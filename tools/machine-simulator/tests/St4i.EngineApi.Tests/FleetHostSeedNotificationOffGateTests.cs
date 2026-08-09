@@ -78,8 +78,22 @@ public sealed class FleetHostSeedNotificationOffGateTests
         MappingProfile: null,
         CycleSeconds: 1.0);
 
+    /// <summary>Runs <paramref name="work"/> on a DEDICATED thread rather than <see cref="Task.Run"/>.
+    ///
+    /// <para>🔴 This is not style. The whole point of the measurement below is that the calling thread is
+    /// consumed for seconds; on a thread-pool thread that is <b>thread-pool starvation injected into a
+    /// 1,300-test suite that xUnit runs classes of in parallel</b> — a side effect of the harness, not of
+    /// anything under test, and the kind that surfaces as an unrelated suite's intermittent failure. A
+    /// dedicated thread blocks nothing but itself, and the assertion is identical either way.</para></summary>
+    private static Thread RunOnItsOwnThread(Action work, string name)
+    {
+        var thread = new Thread(() => work()) { IsBackground = true, Name = name };
+        thread.Start();
+        return thread;
+    }
+
     [Fact]
-    public async Task WhileASeedCallbackIsRunning_AReaderOfTheHaltLatchIsNotBlocked_Measured()
+    public void WhileASeedCallbackIsRunning_AReaderOfTheHaltLatchIsNotBlocked_Measured()
     {
         var registry = new BlockingAssetRegistry(BlockingCode, SeedCallbackBlockFor);
         var host = CreateHost(registry);
@@ -88,7 +102,15 @@ public sealed class FleetHostSeedNotificationOffGateTests
         // so a green result cannot be explained by anything but where the callback runs.
         Assert.False(host.IsRunning);
 
-        var register = Task.Run(() => host.RegisterMachine(NewDescriptor(BlockingCode)));
+        var registered = false;
+        Exception? registrationFault = null;
+        var worker = RunOnItsOwnThread(
+            () =>
+            {
+                try { registered = host.RegisterMachine(NewDescriptor(BlockingCode)); }
+                catch (Exception ex) { registrationFault = ex; }
+            },
+            "g1-seed-register");
 
         Assert.True(
             registry.CallbackEntered.Wait(TimeSpan.FromSeconds(10)),
@@ -100,8 +122,10 @@ public sealed class FleetHostSeedNotificationOffGateTests
         var latched = host.EstopEngaged;
         stopwatch.Stop();
 
+        Assert.True(worker.Join(TimeSpan.FromSeconds(30)), "the registering thread should have finished");
+        Assert.Null(registrationFault);
         Assert.True(
-            await register,
+            registered,
             "the registration itself must still succeed — a fast read of a machine that was never registered proves nothing");
         Assert.True(registry.Upserted.Contains(BlockingCode), "the callback must actually have run for this machine");
         Assert.False(latched);

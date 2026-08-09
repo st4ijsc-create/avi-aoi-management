@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
@@ -39,6 +40,16 @@ namespace St4i.EngineApi.Tests;
 /// defensive-only — a slot's run-task body catches everything it can throw — so nothing in this codebase
 /// can make it fire. It shares the same <c>_logDebug</c> field by construction, which is a READING and not
 /// a measurement; it is recorded as an untested line rather than claimed as a covered one.
+///
+/// <para>🔴 <b>The third test here belongs to part 1, not part 2, and it is in this file because it is
+/// about the same channel.</b> A log callback is host-supplied code, and under <c>AddWindowsService</c> a
+/// host wires it to a provider that writes the Windows Event Log SYNCHRONOUSLY — so blueprint §10.3(a)'s
+/// four log calls made while <c>_gate</c> was held were I/O on the lock <c>Estop()</c> takes, not
+/// bookkeeping. G-1 buffers them and flushes off-lock, and
+/// <see cref="WhileAConnectorWarningIsBeingLogged_AReaderOfTheHaltLatchIsNotBlocked_Measured"/> is that
+/// mechanism's own measurement — same instrument as the seed-callback one in
+/// <c>FleetHostSeedNotificationOffGateTests</c>: time a reader of the halt latch while the host's callback
+/// is deliberately slow. Without it, the log-deferral half of this task would rest on reading alone.
 /// </summary>
 public sealed class FleetHostTeardownLogChannelTests
 {
@@ -47,6 +58,14 @@ public sealed class FleetHostTeardownLogChannelTests
 
     private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>How long the fake logger holds the calling thread for the one nominated message. Same
+    /// reasoning as the seed-callback measurement's own bound: wide enough that a lock held across the call
+    /// is unmistakable, short enough that the mutant fails rather than looking like a hang.</summary>
+    private static readonly TimeSpan LogCallbackBlockFor = TimeSpan.FromSeconds(2);
+
+    /// <summary>Budget for one <c>EstopEngaged</c> read taken while the log callback above is blocking.</summary>
+    private static readonly TimeSpan ReaderBudget = TimeSpan.FromMilliseconds(500);
 
     private static FleetHost CreateHost(RecordingLogger logger, ConnectorRegistry? connectorRegistry = null)
     {
@@ -139,12 +158,88 @@ public sealed class FleetHostTeardownLogChannelTests
         }
     }
 
+    /// <summary>Runs <paramref name="work"/> on a DEDICATED thread rather than <see cref="Task.Run"/>.
+    ///
+    /// <para>🔴 Not style. The measurement below deliberately consumes its calling thread for seconds; on a
+    /// thread-pool thread that is <b>thread-pool starvation injected into a 1,300-test suite whose classes
+    /// xUnit runs in parallel</b> — a side effect of the harness, not of anything under test, and exactly
+    /// the kind that surfaces later as some unrelated suite's intermittent failure. A dedicated thread
+    /// blocks nothing but itself, and the assertion is identical either way.</para></summary>
+    private static Thread RunOnItsOwnThread(Action work, string name)
+    {
+        var thread = new Thread(() => work()) { IsBackground = true, Name = name };
+        thread.Start();
+        return thread;
+    }
+
+    [Fact]
+    public void WhileAConnectorWarningIsBeingLogged_AReaderOfTheHaltLatchIsNotBlocked_Measured()
+    {
+        const string slowId = "vendor.acme.slowlog";
+
+        // A logger that consumes the calling thread for exactly one message — the honest model of a
+        // synchronous Event Log write under AddWindowsService, which is what a host's ILogger becomes there.
+        var logger = new RecordingLogger { BlockOnFragment = slowId, BlockFor = LogCallbackBlockFor };
+        var registry = new ConnectorRegistry();
+        registry.Register(new RejectingOnlyFactory(slowId), config: "garbage");
+        var host = CreateHost(logger, registry);
+
+        Exception? startFault = null;
+        var worker = RunOnItsOwnThread(
+            () => { try { host.Start(); } catch (Exception ex) { startFault = ex; } },
+            "g1-slowlog-start");
+        try
+        {
+            Assert.True(
+                logger.BlockEntered.Wait(TimeSpan.FromSeconds(10)),
+                "the connector-rejection warning should have reached the logger");
+
+            // THE MEASUREMENT — the same reader blueprint §9.2 timed, against a different mechanism.
+            var stopwatch = Stopwatch.StartNew();
+            var latched = host.EstopEngaged;
+            stopwatch.Stop();
+
+            Assert.True(worker.Join(TimeSpan.FromSeconds(30)), "the starting thread should have finished");
+            Assert.Null(startFault);
+            Assert.False(latched);
+            Assert.True(
+                logger.Has(LogLevel.Warning, slowId),
+                "a fast read while nothing was ever logged would prove nothing");
+
+            Assert.True(
+                stopwatch.Elapsed < ReaderBudget,
+                $"a reader of the HALT latch waited {stopwatch.Elapsed.TotalMilliseconds:F1} ms while a " +
+                $"connector warning was being logged; budget is {ReaderBudget.TotalMilliseconds:F0} ms and " +
+                $"the log callback blocks for {LogCallbackBlockFor.TotalMilliseconds:F0} ms — the log call " +
+                "is being made with _gate held again");
+        }
+        finally
+        {
+            logger.BlockOnFragment = null;
+            worker.Join(TimeSpan.FromSeconds(30));
+            host.Stop();
+        }
+    }
+
     /// <summary>Minimal <see cref="ILogger{TCategoryName}"/> recorder — keeps the LEVEL beside the rendered
     /// message, because the level IS the assertion here. Everything is enabled: a fake that filtered would
-    /// answer a question about a filter rather than about which channel the call site chose.</summary>
+    /// answer a question about a filter rather than about which channel the call site chose.
+    ///
+    /// <para>It can also BLOCK on one nominated message, which is what makes the "off which lock" question
+    /// measurable rather than readable.</para></summary>
     private sealed class RecordingLogger : ILogger<FleetHost>
     {
+        private int _blocked;
+
         public ConcurrentQueue<(LogLevel Level, string Message)> Entries { get; } = new();
+
+        /// <summary>Null (the default) means never block. Set to a message fragment to make the FIRST
+        /// matching call consume its calling thread for <see cref="BlockFor"/>.</summary>
+        public string? BlockOnFragment { get; set; }
+
+        public TimeSpan BlockFor { get; set; }
+
+        public ManualResetEventSlim BlockEntered { get; } = new(false);
 
         public bool Has(LogLevel level, string fragment) =>
             Entries.Any(e => e.Level == level && e.Message.Contains(fragment, StringComparison.Ordinal));
@@ -158,8 +253,36 @@ public sealed class FleetHostTeardownLogChannelTests
             EventId eventId,
             TState state,
             Exception? exception,
-            Func<TState, Exception?, string> formatter) =>
-            Entries.Enqueue((logLevel, formatter(state, exception)));
+            Func<TState, Exception?, string> formatter)
+        {
+            var message = formatter(state, exception);
+            Entries.Enqueue((logLevel, message));
+
+            var fragment = BlockOnFragment;
+            if (fragment is not null
+                && message.Contains(fragment, StringComparison.Ordinal)
+                && Interlocked.Exchange(ref _blocked, 1) == 0)
+            {
+                BlockEntered.Set();
+                Thread.Sleep(BlockFor);
+            }
+        }
+    }
+
+    /// <summary>Rejects with no driver at all — isolates the connector-rejection WARNING from the orphan
+    /// disposal path, so the measurement above times one mechanism and not two.</summary>
+    private sealed class RejectingOnlyFactory : IConnectorFactory
+    {
+        public RejectingOnlyFactory(string kind) => Kind = kind;
+
+        public string Kind { get; }
+
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
+        {
+            driver = null;
+            error = "bad config: this factory always rejects";
+            return false;
+        }
     }
 
     /// <summary>A contract-violating factory of exactly the shape <c>StartLocked</c>'s orphan collection

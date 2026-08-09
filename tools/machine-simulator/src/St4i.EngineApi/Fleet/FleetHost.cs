@@ -105,7 +105,8 @@ public sealed class FleetHost
         _configSyncCoordinator = configSyncCoordinator;
 
         // 🔴 E-2 — NULL when there is no ILogger, deliberately, and NOT a lambda that closes over a null
-        // logger. St4i.EdgeCore's logging convention is a nullable callback pair, and D-7a's Critical is what
+        // logger. St4i.EdgeCore's logging convention is nullable callbacks (a pair until G-1 added a third,
+        // logDebug, below — WalFlushPump already carried three), and D-7a's Critical is what
         // makes the nullability load-bearing rather than stylistic: `?.` short-circuits the whole argument
         // list, so any mechanism state smuggled into a log call's arguments silently stops working for hosts
         // built without a callback. A never-null callback would make that failure mode unreachable BY TEST

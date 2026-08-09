@@ -1642,7 +1642,37 @@ EXPECT_EDGESERVICE=50
 #       grep would have flagged neither, only the historical "every assertion …" / "no arm computes …"
 #       pair that the prose trigger already covers. Bounded recall on a sub-class already covered, versus
 #       a count check whose class has produced four real defects in one branch.
-EXPECT_ENGINEAPI=1295
+# 🔴 TASK G-1 (.superpowers/sdd/gate-and-log-channel/task-1-brief.md) raises this 1295 -> 1300 (+5),
+# COUNTED FROM THE RUNNER (`dotnet test --list-tests`: 1295 -> 1300), not by hand. TWO new files; nothing is
+# rewritten, split or deleted. Per file:
+#   FleetHostSeedNotificationOffGateTests            +2   NEW
+#   FleetHostTeardownLogChannelTests                 +3   NEW
+#
+# WHY EACH TEST EXISTS, and why five is the number rather than "a suite":
+#   - Two of the five are MEASUREMENTS of the same shape, against the two mechanisms G-1 took off
+#     FleetCore._gate: a host callback is made deliberately slow, and a reader of `EstopEngaged` — the very
+#     reader blueprint §9.2 timed at 12.35 ms, and the same lock Estop() takes — is timed while it runs.
+#     That is §8.1's fifth rule applied ("measure the effect on the thing the mechanism protects, on the
+#     production path, with no observer the mechanism does not itself need"), not a shape check on where a
+#     call sits in a file. Both are MUTATION-PROVEN: putting the callback back inside `lock (_gate)` gives
+#     2012.0 ms and 2011.7 ms against a 500 ms budget. Neither hangs under its mutant — the blocks are
+#     bounded on purpose, so a mutant FAILS rather than looking like this script's trap 6.
+#   - One pins the three invariants that moving a call out of a lock could have broken: exactly one
+#     notification per seeded machine, in roster order, never before the machine is in the roster. It tests
+#     what CHANGED, not what was kept.
+#   - Two pin the third log channel end to end through the real FleetHost: the two teardown sites that are
+#     deterministically reachable now arrive as Debug and NOT as Error. The negative is the half that
+#     matters — "no Error on a best-effort teardown path" is the operator-facing claim, because under
+#     AddWindowsService an Error there is a synchronous Windows Event Log write.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are deliberately
+# UNCHANGED, and that is the check rather than a coincidence: G-1 touches exactly two product files
+# (src/St4i.EdgeCore/Fleet/FleetCore.cs, src/St4i.EngineApi/Fleet/FleetHost.cs) and adds two test files in
+# one suite. A total moving anywhere else would mean this task reached somewhere it had no business
+# reaching. EXPECT_CONFORMANCE in particular stays 22: G-1 adds no driver and no connector kind.
+# EXPECT_WARNINGS stays 116 — the new code adds no warning, and the third log channel adds a parameter to an
+# internal ctor rather than an unused symbol.
+EXPECT_ENGINEAPI=1300
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

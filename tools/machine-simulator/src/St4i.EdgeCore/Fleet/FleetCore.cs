@@ -148,11 +148,14 @@ public enum MachineDriverAvailability
 /// and it is also what makes the one-way dependency edge checkable by the compiler rather than by
 /// review — <c>St4i.EdgeCore</c> cannot reference <c>St4i.EngineApi</c> at all.</para>
 ///
-/// <para><b>Logging is a callback pair, not <c>ILogger</c>.</b> <c>St4i.EdgeCore</c> is intentionally
+/// <para><b>Logging is nullable callbacks, not <c>ILogger</c>.</b> <c>St4i.EdgeCore</c> is intentionally
 /// logging-framework-free (<c>MappingProfileResolver.cs</c> states the policy); this class follows the
 /// same <c>Action&lt;string&gt;? logWarning</c> / <c>Action&lt;Exception,string&gt;? logError</c>
-/// convention as every other type here. See <see cref="_logWarning"/> for the D-7a trap that shape
-/// carries and the rule this class holds because of it.</para>
+/// convention as every other type here. 🔴 G-1 added a THIRD, <see cref="_logDebug"/> — the shape is not
+/// new (<c>WalFlushPump</c> already carries three), but this doc block said "a callback pair" and the
+/// count is load-bearing enough to be worth keeping true. See <see cref="_logWarning"/> for the D-7a trap
+/// the shape carries and the rule this class holds because of it, and <see cref="_logDebug"/> for the
+/// operator cost that made a third channel worth adding.</para>
 ///
 /// <para>🔴 <b>Task E-3 — THIS TYPE IS <c>internal</c>, AND THAT IS THE WHOLE OF BLUEPRINT §3's "an edge
 /// agent's machines are read-only", EXPRESSED AS A COMPILE ERROR RATHER THAN AS A SENTENCE.</b>
@@ -499,20 +502,24 @@ internal sealed class FleetCore
     /// <c>_ = _assetRegistry?.UpsertAsync(descriptor)</c>. <c>IAssetRegistry</c> stays in
     /// <c>St4i.EngineApi</c> (blueprint §9.1/§9.6(a): it is not a leaf — it drags <c>AssetRecord</c> and
     /// <c>AssetLifecycleState</c>), so the core knows only "a machine was seeded" and the shell decides what
-    /// that means. <b>The call site did not move and the operation count did not change:</b> it is still
-    /// exactly one invocation per seeded machine, still on the calling thread, still inside
-    /// <see cref="_gate"/> at <see cref="RegisterMachine"/> and still outside any lock in the ctor.</para>
+    /// that means. <b>At E-2 the call site did not move and the operation count did not change:</b> it was
+    /// still exactly one invocation per seeded machine, still on the calling thread, still inside
+    /// <see cref="_gate"/> at <see cref="RegisterMachine"/> and still outside any lock in the ctor.
+    /// 🔴 <b>G-1 changed the third of those four clauses and only the third</b> — see the G-1 paragraph
+    /// below. One invocation per seeded machine, on the calling thread, and no lock in the ctor are all
+    /// still true today.</para>
     ///
     /// <para><b>Read blueprint §9.2 before you touch this.</b> The <c>_ =</c> discard plus the <c>Async</c>
     /// suffix read as fire-and-forget. It is NOT: Microsoft.Data.Sqlite does not override the async ADO.NET
     /// members, so a real <c>AssetRegistryStore.UpsertAsync</c> runs its open+insert entirely on THIS thread
-    /// and hands back an already-completed task — a full SQLite transaction executed while
-    /// <see cref="_gate"/> is held, measured to block a reader of <see cref="EstopEngaged"/> for up to
-    /// 12.35 ms. That is a PRE-EXISTING defect E-2 deliberately did not fix (a fix folded into a move makes
-    /// "behaviour unchanged" untrue), and the reason this doc comment says so out loud is that the previous
-    /// wording — "fire-and-forget, never awaited, never throws" — is what let it sit unnoticed. A callback
-    /// shape makes it worse-looking and better-documented at once: whatever the shell wires here runs
-    /// synchronously under the lock unless the shell itself hands the work to another thread.</para>
+    /// and hands back an already-completed task. Until G-1 that whole SQLite transaction executed while
+    /// <see cref="_gate"/> was held, measured to block a reader of <see cref="EstopEngaged"/> for up to
+    /// 12.35 ms. That was a PRE-EXISTING defect E-2 deliberately did not fix (a fix folded into a move makes
+    /// "behaviour unchanged" untrue), and the reason this doc comment said so out loud is that the previous
+    /// wording — "fire-and-forget, never awaited, never throws" — is what let it sit unnoticed. The
+    /// synchronous half of that sentence is STILL TRUE and always will be: whatever the shell wires here
+    /// runs on the calling thread unless the shell itself hands the work elsewhere. Only the "under the
+    /// lock" half is gone.</para>
     ///
     /// <para>🔴 <b>G-1 CLOSED the <see cref="_gate"/> half of that defect.</b> This callback is no longer
     /// invoked under <see cref="_gate"/> anywhere. <see cref="RegisterMachine"/> now ENQUEUES the descriptor

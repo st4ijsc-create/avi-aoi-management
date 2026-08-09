@@ -614,6 +614,29 @@ viên, không nêu số dòng**: một số dòng trong bản ghi bền là mộ
 → **Hạng mục sửa `_gate` là BỐN đường, không phải ba**, và danh sách `Cancel` của nó có **hai** mục, không
 phải một.
 
+🔴 **Đính chính sau G-1 (`.superpowers/sdd/gate-and-log-channel/task-1-brief.md`) — tiêu đề mục này giờ SAI, và
+tập hợp lớn hơn cả con số đã đính chính ở trên.** G-1 dựng lại **tập** thay vì thừa kế danh sách: một cuộc đi bộ
+theo khả năng với tới từ cả **hai mươi** vùng `lock (_gate)` qua các callee, hỏi ở mỗi chỗ *"cái này có với tới
+I/O, `Dispose` hay `Cancel` không"* — **không** phải một bảng đếm "điểm mã do host cung cấp", đúng cái đại lượng
+(c) ở trên nói là sai. Nó tìm ra **tám** đường; danh sách thừa kế nêu **năm**.
+
+**G-1 đóng ba cơ chế, sáu điểm gọi:** vi phạm #3 (`_onMachineSeeded`, đường có con số 12,35 ms — nay xếp hàng
+dưới khoá và gọi ngoài khoá); **cả bốn** lời gọi log của (a); và `Cancel` thứ hai của (d) trong `Burst`.
+
+**Còn mở bốn, mỗi cái kèm lý do:** vi phạm #1 (`MappingProfileResolver.Build`, 2,39 ms); vi phạm #2
+(`slot.Cts.Cancel()`); `IConnectorFactory.TryCreate` của bên thứ ba; và 🔴 **một đường KHÔNG có trong bất kỳ
+danh sách nào trước đây, và nó là một lệnh GHI**: `StartLocked` → `SimulatorFactory.Create` → hàm dựng
+`SimulatorBase` → `MachineConfigStore.Ensure` → `Save()` → `File.WriteAllText` + `File.Move`, một lần mỗi máy
+chưa có trong store (tức lần `Start` đầu tiên trên một data root mới), và **lấy một khoá THỨ HAI trong lúc giữ
+`_gate`** ở mọi lần start sau đó. Mọi phép đếm trước đây của hạng mục này đều đếm đường ĐỌC.
+
+**Và một đường log THỨ NĂM mà bảng sáu dòng của (a) không thể thấy:** `Start`/`Stop`/`Estop` giữ `_gate` băng qua
+`_unsPublisher.PublishNodeBirth()`/`PublishNodeDeath()`, mà nhánh suy giảm của chúng (publisher đã dispose, hàng
+đợi publish đầy) gọi `logWarning` **của chính `UnsPublisher`** — một callback do host cung cấp, nối tới `ILogger`
+ở `Program.cs`. (a) đếm các điểm `_logger?.` **bên trong FleetCore.cs**; đường này nằm trong callee. G-1 cố ý
+không đụng: giữ hai lời gọi ấy trong khoá là một bản sửa review có chủ đích (nó nối thứ tự NBIRTH/NDEATH với
+chính lần chuyển trạng thái), nên bản sửa thuộc về `UnsPublisher`, không thuộc về `FleetCore`.
+
 ### 10.4 Mười bốn lời gọi log đã port — và một sự trôi mức nghiêm trọng, có chủ đích
 
 Mười bốn chỗ `_logger?.` (§9.5, con số đã đính chính) chuyển sang quy ước của EdgeCore. **Vỏ truyền `null` cho
@@ -644,6 +667,26 @@ Event Log hay không, vì bộ lọc mặc định của `AddEventLog` vốn đ�
 
 → **Xếp lịch callback thứ ba, đừng để nó ở dạng "tôi sẽ nhận một follow-up".** *Ba đường tháo dỡ ghi lỗi vào
 Event Log là cách một người vận hành học được thói quen thôi đọc Event Log.*
+
+🔴 **G-1 đã làm, và phép đếm ở trên ĐÚNG y nguyên khi đếm lại từ nguồn.** Kiểm chứng bằng cách đọc chính
+`FleetHost.cs` ở `5f2b8883` (trước cuộc dời), không bằng cách đọc lại mục này: **14 điểm** `_logger?.`, **4**
+chỉ-có-thông-điệp (đều `LogWarning`, đều vẫn `LogWarning`), **10** mang exception = **5 `LogWarning` + 2
+`LogError` + 3 `LogDebug`**. Không có đường `LogDebug` thứ tư. Ba đường ấy đúng là `:1573`/`:1751`/`:1763` của
+bản trước cuộc dời — nay là `DisposeOrphanedConnectorDrivers`, và hai chỗ trong `WaitAndDisposeOldPipeline`
+(**nêu tên thành viên, không nêu số dòng**, theo chính đính chính M4 ở §10.3(d)).
+
+Kênh thứ ba là `Action<Exception,string>? logDebug` (mang exception, vì cả ba điểm đều mang), vỏ nối tới
+`logger.LogDebug`, và **`null` khi không có `ILogger`** như cặp kia — một callback không-bao-giờ-null sẽ làm lỗi
+Critical D-7a thành không thể kiểm được trên kênh này y như trên hai kênh kia. **Chọn `LogDebug` chứ không phải
+`LogInformation`**, dù tiền lệ được nêu tên là `logInfo` của `WalFlushPump`: tiền lệ là *hình dạng* (một callback
+thứ ba, nullable, do host cung cấp), còn mức thì mục tiêu là **khôi phục** độ mịn E-2 đã gộp — `LogInformation`
+sẽ để ba dòng này hiện trên console ở nơi trước đây chúng im lặng, tức một thay đổi khác, không phải một sự khôi
+phục. Đây là chỗ G-1 đi lệch chữ của brief một cách có chủ đích, và nó được ghi ra để review phán quyết.
+
+**Năm chỗ trôi `LogWarning` → `LogError` còn lại thì KHÔNG sửa, và lý do là một phép đo chứ không phải sự lười:**
+bộ lọc mặc định của `AddEventLog` vốn đã nhận mức Warning, nên năm chỗ ấy đổi **mức nghiêm trọng** chứ không đổi
+**việc có mặt trong Event Log** — đúng như chính mục này đã ghi cho `:1477`. Cái giá cho người vận hành mà đoạn
+văn trên mô tả nằm trọn ở ba đường im-lặng-thành-Error.
 
 ### 10.5 `InternalsVisibleTo`, và vì sao nó KHÔNG mâu thuẫn với ghi chú cũ trong `AssemblyInfo.cs`
 
