@@ -245,7 +245,7 @@ public sealed class FleetService : IDisposable
     /// through <see cref="ScenarioChanged"/> like any other <see cref="ApplyScenario"/> call.
     ///
     /// <para>🔴 <b>TASK H-1b — THIS METHOD CARRIES AN OPEN DEFECT OF THE SAME CLASS <c>FleetCore</c>'s
-    /// S-SET NAMES, AND IT IS DELIBERATELY NOT FIXED. Named here so the next sweep starts from a set.</b>
+    /// S-SET NAMES, AND IT IS DELIBERATELY NOT FIXED. Named here so the next sweep starts from a set.</b></para>
     ///
     /// <para><b>The mechanism, exactly.</b> Two things are COMMITTED under this service's own
     /// <see cref="_gate"/>: <see cref="_burstRevertCts"/><c> = cts</c> and (on the first click of an
@@ -255,12 +255,35 @@ public sealed class FleetService : IDisposable
     /// <see cref="ApplyScenario"/> throws — it re-takes <see cref="_gate"/>, may
     /// <see cref="StopLocked"/>/<see cref="StartLocked"/>, and ends by invoking
     /// <see cref="ScenarioChanged"/>, an arbitrary subscriber-supplied handler — the revert task is never
-    /// started, so <see cref="_burstRevertCts"/> is left non-null forever. Every later <see cref="Burst"/>
-    /// then takes the "a burst is already active" branch, no revert is ever scheduled, and the fleet stays
-    /// at whatever rate it reached. There is a second, narrower window in the same shape:
-    /// <c>previousCts?.Cancel()</c> runs registered callbacks synchronously and rethrows, and it sits
-    /// BEFORE <c>_burstRevertCts = cts</c> inside the lock, so a throwing callback leaves the field
-    /// pointing at a CTS that has just been cancelled and whose task will return without reverting.</para>
+    /// started, so the fleet is left running at <see cref="BurstMultiplier"/> with no revert task ever
+    /// scheduled: <b>indefinitely, until some later <see cref="Burst"/></b> — the wording
+    /// <c>FleetCore</c>'s own comment already uses for the identical window.</para>
+    ///
+    /// <para>🔴 <b>WHAT THAT IS NOT, corrected in fix round 1 because the first draft of this note said
+    /// it and it was false.</b> The draft claimed <see cref="_burstRevertCts"/> is left non-null "forever"
+    /// and that every later <see cref="Burst"/> then takes an "already active" branch under which no
+    /// revert is ever scheduled again. <b>There is no such branch.</b> The
+    /// <c>if (previousCts is null)</c>/<c>else</c> pair below governs ONLY whether
+    /// <see cref="_burstBaseline"/> is re-captured; <c>previousCts?.Cancel()</c>,
+    /// <c>_burstRevertCts = cts</c>, <see cref="ApplyScenario"/> and the revert scheduling all run
+    /// unconditionally on every click. So the NEXT click does schedule a revert, and it reverts to the
+    /// correct first-click baseline — <b>the defect self-heals on the next click</b>, which is what
+    /// REPLACES the stale <see cref="_burstRevertCts"/> (nothing else does: the revert task is what
+    /// normally nulls it, and in this window it was never started; <see cref="Dispose"/> only
+    /// <c>Cancel</c>s the field, it does not clear it, which is harmless because the service is going
+    /// away). This matters twice over: it is the "actionable-and-wrong" class (a maintainer sent to find the
+    /// suppressing branch would not find one), and it makes the defect materially SMALLER than the first
+    /// draft priced it — which is part of why it is not fixed.</para>
+    ///
+    /// <para><b>A second, narrower window in the same shape — and it is currently UNREACHABLE, which the
+    /// first draft failed to say.</b> <c>previousCts?.Cancel()</c> runs registered callbacks
+    /// synchronously and rethrows what one of them throws, and it sits BEFORE <c>_burstRevertCts = cts</c>
+    /// inside the lock, so a throwing callback would leave the field pointing at a CTS that has just been
+    /// cancelled and whose task returns without reverting. <b>The only registration on that token today is
+    /// <see cref="Task.Delay(TimeSpan, CancellationToken)"/>'s own, which cannot throw</b>, so there is no
+    /// reachable throw here now. "Benign today" is a property of the current callee rather than of this
+    /// method — the same sentence <c>FleetCore</c> carries at its own copy — but a sweep told this window
+    /// is live would go looking for a registration that does not exist.</para>
     ///
     /// <para><b>And the half that is SILENT rather than merely wrong.</b>
     /// <see cref="RevertBurstAfterDelayAsync"/> is started as <c>_ = …</c>, so its Task is never observed;
@@ -285,27 +308,48 @@ public sealed class FleetService : IDisposable
     /// <c>FleetCore</c> is <c>internal</c> to <c>St4i.EdgeCore</c> with
     /// <c>InternalsVisibleTo("St4i.EngineApi")</c> only, so this assembly cannot reach it even by accident.
     /// This service also has no <c>Estop</c>, no HALT latch and no safety path at all: the consequence here
-    /// is an exhibition simulator stuck at 6× cycle rate, which is a demo artefact, not a machine-stop
-    /// line.</para>
+    /// is an exhibition simulator stuck at 6× cycle rate until the next click, which is a demo artefact,
+    /// not a machine-stop line.</para>
     ///
-    /// <para>🔴 <b>WHY IT IS NOT FIXED: THE GATE CANNOT WITNESS THIS HOST.</b> Said plainly rather than as
-    /// "later" — there is no follow-up scheduled and none implied. <c>scripts/verify-suites.sh</c> measures
-    /// FIVE suites (<c>St4i.Connector.Abstractions.Tests</c>, <c>St4i.Connector.Conformance.Tests</c>,
+    /// <para>🔴 <b>WHY IT IS NOT FIXED — AND THE REASON IS A PRICE, NOT AN IMPOSSIBILITY. The owner
+    /// re-ruled on this after fix round 1, and the earlier phrasing here was the weaker of the two
+    /// grounds.</b>
+    /// Today the gate cannot witness a fix: <c>scripts/verify-suites.sh</c> measures FIVE suites
+    /// (<c>St4i.Connector.Abstractions.Tests</c>, <c>St4i.Connector.Conformance.Tests</c>,
     /// <c>St4i.EdgeCore.Tests</c>, <c>St4i.EdgeService.Tests</c>, <c>St4i.EngineApi.Tests</c>) and NONE of
     /// them references <c>St4iMachineSimulator</c> — the assembly appears in no test project's
-    /// <c>ProjectReference</c> anywhere in the tree. A fix applied here would compile and would be measured
-    /// by nothing; this project's own record is a long list of what that costs.
-    /// <b>The target framework is NOT the reason, and stating it as one would be false:</b> three of those
-    /// five suites are themselves <c>net10.0-windows</c>. The obstacle is the absence of a suite, not an
-    /// incompatibility.</para>
+    /// <c>ProjectReference</c> anywhere in the tree.
+    /// <b>But that is an ABSENCE with a bounded price, not an incompatibility, and the price is written
+    /// down here so nobody has to re-derive it:</b> three of those five suites are already
+    /// <c>net10.0-windows</c>, and a <c>net10.0-windows</c> xunit project can <c>ProjectReference</c> a
+    /// <c>WinExe</c>. A sixth suite therefore costs one <c>.csproj</c>, one <c>SUITES=</c> entry and one
+    /// <c>EXPECT_</c> constant — plus whatever this project's WPF dependency graph
+    /// (<c>LiveChartsCore</c>/<c>SkiaSharp</c>, <c>RuntimeIdentifier=win-x64</c>) does to build time and to
+    /// <c>EXPECT_WARNINGS</c>, which is the part nobody has measured. Small but not free.
+    /// <b>The target framework is NOT the reason, and stating it as one would be false.</b></para>
     ///
-    /// <para><b>TRIGGER — write it down so it fires without anyone remembering it.</b> If a test project is
-    /// ever added for the WPF shell, THIS is the first thing it must witness. The same trigger fires on the
-    /// route this repository has actually taken before: relocating the mechanism into <c>St4i.EdgeCore</c>,
-    /// which is how <c>SwitchableTransport</c>/<c>TransportCoordinator</c>/<c>ScenarioAwareDriver</c>
-    /// stopped being untestable (see <c>RelocatedFromWpfTests</c> in <c>St4i.EdgeCore.Tests</c>). Either
-    /// way the FIRST assertion is the one <c>FleetCore</c>'s own S5 test makes: a <see cref="Burst"/> whose
-    /// <see cref="ApplyScenario"/> throws must STILL have scheduled its revert.</para></para>
+    /// <para><b>So the ruling stands on the OTHER ground, and only that one: the consequence.</b> A burst
+    /// left at 6× on an exhibition simulator, self-healing on the next click, on a host with no HALT latch
+    /// and no write path to a real machine, does not earn a new suite and a new
+    /// <c>EXPECT_WARNINGS</c> negotiation. It would earn one the moment any of the following is true —
+    /// <b>this is the trigger, and it is stated as a condition to CHECK rather than as an event to wait
+    /// for:</b></para>
+    /// <list type="number">
+    /// <item>a defect in this host reaches a STOP path, a safety surface, or persisted/customer-visible
+    /// data (this one reaches none of the three);</item>
+    /// <item>a SECOND instance of this shape is found here — two makes it a class, and this repository's
+    /// own record is that a class is what a suite is for;</item>
+    /// <item>the WPF shell gains a writer to any store the other hosts share, at which point its defects
+    /// stop being confined to a demo;</item>
+    /// <item>or a test project is added for any other reason — then this is the FIRST thing it must
+    /// witness, because the cost has already been paid.</item>
+    /// </list>
+    /// <para>The alternative route costs less and this repository has already taken it: relocating the
+    /// mechanism into <c>St4i.EdgeCore</c>, which is how
+    /// <c>SwitchableTransport</c>/<c>TransportCoordinator</c>/<c>ScenarioAwareDriver</c> stopped being
+    /// untestable (see <c>RelocatedFromWpfTests</c> in <c>St4i.EdgeCore.Tests</c>). Either way the FIRST
+    /// assertion is the one <c>FleetCore</c>'s own S5 test makes: a <see cref="Burst"/> whose
+    /// <see cref="ApplyScenario"/> throws must STILL have scheduled its revert.</para>
     /// </summary>
     public void Burst()
     {
