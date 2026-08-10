@@ -53,6 +53,7 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/routers/verify2faPasswordStep.test.ts \
   server/routers/sessionGrantScan.test.ts \
   server/routers/userExposureScan.test.ts \
+  server/_core/phienTrungTrongMotGiay.test.ts \
   server/_core/publicUser.test.ts \
   server/_core/backupCodeWriteScan.test.ts \
   server/_core/backupCodeWidth.test.ts \

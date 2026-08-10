@@ -269,6 +269,79 @@ export async function verifyCredentials(
 }
 
 /**
+ * ★★★ Pha 8 — **LỖI GHI SỔ PHIÊN KHÔNG CÒN VÔ HÌNH.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ TRƯỚC BẢN VÁ: `.catch(() => {})` — MỘT LƯỢT ĐĂNG NHẬP CÓ THỂ KHÔNG CÓ HÀNG PHIÊN NÀO
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Hàng `user_sessions` là thứ làm cho một phiên **thấy được** (`session.list`) và **thu hồi được**
+ * (`session.revoke`). Khi lượt INSERT hỏng mà lỗi bị nuốt, lượt đăng nhập ấy vẫn **cấp cookie hợp
+ * lệ** nhưng **không có hàng nào đại diện** ⇒ nó không hiện trong danh sách thiết bị, và *"đăng
+ * xuất mọi thiết bị"* **không chạm tới nó**. Task 2 vừa biến `user_sessions` thành đường thu hồi
+ * CHÍNH, nên đây là lỗ an ninh, không phải chuyện sổ sách.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO **GHI LOG + ĐẾM**, KHÔNG PHẢI **NÉM** — LỰA CHỌN CÓ SỐ ĐO ĐỠ LƯNG
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Ném thẳng biến một lỗi DB thoáng qua thành **lượt đăng nhập thất bại**. Nhưng lý do quyết định
+ * không phải "phòng xa" — nó **đo được**:
+ *   · `user_sessions.sessionToken` là **`varchar(255)`**; JWT thật hôm nay dài **203–233** (276
+ *     hàng), tức chỉ dư **22 ký tự**.
+ *   · Chiều dài JWT do **`users.name`** lái, mà đây là sản phẩm **tiếng Việt** — dấu tiếng Việt là
+ *     **2 byte UTF-8**, còn base64 đếm **BYTE**. Đo được: tên `"Đặng Thị Bích Ngọc Hương Giang"`
+ *     (30 ký tự / 40 byte) cho JWT **256 ký tự** — **VỠ trần NGAY HÔM NAY, chưa cần nonce**.
+ *   ⇒ Nếu ném, đúng nhóm người dùng ấy **không đăng nhập được nữa**. Đó là lớp lỗi đã deploy ra
+ *     **nhà tù 4/4 tài khoản** ở Pha 7: một cổng fail-closed chặn luôn cả đường thoát.
+ * ⇒ Chọn **không im lặng mà cũng không chặn cửa**: đếm (`demLoiGhiSoPhien()` — đo được từ lưới,
+ *   không phải một dòng log phải đọc bằng mắt) + `console.error` có ngữ cảnh.
+ *
+ * ⚠ **NỢ MỚI, CẦN CHỦ DỰ ÁN QUYẾT** (không tự làm vì là DDL / đổi ngữ nghĩa cột trên đường xác
+ *   thực): trần `varchar(255)` phải được nới, **hoặc** cột chuyển sang lưu **băm** của JWT (dài cố
+ *   định 64, hết hẳn lớp lỗi này và bí mật không còn nằm nguyên ở tầng nghỉ). Chừng nào chưa xử,
+ *   người tên dài **vẫn** mất hàng phiên — nhưng nay **kêu thành tiếng và đếm được**.
+ */
+let soLoiGhiSoPhien = 0;
+
+/** Số lượt ghi sổ phiên hỏng kể từ khi tiến trình chạy (hoặc từ lần đặt lại gần nhất). */
+export function demLoiGhiSoPhien(): number {
+  return soLoiGhiSoPhien;
+}
+
+/** Đặt lại bộ đếm — dành cho lưới, để mỗi ca đo trên một mốc sạch. */
+export function datLaiDemLoiGhiSoPhien(): void {
+  soLoiGhiSoPhien = 0;
+}
+
+/**
+ * Ghi hàng `user_sessions` cho một lượt cấp phiên. **Không ném** (xem khối lý lẽ trên), nhưng
+ * **không bao giờ im lặng**: hỏng thì bộ đếm nhích và một dòng `error` có ngữ cảnh được ghi.
+ */
+export async function ghiSoPhien(data: {
+  userId: number;
+  sessionToken: string;
+  ipAddress?: string;
+  deviceName?: string;
+  expiresAt: Date;
+}): Promise<number | null> {
+  try {
+    return await db.createUserSession(data);
+  } catch (err) {
+    soLoiGhiSoPhien++;
+    console.error(
+      "[Auth] GHI SỔ PHIÊN HỎNG — lượt đăng nhập này KHÔNG có hàng `user_sessions` của riêng nó, " +
+        "nên nó VÔ HÌNH với `session.list` và NGOÀI TẦM `session.revoke`.",
+      {
+        userId: data.userId,
+        doDaiToken: data.sessionToken.length, // ⚠ độ dài, KHÔNG phải token — token là khoá phiên.
+        tranCot: 255,
+        loi: err instanceof Error ? err.message : String(err),
+      },
+    );
+    return null;
+  }
+}
+
+/**
  * Complete a successful login: mark last-signed-in, mint a session JWT, persist
  * a user_sessions row (keyed by that JWT so it is discoverable / revocable),
  * set the cookie, and write the success audit entry.
@@ -290,18 +363,14 @@ export async function establishSession(
 
   // Persist a server-side session record so it shows up in the session list
   // and can be individually revoked. Keyed by the JWT == ctx.sessionToken.
-  await db
-    .createUserSession({
-      userId: user.id,
-      sessionToken,
-      ipAddress: audit.ipAddress ?? undefined,
-      // Minimal device hint; richer UA parsing can be layered in later.
-      deviceName: audit.userAgent ?? undefined,
-      expiresAt: new Date(Date.now() + ONE_YEAR_MS),
-    })
-    .catch(() => {
-      /* never block login on session bookkeeping */
-    });
+  await ghiSoPhien({
+    userId: user.id,
+    sessionToken,
+    ipAddress: audit.ipAddress ?? undefined,
+    // Minimal device hint; richer UA parsing can be layered in later.
+    deviceName: audit.userAgent ?? undefined,
+    expiresAt: new Date(Date.now() + ONE_YEAR_MS),
+  });
 
   const cookieOptions = getSessionCookieOptions(req);
   res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });

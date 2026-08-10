@@ -360,7 +360,13 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //       SIẾT, không chọn XOÁ TUYẾN; siết quá tay là lớp lỗi đã ship nhà tù 4/4 ở Pha 7).
     //   `server/routers/*.test.ts` **không** có đường bao trong cổng ⇒ thiếu dòng này thì lưới ấy
     //   *"theo cấu tạo không bao giờ được canh"*.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(45); // Pha 8 siết 2FA: +1
+    // ⚠ Pha 8 / JWT trùng giây: 45 → **46**. `server/_core/phienTrungTrongMotGiay.test.ts` — bất
+    //   biến *"hai lượt đăng nhập, KỂ CẢ trong cùng một giây, sinh HAI hàng `user_sessions` phân
+    //   biệt, mỗi hàng thu hồi độc lập"* + *"lỗi ghi sổ phiên phải ĐẾM ĐƯỢC"*. Hai nửa cố ý nằm ở
+    //   **hai ô khác nhau** (§1–§2 canh nonce · §3 canh lượt nuốt lỗi) để một đột biến trên nửa
+    //   này không được ăn may nhờ nửa kia. `server/_core/` **không** có đường bao trong cổng ⇒
+    //   thiếu dòng này thì lưới ấy *"theo cấu tạo không bao giờ được canh"*.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(46); // Pha 8 JWT trùng giây: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -488,7 +494,8 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   tự khai `Pha 5` nên bộ nhận diện theo NỘI DUNG thấy, và nó phải có đường riêng ở §Cổng
     //   kiểm chung ⇒ `CONG.length` 44 → **45** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên
     //   **hai** trục.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(108); // Pha 8 siết 2FA: +1
+    // ⚠ Pha 8 / JWT trùng giây: 108 → **109**. Đúng MỘT lưới mới (lý do ở ô `CONG.length`).
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(109); // Pha 8 JWT trùng giây: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
