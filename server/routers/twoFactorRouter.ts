@@ -222,6 +222,19 @@ export const twoFactorRouter = router({
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
       }
       const biMat = await layBiMatNguoiDung(ctx.user.id);
+      /**
+       * ⚠⚠ **HỆ QUẢ ĐƯỢC NÓI RA** (review TOÀN NHÁNH Pha 8 · M-3): với tài khoản **KHÔNG** xác thực
+       * nội bộ (SSO/OIDC — không có hash cục bộ), vế mật khẩu này **KHÔNG chạy**, nên lượt tắt 2FA
+       * chỉ cần **MỘT** yếu tố (mã TOTP/dự phòng), trong khi `z.string().min(1)` ở `input` làm hợp
+       * đồng API **trông như** đòi hai.
+       * ⚠ Vị từ vẫn ĐÚNG theo chủ ý đã khai — **chống NHÀ TÙ**: đòi một mật khẩu mà tài khoản ấy
+       *   không có là khoá vĩnh viễn người dùng SSO khỏi tuyến này (Pha 7 đã ship một lần ra nhà tù
+       *   thật 4/4 tài khoản). ⇒ **Không siết ở đây.** Lối siết đúng là **bước-up SSO** (re-auth
+       *   OIDC) thay cho mật khẩu — một quyết định sản phẩm, cần chủ dự án.
+       * ⚠ Về mặt lưới: hai tuyến (`twoFactor.disable` ≡ `user.disable2FA`) **KHỚP nhau** nên
+       *   `hoTuyenSongSong` xanh — một ví dụ sạch của *"khớp TẬP mà cả hai cùng hở"*. Cặp ấy chỉ so
+       *   **A với B**, không so **A với một chuẩn**; đừng đọc màu xanh của nó thành "đã đủ yếu tố".
+       */
       if (laXacThucNoiBo(hoSo.loginMethod) && biMat.passwordHash) {
         const dungMatKhau = await bcrypt.compare(input.password, biMat.passwordHash);
         if (!dungMatKhau) {

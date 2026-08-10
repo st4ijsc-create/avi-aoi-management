@@ -77,6 +77,25 @@ const BANG_CANH_SQL = "users";
 const HOOK = new Set(["beforeEach", "afterEach", "beforeAll", "afterAll"]);
 /** Hàm liệt kê **cả bảng** (hoặc cả một vai). Kết quả của chúng chảy vào một lượt xoá ⇒ xoá rộng. */
 const LIET_KE = /^(getAll[A-Z]|getUsersByRole$|getUsers$|listAll[A-Z]|findAll[A-Z])/;
+
+/**
+ * ★★★ Review TOÀN NHÁNH Pha 8 · **M-2** — **TÊN BẢNG SUY TỪ HÀM LIỆT KÊ, KHÔNG GÁN CỨNG.**
+ *
+ * Nhánh D3 trước đây gán **cứng** `bang: BANG_CANH` cho **mọi** lượt xoá được nuôi bởi **mọi** hàm
+ * liệt kê — trong khi `LIET_KE` khớp cả `getAllMachines` · `getAllProducts` · … Một
+ * `for (const m of await db.getAllMachines()) await db.deleteMachine(m.id)` sẽ được ghi là *"xoá
+ * không giới hạn bảng `users`"* và làm §4 đỏ với **câu lỗi chỉ sai bảng**: người gặp nó lần đầu sẽ
+ * đi tìm một lượt xoá `users` **không tồn tại**. Hôm nay tập vi phạm bằng 0 nên nó chưa nổ — và đó
+ * đúng là lúc rẻ nhất để sửa.
+ * ⚠ Phép suy cố ý **bảo thủ**: tên không nhận ra được thì trả về **chính tên hàm**, để câu lỗi nói
+ *   *"không biết bảng nào"* thay vì nói **sai** một cái tên.
+ */
+function bangTuLietKe(ten: string): string {
+  const m = /^(?:getAll|listAll|findAll)([A-Z]\w*)$/.exec(ten);
+  if (m !== null) return m[1]!.charAt(0).toLowerCase() + m[1]!.slice(1);
+  if (/^getUsers(ByRole)?$/.test(ten)) return "users";
+  return `?${ten}`;
+}
 /** Hàm thi hành SQL thô. Chỉ literal đi qua đây mới được coi là một lượt xoá THẬT. */
 const THI_HANH_SQL = new Set(["query", "execute", "unsafe"]);
 
@@ -188,8 +207,9 @@ export function quetDiemXoa(duong: string, ma: string): Diem[] {
           ra.push({
             duong, dong: dongCua(n), hook: h,
             loai: `hàm:${t}←${nguon}`,
-            // `getUsersByRole`/`getAllUsers` là người liệt kê bảng `users`.
-            bang: BANG_CANH,
+            // ★ M-2: bảng SUY TỪ hàm liệt kê (`getAllUsers`/`getUsersByRole` → `users`;
+            //   `getAllMachines` → `machines`), không gán cứng `users` cho mọi lượt.
+            bang: bangTuLietKe(nguon),
             coGioiHan: false,
           });
         }
@@ -251,6 +271,28 @@ describe("★★★ Pha 8 Task 3 — ∀ file test: xoá hàng `users` phải GI
       const ho = quetDiemXoa("tong-hop.test.ts", ma).filter((d) => !d.coGioiHan);
       expect(ho, `DƯƠNG TÍNH GIẢ ở hình dạng "${ten}" — lưới này sẽ dạy người sau né bằng cách sai`).toEqual([]);
     }
+  });
+
+  it("§1d M-2 — nhánh D3 ghi ĐÚNG tên bảng, không gán cứng `users` cho mọi hàm liệt kê", () => {
+    /**
+     * ⚠ Trước bản vá, ô dưới đây cho `bang === "users"` cho **cả ba** dòng — tức §4 sẽ đỏ với một
+     *   **câu lỗi chỉ sai bảng**, và người gặp nó lần đầu đi tìm một lượt xoá `users` không tồn tại.
+     *   Hôm nay tập vi phạm bằng 0 nên nó chưa nổ; chốt lúc rẻ.
+     */
+    const bangCua = (ma: string): string[] =>
+      quetDiemXoa("tong-hop.test.ts", ma).filter((d) => d.loai.startsWith("hàm:")).map((d) => d.bang);
+    expect(
+      bangCua('beforeEach(async () => { for (const m of await db.getAllMachines()) await db.deleteMachine(m.id); });'),
+      "lượt xoá được nuôi bởi `getAllMachines` bị ghi là bảng `users`",
+    ).toEqual(["machines"]);
+    expect(
+      bangCua('beforeEach(async () => { for (const u of await db.getAllUsers()) await db.deleteUser(u.id); });'),
+      "lượt xoá được nuôi bởi `getAllUsers` phải VẪN là bảng `users` — nếu không §4 mất chính ca của nó",
+    ).toEqual([BANG_CANH]);
+    expect(
+      bangCua('beforeEach(async () => { const a = await db.getUsersByRole("admin"); for (const x of a) await db.deleteUser(x.id); });'),
+      "`getUsersByRole` là người liệt kê bảng `users`",
+    ).toEqual([BANG_CANH]);
   });
 
   // ──────────────────────────────────────────────────────────────────────────────────────────────

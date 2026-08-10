@@ -173,15 +173,26 @@ export default function SessionManagement() {
               </div>
             ) : sessions && sessions.length > 0 ? (
               <div className="space-y-4">
-                {sessions.map((session, index) => (
+                {sessions.map((session) => (
+                  /**
+                   * ★★★ Review TOÀN NHÁNH Pha 8 · **M-4** — *"phiên hiện tại"* đọc từ **`isCurrent`
+                   * do MÁY CHỦ suy ra**, không từ `index === 0`.
+                   *
+                   * `db.getUserSessions` sắp theo `lastActivityAt desc`, nên hàng đầu là hàng **hoạt
+                   * động gần nhất** — không nhất thiết là phiên của người đang xem. Hệ quả thật của
+                   * phép đoán cũ: nút thu hồi bị **giấu** ở một phiên KHÔNG phải của bạn, và **hiện**
+                   * ở chính phiên bạn đang dùng ⇒ tự đá mình ra trong khi giao diện khai ngược lại.
+                   * Task 5 đã dựng `isCurrent` ở máy chủ cho **cả hai** tuyến; trang này (khác với
+                   * `components/SessionManagement.tsx`) chưa dùng — grep đo được **0** điểm.
+                   */
                   <div
                     key={session.id}
                     className={`flex items-center gap-4 p-4 border rounded-lg ${
-                      index === 0 ? "border-success/50 bg-success/5" : ""
+                      session.isCurrent ? "border-success/50 bg-success/5" : ""
                     }`}
                   >
                     <div className={`p-2 rounded-full ${
-                      index === 0 ? "bg-success/20 text-success" : "bg-muted"
+                      session.isCurrent ? "bg-success/20 text-success" : "bg-muted"
                     }`}>
                       {getDeviceIcon(session.deviceType)}
                     </div>
@@ -199,7 +210,7 @@ export default function SessionManagement() {
                             return `${browser} ${t('session.deviceOn', 'trên')} ${os}`;
                           })()}
                         </span>
-                        {index === 0 && (
+                        {session.isCurrent && (
                           <StatusBadge status={t('session.currentSession')} tone="success" />
                         )}
                       </div>
@@ -228,7 +239,7 @@ export default function SessionManagement() {
                       </div>
                     </div>
 
-                    {index !== 0 && (
+                    {!session.isCurrent && (
                       <Button 
                         variant="ghost" 
                         size="sm"

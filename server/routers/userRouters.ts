@@ -358,6 +358,12 @@ export const userRouter = router({
       // ⚠ Vá NHÀ TÙ I-4 khép luôn một lỗ theo chiều MỞ ở đây: với `loginMethod = 'password'` (4 tài
       //   khoản đang chạy) vị từ cũ cho `false` ⇒ lượt tắt 2FA **bỏ qua** phép kiểm mật khẩu hoàn
       //   toàn. Nay cùng một chủ trả lời ⇒ có hash thì PHẢI đúng mật khẩu mới tắt được 2FA.
+      // ⚠⚠ HỆ QUẢ ĐƯỢC NÓI RA (review TOÀN NHÁNH Pha 8 · M-3): với tài khoản **KHÔNG** xác thực nội
+      //   bộ (SSO/OIDC — không có hash cục bộ), vế này KHÔNG chạy ⇒ tắt 2FA chỉ cần **MỘT** yếu tố,
+      //   trong khi `z.string().min(1)` làm hợp đồng API trông như đòi hai. Vị từ vẫn ĐÚNG theo chủ
+      //   ý (**chống NHÀ TÙ**); lối siết đúng là **bước-up SSO** (re-auth OIDC), một quyết định sản
+      //   phẩm. ⚠ Hai tuyến KHỚP nhau nên `hoTuyenSongSong` xanh — *"khớp TẬP mà cả hai cùng hở"*;
+      //   cặp ấy so A với B, không so A với một chuẩn. Lý lẽ đầy đủ: `twoFactorRouter.ts::disable`.
       const biMat = await db.layBiMatNguoiDung(user.id);
       if (laXacThucNoiBo(user.loginMethod) && biMat.passwordHash) {
         const isValidPassword = await bcrypt.compare(input.password, biMat.passwordHash);
