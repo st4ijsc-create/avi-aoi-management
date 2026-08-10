@@ -2107,7 +2107,10 @@ EXPECT_EDGESERVICE=50
 #       🔴 REVIEW C-1 — WHAT IT PINS, CORRECTED, AND THE CORRECTION IS §8.1(h) RECURRING INSIDE THE FIX FOR
 #       §8.1(h). This block first said the test "makes a later change that makes a restart unconditional go
 #       red". IT CANNOT: J-1b's own pre-check inside RebuildPipelineOffLock returns before BuildStartPlan in
-#       exactly that hypothetical, so all four assertions stay green. The claim was invalidated by the guard
+#       exactly that hypothetical, so all FIVE assertions of the terminal block stay green — observation
+#       count, store entry, EstopEngaged, IsRunning, driver health. (🔴 Re-review N3: this said "four",
+#       inside the paragraph written to correct a false claim; the five are named so the count cannot drift
+#       from them silently.) The claim was invalidated by the guard
 #       added in the SAME COMMIT that made the claim — the same shape as the mutation result J-1 carried
 #       across a tree that had moved under it. What the test actually pins is the observable PROPERTY, and it
 #       is mechanism-agnostic: from either public entry point during a HALT, zero pipeline builds, no

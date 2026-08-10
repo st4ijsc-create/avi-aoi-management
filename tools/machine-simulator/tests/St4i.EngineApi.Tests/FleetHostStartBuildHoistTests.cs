@@ -617,8 +617,12 @@ public sealed class FleetHostStartBuildHoistTests
     /// <para>🔴 <b>REVIEW C-1 — WHAT IT DEFENDS, CORRECTED, AND THE CORRECTION IS §8.1(h) HAPPENING INSIDE
     /// THE FIX FOR §8.1(h).</b> This paragraph first claimed the test goes red "if a later change ever makes
     /// a restart unconditional". <b>It cannot.</b> J-1b's own pre-check inside <c>RebuildPipelineOffLock</c>
-    /// returns before <c>BuildStartPlan</c> in exactly that hypothetical, so all four assertions below stay
-    /// green — the claim was invalidated by a guard added in the SAME COMMIT that wrote it, which is the
+    /// returns before <c>BuildStartPlan</c> in exactly that hypothetical, so all FIVE assertions of the
+    /// terminal block below stay green — observation count, store entry, <c>EstopEngaged</c>,
+    /// <c>IsRunning</c>, driver health. (🔴 Re-review N3: that count read "four", inside the paragraph
+    /// written to correct a false claim — a counted list disagreeing with the list it counts, which is this
+    /// project's signature defect. The five are NAMED here so the number cannot drift from them silently.)
+    /// The claim was invalidated by a guard added in the SAME COMMIT that wrote it, which is the
     /// reach-path-moved-under-the-measurement shape §8.1(h) is about, one layer up from a mutation result.</para>
     ///
     /// <para><b>What it actually pins is the PROPERTY, and that is mechanism-agnostic by design:</b> from

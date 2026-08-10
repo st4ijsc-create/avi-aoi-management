@@ -111,6 +111,38 @@
 # "the pattern didn't match". It caught that only because five-for-five is implausible —
 # "which is a judgement call, not a check."
 #
+# 🔴 THE CONTROL PAIRS WITH THE SUITE THE VERDICT IS READ FROM, NOT WITH THE SESSION (J-1b).
+# ---------------------------------------------------------------------------------------
+# "In the same session" above is NOT ENOUGH, and this is a carried item rather than one task's
+# footnote. A believable session can contain an unbelievable verdict when the control ran
+# against ONE suite and the SURVIVED was read from ANOTHER — the control certifies A HARNESS,
+# and there is one harness per test project.
+#
+# MEASURED, J-1b: the control (`_running = true` -> `false` inside FleetCore.StartLocked, which
+# makes every single Start() report a stopped fleet) was run against St4i.EngineApi.Tests and
+# KILLED 91 tests. A mutation on the SAME LINE OF THE SAME FILE was then read from
+# St4i.EdgeCore.Tests and reported "SURVIVED 1093/1093". Re-running the CONTROL against
+# St4i.EdgeCore.Tests: it SURVIVES TOO, 1093/1093, on a fresh binary. That suite does not
+# observe FleetCore's start/stop state machine at all, so its "SURVIVED" was a NULL RESULT
+# wearing the costume of strong negative evidence — and 1093 green tests is a very convincing
+# costume.
+#
+# WHY THIS TRAP IS THE DEFAULT RATHER THAN AN EXOTIC MISTAKE: for a file under
+# src/St4i.EdgeCore the WRONG suite is the OBVIOUS one. Nothing about the file's location hints
+# that its behaviour is only observable through a live FleetHost in St4i.EngineApi.Tests. It
+# has already caught someone mid-measurement-round, which is precisely when a null result is
+# most likely to be reported as a finding.
+#
+# → RULE: RUN THE POSITIVE CONTROL AGAINST THE SAME SUITE YOU WILL READ THE VERDICT FROM.
+#   The pairing is per (mutation, suite), never per session. Reading one mutation from two
+#   suites needs two controls. If a control survives in a suite, every verdict from that suite
+#   is NO-VERDICT — report it as "this harness cannot see this code", never as "this code is
+#   untested" and never as "the guard is unwitnessed".
+#
+# The `control` verb below already refuses correctly (a SURVIVED control exits 3 and voids the
+# session). What was missing was never the tool — it was this rule, in the place its users
+# actually read. See docs/plans/2026-08-02-dotD-modbus-rtu-blueprint.md §8.1(h)/(h2).
+#
 # USAGE — all six verbs. Run them in this order around a mutation round.
 #   scripts/mutate-guard.sh clean   <path...>                          # BEFORE anything, esp. after an
 #                                                                      #   interrupted run: refuses if a
