@@ -1946,14 +1946,30 @@ internal sealed class FleetCore
         // happen, against a root ST4I_MACHINE_CONFIG_DIR may have pointed at a UNC share — and can throw
         // there too. My sweep for this disclosure took its domain from the method I was editing rather than
         // from the property (ANY path that now builds before the latch is read), which is §8.1(f) for the
-        // fourth time in this task. Both restart sites now carry the disclosure.
+        // fourth time in this task. Both restart sites carry the disclosure — 🔴 and that sentence was
+        // itself FALSE when the branch-review round wrote it (branch re-review, N1): the disclosure went
+        // into RegisterMachine only, ApplyScenario had none, and this line asserted both. Seventh instance
+        // of the same class, inside the repair for the fourth. It is true as of this commit, and the way it
+        // was made true was to write the fact at the missing site rather than to soften the claim here.
         //
-        // NOT "fixed" by adding a symmetric pre-check there, and the trade is worth stating because it is
-        // not obvious: a pre-check would skip that build while latched (outcome-identical, since the latch
-        // refuses the install anyway) and would remove the halt-path I/O — but it would also narrow the ONLY
-        // window in which the latch's _estopEngaged arm is reachable, which is exactly the window its sole
-        // witness uses. Reducing halt-path I/O at the cost of the guard's testability is a trade for the
-        // owner, not for this task.
+        // NOT "fixed" by adding a symmetric pre-check there, and the reason is NOT the one first given.
+        //
+        // 🔴 THE MECHANISM SENTENCE THAT STOOD HERE WAS FALSE, and is replaced rather than softened: it
+        // claimed a pre-check would "narrow the only window in which the latch's _estopEngaged arm is
+        // reachable, which is exactly the window its sole witness uses". It would not. A pre-check goes
+        // where Start()'s does — BEFORE the build — while the witness's Estop lands at the END of
+        // BuildStartPlan, so a pre-build check does not touch that window at all. What shadows the latch on
+        // Start()'s path is _stopRequests, which is read AFTER the build; a pre-build check reads nothing
+        // after it.
+        //
+        // The conclusion survives on a different and better route. A pre-build check would remove halt-path
+        // I/O only for the TEARDOWN SUB-WINDOW — an Estop that lands between StopLocked and the first
+        // statement of the build — which is a sliver of the exposure and buys almost nothing. The check
+        // that WOULD cover the build window is a POST-BUILD re-check, and that is precisely the shape this
+        // branch has just paid a Critical for: a second refusal sited after the build shadows the latch
+        // exactly as _stopRequests does on Start()'s path, and the latch's only remaining witness runs
+        // through here. So the answer is not "a cheap win we are declining" — it is "the cheap version
+        // covers almost nothing, and the version that covers it re-creates the defect".
         bool started = false;
         StartOutcome outcome = default;
         try
@@ -3840,6 +3856,24 @@ internal sealed class FleetCore
             // `_stopRequests` deliberately does NOT guard this site — only Start() abandons on a concurrent
             // operator Stop, because a restart that abandoned would leave `_scenario` committed with no
             // pipeline built from it. See RegisterMachine and _stopRequests for the full argument.
+            //
+            // 🔴 BRANCH RE-REVIEW, N1 — THE FOURTH FACT, WHICH WAS ASSERTED TO BE HERE AND WAS NOT. The
+            // branch-review round wrote the I-2 disclosure into RegisterMachine and then claimed at Start()
+            // that "both restart sites now carry the disclosure". It was in ONE. This site had only the
+            // three facts above, none of which says what follows — which is the same shape as the universal
+            // this branch already retracted once: RETRACTED IN ONE OF TWO PLACES, ASSERTED AS BOTH. Seventh
+            // instance of §8.1(f) in this task, and the second to occur inside the repair for an earlier
+            // one.
+            //
+            // The fact itself: unlike Start(), this arm has NO cheap pre-check, so when an Estop lands
+            // after the StopLocked above, the rebuild's BuildStartPlan still runs — P4's per-machine reads
+            // and P5's WRITE — WHILE THE HALT LATCH IS ENGAGED, against a root ST4I_MACHINE_CONFIG_DIR may
+            // point at a UNC share, and it can THROW there (MachineConfigStore.Ensure's
+            // InvalidOperationException on a config-kind mismatch, IOException on a full or read-only
+            // root). Pre-J-1 the latch refused before any build, so none of that was reachable on this
+            // path. It is STRICTLY WIDER, not "the same reachability". Why no pre-check was added is argued
+            // at Start(), and the short version is that the cheap one covers almost nothing while the one
+            // that would cover it re-creates the Critical this branch just paid for.
             try
             {
                 WaitAndDisposeOldPipeline(restartHandle);
