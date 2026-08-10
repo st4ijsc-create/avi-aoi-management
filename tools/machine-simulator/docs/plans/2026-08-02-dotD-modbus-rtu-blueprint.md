@@ -316,6 +316,13 @@ mã** (đoạn ngay trên) — nhưng "chỉ-sửa-chú-thích" phải được 
 > một phép đột biến, một phép đo, **và một CÂU VĂN nói một bài test bảo vệ cái gì**. Cái chung không
 > phải là "phép đo"; cái chung là **chỉ mục theo trạng thái cây mã**. Lý do phải mở rộng thay vì thêm
 > một chữ cái nằm ở §(h2) cuối mục này.
+>
+> 🔴 **Và lần mở rộng ĐẦU chỉ đụng đúng cái tiêu đề này** — phần thân bên dưới vẫn nói bằng từ vựng
+> đột biến và **cả ba** thuốc chữa của nó vẫn chỉ áp được cho phép đo, nên một người chỉ đọc (h) vẫn
+> nhận về một quy tắc dành-cho-phép-đo nằm dưới một tiêu đề nói về mọi khẳng định (phản biện toàn
+> nhánh, Important 5). Đã vá bằng bảng chia việc ở cuối phần thân: **thuốc nào cho nửa nào.** Ghi lại
+> vì đó là đúng lớp lỗi mục này nói tới — **một bản sửa đúng nhưng chưa tới nơi trông y hệt một bản
+> sửa đã xong**.
 
 Mục (f) nói phạm vi của một dụng cụ bị **thừa kế từ chỗ tác giả đang đứng**. J-1 sinh ra **bảy** ca của lớp
 ấy trong **một** nhiệm vụ, và chúng tách làm hai trục khác hẳn nhau.
@@ -346,6 +353,23 @@ chọn theo cảm tính, vì "đột biến nào còn áp dụng được" **ch�
 → Mỗi hàng trong bảng đột biến mang **mã commit nó đã chạy trên đó**. Cần, nhưng **chưa đủ**: nó làm một
 hàng bác bỏ được bằng mắt, **không có gì ép người ta đặt câu hỏi**, và nó chỉ phủ cái bảng — trong khi lời
 khẳng định sai còn được **trích lại trong văn xuôi**.
+
+🔴 **BA THUỐC CHỮA VỪA KỂ CHỈ ÁP ĐƯỢC CHO NỬA "PHÉP ĐO" CỦA CHỦ NGỮ ĐÃ MỞ RỘNG — nói rõ ở đây, vì bản mở
+rộng trước chỉ sửa TIÊU ĐỀ và như thế đọc lên như đã xong (phản biện toàn nhánh, Important 5).** "Chạy lại
+cả cụm", "mỗi hàng mang mã commit", "tuổi là đại lượng bị hao" đều giả định thứ được kiểm chứng **chạy
+được**. Với nửa còn lại của chủ ngữ — **một CÂU VĂN nói bài test nào canh cái gì** — cả ba đều **không dùng
+được**: không có gì để chạy lại, không có hàng nào để gắn mã commit, và tuổi thì bằng không (ca tệ nhất là
+câu văn viết **trong cùng commit** với đoạn mã làm nó sai). Thuốc chữa cho nửa ấy là **(h2) ở dưới**, và nó
+là một thuốc khác về bản chất chứ không phải cùng một thuốc nói lại: **một lượt ĐỌC LẠI KHI ĐÓNG, đối chiếu
+với trạng thái CUỐI của diff.** Đọc (h) mà bỏ (h2) thì vẫn còn là một quy tắc chỉ-dành-cho-phép-đo nằm dưới
+một cái tiêu đề nói về mọi khẳng định.
+
+**Chia việc, để không ai phải đoán:**
+
+| Thứ được kiểm chứng | Thuốc chữa |
+|---|---|
+| một phép đột biến / một phép đo | chạy lại cả cụm; mỗi hàng mang mã commit **và bộ test** nó chạy trên đó (xem quy tắc ghép đôi ở cuối §8.1) |
+| **một câu văn nói cái gì canh cái gì** | **(h2)** — đọc lại khi đóng, mô phỏng cả giả thuyết trên cây mã sau cùng |
 
 🔴 **VÀ ĐÂY LÀ NỬA CÓ GIÁ TRỊ NHẤT — CHỖ LỚP (f) TỤ LẠI.** Hai cách đếm cùng tồn tại: "hai trên bảy" (ca
 nằm trong bản sửa cho một ca (f) trước đó) và "năm trên bảy" (ca nằm trong **bất kỳ** bước sửa nào). Chúng
@@ -398,7 +422,7 @@ cặp quy tắc "khẳng định về TÍNH ĐẦY ĐỦ" ở (f)).
 → **Và ghi lại phép đệ quy, vì đó mới là điểm chính: (h) đã bị chính VÍ DỤ của nó thu hẹp phạm vi.** (h)
 sinh ra từ một phép **đột biến**, nên nó được viết bằng từ vựng của đột biến ("phép đo", "chạy lại", "mã
 commit trên mỗi hàng") và **miền của nó bị thừa hưởng từ ca khai sinh** thay vì được suy ra từ **tính chất**
-(*chỉ mục theo trạng thái cây mã*). **Đó chính là §8.1(f), áp lên §8.1.** Ca thứ chín của lớp ấy, và lần này
+(*chỉ mục theo trạng thái cây mã*). **Đó chính là §8.1(f), áp lên §8.1.** *(🔴 Phản biện toàn nhánh, Minor 10: chỗ này từng viết **"ca thứ chín CỦA LỚP ẤY"**, lấy bộ đếm **cục bộ trong J-1** — bảy ca, xem đầu mục này — rồi phổ quát hoá nó ra cả lớp, trong khi riêng bảng của §8.1(f) đã có sáu ca G-2 trước bảy ca của J-1. **Không đánh số lại** — đánh số một lớp trải khắp nhiều đợt là đúng thứ đã hỏng ba lần ở đây — mà bỏ hẳn con số: nó không làm việc gì trong lập luận.)* Và lần này
 nạn nhân là **một quy tắc của chính bộ quy tắc này** — đúng chỗ (f) đã cảnh báo là đắt nhất: *"một chẩn đoán
 đang được nâng lên thành quy tắc là chỗ đắt nhất cho một khẳng định phổ quát sai, vì mọi thứ phía sau sẽ
 được viết dựa trên nó."*
@@ -407,9 +431,15 @@ nạn nhân là **một quy tắc của chính bộ quy tắc này** — đúng 
 
 → Quy tắc đúng: **hành vi phụ thuộc phần cứng không bao giờ là một test bị bỏ qua có điều kiện bên trong năm bộ test.** Nó hoặc được **ghi rõ là khoảng trống chưa test** trong báo cáo và trong chú thích của cổng, hoặc được commit thành **một bench harness riêng nằm ngoài năm bộ** (`tools/serial-bench/`). Phép đo không commit được thì không tái lập được — reviewer D-3 phải **viết lại toàn bộ probe** để kiểm chứng các con số của D-3.
 
-Công cụ bắt buộc từ D-3: `scripts/mutate-guard.sh` (so dấu thời gian + đối chứng dương). Lý do đầy đủ nằm trong header của nó.
+Công cụ bắt buộc từ D-3: `scripts/mutate-guard.sh` (so dấu thời gian + đối chứng dương **mỗi phiên**, và từ J-1b là **mỗi (đột biến, BỘ TEST)** — xem ngay dưới). Lý do đầy đủ nằm trong header của nó.
 
-🔴 **HẠNG MỤC MANG THEO, thêm ở J-1b và CÓ PHẠM VI RỘNG HƠN nhiệm vụ sinh ra nó — ĐỐI CHỨNG DƯƠNG GHÉP THEO (ĐỘT BIẾN, BỘ TEST), KHÔNG PHẢI THEO PHIÊN.** Câu *"đối chứng dương **mỗi phiên**"* ở trên là **chưa đủ**: đối chứng chứng thực **MỘT DỤNG CỤ ĐO**, và mỗi project test là một dụng cụ riêng — nên một phiên "tin được" vẫn chứa được một phán quyết không tin được khi đối chứng chạy ở bộ này còn SURVIVED được đọc từ bộ khác. **Đo, J-1b:** đối chứng (`_running = true → false` trong `FleetCore.StartLocked` — khiến **mọi** `Start()` báo đội máy dừng) **KILLED 91** trên `St4i.EngineApi.Tests`; một đột biến **trong đúng hàm đó, đúng file đó** — cái chốt HALT nằm trên phép gán ấy vài dòng, *không phải* chính phép gán *(🔴 chỗ này viết **"đúng dòng đó"** ở bản đầu, sai, và **thứ bắt được nó là lượt ĐỌC LẠI KHI ĐÓNG mà chính vòng này vừa ghi vào (h2), chạy trên đúng cái diff đã đẻ ra quy tắc ấy**)* — đọc từ `St4i.EdgeCore.Tests` báo *"SURVIVED 1093/1093"*; chạy lại **chính đối chứng ấy** trên `St4i.EdgeCore.Tests` thì nó **cũng SỐNG SÓT, 1093/1093, trên binary tươi**. **Một bộ 1093 test không phát hiện nổi một đột biến làm mọi `Start()` báo đội máy dừng** — và con số 1093 xanh là bộ đồ nguỵ trang rất thuyết phục cho một **kết quả rỗng**. Cái bẫy này là **mặc định chứ không phải hi hữu**: với một file nằm dưới `src/St4i.EdgeCore`, bộ **SAI** lại chính là bộ **hiển nhiên**. → **Quy tắc: chạy đối chứng dương trên ĐÚNG bộ test mà anh sẽ đọc phán quyết từ đó; đọc một đột biến từ hai bộ thì cần hai đối chứng. Đối chứng sống sót ở bộ nào thì mọi phán quyết từ bộ ấy là KHÔNG CÓ PHÁN QUYẾT — phải báo là "dụng cụ này không nhìn thấy đoạn mã này", tuyệt đối không báo là "đoạn mã này không được test" hay "cái chốt này không có nhân chứng".** Dụng cụ vốn đã đúng (`control SURVIVED` → exit 3); thứ còn thiếu là **quy tắc**, nay nằm trong header của chính script.
+🔴 **HẠNG MỤC MANG THEO, thêm ở J-1b và CÓ PHẠM VI RỘNG HƠN nhiệm vụ sinh ra nó — ĐỐI CHỨNG DƯƠNG GHÉP THEO (ĐỘT BIẾN, BỘ TEST), KHÔNG PHẢI THEO PHIÊN.** Câu *"đối chứng dương **mỗi phiên**"* ở trên là **chưa đủ**: đối chứng chứng thực **MỘT DỤNG CỤ ĐO**, và mỗi project test là một dụng cụ riêng — nên một phiên "tin được" vẫn chứa được một phán quyết không tin được khi đối chứng chạy ở bộ này còn SURVIVED được đọc từ bộ khác. **Đo, J-1b:** đối chứng (`_running = true → false` trong `FleetCore.StartLocked` — khiến **mọi** `Start()` báo đội máy dừng) **KILLED 91** trên `St4i.EngineApi.Tests`; một đột biến **trong đúng hàm đó, đúng file đó** — cái chốt HALT nằm trên phép gán ấy vài dòng, *không phải* chính phép gán *(🔴 chỗ này viết **"đúng dòng đó"** ở bản đầu, sai, và **thứ bắt được nó là lượt ĐỌC LẠI KHI ĐÓNG mà chính vòng này vừa ghi vào (h2), chạy trên đúng cái diff đã đẻ ra quy tắc ấy**)* — đọc từ `St4i.EdgeCore.Tests` báo *"SURVIVED 1093/1093"*; chạy lại **chính đối chứng ấy** trên `St4i.EdgeCore.Tests` thì nó **cũng SỐNG SÓT, 1093/1093, trên binary tươi**. **CHÍNH BỘ TEST ẤY — `St4i.EdgeCore.Tests`, cả 1093 bài — không phát hiện nổi một đột biến làm mọi `Start()` báo đội máy dừng** *(🔴 phản biện toàn nhánh, Minor 8: câu này từng viết *"một bộ 1093 test"*, làm nó đọc thành khẳng định về **KÍCH CỠ** trong khi sự thật đo được là về **ĐỘ PHỦ** — 1093 không làm việc gì trong lập luận cả, đúng hình dạng §8.1(a3). Phản biện còn kiểm độc lập cơ chế: bộ ấy có **KHÔNG một tham chiếu sống nào** tới `FleetCore`/`FleetHost`, mọi kết quả grep đều là chú thích)* — và **1093 xanh** là bộ đồ nguỵ trang rất thuyết phục cho một **kết quả rỗng**. Cái bẫy này là **mặc định chứ không phải hi hữu**: với một file nằm dưới `src/St4i.EdgeCore`, bộ **SAI** lại chính là bộ **hiển nhiên**.
+
+→ **Quy tắc: chạy đối chứng dương trên ĐÚNG bộ test mà anh sẽ đọc phán quyết từ đó; đọc một đột biến từ hai bộ thì cần hai đối chứng. Đối chứng sống sót ở bộ nào thì mọi phán quyết SURVIVED đọc từ bộ ấy là KHÔNG CÓ PHÁN QUYẾT, và chỉ với đoạn mã đối chứng ấy chạm tới — phải báo là "dụng cụ này không nhìn thấy đoạn mã này", tuyệt đối không báo là "đoạn mã này không được test" hay "cái chốt này không có nhân chứng".**
+
+🔴 **Hai đính chính của phản biện toàn nhánh, và cái thứ hai nặng hơn:**
+- **(Important 2)** Câu trên từng viết *"**mọi** phán quyết từ bộ ấy là KHÔNG CÓ PHÁN QUYẾT"*. **Sai hai đường:** một phán quyết **KILLED tự chứng thực** — có bài đỏ nghĩa là dụng cụ **đã** dựng, **đã** phát hiện và **đã** chạy đúng đoạn mã đột biến, tức đúng cái mà một đối chứng sinh ra để chứng minh; và phạm vi vô hiệu hoá chỉ tới **đoạn mã đối chứng chạm vào**, đúng như vế sau của chính câu ấy (*"không nhìn thấy ĐOẠN MÃ NÀY"*) đã tự thừa nhận. Áp nguyên văn thì nó **xoá sổ chính C0, M1′′ và M13 của J-1b** — tức bằng chứng rằng chốt HALT có nhân chứng.
+- **(Important 3)** Câu chốt từng là *"dụng cụ vốn đã đúng; thứ còn thiếu là quy tắc"*. **Sai, và sai theo hướng bảo người ta thôi kiểm:** `control` **không nhận đối số bộ test** và file trạng thái **khoá theo cây mã**, nên `check` vẫn in *"positive control on record — SURVIVED is meaningful"* cho một SURVIVED đọc từ **bộ khác** với bộ đối chứng đã chạy — **đúng cái thất bại J-1b vừa vấp, được chính dụng cụ chúc phúc**. **Đã sửa Ở DỤNG CỤ, không sửa ở văn xuôi:** `control` và `check` nay **BẮT BUỘC** kèm tên bộ test, trạng thái khoá theo **(cây mã, bộ test)**, và `check` cho một bộ chưa có đối chứng riêng thì **từ chối** và liệt kê những bộ đang có. Đường mới đã được **chạy thử thật**, không chỉ `bash -n`.
 
 🔴 **PHÉP CENSUS — ngữ liệu của nó là một phần của phương pháp, không phải của từng brief (thêm sau Đợt E, E-4).**
 

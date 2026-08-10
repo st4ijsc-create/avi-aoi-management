@@ -237,10 +237,19 @@ internal sealed class FleetCore
 
     /// <summary>🔴 E-2 — THE fleet-state lock: after the cut it is the only lock ACROSS the cut, i.e. the
     /// only one <c>FleetHost</c> could have ended up needing. 🔴 <b>Whole-branch review M3 — it is not the only
-    /// lock in this class.</b> <see cref="_kpiGate"/> is declared 29 lines below and guards the KPI counters;
+    /// lock in this class.</b> <see cref="_kpiGate"/> is declared 49 lines below and guards the KPI counters;
     /// the reviewer walked both and confirmed there is <b>no nesting hazard</b> (nothing takes one while
     /// holding the other), so the sentence was wrong, not the locking — but it is this class's lock-discipline
     /// banner, and a banner that overstates is how the next reader stops checking.
+    /// 🔴 <b>J-1b branch review, Minor 16 — and it is the same defect one layer in, in the repair itself.</b>
+    /// Two numbers above were wrong: the distance was <b>29</b> and is <b>49</b> (650 → 699), and, worse, this
+    /// class holds <b>THREE</b> lock objects, not two — <see cref="_seedNotifyGate"/> is the third and the
+    /// paragraph written to punish an understated set understated it again. It IS disclosed elsewhere (it has
+    /// its own doc comment and the lock-order set below excludes it deliberately and by name), so nothing was
+    /// hidden; what failed is that a repair naming "the other lock" stopped counting at the one the finding
+    /// handed it — §8.1(f)'s scope-from-the-critique, in the fix for a scope complaint. Counted here rather
+    /// than recalled: <c>private readonly object</c> declarations in this file are <c>_gate</c> (650),
+    /// <c>_kpiGate</c> (699), <c>_seedNotifyGate</c> (963).
     /// <c>FleetHost</c> takes no lock of its own and never re-derives a pair of gate-protected fields from
     /// two calls; every member that used to read two such fields in ONE acquisition
     /// (<see cref="GetSafetyStatus"/>, <see cref="ReadSnapshot"/>, <see cref="GetSettings"/>,
@@ -262,11 +271,23 @@ internal sealed class FleetCore
     /// was a MOVE and deliberately did not fix it, only proved it no worse.
     ///
     /// 🔴 <b>G-1 rebuilt the SET rather than inheriting the list, and the inherited list was short.</b> The
-    /// instrument was a reachability walk from all twenty <c>lock (_gate)</c> regions through their callees,
+    /// instrument was a reachability walk from all twenty <c>lock (_gate)</c> regions <b>that existed when
+    /// G-1 ran it</b> through their callees,
     /// asking of each "can this reach I/O, <c>Dispose</c> or <c>Cancel</c>" — <b>not</b> a count of
     /// host-supplied code points and not a lexical scan of <c>lock</c> bodies (a lexical scan is precisely
     /// what once reported this invariant intact while it was broken three ways; a host-callback census is
-    /// the narrower instrument §8.1(a3) names).</para>
+    /// the narrower instrument §8.1(a3) names).
+    ///
+    /// <para>🔴 <b>J-1b — THAT NUMBER IS NOW HISTORICAL, AND THIS BRANCH IS WHAT MADE IT SO. Counted, not
+    /// recalled: twenty code-site <c>lock (_gate)</c> regions at this branch's base <c>0dcc2594</c> and
+    /// TWENTY-ONE here, because J-1b's pre-check in <see cref="RebuildPipelineOffLock"/> is the twenty-first.</b>
+    /// The instrument's RESULT is unaffected — the new region reads two fields and reaches no I/O, no
+    /// <c>Dispose</c> and no <c>Cancel</c>, so the set below is still the same nine paths and still 3/2/4 —
+    /// but anyone RE-DERIVING the set must walk twenty-one regions, not twenty, and would otherwise stop one
+    /// short of the newest one. This is the widened §8.1(h) firing on the branch that widened it: a sentence
+    /// true at the base commit, falsified by the diff, in the same banner that diff edits. Its past tense
+    /// ("the instrument WAS") is a partial defence and was not enough; a count that a reader may re-run has
+    /// to say WHEN it was taken.</para></para>
     ///
     /// <para><b>🔴 THE SET IS NINE PATHS, LABELLED P1…P9. Numbered once, in every status together, so the
     /// headline number and the list are the same object.</b> (🔴 Fix round 1, review Minor 4: this sentence
@@ -2722,7 +2743,9 @@ internal sealed class FleetCore
     /// this file and neither is J-1's to decide.</para></summary>
     private void RebuildPipelineOffLock(StartInputs inputs)
     {
-        // 🔴 J-1b (.superpowers/sdd/symmetric-precheck/task-1-brief.md) — THE PRE-CHECK, SYMMETRIC WITH
+        // 🔴 J-1b (brief at .superpowers/sdd/symmetric-precheck/task-1-brief.md — UNTRACKED, that whole
+        // tree is gitignored, so treat this as provenance and never as a place to go for a fact; every fact
+        // this comment relies on is stated here) — THE PRE-CHECK, SYMMETRIC WITH
         // Start()'s, AND AN OPTIMISATION FOR THE SAME REASON THAT ONE IS. Same test, same lock, same place
         // relative to the build: BEFORE it. StartLocked's latch re-reads both flags under the install's own
         // acquisition and that reading is the one that decides — deleting this line only wastes work;
@@ -2754,8 +2777,13 @@ internal sealed class FleetCore
         // written WRONG the first time — a cross-reference that resolves to nothing reads as coverage, which
         // is worse than no reference at all.
         //
-        // IT IS ONE MORE _gate ACQUISITION PER REBUILD AND TAKES NO OTHER LOCK WHILE HOLDING IT, so the
-        // five-lock ordering set at the top of this file is unchanged and gains no sixth member.
+        // IT IS ONE MORE `lock (_gate)` REGION PER REBUILD — the twenty-first in this file — AND TAKES NO
+        // OTHER LOCK WHILE HOLDING IT, so the five-lock ordering set at the top of this file is unchanged and
+        // gains no sixth member. (🔴 Branch review Minor 14: this said "one more ACQUISITION", which is one
+        // short — `IsRunning` re-enters the same monitor inside the region, so it is one region and two
+        // acquisitions. The invariant this sentence carries is about the ORDERING SET, and re-entering the
+        // monitor you already hold adds no pair to it; the count is corrected because the sentence is doing
+        // invariant work, not because the invariant moved.)
         //
         // IT ERRS IN THE SAFE DIRECTION, and the one interleaving where it changes an OUTCOME rather than an
         // amount of work is worth naming: a flag that is set here and cleared again before the install (an

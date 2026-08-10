@@ -139,25 +139,55 @@
 #
 # → RULE: RUN THE POSITIVE CONTROL AGAINST THE SAME SUITE YOU WILL READ THE VERDICT FROM.
 #   The pairing is per (mutation, suite), never per session. Reading one mutation from two
-#   suites needs two controls. If a control survives in a suite, every verdict from that suite
-#   is NO-VERDICT — report it as "this harness cannot see this code", never as "this code is
-#   untested" and never as "the guard is unwitnessed".
+#   suites needs two controls.
 #
-# The `control` verb below already refuses correctly (a SURVIVED control exits 3 and voids the
-# session). What was missing was never the tool — it was this rule, in the place its users
-# actually read. See docs/plans/2026-08-02-dotD-modbus-rtu-blueprint.md §8.1(h)/(h2).
+#   WHAT A SURVIVING CONTROL INVALIDATES — scoped, because the first draft of this rule
+#   overreached and the overreach was load-bearing. It voids every **SURVIVED** read from that
+#   suite, and only for **the code the control touches**. It does NOT void a **KILLED**: a
+#   KILLED is self-certifying — a test went red, so the harness demonstrably built, discovered
+#   and executed the mutated code, which is the entire logic a control exists to establish.
+#   (The sentence here used to read "every verdict from that suite is NO-VERDICT". Applied
+#   literally that voids this project's own C0, M1′′ and M13 — the evidence that the HALT latch
+#   is witnessed — and it contradicted its own next clause, which already scoped the damage to
+#   "cannot see THIS CODE". Branch review, Important 2.)
+#
+#   And report it as "this harness cannot see this code" — never as "this code is untested",
+#   never as "the guard is unwitnessed".
+#
+# 🔴 THE TOOL DID NOT ENFORCE THIS, AND SAYING IT DID WAS THE WORST SENTENCE ON THAT ROUND.
+# This block used to end "the `control` verb below already refuses correctly … what was missing
+# was never the tool — it was this rule". FALSE, and false in the direction that tells a reader
+# to stop looking: `control` took no suite argument and the state file was keyed on the TREE, so
+# `check` would print "positive control on record — SURVIVED is meaningful" for a SURVIVED read
+# from a DIFFERENT suite than the control ran in. The tool blessed precisely the failure the
+# rule was written to prevent. Caught by the branch review (Important 3), not by me.
+#
+# FIXED IN THE TOOL, not in the prose: `control` and `check` both REQUIRE the suite, the state
+# file is keyed per (tree, suite), and `check` for a suite with no control of its own refuses
+# and lists the suites that do have one — so a cross-suite carry now fails closed and says so.
+# An invocation written against the old signature errors instead of silently recording, which
+# is the same fail-closed direction the `restore` verb takes.
+# See docs/plans/2026-08-02-dotD-modbus-rtu-blueprint.md §8.1(h)/(h2).
 #
 # USAGE — all six verbs. Run them in this order around a mutation round.
 #   scripts/mutate-guard.sh clean   <path...>                          # BEFORE anything, esp. after an
 #                                                                      #   interrupted run: refuses if a
 #                                                                      #   mutant or .bak is still live
-#   scripts/mutate-guard.sh control <"KILLED"|"SURVIVED">              # record the session's control
+#   scripts/mutate-guard.sh control <"KILLED"|"SURVIVED"> <suite>      # record the control FOR ONE SUITE —
+#                                                                      #   the suite you will read the
+#                                                                      #   verdict from, not "this session"
 #   scripts/mutate-guard.sh applied <source.cs> <marker>               # PER MUTATION: is it really there?
 #   scripts/mutate-guard.sh fresh   <assembly.dll> <mutated-source.cs> # did the build see it?
 #   scripts/mutate-guard.sh restore <mutated-source.cs...>             # PUT THE FILE BACK — snapshot first,
 #                                                                      #   then checkout, then touch. Use
 #                                                                      #   this, not `git checkout --`.
-#   scripts/mutate-guard.sh check                                      # may I believe a SURVIVED?
+#   scripts/mutate-guard.sh check   <suite>                            # may I believe a SURVIVED read from
+#                                                                      #   THIS suite?
+#
+# 🔴 `control` and `check` GREW A REQUIRED SUITE ARGUMENT (J-1b branch review, Important 3).
+# An invocation in the old shape — `control KILLED`, `check` — now REFUSES with exit 3 rather
+# than recording or blessing anything. That is deliberate: the old shape asks a question whose
+# honest answer is "for which harness?", and the failure it enabled is on record in this file.
 #
 # `applied` turned out to catch a DIFFERENT and more common failure than the one it was
 # written for. In its first real round it caught NO false SURVIVED — it caught FOUR
@@ -185,7 +215,12 @@ set -uo pipefail
 # rounds on ONE tree now collide deliberately rather than silently running blind. Override with
 # ST4I_MUTATE_SESSION if you genuinely want two independent rounds in one tree.
 _tree_key=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd | tr -c '[:alnum:]' '-')
-STATE="${TMPDIR:-/tmp}/st4i-mutate-control-${ST4I_MUTATE_SESSION:-$_tree_key}"
+# 🔴 J-1b branch review (Important 3) — keyed on (tree, SUITE), not on the tree alone. A control
+# certifies ONE HARNESS, and there is one harness per test project; a tree-only key let `check`
+# bless a SURVIVED read from a suite the control never ran in. `_state_for <suite>` is the only
+# way this file is now addressed.
+STATE_BASE="${TMPDIR:-/tmp}/st4i-mutate-control-${ST4I_MUTATE_SESSION:-$_tree_key}"
+_state_for() { printf '%s--%s' "$STATE_BASE" "$(printf '%s' "$1" | tr -c '[:alnum:]' '-')"; }
 
 case "${1:-}" in
   fresh)
@@ -202,15 +237,29 @@ case "${1:-}" in
 
   control)
     verdict="${2:?KILLED or SURVIVED}"
+    suite="${3:-}"
+    if [[ -z "$suite" ]]; then
+      echo "NO-VERDICT: control REQUIRES the suite the verdict will be read from."
+      echo "  usage: mutate-guard.sh control <KILLED|SURVIVED> <suite>"
+      echo "  A control certifies ONE HARNESS, and there is one harness per test project. A"
+      echo "  control run against suite A says nothing about a SURVIVED read from suite B —"
+      echo "  that is the exact failure this argument was added to make impossible."
+      exit 3
+    fi
+    _state="$(_state_for "$suite")"
     if [[ "$verdict" == "KILLED" ]]; then
-      echo "ok" > "$STATE"
-      echo "positive control KILLED — SURVIVED verdicts in this session are now believable"
+      echo "ok" > "$_state"
+      echo "positive control KILLED on ${suite} — SURVIVED verdicts READ FROM ${suite} are now believable"
+      echo "  (and only from ${suite}: another suite needs its own control)"
     else
-      rm -f "$STATE"
-      echo "NO-VERDICT: the positive control was NOT killed."
+      rm -f "$_state"
+      echo "NO-VERDICT: the positive control was NOT killed on ${suite}."
       echo "  A known-lethal mutation that survives means the harness is not measuring what"
       echo "  you think — wrong filter, wrong assembly, failed discovery, or dead code path."
-      echo "  Every SURVIVED in this session is meaningless until this passes."
+      echo "  Every SURVIVED read from ${suite} is meaningless until this passes. A KILLED read"
+      echo "  from ${suite} is still believable: a test going red proves the harness built,"
+      echo "  discovered and ran the mutated code."
+      echo "  Report this as \"${suite} cannot see this code\" — never as \"this code is untested\"."
       exit 3
     fi
     ;;
@@ -346,11 +395,27 @@ case "${1:-}" in
     ;;
 
   check)
-    if [[ -f "$STATE" ]]; then
-      echo "positive control on record — SURVIVED is meaningful"
+    suite="${2:-}"
+    if [[ -z "$suite" ]]; then
+      echo "NO-VERDICT: check REQUIRES the suite you read the verdict from."
+      echo "  usage: mutate-guard.sh check <suite>"
+      echo "  Belief is per (mutation, suite). Asking without naming the suite is the question"
+      echo "  that used to get a yes from a control run somewhere else."
+      exit 3
+    fi
+    if [[ -f "$(_state_for "$suite")" ]]; then
+      echo "positive control on record for ${suite} — a SURVIVED read from ${suite} is meaningful"
     else
-      echo "NO-VERDICT: no positive control recorded this session."
-      echo "  Run one known-lethal mutation first and record it with: mutate-guard.sh control KILLED"
+      echo "NO-VERDICT: no positive control recorded for ${suite}."
+      echo "  A control recorded for another suite does NOT transfer — it certifies that harness,"
+      echo "  not this one. Run a known-lethal mutation, read it FROM ${suite}, and record it:"
+      echo "    mutate-guard.sh control KILLED ${suite}"
+      _others=""
+      for _f in "$STATE_BASE"--*; do
+        [[ -e "$_f" ]] || continue
+        _others="${_others} ${_f##*--}"
+      done
+      [[ -n "$_others" ]] && echo "  Controls currently on record for:${_others}"
       exit 3
     fi
     ;;

@@ -373,9 +373,18 @@ public sealed class FleetHostStartBuildHoistTests
     /// Stated as a measurement rather than as an argument, because the argument is what §8.1(h) says not to
     /// trust.</b> The pre-check is sited BEFORE <c>BuildStartPlan</c> and the <c>Estop()</c> below is injected
     /// at the END of it, so the check has already passed when the halt lands. The whole HALT-latch mutation
-    /// cluster was re-run on the post-J-1b tree for exactly this reason — see
-    /// <c>.superpowers/sdd/symmetric-precheck/task-1-report.md</c> — rather than reasoning about which
-    /// mutations still applied, which is the judgement that failed the first time.</para></summary>
+    /// cluster was re-run on the post-J-1b tree for exactly this reason, rather than reasoning about which
+    /// mutations still applied — which is the judgement that failed the first time.</para>
+    ///
+    /// <para>🔴 <b>THE VERDICT ITSELF, written here rather than cited</b> (branch review Minor 13: the
+    /// citation this paragraph used to carry pointed into <c>.superpowers/sdd/</c>, which is <b>gitignored</b>
+    /// — so it sent anyone who cloned this repository to a file they do not have, for the evidence that the
+    /// latch is still guarded). <b>Deleting the HALT latch in <c>StartLocked</c>, re-run at commit
+    /// <c>1cbdc564</c> against <c>St4i.EngineApi.Tests</c>: KILLED, exactly 2 failures — THIS test and
+    /// <c>ASecondStartWinningTheRace_…</c>. That session's positive control (<c>_running = true</c> →
+    /// <c>false</c> in <c>StartLocked</c>), run against THE SAME SUITE: KILLED 91.</b> Both numbers are here
+    /// because a coverage claim whose evidence lives outside the repository is a coverage claim the next
+    /// person cannot check.</para></summary>
     [Fact]
     public void AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock()
     {
@@ -529,7 +538,8 @@ public sealed class FleetHostStartBuildHoistTests
     // 🔴 Task J-1b — the pre-check on the RESTART path, and the measurement that says what it is worth.
     // ─────────────────────────────────────────────────────────────────────
 
-    /// <summary>🔴 <b>Task J-1b (.superpowers/sdd/symmetric-precheck/task-1-brief.md) — the witness for the
+    /// <summary>🔴 <b>Task J-1b (brief at .superpowers/sdd/symmetric-precheck/task-1-brief.md — UNTRACKED,
+    /// that tree is gitignored; provenance, not a source to consult) — the witness for the
     /// pre-check <c>RebuildPipelineOffLock</c> now carries, and the window it actually covers.</b>
     ///
     /// <para>A restart's gap runs: the caller's locked section (roster write + <c>StopLocked</c>) → gate
@@ -547,12 +557,28 @@ public sealed class FleetHostStartBuildHoistTests
     /// <c>WaitAndDisposeOldPipeline</c>, off the gate, so an <c>Estop()</c> raised from there lands strictly
     /// between the caller's lock release and the pre-check.</para>
     ///
-    /// <para><b>Two assertions, because they fail differently.</b> The build-observation count is what makes
-    /// deleting the pre-check RED — it says no plan was built at all. The store is the consequence probe: the
-    /// machine registered by the call that triggered this restart must have NO entry, which is P5's write not
-    /// happening rather than merely a call not being counted. The END STATE is deliberately identical to what
-    /// it was before the pre-check existed (halted, not running, no slots): this change is about work not
-    /// done, never about a different outcome.</para></summary>
+    /// <para><b>TWO KINDS of assertion, because they fail differently</b> (🔴 branch review Minor 7: this
+    /// said "Two assertions" over a body that makes seven — the store probe alone is two, <c>GetConfig</c>
+    /// and the on-disk <c>DoesNotContain</c>. Kinds, named, so the count cannot drift from the body:
+    /// <b>(a) the build-observation count</b>, which is what makes deleting the pre-check RED — it says no
+    /// plan was built at all; <b>(b) the consequence probes</b> — the machine registered by the call that
+    /// triggered this restart must have NO store entry in memory AND none on disk, which is P5's write not
+    /// happening rather than merely a call not being counted — followed by the three end-state assertions
+    /// below.)</para>
+    ///
+    /// <para><b>The END STATE here is identical to what it was before the pre-check existed</b> — halted, not
+    /// running, no slots — so on THIS path the change is about work not done.
+    ///
+    /// 🔴 <b>Branch review Important 1: the sentence here used to generalise that to "never about a different
+    /// outcome", and that universal is FALSE — refuted inside this same branch.</b>
+    /// <c>FleetCore.RebuildPipelineOffLock</c>'s own block comment names the one interleaving where the
+    /// outcome DOES differ: a flag set when the pre-check reads it and cleared again before the install (an
+    /// <c>Estop</c> then a <c>ResetEstop</c>, or a racing <c>Start</c> then a <c>Stop</c>, both landing inside
+    /// the build window) used to end with the rebuild installing a pipeline and now ends stopped. A
+    /// whole-branch enumeration of the two-read divergences found four cases — three refuse→proceed, which
+    /// are outcome-identical because the latch decides, and that one proceed→refuse — so it is not one
+    /// instance of a family, it IS the family, and it awaits the owner's ratification. The correct scope of
+    /// the claim is THIS TEST'S path, not the change.</para></summary>
     [Fact]
     public void AnEstopLandingInTheRestartTeardown_IsRefusedBeforeTheRebuildBuildsAnything()
     {
