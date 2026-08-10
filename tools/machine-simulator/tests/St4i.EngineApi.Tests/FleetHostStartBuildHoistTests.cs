@@ -342,6 +342,71 @@ public sealed class FleetHostStartBuildHoistTests
         Assert.Empty(host.GetDriverHealth());
     }
 
+    /// <summary>🔴 Fix round 1 (review I-1) — a <c>Stop()</c> that lands in the off-lock build window must
+    /// WIN, and this is the witness that it does.
+    ///
+    /// <para>The hoist opened an interval in the middle of <c>Start()</c> that did not exist before it. A
+    /// <c>Stop()</c> arriving there acquires the gate, finds the fleet not running (this start has not
+    /// installed yet) and <c>StopLocked</c> returns on its own <c>!_running</c> guard — so the request left
+    /// no state behind and the start went on to complete. A <c>Start</c>‖<c>Stop</c> race that pre-J-1 could
+    /// end STOPPED could then only end RUNNING. That is why the fix counts REQUESTS rather than reading
+    /// state: at install time <c>IsRunning</c> and <c>_estopEngaged</c> are both false either way, so the
+    /// latch cannot see the difference and no amount of re-reading would have found it.</para>
+    ///
+    /// <para>The assertion is the END STATE, not the mechanism — <c>IsRunning == false</c> is what an
+    /// operator who pressed Stop is owed. It also pins that the halt latch was NOT used to achieve it
+    /// (<c>EstopEngaged</c> stays false): a stop must leave the fleet stoppable-and-restartable, not
+    /// latched.</para></summary>
+    [Fact]
+    public void AStopLandingDuringTheHoistedBuild_WinsTheRace_TheStartIsAbandoned()
+    {
+        var host = CreateHost();
+
+        var observations = 0;
+        var stopped = false;
+        host.StartBuildObserverForTests = () =>
+        {
+            if (Interlocked.Increment(ref observations) > 1) return;
+            stopped = CompletesOnAnotherThread(host.Stop);
+        };
+
+        host.Start();
+
+        Assert.Equal(1, Volatile.Read(ref observations));
+        Assert.True(stopped, "the mid-build Stop must have completed");
+        Assert.False(host.IsRunning);
+        Assert.False(host.EstopEngaged);
+        Assert.Empty(host.GetDriverHealth());
+    }
+
+    /// <summary>The complement of the test above, and it is what stops the fix from being a blunt "any Stop
+    /// ever seen cancels the next Start". A <c>Stop()</c> that completes BEFORE the start begins is not in
+    /// the window at all: the snapshot reads the request count after it, so the counts match at install time
+    /// and the start proceeds. Without this, a counter that was compared against the wrong baseline — or
+    /// never re-read — would make every fleet permanently unstartable after its first Stop, and the test
+    /// above alone would not notice.</summary>
+    [Fact]
+    public async Task AStopThatCompletedBeforeTheStartBegan_DoesNotCancelIt()
+    {
+        var host = CreateHost();
+        const string code = "J1-STOP-BEFORE-START-01";
+        Assert.True(host.RegisterMachine(Descriptor(code)));
+
+        host.Stop();
+        host.Stop();
+
+        host.Start();
+        try
+        {
+            Assert.True(host.IsRunning);
+            await WaitUntilAsync(() => (host.MachineDetail(code)?.Cycles ?? 0) > 0, $"{code} to cycle");
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
     /// <summary>The brief's own acceptance line: a direct restart call made while the latch is engaged must
     /// still be refused. It ALSO pins that such a call does no I/O at all — before J-1 it could not, because
     /// the latch ran before any build; the cheap pre-check in <c>Start()</c> is what preserves that, and

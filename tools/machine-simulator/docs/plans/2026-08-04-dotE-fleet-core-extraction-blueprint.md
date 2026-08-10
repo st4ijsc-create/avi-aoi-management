@@ -556,7 +556,14 @@ vòng đời là "đọc `IsRunning`", nửa chiếu ra là `state.ToDetail(isRu
 `_core.IsRunning`. Bọc thêm một `lock` ở phía vỏ chính là **thêm một khoá cho vỏ** — điều §10.1 cấm. Một lần
 lấy khoá tái nhập dư thừa bị bỏ; giá trị không đổi, hành vi không đổi.
 
-### 10.3 ~~Ba vi phạm `_gate` của §9.2 **VẪN CÒN NGUYÊN**~~ → 🔴 **G-1: tập là CHÍN đường, ba đã đóng, bốn còn mở trong lõi, hai nằm trong callee** — và cuộc đi bộ ba chặng nói gì
+### 10.3 ~~Ba vi phạm `_gate` của §9.2 **VẪN CÒN NGUYÊN**~~ → ~~🔴 **G-1: tập là CHÍN đường, ba đã đóng, bốn còn mở trong lõi, hai nằm trong callee**~~ → 🔴 **J-1: tập vẫn là CHÍN đường — 3 ĐÓNG, 2 THU HẸP, 4 MỞ** — và cuộc đi bộ ba chặng nói gì
+
+> 🔴 **Đính chính ngày 2026-08-10, J-1 (review Minor 5).** Tiêu đề của G-1 tóm tắt tập là **3/4/2** ("ba đã
+> đóng, bốn còn mở trong lõi, hai nằm trong callee") — một cách nhóm theo VỊ TRÍ, không theo TRẠNG THÁI. Sau
+> J-1 nó không còn dựng lại được từ bản chính thức ở đầu `FleetCore.cs`, vốn đếm theo trạng thái: **3 ĐÓNG
+> (P1–P3), 2 THU HẸP (P4, P5), 4 MỞ (P6–P9), 3+2+4 = 9**. Hai cách nhóm cùng cho ra chín nhưng **không phải
+> cùng một phép chia**, và một người đọc đối chiếu hai tiêu đề sẽ thấy "bốn còn mở" chọi "bốn MỞ" rồi kết
+> luận sai rằng P4/P5 vẫn nằm trong đó. Giữ tiêu đề cũ có gạch ngang theo đúng quy ước M4 của chính file này.
 
 > 🔴 **Tiêu đề cũ giữ lại gạch ngang, không xoá** (đúng quy ước đính chính M4 của chính file này). Nó đúng
 > lúc E-2 viết và **sai kể từ G-1**; một register được quét bằng TIÊU ĐỀ, nên để nguyên chữ "VẪN CÒN NGUYÊN" ở
@@ -600,8 +607,14 @@ Reviewer đi bộ lại và xác nhận: `FleetCore.cs:1476`, `:1477`, `:1609`, 
 **(b) Không phải "một dòng log có thể chặn `Estop()`" mà là "TỚI N DÒNG LOG, MỖI MÁY MỘT DÒNG".** Hai callback
 của `MappingProfileResolver` được gọi **bên trong `ResolveOne`, mỗi máy trong roster một lần**
 (`MappingProfileResolver.cs:76` và `:87`) — cùng vòng lặp với `File.Exists`/`File.ReadAllText` của vi phạm #1,
-trên đúng roster 50 máy mà §9.2 đo được 2,39 ms giữ khoá. Điều đó **đổi hình dạng của hạng mục sửa**, không
+trên đúng roster 50 máy mà §9.2 đo được **2,39 ms** giữ khoá. Điều đó **đổi hình dạng của hạng mục sửa**, không
 chỉ đổi con số.
+
+> 🔴 **`2,39 ms` Ở ĐÂY LÀ MỘT PHÉP ĐO LỊCH SỬ (J-1, 2026-08-10 — review Minor 5).** Từ J-1, cả vòng lặp ấy —
+> `MappingProfileResolver.Build` **và** hai callback của nó — chạy trong `FleetCore.BuildStartPlan`, **đã nhả
+> `_gate`**. Dụng cụ sinh ra con số này chạy lại hôm nay sẽ cho một số khác. Hộp đính chính ở §9.2 tuyên bố
+> "§10.3" đã được phủ; **nó chưa**, cho tới dòng này — một khẳng định về ĐỘ PHỦ trỏ tới một chỗ không có dấu,
+> tức đúng lớp lỗi §8.1(b) mà chính đợt này đang đếm, cách chỗ bắt được nó đúng một artifact.
 
 **(c) Dụng cụ dùng để nghiệm thu đếm một đại lượng KHÁC với đại lượng tiêu chí nêu tên.** Tiêu chí là
 *"số thao tác **I/O hoặc `Dispose`** với tới được dưới `_gate` không được tăng"*; bảng sáu dòng ở trên đếm

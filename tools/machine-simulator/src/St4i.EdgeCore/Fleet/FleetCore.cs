@@ -268,8 +268,12 @@ internal sealed class FleetCore
     /// what once reported this invariant intact while it was broken three ways; a host-callback census is
     /// the narrower instrument §8.1(a3) names).</para>
     ///
-    /// <para><b>🔴 THE SET IS NINE PATHS, LABELLED P1…P9. Numbered once, closed and open together, so the
-    /// headline number and the list are the same object.</b>
+    /// <para><b>🔴 THE SET IS NINE PATHS, LABELLED P1…P9. Numbered once, in every status together, so the
+    /// headline number and the list are the same object.</b> (🔴 Fix round 1, review Minor 4: this sentence
+    /// read "closed and open together" until J-1 introduced a third status and left the two-status wording
+    /// standing — the repair was additive, so the defective sentence survived UNDER the correct tally. That
+    /// is the same shape one layer down, and the fix is to say "in every status" rather than to enumerate
+    /// two of three.)
     ///
     /// <b>🔴 THE TALLY, because J-1 introduced a THIRD status and a two-status headline over a
     /// three-status list is this branch's signature defect.</b> <b>3 CLOSED</b> (P1, P2, P3) —
@@ -330,8 +334,11 @@ internal sealed class FleetCore
     /// produced eight — a headline that cannot be reconstructed from the enumeration it summarises is a
     /// defect in the deliverable, since the enumeration IS the deliverable. Corrected by review.)
     ///
-    /// <b>Closed by G-1 — P1 to P3</b> (and these three, alone, are what "CLOSED" means in the tally above:
-    /// nothing can reach the hazard through them any more):
+    /// <b>🔴 THE NINE, IN ONE LIST, EACH ROW CARRYING ITS OWN STATUS.</b> (Fix round 1, review Minor 4: this
+    /// heading read "Closed by G-1 — P1 to P3" and the whole nine-item list hung beneath it, so the list's
+    /// heading described its first three rows only. P1 to P3 remain the three G-1 closed, and they are still
+    /// the only three that are CLOSED — that fact now lives on the rows, which is where a reader who
+    /// reorders the list will keep it.)
     /// <list type="number">
     /// <item><b>P1 — CLOSED.</b> <see cref="RegisterMachine"/>'s <see cref="_onMachineSeeded"/> — §9.2 violation
     /// 3, the one with the number on it: for a real <c>AssetRegistryStore</c> a complete synchronous SQLite
@@ -474,9 +481,18 @@ internal sealed class FleetCore
     /// <see cref="BuildStartPlan"/> constructs every simulator off it. But the install's per-machine
     /// reuse-or-build arm reaches <c>SimulatorFactory.Create</c> for a descriptor the plan does not cover, so
     /// the acquisition remains REACHABLE and the ordering pair therefore still exists. A set member is about
-    /// reachability, not frequency: removing it needs an install that can never build, which needs either a
-    /// new way for a start to fail or a way to freeze the roster while one is in flight — both public-contract
-    /// changes, and both refused by J-1 rather than taken. <b>The set is still FIVE.</b>);
+    /// reachability, not frequency: removing it needs an install that can never build.
+    /// <b>🔴 Fix round 1 (review I-3) — the sentence here USED to say that needs "either a new way for a
+    /// start to fail or a way to freeze the roster", and that disjunction was a FALSE UNIVERSAL of exactly
+    /// the kind this banner exists to catch.</b> Review found a fifth shape and it is neither: install the
+    /// plan verbatim and make the start's own OFF-LOCK EPILOGUE owe a follow-up rebuild whenever the roster
+    /// moved during the build — P1's own commit-under-lock/complete-off-lock pattern, applied to the roster
+    /// instead of to a notification. It buys an extra operator-observable pipeline restart per lost race,
+    /// and under a repeating registrant it degenerates into the unbounded-retry livelock; bounding it puts
+    /// the build back under the lock, i.e. back here. So the honest sentence is <b>every shape FOUND trades
+    /// into a category the owner reserved</b> — a statement about a search, which can be extended — not an
+    /// exhaustive disjunction, which cannot. The verdict is unchanged and the label stays NARROWED.
+    /// <b>The set is still FIVE.</b>);
     /// <c>TransportCoordinator</c>'s and
     /// <c>SwitchableTransport</c>'s (via <see cref="ApplyNetworkOutageLocked"/>);
     /// <see cref="ConnectorRegistry"/>'s (<c>SnapshotBindings</c>/<c>RegisteredIds</c>/
@@ -603,6 +619,45 @@ internal sealed class FleetCore
     /// general lesson, since this instrument missed it twice: a completion routine's host seams are not only
     /// the ones that PRECEDE its load-bearing work.</para></summary>
     private readonly object _gate = new();
+
+    /// <summary>🔴 J-1 fix round 1 (review I-1) — counts OPERATOR REQUESTS FOR THE PIPELINE TO BE DOWN, and
+    /// exists only so <see cref="Start"/> can tell whether one landed while its off-lock build was running.
+    /// Written and read under <see cref="_gate"/>, never anywhere else.
+    ///
+    /// <para><b>The defect it closes, stated as the race rather than as the symptom.</b> Before J-1,
+    /// <see cref="Start"/> held <see cref="_gate"/> across its whole body, so a concurrent <see cref="Stop"/>
+    /// was strictly ordered against it: arrive first and the stop no-ops on a stopped fleet and the start
+    /// wins; arrive second and the stop tears the just-started fleet down. J-1's hoist opened an interval in
+    /// the middle of <see cref="Start"/> in which a <see cref="Stop"/> is neither — it acquires the gate,
+    /// finds <see cref="_running"/> still <see langword="false"/> (the start has not installed yet), and
+    /// <see cref="StopLocked"/> returns on its own <c>!_running</c> guard. The request evaporates and the
+    /// start then completes, so a <c>Start</c>‖<c>Stop</c> race that used to be able to end STOPPED could
+    /// only end RUNNING. Nothing was corrupted — no historian event is emitted for a stop that did not
+    /// happen, and <see cref="IsRunning"/> reports honestly — which is why this was an inverted OUTCOME
+    /// rather than a broken invariant.
+    ///
+    /// <para><b>How it is resolved, and why this resolution rather than another.</b> A start whose snapshot
+    /// predates a stop request abandons its install. That makes the windowed stop win, which is the outcome
+    /// the pre-J-1 lock produced whenever the stop arrived second. It costs no new failure mode
+    /// (<see cref="Start"/> returns <see langword="void"/> and already declines silently when latched or
+    /// already running), no new lock, and no roster freeze.
+    ///
+    /// <para>🔴 <b>What is NOT restored byte-for-byte, said plainly rather than glossed.</b> Pre-J-1's
+    /// "stop arrived second" path emitted a full <c>NBIRTH</c> + historian <c>"Start"</c> pair and then
+    /// <c>NDEATH</c> + <c>"Stop"</c>. The abandoned start emits NONE of the four. That is not a third
+    /// behaviour: it is exactly what pre-J-1's OTHER resolution — "stop arrived first" — emitted, and both
+    /// were legal outcomes of the same race. Emitting a Start/Stop pair for a pipeline that never ran would
+    /// be the worse choice, because <c>SqliteHistorianStore</c>'s OEE query opens an interval on
+    /// <c>"Start"</c>; a zero-length interval for a start that never installed is a fabricated one.
+    ///
+    /// <para><b>Scope, deliberately narrow.</b> Only <see cref="Start"/> consults this. The equivalent window
+    /// inside <see cref="RegisterMachine"/>/<see cref="ApplyScenario"/> — between their <see cref="StopLocked"/>
+    /// and their rebuild — PREDATES J-1 and is documented and accepted at <see cref="RegisterMachine"/> as
+    /// "last writer wins"; J-1 made it wider but did not create it, and making those two abandon would be a
+    /// behaviour change this task has no mandate for. Incrementing here rather than inside
+    /// <see cref="StopLocked"/> is what keeps that distinction: an internal restart's teardown is not a
+    /// request for the fleet to END stopped, so it must not cancel a concurrent start.</para></summary>
+    private long _stopRequests;
 
     private readonly object _kpiGate = new();
     private readonly SwitchableTransport _transport;
@@ -1652,7 +1707,8 @@ internal sealed class FleetCore
     private readonly record struct StartInputs(
         List<MachineDescriptor> Fleet,
         double Multiplier,
-        IReadOnlyList<ConnectorRegistry.ConnectorBinding>? Bindings);
+        IReadOnlyList<ConnectorRegistry.ConnectorBinding>? Bindings,
+        long StopRequests);
 
     /// <summary>🔴 J-1 — the product of <see cref="BuildStartPlan"/>: everything the pipeline needs that
     /// costs I/O to produce, built with <see cref="_gate"/> RELEASED.
@@ -1814,6 +1870,16 @@ internal sealed class FleetCore
         // IsRunning/_estopEngaged under the second acquisition and that reading is the one that decides.
         // Deleting THAT one opens a window on the safety path; deleting THIS one only wastes work. Both
         // mutations are covered — see FleetHostStartBuildHoistTests.
+        //
+        // 🔴 J-1 fix round 1 (review I-2) — AND IT IS NOT ONLY WASTED WORK: naming the write without naming
+        // the THROW understated it. If an Estop lands between the two acquisitions, the build has already
+        // run, and BuildStartPlan reaches MachineConfigStore.Ensure — which throws InvalidOperationException
+        // on a config-kind mismatch and IOException on a full or read-only data root. Pre-J-1 the latch
+        // refused before any of that, so a Start() made while latching was a guaranteed silent no-op; now it
+        // can propagate. That is a NEW WAY FOR A START TO FAIL, which is the exact category this task's own
+        // enumeration refuses when it rejects "throw" as a way to close P4/P5 — so it is named here rather
+        // than left as a footnote about files. It needs BOTH a poisoned data root AND an Estop inside the
+        // window, and the pre-check above is what keeps the ordinary latched Start on the old path.
         bool started = false;
         StartOutcome outcome = default;
         try
@@ -1830,6 +1896,20 @@ internal sealed class FleetCore
 
             lock (_gate)
             {
+                // 🔴 J-1 fix round 1 (review I-1) — A STOP REQUESTED DURING THE BUILD WINS, and this is the
+                // one place that decides it. Without this line a Stop() landing between the two acquisitions
+                // is silently dropped (StopLocked returns on `!_running`, because this start has not
+                // installed yet) and the start then completes — inverting a Start‖Stop race that pre-J-1
+                // could end stopped. Abandoning here is not a failure: this method returns void and already
+                // declines silently when latched or already running, so no caller learns anything new.
+                //
+                // It is NOT redundant with the latch below. The latch answers "is the fleet running or
+                // halted RIGHT NOW"; after a dropped Stop the answer to both is no, so the latch admits the
+                // start. Only a count of REQUESTS can see an event that left no state behind. See
+                // _stopRequests for why the counter lives at the operator-facing calls rather than inside
+                // StopLocked.
+                if (_stopRequests != inputs.StopRequests) return;
+
                 var wasRunning = IsRunning;
                 outcome = StartLocked(plan);
                 started = !wasRunning && IsRunning;
@@ -1898,6 +1978,12 @@ internal sealed class FleetCore
         {
             lock (_gate)
             {
+                // 🔴 J-1 fix round 1 (review I-1) — recorded BEFORE StopLocked and unconditionally, which is
+                // the whole point: the request that used to be lost is precisely the one StopLocked drops on
+                // its `!_running` guard, so counting after it, or only when something was actually torn down,
+                // would count everything except the case this exists for. See _stopRequests.
+                _stopRequests++;
+
                 var wasRunning = IsRunning;
                 handle = StopLocked();
                 stopped = wasRunning && !IsRunning;
@@ -2054,6 +2140,13 @@ internal sealed class FleetCore
         {
             lock (_gate)
             {
+                // 🔴 J-1 fix round 1 (review I-1) — a HALT is a request for the pipeline to be down too, so
+                // it counts here for the same reason Stop() does. This is belt-and-braces rather than
+                // load-bearing: `_estopEngaged` below already makes StartLocked's latch refuse any start
+                // whose install lands after this point, and that latch is the guard. Counting anyway means
+                // the two mechanisms agree instead of one covering for the other.
+                _stopRequests++;
+
                 handle = StopLocked();
                 _estopEngaged = true;
                 halted = true;
@@ -2284,6 +2377,31 @@ internal sealed class FleetCore
     /// exists to record.</summary>
     private static readonly string MappingDirectory = Path.Combine(AppContext.BaseDirectory, "mapping");
 
+    /// <summary>🔴 J-1 fix round 1 (review Minor 6) — the comparer for <see cref="StartPlan.MappingKeys"/>,
+    /// pinned to <see cref="StringComparer.OrdinalIgnoreCase"/> on BOTH string members so the set answers
+    /// the same question <c>MappingProfileResolver</c>'s own <c>OrdinalIgnoreCase</c> map answers. A default
+    /// tuple comparer is ordinal, which made the two disagree on case; see the census loop in
+    /// <see cref="BuildStartPlan"/> for what that cost and why it was unreachable rather than harmless.</summary>
+    private static readonly IEqualityComparer<(string Code, string? MappingProfile, DeviceClass DeviceClass)>
+        MappingKeyComparer = new MappingKeyEqualityComparer();
+
+    private sealed class MappingKeyEqualityComparer
+        : IEqualityComparer<(string Code, string? MappingProfile, DeviceClass DeviceClass)>
+    {
+        public bool Equals(
+            (string Code, string? MappingProfile, DeviceClass DeviceClass) x,
+            (string Code, string? MappingProfile, DeviceClass DeviceClass) y) =>
+            string.Equals(x.Code, y.Code, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.MappingProfile, y.MappingProfile, StringComparison.OrdinalIgnoreCase)
+            && x.DeviceClass == y.DeviceClass;
+
+        public int GetHashCode((string Code, string? MappingProfile, DeviceClass DeviceClass) obj) =>
+            HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Code),
+                obj.MappingProfile is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(obj.MappingProfile),
+                obj.DeviceClass);
+    }
+
     /// <summary>🔴 J-1 — copies the <see cref="_gate"/>-protected inputs a pipeline build reads, so that
     /// <see cref="BuildStartPlan"/> can run with the lock released. <b>Assumes the caller holds
     /// <see cref="_gate"/>.</b>
@@ -2304,7 +2422,7 @@ internal sealed class FleetCore
     private StartInputs SnapshotStartInputsLocked()
     {
         var multiplier = _scenario.CycleRateMultiplier > 0 ? _scenario.CycleRateMultiplier : 1.0;
-        return new StartInputs(_fleet.ToList(), multiplier, _connectorRegistry?.SnapshotBindings());
+        return new StartInputs(_fleet.ToList(), multiplier, _connectorRegistry?.SnapshotBindings(), _stopRequests);
     }
 
     /// <summary>🔴 J-1 — builds everything a pipeline needs that costs I/O to produce. <b>MUST NOT be called
@@ -2347,7 +2465,18 @@ internal sealed class FleetCore
             logWarning: msg => deferredLogs.Add(new DeferredLogEntry(null, msg)),
             logError: (ex, msg) => deferredLogs.Add(new DeferredLogEntry(ex, msg)));
 
-        var mappingKeys = new HashSet<(string, string?, DeviceClass)>();
+        // 🔴 J-1 fix round 1 (review Minor 6) — the comparer is stated, not defaulted. This set decides
+        // "did the plan already resolve a mapping profile for this descriptor", and the thing it is standing
+        // in for is MappingProfileResolver's own map, which is keyed OrdinalIgnoreCase. A default tuple
+        // HashSet compares every string ORDINALLY, so `LINE-1` and `line-1` were two different keys here and
+        // one key there — the plan would have been asked to supplement a code it had in fact already
+        // resolved. That is only unreachable because RegisterMachine's duplicate check is case-insensitive,
+        // i.e. "benign by a property of another call site", which is the sentence pattern the banner at the
+        // top of this file exists to stop people writing. Matching the comparer to the map removes the
+        // question instead of answering it. MappingProfile stays ordinal-insensitive for the same reason:
+        // ResolveOne uses it to build a FILE PATH, and the profile a descriptor resolves to is a function of
+        // that path, so two spellings that name the same file must not look like two different keys.
+        var mappingKeys = new HashSet<(string, string?, DeviceClass)>(MappingKeyComparer);
         foreach (var d in effectiveFleet)
         {
             mappingKeys.Add((d.Code, d.MappingProfile, d.DeviceClass));

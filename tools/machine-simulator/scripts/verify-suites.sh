@@ -2026,7 +2026,38 @@ EXPECT_EDGESERVICE=50
 # _gate) — the conformance suite's own "construction is non-blocking because FleetCore.StartLocked
 # constructs drivers under the same _gate lock Estop() takes" string is still TRUE after J-1 and was
 # re-checked rather than assumed, precisely because it is a live assertion message in a contract assembly.
-EXPECT_ENGINEAPI=1328
+#
+# 🔴 J-1 FIX ROUND 1 raises EXPECT_ENGINEAPI 1328 -> 1330 (+2). Same one file; nothing rewritten, split or
+# deleted. Both are review I-1, which is a BEHAVIOUR fix and not a disclosure fix: J-1's hoist opened an
+# interval inside Start() in which a concurrent Stop() was silently dropped (StopLocked returns on
+# !_running, because the start has not installed yet), inverting a Start||Stop race that could previously
+# end stopped. FleetCore now counts operator stop REQUESTS, and a start whose snapshot predates one
+# abandons its install.
+#   AStopLandingDuringTheHoistedBuild_WinsTheRace_TheStartIsAbandoned                   +1
+#       The regression itself: Stop() from another thread inside the build window, then the fleet must be
+#       NOT running afterwards. It also pins that the halt latch was not used to get there (EstopEngaged
+#       stays false) — a stop must leave the fleet restartable, not latched.
+#   AStopThatCompletedBeforeTheStartBegan_DoesNotCancelIt                               +1
+#       The complement, and the reason the pair is not one test: a counter compared against the wrong
+#       baseline would make every fleet permanently unstartable after its first Stop, and the test above
+#       alone stays green on exactly that bug.
+#
+# Review Minor 6 (mappingKeys compared Code ordinally while MappingProfileResolver's map is
+# OrdinalIgnoreCase) adds NO test and is stated as such: the disagreement is unreachable today because
+# RegisterMachine's duplicate check is case-insensitive, so no test can construct the divergence without
+# first breaking that check. The comparer is pinned anyway, because "unreachable by a property of another
+# call site" is the sentence pattern this file's own banner exists to stop.
+#
+# 🔴 COUNTED FROM THE EXECUTED TOTAL, not from `--list-tests | grep -c`. The grep form ALSO matches the
+# runner's own header line (it ends "...\St4i.EngineApi.Tests.dll", which contains the pattern), so it
+# reports one more than the suite runs. That is §8.1(a3) in miniature — the instrument answers "lines
+# matching a pattern in a listing" while the criterion this constant feeds is "tests executed" — and it was
+# caught here by the two numbers disagreeing, not by re-reading the command.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE remain unchanged: the fix
+# round touches FleetCore, MachineState's doc comment and one test file, and adds no behaviour those suites
+# can observe.
+EXPECT_ENGINEAPI=1330
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

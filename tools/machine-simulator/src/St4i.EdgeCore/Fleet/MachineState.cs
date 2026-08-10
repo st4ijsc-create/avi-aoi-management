@@ -67,8 +67,11 @@ public sealed class MachineState
     /// <summary>The last RAW <see cref="DeviceReading.CycleCounter"/> seen (i.e. straight off
     /// <c>St4i.EdgeCore.Drivers.SimulatedDriver</c>, NOT the offset-adjusted <see cref="Cycles"/>
     /// below) — tracked so <see cref="ApplyReading"/> can detect a driver restart
-    /// (<c>FleetHost.ApplyScenario</c>'s <c>StopLocked()+StartLocked()</c> on a cycle-rate/scenario
-    /// change builds a brand-new <c>SimulatedDriver</c> whose per-machine counters reset to 0) purely
+    /// (<c>FleetCore.ApplyScenario</c>'s <c>StopLocked()</c> + <c>RebuildPipelineOffLock</c> on a
+    /// cycle-rate/scenario change builds a brand-new <c>SimulatedDriver</c> whose per-machine counters reset
+    /// to 0 — 🔴 task J-1 changed that call shape from <c>StopLocked()+StartLocked()</c>, and the property
+    /// asserted here is UNAFFECTED because a plan is built per start and never outlives one, so no simulator
+    /// instance survives a restart to carry a counter across it) purely
     /// from the counter going backwards, with no dependency on FleetHost telling this class a restart
     /// happened.</summary>
     private long _lastRawCycleCounter;
