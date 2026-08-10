@@ -13,6 +13,8 @@ import { suyRaPhaiDoiMatKhau, type MocMatKhau } from "../_core/publicUser";
 import { ENV } from '../_core/env';
 // ★★★ Pha 7 Task 8a — chủ duy nhất của mã dự phòng 2FA (sinh · băm · đối chiếu).
 import { khopMaDuPhong } from '../_core/backupCodeSecret';
+// ★★★★ Review TOÀN NHÁNH Pha 8 C-2 — trần cột SUY TỪ SCHEMA, không phải một con số viết tay.
+import { catTheoTranCot } from './catTheoTranCot';
 // W4-B (doc 27 B4): the auth layer caches session→user for AUTH_CACHE_TTL_S.
 // Every mutation below that changes what authenticateRequest returns (role,
 // isActive/ban, password, 2FA, session revocation) MUST explicitly evict the
@@ -520,8 +522,24 @@ export async function createUserSession(data: {
 }) {
   const db = await getDb();
   if (!db) return 0;
-  
-  const [result] = await db.insert(userSessions).values(data).returning({ id: userSessions.id });
+
+  /**
+   * ★★★★ Review TOÀN NHÁNH Pha 8 · **C-2 — CẮT TẠI NGUỒN, THEO TRẦN SUY RA TỪ SCHEMA.**
+   *
+   * `deviceName` (`varchar(255)`) được nạp thẳng từ header `User-Agent` — **dữ liệu KẺ TẤN CÔNG**.
+   * Một UA 3.770 ký tự ⇒ `22001` ⇒ `ghiSoPhien` nuốt lỗi ⇒ lượt đăng nhập vẫn 200 nhưng **KHÔNG có
+   * hàng sổ** ⇒ phiên ấy **vô hình** với `session.list` và **ngoài tầm** mọi đường thu hồi, tới 2027.
+   *
+   * ⚠ Đây là **NGƯỜI GHI DUY NHẤT** của `user_sessions` trong `server/**` (đo được, và có lượng từ
+   *   canh: `server/_core/tranCotSoPhien.test.ts` §4). Cắt ở đây phủ mọi người gọi — kể cả lưới —
+   *   mà không ai phải nhớ cắt.
+   * ⚠ `sessionToken` là `text` ⇒ **KHÔNG** có trần ⇒ **KHÔNG** bị chạm. Cắt khoá phiên là đúc ra
+   *   một hàng không bao giờ khớp cookie: cùng lỗ C-2, một đường im lặng hơn.
+   */
+  const [result] = await db
+    .insert(userSessions)
+    .values(catTheoTranCot(userSessions, data))
+    .returning({ id: userSessions.id });
   return result.id;
 }
 

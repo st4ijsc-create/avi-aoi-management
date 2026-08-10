@@ -373,7 +373,12 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   nửa** — cổng mật khẩu — để phép thu hồi phiên hở trên **58 tuyến `/api/external/*`**.
     //   `server/_core/` **không** có đường bao trong cổng ⇒ thiếu dòng này thì lưới ấy *"theo cấu
     //   tạo không bao giờ được canh"*.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(47); // review Pha 8 C-1: +1
+    // ⚠ Review TOÀN NHÁNH Pha 8 / **C-2**: 47 → **48**. `server/_core/tranCotSoPhien.test.ts` —
+    //   bất biến *"∀ cột `varchar(n)` của `user_sessions`: giá trị ghi vào bị cắt theo trần SUY TỪ
+    //   SCHEMA"*, cộng ô ∀ *"mọi người ghi `user_sessions` phải đi qua phép cắt"* (M3). Nó canh một
+    //   trục KHÁC hẳn `phienTrungTrongMotGiay.test.ts` (nonce + lượt nuốt lỗi): ở đây nguyên nhân
+    //   ghi-sổ-hỏng là **dữ liệu KẺ TẤN CÔNG** trong một header, không phải một va chạm nội bộ.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(48); // review Pha 8 C-2: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -506,7 +511,10 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   (`server/_core/thuHoiPhienMoiBeMat.test.ts`, lý do ở ô `CONG.length`). Nó tự khai `Pha 5`
     //   nên bộ nhận diện theo NỘI DUNG thấy, và nó phải có đường riêng ở §Cổng kiểm chung ⇒
     //   `CONG.length` 46 → **47** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(110); // review Pha 8 C-1: +1
+    // ⚠ Review TOÀN NHÁNH Pha 8 / **C-2**: 110 → **111**. Đúng MỘT lưới mới
+    //   (`server/_core/tranCotSoPhien.test.ts`, lý do ở ô `CONG.length`) ⇒ `CONG.length` 47 → **48**
+    //   cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(111); // review Pha 8 C-2: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
