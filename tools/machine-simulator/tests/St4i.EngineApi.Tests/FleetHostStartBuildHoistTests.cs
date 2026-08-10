@@ -53,7 +53,7 @@ public sealed class FleetHostStartBuildHoistTests
     /// one.</summary>
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(20);
 
-    private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(50);
 
     private static FleetHost CreateHost(RecordingLogger? logger = null, MachineConfigStore? configStore = null)
@@ -244,6 +244,71 @@ public sealed class FleetHostStartBuildHoistTests
         finally
         {
             host.Stop();
+        }
+    }
+
+    /// <summary>The third input a plan can go stale on, and the only one a descriptor comparison cannot
+    /// see. A simulator is a function of (descriptor, index, <b>multiplier</b>), and the descriptor carries
+    /// the multiplier only through its pre-scaled <c>CycleSeconds</c> — which <c>MinCycleSeconds</c>
+    /// CLAMPS. So for a machine already at the floor, two very different multipliers produce byte-identical
+    /// descriptors, and only <c>StartPlan.Multiplier</c> distinguishes them. Without that check a
+    /// scenario change landing mid-build would leave a config-aware simulator baked at the OLD rate while
+    /// <c>GetScenario</c> reports the new one, until some later restart.
+    ///
+    /// <para><b>The separation is structural, not a race against the clock.</b> The machine's descriptor
+    /// sits at the 0.05 s floor, so it is identical under both multipliers; its config-derived cadence is
+    /// driven to the schema's slowest legal setting (<c>speedRpm</c> 50, <c>clampTimeMs</c> 5000 — the
+    /// documented <c>Min</c>/<c>Max</c> of <c>MachineParameterSchema</c>, giving 0.2 + 3.6 + 5.0 = 8.8 s),
+    /// and the mid-build scenario drives the multiplier to 200, which floors the override at 0.05 s. Three
+    /// cycles therefore take 0.15 s when the simulator is rebuilt and 26.4 s when a stale one is reused, so
+    /// the bound below has ~50x headroom on the passing side and is exceeded by 3x on the failing one. If a
+    /// future schema change moves either bound, this test gets slower or louder — never quieter.</para>
+    ///
+    /// <para>A non-config-aware simulator cannot witness this at all, and that is a property rather than a
+    /// gap: for those the multiplier reaches the pipeline ONLY through the descriptor's
+    /// <c>CycleSeconds</c>, which the clamp has already made identical — so a reused instance is
+    /// indistinguishable from a rebuilt one, by construction.</para></summary>
+    [Fact]
+    public async Task AScenarioMultiplierChangedMidBuild_RebuildsTheSimulators_EvenWhenTheDescriptorsAreIdentical()
+    {
+        var dir = NewTempDir();
+        var store = new MachineConfigStore(dir);
+        var host = CreateHost(configStore: store);
+        const string code = "J1-MULTIPLIER-CLAMPED-01";
+
+        // CycleSeconds AT the floor: 0.05/1 and 0.05/200 both clamp to 0.05, so the two descriptors are
+        // byte-identical and the descriptor comparison cannot tell the two plans apart.
+        Assert.True(host.RegisterMachine(new MachineDescriptor(
+            code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
+            DriverKinds.Simulated, "RC-J1", null, CycleSeconds: 0.05)));
+
+        // One start/stop purely to let the config store seed this machine, so the adjustments below have a
+        // config to attach to. Nothing about the pipeline that start builds is under test.
+        host.Start();
+        host.Stop();
+        store.SetAdjustment(code, "speedRpm", 50, AdjustmentScope.Machine, null, "j1", null);
+        store.SetAdjustment(code, "clampTimeMs", 5000, AdjustmentScope.Machine, null, "j1", null);
+
+        var observations = 0;
+        host.StartBuildObserverForTests = () =>
+        {
+            if (Interlocked.Increment(ref observations) > 1) return;
+            Assert.True(CompletesOnAnotherThread(
+                () => host.ApplyScenario(new ScenarioConfig(200.0, 0.0, 0.0, false), "j1-fast")));
+        };
+
+        host.Start();
+        try
+        {
+            Assert.Equal(1, Volatile.Read(ref observations));
+            await WaitUntilAsync(
+                () => (host.MachineDetail(code)?.Cycles ?? 0) >= 3,
+                $"{code} to cycle at the multiplier this start committed, not the one its plan was built with");
+        }
+        finally
+        {
+            host.Stop();
+            try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
         }
     }
 

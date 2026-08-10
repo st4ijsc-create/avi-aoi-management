@@ -1989,10 +1989,10 @@ EXPECT_EDGESERVICE=50
 #       from options the early EnsureDir never saw. It asserts the host is UP and the file does not exist
 #       ON DISK (not merely that Load() returns null, which is also true for a corrupt file).
 #
-# 🔴 TASK J-1 (.superpowers/sdd/restart-chokepoint/task-1-brief.md) raises EXPECT_ENGINEAPI 1321 -> 1327
-# (+6), COUNTED FROM THE RUNNER (`dotnet test --list-tests`). ONE new file, nothing rewritten, split or
+# 🔴 TASK J-1 (.superpowers/sdd/restart-chokepoint/task-1-brief.md) raises EXPECT_ENGINEAPI 1321 -> 1328
+# (+7), COUNTED FROM THE RUNNER (`dotnet test --list-tests`). ONE new file, nothing rewritten, split or
 # deleted; the two other test files J-1 touches are prose-only corrections and contribute 0.
-#   FleetHostStartBuildHoistTests.cs                                                    +6
+#   FleetHostStartBuildHoistTests.cs                                                    +7
 #       The witnesses for hoisting the enumeration's P4 (MappingProfileResolver.Build -> File.Exists/
 #       File.ReadAllText per machine, the 2.39 ms measurement) and P5 (SimulatorFactory.Create ->
 #       MachineConfigStore.Ensure -> File.WriteAllText + File.Move, plus a second lock) out of
@@ -2008,6 +2008,14 @@ EXPECT_EDGESERVICE=50
 #       landing DURING the build must still be refused by the check inside the lock (that is the guard),
 #       and a Start made while already latched must not even build (that is the cheap pre-check in Start(),
 #       an optimisation — deleting it wastes work, deleting the other opens a window on the safety path).
+#       One is the SEVENTH, added DURING the mutation round because the round found it missing: the
+#       multiplier a plan was built with is not recoverable from the descriptors it holds, because
+#       MinCycleSeconds CLAMPS the pre-scaled CycleSeconds — so for a machine already at the floor two very
+#       different multipliers give byte-identical descriptors and only StartPlan.Multiplier separates them.
+#       Dropping that one check survived every other witness in this file. The new test drives the
+#       config-derived cadence to the schema's slowest legal setting (0.2 + 3.6 + 5.0 = 8.8 s), so three
+#       cycles take 0.15 s rebuilt and 26.4 s reused: the separation is structural, not a race against the
+#       clock.
 #
 # EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are deliberately
 # UNCHANGED, and EXPECT_EDGECORE staying put is evidence rather than convenience: J-1 edits four files in
@@ -2018,7 +2026,7 @@ EXPECT_EDGESERVICE=50
 # _gate) — the conformance suite's own "construction is non-blocking because FleetCore.StartLocked
 # constructs drivers under the same _gate lock Estop() takes" string is still TRUE after J-1 and was
 # re-checked rather than assumed, precisely because it is a live assertion message in a contract assembly.
-EXPECT_ENGINEAPI=1327
+EXPECT_ENGINEAPI=1328
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
