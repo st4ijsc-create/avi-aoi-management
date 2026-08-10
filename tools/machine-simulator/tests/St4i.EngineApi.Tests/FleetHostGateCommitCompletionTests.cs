@@ -57,9 +57,19 @@ namespace St4i.EngineApi.Tests;
 /// in for FleetCore's enumeration P5 (<c>SimulatorFactory.Create</c> →
 /// <c>MachineConfigStore.Ensure</c> → <c>File.WriteAllText</c>/<c>File.Move</c>, which throws
 /// <c>InvalidOperationException</c> on a config-kind mismatch and <c>IOException</c> on a full or read-only
-/// data root). It throws from the same method, under the same lock, at a point between the same two
-/// statements. It is a STAND-IN and is labelled one: a test seam, not the production path — closing P5
-/// itself is a redesign of the restart chokepoint that G-1's brief reserved and G-2's does too.
+/// data root). It is a STAND-IN and is labelled one: a test seam, not the production path.
+/// <para>🔴 <b>J-1 did the redesign this sentence used to defer, and the stand-in survives it — with a
+/// weaker analogy that is stated rather than left standing.</b> The claim here was "it throws from the same
+/// method, under the same lock, at a point between the same two statements", plus "closing P5 itself is a
+/// redesign of the restart chokepoint that G-1's brief reserved and G-2's does too". The second half is now
+/// simply false: J-1 hoisted the build, so on an uncontended start P5 fires from <c>BuildStartPlan</c> with
+/// <c>_gate</c> RELEASED, and the two are no longer the same method or the same side of the lock. The first
+/// half survives in the form these tests actually depend on, which is narrower than what it said: this seam
+/// throws from inside <c>StartLocked</c>, between a commit made under <c>_gate</c> and a completion owed
+/// after it, which is the ONLY property the S-set tests below rest on. P5 is still reachable there too — the
+/// install's per-machine reuse-or-build arm builds a simulator for any descriptor the plan does not cover —
+/// so the stand-in has not become a stand-in for nothing. It has become a stand-in for a rarer arm of the
+/// same path.</para>
 /// <para>🔴 The two exception MESSAGES for this stand-in still spell it "item 5", deliberately. The
 /// whole-branch re-review's NEW-5 gave that member one canonical name, <c>P5</c>, everywhere it is
 /// CROSS-REFERENCED — and a bulk rename swept these two string literals along with the comments, which would
@@ -611,9 +621,11 @@ public sealed class FleetHostGateCommitCompletionTests
     /// discharges it is started after the lock is released — with <c>ApplyScenario</c> in between.
     ///
     /// <para>Review M-5 named only the <c>previousCts?.Cancel()</c> half of that window. The larger half is
-    /// <c>ApplyScenario</c>, which reaches <c>StartLocked</c> and is therefore reachable through FleetCore's
-    /// own enumeration P5. A throw there left the fleet at the burst multiplier with <b>no revert task
-    /// ever scheduled</b> — indefinitely, until some later Burst.</para>
+    /// <c>ApplyScenario</c>, whose restart branch is reachable through FleetCore's own enumeration P5 (🔴
+    /// since J-1 via <c>RebuildPipelineOffLock</c> → <c>BuildStartPlan</c>, previously via
+    /// <c>StartLocked</c> — the reachability is unchanged, the frame is not). A throw there left the fleet at
+    /// the burst multiplier with <b>no revert task ever scheduled</b> — indefinitely, until some later
+    /// Burst.</para>
     ///
     /// <para>This test also pins S4's SECOND half as an open gap rather than a surprise: the fleet IS left
     /// stopped by the throw, and stays stopped. That is asserted, not merely tolerated.</para></summary>

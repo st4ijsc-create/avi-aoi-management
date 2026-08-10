@@ -362,6 +362,18 @@ cùng hình dạng): `MappingProfileResolver.Build` giữ `_gate` **2,39 ms** v�
 cục bộ; `RegisterMachine` ×100 tốn **0,1 ms** khi registry null và **7,1 ms** khi có store thật; và một
 thread chỉ đọc `host.EstopEngaged` — **cùng cái khoá `Estop()` lấy** — bị chặn tới **12,35 ms**, tức ~300×.
 
+> 🔴 **`2,39 ms` Ở ĐÂY CŨNG LÀ MỘT PHÉP ĐO LỊCH SỬ (J-1, 2026-08-10 — branch review, Minor).** Từ J-1,
+> `MappingProfileResolver.Build` chạy trong `FleetCore.BuildStartPlan`, **đã nhả `_gate`**; dụng cụ sinh ra
+> con số này chạy lại hôm nay sẽ ra số khác. **Hai con số kia KHÔNG đổi:** `RegisterMachine` ×100 và
+> **12,35 ms** thuộc về `_onMachineSeeded` (P1), đóng từ G-1 và J-1 không đụng tới.
+>
+> 🔴 **Và đây là lần thứ NĂM của cùng một lớp lỗi trong nhiệm vụ này.** Vòng sửa 2 đánh dấu chỗ ở §10.3 rồi
+> **báo cáo §7.2 tuyên bố "đã đánh dấu ở ba nơi"** — trong khi chỗ NÀY, chỗ mà cả hai chỗ kia đều trỏ về
+> như nguồn (*"§9.2 đo được 2,39 ms"*), vẫn trống. Miền của phép quét lại lấy từ **chỗ tôi đang đứng**
+> (§10.3, mục mà phát hiện trích dẫn) chứ không từ **tính chất** (*mọi lần xuất hiện của phép đo ấy*).
+> §8.1(f). Cách quét đúng là `grep "2,39 ms"` — năm hit, và bây giờ mỗi hit hoặc mang dấu hoặc trỏ tới một
+> hit mang dấu.
+
 **Cả ba đều có TRƯỚC Đợt E.** Khuyến nghị: xếp thành một hạng mục riêng, **không** gộp vào E-2 — gộp vào sẽ
 làm hợp đồng "hành vi không đổi, gate là phép kiểm" của E-2 thành không đúng, và đó đúng là hình dạng
 "bản sửa và phép quét cảm giác như một hành động nhưng là hai" của Đợt D §8.1.
@@ -556,7 +568,14 @@ vòng đời là "đọc `IsRunning`", nửa chiếu ra là `state.ToDetail(isRu
 `_core.IsRunning`. Bọc thêm một `lock` ở phía vỏ chính là **thêm một khoá cho vỏ** — điều §10.1 cấm. Một lần
 lấy khoá tái nhập dư thừa bị bỏ; giá trị không đổi, hành vi không đổi.
 
-### 10.3 ~~Ba vi phạm `_gate` của §9.2 **VẪN CÒN NGUYÊN**~~ → 🔴 **G-1: tập là CHÍN đường, ba đã đóng, bốn còn mở trong lõi, hai nằm trong callee** — và cuộc đi bộ ba chặng nói gì
+### 10.3 ~~Ba vi phạm `_gate` của §9.2 **VẪN CÒN NGUYÊN**~~ → ~~🔴 **G-1: tập là CHÍN đường, ba đã đóng, bốn còn mở trong lõi, hai nằm trong callee**~~ → 🔴 **J-1: tập vẫn là CHÍN đường — 3 ĐÓNG, 2 THU HẸP, 4 MỞ** — và cuộc đi bộ ba chặng nói gì
+
+> 🔴 **Đính chính ngày 2026-08-10, J-1 (review Minor 5).** Tiêu đề của G-1 tóm tắt tập là **3/4/2** ("ba đã
+> đóng, bốn còn mở trong lõi, hai nằm trong callee") — một cách nhóm theo VỊ TRÍ, không theo TRẠNG THÁI. Sau
+> J-1 nó không còn dựng lại được từ bản chính thức ở đầu `FleetCore.cs`, vốn đếm theo trạng thái: **3 ĐÓNG
+> (P1–P3), 2 THU HẸP (P4, P5), 4 MỞ (P6–P9), 3+2+4 = 9**. Hai cách nhóm cùng cho ra chín nhưng **không phải
+> cùng một phép chia**, và một người đọc đối chiếu hai tiêu đề sẽ thấy "bốn còn mở" chọi "bốn MỞ" rồi kết
+> luận sai rằng P4/P5 vẫn nằm trong đó. Giữ tiêu đề cũ có gạch ngang theo đúng quy ước M4 của chính file này.
 
 > 🔴 **Tiêu đề cũ giữ lại gạch ngang, không xoá** (đúng quy ước đính chính M4 của chính file này). Nó đúng
 > lúc E-2 viết và **sai kể từ G-1**; một register được quét bằng TIÊU ĐỀ, nên để nguyên chữ "VẪN CÒN NGUYÊN" ở
@@ -600,8 +619,14 @@ Reviewer đi bộ lại và xác nhận: `FleetCore.cs:1476`, `:1477`, `:1609`, 
 **(b) Không phải "một dòng log có thể chặn `Estop()`" mà là "TỚI N DÒNG LOG, MỖI MÁY MỘT DÒNG".** Hai callback
 của `MappingProfileResolver` được gọi **bên trong `ResolveOne`, mỗi máy trong roster một lần**
 (`MappingProfileResolver.cs:76` và `:87`) — cùng vòng lặp với `File.Exists`/`File.ReadAllText` của vi phạm #1,
-trên đúng roster 50 máy mà §9.2 đo được 2,39 ms giữ khoá. Điều đó **đổi hình dạng của hạng mục sửa**, không
+trên đúng roster 50 máy mà §9.2 đo được **2,39 ms** giữ khoá. Điều đó **đổi hình dạng của hạng mục sửa**, không
 chỉ đổi con số.
+
+> 🔴 **`2,39 ms` Ở ĐÂY LÀ MỘT PHÉP ĐO LỊCH SỬ (J-1, 2026-08-10 — review Minor 5).** Từ J-1, cả vòng lặp ấy —
+> `MappingProfileResolver.Build` **và** hai callback của nó — chạy trong `FleetCore.BuildStartPlan`, **đã nhả
+> `_gate`**. Dụng cụ sinh ra con số này chạy lại hôm nay sẽ cho một số khác. Hộp đính chính ở §9.2 tuyên bố
+> "§10.3" đã được phủ; **nó chưa**, cho tới dòng này — một khẳng định về ĐỘ PHỦ trỏ tới một chỗ không có dấu,
+> tức đúng lớp lỗi §8.1(b) mà chính đợt này đang đếm, cách chỗ bắt được nó đúng một artifact.
 
 **(c) Dụng cụ dùng để nghiệm thu đếm một đại lượng KHÁC với đại lượng tiêu chí nêu tên.** Tiêu chí là
 *"số thao tác **I/O hoặc `Dispose`** với tới được dưới `_gate` không được tăng"*; bảng sáu dòng ở trên đếm
@@ -639,6 +664,17 @@ bàn giao**, vì phép liệt kê CHÍNH LÀ sản phẩm bàn giao. Review G-1 
 3. `Cancel` thứ hai của (d), trong `Burst`. Đã đưa xuống dưới khoá.
 
 **Còn MỞ, trong mã của chính lõi (4–7):**
+
+> 🔴 **Đính chính ngày 2026-08-10, nhiệm vụ J-1 (`.superpowers/sdd/restart-chokepoint/`).** Hạng mục **4 và
+> 5** dưới đây (là `P4` và `P5` trong danh sách chín đường ở đầu `FleetCore.cs`, nơi lưu bản CHÍNH THỨC) đã
+> được **THU HẸP, chưa ĐÓNG**. Việc dựng driver đã được hoist ra ngoài `_gate`: `BuildStartPlan` dựng mọi
+> simulator và phân giải mọi mapping profile **khi đã nhả khoá**; `StartLocked` chỉ lắp đặt. Trên mọi lần
+> start không tranh chấp, cả hai đường đều **không** chạm hệ thống tập tin dưới khoá, và khoá riêng của
+> `MachineConfigStore` **không** được lấy dưới `_gate`. Đường dưới khoá vẫn CÒN với đúng một máy: máy được
+> đăng ký xen vào giữa lúc dựng. Con số **2,39 ms** ở hạng mục 4 và ở §10.3 vì thế là một phép đo LỊCH SỬ —
+> dụng cụ cũ chạy lại hôm nay sẽ ra số khác. Câu chữ nguyên bản dưới đây giữ nguyên vì nó là bản ghi của Đợt
+> E, không phải phát biểu về hiện trạng.
+
 4. Vi phạm #1 — `MappingProfileResolver.Build` → `File.Exists`/`File.ReadAllText` mỗi máy, **2,39 ms**.
 5. 🔴 **KHÔNG có trong bất kỳ danh sách nào trước đây, và nó là một lệnh GHI**: `StartLocked` →
    `SimulatorFactory.Create` → hàm dựng `SimulatorBase` → `MachineConfigStore.Ensure` → `Save()` →

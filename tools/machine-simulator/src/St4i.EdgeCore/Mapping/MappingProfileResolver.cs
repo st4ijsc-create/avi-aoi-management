@@ -11,14 +11,26 @@ namespace St4i.EdgeCore.Mapping;
 /// shared <c>MappingProfile { Name = "fleet-mixed" }</c> regardless of what <c>fleet.json</c>'s own
 /// per-entry <see cref="MachineDescriptor.MappingProfile"/> field named.
 ///
-/// Builds, once per fleet (re)composition (see <c>FleetCore.StartLocked</c>), a
-/// machineCode → <see cref="MappingProfile"/> map: a descriptor naming a real
+/// Builds a machineCode → <see cref="MappingProfile"/> map for a set of descriptors.
+///
+/// <para>🔴 <b>Task J-1 changed WHEN and HOW OFTEN this runs, and the old wording ("once per fleet
+/// (re)composition, see <c>FleetCore.StartLocked</c>") is now wrong in both halves.</b> It runs in
+/// <c>FleetCore.BuildStartPlan</c>, with that class's <c>_gate</c> RELEASED — the point of the change, since
+/// this method's <c>File.Exists</c>/<c>File.ReadAllText</c> per descriptor was measured at 2.39 ms held on
+/// the lock <c>Estop()</c> takes with 50 machines. And a single fleet composition can now call it TWICE: a
+/// second, supplementary <see cref="Build"/> over just the descriptors the first one did not cover runs
+/// under the lock when the roster changed while the first was running. Both results are composed by the
+/// caller, supplement first. Nothing about this class's own contract changed — it is still stateless, still
+/// never throws, and <see cref="Resolve"/> is still a pure dictionary lookup — which is exactly what makes
+/// composing two of them legitimate.</para>
+///
+/// <para>A descriptor naming a real
 /// <c>mapping/&lt;name&gt;.json</c> file resolves to THAT file's <see cref="MappingProfile.FromJson"/>;
 /// a descriptor with no name, or naming a file that is missing/unreadable/malformed, falls back to
 /// <see cref="MappingProfile.ForClass"/> for that descriptor's <see cref="MachineDescriptor.DeviceClass"/>
 /// — this class NEVER throws, so one bad/missing preset can never take the fleet pipeline down (same
 /// "graceful fallback, not a startup crash" contract <c>FleetConfig.Load</c> already keeps for a
-/// malformed <c>fleet.json</c> itself).
+/// malformed <c>fleet.json</c> itself).</para>
 /// </summary>
 public sealed class MappingProfileResolver
 {

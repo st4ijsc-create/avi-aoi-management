@@ -1988,7 +1988,99 @@ EXPECT_EDGESERVICE=50
 #       with a real one whose WalOptions.Directory points at an existing FILE — same throw, same call,
 #       from options the early EnsureDir never saw. It asserts the host is UP and the file does not exist
 #       ON DISK (not merely that Load() returns null, which is also true for a corrupt file).
-EXPECT_ENGINEAPI=1321
+#
+# 🔴 TASK J-1 (.superpowers/sdd/restart-chokepoint/task-1-brief.md) raises EXPECT_ENGINEAPI 1321 -> 1328
+# (+7), COUNTED FROM THE RUNNER (`dotnet test --list-tests`). ONE new file, nothing rewritten, split or
+# deleted; the two other test files J-1 touches are prose-only corrections and contribute 0.
+#   FleetHostStartBuildHoistTests.cs                                                    +7
+#       The witnesses for hoisting the enumeration's P4 (MappingProfileResolver.Build -> File.Exists/
+#       File.ReadAllText per machine, the 2.39 ms measurement) and P5 (SimulatorFactory.Create ->
+#       MachineConfigStore.Ensure -> File.WriteAllText + File.Move, plus a second lock) out of
+#       FleetCore.StartLocked and off _gate, the lock Estop() takes.
+#       Two prove the work moved: the store's file is on disk AND _gate is grantable to ANOTHER THREAD at
+#       the moment the build's last statement runs; and a mapping warning appears exactly ONCE, which is
+#       what says the install consumed the plan instead of re-reading every mapping file under the lock.
+#       Two prove the roster-changed-underneath window is EXCLUDED rather than tolerated: a machine
+#       registered mid-build is CYCLING afterwards (not merely present in the roster — being present and
+#       never driven is the silent outcome), and its own mapping profile is resolved by the install's
+#       supplementary Build, which is what makes that arm live code rather than an unreachable branch.
+#       Two are the HALT latch, and they are separate because the two checks are not equivalent: an Estop
+#       landing DURING the build must still be refused by the check inside the lock (that is the guard),
+#       and a Start made while already latched must not even build (that is the cheap pre-check in Start(),
+#       an optimisation — deleting it wastes work, deleting the other opens a window on the safety path).
+#       One is the SEVENTH, added DURING the mutation round because the round found it missing: the
+#       multiplier a plan was built with is not recoverable from the descriptors it holds, because
+#       MinCycleSeconds CLAMPS the pre-scaled CycleSeconds — so for a machine already at the floor two very
+#       different multipliers give byte-identical descriptors and only StartPlan.Multiplier separates them.
+#       Dropping that one check survived every other witness in this file. The new test drives the
+#       config-derived cadence to the schema's slowest legal setting (0.2 + 3.6 + 5.0 = 8.8 s), so three
+#       cycles take 0.15 s rebuilt and 26.4 s reused: the separation is structural, not a race against the
+#       clock.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are deliberately
+# UNCHANGED, and EXPECT_EDGECORE staying put is evidence rather than convenience: J-1 edits four files in
+# St4i.EdgeCore (FleetCore, MappingProfileResolver, SimulatorFactory/SimulatorBase/IotSensorSim prose) and
+# adds no behaviour that suite can see — every consequence of the hoist is observable only through a live
+# FleetHost, which is why the witnesses live here. EXPECT_CONFORMANCE in particular stays 22: J-1 adds no
+# driver and no connector kind, and deliberately does NOT move P7 (IConnectorFactory.TryCreate stays under
+# _gate) — the conformance suite's own "construction is non-blocking because FleetCore.StartLocked
+# constructs drivers under the same _gate lock Estop() takes" string is still TRUE after J-1 and was
+# re-checked rather than assumed, precisely because it is a live assertion message in a contract assembly.
+#
+# 🔴 J-1 FIX ROUND 1 raises EXPECT_ENGINEAPI 1328 -> 1330 (+2). Same one file; nothing rewritten, split or
+# deleted. Both are review I-1, which is a BEHAVIOUR fix and not a disclosure fix: J-1's hoist opened an
+# interval inside Start() in which a concurrent Stop() was silently dropped (StopLocked returns on
+# !_running, because the start has not installed yet), inverting a Start||Stop race that could previously
+# end stopped. FleetCore now counts operator stop REQUESTS, and a start whose snapshot predates one
+# abandons its install.
+#   AStopLandingDuringTheHoistedBuild_WinsTheRace_TheStartIsAbandoned                   +1
+#       The regression itself: Stop() from another thread inside the build window, then the fleet must be
+#       NOT running afterwards. It also pins that the halt latch was not used to get there (EstopEngaged
+#       stays false) — a stop must leave the fleet restartable, not latched.
+#   AStopThatCompletedBeforeTheStartBegan_DoesNotCancelIt                               +1
+#       The complement, and the reason the pair is not one test: a counter compared against the wrong
+#       baseline would make every fleet permanently unstartable after its first Stop, and the test above
+#       alone stays green on exactly that bug.
+#
+# Review Minor 6 (mappingKeys compared Code ordinally while MappingProfileResolver's map is
+# OrdinalIgnoreCase) adds NO test and is stated as such: the disagreement is unreachable today because
+# RegisterMachine's duplicate check is case-insensitive, so no test can construct the divergence without
+# first breaking that check. The comparer is pinned anyway, because "unreachable by a property of another
+# call site" is the sentence pattern this file's own banner exists to stop.
+#
+# 🔴 COUNTED FROM THE EXECUTED TOTAL, not from `--list-tests | grep -c`. The grep form ALSO matches the
+# runner's own header line (it ends "...\St4i.EngineApi.Tests.dll", which contains the pattern), so it
+# reports one more than the suite runs. That is §8.1(a3) in miniature — the instrument answers "lines
+# matching a pattern in a listing" while the criterion this constant feeds is "tests executed" — and it was
+# caught here by the two numbers disagreeing, not by re-reading the command.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE remain unchanged: the fix
+# round touches FleetCore, MachineState's doc comment and one test file, and adds no behaviour those suites
+# can observe.
+#
+# 🔴 J-1 BRANCH-REVIEW ROUND raises EXPECT_ENGINEAPI 1330 -> 1332 (+2), counted from the EXECUTED total.
+# Same one file. Both close the branch review's Critical: THE HALT LATCH HAD NO SURVIVING WITNESS.
+# Fix round 1 made Estop() increment _stopRequests, so from that commit Start()'s abandon check returned
+# before StartLocked ran and the test whose name claims to cover the latch was passing through the counter
+# instead. MEASURED: mutation M1 (delete the latch) was re-run at the branch tip and SURVIVED all 1330
+# tests. The behaviour was never wrong — Estop is refused either way — but the coverage claim was stale,
+# and a stale coverage claim is worse than a gap because it stops the next person looking.
+#   AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock                +1
+#       The _estopEngaged arm. Reaches the latch because RebuildPipelineOffLock (the RegisterMachine/
+#       ApplyScenario restart) consults neither the cheap pre-check nor _stopRequests, so an Estop landing
+#       in that rebuild's build window meets the latch and nothing else.
+#   ASecondStartWinningTheRace_LeavesTheLoserRefusedByTheLatch_NotASecondSetOfSlots      +1
+#       The IsRunning arm, still live on Start()'s own path because a racing Start moves no counter. The
+#       assertion is the SLOT COUNT, not a flag: what the latch prevents is a second set of pipeline slots
+#       over one roster, i.e. two simulated groups writing the same MachineState — the silent double-drive.
+# M1 now kills both.
+#
+# 🔴 THE ROUND'S OTHER LESSON, recorded because it is about evidence rather than about code: M1's KILLED
+# verdict in the task report was obtained BEFORE the mechanism it tested changed, and was cited afterwards
+# as current. This project already records that an absence of failures is not evidence of a repair; this is
+# the same error one layer up — a PRESENCE of a past failure cited as evidence of a present guard. A
+# mutation result is only evidence for the tree it was run against.
+EXPECT_ENGINEAPI=1332
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

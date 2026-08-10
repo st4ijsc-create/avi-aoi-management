@@ -349,8 +349,11 @@ public sealed class FleetHostSeedNotificationOffGateTests
     /// <para>The throw is injected through the pipeline-injection seam because it is deterministic; the
     /// REAL reachable throw is P5 of the <c>_gate</c> enumeration (<c>MachineConfigStore.Ensure</c>'s
     /// config-kind mismatch, and its <c>File.WriteAllText</c>/<c>File.Move</c> on a full or read-only data
-    /// root), which needs a poisoned data root to reproduce and would test the same
-    /// statement.</para></summary>
+    /// root), which needs a poisoned data root to reproduce and would test the same statement. 🔴 J-1 moved
+    /// that real throw one frame earlier — <c>RebuildPipelineOffLock</c> → <c>BuildStartPlan</c>, off
+    /// <c>_gate</c>, rather than out of <c>StartLocked</c> — and this test is unaffected because the
+    /// statement it guards is the <c>finally</c> around the whole restart, not the frame the throw comes
+    /// from.</para></summary>
     [Fact]
     public async Task WhenTheRestartThrows_TheSeedNotificationIsStillDelivered_NotStrandedInTheQueue()
     {
