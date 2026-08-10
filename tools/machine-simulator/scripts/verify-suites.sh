@@ -2102,8 +2102,20 @@ EXPECT_EDGESERVICE=50
 #       change during a HALT reads N mapping files and writes N machine configs, then refuses") does not
 #       exist here and never did: RegisterMachine restarts only `if (IsRunning)` and ApplyScenario only
 #       `if (IsRunning && multiplierChanged)`, and Estop leaves the fleet not running. So that call does ZERO
-#       builds, reads and writes — before and after J-1b alike. This test is what makes a later change that
-#       makes a restart unconditional go red, and it is the only halt-path coverage ApplyScenario has here.
+#       builds, reads and writes — before and after J-1b alike. It is also the only halt-path coverage
+#       ApplyScenario has here.
+#       🔴 REVIEW C-1 — WHAT IT PINS, CORRECTED, AND THE CORRECTION IS §8.1(h) RECURRING INSIDE THE FIX FOR
+#       §8.1(h). This block first said the test "makes a later change that makes a restart unconditional go
+#       red". IT CANNOT: J-1b's own pre-check inside RebuildPipelineOffLock returns before BuildStartPlan in
+#       exactly that hypothetical, so all four assertions stay green. The claim was invalidated by the guard
+#       added in the SAME COMMIT that made the claim — the same shape as the mutation result J-1 carried
+#       across a tree that had moved under it. What the test actually pins is the observable PROPERTY, and it
+#       is mechanism-agnostic: from either public entry point during a HALT, zero pipeline builds, no
+#       MachineConfigStore entry for the machine the call registers, and a fleet still latched, not running
+#       and slotless. TWO independent mechanisms deliver that today — the callers' own IsRunning guards and
+#       (since J-1b) the pre-check — so it goes red only when BOTH are gone, never when one is. Measured, not
+#       reasoned: under mutation M13 (J-1b's pre-check deleted) this test stayed GREEN, which is precisely
+#       what says the zero it records belongs to the callers' guards rather than to the new check.
 # The pre-check adds NO test to any other suite and moves no other constant: EXPECT_ABSTRACTIONS,
 # EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are unchanged, and EXPECT_EDGECORE staying put
 # is evidence rather than convenience — J-1b edits exactly one src file (FleetCore.cs, itself EdgeCore) and

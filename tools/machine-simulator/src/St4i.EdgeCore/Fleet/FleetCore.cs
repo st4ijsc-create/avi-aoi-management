@@ -1993,8 +1993,13 @@ internal sealed class FleetCore
         // and the first is the one worth reading:
         //   (1) "TEARDOWN SUB-WINDOW … a sliver" is right about WHICH window and understates it. That window
         //       contains WaitAndDisposeOldPipeline — a bounded wait per old slot at RestartTeardownTimeout,
-        //       twice (run-task, then the driver's own DisposeAsync, which is third-party code) — so it is
-        //       bounded by seconds, not by microseconds.
+        //       twice (run-task, then the driver's own DisposeAsync, which is third-party code). 🔴 Review
+        //       Minor: what that gives is a BOUND, not a typical width. Its CEILING is seconds
+        //       (2 × RestartTeardownTimeout per old slot) where "a sliver" implies microseconds; the
+        //       TYPICAL width is unmeasured, and on a healthy simulated fleet a cancelled run-task and an
+        //       in-memory DisposeAsync both return promptly, so it is probably small. The argument for the
+        //       check rests on the ceiling — a hung third-party driver is exactly when an operator is
+        //       reaching for E-stop — not on a number nobody has taken.
         //   (2) The case a pre-check is INTUITIVELY for — a RegisterMachine/ApplyScenario made while the
         //       fleet is ALREADY latched — is not covered by it and never needed to be: those callers rebuild
         //       only when IsRunning, and a latched fleet is not running, so that call does no I/O at all and
@@ -2742,8 +2747,12 @@ internal sealed class FleetCore
         // The window this line covers is the TEARDOWN one and only that: the caller's lock release, through
         // WaitAndDisposeOldPipeline (bounded by RestartTeardownTimeout per old slot, once for the run-task
         // wait and once for the driver's DisposeAsync), to here. Both facts are pinned by tests —
-        // AnEstopLandingInTheRestartTeardown_IsRefusedBeforeTheRebuildBuildsAnything and
-        // ARegisterMadeWhileTheLatchIsEngaged_NeverReachesTheRebuildAtAll.
+        // AnEstopLandingInTheRestartTeardown_IsRefusedBeforeTheRebuildBuildsAnything (this check's own
+        // witness) and ARegisterOrScenarioChangeMadeWhileTheLatchIsEngaged_NeverReachesTheRebuild (the zero
+        // above, which stays green with this check deleted — that is what says the zero belongs to the
+        // callers' IsRunning guards rather than to this line). 🔴 Review I-1: the second name here was
+        // written WRONG the first time — a cross-reference that resolves to nothing reads as coverage, which
+        // is worse than no reference at all.
         //
         // IT IS ONE MORE _gate ACQUISITION PER REBUILD AND TAKES NO OTHER LOCK WHILE HOLDING IT, so the
         // five-lock ordering set at the top of this file is unchanged and gains no sixth member.

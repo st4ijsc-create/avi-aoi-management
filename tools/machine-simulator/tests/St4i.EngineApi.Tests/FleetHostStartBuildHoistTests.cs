@@ -611,10 +611,24 @@ public sealed class FleetHostStartBuildHoistTests
     /// while <c>Estop()</c> tears the pipeline down before latching — so an already-halted fleet is not
     /// running and the rebuild is never entered. Zero builds, zero reads, zero writes.</para>
     ///
-    /// <para>What this test protects is therefore not the pre-check but the CLAIM: if a later change ever
-    /// makes a restart unconditional, the halted case starts doing filesystem work on the halt path again and
-    /// this goes red at the observation count. It also covers <c>ApplyScenario</c>, which the sibling tests in
-    /// this file do not exercise on the halt path at all.</para></summary>
+    /// <para>It also covers <c>ApplyScenario</c>, which the sibling tests in this file do not exercise on the
+    /// halt path at all.</para>
+    ///
+    /// <para>🔴 <b>REVIEW C-1 — WHAT IT DEFENDS, CORRECTED, AND THE CORRECTION IS §8.1(h) HAPPENING INSIDE
+    /// THE FIX FOR §8.1(h).</b> This paragraph first claimed the test goes red "if a later change ever makes
+    /// a restart unconditional". <b>It cannot.</b> J-1b's own pre-check inside <c>RebuildPipelineOffLock</c>
+    /// returns before <c>BuildStartPlan</c> in exactly that hypothetical, so all four assertions below stay
+    /// green — the claim was invalidated by a guard added in the SAME COMMIT that wrote it, which is the
+    /// reach-path-moved-under-the-measurement shape §8.1(h) is about, one layer up from a mutation result.</para>
+    ///
+    /// <para><b>What it actually pins is the PROPERTY, and that is mechanism-agnostic by design:</b> from
+    /// either public entry point during a HALT — zero pipeline builds, no <c>MachineConfigStore</c> entry for
+    /// the machine the call registers, and a fleet still latched, not running, with no slots. TWO independent
+    /// mechanisms deliver it today (the callers' own <c>IsRunning</c> guards, and since J-1b the pre-check),
+    /// so <b>it goes red only when BOTH are gone</b>. Measured rather than reasoned: under mutation M13 —
+    /// J-1b's pre-check deleted — this test stayed GREEN, which is what says the zero it records belongs to
+    /// the callers' guards and not to the new check. Its sibling
+    /// <c>AnEstopLandingInTheRestartTeardown_…</c> is the pre-check's witness; this one is not.</para></summary>
     [Fact]
     public void ARegisterOrScenarioChangeMadeWhileTheLatchIsEngaged_NeverReachesTheRebuild()
     {
