@@ -537,14 +537,42 @@ function laSoVoiRong(n: ts.BinaryExpression): boolean {
  * N+1** làm lưới **ĐỎ** cho tới khi ai đó **quyết** rằng nó thật sự tiêu thụ chứ không phát đi.
  * ⚠ `Boolean` nằm đây **và** trong bộ giảm — hai đường tới cùng một kết luận, không phải bản sao.
  */
-const TIEU_THU = ["verifyTotpOnce", "compare", "khopMaDuPhong", "Boolean"] as const;
+/**
+ * ★★★ Pha 8 Task 5 — người tiêu thụ **ĐANG ĐỠ MỘT ĐIỂM THẬT** trong `server/**`.
+ * Bất biến canh nó: *"bỏ phần tử này ra ⇒ phải xuất hiện ≥1 vi phạm MỚI"* (§CHIỀU 1 cuối file).
+ */
+const TIEU_THU_CO_CHO = ["verifyTotpOnce"] as const;
+
+/**
+ * ★★★ **HÌNH DẠNG ĐƯỢC CHO PHÉP TRƯỚC, HÔM NAY KHÔNG ĐỠ ĐIỂM NÀO** — và điều đó **đã đo được**,
+ * không phải phỏng đoán: bỏ từng tên dưới đây ra khỏi tập, bộ quét cho ra **đúng bằng** số vi phạm
+ * cũ (0 mới). Tức ba tên này là *"lời cho phép chờ sẵn"*, không phải *"cái chốt đang giữ cửa"*.
+ *
+ * ⚠⚠ Vì sao **GIỮ** chứ không xoá: chiều hỏng của tập này là **fail-closed** — một tên vắng mặt chỉ
+ *    làm lưới **ĐỎ**, không bao giờ làm nó **tha nhầm**. Xoá đi thì lượt đầu tiên ai đó viết
+ *    `return bcrypt.compare(mk, biMat.passwordHash)` sẽ đỏ **dù mã hoàn toàn đúng**, và một lưới
+ *    bắt nhầm là một lưới sẽ bị tắt. Giữ lại thì cửa **vẫn đóng** với mọi tên ngoài danh sách.
+ * ⚠ Nhưng giữ mà **không canh** thì đây đúng là chỗ *"hai phần tử CHẾT chiếm chỗ của phép nhận diện
+ *   thật"* mà M-2 đã bắt ở `MAU_DANH_TINH`. Nên tập này bị canh bằng **SỐ ĐƯỢC GHIM** (§CHIỀU 2):
+ *   một tên thứ tư phải là một **quyết định nói ra**, không phải một lượt thêm vào cho lưới thôi đỏ.
+ *
+ * Lý do một dòng cho từng mục:
+ *   · `compare`        — `bcrypt.compare(mk, hash)`: trả **boolean**, hash không rời hàm.
+ *   · `khopMaDuPhong`  — so mã dự phòng đã băm: trả **kết quả khớp**, không trả hạt giống.
+ *   · `Boolean`        — ép về boolean; cũng nằm trong bộ giảm, hai đường tới cùng kết luận.
+ */
+const TIEU_THU_DU_PHONG = ["compare", "khopMaDuPhong", "Boolean"] as const;
+/** ⚠ GHIM SỐ — xem §CHIỀU 2. Tự đếm bằng cách để cổng đỏ rồi đọc số thật, đừng chép từ trí nhớ. */
+const SO_DU_PHONG = 3;
+
+const TIEU_THU = [...TIEU_THU_CO_CHO, ...TIEU_THU_DU_PHONG] as const;
 
 /**
  * Ô bí mật `tu` (nằm trong biểu thức thoát `chan`) có **an toàn** không.
  * An toàn ⇔ đã bị **GIẢM về boolean**, **hoặc** đã đi vào đối số của một **NGƯỜI TIÊU THỤ** đã khai.
  * ⚠ Mọi thứ khác ⇒ **KHÔNG an toàn** (fail-closed).
  */
-function daAnToan(tu: ts.Node, chan: ts.Node): boolean {
+function daAnToan(tu: ts.Node, chan: ts.Node, tieuThu: readonly string[] = TIEU_THU): boolean {
   let truoc: ts.Node = tu;
   let cur: ts.Node | undefined = tu.parent;
   while (cur) {
@@ -552,7 +580,7 @@ function daAnToan(tu: ts.Node, chan: ts.Node): boolean {
     if (ts.isBinaryExpression(cur) && laSoVoiRong(cur)) return true;
     // Đi vào ĐỐI SỐ của một lời gọi (không phải vào `expression` của nó).
     if (ts.isCallExpression(cur) && cur.arguments.some((a) => a === truoc || a.pos <= truoc.pos && truoc.end <= a.end)) {
-      return (TIEU_THU as readonly string[]).includes(tenLoiGoi(cur));
+      return tieuThu.includes(tenLoiGoi(cur));
     }
     if (cur === chan) break;
     truoc = cur;
@@ -614,7 +642,12 @@ function hatGiongCua(goi: ts.CallExpression): Set<string> {
   return hat;
 }
 
-function quetRoBiMat(): { viPham: ViPham[]; soDiemGoi: number } {
+/**
+ * ⚠ `tieuThu` là **tham số**, không phải hằng bị đóng kín, **chỉ vì một lý do**: nó cho phép ô
+ *   *"∀ người tiêu thụ phải GÁNH TẢI"* chạy lại chính bộ quét này với tập **thiếu đúng một phần
+ *   tử** và đọc chênh lệch. Mọi người gọi khác dùng mặc định.
+ */
+function quetRoBiMat(tieuThu: readonly string[] = TIEU_THU): { viPham: ViPham[]; soDiemGoi: number } {
   const viPham: ViPham[] = [];
   let soDiemGoi = 0;
   const SAN_XUAT = moiFileDuoi(GOC_REPO, "server", [".ts"]).filter((f) => !laFileTest(f.duong));
@@ -645,7 +678,7 @@ function quetRoBiMat(): { viPham: ViPham[]; soDiemGoi: number } {
               }
               for (const c of chan) {
                 for (const o of oBiMatTrong(c, nhiem)) {
-                  if (!daAnToan(o, c)) {
+                  if (!daAnToan(o, c, tieuThu)) {
                     viPham.push({
                       duong: f.duong,
                       dong: dong(sf, o),
@@ -913,4 +946,97 @@ describe("★★★ C-2 §5 — ∀ Ô BÍ MẬT của `user_secrets` KHÔNG đ�
       "phần giao `{ [K in ServerOnlyUserSecretField]?: never }` biến mất ⇒ `KhongMangBiMat` thành `T`",
     ).toBe(true);
   });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 8 Task 5 — **`TIEU_THU` THÔI LÀ MỘT DANH SÁCH KHÔNG AI CANH.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ **NÓ VẪN LÀ DANH SÁCH VIẾT TAY — VÀ ĐÓ LÀ QUYẾT ĐỊNH, KHÔNG PHẢI SỰ LƯỜI.** *"Hàm này tiêu
+ *    thụ bí mật hay phát nó đi"* là một phán quyết **ngữ nghĩa**; không có nguồn nào trong mã trả
+ *    lời được. Hai phép suy khả dĩ đều SAI theo hướng nguy hiểm:
+ *      · *"mọi hàm nhận bí mật làm đối số"* ⇒ `return { t: String(s.twoFactorSecret) }` được tha —
+ *        đó là một lượt **RÒ THẬT**, và luật ấy mở cửa cho nó;
+ *      · *"không hàm nào được nhận bí mật"* ⇒ `verifyTotpOnce` bị bắt nhầm, và một lưới bắt nhầm
+ *        là một lưới sẽ bị người sau **tắt đi**.
+ *    ⇒ *Một danh sách tay ĐƯỢC CANH tốt hơn một phép suy SAI.* Phần dưới là phần **CANH**, neo hai
+ *      chiều vào **chỗ tiêu thụ thật** trong `server/**`.
+ * ────────────────────────────────────────────────────────────────────────────────────────────── */
+describe("★★★ Pha 8 Task 5 — `TIEU_THU` là danh sách tay CÓ CANH (neo hai chiều vào chỗ tiêu thụ)", () => {
+  const khoa = (v: ViPham) => `${v.duong}:${v.dong}:${v.bien}`;
+  const GOC = new Set(KQ_BM.viPham.map(khoa));
+
+  it("★★★ cầu chì — tập `TIEU_THU` không rỗng, và bộ quét CÓ tham số hoá được (rỗng ⇒ chân lý rỗng)", () => {
+    expect(TIEU_THU.length, "tập rỗng ⇒ mọi ô dưới đúng theo cấu tạo").toBeGreaterThan(0);
+    // Đối chứng: quét với tập RỖNG phải cho NHIỀU vi phạm hơn tập đầy. Nếu bằng nhau thì tham số
+    // không tới được nơi quyết định, và hai ô dưới đang đo một sợi dây ĐỨT.
+    const rong = quetRoBiMat([]).viPham.length;
+    expect(
+      rong,
+      "quét với `TIEU_THU` RỖNG cho ra đúng bằng lúc đầy ⇒ tham số không tới được `daAnToan`",
+    ).toBeGreaterThan(KQ_BM0.viPham.length);
+  });
+
+  /** Phần tử này có đang **đỡ một điểm thật** không: bỏ nó ra ⇒ có vi phạm MỚI hay không. */
+  const ganhTai = (e: string): boolean =>
+    quetRoBiMat(TIEU_THU.filter((x) => x !== e)).viPham.filter((v) => !GOC.has(khoa(v))).length > 0;
+
+  it("★★★★ CHIỀU 1 (thiếu ⇒ ĐỎ) — ∀ phần tử `TIEU_THU_CO_CHO` phải GÁNH TẢI ở một chỗ THẬT", () => {
+    /**
+     * ⚠⚠ Lượng từ này **KHÔNG TỰ THOẢ**: nó không hỏi tập về chính tập, mà hỏi **mã sản xuất** xem
+     *    mỗi phần tử có đang đỡ một điểm thật không. Xoá `verifyTotpOnce` khỏi
+     *    `server/_core/trpc.ts` ⇒ ô này ĐỎ **trước khi** ai kịp "dọn" tên ấy khỏi danh sách.
+     */
+    const khongGanh = TIEU_THU_CO_CHO.filter((e) => !ganhTai(e));
+    expect(
+      khongGanh.join(" · "),
+      "PHẦN TỬ KHÔNG CÒN GÁNH TẢI trong `TIEU_THU_CO_CHO`.\n" +
+        "Bỏ nó ra khỏi tập KHÔNG làm xuất hiện vi phạm nào ⇒ điểm tiêu thụ mà nó đỡ đã BIẾN MẤT\n" +
+        "khỏi `server/**`. Đây đúng lớp lỗi M-2 đã bắt ở `MAU_DANH_TINH`: một phần tử CHẾT chiếm\n" +
+        "chỗ của phép nhận diện thật. ⇒ Hoặc chuyển nó xuống `TIEU_THU_DU_PHONG` (và cộng\n" +
+        "`SO_DU_PHONG`), hoặc xoá hẳn — nhưng đừng để nguyên mà không nói gì.",
+    ).toBe("");
+  }, 60_000);
+
+  it("★★★★ CHIỀU 2 (thừa ⇒ ĐỎ) — `TIEU_THU_DU_PHONG` GHIM SỐ, và không tên nào ở đó đang đỡ điểm", () => {
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠⚠⚠ **PHÉP ĐO LẬT MỘT GIẢ ĐỊNH CỦA CHÍNH TÔI** — ghi lại vì nó là số, không phải ý kiến.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Bản đầu của lưới này đòi **MỌI** phần tử `TIEU_THU` phải gánh tải. Chạy thật ⇒ **ĐỎ**, và
+     * danh sách đỏ là `compare · khopMaDuPhong · Boolean` — **3 trong 4** tên không đỡ điểm nào.
+     * Tức tập bốn phần tử ấy chưa bao giờ là *"bốn người tiêu thụ"*; nó là **một** người tiêu thụ
+     * cộng **ba** lời cho phép chờ sẵn. Lưới đòi hỏi sai đã bị sửa theo **phép đo**, không phải
+     * mã bị nắn cho vừa lưới.
+     *
+     * Nên chiều "thừa" được canh bằng **SỐ GHIM**: một tên thứ tư không đỡ điểm nào chỉ vào được
+     * tập khi có người **sửa `SO_DU_PHONG`** — tức một quyết định NÓI RA. Thêm `"String"` lặng lẽ
+     * ⇒ ô này ĐỎ.
+     */
+    expect(
+      TIEU_THU_DU_PHONG.length,
+      "số 'lời cho phép chờ sẵn' đã đổi. Mỗi mục phải có LÝ DO MỘT DÒNG tại chỗ khai, và việc\n" +
+        "thêm một mục là một quyết định về an ninh — không phải một lượt vá cho lưới thôi đỏ.",
+    ).toBe(SO_DU_PHONG);
+
+    // …và chúng phải ĐÚNG LÀ "chưa đỡ điểm nào": cái nào bắt đầu đỡ thì phải được THĂNG hạng, để
+    // ô CHIỀU 1 từ đó canh nó — nếu không, một người tiêu thụ thật sẽ nằm ngoài mọi phép canh.
+    const daDoDiem = TIEU_THU_DU_PHONG.filter((e) => ganhTai(e));
+    expect(
+      daDoDiem.join(" · "),
+      "một 'lời cho phép chờ sẵn' NAY ĐANG ĐỠ một điểm thật ⇒ chuyển nó sang `TIEU_THU_CO_CHO`\n" +
+        "(và giảm `SO_DU_PHONG`), để nó được canh bằng phép thử GÁNH TẢI chứ không chỉ bằng một số.",
+    ).toBe("");
+  }, 60_000);
+
+  it("★★★ đối chứng DƯƠNG — phép đo 'gánh tải' PHÂN BIỆT được, và `String` không nằm trong tập", () => {
+    // Cầu chì của chính phép đo: nếu `ganhTai` luôn trả `false` thì CHIỀU 1 xanh theo cấu tạo.
+    expect(
+      ganhTai("verifyTotpOnce"),
+      "phép đo 'gánh tải' không phân biệt được gì ⇒ ô CHIỀU 1 là chân lý rỗng",
+    ).toBe(true);
+    expect(
+      (TIEU_THU as readonly string[]).includes("String"),
+      "`String` lọt vào `TIEU_THU` ⇒ `return { t: String(secret) }` được tha — hình dạng RÒ THẬT",
+    ).toBe(false);
+  }, 60_000);
 });

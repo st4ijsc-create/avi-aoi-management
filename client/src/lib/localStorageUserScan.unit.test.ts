@@ -39,7 +39,29 @@ import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { donKhoaMangNguoiDung, KHOA_DA_BO } from "./donKhoaNguoiDung";
+import { getTableColumns, is } from "drizzle-orm";
+import { PgTable } from "drizzle-orm/pg-core";
+import { donKhoaMangNguoiDung, KHOA_DA_BO, MAU_DANH_TINH } from "./donKhoaNguoiDung";
+/**
+ * ★★★ Pha 8 Task 5 — hai NGUỒN SỰ THẬT phía máy chủ, nhập vào **lưới** chứ không vào bó mã trình
+ * duyệt. Các file `*.unit.test.ts` dưới `client/src` chạy trong môi trường **node** (xem
+ * `vitest.config.ts`), nên ràng buộc *"`publicUser.ts` nhập `drizzle/schema` nên không mang sang
+ * trình duyệt được"* — một ràng buộc về **bó mã lúc chạy** — không cấm lượt đối chiếu này.
+ */
+import * as SCHEMA from "../../../drizzle/schema";
+import { PUBLIC_USER_FIELDS } from "../../../server/_core/publicUser";
+
+/** Kho giả tối thiểu đúng bề mặt `Storage` mà người dọn dùng (`length`/`key`/`getItem`/`removeItem`). */
+function khoGia(kho: Map<string, string>): Storage {
+  return {
+    get length() {
+      return kho.size;
+    },
+    key: (i: number) => [...kho.keys()][i] ?? null,
+    getItem: (k: string) => kho.get(k) ?? null,
+    removeItem: (k: string) => void kho.delete(k),
+  } as unknown as Storage;
+}
 
 const THU_MUC = fileURLToPath(new URL(".", import.meta.url)); // …/client/src/lib
 const GOC = join(THU_MUC, "..", "..", ".."); // gốc repo
@@ -382,6 +404,131 @@ describe("★★★ Pha 5/7 Task 8b — ∀ khoá kho-trên-đĩa: KHÔNG khoá 
         "⚠ Đây là hậu quả của việc suy `MAU_DANH_TINH` từ `PUBLIC_USER_FIELDS` (nó chứa `name`).\n" +
         "⇒ Tập ấy phải là *những ô mà CHỈ một tài khoản mới có*, một khái niệm HẸP HƠN.",
     ).toEqual(["day-chuyen", "ho-so-may", "san-pham"]);
+  });
+
+  it("★★★★ Pha 8 Task 5 / CHIỀU 1 (thừa ⇒ ĐỎ) — ∀ phần tử `MAU_DANH_TINH` là một ô THẬT của `auth.me`", () => {
+    /**
+     * ⚠⚠ **`PUBLIC_USER_FIELDS` DÙNG LÀM CẬN TRÊN, KHÔNG LÀM NGUỒN SUY** — và khác biệt ấy là cả
+     *    bài học M-2. Suy `MAU_DANH_TINH` **=** tập ấy thì `name` lọt vào và mọi `{id,name}` nghiệp
+     *    vụ bị xoá nhầm. Đòi `MAU_DANH_TINH` **⊆** tập ấy thì chỉ chặn phần tử **không có thật** —
+     *    đúng hai phần tử chết (`passwordHash`/`twoFactorSecret`) mà M-2 đã phải thay bằng tay.
+     */
+    const congKhai = new Set<string>(PUBLIC_USER_FIELDS as readonly string[]);
+    expect(congKhai.size, "cầu chì: `PUBLIC_USER_FIELDS` rỗng ⇒ ô này đúng theo cấu tạo").toBeGreaterThan(5);
+    const khongCoThat = MAU_DANH_TINH.filter((k) => !congKhai.has(k));
+    expect(
+      khongCoThat.join(" · "),
+      "PHẦN TỬ KHÔNG CÓ THẬT TRONG `auth.me`.\n" +
+        "Nó không làm sai điều gì — nó chỉ **chiếm chỗ** của phép nhận diện thật, và người đọc sau\n" +
+        "sẽ tưởng tập này đang canh nhiều hơn thực tế. Đúng lớp lỗi M-2 (`passwordHash` +\n" +
+        "`twoFactorSecret` nằm lại sau khi đã rời `users`). ⇒ Thay bằng một ô CÒN SỐNG.",
+    ).toBe("");
+  });
+
+  it("★★★★ Pha 8 Task 5 / CHIỀU 2 (cạm bẫy ⇒ ĐỎ) — không phần tử nào là cột của bảng nghiệp vụ `{id,name}`", () => {
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ★★★ **CA CHỐNG HỒI QUY CHO ĐÚNG CẠM BẪY ĐÃ ĐO ĐƯỢC.**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Đề xuất *"suy `MAU_DANH_TINH` từ `PUBLIC_USER_FIELDS`"* hỏng **theo chiều MỞ**: tập ấy chứa
+     * `name`, và `name` là cột của **90** bảng `{id, name}` trong `drizzle/schema` (đo 2026-08-10)
+     * — máy, sản phẩm, dây chuyền, trạm… ⇒ mọi đối tượng nghiệp vụ bị **XOÁ NHẦM** khỏi
+     * `localStorage`. Ô M-2 phía trên bắt được điều đó bằng **ba fixture**; ô này bắt bằng một
+     * **LƯỢNG TỪ trên toàn schema**, nên nó không phụ thuộc vào việc ai đó có nhớ thêm fixture hay
+     * không, và nó nêu **đích danh** phần tử phạm luật.
+     *
+     * ⚠ NGOẠI LỆ được **KHAI ĐÍCH DANH + GHIM SỐ** (khuôn Task 4 Bước 3): một cặp (ô, bảng) mới
+     *   phải là một quyết định NÓI RA, không phải một lượt trôi.
+     */
+    const bang: Array<{ ten: string; cot: string[] }> = [];
+    for (const [ten, v] of Object.entries(SCHEMA as Record<string, unknown>)) {
+      if (v && is(v as never, PgTable)) {
+        try {
+          bang.push({ ten, cot: Object.keys(getTableColumns(v as never)) });
+        } catch {
+          /* không phải bảng dùng được — bỏ qua */
+        }
+      }
+    }
+    // "Đối tượng nghiệp vụ" = bảng KHÔNG PHẢI tài khoản mà mang đúng hình dạng `{id, name}` —
+    // chính hình dạng mà docstring của người dọn cam kết KHÔNG đụng tới.
+    const NGHIEP_VU = bang.filter(
+      (b) => b.ten !== "users" && b.ten !== "userSecrets" && b.cot.includes("id") && b.cot.includes("name"),
+    );
+    expect(NGHIEP_VU.length, "cầu chì: không suy ra được bảng nghiệp vụ nào ⇒ ô này là chân lý rỗng").toBeGreaterThan(50);
+
+    /** Ngoại lệ đã khai — mỗi mục một lý do một dòng. ⚠ GHIM SỐ ngay dưới. */
+    const MIEN: ReadonlyArray<readonly [string, string]> = [
+      // `mqttClientProfiles.username` là tài khoản đăng nhập **broker MQTT** của một thiết bị —
+      // không phải hồ sơ người dùng, và không có đường nào ghi nó xuống kho-trên-đĩa trình duyệt.
+      ["username", "mqttClientProfiles"],
+    ];
+    const SO_MIEN_NGHIEP_VU = 1;
+    expect(
+      MIEN.length,
+      "số NGOẠI LỆ đã đổi — mỗi cặp (ô, bảng) được miễn phải có lý do một dòng tại chỗ khai",
+    ).toBe(SO_MIEN_NGHIEP_VU);
+
+    const duocMien = new Set(MIEN.map(([o, b]) => `${o}@${b}`));
+    const pham: string[] = [];
+    for (const k of MAU_DANH_TINH) {
+      for (const b of NGHIEP_VU) {
+        if (b.cot.includes(k) && !duocMien.has(`${k}@${b.ten}`)) pham.push(`${k}@${b.ten}`);
+      }
+    }
+    expect(
+      `${pham.length}${pham.length ? ` — ${pham.slice(0, 8).join(" · ")}` : ""}`,
+      "MẨU DANH TÍNH TRÙNG VỚI CỘT CỦA ĐỐI TƯỢNG NGHIỆP VỤ.\n" +
+        "⚠ Một ô như thế làm người dọn XOÁ NHẦM máy/sản phẩm/dây chuyền khỏi `localStorage` —\n" +
+        "  hỏng theo chiều MỞ, và im lặng (người dùng chỉ thấy cấu hình 'tự nhiên mất').\n" +
+        "⚠ Nếu bạn vừa suy tập này từ `PUBLIC_USER_FIELDS`: **ĐÓ LÀ CẠM BẪY ĐÃ ĐO ĐƯỢC.** Tập ấy\n" +
+        "  chứa `name`, và `name` nằm trên hàng chục bảng nghiệp vụ. Dùng nó làm CẬN TRÊN (ô\n" +
+        "  CHIỀU 1) thì đúng; dùng nó làm NGUỒN SUY thì sai.",
+    ).toBe("0");
+  });
+
+  it("★★★★ Pha 8 Task 5 / CHIỀU 3 (thiếu ⇒ ĐỎ) — ∀ phần tử phải GÁNH TẢI, và bằng chứng ràng buộc HAI CHIỀU", () => {
+    /**
+     * ⚠⚠ **KHÔNG TỰ THOẢ.** Ô này không hỏi tập về chính tập: `BANG_CHUNG` là một artefact **viết
+     *    riêng**, và hai chiều được kiểm tường minh — bỏ một phần tử khỏi `MAU_DANH_TINH` thì bản
+     *    ghi bằng chứng của nó **sống sót** (⇒ ĐỎ); thêm một phần tử mà không có bằng chứng thì
+     *    tập khoá **lệch** (⇒ ĐỎ). Đó là chỗ *"neo hai chiều vào chỗ TIÊU THỤ"*: người tiêu thụ
+     *    thật của danh sách này là `donKhoaMangNguoiDung`, nên bằng chứng đi qua đúng hàm ấy.
+     */
+    const BANG_CHUNG: Record<(typeof MAU_DANH_TINH)[number], unknown> = {
+      username: "nguyenvana",
+      email: "a@b.c",
+      openId: "local_1783673235595_3unhqnawq79",
+      loginMethod: "password",
+      twoFactorEnabled: false,
+      lastSignedIn: "2026-08-01T00:00:00Z",
+    };
+
+    // ── Ràng buộc HAI CHIỀU giữa tập và bằng chứng ───────────────────────────────────────────
+    expect(
+      Object.keys(BANG_CHUNG).sort(),
+      "tập bằng chứng LỆCH khỏi `MAU_DANH_TINH` ⇒ hoặc một phần tử mới chưa có bằng chứng (nên\n" +
+        "không ai biết nó có tác dụng gì), hoặc một phần tử vừa bị xoá mà bằng chứng còn nằm lại",
+    ).toEqual([...MAU_DANH_TINH].sort());
+
+    // ── Mỗi phần tử phải GÁNH TẢI: bản ghi chỉ có `id` + ô ấy phải bị dọn ────────────────────
+    for (const k of MAU_DANH_TINH) {
+      const kho = new Map<string, string>([
+        [`bc-${k}`, JSON.stringify({ id: 77, [k]: BANG_CHUNG[k] })],
+      ]);
+      expect(
+        donKhoaMangNguoiDung(khoGia(kho)),
+        `mẩu danh tính \`${k}\` KHÔNG dọn được bản ghi mà nó là dấu hiệu DUY NHẤT ⇒ phần tử CHẾT`,
+      ).toEqual([`bc-${k}`]);
+
+      // …và đối chứng ÂM: bỏ đúng ô ấy đi thì bản ghi phải SỐNG (chứng minh `id` không tự làm nên
+      // phán quyết — nếu không, ô trên xanh vì `id`, và cả tập này là trang trí).
+      const khongCo = new Map<string, string>([[`am-${k}`, JSON.stringify({ id: 77 })]]);
+      expect(
+        donKhoaMangNguoiDung(khoGia(khongCo)),
+        `bản ghi CHỈ có \`id\` cũng bị dọn ⇒ phép nhận diện không dùng tới \`${k}\`, và ô trên xanh vì lý do sai`,
+      ).toEqual([]);
+    }
   });
 
   it("★★ người dọn KHÔNG được nổ khi kho không có / bị chặn", () => {

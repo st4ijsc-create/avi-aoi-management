@@ -38,13 +38,28 @@ export const KHOA_DA_BO = ["manus-runtime-user-info"] as const;
  * vụ có `{id, name}` — máy, sản phẩm, dây chuyền — sẽ khớp và **bị XOÁ NHẦM** khỏi `localStorage`.
  * Đó đúng là điều mà điều kiện hai vế ở docstring trên được dựng ra để chặn.
  * ⇒ Tập này **KHÔNG** phải "mọi ô công khai của người dùng"; nó là *"những ô mà **chỉ** một tài
- *   khoản mới có"* — một khái niệm **hẹp hơn**, nên nó vẫn được viết ra ở đây. Nợ còn lại: chưa có
- *   lưới nào canh *"∀ phần tử của tập này là một ô THẬT của `auth.me`"* (cần đưa danh sách ô công
- *   khai xuống `shared/` — `publicUser.ts` nhập `drizzle/schema`, không mang sang trình duyệt được).
- * ⚠ Cổng **vẫn đúng**: `localStorageUserScan.unit.test.ts` suy nguồn từ AST (`auth.me.useQuery`),
- *   không từ danh sách này; danh sách chỉ lái phép **dọn lúc chạy** của dữ liệu cũ.
+ *   khoản mới có"* — một khái niệm **hẹp hơn**, nên nó vẫn được viết ra ở đây.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 8 Task 5 — **VẪN LÀ DANH SÁCH TAY, NHƯNG THÔI LÀ DANH SÁCH KHÔNG AI CANH.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Nợ cũ ghi ở đây (*"chưa có lưới nào canh ∀ phần tử của tập này là một ô THẬT của `auth.me`"*) nay
+ * **đã trả**. Ràng buộc *"`publicUser.ts` nhập `drizzle/schema` nên không mang sang trình duyệt
+ * được"* là ràng buộc của **bó mã lúc chạy** — nó **không** cấm một lưới chạy trên Node đối chiếu
+ * hai nguồn. `localStorageUserScan.unit.test.ts` nay neo tập này **ba chiều**:
+ *   1. **⊆ `PUBLIC_USER_FIELDS`** — một ô không có thật trong `auth.me` (hoặc đã chết như
+ *      `passwordHash`/`twoFactorSecret` trước M-2) ⇒ **ĐỎ**. ⚠ Dùng tập ấy làm **CẬN TRÊN** là an
+ *      toàn; dùng nó làm **NGUỒN SUY** mới là cạm bẫy (nó chứa `name`).
+ *   2. **∌ cột của bảng nghiệp vụ `{id, name}`** — suy từ chính `drizzle/schema` (đo được: `name`
+ *      nằm trên **90** bảng như thế). Ngày ai đó "sửa" theo đề xuất suy-từ-`PUBLIC_USER_FIELDS`,
+ *      lưới ĐỎ với 90 chỗ, chứ không im lặng xoá sạch `localStorage` của người dùng.
+ *   3. **Mỗi phần tử phải GÁNH TẢI** — có một bản ghi bằng chứng mà **chỉ** nó nhận ra được; và
+ *      tập bằng chứng ↔ tập này ràng buộc **hai chiều**, nên thêm một phần tử mà không có bằng
+ *      chứng cũng ⇒ **ĐỎ**.
+ * ⚠ Cổng **vẫn đúng ở trục cũ**: lưới suy NGUỒN từ AST (`auth.me.useQuery`), không từ danh sách
+ *   này; danh sách chỉ lái phép **dọn lúc chạy** của dữ liệu cũ.
  */
-const MAU_DANH_TINH = [
+export const MAU_DANH_TINH = [
   "username",
   "email",
   "openId",
