@@ -286,9 +286,20 @@ internal sealed class FleetCore
     /// stops being counted only when nothing can reach it. So <b>the number of paths that can reach I/O
     /// under this lock is still NINE, and the number CLOSED is still THREE</b>: J-1 moved work off the lock
     /// without removing a member from this set, and the earlier draft of this banner that let the tally read
-    /// as "five closed" was corrected before it shipped. Why NARROWED could not be CLOSED — it needs either
-    /// a new way for a start to FAIL or a way to FREEZE the roster while one is in flight, both public
-    /// contract changes — is argued at P5 and in J-1's report, not decided here.
+    /// as "five closed" was corrected before it shipped. Why NARROWED could not be CLOSED — <b>every shape
+    /// FOUND trades into a category the owner reserved</b> — is argued at P5 and in J-1's report, not
+    /// decided here.
+    ///
+    /// (🔴 Fix round 2. That clause read "it needs EITHER a new way for a start to FAIL OR a way to FREEZE
+    /// the roster, both public contract changes" — an exhaustive disjunction, and review had already found
+    /// the third shape it excludes. The retraction was written at P5 and this copy, 200 lines above it,
+    /// was not: the repair took its domain from the ONE LINE the finding cited instead of from the property
+    /// <i>any sentence asserting what closing P4/P5 requires</i>. §8.1(f), vocabulary half, <b>third
+    /// instance in this one task</b> and structurally identical to the additive-repair shape fixed one
+    /// round earlier. The sweep that closed it greps the two phrases the claim is made of rather than the
+    /// line number, and returns exactly two hits in <c>src/</c>: the assertion and its own retraction.
+    /// A claim about a SEARCH can absorb a new finding; a claim about a UNIVERSE has to be retracted, and
+    /// retracting it in one of two places is how it survives.)
     ///
     /// <para>🔴 <b>The P-labels are the same repair the S-list below got, applied for the same reason.</b>
     /// This list was identified purely by ORDINAL and cross-referenced from a dozen sites under several
@@ -1982,6 +1993,20 @@ internal sealed class FleetCore
                 // the whole point: the request that used to be lost is precisely the one StopLocked drops on
                 // its `!_running` guard, so counting after it, or only when something was actually torn down,
                 // would count everything except the case this exists for. See _stopRequests.
+                //
+                // 🔴 FIX ROUND 2 — NAMED, NOT CHANGED: a caller invoking this in a loop can now starve
+                // Start() indefinitely. Every start snapshots a count that the next Stop() invalidates
+                // before the build finishes, so the install is abandoned every time and the fleet never
+                // comes up. Pre-J-1 the same loop produced a visible FLAP — each Start won the gate, ran to
+                // completion and emitted NBIRTH + historian "Start", and each Stop then emitted NDEATH +
+                // "Stop". Both regimes end stopped, so the outcome class is unchanged; what changed is that
+                // the flap USED TO BE IN THE HISTORIAN and now nothing is emitted at all, so an operator
+                // reading the run-event timeline sees a quiet fleet rather than a thrashing one. That is a
+                // loss of EVIDENCE, not of safety. Left as-is deliberately: suppressing a start that a
+                // concurrent stop cancelled is the behaviour review I-1 asked for, and emitting a
+                // Start/Stop pair for a pipeline that never installed would fabricate a zero-length OEE
+                // interval — the worse of the two. Recorded here because a starving Start() is exactly the
+                // symptom someone will debug from this side.
                 _stopRequests++;
 
                 var wasRunning = IsRunning;
@@ -2388,17 +2413,32 @@ internal sealed class FleetCore
     private sealed class MappingKeyEqualityComparer
         : IEqualityComparer<(string Code, string? MappingProfile, DeviceClass DeviceClass)>
     {
+        // 🔴 Fix round 2 (re-review Minor) — THE TWO STRINGS GET DIFFERENT COMPARERS, because they are
+        // different KINDS of thing and the round-1 justification proved that only for one of them.
+        //
+        // Code is OrdinalIgnoreCase because the thing this set stands in for — MappingProfileResolver's
+        // machineCode -> profile dictionary — is Code-keyed and OrdinalIgnoreCase.
+        //
+        // MappingProfile is ORDINAL, and round 1 had it insensitive on the strength of that same sentence,
+        // which never applied to it: the resolver does not key on MappingProfile at all. It is a PATH
+        // FRAGMENT — Path.Combine(mappingDir, MappingProfile + ".json") handed to File.Exists — so whether
+        // two spellings name one file is a property of the FILESYSTEM, not of this class. On Windows they
+        // do; on a case-sensitive filesystem "Foo" and "foo" are two different files with two different
+        // profiles inside them. Comparing insensitively there would let this set answer "the plan already
+        // resolved that" about a descriptor whose file the plan never opened — a stale profile served with
+        // nothing red, which is the WRONG-WAY failure. Ordinal errs the other way: two spellings that turn
+        // out to be one file cost one redundant resolve under the lock and produce the identical profile.
         public bool Equals(
             (string Code, string? MappingProfile, DeviceClass DeviceClass) x,
             (string Code, string? MappingProfile, DeviceClass DeviceClass) y) =>
             string.Equals(x.Code, y.Code, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(x.MappingProfile, y.MappingProfile, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.MappingProfile, y.MappingProfile, StringComparison.Ordinal)
             && x.DeviceClass == y.DeviceClass;
 
         public int GetHashCode((string Code, string? MappingProfile, DeviceClass DeviceClass) obj) =>
             HashCode.Combine(
                 StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Code),
-                obj.MappingProfile is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(obj.MappingProfile),
+                obj.MappingProfile is null ? 0 : StringComparer.Ordinal.GetHashCode(obj.MappingProfile),
                 obj.DeviceClass);
     }
 
@@ -2473,9 +2513,10 @@ internal sealed class FleetCore
         // resolved. That is only unreachable because RegisterMachine's duplicate check is case-insensitive,
         // i.e. "benign by a property of another call site", which is the sentence pattern the banner at the
         // top of this file exists to stop people writing. Matching the comparer to the map removes the
-        // question instead of answering it. MappingProfile stays ordinal-insensitive for the same reason:
-        // ResolveOne uses it to build a FILE PATH, and the profile a descriptor resolves to is a function of
-        // that path, so two spellings that name the same file must not look like two different keys.
+        // question instead of answering it. 🔴 Fix round 2 — MappingProfile does NOT get that comparer, and
+        // round 1's reason for giving it one ("two spellings that name the same file must not look like two
+        // different keys") was the Code argument applied to something it does not describe: whether two
+        // spellings name the same file is the FILESYSTEM's answer, not this class's. See the comparer.
         var mappingKeys = new HashSet<(string, string?, DeviceClass)>(MappingKeyComparer);
         foreach (var d in effectiveFleet)
         {
@@ -3577,6 +3618,30 @@ internal sealed class FleetCore
                 // install and the off-lock completion now live in RebuildPipelineOffLock, so the question is
                 // asked and answered once, there, instead of at each of this method's and ApplyScenario's
                 // copies — and this site has no multi-statement `finally` left to reason about.
+                // 🔴 J-1 FIX ROUND 2 — WHAT NOW LIVES IN THE GAP BELOW, stated at the site because neither
+                // direction of approach reaches it otherwise. Three things are true here and none of them
+                // was written down at this method:
+                //
+                //  (1) THE PIPELINE BUILD IS INSIDE THIS WINDOW. RebuildPipelineOffLock runs BuildStartPlan
+                //      — every simulator, every mapping profile — before it re-takes _gate. The window
+                //      between this method's two locked sections is therefore wider than it was before J-1.
+                //      Its OUTCOME class is unchanged, and that is why it was merged as-is: this gap always
+                //      contained unbounded third-party work (WaitAndDisposeOldPipeline's deferred-log flush
+                //      is a host seam, and each driver's DisposeAsync is third-party code under a timeout),
+                //      so a build is consistent in kind with what was already here rather than a new
+                //      category. "Last writer wins" for a concurrent Stop/Start, documented in this
+                //      method's own doc comment, still describes it exactly.
+                //  (2) AN OPERATOR CAN WIDEN IT FROM OUTSIDE THE PROCESS. The build reaches
+                //      MachineConfigStore.Ensure, whose root is relocatable via ST4I_MACHINE_CONFIG_DIR
+                //      (H-1c; README §15.9 tells operators they may set it). Point it at a UNC share and
+                //      the width of this window becomes a property of the network. That is the one input
+                //      here that is neither this class's nor the caller's.
+                //  (3) `_stopRequests` DELIBERATELY DOES NOT COVER THIS SITE. Start() abandons its install
+                //      when an operator Stop lands in ITS window; this restart does not, because a restart
+                //      is not a request for the fleet to end stopped and cancelling it would leave the
+                //      roster/scenario committed with no pipeline. The exclusion is argued at _stopRequests
+                //      and is repeated here because a reader arriving from this side would otherwise never
+                //      see it.
                 try
                 {
                     WaitAndDisposeOldPipeline(restartHandle);
@@ -3647,6 +3712,16 @@ internal sealed class FleetCore
         // question this comment used to answer here is answered once, in that method, for both copies.
         if (restarting)
         {
+            // 🔴 J-1 FIX ROUND 2 — the same three facts RegisterMachine's copy of this window now records,
+            // repeated here rather than cross-referenced away, because a reader debugging a scenario change
+            // arrives at THIS site and not at that one: (1) the pipeline BUILD (BuildStartPlan — every
+            // simulator, every mapping profile) sits inside the gap below, so it is wider than pre-J-1,
+            // though its outcome class is unchanged and the gap always held unbounded third-party work;
+            // (2) ST4I_MACHINE_CONFIG_DIR is an operator-settable input that directly widens it, because
+            // the build reaches MachineConfigStore.Ensure and that root can be a UNC share; (3)
+            // `_stopRequests` deliberately does NOT guard this site — only Start() abandons on a concurrent
+            // operator Stop, because a restart that abandoned would leave `_scenario` committed with no
+            // pipeline built from it. See RegisterMachine and _stopRequests for the full argument.
             try
             {
                 WaitAndDisposeOldPipeline(restartHandle);
