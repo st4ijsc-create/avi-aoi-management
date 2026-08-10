@@ -178,7 +178,16 @@ describe("★★★ Pha 5/8 — mỗi lượt đăng nhập là MỘT phiên ri�
         "  (2) thu hồi một thiết bị là thu hồi CẢ HAI. Sửa ở `sdk.signSession` (`.setJti`).",
     ).toBe(false);
 
-    const hang = await hangCuaToi();
+    /**
+     * ⚠⚠⚠ **KHOÁ VÀO ĐÚNG HAI VÉ VỪA ĐÚC, KHÔNG ĐẾM CẢ SỔ CỦA TÀI KHOẢN.**
+     * Bản đầu đọc `hangCuaToi()` (mọi hàng của `uid`) rồi ghim `=== 2`. §3 và §4 **cũng** ghi hàng
+     * cho **cùng** `uid`, nên ô này chỉ xanh khi nó chạy **trước** hai ô kia — một **phụ thuộc thứ
+     * tự trong file**. Đo được với `--sequence.shuffle.tests` (3/3 lượt): `expected 4 to be 2`, và
+     * câu lỗi đổ oan cho *"lượt thứ hai rơi vào catch (23505)"* trong khi cả hai lượt ghi **đều
+     * thành công**. Đúng lớp *"màu ĐỎ nói dối"*, và đúng bài học Task 3 (**khoá lượt đo vào DẤU
+     * RIÊNG của chính nó**) — chỉ là lần này áp cho lượt ĐỌC, không phải lượt XOÁ.
+     */
+    const hang = (await hangCuaToi()).filter((h) => ve.includes(h.sessionToken));
     expect(
       hang.length,
       "hai lượt đăng nhập KHÔNG cho hai hàng sổ — lượt thứ hai đã rơi vào `catch` (23505)",
@@ -195,7 +204,10 @@ describe("★★★ Pha 5/8 — mỗi lượt đăng nhập là MỘT phiên ri�
     // …và mỗi hàng thu hồi được ĐỘC LẬP — vế thứ hai của bất biến.
     const [h1, h2] = hang as [typeof hang[number], typeof hang[number]];
     await db.revokeSession(h1.id, uid);
-    const conLai = (await hangCuaToi()).filter((h) => h.isActive).map((h) => h.id);
+    // ⚠ Cũng khoá vào đúng hai vé ấy — xem khối lý lẽ trên.
+    const conLai = (await hangCuaToi())
+      .filter((h) => ve.includes(h.sessionToken) && h.isActive)
+      .map((h) => h.id);
     expect(conLai, "thu hồi phiên A đã kéo theo phiên B ⇒ hai phiên KHÔNG độc lập").toEqual([h2.id]);
   }, 30_000);
 
