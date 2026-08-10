@@ -308,6 +308,60 @@ mặt sản phẩm**. Trình biên dịch không phân biệt chúng với chú 
 lớp này, và §8.1 đã trả giá cho nó một lần: một diff chỉ-sửa-chú-thích là bằng chứng kết luận **về cây
 mã** (đoạn ngay trên) — nhưng "chỉ-sửa-chú-thích" phải được ĐO chứ không được tự khai.
 
+🔴 **(h) MỘT PHÉP ĐO CHỈ LÀ BẰNG CHỨNG CHO ĐÚNG CÂY MÃ NÓ ĐÃ CHẠY TRÊN ĐÓ — VÀ CHỖ LỚP LỖI NÀY TỤ LẠI LÀ BƯỚC SỬA, KHÔNG PHẢI CÔNG VIỆC GỐC (J-1).**
+
+Mục (f) nói phạm vi của một dụng cụ bị **thừa kế từ chỗ tác giả đang đứng**. J-1 sinh ra **bảy** ca của lớp
+ấy trong **một** nhiệm vụ, và chúng tách làm hai trục khác hẳn nhau.
+
+**Trục KHÔNG GIAN — sáu ca, đã biết:** sai file, sai hàm, sai mục, sai dòng được trích. Dụng cụ nhắm sai chỗ.
+
+🔴 **Trục THỜI GIAN — một ca, mới, và đắt nhất:** dụng cụ **nhắm đúng**, kết quả **đúng vào lúc nó được tạo
+ra** — và **cái nó đo đã dịch đi bên dưới nó**.
+
+**Ca sinh ra nó.** `StartLocked` có một chốt HALT: `if (IsRunning || _estopEngaged) return`. Một phép đột
+biến xoá chốt ấy đã chạy và **CHẾT** — bằng chứng tốt. Vòng sửa sau đó thêm một bộ đếm yêu-cầu-dừng, khiến
+`Start()` **trả về trước khi** phần chạy dưới khoá được gọi. Chốt vẫn đúng; **chứng nhân của nó thì không
+còn**. Phép đột biến cũ **không được chạy lại**, và kết quả CHẾT của nó tiếp tục được dẫn qua **hai vòng**
+trong **ba artifact**. Chạy lại ở đầu nhánh: **SỐNG SÓT — 1330/1330 xanh với chốt HALT bị XOÁ.** Không một
+test nào phân biệt được.
+
+**Không quy tắc phạm vi nào bắt được chuyện này**, vì không có gì bị nhắm sai. Đột biến canh **bài test**;
+cổng canh **cây mã**; và **không gì canh một kết quả được đánh chỉ mục theo một cây mã, đem dẫn cho một cây
+mã khác**.
+
+→ **"Tuổi" là một đại lượng thay thế BỊ HAO — đây là câu hỏi về DIFF, không phải về tuổi.** Phép đo ấy chỉ
+vài ngày tuổi.
+→ **Đường với tới, không phải cơ chế.** Bản nháp đầu của quy tắc này canh "cơ chế có đổi không" và **sẽ
+không bắt được chính ca khai sinh ra nó**: vòng sửa ấy **chưa từng chạm vào cái chốt**, nó thêm một lệnh trả
+về sớm **ở thượng nguồn**. Quy tắc đúng: **chạy lại các đột biến của một cái chốt khi BẤT CỨ THỨ GÌ nằm giữa
+một lối vào công khai và cái chốt ấy thay đổi** — và chạy lại **CẢ CỤM** khi file của chúng đổi, chứ không
+chọn theo cảm tính, vì "đột biến nào còn áp dụng được" **chính là phép cảm tính đã thất bại**.
+→ Mỗi hàng trong bảng đột biến mang **mã commit nó đã chạy trên đó**. Cần, nhưng **chưa đủ**: nó làm một
+hàng bác bỏ được bằng mắt, **không có gì ép người ta đặt câu hỏi**, và nó chỉ phủ cái bảng — trong khi lời
+khẳng định sai còn được **trích lại trong văn xuôi**.
+
+🔴 **VÀ ĐÂY LÀ NỬA CÓ GIÁ TRỊ NHẤT — CHỖ LỚP (f) TỤ LẠI.** Hai cách đếm cùng tồn tại: "hai trên bảy" (ca
+nằm trong bản sửa cho một ca (f) trước đó) và "năm trên bảy" (ca nằm trong **bất kỳ** bước sửa nào). Chúng
+trả lời **hai câu hỏi khác nhau** và đã bị dùng thay cho nhau — tức **chính lỗi (a3), áp lên bằng chứng cho
+một quy tắc về (a3)**.
+
+**Và không phép đếm nào chứng minh được "sự tập trung"**, vì sau vòng một thì gần như **mọi** việc đều là
+việc sửa: năm-trên-bảy xấp xỉ đúng cái tỉ lệ đều cho ra. Đó là một xu hướng đọc trên một mẫu số sai.
+
+**Thứ làm nó đúng là một CƠ CHẾ:** trong **bốn trên năm** ca, **chính lời phê bình đã TRAO cho bản sửa cái
+phạm vi của nó** — một dòng, một hàm, một mục, hai số mục — và **việc nhận lấy cái phạm vi được trao ấy mới
+là thất bại**. Công việc gốc **không có** phạm vi được trao sẵn nên buộc phải tự chọn; **bước sửa bỏ qua đúng
+khoảnh khắc chọn ấy, vì nó có cảm giác đã được trả lời rồi.** (Ca trục-thời-gian **không** chia sẻ cơ chế
+này — nhất quán với việc nó là một trục riêng.)
+
+→ **Kết luận dùng được, và nó HẸP hơn "các bản sửa hay đẻ lỗi": quy tắc (a) — viết ra tính chất cần quét
+bằng những từ KHÔNG chứa ví dụ nào của lời phê bình — thuộc về giao thức TRẢ LỜI PHÊ BÌNH, như bước bắt buộc
+đầu tiên khi nhận MỌI phát hiện, TRƯỚC mọi thao tác sửa.**
+
+Bằng chứng gần nhất: chính vòng sửa cho ca (f) thứ tư đã đẻ ra ca thứ bảy, và phép quét sửa-tại-chỗ sau đó
+đẻ ra ca thứ tám — **trong đúng tài liệu đang lý thuyết hoá về lớp lỗi này**, một vòng sau khi quy tắc được
+viết ra.
+
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**
 
 → Quy tắc đúng: **hành vi phụ thuộc phần cứng không bao giờ là một test bị bỏ qua có điều kiện bên trong năm bộ test.** Nó hoặc được **ghi rõ là khoảng trống chưa test** trong báo cáo và trong chú thích của cổng, hoặc được commit thành **một bench harness riêng nằm ngoài năm bộ** (`tools/serial-bench/`). Phép đo không commit được thì không tái lập được — reviewer D-3 phải **viết lại toàn bộ probe** để kiểm chứng các con số của D-3.
