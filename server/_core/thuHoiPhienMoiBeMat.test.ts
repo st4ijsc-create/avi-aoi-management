@@ -42,13 +42,26 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  *  1. §4 là lưới **HÌNH DẠNG**. Một `try { await chanNeuPhienDaThuHoi(t) } catch {}` có đúng hình
  *     dạng và vẫn lọt.
- *  2. Nhánh **"không có hàng ⇒ cho qua"** là một lỗ **ĐƯỢC KHAI, CÓ CHỦ Ý** (tương thích ngược với
- *     vé đúc trước khi `user_sessions` ra đời). §5c ghim nó để nó không bị siết **lặng lẽ** — siết
- *     nó là một quyết định vận hành (Pha 7 đã ship một lần ra **nhà tù 4/4 tài khoản**).
+ *  2. ~~Nhánh **"không có hàng ⇒ cho qua"**~~ — **ĐÃ SIẾT 2026-08-11, chủ dự án duyệt.** Nay
+ *     *"không có hàng ⇒ TỪ CHỐI"* (§5d), và điều kiện đủ để lượt siết không dựng nhà tù —
+ *     *"∀ điểm đúc vé đều ghi sổ"* — do `server/routers/sessionGrantScan.test.ts` §4 canh.
+ *     Nhánh cho-qua **còn lại đúng một**: token RỖNG (§5e) — ở đó không có gì để tra.
  *  3. Xác thực bằng **khoá máy** (`x-master-key`, API key máy/ERP) KHÔNG thuộc lượng từ: chủ thể ở
  *     đó không phải một hàng `users`, không có phiên để thu hồi. Giới hạn **CÓ CHỦ Ý**.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+
+/**
+ * ⚠⚠ **PHẢI ĐẶT TRƯỚC MỌI `import`** — `server/_core/env.ts` đọc `process.env` **đúng một lần** lúc
+ * nạp module, và `vitest.setup.ts` cố ý **KHÔNG** nạp `.env`. Thiếu hai biến này thì ô §5f (đúc một
+ * vé thật để đọc payload) ném `DataError: Zero-length key is not supported` ⇒ **ĐỎ VÌ HẠ TẦNG**,
+ * một màu đỏ **nói dối** về bất biến đang canh. `vi.hoisted` là thứ duy nhất chạy trước `import`.
+ */
+vi.hoisted(() => {
+  process.env.JWT_SECRET ||= "pha8-siet-failopen-thuhoi-phien-secret";
+  process.env.VITE_APP_ID ||= "avi-aoi-management";
+});
+
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -354,18 +367,70 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-1 — ∀ điểm xác thực
       ).toBe(1);
     });
 
-    it("🔴 §5d NHÁNH CHO QUA CÓ CHỦ Ý — token KHÔNG có hàng sổ vẫn đi tiếp (tương thích ngược)", async () => {
+    it("★★★★ §5d ĐÃ SIẾT (2026-08-11) — token KHÔNG có hàng sổ ⇒ **BỊ TỪ CHỐI**", async () => {
       /**
-       * ⚠⚠⚠ CA NÀY GHIM MỘT LỖ, KHÔNG PHẢI MỘT TÍNH NĂNG. `user_sessions` chỉ được ghi **từ khi cơ
-       * chế ra đời**; siết nhánh này thành fail-closed **đá văng mọi vé cũ** — Pha 7 đã deploy đúng
-       * lớp ấy ra **nhà tù thật 4/4 tài khoản**. Lối siết đúng (chỉ tha vé có `iat` cũ hơn một mốc
-       * cấu hình được) là một **quyết định vận hành của chủ dự án**, không phải một dòng mã.
-       * ⇒ Ô này tồn tại để lượt siết ấy **không xảy ra lặng lẽ**: sửa nhánh ⇒ ô này ĐỎ ⇒ có người đọc.
+       * ══════════════════════════════════════════════════════════════════════════════════════════
+       * ⚠⚠⚠ Ô NÀY VỪA ĐỔI CHIỀU. Trước 2026-08-11 nó ghim *"không có hàng ⇒ CHO QUA"* — một lỗ được
+       * khai, để lượt siết **không xảy ra lặng lẽ**. Chủ dự án đã **duyệt SIẾT**, và ô này là chỗ
+       * lượt siết được nói ra.
+       *
+       * ⚠⚠ **VÌ SAO FAIL-CLOSED THẲNG, KHÔNG PHẢI MỐC `iat`** (đề xuất của báo cáo review): phép đo
+       *    bác bỏ chính đề xuất ấy. `sdk.signSession` **chưa bao giờ gọi `.setIssuedAt()`** — payload
+       *    một vé thật là `{openId, appId, name, jti, exp}`, **không có `iat`** ⇒ vị từ *"vé có `iat`
+       *    cũ hơn mốc M"* không đánh giá được trên đúng những vé cần tha. Ô §5f dưới ghim điều ấy
+       *    bằng phép đo, để lượt sau không "sửa" ô này bằng cách quay lại mốc `iat`.
+       *
+       * ⚠ AI CHẾT VÌ NÓ: mọi vé đang lưu hành **không có hàng sổ** — vé đúc trước khi cơ chế ra
+       *   đời, vé của một lượt ghi sổ hỏng, và vé bị xoá hàng. Họ **đăng nhập lại được bình thường**
+       *   (§Nghiệm thu sống mục 3 đo điều này trên hệ thật), nên đây là mất phiên, KHÔNG phải nhà tù.
        */
       const { chanNeuPhienDaThuHoi } = await import("./sdk");
-      expect(await loiCua(() => chanNeuPhienDaThuHoi(`${DAU}-khong-co-hang-${Date.now()}`))).toBe(null);
+      const { demChanPhienKhongCoHang, datLaiDemChanPhienKhongCoHang } = await import("./demSoPhien");
+      datLaiDemChanPhienKhongCoHang();
+      const loi = await loiCua(() => chanNeuPhienDaThuHoi(`${DAU}-khong-co-hang-${Date.now()}`));
+      expect(
+        loi,
+        "vé KHÔNG nằm trong sổ vẫn đi tiếp ⇒ MỌI cơ chế thu hồi của Pha 7/8 vô hiệu với loại vé ấy",
+      ).not.toBeNull();
+      expect(loi).toMatch(/SESSION_NOT_IN_LEDGER/);
+      expect(
+        demChanPhienKhongCoHang(),
+        "phán quyết 'không có hàng' KHÔNG để lại dấu vết đếm được ⇒ lượt siết vô hình với vận hành",
+      ).toBe(1);
+    });
+
+    it("★★ §5e HAI NHÁNH CHO QUA CÒN LẠI — token RỖNG (không có gì để tra) vẫn im lặng", async () => {
+      /**
+       * ⚠ *"Không có hàng"* ≠ *"không có token"*. Người gọi phía trên (`xacThucTho` ⇒
+       *   `verifySession`) đã từ chối cookie trống rồi; ném thêm ở đây chỉ đổi **mã lỗi** của một
+       *   lượt vốn đã hỏng, và làm `validateExternalAuth` mất nhánh `x-master-key` (nó gọi phép chặn
+       *   với một token có thể rỗng).
+       */
+      const { chanNeuPhienDaThuHoi } = await import("./sdk");
       expect(await loiCua(() => chanNeuPhienDaThuHoi(null)), "token rỗng ⇒ không có gì để tra").toBe(null);
       expect(await loiCua(() => chanNeuPhienDaThuHoi(undefined))).toBe(null);
+      expect(await loiCua(() => chanNeuPhienDaThuHoi("")), "chuỗi rỗng cũng vậy").toBe(null);
+    });
+
+    it("★★★★ §5f VÌ SAO KHÔNG DÙNG MỐC `iat` — vé THẬT của cửa đúc KHÔNG mang `iat`", async () => {
+      /**
+       * ⚠⚠⚠ Ô này neo vào **phép đo đã bác bỏ một đề xuất**, không vào ý thích. Nếu một lượt sau
+       * thêm `.setIssuedAt()` vào cửa đúc thì ô này ĐỎ — và đó đúng là lúc *"siết theo mốc `iat`"*
+       * trở nên khả thi và phải được bàn lại. Đừng "sửa" ô này bằng cách xoá nó.
+       */
+      const { sdk } = await import("./sdk");
+      const ve = await sdk.createSessionToken(`${DAU}-do-iat`, { name: "đo iat", expiresInMs: 60_000 });
+      const tai = JSON.parse(
+        Buffer.from(ve.split(".")[1]!.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"),
+      ) as Record<string, unknown>;
+      expect(
+        Object.keys(tai).sort().join(","),
+        "hình dạng payload vé đã đổi — xem lại lý lẽ của lượt siết",
+      ).toBe("appId,exp,jti,name,openId");
+      expect(
+        Object.prototype.hasOwnProperty.call(tai, "iat"),
+        "vé nay CÓ `iat` ⇒ lối siết theo mốc `iat` đã khả thi; đây là lúc bàn lại lượt siết thẳng",
+      ).toBe(false);
     });
   });
 });

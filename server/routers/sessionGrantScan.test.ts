@@ -419,3 +419,92 @@ describe("★★★ Task 6 §3 — nửa THỨ HAI: đường mật khẩu cục
     expect(khai.length).toBe(SO_VUNG_MU_2FA);
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★★ 2026-08-11 · **SIẾT FAIL-OPEN** — nửa THỨ BA của cùng một câu.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO §4 PHẢI SỐNG CÙNG NHÀ VỚI §2/§3 — VÀ DÙNG CHUNG **ĐÚNG MỘT** BỘ SUY
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `chanNeuPhienDaThuHoi` nay **từ chối** mọi vé không có hàng `user_sessions`. Bất biến mới:
+ *
+ *   ***∀ điểm đúc thẻ phiên trong mã sản xuất `server/**`: hàm bao quanh nó phải **GHI SỔ** —
+ *   trực tiếp (`ghiSoPhien` / `ghiSoPhienChoOpenId` / `createUserSession`) hoặc qua hàm uỷ quyền
+ *   `establishSession`.***
+ *
+ * Phép đếm **TRƯỚC** lượt siết (bộ suy của chính file này): **5** điểm gọi `createSessionToken`,
+ * chỉ **1** ghi sổ. Bốn điểm còn lại — hai callback OAuth, ACS của SAML, `/api/external/auth/login`
+ * — đúc vé rồi không ghi gì; sau lượt siết mỗi điểm ấy là một **nhà tù im lặng** (302 về `/` rồi
+ * 403 mọi thứ), và `/api/external/auth/login` còn đứt hẳn một client thật trong repo.
+ *
+ * ⚠⚠ **KHÔNG viết bộ suy thứ HAI.** §4 dùng lại nguyên `quet()`, `goiTrong()`, `MOI_DUONG` của
+ *    §2/§3 — đúng bài học **C-2** (*"hai bộ suy độc lập canh hai nửa một câu ở hai phạm vi thì cái
+ *    yếu canh nửa nguy hiểm hơn"*). Một điểm đúc **thứ SÁU** ở một file chưa tồn tại tự vào **cả
+ *    ba** lượng từ cùng lúc.
+ * ⚠ Và `establishSession` được nhận là ghi sổ vì **nó thật sự ghi** — ca hiệu chuẩn dưới đọc lại
+ *   thân nó trên CÂY thay vì tin cái tên (I-2).
+ */
+const GHI_SO = [
+  "ghiSoPhien", // chủ của lượt ghi (`server/_core/authService.ts`)
+  "ghiSoPhienChoOpenId", // ghi sổ khi chỉ cầm `openId` (OAuth/SAML)
+  "createUserSession", // người ghi DUY NHẤT ở tầng db
+  HAM_UY_QUYEN, // `establishSession` — đúc HỘ thì cũng ghi HỘ
+] as const;
+
+describe("★★★★ SIẾT FAIL-OPEN §4 — ∀ đường cấp phiên: PHẢI GHI SỔ `user_sessions`", () => {
+  it("★★★★ ĐỐI CHỨNG TỔNG HỢP — vị từ xếp đúng cảnh HỞ và cảnh KÍN (đáp số biết trước)", () => {
+    const ho = `async function capPhien(req: any, res: any) {
+        const u = await verifyCredentials(req.body);
+        // đã ghiSoPhien(...) ở tầng trên — CHÚ THÍCH, không phải lời gọi
+        const token = await sdk.createSessionToken(u.openId, { name: "" });
+        res.cookie(COOKIE_NAME, token, {});
+      }`;
+    expect(
+      goiTrong(ts.createSourceFile("server/x/ho.ts", ho, ts.ScriptTarget.Latest, true), GHI_SO),
+      "một CHÚ THÍCH mang tên phép ghi sổ được nhận là ghi sổ ⇒ §4 đang canh CHÍNH TẢ",
+    ).toBe(false);
+
+    const kin = `async function capPhien(req: any, res: any) {
+        const u = await verifyCredentials(req.body);
+        const token = await sdk.createSessionToken(u.openId, { name: "" });
+        await ghiSoPhienChoOpenId(u.openId, token, req, 1000);
+        res.cookie(COOKIE_NAME, token, {});
+      }`;
+    expect(
+      goiTrong(ts.createSourceFile("server/x/kin.ts", kin, ts.ScriptTarget.Latest, true), GHI_SO),
+      "một lời gọi ghi sổ THẬT phải được nhận",
+    ).toBe(true);
+  });
+
+  it("★★★★ ĐỐI CHỨNG DƯƠNG — `establishSession` được nhận là ghi sổ vì THÂN nó thật sự ghi", () => {
+    // ⚠ I-2: không tin cái TÊN trong `GHI_SO`; đọc lại thân hàm uỷ quyền trên CÂY.
+    const duong = join(GOC_REPO, "server", "_core", "authService.ts");
+    const sf = ts.createSourceFile(duong, readFileSync(duong, "utf8"), ts.ScriptTarget.Latest, true);
+    let than: ts.Node | undefined;
+    const di = (n: ts.Node): void => {
+      if (ts.isFunctionDeclaration(n) && n.name?.getText() === HAM_UY_QUYEN) than = n;
+      ts.forEachChild(n, di);
+    };
+    ts.forEachChild(sf, di);
+    expect(than, `không thấy \`${HAM_UY_QUYEN}\` trong authService.ts — nó đã đổi hình dạng?`).toBeTruthy();
+    expect(
+      goiTrong(than, ["ghiSoPhien", "createUserSession"]),
+      `\`${HAM_UY_QUYEN}\` thôi ghi sổ ⇒ mọi đường uỷ quyền cho nó cấp ra vé CHẾT NGAY (fail-closed).`,
+    ).toBe(true);
+  });
+
+  it("★★★★ ∀ điểm đúc thẻ phiên trong `server/**`: hàm bao có ≥1 lượt GHI SỔ", () => {
+    const pham = MOI_DUONG.filter((d) => !goiTrong(d.bao, GHI_SO)).map(
+      (d) => `${d.duong}:${d.dong} (${d.loai}) trong \`${d.ham}\``,
+    );
+    expect(
+      pham.join("\n"),
+      `một đường cấp phiên đúc vé mà KHÔNG ghi hàng \`user_sessions\`.\n` +
+        `Từ lượt siết 2026-08-11, \`chanNeuPhienDaThuHoi\` TỪ CHỐI vé không có hàng ⇒ đường này\n` +
+        `cấp ra một vé **chết ngay ở yêu cầu đầu tiên**: người dùng đăng nhập "thành công" rồi\n` +
+        `403 mọi thứ — một NHÀ TÙ IM LẶNG (Pha 7 đã ship đúng lớp ấy ra 4/4 tài khoản).\n` +
+        `Phép ghi được chấp nhận: ${GHI_SO.join(" · ")}.`,
+    ).toBe("");
+  });
+});

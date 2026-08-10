@@ -14,7 +14,7 @@ import {
   setCachedAuthUser,
 } from "../services/authSessionCache";
 // ★★★ Review TOÀN NHÁNH Pha 8 C-1/C-2 §3 — bộ đếm có bề mặt Prometheus (chủ trung lập, không vòng nhập).
-import { nhichChanPhienDaThuHoi } from "./demSoPhien";
+import { nhichChanPhienDaThuHoi, nhichChanPhienKhongCoHang } from "./demSoPhien";
 // ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
 import { redactServerOnlyUserFields } from "./publicUser";
 import { ENV } from "./env";
@@ -89,34 +89,62 @@ export async function chanNeuPhaiDoiMatKhau(user: User): Promise<void> {
  * ⇒ Vị từ được **RÚT RA MỘT CHỦ** và gọi từ **cả hai** đường. Viết bản sao thứ hai là đúng lớp lỗi
  *   *"nhiều chủ cho một bất biến"* đã đẻ ba Critical trong chuỗi pha này.
  *
- * ⚠⚠ **NHÁNH "KHÔNG CÓ HÀNG ⇒ CHO QUA" ĐƯỢC GIỮ NGUYÊN — CÓ CHỦ Ý, KHÔNG PHẢI SƠ SUẤT.**
- *    `user_sessions` chỉ được ghi **từ khi cơ chế ra đời**, nên mọi JWT cũ hơn **không có hàng**.
- *    Siết nhánh này thành fail-closed sẽ **đá văng mọi người đang đăng nhập bằng vé cũ** — Pha 7 đã
- *    ship đúng lớp ấy một lần ra **nhà tù thật 4/4 tài khoản**. Lối siết đúng (chỉ tha vé có `iat`
- *    cũ hơn một mốc cấu hình được) là một **quyết định vận hành**, không phải một dòng mã: nó cần
- *    chủ dự án chọn mốc và chấp nhận số người phải đăng nhập lại. ⇒ **BÁO, KHÔNG TỰ SIẾT.**
- *    ⚠ Lỗ mà nhánh này để lại **đã được đóng ở đầu kia**: từ lượt vá C-2, một lượt ghi sổ hỏng
- *      không còn im lặng (`deviceName`/`ipAddress` bị cắt theo trần khai trong schema, và bộ đếm
- *      `soPhien_ghiSoLoi_total` đã có bề mặt Prometheus).
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ 2026-08-11 — **NHÁNH "KHÔNG CÓ HÀNG ⇒ CHO QUA" ĐÃ BỊ SIẾT. CHỦ DỰ ÁN DUYỆT.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Trước lượt này, một vé **không nằm trong sổ** vẫn dùng được ⇒ **mọi** cơ chế thu hồi của Pha 7/8
+ * vô hiệu với đúng loại vé ấy. Đo sống trước lượt siết (máy chủ PID 34072, `engineer1` #51):
+ *   · đăng nhập ⇒ 200, có hàng sổ · **XOÁ hàng sổ** ⇒ `auth.me` **VẪN** trả hồ sơ đầy đủ (id 51);
+ *   · `POST /api/external/auth/login` đúc một vé **KHÔNG BAO GIỜ ghi sổ** (0 hàng) ⇒ vé ấy vào
+ *     `GET /api/external/health` ⇒ **200**, và dán thẳng vào cookie ⇒ `auth.me` ⇒ **id 51**.
  *
- * ⚠ **FAIL-OPEN trên lỗi TRA CỨU** (DB nấc) cũng giữ nguyên: một lượt hỏng thoáng qua không được
- *   khoá cả nhà máy ra ngoài. Đây là hai nhánh KHÁC NHAU — "không có hàng" ≠ "không hỏi được".
+ * ⚠⚠⚠ **VÌ SAO KHÔNG DÙNG "MỐC `iat`" NHƯ BÁO CÁO REVIEW ĐỀ XUẤT — PHÉP ĐO BÁC BỎ CHÍNH ĐỀ XUẤT ẤY.**
+ *    `signSession` **chưa bao giờ gọi `.setIssuedAt()`**. Payload một vé thật, giải mã trên máy chủ
+ *    đang chạy: `{openId, appId, name, jti, exp}` — **KHÔNG có `iat`**. Nghĩa là *"tha vé có `iat`
+ *    cũ hơn mốc M"* **không đánh giá được** trên đúng những vé cần được tha: với chúng `iat` là
+ *    `undefined`. Suy ngược `iat = exp − TTL` thì TTL do `SESSION_TTL_DAYS` **cấu hình được** ⇒ một
+ *    **trần đoán trên dữ liệu ngoài tầm kiểm soát**, đúng lớp lỗi mà `0317`/`0318` sinh ra để giết.
+ *    ⇒ Chọn **fail-closed thẳng**, và trả giá bằng một câu nói ra được: *"vé không có hàng thì chết"*.
+ *
+ * ⚠⚠ **ĐIỀU KIỆN ĐỦ ĐỂ SIẾT MÀ KHÔNG DỰNG NHÀ TÙ: "có vé ⇒ có hàng" phải đúng ở MỌI cửa đúc.**
+ *    Phép đếm trước lượt siết: **5** điểm gọi `createSessionToken`, chỉ **1** (`establishSession`)
+ *    ghi sổ. Bốn điểm còn lại — hai callback OAuth, ACS của SAML, và `/api/external/auth/login` —
+ *    đúc vé rồi **không ghi gì**. Siết mà không vá bốn điểm ấy là ship một lượt **mất hẳn** đường
+ *    đăng nhập OAuth/SAML và **đứt toàn bộ** API ngoài (có client thật trong repo:
+ *    `FactoryAlertSystem`). Cả bốn đã được vá trong cùng lượt, và lượng từ canh chuyện *"điểm đúc
+ *    thứ SÁU cũng phải ghi sổ"* là `server/routers/sessionGrantScan.test.ts` §4 — trên **hình dạng**,
+ *    không trên một danh sách bốn tên ("N+1" đã mười tám lần).
+ *
+ * ⚠ **FAIL-OPEN trên lỗi TRA CỨU** (DB nấc) **giữ nguyên**: một lượt hỏng thoáng qua không được
+ *   khoá cả nhà máy ra ngoài. Đây là hai nhánh KHÁC NHAU — "không có hàng" ≠ "không hỏi được", và
+ *   chỉ nhánh THỨ NHẤT bị siết.
+ * ⚠ Vé **rỗng/thiếu** vẫn trả sớm: ở đó không có gì để tra, và người gọi phía trên
+ *   (`xacThucTho` ⇒ `verifySession`) đã từ chối một cookie trống rồi.
  */
 export async function chanNeuPhienDaThuHoi(token: string | null | undefined): Promise<void> {
   if (!isNonEmptyString(token)) return;
   let daThuHoi = false;
+  let khongCoHang = false;
   try {
     const hang = await db.getSessionByToken(token);
     if (hang) {
       const hetHan =
         hang.expiresAt != null && new Date(hang.expiresAt).getTime() <= Date.now();
       daThuHoi = hang.isActive === false || hetHan;
+    } else {
+      // ★★★★ 2026-08-11 SIẾT: không có hàng → **TỪ CHỐI** (trước đây: cho qua). Xem khối lý lẽ trên.
+      khongCoHang = true;
     }
-    // Không có hàng → cho qua (tương thích ngược) — xem khối lý lẽ trên.
   } catch (error) {
     // Fail-open trên lỗi TRA CỨU (DB không với tới được), KHÔNG phải trên "không có hàng".
     console.warn("[Auth] Session-active check failed; failing open:", String(error));
     return;
+  }
+  if (khongCoHang) {
+    nhichChanPhienKhongCoHang();
+    throw ForbiddenError(
+      "SESSION_NOT_IN_LEDGER: Session has been revoked (no ledger row); please sign in again",
+    );
   }
   if (daThuHoi) {
     nhichChanPhienDaThuHoi();

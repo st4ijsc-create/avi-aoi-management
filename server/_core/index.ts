@@ -1915,9 +1915,24 @@ async function startServer() {
       //   mù THỨ HAI ở bất kỳ đâu làm lưới ấy ĐỎ ngay.
       // Create JWT token (same format as session cookie, but returned as Bearer token)
       const { sdk } = await import("./sdk");
+      const HAN_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
       const token = await sdk.createSessionToken(user.openId, {
         name: user.name || "",
-        expiresInMs: 30 * 24 * 60 * 60 * 1000, // 30 days
+        expiresInMs: HAN_MS,
+      });
+
+      // ★★★★ 2026-08-11 SIẾT FAIL-OPEN — **ĐÚC VÉ THÌ PHẢI GHI SỔ.** Từ lượt siết,
+      // `chanNeuPhienDaThuHoi` từ chối mọi vé không có hàng `user_sessions`, và nhánh Bearer ngay
+      // trên tuyến `/api/external/*` gọi đúng phép chặn ấy ⇒ không ghi sổ ở đây là **đứt toàn bộ**
+      // API ngoài (có client thật trong repo: `FactoryAlertSystem`). Ghi sổ cũng làm vé 30 ngày này
+      // **hiện ra** ở `session.list` và **thu hồi được** — thứ nó chưa từng có.
+      const { ghiSoPhien } = await import("./authService");
+      await ghiSoPhien({
+        userId: user.id,
+        sessionToken: token,
+        ipAddress: req.ip ?? req.socket.remoteAddress ?? undefined,
+        deviceName: req.headers["user-agent"] ?? undefined,
+        expiresAt: new Date(Date.now() + HAN_MS),
       });
 
       await upsertUser({ openId: user.openId, lastSignedIn: new Date() });

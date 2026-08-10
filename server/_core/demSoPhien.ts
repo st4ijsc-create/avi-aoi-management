@@ -26,6 +26,7 @@
 
 let soLoiGhiSoPhien = 0;
 let soChanPhienDaThuHoi = 0;
+let soChanPhienKhongCoHang = 0;
 
 /** Số lượt **ghi sổ phiên hỏng** kể từ khi tiến trình chạy (hoặc từ lần đặt lại gần nhất). */
 export function demLoiGhiSoPhien(): number {
@@ -58,6 +59,30 @@ export function nhichChanPhienDaThuHoi(): void {
 }
 
 /**
+ * ★★★★ Pha 8 · **SIẾT FAIL-OPEN** (chủ dự án duyệt 2026-08-11) — số lượt một vé bị chặn **vì
+ * KHÔNG có hàng `user_sessions`**, tách khỏi bộ đếm *"đã thu hồi"*.
+ *
+ * ⚠⚠ VÌ SAO PHẢI LÀ **HAI** BỘ ĐẾM, KHÔNG PHẢI MỘT: hai con số trả lời hai câu khác hẳn nhau.
+ *    `chanDaThuHoi` = *"cơ chế thu hồi đang chạy đúng"* (một người vừa đăng xuất). `chanKhongCoHang`
+ *    = *"một vé đang lưu hành mà sổ không biết"* — tức **đúng cái lỗ vừa bị siết**, và cũng là
+ *    **đồng hồ đo cơn đau của lượt siết**: nó nhích mỗi lần một người bị đá ra. Gộp hai số vào một
+ *    là làm mù chính phép đo dùng để biết lượt siết có đang gây thiệt hại ngoài dự kiến hay không.
+ */
+export function demChanPhienKhongCoHang(): number {
+  return soChanPhienKhongCoHang;
+}
+
+/** Đặt lại bộ đếm chặn-vé-không-có-hàng — dành cho lưới. */
+export function datLaiDemChanPhienKhongCoHang(): void {
+  soChanPhienKhongCoHang = 0;
+}
+
+/** Nhích bộ đếm chặn-vé-không-có-hàng. Người gọi DUY NHẤT: `sdk.chanNeuPhienDaThuHoi`. */
+export function nhichChanPhienKhongCoHang(): void {
+  soChanPhienKhongCoHang++;
+}
+
+/**
  * Kết xuất Prometheus của hai bộ đếm trên.
  *
  * ⚠ Không nhãn (label): hai con số này là **tín hiệu an ninh của cả tiến trình**, không phải một
@@ -72,6 +97,9 @@ export function renderSoPhienPrometheus(): string {
     "# HELP soPhien_chanDaThuHoi_total Số lượt một phiên ĐÃ THU HỒI bị chặn ở biên xác thực (tRPC/socket/REST/Bearer).",
     "# TYPE soPhien_chanDaThuHoi_total counter",
     `soPhien_chanDaThuHoi_total ${soChanPhienDaThuHoi}`,
+    "# HELP soPhien_chanKhongCoHang_total Số lượt một vé bị chặn vì KHÔNG có hàng user_sessions (lượt siết fail-open, Pha 8).",
+    "# TYPE soPhien_chanKhongCoHang_total counter",
+    `soPhien_chanKhongCoHang_total ${soChanPhienKhongCoHang}`,
     "",
   ].join("\n");
 }

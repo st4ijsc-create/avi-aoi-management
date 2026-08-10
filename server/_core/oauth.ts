@@ -2,7 +2,12 @@ import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
 import * as db from "../db";
-import { establishSession, LoginError, verifyCredentials } from "./authService";
+import {
+  establishSession,
+  ghiSoPhienChoOpenId,
+  LoginError,
+  verifyCredentials,
+} from "./authService";
 import { getSessionCookieOptions } from "./cookies";
 import { capVe2FA, ghiNhanOtpSai, kiemVe2FA, tieuVe2FA } from "./pendingTwoFactor";
 import {
@@ -308,6 +313,12 @@ export function registerOAuthRoutes(app: Express) {
         expiresInMs: ONE_YEAR_MS,
       });
 
+      // ★★★★ 2026-08-11 SIẾT FAIL-OPEN — **ĐÚC VÉ THÌ PHẢI GHI SỔ.** Không ghi ⇒ vé này chết ngay
+      // ở lượt yêu cầu đầu tiên (`chanNeuPhienDaThuHoi` nay từ chối vé không có hàng) ⇒ đăng nhập
+      // OAuth thành một **nhà tù im lặng**: redirect 302 về "/" rồi 403 mọi thứ. Lượng từ canh điểm
+      // đúc thứ SÁU: `server/routers/sessionGrantScan.test.ts` §4.
+      await ghiSoPhienChoOpenId(openId, sessionToken, req, ONE_YEAR_MS);
+
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
       res.redirect(302, redirectPath || "/");
@@ -505,6 +516,9 @@ export function registerOAuthRoutes(app: Express) {
         name: userInfo.name || "",
         expiresInMs: ONE_YEAR_MS,
       });
+
+      // ★★★★ 2026-08-11 SIẾT FAIL-OPEN — xem khối lý lẽ ở callback nhà cung cấp phía trên.
+      await ghiSoPhienChoOpenId(userInfo.openId, sessionToken, req, ONE_YEAR_MS);
 
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });

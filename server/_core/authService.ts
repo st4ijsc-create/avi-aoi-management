@@ -344,6 +344,56 @@ export async function ghiSoPhien(data: {
 }
 
 /**
+ * ★★★★ 2026-08-11 SIẾT FAIL-OPEN — **GHI SỔ CHO MỘT VÉ CHỈ BIẾT `openId`.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO HÀM NÀY TỒN TẠI
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `chanNeuPhienDaThuHoi` nay **từ chối** mọi vé không có hàng `user_sessions`. Ba đường cấp phiên
+ * bằng danh tính NGOÀI — hai callback OAuth và ACS của SAML — chỉ cầm trong tay một `openId` (chúng
+ * vừa `upsertUser` xong), **không** cầm `userId`. Không có hàm này thì mỗi đường tự tra `users` một
+ * kiểu, và ba bản sao dưới cùng một bất biến là **lớp lỗi đã đẻ ba Critical** trong chuỗi pha này.
+ *
+ * ⚠ **KHÔNG NÉM** — cùng lý lẽ với `ghiSoPhien`: một lượt ghi hỏng phải **kêu** (bộ đếm
+ *   `soPhien_ghiSoLoi_total` + `console.error`), chứ không được biến thành một lượt đăng nhập vỡ.
+ *   Hệ quả sau lượt siết được nói thẳng: ghi hỏng ⇒ vé ấy **chết ở yêu cầu đầu tiên** và người dùng
+ *   phải đăng nhập lại. Đó là fail-closed **có tiếng động**, không phải một nhà tù im lặng — và nó
+ *   **không vĩnh viễn**: lượt đăng nhập kế tiếp ghi được sổ là dùng được ngay.
+ * ⚠ `openId` không tra ra hàng `users` ⇒ **không ghi gì** và bộ đếm nhích. Đây là cảnh "vừa
+ *   `upsertUser` xong mà không đọc lại được", tức DB đang có chuyện — đúng loại tín hiệu phải kêu.
+ */
+export async function ghiSoPhienChoOpenId(
+  openId: string,
+  sessionToken: string,
+  req: Request,
+  hanMs: number,
+): Promise<number | null> {
+  let userId: number | undefined;
+  try {
+    userId = (await db.getUserByOpenId(openId))?.id;
+  } catch (err) {
+    console.error("[Auth] GHI SỔ PHIÊN: không tra được `users` theo openId", { openId, loi: String(err) });
+  }
+  if (!userId) {
+    nhichLoiGhiSoPhien();
+    console.error(
+      "[Auth] GHI SỔ PHIÊN HỎNG — không tìm được hàng `users` cho openId vừa cấp phiên; " +
+        "vé này KHÔNG có hàng `user_sessions` nên nó sẽ bị TỪ CHỐI ở yêu cầu đầu tiên.",
+      { openId },
+    );
+    return null;
+  }
+  const audit = auditCtxFromRequest(req);
+  return ghiSoPhien({
+    userId,
+    sessionToken,
+    ipAddress: audit.ipAddress ?? undefined,
+    deviceName: audit.userAgent ?? undefined,
+    expiresAt: new Date(Date.now() + hanMs),
+  });
+}
+
+/**
  * Complete a successful login: mark last-signed-in, mint a session JWT, persist
  * a user_sessions row (keyed by that JWT so it is discoverable / revocable),
  * set the cookie, and write the success audit entry.

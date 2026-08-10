@@ -90,8 +90,22 @@ describe("sdk.authenticateRequest session-user cache (B4)", () => {
     vi.clearAllMocks();
     dbMocks.getUserByOpenId.mockResolvedValue({ ...USER_ROW });
     dbMocks.upsertUser.mockResolvedValue(undefined);
-    dbMocks.getSessionByToken.mockResolvedValue(undefined); // no session row → JWT authoritative
     token = await sdk.createSessionToken("open-42", { name: "Cache Test User" });
+    /**
+     * ★★★★ 2026-08-11 SIẾT FAIL-OPEN — dòng này TRƯỚC ĐÂY là `mockResolvedValue(undefined)` với chú
+     * thích *"no session row → JWT authoritative"*. Đó chính là **lỗ vừa bị siết**: một vé không nằm
+     * trong sổ vẫn dùng được. Nay `chanNeuPhienDaThuHoi` TỪ CHỐI vé không có hàng, nên một phiên
+     * **hợp lệ** trong file này phải có hàng sổ SỐNG — nếu không, mọi ô dưới sẽ đỏ vì
+     * `SESSION_NOT_IN_LEDGER`, tức đo nhầm thứ khác hẳn thay vì đo bộ nhớ đệm.
+     * ⚠ Số lượt gọi DB **không đổi**: `getSessionByToken` vẫn được gọi đúng một lần mỗi lượt cache-miss.
+     */
+    dbMocks.getSessionByToken.mockResolvedValue({
+      id: 1,
+      userId: 42,
+      sessionToken: token,
+      isActive: true,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
   });
 
   it("BEFORE (cache disabled): every request pays 3 DB calls — 5 requests = 15", async () => {

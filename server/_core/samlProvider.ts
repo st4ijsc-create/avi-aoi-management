@@ -350,10 +350,11 @@ export function registerSamlRoutes(app: Express): void {
       const config = getSamlConfig();
       const { id, email, name } = await consumeAssertion(samlResponse, config);
 
-      const [db, { getSessionCookieOptions }, { sdk }] = await Promise.all([
+      const [db, { getSessionCookieOptions }, { sdk }, { ghiSoPhienChoOpenId }] = await Promise.all([
         import("../db"),
         import("./cookies"),
         import("./sdk"),
+        import("./authService"),
       ]);
       const openId = `saml:${id}`;
       const displayName = name || email || id;
@@ -368,6 +369,10 @@ export function registerSamlRoutes(app: Express): void {
         name: displayName ?? "",
         expiresInMs: ONE_YEAR_MS,
       });
+      // ★★★★ 2026-08-11 SIẾT FAIL-OPEN — **ĐÚC VÉ THÌ PHẢI GHI SỔ.** Không ghi ⇒ vé SAML này bị
+      // `chanNeuPhienDaThuHoi` từ chối ngay ở yêu cầu đầu tiên ⇒ SSO doanh nghiệp thành nhà tù.
+      // Lượng từ canh điểm đúc thứ SÁU: `server/routers/sessionGrantScan.test.ts` §4.
+      await ghiSoPhienChoOpenId(openId, sessionToken, req, ONE_YEAR_MS);
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
       res.redirect(302, relayState.startsWith("/") ? relayState : "/");
