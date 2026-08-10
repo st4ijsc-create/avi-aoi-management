@@ -1,6 +1,9 @@
 -- ════════════════════════════════════════════════════════════════════════════════════════════
 -- 0316 — CHỐT BẤT BIẾN "CÓ MẬT KHẨU ⇒ PHẢI ĐƯỢC CÔNG NHẬN LÀ NỘI BỘ"
--- BẢN NHÁP — CHƯA ÁP. Chờ chủ dự án duyệt. Áp bằng owner `aoi` lên CẢ HAI DB.
+-- ĐÃ ÁP 2026-08-09 bằng owner `aoi` lên CẢ HAI DB (`aoi_management`, `aoi_management_test`).
+-- ⚠ Cơ chế là TRIGGER, KHÔNG phải CHECK (bất biến bắc qua hai bảng — xem phần dưới). Muốn kiểm
+--   nó đã áp chưa thì hỏi `pg_trigger` cho `trg_users_xac_thuc_noi_bo`, ĐỪNG tìm ràng buộc CHECK:
+--   một lượt rà 2026-08-10 đã tìm nhầm CHECK, không thấy, và kết luận sai rằng mig này chưa áp.
 -- ════════════════════════════════════════════════════════════════════════════════════════════
 --
 -- ⚠ VÌ SAO KHÔNG PHẢI `CHECK ("loginMethod" IN ('local','password'))` NHƯ ĐỀ XUẤT BAN ĐẦU
