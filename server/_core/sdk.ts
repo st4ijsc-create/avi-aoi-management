@@ -13,6 +13,8 @@ import {
   getCachedAuthUser,
   setCachedAuthUser,
 } from "../services/authSessionCache";
+// ★★★ Review TOÀN NHÁNH Pha 8 C-1/C-2 §3 — bộ đếm có bề mặt Prometheus (chủ trung lập, không vòng nhập).
+import { nhichChanPhienDaThuHoi } from "./demSoPhien";
 // ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
 import { redactServerOnlyUserFields } from "./publicUser";
 import { ENV } from "./env";
@@ -65,6 +67,60 @@ export async function chanNeuPhaiDoiMatKhau(user: User): Promise<void> {
     throw ForbiddenError(
       "MUST_CHANGE_PASSWORD: Bạn phải đổi mật khẩu trước khi tiếp tục sử dụng hệ thống.",
     );
+  }
+}
+
+/**
+ * ★★★★ Review TOÀN NHÁNH Pha 8 · **C-1** — **PHÉP THU HỒI PHIÊN, DÙNG CHUNG CHO MỌI BỀ MẶT.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO HÀM NÀY TỒN TẠI — MỘT BẤT BIẾN, HAI ĐƯỜNG ĐI, MỘT ĐƯỜNG BỎ QUÊN
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Pha 8 Task 2 làm `auth.logout` thu hồi **thật**, và cơ chế cưỡng chế **DUY NHẤT** là hàng
+ * `user_sessions`: `xacThucTho` tra sổ mỗi lượt. Nhưng `validateExternalAuth`
+ * (`server/_core/index.ts`, nhánh `Authorization: Bearer`) **tự phân giải danh tính**
+ * (`verifySession` + `getUserByOpenId`) và **không bao giờ tra sổ** ⇒ **58 tuyến `/api/external/*`**
+ * vẫn nhận một cookie ĐÃ ĐĂNG XUẤT cho tới `exp` (đo được: **2027**).
+ *
+ * Đo sống trước bản vá (máy chủ PID 37600, `engineer1` #51): `auth.logout` ⇒ 200 · hàng sổ 290
+ * `isActive=f` · `auth.me` ⇒ `null` · **cùng token** trên `GET /api/external/health` ⇒ **200**
+ * (đối chứng âm không-auth ⇒ 401).
+ *
+ * ⇒ Vị từ được **RÚT RA MỘT CHỦ** và gọi từ **cả hai** đường. Viết bản sao thứ hai là đúng lớp lỗi
+ *   *"nhiều chủ cho một bất biến"* đã đẻ ba Critical trong chuỗi pha này.
+ *
+ * ⚠⚠ **NHÁNH "KHÔNG CÓ HÀNG ⇒ CHO QUA" ĐƯỢC GIỮ NGUYÊN — CÓ CHỦ Ý, KHÔNG PHẢI SƠ SUẤT.**
+ *    `user_sessions` chỉ được ghi **từ khi cơ chế ra đời**, nên mọi JWT cũ hơn **không có hàng**.
+ *    Siết nhánh này thành fail-closed sẽ **đá văng mọi người đang đăng nhập bằng vé cũ** — Pha 7 đã
+ *    ship đúng lớp ấy một lần ra **nhà tù thật 4/4 tài khoản**. Lối siết đúng (chỉ tha vé có `iat`
+ *    cũ hơn một mốc cấu hình được) là một **quyết định vận hành**, không phải một dòng mã: nó cần
+ *    chủ dự án chọn mốc và chấp nhận số người phải đăng nhập lại. ⇒ **BÁO, KHÔNG TỰ SIẾT.**
+ *    ⚠ Lỗ mà nhánh này để lại **đã được đóng ở đầu kia**: từ lượt vá C-2, một lượt ghi sổ hỏng
+ *      không còn im lặng (`deviceName`/`ipAddress` bị cắt theo trần khai trong schema, và bộ đếm
+ *      `soPhien_ghiSoLoi_total` đã có bề mặt Prometheus).
+ *
+ * ⚠ **FAIL-OPEN trên lỗi TRA CỨU** (DB nấc) cũng giữ nguyên: một lượt hỏng thoáng qua không được
+ *   khoá cả nhà máy ra ngoài. Đây là hai nhánh KHÁC NHAU — "không có hàng" ≠ "không hỏi được".
+ */
+export async function chanNeuPhienDaThuHoi(token: string | null | undefined): Promise<void> {
+  if (!isNonEmptyString(token)) return;
+  let daThuHoi = false;
+  try {
+    const hang = await db.getSessionByToken(token);
+    if (hang) {
+      const hetHan =
+        hang.expiresAt != null && new Date(hang.expiresAt).getTime() <= Date.now();
+      daThuHoi = hang.isActive === false || hetHan;
+    }
+    // Không có hàng → cho qua (tương thích ngược) — xem khối lý lẽ trên.
+  } catch (error) {
+    // Fail-open trên lỗi TRA CỨU (DB không với tới được), KHÔNG phải trên "không có hàng".
+    console.warn("[Auth] Session-active check failed; failing open:", String(error));
+    return;
+  }
+  if (daThuHoi) {
+    nhichChanPhienDaThuHoi();
+    throw ForbiddenError("Session has been revoked");
   }
 }
 
@@ -449,39 +505,15 @@ class SDKServer {
     // The session JWT is stateless, so a revoked session's cookie would still
     // verify (and thus authenticate) until it expired. P0-B persists a
     // `user_sessions` row keyed by this exact cookie (== sessionToken) and
-    // session.revoke / revokeAll flip that row's isActive to false. Here we
-    // make that revocation actually take effect: if a matching row EXISTS and
-    // is inactive or past its expiry, we treat the request as unauthenticated.
+    // session.revoke / revokeAll flip that row's isActive to false. This makes
+    // that revocation actually take effect.
     //
-    // Backward-compat: sessions are only created going forward, so pre-existing
-    // logins / older JWTs have NO matching row. If no row is found we ALLOW
-    // (the JWT alone is authoritative, as before) — we only ever REJECT a row
-    // that exists and is revoked/expired. The lookup is a single indexed query
-    // (user_sessions.sessionToken is UNIQUE + indexed). Fail-open on any
-    // DB/cache error so a transient failure never locks everyone out.
-    if (sessionCookie) {
-      let sessionRevoked = false;
-      try {
-        const sessionRow = await db.getSessionByToken(sessionCookie);
-        if (sessionRow) {
-          const isExpired =
-            sessionRow.expiresAt != null &&
-            new Date(sessionRow.expiresAt).getTime() <= Date.now();
-          sessionRevoked = sessionRow.isActive === false || isExpired;
-        }
-        // No row → backward-compatible allow (sessionRevoked stays false).
-      } catch (error) {
-        // Fail-open on any lookup error (e.g. DB unreachable) so a transient
-        // failure can't lock everyone out. The JWT alone is then authoritative.
-        console.warn(
-          "[Auth] Session-active check failed; failing open:",
-          String(error),
-        );
-      }
-      if (sessionRevoked) {
-        throw ForbiddenError("Session has been revoked");
-      }
-    }
+    // ★★★★ Review TOÀN NHÁNH Pha 8 · C-1 — **thân của vị từ đã rút ra
+    // `chanNeuPhienDaThuHoi` (cùng file, ngay trên `SDKServer`)** vì nó có người dùng THỨ HAI:
+    // nhánh `Authorization: Bearer` của `validateExternalAuth` (`_core/index.ts`), điểm xác thực
+    // DUY NHẤT vòng qua `authenticateRequest`. Hai bản sao ⇒ bản yếu hơn quyết định lưới nào đỏ.
+    // Lượng từ canh chuyện này: `server/_core/thuHoiPhienMoiBeMat.test.ts`.
+    await chanNeuPhienDaThuHoi(sessionCookie);
 
     await db.upsertUser({
       openId: user.openId,

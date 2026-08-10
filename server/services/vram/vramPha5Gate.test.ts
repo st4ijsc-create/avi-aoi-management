@@ -366,7 +366,14 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   **hai ô khác nhau** (§1–§2 canh nonce · §3 canh lượt nuốt lỗi) để một đột biến trên nửa
     //   này không được ăn may nhờ nửa kia. `server/_core/` **không** có đường bao trong cổng ⇒
     //   thiếu dòng này thì lưới ấy *"theo cấu tạo không bao giờ được canh"*.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(46); // Pha 8 JWT trùng giây: +1
+    // ⚠ Review TOÀN NHÁNH Pha 8 / **C-1**: 46 → **47**. `server/_core/thuHoiPhienMoiBeMat.test.ts` —
+    //   bất biến *"∀ điểm xác thực: phiên ĐÃ THU HỒI phải bị chặn"*. Nó là **anh em sinh đôi** của
+    //   `buocDoiMatKhauMoiBeMat.test.ts` (cùng bộ suy, khác vị từ), và lý do nó tồn tại RIÊNG là
+    //   chính lỗ C-1: Task 1 cầm nhánh Bearer của `validateExternalAuth` trên tay và chỉ vá **một
+    //   nửa** — cổng mật khẩu — để phép thu hồi phiên hở trên **58 tuyến `/api/external/*`**.
+    //   `server/_core/` **không** có đường bao trong cổng ⇒ thiếu dòng này thì lưới ấy *"theo cấu
+    //   tạo không bao giờ được canh"*.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(47); // review Pha 8 C-1: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -495,7 +502,11 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   kiểm chung ⇒ `CONG.length` 44 → **45** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên
     //   **hai** trục.
     // ⚠ Pha 8 / JWT trùng giây: 108 → **109**. Đúng MỘT lưới mới (lý do ở ô `CONG.length`).
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(109); // Pha 8 JWT trùng giây: +1
+    // ⚠ Review TOÀN NHÁNH Pha 8 / **C-1**: 109 → **110**. Đúng MỘT lưới mới
+    //   (`server/_core/thuHoiPhienMoiBeMat.test.ts`, lý do ở ô `CONG.length`). Nó tự khai `Pha 5`
+    //   nên bộ nhận diện theo NỘI DUNG thấy, và nó phải có đường riêng ở §Cổng kiểm chung ⇒
+    //   `CONG.length` 46 → **47** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(110); // review Pha 8 C-1: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

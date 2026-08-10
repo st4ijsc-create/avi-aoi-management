@@ -60,29 +60,29 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
 import { moiFileDuoi, laFileTest } from "../routers/deployProcedureScan";
 import { VAI_MIEN_TRU_BUOC_DOI_MAT_KHAU } from "@shared/buocDoiMatKhau";
 import { THU_TUC_CHO_QUA } from "./trpc";
 import * as db from "../db";
+/**
+ * ⚠⚠ Bộ nhận diện **KHÔNG** sống trong file này nữa (review TOÀN NHÁNH Pha 8 · C-1): nó có người
+ * tiêu thụ THỨ HAI (`thuHoiPhienMoiBeMat.test.ts`, bất biến *"phiên đã thu hồi thì không đi tiếp
+ * được"*). Hai bản sao của cùng một bộ suy ⇒ **bản yếu hơn quyết định lưới nào đỏ** — đúng cơ chế
+ * đã đẻ ba Critical trong chuỗi pha này. Chủ duy nhất: `server/_core/quetDiemXacThuc.ts`.
+ */
+import {
+  type DiemXacThuc,
+  quetDiemXacThuc,
+  diemChungCuongChe,
+  TEN_XAC_THUC,
+  TEN_PHAN_GIAI_PHIEN,
+  TEN_PHEP_CHAN,
+  O_BO_QUA,
+  FILE_DIEM_CHUNG,
+} from "./quetDiemXacThuc";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // …/server/_core
 const GOC = join(TEST_DIR, "..", "..");
-
-/* ════════════════════════════════════════════════════════════════════════════════════════════════
- * TÊN — mỗi cái là một sự thật của kho mã, khai ở ĐÚNG MỘT chỗ.
- * ══════════════════════════════════════════════════════════════════════════════════════════════ */
-
-/** Phép phân giải *"yêu cầu này là ai"* — **ĐIỂM CHUNG**. */
-const TEN_XAC_THUC = "authenticateRequest";
-/** Phép phân giải *"cookie/token này là phiên của ai"* — đường **vòng qua** điểm chung. */
-const TEN_PHAN_GIAI_PHIEN = "verifySession";
-/** Phép chặn. Một lượt gọi tên này là bằng chứng DUY NHẤT mà §4 chấp nhận. */
-const TEN_PHEP_CHAN = "chanNeuPhaiDoiMatKhau";
-/** Ô tắt cổng ở lượt gọi `authenticateRequest`. */
-const O_BO_QUA = "boQuaCongDoiMatKhau";
-/** File khai điểm chung. */
-const FILE_DIEM_CHUNG = "server/_core/sdk.ts";
 
 /**
  * **TẬP BỀ MẶT TỰ CANH — GHIM SỐ, NEO HAI CHIỀU.**
@@ -103,132 +103,6 @@ const BE_MAT_TU_CANH: { duong: string; vi_sao: string; canh_boi: string }[] = [
     canh_boi: "server/_core/trpc.ts::thuTucGoc (chanKhiPhaiDoiMatKhau) + server/_core/buocDoiMatKhau.test.ts",
   },
 ];
-
-/* ════════════════════════════════════════════════════════════════════════════════════════════════
- * BỘ NHẬN DIỆN — tách khỏi lượt quét đĩa để §1 hiệu chuẩn nó bằng mã có ĐÁP SỐ BIẾT TRƯỚC.
- * ══════════════════════════════════════════════════════════════════════════════════════════════ */
-
-export type DiemXacThuc = {
-  duong: string;
-  dong: number;
-  /** `xt` = qua điểm chung · `phien` = tự phân giải phiên (vòng qua điểm chung). */
-  loai: "xt" | "phien";
-  /** Lượt gọi có **tắt** cổng bằng ô `boQuaCongDoiMatKhau` không. */
-  boQua: boolean;
-  /** Thân hàm bao quanh có **tự** gọi phép chặn không. */
-  tuCanh: boolean;
-};
-
-/** Định danh của một lượt gọi: `a.b.c(x)` → `c`; `c(x)` → `c`. */
-function tenGoi(n: ts.CallExpression): string | null {
-  if (ts.isPropertyAccessExpression(n.expression)) return n.expression.name.text;
-  if (ts.isIdentifier(n.expression)) return n.expression.text;
-  return null;
-}
-
-/** Bên nhận của một lượt gọi `x.f()` → `x` (hoặc `null`). */
-function benNhan(n: ts.CallExpression): ts.Node | null {
-  return ts.isPropertyAccessExpression(n.expression) ? n.expression.expression : null;
-}
-
-export function quetDiemXacThuc(duong: string, ma: string): DiemXacThuc[] {
-  const src = ts.createSourceFile(duong, ma, ts.ScriptTarget.Latest, true);
-  const ra: DiemXacThuc[] = [];
-  const dongCua = (n: ts.Node) => src.getLineAndCharacterOfPosition(n.getStart(src)).line + 1;
-
-  /** Thân hàm gần nhất bao quanh `n` có gọi `chanNeuPhaiDoiMatKhau` không? */
-  const thanCoPhepChan = (n: ts.Node): boolean => {
-    let than: ts.Node | undefined = n.parent;
-    while (than !== undefined && !ts.isFunctionLike(than)) than = than.parent;
-    if (than === undefined) return false;
-    let thay = false;
-    const tim = (x: ts.Node): void => {
-      if (thay) return;
-      if (ts.isCallExpression(x) && tenGoi(x) === TEN_PHEP_CHAN) {
-        thay = true;
-        return;
-      }
-      x.forEachChild(tim);
-    };
-    than.forEachChild(tim);
-    return thay;
-  };
-
-  /** Lượt gọi có tắt cổng không: đối số thứ 2 mang ô `boQuaCongDoiMatKhau`. */
-  const coTatCong = (n: ts.CallExpression): boolean => {
-    const a = n.arguments[1];
-    if (a === undefined) return false;
-    if (!ts.isObjectLiteralExpression(a)) return true; // không đọc được ⇒ coi như TẮT (bảo thủ)
-    for (const p of a.properties) {
-      if (!ts.isPropertyAssignment(p)) continue;
-      const ten = ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) ? p.name.text : null;
-      if (ten !== O_BO_QUA) continue;
-      // `false` tường minh KHÔNG phải một lượt tắt; mọi thứ khác (kể cả biến) thì có.
-      return p.initializer.kind !== ts.SyntaxKind.FalseKeyword;
-    }
-    return false;
-  };
-
-  const di = (n: ts.Node): void => {
-    if (ts.isCallExpression(n)) {
-      const t = tenGoi(n);
-      if (t === TEN_XAC_THUC || t === TEN_PHAN_GIAI_PHIEN) {
-        // ⚠ `this.verifySession(...)` bên trong chính lớp khai nó **không** là một bề mặt — đó là
-        //    một mắt xích nội bộ của điểm chung. Nhận diện bằng HÌNH DẠNG (`this`), không bằng một
-        //    danh sách file được tha.
-        const bn = benNhan(n);
-        const laTuGoi = bn !== null && bn.kind === ts.SyntaxKind.ThisKeyword;
-        if (!laTuGoi) {
-          ra.push({
-            duong,
-            dong: dongCua(n),
-            loai: t === TEN_XAC_THUC ? "xt" : "phien",
-            boQua: t === TEN_XAC_THUC ? coTatCong(n) : true, // đường `phien` KHÔNG đi qua điểm chung
-            tuCanh: thanCoPhepChan(n),
-          });
-        }
-      }
-    }
-    n.forEachChild(di);
-  };
-  di(src);
-  return ra;
-}
-
-/**
- * ĐIỂM CHUNG có **thật sự** cưỡng chế không: thân `authenticateRequest` (khai trong lớp ở
- * `sdk.ts`) có gọi `chanNeuPhaiDoiMatKhau` không.
- *
- * ⚠ Đây là mắt xích khiến cả 11 bề mặt kia được phủ mà **không ai phải sửa 11 chỗ**. Gỡ dòng ấy
- *   ⇒ toàn bộ §4 đỏ cùng lúc, đúng như nó phải thế.
- */
-export function diemChungCuongChe(ma: string): boolean {
-  const src = ts.createSourceFile(FILE_DIEM_CHUNG, ma, ts.ScriptTarget.Latest, true);
-  let ok = false;
-  const tim = (n: ts.Node): void => {
-    if (ok) return;
-    if (
-      (ts.isMethodDeclaration(n) || ts.isFunctionDeclaration(n)) &&
-      n.name !== undefined &&
-      ts.isIdentifier(n.name) &&
-      n.name.text === TEN_XAC_THUC &&
-      n.body !== undefined
-    ) {
-      const tim2 = (x: ts.Node): void => {
-        if (ok) return;
-        if (ts.isCallExpression(x) && tenGoi(x) === TEN_PHEP_CHAN) {
-          ok = true;
-          return;
-        }
-        x.forEachChild(tim2);
-      };
-      n.body.forEachChild(tim2);
-    }
-    n.forEachChild(tim);
-  };
-  tim(src);
-  return ok;
-}
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════════
  * LƯỢT QUÉT ĐĨA — lượng từ suy từ **ĐĨA**, không từ danh sách. Dùng lại bộ duyệt của

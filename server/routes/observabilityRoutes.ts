@@ -159,9 +159,17 @@ export function registerObservabilityRoutes(app: express.Express): void {
     }
     try {
       const { renderSloPrometheus } = await import("../services/observability/sloAlerting");
+      /**
+       * ★★★ Review TOÀN NHÁNH Pha 8 · **C-2 §3 — CẮT ĐƯỜNG IM LẶNG.**
+       * Hai bộ đếm sổ phiên (`soPhien_ghiSoLoi_total` · `soPhien_chanDaThuHoi_total`) trước lượt vá
+       * **chỉ đọc được TỪ LƯỚI** — tức chúng chứng minh "không im lặng" trong test, còn trong sản
+       * xuất thì vẫn im lặng. Ghép vào đây vì bề mặt này **đã có** phép xác thực (loopback **hoặc**
+       * phiên admin/supervisor) ⇒ không mở thêm cửa nào, và Prometheus cạnh app đọc được ngay.
+       */
+      const { renderSoPhienPrometheus } = await import("../_core/demSoPhien");
       res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
       res.setHeader("Cache-Control", "no-store");
-      return res.send(renderSloPrometheus());
+      return res.send(`${renderSloPrometheus()}\n${renderSoPhienPrometheus()}`);
     } catch (err: any) {
       console.error("[Observability] /metrics error:", err?.message || err);
       return res.status(500).type("text/plain").send("# metrics error\n");

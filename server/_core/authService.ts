@@ -4,6 +4,8 @@ import type { Request, Response } from "express";
 import * as db from "../db";
 import type { User } from "../../drizzle/schema";
 import { getSessionCookieOptions } from "./cookies";
+// ★★★ Review TOÀN NHÁNH Pha 8 C-2 §3 — chủ DUY NHẤT của hai bộ đếm sổ phiên (có bề mặt Prometheus).
+import { nhichLoiGhiSoPhien } from "./demSoPhien";
 // ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
 import { redactServerOnlyUserFields } from "./publicUser";
 import { sdk } from "./sdk";
@@ -297,20 +299,21 @@ export async function verifyCredentials(
  * ⇒ Nên **bất cứ lỗi nào còn lọt tới `catch` này đều là dấu hiệu của một thứ KHÁC HẲN** — mất kết
  *   nối, quyền bị thu, bảng đổi hình dạng. Đó đúng là loại tín hiệu **không được nuốt**, và cũng
  *   đúng là loại tín hiệu **không nên biến thành lượt đăng nhập hỏng** trước khi có người nhìn nó.
- * ⇒ Giữ **không im lặng mà cũng không chặn cửa**: đếm (`demLoiGhiSoPhien()` — đo được từ lưới,
- *   không phải một dòng log phải đọc bằng mắt) + `console.error` có ngữ cảnh.
+ * ⇒ Giữ **không im lặng mà cũng không chặn cửa**: đếm (`demLoiGhiSoPhien()`) + `console.error` có
+ *   ngữ cảnh.
+ *
+ * ⚠⚠⚠ **PHÉP ĐO ĐÃ BÁC BỎ MỘT CÂU Ở NGAY TRÊN.** Review TOÀN NHÁNH Pha 8 · C-2: còn một nguyên
+ *    nhân **THỨ BA**, và nó **do bên ngoài điều khiển** — `deviceName` là `varchar(255)` nạp thẳng
+ *    từ header `User-Agent`. Một UA 3.770 ký tự ⇒ `22001` ⇒ lượt đăng nhập vẫn 200 nhưng **KHÔNG có
+ *    hàng sổ** ⇒ phiên ấy **không thu hồi được bằng bất kỳ cơ chế sản phẩm nào**. Câu *"hai nguyên
+ *    nhân đã biết đều đã đóng"* ở trên là ĐÚNG-mà-KHÔNG-ĐỦ: nó nói về hai cột, còn lượt `INSERT` có
+ *    **bảy** cột chuỗi. ⇒ Bản vá: `createUserSession` cắt **mọi** cột `varchar` theo trần **suy ra
+ *    từ schema** (`server/db/catTheoTranCot.ts`), không theo một danh sách viết tay.
+ * ⚠⚠ Và bộ đếm ấy trước lượt vá **chỉ đọc được TỪ LƯỚI** — tức "không im lặng" **trong test**, còn
+ *    sản xuất thì vẫn im lặng. Nay nó có bề mặt Prometheus (`soPhien_ghiSoLoi_total` ở
+ *    `GET /api/observability/metrics`), chủ bộ đếm là `server/_core/demSoPhien.ts`.
  */
-let soLoiGhiSoPhien = 0;
-
-/** Số lượt ghi sổ phiên hỏng kể từ khi tiến trình chạy (hoặc từ lần đặt lại gần nhất). */
-export function demLoiGhiSoPhien(): number {
-  return soLoiGhiSoPhien;
-}
-
-/** Đặt lại bộ đếm — dành cho lưới, để mỗi ca đo trên một mốc sạch. */
-export function datLaiDemLoiGhiSoPhien(): void {
-  soLoiGhiSoPhien = 0;
-}
+export { demLoiGhiSoPhien, datLaiDemLoiGhiSoPhien } from "./demSoPhien";
 
 /**
  * Ghi hàng `user_sessions` cho một lượt cấp phiên. **Không ném** (xem khối lý lẽ trên), nhưng
@@ -326,7 +329,7 @@ export async function ghiSoPhien(data: {
   try {
     return await db.createUserSession(data);
   } catch (err) {
-    soLoiGhiSoPhien++;
+    nhichLoiGhiSoPhien();
     console.error(
       "[Auth] GHI SỔ PHIÊN HỎNG — lượt đăng nhập này KHÔNG có hàng `user_sessions` của riêng nó, " +
         "nên nó VÔ HÌNH với `session.list` và NGOÀI TẦM `session.revoke`.",

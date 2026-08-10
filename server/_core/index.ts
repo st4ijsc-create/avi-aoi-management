@@ -1654,7 +1654,7 @@ async function startServer() {
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
       try {
-        const { sdk, chanNeuPhaiDoiMatKhau } = await import("./sdk");
+        const { sdk, chanNeuPhaiDoiMatKhau, chanNeuPhienDaThuHoi } = await import("./sdk");
         const session = await sdk.verifySession(token);
         if (session) {
           const { getUserByOpenId } = await import("../db");
@@ -1667,6 +1667,17 @@ async function startServer() {
             // khi lượng từ được phát biểu trên **hình dạng phân giải danh tính**, không trên tên
             // một hàm (`buocDoiMatKhauMoiBeMat.test.ts`, nhánh `phien`).
             // ⚠ Ném ⇒ rơi vào `catch` ngay dưới ⇒ **401**. Fail-closed, đúng như 12 bề mặt kia.
+            //
+            // ★★★★ Review TOÀN NHÁNH Pha 8 · **C-1** — VÀ ĐÚNG ĐIỂM NÀY CŨNG PHẢI **TRA SỔ PHIÊN**.
+            // Task 1 cầm chính chỗ này trên tay và chỉ vá **một nửa** (cổng đổi mật khẩu). Nửa kia —
+            // phép thu hồi phiên của Task 2 — hở trên **58 tuyến `/api/external/*`**: đo sống được
+            // rằng sau `auth.logout` (200, hàng sổ `isActive=f`, `auth.me`=null), **cùng token** vẫn
+            // vào `GET /api/external/health` ⇒ **200**.
+            // ⚠ THỨ TỰ CÓ Ý NGHĨA: phép tra sổ đứng **TRƯỚC** cổng mật khẩu. Một vé đã thu hồi phải
+            //   chết ngay cả khi chủ nó đang bị buộc đổi mật khẩu — và thứ tự này còn làm phán quyết
+            //   "đã thu hồi" **ĐO ĐƯỢC** (bộ đếm `soPhien_chanDaThuHoi_total`) trên một tài khoản
+            //   đang mang cờ, thay vì bị cổng mật khẩu che mất.
+            await chanNeuPhienDaThuHoi(token);
             await chanNeuPhaiDoiMatKhau(user);
             (req as any).externalUser = user;
             return next();
