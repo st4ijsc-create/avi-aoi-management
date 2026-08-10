@@ -1676,7 +1676,8 @@ await trpc.permissions.deleteRole.mutate({ id: 1 });`} />
                   </div>
                   <div>
                     <h4 className="mb-2 font-semibold">twoFactor.disable — Tắt 2FA</h4>
-                    <CodeBlock code={`await trpc.twoFactor.disable.mutate({ code: "123456" });`} />
+                    <CodeBlock code={`// code = TOTP 6 số HOẶC mã dự phòng; password = mật khẩu hiện tại (bắt buộc)
+await trpc.twoFactor.disable.mutate({ code: "123456", password: "..." });`} />
                   </div>
                   <div>
                     <h4 className="mb-2 font-semibold">twoFactor.regenerateBackupCodes — Tạo lại backup codes</h4>

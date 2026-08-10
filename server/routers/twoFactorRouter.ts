@@ -7,7 +7,11 @@ import speakeasy from "speakeasy";
 // ở file này nay **chỉ** còn dùng để **SINH** secret (`generateSecret`), không để verify.
 import { verifyTotpOnce } from "../_core/totpOnce";
 import QRCode from "qrcode";
-import { getDb, get2FAStatus, setup2FA, disable2FA, xoaMoiMaDuPhong } from "../db";
+import { getDb, get2FAStatus, setup2FA, disable2FA, xoaMoiMaDuPhong, getUserById, layBiMatNguoiDung } from "../db";
+// ★ Pha 8 — siết `disable` cho khớp tuyến song song `user.disable2FA`: đòi MẬT KHẨU + một yếu tố
+//   2FA. Cùng vị từ, cùng NGƯỜI ĐỌC bí mật với tuyến kia (xem khối lý lẽ ở `disable`).
+import bcrypt from "bcryptjs";
+import { laXacThucNoiBo } from "@shared/xacThucNoiBo";
 import { users, backupCodes } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 // ★★★ Pha 7 Task 9 (9c) — hạt giống TOTP đã rời `users` sang `user_secrets`. Router này KHÔNG
@@ -171,9 +175,34 @@ export const twoFactorRouter = router({
       };
     }),
 
-  // Disable 2FA
+  /**
+   * ★★★ Pha 8 — **SIẾT CHO KHỚP TUYẾN CHẶT** (chủ dự án duyệt 2026-08-10).
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ BẤT ĐỒNG ĐO ĐƯỢC: HAI TUYẾN SONG SONG, KẺ TẤN CÔNG CHỌN TUYẾN LỎNG
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Trước bản vá, tuyến này đòi **một** yếu tố (TOTP *hoặc* mã dự phòng) để tắt 2FA, trong khi
+   * tuyến song song `user.disable2FA` (`server/routers/userRouters.ts:341`) đòi **mật khẩu + TOTP**.
+   * Hai màn client dùng hai họ tuyến khác nhau nên **cả hai đều sống** ⇒ ai cầm được phiên đã đăng
+   * nhập (cookie trộm / máy bỏ ngỏ) mà **không** biết mật khẩu vẫn tắt được 2FA qua đúng tuyến này.
+   * `hoTuyenSongSong.test.ts` khai đây là *"bất đồng NGUY HIỂM CHƯA VÁ"* và chờ chủ dự án vì vá là
+   * **đổi hợp đồng API**.
+   *
+   * ⚠ **GIỮ ĐƯỜNG MÃ DỰ PHÒNG — CHỦ DỰ ÁN CHỌN *SIẾT*, KHÔNG CHỌN *XOÁ TUYẾN*.** Người mất điện
+   *   thoại vẫn phải tắt được 2FA bằng mã dự phòng; nay kèm mật khẩu. Đổi `input.code` thành
+   *   `z.string().length(6)` (chỉ TOTP) là **KHOÁ NGƯỜI DÙNG RA NGOÀI** — đúng lớp lỗi đã đẻ ra
+   *   nhà tù 4/4 tài khoản ở Pha 7. Sau bản vá, người **đang có** 2FA và **biết** mật khẩu tắt được
+   *   bằng **CẢ HAI** loại mã.
+   *
+   * ⚠ Vị từ mật khẩu chép **đúng** hình dạng của tuyến song song (`laXacThucNoiBo(loginMethod) ∧
+   *   passwordHash`), không chặt hơn: tài khoản SSO không có hash cục bộ nên đòi mật khẩu ở đó
+   *   cũng là một cánh cửa khoá chết.
+   */
   disable: protectedProcedure
-    .input(z.object({ code: z.string() })) // Can be TOTP or backup code
+    .input(z.object({
+      code: z.string(), // Can be TOTP or backup code — ⚠ GIỮ NGUYÊN, xem khối trên.
+      password: z.string().min(1),
+    }))
     .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean; message: string }>> => {
       const db = await getDb();
       if (!db) {
@@ -185,6 +214,19 @@ export const twoFactorRouter = router({
 
       if (!user[0]) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
+      }
+
+      // ★ Mật khẩu — hash ở `user_secrets` (Pha 7 Task 9), cùng NGƯỜI ĐỌC với tuyến song song.
+      const hoSo = await getUserById(ctx.user.id);
+      if (!hoSo) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
+      }
+      const biMat = await layBiMatNguoiDung(ctx.user.id);
+      if (laXacThucNoiBo(hoSo.loginMethod) && biMat.passwordHash) {
+        const dungMatKhau = await bcrypt.compare(input.password, biMat.passwordHash);
+        if (!dungMatKhau) {
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "password" }, "Incorrect password");
+        }
       }
 
       if (!user[0].twoFactorEnabled) {

@@ -351,7 +351,16 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   TAY ở `server/_core/totpOnce.ts:20-24` khai **HAI** cặp; phép đếm đảo lượng từ ra **29**.
     //   Nó tự khai `Pha 5` ⇒ bộ nhận diện THỨ NHẤT (nội dung) kéo nó vào tập bị canh ⇒ phải có
     //   đường riêng ở §Cổng kiểm chung. Gỡ đường ấy ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(44); // Pha 8 Task 5: +1
+    // ⚠ Pha 8 / siết 2FA: 44 → **45**. `server/routers/tat2FaDoiMatKhau.test.ts` — lưới **HÀNH VI**
+    //   của bản vá *"`twoFactor.disable` đòi MẬT KHẨU + một yếu tố 2FA"*. Nó KHÔNG thay
+    //   `hoTuyenSongSong.test.ts` (lưới HÌNH DẠNG, đọc mã) mà canh trục còn lại: **gọi thật** rồi
+    //   đọc `users.two_factor_enabled`. Hai ô của nó không lưới nào khác canh được:
+    //     · thứ tự phép kiểm — sai mật khẩu KHÔNG được ĐỐT mã 2FA của người dùng;
+    //     · **chống NHÀ TÙ** — mật khẩu đúng + **mã dự phòng** vẫn tắt được 2FA (chủ dự án chọn
+    //       SIẾT, không chọn XOÁ TUYẾN; siết quá tay là lớp lỗi đã ship nhà tù 4/4 ở Pha 7).
+    //   `server/routers/*.test.ts` **không** có đường bao trong cổng ⇒ thiếu dòng này thì lưới ấy
+    //   *"theo cấu tạo không bao giờ được canh"*.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(45); // Pha 8 siết 2FA: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -475,7 +484,11 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     // ⚠ Pha 8 Task 2: 104 → **105**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
     // ⚠ Pha 8 Task 4a: 105 → **106**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
     // ⚠ Pha 8 Task 5: 106 → **107**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(107); // Pha 8 Task 5: +1
+    // ⚠ Pha 8 / siết 2FA: 107 → **108**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`). Nó
+    //   tự khai `Pha 5` nên bộ nhận diện theo NỘI DUNG thấy, và nó phải có đường riêng ở §Cổng
+    //   kiểm chung ⇒ `CONG.length` 44 → **45** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên
+    //   **hai** trục.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(108); // Pha 8 siết 2FA: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
