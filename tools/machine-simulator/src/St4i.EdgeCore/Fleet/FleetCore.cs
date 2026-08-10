@@ -271,6 +271,21 @@ internal sealed class FleetCore
     /// <para><b>🔴 THE SET IS NINE PATHS, LABELLED P1…P9. Numbered once, closed and open together, so the
     /// headline number and the list are the same object.</b>
     ///
+    /// <b>🔴 THE TALLY, because J-1 introduced a THIRD status and a two-status headline over a
+    /// three-status list is this branch's signature defect.</b> <b>3 CLOSED</b> (P1, P2, P3) —
+    /// <b>2 NARROWED</b> (P4, P5) — <b>4 OPEN</b> (P6, P7, P8, P9). 3 + 2 + 4 = 9, and every row below
+    /// carries its own status word so the two are re-derivable from each other in either direction.
+    ///
+    /// <b>NARROWED is a real status and not a softer word for CLOSED.</b> It means: the path no longer runs
+    /// under this lock on an uncontended start — which is every start a single operator makes — but it is
+    /// still REACHABLE under it, on a named arm, and that arm is live code with a test driving it. A path
+    /// stops being counted only when nothing can reach it. So <b>the number of paths that can reach I/O
+    /// under this lock is still NINE, and the number CLOSED is still THREE</b>: J-1 moved work off the lock
+    /// without removing a member from this set, and the earlier draft of this banner that let the tally read
+    /// as "five closed" was corrected before it shipped. Why NARROWED could not be CLOSED — it needs either
+    /// a new way for a start to FAIL or a way to FREEZE the roster while one is in flight, both public
+    /// contract changes — is argued at P5 and in J-1's report, not decided here.
+    ///
     /// <para>🔴 <b>The P-labels are the same repair the S-list below got, applied for the same reason.</b>
     /// This list was identified purely by ORDINAL and cross-referenced from a dozen sites under several
     /// spellings — <i>"path N"</i> here, <i>"item N"</i> in the tests and the gate script, and <i>"path B"</i>
@@ -315,7 +330,8 @@ internal sealed class FleetCore
     /// produced eight — a headline that cannot be reconstructed from the enumeration it summarises is a
     /// defect in the deliverable, since the enumeration IS the deliverable. Corrected by review.)
     ///
-    /// <b>Closed by G-1 — P1 to P3:</b>
+    /// <b>Closed by G-1 — P1 to P3</b> (and these three, alone, are what "CLOSED" means in the tally above:
+    /// nothing can reach the hazard through them any more):
     /// <list type="number">
     /// <item><b>P1 — CLOSED.</b> <see cref="RegisterMachine"/>'s <see cref="_onMachineSeeded"/> — §9.2 violation
     /// 3, the one with the number on it: for a real <c>AssetRegistryStore</c> a complete synchronous SQLite
