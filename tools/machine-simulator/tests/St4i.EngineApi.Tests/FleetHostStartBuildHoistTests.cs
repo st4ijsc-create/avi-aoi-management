@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Engine;
@@ -363,11 +364,18 @@ public sealed class FleetHostStartBuildHoistTests
     /// current evidence: the inverse of "no failures is not evidence of a repair", one layer up.</para>
     ///
     /// <para><b>Why this test reaches the latch when <c>Start()</c> no longer can.</b> A roster change on a
-    /// RUNNING fleet restarts through <c>RebuildPipelineOffLock</c>, which — unlike <c>Start()</c> —
-    /// consults neither the cheap pre-check nor <c>_stopRequests</c>. So an <c>Estop()</c> landing in that
-    /// rebuild's off-lock build window meets the latch and nothing else. This is the
-    /// <c>_estopEngaged</c> arm; the sibling test below covers the <c>IsRunning</c> arm, which is still
-    /// reachable from <c>Start()</c>.</para></summary>
+    /// RUNNING fleet restarts through <c>RebuildPipelineOffLock</c>, which reads no <c>_stopRequests</c>. So
+    /// an <c>Estop()</c> landing in that rebuild's off-lock build window meets the latch and nothing else.
+    /// This is the <c>_estopEngaged</c> arm; the sibling test below covers the <c>IsRunning</c> arm, which is
+    /// still reachable from <c>Start()</c>.</para>
+    ///
+    /// <para>🔴 <b>Task J-1b — that method now has a pre-check too, and this test still reaches the latch.
+    /// Stated as a measurement rather than as an argument, because the argument is what §8.1(h) says not to
+    /// trust.</b> The pre-check is sited BEFORE <c>BuildStartPlan</c> and the <c>Estop()</c> below is injected
+    /// at the END of it, so the check has already passed when the halt lands. The whole HALT-latch mutation
+    /// cluster was re-run on the post-J-1b tree for exactly this reason — see
+    /// <c>.superpowers/sdd/symmetric-precheck/task-1-report.md</c> — rather than reasoning about which
+    /// mutations still applied, which is the judgement that failed the first time.</para></summary>
     [Fact]
     public void AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock()
     {
@@ -518,8 +526,176 @@ public sealed class FleetHostStartBuildHoistTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task J-1b — the pre-check on the RESTART path, and the measurement that says what it is worth.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 <b>Task J-1b (.superpowers/sdd/symmetric-precheck/task-1-brief.md) — the witness for the
+    /// pre-check <c>RebuildPipelineOffLock</c> now carries, and the window it actually covers.</b>
+    ///
+    /// <para>A restart's gap runs: the caller's locked section (roster write + <c>StopLocked</c>) → gate
+    /// released → <c>WaitAndDisposeOldPipeline</c> (a bounded wait per old slot at the private
+    /// <c>RestartTeardownTimeout</c>, then each driver's own <c>DisposeAsync</c> — third-party code) → the
+    /// rebuild. An <c>Estop()</c> landing in the TEARDOWN part of that gap is what this pre-check exists for:
+    /// before it, the rebuild went on to run <c>BuildStartPlan</c> — P4's <c>File.Exists</c>/
+    /// <c>File.ReadAllText</c> per mapping-profile-carrying descriptor and P5's whole-file rewrite of
+    /// <c>machine-operating-config.json</c> per machine not yet stored, against a root
+    /// <c>ST4I_MACHINE_CONFIG_DIR</c> may point at a UNC share — and only then met the latch.</para>
+    ///
+    /// <para><b>The seam is the OLD driver's disposal</b>, because that is where the teardown actually
+    /// spends its time and it is the one place in this gap a test can stand. <c>DriverDecoratorForTests</c>
+    /// wraps the driver of the pipeline that is already running; its <c>DisposeAsync</c> runs inside
+    /// <c>WaitAndDisposeOldPipeline</c>, off the gate, so an <c>Estop()</c> raised from there lands strictly
+    /// between the caller's lock release and the pre-check.</para>
+    ///
+    /// <para><b>Two assertions, because they fail differently.</b> The build-observation count is what makes
+    /// deleting the pre-check RED — it says no plan was built at all. The store is the consequence probe: the
+    /// machine registered by the call that triggered this restart must have NO entry, which is P5's write not
+    /// happening rather than merely a call not being counted. The END STATE is deliberately identical to what
+    /// it was before the pre-check existed (halted, not running, no slots): this change is about work not
+    /// done, never about a different outcome.</para></summary>
+    [Fact]
+    public void AnEstopLandingInTheRestartTeardown_IsRefusedBeforeTheRebuildBuildsAnything()
+    {
+        var dir = NewTempDir();
+        var store = new MachineConfigStore(dir);
+        var host = CreateHost(configStore: store);
+        var storeFile = Path.Combine(dir, "machine-operating-config.json");
+        const string running = "J1B-TEARDOWN-ESTOP-01";
+        const string late = "J1B-TEARDOWN-ESTOP-02";
+
+        var halted = false;
+        host.DriverDecoratorForTests = driver => new EstopWhenDisposedDriver(
+            driver, () => halted = CompletesOnAnotherThread(host.Estop));
+
+        Assert.True(host.RegisterMachine(Descriptor(running)));
+        host.Start();
+        try
+        {
+            Assert.True(host.IsRunning);
+            // The instrument reads what it claims to: a machine the build DID see is in the store.
+            Assert.NotNull(store.GetConfig(running));
+
+            // Armed only now, so the initial start's own build is not counted.
+            var observations = 0;
+            host.StartBuildObserverForTests = () => Interlocked.Increment(ref observations);
+
+            // Restarts the running fleet. The Estop lands inside the teardown, i.e. before the rebuild's
+            // pre-check, never inside its build.
+            Assert.True(host.RegisterMachine(Descriptor(late)));
+
+            Assert.True(halted, "the Estop raised from the old driver's disposal must have completed");
+            Assert.Equal(0, Volatile.Read(ref observations));
+            Assert.Null(store.GetConfig(late));
+            Assert.DoesNotContain(late, File.ReadAllText(storeFile), StringComparison.Ordinal);
+
+            // Unchanged outcome: refused, halted, nothing running — exactly as it was refused before.
+            Assert.True(host.EstopEngaged);
+            Assert.False(host.IsRunning);
+            Assert.Empty(host.GetDriverHealth());
+        }
+        finally
+        {
+            host.DriverDecoratorForTests = null;
+            host.Stop();
+            try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
+        }
+    }
+
+    /// <summary>🔴 <b>Task J-1b — the ZERO, pinned. This is the measurement that contradicted the task's own
+    /// motivating case, so it is committed rather than reported.</b>
+    ///
+    /// <para>The intuition a symmetric pre-check invites is "a roster or scenario change made while the fleet
+    /// is halted reads every mapping file and writes every machine config, and only then refuses". On this
+    /// codebase it does neither, and not because of the new pre-check: <c>RegisterMachine</c> rebuilds only
+    /// <c>if (IsRunning)</c> and <c>ApplyScenario</c> only <c>if (IsRunning &amp;&amp; multiplierChanged)</c>,
+    /// while <c>Estop()</c> tears the pipeline down before latching — so an already-halted fleet is not
+    /// running and the rebuild is never entered. Zero builds, zero reads, zero writes.</para>
+    ///
+    /// <para>What this test protects is therefore not the pre-check but the CLAIM: if a later change ever
+    /// makes a restart unconditional, the halted case starts doing filesystem work on the halt path again and
+    /// this goes red at the observation count. It also covers <c>ApplyScenario</c>, which the sibling tests in
+    /// this file do not exercise on the halt path at all.</para></summary>
+    [Fact]
+    public void ARegisterOrScenarioChangeMadeWhileTheLatchIsEngaged_NeverReachesTheRebuild()
+    {
+        var dir = NewTempDir();
+        var store = new MachineConfigStore(dir);
+        var host = CreateHost(configStore: store);
+        const string running = "J1B-LATCHED-NOOP-01";
+        const string added = "J1B-LATCHED-NOOP-02";
+
+        Assert.True(host.RegisterMachine(Descriptor(running)));
+        host.Start();
+        try
+        {
+            Assert.True(host.IsRunning);
+            Assert.NotNull(store.GetConfig(running));
+
+            host.Estop();
+            Assert.True(host.EstopEngaged);
+            Assert.False(host.IsRunning);
+
+            var observations = 0;
+            host.StartBuildObserverForTests = () => Interlocked.Increment(ref observations);
+
+            Assert.True(host.RegisterMachine(Descriptor(added, mappingProfile: "j1b-no-such-profile")));
+            host.ApplyScenario(new ScenarioConfig(7.0, 0.0, 0.0, false), "j1b-latched");
+
+            Assert.Equal(0, Volatile.Read(ref observations));
+            Assert.Null(store.GetConfig(added));
+            Assert.True(host.EstopEngaged);
+            Assert.False(host.IsRunning);
+            Assert.Empty(host.GetDriverHealth());
+        }
+        finally
+        {
+            host.Stop();
+            try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Fixtures
     // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 Task J-1b — runs <paramref name="onFirstDispose"/> the first time this driver is disposed,
+    /// then delegates. Everything else is pass-through: the wrapped driver is the real one, so the pipeline
+    /// under test is the production one and only the MOMENT is borrowed.
+    ///
+    /// <para>One-shot on purpose. The decorator is installed before the first <c>Start</c> so that the
+    /// RUNNING pipeline's driver carries it — that is the driver <c>WaitAndDisposeOldPipeline</c> disposes
+    /// during a restart's teardown, which is the window under test — and a second firing (a later teardown,
+    /// or a rebuild that did happen) would make the test measure something else.</para></summary>
+    private sealed class EstopWhenDisposedDriver : IDeviceDriver
+    {
+        private readonly IDeviceDriver _inner;
+        private readonly Action _onFirstDispose;
+        private int _fired;
+
+        public EstopWhenDisposedDriver(IDeviceDriver inner, Action onFirstDispose)
+        {
+            _inner = inner;
+            _onFirstDispose = onFirstDispose;
+        }
+
+        public string Id => _inner.Id;
+
+        public string Kind => _inner.Kind;
+
+        public DriverHealthState Health => _inner.Health;
+
+        public IAsyncEnumerable<DeviceReading> ReadAsync(CancellationToken ct) => _inner.ReadAsync(ct);
+
+        public ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _fired, 1) == 0)
+            {
+                _onFirstDispose();
+            }
+
+            return _inner.DisposeAsync();
+        }
+    }
 
     /// <summary>Minimal message recorder. Deliberately its own copy rather than a shared helper — the two
     /// existing copies in this suite each carry a throw seam this file does not want, and a shared base

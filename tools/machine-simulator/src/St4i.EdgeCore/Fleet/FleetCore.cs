@@ -421,6 +421,16 @@ internal sealed class FleetCore
     /// drives it. So the honest count of paths that can reach I/O under this lock is unchanged at NINE, and
     /// the count CLOSED is unchanged at three.
     ///
+    /// <b>🔴 J-1b changes NEITHER of those two numbers and changes no label.</b> It adds a pre-check to
+    /// <see cref="RebuildPipelineOffLock"/>, symmetric with <see cref="Start"/>'s: one reached CASE fewer for
+    /// P4 and P5 — an <see cref="Estop"/> landing in a restart's teardown no longer buys a build that the
+    /// latch is about to refuse — and nothing at all about whether those paths can reach I/O under this lock,
+    /// which is what the label measures. P4 and P5 stay NARROWED. The case that sounds like the point of such
+    /// a check and is not covered by it, because it never needed to be: a
+    /// <see cref="RegisterMachine"/>/<see cref="ApplyScenario"/> made while the latch is ALREADY engaged
+    /// rebuilds nothing, since both callers rebuild only when <see cref="IsRunning"/> and a latched fleet is
+    /// not running. Measured, not read.
+    ///
     /// <b>Why the window is answered by exclusion rather than by detection.</b> The obvious hoist — snapshot,
     /// build, install the plan — loses a machine registered in that window <b>silently</b>: it is absent from
     /// the plan's simulator list, so nothing ever drives it, and the registering thread saw
@@ -1922,8 +1932,12 @@ internal sealed class FleetCore
         //
         // WHERE EACH ARM IS WITNESSED NOW, since "covered" has to name the arm to mean anything:
         //   _estopEngaged — NOT from this method (the counter shadows it). Reached and tested through
-        //       RebuildPipelineOffLock, which consults neither the pre-check nor the counter:
-        //       AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock.
+        //       RebuildPipelineOffLock: AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock.
+        //       🔴 J-1b — that method now HAS a pre-check of its own, and this arm is still witnessed there
+        //       because the check is sited BEFORE its build while that test's Estop lands at the END of
+        //       BuildStartPlan. Re-measured on the post-J-1b tree rather than inherited, since an upstream
+        //       early return is precisely what invalidated the previous measurement (§8.1(h)); it reads no
+        //       counter either way.
         //   IsRunning     — still live HERE, because a racing Start moves no counter:
         //       ASecondStartWinningTheRace_LeavesTheLoserRefusedByTheLatch_NotASecondSetOfSlots.
         // M1 kills both. The pre-check below is witnessed separately by
@@ -1940,7 +1954,10 @@ internal sealed class FleetCore
         // window, and the pre-check above is what keeps the ordinary latched Start on the old path.
         //
         // 🔴 BRANCH REVIEW, Important 2 — THIS DISCLOSURE WAS WRITTEN ONLY HERE, AND THE OTHER ARM IS WORSE.
-        // RebuildPipelineOffLock (RegisterMachine/ApplyScenario) has NO pre-check at all, so when an Estop
+        // (🔴 J-1b: the "no pre-check" half of this paragraph is now HISTORY — read it with the J-1b block at
+        // the end of this comment, which says what the pre-check that method now carries does and does not
+        // cover. What is unchanged is the shape of the exposure, so the paragraph stands as written.)
+        // RebuildPipelineOffLock (RegisterMachine/ApplyScenario) had NO pre-check at all, so when an Estop
         // lands after their StopLocked, the rebuild's BuildStartPlan runs P4's per-machine reads AND P5's
         // WRITE while the HALT latch is engaged — filesystem work on the halt path that pre-J-1 could not
         // happen, against a root ST4I_MACHINE_CONFIG_DIR may have pointed at a UNC share — and can throw
@@ -1970,6 +1987,21 @@ internal sealed class FleetCore
         // exactly as _stopRequests does on Start()'s path, and the latch's only remaining witness runs
         // through here. So the answer is not "a cheap win we are declining" — it is "the cheap version
         // covers almost nothing, and the version that covers it re-creates the defect".
+        //
+        // 🔴 J-1b — THE OWNER TOOK THAT DECISION AND TOOK IT THE OTHER WAY: the pre-build check IS there now,
+        // and the paragraph above is what it was weighed against, so it stays. Three corrections it earns,
+        // and the first is the one worth reading:
+        //   (1) "TEARDOWN SUB-WINDOW … a sliver" is right about WHICH window and understates it. That window
+        //       contains WaitAndDisposeOldPipeline — a bounded wait per old slot at RestartTeardownTimeout,
+        //       twice (run-task, then the driver's own DisposeAsync, which is third-party code) — so it is
+        //       bounded by seconds, not by microseconds.
+        //   (2) The case a pre-check is INTUITIVELY for — a RegisterMachine/ApplyScenario made while the
+        //       fleet is ALREADY latched — is not covered by it and never needed to be: those callers rebuild
+        //       only when IsRunning, and a latched fleet is not running, so that call does no I/O at all and
+        //       never has. Measured on this tree (zero build observations), because "obviously it must be
+        //       doing the work" is exactly the kind of claim this file's banner exists to stop.
+        //   (3) The POST-BUILD re-check is STILL refused, for the reason given above and unchanged by J-1b.
+        //       The latch keeps its witness precisely because the new check reads nothing after the build.
         bool started = false;
         StartOutcome outcome = default;
         try
@@ -2280,8 +2312,11 @@ internal sealed class FleetCore
                 // the whole 1330-test suite stayed green until a witness was added on the restart path.
                 //
                 // KEPT, and the reason is about which failure each mechanism can still catch. The latch
-                // remains the ONLY guard on the RebuildPipelineOffLock path (no pre-check, no counter read
-                // there), so it is live code with its own witness; this increment additionally makes an
+                // remains the ONLY guard on the RebuildPipelineOffLock path (🔴 J-1b gave that method a
+                // pre-check, but it is read BEFORE the build and reads no counter, so an Estop landing in
+                // that build window still meets the latch and nothing else — which is why that arm's witness
+                // survived J-1b, re-measured rather than assumed), so it is live code with its own witness;
+                // this increment additionally makes an
                 // Estop win Start()'s window without depending on _estopEngaged still being set by the time
                 // the install runs — which an EstopReset in the same window could otherwise clear. Removing
                 // it would hand that interleaving back to the latch and change which pre-J-1 arm the race
@@ -2660,7 +2695,10 @@ internal sealed class FleetCore
 
     /// <summary>🔴 J-1 — the shared off-lock rebuild <see cref="RegisterMachine"/> and
     /// <see cref="ApplyScenario"/> owe after their teardown: build off <see cref="_gate"/>, install under it,
-    /// finish off it. <b>MUST NOT be called while holding <see cref="_gate"/>.</b>
+    /// finish off it. 🔴 J-1b prefixes one more step — READ the latch under <see cref="_gate"/> before
+    /// building, symmetric with <see cref="Start"/>'s own pre-check and an optimisation in exactly the same
+    /// sense; see the block comment inside for what it does and does not remove.
+    /// <b>MUST NOT be called while holding <see cref="_gate"/>.</b>
     ///
     /// <para><b>Why this is a method and not three statements inlined at each caller.</b> Both callers run
     /// it from a <c>finally</c>, and blueprint §8.1(e) is specifically about a <c>finally</c> whose second
@@ -2679,6 +2717,58 @@ internal sealed class FleetCore
     /// this file and neither is J-1's to decide.</para></summary>
     private void RebuildPipelineOffLock(StartInputs inputs)
     {
+        // 🔴 J-1b (.superpowers/sdd/symmetric-precheck/task-1-brief.md) — THE PRE-CHECK, SYMMETRIC WITH
+        // Start()'s, AND AN OPTIMISATION FOR THE SAME REASON THAT ONE IS. Same test, same lock, same place
+        // relative to the build: BEFORE it. StartLocked's latch re-reads both flags under the install's own
+        // acquisition and that reading is the one that decides — deleting this line only wastes work;
+        // deleting the latch opens a window on the safety path. J-1 left it as an owner decision and the
+        // owner decided yes.
+        //
+        // WHAT IT REMOVES, as quantities rather than as "less work". An Estop landing between this method's
+        // caller releasing _gate and this line leaves the fleet halted before the build starts. Without this
+        // check the build runs anyway and is refused afterwards, having done: P4 — one File.Exists per
+        // descriptor carrying a mappingProfile, plus a File.ReadAllText for each such file that exists; and
+        // P5 — one whole-file rewrite of machine-operating-config.json (File.WriteAllText + File.Move) per
+        // simulated machine not yet in that store, each taking MachineConfigStore's own lock. Filesystem work
+        // on the HALT path, against a root ST4I_MACHINE_CONFIG_DIR may point at a UNC share, and the place
+        // MachineConfigStore.Ensure's InvalidOperationException/IOException can be thrown out of a call that
+        // pre-J-1 was a guaranteed silent no-op.
+        //
+        // 🔴 WHAT IT DOES NOT REMOVE, MEASURED RATHER THAN REASONED, because the brief that ordered it named
+        // a different case: AN ALREADY-LATCHED FLEET NEVER REACHES THIS METHOD AT ALL. Both callers rebuild
+        // only `if (IsRunning)` (RegisterMachine) / `if (IsRunning && multiplierChanged)` (ApplyScenario),
+        // and Estop's own StopLocked leaves _running false — so a RegisterMachine/ApplyScenario made while
+        // the HALT latch is engaged does ZERO reads and ZERO writes, and did so before this line existed.
+        // The window this line covers is the TEARDOWN one and only that: the caller's lock release, through
+        // WaitAndDisposeOldPipeline (bounded by RestartTeardownTimeout per old slot, once for the run-task
+        // wait and once for the driver's DisposeAsync), to here. Both facts are pinned by tests —
+        // AnEstopLandingInTheRestartTeardown_IsRefusedBeforeTheRebuildBuildsAnything and
+        // ARegisterMadeWhileTheLatchIsEngaged_NeverReachesTheRebuildAtAll.
+        //
+        // IT IS ONE MORE _gate ACQUISITION PER REBUILD AND TAKES NO OTHER LOCK WHILE HOLDING IT, so the
+        // five-lock ordering set at the top of this file is unchanged and gains no sixth member.
+        //
+        // IT ERRS IN THE SAFE DIRECTION, and the one interleaving where it changes an OUTCOME rather than an
+        // amount of work is worth naming: a flag that is set here and cleared again before the install (an
+        // Estop then a ResetEstop, or a racing Start then a Stop, both inside the build window) used to end
+        // with this rebuild installing a pipeline. It now ends stopped. Both directions move TOWARDS a
+        // documented contract rather than away from one — ResetEstop's own doc says a reset "does NOT
+        // auto-restart the fleet", and a Stop that an operator asked for winning is the same resolution
+        // _stopRequests already chose for Start(). Note this reads STATE, never a request count: point (3) at
+        // both call sites — that a restart is not a request for the fleet to end stopped — is unchanged.
+        //
+        // 🔴 AND THERE IS DELIBERATELY NO RE-CHECK AFTER THE BUILD. That is the check that would cover the
+        // BUILD window, and it is the shape this branch has already paid a Critical for: sited after the
+        // build it would shadow StartLocked's latch here exactly as _stopRequests shadows it on Start()'s
+        // path — and this path carries the latch's only _estopEngaged witness. That witness survives this
+        // line because the Estop it injects lands at the END of BuildStartPlan, i.e. after this check and
+        // before the install. Measured on the post-J-1b tree, not inherited: §8.1(h) is exactly the rule that
+        // an upstream early return like this one invalidates a mutation result nobody re-ran.
+        lock (_gate)
+        {
+            if (IsRunning || _estopEngaged) return;
+        }
+
         StartOutcome outcome = default;
         try
         {
@@ -3650,7 +3740,11 @@ internal sealed class FleetCore
                 restartHandle = StopLocked();
                 restarting = true;
                 // 🔴 J-1 — the snapshot rides the acquisition this method ALREADY takes, so the hoist costs
-                // no extra lock here (unlike Start(), which had only one). Taken AFTER _fleet.Add, so the
+                // no extra lock here (unlike Start(), which had only one). 🔴 J-1b — that is still true OF
+                // THE SNAPSHOT and no longer true of the restart path as a whole: the pre-check in
+                // RebuildPipelineOffLock is one more _gate acquisition per rebuild. It takes no OTHER lock
+                // while holding it, so the five-lock ordering set at the top of this file is unchanged.
+                // Taken AFTER _fleet.Add, so the
                 // machine just registered is in it — which is why the common case reuses the whole plan and
                 // the reuse-or-build fallback in StartLocked is for a CONCURRENT registration, not this one.
                 restartInputs = SnapshotStartInputsLocked();
@@ -3680,9 +3774,13 @@ internal sealed class FleetCore
         // any build, so an Estop landing after the StopLocked above made the whole rebuild — and this throw
         // — unreachable. Now the build runs first, so during a HALT this path performs P4's per-machine
         // reads and P5's WRITE (against whatever root ST4I_MACHINE_CONFIG_DIR names, possibly a UNC share)
-        // and can throw where it previously could not. STRICTLY WIDER, not the same. Unlike Start(), this
-        // arm has no cheap pre-check to keep the latched case off it; see the note at Start() for why one
-        // was not added.). Without the finally, that
+        // and can throw where it previously could not. STRICTLY WIDER, not the same. 🔴 J-1b narrowed it
+        // again by exactly one window: RebuildPipelineOffLock now reads the latch under _gate BEFORE it
+        // builds, so an Estop landing anywhere in the TEARDOWN below — the widest part of that gap, bounded
+        // by RestartTeardownTimeout per old slot and containing third-party DisposeAsync code — costs no
+        // reads, no writes and no throw. An Estop landing INSIDE the build still does all three, and no
+        // PRE-build check can change that; the POST-build one that would is refused at Start() and stays
+        // refused.). Without the finally, that
         // throw leaves the machine in
         // the roster with its notification still sitting in _pendingSeedNotifications, delivered only if some
         // LATER RegisterMachine happens to drain it, and never at all if none does. Pre-G-1 the notification
@@ -3865,15 +3963,21 @@ internal sealed class FleetCore
             // instance of §8.1(f) in this task, and the second to occur inside the repair for an earlier
             // one.
             //
-            // The fact itself: unlike Start(), this arm has NO cheap pre-check, so when an Estop lands
-            // after the StopLocked above, the rebuild's BuildStartPlan still runs — P4's per-machine reads
-            // and P5's WRITE — WHILE THE HALT LATCH IS ENGAGED, against a root ST4I_MACHINE_CONFIG_DIR may
-            // point at a UNC share, and it can THROW there (MachineConfigStore.Ensure's
-            // InvalidOperationException on a config-kind mismatch, IOException on a full or read-only
-            // root). Pre-J-1 the latch refused before any build, so none of that was reachable on this
-            // path. It is STRICTLY WIDER, not "the same reachability". Why no pre-check was added is argued
-            // at Start(), and the short version is that the cheap one covers almost nothing while the one
-            // that would cover it re-creates the Critical this branch just paid for.
+            // The fact itself: when an Estop lands after the StopLocked above, the rebuild's BuildStartPlan
+            // still runs — P4's per-machine reads and P5's WRITE — WHILE THE HALT LATCH IS ENGAGED, against
+            // a root ST4I_MACHINE_CONFIG_DIR may point at a UNC share, and it can THROW there
+            // (MachineConfigStore.Ensure's InvalidOperationException on a config-kind mismatch, IOException
+            // on a full or read-only root). Pre-J-1 the latch refused before any build, so none of that was
+            // reachable on this path. It is STRICTLY WIDER, not "the same reachability".
+            //
+            // 🔴 J-1b — AND IT IS NARROWER AGAIN NOW, BY ONE WINDOW AND NOT BY THE WHOLE GAP.
+            // RebuildPipelineOffLock reads the latch under _gate before it builds, so an Estop landing
+            // anywhere in the TEARDOWN below — bounded by RestartTeardownTimeout per old slot, twice, and
+            // containing third-party DisposeAsync code, i.e. the widest part of this gap — now costs no
+            // reads, no writes and no throw. An Estop landing inside the BUILD still costs all three: no
+            // PRE-build check reaches that window, and the POST-build check that would is refused at
+            // Start() for a reason J-1b did not change. Written at BOTH restart sites rather than at one
+            // and asserted as both, which is the N1 lesson directly above.
             try
             {
                 WaitAndDisposeOldPipeline(restartHandle);

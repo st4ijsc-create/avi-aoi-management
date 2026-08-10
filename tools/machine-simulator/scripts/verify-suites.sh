@@ -2067,8 +2067,10 @@ EXPECT_EDGESERVICE=50
 # and a stale coverage claim is worse than a gap because it stops the next person looking.
 #   AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock                +1
 #       The _estopEngaged arm. Reaches the latch because RebuildPipelineOffLock (the RegisterMachine/
-#       ApplyScenario restart) consults neither the cheap pre-check nor _stopRequests, so an Estop landing
-#       in that rebuild's build window meets the latch and nothing else.
+#       ApplyScenario restart) reads no _stopRequests, so an Estop landing in that rebuild's build window
+#       meets the latch and nothing else. (🔴 J-1b gave that method a pre-check too; this test still reaches
+#       the latch because the check is read BEFORE the build and this Estop lands at the END of it — MEASURED
+#       on the post-J-1b tree by re-running the whole latch mutation cluster, not argued.)
 #   ASecondStartWinningTheRace_LeavesTheLoserRefusedByTheLatch_NotASecondSetOfSlots      +1
 #       The IsRunning arm, still live on Start()'s own path because a racing Start moves no counter. The
 #       assertion is the SLOT COUNT, not a flag: what the latch prevents is a second set of pipeline slots
@@ -2080,7 +2082,36 @@ EXPECT_EDGESERVICE=50
 # as current. This project already records that an absence of failures is not evidence of a repair; this is
 # the same error one layer up — a PRESENCE of a past failure cited as evidence of a present guard. A
 # mutation result is only evidence for the tree it was run against.
-EXPECT_ENGINEAPI=1332
+#
+# 🔴 TASK J-1b (.superpowers/sdd/symmetric-precheck/task-1-brief.md) raises EXPECT_ENGINEAPI 1332 -> 1334
+# (+2), counted from the EXECUTED total. Same one file (FleetHostStartBuildHoistTests.cs); nothing rewritten,
+# split or deleted. J-1b adds the pre-check J-1 left as an owner decision: RebuildPipelineOffLock now reads
+# `IsRunning || _estopEngaged` under _gate BEFORE BuildStartPlan, symmetric with Start()'s.
+#   AnEstopLandingInTheRestartTeardown_IsRefusedBeforeTheRebuildBuildsAnything           +1
+#       The pre-check's own witness, and the only window it covers: an Estop landing in the restart's
+#       TEARDOWN (the gap the caller's lock release opens, containing WaitAndDisposeOldPipeline's two bounded
+#       waits per old slot and each driver's third-party DisposeAsync). The seam is the OLD driver's disposal
+#       — DriverDecoratorForTests on the pipeline that is already running — which is the one place inside
+#       that gap a test can stand. Asserts the build-observation count is 0 (deleting the pre-check makes
+#       this red) AND that the machine registered by the triggering call has no MachineConfigStore entry,
+#       which is P5's write not happening rather than a call not being counted. End state is unchanged
+#       (halted, not running, no slots): the change is about work not done, not about a different outcome.
+#   ARegisterOrScenarioChangeMadeWhileTheLatchIsEngaged_NeverReachesTheRebuild           +1
+#       🔴 THE ZERO, PINNED — a measurement that contradicted this task's own motivating case, committed
+#       rather than merely reported. The case a symmetric pre-check sounds like it is for ("a roster/scenario
+#       change during a HALT reads N mapping files and writes N machine configs, then refuses") does not
+#       exist here and never did: RegisterMachine restarts only `if (IsRunning)` and ApplyScenario only
+#       `if (IsRunning && multiplierChanged)`, and Estop leaves the fleet not running. So that call does ZERO
+#       builds, reads and writes — before and after J-1b alike. This test is what makes a later change that
+#       makes a restart unconditional go red, and it is the only halt-path coverage ApplyScenario has here.
+# The pre-check adds NO test to any other suite and moves no other constant: EXPECT_ABSTRACTIONS,
+# EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are unchanged, and EXPECT_EDGECORE staying put
+# is evidence rather than convenience — J-1b edits exactly one src file (FleetCore.cs, itself EdgeCore) and
+# every consequence of the change is observable only through a live FleetHost, which is why both witnesses
+# live here. EXPECT_CONFORMANCE in particular stays 22: no driver, no connector kind, and the shared suite's
+# "FleetCore.StartLocked constructs drivers under the same _gate lock Estop() takes" assertion string is
+# still TRUE — J-1b moves no driver construction and P7 is untouched.
+EXPECT_ENGINEAPI=1334
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
