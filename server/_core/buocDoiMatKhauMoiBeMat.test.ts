@@ -33,9 +33,13 @@
  * tồn tại** cũng vào tập, không ai phải nhớ khai gì.
  *
  * Bốn lớp chống *"tự thoả"* (mỗi lớp hỏng theo một kiểu khác nhau):
- *   1. **§1 ĐỐI CHỨNG TỔNG HỢP** — bộ nhận diện chạy trên mã dựng sẵn có **đáp số biết trước**
- *      (5 hình dạng hở ⇒ phải bắt · 4 hình dạng kín ⇒ phải tha). Thước chết ⇒ §1 đỏ NGAY, kể cả
- *      khi kho mã sạch tuyệt đối.
+ *   1. **§1 ĐỐI CHỨNG TỔNG HỢP** — bộ nhận diện **và VỊ TỪ PHỦ** chạy trên mã dựng sẵn có **đáp số
+ *      biết trước** (3 hình dạng hở ⇒ phải **XẾP LÀ VI PHẠM** · 2 hình dạng cưỡi điểm chung ⇒ phủ
+ *      khi điểm chung bật, hở khi tắt · 4 hình dạng kín ⇒ phải tha). Thước chết **hoặc vị từ bị
+ *      nới** ⇒ §1 đỏ NGAY, kể cả khi kho mã sạch tuyệt đối.
+ *      ⚠ Bản đầu của §1a hỏi *"bộ dò có THẤY điểm nào không"* chứ không phải *"bộ dò có XẾP điểm ấy
+ *        là HỞ không"*, nên nó **thoả bất kể vị từ phán quyết thế nào** — đo được ở review TOÀN
+ *        NHÁNH Pha 8 (I-3): ép `duocPhu ≡ true` ⇒ **14/14 XANH**, cổng chính tắt hoàn toàn.
  *   2. **§2 SÀN SỐ FILE** — glob rỗng làm vitest im lặng khai XANH (**đã sáu lần**).
  *   3. **§3 SÀN SỐ ĐIỂM** — thước còn sống nhưng **mù với kho mã thật** (đường dẫn đổi, `sdk` đổi
  *      tên) sẽ cho 0 điểm trong khi §1 vẫn xanh. Sàn này bắt đúng khe ấy.
@@ -115,19 +119,53 @@ const MOI_DIEM: DiemXacThuc[] = MOI_FILE_SX.flatMap((f) =>
 const DIEM_CHUNG_CUONG_CHE = diemChungCuongChe(readFileSync(join(GOC, FILE_DIEM_CHUNG), "utf8"));
 
 const laTuCanhGhim = (d: DiemXacThuc) => BE_MAT_TU_CANH.some((b) => b.duong === d.duong);
+
+/**
+ * ★★★★ **VỊ TỪ PHỦ — MỘT CÔNG THỨC, DÙNG CHUNG cho §1 (hiệu chuẩn) và §4 (lượng từ chính).**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ Review TOÀN NHÁNH Pha 8 · **I-3** — §1a TRƯỚC ĐÂY **KHÔNG** HIỆU CHUẨN THỨ TÊN NÓ NÓI
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu lọc bằng `!duocPhu(d) || d.boQua || !d.tuCanh` — ba vế **HỢP**, trong đó `!d.tuCanh` đúng
+ * với **mọi** mã tổng hợp không tự canh ⇒ ô thoả **bất kể** `duocPhu` phán quyết thế nào. Nó chứng
+ * minh *"bộ dò THẤY một điểm"*, chứ không phải *"bộ dò XẾP điểm ấy là HỞ"*.
+ * Đo được (đột biến, đã hoàn nguyên): ép `const duocPhu = () => true` ⇒ **14/14 XANH**, kể cả §1a,
+ * §4 và §4b — **toàn bộ lượng từ chính tắt hoàn toàn mà không một ô nào đỏ**.
+ *
+ * ⇒ Vị từ tách làm hai mảnh, và §1 khẳng định **ĐÚNG MẢNH mà §4 tin**:
+ *   · `phuTheoHinhDang(d, diemChungBat)` — công thức thật, `DIEM_CHUNG_CUONG_CHE` là **THAM SỐ** để
+ *     §1 hiệu chuẩn được cả hai chiều (bật/tắt);
+ *   · `laTuCanhGhim(d)` — tập miễn trừ ghim tay, canh riêng ở §5.
+ * ⚠ MA_HO nay tách làm **HAI** bảng theo **đáp số biết trước**, vì hai nhóm hình dạng có hai đáp số
+ *   khác nhau: nhóm HỞ phải bị **XẾP LÀ VI PHẠM**; nhóm đi-qua-điểm-chung phải được **PHỦ khi điểm
+ *   chung BẬT** và **HỞ khi điểm chung TẮT**. Gộp chúng vào một bảng là cách ô cũ trở nên tự thoả.
+ */
+const phuTheoHinhDang = (d: DiemXacThuc, diemChungBat: boolean): boolean =>
+  (d.loai === "xt" && diemChungBat && !d.boQua) || d.tuCanh;
 /** Điểm này CÓ được cưỡng chế không. */
 const duocPhu = (d: DiemXacThuc): boolean =>
-  (d.loai === "xt" && DIEM_CHUNG_CUONG_CHE && !d.boQua) || d.tuCanh || laTuCanhGhim(d);
+  phuTheoHinhDang(d, DIEM_CHUNG_CUONG_CHE) || laTuCanhGhim(d);
 const nhan = (d: DiemXacThuc) => `${d.duong}:${d.dong} [${d.loai}]`;
 
 describe("★★★★ Pha 8 Task 1 — ∀ điểm xác thực HTTP/socket: cờ buộc-đổi-mật-khẩu phải được kiểm", () => {
   /* ── §1 ĐỐI CHỨNG TỔNG HỢP — hiệu chuẩn thước bằng đáp số biết trước ────────────────────────── */
+
+  /**
+   * Hình dạng **HỞ THẬT SỰ**: kể cả khi điểm chung ĐANG cưỡng chế, vị từ phủ vẫn phải xếp chúng là
+   * **VI PHẠM**. ⚠ Hai hình dạng *"gọi thẳng/qua import động điểm chung"* **KHÔNG** ở đây — chúng
+   * được **PHỦ** khi điểm chung bật, nên bắt chúng ở ô này là một dương tính giả. Chúng có bảng
+   * riêng ngay dưới, với một đáp số khác.
+   */
   const MA_HO = [
-    ["gọi thẳng điểm chung", `const u = await sdk.${TEN_XAC_THUC}(req);`],
-    ["gọi qua import động", `async function f(req){ const {sdk} = await import("./sdk"); return sdk.${TEN_XAC_THUC}(req); }`],
     ["TẮT cổng tường minh", `async function f(req){ return sdk.${TEN_XAC_THUC}(req, { ${O_BO_QUA}: true }); }`],
     ["TẮT cổng bằng biến", `async function f(req){ return sdk.${TEN_XAC_THUC}(req, opts); }`],
     ["vòng qua điểm chung", `async function f(t){ const s = await sdk.${TEN_PHAN_GIAI_PHIEN}(t); return getUserByOpenId(s.openId); }`],
+  ] as const;
+
+  /** Hình dạng **CƯỠI ĐIỂM CHUNG**: phủ khi điểm chung BẬT, hở khi điểm chung TẮT. */
+  const MA_QUA_DIEM_CHUNG = [
+    ["gọi thẳng điểm chung", `async function f(req){ return sdk.${TEN_XAC_THUC}(req); }`],
+    ["gọi qua import động", `async function f(req){ const {sdk} = await import("./sdk"); return sdk.${TEN_XAC_THUC}(req); }`],
   ] as const;
 
   const MA_KIN = [
@@ -137,22 +175,48 @@ describe("★★★★ Pha 8 Task 1 — ∀ điểm xác thực HTTP/socket: c�
     ["mắt xích NỘI BỘ của điểm chung", `class S { async ${TEN_XAC_THUC}(req){ return this.${TEN_PHAN_GIAI_PHIEN}(req); } }`],
   ] as const;
 
-  it("§1a ĐỘT BIẾN TỔNG HỢP — năm hình dạng hở đều bị BẮT (thước còn sống)", () => {
+  it("§1a ĐỘT BIẾN TỔNG HỢP — hình dạng HỞ bị XẾP LÀ VI PHẠM (không chỉ 'được nhìn thấy')", () => {
+    /**
+     * ⚠⚠⚠ Ô này khẳng định **ĐÚNG VỊ TỪ §4 dùng** (`duocPhu`), trên đường dẫn tổng hợp không nằm
+     * trong `BE_MAT_TU_CANH`. Ép `duocPhu`/`phuTheoHinhDang` thành `true` ⇒ ô này **ĐỎ**.
+     * Bản cũ (`!duocPhu(d) || d.boQua || !d.tuCanh`) thoả **bất kể** vị từ phán quyết thế nào —
+     * đo được: cổng chính tắt hoàn toàn mà **14/14 vẫn XANH**.
+     */
     for (const [ten, ma] of MA_HO) {
-      const ho = quetDiemXacThuc("tong-hop.ts", ma).filter((d) => !duocPhu(d) || d.boQua || !d.tuCanh);
+      const diem = quetDiemXacThuc("tong-hop.ts", ma);
+      expect(diem.length, `bộ nhận diện MÙ với hình dạng "${ten}"`).toBeGreaterThan(0);
       expect(
-        ho.length,
-        `bộ nhận diện MÙ với hình dạng "${ten}" — mọi màu xanh bên dưới là vô nghĩa`,
+        diem.filter((d) => !duocPhu(d)).length,
+        `hình dạng "${ten}" KHÔNG bị xếp là HỞ — vị từ phủ đã bị nới, mọi màu xanh bên dưới là vô nghĩa`,
       ).toBeGreaterThan(0);
+    }
+  });
+
+  it("§1a2 ĐIỂM CHUNG TẮT ⇒ hình dạng CƯỠI ĐIỂM CHUNG trở thành HỞ (vị từ THẬT SỰ phụ thuộc nó)", () => {
+    /**
+     * ⚠ Không có ô này, `phuTheoHinhDang` có thể bỏ qua tham số `diemChungBat` mà §1a/§1b vẫn xanh
+     *   — và §4b (*"điểm chung thật sự cưỡng chế"*) sẽ là ô **duy nhất** biết chuyện, tức lại là
+     *   một cổng đơn độc.
+     */
+    for (const [ten, ma] of MA_QUA_DIEM_CHUNG) {
+      const diem = quetDiemXacThuc("tong-hop.ts", ma).filter((d) => d.loai === "xt");
+      expect(diem.length, `bộ nhận diện MÙ với hình dạng "${ten}"`).toBeGreaterThan(0);
+      expect(
+        diem.every((d) => phuTheoHinhDang(d, true)),
+        `hình dạng "${ten}" KHÔNG được phủ khi điểm chung BẬT ⇒ dương tính giả`,
+      ).toBe(true);
+      expect(
+        diem.some((d) => phuTheoHinhDang(d, false)),
+        `hình dạng "${ten}" vẫn khai PHỦ khi điểm chung TẮT ⇒ vị từ giả, §4 không bao giờ đỏ được`,
+      ).toBe(false);
     }
   });
 
   it("§1b ĐỐI CHỨNG DƯƠNG TỔNG HỢP — bốn hình dạng kín đều được THA (không dương tính giả)", () => {
     for (const [ten, ma] of MA_KIN) {
-      const diem = quetDiemXacThuc("tong-hop.ts", ma);
       // Điểm chung được giả định ĐANG cưỡng chế ở phép thử tổng hợp này (biến duy nhất là hình dạng
-      // của lượt gọi), nên `duocPhu` được tính lại tại chỗ với `DIEM_CHUNG_CUONG_CHE := true`.
-      const ho = diem.filter((d) => !((d.loai === "xt" && !d.boQua) || d.tuCanh));
+      // của lượt gọi) ⇒ **CÙNG công thức** `phuTheoHinhDang`, chỉ khác tham số.
+      const ho = quetDiemXacThuc("tong-hop.ts", ma).filter((d) => !phuTheoHinhDang(d, true));
       expect(
         ho.map(nhan),
         `DƯƠNG TÍNH GIẢ ở hình dạng "${ten}" — lưới này sẽ dạy người sau né bằng cách sai`,
