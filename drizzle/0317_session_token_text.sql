@@ -1,6 +1,10 @@
 -- ════════════════════════════════════════════════════════════════════════════════════════════
 -- 0317 — NỚI `user_sessions.sessionToken` TỪ varchar(255) SANG text
--- BẢN NHÁP — CHƯA ÁP. Chờ chủ dự án duyệt. Áp bằng owner `aoi` lên CẢ HAI DB.
+-- ✅ **ĐÃ ÁP** (2026-08-10) bằng owner `aoi` lên CẢ HAI DB. Đo lại từ `information_schema`:
+--      aoi_management       data_type=text · character_maximum_length=NULL · 276 hàng · UNIQUE còn
+--      aoi_management_test  data_type=text · character_maximum_length=NULL ·  91 hàng · UNIQUE còn
+-- ⚠ NỢ SỔ SÁCH: lượt áp đi NGOÀI `scripts/migrate-standalone.mjs`, nên bảng `__applied_migrations`
+--   **không có hàng nào** cho `0317` trên cả hai DB. Cột đã đúng; chỉ cuốn sổ là chưa biết.
 -- ════════════════════════════════════════════════════════════════════════════════════════════
 --
 -- ⚠ VÌ SAO — LỖI ĐANG SỐNG, ĐO ĐƯỢC 2026-08-10

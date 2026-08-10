@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
 // ★★★★ Pha 8 Task 1 — chủ DUY NHẤT của vị từ "lượt gọi này có bị cổng BUỘC-ĐỔI-MẬT-KHẨU chặn không".
@@ -221,6 +222,32 @@ class SDKServer {
     );
   }
 
+  /**
+   * ★★★★ Pha 8 — **CỬA ĐÚC DUY NHẤT của một vé phiên, và nay mỗi vé là MỘT vé.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ VÌ SAO CÓ `jti` — HAI LƯỢT ĐĂNG NHẬP TRONG CÙNG MỘT GIÂY TỪNG CHO RA **CÙNG MỘT** JWT
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Trước bản vá, payload chỉ có `{openId, appId, name}` cộng `exp` **tính theo GIÂY**. HS256 là
+   * hàm **tất định**: cùng đầu vào ⇒ cùng byte. Nên hai lượt đăng nhập của cùng một người trong
+   * cùng một giây sinh ra **JWT giống hệt nhau**, và hệ quả đo được nằm ở tầng dưới:
+   *   · `user_sessions.sessionToken` có ràng buộc **UNIQUE** ⇒ lượt ghi sổ thứ hai **vỡ** (`23505`);
+   *   · `ghiSoPhien` không ném (cố ý — xem `authService.ts`), nên lượt đăng nhập thứ hai vẫn nhận
+   *     cookie hợp lệ **nhưng không có hàng phiên của riêng nó** ⇒ **vô hình** với `session.list`
+   *     và **ngoài tầm** `session.revoke`;
+   *   · và vì hai phiên dùng **chung một khoá**, thu hồi một cái là thu hồi **cả hai** — hai thiết
+   *     bị khác nhau không còn tách rời được.
+   *
+   * `jti` = 9 byte ngẫu nhiên mã base64url (**12 ký tự**, 72 bit). Đặt ở **`signSession`** chứ
+   * không ở `createSessionToken`: đây là cửa **duy nhất** mọi vé đi qua (xem
+   * `server/routers/sessionGrantScan.test.ts`), nên không đường đúc nào lọt ra ngoài luật này.
+   *
+   * ⚠ Điều kiện đủ để ship: trần `varchar(255)` của `user_sessions.sessionToken` đã được **nới
+   *   thành `text`** (mig `0317`). Thêm nonce khi trần còn 255 ⇒ `22001` cho mọi người dùng tên
+   *   tiếng Việt — đã đo, và đó là lý do lượt trước phải hoàn nguyên.
+   * ⚠ `verifySession` **không** đọc `jti`: nó là **entropy**, không phải một điều kiện. Thêm phép
+   *   kiểm ở đó sẽ làm mọi cookie đã cấp trước bản vá **chết ngay lập tức**.
+   */
   async signSession(
     payload: SessionPayload,
     options: { expiresInMs?: number } = {}
@@ -245,6 +272,8 @@ class SDKServer {
       name: payload.name,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      // ⚠ NONCE — thứ DUY NHẤT làm hai vé của cùng một người trong cùng một giây khác nhau.
+      .setJti(randomBytes(9).toString("base64url"))
       .setExpirationTime(expirationSeconds)
       .sign(secretKey);
   }

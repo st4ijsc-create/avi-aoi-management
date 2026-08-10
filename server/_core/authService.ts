@@ -281,24 +281,24 @@ export async function verifyCredentials(
  * CHÍNH, nên đây là lỗ an ninh, không phải chuyện sổ sách.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * ⚠⚠⚠ VÌ SAO **GHI LOG + ĐẾM**, KHÔNG PHẢI **NÉM** — LỰA CHỌN CÓ SỐ ĐO ĐỠ LƯNG
+ * ⚠⚠⚠ VÌ SAO **GHI LOG + ĐẾM**, KHÔNG PHẢI **NÉM** — LỰA CHỌN GIỮ NGUYÊN, LÝ LẼ MẠNH HƠN
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * Ném thẳng biến một lỗi DB thoáng qua thành **lượt đăng nhập thất bại**. Nhưng lý do quyết định
- * không phải "phòng xa" — nó **đo được**:
- *   · `user_sessions.sessionToken` là **`varchar(255)`**; JWT thật hôm nay dài **203–233** (276
- *     hàng), tức chỉ dư **22 ký tự**.
- *   · Chiều dài JWT do **`users.name`** lái, mà đây là sản phẩm **tiếng Việt** — dấu tiếng Việt là
- *     **2 byte UTF-8**, còn base64 đếm **BYTE**. Đo được: tên `"Đặng Thị Bích Ngọc Hương Giang"`
- *     (30 ký tự / 40 byte) cho JWT **256 ký tự** — **VỠ trần NGAY HÔM NAY, chưa cần nonce**.
- *   ⇒ Nếu ném, đúng nhóm người dùng ấy **không đăng nhập được nữa**. Đó là lớp lỗi đã deploy ra
- *     **nhà tù 4/4 tài khoản** ở Pha 7: một cổng fail-closed chặn luôn cả đường thoát.
- * ⇒ Chọn **không im lặng mà cũng không chặn cửa**: đếm (`demLoiGhiSoPhien()` — đo được từ lưới,
- *   không phải một dòng log phải đọc bằng mắt) + `console.error` có ngữ cảnh.
+ * Ném thẳng biến một lỗi DB thoáng qua thành **lượt đăng nhập thất bại** — một cổng fail-closed
+ * chặn luôn cả đường thoát, đúng lớp lỗi đã deploy ra **nhà tù 4/4 tài khoản** ở Pha 7.
  *
- * ⚠ **NỢ MỚI, CẦN CHỦ DỰ ÁN QUYẾT** (không tự làm vì là DDL / đổi ngữ nghĩa cột trên đường xác
- *   thực): trần `varchar(255)` phải được nới, **hoặc** cột chuyển sang lưu **băm** của JWT (dài cố
- *   định 64, hết hẳn lớp lỗi này và bí mật không còn nằm nguyên ở tầng nghỉ). Chừng nào chưa xử,
- *   người tên dài **vẫn** mất hàng phiên — nhưng nay **kêu thành tiếng và đếm được**.
+ * ⚠⚠ **HAI NGUYÊN NHÂN ĐÃ BIẾT CỦA LƯỢT HỎNG NAY ĐỀU ĐÃ ĐÓNG** — và điều đó làm lựa chọn này
+ *    **mạnh hơn**, không phải yếu đi:
+ *   · **trần cột** — `sessionToken` từng là `varchar(255)` với đúng **22 ký tự** dư trên 276 hàng
+ *     thật; dấu tiếng Việt là 2 byte UTF-8 mà base64 đếm BYTE, nên một cái tên 12 ký tự đã đủ vỡ.
+ *     Mig `0317` đổi cột sang **`text`** ⇒ lớp lỗi `22001` **hết hẳn**, không còn trần để đoán.
+ *   · **va chạm UNIQUE** — hai lượt đăng nhập trong cùng một giây từng sinh **cùng một JWT** ⇒
+ *     `23505` ở lượt thứ hai. `sdk.signSession` nay gắn `jti` ngẫu nhiên 72 bit ⇒ va chạm còn lại
+ *     là biến cố xác suất ~0.
+ * ⇒ Nên **bất cứ lỗi nào còn lọt tới `catch` này đều là dấu hiệu của một thứ KHÁC HẲN** — mất kết
+ *   nối, quyền bị thu, bảng đổi hình dạng. Đó đúng là loại tín hiệu **không được nuốt**, và cũng
+ *   đúng là loại tín hiệu **không nên biến thành lượt đăng nhập hỏng** trước khi có người nhìn nó.
+ * ⇒ Giữ **không im lặng mà cũng không chặn cửa**: đếm (`demLoiGhiSoPhien()` — đo được từ lưới,
+ *   không phải một dòng log phải đọc bằng mắt) + `console.error` có ngữ cảnh.
  */
 let soLoiGhiSoPhien = 0;
 
@@ -333,7 +333,6 @@ export async function ghiSoPhien(data: {
       {
         userId: data.userId,
         doDaiToken: data.sessionToken.length, // ⚠ độ dài, KHÔNG phải token — token là khoá phiên.
-        tranCot: 255,
         loi: err instanceof Error ? err.message : String(err),
       },
     );

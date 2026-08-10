@@ -220,7 +220,21 @@ export type InsertBackupCode = typeof backupCodes.$inferInsert;
 export const userSessions = pgTable("user_sessions", {
   id: serial("id").primaryKey(),
   userId: integer("userId").notNull(),
-  sessionToken: varchar("sessionToken", { length: 255 }).notNull().unique(),
+  /**
+   * ★★★ Pha 8 — **`text`, KHÔNG phải `varchar(n)`** (mig `0317`, đã áp lên cả hai DB).
+   *
+   * Cột giữ **nguyên văn JWT phiên**, mà độ dài JWT do `users.name` lái — dữ liệu người dùng, ta
+   * không kiểm soát. Trần `varchar(255)` cũ chỉ còn **22 ký tự** dư trên 276 hàng thật, và vì dấu
+   * tiếng Việt là **2 byte UTF-8** còn base64 đếm **BYTE**, một cái tên 12 ký tự đã đủ vỡ. Lượt vỡ
+   * ấy **không** làm đăng nhập hỏng — nó làm phiên **mất hàng sổ** ⇒ vô hình với `session.list`,
+   * ngoài tầm `session.revoke`.
+   *
+   * ⚠ Postgres lưu `varchar(n)` và `text` **y hệt** (cùng `varlena`); `n` chỉ là một ràng buộc kiểm
+   *   lúc ghi. Một con số mới (512) chỉ dời cùng lớp lỗi sang chỗ khác — nó vẫn là một TRẦN ĐOÁN.
+   * ⚠ Khai báo TS này phải **khớp DB**: drizzle liệt kê **toàn bộ** cột ở mọi câu lệnh, nên một ô
+   *   lệch kiểu cắn ở chỗ khác chứ không cắn tại đây.
+   */
+  sessionToken: text("sessionToken").notNull().unique(),
   deviceName: varchar("deviceName", { length: 255 }), // Browser/Device name
   deviceType: varchar("deviceType", { length: 50 }), // desktop, mobile, tablet
   browser: varchar("browser", { length: 100 }), // Chrome, Firefox, Safari

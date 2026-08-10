@@ -1,42 +1,43 @@
 /**
- * ★★★ Pha 8 — **LỖI GHI SỔ PHIÊN KHÔNG CÒN IM LẶNG · TRẦN `varchar(255)` ĐƯỢC GHIM SỐ.**
+ * ★★★ Pha 8 — **MỖI LƯỢT ĐĂNG NHẬP LÀ MỘT PHIÊN RIÊNG, KỂ CẢ TRONG CÙNG MỘT GIÂY.**
  * (Tự khai `Pha 5` để `server/services/vram/vramPha5Gate.test.ts` kéo file này vào lượng từ
  *  *"mọi lưới tự khai một pha phải được §Cổng kiểm chung phủ"*.)
  *
+ *   ***∀ hai lượt đăng nhập liên tiếp của cùng một người — kể cả khi đồng hồ ĐỨNG YÊN — sinh ra
+ *   HAI hàng `user_sessions` PHÂN BIỆT, và mỗi hàng thu hồi được ĐỘC LẬP.***
  *   ***∀ lượt ghi sổ phiên HỎNG ⇒ phải ĐẾM ĐƯỢC và ghi log; im lặng là vi phạm.***
- *   ***∀ thay đổi làm JWT DÀI THÊM ⇒ phải làm ô §2 ĐỎ trước khi nó vỡ INSERT ở sản xuất.***
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * ⚠⚠⚠ NỬA "NONCE" CỦA NHIỆM VỤ **BỊ CHẶN BỞI PHÉP ĐO** — ĐỌC TRƯỚC KHI SỬA FILE NÀY
+ * ⚠⚠⚠ FILE NÀY TỪNG LÀ MỘT **CẦU DAO**, VÀ CẦU DAO ẤY ĐÃ ĐƯỢC GỠ — ĐỌC TRƯỚC KHI SỬA
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * Nhiệm vụ Pha 8 giao **hai nửa**: (1) thêm nonce vào payload JWT, (2) bỏ `.catch(() => {})`.
- * **Nửa (2) đã làm.** **Nửa (1) KHÔNG ship được**, và đây là số đo:
+ * Bản trước khẳng định điều **ngược lại**: *"hai lượt ký trong cùng một giây cho ra JWT GIỐNG
+ * HỆT"*, kèm hướng dẫn *"nới trần TRƯỚC rồi mới thêm nonce"*. Nó **không** nói lỗi ấy là đúng đắn;
+ * nó là một cái phanh, vì điều kiện đủ để vá **chưa có**:
+ *   · `user_sessions.sessionToken` là `varchar(255)`, dài nhất trên 276 hàng thật là **233**;
+ *   · thêm nonce ⇒ `auth.logoutThuHoi.test.ts` **ĐỎ 6/6** với `22001 value too long`.
  *
- *   · `user_sessions.sessionToken` là **`varchar(255)`** (đo từ `information_schema`).
- *   · `createLocalUser` sinh `openId` = `local_<13 số>_<11 ký tự>` = **31 ký tự** cho **MỌI** tài
- *     khoản cục bộ mới (`server/db/auth.ts`). Một người dùng thật đã mang đúng độ dài ấy.
- *   · Với `openId` 31 ký tự, ngân sách còn lại cho `users.name` là:
- *         **KHÔNG nonce**: 30 ký tự ASCII · **10** ký tự tiếng Việt có dấu
- *         **CÓ nonce 6 ký tự**: 15 ký tự ASCII · **5** ký tự tiếng Việt có dấu
- *     (dấu tiếng Việt là **2 byte UTF-8**, mà base64 đếm **BYTE** — đây là sản phẩm tiếng Việt.)
- *   · Đo trên tên thật: `"Trần Văn Bảo"` (12 ký tự) ⇒ JWT **257** ký tự khi có nonce ⇒ **VỠ**.
- *     `"Nguyễn Thị Minh Khai"` ⇒ **267**. `"Chị Hương (Quản đốc)"` ⇒ **273**.
- *   · Chạy thật với nonce: `auth.logoutThuHoi.test.ts` **ĐỎ 6/6 ca** với
- *     `PostgresError 22001: value too long for type character varying(255)`.
+ * **Điều kiện đủ nay ĐÃ CÓ** — mig `0317` đổi cột sang **`text`**, áp lên cả hai DB (đo lại ở ô
+ * *"cầu chì"* dưới, **không** chép từ trí nhớ). Nên cầu dao được **thay bằng lưới khẳng định đúng
+ * bất biến mà nó vẫn canh từ phía sau**: hai vé phải KHÁC NHAU.
  *
- * ⇒ **KHÔNG kích thước nonce nào vừa**: tên `"Nguyễn Thị Minh Khai"` chỉ còn **8 ký tự** biên, mà
- *   nonce rẻ nhất có thể (1 ký tự) đã tốn ~11. Thêm nonce = **mọi người dùng mới tên tiếng Việt
- *   mất hàng phiên**. Đó đúng lớp lỗi đã deploy ra **nhà tù 4/4 tài khoản** ở Pha 7.
- * ⇒ Phải **nới trần TRƯỚC**, rồi mới thêm nonce. Ba đường, **cả ba cần chủ dự án duyệt**:
- *     (a) DDL nới `sessionToken` (bị cấm ở pha này) ·
- *     (b) lưu **băm** JWT (dài cố định 64; hết hẳn lớp lỗi, và khoá phiên không còn nằm nguyên ở
- *         tầng nghỉ) — chạm ~6 điểm: `getSessionByToken` · `thuHoiPhienTheoToken` ·
- *         `publicSession.ts` (`isCurrent`) · `sdk.ts` · khoá của `authSessionCache` ·
- *     (c) bỏ `name`/`appId` khỏi payload (đổi hợp đồng `verifySession`).
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ VÌ SAO PHẢI ÉP **CÙNG MỘT GIÂY**, KHÔNG PHẢI "gọi hai lần rồi so"
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `exp` của JWT tính theo **GIÂY**. Hai lượt gọi cách nhau ≥1 giây cho hai `exp` khác nhau ⇒ hai
+ * token khác nhau **dù không có nonce nào**. Một ca như thế xanh vì **MAY**, không vì đúng — và nó
+ * sẽ xanh y hệt sau khi ai đó gỡ nonce. Nên §1 **đóng băng `Date.now`**: mọi ô của payload bằng
+ * nhau tuyệt đối, và thứ **duy nhất** còn có thể làm hai vé khác nhau là `jti`.
  *
- * ⚠ **VÌ SAO §1 KHẲNG ĐỊNH ĐÚNG CÁI LỖI:** vì lỗi ấy **vẫn còn**, và một lưới im lặng về nó sẽ để
- *   nó trôi. §1 là **cầu dao**: ai thêm nonce sẽ thấy nó ĐỎ **kèm hướng dẫn phải nới trần trước** —
- *   thay vì phát hiện bằng một lượt deploy hỏng. Nó **không** khẳng định lỗi là đúng đắn.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠ HAI VẾ, HAI Ô KHÁC NHAU — CÓ CHỦ Ý
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * §1/§2 canh **nonce**; §3 canh **lượt nuốt lỗi**. Gỡ nonce ⇒ §1/§2 đỏ, §3 **vẫn xanh**. Trả lại
+ * `.catch(() => {})` ⇒ §3 đỏ, §1/§2 **vẫn xanh**. Hai hỏng khác nhau ⇒ hai ô khác nhau; nếu cùng
+ * một ô đỏ cho cả hai thì lưới đang canh một nửa và **ăn may** nửa kia (đã ship đúng lỗi ấy ở Pha 5).
+ *
+ * ⚠ Lưới chạy trên **DB test THẬT** và **KHÔNG dùng `vi.mock`**: cả hai vế nói về *một hàng trong
+ *   sổ* và *một lỗi thật của PostgreSQL*. File tự dựng tài khoản của mình và **chỉ dọn đúng hàng
+ *   ấy** (kỷ luật Pha 8 Task 3).
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
@@ -52,129 +53,264 @@ vi.hoisted(() => {
   process.env.VITE_APP_ID ||= "avi-aoi-management";
 });
 
+import { eq } from "drizzle-orm";
+import type { Request, Response } from "express";
 import { sdk } from "./sdk";
-import { ghiSoPhien, demLoiGhiSoPhien, datLaiDemLoiGhiSoPhien } from "./authService";
+import {
+  establishSession,
+  ghiSoPhien,
+  demLoiGhiSoPhien,
+  datLaiDemLoiGhiSoPhien,
+} from "./authService";
 import * as db from "../db";
+import { userSessions, type User } from "../../drizzle/schema";
 
-/** Đúng hình dạng `openId` mà `createLocalUser` sinh ra cho MỌI tài khoản cục bộ mới. */
+/** Dấu riêng của file này — mọi hàng nó tạo mang tiền tố này, và lượt dọn khoá đúng vào đó. */
+const DAU = "pha8-trungphien";
+const MOT_GIO_MS = 60 * 60 * 1000;
+
+/** Đúng hình dạng `openId` mà `createLocalUser` sinh ra cho MỌI tài khoản cục bộ mới (31 ký tự). */
 const OPEN_ID_THAT = "local_1783673235595_3unhqnawq79";
-/** Trần cột, đo từ `information_schema.columns` — không chép từ trí nhớ. */
-const TRAN_COT = 255;
 
-const OPEN_ID = `pha8_trungphien_${Date.now()}`;
+/**
+ * Tên **DÀI NHẤT theo BYTE** đang có thật trong `users` của DB sản xuất (đo 2026-08-10:
+ * `"Chị Hương (Quản đốc)"` — 20 ký tự / **29 byte**). Dùng để đo biên độ token thật, vì base64
+ * đếm **BYTE** chứ không đếm ký tự — và đây là sản phẩm tiếng Việt.
+ */
+const TEN_DAI_NHAT_THAT = "Chị Hương (Quản đốc)";
+
 let uid = 0;
+let nguoi: User;
 
 beforeAll(async () => {
   const r = await db.createLocalUser({
-    username: OPEN_ID,
+    username: `${DAU}-${Date.now()}`,
     passwordHash: "$2b$10$khongdungdedangnhap0000000000000000000000000000000000000000",
     name: "Pha 8 — sổ phiên",
     role: "user",
   });
   uid = r.id;
+  nguoi = (await db.getUserById(uid)) as unknown as User;
 });
 
 afterAll(async () => {
+  const d = await db.getDb();
+  if (d && uid) await d.delete(userSessions).where(eq(userSessions.userId, uid));
   if (uid) await db.deleteUser(uid);
 });
 
-/** Ngân sách tên còn lại cho một tài khoản cục bộ MỚI, đo bằng cách ký thật rồi đếm. */
-async function tenToiDa(ky: string): Promise<number> {
-  let n = -1;
-  for (let i = 0; i <= 120; i++) {
-    const t = await sdk.createSessionToken(OPEN_ID_THAT, { name: ky.repeat(i), expiresInMs: 31_536_000_000 });
-    if (t.length <= TRAN_COT) n = i;
-    else break;
-  }
-  return n;
+/** `Request` đúng hình dạng `establishSession` đọc (ip · socket · user-agent · protocol/hostname). */
+function reqGia(): Request {
+  return {
+    ip: "127.0.0.1",
+    socket: { remoteAddress: "127.0.0.1" },
+    headers: { "user-agent": `${DAU}-ua` },
+    protocol: "http",
+    hostname: "localhost",
+  } as unknown as Request;
 }
 
-describe("★★★ Pha 5/8 — sổ phiên: lỗi phải ĐẾM ĐƯỢC, và trần cột phải được GHIM", () => {
-  it("★★★ cầu chì — dựng được người dùng, và trần cột đúng như đã đo", async () => {
+/** `Response` chỉ giữ lại giá trị cookie đã cấp — đó là **vé thật** người dùng cầm về. */
+function resGia(): { res: Response; ve: string[] } {
+  const ve: string[] = [];
+  const res = {
+    cookie: (_ten: string, gt: string) => {
+      ve.push(gt);
+    },
+  } as unknown as Response;
+  return { res, ve };
+}
+
+/** Mọi hàng sổ của tài khoản này, đọc THẲNG — không qua cache, không qua hàm của đường vá. */
+async function hangCuaToi() {
+  const d = await db.getDb();
+  return d!.select().from(userSessions).where(eq(userSessions.userId, uid));
+}
+
+describe("★★★ Pha 5/8 — mỗi lượt đăng nhập là MỘT phiên riêng, kể cả trong cùng một giây", () => {
+  it("★★★ cầu chì — dựng được người dùng, và cột `sessionToken` KHÔNG còn trần", async () => {
     expect(uid, "không dựng được người dùng ⇒ mọi ô dưới là chân lý rỗng").toBeGreaterThan(0);
     const conn = await db.getDb();
     expect(conn, "cầu chì: phải có DB thật — lưới này KHÔNG dùng `vi.mock`").toBeTruthy();
-    const [cot] = await conn!.execute(
-      `SELECT character_maximum_length AS len FROM information_schema.columns
-       WHERE table_name = 'user_sessions' AND column_name = 'sessionToken'` as never,
-    ) as unknown as Array<{ len: number }>;
+    const [cot] = (await conn!.execute(
+      `SELECT data_type AS kieu, character_maximum_length AS tran
+         FROM information_schema.columns
+        WHERE table_name = 'user_sessions' AND column_name = 'sessionToken'` as never,
+    )) as unknown as Array<{ kieu: string; tran: number | null }>;
     expect(
-      Number(cot!.len),
-      "trần cột đã đổi so với lúc đo. Nếu nó vừa được NỚI thì nợ này đã trả — hãy cập nhật\n" +
-        "`TRAN_COT`, gỡ ô §1, và thêm nonce vào `sdk.signSession` (xem khối đầu file).",
-    ).toBe(TRAN_COT);
+      { kieu: cot!.kieu, tran: cot!.tran },
+      "TRẦN CỘT ĐÃ QUAY LẠI.\n" +
+        "⚠ `sessionToken` giữ NGUYÊN VĂN JWT, mà độ dài JWT do `users.name` lái — dữ liệu người\n" +
+        "  dùng, ta không kiểm soát. Một trần bằng SỐ ở đây là một TRẦN ĐOÁN, và lượt vỡ nó KHÔNG\n" +
+        "  làm đăng nhập hỏng: nó làm phiên MẤT HÀNG SỔ ⇒ vô hình với `session.list`, ngoài tầm\n" +
+        "  `session.revoke`. Đó đúng là lỗ mà mig `0317` vừa đóng — xem `drizzle/0317_*.sql`.",
+    ).toEqual({ kieu: "text", tran: null });
   }, 25_000);
 
-  it("★★★★ §1 CẦU DAO — NỢ MỞ: hai lượt ký trong CÙNG MỘT GIÂY cho ra JWT GIỐNG HỆT", async () => {
-    const DONG_BANG = 1_777_000_000_000; // đóng băng ⇒ `exp` hai lượt bằng nhau tuyệt đối
-    const spy = vi.spyOn(Date, "now").mockReturnValue(DONG_BANG);
+  it("★★★★ §1 — HAI lượt `establishSession` trong CÙNG MỘT GIÂY ⇒ HAI hàng phiên PHÂN BIỆT", async () => {
+    // Đóng băng đồng hồ: `exp` (tính theo GIÂY) của hai vé bằng nhau TUYỆT ĐỐI, nên thứ duy nhất
+    // còn có thể làm hai vé khác nhau là `jti`. Không đóng băng thì ô này xanh vì MAY.
+    const DONG_BANG = 1_777_000_000_000;
+    const dongHo = vi.spyOn(Date, "now").mockReturnValue(DONG_BANG);
+    const im = vi.spyOn(console, "error").mockImplementation(() => {});
+    datLaiDemLoiGhiSoPhien();
+    let ve: string[];
     try {
-      const a = await sdk.createSessionToken(OPEN_ID_THAT, { name: "Trùng Giây", expiresInMs: 3_600_000 });
-      const b = await sdk.createSessionToken(OPEN_ID_THAT, { name: "Trùng Giây", expiresInMs: 3_600_000 });
-      expect(
-        a,
-        "⚠ Ô NÀY ĐỎ = BẠN VỪA THÊM NONCE VÀO PAYLOAD JWT.\n" +
-          "Đó là hướng ĐÚNG, nhưng **chưa đủ điều kiện**: `user_sessions.sessionToken` là\n" +
-          "`varchar(255)` và ngân sách tên cho một tài khoản MỚI chỉ còn 10 ký tự tiếng Việt.\n" +
-          "Thêm nonce khi CHƯA nới trần ⇒ `22001 value too long` cho mọi người dùng tên tiếng\n" +
-          "Việt (đo được: \"Trần Văn Bảo\" ⇒ 257 ký tự). NỚI TRẦN TRƯỚC — xem khối đầu file.",
-      ).toBe(b);
+      const r1 = resGia();
+      const r2 = resGia();
+      await establishSession(nguoi, reqGia(), r1.res);
+      await establishSession(nguoi, reqGia(), r2.res);
+      ve = [...r1.ve, ...r2.ve];
     } finally {
-      spy.mockRestore();
+      dongHo.mockRestore();
+      im.mockRestore();
     }
-  }, 20_000);
 
-  it("★★★★ §2 — GHIM ngân sách tên: một thay đổi làm JWT dài thêm phải ĐỎ Ở ĐÂY trước", async () => {
-    const ascii = await tenToiDa("N");
-    const viet = await tenToiDa("ữ");
+    // Cầu chì: đồng hồ phải THẬT SỰ đứng yên, nếu không ô này không đo thứ nó khai.
+    expect(ve.length, "cầu chì: hai lượt đăng nhập phải cấp đúng hai cookie").toBe(2);
+    const [a, b] = ve as [string, string];
     expect(
-      { ascii, viet },
-      "NGÂN SÁCH TÊN ĐÃ ĐỔI.\n" +
-        "· Nhỏ đi ⇒ một thay đổi vừa làm JWT DÀI THÊM. Ở sản xuất điều đó nghĩa là người dùng\n" +
-        "  tên dài mất hàng `user_sessions` (nay kêu thành tiếng qua `demLoiGhiSoPhien`).\n" +
-        "· Lớn lên ⇒ trần vừa được nới hoặc payload vừa được rút gọn: nợ đã trả, cập nhật số\n" +
-        "  này và đọc lại khối đầu file để gỡ §1 + thêm nonce.",
-    ).toEqual({ ascii: 30, viet: 10 });
+      a === b,
+      "HAI VÉ GIỐNG HỆT NHAU.\n" +
+        "⚠ HS256 là hàm TẤT ĐỊNH: cùng `{openId, appId, name, exp}` ⇒ cùng byte. Thiếu `jti`,\n" +
+        "  hai lượt đăng nhập trong cùng một giây dùng CHUNG một khoá phiên ⇒ (1) lượt ghi sổ thứ\n" +
+        "  hai vỡ UNIQUE nên phiên ấy VÔ HÌNH với `session.list` và NGOÀI TẦM `session.revoke`,\n" +
+        "  (2) thu hồi một thiết bị là thu hồi CẢ HAI. Sửa ở `sdk.signSession` (`.setJti`).",
+    ).toBe(false);
+
+    const hang = await hangCuaToi();
+    expect(
+      hang.length,
+      "hai lượt đăng nhập KHÔNG cho hai hàng sổ — lượt thứ hai đã rơi vào `catch` (23505)",
+    ).toBe(2);
+    expect(
+      new Set(hang.map((h) => h.sessionToken)).size,
+      "hai hàng sổ dùng CHUNG một khoá phiên ⇒ chúng không phải hai phiên",
+    ).toBe(2);
+    expect(
+      demLoiGhiSoPhien(),
+      "hai lượt đăng nhập hợp lệ mà bộ đếm lỗi ghi sổ nhích ⇒ có lượt ghi đã vỡ trong im lặng",
+    ).toBe(0);
+
+    // …và mỗi hàng thu hồi được ĐỘC LẬP — vế thứ hai của bất biến.
+    const [h1, h2] = hang as [typeof hang[number], typeof hang[number]];
+    await db.revokeSession(h1.id, uid);
+    const conLai = (await hangCuaToi()).filter((h) => h.isActive).map((h) => h.id);
+    expect(conLai, "thu hồi phiên A đã kéo theo phiên B ⇒ hai phiên KHÔNG độc lập").toEqual([h2.id]);
   }, 30_000);
+
+  it("★★★★ §2 — nonce nằm ở CỬA ĐÚC, và vé vẫn xác thực được (nonce là entropy, không phải điều kiện)", async () => {
+    /**
+     * ⚠⚠ **THIẾT BỊ ĐO NÓI DỐI — ĐÃ ĐO, GHI LẠI ĐỂ LƯỢT SAU KHÔNG MẤT THÌ GIỜ.** Bản đầu của ô này
+     *    đóng băng ở một mốc **quá khứ** (`1_777_000_111_000`) rồi mới `verifySession`, và nó ĐỎ
+     *    với `JWTExpired` — **không phải** vì nonce làm hỏng lượt xác thực.
+     *    Hai điều học được:
+     *      · `jose` kiểm `exp` bằng **`new Date()`**, **KHÔNG** bằng `Date.now()` ⇒
+     *        `vi.spyOn(Date, "now")` **không chạm tới** lượt kiểm hạn của nó;
+     *      · nên mốc đóng băng phải là **hiện tại thật**: hai lượt ký vẫn nhận **cùng một** `exp`
+     *        (đó là toàn bộ điều ô này cần), mà vé thì vẫn còn hạn dưới đồng hồ thật.
+     */
+    const DONG_BANG = Date.now();
+    const dongHo = vi.spyOn(Date, "now").mockReturnValue(DONG_BANG);
+    try {
+      const x = await sdk.createSessionToken(OPEN_ID_THAT, { name: "Trùng Giây", expiresInMs: MOT_GIO_MS });
+      const y = await sdk.createSessionToken(OPEN_ID_THAT, { name: "Trùng Giây", expiresInMs: MOT_GIO_MS });
+      expect(
+        x === y,
+        "CỬA ĐÚC vé (`sdk.signSession`) vẫn tất định ⇒ mọi đường cấp phiên đều thừa hưởng lỗ này,\n" +
+          "kể cả những đường KHÔNG đi qua `establishSession`.",
+      ).toBe(false);
+
+      // ⚠ Nonce KHÔNG được làm hỏng lượt xác thực: nó là entropy, không phải một điều kiện mới.
+      //   Một bản vá thêm phép kiểm `jti` ở `verifySession` sẽ giết mọi cookie đã cấp trước đó.
+      for (const [ten, t] of [["vé 1", x], ["vé 2", y]] as const) {
+        const p = await sdk.verifySession(t);
+        expect(p, `${ten}: có nonce mà KHÔNG xác thực được ⇒ nonce đã thành một điều kiện`).not.toBeNull();
+        expect(p!.openId).toBe(OPEN_ID_THAT);
+        expect(p!.name).toBe("Trùng Giây");
+      }
+    } finally {
+      dongHo.mockRestore();
+    }
+  }, 25_000);
+
+  it("★★ §2b — BIÊN ĐỘ THẬT sau nonce: tên dài nhất trong DB + openId 31 ký tự vẫn thoải mái", async () => {
+    // Đây là phép ĐO, không phải một trần đoán: cột là `text` nên không còn giới hạn để vượt. Ô này
+    // giữ con số **nhìn thấy được** để lượt sau biết một thay đổi làm JWT dài thêm bao nhiêu.
+    const t = await sdk.createSessionToken(OPEN_ID_THAT, {
+      name: TEN_DAI_NHAT_THAT,
+      expiresInMs: 31_536_000_000,
+    });
+    const cu = await sdk.createSessionToken(OPEN_ID_THAT, {
+      name: "",
+      expiresInMs: 31_536_000_000,
+    });
+    expect(t.length - cu.length, "chi phí của phần TÊN đã đổi bất ngờ").toBeGreaterThan(0);
+    expect(
+      t.length,
+      `JWT cho tên dài nhất thật ("${TEN_DAI_NHAT_THAT}", 29 byte) + openId 31 ký tự + nonce.\n` +
+        "Số này chỉ là MỐC ĐO — nó KHÔNG phải một trần. Lệch nhiều ⇒ payload vừa đổi hình dạng.",
+    ).toBeLessThan(400);
+  }, 25_000);
 
   it("★★★★ §3 — lỗi ghi sổ phiên phải ĐẾM ĐƯỢC, không được nuốt im lặng", async () => {
     datLaiDemLoiGhiSoPhien();
     expect(demLoiGhiSoPhien(), "cầu chì: bộ đếm phải bắt đầu từ 0").toBe(0);
 
-    // Lỗi THẬT từ PostgreSQL (`22001`) — ⚠ KHÔNG `vi.mock`: lưới xanh trên mã đã bị thay là một
-    // lớp lỗi riêng của dự án này. 300 ký tự > `varchar(255)`.
-    const quaDai = "x".repeat(300);
+    // Lỗi THẬT từ PostgreSQL — ⚠ KHÔNG `vi.mock`: lưới xanh trên mã đã bị thay là một lớp lỗi
+    // riêng của dự án này. Va chạm ràng buộc UNIQUE trên `sessionToken` ⇒ `23505`.
+    // ⚠ Trước mig `0317` ô này dùng một chuỗi 300 ký tự để ép `22001`. Cột nay là `text` nên lượt
+    //   ghi ấy **THÀNH CÔNG** và ô này sẽ xanh vì một tập rỗng — đúng lớp "lưới đo thứ không còn
+    //   tồn tại". Đường ép lỗi phải đi theo một ràng buộc CÒN SỐNG.
+    const trung = await sdk.createSessionToken(OPEN_ID_THAT, {
+      name: `${DAU}-trung`,
+      expiresInMs: MOT_GIO_MS,
+    });
+    const dau = await ghiSoPhien({
+      userId: uid,
+      sessionToken: trung,
+      deviceName: `${DAU}-lan-1`,
+      expiresAt: new Date(Date.now() + MOT_GIO_MS),
+    });
+    expect(dau, "cầu chì: lượt ghi ĐẦU phải thành công, nếu không ô dưới đo nhầm nguyên nhân").toBeTruthy();
+    expect(demLoiGhiSoPhien(), "cầu chì: lượt ghi hợp lệ không được làm bộ đếm nhích").toBe(0);
+
     const im = vi.spyOn(console, "error").mockImplementation(() => {});
-    let id: number | null = null;
+    let lai: number | null = null;
     try {
-      id = await ghiSoPhien({
+      lai = await ghiSoPhien({
         userId: uid,
-        sessionToken: quaDai,
-        deviceName: "vitest-qua-dai",
-        expiresAt: new Date(Date.now() + 3_600_000),
+        sessionToken: trung, // ← va chạm UNIQUE
+        deviceName: `${DAU}-lan-2`,
+        expiresAt: new Date(Date.now() + MOT_GIO_MS),
       });
       expect(
         demLoiGhiSoPhien(),
         "LƯỢT GHI SỔ PHIÊN HỎNG MÀ KHÔNG ĐỂ LẠI DẤU VẾT NÀO.\n" +
           "⚠ `.catch(() => {})` làm lỗi này VÔ HÌNH: lượt đăng nhập vẫn nhận cookie hợp lệ nhưng\n" +
           "  KHÔNG có hàng phiên nào đại diện ⇒ vô hình với `session.list`, NGOÀI TẦM\n" +
-          "  `session.revoke`. Task 2 vừa biến `user_sessions` thành đường thu hồi CHÍNH.",
+          "  `session.revoke`. Task 2 đã biến `user_sessions` thành đường thu hồi CHÍNH.\n" +
+          "⚠ Nay nonce làm va chạm UNIQUE gần như không còn, nên BẤT CỨ lỗi nào lọt tới `catch`\n" +
+          "  ấy đều là dấu hiệu của một thứ KHÁC HẲN — đúng loại tín hiệu không được nuốt.",
       ).toBe(1);
       expect(im, "hỏng thì phải ghi một dòng `error` có ngữ cảnh").toHaveBeenCalled();
     } finally {
       im.mockRestore();
     }
-    expect(id, "lượt hỏng phải trả `null` — người gọi cần phân biệt 'ghi được' với 'hỏng'").toBeNull();
+    expect(lai, "lượt hỏng phải trả `null` — người gọi cần phân biệt 'ghi được' với 'hỏng'").toBeNull();
   }, 25_000);
 
   it("★★★★ §4 — ĐỐI CHỨNG DƯƠNG: lượt ghi HỢP LỆ ghi được hàng và KHÔNG làm bộ đếm nhích", async () => {
     datLaiDemLoiGhiSoPhien();
-    const t = await sdk.createSessionToken(OPEN_ID, { name: "Hợp Lệ", expiresInMs: 3_600_000 });
+    const t = await sdk.createSessionToken(OPEN_ID_THAT, {
+      name: `${DAU}-hop-le`,
+      expiresInMs: MOT_GIO_MS,
+    });
     const id = await ghiSoPhien({
       userId: uid,
       sessionToken: t,
-      deviceName: "vitest-hop-le",
-      expiresAt: new Date(Date.now() + 3_600_000),
+      deviceName: `${DAU}-hop-le`,
+      expiresAt: new Date(Date.now() + MOT_GIO_MS),
     });
     expect(id, "đường hợp lệ phải ghi được hàng phiên").toBeTruthy();
     expect(
