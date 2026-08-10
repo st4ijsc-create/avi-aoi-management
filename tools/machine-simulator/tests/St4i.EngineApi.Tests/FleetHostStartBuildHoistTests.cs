@@ -575,10 +575,24 @@ public sealed class FleetHostStartBuildHoistTests
     /// outcome DOES differ: a flag set when the pre-check reads it and cleared again before the install (an
     /// <c>Estop</c> then a <c>ResetEstop</c>, or a racing <c>Start</c> then a <c>Stop</c>, both landing inside
     /// the build window) used to end with the rebuild installing a pipeline and now ends stopped. A
-    /// whole-branch enumeration of the two-read divergences found four cases — three refuse→proceed, which
-    /// are outcome-identical because the latch decides, and that one proceed→refuse — so it is not one
-    /// instance of a family, it IS the family, and it awaits the owner's ratification. The correct scope of
-    /// the claim is THIS TEST'S path, not the change.</para></summary>
+    /// whole-branch enumeration of the two-read divergences found FOUR cases, of which exactly one differs —
+    /// so that interleaving is not an instance of a family, it IS the family, and it awaits the owner's
+    /// ratification. The correct scope of the claim is THIS TEST'S path, not the change.
+    ///
+    /// <b>The enumeration, re-derived here rather than quoted, and it is short because the pre-check has only
+    /// two outcomes.</b> If it PASSES, the latch decides exactly as it did before J-1b (case A: an
+    /// <c>Estop</c> landing during the build — build runs, latch refuses, same end state as pre-J-1b). If it
+    /// REFUSES, the only question is whether the latch would have refused too: YES when the halt landed in
+    /// the teardown (case B) and YES when a racing <c>Start</c> installed during the teardown (case C) —
+    /// both outcome-identical to pre-J-1b, differing only in the build that no longer runs — and NO in
+    /// case D, the flag set at the check and cleared before the install, where pre-J-1b the rebuild
+    /// installed and now it does not. <b>Three identical, one different, and no fifth shape exists because a
+    /// check that neither passes nor refuses does not exist.</b>
+    /// (🔴 The review that raised this offered the same four cases under the labels "three refuse→proceed,
+    /// one proceed→refuse". Those labels do not survive being checked — case A's check PASSES while cases
+    /// B, C and D all REFUSE, so the grouping is not by arrow direction at all — and §8.1(d) says a mechanism
+    /// arriving with a finding is a claim to run, not a premise to build on. The four cases are right; the
+    /// vocabulary is dropped rather than repeated.)</para></summary>
     [Fact]
     public void AnEstopLandingInTheRestartTeardown_IsRefusedBeforeTheRebuildBuildsAnything()
     {

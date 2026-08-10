@@ -2110,8 +2110,11 @@ EXPECT_EDGESERVICE=50
 #       THE CHANGE rather than of this path, and that universal is FALSE: FleetCore's own block comment at
 #       the pre-check names the one interleaving where the outcome differs (a flag set at the check and
 #       cleared before the install — Estop then ResetEstop, or a racing Start then a Stop). A whole-branch
-#       enumeration of two-read divergences found four cases: three refuse->proceed (outcome-identical, the
-#       latch decides) and that one proceed->refuse. It is the whole family, not an instance of one, and it
+#       enumeration of two-read divergences found FOUR cases and exactly ONE differs: the pre-check either
+#       passes (the latch then decides exactly as pre-J-1b) or refuses, and if it refuses the latch would
+#       have refused too in two of the three refusing cases — halt landed in the teardown, racing Start
+#       installed in the teardown — leaving only "flag set at the check, cleared before the install" as a
+#       changed outcome. It is the whole family, not an instance of one, and it
 #       is the owner's to ratify — which two shipped artifacts, this one included, said did not exist.
 #   ARegisterOrScenarioChangeMadeWhileTheLatchIsEngaged_NeverReachesTheRebuild           +1
 #       🔴 THE ZERO, PINNED — a measurement that contradicted this task's own motivating case, committed
