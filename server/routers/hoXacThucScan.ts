@@ -419,6 +419,28 @@ export function phepKiemTrong(
  *   chính là hình dạng đã để **`user_sessions.sessionToken`** bay xuống trình duyệt qua
  *   `user.getSessions` — trong khi tuyến song song `session.list` chiếu tường minh 10 cột và
  *   **không** có token.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ Review TOÀN NHÁNH Pha 8 · **I-2** — CÂU LƯỚI HỨA MẠNH HƠN HẲN THỨ NÓ CANH
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu chỉ nhận `return <lời gọi>`. Một `return <định danh>` — **hình dạng phổ biến nhất của
+ * cùng một lỗi** — nằm ngoài lượng từ. Đo được (đột biến trên đĩa, đã hoàn nguyên):
+ *
+ *     const hang = await db.getUserSessions(ctx.user.id);
+ *     return hang;                      // ← `sessionToken` vẫn bay xuống trình duyệt
+ *
+ * ⇒ **§3 XANH**, chỉ §7 đỏ. Mà §7 là lưới HÀNH VI gọi **đích danh** `user.getSessions`: một thủ
+ *   tục **MỚI trong FILE MỚI** mang cùng hình dạng thì §3 mù **và** §7 không chạm tới ⇒ **không
+ *   lưới nào bắt**. Ô §4 (phép thử M3) không cứu được: nó ghép cặp theo tác động **GHI**, còn đây
+ *   là đường **ĐỌC**.
+ *
+ * ⇒ Nay **theo dõi biến**: một biến được gán từ một lượt đọc thô mang **vết nhiễm**, và `return
+ *   <biến nhiễm>` là vi phạm y như `return <lời gọi>`. Phép lan truyền cố ý **một tầng, không có
+ *   phép chiếu** — đúng khuôn `hatGiongCua()`/`thoatKhoi()` của `userExposureScan.test.ts`, đừng
+ *   viết bộ suy thứ N+1.
+ * ⚠ VÙNG MÙ CÒN LẠI (được khai): một biến đi qua **hai** lần gán trung gian, hoặc thoát qua
+ *   `res.json(<biến>)` ở tuyến REST, vẫn ngoài tầm. Trục ấy do `userExposureScan.test.ts` §5 canh
+ *   (theo **giá trị**, không theo hình dạng).
  */
 export function bangTraTho(
   node: ts.Node,
@@ -426,19 +448,57 @@ export function bangTraTho(
   banDo: ReadonlyMap<string, ReadonlySet<string>>,
 ): Set<string> {
   const ra = new Set<string>();
+
+  /** Bảng mà một biểu thức **ĐỌC THÔ**, sau khi bóc `await`/`(…)`/`!`. */
+  const bangDocTho = (e0: ts.Expression): string[] => {
+    let e: ts.Expression = e0;
+    while (ts.isAwaitExpression(e) || ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e)) e = e.expression;
+    if (!ts.isCallExpression(e)) return [];
+    const ten = tenLoiGoi(e);
+    return tn.bang.filter((b) => banDo.get(ten)?.has(`${b}:select*`) === true);
+  };
+
+  /** Biểu thức này có mang BẤT KỲ phép chiếu nào (object literal) không ⇒ không còn là "thô". */
+  const coChieu = (e: ts.Node): boolean => {
+    let co = false;
+    const dc = (y: ts.Node): void => {
+      if (ts.isObjectLiteralExpression(y)) co = true;
+      ts.forEachChild(y, dc);
+    };
+    dc(e);
+    return co;
+  };
+
+  // ── (1) BIẾN NHIỄM: `const x = <lượt đọc thô>` trong phạm vi đơn vị xử lý ────────────────────
+  const nhiem = new Map<string, string[]>();
+  const d0 = (x: ts.Node): void => {
+    if (ts.isVariableDeclaration(x) && ts.isIdentifier(x.name) && x.initializer !== undefined) {
+      if (!coChieu(x.initializer)) {
+        const b = bangDocTho(x.initializer);
+        if (b.length > 0) nhiem.set(x.name.text, b);
+      }
+    }
+    ts.forEachChild(x, d0);
+  };
+  d0(node);
+
+  // ── (2) ĐƯỜNG THOÁT: `return <lời gọi thô>` HOẶC `return <biến nhiễm>` ───────────────────────
   const di = (x: ts.Node): void => {
     if (ts.isReturnStatement(x) && x.expression) {
       let e: ts.Expression = x.expression;
-      while (ts.isAwaitExpression(e) || ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e)) e = e.expression;
-      // Có BẤT KỲ phép chiếu nào (object literal / `.map`) ⇒ không phải trả thô.
-      let chieu = false;
-      const dc = (y: ts.Node): void => {
-        if (ts.isObjectLiteralExpression(y)) chieu = true;
-        ts.forEachChild(y, dc);
-      };
-      dc(e);
-      if (!chieu && ts.isCallExpression(e)) {
-        for (const b of tn.bang) if (banDo.get(tenLoiGoi(e))?.has(`${b}:select*`) === true) ra.add(b);
+      while (
+        ts.isAwaitExpression(e) ||
+        ts.isParenthesizedExpression(e) ||
+        ts.isNonNullExpression(e) ||
+        // `hang as unknown as PublicSession[]` — ép kiểu KHÔNG phải một phép chiếu.
+        ts.isAsExpression(e) ||
+        ts.isTypeAssertionExpression(e)
+      ) {
+        e = e.expression;
+      }
+      if (!coChieu(e)) {
+        for (const b of bangDocTho(e)) ra.add(b);
+        if (ts.isIdentifier(e)) for (const b of nhiem.get(e.text) ?? []) ra.add(b);
       }
     }
     ts.forEachChild(x, di);

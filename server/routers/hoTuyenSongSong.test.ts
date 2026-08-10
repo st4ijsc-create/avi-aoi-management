@@ -271,6 +271,58 @@ describe("★★★★ Pha 5/8 Task 5 §3 — ∀ TUYỆT ĐỐI: không đơn v
         "  không phải bằng một `delete row.<cột>` tại chỗ.\n",
     ).toBe("");
   });
+
+  /* ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★★ §3b HIỆU CHUẨN — review TOÀN NHÁNH Pha 8 · **I-2**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Ô ∀ ở trên **KHÔNG BAO GIỜ ĐỎ ĐƯỢC** nếu bộ nhận diện mù với hình dạng thật. Đo được trước bản
+   * vá (đột biến trên đĩa, đã hoàn nguyên): thay `return toPublicSessions(await db.getUserSessions(…))`
+   * bằng **hai dòng** — `const hang = await db.getUserSessions(…); return hang;` — ⇒ **§3 XANH**,
+   * chỉ §7 đỏ. Mà §7 gọi **đích danh** `user.getSessions`, nên cùng hình dạng ấy trong một thủ tục
+   * **MỚI ở FILE MỚI** thì **không lưới nào bắt**.
+   * ⇒ Bốn ca dưới đây hiệu chuẩn bộ nhận diện bằng mã có **ĐÁP SỐ BIẾT TRƯỚC**, trên một file
+   *   **CHƯA TỒN TẠI** (phép thử M3 cho trục ĐỌC).
+   * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+  const FILE_DOC_MOI = "server/routers/phienDocThoN1Router.ts";
+  const thoCua = (than: string): string[] => {
+    const ma = `
+      import { router, protectedProcedure } from "../_core/trpc";
+      import * as db from "../db";
+      export const r = router({
+        docPhien: protectedProcedure.query(async ({ ctx }) => {${than}}),
+      });`;
+    return donViTrongNguon(FILE_DOC_MOI, ma, TAI_NGUYEN, BAN_DO).flatMap((d) => d.traTho);
+  };
+
+  it("★★★★ §3b ĐỘT BIẾN — `return <lời gọi thô>` VÀ `return <biến nhiễm>` đều bị BẮT", () => {
+    expect(
+      thoCua(` return db.getUserSessions(ctx.user.id); `),
+      "hình dạng CŨ (trả thẳng lời gọi) rơi khỏi bộ nhận diện — thước đã chết",
+    ).toContain("userSessions");
+    expect(
+      thoCua(` const hang = await db.getUserSessions(ctx.user.id); return hang; `),
+      "ĐÚNG đột biến của I-2: một biến trung gian đủ để đi lọt một ∀ TUYỆT ĐỐI",
+    ).toContain("userSessions");
+    expect(
+      thoCua(` const hang = await db.getUserSessions(ctx.user.id); return hang as unknown as never[]; `),
+      "một lượt ép kiểu KHÔNG phải một phép chiếu — nó không làm hàng sạch đi",
+    ).toContain("userSessions");
+  });
+
+  it("★★★★ §3b ĐỐI CHỨNG DƯƠNG — có phép chiếu (kể cả qua biến) thì KHÔNG bị bắt", () => {
+    expect(
+      thoCua(` return toPublicSessions(await db.getUserSessions(ctx.user.id), ctx.sessionToken); `),
+      "DƯƠNG TÍNH GIẢ: hình dạng ĐÃ VÁ vẫn bị bắt ⇒ lưới này sẽ bị người sau tắt đi",
+    ).toEqual([]);
+    expect(
+      thoCua(
+        ` const hang = await db.getUserSessions(ctx.user.id);
+          const ra = hang.map((h) => ({ id: h.id, deviceName: h.deviceName }));
+          return ra; `,
+      ),
+      "DƯƠNG TÍNH GIẢ trên một phép chiếu tường minh qua biến",
+    ).toEqual([]);
+  });
 });
 
 describe("★★★★ Pha 5/8 Task 5 §4 — M3: một cặp bất đồng MỚI trong FILE CHƯA TỒN TẠI vẫn bị bắt", () => {
