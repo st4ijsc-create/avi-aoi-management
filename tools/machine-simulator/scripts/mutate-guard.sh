@@ -120,7 +120,11 @@
 #
 # MEASURED, J-1b: the control (`_running = true` -> `false` inside FleetCore.StartLocked, which
 # makes every single Start() report a stopped fleet) was run against St4i.EngineApi.Tests and
-# KILLED 91 tests. A mutation on the SAME LINE OF THE SAME FILE was then read from
+# KILLED 91 tests. A mutation in the SAME METHOD OF THE SAME FILE — the HALT latch a few
+# lines above that assignment, not the assignment itself (🔴 this read "the same LINE" when
+# first written, which was false and is corrected here; see the commit that fixes it, because
+# WHAT CAUGHT IT is the closing re-read this same round added to §8.1(h2), fired against the
+# very diff that introduced the rule) — was then read from
 # St4i.EdgeCore.Tests and reported "SURVIVED 1093/1093". Re-running the CONTROL against
 # St4i.EdgeCore.Tests: it SURVIVES TOO, 1093/1093, on a fresh binary. That suite does not
 # observe FleetCore's start/stop state machine at all, so its "SURVIVED" was a NULL RESULT
