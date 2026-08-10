@@ -506,8 +506,16 @@ internal sealed class FleetCore
     /// <b>The set is still FIVE.</b>);
     /// <c>TransportCoordinator</c>'s and
     /// <c>SwitchableTransport</c>'s (via <see cref="ApplyNetworkOutageLocked"/>);
-    /// <see cref="ConnectorRegistry"/>'s (<c>SnapshotBindings</c>/<c>RegisteredIds</c>/
-    /// <c>TryCreateDriver</c>); and the UNS publisher's own lifecycle lock (via
+    /// <see cref="ConnectorRegistry"/>'s (🔴 <b>branch review, Minor — <c>TryCreateDriver</c> ONLY.</b> This
+    /// read "<c>SnapshotBindings</c>/<c>RegisteredIds</c>/<c>TryCreateDriver</c>" and the first two take no
+    /// lock at all: <c>RegisteredIds</c> is <c>_entries.Keys.ToList()</c> and <c>SnapshotBindings</c>
+    /// enumerates the same <see cref="ConcurrentDictionary{TKey,TValue}"/>, both lock-free by construction —
+    /// which is precisely why <c>SnapshotBindings</c>' own doc argues for one CONSISTENT snapshot rather
+    /// than a fresh one. Naming two lock-free reads as lock acquisitions overstates the set in the direction
+    /// that makes a reader stop checking, the same failure mode as the "none" this banner already
+    /// records. The ordering pair is real and stays — <c>_registerGate</c> is taken by
+    /// <c>TryCreateDriver</c> under <see cref="_gate"/> in the connector loop — so the set is unchanged at
+    /// FIVE; only its justification is now accurate); and the UNS publisher's own lifecycle lock (via
     /// <see cref="IUnsPublisher.PublishNodeBirth"/>/<see cref="IUnsPublisher.PublishNodeDeath"/>). None
     /// inverts today. <see cref="_seedNotifyGate"/> is deliberately NOT in this list and must never join it —
     /// see its own doc comment for the order that genuinely exists there and what keeps it one-way.
@@ -653,13 +661,21 @@ internal sealed class FleetCore
     /// (<see cref="Start"/> returns <see langword="void"/> and already declines silently when latched or
     /// already running), no new lock, and no roster freeze.
     ///
-    /// <para>🔴 <b>What is NOT restored byte-for-byte, said plainly rather than glossed.</b> Pre-J-1's
-    /// "stop arrived second" path emitted a full <c>NBIRTH</c> + historian <c>"Start"</c> pair and then
-    /// <c>NDEATH</c> + <c>"Stop"</c>. The abandoned start emits NONE of the four. That is not a third
-    /// behaviour: it is exactly what pre-J-1's OTHER resolution — "stop arrived first" — emitted, and both
-    /// were legal outcomes of the same race. Emitting a Start/Stop pair for a pipeline that never ran would
-    /// be the worse choice, because <c>SqliteHistorianStore</c>'s OEE query opens an interval on
-    /// <c>"Start"</c>; a zero-length interval for a start that never installed is a fabricated one.
+    /// <para>🔴 <b>What is NOT restored byte-for-byte, said plainly rather than glossed — and the first
+    /// version of this paragraph got it wrong (branch review, Important 1).</b> Pre-J-1's "stop arrived
+    /// second" path emitted <c>NBIRTH</c> + historian <c>"Start"</c>, then <c>NDEATH</c> + <c>"Stop"</c>,
+    /// and ended STOPPED. Pre-J-1's "stop arrived first" path emitted <c>NBIRTH</c> + <c>"Start"</c> and
+    /// ended RUNNING (the stop no-opped on a stopped fleet, then the start ran). The abandoned start emits
+    /// NONE of the four and ends STOPPED. <b>That is a genuinely THIRD (end-state, emission) pair</b>, and
+    /// the claim that once stood here — "exactly what pre-J-1's other resolution emitted" — was false:
+    /// that arm emitted two of the four and ended in the opposite state.
+    ///
+    /// <para>The ruling this change was accepted under does not rest on that sentence, which is why the
+    /// sentence is corrected rather than the behaviour. It rests on the OEE leg, which is independent:
+    /// <c>SqliteHistorianStore</c>'s query opens an interval on <c>"Start"</c> and closes it on
+    /// <c>"Stop"</c>/<c>"Estop"</c>, so emitting a pair for a pipeline that never installed fabricates a
+    /// zero-length interval — an invented production record, which is worse than an absent one. Emitting
+    /// nothing is the honest report of a start that never happened.</para>
     ///
     /// <para><b>Scope, deliberately narrow.</b> Only <see cref="Start"/> consults this. The equivalent window
     /// inside <see cref="RegisterMachine"/>/<see cref="ApplyScenario"/> — between their <see cref="StopLocked"/>
@@ -1732,6 +1748,19 @@ internal sealed class FleetCore
     /// cannot produce a wrong pipeline — it produces a slower one, degrading per machine rather than
     /// all-or-nothing, and never silently.</para>
     ///
+    /// <para>🔴 <b>WHAT IT COSTS, labelled because only the win was written down (branch review,
+    /// Important 3).</b> The roster-derived work is now done TWICE per start, once in
+    /// <see cref="BuildStartPlan"/> and once in <see cref="StartLocked"/>: the <c>effectiveFleet</c>
+    /// projection when the multiplier is not 1, the <c>simFleet</c> filter, and a second
+    /// <see cref="ConnectorRegistry.SnapshotBindings"/> — plus this record's own lists and the
+    /// <c>MappingKeys</c> set. All of it is in-memory work over a roster whose size is the machine count,
+    /// with no I/O and no lock beyond the one the install already holds, so the trade is a second pass over
+    /// N descriptors against N file reads and up to N file writes moved off the lock. That is the trade,
+    /// stated rather than measured: this task's instruments answer "is the gate grantable" and "how many
+    /// times did a resolve run", and neither of them times an allocation. Calling it negligible without a
+    /// measurement would be the (a3) error this file has a banner about, so it is LABELLED — if the second
+    /// pass ever matters, the number to get first is the install's own hold time, not this list's length.</para>
+    ///
     /// <para><b>The members, and why each reuse key is what it is:</b>
     /// <list type="bullet">
     /// <item><c>SimFleet</c> — the simulated-group roster this plan was built from, IN ORDER. Compared
@@ -1879,8 +1908,26 @@ internal sealed class FleetCore
         // start. It is the SAME test, under the SAME lock, and it errs in the safe direction (it can only
         // decline to start). What makes it safe is that it is not load-bearing: StartLocked re-reads
         // IsRunning/_estopEngaged under the second acquisition and that reading is the one that decides.
-        // Deleting THAT one opens a window on the safety path; deleting THIS one only wastes work. Both
-        // mutations are covered — see FleetHostStartBuildHoistTests.
+        // Deleting THAT one opens a window on the safety path; deleting THIS one only wastes work.
+        //
+        // 🔴 BRANCH REVIEW, Critical — AND THE SENTENCE THAT USED TO END THIS PARAGRAPH ("Both mutations are
+        // covered") WAS FALSE BY THE TIME IT SHIPPED. Fix round 1 made Estop() increment _stopRequests, so
+        // from that commit the abandon check below returns BEFORE StartLocked is called: the latch's
+        // _estopEngaged arm became unreachable FROM THIS METHOD, and the test whose name says it covers it
+        // was in fact passing through the counter. The mutation that had proved the latch (M1) was run
+        // before the counter existed and was never re-run; re-run at the branch tip it SURVIVED all 1330
+        // tests. Nothing was ever wrong with the BEHAVIOUR — Estop is still refused, by the counter here and
+        // by the latch on the restart path — but the coverage claim was stale, which is worse than a gap
+        // because it stops the next person looking.
+        //
+        // WHERE EACH ARM IS WITNESSED NOW, since "covered" has to name the arm to mean anything:
+        //   _estopEngaged — NOT from this method (the counter shadows it). Reached and tested through
+        //       RebuildPipelineOffLock, which consults neither the pre-check nor the counter:
+        //       AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock.
+        //   IsRunning     — still live HERE, because a racing Start moves no counter:
+        //       ASecondStartWinningTheRace_LeavesTheLoserRefusedByTheLatch_NotASecondSetOfSlots.
+        // M1 kills both. The pre-check below is witnessed separately by
+        // AStartMadeWhileTheLatchIsEngaged_NeitherStartsNorBuilds, on the observation count.
         //
         // 🔴 J-1 fix round 1 (review I-2) — AND IT IS NOT ONLY WASTED WORK: naming the write without naming
         // the THROW understated it. If an Estop lands between the two acquisitions, the build has already
@@ -1891,6 +1938,22 @@ internal sealed class FleetCore
         // enumeration refuses when it rejects "throw" as a way to close P4/P5 — so it is named here rather
         // than left as a footnote about files. It needs BOTH a poisoned data root AND an Estop inside the
         // window, and the pre-check above is what keeps the ordinary latched Start on the old path.
+        //
+        // 🔴 BRANCH REVIEW, Important 2 — THIS DISCLOSURE WAS WRITTEN ONLY HERE, AND THE OTHER ARM IS WORSE.
+        // RebuildPipelineOffLock (RegisterMachine/ApplyScenario) has NO pre-check at all, so when an Estop
+        // lands after their StopLocked, the rebuild's BuildStartPlan runs P4's per-machine reads AND P5's
+        // WRITE while the HALT latch is engaged — filesystem work on the halt path that pre-J-1 could not
+        // happen, against a root ST4I_MACHINE_CONFIG_DIR may have pointed at a UNC share — and can throw
+        // there too. My sweep for this disclosure took its domain from the method I was editing rather than
+        // from the property (ANY path that now builds before the latch is read), which is §8.1(f) for the
+        // fourth time in this task. Both restart sites now carry the disclosure.
+        //
+        // NOT "fixed" by adding a symmetric pre-check there, and the trade is worth stating because it is
+        // not obvious: a pre-check would skip that build while latched (outcome-identical, since the latch
+        // refuses the install anyway) and would remove the halt-path I/O — but it would also narrow the ONLY
+        // window in which the latch's _estopEngaged arm is reachable, which is exactly the window its sole
+        // witness uses. Reducing halt-path I/O at the cost of the guard's testability is a trade for the
+        // owner, not for this task.
         bool started = false;
         StartOutcome outcome = default;
         try
@@ -1919,6 +1982,19 @@ internal sealed class FleetCore
                 // start. Only a count of REQUESTS can see an event that left no state behind. See
                 // _stopRequests for why the counter lives at the operator-facing calls rather than inside
                 // StopLocked.
+                //
+                // 🔴 BRANCH REVIEW, Minor — THIS RETURN DROPS THE PLAN'S MAPPING WARNINGS, and unlike the
+                // latch path that is NOT what pre-J-1 did. Both pre-J-1 resolutions of a Start||Stop race
+                // ran StartLocked to completion at some point, so both emitted the "mappingProfile X not
+                // found, falling back" line for every descriptor that had one; an abandoned start emits
+                // none. The lines are not lost forever — the next start rebuilds the plan and produces the
+                // same messages — so what is lost is one emission per abandoned attempt, which under the
+                // repeating-Stop case below means they are never emitted at all while the loop continues.
+                // Left dropped, consistent with the latch path directly below: `outcome` stays
+                // default(StartOutcome) and CompleteStartOffLock is a no-op over it, so emitting here would
+                // mean carrying the plan into the finally purely to log from a start that never installed.
+                // Named rather than fixed, because "which arm's log behaviour is right" is a question about
+                // operator-facing output, not about this mechanism.
                 if (_stopRequests != inputs.StopRequests) return;
 
                 var wasRunning = IsRunning;
@@ -2007,6 +2083,16 @@ internal sealed class FleetCore
                 // Start/Stop pair for a pipeline that never installed would fabricate a zero-length OEE
                 // interval — the worse of the two. Recorded here because a starving Start() is exactly the
                 // symptom someone will debug from this side.
+                //
+                // 🔴 BRANCH REVIEW — AND IT COSTS MORE THAN HISTORIAN EVIDENCE. Every starved attempt still
+                // runs its whole off-lock build before being abandoned, so each one repeats P5: a
+                // MachineConfigStore.Ensure per not-yet-stored machine, i.e. a File.WriteAllText +
+                // File.Move against a root ST4I_MACHINE_CONFIG_DIR may point at a UNC share. A Stop() loop
+                // therefore drives repeated network filesystem writes for starts that never install —
+                // off _gate, so it delays nobody's Estop, but it is real I/O and not merely a quiet
+                // timeline. After the first pass those machines are in the store's in-memory map and Ensure
+                // stops writing, so the repeat cost is the store's lock and the mapping reads rather than
+                // an unbounded write loop; the write repeats only where the store keeps being reset.
                 _stopRequests++;
 
                 var wasRunning = IsRunning;
@@ -2166,10 +2252,24 @@ internal sealed class FleetCore
             lock (_gate)
             {
                 // 🔴 J-1 fix round 1 (review I-1) — a HALT is a request for the pipeline to be down too, so
-                // it counts here for the same reason Stop() does. This is belt-and-braces rather than
-                // load-bearing: `_estopEngaged` below already makes StartLocked's latch refuse any start
-                // whose install lands after this point, and that latch is the guard. Counting anyway means
-                // the two mechanisms agree instead of one covering for the other.
+                // it counts here for the same reason Stop() does.
+                //
+                // 🔴 BRANCH REVIEW, Critical — THE ORIGINAL JUSTIFICATION HERE HAD THE EXECUTION ORDER
+                // BACKWARDS. It read "belt-and-braces rather than load-bearing: `_estopEngaged` below
+                // already makes StartLocked's latch refuse any start whose install lands after this point,
+                // and THAT LATCH IS THE GUARD." On Start()'s path it is the other way round: this increment
+                // makes Start() abandon BEFORE StartLocked runs, so for an Estop landing in Start()'s build
+                // window THIS COUNTER is the guard and the latch never executes. The two mechanisms do not
+                // "agree" there — this one shadows the other. Measured, not reasoned: with the latch deleted
+                // the whole 1330-test suite stayed green until a witness was added on the restart path.
+                //
+                // KEPT, and the reason is about which failure each mechanism can still catch. The latch
+                // remains the ONLY guard on the RebuildPipelineOffLock path (no pre-check, no counter read
+                // there), so it is live code with its own witness; this increment additionally makes an
+                // Estop win Start()'s window without depending on _estopEngaged still being set by the time
+                // the install runs — which an EstopReset in the same window could otherwise clear. Removing
+                // it would hand that interleaving back to the latch and change which pre-J-1 arm the race
+                // resolves to, for no gain now that the latch is witnessed elsewhere.
                 _stopRequests++;
 
                 handle = StopLocked();
@@ -2517,6 +2617,17 @@ internal sealed class FleetCore
         // round 1's reason for giving it one ("two spellings that name the same file must not look like two
         // different keys") was the Code argument applied to something it does not describe: whether two
         // spellings name the same file is the FILESYSTEM's answer, not this class's. See the comparer.
+        //
+        // 🔴 BRANCH REVIEW — AND THE REACHABILITY CLAIM AROUND IT WAS TOO GENEROUS TO ITSELF. Fix round 2
+        // recorded the case-divergence as "only constructible on a case-sensitive filesystem", carrying it
+        // as something a Linux runner would catch. It is not constructible ANYWHERE: this set is keyed on
+        // Code among other things, `_fleet` is append-only, and MachineDescriptor is immutable, so one code
+        // can never appear twice with two profile spellings for the two keys to disagree over — no
+        // filesystem enters into it. The Linux-runner carry is withdrawn. What remains true, and is the only
+        // thing worth watching, is that the case-insensitive duplicate check this rests on lives in
+        // RegisterMachine: a roster seeded through FleetConfig.Load (fleet.json) does not pass through it,
+        // so two entries differing only in case would enter `_fleet` unchallenged. That is a fleet.json
+        // question, not a comparer one, and the comparer is correct either way.
         var mappingKeys = new HashSet<(string, string?, DeviceClass)>(MappingKeyComparer);
         foreach (var d in effectiveFleet)
         {
@@ -3547,8 +3658,15 @@ internal sealed class FleetCore
         // "path B" before that list was labelled: SimulatorFactory.Create -> SimulatorBase's ctor ->
         // MachineConfigStore.Ensure, which throws InvalidOperationException on a config-kind mismatch and
         // IOException from its File.WriteAllText/File.Move on a full or read-only data root — 🔴 reached
-        // from RebuildPipelineOffLock -> BuildStartPlan since J-1, not from StartLocked; same throw, same
-        // reachability from this method, one statement earlier and off _gate). Without the finally, that
+        // from RebuildPipelineOffLock -> BuildStartPlan since J-1, not from StartLocked; same throw, one
+        // statement earlier and off _gate. 🔴 BRANCH REVIEW, Important 2: this used to say "SAME
+        // reachability" and that is FALSE on this arm. Pre-J-1 the latch inside StartLocked refused before
+        // any build, so an Estop landing after the StopLocked above made the whole rebuild — and this throw
+        // — unreachable. Now the build runs first, so during a HALT this path performs P4's per-machine
+        // reads and P5's WRITE (against whatever root ST4I_MACHINE_CONFIG_DIR names, possibly a UNC share)
+        // and can throw where it previously could not. STRICTLY WIDER, not the same. Unlike Start(), this
+        // arm has no cheap pre-check to keep the latched case off it; see the note at Start() for why one
+        // was not added.). Without the finally, that
         // throw leaves the machine in
         // the roster with its notification still sitting in _pendingSeedNotifications, delivered only if some
         // LATER RegisterMachine happens to drain it, and never at all if none does. Pre-G-1 the notification

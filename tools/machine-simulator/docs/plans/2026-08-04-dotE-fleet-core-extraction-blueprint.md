@@ -362,6 +362,18 @@ cùng hình dạng): `MappingProfileResolver.Build` giữ `_gate` **2,39 ms** v�
 cục bộ; `RegisterMachine` ×100 tốn **0,1 ms** khi registry null và **7,1 ms** khi có store thật; và một
 thread chỉ đọc `host.EstopEngaged` — **cùng cái khoá `Estop()` lấy** — bị chặn tới **12,35 ms**, tức ~300×.
 
+> 🔴 **`2,39 ms` Ở ĐÂY CŨNG LÀ MỘT PHÉP ĐO LỊCH SỬ (J-1, 2026-08-10 — branch review, Minor).** Từ J-1,
+> `MappingProfileResolver.Build` chạy trong `FleetCore.BuildStartPlan`, **đã nhả `_gate`**; dụng cụ sinh ra
+> con số này chạy lại hôm nay sẽ ra số khác. **Hai con số kia KHÔNG đổi:** `RegisterMachine` ×100 và
+> **12,35 ms** thuộc về `_onMachineSeeded` (P1), đóng từ G-1 và J-1 không đụng tới.
+>
+> 🔴 **Và đây là lần thứ NĂM của cùng một lớp lỗi trong nhiệm vụ này.** Vòng sửa 2 đánh dấu chỗ ở §10.3 rồi
+> **báo cáo §7.2 tuyên bố "đã đánh dấu ở ba nơi"** — trong khi chỗ NÀY, chỗ mà cả hai chỗ kia đều trỏ về
+> như nguồn (*"§9.2 đo được 2,39 ms"*), vẫn trống. Miền của phép quét lại lấy từ **chỗ tôi đang đứng**
+> (§10.3, mục mà phát hiện trích dẫn) chứ không từ **tính chất** (*mọi lần xuất hiện của phép đo ấy*).
+> §8.1(f). Cách quét đúng là `grep "2,39 ms"` — năm hit, và bây giờ mỗi hit hoặc mang dấu hoặc trỏ tới một
+> hit mang dấu.
+
 **Cả ba đều có TRƯỚC Đợt E.** Khuyến nghị: xếp thành một hạng mục riêng, **không** gộp vào E-2 — gộp vào sẽ
 làm hợp đồng "hành vi không đổi, gate là phép kiểm" của E-2 thành không đúng, và đó đúng là hình dạng
 "bản sửa và phép quét cảm giác như một hành động nhưng là hai" của Đợt D §8.1.

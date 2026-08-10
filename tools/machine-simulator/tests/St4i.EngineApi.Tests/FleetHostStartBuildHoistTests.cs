@@ -316,10 +316,17 @@ public sealed class FleetHostStartBuildHoistTests
     // The HALT latch — the most dangerous part of the hoist, per the brief.
     // ─────────────────────────────────────────────────────────────────────
 
-    /// <summary>The defence-in-depth latch at the top of <c>StartLocked</c> is now evaluated AFTER a build
-    /// that ran off the lock, so an <c>Estop()</c> can land in between. It must still refuse. This is the
-    /// test that makes deleting that check red — the other latch test below only covers the cheap pre-check
-    /// in <c>Start()</c>, which is an optimisation and not the guard.</summary>
+    /// <summary>An <c>Estop()</c> landing in <c>Start()</c>'s off-lock build window must leave the fleet
+    /// halted and not running.
+    ///
+    /// <para>🔴 <b>BRANCH REVIEW, Critical — WHAT THIS TEST ACTUALLY EXERCISES CHANGED UNDER IT, and its
+    /// own doc went on claiming otherwise.</b> It read "this is the test that makes deleting that check
+    /// red", meaning <c>StartLocked</c>'s latch. That was true when written and FALSE from fix round 1
+    /// onward: once <c>Estop()</c> began incrementing <c>_stopRequests</c>, <c>Start()</c>'s abandon check
+    /// started returning before <c>StartLocked</c> was ever called, so this test has been passing through
+    /// the COUNTER. Measured rather than argued — with the latch deleted at the branch tip, all 1330 tests
+    /// stayed green. The latch's own witnesses are the two tests at the top of this file; this one is the
+    /// witness for the counter on the Estop path, which is a real guarantee and a different one.</para></summary>
     [Fact]
     public void AnEstopLandingDuringTheHoistedBuild_IsStillRefusedByTheLatchInsideTheLock()
     {
@@ -340,6 +347,89 @@ public sealed class FleetHostStartBuildHoistTests
         Assert.True(host.EstopEngaged);
         Assert.False(host.IsRunning);
         Assert.Empty(host.GetDriverHealth());
+    }
+
+    /// <summary>🔴 BRANCH REVIEW, Critical — <b>the witness for the HALT latch itself, and it exists because
+    /// the latch had none.</b>
+    ///
+    /// <para><b>What happened, because the shape matters more than the fix.</b> Round 1 made
+    /// <c>Estop()</c> increment <c>_stopRequests</c>. From that moment <c>Start()</c>'s abandon check
+    /// returned <i>before</i> <c>StartLocked</c> was ever called, so
+    /// <c>AnEstopLandingDuringTheHoistedBuild_…</c> below stopped exercising the latch and started
+    /// exercising the counter — while its own name, three comments and the task report all went on claiming
+    /// it covered the latch. The mutation that had proved the latch (M1) was run at <c>39f1fb38</c>, BEFORE
+    /// the counter existed, and was never re-run. <b>Re-run against the branch tip it SURVIVES the entire
+    /// 1330-test suite.</b> A mutation result taken before the mechanism changed, cited afterwards as
+    /// current evidence: the inverse of "no failures is not evidence of a repair", one layer up.</para>
+    ///
+    /// <para><b>Why this test reaches the latch when <c>Start()</c> no longer can.</b> A roster change on a
+    /// RUNNING fleet restarts through <c>RebuildPipelineOffLock</c>, which — unlike <c>Start()</c> —
+    /// consults neither the cheap pre-check nor <c>_stopRequests</c>. So an <c>Estop()</c> landing in that
+    /// rebuild's off-lock build window meets the latch and nothing else. This is the
+    /// <c>_estopEngaged</c> arm; the sibling test below covers the <c>IsRunning</c> arm, which is still
+    /// reachable from <c>Start()</c>.</para></summary>
+    [Fact]
+    public void AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock()
+    {
+        var host = CreateHost();
+        Assert.True(host.RegisterMachine(Descriptor("J1-RESTART-LATCH-01")));
+
+        host.Start();
+        Assert.True(host.IsRunning);
+
+        // Armed only now, so the initial start's own build does not consume the one-shot.
+        var observations = 0;
+        var halted = false;
+        host.StartBuildObserverForTests = () =>
+        {
+            if (Interlocked.Increment(ref observations) > 1) return;
+            halted = CompletesOnAnotherThread(host.Estop);
+        };
+
+        // Restarts the running fleet: StopLocked under the gate, teardown off it, then the rebuild whose
+        // build window the Estop above lands in.
+        Assert.True(host.RegisterMachine(Descriptor("J1-RESTART-LATCH-02")));
+
+        Assert.Equal(1, Volatile.Read(ref observations));
+        Assert.True(halted, "the mid-rebuild Estop must have completed");
+        Assert.True(host.EstopEngaged);
+        Assert.False(host.IsRunning);
+        Assert.Empty(host.GetDriverHealth());
+    }
+
+    /// <summary>The latch's OTHER arm, and the one that is still live on <c>Start()</c>'s own path: a second
+    /// start winning the race while this one is building. <c>_stopRequests</c> does not move — nobody asked
+    /// for a stop — so the abandon check passes and <c>IsRunning</c> is what refuses the install.
+    ///
+    /// <para>The assertion is the SLOT COUNT rather than a flag, because the flag is true either way. What
+    /// the latch prevents here is a SECOND set of pipeline slots over the same roster: two simulated groups
+    /// writing the same <c>MachineState</c>, which is the double-drive that corrupts per-machine cycles and
+    /// therefore fleet KPI/OEE/FPY, silently.</para></summary>
+    [Fact]
+    public void ASecondStartWinningTheRace_LeavesTheLoserRefusedByTheLatch_NotASecondSetOfSlots()
+    {
+        var host = CreateHost();
+        Assert.True(host.RegisterMachine(Descriptor("J1-DOUBLE-START-01")));
+
+        var observations = 0;
+        var innerStarted = false;
+        host.StartBuildObserverForTests = () =>
+        {
+            if (Interlocked.Increment(ref observations) > 1) return;
+            innerStarted = CompletesOnAnotherThread(host.Start);
+        };
+
+        host.Start();
+        try
+        {
+            Assert.True(innerStarted, "the racing Start must have completed");
+            Assert.True(host.IsRunning);
+            Assert.Single(host.GetDriverHealth());
+        }
+        finally
+        {
+            host.Stop();
+        }
     }
 
     /// <summary>🔴 Fix round 1 (review I-1) — a <c>Stop()</c> that lands in the off-lock build window must

@@ -2057,7 +2057,30 @@ EXPECT_EDGESERVICE=50
 # EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE remain unchanged: the fix
 # round touches FleetCore, MachineState's doc comment and one test file, and adds no behaviour those suites
 # can observe.
-EXPECT_ENGINEAPI=1330
+#
+# 🔴 J-1 BRANCH-REVIEW ROUND raises EXPECT_ENGINEAPI 1330 -> 1332 (+2), counted from the EXECUTED total.
+# Same one file. Both close the branch review's Critical: THE HALT LATCH HAD NO SURVIVING WITNESS.
+# Fix round 1 made Estop() increment _stopRequests, so from that commit Start()'s abandon check returned
+# before StartLocked ran and the test whose name claims to cover the latch was passing through the counter
+# instead. MEASURED: mutation M1 (delete the latch) was re-run at the branch tip and SURVIVED all 1330
+# tests. The behaviour was never wrong — Estop is refused either way — but the coverage claim was stale,
+# and a stale coverage claim is worse than a gap because it stops the next person looking.
+#   AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock                +1
+#       The _estopEngaged arm. Reaches the latch because RebuildPipelineOffLock (the RegisterMachine/
+#       ApplyScenario restart) consults neither the cheap pre-check nor _stopRequests, so an Estop landing
+#       in that rebuild's build window meets the latch and nothing else.
+#   ASecondStartWinningTheRace_LeavesTheLoserRefusedByTheLatch_NotASecondSetOfSlots      +1
+#       The IsRunning arm, still live on Start()'s own path because a racing Start moves no counter. The
+#       assertion is the SLOT COUNT, not a flag: what the latch prevents is a second set of pipeline slots
+#       over one roster, i.e. two simulated groups writing the same MachineState — the silent double-drive.
+# M1 now kills both.
+#
+# 🔴 THE ROUND'S OTHER LESSON, recorded because it is about evidence rather than about code: M1's KILLED
+# verdict in the task report was obtained BEFORE the mechanism it tested changed, and was cited afterwards
+# as current. This project already records that an absence of failures is not evidence of a repair; this is
+# the same error one layer up — a PRESENCE of a past failure cited as evidence of a present guard. A
+# mutation result is only evidence for the tree it was run against.
+EXPECT_ENGINEAPI=1332
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
