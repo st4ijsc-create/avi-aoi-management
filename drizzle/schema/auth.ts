@@ -235,7 +235,17 @@ export const userSessions = pgTable("user_sessions", {
    *   lệch kiểu cắn ở chỗ khác chứ không cắn tại đây.
    */
   sessionToken: text("sessionToken").notNull().unique(),
-  deviceName: varchar("deviceName", { length: 255 }), // Browser/Device name
+  /**
+   * ★★★★ Mig **0318** (áp 2026-08-11, CẢ HAI DB) — `varchar(255)` → **`text`**, cùng lý lẽ với
+   * `sessionToken` ngay trên: cột này nạp **thẳng** từ header `User-Agent`, tức **dữ liệu KẺ TẤN
+   * CÔNG** đặt tuỳ ý. Một UA 3.770 ký tự ⇒ `22001` ⇒ lượt ghi sổ vỡ ⇒ phiên **không có hàng** ⇒
+   * (trước lượt siết) vô hình với `session.list` và ngoài tầm `session.revoke`.
+   * ⚠ Mọi trần trên dữ liệu ngoài tầm kiểm soát đều là **TRẦN ĐOÁN**; `varchar(512)` chỉ dời cùng
+   *   lớp lỗi sang chỗ khác. Postgres lưu `varchar(n)` và `text` y hệt (`varlena`).
+   * ⚠ Hệ quả cố ý: `catTheoTranCot` suy trần **từ chính khai báo này**, nên cột rời tập bị cắt
+   *   **tự động** — không dòng mã nào phải sửa, và một UA dài nay được lưu NGUYÊN VĂN.
+   */
+  deviceName: text("deviceName"), // Browser/Device name (UA nguyên văn — xem mig 0318)
   deviceType: varchar("deviceType", { length: 50 }), // desktop, mobile, tablet
   browser: varchar("browser", { length: 100 }), // Chrome, Firefox, Safari
   os: varchar("os", { length: 100 }), // Windows, macOS, Linux, iOS, Android

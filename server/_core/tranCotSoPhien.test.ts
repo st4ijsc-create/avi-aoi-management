@@ -40,9 +40,12 @@
  *  1. Cắt là **chuẩn hoá**, không phải kiểm tra. Nó đóng lớp lỗi `22001`; nó **không** đóng các
  *     nguyên nhân khác của một lượt ghi sổ hỏng (mất kết nối, quyền bị thu, bảng đổi hình dạng).
  *     Nửa ấy do bộ đếm `soPhien_ghiSoLoi_total` canh — nay có bề mặt Prometheus (§3).
- *  2. `deviceName` vẫn là `varchar(255)`: đổi sang `text` là **DDL**, cần chủ dự án duyệt
- *     (`drizzle/0318_session_device_name_text.sql.DRAFT`). Phép cắt ở đây **không phụ thuộc** vào
- *     lượt DDL ấy — nó đọc trần từ schema, nên khi cột thành `text` thì cột ấy tự rời tập bị cắt.
+ *  2. ~~`deviceName` vẫn là `varchar(255)`~~ — **mig `0318` ĐÃ ÁP 2026-08-11 trên CẢ HAI DB**
+ *     (`deviceName` → `text`, chủ dự án duyệt). Và lượt áp ấy **chứng minh câu vừa nói ở trên**:
+ *     phép cắt đọc trần **từ schema**, nên `deviceName` **tự rời** tập bị cắt — **không một dòng mã
+ *     sản xuất nào phải sửa**. Thứ duy nhất đổi là các ô của lưới này, vì chúng ghim SỐ (§1a/§2a).
+ *     ⇒ Nay một UA dài được lưu **NGUYÊN VĂN**; `ipAddress` (`varchar(45)`) vẫn bị cắt, và đó là
+ *     cột **cuối cùng** của câu `INSERT` này còn mang một trần đoán (xem `.DRAFT` của 0319).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
@@ -74,13 +77,28 @@ const TRAN = tranVarcharCua(userSessions);
 
 describe("★★★★ Review TOÀN NHÁNH Pha 8 C-2 — ∀ cột varchar của `user_sessions`: cắt theo trần SCHEMA", () => {
   /* ── §1 TRẦN SUY TỪ SCHEMA ─────────────────────────────────────────────────────────────────── */
-  it("§1a cầu chì — bộ suy trần KHÔNG rỗng và khớp hai cột ĐO ĐƯỢC trên cả hai DB", () => {
+  it("§1a cầu chì — bộ suy trần KHÔNG rỗng và khớp cột ĐO ĐƯỢC trên cả hai DB (SAU mig 0318)", () => {
     expect(
       Object.keys(TRAN).length,
       "0 cột có trần ⇒ phép cắt là no-op và MỌI ô dưới đây là chân lý rỗng",
-    ).toBeGreaterThanOrEqual(6);
-    expect(TRAN.deviceName, "`deviceName` — cột nạp thẳng từ header `User-Agent`").toBe(255);
-    expect(TRAN.ipAddress, "`ipAddress` — cột thứ hai của cùng câu INSERT").toBe(45);
+    ).toBeGreaterThanOrEqual(5);
+    /**
+     * ★★★★ **Ô NÀY VỪA ĐỔI CHIỀU VÌ MIG `0318` (áp 2026-08-11, cả hai DB).** Trước đó nó ghim
+     * `TRAN.deviceName === 255`. Nay cột là `text` ⇒ **không có trần** ⇒ nó phải **RỜI** tập bị cắt.
+     * ⚠ Đây đúng là điều `0318` được soạn ra để làm, và cũng là bằng chứng phép cắt suy trần **từ
+     *   schema** chứ không từ một danh sách viết tay: DDL đổi, mã sản xuất **không đổi một dòng**.
+     * ⚠ Ô này ĐỎ nếu ai đó hoàn nguyên `0318` **hoặc** để khai báo TS lệch khỏi DB — drizzle liệt kê
+     *   toàn bộ cột ở mọi câu lệnh, nên một ô lệch kiểu cắn ở chỗ khác chứ không cắn tại đây.
+     */
+    expect(
+      TRAN.deviceName,
+      "`deviceName` phải KHÔNG còn trần (mig 0318 đổi sang `text`) — còn trần ⇒ khai báo TS lệch DB",
+    ).toBeUndefined();
+    expect(
+      Object.keys(TRAN),
+      "`deviceName` vẫn nằm trong tập bị cắt ⇒ một UA dài vẫn bị cắt dù cột đã là `text`",
+    ).not.toContain("deviceName");
+    expect(TRAN.ipAddress, "`ipAddress` — cột CUỐI CÙNG của câu INSERT còn mang một trần đoán").toBe(45);
   });
 
   it("★★★ §1b `sessionToken` KHÔNG BAO GIỜ nằm trong tập bị cắt (cắt KHOÁ PHIÊN = tái tạo C-2)", () => {
@@ -142,7 +160,9 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-2 — ∀ cột varchar của
       expect(uid).toBeGreaterThan(0);
       // Cầu chì: chuỗi phải DÀI THẬT — một chuỗi ngắn làm ô này xanh vô nghĩa.
       expect(UA_DAI.length, "UA phải dài đúng bằng lượt đo sống").toBe(DAI_THAT);
-      expect(UA_DAI.length, "UA phải vượt trần cột").toBeGreaterThan(TRAN.deviceName!);
+      // ⚠ SAU mig 0318 cột `deviceName` là `text` ⇒ không còn trần để "vượt". Cầu chì chuyển sang
+      //   cột CÒN trần của **cùng câu INSERT** (`ipAddress` 45) — nếu bộ suy trần hỏng, ô này ĐỎ.
+      expect(TRAN.ipAddress, "cầu chì: cột `ipAddress` phải còn trần, nếu không §2a đo rỗng").toBe(45);
 
       const token = `${DAU}-ua-dai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       datLaiDemLoiGhiSoPhien();
@@ -163,7 +183,18 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-2 — ∀ cột varchar của
       const d = await db.getDb();
       const [hang] = await d!.select().from(userSessions).where(eq(userSessions.sessionToken, token));
       expect(hang, "không có hàng sổ ⇒ đúng lỗ C-2").toBeTruthy();
-      expect(hang!.deviceName!.length, "`deviceName` phải được cắt về đúng trần").toBe(TRAN.deviceName);
+      /**
+       * ★★★★ **VẾ NÀY ĐỔI CHIỀU VÌ MIG `0318`.** Trước: `deviceName` bị cắt còn **255**. Nay cột là
+       * `text` ⇒ UA được lưu **NGUYÊN VĂN 3.770 ký tự**. Đó là chủ ý của `0318`: `deviceName` là dữ
+       * liệu **chẩn đoán**, và giữ nguyên nó không tốn ô đĩa nào (Postgres lưu `varchar(n)` và
+       * `text` y hệt). Cột `ipAddress` — cùng câu `INSERT`, vẫn `varchar(45)` — **vẫn phải bị cắt**,
+       * nên ô này cũng là đối chứng *"phép cắt chưa bị tắt nhầm cho cả bảng"*.
+       */
+      expect(
+        hang!.deviceName!.length,
+        "sau mig 0318 `deviceName` là `text` ⇒ UA phải vào DB NGUYÊN VĂN, không bị cắt",
+      ).toBe(DAI_THAT);
+      expect(hang!.deviceName, "và đúng nguyên văn chuỗi đã gửi").toBe(UA_DAI);
       expect(hang!.ipAddress!.length, "`ipAddress` phải được cắt về đúng trần").toBe(TRAN.ipAddress);
       expect(hang!.sessionToken, "KHOÁ PHIÊN phải nguyên vẹn — hàng phải khớp cookie").toBe(token);
     });
@@ -195,7 +226,13 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-2 — ∀ cột varchar của
   /* ── §3 BỀ MẶT QUAN SÁT ĐƯỢC — "không im lặng trong lưới" ≠ "không im lặng trong sản xuất" ─── */
   it("★★★ §3 hai bộ đếm sổ phiên có mặt trong kết xuất Prometheus (đường vá 3 của C-2)", () => {
     const ra = renderSoPhienPrometheus();
-    for (const ten of ["soPhien_ghiSoLoi_total", "soPhien_chanDaThuHoi_total"]) {
+    for (const ten of [
+      "soPhien_ghiSoLoi_total",
+      "soPhien_chanDaThuHoi_total",
+      // ★ 2026-08-11 SIẾT FAIL-OPEN — bộ đếm THỨ BA: số vé bị chặn vì KHÔNG có hàng sổ. Đây là
+      //   đồng hồ đo cơn đau của lượt siết; im lặng ở đây = siết mù.
+      "soPhien_chanKhongCoHang_total",
+    ]) {
       expect(ra, `bộ đếm \`${ten}\` không có mặt ⇒ sản xuất vẫn im lặng`).toContain(`${ten} `);
       expect(ra, `\`${ten}\` thiếu dòng TYPE ⇒ scraper Prometheus bỏ qua`).toContain(`# TYPE ${ten} counter`);
     }

@@ -1,11 +1,13 @@
 -- ════════════════════════════════════════════════════════════════════════════════════════════
--- 0318 — NỚI `user_sessions.deviceName` TỪ varchar(255) SANG text        ⚠⚠⚠ **BẢN NHÁP — CHƯA ÁP**
+-- 0318 — NỚI `user_sessions.deviceName` TỪ varchar(255) SANG text        ✅ **ĐÃ ÁP 2026-08-11**
 -- ════════════════════════════════════════════════════════════════════════════════════════════
--- ⚠⚠⚠ FILE NÀY MANG ĐUÔI `.DRAFT` VÀ **KHÔNG** ĐƯỢC `scripts/migrate-standalone.mjs` NHẶT.
---     Nó chờ **chủ dự án duyệt**. Brief của lượt vá cấm mọi DDL/migration/seed/cấp quyền.
---     Muốn áp: đổi tên thành `0318_session_device_name_text.sql` rồi chạy đúng đường chuẩn
---     (`node scripts/migrate-standalone.mjs`) — **đừng** chạy tay bằng `psql`: mig `0317` áp ngoài
---     đường chuẩn và đã đẻ ra một chú thích sai về sổ sách (M-1 của cùng lượt review).
+-- ✅ **CHỦ DỰ ÁN DUYỆT 2026-08-11.** Đuôi `.DRAFT` đã được bỏ; file áp qua đúng đường chuẩn
+--     (`scripts/migrate-standalone.mjs`, owner `aoi`, **CẢ HAI** DB) — **không** chạy tay bằng
+--     `psql`: mig `0317` áp ngoài đường chuẩn và đã đẻ ra một chú thích sai về sổ sách (M-1).
+--     ⚠ Lượt áp thu hẹp danh sách file của bộ chạy về **đúng 0318** (repo còn **6** migration
+--       "pending" là nợ CÓ TRƯỚC: 0057 · 0066 · 0125 · 0234 mang `success=false` từ 2026-07-19,
+--       và 0308 · 0309 **không có hàng sổ nào** — cùng lớp nợ mà 0317 vừa để lại). Brief cấm mọi
+--       DDL ngoài 0318, nên sáu file ấy **KHÔNG** được đụng tới, và chúng vẫn là nợ đang mở.
 --
 -- ⚠⚠ **LƯỢT VÁ ĐÃ SHIP KHÔNG PHỤ THUỘC FILE NÀY.** Lỗ C-2 đã được đóng ở tầng ứng dụng:
 --     `server/db/catTheoTranCot.ts` cắt **mọi** cột `varchar(n)` theo trần **suy từ schema** ngay
@@ -34,10 +36,13 @@
 --     một chuỗi dài trong cột `text` không tốn gì. Ai muốn chặn phình sổ thì đặt trần **ở tầng ứng
 --     dụng** (một con số nói ra được), không đặt bằng một `varchar(n)` làm vỡ câu `INSERT`.
 --
--- ⚠ ĐO TRƯỚC KHI SOẠN — cần chủ dự án chạy lại và dán số THẬT vào đây trước khi áp:
---     · phụ thuộc khung nhìn / rule trên cột `deviceName`:  __ (kỳ vọng 0, đo lại)
---     · chỉ số trên cột `deviceName`:                       __ (kỳ vọng 0, đo lại)
---     · số hàng `user_sessions`:                            __ (đo lại trên CẢ HAI DB)
+-- ⚠ ĐO NGAY TRƯỚC LƯỢT ÁP (2026-08-11, owner `aoi`, cổng 5434) — SỐ THẬT, không phải kỳ vọng:
+--     · phụ thuộc khung nhìn / rule trên cột `deviceName`:  **0** · **0**   (prod · test)
+--       (`pg_depend`⋈`pg_rewrite` khoá theo `attname='deviceName'`; `pg_rules` trên bảng: 0 · 0)
+--     · chỉ số trên cột `deviceName`:                       **0** · **0**
+--       (6 chỉ số trên `user_sessions`, không cái nào chạm `deviceName`: pkey · userId · isActive
+--        · expiresAt · UNIQUE sessionToken · idx sessionToken)
+--     · số hàng `user_sessions`:                            **293** · **107**
 --   `varchar(n)` → `text` là **binary-coercible** ⇒ Postgres **KHÔNG** viết lại bảng. Khoá
 --   ACCESS EXCLUSIVE trong lượt đổi; với vài trăm hàng là mili-giây.
 --
