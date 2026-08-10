@@ -56,6 +56,10 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import {
   nguoiDocBiMatCuaUserSecrets,
+  diemDocBiMatCuaUserSecrets,
+  diemDocBiMatTrongNguon,
+  nhapUserSecrets,
+  moiFileNhapUserSecrets,
   quetThuTucDocBiMat,
   moiFileDuoi,
   laFileTest,
@@ -177,6 +181,124 @@ describe("★★★ Pha 8 Task 4a — ∀ thủ tục đọc `user_secrets` PH�
         "  Một điểm MỚI ở đây có thể là một bề mặt mới đang mọc ra ngoài cổng KIỂU ⇒ phải có người\n" +
         "  QUYẾT, rồi cập nhật `SO_DIEM_NGOAI`.\n",
     ).toBe(SO_DIEM_NGOAI);
+  });
+
+  /* ════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★★ §4b — **LƯỢNG TỪ THEO KHÁI NIỆM, KHÔNG THEO ĐƯỜNG DẪN** (review TOÀN NHÁNH Pha 8 · I-1)
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Bộ suy *"người đọc bí mật"* trả về **TÊN HÀM KHAI BÁO**. Một lượt đọc nằm trong một **hàm mũi
+   * tên** — chính là thân một thủ tục tRPC — **không có tên để trả** ⇒ nó rơi khỏi tập ấy **theo
+   * cấu tạo**, và cả hai lưới tiêu thụ đều mù. Đo được: tiêm vào một **FILE MỚI** một thủ tục đọc
+   * `userSecrets` thẳng bằng drizzle rồi **trả hạt giống TOTP** ⇒ **39/39 XANH**, `check` sạch.
+   *
+   * ⇒ Hai ô dưới đây đóng khe ấy bằng **hai lượng từ ĐỘC LẬP**, cố ý không thay nhau:
+   *   · §4b — *"∀ điểm đọc bí mật phải nằm trong một HÀM CÓ TÊN"* (⇒ nó vào tập người đọc ⇒ chịu
+   *     luật KHAI BẮT BUỘC ở trên). Bắt theo **HÌNH DẠNG LƯỢT ĐỌC**.
+   *   · §4c — *"∀ file sản xuất `server/**` CẦM bảng `userSecrets` phải nằm trong tập KHAI"*. Bắt
+   *     theo **QUYỀN TRUY CẬP**, kể cả khi lượt đọc dùng một hình dạng bộ suy chưa biết (SQL thô).
+   * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+  it("★★★★ §4b ∀ điểm đọc bí mật `user_secrets` phải nằm trong một HÀM CÓ TÊN", () => {
+    const diem = diemDocBiMatCuaUserSecrets(GOC, COT_BI_MAT);
+    // Cầu chì: bộ suy phải THẤY kho mã thật (0 điểm ⇒ ô này là chân lý rỗng).
+    expect(
+      diem.length,
+      "0 điểm đọc bí mật trong `server/**` — bộ suy đang mù với repo",
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      diem.filter((d) => d.hamBao === null).map((d) => `  · ${d.file}:${d.dong}`).join("\n"),
+      "MỘT LƯỢT ĐỌC BÍ MẬT `user_secrets` KHÔNG NẰM TRONG MỘT HÀM CÓ TÊN.\n" +
+        "⚠ Tập NGƯỜI ĐỌC được suy theo **tên hàm khai báo**; một lượt đọc trong hàm mũi tên (thân\n" +
+        "  một thủ tục tRPC chẳng hạn) KHÔNG có tên để trả ⇒ nó rơi khỏi tập **theo cấu tạo**, và\n" +
+        "  luật KHAI BẮT BUỘC ở trên không bao giờ chạm tới nó. Đo được: một thủ tục như vậy TRẢ\n" +
+        "  HẠT GIỐNG TOTP xuống trình duyệt với 39/39 XANH và `npm run check` sạch.\n" +
+        "⇒ Đọc bí mật qua một hàm CÓ TÊN của `server/db/auth.ts` (`layBiMatNguoiDung`/`get2FAStatus`),\n" +
+        "  đừng dựng câu truy vấn tại chỗ trong thân thủ tục.\n",
+    ).toBe("");
+  });
+
+  /**
+   * **TẬP KHAI — mọi file sản xuất được phép CẦM bảng `user_secrets`.** Ghim SỐ; mỗi mục một lý do.
+   * ⚠ Đo được hôm nay: đúng **hai**. Chốt một con số đang gần 0 thì rẻ.
+   */
+  const CAM_USER_SECRETS: { duong: string; vi_sao: string }[] = [
+    {
+      duong: "server/db/auth.ts",
+      vi_sao: "CỬA DUY NHẤT tới `user_secrets` (Pha 7 Task 9c) — ba hàm đọc/ghi bí mật sống ở đây.",
+    },
+    {
+      duong: "server/_core/publicUser.ts",
+      vi_sao:
+        "chỉ lấy **tên cột** (`getTableColumns(userSecrets)`) để suy `USER_SECRETS_FIELD_VISIBILITY` " +
+        "— không có lượt đọc dữ liệu nào; đó là nguồn sự thật của chính tập COT_BI_MAT.",
+    },
+  ];
+
+  it("★★★★ §4c ∀ file sản xuất `server/**` CẦM bảng `userSecrets`: phải nằm trong tập KHAI", () => {
+    const cam = moiFileNhapUserSecrets(GOC);
+    // Cầu chì HAI CHIỀU: bộ suy phải thấy chủ thật, nếu không ô này xanh vì mù.
+    expect(cam, "`server/db/auth.ts` rơi khỏi bộ suy ⇒ nó đang mù, không phải kho mã đang sạch").toContain(
+      "server/db/auth.ts",
+    );
+    const khai = new Set(CAM_USER_SECRETS.map((c) => c.duong));
+    expect(
+      cam.filter((f) => !khai.has(f)).map((f) => `  · ${f}`).join("\n"),
+      "MỘT FILE SẢN XUẤT NGOÀI TẬP KHAI ĐANG CẦM BẢNG `user_secrets`.\n" +
+        "⚠ Cầm được bảng là dựng được câu truy vấn — kể cả bằng một hình dạng mà bộ suy §4b chưa\n" +
+        "  biết (SQL thô, `sql\\`…\\``). Đây là cầu chì ĐẢO LƯỢNG TỪ: nó chốt **quyền truy cập**, không\n" +
+        "  chốt hình dạng lượt đọc.\n" +
+        "⇒ Đi qua `server/db/auth.ts`. Nếu thật sự cần một chủ mới, thêm mục vào `CAM_USER_SECRETS`\n" +
+        "  kèm lý do — đó là một quyết định an ninh phải viết ra.\n",
+    ).toBe("");
+    // …và lời khai không được RỘNG hơn tập thật (mục ma vẫn tiếp tục THA cho một file mới trùng chỗ).
+    expect(
+      CAM_USER_SECRETS.filter((c) => !cam.includes(c.duong)).map((c) => c.duong),
+      "mục KHAI trỏ tới một file không còn cầm bảng ⇒ gỡ dòng ấy đi",
+    ).toEqual([]);
+    expect(CAM_USER_SECRETS.every((c) => c.vi_sao.length > 0), "mỗi mục phải có lý do").toBe(true);
+  });
+
+  it("★★★★ §4d M3 — một thủ tục đọc `userSecrets` trong FILE CHƯA TỒN TẠI bị BẮT bởi CẢ HAI ô", () => {
+    /**
+     * ⚠⚠⚠ Đây **đúng** đột biến mà reviewer dùng để chứng minh lỗ I-1 (đã tái hiện trên đĩa: 39/39
+     * XANH trước bản vá). Giữ nó ở dạng nguồn tổng hợp để lượt hồi quy không cần đột biến trên đĩa.
+     */
+    const FILE_MOI = "server/routers/rotHatGiongN1Router.ts";
+    const ma = `
+      import { eq } from "drizzle-orm";
+      import { router, protectedProcedure } from "../_core/trpc";
+      import { getDb } from "../db/connection";
+      import { userSecrets } from "../../drizzle/schema";
+      export const r = router({
+        rotHatGiong: protectedProcedure.query(async ({ ctx }) => {
+          const db = await getDb();
+          const hang = await db
+            .select({ twoFactorSecret: userSecrets.twoFactorSecret })
+            .from(userSecrets)
+            .where(eq(userSecrets.userId, ctx.user.id))
+            .limit(1);
+          return { twoFactorSecret: hang[0]?.twoFactorSecret ?? null };
+        }),
+      });`;
+    // (a) trục HÌNH DẠNG LƯỢT ĐỌC — điểm đọc nằm trong một hàm mũi tên ⇒ `hamBao === null`.
+    const diem = diemDocBiMatTrongNguon(FILE_MOI, ma, COT_BI_MAT);
+    expect(diem.length, "lượt đọc mới rơi khỏi bộ suy ⇒ nó mù với file mới").toBeGreaterThanOrEqual(1);
+    expect(
+      diem.some((d) => d.hamBao === null),
+      "lượt đọc trong thân thủ tục vẫn được coi là 'có tên' ⇒ §4b sẽ không bao giờ đỏ",
+    ).toBe(true);
+    // (b) trục QUYỀN TRUY CẬP — file mới CẦM bảng, và nó không nằm trong tập KHAI.
+    expect(nhapUserSecrets(GOC, FILE_MOI, ma), "bộ suy 'cầm bảng' mù với nhập TĨNH").toBe(true);
+    expect(CAM_USER_SECRETS.some((c) => c.duong === FILE_MOI), "file mới KHÔNG được tự vào tập khai").toBe(false);
+    // (c) …và cùng bộ suy ấy phải thấy được **nhập ĐỘNG** (hình dạng reviewer đã dùng).
+    const maDong = `
+      export async function f(db: any, id: number) {
+        const { userSecrets } = await import("../../drizzle/schema");
+        return db.select({ twoFactorSecret: userSecrets.twoFactorSecret }).from(userSecrets);
+      }`;
+    expect(nhapUserSecrets(GOC, FILE_MOI, maDong), "bộ suy 'cầm bảng' mù với nhập ĐỘNG").toBe(true);
+    // (d) ĐỐI CHỨNG DƯƠNG — chỉ nhập KIỂU thì KHÔNG cầm được bảng lúc chạy ⇒ được tha.
+    const maKieu = `import type { UserSecrets } from "../../drizzle/schema";\nexport type X = UserSecrets;`;
+    expect(nhapUserSecrets(GOC, FILE_MOI, maKieu), "nhập KIỂU bị coi là cầm bảng ⇒ dương tính giả").toBe(false);
   });
 });
 

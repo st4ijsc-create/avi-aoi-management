@@ -755,17 +755,53 @@ export function anhXaKhongGianTen(goc: string): { anhXa: Record<string, string>;
  * hơn** quyết định lưới nào đỏ, và không ai biết bản nào đang chạy.
  * ⇒ Chuyển về đây, **một** chủ; cả hai lưới gọi cùng một hàm.
  *
- * Một hàm xuất khẩu của `server/db/auth.ts` là **người đọc bí mật** khi:
+ * Một hàm là **người đọc bí mật** khi:
  *   · phép chiếu `.select({…})` của nó **CHẠM một cột bí mật** — theo **tên khoá**, theo **giá trị**
  *     (`{ x: userSecrets.twoFactorSecret }`, đủ phủ cả `leftJoin`), hoặc theo **rút gọn**; **hoặc**
  *   · nó `.select()` **không phép chiếu** rồi `.from(userSecrets)` — thô, tức đọc mọi cột.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ Review TOÀN NHÁNH Pha 8 · **I-1** — LƯỢNG TỪ SUY THEO **KHÁI NIỆM**, KHÔNG THEO **ĐƯỜNG DẪN**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu của bộ suy này ghim cứng `join(goc, "server", "db", "auth.ts")`. Task 4a gộp hai bản sao
+ * về **một chủ** (đúng bài học) — nhưng chủ ấy mù theo **cấu tạo** với mọi lượt đọc **ngoài** một
+ * file. Đo được: tiêm một thủ tục tRPC đọc `userSecrets` **thẳng bằng drizzle** rồi **trả hạt giống
+ * TOTP** cho client ⇒ **39/39 XANH**, `npm run check` sạch. Đó đúng lượt rò mà C-2 của Pha 7 đã đo,
+ * tái hiện qua một cánh cửa khác: **không đi qua `server/db/auth.ts`**.
+ * ⇒ Phạm vi nay là `moiFileDuoi(goc, "server")` (trừ `*.test.ts`), tiền lọc bằng
+ *   `src.includes("userSecrets")` — đúng khuôn đã dùng ở các bộ suy khác trong chính file này.
+ *
+ * ⚠ Bộ suy này vẫn chỉ trả **TÊN HÀM KHAI BÁO**. Một lượt đọc nằm trong một **hàm mũi tên** (thân
+ *   một thủ tục tRPC chẳng hạn) **không có tên để trả** ⇒ nó rơi khỏi tập này **theo cấu tạo**. Đó
+ *   là lý do `diemDocBiMatCuaUserSecrets()` bên dưới tồn tại, và lý do
+ *   `server/_core/hangRaoKhongAiCanh.test.ts` §4b/§4c canh đúng khe ấy.
+ *
  * @param cotBiMat tập cột bí mật, **SUY RA** từ `USER_SECRETS_FIELD_VISIBILITY` (đừng viết tay).
  */
 export function nguoiDocBiMatCuaUserSecrets(goc: string, cotBiMat: readonly string[]): string[] {
-  const duong = join(goc, "server", "db", "auth.ts");
-  if (!existsSync(duong)) return [];
-  const sf = ts.createSourceFile(duong, readFileSync(duong, "utf8"), ts.ScriptTarget.Latest, true);
   const ra = new Set<string>();
+  for (const d of diemDocBiMatCuaUserSecrets(goc, cotBiMat)) {
+    if (d.hamBao !== null) ra.add(d.hamBao);
+  }
+  return [...ra].sort();
+}
+
+/** Một điểm đọc bí mật `user_secrets` trên đĩa. */
+export interface DiemDocBiMat {
+  readonly file: string;
+  readonly dong: number;
+  /** Tên hàm **KHAI BÁO** bao quanh, hoặc `null` (hàm mũi tên / thân thủ tục / mức module). */
+  readonly hamBao: string | null;
+}
+
+/** Mọi điểm đọc bí mật `user_secrets` trong **một nguồn bất kỳ** (kể cả file CHƯA TỒN TẠI — M3). */
+export function diemDocBiMatTrongNguon(
+  duong: string,
+  ma: string,
+  cotBiMat: readonly string[],
+): DiemDocBiMat[] {
+  const sf = ts.createSourceFile(duong, ma, ts.ScriptTarget.Latest, true);
+  const ra: DiemDocBiMat[] = [];
 
   const ten = (n: ts.CallExpression): string => {
     const e = n.expression;
@@ -782,7 +818,11 @@ export function nguoiDocBiMatCuaUserSecrets(goc: string, cotBiMat: readonly stri
   };
   const ghi = (n: ts.Node): void => {
     const h = hamBao(n);
-    if (h && ts.isFunctionDeclaration(h) && h.name) ra.add(h.name.text);
+    ra.push({
+      file: duong,
+      dong: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1,
+      hamBao: h && ts.isFunctionDeclaration(h) && h.name ? h.name.text : null,
+    });
   };
 
   const di = (n: ts.Node): void => {
@@ -818,7 +858,95 @@ export function nguoiDocBiMatCuaUserSecrets(goc: string, cotBiMat: readonly stri
     ts.forEachChild(n, di);
   };
   di(sf);
-  return [...ra].sort();
+  return ra;
+}
+
+/** Mọi điểm đọc bí mật `user_secrets` trong **mã sản xuất `server/**`** (suy từ ĐĨA, không từ danh sách). */
+export function diemDocBiMatCuaUserSecrets(goc: string, cotBiMat: readonly string[]): DiemDocBiMat[] {
+  const ra: DiemDocBiMat[] = [];
+  for (const f of moiFileDuoi(goc, "server", [".ts"]).filter((x) => !laFileTest(x.duong))) {
+    const ma = readFileSync(f.that, "utf8");
+    if (!ma.includes("userSecrets")) continue; // tiền lọc — khuôn dùng chung của file này
+    ra.push(...diemDocBiMatTrongNguon(f.duong, ma, cotBiMat));
+  }
+  return ra.sort((a, b) => `${a.file}:${a.dong}`.localeCompare(`${b.file}:${b.dong}`));
+}
+
+/**
+ * ★★★ Review TOÀN NHÁNH Pha 8 · **I-1 (cầu chì ĐẢO LƯỢNG TỪ)** — *"file này có **CẦM** bảng
+ * `user_secrets` không"*.
+ *
+ * Trả `true` khi nguồn **ràng buộc định danh `userSecrets`** từ module schema — nhập tĩnh
+ * (`import { userSecrets } from "…/drizzle/schema"`) **hoặc** nhập động
+ * (`const { userSecrets } = await import("…/drizzle/schema")`).
+ *
+ * ⚠⚠ **DANH TÍNH MODULE HỎI BẰNG PHÉP NỐI ĐƯỜNG DẪN, KHÔNG BẰNG CHÍNH TẢ CHUỖI.** `"../../drizzle/
+ *    schema"` và `"../drizzle/schema"` và `"./schema"` là **cùng một module** nhìn từ ba chỗ khác
+ *    nhau; so chuỗi là đúng lớp lỗi *"lượng từ theo ĐƯỜNG DẪN"* mà I-1 vừa bắt. `phanGiaiToi()`
+ *    phân giải specifier về đường tuyệt đối rồi mới so.
+ * ⚠ Không đọc `import type` (chỉ kiểu — không cầm được bảng lúc chạy).
+ */
+export function nhapUserSecrets(goc: string, duong: string, ma: string): boolean {
+  const DICH = join(goc, "drizzle", "schema");
+  const tuFile = join(goc, ...duong.split("/"));
+  const sf = ts.createSourceFile(duong, ma, ts.ScriptTarget.Latest, true);
+  const laModuleSchema = (spec: string): boolean =>
+    phanGiaiToi(tuFile, spec, DICH) ||
+    phanGiaiToi(tuFile, spec, `${DICH}.ts`) ||
+    phanGiaiToi(tuFile, spec, join(DICH, "index.ts"));
+
+  let co = false;
+  const di = (n: ts.Node): void => {
+    if (co) return;
+    // ── nhập TĨNH ────────────────────────────────────────────────────────────────────────────
+    if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier)) {
+      if (n.importClause?.isTypeOnly !== true && laModuleSchema(n.moduleSpecifier.text)) {
+        const nb = n.importClause?.namedBindings;
+        if (nb !== undefined && ts.isNamedImports(nb)) {
+          for (const el of nb.elements) {
+            if (el.isTypeOnly) continue;
+            if ((el.propertyName ?? el.name).text === "userSecrets") co = true;
+          }
+        }
+      }
+    }
+    // ── nhập ĐỘNG: `const { userSecrets } = await import("…")` ────────────────────────────────
+    if (
+      ts.isVariableDeclaration(n) &&
+      ts.isObjectBindingPattern(n.name) &&
+      n.initializer !== undefined
+    ) {
+      let e: ts.Expression = n.initializer;
+      while (ts.isAwaitExpression(e) || ts.isParenthesizedExpression(e)) e = e.expression;
+      const spec =
+        ts.isCallExpression(e) &&
+        e.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        e.arguments[0] !== undefined &&
+        ts.isStringLiteral(e.arguments[0]!)
+          ? (e.arguments[0] as ts.StringLiteral).text
+          : null;
+      if (spec !== null && laModuleSchema(spec)) {
+        for (const el of n.name.elements) {
+          const t = el.propertyName ?? el.name;
+          if ((ts.isIdentifier(t) || ts.isStringLiteral(t)) && t.text === "userSecrets") co = true;
+        }
+      }
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return co;
+}
+
+/** Mọi file mã sản xuất `server/**` **CẦM** bảng `user_secrets` (đường tương đối gốc repo). */
+export function moiFileNhapUserSecrets(goc: string): string[] {
+  const ra: string[] = [];
+  for (const f of moiFileDuoi(goc, "server", [".ts"]).filter((x) => !laFileTest(x.duong))) {
+    const ma = readFileSync(f.that, "utf8");
+    if (!ma.includes("userSecrets")) continue;
+    if (nhapUserSecrets(goc, f.duong, ma)) ra.push(f.duong);
+  }
+  return ra.sort();
 }
 
 /**
