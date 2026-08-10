@@ -217,6 +217,17 @@ public sealed class FleetHost
         set => _core.AdditionalPipelinesForTests = value;
     }
 
+    /// <summary>🔴 J-1 — test-only seam (default null): fires inside <c>FleetCore</c>'s hoisted pipeline
+    /// build, with that class's <c>_gate</c> RELEASED. See <see cref="FleetCore.StartBuildObserverForTests"/>
+    /// for why the two seams above could not serve, and <see cref="DriverDecoratorForTests"/> for the
+    /// visibility note. This is a straight pass-through and reads nothing — it is not a third exception to
+    /// this class's no-paired-read rule.</summary>
+    internal Action? StartBuildObserverForTests
+    {
+        get => _core.StartBuildObserverForTests;
+        set => _core.StartBuildObserverForTests = value;
+    }
+
     public bool IsRunning => _core.IsRunning;
 
     /// <summary>The HALT latch. See <see cref="FleetCore.EstopEngaged"/> — including the SM-4 truth that this

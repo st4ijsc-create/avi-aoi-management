@@ -28,8 +28,9 @@ public abstract class SimulatorBase : IMachineSimulator
 
     /// <summary>I-5 (mc-feature-review.md) — the active scenario's <c>CycleRateMultiplier</c> (1.0 =
     /// unscaled), baked in at construction the same way EngineApi's own <c>FleetHost</c> already bakes it
-    /// into the DESCRIPTOR's <c>CycleSeconds</c> for every non-config-aware sim (<c>StartLocked</c>
-    /// pre-scales <c>effectiveFleet</c> before calling <c>SimulatorFactory.Create</c> — safe to fix at
+    /// into the DESCRIPTOR's <c>CycleSeconds</c> for every non-config-aware sim (the pipeline build
+    /// pre-scales <c>effectiveFleet</c> before calling <c>SimulatorFactory.Create</c> — 🔴 task J-1:
+    /// <c>FleetCore.BuildStartPlan</c>, off <c>_gate</c>, where it was <c>StartLocked</c> under it — safe to fix at
     /// construction time because a multiplier change always restarts the whole pipeline, see
     /// <c>FleetCore.ApplyScenario</c>'s <c>multiplierChanged</c> check. 🔴 Task E-2: this parenthetical
     /// used to end "EdgeCore doesn't reference EngineApi, same reason <c>MinCycleSecondsFloor</c> below is

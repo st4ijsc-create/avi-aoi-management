@@ -1,0 +1,323 @@
+using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
+using St4i.Connector.Abstractions.Models;
+using St4i.EdgeCore.Config;
+using St4i.EdgeCore.Engine;
+using St4i.EdgeCore.Infrastructure;
+using St4i.EdgeCore.Models;
+using St4i.EdgeCore.Transport;
+using St4i.EngineApi.Fleet;
+using Xunit;
+
+namespace St4i.EngineApi.Tests;
+
+/// <summary>
+/// 🔴 Task J-1 (.superpowers/sdd/restart-chokepoint/task-1-brief.md) — the witnesses for taking the
+/// enumeration's <b>P4</b> and <b>P5</b> off <c>FleetCore._gate</c>, the lock <c>Estop()</c> takes.
+///
+/// <para><b>P4</b> is <c>MappingProfileResolver.Build</c> → <c>File.Exists</c>/<c>File.ReadAllText</c>, once
+/// per roster machine, measured at 2.39 ms held with 50 machines on a local SSD. <b>P5</b> is a WRITE:
+/// <c>SimulatorFactory.Create</c> → <c>SimulatorBase</c>'s ctor → <c>MachineConfigStore.Ensure</c> →
+/// <c>File.WriteAllText</c> + <c>File.Move</c>, plus that store's own lock taken while this one is held —
+/// and since H-1c its root is relocatable, so it can be a network filesystem write. Both now happen in
+/// <c>FleetCore.BuildStartPlan</c>, with the gate released.</para>
+///
+/// <para><b>Why these tests are shaped as CONSEQUENCE probes rather than structure assertions.</b> Every
+/// claim J-1 makes is about where work runs relative to a lock, and about what a concurrent roster change
+/// does to the pipeline that comes out. Neither is visible to an assertion about which method a call sits
+/// in. So: the gate is probed FROM ANOTHER THREAD at the moment the build is running (a lock that is held
+/// cannot be granted, so there is no timing assumption in the passing direction — only in the failing one,
+/// which is a genuine block, not a slow machine); the roster window is probed by mutating the roster from
+/// inside the build and then asserting the machine that was added is CYCLING; and the halt latch is probed
+/// by engaging it inside the same window and asserting the fleet did not come up.</para>
+///
+/// <para><b>The seam.</b> <c>StartBuildObserverForTests</c> fires as the last statement of the hoisted
+/// build, off the gate. It had to be a third seam: <c>DriverDecoratorForTests</c> and
+/// <c>AdditionalPipelinesForTests</c> both fire INSIDE <c>StartLocked</c> under the lock, which is what
+/// makes them good throw sites for the S-set tests and useless here. Note also that a same-thread callback
+/// would prove nothing about the lock — <c>Monitor</c> is re-entrant, so a re-entrant <c>Estop()</c> would
+/// be granted whether or not the build held the gate. That is why every probe below runs on
+/// <see cref="Task.Run(Action)"/> and is awaited with a bound.</para>
+///
+/// <para><b>What these tests do NOT prove.</b> That P4/P5 are unreachable under the gate — they are not,
+/// and the design says so: a machine whose descriptor entered the roster after the snapshot is built under
+/// the lock, for that machine only. <c>ALateMachineWithAnUnknownMappingProfile_...</c> below is the witness
+/// that that arm is live code rather than an unreachable branch. Nothing here measures the 2.39 ms figure
+/// itself; the quantity this file's instrument reports is "was the gate grantable to another thread while
+/// the build ran", which is a different and stronger question than "how long was it held".</para>
+/// </summary>
+public sealed class FleetHostStartBuildHoistTests
+{
+    /// <summary>Bound for every cross-thread probe. A pass takes microseconds; only a genuinely HELD lock
+    /// can exhaust this, so the constant buys tolerance in the failing direction and nothing in the passing
+    /// one.</summary>
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(20);
+
+    private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(50);
+
+    private static FleetHost CreateHost(RecordingLogger? logger = null, MachineConfigStore? configStore = null)
+    {
+        var demo = new DemoTransport(latencyMs: 0);
+        var live = LiveTransport.ForMachine("http://localhost:1", mkKey: "", machineCode: "TEST", queuePath: null, verifyTls: true);
+        var auto = new AutoTransport(live, demo);
+        var switchable = new SwitchableTransport(demo);
+        var coordinator = new TransportCoordinator(switchable, demo, live, auto, TransportMode.Demo);
+        var eventBus = new EventBus();
+        return new FleetHost(switchable, coordinator, eventBus, logger: logger, configStore: configStore);
+    }
+
+    private static MachineDescriptor Descriptor(string code, string? mappingProfile = null) =>
+        new(code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
+            DriverKinds.Simulated, "RC-J1", mappingProfile, CycleSeconds: 0.05);
+
+    private static string NewTempDir()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "st4i-j1-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate, string because)
+    {
+        var deadline = DateTime.UtcNow + PollTimeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (predicate()) return;
+            await Task.Delay(PollInterval);
+        }
+
+        Assert.Fail($"Timed out after {PollTimeout.TotalSeconds:F0}s waiting for {because}.");
+    }
+
+    /// <summary>Runs <paramref name="probe"/> on a DIFFERENT thread and returns whether it completed inside
+    /// <see cref="ProbeTimeout"/>. The different thread is the whole instrument: <c>Monitor</c> is
+    /// re-entrant, so the same thread would be granted <c>_gate</c> even if the build held it.</summary>
+    private static bool CompletesOnAnotherThread(Action probe) => Task.Run(probe).Wait(ProbeTimeout);
+
+    // ─────────────────────────────────────────────────────────────────────
+    // P4 / P5 — the work happens with the gate RELEASED.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The load-bearing measurement of this task, and it answers both halves at one instant: by the
+    /// time the build's last statement runs, P5's write has ALREADY happened (the store's file is on disk),
+    /// and <c>_gate</c> is grantable to another thread. Before J-1 both were true only of a moment when the
+    /// gate was HELD — that is what the 2.39 ms figure measured, and what every <c>EstopEngaged</c> reader
+    /// paid.
+    ///
+    /// <para>The store's file is the right witness for P5 rather than a call count, because the file is
+    /// exactly the thing the hazard is about: a <c>File.WriteAllText</c> + <c>File.Move</c> that H-1c made
+    /// relocatable onto a UNC share. A test that counted <c>Ensure</c> calls would stay green if the write
+    /// moved back under the lock.</para></summary>
+    [Fact]
+    public void TheHoistedBuild_HasAlreadyDoneP5sWrite_AndRunsWithTheGateGrantableToAnotherThread()
+    {
+        var dir = NewTempDir();
+        var store = new MachineConfigStore(dir);
+        var host = CreateHost(configStore: store);
+        var storeFile = Path.Combine(dir, "machine-operating-config.json");
+
+        Assert.True(host.RegisterMachine(Descriptor("J1-HOIST-GATEFREE-01")));
+        Assert.False(File.Exists(storeFile), "the store must not have been written before the first Start");
+
+        var observations = 0;
+        var p5Done = false;
+        var gateGrantable = false;
+        host.StartBuildObserverForTests = () =>
+        {
+            if (Interlocked.Increment(ref observations) > 1) return;
+            p5Done = File.Exists(storeFile);
+            gateGrantable = CompletesOnAnotherThread(() => { _ = host.EstopEngaged; });
+        };
+
+        host.Start();
+        try
+        {
+            Assert.Equal(1, Volatile.Read(ref observations));
+            Assert.True(p5Done, "P5's MachineConfigStore write must have completed inside the hoisted build");
+            Assert.True(
+                gateGrantable,
+                "another thread must be able to take FleetCore._gate while the hoisted build is running");
+        }
+        finally
+        {
+            host.Stop();
+            try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
+        }
+    }
+
+    /// <summary>P4's witness, and it is a COUNT rather than a timing: the mapping file for a profile name
+    /// that does not exist produces exactly one warning per <c>MappingProfileResolver.Build</c> over that
+    /// descriptor. One warning means the install phase resolved nothing — it consumed the plan. Two would
+    /// mean the hoist bought nothing, because the same per-machine <c>File.Exists</c> would still be running
+    /// under the gate; and a count is immune to the "it was fast enough" reading a duration invites.</summary>
+    [Fact]
+    public void AMappingProfileTheBuildAlreadyResolved_IsNotResolvedAgainByTheInstall()
+    {
+        var logger = new RecordingLogger();
+        var host = CreateHost(logger: logger);
+        const string code = "J1-MISSING-MAPPING-01";
+
+        Assert.True(host.RegisterMachine(Descriptor(code, mappingProfile: "j1-no-such-profile")));
+
+        host.Start();
+        try
+        {
+            // Start()'s own finally flushes the deferred lines before it returns, so this needs no wait.
+            Assert.Equal(1, logger.CountContaining(code));
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // The roster-changed-underneath window — EXCLUDED, not merely detected.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The window the nine-path banner named as the reason this hoist was deferred six times. A
+    /// machine registered from another thread WHILE the build is running is not in the plan — and must still
+    /// be driven by the start that was in flight, because that registration saw <c>IsRunning == false</c>
+    /// and therefore scheduled no restart of its own. Nothing else will ever come back for it.
+    ///
+    /// <para>The assertion is <c>Cycles &gt; 0</c>, not "appears in the roster": a machine can be in
+    /// <c>_fleet</c> and <c>_states</c>, visible in every snapshot as idle with zero cycles, and simply
+    /// never driven. That is the silent outcome, and a roster-membership assertion would pass on it.</para></summary>
+    [Fact]
+    public async Task AMachineRegisteredWhileTheHoistedBuildIsRunning_IsDrivenByThatSameStart()
+    {
+        var host = CreateHost();
+        const string late = "J1-LATE-ROSTER-01";
+
+        var observations = 0;
+        var registered = false;
+        host.StartBuildObserverForTests = () =>
+        {
+            if (Interlocked.Increment(ref observations) > 1) return;
+            registered = CompletesOnAnotherThread(() => Assert.True(host.RegisterMachine(Descriptor(late))));
+        };
+
+        host.Start();
+        try
+        {
+            Assert.Equal(1, Volatile.Read(ref observations));
+            Assert.True(registered, "the mid-build registration must have completed");
+            await WaitUntilAsync(
+                () => (host.MachineDetail(late)?.Cycles ?? 0) > 0,
+                $"{late} — registered inside the build window — to be driven by the start that was in flight");
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
+    /// <summary>The other half of the same window, and the witness that the install's own resolve arm is
+    /// LIVE CODE rather than an unreachable branch. A machine that arrives mid-build carries a mapping
+    /// profile the plan never saw, so its profile has to be resolved under the gate — once, for that machine
+    /// alone. Exactly one warning: not zero (which would mean the late machine's mapping was never resolved
+    /// at all and it silently inherited the group's shared fleet-mixed profile), and not two (which would
+    /// mean the install re-resolved the whole roster).</summary>
+    [Fact]
+    public async Task AMachineRegisteredMidBuild_HasItsOwnMappingProfileResolvedByTheInstall()
+    {
+        var logger = new RecordingLogger();
+        var host = CreateHost(logger: logger);
+        const string late = "J1-LATE-MAPPING-01";
+
+        var observations = 0;
+        host.StartBuildObserverForTests = () =>
+        {
+            if (Interlocked.Increment(ref observations) > 1) return;
+            Assert.True(CompletesOnAnotherThread(
+                () => Assert.True(host.RegisterMachine(Descriptor(late, mappingProfile: "j1-no-such-profile")))));
+        };
+
+        host.Start();
+        try
+        {
+            Assert.Equal(1, logger.CountContaining(late));
+            await WaitUntilAsync(
+                () => (host.MachineDetail(late)?.Cycles ?? 0) > 0, $"{late} to be driven");
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // The HALT latch — the most dangerous part of the hoist, per the brief.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The defence-in-depth latch at the top of <c>StartLocked</c> is now evaluated AFTER a build
+    /// that ran off the lock, so an <c>Estop()</c> can land in between. It must still refuse. This is the
+    /// test that makes deleting that check red — the other latch test below only covers the cheap pre-check
+    /// in <c>Start()</c>, which is an optimisation and not the guard.</summary>
+    [Fact]
+    public void AnEstopLandingDuringTheHoistedBuild_IsStillRefusedByTheLatchInsideTheLock()
+    {
+        var host = CreateHost();
+
+        var observations = 0;
+        var halted = false;
+        host.StartBuildObserverForTests = () =>
+        {
+            if (Interlocked.Increment(ref observations) > 1) return;
+            halted = CompletesOnAnotherThread(host.Estop);
+        };
+
+        host.Start();
+
+        Assert.Equal(1, Volatile.Read(ref observations));
+        Assert.True(halted, "the mid-build Estop must have completed");
+        Assert.True(host.EstopEngaged);
+        Assert.False(host.IsRunning);
+        Assert.Empty(host.GetDriverHealth());
+    }
+
+    /// <summary>The brief's own acceptance line: a direct restart call made while the latch is engaged must
+    /// still be refused. It ALSO pins that such a call does no I/O at all — before J-1 it could not, because
+    /// the latch ran before any build; the cheap pre-check in <c>Start()</c> is what preserves that, and
+    /// this observation count is what makes deleting it red rather than merely wasteful.</summary>
+    [Fact]
+    public void AStartMadeWhileTheLatchIsEngaged_NeitherStartsNorBuilds()
+    {
+        var host = CreateHost();
+        host.Estop();
+
+        var observations = 0;
+        host.StartBuildObserverForTests = () => Interlocked.Increment(ref observations);
+
+        host.Start();
+
+        Assert.False(host.IsRunning);
+        Assert.True(host.EstopEngaged);
+        Assert.Equal(0, Volatile.Read(ref observations));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fixtures
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>Minimal message recorder. Deliberately its own copy rather than a shared helper — the two
+    /// existing copies in this suite each carry a throw seam this file does not want, and a shared base
+    /// would couple three unrelated test classes to one fixture's evolution.</summary>
+    private sealed class RecordingLogger : ILogger<FleetHost>
+    {
+        private readonly ConcurrentQueue<string> _messages = new();
+
+        public int CountContaining(string fragment) =>
+            _messages.Count(m => m.Contains(fragment, StringComparison.Ordinal));
+
+        IDisposable? ILogger.BeginScope<TState>(TState state) => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            _messages.Enqueue(formatter(state, exception));
+    }
+}

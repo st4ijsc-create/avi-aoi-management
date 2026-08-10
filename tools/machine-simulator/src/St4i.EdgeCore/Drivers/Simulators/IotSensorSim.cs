@@ -37,7 +37,8 @@ public sealed class IotSensorSim : SimulatorBase
     /// either collapse them or record why not). <b>Recorded, deliberately not collapsed</b>, and not merely
     /// because a move must not smuggle in a fix: the two clamps are applied at DIFFERENT points to DIFFERENT
     /// quantities. <c>FleetCore.MinCycleSeconds</c> floors a roster descriptor's <c>CycleSeconds</c> as
-    /// <c>StartLocked</c> pre-scales it by the active scenario multiplier; this one floors a cadence THIS
+    /// the pipeline build pre-scales it by the active scenario multiplier (🔴 task J-1:
+    /// <c>FleetCore.BuildStartPlan</c>, off <c>_gate</c>, where it was <c>StartLocked</c> under it); this one floors a cadence THIS
     /// simulator computes from its own live config, which bypasses that descriptor entirely. Sharing one
     /// symbol would tie two independent clamps together and read as a coupling that does not exist. They
     /// agree at 0.05 today by intention, not by derivation.</para></summary>

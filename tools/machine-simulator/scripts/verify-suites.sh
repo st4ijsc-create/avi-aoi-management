@@ -1988,7 +1988,37 @@ EXPECT_EDGESERVICE=50
 #       with a real one whose WalOptions.Directory points at an existing FILE — same throw, same call,
 #       from options the early EnsureDir never saw. It asserts the host is UP and the file does not exist
 #       ON DISK (not merely that Load() returns null, which is also true for a corrupt file).
-EXPECT_ENGINEAPI=1321
+#
+# 🔴 TASK J-1 (.superpowers/sdd/restart-chokepoint/task-1-brief.md) raises EXPECT_ENGINEAPI 1321 -> 1327
+# (+6), COUNTED FROM THE RUNNER (`dotnet test --list-tests`). ONE new file, nothing rewritten, split or
+# deleted; the two other test files J-1 touches are prose-only corrections and contribute 0.
+#   FleetHostStartBuildHoistTests.cs                                                    +6
+#       The witnesses for hoisting the enumeration's P4 (MappingProfileResolver.Build -> File.Exists/
+#       File.ReadAllText per machine, the 2.39 ms measurement) and P5 (SimulatorFactory.Create ->
+#       MachineConfigStore.Ensure -> File.WriteAllText + File.Move, plus a second lock) out of
+#       FleetCore.StartLocked and off _gate, the lock Estop() takes.
+#       Two prove the work moved: the store's file is on disk AND _gate is grantable to ANOTHER THREAD at
+#       the moment the build's last statement runs; and a mapping warning appears exactly ONCE, which is
+#       what says the install consumed the plan instead of re-reading every mapping file under the lock.
+#       Two prove the roster-changed-underneath window is EXCLUDED rather than tolerated: a machine
+#       registered mid-build is CYCLING afterwards (not merely present in the roster — being present and
+#       never driven is the silent outcome), and its own mapping profile is resolved by the install's
+#       supplementary Build, which is what makes that arm live code rather than an unreachable branch.
+#       Two are the HALT latch, and they are separate because the two checks are not equivalent: an Estop
+#       landing DURING the build must still be refused by the check inside the lock (that is the guard),
+#       and a Start made while already latched must not even build (that is the cheap pre-check in Start(),
+#       an optimisation — deleting it wastes work, deleting the other opens a window on the safety path).
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are deliberately
+# UNCHANGED, and EXPECT_EDGECORE staying put is evidence rather than convenience: J-1 edits four files in
+# St4i.EdgeCore (FleetCore, MappingProfileResolver, SimulatorFactory/SimulatorBase/IotSensorSim prose) and
+# adds no behaviour that suite can see — every consequence of the hoist is observable only through a live
+# FleetHost, which is why the witnesses live here. EXPECT_CONFORMANCE in particular stays 22: J-1 adds no
+# driver and no connector kind, and deliberately does NOT move P7 (IConnectorFactory.TryCreate stays under
+# _gate) — the conformance suite's own "construction is non-blocking because FleetCore.StartLocked
+# constructs drivers under the same _gate lock Estop() takes" string is still TRUE after J-1 and was
+# re-checked rather than assumed, precisely because it is a live assertion message in a contract assembly.
+EXPECT_ENGINEAPI=1327
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

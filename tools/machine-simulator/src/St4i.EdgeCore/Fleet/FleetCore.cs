@@ -332,11 +332,15 @@ internal sealed class FleetCore
     /// <item><b>P3 — CLOSED.</b> <see cref="Burst"/>'s <c>previousCts?.Cancel()</c> — §10.3(d)'s second
     /// <c>Cancel</c>. Moved below the lock.</item>
     ///
-    /// <item><b>P4 — OPEN — in this class's own code, P4 to P7.</b> <see cref="StartLocked"/> →
-    /// <c>MappingProfileResolver.Build</c> → <c>File.Exists</c>/<c>File.ReadAllText</c> per machine — §9.2
-    /// violation 1, measured <b>2.39 ms</b> held with 50 machines having mapping files on a local
-    /// SSD.</item>
-    /// <item><b>P5 — OPEN.</b> 🔴 <b>On no prior list, in any batch, and it is a WRITE.</b>
+    /// <item><b>P4 — NARROWED by J-1, NOT closed — in this class's own code, P4 to P7.</b>
+    /// <see cref="StartLocked"/> → <c>MappingProfileResolver.Build</c> →
+    /// <c>File.Exists</c>/<c>File.ReadAllText</c> per machine — §9.2 violation 1, measured <b>2.39 ms</b>
+    /// held with 50 machines having mapping files on a local SSD. <b>🔴 That measurement is now historical
+    /// and its instrument would report a different number: J-1 moved the <c>Build</c> to
+    /// <see cref="BuildStartPlan"/>, off this lock.</b> What is left under the lock is a resolve for any
+    /// descriptor the plan does not already cover — see the shared J-1 note under P5.</item>
+    /// <item><b>P5 — NARROWED by J-1, NOT closed.</b> 🔴 <b>On no prior list, in any batch, and it is a
+    /// WRITE.</b>
     /// <see cref="StartLocked"/> → <c>SimulatorFactory.Create</c> → <c>SimulatorBase</c>'s constructor →
     /// <c>MachineConfigStore.Ensure</c> → <c>Save()</c> → <c>File.WriteAllText</c> + <c>File.Move</c>. It
     /// fires once per machine that is not yet in the store, i.e. on the first <see cref="Start"/> against a
@@ -366,7 +370,37 @@ internal sealed class FleetCore
     /// does not exist is a sentence anywhere saying WHICH roots crash the host and which do not, so an
     /// operator relocating two directories in one afternoon gets two different failure semantics with no
     /// way to predict either. Surfaced by H-1c's own measurement of the WAL path; it needs one owner and
-    /// one artefact, and that owner is whoever takes P5.</para></item>
+    /// one artefact, and that owner is whoever takes P5.</para>
+    /// <para>🔴 <b>WHAT J-1 DID TO P4 AND P5, stated once for both because it is one mechanism.</b> Driver
+    /// construction is hoisted: <see cref="SnapshotStartInputsLocked"/> copies the roster, the multiplier and
+    /// one binding snapshot under this lock; <see cref="BuildStartPlan"/> then builds every simulator and
+    /// resolves every mapping profile <b>with the lock released</b>; <see cref="StartLocked"/> installs.
+    /// <b>On an uncontended start — which is every start a single operator makes — neither path touches the
+    /// filesystem while this lock is held, and <c>MachineConfigStore</c>'s lock is not taken under it.</b>
+    ///
+    /// <b>The label is NARROWED and not CLOSED, and the difference is one reachable arm.</b>
+    /// <see cref="StartLocked"/> still derives the roster it installs from the LIVE <see cref="_fleet"/>, and
+    /// consumes the plan only where the live input is identical — so a machine registered by another thread
+    /// between the snapshot and the install is built RIGHT THERE, under this lock, at exactly the pre-J-1
+    /// per-machine cost. That arm is live code, not a defensive branch:
+    /// <c>FleetHostStartBuildHoistTests.AMachineRegisteredMidBuild_HasItsOwnMappingProfileResolvedByTheInstall</c>
+    /// drives it. So the honest count of paths that can reach I/O under this lock is unchanged at NINE, and
+    /// the count CLOSED is unchanged at three.
+    ///
+    /// <b>Why the window is answered by exclusion rather than by detection.</b> The obvious hoist — snapshot,
+    /// build, install the plan — loses a machine registered in that window <b>silently</b>: it is absent from
+    /// the plan's simulator list, so nothing ever drives it, and the registering thread saw
+    /// <c>IsRunning == false</c> and scheduled no restart of its own, so nothing comes back for it. (🔴 The
+    /// paragraph below USED to describe that outcome as "silently degrades to <c>MappingProfile.ForClass</c>".
+    /// That was wrong twice over and is corrected here: the machine is never simulated at all, so no profile
+    /// is ever consulted for it; and the profile a reading with an unknown code WOULD fall back to is the
+    /// group's shared <c>fleet-mixed</c> one — <see cref="EdgePipeline"/>'s <c>?? _profile</c> — not
+    /// <c>ForClass</c>, which is <c>MappingProfileResolver</c>'s own fallback for a descriptor it DID see.
+    /// Measured by mutation, not read: with the reuse-or-build loop replaced by the plan's list verbatim, the
+    /// test above fails on <c>Cycles == 0</c>, i.e. on never being driven.) Treating the plan as a cache
+    /// rather than a substitute removes that state instead of reporting it — there is no interleaving in
+    /// which this method installs a pipeline that disagrees with the roster, so there is nothing to
+    /// detect.</para></item>
     /// <item><b>P6 — OPEN.</b> <see cref="StopLocked"/> → <c>slot.Cts.Cancel()</c> → a driver's own
     /// <c>ct.Register</c> callback running a <c>Dispose</c> SYNCHRONOUSLY on this thread — §9.2 violation
     /// 2.</item>
@@ -396,20 +430,38 @@ internal sealed class FleetCore
     /// (P3). P7 was documented at its own call site but never on that list. <b>P5, P8 and P9 were on no
     /// list anywhere</b>. 5 + 1 + 3 = 9.</para>
     ///
-    /// <para><b>Why P4 to P7 did not move.</b> P4 and P5 live in the same place and have the same fix: hoist
-    /// driver construction out of <see cref="StartLocked"/> entirely. That means reading
-    /// <see cref="_fleet"/>/<see cref="_scenario"/> under the lock, building off it, and re-entering — which
-    /// introduces a roster-changed-underneath window this class has no answer for today, and silently
-    /// degrades a machine registered in that window to <c>MappingProfile.ForClass</c>. P6 would move the halt
-    /// path's cancel request after the latch. P7 is third-party code. Each is a redesign of the restart
-    /// chokepoint or an operator-observable ordering change, which G-1's brief reserves rather than
-    /// delegates.</para>
+    /// <para><b>🔴 Why P4 to P7 did not move, as G-1 and G-2 left it — and what J-1 changed.</b> The
+    /// paragraph that stood here said P4 and P5 live in the same place and have the same fix (hoist driver
+    /// construction out of <see cref="StartLocked"/> entirely), that doing so means reading
+    /// <see cref="_fleet"/>/<see cref="_scenario"/> under the lock, building off it and re-entering, and that
+    /// this "introduces a roster-changed-underneath window this class has no answer for today". <b>J-1 did
+    /// the hoist and the class now has an answer</b>: the plan is a CACHE consulted by an install that still
+    /// reads the live roster, so the window is excluded rather than merely narrowed. See the J-1 note under
+    /// P5 for the mechanism, for the label it earns (NARROWED, not CLOSED) and for the correction to that
+    /// paragraph's description of what the window actually cost.
+    ///
+    /// <b>P6 and P7 are untouched by J-1 and the reasons are unchanged.</b> P6 would move the halt path's
+    /// cancel request after the latch — an operator-observable ordering change on the safety path. P7 is
+    /// third-party code (<c>ConnectorRegistry.TryCreateDriver</c> → <c>IConnectorFactory.TryCreate</c>) and
+    /// J-1 deliberately left it where it was: hoisting it would let a factory open a socket or lease a serial
+    /// port for a start the HALT latch is about to refuse, and would widen the gap between "which machines
+    /// are excluded from simulation" and "which connector slots get built" from microseconds to the whole
+    /// build — the double-drive that corrupts per-machine cycles, and therefore fleet KPI/OEE/FPY, with
+    /// nothing red. Both remain reserved rather than delegated.</para>
     ///
     /// <para><b>🔴 A DIFFERENT AXIS, recorded here because nobody had written it down: this lock is held
     /// across FIVE other locks.</b> None of these is an I/O/<c>Dispose</c>/<c>Cancel</c> violation, so none
     /// belongs in the nine — but "which lock may be taken while holding this one" is its own invariant and
     /// it had no home. In acquisition order, always <see cref="_gate"/> first:
-    /// <c>MachineConfigStore</c>'s own lock (P5); <c>TransportCoordinator</c>'s and
+    /// <c>MachineConfigStore</c>'s own lock (P5 — 🔴 <b>J-1 did NOT remove this member, and it was expected
+    /// to.</b> On the uncontended path it is no longer taken under this lock at all, because
+    /// <see cref="BuildStartPlan"/> constructs every simulator off it. But the install's per-machine
+    /// reuse-or-build arm reaches <c>SimulatorFactory.Create</c> for a descriptor the plan does not cover, so
+    /// the acquisition remains REACHABLE and the ordering pair therefore still exists. A set member is about
+    /// reachability, not frequency: removing it needs an install that can never build, which needs either a
+    /// new way for a start to fail or a way to freeze the roster while one is in flight — both public-contract
+    /// changes, and both refused by J-1 rather than taken. <b>The set is still FIVE.</b>);
+    /// <c>TransportCoordinator</c>'s and
     /// <c>SwitchableTransport</c>'s (via <see cref="ApplyNetworkOutageLocked"/>);
     /// <see cref="ConnectorRegistry"/>'s (<c>SnapshotBindings</c>/<c>RegisteredIds</c>/
     /// <c>TryCreateDriver</c>); and the UNS publisher's own lifecycle lock (via
@@ -475,7 +527,16 @@ internal sealed class FleetCore
     /// <see cref="StartLocked"/> that throws ITSELF leaves the fleet stopped with the roster/scenario write
     /// already committed, and no <c>finally</c> can start a fleet that failed to start. Rolling the commit
     /// back changes what a failed call MEANS to its caller; the root cause is P5 above. Both are owner
-    /// decisions and both are named in G-2's report rather than decided here.</item>
+    /// decisions and both are named in G-2's report rather than decided here.
+    /// <para>🔴 <b>J-1 moved that throw and did NOT close this half — recorded because "the root cause is
+    /// P5" now points somewhere else.</b> P5's throw (<c>MachineConfigStore.Ensure</c>'s
+    /// <c>InvalidOperationException</c> on a config-kind mismatch, <c>IOException</c> from its write) now
+    /// fires inside <see cref="BuildStartPlan"/>, i.e. off this lock and BEFORE any slot exists — so it can
+    /// no longer leave <see cref="_slots"/> half-populated. It still fires inside the same <c>finally</c>
+    /// that owes the rebuild, so the fleet is still left stopped with the roster/scenario write committed.
+    /// The blast radius shrank; the decision did not move. Closing it means building the new pipeline BEFORE
+    /// tearing the old one down, which reverses the restart order an operator observes — exactly the class
+    /// of change this branch reserves.</para></item>
     /// <item><b>S5 — CLOSED (G-2).</b> <see cref="Burst"/> → <see cref="RevertBurstAfterDelayAsync"/>.</item>
     /// <item><b>S6 — CLOSED (H-1a), and HOW it closed is the part worth carrying.</b>
     /// <see cref="UpdateSettings"/>'s committed triple versus its off-lock activation and persistence. G-2
@@ -504,7 +565,17 @@ internal sealed class FleetCore
     /// REFUSES to tear down. Closing it means restructuring <see cref="StartLocked"/> so its partial work is
     /// owned by the caller, which is the same redesign P5 needs. Reachability today is only
     /// <see cref="StartSlot"/>'s <c>new EdgePipeline</c>/<c>Task.Run</c>, which is why "named with a reason"
-    /// is the honest answer rather than a fix.</para>
+    /// is the honest answer rather than a fix.
+    /// <para>🔴 <b>J-1 performed that restructuring for the BUILD half only, and this residual is
+    /// UNCHANGED.</b> The half that moved (simulators, mapping profiles) never owned anything a caller had to
+    /// release — <c>IMachineSimulator</c> has no <c>Dispose</c> — so hoisting it bought nothing here. The two
+    /// things that ARE lost, <c>orphanedConnectorDrivers</c> and <c>deferredLogs</c>, are locals of the
+    /// INSTALL half, which J-1 left under the lock along with the connector loop that fills them. The one
+    /// thing J-1 makes cheap that was not cheap before is flushing a failed install's deferred lines: they
+    /// now exist in a <see cref="StartPlan"/> the caller is already holding
+    /// (<see cref="RebuildPipelineOffLock"/>'s local), so a future task can reach them without restructuring
+    /// anything. Not done here, and not claimed — it would emit lines on a path that today emits
+    /// none.</para></para>
     ///
     /// <para><b>Two of these were WIDENED by G-1 rather than inherited from it</b>, and in the same way:
     /// <see cref="FlushDeferredLogs"/> — a host-supplied delegate, i.e. a throw site — became the FIRST
@@ -1121,6 +1192,24 @@ internal sealed class FleetCore
     /// driver, and the fallback MappingProfile for its readings.</summary>
     internal Func<IReadOnlyList<(string Label, IDeviceDriver Driver, MappingProfile Profile)>>? AdditionalPipelinesForTests { get; set; }
 
+    /// <summary>🔴 J-1 — test-only seam (default null), invoked as the LAST statement of
+    /// <see cref="BuildStartPlan"/>, i.e. after the whole hoisted build (P4 and P5) has run and while
+    /// <see cref="_gate"/> is NOT held. Production never sets it (<c>internal</c>, requires
+    /// <c>InternalsVisibleTo</c>).
+    ///
+    /// <para><b>Why a third seam rather than reusing one of the two above.</b> Both existing seams fire
+    /// INSIDE <see cref="StartLocked"/>, under the lock — that is exactly what makes them useful as throw
+    /// sites for the S-set tests, and exactly what makes them useless here. J-1's central claim is about
+    /// where a piece of work runs relative to a lock, and the only way to witness that is a callback the
+    /// build itself reaches with the lock released. A test can therefore do from here what no caller could
+    /// do before: take <see cref="_gate"/> from ANOTHER thread and observe it granted while a start is
+    /// mid-flight (which is the measurement, not a proxy for it), or mutate the roster and then assert the
+    /// machine it added is still driven (which is the roster-window witness).
+    ///
+    /// <para><b>What it is NOT.</b> It is not a synchronisation point and nothing in this class waits on it.
+    /// A <see langword="null"/> delegate — production, always — costs one branch per start.</para></summary>
+    internal Action? StartBuildObserverForTests { get; set; }
+
     /// <summary>G2-5 / SM-1 — see <see cref="_running"/>'s own doc comment for the full definition. With a
     /// non-empty roster (every roster before this task, and demo mode always) this is byte-identical to the
     /// original stored-flag behavior: the slot's fault-catch removes it (see <see cref="StartLocked"/>), so
@@ -1540,6 +1629,52 @@ internal sealed class FleetCore
         List<IDeviceDriver> OrphanedConnectorDrivers,
         List<DeferredLogEntry> DeferredLogs);
 
+    /// <summary>🔴 J-1 — the inputs a pipeline build depends on, copied out of <see cref="_gate"/>-protected
+    /// state in one acquisition so the build itself can run off the lock. See
+    /// <see cref="SnapshotStartInputsLocked"/> for the enumeration of what is in here and — more
+    /// importantly — what deliberately is not.</summary>
+    private readonly record struct StartInputs(
+        List<MachineDescriptor> Fleet,
+        double Multiplier,
+        IReadOnlyList<ConnectorRegistry.ConnectorBinding>? Bindings);
+
+    /// <summary>🔴 J-1 — the product of <see cref="BuildStartPlan"/>: everything the pipeline needs that
+    /// costs I/O to produce, built with <see cref="_gate"/> RELEASED.
+    ///
+    /// <para><b>This is a CACHE, not a substitute for reading the roster.</b> That distinction is the whole
+    /// of J-1's answer to the roster-changed-underneath window. <see cref="StartLocked"/> still derives
+    /// <c>effectiveFleet</c>/<c>simFleet</c> from the LIVE <see cref="_fleet"/> under the lock, exactly as it
+    /// did before J-1; this record only lets it skip the I/O for the entries it already has. An entry is
+    /// reused only when the live input it would be rebuilt from is IDENTICAL, so a plan that has gone stale
+    /// cannot produce a wrong pipeline — it produces a slower one, degrading per machine rather than
+    /// all-or-nothing, and never silently.</para>
+    ///
+    /// <para><b>The members, and why each reuse key is what it is:</b>
+    /// <list type="bullet">
+    /// <item><c>SimFleet</c> — the simulated-group roster this plan was built from, IN ORDER. Compared
+    /// element-wise against the live one under the lock; index <c>i</c> of <c>Sims</c> is reused only when
+    /// element <c>i</c> matches, because the seed a simulator is built with is <c>1000 + i</c>.</item>
+    /// <item><c>Multiplier</c> — a precondition for reusing ANY simulator, and NOT redundant with
+    /// <c>SimFleet</c>: a descriptor carries the multiplier only through its pre-scaled
+    /// <c>CycleSeconds</c>, which <see cref="MinCycleSeconds"/> CLAMPS — so two different multipliers can
+    /// produce byte-identical descriptors while <c>SimulatorFactory.Create</c>'s own
+    /// <c>cycleRateMultiplier</c> argument (baked into the Screwdrive/Iot simulators at construction)
+    /// differs. Checking the descriptors alone would be right for every multiplier pair EXCEPT the clamped
+    /// ones, which is the shape of defect this file has a banner about.</item>
+    /// <item><c>MappingKeys</c> — the exact input <c>MappingProfileResolver</c>'s per-descriptor resolution
+    /// consumes: <c>(Code, MappingProfile, DeviceClass)</c>. Derived from the PROPERTY (what the resolved
+    /// profile is a function of) rather than from the whole descriptor, so a scenario multiplier change —
+    /// which moves <c>CycleSeconds</c> and nothing that resolver reads — does not force every mapping file
+    /// to be re-read under the lock.</item>
+    /// </list></para></summary>
+    private sealed record StartPlan(
+        List<MachineDescriptor> SimFleet,
+        List<IMachineSimulator> Sims,
+        double Multiplier,
+        MappingProfileResolver MappingResolver,
+        HashSet<(string Code, string? MappingProfile, DeviceClass DeviceClass)> MappingKeys,
+        List<DeferredLogEntry> DeferredLogs);
+
     /// <summary>🔴 G-1 — emits log lines a <see cref="_gate"/>-holding path deferred. Never call this while
     /// holding <see cref="_gate"/>; that is the entire point of the deferral.</summary>
     private void FlushDeferredLogs(IReadOnlyList<DeferredLogEntry>? entries)
@@ -1638,21 +1773,49 @@ internal sealed class FleetCore
         // logger failures, so neither is the strictly more important message; it is stated because the rule
         // is that it gets stated.
         //
-        // `default(StartOutcome)` is the value CompleteStartOffLock sees when StartLocked itself threw
-        // (reachable — the enumeration's P5, MachineConfigStore.Ensure); both of its halves return
-        // immediately on a null list, so the `finally` is a no-op on that path rather than a second fault.
+        // `default(StartOutcome)` is the value CompleteStartOffLock sees when the start threw before
+        // assigning one. 🔴 J-1 moved the likeliest such throw but did not remove it: the enumeration's P5
+        // (MachineConfigStore.Ensure) now fires out of BuildStartPlan, one statement EARLIER and off the
+        // lock, rather than out of StartLocked. Both of the outcome's halves return immediately on a null
+        // list either way, so the `finally` is a no-op on that path rather than a second fault.
         //
         // Not "lost" traded for "twice": the outcome is produced exactly once per call and consumed exactly
         // once, in the finally, on every path. StartLocked's own `if (IsRunning || _estopEngaged) return` is
         // what makes a repeated Start a no-op rather than a second set of slots.
+        //
+        // 🔴 J-1 — this method now takes _gate TWICE, and the split is the whole change. The first
+        // acquisition only copies what a build reads (SnapshotStartInputsLocked); the build itself runs
+        // between the two, off the lock; the second acquisition is the one that has always mattered — it
+        // re-reads the latch, re-reads the roster, installs, and publishes NBIRTH, all exactly where they
+        // were before.
+        //
+        // 🔴 THE EARLY RETURN IN THE FIRST ACQUISITION IS AN OPTIMISATION AND MUST NEVER BECOME THE GUARD.
+        // It exists so that a Start() made while the HALT latch is engaged does no I/O at all — before J-1
+        // it did none because the latch inside StartLocked refused before any build; without this line it
+        // would now write machine-config files and read mapping files for a fleet it is about to refuse to
+        // start. It is the SAME test, under the SAME lock, and it errs in the safe direction (it can only
+        // decline to start). What makes it safe is that it is not load-bearing: StartLocked re-reads
+        // IsRunning/_estopEngaged under the second acquisition and that reading is the one that decides.
+        // Deleting THAT one opens a window on the safety path; deleting THIS one only wastes work. Both
+        // mutations are covered — see FleetHostStartBuildHoistTests.
         bool started = false;
         StartOutcome outcome = default;
         try
         {
+            StartInputs inputs;
+            lock (_gate)
+            {
+                if (IsRunning || _estopEngaged) return;
+                inputs = SnapshotStartInputsLocked();
+            }
+
+            // OFF-LOCK: the enumeration's P4 and P5 happen here.
+            var plan = BuildStartPlan(inputs);
+
             lock (_gate)
             {
                 var wasRunning = IsRunning;
-                outcome = StartLocked();
+                outcome = StartLocked(plan);
                 started = !wasRunning && IsRunning;
 
                 // Review fix (Important) — the NBIRTH call is made HERE, still inside _gate, deliberately: two
@@ -2097,6 +2260,125 @@ internal sealed class FleetCore
         return false;
     }
 
+    /// <summary>🔴 J-1 — the directory <c>mapping/*.json</c> presets live in, resolved the same
+    /// "next to the exe" way <see cref="ResolveFleetPath"/> resolves <c>fleet.json</c>. Named once because
+    /// J-1 gave it a second reader: <see cref="BuildStartPlan"/> resolves the whole roster off-lock and
+    /// <see cref="StartLocked"/> resolves any late arrival under the lock, and two independently-written
+    /// copies of one path expression is the drift hazard this file's own <see cref="SimulatedSlotLabel"/>
+    /// exists to record.</summary>
+    private static readonly string MappingDirectory = Path.Combine(AppContext.BaseDirectory, "mapping");
+
+    /// <summary>🔴 J-1 — copies the <see cref="_gate"/>-protected inputs a pipeline build reads, so that
+    /// <see cref="BuildStartPlan"/> can run with the lock released. <b>Assumes the caller holds
+    /// <see cref="_gate"/>.</b>
+    ///
+    /// <para><b>What is in here is an enumeration, and so is what is not.</b> IN: the roster (copied — the
+    /// live list keeps being mutated under the lock), the scenario's cycle-rate multiplier (the only part of
+    /// <see cref="_scenario"/> a build consumes; the driver reads the scenario itself through a live lambda,
+    /// so nothing else about it can go stale), and one <see cref="ConnectorRegistry.SnapshotBindings"/> —
+    /// taken here for the same "one consistent view, not a fresh one" reason that method's own doc comment
+    /// gives, and used ONLY to decide which machines the build should prepare simulators for.
+    ///
+    /// <para>NOT in here, deliberately: <see cref="_running"/> and <see cref="_estopEngaged"/>. A snapshot of
+    /// either would be a copy of the HALT latch, and a copy of a latch is exactly the thing that must not
+    /// exist — <see cref="StartLocked"/> re-reads both under the lock at install time and that reading is
+    /// the only one that decides anything. Callers may also test them before calling this, and that test is
+    /// an OPTIMISATION (it keeps a start attempt made while latched from doing any I/O at all); it is never
+    /// the guard.</para></summary>
+    private StartInputs SnapshotStartInputsLocked()
+    {
+        var multiplier = _scenario.CycleRateMultiplier > 0 ? _scenario.CycleRateMultiplier : 1.0;
+        return new StartInputs(_fleet.ToList(), multiplier, _connectorRegistry?.SnapshotBindings());
+    }
+
+    /// <summary>🔴 J-1 — builds everything a pipeline needs that costs I/O to produce. <b>MUST NOT be called
+    /// while holding <see cref="_gate"/>; that is the entire point.</b> This is where the enumeration's P4
+    /// (<c>MappingProfileResolver.Build</c> → <c>File.Exists</c>/<c>File.ReadAllText</c> per machine) and P5
+    /// (<c>SimulatorFactory.Create</c> → <c>SimulatorBase</c>'s ctor → <c>MachineConfigStore.Ensure</c> →
+    /// <c>File.WriteAllText</c> + <c>File.Move</c>, plus that store's own lock) now run.
+    ///
+    /// <para><b>Nothing this method produces owns a resource.</b> <c>IMachineSimulator</c> has no
+    /// <c>Dispose</c>, and no <see cref="IDeviceDriver"/> is constructed here — driver construction stays in
+    /// <see cref="StartLocked"/> on purpose, so a plan that is never installed (the HALT latch refused it)
+    /// can simply be dropped. Hoisting the driver too would have created a class of leak that did not exist
+    /// before: a live <c>ScenarioAwareDriver</c>, or whatever <see cref="DriverDecoratorForTests"/> wrapped
+    /// it in, with no owner and no disposal path.</para>
+    ///
+    /// <para><b>It reads no <see cref="_gate"/>-protected field.</b> Everything comes from
+    /// <paramref name="inputs"/> or from readonly ctor fields. The one apparent exception is
+    /// <see cref="ResolveSlotLabelForMachine"/> → <see cref="ResolveSlotLabelFor"/>, which reads
+    /// <c>_connectorRegistry.RegisteredIds</c> live — that is a <see cref="ConcurrentDictionary{TKey,TValue}"/>
+    /// key enumeration behind no lock of ours, safe from any thread, and it was already an independent point
+    /// in time from the bindings snapshot before J-1.</para></summary>
+    private StartPlan BuildStartPlan(StartInputs inputs)
+    {
+        var deferredLogs = new List<DeferredLogEntry>();
+
+        var multiplier = inputs.Multiplier;
+        var effectiveFleet = Math.Abs(multiplier - 1.0) < 1e-9
+            ? inputs.Fleet
+            : inputs.Fleet.Select(d => d with { CycleSeconds = Math.Max(MinCycleSeconds, d.CycleSeconds / multiplier) }).ToList();
+
+        var simFleet = effectiveFleet
+            .Where(d => ResolveSlotLabelForMachine(d, inputs.Bindings) == SimulatedSlotLabel).ToList();
+        var sims = simFleet
+            .Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore))
+            .ToList();
+
+        var mappingResolver = MappingProfileResolver.Build(
+            effectiveFleet,
+            MappingDirectory,
+            logWarning: msg => deferredLogs.Add(new DeferredLogEntry(null, msg)),
+            logError: (ex, msg) => deferredLogs.Add(new DeferredLogEntry(ex, msg)));
+
+        var mappingKeys = new HashSet<(string, string?, DeviceClass)>();
+        foreach (var d in effectiveFleet)
+        {
+            mappingKeys.Add((d.Code, d.MappingProfile, d.DeviceClass));
+        }
+
+        // 🔴 J-1 — last statement, after both hoisted halves, and with _gate released. See
+        // StartBuildObserverForTests for why this seam had to be a third one rather than a reuse of either
+        // existing seam.
+        StartBuildObserverForTests?.Invoke();
+
+        return new StartPlan(simFleet, sims, multiplier, mappingResolver, mappingKeys, deferredLogs);
+    }
+
+    /// <summary>🔴 J-1 — the shared off-lock rebuild <see cref="RegisterMachine"/> and
+    /// <see cref="ApplyScenario"/> owe after their teardown: build off <see cref="_gate"/>, install under it,
+    /// finish off it. <b>MUST NOT be called while holding <see cref="_gate"/>.</b>
+    ///
+    /// <para><b>Why this is a method and not three statements inlined at each caller.</b> Both callers run
+    /// it from a <c>finally</c>, and blueprint §8.1(e) is specifically about a <c>finally</c> whose second
+    /// statement is abandoned when its first throws. As ONE statement there is no such question to answer at
+    /// either call site — the question moves in here, where it is answered once: if
+    /// <see cref="BuildStartPlan"/> throws, no lock has been taken, no slot exists, nothing is committed, and
+    /// the <c>finally</c> below runs <see cref="CompleteStartOffLock"/> over <c>default(StartOutcome)</c>,
+    /// which is a no-op on both halves. The exception propagates to the caller exactly as a throw from the
+    /// pre-J-1 in-lock build did.</para>
+    ///
+    /// <para><b>What this does NOT close, stated because it would be easy to claim.</b> A build that throws
+    /// still leaves the fleet stopped with the roster/scenario write already committed — that is the second
+    /// half of S4, and moving the throw site from inside the lock to outside it does not change what a
+    /// failed call means to its caller. The plan's own deferred lines are still lost on that path (they are
+    /// a local of the <c>try</c>), which is S3's named residual. Both are named in the banner at the top of
+    /// this file and neither is J-1's to decide.</para></summary>
+    private void RebuildPipelineOffLock(StartInputs inputs)
+    {
+        StartOutcome outcome = default;
+        try
+        {
+            var plan = BuildStartPlan(inputs);
+            lock (_gate) { outcome = StartLocked(plan); }
+        }
+        finally
+        {
+            // Review fix round 2 — off-lock, same reasoning as WaitAndDisposeOldPipeline at both call sites.
+            CompleteStartOffLock(outcome);
+        }
+    }
+
     /// <summary>Review fix round 2 — <see cref="StartLocked"/> USED to dispose an orphaned connector
     /// driver (see the connector loop below) inline, synchronously, while <see cref="_gate"/> was held by
     /// every one of its callers. That is a hazard this class's own review has already named twice: a
@@ -2108,8 +2390,16 @@ internal sealed class FleetCore
     /// <see cref="WaitAndDisposeOldPipeline"/> already documents for the restart-teardown path. An empty
     /// list (never <see langword="null"/>) is returned on every early-return/no-op path below, so a caller
     /// can unconditionally hand the result to <see cref="DisposeOrphanedConnectorDrivers"/> with no null
-    /// check.</summary>
-    private StartOutcome StartLocked()
+    /// check.
+    ///
+    /// <para>🔴 <b>J-1 — this method no longer BUILDS anything that costs I/O; it INSTALLS a
+    /// <see cref="StartPlan"/> that <see cref="BuildStartPlan"/> produced off <see cref="_gate"/>.</b> That
+    /// is what took the enumeration's P4 and P5 off this lock. Read <see cref="BuildStartPlan"/> and
+    /// <see cref="SnapshotStartInputsLocked"/> together with this method — the three are one mechanism and
+    /// no one of them is correct alone. It still derives the roster it installs from the LIVE
+    /// <see cref="_fleet"/> under the lock, exactly as it did before J-1; the plan is a cache it consults,
+    /// never a substitute for that read.</para></summary>
+    private StartOutcome StartLocked(StartPlan plan)
     {
         // 🔴 G-1 — every log line this method would have written while holding _gate lands here instead and
         // is emitted by CompleteStartOffLock after the lock is released. A host wires _logWarning/_logError
@@ -2122,6 +2412,17 @@ internal sealed class FleetCore
         // restart the read pipeline while the HALT latch is still engaged.
         if (IsRunning || _estopEngaged) return new StartOutcome(new List<IDeviceDriver>(), deferredLogs);
         LastError = null;
+
+        // 🔴 J-1 — the plan's own deferred lines join the list ONLY once the latch above has let this call
+        // through, and that placement is deliberate rather than incidental. Before J-1 a latched Start
+        // produced no mapping warnings at all, because the resolver never ran; after J-1 the resolver has
+        // ALREADY run off-lock by the time we get here, so emitting its lines on the refusal path would put
+        // new operator-visible output on the halt path. The plan is discarded instead, and the next start
+        // rebuilds it — the same messages, once, never twice. See the same argument at the reuse sites
+        // below: a discarded plan holds nothing disposable (IMachineSimulator has no Dispose, and no
+        // IDeviceDriver is constructed until after this point), which is exactly why driver construction
+        // was left on THIS side of the lock rather than hoisted with the rest.
+        deferredLogs.AddRange(plan.DeferredLogs);
 
         // Assumes the caller already holds _gate (Start()/ApplyScenario()/RegisterMachine() all do) —
         // reads _fleet directly rather than through the Fleet property so a Register-while-running
@@ -2215,10 +2516,52 @@ internal sealed class FleetCore
         // decision must be internally consistent across the fleet (a registration landing mid-filter could
         // otherwise exclude one machine and simulate its sibling), and it is the same discipline
         // ResolveWritableDriver now follows.
+        // 🔴 J-1 — this snapshot is taken HERE, under the lock, and NOT carried in from the plan. That is
+        // what keeps the registry window exactly as wide as it was before J-1: the filter below and the
+        // connector loop further down read the registry microseconds apart under one acquisition, as they
+        // always have. Threading the plan's (older) snapshot down here instead would have widened the gap
+        // between "which machines are excluded from simulation" and "which connector slots get built" from
+        // microseconds to the whole build — and a machine that is BOTH simulated and connector-driven writes
+        // the same MachineState from two places, corrupting per-machine cycles and therefore fleet KPI/OEE/
+        // FPY with nothing red. See the big union-filter comment above for why that double-drive is the
+        // hazard this filter exists to prevent.
         var startBindings = _connectorRegistry?.SnapshotBindings();
         var simFleet = effectiveFleet
             .Where(d => ResolveSlotLabelForMachine(d, startBindings) == SimulatedSlotLabel).ToList();
-        var sims = simFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
+
+        // 🔴 J-1 — REUSE-OR-BUILD, and the reuse is what moved P5 (SimulatorFactory.Create ->
+        // SimulatorBase's ctor -> MachineConfigStore.Ensure -> File.WriteAllText + File.Move, plus that
+        // store's own lock) off this one.
+        //
+        // `simFleet` above is derived from the LIVE _fleet, so this loop is over the roster as it is NOW,
+        // never as the plan saw it. A plan entry is consumed only when the descriptor it was built from is
+        // identical to the live one at the same index AND the multiplier has not moved (see StartPlan for
+        // why the multiplier is not implied by the descriptor). Anything else is built right here, under the
+        // lock, at exactly the pre-J-1 cost — for THAT machine only.
+        //
+        // That is the whole of J-1's answer to the roster-changed-underneath window, and it is an EXCLUSION
+        // rather than a detection: there is no state in which this method installs a pipeline that disagrees
+        // with the roster, so there is nothing to detect and nothing to report. What a lost race costs is
+        // one machine's worth of construction back under the lock, which is strictly less than the whole
+        // fleet's worth this method paid on every single start before J-1.
+        //
+        // Index equality is load-bearing, not incidental: the seed is `1000 + i`, so a simulator is a
+        // function of (descriptor, position). Comparing sets instead of positions would hand back a
+        // simulator seeded for a different slot and change the generated stream — silently, and only for a
+        // roster whose order moved.
+        var reusable = Math.Abs(multiplier - plan.Multiplier) < 1e-9;
+        var sims = new List<IMachineSimulator>(simFleet.Count);
+        for (var i = 0; i < simFleet.Count; i++)
+        {
+            if (reusable && i < plan.SimFleet.Count && plan.SimFleet[i] == simFleet[i])
+            {
+                sims.Add(plan.Sims[i]);
+                continue;
+            }
+
+            sims.Add(SimulatorFactory.Create(
+                simFleet[i], seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore));
+        }
 
         // SM-1 (task-1-brief.md) — a roster with no simulated machines (an empty product roster, or one
         // containing ONLY real Modbus/OPC-UA/registered-connector entries — every one of which `simFleet`
@@ -2245,17 +2588,39 @@ internal sealed class FleetCore
         // shared `profile` below is now only the fallback for a machine code this resolver doesn't
         // recognize (should not happen in practice — every reading's driver was built from this SAME
         // effectiveFleet, see `sims` above) — never a per-machine override target itself anymore.
-        var mappingDir = Path.Combine(AppContext.BaseDirectory, "mapping");
+        //
         // 🔴 G-1 — the resolver's two callbacks are BUFFERED, not wired straight to _logWarning/_logError.
-        // MappingProfileResolver.Build resolves every descriptor eagerly on THIS thread (see its own doc
-        // comment: Resolve is a pure dictionary lookup afterwards), so both delegates only ever run here,
-        // under _gate — which is exactly what makes them a per-machine Event Log write on the halt path.
-        // Buffering keeps the messages, the order and the channel choice identical and moves only the I/O.
-        var mappingResolver = MappingProfileResolver.Build(
-            effectiveFleet,
-            mappingDir,
-            logWarning: msg => deferredLogs.Add(new DeferredLogEntry(null, msg)),
-            logError: (ex, msg) => deferredLogs.Add(new DeferredLogEntry(ex, msg)));
+        // MappingProfileResolver.Build resolves every descriptor eagerly on the CALLING thread (see its own
+        // doc comment: Resolve is a pure dictionary lookup afterwards), so both delegates only ever run
+        // where Build does — which, before J-1, was here, under _gate, i.e. a per-machine Event Log write on
+        // the halt path. Buffering keeps the messages, the order and the channel choice identical and moves
+        // only the I/O.
+        //
+        // 🔴 J-1 — that Build has moved to BuildStartPlan, off the lock: this is the enumeration's P4, and
+        // `plan.MappingResolver` is its result. What is left here is the same reuse-or-build rule the
+        // simulators above follow. A descriptor whose (Code, MappingProfile, DeviceClass) the plan already
+        // resolved is served from the plan; anything else — a machine registered since the snapshot, or one
+        // whose profile name the plan never saw — is resolved NOW, under the lock, from a Build over just
+        // those descriptors. The supplement is consulted FIRST so that where both have an answer the fresher
+        // one wins.
+        //
+        // Deferred-line ORDER is preserved and that is checkable rather than asserted: the plan's lines were
+        // produced in snapshot-roster order and are already in `deferredLogs` (see the AddRange above the
+        // latch); the supplement's are appended for descriptors the snapshot did not contain, which _fleet's
+        // append-only mutation puts AFTER them. Connector-loop lines still come last. Same messages, same
+        // sequence, same channel as before J-1.
+        var unresolvedForMapping = effectiveFleet
+            .Where(d => !plan.MappingKeys.Contains((d.Code, d.MappingProfile, d.DeviceClass))).ToList();
+        Func<string, MappingProfile?> mappingResolve = plan.MappingResolver.Resolve;
+        if (unresolvedForMapping.Count > 0)
+        {
+            var supplement = MappingProfileResolver.Build(
+                unresolvedForMapping,
+                MappingDirectory,
+                logWarning: msg => deferredLogs.Add(new DeferredLogEntry(null, msg)),
+                logError: (ex, msg) => deferredLogs.Add(new DeferredLogEntry(ex, msg)));
+            mappingResolve = code => supplement.Resolve(code) ?? plan.MappingResolver.Resolve(code);
+        }
 
         var profile = new MappingProfile { Name = "fleet-mixed", DeviceClass = "Mixed" };
 
@@ -2301,7 +2666,7 @@ internal sealed class FleetCore
         {
             // Review fix round 1 (task-2-report.md, Minor) — SimulatedSlotLabel, not a second "simulated"
             // literal: see that constant's own doc comment for why a repeated literal was itself a hazard.
-            groups.Add((SimulatedSlotLabel, driver, profile, mappingResolver.Resolve));
+            groups.Add((SimulatedSlotLabel, driver, profile, mappingResolve));
         }
 
         var extra = AdditionalPipelinesForTests?.Invoke();
@@ -2936,6 +3301,7 @@ internal sealed class FleetCore
 
         PipelineHandle restartHandle = default;
         var restarting = false;
+        StartInputs restartInputs = default;
 
         lock (_gate)
         {
@@ -2944,6 +3310,11 @@ internal sealed class FleetCore
                 return false;
             }
 
+            // 🔴 J-1 — `_fleet` is APPEND-ONLY: this is its only growth point, and the RemoveAt below is a
+            // rollback of this very statement inside the same acquisition, so no descriptor already visible
+            // to a reader is ever removed or replaced. StartLocked's reuse-or-build rule does not DEPEND on
+            // that (it compares element-wise and falls back to building, whatever the roster did), but the
+            // deferred-log ORDER argument recorded there does.
             _fleet.Add(descriptor);
             // TryAdd (not the indexer): the _fleet duplicate-check above is the source of truth under
             // this same lock, so a collision here would indicate _fleet/_states drifted out of sync —
@@ -2965,6 +3336,11 @@ internal sealed class FleetCore
             {
                 restartHandle = StopLocked();
                 restarting = true;
+                // 🔴 J-1 — the snapshot rides the acquisition this method ALREADY takes, so the hoist costs
+                // no extra lock here (unlike Start(), which had only one). Taken AFTER _fleet.Add, so the
+                // machine just registered is in it — which is why the common case reuses the whole plan and
+                // the reuse-or-build fallback in StartLocked is for a CONCURRENT registration, not this one.
+                restartInputs = SnapshotStartInputsLocked();
             }
         }
 
@@ -2982,10 +3358,12 @@ internal sealed class FleetCore
         // back, so from the instant the lock is released the machine EXISTS and owes exactly one
         // notification. Everything between here and the drain can throw — and one of those throws is
         // reachable through the very path G-1's own enumeration turned up (P5, which G-1's prose called
-        // "path B" before that list was labelled: StartLocked ->
-        // SimulatorFactory.Create -> SimulatorBase's ctor -> MachineConfigStore.Ensure, which throws
-        // InvalidOperationException on a config-kind mismatch and IOException from its File.WriteAllText/
-        // File.Move on a full or read-only data root). Without the finally, that throw leaves the machine in
+        // "path B" before that list was labelled: SimulatorFactory.Create -> SimulatorBase's ctor ->
+        // MachineConfigStore.Ensure, which throws InvalidOperationException on a config-kind mismatch and
+        // IOException from its File.WriteAllText/File.Move on a full or read-only data root — 🔴 reached
+        // from RebuildPipelineOffLock -> BuildStartPlan since J-1, not from StartLocked; same throw, same
+        // reachability from this method, one statement earlier and off _gate). Without the finally, that
+        // throw leaves the machine in
         // the roster with its notification still sitting in _pendingSeedNotifications, delivered only if some
         // LATER RegisterMachine happens to drain it, and never at all if none does. Pre-G-1 the notification
         // had already been delivered by that point, so this would be a regression THIS CHANGE introduced,
@@ -3032,36 +3410,35 @@ internal sealed class FleetCore
                 // is the safe one and it is the argument G-1's N-2 already made — losing "the logger failed"
                 // to keep "the pipeline is down" is the trade worth taking, never the reverse.
                 //
-                // What this does NOT close is the other half of S4: if StartLocked ITSELF throws (the
+                // What this does NOT close is the other half of S4: if the rebuild ITSELF throws (the
                 // enumeration's P5), no `finally` can restart a fleet that failed to start. See this
                 // method's own remarks below and the G-2 report for why that half needs an owner decision.
                 //
-                // 🔴 The `finally` below holds TWO statements, and a throw from the first ABANDONS the
-                // second — that is how C# `finally` works and it cost this task one wrong draft in Start().
-                // It is harmless HERE and the reason is specific rather than general: the only way the first
-                // statement throws is StartLocked throwing, which leaves `outcome` at default(StartOutcome),
-                // and CompleteStartOffLock over that value is a no-op on both halves — so there is nothing
-                // left for THIS `finally` to do. Start() needed nesting because its second statement is not
-                // a no-op.
-                //
-                // 🔴 Scoped to this statement deliberately (whole-branch review I-3). An earlier wording
-                // generalised it to "nothing is owed, so nothing is lost", which is FALSE about that throw:
-                // by then StartLocked has lost `orphanedConnectorDrivers` and `deferredLogs` outright — they
-                // are its locals, unreachable from any caller's finally — and left `_slots` non-empty with
+                // 🔴 Scoped to that throw deliberately (whole-branch review I-3). An earlier wording
+                // generalised it to "nothing is owed, so nothing is lost", which is FALSE about it: by then
+                // StartLocked has lost `orphanedConnectorDrivers` and `deferredLogs` outright — they are its
+                // locals, unreachable from any caller's finally — and left `_slots` non-empty with
                 // `_running == false`, which StopLocked then refuses to tear down. That is S3's named
                 // residual, at the top of this file, and a reader sent away from it by this comment would
                 // miss the one thing they need. ApplyScenario's copy of this same argument never carried the
                 // generalisation; the two now agree.
+                //
+                // 🔴 J-1 — the `finally` below is now ONE statement, and that is a deliberate answer to
+                // §8.1(e) rather than a tidy-up. The paragraph that used to sit here reasoned about TWO
+                // statements ("a throw from the first ABANDONS the second — that is how C# `finally` works
+                // and it cost this task one wrong draft in Start()") and concluded it was harmless because
+                // the second was a no-op on the only throwing path. That argument was correct and it was
+                // also the kind that has to be re-derived at every copy of the pattern. The build, the
+                // install and the off-lock completion now live in RebuildPipelineOffLock, so the question is
+                // asked and answered once, there, instead of at each of this method's and ApplyScenario's
+                // copies — and this site has no multi-statement `finally` left to reason about.
                 try
                 {
                     WaitAndDisposeOldPipeline(restartHandle);
                 }
                 finally
                 {
-                    StartOutcome outcome;
-                    lock (_gate) { outcome = StartLocked(); }
-                    // Review fix round 2 — off-lock, same reasoning as WaitAndDisposeOldPipeline just above.
-                    CompleteStartOffLock(outcome);
+                    RebuildPipelineOffLock(restartInputs);
                 }
             }
         }
@@ -3091,6 +3468,7 @@ internal sealed class FleetCore
 
         PipelineHandle restartHandle = default;
         var restarting = false;
+        StartInputs restartInputs = default;
 
         lock (_gate)
         {
@@ -3105,6 +3483,12 @@ internal sealed class FleetCore
             {
                 restartHandle = StopLocked();
                 restarting = true;
+                // 🔴 J-1 — taken AFTER `_scenario = config`, so the plan is built with the multiplier this
+                // call just committed. That ordering is what makes the reuse test in StartLocked
+                // (`multiplier == plan.Multiplier`) succeed on the uncontended path rather than rebuilding
+                // every simulator under the lock on every scenario change — i.e. it is the difference
+                // between P5 being hoisted and P5 merely being moved.
+                restartInputs = SnapshotStartInputsLocked();
             }
         }
 
@@ -3113,9 +3497,9 @@ internal sealed class FleetCore
         // 🔴 G-2 (S4, first half) — and the same `finally` around the rebuild, for the same reason: `_scenario`,
         // `_activePresetName` and the outage transport swap are all committed under _gate and never rolled
         // back, so from the moment the lock is released the fleet OWES a pipeline built from them. A throw out
-        // of the off-lock teardown must not be what decides it never gets one. The two-statement `finally`
-        // below is safe for the reason RegisterMachine's copy of it spells out: a throw from the first leaves
-        // `outcome` at default(StartOutcome), over which the second is a no-op on both halves.
+        // of the off-lock teardown must not be what decides it never gets one.
+        // 🔴 J-1 — the `finally` below is ONE statement now (RebuildPipelineOffLock), so the §8.1(e)
+        // question this comment used to answer here is answered once, in that method, for both copies.
         if (restarting)
         {
             try
@@ -3124,10 +3508,7 @@ internal sealed class FleetCore
             }
             finally
             {
-                StartOutcome outcome;
-                lock (_gate) { outcome = StartLocked(); }
-                // Review fix round 2 — off-lock, same reasoning as WaitAndDisposeOldPipeline just above.
-                CompleteStartOffLock(outcome);
+                RebuildPipelineOffLock(restartInputs);
             }
         }
 
@@ -3171,9 +3552,11 @@ internal sealed class FleetCore
         // RevertBurstAfterDelayAsync (below) was never started.
         //
         // 🔴 G-2 CLOSES THAT, and M-5 turned out to be the small half of a larger window (S5). M-5 named only
-        // the Cancel; the other statement in the same window is ApplyScenario, which is REACHABLE — it calls
-        // StartLocked, and StartLocked reaches MachineConfigStore.Ensure (the enumeration's P5:
-        // InvalidOperationException on a config-kind mismatch, IOException on a full or read-only data root).
+        // the Cancel; the other statement in the same window is ApplyScenario, which is REACHABLE — its
+        // restart branch reaches MachineConfigStore.Ensure (the enumeration's P5: InvalidOperationException
+        // on a config-kind mismatch, IOException on a full or read-only data root; 🔴 via
+        // RebuildPipelineOffLock -> BuildStartPlan since J-1, via StartLocked before it — the reachability
+        // this paragraph rests on is unchanged, only the frame the throw unwinds through).
         // Either throw left the fleet running at BurstMultiplier with no revert task ever scheduled —
         // indefinitely, until some later Burst — because `_burstRevertCts = cts` had already committed under
         // _gate while the thing that discharges it, `RevertBurstAfterDelayAsync`, had not been started.
@@ -3229,8 +3612,9 @@ internal sealed class FleetCore
         if (shouldRevert)
         {
             // 🔴 G-2 — the ONE genuinely SILENT instance of S4, and the reason it is silent is here rather
-            // than in ApplyScenario. ApplyScenario's restart branch can throw (P5: StartLocked →
-            // MachineConfigStore.Ensure), leaving the fleet stopped with `_scenario` already mutated. On its
+            // than in ApplyScenario. ApplyScenario's restart branch can throw (P5: 🔴 since J-1
+            // RebuildPipelineOffLock → BuildStartPlan → MachineConfigStore.Ensure, previously StartLocked →
+            // the same), leaving the fleet stopped with `_scenario` already mutated. On its
             // other two entry paths that throw reaches an operator — RegisterMachine and the scenario
             // endpoint both propagate it to their caller, which is an HTTP 500. This one does not: Burst
             // starts this method as `_ = RevertBurstAfterDelayAsync(...)`, so the Task is never observed,

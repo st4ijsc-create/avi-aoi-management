@@ -29,8 +29,11 @@ public static class SimulatorFactory
     /// scenario multiplier composes with a config-store cadence override instead of being silently
     /// ignored by it — see <see cref="ScrewdriveSim.CycleSecondsOverride"/>'s doc comment. AOI has no
     /// cadence override, so it needs no multiplier here — its cadence already comes entirely from
-    /// <paramref name="d"/>.CycleSeconds, which the caller (<c>FleetCore.StartLocked</c>) already
-    /// pre-scales by this SAME multiplier before calling this factory. Defaults to 1.0 (every pre-existing
+    /// <paramref name="d"/>.CycleSeconds, which the caller already pre-scales by this SAME multiplier before
+    /// calling this factory. 🔴 Task J-1: that caller is <c>FleetCore.BuildStartPlan</c>, which runs with
+    /// <c>FleetCore._gate</c> RELEASED — this factory reaches <c>MachineConfigStore.Ensure</c> through
+    /// <c>SimulatorBase</c>'s ctor, i.e. a file WRITE, and that is why it was hoisted. <c>StartLocked</c> is
+    /// still a caller, but only for a descriptor the plan did not already cover. Defaults to 1.0 (every pre-existing
     /// call site/test that doesn't pass one behaves exactly as before).</param>
     /// <param name="productConfigStore">WS3-T1 — optional (defaults null, every pre-existing call site
     /// unaffected) source for <see cref="AoiInspectorSim"/>'s real-product-points cycle plan; see its own

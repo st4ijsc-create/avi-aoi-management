@@ -639,6 +639,17 @@ bàn giao**, vì phép liệt kê CHÍNH LÀ sản phẩm bàn giao. Review G-1 
 3. `Cancel` thứ hai của (d), trong `Burst`. Đã đưa xuống dưới khoá.
 
 **Còn MỞ, trong mã của chính lõi (4–7):**
+
+> 🔴 **Đính chính ngày 2026-08-10, nhiệm vụ J-1 (`.superpowers/sdd/restart-chokepoint/`).** Hạng mục **4 và
+> 5** dưới đây (là `P4` và `P5` trong danh sách chín đường ở đầu `FleetCore.cs`, nơi lưu bản CHÍNH THỨC) đã
+> được **THU HẸP, chưa ĐÓNG**. Việc dựng driver đã được hoist ra ngoài `_gate`: `BuildStartPlan` dựng mọi
+> simulator và phân giải mọi mapping profile **khi đã nhả khoá**; `StartLocked` chỉ lắp đặt. Trên mọi lần
+> start không tranh chấp, cả hai đường đều **không** chạm hệ thống tập tin dưới khoá, và khoá riêng của
+> `MachineConfigStore` **không** được lấy dưới `_gate`. Đường dưới khoá vẫn CÒN với đúng một máy: máy được
+> đăng ký xen vào giữa lúc dựng. Con số **2,39 ms** ở hạng mục 4 và ở §10.3 vì thế là một phép đo LỊCH SỬ —
+> dụng cụ cũ chạy lại hôm nay sẽ ra số khác. Câu chữ nguyên bản dưới đây giữ nguyên vì nó là bản ghi của Đợt
+> E, không phải phát biểu về hiện trạng.
+
 4. Vi phạm #1 — `MappingProfileResolver.Build` → `File.Exists`/`File.ReadAllText` mỗi máy, **2,39 ms**.
 5. 🔴 **KHÔNG có trong bất kỳ danh sách nào trước đây, và nó là một lệnh GHI**: `StartLocked` →
    `SimulatorFactory.Create` → hàm dựng `SimulatorBase` → `MachineConfigStore.Ensure` → `Save()` →
