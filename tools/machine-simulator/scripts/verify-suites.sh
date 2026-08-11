@@ -2067,20 +2067,86 @@ EXPECT_EDGESERVICE=50
 # and a stale coverage claim is worse than a gap because it stops the next person looking.
 #   AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock                +1
 #       The _estopEngaged arm. Reaches the latch because RebuildPipelineOffLock (the RegisterMachine/
-#       ApplyScenario restart) consults neither the cheap pre-check nor _stopRequests, so an Estop landing
-#       in that rebuild's build window meets the latch and nothing else.
+#       ApplyScenario restart) reads no _stopRequests, so an Estop landing in that rebuild's build window
+#       meets the latch and nothing else. (🔴 J-1b gave that method a pre-check too; this test still reaches
+#       the latch because the check is read BEFORE the build and this Estop lands at the END of it — MEASURED
+#       on the post-J-1b tree by re-running the whole latch mutation cluster, not argued. 🔴 Branch review
+#       Minor 11 — AND THE VERDICT ITSELF BELONGS IN-TREE, not only in a gitignored report: re-running the
+#       latch deletion at 1cbdc564 against St4i.EngineApi.Tests gives KILLED, 2 failures, and they are
+#       exactly this test and the one below. Its session's positive control — `_running = true` -> `false`
+#       in StartLocked, run against THE SAME SUITE — was KILLED at 91. That pair of numbers is what the
+#       stale SURVIVED 1330 above is now superseded by, and §8.1(h) is the reason it is written here rather
+#       than cited from somewhere a clone does not have.)
 #   ASecondStartWinningTheRace_LeavesTheLoserRefusedByTheLatch_NotASecondSetOfSlots      +1
 #       The IsRunning arm, still live on Start()'s own path because a racing Start moves no counter. The
 #       assertion is the SLOT COUNT, not a flag: what the latch prevents is a second set of pipeline slots
 #       over one roster, i.e. two simulated groups writing the same MachineState — the silent double-drive.
-# M1 now kills both.
+# M1 now kills both — and still kills both after J-1b (KILLED 2, at 1cbdc564, these same two tests, control
+# KILLED 91 on the same suite). Neither witness was taken by the pre-check J-1b added upstream of the latch.
 #
 # 🔴 THE ROUND'S OTHER LESSON, recorded because it is about evidence rather than about code: M1's KILLED
 # verdict in the task report was obtained BEFORE the mechanism it tested changed, and was cited afterwards
 # as current. This project already records that an absence of failures is not evidence of a repair; this is
 # the same error one layer up — a PRESENCE of a past failure cited as evidence of a present guard. A
 # mutation result is only evidence for the tree it was run against.
-EXPECT_ENGINEAPI=1332
+#
+# 🔴 TASK J-1b (brief at .superpowers/sdd/symmetric-precheck/task-1-brief.md — UNTRACKED/gitignored, cited
+# for provenance only; every number below is justified here) raises EXPECT_ENGINEAPI 1332 -> 1334
+# (+2), counted from the EXECUTED total. Same one file (FleetHostStartBuildHoistTests.cs); nothing rewritten,
+# split or deleted. J-1b adds the pre-check J-1 left as an owner decision: RebuildPipelineOffLock now reads
+# `IsRunning || _estopEngaged` under _gate BEFORE BuildStartPlan, symmetric with Start()'s.
+#   AnEstopLandingInTheRestartTeardown_IsRefusedBeforeTheRebuildBuildsAnything           +1
+#       The pre-check's own witness, and the only window it covers: an Estop landing in the restart's
+#       TEARDOWN (the gap the caller's lock release opens, containing WaitAndDisposeOldPipeline's TWO bounded
+#       waits per old slot — the run-task wait, then the driver's own third-party DisposeAsync, which IS the
+#       second of the two and not a third component; 🔴 branch review Minor 6, this read as three). The seam
+#       is the OLD driver's disposal — DriverDecoratorForTests on the pipeline that is already running —
+#       which is the one place inside that gap a test can stand. Asserts the build-observation count is 0
+#       (deleting the pre-check makes this red) AND that the machine registered by the triggering call has no
+#       MachineConfigStore entry, in memory or on disk, which is P5's write not happening rather than a call
+#       not being counted. End state on THIS path is unchanged (halted, not running, no slots), so here the
+#       change is about work not done.
+#       🔴 BRANCH REVIEW IMPORTANT 1 — this sentence used to end "…not about a different outcome", stated of
+#       THE CHANGE rather than of this path, and that universal is FALSE: FleetCore's own block comment at
+#       the pre-check names the one interleaving where the outcome differs (a flag set at the check and
+#       cleared before the install — Estop then ResetEstop, or a racing Start then a Stop). A whole-branch
+#       enumeration of two-read divergences found FOUR cases and exactly ONE differs: the pre-check either
+#       passes (the latch then decides exactly as pre-J-1b) or refuses, and if it refuses the latch would
+#       have refused too in two of the three refusing cases — halt landed in the teardown, racing Start
+#       installed in the teardown — leaving only "flag set at the check, cleared before the install" as a
+#       changed outcome. It is the whole family, not an instance of one, and it
+#       is the owner's to ratify — which two shipped artifacts, this one included, said did not exist.
+#   ARegisterOrScenarioChangeMadeWhileTheLatchIsEngaged_NeverReachesTheRebuild           +1
+#       🔴 THE ZERO, PINNED — a measurement that contradicted this task's own motivating case, committed
+#       rather than merely reported. The case a symmetric pre-check sounds like it is for ("a roster/scenario
+#       change during a HALT reads N mapping files and writes N machine configs, then refuses") does not
+#       exist here and never did: RegisterMachine restarts only `if (IsRunning)` and ApplyScenario only
+#       `if (IsRunning && multiplierChanged)`, and Estop leaves the fleet not running. So that call does ZERO
+#       builds, reads and writes — before and after J-1b alike. It is also the only halt-path coverage
+#       ApplyScenario has here.
+#       🔴 REVIEW C-1 — WHAT IT PINS, CORRECTED, AND THE CORRECTION IS §8.1(h) RECURRING INSIDE THE FIX FOR
+#       §8.1(h). This block first said the test "makes a later change that makes a restart unconditional go
+#       red". IT CANNOT: J-1b's own pre-check inside RebuildPipelineOffLock returns before BuildStartPlan in
+#       exactly that hypothetical, so all FIVE assertions of the terminal block stay green — observation
+#       count, store entry, EstopEngaged, IsRunning, driver health. (🔴 Re-review N3: this said "four",
+#       inside the paragraph written to correct a false claim; the five are named so the count cannot drift
+#       from them silently.) The claim was invalidated by the guard
+#       added in the SAME COMMIT that made the claim — the same shape as the mutation result J-1 carried
+#       across a tree that had moved under it. What the test actually pins is the observable PROPERTY, and it
+#       is mechanism-agnostic: from either public entry point during a HALT, zero pipeline builds, no
+#       MachineConfigStore entry for the machine the call registers, and a fleet still latched, not running
+#       and slotless. TWO independent mechanisms deliver that today — the callers' own IsRunning guards and
+#       (since J-1b) the pre-check — so it goes red only when BOTH are gone, never when one is. Measured, not
+#       reasoned: under mutation M13 (J-1b's pre-check deleted) this test stayed GREEN, which is precisely
+#       what says the zero it records belongs to the callers' guards rather than to the new check.
+# The pre-check adds NO test to any other suite and moves no other constant: EXPECT_ABSTRACTIONS,
+# EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are unchanged, and EXPECT_EDGECORE staying put
+# is evidence rather than convenience — J-1b edits exactly one src file (FleetCore.cs, itself EdgeCore) and
+# every consequence of the change is observable only through a live FleetHost, which is why both witnesses
+# live here. EXPECT_CONFORMANCE in particular stays 22: no driver, no connector kind, and the shared suite's
+# "FleetCore.StartLocked constructs drivers under the same _gate lock Estop() takes" assertion string is
+# still TRUE — J-1b moves no driver construction and P7 is untouched.
+EXPECT_ENGINEAPI=1334
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -2268,7 +2334,9 @@ if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
   echo "  update EXPECT_WARNINGS and justify it beside the suite totals below."
-  echo "  Warning CODES in this build, by occurrence count across all projects (NOT the 115 --"
+  # 🔴 J-1b branch review, Minor 15 — this literal said 115 against a pinned EXPECT_WARNINGS of 116, i.e. a
+  # stale copy of the very number it sits beside. Interpolated now, so it cannot go stale again.
+  echo "  Warning CODES in this build, by occurrence count across all projects (NOT the ${EXPECT_WARNINGS} --"
   echo "  MSBuild counts a warning once per project that emits it; this is a pointer, not the total):"
   grep -oE 'warning [A-Za-z]+[0-9]+' "$BUILD_LOG" | sort | uniq -c | sort -rn | head -10
   echo "  full log: $BUILD_LOG"

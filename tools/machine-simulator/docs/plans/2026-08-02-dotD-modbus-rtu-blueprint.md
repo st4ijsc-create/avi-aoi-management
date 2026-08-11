@@ -308,7 +308,21 @@ mặt sản phẩm**. Trình biên dịch không phân biệt chúng với chú 
 lớp này, và §8.1 đã trả giá cho nó một lần: một diff chỉ-sửa-chú-thích là bằng chứng kết luận **về cây
 mã** (đoạn ngay trên) — nhưng "chỉ-sửa-chú-thích" phải được ĐO chứ không được tự khai.
 
-🔴 **(h) MỘT PHÉP ĐO CHỈ LÀ BẰNG CHỨNG CHO ĐÚNG CÂY MÃ NÓ ĐÃ CHẠY TRÊN ĐÓ — VÀ CHỖ LỚP LỖI NÀY TỤ LẠI LÀ BƯỚC SỬA, KHÔNG PHẢI CÔNG VIỆC GỐC (J-1).**
+🔴 **(h) MỘT KHẲNG ĐỊNH CHỈ LÀ BẰNG CHỨNG CHO ĐÚNG TRẠNG THÁI CÂY MÃ NÓ ĐƯỢC KIỂM CHỨNG TRÊN ĐÓ — VÀ CHỖ LỚP LỖI NÀY TỤ LẠI LÀ BƯỚC SỬA, KHÔNG PHẢI CÔNG VIỆC GỐC (J-1, mở rộng ở J-1b).**
+
+> 🔴 **Tiêu đề mục này TỪNG đọc là "một PHÉP ĐO … cây mã nó đã CHẠY trên đó", và chữ ấy quá hẹp — sửa
+> tại chỗ, KHÔNG tách thành mục (i), vì các danh sách trong file này đã trôi một lần rồi.** Chủ ngữ
+> đúng của (h) là **bất kỳ khẳng định nào được kiểm chứng đối chiếu với một TRẠNG THÁI của cây mã**:
+> một phép đột biến, một phép đo, **và một CÂU VĂN nói một bài test bảo vệ cái gì**. Cái chung không
+> phải là "phép đo"; cái chung là **chỉ mục theo trạng thái cây mã**. Lý do phải mở rộng thay vì thêm
+> một chữ cái nằm ở §(h2) cuối mục này.
+>
+> 🔴 **Và lần mở rộng ĐẦU chỉ đụng đúng cái tiêu đề này** — phần thân bên dưới vẫn nói bằng từ vựng
+> đột biến và **cả ba** thuốc chữa của nó vẫn chỉ áp được cho phép đo, nên một người chỉ đọc (h) vẫn
+> nhận về một quy tắc dành-cho-phép-đo nằm dưới một tiêu đề nói về mọi khẳng định (phản biện toàn
+> nhánh, Important 5). Đã vá bằng bảng chia việc ở cuối phần thân: **thuốc nào cho nửa nào.** Ghi lại
+> vì đó là đúng lớp lỗi mục này nói tới — **một bản sửa đúng nhưng chưa tới nơi trông y hệt một bản
+> sửa đã xong**.
 
 Mục (f) nói phạm vi của một dụng cụ bị **thừa kế từ chỗ tác giả đang đứng**. J-1 sinh ra **bảy** ca của lớp
 ấy trong **một** nhiệm vụ, và chúng tách làm hai trục khác hẳn nhau.
@@ -340,6 +354,23 @@ chọn theo cảm tính, vì "đột biến nào còn áp dụng được" **ch�
 hàng bác bỏ được bằng mắt, **không có gì ép người ta đặt câu hỏi**, và nó chỉ phủ cái bảng — trong khi lời
 khẳng định sai còn được **trích lại trong văn xuôi**.
 
+🔴 **BA THUỐC CHỮA VỪA KỂ CHỈ ÁP ĐƯỢC CHO NỬA "PHÉP ĐO" CỦA CHỦ NGỮ ĐÃ MỞ RỘNG — nói rõ ở đây, vì bản mở
+rộng trước chỉ sửa TIÊU ĐỀ và như thế đọc lên như đã xong (phản biện toàn nhánh, Important 5).** "Chạy lại
+cả cụm", "mỗi hàng mang mã commit", "tuổi là đại lượng bị hao" đều giả định thứ được kiểm chứng **chạy
+được**. Với nửa còn lại của chủ ngữ — **một CÂU VĂN nói bài test nào canh cái gì** — cả ba đều **không dùng
+được**: không có gì để chạy lại, không có hàng nào để gắn mã commit, và tuổi thì bằng không (ca tệ nhất là
+câu văn viết **trong cùng commit** với đoạn mã làm nó sai). Thuốc chữa cho nửa ấy là **(h2) ở dưới**, và nó
+là một thuốc khác về bản chất chứ không phải cùng một thuốc nói lại: **một lượt ĐỌC LẠI KHI ĐÓNG, đối chiếu
+với trạng thái CUỐI của diff.** Đọc (h) mà bỏ (h2) thì vẫn còn là một quy tắc chỉ-dành-cho-phép-đo nằm dưới
+một cái tiêu đề nói về mọi khẳng định.
+
+**Chia việc, để không ai phải đoán:**
+
+| Thứ được kiểm chứng | Thuốc chữa |
+|---|---|
+| một phép đột biến / một phép đo | chạy lại cả cụm; mỗi hàng mang mã commit **và bộ test** nó chạy trên đó (xem quy tắc ghép đôi ở cuối §8.1) |
+| **một câu văn nói cái gì canh cái gì** | **(h2)** — đọc lại khi đóng, mô phỏng cả giả thuyết trên cây mã sau cùng |
+
 🔴 **VÀ ĐÂY LÀ NỬA CÓ GIÁ TRỊ NHẤT — CHỖ LỚP (f) TỤ LẠI.** Hai cách đếm cùng tồn tại: "hai trên bảy" (ca
 nằm trong bản sửa cho một ca (f) trước đó) và "năm trên bảy" (ca nằm trong **bất kỳ** bước sửa nào). Chúng
 trả lời **hai câu hỏi khác nhau** và đã bị dùng thay cho nhau — tức **chính lỗi (a3), áp lên bằng chứng cho
@@ -362,11 +393,53 @@ Bằng chứng gần nhất: chính vòng sửa cho ca (f) thứ tư đã đẻ 
 đẻ ra ca thứ tám — **trong đúng tài liệu đang lý thuyết hoá về lớp lỗi này**, một vòng sau khi quy tắc được
 viết ra.
 
+🔴 **(h2) HỆ QUẢ CÙNG-COMMIT, thêm ở J-1b — và đây là lý do (h) phải MỞ RỘNG chứ không được đẻ thêm một
+chữ cái.**
+
+**Ca sinh ra nó.** J-1b thêm một bước kiểm trước ở `RebuildPipelineOffLock`, và **trong cùng commit ấy**
+viết ba chỗ nói bài test "số không" của nó *"làm một thay đổi sau này khiến restart trở thành vô điều kiện
+phải đỏ"*. Câu ấy **sai ngay lúc được viết**: chính bước kiểm vừa thêm trả về trước `BuildStartPlan` trong
+đúng giả thuyết đó, nên bài test vẫn xanh. Không ai dẫn một kết quả cũ qua một cây mã mới — **cây mã đã dịch
+đi bên dưới câu văn trong khoảng thời gian giữa lúc viết câu ấy và lúc commit**.
+
+**Vì sao (h) như đã viết KHÔNG bắt được nó, dù đây đúng là (h).**
+- **Cò súng của (h) không nổ.** (h) canh *"có gì thay đổi giữa một lối vào công khai và cái chốt kể từ khi
+  phép đo được lấy?"* — một câu hỏi về **hai thời điểm**. Cùng-commit thì không có hai thời điểm nào để so:
+  câu văn được viết **SAU** đoạn mã, **trong cùng một cây**, nên nó **có cảm giác đương thời theo đúng cấu
+  tạo**. Đó là biến thể **nguy hiểm nhất** của lớp này, không phải biến thể nhẹ nhất.
+- **Thuốc chữa của (h) không có ở đây.** Thuốc của (h) là **CHẠY LẠI**. Một câu văn không chạy lại được.
+- **(g) chỉ sai hướng.** (g) hỏi *"bản sửa này có phải chỉ-là-chú-thích không"* — tức **sửa cái gì**. Câu
+  hỏi ở đây ngược lại: *"đoạn mã tôi vừa sửa có làm một câu văn CÓ SẴN (kể cả câu tôi vừa viết) thành sai
+  không?"*
+
+→ **QUY TẮC, và nó là thuốc chữa DUY NHẤT còn lại vì "chạy lại" không dùng được: một lượt ĐỌC LẠI KHI ĐÓNG,
+trên MỌI khẳng định về việc-cái-gì-canh-cái-gì nằm trong diff, đối chiếu với TRẠNG THÁI CUỐI CÙNG của diff
+ấy — không phải với trạng thái lúc câu ấy được gõ ra.** Cụ thể: với mỗi câu trong diff nói *"bài test này
+làm X đỏ"*, hãy **mô phỏng X trên cây mã sau cùng**, kể cả khi X là một giả thuyết. Nếu mọi phép khẳng định
+vẫn xanh, câu ấy **sai** — và nó sai theo hướng tệ nhất, vì nó **bảo người đọc thôi không kiểm nữa** (xem
+cặp quy tắc "khẳng định về TÍNH ĐẦY ĐỦ" ở (f)).
+
+→ **Và ghi lại phép đệ quy, vì đó mới là điểm chính: (h) đã bị chính VÍ DỤ của nó thu hẹp phạm vi.** (h)
+sinh ra từ một phép **đột biến**, nên nó được viết bằng từ vựng của đột biến ("phép đo", "chạy lại", "mã
+commit trên mỗi hàng") và **miền của nó bị thừa hưởng từ ca khai sinh** thay vì được suy ra từ **tính chất**
+(*chỉ mục theo trạng thái cây mã*). **Đó chính là §8.1(f), áp lên §8.1.** *(🔴 Phản biện toàn nhánh, Minor 10: chỗ này từng viết **"ca thứ chín CỦA LỚP ẤY"**, lấy bộ đếm **cục bộ trong J-1** — bảy ca, xem đầu mục này — rồi phổ quát hoá nó ra cả lớp, trong khi riêng bảng của §8.1(f) đã có sáu ca G-2 trước bảy ca của J-1. **Không đánh số lại** — đánh số một lớp trải khắp nhiều đợt là đúng thứ đã hỏng ba lần ở đây — mà bỏ hẳn con số: nó không làm việc gì trong lập luận.)* Và lần này
+nạn nhân là **một quy tắc của chính bộ quy tắc này** — đúng chỗ (f) đã cảnh báo là đắt nhất: *"một chẩn đoán
+đang được nâng lên thành quy tắc là chỗ đắt nhất cho một khẳng định phổ quát sai, vì mọi thứ phía sau sẽ
+được viết dựa trên nó."*
+
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**
 
 → Quy tắc đúng: **hành vi phụ thuộc phần cứng không bao giờ là một test bị bỏ qua có điều kiện bên trong năm bộ test.** Nó hoặc được **ghi rõ là khoảng trống chưa test** trong báo cáo và trong chú thích của cổng, hoặc được commit thành **một bench harness riêng nằm ngoài năm bộ** (`tools/serial-bench/`). Phép đo không commit được thì không tái lập được — reviewer D-3 phải **viết lại toàn bộ probe** để kiểm chứng các con số của D-3.
 
-Công cụ bắt buộc từ D-3: `scripts/mutate-guard.sh` (so dấu thời gian + đối chứng dương mỗi phiên). Lý do đầy đủ nằm trong header của nó.
+Công cụ bắt buộc từ D-3: `scripts/mutate-guard.sh` (so dấu thời gian + đối chứng dương **mỗi phiên**, và từ J-1b là **mỗi (đột biến, BỘ TEST)** — xem ngay dưới). Lý do đầy đủ nằm trong header của nó.
+
+🔴 **HẠNG MỤC MANG THEO, thêm ở J-1b và CÓ PHẠM VI RỘNG HƠN nhiệm vụ sinh ra nó — ĐỐI CHỨNG DƯƠNG GHÉP THEO (ĐỘT BIẾN, BỘ TEST), KHÔNG PHẢI THEO PHIÊN.** Câu *"đối chứng dương **mỗi phiên**"* ở trên là **chưa đủ**: đối chứng chứng thực **MỘT DỤNG CỤ ĐO**, và mỗi project test là một dụng cụ riêng — nên một phiên "tin được" vẫn chứa được một phán quyết không tin được khi đối chứng chạy ở bộ này còn SURVIVED được đọc từ bộ khác. **Đo, J-1b:** đối chứng (`_running = true → false` trong `FleetCore.StartLocked` — khiến **mọi** `Start()` báo đội máy dừng) **KILLED 91** trên `St4i.EngineApi.Tests`; một đột biến **trong đúng hàm đó, đúng file đó** — cái chốt HALT nằm trên phép gán ấy vài dòng, *không phải* chính phép gán *(🔴 chỗ này viết **"đúng dòng đó"** ở bản đầu, sai, và **thứ bắt được nó là lượt ĐỌC LẠI KHI ĐÓNG mà chính vòng này vừa ghi vào (h2), chạy trên đúng cái diff đã đẻ ra quy tắc ấy**)* — đọc từ `St4i.EdgeCore.Tests` báo *"SURVIVED 1093/1093"*; chạy lại **chính đối chứng ấy** trên `St4i.EdgeCore.Tests` thì nó **cũng SỐNG SÓT, 1093/1093, trên binary tươi**. **CHÍNH BỘ TEST ẤY — `St4i.EdgeCore.Tests`, cả 1093 bài — không phát hiện nổi một đột biến làm mọi `Start()` báo đội máy dừng** *(🔴 phản biện toàn nhánh, Minor 8: câu này từng viết *"một bộ 1093 test"*, làm nó đọc thành khẳng định về **KÍCH CỠ** trong khi sự thật đo được là về **ĐỘ PHỦ** — 1093 không làm việc gì trong lập luận cả, đúng hình dạng §8.1(a3). Phản biện còn kiểm độc lập cơ chế: bộ ấy có **KHÔNG một tham chiếu sống nào** tới `FleetCore`/`FleetHost`, mọi kết quả grep đều là chú thích)* — và **1093 xanh** là bộ đồ nguỵ trang rất thuyết phục cho một **kết quả rỗng**. Cái bẫy này là **mặc định chứ không phải hi hữu**: với một file nằm dưới `src/St4i.EdgeCore`, bộ **SAI** lại chính là bộ **hiển nhiên**.
+
+→ **Quy tắc: chạy đối chứng dương trên ĐÚNG bộ test mà anh sẽ đọc phán quyết từ đó; đọc một đột biến từ hai bộ thì cần hai đối chứng. Đối chứng sống sót ở bộ nào thì mọi phán quyết SURVIVED đọc từ bộ ấy là KHÔNG CÓ PHÁN QUYẾT, và chỉ với đoạn mã đối chứng ấy chạm tới — phải báo là "dụng cụ này không nhìn thấy đoạn mã này", tuyệt đối không báo là "đoạn mã này không được test" hay "cái chốt này không có nhân chứng".**
+
+🔴 **Hai đính chính của phản biện toàn nhánh, và cái thứ hai nặng hơn:**
+- **(Important 2)** Câu trên từng viết *"**mọi** phán quyết từ bộ ấy là KHÔNG CÓ PHÁN QUYẾT"*. **Sai hai đường:** một phán quyết **KILLED tự chứng thực** — có bài đỏ nghĩa là dụng cụ **đã** dựng, **đã** phát hiện và **đã** chạy đúng đoạn mã đột biến, tức đúng cái mà một đối chứng sinh ra để chứng minh; và phạm vi vô hiệu hoá chỉ tới **đoạn mã đối chứng chạm vào**, đúng như vế sau của chính câu ấy (*"không nhìn thấy ĐOẠN MÃ NÀY"*) đã tự thừa nhận. Áp nguyên văn thì nó **xoá sổ chính C0, M1′′ và M13 của J-1b** — tức bằng chứng rằng chốt HALT có nhân chứng.
+- **(Important 3)** Câu chốt từng là *"dụng cụ vốn đã đúng; thứ còn thiếu là quy tắc"*. **Sai, và sai theo hướng bảo người ta thôi kiểm:** `control` **không nhận đối số bộ test** và file trạng thái **khoá theo cây mã**, nên `check` vẫn in *"positive control on record — SURVIVED is meaningful"* cho một SURVIVED đọc từ **bộ khác** với bộ đối chứng đã chạy — **đúng cái thất bại J-1b vừa vấp, được chính dụng cụ chúc phúc**. **Đã sửa Ở DỤNG CỤ, không sửa ở văn xuôi:** `control` và `check` nay **BẮT BUỘC** kèm tên bộ test, trạng thái khoá theo **(cây mã, bộ test)**, và `check` cho một bộ chưa có đối chứng riêng thì **từ chối** và liệt kê những bộ đang có. Đường mới đã được **chạy thử thật**, không chỉ `bash -n`.
 
 🔴 **PHÉP CENSUS — ngữ liệu của nó là một phần của phương pháp, không phải của từng brief (thêm sau Đợt E, E-4).**
 
