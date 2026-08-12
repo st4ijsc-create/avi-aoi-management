@@ -130,9 +130,37 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
     expect(r.alarm).toBe(true);
   });
 
-  // ⚠ I-2 (review round 1): câu cảnh báo phải CHẨN ĐOÁN ĐÚNG HƯỚNG. Lệch dương = có hộ tiêu
-  // thụ cấp phát không xin phép; lệch âm = giấy phép treo/số commit sai — KHÔNG phải cấp phát
-  // chui. Một câu cố định gắn sai nguyên nhân sẽ khiến người trực đi tìm sai chỗ.
+  /**
+   * ★★★★ Pha 9 nhóm B · **B4 / X-2 — `warn.mock.calls[0]` LÀ MỘT GIẢ ĐỊNH VỀ THỨ TỰ, KHÔNG PHẢI
+   * MỘT PHÉP ĐO.**
+   *
+   * ════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ ĐO ĐƯỢC — VÀ CHÍNH LƯỢT SHUFFLE VỪA ĐƯỢC ĐƯA VÀO CỔNG (B4) LÀ THỨ TÌM RA NÓ
+   * ════════════════════════════════════════════════════════════════════════════════════════════
+   *   · thứ tự CỐ ĐỊNH (cổng thường): 151 file / 2393 ca **xanh**
+   *   · riêng file này:               **45/45 xanh**
+   *   · thứ tự TRỘN (`--sequence.shuffle.tests`): ca *"cảnh báo lệch ÂM"* **ĐỎ**
+   *         expected '[vram] nền vừa chốt CHƯA XÁC MINH ĐƯỢC…' to contain 'treo'
+   *
+   * Nguyên nhân: `reconcileOnce()` phát **nhiều** câu `console.warn`, và câu **đầu tiên** không
+   * phải lúc nào cũng là câu chẩn đoán lệch. Khi một ca khác chạy trước để lại trạng thái mức
+   * module, lượt này còn phát thêm câu *"nền vừa chốt CHƯA XÁC MINH ĐƯỢC"* — một cảnh báo **hoàn
+   * toàn hợp lệ, thuộc trục khác** — và nó chiếm mất ô `calls[0]`.
+   *
+   * ⚠⚠ ĐÂY LÀ LỖI THIẾT BỊ, KHÔNG PHẢI LỖI SẢN PHẨM — và phân biệt được điều đó là cả vấn đề:
+   *    câu sản phẩm nhận được **đúng nội dung của nó**; thứ sai là **giả định của ca test** rằng
+   *    câu chẩn đoán đứng ở chỉ số 0. Vá bằng cách nới `usedBytes` cho câu kia thôi phát ra sẽ là
+   *    *"nắn mã cho vừa lưới"*; vá bằng cách bỏ `not.toContain` sẽ là **làm yếu lưới đi**.
+   * ⇒ Vá đúng: hỏi **TOÀN BỘ** các câu cảnh báo của lượt gọi ấy. Phép hỏi mới **CHẶT HƠN** bản cũ
+   *   theo cả hai chiều — `toContain` nay đúng khi câu chẩn đoán ở **bất kỳ** vị trí nào, còn
+   *   `not.toContain` nay cấm chẩn đoán sai xuất hiện ở **bất kỳ** câu nào, chứ không chỉ câu đầu.
+   *
+   * ⚠ I-2 (review round 1): câu cảnh báo phải CHẨN ĐOÁN ĐÚNG HƯỚNG. Lệch dương = có hộ tiêu
+   *   thụ cấp phát không xin phép; lệch âm = giấy phép treo/số commit sai — KHÔNG phải cấp phát
+   *   chui. Một câu cố định gắn sai nguyên nhân sẽ khiến người trực đi tìm sai chỗ.
+   */
+  const moiCanhBao = (spy: { mock: { calls: unknown[][] } }): string =>
+    spy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
   it("cảnh báo lệch DƯƠNG phải nói 'cấp phát KHÔNG XIN PHÉP', KHÔNG nói 'treo'", async () => {
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 20_000 * MIB, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
@@ -142,7 +170,7 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { reconcileOnce } = await import("./vramReconciler");
     await reconcileOnce();
-    const msg = String(warnSpy.mock.calls[0]?.[0] ?? "");
+    const msg = moiCanhBao(warnSpy);
     expect(msg).toContain("KHÔNG XIN PHÉP");
     expect(msg).not.toContain("treo");
     warnSpy.mockRestore();
@@ -157,7 +185,7 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { reconcileOnce } = await import("./vramReconciler");
     await reconcileOnce();
-    const msg = String(warnSpy.mock.calls[0]?.[0] ?? "");
+    const msg = moiCanhBao(warnSpy);
     expect(msg).toContain("treo");
     expect(msg).not.toContain("KHÔNG XIN PHÉP");
     warnSpy.mockRestore();
