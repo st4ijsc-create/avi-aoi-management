@@ -101,6 +101,26 @@ const docNguon = (f: { duong: string; that: string }): FileNguon => {
  */
 const MOI_FILE_SERVER: readonly FileNguon[] = moiFileDuoi(GOC_REPO, "server", [".ts"]).map(docNguon);
 
+/**
+ * ★★ Review TOÀN NHÁNH Pha 9 · **M-2 — LƯỢNG TỪ `otplib` PHỦ CẢ BỐN CÂY, KHÔNG CHỈ `server/`.**
+ *
+ * B3 nới lượng từ ra `*.test.ts` nhưng **giữ nguyên** phạm vi `server/**` ⇒ `client/`, `shared/`,
+ * `scripts/` vẫn ngoài tầm. Với `otplib` còn ở **`dependencies`** (`^13.4.0` — tức **vẫn được cài
+ * ở máy sản xuất**: `npm ci --omit=dev` giữ nó), một lượt nhập ở ba cây kia là đúng đường mà đường
+ * xác minh TOTP thứ hai quay lại, và lưới **theo cấu tạo** không thấy.
+ * ⚠ Đây là lớp lỗi *"lưới theo FILE/THƯ MỤC, không theo ĐƯỜNG THOÁT"* — cùng lớp mà chính B3 vừa
+ *   vá **một nửa**, và cùng lớp với I-1 của lượt review này (thiết bị chống-N+1 tự nó là danh sách).
+ * ⚠ NỢ CÒN LẠI, ĐƯỢC KHAI: `otplib` **vẫn ở `dependencies`** dù **0 người nhập** trên cả bốn cây.
+ *   Chuyển nó sang `devDependencies` (hoặc gỡ hẳn) là một lượt đổi **bề mặt cài đặt sản xuất** +
+ *   sinh lại `package-lock.json` ⇒ để chủ dự án quyết. Lượng từ dưới đây làm tính **không-với-tới**
+ *   trở thành một bất biến, nên món nợ ấy nay là *"một thư viện có mặt mà không ai gọi được"*.
+ */
+const CAY_NGOAI: readonly string[] = ["client", "shared", "scripts"];
+const MOI_FILE_BON_CAY: readonly FileNguon[] = [
+  ...MOI_FILE_SERVER,
+  ...CAY_NGOAI.flatMap((c) => moiFileDuoi(GOC_REPO, c, [".ts", ".tsx"]).map(docNguon)),
+];
+
 /** MỌI file **sản xuất** (`.ts`, không `*.test.ts`) dưới `server/**`. */
 const SAN_XUAT: readonly FileNguon[] = MOI_FILE_SERVER.filter((f) => !laFileTest(f.duong));
 
@@ -213,12 +233,19 @@ describe("★★★ Task 6 — MỌI lượt xác minh TOTP đi qua sổ", () =>
      *    `MOI_FILE_SERVER`: trước B3 vi phạm **duy nhất** của repo nằm trong một file test, tức
      *    đúng chỗ lượng từ cũ không với tới.
      */
-    const pham = MOI_FILE_SERVER.filter((f) =>
+    // ★★ M-2: phạm vi nay là **BỐN CÂY** (`server` · `client` · `shared` · `scripts`) — xem khối
+    //    lý lẽ ở chỗ khai `MOI_FILE_BON_CAY`. Cầu chì: tập phải lớn hơn tập `server/**`, nếu không
+    //    thì `moiFileDuoi` đã mù với ba cây kia và ô này rộng ra chỉ trên giấy.
+    expect(
+      MOI_FILE_BON_CAY.length,
+      "tập bốn cây KHÔNG lớn hơn tập `server/**` ⇒ `moiFileDuoi` mù với `client`/`shared`/`scripts`",
+    ).toBeGreaterThan(MOI_FILE_SERVER.length);
+    const pham = MOI_FILE_BON_CAY.filter((f) =>
       moiDuongNhap(f).some((s) => s === "otplib" || s.startsWith("otplib/")),
     ).map((f) => f.duong);
     expect(
       pham.join(" · "),
-      "một thư viện TOTP thứ hai trong `server/**` ⇒ một đường xác minh NGOÀI sổ (mã sản xuất), hoặc\n" +
+      "một thư viện TOTP thứ hai trong `server`/`client`/`shared`/`scripts` ⇒ một đường xác minh NGOÀI sổ (mã sản xuất), hoặc\n" +
         "một khuôn mẫu dùng thư viện bị cấm ĐƯỢC MỘT LƯỚI XANH CHỨNG THỰC (mã test) — cả hai đều là\n" +
         "đường để đường xác minh thứ hai quay lại. Dùng `speakeasy` + `verifyTotpOnce`.",
     ).toBe("");
