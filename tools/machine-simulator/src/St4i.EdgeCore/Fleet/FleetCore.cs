@@ -688,19 +688,32 @@ internal sealed class FleetCore
     /// evidence for that diagnosis.</b> It read: <i>"a throw inside <see cref="StartLocked"/> after the
     /// connector loop loses <c>orphanedConnectorDrivers</c> and <c>deferredLogs</c> outright — they are
     /// locals, so no <c>finally</c> in a caller can reach them — and leaves <see cref="_slots"/> non-empty
-    /// with <c>_running == false</c>, which <see cref="StopLocked"/>'s <c>if (!_running) return default;</c>
-    /// then REFUSES to tear down. Closing it means restructuring <see cref="StartLocked"/> so its partial
-    /// work is owned by the caller, which is the same redesign P5 needs."</i>
-    /// <b>Three of those clauses are now FALSE and the fourth was never true.</b> The orphan list is no
-    /// longer a local (it is the caller's, see (1)); <see cref="StopLocked"/>'s guard is no longer
-    /// <c>if (!_running) return default;</c> (it is a conjunction, see (2)); and the refusal it describes is
-    /// gone with it. The clause that was never true is the last one: closing (1) took ONE parameter and two
-    /// caller declarations, closing (2) took ONE <c>&amp;&amp;</c>, and <b>neither is the P5 redesign</b> —
-    /// P5 is "get <c>MachineConfigStore.Ensure</c>'s write off this lock", and neither change moves any I/O
-    /// relative to it. <b>That sentence converted two cheap repairs into a reserved redesign by assertion,
-    /// and three rounds of readers took their scope from it instead of from the code.</b> §8.1(f), the
-    /// vocabulary half, applied to a scope rather than to a name — recorded in the blueprint as its own
-    /// instance.</para>
+    /// with <c>_running == false</c>, which <see cref="StopLocked"/>'s guard [QUOTED-NOT-LIVE: the old
+    /// single-disjunct form, deliberately NOT reproduced verbatim here — see the note below] then REFUSES to
+    /// tear down. Closing it means restructuring <see cref="StartLocked"/> so its partial work is owned by
+    /// the caller, which is the same redesign P5 needs."</i>
+    /// <para>🔴 <b>Re-review, Minor — THE QUOTATION USED TO REPRODUCE THE OLD GUARD VERBATIM, and in this
+    /// file that is not free.</b> A <c>grep</c> for the live guard then returned a hit that LOOKS like code,
+    /// in the one file whose own banner records three defects caused by grepping a label and believing the
+    /// result. The clause is described instead of quoted, and the marker is greppable on purpose: the live
+    /// guard is at <see cref="StopLocked"/> and is a CONJUNCTION. History that impersonates code is a worse
+    /// exhibit than history that says what it is.</para>
+    /// <b>Three of those clauses are now FALSE, one is still TRUE, and the last is HALF true.</b> The orphan
+    /// list is no longer a local (it is the caller's, see (1)); <see cref="StopLocked"/>'s guard is no longer
+    /// that single test (it is a conjunction, see (2)); and the refusal it describes is gone with it. Still
+    /// TRUE and deliberately not marked otherwise: a throw does still leave <see cref="_slots"/> non-empty
+    /// with <c>_running == false</c> — J-2 made that state CLEANABLE, not unreachable.
+    /// <para>🔴 <b>And the last clause is HALF true, which the previous headline over-reached by calling it
+    /// "never true" (re-review, Minor).</b> <i>"Restructuring <see cref="StartLocked"/> so its partial work
+    /// is owned by the caller"</i> is EXACTLY what J-2 did for the orphan half — the list is now the
+    /// caller's. What was never true is the second half: the <b>P5 EQUIVALENCE</b>, and the SIZE it implied.
+    /// Closing (1) took ONE parameter and two caller declarations, closing (2) took ONE <c>&amp;&amp;</c>,
+    /// and <b>neither is the P5 redesign</b> — P5 is "get <c>MachineConfigStore.Ensure</c>'s write off this
+    /// lock", and neither change moves any I/O relative to it. <b>That equivalence converted two cheap
+    /// repairs into a reserved redesign by assertion, and three rounds of readers took their scope from it
+    /// instead of from the code.</b> §8.1(f), the vocabulary half, applied to a SCOPE rather than to a name.
+    /// The correction is worth its own line because the over-reach happened in the sentence written to
+    /// diagnose an over-reach.</para>
     /// <para>🔴 <b>J-1 performed that restructuring for the BUILD half only, and this residual was UNCHANGED
     /// BY IT</b> (past tense as of J-2 — see (1) and (2) for what has since moved). The half that moved
     /// (simulators, mapping profiles) never owned anything a caller had to
@@ -3676,7 +3689,10 @@ internal sealed class FleetCore
         // already-not-running fleet (never started, or already stopped/faulted-out) skips everything below.
         //
         // 🔴 J-2 — AND THE GUARD IS NOW A CONJUNCTION, WHICH CLOSES THE ONE STATE IT USED TO REFUSE TO CLEAN.
-        // It read `if (!_running) return default;`. That is correct for every state EXCEPT
+        // It tested `!_running` ALONE [QUOTED-NOT-LIVE — the verbatim old line is deliberately not
+        // reproduced anywhere in this file; see the same marker in the S-set banner for why a grep hit that
+        // looks like code is not free here. The live guard is the conjunction below]. Testing it alone is
+        // correct for every state EXCEPT
         // `_running == false` with `_slots` NON-EMPTY — and in that state the slots are LIVE: each one's
         // run-task is already driving its pipeline, publishing readings and moving KPI counters, while
         // IsRunning reports the fleet stopped. Stop() and Estop() both returned here without cancelling a
@@ -3716,10 +3732,34 @@ internal sealed class FleetCore
         // (no appsettings.json), so the Error line is the one an operator can actually meet. It is NAMED
         // rather than avoided because it is INSEPARABLE from the fix: the lines are produced BY the teardown,
         // and a teardown that cannot report a driver that refused to cancel is worse than one that can.
-        // Note what this is NOT: it is not the deferred-log question S3's residual (3) refuses. That one is
-        // about SPEAKING FOR A START THAT NEVER INSTALLED, where the alternative is silence about nothing
-        // having happened. This is a halt that really did tear down really-live slots and really did meet a
-        // driver that misbehaved.
+        //
+        // 🔴 WHY THIS IS NOT THE DEFERRED-LOG QUESTION S3's RESIDUAL (3) REFUSES, AND THE FIRST ANSWER I
+        // WROTE HERE WAS FALSE (re-review, Important). It said (3) is about "SPEAKING FOR A START THAT NEVER
+        // INSTALLED, where the alternative is silence about nothing having happened". That is true of (3)'s
+        // two SIBLING paths — the latch refusal and the stop-abandon — and FALSE of the path (3) is actually
+        // about. On the throw path the start did plenty: the resolver ran and fell back, a connector was
+        // rejected, and slots MAY HAVE BEEN INSTALLED before the throw — that last one is consequence (2) of
+        // this same residual, a few lines up in the same banner. A distinction that is false of the case it
+        // is drawn for does not draw it.
+        //
+        // THE DIFFERENCE THAT DOES HOLD IS INSEPARABILITY, and it is already stated one paragraph above:
+        // these three lines are produced BY the teardown — there is no way to make HALT halt without running
+        // the code that emits them. Emitting `deferredLogs` is a FREE-STANDING choice with no other
+        // consequence: nothing else about the system changes if it is or is not done. "Output that arrives
+        // with a safety fix" and "output added because it seemed better" are different categories, and only
+        // the second is the one this branch reserves.
+        //
+        // 🔴 AND (h3) IS SYMMETRIC — THIS CHANGE ALSO REMOVES A REPORTING ROUTE, which both my sweep and its
+        // first correction missed because both looked only for reports that START (re-review, Minor).
+        // Before this fix, a stranded slot that faulted at some later point reached StartSlot's catch, found
+        // `_slots.Remove(slot)` == TRUE, set `LastError = ex` and flipped GET /v1/health unhealthy: that was
+        // the stuck state's ONLY eventual self-report, and an operator who waited long enough got one. After
+        // a halt has cleared `_slots`, that same fault finds `removed` == FALSE, so LastError is not set and
+        // health does not flip. BENIGN — the state being reported no longer exists, and reporting a fleet
+        // unhealthy because a slot an operator already halted later unwound is worse than silence. But
+        // "follow a failure to where it is REPORTED" covers failures that STOP being reported exactly as
+        // much as ones that start, and a change that removes an operator-visible signal has to say so even
+        // when removing it is right.
         //
         // WHAT IT COSTS, SECOND HALF: a Stop/Estop made in that state now performs the teardown instead of
         // returning immediately — bounded by RestartTeardownTimeout per stranded slot, twice (run-task wait,
