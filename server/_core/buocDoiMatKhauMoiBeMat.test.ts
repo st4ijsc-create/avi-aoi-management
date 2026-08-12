@@ -83,6 +83,9 @@ import {
   TEN_PHEP_CHAN,
   O_BO_QUA,
   FILE_DIEM_CHUNG,
+  FILE_UY_QUYEN_REST,
+  TEN_UY_QUYEN_REST,
+  uyQuyenRestDiQuaDiemChung,
 } from "./quetDiemXacThuc";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // …/server/_core
@@ -248,8 +251,11 @@ describe("★★★★ Pha 8 Task 1 — ∀ điểm xác thực HTTP/socket: c�
   });
 
   /* ── §3 LIÊN HỆ VỚI KHO MÃ THẬT — §1 xanh + §3 đỏ = thước sống nhưng mù với repo ────────────── */
-  it("§3 bộ nhận diện THẤY kho mã thật (đủ cả hai hình dạng)", () => {
+  it("§3 bộ nhận diện THẤY kho mã thật (đủ cả ba hình dạng)", () => {
     // Đo được 2026-08-09 trên `18432e91`: **12** điểm `xt` + **1** điểm `phien` = 13.
+    // ⚠ Pha 9 A6: bảy điểm gọi của tuyến REST gộp về `thuXacThucRest` ⇒ nếu bộ nhận diện KHÔNG biết
+    //   hình dạng thứ ba, con số này rơi **13 → 6** và bảy bề mặt rời khỏi tầm phát biểu của lượng
+    //   từ. Tổng vẫn **13** sau khi bộ nhận diện được dạy (xem `quetDiemXacThuc.ts`).
     expect(
       MOI_DIEM.filter((d) => d.loai === "xt").length,
       "0 điểm `authenticateRequest` trong mã sản xuất — bộ nhận diện đang mù với repo",
@@ -258,6 +264,20 @@ describe("★★★★ Pha 8 Task 1 — ∀ điểm xác thực HTTP/socket: c�
       MOI_DIEM.filter((d) => d.loai === "phien").length,
       "0 điểm `verifySession` ngoài lớp khai nó — nhánh 'vòng qua điểm chung' của thước đã chết",
     ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("★★★★ Pha 9 — LƯỢT UỶ QUYỀN REST thật sự đi qua ĐIỂM CHUNG (7 bề mặt được phủ nhờ dòng này)", () => {
+    /**
+     * ⚠⚠ A6 gộp bảy điểm gọi của tuyến REST về `thuXacThucRest`. Bộ nhận diện coi lượt gọi ấy là
+     *    một điểm xác thực **ĐƯỢC PHỦ** — điều đó chỉ ĐÚNG khi chủ ấy thật sự uỷ quyền cho điểm
+     *    chung. Nếu ai viết lại nó để **tự** phân giải danh tính (đúng hình dạng lỗ C-1), ô này ĐỎ.
+     *    Không có ô này, hình dạng thứ ba là một cái tên được tin **theo lời khai**.
+     */
+    expect(
+      uyQuyenRestDiQuaDiemChung(readFileSync(join(GOC, FILE_UY_QUYEN_REST), "utf8")),
+      `${FILE_UY_QUYEN_REST}::${TEN_UY_QUYEN_REST} không còn gọi ${TEN_XAC_THUC} ⇒ bảy bề mặt REST vừa ` +
+        "rời khỏi mọi cưỡng chế của điểm chung, mà lượng từ vẫn khai XANH.",
+    ).toBe(true);
   });
 
   /* ── §4 LƯỢNG TỪ CHÍNH ─────────────────────────────────────────────────────────────────────── */

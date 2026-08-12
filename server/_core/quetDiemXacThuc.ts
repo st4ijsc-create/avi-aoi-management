@@ -31,6 +31,28 @@ export const TEN_XAC_THUC = "authenticateRequest";
 export const TEN_XAC_THUC_THO = "xacThucTho";
 /** Phép phân giải *"cookie/token này là phiên của ai"* — đường **vòng qua** điểm chung. */
 export const TEN_PHAN_GIAI_PHIEN = "verifySession";
+/**
+ * ★★★★ Pha 9 nhóm A · **A6/A1 — HÌNH DẠNG THỨ BA: LƯỢT UỶ QUYỀN CỦA TUYẾN REST.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO PHẢI THÊM — "TASK SAU KHÔNG PHÁ LƯỚI; NÓ DỜI CÁI ĐƯỢC CANH RA KHỎI TẦM PHÁT BIỂU"
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * A6 gộp bảy điểm gọi `sdk.authenticateRequest` của tuyến REST về một chủ (`thuXacThucRest`) để
+ * nhánh 401 viết sẵn thôi làm mã chết. Bất biến an ninh **mạnh lên** — bảy bề mặt vẫn đi qua đúng
+ * điểm chung, chỉ thêm một mắt xích. Nhưng bộ nhận diện này chỉ biết **hai** cái tên, nên phép
+ * đếm điểm xác thực **13 → 6**, và §3 của cả hai lưới ĐỎ với thông điệp *"bộ nhận diện đang mù"*.
+ *
+ * ⚠ Màu đỏ ấy **nói đúng**: sau A6, bảy bề mặt REST **thật sự** nằm ngoài tầm phát biểu của lượng
+ *   từ *"∀ điểm xác thực phải kiểm cờ buộc-đổi-mật-khẩu / phải tra sổ phiên"*. Chúng vẫn được cưỡng
+ *   chế (qua điểm chung), nhưng **lưới không còn nói được điều đó** — đúng lớp lỗi C-2 của Pha 7.
+ *   Nới con số 12 xuống 6 là *"nắn mã cho vừa lưới"* theo chiều ngược: nắn **lưới** cho vừa mã.
+ * ⇒ Cách đúng: dạy bộ nhận diện hình dạng thứ ba, và **ghim rằng nó thật sự uỷ quyền** cho điểm
+ *   chung (`uyQuyenRestDiQuaDiemChung`). Nếu ai viết lại chủ ấy để tự phân giải danh tính, hai lưới
+ *   đỏ ngay.
+ */
+export const TEN_UY_QUYEN_REST = "thuXacThucRest";
+/** File khai lượt uỷ quyền của tuyến REST. */
+export const FILE_UY_QUYEN_REST = "server/routes/_xacThucRest.ts";
 /** Phép chặn của cổng BUỘC-ĐỔI-MẬT-KHẨU (Pha 8 Task 1). */
 export const TEN_PHEP_CHAN = "chanNeuPhaiDoiMatKhau";
 /** Phép chặn của cổng THU HỒI PHIÊN (review TOÀN NHÁNH Pha 8 · C-1). */
@@ -110,7 +132,7 @@ export function quetDiemXacThuc(duong: string, ma: string): DiemXacThuc[] {
   const di = (n: ts.Node): void => {
     if (ts.isCallExpression(n)) {
       const t = tenGoi(n);
-      if (t === TEN_XAC_THUC || t === TEN_PHAN_GIAI_PHIEN) {
+      if (t === TEN_XAC_THUC || t === TEN_PHAN_GIAI_PHIEN || t === TEN_UY_QUYEN_REST) {
         // ⚠ `this.verifySession(...)` bên trong chính lớp khai nó **không** là một bề mặt — đó là
         //    một mắt xích nội bộ của điểm chung. Nhận diện bằng HÌNH DẠNG (`this`), không bằng một
         //    danh sách file được tha.
@@ -120,8 +142,12 @@ export function quetDiemXacThuc(duong: string, ma: string): DiemXacThuc[] {
           ra.push({
             duong,
             dong: dongCua(n),
-            loai: t === TEN_XAC_THUC ? "xt" : "phien",
-            boQua: t === TEN_XAC_THUC ? coTatCong(n) : true, // đường `phien` KHÔNG đi qua điểm chung
+            // ★ Pha 9 — lượt uỷ quyền REST đi qua điểm chung ⇒ cùng loại với một lượt gọi trực tiếp.
+            loai: t === TEN_PHAN_GIAI_PHIEN ? "phien" : "xt",
+            // ⚠ `thuXacThucRest` KHÔNG nhận ô `boQuaCongDoiMatKhau` (hợp đồng chỉ có `req`) nên nó
+            //   **không thể** tắt cổng. `uyQuyenRestDiQuaDiemChung()` ghim rằng nó thật sự uỷ quyền.
+            boQua:
+              t === TEN_XAC_THUC ? coTatCong(n) : t === TEN_UY_QUYEN_REST ? false : true,
             tuCanh: thanCoGoi(n, TEN_PHEP_CHAN),
             tuTraSo: thanCoGoi(n, TEN_PHEP_CHAN_PHIEN),
           });
@@ -182,4 +208,16 @@ export function diemChungCuongChe(ma: string): boolean {
  */
 export function diemChungTraSo(ma: string): boolean {
   return thanPhuongThucGoi(ma, TEN_XAC_THUC_THO, TEN_PHEP_CHAN_PHIEN);
+}
+
+/**
+ * ★★★★ Pha 9 — **LƯỢT UỶ QUYỀN REST CÓ THẬT SỰ ĐI QUA ĐIỂM CHUNG KHÔNG.**
+ *
+ * ⚠⚠ Đây là mắt xích khiến bảy bề mặt REST được phủ **mà không ai phải sửa bảy chỗ**. Nếu ai viết
+ *    lại `thuXacThucRest` để **tự** phân giải danh tính (`verifySession` + `getUserByOpenId`, đúng
+ *    hình dạng của `validateExternalAuth` — lỗ C-1), hàm này trả `false` và cả hai lưới ∀ đỏ ngay.
+ *    Không có ô này, `TEN_UY_QUYEN_REST` chỉ là một cái tên được tin **theo lời khai**.
+ */
+export function uyQuyenRestDiQuaDiemChung(ma: string): boolean {
+  return thanPhuongThucGoi(ma, TEN_UY_QUYEN_REST, TEN_XAC_THUC);
 }

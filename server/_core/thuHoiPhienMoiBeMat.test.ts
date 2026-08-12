@@ -77,6 +77,9 @@ import {
   TEN_PHAN_GIAI_PHIEN,
   TEN_PHEP_CHAN_PHIEN,
   FILE_DIEM_CHUNG,
+  FILE_UY_QUYEN_REST,
+  TEN_UY_QUYEN_REST,
+  uyQuyenRestDiQuaDiemChung,
 } from "./quetDiemXacThuc";
 import * as db from "../db";
 import { userSessions } from "../../drizzle/schema";
@@ -221,8 +224,10 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-1 — ∀ điểm xác thực
     ).toBeGreaterThanOrEqual(500);
   });
 
-  it("§3 bộ nhận diện THẤY kho mã thật (đủ cả hai hình dạng)", () => {
+  it("§3 bộ nhận diện THẤY kho mã thật (đủ cả ba hình dạng)", () => {
     // Đo được 2026-08-10: **12** điểm `xt` + **1** điểm `phien` (`_core/index.ts`, nhánh Bearer).
+    // ⚠ Pha 9 A6: bảy điểm gọi của tuyến REST gộp về `thuXacThucRest`; bộ nhận diện được dạy hình
+    //   dạng thứ ba nên tổng giữ **13**. Không dạy ⇒ rơi xuống 6 và bảy bề mặt rời khỏi lượng từ.
     expect(
       MOI_DIEM.filter((d) => d.loai === "xt").length,
       "0 điểm `authenticateRequest` trong mã sản xuất — bộ nhận diện đang mù với repo",
@@ -231,6 +236,20 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-1 — ∀ điểm xác thực
       MOI_DIEM.filter((d) => d.loai === "phien").length,
       "0 điểm `verifySession` ngoài lớp khai nó — nhánh 'vòng qua điểm chung' của thước đã chết",
     ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("★★★★ Pha 9 — LƯỢT UỶ QUYỀN REST thật sự đi qua ĐIỂM CHUNG (7 bề mặt được phủ nhờ dòng này)", () => {
+    /**
+     * ⚠⚠ Cùng lý lẽ với ô song song ở `buocDoiMatKhauMoiBeMat.test.ts`, trên trục THU HỒI PHIÊN:
+     *    `thuXacThucRest` được coi là **ĐƯỢC PHỦ** chỉ vì nó uỷ quyền cho điểm chung. Viết lại nó
+     *    thành một lượt tự phân giải danh tính là **tái tạo đúng lỗ C-1** (58 tuyến `/api/external/*`
+     *    nhận cookie đã đăng xuất tới 2027), lần này trên bảy tuyến REST.
+     */
+    expect(
+      uyQuyenRestDiQuaDiemChung(readFileSync(join(GOC, FILE_UY_QUYEN_REST), "utf8")),
+      `${FILE_UY_QUYEN_REST}::${TEN_UY_QUYEN_REST} không còn gọi ${TEN_XAC_THUC} ⇒ bảy bề mặt REST ` +
+        "thôi tra sổ phiên, mà lượng từ vẫn khai XANH.",
+    ).toBe(true);
   });
 
   /* ── §4 LƯỢNG TỪ CHÍNH ─────────────────────────────────────────────────────────────────────── */
