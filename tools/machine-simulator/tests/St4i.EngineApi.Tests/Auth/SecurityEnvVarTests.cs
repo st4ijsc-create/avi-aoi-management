@@ -71,12 +71,26 @@ namespace St4i.EngineApi.Tests.Auth;
 /// SCHEDULING, not behaviour, so it compiles and every test still passes, which means MUTATION CANNOT KILL IT
 /// and neither can the gate.
 /// The census is also only as complete as its list of process-scope state KINDS; a kind nobody has thought of
-/// is invisible to it. The kinds swept were: the process environment block; the SQLite connection pool; the
-/// process console/standard streams; the process current directory; <c>AppContext</c> switches, default
-/// thread culture, <c>Trace.Listeners</c> and thread-pool minimums; mutable statics in the test assemblies;
-/// <c>AppDomain</c> handlers; fixed TCP ports and named mutexes/pipes; and machine-wide directories. That
-/// list is a measurement of what was looked for, not a proof that it is all there is — and the full table,
-/// with what each sweep returned, is in <c>.superpowers/sdd/gate-determinism/task-1-report.md</c> §2.3.</para>
+/// is invisible to it. <b>TEN kinds were swept</b>, one per row of the table in
+/// <c>.superpowers/sdd/gate-determinism/task-1-report.md</c> §2.3, which also records what each sweep
+/// returned:
+/// <list type="number">
+/// <item>the process environment block;</item>
+/// <item>the SQLite connection pool;</item>
+/// <item>the process console / standard streams;</item>
+/// <item>the process current directory;</item>
+/// <item><c>AppContext</c> switches, default thread culture, <c>Trace.Listeners</c>, thread-pool minimums;</item>
+/// <item>mutable statics in the test assemblies;</item>
+/// <item><c>AppDomain</c> handlers;</item>
+/// <item>fixed TCP ports;</item>
+/// <item>named mutexes and named pipes;</item>
+/// <item>machine-wide directories.</item>
+/// </list>
+/// That list is a measurement of what was looked for, not a proof that it is all there is.
+/// (🔴 It previously ran as prose that bundled rows 8 and 9 into one clause, so it READ as nine while the
+/// commit message beside it said ten — a count and the list it is a count OF disagreeing, which is the
+/// defect <c>TestHarnessIsolationTests</c> already carries a paragraph about. Enumerated now, so the two
+/// cannot drift apart again without the list itself changing.)</para>
 /// </summary>
 [CollectionDefinition(CollectionName)]
 public sealed class SecurityEnvVarTests

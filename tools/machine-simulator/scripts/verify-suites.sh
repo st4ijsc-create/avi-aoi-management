@@ -2777,6 +2777,13 @@ build_node_sample() {
 #
 # 🔴 TRAP 9 STILL APPLIES: the settled number is ASSERTED, and the series below it is printed for a human
 # to read alongside the verdict. EVERY number this script computes is either asserted or deleted.
+# 🔴 WHAT THIS COSTS ON A RUN THAT PASSES, because a check that taxes every green run should say the
+# number rather than leave it to be discovered (review, Minor 3). The cheapest possible outcome is still
+# THREE readings and TWO sleeps: MEASURED on this machine, one reading is ~0.29 s (PowerShell start-up
+# dominates it — the CIM query itself is nothing) and the floor is ~4.9 s, three runs, 4.87/4.91/4.94.
+# That is the FLOOR, paid by every green gate run, not a worst case. It buys the distinction between a
+# teardown that is draining and a population that is standing still, which one reading cannot make at any
+# price. The ceiling is ~60 s + query time, and only a machine that never settles pays it.
 BUILD_NODE_STABLE_SAMPLES=3       # equal consecutive readings before the population counts as settled
 BUILD_NODE_SAMPLE_INTERVAL=2      # seconds between readings
 BUILD_NODE_MAX_SAMPLES=30         # hard bound: ~60s of polling, then FAIL for never settling
