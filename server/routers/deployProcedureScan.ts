@@ -845,8 +845,27 @@ function laSqlChamBiMat(chu: string, sqlBiMat: TenSqlBiMat): boolean {
   // Tên bảng theo BIÊN TỪ: `user_secrets_backup` không phải bảng này.
   if (!new RegExp(`\\b${bang.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(s)) return false;
   if (sqlBiMat.cot.some((c) => new RegExp(`\\b${c.toLowerCase()}\\b`).test(s))) return true;
-  // `SELECT *` trên chính bảng bí mật ⇒ kéo MỌI cột, kể cả bí mật.
-  return /\bselect\s+\*/.test(s);
+  /**
+   * `SELECT *` trên chính bảng bí mật ⇒ kéo MỌI cột, kể cả bí mật.
+   *
+   * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-3 — BÍ DANH `s.*` LÀ HÌNH DẠNG TỰ NHIÊN NHẤT CỦA MỘT `JOIN`.**
+   * Bản trước là `\bselect\s+\*` (không nhận bí danh) — chỉ bắt dạng **trần**. Đo được qua chính
+   * `diemDocBiMatTrongNguon`:
+   *
+   *     SELECT *  (trần)                     => 1 điểm
+   *     SELECT s.*                           => 0 điểm   ← MÙ
+   *     SELECT us.*, u.id (JOIN với users)   => 0 điểm   ← MÙ
+   *
+   * Trong khi **tên ca** lại khai rộng hơn: *"`SELECT *` trên bảng bí mật bị bắt (**không cần nêu
+   * tên cột nào**)"*. Cách viết **có xác suất cao nhất** để một câu SQL thô chạm `user_secrets` là
+   * gắn nó vào `users` bằng `JOIN` rồi lấy `us.*` — đúng hình dạng đi qua **cả ba** lưới (§4b
+   * drizzle · §4c quyền truy cập · §4e SQL thô) mà không lưới nào thấy.
+   *
+   * ⚠ Nới **đúng một bậc**: một bí danh tuỳ chọn ngay trước `*`. **KHÔNG** nới sang `count(*)` —
+   *   `\bselect\s+` đòi `*` (hoặc `alias.*`) là thứ **đầu tiên** sau `select`, nên `SELECT COUNT(*)`
+   *   vẫn không khớp; ca đối chứng dương ghim điều đó.
+   */
+  return /\bselect\s+(?:[a-z_][a-z0-9_]*\s*\.\s*)?\*/.test(s);
 }
 
 /** Mọi điểm đọc bí mật `user_secrets` trong **một nguồn bất kỳ** (kể cả file CHƯA TỒN TẠI — M3). */

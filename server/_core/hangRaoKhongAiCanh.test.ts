@@ -377,6 +377,47 @@ describe("★★★ Pha 8 Task 4a — ∀ thủ tục đọc `user_secrets` PH�
       ).toBeGreaterThanOrEqual(1);
     });
 
+    it("★★★★ I-3 — `SELECT <bí danh>.*` (hình dạng tự nhiên nhất của một JOIN) cũng bị bắt", () => {
+      /**
+       * ══════════════════════════════════════════════════════════════════════════════════════════
+       * ⚠⚠⚠ Review TOÀN NHÁNH Pha 9 · **I-3 — LƯỚI CANH HẸP HƠN TÊN GỌI CỦA CHÍNH NÓ.**
+       * ══════════════════════════════════════════════════════════════════════════════════════════
+       * Ca ngay trên tên là *"`SELECT *` … **không cần nêu tên cột nào**"*, nhưng vị từ đứng sau nó
+       * là `\bselect\s+\*` (không nhận bí danh) — chỉ dạng **trần**. Đo trước bản vá, qua chính bộ suy này:
+       *
+       *     SELECT *  (trần)                     => 1 điểm
+       *     SELECT s.*                           => **0** điểm   ← MÙ
+       *     SELECT us.*, u.id (JOIN với users)   => **0** điểm   ← MÙ
+       *
+       * ⇒ Cách viết **có xác suất cao nhất** để một câu SQL thô chạm `user_secrets` là gắn nó vào
+       *   `users` bằng `JOIN` rồi lấy `us.*`. Đúng hình dạng ấy đi qua **cả ba** lưới (§4b · §4c ·
+       *   §4e) mà không lưới nào thấy — tức lỗ A3 vừa vá **còn nguyên một nửa**, và nay có một ca
+       *   XANH mang tên *"`SELECT *` … bị bắt"* đứng cạnh. Đây là *"biến thể thứ năm"* của lớp lỗi
+       *   **lưới canh hẹp hơn tên gọi**.
+       */
+      const biDanhTran = [
+        'import { sql } from "drizzle-orm";',
+        "export async function docBiDanh(db: any, id: number) {",
+        '  return db.execute(sql`SELECT s.* FROM user_secrets s WHERE s."userId" = ${id}`);',
+        "}",
+      ].join("\n");
+      expect(
+        diemDocBiMatTrongNguon("server/routes/biDanhN1.ts", biDanhTran, COT_BI_MAT, SQL_BI_MAT).length,
+        "`SELECT s.*` KHÔNG bị bắt ⇒ đúng nửa lỗ A3 còn mở, và một ca xanh đứng cạnh nói ngược lại",
+      ).toBeGreaterThanOrEqual(1);
+
+      const join = [
+        'import { sql } from "drizzle-orm";',
+        "export async function docJoin(db: any, id: number) {",
+        "  return db.execute(sql`SELECT us.*, u.id FROM users u JOIN user_secrets us ON us.\"userId\" = u.id WHERE u.id = ${id}`);",
+        "}",
+      ].join("\n");
+      expect(
+        diemDocBiMatTrongNguon("server/routes/joinN1.ts", join, COT_BI_MAT, SQL_BI_MAT).length,
+        "`SELECT us.*, u.id` trong một JOIN — hình dạng có xác suất cao nhất — vẫn lọt",
+      ).toBeGreaterThanOrEqual(1);
+    });
+
     it("★★★ chuỗi THƯỜNG (không phải `sql` tag) cũng bị bắt — bộ dò ở tầng LITERAL, không ở tầng một API", () => {
       /**
        * ⚠ Người ta chạm DB bằng nhiều cửa: `sql` tag, `pool.query`, `client.query`, một hằng chuỗi
@@ -407,9 +448,24 @@ describe("★★★ Pha 8 Task 4a — ∀ thủ tục đọc `user_secrets` PH�
         "}",
       ].join("\n");
       // ⚠ `COUNT(*)` chứa dấu `*` nhưng KHÔNG phải `SELECT *` — vị từ phải phân biệt được.
+      // ⚠⚠ I-3 nới vị từ sang `SELECT <bí danh>.*`. Ô này là **nửa còn lại** của lượt nới: nếu ai
+      //    nới thành `/select[\s\S]*\*/` thì `COUNT(*)` khớp và lưới đỏ vì chuyện vô hại — một lưới
+      //    như thế sẽ bị người sau tắt đi. Giữ ô này ĐÚNG CHỖ NÓ ĐANG ĐỨNG.
       expect(
         diemDocBiMatTrongNguon("server/routes/demN1.ts", dem, COT_BI_MAT, SQL_BI_MAT).length,
         "`SELECT COUNT(*)` bị xếp là đọc bí mật ⇒ dương tính giả (dấu `*` không phải `SELECT *`)",
+      ).toBe(0);
+
+      // ⚠ Và một bí danh KHÔNG đứng ngay sau `select` cũng không được kéo vào: `SELECT n.name … `
+      const cotThuong = [
+        'import { sql } from "drizzle-orm";',
+        "export async function docCot(db: any) {",
+        '  return db.execute(sql`SELECT us."userId" FROM user_secrets us`);',
+        "}",
+      ].join("\n");
+      expect(
+        diemDocBiMatTrongNguon("server/routes/cotThuongN1.ts", cotThuong, COT_BI_MAT, SQL_BI_MAT).length,
+        "`SELECT us.\"userId\"` (đếm hàng, không chạm bí mật) bị bắt ⇒ lượt nới I-3 đã đi quá một bậc",
       ).toBe(0);
 
       const bangKhac = [
