@@ -50,6 +50,16 @@
 
 set -uo pipefail
 
+# 🔴 NODE-REUSE POSTURE IS THIS SCRIPT'S, NOT THE OPERATOR'S (K-1 re-review 2, Q2).
+# `MSBUILDDISABLENODEREUSE=1` was an inline prefix on the ONE `dotnet build` below. `dotnet test` carries
+# no prefix, and `--no-build` still runs MSBuild project evaluation — so the five test invocations kept
+# whatever posture the caller's environment happened to have. K-1 ran its final gate with the variable
+# EXPORTED and initially recorded that as redundant; it was not, and that is the point: the gate's
+# behaviour differed depending on whether whoever ran it had set a variable. A check whose posture is
+# supplied by the person running it is the same class as a check that passes for the wrong reason.
+# Exported once, here, so every child process in this script gets it — build and suites alike.
+export MSBUILDDISABLENODEREUSE=1
+
 # Expected per-suite totals. Update deliberately when a task adds tests, and state
 # the new numbers in the task report -- a changed total is a fact to be justified,
 # not a number to be pasted over.
@@ -2290,6 +2300,13 @@ CREDS_BEFORE="$LOGDIR/creds-before.txt"
 CREDS_AFTER="$LOGDIR/creds-after.txt"
 CREDS_ADDED=""
 CREDS_REMOVED=""
+# 🔴 SEPARATE FROM THE TWO POPULATIONS (re-review New-7). "Could not read the directory" is a THIRD
+# outcome, not a deletion. It used to be stuffed into CREDS_REMOVED, which printed a diagnostic string
+# under the heading "something DELETED from a directory nothing is allowed to delete from" — a heading
+# contradicting the line beneath it, in a gate whose entire premise is that deletions there are alarming.
+# Manufacturing the wrong alarm is worse than a vague one: it sends the reader to look for a culprit that
+# does not exist.
+CREDS_UNREADABLE=0
 CREDS_EVALUATED=0
 CREDS_REPORTED=0
 if ! creds_snapshot > "$CREDS_BEFORE"; then
@@ -2306,14 +2323,15 @@ note "real creds root under watch: $REAL_CREDS_ROOT ($(grep -c . < "$CREDS_BEFOR
 # Evaluates once; later calls reuse the verdict. Returns 0 when the directory is unchanged.
 creds_bracket_eval() {
   if [[ $CREDS_EVALUATED -eq 1 ]]; then
-    [[ -z "$CREDS_ADDED" && -z "$CREDS_REMOVED" ]] && return 0 || return 1
+    [[ $CREDS_UNREADABLE -eq 0 && -z "$CREDS_ADDED" && -z "$CREDS_REMOVED" ]] && return 0 || return 1
   fi
   CREDS_EVALUATED=1
   if ! creds_snapshot > "$CREDS_AFTER"; then
-    # Unreadable-but-present root at the closing read. Report it as a CHANGE rather than comparing
-    # against a truncated file, which would read as "everything was deleted" or, worse, as clean.
+    # Unreadable-but-present root at the closing read. Still fatal — a bracket that cannot read its own
+    # directory has not measured anything — but reported as ITS OWN outcome, never as a deletion.
+    CREDS_UNREADABLE=1
     CREDS_ADDED=""
-    CREDS_REMOVED="<the root could not be listed at the end of the run — see the error above>"
+    CREDS_REMOVED=""
     return 1
   fi
   CREDS_ADDED=$(comm -13 "$CREDS_BEFORE" "$CREDS_AFTER" || true)
@@ -2322,6 +2340,15 @@ creds_bracket_eval() {
 }
 
 creds_bracket_text() {
+  if [[ $CREDS_UNREADABLE -eq 1 ]]; then
+    echo "REAL credential directory could NOT BE READ at the end of this run: $REAL_CREDS_ROOT"
+    echo "  NOTHING WAS DELETED and nothing was added — the directory exists and could not be listed, so"
+    echo "  this run measured NOTHING. Do not go looking for a culprit; there is no evidence of one."
+    echo "  Causes worth checking, in order: an ACL change on the creds directory (SecurityDirAcl.Apply"
+    echo "  runs on every CredentialStore.Save), a handle held open by another process, or the directory"
+    echo "  being replaced mid-run. Fix the read and re-run; do not disarm the bracket."
+    return
+  fi
   echo "REAL credential directory CHANGED across this run: $REAL_CREDS_ROOT"
   if [[ -n "$CREDS_ADDED" ]]; then
     echo "  ADDED ($(printf '%s\n' "$CREDS_ADDED" | grep -c .)) — something wrote a machine credential into a real install's store:"
@@ -2602,6 +2629,23 @@ note "build servers still resident entering the test phase: ${BUILD_NODES:-unkno
 # So the rule this script keeps re-learning, now stated where both instances sit: EVERY number
 # this script computes is either asserted or deleted. A `note` is for something a human reads
 # alongside a verdict, never for something the verdict depends on.
+# 🔴 CARRIED ITEM — THIS CHECK LOOKS RACY, AND IT IS DELIBERATELY NOT FIXED HERE (K-1 re-review 2).
+# `dotnet build-server shutdown` above SIGNALS teardown; the sample below runs with NO wait, poll or
+# retry. Observed three times during K-1, ALWAYS against a rebuild this script itself had just launched,
+# and cleared every time by re-running with NO CODE CHANGE. That is the tell: a genuine leftover
+# population does not clear itself on a re-run — a teardown race does.
+#
+# Two aggravators, both already in this file:
+#   * the null-`CommandLine` rule counts unreadable processes (fail-loud, added on purpose above) — and a
+#     process IN TEARDOWN is exactly when CommandLine becomes unreadable, so that fix feeds this failure;
+#   * MSBUILDDISABLENODEREUSE does not govern VBCSCompiler, which is precisely what `shutdown` must race.
+#
+# WHY K-1 DID NOT FIX IT: this check produces K-1's OWN verdict. A round that modifies the instrument its
+# own PASS depends on is the shape this project keeps paying for. It gets its own task and its own review.
+# REMEDY ALREADY IN THIS SCRIPT'S VOCABULARY: a bounded poll shaped like the CPU-flat detector's
+# consecutive-samples rule — which additionally DISTINGUISHES a race from a genuine miss, because a real
+# leftover population stays put across samples while a teardown drains. Blocking nothing; touching
+# everything, since every gate run passes through it.
 EXPECT_BUILD_NODES=0
 if [[ "${BUILD_NODES:-}" != "$EXPECT_BUILD_NODES" ]]; then
   echo "FAIL: ${BUILD_NODES:-unknown} build-server process(es) are resident entering the test phase,"
