@@ -29,8 +29,16 @@
  * những gì registrar đăng ký. Một tuyến **thứ 13** thêm vào bất kỳ file nào trong ba registrar ấy
  * **tự vào lượng từ** — không ai phải nhớ khai gì ("N+1" đã hai mươi lần).
  *
- * ⚠ VÙNG MÙ ĐƯỢC KHAI: lượng từ chỉ phủ **ba registrar** được nhập dưới đây. Bề mặt REST của một
- *   registrar **thứ tư** nằm ngoài — đó là phạm vi của A1, không phải của ô này.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ Pha 9 · **A1 — VÀ AI CANH CHÍNH DANH SÁCH REGISTRAR?**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu của file này nhập **ba** registrar bằng tay và ∀ trên chúng. Lượng từ ấy đúng **cho ba
+ * file ấy**, và **theo cấu tạo** mù với registrar **thứ tư** — đúng lớp *"N+1"* đã hai mươi lần.
+ * Phép đếm thật trên đĩa: **22** hàm `register…` trong `server/routes/` + `server/api/`.
+ *
+ * ⇒ §6 dưới đây đảo lượng từ: ***∀ registrar TRÊN ĐĨA: hoặc nó được lưới này GỌI THẬT, hoặc nó
+ *   được KHAI TÊN là ngoài phạm vi kèm lý do.*** Một registrar mới ở một file chưa tồn tại làm §6
+ *   **ĐỎ** cho tới khi có người quyết — không ai phải nhớ khai gì.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
@@ -44,6 +52,9 @@ vi.hoisted(() => {
   process.env.VITE_APP_ID ||= "avi-aoi-management";
 });
 
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import * as db from "../db";
 import { userSessions } from "../../drizzle/schema";
@@ -51,6 +62,7 @@ import { sdk } from "../_core/sdk";
 import { COOKIE_NAME } from "../../shared/const";
 import { clearAuthSessionCache } from "../services/authSessionCache";
 
+const GOC = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const DAU = "pha9-a6-rest";
 const MOT_GIO_MS = 60 * 60 * 1000;
 
@@ -292,6 +304,139 @@ describe("★★★ Pha 9 A6 §4 — TẬP AUTH-FREE: neo hai chiều, không m�
     for (const [k, v] of Object.entries(AUTH_FREE)) {
       expect(v.length, `mục auth-free "${k}" không nêu lý do`).toBeGreaterThan(30);
     }
+  });
+});
+
+describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN ĐĨA phải được GỌI hoặc được KHAI", () => {
+  /** Ba registrar lưới này **gọi thật** ở `beforeAll` (nguồn sự thật: cùng danh sách ấy). */
+  const DA_GOI = [
+    "server/routes/aiStreamingApi.ts",
+    "server/routes/aiLocalKnowledgeApi.ts",
+    "server/routes/observabilityRoutes.ts",
+  ] as const;
+
+  /**
+   * ★★★ **NGOÀI PHẠM VI — KHAI TÊN kèm lý do.** Mỗi mục là một quyết định an ninh phải viết ra.
+   * ⚠ Chúng **không** phải "an toàn"; chúng là *"không thuộc trục mà lưới này đo"* (phiên trình
+   *   duyệt qua `sdk.authenticateRequest`). Trục khoá-máy/API-key do lưới khác canh.
+   */
+  const NGOAI_PHAM_VI: Readonly<Record<string, string>> = {
+    "server/routes/externalInspectionApi.ts":
+      "Tuyến `/api/external/*` — xác thực bằng KHOÁ MÁY (Bearer/API key) qua `validateExternalAuth`, không phải phiên trình duyệt. Chủ thể không phải một hàng `users`.",
+    "server/routes/openaiGateway.ts":
+      "Cổng tương thích OpenAI — xác thực bằng API key của máy/tích hợp, cùng trục với `/api/external/*`.",
+    "server/routes/edgeDownload.ts":
+      "Tải gói Edge — cưỡng chế bằng token tải một lần + `x-master-key`, trục khoá máy.",
+    "server/routes/reportArtifactRoutes.ts":
+      "Tải hiện vật báo cáo — cưỡng chế bằng token ký của chính hiện vật (không phải phiên).",
+  };
+
+  /**
+   * ★★★ **NGOÀI PHẠM VI THEO THƯ MỤC** — một lý do dùng chung, và **SỐ FILE ĐƯỢC GHIM**.
+   *
+   * ⚠⚠ Vì sao một luật thư mục chứ không 15 dòng khai giống hệt nhau: 15 bản sao của cùng một lý do
+   *    là 15 chỗ lý do có thể trôi khỏi nhau. Nhưng một luật thư mục **không ghim số** là một tấm vé
+   *    trắng cho mọi file tương lai đặt vào đó ⇒ số được ghim, và một file thứ 16 phải là một quyết
+   *    định NÓI RA.
+   */
+  const THU_MUC_NGOAI = {
+    tienTo: "server/api/v1/",
+    viSao:
+      "Trục `/api/external/*` — mọi tuyến ở đây nằm sau `validateExternalAuth` (Bearer/API key của máy/ERP). " +
+      "Chủ thể KHÔNG phải một hàng `users` nên nó không có phiên trình duyệt để lưới này đo. " +
+      "Trục ấy được canh bởi `server/_core/thuHoiPhienMoiBeMat.test.ts` (thu hồi phiên trên nhánh Bearer).",
+    soFile: 15,
+  } as const;
+
+  /** Mọi hàm `register…` khai báo trong `server/routes/` + `server/api/` — SUY TỪ ĐĨA. */
+  function moiRegistrar(): string[] {
+    const ra: string[] = [];
+    const duyet = (thuMuc: string): void => {
+      for (const m of readdirSync(join(GOC, thuMuc), { withFileTypes: true })) {
+        const duong = `${thuMuc}/${m.name}`;
+        if (m.isDirectory()) duyet(duong);
+        else if (m.name.endsWith(".ts") && !m.name.endsWith(".test.ts")) {
+          if (/export function register\w*\s*\(/.test(readFileSync(join(GOC, duong), "utf8"))) ra.push(duong);
+        }
+      }
+    };
+    duyet("server/routes");
+    duyet("server/api");
+    return ra.sort();
+  }
+
+  const REGISTRAR = moiRegistrar();
+
+  it("★★★ CẦU CHÌ — bộ suy thấy đủ registrar trên đĩa (0 ⇒ §6 là chân lý rỗng)", () => {
+    expect(
+      REGISTRAR.length,
+      "quét ra quá ít registrar — bộ suy phạm vi đã hỏng? (đo được ở Pha 9 A1: 22)",
+    ).toBeGreaterThanOrEqual(20);
+    for (const d of DA_GOI) {
+      expect(REGISTRAR, `registrar được GỌI mà bộ suy không thấy: ${d}`).toContain(d);
+    }
+  });
+
+  it("★★★ SỐ file của luật thư mục được GHIM (file thứ 16 phải là một quyết định nói ra)", () => {
+    const trongThuMuc = REGISTRAR.filter((d) => d.startsWith(THU_MUC_NGOAI.tienTo));
+    expect(
+      trongThuMuc.length,
+      `số registrar dưới \`${THU_MUC_NGOAI.tienTo}\` đã đổi — một tuyến ngoài mới vừa xuất hiện,\n` +
+        "hãy xác nhận nó thật sự thuộc trục khoá-máy chứ không phải một bề mặt phiên.",
+    ).toBe(THU_MUC_NGOAI.soFile);
+    expect(THU_MUC_NGOAI.viSao.length, "luật thư mục phải nêu lý do").toBeGreaterThan(30);
+  });
+
+  it("★★★★ ∀ registrar: được GỌI THẬT, hoặc được KHAI TÊN là ngoài phạm vi", () => {
+    const chuaXuLy = REGISTRAR.filter(
+      (d) =>
+        !DA_GOI.includes(d as (typeof DA_GOI)[number]) &&
+        NGOAI_PHAM_VI[d] === undefined &&
+        !d.startsWith(THU_MUC_NGOAI.tienTo),
+    );
+    expect(
+      chuaXuLy.map((d) => `  · ${d}`).join("\n"),
+      [
+        "MỘT REGISTRAR TUYẾN REST KHÔNG ĐƯỢC LƯỚI HÀNH VI NÀO CHẠM TỚI.",
+        "⚠ Trước Pha 9, các bề mặt ngoài tRPC chỉ có SUY LUẬN CẤU TẠO (`try/catch` ⇒ 'suy ra' là từ",
+        "  chối). Phép đo bác bỏ suy luận ấy: 6 tuyến trả 500 chứ không 401.",
+        "⇒ Hoặc thêm registrar vào lượt gọi thật của lưới này (nó sẽ tự vào ∀ của §2),",
+        "  hoặc KHAI vào `NGOAI_PHAM_VI` kèm lý do — một quyết định an ninh phải viết ra.",
+      ].join("\n"),
+    ).toBe("");
+  });
+
+  it("★★★ tập KHAI không có mục MA, và mỗi mục có lý do", () => {
+    const ma = Object.keys(NGOAI_PHAM_VI).filter((d) => !REGISTRAR.includes(d));
+    expect(
+      ma,
+      "mục ma: file đã đổi tên/biến mất ⇒ lời khai vẫn tiếp tục THA cho một registrar mới trùng đường dẫn",
+    ).toEqual([]);
+    for (const [k, v] of Object.entries(NGOAI_PHAM_VI)) {
+      expect(v.length, `mục ngoài-phạm-vi "${k}" không nêu lý do`).toBeGreaterThan(30);
+    }
+  });
+});
+
+describe("★★★ Pha 9 A1 §7 — HÀNH VI: nhánh PHIÊN của bề mặt xuất dữ liệu", () => {
+  /**
+   * ⚠ `authenticateExportRequest` không đăng ký qua registrar nên §2 không chạm tới nó, nhưng nó
+   *   **có** một nhánh phiên trình duyệt đi qua `sdk.authenticateRequest` — đúng trục lưới này đo.
+   *   Gọi THẲNG hàm ấy là cách đo hành vi rẻ nhất mà vẫn thật.
+   */
+  it("★★★ không cookie, không API key ⇒ 401 (KHÔNG 5xx, KHÔNG ném)", async () => {
+    const { authenticateExportRequest } = await import("../api/export/exportRouter");
+    const ra = await authenticateExportRequest(reqGhiSo(null) as never, "inspections:read");
+    expect(ra.status, "bề mặt xuất dữ liệu từ chối SAI MÃ khi chưa xác thực").toBe(401);
+    expect(ra.principal, "từ chối mà vẫn trả về một chủ thể ⇒ fail-open").toBeNull();
+  });
+
+  it("★★★ cookie THẬT ⇒ 200 và chủ thể là PHIÊN (đối chứng dương, chống nhà tù)", async () => {
+    const { authenticateExportRequest } = await import("../api/export/exportRouter");
+    const ra = await authenticateExportRequest(reqGhiSo(cookieThat) as never, "inspections:read");
+    expect(ra.status, "cookie thật vẫn bị từ chối ⇒ bề mặt xuất dữ liệu thành nhà tù").toBe(200);
+    expect(ra.principal?.kind).toBe("session");
+    expect((ra.principal as { userId?: number })?.userId).toBe(uid);
   });
 });
 
