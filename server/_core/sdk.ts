@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { AXIOS_TIMEOUT_MS, COOKIE_NAME } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
 // ★★★★ Pha 8 Task 1 — chủ DUY NHẤT của vị từ "lượt gọi này có bị cổng BUỘC-ĐỔI-MẬT-KHẨU chặn không".
 import { biChanBoiCongDoiMatKhau } from "@shared/buocDoiMatKhau";
@@ -18,6 +18,8 @@ import { nhichChanPhienDaThuHoi, nhichChanPhienKhongCoHang } from "./demSoPhien"
 // ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
 import { redactServerOnlyUserFields } from "./publicUser";
 import { ENV } from "./env";
+// ★★★★ Pha 9 — CHỦ DUY NHẤT của "một phiên sống bao lâu" (mặc định 30 ngày, `SESSION_TTL_DAYS`).
+import { hanPhienMs } from "./hanPhien";
 import type {
   ExchangeTokenRequest,
   ExchangeTokenResponse,
@@ -387,16 +389,21 @@ class SDKServer {
     options: { expiresInMs?: number } = {}
   ): Promise<string> {
     const issuedAt = Date.now();
-    // Session TTL is operator-configurable via SESSION_TTL_DAYS (hardening:
-    // the previous hardcoded 1-year cookie is long-lived; recommend 7–30 days
-    // in production). Default preserved at 1 year to avoid invalidating
-    // existing sessions on upgrade.
-    const ttlDays = Number(process.env.SESSION_TTL_DAYS);
-    const defaultTtlMs =
-      Number.isFinite(ttlDays) && ttlDays > 0
-        ? ttlDays * 24 * 60 * 60 * 1000
-        : ONE_YEAR_MS;
-    const expiresInMs = options.expiresInMs ?? defaultTtlMs;
+    /**
+     * ★★★★ Pha 9 — **HẠN PHIÊN VỀ MỘT CHỦ (`_core/hanPhien.ts`), MẶC ĐỊNH 365 → 30 NGÀY.**
+     *
+     * Khối cũ ở đây đọc `SESSION_TTL_DAYS` và mặc định `ONE_YEAR_MS` *"để không vô hiệu hoá phiên
+     * đang có khi nâng cấp"*. Cả hai vế đều đã hết đúng:
+     *  · **vế cấu hình**: `??` bên dưới nghĩa là mặc định chỉ áp dụng khi người gọi **không** truyền
+     *    `expiresInMs` — mà **cả bốn** cửa đúc vé phiên đều truyền `ONE_YEAR_MS` **tường minh** ⇒
+     *    `SESSION_TTL_DAYS` là **MÃ CHẾT**. Lượt này gỡ cả bốn lượt truyền ấy.
+     *  · **vế "không vô hiệu hoá phiên đang có"**: `exp` nằm **trong vé đã ký**, nên đổi mặc định
+     *    ở đây **theo cấu tạo** chỉ chạm vé **MỚI**. Nỗi lo ấy chưa bao giờ đúng — và nó đã mua một
+     *    cửa sổ khai thác **365 ngày** cho mọi cookie bị bắt. Đo sống: `Max-Age=31536000`.
+     * ⚠ Lượt nhập `ONE_YEAR_MS` đã được GỠ khỏi file này: sau lượt vá không còn điểm dùng nào
+     *   (đo bằng AST, không bằng `grep` — hai lượt còn lại nằm trong khối bình luận).
+     */
+    const expiresInMs = options.expiresInMs ?? hanPhienMs();
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
 

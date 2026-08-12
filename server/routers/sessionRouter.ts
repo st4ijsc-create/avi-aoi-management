@@ -30,8 +30,15 @@ type PhienHienThi = PublicSession & {
  * canonical identifier of the CALLER's session, so `isCurrent` resolves
  * correctly and `revokeAll` preserves the caller's own session.
  *
- * TODO(doc 12 §12.5): session TTL is still the pending 1-year default — do NOT
- * shorten it here until that decision is finalised with the user.
+ * ✅ **TODO(doc 12 §12.5) ĐÃ ĐÓNG — Pha 9, chủ dự án duyệt.** Câu cũ ở đây là: *"session TTL is
+ * still the pending 1-year default — do NOT shorten it here until that decision is finalised"*.
+ * Quyết định đã có: hạn phiên về **MỘT CHỦ** `server/_core/hanPhien.ts`, mặc định **30 ngày**
+ * (`SESSION_TTL_DAYS` ghi đè được — và nay nó **thật sự** có hiệu lực; trước Pha 9 nó là mã chết vì
+ * cả bốn cửa đúc truyền `expiresInMs` tường minh). Đo sống trước lượt vá: `Max-Age=31536000`,
+ * `exp` = 2027 ⇒ cửa sổ khai thác của một cookie bị bắt là **365 ngày**.
+ * ⚠ Router này **không** phải chỗ đặt hạn — nó chỉ **đọc** `expiresAt` của hàng sổ. Lượt siết chỉ
+ *   chạm **vé MỚI**; mọi phiên đang sống giữ nguyên hạn cũ (`sessionGrantScan.test.ts` §5c ghim
+ *   rằng không cửa đúc nào `UPDATE` cột `expiresAt` của hàng đã có).
  */
 export const sessionRouter = router({
   /**

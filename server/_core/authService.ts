@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { COOKIE_NAME } from "@shared/const";
+// ★★★★ Pha 9 — CHỦ DUY NHẤT của "một phiên sống bao lâu" (mặc định 30 ngày, SESSION_TTL_DAYS).
+import { hanPhienMs } from "./hanPhien";
 import type { Request, Response } from "express";
 import * as db from "../db";
 import type { User } from "../../drizzle/schema";
@@ -408,9 +410,12 @@ export async function establishSession(
 
   await db.upsertUser({ openId: user.openId, lastSignedIn: new Date() });
 
+  // ★★★★ Pha 9 — hạn phiên về MỘT CHỦ (`_core/hanPhien.ts`): 365 → 30 ngày mặc định, và
+  //   `SESSION_TTL_DAYS` thôi là mã chết. Lượt truyền `expiresInMs` tường minh ở đây chính là
+  //   thứ đã vô hiệu hoá biến môi trường ấy — nên nó được GỠ, không phải đổi giá trị.
+  const hanMs = hanPhienMs();
   const sessionToken = await sdk.createSessionToken(user.openId, {
     name: user.name || "",
-    expiresInMs: ONE_YEAR_MS,
   });
 
   // Persist a server-side session record so it shows up in the session list
@@ -421,11 +426,11 @@ export async function establishSession(
     ipAddress: audit.ipAddress ?? undefined,
     // Minimal device hint; richer UA parsing can be layered in later.
     deviceName: audit.userAgent ?? undefined,
-    expiresAt: new Date(Date.now() + ONE_YEAR_MS),
+    expiresAt: new Date(Date.now() + hanMs),
   });
 
   const cookieOptions = getSessionCookieOptions(req);
-  res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+  res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: hanMs });
 
   // doc 44 G5.18 — anomalous-login detection (additive; ANOMALOUS_LOGIN_ENABLED,
   // default OFF → immediate no-op, zero added cost / bit-compat). Run BEFORE the

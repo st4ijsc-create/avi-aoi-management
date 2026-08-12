@@ -1,4 +1,6 @@
-import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { COOKIE_NAME } from "@shared/const";
+// ★★★★ Pha 9 — CHỦ DUY NHẤT của "một phiên sống bao lâu" (mặc định 30 ngày, SESSION_TTL_DAYS).
+import { hanPhienMs } from "./hanPhien";
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
 import * as db from "../db";
@@ -308,19 +310,20 @@ export function registerOAuthRoutes(app: Express) {
         lastSignedIn: new Date(),
       });
 
+      // ★ Pha 9 — hạn phiên về MỘT CHỦ (`_core/hanPhien.ts`), mặc định 30 ngày.
+      const hanMs = hanPhienMs();
       const sessionToken = await sdk.createSessionToken(openId, {
         name: displayName ?? "",
-        expiresInMs: ONE_YEAR_MS,
       });
 
       // ★★★★ 2026-08-11 SIẾT FAIL-OPEN — **ĐÚC VÉ THÌ PHẢI GHI SỔ.** Không ghi ⇒ vé này chết ngay
       // ở lượt yêu cầu đầu tiên (`chanNeuPhienDaThuHoi` nay từ chối vé không có hàng) ⇒ đăng nhập
       // OAuth thành một **nhà tù im lặng**: redirect 302 về "/" rồi 403 mọi thứ. Lượng từ canh điểm
       // đúc thứ SÁU: `server/routers/sessionGrantScan.test.ts` §4.
-      await ghiSoPhienChoOpenId(openId, sessionToken, req, ONE_YEAR_MS);
+      await ghiSoPhienChoOpenId(openId, sessionToken, req, hanMs);
 
       const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: hanMs });
       res.redirect(302, redirectPath || "/");
     } catch (error) {
       console.error(`[OAuth] ${providerParam} callback failed`, error);
@@ -512,16 +515,17 @@ export function registerOAuthRoutes(app: Express) {
         lastSignedIn: new Date(),
       });
 
+      // ★ Pha 9 — hạn phiên về MỘT CHỦ (`_core/hanPhien.ts`), mặc định 30 ngày.
+      const hanMs = hanPhienMs();
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
         name: userInfo.name || "",
-        expiresInMs: ONE_YEAR_MS,
       });
 
       // ★★★★ 2026-08-11 SIẾT FAIL-OPEN — xem khối lý lẽ ở callback nhà cung cấp phía trên.
-      await ghiSoPhienChoOpenId(userInfo.openId, sessionToken, req, ONE_YEAR_MS);
+      await ghiSoPhienChoOpenId(userInfo.openId, sessionToken, req, hanMs);
 
       const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: hanMs });
 
       res.redirect(302, "/");
     } catch (error) {

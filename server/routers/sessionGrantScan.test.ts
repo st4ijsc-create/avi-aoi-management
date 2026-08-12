@@ -148,6 +148,13 @@ type DiemDuc = {
    * còn dùng cho những thứ **thật sự là văn bản** (dấu khai `@KHONG-CONG-2FA` là một chú thích).
    */
   bao?: ts.Node;
+  /**
+   * ★★★★ Pha 9 §5 — lượt gọi đúc này có **TỰ KHAI** `expiresInMs` không.
+   * ⚠ Đây chính là thứ đã làm `SESSION_TTL_DAYS` thành mã chết: `signSession` dùng nó làm **mặc
+   *   định** (`options.expiresInMs ?? …`), nên một cửa đúc tự khai hạn đứng **ngoài** mọi lượt
+   *   siết. Đọc bằng AST — một `expiresInMs` trong chú thích KHÔNG tính.
+   */
+  hanTuKhai: string | null;
 };
 
 /**
@@ -229,6 +236,19 @@ function quet(): { duc: DiemDuc[]; uyQuyen: DiemDuc[]; goiUyQuyen: DiemDuc[] } {
         if (laDuc || laGoiUyQuyen) {
           let bao: ts.Node | undefined = n.parent;
           while (bao && !laHamBao(bao)) bao = bao.parent;
+          const a1 = n.arguments[1];
+          let hanTuKhai: string | null = null;
+          if (a1 !== undefined && ts.isObjectLiteralExpression(a1)) {
+            for (const pr of a1.properties) {
+              if (
+                ts.isPropertyAssignment(pr) &&
+                (ts.isIdentifier(pr.name) || ts.isStringLiteral(pr.name)) &&
+                pr.name.text === "expiresInMs"
+              ) {
+                hanTuKhai = pr.initializer.getText();
+              }
+            }
+          }
           const muc: DiemDuc = {
             duong: f.duong,
             dong: sf.getLineAndCharacterOfPosition(n.getStart()).line + 1,
@@ -236,6 +256,7 @@ function quet(): { duc: DiemDuc[]; uyQuyen: DiemDuc[]; goiUyQuyen: DiemDuc[] } {
             than: bao ? bao.getText() : src,
             loai: laCookiePhien ? "res.cookie(COOKIE_NAME)" : ten,
             bao: bao ?? sf,
+            hanTuKhai,
           };
           // Điểm đúc NẰM TRONG chính một hàm uỷ quyền ⇒ lượt đúc HỘ, không phải một đường mới.
           // ⚠ I-1: miễn trừ theo **ĐƯỜNG:HÀM** — cùng tên ở file khác KHÔNG được miễn hộ.
@@ -505,6 +526,126 @@ describe("★★★★ SIẾT FAIL-OPEN §4 — ∀ đường cấp phiên: PH�
         `cấp ra một vé **chết ngay ở yêu cầu đầu tiên**: người dùng đăng nhập "thành công" rồi\n` +
         `403 mọi thứ — một NHÀ TÙ IM LẶNG (Pha 7 đã ship đúng lớp ấy ra 4/4 tài khoản).\n` +
         `Phép ghi được chấp nhận: ${GHI_SO.join(" · ")}.`,
+    ).toBe("");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ Pha 9 · **§5 — HẠN CỦA MỘT PHIÊN CÓ ĐÚNG MỘT CHỦ, VÀ NÓ KHÔNG PHẢI MỘT NĂM.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐO SỐNG TRƯỚC BẢN VÁ (máy chủ PID 36248, `POST /api/trpc/auth.login`, `engineer1` #51)
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ *     Set-Cookie: app_session_id=…; Max-Age=31536000; Expires=Thu, 12 Aug 2027 15:42:43 GMT
+ *     JWT { "exp": 1818085363 }  →  TTL = 365,00 ngày
+ *
+ * Và một phát hiện **ngoài brief**: `SESSION_TTL_DAYS` không phải *"có sẵn nhưng chưa đặt"* — nó là
+ * **MÃ CHẾT**. `signSession` chỉ dùng nó làm **mặc định** (`options.expiresInMs ?? …`), trong khi
+ * **cả bốn** cửa đúc vé phiên truyền `expiresInMs: ONE_YEAR_MS` **tường minh** ⇒ đặt biến ấy vào
+ * `.env` **không đổi được một giây nào**. Một nút điều khiển không nối với gì.
+ *
+ * ⇒ Ba ô dưới đây khoá cả hai nửa: **(a)** không cửa đúc nào được tự khai một hạn; **(b)** chủ duy
+ *   nhất trả đúng con số đã quyết (30 ngày) và **đọc được** `SESSION_TTL_DAYS`.
+ * ⚠ Ô (a) là một ∀ trên **cấu trúc**: một cửa đúc **thứ sáu** ở một file chưa tồn tại tự vào lượng
+ *   từ — nó dùng lại nguyên `quet()`/`MOI_DUONG` của §2/§3/§4, không viết bộ suy thứ hai.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Cửa đúc **thẻ Bearer của API ngoài** — `POST /api/external/auth/login`. Nó **CỐ Ý** giữ một hạn
+ * riêng (30 ngày, viết thẳng tại chỗ): đó là một **API hướng ra ngoài đã tài liệu hoá**
+ * (`docs/API_REFERENCE.md` + OpenAPI, client thật `FactoryAlertSystem`), nên hạn của nó là một hợp
+ * đồng sản phẩm và **không được** để `SESSION_TTL_DAYS` lặng lẽ đổi.
+ * ⚠ Mục này ghim **ĐƯỜNG DẪN + BIỂU THỨC** (`HAN_MS`), **không** ghim tên hàm bao — cửa đúc ấy nằm
+ *   trong một handler **ẩn danh**, và một cửa đúc MỚI ở cùng file với một biểu thức KHÁC vẫn bị bắt.
+ */
+const HAN_RIENG: readonly (readonly [duong: string, bieuThuc: string])[] = [
+  ["server/_core/index.ts", "HAN_MS"],
+];
+
+describe("★★★★ Pha 9 §5 — hạn phiên: MỘT CHỦ, và mặc định KHÔNG phải một năm", () => {
+  it("★★★★ ∀ cửa đúc vé phiên: KHÔNG tự khai `expiresInMs` (trừ hạn riêng ĐÃ KHAI)", () => {
+    /**
+     * ⚠⚠ Đây đúng là thứ đã làm `SESSION_TTL_DAYS` thành mã chết: `?? ` chỉ chạy khi người gọi
+     *    **không** truyền. Một cửa đúc tự khai hạn là một cửa **ngoài tầm** của biến cấu hình, và
+     *    nó im lặng — người vận hành đặt biến, đọc tài liệu, và tin rằng mình đã siết.
+     */
+    // ⚠ **CẢ HAI** tập: `duc` (đường cấp phiên riêng) **và** `uyQuyen` (lượt đúc HỘ bên trong
+    //   `establishSession`) — bỏ tập thứ hai là bỏ đúng cửa đúc của lượt đăng nhập cục bộ.
+    const pham = [...duc, ...uyQuyen]
+      .filter(
+        (d) =>
+          d.hanTuKhai !== null &&
+          !HAN_RIENG.some(([duong, bieuThuc]) => d.duong === duong && d.hanTuKhai === bieuThuc),
+      )
+      .map((d) => `${d.duong}:${d.dong} trong \`${d.ham}\` ⇒ \`expiresInMs: ${d.hanTuKhai}\``);
+    expect(
+      pham.join("\n"),
+      [
+        "Một cửa đúc vé phiên tự khai `expiresInMs`.",
+        "⇒ `SESSION_TTL_DAYS` KHÔNG với tới nó (`options.expiresInMs ?? hanPhienMs()`), và cửa ấy",
+        "  im lặng đứng ngoài mọi lượt siết hạn phiên — đúng cách con số 365 ngày sống sót qua",
+        "  bốn pha dù `signSession` vẫn 'đọc cấu hình'.",
+        "⇒ Cách đúng: bỏ `expiresInMs` để chủ duy nhất `_core/hanPhien.ts` quyết; nếu bề mặt ấy",
+        "  CỐ Ý có hạn riêng (hợp đồng API ngoài), khai vào `HAN_RIENG` kèm lý do.",
+      ].join("\n"),
+    ).toBe("");
+  });
+
+  it("★★★★ chủ duy nhất trả ĐÚNG con số đã quyết, và THẬT SỰ đọc `SESSION_TTL_DAYS`", async () => {
+    /**
+     * ⚠ Hai vế, hai lỗi khác nhau: một hằng đúng mà **không đọc cấu hình** là nút điều khiển chết
+     *   (đúng lỗi vừa vá); một hàm đọc cấu hình mà **mặc định sai** là 365 ngày quay lại.
+     * ⚠ Khôi phục `process.env` nguyên trạng ở cuối — vitest chạy các file **song song**.
+     */
+    const { hanPhienMs, HAN_PHIEN_MAC_DINH_NGAY } = await import("../_core/hanPhien");
+    const NGAY = 24 * 60 * 60 * 1000;
+    const cu = process.env.SESSION_TTL_DAYS;
+    try {
+      delete process.env.SESSION_TTL_DAYS;
+      expect(HAN_PHIEN_MAC_DINH_NGAY, "con số mặc định đã đổi — đây là một quyết định an ninh").toBe(30);
+      expect(
+        hanPhienMs(),
+        "mặc định KHÔNG phải 30 ngày ⇒ cửa sổ khai thác của một cookie bị bắt đã đổi mà không ai nói",
+      ).toBe(30 * NGAY);
+      expect(hanPhienMs(), "mặc định vẫn là MỘT NĂM").not.toBe(365 * NGAY);
+
+      process.env.SESSION_TTL_DAYS = "7";
+      expect(hanPhienMs(), "`SESSION_TTL_DAYS` KHÔNG có hiệu lực ⇒ nút điều khiển chết").toBe(7 * NGAY);
+
+      // Giá trị RÁC ⇒ rơi về mặc định, KHÔNG dựng một hạn 0 giây (một nhà tù vì gõ sai).
+      for (const rac of ["", "0", "-1", "abc", "Infinity"]) {
+        process.env.SESSION_TTL_DAYS = rac;
+        expect(hanPhienMs(), `\`SESSION_TTL_DAYS="${rac}"\` phải rơi về mặc định, không thành hạn 0`).toBe(
+          30 * NGAY,
+        );
+      }
+    } finally {
+      if (cu === undefined) delete process.env.SESSION_TTL_DAYS;
+      else process.env.SESSION_TTL_DAYS = cu;
+    }
+  });
+
+  it("★★★ CHỈ ẢNH HƯỞNG VÉ MỚI — không đường nào ở đây đọc lại `exp`/`expiresAt` của vé CŨ", () => {
+    /**
+     * ⚠⚠ Bất biến sống còn: *"KHÔNG ĐƯỢC KHOÁ AI RA NGOÀI"* (Pha 7 đã ship một nhà tù thật 4/4 tài
+     *    khoản). `exp` nằm **trong vé đã ký** và `expiresAt` nằm **trong hàng `user_sessions`** —
+     *    lượt hạ TTL chỉ chạm **lượt đúc**. Ô này ghim rằng không ai lén thêm một lượt *"siết hồi
+     *    tố"*: không cửa đúc nào được `UPDATE user_sessions` cột `expiresAt` của hàng đã có.
+     * ⚠ Nghiệm thu SỐNG (báo cáo lượt này): cookie đúc TRƯỚC lượt triển khai vẫn `auth.me` ⇒ id 51
+     *   SAU lượt triển khai. Ô này là nửa cấu trúc của phép đo ấy.
+     */
+    const xau: string[] = [];
+    for (const d of MOI_DUONG) {
+      const ma = d.bao?.getText() ?? d.than;
+      if (/update\s*\(\s*userSessions\s*\)/.test(ma) || /UPDATE\s+"?user_sessions"?/i.test(ma)) {
+        xau.push(`${d.duong}:${d.dong} trong \`${d.ham}\``);
+      }
+    }
+    expect(
+      xau.join("\n"),
+      "một cửa đúc vé đang GHI ĐÈ hàng `user_sessions` đã có ⇒ lượt hạ TTL thành một lượt siết HỒI TỐ, " +
+        "và mọi phiên đang sống bị cắt ngắn — đúng hình dạng nhà tù mà Pha 7 đã ship một lần",
     ).toBe("");
   });
 });

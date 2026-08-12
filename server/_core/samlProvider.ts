@@ -19,7 +19,9 @@
  *   SAML_REQUIRE_SIGNED (default true).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { COOKIE_NAME } from "@shared/const";
+// ★★★★ Pha 9 — CHỦ DUY NHẤT của "một phiên sống bao lâu" (mặc định 30 ngày, SESSION_TTL_DAYS).
+import { hanPhienMs } from "./hanPhien";
 import type { Express, Request, Response } from "express";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
@@ -365,16 +367,17 @@ export function registerSamlRoutes(app: Express): void {
         loginMethod: "saml",
         lastSignedIn: new Date(),
       });
+      // ★ Pha 9 — hạn phiên về MỘT CHỦ (`_core/hanPhien.ts`), mặc định 30 ngày.
+      const hanMs = hanPhienMs();
       const sessionToken = await sdk.createSessionToken(openId, {
         name: displayName ?? "",
-        expiresInMs: ONE_YEAR_MS,
       });
       // ★★★★ 2026-08-11 SIẾT FAIL-OPEN — **ĐÚC VÉ THÌ PHẢI GHI SỔ.** Không ghi ⇒ vé SAML này bị
       // `chanNeuPhienDaThuHoi` từ chối ngay ở yêu cầu đầu tiên ⇒ SSO doanh nghiệp thành nhà tù.
       // Lượng từ canh điểm đúc thứ SÁU: `server/routers/sessionGrantScan.test.ts` §4.
-      await ghiSoPhienChoOpenId(openId, sessionToken, req, ONE_YEAR_MS);
+      await ghiSoPhienChoOpenId(openId, sessionToken, req, hanMs);
       const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: hanMs });
       res.redirect(302, relayState.startsWith("/") ? relayState : "/");
     } catch (err: any) {
       if (err instanceof SamlNotConfiguredError) {
