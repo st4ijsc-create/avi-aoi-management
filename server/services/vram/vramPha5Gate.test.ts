@@ -585,7 +585,12 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   52 → **53** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
     // ⚠ Review TOÀN NHÁNH Pha 9 / **I-2**: 116 → **118**. HAI lưới mới (lý do ở ô `CONG.length`) ⇒
     //   `CONG.length` 53 → **55** cùng lượt. Gỡ một đường ra ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(118); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2
+    // ⚠ Review TOÀN NHÁNH Pha 9 / **I-4**: 118 → **119**. Đúng MỘT lưới mới —
+    //   `client/src/lib/hopThoaiHienMotLan.unit.test.ts` (hộp thoại "hiện đúng một lần" phải chặn
+    //   CẢ BA lối đóng; bản A4 chỉ chặn một). Vì `client/src/lib/` **đã** là một đường của §Cổng
+    //   kiểm chung nên `CONG.length` giữ nguyên **55**; chỉ con số này đổi.
+    //   ⚠ Đuôi `.unit.test.ts` là bắt buộc — `vitest.config.ts` gom client bằng `*.unit.test.ts`.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(119); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-4: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

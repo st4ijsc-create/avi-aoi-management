@@ -525,9 +525,28 @@ export default function Profile() {
       {/*
         ★★★ Pha 9 A4 — HỘP THOẠI MÃ DỰ PHÒNG. Cố ý **không** đóng được bằng nút X / bấm ra ngoài
         khi chưa xác nhận: đây là lần hiển thị DUY NHẤT, đóng nhầm là mất bộ mã vĩnh viễn.
+
+        ★★★★ Review TOÀN NHÁNH Pha 9 · **I-4 — LỜI KHAI TRÊN ĐÂY TỪNG ĐÚNG MỘT PHẦN BA.**
+        Bản A4 chỉ viết `onInteractOutside` ⇒ **chỉ** chặn lượt bấm ra ngoài. Hai lối kia vẫn mở:
+          · `dialog.tsx:95` — `showCloseButton = true` là **MẶC ĐỊNH**, và ở đây không truyền
+            `showCloseButton={false}` ⇒ nút **X** (`DialogPrimitive.Close`) **CÓ** render;
+          · `dialog.tsx:100-118` — `handleEscapeKeyDown` chỉ `preventDefault()` khi **IME đang gõ**;
+            ngoài ra nó gọi tiếp `onEscapeKeyDown?.()` rồi để Radix đóng, và ở đây không truyền gì.
+        Hậu quả đúng cái A4 tự khai là **tệ hơn không cấp mã**: máy chủ đã **xoá bộ mã cũ và cấp 10
+        mã mới** (`db.quayVongMaDuPhong`); người dùng bấm X theo phản xạ ⇒ **10 chuỗi không ai từng
+        đọc**, máy chủ chỉ giữ bản băm. Tệ hơn nữa, màn này hiển thị *"số mã còn lại = 10"*, tức nó
+        **khẳng định với họ rằng họ có một lưới an toàn**. Đường cấp lại nằm ở màn hình KHÁC
+        (`TwoFactorSetup.tsx` — nợ N-1 "hai họ 2FA song song").
+        ⇒ Chặn **cả ba** lối; lối ra duy nhất là nút "Xong", và nút ấy đòi đã sao chép.
+        Lưới canh: `client/src/lib/hopThoaiHienMotLan.unit.test.ts`.
       */}
       <Dialog open={showBackupCodes} onOpenChange={(open) => { if (!open) setShowBackupCodes(false); }}>
-        <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()}>
+        <DialogContent
+          className="max-w-md"
+          showCloseButton={false}
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <KeyRound className="h-5 w-5" />
