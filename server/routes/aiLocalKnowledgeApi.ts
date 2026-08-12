@@ -2,6 +2,8 @@ import type express from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { thuXacThucRest } from "./_xacThucRest";
+// ★★★★ Review TOÀN NHÁNH Pha 9 · I-6 — chủ DUY NHẤT của cặp cổng "loopback HOẶC vai đặc quyền".
+import { laLoopback, doiVaiDacQuyen as requirePrivileged } from "./_congLoopback";
 import {
   answerQuestion,
   getKbHealth,
@@ -524,12 +526,44 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     }
   });
 
-  // Stage 13.D — user feedback (👍 / 👎) on a single answer.
-  // Path matches what aiLocalKbRouter.feedback POSTs to via fetchKbApi
-  // (server-to-server localhost call — no cookie forwarded, so this route
-  // intentionally stays auth-free; the tRPC layer enforces session auth).
-  // Persisted to knowledge/feedback.jsonl for later curation.
+  /**
+   * Stage 13.D — user feedback (👍 / 👎) on a single answer.
+   * Path matches what `aiLocalKbRouter.feedback` POSTs to via `fetchKbApi`
+   * (server-to-server localhost call — no cookie forwarded).
+   * Persisted to `knowledge/feedback.jsonl` for later curation.
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-6 — "TRONG LOCALHOST" PHẢI LÀ MỘT CƠ CHẾ, KHÔNG PHẢI MỘT CÂU.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Bình luận cũ ở đúng dòng này khai *"lượt gọi máy-sang-máy trong localhost … tầng tRPC đã cưỡng
+   * chế phiên"* và kết luận tuyến *"cố ý auth-free"*. **Không có cơ chế nào cưỡng chế mệnh đề "trong
+   * localhost"** — nó là một **mô tả về người gọi có thiện chí**, không phải một điều kiện được kiểm.
+   *
+   * **Đo sống trước bản vá** (máy chủ đang chạy, KHÔNG cookie):
+   *
+   *     curl -X POST -d '{}' http://127.0.0.1:3000/api/ai/local-kb/feedback
+   *     {"success":false,"error":"messageId and question are required"}   HTTP=400
+   *
+   * **400, không phải 401** ⇒ thân handler chạy **trước** mọi phép xác thực. Mỗi lượt gọi hợp lệ
+   * **append một dòng** tới ~10 KB vào một tệp **trong repo** ⇒ bất kỳ ai với tới cổng 3000 đều ghi
+   * được không giới hạn (đầy đĩa) và bơm nội dung tuỳ ý vào đúng kho *"để tái nạp vào KB curation"*.
+   *
+   * ⇒ Cơ chế nay **giống hệt** `/api/observability/metrics` (`observabilityRoutes.ts`): **loopback
+   *   HOẶC phiên đặc quyền**. Lượt gọi tự-thân (`KB_API_BASE` mặc định `http://localhost:3000`)
+   *   thoả nhánh thứ nhất ⇒ **không khoá ai ra ngoài**.
+   * ⚠ CAVEAT ĐƯỢC KHAI: nếu một triển khai đặt `KB_API_BASE` sang một địa chỉ **không loopback**
+   *   thì lượt tự-thân rơi sang nhánh thứ hai và **không có cookie** ⇒ 401. Đó là một cấu hình
+   *   không tồn tại trong `.env` hôm nay, và nó phải được đổi **cùng lúc** với một đường mang danh
+   *   tính — không được sửa bằng cách gỡ phép kiểm này.
+   */
   app.post("/api/ai/local-kb/feedback", async (req, res) => {
+    if (!laLoopback(req)) {
+      const auth = await requirePrivileged(req);
+      if (!auth.ok) {
+        res.status(auth.status).json({ success: false, error: auth.message });
+        return;
+      }
+    }
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const messageId = typeof body.messageId === "string" ? body.messageId.trim() : "";
