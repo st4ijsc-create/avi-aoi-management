@@ -23,9 +23,20 @@
          %ProgramData%\ST4I\sim\creds must not GAIN a file while this assembly's process runs (see
          tests/Shared/RealCredentialStoreLeakGuard.cs for what it does and does not see). LINKED into all
          five suites for the same reason as the line above — each process is its own measurement, and a
-         guard installed in one suite says nothing about the other four. It reads the product source to
-         derive the directory and adds no assembly reference, so this project's deliberate
-         one-ProjectReference boundary is untouched. -->
+         guard installed in one suite says nothing about the other four.
+
+         TWO THINGS ABOUT THIS PROJECT'S DELIBERATE ONE-REFERENCE BOUNDARY, and the second is a real cost
+         rather than a footnote — the first draft of this comment asserted the first and introduced the
+         second in the same clause (re-review Minor):
+           * ASSEMBLY boundary: UNTOUCHED. The guard's only `using`s are System.* and Xunit; it adds no
+             ProjectReference and cannot see St4i.EdgeCore. A third-party driver author's suite would
+             still compile exactly as this one does.
+           * NEW DEPENDENCY, and it is new: it derives the directory by READING the product source, so
+             this project now requires being run from inside the source tree. Off-tree execution yields
+             SetupFailure and a RED suite. That is fail-closed and deliberate — the alternative is a
+             restated path literal that goes silently vacuous the day the store moves — but it is a
+             constraint this project did not have before, on a project whose whole point is depending on
+             as little as possible. -->
     <Compile Include="..\Shared\RealCredentialStoreLeakGuard.cs" Link="RealCredentialStoreLeakGuard.cs" />
   </ItemGroup>
   <ItemGroup>

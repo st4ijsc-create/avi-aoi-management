@@ -90,7 +90,10 @@ namespace St4i.TestHygiene;
 /// whole process" have the same fix, and it is not reachable from inside a test: the gate snapshots this
 /// same directory before the build and compares after everything, bracketing all five processes end to
 /// end. <b>This paragraph said "deliberately NOT built" until the closing re-read caught it in the very
-/// commit that built it</b> — §8.1(h2), and the third time that rule has fired on this task's own diff.
+/// commit that built it</b> — §8.1(h2). 🔴 This said "the third time"; its own commit list makes it the
+/// FOURTH, and an ordinal written while the list is still growing is exactly what §8.1 records rotting
+/// twice already in this file. Not renumbered again — the count does no work here, so it is gone: the
+/// rule has fired on this task's own diff <b>repeatedly</b>, which is the only part that means anything.
 /// <para>The two instruments are complementary and neither replaces the other: <b>the gate bracket is
 /// complete but anonymous</b> (it measures THE MACHINE over the window — the WPF shell or edge service
 /// running alongside reddens it too), while <b>this one is partial but attributes</b>, naming the process

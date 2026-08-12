@@ -2240,16 +2240,50 @@ if [[ "${_creds_expr_count:-0}" != "1" ]]; then
   echo "  would keep passing while watching a directory the product no longer writes to."
   exit 1
 fi
-REAL_CREDS_ROOT="$(cygpath -u "${PROGRAMDATA:-C:/ProgramData}" 2>/dev/null || echo /c/ProgramData)"
+# 🔴 THE ROOT HALF, AND IT HAD THE EXACT DEFECT THE CHECK ABOVE EXISTS TO PREVENT (re-review New-1).
+# This read `cygpath -u "${PROGRAMDATA:-C:/ProgramData}"`. MEASURED in this repo's Git Bash: `PROGRAMDATA`
+# is NOT SET — Windows exports `ProgramData` (mixed case) and `ALLUSERSPROFILE`, and bash is
+# case-sensitive — so the `:-` fallback fired on EVERY run and the "derivation" was a hardcoded literal
+# wearing a derivation's clothes. It resolved correctly here by luck; on a machine with a relocated
+# ProgramData it would have watched a nonexistent directory and been SILENTLY GREEN FOREVER. The
+# fail-closed check above covered the SEGMENT half and left the ROOT half to a `:-`.
+#
+# Fixed by asking the SAME API the product asks. `CredentialStore.DefaultRoot()` calls
+# `Environment.GetFolderPath(SpecialFolder.CommonApplicationData)`, which is the shell folder API and NOT
+# an environment variable at all; PowerShell reaches the identical call. So the two derivations now agree
+# BY CONSTRUCTION rather than by coincidence, and there is no literal left to be silently wrong.
+# (PowerShell is already this script's idiom for asking Windows a question — see the build-node check.)
+_creds_base_win=$(powershell -NoProfile -NonInteractive -Command \
+  "[Environment]::GetFolderPath('CommonApplicationData')" 2>/dev/null | tr -d '\r' | head -1)
+REAL_CREDS_ROOT=""
+[[ -n "$_creds_base_win" ]] && REAL_CREDS_ROOT="$(cygpath -u "$_creds_base_win" 2>/dev/null || true)"
+if [[ -z "$REAL_CREDS_ROOT" || ! -d "$REAL_CREDS_ROOT" ]]; then
+  echo "FAIL: could not resolve CommonApplicationData, so the credential bracket has no root to watch."
+  echo "  PowerShell returned: '${_creds_base_win:-<nothing>}' -> '${REAL_CREDS_ROOT:-<nothing>}'"
+  echo "  Refusing to guess. A default here is how this check came to watch a hardcoded path on every"
+  echo "  run while looking derived (re-review New-1); an unresolvable root must stop the gate, never"
+  echo "  silently disarm it."
+  exit 1
+fi
 while IFS= read -r _seg; do
   REAL_CREDS_ROOT="${REAL_CREDS_ROOT%/}/${_seg}"
 done < <(printf '%s' "$_creds_expr" | grep -oE '"[^"]*"' | tr -d '"')
 
 # Names only, relative to the root, sorted for `comm`. Enumerates and never opens, deletes or creates.
+#
+# 🔴 FAILS CLOSED ON AN UNREADABLE ROOT (re-review Minor). The `|| true` that used to end this line
+# swallowed a root that EXISTS but cannot be listed — an ACL change, a lock — into an empty snapshot,
+# i.e. into a silent pass, which is the same hole the C# side closed for its own `Snapshot()` call. A
+# root that is absent is legitimate (a machine that never onboarded); a root that is present and
+# unreadable is not.
 creds_snapshot() {
-  if [[ -d "$REAL_CREDS_ROOT" ]]; then
-    ( cd "$REAL_CREDS_ROOT" && find . -mindepth 1 2>/dev/null | sed 's|^\./||' | LC_ALL=C sort ) || true
-  fi
+  [[ -d "$REAL_CREDS_ROOT" ]] || return 0
+  ( cd "$REAL_CREDS_ROOT" && find . -mindepth 1 | sed 's|^\./||' | LC_ALL=C sort ) || {
+    echo "FAIL: the REAL credential directory exists but could not be listed: $REAL_CREDS_ROOT" >&2
+    echo "  The bracket cannot measure what it cannot read, and an empty reading here would be a" >&2
+    echo "  SILENT PASS. Fix the ACL/lock; do not disarm the check." >&2
+    return 1
+  }
 }
 
 CREDS_BEFORE="$LOGDIR/creds-before.txt"
@@ -2258,7 +2292,15 @@ CREDS_ADDED=""
 CREDS_REMOVED=""
 CREDS_EVALUATED=0
 CREDS_REPORTED=0
-creds_snapshot > "$CREDS_BEFORE"
+if ! creds_snapshot > "$CREDS_BEFORE"; then
+  echo "FAIL: could not take the credential bracket's BASELINE. Stopping rather than running the suites"
+  echo "  under a bracket that cannot fail. (This runs before the EXIT trap is armed, so nothing else"
+  echo "  in this script has started yet.)"
+  exit 1
+fi
+# NOT a check — a `note` is for a human reading alongside a verdict, never something a verdict depends on
+# (this script's own rule, stated at gate 3). The verdict below depends on the SET COMPARISON, never on
+# this number; it is printed so a reader can see the bracket armed against a plausible population.
 note "real creds root under watch: $REAL_CREDS_ROOT ($(grep -c . < "$CREDS_BEFORE" || true) entries at start)"
 
 # Evaluates once; later calls reuse the verdict. Returns 0 when the directory is unchanged.
@@ -2267,7 +2309,13 @@ creds_bracket_eval() {
     [[ -z "$CREDS_ADDED" && -z "$CREDS_REMOVED" ]] && return 0 || return 1
   fi
   CREDS_EVALUATED=1
-  creds_snapshot > "$CREDS_AFTER"
+  if ! creds_snapshot > "$CREDS_AFTER"; then
+    # Unreadable-but-present root at the closing read. Report it as a CHANGE rather than comparing
+    # against a truncated file, which would read as "everything was deleted" or, worse, as clean.
+    CREDS_ADDED=""
+    CREDS_REMOVED="<the root could not be listed at the end of the run — see the error above>"
+    return 1
+  fi
   CREDS_ADDED=$(comm -13 "$CREDS_BEFORE" "$CREDS_AFTER" || true)
   CREDS_REMOVED=$(comm -23 "$CREDS_BEFORE" "$CREDS_AFTER" || true)
   [[ -z "$CREDS_ADDED" && -z "$CREDS_REMOVED" ]] && return 0 || return 1
@@ -2290,9 +2338,15 @@ creds_bracket_text() {
   echo "  SCOPE: this measures THE MACHINE over the whole gate window, not just the test processes. If the"
   echo "     WPF shell, the edge service, or an operator onboarding a machine was running here, that is a"
   echo "     false positive of this gate and not a test defect — check before you go hunting a test."
-  echo "  TO ATTRIBUTE IT TO A SUITE: RealCredentialStoreLeakGuardTests runs inside each of the five"
-  echo "     processes and names the process it saw. This bracket is complete but anonymous; that one is"
-  echo "     partial but attributes. Read them together."
+  echo "  🔴 WHICH ONE IT IS, WITHOUT GUESSING — the discriminator is above you in this same output:"
+  echo "     * bracket RED + one or more suites RED on"
+  echo "       RealCredentialStoreLeakGuardTests  ->  A TEST WROTE IT. The suite that went red names the"
+  echo "       process; go there."
+  echo "     * bracket RED + all five suites GREEN  ->  SOMETHING OUTSIDE THE SUITES WROTE IT. Every test"
+  echo "       process measured its own window and saw nothing, so the writer was another process on this"
+  echo "       machine. Close the WPF shell / edge service and re-run before changing any test."
+  echo "     That pair is why both instruments exist: this one is complete but anonymous, the per-suite"
+  echo "     guard is partial but attributes. Neither replaces the other."
 }
 
 # 🔴 Unconditional, via trap: the warnings gate and the build-node gate below both `exit 1` before the
