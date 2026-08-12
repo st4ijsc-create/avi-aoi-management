@@ -397,6 +397,40 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     expect(thieu.join(" · "), "đường của cổng không tồn tại ⇒ cổng khai XANH cho một tập rỗng").toBe("");
   });
 
+  /* ════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★★ Pha 9 nhóm B · **B4 — LƯỢT SHUFFLE PHẢI Ở TRONG MỘT KHỐI LỆNH, KHÔNG PHẢI MỘT CÂU VĂN.**
+   * ════════════════════════════════════════════════════════════════════════════════════════════
+   * Bản trước viết *"Cộng một lượt `--sequence.shuffle.tests`"* thành một **câu văn xuôi dưới** khối
+   * lệnh. Cạnh một khối copy-paste được, một câu văn xuôi **không phải một cổng**: người chạy cổng
+   * copy khối lệnh, và câu ấy nằm ngoài vùng chọn. ⇒ Đã trả giá: Pha 8 bắt được **X-1** (một ca phụ
+   * thuộc thứ tự chạy) nhờ một lượt shuffle **chạy tay**, không nhờ cổng đòi.
+   *
+   * ⚠⚠ Vì sao thước này KHÔNG thay thế được bằng cổng thường: cổng thường chạy một thứ tự **cố
+   *    định**, nên một ca mượn trạng thái do ca trước để lại **xanh mãi mãi** — nó mù với lớp lỗi ấy
+   *    **theo cấu tạo**, không phải vì thiếu ca.
+   * ⚠ Ô này canh **sự tồn tại của lượt chạy trong một khối lệnh**, không canh chữ nghĩa quanh nó:
+   *   ai đó xoá dòng lệnh shuffle đi ⇒ ĐỎ, kể cả khi câu văn giải thích vẫn còn nguyên.
+   * ════════════════════════════════════════════════════════════════════════════════════════════ */
+  it("★★★★ B4 — §Cổng kiểm chung phải chứa một LỆNH `--sequence.shuffle.tests` trong khối ```", () => {
+    const md = readFileSync(KE_HOACH, "utf8");
+    const i = md.indexOf("**Cổng kiểm chung");
+    expect(i, "không tìm thấy §Cổng kiểm chung trong kế hoạch").toBeGreaterThan(-1);
+    /** Mọi khối ``` sau tiêu đề §Cổng kiểm chung, cho tới tiêu đề ⚠⚠⚠ đầu tiên của phần lý lẽ. */
+    const vung = md.slice(i, md.indexOf("⚠⚠⚠ **I-1", i));
+    const khoi = [...vung.matchAll(/```([\s\S]*?)```/g)].map((m) => m[1] as string);
+    expect(khoi.length, "§Cổng kiểm chung không còn khối lệnh nào — nó đã đổi hình dạng").toBeGreaterThanOrEqual(2);
+    const coShuffle = khoi.some((k) =>
+      k.split("\n").some((d) => d.includes("vitest") && d.includes("--sequence.shuffle.tests")),
+    );
+    expect(
+      coShuffle,
+      "KHÔNG khối lệnh nào của §Cổng kiểm chung chạy `--sequence.shuffle.tests`.\n" +
+        "⚠ Thước này đã CHỨNG MINH có tác dụng (Pha 8 X-1: một ca phụ thuộc thứ tự chạy) và cổng\n" +
+        "  thường mù với lớp lỗi ấy THEO CẤU TẠO — nó chạy một thứ tự cố định.\n" +
+        "⇒ Đưa lượt shuffle vào một khối lệnh. Một câu văn xuôi cạnh khối copy-paste KHÔNG phải cổng.\n",
+    ).toBe(true);
+  });
+
   it("★★★ cầu chì — cả HAI bộ nhận diện đều thấy đủ nhiều file (0 file ⇒ mọi khẳng định dưới là chân lý rỗng)", () => {
     expect(FILE_PHA5.length, "bộ quét NỘI DUNG không thấy file nào — nó đã hỏng?").toBeGreaterThanOrEqual(10);
     expect(FILE_VRAM.length, "bộ quét VỊ TRÍ/TÊN không thấy file nào — nó đã hỏng?").toBeGreaterThanOrEqual(40);

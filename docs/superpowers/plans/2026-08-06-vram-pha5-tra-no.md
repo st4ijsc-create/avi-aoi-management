@@ -84,11 +84,33 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/services/authSessionCache.test.ts \
   server/services/aiCopilotActions.hardlinkSink.test.ts \
   server/services/aiAgentOrchestrator.authCtx.test.ts client/src/lib/
-NODE_OPTIONS=--max-old-space-size=8192 npm run check
+npm run check
 npm run check:tests
 npm run i18n:check
 ```
-Cộng một lượt `--sequence.shuffle.tests`.
+**Rồi CHẠY LẠI ĐÚNG KHỐI `npx vitest run …` TRÊN, thêm `--sequence.shuffle.tests`:**
+```
+npx vitest run --sequence.shuffle.tests <y hệt danh sách đường dẫn ở trên>
+```
+
+⚠⚠⚠ **Pha 9 B4 — LƯỢT SHUFFLE VÀO TRONG KHỐI LỆNH, KHÔNG ĐỨNG NGOÀI NÓ NỮA.**
+Bản trước viết *"Cộng một lượt `--sequence.shuffle.tests`"* thành **một câu văn xuôi dưới khối
+lệnh**. Một câu văn xuôi cạnh một khối copy-paste được **không phải một cổng**: người chạy cổng
+copy khối lệnh, và câu ấy ở ngoài vùng chọn. ⇒ Nó **đã trả giá**: Pha 8 chỉ bắt được **X-1** (một
+ca phụ thuộc thứ tự chạy) vì lượt shuffle được chạy **thủ công**, không vì cổng đòi.
+Thước này đã **chứng minh có tác dụng** — nó thấy đúng lớp lỗi mà cổng thường **theo cấu tạo**
+không thấy: cổng thường chạy một thứ tự **cố định**, nên một ca mượn trạng thái do ca trước để lại
+**xanh mãi mãi**. Để nó ngoài khối lệnh là vứt đi một thước đã có răng.
+
+⚠ **VÀ NÓ PHẢI LÀ CÙNG DANH SÁCH ĐƯỜNG DẪN**, không phải `npx vitest run --sequence.shuffle.tests`
+trần: chạy trần là chạy **toàn bộ** suite (883 file, ~169 s, và 65 file đỏ có trước ngoài phạm vi)
+⇒ kết xuất không đọc được, và người đọc sẽ bỏ qua nó ở lượt thứ hai.
+
+⚠ **Pha 9 B5 — tiền tố `NODE_OPTIONS=…` đã được GỠ khỏi dòng `npm run check`.** Nó nay nằm trong
+chính script (`package.json`: `cross-env NODE_OPTIONS=--max-old-space-size=8192 tsc --noEmit`).
+Lý do gỡ **không** phải thẩm mỹ: tiền tố biến-môi-trường kiểu POSIX **không chạy được** trên
+PowerShell/cmd, mà repo này chạy trên Windows — nên trên máy thật nó **im lặng không có tác dụng**,
+và `npm run check` NGUỘI chết vì heap với **exit 134**. Xem khối lý lẽ ở commit B5.
 
 ⚠⚠⚠ **I-1 (review TOÀN NHÁNH 2026-08-06) — HAI ĐƯỜNG VỪA ĐƯỢC THÊM, VÀ ĐÓ KHÔNG PHẢI BẢN VÁ.**
 Bản trước liệt kê **9 đường** và bỏ sót `vramPermissionSplit.test.ts` (**662 dòng — toàn bộ phép
