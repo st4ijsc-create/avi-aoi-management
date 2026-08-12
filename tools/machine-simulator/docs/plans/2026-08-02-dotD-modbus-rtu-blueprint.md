@@ -528,6 +528,51 @@ khi đúng bước ấy mới là thứ đóng lại khoảng OEE đang mở. **
 mất cái TRIỆU CHỨNG vốn thúc người ta làm HÀNH ĐỘNG tình cờ vá được dòng thời gian.** Không test nào bắt,
 không cổng nào thấy. Câu hỏi duy nhất lôi nó ra: **"sau bản sửa này, người vận hành sẽ THÔI LÀM gì?"**
 
+🔴 **(h6) MỘT PHÁN QUYẾT CHỈ LÀ BẰNG CHỨNG VỀ NHỮNG TÍNH CHẤT MÀ CÁC KHẲNG ĐỊNH CỦA NÓ ĐƯỢC ĐÁNH CHỈ MỤC LÊN
+— VÀ MỘT LẦN XANH TRÊN MỘT CÂY MÃ ĐANG MANG MỘT KHIẾM KHUYẾT ĐÃ BIẾT ĐO ĐƯỢC *NHỮNG TÍNH CHẤT ẤY LÀ GÌ* (L-1).**
+
+Cả bộ quy tắc này nói về **các khẳng định của con người**. Mục này nói về **khẳng định của chính cái cổng** —
+và nó cần thiết vì L-1 là nhiệm vụ duy nhất **được phán xử bằng chính dụng cụ nó đang sửa**.
+
+**Ca sinh ra nó, và nó là một ĐỐI CHỨNG ÂM KHÔNG AI DÀN DỰNG.** Lần chạy 1 và 2 xanh **với một lớp test còn
+nằm NGOÀI** collection — đúng cái khiếm khuyết khiến phản biện **bác cả nhiệm vụ**. Lần chạy 3 xanh **với nó
+đã vào TRONG**. Cổng trả về **phán quyết y hệt ở cả hai phía**. Nó **không yếu đi, không mạnh lên, KHÔNG NHẬN
+RA**. Và nó **không hỏng** — không có gì được đánh chỉ mục ở đó cả.
+
+**Vì sao nó mạnh hơn một đột biến:** một đột biến là khiếm khuyết **ta cấy vào**, nên nó chỉ trả lời câu hỏi
+ta đã nghĩ ra. Cái này **không ai cấy** — nó là một khiếm khuyết thật, do một phản biện tìm ra, đã tồn tại
+trên cây mã trong hai lần chạy xanh trước khi bất cứ ai biết. **Một đối chứng âm không dàn dựng, trên chính
+cái cổng của dự án.**
+
+→ **Cách phát biểu, và giữ nguyên văn vì nó đã được cân:** *"nó không yếu đi, không mạnh lên, không nhận ra"*.
+🔴 **ĐỪNG viết thành "cổng bị mù" hay "cổng hỏng"** — hai chữ ấy mời người đọc kết luận cổng **thất bại**, mà
+nó không thất bại; **không có gì được đánh chỉ mục ở đó**. Sự khác biệt ấy quyết định người ta đi sửa cái gì.
+
+🔴 **HAI CÁI CHẶN, BẮT BUỘC — thiếu chúng thì quy tắc này thành MỘT DUNG MÔI VẠN NĂNG để hạ giá bất kỳ lần
+chạy xanh nào gây bất tiện:**
+1. **Phải có một khiếm khuyết ĐÃ BIẾT hiện diện ở MỘT phía.** Không có nó thì đây chỉ là hai lần chạy xanh,
+   và hai lần chạy xanh **không đo được gì cả**.
+2. **Hai phía phải khác nhau KHÔNG QUÁ cái thay đổi đang xét.** Ở L-1 điều đó đúng — phần còn lại là
+   chỉ-sửa-chú-thích, đã đo — **và phải NÓI RA, đừng bắt người đọc tự đi kiểm.**
+
+**Hệ quả trực tiếp cho mọi nhiệm vụ sửa chính cái cổng:** một lần chạy xanh **theo định nghĩa là lần chạy mà
+phép kiểm ta vừa sửa KHÔNG kích hoạt**. Bằng chứng cho một phép kiểm **luôn nằm ở chỗ khác** — ở những lần
+chạy **ĐỎ**, dựng có chủ đích, chạy **qua đúng nhánh sản xuất**. Ở L-1 đó là hai lần chạy đầu-cuối trên một
+quần thể **không thể cạn**, cộng bảy chuỗi tổng hợp, cộng việc phản biện **tự dựng lại cả bảy từ khối mã đã
+ship** thay vì tin bảng số trong báo cáo.
+
+**Và một mặt trái đã đo được, ghi ra vì nó là cái giá của quy tắc:** ở L-1 phép kiểm kê thành viên **sai hai
+lần, cùng một kiểu** — lần đầu trong brief của người điều phối (đếm kẻ **gây nhiễu**, trong khi chỗ hở là các
+kẻ **quan sát**), lần sau trong bản sửa cho chính nó (bám vào một câu lệnh `using`, sót đúng một lớp trên 45).
+**Không lần nào cổng thấy, và không lần nào đột biến với tới được** — thiếu một `[Collection]` đổi **lịch
+chạy, không đổi hành vi**. Khi một tính chất **không dụng cụ nào trong repo quan sát được**, thứ duy nhất còn
+lại là **một phép liệt kê được nói ra kèm dụng cụ của nó** — và bằng chứng cho tính đầy đủ của nó là **CHỖ BẤT
+ĐỒNG giữa các dụng cụ độc lập, không phải chỗ chúng đồng thuận**: hai bộ đối sánh hẹp sót hai thứ khác nhau và
+lệch nhau một đơn vị **theo cả hai chiều**, nên **không cái nào tạo ra được chỗ sót của cái kia**. Ngay cả thế
+**vẫn chưa phải chứng minh**, vì bộ rộng nhất **định nghĩa** con số — nên phép kiểm cuối phải đến **từ ngoài
+phương pháp**: ở L-1 là một phép dò **ngược**, quét mọi lớp chưa được gom tìm bất cứ thứ gì với tới một chỗ mở
+kết nối, **rỗng, với một đối chứng dương còn sống**.
+
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**
 
 → Quy tắc đúng: **hành vi phụ thuộc phần cứng không bao giờ là một test bị bỏ qua có điều kiện bên trong năm bộ test.** Nó hoặc được **ghi rõ là khoảng trống chưa test** trong báo cáo và trong chú thích của cổng, hoặc được commit thành **một bench harness riêng nằm ngoài năm bộ** (`tools/serial-bench/`). Phép đo không commit được thì không tái lập được — reviewer D-3 phải **viết lại toàn bộ probe** để kiểm chứng các con số của D-3.
