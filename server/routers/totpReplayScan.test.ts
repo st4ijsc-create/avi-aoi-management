@@ -14,7 +14,8 @@
  * ⇒ Bất biến được phát biểu ở dạng **∀ trên cấu trúc**, không trên tên:
  *
  *   ***∀ file SẢN XUẤT dưới `server/**` khác `server/_core/totpOnce.ts`: KHÔNG được chứa một lời
- *   gọi `<x>.totp.verify(…)` / `<x>.totp.verifyDelta(…)`, và KHÔNG được nhập `otplib`.***
+ *   gọi `<x>.totp.verify(…)` / `<x>.totp.verifyDelta(…)`.***
+ *   ***∀ file `.ts` dưới `server/**` — KỂ CẢ `*.test.ts` (Pha 9 B3): KHÔNG được nhập `otplib`.***
  *
  * Một điểm xác minh thứ chín sinh ra ở **bất kỳ đâu** — file mới, thư mục mới, tên khác — đều tự
  * đưa mình vào lượng từ và làm ô này **ĐỎ**.
@@ -65,13 +66,43 @@ interface FileNguon {
   readonly sf: ts.SourceFile;
 }
 
+/** Đọc một file trên đĩa thành `FileNguon`. */
+const docNguon = (f: { duong: string; that: string }): FileNguon => {
+  const ma = readFileSync(f.that, "utf8");
+  return { duong: f.duong, that: f.that, ma, sf: ts.createSourceFile(f.duong, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS) };
+};
+
+/**
+ * ★★★★ Pha 9 nhóm B · **B3 — MỌI file `.ts` dưới `server/**`, KỂ CẢ `*.test.ts`.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO PHẢI CÓ TẬP RỘNG HƠN — LƯỚI CŨ MÙ ĐÚNG CHỖ CÓ VI PHẠM DUY NHẤT
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Ô *"KHÔNG nhập `otplib`"* dưới đây trước B3 chạy trên `SAN_XUAT` (đã lọc `laFileTest`). Đo được
+ * ở Bước 1 của B3: **người nhập `otplib` DUY NHẤT trong toàn repo là một file TEST** —
+ * `server/twoFactor.test.ts`, bốn ca `await import("otplib")`. Tức lượng từ được phát biểu trên
+ * đúng cái tập **không chứa** vi phạm duy nhất đang tồn tại, và nó **XANH VĨNH VIỄN** vì thế.
+ * Đây là lớp lỗi *"lưới theo FILE, không theo ĐƯỜNG THOÁT"* lần thứ **sáu** của chuỗi pha này.
+ *
+ * ⚠⚠ Vì sao một file TEST nhập `otplib` là chuyện thật, không phải chuyện hình thức: `otplib` vẫn
+ *    nằm trong `package.json` (`^13.4.0`) — thư viện TOTP **thứ hai**, một đường xác minh hoàn
+ *    toàn ngoài sổ `_core/totpOnce.ts`. Chừng nào còn một file trong repo dựng `new OTP(...)` và
+ *    khẳng định nó chạy đúng, thì lượt sao-chép-dán tiếp theo có sẵn một khuôn mẫu **đã được một
+ *    lưới xanh chứng thực** để bê vào mã sản xuất. Một *"ca test cho thư viện bị cấm"* là tài liệu
+ *    sai đúng nghĩa đen.
+ *
+ * ⇒ B3 **xoá** `server/twoFactor.test.ts` (12 ca: 6 ô `expect(true).toBe(true)` + 4 ca cho chính
+ *   thư viện bị cấm) và **nới lượng từ này ra cả `*.test.ts`** — MỘT chủ, không hai. Sau lượt xoá,
+ *   số vi phạm là **0**, nên đây là một cổng thật chứ không phải một ảnh chụp.
+ * ⚠ Chỉ ô `otplib` dùng tập rộng. Ô `.totp.verify` **giữ nguyên** `SAN_XUAT`: một lưới **được
+ *   phép** gọi `speakeasy.totp.verify` để đúc mã hợp lệ làm vật liệu thử (`totpReplay.test.ts`
+ *   làm đúng thế), nên nới ô ấy ra test là **bắt nhầm** — và một lưới bắt nhầm là một lưới sẽ bị
+ *   người sau tắt đi.
+ */
+const MOI_FILE_SERVER: readonly FileNguon[] = moiFileDuoi(GOC_REPO, "server", [".ts"]).map(docNguon);
+
 /** MỌI file **sản xuất** (`.ts`, không `*.test.ts`) dưới `server/**`. */
-const SAN_XUAT: readonly FileNguon[] = moiFileDuoi(GOC_REPO, "server", [".ts"])
-  .filter((f) => !laFileTest(f.duong))
-  .map((f) => {
-    const ma = readFileSync(f.that, "utf8");
-    return { duong: f.duong, that: f.that, ma, sf: ts.createSourceFile(f.duong, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS) };
-  });
+const SAN_XUAT: readonly FileNguon[] = MOI_FILE_SERVER.filter((f) => !laFileTest(f.duong));
 
 /** Mọi lời gọi `<x>.totp.verify(…)` / `<x>.totp.verifyDelta(…)` trong một file, kèm số dòng. */
 function loiGoiVerifyTotp(f: FileNguon): string[] {
@@ -173,16 +204,24 @@ describe("★★★ Task 6 — MỌI lượt xác minh TOTP đi qua sổ", () =>
     ).toBe("");
   });
 
-  it("★★★ ∀ file sản xuất dưới `server/**`: KHÔNG nhập `otplib` (thư viện TOTP THỨ HAI)", () => {
+  it("★★★★ B3 — ∀ file `.ts` dưới `server/**` **KỂ CẢ `*.test.ts`**: KHÔNG nhập `otplib` (thư viện TOTP THỨ HAI)", () => {
     /**
      * ⚠ `otplib` **vẫn nằm trong `package.json`** (`^13.4.0`). Nó là một đường xác minh TOTP song
      * song, hoàn toàn ngoài sổ — và `userRouters.ts:213-216` ghi rằng repo *"nay dùng MỘT thư
      * viện"*. Câu ấy là một **quan sát**; ô này biến nó thành một **bất biến**.
+     * ⚠⚠ Phạm vi là `MOI_FILE_SERVER`, KHÔNG phải `SAN_XUAT` — xem khối lý lẽ ở chỗ khai
+     *    `MOI_FILE_SERVER`: trước B3 vi phạm **duy nhất** của repo nằm trong một file test, tức
+     *    đúng chỗ lượng từ cũ không với tới.
      */
-    const pham = SAN_XUAT.filter((f) => moiDuongNhap(f).some((s) => s === "otplib" || s.startsWith("otplib/"))).map(
-      (f) => f.duong,
-    );
-    expect(pham.join(" · "), "một thư viện TOTP thứ hai trong mã sản xuất ⇒ một đường xác minh NGOÀI sổ").toBe("");
+    const pham = MOI_FILE_SERVER.filter((f) =>
+      moiDuongNhap(f).some((s) => s === "otplib" || s.startsWith("otplib/")),
+    ).map((f) => f.duong);
+    expect(
+      pham.join(" · "),
+      "một thư viện TOTP thứ hai trong `server/**` ⇒ một đường xác minh NGOÀI sổ (mã sản xuất), hoặc\n" +
+        "một khuôn mẫu dùng thư viện bị cấm ĐƯỢC MỘT LƯỚI XANH CHỨNG THỰC (mã test) — cả hai đều là\n" +
+        "đường để đường xác minh thứ hai quay lại. Dùng `speakeasy` + `verifyTotpOnce`.",
+    ).toBe("");
   });
 
   it("★★★ ∀ file gọi `verifyTotpOnce`: nó PHẢI nhập hàm ấy từ chính `_core/totpOnce`", () => {
