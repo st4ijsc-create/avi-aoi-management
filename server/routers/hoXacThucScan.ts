@@ -435,12 +435,12 @@ export function phepKiemTrong(
  *   là đường **ĐỌC**.
  *
  * ⇒ Nay **theo dõi biến**: một biến được gán từ một lượt đọc thô mang **vết nhiễm**, và `return
- *   <biến nhiễm>` là vi phạm y như `return <lời gọi>`. Phép lan truyền cố ý **một tầng, không có
- *   phép chiếu** — đúng khuôn `hatGiongCua()`/`thoatKhoi()` của `userExposureScan.test.ts`, đừng
- *   viết bộ suy thứ N+1.
- * ⚠ VÙNG MÙ CÒN LẠI (được khai): một biến đi qua **hai** lần gán trung gian, hoặc thoát qua
- *   `res.json(<biến>)` ở tuyến REST, vẫn ngoài tầm. Trục ấy do `userExposureScan.test.ts` §5 canh
- *   (theo **giá trị**, không theo hình dạng).
+ *   <biến nhiễm>` là vi phạm y như `return <lời gọi>`. Phép lan truyền dừng ở **phép chiếu** —
+ *   đúng khuôn `hatGiongCua()`/`thoatKhoi()` của `userExposureScan.test.ts`, đừng viết bộ suy
+ *   thứ N+1.
+ * ⚠ **Pha 9 B7b đã ĐÓNG vùng mù "hai lần gán trung gian"** nêu ở lời khai cũ: phép lan truyền nay
+ *   chạy tới **điểm bất động**, không còn giới hạn một tầng. Số đo trước/sau và vùng mù còn lại
+ *   nằm ở khối B7b ngay trong thân hàm bên dưới.
  */
 export function bangTraTho(
   node: ts.Node,
@@ -469,18 +469,76 @@ export function bangTraTho(
     return co;
   };
 
-  // ── (1) BIẾN NHIỄM: `const x = <lượt đọc thô>` trong phạm vi đơn vị xử lý ────────────────────
+  /** Bóc `await`/`(…)`/`!`/`as` để lấy **lõi** một biểu thức. Ép kiểu KHÔNG phải phép chiếu. */
+  const loi = (e0: ts.Expression): ts.Expression => {
+    let e: ts.Expression = e0;
+    while (
+      ts.isAwaitExpression(e) ||
+      ts.isParenthesizedExpression(e) ||
+      ts.isNonNullExpression(e) ||
+      ts.isAsExpression(e) ||
+      ts.isTypeAssertionExpression(e)
+    ) {
+      e = e.expression;
+    }
+    return e;
+  };
+
+  // ── (1) BIẾN NHIỄM: `const x = <lượt đọc thô>` — LAN TRUYỀN **BẮC CẦU** ──────────────────────
+  /**
+   * ★★★★ Pha 9 nhóm B · **B7b — "MỘT TẦNG" LÀ MỘT VÙNG MÙ ĐO ĐƯỢC, KHÔNG PHẢI MỘT LỰA CHỌN.**
+   *
+   * ════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ SỐ ĐO (probe qua `donViTrongNguon`, hai nguồn KHÁC NHAU, cùng một lượt chạy)
+   * ════════════════════════════════════════════════════════════════════════════════════════════
+   *     const hang = await db.getUserSessions(ctx.user.id);
+   *     return hang;                    ⇒  traTho = **["userSessions"]**   ← BẮT ĐƯỢC
+   *
+   *     const hang = await db.getUserSessions(ctx.user.id);
+   *     const ra = hang;
+   *     return ra;                      ⇒  traTho = **[]**                 ← **LỌT**
+   *
+   * Hai đoạn trên **rò y hệt nhau**: cột `user_sessions.sessionToken` là **khoá phiên**
+   * (`db.getSessionByToken` tra bằng nó) nên ai đọc được response **là** người dùng ấy trên mọi
+   * thiết bị. Đó đúng là lỗ Pha 8 Task 5. Bản trước của khối này lan truyền **đúng một tầng**, và
+   * vùng mù ấy được **KHAI** ở lời khai I-2 ngay trên — nhưng "khai" không phải "canh": một lượt
+   * refactor tách biến trung gian (hình dạng phổ biến nhất của mọi lượt dọn mã) là đủ để dời cái
+   * được canh ra khỏi tầm phát biểu của lượng từ. Đúng lớp lỗi **C-2 của Pha 7**.
+   *
+   * ⇒ Nay chạy tới **ĐIỂM BẤT ĐỘNG**: một biến gán từ một biến nhiễm cũng nhiễm, lặp cho tới khi
+   *   một lượt quét không thêm được gì. Số tầng **không còn là một tham số** — nên không còn con
+   *   số nào để ai đó phải đoán đúng.
+   * ⚠ Phép lan truyền vẫn dừng ở **phép chiếu**: `const b = a.map(x => ({ id: x.id }))` có object
+   *   literal ⇒ `coChieu` = true ⇒ **không** nhiễm. Đó là chỗ luật này KHÔNG được nới, vì chiếu
+   *   tường minh chính là bản vá đúng.
+   * ⚠ VÙNG MÙ CÒN LẠI (được khai, hẹp hơn hẳn): gán **không qua khai báo** (`let x; x = await …`),
+   *   và lượt thoát qua `res.json(<biến>)` ở tuyến REST. Trục sau do `userExposureScan.test.ts` §5
+   *   canh theo **giá trị**, không theo hình dạng.
+   */
   const nhiem = new Map<string, string[]>();
+  const khai: { ten: string; init: ts.Expression }[] = [];
   const d0 = (x: ts.Node): void => {
     if (ts.isVariableDeclaration(x) && ts.isIdentifier(x.name) && x.initializer !== undefined) {
-      if (!coChieu(x.initializer)) {
-        const b = bangDocTho(x.initializer);
-        if (b.length > 0) nhiem.set(x.name.text, b);
-      }
+      if (!coChieu(x.initializer)) khai.push({ ten: x.name.text, init: x.initializer });
     }
     ts.forEachChild(x, d0);
   };
   d0(node);
+  // Điểm bất động — tập chỉ LỚN LÊN và bị chặn trên bởi (số biến × số bảng) ⇒ luôn dừng.
+  for (let doi = true; doi; ) {
+    doi = false;
+    for (const k of khai) {
+      const co = nhiem.get(k.ten) ?? [];
+      const them = new Set(co);
+      for (const b of bangDocTho(k.init)) them.add(b);
+      const e = loi(k.init);
+      if (ts.isIdentifier(e)) for (const b of nhiem.get(e.text) ?? []) them.add(b);
+      if (them.size > co.length) {
+        nhiem.set(k.ten, [...them]);
+        doi = true;
+      }
+    }
+  }
 
   // ── (2) ĐƯỜNG THOÁT: `return <lời gọi thô>` HOẶC `return <biến nhiễm>` ───────────────────────
   const di = (x: ts.Node): void => {

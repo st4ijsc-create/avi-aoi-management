@@ -355,6 +355,58 @@ describe("★★★★ Pha 5/8 Task 5 §3 — ∀ TUYỆT ĐỐI: không đơn v
     ).toContain("userSessions");
   });
 
+  /* ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★★ Pha 9 nhóm B · **B7b — VÙNG MÙ "HAI LẦN GÁN TRUNG GIAN" ĐÃ ĐO ĐƯỢC, VÀ ĐÃ ĐÓNG.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Lời khai I-2 ở `hoXacThucScan.ts` **tự khai** rằng phép lan truyền dừng ở **một tầng** và một
+   * biến qua **hai** lần gán vẫn lọt. Đo được trước bản vá (probe qua `donViTrongNguon`):
+   *
+   *     const hang = await db.getUserSessions(…); return hang;              ⇒ ["userSessions"]
+   *     const hang = await db.getUserSessions(…); const ra = hang; return ra; ⇒ **[]**  ← LỌT
+   *
+   * ⚠⚠ "Được khai" **không phải** "được canh". Hai đoạn trên rò y hệt nhau — `sessionToken` là
+   *    KHOÁ PHIÊN — và đoạn thứ hai là kết quả của **một lượt tách biến trung gian**, tức hình
+   *    dạng phổ biến nhất của mọi lượt dọn mã. Một lời khai vùng mù chỉ nói cho người ĐỌC nó;
+   *    người refactor không đọc nó, và lượng từ ∀ TUYỆT ĐỐI ở §3 vẫn khai XANH. Đúng lớp lỗi C-2
+   *    của Pha 7: *task sau không phá lưới — nó DỜI CÁI ĐƯỢC CANH ra khỏi tầm phát biểu của lưới.*
+   * ⇒ B7b cho phép lan truyền chạy tới **ĐIỂM BẤT ĐỘNG**. Số tầng không còn là một tham số, nên
+   *   không còn con số nào để ai đó phải đoán đúng.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+  it("★★★★ §3c B7b — BẮC CẦU: biến nhiễm đi qua NHIỀU lần gán trung gian vẫn bị BẮT", () => {
+    expect(
+      thoCua(` const hang = await db.getUserSessions(ctx.user.id); const ra = hang; return ra; `),
+      "HAI tầng gán: đây đúng là vùng mù mà lời khai I-2 tự khai — nó phải ĐÓNG rồi",
+    ).toContain("userSessions");
+    expect(
+      thoCua(
+        ` const a = await db.getUserSessions(ctx.user.id);
+          const b = a;
+          const c = b;
+          const d = c as unknown as never[];
+          return d; `,
+      ),
+      "BỐN tầng + một lượt ép kiểu: nếu ô này xanh thì phép lan truyền vẫn đang ĐẾM TẦNG",
+    ).toContain("userSessions");
+  });
+
+  it("★★★★ §3c B7b ĐỐI CHỨNG DƯƠNG — bắc cầu KHÔNG được vượt qua một phép chiếu", () => {
+    expect(
+      thoCua(
+        ` const a = await db.getUserSessions(ctx.user.id);
+          const b = a.map((h) => ({ id: h.id }));
+          const c = b;
+          return c; `,
+      ),
+      "DƯƠNG TÍNH GIẢ: phép chiếu tường minh là BẢN VÁ ĐÚNG — bắt nó là bắt nhầm, và một lưới bắt\n" +
+        "nhầm là một lưới sẽ bị người sau tắt đi. Điểm bất động phải DỪNG ở `coChieu`.",
+    ).toEqual([]);
+    expect(
+      thoCua(` const a = await db.getUserSessions(ctx.user.id); const n = a.length; return n; `),
+      "DƯƠNG TÍNH GIẢ: `a.length` là một con số, không phải hàng — vết nhiễm không được lan qua\n" +
+        "một phép truy cập thuộc tính bất kỳ.",
+    ).toEqual([]);
+  });
+
   it("★★★★ §3b ĐỐI CHỨNG DƯƠNG — có phép chiếu (kể cả qua biến) thì KHÔNG bị bắt", () => {
     expect(
       thoCua(` return toPublicSessions(await db.getUserSessions(ctx.user.id), ctx.sessionToken); `),
