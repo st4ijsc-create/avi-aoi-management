@@ -389,7 +389,13 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   bất biến "mã dự phòng DÙNG-MỘT-LẦN". Lượt đột biến của A5 (bỏ lượt UPDATE isUsed, giữ
     //   `return true`) làm `hoTuyenSongSong` đỏ 3 ca — nhưng CẢ BA đều đỏ vì HÌNH DẠNG, 0 ca hành
     //   vi. Tức thứ phân biệt mã dự phòng với một MẬT KHẨU VĨNH VIỄN trước đó chỉ có lưới đọc mã.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(52); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat)
+    // ⚠ Review TOÀN NHÁNH Pha 9 / **C-1**: 52 → **53**. `server/_core/taiKhoanBiTatMoiBeMat.test.ts`
+    //   — lượng từ *"∀ điểm xác thực: tài khoản `isActive=false` phải bị chặn"*. Nó canh trục **thứ
+    //   ba**, độc lập với `thuHoiPhienMoiBeMat` (thu hồi PHIÊN) và `buocDoiMatKhauMoiBeMat` (cờ mật
+    //   khẩu): đo được rằng một bề mặt có **đủ hai** phép chặn kia vẫn cho một tài khoản đã tắt đi
+    //   qua tới `ONE_YEAR_MS`. Nó tự khai `Pha 5` nên bộ nhận diện theo NỘI DUNG thấy ⇒ nó **phải**
+    //   có đường riêng ở §Cổng kiểm chung. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(53); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -566,7 +572,10 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   `CONG.length` 49 → **50** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
     // ⚠ Pha 9 nhóm A / **A5**: 113 → **114**. Đúng MỘT lưới mới (lý do ở ô `CONG.length`) ⇒
     //   `CONG.length` 50 → **51** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(115); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat)
+    // ⚠ Review TOÀN NHÁNH Pha 9 / **C-1**: 115 → **116**. Đúng MỘT lưới mới
+    //   (`server/_core/taiKhoanBiTatMoiBeMat.test.ts`, lý do ở ô `CONG.length`) ⇒ `CONG.length`
+    //   52 → **53** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(116); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

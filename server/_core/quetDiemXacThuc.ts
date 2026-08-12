@@ -57,6 +57,15 @@ export const FILE_UY_QUYEN_REST = "server/routes/_xacThucRest.ts";
 export const TEN_PHEP_CHAN = "chanNeuPhaiDoiMatKhau";
 /** Phép chặn của cổng THU HỒI PHIÊN (review TOÀN NHÁNH Pha 8 · C-1). */
 export const TEN_PHEP_CHAN_PHIEN = "chanNeuPhienDaThuHoi";
+/**
+ * Phép chặn của cổng **TÀI KHOẢN BỊ TẮT** (review TOÀN NHÁNH Pha 9 · C-1).
+ *
+ * ⚠ Trục **thứ ba**, độc lập với hai trục kia: trước Pha 9 C-1, `xacThucTho` tra sổ phiên **và**
+ *   kiểm cờ mật khẩu mà **không bao giờ** hỏi `users.isActive` ⇒ một tài khoản bị tắt vẫn dùng được
+ *   toàn bộ ứng dụng web tới `ONE_YEAR_MS`. Ba cờ ⇒ ba trường trong `DiemXacThuc`, không một cờ
+ *   "đã canh" gộp — gộp là để một trục hỏng núp sau hai trục lành.
+ */
+export const TEN_PHEP_CHAN_TAI_KHOAN = "chanNeuTaiKhoanBiTat";
 /** Ô tắt cổng buộc-đổi-mật-khẩu ở lượt gọi `authenticateRequest`. */
 export const O_BO_QUA = "boQuaCongDoiMatKhau";
 /** File khai điểm chung. */
@@ -77,6 +86,12 @@ export type DiemXacThuc = {
    *   đó đúng là lỗ C-1 (58 tuyến `/api/external/*`), nơi Task 1 vá một nửa và để hở nửa kia.
    */
   tuTraSo: boolean;
+  /**
+   * Thân hàm bao quanh có **tự** gọi phép chặn **TÀI KHOẢN BỊ TẮT** không.
+   * ⚠ Độc lập với hai trục trên: `validateExternalAuth` **có** kiểm cờ này (viết thẳng tại chỗ) từ
+   *   lâu, trong khi điểm chung — đường đi của 12/13 bề mặt — **không có** cho tới Pha 9 C-1.
+   */
+  tuKiemTaiKhoan: boolean;
 };
 
 /** Định danh của một lượt gọi: `a.b.c(x)` → `c`; `c(x)` → `c`. */
@@ -150,6 +165,7 @@ export function quetDiemXacThuc(duong: string, ma: string): DiemXacThuc[] {
               t === TEN_XAC_THUC ? coTatCong(n) : t === TEN_UY_QUYEN_REST ? false : true,
             tuCanh: thanCoGoi(n, TEN_PHEP_CHAN),
             tuTraSo: thanCoGoi(n, TEN_PHEP_CHAN_PHIEN),
+            tuKiemTaiKhoan: thanCoGoi(n, TEN_PHEP_CHAN_TAI_KHOAN),
           });
         }
       }
@@ -208,6 +224,17 @@ export function diemChungCuongChe(ma: string): boolean {
  */
 export function diemChungTraSo(ma: string): boolean {
   return thanPhuongThucGoi(ma, TEN_XAC_THUC_THO, TEN_PHEP_CHAN_PHIEN);
+}
+
+/**
+ * ĐIỂM CHUNG có cưỡng chế cổng **TÀI KHOẢN BỊ TẮT** không (review TOÀN NHÁNH Pha 9 · C-1).
+ *
+ * ⚠ Hỏi ở `xacThucTho`, **không** ở `authenticateRequest`: cổng này phải bắt cả lượt gọi mang
+ *   `boQuaCongDoiMatKhau: true` (tRPC — `_core/context.ts`). Đặt nó ở `authenticateRequest` cạnh
+ *   `chanNeuPhaiDoiMatKhau` là để **toàn bộ tRPC** ra ngoài lượng từ, đúng nửa lỗ mà C-1 mô tả.
+ */
+export function diemChungKiemTaiKhoan(ma: string): boolean {
+  return thanPhuongThucGoi(ma, TEN_XAC_THUC_THO, TEN_PHEP_CHAN_TAI_KHOAN);
 }
 
 /**

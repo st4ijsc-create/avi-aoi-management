@@ -1654,12 +1654,24 @@ async function startServer() {
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
       try {
-        const { sdk, chanNeuPhaiDoiMatKhau, chanNeuPhienDaThuHoi } = await import("./sdk");
+        const { sdk, chanNeuPhaiDoiMatKhau, chanNeuPhienDaThuHoi, chanNeuTaiKhoanBiTat } =
+          await import("./sdk");
         const session = await sdk.verifySession(token);
         if (session) {
           const { getUserByOpenId } = await import("../db");
           const user = await getUserByOpenId(session.openId);
-          if (user && user.isActive) {
+          if (user) {
+            // ★★★★ Review TOÀN NHÁNH Pha 9 · **C-1** — dòng này TRƯỚC ĐÂY là `user && user.isActive`
+            // viết thẳng tại chỗ. Đó là **bản sao thứ hai** của một vị từ an ninh (bản kia ở
+            // `authService.ts`, lượt đăng nhập) — và **đường CHÍNH không có bản nào**, nên một tài
+            // khoản bị tắt đi qua toàn bộ ứng dụng web tới một năm. Nay cả ba đường gọi **một chủ**
+            // (`chanNeuTaiKhoanBiTat`), và `taiKhoanBiTatMoiBeMat.test.ts` phát biểu lượng từ trên
+            // **hình dạng phân giải danh tính**, không trên một danh sách ba cái tên.
+            // ⚠ Vị trí giữ NGUYÊN như phép kiểm cũ (trước `chanNeuPhienDaThuHoi`) để bộ đếm
+            //   `soPhien_chanDaThuHoi_total` không đổi nghĩa: một tài khoản đã tắt không được ghi
+            //   thành một lượt "phiên bị thu hồi". Ném ⇒ rơi vào `catch` ngay dưới ⇒ **401**, đúng
+            //   hệt nhánh `if` cũ rơi xuống `return res.status(401)`.
+            await chanNeuTaiKhoanBiTat(user);
             // ★★★★ Pha 8 Task 1 — **ĐIỂM XÁC THỰC DUY NHẤT VÒNG QUA `authenticateRequest`.**
             // Nhánh này tự phân giải phiên (`verifySession` + `getUserByOpenId`), nên phép chặn ở
             // biên xác thực **theo cấu tạo** không thấy nó — đúng lớp lỗi *"lưới theo ĐƯỜNG THOÁT,

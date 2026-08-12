@@ -287,7 +287,40 @@ export async function updateUser(userId: number, data: {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
   await db.update(users).set(data).where(eq(users.id, userId));
-  await invalidateAuthUser(userId); // covers role change + ban (isActive:false)
+  /**
+   * ⚠ Lượt dọn cache buộc lượt kế tiếp đi **đường DB** — điều đó làm một lượt đổi **VAI** ăn ngay.
+   *   (Bình luận cũ ở dòng này khai *"covers role change + ban"*; nửa **ban** của câu ấy **SAI**:
+   *   đường DB trả về đúng hàng ấy, và trước Pha 9 C-1 không ai hỏi `isActive` trên đường chính.)
+   */
+  await invalidateAuthUser(userId); // đổi VAI ăn ngay (lượt kế tiếp đi đường DB)
+
+  /**
+   * ★★★★ Review TOÀN NHÁNH Pha 9 · **C-1 — TẮT TÀI KHOẢN PHẢI SINH RA MỘT LƯỢT THU HỒI THẬT.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ VÌ SAO DÒNG NÀY LÀ NỬA KHÔNG THỂ THIẾU CỦA BẢN VÁ
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Pha 9 A2 trả **−44% thông lượng** (740 → 413 lượt/s) để mua bất biến *"thu hồi có hiệu lực
+   * NGAY"*: mỗi request nay tra `user_sessions` **trước** bộ nhớ đệm. Nhưng **"thu hồi" trong toàn
+   * bộ từ vựng của cơ chế ấy = `user_sessions.isActive === false`**, còn ý định thu hồi phổ biến
+   * nhất của một người vận hành — *"tắt tài khoản của người vừa nghỉ việc"* — **không sinh ra một
+   * lượt thu hồi nào**. Đo được trước bản vá: sau `updateUser({isActive:false})`, hàng sổ phiên vẫn
+   * `isActive = true` ⇒ lượt `SELECT` vừa được trả tiền cho **mỗi request** không chạm được nó.
+   * ⇒ Dòng dưới làm phép đo ấy hết đúng: từ nay lượt tắt tài khoản **là** một lượt thu hồi.
+   *
+   * ⚠⚠ Nó **KHÔNG thay** cổng `chanNeuTaiKhoanBiTat` ở `_core/sdk.ts`, và ngược lại. Hai cơ chế
+   *    canh hai đường **khác nhau**: cổng ở biên xác thực bắt cả lượt lật cờ bằng **SQL thẳng**
+   *    (không đi qua hàm này); dòng này làm lượt tắt có hiệu lực **NGAY**, không phải *"trong vòng
+   *    một TTL bộ nhớ đệm"*. Bỏ một trong hai là để lại đúng nửa lỗ mà C-1 mô tả.
+   *
+   * ⚠ `data.isActive === false` **tường minh**: `undefined` (lượt sửa hồ sơ thường) và `true` (lượt
+   *   BẬT LẠI tài khoản) **không** được đá ai ra ngoài. Đá phiên khi bật lại là dựng một nhà tù
+   *   ngược — Pha 7 đã ship một nhà tù thật 4/4 tài khoản một lần rồi.
+   * ⚠ `revokeAllSessions` **tự** dọn cache (một bất biến, một chủ) nên không có lượt dọn thứ hai.
+   */
+  if (data.isActive === false) {
+    await revokeAllSessions(userId);
+  }
 }
 
 /**

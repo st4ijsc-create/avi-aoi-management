@@ -71,6 +71,56 @@ export async function chanNeuPhaiDoiMatKhau(user: User): Promise<void> {
 }
 
 /**
+ * ★★★★ Review TOÀN NHÁNH Pha 9 · **C-1** — **PHÉP CHẶN TÀI KHOẢN BỊ TẮT, DÙNG CHUNG MỌI BỀ MẶT.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO HÀM NÀY TỒN TẠI — CƠ CHẾ ĐÃ CÓ TRÊN HAI ĐƯỜNG **HẸP**, VẮNG TRÊN ĐƯỜNG **CHÍNH**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Trước bản vá, `xacThucTho` hỏi ba câu (*vé ký đúng không* · *hàng sổ phiên còn sống không* ·
+ * *có bị buộc đổi mật khẩu không*) và **không bao giờ** hỏi *"tài khoản này còn được bật không"*.
+ * Cùng lúc đó, phép kiểm ấy **đã tồn tại** ở hai chỗ hẹp hơn nhiều:
+ *
+ *     server/_core/index.ts   `validateExternalAuth` (nhánh Bearer)  ← 58 tuyến `/api/external/*`
+ *     server/_core/authService.ts:211  lượt ĐĂNG NHẬP                ← chỉ lúc đăng nhập
+ *
+ * ⇒ Một tài khoản đã tắt **không đăng nhập lại được** và **không vào được `/api/external/*`**,
+ *   nhưng **cookie đang cầm trên tay thì dùng được toàn bộ ứng dụng web** — tRPC, socket, và mọi
+ *   tuyến REST phiên. Đúng lớp lỗi *"an toàn là HỆ QUẢ của thứ khác đang hỏng"*: người ta tin lượt
+ *   ban có hiệu lực vì **lượt đăng nhập** chặn, mà lượt đăng nhập không phải cửa mà một phiên đang
+ *   sống đi qua.
+ *
+ * **ĐO ĐƯỢC trước bản vá** (probe hành vi trên DB test thật, đường sản phẩm `db.updateUser`):
+ *
+ *     ### hàng user_sessions sau lượt tắt: isActive = true
+ *     ### KẾT QUẢ SAU KHI TẮT TÀI KHOẢN: ĐI QUA id=2103 role=user isActive=false
+ *
+ * Với `expiresInMs: ONE_YEAR_MS` ở cả ba cửa đúc vé, đó là **tới một năm toàn quyền của vai cũ**.
+ *
+ * ⚠⚠ **VÌ SAO ĐỌC CỜ TỪ HÀNG TRONG TAY, KHÔNG PHẢI MỘT `SELECT` MỚI** — *"vá cho khớp bên chặt
+ *    hơn, đừng phát minh cơ chế mới"*: cả hai đường hẹp đã có đều kiểm `user.isActive` trên **đúng
+ *    hàng chúng vừa lấy**. Một lượt đọc mới là bất biến **thứ tư** trên cùng một cửa và thêm một
+ *    `SELECT` cho mỗi request (A2 đã trả −44% thông lượng cho lượt đọc thứ hai). Nửa còn lại của
+ *    bản vá — `db.updateUser` **thu hồi** mọi phiên khi tắt tài khoản — là thứ làm lượt đọc A2 đã
+ *    trả tiền cho **chạm được** ý định thu hồi phổ biến nhất; xem khối lý lẽ ở `server/db/auth.ts`.
+ *
+ * ⚠ **`=== false` tường minh, KHÔNG phải `!user.isActive`**: cột cho phép `NULL`, và một hàng
+ *   `NULL` là *"chưa ai nói gì"*, không phải *"đã bị tắt"*. `!null` là `true` ⇒ viết `!` là dựng
+ *   một **nhà tù** cho mọi hàng chưa đặt cờ. Pha 7 đã ship một nhà tù thật 4/4 tài khoản một lần.
+ *
+ * ⚠ VÙNG MÙ ĐƯỢC KHAI: hàng đến từ **bộ nhớ đệm phiên** là ảnh chụp tới `AUTH_CACHE_TTL_S` giây.
+ *   Lượt tắt đi qua **đường sản phẩm** (`db.updateUser`) không có cửa sổ ấy — nó dọn cache **và**
+ *   thu hồi phiên, nên `chanNeuPhienDaThuHoi` (đứng TRƯỚC cache) chặn ngay. Cửa sổ chỉ còn cho một
+ *   lượt lật cờ bằng **SQL thẳng**, và nó ≤ TTL, không phải ≤ một năm.
+ */
+export async function chanNeuTaiKhoanBiTat(user: User): Promise<void> {
+  if (user.isActive === false) {
+    throw ForbiddenError(
+      "ACCOUNT_DISABLED: Tài khoản của bạn đã bị vô hiệu hoá. Vui lòng liên hệ quản trị viên.",
+    );
+  }
+}
+
+/**
  * ★★★★ Review TOÀN NHÁNH Pha 8 · **C-1** — **PHÉP THU HỒI PHIÊN, DÙNG CHUNG CHO MỌI BỀ MẶT.**
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -522,81 +572,98 @@ class SDKServer {
     // AUTH_CACHE_TTL_S seconds, so we skip those 2 DB round-trips. The
     // revocation check is NO LONGER among them — see the block above.
     const cachedUser = await getCachedAuthUser(sessionCookie!);
-    if (cachedUser) {
-      return cachedUser;
-    }
 
-    const sessionUserId = session.openId;
-    const signedInAt = new Date();
-    let user = await db.getUserByOpenId(sessionUserId);
+    /**
+     * ★★★★ Review TOÀN NHÁNH Pha 9 · **C-1 — MỘT LỐI RA DUY NHẤT CHO CẢ HAI NHÁNH.**
+     *
+     * ⚠⚠⚠ Nhánh trúng cache trước đây `return` **thẳng** tại đây. Thêm một lượt gọi
+     *    `chanNeuTaiKhoanBiTat` vào nhánh ấy **và** một lượt nữa ở cuối là dựng **hai bản sao**
+     *    dưới cùng một bất biến — đúng lớp lỗi đã đẻ **bốn** Critical trong chuỗi pha này, và đúng
+     *    thứ Pha 7 đo được ở chính phương thức này (*"1/6 lượt rò, 5/6 lượt sạch"* vì hai nhánh làm
+     *    hai việc khác nhau). ⇒ Hai nhánh **hội** về một biến, rồi **một** cổng, rồi **một** lối ra.
+     *    `taiKhoanBiTatMoiBeMat.test.ts` §6 ghim **ĐÚNG MỘT** call site bằng AST.
+     */
+    let nguoiDung: User | null = cachedUser;
 
-    // If user not in DB, sync from OAuth server automatically
-    if (!user) {
-      try {
-        const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-        await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-          lastSignedIn: signedInAt,
-        });
-        user = await db.getUserByOpenId(userInfo.openId);
-      } catch (error) {
-        if (!ENV.oAuthServerUrl) {
-          // Expected in local-login deployments: the session is valid but the
-          // user row is missing and there is no OAuth server to sync from.
-          console.warn(
-            `[Auth] Session user ${sessionUserId} not found and OAuth sync is disabled (local-login mode).`
-          );
-        } else {
-          console.error("[Auth] Failed to sync user from OAuth:", error);
+    if (nguoiDung === null) {
+      const sessionUserId = session.openId;
+      const signedInAt = new Date();
+      let user = await db.getUserByOpenId(sessionUserId);
+
+      // If user not in DB, sync from OAuth server automatically
+      if (!user) {
+        try {
+          const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
+          await db.upsertUser({
+            openId: userInfo.openId,
+            name: userInfo.name || null,
+            email: userInfo.email ?? null,
+            loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+            lastSignedIn: signedInAt,
+          });
+          user = await db.getUserByOpenId(userInfo.openId);
+        } catch (error) {
+          if (!ENV.oAuthServerUrl) {
+            // Expected in local-login deployments: the session is valid but the
+            // user row is missing and there is no OAuth server to sync from.
+            console.warn(
+              `[Auth] Session user ${sessionUserId} not found and OAuth sync is disabled (local-login mode).`
+            );
+          } else {
+            console.error("[Auth] Failed to sync user from OAuth:", error);
+          }
+          throw ForbiddenError("Failed to sync user info");
         }
-        throw ForbiddenError("Failed to sync user info");
       }
+
+      if (!user) {
+        throw ForbiddenError("User not found");
+      }
+
+      // FU-3: Enforce session revocation at the auth layer.
+      //
+      // The session JWT is stateless, so a revoked session's cookie would still
+      // verify (and thus authenticate) until it expired. P0-B persists a
+      // `user_sessions` row keyed by this exact cookie (== sessionToken) and
+      // session.revoke / revokeAll flip that row's isActive to false. This makes
+      // that revocation actually take effect.
+      //
+      // ★★★★ Review TOÀN NHÁNH Pha 8 · C-1 — **thân của vị từ đã rút ra
+      // `chanNeuPhienDaThuHoi` (cùng file, ngay trên `SDKServer`)** vì nó có người dùng THỨ HAI:
+      // nhánh `Authorization: Bearer` của `validateExternalAuth` (`_core/index.ts`), điểm xác thực
+      // DUY NHẤT vòng qua `authenticateRequest`. Hai bản sao ⇒ bản yếu hơn quyết định lưới nào đỏ.
+      // Lượng từ canh chuyện này: `server/_core/thuHoiPhienMoiBeMat.test.ts`.
+      // ★ Pha 9 · A2 — lượt gọi ĐÃ DỜI LÊN TRƯỚC bộ nhớ đệm (xem khối lý lẽ ở đó). Ở đây **KHÔNG**
+      //   còn lượt gọi thứ hai: một bất biến, một chủ.
+
+      await db.upsertUser({
+        openId: user.openId,
+        lastSignedIn: signedInAt,
+      });
+
+      // Cache only after EVERY check passed (user found + active session).
+      // NOTE: this also throttles the lastSignedIn write above to once per
+      // TTL window per session instead of once per request.
+      await setCachedAuthUser(sessionCookie!, user);
+
+      // ★★★ Pha 7 Task 7 — **BIÊN XÁC THỰC LÀ CHỖ HẸP NHẤT.** Mọi `ctx.user`, mọi
+      // `socket.data.user`, mọi `req.externalUser`, và cả `localStorage["manus-runtime-user-info"]`
+      // của trình duyệt đều bắt nguồn từ đúng một giá trị này. Làm rỗng bí mật **ở đây** đóng cùng
+      // lúc bốn bề mặt, thay vì vá bốn chỗ (và bỏ sót cái thứ năm).
+      // ⚠ ĐO TRƯỚC KHI ĐỔI: `git grep` mọi điểm đọc `passwordHash`/`twoFactorSecret` ⇒ **6 điểm,
+      //   KHÔNG điểm nào** đọc từ `authenticateRequest`; cả 6 đọc từ một lượt `db.getUserById` /
+      //   `getUserByUsername` MỚI ⇒ phép làm rỗng này **không chạm** đăng nhập / đổi mật khẩu / 2FA.
+      // ⚠ Nó cũng xoá tính **NGẮT QUÃNG** của lượt rò: nhánh cache-hit ở trên đã trả hàng đã che, còn
+      //   nhánh này thì chưa ⇒ đo được **1/6 lượt rò, 5/6 lượt sạch**, tức một lượt nghiệm thu "nhìn
+      //   một phát" sẽ báo SẠCH NHẦM. Nay hai nhánh giống hệt nhau.
+      nguoiDung = redactServerOnlyUserFields(user);
     }
 
-    if (!user) {
-      throw ForbiddenError("User not found");
-    }
-
-    // FU-3: Enforce session revocation at the auth layer.
-    //
-    // The session JWT is stateless, so a revoked session's cookie would still
-    // verify (and thus authenticate) until it expired. P0-B persists a
-    // `user_sessions` row keyed by this exact cookie (== sessionToken) and
-    // session.revoke / revokeAll flip that row's isActive to false. This makes
-    // that revocation actually take effect.
-    //
-    // ★★★★ Review TOÀN NHÁNH Pha 8 · C-1 — **thân của vị từ đã rút ra
-    // `chanNeuPhienDaThuHoi` (cùng file, ngay trên `SDKServer`)** vì nó có người dùng THỨ HAI:
-    // nhánh `Authorization: Bearer` của `validateExternalAuth` (`_core/index.ts`), điểm xác thực
-    // DUY NHẤT vòng qua `authenticateRequest`. Hai bản sao ⇒ bản yếu hơn quyết định lưới nào đỏ.
-    // Lượng từ canh chuyện này: `server/_core/thuHoiPhienMoiBeMat.test.ts`.
-    // ★ Pha 9 · A2 — lượt gọi ĐÃ DỜI LÊN TRƯỚC bộ nhớ đệm (xem khối lý lẽ ở đó). Ở đây **KHÔNG**
-    //   còn lượt gọi thứ hai: một bất biến, một chủ.
-
-    await db.upsertUser({
-      openId: user.openId,
-      lastSignedIn: signedInAt,
-    });
-
-    // Cache only after EVERY check passed (user found + active session).
-    // NOTE: this also throttles the lastSignedIn write above to once per
-    // TTL window per session instead of once per request.
-    await setCachedAuthUser(sessionCookie!, user);
-
-    // ★★★ Pha 7 Task 7 — **BIÊN XÁC THỰC LÀ CHỖ HẸP NHẤT.** Mọi `ctx.user`, mọi
-    // `socket.data.user`, mọi `req.externalUser`, và cả `localStorage["manus-runtime-user-info"]`
-    // của trình duyệt đều bắt nguồn từ đúng một giá trị này. Làm rỗng bí mật **ở đây** đóng cùng
-    // lúc bốn bề mặt, thay vì vá bốn chỗ (và bỏ sót cái thứ năm).
-    // ⚠ ĐO TRƯỚC KHI ĐỔI: `git grep` mọi điểm đọc `passwordHash`/`twoFactorSecret` ⇒ **6 điểm,
-    //   KHÔNG điểm nào** đọc từ `authenticateRequest`; cả 6 đọc từ một lượt `db.getUserById` /
-    //   `getUserByUsername` MỚI ⇒ phép làm rỗng này **không chạm** đăng nhập / đổi mật khẩu / 2FA.
-    // ⚠ Nó cũng xoá tính **NGẮT QUÃNG** của lượt rò: nhánh cache-hit ở trên đã trả hàng đã che, còn
-    //   nhánh này thì chưa ⇒ đo được **1/6 lượt rò, 5/6 lượt sạch**, tức một lượt nghiệm thu "nhìn
-    //   một phát" sẽ báo SẠCH NHẦM. Nay hai nhánh giống hệt nhau.
-    return redactServerOnlyUserFields(user);
+    // ★★★★ Review TOÀN NHÁNH Pha 9 · **C-1 — CỔNG "TÀI KHOẢN CÒN BẬT KHÔNG", LỐI RA DUY NHẤT.**
+    // Đứng ở đây (không ở trong hai nhánh) vì đây là chỗ **duy nhất** cầm được hàng `users` của cả
+    // hai đường đi. Xem khối lý lẽ đầy đủ ở `chanNeuTaiKhoanBiTat` (cùng file, ngay trên `SDKServer`).
+    await chanNeuTaiKhoanBiTat(nguoiDung);
+    return nguoiDung;
   }
 }
 
