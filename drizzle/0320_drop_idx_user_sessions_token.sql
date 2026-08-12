@@ -1,11 +1,14 @@
 -- ════════════════════════════════════════════════════════════════════════════════════════════
--- 0320 — GỠ `idx_user_sessions_token` (TRÙNG chỉ số của ràng buộc UNIQUE)  ⚠⚠⚠ **BẢN NHÁP — CHƯA ÁP**
+-- 0320 — GỠ `idx_user_sessions_token` (TRÙNG chỉ số của ràng buộc UNIQUE)   ✅ **ĐÃ ÁP 2026-08-12**
 -- ════════════════════════════════════════════════════════════════════════════════════════════
--- ⚠⚠⚠ FILE NÀY MANG ĐUÔI `.DRAFT` VÀ **KHÔNG** ĐƯỢC `scripts/migrate-standalone.mjs` NHẶT.
---     Nó chờ **chủ dự án duyệt**. Brief Pha 9 nhóm B nói rõ: *"Cần DDL ⇒ **KHÔNG tự áp**. Soạn
---     `.DRAFT`, báo tôi."* ⇒ Đây là bản nháp ấy. **KHÔNG ÁP.**
---     ⚠ `drizzle/0319_session_ip_address_text.sql.DRAFT` cũng đang chờ — **đừng áp, đừng đổi tên**
---       nó khi xử lý file này. Hai bản nháp độc lập, duyệt riêng.
+-- ✅ **CHỦ DỰ ÁN DUYỆT 2026-08-11.** Đuôi `.DRAFT` đã được bỏ; file áp qua đúng đường chuẩn
+--     (`scripts/migrate-standalone.mjs`, `MIGRATE_STRICT=1`, owner `aoi`, **CẢ HAI** DB).
+--     `0319` được duyệt **cùng lượt** và áp ngay trước file này — hai file độc lập, hai commit riêng.
+--     ⚠ Lượt áp **thu hẹp** danh sách file của bộ chạy về **đúng 0319 + 0320**: repo còn nợ sổ CÓ
+--       TRƯỚC (`0057`·`0066`·`0125`·`0234` `success=false`; `0308`·`0309` không hàng sổ trên prod;
+--       `0300`–`0309` không hàng sổ trên test) mà lượt này **KHÔNG** được đụng tới.
+--     ✅ NỬA THỨ HAI ĐÃ ĐI CÙNG LƯỢT: dòng `index("idx_user_sessions_token")` trong
+--       `drizzle/schema/auth.ts` đã được xoá trong **cùng commit** — xem mục "NỬA THỨ HAI" bên dưới.
 --
 -- ════════════════════════════════════════════════════════════════════════════════════════════
 -- ⚠⚠ SỐ ĐO TRÊN DB THẬT (`aoi_management`, 2026-08-12) — KHÔNG PHẢI SUY LUẬN TỪ FILE SCHEMA
@@ -25,7 +28,10 @@
 --
 --   (bốn chỉ số còn lại — `_pkey`, `_user`, `_expires`, `_active` — trên cột KHÁC, không liên quan.)
 --
--- Số hàng `user_sessions` hôm nay: **297**.
+-- Số hàng `user_sessions` hôm nay: **298** (đo lại 2026-08-12 ngay trước lượt áp; bản nháp ghi
+-- **297** hôm 08-12 sớm — bảng vẫn đang nhận phiên mới, kết luận không đổi).
+-- Trên `aoi_management_test` cùng hình dạng: `idx_user_sessions_token` uniq=false ràng-buộc=**0**
+-- (81.920 byte) · `user_sessions_sessionToken_unique` uniq=true ràng-buộc=**1** (131.072 byte).
 --
 -- ⇒ Chỉ số UNIQUE phục vụ được **MỌI** truy vấn mà chỉ số thường phục vụ được: cùng cột dẫn đầu,
 --   cùng btree, cùng chiều. `db.getSessionByToken` (`WHERE "sessionToken" = $1`) — đường nóng nhất
@@ -85,7 +91,52 @@
 --      `user_sessions_sessionToken_unique` phải **CÒN NGUYÊN** (`uniq=true`, `ràng buộc=1`)
 -- ════════════════════════════════════════════════════════════════════════════════════════════
 
+BEGIN;
+
 -- ⚠ `IF EXISTS` để lượt áp lại không vỡ. KHÔNG dùng `CASCADE`: nếu một ràng buộc nào đó bất ngờ
 --   phụ thuộc vào chỉ số này thì ta MUỐN câu lệnh vỡ và nói ra, chứ không muốn nó âm thầm kéo
 --   theo một ràng buộc an ninh.
 DROP INDEX IF EXISTS "idx_user_sessions_token";
+
+-- ── ĐỐI CHỨNG NGAY TRONG LƯỢT ÁP: sai thì HUỶ CẢ LƯỢT ───────────────────────────────────────
+-- Cùng khuôn với 0316/0317/0318/0319. Lượt này GỠ một thứ, nên đối chứng phải chứng minh **cả
+-- hai** vế: cái đáng gỡ đã biến mất, VÀ cái tuyệt đối không được chạm vẫn còn nguyên.
+DO $$
+DECLARE
+  con_thua   integer;
+  con_unique integer;
+  so_chi_so  integer;
+  so_hang    bigint;
+BEGIN
+  -- 1. chỉ số thừa phải BIẾN MẤT
+  SELECT count(*) INTO con_thua
+    FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+   WHERE i.indrelid = 'user_sessions'::regclass AND c.relname = 'idx_user_sessions_token';
+  IF con_thua <> 0 THEN
+    RAISE EXCEPTION 'HUỶ: idx_user_sessions_token vẫn còn (% bản)', con_thua;
+  END IF;
+
+  -- 2. chỉ số UNIQUE phải CÒN NGUYÊN, và vẫn phải còn ràng buộc đứng sau nó.
+  --    Đây là bất biến an ninh "một token = một phiên" — mất nó là mất cưỡng chế.
+  SELECT count(*) INTO con_unique
+    FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+   WHERE i.indrelid = 'user_sessions'::regclass
+     AND c.relname  = 'user_sessions_sessionToken_unique'
+     AND i.indisunique
+     AND EXISTS (SELECT 1 FROM pg_constraint pc WHERE pc.conindid = c.oid AND pc.contype = 'u');
+  IF con_unique <> 1 THEN
+    RAISE EXCEPTION 'HUỶ: chỉ số UNIQUE trên sessionToken không còn nguyên vẹn (đếm=%)', con_unique;
+  END IF;
+
+  -- 3. đúng NĂM chỉ số còn lại (sáu trừ một) — bắt cả trường hợp gỡ nhầm thêm cái khác
+  SELECT count(*) INTO so_chi_so
+    FROM pg_index i WHERE i.indrelid = 'user_sessions'::regclass;
+  IF so_chi_so <> 5 THEN
+    RAISE EXCEPTION 'HUỶ: user_sessions còn % chỉ số, chờ đợi 5', so_chi_so;
+  END IF;
+
+  SELECT count(*) INTO so_hang FROM user_sessions;
+  RAISE NOTICE 'ĐỐI CHỨNG ĐẠT: idx thừa đã gỡ, UNIQUE sessionToken còn nguyên, còn % chỉ số, % hàng giữ nguyên', so_chi_so, so_hang;
+END $$;
+
+COMMIT;

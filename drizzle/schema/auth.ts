@@ -257,7 +257,10 @@ export const userSessions = pgTable("user_sessions", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_user_sessions_user").on(table.userId),
-  index("idx_user_sessions_token").on(table.sessionToken),
+  // ⚠ `idx_user_sessions_token` ĐÃ GỠ (mig 0320): nó trùng hoàn toàn với chỉ số của ràng buộc
+  //   UNIQUE `user_sessions_sessionToken_unique` (cùng cột, cùng btree, cùng chiều) ⇒ không phục
+  //   vụ được truy vấn nào mà chỉ số UNIQUE không phục vụ được, nhưng bắt MỌI lượt đăng nhập
+  //   cập nhật hai cây btree thay vì một. KHÔNG khai lại ở đây: `db:push` sẽ TẠO LẠI nó.
   index("idx_user_sessions_active").on(table.isActive),
   index("idx_user_sessions_expires").on(table.expiresAt),
 ]);
