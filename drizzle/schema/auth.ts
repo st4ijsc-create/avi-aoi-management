@@ -249,7 +249,21 @@ export const userSessions = pgTable("user_sessions", {
   deviceType: varchar("deviceType", { length: 50 }), // desktop, mobile, tablet
   browser: varchar("browser", { length: 100 }), // Chrome, Firefox, Safari
   os: varchar("os", { length: 100 }), // Windows, macOS, Linux, iOS, Android
-  ipAddress: varchar("ipAddress", { length: 45 }),
+  /**
+   * ★★★ Mig **0319** (áp 2026-08-12, CẢ HAI DB) — `varchar(45)` → **`text`**.
+   * ⚠ Trần 45 hôm nay **không** bị một header lái: `auditCtxFromRequest` đọc
+   *   `req.ip ?? req.socket.remoteAddress`, và Express chỉ suy `req.ip` từ `X-Forwarded-For` khi
+   *   `app.set("trust proxy", …)` — phép đo 2026-08-12: **không** lời gọi nào trong `server/**`,
+   *   **không** biến `TRUST_PROXY` nào trong `.env`. Nhưng nó an toàn **NHỜ MỘT CẤU HÌNH KHÔNG AI
+   *   GHIM**: đặt reverse proxy trước ứng dụng rồi bật `trust proxy` — việc bình thường khi lên
+   *   sản xuất — là cột này lập tức thành **dữ liệu kẻ tấn công**, KHÔNG một dòng mã nào đổi.
+   *   Đó là lớp lỗi *"an toàn là HỆ QUẢ của thứ khác đang tắt"* (Pha 4).
+   * ⚠ Còn một nguồn dài **không** cần `trust proxy`: IPv6 link-local mang **zone index**
+   *   (`fe80::1%eth0`) — 45 là biên của dạng IPv4-mapped chuẩn, **không** kể zone.
+   * ⚠ Thiệt hại của trần cũ không phải `22001` (phép cắt đã chặn) mà là một IP **bị cắt cụt** trong
+   *   sổ kiểm toán: `203.0.113.11` cắt thành `203.0.113.1` vẫn là IP hợp lệ — **sai mà trông đúng**.
+   */
+  ipAddress: text("ipAddress"),
   location: varchar("location", { length: 255 }), // City, Country
   isActive: boolean("isActive").default(true).notNull(),
   lastActivityAt: timestamp("lastActivityAt").defaultNow().notNull(),

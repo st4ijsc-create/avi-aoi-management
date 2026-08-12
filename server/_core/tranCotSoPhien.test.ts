@@ -21,6 +21,11 @@
  *     ⇒ ERROR: value too long for type character varying(255)
  * Và `information_schema` của **cả hai** DB xác nhận `deviceName varchar(255)` · `ipAddress
  * varchar(45)` · `sessionToken text` (mig 0317 đã áp).
+ * ⚠ **HÌNH DẠNG ẤY NAY ĐÃ ĐỔI** — mig `0318` (deviceName) và `0319` (ipAddress) đều đã áp trên cả
+ *   hai DB, nên **cả ba** cột trên đều là `text`. Phép đo `information_schema` 2026-08-12 (cả hai
+ *   DB, giống hệt nhau) nói `user_sessions` còn **ĐÚNG BỐN** cột mang trần: `deviceType` 50 ·
+ *   `browser` 100 · `os` 100 · `location` 255. Đoạn đo sống ở trên **giữ nguyên** vì nó là bản ghi
+ *   lịch sử của lỗ C-2 lúc còn sống — không phải mô tả lược đồ hôm nay.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠ BA LỚP CHỐNG "TỰ THOẢ"
@@ -44,8 +49,16 @@
  *     (`deviceName` → `text`, chủ dự án duyệt). Và lượt áp ấy **chứng minh câu vừa nói ở trên**:
  *     phép cắt đọc trần **từ schema**, nên `deviceName` **tự rời** tập bị cắt — **không một dòng mã
  *     sản xuất nào phải sửa**. Thứ duy nhất đổi là các ô của lưới này, vì chúng ghim SỐ (§1a/§2a).
- *     ⇒ Nay một UA dài được lưu **NGUYÊN VĂN**; `ipAddress` (`varchar(45)`) vẫn bị cắt, và đó là
- *     cột **cuối cùng** của câu `INSERT` này còn mang một trần đoán (xem `.DRAFT` của 0319).
+ *     ⇒ Nay một UA dài được lưu **NGUYÊN VĂN**.
+ *  3. ~~`ipAddress` vẫn là `varchar(45)`~~ — **mig `0319` ĐÃ ÁP 2026-08-12 trên CẢ HAI DB**
+ *     (`ipAddress` → `text`, chủ dự án duyệt). Lần thứ **hai** liên tiếp một lượt DDL đổi tập bị
+ *     cắt mà **không dòng mã sản xuất nào phải sửa** — chỉ các ô ghim SỐ của lưới này đổi.
+ *     ⇒ Câu `INSERT` của `ghiSoPhien` nay **không còn cột nào mang trần** (`sessionToken` ·
+ *       `deviceName` · `ipAddress` đều `text`). §2a vì thế đổi **chiều đo**: nó đo *"cả hai cột vào
+ *       DB NGUYÊN VĂN"* thay vì đo một phép cắt không còn tồn tại — và cầu chì §2a chuyển sang neo
+ *       vào **sự sống của bộ suy trần** (4 cột khác vẫn có trần), không neo vào một con số.
+ *     ⚠ Bản `.DRAFT` của 0319 tự khai *"lúc đó `user_sessions` không còn cột `varchar` nào"*. Phép
+ *       đo bác bỏ: còn **4**. Một chú thích về trạng thái mà không ai đo lại là một cái bẫy có hạn dùng.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
@@ -78,10 +91,18 @@ const TRAN = tranVarcharCua(userSessions);
 describe("★★★★ Review TOÀN NHÁNH Pha 8 C-2 — ∀ cột varchar của `user_sessions`: cắt theo trần SCHEMA", () => {
   /* ── §1 TRẦN SUY TỪ SCHEMA ─────────────────────────────────────────────────────────────────── */
   it("§1a cầu chì — bộ suy trần KHÔNG rỗng và khớp cột ĐO ĐƯỢC trên cả hai DB (SAU mig 0318)", () => {
+    /**
+     * ★★★ **SỐ NÀY HẠ 5 → 4 VÌ MIG `0319`** (áp 2026-08-12, cả hai DB): `ipAddress` rời tập bị cắt.
+     * ⚠ Bản `.DRAFT` của 0319 tự khai *"lúc đó `user_sessions` **không còn cột `varchar` nào**"* —
+     *   **câu ấy SAI**, và nó sai theo hướng nguy hiểm (nó đề nghị gỡ luôn cầu chì này). Phép đo
+     *   `information_schema` sau lượt áp, **cả hai** DB, trả về **ĐÚNG BỐN** cột còn trần:
+     *   `deviceType` 50 · `browser` 100 · `os` 100 · `location` 255. Tập **chưa** rỗng ⇒ cầu chì
+     *   vẫn còn việc để làm, và phép cắt vẫn **không** phải no-op cho bảng này.
+     */
     expect(
       Object.keys(TRAN).length,
       "0 cột có trần ⇒ phép cắt là no-op và MỌI ô dưới đây là chân lý rỗng",
-    ).toBeGreaterThanOrEqual(5);
+    ).toBeGreaterThanOrEqual(4);
     /**
      * ★★★★ **Ô NÀY VỪA ĐỔI CHIỀU VÌ MIG `0318` (áp 2026-08-11, cả hai DB).** Trước đó nó ghim
      * `TRAN.deviceName === 255`. Nay cột là `text` ⇒ **không có trần** ⇒ nó phải **RỜI** tập bị cắt.
@@ -98,7 +119,29 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-2 — ∀ cột varchar của
       Object.keys(TRAN),
       "`deviceName` vẫn nằm trong tập bị cắt ⇒ một UA dài vẫn bị cắt dù cột đã là `text`",
     ).not.toContain("deviceName");
-    expect(TRAN.ipAddress, "`ipAddress` — cột CUỐI CÙNG của câu INSERT còn mang một trần đoán").toBe(45);
+    /**
+     * ★★★ **Ô NÀY ĐỔI CHIỀU VÌ MIG `0319`** — hệt như ô `deviceName` ngay trên đã đổi vì `0318`.
+     * Trước: `TRAN.ipAddress === 45`. Nay cột là `text` ⇒ nó phải **RỜI** tập bị cắt.
+     * ⇒ **Câu `INSERT` của `ghiSoPhien` nay KHÔNG còn cột nào mang trần**: cả ba cột nó ghi
+     *   (`sessionToken` · `deviceName` · `ipAddress`) đều là `text`. Đó là chủ ý, và §2a bên dưới
+     *   được viết lại để **đo chính điều đó** thay vì đo một phép cắt không còn tồn tại.
+     */
+    expect(
+      TRAN.ipAddress,
+      "`ipAddress` phải KHÔNG còn trần (mig 0319 đổi sang `text`) — còn trần ⇒ khai báo TS lệch DB",
+    ).toBeUndefined();
+    expect(
+      Object.keys(TRAN),
+      "`ipAddress` vẫn nằm trong tập bị cắt ⇒ một IP dài vẫn bị cắt cụt dù cột đã là `text`",
+    ).not.toContain("ipAddress");
+    /**
+     * Neo vào **bốn cột ĐO ĐƯỢC** còn lại (`information_schema`, cả hai DB, 2026-08-12). Nếu bộ suy
+     * trần hỏng hoặc khai báo TS lệch khỏi DB, các ô này ĐỎ — đó là việc của cầu chì §1a.
+     */
+    expect(TRAN.deviceType, "`deviceType` varchar(50) — đo trên cả hai DB").toBe(50);
+    expect(TRAN.browser, "`browser` varchar(100) — đo trên cả hai DB").toBe(100);
+    expect(TRAN.os, "`os` varchar(100) — đo trên cả hai DB").toBe(100);
+    expect(TRAN.location, "`location` varchar(255) — đo trên cả hai DB").toBe(255);
   });
 
   it("★★★ §1b `sessionToken` KHÔNG BAO GIỜ nằm trong tập bị cắt (cắt KHOÁ PHIÊN = tái tạo C-2)", () => {
@@ -122,9 +165,20 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-2 — ∀ cột varchar của
   });
 
   it("§1d ĐỐI CHỨNG DƯƠNG — chuỗi ngắn hơn trần đi qua NGUYÊN VẸN (không cắt bừa)", () => {
-    const ra = catTheoTranCot(userSessions, { deviceName: "curl/8.7.1", ipAddress: "127.0.0.1" });
+    /**
+     * ⚠ SAU `0318`+`0319` cả `deviceName` lẫn `ipAddress` đều **không còn trần** ⇒ hai ô ấy giờ chỉ
+     *   chứng minh *"cột không trần đi qua nguyên vẹn"*, **không** chứng minh *"không cắt bừa"*.
+     *   Nên ca này thêm một cột **CÒN trần** (`browser` 100): đó mới là chỗ một phép cắt hỏng có thể
+     *   cắt nhầm một giá trị ngắn. Thiếu nó, §1d là một ô **tự thoả**.
+     */
+    const ra = catTheoTranCot(userSessions, {
+      deviceName: "curl/8.7.1",
+      ipAddress: "127.0.0.1",
+      browser: "Chrome",
+    }) as Record<string, unknown>;
     expect(ra.deviceName, "cắt nhầm một UA bình thường ⇒ lưới này sẽ bị người sau tắt đi").toBe("curl/8.7.1");
     expect(ra.ipAddress).toBe("127.0.0.1");
+    expect(ra.browser, "cột CÒN trần mà bị cắt dù ngắn hơn trần ⇒ phép cắt hỏng").toBe("Chrome");
   });
 
   it("§1e cặp thay thế KHÔNG bị chẻ đôi ở đuôi (không đẩy `U+FFFD` xuống DB)", () => {
@@ -160,16 +214,35 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-2 — ∀ cột varchar của
       expect(uid).toBeGreaterThan(0);
       // Cầu chì: chuỗi phải DÀI THẬT — một chuỗi ngắn làm ô này xanh vô nghĩa.
       expect(UA_DAI.length, "UA phải dài đúng bằng lượt đo sống").toBe(DAI_THAT);
-      // ⚠ SAU mig 0318 cột `deviceName` là `text` ⇒ không còn trần để "vượt". Cầu chì chuyển sang
-      //   cột CÒN trần của **cùng câu INSERT** (`ipAddress` 45) — nếu bộ suy trần hỏng, ô này ĐỎ.
-      expect(TRAN.ipAddress, "cầu chì: cột `ipAddress` phải còn trần, nếu không §2a đo rỗng").toBe(45);
+      /**
+       * ★★★ **CẦU CHÌ PHẢI ĐỔI HÌNH DẠNG VÌ MIG `0319`.** Trước, nó neo vào `TRAN.ipAddress === 45`
+       * — cột CÒN trần cuối cùng của câu `INSERT` này. Sau `0319` **cả ba** cột `ghiSoPhien` ghi đều
+       * là `text` ⇒ **không còn trần nào trong câu INSERT này để neo vào**.
+       * ⚠ Đây đúng là chỗ một lưới dễ trở nên **TỰ THOẢ**: bỏ cầu chì đi thì ô vẫn xanh, nhưng nó
+       *   xanh vì *"không có gì bị cắt"* — đúng cái sẽ xảy ra nếu ai đó tắt nhầm phép cắt cho CẢ
+       *   bảng. Nên cầu chì đổi **chiều đo**, không biến mất: nó chứng minh bộ suy trần **vẫn sống**
+       *   (tập KHÔNG rỗng — 4 cột khác vẫn có trần) VÀ hai cột của câu INSERT này đã **cố ý** rời
+       *   tập. Bộ suy trần chết ⇒ vế đầu ĐỎ; ai đó hoàn nguyên 0318/0319 ⇒ vế sau ĐỎ.
+       */
+      expect(
+        Object.keys(TRAN).length,
+        "cầu chì: bộ suy trần trả rỗng ⇒ §2a đo một phép cắt không tồn tại",
+      ).toBeGreaterThanOrEqual(4);
+      expect(
+        Object.keys(TRAN),
+        "cầu chì: `ipAddress` còn trần ⇒ mig 0319 đã bị hoàn nguyên hoặc khai báo TS lệch DB",
+      ).not.toContain("ipAddress");
+      expect(
+        Object.keys(TRAN),
+        "cầu chì: `deviceName` còn trần ⇒ mig 0318 đã bị hoàn nguyên hoặc khai báo TS lệch DB",
+      ).not.toContain("deviceName");
 
       const token = `${DAU}-ua-dai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       datLaiDemLoiGhiSoPhien();
       const id = await ghiSoPhien({
         userId: uid,
         sessionToken: token,
-        ipAddress: "9".repeat(200), // cột thứ hai của cùng câu INSERT — cũng phải qua
+        ipAddress: "9".repeat(200), // cột thứ hai của cùng câu INSERT — sau 0319 phải vào NGUYÊN VĂN
         deviceName: UA_DAI,
         expiresAt: new Date(Date.now() + 3_600_000),
       });
@@ -187,15 +260,26 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-2 — ∀ cột varchar của
        * ★★★★ **VẾ NÀY ĐỔI CHIỀU VÌ MIG `0318`.** Trước: `deviceName` bị cắt còn **255**. Nay cột là
        * `text` ⇒ UA được lưu **NGUYÊN VĂN 3.770 ký tự**. Đó là chủ ý của `0318`: `deviceName` là dữ
        * liệu **chẩn đoán**, và giữ nguyên nó không tốn ô đĩa nào (Postgres lưu `varchar(n)` và
-       * `text` y hệt). Cột `ipAddress` — cùng câu `INSERT`, vẫn `varchar(45)` — **vẫn phải bị cắt**,
-       * nên ô này cũng là đối chứng *"phép cắt chưa bị tắt nhầm cho cả bảng"*.
+       * `text` y hệt).
        */
       expect(
         hang!.deviceName!.length,
         "sau mig 0318 `deviceName` là `text` ⇒ UA phải vào DB NGUYÊN VĂN, không bị cắt",
       ).toBe(DAI_THAT);
       expect(hang!.deviceName, "và đúng nguyên văn chuỗi đã gửi").toBe(UA_DAI);
-      expect(hang!.ipAddress!.length, "`ipAddress` phải được cắt về đúng trần").toBe(TRAN.ipAddress);
+      /**
+       * ★★★ **VẾ NÀY ĐỔI CHIỀU VÌ MIG `0319`.** Trước: `ipAddress` bị cắt về **45**. Nay cột là
+       * `text` ⇒ 200 ký tự phải vào DB **NGUYÊN VĂN**.
+       * ⚠ Đây không phải một ô yếu hơn ô cũ — nó đo **cùng một sự thật theo chiều ngược**: nếu ai đó
+       *   hoàn nguyên `0319` trên DB mà quên khai báo TS (hoặc ngược lại), độ dài đọc lại sẽ là 45
+       *   chứ không phải 200 và ô này ĐỎ. Và nó đóng đúng lớp lỗi `0319` được soạn ra để đóng: một
+       *   IP **bị cắt cụt** trong sổ kiểm toán là **sai mà trông đúng**.
+       */
+      expect(
+        hang!.ipAddress!.length,
+        "sau mig 0319 `ipAddress` là `text` ⇒ phải vào DB NGUYÊN VĂN, không bị cắt cụt",
+      ).toBe(200);
+      expect(hang!.ipAddress, "và đúng nguyên văn chuỗi đã gửi").toBe("9".repeat(200));
       expect(hang!.sessionToken, "KHOÁ PHIÊN phải nguyên vẹn — hàng phải khớp cookie").toBe(token);
     });
 
