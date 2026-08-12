@@ -7,6 +7,7 @@ using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests;
@@ -25,6 +26,10 @@ namespace St4i.EngineApi.Tests;
 /// real PDF (not just a plausible-looking Content-Type) came back, without asserting on any
 /// non-deterministic "generated at" timestamp the report body may also contain.
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class HistorianEndpointsPdfTests
 {
     private static readonly byte[] PdfMagicBytes = { 0x25, 0x50, 0x44, 0x46, 0x2D }; // "%PDF-"

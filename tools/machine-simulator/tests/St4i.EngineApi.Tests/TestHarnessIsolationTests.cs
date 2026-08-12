@@ -126,6 +126,18 @@ public sealed class TestHarnessIsolationTests
     // therefore cannot be killed by a mutation (measured: dropping the attribute compiles and every test
     // passes). Named so the next person starts from the set.
     //
+    // 🔴 TASK L-1 PARTIALLY ANSWERED THIS, and the part it did NOT answer is the part named above.
+    //   WHAT L-1 DID: took the census, on the PROPERTY rather than on a variable name — "state whose lifetime
+    //   is the test PROCESS rather than the test instance, perturbed by one class and observable by another
+    //   in the same process". On the ENV-VAR kind the census came back clean: every process environment
+    //   variable written by more than one class in either suite already had all its writers inside ONE
+    //   collection. The kind that was NOT clean was a different one — the process-wide SQLite connection
+    //   pool — and L-1 serialized it. See tests/.../Auth/SecurityEnvVarTests.cs for the membership rule and
+    //   for the list of state kinds the census swept.
+    //   WHAT IS STILL NOT BUILT, unchanged: anything that ENFORCES membership. The census is a script plus a
+    //   read; the sentence above about mutation not reaching a [Collection] omission is still exactly true,
+    //   and it is why a green gate says nothing at all about this.
+    //
     // 🔴 AND A WITHDRAWN CLAIM, recorded here because the block that owns an item is where its evidence
     // belongs, and because withdrawing is the finding (branch review, Minor 11 asked for the evidence to be
     // moved here; measuring it is what killed it).

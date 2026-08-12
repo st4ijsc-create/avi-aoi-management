@@ -11,6 +11,10 @@ namespace St4i.EdgeCore.Tests.Historian;
 /// <see cref="SqliteHistorianStore.AggregateForOeeAsync"/> (unmatched trailing Start, Start-before-window
 /// clipping, verdict/reading-kind filtering).
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars:
+//    BridgeSpoolTests/UnsBridgeSpoolTests (already here) call SqliteConnection.ClearAllPools(), which is
+//    process-global. See SiteTestCollection for the membership rule.
+[Collection("St4i.EdgeCore.Tests.Site")]
 public sealed class SqliteHistorianStoreQueryTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();

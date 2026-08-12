@@ -5,6 +5,7 @@ using System.Security.Principal;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using St4i.EngineApi.Alarms;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Alarms;
@@ -15,6 +16,10 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// task exists — that a credential cannot reach a public read, a returned object, a log line, or a copy of
 /// the database file.
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class NotificationConfigStoreTests
 {
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-notificationconfig-tests-").FullName;

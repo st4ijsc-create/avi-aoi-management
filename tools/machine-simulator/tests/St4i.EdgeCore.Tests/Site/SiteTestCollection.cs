@@ -30,6 +30,31 @@ namespace St4i.EdgeCore.Tests.Site;
 /// assembly), which keeps running fully in parallel with this one. Any future test class that reads or
 /// writes an environment variable another class in THIS collection also touches needs to join this same
 /// collection, or the same class of race recurs silently.</para>
+///
+/// <para>🔴 <b>Task L-1 — the membership rule is now stated by PROPERTY, and this collection's name only
+/// describes where it started.</b> The rule is not "is a Site test" and not "mutates an environment
+/// variable". It is: <b>a class belongs here if it PERTURBS state whose lifetime is the test PROCESS rather
+/// than the test instance, or if it OBSERVES state another class in this assembly perturbs.</b> Both halves
+/// are required — serializing the perturbers against each other only, while the observers keep running in
+/// parallel, leaves the race alive and makes the assembly LOOK serialized.</para>
+///
+/// <para>The second instance, added by L-1: <b>the process-wide SQLite connection pool.</b>
+/// <c>BridgeSpoolTests</c> and <c>UnsBridgeSpoolTests</c> — already here, for the env-var reason above —
+/// call <c>SqliteConnection.ClearAllPools()</c>, which by its own contract clears EVERY pool in the process,
+/// not just the caller's database. The three <c>SqliteHistorianStore*Tests</c> classes hold
+/// <c>Microsoft.Data.Sqlite</c> connections and were in no collection at all, so they ran in parallel with
+/// those calls. They join here now, because the same-collection guarantee is the only one xUnit gives:
+/// classes in ONE collection never run concurrently. (<c>DisableParallelization</c> above is NOT what is
+/// being relied on — see the paragraph above for what it does and does not buy.)</para>
+///
+/// <para><b>Two things L-1 did NOT establish, said plainly.</b> (1) It did not reproduce any failure caused
+/// by this pairing, and it did not establish the disposal path inside Microsoft.Data.Sqlite that a
+/// concurrent <c>ClearAllPools</c> would have to take to hurt a connection another class holds. What it
+/// established is the pairing itself, by census. (2) Nothing can TEST this membership: dropping a
+/// <c>[Collection]</c> attribute changes scheduling, not behaviour, so it compiles and every test still
+/// passes — mutation cannot kill it and neither can the gate. The instrument is a scripted census over the
+/// parsed sources plus a read of its output, and it is only as complete as its list of process-scope state
+/// kinds.</para>
 /// </summary>
 [CollectionDefinition("St4i.EdgeCore.Tests.Site", DisableParallelization = true)]
 public sealed class SiteTestCollection

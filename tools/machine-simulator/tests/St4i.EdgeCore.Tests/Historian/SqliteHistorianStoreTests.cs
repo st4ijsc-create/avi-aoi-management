@@ -10,6 +10,10 @@ namespace St4i.EdgeCore.Tests.Historian;
 /// the store compiles against <see cref="IHistorianStore"/>, persists to a real SQLite file, and the
 /// results/run-events paths this task's brief calls out round-trip correctly.
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars:
+//    BridgeSpoolTests/UnsBridgeSpoolTests (already here) call SqliteConnection.ClearAllPools(), which is
+//    process-global. See SiteTestCollection for the membership rule.
+[Collection("St4i.EdgeCore.Tests.Site")]
 public sealed class SqliteHistorianStoreTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();

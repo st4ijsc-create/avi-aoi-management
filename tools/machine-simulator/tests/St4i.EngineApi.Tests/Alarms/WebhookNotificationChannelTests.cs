@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using St4i.EngineApi.Alarms;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Alarms;
@@ -18,6 +19,10 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// a real <see cref="AlarmStore"/>: a fake would define away exactly the things under test — the raw bytes
 /// the signature covers, and the DPAPI round trip the URL and secrets take.</para>
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class WebhookNotificationChannelTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();

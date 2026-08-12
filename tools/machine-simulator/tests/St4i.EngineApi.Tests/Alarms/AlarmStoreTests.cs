@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using St4i.EngineApi.Alarms;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Alarms;
@@ -12,6 +13,10 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// fresh temp directory (its own <c>alarms.db</c>), deleted on dispose — same idiom as
 /// <c>AssetRegistryStoreTests</c>.
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class AlarmStoreTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();

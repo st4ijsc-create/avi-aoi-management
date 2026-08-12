@@ -1,6 +1,7 @@
 using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.Alarms;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Alarms;
@@ -19,6 +20,10 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// <see cref="IAlarmStore"/>'s own never-throw contract on purpose, to prove the EVALUATOR's guard holds
 /// even then.
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class AlarmEvaluatorTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();

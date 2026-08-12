@@ -1,4 +1,5 @@
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Fleet;
@@ -11,6 +12,10 @@ namespace St4i.EngineApi.Tests.Fleet;
 /// while NEVER overwriting an operator's own persisted row for the same kind (the insert-only contract this
 /// class's own doc comment describes).
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class ConnectorConfigVisibilitySeederTests
 {
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-connector-visibility-seeder-tests-").FullName;

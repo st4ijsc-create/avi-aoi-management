@@ -13,6 +13,10 @@ namespace St4i.EngineApi.Tests.Auth;
 /// vacuous (an append/verify pair that always returns Ok=true would trivially "pass" a tamper test that
 /// never actually mutated anything real).
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class SqliteAuditStoreTests
 {
     private static string NewTempDir() => Directory.CreateTempSubdirectory("st4i-audit-tests-").FullName;

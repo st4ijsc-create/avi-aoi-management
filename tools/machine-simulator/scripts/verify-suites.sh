@@ -2703,10 +2703,11 @@ dotnet build-server shutdown >/dev/null 2>&1 || true
 #       started elevated was counted by the old name-based matcher and skipped silently by the new
 #       one. Null now counts as a hit: this check may cry wolf on an unreadable process, and must
 #       never wave one through.
-BUILD_NODES=$(powershell -NoProfile -NonInteractive -Command \
-  "(Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe' OR Name='VBCSCompiler.exe'\" | Where-Object { \$null -eq \$_.CommandLine -or \$_.CommandLine -match 'MSBuild\.dll|VBCSCompiler|rzc\.dll' } | Measure-Object).Count" \
-  2>/dev/null | tr -d '\r' | head -1)
-note "build servers still resident entering the test phase: ${BUILD_NODES:-unknown}"
+build_node_sample() {
+  powershell -NoProfile -NonInteractive -Command \
+    "(Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe' OR Name='VBCSCompiler.exe'\" | Where-Object { \$null -eq \$_.CommandLine -or \$_.CommandLine -match 'MSBuild\.dll|VBCSCompiler|rzc\.dll' } | Measure-Object).Count" \
+    2>/dev/null | tr -d '\r' | head -1
+}
 
 # 🔴 TRAP 9 AGAIN, ELEVEN LINES BELOW ITS OWN FIX. The whole-branch review found this while
 # reviewing the EXPECT_WARNINGS commit directly above: that commit argues "a printed number is not
@@ -2718,43 +2719,107 @@ note "build servers still resident entering the test phase: ${BUILD_NODES:-unkno
 # So the rule this script keeps re-learning, now stated where both instances sit: EVERY number
 # this script computes is either asserted or deleted. A `note` is for something a human reads
 # alongside a verdict, never for something the verdict depends on.
-# 🔴 CARRIED ITEM — THIS CHECK LOOKS RACY, AND IT IS DELIBERATELY NOT FIXED HERE (K-1 re-review 2).
-# `dotnet build-server shutdown` above SIGNALS teardown; the sample below runs with NO wait, poll or
-# retry. Observed three times during K-1, ALWAYS against a rebuild this script itself had just launched,
-# and cleared every time by re-running with NO CODE CHANGE. That is the tell: a genuine leftover
+# ══ TRAP 10 — THE SAMPLE WAS TAKEN AT AN INSTANT THAT MEANT NOTHING (carried from K-1, closed by L-1).
+#
+# `dotnet build-server shutdown` above SIGNALS teardown; the sample used to run with NO wait, poll or
+# retry. It went red three times during K-1, ALWAYS against a rebuild this script itself had just
+# launched, and cleared every time on a re-run with NO CODE CHANGE. That is the tell: a genuine leftover
 # population does not clear itself on a re-run — a teardown race does.
 #
-# Two aggravators, both already in this file:
+# Two aggravators, both still in this file and both still deliberate:
 #   * the null-`CommandLine` rule counts unreadable processes (fail-loud, added on purpose above) — and a
 #     process IN TEARDOWN is exactly when CommandLine becomes unreadable, so that fix feeds this failure;
 #   * MSBUILDDISABLENODEREUSE does not govern VBCSCompiler, which is precisely what `shutdown` must race.
 #
-# 🔴 WHY K-1 DID NOT FIX IT — and the first version of this reason was WRONG, which matters because a
-# wrong reason on a deferral is how the deferral gets overturned by the next person who notices.
-# It said: "this check produces K-1's own verdict; do not modify the instrument your own PASS depends on."
-# That CANNOT be the rule — K-1 modifies this very file wholesale, including the bracket its own verdict
-# now also depends on. The reason that actually holds is narrower and is about INCENTIVE:
-#   the remedy RELAXES an assertion — "zero now" becomes "zero within N" — and the evidence for relaxing
-#   it is EQUALLY CONSISTENT with a genuine leftover population draining. Loosening a threshold, on
-#   ambiguous evidence, inside the round that threshold is judging, is the worst available position to
-#   make that call from. It is not that the author cannot touch the instrument; it is that this
-#   particular change cannot be judged from here.
-# Adding a check, tightening one, or fixing one that is silently vacuous does not carry that hazard —
-# which is why the rest of this branch's edits to this file were fine and this one is not.
+# 🔴 WHY THIS WAS DEFERRED, AND WHAT PAYS THE DEBT. K-1 deferred it for a reason that was about INCENTIVE
+# rather than authorship: *the natural remedy RELAXES an assertion — "zero now" becomes "zero within N" —
+# on evidence EQUALLY CONSISTENT with a genuine leftover population draining, inside the round that
+# assertion is judging.* That reason is correct and it is the specification this fix had to satisfy.
 #
-# AND THE DIRECTION OF TRAVEL IS RIGHT ANYWAY: this branch TIGHTENED node-reuse posture (exported at the
-# top, so the five `dotnet test` invocations get it too) rather than loosening the check. That may reduce
-# the resident population on its own and make the race stop firing without anyone relaxing anything.
-# REMEDY ALREADY IN THIS SCRIPT'S VOCABULARY: a bounded poll shaped like the CPU-flat detector's
-# consecutive-samples rule — which additionally DISTINGUISHES a race from a genuine miss, because a real
-# leftover population stays put across samples while a teardown drains. Blocking nothing; touching
-# everything, since every gate run passes through it.
+# SO THIS IS NOT "ZERO WITHIN N", AND THE DIFFERENCE IS THE WHOLE POINT:
+#   * The ACCEPTED SET IS UNCHANGED. The verdict is still `settled == 0` — exactly one value passes, the
+#     same one as before. No count above zero is tolerated at any deadline, so nothing was loosened.
+#   * WHAT MOVED IS WHICH INSTANT IS MEASURED, and only that: the sample is now taken at the first moment
+#     the population has STOPPED MOVING, instead of at an arbitrary point inside an asynchronous teardown.
+#   * A POPULATION THAT DOES NOT DRAIN IS STILL RED, and it is red SOONER in wall-clock terms than a
+#     draining one: standing still IS stability, so it settles at its non-zero value on the third sample
+#     and fails there. Demonstrated by measurement, not by argument — see the task L-1 report.
+#   * NEVER SETTLING IS ITS OWN RED. A count that keeps moving for the whole bound is not waved through as
+#     "still draining"; it fails with its own message. "Sample until stable, and FAIL if it never
+#     stabilises" is the shape — never "zero eventually".
+# The old form's failure text already claimed the property this form actually measures ("the suites would
+# run under a population this script created"): the suites start AFTER this loop, so a settled zero is a
+# statement about the window the suites run in, while a single sample was a statement about one instant
+# that nothing depended on.
+#
+# THE IDIOM IS BORROWED, NOT INVENTED: the CPU-flat hang detector below already decides "has this stopped
+# moving?" by consecutive samples carried across iterations, and for the same reason — one observation of
+# a quantity in motion cannot distinguish a transient from a state. Two rules are borrowed with it:
+#   * an UNREADABLE sample means "cannot tell" and can NEVER count towards stability (empty must never
+#     read as flat), so a machine with no PowerShell fails this gate rather than skipping it; and
+#   * the tolerance is deliberately lopsided — the bound is generous because waiting costs seconds while a
+#     false red costs a whole gate run.
+#
+# 🔴 THE SYMMETRIC SITE, NAMED RATHER THAN LEFT SILENT (§8.1(h4)): `dotnet build-server shutdown` is called
+# TWICE in this script — once at [1/3] before the rebuild, once above. The first one is DELIBERATELY NOT
+# POLLED. No verdict is read from it: nothing samples the population between it and the build, so there is
+# no instant there that can be measured wrongly. What that shutdown is for — the build not running under a
+# previous run's leftovers — is asserted by the build's own gates instead (0 errors, and the MSB3061 check
+# that catches exactly the "a live process held our output files" outcome). Adding a poll there would buy
+# no assertion and would cost every run the wait.
+#
+# 🔴 TRAP 9 STILL APPLIES: the settled number is ASSERTED, and the series below it is printed for a human
+# to read alongside the verdict. EVERY number this script computes is either asserted or deleted.
+BUILD_NODE_STABLE_SAMPLES=3       # equal consecutive readings before the population counts as settled
+BUILD_NODE_SAMPLE_INTERVAL=2      # seconds between readings
+BUILD_NODE_MAX_SAMPLES=30         # hard bound: ~60s of polling, then FAIL for never settling
+BUILD_NODES=""
+BUILD_NODE_SERIES=""
+_bn_stable=0
+_bn_prev=""
+_bn_settled=0
+for ((_bn_i = 1; _bn_i <= BUILD_NODE_MAX_SAMPLES; _bn_i++)); do
+  _bn_now=$(build_node_sample)
+  BUILD_NODE_SERIES="${BUILD_NODE_SERIES}${BUILD_NODE_SERIES:+ }${_bn_now:-?}"
+  if [[ -z "${_bn_now:-}" ]]; then
+    # "Cannot tell" is not "unchanged". Reset, exactly as the CPU detector refuses to call an empty
+    # sample flat -- otherwise a PowerShell that stopped answering would settle this check at "".
+    _bn_stable=0
+  elif [[ "$_bn_now" == "$_bn_prev" ]]; then
+    _bn_stable=$((_bn_stable + 1))
+  else
+    _bn_stable=1
+  fi
+  _bn_prev="${_bn_now:-}"
+  if [[ -n "${_bn_now:-}" && $_bn_stable -ge $BUILD_NODE_STABLE_SAMPLES ]]; then
+    BUILD_NODES="$_bn_now"
+    _bn_settled=1
+    break
+  fi
+  sleep "$BUILD_NODE_SAMPLE_INTERVAL"
+done
+note "build servers entering the test phase: ${BUILD_NODES:-unsettled} (samples: ${BUILD_NODE_SERIES})"
+
+if [[ $_bn_settled -eq 0 ]]; then
+  echo "FAIL: the build-server population NEVER STOPPED MOVING across ${BUILD_NODE_MAX_SAMPLES} readings"
+  echo "  ${BUILD_NODE_SAMPLE_INTERVAL}s apart, so this run has no instant at which it can honestly say what"
+  echo "  the suites are about to run underneath. Readings: ${BUILD_NODE_SERIES}"
+  echo "  A '?' is an UNREADABLE sample (PowerShell absent or refusing), which never counts as settled --"
+  echo "  a check that cannot measure must fail, not skip."
+  echo "  Something is spawning or reaping build servers continuously: another gate run (this script is NOT"
+  echo "  re-entrant -- see trap 1 at the build gate), an IDE build, or a watch task. Stop it and re-run."
+  exit 1
+fi
+
 EXPECT_BUILD_NODES=0
 if [[ "${BUILD_NODES:-}" != "$EXPECT_BUILD_NODES" ]]; then
   echo "FAIL: ${BUILD_NODES:-unknown} build-server process(es) are resident entering the test phase,"
-  echo "  expected ${EXPECT_BUILD_NODES}. The suites would run under a population this script created"
-  echo "  (measured once at 14 processes / 1955 MB), which is machine-wide memory pressure in the same"
-  echo "  window as the memory-sensitive part of this run. Trap 8 in the build gate above is the story."
+  echo "  expected ${EXPECT_BUILD_NODES}. Readings: ${BUILD_NODE_SERIES}"
+  echo "  This is a SETTLED count, not a snapshot taken mid-teardown: it stopped moving and it is not zero,"
+  echo "  so 'try again, it was probably draining' is exactly what this reading rules out."
+  echo "  The suites would run under a population this script created (measured once at 14 processes /"
+  echo "  1955 MB), which is machine-wide memory pressure in the same window as the memory-sensitive part"
+  echo "  of this run. Trap 8 in the build gate above is the story."
   exit 1
 fi
 echo "[2/3] Running ${#SUITES[@]} suites sequentially..."
