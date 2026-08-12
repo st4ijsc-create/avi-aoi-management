@@ -105,10 +105,45 @@ function moiDuongNhap(that: string): string[] {
   return ra;
 }
 
-/** Phân giải một đường nhập **tương đối** thành file thật trên đĩa (bài học R1b: nối đường, không so chuỗi). */
+/**
+ * ★★ Review TOÀN NHÁNH Pha 9 · **M-6 — ALIAS `tsconfig.paths` ĐƯỢC ĐI THEO, KHÔNG CHỈ ĐƯỜNG TƯƠNG ĐỐI.**
+ *
+ * Bản trước chỉ nhận `spec.startsWith(".")` ⇒ mọi lượt `import … from "@shared/x"` rơi khỏi bao
+ * đóng. **Đo được**: bao đóng **1041** file theo đường tương đối; đi theo alias ⇒ **1051**; **10**
+ * file bị bỏ sót, **toàn bộ** là `shared/**`.
+ * ⚠ Cầu chì `VOI_TOI.size > 500` **KHÔNG THỂ** phát hiện mất mát ấy — 1041 ≫ 500. Đây đúng lớp
+ *   *"cầu chì đặt ở ngưỡng không bao giờ chạm tới"*: nó canh *"bộ suy còn sống"*, không canh
+ *   *"bộ suy còn ĐẦY ĐỦ"*.
+ * ⚠ **VÔ HẠI HÔM NAY** (0/10 file ấy nhập `typescript` — chính phép đo ấy đã hạ nghi ngờ R-1 từ
+ *   Important xuống Minor), nhưng một module quét AST đặt ở `shared/` sẽ **vô hình**.
+ * ⚠ Bảng alias đọc **từ chính `tsconfig.json`**, không chép lại vào đây: giữ một bản sao thứ hai
+ *   thì chỉ chứng minh bản sao ấy đúng (cùng lý lẽ với `duongCuaCong()` của `vramPha5Gate`).
+ */
+const ALIAS: ReadonlyArray<{ tienTo: string; goc: string }> = (() => {
+  const raw = readFileSync(join(GOC, "tsconfig.json"), "utf8");
+  const cfg = ts.parseConfigFileTextToJson("tsconfig.json", raw).config as {
+    compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> };
+  };
+  const paths = cfg?.compilerOptions?.paths ?? {};
+  const base = resolve(GOC, cfg?.compilerOptions?.baseUrl ?? ".");
+  const ra: { tienTo: string; goc: string }[] = [];
+  for (const [mau, dich] of Object.entries(paths)) {
+    if (!mau.endsWith("/*") || dich[0] === undefined || !dich[0].endsWith("/*")) continue;
+    ra.push({ tienTo: mau.slice(0, -1), goc: resolve(base, dich[0].slice(0, -1)) });
+  }
+  return ra;
+})();
+
+/** Phân giải một đường nhập thành file thật trên đĩa (bài học R1b: nối đường, không so chuỗi). */
 function phanGiai(tu: string, spec: string): string | null {
-  if (!spec.startsWith(".")) return null;
-  const p = resolve(dirname(tu), spec);
+  let p: string;
+  if (spec.startsWith(".")) {
+    p = resolve(dirname(tu), spec);
+  } else {
+    const a = ALIAS.find((x) => spec.startsWith(x.tienTo));
+    if (a === undefined) return null;
+    p = resolve(a.goc, spec.slice(a.tienTo.length));
+  }
   for (const c of [p, `${p}.ts`, `${p}.tsx`, join(p, "index.ts")]) {
     if (existsSync(c) && statSync(c).isFile()) return c;
   }
@@ -177,6 +212,19 @@ describe("★★★ Pha 9 B7a §0 — CẦU CHÌ: lượng từ này KHÔNG đư
      *   "cập nhật con số" vô nghĩa.
      */
     expect(VOI_TOI.size, "bao đóng với-tới co lại bất thường ⇒ `phanGiai` đã mù, mọi ô dưới vô nghĩa").toBeGreaterThan(500);
+
+    /**
+     * ★★ Review TOÀN NHÁNH Pha 9 · **M-6 — CẦU CHÌ THỨ HAI: NHÁNH ALIAS PHẢI CÒN SỐNG.**
+     * ⚠⚠ Ngưỡng 500 ở trên **không thể** phát hiện lượt mù alias (đo được: 1041 khi mù, 1051 khi
+     *    sáng — cả hai đều ≫ 500). Đây đúng lớp *"cầu chì đặt ở ngưỡng không bao giờ chạm tới"*.
+     *    Ô này hỏi thẳng: bao đóng có chứa **ít nhất một** file `shared/**` không — tập **chỉ với
+     *    tới được qua alias** (đo được: **10** file, toàn bộ `shared/**`).
+     */
+    expect(ALIAS.length, "không đọc được alias nào từ `tsconfig.json` — nhánh alias của `phanGiai` là mã chết").toBeGreaterThan(0);
+    expect(
+      [...VOI_TOI].filter((f) => duong(f).startsWith("shared/")).length,
+      "bao đóng KHÔNG chứa file `shared/**` nào ⇒ `phanGiai` đã mù với alias `@shared/*` trở lại",
+    ).toBeGreaterThan(0);
   });
 
   it("★★★ phải TÌM RA các module quét nhập `typescript` — nếu 0 thì bộ nhận diện đã chết", () => {

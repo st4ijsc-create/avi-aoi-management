@@ -209,7 +209,13 @@ const MIEN_TRU: Readonly<Record<string, { lyDo: string; lech: readonly string[] 
 };
 
 /**
- * ★★★ GHIM SỐ. Một cặp bất đồng **thứ mười tám** phải là một quyết định NÓI RA.
+ * ★★★ GHIM SỐ. Một cặp bất đồng **thứ mười bảy** phải là một quyết định NÓI RA.
+ *
+ * ⚠ Review TOÀN NHÁNH Pha 9 · **M-1** — hai con số trong file này từng **lệch nhau và lệch mã**:
+ *   docstring khai *"thứ mười tám"*, tên ca khai *"thứ mười sáu"*, trong khi `MIEN_TRU` có **16**
+ *   khoá (đếm bằng AST) ⇒ cặp mới là thứ **17**. Cả hai là tàn dư của lượt `15 → 17 → 16`. Một lời
+ *   khai lệch số là **đúng thứ mà `SO_MIEN_TRU` được dựng ra để chống** — nó chỉ chống được ở mã,
+ *   không chống được ở văn xuôi, nên văn xuôi phải được sửa bằng tay và ở **đúng một cách đọc**.
  *
  * ⚠⚠⚠ **PHA 9 A4 — LẦN THỨ HAI LIÊN TIẾP PHÉP ĐO BÁC BỎ DỰ ĐOÁN VỀ CHÍNH CON SỐ NÀY.**
  * Ở Pha 8, bản vá được giao với kỳ vọng 15 → 14 và phép đo trả lời **15** (cặp ở lại với lý do
@@ -286,7 +292,7 @@ describe("★★★★ Pha 5/8 Task 5 §2 — ∀ cặp song song: KHỚP, hoặ
     ).toBe("");
   });
 
-  it("★★★ SỐ cặp bất đồng được GHIM — cặp thứ mười sáu phải là một quyết định NÓI RA", () => {
+  it("★★★ SỐ cặp bất đồng được GHIM — cặp thứ mười bảy phải là một quyết định NÓI RA", () => {
     const bd = CAP.filter((c) => c.lech.length > 0);
     expect(
       bd.map((c) => `  · ${c.khoa}`).join("\n"),

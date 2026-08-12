@@ -529,14 +529,33 @@ export async function quayVongMaDuPhong(userId: number, soLuong = SO_MA_DU_PHONG
   const maTho: string[] = [];
   for (let i = 0; i < soLuong; i++) maTho.push(sinhMaDuPhong());
 
-  await xoaMoiMaDuPhong(userId);
-  for (const ma of maTho) {
-    await db.insert(backupCodes).values({
-      userId,
-      code: await bamMaDuPhong(ma),
-      isUsed: false,
-    });
-  }
+  /**
+   * ★★ Review TOÀN NHÁNH Pha 9 · **M-5 — MỘT GIAO DỊCH: XOÁ VÀ CẤP LÀ **MỘT** LƯỢT.**
+   *
+   * Bản trước: `xoaMoiMaDuPhong(userId)` **rồi** 10 lượt `insert` **rời nhau**, không giao dịch.
+   * Một lượt hỏng giữa chừng (nấc kết nối · tiến trình chết · `bcrypt` ném) để người dùng ở trạng
+   * thái **0–9 mã**, còn bộ cũ thì **đã mất**. A4 làm hàm này thành **NGƯỜI CẤP DUY NHẤT** với
+   * **ba** người gọi, nên bề mặt của trạng thái ấy rộng gấp ba.
+   * ⚠ Cùng khuôn `disable2FA` / `createLocalUser` / `updateUserPassword` đã dùng: *"hai bảng, một
+   *   giao dịch"* — và `xoaMoiMaDuPhong` **đã** nhận `tx?`, nó chỉ chưa bao giờ được truyền.
+   * ⚠⚠ **BĂM ĐỨNG NGAY TẠI ĐIỂM GHI, KHÔNG TÁCH RA MỘT BIẾN.** Bản đầu của lượt vá này băm trước
+   *    rồi mới vào giao dịch (để giao dịch ngắn) — và `backupCodeWriteScan.test.ts` **ĐỎ**:
+   *    lượng từ ∀ ở đó đòi *"khoá `code` của mọi lượt ghi phải là một lượt gọi `bamMaDuPhong()`
+   *    ngay tại chỗ"*, chính xác để không ai đưa được một chuỗi thô vào cột ấy qua một biến trung
+   *    gian. Màu đỏ ấy **nói đúng**, nên mã được nắn cho vừa lưới chứ **không** ngược lại. Giá phải
+   *    trả được nói ra: giao dịch mở trong ~10 lượt `bcrypt` (~1 s). Chấp nhận được vì đường này chỉ
+   *    chạy lúc **bật/quay vòng** 2FA, không nằm trên đường nóng.
+   */
+  await db.transaction(async (tx) => {
+    await xoaMoiMaDuPhong(userId, tx);
+    for (const ma of maTho) {
+      await tx.insert(backupCodes).values({
+        userId,
+        code: await bamMaDuPhong(ma),
+        isUsed: false,
+      });
+    }
+  });
   return maTho;
 }
 

@@ -571,6 +571,17 @@ class SDKServer {
     // the lastSignedIn touch completed successfully within the last
     // AUTH_CACHE_TTL_S seconds, so we skip those 2 DB round-trips. The
     // revocation check is NO LONGER among them — see the block above.
+    //
+    // ★★ Review TOÀN NHÁNH Pha 9 · **M-3 — CÂU CẢNH BÁO CŨ ĐƯỢC TRẢ LẠI, THU HẸP ĐÚNG PHẦN ĐÃ VÁ.**
+    // A2 viết lại khối này và **bỏ** câu cũ *"Staleness window (role change / ban / revocation …)
+    // is bounded by the TTL"*, trong khi A2 chỉ vá nhánh **revocation**. Một bình luận nói **ÍT
+    // HƠN** sự thật cũng là tài liệu sai — và nhánh `ban` thì còn tệ hơn thế (xem C-1).
+    // ⇒ Cửa sổ cũ (≤ AUTH_CACHE_TTL_S) vẫn còn cho:
+    //     · **đổi VAI** — `updateUserRole`/`updateUser` dọn cache nên đường sản phẩm ăn ngay; một
+    //       lượt đổi bằng **SQL thẳng** thì chờ hết TTL;
+    //     · **tắt TÀI KHOẢN** — như trên. Đường sản phẩm nay còn **thu hồi phiên** (C-1) nên nó ăn
+    //       ngay hai lần; cửa sổ chỉ còn cho lượt lật cờ ngoài đường sản phẩm.
+    //   **Không** còn cho: thu hồi PHIÊN (A2 dời phép tra sổ lên trên khối này).
     const cachedUser = await getCachedAuthUser(sessionCookie!);
 
     /**
