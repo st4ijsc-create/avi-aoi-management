@@ -27,11 +27,16 @@
          second in the same clause (re-review Minor):
            * ASSEMBLY boundary: UNTOUCHED. The guard's only `using`s are System.* and Xunit; it adds no
              ProjectReference and cannot see St4i.EdgeCore.
-           * NEW DEPENDENCY, and it is new: it derives the directory by READING the product source, so
-             this project now requires being run from inside the source tree. Off-tree execution yields
-             SetupFailure and a RED suite. Fail-closed and deliberate — the alternative is a restated path
-             literal that goes silently vacuous the day the store moves — but it is a constraint this
-             project did not have before. -->
+           * TWO NEW DEPENDENCIES, and the first draft of this bullet named only one (branch review,
+             Important 3):
+               (1) THE SOURCE TREE — it derives the directory by READING the product source, so off-tree
+                   execution yields SetupFailure and a RED suite.
+               (2) READ ACCESS TO A HARDENED MACHINE-WIDE DIRECTORY — it enumerates
+                   %ProgramData%\ST4I\sim\creds, which SecurityDirAcl.Apply restricts to
+                   SYSTEM/Administrators/owner on every CredentialStore.Save.
+             Both fail closed and both are deliberate; the alternatives are a path literal that goes
+             silently vacuous when the store moves, and treating "I could not look" as "nothing was
+             there". Deliberate is not free, which is why both are written down. -->
     <Compile Include="..\Shared\RealCredentialStoreLeakGuard.cs" Link="RealCredentialStoreLeakGuard.cs" />
   </ItemGroup>
   <ItemGroup>

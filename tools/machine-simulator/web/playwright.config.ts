@@ -203,11 +203,18 @@ export default defineConfig({
       // 🔴 Test-hygiene batch — `creds` is now isolated too, and the note that used to stand here was
       // WRONG on its load-bearing claim. It read: "this suite never calls anything that writes there."
       // It does. `04-onboarding.spec.ts` mints a machine code per run — `SIM-E2E-${Date.now()}`,
-      // `SIM-E2E-IOT-*`, `SIM-E2E-RESET-*`, `SIM-PASTE-*`, `SIM-E2E-FLAGOFF-*` — and every one of those
-      // flows ends in `OnboardingService`, which calls `CredentialStore.Save`. A census of the real
+      // `SIM-E2E-IOT-*`, `SIM-E2E-RESET-*`, `SIM-PASTE-*`, `SIM-E2E-FLAGOFF-*` — and those flows end in
+      // `OnboardingService`, which calls `CredentialStore.Save`. A census of the real
       // `%ProgramData%\ST4I\sim\creds` found 2,999 `.bin` files, of which 613 carry exactly those five
       // prefixes: one NEW, never-overwritten DPAPI-sealed credential per e2e run, growing without
       // bound, in the directory `packaging/remove-data.ps1` exists to purge on decommissioning.
+      // 🔴 THE SPEC MINTS A SIXTH, `SIM-LIVE-${Date.now()}` (line 294), AND IT IS THE ONE EXCEPTION TO
+      // THE SENTENCE ABOVE — stated here rather than achieved by leaving it out (branch review,
+      // Important 4). That test `page.route`s `**/v1/onboarding/claim` and fulfils it IN THE BROWSER, so
+      // the request never reaches the engine, `CredentialStore.Save` never runs, and no `SIM-LIVE-*.bin`
+      // was ever written — which is why the census found five prefixes and not six. A universal whose
+      // counterexample is quietly dropped from its own evidence list reads as stronger than it is, and
+      // this file is where that exact move was already paid for once.
       // 🔴 This said "633 ... those four prefixes" until task K-1 re-measured it. Both were wrong, and
       // this is the site where it mattered most: 613 is the number that FALSIFIED the claim this block
       // replaced ("this suite never calls anything that writes there"), so it is load-bearing here in a

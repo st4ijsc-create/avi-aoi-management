@@ -2232,6 +2232,13 @@ note() { printf '  %s\n' "$*"; }
 # two instants is structurally blind to a file that appears and vanishes inside the bracket. There is no
 # arrangement of two snapshots that fixes that; only a watcher would, and this is not one.
 #
+# 🔴 AND THE OTHER THING NEITHER INSTRUMENT SEES: an IN-PLACE OVERWRITE of a name already present. Both
+# sides compare SETS OF NAMES, not content and not timestamps, so re-sealing a credential that was
+# already there changes nothing either one looks at. The leak shapes this repo has paid for all mint a
+# fresh machine code per run and therefore land as new names — but an overwrite of one of the eleven kept
+# blobs would destroy evidence silently, and nothing here would say a word. Named because this comment
+# previously listed only the appear-and-vanish hole and read as if that were the whole of it.
+#
 # 🔴 AND THE DOMAIN IS WIDER THAN THE CRITERION'S. This measures THE MACHINE over the window, not "the
 # test processes". Anything else running here that writes a credential — the WPF shell, the edge service,
 # an operator onboarding a machine in another window — reddens this gate and is not a test defect. That is
@@ -2287,13 +2294,40 @@ done < <(printf '%s' "$_creds_expr" | grep -oE '"[^"]*"' | tr -d '"')
 # root that is absent is legitimate (a machine that never onboarded); a root that is present and
 # unreadable is not.
 creds_snapshot() {
-  [[ -d "$REAL_CREDS_ROOT" ]] || return 0
-  ( cd "$REAL_CREDS_ROOT" && find . -mindepth 1 | sed 's|^\./||' | LC_ALL=C sort ) || {
-    echo "FAIL: the REAL credential directory exists but could not be listed: $REAL_CREDS_ROOT" >&2
-    echo "  The bracket cannot measure what it cannot read, and an empty reading here would be a" >&2
-    echo "  SILENT PASS. Fix the ACL/lock; do not disarm the check." >&2
+  # 🔴 ABSENT AND UNREADABLE ARE DIFFERENT ANSWERS, AND `[[ -d ]]` GIVES THE SAME ONE TO BOTH
+  # (branch review, Important 2). `[[ -d ]]` is false on EACCES just as it is on "no such directory", so
+  # the earlier `|| return 0` turned a permission denial into an EMPTY SNAPSHOT — a silent green, in the
+  # one function whose whole job is to refuse to pass silently. The New-7 work covered only the
+  # traverse-but-cannot-list slice; this is the cannot-traverse slice, and it is reachable on any
+  # non-elevated identity given the ACL SecurityDirAcl.Apply puts on this directory.
+  if [[ -d "$REAL_CREDS_ROOT" ]]; then
+    ( cd "$REAL_CREDS_ROOT" && find . -mindepth 1 | sed 's|^\./||' | LC_ALL=C sort ) || {
+      echo "FAIL: the REAL credential directory exists but could not be LISTED: $REAL_CREDS_ROOT" >&2
+      echo "  The bracket cannot measure what it cannot read, and an empty reading would be a SILENT" >&2
+      echo "  PASS. Fix the ACL or the lock; do not disarm the check." >&2
+      return 1
+    }
+    return 0
+  fi
+
+  # Not a readable directory. Decide WHICH by asking the parent, whose answer distinguishes the two.
+  local _parent _base
+  _parent=$(dirname "$REAL_CREDS_ROOT"); _base=$(basename "$REAL_CREDS_ROOT")
+  if [[ -e "$REAL_CREDS_ROOT" ]] || { ls -1a "$_parent" 2>/dev/null | LC_ALL=C grep -qxF "$_base"; }; then
+    echo "FAIL: the REAL credential root EXISTS but cannot be entered: $REAL_CREDS_ROOT" >&2
+    echo "  The parent lists it, so this is a PERMISSION or lock problem, not an absent directory." >&2
+    echo "  Treating it as absent would be a silent green. Fix access; do not disarm the check." >&2
     return 1
-  }
+  fi
+  if ! ls -1a "$_parent" >/dev/null 2>&1; then
+    echo "FAIL: cannot read the parent of the REAL credential root either: $_parent" >&2
+    echo "  Nothing can be concluded about the creds directory from here, and 'nothing concluded'" >&2
+    echo "  must not read as 'nothing changed'." >&2
+    return 1
+  fi
+  # Genuinely absent — a machine that has never onboarded. Legitimate, and an empty snapshot is correct:
+  # any entry appearing later still reads as an addition.
+  return 0
 }
 
 CREDS_BEFORE="$LOGDIR/creds-before.txt"
@@ -2334,8 +2368,14 @@ creds_bracket_eval() {
     CREDS_REMOVED=""
     return 1
   fi
-  CREDS_ADDED=$(comm -13 "$CREDS_BEFORE" "$CREDS_AFTER" || true)
-  CREDS_REMOVED=$(comm -23 "$CREDS_BEFORE" "$CREDS_AFTER" || true)
+  # 🔴 LC_ALL=C ON `comm` TOO (branch review, Minor). Both input files are sorted under LC_ALL=C, but
+  # `comm` was left to the ambient locale — and `comm` re-checks collation order as it merges. A locale
+  # whose collation differs from C makes it consider its own correctly-sorted input unsorted, at which
+  # point its output is undefined rather than wrong-in-a-visible-way. Pin the comparison to the same
+  # collation the sort used; a set difference whose two halves disagree about order is not a set
+  # difference.
+  CREDS_ADDED=$(LC_ALL=C comm -13 "$CREDS_BEFORE" "$CREDS_AFTER" || true)
+  CREDS_REMOVED=$(LC_ALL=C comm -23 "$CREDS_BEFORE" "$CREDS_AFTER" || true)
   [[ -z "$CREDS_ADDED" && -z "$CREDS_REMOVED" ]] && return 0 || return 1
 }
 
@@ -2365,15 +2405,26 @@ creds_bracket_text() {
   echo "  SCOPE: this measures THE MACHINE over the whole gate window, not just the test processes. If the"
   echo "     WPF shell, the edge service, or an operator onboarding a machine was running here, that is a"
   echo "     false positive of this gate and not a test defect — check before you go hunting a test."
-  echo "  🔴 WHICH ONE IT IS, WITHOUT GUESSING — the discriminator is above you in this same output:"
+  echo "  WHAT THE SUITE RESULTS ABOVE DO AND DO NOT TELL YOU:"
   echo "     * bracket RED + one or more suites RED on"
-  echo "       RealCredentialStoreLeakGuardTests  ->  A TEST WROTE IT. The suite that went red names the"
-  echo "       process; go there."
-  echo "     * bracket RED + all five suites GREEN  ->  SOMETHING OUTSIDE THE SUITES WROTE IT. Every test"
-  echo "       process measured its own window and saw nothing, so the writer was another process on this"
-  echo "       machine. Close the WPF shell / edge service and re-run before changing any test."
-  echo "     That pair is why both instruments exist: this one is complete but anonymous, the per-suite"
-  echo "     guard is partial but attributes. Neither replaces the other."
+  echo "       RealCredentialStoreLeakGuardTests  ->  DECISIVE: A TEST WROTE IT. A guard went red, so that"
+  echo "       process saw the entry appear inside its own window. It names the process; go there."
+  echo "     * bracket RED + all five suites GREEN  ->  🔴 NOT DECISIVE. DO NOT read it as \"external\"."
+  echo "       TWO causes produce this exact signature and this output cannot separate them:"
+  echo "         (a) another process on this machine wrote it — WPF shell, edge service, or an operator"
+  echo "             onboarding a machine in another window; or"
+  echo "         (b) A TEST wrote it AFTER its own guard [Fact] had already run. xunit orders nothing, so"
+  echo "             a writer scheduled after the guard is invisible to it and the suite stays GREEN."
+  echo "       (b) is not hypothetical — it is this repository's MEASURED mutation M1: a test that sealed a"
+  echo "       real DPAPI blob into this directory while its suite reported 1336/1336 green. Recorded in"
+  echo "       tests/Shared/RealCredentialStoreLeakGuard.cs under \"A window, not the whole process\"."
+  echo "       🔴 A GREEN RE-RUN IS NOT CONFIRMATION OF (a): case (b) is scheduling-dependent, so it comes"
+  echo "       back green on its own about as often as not. Re-running decides nothing here."
+  echo "       WHAT DOES SEPARATE THEM: the entry's WRITE TIME against this run's suite phase — inside it"
+  echo "       means a test wrote it. The names above are a hint and NOTHING MORE: a census by machine-code"
+  echo "       prefix is the very instrument this guard exists because it returns green over real leaks."
+  echo "     Both instruments are still needed — this one is complete but anonymous, the per-suite guard"
+  echo "     attributes but only over its own window — and NEITHER of them closes (b)."
 }
 
 # 🔴 Unconditional, via trap: the warnings gate and the build-node gate below both `exit 1` before the
@@ -2640,8 +2691,22 @@ note "build servers still resident entering the test phase: ${BUILD_NODES:-unkno
 #     process IN TEARDOWN is exactly when CommandLine becomes unreadable, so that fix feeds this failure;
 #   * MSBUILDDISABLENODEREUSE does not govern VBCSCompiler, which is precisely what `shutdown` must race.
 #
-# WHY K-1 DID NOT FIX IT: this check produces K-1's OWN verdict. A round that modifies the instrument its
-# own PASS depends on is the shape this project keeps paying for. It gets its own task and its own review.
+# 🔴 WHY K-1 DID NOT FIX IT — and the first version of this reason was WRONG, which matters because a
+# wrong reason on a deferral is how the deferral gets overturned by the next person who notices.
+# It said: "this check produces K-1's own verdict; do not modify the instrument your own PASS depends on."
+# That CANNOT be the rule — K-1 modifies this very file wholesale, including the bracket its own verdict
+# now also depends on. The reason that actually holds is narrower and is about INCENTIVE:
+#   the remedy RELAXES an assertion — "zero now" becomes "zero within N" — and the evidence for relaxing
+#   it is EQUALLY CONSISTENT with a genuine leftover population draining. Loosening a threshold, on
+#   ambiguous evidence, inside the round that threshold is judging, is the worst available position to
+#   make that call from. It is not that the author cannot touch the instrument; it is that this
+#   particular change cannot be judged from here.
+# Adding a check, tightening one, or fixing one that is silently vacuous does not carry that hazard —
+# which is why the rest of this branch's edits to this file were fine and this one is not.
+#
+# AND THE DIRECTION OF TRAVEL IS RIGHT ANYWAY: this branch TIGHTENED node-reuse posture (exported at the
+# top, so the five `dotnet test` invocations get it too) rather than loosening the check. That may reduce
+# the resident population on its own and make the race stop firing without anyone relaxing anything.
 # REMEDY ALREADY IN THIS SCRIPT'S VOCABULARY: a bounded poll shaped like the CPU-flat detector's
 # consecutive-samples rule — which additionally DISTINGUISHES a race from a genuine miss, because a real
 # leftover population stays put across samples while a teardown drains. Blocking nothing; touching

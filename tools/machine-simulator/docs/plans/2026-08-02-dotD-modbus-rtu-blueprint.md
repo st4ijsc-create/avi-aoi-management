@@ -604,3 +604,39 @@ cũng đã được ghi ngay trên hai thành viên public `ModbusRtuDriver.Writ
 Lý lẽ đã được review D-5 kiểm chứng bằng cấu trúc: lượt giữ nằm *bên trong* khoá trọng tài, còn backoff
 đổi một `Task.Delay` nằm *ngoài* nó — nên trường hợp xấu nhất mà một lệnh ghi phải xếp hàng sau là **y hệt
 nhau** dù có backoff hay không. Cái nó cải thiện là thông lượng ĐỌC ở trạng thái dừng (D-4 đo được 67.5×).
+
+## 11. 🔴 Hạng mục mang theo, ghi ở đây vì nó chạm MỌI đợt — cổng đếm build node có vẻ ĐUA (K-1)
+
+Ghi ở đây, không phải chỉ trong `scripts/verify-suites.sh`, vì **một khiếm khuyết ở cấp CỔNG mà chỉ người
+đọc đúng một file gặp được thì không phải một bản ghi nguồn** — cùng lý do §10 tồn tại. Mọi đợt đều đi qua
+cổng này; K-1 chỉ tình cờ là đợt đầu tiên bị nó bắn ba lần.
+
+**Đo được, K-1:** `dotnet build-server shutdown` (`verify-suites.sh`, ngay trước phần test) **PHÁT tín hiệu**
+tháo dỡ, rồi phép đếm chạy ngay sau đó **không chờ, không poll, không thử lại**. Nó bắn **ba lần**, **luôn
+luôn** với đúng cái population mà chính script vừa tạo ra bằng lần rebuild của nó, và **mỗi lần đều sạch khi
+chạy lại mà KHÔNG đổi một dòng mã nào**. Đó chính là dấu hiệu: **một population sót lại thật thì không tự
+biến mất khi chạy lại; một cuộc đua lúc tháo dỡ thì có.**
+
+Hai thứ làm nó nặng thêm, và cả hai đã nằm sẵn trong file:
+- luật đếm cả tiến trình có `CommandLine` **null** (thêm có chủ đích, để không bao giờ bỏ sót) — mà **một
+  tiến trình ĐANG tháo dỡ chính là lúc `CommandLine` trở nên không đọc được**, nên một bản sửa trước đó
+  **nuôi** đúng lần bắn này;
+- `MSBUILDDISABLENODEREUSE` **không** chi phối `VBCSCompiler`, tức đúng thứ mà `shutdown` phải chạy đua.
+
+**🔴 Vì sao K-1 KHÔNG sửa — và lý do đầu tiên tôi viết ra là SAI, ghi lại vì một lý do sai gắn vào một quyết
+định hoãn chính là cách quyết định ấy bị lật.** Câu cũ: *"cổng này sinh ra phán quyết của chính K-1; đừng
+sửa dụng cụ mà phán quyết của mình phụ thuộc vào."* Câu ấy **không thể là luật**: K-1 sửa chính file đó rất
+nhiều, kể cả cái bracket mà phán quyết của nó giờ cũng phụ thuộc vào. Lý do **đúng** hẹp hơn và nói về
+**động cơ**: bản sửa **NỚI một phép khẳng định** — "0 ngay bây giờ" thành "0 trong vòng N" — trên bằng
+chứng **cũng khớp y hệt với một population sót lại đang tháo dần**. Nới một ngưỡng, trên bằng chứng nhập
+nhằng, **bên trong chính vòng mà ngưỡng ấy đang phán xử**, là vị trí tệ nhất để ra quyết định đó. Không
+phải "tác giả không được chạm dụng cụ" — mà **riêng thay đổi này không phán xử được từ đây**. Thêm một phép
+kiểm, siết một phép kiểm, hay sửa một phép kiểm đang rỗng thì **không** mang rủi ro ấy.
+
+**Thuốc chữa đã có sẵn trong từ vựng của chính script:** một phép **poll có biên**, hình dạng giống luật
+"mấy lần liên tiếp" của bộ dò CPU-phẳng — và nó còn **phân biệt được một cuộc đua với một lần sót thật**,
+vì một population thật thì đứng yên qua nhiều mẫu còn một lần tháo dỡ thì rút dần.
+
+**Chiều đi hiện tại đã đúng:** K-1 **SIẾT** tư thế node-reuse (export ở đầu script, nên cả năm lần
+`dotnet test` cũng nhận) chứ không nới phép kiểm. Điều đó có thể tự làm population nhỏ lại và khiến cuộc đua
+ngừng bắn mà không ai phải nới gì cả — hãy đo lại trước khi xây thuốc chữa.

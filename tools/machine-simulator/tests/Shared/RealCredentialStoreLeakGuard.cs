@@ -97,9 +97,20 @@ namespace St4i.TestHygiene;
 /// <para>The two instruments are complementary and neither replaces the other: <b>the gate bracket is
 /// complete but anonymous</b> (it measures THE MACHINE over the window — the WPF shell or edge service
 /// running alongside reddens it too), while <b>this one is partial but attributes</b>, naming the process
-/// it saw. A red gate is triaged by reading them together.</para>
-/// <para>What is still NOT closed, and cannot be by any pair of snapshots: a file that appears and
-/// VANISHES inside the bracket cancels out. Measured, not assumed — see the bracket's own comment.</para></para>
+/// it saw. Reading them together narrows a red, but see the bracket's own failure text: the pair does
+/// NOT decide, because a test writing after its own <c>[Fact]</c> looks exactly like an external writer.</para>
+/// <para>🔴 <b>WHAT IS STILL NOT CLOSED — BY EITHER INSTRUMENT. Three things, and this list used to name
+/// one</b> (branch review, Important 1: a summary contradicting the list it summarises, in the summary of
+/// what is not closed, four bullets above its own source):
+/// <list type="number">
+/// <item><b>Appear-and-vanish.</b> A file created and deleted inside the bracket cancels out. No pair of
+/// snapshots can see it. Measured, not assumed — see the bracket's own comment.</item>
+/// <item><b>In-place OVERWRITE of an existing name.</b> Neither instrument watches content or timestamps,
+/// only the set of names, so re-sealing a credential that was already there is invisible to BOTH. Named
+/// in the bullet list above and, until now, dropped from this summary.</item>
+/// <item><b>A writer scheduled after this fact</b> — for this instrument; the bracket covers it, but the
+/// bracket cannot say WHICH process, which is what makes the pair non-decisive rather than complete.</item>
+/// </list></para></para>
 /// </summary>
 internal static class RealCredentialStoreWatch
 {
@@ -136,19 +147,37 @@ internal static class RealCredentialStoreWatch
     }
 
     /// <summary>The entries under <paramref name="root"/> right now, as paths relative to it. A root that
-    /// does not exist yields an EMPTY set rather than an error — a machine that has never onboarded is a
-    /// legitimate state, and an entry appearing later (root included) still reads as an addition.
-    /// Read-only by construction: this enumerates and never creates, deletes or opens anything.</summary>
+    /// does not exist yields an EMPTY set — a machine that has never onboarded is a legitimate state, and
+    /// an entry appearing later (root included) still reads as an addition.
+    /// Read-only by construction: this enumerates and never creates, deletes or opens anything.
+    ///
+    /// <para>🔴 <b>ABSENT AND UNREADABLE ARE DIFFERENT ANSWERS, and <see cref="Directory.Exists"/> gives
+    /// the same one to both</b> (branch review, Important 2). It returns <see langword="false"/> on a
+    /// permissions error exactly as it does for "no such directory", so the earlier
+    /// <c>if (!Directory.Exists(root)) return entries;</c> turned an ACL denial into an EMPTY SNAPSHOT —
+    /// a silent green, in the method whose entire job is to refuse to pass silently. That is reachable on
+    /// any non-elevated identity, because <c>SecurityDirAcl.Apply</c> restricts this directory to
+    /// SYSTEM/Administrators/owner on every single <c>CredentialStore.Save</c>. So the existence test is
+    /// gone: this ENUMERATES and lets the exception type answer the question, which is the only way to
+    /// get a different answer for the two cases.</para></summary>
     internal static SortedSet<string> Snapshot(string root)
     {
         var entries = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (!Directory.Exists(root)) return entries;
-
-        foreach (var path in Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories))
+        try
         {
-            entries.Add(Path.GetRelativePath(root, path));
+            foreach (var path in Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories))
+            {
+                entries.Add(Path.GetRelativePath(root, path));
+            }
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // Genuinely absent. The one legitimate empty reading.
         }
 
+        // UnauthorizedAccessException, IOException and anything else propagate ON PURPOSE: the callers
+        // turn them into a RED with a message naming access as the cause. "Could not read" must never be
+        // spelled the same way as "nothing was there".
         return entries;
     }
 
@@ -260,11 +289,23 @@ public sealed class RealCredentialStoreLeakGuardTests
         }
         catch (Exception ex)
         {
+            // 🔴 An ACCESS DENIAL is not a broken scan, and telling the reader to "fix the derivation"
+            // would send them to rewrite a regex that is working (branch review, Important 3). Name the
+            // cause the exception type actually indicates.
+            var isAccess = ex is UnauthorizedAccessException;
             Assert.Fail(
                 $"Could not read the REAL credential directory \"{root}\" to compare against this " +
-                $"assembly's baseline: {ex.GetType().Name}: {ex.Message}. This is NOT a pass — the " +
-                "measurement did not happen. Fix the read (ACL, a lock, a vanished root); do NOT delete " +
-                "this assertion and do NOT delete anything under %ProgramData%\\ST4I\\.");
+                $"assembly's baseline: {ex.GetType().Name}: {ex.Message}\n" +
+                "  This is NOT a pass — NOTHING was measured, and nothing was added or deleted as far as " +
+                "anyone here knows. Do not go hunting a writer.\n" +
+                (isAccess
+                    ? "  ACCESS DENIED, and that is the expected shape: SecurityDirAcl.Apply restricts this " +
+                      "directory to SYSTEM/Administrators/owner on every CredentialStore.Save, so a test " +
+                      "run under a different identity cannot list it. This guard needs READ access to that " +
+                      "machine-wide directory; that is a real dependency of these test projects, not a bug " +
+                      "in the scan. Do NOT 'fix the derivation' — it is working.\n"
+                    : "  Check for a lock, or for the directory being replaced mid-run.\n") +
+                "  And do NOT delete this assertion or anything under %ProgramData%\\ST4I\\.");
             return; // unreachable; keeps `now` definitely-assigned for the compiler
         }
 
@@ -280,14 +321,25 @@ public sealed class RealCredentialStoreLeakGuardTests
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        Assert.True(removed.Count == 0,
-            $"{removed.Count} entr{(removed.Count == 1 ? "y" : "ies")} DISAPPEARED from the REAL " +
-            $"credential directory \"{root}\" while this suite's process ran: {Listed(removed)}.\n" +
-            "  Nothing in this repository is allowed to delete from that directory — its contents are a " +
-            "deliberately kept evidence base. A test that prunes it, or a \"clean up before measuring\" " +
-            "step added to make some other assertion green, is the failure this arm exists to catch.");
+        // 🔴 ONE ASSERTION OVER BOTH POPULATIONS (branch review, Minor). Asserting `removed` first meant a
+        // run that both added AND deleted reported only the deletion — the added half was never evaluated,
+        // because the first Assert throws. A guard that hides half of what it measured, in the exact case
+        // where the most is going wrong, is the shape this file exists to complain about.
+        var report = new List<string>();
 
-        Assert.True(added.Count == 0,
+        if (removed.Count > 0)
+        {
+            report.Add(
+                $"{removed.Count} entr{(removed.Count == 1 ? "y" : "ies")} DISAPPEARED from the REAL " +
+                $"credential directory \"{root}\" while this suite's process ran: {Listed(removed)}.\n" +
+                "  Nothing in this repository is allowed to delete from that directory — its contents are a " +
+                "deliberately kept evidence base. A test that prunes it, or a \"clean up before measuring\" " +
+                "step added to make some other assertion green, is the failure this arm exists to catch.");
+        }
+
+        if (added.Count > 0)
+        {
+            report.Add(
             $"{added.Count} entr{(added.Count == 1 ? "y" : "ies")} appeared in the REAL credential " +
             $"directory \"{root}\" while this suite's process ran: {Listed(added)}.\n" +
             "  Something in this process wrote a machine credential to a real install's store. It does not " +
@@ -303,5 +355,8 @@ public sealed class RealCredentialStoreLeakGuardTests
             "that stops it racing another class on that process-wide variable), or leave it to the " +
             "assembly-wide redirect in tests/Shared/TestRunTempRoot.cs — and check that nothing put the " +
             "variable back.");
+        }
+
+        Assert.True(report.Count == 0, string.Join("\n\n", report));
     }
 }

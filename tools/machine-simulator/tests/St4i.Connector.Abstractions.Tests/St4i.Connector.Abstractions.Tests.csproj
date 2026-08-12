@@ -31,12 +31,21 @@
            * ASSEMBLY boundary: UNTOUCHED. The guard's only `using`s are System.* and Xunit; it adds no
              ProjectReference and cannot see St4i.EdgeCore. A third-party driver author's suite would
              still compile exactly as this one does.
-           * NEW DEPENDENCY, and it is new: it derives the directory by READING the product source, so
-             this project now requires being run from inside the source tree. Off-tree execution yields
-             SetupFailure and a RED suite. That is fail-closed and deliberate — the alternative is a
-             restated path literal that goes silently vacuous the day the store moves — but it is a
-             constraint this project did not have before, on a project whose whole point is depending on
-             as little as possible. -->
+           * TWO NEW DEPENDENCIES, and the first draft of this bullet named only one (branch review,
+             Important 3 — "NEW DEPENDENCY" singular, in a project whose entire point is depending on as
+             little as possible):
+               (1) THE SOURCE TREE. It derives the directory by READING the product source, so this
+                   project now requires being run from inside the tree. Off-tree execution yields
+                   SetupFailure and a RED suite.
+               (2) READ ACCESS TO A HARDENED MACHINE-WIDE DIRECTORY. The guard enumerates
+                   %ProgramData%\ST4I\sim\creds, which SecurityDirAcl.Apply restricts to
+                   SYSTEM/Administrators/owner on every CredentialStore.Save. A run under an identity
+                   without read access there fails this suite — correctly, since it cannot measure — but
+                   that is an environment requirement this project did not previously have.
+             Both are fail-closed and deliberate: the alternative to (1) is a restated path literal that
+             goes silently vacuous the day the store moves, and the alternative to (2) is treating "I
+             could not look" as "nothing was there". Deliberate is not the same as free, which is why
+             both are written down. -->
     <Compile Include="..\Shared\RealCredentialStoreLeakGuard.cs" Link="RealCredentialStoreLeakGuard.cs" />
   </ItemGroup>
   <ItemGroup>

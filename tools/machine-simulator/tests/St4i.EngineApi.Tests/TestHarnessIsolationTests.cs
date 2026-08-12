@@ -17,13 +17,20 @@ namespace St4i.EngineApi.Tests;
 /// writing a real install's webhook URLs and SMTP passwords.</item>
 /// <item>This batch found <c>creds</c> still un-isolated. The config's own note claimed "this suite never
 /// calls anything that writes there"; a census of the real
-/// <c>%ProgramData%\ST4I\sim\creds</c> found <b>613</b> files carrying the exact machine-code prefixes
-/// <c>04-onboarding.spec.ts</c> mints (<c>SIM-E2E-*</c>, <c>SIM-E2E-IOT-*</c>, <c>SIM-E2E-RESET-*</c>,
-/// <c>SIM-PASTE-*</c>, <c>SIM-E2E-FLAGOFF-*</c>) — one new, never-overwritten DPAPI-sealed credential per
-/// run. 🔴 <b>This read "633 files" over FOUR prefixes until task K-1 re-measured it, and both halves were
-/// wrong together</b>: the census counted 613, over FIVE prefixes (leak-report.md:308's regex). A count
-/// and the list it is a count OF have to be corrected as one thing — fixing the number and leaving the
-/// list is how a sentence stays false while looking audited.</item>
+/// <c>%ProgramData%\ST4I\sim\creds</c> found <b>613</b> files carrying the machine-code prefixes
+/// <c>04-onboarding.spec.ts</c> mints AND ACTUALLY REACHES THE ENGINE WITH (<c>SIM-E2E-*</c>,
+/// <c>SIM-E2E-IOT-*</c>, <c>SIM-E2E-RESET-*</c>, <c>SIM-PASTE-*</c>, <c>SIM-E2E-FLAGOFF-*</c>) — one new,
+/// never-overwritten DPAPI-sealed credential per run.
+/// 🔴 <b>That spec mints a SIXTH, <c>SIM-LIVE-*</c> (line 294), and it is deliberately NOT in the list —
+/// which is a fact that has to be STATED rather than achieved by pruning</b> (branch review, Important 4).
+/// That test <c>page.route</c>s <c>**/v1/onboarding/claim</c> and fulfils it in the browser, so the
+/// request never reaches <c>OnboardingService</c> and no credential is ever sealed. It is therefore the
+/// ONE counterexample to the very next clause — "every one of those flows ends in OnboardingService" —
+/// and leaving it out silently made a universal look true by shortening its own evidence.
+/// 🔴 This also read "633 files" over FOUR prefixes until K-1 re-measured it: the census counted 613 over
+/// FIVE (leak-report.md:308's regex). A count and the list it is a count OF have to be corrected as one
+/// thing — fixing the number and leaving the list is how a sentence stays false while looking audited,
+/// and correcting the list to five while a sixth existed is the same move one notch further along.</item>
 /// </list>
 /// The pattern is not carelessness; it is that a hand-maintained list of stores cannot survive a store
 /// being ADDED. So this test does not hold a list. It discovers every <c>ST4I_*_DIR</c> environment
