@@ -604,3 +604,84 @@ cũng đã được ghi ngay trên hai thành viên public `ModbusRtuDriver.Writ
 Lý lẽ đã được review D-5 kiểm chứng bằng cấu trúc: lượt giữ nằm *bên trong* khoá trọng tài, còn backoff
 đổi một `Task.Delay` nằm *ngoài* nó — nên trường hợp xấu nhất mà một lệnh ghi phải xếp hàng sau là **y hệt
 nhau** dù có backoff hay không. Cái nó cải thiện là thông lượng ĐỌC ở trạng thái dừng (D-4 đo được 67.5×).
+
+## 11. 🔴 Hạng mục mang theo, ghi ở đây vì nó chạm MỌI đợt — cổng đếm build node có vẻ ĐUA (K-1)
+
+Ghi ở đây, không phải chỉ trong `scripts/verify-suites.sh`, vì **một khiếm khuyết ở cấp CỔNG mà chỉ người
+đọc đúng một file gặp được thì không phải một bản ghi nguồn** — cùng lý do §10 tồn tại. Mọi đợt đều đi qua
+cổng này; K-1 chỉ tình cờ là đợt đầu tiên bị nó bắn ba lần.
+
+**Đo được, K-1:** `dotnet build-server shutdown` (`verify-suites.sh`, ngay trước phần test) **PHÁT tín hiệu**
+tháo dỡ, rồi phép đếm chạy ngay sau đó **không chờ, không poll, không thử lại**. Nó bắn **ba lần**, **luôn
+luôn** với đúng cái population mà chính script vừa tạo ra bằng lần rebuild của nó, và **mỗi lần đều sạch khi
+chạy lại mà KHÔNG đổi một dòng mã nào**. Đó chính là dấu hiệu: **một population sót lại thật thì không tự
+biến mất khi chạy lại; một cuộc đua lúc tháo dỡ thì có.**
+
+Hai thứ làm nó nặng thêm, và cả hai đã nằm sẵn trong file:
+- luật đếm cả tiến trình có `CommandLine` **null** (thêm có chủ đích, để không bao giờ bỏ sót) — mà **một
+  tiến trình ĐANG tháo dỡ chính là lúc `CommandLine` trở nên không đọc được**, nên một bản sửa trước đó
+  **nuôi** đúng lần bắn này;
+- `MSBUILDDISABLENODEREUSE` **không** chi phối `VBCSCompiler`, tức đúng thứ mà `shutdown` phải chạy đua.
+
+**🔴 Vì sao K-1 KHÔNG sửa — và lý do đầu tiên tôi viết ra là SAI, ghi lại vì một lý do sai gắn vào một quyết
+định hoãn chính là cách quyết định ấy bị lật.** Câu cũ: *"cổng này sinh ra phán quyết của chính K-1; đừng
+sửa dụng cụ mà phán quyết của mình phụ thuộc vào."* Câu ấy **không thể là luật**: K-1 sửa chính file đó rất
+nhiều, kể cả cái bracket mà phán quyết của nó giờ cũng phụ thuộc vào. Lý do **đúng** hẹp hơn và nói về
+**động cơ**: bản sửa **NỚI một phép khẳng định** — "0 ngay bây giờ" thành "0 trong vòng N" — trên bằng
+chứng **cũng khớp y hệt với một population sót lại đang tháo dần**. Nới một ngưỡng, trên bằng chứng nhập
+nhằng, **bên trong chính vòng mà ngưỡng ấy đang phán xử**, là vị trí tệ nhất để ra quyết định đó. Không
+phải "tác giả không được chạm dụng cụ" — mà **riêng thay đổi này không phán xử được từ đây**. Thêm một phép
+kiểm, siết một phép kiểm, hay sửa một phép kiểm đang rỗng thì **không** mang rủi ro ấy.
+
+**Thuốc chữa đã có sẵn trong từ vựng của chính script:** một phép **poll có biên**, hình dạng giống luật
+"mấy lần liên tiếp" của bộ dò CPU-phẳng — và nó còn **phân biệt được một cuộc đua với một lần sót thật**,
+vì một population thật thì đứng yên qua nhiều mẫu còn một lần tháo dỡ thì rút dần.
+
+**Chiều đi hiện tại đã đúng:** K-1 **SIẾT** tư thế node-reuse (export ở đầu script, nên cả năm lần
+`dotnet test` cũng nhận) chứ không nới phép kiểm. Điều đó có thể tự làm population nhỏ lại và khiến cuộc đua
+ngừng bắn mà không ai phải nới gì cả — hãy đo lại trước khi xây thuốc chữa.
+
+## 12. 🔴 Hạng mục mang theo (K-1) — GHI ĐÈ TẠI CHỖ: không dụng cụ nào của K-1 nhìn thấy
+
+Tách **riêng** khỏi lỗ "hiện-rồi-biến-mất" ở §11 và khỏi nửa ĐUA, có chủ đích: gộp chung sẽ khiến hạng mục
+này **thừa hưởng độ khó của hàng xóm**, mà nó thì **không cần một watcher** — hai cái kia thì có.
+
+**Lỗ.** Cả hai dụng cụ của K-1 so **TẬP TÊN**: `comm -13`/`comm -23` phía cổng, `Except` phía tiến trình.
+Một lần **ghi đè tại chỗ** lên một tên **đã có sẵn** không đổi tập tên, nên **cả hai đều im lặng**. Tác hại
+đúng bằng thứ K-1 sinh ra để chặn — một lần niêm phong lại đè lên một trong **mười một** blob được cố ý giữ
+sẽ **phá bằng chứng mà không dụng cụ nào nói một tiếng nào** — và nó **tệ hơn** lỗ hiện-rồi-biến-mất ở chỗ
+lỗ kia ít nhất đòi ai đó **chủ động xoá một file đã được nêu tên**.
+
+**Vì sao KHÔNG đóng trong K-1** (lý lẽ của phản biện, tôi nhận):
+1. **Chưa từng có một ca đo được nào.** Bản kiểm kê quy **2.996 trên 3.007** blob về những tiền tố
+   **duy-nhất-mỗi-lần-chạy** (`SIM-E2E-<unix-ms>`, `SF-RESTART-<8 hex>`, `REDIRECT-…`), và **cả hai** rò rỉ
+   đã biết đều rơi vào **thêm mới**. Lỗ là thật, rủi ro hiện thời là lý thuyết — **ngược** với lỗ
+   hiện-rồi-biến-mất, nơi *cách lách* (xoá đúng file vừa bị nêu tên) chính là thứ một người đang chịu áp lực
+   sẽ với tay tới.
+2. **Đóng cho đúng nghĩa là tái cấu trúc phép khẳng định LẦN THỨ BA trong một nhánh.** Nhánh này đã trả giá
+   đàng hoàng để chứng minh lại rằng phép khẳng định còn hỏng được sau lần tái cấu trúc thứ nhất (M4). Lần
+   thứ ba cần vòng đột biến riêng của nó, và làm việc đó **bên trong cửa sổ merge** chính là kiểu "một vòng
+   sửa đúng cái dụng cụ sinh ra phán quyết của chính nó" mà §11 vừa mới nói đúng.
+
+**🔴 DỤNG CỤ ĐÃ ĐƯỢC CHỌN SẴN, ghi ở đây để nhiệm vụ sau KHÔNG phải tranh luận lại thiết kế:** bộ ba
+**tên + `Length` + `LastWriteTimeUtc`**, ở **cả hai** tầng. Vẫn **đọc 0 byte**, nên cả tính chất "không bao
+giờ mở một file" lẫn ràng buộc bí mật đều **còn nguyên**; và nó **ghép thêm** vào phép so tập tên đang có
+chứ **không thay thế** nó. Phía bash là **một chuỗi định dạng `stat`**. Nhiệm vụ ấy phải kèm vòng đột biến
+của riêng nó, vì nó đổi hình dạng phép khẳng định.
+
+**Ba việc nhỏ MANG THEO, chưa làm và chưa phân xử** — ghi ra vì tiêu đề "Minors taken" ở báo cáo K-1 liệt kê
+ba trên sáu, và một tiêu đề ngụ ý nhiều hơn danh sách của nó là đúng lớp lỗi nhánh này trả giá nhiều lần:
+- **M-3 — `OrdinalIgnoreCase` (C#) so với `comm` so byte (bash).** Một lần đổi tên **chỉ khác hoa/thường**
+  làm hai dụng cụ **bất đồng**: phía cổng thấy một cặp thêm/bớt, phía tiến trình không thấy gì. Đây là một
+  **bất đồng giữa hai dụng cụ**, không phải một lỗ của cặp.
+- **M-5 — `_creds_src` là đường dẫn TƯƠNG ĐỐI.** Chạy script từ sai thư mục làm phép dò dẫn xuất hỏng
+  **trước**, và thất bại đó **nêu sai thuốc chữa** (nó nói "sửa phép dò", còn nguyên nhân là cwd).
+- **M-6 — "năm artifact" là một con số CHƯA ĐO**, ở ba chỗ trong mã (`verify-suites.sh`,
+  `RealCredentialStoreLeakGuard.cs` ×2). Đúng cái lớp mà K-1 vừa dành hai vòng để sửa (`633`), còn sót lại
+  trong chính văn bản của K-1.
+- **N-4 (tin cậy thấp, chưa tái lập) — `ls -1a "$parent" | grep -qxF` dưới `set -o pipefail`.** `grep -q`
+  thoát ngay khi khớp; nếu `ls` còn đang ghi thì nó ăn SIGPIPE và `pipefail` biến pipeline thành khác 0, tức
+  đọc thành "không tìm thấy" rồi rơi xuống nhánh "vắng mặt thật → return 0" — **một lần xanh im lặng trong
+  đúng hàm sinh ra để từ chối điều đó**. Không với tới được trên máy này (`C:\ProgramData` nhỏ hơn bộ đệm
+  pipe rất nhiều, và nhánh `[[ -e ]]` chặn trước ở ca thường). Thuốc chữa một dòng:
+  `grep -qxF … <<< "$(ls -1a "$parent")"`.

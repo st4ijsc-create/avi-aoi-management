@@ -19,6 +19,34 @@
          Without it this suite writes into the real %TEMP% and the real %ProgramData%\ST4I\sim\creds and
          never cleans up either. -->
     <Compile Include="..\Shared\TestRunTempRoot.cs" Link="TestRunTempRoot.cs" />
+    <!-- Task K-1 — the guard that measures the CONSEQUENCE rather than the naming: the REAL
+         %ProgramData%\ST4I\sim\creds must not GAIN a file while this assembly's process runs (see
+         tests/Shared/RealCredentialStoreLeakGuard.cs for what it does and does not see). LINKED into all
+         five suites for the same reason as the line above — each process is its own measurement, and a
+         guard installed in one suite says nothing about the other four.
+
+         TWO THINGS ABOUT THIS PROJECT'S DELIBERATE ONE-REFERENCE BOUNDARY, and the second is a real cost
+         rather than a footnote — the first draft of this comment asserted the first and introduced the
+         second in the same clause (re-review Minor):
+           * ASSEMBLY boundary: UNTOUCHED. The guard's only `using`s are System.* and Xunit; it adds no
+             ProjectReference and cannot see St4i.EdgeCore. A third-party driver author's suite would
+             still compile exactly as this one does.
+           * TWO NEW DEPENDENCIES, and the first draft of this bullet named only one (branch review,
+             Important 3 — "NEW DEPENDENCY" singular, in a project whose entire point is depending on as
+             little as possible):
+               (1) THE SOURCE TREE. It derives the directory by READING the product source, so this
+                   project now requires being run from inside the tree. Off-tree execution yields
+                   SetupFailure and a RED suite.
+               (2) READ ACCESS TO A HARDENED MACHINE-WIDE DIRECTORY. The guard enumerates
+                   %ProgramData%\ST4I\sim\creds, which SecurityDirAcl.Apply restricts to
+                   SYSTEM/Administrators/owner on every CredentialStore.Save. A run under an identity
+                   without read access there fails this suite — correctly, since it cannot measure — but
+                   that is an environment requirement this project did not previously have.
+             Both are fail-closed and deliberate: the alternative to (1) is a restated path literal that
+             goes silently vacuous the day the store moves, and the alternative to (2) is treating "I
+             could not look" as "nothing was there". Deliberate is not the same as free, which is why
+             both are written down. -->
+    <Compile Include="..\Shared\RealCredentialStoreLeakGuard.cs" Link="RealCredentialStoreLeakGuard.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />

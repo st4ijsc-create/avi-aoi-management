@@ -50,11 +50,53 @@
 
 set -uo pipefail
 
+# 🔴 NODE-REUSE POSTURE IS THIS SCRIPT'S, NOT THE OPERATOR'S (K-1 re-review 2, Q2).
+# `MSBUILDDISABLENODEREUSE=1` was an inline prefix on the ONE `dotnet build` below. `dotnet test` carries
+# no prefix, and `--no-build` still runs MSBuild project evaluation — so the five test invocations kept
+# whatever posture the caller's environment happened to have. K-1 ran its final gate with the variable
+# EXPORTED and initially recorded that as redundant; it was not, and that is the point: the gate's
+# behaviour differed depending on whether whoever ran it had set a variable. A check whose posture is
+# supplied by the person running it is the same class as a check that passes for the wrong reason.
+# Exported once, here, so every child process in this script gets it — build and suites alike.
+export MSBUILDDISABLENODEREUSE=1
+
 # Expected per-suite totals. Update deliberately when a task adds tests, and state
 # the new numbers in the task report -- a changed total is a fact to be justified,
 # not a number to be pasted over.
-EXPECT_ABSTRACTIONS=151
-EXPECT_CONFORMANCE=22
+# 🔴 TASK K-1 (.superpowers/sdd/creds-leak-guard/task-1-brief.md) raises ALL FIVE totals by exactly +1,
+# counted from the runner. ONE new file, tests/Shared/RealCredentialStoreLeakGuard.cs, LINKED into all five
+# test projects the way tests/Shared/TestRunTempRoot.cs already is — one source file, five assemblies, one
+# [Fact] each:
+#   St4i.Connector.Abstractions.Tests  151 -> 152
+#   St4i.Connector.Conformance.Tests    22 ->  23
+#   St4i.EdgeCore.Tests               1093 -> 1094
+#   St4i.EdgeService.Tests              50 ->  51
+#   St4i.EngineApi.Tests              1334 -> 1335
+# Grand total 2650 -> 2655. Nothing is rewritten, split or deleted, and no src/ file changes at all.
+#
+# WHY ALL FIVE RATHER THAN THE ONE SUITE THE LEAK WAS FOUND IN. The property is "no test PROCESS adds a file
+# to the product's real credential store"; St4i.EngineApi.Tests was the EXAMPLE that paid for it, not the
+# scope (§8.1(a), and §8.1(f) on domains inherited from where the author was standing). The five suites run
+# sequentially in five separate processes, so a guard installed in one measures one process and says nothing
+# about the other four — installing it in one suite and reading it as a repository-wide guarantee is exactly
+# the completeness claim this repo has now paid for five times.
+#
+# 🔴 EXPECT_CONFORMANCE MOVING 22 -> 23 IS NOT THE THING THE "stays 22" NOTES BELOW PROTECT. There are
+# ELEVEN genuine notes, at lines 167, 236, 343, 492, 572, 841, 877, 1023, 1762, 2065 and 2187.
+# 🔴 `grep -c 'stays 22'` returns THIRTEEN, not eleven and not the "twelve" this parenthetical used to
+# claim — because THIS SUMMARY quotes the literal string twice while describing it. A number offered in
+# the voice of a measurement, naming the exact command, that the command does not produce, inside the
+# paragraph defending a moved count (branch re-review, N-3; it pre-dates this round and two reviews
+# missed it). The eleven is the checked claim: each of those lines is scoped to a SPECIFIC TASK and to
+# CONTENT —
+# no new driver, no new connector kind, no Check_* added to the shared conformance suite — and none
+# asserts a standing invariant on the integer. K-1 adds none of those things: it adds the same hygiene
+# [Fact] every other suite gets, from a linked file outside that project, with no ProjectReference and no
+# assembly reference, so that project's deliberate one-reference boundary is intact. Shared suite untouched.
+#
+# EXPECT_WARNINGS stays 116: the new file adds no warning (measured on a full -t:Rebuild).
+EXPECT_ABSTRACTIONS=152
+EXPECT_CONFORMANCE=23
 # chore/test-hygiene raised this 735 -> 741 (+6): guards proving the test-isolation seam added to
 # CredentialStore, which was the only one of THIRTEEN stores without one — which is exactly why
 # (🔴 Dot F branch review, F-7: this said FOURTEEN while the same file says THIRTEEN in three later
@@ -947,7 +989,9 @@ EXPECT_CONFORMANCE=22
 # The class joins the existing "St4i.EdgeCore.Tests.MachineWideStoreEnv" collection because it mutates a
 # PROCESS-WIDE variable. That collection's NAME says machine-wide and this store is not — recorded in the
 # class comment rather than renamed, since renaming touches three unrelated classes to no measured end.
-EXPECT_EDGECORE=1093
+# 🔴 Task K-1 raises this 1093 -> 1094 (+1): the one linked hygiene [Fact] every suite gets. Full
+# justification beside EXPECT_ABSTRACTIONS at the top of this file.
+EXPECT_EDGECORE=1094
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -1007,7 +1051,9 @@ EXPECT_EDGECORE=1093
 # per-host data-root decision — is now made; the refusal stands because what remains is engineering) and
 # AnOpcUaEntry_IsRefusedByName_… is unchanged and still green: it asserts the refusal and the word
 # "opcua-pki", both of which survive deliberately. A moved count here would mean the reword changed behaviour.
-EXPECT_EDGESERVICE=50
+# 🔴 Task K-1 raises this 50 -> 51 (+1): the one linked hygiene [Fact] every suite gets. Full
+# justification beside EXPECT_ABSTRACTIONS at the top of this file.
+EXPECT_EDGESERVICE=51
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
 #     +24  NotificationEndpointsTests    (new file — the eleven notification routes)
@@ -2146,7 +2192,10 @@ EXPECT_EDGESERVICE=50
 # live here. EXPECT_CONFORMANCE in particular stays 22: no driver, no connector kind, and the shared suite's
 # "FleetCore.StartLocked constructs drivers under the same _gate lock Estop() takes" assertion string is
 # still TRUE — J-1b moves no driver construction and P7 is untouched.
-EXPECT_ENGINEAPI=1334
+# 🔴 Task K-1 raises this 1334 -> 1335 (+1): the one linked hygiene [Fact] every suite gets. Full
+# justification beside EXPECT_ABSTRACTIONS at the top of this file. K-1 changes no src/ file, so every
+# other number in this script is unchanged for it.
+EXPECT_ENGINEAPI=1335
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -2163,6 +2212,247 @@ UPDATE=0
 [[ "${1:-}" == "--update" ]] && UPDATE=1
 
 note() { printf '  %s\n' "$*"; }
+
+# ══ THE BRACKET ON THE REAL CREDENTIAL DIRECTORY (task K-1, branch review §2) ═══════════════════
+#
+# WHAT THIS IS FOR. tests/Shared/RealCredentialStoreLeakGuard.cs asserts that the product's REAL
+# credential directory gains no entry while ONE test process runs. That guard has two holes it names
+# in its own doc comment and cannot close from inside a test:
+#   * five suites are five processes, so five baselines and no delta across them;
+#   * its interval ends when its [Fact] runs, and xunit orders nothing. MEASURED, not feared: K-1's
+#     mutation M1 wrote a real DPAPI blob into the real root and the guard stayed GREEN, because the
+#     writer happened to be scheduled after it.
+# This script is the only anchor in the repository that spans all five processes. Snapshot before the
+# build, compare after everything, and both holes close at once. It adds no test, so no EXPECT_* moves.
+#
+# 🔴 NAME SETS, NOT COUNTS, AND TWO SEPARATELY FATAL POPULATIONS. A count delta cancels on
+# one-add-plus-one-delete, which would make this instrument STRICTLY WEAKER than the set difference the
+# per-suite guard already ships. `added` and `removed` are compared and reported apart.
+#
+# 🔴 WHAT THE SECOND DIRECTION DOES AND DOES NOT BUY — stated carefully, because the comfortable version
+# of this sentence is false and this file is where such sentences get believed. Reporting `removed`
+# closes the case where the kept evidence base is pruned while the gate is otherwise green. It does NOT
+# close the adaptation anyone actually reaches for: when this fires because file X appeared, DELETING X
+# restores before == after and buys a green — and the message below will have named X. A delta sampled at
+# two instants is structurally blind to a file that appears and vanishes inside the bracket. There is no
+# arrangement of two snapshots that fixes that; only a watcher would, and this is not one.
+#
+# 🔴 AND THE OTHER THING NEITHER INSTRUMENT SEES: an IN-PLACE OVERWRITE of a name already present. Both
+# sides compare SETS OF NAMES, not content and not timestamps, so re-sealing a credential that was
+# already there changes nothing either one looks at. The leak shapes this repo has paid for all mint a
+# fresh machine code per run and therefore land as new names — but an overwrite of one of the eleven kept
+# blobs would destroy evidence silently, and nothing here would say a word. Named because this comment
+# previously listed only the appear-and-vanish hole and read as if that were the whole of it.
+#
+# 🔴 AND THE DOMAIN IS WIDER THAN THE CRITERION'S. This measures THE MACHINE over the window, not "the
+# test processes". Anything else running here that writes a credential — the WPF shell, the edge service,
+# an operator onboarding a machine in another window — reddens this gate and is not a test defect. That is
+# §8.1(f) running in reverse: a tool whose domain is wider than the question, which is a false-positive
+# source rather than a blind spot. The per-suite guard is what attributes; keep both.
+_creds_src="src/St4i.EdgeCore/Infrastructure/CredentialStore.cs"
+_creds_expr=$(tr '\n' ' ' < "$_creds_src" 2>/dev/null \
+  | grep -oE 'SpecialFolder\.CommonApplicationData\)[[:space:]]*(,[[:space:]]*"[^"]*")+' || true)
+_creds_expr_count=$(printf '%s' "$_creds_expr" | grep -c . || true)
+if [[ "${_creds_expr_count:-0}" != "1" ]]; then
+  # Fail closed, exactly as the C# side does. A bracket that silently watched the wrong directory would
+  # be green forever, which is the vacuity shape this whole task exists to avoid.
+  echo "FAIL: could not derive the REAL creds root from ${_creds_src}"
+  echo "  (found ${_creds_expr_count:-0} CommonApplicationData root expressions, expected exactly 1)."
+  echo "  Fix the derivation. Do NOT hardcode the directory here — a restated literal is how this check"
+  echo "  would keep passing while watching a directory the product no longer writes to."
+  exit 1
+fi
+# 🔴 THE ROOT HALF, AND IT HAD THE EXACT DEFECT THE CHECK ABOVE EXISTS TO PREVENT (re-review New-1).
+# This read `cygpath -u "${PROGRAMDATA:-C:/ProgramData}"`. MEASURED in this repo's Git Bash: `PROGRAMDATA`
+# is NOT SET — Windows exports `ProgramData` (mixed case) and `ALLUSERSPROFILE`, and bash is
+# case-sensitive — so the `:-` fallback fired on EVERY run and the "derivation" was a hardcoded literal
+# wearing a derivation's clothes. It resolved correctly here by luck; on a machine with a relocated
+# ProgramData it would have watched a nonexistent directory and been SILENTLY GREEN FOREVER. The
+# fail-closed check above covered the SEGMENT half and left the ROOT half to a `:-`.
+#
+# Fixed by asking the SAME API the product asks. `CredentialStore.DefaultRoot()` calls
+# `Environment.GetFolderPath(SpecialFolder.CommonApplicationData)`, which is the shell folder API and NOT
+# an environment variable at all; PowerShell reaches the identical call. So the two derivations now agree
+# BY CONSTRUCTION rather than by coincidence, and there is no literal left to be silently wrong.
+# (PowerShell is already this script's idiom for asking Windows a question — see the build-node check.)
+_creds_base_win=$(powershell -NoProfile -NonInteractive -Command \
+  "[Environment]::GetFolderPath('CommonApplicationData')" 2>/dev/null | tr -d '\r' | head -1)
+REAL_CREDS_ROOT=""
+[[ -n "$_creds_base_win" ]] && REAL_CREDS_ROOT="$(cygpath -u "$_creds_base_win" 2>/dev/null || true)"
+if [[ -z "$REAL_CREDS_ROOT" || ! -d "$REAL_CREDS_ROOT" ]]; then
+  echo "FAIL: could not resolve CommonApplicationData, so the credential bracket has no root to watch."
+  echo "  PowerShell returned: '${_creds_base_win:-<nothing>}' -> '${REAL_CREDS_ROOT:-<nothing>}'"
+  echo "  Refusing to guess. A default here is how this check came to watch a hardcoded path on every"
+  echo "  run while looking derived (re-review New-1); an unresolvable root must stop the gate, never"
+  echo "  silently disarm it."
+  exit 1
+fi
+while IFS= read -r _seg; do
+  REAL_CREDS_ROOT="${REAL_CREDS_ROOT%/}/${_seg}"
+done < <(printf '%s' "$_creds_expr" | grep -oE '"[^"]*"' | tr -d '"')
+
+# Names only, relative to the root, sorted for `comm`. Enumerates and never opens, deletes or creates.
+#
+# 🔴 FAILS CLOSED ON AN UNREADABLE ROOT (re-review Minor). The `|| true` that used to end this line
+# swallowed a root that EXISTS but cannot be listed — an ACL change, a lock — into an empty snapshot,
+# i.e. into a silent pass, which is the same hole the C# side closed for its own `Snapshot()` call. A
+# root that is absent is legitimate (a machine that never onboarded); a root that is present and
+# unreadable is not.
+creds_snapshot() {
+  # 🔴 ABSENT AND UNREADABLE ARE DIFFERENT ANSWERS, AND `[[ -d ]]` GIVES THE SAME ONE TO BOTH
+  # (branch review, Important 2). `[[ -d ]]` is false on EACCES just as it is on "no such directory", so
+  # the earlier `|| return 0` turned a permission denial into an EMPTY SNAPSHOT — a silent green, in the
+  # one function whose whole job is to refuse to pass silently. The New-7 work covered only the
+  # traverse-but-cannot-list slice; this is the cannot-traverse slice, and it is reachable on any
+  # non-elevated identity given the ACL SecurityDirAcl.Apply puts on this directory.
+  if [[ -d "$REAL_CREDS_ROOT" ]]; then
+    ( cd "$REAL_CREDS_ROOT" && find . -mindepth 1 | sed 's|^\./||' | LC_ALL=C sort ) || {
+      echo "FAIL: the REAL credential directory exists but could not be LISTED: $REAL_CREDS_ROOT" >&2
+      echo "  The bracket cannot measure what it cannot read, and an empty reading would be a SILENT" >&2
+      echo "  PASS. Fix the ACL or the lock; do not disarm the check." >&2
+      return 1
+    }
+    return 0
+  fi
+
+  # Not a readable directory. Decide WHICH by asking the parent, whose answer distinguishes the two.
+  local _parent _base
+  _parent=$(dirname "$REAL_CREDS_ROOT"); _base=$(basename "$REAL_CREDS_ROOT")
+  if [[ -e "$REAL_CREDS_ROOT" ]] || { ls -1a "$_parent" 2>/dev/null | LC_ALL=C grep -qxF "$_base"; }; then
+    echo "FAIL: the REAL credential root EXISTS but cannot be entered: $REAL_CREDS_ROOT" >&2
+    echo "  The parent lists it, so this is a PERMISSION or lock problem, not an absent directory." >&2
+    echo "  Treating it as absent would be a silent green. Fix access; do not disarm the check." >&2
+    return 1
+  fi
+  if ! ls -1a "$_parent" >/dev/null 2>&1; then
+    echo "FAIL: cannot read the parent of the REAL credential root either: $_parent" >&2
+    echo "  Nothing can be concluded about the creds directory from here, and 'nothing concluded'" >&2
+    echo "  must not read as 'nothing changed'." >&2
+    return 1
+  fi
+  # Genuinely absent — a machine that has never onboarded. Legitimate, and an empty snapshot is correct:
+  # any entry appearing later still reads as an addition.
+  return 0
+}
+
+CREDS_BEFORE="$LOGDIR/creds-before.txt"
+CREDS_AFTER="$LOGDIR/creds-after.txt"
+CREDS_ADDED=""
+CREDS_REMOVED=""
+# 🔴 SEPARATE FROM THE TWO POPULATIONS (re-review New-7). "Could not read the directory" is a THIRD
+# outcome, not a deletion. It used to be stuffed into CREDS_REMOVED, which printed a diagnostic string
+# under the heading "something DELETED from a directory nothing is allowed to delete from" — a heading
+# contradicting the line beneath it, in a gate whose entire premise is that deletions there are alarming.
+# Manufacturing the wrong alarm is worse than a vague one: it sends the reader to look for a culprit that
+# does not exist.
+CREDS_UNREADABLE=0
+CREDS_EVALUATED=0
+CREDS_REPORTED=0
+if ! creds_snapshot > "$CREDS_BEFORE"; then
+  echo "FAIL: could not take the credential bracket's BASELINE. Stopping rather than running the suites"
+  echo "  under a bracket that cannot fail. (This runs before the EXIT trap is armed, so nothing else"
+  echo "  in this script has started yet.)"
+  exit 1
+fi
+# NOT a check — a `note` is for a human reading alongside a verdict, never something a verdict depends on
+# (this script's own rule, stated at gate 3). The verdict below depends on the SET COMPARISON, never on
+# this number; it is printed so a reader can see the bracket armed against a plausible population.
+note "real creds root under watch: $REAL_CREDS_ROOT ($(grep -c . < "$CREDS_BEFORE" || true) entries at start)"
+
+# Evaluates once; later calls reuse the verdict. Returns 0 when the directory is unchanged.
+creds_bracket_eval() {
+  if [[ $CREDS_EVALUATED -eq 1 ]]; then
+    [[ $CREDS_UNREADABLE -eq 0 && -z "$CREDS_ADDED" && -z "$CREDS_REMOVED" ]] && return 0 || return 1
+  fi
+  CREDS_EVALUATED=1
+  if ! creds_snapshot > "$CREDS_AFTER"; then
+    # Unreadable-but-present root at the closing read. Still fatal — a bracket that cannot read its own
+    # directory has not measured anything — but reported as ITS OWN outcome, never as a deletion.
+    CREDS_UNREADABLE=1
+    CREDS_ADDED=""
+    CREDS_REMOVED=""
+    return 1
+  fi
+  # 🔴 LC_ALL=C ON `comm` TOO (branch review, Minor). Both input files are sorted under LC_ALL=C, but
+  # `comm` was left to the ambient locale — and `comm` re-checks collation order as it merges. A locale
+  # whose collation differs from C makes it consider its own correctly-sorted input unsorted, at which
+  # point its output is undefined rather than wrong-in-a-visible-way. Pin the comparison to the same
+  # collation the sort used; a set difference whose two halves disagree about order is not a set
+  # difference.
+  CREDS_ADDED=$(LC_ALL=C comm -13 "$CREDS_BEFORE" "$CREDS_AFTER" || true)
+  CREDS_REMOVED=$(LC_ALL=C comm -23 "$CREDS_BEFORE" "$CREDS_AFTER" || true)
+  [[ -z "$CREDS_ADDED" && -z "$CREDS_REMOVED" ]] && return 0 || return 1
+}
+
+creds_bracket_text() {
+  if [[ $CREDS_UNREADABLE -eq 1 ]]; then
+    echo "REAL credential directory could NOT BE READ at the end of this run: $REAL_CREDS_ROOT"
+    echo "  NOTHING WAS DELETED and nothing was added — the directory exists and could not be listed, so"
+    echo "  this run measured NOTHING. Do not go looking for a culprit; there is no evidence of one."
+    echo "  Causes worth checking, in order: an ACL change on the creds directory (SecurityDirAcl.Apply"
+    echo "  runs on every CredentialStore.Save), a handle held open by another process, or the directory"
+    echo "  being replaced mid-run. Fix the read and re-run; do not disarm the bracket."
+    return
+  fi
+  echo "REAL credential directory CHANGED across this run: $REAL_CREDS_ROOT"
+  if [[ -n "$CREDS_ADDED" ]]; then
+    echo "  ADDED ($(printf '%s\n' "$CREDS_ADDED" | grep -c .)) — something wrote a machine credential into a real install's store:"
+    printf '%s\n' "$CREDS_ADDED" | head -25 | sed 's/^/      /'
+  fi
+  if [[ -n "$CREDS_REMOVED" ]]; then
+    echo "  REMOVED ($(printf '%s\n' "$CREDS_REMOVED" | grep -c .)) — something DELETED from a directory nothing is allowed to delete from:"
+    printf '%s\n' "$CREDS_REMOVED" | head -25 | sed 's/^/      /'
+  fi
+  echo "  🔴 DO NOT MAKE THIS GREEN BY DELETING. Removing a file named above WILL restore before == after"
+  echo "     and WILL buy a green, because this compares two instants and cannot see a file that appears"
+  echo "     and vanishes between them. That is not the check working; it is the check being defeated, and"
+  echo "     the evidence base five artifacts cite is what gets spent doing it."
+  echo "  SCOPE: this measures THE MACHINE over the whole gate window, not just the test processes. If the"
+  echo "     WPF shell, the edge service, or an operator onboarding a machine was running here, that is a"
+  echo "     false positive of this gate and not a test defect — check before you go hunting a test."
+  echo "  WHAT THE SUITE RESULTS ABOVE DO AND DO NOT TELL YOU:"
+  echo "     * bracket RED + one or more suites RED on"
+  echo "       RealCredentialStoreLeakGuardTests  ->  STRONGLY SUGGESTIVE, not decisive. It narrows the"
+  echo "       WINDOW: the entry appeared while that suite's process was alive. Start there."
+  echo "       🔴 But the guard names the OBSERVING process, never the WRITING one. It watches the same"
+  echo "       machine-wide directory this bracket does — it is narrower in TIME, not in DOMAIN — so an"
+  echo "       operator, the WPF shell or the edge service completing a claim during that suite's window"
+  echo "       turns it red too. That is the same population the SCOPE line above declares real; it does"
+  echo "       not stop existing because a guard went red."
+  echo "     * bracket RED + all five suites GREEN  ->  🔴 NOT DECISIVE. DO NOT read it as \"external\"."
+  echo "       TWO causes produce this exact signature and this output cannot separate them:"
+  echo "         (a) another process on this machine wrote it — WPF shell, edge service, or an operator"
+  echo "             onboarding a machine in another window; or"
+  echo "         (b) A TEST wrote it AFTER its own guard [Fact] had already run. xunit orders nothing, so"
+  echo "             a writer scheduled after the guard is invisible to it and the suite stays GREEN."
+  echo "       (b) is not hypothetical — it is this repository's MEASURED mutation M1: a test that sealed a"
+  echo "       real DPAPI blob into this directory while its suite reported 1336/1336 green. Recorded in"
+  echo "       tests/Shared/RealCredentialStoreLeakGuard.cs under \"A window, not the whole process\"."
+  echo "       🔴 A GREEN RE-RUN IS NOT CONFIRMATION OF (a): case (b) is scheduling-dependent, so it comes"
+  echo "       back green on its own about as often as not. Re-running decides nothing here."
+  echo "       WHAT DOES SEPARATE THEM: the entry's WRITE TIME against this run's suite phase — inside it"
+  echo "       means a test wrote it. The names above are a hint and NOTHING MORE: a census by machine-code"
+  echo "       prefix is the very instrument this guard exists because it returns green over real leaks."
+  echo "     Both instruments are still needed — this one is complete but anonymous, the per-suite guard"
+  echo "     narrows the window but is equally anonymous about the writer."
+  echo "     🔴 And to be exact about (b): this bracket DETECTS it — that is why you are reading this text"
+  echo "     at all — it just cannot ATTRIBUTE it. Saying \"neither closes (b)\" understated the instrument"
+  echo "     that caught it; detection and attribution are different things and only the second is missing."
+}
+
+# 🔴 Unconditional, via trap: the warnings gate and the build-node gate below both `exit 1` before the
+# suites run, and a bracket placed at the end would be skipped by exactly the runs most likely to have
+# left something behind. `exit` inside an EXIT trap does not re-enter it, so the status set here is final.
+creds_bracket_trap() {
+  local rc=$?
+  if creds_bracket_eval || [[ $CREDS_REPORTED -eq 1 ]]; then
+    exit "$rc"
+  fi
+  echo "FAIL (credential bracket):"
+  creds_bracket_text
+  exit 1
+}
+trap creds_bracket_trap EXIT
 
 # Total processor SECONDS consumed by every live `testhost` process, as a float, or the
 # empty string when there is none (or when PowerShell is unavailable). See the hang
@@ -2403,6 +2693,37 @@ note "build servers still resident entering the test phase: ${BUILD_NODES:-unkno
 # So the rule this script keeps re-learning, now stated where both instances sit: EVERY number
 # this script computes is either asserted or deleted. A `note` is for something a human reads
 # alongside a verdict, never for something the verdict depends on.
+# 🔴 CARRIED ITEM — THIS CHECK LOOKS RACY, AND IT IS DELIBERATELY NOT FIXED HERE (K-1 re-review 2).
+# `dotnet build-server shutdown` above SIGNALS teardown; the sample below runs with NO wait, poll or
+# retry. Observed three times during K-1, ALWAYS against a rebuild this script itself had just launched,
+# and cleared every time by re-running with NO CODE CHANGE. That is the tell: a genuine leftover
+# population does not clear itself on a re-run — a teardown race does.
+#
+# Two aggravators, both already in this file:
+#   * the null-`CommandLine` rule counts unreadable processes (fail-loud, added on purpose above) — and a
+#     process IN TEARDOWN is exactly when CommandLine becomes unreadable, so that fix feeds this failure;
+#   * MSBUILDDISABLENODEREUSE does not govern VBCSCompiler, which is precisely what `shutdown` must race.
+#
+# 🔴 WHY K-1 DID NOT FIX IT — and the first version of this reason was WRONG, which matters because a
+# wrong reason on a deferral is how the deferral gets overturned by the next person who notices.
+# It said: "this check produces K-1's own verdict; do not modify the instrument your own PASS depends on."
+# That CANNOT be the rule — K-1 modifies this very file wholesale, including the bracket its own verdict
+# now also depends on. The reason that actually holds is narrower and is about INCENTIVE:
+#   the remedy RELAXES an assertion — "zero now" becomes "zero within N" — and the evidence for relaxing
+#   it is EQUALLY CONSISTENT with a genuine leftover population draining. Loosening a threshold, on
+#   ambiguous evidence, inside the round that threshold is judging, is the worst available position to
+#   make that call from. It is not that the author cannot touch the instrument; it is that this
+#   particular change cannot be judged from here.
+# Adding a check, tightening one, or fixing one that is silently vacuous does not carry that hazard —
+# which is why the rest of this branch's edits to this file were fine and this one is not.
+#
+# AND THE DIRECTION OF TRAVEL IS RIGHT ANYWAY: this branch TIGHTENED node-reuse posture (exported at the
+# top, so the five `dotnet test` invocations get it too) rather than loosening the check. That may reduce
+# the resident population on its own and make the race stop firing without anyone relaxing anything.
+# REMEDY ALREADY IN THIS SCRIPT'S VOCABULARY: a bounded poll shaped like the CPU-flat detector's
+# consecutive-samples rule — which additionally DISTINGUISHES a race from a genuine miss, because a real
+# leftover population stays put across samples while a teardown drains. Blocking nothing; touching
+# everything, since every gate run passes through it.
 EXPECT_BUILD_NODES=0
 if [[ "${BUILD_NODES:-}" != "$EXPECT_BUILD_NODES" ]]; then
   echo "FAIL: ${BUILD_NODES:-unknown} build-server process(es) are resident entering the test phase,"
@@ -2597,6 +2918,16 @@ for entry in "${SUITES[@]}"; do
 done
 
 # ── Gate 3: the verdict, as one line. ───────────────────────────────────────────
+# The credential bracket is folded into FAILURES here rather than left to its EXIT trap, so that the
+# normal path still prints EXACTLY ONE PASS/FAIL line. A trap firing after a printed "PASS:" would be a
+# summary contradicting the list below it — the signature defect §8.1 records five branches of. The trap
+# stays armed for the early `exit 1` paths above, which never reach this line; CREDS_REPORTED stops it
+# saying the same thing twice.
+if ! creds_bracket_eval; then
+  CREDS_REPORTED=1
+  FAILURES+=("$(creds_bracket_text)")
+fi
+
 echo "[3/3] Verdict:"
 if [[ $UPDATE -eq 1 ]]; then
   echo "Observed totals (paste into the EXPECT_* constants above, and justify each change):"

@@ -12,6 +12,12 @@
          Without it this suite writes into the real %TEMP% and the real %ProgramData%\ST4I\sim\creds and
          never cleans up either. -->
     <Compile Include="..\Shared\TestRunTempRoot.cs" Link="TestRunTempRoot.cs" />
+    <!-- Task K-1 — the guard that measures the CONSEQUENCE rather than the naming: the REAL
+         %ProgramData%\ST4I\sim\creds must not GAIN a file while this assembly's process runs (see
+         tests/Shared/RealCredentialStoreLeakGuard.cs for what it does and does not see). LINKED into all
+         five suites for the same reason as the line above — each process is its own measurement, and a
+         guard installed in one suite says nothing about the other four. -->
+    <Compile Include="..\Shared\RealCredentialStoreLeakGuard.cs" Link="RealCredentialStoreLeakGuard.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
