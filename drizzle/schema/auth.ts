@@ -219,7 +219,31 @@ export type InsertBackupCode = typeof backupCodes.$inferInsert;
  */
 export const userSessions = pgTable("user_sessions", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull(),
+  /**
+   * ★★★ Pha 9 — mig **`0321`** (áp 2026-08-12, CẢ HAI DB): khoá ngoại `→ users.id`
+   * **`ON DELETE CASCADE`**, khai **`NOT VALID`**.
+   *
+   * ⚠ Nợ Pha 7 ghi *"thiếu `ON DELETE CASCADE`"*, câu ấy ngụ ý đã có FK và chỉ thiếu hành vi kèm
+   *   theo. Phép đo bác bỏ: trước `0321`, `pg_constraint` trên bảng này có **ĐÚNG HAI** ràng buộc
+   *   (`pkey`, `sessionToken_unique`) và **`contype='f'` = 0 hàng** trên cả hai DB — **không có FK
+   *   nào cả**. Khai báo TS cũ (`integer("userId").notNull()` trần) khớp đúng sự vắng mặt ấy, nên
+   *   không có lưới nào bắt được. Đối chiếu `userSecrets.userId` ngay trên: nó CÓ `.references()`
+   *   và DB CÓ FK thật.
+   *
+   * ⚠⚠ **`NOT VALID` ⇒ ràng buộc CHƯA đúng cho mọi hàng.** Nó **chỉ** bỏ qua lượt kiểm hàng CŨ:
+   *   mọi `INSERT`/`UPDATE` mới bị cưỡng chế đầy đủ, và `CASCADE` nổ bình thường khi xoá `users`.
+   *   Nhưng **4 hàng mồ côi cũ trên prod vẫn ở lại** (`userId` ma 301·302·1432·1474, `isActive`,
+   *   hạn 2027) và **138/138 hàng DB test** cũng vậy — chủ dự án chọn đường B đúng vì nó **xoá 0
+   *   byte**. Ai đọc `pg_constraint` mà **không đọc cột `convalidated`** sẽ tưởng bảng đã kín.
+   *   Dọn xong hàng cũ thì chạy `VALIDATE CONSTRAINT` (không khoá ghi).
+   *
+   * ⚠ Vùng mù ĐƯỢC KHAI, không phải chỗ sót: `getSessionByToken` (`server/db/auth.ts`) **không
+   *   join `users`**, nên cổng `chanNeuPhienDaThuHoi` vẫn cho 4 hàng mồ côi ấy qua. FK này không
+   *   phát biểu gì về chúng. Xem chú thích đầu `drizzle/0321_user_sessions_fk_cascade.sql`.
+   */
+  userId: integer("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   /**
    * ★★★ Pha 8 — **`text`, KHÔNG phải `varchar(n)`** (mig `0317`, đã áp lên cả hai DB).
    *
