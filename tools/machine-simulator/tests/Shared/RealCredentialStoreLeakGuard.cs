@@ -21,8 +21,11 @@ namespace St4i.TestHygiene;
 /// set it, and four separate membership derivations missed the first of them. An instrument keyed on the
 /// DIRECT half — "which classes assign the variable" — returns GREEN over exactly the case that was paid
 /// for. That is blueprint §8.1(f) with a completeness claim on top. This measures the CONSEQUENCE
-/// instead, so it catches a writer at ANY call depth, including one that passes
-/// <c>CredentialStore.Save</c>'s directory explicitly and never touches the variable at all.</para>
+/// instead, so <b>DEPTH stops being a way to hide</b>: a writer is seen whether it is one frame away or
+/// five, and whether it names the variable, clears it, or passes <c>CredentialStore.Save</c>'s directory
+/// explicitly and never touches the variable at all. 🔴 Depth is the only axis that sentence covers —
+/// TIME is a separate one and this instrument does NOT cover it (see "a window, not the whole process"
+/// below, which is measured rather than feared).</para>
 ///
 /// <para>🔴 <b>"GAINS NO FILE", not "IS EMPTY", and the distinction is load-bearing.</b> That directory
 /// HAS files and they are KEPT ON PURPOSE — five artifacts cite them as an evidence base. An assertion
@@ -45,9 +48,15 @@ namespace St4i.TestHygiene;
 /// repository-wide guarantee. Nothing here measures a delta ACROSS suites — that needs an anchor outside
 /// every process, and there isn't one in here. Do not read a green from one suite as a statement about
 /// any other.</item>
-/// <item><b>A window, not the whole process.</b> The interval ends when THIS fact runs, and xunit does
-/// not let a class choose to run last. A writer that only ever runs after this fact is invisible to it.
-/// Stated, not fixed — see BOOKED below.</item>
+/// <item>🔴 <b>A window, not the whole process — MEASURED, not feared.</b> The interval ends when THIS
+/// fact runs, and xunit orders neither collections nor the classes inside them, so a writer that happens
+/// to be scheduled after this fact is invisible to it. K-1's own mutation round proves it rather than
+/// worrying about it: mutation M1 — a <c>[Fact]</c> in its own class that clears <c>ST4I_CREDS_DIR</c>
+/// and calls <c>CredentialStore.Save</c> — <b>SURVIVED</b> on <c>St4i.EngineApi.Tests</c> at commit
+/// c012ec51 (1336/1336 green) <b>while genuinely writing a DPAPI blob into the real root</b> (censused
+/// immediately after: 32 files, up from 31). The same write moved inside the interval, M2, KILLED it.
+/// So a GREEN from this fact is "nothing was written BEFORE me", never "nothing was written". Not
+/// fixable from inside a test — see BOOKED below.</item>
 /// <item><b>Additions, not overwrites.</b> A write that REPLACES a name already present at baseline
 /// changes no entry name and is invisible here. The leak shapes this repository has actually paid for
 /// mint a fresh machine code per run (<c>SIM-E2E-*</c>, <c>SF-RESTART-&lt;guid&gt;</c>, ...) and so land as

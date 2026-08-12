@@ -78,9 +78,15 @@ public sealed class TestHarnessIsolationTests
     //   (2) "It wrote ... for as long as it existed" reads as the whole story, and it is not. Measured
     //       2026-08-12 on this machine: the real creds directory holds 31 .bin files, of which 20 are
     //       SF-RESTART-<8 hex> — a prefix minted at StoreAndForwardRestartSurvivalTests.cs:216 and nowhere
-    //       else in the tree — written 2026-08-01 12:57:39Z–13:04:49Z, i.e. AFTER 208e5ccc (12:32:32Z)
-    //       closed the leak "at its mechanism". A DIFFERENT class, leaking AFTER the mechanism fix, is the
-    //       strongest argument this file can carry for measuring the consequence instead of the naming.
+    //       else in the tree — written 2026-08-01 12:57:39Z–13:04:49Z, i.e. after 208e5ccc (12:32:32Z)
+    //       committed the "fixed at its mechanism" redirect. A DIFFERENT class from the one this block
+    //       names, writing real credentials, is the strongest argument this file can carry for measuring
+    //       the consequence instead of the naming.
+    //       🔴 SCOPED, because the filesystem cannot say more than this: those timestamps establish
+    //       ORDER against a commit time, NOT that the run which produced them was built from a post-fix
+    //       tree. A developer iterating in that window (81e65367 lands 58 minutes later, on that very
+    //       file) can run a stale binary. What is NOT in doubt is the class, the count and the fact that
+    //       a naming census would have called that class clean: it sets no ST4I_*_DIR at all.
     //
     // WHY A "WHICH CLASSES SET THE VARIABLE" CENSUS IS THE WRONG INSTRUMENT, and this is the decisive
     // part: keyed on the DIRECT half it returns GREEN over exactly the case that was paid for. That is
