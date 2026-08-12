@@ -1,12 +1,15 @@
 -- ════════════════════════════════════════════════════════════════════════════════════════════
--- 0319 — NỚI `user_sessions.ipAddress` TỪ varchar(45) SANG text        ⚠⚠⚠ **BẢN NHÁP — CHƯA ÁP**
+-- 0319 — NỚI `user_sessions.ipAddress` TỪ varchar(45) SANG text        ✅ **ĐÃ ÁP 2026-08-12**
 -- ════════════════════════════════════════════════════════════════════════════════════════════
--- ⚠⚠⚠ FILE NÀY MANG ĐUÔI `.DRAFT` VÀ **KHÔNG** ĐƯỢC `scripts/migrate-standalone.mjs` NHẶT.
---     Nó chờ **chủ dự án duyệt**. Brief 2026-08-11 duyệt DDL **chỉ cho `0318`**, và nói rõ:
---     *"Cân nhắc `ipAddress` — nếu bạn cho là cùng lớp lỗi, **soạn `.DRAFT` riêng**, đừng gộp,
---     đừng tự áp."* ⇒ Đây là bản nháp ấy. **KHÔNG ÁP.**
---     Muốn áp: đổi tên thành `0319_session_ip_address_text.sql` rồi chạy `migrate-standalone.mjs`
---     với owner `aoi` trên **CẢ HAI** DB (`aoi_management`, `aoi_management_test`).
+-- ✅ **CHỦ DỰ ÁN DUYỆT 2026-08-11.** Đuôi `.DRAFT` đã được bỏ; file áp qua đúng đường chuẩn
+--     (`scripts/migrate-standalone.mjs`, `MIGRATE_STRICT=1`, owner `aoi`, **CẢ HAI** DB) —
+--     **không** chạy tay bằng `psql`: mig `0317` áp ngoài đường chuẩn và đã đẻ ra nợ sổ sách.
+--     ⚠ Lượt áp **thu hẹp** danh sách file của bộ chạy về **đúng 0319 + 0320**. Repo còn nợ sổ
+--       CÓ TRƯỚC mà lượt này **KHÔNG** được đụng: `0057` · `0066` · `0125` · `0234` mang
+--       `success=false` từ 2026-07-19 (cả hai DB), cộng `0308` · `0309` **không có hàng sổ nào**
+--       trên `aoi_management`, và `0300`–`0309` (10 file) không có hàng sổ trên `aoi_management_test`.
+--       Bộ chạy sắp file theo tên ⇒ chạy nguyên danh sách với `MIGRATE_STRICT=1` sẽ **dừng ở 0057**
+--       và 0319 **không bao giờ tới lượt**. Thu hẹp là bắt buộc, không phải tuỳ chọn.
 --
 -- ════════════════════════════════════════════════════════════════════════════════════════════
 -- ⚠⚠ PHÁN QUYẾT TRUNG THỰC: **CÙNG LỚP LỖI, NHƯNG CÓ ĐIỀU KIỆN — VÀ ĐIỀU KIỆN ẤY KHÔNG ĐƯỢC GHIM**
@@ -42,13 +45,15 @@
 --   — sai mà **trông đúng**, kiểu hỏng tệ nhất). Đó là lý do vẫn nên áp, chỉ là không gấp.
 --
 -- ════════════════════════════════════════════════════════════════════════════════════════════
--- ⚠ ĐO 2026-08-11 (owner `aoi`, cổng 5434) — SỐ THẬT, dán sẵn; **đo lại trước khi áp**
+-- ⚠ ĐO LẠI 2026-08-12 NGAY TRƯỚC LƯỢT ÁP (owner `aoi`, cổng 5434) — SỐ THẬT
 -- ════════════════════════════════════════════════════════════════════════════════════════════
 --   · phụ thuộc khung nhìn / rule trên `user_sessions.ipAddress`: **0** · **0**  (prod · test)
 --   · chỉ số chạm `ipAddress`:                                    **0** · **0**
---   · số hàng `user_sessions`:                                    **293** · **107**
+--   · số hàng `user_sessions`:                                    **298** · **136**
 --   · giá trị `ipAddress` DÀI NHẤT đang có:                       **16** · **16** ký tự
---     (293/293 hàng prod có giá trị · 56/107 hàng test) ⇒ **0 hàng** đang chạm trần 45
+--     (298/298 hàng prod có giá trị · 56/136 hàng test) ⇒ **0 hàng** đang chạm trần 45
+--   ⚠ Số của bản nháp 2026-08-11 (**293** · **107** hàng) nay đã **CŨ** — bảng vẫn đang nhận
+--     phiên mới. Kết luận **không đổi**: trần 45 vẫn chưa bị chạm, và lượt nới vẫn không mất dữ liệu.
 --   `varchar(n)` → `text` là **binary-coercible** ⇒ Postgres **KHÔNG** viết lại bảng.
 --
 -- ⚠⚠⚠ **PHẠM VI CỐ Ý HẸP — VÀ ĐÂY LÀ NỢ ĐƯỢC KHAI, KHÔNG PHẢI VÙNG MÙ.**
