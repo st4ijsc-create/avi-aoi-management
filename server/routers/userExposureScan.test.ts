@@ -46,7 +46,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { moiFileDuoi, laFileTest, nguoiDocBiMatCuaUserSecrets } from "./deployProcedureScan";
-import { moiCotBiMatCuaUserSecrets } from "../_core/publicUser";
+import { moiCotBiMatCuaUserSecrets, tenSqlCuaBangBiMat, moiTenSqlCotBiMat } from "../_core/publicUser";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../server/routers
 const GOC_REPO = join(TEST_DIR, "..", "..");
@@ -168,7 +168,10 @@ function nguoiDocTho(): string[] {
  *    **không đổi** — nó vẫn neo vào hai hàm đo được, nên một lượt chuyển nhà làm trượt bộ suy vẫn ĐỎ.
  */
 function nguoiDocBiMat(): string[] {
-  return nguoiDocBiMatCuaUserSecrets(GOC_REPO, COT_BI_MAT);
+  return nguoiDocBiMatCuaUserSecrets(GOC_REPO, COT_BI_MAT, {
+    bang: tenSqlCuaBangBiMat(),
+    cot: moiTenSqlCotBiMat(),
+  });
 }
 
 const DOC_BI_MAT = nguoiDocBiMat();

@@ -48,7 +48,7 @@
  *   `sdk.authenticateRequest` **gọi lại** `redactServerOnlyUserFields()` của module này thay vì giữ
  *   danh sách riêng — lớp lỗi *"nhiều chủ cho một bất biến"* đã đẻ **ba** Critical.
  */
-import { getTableColumns } from "drizzle-orm";
+import { getTableColumns, getTableName } from "drizzle-orm";
 import { users, userSecrets, type User, type UserSecrets } from "../../drizzle/schema";
 
 /** Mức hiển thị của một cột `users`. */
@@ -298,6 +298,30 @@ export function moiCotCuaBangUserSecrets(): string[] {
  */
 export function moiCotBiMatCuaUserSecrets(): string[] {
   return [...SERVER_ONLY_USER_SECRET_FIELDS].sort();
+}
+
+/**
+ * ★★★ Pha 9 nhóm A · **A3 — TÊN SQL THẬT của bảng bí mật và các cột bí mật.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO **SUY TỪ DRIZZLE**, KHÔNG PHẢI MỘT PHÉP ĐỔI camelCase → snake_case VIẾT TAY
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bộ suy của A3 phải nhận ra một câu SQL **thô** chạm bảng bí mật. SQL nói `two_factor_secret`,
+ * TypeScript nói `twoFactorSecret`. Tự viết một hàm `camelToSnake` là dựng **người thứ hai** trả
+ * lời câu *"cột này tên gì dưới DB"* — và người ấy sai ngay khi một cột được đặt tên tường minh
+ * khác quy ước (drizzle cho phép: `varchar("ten_khac")`). Bản đồ ĐÚNG **đã tồn tại**: chính đối
+ * tượng bảng của drizzle.
+ * ⇒ `getTableName` + `.name` của từng cột là **nguồn sự thật DUY NHẤT**. Đổi tên cột dưới DB thì
+ *   bộ suy tự đi theo, không ai phải nhớ.
+ */
+export function tenSqlCuaBangBiMat(): string {
+  return getTableName(userSecrets);
+}
+
+/** Tên **SQL** (thường là snake_case) của mọi cột bí mật — suy từ chính bảng drizzle. */
+export function moiTenSqlCotBiMat(): string[] {
+  const cot = getTableColumns(userSecrets) as Record<string, { name: string }>;
+  return SERVER_ONLY_USER_SECRET_FIELDS.map((k) => cot[k]!.name).sort();
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════

@@ -65,8 +65,8 @@ import {
   laFileTest,
   phanGiaiToi,
 } from "../routers/deployProcedureScan";
-import { moiCotBiMatCuaUserSecrets } from "./publicUser";
-import { readFileSync } from "node:fs";
+import { moiCotBiMatCuaUserSecrets, tenSqlCuaBangBiMat, moiTenSqlCotBiMat } from "./publicUser";
+import { readFileSync, existsSync } from "node:fs";
 import ts from "typescript";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // …/server/_core
@@ -76,7 +76,8 @@ const GOC = join(TEST_DIR, "..", "..");
 const DAU_KHAI = "KhongMangBiMat";
 
 const COT_BI_MAT = moiCotBiMatCuaUserSecrets();
-const DOC_BI_MAT = nguoiDocBiMatCuaUserSecrets(GOC, COT_BI_MAT);
+const SQL_BI_MAT = { bang: tenSqlCuaBangBiMat(), cot: moiTenSqlCotBiMat() };
+const DOC_BI_MAT = nguoiDocBiMatCuaUserSecrets(GOC, COT_BI_MAT, SQL_BI_MAT);
 const THU_TUC = quetThuTucDocBiMat(GOC, DOC_BI_MAT);
 
 /**
@@ -198,7 +199,7 @@ describe("★★★ Pha 8 Task 4a — ∀ thủ tục đọc `user_secrets` PH�
    *     theo **QUYỀN TRUY CẬP**, kể cả khi lượt đọc dùng một hình dạng bộ suy chưa biết (SQL thô).
    * ══════════════════════════════════════════════════════════════════════════════════════════════ */
   it("★★★★ §4b ∀ điểm đọc bí mật `user_secrets` phải nằm trong một HÀM CÓ TÊN", () => {
-    const diem = diemDocBiMatCuaUserSecrets(GOC, COT_BI_MAT);
+    const diem = diemDocBiMatCuaUserSecrets(GOC, COT_BI_MAT, SQL_BI_MAT);
     // Cầu chì: bộ suy phải THẤY kho mã thật (0 điểm ⇒ ô này là chân lý rỗng).
     expect(
       diem.length,
@@ -280,7 +281,7 @@ describe("★★★ Pha 8 Task 4a — ∀ thủ tục đọc `user_secrets` PH�
         }),
       });`;
     // (a) trục HÌNH DẠNG LƯỢT ĐỌC — điểm đọc nằm trong một hàm mũi tên ⇒ `hamBao === null`.
-    const diem = diemDocBiMatTrongNguon(FILE_MOI, ma, COT_BI_MAT);
+    const diem = diemDocBiMatTrongNguon(FILE_MOI, ma, COT_BI_MAT, SQL_BI_MAT);
     expect(diem.length, "lượt đọc mới rơi khỏi bộ suy ⇒ nó mù với file mới").toBeGreaterThanOrEqual(1);
     expect(
       diem.some((d) => d.hamBao === null),
@@ -299,6 +300,129 @@ describe("★★★ Pha 8 Task 4a — ∀ thủ tục đọc `user_secrets` PH�
     // (d) ĐỐI CHỨNG DƯƠNG — chỉ nhập KIỂU thì KHÔNG cầm được bảng lúc chạy ⇒ được tha.
     const maKieu = `import type { UserSecrets } from "../../drizzle/schema";\nexport type X = UserSecrets;`;
     expect(nhapUserSecrets(GOC, FILE_MOI, maKieu), "nhập KIỂU bị coi là cầm bảng ⇒ dương tính giả").toBe(false);
+  });
+
+  /* ════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★★ Pha 9 nhóm A · **A3 — SQL THÔ ĐỌC `user_secrets`: TRƯỚC LƯỢT NÀY, **KHÔNG LƯỚI NÀO THẤY**.
+   * ════════════════════════════════════════════════════════════════════════════════════════════
+   * §4b suy người đọc theo **lời gọi drizzle** (`.select({…})` / `.select().from(userSecrets)`).
+   * §4c bắt theo **quyền truy cập**, nhưng nó hỏi *"file này có NHẬP định danh `userSecrets` không"*.
+   * Một câu SQL **thô** không làm cả hai việc ấy: nó không gọi drizzle, và nó **không nhập gì cả** —
+   * nó chỉ viết chữ `user_secrets` trong một chuỗi.
+   *
+   * **ĐO ĐƯỢC TRƯỚC BẢN VÁ** (ba hình dạng dựng sẵn, đối chứng là hình dạng drizzle tương đương):
+   *     drizzle có phép chiếu                       ⇒ **1** điểm
+   *     `sql\`SELECT "twoFactorSecret" FROM user_secrets …\``  ⇒ **0** điểm  ← MÙ
+   *     `sql\`SELECT * FROM user_secrets\``                    ⇒ **0** điểm  ← MÙ
+   * ⇒ Lượt rò qua cánh cửa ấy vô hình với **cả hai** lưới, và `npm run check` sạch.
+   *
+   * ⚠⚠⚠ **PHÉP ĐO ĐÃ BÁC BỎ MỘT TIỀN ĐỀ CỦA CHÍNH BẢN VÁ, VÀ ĐÓ LÀ LÝ DO TÊN SQL PHẢI SUY TỪ DRIZZLE.**
+   *    Bản đầu của lượt đo dùng `two_factor_secret` / `password_hash` — tức **giả định** quy ước
+   *    camelCase → snake_case. Sự thật của kho mã này: `drizzle/schema/auth.ts` khai
+   *    `pgTable("user_secrets", { twoFactorSecret: varchar("twoFactorSecret", …) })` — **BẢNG
+   *    snake_case, CỘT camelCase**. Một hàm `camelToSnake` viết tay sẽ sinh ra tên **không tồn tại
+   *    trong DB này**, và lưới sẽ xanh vĩnh viễn vì nó đi tìm thứ không có. ⇒ Tên lấy từ
+   *    `getTableName()` + `.name` của cột — **nguồn sự thật DUY NHẤT** (`_core/publicUser.ts`).
+   * ════════════════════════════════════════════════════════════════════════════════════════════ */
+  describe("★★★★ §4e A3 — SQL THÔ chạm bí mật `user_secrets`", () => {
+    it("★★★ CẦU CHÌ — tên SQL suy từ drizzle, KHÔNG phải quy ước viết tay", () => {
+      expect(SQL_BI_MAT.bang, "tên bảng suy sai ⇒ mọi ô dưới đi tìm một thứ không tồn tại").toBe("user_secrets");
+      expect(
+        SQL_BI_MAT.cot,
+        "★ Kho mã này khai CỘT camelCase trong khi BẢNG snake_case — một phép đổi quy ước viết tay\n" +
+          "  sẽ cho `two_factor_secret` và lưới sẽ XANH VĨNH VIỄN vì đi tìm tên không có thật.",
+      ).toEqual(["passwordHash", "twoFactorSecret"]);
+    });
+
+    it("★★★★ M3 — SQL THÔ trong một FILE CHƯA TỒN TẠI bị BẮT (ca phân biệt 'theo ĐƯỜNG THOÁT' với 'theo FILE')", () => {
+      const FILE_MOI = "server/routes/rotHatGiongSqlThoN1.ts";
+      expect(existsSync(join(GOC, FILE_MOI)), "ca này giả định file ấy chưa tồn tại").toBe(false);
+
+      /**
+       * ⚠ File này **KHÔNG nhập `userSecrets`** và **KHÔNG gọi drizzle** — đó là cả điểm mấu chốt:
+       *   §4b và §4c đều mù với nó theo **cấu tạo**. Nó vẫn rót hạt giống TOTP xuống client.
+       */
+      const maTho = [
+        'import { sql } from "drizzle-orm";',
+        'import { getDb } from "../db/connection";',
+        "export async function rotHatGiong(userId: number) {",
+        "  const db = await getDb();",
+        '  const r = await db!.execute(sql`SELECT "twoFactorSecret" FROM user_secrets WHERE "userId" = ${userId}`);',
+        "  return r.rows[0];",
+        "}",
+      ].join("\n");
+
+      const diem = diemDocBiMatTrongNguon(FILE_MOI, maTho, COT_BI_MAT, SQL_BI_MAT);
+      expect(
+        diem.length,
+        "SQL THÔ đọc cột bí mật KHÔNG bị bắt ⇒ một lượt rò đi qua cánh cửa này là VÔ HÌNH với cả hai lưới",
+      ).toBeGreaterThanOrEqual(1);
+      // …và nó phải mù với hai bộ suy CŨ — đó là bằng chứng ô này canh một trục MỚI, không trùng lặp.
+      expect(
+        nhapUserSecrets(GOC, FILE_MOI, maTho),
+        "file SQL thô KHÔNG nhập `userSecrets` — nếu ô này `true` thì §4c đã phủ rồi và §4e thừa",
+      ).toBe(false);
+    });
+
+    it("★★★ `SELECT *` trên bảng bí mật bị bắt (không cần nêu tên cột nào)", () => {
+      const ma = [
+        'import { sql } from "drizzle-orm";',
+        "export async function docSao(db: any, id: number) {",
+        "  return db.execute(sql`SELECT * FROM user_secrets WHERE \"userId\" = ${id}`);",
+        "}",
+      ].join("\n");
+      expect(
+        diemDocBiMatTrongNguon("server/routes/saoN1.ts", ma, COT_BI_MAT, SQL_BI_MAT).length,
+        "`SELECT *` kéo MỌI cột kể cả bí mật — không bắt là để ngỏ đúng hình dạng lười nhất",
+      ).toBeGreaterThanOrEqual(1);
+    });
+
+    it("★★★ chuỗi THƯỜNG (không phải `sql` tag) cũng bị bắt — bộ dò ở tầng LITERAL, không ở tầng một API", () => {
+      /**
+       * ⚠ Người ta chạm DB bằng nhiều cửa: `sql` tag, `pool.query`, `client.query`, một hằng chuỗi
+       *   nối vào sau. Ghim bộ dò vào **một** cửa là dựng lại đúng vùng mù vừa vá.
+       */
+      const ma = [
+        "export async function docPool(pool: any, id: number) {",
+        "  const CAU = 'SELECT \"passwordHash\" FROM user_secrets WHERE \"userId\" = $1';",
+        "  return pool.query(CAU, [id]);",
+        "}",
+      ].join("\n");
+      expect(
+        diemDocBiMatTrongNguon("server/routes/poolN1.ts", ma, COT_BI_MAT, SQL_BI_MAT).length,
+        "một hằng chuỗi SQL gán vào biến rồi mới dùng ⇒ vẫn phải bị bắt",
+      ).toBeGreaterThanOrEqual(1);
+    });
+
+    it("★★★★ ĐỐI CHỨNG DƯƠNG — câu SQL KHÔNG chạm bí mật KHÔNG bị bắt (chống dương tính giả)", () => {
+      /**
+       * ⚠⚠ Không có ô này, vị từ *"chuỗi có chứa `user_secrets`"* sẽ xanh một cách vô nghĩa: nó đỏ
+       *    cho **mọi** câu chạm bảng, kể cả `SELECT "userId"` (đếm hàng), kể cả một dòng bình luận.
+       *    Lưới đỏ vì chuyện vô hại là lưới sẽ bị người sau tắt đi.
+       */
+      const dem = [
+        'import { sql } from "drizzle-orm";',
+        "export async function demHang(db: any) {",
+        "  return db.execute(sql`SELECT COUNT(*) AS n FROM user_secrets`);",
+        "}",
+      ].join("\n");
+      // ⚠ `COUNT(*)` chứa dấu `*` nhưng KHÔNG phải `SELECT *` — vị từ phải phân biệt được.
+      expect(
+        diemDocBiMatTrongNguon("server/routes/demN1.ts", dem, COT_BI_MAT, SQL_BI_MAT).length,
+        "`SELECT COUNT(*)` bị xếp là đọc bí mật ⇒ dương tính giả (dấu `*` không phải `SELECT *`)",
+      ).toBe(0);
+
+      const bangKhac = [
+        'import { sql } from "drizzle-orm";',
+        "export async function docBangKhac(db: any) {",
+        '  return db.execute(sql`SELECT "passwordHash" FROM user_secrets_backup_2024`);',
+        "}",
+      ].join("\n");
+      expect(
+        diemDocBiMatTrongNguon("server/routes/khacN1.ts", bangKhac, COT_BI_MAT, SQL_BI_MAT).length,
+        "một bảng KHÁC có tên bắt đầu bằng `user_secrets` bị nhận nhầm ⇒ vị từ thiếu biên từ",
+      ).toBe(0);
+    });
   });
 });
 

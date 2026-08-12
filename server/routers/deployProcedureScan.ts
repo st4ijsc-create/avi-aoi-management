@@ -778,9 +778,13 @@ export function anhXaKhongGianTen(goc: string): { anhXa: Record<string, string>;
  *
  * @param cotBiMat tập cột bí mật, **SUY RA** từ `USER_SECRETS_FIELD_VISIBILITY` (đừng viết tay).
  */
-export function nguoiDocBiMatCuaUserSecrets(goc: string, cotBiMat: readonly string[]): string[] {
+export function nguoiDocBiMatCuaUserSecrets(
+  goc: string,
+  cotBiMat: readonly string[],
+  sqlBiMat: TenSqlBiMat,
+): string[] {
   const ra = new Set<string>();
-  for (const d of diemDocBiMatCuaUserSecrets(goc, cotBiMat)) {
+  for (const d of diemDocBiMatCuaUserSecrets(goc, cotBiMat, sqlBiMat)) {
     if (d.hamBao !== null) ra.add(d.hamBao);
   }
   return [...ra].sort();
@@ -794,11 +798,63 @@ export interface DiemDocBiMat {
   readonly hamBao: string | null;
 }
 
+/**
+ * ★★★ Pha 9 nhóm A · **A3 — TÊN SQL của bảng/cột bí mật, để bắt được câu SQL THÔ.**
+ *
+ * ⚠⚠ Tham số này **BẮT BUỘC**, không phải tuỳ chọn — và đó là cả điểm mấu chốt. Nếu nó tuỳ chọn,
+ *    một người gọi **thứ ba** quên truyền sẽ được một bộ suy **mù với SQL thô** mà cổng vẫn xanh:
+ *    đúng lớp lỗi *"lưới yếu hơn quyết định lưới nào đỏ"*. Bắt buộc ⇒ quên là **lỗi biên dịch**.
+ * ⚠ Giá trị phải **SUY TỪ DRIZZLE** (`tenSqlCuaBangBiMat()` / `moiTenSqlCotBiMat()` ở
+ *   `server/_core/publicUser.ts`), không viết tay: xem khối lý lẽ ở đó.
+ */
+export interface TenSqlBiMat {
+  /** Tên bảng dưới DB, ví dụ `user_secrets`. */
+  readonly bang: string;
+  /** Tên cột bí mật dưới DB, ví dụ `two_factor_secret`. */
+  readonly cot: readonly string[];
+}
+
+/**
+ * Nội dung chữ của một literal chuỗi/template — **gộp cả các mảnh của template có nội suy**, vì
+ * `sql\`SELECT … FROM user_secrets WHERE id = ${x}\`` bị TypeScript tách thành nhiều mảnh.
+ * Trả `null` nếu nút không phải một literal chữ.
+ */
+function chuCuaLiteral(n: ts.Node): string | null {
+  if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return n.text;
+  if (ts.isTemplateExpression(n)) {
+    return n.head.text + n.templateSpans.map((s) => s.literal.text).join(" ");
+  }
+  return null;
+}
+
+/**
+ * ★★★ Pha 9 A3 — *"đoạn chữ này là một câu SQL chạm bí mật `user_secrets`"*.
+ *
+ * ĐO ĐƯỢC TRƯỚC BẢN VÁ: bộ suy cũ chỉ biết hai hình dạng **drizzle**; ba hình dạng SQL thô dựng
+ * sẵn (`sql\`SELECT two_factor_secret FROM user_secrets…\`` · `sql\`SELECT * FROM user_secrets\`` ·
+ * `pool.query("SELECT password_hash FROM user_secrets…")`) cho **0/0/0 điểm** — trong khi hình dạng
+ * drizzle tương đương cho **1**. Một lượt rò qua cánh cửa ấy là vô hình với **cả hai** lưới.
+ *
+ * ⚠ Vị từ đòi **CẢ HAI** vế (tên bảng **và** (một cột bí mật **hoặc** `SELECT *`)) — không chỉ tên
+ *   bảng. Một câu `SELECT user_id FROM user_secrets` (đếm hàng, không chạm bí mật) **không** bị
+ *   bắt; nếu không, lưới sẽ đỏ vì những câu vô hại và người sau sẽ tắt nó đi.
+ */
+function laSqlChamBiMat(chu: string, sqlBiMat: TenSqlBiMat): boolean {
+  const s = chu.toLowerCase();
+  const bang = sqlBiMat.bang.toLowerCase();
+  // Tên bảng theo BIÊN TỪ: `user_secrets_backup` không phải bảng này.
+  if (!new RegExp(`\\b${bang.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(s)) return false;
+  if (sqlBiMat.cot.some((c) => new RegExp(`\\b${c.toLowerCase()}\\b`).test(s))) return true;
+  // `SELECT *` trên chính bảng bí mật ⇒ kéo MỌI cột, kể cả bí mật.
+  return /\bselect\s+\*/.test(s);
+}
+
 /** Mọi điểm đọc bí mật `user_secrets` trong **một nguồn bất kỳ** (kể cả file CHƯA TỒN TẠI — M3). */
 export function diemDocBiMatTrongNguon(
   duong: string,
   ma: string,
   cotBiMat: readonly string[],
+  sqlBiMat: TenSqlBiMat,
 ): DiemDocBiMat[] {
   const sf = ts.createSourceFile(duong, ma, ts.ScriptTarget.Latest, true);
   const ra: DiemDocBiMat[] = [];
@@ -855,6 +911,14 @@ export function diemDocBiMatTrongNguon(
         }
       }
     }
+    // ★ Pha 9 A3 — nhánh **SQL THÔ**: mọi literal chữ là một câu SQL chạm bí mật.
+    // ⚠ Bắt ở tầng LITERAL, không ở tầng `sql\`\`` / `db.execute(…)`: người ta chạm DB bằng rất
+    //   nhiều cửa (`sql` tag, `pool.query`, `client.query`, một hằng chuỗi nối vào sau). Ghim vào
+    //   một cửa là dựng lại đúng vùng mù vừa vá — "N+1" đã hai mươi lần.
+    {
+      const chu = chuCuaLiteral(n);
+      if (chu !== null && laSqlChamBiMat(chu, sqlBiMat)) ghi(n);
+    }
     ts.forEachChild(n, di);
   };
   di(sf);
@@ -862,12 +926,24 @@ export function diemDocBiMatTrongNguon(
 }
 
 /** Mọi điểm đọc bí mật `user_secrets` trong **mã sản xuất `server/**`** (suy từ ĐĨA, không từ danh sách). */
-export function diemDocBiMatCuaUserSecrets(goc: string, cotBiMat: readonly string[]): DiemDocBiMat[] {
+export function diemDocBiMatCuaUserSecrets(
+  goc: string,
+  cotBiMat: readonly string[],
+  sqlBiMat: TenSqlBiMat,
+): DiemDocBiMat[] {
   const ra: DiemDocBiMat[] = [];
   for (const f of moiFileDuoi(goc, "server", [".ts"]).filter((x) => !laFileTest(x.duong))) {
     const ma = readFileSync(f.that, "utf8");
-    if (!ma.includes("userSecrets")) continue; // tiền lọc — khuôn dùng chung của file này
-    ra.push(...diemDocBiMatTrongNguon(f.duong, ma, cotBiMat));
+    /**
+     * ★★★ Pha 9 A3 — **TIỀN LỌC PHẢI BIẾT CẢ HAI CHÍNH TẢ.**
+     * ⚠⚠ Trước bản vá dòng này là `if (!ma.includes("userSecrets")) continue;`. Một file chạm bảng
+     *    **chỉ bằng SQL thô** không bao giờ viết chữ `userSecrets` (camelCase) — nó viết
+     *    `user_secrets`. Nghĩa là kể cả sau khi bộ dò biết đọc SQL thô, **tiền lọc vẫn loại file ấy
+     *    ra trước khi bộ dò kịp nhìn**: một vùng mù nằm ở *"lượt sàng"*, không ở *"phép đo"* — đúng
+     *    lớp lỗi đã đo được ở Pha 4 (glob rỗng ⇒ vitest im lặng khai XANH).
+     */
+    if (!ma.includes("userSecrets") && !ma.includes(sqlBiMat.bang)) continue;
+    ra.push(...diemDocBiMatTrongNguon(f.duong, ma, cotBiMat, sqlBiMat));
   }
   return ra.sort((a, b) => `${a.file}:${a.dong}`.localeCompare(`${b.file}:${b.dong}`));
 }
