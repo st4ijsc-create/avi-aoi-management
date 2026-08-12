@@ -640,3 +640,48 @@ vì một population thật thì đứng yên qua nhiều mẫu còn một lần
 **Chiều đi hiện tại đã đúng:** K-1 **SIẾT** tư thế node-reuse (export ở đầu script, nên cả năm lần
 `dotnet test` cũng nhận) chứ không nới phép kiểm. Điều đó có thể tự làm population nhỏ lại và khiến cuộc đua
 ngừng bắn mà không ai phải nới gì cả — hãy đo lại trước khi xây thuốc chữa.
+
+## 12. 🔴 Hạng mục mang theo (K-1) — GHI ĐÈ TẠI CHỖ: không dụng cụ nào của K-1 nhìn thấy
+
+Tách **riêng** khỏi lỗ "hiện-rồi-biến-mất" ở §11 và khỏi nửa ĐUA, có chủ đích: gộp chung sẽ khiến hạng mục
+này **thừa hưởng độ khó của hàng xóm**, mà nó thì **không cần một watcher** — hai cái kia thì có.
+
+**Lỗ.** Cả hai dụng cụ của K-1 so **TẬP TÊN**: `comm -13`/`comm -23` phía cổng, `Except` phía tiến trình.
+Một lần **ghi đè tại chỗ** lên một tên **đã có sẵn** không đổi tập tên, nên **cả hai đều im lặng**. Tác hại
+đúng bằng thứ K-1 sinh ra để chặn — một lần niêm phong lại đè lên một trong **mười một** blob được cố ý giữ
+sẽ **phá bằng chứng mà không dụng cụ nào nói một tiếng nào** — và nó **tệ hơn** lỗ hiện-rồi-biến-mất ở chỗ
+lỗ kia ít nhất đòi ai đó **chủ động xoá một file đã được nêu tên**.
+
+**Vì sao KHÔNG đóng trong K-1** (lý lẽ của phản biện, tôi nhận):
+1. **Chưa từng có một ca đo được nào.** Bản kiểm kê quy **2.996 trên 3.007** blob về những tiền tố
+   **duy-nhất-mỗi-lần-chạy** (`SIM-E2E-<unix-ms>`, `SF-RESTART-<8 hex>`, `REDIRECT-…`), và **cả hai** rò rỉ
+   đã biết đều rơi vào **thêm mới**. Lỗ là thật, rủi ro hiện thời là lý thuyết — **ngược** với lỗ
+   hiện-rồi-biến-mất, nơi *cách lách* (xoá đúng file vừa bị nêu tên) chính là thứ một người đang chịu áp lực
+   sẽ với tay tới.
+2. **Đóng cho đúng nghĩa là tái cấu trúc phép khẳng định LẦN THỨ BA trong một nhánh.** Nhánh này đã trả giá
+   đàng hoàng để chứng minh lại rằng phép khẳng định còn hỏng được sau lần tái cấu trúc thứ nhất (M4). Lần
+   thứ ba cần vòng đột biến riêng của nó, và làm việc đó **bên trong cửa sổ merge** chính là kiểu "một vòng
+   sửa đúng cái dụng cụ sinh ra phán quyết của chính nó" mà §11 vừa mới nói đúng.
+
+**🔴 DỤNG CỤ ĐÃ ĐƯỢC CHỌN SẴN, ghi ở đây để nhiệm vụ sau KHÔNG phải tranh luận lại thiết kế:** bộ ba
+**tên + `Length` + `LastWriteTimeUtc`**, ở **cả hai** tầng. Vẫn **đọc 0 byte**, nên cả tính chất "không bao
+giờ mở một file" lẫn ràng buộc bí mật đều **còn nguyên**; và nó **ghép thêm** vào phép so tập tên đang có
+chứ **không thay thế** nó. Phía bash là **một chuỗi định dạng `stat`**. Nhiệm vụ ấy phải kèm vòng đột biến
+của riêng nó, vì nó đổi hình dạng phép khẳng định.
+
+**Ba việc nhỏ MANG THEO, chưa làm và chưa phân xử** — ghi ra vì tiêu đề "Minors taken" ở báo cáo K-1 liệt kê
+ba trên sáu, và một tiêu đề ngụ ý nhiều hơn danh sách của nó là đúng lớp lỗi nhánh này trả giá nhiều lần:
+- **M-3 — `OrdinalIgnoreCase` (C#) so với `comm` so byte (bash).** Một lần đổi tên **chỉ khác hoa/thường**
+  làm hai dụng cụ **bất đồng**: phía cổng thấy một cặp thêm/bớt, phía tiến trình không thấy gì. Đây là một
+  **bất đồng giữa hai dụng cụ**, không phải một lỗ của cặp.
+- **M-5 — `_creds_src` là đường dẫn TƯƠNG ĐỐI.** Chạy script từ sai thư mục làm phép dò dẫn xuất hỏng
+  **trước**, và thất bại đó **nêu sai thuốc chữa** (nó nói "sửa phép dò", còn nguyên nhân là cwd).
+- **M-6 — "năm artifact" là một con số CHƯA ĐO**, ở ba chỗ trong mã (`verify-suites.sh`,
+  `RealCredentialStoreLeakGuard.cs` ×2). Đúng cái lớp mà K-1 vừa dành hai vòng để sửa (`633`), còn sót lại
+  trong chính văn bản của K-1.
+- **N-4 (tin cậy thấp, chưa tái lập) — `ls -1a "$parent" | grep -qxF` dưới `set -o pipefail`.** `grep -q`
+  thoát ngay khi khớp; nếu `ls` còn đang ghi thì nó ăn SIGPIPE và `pipefail` biến pipeline thành khác 0, tức
+  đọc thành "không tìm thấy" rồi rơi xuống nhánh "vắng mặt thật → return 0" — **một lần xanh im lặng trong
+  đúng hàm sinh ra để từ chối điều đó**. Không với tới được trên máy này (`C:\ProgramData` nhỏ hơn bộ đệm
+  pipe rất nhiều, và nhánh `[[ -e ]]` chặn trước ở ca thường). Thuốc chữa một dòng:
+  `grep -qxF … <<< "$(ls -1a "$parent")"`.

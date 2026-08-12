@@ -126,6 +126,15 @@ internal static class RealCredentialStoreWatch
     /// missing baseline can only ever produce a vacuous pass.</summary>
     internal static string? SetupFailure { get; private set; }
 
+    /// <summary>🔴 Whether <see cref="SetupFailure"/> was an ACCESS DENIAL rather than a broken scan —
+    /// carried separately because the two need OPPOSITE advice, and because this round's own fix made the
+    /// first one likely (branch re-review, N-1). Before the absent-vs-unreadable fix, an ACL denial at
+    /// module-initializer time threw NOTHING: <c>Directory.Exists</c> returned false and the baseline came
+    /// back empty. Now it throws by design and lands in <see cref="SetupFailure"/> — so the single most
+    /// likely producer of a setup failure on a real machine became the one case the floor's message was
+    /// telling the reader to fix a working regex over.</summary>
+    internal static bool SetupFailureIsAccessDenied { get; private set; }
+
     [ModuleInitializer]
     internal static void CaptureBaseline()
     {
@@ -142,6 +151,7 @@ internal static class RealCredentialStoreWatch
         }
         catch (Exception ex)
         {
+            SetupFailureIsAccessDenied = ex is UnauthorizedAccessException;
             SetupFailure = $"{ex.GetType().Name}: {ex.Message}";
         }
     }
@@ -269,12 +279,28 @@ public sealed class RealCredentialStoreLeakGuardTests
     public void TheRealCredentialDirectory_GainsNoEntry_WhileThisSuitesProcessRuns()
     {
         // Non-vacuity floor. A missing baseline cannot produce a meaningful pass, only a silent one, so it
-        // is RED — and red pointing at the scan, which is what broke.
+        // is RED — but red pointing at THE RIGHT THING, which is not always the scan.
+        //
+        // 🔴 This message said "fix the derivation" unconditionally until the branch re-review (N-1), and
+        // the round that introduced the absent-vs-unreadable fix is what made that wrong: an ACL denial
+        // now REACHES here, where before it threw nothing at all. So the fix for one silent-vacuity hole
+        // routed its newly-detected case straight into a message naming a culprit that does not exist —
+        // the same defect New-7 was, at the site New-7 originally named, while the adjacent site got
+        // corrected. Fixed one side, left the symmetric side: the shape this branch has now paid for
+        // three times.
         Assert.True(
             RealCredentialStoreWatch.SetupFailure is null,
             "The REAL creds root was never resolved, so this assertion had nothing to compare and could " +
-            "only have passed vacuously. Fix the derivation in RealCredentialStoreWatch — do NOT delete " +
-            $"this assertion, and do NOT hardcode the directory. Reason: {RealCredentialStoreWatch.SetupFailure}");
+            "only have passed vacuously. NOTHING was measured — do not go looking for a writer.\n" +
+            (RealCredentialStoreWatch.SetupFailureIsAccessDenied
+                ? "  ACCESS DENIED, and the derivation is FINE — do NOT rewrite it. SecurityDirAcl.Apply " +
+                  "restricts that directory to SYSTEM/Administrators/owner on every CredentialStore.Save, " +
+                  "so a run under another identity cannot enumerate it. Read access to that machine-wide " +
+                  "directory is a real requirement of these test projects, stated in their .csproj.\n"
+                : "  Fix the derivation in RealCredentialStoreWatch, and do NOT hardcode the directory — a " +
+                  "restated literal is how this guard would watch a dead path and stay green forever.\n") +
+            "  Either way: do NOT delete this assertion, and do NOT delete anything under " +
+            $"%ProgramData%\\ST4I\\. Reason: {RealCredentialStoreWatch.SetupFailure}");
 
         var root = RealCredentialStoreWatch.Root!;
         var baseline = RealCredentialStoreWatch.Baseline!;

@@ -82,8 +82,13 @@ export MSBUILDDISABLENODEREUSE=1
 # the completeness claim this repo has now paid for five times.
 #
 # 🔴 EXPECT_CONFORMANCE MOVING 22 -> 23 IS NOT THE THING THE "stays 22" NOTES BELOW PROTECT. There are
-# ELEVEN of them (twelve counting this line — `grep -c 'stays 22'`, measured, because K-1's own report
-# guessed "eight" and the branch review counted). Every one is scoped to a SPECIFIC TASK and to CONTENT —
+# ELEVEN genuine notes, at lines 167, 236, 343, 492, 572, 841, 877, 1023, 1762, 2065 and 2187.
+# 🔴 `grep -c 'stays 22'` returns THIRTEEN, not eleven and not the "twelve" this parenthetical used to
+# claim — because THIS SUMMARY quotes the literal string twice while describing it. A number offered in
+# the voice of a measurement, naming the exact command, that the command does not produce, inside the
+# paragraph defending a moved count (branch re-review, N-3; it pre-dates this round and two reviews
+# missed it). The eleven is the checked claim: each of those lines is scoped to a SPECIFIC TASK and to
+# CONTENT —
 # no new driver, no new connector kind, no Check_* added to the shared conformance suite — and none
 # asserts a standing invariant on the integer. K-1 adds none of those things: it adds the same hygiene
 # [Fact] every other suite gets, from a linked file outside that project, with no ProjectReference and no
@@ -2407,8 +2412,13 @@ creds_bracket_text() {
   echo "     false positive of this gate and not a test defect — check before you go hunting a test."
   echo "  WHAT THE SUITE RESULTS ABOVE DO AND DO NOT TELL YOU:"
   echo "     * bracket RED + one or more suites RED on"
-  echo "       RealCredentialStoreLeakGuardTests  ->  DECISIVE: A TEST WROTE IT. A guard went red, so that"
-  echo "       process saw the entry appear inside its own window. It names the process; go there."
+  echo "       RealCredentialStoreLeakGuardTests  ->  STRONGLY SUGGESTIVE, not decisive. It narrows the"
+  echo "       WINDOW: the entry appeared while that suite's process was alive. Start there."
+  echo "       🔴 But the guard names the OBSERVING process, never the WRITING one. It watches the same"
+  echo "       machine-wide directory this bracket does — it is narrower in TIME, not in DOMAIN — so an"
+  echo "       operator, the WPF shell or the edge service completing a claim during that suite's window"
+  echo "       turns it red too. That is the same population the SCOPE line above declares real; it does"
+  echo "       not stop existing because a guard went red."
   echo "     * bracket RED + all five suites GREEN  ->  🔴 NOT DECISIVE. DO NOT read it as \"external\"."
   echo "       TWO causes produce this exact signature and this output cannot separate them:"
   echo "         (a) another process on this machine wrote it — WPF shell, edge service, or an operator"
@@ -2424,7 +2434,10 @@ creds_bracket_text() {
   echo "       means a test wrote it. The names above are a hint and NOTHING MORE: a census by machine-code"
   echo "       prefix is the very instrument this guard exists because it returns green over real leaks."
   echo "     Both instruments are still needed — this one is complete but anonymous, the per-suite guard"
-  echo "     attributes but only over its own window — and NEITHER of them closes (b)."
+  echo "     narrows the window but is equally anonymous about the writer."
+  echo "     🔴 And to be exact about (b): this bracket DETECTS it — that is why you are reading this text"
+  echo "     at all — it just cannot ATTRIBUTE it. Saying \"neither closes (b)\" understated the instrument"
+  echo "     that caught it; detection and attribution are different things and only the second is missing."
 }
 
 # 🔴 Unconditional, via trap: the warnings gate and the build-node gate below both `exit 1` before the
