@@ -143,26 +143,50 @@ function bam(userId: number, token: string): Buffer {
  *   • trả về **= `luot` của ta** ⇒ ta vừa **chèn mới**, hoặc vừa **thu lại** một mục **quá hạn**,
  *     hoặc đây là **lượt verify thứ N của CÙNG lượt gọi** ⇒ cho qua;
  *   • trả về **≠ `luot` của ta** ⇒ một **lượt gọi KHÁC** đang giữ mã và mục **còn sống** ⇒ PHÁT LẠI.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ Pha 9 · **NỬA CÒN LẠI CỦA I-3 — ĐỒNG HỒ CỦA SỔ LÀ ĐỒNG HỒ CỦA **DB**, KHÔNG PHẢI CỦA
+ * NGƯỜI GỌI.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Nợ khai ở Pha 7 (docstring `donSo`) nói đúng lời giải: *"đưa đồng hồ của sổ xuống DB — `expiresAt`
+ * **ghi** bằng `now()` của Postgres và cả hai phép so (`tieuMaTrongSo` **và** `donSo`) đọc cùng đồng
+ * hồ ấy"*. Lượt này trả **trọn** món nợ ấy, cho **cả hai** hàm cùng lúc.
+ *
+ * ⚠⚠⚠ **VÌ SAO PHẢI ĐI CÙNG NHAU, KHÔNG VÁ MỘT NỬA** — đo được khi thử vá riêng `tieuMaTrongSo`:
+ *    ghi `expiresAt` bằng đồng hồ DB trong khi `donSo` vẫn so bằng đồng hồ NGƯỜI GỌI ⇒ một lưới
+ *    lái đồng hồ +1h **xoá ngay** mục vừa ghi của chính nó (`real+120s <= real+3600s`), và ca
+ *    *"đỉnh nhiều mục"* thấy đỉnh = **1**. Hai đồng hồ dưới một bất biến là **đúng lớp lỗi** mà cả
+ *    chuỗi pha này đang trả nợ — nên `nowMs` bị **gỡ khỏi CHỮ KÝ** của cả hai hàm, không phải
+ *    "được khuyên là đừng dùng".
+ *
+ * **BẤT BIẾN NAY NEO ĐƯỢC** (`totpLedgerDurable.test.ts` §I-3b):
+ *   ***Một lượt gọi với đồng hồ lệch KHÔNG đổi được kết quả của người khác, và KHÔNG kéo dài/rút
+ *   ngắn hiệu lực của chính mã mình.***
+ *   · vế *"người khác"*: khoá sổ là `(userId, tokenHash)` và `donSo` giới hạn theo `userId` (I-3);
+ *   · vế *"chính mình"*: `expiresAt` **và** cả hai phép so nay đọc `now()` của Postgres ⇒ `nowMs`
+ *     **không có đường nào** chạm tới sổ. Nó chỉ còn lái đồng hồ của `speakeasy`.
+ *
+ * ⚠ `excluded."expiresAt"` giữ nguyên ở nhánh thu-lại: giá trị ấy nay **cũng** do DB tính (xem
+ *   `hanMoi()`), nên hai vế của `CASE` đọc **cùng một** đồng hồ.
  */
 async function tieuMaTrongSo(
   userId: number,
   tokenHash: Buffer,
   luot: string,
-  nowMs: number,
 ): Promise<string | null> {
   const db = await layDb();
   if (db === null) return null;
   const { totpConsumed } = await import("../../drizzle/schema/auth");
   const rows = await db
     .insert(totpConsumed)
-    .values({ userId, tokenHash, luot, expiresAt: new Date(nowMs + TOTP_HAN_SO_MS) })
+    .values({ userId, tokenHash, luot, expiresAt: hanMoi() })
     .onConflictDoUpdate({
       target: [totpConsumed.userId, totpConsumed.tokenHash],
       set: {
         // ⚠ `totpConsumed.<cot>` trong nhánh `DO UPDATE` render thành `"totp_consumed"."<cot>"` —
         //   tức **hàng ĐANG CÓ**; `excluded."<cot>"` là hàng ta vừa định chèn. Đúng hai vế cần.
-        luot: sql`CASE WHEN ${totpConsumed.expiresAt} <= ${mocUtc(nowMs)} THEN excluded."luot" ELSE ${totpConsumed.luot} END`,
-        expiresAt: sql`CASE WHEN ${totpConsumed.expiresAt} <= ${mocUtc(nowMs)} THEN excluded."expiresAt" ELSE ${totpConsumed.expiresAt} END`,
+        luot: sql`CASE WHEN ${totpConsumed.expiresAt} <= ${dongHoSo()} THEN excluded."luot" ELSE ${totpConsumed.luot} END`,
+        expiresAt: sql`CASE WHEN ${totpConsumed.expiresAt} <= ${dongHoSo()} THEN excluded."expiresAt" ELSE ${totpConsumed.expiresAt} END`,
       },
     })
     .returning({ luot: totpConsumed.luot });
@@ -170,18 +194,24 @@ async function tieuMaTrongSo(
 }
 
 /**
- * Mốc thời gian cho một **mảnh `sql` thô**.
+ * **ĐỒNG HỒ DUY NHẤT CỦA SỔ** — `now()` của Postgres, quy về UTC.
  *
- * ⚠⚠ **KHÔNG truyền thẳng một `Date` vào `sql\`…\``** — đã trả giá ở Bước 5: drizzle chỉ biết kiểu
- * cột trong `.values()`, còn tham số của một mảnh `sql` thô đi **thẳng** xuống gói `postgres` (v3)
- * và ném `ERR_INVALID_ARG_TYPE: … Received an instance of Date`. Truyền **số giây** rồi để Postgres
- * tự dựng mốc là đường duy nhất không phụ thuộc vào việc driver có đoán đúng kiểu hay không.
- * ⚠ `AT TIME ZONE 'UTC'` là **bắt buộc**: `to_timestamp()` trả `timestamptz`, còn cột là `timestamp`
- *   **không** múi giờ (drizzle ghi Date bằng UTC). Thiếu nó, phép so lệch đúng bằng offset của máy
- *   chủ — một lỗi **im lặng** chỉ hiện ra ngoài UTC.
+ * ⚠ `AT TIME ZONE 'UTC'` là **bắt buộc**: `now()` trả `timestamptz`, còn cột là `timestamp`
+ *   **không** múi giờ (drizzle ghi `Date` bằng UTC). Thiếu nó, phép so lệch đúng bằng offset của
+ *   máy chủ — một lỗi **im lặng** chỉ hiện ra ngoài UTC.
+ *   ✅ Đo được ở lượt này: `SHOW TimeZone` = `Etc/UTC` trên cả hai DB, nên hôm nay offset là 0 —
+ *   nhưng đó là một **cấu hình**, không phải một bất biến, nên phép quy đổi **ở lại**.
+ * ⚠ **KHÔNG truyền một `Date` vào `sql\`…\``** (bài học Bước 5): tham số của một mảnh `sql` thô đi
+ *   **thẳng** xuống gói `postgres` (v3) và ném `ERR_INVALID_ARG_TYPE: … Received an instance of
+ *   Date`. Nay không còn tham số thời gian nào để truyền — đó chính là điểm của lượt vá.
  */
-function mocUtc(nowMs: number) {
-  return sql`to_timestamp(${nowMs / 1000}) AT TIME ZONE 'UTC'`;
+function dongHoSo() {
+  return sql`(now() AT TIME ZONE 'UTC')`;
+}
+
+/** Hạn của một mục MỚI, tính **trong DB**: `now() + TOTP_HAN_SO_MS`. */
+function hanMoi() {
+  return sql`(${dongHoSo()} + make_interval(secs => ${TOTP_HAN_SO_MS / 1000}))`;
 }
 
 /**
@@ -224,17 +254,17 @@ function mocUtc(nowMs: number) {
  * ⚠ Pha 7 đã đóng đúng nửa này cho `__soTotpSize`/`__resetSoTotpChoTest` (xem docstring của chúng)
  *   và **bỏ quên `donSo`** — cái DUY NHẤT chạy trên **đường sản phẩm**.
  *
- * ⚠⚠ **NỢ CÒN LẠI, NÓI RA CHỨ KHÔNG ĐỂ NGẦM:** lượt dọn vẫn lái bằng `nowMs` của người gọi. Với
- *    giới hạn `userId` ở đây, một đồng hồ lệch **không còn chạm được người khác**; nó chỉ còn có
- *    thể xoá sớm **mã KHÁC của CHÍNH người ấy** — và chỉ trong topo **nhiều bản sao `ROLE=api`
- *    lệch > 120 s**, thứ hệ hôm nay không hỗ trợ (xem docstring đầu file). Lời giải **trọn vẹn** là
- *    đưa đồng hồ của sổ xuống DB — `expiresAt` **ghi** bằng `now()` của Postgres và cả hai phép so
- *    (`tieuMaTrongSo` **và** hàm này) đọc cùng đồng hồ ấy. Nó đổi nghĩa của tham số `nowMs` trên
- *    **toàn bộ** dàn chứng minh của Task 5, nên là một **quyết định của chủ dự án**, không phải một
- *    lượt vá lặng lẽ. ⚠ `tieuMaTrongSo` cũng lái bằng `nowMs` ở nhánh *"thu lại mục quá hạn"* —
- *    cùng một nợ, cùng một lời giải.
+ * ✅ **NỢ ẤY ĐÃ TRẢ (Pha 9, chủ dự án duyệt).** Câu cũ ở đây là: *"lượt dọn vẫn lái bằng `nowMs` của
+ *    người gọi … lời giải trọn vẹn là đưa đồng hồ của sổ xuống DB … `tieuMaTrongSo` cũng lái bằng
+ *    `nowMs` ở nhánh thu-lại — cùng một nợ, cùng một lời giải"*. Lượt này làm đúng thế, cho **cả
+ *    hai** hàm cùng lúc: `nowMs` bị **gỡ khỏi chữ ký** của cả `tieuMaTrongSo` lẫn hàm này, và mọi
+ *    phép so đọc `dongHoSo()` = `now()` của Postgres.
+ *    ⚠ Vá một nửa là **tệ hơn không vá**: đo được khi thử — ghi `expiresAt` bằng đồng hồ DB mà vẫn
+ *      so bằng đồng hồ người gọi ⇒ một lưới lái đồng hồ +1h **xoá ngay** mục vừa ghi của chính nó.
+ *    ⚠ `nowMs` **vẫn còn** ở `verifyTotpOnce` — nhưng nay nó chỉ lái đồng hồ của `speakeasy`, và
+ *      `totpLedgerDurable.test.ts` §I-3b ghim rằng nó **không** với tới sổ được nữa (AST + hành vi).
  */
-async function donSo(userId: number, nowMs: number): Promise<void> {
+async function donSo(userId: number): Promise<void> {
   try {
     const db = await layDb();
     if (db === null) return;
@@ -255,7 +285,7 @@ async function donSo(userId: number, nowMs: number): Promise<void> {
     await db
       .delete(totpConsumed)
       .where(
-        sql`${totpConsumed.userId} = ${userId} AND ${totpConsumed.expiresAt} <= ${mocUtc(nowMs)}`,
+        sql`${totpConsumed.userId} = ${userId} AND ${totpConsumed.expiresAt} <= ${dongHoSo()}`,
       );
   } catch (e) {
     console.warn(
@@ -309,8 +339,13 @@ let daKeuSaiTienTrinh = false;
  * @param luot    dấu của LƯỢT GỌI. Cùng `luot` ⇒ lượt verify thứ N của **cùng** một lượt gọi ⇒
  *                cho qua. Bỏ trống ⇒ mỗi lượt gọi là một lượt riêng (đúng cho mọi điểm gọi chỉ
  *                verify **một** lần / request).
- * @param nowMs   **chỉ dùng trong lưới** — điều khiển cả đồng hồ của `speakeasy` lẫn hạn của sổ,
- *                để các ca về hạn không phải `sleep` 120 giây thật.
+ * @param nowMs   **chỉ dùng trong lưới**, và **CHỈ điều khiển đồng hồ của `speakeasy`** — để một ca
+ *                đúc/kiểm mã ở một nhịp bất kỳ mà không phải chờ thật.
+ *                ⚠⚠ Pha 9: nó **KHÔNG còn** chạm tới sổ. `expiresAt` và cả hai phép so hạn đọc
+ *                `now()` của **Postgres** (xem `dongHoSo()`), nên một đồng hồ lệch không kéo dài
+ *                hay rút ngắn được hiệu lực của bất kỳ mục nào — kể cả mục của chính người gọi.
+ *                Muốn thử nghiệm một mục **đã quá hạn**, lưới phải **làm già hàng trong DB**
+ *                (`UPDATE … SET "expiresAt" = now() - interval '…'`), không phải nói dối về giờ.
  */
 export async function verifyTotpOnce(args: {
   userId: number;
@@ -355,7 +390,7 @@ export async function verifyTotpOnce(args: {
 
   let giuBoi: string | null;
   try {
-    giuBoi = await tieuMaTrongSo(userId, bam(userId, token), cuaTa, nowMs);
+    giuBoi = await tieuMaTrongSo(userId, bam(userId, token), cuaTa);
   } catch (e) {
     /**
      * ⚠⚠⚠ **FAIL-CLOSED, VÀ ĐÂY LÀ MỘT QUYẾT ĐỊNH CÓ CHỦ Ý — KHÔNG PHẢI MỘT `catch` CHO ĐỦ.**
@@ -385,7 +420,7 @@ export async function verifyTotpOnce(args: {
 
   // Ta vừa chèn mới / thu lại một mục quá hạn ⇒ đúng lúc bảng CÓ THỂ to thêm ⇒ dọn.
   // ⚠ I-3: dọn **của chính người vừa ghi**, không phải toàn bảng — xem docstring `donSo`.
-  await donSo(userId, nowMs);
+  await donSo(userId);
   return { hopLe: true, phatLai: false };
 }
 

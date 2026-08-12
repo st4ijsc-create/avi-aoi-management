@@ -339,7 +339,24 @@ describe("★★★ Task 6 — sổ mã đã tiêu TỰ DỌN", async () => {
     const dinh = await __soTotpSize([SUP_ID, SUP2_ID]);
     expect(dinh, "5 mã liên tiếp ⇒ sổ phải có mục").toBeGreaterThan(0);
 
-    // Nhảy qua HẠN của sổ rồi ghi thêm MỘT mục ⇒ mọi mục cũ phải biến mất.
+    /**
+     * ★★★★ Pha 9 (nửa còn lại của **I-3**) — **LÀM GIÀ HÀNG TRONG DB, KHÔNG NÓI DỐI VỀ GIỜ.**
+     * Bản trước "nhảy qua HẠN" bằng chính `nowMs` — tức bằng đúng cái quyền mà lỗ I-3 trao cho
+     * người gọi (tự quyết định hạn của sổ bằng đồng hồ của mình). Nay `expiresAt` và cả hai phép
+     * so đọc `now()` của **Postgres**, nên muốn có một mục **đã quá hạn** thì phải làm nó quá hạn
+     * THẬT. Ca này vì thế **mạnh hơn**: nó đo đúng đồng hồ mà phép dọn thật sự đọc.
+     */
+    // ⚠ `../db/connection` bị `vi.mock` thành sổ HỖN HỢP (FakeDb + DB thật). Lượt làm già phải đi
+    //   xuống **DB thật**, nên lấy bản `importActual` — không phải bản mock.
+    const that = await vi.importActual<typeof import("../db/connection")>("../db/connection");
+    const { sql } = await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
+    const dThat = await that.getDb();
+    expect(dThat, "cầu chì: ca này ĐÒI một DB thật").not.toBeNull();
+    await dThat!.execute(
+      sql`UPDATE "totp_consumed" SET "expiresAt" = (now() AT TIME ZONE 'UTC') - interval '1 second' WHERE "userId" IN (${SUP_ID}, ${SUP2_ID})`,
+    );
+
+    // …rồi ghi thêm MỘT mục ⇒ mọi mục đã quá hạn phải biến mất.
     const sau = t0 + Math.ceil(TOTP_HAN_SO_MS / 1000) + 300;
     const kq = await verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: otpLuc(sau), nowMs: sau * 1000 });
     expect(kq.hopLe, "đối chứng dương: mã mới ở thời điểm mới vẫn phải QUA").toBe(true);

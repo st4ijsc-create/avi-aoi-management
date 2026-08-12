@@ -66,6 +66,27 @@ async function donRieng(): Promise<void> {
   await d.execute(sql`DELETE FROM "totp_consumed" WHERE "userId" IN (${USER}, ${USER_KHAC})`);
 }
 
+/**
+ * ★★★★ Pha 9 (nửa còn lại của **I-3**) — **LÀM GIÀ HÀNG TRONG DB, KHÔNG NÓI DỐI VỀ GIỜ.**
+ *
+ * Trước lượt vá, một ca *"mục quá hạn"* được dựng bằng cách **truyền `nowMs` nhảy về tương lai** —
+ * tức chính cái quyền mà lỗ I-3 cho người gọi: quyết định hạn của sổ bằng đồng hồ của mình. Nay
+ * `expiresAt` và cả hai phép so đọc `now()` của **Postgres**, nên một lưới muốn thử nghiệm *"mục đã
+ * quá hạn"* phải **thật sự làm hàng ấy quá hạn**.
+ *
+ * ⚠ Đây là một ca **MẠNH HƠN**, không phải một lượt chiều bản vá: nó thôi phụ thuộc vào việc người
+ *   gọi có nói thật về giờ hay không, và nó đo đúng thứ phép dọn thật sự đọc.
+ */
+async function lamGiaHang(...uids: number[]): Promise<void> {
+  const d = await db();
+  if (!d) return;
+  for (const uid of uids) {
+    await d.execute(
+      sql`UPDATE "totp_consumed" SET "expiresAt" = (now() AT TIME ZONE 'UTC') - interval '1 second' WHERE "userId" = ${uid}`,
+    );
+  }
+}
+
 async function demRieng(): Promise<number> {
   const d = await db();
   if (!d) return 0;
@@ -223,7 +244,10 @@ describe("★★★ (A) Bước 8 — SỔ TỰ DỌN, ĐO ĐƯỢC (không ch�
     const dinh = await demRieng();
     expect(dinh, "phải có một ĐỈNH thật thì phép dọn mới đo được").toBeGreaterThan(1);
 
-    // Nhảy qua hạn rồi ghi MỘT lượt ⇒ mọi mục chết bị quét.
+    // ★ Pha 9 — làm GIÀ hàng bằng đồng hồ của DB (xem `lamGiaHang`), rồi ghi MỘT lượt ⇒ quét sạch.
+    //   ⚠ Trước Pha 9 ca này "nhảy qua hạn" bằng chính `nowMs` — tức bằng đúng cái quyền mà lỗ I-3
+    //     trao cho người gọi. Nay `nowMs` chỉ còn lái `speakeasy`.
+    await lamGiaHang(USER, USER_KHAC);
     const sau = t0 + Math.ceil(t.TOTP_HAN_SO_MS / 1000) + 300;
     const kq = await t.verifyTotpOnce({
       userId: USER, secret: SECRET, token: maLuc(SECRET, sau * 1000), nowMs: sau * 1000,
@@ -404,6 +428,7 @@ describe("★★★ I-3 — lượt dọn của MỘT người dùng KHÔNG đư
     const dinh = await demCua(USER_BA);
     expect(dinh, "phải có một ĐỈNH thật thì phép dọn mới đo được").toBeGreaterThan(1);
 
+    await lamGiaHang(USER_BA); // ★ Pha 9 — quá hạn THẬT theo đồng hồ DB, không phải theo lời khai.
     const sau = t0 + Math.ceil(t.TOTP_HAN_SO_MS / 1000) + 300;
     expect(
       (await t.verifyTotpOnce({
@@ -431,11 +456,210 @@ describe("★★★ I-3 — lượt dọn của MỘT người dùng KHÔNG đư
         userId: USER_BA, secret: SECRET_BA, token: maLuc(SECRET_BA, giay * 1000), nowMs: giay * 1000,
       });
     }
+    // ★ Pha 9 — làm già hàng của **B mà thôi**, để lượt dọn của B THẬT SỰ có việc để làm. Không có
+    //   dòng này, ca dưới xanh vì "chẳng ai dọn gì" — một chân lý rỗng.
+    await lamGiaHang(USER_BA);
     const sau = t0 + Math.ceil(t.TOTP_HAN_SO_MS / 1000) + 300;
     await t.verifyTotpOnce({
       userId: USER_BA, secret: SECRET_BA, token: maLuc(SECRET_BA, sau * 1000), nowMs: sau * 1000,
     });
+    expect(await demCua(USER_BA), "cầu chì: lượt dọn của B PHẢI thật sự quét (nếu không ca này rỗng)").toBe(1);
 
     expect(await demCua(USER), "lượt dọn CÓ CHẠY của B vẫn không được chạm hàng của A").toBe(cuaA);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ Pha 9 · **I-3b — NỬA CÒN LẠI: ĐỒNG HỒ CỦA NGƯỜI GỌI KHÔNG CHẠM ĐƯỢC SỔ.**
+ *
+ * Nợ khai ở Pha 7 (`donSo` docstring): *"lượt dọn vẫn lái bằng `nowMs` của người gọi … lời giải
+ * trọn vẹn là đưa đồng hồ của sổ xuống DB … `tieuMaTrongSo` cũng lái bằng `nowMs` — cùng một nợ,
+ * cùng một lời giải."* Khối này là chỗ bất biến ấy được **NEO**:
+ *
+ *   ***Một lượt gọi với đồng hồ lệch KHÔNG đổi được kết quả của người khác, và KHÔNG kéo dài / rút
+ *   ngắn hiệu lực của chính mã mình.***
+ *
+ * ⚠ Vế *"người khác"* đã có ba ca ở §I-3 ngay trên. Khối này canh vế *"chính mình"* — vế mà **không
+ *   ca nào** trước đây hỏi, vì mọi ca đều **dùng** quyền lái đồng hồ ấy thay vì nghi ngờ nó.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+describe("★★★★ I-3b — `nowMs` KHÔNG kéo dài/rút ngắn hiệu lực của chính mục mình ghi", () => {
+  const USER_TU = 90_004;
+  const SECRET_TU = "NBSWY3DPEB3W64TMMQXC6ZLOMNXW2LTD";
+
+  async function hanCua(uid: number): Promise<number[]> {
+    const d = await db();
+    if (!d) return [];
+    const r = await d.execute<{ ms: number }>(
+      sql`SELECT (extract(epoch from "expiresAt") * 1000)::bigint AS ms FROM "totp_consumed" WHERE "userId" = ${uid}`,
+    );
+    return (r as unknown as { ms: string | number }[]).map((x) => Number(x.ms));
+  }
+
+  async function dbNowMs(): Promise<number> {
+    const d = await db();
+    if (!d) return Date.now();
+    const r = await d.execute<{ ms: number }>(
+      sql`SELECT (extract(epoch from (now() AT TIME ZONE 'UTC')) * 1000)::bigint AS ms`,
+    );
+    return Number((r as unknown as { ms: string | number }[])[0]?.ms ?? Date.now());
+  }
+
+  const don = async (): Promise<void> => {
+    const d = await db();
+    if (d) await d.execute(sql`DELETE FROM "totp_consumed" WHERE "userId" = ${USER_TU}`);
+  };
+  beforeEach(don);
+  afterAll(don);
+
+  it("★★★★ đồng hồ +1h ⇒ `expiresAt` vẫn bám ĐỒNG HỒ DB, không bám đồng hồ người gọi", async () => {
+    /**
+     * ⚠⚠⚠ ĐO ĐƯỢC TRƯỚC BẢN VÁ: `expiresAt = new Date(nowMs + TOTP_HAN_SO_MS)` ⇒ với `nowMs` đi
+     *    trước **một giờ**, mục sống thêm **một giờ + 120 s** — tức người gọi tự quyết định hiệu
+     *    lực của chính hàng mình ghi. Ca này khoá cửa ấy bằng một phép so **SỐ**, không bằng lời.
+     * ⚠ Biên: `[dbNow, dbNow + HAN + 5 s]`. Cận dưới bắt bản vá *"ghi một mốc quá khứ"* (rút ngắn ⇒
+     *   mở lại cửa phát lại); cận trên bắt bản vá *"vẫn cộng đồng hồ người gọi"* (lệch một giờ ⇒
+     *   vượt xa 5 s trượt của một lượt đo).
+     */
+    const t = await tienTrinhMoi();
+    const lech = Date.now() + 3_600_000; // ĐỒNG HỒ LỆCH +1h — đúng khuôn `NOW` của file này.
+    const truoc = await dbNowMs();
+    expect(
+      (await t.verifyTotpOnce({ userId: USER_TU, secret: SECRET_TU, token: maLuc(SECRET_TU, lech), nowMs: lech }))
+        .hopLe,
+      "cầu chì: lượt tiêu mã phải QUA (nếu không, ca này không đo gì)",
+    ).toBe(true);
+
+    const han = await hanCua(USER_TU);
+    expect(han.length, "cầu chì: phải có ĐÚNG một mục vừa ghi").toBe(1);
+    const tran = truoc + t.TOTP_HAN_SO_MS + 5_000;
+    expect(
+      han[0]! <= tran,
+      `expiresAt (${han[0]}) vượt trần đồng hồ DB (${tran}) ⇒ người gọi đang KÉO DÀI hiệu lực mục ` +
+        "của chính mình bằng `nowMs` — nửa còn lại của lỗ I-3 vẫn mở",
+    ).toBe(true);
+    expect(
+      han[0]! >= truoc,
+      "`expiresAt` nằm ở QUÁ KHỨ ⇒ mục chết ngay khi sinh ⇒ cửa PHÁT LẠI mở lại",
+    ).toBe(true);
+  });
+
+  it("★★★★ đồng hồ +1h KHÔNG thu lại được mục CÒN SỐNG của chính mình (phát lại vẫn bị chặn)", async () => {
+    /**
+     * ⚠⚠ Nhánh `CASE WHEN expiresAt <= <đồng hồ> THEN excluded."luot"` là cửa **thu lại**. Trước bản
+     *    vá, `<đồng hồ>` là của **người gọi**, nên một lượt gọi lệch đủ xa thu lại được **mục còn
+     *    sống của chính mình** ⇒ `luot` mới thắng ⇒ **PHÁT LẠI ĐƯỢC**. Nay cả hai vế đọc `now()` của
+     *    Postgres, nên một đồng hồ lệch không mở được cửa ấy.
+     * ⚠ Cùng `nowMs` cho cả hai lượt (để `speakeasy` chấp nhận cùng mã), **khác `luot`** ⇒ đúng hình
+     *   dạng một lượt gọi THỨ HAI.
+     */
+    const t = await tienTrinhMoi();
+    const lech = Date.now() + 3_600_000;
+    const ma = maLuc(SECRET_TU, lech);
+    expect(
+      (await t.verifyTotpOnce({ userId: USER_TU, secret: SECRET_TU, token: ma, nowMs: lech, luot: "L1" })).hopLe,
+    ).toBe(true);
+    const kq = await t.verifyTotpOnce({ userId: USER_TU, secret: SECRET_TU, token: ma, nowMs: lech, luot: "L2" });
+    expect(kq.hopLe, "một lượt gọi KHÁC thu lại được mục CÒN SỐNG ⇒ chống phát lại đã hỏng").toBe(false);
+    expect(kq.phatLai, "và phải nói ĐÚNG LÝ DO: chặn vì SỔ").toBe(true);
+    expect(await hanCua(USER_TU), "lượt bị chặn KHÔNG được thêm hàng nào").toHaveLength(1);
+  });
+
+  it("★★★★ THEO CẤU TRÚC — `nowMs` không còn ĐƯỜNG NÀO tới sổ (AST, không đọc bình luận)", async () => {
+    /**
+     * ⚠⚠⚠ Hai ca trên là HÀNH VI; ca này là **CẤU TRÚC**, và nó bắt đúng thứ hành vi không thấy:
+     *    một lượt vá sau chỉ cần thêm lại một tham số `nowMs` vào `tieuMaTrongSo`/`donSo` là lỗ mở
+     *    lại — hai ca trên vẫn xanh chừng nào **giá trị** truyền vào tình cờ đúng.
+     * ⚠ Đọc bằng **AST**, vì chuỗi `nowMs` đang nằm đầy trong khối bình luận của chính file ấy (đã
+     *   trả giá: `git grep` đọc bình luận thành lượt nhập; một ô `indexOf` xanh dưới chính đột biến
+     *   của nó).
+     */
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const tsMod = (await import("typescript")).default;
+    const duong = path.join(process.cwd(), "server", "_core", "totpOnce.ts");
+    const sf = tsMod.createSourceFile(
+      duong,
+      await fs.readFile(duong, "utf8"),
+      tsMod.ScriptTarget.Latest,
+      true,
+    );
+
+    /** Tham số của một khai báo hàm, tra theo TÊN. */
+    const thamSo = (nguon: import("typescript").SourceFile, ten: string): string[] | null => {
+      let ra: string[] | null = null;
+      const di = (n: import("typescript").Node): void => {
+        if (tsMod.isFunctionDeclaration(n) && n.name !== undefined && n.name.text === ten) {
+          ra = n.parameters.map((p) => (tsMod.isIdentifier(p.name) ? p.name.text : "?"));
+        }
+        n.forEachChild(di);
+      };
+      di(nguon);
+      return ra;
+    };
+
+    expect(thamSo(sf, "tieuMaTrongSo"), "không thấy `tieuMaTrongSo` ⇒ bộ dò mất điểm neo").not.toBeNull();
+    expect(
+      thamSo(sf, "tieuMaTrongSo"),
+      "`tieuMaTrongSo` nhận lại một tham số thời gian của NGƯỜI GỌI ⇒ nửa còn lại của I-3 mở lại",
+    ).toEqual(["userId", "tokenHash", "luot"]);
+    expect(
+      thamSo(sf, "donSo"),
+      "`donSo` nhận lại một tham số thời gian của NGƯỜI GỌI ⇒ lỗ I-3 mở lại",
+    ).toEqual(["userId"]);
+
+    // ĐỐI CHỨNG DƯƠNG cho chính bộ dò: nó THẤY một chữ ký còn tham số thời gian.
+    const gia = tsMod.createSourceFile(
+      "gia.ts",
+      "async function tieuMaTrongSo(userId, tokenHash, luot, nowMs) { return null; }",
+      tsMod.ScriptTarget.Latest,
+      true,
+    );
+    expect(
+      thamSo(gia, "tieuMaTrongSo"),
+      "bộ dò MÙ với một chữ ký còn `nowMs` ⇒ hai ô trên là chân lý rỗng",
+    ).toEqual(["userId", "tokenHash", "luot", "nowMs"]);
+  });
+
+  it("★★★ ∀ điểm gọi SẢN XUẤT của `verifyTotpOnce`: KHÔNG truyền `nowMs`", async () => {
+    /**
+     * ⚠ `nowMs` còn lại ở chữ ký công khai của `verifyTotpOnce` (để lưới đúc mã ở nhịp bất kỳ).
+     *   Nó **không** còn chạm sổ, nhưng nó vẫn lái đồng hồ của `speakeasy` — một điểm gọi sản xuất
+     *   truyền nó vào là dựng một cửa sổ TOTP do người gọi định nghĩa. Đo được hôm nay: **0** điểm.
+     */
+    const { readFileSync } = await import("node:fs");
+    const tsMod = (await import("typescript")).default;
+    const { moiFileDuoi, laFileTest } = await import("./deployProcedureScan");
+    const pham: string[] = [];
+    let soDiem = 0;
+    for (const f of moiFileDuoi(process.cwd(), "server", [".ts"]).filter((x) => !laFileTest(x.duong))) {
+      const ma = readFileSync(f.that, "utf8");
+      if (!ma.includes("verifyTotpOnce")) continue;
+      const sf = tsMod.createSourceFile(f.duong, ma, tsMod.ScriptTarget.Latest, true);
+      const di = (n: import("typescript").Node): void => {
+        if (
+          tsMod.isCallExpression(n) &&
+          tsMod.isIdentifier(n.expression) &&
+          n.expression.text === "verifyTotpOnce"
+        ) {
+          soDiem++;
+          const a0 = n.arguments[0];
+          if (a0 !== undefined && tsMod.isObjectLiteralExpression(a0)) {
+            for (const p of a0.properties) {
+              const ten = p.name !== undefined && tsMod.isIdentifier(p.name) ? p.name.text : "";
+              if (ten === "nowMs") {
+                pham.push(`${f.duong}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`);
+              }
+            }
+          }
+        }
+        n.forEachChild(di);
+      };
+      di(sf);
+    }
+    expect(soDiem, "0 điểm gọi sản xuất ⇒ ô này là chân lý rỗng").toBeGreaterThanOrEqual(8);
+    expect(
+      pham.join(" · "),
+      "một điểm gọi SẢN XUẤT truyền `nowMs` ⇒ cửa sổ TOTP do người gọi định nghĩa. `nowMs` là tham số CỦA LƯỚI.",
+    ).toBe("");
   });
 });
