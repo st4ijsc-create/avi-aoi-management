@@ -50,6 +50,7 @@ vi.hoisted(() => {
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { eq } from "drizzle-orm";
 import * as db from "../db";
 import { userSessions } from "../../drizzle/schema";
@@ -219,39 +220,71 @@ describe("★★★ Pha 9 A2 §4 — ĐỐI CHỨNG DƯƠNG: KHÔNG được kho
 });
 
 describe("★★★ Pha 9 A2 §5 — HÌNH DẠNG: MỘT call site, và nó đứng TRƯỚC lượt đọc cache", () => {
+  /**
+   * ⚠⚠⚠ **BỘ SUY NÀY PHẢI LÀ AST, KHÔNG PHẢI `indexOf` — ĐO ĐƯỢC, KHÔNG PHẢI PHÒNG XA.**
+   * Bản đầu của §5 dùng phép tìm chuỗi. Lượt đột biến của chính A2 (bình luận-hoá lượt gọi bằng
+   * `// …`) làm §2/§3/§4/§6 **ĐỎ** đúng như thiết kế, nhưng §5 **VẪN XANH**: chuỗi cần tìm còn
+   * nguyên trong **một bình luận**. Đó đúng lớp *"thước hỏng cho ra đúng câu mà mã lành sẽ cho ra"*.
+   * ⇒ Nay đếm **lượt gọi THẬT** trên cây cú pháp; mã trong bình luận không phải một `CallExpression`.
+   */
   const NGUON = readFileSync(join(GOC, "server/_core/sdk.ts"), "utf8");
 
-  it("★★★ `chanNeuPhienDaThuHoi(sessionCookie)` xuất hiện ĐÚNG MỘT lần trong `sdk.ts`", () => {
-    const soLan = NGUON.split("await chanNeuPhienDaThuHoi(sessionCookie)").length - 1;
+  /** Vị trí mọi lượt gọi `<ten>(…)` THẬT (AST) trong một nguồn. */
+  function viTriGoi(ma: string, ten: string): number[] {
+    const sf = ts.createSourceFile("x.ts", ma, ts.ScriptTarget.Latest, true);
+    const ra: number[] = [];
+    const tenCua = (n: ts.CallExpression): string => {
+      const e = n.expression;
+      if (ts.isIdentifier(e)) return e.text;
+      if (ts.isPropertyAccessExpression(e)) return e.name.text;
+      return "";
+    };
+    const di = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && tenCua(n) === ten) ra.push(n.getStart(sf));
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+    return ra;
+  }
+
+  it("★★★ `chanNeuPhienDaThuHoi` được gọi ĐÚNG MỘT lần trong `sdk.ts` (AST, không đếm bình luận)", () => {
     expect(
-      soLan,
-      "hai bản sao của cùng một lượt tra sổ ⇒ bản yếu hơn quyết định lưới nào đỏ (đã đẻ ba Critical)",
+      viTriGoi(NGUON, "chanNeuPhienDaThuHoi").length,
+      "hai bản sao của cùng một lượt tra sổ ⇒ bản yếu hơn quyết định lưới nào đỏ (đã đẻ ba Critical);\n" +
+        "0 lượt gọi ⇒ bản vá A2 đã bị gỡ hoàn toàn",
     ).toBe(1);
   });
 
-  it("★★★ lượt tra sổ đứng TRƯỚC `getCachedAuthUser` trong cùng một thân hàm", () => {
-    const viTriSo = NGUON.indexOf("await chanNeuPhienDaThuHoi(sessionCookie)");
-    const viTriCache = NGUON.indexOf("await getCachedAuthUser(sessionCookie");
-    expect(viTriSo, "không tìm thấy lượt tra sổ — bản vá A2 đã bị gỡ").toBeGreaterThan(-1);
-    expect(viTriCache, "không tìm thấy lượt đọc cache — hình dạng đã đổi, hãy đọc lại lưới này").toBeGreaterThan(-1);
-    expect(
-      viTriSo,
-      "lượt tra sổ nằm SAU lượt đọc cache ⇒ cửa sổ 45 giây đã mở lại",
-    ).toBeLessThan(viTriCache);
+  it("★★★ lượt tra sổ đứng TRƯỚC `getCachedAuthUser`", () => {
+    const so = viTriGoi(NGUON, "chanNeuPhienDaThuHoi");
+    const cache = viTriGoi(NGUON, "getCachedAuthUser");
+    expect(so.length, "không tìm thấy lượt gọi tra sổ nào — bản vá A2 đã bị gỡ").toBe(1);
+    expect(cache.length, "không tìm thấy lượt đọc cache — hình dạng đã đổi, hãy đọc lại lưới này").toBe(1);
+    expect(so[0], "lượt tra sổ nằm SAU lượt đọc cache ⇒ cửa sổ 45 giây đã mở lại").toBeLessThan(cache[0]!);
   });
 
-  it("★★ CẦU CHÌ cho chính §5 — thước phân biệt được hai thứ tự trên mã dựng sẵn", () => {
+  it("★★ CẦU CHÌ cho chính §5 — thước phân biệt được ba tình huống có ĐÁP SỐ BIẾT TRƯỚC", () => {
     /**
-     * ⚠ Không có ô này, hai ô trên có thể đang xanh vì `indexOf` trả `-1` cho cả hai, hoặc vì một
-     *   phép so sánh luôn đúng. Đây là hiệu chuẩn bằng **đáp số biết trước**.
+     * ⚠ Không có ô này, hai ô trên có thể đang xanh vì bộ suy trả rỗng cho mọi thứ, hoặc vì một
+     *   phép so sánh luôn đúng. Hiệu chuẩn bằng **đáp số biết trước**, gồm cả ca đã lừa được bản đầu.
      */
-    const dung = "await chanNeuPhienDaThuHoi(sessionCookie);\nconst u = await getCachedAuthUser(sessionCookie);";
-    const sai = "const u = await getCachedAuthUser(sessionCookie);\nawait chanNeuPhienDaThuHoi(sessionCookie);";
-    const truoc = (s: string) =>
-      s.indexOf("await chanNeuPhienDaThuHoi(sessionCookie)") <
-      s.indexOf("await getCachedAuthUser(sessionCookie");
-    expect(truoc(dung), "thước khai SAI trên mã có thứ tự ĐÚNG").toBe(true);
-    expect(truoc(sai), "thước khai ĐÚNG trên mã có thứ tự SAI ⇒ nó không đo thứ tự gì cả").toBe(false);
+    const dung = `async function f(c){ await chanNeuPhienDaThuHoi(c); const u = await getCachedAuthUser(c); return u; }`;
+    const sai = `async function f(c){ const u = await getCachedAuthUser(c); await chanNeuPhienDaThuHoi(c); return u; }`;
+    const binhLuan = `async function f(c){ // await chanNeuPhienDaThuHoi(c);\n const u = await getCachedAuthUser(c); return u; }`;
+
+    expect(viTriGoi(dung, "chanNeuPhienDaThuHoi").length, "thước mù với một lượt gọi THẬT").toBe(1);
+    expect(
+      viTriGoi(dung, "chanNeuPhienDaThuHoi")[0],
+      "thước khai SAI trên mã có thứ tự ĐÚNG",
+    ).toBeLessThan(viTriGoi(dung, "getCachedAuthUser")[0]!);
+    expect(
+      viTriGoi(sai, "chanNeuPhienDaThuHoi")[0],
+      "thước khai ĐÚNG trên mã có thứ tự SAI ⇒ nó không đo thứ tự gì cả",
+    ).toBeGreaterThan(viTriGoi(sai, "getCachedAuthUser")[0]!);
+    expect(
+      viTriGoi(binhLuan, "chanNeuPhienDaThuHoi").length,
+      "★ CA ĐÃ LỪA ĐƯỢC BẢN ĐẦU: một lượt gọi bị BÌNH LUẬN-HOÁ vẫn được đếm ⇒ thước đang đọc chữ, không đọc mã",
+    ).toBe(0);
   });
 });
 
