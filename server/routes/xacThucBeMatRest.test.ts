@@ -55,6 +55,7 @@ vi.hoisted(() => {
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import tsMod from "typescript";
 import { eq } from "drizzle-orm";
 import * as db from "../db";
 import { userSessions } from "../../drizzle/schema";
@@ -167,12 +168,37 @@ async function chay(t: Tuyen, cookie: string | null, than?: Record<string, unkno
  * ★★★ **TẬP AUTH-FREE ĐƯỢC KHAI TÊN.** Mỗi mục là một quyết định an ninh phải viết ra.
  * ⚠ Neo hai chiều: §4 bắt mọi mục **ma** (khai một tuyến không còn tồn tại) — mục ma sẽ lặng lẽ
  *   tiếp tục **THA** cho một tuyến mới trùng đường dẫn.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-6 — MỘT LỜI KHAI KHÔNG THAY ĐƯỢC MỘT CƠ CHẾ.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trước là `Record<string, string>`, và §4 chỉ kiểm *"mục khai có tồn tại như một tuyến thật"*
+ * + *"lý do dài > 30 ký tự"*. Nó **không** kiểm **cơ chế thay thế có tồn tại không**. Hậu quả đo
+ * được: mục `feedback` khai *"lượt gọi máy-sang-máy **trong localhost**"* trong khi **không có cơ
+ * chế nào cưỡng chế mệnh đề ấy** — tuyến ghi tệp, không xác thực, và một `curl` không cookie từ
+ * ngoài trả **400**, không phải 401. Lời khai biến một lỗ thành **một dòng xanh mỗi lượt chạy cổng**.
+ *
+ * ⇒ Mỗi mục nay khai **hai** thứ: `lyDo` (cho người) và `coCheThayThe` — **tên một hàm phải có mặt
+ *   THẬT trong mã của tuyến** (§4c kiểm bằng AST trên chính file registrar). Đây là khuôn `MIEN_TRU`
+ *   của `hoTuyenSongSong` với phần mạnh nhất được trả lại: mỗi miễn trừ ghim một **chữ ký chính xác**,
+ *   không phải một câu văn.
  */
-const AUTH_FREE: Readonly<Record<string, string>> = {
-  "GET /api/ai/local-kb/health":
-    "Thăm dò sức khoẻ KB — không đọc dữ liệu người dùng, không nhận tham số; dùng cho probe hạ tầng.",
-  "POST /api/ai/local-kb/feedback":
-    "Lượt gọi máy-sang-máy trong localhost từ `aiLocalKbRouter.feedback` (KHÔNG chuyển tiếp cookie); tầng tRPC đã cưỡng chế phiên. ⚠ NỢ ĐÃ GHI: tuyến này ghi tệp mà không xác thực — nên buộc loopback.",
+const AUTH_FREE: Readonly<Record<string, { lyDo: string; coCheThayThe: string; file: string }>> = {
+  "GET /api/ai/local-kb/health": {
+    lyDo: "Thăm dò sức khoẻ KB — không đọc dữ liệu người dùng, không nhận tham số, KHÔNG GHI gì; dùng cho probe hạ tầng.",
+    // ⚠ Cơ chế ở đây là **hình dạng của chính tuyến**: nó chỉ đọc và trả một bản tóm tắt tĩnh.
+    //   `getKbHealth` là hàm duy nhất nó gọi; nếu tuyến bắt đầu gọi thứ khác, ô §4c đỏ.
+    coCheThayThe: "getKbHealth",
+    file: "server/routes/aiLocalKnowledgeApi.ts",
+  },
+  /*
+   * ⚠⚠⚠ `POST /api/ai/local-kb/feedback` **ĐÃ RỜI KHỎI TẬP NÀY** (review Pha 9 · I-6). Nó từng
+   *    được tha bằng một câu văn — *"lượt gọi máy-sang-máy **trong localhost**"* — trong khi không
+   *    có cơ chế nào cưỡng chế mệnh đề ấy (đo sống, không cookie: **400**, không phải 401). Nay
+   *    tuyến tự cưỡng chế **loopback HOẶC vai đặc quyền** (`_congLoopback.ts`), nên nó **vào thẳng
+   *    lượng từ §2** như mọi bề mặt khác. Một miễn trừ được **xoá** là kết cục tốt hơn một miễn trừ
+   *    được viết hay.
+   */
 };
 
 let uid = 0;
@@ -279,6 +305,30 @@ describe("★★★ Pha 9 A6 §3 — ĐỐI CHỨNG DƯƠNG: cookie THẬT thì 
     ).toBe(400);
   });
 
+  it("★★★★ I-6 — `POST /api/ai/local-kb/feedback` nay **401**, trước bản vá là **400**", async () => {
+    /**
+     * ⚠⚠⚠ Ô này ghim một **lượt đổi hành vi đo được trên hệ sống**:
+     *
+     *     curl -X POST -d '{}' http://127.0.0.1:3000/api/ai/local-kb/feedback
+     *     TRƯỚC: {"success":false,"error":"messageId and question are required"}  HTTP=**400**
+     *
+     *   400 nghĩa là **thân handler đã chạy** — nó đọc thân, kiểm tham số, và (với thân hợp lệ)
+     *   **append một dòng tới ~10 KB vào một tệp trong repo**, cho bất kỳ ai với tới cổng 3000.
+     * ⚠ Ô này cũng là **đối chứng dương của chính bản vá**: nhánh loopback KHÔNG được thoả bởi một
+     *   `req` giả không có `.ip` — nếu ai nới `laLoopback` thành *"mặc định cho qua"*, ô này ĐỎ.
+     */
+    const t = TUYEN.find((x) => khoa(x) === "POST /api/ai/local-kb/feedback");
+    expect(t, "không tìm thấy tuyến feedback — registrar đã đổi hình dạng").toBeTruthy();
+    expect(
+      canhBoi(t!),
+      "tuyến feedback lại được khai auth-free ⇒ miễn trừ vừa mọc lại; đọc lý lẽ I-6 trước khi thêm",
+    ).toBe(true);
+    expect(
+      await chay(t!, null, { messageId: "x", question: "y", rating: 1 }),
+      "thân HỢP LỆ, không cookie, không loopback mà KHÔNG bị 401 ⇒ tuyến vẫn ghi tệp cho người lạ",
+    ).toBe(401);
+  });
+
   it("★★ tuyến ĐÒI VAI: cookie thật vai `user` ⇒ 403 (phân biệt được với 401)", async () => {
     const t = TUYEN.find((x) => khoa(x) === "GET /api/observability/health");
     expect(t).toBeTruthy();
@@ -302,7 +352,42 @@ describe("★★★ Pha 9 A6 §4 — TẬP AUTH-FREE: neo hai chiều, không m�
 
   it("★★ mỗi mục auth-free có lý do viết ra", () => {
     for (const [k, v] of Object.entries(AUTH_FREE)) {
-      expect(v.length, `mục auth-free "${k}" không nêu lý do`).toBeGreaterThan(30);
+      expect(v.lyDo.length, `mục auth-free "${k}" không nêu lý do`).toBeGreaterThan(30);
+    }
+  });
+
+  it("★★★★ §4c I-6 — mỗi miễn trừ ghim một CƠ CHẾ có thật trong mã của tuyến (AST, không đọc chữ)", () => {
+    /**
+     * ⚠⚠⚠ Đây là ô biến một **lời khai** thành một **chữ ký kiểm được**. Không có nó, `AUTH_FREE`
+     *    cấp một tấm vé **vĩnh viễn** bằng một câu văn: mục `feedback` đã khai *"trong localhost"*
+     *    suốt một pha trong khi không có cơ chế nào cưỡng chế mệnh đề ấy (đo sống: 400, không 401).
+     * ⚠ Đếm bằng **AST**: một cái tên nằm trong **bình luận** không phải một lượt gọi — chính lỗi
+     *   đã làm §5 của A2 xanh giả một lần.
+     */
+    const tenGoiThat = (ma: string): Set<string> => {
+      const sf = tsMod.createSourceFile("x.ts", ma, tsMod.ScriptTarget.Latest, true);
+      const ra = new Set<string>();
+      const di = (n: tsMod.Node): void => {
+        if (tsMod.isCallExpression(n)) {
+          const e = n.expression;
+          if (tsMod.isIdentifier(e)) ra.add(e.text);
+          else if (tsMod.isPropertyAccessExpression(e)) ra.add(e.name.text);
+        }
+        tsMod.forEachChild(n, di);
+      };
+      di(sf);
+      return ra;
+    };
+    for (const [k, v] of Object.entries(AUTH_FREE)) {
+      const ma = readFileSync(join(GOC, v.file), "utf8");
+      expect(v.coCheThayThe.length, `mục auth-free "${k}" không nêu tên cơ chế`).toBeGreaterThan(0);
+      expect(
+        tenGoiThat(ma).has(v.coCheThayThe),
+        `Miễn trừ "${k}" khai cơ chế \`${v.coCheThayThe}\` nhưng ${v.file} KHÔNG GỌI hàm ấy.\n` +
+          "⚠ Một lời khai vừa mất cơ chế đứng sau nó — đó là trạng thái mà tuyến `feedback` đã ở\n" +
+          "  suốt một pha: khai 'chỉ trong localhost' mà không có gì cưỡng chế mệnh đề ấy.\n" +
+          "⇒ Hoặc trả lại cơ chế, hoặc gỡ mục khỏi `AUTH_FREE` và để tuyến vào lượng từ §2.",
+      ).toBe(true);
     }
   });
 });
@@ -320,15 +405,66 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
    * ⚠ Chúng **không** phải "an toàn"; chúng là *"không thuộc trục mà lưới này đo"* (phiên trình
    *   duyệt qua `sdk.authenticateRequest`). Trục khoá-máy/API-key do lưới khác canh.
    */
-  const NGOAI_PHAM_VI: Readonly<Record<string, string>> = {
-    "server/routes/externalInspectionApi.ts":
-      "Tuyến `/api/external/*` — xác thực bằng KHOÁ MÁY (Bearer/API key) qua `validateExternalAuth`, không phải phiên trình duyệt. Chủ thể không phải một hàng `users`.",
-    "server/routes/openaiGateway.ts":
-      "Cổng tương thích OpenAI — xác thực bằng API key của máy/tích hợp, cùng trục với `/api/external/*`.",
-    "server/routes/edgeDownload.ts":
-      "Tải gói Edge — cưỡng chế bằng token tải một lần + `x-master-key`, trục khoá máy.",
-    "server/routes/reportArtifactRoutes.ts":
-      "Tải hiện vật báo cáo — cưỡng chế bằng token ký của chính hiện vật (không phải phiên).",
+  /**
+   * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-6** — **MỖI LỜI KHAI GHIM MỘT CHỮ KÝ, KHÔNG CHỈ MỘT CÂU VĂN.**
+   *
+   * ⚠⚠ Bản trước là `Record<string, string>`: một câu văn dài > 30 ký tự là đủ để một file rời khỏi
+   *    lượng từ **vĩnh viễn**, kể cả khi người ta thêm mười tuyến mới vào nó. Đó đúng lớp lỗi mà
+   *    review chỉ ra ở tập `AUTH_FREE` (*"một lời khai không thay được một cơ chế"*).
+   * ⇒ Mỗi mục nay ghim **số điểm gắn tuyến** của file ấy (`app|router . <verb> (`). Thêm một tuyến
+   *   vào một file đã được tha ⇒ **ĐỎ**, và người thêm phải nói ra rằng tuyến ấy cũng ngoài phạm vi.
+   *   Đây là khuôn *"chữ ký chênh lệch chính xác"* của `hoTuyenSongSong`, áp cho lời khai này.
+   */
+  const NGOAI_PHAM_VI: Readonly<Record<string, { viSao: string; soTuyen: number }>> = {
+    "server/routes/externalInspectionApi.ts": {
+      viSao:
+        "Tuyến `/api/external/*` — xác thực bằng KHOÁ MÁY (Bearer/API key) qua `validateExternalAuth`, không phải phiên trình duyệt. Chủ thể không phải một hàng `users`.",
+      soTuyen: 26,
+    },
+    "server/routes/openaiGateway.ts": {
+      viSao:
+        "Cổng tương thích OpenAI — xác thực bằng API key của máy/tích hợp, cùng trục với `/api/external/*`.",
+      soTuyen: 4,
+    },
+    "server/routes/edgeDownload.ts": {
+      viSao: "Tải gói Edge — cưỡng chế bằng token tải một lần + `x-master-key`, trục khoá máy.",
+      soTuyen: 1,
+    },
+    "server/routes/reportArtifactRoutes.ts": {
+      viSao:
+        "Tải hiện vật báo cáo — cưỡng chế bằng token ký của chính hiện vật (không phải phiên).",
+      soTuyen: 1,
+    },
+    /* ── ★★★★ Review TOÀN NHÁNH Pha 9 · I-1 — BA REGISTRAR `_core/` VỪA LỘ RA ─────────────────
+     * Ba file dưới đây thoả **đúng vị từ** mà §6 đi tìm; thứ duy nhất loại chúng ra là **THƯ MỤC**
+     * (bản trước chỉ duyệt `server/routes` + `server/api`). Một trong số đó khai
+     * `POST /api/auth/verify-2fa` — **chính tuyến mà A5 vừa đổi người tiêu mã dự phòng**, tức Pha 9
+     * sửa hành vi của một tuyến rồi dựng một lưới hành vi mà tuyến ấy **theo cấu tạo** không nằm trong.
+     *
+     * ⚠ Chúng **không** được gọi trong `beforeAll` vì chúng nằm trên một trục KHÁC: đây là **cửa
+     *   ĐÚC vé** (đăng nhập · callback OAuth · ACS của SAML) và một bề mặt **công khai có chủ ý**
+     *   (điểm nhận báo cáo CSP của trình duyệt). Bất biến *"không cookie ⇒ 401"* **sai** với chúng
+     *   theo định nghĩa — bắt chúng vào §2 là dựng một lưới đo sai thứ.
+     * ⚠ Trục của chúng có người canh riêng, và người ấy có tên: `sessionGrantScan.test.ts` §4
+     *   (*"∀ điểm đúc vé phải ghi sổ `user_sessions`"*) · `verify2faPasswordStep.test.ts` ·
+     *   `hoTuyenSongSong.test.ts`. Số tuyến được ghim ở đây để một tuyến **thứ 7** của `oauth.ts`
+     *   không lặng lẽ thừa hưởng lời khai này.
+     */
+    "server/_core/oauth.ts": {
+      viSao:
+        "Cửa ĐÚC vé phiên (đăng nhập cục bộ · `verify-2fa` · callback OAuth) — bất biến 'không cookie ⇒ 401' sai theo định nghĩa với một cửa đăng nhập. Trục này do `sessionGrantScan.test.ts` §4 + `verify2faPasswordStep.test.ts` canh.",
+      soTuyen: 6,
+    },
+    "server/_core/samlProvider.ts": {
+      viSao:
+        "ACS/metadata của SAML — cửa đúc vé thứ hai, chủ thể đến từ IdP chứ không từ một cookie phiên. Cùng người canh với `oauth.ts` (`sessionGrantScan.test.ts` §4).",
+      soTuyen: 3,
+    },
+    "server/_core/securityHeaders.ts": {
+      viSao:
+        "Điểm nhận báo cáo CSP — trình duyệt POST tới đây KHÔNG kèm cookie theo đúng đặc tả; đòi 401 là tự tắt kênh báo cáo. Nội dung bị bỏ qua, không chạm dữ liệu người dùng.",
+      soTuyen: 1,
+    },
   };
 
   /**
@@ -348,32 +484,146 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
     soFile: 15,
   } as const;
 
-  /** Mọi hàm `register…` khai báo trong `server/routes/` + `server/api/` — SUY TỪ ĐĨA. */
-  function moiRegistrar(): string[] {
+  /**
+   * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-1 — THIẾT BỊ CHỐNG-"N+1" TỰ NÓ LÀ MỘT DANH SÁCH N+1.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ ĐO ĐƯỢC — CÙNG MỘT VỊ TỪ, HAI PHẠM VI
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Bản trước duyệt **hai thư mục viết tay** (`server/routes` + `server/api`) ⇒ **22** registrar.
+   * Chạy **cùng vị từ** trên toàn `server/` ⇒ **55**. Ba trong số 33 file ngoài tầm là registrar
+   * Express **THẬT** — và một trong ba khai `POST /api/auth/verify-2fa`, chính tuyến A5 vừa đổi.
+   * ⇒ Thiết bị tồn tại để trả lời *"và ai canh chính danh sách registrar?"* lại **chính là** một
+   *   danh sách hai phần tử. Nay nó duyệt **một** thư mục: `server`.
+   *
+   * ⚠⚠ **NHƯNG PHẠM VI RỘNG ĐÒI VỊ TỪ ĐÚNG.** `export function register\w*(` trên toàn `server/`
+   *    tóm thêm **30** file **không phải Express**: `registerHandlers` của kho công cụ AI,
+   *    `registerDriver` của kho driver OT/robot, `registerProvider`… Khai 30 mục *"ngoài phạm vi"*
+   *    cho chúng là dựng đúng cái danh sách vô nghĩa mà lượng từ này ra đời để giết.
+   * ⇒ Vị từ được siết theo **HÌNH DẠNG**, không theo thư mục: một registrar TUYẾN là hàm
+   *   `register…` nhận **một tham số kiểu Express** (`Express` · `Application` · `Router`).
+   *   Đo được: 55 → **25** = 22 cũ + **đúng ba** file `_core/` mà bản trước bỏ sót. §6a ghim cả
+   *   **hai** con số, nên một lượt nới vị từ trở lại (hoặc thu phạm vi lại) đều ĐỎ.
+   */
+  const VI_TU_REGISTRAR = /export function register\w*\s*\(/;
+  const THAM_SO_EXPRESS = /:\s*(?:express\s*\.\s*)?(?:Express|Application|Router)\b/;
+  /** Điểm gắn tuyến Express: `app.get("/…")`, `router.use(HANG_SO, …)`, … */
+  const GAN_TUYEN = /\b(?:app|router)\s*\.\s*(?:get|post|put|patch|delete|all|use)\s*\(\s*(?:["'`]|[A-Z_]{3,})/g;
+
+  /** Mọi file `.ts` mã sản xuất dưới `server/` — SUY TỪ ĐĨA, một thư mục gốc. */
+  function moiFileSanXuat(): string[] {
     const ra: string[] = [];
     const duyet = (thuMuc: string): void => {
       for (const m of readdirSync(join(GOC, thuMuc), { withFileTypes: true })) {
         const duong = `${thuMuc}/${m.name}`;
-        if (m.isDirectory()) duyet(duong);
-        else if (m.name.endsWith(".ts") && !m.name.endsWith(".test.ts")) {
-          if (/export function register\w*\s*\(/.test(readFileSync(join(GOC, duong), "utf8"))) ra.push(duong);
-        }
+        if (m.isDirectory()) {
+          if (m.name !== "node_modules") duyet(duong);
+        } else if (m.name.endsWith(".ts") && !m.name.endsWith(".test.ts")) ra.push(duong);
       }
     };
-    duyet("server/routes");
-    duyet("server/api");
+    duyet("server");
     return ra.sort();
   }
 
-  const REGISTRAR = moiRegistrar();
+  const MOI_FILE_SX = moiFileSanXuat();
+  const doc = (d: string) => readFileSync(join(GOC, d), "utf8");
+  const soGanTuyen = (d: string): number => {
+    GAN_TUYEN.lastIndex = 0;
+    return (doc(d).match(GAN_TUYEN) ?? []).length;
+  };
+
+  /** Mọi hàm `register…` trên toàn `server/` — **vị từ THÔ**, giữ lại để ghim khoảng cách. */
+  const REGISTRAR_THO = MOI_FILE_SX.filter((d) => VI_TU_REGISTRAR.test(doc(d)));
+  /** Registrar **TUYẾN EXPRESS** — thô ∧ nhận một tham số kiểu Express. */
+  const REGISTRAR = REGISTRAR_THO.filter((d) => THAM_SO_EXPRESS.test(doc(d)));
 
   it("★★★ CẦU CHÌ — bộ suy thấy đủ registrar trên đĩa (0 ⇒ §6 là chân lý rỗng)", () => {
     expect(
+      MOI_FILE_SX.length,
+      "quét `server/**` ra quá ít file — phạm vi đã hỏng? (glob rỗng ⇒ vitest im lặng khai XANH)",
+    ).toBeGreaterThanOrEqual(500);
+    expect(
       REGISTRAR.length,
-      "quét ra quá ít registrar — bộ suy phạm vi đã hỏng? (đo được ở Pha 9 A1: 22)",
+      "quét ra quá ít registrar — bộ suy phạm vi đã hỏng? (đo được 2026-08-12 trên toàn `server/`: 25)",
     ).toBeGreaterThanOrEqual(20);
     for (const d of DA_GOI) {
       expect(REGISTRAR, `registrar được GỌI mà bộ suy không thấy: ${d}`).toContain(d);
+    }
+  });
+
+  it("★★★★ §6a I-1 — HAI con số được ghim: phạm vi ĐÃ rộng ra, và vị từ ĐÃ được siết", () => {
+    /**
+     * ⚠⚠⚠ Không có ô này, hai lượt sửa **ngược nhau** đều đi lọt: (a) thu phạm vi về hai thư mục ⇒
+     *    `REGISTRAR` rơi về 22 và ba registrar `_core/` biến mất **im lặng**; (b) nới vị từ về bản
+     *    thô ⇒ `REGISTRAR` vọt lên 55 và 30 mục vô nghĩa đòi được khai. Ghim **cả hai** con số làm
+     *    khoảng cách giữa chúng thành một sự thật quan sát được.
+     */
+    expect(
+      REGISTRAR_THO.length,
+      "số hàm `register…` trên toàn `server/` đã đổi — đây là con số bản trước ĐÃ ĐO SAI (22 vì chỉ đi hai thư mục)",
+    ).toBe(55);
+    expect(
+      REGISTRAR.length,
+      "số registrar TUYẾN EXPRESS đã đổi — một registrar tuyến mới vừa xuất hiện, hoặc vị từ đã bị nới",
+    ).toBe(25);
+    expect(
+      REGISTRAR.filter((d) => d.startsWith("server/_core/")).sort(),
+      "ba registrar `_core/` mà bản trước KHÔNG BAO GIỜ thấy — chúng là lý do §6 được viết lại",
+    ).toEqual([
+      "server/_core/oauth.ts",
+      "server/_core/samlProvider.ts",
+      "server/_core/securityHeaders.ts",
+    ]);
+  });
+
+  it("★★★★ §6b I-1 — ∀ theo HÌNH DẠNG GẮN TUYẾN: file gắn tuyến THẲNG cũng phải được khai", () => {
+    /**
+     * ⚠⚠⚠ §6 hỏi *"ai canh danh sách registrar"*. Ô này hỏi câu **đứng sau** nó: *"và tuyến nào
+     *    KHÔNG đi qua một registrar nào cả?"*. Đo được: `server/_core/index.ts` gắn **98** điểm
+     *    tuyến **thẳng vào `app`** — chúng **chưa từng được lưới hành vi nào gọi thật**, và câu
+     *    *"0/12 tuyến trả 5xx"* của báo cáo nhóm A đúng **cho 12 tuyến của ba registrar**, không
+     *    cho chúng.
+     * ⚠ Đây là **NỢ ĐƯỢC KHAI kèm SỐ**, không phải một lượt vá: gọi thật 98 tuyến của `index.ts`
+     *   đòi dựng gần trọn ứng dụng. Con số bị ghim, nên tuyến thứ 99 là một quyết định phải nói ra.
+     */
+    const GAN_THANG: Readonly<Record<string, { viSao: string; soTuyen: number }>> = {
+      "server/_core/index.ts": {
+        viSao:
+          "NỢ ĐÃ KHAI (review Pha 9 I-1): 98 điểm gắn tuyến THẲNG vào `app`, gồm 58 tuyến `/api/external/*` (trục khoá máy, do `thuHoiPhienMoiBeMat.test.ts` canh). Gọi thật đòi dựng gần trọn ứng dụng ⇒ chưa vào lưới hành vi này. Con số bị ghim để tuyến thứ 99 là một quyết định nói ra.",
+        soTuyen: 98,
+      },
+      "server/api/v1/guard.ts": {
+        viSao:
+          "Middleware của trục `/api/v1/*` (khoá máy/ERP) — không đăng ký tuyến nghiệp vụ nào, chỉ `app.use` hai lớp chặn.",
+        soTuyen: 2,
+      },
+      "server/license/license-middleware.ts": {
+        viSao:
+          "Middleware giấy phép — `app.use` hai lớp, không phải một bề mặt phiên; nó chạy TRƯỚC mọi phép xác thực.",
+        soTuyen: 2,
+      },
+      "server/_core/vite.ts": {
+        viSao:
+          "Phục vụ tài nguyên tĩnh của trình dựng (dev middleware + `app.use('*')` bắt-tất cho SPA) — không đọc dữ liệu người dùng.",
+        soTuyen: 2,
+      },
+    };
+
+    const ganThang = MOI_FILE_SX.filter(
+      (d) => soGanTuyen(d) > 0 && !(VI_TU_REGISTRAR.test(doc(d)) && THAM_SO_EXPRESS.test(doc(d))),
+    );
+    expect(
+      ganThang.filter((d) => GAN_THANG[d] === undefined),
+      [
+        "MỘT FILE GẮN TUYẾN EXPRESS THẲNG (không qua registrar nào) MÀ KHÔNG AI KHAI.",
+        "⚠ `moiRegistrar()` theo cấu tạo mù với nó: nó không có hàm `register…` nào để quét.",
+        "⇒ Hoặc gói tuyến ấy vào một registrar (nó tự vào §6), hoặc KHAI vào `GAN_THANG` kèm lý do",
+        "  VÀ số điểm gắn tuyến — một lời khai không kèm số là một tấm vé trắng cho mọi tuyến sau.",
+      ].join("\n"),
+    ).toEqual([]);
+    for (const [d, k] of Object.entries(GAN_THANG)) {
+      expect(soGanTuyen(d), `số điểm gắn tuyến của \`${d}\` đã đổi — lời khai không còn mô tả file ấy`).toBe(k.soTuyen);
+      expect(k.viSao.length, `mục gắn-thẳng "${d}" không nêu lý do`).toBeGreaterThan(30);
     }
   });
 
@@ -406,14 +656,21 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
     ).toBe("");
   });
 
-  it("★★★ tập KHAI không có mục MA, và mỗi mục có lý do", () => {
+  it("★★★ tập KHAI không có mục MA, mỗi mục có lý do VÀ một chữ ký số khớp file thật", () => {
     const ma = Object.keys(NGOAI_PHAM_VI).filter((d) => !REGISTRAR.includes(d));
     expect(
       ma,
       "mục ma: file đã đổi tên/biến mất ⇒ lời khai vẫn tiếp tục THA cho một registrar mới trùng đường dẫn",
     ).toEqual([]);
     for (const [k, v] of Object.entries(NGOAI_PHAM_VI)) {
-      expect(v.length, `mục ngoài-phạm-vi "${k}" không nêu lý do`).toBeGreaterThan(30);
+      expect(v.viSao.length, `mục ngoài-phạm-vi "${k}" không nêu lý do`).toBeGreaterThan(30);
+      expect(
+        soGanTuyen(k),
+        `số điểm gắn tuyến của \`${k}\` đã đổi (${v.soTuyen} → ${soGanTuyen(k)}).\n` +
+          "⚠ Một tuyến MỚI vừa được thêm vào một file ĐÃ ĐƯỢC THA. Lời khai cũ không mô tả nó.\n" +
+          "⇒ Xác nhận tuyến mới cũng thuộc trục ngoài phạm vi, rồi cập nhật `soTuyen` — đây là\n" +
+          "  một quyết định an ninh, không phải một lượt cập nhật con số.",
+      ).toBe(v.soTuyen);
     }
   });
 });
