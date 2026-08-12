@@ -7,6 +7,13 @@ namespace St4i.EngineApi.Tests.Auth;
 /// <summary>WS-D-D1 — <see cref="SqliteUserStore"/> over a fresh temp directory per test (never the real
 /// %ProgramData% root, never ST4I_SECURITY_DIR mutation — the ctor's explicit directory override is
 /// enough, so there's no env-var-based test flakiness risk here at all).</summary>
+// 🔴 Task L-1, second round — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, and the
+//    doc comment above is why L-1's FIRST census missed it: this class touches SQLite entirely through
+//    SqliteUserStore -> SecurityDb, names no env var, and carries no `using Microsoft.Data.Sqlite`. The
+//    first census keyed on a hand-written list of SQLite-opening TYPE NAMES, so a class that reaches an
+//    opener one hop away was invisible to it. Membership rule and the derived instrument that does see it
+//    are in SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class SqliteUserStoreTests
 {
     private static string NewTempDir() => Directory.CreateTempSubdirectory("st4i-security-tests-").FullName;

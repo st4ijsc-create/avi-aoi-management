@@ -749,8 +749,12 @@ tín hiệu tháo dỡ. Điểm chịu lực **không phải** là "chờ lâu h
 
 - **TẬP GIÁ TRỊ ĐƯỢC CHẤP NHẬN KHÔNG ĐỔI.** Phán quyết vẫn là `settled == 0`. Không có ngưỡng nào được nới,
   không có số nào lớn hơn 0 được tha ở bất kỳ hạn nào. Thứ dịch đi là **KHOẢNH KHẮC ĐƯỢC ĐO**, và chỉ thế.
-- **Một quần thể KHÔNG cạn vẫn ĐỎ, và đỏ SỚM HƠN một quần thể đang cạn** — vì đứng yên *chính là* ổn định:
-  nó chốt ở giá trị khác 0 ngay ở mẫu thứ ba và hỏng ở đó.
+- **Một quần thể KHÔNG cạn vẫn ĐỎ, và đỏ KHÔNG MUỘN HƠN một quần thể đang cạn** — vì đứng yên *chính là* ổn
+  định: nó chốt ở giá trị khác 0 ngay ở mẫu thứ ba, tức **mức sàn** của mọi lần chốt, và hỏng ở đó.
+  *(🔴 Câu này từng viết **"đỏ SỚM HƠN"** — quá mạnh, vì một quần thể vốn đã bằng 0 cũng chốt sau đúng ba mẫu.
+  Lượt đọc-lại-cuối của L-1 đã sửa đúng câu ấy ở `verify-suites.sh` và **KHÔNG đi theo nó sang đây, trong
+  chính cái diff đã viết ra cả hai** — §8.1(h5.2) đúng nghĩa: miền của lượt đọc lại là **SỰ PHỤ THUỘC**, mà
+  hai bản sao của một khẳng định là quan hệ phụ thuộc gần nhất có thể. Phản biện bắt.)*
 - **KHÔNG BAO GIỜ ỔN ĐỊNH là một màu ĐỎ RIÊNG.** Một con số cứ nhúc nhích suốt biên không được coi là "vẫn
   đang cạn"; nó hỏng với thông điệp của chính nó. Hình dạng là *"lấy mẫu tới khi ổn định, và HỎNG nếu không
   bao giờ ổn định"*, không phải *"bằng không trong vòng N"*.

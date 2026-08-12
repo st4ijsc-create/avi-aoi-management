@@ -31,8 +31,19 @@ namespace St4i.EngineApi.Tests.Auth;
 /// in this assembly call <c>SqliteConnection.ClearAllPools()</c> — an API that is process-global by its own
 /// contract, clearing every pool for every connection string in the process, not just the caller's own
 /// database — while other classes in the same process hold <c>Microsoft.Data.Sqlite</c> connections. None of
-/// the seven carried a <c>[Collection]</c>. L-1 put all of them here, and with them every class in this
-/// assembly that references a SQLite-backed store, because the observers are the other half of the rule.</para>
+/// the seven carried a <c>[Collection]</c>. L-1 put all of them here, and with them <b>every test class in
+/// this assembly that can cause a SQLite connection to be OPENED — 45 classes, all 45 in this collection</b>
+/// — because the observers are the other half of the rule.</para>
+///
+/// <para>🔴 <b>That sentence said "every class that REFERENCES a SQLite-backed store", and it was FALSE BY
+/// ONE, in the file that defines the membership rule.</b> Recorded rather than quietly corrected, because the
+/// way it was false is the finding. The first census keyed on a hand-written list of SQLite-opening TYPE
+/// NAMES, so it saw <c>SqliteAuditStoreTests</c> and missed its sibling <c>SqliteUserStoreTests</c> —
+/// <b>same <c>security.db</c></b> — whose only difference is that the sibling writes
+/// <c>using Microsoft.Data.Sqlite;</c> while this one reaches SQLite through
+/// <c>SqliteUserStore -&gt; SecurityDb</c> and names no SQLite type at all. An instrument whose domain came
+/// from a TOKEN rather than from the property: §8.1(f), one level below the same error in the brief that
+/// commissioned the fix.</para>
 ///
 /// <para><b>What is NOT claimed:</b> that this fixes a specific reported failure. The reported symptom (a
 /// full-suite run failing on <c>ObjectDisposedException: SQLitePCL.sqlite3</c>, green on the runs either
@@ -46,13 +57,21 @@ namespace St4i.EngineApi.Tests.Auth;
 /// guarantee lives in this rule rather than in the string. Named here rather than left for a reader to trip
 /// over: the string says "security env-var tests" and the membership no longer does.</para>
 ///
-/// <para><b>The instrument, and what it cannot see (L-1).</b> Membership completeness was established by a
-/// scripted census over the parsed test sources — class declarations, their <c>[Collection]</c> attribute if
-/// any, and the process-scope perturbations each class makes — plus a read of the resulting table. There is
-/// NO test that can enforce it: dropping a <c>[Collection]</c> attribute changes SCHEDULING, not behaviour,
-/// so it compiles and every test still passes, which means MUTATION CANNOT KILL IT and neither can the gate.
-/// The census is only as complete as its list of process-scope state kinds; a kind nobody has thought of is
-/// invisible to it. The kinds swept were: the process environment block; the SQLite connection pool; the
+/// <para><b>The instrument, and what it cannot see (L-1).</b> The observer half is now DERIVED FROM THE
+/// PROPERTY rather than from a list of type names, because a list of type names is what got it wrong the
+/// first time. The census computes, over <c>src/</c>, the TRANSITIVE CLOSURE of "types whose own body
+/// contains <c>new SqliteConnection(</c>" under construction/static-use/field-type edges — 7 seeds close to
+/// 14 types, and <c>SqliteUserStore</c> arrives in that closure without anyone naming it — then closes again
+/// inside the test assembly over base classes and helper types, and reports every test class that reaches it.
+/// Run at three widths (construction-only, construction plus static calls, then any mention at all of any
+/// closure type), all three converge on the same answer: <b>domain 45, exactly one class outside the
+/// collection</b> before this round, none after. Convergence across widths is the completeness argument;
+/// it is not a proof.
+/// There is still NO test that can enforce membership: dropping a <c>[Collection]</c> attribute changes
+/// SCHEDULING, not behaviour, so it compiles and every test still passes, which means MUTATION CANNOT KILL IT
+/// and neither can the gate.
+/// The census is also only as complete as its list of process-scope state KINDS; a kind nobody has thought of
+/// is invisible to it. The kinds swept were: the process environment block; the SQLite connection pool; the
 /// process console/standard streams; the process current directory; <c>AppContext</c> switches, default
 /// thread culture, <c>Trace.Listeners</c> and thread-pool minimums; mutable statics in the test assemblies;
 /// <c>AppDomain</c> handlers; fixed TCP ports and named mutexes/pipes; and machine-wide directories. That
