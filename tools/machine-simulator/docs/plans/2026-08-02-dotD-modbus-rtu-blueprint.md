@@ -471,6 +471,63 @@ từ hình mẫu vừa đặt tên**: đó là §8.1(a) vận hành **lùi ra m�
 IM LẶNG KHÔNG PHẢI MỘT CÁCH XỬ.** Ưu điểm riêng của nó là **kiểm được CHỈ BẰNG DIFF**, không cần chạy gì —
 và **mọi khiếm khuyết muộn của K-1 đều sẽ vấp phải nó**.
 
+🔴 **(h5) BỐN BẢN SỬA LUẬT TỪ J-2 — và bằng chứng cho chúng là chính J-2, không phải lập luận trong J-2.**
+
+J-2 đổi **mười dòng chạy được**, đúng ngay từ commit đầu, không đổi qua **ba** lượt kiểm chứng độc lập. Cùng
+lúc đó nó sinh ra **SÁU câu sai qua bốn vòng — tất cả nằm trong lời biện minh, không câu nào nằm trong
+logic**. Đó là §8.1(b) tự ứng nghiệm ở mật độ cao nhất từng ghi được. Và **hai hình dạng tái phát NGAY BÊN
+TRONG các bản sửa viết ra cho chính chúng**: *"sửa một trong hai chỗ đối xứng"* và *"một con số vô hướng
+tóm tắt một tập không đồng nhất"* — **ca thứ tư và thứ năm liên tiếp của mỗi loại, SAU khi đã được đặt tên**.
+Đó là bằng chứng mạnh hơn mọi lập luận cho (h4) và cho việc **liệt kê thay vì đếm**.
+
+**(h5.1) Một con số đối chứng là tính chất của bộ ba (ĐỘT BIẾN, BỘ TEST, SHA CÂY MÃ).** Luật ở J-1b nói cặp
+*(đột biến, bộ test)* — vẫn thiếu một chiều. **Ghi con số luôn luôn; ghi TẬP TÊN các bài bị giết mỗi khi con
+số dịch** — thứ còn nợ là **HIỆU CỦA HAI TẬP, THEO CẢ HAI CHIỀU**, vì một đối chứng **giết THÊM** cũng chẩn
+đoán được y như một đối chứng giết ít đi; ghi tên **vô điều kiện** cho đối chứng dương, vì mỗi phiên chỉ có
+một. 🔴 **Và một con số đối chứng DỊCH ĐI là MỘT PHÁT HIỆN PHẢI GIẢI THÍCH, không bao giờ là một con số để
+lặng lẽ cập nhật** — nếu không, bản sửa luật này sẽ bị dùng **ngược**.
+
+**Ca sinh ra nó, và nó là ca đẹp nhất của cả loạt:** đối chứng giết **91** ở cây cha, **85** ở cây con. Sáu
+bài thôi chết là **năm bài Estop/tháo dỡ cộng `GetDriverHealth`** — vì đột biến đối chứng **chế ra trạng thái
+kẹt ở MỌI lần `Start()`**, nên ở cây cha mọi lệnh dừng đều từ chối và mọi bài khẳng định *"sau khi dừng thì
+slot biến mất"* đều đỏ; ở cây con **chính những bài ấy qua được DƯỚI đột biến**, vì phần tháo dỡ giờ chạy
+thật. **Dụng cụ tụt xuống vì MÃ TỐT LÊN, không phải vì độ phủ mất đi.** Chiều, độ lớn và thành phần đều khớp
+— và đối chứng ấy được chọn để **hiệu chuẩn một dụng cụ**, không phải để dò bản sửa này, nên **một con số
+sinh ra cho mục đích khác rơi trúng kết luận rút ra bằng cách đọc thì mạnh hơn cả hai thứ đứng riêng**.
+J-1b ghi "91" **mà không ghi tên**, nên **cách duy nhất giải thích được 85 là chạy lại cả hai cây**.
+
+**(h5.2) Miền của lượt ĐỌC LẠI KHI ĐÓNG là SỰ PHỤ THUỘC, không phải sự GẦN GŨI.** *Đọc lại mọi câu mà giá
+trị đúng-sai của nó có thể bị thay đổi bởi thay đổi của anh.* 🔴 **"Vùng lân cận" là một luật hình-ví-dụ —
+tức §8.1(a) lùi ra một tầng** — vì **sự gần gũi không có bán kính**. Và chính file này đã mang sẵn phản ví
+dụ: bản đính chính *"viết ở chỗ này, còn bản sao cách đó 200 dòng thì không"*. Giữ "gần" làm **lượt quét rẻ
+đầu tiên, không bao giờ làm định nghĩa**. Ca sinh ra nó: cả năm khẳng định người thực thi tự bắt được đều nằm
+**trong các hunk họ viết**; câu duy nhất họ bỏ sót — **và là câu mà cả nhiệm vụ xoay quanh** — nằm trong một
+đoạn họ **sửa vòng quanh**, đổi tiêu đề mà không đụng thân. Phản biện nói đây là bản sửa **giá trị nhất trong
+bốn**, vì **sáu thể hiện mà nó bắt được nằm ngay trên chính thay đổi đã đề xuất ra nó**.
+
+**(h5.3) Một LẬP LUẬN THAY THẾ thừa kế nghĩa vụ của lập luận bị bác, và phải được CHẠY ĐỐI CHIẾU với chính
+cái ca đã bác lập luận trước.** Khác (h)/(h2): **không có khẳng định thừa kế, không có cây mã cũ** — người
+thực thi **tự phát minh một lời biện minh mới trong lúc sửa một phép quét sai, rồi không bao giờ chạy nó với
+cái ca mà nó được viết ra để phục vụ**. *"Chịu cùng mức soi xét"* **không phải một quy trình**; dạng trên thì
+**kiểm được chỉ bằng diff**. Bằng chứng giờ mạnh hơn ca của chính tác giả: **câu sai thứ năm của J-2 là một
+ca thứ hai của đúng luật này**.
+
+**(h5.4) Bản sửa cho (h3): phép quét định nghĩa trên NHỮNG BỀ MẶT ĐỌC TRẠNG THÁI ĐÃ THAY ĐỔI, không phải trên
+các chỗ GHI LOG.** (h3) viết *"đi theo một thất bại tới nơi nó ĐƯỢC BÁO CÁO"* và **không nói gì về nơi nó
+THÔI ĐƯỢC BÁO CÁO** — phép quét đã chạy một chiều **hai lần**, và cả hai lần phản biện phải cấp nửa còn lại.
+🔴 **Nhưng nửa quan trọng hơn là nửa kia:** phát hiện nặng nhất của J-2 — `_slots` có một người đọc thứ hai
+**không kiểm cờ nào**, để lại một driver **ghi được** phân giải ra được **sau khi đã dừng khẩn** — **không
+phải một thông điệp gì cả. Nó là một QUYẾT ĐỊNH.** Không phép quét nào trên các chỗ ghi log, chạy theo chiều
+nào, chạy hoàn hảo đến đâu, với tới được nó. Bộ đầy đủ đã được dựng trên **những bề mặt CÓ IN RA**, còn chỗ
+này **không in gì**.
+
+🔴 **VÀ MỘT TÁC DỤNG PHỤ KHÔNG DỤNG CỤ NÀO Ở ĐÂY THẤY ĐƯỢC, ghi ra vì nó là một LỚP chứ không phải một ca.**
+J-2 làm cho `Stop()` trong trạng thái kẹt **thật sự có tác dụng**, nên nó **trông như một lần khôi phục trọn
+vẹn** — và bước leo thang sang `Estop()` mà người vận hành từng buộc phải làm **giờ không còn xảy ra**, trong
+khi đúng bước ấy mới là thứ đóng lại khoảng OEE đang mở. **Sửa cho một đường khôi phục hỏng chạy được đã xoá
+mất cái TRIỆU CHỨNG vốn thúc người ta làm HÀNH ĐỘNG tình cờ vá được dòng thời gian.** Không test nào bắt,
+không cổng nào thấy. Câu hỏi duy nhất lôi nó ra: **"sau bản sửa này, người vận hành sẽ THÔI LÀM gì?"**
+
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**
 
 → Quy tắc đúng: **hành vi phụ thuộc phần cứng không bao giờ là một test bị bỏ qua có điều kiện bên trong năm bộ test.** Nó hoặc được **ghi rõ là khoảng trống chưa test** trong báo cáo và trong chú thích của cổng, hoặc được commit thành **một bench harness riêng nằm ngoài năm bộ** (`tools/serial-bench/`). Phép đo không commit được thì không tái lập được — reviewer D-3 phải **viết lại toàn bộ probe** để kiểm chứng các con số của D-3.
