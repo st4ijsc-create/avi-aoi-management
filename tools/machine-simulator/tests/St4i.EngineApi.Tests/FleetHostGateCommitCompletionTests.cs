@@ -76,7 +76,15 @@ namespace St4i.EngineApi.Tests;
 /// have made a comment-only merge pass carry executable change. Instrument 1 caught it and instrument 2
 /// confirmed it: the TEST assembly's IL moved, both PRODUCT assemblies did not. Reverted, because nobody
 /// resolves a member name out of an exception message — the rename bought nothing here and cost the
-/// comment-only property the branch review had verified.</para></item>
+/// comment-only property the branch review had verified.</para>
+/// <para>🔴 <b>J-2 uses this same seam a SECOND way, and it is not a third seam: the seam itself does not
+/// throw there.</b> The two J-2 tests hand it a group with a NULL profile, so the throw comes from
+/// <c>StartSlot</c>'s own <c>new EdgePipeline</c> — one statement further on, INSIDE the slot loop, which is
+/// the only place a throw can leave slots installed. What that costs in fidelity is stated at those tests
+/// and is worth repeating here: in production every argument that constructor null-checks is non-null by
+/// construction, so the only production producer inside that loop is an allocation failure at
+/// <c>Task.Run</c>. The seam supplies the SHAPE the two fixes are about, not a production
+/// frequency.</para></item>
 /// </list></para>
 ///
 /// <para><b>What these tests do NOT prove.</b> That no <b>eighth, ninth or tenth</b> member exists — the set
@@ -540,6 +548,135 @@ public sealed class FleetHostGateCommitCompletionTests
         {
             host.AdditionalPipelinesForTests = null;
             logger.ThrowOnFragment = null;
+            try { host.Stop(); } catch { /* best-effort */ }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // S3's residual (J-2) — the partial work a StartLocked that throws leaves behind.
+    //
+    // Both tests below drive the SAME throw site and assert two different consequences of it. The site is
+    // StartSlot's `new EdgePipeline`, which the S-set banner names as one of this residual's two reachability
+    // points, reached here through the AdditionalPipelinesForTests seam with a null profile.
+    //
+    // 🔴 WHAT THAT SEAM IS AND IS NOT, because this file's own header sets the standard: in PRODUCTION every
+    // argument `new EdgePipeline` null-checks is non-null by construction on every path (the transport and
+    // the bus are ctor fields; the driver is guarded; both profiles are constructed two statements earlier),
+    // so the only production producer of a throw inside that loop is an allocation failure at `Task.Run`. The
+    // seam reproduces the SHAPE — a throw from StartSlot after at least one slot is installed and before
+    // `_running = true` — and the shape is what both fixes are about. Stated rather than left for a reader to
+    // discover, and recorded in the same words on the banner.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 S3's residual, consequence (2) — the STUCK STATE, and the only one of the four with a
+    /// consequence on the halt path.
+    ///
+    /// <para>A <c>StartLocked</c> that throws part-way through its slot loop leaves <c>_slots</c> populated
+    /// with <c>_running == false</c>. Those slots are LIVE — each run-task is already driving its pipeline —
+    /// yet <c>StopLocked</c>'s guard tested <c>!_running</c> ALONE [QUOTED-NOT-LIVE — the verbatim old line
+    /// is deliberately not reproduced here or in <c>FleetCore.cs</c>; a grep for the live guard must not
+    /// return a hit that looks like live code, and greps do not stop at a file boundary], so <b>both</b> teardown
+    /// callers returned without cancelling one of them. A HALT did not halt them, and NO OPERATOR ACTION
+    /// could: <c>RegisterMachine</c>/<c>ApplyScenario</c> reach <c>StopLocked</c> only
+    /// <c>if (IsRunning)</c>, and a <c>Start()</c> from that state installs more slots rather than clearing
+    /// these. (The one release that did exist is not an operator's to trigger: a stranded slot whose driver
+    /// later FAULTS removes itself through <c>StartSlot</c>'s catch. One that behaves does not.)</para>
+    ///
+    /// <para><b>The state is asserted before the remedy, not inferred:</b> <c>IsRunning</c> false while
+    /// <c>GetDriverHealth</c> still lists the installed slot is the divergence itself, and it is the surface
+    /// an operator meets first (<c>AlarmEvaluator</c> diffs that list).</para>
+    ///
+    /// <para><b>The symmetric caller (§8.1(h4)):</b> <c>Stop()</c> reaches the identical guard in the
+    /// identical way — the fix is in the shared callee and both callers call it unconditionally — so it is
+    /// DELIBERATELY not witnessed separately. <c>Estop()</c> is the one asserted because it is the one whose
+    /// failure to tear down is a safety-path claim rather than a leak.</para></summary>
+    [Fact]
+    public void AStartThatThrowsWhileInstallingSlots_LeavesSlotsTheHaltPathCanStillTearDown()
+    {
+        const string installedLabel = "j2-installed";
+        var host = CreateHost();
+        var installed = new DisposeCountingDriver(installedLabel);
+        var neverReached = new DisposeCountingDriver("j2-never-reached");
+
+        host.AdditionalPipelinesForTests = () => new List<(string, IDeviceDriver, MappingProfile)>
+        {
+            (installedLabel, installed, ProfileFor(installedLabel)),
+            ("j2-throwing", neverReached, null!),
+        };
+
+        try
+        {
+            Assert.Throws<ArgumentNullException>(() => host.Start());
+
+            // The stuck state, as a state: the fleet says it is not running and its own driver-health
+            // projection says otherwise, about a slot whose pipeline is genuinely running.
+            Assert.False(host.IsRunning);
+            Assert.Contains(host.GetDriverHealth(), h => h.SlotLabel == installedLabel);
+            Assert.Equal(0, installed.DisposeCount);
+
+            host.Estop();
+
+            // THE ASSERTION: the halt reached them. Before J-2 this was 0 for the life of the process.
+            Assert.Equal(1, installed.DisposeCount);
+            Assert.Empty(host.GetDriverHealth());
+            Assert.True(host.EstopEngaged);
+        }
+        finally
+        {
+            host.AdditionalPipelinesForTests = null;
+            try { host.Stop(); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>🔴 S3's residual, consequence (1) — the orphaned connector driver, which is the half of the
+    /// residual the banner has named since review I-5.
+    ///
+    /// <para>A factory that rejects its config while still handing back a live driver is the shape
+    /// "review fix round 2" exists for. <c>StartLocked</c> collects that driver and its CALLER disposes it
+    /// off <c>_gate</c> — but the list lived in a local of <c>StartLocked</c>, so a throw between the
+    /// collection and the return took every orphan out of scope with its socket open, and the caller's
+    /// <c>finally</c> reached <c>default(StartOutcome)</c> and did nothing. The list is allocated by the
+    /// caller now; nothing else about the mechanism moved.</para>
+    ///
+    /// <para><b>The second assertion PINS A GAP rather than a guarantee</b>, in the same style as the Burst
+    /// test below. <c>j2-later</c>'s driver sits AFTER the throwing group in the same list: it was never
+    /// installed, is referenced only by a local, and is never disposed. That is S3's residual (4) — new, on
+    /// no previous list, and NOT closed here, because at the FAILING index this method cannot distinguish
+    /// "installed" from "not installed" (<c>StartSlot</c> adds the slot before assigning its run-task) and a
+    /// hand-over would either leak one driver or double-dispose it against the teardown path the sibling
+    /// test just made reachable. If a later task closes it, this assertion is what goes red — which is the
+    /// point of pinning it.</para></summary>
+    [Fact]
+    public void AStartThatThrowsWhileInstallingSlots_StillDisposesTheConnectorDriverItOrphaned()
+    {
+        var orphan = new DisposeCountingDriver("j2-orphan");
+        var registry = new ConnectorRegistry();
+        registry.Register(new OrphanLeakingFactory("vendor.j2.orphan", orphan), config: "garbage");
+
+        var host = CreateHost(connectorRegistry: registry);
+        var throwingSlot = new DisposeCountingDriver("j2-throwing");
+        var later = new DisposeCountingDriver("j2-later");
+
+        host.AdditionalPipelinesForTests = () => new List<(string, IDeviceDriver, MappingProfile)>
+        {
+            ("j2-throwing", throwingSlot, null!),
+            ("j2-later", later, ProfileFor("j2-later")),
+        };
+
+        try
+        {
+            Assert.Throws<ArgumentNullException>(() => host.Start());
+
+            // THE ASSERTION: exactly one — the `finally` must not have traded a lost disposal for a doubled
+            // one, the same bar every other disposal count in this file is held to.
+            Assert.Equal(1, orphan.DisposeCount);
+
+            // THE PINNED GAP: S3's residual (4), stated as a fact about this tree rather than tolerated.
+            Assert.Equal(0, later.DisposeCount);
+        }
+        finally
+        {
+            host.AdditionalPipelinesForTests = null;
             try { host.Stop(); } catch { /* best-effort */ }
         }
     }

@@ -454,7 +454,13 @@ public sealed class FleetHostStartBuildHoistTests
     ///
     /// <para>The hoist opened an interval in the middle of <c>Start()</c> that did not exist before it. A
     /// <c>Stop()</c> arriving there acquires the gate, finds the fleet not running (this start has not
-    /// installed yet) and <c>StopLocked</c> returns on its own <c>!_running</c> guard — so the request left
+    /// installed yet) and <c>StopLocked</c> returns on its own opening guard — no slots exist there either,
+    /// so the conjunction J-2 gave that guard returns for the same reason the single <c>!_running</c> test
+    /// did; the predicted behaviour is unchanged and only the guard's stated FORM was stale. (🔴 J-2 branch
+    /// review, Important 2 — and this site was NOT in the review's list of five: it was found by sweeping
+    /// the PROPERTY, "every comment that names the guard, wherever it lives", across <c>src/</c> and
+    /// <c>tests/</c>. Sweeping the review's examples would have missed it, which is the whole of the
+    /// dependency rule that round proposed.) So the request left
     /// no state behind and the start went on to complete. A <c>Start</c>‖<c>Stop</c> race that pre-J-1 could
     /// end STOPPED could then only end RUNNING. That is why the fix counts REQUESTS rather than reading
     /// state: at install time <c>IsRunning</c> and <c>_estopEngaged</c> are both false either way, so the
