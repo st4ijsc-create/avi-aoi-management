@@ -629,15 +629,27 @@ internal sealed class FleetCore
     /// half additionally needs an install that either completes or restores the pipeline it replaced, i.e. a
     /// transactional teardown, and the old slots have already been cancelled and disposed by that point. So
     /// the reserved change is strictly larger than the sentence above describes. The ordering claim itself
-    /// holds and is worse than "the operator sees the gap move": with the build hoisted ahead of the
-    /// teardown, <c>MachineConfigStore.Ensure</c>'s writes land while the OLD pipeline is still live, and a
-    /// config-aware simulator re-resolves its config EVERY CYCLE (see <c>SimulatorBase</c>), so the running
-    /// fleet would observe the next fleet's configuration mid-restart.</item>
+    /// holds on its own terms — an operator observes the pipeline stop, then the build's file I/O, then the
+    /// pipeline start, and reordering moves what they see.
+    /// <para>🔴 <b>Review I-2 — AND THE ADDENDUM THAT STOOD HERE DID NOT FOLLOW, so it is withdrawn rather
+    /// than softened.</b> It argued that with the build hoisted ahead of the teardown,
+    /// <c>MachineConfigStore.Ensure</c>'s writes would land while the old pipeline was still live and a
+    /// config-aware simulator re-resolving EVERY CYCLE would therefore "observe the next fleet's
+    /// configuration mid-restart". The write lands; the observation does not follow. <c>Ensure</c> NEVER
+    /// modifies an existing record — for a machine already in the store it returns a deep clone of what is
+    /// there (and throws on a config-kind mismatch), and it writes only when SEEDING a machine that has no
+    /// record, which by construction is not a machine any live simulator is running. So no running machine's
+    /// resolved config changes, and the per-cycle re-resolution has nothing new to see. I reasoned from "a
+    /// write happens" to "a reader sees it" without opening the writer — the (a3) shape, in the sentence I
+    /// added to strengthen a claim that did not need it.</para></item>
     /// <item><b>"Rolling the commit back changes what a failed call MEANS" holds, and the two concrete
     /// reasons are better than the general one.</b> (a) <c>_fleet</c> is APPEND-ONLY by documented invariant
     /// and the roster is PUBLICLY VISIBLE throughout this window — the lock is released across the whole
-    /// teardown and build, so <c>GET /v1/fleet</c> has already reported the machine that a rollback would
-    /// remove. (b) <see cref="RegisterMachine"/>'s seed notification is delivered by the
+    /// teardown and build, so <c>GET /v1/fleet</c> <b>can</b> have reported the machine a rollback would
+    /// remove. (🔴 Review Minor: this said <i>"has already reported"</i>, which asserts a READ where the
+    /// premise establishes only VISIBILITY. The rollback is unsound whether or not anyone happened to look —
+    /// overclaiming it invites the reply "prove someone read it" and loses an argument that does not need
+    /// the read.) (b) <see cref="RegisterMachine"/>'s seed notification is delivered by the
     /// <see cref="DrainSeedNotifications"/> in its outer <c>finally</c>, which runs AFTER the rebuild throws
     /// — so a rollback would leave a durable asset row for a machine no longer in the roster. For
     /// <see cref="ApplyScenario"/> the same argument runs through <see cref="ApplyNetworkOutageLocked"/>'s
@@ -666,18 +678,36 @@ internal sealed class FleetCore
     /// halt path.</item>
     /// </list>
     /// <b>S3's residual — TWO OF ITS THREE CONSEQUENCES CLOSED BY J-2, ONE STILL OPEN, AND A FOURTH THAT WAS
-    /// NEVER ON THIS LIST</b> (recorded by the sweep, dropped by G-2's round 1, restored by review I-5): a
-    /// throw inside <see cref="StartLocked"/> <i>after</i> the connector loop loses
-    /// <c>orphanedConnectorDrivers</c> and <c>deferredLogs</c> outright — they are locals, so no
-    /// <c>finally</c> in a caller can reach them — and leaves <see cref="_slots"/> non-empty with
-    /// <c>_running == false</c>, which <see cref="StopLocked"/>'s <c>if (!_running) return default;</c> then
-    /// REFUSES to tear down. Closing it means restructuring <see cref="StartLocked"/> so its partial work is
-    /// owned by the caller, which is the same redesign P5 needs.
-    /// <para>🔴 <b>J-1 performed that restructuring for the BUILD half only, and this residual is
-    /// UNCHANGED.</b> The half that moved (simulators, mapping profiles) never owned anything a caller had to
+    /// NEVER ON THIS LIST</b> (recorded by the sweep, dropped by G-2's round 1, restored by review I-5).
+    /// <b>The shape, stated once and in the present tense only where it is still true:</b> a throw inside
+    /// <see cref="StartLocked"/> leaves partial work behind, and the question for each piece is who owns it
+    /// afterwards. The four pieces and their CURRENT verdicts are (1)–(4) below; read them, not this
+    /// sentence, for status.
+    /// <para>🔴 <b>WHAT THIS PARAGRAPH USED TO SAY, kept as history because the task that closed two of the
+    /// four diagnosed this very sentence as the reason they stayed open — and deleting it would erase the
+    /// evidence for that diagnosis.</b> It read: <i>"a throw inside <see cref="StartLocked"/> after the
+    /// connector loop loses <c>orphanedConnectorDrivers</c> and <c>deferredLogs</c> outright — they are
+    /// locals, so no <c>finally</c> in a caller can reach them — and leaves <see cref="_slots"/> non-empty
+    /// with <c>_running == false</c>, which <see cref="StopLocked"/>'s <c>if (!_running) return default;</c>
+    /// then REFUSES to tear down. Closing it means restructuring <see cref="StartLocked"/> so its partial
+    /// work is owned by the caller, which is the same redesign P5 needs."</i>
+    /// <b>Three of those clauses are now FALSE and the fourth was never true.</b> The orphan list is no
+    /// longer a local (it is the caller's, see (1)); <see cref="StopLocked"/>'s guard is no longer
+    /// <c>if (!_running) return default;</c> (it is a conjunction, see (2)); and the refusal it describes is
+    /// gone with it. The clause that was never true is the last one: closing (1) took ONE parameter and two
+    /// caller declarations, closing (2) took ONE <c>&amp;&amp;</c>, and <b>neither is the P5 redesign</b> —
+    /// P5 is "get <c>MachineConfigStore.Ensure</c>'s write off this lock", and neither change moves any I/O
+    /// relative to it. <b>That sentence converted two cheap repairs into a reserved redesign by assertion,
+    /// and three rounds of readers took their scope from it instead of from the code.</b> §8.1(f), the
+    /// vocabulary half, applied to a scope rather than to a name — recorded in the blueprint as its own
+    /// instance.</para>
+    /// <para>🔴 <b>J-1 performed that restructuring for the BUILD half only, and this residual was UNCHANGED
+    /// BY IT</b> (past tense as of J-2 — see (1) and (2) for what has since moved). The half that moved
+    /// (simulators, mapping profiles) never owned anything a caller had to
     /// release — <c>IMachineSimulator</c> has no <c>Dispose</c> — so hoisting it bought nothing here. The two
-    /// things that ARE lost, <c>orphanedConnectorDrivers</c> and <c>deferredLogs</c>, are locals of the
-    /// INSTALL half, which J-1 left under the lock along with the connector loop that fills them. The one
+    /// things that were lost AS OF J-1, <c>orphanedConnectorDrivers</c> and <c>deferredLogs</c>, were locals
+    /// of the INSTALL half, which J-1 left under the lock along with the connector loop that fills them
+    /// (<b>the first of those two is a caller-owned list as of J-2; only the second is still lost</b>). The one
     /// thing J-1 makes cheap that was not cheap before is flushing a failed install's deferred lines: they
     /// now exist in a <see cref="StartPlan"/> the caller is already holding
     /// (<see cref="RebuildPipelineOffLock"/>'s local), so a future task can reach them without restructuring
@@ -1855,14 +1885,33 @@ internal sealed class FleetCore
     ///
     /// <para>🔴 <b>J-2 — THE TWO HALVES NO LONGER TRAVEL THE SAME WAY, and the difference is the fix.</b>
     /// <see cref="OrphanedConnectorDrivers"/> is now allocated by the CALLER and passed INTO
-    /// <see cref="StartLocked"/>, which only fills it; this record then carries it back so the completion
-    /// still takes one argument. <see cref="DeferredLogs"/> is unchanged — still built inside
+    /// <see cref="StartLocked"/>, which only fills it. <see cref="DeferredLogs"/> is unchanged — still built inside
     /// <see cref="StartLocked"/>, still reaching a caller only on a return. So on a throw the first half is
     /// intact and the second is <see langword="null"/>, which is the state
     /// <see cref="CompleteStartOffLock"/> is written for. Why only one half moved is argued at
     /// <see cref="StartLocked"/>: releasing a socket is owed whatever happened, emitting a line from a start
     /// that never installed is a question about operator-facing output that two sibling paths have already
-    /// answered the other way.</para></summary>
+    /// answered the other way.</para>
+    ///
+    /// <para>🔴 <b>Review I-3 — AND THE RETURNED <see cref="OrphanedConnectorDrivers"/> HALF IS DEAD, WHICH
+    /// THIS DOC PREVIOUSLY DENIED.</b> The sentence here said the record "carries it back so the completion
+    /// still takes one argument". It does not: <b>neither caller reads it.</b> Both build a fresh
+    /// <see cref="StartOutcome"/> from the list THEY own, because on the throw path there is no returned
+    /// value at all — which is the entire point. The returned half is therefore write-only, and the obvious
+    /// "simplification" back to <c>CompleteStartOffLock(outcome)</c> would restore the leak J-2 closed.
+    ///
+    /// <para><b>That regression is guarded by a TEST, not by this paragraph, and the guard is measured:</b>
+    /// mutation <c>J2-B2</c> is exactly that edit — the completion reading <c>outcome</c> again — and it is
+    /// KILLED (1) by
+    /// <c>FleetHostGateCommitCompletionTests.AStartThatThrowsWhileInstallingSlots_StillDisposesTheConnectorDriverItOrphaned</c>,
+    /// and by that test alone. So the type does not prevent it and a red test does.
+    /// <b>The type-level alternative was considered and deliberately not taken in the review round:</b>
+    /// having <see cref="StartLocked"/> return only its <see cref="DeferredLogs"/> would make the
+    /// regression a COMPILE ERROR rather than a red test, which is strictly better — and it is an executable
+    /// change to the method that sits between every public entry and the HALT latch, so it costs a full
+    /// re-run of that latch's mutation cluster (§8.1(h)) to buy a stronger guard for a regression that
+    /// already has a witness. It is the right follow-up and it is named here rather than done
+    /// quietly.</para></para></summary>
     private readonly record struct StartOutcome(
         List<IDeviceDriver> OrphanedConnectorDrivers,
         List<DeferredLogEntry> DeferredLogs);
@@ -2159,6 +2208,21 @@ internal sealed class FleetCore
         // nothing to reach. It reached `default(StartOutcome)` and did nothing, which is precisely how a
         // completion written to close a leak still lost one. The list is the caller's now; the `finally`
         // names it directly and does not depend on StartLocked having returned at all.
+        //
+        // 🔴 WHAT IT COSTS (review Minor — StopLocked's change was given this disclosure and this one was
+        // not): on the throw path the `finally` now WAITS. DisposeOrphanedConnectorDrivers bounds each
+        // orphan at RestartTeardownTimeout, so a failed Start() can take that much longer per collected
+        // orphan to hand its exception back, where it previously returned at once. Off _gate, so it delays
+        // nobody's Estop; and the list is empty on every path where no factory rejected while leaking, which
+        // is every path in a healthy fleet. The trade is that latency against a socket held for the life of
+        // the process.
+        //
+        // 🔴 AND IT IS ALLOCATED BEFORE THE `try`, i.e. BEFORE this method's own early return — unlike
+        // RebuildPipelineOffLock, which allocates AFTER its pre-check, though both are documented as the
+        // same change (review Minor). The difference is forced, not stylistic: THIS method's early return
+        // lives INSIDE the `try` whose `finally` consumes the list, so the declaration has to precede it;
+        // that method's pre-check runs before its `try` begins. The cost of the asymmetry is one empty list
+        // allocated by a Start() that declines — which is the same list the latch path has always returned.
         bool started = false;
         StartOutcome outcome = default;
         var orphanedConnectorDrivers = new List<IDeviceDriver>();
@@ -3640,9 +3704,26 @@ internal sealed class FleetCore
         // is invented or lost and the OEE timeline is untouched. RegisterMachine/ApplyScenario never reach
         // this state at all: both call this method only `if (IsRunning)`.
         //
-        // WHAT IT COSTS: a Stop/Estop made in that state now performs the teardown instead of returning
-        // immediately — bounded by RestartTeardownTimeout per stranded slot, twice (run-task wait, then the
-        // driver's own DisposeAsync), off this lock in WaitAndDisposeOldPipeline. And it widens the
+        // 🔴 WHAT IT COSTS, FIRST HALF — AND IT IS OPERATOR-VISIBLE OUTPUT, WHICH THE FIRST VERSION OF THIS
+        // COMMENT DENIED. Review I-1, and it is §8.1(h3) firing on the round that was told to apply it: I
+        // swept the newly reachable path for new messages and wrote "no new message exists". FALSE. Making
+        // this method DO its teardown in that state makes three log lines reachable that were not:
+        //   - the per-slot cancellation-callback entry buffered below carries a NON-NULL Error, so
+        //     FlushDeferredLogs routes it to _logError — a HOST ERROR LINE, on a path that emitted nothing;
+        //   - DisposeOldSlots' two buffered _logDebug lines (faulted run-task wait, driver dispose fault)
+        //     become reachable for the same reason.
+        // All three need a MISBEHAVING driver to fire at all, and Debug is silent under the shipped hosts
+        // (no appsettings.json), so the Error line is the one an operator can actually meet. It is NAMED
+        // rather than avoided because it is INSEPARABLE from the fix: the lines are produced BY the teardown,
+        // and a teardown that cannot report a driver that refused to cancel is worse than one that can.
+        // Note what this is NOT: it is not the deferred-log question S3's residual (3) refuses. That one is
+        // about SPEAKING FOR A START THAT NEVER INSTALLED, where the alternative is silence about nothing
+        // having happened. This is a halt that really did tear down really-live slots and really did meet a
+        // driver that misbehaved.
+        //
+        // WHAT IT COSTS, SECOND HALF: a Stop/Estop made in that state now performs the teardown instead of
+        // returning immediately — bounded by RestartTeardownTimeout per stranded slot, twice (run-task wait,
+        // then the driver's own DisposeAsync), off this lock in WaitAndDisposeOldPipeline. And it widens the
         // REACHABILITY of P6 in the nine-path enumeration above by exactly one state: `slot.Cts.Cancel()`
         // below runs a third-party cancellation callback under this lock, which it already did on every
         // ordinary halt. No path is added, no member changes status, the set is still nine and the lock
