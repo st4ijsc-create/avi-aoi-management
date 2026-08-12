@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+import { readAppErrorMeta } from "./_core/appError";
 
 // Mock database functions with correct names
 vi.mock("./db", () => ({
@@ -140,16 +141,53 @@ describe("Factory Router", () => {
     expect(result).toHaveProperty("id");
   });
 
+  /**
+   * ★★★★ Review TOÀN NHÁNH Pha 9 · **KỲ VỌNG SAI, HÀNH VI ĐÚNG.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ CA NÀY ĐỎ VÌ **CHÍNH NÓ**, KHÔNG VÌ SẢN PHẨM — VÀ ĐÓ LÀ HAI CHUYỆN KHÁC HẲN NHAU
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * Đo được (`npx vitest run server/api.test.ts -t "reject non-admin"`, trước lượt sửa):
+   *
+   *     Expected: "Admin access required"
+   *     Received: "Bạn không có quyền create cho module \"settings_factory\""
+   *
+   * RBAC **vẫn từ chối** — nó chỉ thôi nói tiếng Anh, từ **AI Sprint 5** (`appError` +
+   * `errors.PERMISSION_DENIED`, `server/_core/accessControl.ts:191-196`). Kỳ vọng là cái **cũ**.
+   *
+   * ⚠⚠ **KHÔNG nới thành *"ném bất cứ gì cũng được"***: thế là biến một ca thật thành một ca
+   *    trang trí — nó sẽ xanh cả khi `factory.create` ném vì DB rớt, vì zod, vì một `TypeError`.
+   * ⚠⚠ **VÀ KHÔNG ghim CÂU TIẾNG VIỆT**: một lượt đổi bản dịch (hoặc đổi ngôn ngữ mặc định) sẽ
+   *    làm ca này đỏ trong khi bất biến an ninh **không hề đổi** — đúng cái bẫy vừa mắc, chỉ
+   *    khác ngôn ngữ. Ghim câu chữ là ghim **hiển thị**, không phải **cơ chế**.
+   * ⇒ Ghim đúng thứ là **hợp đồng máy-đọc-được** mà chính `appError` sinh ra để tồn tại:
+   *   `TRPCError.code === "FORBIDDEN"` ∧ `appCode === "PERMISSION_DENIED"` ∧
+   *   `appParams.action === "canCreate"`. Ba vế, và **cả ba đều đỏ được**:
+   *     · RBAC thôi từ chối        ⇒ không ném ⇒ ĐỎ ở `daNem`;
+   *     · từ chối vì lý do KHÁC    ⇒ `appCode` khác ⇒ ĐỎ;
+   *     · gắn nhầm `action`        ⇒ `appParams` khác ⇒ ĐỎ (đo được: `canCreate`, không `canEdit`).
+   */
   it("should reject non-admin from creating factory", async () => {
     const ctx = createUserContext("user");
     const caller = appRouter.createCaller(ctx);
 
-    await expect(
-      caller.factory.create({
-        code: "FAC002",
-        name: "Factory 2",
-      })
-    ).rejects.toThrow("Admin access required");
+    // ĐỐI CHỨNG DƯƠNG nằm ngay trên (`should allow admin to create factory`): cùng thủ tục, cùng
+    // đầu vào, chỉ đổi vai ⇒ ca này KHÔNG thể xanh bằng một bản vá "chặn tất".
+    let daNem: unknown = null;
+    try {
+      await caller.factory.create({ code: "FAC002", name: "Factory 2" });
+    } catch (e) {
+      daNem = e;
+    }
+
+    expect(daNem, "vai `user` TẠO ĐƯỢC nhà máy ⇒ cổng RBAC đã biến mất").not.toBeNull();
+    expect((daNem as { code?: string })?.code, "phải là FORBIDDEN, không phải một lỗi hạ tầng").toBe(
+      "FORBIDDEN",
+    );
+    expect(
+      readAppErrorMeta(daNem),
+      "mã máy-đọc-được của lượt từ chối đã đổi — client bản địa hoá theo đúng nó",
+    ).toEqual({ appCode: "PERMISSION_DENIED", appParams: { action: "canCreate" } });
   });
 });
 
