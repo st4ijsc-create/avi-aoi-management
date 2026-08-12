@@ -1,7 +1,7 @@
 import type express from "express";
 import fs from "node:fs";
 import path from "node:path";
-import { sdk } from "../_core/sdk";
+import { thuXacThucRest } from "./_xacThucRest";
 import {
   answerQuestion,
   getKbHealth,
@@ -286,7 +286,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
 
   app.post("/api/ai/local-kb/reload", async (req, res) => {
     try {
-      const user = await sdk.authenticateRequest(req);
+      const user = await thuXacThucRest(req);
       if (!user) {
         res.status(401).json({ success: false, error: "Unauthorized" });
         return;
@@ -304,7 +304,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
 
   app.post("/api/ai/local-kb/retrieve", async (req, res) => {
     try {
-      const user = await sdk.authenticateRequest(req);
+      const user = await thuXacThucRest(req);
       if (!user) {
         res.status(401).json({ success: false, error: "Unauthorized" });
         return;
@@ -333,7 +333,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
 
   app.post("/api/ai/local-kb/ask", async (req, res) => {
     try {
-      const user = await sdk.authenticateRequest(req);
+      const user = await thuXacThucRest(req);
       if (!user) {
         res.status(401).json({ success: false, error: "Unauthorized" });
         return;
@@ -374,7 +374,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
   // `token` events, then `done`. Falls back to chunked emission of the
   // final answer when an LLM is not available locally.
   app.post("/api/ai/local-kb/stream", async (req, res) => {
-    const user = await sdk.authenticateRequest(req).catch(() => null);
+    const user = await thuXacThucRest(req);
     if (!user) {
       res.status(401).json({ success: false, error: "Unauthorized" });
       return;

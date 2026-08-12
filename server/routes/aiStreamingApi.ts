@@ -6,7 +6,7 @@
  */
 
 import type express from "express";
-import { sdk } from "../_core/sdk";
+import { thuXacThucRest } from "./_xacThucRest";
 import {
   generateTextStream,
   chatCompletionStream,
@@ -21,7 +21,7 @@ export function registerAiStreamingRoutes(app: express.Express) {
   // ─── SSE: Text Generation Stream ────────────────────
   app.post("/api/ai/stream/generate", async (req, res) => {
     try {
-      const user = await sdk.authenticateRequest(req);
+      const user = await thuXacThucRest(req);
       if (!user) {
         res.status(401).json({ error: "Unauthorized" });
         return;
@@ -90,7 +90,7 @@ export function registerAiStreamingRoutes(app: express.Express) {
   // ─── SSE: Chat Completion Stream ────────────────────
   app.post("/api/ai/stream/chat", async (req, res) => {
     try {
-      const user = await sdk.authenticateRequest(req);
+      const user = await thuXacThucRest(req);
       if (!user) {
         res.status(401).json({ error: "Unauthorized" });
         return;
@@ -153,7 +153,7 @@ export function registerAiStreamingRoutes(app: express.Express) {
   // ─── SSE: Narrative Stream (Hybrid OpenAI + GGUF via provider router) ──
   app.post("/api/ai/stream/narrative", async (req, res) => {
     try {
-      const user = await sdk.authenticateRequest(req);
+      const user = await thuXacThucRest(req);
       if (!user) {
         res.status(401).json({ error: "Unauthorized" });
         return;
