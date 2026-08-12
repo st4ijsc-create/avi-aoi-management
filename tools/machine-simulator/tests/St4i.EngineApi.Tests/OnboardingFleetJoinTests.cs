@@ -27,7 +27,8 @@ namespace St4i.EngineApi.Tests;
 /// <c>CredentialStore.Save</c>, which resolves the PROCESS-WIDE <c>ST4I_CREDS_DIR</c> on every call. With
 /// no override in effect it sealed real DPAPI <c>mk_</c> blobs for this file's distinctive serials into a
 /// real install's <c>%ProgramData%\ST4I\sim\creds</c> — the directory this project deliberately keeps,
-/// and the exact leak the test-hygiene batch spent a census on (2,999 blobs, 633 of them from e2e runs).
+/// and the exact leak the test-hygiene batch spent a census on (2,999 blobs total; the e2e share was 613,
+/// corrected from 633 by task K-1 — see <c>CredentialStoreTests</c> for the full four-part decomposition).
 /// Raced against a class that HAS set the variable, it wrote into that class's temp root instead. Nothing
 /// in this suite suppresses cross-collection parallelism.</para>
 ///

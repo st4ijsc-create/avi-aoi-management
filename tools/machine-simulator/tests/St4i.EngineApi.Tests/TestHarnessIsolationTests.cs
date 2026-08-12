@@ -17,9 +17,13 @@ namespace St4i.EngineApi.Tests;
 /// writing a real install's webhook URLs and SMTP passwords.</item>
 /// <item>This batch found <c>creds</c> still un-isolated. The config's own note claimed "this suite never
 /// calls anything that writes there"; a census of the real
-/// <c>%ProgramData%\ST4I\sim\creds</c> found 633 files carrying the exact machine-code prefixes
+/// <c>%ProgramData%\ST4I\sim\creds</c> found <b>613</b> files carrying the exact machine-code prefixes
 /// <c>04-onboarding.spec.ts</c> mints (<c>SIM-E2E-*</c>, <c>SIM-E2E-IOT-*</c>, <c>SIM-E2E-RESET-*</c>,
-/// <c>SIM-PASTE-*</c>) — one new, never-overwritten DPAPI-sealed credential per run.</item>
+/// <c>SIM-PASTE-*</c>, <c>SIM-E2E-FLAGOFF-*</c>) — one new, never-overwritten DPAPI-sealed credential per
+/// run. 🔴 <b>This read "633 files" over FOUR prefixes until task K-1 re-measured it, and both halves were
+/// wrong together</b>: the census counted 613, over FIVE prefixes (leak-report.md:308's regex). A count
+/// and the list it is a count OF have to be corrected as one thing — fixing the number and leaving the
+/// list is how a sentence stays false while looking audited.</item>
 /// </list>
 /// The pattern is not carelessness; it is that a hand-maintained list of stores cannot survive a store
 /// being ADDED. So this test does not hold a list. It discovers every <c>ST4I_*_DIR</c> environment
@@ -94,9 +98,13 @@ public sealed class TestHarnessIsolationTests
     //       a naming census would have called that class clean: it sets no ST4I_*_DIR at all.
     //
     // WHY A "WHICH CLASSES SET THE VARIABLE" CENSUS IS THE WRONG INSTRUMENT, and this is the decisive
-    // part: keyed on the DIRECT half it returns GREEN over exactly the case that was paid for. That is
+    // part: keyed on DIRECT ASSIGNMENT OF THE VARIABLE it returns GREEN over both cases above. That is
     // blueprint §8.1(f) with a completeness claim on top — a recogniser whose domain is inherited from
     // where its author was standing.
+    // 🔴 That sentence said "keyed on the DIRECT half" until the branch review (Minor 8), which is the
+    // word the NAMING bullet six lines up had just given a second, opposite meaning: one of the two leaks
+    // IS a direct Save. "Direct" now names the assignment, never the call — a collision introduced by the
+    // very paragraph that added the second axis, i.e. in the same round, which is where these land.
     //
     // WHAT IS BUILT: RealCredentialStoreLeakGuardTests asserts that the REAL creds root GAINS NO ENTRY
     // while a test process runs — a difference across an interval, never "is empty", because that
@@ -110,6 +118,17 @@ public sealed class TestHarnessIsolationTests
     // fixture and its own decision, because a [Collection] omission changes SCHEDULING, not behaviour, and
     // therefore cannot be killed by a mutation (measured: dropping the attribute compiles and every test
     // passes). Named so the next person starts from the set.
+    //
+    // 🔴 AND THE RACE HALF HAS NOW BEEN SEEN TO FIRE, which is worth more than the argument that it could.
+    // Recorded here, in the block that OWNS this item, because it was found during K-1's mutation round and
+    // a finding that lives only in a report is a finding the next person does not have (branch review,
+    // Minor 11). K-1's M2 mutation put a CredentialStore.Save behind a momentary
+    // `SetEnvironmentVariable(ST4I_CREDS_DIR, null)` in one class. The first run of the suite reported TWO
+    // failures; the immediate repeat, on the same binary, reported ONE — the guard alone. The second
+    // failure did not reproduce and its name was not captured. That is exactly the shape this item
+    // describes: a process-wide variable nulled by one class while another reads it, visible only as a
+    // scheduling-dependent flake. It is evidence the hazard is live, NOT a measurement of which class lost
+    // the race — nobody has that, and the honest gap is why this stays booked rather than closed.
     // ─────────────────────────────────────────────────────────────────────────────────────────────
 
     private static string MachineSimulatorRoot()
@@ -192,7 +211,7 @@ public sealed class TestHarnessIsolationTests
             $"{string.Join(", ", missing)}. Every `npm run test:e2e` and `npm run dev` therefore reads and " +
             "writes a REAL install's data for those stores — which is how this harness came to create " +
             "login-capable accounts in a production security.db (SM-6), read and write real webhook URLs " +
-            "and SMTP passwords (C-5), and leave 633 DPAPI-sealed machine credentials in the real creds " +
+            "and SMTP passwords (C-5), and leave 613 DPAPI-sealed machine credentials in the real creds " +
             "directory (test-hygiene batch). Add it to the webServer `env` block under `e2eDataDir`.");
     }
 }

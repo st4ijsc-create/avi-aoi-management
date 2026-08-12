@@ -205,9 +205,14 @@ export default defineConfig({
       // It does. `04-onboarding.spec.ts` mints a machine code per run — `SIM-E2E-${Date.now()}`,
       // `SIM-E2E-IOT-*`, `SIM-E2E-RESET-*`, `SIM-PASTE-*`, `SIM-E2E-FLAGOFF-*` — and every one of those
       // flows ends in `OnboardingService`, which calls `CredentialStore.Save`. A census of the real
-      // `%ProgramData%\ST4I\sim\creds` found 2,999 `.bin` files, of which 633 carry exactly those four
+      // `%ProgramData%\ST4I\sim\creds` found 2,999 `.bin` files, of which 613 carry exactly those five
       // prefixes: one NEW, never-overwritten DPAPI-sealed credential per e2e run, growing without
       // bound, in the directory `packaging/remove-data.ps1` exists to purge on decommissioning.
+      // 🔴 This said "633 ... those four prefixes" until task K-1 re-measured it. Both were wrong, and
+      // this is the site where it mattered most: 613 is the number that FALSIFIED the claim this block
+      // replaced ("this suite never calls anything that writes there"), so it is load-bearing here in a
+      // way it is nowhere else. The 2,999 is untouched and correct — a directly measured total
+      // (leak-report.md:13) that decomposes as 2,366 xunit + 613 e2e + 9 named + 11 kept.
       //
       // The xunit fixtures were the larger share (2,366 files) and the old note was right about them,
       // but "the other harness is worse" was never a reason this one could not be isolated — and the

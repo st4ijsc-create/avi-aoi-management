@@ -222,6 +222,13 @@ public sealed class RealCredentialStoreLeakGuardTests
     /// in a message, a log line or an audit row, by structure rather than by redaction.</summary>
     private const int MaxNamesListed = 25;
 
+    /// <summary>Renders a population as NAMES ONLY, capped. Never touches a file's bytes.</summary>
+    private static string Listed(IReadOnlyList<string> names)
+    {
+        var text = string.Join(", ", names.Take(MaxNamesListed));
+        return names.Count > MaxNamesListed ? $"{text}, … (+{names.Count - MaxNamesListed} more)" : text;
+    }
+
     [Fact]
     public void TheRealCredentialDirectory_GainsNoEntry_WhileThisSuitesProcessRuns()
     {
@@ -236,17 +243,46 @@ public sealed class RealCredentialStoreLeakGuardTests
         var root = RealCredentialStoreWatch.Root!;
         var baseline = RealCredentialStoreWatch.Baseline!;
 
-        var added = RealCredentialStoreWatch.Snapshot(root)
-            .Except(baseline, StringComparer.OrdinalIgnoreCase)
+        // Branch review, Minor 6: the identical call inside the module initializer is wrapped, this one was
+        // not — so an ACL change or a mid-enumeration I/O error surfaced as a raw exception instead of the
+        // message below. A guard whose failure mode is a stack trace is a guard nobody triages.
+        SortedSet<string> now;
+        try
+        {
+            now = RealCredentialStoreWatch.Snapshot(root);
+        }
+        catch (Exception ex)
+        {
+            Assert.Fail(
+                $"Could not read the REAL credential directory \"{root}\" to compare against this " +
+                $"assembly's baseline: {ex.GetType().Name}: {ex.Message}. This is NOT a pass — the " +
+                "measurement did not happen. Fix the read (ACL, a lock, a vanished root); do NOT delete " +
+                "this assertion and do NOT delete anything under %ProgramData%\\ST4I\\.");
+            return; // unreachable; keeps `now` definitely-assigned for the compiler
+        }
+
+        var added = now.Except(baseline, StringComparer.OrdinalIgnoreCase)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var listed = string.Join(", ", added.Take(MaxNamesListed));
-        if (added.Count > MaxNamesListed) listed += $", … (+{added.Count - MaxNamesListed} more)";
+        // Branch review, Minor 7 — the REMOVED arm, which is not symmetry for its own sake. The binding
+        // constraint on this directory is that nothing may be deleted from it, and until now no assertion
+        // anywhere enforced that: a run that quietly pruned the evidence base five artifacts cite was
+        // indistinguishable from a clean one. Reported as its own population, separately fatal.
+        var removed = baseline.Except(now, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        Assert.True(removed.Count == 0,
+            $"{removed.Count} entr{(removed.Count == 1 ? "y" : "ies")} DISAPPEARED from the REAL " +
+            $"credential directory \"{root}\" while this suite's process ran: {Listed(removed)}.\n" +
+            "  Nothing in this repository is allowed to delete from that directory — its contents are a " +
+            "deliberately kept evidence base. A test that prunes it, or a \"clean up before measuring\" " +
+            "step added to make some other assertion green, is the failure this arm exists to catch.");
 
         Assert.True(added.Count == 0,
             $"{added.Count} entr{(added.Count == 1 ? "y" : "ies")} appeared in the REAL credential " +
-            $"directory \"{root}\" while this suite's process ran: {listed}.\n" +
+            $"directory \"{root}\" while this suite's process ran: {Listed(added)}.\n" +
             "  Something in this process wrote a machine credential to a real install's store. It does not " +
             "have to NAME ST4I_CREDS_DIR to have done it, and it does not have to be at depth either: " +
             "CredentialStore is static and resolves per call, so a direct Save that simply never sets the " +

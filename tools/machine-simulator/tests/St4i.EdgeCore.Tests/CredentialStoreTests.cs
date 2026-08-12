@@ -118,8 +118,14 @@ public class CredentialStoreTests
     // the machine's REAL credential directory. Before the batch, CredentialStore resolved straight from
     // Environment.SpecialFolder.CommonApplicationData with NO override — the only store in the product
     // without the explicit > env > default seam its twelve siblings all had — and a census found 2,999
-    // .bin files accumulated in %ProgramData%\ST4I\sim\creds as a result, 2,366 of them from xunit and
-    // 633 from the Playwright e2e harness, growing on every run.
+    // .bin files accumulated in %ProgramData%\ST4I\sim\creds as a result, growing on every run. That
+    // total decomposes exactly, and it is worth carrying whole rather than as two of its four parts:
+    // 2,366 xunit + 613 Playwright e2e + 9 named-and-traced + 11 untraceable (kept) = 2,999
+    // (backlog-test-hygiene/leak-report.md:13 for the measured total, §2a/§2b for the split).
+    // 🔴 The e2e share read 633 here and in four other places until task K-1 re-measured it; the census
+    // says 613 in both places it counts. 633 is not a variant reading of anything — it is 613 + the 20
+    // files (9 named + 11 kept) that belong to the other two parts, which is why the wrong number still
+    // added up to 2,999 and survived unchallenged.
     //
     // If the seam regresses, the leak resumes silently and at full rate. Nothing else in the suite would
     // notice: every other test here still passes when the store writes to the real directory, which is

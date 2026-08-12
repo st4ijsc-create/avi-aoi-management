@@ -71,10 +71,13 @@ set -uo pipefail
 # about the other four — installing it in one suite and reading it as a repository-wide guarantee is exactly
 # the completeness claim this repo has now paid for five times.
 #
-# 🔴 EXPECT_CONFORMANCE MOVING 22 -> 23 IS NOT THE THING THE "stays 22" NOTES BELOW PROTECT. Those notes
-# assert an invariant about CONTENT — no new driver, no new connector kind, no Check_* added to the shared
-# conformance suite — and K-1 adds none of those: it adds the same hygiene [Fact] every other suite gets,
-# from a linked file outside that project, with no ProjectReference change. The shared suite is untouched.
+# 🔴 EXPECT_CONFORMANCE MOVING 22 -> 23 IS NOT THE THING THE "stays 22" NOTES BELOW PROTECT. There are
+# ELEVEN of them (twelve counting this line — `grep -c 'stays 22'`, measured, because K-1's own report
+# guessed "eight" and the branch review counted). Every one is scoped to a SPECIFIC TASK and to CONTENT —
+# no new driver, no new connector kind, no Check_* added to the shared conformance suite — and none
+# asserts a standing invariant on the integer. K-1 adds none of those things: it adds the same hygiene
+# [Fact] every other suite gets, from a linked file outside that project, with no ProjectReference and no
+# assembly reference, so that project's deliberate one-reference boundary is intact. Shared suite untouched.
 #
 # EXPECT_WARNINGS stays 116: the new file adds no warning (measured on a full -t:Rebuild).
 EXPECT_ABSTRACTIONS=152
@@ -2195,6 +2198,117 @@ UPDATE=0
 
 note() { printf '  %s\n' "$*"; }
 
+# ══ THE BRACKET ON THE REAL CREDENTIAL DIRECTORY (task K-1, branch review §2) ═══════════════════
+#
+# WHAT THIS IS FOR. tests/Shared/RealCredentialStoreLeakGuard.cs asserts that the product's REAL
+# credential directory gains no entry while ONE test process runs. That guard has two holes it names
+# in its own doc comment and cannot close from inside a test:
+#   * five suites are five processes, so five baselines and no delta across them;
+#   * its interval ends when its [Fact] runs, and xunit orders nothing. MEASURED, not feared: K-1's
+#     mutation M1 wrote a real DPAPI blob into the real root and the guard stayed GREEN, because the
+#     writer happened to be scheduled after it.
+# This script is the only anchor in the repository that spans all five processes. Snapshot before the
+# build, compare after everything, and both holes close at once. It adds no test, so no EXPECT_* moves.
+#
+# 🔴 NAME SETS, NOT COUNTS, AND TWO SEPARATELY FATAL POPULATIONS. A count delta cancels on
+# one-add-plus-one-delete, which would make this instrument STRICTLY WEAKER than the set difference the
+# per-suite guard already ships. `added` and `removed` are compared and reported apart.
+#
+# 🔴 WHAT THE SECOND DIRECTION DOES AND DOES NOT BUY — stated carefully, because the comfortable version
+# of this sentence is false and this file is where such sentences get believed. Reporting `removed`
+# closes the case where the kept evidence base is pruned while the gate is otherwise green. It does NOT
+# close the adaptation anyone actually reaches for: when this fires because file X appeared, DELETING X
+# restores before == after and buys a green — and the message below will have named X. A delta sampled at
+# two instants is structurally blind to a file that appears and vanishes inside the bracket. There is no
+# arrangement of two snapshots that fixes that; only a watcher would, and this is not one.
+#
+# 🔴 AND THE DOMAIN IS WIDER THAN THE CRITERION'S. This measures THE MACHINE over the window, not "the
+# test processes". Anything else running here that writes a credential — the WPF shell, the edge service,
+# an operator onboarding a machine in another window — reddens this gate and is not a test defect. That is
+# §8.1(f) running in reverse: a tool whose domain is wider than the question, which is a false-positive
+# source rather than a blind spot. The per-suite guard is what attributes; keep both.
+_creds_src="src/St4i.EdgeCore/Infrastructure/CredentialStore.cs"
+_creds_expr=$(tr '\n' ' ' < "$_creds_src" 2>/dev/null \
+  | grep -oE 'SpecialFolder\.CommonApplicationData\)[[:space:]]*(,[[:space:]]*"[^"]*")+' || true)
+_creds_expr_count=$(printf '%s' "$_creds_expr" | grep -c . || true)
+if [[ "${_creds_expr_count:-0}" != "1" ]]; then
+  # Fail closed, exactly as the C# side does. A bracket that silently watched the wrong directory would
+  # be green forever, which is the vacuity shape this whole task exists to avoid.
+  echo "FAIL: could not derive the REAL creds root from ${_creds_src}"
+  echo "  (found ${_creds_expr_count:-0} CommonApplicationData root expressions, expected exactly 1)."
+  echo "  Fix the derivation. Do NOT hardcode the directory here — a restated literal is how this check"
+  echo "  would keep passing while watching a directory the product no longer writes to."
+  exit 1
+fi
+REAL_CREDS_ROOT="$(cygpath -u "${PROGRAMDATA:-C:/ProgramData}" 2>/dev/null || echo /c/ProgramData)"
+while IFS= read -r _seg; do
+  REAL_CREDS_ROOT="${REAL_CREDS_ROOT%/}/${_seg}"
+done < <(printf '%s' "$_creds_expr" | grep -oE '"[^"]*"' | tr -d '"')
+
+# Names only, relative to the root, sorted for `comm`. Enumerates and never opens, deletes or creates.
+creds_snapshot() {
+  if [[ -d "$REAL_CREDS_ROOT" ]]; then
+    ( cd "$REAL_CREDS_ROOT" && find . -mindepth 1 2>/dev/null | sed 's|^\./||' | LC_ALL=C sort ) || true
+  fi
+}
+
+CREDS_BEFORE="$LOGDIR/creds-before.txt"
+CREDS_AFTER="$LOGDIR/creds-after.txt"
+CREDS_ADDED=""
+CREDS_REMOVED=""
+CREDS_EVALUATED=0
+CREDS_REPORTED=0
+creds_snapshot > "$CREDS_BEFORE"
+note "real creds root under watch: $REAL_CREDS_ROOT ($(grep -c . < "$CREDS_BEFORE" || true) entries at start)"
+
+# Evaluates once; later calls reuse the verdict. Returns 0 when the directory is unchanged.
+creds_bracket_eval() {
+  if [[ $CREDS_EVALUATED -eq 1 ]]; then
+    [[ -z "$CREDS_ADDED" && -z "$CREDS_REMOVED" ]] && return 0 || return 1
+  fi
+  CREDS_EVALUATED=1
+  creds_snapshot > "$CREDS_AFTER"
+  CREDS_ADDED=$(comm -13 "$CREDS_BEFORE" "$CREDS_AFTER" || true)
+  CREDS_REMOVED=$(comm -23 "$CREDS_BEFORE" "$CREDS_AFTER" || true)
+  [[ -z "$CREDS_ADDED" && -z "$CREDS_REMOVED" ]] && return 0 || return 1
+}
+
+creds_bracket_text() {
+  echo "REAL credential directory CHANGED across this run: $REAL_CREDS_ROOT"
+  if [[ -n "$CREDS_ADDED" ]]; then
+    echo "  ADDED ($(printf '%s\n' "$CREDS_ADDED" | grep -c .)) — something wrote a machine credential into a real install's store:"
+    printf '%s\n' "$CREDS_ADDED" | head -25 | sed 's/^/      /'
+  fi
+  if [[ -n "$CREDS_REMOVED" ]]; then
+    echo "  REMOVED ($(printf '%s\n' "$CREDS_REMOVED" | grep -c .)) — something DELETED from a directory nothing is allowed to delete from:"
+    printf '%s\n' "$CREDS_REMOVED" | head -25 | sed 's/^/      /'
+  fi
+  echo "  🔴 DO NOT MAKE THIS GREEN BY DELETING. Removing a file named above WILL restore before == after"
+  echo "     and WILL buy a green, because this compares two instants and cannot see a file that appears"
+  echo "     and vanishes between them. That is not the check working; it is the check being defeated, and"
+  echo "     the evidence base five artifacts cite is what gets spent doing it."
+  echo "  SCOPE: this measures THE MACHINE over the whole gate window, not just the test processes. If the"
+  echo "     WPF shell, the edge service, or an operator onboarding a machine was running here, that is a"
+  echo "     false positive of this gate and not a test defect — check before you go hunting a test."
+  echo "  TO ATTRIBUTE IT TO A SUITE: RealCredentialStoreLeakGuardTests runs inside each of the five"
+  echo "     processes and names the process it saw. This bracket is complete but anonymous; that one is"
+  echo "     partial but attributes. Read them together."
+}
+
+# 🔴 Unconditional, via trap: the warnings gate and the build-node gate below both `exit 1` before the
+# suites run, and a bracket placed at the end would be skipped by exactly the runs most likely to have
+# left something behind. `exit` inside an EXIT trap does not re-enter it, so the status set here is final.
+creds_bracket_trap() {
+  local rc=$?
+  if creds_bracket_eval || [[ $CREDS_REPORTED -eq 1 ]]; then
+    exit "$rc"
+  fi
+  echo "FAIL (credential bracket):"
+  creds_bracket_text
+  exit 1
+}
+trap creds_bracket_trap EXIT
+
 # Total processor SECONDS consumed by every live `testhost` process, as a float, or the
 # empty string when there is none (or when PowerShell is unavailable). See the hang
 # check below for why this cannot be `ps`: Windows' `ps` has no CPU column at all.
@@ -2628,6 +2742,16 @@ for entry in "${SUITES[@]}"; do
 done
 
 # ── Gate 3: the verdict, as one line. ───────────────────────────────────────────
+# The credential bracket is folded into FAILURES here rather than left to its EXIT trap, so that the
+# normal path still prints EXACTLY ONE PASS/FAIL line. A trap firing after a printed "PASS:" would be a
+# summary contradicting the list below it — the signature defect §8.1 records five branches of. The trap
+# stays armed for the early `exit 1` paths above, which never reach this line; CREDS_REPORTED stops it
+# saying the same thing twice.
+if ! creds_bracket_eval; then
+  CREDS_REPORTED=1
+  FAILURES+=("$(creds_bracket_text)")
+fi
+
 echo "[3/3] Verdict:"
 if [[ $UPDATE -eq 1 ]]; then
   echo "Observed totals (paste into the EXPECT_* constants above, and justify each change):"
