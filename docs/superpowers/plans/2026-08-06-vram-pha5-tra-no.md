@@ -70,6 +70,7 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/_core/xacThucNoiBoDb.test.ts \
   server/_core/xoaHangKhongGioiHanTrongTest.test.ts \
   server/_core/hangRaoKhongAiCanh.test.ts \
+  server/_core/quetKhongVoiToiSanXuat.test.ts \
   server/routers/appErrorParamsCoverage.test.ts \
   server/services/aiGgufEngine.test.ts \
   server/services/kbSyncScheduler.evalGate.test.ts \
