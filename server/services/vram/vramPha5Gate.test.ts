@@ -403,7 +403,7 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //     dạng factory. Bản vá làm nó tự khai `Pha 9` ⇒ bộ nhận diện **THỨ BA** (`DAU_KHAI_PHA`)
     //     kéo nó vào tập bị canh ⇒ nó phải có đường riêng ở §Cổng kiểm chung. Đây là **cơ chế đang
     //     làm việc**: lượt sửa một file test biến nó thành một lưới được canh.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(55); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(56); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-5: +1 (neoTenXacThuc)
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -590,7 +590,7 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   CẢ BA lối đóng; bản A4 chỉ chặn một). Vì `client/src/lib/` **đã** là một đường của §Cổng
     //   kiểm chung nên `CONG.length` giữ nguyên **55**; chỉ con số này đổi.
     //   ⚠ Đuôi `.unit.test.ts` là bắt buộc — `vitest.config.ts` gom client bằng `*.unit.test.ts`.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(119); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-4: +1
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(120); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-4: +1 · Pha 9 I-5: +1 (neoTenXacThuc)
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

@@ -53,6 +53,39 @@ export const TEN_PHAN_GIAI_PHIEN = "verifySession";
 export const TEN_UY_QUYEN_REST = "thuXacThucRest";
 /** File khai lượt uỷ quyền của tuyến REST. */
 export const FILE_UY_QUYEN_REST = "server/routes/_xacThucRest.ts";
+/**
+ * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-5 (nửa 1) — HÌNH DẠNG THỨ BA: TRA THẲNG SỔ PHIÊN.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐO ĐƯỢC, KHÔNG SUY LUẬN — VÙNG MÙ NÀY ĐÃ ĐƯỢC **KHAI** RỒI ĐỂ NGUYÊN BA PHA
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `buocDoiMatKhauMoiBeMat.test.ts:55-58` viết: *"Bộ nhận diện biết **hai** hình dạng … Một cơ chế
+ * phiên **thứ ba** (ví dụ đọc thẳng `user_sessions` rồi `getUserById`) nằm ngoài lượng từ. Đo được
+ * hôm nay: không tồn tại — nhưng đó là một **quan sát**, không phải bất biến."*
+ * Review Pha 9 (I-5) dựng đúng hình dạng ấy trong một file mới và đo:
+ *
+ *     quetDiemXacThuc("server/routes/gia.ts", <getSessionByToken + getUserById>)  ⇒  []
+ *     npx vitest run buocDoiMatKhau… thuHoiPhien… xacThucBeMatRest…              ⇒  48 passed
+ *
+ * ⇒ **0 điểm** — một bề mặt HTTP tự phân giải danh tính, không kiểm cờ nào, **vô hình với CẢ BA**
+ *   lượng từ ∀. Và nó **rẻ**: hai lượt gọi có sẵn trong `server/db`.
+ *
+ * ⚠ Nhận diện theo **HÌNH DẠNG**, không theo một danh sách file: *một lượt tra sổ phiên
+ *   (`getSessionByToken`) đứng cùng đơn vị hàm với một lượt lấy hàng `users`* **là** một phép phân
+ *   giải danh tính, dù người viết đặt tên hàm bao quanh là gì.
+ * ⚠ Vì sao đòi **cả hai** vế: `chanNeuPhienDaThuHoi` (`sdk.ts`) và `sessionRouter`/`userRouters`
+ *   gọi `getSessionByToken` **một mình** — để nhận ra *"phiên nào đang gọi"*, không để **dựng** một
+ *   danh tính. Bắt chúng là một dương tính giả, và một lưới bắt nhầm là một lưới sẽ bị tắt đi.
+ *   Đo được trên `9d81e382`: **0** điểm ở `server/**` sản xuất ⇒ đây là một **cổng thật**, không
+ *   phải một ảnh chụp nợ cũ.
+ */
+export const TEN_TRA_SO_PHIEN = "getSessionByToken";
+/**
+ * Lượt lấy **hàng `users`** — vế thứ hai của hình dạng thứ ba.
+ * ⚠ `getUserByOpenId` cũng nằm đây dù nó đã là vế của hình dạng `verifySession`: hai hình dạng
+ *   không loại trừ nhau, và một bề mặt trộn cả hai vẫn phải bị thấy.
+ */
+export const TEN_LAY_HANG_USER: readonly string[] = ["getUserById", "getUserByOpenId"];
 /** Phép chặn của cổng BUỘC-ĐỔI-MẬT-KHẨU (Pha 8 Task 1). */
 export const TEN_PHEP_CHAN = "chanNeuPhaiDoiMatKhau";
 /** Phép chặn của cổng THU HỒI PHIÊN (review TOÀN NHÁNH Pha 8 · C-1). */
@@ -144,9 +177,28 @@ export function quetDiemXacThuc(duong: string, ma: string): DiemXacThuc[] {
     return false;
   };
 
+  /** Thân hàm gần nhất bao quanh `n` có gọi **một trong** `tenHams` không? */
+  const thanCoGoiMot = (n: ts.Node, tenHams: readonly string[]): boolean =>
+    tenHams.some((h) => thanCoGoi(n, h));
+
   const di = (n: ts.Node): void => {
     if (ts.isCallExpression(n)) {
       const t = tenGoi(n);
+      // ★ I-5 (nửa 1) — HÌNH DẠNG THỨ BA: tra thẳng sổ phiên **và** lấy hàng `users` trong cùng
+      //   một đơn vị hàm. Xếp `loai: "phien"` vì nó **là** một lượt tự phân giải phiên vòng qua
+      //   điểm chung — cùng đúng một chỗ trong cả ba vị từ phủ, nên không lưới nào phải đổi công
+      //   thức để nói được về nó.
+      if (t === TEN_TRA_SO_PHIEN && thanCoGoiMot(n, TEN_LAY_HANG_USER)) {
+        ra.push({
+          duong,
+          dong: dongCua(n),
+          loai: "phien",
+          boQua: true, // như mọi điểm `phien`: nó không đi qua cổng của điểm chung.
+          tuCanh: thanCoGoi(n, TEN_PHEP_CHAN),
+          tuTraSo: thanCoGoi(n, TEN_PHEP_CHAN_PHIEN),
+          tuKiemTaiKhoan: thanCoGoi(n, TEN_PHEP_CHAN_TAI_KHOAN),
+        });
+      }
       if (t === TEN_XAC_THUC || t === TEN_PHAN_GIAI_PHIEN || t === TEN_UY_QUYEN_REST) {
         // ⚠ `this.verifySession(...)` bên trong chính lớp khai nó **không** là một bề mặt — đó là
         //    một mắt xích nội bộ của điểm chung. Nhận diện bằng HÌNH DẠNG (`this`), không bằng một
@@ -247,4 +299,121 @@ export function diemChungKiemTaiKhoan(ma: string): boolean {
  */
 export function uyQuyenRestDiQuaDiemChung(ma: string): boolean {
   return thanPhuongThucGoi(ma, TEN_UY_QUYEN_REST, TEN_XAC_THUC);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-5 (nửa 2) — MỘT CÁI TÊN KHÔNG PHẢI MỘT BẰNG CHỨNG.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐO ĐƯỢC — VÀ NÓ LÀM CẦU CHÌ §3 **KHOẺ LÊN** NHỜ MỘT BỀ MẶT HỞ
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `quetDiemXacThuc` xếp một điểm là *"đi qua điểm chung"* khi **TÊN** lượt gọi là
+ * `authenticateRequest` / `thuXacThucRest`. `uyQuyenRestDiQuaDiemChung()` chỉ đọc **một** file
+ * (`FILE_UY_QUYEN_REST`) ⇒ nó ghim rằng **bản gốc** uỷ quyền đúng, **không** ghim rằng mọi lượt
+ * gọi mang tên ấy **là** bản gốc. Đo được (probe I-5, đã hoàn nguyên):
+ *
+ *     async function thuXacThucRest(req){ … getSessionByToken … getUserById … }   // TỰ phân giải
+ *     ⇒ quetDiemXacThuc(…) = [{ loai:"xt", boQua:false, tuCanh:false, tuTraSo:false, tuKiemTaiKhoan:false }]
+ *
+ * ⇒ Một bề mặt **KHÔNG kiểm gì cả** được **cả ba** vị từ phủ xếp là **ĐƯỢC PHỦ** (`loai==="xt"` ∧
+ *   điểm chung bật), **và** nó **cộng vào** cầu chì *"§3 ≥ 12 điểm `xt`"*. Tức một lỗ làm thiết bị
+ *   đo khoẻ lên — đúng lớp *"an toàn là HỆ QUẢ của thứ khác đang hỏng"*.
+ *
+ * ⚠ Repo **đã có** khuôn vá đúng cho một cái tên khác: `totpReplayScan.test.ts` —
+ *   ***∀ file gọi `verifyTotpOnce`: nó PHẢI nhập hàm ấy từ chính `_core/totpOnce`*** — và nó nhận
+ *   diện module bằng **phép nối đường dẫn** (bài học R1b), không bằng chính tả chuỗi. Ba cái tên
+ *   xác thực nay có ô ấy: `server/_core/neoTenXacThuc.test.ts`.
+ *
+ * ⚠⚠ **VÌ SAO KHÔNG NHÉT PHÉP NEO VÀO CHÍNH `quetDiemXacThuc()`** (đo trước khi quyết): ba lưới ∀
+ *    hiệu chuẩn vị từ của mình bằng **mã tổng hợp không có lượt nhập nào** (`"tong-hop.ts"`,
+ *    `sdk.authenticateRequest(req)`). Bắt bộ nhận diện đòi một lượt nhập ⇒ mọi ô §1a/§1b/§1c của
+ *    **cả ba** lưới thấy `diem.length === 0` ⇒ **ba lưới đỏ cùng lúc vì hạ tầng**, đúng cái bẫy
+ *    *"đổi bộ suy mà không xem người dùng nó"*. ⇒ Phép neo là một **vị từ RIÊNG**, một lưới riêng.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/** Tên phân giải danh tính → **file khai nó**. Ai gọi tên ấy phải nhập từ đúng file này. */
+export const CHU_CUA_TEN: ReadonlyMap<string, string> = new Map([
+  [TEN_XAC_THUC, FILE_DIEM_CHUNG],
+  [TEN_XAC_THUC_THO, FILE_DIEM_CHUNG],
+  [TEN_PHAN_GIAI_PHIEN, FILE_DIEM_CHUNG],
+  [TEN_UY_QUYEN_REST, FILE_UY_QUYEN_REST],
+]);
+
+/** Một lượt gọi mang tên xác thực mà **không** có lượt nhập neo nó về chủ. */
+export type DiemThieuNeo = {
+  duong: string;
+  dong: number;
+  ten: string;
+  /** File đáng lẽ phải được nhập. */
+  chu: string;
+};
+
+/** Mọi đường nhập của một nguồn: tĩnh · `export … from` · `import()` động · `require()`. */
+export function moiDuongNhap(duong: string, ma: string): string[] {
+  const src = ts.createSourceFile(duong, ma, ts.ScriptTarget.Latest, true);
+  const ra: string[] = [];
+  const di = (n: ts.Node): void => {
+    if (
+      (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) &&
+      n.moduleSpecifier !== undefined &&
+      ts.isStringLiteral(n.moduleSpecifier)
+    ) {
+      ra.push(n.moduleSpecifier.text);
+    }
+    if (ts.isCallExpression(n)) {
+      const g = n.expression;
+      const la = g.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(g) && g.text === "require");
+      const a0 = n.arguments[0];
+      if (la && a0 !== undefined && ts.isStringLiteral(a0)) ra.push(a0.text);
+    }
+    n.forEachChild(di);
+  };
+  di(src);
+  return ra;
+}
+
+/**
+ * ∀ lượt gọi một tên trong `CHU_CUA_TEN` ở nguồn này: có một lượt nhập trỏ về **đúng chủ** không?
+ *
+ * @param laNhapToiChu phép nối đường dẫn của người gọi — `(spec, chu) => boolean`. Module này
+ *   **không** chạm hệ tệp (xem khối đầu file), nên phép phân giải là **tham số**, không phải một
+ *   bản sao thứ hai của `phanGiaiToi`.
+ * @returns danh sách vi phạm; rỗng ⇒ mọi cái tên đều là **bản gốc**, không phải một tên trùng.
+ *
+ * ⚠ `this.x()` **được tha**: đó là mắt xích nội bộ của chính lớp khai nó — cùng phép nhận diện
+ *   bằng HÌNH DẠNG mà `quetDiemXacThuc` dùng, không phải một danh sách file được tha.
+ * ⚠ Chính file chủ **được tha**: nó khai cái tên, nó không nhập cái tên.
+ * ⚠ Tra bằng `Map.get`, **KHÔNG** bằng `obj[ten]`: đo được ở lượt này — một bảng tra dạng object
+ *   literal khai `toString`/`get`/`has` là **có chủ** (kế thừa từ `Object.prototype`/`Map.prototype`)
+ *   ⇒ probe đầu tiên báo **308** rồi **4.621** vi phạm ma trước khi số thật (**0**) lộ ra.
+ */
+export function neoNhapThieu(
+  duong: string,
+  ma: string,
+  laNhapToiChu: (spec: string, chu: string) => boolean,
+): DiemThieuNeo[] {
+  const src = ts.createSourceFile(duong, ma, ts.ScriptTarget.Latest, true);
+  const nhap = moiDuongNhap(duong, ma);
+  const ra: DiemThieuNeo[] = [];
+  const di = (n: ts.Node): void => {
+    if (ts.isCallExpression(n)) {
+      const t = tenGoi(n);
+      const chu = t === null ? undefined : CHU_CUA_TEN.get(t);
+      if (t !== null && chu !== undefined && duong !== chu) {
+        const bn = benNhan(n);
+        const laTuGoi = bn !== null && bn.kind === ts.SyntaxKind.ThisKeyword;
+        if (!laTuGoi && !nhap.some((s) => laNhapToiChu(s, chu))) {
+          ra.push({
+            duong,
+            dong: src.getLineAndCharacterOfPosition(n.getStart(src)).line + 1,
+            ten: t,
+            chu,
+          });
+        }
+      }
+    }
+    n.forEachChild(di);
+  };
+  di(src);
+  return ra;
 }

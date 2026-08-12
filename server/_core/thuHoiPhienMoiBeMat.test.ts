@@ -75,6 +75,7 @@ import {
   TEN_XAC_THUC,
   TEN_XAC_THUC_THO,
   TEN_PHAN_GIAI_PHIEN,
+  TEN_TRA_SO_PHIEN,
   TEN_PHEP_CHAN_PHIEN,
   FILE_DIEM_CHUNG,
   FILE_UY_QUYEN_REST,
@@ -137,6 +138,15 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-1 — ∀ điểm xác thực
       "vòng qua điểm chung + CHỈ kiểm cờ mật khẩu (nửa vá của Task 1)",
       `async function f(t){ const s = await sdk.${TEN_PHAN_GIAI_PHIEN}(t); const u = await getUserByOpenId(s.openId); await chanNeuPhaiDoiMatKhau(u); return u; }`,
     ],
+    /**
+     * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-5** — **HÌNH DẠNG THỨ BA.** Trước lượt vá, bộ nhận diện
+     * trả **`[]`** cho một bề mặt tra thẳng sổ phiên rồi lấy hàng `users` ⇒ nó **vô hình** với
+     * lượng từ này. Gỡ nhánh thứ ba khỏi `quetDiemXacThuc` ⇒ ô này **ĐỎ**.
+     */
+    [
+      "HÌNH DẠNG THỨ BA — tra thẳng sổ phiên rồi lấy hàng `users` (I-5)",
+      `async function f(t){ const p = await db.${TEN_TRA_SO_PHIEN}(t); const u = await getUserById(p.userId); return u; }`,
+    ],
   ] as const;
 
   /** Hình dạng **KÍN**: hoặc tự tra sổ, hoặc đi qua điểm chung. */
@@ -148,6 +158,11 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-1 — ∀ điểm xác thực
     [
       "mắt xích NỘI BỘ của điểm chung",
       `class S { async ${TEN_XAC_THUC}(req){ return this.${TEN_PHAN_GIAI_PHIEN}(req); } }`,
+    ],
+    // ★ I-5 — đối chứng DƯƠNG của hình dạng thứ ba: nhánh mới không bắt nhầm một bề mặt tự tra sổ.
+    [
+      "HÌNH DẠNG THỨ BA có tự tra sổ phiên (I-5)",
+      `async function f(t){ const p = await db.${TEN_TRA_SO_PHIEN}(t); const u = await getUserById(p.userId); await ${TEN_PHEP_CHAN_PHIEN}(t); return u; }`,
     ],
   ] as const;
 

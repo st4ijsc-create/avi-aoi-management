@@ -52,10 +52,20 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  *  1. §4 là lưới **HÌNH DẠNG**. Một `try { await chanNeuPhaiDoiMatKhau(u) } catch {}` có đúng hình
  *     dạng và vẫn lọt. §7 bù cho **điểm chung**; các bề mặt còn lại thì không.
- *  2. Bộ nhận diện biết **hai** hình dạng phân giải danh tính: `authenticateRequest` và
- *     `verifySession`. Một cơ chế phiên **thứ ba** (ví dụ đọc thẳng `user_sessions` rồi
- *     `getUserById`) nằm ngoài lượng từ. Đo được hôm nay: không tồn tại hình dạng thứ ba trong
- *     `server/**` — nhưng đó là một **quan sát**, không phải bất biến.
+ *  2. ✅ **ĐÃ ĐÓNG — review TOÀN NHÁNH Pha 9 · I-5.** Vùng mù cũ ghi ở đây là: *"bộ nhận diện biết
+ *     **hai** hình dạng (`authenticateRequest`, `verifySession`); một cơ chế phiên **thứ ba** (đọc
+ *     thẳng sổ phiên rồi `getUserById`) nằm ngoài lượng từ — đo được hôm nay là không tồn tại,
+ *     nhưng đó là một **quan sát**, không phải bất biến"*. Review Pha 9 dựng đúng hình dạng ấy và
+ *     đo `quetDiemXacThuc(…) = []`. Nay bộ nhận diện biết **ba** hình dạng (xem
+ *     `TEN_TRA_SO_PHIEN`), `MA_HO`/`MA_KIN` dưới đây hiệu chuẩn cả hai chiều cho nó, và **quan sát
+ *     đã thành bất biến**.
+ *     ⚠ Vùng mù CÒN LẠI, khai đúng phạm vi: một cơ chế phiên thứ **tư** (ví dụ `db.select()` thô
+ *       trên `user_sessions`) vẫn ngoài lượng từ. Đo được trên `9d81e382`: **0** chỗ như thế trong
+ *       `server/**` sản xuất.
+ *  2b. Một cái **TÊN** không phải một bằng chứng: `quetDiemXacThuc` tin `authenticateRequest`/
+ *     `thuXacThucRest` theo tên. Phép neo *"ai gọi tên ấy phải NHẬP nó từ chủ"* là một lưới RIÊNG —
+ *     `server/_core/neoTenXacThuc.test.ts` (I-5 nửa 2). Không có nó, một hàm trùng tên tự phân giải
+ *     danh tính được **cả ba** lưới xếp là ĐƯỢC PHỦ.
  *  3. Xác thực bằng **khoá máy** (`x-master-key`, API key của máy/ERP) **KHÔNG** thuộc lượng từ:
  *     chủ thể ở đó không phải một hàng `users` nên không có cờ đổi mật khẩu để kiểm. Đây là một
  *     giới hạn **CÓ CHỦ Ý**, và tên ca nói đúng phạm vi ấy.
@@ -80,6 +90,7 @@ import {
   diemChungCuongChe,
   TEN_XAC_THUC,
   TEN_PHAN_GIAI_PHIEN,
+  TEN_TRA_SO_PHIEN,
   TEN_PHEP_CHAN,
   O_BO_QUA,
   FILE_DIEM_CHUNG,
@@ -163,6 +174,17 @@ describe("★★★★ Pha 8 Task 1 — ∀ điểm xác thực HTTP/socket: c�
     ["TẮT cổng tường minh", `async function f(req){ return sdk.${TEN_XAC_THUC}(req, { ${O_BO_QUA}: true }); }`],
     ["TẮT cổng bằng biến", `async function f(req){ return sdk.${TEN_XAC_THUC}(req, opts); }`],
     ["vòng qua điểm chung", `async function f(t){ const s = await sdk.${TEN_PHAN_GIAI_PHIEN}(t); return getUserByOpenId(s.openId); }`],
+    /**
+     * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-5** — **HÌNH DẠNG THỨ BA, vùng mù §"VÙNG MÙ ĐƯỢC KHAI"
+     * mục 2 của chính file này.** Câu ấy viết *"đo được hôm nay: không tồn tại — nhưng đó là một
+     * **quan sát**, không phải bất biến"*. Đo lại ở review Pha 9: bộ nhận diện trả **`[]`** cho
+     * đúng hình dạng ấy ⇒ một bề mặt HTTP không kiểm cờ nào **vô hình với cả ba** lượng từ ∀.
+     * Ô này biến quan sát thành bất biến: gỡ nhánh thứ ba khỏi `quetDiemXacThuc` ⇒ **ĐỎ**.
+     */
+    [
+      "HÌNH DẠNG THỨ BA — tra thẳng sổ phiên rồi lấy hàng `users` (I-5)",
+      `async function f(t){ const p = await db.${TEN_TRA_SO_PHIEN}(t); const u = await getUserById(p.userId); return u; }`,
+    ],
   ] as const;
 
   /** Hình dạng **CƯỠI ĐIỂM CHUNG**: phủ khi điểm chung BẬT, hở khi điểm chung TẮT. */
@@ -176,6 +198,11 @@ describe("★★★★ Pha 8 Task 1 — ∀ điểm xác thực HTTP/socket: c�
     ["tự canh sau `verifySession`", `async function f(t){ const s = await sdk.${TEN_PHAN_GIAI_PHIEN}(t); const u = await getUserByOpenId(s.openId); await ${TEN_PHEP_CHAN}(u); return u; }`],
     ["tắt cổng = `false` tường minh", `async function f(req){ return sdk.${TEN_XAC_THUC}(req, { ${O_BO_QUA}: false }); }`],
     ["mắt xích NỘI BỘ của điểm chung", `class S { async ${TEN_XAC_THUC}(req){ return this.${TEN_PHAN_GIAI_PHIEN}(req); } }`],
+    // ★ I-5 — đối chứng DƯƠNG của hình dạng thứ ba: nhánh mới **không** bắt nhầm một bề mặt tự canh.
+    [
+      "HÌNH DẠNG THỨ BA có tự canh cờ mật khẩu (I-5)",
+      `async function f(t){ const p = await db.${TEN_TRA_SO_PHIEN}(t); const u = await getUserById(p.userId); await ${TEN_PHEP_CHAN}(u); return u; }`,
+    ],
   ] as const;
 
   it("§1a ĐỘT BIẾN TỔNG HỢP — hình dạng HỞ bị XẾP LÀ VI PHẠM (không chỉ 'được nhìn thấy')", () => {
