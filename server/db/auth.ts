@@ -561,10 +561,38 @@ export async function verifyBackupCode(userId: number, code: string) {
   return false;
 }
 
-export async function getUnusedBackupCodesCount(userId: number) {
+/**
+ * ★★★ Pha 9 nhóm B · **B7c — `sql<number>` LÀ MỘT LỜI KHAI, KHÔNG PHẢI MỘT PHÉP ÉP KIỂU.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐO ĐƯỢC (probe trên DB test thật), KHÔNG PHẢI SUY LUẬN
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *     db.select({ count: sql<number>`COUNT(*)` })  ⇒  [{ "count": "1" }]   typeof = **string**
+ *
+ * `postgres` v3 trả `bigint` của PostgreSQL về dạng **chuỗi** (chuẩn, để không mất chính xác quá
+ * 2^53). Tham số kiểu `<number>` của `sql` chỉ **nói với trình biên dịch** rằng ô này là số — nó
+ * không sinh một lượt chuyển đổi nào lúc chạy. Nên hàm này khai `Promise<number>` mà **trả chuỗi**.
+ *
+ * ⚠⚠ VÌ SAO KHÔNG AI THẤY: mọi người tiêu thụ đều **vô tình** che lỗi.
+ *   · `client/src/pages/Profile.tsx:414` — `unusedCount > 3`: toán tử `>` **tự ép** chuỗi về số.
+ *   · `client/src/pages/Profile.tsx:410,415` — `{unusedCount || 0}` in ra: `"7"` và `7` hiện y hệt.
+ *   · `server/routers/tat2FaDoiMatKhau.test.ts:99,155` — ca test bọc `Number(...)` quanh lời gọi.
+ *     Lượt bọc ấy **là** dấu vết của một ca đỏ giả đã xảy ra: người viết gặp
+ *     `expected "1" to be 1`, và **vá THIẾT BỊ ĐO thay vì vá SẢN PHẨM** — đúng lớp lỗi đã đếm
+ *     được ở nhóm A hôm nay (`res` giả thiếu `.type()`).
+ *
+ * ⚠ Chỗ nó **sẽ** cắn thật, và im lặng: `"0" || 0` cho ra `"0"` (**chuỗi rỗng mới là falsy**, chuỗi
+ *   `"0"` thì KHÔNG). Bất kỳ người đọc nào sau này viết `if (!count)` để nhận ra *"người này đã
+ *   dùng hết mã dự phòng"* sẽ **không bao giờ** vào nhánh ấy. Đó là một cảnh báo an ninh không bao
+ *   giờ bắn.
+ *
+ * ⇒ Ép **một lần, tại chủ**, chứ không bắt từng người gọi bọc `Number(...)` — luật ở N chỗ là luật
+ *   có chỗ thứ N+1. Lưới hành vi: `server/db/tieuMaDuPhong.test.ts` §5 (`typeof` phải là `number`).
+ */
+export async function getUnusedBackupCodesCount(userId: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  
+
   const result = await db.select({ count: sql<number>`COUNT(*)` })
     .from(backupCodes)
     .where(
@@ -573,7 +601,7 @@ export async function getUnusedBackupCodesCount(userId: number) {
         eq(backupCodes.isUsed, false)
       )
     );
-  return result[0]?.count || 0;
+  return Number(result[0]?.count ?? 0);
 }
 
 // =====================================================

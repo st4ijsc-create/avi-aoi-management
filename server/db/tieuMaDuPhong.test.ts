@@ -160,3 +160,39 @@ describe("★★★ Pha 9 A5 §4 — quay vòng DỌN bộ cũ (một chủ, m�
     expect(await db.verifyBackupCode(uid, moi[0]!), "mã của bộ MỚI phải tiêu được").toBe(true);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 9 nhóm B · **B7c §5 — PHÉP ĐẾM TRẢ VỀ MỘT SỐ, KHÔNG PHẢI MỘT CHUỖI.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `getUnusedBackupCodesCount` khai `sql<number>\`COUNT(*)\`` nhưng `postgres` v3 trả `bigint` về
+ * dạng **chuỗi**; tham số kiểu chỉ nói với trình biên dịch, không sinh phép chuyển đổi lúc chạy.
+ * Đo được trước bản vá (probe trên DB test thật): `[{"count":"1"}]`, `typeof = "string"`.
+ *
+ * ⚠⚠ VÌ SAO CA NÀY PHẢI HỎI `typeof`, KHÔNG ĐƯỢC HỎI GIÁ TRỊ: `expect(await …).toBe(3)` **đỏ**
+ *    với `"3"`, đúng — nhưng người đọc kế tiếp sẽ vá nó bằng `Number(await …)` (đúng cái đã xảy ra
+ *    ở `tat2FaDoiMatKhau.test.ts:99,155`) và lỗi sản phẩm **sống tiếp dưới một lưới xanh**. Hỏi
+ *    `typeof` thì lời vá duy nhất làm ô này xanh là **vá chính hàm ấy**.
+ * ⚠ Ô `"0"` là ô nguy hiểm nhất và được canh riêng: `"0"` **truthy**, nên một phép kiểm
+ *   *"đã dùng hết mã dự phòng"* viết bằng `if (!count)` sẽ không bao giờ bắn.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+describe("★★★ Pha 9 B7c §5 — `getUnusedBackupCodesCount` trả KIỂU SỐ", () => {
+  it("★★★ còn mã: `typeof` phải là `number` (không phải chuỗi do `postgres` v3 trả `bigint`)", async () => {
+    await db.quayVongMaDuPhong(uid);
+    const n = await db.getUnusedBackupCodesCount(uid);
+    expect(
+      typeof n,
+      "`sql<number>` chỉ là LỜI KHAI với trình biên dịch — nó không ép kiểu lúc chạy. Ép tại CHỦ\n" +
+        "(`Number(...)` trong `server/db/auth.ts`), đừng bắt từng người gọi bọc `Number(...)`.",
+    ).toBe("number");
+    expect(n, "phép đếm phải bằng số mã vừa cấp").toBe(db.SO_MA_DU_PHONG);
+  });
+
+  it("★★★ HẾT mã: phải là số `0` — vì chuỗi `\"0\"` là TRUTHY nên `if (!count)` sẽ im lặng", async () => {
+    const bo = await db.quayVongMaDuPhong(uid);
+    for (const ma of bo) expect(await db.verifyBackupCode(uid, ma), "mỗi mã của bộ mới phải tiêu được").toBe(true);
+    const n = await db.getUnusedBackupCodesCount(uid);
+    expect(typeof n, "ô `0` là ô mà chuỗi và số KHÁC NHAU về tính chân trị").toBe("number");
+    expect(n, "đã tiêu hết bộ mã ⇒ phép đếm phải là 0").toBe(0);
+    expect(Boolean(n), "`\"0\"` truthy, `0` falsy — đây là ô mà cảnh báo 'hết mã dự phòng' sống hay chết").toBe(false);
+  });
+});
