@@ -2741,16 +2741,23 @@ build_node_sample() {
 #     same one as before. No count above zero is tolerated at any deadline, so nothing was loosened.
 #   * WHAT MOVED IS WHICH INSTANT IS MEASURED, and only that: the sample is now taken at the first moment
 #     the population has STOPPED MOVING, instead of at an arbitrary point inside an asynchronous teardown.
-#   * A POPULATION THAT DOES NOT DRAIN IS STILL RED, and it is red SOONER in wall-clock terms than a
-#     draining one: standing still IS stability, so it settles at its non-zero value on the third sample
-#     and fails there. Demonstrated by measurement, not by argument — see the task L-1 report.
+#   * A POPULATION THAT DOES NOT DRAIN IS STILL RED, and it is red NO LATER than a draining one: standing
+#     still IS stability, so it settles at its non-zero value on the third reading — the earliest any
+#     reading can settle — and fails there. Demonstrated by measurement, not by argument: see the task
+#     L-1 report for two end-to-end runs of this script against a population that cannot drain.
 #   * NEVER SETTLING IS ITS OWN RED. A count that keeps moving for the whole bound is not waved through as
 #     "still draining"; it fails with its own message. "Sample until stable, and FAIL if it never
 #     stabilises" is the shape — never "zero eventually".
 # The old form's failure text already claimed the property this form actually measures ("the suites would
 # run under a population this script created"): the suites start AFTER this loop, so a settled zero is a
-# statement about the window the suites run in, while a single sample was a statement about one instant
-# that nothing depended on.
+# statement about the state the suites are ENTERED in, while a single sample was a statement about one
+# instant that nothing depended on.
+#
+# 🔴 AND THE LIMIT OF THAT, STATED HERE RATHER THAN LEFT TO BE DISCOVERED: it is still a measurement at ONE
+# instant — the instant the count stops moving. A build server that ARRIVES AFTER that is invisible to this
+# check, exactly like the appear-and-vanish hole the credential bracket names for itself. MEASURED, not
+# feared: a run made under a churner that started a short-lived matching process every few seconds settled
+# at 0 and passed. Closing that needs a WATCHER, and this is not one.
 #
 # THE IDIOM IS BORROWED, NOT INVENTED: the CPU-flat hang detector below already decides "has this stopped
 # moving?" by consecutive samples carried across iterations, and for the same reason — one observation of

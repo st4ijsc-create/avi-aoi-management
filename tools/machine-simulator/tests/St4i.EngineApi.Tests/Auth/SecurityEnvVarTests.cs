@@ -52,10 +52,12 @@ namespace St4i.EngineApi.Tests.Auth;
 /// NO test that can enforce it: dropping a <c>[Collection]</c> attribute changes SCHEDULING, not behaviour,
 /// so it compiles and every test still passes, which means MUTATION CANNOT KILL IT and neither can the gate.
 /// The census is only as complete as its list of process-scope state kinds; a kind nobody has thought of is
-/// invisible to it. The kinds swept were: process environment variables, the SQLite connection pool, the
-/// process's console/standard streams, the current directory, static mutable fields in the test assemblies,
-/// and fixed machine-wide paths. That list is a measurement of what was looked for, not a proof that it is
-/// all there is.</para>
+/// invisible to it. The kinds swept were: the process environment block; the SQLite connection pool; the
+/// process console/standard streams; the process current directory; <c>AppContext</c> switches, default
+/// thread culture, <c>Trace.Listeners</c> and thread-pool minimums; mutable statics in the test assemblies;
+/// <c>AppDomain</c> handlers; fixed TCP ports and named mutexes/pipes; and machine-wide directories. That
+/// list is a measurement of what was looked for, not a proof that it is all there is — and the full table,
+/// with what each sweep returned, is in <c>.superpowers/sdd/gate-determinism/task-1-report.md</c> §2.3.</para>
 /// </summary>
 [CollectionDefinition(CollectionName)]
 public sealed class SecurityEnvVarTests
