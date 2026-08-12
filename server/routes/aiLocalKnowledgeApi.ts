@@ -1,7 +1,7 @@
 import type express from "express";
 import fs from "node:fs";
 import path from "node:path";
-import { thuXacThucRest } from "./_xacThucRest";
+import { thuXacThucRest, thanTuChoiRest } from "./_xacThucRest";
 // ★★★★ Review TOÀN NHÁNH Pha 9 · I-6 — chủ DUY NHẤT của cặp cổng "loopback HOẶC vai đặc quyền".
 import { laLoopback, doiVaiDacQuyen as requirePrivileged } from "./_congLoopback";
 import {
@@ -288,11 +288,12 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
 
   app.post("/api/ai/local-kb/reload", async (req, res) => {
     try {
-      const user = await thuXacThucRest(req);
-      if (!user) {
-        res.status(401).json({ success: false, error: "Unauthorized" });
+      const xacThuc = await thuXacThucRest(req);
+      if (!xacThuc.ok) {
+        res.status(xacThuc.ma).json({ success: false, ...thanTuChoiRest(xacThuc) });
         return;
       }
+      const user = xacThuc.user;
 
       const health = await reloadKbArtifacts();
       res.json({ success: true, health });
@@ -306,11 +307,12 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
 
   app.post("/api/ai/local-kb/retrieve", async (req, res) => {
     try {
-      const user = await thuXacThucRest(req);
-      if (!user) {
-        res.status(401).json({ success: false, error: "Unauthorized" });
+      const xacThuc = await thuXacThucRest(req);
+      if (!xacThuc.ok) {
+        res.status(xacThuc.ma).json({ success: false, ...thanTuChoiRest(xacThuc) });
         return;
       }
+      const user = xacThuc.user;
 
       const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
       const topK = Number(req.body?.topK ?? 5);
@@ -335,11 +337,12 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
 
   app.post("/api/ai/local-kb/ask", async (req, res) => {
     try {
-      const user = await thuXacThucRest(req);
-      if (!user) {
-        res.status(401).json({ success: false, error: "Unauthorized" });
+      const xacThuc = await thuXacThucRest(req);
+      if (!xacThuc.ok) {
+        res.status(xacThuc.ma).json({ success: false, ...thanTuChoiRest(xacThuc) });
         return;
       }
+      const user = xacThuc.user;
 
       const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
       const topK = Number(req.body?.topK ?? 5);
@@ -376,11 +379,12 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
   // `token` events, then `done`. Falls back to chunked emission of the
   // final answer when an LLM is not available locally.
   app.post("/api/ai/local-kb/stream", async (req, res) => {
-    const user = await thuXacThucRest(req);
-    if (!user) {
-      res.status(401).json({ success: false, error: "Unauthorized" });
+    const xacThuc = await thuXacThucRest(req);
+    if (!xacThuc.ok) {
+      res.status(xacThuc.ma).json({ success: false, ...thanTuChoiRest(xacThuc) });
       return;
     }
+    const user = xacThuc.user;
 
     const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
     const topK = Number(req.body?.topK ?? 5);

@@ -733,3 +733,149 @@ describe("★★★ Pha 9 A6 §5 — HIỆU CHUẨN: thước phân biệt đư�
     expect(await chay(nem, null), "một handler ném mà thước khai `null` ⇒ §2b không bao giờ đỏ").toBe("NÉM");
   });
 });
+
+describe("★★★★ Review TOÀN NHÁNH Pha 9 · M-4 §8 — BA LỚP MÃ TRẠNG THÁI, KHÔNG MỘT LỚP", () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ VÌ SAO §2 (*"401 hoặc 403"*) KHÔNG ĐỦ ĐỂ CANH CHUYỆN NÀY
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * §2 đo **một** tình huống: *không cookie*. Ở đó cả bốn nguyên nhân đều **không xảy ra được**
+   * trừ một (`"Invalid session cookie"`), nên §2 xanh **bất kể** ba nguyên nhân kia được ánh xạ
+   * thành mã gì. Trước lượt vá M-4, `catch { return null }` gộp **cả bốn** về **401** — và §2
+   * **không thể** thấy: nó xanh vì 401 nằm trong tập cho phép của nó.
+   *
+   * ⇒ Ô dưới đây gọi **CHÍNH hai phép chặn thật** (`chanNeuPhaiDoiMatKhau` · `chanNeuTaiKhoanBiTat`,
+   *   `server/_core/sdk.ts`) để **lấy đúng lượt ném thật**, rồi đọc lại phân loại. Đổi chuỗi dấu ở
+   *   `sdk.ts` mà quên `_xacThucRest.ts` ⇒ **ĐỎ**. Đây là chỗ hai file được nối lại với nhau.
+   */
+  const bat = <T,>(f: () => Promise<T>) =>
+    f().then(
+      () => null as unknown,
+      (e: unknown) => e,
+    );
+
+  it("★★★★ §8a lượt ném THẬT của hai phép chặn ⇒ 403, và HAI mã PHÂN BIỆT ĐƯỢC", async () => {
+    const { thuXacThucRest } = await import("./_xacThucRest");
+    const { chanNeuPhaiDoiMatKhau, chanNeuTaiKhoanBiTat } = await import("../_core/sdk");
+
+    // Lượt ném THẬT của cổng tài khoản bị tắt.
+    const loiTat = await bat(() => chanNeuTaiKhoanBiTat({ isActive: false } as never));
+    expect(loiTat, "cầu chì: `chanNeuTaiKhoanBiTat` không còn ném ⇒ ô này rỗng nghĩa").not.toBeNull();
+
+    /**
+     * Lượt ném THẬT của cổng buộc-đổi-mật-khẩu — **trên hàng `users` THẬT của file này**, đặt cờ
+     * bằng đúng hai mốc mà `suyRaPhaiDoiMatKhau` đọc.
+     * ⚠ KHÔNG ghi đè `db.phaiDoiMatKhau`: một namespace ESM **chỉ có getter**
+     *   (`Cannot set property … of [object Module]`), và một phép giả ở đó sẽ đo một hàm KHÁC hàm
+     *   sản phẩm. Đo được ở chính lượt viết ô này.
+     */
+    const d = await db.getDb();
+    const { users } = await import("../../drizzle/schema");
+    await d!
+      .update(users)
+      .set({ passwordChangedAt: new Date(Date.now() - 60_000), passwordInvalidBefore: new Date() })
+      .where(eq(users.id, uid));
+    expect(await db.phaiDoiMatKhau(uid), "cầu chì: cờ buộc-đổi-mật-khẩu phải BẬT thật").toBe(true);
+    const hang = (await db.getUserById(uid)) as never;
+    const loiDoi = await bat(() => chanNeuPhaiDoiMatKhau(hang));
+    await d!
+      .update(users)
+      .set({ passwordChangedAt: new Date(), passwordInvalidBefore: null })
+      .where(eq(users.id, uid));
+    expect(loiDoi, "cầu chì: `chanNeuPhaiDoiMatKhau` không còn ném ⇒ ô này rỗng nghĩa").not.toBeNull();
+
+    // Cho `thuXacThucRest` gặp ĐÚNG hai lượt ném ấy.
+    const voi = async (loi: unknown) => {
+      // ⚠ Ghi đè một **thuộc tính của thực thể** (`sdk` là `new SDKServer()`), rồi `delete` để trả
+      //   về phương thức trên prototype — KHÔNG chạm module namespace.
+      (sdk as unknown as Record<string, unknown>).authenticateRequest = async () => {
+        throw loi;
+      };
+      const kq = await thuXacThucRest({} as never);
+      delete (sdk as unknown as Record<string, unknown>).authenticateRequest;
+      return kq;
+    };
+
+    const kqTat = await voi(loiTat);
+    expect(kqTat.ok).toBe(false);
+    expect(
+      kqTat.ok ? null : [kqTat.ma, kqTat.lyDo],
+      "tài khoản bị TẮT trả 401 ⇒ client đá người dùng về màn đăng nhập, nơi họ bị từ chối LẦN NỮA",
+    ).toEqual([403, "ACCOUNT_DISABLED"]);
+
+    const kqDoi = await voi(loiDoi);
+    expect(
+      kqDoi.ok ? null : [kqDoi.ma, kqDoi.lyDo],
+      "buộc-đổi-mật-khẩu trả 401 ⇒ 'đăng nhập lại' là lời khuyên KHÔNG cứu được họ",
+    ).toEqual([403, "MUST_CHANGE_PASSWORD"]);
+
+    // ⚠ HAI mã phải KHÁC NHAU: gộp là để một trục núp sau trục kia (bài học "ba trục là ba trục").
+    expect(kqTat.ok || kqDoi.ok ? "?" : kqTat.lyDo === kqDoi.lyDo).toBe(false);
+  });
+
+  it("★★★★ §8b phiên hỏng ⇒ 401 · lỗi KHÔNG phải `HttpError` ⇒ 500 (fail-closed cả hai)", async () => {
+    const { thuXacThucRest } = await import("./_xacThucRest");
+    const { ForbiddenError } = await import("@shared/_core/errors");
+    const voi = async (loi: unknown) => {
+      (sdk as unknown as Record<string, unknown>).authenticateRequest = async () => {
+        throw loi;
+      };
+      const kq = await thuXacThucRest({} as never);
+      delete (sdk as unknown as Record<string, unknown>).authenticateRequest;
+      return kq;
+    };
+
+    for (const msg of [
+      "Invalid session cookie",
+      "SESSION_NOT_IN_LEDGER: Session has been revoked (no ledger row); please sign in again",
+      "Session has been revoked",
+      "User not found",
+    ]) {
+      const kq = await voi(ForbiddenError(msg));
+      expect(kq.ok ? null : [kq.ma, kq.lyDo], `"${msg}" phải là 401/AUTH_REQUIRED`).toEqual([
+        401,
+        "AUTH_REQUIRED",
+      ]);
+    }
+
+    // ⚠ KHÔNG phải một phán quyết của tầng xác thực ⇒ máy chủ hỏng, và nói THẬT.
+    const kq500 = await voi(new TypeError("Cannot read properties of undefined (reading 'query')"));
+    expect(
+      kq500.ok ? null : [kq500.ma, kq500.lyDo],
+      "một sự cố DB bị dán nhãn 401 là nói dối 'lỗi của bạn', và nó BIẾN MẤT khỏi mọi bảng theo dõi 5xx",
+    ).toEqual([500, "DB_UNAVAILABLE"]);
+
+    // FAIL-CLOSED: KHÔNG lượt nào trong cả hai lớp trả `ok: true`.
+    expect(kq500.ok).toBe(false);
+  });
+
+  it("★★★ §8c thân phản hồi mang MÃ MÁY-ĐỌC-ĐƯỢC, và mã ấy có khoá i18n ở CẢ BA locale", async () => {
+    /**
+     * ⚠ Không có ô này, `code` là một chuỗi client không dịch được ⇒ người dùng thấy đúng câu
+     *   tiếng Anh cứng mà lượt vá này sinh ra để xoá. Đọc **file locale thật**, không một danh sách.
+     */
+    const { thanTuChoiRest } = await import("./_xacThucRest");
+    const codes = (["AUTH_REQUIRED", "MUST_CHANGE_PASSWORD", "ACCOUNT_DISABLED", "DB_UNAVAILABLE"] as const).map(
+      (lyDo) => thanTuChoiRest({ ok: false, ma: 401, lyDo }),
+    );
+    expect(codes.map((c) => c.code)).toEqual([
+      "AUTH_REQUIRED",
+      "MUST_CHANGE_PASSWORD",
+      "ACCOUNT_DISABLED",
+      "DB_UNAVAILABLE",
+    ]);
+    expect(codes.every((c) => c.error.length > 0), "`error` rỗng ⇒ client cũ mất hẳn câu dự phòng").toBe(true);
+
+    for (const l of ["en", "vi", "zh"]) {
+      const bundle = JSON.parse(
+        readFileSync(join(GOC, "client", "src", "i18n", "locales", `${l}.json`), "utf8"),
+      ) as { errors?: Record<string, string> };
+      for (const c of codes) {
+        expect(
+          typeof bundle.errors?.[c.code],
+          `thiếu khoá \`errors.${c.code}\` ở locale \`${l}\` ⇒ người dùng thấy chuỗi tiếng Anh cứng`,
+        ).toBe("string");
+      }
+    }
+  });
+});

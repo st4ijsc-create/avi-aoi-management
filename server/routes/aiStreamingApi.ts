@@ -6,7 +6,7 @@
  */
 
 import type express from "express";
-import { thuXacThucRest } from "./_xacThucRest";
+import { thuXacThucRest, thanTuChoiRest } from "./_xacThucRest";
 import {
   generateTextStream,
   chatCompletionStream,
@@ -21,11 +21,12 @@ export function registerAiStreamingRoutes(app: express.Express) {
   // ─── SSE: Text Generation Stream ────────────────────
   app.post("/api/ai/stream/generate", async (req, res) => {
     try {
-      const user = await thuXacThucRest(req);
-      if (!user) {
-        res.status(401).json({ error: "Unauthorized" });
+      const xacThuc = await thuXacThucRest(req);
+      if (!xacThuc.ok) {
+        res.status(xacThuc.ma).json(thanTuChoiRest(xacThuc));
         return;
       }
+      const user = xacThuc.user;
 
       const available = await isGgufAvailable();
       if (!available) {
@@ -90,11 +91,12 @@ export function registerAiStreamingRoutes(app: express.Express) {
   // ─── SSE: Chat Completion Stream ────────────────────
   app.post("/api/ai/stream/chat", async (req, res) => {
     try {
-      const user = await thuXacThucRest(req);
-      if (!user) {
-        res.status(401).json({ error: "Unauthorized" });
+      const xacThuc = await thuXacThucRest(req);
+      if (!xacThuc.ok) {
+        res.status(xacThuc.ma).json(thanTuChoiRest(xacThuc));
         return;
       }
+      const user = xacThuc.user;
 
       const available = await isGgufAvailable();
       if (!available) {
@@ -153,11 +155,12 @@ export function registerAiStreamingRoutes(app: express.Express) {
   // ─── SSE: Narrative Stream (Hybrid OpenAI + GGUF via provider router) ──
   app.post("/api/ai/stream/narrative", async (req, res) => {
     try {
-      const user = await thuXacThucRest(req);
-      if (!user) {
-        res.status(401).json({ error: "Unauthorized" });
+      const xacThuc = await thuXacThucRest(req);
+      if (!xacThuc.ok) {
+        res.status(xacThuc.ma).json(thanTuChoiRest(xacThuc));
         return;
       }
+      const user = xacThuc.user;
 
       const { prompt, systemPrompt, maxTokens, temperature, language } = req.body;
       if (!prompt || typeof prompt !== "string") {

@@ -23,6 +23,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import type { ToolResultPayload } from "@/components/AIToolResultCard";
+import { thongDiepLoiRest } from "@/lib/restAuthError";
 
 // ─── P3/D8 (doc 34) — shared image-attach helpers (reused by the chat bubble) ──
 // Kept here (AIChatPage already imports this hook) so BOTH chat surfaces share one
@@ -285,7 +286,8 @@ export function useKbChatStream() {
 
         if (!res.ok || !res.body) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Stream failed (${res.status})`);
+          // ★ M-4 — mã máy-đọc-được (`code`) → câu BẢN ĐỊA; không hiển thị chuỗi tiếng Anh cứng.
+          throw new Error(thongDiepLoiRest(errBody, `Stream failed (${res.status})`));
         }
 
         const reader = res.body.getReader();
