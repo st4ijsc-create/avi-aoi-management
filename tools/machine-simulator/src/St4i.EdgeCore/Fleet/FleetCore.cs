@@ -604,7 +604,12 @@ internal sealed class FleetCore
     /// <item><b>S3 — CLOSED (G-2).</b> <see cref="Start"/> → <see cref="StartLocked"/> →
     /// <see cref="CompleteStartOffLock"/> — <b>with a residual, named rather than swept: see the
     /// "S3's residual" note directly below this list. 🔴 J-2 closed two of the three consequences that note
-    /// records and added a fourth it never had; one is open and is an owner decision.</b></item>
+    /// records and added TWO it never had — a fourth and, at branch review, a fifth. <b>THREE of the five
+    /// are open</b>: (3), (4) and (5). <b>Exactly ONE of the three is an owner decision</b> — (3); (4) and
+    /// (5) are engineering, carried. (🔴 Branch review, Minor 1: this row said "one is open and is an owner
+    /// decision", conflating the count of open items with the count of owner decisions — a status summary
+    /// that cannot be reconstructed from the enumeration it summarises, which is the defect this banner
+    /// records against itself at the S-set headline.)</b></item>
     /// <item><b>S4 — PARTLY OPEN.</b> The restart chokepoint. The rebuild is now unconditional over an
     /// off-lock TEARDOWN that throws (<see cref="RegisterMachine"/>/<see cref="ApplyScenario"/>), but a
     /// <see cref="StartLocked"/> that throws ITSELF leaves the fleet stopped with the roster/scenario write
@@ -698,15 +703,31 @@ internal sealed class FleetCore
     /// result. The clause is described instead of quoted, and the marker is greppable on purpose: the live
     /// guard is at <see cref="StopLocked"/> and is a CONJUNCTION. History that impersonates code is a worse
     /// exhibit than history that says what it is.</para>
-    /// <b>Three of those clauses are now FALSE, one is still TRUE, and the last is HALF true.</b> The orphan
-    /// list is no longer a local (it is the caller's, see (1)); <see cref="StopLocked"/>'s guard is no longer
-    /// that single test (it is a conjunction, see (2)); and the refusal it describes is gone with it. Still
-    /// TRUE and deliberately not marked otherwise: a throw does still leave <see cref="_slots"/> non-empty
-    /// with <c>_running == false</c> — J-2 made that state CLEANABLE, not unreachable.
-    /// <para>🔴 <b>And the last clause is HALF true, which the previous headline over-reached by calling it
-    /// "never true" (re-review, Minor).</b> <i>"Restructuring <see cref="StartLocked"/> so its partial work
-    /// is owned by the caller"</i> is EXACTLY what J-2 did for the orphan half — the list is now the
-    /// caller's. What was never true is the second half: the <b>P5 EQUIVALENCE</b>, and the SIZE it implied.
+    /// <b>🔴 THE MARKING IS PER-CLAUSE, AND IT IS NOT A TALLY — branch review, Important 1, which is the
+    /// SECOND false sentence this one paragraph has produced.</b> Round 2 replaced the refuted headline
+    /// ("the fourth was never true") with a scalar one ("three FALSE, one still TRUE, one HALF") and never
+    /// ran the new count against the clause set it summarises: the quotation carries <b>TWO</b> still-true
+    /// clauses, because clause 1 is COMPOUND and its <c>deferredLogs</c> half is still true — as this same
+    /// banner says two paragraphs down and as residual (3) says outright. A scalar summary over a compound
+    /// list is the defect this file has a banner about, so the scalar is GONE rather than corrected:
+    /// <list type="bullet">
+    /// <item>1a. <i>"loses <c>orphanedConnectorDrivers</c> … they are locals"</i> — <b>FALSE.</b> It is the
+    /// caller's list; see (1).</item>
+    /// <item>1b. <i>"loses <c>deferredLogs</c> … they are locals"</i> — <b>STILL TRUE.</b> That is residual
+    /// (3), open, and an owner decision.</item>
+    /// <item>2. <i>"leaves <see cref="_slots"/> non-empty with <c>_running == false</c>"</i> — <b>STILL
+    /// TRUE.</b> J-2 made that state CLEANABLE, not unreachable.</item>
+    /// <item>3. <i>"which <see cref="StopLocked"/>'s [old single test] …"</i> — <b>FALSE.</b> It is a
+    /// conjunction; see (2).</item>
+    /// <item>4. <i>"… then REFUSES to tear down"</i> — <b>FALSE</b>, with clause 3.</item>
+    /// <item>5a. <i>"Closing it means restructuring <see cref="StartLocked"/> so its partial work is owned
+    /// by the caller"</i> — <b>TRUE, and DONE</b> for the orphan half: that is exactly what J-2 did.</item>
+    /// <item>5b. <i>"… which is the same redesign P5 needs"</i> — <b>NEVER TRUE.</b> See below.</item>
+    /// </list>
+    /// <para>🔴 <b>Clause 5b is the one that cost three rounds, and the earlier headline over-reached by
+    /// calling the whole sentence "never true" (re-review, Minor).</b> 5a is EXACTLY what J-2 did for the
+    /// orphan half — the list is now the caller's. What was never true is 5b: the <b>P5 EQUIVALENCE</b>,
+    /// and the SIZE it implied.
     /// Closing (1) took ONE parameter and two caller declarations, closing (2) took ONE <c>&amp;&amp;</c>,
     /// and <b>neither is the P5 redesign</b> — P5 is "get <c>MachineConfigStore.Ensure</c>'s write off this
     /// lock", and neither change moves any I/O relative to it. <b>That equivalence converted two cheap
@@ -787,7 +808,28 @@ internal sealed class FleetCore
     /// making slot installation atomic inside <see cref="StartSlot"/>, which is a change to the slot
     /// lifecycle. Its only production producer is an allocation failure in that loop. Pinned as a gap by the
     /// second assertion of the <c>…StillDisposesTheConnectorDriverItOrphaned</c> test rather than left to be
-    /// rediscovered.</para></para></para>
+    /// rediscovered.</para>
+    ///
+    /// <para><b>(5) AN OEE INTERVAL LEFT OPEN — NAMED at branch review, on the S2/S7 axis rather than this
+    /// one, and PRE-EXISTING rather than introduced here.</b> If the stuck state is reached through an
+    /// INTERNAL restart (<see cref="RegisterMachine"/>/<see cref="ApplyScenario"/> →
+    /// <see cref="StopLocked"/> → <see cref="RebuildPipelineOffLock"/> → <see cref="StartLocked"/> throws),
+    /// the run interval opened by the earlier operator <see cref="Start"/> is still open —
+    /// <c>SqliteHistorianStore</c>'s OEE query opens on <c>"Start"</c> and closes only on
+    /// <c>"Stop"</c>/<c>"Estop"</c> — and a <see cref="Stop"/> from that state computes
+    /// <c>stopped = wasRunning &amp;&amp; !IsRunning</c> as FALSE, so it emits no <c>"Stop"</c> and the
+    /// interval stays open, inflating Availability exactly as S2 describes.
+    /// <para>🔴 <b>What J-2 changes about it is not the interval but the OPERATOR'S NEXT MOVE, and that is
+    /// why it belongs here rather than only in S2.</b> Before J-2 that <see cref="Stop"/> did nothing
+    /// observable at all — the slots kept running, <see cref="GetDriverHealth"/> kept listing them — so an
+    /// operator would escalate to <see cref="Estop"/>, which records unconditionally and CLOSES the
+    /// interval. After J-2 the same <see cref="Stop"/> is mechanically effective (slots really are torn
+    /// down, the projection really does empty), so it LOOKS like a complete recovery and the escalation
+    /// that used to close the interval no longer happens. The fix is right and this consequence is real:
+    /// making a broken recovery work removed the symptom that drove an operator to the action which
+    /// happened to repair the timeline. Not fixed here — emitting <c>"Stop"</c> from a fleet that already
+    /// reported itself stopped is the S2/S7 truthfulness question, decided the other way at both
+    /// call sites — and carried rather than left to be rediscovered.</para></para></para></para>
     ///
     /// <para><b>Two of these were WIDENED by G-1 rather than inherited from it</b>, and in the same way:
     /// <see cref="FlushDeferredLogs"/> — a host-supplied delegate, i.e. a throw site — became the FIRST
@@ -810,7 +852,10 @@ internal sealed class FleetCore
     /// wins; arrive second and the stop tears the just-started fleet down. J-1's hoist opened an interval in
     /// the middle of <see cref="Start"/> in which a <see cref="Stop"/> is neither — it acquires the gate,
     /// finds <see cref="_running"/> still <see langword="false"/> (the start has not installed yet), and
-    /// <see cref="StopLocked"/> returns on its own <c>!_running</c> guard. The request evaporates and the
+    /// <see cref="StopLocked"/> returns on its own opening guard — <c>_slots</c> is empty there too, so the
+    /// conjunction J-2 gave that guard returns for the same reason the single test did (🔴 branch review,
+    /// Important 2: this said "its own <c>!_running</c> guard", naming the guard by the form the
+    /// <c>&amp;&amp;</c> replaced; the predicted behaviour was and is right, the stated form was not). The request evaporates and the
     /// start then completes, so a <c>Start</c>‖<c>Stop</c> race that used to be able to end STOPPED could
     /// only end RUNNING. Nothing was corrupted — no historian event is emitted for a stop that did not
     /// happen, and <see cref="IsRunning"/> reports honestly — which is why this was an inverted OUTCOME
@@ -1636,6 +1681,25 @@ internal sealed class FleetCore
                 return (MachineDriverAvailability.NoLiveDriver, null);
             }
 
+            // 🔴 J-2 (branch review, Important 3) — THIS IS THE SECOND EXTERNAL READER OF `_slots`, AND IT IS
+            // NOT A REPORTING SURFACE, WHICH IS WHY THE ROUND'S SWEEP NEVER REACHED IT. The other is
+            // GetDriverHealth. This one reads `_slots` and checks NEITHER `_running` NOR `_estopEngaged`, so
+            // it changes in the stuck state (`_slots` non-empty with `_running == false` — S3's residual (2))
+            // exactly as that projection does, and nobody had said so.
+            //
+            // WHAT IT MEANT BEFORE J-2, stated plainly because it is the sharper half of that finding: an
+            // Estop() made in the stuck state left the stranded slots in `_slots`, so THIS METHOD STILL
+            // RESOLVED A LIVE WRITABLE DRIVER AFTER A HALT — GetMachineDriverAvailability,
+            // TryWriteSetpointAsync and TryInvokeCommandAsync all resolve through here. What stopped a write
+            // was EstopGuardRule, one assembly up, reading Safety.EstopEngaged. The engine-level answer and
+            // the guard disagreed, and only the guard was load-bearing.
+            //
+            // AFTER J-2 the halt clears `_slots`, so this resolves NoLiveDriver and the two agree. ESTOP IS
+            // STRENGTHENED, NEVER WEAKENED — the standing constraint holds, EstopGuardRule is untouched, and
+            // this is not a regression in either direction. It is disclosed because the round CLAIMED a
+            // complete newly-reachable set and derived that set over surfaces that REPORT. `_slots` has
+            // readers that report nothing, and a write path is the one place where "who reads the state I
+            // changed" and "who prints something" come apart most expensively.
             var slot = _slots.FirstOrDefault(s => string.Equals(s.Label, expectedLabel, StringComparison.Ordinal));
             if (slot is null)
             {
@@ -2255,8 +2319,10 @@ internal sealed class FleetCore
             {
                 // 🔴 J-1 fix round 1 (review I-1) — A STOP REQUESTED DURING THE BUILD WINS, and this is the
                 // one place that decides it. Without this line a Stop() landing between the two acquisitions
-                // is silently dropped (StopLocked returns on `!_running`, because this start has not
-                // installed yet) and the start then completes — inverting a Start‖Stop race that pre-J-1
+                // is silently dropped (StopLocked returns on its opening guard, because this start has not
+                // installed yet — no slots either, so J-2's conjunction returns there for the same reason
+                // the single `!_running` test did; branch review Important 2) and the start then completes
+                // — inverting a Start‖Stop race that pre-J-1
                 // could end stopped. Abandoning here is not a failure: this method returns void and already
                 // declines silently when latched or already running, so no caller learns anything new.
                 //
@@ -2365,7 +2431,9 @@ internal sealed class FleetCore
             {
                 // 🔴 J-1 fix round 1 (review I-1) — recorded BEFORE StopLocked and unconditionally, which is
                 // the whole point: the request that used to be lost is precisely the one StopLocked drops on
-                // its `!_running` guard, so counting after it, or only when something was actually torn down,
+                // its opening guard (a not-running fleet with no slots — J-2's conjunction drops it exactly
+                // as the single `!_running` test did; branch review Important 2), so counting after it, or
+                // only when something was actually torn down,
                 // would count everything except the case this exists for. See _stopRequests.
                 //
                 // 🔴 FIX ROUND 2 — NAMED, NOT CHANGED: a caller invoking this in a loop can now starve
@@ -2532,7 +2600,11 @@ internal sealed class FleetCore
         // that never happened — trading "lost" for "spurious", which is the same trade in the other
         // direction and no better. `halted` is set after the two commits the event actually describes, so it
         // is true exactly when an "Estop" is truthful — including for an already-stopped fleet, where
-        // StopLocked no-ops and this method has always recorded the event anyway.
+        // StopLocked no-ops and this method has always recorded the event anyway. (🔴 Branch review,
+        // Important 2 — "already-stopped fleet" means already-stopped AND SLOTLESS since J-2. A fleet that
+        // is not running but still holds stranded slots is the one state where StopLocked no longer no-ops,
+        // and that is the whole of J-2's safety fix; the sentence above is about the ordinary case and stays
+        // true of it.)
         //
         // 🔴 IF YOU ARE HERE TO DELETE `halted` BECAUSE NOTHING FAILS WITHOUT IT: NOTHING WILL. Measured —
         // mutation N5 removed the `if (halted)` guard below and SURVIVED the whole suite, with the round's
@@ -3604,6 +3676,18 @@ internal sealed class FleetCore
                 // under-_gate commit below, so nothing is committed-then-stranded. It is the same HAZARD
                 // class (a host seam in front of work that must not be skipped) reached from a different
                 // direction, and closing it reopens no "CLOSED" claim.
+                //
+                // 🔴 J-2 (branch review, Minor 4) — AND THIS IS WHERE A REPORTING ROUTE DISAPPEARED, which
+                // this block enumerated everything else about and said nothing about. §8.1(h4): silence is
+                // not a treatment. `LastError = ex` below sits inside `if (removed)`, and GET /v1/health is
+                // literally `LastError is null`. In the stuck state (S3's residual (2)) a stranded slot that
+                // faulted LATER found `removed == true`, set LastError and flipped health unhealthy — the
+                // only eventual self-report that state ever had. J-2 lets a Stop/Estop clear `_slots` first,
+                // so the same fault now finds `removed == false` and health does not flip. BENIGN: the state
+                // being reported no longer exists, and flipping a fleet unhealthy because a slot an operator
+                // already halted later unwound is worse than silence. Recorded at both ends — the cause is
+                // at StopLocked's guard, the effect is HERE, and a reader arriving from either side would
+                // otherwise see only half of it.
 
                 // G2-6 review fix — the disposes below happen OUTSIDE _gate (never dispose while holding
                 // the lock): `removed` is decided under _gate (same slot-membership identity guard as
@@ -3690,8 +3774,9 @@ internal sealed class FleetCore
         //
         // 🔴 J-2 — AND THE GUARD IS NOW A CONJUNCTION, WHICH CLOSES THE ONE STATE IT USED TO REFUSE TO CLEAN.
         // It tested `!_running` ALONE [QUOTED-NOT-LIVE — the verbatim old line is deliberately not
-        // reproduced anywhere in this file; see the same marker in the S-set banner for why a grep hit that
-        // looks like code is not free here. The live guard is the conjunction below]. Testing it alone is
+        // reproduced in this file OR in the J-2 witness test that describes it; greps do not stop at a file
+        // boundary, which is what the first version of this marker overlooked (branch review, Minor 3). See
+        // the same marker in the S-set banner. The live guard is the conjunction below]. Testing it alone is
         // correct for every state EXCEPT
         // `_running == false` with `_slots` NON-EMPTY — and in that state the slots are LIVE: each one's
         // run-task is already driving its pipeline, publishing readings and moving KPI counters, while

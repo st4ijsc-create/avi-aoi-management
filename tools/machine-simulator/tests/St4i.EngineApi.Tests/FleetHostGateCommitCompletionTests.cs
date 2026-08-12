@@ -573,7 +573,9 @@ public sealed class FleetHostGateCommitCompletionTests
     ///
     /// <para>A <c>StartLocked</c> that throws part-way through its slot loop leaves <c>_slots</c> populated
     /// with <c>_running == false</c>. Those slots are LIVE — each run-task is already driving its pipeline —
-    /// yet <c>StopLocked</c>'s guard read <c>if (!_running) return default;</c>, so <b>both</b> teardown
+    /// yet <c>StopLocked</c>'s guard tested <c>!_running</c> ALONE [QUOTED-NOT-LIVE — the verbatim old line
+    /// is deliberately not reproduced here or in <c>FleetCore.cs</c>; a grep for the live guard must not
+    /// return a hit that looks like live code, and greps do not stop at a file boundary], so <b>both</b> teardown
     /// callers returned without cancelling one of them. A HALT did not halt them, and NO OPERATOR ACTION
     /// could: <c>RegisterMachine</c>/<c>ApplyScenario</c> reach <c>StopLocked</c> only
     /// <c>if (IsRunning)</c>, and a <c>Start()</c> from that state installs more slots rather than clearing
