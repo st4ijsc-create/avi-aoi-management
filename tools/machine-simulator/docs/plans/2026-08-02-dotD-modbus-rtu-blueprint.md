@@ -427,6 +427,50 @@ nạn nhân là **một quy tắc của chính bộ quy tắc này** — đúng 
 đang được nâng lên thành quy tắc là chỗ đắt nhất cho một khẳng định phổ quát sai, vì mọi thứ phía sau sẽ
 được viết dựa trên nó."*
 
+🔴 **(h3) ĐI THEO MỘT THẤT BẠI TỚI NƠI NÓ ĐƯỢC BÁO CÁO — THƯỜNG KHÔNG PHẢI NƠI NÓ ĐƯỢC NÉM RA (K-1).**
+
+(h) và (h2) nói về **một khẳng định từng đúng mà cái nó chỉ tới đã dịch đi**. Đây là nửa còn thiếu:
+**một thông điệp VỐN KHÔNG VỚI TỚI ĐƯỢC và giờ đã sống.** Khẳng định ấy **chưa từng có cái để mà mục
+ruỗng** — nó chưa bao giờ sai, vì chưa bao giờ có điều kiện nào chạy tới nó.
+
+**Ca sinh ra nó.** Một bản sửa **ĐÚNG** — cho phép chụp trạng thái **ném lỗi** khi bị ACL từ chối, thay vì
+trả về "thư mục không tồn tại" — đã biến một nhánh **chết** thành một nhánh **có người sinh ra nó**, và
+định tuyến nó vào một thông điệp khuyên người đọc *"sửa lại phép suy ra"*. Phép suy ra **không hỏng**. Trước
+bản sửa ấy, nhánh ACL-bị-từ-chối **không sinh ra ngoại lệ nào**, nên câu khuyên kia **chưa bao giờ với tới
+được** và **chưa bao giờ sai**.
+
+Chạy (h) lên ca này thì nó trả lời **"vẫn đúng"** — và trả lời đúng. Hàng xóm gần nhất là (f), nhưng **(f)
+giả định điểm nhìn của tác giả VỐN ĐÃ SAI**, còn ở đây điểm nhìn **đúng và thế giới dịch chuyển**. Nó là
+**logic thời gian của (h) áp lên câu hỏi độ phủ của (f)** — cả hai bố mẹ đều có sẵn trong file này, đứa con
+thì chưa. Vì thế nó **sửa vào (h)**, không đẻ thêm một chữ cái: tính đúng đắn của một thông điệp **là một
+khẳng định chỉ mục theo trạng thái cây mã**, mà (h) đã được mở rộng đúng sang nghĩa ấy một lần rồi — và
+thêm một ordinal vào đúng cái file mà nhánh này đã **hai lần** ghi nhận ordinal của nó mục ruỗng thì là tự
+chuốc lấy lớp lỗi ấy.
+
+**Điều làm nó dùng được, và nó rất hẹp:** nửa bash của cùng bản sửa ấy sinh ra **ba** thất bại mới và viết
+**ba** thông điệp cho chúng **trong cùng một hàm** — không cần quy tắc nào. Nửa C# sinh ra một thất bại
+**trong một phương thức** rồi báo cáo nó **từ một kiểu khác**, và **đó chính là chỗ nó gãy**.
+
+→ **Quy tắc: một thay đổi làm đổi TẬP CÁC THẤT BẠI CÓ THỂ XẢY RA thì phải quét mọi thông điệp mà các thất
+bại ấy GIỜ chạy tới — và phép quét đi theo đường BÁO CÁO, không đi theo đường ném.**
+
+🔴 **(h4) KHI SỬA MỘT TRONG HAI CHỖ ĐỐI XỨNG, DIFF PHẢI NÊU TÊN CHỖ KIA VÀ NÓI RÕ NÓ ĐƯỢC XỬ THẾ NÀO (K-1).**
+
+**Đây là hình mẫu, còn (h3) chỉ là thể hiện sắc nhất của nó.** Ba vòng cuối của K-1, khiếm khuyết đều là
+**đối xứng — sửa một bên, để nguyên hoặc làm xấu bên kia**: hai đường "gốc không đọc được"; hai thông điệp
+của cùng một chốt; và hai nhánh của một dấu hiệu phân biệt, nơi một nhánh được **hạ nhãn** xuống *"không
+quyết định được"* trong khi nhánh kia **được gắn thêm chữ "QUYẾT ĐỊNH ĐƯỢC"** — **trong cùng một khối văn
+bản mà chủ đề của nó chính là hình dạng ấy**.
+
+🔴 **Và chính người thực thi, khi gọi tên hình mẫu là "đối xứng", lại đề xuất một quy tắc chỉ phủ MỘT ca —
+ca sắc nhất, ca duy nhất có thay đổi về tính-với-tới-được.** Khái quát hoá **từ thể hiện sắc nhất thay vì
+từ hình mẫu vừa đặt tên**: đó là §8.1(a) vận hành **lùi ra một tầng, trong lúc viết một quy tắc**. Nên có
+**hai** quy tắc, không phải một.
+
+→ **Quy tắc: nêu tên chỗ đối xứng và phát biểu cách xử của nó — ĐÃ SỬA, CỐ Ý KHÔNG SỬA, hoặc KHÔNG ÁP DỤNG.
+IM LẶNG KHÔNG PHẢI MỘT CÁCH XỬ.** Ưu điểm riêng của nó là **kiểm được CHỈ BẰNG DIFF**, không cần chạy gì —
+và **mọi khiếm khuyết muộn của K-1 đều sẽ vấp phải nó**.
+
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**
 
 → Quy tắc đúng: **hành vi phụ thuộc phần cứng không bao giờ là một test bị bỏ qua có điều kiện bên trong năm bộ test.** Nó hoặc được **ghi rõ là khoảng trống chưa test** trong báo cáo và trong chú thích của cổng, hoặc được commit thành **một bench harness riêng nằm ngoài năm bộ** (`tools/serial-bench/`). Phép đo không commit được thì không tái lập được — reviewer D-3 phải **viết lại toàn bộ probe** để kiểm chứng các con số của D-3.
