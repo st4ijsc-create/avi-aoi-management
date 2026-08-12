@@ -12,7 +12,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import fs from "fs";
 
-vi.mock("../server/db");
+/**
+ * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-2** — **FACTORY, KHÔNG AUTOMOCK, CHO BỀ MẶT CHỨA `db/auth`.**
+ *
+ * Dòng này trước đây là `vi.mock("../server/db")` **không factory** ⇒ vitest **automock** toàn bộ
+ * bề mặt của thùng `server/db/index.ts`, và thùng ấy `export * from "./auth"`. Đo được:
+ *
+ *     typeof db.phaiDoiMatKhau      = function     ← khoá CÓ MẶT
+ *     db.phaiDoiMatKhau(1)          => undefined   ← KHÔNG ném
+ *     biChanBoiCongDoiMatKhau('user', undefined) = false
+ *     chanNeuPhaiDoiMatKhau(...)    => KHÔNG NÉM   ← **CỔNG MỞ, IM LẶNG**
+ *
+ * ⇒ Automock là hình dạng **không thể ồn ào theo cấu tạo**: một hàm **có thật** trả `undefined`.
+ *   Với factory, khoá thiếu là khoá **VẮNG MẶT** ⇒ `db.x is not a function` ⇒ vết ngăn xếp trỏ
+ *   thẳng vào dòng sản phẩm. File này chỉ cần **một** khoá; khai đúng một khoá.
+ * ⚠ Lượng từ canh chuyện này: `server/_core/mockKhongFactory.test.ts`.
+ */
+vi.mock("../server/db", () => ({
+  getMachineByApiKey: vi.fn(),
+}));
 vi.mock("../server/db/aiAdvanced");
 vi.mock("../server/storage");
 

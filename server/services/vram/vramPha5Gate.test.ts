@@ -395,7 +395,15 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   khẩu): đo được rằng một bề mặt có **đủ hai** phép chặn kia vẫn cho một tài khoản đã tắt đi
     //   qua tới `ONE_YEAR_MS`. Nó tự khai `Pha 5` nên bộ nhận diện theo NỘI DUNG thấy ⇒ nó **phải**
     //   có đường riêng ở §Cổng kiểm chung. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(53); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1
+    // ⚠ Review TOÀN NHÁNH Pha 9 / **I-2**: 53 → **55**. **HAI** đường mới, cùng một lượt:
+    //   · `server/_core/mockKhongFactory.test.ts` — lượng từ *"∀ `vi.mock` KHÔNG factory: bề mặt
+    //     xuất của module đích không chứa `server/db/auth.ts`"*. Hình dạng automock là hình dạng
+    //     **không thể ồn ào theo cấu tạo** (khoá CÓ MẶT, trả `undefined` ⇒ cổng mở, im lặng).
+    //   · `server/edgeDownloadProxy.test.ts` — file **DUY NHẤT** vi phạm (1/30), nay đã đổi sang
+    //     dạng factory. Bản vá làm nó tự khai `Pha 9` ⇒ bộ nhận diện **THỨ BA** (`DAU_KHAI_PHA`)
+    //     kéo nó vào tập bị canh ⇒ nó phải có đường riêng ở §Cổng kiểm chung. Đây là **cơ chế đang
+    //     làm việc**: lượt sửa một file test biến nó thành một lưới được canh.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(55); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -575,7 +583,9 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     // ⚠ Review TOÀN NHÁNH Pha 9 / **C-1**: 115 → **116**. Đúng MỘT lưới mới
     //   (`server/_core/taiKhoanBiTatMoiBeMat.test.ts`, lý do ở ô `CONG.length`) ⇒ `CONG.length`
     //   52 → **53** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(116); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1
+    // ⚠ Review TOÀN NHÁNH Pha 9 / **I-2**: 116 → **118**. HAI lưới mới (lý do ở ô `CONG.length`) ⇒
+    //   `CONG.length` 53 → **55** cùng lượt. Gỡ một đường ra ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(118); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
