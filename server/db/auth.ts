@@ -12,7 +12,7 @@ import {
 import { suyRaPhaiDoiMatKhau, type MocMatKhau } from "../_core/publicUser";
 import { ENV } from '../_core/env';
 // ★★★ Pha 7 Task 8a — chủ duy nhất của mã dự phòng 2FA (sinh · băm · đối chiếu).
-import { khopMaDuPhong } from '../_core/backupCodeSecret';
+import { khopMaDuPhong, bamMaDuPhong, sinhMaDuPhong } from '../_core/backupCodeSecret';
 // ★★★★ Review TOÀN NHÁNH Pha 8 C-2 — trần cột SUY TỪ SCHEMA, không phải một con số viết tay.
 import { catTheoTranCot } from './catTheoTranCot';
 // W4-B (doc 27 B4): the auth layer caches session→user for AUTH_CACHE_TTL_S.
@@ -459,6 +459,52 @@ export async function xoaMoiMaDuPhong(userId: number, tx?: any) {
   const db = tx ?? (await getDb());
   if (!db) throw new Error("Database not available");
   await db.delete(backupCodes).where(eq(backupCodes.userId, userId));
+}
+
+/** Số mã dự phòng cấp cho một lượt bật/quay vòng. Một chỗ, để đổi nó là một quyết định nói ra. */
+export const SO_MA_DU_PHONG = 10;
+
+/**
+ * ★★★ Pha 9 nhóm A · **A4 — NGƯỜI CẤP DUY NHẤT của `backup_codes`.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO PHẢI LÀ MỘT HÀM, VÀ VÌ SAO **NGAY BÂY GIỜ**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Lượt *"quay vòng 10 mã dự phòng"* (sinh → xoá bộ cũ → băm → ghi) đã tồn tại **HAI bản sao viết
+ * tại chỗ**, giống nhau từng dòng:
+ *   · `twoFactorRouter.enable`                 (bật 2FA lần đầu)
+ *   · `twoFactorRouter.regenerateBackupCodes`  (cấp lại khi 2FA đang bật)
+ * Và tuyến SONG SONG `user.verify2FA` **KHÔNG có bản sao nào** ⇒ bật 2FA qua màn Hồ sơ xong,
+ * người dùng có **0 mã dự phòng**: mất điện thoại là mất tài khoản. Đây là **cặp bất đồng thứ NĂM**
+ * của cùng một họ (`hoTuyenSongSong.test.ts`).
+ *
+ * ⇒ Vá bằng cách chép bản sao **thứ BA** vào `verify2FA` là đúng cơ chế đã đẻ ra chính lỗ này.
+ *   Một chủ, một luật; ba người gọi.
+ *
+ * ⚠ Lượt xoá đi qua `xoaMoiMaDuPhong` (NGƯỜI DỌN DUY NHẤT của Pha 8 Task 5), không phải một
+ *   `db.delete` viết lại ở đây — nếu không, bất biến *"dọn"* lại có hai chủ.
+ * ⚠ Băm qua `bamMaDuPhong` — người sản xuất DUY NHẤT của nhãn `MaDuPhongDaBam`. Một lượt ghi mã
+ *   CHƯA BĂM ở đây là **lỗi biên dịch**, không phải một lỗi ai đó phải nhớ đi tìm.
+ *
+ * @returns bộ mã **dạng thô**, trả cho người dùng **đúng một lần**. Người gọi **phải** hiển thị
+ *   chúng — cấp mã rồi không hiện còn tệ hơn không cấp (xem `Profile.tsx`).
+ */
+export async function quayVongMaDuPhong(userId: number, soLuong = SO_MA_DU_PHONG): Promise<string[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const maTho: string[] = [];
+  for (let i = 0; i < soLuong; i++) maTho.push(sinhMaDuPhong());
+
+  await xoaMoiMaDuPhong(userId);
+  for (const ma of maTho) {
+    await db.insert(backupCodes).values({
+      userId,
+      code: await bamMaDuPhong(ma),
+      isUsed: false,
+    });
+  }
+  return maTho;
 }
 
 export async function verifyBackupCode(userId: number, code: string) {

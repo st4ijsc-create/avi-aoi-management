@@ -7,7 +7,7 @@ import speakeasy from "speakeasy";
 // ở file này nay **chỉ** còn dùng để **SINH** secret (`generateSecret`), không để verify.
 import { verifyTotpOnce } from "../_core/totpOnce";
 import QRCode from "qrcode";
-import { getDb, get2FAStatus, setup2FA, disable2FA, xoaMoiMaDuPhong, getUserById, layBiMatNguoiDung } from "../db";
+import { getDb, get2FAStatus, setup2FA, disable2FA, xoaMoiMaDuPhong, quayVongMaDuPhong, getUserById, layBiMatNguoiDung } from "../db";
 // ★ Pha 8 — siết `disable` cho khớp tuyến song song `user.disable2FA`: đòi MẬT KHẨU + một yếu tố
 //   2FA. Cùng vị từ, cùng NGƯỜI ĐỌC bí mật với tuyến kia (xem khối lý lẽ ở `disable`).
 import bcrypt from "bcryptjs";
@@ -141,26 +141,8 @@ export const twoFactorRouter = router({
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twoFactorCode" }, "Invalid verification code. Please try again.");
       }
 
-      // Generate backup codes
-      const plainBackupCodes: string[] = [];
-      for (let i = 0; i < 10; i++) {
-        plainBackupCodes.push(sinhMaDuPhong());
-      }
-
-      // Delete any existing backup codes
-      await db
-        .delete(backupCodes)
-        .where(eq(backupCodes.userId, ctx.user.id));
-
-      // Store hashed backup codes
-      for (const code of plainBackupCodes) {
-        const hashedCode = await bamMaDuPhong(code);
-        await db.insert(backupCodes).values({
-          userId: ctx.user.id,
-          code: hashedCode,
-          isUsed: false,
-        });
-      }
+      // ★ Pha 9 A4 — qua NGƯỜI CẤP DUY NHẤT (`db.quayVongMaDuPhong`): sinh + dọn bộ cũ + băm + ghi.
+      const plainBackupCodes = await quayVongMaDuPhong(ctx.user.id);
 
       // Enable 2FA
       await db
@@ -401,26 +383,8 @@ export const twoFactorRouter = router({
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twoFactorCode" }, "Invalid verification code");
       }
 
-      // Generate new backup codes
-      const plainBackupCodes: string[] = [];
-      for (let i = 0; i < 10; i++) {
-        plainBackupCodes.push(sinhMaDuPhong());
-      }
-
-      // Delete existing backup codes
-      await db
-        .delete(backupCodes)
-        .where(eq(backupCodes.userId, ctx.user.id));
-
-      // Store new hashed backup codes
-      for (const code of plainBackupCodes) {
-        const hashedCode = await bamMaDuPhong(code);
-        await db.insert(backupCodes).values({
-          userId: ctx.user.id,
-          code: hashedCode,
-          isUsed: false,
-        });
-      }
+      // ★ Pha 9 A4 — qua NGƯỜI CẤP DUY NHẤT (cùng chủ với `enable` và `user.verify2FA`).
+      const plainBackupCodes = await quayVongMaDuPhong(ctx.user.id);
 
       return {
         success: true,

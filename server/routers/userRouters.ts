@@ -289,11 +289,31 @@ export const userRouter = router({
     }),
 
   // 2FA Verify and Enable
+  /**
+   * ★★★ Pha 9 nhóm A · **A4 — TUYẾN NÀY BẬT 2FA MÀ KHÔNG CẤP MÃ DỰ PHÒNG NÀO.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ CẶP BẤT ĐỒNG THỨ NĂM CỦA CÙNG MỘT HỌ — VÀ NỬA CLIENT MỚI LÀ CHỖ NGUY HIỂM
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Tuyến SONG SONG `twoFactor.enable` cấp **10** mã dự phòng và trả về cho client. Tuyến này
+   * trước bản vá gọi `enable2FA()` rồi **DỪNG** ⇒ người bật 2FA qua màn **Hồ sơ** có **0 mã**:
+   * mất điện thoại là **mất tài khoản**, không đường nào vào lại.
+   *
+   * ⚠⚠ **VÌ SAO KHÔNG VÁ ĐƯỢC BẰNG MỘT DÒNG Ở MÁY CHỦ** — `hoTuyenSongSong.test.ts` đã khai đúng
+   *    lý do này khi miễn trừ cặp ấy: `Profile.tsx` **không có màn hiển thị mã dự phòng**, nên cấp
+   *    mã rồi **không hiện** còn **tệ hơn** không cấp — người dùng tưởng mình có lưới an toàn, và
+   *    cái lưới ấy là 10 chuỗi không ai từng đọc. ⇒ Bản vá **PHẢI** gồm cả nửa client, và nó có:
+   *    `Profile.tsx` nay hiện bộ mã **một lần** sau khi bật, kèm nút sao chép/tải, và chỉ đóng
+   *    được sau khi người dùng xác nhận đã lưu.
+   *
+   * ⚠ Lượt cấp đi qua `db.quayVongMaDuPhong` — NGƯỜI CẤP DUY NHẤT, dùng chung với `twoFactor.enable`
+   *   và `twoFactor.regenerateBackupCodes`. Chép bản sao thứ ba vào đây là đúng cơ chế đã đẻ ra lỗ.
+   */
   verify2FA: protectedProcedure
     .input(z.object({
       token: z.string().length(6),
     }))
-    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean }>> => {
+    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean; backupCodes: string[] }>> => {
       // ★★★ Pha 6 Task 6 — MỌI lượt xác minh TOTP đi qua sổ mã đã tiêu (chống phát lại).
       const { verifyTotpOnce } = await import('../_core/totpOnce');
 
@@ -334,7 +354,13 @@ export const userRouter = router({
       // Enable 2FA
       await db.enable2FA(ctx.user.id);
 
-      return { success: true };
+      // ★ Pha 9 A4 — cấp bộ mã dự phòng qua NGƯỜI CẤP DUY NHẤT, và TRẢ VỀ để client hiện đúng một
+      //   lần. ⚠ Thứ tự cố ý: cờ 2FA bật TRƯỚC, mã cấp SAU — nếu lượt cấp hỏng, người dùng vẫn ở
+      //   trạng thái "đã bật" và tự cấp lại được bằng `twoFactor.regenerateBackupCodes`; đảo lại
+      //   thì mã tồn tại cho một tài khoản chưa bật 2FA.
+      const backupCodes = await db.quayVongMaDuPhong(ctx.user.id);
+
+      return { success: true, backupCodes };
     }),
 
   // 2FA Disable

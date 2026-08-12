@@ -225,13 +225,32 @@ describe("★★★ Pha 5/7 Task 8a — ∀ điểm ghi `backup_codes.code` ph�
   });
 
   it("★★★ cầu chì thứ hai — bộ quét THẬT SỰ tìm ra các điểm ghi hợp lệ (không phải quét trượt)", () => {
-    // ⚠ Nếu vị từ `chuoiChamBang` hỏng thì ca trên xanh vì **không thấy gì**. Ca này đo rằng nó
-    //   vẫn nhìn thấy đường ghi thật — bằng cách chạy trên nguồn thật với `NGUOI_BAM` bị đổi tên.
-    const that = join(GOC, "server", "routers", "twoFactorRouter.ts");
-    expect(existsSync(that), "đường ghi thật phải tồn tại").toBe(true);
-    const ma = readFileSync(that, "utf8").replace(/bamMaDuPhong/g, "bamGiaVo");
-    const vp = viPhamTrongNguon("server/routers/twoFactorRouter.ts", ma);
-    expect(vp.length, "đổi tên người băm mà lưới KHÔNG thấy ⇒ bộ quét đang quét trượt").toBeGreaterThanOrEqual(2);
+    /**
+     * ⚠ Nếu vị từ `chuoiChamBang` hỏng thì ca trên xanh vì **không thấy gì**. Ca này đo rằng nó
+     *   vẫn nhìn thấy đường ghi thật — bằng cách chạy trên nguồn thật với `NGUOI_BAM` bị đổi tên.
+     *
+     * ⚠⚠⚠ **PHA 9 A4 — CA NÀY TỪNG GHIM CỨNG `server/routers/twoFactorRouter.ts`, VÀ NÓ ĐÃ ĐỎ VÌ
+     *    ĐÚNG ĐIỀU ẤY.** A4 gộp **hai** lượt ghi viết tại chỗ ở router về **một** chủ
+     *    (`server/db/auth.ts::quayVongMaDuPhong`). Bất biến *"mọi lượt ghi ra từ `bamMaDuPhong`"*
+     *    **mạnh lên**, nhưng cầu chì đo *"file X có ≥2 lượt ghi"* thì **ĐỎ** — một màu đỏ nói về
+     *    **đường dẫn**, không nói về bất biến. Đúng lớp lỗi I-1 (*"chủ ghim cứng một đường dẫn"*).
+     *  ⇒ Nay cầu chì **suy từ ĐĨA**: đổi tên người băm trên **mọi** ứng viên, rồi đòi tổng số điểm
+     *    bị bắt ≥2. Lượt ghi dời sang file thứ N+1 không làm ô này đỏ; **mất** lượt ghi thì có.
+     */
+    const tong = UNG_VIEN.filter((f) => f.duong !== CHU).flatMap((f) =>
+      viPhamTrongNguon(f.duong, readFileSync(f.that, "utf8").replace(/bamMaDuPhong/g, "bamGiaVo")),
+    );
+    /**
+     * ⚠ SÀN LÀ **1**, KHÔNG PHẢI 2 — và con số ấy được ĐỌC RA, không phải nới cho vừa: sau A4 kho mã
+     *   chỉ CÒN **một** điểm ghi thật (`db.quayVongMaDuPhong`), vì hai bản sao ở `twoFactorRouter`
+     *   đã gộp về đó. Sàn 2 cũ chính là *"số bản sao"*, tức nó **thưởng cho sự trùng lặp**.
+     *   Sức mạnh của lưới không nằm ở sàn này mà ở M3/M3b (mã dựng sẵn, đáp số biết trước) — ô này
+     *   chỉ trả lời *"bộ dò có nhìn thấy KHO MÃ THẬT không"*, và 1 > 0 là đủ cho câu ấy.
+     */
+    expect(
+      tong.length,
+      "đổi tên người băm trên TOÀN BỘ ứng viên mà lưới KHÔNG thấy điểm ghi nào ⇒ bộ quét đang quét trượt",
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it("★★★ M3 — một đường ghi plaintext trong **FILE MỚI CHƯA TỒN TẠI** vẫn nằm trong lượng từ", () => {

@@ -37,6 +37,16 @@ export default function Profile() {
   const [disablePassword, setDisablePassword] = useState("");
   const [setupData, setSetupData] = useState<{ secret: string; qrCode: string } | null>(null);
   const [secretCopied, setSecretCopied] = useState(false);
+  /**
+   * ★★★ Pha 9 nhóm A · **A4 — NỬA CLIENT CỦA BẢN VÁ, VÀ NÓ LÀ NỬA BẮT BUỘC.**
+   * Máy chủ nay cấp 10 mã dự phòng khi bật 2FA qua màn này (trước bản vá: **0 mã** ⇒ mất điện
+   * thoại là mất tài khoản). Nhưng **cấp mã rồi không hiện còn tệ hơn không cấp**: người dùng
+   * tưởng mình có lưới an toàn, còn lưới ấy là 10 chuỗi không ai từng đọc. Đó chính là lý do
+   * `hoTuyenSongSong.test.ts` từng **miễn trừ** cặp này thay vì đòi vá một nửa.
+   */
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [showBackupCodes, setShowBackupCodes] = useState(false);
+  const [backupCodesCopied, setBackupCodesCopied] = useState(false);
   
   // ★★★ Pha 7 Task 8a — trang này KHÔNG còn đẻ mã dự phòng.
   // `user.generateBackupCodes` ghi PLAINTEXT (mã đẻ ra không xác minh được) và không đòi TOTP;
@@ -69,11 +79,16 @@ export default function Profile() {
   });
 
   const verify2FAMutation = trpc.user.verify2FA.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success(t('auth.twoFAVerifySuccess'));
       setShow2FASetup(false);
       setSetupData(null);
       setOtpToken("");
+      // ★ Pha 9 A4 — hiện bộ mã dự phòng ĐÚNG MỘT LẦN. Máy chủ không bao giờ trả lại chúng nữa
+      //   (chỉ giữ bản băm), nên hộp thoại này là cơ hội DUY NHẤT người dùng đọc được.
+      setBackupCodes(data.backupCodes ?? []);
+      setBackupCodesCopied(false);
+      if ((data.backupCodes ?? []).length > 0) setShowBackupCodes(true);
       refetch2FAStatus();
     },
     onError: (error: any) => {
@@ -117,6 +132,12 @@ export default function Profile() {
       return;
     }
     disable2FAMutation.mutate({ token: otpToken, password: disablePassword || "oauth" });
+  };
+
+  const copyBackupCodes = () => {
+    navigator.clipboard.writeText(backupCodes.join("\n"));
+    setBackupCodesCopied(true);
+    toast.success(t('common.copied'));
   };
 
   const copySecret = () => {
@@ -496,6 +517,51 @@ export default function Profile() {
               disabled={!setupData || otpToken.length !== 6 || verify2FAMutation.isPending}
             >
               {verify2FAMutation.isPending ? t('auth.verifying') : t('auth.confirmAndEnable2FA')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/*
+        ★★★ Pha 9 A4 — HỘP THOẠI MÃ DỰ PHÒNG. Cố ý **không** đóng được bằng nút X / bấm ra ngoài
+        khi chưa xác nhận: đây là lần hiển thị DUY NHẤT, đóng nhầm là mất bộ mã vĩnh viễn.
+      */}
+      <Dialog open={showBackupCodes} onOpenChange={(open) => { if (!open) setShowBackupCodes(false); }}>
+        <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" />
+              {t('auth.backupCodes')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('auth.backupCodesDescription')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>{t('auth.backupCodesViewOnce')}</AlertDescription>
+          </Alert>
+
+          <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted/50 p-4">
+            {backupCodes.map((code) => (
+              <code key={code} className="font-mono text-sm tracking-wider text-center py-1">
+                {code}
+              </code>
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={copyBackupCodes}>
+              {backupCodesCopied ? (
+                <CheckCircle2 className="h-4 w-4 mr-2 text-success" />
+              ) : (
+                <Copy className="h-4 w-4 mr-2" />
+              )}
+              {backupCodesCopied ? t('common.copied') : t('common.copy')}
+            </Button>
+            <Button onClick={() => setShowBackupCodes(false)} disabled={!backupCodesCopied}>
+              {t('common.done')}
             </Button>
           </DialogFooter>
         </DialogContent>
