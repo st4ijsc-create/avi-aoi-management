@@ -7,7 +7,7 @@ import speakeasy from "speakeasy";
 // ở file này nay **chỉ** còn dùng để **SINH** secret (`generateSecret`), không để verify.
 import { verifyTotpOnce } from "../_core/totpOnce";
 import QRCode from "qrcode";
-import { getDb, get2FAStatus, setup2FA, disable2FA, xoaMoiMaDuPhong, quayVongMaDuPhong, getUserById, layBiMatNguoiDung } from "../db";
+import { getDb, get2FAStatus, setup2FA, disable2FA, xoaMoiMaDuPhong, quayVongMaDuPhong, verifyBackupCode, getUserById, layBiMatNguoiDung } from "../db";
 // ★ Pha 8 — siết `disable` cho khớp tuyến song song `user.disable2FA`: đòi MẬT KHẨU + một yếu tố
 //   2FA. Cùng vị từ, cùng NGƯỜI ĐỌC bí mật với tuyến kia (xem khối lý lẽ ở `disable`).
 import bcrypt from "bcryptjs";
@@ -20,7 +20,7 @@ import { eq, and } from "drizzle-orm";
 // năm bản sao của một vị từ là năm chỗ luật có thể trôi khỏi nhau.
 // ★★★ Pha 7 Task 8a — sinh/băm/đối chiếu mã dự phòng có **MỘT chủ**. Ba hàm cục bộ ở đây trước
 // bản vá là ba bản sao của ba vị từ đã có chủ; bản sao thứ hai của một vị từ là chỗ luật trôi đi.
-import { sinhMaDuPhong, bamMaDuPhong, khopMaDuPhong } from "../_core/backupCodeSecret";
+
 import type { KhongMangBiMat } from "../_core/publicUser";
 
 export const twoFactorRouter = router({
@@ -241,28 +241,10 @@ export const twoFactorRouter = router({
       }
 
       // If not TOTP, try backup code
+      // ★ Pha 9 A5 — qua NGƯỜI TIÊU DUY NHẤT (`db.verifyBackupCode`): tìm mã khớp **và** đánh dấu
+      //   đã dùng. Trước bản vá đây là một trong BA bản sao viết tại chỗ của cùng một thủ tục.
       if (!verified) {
-        const codes = await db
-          .select()
-          .from(backupCodes)
-          .where(
-            and(
-              eq(backupCodes.userId, ctx.user.id),
-              eq(backupCodes.isUsed, false)
-            )
-          );
-
-        for (const backupCode of codes) {
-          if (await khopMaDuPhong(input.code.toUpperCase(), backupCode.code)) {
-            verified = true;
-            // Mark backup code as used
-            await db
-              .update(backupCodes)
-              .set({ isUsed: true, usedAt: new Date() })
-              .where(eq(backupCodes.id, backupCode.id));
-            break;
-          }
-        }
+        verified = await verifyBackupCode(ctx.user.id, input.code);
       }
 
       if (!verified) {
@@ -314,29 +296,9 @@ export const twoFactorRouter = router({
         })).hopLe;
       }
 
-      // Try backup code
+      // Try backup code — ★ Pha 9 A5: cùng NGƯỜI TIÊU DUY NHẤT với `disable` và tuyến REST.
       if (!verified) {
-        const codes = await db
-          .select()
-          .from(backupCodes)
-          .where(
-            and(
-              eq(backupCodes.userId, ctx.user.id),
-              eq(backupCodes.isUsed, false)
-            )
-          );
-
-        for (const backupCode of codes) {
-          if (await khopMaDuPhong(input.code.toUpperCase(), backupCode.code)) {
-            verified = true;
-            // Mark backup code as used
-            await db
-              .update(backupCodes)
-              .set({ isUsed: true, usedAt: new Date() })
-              .where(eq(backupCodes.id, backupCode.id));
-            break;
-          }
-        }
+        verified = await verifyBackupCode(ctx.user.id, input.code);
       }
 
       if (!verified) {

@@ -507,6 +507,31 @@ export async function quayVongMaDuPhong(userId: number, soLuong = SO_MA_DU_PHONG
   return maTho;
 }
 
+/**
+ * ★★★ Pha 9 nhóm A · **A5 — NGƯỜI TIÊU DUY NHẤT của `backup_codes`.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ PHÉP ĐO TRƯỚC: BRIEF NÓI "HAI NGƯỜI GỌI CHO MỘT LUẬT ĐỐI CHIẾU" — **KHÔNG ĐÚNG HẲN**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Luật **đối chiếu** (chuẩn hoá HOA + `bcrypt.compare`) đã có **MỘT chủ** từ Pha 7 Task 8a:
+ * `_core/backupCodeSecret.ts::khopMaDuPhong`. Hàm dưới đây gọi đúng chủ ấy, không giữ bản sao.
+ *
+ * Thứ **thật sự** bị nhân bản là cả một **THỦ TỤC**: *"đọc mọi mã chưa dùng của người này → tìm mã
+ * khớp → ĐÁNH DẤU ĐÃ DÙNG"*. Đo được **BA** bản sao:
+ *   · `server/db/auth.ts::verifyBackupCode`        (dùng bởi REST `POST /api/auth/verify-2fa`)
+ *   · `server/routers/twoFactorRouter.ts::disable` (vòng lặp viết tại chỗ)
+ *   · `server/routers/twoFactorRouter.ts::verify`  (vòng lặp viết tại chỗ)
+ *
+ * ⚠⚠ VÌ SAO BA BẢN SAO CỦA **LƯỢT TIÊU** NGUY HƠN BA BẢN SAO CỦA **LƯỢT SO**: phần dễ trôi không
+ *    phải phép so, mà là *"đã khớp thì phải TIÊU"*. Một bản sao quên `isUsed = true` biến mã dự
+ *    phòng từ **dùng-một-lần** thành **mật khẩu vĩnh viễn**, và `tsc` không nói gì cả. Đó chính là
+ *    lớp lỗi *"hai bản sao dưới một bất biến, bản yếu hơn quyết định"* đã đẻ ba Critical.
+ *
+ * ⚠ Chủ này **không ghim đường dẫn nào** (bài học `xacThucNoiBo` / I-1): nó nhận `userId` + mã thô,
+ *   nên một tuyến ở file chưa tồn tại dùng được ngay.
+ *
+ * @returns `true` **và đã tiêu mã** khi khớp; `false` khi không mã nào khớp (không đổi trạng thái).
+ */
 export async function verifyBackupCode(userId: number, code: string) {
   const db = await getDb();
   if (!db) return false;

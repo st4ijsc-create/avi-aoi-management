@@ -18,7 +18,7 @@
  * **Phép đếm ĐẢO LƯỢNG TỪ hôm nay (bộ suy `./hoXacThucScan`, đọc từ đĩa) — sau Pha 9 A4:**
  *   · **38** đơn vị xử lý (tRPC + REST) chạm tài nguyên xác thực
  *   · **32** cặp song song (Pha 8: 29) — **gấp mười sáu** con số "hai cặp" mà phép liệt kê tay khai
- *   · **15** cặp KHỚP · **17** cặp bất đồng, được **khai tên từng cái** ở `MIEN_TRU` dưới đây
+ *   · **16** cặp KHỚP · **16** cặp bất đồng, được **khai tên từng cái** ở `MIEN_TRU` dưới đây
  *   · **0** đơn vị trả nguyên hàng (trước Task 5: **1** — `user.getSessions`)
  *
  * **Ba bất đồng NGUY HIỂM đã vá trong chính lượt này** (mỗi cái một commit):
@@ -52,7 +52,8 @@
  *     MANG cùng bộ phép kiểm không"*, **không** trả lời *"phép kiểm ấy có chạy trên mọi nhánh
  *     không"*. §8 là nửa **HÀNH VI**, và nó chỉ phủ đúng một trục (`user.getSessions`).
  *  2. Cột `users` **ngoài** nhánh (b) của bộ suy không được canh — trục hồ sơ/phân quyền.
- *  3. SQL thô trên bảng xác thực không được nhận diện (hôm nay: 0 điểm).
+ *  3. SQL thô trên bảng xác thực không được nhận diện (hôm nay: 0 điểm). ⚠ Pha 9 A3 mở lượng từ
+ *     cho SQL thô ở trục `user_secrets`; trục NÀY (`hoXacThucScan`) thì **CHƯA** — nợ còn nguyên.
  *  4. ~~Còn một bất đồng NGUY HIỂM CHƯA VÁ~~ — **ĐÃ VÁ ở Pha 8** (chủ dự án duyệt 2026-08-10).
  *     `twoFactor.disable` nay **ĐÒI MẬT KHẨU** (`input` thêm `password`, `TwoFactorSetup.tsx` sửa
  *     theo) ⇒ tắt 2FA **luôn** cần mật khẩu **và** một yếu tố 2FA, đi tuyến nào cũng vậy.
@@ -70,6 +71,16 @@
  * ⇒ Cặp ở lại tập miễn trừ với **lý do MỚI và chữ ký MỚI**: `SO_MIEN_TRU` giữ **15**.
  * ⚠ Đây là *"lời khai đổi NGHĨA mà số không đổi"* — nên chữ ký được ghim, và ô §2 dưới đây ĐỎ ngay
  *   lượt vá đầu tiên (đã đo: **5** cặp lệch chữ ký, không phải 1).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ PHA 9 — CON SỐ ẤY ĐI **HAI CHIỀU**, VÀ CẢ HAI LẦN ĐỀU KHÁC DỰ ĐOÁN
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *   · **A4** (cấp mã dự phòng ở `user.verify2FA`): kỳ vọng GIẢM ⇒ đo được **15 → 17**. Vá cho khớp
+ *     làm `verify2FA` **chạm thêm một bảng**, nên nó ghép cặp với ba đơn vị mới (cặp 29 → 32).
+ *   · **A5** (hợp nhất người TIÊU mã dự phòng): **17 → 16**, và **năm** cặp khác đổi CHỮ KÝ
+ *     (`A+dung:verifyBackupCode` xuất hiện ở chỗ trước đây là vòng lặp viết tại chỗ).
+ * ⇒ Luật rút ra: *"vá cho khớp"* đổi **HÌNH DẠNG** của tập cặp, không chỉ kích thước.
+ *   **Đừng đoán `SO_MIEN_TRU` — để cổng đỏ rồi đọc số thật.** (Đã sai 3/3 lần đoán.)
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { fileURLToPath } from "node:url";
@@ -99,7 +110,7 @@ const DON_VI = quetDonViXuLy(GOC, TAI_NGUYEN, BAN_DO);
 const CAP = capSongSong(DON_VI);
 
 /**
- * ★★★ **TẬP MIỄN TRỪ — 15 cặp, mỗi cặp một lý do MỘT DÒNG và một CHỮ KÝ CHÊNH LỆCH chính xác.**
+ * ★★★ **TẬP MIỄN TRỪ — 16 cặp, mỗi cặp một lý do MỘT DÒNG và một CHỮ KÝ CHÊNH LỆCH chính xác.**
  *
  * Đọc chữ ký: `A+x` = **chỉ** bên A (tên đứng trước trong khoá) có `x`.
  *   · `o:<cột>`      — một chối từ mà điều kiện chạm cột ấy
@@ -110,12 +121,14 @@ const MIEN_TRU: Readonly<Record<string, { lyDo: string; lech: readonly string[] 
   /* ── Trục TIÊU mã dự phòng ─────────────────────────────────────────────────────────────── */
   "server/_core/oauth.ts#/api/auth/verify-2fa | server/routers/twoFactorRouter.ts#disable": {
     lyDo: "Hai luồng khác nhau: bước-2 ĐĂNG NHẬP (chưa có phiên, đã qua bước-mật-khẩu nên KHÔNG đòi lại, có vé + ngân sách đoán) vs TẮT 2FA trong phiên (Pha 8: nay ĐÒI LẠI mật khẩu).",
-    lech: ["A+dung:verifyBackupCode", "B+backupCodes:delete", "B+dung:compare", "B+o:passwordHash", "B+userSecrets.twoFactorSecret=null", "B+users.twoFactorEnabled=false"],
+    lech: ["B+backupCodes:delete", "B+dung:compare", "B+o:passwordHash", "B+userSecrets.twoFactorSecret=null", "B+users.twoFactorEnabled=false"],
   },
-  "server/_core/oauth.ts#/api/auth/verify-2fa | server/routers/twoFactorRouter.ts#verify": {
-    lyDo: "CÙNG một luật đối chiếu mã dự phòng, HAI người gọi: REST qua `db.verifyBackupCode`, tRPC qua `khopMaDuPhong`. Nợ MỚI: hợp nhất về một chủ.",
-    lech: ["A+dung:verifyBackupCode"],
-  },
+  /* ── ★★★ Pha 9 A5 — cặp `/api/auth/verify-2fa ≡ twoFactor.verify` ĐÃ RỜI TẬP NÀY: nay **KHỚP**
+   *    (chữ ký rỗng). Nợ *"hợp nhất về một chủ"* nêu ở lời khai cũ đã trả: cả hai đi qua
+   *    `db.verifyBackupCode` — NGƯỜI TIÊU DUY NHẤT.
+   *    ⚠ Chữ ký của **năm** cặp khác đổi theo (`A+dung:verifyBackupCode` xuất hiện ở chỗ trước đây
+   *      là vòng lặp viết tại chỗ). Đó là *"lời khai đổi NGHĨA"*, và chúng được cập nhật bằng số
+   *      ĐỌC TỪ BỘ SUY, không phải số đoán. ─────────────────────────────────────────────────── */
   "server/routers/twoFactorRouter.ts#disable | server/routers/twoFactorRouter.ts#verify": {
     lyDo: "`verify` chỉ XÁC MINH (không đổi trạng thái); `disable` xác minh RỒI tắt 2FA và dọn vật liệu — nên Pha 8 buộc nó đòi thêm MẬT KHẨU, còn `verify` thì không.",
     lech: ["A+backupCodes:delete", "A+dung:compare", "A+o:passwordHash", "A+userSecrets.twoFactorSecret=null", "A+users.twoFactorEnabled=false"],
@@ -124,11 +137,11 @@ const MIEN_TRU: Readonly<Record<string, { lyDo: string; lech: readonly string[] 
   /* ── Trục SINH/DỌN mã dự phòng ─────────────────────────────────────────────────────────── */
   "server/routers/twoFactorRouter.ts#disable | server/routers/twoFactorRouter.ts#enable": {
     lyDo: "Hai HƯỚNG ngược nhau của cùng một công tắc: bật 2FA (cấp mã mới) vs tắt 2FA (thu mã về, và Pha 8 buộc đòi MẬT KHẨU vì đây là hướng HẠ bảo vệ).",
-    lech: ["A+backupCodes.isUsed=true", "A+backupCodes.usedAt=*", "A+dung:compare", "A+o:passwordHash", "A+userSecrets.twoFactorSecret=null", "A+users.twoFactorEnabled=false", "B+backupCodes:insert", "B+users.twoFactorEnabled=true"],
+    lech: ["A+backupCodes.isUsed=true", "A+backupCodes.usedAt=*", "A+dung:compare", "A+dung:verifyBackupCode", "A+o:passwordHash", "A+userSecrets.twoFactorSecret=null", "A+users.twoFactorEnabled=false", "B+backupCodes:insert", "B+users.twoFactorEnabled=true"],
   },
   "server/routers/twoFactorRouter.ts#disable | server/routers/twoFactorRouter.ts#regenerateBackupCodes": {
     lyDo: "Tắt 2FA (hướng HẠ bảo vệ ⇒ Pha 8 đòi MẬT KHẨU) vs cấp lại mã dự phòng khi 2FA vẫn bật — hai thao tác người dùng khác nhau.",
-    lech: ["A+backupCodes.isUsed=true", "A+backupCodes.usedAt=*", "A+dung:compare", "A+o:passwordHash", "A+userSecrets.twoFactorSecret=null", "A+users.twoFactorEnabled=false", "B+backupCodes:insert"],
+    lech: ["A+backupCodes.isUsed=true", "A+backupCodes.usedAt=*", "A+dung:compare", "A+dung:verifyBackupCode", "A+o:passwordHash", "A+userSecrets.twoFactorSecret=null", "A+users.twoFactorEnabled=false", "B+backupCodes:insert"],
   },
   "server/routers/twoFactorRouter.ts#enable | server/routers/twoFactorRouter.ts#regenerateBackupCodes": {
     lyDo: "`enable` còn BẬT cờ 2FA (lần đầu); `regenerate` chạy khi cờ đã bật nên không chạm cờ.",
@@ -153,7 +166,7 @@ const MIEN_TRU: Readonly<Record<string, { lyDo: string; lech: readonly string[] 
    *    nên nó ghép cặp với ba đơn vị mà trước đó nó không ghép (tổng cặp 29 → 32). ─────────────── */
   "server/routers/twoFactorRouter.ts#disable | server/routers/userRouters.ts#verify2FA": {
     lyDo: "Hai HƯỚNG ngược nhau của cùng công tắc: TẮT 2FA (thu mã về, đòi MẬT KHẨU vì là hướng HẠ bảo vệ) vs BẬT 2FA (cấp mã mới).",
-    lech: ["A+backupCodes.isUsed=true", "A+backupCodes.usedAt=*", "A+dung:compare", "A+o:passwordHash", "A+userSecrets.twoFactorSecret=null", "A+users.twoFactorEnabled=false", "B+backupCodes:insert", "B+users.twoFactorEnabled=true"],
+    lech: ["A+backupCodes.isUsed=true", "A+backupCodes.usedAt=*", "A+dung:compare", "A+dung:verifyBackupCode", "A+o:passwordHash", "A+userSecrets.twoFactorSecret=null", "A+users.twoFactorEnabled=false", "B+backupCodes:insert", "B+users.twoFactorEnabled=true"],
   },
   "server/routers/twoFactorRouter.ts#regenerateBackupCodes | server/routers/userRouters.ts#verify2FA": {
     lyDo: "Cùng một lượt CẤP mã (nay cùng NGƯỜI CẤP DUY NHẤT `db.quayVongMaDuPhong`); khác đúng một điểm: `verify2FA` còn BẬT cờ 2FA lần đầu, `regenerate` chạy khi cờ đã bật.",
@@ -167,7 +180,7 @@ const MIEN_TRU: Readonly<Record<string, { lyDo: string; lech: readonly string[] 
   /* ── Trục TẮT 2FA ──────────────────────────────────────────────────────────────────────── */
   "server/routers/twoFactorRouter.ts#disable | server/routers/userRouters.ts#disable2FA": {
     lyDo: "★ Pha 8 (chủ dự án duyệt 2026-08-10) — nửa NGUY HIỂM đã VÁ: `twoFactor.disable` nay ĐÒI MẬT KHẨU, nên `B+dung:compare`/`B+o:passwordHash` đã BIẾN MẤT khỏi chữ ký. Phần còn lại là khác biệt CÓ CHỦ ĐÍCH: tuyến này CÒN nhận mã dự phòng (và TIÊU nó) để người mất điện thoại vẫn tắt được 2FA — chủ dự án chọn SIẾT, không chọn XOÁ TUYẾN.",
-    lech: ["A+backupCodes.isUsed=true", "A+backupCodes.usedAt=*"],
+    lech: ["A+backupCodes.isUsed=true", "A+backupCodes.usedAt=*", "A+dung:verifyBackupCode"],
   },
 
   /* ── Trục GHI mật khẩu ─────────────────────────────────────────────────────────────────── */
@@ -207,7 +220,7 @@ const MIEN_TRU: Readonly<Record<string, { lyDo: string; lech: readonly string[] 
  * ⇒ Bài học đã lặp lại đủ để thành luật: *"vá cho khớp"* làm tập cặp **đổi hình dạng**, không chỉ
  *   đổi kích thước. **Đừng đoán con số này — để cổng đỏ rồi đọc số thật.**
  */
-const SO_MIEN_TRU = 17;
+const SO_MIEN_TRU = 16;
 
 /** So hai chữ ký chênh lệch — thứ tự đã chuẩn hoá ở `capSongSong`. */
 function bang(a: readonly string[], b: readonly string[]): boolean {
