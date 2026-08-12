@@ -119,16 +119,25 @@ public sealed class TestHarnessIsolationTests
     // therefore cannot be killed by a mutation (measured: dropping the attribute compiles and every test
     // passes). Named so the next person starts from the set.
     //
-    // 🔴 AND THE RACE HALF HAS NOW BEEN SEEN TO FIRE, which is worth more than the argument that it could.
-    // Recorded here, in the block that OWNS this item, because it was found during K-1's mutation round and
-    // a finding that lives only in a report is a finding the next person does not have (branch review,
-    // Minor 11). K-1's M2 mutation put a CredentialStore.Save behind a momentary
-    // `SetEnvironmentVariable(ST4I_CREDS_DIR, null)` in one class. The first run of the suite reported TWO
-    // failures; the immediate repeat, on the same binary, reported ONE — the guard alone. The second
-    // failure did not reproduce and its name was not captured. That is exactly the shape this item
-    // describes: a process-wide variable nulled by one class while another reads it, visible only as a
-    // scheduling-dependent flake. It is evidence the hazard is live, NOT a measurement of which class lost
-    // the race — nobody has that, and the honest gap is why this stays booked rather than closed.
+    // 🔴 AND A WITHDRAWN CLAIM, recorded here because the block that owns an item is where its evidence
+    // belongs, and because withdrawing is the finding (branch review, Minor 11 asked for the evidence to be
+    // moved here; measuring it is what killed it).
+    //
+    // K-1's M2 mutation put a CredentialStore.Save behind a momentary
+    // `SetEnvironmentVariable(ST4I_CREDS_DIR, null)`. Its first run reported TWO failures, the immediate
+    // repeat on the same binary reported ONE, and the extra one was not captured. I wrote that up as this
+    // item firing — a process-wide variable nulled by one class while another reads it.
+    //
+    // THAT WAS WRONG, and the next mutation in the same round falsified it. M3 touches NO environment
+    // variable at all (it seeds a phantom name into the in-memory baseline) and produced the SAME shape:
+    // two failures, the guard plus one more. Captured this time, from the trx:
+    // ConnectorEndpointsMachineClaimTests.ConcurrentSavesForOneMachine_LeaveNoRowForAnyConnectorThatFailedToRegister
+    // — a concurrency test with no creds involvement, which passes 1335/1335 in every clean gate run.
+    //
+    // So the 2-vs-1 is an unrelated flake under mutation-round load, and it is NOT evidence for the RACE
+    // half. I attributed it to the mechanism I happened to be writing about, which is §8.1(b) exactly: the
+    // least-scanned artifact in a change is the author's own justification for it. The RACE half stays
+    // booked on the argument above and on NO measurement — which is the honest state of it.
     // ─────────────────────────────────────────────────────────────────────────────────────────────
 
     private static string MachineSimulatorRoot()

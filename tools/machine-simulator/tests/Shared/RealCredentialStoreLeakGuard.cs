@@ -85,14 +85,18 @@ namespace St4i.TestHygiene;
 /// <c>NotificationDocumentationTests</c> already use, and a scan that stops matching FAILS rather than
 /// falls back.</para>
 ///
-/// <para>🔴 <b>BOOKED, NOT BUILT — the anchor that would close the two holes above.</b> Both "one process,
-/// not the run" and "a window, not the whole process" have the same fix and it is not reachable from
-/// inside a test: snapshot the real creds root in <c>scripts/verify-suites.sh</c> before the suite loop
-/// and compare after it, which brackets all five processes end to end. It is deliberately NOT built here.
-/// It needs its own decision, because a gate that goes red over a MACHINE-WIDE directory can be made
-/// green by deleting the evidence base, and that is the failure this whole guard is shaped to avoid — the
-/// remedy has to be designed before the trigger is installed. Named so the next person starts from the
-/// set rather than rediscovering it.</para>
+/// <para>🔴 <b>THE ANCHOR THAT CLOSES THE TWO HOLES ABOVE IS NOW BUILT — in
+/// <c>scripts/verify-suites.sh</c>, not here.</b> Both "one process, not the run" and "a window, not the
+/// whole process" have the same fix, and it is not reachable from inside a test: the gate snapshots this
+/// same directory before the build and compares after everything, bracketing all five processes end to
+/// end. <b>This paragraph said "deliberately NOT built" until the closing re-read caught it in the very
+/// commit that built it</b> — §8.1(h2), and the third time that rule has fired on this task's own diff.
+/// <para>The two instruments are complementary and neither replaces the other: <b>the gate bracket is
+/// complete but anonymous</b> (it measures THE MACHINE over the window — the WPF shell or edge service
+/// running alongside reddens it too), while <b>this one is partial but attributes</b>, naming the process
+/// it saw. A red gate is triaged by reading them together.</para>
+/// <para>What is still NOT closed, and cannot be by any pair of snapshots: a file that appears and
+/// VANISHES inside the bracket cancels out. Measured, not assumed — see the bracket's own comment.</para></para>
 /// </summary>
 internal static class RealCredentialStoreWatch
 {
