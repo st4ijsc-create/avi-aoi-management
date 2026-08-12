@@ -2195,7 +2195,32 @@ EXPECT_EDGESERVICE=51
 # 🔴 Task K-1 raises this 1334 -> 1335 (+1): the one linked hygiene [Fact] every suite gets. Full
 # justification beside EXPECT_ABSTRACTIONS at the top of this file. K-1 changes no src/ file, so every
 # other number in this script is unchanged for it.
-EXPECT_ENGINEAPI=1335
+#
+# 🔴 TASK J-2 raises this 1335 -> 1337 (+2), counted from the runner. ONE existing file gains two [Fact]s
+# (FleetHostGateCommitCompletionTests.cs — the S-set witness file); nothing is rewritten, split or deleted.
+#   AStartThatThrowsWhileInstallingSlots_LeavesSlotsTheHaltPathCanStillTearDown        +1
+#       S3's residual, consequence (2): a StartLocked that throws part-way through its slot loop left
+#       `_slots` populated with `_running == false`, and StopLocked's `if (!_running) return default;`
+#       refused to tear those LIVE slots down — so Estop could not halt them and nothing else ever could.
+#       Asserts the divergence first (IsRunning false while GetDriverHealth lists the installed slot, driver
+#       undisposed) and then that a subsequent Estop releases it exactly once. Reverting StopLocked's guard
+#       to the disjunct makes this red.
+#   AStartThatThrowsWhileInstallingSlots_StillDisposesTheConnectorDriverItOrphaned      +1
+#       S3's residual, consequence (1): `orphanedConnectorDrivers` is now allocated by StartLocked's CALLERS
+#       and passed in, so a throw between an orphan's collection and the return can no longer take it out of
+#       scope with its socket open. EXACTLY one disposal, same bar as every other count in that file. Its
+#       second assertion PINS consequence (4) as an open gap — the drivers after the failing index in
+#       `groups` are still never disposed — rather than leaving it to be rediscovered.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are deliberately UNCHANGED,
+# and EXPECT_EDGECORE staying put is evidence rather than convenience: J-2 edits exactly one src file
+# (FleetCore.cs, itself EdgeCore) and every consequence of both changes is observable only through a live
+# FleetHost, which is why both witnesses live here — St4i.EdgeCore.Tests has no live reference to FleetCore
+# at all (measured at J-1b; see §8.1's paired-control rule). EXPECT_CONFORMANCE in particular stays 23: J-2
+# adds no driver and no connector kind, and the shared suite's "FleetCore.StartLocked constructs drivers
+# under the same _gate lock Estop() takes" assertion string is still TRUE — J-2 moves no driver construction
+# and P7 is untouched. EXPECT_WARNINGS stays 116: no new warning (measured on a full -t:Rebuild).
+EXPECT_ENGINEAPI=1337
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
