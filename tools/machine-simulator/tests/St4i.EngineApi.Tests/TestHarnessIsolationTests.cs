@@ -57,30 +57,48 @@ namespace St4i.EngineApi.Tests;
 public sealed class TestHarnessIsolationTests
 {
     // ─────────────────────────────────────────────────────────────────────────────────────────────
-    // 🔴 BOOKED, NOT BUILT — the follow-up this file is the natural home for, recorded here rather than
-    // in a report because this is where the machinery already lives.
+    // 🔴 BOOKED — AND THE CONSEQUENCE HALF IS NOW BUILT (task K-1), in tests/Shared/RealCredentialStoreLeakGuard.cs.
+    // Kept here rather than deleted because the CASE is what the next reader needs, and because two of the
+    // sentences below turned out to be false by the time they were acted on. See §8.1(h): an assertion —
+    // including a SENTENCE — is evidence only for the tree state it was checked against, and this block
+    // was written on a different branch.
     //
-    // THE CASE. A test class can reach a process-wide ST4I_*_DIR through PRODUCT code without naming it:
-    // OnboardingFleetJoinTests reaches ST4I_CREDS_DIR two frames deep (ClaimAsync -> OnboardingService ->
-    // CredentialStore.Save) and mentions nothing. It wrote real DPAPI blobs into a real
-    // %ProgramData%\ST4I\sim\creds for as long as it existed, and every membership sweep on this branch
-    // missed it — four derivations, three of them wrong.
+    // THE CASE, which is unchanged. A test class can reach a process-wide ST4I_*_DIR through PRODUCT code
+    // without naming it. Two measured instances: OnboardingFleetJoinTests reaches ST4I_CREDS_DIR two frames
+    // deep (ClaimAsync -> OnboardingService -> CredentialStore.Save), and StoreAndForwardRestartSurvivalTests
+    // reaches it through FleetHost.UpdateSettings -> CredentialStore.Load/Save. Both wrote real DPAPI blobs
+    // into a real %ProgramData%\ST4I\sim\creds, and every membership sweep on the branch that found the
+    // first missed it — four derivations, three of them wrong.
+    //
+    // 🔴 WHAT WAS ALREADY FALSE WHEN K-1 CHECKED IT, and both errors point the same way — the exemplar was
+    // treated as the scope:
+    //   (1) "OnboardingFleetJoinTests ... mentions nothing" — it does now, and did before K-1 started. Fix
+    //       round 4 gave that class a per-class ST4I_CREDS_DIR override, the collection, and a paragraph
+    //       naming both. The instance was remediated; the class of defect was not.
+    //   (2) "It wrote ... for as long as it existed" reads as the whole story, and it is not. Measured
+    //       2026-08-12 on this machine: the real creds directory holds 31 .bin files, of which 20 are
+    //       SF-RESTART-<8 hex> — a prefix minted at StoreAndForwardRestartSurvivalTests.cs:216 and nowhere
+    //       else in the tree — written 2026-08-01 12:57:39Z–13:04:49Z, i.e. AFTER 208e5ccc (12:32:32Z)
+    //       closed the leak "at its mechanism". A DIFFERENT class, leaking AFTER the mechanism fix, is the
+    //       strongest argument this file can carry for measuring the consequence instead of the naming.
     //
     // WHY A "WHICH CLASSES SET THE VARIABLE" CENSUS IS THE WRONG INSTRUMENT, and this is the decisive
     // part: keyed on the DIRECT half it returns GREEN over exactly the case that was paid for. That is
     // blueprint §8.1(f) with a completeness claim on top — a recogniser whose domain is inherited from
     // where its author was standing.
     //
-    // WHAT IS DECIDABLE TODAY, and would catch a writer at ANY call depth: assert that the REAL
-    // %ProgramData%\ST4I\sim\creds gains no files across a suite run. It measures the consequence rather
-    // than the naming, which is this repository's own idiom (see the D-7a backoff measurement). The
-    // machinery is here and in tests/Shared/TestRunTempRoot.cs.
+    // WHAT IS BUILT: RealCredentialStoreLeakGuardTests asserts that the REAL creds root GAINS NO ENTRY
+    // while a test process runs — a difference across an interval, never "is empty", because that
+    // directory's contents are a deliberately kept evidence base and an emptiness check would be paid for
+    // by deleting it. It is linked into ALL FIVE suites, not just this one, because the property is "no
+    // test process writes there", and this file's own class was only ever an EXAMPLE of it. Read that
+    // file's doc comment for the two holes it does NOT close (one process rather than the run; a window
+    // ending when the fact runs) and for the gate-side anchor that would close both.
     //
-    // WHAT IS NOT: the RACE half — two classes interleaving on one variable — needs a runtime fixture and
-    // its own decision, because a [Collection] omission changes SCHEDULING, not behaviour, and therefore
-    // cannot be killed by a mutation (measured: dropping the attribute compiles and every test passes).
-    //
-    // Neither is built here. Both are named so the next person starts from the set.
+    // WHAT IS STILL NOT BUILT: the RACE half — two classes interleaving on one variable — needs a runtime
+    // fixture and its own decision, because a [Collection] omission changes SCHEDULING, not behaviour, and
+    // therefore cannot be killed by a mutation (measured: dropping the attribute compiles and every test
+    // passes). Named so the next person starts from the set.
     // ─────────────────────────────────────────────────────────────────────────────────────────────
 
     private static string MachineSimulatorRoot()

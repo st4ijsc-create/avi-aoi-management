@@ -53,8 +53,32 @@ set -uo pipefail
 # Expected per-suite totals. Update deliberately when a task adds tests, and state
 # the new numbers in the task report -- a changed total is a fact to be justified,
 # not a number to be pasted over.
-EXPECT_ABSTRACTIONS=151
-EXPECT_CONFORMANCE=22
+# 🔴 TASK K-1 (.superpowers/sdd/creds-leak-guard/task-1-brief.md) raises ALL FIVE totals by exactly +1,
+# counted from the runner. ONE new file, tests/Shared/RealCredentialStoreLeakGuard.cs, LINKED into all five
+# test projects the way tests/Shared/TestRunTempRoot.cs already is — one source file, five assemblies, one
+# [Fact] each:
+#   St4i.Connector.Abstractions.Tests  151 -> 152
+#   St4i.Connector.Conformance.Tests    22 ->  23
+#   St4i.EdgeCore.Tests               1093 -> 1094
+#   St4i.EdgeService.Tests              50 ->  51
+#   St4i.EngineApi.Tests              1334 -> 1335
+# Grand total 2650 -> 2655. Nothing is rewritten, split or deleted, and no src/ file changes at all.
+#
+# WHY ALL FIVE RATHER THAN THE ONE SUITE THE LEAK WAS FOUND IN. The property is "no test PROCESS adds a file
+# to the product's real credential store"; St4i.EngineApi.Tests was the EXAMPLE that paid for it, not the
+# scope (§8.1(a), and §8.1(f) on domains inherited from where the author was standing). The five suites run
+# sequentially in five separate processes, so a guard installed in one measures one process and says nothing
+# about the other four — installing it in one suite and reading it as a repository-wide guarantee is exactly
+# the completeness claim this repo has now paid for five times.
+#
+# 🔴 EXPECT_CONFORMANCE MOVING 22 -> 23 IS NOT THE THING THE "stays 22" NOTES BELOW PROTECT. Those notes
+# assert an invariant about CONTENT — no new driver, no new connector kind, no Check_* added to the shared
+# conformance suite — and K-1 adds none of those: it adds the same hygiene [Fact] every other suite gets,
+# from a linked file outside that project, with no ProjectReference change. The shared suite is untouched.
+#
+# EXPECT_WARNINGS stays 116: the new file adds no warning (measured on a full -t:Rebuild).
+EXPECT_ABSTRACTIONS=152
+EXPECT_CONFORMANCE=23
 # chore/test-hygiene raised this 735 -> 741 (+6): guards proving the test-isolation seam added to
 # CredentialStore, which was the only one of THIRTEEN stores without one — which is exactly why
 # (🔴 Dot F branch review, F-7: this said FOURTEEN while the same file says THIRTEEN in three later
@@ -947,7 +971,9 @@ EXPECT_CONFORMANCE=22
 # The class joins the existing "St4i.EdgeCore.Tests.MachineWideStoreEnv" collection because it mutates a
 # PROCESS-WIDE variable. That collection's NAME says machine-wide and this store is not — recorded in the
 # class comment rather than renamed, since renaming touches three unrelated classes to no measured end.
-EXPECT_EDGECORE=1093
+# 🔴 Task K-1 raises this 1093 -> 1094 (+1): the one linked hygiene [Fact] every suite gets. Full
+# justification beside EXPECT_ABSTRACTIONS at the top of this file.
+EXPECT_EDGECORE=1094
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -1007,7 +1033,9 @@ EXPECT_EDGECORE=1093
 # per-host data-root decision — is now made; the refusal stands because what remains is engineering) and
 # AnOpcUaEntry_IsRefusedByName_… is unchanged and still green: it asserts the refusal and the word
 # "opcua-pki", both of which survive deliberately. A moved count here would mean the reword changed behaviour.
-EXPECT_EDGESERVICE=50
+# 🔴 Task K-1 raises this 50 -> 51 (+1): the one linked hygiene [Fact] every suite gets. Full
+# justification beside EXPECT_ABSTRACTIONS at the top of this file.
+EXPECT_EDGESERVICE=51
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
 #     +24  NotificationEndpointsTests    (new file — the eleven notification routes)
@@ -2146,7 +2174,10 @@ EXPECT_EDGESERVICE=50
 # live here. EXPECT_CONFORMANCE in particular stays 22: no driver, no connector kind, and the shared suite's
 # "FleetCore.StartLocked constructs drivers under the same _gate lock Estop() takes" assertion string is
 # still TRUE — J-1b moves no driver construction and P7 is untouched.
-EXPECT_ENGINEAPI=1334
+# 🔴 Task K-1 raises this 1334 -> 1335 (+1): the one linked hygiene [Fact] every suite gets. Full
+# justification beside EXPECT_ABSTRACTIONS at the top of this file. K-1 changes no src/ file, so every
+# other number in this script is unchanged for it.
+EXPECT_ENGINEAPI=1335
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
