@@ -385,7 +385,11 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     // ⚠ Pha 9 nhóm A / **A6**: 49 → **50**. `server/routes/xacThucBeMatRest.test.ts` — lưới HÀNH VI
     //   đầu tiên cho bề mặt REST: nó GỌI THẬT từng tuyến và đọc mã trạng thái, thay cho phép suy
     //   luận cấu tạo "có try/catch ⇒ suy ra từ chối" (phép suy ấy mù với 6 tuyến trả 500).
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(50); // Pha 9 A6: +1
+    // ⚠ Pha 9 nhóm A / **A5**: 50 → **51**. `server/db/tieuMaDuPhong.test.ts` — lưới HÀNH VI cho
+    //   bất biến "mã dự phòng DÙNG-MỘT-LẦN". Lượt đột biến của A5 (bỏ lượt UPDATE isUsed, giữ
+    //   `return true`) làm `hoTuyenSongSong` đỏ 3 ca — nhưng CẢ BA đều đỏ vì HÌNH DẠNG, 0 ca hành
+    //   vi. Tức thứ phân biệt mã dự phòng với một MẬT KHẨU VĨNH VIỄN trước đó chỉ có lưới đọc mã.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(51); // Pha 9 A5: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -526,7 +530,9 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   **49** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
     // ⚠ Pha 9 nhóm A / **A6**: 112 → **113**. Đúng MỘT lưới mới (lý do ở ô `CONG.length`) ⇒
     //   `CONG.length` 49 → **50** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(113); // Pha 9 A6: +1
+    // ⚠ Pha 9 nhóm A / **A5**: 113 → **114**. Đúng MỘT lưới mới (lý do ở ô `CONG.length`) ⇒
+    //   `CONG.length` 50 → **51** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(114); // Pha 9 A5: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
