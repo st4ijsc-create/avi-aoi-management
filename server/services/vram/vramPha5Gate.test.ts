@@ -378,7 +378,11 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   SCHEMA"*, cộng ô ∀ *"mọi người ghi `user_sessions` phải đi qua phép cắt"* (M3). Nó canh một
     //   trục KHÁC hẳn `phienTrungTrongMotGiay.test.ts` (nonce + lượt nuốt lỗi): ở đây nguyên nhân
     //   ghi-sổ-hỏng là **dữ liệu KẺ TẤN CÔNG** trong một header, không phải một va chạm nội bộ.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(48); // review Pha 8 C-2: +1
+    // ⚠ Pha 9 nhóm A / **A2**: 48 → **49**. `server/_core/soPhienTruocCache.test.ts` — bất biến
+    //   *"bộ nhớ đệm phiên KHÔNG được trả lời trước khi sổ `user_sessions` được hỏi"*. Nó canh một
+    //   trục KHÁC `thuHoiPhienMoiBeMat.test.ts`: file ấy hỏi *"vị từ có TỪ CHỐI không"*, file này
+    //   hỏi *"vị từ có ĐƯỢC HỎI không"* — hai câu mà một cửa sổ TTL 45 s tách rời được.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(49); // Pha 9 A2: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -514,7 +518,10 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     // ⚠ Review TOÀN NHÁNH Pha 8 / **C-2**: 110 → **111**. Đúng MỘT lưới mới
     //   (`server/_core/tranCotSoPhien.test.ts`, lý do ở ô `CONG.length`) ⇒ `CONG.length` 47 → **48**
     //   cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(111); // review Pha 8 C-2: +1
+    // ⚠ Pha 9 nhóm A / **A2**: 111 → **112**. Đúng MỘT lưới mới
+    //   (`server/_core/soPhienTruocCache.test.ts`, lý do ở ô `CONG.length`) ⇒ `CONG.length` 48 →
+    //   **49** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(112); // Pha 9 A2: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

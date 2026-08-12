@@ -482,13 +482,45 @@ class SDKServer {
       throw ForbiddenError("Invalid session cookie");
     }
 
+    /**
+     * ★★★★ Pha 9 nhóm A · **A2 — PHÉP TRA SỔ ĐỨNG TRƯỚC BỘ NHỚ ĐỆM, MỘT CALL SITE DUY NHẤT.**
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠⚠⚠ ĐO ĐƯỢC (DB test thật, `__a2probe`), KHÔNG PHẢI SUY LUẬN
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Trước bản vá, phép tra sổ nằm **DƯỚI** nhánh trúng cache, nên một phiên bị thu hồi **ngoài
+     * đường sản phẩm** vẫn đi qua trọn một cửa sổ TTL. Hai hình dạng, cả hai đo được:
+     *   · XOÁ thẳng hàng `user_sessions` bằng SQL ⇒ lượt kế tiếp **ĐI QUA**
+     *   · lật `isActive=false` bằng SQL          ⇒ lượt kế tiếp **ĐI QUA**
+     * Đối chứng hiệu chuẩn (`AUTH_CACHE_TTL_S=0`) ⇒ **CHẶN** (`SESSION_NOT_IN_LEDGER`) ⇒ cơ chế
+     * cưỡng chế CÓ THẬT và còn sống; thứ cho qua đúng là **bộ nhớ đệm**, không phải một thước hỏng.
+     *
+     * ⚠⚠ VÌ SAO **DỜI LÊN** chứ không **CHÉP THÊM** một lượt gọi vào nhánh trúng cache: chép là
+     *    dựng người ghi **thứ hai** dưới cùng một bất biến — đúng lớp lỗi đã đẻ ba Critical trong
+     *    chuỗi pha này (và đúng thứ Pha 7 đo được ở chính phương thức này: *"1/6 lượt rò, 5/6 lượt
+     *    sạch"* vì hai nhánh làm hai việc khác nhau). Nay **một lối vào, một luật**.
+     *
+     * ⚠ CHI PHÍ, ghi đúng và ĐÃ ĐO — **KHÔNG ước lượng**: +1 `SELECT` theo `sessionToken` cho mỗi
+     *   lượt trúng cache. Đây là **1 → 2**, KHÔNG phải 0 → 1: nhánh trúng cache **đã** trả một
+     *   `SELECT` mỗi lượt cho `chanNeuPhaiDoiMatKhau` (cố ý không cache).
+     *   2.000 lượt trúng cache, cùng máy, cùng DB, **ba lượt đo mỗi bên**:
+     *     · TRƯỚC: 1,3516 · 1,3103 · 1,3758 ms/lượt  ⇒ **~740 lượt/s**
+     *     · SAU:   2,3555 · 2,4221 · 2,6302 ms/lượt  ⇒ **~413 lượt/s**  (**−44%**)
+     *   ⇒ Cái giá là THẬT và được nói ra. Nó vẫn được trả vì: (a) tải xác thực thật của một nhà máy
+     *     cách ngưỡng 413 lượt/s **hai bậc độ lớn**; (b) bộ nhớ đệm vẫn giữ giá trị lớn nhất của nó
+     *     — bỏ `getUserByOpenId` **và lượt GHI `upsertUser` mỗi request**; (c) cái được mua là bất
+     *     biến *"thu hồi có hiệu lực NGAY"*, thứ mà một cửa sổ 45 s làm sai theo chiều **MỞ**.
+     *   ⚠ NỢ MỚI đã ghi: hai `SELECT` này (`user_sessions` theo token · `users` theo id) **gộp được
+     *     thành một** câu `JOIN`. Không làm trong lượt này vì gộp là dựng một **chủ thứ ba** cho hai
+     *     bất biến đang có chủ riêng — một quyết định phải nói ra, không phải một lượt tối ưu lén.
+     */
+    await chanNeuPhienDaThuHoi(sessionCookie);
+
     // W4-B (doc 27 B4): short-TTL session→user cache. The JWT signature was
-    // verified above (stateless, no DB); a cache hit means the FULL auth path
-    // below — user lookup, revocation check, lastSignedIn touch — completed
-    // successfully within the last AUTH_CACHE_TTL_S seconds, so we skip its
-    // 3 DB round-trips. Staleness window (role change / ban / revocation on
-    // an instance that missed the invalidation broadcast) is bounded by the
-    // TTL (≤60s) — see services/authSessionCache.ts.
+    // verified above (stateless, no DB); a cache hit means the user lookup and
+    // the lastSignedIn touch completed successfully within the last
+    // AUTH_CACHE_TTL_S seconds, so we skip those 2 DB round-trips. The
+    // revocation check is NO LONGER among them — see the block above.
     const cachedUser = await getCachedAuthUser(sessionCookie!);
     if (cachedUser) {
       return cachedUser;
@@ -541,7 +573,8 @@ class SDKServer {
     // nhánh `Authorization: Bearer` của `validateExternalAuth` (`_core/index.ts`), điểm xác thực
     // DUY NHẤT vòng qua `authenticateRequest`. Hai bản sao ⇒ bản yếu hơn quyết định lưới nào đỏ.
     // Lượng từ canh chuyện này: `server/_core/thuHoiPhienMoiBeMat.test.ts`.
-    await chanNeuPhienDaThuHoi(sessionCookie);
+    // ★ Pha 9 · A2 — lượt gọi ĐÃ DỜI LÊN TRƯỚC bộ nhớ đệm (xem khối lý lẽ ở đó). Ở đây **KHÔNG**
+    //   còn lượt gọi thứ hai: một bất biến, một chủ.
 
     await db.upsertUser({
       openId: user.openId,

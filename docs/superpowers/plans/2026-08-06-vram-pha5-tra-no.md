@@ -62,6 +62,7 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/_core/buocDoiMatKhau.test.ts \
   server/_core/buocDoiMatKhauMoiBeMat.test.ts \
   server/_core/thuHoiPhienMoiBeMat.test.ts \
+  server/_core/soPhienTruocCache.test.ts \
   server/_core/tranCotSoPhien.test.ts \
   server/_core/xacThucNoiBo.test.ts \
   server/_core/xacThucNoiBoDb.test.ts \

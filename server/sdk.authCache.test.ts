@@ -7,9 +7,23 @@
  * session cookie
  *   - cache DISABLED (AUTH_CACHE_TTL_S=0): 15 DB calls
  *       (5× getUserByOpenId + 5× getSessionByToken + 5× upsertUser)
- *   - cache ENABLED  (TTL 60s):            3 DB calls (first request only)
- *   → 80% fewer DB round-trips at 5 requests; converges to ~100% of
- *     steady-state polling traffic within a TTL window.
+ *   - cache ENABLED  (TTL 60s):             7 DB calls
+ *       (1× getUserByOpenId + 5× getSessionByToken + 1× upsertUser)
+ *   → 53% fewer DB round-trips at 5 requests.
+ *
+ * ★★★★ Pha 9 nhóm A · **A2 — CON SỐ NÀY VỪA XẤU ĐI, VÀ ĐÓ LÀ BẢN VÁ, KHÔNG PHẢI HỒI QUY.**
+ *
+ * Trước A2 con số là **3** (`getSessionByToken` chỉ chạy ở lượt cache-miss). Nghĩa thật của con số
+ * 3 ấy: **phép tra sổ thu hồi bị bộ nhớ đệm nuốt trong trọn một cửa sổ TTL** — đo được trên DB
+ * thật, hai hình dạng đều lọt (XOÁ hàng `user_sessions` bằng SQL · lật `isActive=false` bằng SQL)
+ * ⇒ lượt xác thực kế tiếp **ĐI QUA**. Đối chứng hiệu chuẩn `AUTH_CACHE_TTL_S=0` ⇒ **CHẶN**, tức cơ
+ * chế cưỡng chế còn sống và thứ cho qua đúng là cái cache.
+ *
+ * ⇒ `getSessionByToken` nay chạy **mỗi lượt** (`sdk.xacThucTho`, TRƯỚC lượt đọc cache). Ô dưới ghim
+ *   **7**, không phải 3. ⚠ Ai làm nó về lại 3 là đã mở lại cửa sổ 45 s — hãy đọc khối lý lẽ ở
+ *   `server/_core/sdk.ts::xacThucTho` trước khi "tối ưu" con số này.
+ * ⚠ Thứ bộ nhớ đệm VẪN mua được, và là phần đắt nhất: `getUserByOpenId` **và lượt GHI**
+ *   `upsertUser(lastSignedIn)` — 5 → 1. Lượng từ hành vi của A2: `server/_core/soPhienTruocCache.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Request } from "express";
@@ -120,16 +134,19 @@ describe("sdk.authenticateRequest session-user cache (B4)", () => {
     expect(dbCallCount()).toBe(15);
   });
 
-  it("AFTER (cache enabled, TTL 60s): 5 requests = 3 DB calls (first only)", async () => {
+  it("AFTER (cache enabled, TTL 60s): 5 requests = 7 DB calls (sổ mỗi lượt, hồ sơ một lượt)", async () => {
     for (let i = 0; i < 5; i++) {
       const user = await sdk.authenticateRequest(reqWithCookie(token));
       expect(user.id).toBe(42);
       expect(user.role).toBe("operator");
     }
-    expect(dbMocks.getUserByOpenId).toHaveBeenCalledTimes(1);
-    expect(dbMocks.getSessionByToken).toHaveBeenCalledTimes(1);
-    expect(dbMocks.upsertUser).toHaveBeenCalledTimes(1);
-    expect(dbCallCount()).toBe(3);
+    expect(dbMocks.getUserByOpenId, "hồ sơ người dùng phải CÒN được cache").toHaveBeenCalledTimes(1);
+    expect(
+      dbMocks.getSessionByToken,
+      "★ A2: phép tra sổ thu hồi phải chạy MỖI LƯỢT — về 1 là mở lại cửa sổ 45 s",
+    ).toHaveBeenCalledTimes(5);
+    expect(dbMocks.upsertUser, "lượt GHI lastSignedIn phải CÒN được tiết chế").toHaveBeenCalledTimes(1);
+    expect(dbCallCount()).toBe(7);
 
     const stats = getAuthCacheStats();
     expect(stats.hits).toBe(4);
@@ -159,8 +176,9 @@ describe("sdk.authenticateRequest session-user cache (B4)", () => {
     await invalidateAuthSession(token); // what auth.logout does with ctx.sessionToken
 
     await sdk.authenticateRequest(reqWithCookie(token));
-    expect(dbMocks.getUserByOpenId).toHaveBeenCalledTimes(2);
-    expect(dbMocks.getSessionByToken).toHaveBeenCalledTimes(2);
+    expect(dbMocks.getUserByOpenId, "lượt dọn cache phải đẩy hồ sơ về đường DB").toHaveBeenCalledTimes(2);
+    // ★ A2: 3, không phải 2 — phép tra sổ chạy mỗi lượt, độc lập với cache (3 lượt gọi = 3 lượt tra).
+    expect(dbMocks.getSessionByToken).toHaveBeenCalledTimes(3);
   });
 
   it("a REVOKED session row is rejected and never cached", async () => {
