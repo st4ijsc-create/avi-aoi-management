@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using St4i.EngineApi.Alarms;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Endpoints;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Alarms;
@@ -36,6 +37,10 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// through the real pipeline in <c>RbacPolicyTests</c>, which is the only place that can see endpoint
 /// metadata.</para>
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class NotificationEndpointsTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();

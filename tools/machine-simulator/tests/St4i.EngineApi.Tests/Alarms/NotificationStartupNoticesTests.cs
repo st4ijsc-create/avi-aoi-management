@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using St4i.EngineApi.Alarms;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Alarms;
@@ -21,6 +22,10 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// email would have reported "Alarm notifications are ACTIVE on 1 channel(s): Smtp". The parameter is now
 /// the SET of channels this build can deliver, and the space grows from 3⁴ × 2 = 162 to 6⁴ = 1296.</para>
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class NotificationStartupNoticesTests
 {
     /// <summary>What one channel's configuration state is in a generated combination.</summary>

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 using St4i.EngineApi.Alarms;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Alarms;
@@ -17,6 +18,10 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// away exactly the things under test — the SMTP conversation itself, and the DPAPI round trip the password
 /// takes.</para>
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class SmtpNotificationChannelTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();

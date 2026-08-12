@@ -1,5 +1,6 @@
 using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests;
@@ -15,6 +16,10 @@ namespace St4i.EngineApi.Tests;
 /// endpoint, because the <c>SummaryColumns</c>/<c>FullColumns</c> split is the thing that keeps a secret out
 /// structurally, and an endpoint test cannot see it.</para>
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class ConnectorConfigStoreBusProjectionTests
 {
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-connector-bus-store-").FullName;

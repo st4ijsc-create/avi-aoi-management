@@ -3,6 +3,7 @@ using St4i.EdgeCore.Models;
 using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Uns;
 using St4i.EngineApi.AssetRegistry;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.AssetRegistry;
@@ -15,6 +16,10 @@ namespace St4i.EngineApi.Tests.AssetRegistry;
 /// lifecycle and original creation time even though everything else about the row refreshes. Each test
 /// gets its own fresh temp directory (its own <c>assets.db</c>), deleted on dispose.
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class AssetRegistryStoreTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();

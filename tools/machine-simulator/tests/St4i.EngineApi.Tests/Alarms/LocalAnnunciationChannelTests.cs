@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using St4i.EngineApi.Alarms;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Alarms;
@@ -20,6 +21,10 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// same reason C-3's and C-4's suites do: the configuration round trip is part of what is under test, and a
 /// fake would define it away.</para>
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class LocalAnnunciationChannelTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();

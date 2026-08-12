@@ -26,6 +26,10 @@ namespace St4i.EdgeCore.Tests.Historian;
 /// represent "unknown provenance" test data under the new column) need to change — this file's own tests
 /// are the ones that exercise the gate explicitly, with fixtures that deliberately tag real/fabricated.
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars:
+//    BridgeSpoolTests/UnsBridgeSpoolTests (already here) call SqliteConnection.ClearAllPools(), which is
+//    process-global. See SiteTestCollection for the membership rule.
+[Collection("St4i.EdgeCore.Tests.Site")]
 public sealed class SqliteHistorianStoreProvenanceTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();

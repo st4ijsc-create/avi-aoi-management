@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using St4i.EdgeCore.Historian;
 using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests;
@@ -21,6 +22,10 @@ namespace St4i.EngineApi.Tests;
 /// hand-built-context convention, just applied to the response side instead of the request side) to read
 /// back the actual <c>Content-Type</c>/<c>Content-Disposition</c> headers and body bytes.
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class HistorianEndpointsExportTests
 {
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-historian-export-tests-").FullName;

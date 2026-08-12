@@ -8,6 +8,7 @@ using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests;
@@ -29,6 +30,10 @@ namespace St4i.EngineApi.Tests;
 /// render SOMETHING by default when <see cref="St4i.EdgeCore.Config.DemoModeGate.Enabled"/>, not silently
 /// stay empty forever the way a real exhibition install's `/historian`/`/reports` did before this fix.
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class HistorianEndpointsProvenanceTests
 {
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-historian-provenance-endpoints-").FullName;

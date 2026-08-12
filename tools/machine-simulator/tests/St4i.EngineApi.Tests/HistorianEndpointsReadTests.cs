@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using St4i.EdgeCore.Historian;
 using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests;
@@ -20,6 +21,10 @@ namespace St4i.EngineApi.Tests;
 /// <c>MachineConfigStore</c>. Seeding goes straight through <see cref="IHistorianStore.AppendResultsAsync"/>
 /// (the real store, not a fake) so every read handler is exercised against genuine SQLite rows.
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class HistorianEndpointsReadTests
 {
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-historian-endpoints-tests-").FullName;

@@ -8,6 +8,7 @@ using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests;
@@ -24,6 +25,10 @@ namespace St4i.EngineApi.Tests;
 /// roster snapshot, not a running pipeline) — <see cref="FleetHost.Fleet"/> is the "exact roster accessor"
 /// the Task 9 brief asked to confirm.
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class HistorianEndpointsOeeTests
 {
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-oee-endpoints-tests-").FullName;

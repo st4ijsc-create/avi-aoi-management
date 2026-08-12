@@ -742,6 +742,41 @@ vì một population thật thì đứng yên qua nhiều mẫu còn một lần
 `dotnet test` cũng nhận) chứ không nới phép kiểm. Điều đó có thể tự làm population nhỏ lại và khiến cuộc đua
 ngừng bắn mà không ai phải nới gì cả — hãy đo lại trước khi xây thuốc chữa.
 
+### 🔴 11.1 ĐÃ ĐÓNG ở L-1 — và điều đáng ghi là **khoản nợ được trả bằng cách nào**
+
+`verify-suites.sh` giờ **lấy mẫu tới khi ỔN ĐỊNH** rồi mới phán quyết, thay vì lấy một mẫu duy nhất ngay sau
+tín hiệu tháo dỡ. Điểm chịu lực **không phải** là "chờ lâu hơn":
+
+- **TẬP GIÁ TRỊ ĐƯỢC CHẤP NHẬN KHÔNG ĐỔI.** Phán quyết vẫn là `settled == 0`. Không có ngưỡng nào được nới,
+  không có số nào lớn hơn 0 được tha ở bất kỳ hạn nào. Thứ dịch đi là **KHOẢNH KHẮC ĐƯỢC ĐO**, và chỉ thế.
+- **Một quần thể KHÔNG cạn vẫn ĐỎ, và đỏ KHÔNG MUỘN HƠN một quần thể đang cạn** — vì đứng yên *chính là* ổn
+  định: nó chốt ở giá trị khác 0 ngay ở mẫu thứ ba, tức **mức sàn** của mọi lần chốt, và hỏng ở đó.
+  *(🔴 Câu này từng viết **"đỏ SỚM HƠN"** — quá mạnh, vì một quần thể vốn đã bằng 0 cũng chốt sau đúng ba mẫu.
+  Lượt đọc-lại-cuối của L-1 đã sửa đúng câu ấy ở `verify-suites.sh` và **KHÔNG đi theo nó sang đây, trong
+  chính cái diff đã viết ra cả hai** — §8.1(h5.2) đúng nghĩa: miền của lượt đọc lại là **SỰ PHỤ THUỘC**, mà
+  hai bản sao của một khẳng định là quan hệ phụ thuộc gần nhất có thể. Phản biện bắt.)*
+- **KHÔNG BAO GIỜ ỔN ĐỊNH là một màu ĐỎ RIÊNG.** Một con số cứ nhúc nhích suốt biên không được coi là "vẫn
+  đang cạn"; nó hỏng với thông điệp của chính nó. Hình dạng là *"lấy mẫu tới khi ổn định, và HỎNG nếu không
+  bao giờ ổn định"*, không phải *"bằng không trong vòng N"*.
+- Một mẫu **không đọc được** không bao giờ được tính là ổn định — mượn nguyên luật của bộ dò CPU-phẳng
+  (*rỗng nghĩa là "không biết", không bao giờ là "phẳng"*).
+
+**Bằng chứng là phép ĐO, không phải lập luận** (chi tiết trong `.superpowers/sdd/gate-determinism/task-1-report.md`):
+cấy một tiến trình khớp bộ đếm và **không** chết theo `dotnet build-server shutdown`, rồi chạy cổng thật →
+cổng **ĐỎ**, `exit 1`, chuỗi mẫu `1 1 1`. Cấy 100 tiến trình → chuỗi `74 87 100 100 100`, **ĐỎ** ở 100. Tức
+là cùng một dụng cụ **phân biệt được** một lần tháo dỡ đang rút với một quần thể sót thật — đúng thứ mà một
+mẫu đơn không làm được.
+
+**Chỗ đối xứng, nêu tên theo §8.1(h4):** `dotnet build-server shutdown` được gọi **HAI lần** trong script.
+Lần ở `[1/3]` (trước rebuild) **CỐ Ý KHÔNG poll**: không phán quyết nào đọc từ nó, nên ở đó không có khoảnh
+khắc nào để đo sai; thứ nó phục vụ được khẳng định bằng chính các cổng của bản build (0 lỗi, và chốt MSB3061
+bắt đúng ca "một tiến trình sống đang giữ output của ta").
+
+**Giới hạn phải nói thẳng:** phép kiểm vẫn là một phép đo tại **một khoảnh khắc** — khoảnh khắc nó ổn định.
+Một tiến trình build server xuất hiện **sau** lúc ấy thì nó không thấy, y hệt cái lỗ "hiện-rồi-biến-mất" mà
+§12 nêu cho chốt creds. Đã đo: một máy có thứ gì đó sinh/diệt build server theo chu kỳ có thể ổn định ở 0
+trong một cửa sổ rồi lại có tiến trình sau đó. Đóng chuyện ấy cần một **watcher**, và đây không phải watcher.
+
 ## 12. 🔴 Hạng mục mang theo (K-1) — GHI ĐÈ TẠI CHỖ: không dụng cụ nào của K-1 nhìn thấy
 
 Tách **riêng** khỏi lỗ "hiện-rồi-biến-mất" ở §11 và khỏi nửa ĐUA, có chủ đích: gộp chung sẽ khiến hạng mục

@@ -16,6 +16,7 @@ using St4i.EngineApi.Fleet;
 using St4i.EngineApi.Policy;
 using St4i.EngineApi.Policy.Rules;
 using St4i.EngineApi.Safety;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Alarms;
@@ -32,6 +33,10 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// about is precisely whether the gate, the resolution path and the outcome vocabulary are being used
 /// correctly, which a faked <c>FleetHost</c> would define away.</para>
 /// </summary>
+// 🔴 Task L-1 — joins this collection for the PROCESS-WIDE SQLITE CONNECTION POOL, not for env vars.
+//    SqliteConnection.ClearAllPools() is process-global; membership rule and the full list are in
+//    tests/St4i.EngineApi.Tests/Auth/SecurityEnvVarTests.cs.
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class RelayNotificationChannelTests : IDisposable
 {
     private const string MachineCode = "RELAY-01";
