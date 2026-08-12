@@ -13,14 +13,21 @@ namespace St4i.TestHygiene;
 /// Linked (not copied) into all five test projects beside <see cref="TestRunTempRoot"/>; each assembly
 /// gets its own module initializer, its own baseline and its own copy of the assertion below.
 ///
-/// <para><b>Why a consequence measurement and not a census of who sets the variable.</b> A test class can
-/// reach a process-wide <c>ST4I_*_DIR</c> through PRODUCT code without naming it anywhere:
-/// <c>OnboardingFleetJoinTests</c> reached <c>ST4I_CREDS_DIR</c> two frames deep
-/// (<c>ClaimAsync</c> → <c>OnboardingService</c> → <c>CredentialStore.Save</c>) and
-/// <c>StoreAndForwardRestartSurvivalTests</c> reaches it through <c>FleetHost.UpdateSettings</c>; neither
-/// set it, and four separate membership derivations missed the first of them. An instrument keyed on the
-/// DIRECT half — "which classes assign the variable" — returns GREEN over exactly the case that was paid
-/// for. That is blueprint §8.1(f) with a completeness claim on top. This measures the CONSEQUENCE
+/// <para><b>Why a consequence measurement and not a census of who sets the variable.</b> A census keyed
+/// on "which test classes assign <c>ST4I_*_DIR</c>" returns GREEN over BOTH of this repository's measured
+/// leaks, and it misses them on TWO DIFFERENT AXES — which is why widening that census would not have
+/// worked either:
+/// <list type="bullet">
+/// <item><b>DEPTH.</b> <c>OnboardingFleetJoinTests</c> reached <c>ST4I_CREDS_DIR</c> two frames deep
+/// (<c>ClaimAsync</c> → <c>OnboardingService</c> → <c>CredentialStore.Save</c>) and named neither the
+/// variable nor the store. Every membership sweep on the branch that found it missed it.</item>
+/// <item><b>NAMING.</b> <c>StoreAndForwardRestartSurvivalTests</c> calls <c>CredentialStore.Save</c>
+/// DIRECTLY (line 217) — no depth at all — and still sets no <c>ST4I_*_DIR</c>, so the same census calls
+/// it clean. It reads through <c>FleetHost.UpdateSettings</c> → <c>CredentialStore.Load</c> as well,
+/// which is what forced it into the env-var collection; the WRITE was never at depth.</item>
+/// </list>
+/// That is blueprint §8.1(f) with a completeness claim on top — a recogniser whose domain is inherited
+/// from where its author was standing. This measures the CONSEQUENCE
 /// instead, so <b>DEPTH stops being a way to hide</b>: a writer is seen whether it is one frame away or
 /// five, and whether it names the variable, clears it, or passes <c>CredentialStore.Save</c>'s directory
 /// explicitly and never touches the variable at all. 🔴 Depth is the only axis that sentence covers —
@@ -241,8 +248,10 @@ public sealed class RealCredentialStoreLeakGuardTests
             $"{added.Count} entr{(added.Count == 1 ? "y" : "ies")} appeared in the REAL credential " +
             $"directory \"{root}\" while this suite's process ran: {listed}.\n" +
             "  Something in this process wrote a machine credential to a real install's store. It does not " +
-            "have to NAME ST4I_CREDS_DIR to have done it — CredentialStore is static, resolves per call, " +
-            "and is reached two frames deep from OnboardingService and from FleetHost.UpdateSettings.\n" +
+            "have to NAME ST4I_CREDS_DIR to have done it, and it does not have to be at depth either: " +
+            "CredentialStore is static and resolves per call, so a direct Save that simply never sets the " +
+            "variable (StoreAndForwardRestartSurvivalTests) leaks exactly as a call two frames down " +
+            "OnboardingService does (OnboardingFleetJoinTests). Both shapes are on record.\n" +
             "  🔴 DO NOT DELETE THOSE FILES, and do not delete anything else under %ProgramData%\\ST4I\\. " +
             "The pre-existing contents of that directory are a deliberately kept evidence base that five " +
             "artifacts cite, this assertion measures a DIFFERENCE and never an absolute state, and " +

@@ -63,12 +63,17 @@ public sealed class TestHarnessIsolationTests
     // including a SENTENCE — is evidence only for the tree state it was checked against, and this block
     // was written on a different branch.
     //
-    // THE CASE, which is unchanged. A test class can reach a process-wide ST4I_*_DIR through PRODUCT code
-    // without naming it. Two measured instances: OnboardingFleetJoinTests reaches ST4I_CREDS_DIR two frames
-    // deep (ClaimAsync -> OnboardingService -> CredentialStore.Save), and StoreAndForwardRestartSurvivalTests
-    // reaches it through FleetHost.UpdateSettings -> CredentialStore.Load/Save. Both wrote real DPAPI blobs
-    // into a real %ProgramData%\ST4I\sim\creds, and every membership sweep on the branch that found the
-    // first missed it — four derivations, three of them wrong.
+    // THE CASE, and K-1 found it is WIDER than this block stated. A census keyed on "which classes assign
+    // ST4I_*_DIR" misses both measured leaks, on TWO DIFFERENT AXES:
+    //   DEPTH  — OnboardingFleetJoinTests reached ST4I_CREDS_DIR two frames deep (ClaimAsync ->
+    //            OnboardingService -> CredentialStore.Save) and named neither the variable nor the store.
+    //            Every membership sweep on the branch that found it missed it.
+    //   NAMING — StoreAndForwardRestartSurvivalTests calls CredentialStore.Save DIRECTLY (line 217), no
+    //            depth at all, and still sets no ST4I_*_DIR, so the same census calls it clean. Its READ
+    //            path does go through FleetHost.UpdateSettings -> CredentialStore.Load, which is what
+    //            forced it into the env-var collection — but the WRITE was never at depth.
+    // Both wrote real DPAPI blobs into a real %ProgramData%\ST4I\sim\creds. Widening the census along one
+    // axis would still have missed the other; that is why the guard measures the consequence.
     //
     // 🔴 WHAT WAS ALREADY FALSE WHEN K-1 CHECKED IT, and both errors point the same way — the exemplar was
     // treated as the scope:
