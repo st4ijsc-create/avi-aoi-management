@@ -1,0 +1,91 @@
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+-- 0320 — GỠ `idx_user_sessions_token` (TRÙNG chỉ số của ràng buộc UNIQUE)  ⚠⚠⚠ **BẢN NHÁP — CHƯA ÁP**
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+-- ⚠⚠⚠ FILE NÀY MANG ĐUÔI `.DRAFT` VÀ **KHÔNG** ĐƯỢC `scripts/migrate-standalone.mjs` NHẶT.
+--     Nó chờ **chủ dự án duyệt**. Brief Pha 9 nhóm B nói rõ: *"Cần DDL ⇒ **KHÔNG tự áp**. Soạn
+--     `.DRAFT`, báo tôi."* ⇒ Đây là bản nháp ấy. **KHÔNG ÁP.**
+--     ⚠ `drizzle/0319_session_ip_address_text.sql.DRAFT` cũng đang chờ — **đừng áp, đừng đổi tên**
+--       nó khi xử lý file này. Hai bản nháp độc lập, duyệt riêng.
+--
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+-- ⚠⚠ SỐ ĐO TRÊN DB THẬT (`aoi_management`, 2026-08-12) — KHÔNG PHẢI SUY LUẬN TỪ FILE SCHEMA
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+-- Truy vấn `pg_index` ⋈ `pg_class` cho `user_sessions` trả về SÁU chỉ số. Hai trong số đó nằm
+-- trên **CÙNG MỘT CỘT, CÙNG MỘT PHƯƠNG PHÁP, CÙNG MỘT THỨ TỰ**:
+--
+--   user_sessions_sessionToken_unique
+--       uniq=true   ràng buộc=1   147.456 byte
+--       CREATE UNIQUE INDEX "user_sessions_sessionToken_unique"
+--           ON public.user_sessions USING btree ("sessionToken")
+--
+--   idx_user_sessions_token
+--       uniq=false  ràng buộc=0   139.264 byte      ← THỪA HOÀN TOÀN
+--       CREATE INDEX idx_user_sessions_token
+--           ON public.user_sessions USING btree ("sessionToken")
+--
+--   (bốn chỉ số còn lại — `_pkey`, `_user`, `_expires`, `_active` — trên cột KHÁC, không liên quan.)
+--
+-- Số hàng `user_sessions` hôm nay: **297**.
+--
+-- ⇒ Chỉ số UNIQUE phục vụ được **MỌI** truy vấn mà chỉ số thường phục vụ được: cùng cột dẫn đầu,
+--   cùng btree, cùng chiều. `db.getSessionByToken` (`WHERE "sessionToken" = $1`) — đường nóng nhất
+--   của toàn hệ, chạy **mỗi lượt xác thực** kể từ Pha 9 A2 — dùng được cái nào cũng như nhau, và
+--   planner sẽ chọn cái nó thấy rẻ hơn. Không có hình dạng truy vấn nào phân biệt được hai chỉ số
+--   này. Đây **không** phải "một chỉ số ít dùng"; nó là một chỉ số **không thể được dùng cho việc
+--   gì mà cái kia không làm được**.
+--
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+-- ⚠⚠ CÁI GIÁ CỦA VIỆC GIỮ NÓ KHÔNG PHẢI 139 KB — MÀ LÀ MỘT LƯỢT GHI THÊM Ở ĐƯỜNG NÓNG
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+-- 139.264 byte là phần **dễ thấy nhất và ít quan trọng nhất**. Phần thật:
+--   · MỖI `INSERT` vào `user_sessions` (tức **mỗi lượt đăng nhập**) phải cập nhật **hai** cây btree
+--     trên cùng một giá trị thay vì một.
+--   · MỖI `UPDATE` chạm `sessionToken`, và mọi lượt `DELETE` (dọn phiên hết hạn, `session.revoke`,
+--     `revokeAll`) cũng vậy.
+--   · Autovacuum phải dọn **hai** cây.
+-- Trên một bảng 297 hàng thì không đo được. Điểm của lượt gỡ **không** phải hiệu năng hôm nay — mà
+-- là: một chỉ số không phục vụ truy vấn nào là một thứ người sau sẽ đọc thành *"cột này cần đánh
+-- chỉ số riêng, chắc có lý do"*, rồi sao chép khuôn ấy sang bảng khác. Nó là **tài liệu sai**, cùng
+-- loại với `twoFactor.test.ts` mà nhóm B vừa xoá.
+--
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+-- ⚠⚠⚠ VÌ SAO LƯỢT GỠ NÀY AN TOÀN — VÀ CHỖ DUY NHẤT NÓ CÓ THỂ KHÔNG AN TOÀN
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+-- AN TOÀN, đo được: `idx_user_sessions_token` có **`ràng buộc = 0`** (không `pg_constraint` nào
+-- trỏ `conindid` vào nó). Tức nó **không** đứng sau một `UNIQUE`/`PRIMARY KEY`/`FOREIGN KEY` nào;
+-- `DROP INDEX` sẽ không kéo theo một ràng buộc nào. Ngược lại,
+-- `user_sessions_sessionToken_unique` có **`ràng buộc = 1`** ⇒ **KHÔNG BAO GIỜ** drop cái đó: nó
+-- là cơ chế cưỡng chế *"một token = một phiên"*, và mất nó là mất một bất biến an ninh.
+--
+-- ⚠ CHỖ DUY NHẤT CÓ THỂ KHÔNG AN TOÀN — và nó cần một quyết định của chủ dự án:
+--   Nếu có ai đó (script vận hành, công cụ ngoài, một bản `db:push` cũ) **đang trông vào TÊN**
+--   `idx_user_sessions_token`, lượt gỡ làm họ đỏ. Phép đo hôm nay: chuỗi ấy chỉ xuất hiện trong
+--   `drizzle/**` (migration cũ + snapshot) và `drizzle/schema/auth.ts:260`. **Không** file nào
+--   dưới `server/**`, `client/**`, `scripts/**` nhắc tới nó.
+--
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+-- ⚠⚠ NỬA THỨ HAI CỦA BẢN VÁ — ĐỪNG ÁP MỘT NỬA
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+-- `drizzle/schema/auth.ts:260` còn khai `index("idx_user_sessions_token").on(table.sessionToken)`.
+-- Chừng nào dòng ấy còn, một lượt `npm run db:push` sẽ **TẠO LẠI** chỉ số vừa gỡ — lượt gỡ sống
+-- được đúng tới lần push kế tiếp, rồi biến mất im lặng.
+-- ⇒ Khi áp migration này, **cùng lượt** xoá dòng 260 của `drizzle/schema/auth.ts`.
+-- ⚠ Bản nháp này **cố ý KHÔNG** sửa file schema trước: sửa schema mà chưa áp DDL là tạo **lệch**
+--   theo chiều ngược (mã khai không có, DB có) — và lệch schema chính là thứ đã làm vỡ cả `INSERT`
+--   ở Wave 3 (drizzle liệt kê TOÀN BỘ cột ở mọi câu lệnh). Hai nửa đi cùng một lượt, không lệch.
+--
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+-- CÁCH ÁP (khi chủ dự án duyệt)
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+--   1. đổi tên  → `0320_drop_idx_user_sessions_token.sql`
+--   2. xoá dòng 260 của `drizzle/schema/auth.ts`
+--   3. chạy `scripts/migrate-standalone.mjs` bằng owner **`aoi`** (owner `avi_app` ⇒ 42501)
+--      trên **CẢ HAI** DB: `aoi_management` **và** `aoi_management_test`
+--   4. đo lại: truy vấn `pg_index` phải còn **NĂM** chỉ số trên `user_sessions`, và
+--      `user_sessions_sessionToken_unique` phải **CÒN NGUYÊN** (`uniq=true`, `ràng buộc=1`)
+-- ════════════════════════════════════════════════════════════════════════════════════════════
+
+-- ⚠ `IF EXISTS` để lượt áp lại không vỡ. KHÔNG dùng `CASCADE`: nếu một ràng buộc nào đó bất ngờ
+--   phụ thuộc vào chỉ số này thì ta MUỐN câu lệnh vỡ và nói ra, chứ không muốn nó âm thầm kéo
+--   theo một ràng buộc an ninh.
+DROP INDEX IF EXISTS "idx_user_sessions_token";
