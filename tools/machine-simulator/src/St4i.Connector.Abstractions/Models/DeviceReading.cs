@@ -149,7 +149,7 @@ public record MeasurementResult(
 /// <param name="Quality">How much the sample is to be trusted, defaulting to <c>good</c> — the value
 /// reaches the telemetry payload's <c>quality</c> field unchanged, and is stored verbatim with the sample.
 /// This contract does not constrain the string, and a consumer must tolerate whatever it receives.
-/// The tokens this product is observed to write are the <c>good</c> default; <c>bad</c>, which its
+/// The tokens this product is observed to write include the <c>good</c> default; <c>bad</c>, which its
 /// OPC-UA driver emits together with a <see langword="null"/> <paramref name="Value"/> for a node whose
 /// read returned a bad or uncertain status rather than failing the whole poll; and <c>uncertain</c>,
 /// which its IoT-sensor simulator writes on EVERY sample of a calibration-drift block — a routine
