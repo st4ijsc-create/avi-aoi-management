@@ -2644,6 +2644,34 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # carries no source location and names the BASE symbol, so every override of one method collapses into one
 # warning. **A new driver rig applying this proven remedy costs 0.** The bad half stands: +1 the first time
 # anyone applies it to a NEW check.
+#
+# 🔴 N-1 — THE NUMBER DID NOT MOVE AND WHAT IT WITNESSES DID. Read this before concluding "nothing changed".
+# N-1's brief expected this literal to rise, because a 2026-08-08 experiment measured 116 -> 148 for ONE
+# assembly. It did not rise, and the reason is the deliverable rather than an escape from it: six projects
+# now set `GenerateDocumentationFile` — St4i.Connector.Conformance, St4i.EdgeCore.Serial, St4i.EdgeService,
+# St4i.DesktopShell, St4i.SerialBench, St4i.SettingsAclProbe — so the compiler PARSES their `///` blocks and
+# RESOLVES every symbol those blocks name, and all 33 warnings that surfaced there were FIXED rather than
+# suppressed. Nothing survived, so the count is unchanged. (The 116 -> 148 figure is also wrong twice over;
+# the report shows the arithmetic.)
+#
+# So this literal now indexes STRICTLY MORE than it did at 811c9054, at the same value. Before N-1 a green
+# run here said nothing whatever about doc-comment validity anywhere in the tree — no project generated a
+# documentation file, so CS1570/CS1574/CS1734/CS0419/CS1587/CS1591 could not be emitted at all and §8.1(h7)
+# records that as the reason a malformed `<para>` and a rotted cross-assembly `cref` both shipped green.
+# After N-1 a green run additionally witnesses: in those six projects, every `///` block is well-formed XML
+# and every `cref`/`paramref` in them names something that exists.
+#
+# 🔴 WHAT IT STILL DOES NOT WITNESS, stated because the same green number now means two different things
+# depending on the project: the other NINE projects do not set the property, so this count says exactly
+# nothing about their doc comments — and 237 already-false claims are on record there (259 as MSBuild would
+# count them, because a WPF markup pass compiles St4iMachineSimulator twice), listed by file in
+# .superpowers/sdd/doc-comments-compiled/task-1-report.md. They are unset because the switch also asserts
+# documentation COVERAGE (CS1591, 2870 members) and that is an owner decision, not an implementer one; see
+# Directory.Build.props for the measured per-project price of all fifteen.
+#
+# To ask the whole tree the question this gate only asks of six projects, from tools/machine-simulator:
+#     dotnet build -t:Rebuild -p:GenerateDocumentationFile=true
+# That is a diagnostic, not a gate: it does not change this number and nothing here asserts its output.
 EXPECT_WARNINGS=116
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."

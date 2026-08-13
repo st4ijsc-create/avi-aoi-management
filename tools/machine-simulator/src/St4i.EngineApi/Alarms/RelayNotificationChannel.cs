@@ -56,7 +56,7 @@ namespace St4i.EngineApi.Alarms;
 /// and the state moves in two halves: <see cref="RelayInstanceState.Commanded"/> takes the level that WAS
 /// issued (so the same level is never issued again — that is what no-retry means, and it is what keeps the
 /// latch absorbing a storm behind an indeterminate write), while
-/// <see cref="RelayInstanceState.Energised"/> becomes UNKNOWN (nobody knows what the device did).
+/// <see cref="RelayInstanceState.Energised"/> becomes UNKNOWN (nobody knows what the device did).</para>
 ///
 /// <para>🔴 Review round 1 (C-1) found this the hard way: gating the write on <c>Energised</c> meant that
 /// after ONE indeterminate write every subsequent latch input wrote again — 20 distinct alarms in one
@@ -990,7 +990,7 @@ public sealed class RelayNotificationChannel
     /// <see cref="RelayOutcome"/> values are decided here.</b> This method held a SECOND, independently
     /// worded copy of the same cause list as <c>MachineWriteEndpoints.NotAvailableResult</c> — found by
     /// enumerating everything that renders a <see cref="MachineDriverAvailability"/> into operator prose
-    /// rather than by looking at the write endpoint.
+    /// rather than by looking at the write endpoint.</para>
     ///
     /// <para>🔴 <b>Both copies were defective, but NOT in the same way — the first draft of this comment
     /// said they were, and the E-4 review measured otherwise.</b> This channel's <c>ReadOnly</c> string did

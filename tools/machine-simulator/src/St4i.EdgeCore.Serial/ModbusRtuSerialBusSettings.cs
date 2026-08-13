@@ -122,9 +122,18 @@ public sealed record ModbusRtuSerialBusSettings(string Transport, SerialLineSett
     /// <see cref="SerialPort.PortName"/>, which is what a wiring diagram calls it.</summary>
     public const string PortNameProperty = "portName";
 
+    /// <summary>The line's bit rate. Validated by <see cref="SerialLineSettings"/>, which owns the accepted
+    /// set.</summary>
     public const string BaudRateProperty = "baudRate";
+
+    /// <summary>The parity token — one of the five names in <c>ParityTokens</c>, never
+    /// <see cref="Parity"/>'s ordinal; see that field's own doc comment for why a number is refused.</summary>
     public const string ParityProperty = "parity";
+
+    /// <summary>Data bits per character. Validated by <see cref="SerialLineSettings"/>.</summary>
     public const string DataBitsProperty = "dataBits";
+
+    /// <summary>Stop bits per character. Validated by <see cref="SerialLineSettings"/>.</summary>
     public const string StopBitsProperty = "stopBits";
 
     /// <summary>The five parity tokens, in <see cref="Parity"/>'s own order. A STRING rather than the enum's

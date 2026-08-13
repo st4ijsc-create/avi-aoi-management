@@ -373,7 +373,7 @@ public static class MachineWriteEndpoints
     /// <see cref="AlarmSource.Identity"/> (each is an observation about the device/process itself). See
     /// <c>MachineWriteEndpoints</c>' own class doc comment, "The Critical-alarm decision," for why lowering
     /// <c>SAFETY_BLOCKED</c>'s alarm priority instead was rejected (an existing, unrelated
-    /// <c>LineEndpointsTests</c> assertion already pins it Critical).</summary>
+    /// <c>LineEndpointsTests</c> assertion already pins it Critical).
     ///
     /// <para>🔴 Task C-6 — the BODY moved to <see cref="MachineWriteGate.AnyCriticalAlarmActiveAsync"/> and
     /// this is now a forwarder. Unchanged in behaviour; shared because the alarm relay resolves the same

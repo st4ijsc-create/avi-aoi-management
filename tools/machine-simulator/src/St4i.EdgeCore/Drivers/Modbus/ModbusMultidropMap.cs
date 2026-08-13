@@ -121,7 +121,7 @@ public static class ModbusMultidropMap
     /// this class's own no-inheritance decision exists to prevent: <c>{"pollIntervalMs": 5000, "devices": […]}</c>
     /// parsed cleanly and every device silently ran its own value or the default, so <b>the file on disk and the
     /// configuration actually running were two different things</b> — the exact sentence used to justify the
-    /// decision, left reachable by the check written to enforce it.
+    /// decision, left reachable by the check written to enforce it.</para>
     ///
     /// <para>The right test is not "is this field required" but "could a reader believe this field applies to
     /// the bus". That set is finite and knowable: it is every key the per-device parse consumes. Listed

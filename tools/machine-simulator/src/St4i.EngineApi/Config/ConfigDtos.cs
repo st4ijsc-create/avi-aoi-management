@@ -40,6 +40,8 @@ public sealed record RecipeSummaryDto(string Code, string Name, string? MachineT
 /// (geometry, position, limits, image) — the richer spec fields are SYNAPSE-UI-authored only. Kept
 /// byte-shape-identical to the contract on purpose so Task C3's Live backend can serialize this SAME
 /// type straight onto the real HTTP request body with no translation layer.</summary>
+/// <param name="ExpectedUpdatedAt">Opt-in per-point optimistic lock — the LastModifiedAt this caller last
+/// knew about for this point. Null = blind write (contract default, MACHINE_SYNC_OPTIMISTIC_LOCK off).</param>
 public sealed record SyncPointDto(
     string Code,
     string Name,
@@ -65,8 +67,6 @@ public sealed record SyncPointDto(
     string? ImageUrl,
     string? Shape,
     JsonElement? Geometry,
-    /// <summary>Opt-in per-point optimistic lock — the LastModifiedAt this caller last knew about for
-    /// this point. Null = blind write (contract default, MACHINE_SYNC_OPTIMISTIC_LOCK off).</summary>
     DateTimeOffset? ExpectedUpdatedAt);
 
 public sealed record SyncPointsRequestDto(

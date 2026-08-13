@@ -32,6 +32,10 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// </summary>
 public sealed class SerialPortUnavailableException : IOException
 {
+    /// <summary>Builds the exception from a message that must already name WHICH of the three causes applies
+    /// — see this type's own doc comment for why the message, not the type, carries that distinction.</summary>
+    /// <param name="message">The operator-facing description of the failure.</param>
+    /// <param name="inner">The underlying failure, when one exists.</param>
     public SerialPortUnavailableException(string message, Exception? inner = null) : base(message, inner) { }
 }
 
@@ -142,6 +146,8 @@ public sealed record SerialLineSettings
     /// <summary>The COM port, normalised to upper case and trimmed.</summary>
     public string PortName { get; }
 
+    /// <summary>Bits per second on the wire, shared by every device on this segment. Refused at construction
+    /// unless positive; <see cref="DefaultBaudRate"/> when the document omits it.</summary>
     public int BaudRate { get; }
 
     /// <summary>

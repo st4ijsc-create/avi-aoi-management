@@ -857,7 +857,7 @@ internal sealed class FleetCore
     /// making a broken recovery work removed the symptom that drove an operator to the action which
     /// happened to repair the timeline. Not fixed here — emitting <c>"Stop"</c> from a fleet that already
     /// reported itself stopped is the S2/S7 truthfulness question, decided the other way at both
-    /// call sites — and carried rather than left to be rediscovered.</para></para></para></para>
+    /// call sites — and carried rather than left to be rediscovered.</para></para></para></para></para>
     ///
     /// <para><b>Two of these were WIDENED by G-1 rather than inherited from it</b>, and in the same way:
     /// <see cref="FlushDeferredLogs"/> — a host-supplied delegate, i.e. a throw site — became the FIRST
@@ -887,13 +887,13 @@ internal sealed class FleetCore
     /// start then completes, so a <c>Start</c>‖<c>Stop</c> race that used to be able to end STOPPED could
     /// only end RUNNING. Nothing was corrupted — no historian event is emitted for a stop that did not
     /// happen, and <see cref="IsRunning"/> reports honestly — which is why this was an inverted OUTCOME
-    /// rather than a broken invariant.
+    /// rather than a broken invariant.</para>
     ///
     /// <para><b>How it is resolved, and why this resolution rather than another.</b> A start whose snapshot
     /// predates a stop request abandons its install. That makes the windowed stop win, which is the outcome
     /// the pre-J-1 lock produced whenever the stop arrived second. It costs no new failure mode
     /// (<see cref="Start"/> returns <see langword="void"/> and already declines silently when latched or
-    /// already running), no new lock, and no roster freeze.
+    /// already running), no new lock, and no roster freeze.</para>
     ///
     /// <para>🔴 <b>What is NOT restored byte-for-byte, said plainly rather than glossed — and the first
     /// version of this paragraph got it wrong (branch review, Important 1).</b> Pre-J-1's "stop arrived
@@ -902,7 +902,7 @@ internal sealed class FleetCore
     /// ended RUNNING (the stop no-opped on a stopped fleet, then the start ran). The abandoned start emits
     /// NONE of the four and ends STOPPED. <b>That is a genuinely THIRD (end-state, emission) pair</b>, and
     /// the claim that once stood here — "exactly what pre-J-1's other resolution emitted" — was false:
-    /// that arm emitted two of the four and ended in the opposite state.
+    /// that arm emitted two of the four and ended in the opposite state.</para>
     ///
     /// <para>The ruling this change was accepted under does not rest on that sentence, which is why the
     /// sentence is corrected rather than the behaviour. It rests on the OEE leg, which is independent:
@@ -1536,7 +1536,7 @@ internal sealed class FleetCore
     /// build itself reaches with the lock released. A test can therefore do from here what no caller could
     /// do before: take <see cref="_gate"/> from ANOTHER thread and observe it granted while a start is
     /// mid-flight (which is the measurement, not a proxy for it), or mutate the roster and then assert the
-    /// machine it added is still driven (which is the roster-window witness).
+    /// machine it added is still driven (which is the roster-window witness).</para>
     ///
     /// <para><b>What it is NOT.</b> It is not a synchronisation point and nothing in this class waits on it.
     /// A <see langword="null"/> delegate — production, always — costs one branch per start.</para></summary>
@@ -2952,7 +2952,7 @@ internal sealed class FleetCore
     /// <see cref="_scenario"/> a build consumes; the driver reads the scenario itself through a live lambda,
     /// so nothing else about it can go stale), and one <see cref="ConnectorRegistry.SnapshotBindings"/> —
     /// taken here for the same "one consistent view, not a fresh one" reason that method's own doc comment
-    /// gives, and used ONLY to decide which machines the build should prepare simulators for.
+    /// gives, and used ONLY to decide which machines the build should prepare simulators for.</para>
     ///
     /// <para>NOT in here, deliberately: <see cref="_running"/> and <see cref="_estopEngaged"/>. A snapshot of
     /// either would be a copy of the HALT latch, and a copy of a latch is exactly the thing that must not

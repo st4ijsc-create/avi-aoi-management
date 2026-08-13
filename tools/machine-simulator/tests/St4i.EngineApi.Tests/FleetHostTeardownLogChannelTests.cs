@@ -27,19 +27,19 @@ namespace St4i.EngineApi.Tests;
 /// The three <c>LogDebug</c> ones are different in kind: <c>St4i.EngineApi</c> ships no
 /// <c>appsettings.json</c>, so the framework default applied and they emitted NOTHING. They did not go from
 /// Debug to Error in an operator's eyes — they went from <b>SILENT</b> to Error, and under
-/// <c>AddWindowsService</c> to a synchronous Windows Event Log write on a best-effort teardown path.
+/// <c>AddWindowsService</c> to a synchronous Windows Event Log write on a best-effort teardown path.</para>
 ///
 /// <para><b>What this suite pins.</b> Two of the three sites are reachable deterministically and are
 /// exercised here end to end through the real <c>FleetHost</c> — an orphaned connector driver whose
 /// <c>DisposeAsync</c> throws, and a live pipeline slot's driver whose <c>DisposeAsync</c> throws on Stop.
 /// Each asserts BOTH halves: the line still reaches an operator (Debug), and it no longer arrives as Error.
-/// The negative is the half that matters, because "no Error on this path" is the operator-facing claim.
+/// The negative is the half that matters, because "no Error on this path" is the operator-facing claim.</para>
 ///
 /// <para><b>What it does NOT pin, said out loud.</b> The third site
 /// (<c>"old pipeline slot teardown wait observed a faulted task"</c>) is documented at its own call site as
 /// defensive-only — a slot's run-task body catches everything it can throw — so nothing in this codebase
 /// can make it fire. It shares the same <c>_logDebug</c> field by construction, which is a READING and not
-/// a measurement; it is recorded as an untested line rather than claimed as a covered one.
+/// a measurement; it is recorded as an untested line rather than claimed as a covered one.</para>
 ///
 /// <para>🔴 <b>The third test here belongs to part 1, not part 2, and it is in this file because it is
 /// about the same channel.</b> A log callback is host-supplied code, and under <c>AddWindowsService</c> a
@@ -49,7 +49,7 @@ namespace St4i.EngineApi.Tests;
 /// <see cref="WhileAConnectorWarningIsBeingLogged_AReaderOfTheHaltLatchIsNotBlocked_Measured"/> is that
 /// mechanism's own measurement — same instrument as the seed-callback one in
 /// <c>FleetHostSeedNotificationOffGateTests</c>: time a reader of the halt latch while the host's callback
-/// is deliberately slow. Without it, the log-deferral half of this task would rest on reading alone.
+/// is deliberately slow. Without it, the log-deferral half of this task would rest on reading alone.</para>
 /// </summary>
 public sealed class FleetHostTeardownLogChannelTests
 {

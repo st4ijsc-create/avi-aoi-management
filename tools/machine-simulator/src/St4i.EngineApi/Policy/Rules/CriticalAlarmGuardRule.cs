@@ -33,7 +33,7 @@ namespace St4i.EngineApi.Policy.Rules;
 /// A write to a machine that is CURRENTLY in a Critical alarm state is at least as consequential — arguably
 /// more, since it is a NEW capability landing directly against a device that is, right now, in the worst
 /// state this product's alarm model can report — so this rule extends the same posture to the two
-/// machine-write/command actions.
+/// machine-write/command actions.</para>
 ///
 /// <para><b>Decided: YES, an active Critical alarm blocks a write/command.</b> Argued, not assumed:</para>
 /// <list type="bullet">

@@ -13,4 +13,81 @@
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
   </PropertyGroup>
+
+  <!-- 🔴 N-1 (.superpowers/sdd/doc-comments-compiled/task-1-brief.md) — WHY `GenerateDocumentationFile` IS
+       SET IN INDIVIDUAL csproj FILES AND DELIBERATELY NOT HERE, where it would reach all fifteen.
+
+       Until N-1 nothing in this repository read a doc comment as SYNTAX. The three instruments that speak
+       about comments — the strip-`///` diff, scripts/verify-suites.sh's warning count, and the token
+       censuses — all measure TEXT (§8.1(h7)). A `cref` naming a symbol that does not exist, a `paramref`
+       naming a parameter that does not exist and a `<para>` that never closes are invisible to every one of
+       them BY CONSTRUCTION, which is why §8.1 records cross-assembly crefs rotting for entire batches and
+       why J-3 had to build a private XML parser to find four malformed blocks in FleetCore.cs.
+
+       `GenerateDocumentationFile` is the switch that fixes that, and it turns on TWO assertions at once:
+         (1) every `///` block PARSES and every symbol it names RESOLVES — CS1570, CS1574, CS0419, CS1734,
+             CS1587. This is what N-1 exists to install.
+         (2) every publicly visible member HAS a doc comment — CS1591, and one member over, CS1573. This is
+             a documentation-COVERAGE policy this product has never adopted anywhere.
+       Nothing separates (1) from (2): the mechanisms that would (`NoWarn`, `<NoWarn>`, `#pragma warning
+       disable`, an .editorconfig severity, a lowered `WarningLevel`) are all suppression, and suppression is
+       precisely how this task fails — it builds the instrument and then blinds it. So (2) is reported as an
+       owner decision instead of taken, and the property is set only where (2) already held or was a short
+       sitting away from holding.
+
+       THE PRICE OF EACH PROJECT, measured at BASE 811c9054 BEFORE any of it was paid — 2026-08-13, SDK
+       10.0.302, `dotnet build -t:Rebuild -p:GenerateDocumentationFile=true` from tools/machine-simulator,
+       counted the way MSBuild's own "N Warning(s)" summary counts:
+
+           project                            (1) parse/resolve   (2) CS1591   CS1573   set
+           St4i.Connector.Conformance                  15               0          0     yes
+           St4i.EdgeCore.Serial                         3               9          0     yes
+           St4i.EdgeService                             3               2          0     yes
+           St4i.DesktopShell                            0               1          0     yes
+           St4i.SerialBench                             0               0          0     yes
+           St4i.SettingsAclProbe                        0               0          0     yes
+           St4i.Connector.Abstractions                 16              95          0     no
+           St4i.Connector.Abstractions.Tests            1             103          0     no
+           St4i.Connector.Conformance.Tests             5              51          0     no
+           St4i.EdgeService.Tests                       1              44          0     no
+           St4iMachineSimulator                        26              57          0     no
+           St4i.EdgeCore                              112             543         92     no
+           St4i.EngineApi                              53             530        248     no
+           St4i.EdgeCore.Tests                         36             705          0     no
+           St4i.EngineApi.Tests                        38             742          5     no
+
+       St4iMachineSimulator's row lands TWICE in a solution build — the WPF markup pass compiles a
+       `_wpftmp` clone of the project — so setting it there costs 166, not 83. Nothing else doubles.
+
+       Column (2) totals 2870 members across the nine unset projects (the twelve in the six set projects
+       were WRITTEN, not suppressed, which is why their column-(2) price is now zero). 2870 is the number
+       that is an owner decision and not an implementer one, and it is why those nine stay unset: the only
+       honest ways to set them are to write 2870 doc comments or to disable a code, and the first is a
+       product decision about what those surfaces promise while the second is forbidden here. A doc comment
+       invented for a domain field nobody has decided the meaning of is a new lie, not a fix.
+
+       Column (1) is a different thing entirely — every one of those is a claim that is already FALSE. N-1
+       fixed all 21 inside the six projects above (33 warnings in total there, with column (2)), which is why
+       setting the property moved scripts/verify-suites.sh's EXPECT_WARNINGS by ZERO. It also fixed, tree-wide
+       and outside the six, the two sets §8.1 names by measurement — St4i.Connector.Abstractions' 16 and
+       FleetCore.cs's four malformed blocks — plus EVERY remaining malformed-XML block anywhere in the tree
+       (19 blocks in 15 files, plus one block misplaced onto a record parameter in a 16th — CS1570 and CS1587
+       are now zero in every project, set or unset), because that is the class J-3 built a
+       private parser to find and it is now empty. 237 unresolvable `cref`/`paramref` claims remain in the
+       nine unset projects, listed by file in .superpowers/sdd/doc-comments-compiled/task-1-report.md and NOT
+       fixed: a fix there is guarded by nothing and witnessed by nothing until the switch can be set.
+
+       🔴 A malformed block HIDES the diagnostics inside it — measured here, not assumed. Closing the 19
+       blocks made the compiler report EIGHT further defects it had previously abandoned the block before
+       reaching: 4 CS1573 and 1 CS1574 in RtuBusConfiguration, 3 CS1734 in ConnectorConfigVisibilitySeeder.
+       Fix the parse errors first; the resolve errors underneath them are not visible until you do. (A ninth
+       change is not of that kind and is called out so the arithmetic is not mistaken for it: ConfigDtos.cs
+       carried a `///` block on a positional record parameter, where C# attaches it to nothing at all — CS1587.
+       Moving it to a real `<param>` on the record made it live documentation and made 24 CS1573 sayable, which
+       is the true statement "this record documents one parameter of twenty-five".)
+
+       To re-run the measurement without changing anything, from tools/machine-simulator:
+           dotnet build -t:Rebuild -p:GenerateDocumentationFile=true
+       That command turns the whole tree on for one build and is the diagnostic that replaces J-3's
+       purpose-built parser. -->
 </Project>

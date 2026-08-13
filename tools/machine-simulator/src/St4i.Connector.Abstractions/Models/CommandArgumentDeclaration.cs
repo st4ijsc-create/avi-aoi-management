@@ -77,7 +77,7 @@ public enum CommandArgumentType
 /// (resolving whether a command NAME is known at all is the caller's/driver's own job, before it ever reaches an
 /// argument declaration). A future <c>InvokeCommandAsync</c> implementation therefore needs no translation
 /// step beyond "if this returns <see langword="false"/>, reject with <see cref="CommandRejectionReason.InvalidArgument"/>
-/// and this method's own <paramref name="error"/> as <c>Detail</c>" — adding a second out-parameter whose value
+/// and <see cref="TryNarrow"/>'s own <c>error</c> as <c>Detail</c>" — adding a second out-parameter whose value
 /// is always the same constant would not remove any ambiguity, only add API surface. Documented here explicitly
 /// so this is a considered decision, not an oversight.</para>
 /// </summary>

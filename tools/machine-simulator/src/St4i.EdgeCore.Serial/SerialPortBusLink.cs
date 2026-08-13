@@ -128,7 +128,7 @@ public sealed class SerialPortBusLink : IModbusBusLink
     /// the one place to change.</b></para>
     ///
     /// <para>This is NOT the response latency. The slice is how long an IDLE read blocks before rechecking;
-    /// a byte that arrives returns from <see cref="SerialPort.Read"/> immediately, so nothing here is added to
+    /// a byte that arrives returns from <see cref="SerialPort.Read(byte[], int, int)"/> immediately, so nothing here is added to
     /// a healthy transaction.</para>
     /// </summary>
     internal const int ReadSliceMs = 20;
@@ -425,6 +425,8 @@ public sealed class SerialPortBusLink : IModbusBusLink
     /// future endpoint can say WHICH line, rather than only that a Modbus bus is unhappy.</summary>
     public SerialLineSettings Line => _settings;
 
+    /// <summary>NModbus's sentinel for "this resource has no deadline" — <c>-1</c>, the same value
+    /// <see cref="SerialPort.InfiniteTimeout"/> carries.</summary>
     public int InfiniteTimeout => -1;
 
     /// <summary>Set by NModbus's RTU transport before each transaction (probed by D-2: the transport
@@ -448,8 +450,13 @@ public sealed class SerialPortBusLink : IModbusBusLink
     /// </summary>
     public int ReadTimeout { get; set; } = -1;
 
+    /// <summary>How long one write may block, in milliseconds. Read only by <see cref="Write"/>, which pushes
+    /// it onto the port on every call and turns any non-positive value into
+    /// <see cref="SerialPort.InfiniteTimeout"/> there. It carries none of <see cref="ReadTimeout"/>'s slicing
+    /// machinery, because nothing aborts a write in flight.</summary>
     public int WriteTimeout { get; set; } = -1;
 
+    /// <inheritdoc/>
     public bool IsOpen => Volatile.Read(ref _disposed) == 0 && _port.IsOpen;
 
     /// <inheritdoc/>
@@ -474,7 +481,7 @@ public sealed class SerialPortBusLink : IModbusBusLink
     /// <c>NModbus.IO.SocketAdapter.DiscardInBuffer</c> and <c>UdpClientAdapter.DiscardInBuffer</c> are 1 IL
     /// byte each — a bare <c>ret</c>. That head-to-head is pinned as a test. (Review M-1: this said 47 was 27,
     /// which is the INNER method's length. A wrong number in the one paragraph whose whole subject is "verify
-    /// rather than trust the name" is the worst place to put one.)
+    /// rather than trust the name" is the worst place to put one.)</para>
     ///
     /// <b>It is nonetheless the wrong primitive for this seam</b>, because it purges without counting. Reading
     /// <see cref="SerialPort.BytesToRead"/> and then purging would leave a window — at 19200 baud a character

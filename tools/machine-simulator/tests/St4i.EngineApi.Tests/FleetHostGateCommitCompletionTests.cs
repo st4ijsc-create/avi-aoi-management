@@ -25,7 +25,7 @@ namespace St4i.EngineApi.Tests;
 /// throw in between loses the completion. G-1 closed one member (the seed-notification queue); an independent
 /// sweep found <b>five</b> more, and re-deriving the set added a sixth (S7) that the sweep's
 /// single-completion table could not represent — <b>seven members in total</b>. See
-/// <c>FleetCore._gate</c>'s banner, which is the canonical list and labels every row with its S-number.
+/// <c>FleetCore._gate</c>'s banner, which is the canonical list and labels every row with its S-number.</para>
 ///
 /// <para>🔴 This sentence read "found six more" until the whole-branch review. It is the <i>verbatim</i>
 /// sentence a task review had already raised as Critical and corrected in <c>FleetCore.cs</c> — and the

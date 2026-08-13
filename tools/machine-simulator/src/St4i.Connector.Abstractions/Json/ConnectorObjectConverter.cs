@@ -19,15 +19,15 @@ namespace St4i.Connector.Abstractions.Json;
 /// <see cref="St4i.Connector.Abstractions.Models.TelemetryNumeric.TryGet"/> would silently start
 /// returning <see langword="false"/> for every reading that ever crossed a sidecar process boundary — no
 /// exception, no log, the value just vanishes. This converter instead reads JSON straight back into CLR
-/// primitives that already work everywhere <see cref="TelemetryNumeric"/>/<c>Normalizer</c>/
+/// primitives that already work everywhere <see cref="Models.TelemetryNumeric"/>/<c>Normalizer</c>/
 /// <c>LiveTransport</c> already expect (see task-2-report.md for exactly what was checked at each site).</para>
 ///
 /// <para><b>Domain (verified against every concrete driver + parser in this repo — task-2-brief.md's
-/// "documented value domain"):</b> <see cref="TelemetrySample.Value"/> is
+/// "documented value domain"):</b> <see cref="Models.TelemetrySample.Value"/> is
 /// <c>double | bool | string | null</c> (only <c>OpcUaDriver.BoxValue</c> ever produces a non-numeric
 /// string — a status tag like <c>"RUNNING"</c>; every numeric OPC-UA type it handles widens to
 /// <see cref="double"/>; <c>IotSensorSim</c>/<c>ModbusTcpDriver</c> are always <see cref="double"/>).
-/// <see cref="DeviceReading.Genealogy"/> values are <c>string | int | double</c>
+/// <see cref="Models.DeviceReading.Genealogy"/> values are <c>string | int | double</c>
 /// (<c>Doc28Parser.Parse</c>: <c>lotCode</c>/<c>panelId</c>/<c>operatorId</c> → string,
 /// <c>boardIndex</c> → int, <c>cycleTimeSec</c> → double). This converter's accepted CLR write-domain is
 /// WIDER than that documented minimum, though: <c>null | bool | string</c>, every standard CLR
@@ -40,7 +40,7 @@ namespace St4i.Connector.Abstractions.Json;
 /// round 1 (task-2-report.md "Fix round 1"): the FIRST version of this converter only accepted exactly
 /// <c>int | long | double</c> and rejected e.g. a <see cref="float"/> telemetry value with the SAME
 /// <see cref="JsonException"/> a genuinely out-of-domain <see cref="DateTime"/> gets — but
-/// <see cref="TelemetryNumeric.TryGet"/>, <c>Normalizer.CoerceToNumber</c>, and
+/// <see cref="Models.TelemetryNumeric.TryGet"/>, <c>Normalizer.CoerceToNumber</c>, and
 /// <c>LiveTransport.GetDouble</c> all ALREADY accept <see cref="float"/>/<see cref="short"/>/etc.
 /// in-process today, so the narrower domain would have handed the first third-party driver author who
 /// wrote <c>Value = someFloatSensorReading</c> a hard failure at the sidecar boundary for a value that
@@ -71,9 +71,9 @@ namespace St4i.Connector.Abstractions.Json;
 /// whole.</description></item>
 /// </list>
 /// Confirmed this does not break any existing consumer: <see cref="long"/> IS <see cref="IConvertible"/>,
-/// so <see cref="TelemetryNumeric.TryGet"/> resolves it exactly like any other numeric input (see
+/// so <see cref="Models.TelemetryNumeric.TryGet"/> resolves it exactly like any other numeric input (see
 /// <c>Decision_A_*</c> tests in <c>ConnectorRoundTripTests</c>, which feed the converter's OWN
-/// <see cref="long"/> output through <see cref="TelemetryNumeric.TryGet"/> rather than a hand-written
+/// <see cref="long"/> output through <see cref="Models.TelemetryNumeric.TryGet"/> rather than a hand-written
 /// literal). <c>St4i.EdgeCore.Mapping.Normalizer.CoerceToNumber</c>'s numeric-type switch already lists
 /// <c>double or float or int or long or short or decimal</c>, and
 /// <c>St4i.EdgeCore.Transport.LiveTransport.GetDouble</c>'s switch already lists
@@ -83,7 +83,7 @@ namespace St4i.Connector.Abstractions.Json;
 ///
 /// <para><b>Decision (b) — out-of-domain values: reject loudly, never silently coerce.</b> A
 /// <see cref="DateTime"/>, an array, or a nested object assigned to
-/// <see cref="TelemetrySample.Value"/>/a <see cref="DeviceReading.Genealogy"/> value is outside the
+/// <see cref="Models.TelemetrySample.Value"/>/a <see cref="Models.DeviceReading.Genealogy"/> value is outside the
 /// documented domain above. Letting it fall through to whatever System.Text.Json's reflection-based
 /// serializer would otherwise do to it (e.g. a <see cref="DateTime"/> silently becoming an ISO-8601
 /// <see cref="string"/>) is exactly the kind of silent, type-changing surprise at a process boundary this
@@ -97,11 +97,11 @@ namespace St4i.Connector.Abstractions.Json;
 /// (symmetric with the WRITE-side NaN/Infinity rejection).</para>
 ///
 /// <para><b>Decision (b)'s blast radius (review round 1 — read this before building the sidecar host):</b>
-/// throwing from <c>Write</c> aborts serialization of the ENTIRE <see cref="DeviceReading"/> being
+/// throwing from <c>Write</c> aborts serialization of the ENTIRE <see cref="Models.DeviceReading"/> being
 /// serialized, not just the one offending value — <see cref="JsonSerializer.Serialize{TValue}(TValue, JsonSerializerOptions)"/>
 /// has no "skip this one field and continue" mode once a converter throws partway through an object
 /// graph. That is a deliberate escalation from today's IN-PROCESS behaviour, where
-/// <see cref="TelemetryNumeric.TryGet"/> merely skips a value it cannot convert and every other value in
+/// <see cref="Models.TelemetryNumeric.TryGet"/> merely skips a value it cannot convert and every other value in
 /// the same reading is unaffected. At a process boundary that escalation is the right call — see this
 /// class doc's opening paragraphs on why silent coercion is worse — but it means whoever builds the
 /// sidecar host MUST wrap each reading's serialize call in its own try/catch and quarantine (log +
