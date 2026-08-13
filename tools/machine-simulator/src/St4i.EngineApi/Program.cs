@@ -284,6 +284,25 @@ builder.Services.AddSingleton<DemoTransport>();
 // run BEFORE the queuePath below is computed/handed to LiveTransport.ForMachine. Deliberately not
 // try/caught: a WAL root that can't be created is a fatal misconfiguration that should stop startup, not
 // silently downgrade to an in-memory-only queue.
+//
+// 🔴 Task J-3 — THE RULE THIS OBEYS, and it is the SAME rule the startup settings replay ~1550 lines below
+// obeys when it does the OPPOSITE. Both were defensible on their own terms and nothing reconciled them;
+// FleetCore's P5 booked that, and README §15.9 now carries the reconciliation in full, for operators.
+// Stated here so this site can be argued with without leaving the file:
+//
+//   A host refuses to start over a bad configuration only when starting would be the QUIETER failure.
+//   Stopping requires BOTH: (1) continuing would HIDE the loss — the thing that stopped working would go
+//   on being presented as working, with nothing on any surface saying otherwise; and (2) the offending
+//   value can be corrected WITHOUT this process, which is true for anything set from outside the product
+//   and FALSE for anything the product itself wrote, because then the process is part of the repair
+//   channel. If either fails, the host comes up and says what it could not use.
+//
+// Here both hold. (1): the only alternative to stopping is a null queuePath, and an in-memory queue keeps
+// returning successful acks for records that die with the process — the loss is invisible in the outcome,
+// which is the whole reason C-1 was Critical. (2): ST4I_WAL_DIR and a ProgramData ACL are repaired with the
+// same tool that set them, so a dead process costs the operator nothing and the next start simply retries.
+// The settings replay below fails BOTH conditions, independently, which is why it comes up instead — same
+// rule, opposite answer, and neither is the exception to the other.
 var wal = WalOptions.FromEnvironment();
 if (wal.Enabled) wal.EnsureDir();
 builder.Services.AddSingleton(_ => LiveTransport.ForMachine(
@@ -826,6 +845,15 @@ builder.Services.AddSingleton<St4i.EngineApi.Line.LineController>(sp =>
 // DeviceIdentity from DI: zero hits) and removed. deviceIdentity itself is still a local value here —
 // it's what LoadOrCreate returns and what seeds the DeviceIdentityProvider constructed right below — it
 // just no longer needs its own separate DI registration since nothing ever asked the container for it.
+// 🔴 Task J-3 — NAMED, NOT CHANGED. This constructor creates the identity directory and is not guarded, so
+// a root that cannot be CREATED ends the process here. The rule stated at wal.EnsureDir above (and in full
+// at README §15.9) predicts the opposite for this one: the loss is not hidden, because DeviceIdentityStore
+// already has a reported degradation for the neighbouring failure — a directory that exists but cannot be
+// WRITTEN comes up on an in-memory identity with an Error, and that class says in as many words that an
+// unwritable identity directory is an operational problem to fix on disk rather than a reason the device
+// cannot come up. Two adjacent statements about one variable, decided two ways, with nothing saying so.
+// Left exactly as it is: either direction is an operator-observable startup change and the owner has
+// reaffirmed stop-and-report for those.
 var deviceIdentityStore = new St4i.EdgeCore.Identity.DeviceIdentityStore(
     logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"));
 var deviceIdentity = deviceIdentityStore.LoadOrCreate(unsOptions.Cell);
@@ -1124,6 +1152,17 @@ catch (St4i.EdgeCore.Config.ConnectorsConfigException ex)
 // (the raw-instance overload) is exactly what makes that the same object, not a second store pointed at the
 // same directory. Relocatable via ST4I_CONNECTOR_CONFIG_DIR, same ops/testability rationale as
 // ST4I_ASSETS_DIR/ST4I_ALARMS_DIR above.
+//
+// 🔴 Task J-3 — NAMED, NOT CHANGED, and the SYMMETRIC SITE is the notification store ~680 lines above.
+// That one wraps its constructor, and the comment at that wrap says the posture is shared by "every other
+// startup config load here". It is not: this constructor creates a directory and migrates a SQLite schema,
+// unguarded, so a store that cannot be opened ends the process — over rows THIS PRODUCT wrote, through
+// POST /v1/connectors, which fails condition (2) of the rule at wal.EnsureDir above (README §15.9). The
+// LOAD below is guarded; only the open is not. The reason for the asymmetry is worth more than the
+// asymmetry and is why this is not a one-line fix: NotificationEndpoints resolves its store optionally and
+// answers honestly when it is absent, while ConnectorEndpoints takes this one as a required handler
+// parameter — so there is no "absent" state for this store to fail into, and guarding it means building
+// that state first. Recorded rather than attempted: it is an operator-observable startup change.
 var connectorConfigDir = Environment.GetEnvironmentVariable(St4i.EngineApi.Fleet.ConnectorConfigStore.EnvVarDir);
 var connectorConfigStore = new St4i.EngineApi.Fleet.ConnectorConfigStore(
     string.IsNullOrWhiteSpace(connectorConfigDir) ? null : connectorConfigDir);
@@ -1736,6 +1775,22 @@ if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
 // outright (they're only ever the FLOOR for a machine that has never had these three set before). Either
 // branch below goes through this exact same FleetHost.UpdateSettings call, so the transport/config-sync
 // rebuild + (new) persistence-on-change both happen identically regardless of which source won.
+//
+// 🔴 Task J-3 — NAMED, NOT CHANGED, and it is the sharpest of the three: this READ is unguarded, roughly a
+// hundred lines above the guard that exists precisely so this file can never take the host down. Load()
+// tolerates a corrupt file (it catches JsonException and returns null) but not an unreadable one — a
+// deny-share lock from the editor the Error message below tells an operator to open it with, or an ACL on
+// the settings root, throws out of File.ReadAllText and ends the process. By the rule at wal.EnsureDir
+// above (README §15.9) this must come up: the file is one the PRODUCT wrote, so stopping removes the repair
+// channel for a state the product authored — the same condition the guard below is built on.
+//
+// 🔴 AND THE OBVIOUS GUARD WOULD BE A DEFECT, which is why this is named rather than fixed. Wrapping this
+// in a try/catch that yields null makes an unreadable file indistinguishable from NO file, which selects
+// the SEED arm: the environment floor is applied, UpdateSettings persists unconditionally, and the
+// operator's own fleet-settings.json is overwritten by the floor — the precedence inversion argued at
+// length below, reached from the other end. What is missing is a third state, "a file exists and could not
+// be read", which nothing in this composition root or in FleetSettingsStore expresses today. Building it
+// changes what an operator observes at startup, so it is recorded and left.
 var persistedSettings = settingsStore.Load();
 var initialSettingsRequest = persistedSettings is not null
     ? new SettingsUpdateRequest(
@@ -1751,6 +1806,24 @@ var initialSettingsRequest = persistedSettings is not null
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
 // 🔴 H-1a — THE STARTUP REPLAY IS HARDENED HERE, AND IT IS HARDENED **FIRST**.
+//
+// 🔴 Task J-3 — WHY THIS AND THE UNGUARDED `wal.EnsureDir()` ~1550 LINES ABOVE ARE ONE RULE, NOT TWO
+// POSTURES. Both sit before app.Run(), both are about configuration, and they do opposite things; that
+// contradiction was booked at FleetCore's P5 and is reconciled in README §15.9, which is the artefact and
+// the operator-facing half. The rule:
+//
+//   A host refuses to start over a bad configuration only when starting would be the QUIETER failure.
+//   Stopping requires BOTH: (1) continuing would HIDE the loss, and (2) the offending value can be
+//   corrected WITHOUT this process — true for anything set from outside the product, FALSE for anything
+//   the product itself wrote. If either fails, the host comes up and reports.
+//
+// This arm fails BOTH, independently, which is what makes it over-determined rather than a judgement call.
+// (1) fails because the loss is exactly what the LogError below names, and GET /v1/settings goes on
+// truthfully reporting the triple this process is holding — nothing left running claims the Live transport
+// was rebuilt. (2) fails because fleet-settings.json is a file the PRODUCT wrote, through PUT /v1/settings,
+// and that endpoint is the only in-product way to correct it: stopping the host removes the repair channel
+// for a state the host itself created. The WAL ruling above satisfies both conditions instead, and so it
+// stops. Same rule; the situations differ, not the posture.
 //
 // Read the order, because reversing it ships the boot loop G-2 refused: this guard is the PRECONDITION
 // for FleetCore.UpdateSettings persisting unconditionally, not a consequence of it. Until this `try`

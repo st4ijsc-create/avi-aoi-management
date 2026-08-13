@@ -1850,6 +1850,137 @@ riêng (endpoint, node map, gốc PKI), chưa có nhánh dispatch, và chưa có
 giữ được hai kho chứng chỉ. **Chỉ đặt `ST4I_OPCUA_PKI_DIR` thì KHÔNG bật được gì** — entry vẫn bị từ chối theo
 tên, và chính thông điệp từ chối nói vậy.)*
 
+#### 🔴 Which startup failures STOP this host, and which let it come up — the rule, and how it was measured
+
+**EN** — Relocate two roots in one afternoon and you can get two different failure semantics, with nothing
+telling you which you are about to get. This is the sentence that was missing. `FleetCore`'s P5 booked it as
+an open item after two rulings landed in the same file, a thousand lines apart, looking like opposites: the
+WAL root is created **unguarded** before the host serves anything (a root that cannot be created stops
+startup), while a persisted settings triple that cannot be activated leaves the host **UP and reporting at
+`Error`**. **They are not opposites. They are one rule applied to two different situations**, and the rule is:
+
+> **A host refuses to start over a bad configuration only when starting would be the QUIETER failure.**
+
+Stopping requires **both** of the following. If either fails, the host comes up, keeps serving every
+endpoint, and says at `Error` or `Warning` what it could not use:
+
+1. **Continuing would HIDE the loss.** Whatever just stopped working would go on being presented as
+   working — a record acknowledged but never made durable, a boundary reported but not enforced, a store
+   whose absence nothing announces. If the loss can be named on a surface somebody reads, and nothing left
+   running claims the lost thing still works, then **coming up is the louder outcome** and the host must
+   come up.
+2. **The offending value can be corrected WITHOUT this process.** True for anything set from outside the
+   product — an environment variable, a directory's ACL, a file a human placed — because the tool that set
+   it is unaffected by this process dying, so the next start simply retries. **False for anything the
+   product itself wrote**, because then the process is part of the repair channel and stopping it turns a
+   state the product authored into one the product cannot undo.
+
+**Why the two headline cases are the same rule.** The WAL root stops the host because the alternative is
+silence: a queue that quietly degrades to memory keeps returning successful acks for records that then die
+with the process (1 holds), and the variable plus an ACL are repaired with the same tool that set them
+whether or not this process lives (2 holds). The persisted `fleet-settings.json` triple goes the other way
+because *there* stopping **is** the silence: a dead service says nothing about which of three fields is
+wrong, and `PUT /v1/settings` — the only in-product way to correct a file the product itself wrote — dies
+with it. Both conditions fail independently, so that arm is over-determined. **Both arms choose the louder
+failure.** That is the whole of it, and it is why neither ruling has to be revisited.
+
+**What that means at each root — this is the table to read before relocating one.** "Stops" means the
+process ends before it serves anything; "comes up" means every endpoint works and the failure is on the log.
+
+| If this cannot be used at startup | What the host does |
+|---|---|
+| `security`, `wal`, `historian`, `assets`, `sitelink`, `settings` (the DIRECTORY), `machine-config` | **STOPS.** All are external values; all would otherwise go on looking like they work |
+| `alarms`, and `security.db` itself | **STOPS**, a moment later — these open as the host starts rather than before it |
+| `identity` | **MIXED, and read this one twice**: a directory that cannot be **created** stops the host; a directory that exists but cannot be **written** comes up on a fresh in-memory identity with an `Error` — a new device every start, which a Site that pinned the old fingerprint will refuse |
+| `connector-config` | **MIXED**: a store that cannot be **opened** stops the host; one that opens but cannot be **read** comes up with no persisted connectors |
+| `settings` (the FILE) | **MIXED**: `fleet-settings.json` that cannot be **read** stops the host; one that reads but cannot be **activated** comes up and reports — that second arm is the ruling above |
+| `notifications`, `bridge-spool`, the UNS broker port | **Comes up**, warns, that subsystem is off for the run |
+| `connectors.json`, `fleet.json`, `ST4I_MODBUS_MAP`, `ST4I_OPCUA_MAP`, a persisted connector row | **Comes up**, warns, **only that source** disables itself. A connector that is configured but not running stays visible as exactly that — it is never shown as running |
+| `creds`, `opcua-pki` | **No startup decision** — both are resolved when something uses them, not while the host starts |
+| `ASPNETCORE_URLS` / `--urls` | **STOPS** — the bind failure is Kestrel's, not this product's, and it arrives after everything above has already succeeded |
+
+**The instrument, and its ceiling — said plainly so nobody inherits this table as a certainty.** It is a
+READ of the four composition roots (`St4i.EngineApi/Program.cs`, `St4i.EdgeService`'s `Program.cs` +
+`EdgeWorker`, `St4iMachineSimulator/App.xaml.cs`) plus every store constructor they reach, asking at each
+statement whether a failure is caught. Nothing was executed to produce it. What a read cannot see is the
+part of the DI graph resolved **lazily, after the host has started** — a factory that throws on its first
+resolution fails a request rather than the boot, and lands in no row above.
+
+🔴 **Three places do NOT follow the rule. They are named here rather than changed, because flipping any of
+them is an operator-observable startup change and none of them has a one-line fix:**
+
+- **`fleet-settings.json` is READ unguarded**, about a hundred lines before the guard that exists so that
+  file can never take the host down. A file that cannot be read — a deny-share lock from the editor the
+  `Error` message tells the operator to open it with, or an ACL — ends the process. Condition 2 fails, so
+  the rule says come up. **The obvious guard would be a defect**: treating an unreadable file as "no file"
+  routes into the seed arm, which applies the environment floor, persists it, and overwrites the operator's
+  file — the precedence inversion this section's own ruling exists to prevent. The honest fix is a third
+  state, "a file exists and could not be read", which nothing today expresses.
+- **The connector-configuration store is OPENED unguarded**, while the notification store — same shape,
+  same file, same "opened synchronously before the host is built" — is wrapped, and the comment at that
+  wrap claims the posture is shared by *every* startup config load. It is not. The real reason for the
+  difference is worth more than the difference: the notification endpoints resolve their store optionally
+  and answer honestly when it is missing, and the connector endpoints take theirs as a required parameter,
+  so there is no "absent" state for the connector store to fail into. Guarding it means building that state
+  first.
+- **The identity directory's creation is unguarded** while the very same class rules, a hundred and thirty
+  lines further down, that *"an unwritable identity directory is an operational problem to fix on disk, not
+  a reason the device can't come up at all"* — and implements exactly that for the write. Two adjacent
+  statements decide one variable's failure two different ways, and nothing says so.
+
+A fourth, smaller one, in the opposite direction: an **unparseable** `ST4I_WAL_MAX_BYTES` is silently
+ignored — no warning anywhere — while a parseable-but-out-of-range one throws and stops the host. The
+silent arm is a small breach of condition 1, and its structural twin (a tolerated register-map fallback)
+does log.
+
+*(VI: 🔴 **Lỗi khởi động nào DỪNG host, lỗi nào cho host lên — quy tắc, và cách đo.** Dời hai gốc trong một
+buổi chiều là có thể nhận hai ngữ nghĩa lỗi khác nhau mà không chỗ nào báo trước. Đây là câu còn thiếu ấy.
+P5 của `FleetCore` đã ghi nợ nó: hai phán quyết nằm trong cùng một file, cách nhau nghìn dòng, **trông** như
+ngược nhau — gốc WAL không tạo được thì **chặn khởi động**; bộ ba settings đã lưu mà không kích hoạt được thì
+host **VẪN LÊN và báo ở mức `Error`**. **Chúng KHÔNG ngược nhau. Chúng là MỘT quy tắc áp lên hai tình huống
+khác nhau:** > **Một host chỉ từ chối khởi động vì cấu hình sai khi việc khởi động lên mới là cái thất bại
+IM LẶNG HƠN.** Muốn dừng phải thoả **cả hai** điều; thiếu một điều thì host lên, phục vụ đủ mọi endpoint, và
+nói ra thứ nó không dùng được: **(1) Chạy tiếp sẽ GIẤU mất mát** — thứ vừa hỏng vẫn tiếp tục được trình bày
+như đang chạy: một bản ghi đã ack mà không hề bền, một ranh giới được báo mà không được thi hành, một store
+mà sự vắng mặt không ai công bố. Nếu mất mát ấy gọi tên được trên một bề mặt có người đọc, và không thứ gì
+còn chạy dám nói cái đã mất vẫn hoạt động, thì **lên mới là cái ồn hơn** và host phải lên. **(2) Sửa được giá
+trị ấy mà KHÔNG cần tiến trình này** — đúng với mọi thứ đặt từ bên ngoài sản phẩm (biến môi trường, ACL của
+thư mục, một file do người đặt vào), vì dụng cụ đã đặt nó không bị ảnh hưởng bởi việc tiến trình chết, và lần
+khởi động sau sẽ thử lại. **SAI với mọi thứ do chính sản phẩm ghi ra**, vì khi ấy tiến trình là một phần của
+kênh sửa chữa, và dừng nó biến một trạng thái do sản phẩm tạo ra thành trạng thái sản phẩm không gỡ được.
+**Vì sao hai ca nổi tiếng là cùng một quy tắc:** gốc WAL chặn khởi động vì lựa chọn còn lại là sự im lặng —
+một hàng đợi lặng lẽ tụt xuống bộ nhớ vẫn trả ack thành công cho những bản ghi rồi sẽ chết theo tiến trình
+(điều 1 đúng), còn biến môi trường và ACL thì sửa bằng đúng dụng cụ đã đặt chúng, sống chết của tiến trình
+không liên quan (điều 2 đúng). Bộ ba `fleet-settings.json` đi hướng ngược lại vì ở **đó** dừng lại MỚI là sự
+im lặng: một dịch vụ đã chết không nói được trường nào trong ba trường sai, và `PUT /v1/settings` — đường duy
+nhất trong sản phẩm để sửa một file do chính sản phẩm ghi — chết theo nó. Cả hai điều đều sai một cách độc
+lập. **Cả hai nhánh đều chọn cái thất bại ỒN HƠN.** Đó là toàn bộ, và đó là lý do không phán quyết nào phải
+xét lại. **Bảng ở bản EN là thứ phải đọc trước khi dời một gốc:** `security`, `wal`, `historian`, `assets`,
+`sitelink`, thư mục `settings`, `machine-config` — **DỪNG**; `alarms` và `security.db` — **DỪNG**, chậm hơn
+một nhịp (chúng mở khi host đang lên, không phải trước đó); `identity` và `connector-config` và **file**
+`fleet-settings.json` — **HỖN HỢP**, tạo được/mở được/đọc được là một chuyện, ghi được/đọc được/kích hoạt
+được là chuyện khác; `notifications`, `bridge-spool`, cổng broker UNS, `connectors.json`, `fleet.json`,
+`ST4I_MODBUS_MAP`, `ST4I_OPCUA_MAP`, một dòng connector đã lưu — **LÊN** kèm cảnh báo, chỉ nguồn đó tự tắt;
+`creds`, `opcua-pki` — không có quyết định nào lúc khởi động. **Dụng cụ và trần của nó, nói thẳng:** đây là
+một lượt ĐỌC bốn composition root cộng mọi constructor store mà chúng với tới, hỏi ở từng câu lệnh xem lỗi có
+được bắt không — **không chạy gì cả**. Thứ một lượt đọc không thấy là phần đồ thị DI được phân giải **muộn,
+sau khi host đã lên**: một factory ném ở lần phân giải đầu tiên làm hỏng một request chứ không hỏng lượt
+khởi động, và nó không nằm ở hàng nào trong bảng. 🔴 **Ba chỗ KHÔNG theo quy tắc, nêu tên chứ không sửa**, vì
+lật chỗ nào cũng là thay đổi quan sát được trên đường khởi động và không chỗ nào có bản sửa một dòng:
+`fleet-settings.json` **được ĐỌC không bọc**, cách chốt sinh ra để file ấy không bao giờ hạ được host đúng
+một trăm dòng — và **bản vá hiển nhiên lại là một khiếm khuyết**: coi file không đọc được như "không có
+file" sẽ rơi vào nhánh gieo mầm, áp sàn môi trường, lưu nó, và **ghi đè file của người vận hành**; cái cần là
+một trạng thái thứ ba, "có file mà không đọc được", mà hôm nay không gì diễn đạt. Store cấu hình connector
+**được MỞ không bọc**, trong khi store thông báo — cùng hình dạng, cùng file — thì có bọc, và chú thích ở
+chỗ bọc ấy khẳng định lập trường này là chung cho **mọi** lượt nạp cấu hình lúc khởi động: không phải vậy;
+lý do thật đáng giá hơn chỗ lệch — endpoint thông báo phân giải store của nó theo kiểu tuỳ chọn và trả lời
+trung thực khi thiếu, còn endpoint connector nhận store như một tham số bắt buộc, nên **không có trạng thái
+"vắng mặt"** để mà rơi vào. Việc tạo thư mục `identity` **không bọc**, trong khi chính lớp ấy phán quyết,
+cách đó một trăm ba mươi dòng, rằng *"một thư mục identity không ghi được là vấn đề vận hành phải sửa trên
+đĩa, không phải lý do để thiết bị không lên nổi"* — và hiện thực đúng như thế cho đường ghi. Một chỗ thứ tư,
+nhỏ hơn và ngược chiều: `ST4I_WAL_MAX_BYTES` **không parse được thì bị bỏ qua trong im lặng**, không cảnh
+báo ở đâu cả, trong khi giá trị parse được mà ngoài khoảng thì ném và chặn host.)*
+
 ---
 
 ## 16. Middleware backbone (Giai đoạn 2) — UNS spine, Policy/safety, fault isolation, Modbus, Asset Registry / Middleware nền tảng (Giai đoạn 2)

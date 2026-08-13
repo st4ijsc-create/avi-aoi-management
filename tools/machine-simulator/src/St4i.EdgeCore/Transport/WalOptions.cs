@@ -90,7 +90,22 @@ public sealed class WalOptions
     /// Settings-triggered <see cref="TransportCoordinator.RebuildLive"/>) and stop whatever composition
     /// root called this — silently downgrading to a null queuePath instead would make durable
     /// store-and-forward look like it's working when it silently isn't, which is the exact failure mode
-    /// this fix exists to close.</summary>
+    /// this fix exists to close.
+    ///
+    /// <para>🔴 <b>Task J-3 — the RULE that ruling is an instance of, written here because all three
+    /// composition roots that call this method cite this doc comment rather than each other.</b> The
+    /// product also, deliberately, does the OPPOSITE elsewhere on the startup path (a persisted settings
+    /// triple that cannot be activated leaves the host UP and reporting), and until J-3 nothing said which
+    /// situation gets which. README §15.9 is the artefact and the operator-facing half; the rule is:
+    /// <b>a host refuses to start over a bad configuration only when starting would be the QUIETER
+    /// failure.</b> Stopping requires BOTH — (1) continuing would HIDE the loss, the broken thing going on
+    /// being presented as working with nothing on any surface saying otherwise; and (2) the offending value
+    /// can be corrected WITHOUT this process, which holds for anything set from outside the product (an
+    /// environment variable, an ACL, a file a human placed) and FAILS for anything the product itself wrote,
+    /// because then the process is part of the repair channel. Either condition failing means come up and
+    /// report. This method satisfies both: an in-memory queue keeps acknowledging records that then die with
+    /// the process, and <see cref="EnvVarDir"/> plus a directory ACL are repaired with the tool that set
+    /// them whether or not this process lives.</para></summary>
     public string EnsureDir()
     {
         var dir = ResolveDir();

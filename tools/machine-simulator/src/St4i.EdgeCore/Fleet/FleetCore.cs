@@ -426,6 +426,18 @@ internal sealed class FleetCore
     /// operator relocating two directories in one afternoon gets two different failure semantics with no
     /// way to predict either. Surfaced by H-1c's own measurement of the WAL path; it needs one owner and
     /// one artefact, and that owner is whoever takes P5.</para>
+    /// <para>🔴 <b>DISCHARGED by task J-3, and the answer was that the two rulings never disagreed.</b> The
+    /// artefact is <b>README §15.9</b> ("Which startup failures STOP this host, and which let it come up"),
+    /// with the same rule stated at each deciding site — <c>St4i.EngineApi/Program.cs</c>'s
+    /// <c>wal.EnsureDir()</c>, its startup settings replay, and
+    /// <see cref="St4i.EdgeCore.Transport.WalOptions.EnsureDir"/> for the two hosts that reach the ruling
+    /// only through it. The rule: <b>a host refuses to start over a bad configuration only when starting
+    /// would be the QUIETER failure</b> — stopping requires BOTH that continuing would HIDE the loss and
+    /// that the value can be corrected WITHOUT this process (true for anything set from outside the product,
+    /// false for anything the product itself wrote). WS-C's WAL ruling satisfies both; H-1a's settings
+    /// replay fails both independently. <b>Nothing behavioural changed</b>: J-3 also enumerated the rest of
+    /// the startup path and named three sites that diverge from the rule — all recorded in §15.9, none
+    /// touched, because flipping any of them is an operator-observable startup change.</para>
     /// <para>🔴 <b>WHAT J-1 DID TO P4 AND P5, stated once for both because it is one mechanism.</b> Driver
     /// construction is hoisted: <see cref="SnapshotStartInputsLocked"/> copies the roster, the multiplier and
     /// one binding snapshot under this lock; <see cref="BuildStartPlan"/> then builds every simulator and
