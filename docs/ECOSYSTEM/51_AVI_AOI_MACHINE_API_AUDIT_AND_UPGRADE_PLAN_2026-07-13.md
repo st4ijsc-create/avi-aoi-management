@@ -4,8 +4,60 @@
 **Nhánh:** `automation-orchestration-r0`
 **Phạm vi:** Toàn bộ luồng máy AVI/AOI kết nối để **upload inspection + ảnh**, xuyên suốt:
 `Setup máy mới → Đồng bộ → Sync điểm đo (SYNPOINT) → Kết nối MQTT/Realtime → Cập nhật inspection result → Dashboard & quản lý dữ liệu` + các tính năng xuyên suốt (auth/RBAC/rate-limit/idempotency/observability).
-**Trạng thái:** ✅ **USER ĐÃ DUYỆT 8/8 quyết định (2026-07-13)** — xem **§8**. Đang thực thi **P0** (+ **P1-DOC** song song).
-**Cập nhật (2026-07-13):** bổ sung **§9 — Rà soát drift Tài liệu API ↔ Code backend** (doc_health 54/100 · 143 endpoint/field thiếu doc). **§10 — P0 THỰC THI XONG** (idempotency + bịt rò credential + MQTT ACL, mig 0272-0273, verify DB thật). **§11 — P1 + P1-DOC THỰC THI XONG** (version propagation + clock-skew + version pinning + gate-by-snapshot + image atomic + rate-limit NAT + benchmark, mig 0274-0276, tsc 0 lỗi + 311 test xanh). **Chưa commit** — chờ review.
+**Trạng thái:** ✅ **USER ĐÃ DUYỆT 8/8 quyết định (2026-07-13)** — xem **§8**.
+**Cập nhật (2026-07-13):** bổ sung **§9 — Rà soát drift Tài liệu API ↔ Code backend** (doc_health 54/100 · 143 endpoint/field thiếu doc). **§10 — P0 THỰC THI XONG** (idempotency + bịt rò credential + MQTT ACL, mig 0272-0273, verify DB thật). **§11 — P1 + P1-DOC THỰC THI XONG** (version propagation + clock-skew + version pinning + gate-by-snapshot + image atomic + rate-limit NAT + benchmark, mig 0274-0276, tsc 0 lỗi + 311 test xanh).
+
+---
+
+> ## 🔴 ĐỌC TRƯỚC — TRẠNG THÁI THẬT (đo lại 2026-08-13, nhóm C việc 2)
+>
+> **Tài liệu này KHÔNG còn là backlog. Toàn bộ P0 → P3 đã thực thi và ĐÃ COMMIT.**
+> Phần §0–§7 bên dưới là **ảnh chụp ngày 2026-07-13** và mô tả các lỗ hổng ở **thì hiện tại**;
+> đọc chúng như *hiện trạng* là cách chỉ mục ghi nhớ của dự án sai suốt tám tuần.
+> Trạng thái thi hành thật nằm ở **§10 · §11 · §12** (§12 commit `cfb6fa9f`, rồi `982cc916`,
+> `8bd45cd5`, `86547ace`, `47e56e1c`). Câu *"Chưa commit — chờ review"* ở dòng trên đã LỖI THỜI
+> và đã gỡ; nhãn *(CHỜ DUYỆT)* của **§7** cũng lỗi thời — §8 ghi rõ user duyệt 8/8 từ 2026-07-13.
+>
+> **4/4 P0 — ĐÃ VÁ, đo lại độc lập trên DB + mã ngày 2026-08-13:**
+>
+> | P0 | Đo được hôm nay |
+> |---|---|
+> | R1 `config` rò apiKey | `hierarchyRouters.ts:893` `apiKey: legacyExposure ? machine.apiKey : null`; cửa hậu `machineConfigExposesApiKey()` `:653` đọc `MACHINE_CONFIG_EXPOSE_APIKEY`, cờ **vắng khỏi `.env`** ⇒ OFF |
+> | R2 inspection không idempotent | `pg_indexes`: **`uq_inspections_machine_serial_time`** UNIQUE trên `("machineId","serialNumber","inspectionTime") WHERE serialNumber <> ''` — TỒN TẠI |
+> | R3 MQTT không ACL | `mqttService.ts:1459` `aedes.authorizePublish=` · `:1474` `aedes.authorizeSubscribe=` (**dòng gán thật**, không phải bình luận) |
+> | R4 không bump `pointsConfigVersion` | 7 chỗ gọi `bumpAndNotifyPointsConfig(` trong `productRouters.ts`; `delete` bump ở tầng DB trong cùng transaction (`server/db/product.ts` `bumpPointsConfigVersion`) |
+>
+> ### ĐÍNH CHÍNH — hai lời khai từng bị đọc SAI
+>
+> 1. **`uq_machines_code_active` CÓ TỒN TẠI.** §3 mục 5 khoe nó là điểm mạnh — **§3 ĐÚNG**.
+>    Đo: `CREATE UNIQUE INDEX uq_machines_code_active ON public.machines USING btree (code) WHERE ("isActive" = true)`
+>    (tạo bởi `drizzle/0181_machine_lifecycle_softdelete.sql:77`, `pg_class.oid` 23602 — có từ lâu).
+>    Báo cáo khảo sát 2026-08-12 (`docs/superpowers/reports/2026-08-12-nhom-c-khao-sat.md`, mục 51-r3)
+>    khai index này **không tồn tại**; đó là **âm tính giả của phép đo ấy**, không phải lỗi của tài liệu này.
+> 2. **`machineCode` và `approvalStatus` KHÔNG phải tên cột bịa.** Cùng khảo sát cảnh báo
+>    *"mọi truy vấn chép từ doc 51 sẽ lỗi cột"* — **sai**. Đo `information_schema.columns`:
+>    `machineCode` là cột thật trên **16 bảng** (`oee_metrics`, `downtime_events`, `predictive_alerts`,
+>    `maintenance_*`, `sync_logs`, `ai_insights`, …) **và** là tên trường hợp đồng API
+>    (`server/contracts/machineDataContract.ts:27`, `server/api/v1/openapi.ts:99`);
+>    `approvalStatus` là cột thật trên `mqtt_clients` và `suppliers` — đúng nghĩa §7-P2
+>    *"MQTT admission: `approvalStatus≠APPROVED`"* đang dùng.
+>    **Ngoại lệ duy nhất cần biết:** trên chính bảng `machines`, cột tên là **`code`** và
+>    **`registrationStatus`** (không có `machines.machineCode` / `machines.approvalStatus`).
+>    Chỗ §4 hàng P2 viết "`machineCode`/URN unique GLOBAL" là nói về `machines.code`.
+> 3. **§12.2 #1 (`__UNMAPPED__` bị soft-delete) ĐÃ HẾT.** Đo:
+>    `SELECT id, code, "deletedAt" FROM product_models WHERE code='__UNMAPPED__'` → `id=1, deletedAt=NULL`.
+>
+> ### CÒN THẬT — và không mục nào là lỗ hổng mã
+>
+> | Còn lại | Đo được 2026-08-13 |
+> |---|---|
+> | `INSPECTION_SINGLE_TX_ENABLED` · `MACHINE_FIDUCIAL_REGISTRATION` · `PRODUCT_VARIANT_ENABLED` | Mã + lưới đã có (doc 55), **cả ba cờ vắng khỏi `.env` ⇒ OFF** ⇒ §12.3 "còn lại" đã XÂY nhưng chưa BẬT |
+> | `MQTT_ADMISSION_ENFORCE` (§5.3, QĐ#1) | Vắng khỏi `.env` ⇒ warn-only; topic ACL (P0/R3) thì **đang cưỡng chế thật** |
+> | apiKey plaintext at-rest | `SELECT count(*) FILTER (WHERE "apiKey" IS NOT NULL) FROM machines` → **16/41**. Không còn xác thực được (`.env` `MACHINE_SHARED_KEY_ALLOWED=false` → policy `deny`) — là **rác nhạy cảm**, không phải cửa mở. Bước cuối runbook doc 52 chưa chạy. |
+>
+> *Đo bằng: `pg_indexes` / `information_schema.columns` / `pg_class` trên `aoi_management`
+> (`current_database()` + `inet_server_addr()` xác nhận), `grep -c` trên `.env` đọc **exit code của
+> chính grep**, và đọc **dòng gán thật** thay vì đếm số match (5/7 match `authorize*` là bình luận).*
 
 ---
 
@@ -19,6 +71,11 @@
 | **Nguyên tắc** | Phân biệt rõ **framework** (có khung/route) vs **production-ready** (chạy được, xử lý lỗi, idempotent, có test). Mọi finding kèm bằng chứng `file:line`. |
 
 ### 4 claim tôi đã tự kiểm chứng trên đĩa (✔)
+
+> ⚠️ **Cả bốn claim dưới đây là ẢNH CHỤP 2026-07-13 và ĐỀU KHÔNG CÒN ĐÚNG.** Chúng mô tả
+> bốn P0 **trước khi vá**; §10 đã vá cả bốn và bảng ở đầu tài liệu ghi phép đo lại ngày
+> 2026-08-13. Giữ nguyên văn để lưu vết audit — **đừng đọc như hiện trạng**.
+
 1. ✔ **Rò credential:** `machineRouter.config` là `publicProcedure`, chỉ cần `serialNumber` là **trả `machine.apiKey` plaintext** khi máy đã approved — [hierarchyRouters.ts:706-722](../../server/routers/hierarchyRouters.ts#L706-L722).
 2. ✔ **Không idempotent:** `product_inspections` **không có unique constraint** nào (grep `.unique()` trong schema chỉ khớp `packageId` của bảng khác) — [inspection.ts](../../drizzle/schema/inspection.ts).
 3. ✔ **MQTT không ACL:** `grep authorizePublish|authorizeSubscribe` toàn `server/` = **0 match**.
@@ -217,7 +274,11 @@ Lớp dashboard **được xây hợp lý**: query `protectedProcedure` + `stats
 
 ---
 
-## 7. Lộ trình nâng cấp hoàn thiện (CHỜ DUYỆT)
+## 7. Lộ trình nâng cấp hoàn thiện — ✅ **ĐÃ DUYỆT (§8, 2026-07-13) & ĐÃ THỰC THI P0→P3 (§10-§12)**
+
+> Nhãn *(CHỜ DUYỆT)* cũ ở tiêu đề này đã gỡ: nó mâu thuẫn với §8 ("USER ĐÃ DUYỆT") ngay bên dưới
+> và là một trong những chỗ khiến mục này bị chép vào backlog suốt tám tuần. Nội dung giữ nguyên
+> làm bản ghi phạm vi từng đợt.
 
 ### P0 — Bịt thủng bảo mật + chống đếm-trùng  ·  ~2-3 tuần-người  ·  **BLOCKER**
 > *Đóng lỗ credential giả-mạo-máy và ngăn ghi trùng inspection — 2 rủi ro phá toàn vẹn nghiêm trọng nhất, đều đã xác minh trên đĩa.*

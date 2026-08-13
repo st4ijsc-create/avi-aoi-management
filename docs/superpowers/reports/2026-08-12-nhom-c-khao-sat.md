@@ -6,6 +6,42 @@
 
 ---
 
+> ## ⛔ ĐÍNH CHÍNH BẮT BUỘC ĐỌC — hai lời khai của chính báo cáo này SAI (đo lại 2026-08-13)
+>
+> Lượt xử lý nhóm C (`2026-08-12-nhom-c-xu-ly.md`) đo lại **từng mục** thay vì tin báo cáo này,
+> và **bác bỏ hai kết luận** dưới đây. Sửa tại chỗ để không ai chép tiếp:
+>
+> **① Mục `51-r3` — SAI.** `uq_machines_code_active` **CÓ TỒN TẠI** trong DB `aoi_management`:
+> `CREATE UNIQUE INDEX uq_machines_code_active ON public.machines USING btree (code) WHERE ("isActive" = true)`
+> — tạo bởi `drizzle/0181_machine_lifecycle_softdelete.sql:77`, `pg_class.oid` **23602** (cũ hơn
+> `uq_machines_urn_active` oid 61551 của mig 0251, tức đã có từ lâu, không phải mới thêm).
+> Phép đo bác bỏ: `SELECT indexname, indexdef FROM pg_indexes WHERE tablename='machines'` → **12 index**,
+> báo cáo này chỉ khai 2. **Doc 51 §4 mục 5 khoe "điểm mạnh đã có" là ĐÚNG; không có gì để sửa ở doc 51.**
+> ⇒ Hạng **13** ở §2 ("thiếu `uq_machines_code_active`", *"cần DDL"*) **bị xoá khỏi danh sách còn-thật**.
+>
+> **② Ghi chú lệch schema ngay dưới bảng — SAI ở phần khái quát.** Câu *"doc 51 nhắc `machineCode`/`approvalStatus`;
+> DB thật là `code`/`registrationStatus` ⇒ mọi truy vấn chép từ doc 51 sẽ lỗi cột ngay"* là **suy rộng từ
+> lỗi cột của chính lượt đo này**. Đo `information_schema.columns`: `machineCode` là **cột thật trên 16 bảng**
+> (`oee_metrics`, `downtime_events`, `predictive_alerts`, `maintenance_schedules`, `maintenance_work_orders`,
+> `sync_logs`, `ai_insights`, `inspection_packages`, …) **và** là tên trường hợp đồng API
+> (`server/contracts/machineDataContract.ts:27`, `server/api/v1/openapi.ts:99`); `approvalStatus` là **cột thật
+> trên `mqtt_clients` và `suppliers`** — chính là cột mà admission gate của doc 51 §5.3 đọc.
+> **Đúng phần nào:** riêng bảng `machines` dùng `code` / `registrationStatus`, không có
+> `machines.machineCode` / `machines.approvalStatus`.
+>
+> **③ Bổ sung, không phải đính chính — mục `32-c` NẶNG HƠN báo cáo này ước lượng.** Báo cáo xếp
+> *"không hỏng trên máy này… quả mìn hẹn giờ đúng lúc bàn giao"*. Đo thêm: **`Dockerfile:43-46`** chép
+> `dist` `drizzle` `scripts` `knowledge` và **KHÔNG chép `server/`**, `CMD ["node","dist/index.js"]`, cwd `/app`
+> ⇒ trong ảnh Docker cả năm ứng viên `fontDirCandidates()` đều trượt. **Đường triển khai chỉ-ship-`dist`
+> KHÔNG phải giả định — nó đã nằm sẵn trong repo**; `scripts/build-secure.mjs` (dist-secure/) cùng lỗ.
+> Đã vá ở lượt xử lý.
+>
+> *Bài học lặp lại của dự án: một báo cáo khảo sát mới tinh cũng là "tài liệu trong repo" — và
+> **tài liệu trong repo KHÔNG nằm yên, nó ĐƯỢC TIN**. Ở đây `\d machines` (hoặc cách đọc nó) cho ra
+> danh sách index THIẾU mà vẫn có **hình dạng đúng bằng một kết luận thật**.*
+
+---
+
 ## 0. Kết luận một dòng
 
 > **Danh sách tám tuần tuổi đã lệch nặng — nhưng lệch theo hướng NGƯỢC với dự đoán.**
