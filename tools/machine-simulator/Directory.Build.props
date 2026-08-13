@@ -40,16 +40,23 @@
 
        THE PRICE OF EACH PROJECT, measured at BASE 811c9054 BEFORE any of it was paid — 2026-08-13, SDK
        10.0.302, `dotnet build -t:Rebuild -p:GenerateDocumentationFile=true` from tools/machine-simulator,
-       counted the way MSBuild's own "N Warning(s)" summary counts:
+       counted the way MSBuild's own "N Warning(s)" summary counts.
+
+       🔴 READ THE PRICE COLUMNS AS HISTORY, NOT AS A BACKLOG. They are pinned to that base and are NEVER
+       rewritten as rows are paid — only the `set` column moves. So a row reading `95 ... yes` means "95
+       was the bill and it HAS been paid", not "95 outstanding": every `yes` row's live column-(2) price
+       is zero, which is what setting the property asserts on every build. The four rows that had a bill
+       and settled it are marked PAID with the amount; the three unmarked `yes` rows were already zero and
+       had nothing to pay. 12 + 95 = the 107 counted below.
 
            project                            (1) parse/resolve   (2) CS1591   CS1573   set
            St4i.Connector.Conformance                  15               0          0     yes
-           St4i.EdgeCore.Serial                         3               9          0     yes
-           St4i.EdgeService                             3               2          0     yes
-           St4i.DesktopShell                            0               1          0     yes
+           St4i.EdgeCore.Serial                         3               9          0     yes  (N-1, PAID 9)
+           St4i.EdgeService                             3               2          0     yes  (N-1, PAID 2)
+           St4i.DesktopShell                            0               1          0     yes  (N-1, PAID 1)
            St4i.SerialBench                             0               0          0     yes
            St4i.SettingsAclProbe                        0               0          0     yes
-           St4i.Connector.Abstractions                 16              95          0     yes  (N-2)
+           St4i.Connector.Abstractions                 16              95          0     yes  (N-2, PAID 95)
            St4i.Connector.Abstractions.Tests            1             103          0     no
            St4i.Connector.Conformance.Tests             5              51          0     no
            St4i.EdgeService.Tests                       1              44          0     no

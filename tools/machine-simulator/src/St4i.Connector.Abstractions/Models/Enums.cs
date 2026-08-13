@@ -1,9 +1,23 @@
 namespace St4i.Connector.Abstractions.Models;
 
 /// <summary>
-/// Which of the three ingest shapes a <see cref="DeviceReading"/> carries. The host switches on this to
-/// decide which endpoint the reading normalizes to, and it reads only the collection that the chosen kind
-/// names. Serialized as a camelCase string, never an ordinal — see <see cref="Json.ConnectorJson"/>.
+/// Which of the three ingest shapes a <see cref="DeviceReading"/> carries. This product's NORMALIZER
+/// switches on it to decide which endpoint the reading goes to, and reads only the collection that the
+/// chosen kind names.
+///
+/// <para>🔴 <b>That gate is the normalizer's, and a driver author must not generalise it into "the other
+/// collections are inert".</b> Other consumers in this product read <see cref="DeviceReading.Metrics"/>,
+/// <see cref="DeviceReading.Telemetry"/>, <see cref="DeviceReading.Measurements"/>,
+/// <see cref="DeviceReading.Genealogy"/> and <see cref="DeviceReading.Verdict"/> REGARDLESS of this
+/// value — including the path that persists each result to disk and the HTTP surface that serves it back.
+/// The conformance harness a third-party author runs against their own driver also inspects all of those
+/// without checking this. Leave content in a collection this kind does not name and it will still be
+/// consumed; see <see cref="DeviceReading"/> and each of its members for which readers gate on this value
+/// and which do not.</para>
+///
+/// <para>On the connector wire format this is written as a camelCase string, never an ordinal — see
+/// <see cref="Json.ConnectorJson"/>. That is a property of THAT format, not of every place the value is
+/// recorded: this product also persists it as its CLR member name.</para>
 /// </summary>
 public enum ReadingKind
 {
@@ -13,8 +27,11 @@ public enum ReadingKind
     ProcessResult,
 
     /// <summary>Point-in-time device samples: <see cref="DeviceReading.Telemetry"/>. Normalizes to this
-    /// product's <c>/api/v1/ingest/telemetry</c> endpoint, whose payload carries no pass/fail field at
-    /// all — <see cref="DeviceReading.Verdict"/> is not read for this kind.</summary>
+    /// product's <c>/api/v1/ingest/telemetry</c> endpoint, whose PAYLOAD carries no pass/fail field at
+    /// all. That is a fact about the payload only: this product still reads
+    /// <see cref="DeviceReading.Verdict"/> on a reading of this kind in-process, where
+    /// <see cref="Verdict.Skip"/> is what keeps it out of the pass-rate tally — see that member's own doc
+    /// comment.</summary>
     Telemetry,
 
     /// <summary>One inspected unit (AOI/AVI): <see cref="DeviceReading.Measurements"/>, one entry per
@@ -30,11 +47,16 @@ public enum ReadingKind
 // rule, and the recommended (not enforced) third-party naming convention.
 
 /// <summary>
-/// The coarse category of the machine a driver stands in for. Nothing in THIS assembly reads it — it is
-/// carried on the host's own machine descriptor and in a mapping profile's <c>deviceClass</c> field, and
-/// the host's simulator factory falls back to it when a machine's finer machine-type string is one this
-/// build does not recognize. Serialized as a camelCase string, never an ordinal — see
-/// <see cref="Json.ConnectorJson"/>.
+/// The coarse category of the machine a driver stands in for. Nothing in THIS assembly reads it, and it
+/// is on NO type this assembly's own wire format serializes — it is carried on the host's own machine
+/// descriptor and in a mapping profile's <c>deviceClass</c> field, and the host's simulator factory falls
+/// back to it when a machine's finer machine-type string is one this build does not recognize.
+///
+/// <para>Its spelling on disk is therefore NOT this assembly's to promise, and the shipped files do not
+/// agree on one: the mapping profiles write the member name as-is (<c>"Automation"</c>,
+/// <c>"AoiAvi"</c>) while <c>fleet.json</c> writes it lower-case (<c>"automation"</c>). Both load,
+/// because the roster loader deliberately pins NO naming policy and matches case-insensitively. A
+/// consumer must not assume a casing here.</para>
 /// </summary>
 public enum DeviceClass
 {
@@ -54,8 +76,9 @@ public enum DeviceClass
 /// <summary>
 /// The value domain of <see cref="IDeviceDriver.Health"/> — see that member's own doc comment for the rule
 /// a driver must honour when reporting it. This product raises a driver-health alarm per slot off this
-/// value, so the choice between the two unhealthy members below is operator-visible. Serialized as a
-/// camelCase string, never an ordinal — see <see cref="Json.ConnectorJson"/>.
+/// value, so the choice between the two unhealthy members below is operator-visible. It is on no type
+/// this assembly's wire format serializes, and in this product it reaches no JSON at all — it is read
+/// in-process, off a live driver, and turned into alarms.
 /// </summary>
 public enum DriverHealthState
 {
@@ -81,8 +104,17 @@ public enum DriverHealthState
 /// lower-cased (<c>pass</c>/<c>warn</c>/<c>fail</c>/<c>skip</c>). On a <see cref="ReadingKind.Inspection"/>
 /// reading it is consulted ONLY when <see cref="DeviceReading.Measurements"/> is empty, and there
 /// <see cref="Fail"/> becomes <c>NG</c>, <see cref="Skip"/> becomes <c>NTF</c>, and every other member
-/// becomes <c>OK</c>. Serialized as a camelCase string, never an ordinal — see
-/// <see cref="Json.ConnectorJson"/>.
+/// becomes <c>OK</c>.
+///
+/// <para>Both of those are rules of the NORMALIZER. Away from it this product reads this value on EVERY
+/// reading of every kind — it drives the machine's pass-rate tally, its status text and its spark value,
+/// and it is persisted with each stored result. So it is never ignorable on the grounds of
+/// <see cref="DeviceReading.Kind"/>; see <see cref="Skip"/> for the member that carries "no judgement"
+/// through those readers.</para>
+///
+/// <para>On the connector wire format this is written as a camelCase string, never an ordinal — see
+/// <see cref="Json.ConnectorJson"/>. As with <see cref="ReadingKind"/>, that is a property of THAT
+/// format: this product also persists it as its CLR member name.</para>
 /// </summary>
 public enum Verdict
 {
@@ -102,7 +134,11 @@ public enum Verdict
 
     /// <summary>No pass/fail was reached for this cycle: the convention for a reading whose kind has no
     /// verdict concept at all (see <see cref="CyclePlanStep.Result"/>'s own doc comment, which mirrors it
-    /// per step, and which names telemetry as that case). Becomes <c>NTF</c> on the inspection endpoint,
-    /// which that endpoint's worst-wins aggregation ranks between <c>OK</c> and <c>NG</c>.</summary>
+    /// per step, and which names telemetry as that case). It is the member the in-process readers named on
+    /// this enum treat specially — it is what keeps a reading OUT of the pass-rate tally rather than
+    /// counting as a failure in it, so a telemetry driver that leaves this at its default
+    /// (<see cref="Pass"/>, ordinal 0) silently inflates that machine's pass rate instead of abstaining.
+    /// Becomes <c>NTF</c> on the inspection endpoint, which that endpoint's worst-wins aggregation ranks
+    /// between <c>OK</c> and <c>NG</c>.</summary>
     Skip,
 }

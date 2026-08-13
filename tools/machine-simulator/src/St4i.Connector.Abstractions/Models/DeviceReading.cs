@@ -2,7 +2,9 @@ namespace St4i.Connector.Abstractions.Models;
 
 /// <summary>
 /// One named numeric measurement taken during a <see cref="ReadingKind.ProcessResult"/> cycle. Each one
-/// becomes an entry of the process-result payload's <c>metrics</c> array, field for field.
+/// becomes an entry of the process-result payload's <c>metrics</c> array, field for field. The FIRST entry
+/// of a reading's list has a second life this type does not show — see
+/// <see cref="DeviceReading.Metrics"/>.
 /// </summary>
 /// <param name="Name">The metric's own name, carried through unchanged (<c>torque</c>, <c>volume</c>,
 /// <c>weld_current</c> in the built-in simulators).</param>
@@ -36,10 +38,12 @@ public record MetricSample(string Name, double Value, string? Unit = null, doubl
 /// <param name="RateHz">The sampling rate, or <see langword="null"/> for a series that is not sampled
 /// against time.</param>
 /// <param name="Samples">The sample rows, passed to the wire unchanged. 🔴 This contract fixes neither a
-/// row's length nor what its elements mean, and the two built-in producers differ: the time-sampled one
-/// emits one value per row and carries the time base in <paramref name="RateHz"/>, while the
-/// <c>torque_vs_angle</c> one emits an <c>[x, y]</c> pair per row and leaves <paramref name="RateHz"/>
-/// null. A consumer must therefore not assume a row shape from this type alone.</param>
+/// row's length nor what its elements mean, and the two built-in producers differ: the <c>weld_current</c>
+/// one emits a single-element <c>[current]</c> row per sample and carries the time base in
+/// <paramref name="RateHz"/>, while the <c>torque_vs_angle</c> one emits a two-element
+/// <c>[angle, torque]</c> row and leaves <paramref name="RateHz"/> null. The reference device-client SDK
+/// shipped alongside this product documents the same wire field as <c>[[t,v],…]</c>, which matches
+/// neither exactly. A consumer must therefore not assume a row shape from this type alone.</param>
 public record WaveformSeries(string Name, string? Unit, double? RateHz, IReadOnlyList<double[]> Samples);
 
 /// <summary>
@@ -92,9 +96,11 @@ public record Values3d(
 
 /// <summary>
 /// The outcome at ONE measured point of a <see cref="ReadingKind.Inspection"/> reading. Each one becomes an
-/// entry of the inspection payload's <c>measurements</c> array, and this product derives the unit's overall
-/// result from the whole array — worst wins, <c>NG</c> over <c>NTF</c> over <c>OK</c> — consulting
-/// <see cref="DeviceReading.Verdict"/> only when there are no measurements at all.
+/// entry of the inspection payload's <c>measurements</c> array, and the normalizer derives the unit's
+/// overall result from the whole array — worst wins, <c>NG</c> over <c>NTF</c> over <c>OK</c> — consulting
+/// <see cref="DeviceReading.Verdict"/> only when there are no measurements at all. Elsewhere in this
+/// product the same array is counted for its NG tally and point count and stored whole, on a reading of
+/// any kind — see <see cref="DeviceReading.Measurements"/>.
 /// </summary>
 /// <param name="PointCode">Which point on the unit this result is for — the same point identity
 /// <see cref="CyclePlanStep.PointCode"/> uses.</param>
@@ -128,7 +134,8 @@ public record MeasurementResult(
 /// One point-in-time sample of one device signal, carried by a <see cref="ReadingKind.Telemetry"/> reading.
 /// Each one becomes an entry of the telemetry payload's <c>samples</c> array, stamped with the reading's own
 /// <see cref="DeviceReading.MachineCode"/> and <see cref="DeviceReading.Timestamp"/> — a sample carries no
-/// device id or time of its own.
+/// device id or time of its own. It is also read and stored off readings of every kind, not only telemetry
+/// ones — see <see cref="DeviceReading.Telemetry"/>.
 /// </summary>
 /// <param name="Metric">The signal's own name, carried through unchanged.</param>
 /// <param name="Value">The sampled value. Unlike <see cref="MetricSample.Value"/> this is untyped: a
@@ -140,14 +147,32 @@ public record MeasurementResult(
 /// <param name="Unit">The unit <paramref name="Value"/> is expressed in, or <see langword="null"/>. A
 /// mapping profile may rewrite it on the way out; nothing converts the value itself.</param>
 /// <param name="Quality">How much the sample is to be trusted, defaulting to <c>good</c> — the value
-/// reaches the telemetry payload's <c>quality</c> field unchanged.</param>
+/// reaches the telemetry payload's <c>quality</c> field unchanged, and is stored verbatim with the sample.
+/// This contract does not constrain the string. Two tokens are observable in this product: the
+/// <c>good</c> default, and <c>bad</c>, which its OPC-UA driver emits together with a
+/// <see langword="null"/> <paramref name="Value"/> for a node whose read returned a bad or uncertain
+/// status rather than failing the whole poll. The reference device-client SDK shipped alongside this
+/// product documents the field's vocabulary as <c>good|bad|uncertain</c>. 🔴 What any of those three
+/// ASSERT about a sample is written down nowhere in this repository — the tokens are recoverable, their
+/// meaning is not, so this says which strings occur and stops.</param>
 public record TelemetrySample(string Metric, object? Value, string? Unit = null, string Quality = "good");
 
 /// <summary>
 /// The unit of everything a driver produces: one reading, streamed from
 /// <see cref="IDeviceDriver.ReadAsync"/>, that this product normalizes into exactly one ingest call.
-/// <see cref="Kind"/> is the discriminator — it decides which endpoint the reading goes to and which of the
-/// collections below is read.
+/// <see cref="Kind"/> is the discriminator the NORMALIZER switches on: it decides which endpoint the
+/// reading goes to and which of the collections below that one consumer reads.
+///
+/// <para>🔴 <b>That gate is narrower than it looks, and a driver author who reads it as "the collections
+/// this kind does not name are inert" ships data they believe is being ignored.</b> Beyond the normalizer,
+/// this product does check <see cref="Kind"/> in a few places — to route the normalized call, to pick a
+/// display label, to skip fault injection on telemetry, and to decide whether
+/// <see cref="Measurements"/> becomes the live board view. But the readers that build a machine's live
+/// state and the one that PERSISTS each result do not check it at all: they take <see cref="Metrics"/>,
+/// <see cref="Telemetry"/>, <see cref="Measurements"/>, <see cref="Genealogy"/> and <see cref="Verdict"/>
+/// off whatever reading they are handed. Each member below states its own readers; where one says
+/// "carried to the wire by the normalizer only when", that is a claim about the normalizer and nothing
+/// wider.</para>
 ///
 /// <para>This is a full point-in-time snapshot, not a partial update: a null member means "null", never
 /// "unchanged". It is also a mutable class, and <see cref="IDeviceDriver.ReadAsync"/> requires each yielded
@@ -156,8 +181,9 @@ public record TelemetrySample(string Metric, object? Value, string? Unit = null,
 /// </summary>
 public class DeviceReading
 {
-    /// <summary>Which machine this reading is from. Identifies the machine to every ingest endpoint, keys
-    /// the idempotency key, and is the device id stamped onto each <see cref="TelemetrySample"/>.</summary>
+    /// <summary>Which machine this reading is from. It opens the idempotency key for every kind, is a
+    /// top-level field of the process-result and inspection payloads, and is the device id stamped onto
+    /// each <see cref="TelemetrySample"/> — the telemetry payload has no machine field of its own.</summary>
     public string MachineCode { get; set; } = "";
 
     /// <summary>Which of the three ingest shapes this reading carries — see
@@ -170,46 +196,67 @@ public class DeviceReading
     public string SerialNumber { get; set; } = "";
 
     /// <summary>Which process step produced this reading (<c>screw_tightening</c>, <c>glue_dispense</c> in
-    /// the built-in simulators), or <see langword="null"/> to let the machine's mapping profile supply its
-    /// default.</summary>
+    /// the built-in simulators), or <see langword="null"/>. Null is filled in by the normalizer only, from
+    /// the machine's mapping profile and then a literal fallback; every other consumer sees the null as
+    /// given. It also buckets the idempotency key when <see cref="RecipeCode"/> is null.</summary>
     public string? StepType { get; set; }
 
     /// <summary>This cycle's coarse pass/fail as a whole — see the <c>Verdict</c> enum's own doc comment
-    /// for what each value means and for the one case where an inspection reading consults it.</summary>
+    /// for what each value means, for the one case where an inspection payload consults it, and for the
+    /// in-process readers that consult it on EVERY kind. It has no "unset": the CLR default is ordinal 0,
+    /// which is a pass.</summary>
     public Verdict Verdict { get; set; }
 
-    /// <summary>Which recipe/program was running, or <see langword="null"/> to let the machine's mapping
-    /// profile supply its default. It also buckets the idempotency key, so two cycles of different recipes
-    /// cannot collide.</summary>
+    /// <summary>Which recipe/program was running, or <see langword="null"/>. Same rule as
+    /// <see cref="StepType"/>: the mapping-profile default is the normalizer's substitution, not a
+    /// property of this field — a stored result keeps the null, and this product's own inspection-document
+    /// WRITER substitutes a different literal again. It buckets the idempotency key ahead of
+    /// <see cref="StepType"/>, so two cycles of different recipes cannot collide.</summary>
     public string? RecipeCode { get; set; }
 
-    /// <summary>That recipe's version, or <see langword="null"/>. Only reaches the wire alongside a
-    /// resolved <see cref="RecipeCode"/>.</summary>
+    /// <summary>That recipe's version, or <see langword="null"/>. It reaches the ingest payload only
+    /// alongside a resolved <see cref="RecipeCode"/> — but it is stored and served back on its own, so
+    /// null here is not the same as absent everywhere.</summary>
     public string? RecipeVersion { get; set; }
 
-    /// <summary>The named numeric measurements of a cycle. Read only when <see cref="Kind"/> is
-    /// <see cref="ReadingKind.ProcessResult"/> — nothing here stops a driver filling it on another kind,
-    /// and nothing carries it to the wire if one does.</summary>
+    /// <summary>The named numeric measurements of a cycle. Carried to the wire by the normalizer only when
+    /// <see cref="Kind"/> is <see cref="ReadingKind.ProcessResult"/>; other in-process consumers read it
+    /// regardless of kind, and the FIRST entry is the one they single out — it becomes the machine's SPC
+    /// point and spark value, and it is stored and served back as that result's key metric (name, value
+    /// and unit). Leaving a stale entry here on a reading of another kind is therefore visible, not
+    /// inert.</summary>
     public List<MetricSample> Metrics { get; set; } = new();
 
-    /// <summary>The sampled curves of a cycle. Read only when <see cref="Kind"/> is
-    /// <see cref="ReadingKind.ProcessResult"/>, and omitted from the payload entirely when empty — unlike
-    /// <see cref="Metrics"/>, which is always sent.</summary>
+    /// <summary>The sampled curves of a cycle. Carried to the wire by the normalizer only when
+    /// <see cref="Kind"/> is <see cref="ReadingKind.ProcessResult"/>, and omitted from that payload
+    /// entirely when empty — unlike <see cref="Metrics"/>, which is always sent. The one collection whose
+    /// content no other consumer in this product reads: nothing persists it and nothing derives machine
+    /// state from it. The conformance harness still checks whether it is non-empty, without looking at
+    /// <see cref="Kind"/>.</summary>
     public List<WaveformSeries> Waveforms { get; set; } = new();
 
-    /// <summary>The per-point results of an inspection. Read only when <see cref="Kind"/> is
-    /// <see cref="ReadingKind.Inspection"/>, and an empty list is what makes an inspection fall back to
-    /// <see cref="Verdict"/> for its overall result.</summary>
+    /// <summary>The per-point results of an inspection. Carried to the wire by the normalizer only when
+    /// <see cref="Kind"/> is <see cref="ReadingKind.Inspection"/>, where an empty list is what makes an
+    /// inspection fall back to <see cref="Verdict"/> for its overall result. The live board view is gated
+    /// on <see cref="Kind"/> too — but the STORED result is not: the NG tally and point count written with
+    /// every result of every kind are counted off this list, and it is serialized whole into that
+    /// row.</summary>
     public List<MeasurementResult> Measurements { get; set; } = new();
 
-    /// <summary>The samples of a telemetry reading. Read only when <see cref="Kind"/> is
-    /// <see cref="ReadingKind.Telemetry"/>.</summary>
+    /// <summary>The samples of a telemetry reading. Carried to the wire by the normalizer only when
+    /// <see cref="Kind"/> is <see cref="ReadingKind.Telemetry"/>; other in-process consumers read it
+    /// regardless of kind. 🔴 This is the member where that difference costs most: on a reading of ANY
+    /// kind, every numerically-resolvable sample here is appended to that machine's live per-metric series
+    /// and written as a stored telemetry row. A driver that reuses a builder and leaves last cycle's
+    /// samples attached to a process-result reading does not send them — and does persist them.</summary>
     public List<TelemetrySample> Telemetry { get; set; } = new();
 
-    /// <summary>Which cycle of this machine this is. It is part of the idempotency key (zero-padded to six
-    /// digits), so a driver that leaves it at 0 for every cycle makes every cycle look like a repeat of the
-    /// same one — this product's inspection path is the one deliberate case, because the document format it
-    /// reads carries no cycle counter, and its key uses <see cref="SerialNumber"/> instead.</summary>
+    /// <summary>Which cycle of this machine this is. It is the trailing component of the idempotency key
+    /// (zero-padded to six digits), so a driver that leaves it at 0 for every cycle makes every cycle look
+    /// like a repeat of the same one. This product's inspection path is the one deliberate case: the
+    /// document format it reads carries no cycle counter, so the counter stays 0 there and
+    /// <see cref="SerialNumber"/> is ADDED to the key ahead of it — the counter is not removed — which is
+    /// what keeps two boards apart.</summary>
     public long CycleCounter { get; set; }
 
     /// <summary>When this reading happened — the time that reaches the wire for the cycle, and for every
@@ -219,12 +266,16 @@ public class DeviceReading
     public DateTimeOffset Timestamp { get; set; }
 
     /// <summary>Free-form traceability context to travel with the reading — lot code, panel id, board
-    /// index, operator id and the like — or <see langword="null"/> for none. Carried ONLY on a
-    /// process-result payload, where each entry is added as a top-level field of its own, so a key here
-    /// can shadow one of the fields above; the telemetry and inspection payloads do not take it at all.
-    /// Values are limited to the same domain as <see cref="TelemetrySample.Value"/> (see
-    /// <see cref="Json.ConnectorObjectConverter"/>); in practice this product's own producers put strings,
-    /// integers and doubles here.</summary>
+    /// index, operator id and the like — or <see langword="null"/> for none. Values are limited to the same
+    /// domain as <see cref="TelemetrySample.Value"/> (see <see cref="Json.ConnectorObjectConverter"/>); in
+    /// practice this product's own producers put strings, integers and doubles here.
+    ///
+    /// <para>The normalizer carries it on the PROCESS-RESULT payload only, where each entry is added as a
+    /// top-level field of its own — so a key here can shadow one of the fields above — and with one
+    /// exception to that pass-through: a key matching <c>stationId</c> (case-insensitively) is coerced to
+    /// a number first, because the ingest contract requires that one numeric. The telemetry and inspection
+    /// payloads do not take it at all. It is nonetheless serialized and stored with the result on EVERY
+    /// kind, so "not on the wire" is not "not recorded".</para></summary>
     public Dictionary<string, object>? Genealogy { get; set; }
 
     /// <summary>WS3-T1 (docs/PRODUCTION_UI_DESIGN.md §3.2) — this cycle's ordered per-step plan (point
