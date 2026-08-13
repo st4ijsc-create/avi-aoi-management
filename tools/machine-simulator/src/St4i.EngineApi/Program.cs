@@ -291,25 +291,35 @@ builder.Services.AddSingleton<DemoTransport>();
 // Stated here so this site can be argued with without leaving the file:
 //
 //   A host refuses to start over a bad configuration only when starting would be the QUIETER failure.
-//   Stopping requires BOTH: (1) continuing would HIDE the loss — the thing that stopped working would go
-//   on being presented as working, with nothing on any surface saying otherwise; and (2) the offending
-//   value can be corrected WITHOUT this process, which is true for anything set from outside the product
-//   and FALSE for anything the product itself wrote, because then the process is part of the repair
-//   channel. If either fails, the host comes up and says what it could not use.
+//   THE TEST, and it is ONE test: would continuing HIDE the loss — would the thing that stopped working go
+//   on being presented as working, with nothing on any surface saying otherwise? If yes, stopping is the
+//   only channel left. If the loss can be named where somebody reads it, the host comes up and reports.
 //
-// DOMAIN, named and counted so a later reading cannot quietly shrink it to "relocatable roots": startup-path
-// CONFIGURATION DECISIONS — every statement a composition root runs before its host serves, at which a value
-// from outside the running program can fail, and where that statement decides whether the process continues.
-// J-3 enumerated THIRTY-SIX in this host; thirteen are roots, the rest are argv, a bind address, the register
-// and node maps, connectors.json, fleet.json, persisted connector rows, a broker port, an ACL step, and the
-// replay itself. Thirty-two follow the rule and four do not — all four named at their own sites.
+// DOMAIN, so a later reading cannot quietly shrink it to "relocatable roots": startup-path CONFIGURATION
+// DECISIONS — every statement a composition root runs before its host serves, at which a value from outside
+// the running program can fail, and where that statement decides whether the process continues. Roughly a
+// third are roots; the rest are argv, a bind address, the register and node maps, connectors.json,
+// fleet.json, the product/ecosystem catalogues, persisted connector rows, a broker port, an ACL step, five
+// FromEnvironment factories and the replay itself.
 //
-// Here both hold. (1): the only alternative to stopping is a null queuePath, and an in-memory queue keeps
-// returning successful acks for records that die with the process — the loss is invisible in the outcome,
-// which is the whole reason C-1 was Critical. (2): ST4I_WAL_DIR and a ProgramData ACL are repaired with the
-// same tool that set them, so a dead process costs the operator nothing and the next start simply retries.
-// The settings replay below fails BOTH conditions, independently, which is why it comes up instead — same
-// rule, opposite answer, and neither is the exception to the other.
+// 🔴 THE SET IS ENUMERATED IN docs/startup-failure-posture.md — A LIST, NOT A COUNT, and read that before
+// extending anything here. Earlier rounds of this analysis stated a scalar ("thirty-six sites, thirty-two
+// agree") in five places with the members written down nowhere the tree could reach; an independent
+// re-derivation then returned a different number and found two divergences the scalar had absorbed
+// (ProductConfigStore and SimulatedEcosystem, both reached by the very GetRequiredService<FleetHost>() call
+// this file already makes). That is §8.1's standing class — a scalar summarising a heterogeneous set — and
+// the remedy is to list rather than to count. No number is staked here on purpose.
+//
+// Here the test says STOP: the only alternative is a null queuePath, and an in-memory queue keeps returning
+// successful acks for records that die with the process — the loss is invisible in the OUTCOME, which is the
+// whole reason C-1 was Critical. The settings replay below fails the same test in the other direction, which
+// is why it comes up: same rule, opposite answer, neither an exception to the other.
+//
+// 🔴 PROVENANCE — env var here, a file the product wrote there — is the REASON the two arms feel different
+// and is what an operator needs in order to repair either. It is NOT a second condition. An earlier round of
+// this work made it one; over the whole enumerated set it changes exactly ONE prediction, and at the replay
+// below it is refuted outright by that arm's own remedy string, which tells the operator to edit or delete
+// the file and restart. Withdrawn as a test, kept as a reason.
 var wal = WalOptions.FromEnvironment();
 if (wal.Enabled) wal.EnsureDir();
 builder.Services.AddSingleton(_ => LiveTransport.ForMachine(
@@ -852,14 +862,18 @@ builder.Services.AddSingleton<St4i.EngineApi.Line.LineController>(sp =>
 // DeviceIdentity from DI: zero hits) and removed. deviceIdentity itself is still a local value here —
 // it's what LoadOrCreate returns and what seeds the DeviceIdentityProvider constructed right below — it
 // just no longer needs its own separate DI registration since nothing ever asked the container for it.
-// 🔴 Task J-3 — NAMED, NOT CHANGED. This constructor creates the identity directory and is not guarded, so
-// a root that cannot be CREATED ends the process here. The rule stated at wal.EnsureDir above (and in full
-// at README §15.9) predicts the opposite for this one: the loss is not hidden, because DeviceIdentityStore
-// already has a reported degradation for the neighbouring failure — a directory that exists but cannot be
-// WRITTEN comes up on an in-memory identity with an Error, and that class says in as many words that an
-// unwritable identity directory is an operational problem to fix on disk rather than a reason the device
-// cannot come up. Two adjacent statements about one variable, decided two ways, with nothing saying so.
-// Left exactly as it is: either direction is an operator-observable startup change and the owner has
+// 🔴 Task J-3 — NAMED, NOT CHANGED. This one statement reaches THREE failure arms with THREE outcomes, and
+// nothing says so (docs/startup-failure-posture.md §3.3):
+//   * the constructor's Directory.CreateDirectory is unguarded, so a root that cannot be CREATED ends the
+//     process here — which the rule at wal.EnsureDir above contradicts, since the loss is not hidden;
+//   * a root that exists but cannot be WRITTEN comes up on an in-memory identity with an Error, and that
+//     class says in as many words that an unwritable identity directory is an operational problem to fix on
+//     disk rather than a reason the device cannot come up;
+//   * and MintPfxBytes is called OUTSIDE Create's own try, so a CNG/crypto-provider failure at first mint is
+//     an uncaught exit out of LoadOrCreate — a method whose class doc promises it "never lets a bad file
+//     crash the caller". That third arm was missed by the first two rounds of this analysis and is not
+//     decided by the rule at all, because no continue-arm exists to evaluate.
+// Left exactly as they are: every direction is an operator-observable startup change and the owner has
 // reaffirmed stop-and-report for those.
 var deviceIdentityStore = new St4i.EdgeCore.Identity.DeviceIdentityStore(
     logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"));
@@ -1163,13 +1177,26 @@ catch (St4i.EdgeCore.Config.ConnectorsConfigException ex)
 // 🔴 Task J-3 — NAMED, NOT CHANGED, and the SYMMETRIC SITE is the notification store ~680 lines above.
 // That one wraps its constructor, and the comment at that wrap says the posture is shared by "every other
 // startup config load here". It is not: this constructor creates a directory and migrates a SQLite schema,
-// unguarded, so a store that cannot be opened ends the process — over rows THIS PRODUCT wrote, through
-// POST /v1/connectors, which fails condition (2) of the rule at wal.EnsureDir above (README §15.9). The
-// LOAD below is guarded; only the open is not. The reason for the asymmetry is worth more than the
-// asymmetry and is why this is not a one-line fix: NotificationEndpoints resolves its store optionally and
-// answers honestly when it is absent, while ConnectorEndpoints takes this one as a required handler
-// parameter — so there is no "absent" state for this store to fail into, and guarding it means building
-// that state first. Recorded rather than attempted: it is an operator-observable startup change.
+// unguarded, so a store that cannot be opened ends the process.
+//
+// 🔴 THIS IS AN §8.1(h4) SYMMETRY FINDING, NOT A YIELD OF THE STARTUP RULE — corrected here, because an
+// earlier round presented it as the rule's yield and needed a second conjunct to get there. By the rule's
+// actual test (would continuing hide the loss? — a store that never opened is an absence nothing announces)
+// this site AGREES. The finding stands without the rule: a guarded structural twin, plus a completeness
+// claim at that twin which this very line falsifies. Checkable by reading; independent of whether the rule
+// is right. See docs/startup-failure-posture.md §3.2.
+//
+// The reason for the asymmetry is worth more than the asymmetry and is why this is not a one-line fix:
+// NotificationEndpoints resolves its store with GetService and answers honestly when it is absent, while
+// ConnectorEndpoints takes this one as a NON-NULLABLE handler parameter (7 such parameter sites in src/, 4
+// of them route handlers), so minimal API's metadata requires the type to always be registered — there is no
+// "absent" state for this store to fail into. Guarding it means building that state first. Recorded rather
+// than attempted: it is an operator-observable startup change.
+//
+// A SECOND completeness claim of exactly this shape exists in this file and is named rather than rewritten:
+// the roster-seed block below says "one bad source disables only itself" is the posture "every other startup
+// config load in this file already has". Also false. Rewriting either would settle a rule this task is not
+// authorised to settle.
 var connectorConfigDir = Environment.GetEnvironmentVariable(St4i.EngineApi.Fleet.ConnectorConfigStore.EnvVarDir);
 var connectorConfigStore = new St4i.EngineApi.Fleet.ConnectorConfigStore(
     string.IsNullOrWhiteSpace(connectorConfigDir) ? null : connectorConfigDir);
@@ -1700,6 +1727,21 @@ app.MapFallbackToFile("index.html").AllowAnonymous();
 // Force-touch FleetHost now (rather than lazily on the first request) so its fleet.json/default-roster
 // resolution — and any FleetConfigException it might swallow — happens at startup, where a log line is
 // actually useful, not silently on whichever request happens to hit it first.
+//
+// 🔴 Task J-3 — NAMED, NOT CHANGED: this ONE statement is also where TWO operator-editable catalogues end
+// the process, and they are the divergences an earlier round of this analysis absorbed into a count.
+// ProductConfigStore and SimulatedEcosystem are both FleetHost constructor parameters, so both are built
+// here; both do Directory.CreateDirectory(...) then Load(), and Load() deserializes JSON from beside the
+// binary with NO catch of any kind. A malformed products.json — hand-editable, beside the exe, with no
+// schema published to whoever edits it — ends the process. (Both also Save() on first run when a file is
+// absent, so a read-only install directory is a second fatal arm.)
+//
+// THE SYMMETRIC SITES ARE TWO MEMBERS THAT ARE TOLERATED: connectors.json (guarded above) and fleet.json
+// (guarded via FleetConfigException, with a per-entry skip added precisely so "one operator typo destroys
+// the whole fleet" stopped being true). All four are operator-editable JSON beside the binary; two are
+// tolerated, two are fatal. By the rule at wal.EnsureDir above these two should come up — nothing claims a
+// product catalogue is loaded that is not. Recorded, not changed: operator-observable startup change. See
+// docs/startup-failure-posture.md §3.5.
 var fleetHost = app.Services.GetRequiredService<FleetHost>();
 
 // Fix round 1 (SM-5 review) — RegisterMachine returning false used to be discarded silently at every one
@@ -1783,20 +1825,28 @@ if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
 // branch below goes through this exact same FleetHost.UpdateSettings call, so the transport/config-sync
 // rebuild + (new) persistence-on-change both happen identically regardless of which source won.
 //
-// 🔴 Task J-3 — NAMED, NOT CHANGED, and it is the sharpest of the three: this READ is unguarded, roughly a
-// hundred lines above the guard that exists precisely so this file can never take the host down. Load()
-// tolerates a corrupt file (it catches JsonException and returns null) but not an unreadable one — a
-// deny-share lock from the editor the Error message below tells an operator to open it with, or an ACL on
-// the settings root, throws out of File.ReadAllText and ends the process. By the rule at wal.EnsureDir
-// above (README §15.9) this must come up: the file is one the PRODUCT wrote, so stopping removes the repair
-// channel for a state the product authored — the same condition the guard below is built on.
+// 🔴 Task J-3 — NAMED, NOT CHANGED: this READ is unguarded, 104 lines above the guard that exists precisely
+// so this file can never take the host down. Load() tolerates a corrupt file (it catches JsonException and
+// returns null) but not an unreadable one — File.ReadAllText propagates IOException straight through here.
+// By the rule at wal.EnsureDir above (docs/startup-failure-posture.md §3.1a) this must come up: the failure
+// is nameable, so stopping is the quieter outcome.
 //
-// 🔴 AND THE OBVIOUS GUARD WOULD BE A DEFECT, which is why this is named rather than fixed. Wrapping this
-// in a try/catch that yields null makes an unreadable file indistinguishable from NO file, which selects
-// the SEED arm: the environment floor is applied, UpdateSettings persists unconditionally, and the
-// operator's own fleet-settings.json is overwritten by the floor — the precedence inversion argued at
-// length below, reached from the other end. What is missing is a third state, "a file exists and could not
-// be read", which nothing in this composition root or in FleetSettingsStore expresses today. Building it
+// THE REACHABLE VECTOR IS A DENY-SHARE LOCK — an editor or an AV scanner holding the file, including the
+// editor the RESTORE-arm remedy string below tells the operator to open it with.
+//
+// 🔴 AN ACL IS NOT THE VECTOR, and an earlier round of this note said it was. Load() gates on File.Exists,
+// which returns FALSE when the caller lacks permission — so a permission failure returns null and selects
+// the SEED arm TODAY, with no guard at all. And an ACL severe enough to fail Directory.CreateDirectory stops
+// the host 224 lines earlier, at the FleetSettingsStore constructor, never reaching this line. Correcting
+// that sharpens the finding rather than softening it: the inversion described below is ALREADY REACHABLE.
+//
+// 🔴 THE OBVIOUS GUARD IS ITSELF A DEFECT, AND THE HARM IS WORSE THAN AN OVERWRITE. Wrapping this in a
+// try/catch that yields null makes an unreadable file indistinguishable from NO file, selecting the SEED
+// arm: the environment floor is applied, UpdateSettings persists unconditionally — and the seed-arm block
+// further below then REMOVES the file and logs "Nothing an operator wrote was deleted — no settings file
+// existed before this start." With a present-but-unreadable file that sentence is FALSE and the operator's
+// configuration is GONE, not merely overwritten. What is missing is a third state, "a file exists and could
+// not be read", which neither this composition root nor FleetSettingsStore expresses today. Building it
 // changes what an operator observes at startup, so it is recorded and left.
 var persistedSettings = settingsStore.Load();
 var initialSettingsRequest = persistedSettings is not null
@@ -1820,26 +1870,28 @@ var initialSettingsRequest = persistedSettings is not null
 // the operator-facing half. The rule:
 //
 //   A host refuses to start over a bad configuration only when starting would be the QUIETER failure.
-//   Stopping requires BOTH: (1) continuing would HIDE the loss, and (2) the offending value can be
-//   corrected WITHOUT this process — true for anything set from outside the product, FALSE for anything
-//   the product itself wrote. If either fails, the host comes up and reports.
+//   THE TEST, and it is ONE test: would continuing HIDE the loss? If the loss can be named where somebody
+//   reads it, and nothing left running claims the lost thing still works, the host comes up and reports.
 //
 // DOMAIN: startup-path CONFIGURATION DECISIONS, not roots and not settings — every statement a composition
 // root runs before its host serves, at which a value from outside the running program can fail and that
-// statement decides whether the process continues. THIRTY-SIX in this host, enumerated by J-3.
+// statement decides whether the process continues. 🔴 The set is ENUMERATED, not counted, in
+// docs/startup-failure-posture.md; read the list before extending the rule.
 //
-// 🔴 THE CONJUNCTION IS LOAD-BEARING AND WAS TESTED CONDITION BY CONDITION, not fitted to the two cases. Two
-// clauses that jointly describe two examples go SILENT on any site that fails only one of them, and silence
-// reads as agreement; an explicit AND decides those sites. That is the whole difference between this rule and
-// the looser form it was first stated in, and it is why the four divergent sites below have answers at all.
+// This arm comes up because the test says so: the loss is exactly what the LogError below names, and
+// GET /v1/settings goes on truthfully reporting the triple this process is holding — nothing left running
+// claims the Live transport was rebuilt. The WAL ruling above fails the same test the other way, and stops.
 //
-// This arm fails BOTH, independently, which is what makes it over-determined rather than a judgement call.
-// (1) fails because the loss is exactly what the LogError below names, and GET /v1/settings goes on
-// truthfully reporting the triple this process is holding — nothing left running claims the Live transport
-// was rebuilt. (2) fails because fleet-settings.json is a file the PRODUCT wrote, through PUT /v1/settings,
-// and that endpoint is the only in-product way to correct it: stopping the host removes the repair channel
-// for a state the host itself created. The WAL ruling above satisfies both conditions instead, and so it
-// stops. Same rule; the situations differ, not the posture.
+// 🔴 A CORRECTION THAT BELONGS HERE, because the withdrawn claim was stated at this site. An earlier round
+// wrote that this arm "fails BOTH conditions independently", making it "over-determined" — a second
+// condition being "the value can be corrected WITHOUT this process". That is FALSE HERE, and the refutation
+// is 110 lines below in this same file: the RESTORE-arm remedy string tells the operator to "edit/delete
+// fleet-settings.json … and restart". So the value CAN be corrected without this process, by the route the
+// product itself names. What survives is the narrower true statement — PUT /v1/settings is the only
+// IN-PRODUCT correction, and a dead service says nothing about which of three fields is wrong. Provenance is
+// therefore recorded as the REASON the two arms feel different, not as a second test: across the whole
+// enumerated set it changes exactly one prediction, and the one it changes is a symmetry defect that is
+// visible without any rule at all (see the connector-store note ~700 lines above).
 //
 // Read the order, because reversing it ships the boot loop G-2 refused: this guard is the PRECONDITION
 // for FleetCore.UpdateSettings persisting unconditionally, not a consequence of it. Until this `try`
@@ -1990,6 +2042,17 @@ var replaySucceeded = TryReplayStartupSettings(
 // tested case S6's closure rests on. This SEED arm is different: enumerated rather than assumed, NO
 // env-var-only route reaches an activation throw here today. `CredentialStore.Load` throws only on an
 // empty machine code, which this arm cannot produce (a blank ST4I_MACHINE_CODE resolves to null and the
+// 🔴 Task J-3 — THE "~1550" IN THE NEXT PARAGRAPH IS KNOWN STALE AND IS DELIBERATELY NOT RE-FITTED. Read
+// this before "correcting" it. Measured statement-to-statement it was already ~1616 at the commit that
+// introduced J-3 (before this task changed anything) and is ~1679 now — so it was stale by 66 lines BEFORE
+// any of this, and nothing that moved it was about it. FleetCore's own settings paragraph has recorded
+// distance-shaped pointers as "wrong three times running"; this is a fourth instance, and it is the
+// STRONGEST form of that evidence precisely because no one touched the pointer. Re-fitting the number
+// silently would erase the evidence and leave the next drift undetectable. The honest repair is to stop
+// expressing this pointer as a distance at all — which is H-1a's prose to change, not J-3's, so the
+// disposition is: NAMED, NOT CHANGED, and named HERE rather than only in a report so it is checkable by
+// diff (§8.1(h4): silence is not a disposition). The statement it points at is the `wal.EnsureDir()` call
+// near the top of this file; that pointer, not the number, is what to follow.
 // built-in default is kept); `RebuildLive`'s WAL arm is pre-empted ~1550 lines above by an unguarded
 // `wal.EnsureDir()` on the same options, MEASURED, which stops the host before this line; and neither
 // the vendored SDK client nor `LiveConfigSyncBackend` parses a URL. What remains is

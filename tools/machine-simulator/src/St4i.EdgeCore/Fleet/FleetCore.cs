@@ -427,17 +427,33 @@ internal sealed class FleetCore
     /// way to predict either. Surfaced by H-1c's own measurement of the WAL path; it needs one owner and
     /// one artefact, and that owner is whoever takes P5.</para>
     /// <para>🔴 <b>DISCHARGED by task J-3, and the answer was that the two rulings never disagreed.</b> The
-    /// artefact is <b>README §15.9</b> ("Which startup failures STOP this host, and which let it come up"),
-    /// with the same rule stated at each deciding site — <c>St4i.EngineApi/Program.cs</c>'s
+    /// artefact is <c>docs/startup-failure-posture.md</c>; README §15.9 carries the operator-facing half,
+    /// and the same rule is stated at each deciding site — <c>St4i.EngineApi/Program.cs</c>'s
     /// <c>wal.EnsureDir()</c>, its startup settings replay, and
     /// <see cref="St4i.EdgeCore.Transport.WalOptions.EnsureDir"/> for the two hosts that reach the ruling
     /// only through it. The rule: <b>a host refuses to start over a bad configuration only when starting
-    /// would be the QUIETER failure</b> — stopping requires BOTH that continuing would HIDE the loss and
-    /// that the value can be corrected WITHOUT this process (true for anything set from outside the product,
-    /// false for anything the product itself wrote). WS-C's WAL ruling satisfies both; H-1a's settings
-    /// replay fails both independently. <b>Nothing behavioural changed</b>: J-3 also enumerated the rest of
-    /// the startup path and named three sites that diverge from the rule — all recorded in §15.9, none
-    /// touched, because flipping any of them is an operator-observable startup change.</para>
+    /// would be the QUIETER failure</b>, and <b>the test is one test</b> — would continuing HIDE the loss?
+    /// WS-C's WAL ruling stops because an in-memory queue keeps acknowledging records that die with the
+    /// process; H-1a's replay comes up because the failure is named and <see cref="GetSettings"/> goes on
+    /// reporting the held triple truthfully.</para>
+    /// <para>🔴 <b>The DOMAIN, stated here because this paragraph is the one a later P-owner reads and it is
+    /// the likeliest origin of a re-scope.</b> The rule governs <b>startup-path configuration decisions</b> —
+    /// every statement a composition root runs before its host serves, at which a value from outside the
+    /// running program can fail and that statement decides whether the process continues. <b>It is not a rule
+    /// about roots</b>, even though the item booked above asked about roots and even though this paragraph
+    /// lives in the fleet register. Roughly a third of the set is roots; the rest is argument vectors, a bind
+    /// address, map files, <c>connectors.json</c>, <c>fleet.json</c>, the product and ecosystem catalogues,
+    /// persisted connector rows, a broker port, an ACL step, five <c>FromEnvironment</c> factories and the
+    /// replay itself. 🔴 <b>The set is ENUMERATED, not counted</b> — an earlier round of J-3 staked a scalar
+    /// in five places with the members recorded nowhere the tree could reach, and an independent
+    /// re-derivation returned a different number and found two divergences the scalar had absorbed
+    /// (<c>ProductConfigStore</c> and <c>SimulatedEcosystem</c>). Read the list, do not inherit a
+    /// count.</para>
+    /// <para><b>Nothing behavioural changed.</b> J-3 also enumerated the rest of the startup path and named
+    /// the sites that diverge from the rule — a settings file read unguarded above its own guard, three arms
+    /// of the identity store, two operator-editable catalogues, and a nine-site class of silent env-var parse
+    /// failures — plus one symmetry defect that needs no rule at all. All are recorded in the artefact, none
+    /// is touched, because flipping any of them is an operator-observable startup change.</para>
     /// <para>🔴 <b>WHAT J-1 DID TO P4 AND P5, stated once for both because it is one mechanism.</b> Driver
     /// construction is hoisted: <see cref="SnapshotStartInputsLocked"/> copies the roster, the multiplier and
     /// one binding snapshot under this lock; <see cref="BuildStartPlan"/> then builds every simulator and
