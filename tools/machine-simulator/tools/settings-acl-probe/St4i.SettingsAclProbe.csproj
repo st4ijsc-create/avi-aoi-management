@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Task M-1 — the SECOND instrument for docs/startup-failure-posture.md, whose own §2 records that its
+         only instrument was a read and that NOTHING WAS EXECUTED. This executable is where the two
+         statements that reading could not settle are measured.
+
+         🔴 DELIBERATELY NOT A TEST PROJECT, and the reason is the same one tools/serial-bench's csproj
+         already carries, arriving from a different direction. scripts/verify-suites.sh asserts exact
+         per-suite totals AND `skipped == 0`; making a directory unreadable is precisely the thing no suite
+         can do without a conditional skip, and a conditional skip makes Skipped environment-dependent —
+         which is what stops the grand total meaning the same thing on every machine. Putting the ACL work in
+         an executable a human runs keeps that number honest.
+
+         🔴 AND DELIBERATELY COMMITTED, which is the other half of D-3's lesson: a measurement that cannot be
+         re-run is a paragraph. The finding this probe exists to produce contradicts a paragraph; shipping it
+         as another paragraph would put it back inside the instrument it was built to escape. It is in the
+         solution so this gate's build keeps it compiling, and it adds no test. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>St4i.SettingsAclProbe</AssemblyName>
+    <RootNamespace>St4i.SettingsAclProbe</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The PUBLIC surface only, and the same construction the composition root performs: a parameterless
+         `new FleetSettingsStore()` resolving its root through FleetSettingsStore.EnvVarDir. A probe that
+         reached for internals would be measuring something other than what St4i.EngineApi/Program.cs runs. -->
+    <ProjectReference Include="..\..\src\St4i.EdgeCore\St4i.EdgeCore.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 🔴 NOT A NUGET PACKAGE — a FrameworkReference to the shared framework this product already ships on.
+         It is here for one measurement only: the posture list's single UNSETTLED row asks whether an
+         exception from an ApplicationStarted handler ends the host, and that question cannot be answered
+         without a real host raising a real lifetime event. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>
