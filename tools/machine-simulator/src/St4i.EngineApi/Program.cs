@@ -1869,10 +1869,26 @@ if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
 //     GONE. Read rights were withheld; write and delete rights were not, and neither call reads anything;
 //   * a MALFORMED file with nothing denied at all: same — file GONE. That is the likeliest vector of the
 //     three, and the earlier note named none of them.
-// All three still need the replay to ALSO fail to activate; see the seed-arm block's own enumeration below,
-// which bottoms out at _onLiveSettingsRebuilt, an arbitrary host callback. What is missing is still a third
-// state, "a file exists and could not be read", which neither this composition root nor FleetSettingsStore
-// expresses today. Building it changes what an operator observes at startup, so it is recorded and left.
+// All three DELETIONS still need the replay to ALSO fail to activate; see the seed-arm block's own
+// enumeration below, which bottoms out at _onLiveSettingsRebuilt, an arbitrary host callback.
+//
+// 🔴 AND UNDERNEATH ALL THREE THERE IS A SHAPE GATED ON NOTHING, WHICH IS LIVE TODAY. Measured for the case
+// where the replay SUCCEEDS: Load() returns null with the file present, the seed request is the env floor,
+// and FleetCore.UpdateSettings performs its Save in a `finally` inside `if (rebuildNeeded)` — reached
+// whether the activation throws OR RETURNS. So fleet-settings.json is REWRITTEN with the environment floor
+// merged with FleetHost's built-in defaults, the operator's content is gone, and NOTHING SAYS SO: the Error
+// line belongs to a failed replay and the Warning line to the discard block, and on this path neither runs.
+// Its one precondition, and it is the reason this is a real report rather than a scare: rebuildNeeded is set
+// only if at least one of serverUrl/verifyTls/machineCode arrives non-null, and initialLiveVerifyTls above
+// is a bool? that stays null unless ST4I_VERIFY_TLS is set — so with NONE of the three ST4I_* variables set,
+// nothing is written at all. With any one set, it is. Those variables exist for the headless service install
+// (WS-F1 fix F1, above), which is exactly the deployment that has no UI to retype the triple into.
+//
+// What is missing behind ALL FOUR is still one thing: a third state, "a file exists and could not be read",
+// which neither this composition root nor FleetSettingsStore expresses today — plus, for the malformed case,
+// that a tolerated-corrupt file and no file are the same null. Building it changes what an operator observes
+// at startup, so it is recorded and left. The choice facing the owner is a JUSTIFICATION, not a design: one
+// guard and one new state answers all four.
 var persistedSettings = settingsStore.Load();
 var initialSettingsRequest = persistedSettings is not null
     ? new SettingsUpdateRequest(

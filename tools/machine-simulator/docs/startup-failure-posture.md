@@ -309,10 +309,46 @@ outright, and the operator's configuration is gone.**
 
 **The likeliest vector is not an ACL at all: it is a MALFORMED file, which this entry never named.** It
 yields null through the documented `JsonException` tolerance and lands on the same arm with nothing withheld
-at all. All three are gated on the replay ALSO failing to activate, and the note at the seed-arm block in
-`Program.cs` enumerates why no env-var-only route reaches an activation throw today — so the harm is one
-contract away rather than live, and the contract is `_onLiveSettingsRebuilt`, which that site itself
-describes as an arbitrary host callback.
+at all. **All three of the DELETIONS above are gated on the replay ALSO failing to activate** — the discard
+block runs only under `!replaySucceeded && !replayRestoredAFile` — and the note at that block enumerates why
+no env-var-only route reaches an activation throw today. So the deletion is **one contract away rather than
+live**, and the contract is `_onLiveSettingsRebuilt`, which that site itself describes as an arbitrary host
+callback.
+
+🔴 **BUT THERE IS A SHAPE UNDERNEATH ALL THREE THAT IS GATED ON NOTHING, AND IT IS LIVE.** Everything above
+asks what happens when the replay FAILS. Measured for the case where the replay **SUCCEEDS** — no discard
+block, no callback, no log line of any kind:
+
+| The shape | `Load()` | `Save(floor)` | On disk afterwards |
+|---|---|---|---|
+| a **malformed** file, nothing withheld | null | **ok** | the file is intact and now holds **the ENVIRONMENT FLOOR**. The operator's content is **gone** |
+| both objects denied, not propagated | null | **ok** | same — **the ENVIRONMENT FLOOR** |
+| directory deny **propagated** | null | throws | the operator's content survives (the temp file inherits the deny) |
+
+**This is a silent overwrite on an ordinary successful start.** `FleetCore.UpdateSettings` performs its
+`Save` in a `finally` inside `if (rebuildNeeded)`, so it is reached whether the activation throws **or
+returns** — and on the seed arm the value being persisted is the environment floor merged with
+`FleetHost`'s built-in defaults. Nothing logs it: the `Error` line belongs to a failed replay and the
+`Warning` line belongs to the discard block, and on this path neither runs.
+
+**Its one precondition, stated because a claim of live data loss must carry it.** `rebuildNeeded` is set
+only when at least one of `serverUrl` / `verifyTls` / `machineCode` arrives non-null, and on the seed arm all
+three come from the environment — `initialLiveVerifyTls` is a `bool?` that stays null unless
+`ST4I_VERIFY_TLS` is set. **With none of the three variables set, nothing is written and the file survives.
+With any one of them set, it is overwritten** — and those variables exist precisely for the headless
+Windows-Service install that has no UI to type a triple into, which is WS-F1 fix F1's own stated reason.
+
+*(Measured half: what a `Save` with no `Delete` leaves on disk when `Load()` returned null with a file
+present. Read half, cited by symbol rather than executed: that the composition root reaches that `Save` on
+the success path — the `finally` inside `if (rebuildNeeded)` in `FleetCore.UpdateSettings`, and the
+`rebuildNeeded` assignment just above it. Driving that call for real would construct a `CredentialStore` and
+a transport, which is how a probe reaches roots it has no business reaching.)*
+
+**Severity ordering, which is the useful output for whoever takes the D1 decision:** the overwrite is
+**live**; the three deletions are **one contract away**. All four are the same missing third state — *"a file
+exists and could not be read"* — plus, for the malformed case, the fact that the tolerated-corrupt path and
+the no-file path are the same `null`. **The owner is choosing a justification, not a design**: one guard and
+one new state answers all four.
 
 **The obvious guard is still a defect, for a narrower reason.** Wrapping the read so it yields null makes an
 unreadable file indistinguishable from *no* file and moves the three throwing rows above onto the seed arm,

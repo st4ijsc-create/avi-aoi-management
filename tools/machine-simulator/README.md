@@ -1958,11 +1958,19 @@ operator-observable startup change and none has a one-line fix.** The full state
   it was taken **deny-share**; a `FileShare.Read` reader does not. *(The "stops the host" and "routes to the
   seed arm" outcomes are derived: the probe measures the store, and the arm is read off the composition
   root's own control flow.)* **The obvious guard would still be a defect** — treating an unreadable file as
-  "no file" applies the environment floor and persists it. 🔴 **And on two of the three shapes that reach
-  that arm, your file is then DELETED while the log says nothing you wrote was deleted** — measured; the
-  third leaves it beside an orphaned `.tmp-` file. **The likeliest of the three is not a permission at all:
-  it is a malformed file.** What is missing is a third state, "a file exists and could not be read". Full
-  table in `docs/startup-failure-posture.md` §3.1a.
+  "no file" applies the environment floor and persists it.
+  🔴 **Two different harms, and they have very different preconditions — read both.**
+  **(1) Your file is OVERWRITTEN with the environment floor, on an ordinary successful start, silently.**
+  Measured. This needs no failure of any kind: it happens whenever the settings file cannot be parsed or
+  read as "no file" **and at least one of `ST4I_SERVER_URL` / `ST4I_MACHINE_CODE` / `ST4I_VERIFY_TLS` is
+  set** — which is the headless service install those variables exist for. With none of the three set,
+  nothing is written. **The likeliest trigger is not a permission at all: it is a typo in the file.**
+  **(2) Your file is DELETED while the log says nothing you wrote was deleted.** Also measured — but this
+  one additionally requires the startup replay to **fail to activate**, which no environment-variable-only
+  route reaches today. It is a contract away, not live.
+  What is missing behind both is a third state, "a file exists and could not be read". **If you hand-edit
+  `fleet-settings.json`, keep a copy** — the same advice this section already gives for `products.json`.
+  Full tables in `docs/startup-failure-posture.md` §3.1a.
 - **Two operator-editable catalogues end the process**: `products.json`/`recipes.json` and the ecosystem
   files beside the exe are deserialized with no error handling at all, so one typo in a file with no
   published schema stops the host — while `connectors.json` and `fleet.json`, the same kind of file in the
@@ -2043,11 +2051,19 @@ mục bên trong) mới làm phép kiểm tồn tại trả lời "không có fi
 tiến trình khác giữ chỉ hạ được host khi nó mở ở chế độ **deny-share**; một người đọc `FileShare.Read` thì
 không. *(Hai kết cục "chết host" và "rơi vào nhánh gieo mầm" là SUY RA: bộ dò đo cái store, còn nhánh thì đọc
 từ luồng điều khiển của chính composition root.)* **Và bản vá hiển nhiên vẫn là một khiếm khuyết**: coi file
-không đọc được như "không có file" sẽ áp sàn môi trường rồi lưu nó. 🔴 **Và trên HAI trong BA hình dạng với
-tới được nhánh ấy, file của bạn bị XOÁ trong khi log ghi rằng không có gì bạn viết bị xoá** — đã đo; hình
-dạng thứ ba để lại file của bạn cạnh một file `.tmp-` mồ côi. **Hình dạng dễ xảy ra nhất trong ba KHÔNG phải
-là một phép chặn quyền — mà là một file hỏng cú pháp.** Cái cần vẫn là một trạng thái thứ ba, "có file mà
-không đọc được"; bảng đầy đủ ở `docs/startup-failure-posture.md` §3.1a. **Hai catalogue người vận hành sửa được thì làm chết tiến trình**:
+không đọc được như "không có file" sẽ áp sàn môi trường rồi lưu nó.
+🔴 **HAI tác hại khác nhau, với hai điều kiện tiên quyết rất khác nhau — đọc cả hai.**
+**(1) File của bạn bị GHI ĐÈ bằng sàn môi trường, trong một lần khởi động THÀNH CÔNG bình thường, im
+lặng.** Đã đo. Nó không cần bất kỳ thất bại nào: chỉ cần file cài đặt không phân giải được (hoặc bị đọc
+thành "không có file") **và ít nhất MỘT trong `ST4I_SERVER_URL` / `ST4I_MACHINE_CODE` / `ST4I_VERIFY_TLS`
+được đặt** — đúng kiểu cài headless mà ba biến ấy sinh ra để phục vụ. Nếu không đặt biến nào trong ba, không
+có gì được ghi. **Nguyên nhân dễ xảy ra nhất KHÔNG phải một phép chặn quyền — mà là một lỗi gõ trong file.**
+**(2) File của bạn bị XOÁ trong khi log ghi rằng không có gì bạn viết bị xoá.** Cũng đã đo — nhưng tác hại
+này CÒN đòi lượt phát lại lúc khởi động phải **kích hoạt hỏng**, mà hôm nay không đường env-var-nào-đó với
+tới được. Nó cách một hợp đồng, chưa phải chuyện đang xảy ra.
+Đằng sau cả hai vẫn là thiếu một trạng thái thứ ba, "có file mà không đọc được". **Nếu bạn sửa tay
+`fleet-settings.json`, hãy giữ một bản sao** — đúng lời khuyên mục này đã dành cho `products.json`. Bảng đầy
+đủ ở `docs/startup-failure-posture.md` §3.1a. **Hai catalogue người vận hành sửa được thì làm chết tiến trình**:
 `products.json`/`recipes.json` và các file ecosystem cạnh .exe được deserialize **không có bắt lỗi nào**, nên
 một lỗi gõ trong một file **không có schema công bố** sẽ chặn host — trong khi `connectors.json` và
 `fleet.json`, cùng loại file cùng thư mục, thì được dung thứ kèm cảnh báo; nếu bạn sửa tay hai catalogue ấy,

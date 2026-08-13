@@ -84,6 +84,7 @@ internal static class Program
                 PassOne(gate);
                 PassTwo(gate);
                 PassThree(gate);
+                PassThreeSuccessfulReplay(gate);
             }
 
             if (options.Started) StartedHandlerExperiment();
@@ -178,7 +179,14 @@ internal static class Program
         foreach (var refusal in gate.Refused) Console.WriteLine($"  refused: {refusal}");
         Console.WriteLine($"ACL rules applied: {AclLease.RestorationEvidence.Count}; not restored: {AclLease.NotRestored}");
         Console.WriteLine(_problems == 0
-            ? "PROBE OK — every ACL was restored and no path outside the sandbox was ever issued to the filesystem."
+            // 🔴 The qualifier is not hedging: this sentence used to be unconditional while the class doc on
+            // SandboxGate named two paths that do not pass through Admit. An operator-facing summary that is
+            // broader than the artefact it summarises is the same defect as a table's caption contradicting
+            // its rows — one notch weaker, and one this run has now printed three times.
+            ? "PROBE OK — every ACL was restored, and every path this probe NAMED was inside the sandbox. Two\n" +
+              "kinds of I/O do not pass the gate and are excluded by construction, not by omission: the store's\n" +
+              "own reads and writes (that store is what is being measured, and its resolved root IS gated), and\n" +
+              "the ApplicationStarted host's content-root and configuration resolution."
             : $"PROBE PROBLEMS: {_problems}. The measurements above are still printed; treat them as suspect and read the stderr lines.");
     }
 
@@ -449,6 +457,68 @@ internal static class Program
         Table(
             ["restriction", "Load()", "Save(floor)", "Delete()", "file survives", "whose triple is on disk", "what the directory holds afterwards"],
             rows);
+    }
+
+    // ── pass 3b: the same seed arm when the replay SUCCEEDS ────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>The shape BELOW every row of pass 3, and it has its own pass because it has no guard.</b>
+    /// Pass 3 asks what happens when the replay fails to activate — the arm the composition root gates on
+    /// <c>!replaySucceeded &amp;&amp; !replayRestoredAFile</c>, which is why everything it finds is "one
+    /// contract away". This pass asks what happens when the replay <b>SUCCEEDS</b>: the discard block never
+    /// runs, nothing is logged, and <see cref="FleetSettingsStore.Save"/> has already happened anyway —
+    /// <c>FleetCore.UpdateSettings</c> performs it in a <c>finally</c> inside <c>if (rebuildNeeded)</c>, so
+    /// it is reached whether the activation throws or returns.
+    ///
+    /// <para><b>What is measured and what is read, kept apart.</b> Measured here: what a <c>Save</c> with no
+    /// <c>Delete</c> leaves on disk when the operator's file is present and <c>Load()</c> returned null.
+    /// Read, not measured: that the composition root reaches that <c>Save</c> on the success path — which is
+    /// one <c>finally</c> block inside one <c>if</c>, cited by symbol rather than reproduced here.</para>
+    /// </summary>
+    private static void PassThreeSuccessfulReplay(SandboxGate gate)
+    {
+        Banner("PASS 3b — the SAME seed arm when the replay SUCCEEDS: Save() and NO Delete, no guard, no log");
+        var rows = new List<string[]>();
+        var floor = new PersistedFleetSettings
+        {
+            ServerUrl = "http://floor.example.invalid:5000",
+            MachineCode = "ENV-FLOOR-01",
+            VerifyTls = true,
+        };
+
+        foreach (var shape in Shapes())
+        {
+            if (shape.Kind is FixtureKind.NoFile or FixtureKind.NoRootDirectory) continue;
+
+            var fixture = Fixture.Create(gate, "p3b-" + Slug(shape.Id), shape.Kind);
+            Environment.SetEnvironmentVariable(FleetSettingsStore.EnvVarDir, fixture.SettingsRoot);
+            var store = new FleetSettingsStore();
+            gate.Admit(store.RootDirectory);
+
+            string load;
+            string save;
+
+            using (shape.Apply(fixture))
+            {
+                var (loadOutcome, loaded) = Attempt(store.Load);
+                load = Describe(loadOutcome, loaded);
+                save = load == "null" ? Attempt(() => store.Save(floor)).Outcome : "arm not taken";
+            }
+
+            var survives = File.Exists(fixture.SettingsFile);
+            var content = survives
+                ? Attempt(() => File.ReadAllText(fixture.SettingsFile)).Value?.Contains("OPERATOR-EDIT-01", StringComparison.Ordinal) == true
+                    ? "the OPERATOR's"
+                    : "the ENV FLOOR's"
+                : "GONE";
+
+            rows.Add([shape.Id, load, save, survives ? "yes" : "NO", content]);
+        }
+
+        Table(["restriction", "Load()", "Save(floor)", "file survives", "whose triple is on disk"], rows);
+        Console.WriteLine("  No row here passes through a guard, a callback or a log line. Where the last column does not");
+        Console.WriteLine("  read \"the OPERATOR's\", that is the operator's configuration replaced on an ordinary successful");
+        Console.WriteLine("  start — the arms in pass 3 all additionally require the replay to FAIL to activate.");
     }
 
     // ── the second question: does a throwing ApplicationStarted handler end the host? ───────────────────
