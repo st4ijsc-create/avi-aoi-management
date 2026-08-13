@@ -1914,13 +1914,14 @@ process ends before it serves anything; "comes up" means every endpoint works an
 
 | If this cannot be used at startup | What the host does |
 |---|---|
-| `security`, `historian`, `assets`, `settings` (the DIRECTORY), `machine-config` | **STOPS.** All would otherwise go on looking like they work |
+| `security`, `historian`, `assets`, `machine-config` | **STOPS.** All would otherwise go on looking like they work |
+| `settings` (the DIRECTORY) | **MIXED, and measured**: a directory that cannot be **created** stops the host; one that exists but cannot be **read** does **not** — the host comes up, and which arm it takes then depends on whether the deny also reaches the file. Same shape as `identity` and `connector-config` below |
 | `wal`, `sitelink` | **STOPS** — but only when that subsystem is on. `ST4I_WAL_ENABLED=0` removes the WAL decision entirely, and `sitelink` is only touched when the UNS spine is enabled (`ST4I_UNS_ENABLED`). Both default to on, so the common case is a stop |
 | `products.json` / `recipes.json` / `ecosystem\*.json` beside the exe | **STOPS**, and this is one of the divergences — see the note after this table |
 | `alarms`, and `security.db` itself | **STOPS**, a moment later — these open as the host starts rather than before it |
 | `identity` | **MIXED, and read this one twice**: a directory that cannot be **created** stops the host; a directory that exists but cannot be **written** comes up on a fresh in-memory identity with an `Error` — a new device every start, which a Site that pinned the old fingerprint will refuse |
 | `connector-config` | **MIXED**: a store that cannot be **opened** stops the host; one that opens but cannot be **read** comes up with no persisted connectors |
-| `settings` (the FILE) | **MIXED, and measured**: a `fleet-settings.json` whose own bytes cannot be read stops the host; a deny on the **directory** alone changes nothing; the same deny **applied to the contents too** routes to the seed arm instead. One that reads but cannot be **activated** comes up and reports — that last arm is the ruling above |
+| `settings` (the FILE) | **MIXED, and measured**: a `fleet-settings.json` whose own bytes cannot be read stops the host; a deny on the **directory** alone changes nothing; a deny reaching **both** the directory and the file routes to the seed arm instead. One that reads but cannot be **activated** comes up and reports — that last arm is the ruling above |
 | `notifications`, `bridge-spool`, the UNS broker port | **Comes up**, warns, that subsystem is off for the run |
 | `connectors.json`, `fleet.json`, `ST4I_MODBUS_MAP`, `ST4I_OPCUA_MAP`, a persisted connector row | **Comes up**, warns, **only that source** disables itself. A connector that is configured but not running stays visible as exactly that — it is never shown as running |
 | `creds`, `opcua-pki` | **No startup decision** — both are resolved when something uses them, not while the host starts |
@@ -1934,27 +1935,34 @@ was executed to produce it**, and it produced every row. 🔴 **A second instrum
 `tools/settings-acl-probe`** (task M-1) — a committed console app outside the five test suites. It answers
 **two** rows and no others: what curtailed access to the settings root or file actually does, and whether a
 throwing `ApplicationStarted` handler ends the host (it does not — the host serves, and the framework logs
-the throw at `Critical`). What a read cannot see is the part of the DI graph resolved **lazily, after the
-host has started** — a factory that throws on its first resolution fails a request rather than the boot, and
-lands in no row above.
+the throw at `Critical`). **Even in those two rows it measures the STORE, not the host** — no arm of it
+starts `St4i.EngineApi`, so "stops" versus "comes up" is still read off the composition root and mapped onto
+a measured outcome. What a read cannot see is the part of the DI graph resolved **lazily, after the host has
+started** — a factory that throws on its first resolution fails a request rather than the boot, and lands in
+no row above.
 
 🔴 **Places that do NOT follow the rule. Named here rather than changed, because flipping any of them is an
 operator-observable startup change and none has a one-line fix.** The full statement of each is in
 `docs/startup-failure-posture.md`; this is what an operator needs:
 
 - **`fleet-settings.json` is READ unguarded**, 104 lines before the guard that exists so that file can never
-  take the host down. 🔴 **MEASURED (task M-1, `tools/settings-acl-probe`), and what happens depends on WHICH
-  permission and on WHAT OBJECT:** a deny on **the file** — read-data alone is enough — **stops the host**,
-  because the existence check still answers "yes" and the read then fails. A deny on **the directory alone**
-  changes nothing: the folder stops being listable, the file is still opened by name and read. The **same
-  directory deny applied to its contents as well** — what the folder-properties dialog writes by default —
-  makes the existence check answer "no file" and routes to the **seed arm**. A holder's lock stops the host
-  only when it was taken **deny-share**; a `FileShare.Read` reader does not. **The obvious guard would still
-  be a defect** — treating an unreadable file as "no file" applies the environment floor and persists it.
-  (It does **not** then delete your file: measured, that delete is a no-op on the shape that reaches it, and
-  what is left behind is your file plus an orphaned `.tmp-` file. The arm that really deletes is the
-  **corrupt-file** one.) What is missing is a third state, "a file exists and could not be read". Full table
-  in `docs/startup-failure-posture.md` §3.1a.
+  take the host down. *(That "104" is a distance pointer and it decays: measured today it is **106** to the
+  guard's declaration and **136** to its call. It is left unfitted on purpose — see the note at the
+  `settingsStore.Load()` site for why re-fitting a decaying pointer destroys the evidence that it decays.)*
+  🔴 **MEASURED (task M-1, `tools/settings-acl-probe`), and what happens depends on WHICH permission and on
+  WHAT OBJECT:** a deny on **the file** — read-data alone is enough — **stops the host**, because the
+  existence check still answers "yes" and the read then fails. A deny on **the directory alone** changes
+  nothing: the folder stops being listable, the file is still opened by name and read. A deny reaching
+  **both** — which is what the folder-properties dialog writes by default, since it propagates — makes the
+  existence check answer "no file" and routes to the **seed arm**. A holder's lock stops the host only when
+  it was taken **deny-share**; a `FileShare.Read` reader does not. *(The "stops the host" and "routes to the
+  seed arm" outcomes are derived: the probe measures the store, and the arm is read off the composition
+  root's own control flow.)* **The obvious guard would still be a defect** — treating an unreadable file as
+  "no file" applies the environment floor and persists it. 🔴 **And on two of the three shapes that reach
+  that arm, your file is then DELETED while the log says nothing you wrote was deleted** — measured; the
+  third leaves it beside an orphaned `.tmp-` file. **The likeliest of the three is not a permission at all:
+  it is a malformed file.** What is missing is a third state, "a file exists and could not be read". Full
+  table in `docs/startup-failure-posture.md` §3.1a.
 - **Two operator-editable catalogues end the process**: `products.json`/`recipes.json` and the ecosystem
   files beside the exe are deserialized with no error handling at all, so one typo in a file with no
   published schema stops the host — while `connectors.json` and `fleet.json`, the same kind of file in the
@@ -2029,14 +2037,17 @@ vận hành cần: `fleet-settings.json` **được ĐỌC không bọc**, cách
 host **104 dòng**. 🔴 **ĐÃ ĐO (M-1, `tools/settings-acl-probe`), và chuyện gì xảy ra phụ thuộc vào CHẶN QUYỀN
 NÀO, TRÊN ĐỐI TƯỢNG NÀO:** chặn đọc trên **chính FILE** — chỉ riêng read-data cũng đủ — **làm chết host**, vì
 phép kiểm tồn tại vẫn trả lời "có" rồi lệnh đọc mới hỏng. Chặn đọc trên **riêng THƯ MỤC** thì **không đổi gì
-cả**: thư mục thôi liệt kê được, còn file vẫn được mở theo tên và đọc bình thường. **Cùng phép chặn ấy nhưng
-áp cả xuống các mục bên trong** — đúng cái hộp thoại Properties của Windows ghi ra theo mặc định — làm phép
-kiểm tồn tại trả lời "không có file" và rơi vào **nhánh gieo mầm**. Một khoá do tiến trình khác giữ chỉ hạ
-được host khi nó mở ở chế độ **deny-share**; một người đọc `FileShare.Read` thì không. **Và bản vá hiển nhiên
-vẫn là một khiếm khuyết**: coi file không đọc được như "không có file" sẽ áp sàn môi trường rồi lưu nó. (Nó
-**KHÔNG** xoá file của bạn: đã đo, lệnh xoá ấy là một no-op trên đúng nhánh với tới được nó, và để lại file
-của bạn cộng một file `.tmp-` mồ côi. Nhánh thật sự xoá là nhánh **file hỏng cú pháp**.) Cái cần vẫn là một
-trạng thái thứ ba, "có file mà không đọc được"; bảng đầy đủ ở `docs/startup-failure-posture.md` §3.1a. **Hai catalogue người vận hành sửa được thì làm chết tiến trình**:
+cả**: thư mục thôi liệt kê được, còn file vẫn được mở theo tên và đọc bình thường. **Phép chặn với tới CẢ HAI
+— thư mục VÀ file** (đúng cái hộp thoại Properties của Windows ghi ra theo mặc định, vì nó áp xuống cả các
+mục bên trong) mới làm phép kiểm tồn tại trả lời "không có file" và rơi vào **nhánh gieo mầm**. Một khoá do
+tiến trình khác giữ chỉ hạ được host khi nó mở ở chế độ **deny-share**; một người đọc `FileShare.Read` thì
+không. *(Hai kết cục "chết host" và "rơi vào nhánh gieo mầm" là SUY RA: bộ dò đo cái store, còn nhánh thì đọc
+từ luồng điều khiển của chính composition root.)* **Và bản vá hiển nhiên vẫn là một khiếm khuyết**: coi file
+không đọc được như "không có file" sẽ áp sàn môi trường rồi lưu nó. 🔴 **Và trên HAI trong BA hình dạng với
+tới được nhánh ấy, file của bạn bị XOÁ trong khi log ghi rằng không có gì bạn viết bị xoá** — đã đo; hình
+dạng thứ ba để lại file của bạn cạnh một file `.tmp-` mồ côi. **Hình dạng dễ xảy ra nhất trong ba KHÔNG phải
+là một phép chặn quyền — mà là một file hỏng cú pháp.** Cái cần vẫn là một trạng thái thứ ba, "có file mà
+không đọc được"; bảng đầy đủ ở `docs/startup-failure-posture.md` §3.1a. **Hai catalogue người vận hành sửa được thì làm chết tiến trình**:
 `products.json`/`recipes.json` và các file ecosystem cạnh .exe được deserialize **không có bắt lỗi nào**, nên
 một lỗi gõ trong một file **không có schema công bố** sẽ chặn host — trong khi `connectors.json` và
 `fleet.json`, cùng loại file cùng thư mục, thì được dung thứ kèm cảnh báo; nếu bạn sửa tay hai catalogue ấy,

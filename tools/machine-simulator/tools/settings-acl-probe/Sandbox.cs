@@ -19,6 +19,15 @@ namespace St4i.SettingsAclProbe;
 /// <para><b>Zero refusals is not evidence on its own</b> — a gate that admits everything also reports zero.
 /// <c>Program.SafetyControls</c> therefore fires two POSITIVE controls through it before any measurement
 /// runs, and a run whose controls do not both refuse exits non-zero without measuring anything.</para>
+///
+/// <para>🔴 <b>Two more stated limits, because a completeness claim is the dangerous kind.</b> First,
+/// <see cref="IsUnder"/> is a resolved-path PREFIX test with <b>no link resolution</b>, deliberately: reading
+/// a reparse point's target is a syscall, and this gate's whole value is that it decides BEFORE one is
+/// issued. A junction planted under the machine's temp directory would defeat it. Second, the
+/// <c>ApplicationStarted</c> arm builds a real web host, which resolves a content root and runs
+/// configuration providers without passing through here — nowhere near the product's data root, so this is a
+/// completeness point about the claim rather than a safety one, but the claim is "every path", so it is
+/// said.</para>
 /// </summary>
 internal sealed class SandboxGate
 {
@@ -112,14 +121,21 @@ internal sealed class AclLease : IDisposable
     private readonly bool _isDirectory;
     private readonly FileSystemAccessRule _rule;
     private readonly string _before;
+    private readonly Dictionary<string, string> _childrenBefore;
     private bool _released;
 
-    private AclLease(string path, bool isDirectory, FileSystemAccessRule rule, string before)
+    private AclLease(
+        string path,
+        bool isDirectory,
+        FileSystemAccessRule rule,
+        string before,
+        Dictionary<string, string> childrenBefore)
     {
         _path = path;
         _isDirectory = isDirectory;
         _rule = rule;
         _before = before;
+        _childrenBefore = childrenBefore;
     }
 
     /// <summary>Every restoration attempt, in order, as one line each: verdict, path, SDDL before, SDDL
@@ -146,7 +162,21 @@ internal sealed class AclLease : IDisposable
             sid, rights, inheritance, PropagationFlags.None, AccessControlType.Deny);
 
         var before = ReadSddl(full, isDirectory);
-        var lease = new AclLease(full, isDirectory, rule, before);
+
+        // 🔴 Review Minor 5. An INHERITING rule changes objects this lease was not written to, and a
+        // restoration check scoped to the target would report "restored" while a propagated deny sat on a
+        // child. That is the shape the whole R1i finding turns on, so the children are snapshotted here and
+        // compared on the way out — evidence about everything the rule REACHED, not about one object.
+        var childrenBefore = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (inherit && isDirectory)
+        {
+            foreach (var child in Directory.GetFileSystemEntries(full))
+            {
+                childrenBefore[child] = ReadSddl(child, Directory.Exists(child));
+            }
+        }
+
+        var lease = new AclLease(full, isDirectory, rule, before, childrenBefore);
         lock (LiveLeases)
         {
             LiveLeases.Add(lease);
@@ -154,6 +184,31 @@ internal sealed class AclLease : IDisposable
 
         Mutate(full, isDirectory, security => security.AddAccessRule(rule));
         return lease;
+    }
+
+    /// <summary>Holds several restrictions as one, so a shape can withhold rights on more than one object.
+    /// Disposed in reverse order, and every member is disposed even if an earlier one throws.</summary>
+    public static IDisposable All(params IDisposable[] leases) => new LeaseSet(leases);
+
+    private sealed class LeaseSet(IDisposable[] leases) : IDisposable
+    {
+        public void Dispose()
+        {
+            List<Exception>? failures = null;
+            for (var i = leases.Length - 1; i >= 0; i--)
+            {
+                try
+                {
+                    leases[i].Dispose();
+                }
+                catch (Exception ex)
+                {
+                    (failures ??= []).Add(ex);
+                }
+            }
+
+            if (failures is { Count: > 0 }) throw new AggregateException(failures);
+        }
     }
 
     /// <summary>The safety net for a path that never reaches a <c>using</c>'s dispose — an
@@ -188,6 +243,13 @@ internal sealed class AclLease : IDisposable
             verdict = string.Equals(after, _before, StringComparison.Ordinal) ? "RESTORED"
                 : string.Equals(AceList(after), AceList(_before), StringComparison.Ordinal) ? "RESTORED+AI"
                 : "MISMATCH";
+
+            var strayChild = FirstUnrestoredChild();
+            if (strayChild is not null)
+            {
+                verdict = "CHILD MISMATCH";
+                after += $"  [child not restored: {strayChild}]";
+            }
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -228,6 +290,31 @@ internal sealed class AclLease : IDisposable
     {
         var firstAce = sddl.IndexOf('(', StringComparison.Ordinal);
         return firstAce < 0 ? sddl : sddl[firstAce..];
+    }
+
+    /// <summary>The first child whose ACE list did not come back to what it was, or null if every one did.
+    /// A child that a measurement deleted is not a failure — its DACL went with it.</summary>
+    private string? FirstUnrestoredChild()
+    {
+        foreach (var (child, before) in _childrenBefore)
+        {
+            var stillThere = File.Exists(child) || Directory.Exists(child);
+            if (!stillThere) continue;
+
+            string nowSddl;
+            try
+            {
+                nowSddl = ReadSddl(child, Directory.Exists(child));
+            }
+            catch (Exception ex)
+            {
+                return $"{child} ({ex.GetType().Name})";
+            }
+
+            if (!string.Equals(AceList(nowSddl), AceList(before), StringComparison.Ordinal)) return child;
+        }
+
+        return null;
     }
 
     private static string ReadSddl(string path, bool isDirectory) => isDirectory

@@ -100,6 +100,11 @@ answers exactly two of this file's questions — **what curtailed access to the 
 does** (§3.1a) and **whether a throwing `ApplicationStarted` handler ends the host** (ceiling 3, row 40) —
 and it answers nothing else. **Its reach is two rows out of the set below. Every other row is still a read.**
 
+🔴 **And inside those two rows its reach stops at the STORE.** No arm of the probe starts `St4i.EngineApi`,
+so **S** versus **U** is never observed — it is read off the composition root's control flow and mapped onto
+a measured store outcome. Instrument 2 supplies the outcome; instrument 1 supplies the posture. A table that
+said otherwise would be making the exact substitution this file exists to stop.
+
 **Where the two instruments DISAGREED is the useful part**, per §8.1: reading produced two opposite
 statements about §3.1a in two successive rounds, and the execution shows that **each described one member of
 a population and was written as a claim about the population**. Neither round was careless; the read had no
@@ -213,17 +218,24 @@ editor the RESTORE-arm remedy string tells the operator to open it with. It is *
 depends on the share mode the holder asked for: measured, `FileShare.None` reaches the read and
 `FileShare.Read` does not.
 
-🔴 **MEASURED — task M-1, `tools/settings-acl-probe`, every row below RUN rather than reasoned. It refutes
-BOTH of this entry's earlier statements.** Round one said an ACL reaches the read; round two said an ACL is
-*not* the vector because `File.Exists` answers false on a permission failure. **Each is true of one member of
-the population, and each was written as a claim about the population.** "Unreadable" is not one state: a
-Windows ACL withholds rights individually, and the store's two surfaces answer differently depending on
-**which** right is withheld and on **what object**.
+🔴 **MEASURED — task M-1, `tools/settings-acl-probe`. It refutes BOTH of this entry's earlier statements.**
+Round one said an ACL reaches the read; round two said an ACL is *not* the vector because `File.Exists`
+answers false on a permission failure. **Each is true of one member of the population, and each was written
+as a claim about the population.** "Unreadable" is not one state: a Windows ACL withholds rights
+individually, and the store's two surfaces answer differently depending on **which** right is withheld and
+on **what object**.
 
-| What is withheld, and on what | ctor | `File.Exists` | `Load()` | The arm that follows |
+🔴 **The first four columns below are RUN. The last one is READ** — a mapping from the measured outcomes
+onto the composition root's own control flow (`settingsStore.Load()` is unguarded top-level code, and the
+`persistedSettings is not null` ternary immediately below it is the RESTORE/SEED fork). **No arm of the
+probe starts `St4i.EngineApi`.** Instrument 1 does that column's work, inside a table produced by
+instrument 2, and saying so is the point of naming instruments at all.
+
+| What is withheld, and on what | ctor | `File.Exists` | `Load()` | The arm that follows *(derived)* |
 |---|---|---|---|---|
 | all four read rights + `Traverse` on the settings **directory**, that object only | ok | true | the triple | **RESTORE — nothing changes at all** |
-| the same rights on the settings **directory**, **propagated to its children** | ok | **false** | **null** | **SEED — with the operator's file present** |
+| the same rights on the **directory**, **propagated to its children** | ok | **false** | **null** | **SEED — with the operator's file present** |
+| those rights on the **directory** AND all four read rights on the **file**, neither propagated | ok | **false** | **null** | **SEED — with the operator's file present** |
 | all four read rights on the **file** | ok | **true** | **throws `UnauthorizedAccessException`** | **the process ends at the read** |
 | `ReadData` alone on the **file** | ok | **true** | **throws `UnauthorizedAccessException`** | **the process ends at the read** |
 | `ListDirectory` alone, `ReadAttributes` alone, or `Traverse` alone on the **directory** | ok | true | the triple | RESTORE — none of these bite |
@@ -233,26 +245,40 @@ Windows ACL withholds rights individually, and the store's two surfaces answer d
 | a handle held with `FileShare.Read` | ok | true | the triple | RESTORE |
 | `Write` on the **parent**, with the settings root ABSENT | **throws `UnauthorizedAccessException`** | — | — | the process ends at the ctor (row 27) |
 
-**Two Windows mechanisms decide the whole table, and the probe measures both rather than asserting them:**
+**The rule the `File.Exists` column obeys, stated as the rows state it:** every shape that withholds the
+rights on **only one** of the two objects answers **true** — including the one that denies `ReadAttributes`
+**directly on the file**. The only shapes answering **false** are the two where the deny reached **both** the
+directory **and** the file, plus the control where there is genuinely no file.
 
-1. **A deny on a directory does not reach a file inside it.** The `Traverse`-only row opens the file with
-   traverse denied on the file's own parent, which is what traverse-check bypass
-   (`SeChangeNotifyPrivilege`) looks like from outside. 🔴 **The bypass itself was NOT measured — the
-   mechanism is an inference from the outcome**, taken on ONE token: a non-elevated interactive logon, the
-   identity the probe prints in its own header. A service account whose policy withholds that privilege is
-   outside every row of this table, and the probe would have to be re-run under it to say anything.
-2. **`File.Exists` answers off the file, not off the directory.** It returns **true** through every
-   file-scoped deny above, which is exactly why the read is reached and throws. It returns **false** only
-   where the deny landed **on the file**, as an inherited ACE.
+🔴 **So it is NOT the inheritance flag, and that was tested rather than assumed.** An earlier draft of this
+paragraph said `File.Exists` "answers off the file, not off the directory" and attributed the false to the
+ACE being *inherited* — which its own table already falsified, since a direct deny of the same rights on the
+same file answers true and an access check never consults `INHERITED_ACE`. A **discriminating row** was
+added: both objects denied by two **explicit, non-propagating** rules. It answers **false**. Inheritance is
+merely the usual way an operator produces the combination — the folder-properties dialog propagates by
+default — and it is not the mechanism.
+
+**Two explanations, both marked as what they are:**
+
+1. *(inferred)* **A deny on a directory does not reach a file inside it.** The `Traverse`-only row opens the
+   file with traverse denied on the file's own parent, which is what traverse-check bypass
+   (`SeChangeNotifyPrivilege`) looks like from outside. **The bypass itself was not measured**, and it was
+   taken on ONE token: a non-elevated interactive logon, the identity the probe prints in its own header. A
+   service account whose policy withholds that privilege is outside every row here.
+2. *(inferred)* **The attribute lookup is answered from the parent's directory entry while the parent
+   permits it, and falls back to a parent enumeration that the parent must also permit** — which is why
+   denying either object alone leaves it answerable and denying both does not. Consistent with every row;
+   the discriminating row rules out the rival "the inherited flag matters" explanation, and **nothing here
+   rules out a third**.
 
 **What this settles, item by item:**
 
 - **The ACL vector is real and it reaches the read.** A deny on the file — `ReadData` alone is enough —
   makes `Load()` throw out of the unguarded call at the composition root. Row 36's **S** and its ✗ stand,
   and the divergence now has a measured vector that is not a lock.
-- **The seed-arm inversion is also real, and it takes a DIFFERENT ACL** — one propagated to the file, which
-  is what the folder-properties dialog writes by default. Round two's conclusion survives for the inherited
-  shape only, and it was stated for a shape that produces the opposite outcome.
+- **The seed-arm inversion is also real, and it takes a DIFFERENT ACL** — one that reaches the file as well
+  as the directory. Round two's conclusion survives for those two shapes only, and it was stated for a shape
+  that produces the opposite outcome.
 - **None of the six read-denying shapes above stops the host at the constructor.**
   `Directory.CreateDirectory` on an existing but unreadable directory succeeded in every one. The
   constructor arm is real — it throws when the root must be
@@ -260,18 +286,33 @@ Windows ACL withholds rights individually, and the store's two surfaces answer d
   enough to fail `Directory.CreateDirectory` stops the host earlier still, never reaching row 36"* holds for
   no shape this entry is about.
 
-🔴 **The harm was measured too, and it is not the harm this entry claimed.** On the one ACL shape that selects
-the seed arm, `Save` throws `FileNotFoundException` out of the atomic write's rename and **`Delete()` is a
-no-op**, because it gates on the same `File.Exists` that already answered false. **The operator's file
-survives.** What is left in the directory is that file plus an orphaned `fleet-settings.json.tmp-<guid>`
-nothing ever looks at again. So *"Nothing an operator wrote was deleted — no settings file existed before
-this start"* is **false in its premise and true in its effect**.
+🔴 **The harm was measured too, and the two seed-arm ACL shapes DO NOT AGREE — which is the third time in
+this entry that one word covered two outcomes.** Running the seed arm's own two calls, `Save(floor)` then
+`Delete()`, against a file that is present:
 
-**Where the operator's file IS deleted is the CORRUPT-file arm, which this entry never named.** A malformed
-`fleet-settings.json` yields null through the documented `JsonException` tolerance, `Save` then succeeds,
-`Delete` then succeeds, and the file is gone. That arm is gated on the replay ALSO failing to activate, and
-the note at the seed-arm block in `Program.cs` enumerates why no env-var-only route reaches an activation
-throw today — so this harm is one contract away rather than live, and the contract is `_onLiveSettingsRebuilt`.
+| The seed-arm shape | `Save(floor)` | `Delete()` | What is on disk afterwards |
+|---|---|---|---|
+| directory deny **propagated** | throws `FileNotFoundException` | **no-op** | the operator's file **survives**, beside an orphaned `fleet-settings.json.tmp-<guid>` |
+| directory **and** file denied, not propagated | **ok** | **ok** | **the operator's file is GONE; the directory is empty** |
+| a **malformed** file, nothing denied | ok | ok | **the operator's file is GONE; the directory is empty** |
+
+**So this entry's original claim — *"the operator's file is deleted while the log says nothing was
+deleted"* — is TRUE, on a shape it never named.** The withdrawal of it in round two was as over-general as
+the claim had been. The propagating shape is self-limiting for a reason worth writing down: the deny is
+inherited by the **temp file the atomic write creates**, so `File.Move` cannot resolve its own source. Where
+the deny does not propagate, nothing protects the file — read rights were withheld, **write and delete
+rights were not**, and neither `Save` nor `Delete` needs to read anything.
+
+On the propagating shape the sentence *"Nothing an operator wrote was deleted — no settings file existed
+before this start"* is **false in its premise and true in its effect**. On the other two it is **false
+outright, and the operator's configuration is gone.**
+
+**The likeliest vector is not an ACL at all: it is a MALFORMED file, which this entry never named.** It
+yields null through the documented `JsonException` tolerance and lands on the same arm with nothing withheld
+at all. All three are gated on the replay ALSO failing to activate, and the note at the seed-arm block in
+`Program.cs` enumerates why no env-var-only route reaches an activation throw today — so the harm is one
+contract away rather than live, and the contract is `_onLiveSettingsRebuilt`, which that site itself
+describes as an arbitrary host callback.
 
 **The obvious guard is still a defect, for a narrower reason.** Wrapping the read so it yields null makes an
 unreadable file indistinguishable from *no* file and moves the three throwing rows above onto the seed arm,

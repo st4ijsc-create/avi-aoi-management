@@ -1845,8 +1845,10 @@ if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
 //     ReadAllText is reached and throws UnauthorizedAccessException STRAIGHT THROUGH THIS LINE;
 //   * a deny on the DIRECTORY does NOT reach the file at all — the directory stops being enumerable, the
 //     file is still opened by name and read, and this line returns the operator's triple unchanged;
-//   * the SAME directory deny PROPAGATED TO ITS CHILDREN lands on the file as an inherited ACE, File.Exists
-//     answers FALSE, and the SEED arm is selected with the operator's file sitting right there;
+//   * File.Exists answers FALSE only when the deny reaches BOTH the directory AND the file, and the SEED
+//     arm is then selected with the operator's file sitting right there. It is NOT the inheritance flag —
+//     a discriminating shape denying both objects with two EXPLICIT, non-propagating rules answers false
+//     too. Propagation is just how the folder-properties dialog produces the combination;
 //   * none of the six read-denying shapes measured fails the `new FleetSettingsStore()` construction above —
 //     Directory.CreateDirectory succeeded on an existing but unreadable directory in every one. That
 //     constructor DOES throw on a WRITE denial with the root absent, which is a different arm from the one
@@ -1857,13 +1859,20 @@ if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
 // null makes an unreadable file indistinguishable from NO file and moves every shape that throws above onto
 // the SEED arm: the environment floor is applied and UpdateSettings persists unconditionally. What the
 // earlier note claimed next — that the seed-arm block then DELETES the operator's file while logging that
-// nothing was deleted — was MEASURED AND IS NOT WHAT HAPPENS on the ACL shape that selects that arm: Save
-// throws out of the atomic rename and Delete() is a NO-OP, because it gates on the same File.Exists that
-// already answered false. The file survives, next to an orphaned fleet-settings.json.tmp-<guid>. The arm
-// where the operator's file really is deleted is the CORRUPT-file one, which that note never named. What is
-// missing is still a third state, "a file exists and could not be read", which neither this composition root
-// nor FleetSettingsStore expresses today. Building it changes what an operator observes at startup, so it is
-// recorded and left.
+// nothing was deleted — was MEASURED, and IT IS TRUE ON SOME SHAPES AND NOT OTHERS, which is the same
+// one-word-two-outcomes trap a third time. Running Save() then Delete() against a present file:
+//   * deny PROPAGATED to the children: Save throws out of the atomic rename (the TEMP FILE inherits the
+//     deny, so File.Move cannot resolve its own source) and Delete() is a NO-OP, because it gates on the
+//     same File.Exists that already answered false. The file SURVIVES, beside an orphaned
+//     fleet-settings.json.tmp-<guid> that nothing ever looks at again;
+//   * both objects denied WITHOUT propagation: Save SUCCEEDS and Delete SUCCEEDS. THE OPERATOR'S FILE IS
+//     GONE. Read rights were withheld; write and delete rights were not, and neither call reads anything;
+//   * a MALFORMED file with nothing denied at all: same — file GONE. That is the likeliest vector of the
+//     three, and the earlier note named none of them.
+// All three still need the replay to ALSO fail to activate; see the seed-arm block's own enumeration below,
+// which bottoms out at _onLiveSettingsRebuilt, an arbitrary host callback. What is missing is still a third
+// state, "a file exists and could not be read", which neither this composition root nor FleetSettingsStore
+// expresses today. Building it changes what an operator observes at startup, so it is recorded and left.
 var persistedSettings = settingsStore.Load();
 var initialSettingsRequest = persistedSettings is not null
     ? new SettingsUpdateRequest(
