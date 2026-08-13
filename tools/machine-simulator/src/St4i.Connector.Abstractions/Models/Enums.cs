@@ -79,12 +79,14 @@ public enum ReadingKind
 /// tiles it is drawn with, which panel of the desktop detail view is visible, and whether the asset
 /// registry recognises the value or falls back to displaying it raw. Those are examples, not a list.</para>
 ///
-/// <para>🔴 Nothing on that side of the wire is checked by a compiler against THIS enum. The browser
-/// client mirrors these member names in a hand-written union and then uses them as translation keys and
-/// lookup keys; the desktop client compares against them as literal strings in markup. So renaming a
-/// member here need not break anything at build time — it can simply make those stop matching, and a
-/// machine loses its tab, its figure or its label with no error raised anywhere. Treat these member
-/// names as the published strings they already are.</para>
+/// <para>🔴 <b>Not all of that is a branch on this VALUE. Much of it is a lookup keyed by the member's
+/// SPELLING</b>, which is the harder case to notice: the browser client mirrors these names in a
+/// hand-written union and then uses them as translation keys and as the keys of its own lookup tables,
+/// and the desktop client compares against them as literal strings in markup. No compiler on either side
+/// of the wire checks any of that against this enum, so renaming a member here need not break a build —
+/// it can simply make those stop matching, and a machine quietly loses its tab, its figure or its label,
+/// in whichever language its operator is reading. Treat these member names as the published strings they
+/// already are.</para>
 /// </summary>
 public enum DeviceClass
 {
@@ -180,8 +182,9 @@ public enum Verdict
     /// counting as a failure in it, so a telemetry driver that leaves this at its default
     /// (<see cref="Pass"/>, ordinal 0) silently inflates that machine's pass rate instead of abstaining.
     /// Becomes <c>NTF</c> on the inspection endpoint, which that endpoint's worst-wins aggregation ranks
-    /// between <c>OK</c> and <c>NG</c>. Past the serialization boundary the stored name is renamed again:
-    /// this product's own browser client labels a row carrying this member "Telemetry", not
-    /// "Skip".</summary>
+    /// between <c>OK</c> and <c>NG</c>. Past the serialization boundary the stored name is replaced
+    /// again: this product's own browser client renders a row carrying this member under its own
+    /// translated label for TELEMETRY — <c>"Telemetry"</c> in its English locale, a different word in its
+    /// other one — and never as <c>"Skip"</c>.</summary>
     Skip,
 }
