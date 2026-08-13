@@ -2,14 +2,18 @@ namespace St4i.Connector.Abstractions.Models;
 
 /// <summary>
 /// Which of the three ingest shapes a <see cref="DeviceReading"/> carries. This product's NORMALIZER
-/// switches on it to decide which endpoint the reading goes to, and reads only the collection that the
-/// chosen kind names.
+/// switches on it to decide which endpoint the reading goes to, and never reads another kind's
+/// collection.
 ///
 /// <para>🔴 <b>Other consumers do NOT all honour that gate, and a driver author must not generalise it
 /// into "the other collections are inert".</b> The path that persists each result to disk reads
 /// <see cref="DeviceReading.Metrics"/>, <see cref="DeviceReading.Telemetry"/>,
 /// <see cref="DeviceReading.Measurements"/>, <see cref="DeviceReading.Genealogy"/> and
-/// <see cref="DeviceReading.Verdict"/> REGARDLESS of this value, and the HTTP surface serves that back.
+/// <see cref="DeviceReading.Verdict"/> REGARDLESS of this value. 🔴 The HTTP surface then serves back
+/// only what it DERIVES from them — the key metric, the verdict, and the NG and point counts — plus
+/// telemetry, reduced, on a route of its own. The stored genealogy and measurement blobs are
+/// deliberately dropped at the DTO boundary, so misplaced content in
+/// <see cref="DeviceReading.Genealogy"/> is recorded permanently and served nowhere.
 /// The live-state reader reads the same members ungated, except <see cref="DeviceReading.Genealogy"/>,
 /// which it never reads, and <see cref="DeviceReading.Measurements"/>, which it gates for its board view
 /// and then reads ungated again for its cycle log. The Sparkplug data message, by contrast, IS
@@ -75,7 +79,7 @@ public enum ReadingKind
 /// own type. The host writes it as its CLR member name onto every stored result and into its asset
 /// registry, serves it as JSON, and both of this product's own clients then branch on that string
 /// throughout. Among other things it decides which tab a machine opens on, whether a pass rate applies
-/// to that machine at all, how the fleet grid groups and filters it, which schematic and which readout
+/// to that machine at all, how the fleet grid filters it, which schematic and which readout
 /// tiles it is drawn with, which panel of the desktop detail view is visible, and whether the asset
 /// registry recognises the value or falls back to displaying it raw. Those are examples, not a list.</para>
 ///

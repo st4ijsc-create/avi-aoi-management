@@ -148,13 +148,16 @@ public record MeasurementResult(
 /// mapping profile may rewrite it on the way out; nothing converts the value itself.</param>
 /// <param name="Quality">How much the sample is to be trusted, defaulting to <c>good</c> — the value
 /// reaches the telemetry payload's <c>quality</c> field unchanged, and is stored verbatim with the sample.
-/// This contract does not constrain the string. Two tokens are observable in this product: the
-/// <c>good</c> default, and <c>bad</c>, which its OPC-UA driver emits together with a
-/// <see langword="null"/> <paramref name="Value"/> for a node whose read returned a bad or uncertain
-/// status rather than failing the whole poll. The reference device-client SDK shipped alongside this
-/// product documents the field's vocabulary as <c>good|bad|uncertain</c>. 🔴 What any of those three
-/// ASSERT about a sample is written down nowhere in this repository — the tokens are recoverable, their
-/// meaning is not, so this says which strings occur and stops.</param>
+/// This contract does not constrain the string, and a consumer must tolerate whatever it receives.
+/// The tokens this product is observed to write are the <c>good</c> default; <c>bad</c>, which its
+/// OPC-UA driver emits together with a <see langword="null"/> <paramref name="Value"/> for a node whose
+/// read returned a bad or uncertain status rather than failing the whole poll; and <c>uncertain</c>,
+/// which its IoT-sensor simulator writes on EVERY sample of a calibration-drift block — a routine
+/// steady state of a shipped simulator, not an error path. Those are the vocabulary the reference
+/// device-client SDK shipped alongside this product documents for the field,
+/// <c>good|bad|uncertain</c>; nothing here enforces that set. 🔴 What any of them ASSERT about a sample
+/// is written down nowhere in this repository — the tokens are recoverable, their meaning is not, so
+/// this says which strings occur and stops.</param>
 public record TelemetrySample(string Metric, object? Value, string? Unit = null, string Quality = "good");
 
 /// <summary>
@@ -286,10 +289,12 @@ public class DeviceReading
     /// <para>🔴 It is NOT unexamined, though, and the reader that examines it is the conformance harness a
     /// third-party author runs against their own driver: that harness deep-copies every
     /// <see cref="WaveformSeries.Samples"/> row and then compares <see cref="WaveformSeries.Name"/>,
-    /// <see cref="WaveformSeries.Unit"/>, <see cref="WaveformSeries.RateHz"/> and every sample ELEMENT —
-    /// not the row count. So the same reused-buffer mistake this contract warns about elsewhere is caught
-    /// here rather than tolerated: a driver that recycles one <see langword="double"/>[] across cycles
-    /// fails the no-reuse check and the round-trip check, on element values.</para></summary>
+    /// <see cref="WaveformSeries.Unit"/>, <see cref="WaveformSeries.RateHz"/> and every sample ELEMENT,
+    /// not just the row count. So the same reused-buffer mistake this contract warns about elsewhere is
+    /// caught here rather than tolerated: a driver that recycles one <see langword="double"/>[] across
+    /// cycles fails the no-reuse check, on element values. It does NOT fail the round-trip check, which
+    /// compares a reading against its own serialized copy and so sees the recycled buffer on both
+    /// sides.</para></summary>
     public List<WaveformSeries> Waveforms { get; set; } = new();
 
     /// <summary>The per-point results of an inspection. Carried to the wire by the normalizer only when
