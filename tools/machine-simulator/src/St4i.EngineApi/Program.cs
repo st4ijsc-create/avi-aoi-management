@@ -1832,23 +1832,63 @@ if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
 // By the rule at wal.EnsureDir above (docs/startup-failure-posture.md §3.1a) this must come up: the failure
 // is nameable, so stopping is the quieter outcome.
 //
-// THE REACHABLE VECTOR IS A DENY-SHARE LOCK — an editor or an AV scanner holding the file, including the
-// editor the RESTORE-arm remedy string below tells the operator to open it with.
+// A DENY-SHARE LOCK IS ONE REACHABLE VECTOR — an editor or an AV scanner holding the file, including the
+// editor the RESTORE-arm remedy string below tells the operator to open it with. Measured: FileShare.None
+// reaches this line and throws; FileShare.Read does not.
 //
-// 🔴 AN ACL IS NOT THE VECTOR, and an earlier round of this note said it was. Load() gates on File.Exists,
-// which returns FALSE when the caller lacks permission — so a permission failure returns null and selects
-// the SEED arm TODAY, with no guard at all. And an ACL severe enough to fail Directory.CreateDirectory stops
-// the host earlier still, at the `new FleetSettingsStore()` construction, never reaching this line. Correcting
-// that sharpens the finding rather than softening it: the inversion described below is ALREADY REACHABLE.
+// 🔴 AN ACL IS ALSO A VECTOR, AND THIS NOTE HAS NOW SAID BOTH THINGS. Round one said an ACL reaches this
+// read; round two said it does not, because Load() gates on File.Exists and File.Exists answers false on a
+// permission failure. Task M-1 RAN it — tools/settings-acl-probe, committed, re-runnable — and each
+// statement is true of ONE SHAPE and was written about the population. "Unreadable" is not one state; a
+// Windows ACL withholds rights individually. Measured, on this runtime:
+//   * a deny on the FILE (all four read rights, or ReadData alone) leaves File.Exists answering TRUE, so
+//     ReadAllText is reached and throws UnauthorizedAccessException STRAIGHT THROUGH THIS LINE;
+//   * a deny on the DIRECTORY does NOT reach the file at all — the directory stops being enumerable, the
+//     file is still opened by name and read, and this line returns the operator's triple unchanged;
+//   * File.Exists answers FALSE only when the deny reaches BOTH the directory AND the file, and the SEED
+//     arm is then selected with the operator's file sitting right there. It is NOT the inheritance flag —
+//     a discriminating shape denying both objects with two EXPLICIT, non-propagating rules answers false
+//     too. Propagation is just how the folder-properties dialog produces the combination;
+//   * none of the six read-denying shapes measured fails the `new FleetSettingsStore()` construction above —
+//     Directory.CreateDirectory succeeded on an existing but unreadable directory in every one. That
+//     constructor DOES throw on a WRITE denial with the root absent, which is a different arm from the one
+//     this paragraph is about.
+// docs/startup-failure-posture.md §3.1a carries the full table.
 //
-// 🔴 THE OBVIOUS GUARD IS ITSELF A DEFECT, AND THE HARM IS WORSE THAN AN OVERWRITE. Wrapping this in a
-// try/catch that yields null makes an unreadable file indistinguishable from NO file, selecting the SEED
-// arm: the environment floor is applied, UpdateSettings persists unconditionally — and the seed-arm block
-// further below then REMOVES the file and logs "Nothing an operator wrote was deleted — no settings file
-// existed before this start." With a present-but-unreadable file that sentence is FALSE and the operator's
-// configuration is GONE, not merely overwritten. What is missing is a third state, "a file exists and could
-// not be read", which neither this composition root nor FleetSettingsStore expresses today. Building it
-// changes what an operator observes at startup, so it is recorded and left.
+// 🔴 THE OBVIOUS GUARD IS STILL A DEFECT, FOR A NARROWER REASON. Wrapping this in a try/catch that yields
+// null makes an unreadable file indistinguishable from NO file and moves every shape that throws above onto
+// the SEED arm: the environment floor is applied and UpdateSettings persists unconditionally. What the
+// earlier note claimed next — that the seed-arm block then DELETES the operator's file while logging that
+// nothing was deleted — was MEASURED, and IT IS TRUE ON SOME SHAPES AND NOT OTHERS, which is the same
+// one-word-two-outcomes trap a third time. Running Save() then Delete() against a present file:
+//   * deny PROPAGATED to the children: Save throws out of the atomic rename (the TEMP FILE inherits the
+//     deny, so File.Move cannot resolve its own source) and Delete() is a NO-OP, because it gates on the
+//     same File.Exists that already answered false. The file SURVIVES, beside an orphaned
+//     fleet-settings.json.tmp-<guid> that nothing ever looks at again;
+//   * both objects denied WITHOUT propagation: Save SUCCEEDS and Delete SUCCEEDS. THE OPERATOR'S FILE IS
+//     GONE. Read rights were withheld; write and delete rights were not, and neither call reads anything;
+//   * a MALFORMED file with nothing denied at all: same — file GONE. That is the likeliest vector of the
+//     three, and the earlier note named none of them.
+// All three DELETIONS still need the replay to ALSO fail to activate; see the seed-arm block's own
+// enumeration below, which bottoms out at _onLiveSettingsRebuilt, an arbitrary host callback.
+//
+// 🔴 AND UNDERNEATH ALL THREE THERE IS A SHAPE GATED ON NOTHING, WHICH IS LIVE TODAY. Measured for the case
+// where the replay SUCCEEDS: Load() returns null with the file present, the seed request is the env floor,
+// and FleetCore.UpdateSettings performs its Save in a `finally` inside `if (rebuildNeeded)` — reached
+// whether the activation throws OR RETURNS. So fleet-settings.json is REWRITTEN with the environment floor
+// merged with FleetHost's built-in defaults, the operator's content is gone, and NOTHING SAYS SO: the Error
+// line belongs to a failed replay and the Warning line to the discard block, and on this path neither runs.
+// Its one precondition, and it is the reason this is a real report rather than a scare: rebuildNeeded is set
+// only if at least one of serverUrl/verifyTls/machineCode arrives non-null, and initialLiveVerifyTls above
+// is a bool? that stays null unless ST4I_VERIFY_TLS is set — so with NONE of the three ST4I_* variables set,
+// nothing is written at all. With any one set, it is. Those variables exist for the headless service install
+// (WS-F1 fix F1, above), which is exactly the deployment that has no UI to retype the triple into.
+//
+// What is missing behind ALL FOUR is still one thing: a third state, "a file exists and could not be read",
+// which neither this composition root nor FleetSettingsStore expresses today — plus, for the malformed case,
+// that a tolerated-corrupt file and no file are the same null. Building it changes what an operator observes
+// at startup, so it is recorded and left. The choice facing the owner is a JUSTIFICATION, not a design: one
+// guard and one new state answers all four.
 var persistedSettings = settingsStore.Load();
 var initialSettingsRequest = persistedSettings is not null
     ? new SettingsUpdateRequest(

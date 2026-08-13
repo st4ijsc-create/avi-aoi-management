@@ -1,8 +1,10 @@
 # Startup failure posture — the rule, and the enumerated set it was checked against
 
 **Owner:** task J-3 (`.superpowers/sdd/startup-failure-posture/`), discharging the item booked at
-`FleetCore`'s P5. **Status:** descriptive — this records what the product does, and names where it does
-something else. **Nothing here is enforced by a test.**
+`FleetCore`'s P5; §2 ceiling 3 and §3.1a re-measured by task M-1
+(`.superpowers/sdd/settings-acl-probe/`). **Status:** descriptive — this records what the product does, and
+names where it does something else. **Nothing here is enforced by a test**, and two rows — and only two —
+are now backed by something that runs: `tools/settings-acl-probe`.
 
 This file exists because the rule was previously stated as a **scalar** ("thirty-six sites, thirty-two
 agree") in five places with **the members enumerated nowhere the tree could reach**. An independent
@@ -84,10 +86,29 @@ distinct failure **arms** get their own rows only when their postures differ (wh
 has three rows and the historian one). An `X.FromEnvironment()` factory that validates is its own row,
 separate from the store call it feeds.
 
-**Instrument:** a read of the four composition roots — `src/St4i.EngineApi/Program.cs`,
+**Instrument 1 — a read.** The four composition roots — `src/St4i.EngineApi/Program.cs`,
 `src/St4i.EdgeService/Program.cs` + `EdgeWorker`, `src/St4iMachineSimulator/App.xaml.cs`,
-`src/St4i.DesktopShell/App.xaml.cs` — plus every store constructor and options factory they reach. **Nothing
-was executed.**
+`src/St4i.DesktopShell/App.xaml.cs` — plus every store constructor and options factory they reach. It
+produced every row below. **Nothing was executed to produce it**, and it was wrong twice in the same
+direction before this file existed.
+
+🔴 **Instrument 2 — an execution, added by task M-1: `tools/settings-acl-probe`.** A committed console app
+outside the five test suites, for the reason `tools/serial-bench` already carries: making a directory
+unreadable cannot be done from a suite without a conditional skip, and a conditional skip makes `Skipped`
+environment-dependent, which is what stops the grand total meaning the same thing on every machine. It
+answers exactly two of this file's questions — **what curtailed access to the settings root or file actually
+does** (§3.1a) and **whether a throwing `ApplicationStarted` handler ends the host** (ceiling 3, row 40) —
+and it answers nothing else. **Its reach is two rows out of the set below. Every other row is still a read.**
+
+🔴 **And inside those two rows its reach stops at the STORE.** No arm of the probe starts `St4i.EngineApi`,
+so **S** versus **U** is never observed — it is read off the composition root's control flow and mapped onto
+a measured store outcome. Instrument 2 supplies the outcome; instrument 1 supplies the posture. A table that
+said otherwise would be making the exact substitution this file exists to stop.
+
+**Where the two instruments DISAGREED is the useful part**, per §8.1: reading produced two opposite
+statements about §3.1a in two successive rounds, and the execution shows that **each described one member of
+a population and was written as a claim about the population**. Neither round was careless; the read had no
+way to see that "unreadable" is not one state.
 
 **Ceilings, named rather than left to be discovered:**
 
@@ -97,11 +118,23 @@ was executed.**
 2. Rows marked **boundary** execute inside `app.Run()` rather than before it. They are listed because they are
    still startup failures to an operator, and marked because they are not before-serving by the property's own
    words.
-3. One row is **unsettled** and says so: whether an exception from an `ApplicationStarted` handler ends the
-   host depends on whether `HostApplicationLifetime.NotifyStarted` wraps handler execution in its own
-   try/catch. Framework behaviour says it does — which would make that row **U** — but this was read, not run.
-   *The experiment that settles it: throw from an `ApplicationStarted` handler and report whether the host
-   serves.*
+3. ~~One row is **unsettled**~~ — 🔴 **SETTLED by task M-1, and the answer was the predicted one.** The
+   question was whether an exception from an `ApplicationStarted` handler ends the host.
+   **Measured: it does not.** `tools/settings-acl-probe`'s fourth pass registers a throwing handler exactly
+   as the composition root registers its own — `app.Lifetime.ApplicationStarted.Register(...)` before
+   `app.Run()` — and the host **serves**: `GET` answered `200`, `app.Run()` did not return, and the
+   throw was reported by the framework itself at **`Critical`** on
+   `Microsoft.Extensions.Hosting.Internal.ApplicationLifetime` (*"An error occurred starting the
+   application"*, carrying the `AggregateException`). A control arm whose handler returns normally serves
+   identically and logs **nothing** at Warning or above, which is what makes the Critical line evidence
+   about the throw rather than about the rig. Row 40 is therefore **U**, and ✓ by the rule in §1: the loss is
+   named on a surface an operator reads. On this product that level reaches the console and the Windows
+   Event Log without configuration — §10.4's own reason, that no `appsettings.json` ships, so the
+   framework's default minimum applies.
+   *Two ceilings on that measurement, stated rather than left to be found:* it was run on a minimal host on
+   ASP.NET Core 10, not on `St4i.EngineApi` itself, so it is evidence about `NotifyStarted`'s contract and
+   not about this product's own callback body; and it says nothing about the **audit row** that callback
+   exists to write, which a throw before `RecordSystemAsync` would still silently omit.
 
 ---
 
@@ -153,7 +186,7 @@ was executed.**
 | 37 | the startup settings replay | that triple | no | **U** — *posture B* | ✓ |
 | 38 | the seed-arm discard | same file | no | **U** (own try/catch) | ✓ |
 | 39 | `AlarmThresholds.FromEnvironment()` | four `ST4I_ALARM_*` knobs | **yes** | **silent** ×4 | **✗ §3.4** |
-| 40 | `ApplicationStarted` callback — binding notice + `system.startup` audit | bind addresses, `security.db` | no | **UNSETTLED** — S or U, see §2 ceiling 3 | — |
+| 40 | `ApplicationStarted` callback — binding notice + `system.startup` audit | bind addresses, `security.db` | no | **U** — *measured*, M-1; see §2 ceiling 3 | ✓ |
 | 41 | hosted services (inside `app.Run()`) → `AlarmStore` ctor | `ST4I_ALARMS_DIR` | yes | **S** (boundary) | ✓ |
 
 **Excluded, with the reason, because an exclusion is a decision:**
@@ -180,25 +213,153 @@ is a pointer that decays without anyone touching it, and this file exists to rep
 with something checkable; citing positions would have reintroduced the defect in the artefact written to end
 it. Find each site by its symbol.
 
-**The reachable vector is a deny-share lock** — an editor or an AV scanner holding the file — including the
-editor the RESTORE-arm remedy string tells the operator to open it with.
+**A deny-share lock is A reachable vector** — an editor or an AV scanner holding the file — including the
+editor the RESTORE-arm remedy string tells the operator to open it with. It is **not the only one**, and it
+depends on the share mode the holder asked for: measured, `FileShare.None` reaches the read and
+`FileShare.Read` does not.
 
-🔴 **An ACL is NOT the vector, and getting this right sharpens the finding rather than weakening it.**
-`Load()` gates on `File.Exists`, which returns **false** when the caller lacks permission. So a permission
-failure that reaches attribute lookup returns `null` and **selects the SEED arm today, with no guard at all**
-— which is exactly the outcome this entry says the obvious guard would introduce. **The inversion is already
-reachable.** And an ACL severe enough to fail `Directory.CreateDirectory` stops the host earlier still, at the
-`new FleetSettingsStore()` construction (row 27), never reaching row 36 at all.
+🔴 **MEASURED — task M-1, `tools/settings-acl-probe`. It refutes BOTH of this entry's earlier statements.**
+Round one said an ACL reaches the read; round two said an ACL is *not* the vector because `File.Exists`
+answers false on a permission failure. **Each is true of one member of the population, and each was written
+as a claim about the population.** "Unreadable" is not one state: a Windows ACL withholds rights
+individually, and the store's two surfaces answer differently depending on **which** right is withheld and
+on **what object**.
 
-**The obvious guard is itself a defect, and the harm is worse than an overwrite.** Wrapping the read so it
-yields null makes an unreadable file indistinguishable from *no* file, selecting the seed arm. Then:
-the environment floor is applied; `UpdateSettings` persists unconditionally; **and the seed-arm block guarded
-by `!replaySucceeded && !replayRestoredAFile` then removes the file**, logging *"Nothing an operator wrote was
-deleted — no settings file existed before this start."* With a present-but-unreadable file that sentence is **false and the operator's file is gone**,
-not merely overwritten.
+🔴 **The first four columns below are RUN. The last one is READ** — a mapping from the measured outcomes
+onto the composition root's own control flow (`settingsStore.Load()` is unguarded top-level code, and the
+`persistedSettings is not null` ternary immediately below it is the RESTORE/SEED fork). **No arm of the
+probe starts `St4i.EngineApi`.** Instrument 1 does that column's work, inside a table produced by
+instrument 2, and saying so is the point of naming instruments at all.
 
-**What is missing is a third state — "a file exists and could not be read"** — which neither the composition
-root nor `FleetSettingsStore` expresses. Building it changes what an operator observes at startup.
+| What is withheld, and on what | ctor | `File.Exists` | `Load()` | The arm that follows *(derived)* |
+|---|---|---|---|---|
+| all four read rights + `Traverse` on the settings **directory**, that object only | ok | true | the triple | **RESTORE — nothing changes at all** |
+| the same rights on the **directory**, **propagated to its children** | ok | **false** | **null** | **SEED — with the operator's file present** |
+| those rights on the **directory** AND all four read rights on the **file**, neither propagated | ok | **false** | **null** | **SEED — with the operator's file present** |
+| all four read rights on the **file** | ok | **true** | **throws `UnauthorizedAccessException`** | **the process ends at the read** |
+| `ReadData` alone on the **file** | ok | **true** | **throws `UnauthorizedAccessException`** | **the process ends at the read** |
+| `ListDirectory` alone, `ReadAttributes` alone, or `Traverse` alone on the **directory** | ok | true | the triple | RESTORE — none of these bite |
+| `ReadAttributes` alone on the **file** | ok | true | the triple | RESTORE |
+| all four read rights + `Traverse` on the settings root's **parent** | ok | true | the triple | RESTORE |
+| a handle held with `FileShare.None` | ok | true | **throws `IOException`** | **the process ends at the read** |
+| a handle held with `FileShare.Read` | ok | true | the triple | RESTORE |
+| `Write` on the **parent**, with the settings root ABSENT | **throws `UnauthorizedAccessException`** | — | — | the process ends at the ctor (row 27) |
+
+**The rule the `File.Exists` column obeys, stated as the rows state it:** every shape that withholds the
+rights on **only one** of the two objects answers **true** — including the one that denies `ReadAttributes`
+**directly on the file**. The only shapes answering **false** are the two where the deny reached **both** the
+directory **and** the file, plus the control where there is genuinely no file.
+
+🔴 **So it is NOT the inheritance flag, and that was tested rather than assumed.** An earlier draft of this
+paragraph said `File.Exists` "answers off the file, not off the directory" and attributed the false to the
+ACE being *inherited* — which its own table already falsified, since a direct deny of the same rights on the
+same file answers true and an access check never consults `INHERITED_ACE`. A **discriminating row** was
+added: both objects denied by two **explicit, non-propagating** rules. It answers **false**. Inheritance is
+merely the usual way an operator produces the combination — the folder-properties dialog propagates by
+default — and it is not the mechanism.
+
+**Two explanations, both marked as what they are:**
+
+1. *(inferred)* **A deny on a directory does not reach a file inside it.** The `Traverse`-only row opens the
+   file with traverse denied on the file's own parent, which is what traverse-check bypass
+   (`SeChangeNotifyPrivilege`) looks like from outside. **The bypass itself was not measured**, and it was
+   taken on ONE token: a non-elevated interactive logon, the identity the probe prints in its own header. A
+   service account whose policy withholds that privilege is outside every row here.
+2. *(inferred)* **The attribute lookup is answered from the parent's directory entry while the parent
+   permits it, and falls back to a parent enumeration that the parent must also permit** — which is why
+   denying either object alone leaves it answerable and denying both does not. Consistent with every row;
+   the discriminating row rules out the rival "the inherited flag matters" explanation, and **nothing here
+   rules out a third**.
+
+**What this settles, item by item:**
+
+- **The ACL vector is real and it reaches the read.** A deny on the file — `ReadData` alone is enough —
+  makes `Load()` throw out of the unguarded call at the composition root. Row 36's **S** and its ✗ stand,
+  and the divergence now has a measured vector that is not a lock.
+- **The seed-arm inversion is also real, and it takes a DIFFERENT ACL** — one that reaches the file as well
+  as the directory. Round two's conclusion survives for those two shapes only, and it was stated for a shape
+  that produces the opposite outcome.
+- **None of the six read-denying shapes above stops the host at the constructor.**
+  `Directory.CreateDirectory` on an existing but unreadable directory succeeded in every one. The
+  constructor arm is real — it throws when the root must be
+  **created** and the parent withholds `Write` — but that is a write-permission arm, so *"an ACL severe
+  enough to fail `Directory.CreateDirectory` stops the host earlier still, never reaching row 36"* holds for
+  no shape this entry is about.
+
+🔴 **The harm was measured too, and the two seed-arm ACL shapes DO NOT AGREE — which is the third time in
+this entry that one word covered two outcomes.** Running the seed arm's own two calls, `Save(floor)` then
+`Delete()`, against a file that is present:
+
+| The seed-arm shape | `Save(floor)` | `Delete()` | What is on disk afterwards |
+|---|---|---|---|
+| directory deny **propagated** | throws `FileNotFoundException` | **no-op** | the operator's file **survives**, beside an orphaned `fleet-settings.json.tmp-<guid>` |
+| directory **and** file denied, not propagated | **ok** | **ok** | **the operator's file is GONE; the directory is empty** |
+| a **malformed** file, nothing denied | ok | ok | **the operator's file is GONE; the directory is empty** |
+
+**So this entry's original claim — *"the operator's file is deleted while the log says nothing was
+deleted"* — is TRUE, on a shape it never named.** The withdrawal of it in round two was as over-general as
+the claim had been. The propagating shape is self-limiting for a reason worth writing down: the deny is
+inherited by the **temp file the atomic write creates**, so `File.Move` cannot resolve its own source. Where
+the deny does not propagate, nothing protects the file — read rights were withheld, **write and delete
+rights were not**, and neither `Save` nor `Delete` needs to read anything.
+
+On the propagating shape the sentence *"Nothing an operator wrote was deleted — no settings file existed
+before this start"* is **false in its premise and true in its effect**. On the other two it is **false
+outright, and the operator's configuration is gone.**
+
+**The likeliest vector is not an ACL at all: it is a MALFORMED file, which this entry never named.** It
+yields null through the documented `JsonException` tolerance and lands on the same arm with nothing withheld
+at all. **All three of the DELETIONS above are gated on the replay ALSO failing to activate** — the discard
+block runs only under `!replaySucceeded && !replayRestoredAFile` — and the note at that block enumerates why
+no env-var-only route reaches an activation throw today. So the deletion is **one contract away rather than
+live**, and the contract is `_onLiveSettingsRebuilt`, which that site itself describes as an arbitrary host
+callback.
+
+🔴 **BUT THERE IS A SHAPE UNDERNEATH ALL THREE THAT IS GATED ON NOTHING, AND IT IS LIVE.** Everything above
+asks what happens when the replay FAILS. Measured for the case where the replay **SUCCEEDS** — no discard
+block, no callback, no log line of any kind:
+
+| The shape | `Load()` | `Save(floor)` | On disk afterwards |
+|---|---|---|---|
+| a **malformed** file, nothing withheld | null | **ok** | the file is intact and now holds **the ENVIRONMENT FLOOR**. The operator's content is **gone** |
+| both objects denied, not propagated | null | **ok** | same — **the ENVIRONMENT FLOOR** |
+| directory deny **propagated** | null | throws | the operator's content survives (the temp file inherits the deny) |
+
+**This is a silent overwrite on an ordinary successful start.** `FleetCore.UpdateSettings` performs its
+`Save` in a `finally` inside `if (rebuildNeeded)`, so it is reached whether the activation throws **or
+returns** — and on the seed arm the value being persisted is the environment floor merged with
+`FleetHost`'s built-in defaults. Nothing logs it: the `Error` line belongs to a failed replay and the
+`Warning` line belongs to the discard block, and on this path neither runs.
+
+**Its one precondition, stated because a claim of live data loss must carry it.** `rebuildNeeded` is set
+only when at least one of `serverUrl` / `verifyTls` / `machineCode` arrives non-null, and on the seed arm all
+three come from the environment — `initialLiveVerifyTls` is a `bool?` that stays null unless
+`ST4I_VERIFY_TLS` is set. **With none of the three variables set, nothing is written and the file survives.
+With any one of them set, it is overwritten** — and those variables exist precisely for the headless
+Windows-Service install that has no UI to type a triple into, which is WS-F1 fix F1's own stated reason.
+
+*(Measured half: what a `Save` with no `Delete` leaves on disk when `Load()` returned null with a file
+present. Read half, cited by symbol rather than executed: that the composition root reaches that `Save` on
+the success path — the `finally` inside `if (rebuildNeeded)` in `FleetCore.UpdateSettings`, and the
+`rebuildNeeded` assignment just above it. Driving that call for real would construct a `CredentialStore` and
+a transport, which is how a probe reaches roots it has no business reaching.)*
+
+**Severity ordering, which is the useful output for whoever takes the D1 decision:** the overwrite is
+**live**; the three deletions are **one contract away**. All four are the same missing third state — *"a file
+exists and could not be read"* — plus, for the malformed case, the fact that the tolerated-corrupt path and
+the no-file path are the same `null`. **The owner is choosing a justification, not a design**: one guard and
+one new state answers all four.
+
+**The obvious guard is still a defect, for a narrower reason.** Wrapping the read so it yields null makes an
+unreadable file indistinguishable from *no* file and moves the three throwing rows above onto the seed arm,
+where the environment floor is applied and `UpdateSettings` persists unconditionally. **What is missing is
+still a third state — "a file exists and could not be read"** — which neither the composition root nor
+`FleetSettingsStore` expresses. Building it changes what an operator observes at startup.
+
+**Re-running any of this:** `dotnet run --project tools/settings-acl-probe`. It builds its own temp sandbox,
+points the store at it through `FleetSettingsStore.EnvVarDir` — the same seam the composition root reads —
+refuses every path outside that sandbox before issuing a syscall, and verifies each ACL back by SDDL
+comparison. It never touches `%ProgramData%\ST4I`, and it proves the refusal rather than promising it.
 
 ### 3.2 — `ConnectorConfigStore`: a symmetry defect that does NOT need this rule
 
@@ -294,7 +455,8 @@ chỗ chúng đồng thuận."* The memberships differ, and the differences deco
 | **Genuinely missed** — `ProductConfigStore`, `SimulatedEcosystem` (§3.5); the identity mint (§3.3, row 13); eight of the nine parse-ignores (§3.4) | Real. Two new divergences and one new arm. The first derivation's number absorbed them. |
 | **Granularity** — the five `FromEnvironment` factories now counted as their own rows, at the same granularity row 7 always had | Neither derivation was wrong; the rule for splitting arms was unstated, which is why it is now stated in §2. |
 | **Over-counted before** — `builder.Build()`, `WalFlushPump`, `SqliteUserStore` | Removed with reasons; `SqliteUserStore` was a double-count of a root **and** beyond the stated ceiling. |
-| **Still unsettled** — row 40 | Marked, with the experiment that settles it. |
+| ~~**Still unsettled** — row 40~~ | 🔴 **Run, by M-1's probe.** The predicted **U** was correct. That is one row of forty-one; the number of rows produced by an instrument that executes is now **two**. |
+| 🔴 **Where the two instruments disagree — §3.1a** (M-1) | The read produced two **opposite** statements in successive rounds and the execution refutes both, because each described one member and was written about the population. This is the disagreement §8.1 asks for, and it is the only place this file has one. |
 
 **A number this list previously stated and which is now withdrawn: "thirteen of them are roots."** It is
 refuted by README §15.9's own two tables without any re-derivation — that section's thirteen machine-wide
