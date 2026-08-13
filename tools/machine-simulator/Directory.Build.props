@@ -32,8 +32,11 @@
        Nothing separates (1) from (2): the mechanisms that would (`NoWarn`, `<NoWarn>`, `#pragma warning
        disable`, an .editorconfig severity, a lowered `WarningLevel`) are all suppression, and suppression is
        precisely how this task fails — it builds the instrument and then blinds it. So (2) is reported as an
-       owner decision instead of taken, and the property is set only where (2) already held or was a short
-       sitting away from holding.
+       owner decision instead of taken, and the property is set only where (2) already held, was a short
+       sitting away from holding, or — the N-2 case, and the only one — was worth a long sitting because of
+       WHO READS THE SURFACE rather than because of what it cost. Nowhere is (2) suppressed: each of the
+       seven set rows below now stands at a column-(2) price of zero either because it was already zero or
+       because the comments were WRITTEN — in no case because a code was silenced.
 
        THE PRICE OF EACH PROJECT, measured at BASE 811c9054 BEFORE any of it was paid — 2026-08-13, SDK
        10.0.302, `dotnet build -t:Rebuild -p:GenerateDocumentationFile=true` from tools/machine-simulator,
@@ -46,7 +49,7 @@
            St4i.DesktopShell                            0               1          0     yes
            St4i.SerialBench                             0               0          0     yes
            St4i.SettingsAclProbe                        0               0          0     yes
-           St4i.Connector.Abstractions                 16              95          0     no
+           St4i.Connector.Abstractions                 16              95          0     yes  (N-2)
            St4i.Connector.Abstractions.Tests            1             103          0     no
            St4i.Connector.Conformance.Tests             5              51          0     no
            St4i.EdgeService.Tests                       1              44          0     no
@@ -83,12 +86,22 @@
            is simply not our file, and a divergence here is a divergence from three sibling SDKs.
        Read every row above as "this compilation", never as "this directory".
 
-       Column (2) totals 2870 members across the nine unset projects (the twelve in the six set projects
-       were WRITTEN, not suppressed, which is why their column-(2) price is now zero). 2870 is the number
-       that is an owner decision and not an implementer one, and it is why those nine stay unset: the only
-       honest ways to set them are to write 2870 doc comments or to disable a code, and the first is a
-       product decision about what those surfaces promise while the second is forbidden here. A doc comment
-       invented for a domain field nobody has decided the meaning of is a new lie, not a fix.
+       Column (2) totals 2775 members across the eight still-unset projects (the 107 in the seven set
+       projects were WRITTEN, not suppressed, which is why their column-(2) price is now zero: N-1 paid 12,
+       N-2 paid this project's 95). 2775 is the number that is an owner decision and not an implementer
+       one, and it is why those eight stay unset: the only honest ways to set them are to write 2775 doc
+       comments or to disable a code, and the first is a product decision about what those surfaces promise
+       while the second is forbidden here. A doc comment invented for a domain field nobody has decided the
+       meaning of is a new lie, not a fix.
+
+       🔴 N-2 DID NOT WEAKEN THAT SENTENCE, and it is worth saying why, because "one project just wrote 95
+       of them" is the obvious way to misread this row. The 95 were payable because every one of them had a
+       MEANING RECOVERABLE FROM THIS REPOSITORY — the host's Normalizer maps every DeviceReading field onto
+       a named field of one of the three documented ingest payloads, the doc-28 reader fixes the accepted
+       token sets, and the alarm evaluator gives Degraded/Down their operator-visible difference. That is a
+       property of THIS project, not of the number 95, and nothing here establishes that the remaining 2775
+       have the same property. The test is still "can this sentence be recovered", never "is this project
+       cheap".
 
        🔴 AND "DISABLE A CODE" IS TWO DIFFERENT DECISIONS THAT DIFFER BY 448 MEMBERS. Both are forbidden to
        an implementer here; they are NOT interchangeable to whoever authorises one:
@@ -106,34 +119,53 @@
        path under examples/device-client/csharp/, and that should be verified by running it rather than
        reasoned about. Everything else in this block was measured; that sentence was not.
 
-       🔴 AND IF ONLY ONE PROJECT EVER MOVES, MOVE St4i.Connector.Abstractions. Put here rather than in a
-       report because this is where someone deciding will be standing. Three facts, and they point the same
-       way for once:
+       🔴 AND IF ONLY ONE PROJECT EVER MOVES, MOVE St4i.Connector.Abstractions. ✅ DONE — N-2 took exactly
+       this decision, and the three facts below are the reason it was taken rather than a proposal awaiting
+       one; the row above now reads "yes". All 95 were WRITTEN, none suppressed, and EXPECT_WARNINGS stayed
+       116 because nothing was left over. Kept in the present tense rather than rewritten, because it is
+       also the argument for what to do next: the same question ("is this surface's correctness worth more
+       than its price?") is still unasked for the eight rows that remain. Put here rather than in a report
+       because this is where someone deciding will be standing. Three facts, and they point the same way
+       for once:
          * It is the ONLY documented surface in this tree with readers outside this organisation — it is the
            contract a third-party driver author compiles against and reads first (zero PackageReference, zero
            ProjectReference, deliberately, so they can).
          * By the argument this whole block makes, it is therefore the surface whose doc-comment correctness
-           matters MOST — and the scope above leaves it unguarded. The six were selected by what assertion (2)
-           COST, and cost correlates only loosely with what a comment's correctness is worth. This row is
-           where the two come apart hardest, and it is the honest weakness of the scope, not a footnote to it.
-         * It is also the CHEAPEST such move — 95 members, the smallest column-(2) bill of the nine — and the
-           only one measured to be UNBLOCKED: every one of those 95 is our own source, so unlike
-           St4i.EdgeCore no part of the bill sits in a file we may not edit. Its column (1) is already ZERO
-           (N-1 fixed all 16 there even though the switch is off, precisely so this stayed a one-line change).
-       So the whole cost of guarding the most-read surface in the repository is: write 95 doc comments, add
-       one property. Nothing else has to be decided first.
+           matters MOST — and N-1's scope left it unguarded. The six were selected by what assertion (2)
+           COST, and cost correlates only loosely with what a comment's correctness is worth. That row was
+           where the two came apart hardest, and it was the honest weakness of N-1's scope, not a footnote
+           to it. It is closed.
+         * It was also the CHEAPEST such move — 95 members, the smallest column-(2) bill of the nine — and
+           the only one measured to be UNBLOCKED: every one of those 95 is our own source, so unlike
+           St4i.EdgeCore no part of the bill sat in a file we may not edit. Its column (1) was already ZERO
+           (N-1 fixed all 16 there even though the switch was off, precisely so this stayed a one-line
+           change).
+       So the whole cost of guarding the most-read surface in the repository was: write 95 doc comments, add
+       one property. Nothing else had to be decided first, and both have now been paid.
+
+       🔴 ONE THING N-2 MEASURED THAT NOBODY HAD, and it belongs here because it is what the property BUYS
+       rather than what it cost. §8.1(h6) says a green run only witnesses the properties its assertions are
+       indexed on. Before N-2, an unresolvable `cref` in this project was NOT one of them: the same
+       deliberate defect, on the same tree, differing by nothing but the one property below, builds to 116
+       warnings with the property absent (gate green, defect invisible) and to 117 with it present (gate
+       red, CS1574 named at its line). Both halves were run, not reasoned about. That pair is the boundary,
+       and this project is now on the witnessed side of it.
 
        Column (1) is a different thing entirely — every one of those is a claim that is already FALSE. N-1
-       fixed all 21 inside the six projects above (33 warnings in total there, with column (2)), which is why
-       setting the property moved scripts/verify-suites.sh's EXPECT_WARNINGS by ZERO. It also fixed, tree-wide
-       and outside the six, the two sets §8.1 names by measurement — St4i.Connector.Abstractions' 16 and
+       fixed all 21 inside ITS six projects above (33 warnings in total there, with column (2)), which is why
+       setting the property moved scripts/verify-suites.sh's EXPECT_WARNINGS by ZERO. N-2 moved it by zero
+       too, and the two zeros do NOT mean the same thing: N-1's is "nothing surfaced", N-2's is "95 surfaced
+       and all 95 were written". Neither is "something was silenced". It also fixed, tree-wide
+       and outside N-1's six, the two sets §8.1 names by measurement — St4i.Connector.Abstractions' 16 and
        FleetCore.cs's four malformed blocks — plus EVERY remaining malformed-XML block anywhere in the tree
        (19 blocks in 15 files under tools/machine-simulator, plus one block misplaced onto a record parameter
        in a 16th — CS1570 and CS1587 are now zero in every one of the fifteen compilations, which includes the
        linked-in vendored file: it was scanned, and it is clean), because that is the class J-3 built a
        private parser to find and it is now empty. 237 unresolvable `cref`/`paramref` claims remain in the
-       nine unset projects, listed by file in .superpowers/sdd/doc-comments-compiled/task-1-report.md and NOT
-       fixed: a fix there is guarded by nothing and witnessed by nothing until the switch can be set.
+       eight still-unset projects, listed by file in .superpowers/sdd/doc-comments-compiled/task-1-report.md
+       and NOT fixed: a fix there is guarded by nothing and witnessed by nothing until the switch can be set.
+       (That total is unchanged by N-2: this project's column (1) was already zero, which is exactly why it
+       was the row that could move.)
 
        🔴 A malformed block HIDES the diagnostics inside it — measured here, not assumed. Closing the 19
        blocks made the compiler report EIGHT further defects it had previously abandoned the block before
