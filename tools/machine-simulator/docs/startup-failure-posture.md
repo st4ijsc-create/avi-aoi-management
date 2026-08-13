@@ -169,9 +169,16 @@ than merely adjacent.
 
 ### 3.1a — Divergence: `fleet-settings.json` is READ unguarded
 
-`Program.cs:1801`, 104 lines above the guard built so that file can never take the host down.
+The site is the `settingsStore.Load()` call in `St4i.EngineApi/Program.cs`, above the
+`TryReplayStartupSettings` guard built so that file can never take the host down.
 `FleetSettingsStore.Load()` catches only `JsonException`, so a *corrupt* file is tolerated and an
 *unreadable* one is not: `File.ReadAllText` propagates `IOException` out of the composition root.
+
+🔴 **Every citation in this file names a SYMBOL, never a line number or a line distance** — deliberately, and
+it is the same discipline §3.1a's own neighbour argues for at `Program.cs`'s stale `~1550` pointer. A position
+is a pointer that decays without anyone touching it, and this file exists to replace an unfalsifiable scalar
+with something checkable; citing positions would have reintroduced the defect in the artefact written to end
+it. Find each site by its symbol.
 
 **The reachable vector is a deny-share lock** — an editor or an AV scanner holding the file — including the
 editor the RESTORE-arm remedy string tells the operator to open it with.
@@ -180,14 +187,14 @@ editor the RESTORE-arm remedy string tells the operator to open it with.
 `Load()` gates on `File.Exists`, which returns **false** when the caller lacks permission. So a permission
 failure that reaches attribute lookup returns `null` and **selects the SEED arm today, with no guard at all**
 — which is exactly the outcome this entry says the obvious guard would introduce. **The inversion is already
-reachable.** And an ACL severe enough to fail `Directory.CreateDirectory` stops the host 224 lines earlier at
-row 27, never reaching row 36.
+reachable.** And an ACL severe enough to fail `Directory.CreateDirectory` stops the host earlier still, at the
+`new FleetSettingsStore()` construction (row 27), never reaching row 36 at all.
 
 **The obvious guard is itself a defect, and the harm is worse than an overwrite.** Wrapping the read so it
 yields null makes an unreadable file indistinguishable from *no* file, selecting the seed arm. Then:
-the environment floor is applied; `UpdateSettings` persists unconditionally; **and `Program.cs:2006` runs
-`settingsStore.Delete()`**, logging *"Nothing an operator wrote was deleted — no settings file existed before
-this start."* With a present-but-unreadable file that sentence is **false and the operator's file is gone**,
+the environment floor is applied; `UpdateSettings` persists unconditionally; **and the seed-arm block guarded
+by `!replaySucceeded && !replayRestoredAFile` then removes the file**, logging *"Nothing an operator wrote was
+deleted — no settings file existed before this start."* With a present-but-unreadable file that sentence is **false and the operator's file is gone**,
 not merely overwritten.
 
 **What is missing is a third state — "a file exists and could not be read"** — which neither the composition
@@ -213,9 +220,9 @@ requires the type to always be registered. **There is no "absent" state for this
 Guarding the constructor means building that state first.
 
 **Second instance of the same false-completeness shape, found by the sibling scan and named here rather than
-rewritten:** `Program.cs:1716` claims the *"one bad source disables only itself"* posture is one
-*"every other startup config load in this file already has"* — false in the same way, and rows 7, 12, 24, 27,
-32, 33 and 36 all contradict it. Neither claim is rewritten: doing so would settle a rule this task is not
+rewritten:** the doc block on `LogIfRegisterMachineCollided` in `Program.cs` claims the *"one bad source
+disables only itself"* posture is one *"every other startup config load in this file already has"* — false in
+the same way, and rows 7, 12, 24, 27, 32, 33 and 36 all contradict it. Neither claim is rewritten: doing so would settle a rule this task is not
 authorised to settle.
 
 ### 3.3 — Divergence: the identity store decides one variable's failure three ways

@@ -285,8 +285,8 @@ builder.Services.AddSingleton<DemoTransport>();
 // try/caught: a WAL root that can't be created is a fatal misconfiguration that should stop startup, not
 // silently downgrade to an in-memory-only queue.
 //
-// 🔴 Task J-3 — THE RULE THIS OBEYS, and it is the SAME rule the startup settings replay ~1550 lines below
-// obeys when it does the OPPOSITE. Both were defensible on their own terms and nothing reconciled them;
+// 🔴 Task J-3 — THE RULE THIS OBEYS, and it is the SAME rule the startup settings replay
+// (`TryReplayStartupSettings`, far below in this file) obeys when it does the OPPOSITE. Both were defensible on their own terms and nothing reconciled them;
 // FleetCore's P5 booked that, and README §15.9 now carries the reconciliation in full, for operators.
 // Stated here so this site can be argued with without leaving the file:
 //
@@ -1174,7 +1174,8 @@ catch (St4i.EdgeCore.Config.ConnectorsConfigException ex)
 // same directory. Relocatable via ST4I_CONNECTOR_CONFIG_DIR, same ops/testability rationale as
 // ST4I_ASSETS_DIR/ST4I_ALARMS_DIR above.
 //
-// 🔴 Task J-3 — NAMED, NOT CHANGED, and the SYMMETRIC SITE is the notification store ~680 lines above.
+// 🔴 Task J-3 — NAMED, NOT CHANGED, and the SYMMETRIC SITE is the `NotificationConfigStore` construction
+// earlier in this file.
 // That one wraps its constructor, and the comment at that wrap says the posture is shared by "every other
 // startup config load here". It is not: this constructor creates a directory and migrates a SQLite schema,
 // unguarded, so a store that cannot be opened ends the process.
@@ -1825,8 +1826,8 @@ if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
 // branch below goes through this exact same FleetHost.UpdateSettings call, so the transport/config-sync
 // rebuild + (new) persistence-on-change both happen identically regardless of which source won.
 //
-// 🔴 Task J-3 — NAMED, NOT CHANGED: this READ is unguarded, 104 lines above the guard that exists precisely
-// so this file can never take the host down. Load() tolerates a corrupt file (it catches JsonException and
+// 🔴 Task J-3 — NAMED, NOT CHANGED: this READ is unguarded, ABOVE the `TryReplayStartupSettings` guard that
+// exists precisely so this file can never take the host down. Load() tolerates a corrupt file (it catches JsonException and
 // returns null) but not an unreadable one — File.ReadAllText propagates IOException straight through here.
 // By the rule at wal.EnsureDir above (docs/startup-failure-posture.md §3.1a) this must come up: the failure
 // is nameable, so stopping is the quieter outcome.
@@ -1837,7 +1838,7 @@ if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
 // 🔴 AN ACL IS NOT THE VECTOR, and an earlier round of this note said it was. Load() gates on File.Exists,
 // which returns FALSE when the caller lacks permission — so a permission failure returns null and selects
 // the SEED arm TODAY, with no guard at all. And an ACL severe enough to fail Directory.CreateDirectory stops
-// the host 224 lines earlier, at the FleetSettingsStore constructor, never reaching this line. Correcting
+// the host earlier still, at the `new FleetSettingsStore()` construction, never reaching this line. Correcting
 // that sharpens the finding rather than softening it: the inversion described below is ALREADY REACHABLE.
 //
 // 🔴 THE OBVIOUS GUARD IS ITSELF A DEFECT, AND THE HARM IS WORSE THAN AN OVERWRITE. Wrapping this in a
@@ -1864,7 +1865,7 @@ var initialSettingsRequest = persistedSettings is not null
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
 // 🔴 H-1a — THE STARTUP REPLAY IS HARDENED HERE, AND IT IS HARDENED **FIRST**.
 //
-// 🔴 Task J-3 — WHY THIS AND THE UNGUARDED `wal.EnsureDir()` ~1550 LINES ABOVE ARE ONE RULE, NOT TWO
+// 🔴 Task J-3 — WHY THIS AND THE UNGUARDED `wal.EnsureDir()` NEAR THE TOP OF THIS FILE ARE ONE RULE, NOT TWO
 // POSTURES. Both sit before app.Run(), both are about configuration, and they do opposite things; that
 // contradiction was booked at FleetCore's P5 and is reconciled in README §15.9, which is the artefact and
 // the operator-facing half. The rule:
@@ -1885,13 +1886,13 @@ var initialSettingsRequest = persistedSettings is not null
 // 🔴 A CORRECTION THAT BELONGS HERE, because the withdrawn claim was stated at this site. An earlier round
 // wrote that this arm "fails BOTH conditions independently", making it "over-determined" — a second
 // condition being "the value can be corrected WITHOUT this process". That is FALSE HERE, and the refutation
-// is 110 lines below in this same file: the RESTORE-arm remedy string tells the operator to "edit/delete
+// is the RESTORE-arm remedy string passed to that same helper below: it tells the operator to "edit/delete
 // fleet-settings.json … and restart". So the value CAN be corrected without this process, by the route the
 // product itself names. What survives is the narrower true statement — PUT /v1/settings is the only
 // IN-PRODUCT correction, and a dead service says nothing about which of three fields is wrong. Provenance is
 // therefore recorded as the REASON the two arms feel different, not as a second test: across the whole
 // enumerated set it changes exactly one prediction, and the one it changes is a symmetry defect that is
-// visible without any rule at all (see the connector-store note ~700 lines above).
+// visible without any rule at all (see the note at the `ConnectorConfigStore` construction above).
 //
 // Read the order, because reversing it ships the boot loop G-2 refused: this guard is the PRECONDITION
 // for FleetCore.UpdateSettings persisting unconditionally, not a consequence of it. Until this `try`
@@ -2043,9 +2044,12 @@ var replaySucceeded = TryReplayStartupSettings(
 // env-var-only route reaches an activation throw here today. `CredentialStore.Load` throws only on an
 // empty machine code, which this arm cannot produce (a blank ST4I_MACHINE_CODE resolves to null and the
 // 🔴 Task J-3 — THE "~1550" IN THE NEXT PARAGRAPH IS KNOWN STALE AND IS DELIBERATELY NOT RE-FITTED. Read
-// this before "correcting" it. Measured statement-to-statement it was already ~1616 at the commit that
-// introduced J-3 (before this task changed anything) and is ~1679 now — so it was stale by 66 lines BEFORE
-// any of this, and nothing that moved it was about it. FleetCore's own settings paragraph has recorded
+// this before "correcting" it. Measured statement-to-statement at commit 670a3e8f — BEFORE this task changed
+// anything — the real distance was 1616, so the pointer was already stale by 66 lines with nothing that moved
+// it having been about it. It has grown since and will keep growing; no current figure is recorded here on
+// purpose, because a second decaying number is not evidence, it is the same defect twice. Measure it, if you
+// ever need it, between the two SYMBOLS: the `wal.EnsureDir()` call near the top of this file and the
+// `TryReplayStartupSettings` call above. FleetCore's own settings paragraph has recorded
 // distance-shaped pointers as "wrong three times running"; this is a fourth instance, and it is the
 // STRONGEST form of that evidence precisely because no one touched the pointer. Re-fitting the number
 // silently would erase the evidence and leave the next drift undetectable. The honest repair is to stop
