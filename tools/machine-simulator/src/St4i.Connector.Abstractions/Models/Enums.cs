@@ -72,10 +72,19 @@ public enum ReadingKind
 /// out of that field as one of these.</para>
 ///
 /// <para>🔴 Like <see cref="ReadingKind"/> and <see cref="Verdict"/>, this value's meaning outlives its
-/// own type: the host writes it as its CLR member name onto every stored result and into its asset
-/// registry, serves it as JSON, and its own browser client picks a machine's schematic figure and
-/// switches panel content off that string. A member renamed here is a member renamed on all of those, and
-/// on readers this contract cannot see.</para>
+/// own type. The host writes it as its CLR member name onto every stored result and into its asset
+/// registry, serves it as JSON, and both of this product's own clients then branch on that string
+/// throughout. Among other things it decides which tab a machine opens on, whether a pass rate applies
+/// to that machine at all, how the fleet grid groups and filters it, which schematic and which readout
+/// tiles it is drawn with, which panel of the desktop detail view is visible, and whether the asset
+/// registry recognises the value or falls back to displaying it raw. Those are examples, not a list.</para>
+///
+/// <para>🔴 Nothing on that side of the wire is checked by a compiler against THIS enum. The browser
+/// client mirrors these member names in a hand-written union and then uses them as translation keys and
+/// lookup keys; the desktop client compares against them as literal strings in markup. So renaming a
+/// member here need not break anything at build time — it can simply make those stop matching, and a
+/// machine loses its tab, its figure or its label with no error raised anywhere. Treat these member
+/// names as the published strings they already are.</para>
 /// </summary>
 public enum DeviceClass
 {

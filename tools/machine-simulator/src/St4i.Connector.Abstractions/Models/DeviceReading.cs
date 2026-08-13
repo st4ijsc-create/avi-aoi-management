@@ -212,8 +212,8 @@ public class DeviceReading
     /// <summary>Which of the three ingest shapes this reading carries — see
     /// <see cref="ReadingKind"/>.
     ///
-    /// <para>🔴 <b>This value outlives its own type, and the most consequential thing that branches on it
-    /// does so after it has become a string.</b> Every stored result records it as its CLR member name,
+    /// <para>🔴 <b>This value outlives its own type, and part of what branches on it does so only after
+    /// it has become a string.</b> Every stored result records it as its CLR member name,
     /// and this product's OEE aggregate then selects rows with a hard-coded
     /// <c>reading_kind = 'ProcessResult'</c> before it counts anything. So a cycle a driver ships under
     /// any other kind is stored, is returned by the results query and the CSV export, and contributes
@@ -305,8 +305,11 @@ public class DeviceReading
     /// <see cref="Kind"/> at all: a process-result cycle carrying a stale list from the last board will
     /// display it, in the browser client and in the desktop one alike. And the conformance harness a
     /// third-party author runs against their own driver copies this list and compares every point of it,
-    /// also without checking <see cref="Kind"/>. So a stale list here is not invisible; it is absent only
-    /// from the board view, whose gate is what suggests it would be.</para></summary>
+    /// also without checking <see cref="Kind"/>. So a stale list here is hidden exactly where a
+    /// <see cref="Kind"/> gate stands — off the wire, out of the Sparkplug message, past the fault
+    /// injector, and off the board view in either client — and is recorded, served, displayed and
+    /// compared everywhere else. It is the board view's gate that suggests it would be hidden
+    /// everywhere.</para></summary>
     public List<MeasurementResult> Measurements { get; set; } = new();
 
     /// <summary>The samples of a telemetry reading. Same split as <see cref="Metrics"/>, in the opposite
