@@ -90,7 +90,34 @@ public sealed class WalOptions
     /// Settings-triggered <see cref="TransportCoordinator.RebuildLive"/>) and stop whatever composition
     /// root called this — silently downgrading to a null queuePath instead would make durable
     /// store-and-forward look like it's working when it silently isn't, which is the exact failure mode
-    /// this fix exists to close.</summary>
+    /// this fix exists to close.
+    ///
+    /// <para>🔴 <b>Task J-3 — the RULE that ruling is an instance of, written here because all three
+    /// composition roots that call this method cite this doc comment rather than each other.</b> The
+    /// product also, deliberately, does the OPPOSITE elsewhere on the startup path (a persisted settings
+    /// triple that cannot be activated leaves the host UP and reporting), and until J-3 nothing said which
+    /// situation gets which. <c>docs/startup-failure-posture.md</c> is the artefact; README §15.9 is the
+    /// operator-facing half. The rule is: <b>a host refuses to start over a bad configuration only when
+    /// starting would be the QUIETER failure.</b> <b>The test is one test</b> — would continuing HIDE the
+    /// loss, the broken thing going on being presented as working with nothing on any surface saying
+    /// otherwise? If the loss can be named where somebody reads it, the host comes up and reports. This
+    /// method stops because an in-memory queue keeps acknowledging records that then die with the process,
+    /// which is invisible in the outcome.</para>
+    /// <para><b>Provenance is the REASON, not a second test.</b> That <see cref="EnvVarDir"/> and a
+    /// directory ACL are repaired with the tool that set them — while a file the product itself wrote is
+    /// repaired through the product — is what an operator needs in order to fix either arm, and is why the
+    /// two rulings feel opposite. It was briefly written as a second conjunct and that was withdrawn: over
+    /// the whole enumerated set it changes exactly one prediction, and at the settings replay it is refuted
+    /// by that arm's own remedy string.</para>
+    /// <para><b>The DOMAIN is named so it cannot shrink to the type it is written on.</b> It is
+    /// <b>startup-path configuration decisions</b> — every statement a composition root runs before its host
+    /// serves, at which a value from outside the running program (an environment variable, a file, a
+    /// directory's existence or ACL, an argument, a previously persisted store) can fail, and where that
+    /// statement decides whether the process continues. It is not a WAL rule and it is not a rule about
+    /// roots. 🔴 <b>The set is ENUMERATED, not counted</b>, in <c>docs/startup-failure-posture.md</c> — an
+    /// earlier round staked a scalar in five places with the members written down nowhere, and an
+    /// independent re-derivation then returned a different number and found two divergences the scalar had
+    /// absorbed. Read the list; do not inherit a count.</para></summary>
     public string EnsureDir()
     {
         var dir = ResolveDir();
@@ -119,7 +146,17 @@ public sealed class WalOptions
     /// <item><c>ST4I_WAL_MAX_BYTES</c> → <see cref="MaxBytes"/>. An unparseable value is IGNORED (keeps
     /// the default) rather than throwing, so a typo'd env var doesn't crash startup — but the resulting
     /// options are still run through <see cref="Validate"/>, so a value that parses fine but is
-    /// out-of-range (e.g. <c>0</c>) still throws.</item>
+    /// out-of-range (e.g. <c>0</c>) still throws.
+    /// <para>🔴 <b>Task J-3 — NAMED, NOT CHANGED, and it is a CLASS of nine sites rather than this one.</b>
+    /// The ignore is defensible; the <b>silence</b> is not — nothing is written to any channel, so an
+    /// operator's typo takes effect as a default and no surface says so. The sibling scan
+    /// (§8.1 principle 3) returns the same shape at <c>ST4I_UNS_PORT</c>, <c>ST4I_MODBUS_PORT</c> (whose own
+    /// doc says "silently ignored"), both <c>ST4I_BRIDGE_SPOOL_*</c> numeric knobs and four
+    /// <c>ST4I_ALARM_*</c> knobs — nine across five files, none with a warning parameter to thread. An
+    /// earlier round named only this site and pointed its "structural twin" at
+    /// <c>ModbusRegisterMap.FromJson</c>, the site that behaves CORRECTLY: a domain inherited from the WAL
+    /// vocabulary rather than derived from the defect. See <c>docs/startup-failure-posture.md</c>
+    /// §3.4.</para></item>
     /// </list>
     /// Throws <see cref="ArgumentOutOfRangeException"/> (via <see cref="Validate"/>) before returning if
     /// the resolved options are invalid.</summary>
