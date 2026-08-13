@@ -573,6 +573,52 @@ lệch nhau một đơn vị **theo cả hai chiều**, nên **không cái nào 
 phương pháp**: ở L-1 là một phép dò **ngược**, quét mọi lớp chưa được gom tìm bất cứ thứ gì với tới một chỗ mở
 kết nối, **rỗng, với một đối chứng dương còn sống**.
 
+🔴 **(h7) REPO NÀY ĐO CHÚ THÍCH BA CÁCH, VÀ KHÔNG CÁCH NÀO ĐỌC CHÚ THÍCH NHƯ CÚ PHÁP (J-3).**
+
+Ba dụng cụ đang dùng để nói *"chỉ là chú thích"*: **diff sau khi lột `///`/`//`**, **cổng build**, và **các
+phép kiểm kê theo token**. Cả ba đo **văn bản**. Không cái nào **phân tích cú pháp** nó.
+
+**Ca sinh ra nó, và nó bắt đầu bằng một khẳng định của người điều phối.** Tôi viết: *"một bản build sạch với
+0 lỗi / 116 cảnh báo **là** bằng chứng cho rủi ro thẻ doc hỏng."* **Sai.** **Không project nào trong cây này
+bật `GenerateDocumentationFile`** — không thuộc tính `DocumentationFile`, không `NoWarn` CS15xx, không gì
+trong `Directory.Build.props`. Nên **Roslyn không bao giờ phân tích những khối ấy**, và các cảnh báo doc
+**không thể phát ra được**. 🔴 **Sự thật ấy đã nằm sẵn trong chính danh sách tồn đọng tôi đang mang** —
+§8.1 ghi nó là lý do bốn `cref` xuyên assembly mục ruỗng không ai thấy suốt nhiều đợt, và một phép đo
+2026-08-08 cho thấy bật nó cho **một** assembly thôi đã đẩy 116 → 148.
+
+**Và vòng ấy đưa vào một thẻ `<para>` hỏng THẬT**, thứ sẽ **ship xanh qua CẢ HAI dụng cụ** — qua phép lột
+`///` (vì thẻ hỏng **nằm trên một dòng `///`**) và qua cổng (vì trình biên dịch không đọc). Chỉ **một dụng cụ
+thứ ba, dựng riêng cho việc ấy**, mới bắt được: phân tích **mọi khối `///` như XML**. Chạy nó trên ba cây mã
+cho ra **bốn khối hỏng trong `FleetCore.cs` ở cây gốc, và vẫn đúng bốn khối ấy ở cả ba** — có sẵn từ trước,
+không ai thấy. *(Một tinh chỉnh của phản biện, ghi lại vì nó thu hẹp phơi nhiễm đúng chỗ: `Program.cs`
+**không có khối `///` nào** — nó dùng `//`, nên phần văn bản trông giống thẻ ở đó **chưa bao giờ là XML**.)*
+
+→ **Quy tắc: "chỉ là chú thích" đo được về NỘI DUNG, không đo được về CÚ PHÁP.** Một thay đổi chạm vào doc
+comment của một API công khai **phải được phân tích như XML**, vì cả cổng lẫn phép lột đều mù với lớp lỗi ấy
+**theo cấu tạo**. Và đây là **cùng một lỗ hổng với chuyện `cref` mục ruỗng mà §8.1 đã ghi — nhìn thấy hai
+lần**; thuốc thật là bật `GenerateDocumentationFile` cho các assembly hợp đồng, và **cái giá đã đo được**
+(116 → 148 cho một assembly) chính là lý do nó vẫn còn nằm trong tồn đọng.
+
+🔴 **(h8) MỘT CHẨN ĐOÁN VÀ VIỆC ÁP DỤNG CHÍNH NÓ CẢM GIÁC NHƯ MỘT HÀNH ĐỘNG, NHƯNG LÀ HAI (J-3).**
+
+§8.1 đã ghi: **một bản sửa và một phép quét cảm giác như một hành động, nhưng là hai**. J-3 đẻ ra biến thể
+sắc hơn, và nó khó thấy hơn hẳn — vì ở đây **không có bản sửa nào để quên quét**: chỉ có một câu văn.
+
+**Ca sinh ra nó.** Người thực thi viết một đoạn ghi rằng **một con trỏ diễn đạt bằng KHOẢNG CÁCH sẽ tự mục
+ruỗng mà không ai đụng vào nó** — và commit đoạn ấy **kèm năm con trỏ theo vị trí mới, trong chính file nó
+đang giải thích, trong commit sửa ca trước của đúng chuyện đó**. Tệ hơn: các con trỏ trong **tài liệu vừa xuất
+bản để thay một con số không bác được bằng một danh sách kiểm được** cũng sai hết, **bị vô hiệu bởi chính
+commit xuất bản chúng** — tức §8.1(h2)'s hệ quả cùng-commit, xảy ra **bên trong đoạn văn nói về sự mục ruỗng
+của con trỏ**. Rồi phép quét anh em tìm ra **mười hai, không phải năm**.
+
+→ **Quy tắc: khi anh viết ra một chẩn đoán, hãy CHẠY NÓ TRÊN CHÍNH DIFF ĐANG CHỨA NÓ, như một bước riêng.**
+Viết ra một lớp lỗi **cảm giác như đã xử lý nó**; nó không. Và cái cò rất rẻ: nếu đoạn văn anh vừa viết mô tả
+một hình dạng, **hình dạng ấy có mặt trong diff của anh không?**
+
+*(Hệ quả thực dụng của J-3, giữ lại vì nó đúng cho mọi trường hợp: **trỏ bằng TÊN, đừng trỏ bằng VỊ TRÍ.**
+Một con trỏ theo tên hoặc đúng hoặc hỏng-đóng; một con trỏ theo khoảng cách **mục ruỗng trong im lặng** và
+**không dụng cụ nào ở đây bắt được**.)*
+
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**
 
 → Quy tắc đúng: **hành vi phụ thuộc phần cứng không bao giờ là một test bị bỏ qua có điều kiện bên trong năm bộ test.** Nó hoặc được **ghi rõ là khoảng trống chưa test** trong báo cáo và trong chú thích của cổng, hoặc được commit thành **một bench harness riêng nằm ngoài năm bộ** (`tools/serial-bench/`). Phép đo không commit được thì không tái lập được — reviewer D-3 phải **viết lại toàn bộ probe** để kiểm chứng các con số của D-3.
