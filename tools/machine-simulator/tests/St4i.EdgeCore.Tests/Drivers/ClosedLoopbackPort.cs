@@ -16,7 +16,7 @@ namespace St4i.EdgeCore.Tests.Drivers;
 /// "An existing connection was forcibly closed by the remote host" thrown out of its SERVER-side handshake —
 /// a test in a subsystem the change never touched. The easy reading, "a pre-existing TLS flake", was
 /// available, plausible, and wrong; that is how an entry lands on a standing flaky list and stays there
-/// misattributed.
+/// misattributed.</para>
 ///
 /// <para><b>The conformance suites' version is worse than the one that was caught</b>, which is why both now
 /// come here. Theirs is a <see langword="static"/> <see langword="readonly"/> field, so the port is released

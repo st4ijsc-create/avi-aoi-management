@@ -20,7 +20,7 @@ namespace St4i.EngineApi.Tests;
 /// <c>_ = assetRegistry.UpsertAsync(descriptor)</c> reads as fire-and-forget and is not: Microsoft.Data.Sqlite
 /// does not override the async ADO.NET members, so a real <c>AssetRegistryStore</c> runs its whole open+insert
 /// on the calling thread. Blueprint §9.2 MEASURED a thread merely reading <c>EstopEngaged</c> blocked up to
-/// <b>12.35 ms</b> by it.
+/// <b>12.35 ms</b> by it.</para>
 ///
 /// <para><b>Why the first test here is a measurement and not a shape check.</b> §8.1's fifth rule: a
 /// mitigation must be verified by measuring its effect on the thing it protects, on the production path,
@@ -31,17 +31,17 @@ namespace St4i.EngineApi.Tests;
 /// <c>EstopEngaged</c> read returns inside <see cref="ReaderBudget"/>, without it the read cannot return
 /// until the callback does. The bound is deliberately a wide multiple of the measured 12.35 ms rather than
 /// a tight one — this asserts "the lock is not held across the callback at all", which is a structural
-/// property, not a latency budget that a slow CI box could shave.
+/// property, not a latency budget that a slow CI box could shave.</para>
 ///
 /// <para><b>MUTATION-PROVEN, not read.</b> Reverting the fix (invoking <c>_onMachineSeeded</c> inside
 /// <c>RegisterMachine</c>'s <c>lock (_gate)</c> again) turns
 /// <see cref="WhileASeedCallbackIsRunning_AReaderOfTheHaltLatchIsNotBlocked_Measured"/> RED. It does not
 /// hang: the callback's block is bounded, so the mutant fails on the elapsed assertion and the suite
-/// completes.
+/// completes.</para>
 ///
 /// <para><b>The second test is the other half, and it is the harder half.</b> Moving a call out of a lock
 /// is what makes "exactly one notification per seeded machine, in fleet order, never before the machine is
-/// registered" breakable. All three are pinned here — deliberately testing what changed, not what was kept.
+/// registered" breakable. All three are pinned here — deliberately testing what changed, not what was kept.</para>
 /// </summary>
 public sealed class FleetHostSeedNotificationOffGateTests
 {

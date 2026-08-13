@@ -27,7 +27,8 @@ namespace St4i.Connector.Abstractions;
 /// call more than once, after cancellation, after a completed enumeration, and without
 /// <see cref="ReadAsync"/> ever having been enumerated at all — in every one of those cases it must not
 /// throw, and it should itself return promptly. <c>FleetHost</c> best-effort disposes drivers on fault and
-/// on restart under a BOUNDED budget, so a slow <see cref="DisposeAsync"/> is effectively abandoned, not
+/// on restart under a BOUNDED budget, so a slow <see cref="IAsyncDisposable.DisposeAsync"/> is effectively
+/// abandoned, not
 /// awaited to completion.</description></item>
 /// </list>
 /// </summary>

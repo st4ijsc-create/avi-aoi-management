@@ -38,6 +38,8 @@ public partial class MainWindow : Window
     /// kills an engine process some OTHER instance (or a developer's own "dotnet run") started.</summary>
     private Process? _ownedEngineProcess;
 
+    /// <summary>Builds the shell window and subscribes the two lifetime handlers that own the engine
+    /// process — nothing is started here; that waits for <see cref="MainWindow_Loaded"/>.</summary>
     public MainWindow()
     {
         InitializeComponent();

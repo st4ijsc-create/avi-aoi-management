@@ -13,4 +13,139 @@
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
   </PropertyGroup>
+
+  <!-- 🔴 N-1 (.superpowers/sdd/doc-comments-compiled/task-1-brief.md) — WHY `GenerateDocumentationFile` IS
+       SET IN INDIVIDUAL csproj FILES AND DELIBERATELY NOT HERE, where it would reach all fifteen.
+
+       Until N-1 nothing in this repository read a doc comment as SYNTAX. The three instruments that speak
+       about comments — the strip-`///` diff, scripts/verify-suites.sh's warning count, and the token
+       censuses — all measure TEXT (§8.1(h7)). A `cref` naming a symbol that does not exist, a `paramref`
+       naming a parameter that does not exist and a `<para>` that never closes are invisible to every one of
+       them BY CONSTRUCTION, which is why §8.1 records cross-assembly crefs rotting for entire batches and
+       why J-3 had to build a private XML parser to find four malformed blocks in FleetCore.cs.
+
+       `GenerateDocumentationFile` is the switch that fixes that, and it turns on TWO assertions at once:
+         (1) every `///` block PARSES and every symbol it names RESOLVES — CS1570, CS1574, CS0419, CS1734,
+             CS1587. This is what N-1 exists to install.
+         (2) every publicly visible member HAS a doc comment — CS1591, and one member over, CS1573. This is
+             a documentation-COVERAGE policy this product has never adopted anywhere.
+       Nothing separates (1) from (2): the mechanisms that would (`NoWarn`, `<NoWarn>`, `#pragma warning
+       disable`, an .editorconfig severity, a lowered `WarningLevel`) are all suppression, and suppression is
+       precisely how this task fails — it builds the instrument and then blinds it. So (2) is reported as an
+       owner decision instead of taken, and the property is set only where (2) already held or was a short
+       sitting away from holding.
+
+       THE PRICE OF EACH PROJECT, measured at BASE 811c9054 BEFORE any of it was paid — 2026-08-13, SDK
+       10.0.302, `dotnet build -t:Rebuild -p:GenerateDocumentationFile=true` from tools/machine-simulator,
+       counted the way MSBuild's own "N Warning(s)" summary counts:
+
+           project                            (1) parse/resolve   (2) CS1591   CS1573   set
+           St4i.Connector.Conformance                  15               0          0     yes
+           St4i.EdgeCore.Serial                         3               9          0     yes
+           St4i.EdgeService                             3               2          0     yes
+           St4i.DesktopShell                            0               1          0     yes
+           St4i.SerialBench                             0               0          0     yes
+           St4i.SettingsAclProbe                        0               0          0     yes
+           St4i.Connector.Abstractions                 16              95          0     no
+           St4i.Connector.Abstractions.Tests            1             103          0     no
+           St4i.Connector.Conformance.Tests             5              51          0     no
+           St4i.EdgeService.Tests                       1              44          0     no
+           St4iMachineSimulator                        26              57          0     no
+           St4i.EdgeCore                              112             543         92     no
+           St4i.EngineApi                              53             530        248     no
+           St4i.EdgeCore.Tests                         36             705          0     no
+           St4i.EngineApi.Tests                        38             742          5     no
+
+       🔴 TWO ROWS ABOVE ARE NOT WHAT THEY LOOK LIKE, because a source file can belong to more than one
+       compilation. Neither was visible from the per-project numbers and both were found by review, not by me:
+         * St4iMachineSimulator lands TWICE in a solution build — the WPF markup pass compiles a `_wpftmp`
+           clone — so setting it there costs 166, not 83.
+         * `tests/Shared/TestRunTempRoot.cs` and `tests/Shared/RealCredentialStoreLeakGuard.cs` are
+           `Compile`-linked into ALL FIVE test projects, so one doc defect in either counts FIVE times. It is
+           not hypothetical: 5 of the 237 below are ONE defect in TestRunTempRoot.cs, which is why the
+           distinct-source-site count is 233.
+         * And `St4i.EdgeCore` compiles `examples/device-client/csharp/St4iDeviceClient.cs`, linked in from
+           OUTSIDE tools/machine-simulator (see St4i.EdgeCore.csproj's `Compile Include`). Its 95 CS1591 and
+           8 CS1573 are inside St4i.EdgeCore's row above — and it is a VENDORED reference SDK. That is not an
+           assertion, it is in the file's own header: it declares itself the C#/.NET reference client for
+           doc 61 (Machine Developer Integration Guide), pins **C# 7.3+ / netstandard2.0+ / .NET Framework
+           4.7.2+**, and states feature parity with the Python and Node SDKs — which are its siblings under
+           examples/device-client/. It is published to machine developers and kept in step with three other
+           implementations; it is not this repository's source to rewrite.
+
+           🔴 THE TWO HALVES OF THAT ARE BLOCKED WITH DIFFERENT STRENGTH, and merging them loses the sharper
+           half. Its **82 nullable warnings** (the ones in the gate's 116) are blocked MECHANICALLY: silencing
+           them honestly needs nullable ANNOTATIONS (`string?`), annotations need C# 8, and the file's own
+           header pins C# 7.3+ — so annotating it would break the compatibility promise it ships with. The
+           file carries no `#nullable` directive at all and is analysed under EdgeCore's `enable`, which is
+           why the crop is structural rather than accidental. Its **95 CS1591** are blocked only by
+           OWNERSHIP: doc comments have been legal since C# 1.0, so writing them is perfectly possible — it
+           is simply not our file, and a divergence here is a divergence from three sibling SDKs.
+       Read every row above as "this compilation", never as "this directory".
+
+       Column (2) totals 2870 members across the nine unset projects (the twelve in the six set projects
+       were WRITTEN, not suppressed, which is why their column-(2) price is now zero). 2870 is the number
+       that is an owner decision and not an implementer one, and it is why those nine stay unset: the only
+       honest ways to set them are to write 2870 doc comments or to disable a code, and the first is a
+       product decision about what those surfaces promise while the second is forbidden here. A doc comment
+       invented for a domain field nobody has decided the meaning of is a new lie, not a fix.
+
+       🔴 AND "DISABLE A CODE" IS TWO DIFFERENT DECISIONS THAT DIFFER BY 448 MEMBERS. Both are forbidden to
+       an implementer here; they are NOT interchangeable to whoever authorises one:
+         (a) ASSEMBLY-WIDE — `<NoWarn>$(NoWarn);CS1591</NoWarn>` on St4i.EdgeCore. Silences all 543. That
+             project then asserts documentation coverage NOWHERE, including on the 448 members that are our
+             own source and that nothing prevents anyone from documenting.
+         (b) PATH-SCOPED — an .editorconfig section matching only the vendored file
+             (`dotnet_diagnostic.CS1591.severity = none` under a pattern for St4iDeviceClient.cs). Silences
+             95 and LEAVES THE OTHER 448 ASSERTED, which is the whole difference: it exempts the file nobody
+             here may edit and keeps the check on everything we own.
+       (b) is strictly the narrower instrument and is what "St4i.EdgeCore is blocked" actually argues for.
+       🔴 One thing to settle before relying on it, flagged because I did NOT measure it: this file enters
+       the compilation through a `Compile Include` from OUTSIDE the project cone, and .editorconfig sections
+       match a file's REAL path, not its `Link` metadata — so such a section has to be scoped to the real
+       path under examples/device-client/csharp/, and that should be verified by running it rather than
+       reasoned about. Everything else in this block was measured; that sentence was not.
+
+       🔴 AND IF ONLY ONE PROJECT EVER MOVES, MOVE St4i.Connector.Abstractions. Put here rather than in a
+       report because this is where someone deciding will be standing. Three facts, and they point the same
+       way for once:
+         * It is the ONLY documented surface in this tree with readers outside this organisation — it is the
+           contract a third-party driver author compiles against and reads first (zero PackageReference, zero
+           ProjectReference, deliberately, so they can).
+         * By the argument this whole block makes, it is therefore the surface whose doc-comment correctness
+           matters MOST — and the scope above leaves it unguarded. The six were selected by what assertion (2)
+           COST, and cost correlates only loosely with what a comment's correctness is worth. This row is
+           where the two come apart hardest, and it is the honest weakness of the scope, not a footnote to it.
+         * It is also the CHEAPEST such move — 95 members, the smallest column-(2) bill of the nine — and the
+           only one measured to be UNBLOCKED: every one of those 95 is our own source, so unlike
+           St4i.EdgeCore no part of the bill sits in a file we may not edit. Its column (1) is already ZERO
+           (N-1 fixed all 16 there even though the switch is off, precisely so this stayed a one-line change).
+       So the whole cost of guarding the most-read surface in the repository is: write 95 doc comments, add
+       one property. Nothing else has to be decided first.
+
+       Column (1) is a different thing entirely — every one of those is a claim that is already FALSE. N-1
+       fixed all 21 inside the six projects above (33 warnings in total there, with column (2)), which is why
+       setting the property moved scripts/verify-suites.sh's EXPECT_WARNINGS by ZERO. It also fixed, tree-wide
+       and outside the six, the two sets §8.1 names by measurement — St4i.Connector.Abstractions' 16 and
+       FleetCore.cs's four malformed blocks — plus EVERY remaining malformed-XML block anywhere in the tree
+       (19 blocks in 15 files under tools/machine-simulator, plus one block misplaced onto a record parameter
+       in a 16th — CS1570 and CS1587 are now zero in every one of the fifteen compilations, which includes the
+       linked-in vendored file: it was scanned, and it is clean), because that is the class J-3 built a
+       private parser to find and it is now empty. 237 unresolvable `cref`/`paramref` claims remain in the
+       nine unset projects, listed by file in .superpowers/sdd/doc-comments-compiled/task-1-report.md and NOT
+       fixed: a fix there is guarded by nothing and witnessed by nothing until the switch can be set.
+
+       🔴 A malformed block HIDES the diagnostics inside it — measured here, not assumed. Closing the 19
+       blocks made the compiler report EIGHT further defects it had previously abandoned the block before
+       reaching: 4 CS1573 and 1 CS1574 in RtuBusConfiguration, 3 CS1734 in ConnectorConfigVisibilitySeeder.
+       Fix the parse errors first; the resolve errors underneath them are not visible until you do. (A ninth
+       change is not of that kind and is called out so the arithmetic is not mistaken for it: ConfigDtos.cs
+       carried a `///` block on a positional record parameter, where C# attaches it to nothing at all — CS1587.
+       Moving it to a real `<param>` on the record made it live documentation and made 24 CS1573 sayable, which
+       is the true statement "this record documents one parameter of twenty-five".)
+
+       To re-run the measurement without changing anything, from tools/machine-simulator:
+           dotnet build -t:Rebuild -p:GenerateDocumentationFile=true
+       That command turns the whole tree on for one build and is the diagnostic that replaces J-3's
+       purpose-built parser. -->
 </Project>

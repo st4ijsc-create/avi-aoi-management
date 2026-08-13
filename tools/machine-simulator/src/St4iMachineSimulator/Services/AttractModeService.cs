@@ -25,7 +25,7 @@ namespace St4iMachineSimulator.Services;
 /// <item><c>_idleTimer</c> — a single-shot-style idle detector. Its <see cref="Tick"/> callback fires
 /// only once nothing has restarted it for <see cref="IdleThresholdSeconds"/> — the standard "restart on
 /// every activity" idle-timer shape (see <see cref="NotifyActivity"/>).</item>
-/// <item><c>_tourTimer"/> — only running WHILE attract mode is active, advancing the tour every
+/// <item><c>_tourTimer</c> — only running WHILE attract mode is active, advancing the tour every
 /// <see cref="TourInterval"/>.</item>
 /// </list>
 ///

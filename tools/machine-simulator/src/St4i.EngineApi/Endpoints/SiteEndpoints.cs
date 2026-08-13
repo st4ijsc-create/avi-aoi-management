@@ -28,7 +28,7 @@ namespace St4i.EngineApi.Endpoints;
 /// <see cref="DeviceIdentityProvider"/> is always registered (EC-1/EC-2), so it's a plain non-nullable
 /// dependency here — GĐ3 closeout WI-4 switched every handler from a captured <see cref="DeviceIdentity"/>
 /// singleton to reading THROUGH the provider, so a rotation (<c>POST /v1/site/identity/rotate</c>) is
-/// immediately visible to <c>GET /v1/site</c>/<c>GET /v1/site/identity</c> on the very next request.
+/// immediately visible to <c>GET /v1/site</c>/<c>GET /v1/site/identity</c> on the very next request.</para>
 ///
 /// <para><b>Why <c>[FromServices]</c> on <c>mgr</c>, explicitly:</b> minimal APIs only auto-infer a complex
 /// parameter as service-sourced when that TYPE is actually registered in the container at endpoint-metadata

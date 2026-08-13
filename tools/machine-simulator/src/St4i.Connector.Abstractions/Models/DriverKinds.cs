@@ -3,7 +3,7 @@ namespace St4i.Connector.Abstractions.Models;
 /// <summary>
 /// GP-3 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-3-brief.md) — <c>DriverKind</c>
 /// used to be a closed 5-member enum (<see cref="IDeviceDriver.Kind"/>,
-/// <see cref="St4i.EdgeCore.Models.MachineDescriptor.DriverKind"/>, ...). A closed enum can never gain a
+/// <c>St4i.EdgeCore.Models.MachineDescriptor.DriverKind</c>, ...). A closed enum can never gain a
 /// member from outside this assembly, so as long as it stayed one, no third-party connector could exist at
 /// all — this task opened it into a free-form <see langword="string"/> id instead. These five constants are
 /// the ONLY ones this codebase reserves; anything else is a third party's own id to define.
@@ -61,7 +61,7 @@ public static class DriverKinds
     ///
     /// <para>Task-7 (whole-batch review, IMPORTANT) — the match itself is against
     /// <paramref name="id"/><c>.Trim()</c>, not the raw string, so a whitespace-padded built-in
-    /// (e.g. <c>" Simulated "</c>, the shape <see cref="St4i.EdgeCore.Infrastructure.FleetConfig.Load"/>
+    /// (e.g. <c>" Simulated "</c>, the shape <c>St4i.EdgeCore.Infrastructure.FleetConfig.Load</c>
     /// can produce for an untrimmed <c>fleet.json</c> field) still folds to the canonical spelling instead
     /// of silently missing every built-in comparison and passing through as if it were an unrecognized
     /// third-party id. This affects ONLY whether a match is found — a non-matching id is still returned
@@ -97,7 +97,7 @@ public static class DriverKinds
     /// empty <paramref name="id"/>: returns <see langword="false"/> (fails open to "real"), not
     /// <see langword="true"/>.</b> This method has no context to decide what a missing/blank id SHOULD
     /// mean for whichever caller handed it one — that call-site-specific judgment already has exactly one
-    /// home: <see cref="St4i.EdgeCore.Infrastructure.FleetConfig.Load"/>, the one place an externally-
+    /// home: <c>St4i.EdgeCore.Infrastructure.FleetConfig.Load</c>, the one place an externally-
     /// authored <c>fleet.json</c> value is resolved, treats an omitted/blank <c>driverKind</c> key as
     /// <see cref="Simulated"/> (assume fabricated) BEFORE this method ever sees it — not by changing this
     /// method's own default. Every other caller in this codebase (every built-in driver, every connector

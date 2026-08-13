@@ -12,6 +12,13 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- N-1 — the compiler parses this project's `///` blocks and resolves every symbol they name. Set
+         per-project on purpose: Directory.Build.props carries the scope, the measured price for all fifteen
+         projects, and why the other nine are an owner decision rather than an implementer one. This project
+         is the cheapest and the most load-bearing of the six: its doc comments ARE the contract a
+         third-party driver author implements against, and it was already the only project in the tree with
+         no undocumented public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\St4i.Connector.Abstractions\St4i.Connector.Abstractions.csproj" />

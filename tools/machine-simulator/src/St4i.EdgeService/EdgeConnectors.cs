@@ -144,7 +144,7 @@ internal static class EdgeConnectors
     /// <para>A blank id cannot happen (<see cref="ConnectorsConfig.Load"/> defaults it to the kind), but
     /// normalising through
     /// <see cref="DriverKinds.Normalize"/> is what makes this comparable to
-    /// <see cref="ConnectorRegistry"/>'s own keys, which are normalised on the way in.</summary>
+    /// <see cref="ConnectorRegistry"/>'s own keys, which are normalised on the way in.</para></summary>
     internal static string RegistrationKeyOf(ConnectorConfigEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);

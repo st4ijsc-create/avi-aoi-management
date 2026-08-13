@@ -121,7 +121,7 @@ public sealed class EdgeWorker : BackgroundService
     /// Optional (defaults <see langword="null"/>) so every pre-existing test/call site that constructs
     /// <see cref="EdgeWorker"/> directly without one keeps compiling and behaving byte-for-byte
     /// unchanged: <see langword="null"/> is treated as demo mode by <see cref="LoadFleet"/>, exactly like
-    /// <see cref="St4i.EngineApi.Fleet.FleetHost"/>'s own <c>_demoModeGate</c> field treats a null
+    /// <c>St4i.EngineApi.Fleet.FleetHost</c>'s own <c>_demoModeGate</c> field treats a null
     /// <c>DemoModeGate</c> as demo. Production (<c>Program.cs</c>) never leaves this null: it registers
     /// the fully-resolved gate (raw <c>ST4I_DEMO_ENABLED</c> + <see cref="ResolveGate"/>'s own
     /// <c>--smoke</c> CI-path default) as a DI singleton, so a bare <c>--smoke N</c> run (README §9, no
@@ -142,6 +142,12 @@ public sealed class EdgeWorker : BackgroundService
     /// directly) collapses the duplicate with no new project-reference edge and no NU1605 risk.</summary>
     private readonly DemoModeGate? _demoModeGate;
 
+    /// <summary>Every dependency is required except the demo gate — see <c>_demoModeGate</c>'s own doc
+    /// comment for why that one is optional and what a <see langword="null"/> means.</summary>
+    /// <param name="logger">Where this worker's operator-facing lines go.</param>
+    /// <param name="lifetime">Used to stop the host once a <c>--smoke N</c> run has committed its N.</param>
+    /// <param name="options">The parsed command line for this run.</param>
+    /// <param name="demoModeGate">The resolved demo/product decision, or <see langword="null"/> for demo.</param>
     public EdgeWorker(
         ILogger<EdgeWorker> logger,
         IHostApplicationLifetime lifetime,
@@ -160,6 +166,7 @@ public sealed class EdgeWorker : BackgroundService
     /// convention — just "not zero."</summary>
     internal const int SmokeEmptyRosterExitCode = 1;
 
+    /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var fleet = LoadFleet();

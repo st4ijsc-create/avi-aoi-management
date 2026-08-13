@@ -86,7 +86,7 @@ public abstract class DeviceDriverConformanceSuite
     /// <see cref="CreateUnresponsiveWritableDeviceAsync"/>'s own target. Generous relative to what a driver
     /// author is expected to configure that target's OWN internal timeout to (a few hundred ms to a couple of
     /// seconds — see that hook's own doc comment), so CI jitter never produces a false failure, while still
-    /// catching a driver that hangs indefinitely instead of resolving to <see cref="Models.WriteOutcome.Indeterminate"/>.</summary>
+    /// catching a driver that hangs indefinitely instead of resolving to <see cref="WriteOutcome.Indeterminate"/>.</summary>
     protected virtual TimeSpan WriteBudget => TimeSpan.FromSeconds(8);
 
     // ---- hooks a driver author implements ----------------------------------------------------------
@@ -177,7 +177,7 @@ public abstract class DeviceDriverConformanceSuite
     ///
     /// <para>Default implementation wraps <see cref="CreateDriver"/> with a no-op unstick — correct for a
     /// device-less driver (nothing to get stuck connecting to). A driver with an external target overrides
-    /// this to stand up its own silent listener and returns a <see cref="ForceUnstickAsync"/> that forcibly
+    /// this to stand up its own silent listener and returns a <see cref="UnresponsiveDeviceSession.ForceUnstickAsync"/> that forcibly
     /// closes it (e.g. from the SERVER side) so a stuck client-side call unblocks — proven in task-6-report.md
     /// to reliably unblock a hung call.</para>
     /// </summary>
@@ -197,7 +197,8 @@ public abstract class DeviceDriverConformanceSuite
     /// reachable device produces no readings at all, and a readings-dependent check that silently examined
     /// zero of them would be exactly the "silent no-op" failure mode task-6-brief.md calls out by name.
     /// <see cref="CollectFromAsync"/> below already implements this contract correctly for the common case
-    /// (drive <paramref name="driver"/>'s own <see cref="IDeviceDriver.ReadAsync"/> directly) — most
+    /// (drive <c>CollectFromAsync</c>'s own <c>driver</c> argument's <see cref="IDeviceDriver.ReadAsync"/>
+    /// directly) — most
     /// overrides can just stand up whatever the driver needs first, then delegate to it.</para>
     /// </summary>
     protected abstract Task<IReadOnlyList<DeviceReading>> CollectReadingsAsync(
@@ -258,7 +259,7 @@ public abstract class DeviceDriverConformanceSuite
     /// setpoint write against it must be attemptable (never rejected pre-flight) so the checks below can
     /// actually reach the "no definitive answer arrives" scenario they exist to test.</param>
     /// <param name="ValidPointValue">A value within <paramref name="WritablePoint"/>'s own declared range —
-    /// never rejected as <see cref="Models.SetpointRejectionReason.OutOfRange"/>.</param>
+    /// never rejected as <see cref="SetpointRejectionReason.OutOfRange"/>.</param>
     /// <param name="Command">A name from <paramref name="Driver"/>'s own <c>Commands</c> that takes NO
     /// required arguments the checks below would otherwise have to know how to supply, UNLESS <paramref
     /// name="CommandArguments"/> is supplied to cover them.</param>
@@ -294,7 +295,7 @@ public abstract class DeviceDriverConformanceSuite
     /// "real, portable, loopback-only silent peer" rationale exactly, for the write side. Only ever called
     /// from a Check_Write_* method, so an override that only implements <see cref="IWritableDeviceDriver"/>
     /// members meaningfully (never <see cref="IDeviceDriver.ReadAsync"/>-dependent behaviour) is completely
-    /// fine — none of the write checks read from <paramref name="Driver"/>.
+    /// fine — none of the write checks read from <see cref="UnresponsiveWritableDeviceSession.Driver"/>.
     ///
     /// <para><b>The driver's OWN internal write/command timeout should be configured SHORT</b> (a few hundred
     /// milliseconds to a couple of seconds — well under <see cref="WriteBudget"/>) so
@@ -788,9 +789,9 @@ public abstract class DeviceDriverConformanceSuite
     /// <para>Guards CONTENT, not just count (task-6-report.md "Fix round 1" cheap fold): a driver emitting
     /// readings with every value-bearing collection empty would satisfy "N readings round-tripped" having
     /// compared nothing meaningful — so this also requires at least one collected reading to actually carry
-    /// SOME value in <see cref="Models.DeviceReading.Telemetry"/>/<see cref="Models.DeviceReading.Metrics"/>/
-    /// <see cref="Models.DeviceReading.Measurements"/>/<see cref="Models.DeviceReading.Waveforms"/>/
-    /// <see cref="Models.DeviceReading.Genealogy"/>.</para>
+    /// SOME value in <see cref="DeviceReading.Telemetry"/>/<see cref="DeviceReading.Metrics"/>/
+    /// <see cref="DeviceReading.Measurements"/>/<see cref="DeviceReading.Waveforms"/>/
+    /// <see cref="DeviceReading.Genealogy"/>.</para>
     /// </summary>
     public virtual async Task Check_Telemetry_RoundTripsLosslesslyThroughConnectorJson()
     {
@@ -909,7 +910,7 @@ public abstract class DeviceDriverConformanceSuite
         Assert.Equal(CommandRejectionReason.UnknownCommand, crossCommandResult.RejectionReason);
     }
 
-    /// <summary>Enforces <see cref="Models.IWritableDeviceDriver.WritablePoints"/>/<see cref="Models.IWritableDeviceDriver.Commands"/>'s
+    /// <summary>Enforces <see cref="IWritableDeviceDriver.WritablePoints"/>/<see cref="IWritableDeviceDriver.Commands"/>'s
     /// own doc comment: "fixed for the lifetime of this instance"/"effectively immutable... never a live view
     /// a caller could observe changing". Task B-4 shipped these as the underlying <c>List&lt;string&gt;</c>
     /// cast to <c>IReadOnlyList&lt;string&gt;</c> — downcastable and mutable — and a reviewer caught it; this
@@ -1154,7 +1155,7 @@ public abstract class DeviceDriverConformanceSuite
 
     // ---- write-contract helpers ------------------------------------------------------------------------
 
-    /// <summary>Calls <see cref="Models.IWritableDeviceDriver.WriteSetpointAsync"/>, catching ANY exception
+    /// <summary>Calls <see cref="IWritableDeviceDriver.WriteSetpointAsync"/>, catching ANY exception
     /// rather than letting it propagate — every write-contract "must not throw" check needs to turn a
     /// driver's own thrown exception into an ordinary, reportable assertion failure rather than an
     /// unhandled fault the test runner treats completely differently (see the individual checks' own
@@ -1172,7 +1173,7 @@ public abstract class DeviceDriverConformanceSuite
         }
     }
 
-    /// <summary>The <see cref="Models.IWritableDeviceDriver.InvokeCommandAsync"/> mirror of
+    /// <summary>The <see cref="IWritableDeviceDriver.InvokeCommandAsync"/> mirror of
     /// <see cref="TryWriteSetpointAsync"/> — see that method's own remarks.</summary>
     private static async Task<(CommandResult? Result, Exception? Thrown)> TryInvokeCommandAsync(
         IWritableDeviceDriver driver, CommandRequest request, CancellationToken ct)

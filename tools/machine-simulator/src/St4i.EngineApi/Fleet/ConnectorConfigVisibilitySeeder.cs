@@ -47,7 +47,7 @@ namespace St4i.EngineApi.Fleet;
 /// capability) means the same thing: the persisted row is not what is actually running.</para>
 ///
 /// <para><b>Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) —
-/// closes the carried B-4 finding: a <see cref="ConnectorConfigSource.Seeded"/> row is now told apart from a
+/// closes the carried B-4 finding.</b> A <see cref="ConnectorConfigSource.Seeded"/> row is now told apart from a
 /// <see cref="ConnectorConfigSource.Operator"/> one, so this method can tell "an operator's own configuration,
 /// now shadowed" (still insert-only, still warns loudly — behavior UNCHANGED for that case) apart from
 /// "my own artifact from an earlier boot of the SAME env-var/connectors.json source" (safe to refresh in

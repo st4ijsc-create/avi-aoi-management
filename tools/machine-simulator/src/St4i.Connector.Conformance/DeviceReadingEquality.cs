@@ -19,7 +19,7 @@ namespace St4i.Connector.Conformance;
 /// it asserted CLR TYPES rather than VALUES</b> (see task-6-report.md's framing) — so <see cref="Compare"/>
 /// deliberately never compares <c>GetType()</c>/uses <c>is</c> pattern matching as its final word for the
 /// <c>object?</c> slots (<see cref="TelemetrySample.Value"/>, <see cref="DeviceReading.Genealogy"/> values).
-/// Instead, <paramref name="allowNumericWidening"/> controls whether a numeric value is allowed to have
+/// Instead, <see cref="Compare"/>'s own <c>allowNumericWidening</c> argument controls whether a numeric value is allowed to have
 /// CROSSED a CLR-type boundary that GP-2's <c>ConnectorObjectConverter</c> documents as lossless (e.g. an
 /// <see cref="int"/> becoming a <see cref="long"/>, a <see cref="float"/> becoming a <see cref="double"/>) —
 /// <see langword="true"/> for a round-trip comparison (original CLR value vs. what came back through JSON),

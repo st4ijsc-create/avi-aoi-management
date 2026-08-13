@@ -227,8 +227,8 @@ public static class RtuBusConfiguration
     /// eight connectors, and have one of its machines permanently absent from the roster — the exact
     /// "persisted, listed, and permanently never running" state <c>ConnectorEndpoints</c>' own SM-5 comment
     /// says must never be creatable.</para>
-    /// </summary>
-/// <para>🔴 <b>Fix round 4 (branch review) — this method states the PROBLEM and never the REMEDY for
+    ///
+    /// <para>🔴 <b>Fix round 4 (branch review) — this method states the PROBLEM and never the REMEDY for
     /// the claim arm, and the reason is a fact about this signature.</b> "Remove that connector
     /// (DELETE /v1/connectors/{id})" is correct for an incumbent an operator saved and WRONG for one
     /// <see cref="ConnectorConfigVisibilitySeeder"/> wrote — that row is re-created at every start, so the
