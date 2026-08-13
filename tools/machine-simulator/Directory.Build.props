@@ -66,9 +66,21 @@
            distinct-source-site count is 233.
          * And `St4i.EdgeCore` compiles `examples/device-client/csharp/St4iDeviceClient.cs`, linked in from
            OUTSIDE tools/machine-simulator (see St4i.EdgeCore.csproj's `Compile Include`). Its 95 CS1591 and
-           8 CS1573 are inside St4i.EdgeCore's row above, and that file is VENDORED — it must not be edited
-           here. So for St4i.EdgeCore the "write the doc comments" option is not merely expensive, it is
-           BLOCKED for 95 of its 543 members. Any plan for that project has to start from the other option.
+           8 CS1573 are inside St4i.EdgeCore's row above — and it is a VENDORED reference SDK. That is not an
+           assertion, it is in the file's own header: it declares itself the C#/.NET reference client for
+           doc 61 (Machine Developer Integration Guide), pins **C# 7.3+ / netstandard2.0+ / .NET Framework
+           4.7.2+**, and states feature parity with the Python and Node SDKs — which are its siblings under
+           examples/device-client/. It is published to machine developers and kept in step with three other
+           implementations; it is not this repository's source to rewrite.
+
+           🔴 THE TWO HALVES OF THAT ARE BLOCKED WITH DIFFERENT STRENGTH, and merging them loses the sharper
+           half. Its **82 nullable warnings** (the ones in the gate's 116) are blocked MECHANICALLY: silencing
+           them honestly needs nullable ANNOTATIONS (`string?`), annotations need C# 8, and the file's own
+           header pins C# 7.3+ — so annotating it would break the compatibility promise it ships with. The
+           file carries no `#nullable` directive at all and is analysed under EdgeCore's `enable`, which is
+           why the crop is structural rather than accidental. Its **95 CS1591** are blocked only by
+           OWNERSHIP: doc comments have been legal since C# 1.0, so writing them is perfectly possible — it
+           is simply not our file, and a divergence here is a divergence from three sibling SDKs.
        Read every row above as "this compilation", never as "this directory".
 
        Column (2) totals 2870 members across the nine unset projects (the twelve in the six set projects
@@ -77,6 +89,39 @@
        honest ways to set them are to write 2870 doc comments or to disable a code, and the first is a
        product decision about what those surfaces promise while the second is forbidden here. A doc comment
        invented for a domain field nobody has decided the meaning of is a new lie, not a fix.
+
+       🔴 AND "DISABLE A CODE" IS TWO DIFFERENT DECISIONS THAT DIFFER BY 448 MEMBERS. Both are forbidden to
+       an implementer here; they are NOT interchangeable to whoever authorises one:
+         (a) ASSEMBLY-WIDE — `<NoWarn>$(NoWarn);CS1591</NoWarn>` on St4i.EdgeCore. Silences all 543. That
+             project then asserts documentation coverage NOWHERE, including on the 448 members that are our
+             own source and that nothing prevents anyone from documenting.
+         (b) PATH-SCOPED — an .editorconfig section matching only the vendored file
+             (`dotnet_diagnostic.CS1591.severity = none` under a pattern for St4iDeviceClient.cs). Silences
+             95 and LEAVES THE OTHER 448 ASSERTED, which is the whole difference: it exempts the file nobody
+             here may edit and keeps the check on everything we own.
+       (b) is strictly the narrower instrument and is what "St4i.EdgeCore is blocked" actually argues for.
+       🔴 One thing to settle before relying on it, flagged because I did NOT measure it: this file enters
+       the compilation through a `Compile Include` from OUTSIDE the project cone, and .editorconfig sections
+       match a file's REAL path, not its `Link` metadata — so such a section has to be scoped to the real
+       path under examples/device-client/csharp/, and that should be verified by running it rather than
+       reasoned about. Everything else in this block was measured; that sentence was not.
+
+       🔴 AND IF ONLY ONE PROJECT EVER MOVES, MOVE St4i.Connector.Abstractions. Put here rather than in a
+       report because this is where someone deciding will be standing. Three facts, and they point the same
+       way for once:
+         * It is the ONLY documented surface in this tree with readers outside this organisation — it is the
+           contract a third-party driver author compiles against and reads first (zero PackageReference, zero
+           ProjectReference, deliberately, so they can).
+         * By the argument this whole block makes, it is therefore the surface whose doc-comment correctness
+           matters MOST — and the scope above leaves it unguarded. The six were selected by what assertion (2)
+           COST, and cost correlates only loosely with what a comment's correctness is worth. This row is
+           where the two come apart hardest, and it is the honest weakness of the scope, not a footnote to it.
+         * It is also the CHEAPEST such move — 95 members, the smallest column-(2) bill of the nine — and the
+           only one measured to be UNBLOCKED: every one of those 95 is our own source, so unlike
+           St4i.EdgeCore no part of the bill sits in a file we may not edit. Its column (1) is already ZERO
+           (N-1 fixed all 16 there even though the switch is off, precisely so this stayed a one-line change).
+       So the whole cost of guarding the most-read surface in the repository is: write 95 doc comments, add
+       one property. Nothing else has to be decided first.
 
        Column (1) is a different thing entirely — every one of those is a claim that is already FALSE. N-1
        fixed all 21 inside the six projects above (33 warnings in total there, with column (2)), which is why
