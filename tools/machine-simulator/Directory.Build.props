@@ -56,8 +56,20 @@
            St4i.EdgeCore.Tests                         36             705          0     no
            St4i.EngineApi.Tests                        38             742          5     no
 
-       St4iMachineSimulator's row lands TWICE in a solution build — the WPF markup pass compiles a
-       `_wpftmp` clone of the project — so setting it there costs 166, not 83. Nothing else doubles.
+       🔴 TWO ROWS ABOVE ARE NOT WHAT THEY LOOK LIKE, because a source file can belong to more than one
+       compilation. Neither was visible from the per-project numbers and both were found by review, not by me:
+         * St4iMachineSimulator lands TWICE in a solution build — the WPF markup pass compiles a `_wpftmp`
+           clone — so setting it there costs 166, not 83.
+         * `tests/Shared/TestRunTempRoot.cs` and `tests/Shared/RealCredentialStoreLeakGuard.cs` are
+           `Compile`-linked into ALL FIVE test projects, so one doc defect in either counts FIVE times. It is
+           not hypothetical: 5 of the 237 below are ONE defect in TestRunTempRoot.cs, which is why the
+           distinct-source-site count is 233.
+         * And `St4i.EdgeCore` compiles `examples/device-client/csharp/St4iDeviceClient.cs`, linked in from
+           OUTSIDE tools/machine-simulator (see St4i.EdgeCore.csproj's `Compile Include`). Its 95 CS1591 and
+           8 CS1573 are inside St4i.EdgeCore's row above, and that file is VENDORED — it must not be edited
+           here. So for St4i.EdgeCore the "write the doc comments" option is not merely expensive, it is
+           BLOCKED for 95 of its 543 members. Any plan for that project has to start from the other option.
+       Read every row above as "this compilation", never as "this directory".
 
        Column (2) totals 2870 members across the nine unset projects (the twelve in the six set projects
        were WRITTEN, not suppressed, which is why their column-(2) price is now zero). 2870 is the number
@@ -71,8 +83,9 @@
        setting the property moved scripts/verify-suites.sh's EXPECT_WARNINGS by ZERO. It also fixed, tree-wide
        and outside the six, the two sets §8.1 names by measurement — St4i.Connector.Abstractions' 16 and
        FleetCore.cs's four malformed blocks — plus EVERY remaining malformed-XML block anywhere in the tree
-       (19 blocks in 15 files, plus one block misplaced onto a record parameter in a 16th — CS1570 and CS1587
-       are now zero in every project, set or unset), because that is the class J-3 built a
+       (19 blocks in 15 files under tools/machine-simulator, plus one block misplaced onto a record parameter
+       in a 16th — CS1570 and CS1587 are now zero in every one of the fifteen compilations, which includes the
+       linked-in vendored file: it was scanned, and it is clean), because that is the class J-3 built a
        private parser to find and it is now empty. 237 unresolvable `cref`/`paramref` claims remain in the
        nine unset projects, listed by file in .superpowers/sdd/doc-comments-compiled/task-1-report.md and NOT
        fixed: a fix there is guarded by nothing and witnessed by nothing until the switch can be set.

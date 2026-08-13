@@ -2663,11 +2663,24 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 #
 # 🔴 WHAT IT STILL DOES NOT WITNESS, stated because the same green number now means two different things
 # depending on the project: the other NINE projects do not set the property, so this count says exactly
-# nothing about their doc comments — and 237 already-false claims are on record there (259 as MSBuild would
-# count them, because a WPF markup pass compiles St4iMachineSimulator twice), listed by file in
+# nothing about their doc comments — and 237 already-false claims are on record there (233 distinct source
+# sites: five of the 237 are ONE defect in tests/Shared/TestRunTempRoot.cs, which is Compile-linked into all
+# five test projects; 259 if you count the way MSBuild does, because the WPF markup pass compiles
+# St4iMachineSimulator a second time), listed by file in
 # .superpowers/sdd/doc-comments-compiled/task-1-report.md. They are unset because the switch also asserts
 # documentation COVERAGE (CS1591, 2870 members) and that is an owner decision, not an implementer one; see
 # Directory.Build.props for the measured per-project price of all fifteen.
+#
+# 🔴 THAT LAST PARAGRAPH IS A MEASUREMENT, NOT A CAVEAT — negative control, run on this gate, N-1.
+# One `</para>` was deleted from a doc block in FleetCore.cs, recreating one of the four malformed blocks
+# J-3 needed a purpose-built parser to find. The defect was confirmed present by two independent instruments
+# (that parser: 1 block failing to parse; the compiler with the flag on: 2 x CS1570). This gate was then run
+# end to end against it:
+#     build: 0 errors, 116 warnings ... PASS: 0 build errors, 5/5 suites at their exact expected totals (2657)
+# Full green, exit 0, this number unmoved. Say it the way §8.1(h6) requires: the gate did not weaken, did not
+# strengthen, DID NOT NOTICE — and it did not fail, because nothing is indexed there for St4i.EdgeCore. The
+# positive control is the mirror: the same class of defect placed in one of the SIX takes this to 119 and
+# exits 1. Same gate, same defect class, two projects, opposite verdicts. That is the boundary, measured.
 #
 # To ask the whole tree the question this gate only asks of six projects, from tools/machine-simulator:
 #     dotnet build -t:Rebuild -p:GenerateDocumentationFile=true
