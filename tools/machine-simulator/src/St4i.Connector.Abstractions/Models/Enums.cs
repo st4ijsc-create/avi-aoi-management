@@ -10,10 +10,14 @@ namespace St4i.Connector.Abstractions.Models;
 /// <see cref="DeviceReading.Metrics"/>, <see cref="DeviceReading.Telemetry"/>,
 /// <see cref="DeviceReading.Measurements"/>, <see cref="DeviceReading.Genealogy"/> and
 /// <see cref="DeviceReading.Verdict"/> REGARDLESS of this value, and the HTTP surface serves that back;
-/// the live-state reader takes three of those five ungated. The UNS/Sparkplug publisher, by contrast,
-/// DOES gate — so misplaced content can be recorded without ever being published. The conformance harness
-/// a third-party author runs also inspects these without checking this value. See
+/// the live-state reader takes three of those five ungated. The Sparkplug data message, by contrast, IS
+/// built per kind — so misplaced content can be recorded without ever being published. The conformance
+/// harness a third-party author runs also inspects these without checking this value. See
 /// <see cref="DeviceReading"/> and each of its members for which readers gate and which do not.</para>
+///
+/// <para>🔴 And this value does not stop mattering when the reading is gone: it is stored as its CLR
+/// member name, and this product's OEE aggregate selects on that stored string. See
+/// <see cref="DeviceReading.Kind"/> for what that costs a reading shipped under the wrong one.</para>
 ///
 /// <para>On the connector wire format this is written as a camelCase string, never an ordinal — see
 /// <see cref="Json.ConnectorJson"/>. That is a property of THAT format, not of every place the value is
@@ -122,6 +126,14 @@ public enum DriverHealthState
 /// <para>On the connector wire format this is written as a camelCase string, never an ordinal — see
 /// <see cref="Json.ConnectorJson"/>. As with <see cref="ReadingKind"/>, that is a property of THAT
 /// format: this product also persists it as its CLR member name.</para>
+///
+/// <para>🔴 <b>And that persisted string is branched on, which makes this the second member of this
+/// contract whose meaning outlives its own type.</b> This product's OEE aggregate reads the stored
+/// verdict, not a live one: it excludes <see cref="Skip"/> rows from the denominator entirely, and counts
+/// <see cref="Pass"/> and <see cref="Warn"/> — but not <see cref="Fail"/> — into the numerator. So
+/// <see cref="Warn"/> is GOOD for OEE while being "not cleanly judged" everywhere else in this contract,
+/// and the choice between these members sets a number on the API, the fleet list and the report PDF long
+/// after the reading itself is gone.</para>
 /// </summary>
 public enum Verdict
 {

@@ -164,18 +164,22 @@ public record TelemetrySample(string Metric, object? Value, string? Unit = null,
 /// reading goes to and which of the collections below that one consumer reads.
 ///
 /// <para>🔴 <b>Which consumers honour that gate is NOT uniform, and a driver author who reads it as "the
-/// collections this kind does not name are inert" ships data they believe is being ignored.</b> This
-/// product branches on <see cref="Kind"/> in six places: the normalizer (endpoint, and which collection
-/// reaches the wire), the two transports that route the normalized call, the UNS/Sparkplug publisher
-/// (which collection becomes a published metric, and the semantic topic), the fault injector, the live
-/// board view, and the display label.</para>
+/// collections this kind does not name are inert" ships data they believe is being ignored.</b> Behaviour
+/// that depends on WHICH member this is exists in three groups, and no count is offered here because this
+/// value does not stay in one place long enough for one to be trustworthy: (1) on this object — the
+/// normalizer's endpoint and key shape, the Sparkplug metric arms and the semantic topic aspect, the fault
+/// injector, the live board view, the display label; (2) on a TYPED COPY of it — the two transports route
+/// on the normalized envelope's copy, and the desktop trace inspector filters on a trace event's copy;
+/// (3) 🔴 <b>on a STRINGIFIED copy, after the value has left the type system altogether</b> — see the
+/// <see cref="Kind"/> member itself.</para>
 ///
 /// <para>The consumer that gates LEAST is the one that writes to disk: it takes
 /// <see cref="Metrics"/>, <see cref="Telemetry"/>, <see cref="Measurements"/>,
 /// <see cref="Genealogy"/> and <see cref="Verdict"/> off whatever reading it is handed, with no check on
 /// this value, and stores all five. The live-state reader is in between — it takes <see cref="Metrics"/>,
-/// <see cref="Telemetry"/> and <see cref="Verdict"/> ungated, gates <see cref="Measurements"/> on
-/// <see cref="Kind"/>, and never reads <see cref="Genealogy"/> at all.</para>
+/// <see cref="Telemetry"/> and <see cref="Verdict"/> ungated, gates <see cref="Measurements"/> for the
+/// live BOARD VIEW only, reads <see cref="Measurements"/> ungated again for the cycle-log key metric, and
+/// never reads <see cref="Genealogy"/> at all.</para>
 ///
 /// <para>🔴 So the same misplaced content can be stored and not published, and a claim about one consumer
 /// is not a claim about another. Each member below names ITS readers on both sides of that split; where
@@ -201,7 +205,19 @@ public class DeviceReading
     public string MachineCode { get; set; } = "";
 
     /// <summary>Which of the three ingest shapes this reading carries — see
-    /// <see cref="ReadingKind"/>.</summary>
+    /// <see cref="ReadingKind"/>.
+    ///
+    /// <para>🔴 <b>This value outlives its own type, and the most consequential thing that branches on it
+    /// does so after it has become a string.</b> Every stored result records it as its CLR member name,
+    /// and this product's OEE aggregate then selects rows with a hard-coded
+    /// <c>reading_kind = 'ProcessResult'</c> before it counts anything. So a cycle a driver ships under
+    /// any other kind is stored, is returned by the results query and the CSV export, and contributes
+    /// NOTHING to that machine's OEE — not a zero, but absent from both the numerator and the
+    /// denominator — on the API, the fleet OEE list and the report PDF alike. Nothing rejects it and no
+    /// warning is produced.</para>
+    ///
+    /// <para>Choosing this value is therefore not only a choice of endpoint. It decides what the machine's
+    /// OEE is computed from, permanently, for every row already written.</para></summary>
     public ReadingKind Kind { get; set; }
 
     /// <summary>The unit this reading is about: the serial number of the part produced or the board
@@ -237,11 +253,12 @@ public class DeviceReading
 
     /// <summary>The named numeric measurements of a cycle. Two consumers GATE on <see cref="Kind"/> and
     /// take this only for <see cref="ReadingKind.ProcessResult"/>: the normalizer, which carries it to the
-    /// wire, and the Sparkplug metric builder, which turns each entry into a published metric. Three do
-    /// NOT gate, and they single out the FIRST entry — it becomes the machine's SPC point and its spark
-    /// value, and it is stored and served back as that result's key metric (name, value and unit). So a
-    /// stale entry left here on a reading of another kind is neither sent nor published, and IS recorded
-    /// and shown.</summary>
+    /// wire, and the Sparkplug metric builder, which turns each entry into a published metric. The rest do
+    /// NOT gate. Most of those single out the FIRST entry — it becomes the machine's SPC point and its
+    /// spark value, and it is stored and served back as that result's key metric (name, value and unit) —
+    /// while the conformance harness a third-party author runs copies and compares EVERY entry, also
+    /// without checking <see cref="Kind"/>. So a stale entry left here on a reading of another kind is
+    /// neither sent nor published, and IS recorded, shown, and compared.</summary>
     public List<MetricSample> Metrics { get; set; } = new();
 
     /// <summary>The sampled curves of a cycle. Carried to the wire by the normalizer only when
@@ -265,10 +282,16 @@ public class DeviceReading
     /// <see cref="Kind"/> is <see cref="ReadingKind.Inspection"/>, where an empty list is what makes an
     /// inspection fall back to <see cref="Verdict"/> for its overall result. The most heavily gated of the
     /// four: the Sparkplug metric builder, the live board view and the fault injector all check
-    /// <see cref="Kind"/> before touching it — but the STORED result does not. The NG tally and point
-    /// count written with every result of every kind are counted off this list, and it is serialized whole
-    /// into that row. So a stale list here is invisible everywhere a person would look at it and present
-    /// in the data.</summary>
+    /// <see cref="Kind"/> before touching it.
+    ///
+    /// <para>🔴 Three readers do NOT, and two of them are person-facing. The NG tally and point count
+    /// written with every stored result of every kind are counted off this list, it is serialized whole
+    /// into that row, and both counts are returned by the results query and the CSV export. And the
+    /// live cycle log's key-metric column falls back to this list — <c>"{n} pts, {ng} NG"</c> — whenever a
+    /// reading has no <see cref="Metrics"/> and no <see cref="Telemetry"/>, with no check on
+    /// <see cref="Kind"/> at all: a process-result cycle carrying a stale list from the last board will
+    /// display it. So a stale list here is not invisible; it is merely absent from the one surface
+    /// (the board view) whose gate suggests it would be.</para></summary>
     public List<MeasurementResult> Measurements { get; set; } = new();
 
     /// <summary>The samples of a telemetry reading. Same split as <see cref="Metrics"/>, in the opposite
