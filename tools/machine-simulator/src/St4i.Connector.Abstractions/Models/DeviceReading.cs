@@ -14,10 +14,10 @@ namespace St4i.Connector.Abstractions.Models;
 /// <param name="Lsl">Lower specification limit — a value below it is out of specification. Optional: null
 /// means this metric has no lower limit to be judged against.</param>
 /// <param name="Usl">Upper specification limit — a value above it is out of specification. Optional, same
-/// convention as <paramref name="Lsl"/>. This product's built-in judge derives
-/// <see cref="DeviceReading.Verdict"/> from a metric's value and these two limits, and returns
-/// <see cref="Verdict.Warn"/> when neither is present because there is then nothing to judge
-/// against.</param>
+/// convention as <paramref name="Lsl"/>. The simulators in this product that judge on a metric derive
+/// <see cref="DeviceReading.Verdict"/> from ONE metric's value and these two limits, through a shared
+/// helper that returns <see cref="Verdict.Warn"/> when neither limit is present, because there is then
+/// nothing to judge against.</param>
 /// <param name="Nominal">The intended value for this metric — its target, not a limit. Optional, and never
 /// used to judge: the built-in simulators pass the configured target (a torque target, a mean) here while
 /// passing the acceptance band through <paramref name="Lsl"/>/<paramref name="Usl"/>.</param>
@@ -187,21 +187,23 @@ public class DeviceReading
     /// resolved <see cref="RecipeCode"/>.</summary>
     public string? RecipeVersion { get; set; }
 
-    /// <summary>The named numeric measurements of a <see cref="ReadingKind.ProcessResult"/> cycle. Empty
-    /// for the other kinds.</summary>
+    /// <summary>The named numeric measurements of a cycle. Read only when <see cref="Kind"/> is
+    /// <see cref="ReadingKind.ProcessResult"/> — nothing here stops a driver filling it on another kind,
+    /// and nothing carries it to the wire if one does.</summary>
     public List<MetricSample> Metrics { get; set; } = new();
 
-    /// <summary>The sampled curves of a <see cref="ReadingKind.ProcessResult"/> cycle. Empty for the other
-    /// kinds, and omitted from the payload entirely when empty.</summary>
+    /// <summary>The sampled curves of a cycle. Read only when <see cref="Kind"/> is
+    /// <see cref="ReadingKind.ProcessResult"/>, and omitted from the payload entirely when empty — unlike
+    /// <see cref="Metrics"/>, which is always sent.</summary>
     public List<WaveformSeries> Waveforms { get; set; } = new();
 
-    /// <summary>The per-point results of a <see cref="ReadingKind.Inspection"/> reading. Empty for the
-    /// other kinds — and an empty list is what makes an inspection fall back to <see cref="Verdict"/> for
-    /// its overall result.</summary>
+    /// <summary>The per-point results of an inspection. Read only when <see cref="Kind"/> is
+    /// <see cref="ReadingKind.Inspection"/>, and an empty list is what makes an inspection fall back to
+    /// <see cref="Verdict"/> for its overall result.</summary>
     public List<MeasurementResult> Measurements { get; set; } = new();
 
-    /// <summary>The samples of a <see cref="ReadingKind.Telemetry"/> reading. Empty for the other
-    /// kinds.</summary>
+    /// <summary>The samples of a telemetry reading. Read only when <see cref="Kind"/> is
+    /// <see cref="ReadingKind.Telemetry"/>.</summary>
     public List<TelemetrySample> Telemetry { get; set; } = new();
 
     /// <summary>Which cycle of this machine this is. It is part of the idempotency key (zero-padded to six
@@ -211,14 +213,16 @@ public class DeviceReading
     public long CycleCounter { get; set; }
 
     /// <summary>When this reading happened — the time that reaches the wire for the cycle, and for every
-    /// <see cref="TelemetrySample"/> in it. Kept as a <see cref="DateTimeOffset"/> so the offset survives
-    /// the round trip rather than being normalized away.</summary>
+    /// <see cref="TelemetrySample"/> in it. The offset is carried rather than normalized away: it is part
+    /// of the formatted timestamp on the wire, and it survives a round trip through
+    /// <see cref="Json.ConnectorJson"/>.</summary>
     public DateTimeOffset Timestamp { get; set; }
 
     /// <summary>Free-form traceability context to travel with the reading — lot code, panel id, board
-    /// index, operator id and the like — or <see langword="null"/> for none. Each entry is added to a
-    /// process-result payload as a top-level field of its own, so a key here can shadow one of the fields
-    /// above. Values are limited to the same domain as <see cref="TelemetrySample.Value"/> (see
+    /// index, operator id and the like — or <see langword="null"/> for none. Carried ONLY on a
+    /// process-result payload, where each entry is added as a top-level field of its own, so a key here
+    /// can shadow one of the fields above; the telemetry and inspection payloads do not take it at all.
+    /// Values are limited to the same domain as <see cref="TelemetrySample.Value"/> (see
     /// <see cref="Json.ConnectorObjectConverter"/>); in practice this product's own producers put strings,
     /// integers and doubles here.</summary>
     public Dictionary<string, object>? Genealogy { get; set; }

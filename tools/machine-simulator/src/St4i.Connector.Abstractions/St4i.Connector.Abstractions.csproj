@@ -17,12 +17,29 @@
 
          WHY THIS ROW WAS THE ONE TO MOVE, and it is N-1's own argument, not a new one: this is the only
          documented surface in this tree with readers OUTSIDE this organisation — the contract a
-         third-party driver author compiles against and reads first (zero PackageReference, zero
-         ProjectReference, deliberately, so they can). N-1 selected its six by what the coverage assertion
-         COST, named that as the honest weakness of its own scope, and left this row unguarded. The bill
-         here — 95 doc comments, measured and re-measured before it was paid — was written, not
-         suppressed; its parse/resolve column was already zero because N-1 fixed all 16 sites here while
-         the switch was still off, precisely so this stayed a one-property change. -->
+         third-party driver author compiles against and reads first — it declares no NuGet package and no
+         reference to any other project in this repository, deliberately, so they can. N-1 selected its six
+         by what the coverage assertion COST, named that as the honest weakness of its own scope, and left
+         this row unguarded. The bill here — 95 doc comments, measured and re-measured before it was
+         paid — was written, not suppressed; its parse/resolve column was already zero because N-1 fixed
+         all 16 sites here while the switch was still off, so this stayed a one-property change.
+
+         🔴 AND THAT SENTENCE IS PHRASED THE WAY IT IS BECAUSE A TEST CAUGHT THE FIRST DRAFT, which is
+         worth leaving here rather than in a report. Its first version quoted the two element names
+         verbatim from the paragraph in Directory.Build.props that makes this argument. That turned the
+         gate RED: ZeroDependencyTests has a csproj assertion (the third `[Fact]` in that class) that those
+         two names do not appear in this file, and it does so with Assert.DoesNotContain over the file's
+         raw TEXT — so it cannot tell a declaration from a mention inside a comment, and a task whose
+         entire product is prose is exactly where that difference shows up. The assertion is not wrong
+         about anything it exists to protect (this project still declares neither); it is simply measuring
+         text, and it fails in the safe direction.
+
+         🔴 That test is deliberately named here by CLASS and ORDINAL rather than by method name, which
+         is the opposite of §8.1(h8)'s "point by NAME, never by POSITION" — and the exception is the rule's
+         own subject matter, not a lapse. Its method name CONTAINS one of the two forbidden substrings, so
+         writing it here re-breaks the very assertion this paragraph is about. Caught the same way as the
+         first draft: by the gate, on the second run, after the fix. Do not restate any of this using
+         those two names. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 </Project>

@@ -131,7 +131,7 @@ public sealed class ConnectorObjectConverter : JsonConverter<object?>
     /// or is a number this converter refuses to manufacture a value for: one that overflows to a non-finite
     /// <see cref="double"/> (symmetric with <see cref="Write"/>'s own NaN/Infinity rejection), or one
     /// neither <see cref="Utf8JsonReader.TryGetInt64"/> nor <see cref="Utf8JsonReader.TryGetDouble"/> can
-    /// read at all.</exception>
+    /// read at all. Any other token type is refused the same way, by name.</exception>
     public override object? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         switch (reader.TokenType)

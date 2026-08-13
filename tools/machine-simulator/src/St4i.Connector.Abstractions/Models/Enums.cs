@@ -89,9 +89,11 @@ public enum Verdict
     /// <summary>The cycle was judged and met its specification.</summary>
     Pass,
 
-    /// <summary>Judged, but not cleanly. This product's own built-in judge returns it both for a value
-    /// close to (or only just outside) a spec limit and for a value it has NO spec limit to judge
-    /// against — so a reading carrying it has not been shown to be out of specification.</summary>
+    /// <summary>Judged, but not cleanly. The shared helper this product's metric-judging simulators go
+    /// through returns it in three situations that this value alone does not distinguish: a value inside
+    /// its limits but hugging one, a value OUTSIDE a limit by no more than a margin derived from the
+    /// limits themselves, and a metric with no limits to judge against at all. So it does not by itself
+    /// mean the cycle was within specification.</summary>
     Warn,
 
     /// <summary>The cycle was judged and did not meet its specification. The only member that becomes
@@ -100,7 +102,7 @@ public enum Verdict
 
     /// <summary>No pass/fail was reached for this cycle: the convention for a reading whose kind has no
     /// verdict concept at all (see <see cref="CyclePlanStep.Result"/>'s own doc comment, which mirrors it
-    /// per step). Becomes <c>NTF</c> — not a pass, and not counted as a failure — on the inspection
-    /// endpoint.</summary>
+    /// per step, and which names telemetry as that case). Becomes <c>NTF</c> on the inspection endpoint,
+    /// which that endpoint's worst-wins aggregation ranks between <c>OK</c> and <c>NG</c>.</summary>
     Skip,
 }

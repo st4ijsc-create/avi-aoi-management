@@ -23,8 +23,9 @@ public enum CommandArgumentType
     /// <see langword="short"/>.</summary>
     Int16,
 
-    /// <summary>A 16-bit unsigned integer — the width one Modbus holding/input register carries. Narrows
-    /// exactly like <see cref="Int16"/>, producing a CLR <see langword="ushort"/>.</summary>
+    /// <summary>A 16-bit unsigned integer — the width of one Modbus register, which is one of the two
+    /// scoped protocols this enum's own doc comment names. Narrows exactly like <see cref="Int16"/>,
+    /// producing a CLR <see langword="ushort"/>.</summary>
     UInt16,
 
     /// <summary>A 32-bit signed integer. Narrows exactly like <see cref="Int16"/>, producing a CLR
