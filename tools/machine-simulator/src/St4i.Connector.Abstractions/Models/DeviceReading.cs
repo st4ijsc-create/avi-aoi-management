@@ -163,16 +163,30 @@ public record TelemetrySample(string Metric, object? Value, string? Unit = null,
 /// <see cref="Kind"/> is the discriminator the NORMALIZER switches on: it decides which endpoint the
 /// reading goes to and which of the collections below that one consumer reads.
 ///
-/// <para>🔴 <b>That gate is narrower than it looks, and a driver author who reads it as "the collections
-/// this kind does not name are inert" ships data they believe is being ignored.</b> Beyond the normalizer,
-/// this product does check <see cref="Kind"/> in a few places — to route the normalized call, to pick a
-/// display label, to skip fault injection on telemetry, and to decide whether
-/// <see cref="Measurements"/> becomes the live board view. But the readers that build a machine's live
-/// state and the one that PERSISTS each result do not check it at all: they take <see cref="Metrics"/>,
-/// <see cref="Telemetry"/>, <see cref="Measurements"/>, <see cref="Genealogy"/> and <see cref="Verdict"/>
-/// off whatever reading they are handed. Each member below states its own readers; where one says
-/// "carried to the wire by the normalizer only when", that is a claim about the normalizer and nothing
-/// wider.</para>
+/// <para>🔴 <b>Which consumers honour that gate is NOT uniform, and a driver author who reads it as "the
+/// collections this kind does not name are inert" ships data they believe is being ignored.</b> This
+/// product branches on <see cref="Kind"/> in six places: the normalizer (endpoint, and which collection
+/// reaches the wire), the two transports that route the normalized call, the UNS/Sparkplug publisher
+/// (which collection becomes a published metric, and the semantic topic), the fault injector, the live
+/// board view, and the display label.</para>
+///
+/// <para>The consumer that gates LEAST is the one that writes to disk: it takes
+/// <see cref="Metrics"/>, <see cref="Telemetry"/>, <see cref="Measurements"/>,
+/// <see cref="Genealogy"/> and <see cref="Verdict"/> off whatever reading it is handed, with no check on
+/// this value, and stores all five. The live-state reader is in between — it takes <see cref="Metrics"/>,
+/// <see cref="Telemetry"/> and <see cref="Verdict"/> ungated, gates <see cref="Measurements"/> on
+/// <see cref="Kind"/>, and never reads <see cref="Genealogy"/> at all.</para>
+///
+/// <para>🔴 So the same misplaced content can be stored and not published, and a claim about one consumer
+/// is not a claim about another. Each member below names ITS readers on both sides of that split; where
+/// one says "carried to the wire by the normalizer only when", that is a claim about the normalizer and
+/// nothing wider.</para>
+///
+/// <para>One consumer needs unpicking because it is really two, and reading it as one is how the split
+/// above gets missed: the UNS publisher emits TWO messages per reading. The retained semantic mirror is
+/// the NORMALIZED envelope serialized whole, so it can only ever contain what the normalizer already
+/// selected; the Sparkplug data message is built by re-reading THIS object and has its own
+/// <see cref="Kind"/> switch. Only the second can disagree with the readers above, and it does.</para>
 ///
 /// <para>This is a full point-in-time snapshot, not a partial update: a null member means "null", never
 /// "unchanged". It is also a mutable class, and <see cref="IDeviceDriver.ReadAsync"/> requires each yielded
@@ -198,7 +212,9 @@ public class DeviceReading
     /// <summary>Which process step produced this reading (<c>screw_tightening</c>, <c>glue_dispense</c> in
     /// the built-in simulators), or <see langword="null"/>. Null is filled in by the normalizer only, from
     /// the machine's mapping profile and then a literal fallback; every other consumer sees the null as
-    /// given. It also buckets the idempotency key when <see cref="RecipeCode"/> is null.</summary>
+    /// given. It also buckets the idempotency key when <see cref="RecipeCode"/> is null — but only on the
+    /// process-result and telemetry branch: the inspection branch buckets on <see cref="RecipeCode"/> or a
+    /// literal and never consults this.</summary>
     public string? StepType { get; set; }
 
     /// <summary>This cycle's coarse pass/fail as a whole — see the <c>Verdict</c> enum's own doc comment
@@ -219,36 +235,54 @@ public class DeviceReading
     /// null here is not the same as absent everywhere.</summary>
     public string? RecipeVersion { get; set; }
 
-    /// <summary>The named numeric measurements of a cycle. Carried to the wire by the normalizer only when
-    /// <see cref="Kind"/> is <see cref="ReadingKind.ProcessResult"/>; other in-process consumers read it
-    /// regardless of kind, and the FIRST entry is the one they single out — it becomes the machine's SPC
-    /// point and spark value, and it is stored and served back as that result's key metric (name, value
-    /// and unit). Leaving a stale entry here on a reading of another kind is therefore visible, not
-    /// inert.</summary>
+    /// <summary>The named numeric measurements of a cycle. Two consumers GATE on <see cref="Kind"/> and
+    /// take this only for <see cref="ReadingKind.ProcessResult"/>: the normalizer, which carries it to the
+    /// wire, and the Sparkplug metric builder, which turns each entry into a published metric. Three do
+    /// NOT gate, and they single out the FIRST entry — it becomes the machine's SPC point and its spark
+    /// value, and it is stored and served back as that result's key metric (name, value and unit). So a
+    /// stale entry left here on a reading of another kind is neither sent nor published, and IS recorded
+    /// and shown.</summary>
     public List<MetricSample> Metrics { get; set; } = new();
 
     /// <summary>The sampled curves of a cycle. Carried to the wire by the normalizer only when
     /// <see cref="Kind"/> is <see cref="ReadingKind.ProcessResult"/>, and omitted from that payload
-    /// entirely when empty — unlike <see cref="Metrics"/>, which is always sent. The one collection whose
-    /// content no other consumer in this product reads: nothing persists it and nothing derives machine
-    /// state from it. The conformance harness still checks whether it is non-empty, without looking at
-    /// <see cref="Kind"/>.</summary>
+    /// entirely when empty — unlike <see cref="Metrics"/>, which is always sent. The narrowest reach of
+    /// the four: nothing persists it and nothing derives live machine state from it. The Sparkplug metric
+    /// builder has no arm for it either, on any kind — so unlike every other collection here it never
+    /// becomes a published metric. It does still travel inside the retained semantic mirror, because that
+    /// message is the normalized envelope itself rather than a re-read of this object.
+    ///
+    /// <para>🔴 It is NOT unexamined, though, and the reader that examines it is the conformance harness a
+    /// third-party author runs against their own driver: that harness deep-copies every
+    /// <see cref="WaveformSeries.Samples"/> row and then compares <see cref="WaveformSeries.Name"/>,
+    /// <see cref="WaveformSeries.Unit"/>, <see cref="WaveformSeries.RateHz"/> and every sample ELEMENT —
+    /// not the row count. So the same reused-buffer mistake this contract warns about elsewhere is caught
+    /// here rather than tolerated: a driver that recycles one <see langword="double"/>[] across cycles
+    /// fails the no-reuse check and the round-trip check, on element values.</para></summary>
     public List<WaveformSeries> Waveforms { get; set; } = new();
 
     /// <summary>The per-point results of an inspection. Carried to the wire by the normalizer only when
     /// <see cref="Kind"/> is <see cref="ReadingKind.Inspection"/>, where an empty list is what makes an
-    /// inspection fall back to <see cref="Verdict"/> for its overall result. The live board view is gated
-    /// on <see cref="Kind"/> too — but the STORED result is not: the NG tally and point count written with
-    /// every result of every kind are counted off this list, and it is serialized whole into that
-    /// row.</summary>
+    /// inspection fall back to <see cref="Verdict"/> for its overall result. The most heavily gated of the
+    /// four: the Sparkplug metric builder, the live board view and the fault injector all check
+    /// <see cref="Kind"/> before touching it — but the STORED result does not. The NG tally and point
+    /// count written with every result of every kind are counted off this list, and it is serialized whole
+    /// into that row. So a stale list here is invisible everywhere a person would look at it and present
+    /// in the data.</summary>
     public List<MeasurementResult> Measurements { get; set; } = new();
 
-    /// <summary>The samples of a telemetry reading. Carried to the wire by the normalizer only when
-    /// <see cref="Kind"/> is <see cref="ReadingKind.Telemetry"/>; other in-process consumers read it
-    /// regardless of kind. 🔴 This is the member where that difference costs most: on a reading of ANY
-    /// kind, every numerically-resolvable sample here is appended to that machine's live per-metric series
-    /// and written as a stored telemetry row. A driver that reuses a builder and leaves last cycle's
-    /// samples attached to a process-result reading does not send them — and does persist them.</summary>
+    /// <summary>The samples of a telemetry reading. Same split as <see cref="Metrics"/>, in the opposite
+    /// direction: the normalizer and the Sparkplug metric builder both GATE on <see cref="Kind"/> and take
+    /// this only for <see cref="ReadingKind.Telemetry"/>, while the live-state reader and the one that
+    /// writes to disk do not gate at all.
+    ///
+    /// <para>🔴 This is the member where that difference costs most, and it is the clearest case of two
+    /// consumers of one field disagreeing. On a reading of ANY kind, every numerically-resolvable sample
+    /// here is appended to that machine's live per-metric series and written as a stored telemetry row —
+    /// and on a reading that is not <see cref="ReadingKind.Telemetry"/>, NONE of them is published to the
+    /// Sparkplug data message. A driver that reuses a builder and leaves last cycle's samples attached to a
+    /// process-result reading therefore does not send them, does not publish them, and does persist
+    /// them.</para></summary>
     public List<TelemetrySample> Telemetry { get; set; } = new();
 
     /// <summary>Which cycle of this machine this is. It is the trailing component of the idempotency key

@@ -5,15 +5,15 @@ namespace St4i.Connector.Abstractions.Models;
 /// switches on it to decide which endpoint the reading goes to, and reads only the collection that the
 /// chosen kind names.
 ///
-/// <para>🔴 <b>That gate is the normalizer's, and a driver author must not generalise it into "the other
-/// collections are inert".</b> Other consumers in this product read <see cref="DeviceReading.Metrics"/>,
-/// <see cref="DeviceReading.Telemetry"/>, <see cref="DeviceReading.Measurements"/>,
-/// <see cref="DeviceReading.Genealogy"/> and <see cref="DeviceReading.Verdict"/> REGARDLESS of this
-/// value — including the path that persists each result to disk and the HTTP surface that serves it back.
-/// The conformance harness a third-party author runs against their own driver also inspects all of those
-/// without checking this. Leave content in a collection this kind does not name and it will still be
-/// consumed; see <see cref="DeviceReading"/> and each of its members for which readers gate on this value
-/// and which do not.</para>
+/// <para>🔴 <b>Other consumers do NOT all honour that gate, and a driver author must not generalise it
+/// into "the other collections are inert".</b> The path that persists each result to disk reads
+/// <see cref="DeviceReading.Metrics"/>, <see cref="DeviceReading.Telemetry"/>,
+/// <see cref="DeviceReading.Measurements"/>, <see cref="DeviceReading.Genealogy"/> and
+/// <see cref="DeviceReading.Verdict"/> REGARDLESS of this value, and the HTTP surface serves that back;
+/// the live-state reader takes three of those five ungated. The UNS/Sparkplug publisher, by contrast,
+/// DOES gate — so misplaced content can be recorded without ever being published. The conformance harness
+/// a third-party author runs also inspects these without checking this value. See
+/// <see cref="DeviceReading"/> and each of its members for which readers gate and which do not.</para>
 ///
 /// <para>On the connector wire format this is written as a camelCase string, never an ordinal — see
 /// <see cref="Json.ConnectorJson"/>. That is a property of THAT format, not of every place the value is
@@ -52,11 +52,16 @@ public enum ReadingKind
 /// descriptor and in a mapping profile's <c>deviceClass</c> field, and the host's simulator factory falls
 /// back to it when a machine's finer machine-type string is one this build does not recognize.
 ///
-/// <para>Its spelling on disk is therefore NOT this assembly's to promise, and the shipped files do not
-/// agree on one: the mapping profiles write the member name as-is (<c>"Automation"</c>,
-/// <c>"AoiAvi"</c>) while <c>fleet.json</c> writes it lower-case (<c>"automation"</c>). Both load,
-/// because the roster loader deliberately pins NO naming policy and matches case-insensitively. A
-/// consumer must not assume a casing here.</para>
+/// <para>Only ONE shipped file actually holds this enum: the fleet roster, whose <c>deviceClass</c> field
+/// deserializes to these members. Its loader deliberately pins no naming policy, so any casing matches —
+/// the shipped roster uses camelCase (<c>"automation"</c>, <c>"iot"</c>, <c>"aoiAvi"</c>), and a consumer
+/// must not assume a casing there.</para>
+///
+/// <para>🔴 A mapping profile's <c>deviceClass</c> looks like the same thing and is NOT: on the host's
+/// mapping profile that field is a plain <see langword="string"/> with no enum converter behind it,
+/// checked against nothing. The shipped profiles happen to write these member names, but this product
+/// itself also ships <c>"Mixed"</c> there, which is not a member of this enum at all. Do not read a value
+/// out of that field as one of these.</para>
 /// </summary>
 public enum DeviceClass
 {
@@ -107,10 +112,12 @@ public enum DriverHealthState
 /// becomes <c>OK</c>.
 ///
 /// <para>Both of those are rules of the NORMALIZER. Away from it this product reads this value on EVERY
-/// reading of every kind — it drives the machine's pass-rate tally, its status text and its spark value,
-/// and it is persisted with each stored result. So it is never ignorable on the grounds of
-/// <see cref="DeviceReading.Kind"/>; see <see cref="Skip"/> for the member that carries "no judgement"
-/// through those readers.</para>
+/// reading of every kind: it drives the machine's pass-rate tally and its status text unconditionally, it
+/// is persisted with each stored result, and it is published as a Sparkplug metric on the process-result
+/// and inspection arms. It also backs the spark value, but only as a LAST resort — after a first metric
+/// and a numerically-resolvable first telemetry sample have both been found absent. So it is never
+/// ignorable on the grounds of <see cref="DeviceReading.Kind"/>; see <see cref="Skip"/> for the member
+/// that carries "no judgement" through those readers.</para>
 ///
 /// <para>On the connector wire format this is written as a camelCase string, never an ordinal — see
 /// <see cref="Json.ConnectorJson"/>. As with <see cref="ReadingKind"/>, that is a property of THAT
