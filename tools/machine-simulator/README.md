@@ -1884,6 +1884,24 @@ wrong, and `PUT /v1/settings` — the only in-product way to correct a file the 
 with it. Both conditions fail independently, so that arm is over-determined. **Both arms choose the louder
 failure.** That is the whole of it, and it is why neither ruling has to be revisited.
 
+🔴 **THE DOMAIN OF THIS RULE, NAMED AND COUNTED — read this before extending it, because the rule is stated
+in a section about roots and its domain is larger than roots.** The rule governs **startup-path
+configuration decisions**: every statement a composition root executes before its host begins serving, at
+which a value obtained from outside the running program — an environment variable, a file, a directory's
+existence or ACL, a command-line argument, a store the product previously persisted — can fail to be usable,
+and where the code at that point determines whether the process continues or ends. **J-3 enumerated
+thirty-six of them in `St4i.EngineApi` alone**, by reading the four composition roots (`St4i.EngineApi`'s
+`Program.cs`, `St4i.EdgeService`'s `Program.cs` + `EdgeWorker`, `St4iMachineSimulator`'s `App.xaml.cs`,
+`St4i.DesktopShell`'s `App.xaml.cs`) plus every store constructor and options factory they reach.
+**Thirteen of those thirty-six are roots.** The other twenty-three are argument vectors, a bind address,
+register and node maps, `connectors.json`, `fleet.json`, persisted connector rows, a broker port, an ACL
+hardening step and the settings replay itself.
+
+**So the table immediately below is a VIEW of that domain projected onto the roots this section is otherwise
+about — it is not the domain.** A later change that reads this rule as "which roots crash the host" has to
+contradict a number, not merely drift past a paragraph: the number is thirty-six, the instrument is named in
+the paragraph after the table, and its ceiling is named there too.
+
 **What that means at each root — this is the table to read before relocating one.** "Stops" means the
 process ends before it serves anything; "comes up" means every endpoint works and the failure is on the log.
 
@@ -1955,7 +1973,19 @@ không liên quan (điều 2 đúng). Bộ ba `fleet-settings.json` đi hướng
 im lặng: một dịch vụ đã chết không nói được trường nào trong ba trường sai, và `PUT /v1/settings` — đường duy
 nhất trong sản phẩm để sửa một file do chính sản phẩm ghi — chết theo nó. Cả hai điều đều sai một cách độc
 lập. **Cả hai nhánh đều chọn cái thất bại ỒN HƠN.** Đó là toàn bộ, và đó là lý do không phán quyết nào phải
-xét lại. **Bảng ở bản EN là thứ phải đọc trước khi dời một gốc:** `security`, `wal`, `historian`, `assets`,
+xét lại. 🔴 **MIỀN CỦA QUY TẮC NÀY — ĐẶT TÊN VÀ ĐẾM, đọc trước khi mở rộng nó**, vì quy tắc đang được phát
+biểu trong một mục nói về các GỐC, còn miền của nó **rộng hơn các gốc**. Miền là **các quyết định cấu hình
+trên đường khởi động**: mọi câu lệnh một composition root chạy trước khi host của nó bắt đầu phục vụ, tại đó
+một giá trị đến từ ngoài chương trình đang chạy — biến môi trường, một file, sự tồn tại hay ACL của một thư
+mục, một tham số dòng lệnh, một store sản phẩm đã lưu trước đó — có thể không dùng được, và đoạn mã ở đó
+quyết định tiến trình đi tiếp hay kết thúc. **J-3 đã liệt kê BA MƯƠI SÁU chỗ như vậy chỉ riêng trong
+`St4i.EngineApi`**, bằng cách đọc bốn composition root cộng mọi constructor store và factory options mà chúng
+với tới. **Mười ba trong ba mươi sáu là gốc**; hai mươi ba chỗ còn lại là tham số dòng lệnh, một địa chỉ bind,
+các file map, `connectors.json`, `fleet.json`, các dòng connector đã lưu, một cổng broker, một bước siết ACL,
+và chính lượt phát lại settings. **Vậy bảng bên dưới là một LÁT CẮT của miền ấy chiếu lên các gốc mà mục này
+vốn nói tới — nó KHÔNG PHẢI là miền.** Một thay đổi sau này đọc quy tắc này thành "gốc nào làm sập host" sẽ
+phải **bác một con số**, chứ không chỉ lướt qua một đoạn văn. **Bảng ở bản EN là thứ phải đọc trước khi dời
+một gốc:** `security`, `wal`, `historian`, `assets`,
 `sitelink`, thư mục `settings`, `machine-config` — **DỪNG**; `alarms` và `security.db` — **DỪNG**, chậm hơn
 một nhịp (chúng mở khi host đang lên, không phải trước đó); `identity` và `connector-config` và **file**
 `fleet-settings.json` — **HỖN HỢP**, tạo được/mở được/đọc được là một chuyện, ghi được/đọc được/kích hoạt

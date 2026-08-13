@@ -105,7 +105,14 @@ public sealed class WalOptions
     /// because then the process is part of the repair channel. Either condition failing means come up and
     /// report. This method satisfies both: an in-memory queue keeps acknowledging records that then die with
     /// the process, and <see cref="EnvVarDir"/> plus a directory ACL are repaired with the tool that set
-    /// them whether or not this process lives.</para></summary>
+    /// them whether or not this process lives.</para>
+    /// <para><b>The DOMAIN of that rule is named and counted so it cannot shrink to the type it is written
+    /// on.</b> It is <b>startup-path configuration decisions</b> — every statement a composition root runs
+    /// before its host serves, at which a value from outside the running program (an environment variable, a
+    /// file, a directory's existence or ACL, an argument, a previously persisted store) can fail, and where
+    /// that statement decides whether the process continues. <b>J-3 enumerated thirty-six in the engine host
+    /// alone</b>; thirteen are relocatable roots and this is one of them. It is not a WAL rule, and it is not
+    /// a rule about roots.</para></summary>
     public string EnsureDir()
     {
         var dir = ResolveDir();

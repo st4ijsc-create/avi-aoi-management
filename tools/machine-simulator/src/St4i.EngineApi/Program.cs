@@ -297,6 +297,13 @@ builder.Services.AddSingleton<DemoTransport>();
 //   and FALSE for anything the product itself wrote, because then the process is part of the repair
 //   channel. If either fails, the host comes up and says what it could not use.
 //
+// DOMAIN, named and counted so a later reading cannot quietly shrink it to "relocatable roots": startup-path
+// CONFIGURATION DECISIONS — every statement a composition root runs before its host serves, at which a value
+// from outside the running program can fail, and where that statement decides whether the process continues.
+// J-3 enumerated THIRTY-SIX in this host; thirteen are roots, the rest are argv, a bind address, the register
+// and node maps, connectors.json, fleet.json, persisted connector rows, a broker port, an ACL step, and the
+// replay itself. Thirty-two follow the rule and four do not — all four named at their own sites.
+//
 // Here both hold. (1): the only alternative to stopping is a null queuePath, and an in-memory queue keeps
 // returning successful acks for records that die with the process — the loss is invisible in the outcome,
 // which is the whole reason C-1 was Critical. (2): ST4I_WAL_DIR and a ProgramData ACL are repaired with the
@@ -1816,6 +1823,15 @@ var initialSettingsRequest = persistedSettings is not null
 //   Stopping requires BOTH: (1) continuing would HIDE the loss, and (2) the offending value can be
 //   corrected WITHOUT this process — true for anything set from outside the product, FALSE for anything
 //   the product itself wrote. If either fails, the host comes up and reports.
+//
+// DOMAIN: startup-path CONFIGURATION DECISIONS, not roots and not settings — every statement a composition
+// root runs before its host serves, at which a value from outside the running program can fail and that
+// statement decides whether the process continues. THIRTY-SIX in this host, enumerated by J-3.
+//
+// 🔴 THE CONJUNCTION IS LOAD-BEARING AND WAS TESTED CONDITION BY CONDITION, not fitted to the two cases. Two
+// clauses that jointly describe two examples go SILENT on any site that fails only one of them, and silence
+// reads as agreement; an explicit AND decides those sites. That is the whole difference between this rule and
+// the looser form it was first stated in, and it is why the four divergent sites below have answers at all.
 //
 // This arm fails BOTH, independently, which is what makes it over-determined rather than a judgement call.
 // (1) fails because the loss is exactly what the LogError below names, and GET /v1/settings goes on
