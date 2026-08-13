@@ -9,15 +9,19 @@ namespace St4i.Connector.Abstractions.Models;
 /// into "the other collections are inert".</b> The path that persists each result to disk reads
 /// <see cref="DeviceReading.Metrics"/>, <see cref="DeviceReading.Telemetry"/>,
 /// <see cref="DeviceReading.Measurements"/>, <see cref="DeviceReading.Genealogy"/> and
-/// <see cref="DeviceReading.Verdict"/> REGARDLESS of this value, and the HTTP surface serves that back;
-/// the live-state reader takes three of those five ungated. The Sparkplug data message, by contrast, IS
+/// <see cref="DeviceReading.Verdict"/> REGARDLESS of this value, and the HTTP surface serves that back.
+/// The live-state reader reads the same members ungated, except <see cref="DeviceReading.Genealogy"/>,
+/// which it never reads, and <see cref="DeviceReading.Measurements"/>, which it gates for its board view
+/// and then reads ungated again for its cycle log. The Sparkplug data message, by contrast, IS
 /// built per kind — so misplaced content can be recorded without ever being published. The conformance
 /// harness a third-party author runs also inspects these without checking this value. See
 /// <see cref="DeviceReading"/> and each of its members for which readers gate and which do not.</para>
 ///
-/// <para>🔴 And this value does not stop mattering when the reading is gone: it is stored as its CLR
-/// member name, and this product's OEE aggregate selects on that stored string. See
-/// <see cref="DeviceReading.Kind"/> for what that costs a reading shipped under the wrong one.</para>
+/// <para>🔴 And this value does not stop mattering when the reading is gone, or when the process that
+/// produced it is gone: it is stored as its CLR member name and this product's OEE aggregate selects on
+/// that stored string, and it is serialized under that same name into API JSON that this product's own
+/// browser client branches on. See <see cref="DeviceReading.Kind"/> for what that costs a reading shipped
+/// under the wrong one, and for why no reader list here is exhaustive.</para>
 ///
 /// <para>On the connector wire format this is written as a camelCase string, never an ordinal — see
 /// <see cref="Json.ConnectorJson"/>. That is a property of THAT format, not of every place the value is
@@ -56,8 +60,8 @@ public enum ReadingKind
 /// descriptor and in a mapping profile's <c>deviceClass</c> field, and the host's simulator factory falls
 /// back to it when a machine's finer machine-type string is one this build does not recognize.
 ///
-/// <para>Only ONE shipped file actually holds this enum: the fleet roster, whose <c>deviceClass</c> field
-/// deserializes to these members. Its loader deliberately pins no naming policy, so any casing matches —
+/// <para>In the shipped configuration it is the fleet roster's <c>deviceClass</c> field that deserializes
+/// to these members. Its loader deliberately pins no naming policy, so any casing matches —
 /// the shipped roster uses camelCase (<c>"automation"</c>, <c>"iot"</c>, <c>"aoiAvi"</c>), and a consumer
 /// must not assume a casing there.</para>
 ///
@@ -66,6 +70,12 @@ public enum ReadingKind
 /// checked against nothing. The shipped profiles happen to write these member names, but this product
 /// itself also ships <c>"Mixed"</c> there, which is not a member of this enum at all. Do not read a value
 /// out of that field as one of these.</para>
+///
+/// <para>🔴 Like <see cref="ReadingKind"/> and <see cref="Verdict"/>, this value's meaning outlives its
+/// own type: the host writes it as its CLR member name onto every stored result and into its asset
+/// registry, serves it as JSON, and its own browser client picks a machine's schematic figure and
+/// switches panel content off that string. A member renamed here is a member renamed on all of those, and
+/// on readers this contract cannot see.</para>
 /// </summary>
 public enum DeviceClass
 {
@@ -127,13 +137,16 @@ public enum DriverHealthState
 /// <see cref="Json.ConnectorJson"/>. As with <see cref="ReadingKind"/>, that is a property of THAT
 /// format: this product also persists it as its CLR member name.</para>
 ///
-/// <para>🔴 <b>And that persisted string is branched on, which makes this the second member of this
-/// contract whose meaning outlives its own type.</b> This product's OEE aggregate reads the stored
-/// verdict, not a live one: it excludes <see cref="Skip"/> rows from the denominator entirely, and counts
-/// <see cref="Pass"/> and <see cref="Warn"/> — but not <see cref="Fail"/> — into the numerator. So
-/// <see cref="Warn"/> is GOOD for OEE while being "not cleanly judged" everywhere else in this contract,
-/// and the choice between these members sets a number on the API, the fleet list and the report PDF long
-/// after the reading itself is gone.</para>
+/// <para>🔴 <b>And that persisted string is branched on, so this value's meaning outlives its own type,
+/// as <see cref="ReadingKind"/> and <see cref="DeviceClass"/> also do.</b> This product's OEE aggregate
+/// reads the stored verdict, not a live one: it excludes <see cref="Skip"/> rows from the denominator
+/// entirely, and counts <see cref="Pass"/> and <see cref="Warn"/> — but not <see cref="Fail"/> — into the
+/// numerator. <see cref="Warn"/> is therefore GOOD for OEE, by exactly the rule the live pass-rate tally
+/// named above already applies to it in-process; the OEE path is not an exception, it is the same
+/// judgement made again on a stored string. 🔴 Neither counter agrees with what <see cref="Warn"/>'s own
+/// member doc says the value MEANS — a <see cref="Warn"/> cycle need not have been within specification,
+/// and both credit it as though it were — so the choice between these members sets a number on the API,
+/// the fleet list and the report PDF long after the reading itself is gone.</para>
 /// </summary>
 public enum Verdict
 {
@@ -158,6 +171,8 @@ public enum Verdict
     /// counting as a failure in it, so a telemetry driver that leaves this at its default
     /// (<see cref="Pass"/>, ordinal 0) silently inflates that machine's pass rate instead of abstaining.
     /// Becomes <c>NTF</c> on the inspection endpoint, which that endpoint's worst-wins aggregation ranks
-    /// between <c>OK</c> and <c>NG</c>.</summary>
+    /// between <c>OK</c> and <c>NG</c>. Past the serialization boundary the stored name is renamed again:
+    /// this product's own browser client labels a row carrying this member "Telemetry", not
+    /// "Skip".</summary>
     Skip,
 }

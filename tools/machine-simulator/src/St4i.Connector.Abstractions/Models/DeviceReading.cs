@@ -38,7 +38,7 @@ public record MetricSample(string Name, double Value, string? Unit = null, doubl
 /// <param name="RateHz">The sampling rate, or <see langword="null"/> for a series that is not sampled
 /// against time.</param>
 /// <param name="Samples">The sample rows, passed to the wire unchanged. 🔴 This contract fixes neither a
-/// row's length nor what its elements mean, and the two built-in producers differ: the <c>weld_current</c>
+/// row's length nor what its elements mean, and the built-in producers differ: the <c>weld_current</c>
 /// one emits a single-element <c>[current]</c> row per sample and carries the time base in
 /// <paramref name="RateHz"/>, while the <c>torque_vs_angle</c> one emits a two-element
 /// <c>[angle, torque]</c> row and leaves <paramref name="RateHz"/> null. The reference device-client SDK
@@ -165,18 +165,23 @@ public record TelemetrySample(string Metric, object? Value, string? Unit = null,
 ///
 /// <para>🔴 <b>Which consumers honour that gate is NOT uniform, and a driver author who reads it as "the
 /// collections this kind does not name are inert" ships data they believe is being ignored.</b> Behaviour
-/// that depends on WHICH member this is exists in three groups, and no count is offered here because this
-/// value does not stay in one place long enough for one to be trustworthy: (1) on this object — the
-/// normalizer's endpoint and key shape, the Sparkplug metric arms and the semantic topic aspect, the fault
-/// injector, the live board view, the display label; (2) on a TYPED COPY of it — the two transports route
-/// on the normalized envelope's copy, and the desktop trace inspector filters on a trace event's copy;
-/// (3) 🔴 <b>on a STRINGIFIED copy, after the value has left the type system altogether</b> — see the
-/// <see cref="Kind"/> member itself.</para>
+/// that depends on WHICH member this value holds is not confined to code holding a
+/// <see cref="ReadingKind"/>:
+/// it happens ON THIS OBJECT — the normalizer's endpoint and key shape, the Sparkplug metric arms, the
+/// fault injector, the live board view, the display label; on a TYPED COPY of it — the transports route on
+/// the normalized envelope's copy, the desktop trace inspector filters on a trace event's copy; and 🔴 <b>on
+/// a STRINGIFIED or SERIALIZED copy, after the value has left the type system and then this process
+/// altogether</b> — see the <see cref="Kind"/> member itself.</para>
 ///
-/// <para>The consumer that gates LEAST is the one that writes to disk: it takes
+/// <para>Nothing here is offered as an exhaustive list of readers, and on a published contract nothing
+/// can be: a reader may be added wherever the value is carried to, including outside the process that
+/// produced it. What each member below DOES state is where its content is carried to, so that a consumer
+/// can finish the enumeration on their own side.</para>
+///
+/// <para>The consumer that writes to disk checks nothing: it takes
 /// <see cref="Metrics"/>, <see cref="Telemetry"/>, <see cref="Measurements"/>,
 /// <see cref="Genealogy"/> and <see cref="Verdict"/> off whatever reading it is handed, with no check on
-/// this value, and stores all five. The live-state reader is in between — it takes <see cref="Metrics"/>,
+/// this value, and stores them. The live-state reader takes <see cref="Metrics"/>,
 /// <see cref="Telemetry"/> and <see cref="Verdict"/> ungated, gates <see cref="Measurements"/> for the
 /// live BOARD VIEW only, reads <see cref="Measurements"/> ungated again for the cycle-log key metric, and
 /// never reads <see cref="Genealogy"/> at all.</para>
@@ -216,8 +221,16 @@ public class DeviceReading
     /// denominator — on the API, the fleet OEE list and the report PDF alike. Nothing rejects it and no
     /// warning is produced.</para>
     ///
+    /// <para>🔴 <b>It then outlives this process.</b> It is serialized under its CLR member name into this
+    /// product's own API JSON — including the inspector trace stream, where the browser client picks each
+    /// trace row's colour from it and offers it as one of that screen's filters — and it is carried,
+    /// renamed, as an aspect segment of the retained MQTT topic, whose subscribers are outside this
+    /// repository altogether. A colour map in a web client and a broker subscription are both readers this
+    /// contract can neither enforce nor enumerate.</para>
+    ///
     /// <para>Choosing this value is therefore not only a choice of endpoint. It decides what the machine's
-    /// OEE is computed from, permanently, for every row already written.</para></summary>
+    /// OEE is computed from, permanently, for every row already written, and it is read by consumers on
+    /// the far side of a serialization boundary that this type cannot see across.</para></summary>
     public ReadingKind Kind { get; set; }
 
     /// <summary>The unit this reading is about: the serial number of the part produced or the board
@@ -251,23 +264,24 @@ public class DeviceReading
     /// null here is not the same as absent everywhere.</summary>
     public string? RecipeVersion { get; set; }
 
-    /// <summary>The named numeric measurements of a cycle. Two consumers GATE on <see cref="Kind"/> and
-    /// take this only for <see cref="ReadingKind.ProcessResult"/>: the normalizer, which carries it to the
-    /// wire, and the Sparkplug metric builder, which turns each entry into a published metric. The rest do
-    /// NOT gate. Most of those single out the FIRST entry — it becomes the machine's SPC point and its
-    /// spark value, and it is stored and served back as that result's key metric (name, value and unit) —
-    /// while the conformance harness a third-party author runs copies and compares EVERY entry, also
-    /// without checking <see cref="Kind"/>. So a stale entry left here on a reading of another kind is
-    /// neither sent nor published, and IS recorded, shown, and compared.</summary>
+    /// <summary>The named numeric measurements of a cycle. The consumers that GATE on <see cref="Kind"/>
+    /// and take this only for <see cref="ReadingKind.ProcessResult"/> are the normalizer, which carries it
+    /// to the wire, and the Sparkplug metric builder, which turns each entry into a published metric. The
+    /// rest do NOT gate. Those that reduce this list to one number single out the FIRST entry — it becomes
+    /// the machine's SPC point and its spark value, and it is stored and served back as that result's key
+    /// metric (name, value and unit) — while the conformance harness a third-party author runs copies and
+    /// compares EVERY entry, also without checking <see cref="Kind"/>. So a stale entry left here on a
+    /// reading of another kind is neither sent nor published, and IS recorded, shown, and
+    /// compared.</summary>
     public List<MetricSample> Metrics { get; set; } = new();
 
     /// <summary>The sampled curves of a cycle. Carried to the wire by the normalizer only when
     /// <see cref="Kind"/> is <see cref="ReadingKind.ProcessResult"/>, and omitted from that payload
-    /// entirely when empty — unlike <see cref="Metrics"/>, which is always sent. The narrowest reach of
-    /// the four: nothing persists it and nothing derives live machine state from it. The Sparkplug metric
-    /// builder has no arm for it either, on any kind — so unlike every other collection here it never
-    /// becomes a published metric. It does still travel inside the retained semantic mirror, because that
-    /// message is the normalized envelope itself rather than a re-read of this object.
+    /// entirely when empty — unlike <see cref="Metrics"/>, which is always sent. Nothing persists it and
+    /// nothing derives live machine state from it. The Sparkplug metric builder has no arm for it either,
+    /// on any kind, so it never becomes a published metric. It does still travel inside the retained
+    /// semantic mirror, because that message is the normalized envelope itself rather than a re-read of
+    /// this object.
     ///
     /// <para>🔴 It is NOT unexamined, though, and the reader that examines it is the conformance harness a
     /// third-party author runs against their own driver: that harness deep-copies every
@@ -280,18 +294,19 @@ public class DeviceReading
 
     /// <summary>The per-point results of an inspection. Carried to the wire by the normalizer only when
     /// <see cref="Kind"/> is <see cref="ReadingKind.Inspection"/>, where an empty list is what makes an
-    /// inspection fall back to <see cref="Verdict"/> for its overall result. The most heavily gated of the
-    /// four: the Sparkplug metric builder, the live board view and the fault injector all check
-    /// <see cref="Kind"/> before touching it.
+    /// inspection fall back to <see cref="Verdict"/> for its overall result. The Sparkplug metric builder,
+    /// the live board view and the fault injector all check <see cref="Kind"/> before touching it.
     ///
-    /// <para>🔴 Three readers do NOT, and two of them are person-facing. The NG tally and point count
+    /// <para>🔴 The rest do NOT, and some of them are person-facing. The NG tally and point count
     /// written with every stored result of every kind are counted off this list, it is serialized whole
-    /// into that row, and both counts are returned by the results query and the CSV export. And the
+    /// into that row, and both counts are returned by the results query and the CSV export. The
     /// live cycle log's key-metric column falls back to this list — <c>"{n} pts, {ng} NG"</c> — whenever a
     /// reading has no <see cref="Metrics"/> and no <see cref="Telemetry"/>, with no check on
     /// <see cref="Kind"/> at all: a process-result cycle carrying a stale list from the last board will
-    /// display it. So a stale list here is not invisible; it is merely absent from the one surface
-    /// (the board view) whose gate suggests it would be.</para></summary>
+    /// display it, in the browser client and in the desktop one alike. And the conformance harness a
+    /// third-party author runs against their own driver copies this list and compares every point of it,
+    /// also without checking <see cref="Kind"/>. So a stale list here is not invisible; it is absent only
+    /// from the board view, whose gate is what suggests it would be.</para></summary>
     public List<MeasurementResult> Measurements { get; set; } = new();
 
     /// <summary>The samples of a telemetry reading. Same split as <see cref="Metrics"/>, in the opposite
@@ -299,8 +314,8 @@ public class DeviceReading
     /// this only for <see cref="ReadingKind.Telemetry"/>, while the live-state reader and the one that
     /// writes to disk do not gate at all.
     ///
-    /// <para>🔴 This is the member where that difference costs most, and it is the clearest case of two
-    /// consumers of one field disagreeing. On a reading of ANY kind, every numerically-resolvable sample
+    /// <para>🔴 Here two consumers of this one field disagree, and a driver author can see the effect in
+    /// both directions at once. On a reading of ANY kind, every numerically-resolvable sample
     /// here is appended to that machine's live per-metric series and written as a stored telemetry row —
     /// and on a reading that is not <see cref="ReadingKind.Telemetry"/>, NONE of them is published to the
     /// Sparkplug data message. A driver that reuses a builder and leaves last cycle's samples attached to a
@@ -310,7 +325,7 @@ public class DeviceReading
 
     /// <summary>Which cycle of this machine this is. It is the trailing component of the idempotency key
     /// (zero-padded to six digits), so a driver that leaves it at 0 for every cycle makes every cycle look
-    /// like a repeat of the same one. This product's inspection path is the one deliberate case: the
+    /// like a repeat of the same one. This product's inspection path is a deliberate exception: the
     /// document format it reads carries no cycle counter, so the counter stays 0 there and
     /// <see cref="SerialNumber"/> is ADDED to the key ahead of it — the counter is not removed — which is
     /// what keeps two boards apart.</summary>
