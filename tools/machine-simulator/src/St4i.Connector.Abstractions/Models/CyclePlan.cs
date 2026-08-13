@@ -23,8 +23,11 @@ namespace St4i.Connector.Abstractions.Models;
 /// reference image for AOI, a synthetic fastening/sensor layout otherwise) — so a web twin can place the
 /// head without knowing pixel dimensions.</param>
 /// <param name="NormalizedY">0..1 position, same convention as <see cref="NormalizedX"/>.</param>
-/// <param name="Result">This step's OWN pass/fail outcome — <c>"OK"</c> or <c>"NG"</c>, the same 2-token
-/// vocabulary <see cref="MeasurementResult.Result"/> already uses — or <see langword="null"/> for a step
+/// <param name="Result">This step's OWN pass/fail outcome — <c>"OK"</c> or <c>"NG"</c>, the two tokens the
+/// simulators that build a plan emit here. That is a SUBSET of
+/// <see cref="MeasurementResult.Result"/>'s vocabulary, which also admits <c>"NTF"</c> (see its own doc
+/// comment); this line previously called the two "the same 2-token vocabulary", which was wrong about the
+/// other member rather than about this one. Or <see langword="null"/> for a step
 /// with no pass/fail concept (IOT_SENSOR telemetry has no verdict, mirroring
 /// <see cref="DeviceReading.Verdict"/>'s own <see cref="Verdict.Skip"/> convention for that reading
 /// kind).</param>

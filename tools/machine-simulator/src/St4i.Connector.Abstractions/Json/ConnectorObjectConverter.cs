@@ -112,6 +112,26 @@ public sealed class ConnectorObjectConverter : JsonConverter<object?>
 {
     private static readonly char[] FloatingPointMarkerChars = ['.', 'e', 'E'];
 
+    /// <summary>
+    /// Reads one JSON token of this converter's domain back into a CLR primitive: a null/true/false token
+    /// into <see langword="null"/>/<see langword="bool"/>, a string token into <see langword="string"/>
+    /// unconditionally (never reinterpreted as a number, even when its contents look numeric), and a number
+    /// token into <see langword="long"/> when <see cref="Utf8JsonReader.TryGetInt64"/> accepts it (decision
+    /// (a) — that succeeds only for a token with no decimal-point/exponent marker) and
+    /// <see langword="double"/> otherwise.
+    /// </summary>
+    /// <param name="reader">The reader, positioned on the token to convert.</param>
+    /// <param name="typeToConvert">Unused — this converter is registered for <see cref="object"/> and its
+    /// behaviour depends only on the token in front of it.</param>
+    /// <param name="options">Unused — every decision this converter makes is its own, not inherited from
+    /// the surrounding options.</param>
+    /// <returns>The CLR value for the token: <see langword="null"/>, <see langword="bool"/>,
+    /// <see langword="string"/>, <see langword="long"/> or <see langword="double"/>.</returns>
+    /// <exception cref="JsonException">The token is out of domain — an array or an object (decision (b)) —
+    /// or is a number this converter refuses to manufacture a value for: one that overflows to a non-finite
+    /// <see cref="double"/> (symmetric with <see cref="Write"/>'s own NaN/Infinity rejection), or one
+    /// neither <see cref="Utf8JsonReader.TryGetInt64"/> nor <see cref="Utf8JsonReader.TryGetDouble"/> can
+    /// read at all. Any other token type is refused the same way, by name.</exception>
     public override object? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         switch (reader.TokenType)
@@ -172,6 +192,25 @@ public sealed class ConnectorObjectConverter : JsonConverter<object?>
         }
     }
 
+    /// <summary>
+    /// Writes one CLR value of this converter's accepted write-domain — <see langword="null"/>,
+    /// <see langword="bool"/>, <see langword="string"/>, any standard CLR integral primitive (all widened
+    /// to <see langword="long"/>), <see langword="float"/> and <see langword="double"/> (both written
+    /// through the same floating-point path). A floating-point value always gets a decimal-point/exponent
+    /// marker forced into its text, even when its value is whole, so that <see cref="Read"/> reads it back
+    /// as a <see langword="double"/> rather than as an integer (decision (a)).
+    /// </summary>
+    /// <param name="writer">The writer to emit the value to.</param>
+    /// <param name="value">The value to write; anything outside the domain above is refused rather than
+    /// coerced.</param>
+    /// <param name="options">Unused — every decision this converter makes is its own, not inherited from
+    /// the surrounding options.</param>
+    /// <exception cref="JsonException">The value is outside the accepted write-domain (decision (b)), or is
+    /// inside it in CLR type but not representable without loss: a <see cref="decimal"/>, a
+    /// <see cref="ulong"/> above <see cref="long.MaxValue"/>, or a non-finite
+    /// <see cref="double"/>/<see cref="float"/>. 🔴 Throwing here aborts serialization of the WHOLE object
+    /// graph, not just this one value — see this class's own doc comment on decision (b)'s blast
+    /// radius.</exception>
     public override void Write(Utf8JsonWriter writer, object? value, JsonSerializerOptions options)
     {
         switch (value)

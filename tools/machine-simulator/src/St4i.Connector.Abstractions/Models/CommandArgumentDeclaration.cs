@@ -11,12 +11,44 @@ namespace St4i.Connector.Abstractions.Models;
 /// </summary>
 public enum CommandArgumentType
 {
+    /// <summary>A JSON boolean. <see cref="CommandArgumentDeclaration.TryNarrow"/> accepts only a CLR
+    /// <see langword="bool"/> and produces one. Not numeric, so a declared
+    /// <see cref="CommandArgumentDeclaration.Min"/>/<see cref="CommandArgumentDeclaration.Max"/> is a
+    /// schema error — see <see cref="CommandArgumentDeclaration.ValidateSelf"/>.</summary>
     Bool,
+
+    /// <summary>A 16-bit signed integer. <see cref="CommandArgumentDeclaration.TryNarrow"/> accepts only
+    /// an integral JSON number (a CLR <see langword="long"/>), range-checks it against
+    /// <see cref="CommandArgumentDeclaration.IntegralRange"/>, and produces a CLR
+    /// <see langword="short"/>.</summary>
     Int16,
+
+    /// <summary>A 16-bit unsigned integer — the width of one Modbus register, which is one of the two
+    /// scoped protocols this enum's own doc comment names. Narrows exactly like <see cref="Int16"/>,
+    /// producing a CLR <see langword="ushort"/>.</summary>
     UInt16,
+
+    /// <summary>A 32-bit signed integer. Narrows exactly like <see cref="Int16"/>, producing a CLR
+    /// <see langword="int"/>.</summary>
     Int32,
+
+    /// <summary>A 32-bit unsigned integer. Narrows exactly like <see cref="Int16"/>, producing a CLR
+    /// <see langword="uint"/>.</summary>
     UInt32,
+
+    /// <summary>A double-precision number. The one type
+    /// <see cref="CommandArgumentDeclaration.TryNarrow"/> WIDENS into: an integral JSON number is accepted
+    /// as well as a fractional one (the reverse never happens). Non-finite values are refused, and it has
+    /// no representable-range check of its own — only a declared
+    /// <see cref="CommandArgumentDeclaration.Min"/>/<see cref="CommandArgumentDeclaration.Max"/>, if the
+    /// declaration carries one.</summary>
     Double,
+
+    /// <summary>A JSON string. <see cref="CommandArgumentDeclaration.TryNarrow"/> accepts only a CLR
+    /// <see langword="string"/> and produces one — a numeric-looking string is never reinterpreted as a
+    /// number. Not numeric, so a declared
+    /// <see cref="CommandArgumentDeclaration.Min"/>/<see cref="CommandArgumentDeclaration.Max"/> is a
+    /// schema error, same as <see cref="Bool"/>.</summary>
     String,
 }
 
