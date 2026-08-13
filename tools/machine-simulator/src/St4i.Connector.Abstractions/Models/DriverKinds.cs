@@ -39,10 +39,23 @@ namespace St4i.Connector.Abstractions.Models;
 /// </summary>
 public static class DriverKinds
 {
+    /// <summary>The id of the built-in <c>SimulatedDriver</c>. The ONE built-in whose readings are
+    /// fabricated rather than read off a real device — <see cref="IsFabricated"/> is the single call path
+    /// that decides that, and this is the only id it answers <see langword="true"/> for.</summary>
     public const string Simulated = "Simulated";
+
+    /// <summary>The id of the built-in <c>HotFolderAoiDriver</c>, which reads inspection documents a
+    /// machine drops into a watched folder.</summary>
     public const string HotFolderAoi = "HotFolderAoi";
+
+    /// <summary>The id of the built-in <c>MqttDriver</c>, which subscribes to a broker.</summary>
     public const string Mqtt = "Mqtt";
+
+    /// <summary>The id of the built-in Modbus drivers (<c>ModbusTcpDriver</c>, and the RTU driver that
+    /// shares this id) — ONE id for the protocol, not one per transport.</summary>
     public const string Modbus = "Modbus";
+
+    /// <summary>The id of the built-in <c>OpcUaDriver</c>.</summary>
     public const string OpcUa = "OpcUa";
 
     /// <summary>Every built-in id, in the exact casing every built-in driver/roster/wire value must use.

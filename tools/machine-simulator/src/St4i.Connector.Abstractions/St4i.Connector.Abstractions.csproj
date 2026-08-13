@@ -10,5 +10,19 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- N-2 (.superpowers/sdd/abstractions-documented/task-1-brief.md), completing N-1's scope — the
+         compiler parses this project's `///` blocks and resolves every symbol they name. Set per-project
+         on purpose: Directory.Build.props carries the scope, the measured price for all fifteen projects,
+         and why the remaining eight are an owner decision rather than an implementer one.
+
+         WHY THIS ROW WAS THE ONE TO MOVE, and it is N-1's own argument, not a new one: this is the only
+         documented surface in this tree with readers OUTSIDE this organisation — the contract a
+         third-party driver author compiles against and reads first (zero PackageReference, zero
+         ProjectReference, deliberately, so they can). N-1 selected its six by what the coverage assertion
+         COST, named that as the honest weakness of its own scope, and left this row unguarded. The bill
+         here — 95 doc comments, measured and re-measured before it was paid — was written, not
+         suppressed; its parse/resolve column was already zero because N-1 fixed all 16 sites here while
+         the switch was still off, precisely so this stayed a one-property change. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 </Project>
