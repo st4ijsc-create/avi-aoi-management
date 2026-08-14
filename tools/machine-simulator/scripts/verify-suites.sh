@@ -2517,6 +2517,375 @@ testhost_cpu_seconds() {
     2>/dev/null | tr -d '\r' | head -1
 }
 
+# ══ WHAT A BUILD SERVER IS — ONE DEFINITION, TWO READERS (task P-1) ═════════════════════════════
+# 🔴 The predicate below is UNCHANGED, character for character, from the one that used to live inline
+# in `build_node_sample`. All the reasoning for every clause of it — why it matches on what a process
+# IS rather than what it is called, why `rzc.dll` stays in a repo with no Razor, and why a NULL
+# CommandLine must COUNT rather than fail open — is in the trap block at the settle poll below, which
+# is still its home. It is hoisted here for exactly one reason: P-1 adds a SECOND reader of the same
+# population (the census below), and two copies of this matcher is the drift this file has already
+# paid for. Trap 7's first rewrite dropped the Razor server and failed open on a null command line;
+# both were found by asking "does the new matcher miss anything". A copy that a future fix reaches
+# and a copy it does not is that same defect with a delay fuse on it. One string, interpolated twice.
+BUILD_SERVER_WHERE="Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe' OR Name='VBCSCompiler.exe'\" | Where-Object { \$null -eq \$_.CommandLine -or \$_.CommandLine -match 'MSBuild\.dll|VBCSCompiler|rzc\.dll' }"
+
+# ══ THE CENSUS — the instrument this script did not have (task P-1, §8.1(h7)) ═══════════════════
+#
+# WHAT WAS MISSING. The settle poll below produces a COUNT. A count cannot answer the only question
+# a non-zero reading actually raises, which is WHOSE. The old failure text answered it anyway, by
+# assertion — "a population this script created" — and that sentence is FALSE for the population it
+# was written about. This is §8.1(f) in this script's own voice: the instrument stood in the position
+# of its AUTHOR (inside this script's process tree, where every build server plausibly is ours) and
+# inherited its domain from there instead of deriving it from the question.
+#
+# 🔴 WHAT THE NEW READING STANDS ON, and it is deliberately not a position. Two axes, both properties
+# of the process rather than of the observer:
+#
+#   1. THE FLAG THE PROCESS CARRIES. This script declares node reuse OFF twice — the export at the
+#      top of the file and the inline prefix on the build line. MEASURED, both directions, on this
+#      tree (P-1):
+#        * a rebuild under THIS script's posture spawns 14 worker nodes carrying `/nodeReuse:false`,
+#          and they are GONE the moment the build ends — the resident population it leaves is one
+#          VBCSCompiler and nothing else;
+#        * the same rebuild with the variable unset spawns 14 carrying `/nodeReuse:true`, and all 14
+#          are STILL RESIDENT minutes later, because that is what node reuse means.
+#      So `/nodeReuse:true` on a live process is not a hint about provenance, it is a proof of
+#      exclusion: this script cannot have started it. That is the divergence §8.1(h7) says nothing
+#      here could read, and reading it is most of this task.
+#   2. WHETHER IT WAS ALREADY THERE. The census taken before this script's FIRST action fixes a PID
+#      set that no later behaviour of this script can alter. A survivor in that set was inherited; a
+#      survivor outside it arrived while this run was going.
+#
+# 🔴 AND THE LIMITS, stated here rather than left to be discovered, because both are real:
+#   * PIDs are reused by the OS. A recycled PID could make a new process look inherited. Windows does
+#     not recycle aggressively over a gate run's lifetime, but this is a heuristic on the "was it
+#     already there" axis — the FLAG axis has no such weakness and is the one that carries the claim.
+#   * A census is TWO INSTANTS, not a watcher. A foreign build that starts and finishes between two
+#     readings is invisible to it, exactly like the appear-and-vanish hole the settle poll names for
+#     itself and the credential bracket names for itself. Closing that needs a watcher; this is not
+#     one, and pretending otherwise is how the last three instruments in this file got their domains
+#     wrong.
+#
+# 🔴 A THIRD LIMIT, STATED HERE WITH THE OTHER TWO RATHER THAN IN A REPORT (P-1 fix round 2). NONE of
+# this file's PowerShell call sites carries a timeout -- not this census, not `build_node_sample`, not
+# `testhost_cpu_seconds`. A PowerShell that HANGS rather than failing is therefore not "unreadable", it
+# is "not yet answered", and it stalls whatever is waiting on it. That is a PRE-EXISTING class and it is
+# deliberately not fixed here: a timeout changes what "unreadable" MEANS to the settle poll, which is an
+# assertion, so it is a new mechanism that needs its own control pair and its own task. Recorded in the
+# file, next to the code it constrains, because a limit that lives only in a task report is a limit the
+# next reader does not have.
+#
+# Emits ONE line: "<count> <comma-separated pids, or -> <reuseTrue>,<reuseFalse>,<noToken>,<unreadable>"
+# An unreadable sample emits NOTHING, and every caller must treat empty as "cannot tell" — never as 0.
+# That rule is borrowed from the CPU detector and the settle poll for the third time in this file:
+# an absent measurement that reads as a healthy one is the shape of every trap in the header.
+build_server_census() {
+  powershell -NoProfile -NonInteractive -Command \
+    "\$p = @(${BUILD_SERVER_WHERE}); \$t=0; \$f=0; \$n=0; \$u=0; foreach (\$q in \$p) { if (\$null -eq \$q.CommandLine) { \$u++ } elseif (\$q.CommandLine -match '/nodeReuse:[Tt]rue') { \$t++ } elseif (\$q.CommandLine -match '/nodeReuse:[Ff]alse') { \$f++ } else { \$n++ } }; \$ids = if (\$p.Count -gt 0) { (\$p | ForEach-Object { \$_.ProcessId }) -join ',' } else { '-' }; Write-Output \"\$(\$p.Count) \$ids \$t,\$f,\$n,\$u\"" \
+    2>/dev/null | tr -d '\r' | head -1
+}
+
+# ══ THE SHUTDOWN, WITH ITS EVIDENCE KEPT (task P-1) ═════════════════════════════════════════════
+#
+# 🔴 WHAT THIS REPLACES AND WHY. Both calls used to be `>/dev/null 2>&1 || true`, which discards the
+# output AND the exit code. That collapses THREE different machine states into one silence:
+#   (a) the command FAILED;
+#   (b) the command SUCCEEDED AND REMOVED NOTHING;
+#   (c) the command succeeded and did its job.
+# (b) is not hypothetical and it is not rare. MEASURED (P-1), at PID level, from this script's exact
+# posture: with a foreign multi-project build IN FLIGHT, `dotnet build-server shutdown` printed
+# "MSBuild server shut down successfully", exited 0, and 14 of the 15 resident processes came out the
+# other side WITH THE SAME PIDS. The one that changed was the VBCSCompiler, replaced by the foreign
+# build itself. Zero MSBuild nodes were terminated by a command that reported success and was believed.
+# Those 14 then persist, because they carry `/nodeReuse:true`, and the settle poll below reads them —
+# correctly — as a STABLE non-zero population, and the old text blamed this script's own build for them.
+#
+# The same command against the same population when it is IDLE removes all of it (measured twice:
+# 27 -> 0, exit 0, with the full per-process before/after census on file -- 26 x /nodeReuse:true plus a
+# VBCSCompiler in, nothing out). So "the command is broken" is refuted, and so is "the command ignores
+# a pre-existing population" — the discriminator is whether a foreign build holds those nodes AT THE
+# INSTANT OF THE CALL, which is a property of the machine and not of this script.
+#
+# So: keep the log, keep the exit code, and take a census on BOTH sides so the three states above are
+# three different sentences. Sets SD_* for the caller to read.
+#
+# 🔴 THIS IS A CENSUS, NOT A POLL, AND THE DIFFERENCE IS THE WHOLE COST ARGUMENT. What the note at the
+# settle poll refused to add here was a POLL — a settle loop, three readings and two sleeps, ~4.9 s
+# floor on every run. This is two instantaneous readings, ~0.29 s each, and it waits for nothing. The
+# refusal was about the wait; it was never about the evidence.
+build_server_shutdown() {
+  local label="${1:?label}"
+  local log="$LOGDIR/build-server-shutdown-$label.log"
+  local before after rest p
+
+  before=$(build_server_census)
+  dotnet build-server shutdown > "$log" 2>&1
+  SD_RC=$?
+  after=$(build_server_census)
+  SD_LOG="$log"
+
+  SD_BEFORE_COUNT=""; SD_BEFORE_PIDS=""; SD_BEFORE_POSTURE=""
+  SD_AFTER_COUNT="";  SD_AFTER_PIDS="";  SD_AFTER_POSTURE=""
+  if [[ -n "$before" ]]; then
+    SD_BEFORE_COUNT="${before%% *}"; rest="${before#* }"
+    SD_BEFORE_PIDS="${rest%% *}";    SD_BEFORE_POSTURE="${rest#* }"
+  fi
+  if [[ -n "$after" ]]; then
+    SD_AFTER_COUNT="${after%% *}";   rest="${after#* }"
+    SD_AFTER_PIDS="${rest%% *}";     SD_AFTER_POSTURE="${rest#* }"
+  fi
+
+  # Survivors: the processes that were there BEFORE the call and are still there AFTER it. This is
+  # the whole point -- a count that happens to be equal on both sides would also be produced by
+  # "killed 14, gained 14", which is a different machine and a different bug.
+  SD_SURVIVOR_PIDS=""; SD_SURVIVOR_COUNT=0
+  for p in ${SD_BEFORE_PIDS//,/ }; do
+    [[ "$p" == "-" || -z "$p" ]] && continue
+    case ",${SD_AFTER_PIDS}," in
+      *",$p,"*) SD_SURVIVOR_PIDS="${SD_SURVIVOR_PIDS}${SD_SURVIVOR_PIDS:+,}$p"
+                SD_SURVIVOR_COUNT=$((SD_SURVIVOR_COUNT + 1)) ;;
+    esac
+  done
+
+  if [[ $SD_RC -ne 0 ]]; then
+    SD_VERDICT="FAILED"
+    SD_DETAIL="exit ${SD_RC} -- the command itself failed; see ${log}"
+  elif [[ -z "$SD_BEFORE_COUNT" || -z "$SD_AFTER_COUNT" ]]; then
+    # Never read an absent census as a clean one. This does not fail the run on its own: the settle
+    # poll below is the assertion on the population and it already refuses to settle on an unreadable
+    # sample. What this must not do is report a reassuring word it did not measure.
+    #
+    # 🔴 THAT IS A DEPENDENCY, NOT AN OBSERVATION, AND IT IS LOAD-BEARING (P-1 fix round 2). Not
+    # failing here is only legitimate BECAUSE `build_node_sample` returning empty forces
+    # `_bn_stable=0`, never settles, and FAILs the run -- so there is no path on which an
+    # unmeasurable population lets this gate go green. IF A FUTURE TASK EVER LETS THAT POLL DEGRADE
+    # GRACEFULLY ON UNREADABLE SAMPLES, THIS BRANCH SILENTLY BECOMES THE FORBIDDEN
+    # skip-when-unmeasurable. Whoever touches the poll's empty-sample handling owns this line too.
+    SD_VERDICT="UNMEASURED"
+    SD_DETAIL="exit ${SD_RC}, but the population could not be read (PowerShell absent or refusing) -- cannot tell what it did"
+  elif [[ "$SD_BEFORE_COUNT" == "0" ]]; then
+    SD_VERDICT="NOTHING-TO-DO"
+    SD_DETAIL="exit 0, 0 resident before the call -- nothing to shut down"
+  elif [[ $SD_SURVIVOR_COUNT -eq 0 ]]; then
+    SD_VERDICT="EFFECTIVE"
+    SD_DETAIL="exit 0, ${SD_BEFORE_COUNT} -> ${SD_AFTER_COUNT}, none of the ${SD_BEFORE_COUNT} survived"
+  else
+    SD_VERDICT="NO-EFFECT"
+    SD_DETAIL="exit 0 AND IT REPORTED SUCCESS, but ${SD_SURVIVOR_COUNT} of ${SD_BEFORE_COUNT} resident process(es) came out with the SAME PIDs (${SD_SURVIVOR_PIDS}); ${SD_BEFORE_COUNT} -> ${SD_AFTER_COUNT}"
+  fi
+  SD_DETAIL="${SD_VERDICT}: ${SD_DETAIL} [posture before ${SD_BEFORE_POSTURE:-?}, after ${SD_AFTER_POSTURE:-?}; reuse:true,reuse:false,no-token,unreadable]"
+}
+
+# ══ WHOSE ARE THEY (task P-1) ═══════════════════════════════════════════════════════════════════
+# Prints an indented provenance block for the population resident RIGHT NOW, on the two failure paths
+# that have a population to explain. Both axes are described at the census above; this is where they
+# are turned into sentences.
+#
+# 🔴 WHY THIS IS ONLY ON THE FAILURE PATHS, since trap 9 says every number is asserted or deleted and
+# this one is neither. On a passing run the settled population is ZERO, so there is no posture to
+# report and no provenance to attribute -- the block would print four zeroes and mean nothing. The
+# numbers it does print are read BY A HUMAN ALONGSIDE A VERDICT that has already been decided by the
+# settle poll, which is the one use trap 9 explicitly allows. And the reason the gate-entry population
+# is NOT itself asserted is trap 7: an inherited population is normal and harmless -- the pre-build
+# shutdown clears it, measured 27 -> 0 with a full per-process census -- so failing on it would red
+# every run made with an editor open, which is precisely the crying-wolf failure this file has now
+# paid for three times.
+attribute_build_servers() {
+  local census rest now_count now_pids now_posture p t f n u entry_known shutdown_known
+  local inherited=0 arrived=0 inh_pids="" arr_pids=""
+  local survived=0 arrived_late=0 surv_pids="" late_pids=""
+  census=$(build_server_census)
+  if [[ -z "$census" ]]; then
+    echo "  WHERE THIS POPULATION CAME FROM: it could not be read at all (PowerShell absent or refusing)."
+    echo "    That is 'cannot tell'. This gate reports it and never waves it through."
+    return
+  fi
+  now_count="${census%% *}"; rest="${census#* }"
+  now_pids="${rest%% *}";    now_posture="${rest#* }"
+  IFS=',' read -r t f n u <<< "$now_posture"
+
+  # 🔴 THE TWO AXES DEGRADE INDEPENDENTLY, AND THE FIRST VERSION OF THIS FUNCTION GOT IT WRONG
+  # (P-1 fix round 1, found by review). `${GATE_ENTRY_PIDS:--}` collapsed two states that are not the
+  # same: "the entry census was never read" and "the entry census was read and the machine was empty".
+  # Both became `-`, every survivor fell to the arrived arm, and the gate printed `INHERITED 0` /
+  # `appeared while this run was going N` WITH FULL CONFIDENCE on a run where it had no baseline.
+  # That is the exact rule stated at `build_server_census` -- "every caller must treat empty as
+  # 'cannot tell', never as 0" -- broken by a caller two functions below it, by the hand that wrote
+  # the rule. It is also §8.1(f) resurfacing inside the instrument built to answer (f): the FLAG axis
+  # reads a property of the process and stands outside this script, but "was it in the set I saw when
+  # I started" is a property of THE OBSERVER'S TIMELINE, and a position-derived instrument fails in
+  # position-derived ways.
+  #
+  # So the arrival axis is refused outright when it has no baseline, and the flag axis is printed
+  # anyway -- it needs no baseline, and it is the axis that carries the exclusion claim.
+  entry_known=1
+  [[ -z "${GATE_ENTRY_PIDS:-}" ]] && entry_known=0
+  if [[ $entry_known -eq 1 ]]; then
+    for p in ${now_pids//,/ }; do
+      [[ "$p" == "-" || -z "$p" ]] && continue
+      case ",${GATE_ENTRY_PIDS}," in
+        *",$p,"*) inherited=$((inherited + 1)); inh_pids="${inh_pids}${inh_pids:+,}$p" ;;
+        *)        arrived=$((arrived + 1));     arr_pids="${arr_pids}${arr_pids:+,}$p" ;;
+      esac
+    done
+  fi
+
+  # ══ THE SHUTDOWN-INSTANT AXIS -- A THIRD AXIS, BECAUSE TWO WAS THE WRONG NUMBER ═══════════════
+  # 🔴 THE DEFECT THIS FIXES, RECORDED BECAUSE IT IS THE SUBTLEST ONE IN THIS FILE'S NEW CODE
+  # (P-1 fix round 2, found by review). The block used to end by telling the operator that the
+  # `appeared while this run was going` count was what separated SURVIVAL from ARRIVAL. IT IS NOT.
+  # That count is keyed on GATE ENTRY; SURVIVAL and ARRIVAL are decided at THE SHUTDOWN INSTANT.
+  # Those are two different moments, and everything a foreign build spawns BETWEEN them is a
+  # SURVIVAL case that the entry axis reports as an arrival.
+  #
+  # It is not a hypothetical: the control pair filed as this block's OWN evidence is exactly that
+  # run -- 7 of 8 came out with the SAME PIDs (SURVIVAL) while the entry axis printed
+  # `INHERITED 0 / appeared 8`. An operator following the old sentence read 8/8 arrived, took the
+  # ARRIVAL remedy, and would have gone looking for a spawner to stop while the true remedy was to
+  # WAIT for a build that was already finishing. A discriminator that points at the wrong instant is
+  # worse than none, because it is confident.
+  #
+  # So the split is COMPUTED here rather than left as arithmetic for a human to do across two
+  # printed lines. The author of the old sentence did that arithmetic by hand for the comment beside
+  # it and got the number INVERTED (wrote "1 survivor of 8" for a capture showing 7) -- which is the
+  # argument for computing it, made by the person who most wanted to believe he could do it by eye.
+  #
+  # 🔴 AND IT CARRIES ITS OWN EMPTY-VS-UNKNOWN GUARD, because that is the exact bug round 1 fixed on
+  # the entry axis and it would otherwise reappear here verbatim: an empty POST_SHUTDOWN_SURVIVORS
+  # means "measured, and nothing survived" when the verdict is EFFECTIVE or NOTHING-TO-DO, and it
+  # means "we never found out" when the verdict is UNMEASURED. The VERDICT is what separates them,
+  # so the verdict is what this branches on -- never the emptiness of the list.
+  # 🔴 `FAILED` IS LISTED HERE AND IT IS CURRENTLY UNREACHABLE, WHICH IS THE REASON TO LIST IT
+  # (P-1 fix round 3, found by review). Today a FAILED post-build shutdown never gets this far:
+  # `assert_shutdown_ran` exits the run BEFORE `POST_SHUTDOWN_VERDICT` is even assigned. So the arm
+  # was complete BY ARRANGEMENT -- by the order of two adjacent statements at the call site -- rather
+  # than BY CONSTRUCTION. Swap those two lines, which is a reordering nobody would think twice about,
+  # and a FAILED shutdown reaches this guard, passes it, and yields a COMPUTED SURVIVAL/ARRIVAL SPLIT
+  # DERIVED FROM A COMMAND THAT NEVER RAN. That is a confident number about a call that did not
+  # happen, which is this file's oldest failure shape.
+  #
+  # A guard whose correctness lives in a neighbouring statement's position is not a guard, it is a
+  # coincidence with good manners. This one now stands on its own: every verdict under which the
+  # before-set is not trustworthy is named, whether or not today's control flow can deliver it.
+  shutdown_known=1
+  case "${POST_SHUTDOWN_VERDICT:-}" in
+    ""|UNMEASURED|FAILED) shutdown_known=0 ;;
+  esac
+  if [[ $shutdown_known -eq 1 ]]; then
+    for p in ${now_pids//,/ }; do
+      [[ "$p" == "-" || -z "$p" ]] && continue
+      case ",${POST_SHUTDOWN_SURVIVORS:-}," in
+        *",$p,"*) survived=$((survived + 1));    surv_pids="${surv_pids}${surv_pids:+,}$p" ;;
+        *)        arrived_late=$((arrived_late + 1)); late_pids="${late_pids}${late_pids:+,}$p" ;;
+      esac
+    done
+  fi
+  echo "  WHERE THIS POPULATION CAME FROM -- measured on the live processes, not inferred:"
+  echo "    resident now ......................... ${now_count} (pids ${now_pids})"
+  if [[ $entry_known -eq 1 ]]; then
+  echo "    present at gate entry, before this script acted"
+  echo "                        -> INHERITED ..... ${inherited}${inh_pids:+ (pids ${inh_pids})}"
+  echo "    appeared while this run was going .... ${arrived}${arr_pids:+ (pids ${arr_pids})}"
+  else
+  echo "    arrival axis ......................... NOT ATTRIBUTABLE ON THIS RUN. The gate-entry census"
+  echo "                                           was never read (the pre-build shutdown reported"
+  echo "                                           UNMEASURED), so there is no baseline to ask 'was it"
+  echo "                                           already there'. This is 'cannot tell' -- it is NOT"
+  echo "                                           'nothing was inherited'. The flag axis below is"
+  echo "                                           unaffected: it reads a property of each process and"
+  echo "                                           needs no baseline."
+  fi
+  if [[ $shutdown_known -eq 1 ]]; then
+  echo "    measured at the POST-BUILD SHUTDOWN INSTANT -- this is the SURVIVAL/ARRIVAL split:"
+  echo "      SURVIVAL: still here with the SAME PID across that call"
+  echo "                                       ... ${survived}${surv_pids:+ (pids ${surv_pids})}"
+  echo "      ARRIVAL:  not in that call's before-set, so they started after it"
+  echo "                                       ... ${arrived_late}${late_pids:+ (pids ${late_pids})}"
+  else
+  echo "    SURVIVAL/ARRIVAL split ............... NOT ATTRIBUTABLE ON THIS RUN. The post-build shutdown"
+  echo "                                           reported ${POST_SHUTDOWN_VERDICT:-<never reached>}, so there is no trustworthy"
+  echo "                                           before-set to compare against. 'Cannot tell' -- and"
+  echo "                                           emphatically NOT 'none of them survived'."
+  fi
+  echo "    posture actually carried, vs the posture this script declares TWICE (export + build prefix):"
+  echo "      /nodeReuse:true .................... ${t}  <- CANNOT be this script's. Every node it starts"
+  echo "                                              carries /nodeReuse:false and exits with the build"
+  echo "                                              (measured: 14 spawned, 0 resident afterwards). A live"
+  echo "                                              /nodeReuse:true process came from a build that did"
+  echo "                                              not disable node reuse -- an IDE build host, another"
+  echo "                                              shell, a watch task. Not this run."
+  echo "      /nodeReuse:false ................... ${f}  <- consistent with this script's own build, which"
+  echo "                                              means it should already have exited"
+  echo "      no /nodeReuse token ................ ${n}  <- VBCSCompiler / Razor server. Node reuse does not"
+  echo "                                              govern them; this script's build does leave one"
+  echo "      unreadable command line ............ ${u}  <- cannot tell whose. Counted, never waved through"
+  echo "    shutdown before the rebuild .......... ${PRE_SHUTDOWN_DETAIL:-<not reached>}"
+  echo "    shutdown after the rebuild ........... ${POST_SHUTDOWN_DETAIL:-<not reached>}"
+  echo "  READ IT LIKE THIS, and the states are different people's problems:"
+  echo "    * a shutdown reported FAILED ........ the command did not run to completion. Read its log."
+  echo "      No run during this instrument's construction ever produced it, so it has no measured cause"
+  echo "      to offer you -- which is said here rather than guessed at."
+  echo "    * a shutdown reported NO-EFFECT ..... it printed success, exited 0, and at least one of the"
+  echo "      SAME PIDs came out the other side. TWO PATHS ARE SUFFICIENT, this gate cannot always"
+  echo "      separate them, and the remedy DIFFERS, so both are named:"
+  echo "        (1) SURVIVAL -- nodes busy in another build at the instant of the call are not torn"
+  echo "            down. Measured at PID level, n=3, every trial identical: 15 in, 15 out, 14 of the"
+  echo "            same PIDs, exit 0, while the SAME call did remove the VBCSCompiler."
+  echo "            Remedy: let the other build FINISH, then re-run."
+  echo "        (2) ARRIVAL -- teardown worked and a foreign build started fresh nodes right after it."
+  echo "            Remedy: waiting does NOT help; a live spawner will do it again. STOP it."
+  if [[ $shutdown_known -eq 1 ]]; then
+  echo "      USE THE SURVIVAL/ARRIVAL SPLIT ABOVE to tell them apart -- it is measured at the shutdown"
+  echo "      instant, which is the moment these two differ. Do NOT use the gate-entry axis for this:"
+  echo "      it answers a different question, at a different moment, and anything a foreign build"
+  echo "      spawned BETWEEN gate entry and that shutdown is a SURVIVAL that the entry axis calls an"
+  echo "      arrival. That mistake is on the record in this file's own control pair (7 survivors of 8,"
+  echo "      printed beside 'appeared ... 8'), which is why the split above is computed, not derived."
+  else
+  echo "      YOU CANNOT TELL THEM APART ON THIS RUN. The split that separates them was refused above,"
+  echo "      and the gate-entry axis is NOT a substitute -- it is keyed on a different moment and will"
+  echo "      report a SURVIVAL as an arrival. Re-run with the population readable rather than guessing."
+  fi
+  echo "    * INHERITED > 0 while both shutdowns reported EFFECTIVE .. that combination is INTERNALLY"
+  echo "      INCONSISTENT and is a symptom, not a diagnosis: EFFECTIVE means nothing in the entry set"
+  echo "      survived, so a PID from that set being resident now is a PID-REUSE artefact -- the OS"
+  echo "      handed an old number to a new process. Trust the flag axis, not the label."
+  echo "    * /nodeReuse:false or a self-generated set .. then it IS this run's build, and trap 8 in the"
+  echo "      build gate above is the story to read."
+  echo "  WHAT THIS BLOCK DOES NOT SAY: whether this tree's code is sound. The suites have not run yet."
+  echo "  A NO-EFFECT shutdown and a foreign-looking population tell you THIS RED is not about the code;"
+  echo "  they cannot tell you the code is clean, and this gate will not send you away from a regression"
+  echo "  it never looked for."
+}
+
+# ══ THE ASSERTION ON THE COMMAND ITSELF (task P-1) ══════════════════════════════════════════════
+# The old form's `|| true` was the SECOND half of the discarded evidence, and the note at the settle
+# poll defended only the first: it argued that nothing reads a verdict between the pre-build shutdown
+# and the build, so there is no instant there that can be MIS-MEASURED. That is true, and it is silent
+# about the other half -- if the command FAILS, nothing notices, at either site. It costs one integer
+# to notice, and no wait at all.
+#
+# 🔴 THIS BRANCH HAD NEVER BEEN WALKED WHEN IT SHIPPED, AND THAT IS ITS OWN HAZARD (P-1 fix round 1).
+# No non-zero exit from `dotnet build-server shutdown` was observed in ANY state during this task --
+# not idle, not busy, not against an empty machine. So this is a hard red on a state nobody had
+# produced, which is the shape of trap 7: a path that first executes at the worst possible moment.
+# It is now exercised under control, with a `dotnet` stub that exits non-zero and an otherwise
+# identical run: FAILED classifies, this function exits 1, and the message names the log. The
+# companion UNMEASURED branch is exercised the same way with a `powershell` stub that emits nothing,
+# and it deliberately does NOT fail here -- the settle poll is the assertion on the population, and
+# two hard reds on one property is how a checker starts crying wolf.
+assert_shutdown_ran() {
+  local when="${1:?when}"
+  [[ "$SD_VERDICT" != "FAILED" ]] && return 0
+  echo "FAIL: 'dotnet build-server shutdown' ${when} exited ${SD_RC}."
+  echo "  ${SD_DETAIL}"
+  echo "  This is the state the old '|| true' swallowed. Two things produce it, and the log tells them"
+  echo "  apart: the command ran and failed, OR it never started because its log could not be created"
+  echo "  (bash does not run a command whose redirection fails, and reports 1 for that too)."
+  echo "  Command output: ${SD_LOG}"
+  exit 1
+}
+
 # ── Gate 1: the build. Nothing below is trustworthy until this passes. ───────────
 # Trap 1 and 4. Read the LOG, not the exit code: a locked file can leave a project
 # unrelinked while the overall invocation still reports success.
@@ -2534,7 +2903,36 @@ testhost_cpu_seconds() {
 echo "[1/3] Killing stray test hosts, then rebuilding..."
 taskkill //F //IM testhost.exe //T >/dev/null 2>&1 || true
 taskkill //F //IM vstest.console.exe //T >/dev/null 2>&1 || true
-dotnet build-server shutdown >/dev/null 2>&1 || true
+
+# 🔴 THE BASELINE THIS SCRIPT NEVER TOOK (task P-1). The census inside this call, on its BEFORE side,
+# is the population this run WALKED INTO -- taken before this script has built anything, so nothing
+# in it can be this script's doing. Everything downstream that says the word "inherited" means
+# "was in this set", and that is the only sense in which this script is entitled to use the word.
+build_server_shutdown pre-build
+assert_shutdown_ran "before the rebuild"
+GATE_ENTRY_COUNT="$SD_BEFORE_COUNT"
+GATE_ENTRY_PIDS="$SD_BEFORE_PIDS"
+GATE_ENTRY_POSTURE="$SD_BEFORE_POSTURE"
+PRE_SHUTDOWN_DETAIL="$SD_DETAIL"
+note "build servers at gate entry: ${GATE_ENTRY_COUNT:-unreadable} (posture ${GATE_ENTRY_POSTURE:-?}) -- shutdown ${SD_DETAIL}"
+
+# 🔴 §8.1(h7), AND IT IS THE SMALLEST INSTRUMENT IN THIS FILE: NOTHING HERE EVER READ THE POSTURE
+# THIS SCRIPT DECLARES. Node reuse is refused twice -- the export at the top and the inline prefix on
+# the build line below -- and the redundancy is deliberate (see the K-1 note at the export: the prefix
+# alone left the five `dotnet test` invocations taking whatever posture the OPERATOR happened to have).
+# Two declarations, and until now zero readings of either. This reads the one that is readable.
+# It cannot be flaky and it costs nothing: it fires only if a future edit deletes the export, which is
+# exactly the regression the K-1 note describes and the one that would silently hand the suites back
+# to the caller's environment. The OTHER declaration -- the flag the spawned processes actually carry
+# -- is read by the census, and the two together are the whole of "check the flag this script passes".
+if [[ "${MSBUILDDISABLENODEREUSE:-}" != "1" ]]; then
+  echo "FAIL: this script's declared node-reuse posture is not in effect."
+  echo "  MSBUILDDISABLENODEREUSE is '${MSBUILDDISABLENODEREUSE:-<unset>}', expected '1'."
+  echo "  The export at the top of this file is what puts every child process -- the build AND all five"
+  echo "  suites -- under one posture instead of the caller's. Without it the gate's behaviour depends on"
+  echo "  who ran it, which is the same class as a check that passes for the wrong reason."
+  exit 1
+fi
 
 BUILD_LOG="$LOGDIR/build.log"
 # 🔴 TRAP 8, and it is this script's own cleanup being right once and then never again.
@@ -2557,6 +2955,45 @@ BUILD_LOG="$LOGDIR/build.log"
 # again after the build so the suites do not run under the build's leftovers.
 MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo > "$BUILD_LOG" 2>&1 || true
 
+# 🔴 A SECOND FOREIGN-BUILD FAILURE MODE, RECORDED HERE BECAUSE THIS IS THE BRANCH THAT CATCHES IT AND
+# THIS BRANCH OFFERS NO ADVICE AT ALL (P-1). If you are reading this because the gate just told you the
+# build did not report 0 errors, check the log for these two signatures FIRST, before concluding
+# anything about the tree:
+#     error BG1002: File '...\obj\...\*.baml' cannot be found      [St4iMachineSimulator.csproj]
+#     error CS2001: Source file '...\obj\...\*.g.cs' could not be found   [..._wpftmp.csproj]
+#     error CS2012: Cannot open '...\obj\...\*.dll' for writing ... file may be locked by 'X' (PID)
+# All three are SOMETHING ELSE WRITING THE SAME `obj` DIRECTORY while this script's `-t:Rebuild` ran
+# (the first two are the WPF markup pass losing its generated files mid-flight). MEASURED during P-1:
+# all three were produced on a tree that built clean immediately before and immediately after, with a
+# foreign build active on the same workspace -- the VS Code C# Dev Kit build host, which also produces
+# the resident `/nodeReuse:true` populations the build-node gate below reports. Same root cause,
+# different gate. THE TREE WAS FINE in every case.
+#
+# 🔴 START WITH CS2012 IF YOU SEE IT: alone among the three it NAMES THE PROCESS holding the file. The
+# other two only tell you a file vanished, which reads like a broken tree and is not one. Note also
+# that BG1002 and CS2001 did NOT reproduce on demand -- the CLASS did, every time, by simply running a
+# second build against this tree -- so "I could not reproduce it" is expected here and is not evidence
+# that the tree was at fault.
+#
+# 🔴 WHAT WOULD REFUTE ALL OF THE ABOVE, NAMED SO THAT IT CAN BE (§8.1(b); the exculpation is only
+# worth anything if it ships its own falsifier):
+#     ANY of these three signatures reproducing WITH NO FOREIGN BUILD ACTIVE ON THIS WORKSPACE.
+# Check before you believe this note: no second `dotnet build`/`msbuild`, no IDE build host (the
+# build-node census below names them), no watch task. If it reproduces on a quiet machine, this
+# paragraph is WRONG and the tree is the suspect again -- and note that the population census below
+# is the instrument for "was anything else active", so the two halves of this file check each other.
+#
+# What this exculpation actually rests on -- stated so nobody mistakes it for "it didn't reproduce, so
+# it's fine": a POSITIVE CONTROL. The same tree built clean, 0 errors / 116 warnings, immediately
+# BEFORE and immediately AFTER each occurrence. Non-reproduction of a SIGNATURE is a prediction of the
+# race mechanism, not the evidence of innocence; the clean builds either side are the evidence.
+#
+# 🔴 AND DO NOT REACH FOR THE MSB3061 ADVICE BELOW: that branch says "kill stray test hosts and re-run",
+# and it is UNREACHABLE for this mode -- a build that reports errors exits HERE first. So this failure
+# arrives with the error greps, a log path, and nothing that names a foreign builder. That silence is
+# why this note exists rather than a check: instrumenting it is a NEW build-gate assertion, it needs its
+# own control pair, and P-1's brief barred both remedies that would otherwise apply (relaxing an
+# assertion, and killing processes this gate does not own -- trap 7(j)). Recorded, not fixed.
 if ! grep -qE '^ *0 Error\(s\)' "$BUILD_LOG"; then
   echo "FAIL: build did not report 0 errors. Refusing to read any test count."
   grep -E 'error |Error\(s\)' "$BUILD_LOG" | head -20
@@ -2705,7 +3142,27 @@ fi
 # while the suites run. Measured before this line existed: 14 processes, 1955 MB, alive through
 # all five suites. Report what the suites are actually running underneath, so the next person
 # reading a machine-wide failure has the number instead of a hypothesis.
-dotnet build-server shutdown >/dev/null 2>&1 || true
+#
+# 🔴 P-1: this call's BEFORE census is also the answer to "did the build leave anything", which is a
+# question this script asked in prose for eight tasks and never measured. MEASURED on this tree: under
+# the posture above, one full `-t:Rebuild` leaves exactly ONE resident process, a VBCSCompiler, and no
+# MSBuild worker node at all -- the 13-plus population the trap-8 note records was measured BEFORE the
+# export existed, and it is what a build WITHOUT this posture still leaves today (14, measured).
+build_server_shutdown post-build
+assert_shutdown_ran "after the rebuild"
+POST_BUILD_COUNT="$SD_BEFORE_COUNT"
+POST_BUILD_POSTURE="$SD_BEFORE_POSTURE"
+POST_SHUTDOWN_DETAIL="$SD_DETAIL"
+# 🔴 THE SURVIVOR LIST IS BACK, AND THE ROUND TRIP IS THE LESSON (P-1, rounds 1 and 2).
+# Round 1 DELETED this variable, correctly: it was assigned and never read, which is trap 9 committed in
+# the same change that quotes trap 9's rule at two other sites. Round 2 reinstates it because it now has
+# a READER -- `attribute_build_servers` needs it to separate SURVIVAL from ARRIVAL, and that separation
+# is the thing the NO-EFFECT guidance sends an operator to act on. Trap 9's rule is "asserted or
+# deleted", not "never computed": the difference between the two rounds is whether anything consumes it.
+# The VERDICT travels with the list on purpose -- see the empty-vs-unknown note in the attribution block.
+POST_SHUTDOWN_VERDICT="$SD_VERDICT"
+POST_SHUTDOWN_SURVIVORS="$SD_SURVIVOR_PIDS"
+note "build servers left by the build: ${POST_BUILD_COUNT:-unreadable} (posture ${POST_BUILD_POSTURE:-?}) -- shutdown ${SD_DETAIL}"
 # 🔴 TRAP 7 AGAIN, IN A NEW COSTUME — a checker that cries wolf, found by the first task that ran
 # under it. This counted processes BY NAME (`Get-Process dotnet`), and VS Code's C# Dev Kit language
 # server is also `dotnet.exe`. So the assertion below failed whenever the repository was merely OPEN
@@ -2744,9 +3201,14 @@ dotnet build-server shutdown >/dev/null 2>&1 || true
 #       started elevated was counted by the old name-based matcher and skipped silently by the new
 #       one. Null now counts as a hit: this check may cry wolf on an unreadable process, and must
 #       never wave one through.
+# 🔴 P-1 moved the predicate itself into BUILD_SERVER_WHERE, above the build gate, and changed NOT ONE
+# CHARACTER of it -- verified by diffing the expanded command against the old literal. It is shared
+# with the census because a second copy is a matcher that a future fix reaches only half of, and the
+# two false negatives recorded above are what that costs. Everything this comment block says about
+# WHY the predicate is shaped this way still governs it; only its storage moved.
 build_node_sample() {
   powershell -NoProfile -NonInteractive -Command \
-    "(Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe' OR Name='VBCSCompiler.exe'\" | Where-Object { \$null -eq \$_.CommandLine -or \$_.CommandLine -match 'MSBuild\.dll|VBCSCompiler|rzc\.dll' } | Measure-Object).Count" \
+    "(${BUILD_SERVER_WHERE} | Measure-Object).Count" \
     2>/dev/null | tr -d '\r' | head -1
 }
 
@@ -2809,12 +3271,22 @@ build_node_sample() {
 #     false red costs a whole gate run.
 #
 # 🔴 THE SYMMETRIC SITE, NAMED RATHER THAN LEFT SILENT (§8.1(h4)): `dotnet build-server shutdown` is called
-# TWICE in this script — once at [1/3] before the rebuild, once above. The first one is DELIBERATELY NOT
-# POLLED. No verdict is read from it: nothing samples the population between it and the build, so there is
-# no instant there that can be measured wrongly. What that shutdown is for — the build not running under a
-# previous run's leftovers — is asserted by the build's own gates instead (0 errors, and the MSB3061 check
-# that catches exactly the "a live process held our output files" outcome). Adding a poll there would buy
-# no assertion and would cost every run the wait.
+# TWICE in this script — once at [1/3] before the rebuild, once above. The first one is STILL DELIBERATELY
+# NOT POLLED, for the reason this note has always given: no verdict is read from it, nothing samples the
+# population between it and the build, so there is no instant there that can be measured wrongly. What that
+# shutdown is for — the build not running under a previous run's leftovers — is asserted by the build's own
+# gates instead (0 errors, and the MSB3061 check that catches exactly the "a live process held our output
+# files" outcome). Adding a POLL there would buy no assertion and would cost every run the wait.
+#
+# 🔴 P-1 CORRECTED THE HALF OF THAT ARGUMENT THAT WAS NEVER TRUE, and it is worth being precise about
+# which half. Everything above is about MIS-MEASURING, and it is right. It was silent about the other
+# direction: IF THE COMMAND FAILS, NOTHING NOTICED — at either site, because both were
+# `>/dev/null 2>&1 || true`, which throws away the output and the exit code together. "No verdict is read
+# from it" was offered as the reason not to measure, and it was in fact a description of the defect.
+# BOTH sites now keep the log, assert the exit code, and take a CENSUS on each side. A census is not a
+# poll: two instantaneous readings, ~0.29 s each, no wait, no settle loop, no tolerance. The refusal above
+# was always about the ~4.9 s floor of the poll; it was never about the evidence, and conflating the two
+# is what let a discarded exit code sit next to a paragraph explaining why it was fine.
 #
 # 🔴 TRAP 9 STILL APPLIES: the settled number is ASSERTED, and the series below it is printed for a human
 # to read alongside the verdict. EVERY number this script computes is either asserted or deleted.
@@ -2863,6 +3335,7 @@ if [[ $_bn_settled -eq 0 ]]; then
   echo "  a check that cannot measure must fail, not skip."
   echo "  Something is spawning or reaping build servers continuously: another gate run (this script is NOT"
   echo "  re-entrant -- see trap 1 at the build gate), an IDE build, or a watch task. Stop it and re-run."
+  attribute_build_servers
   exit 1
 fi
 
@@ -2872,9 +3345,18 @@ if [[ "${BUILD_NODES:-}" != "$EXPECT_BUILD_NODES" ]]; then
   echo "  expected ${EXPECT_BUILD_NODES}. Readings: ${BUILD_NODE_SERIES}"
   echo "  This is a SETTLED count, not a snapshot taken mid-teardown: it stopped moving and it is not zero,"
   echo "  so 'try again, it was probably draining' is exactly what this reading rules out."
-  echo "  The suites would run under a population this script created (measured once at 14 processes /"
-  echo "  1955 MB), which is machine-wide memory pressure in the same window as the memory-sensitive part"
-  echo "  of this run. Trap 8 in the build gate above is the story."
+  echo "  The suites would run underneath it, which is machine-wide memory pressure in the same window as"
+  echo "  the memory-sensitive part of this run. For a sense of SCALE only: a population of this kind was"
+  echo "  once measured at 14 processes / 1955 MB -- that figure sized a SELF-CREATED, pre-export"
+  echo "  population (trap 8) and is not a claim about where THIS one came from; see the block below."
+  # 🔴 P-1 DELETED A SENTENCE THAT WAS FALSE. This used to say the suites "would run under a population
+  # THIS SCRIPT CREATED", unconditionally, as the explanation for every non-zero reading. It is an
+  # attribution the gate never measured and, for the run that motivated this task, it was simply wrong:
+  # the resident processes carried /nodeReuse:true, which this script cannot produce. A checker that
+  # names the wrong culprit sends its reader to rewrite the wrong file, and this file's own history has
+  # four tasks carrying forward a diagnosis that a remedy had manufactured. So the culprit is measured
+  # now, and the block below is the measurement rather than the story.
+  attribute_build_servers
   exit 1
 fi
 echo "[2/3] Running ${#SUITES[@]} suites sequentially..."
