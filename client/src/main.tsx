@@ -1,5 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { isUnauthorizedError } from "@/lib/authRedirect";
+import { mapTrpcError } from "@/lib/trpcErrors";
+import { toast } from "sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -55,6 +57,23 @@ queryClient.getMutationCache().subscribe(event => {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
     console.error("[API Mutation Error]", error);
+
+    /**
+     * F11 (nhóm C 2026-08-14) — LƯỚI CUỐI cho mutation không tự xử lý lỗi.
+     *
+     * Đo được: 248/910 lời gọi `useMutation` KHÔNG khai `onError`. Với chúng, người dùng
+     * bấm nút, việc hỏng, và **không có gì xảy ra trên màn hình** — trước đây chỉ có một
+     * dòng `console.error` mà không ai mở DevTools để đọc. Im lặng không bao giờ là hành
+     * vi đúng cho một thao tác do chính người dùng khởi động.
+     *
+     * ⚠ Chỉ bắn khi mutation KHÔNG có `onError` riêng. 662 chỗ đã tự hiện thông báo
+     *   (phần lớn qua `mapTrpcError`) — bắn thêm ở đó là toast ĐÔI, một hồi quy.
+     * ⚠ Không bắn khi đang điều hướng về trang đăng nhập: người dùng sắp rời trang,
+     *   một toast nháy rồi biến mất chỉ gây nhiễu.
+     */
+    if (!event.mutation.options.onError && !isUnauthorizedError(error)) {
+      toast.error(mapTrpcError(error));
+    }
   }
 });
 
