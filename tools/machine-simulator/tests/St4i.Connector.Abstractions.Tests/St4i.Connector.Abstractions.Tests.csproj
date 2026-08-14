@@ -48,6 +48,29 @@
              both are written down. -->
     <Compile Include="..\Shared\RealCredentialStoreLeakGuard.cs" Link="RealCredentialStoreLeakGuard.cs" />
   </ItemGroup>
+  <!-- 🔴 TASK P-2 (.superpowers/sdd/enum-spelling-witnessed/task-1-brief.md) — EnumSpellingContractTests.cs
+       is committed IN this project (no <Compile Include> needed; the default glob picks it up) and it WIDENS
+       the source-tree dependency K-1 declared above, so the cost is recorded here beside K-1's rather than
+       left for a reader to discover.
+
+       WHAT IT ADDS, and the assembly boundary is NOT among it:
+         * ASSEMBLY boundary: UNTOUCHED, exactly as K-1's guard leaves it. Its usings are System.*, Xunit and
+           this project's one referenced assembly; no ProjectReference, no PackageReference, nothing that can
+           see St4i.EdgeCore or St4i.EngineApi. It reaches those assemblies' files as TEXT, which is the same
+           mechanism ZeroDependencyTests already uses to read this project's own .csproj.
+         * THE SOURCE TREE, WIDER THAN K-1's. K-1's guard reads ONE product source file to derive one
+           directory. This reads web/src (the browser client), src/St4iMachineSimulator (the WPF shell's
+           markup) and src/**/*.cs (the SQL literals) — because the contract it witnesses is a member's
+           SPELLING, and the things that depend on a spelling are in TypeScript, in XAML and in SQL, none of
+           which any compiler on either side of the wire checks against the enum.
+
+       AND THE CLAIM THIS WEAKENS, stated plainly because the comment it weakens is a few lines above and
+       still reads as absolute: "a third-party driver author's own test suite ... would look exactly like
+       this" is now LESS TRUE than it was. A third party has no web/src and no WPF shell, so this one class
+       would fail for them where every other class here would pass. That is a real cost of putting the check
+       beside the assembly whose names it protects, and it was taken deliberately — see the placement
+       paragraph in scripts/verify-suites.sh at EXPECT_ABSTRACTIONS. Deliberate is not the same as free. -->
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
