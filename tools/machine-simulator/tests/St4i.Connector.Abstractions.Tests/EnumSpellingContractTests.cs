@@ -9,8 +9,19 @@ namespace St4i.Connector.Abstractions.Tests;
 
 /// <summary>
 /// Task P-2 (.superpowers/sdd/enum-spelling-witnessed/task-1-brief.md) — <b>the spelling of an enum member
-/// on this assembly is a published string, and until this file existed nothing in this repository read it
-/// as one.</b>
+/// on this assembly is a published string, and until this file existed nothing here read it as one ACROSS
+/// THE BOUNDARY IT CROSSES.</b>
+///
+/// <para>🔴 That sentence is deliberately narrower than the one this file shipped with, which said
+/// "nothing in this repository read it as one" — a universal denial, and the implementer's OWN control run
+/// refuted it. Renaming <c>DeviceClass.Iot</c> required editing fourteen files under <c>tests/</c>, and at
+/// least two of those edits were ASSERTIONS rather than compile fixes:
+/// <c>tests/St4i.EdgeCore.Tests/PackagingFleetJsonTests.cs:76/79</c> pins the string <c>"Iot"</c> in an
+/// <c>[InlineData]</c> against <c>MappingProfile.ForClass</c>'s <c>nameof</c>-derived value, and
+/// <c>tests/St4i.EdgeCore.Tests/FleetConfigTests.cs:271</c> pins <c>"deviceClass": "Iot"</c> in a roster
+/// fixture. Those two DO witness a <see cref="DeviceClass"/> rename, inside .NET, today. What no suite
+/// reached — and what this file is for — is the TypeScript, the XAML and the SQL on the far side of a
+/// process boundary, where no compiler at either end checks anything.</para>
 ///
 /// <para><b>THE PROPERTY, DERIVED FROM THE QUESTION RATHER THAN FROM THE RENAME EXAMPLE.</b> The question
 /// is "what breaks when a member's spelling changes, and what would notice". The answer is not confined to
@@ -25,11 +36,19 @@ namespace St4i.Connector.Abstractions.Tests;
 ///   member-name set. A RENAME leaves a key nothing produces; an ADDED MEMBER leaves a value nothing
 ///   handles. Both land at the same lookup as <c>undefined</c>, so both are red here. The brief's own
 ///   phrasing named only renames; that is narrower than the hazard.</description></item>
-///   <item><description><b>Membership at every scattered comparison.</b> A site that compares one value
-///   (<c>deviceClass === "Iot"</c>, <c>verdict &lt;&gt; 'Skip'</c>, a XAML <c>DataTrigger</c>) cannot be
-///   checked for completeness — nothing says it should mention every member — but every literal it does
-///   mention must still NAME a current member. A rename makes those compare against a string the product
-///   can no longer emit.</description></item>
+///   <item><description><b>Membership wherever a registered carrier meets a string literal — whether it
+///   COMPARES or PRODUCES.</b> A site that handles one value (<c>deviceClass === "Iot"</c>,
+///   <c>verdict &lt;&gt; 'Skip'</c>, a XAML <c>DataTrigger</c>, or <c>DeviceClass = "Automation"</c>
+///   written into a profile) cannot be checked for completeness — nothing says it should mention every
+///   member — but every literal it does mention must still NAME a current member, or be a spelling this
+///   file records as deliberately NOT one. A rename leaves those holding a string the product can no
+///   longer emit.
+///   <para>🔴 The first draft of this said "comparison", and that silently excluded PRODUCERS — the half
+///   where a stale spelling is not merely unmatched but actively written onto new data.
+///   <c>FleetCore.cs:3548</c> writes <c>DeviceClass = "Automation"</c> as a bare literal where its own
+///   sibling <see cref="M:St4i.EdgeCore.Mapping.MappingProfile.ForClass"/> uses <c>nameof</c> for the
+///   identical field; a rename updates the sibling and leaves that one behind, minting profiles whose
+///   class names disagree with every other profile's. Producers are inside now.</para></description></item>
 /// </list>
 /// A <b>missing</b> dependency and a <b>wrong</b> one are therefore the same failure at the lookup and
 /// different failures at the cause, and this file reports them apart — the same "two separately fatal
@@ -50,9 +69,17 @@ namespace St4i.Connector.Abstractions.Tests;
 /// is a claim about where the dependents ARE, and a registry seeded from a previous author's citation list
 /// is how a scan inherits its domain from where its author was standing. So the registry ships with a
 /// census that can refute it — see
+/// <see cref="EveryObjectLiteralKeyedByMemberNames_IsARegisteredMirror"/>,
 /// <see cref="EveryTsTypeAliasOrTableNamedForAPublishedEnum_IsARegisteredMirror"/> and
-/// <see cref="EveryComparandAgainstARegisteredCarrier_NamesACurrentMember"/>, neither of which reads the
-/// registry to decide what to look at.</para>
+/// <see cref="EveryLiteralBoundToARegisteredCarrier_NamesACurrentMember"/>, none of which reads the
+/// registry to decide what to look at.
+/// <para>🔴 The FIRST version of that promise was not kept, and the correction is the point. The only
+/// census this file shipped with was indexed on a declaration's TYPE ANNOTATION, and six of the seven
+/// member-keyed tables in this codebase carry none — so it could not refute the registry in the one
+/// direction that mattered, and a live unregistered site (<c>TraceTable.tsx</c>'s <c>KIND_DOT</c>) sat
+/// inside the corpus until a reviewer read the tree by hand.
+/// <see cref="EveryObjectLiteralKeyedByMemberNames_IsARegisteredMirror"/> is indexed on the KEYS instead,
+/// which is what the question actually asks about, and it finds that site on its own.</para>
 ///
 /// <para><b>PRECONDITION.</b> Like <c>ZeroDependencyTests</c> and <c>RealCredentialStoreLeakGuard</c>, this
 /// requires being run from inside the source tree: it walks up from <see cref="AppContext.BaseDirectory"/>
@@ -64,9 +91,17 @@ public class EnumSpellingContractTests
 {
     // ══ THE CORPUS ═════════════════════════════════════════════════════════════════════════════════
     //
-    // Three roots, each named here and nowhere else. `tests/` is deliberately NOT among them, and the
-    // reason is not tidiness: this file itself holds every member spelling as a string literal, so a
-    // corpus that included it would find its own registry and report the instrument as its own dependent.
+    // Two root CONSTANTS below, swept as three (file kind is the third axis: `src` is read once for .xaml
+    // and once for .cs). "Named here and nowhere else" is what an earlier draft of this comment claimed and
+    // it was refutable by its own file: both root strings are re-spelled inside all twenty `MirrorSite`
+    // paths and inside `ReadSite("src/St4i.EngineApi/JsonConfig.cs")`. What is true is narrower and is the
+    // only thing being claimed: these constants are where the SWEEPS take their roots from, so widening a
+    // sweep's reach is one edit here. A registry path is not a root and does not become one by looking
+    // like a prefix of one.
+    //
+    // `tests/` is deliberately NOT among them, and the reason is not tidiness: this file itself holds every
+    // member spelling as a string literal, so a corpus that included it would find its own registry and
+    // report the instrument as its own dependent.
 
     private const string WebSourceRoot = "web/src";
     private const string ProductSourceRoot = "src";
@@ -270,6 +305,19 @@ public class EnumSpellingContractTests
             "the API inspector's frame-kind union; a missing member makes the inspector's own filter type "
             + "reject a kind the socket really delivers"),
 
+        // 🔴 REVIEW FIX C1 — THE HOLE THIS FILE SHIPPED WITH, AND THE ONE IT EXISTED TO CLOSE.
+        // `KIND_DOT` is annotated `Record<string, string>`, so the census that was supposed to be able to
+        // refute this registry could not see it: that census was indexed on `Record<Enum, …>`/`Enum[]`/
+        // `type Enum =`, a shape SIX OF THE SEVEN real tables in this codebase do not use. It was found by
+        // a reviewer reading the tree, not by anything here — which is the whole failure mode this file
+        // names in its own header and then walked into. See
+        // EveryObjectLiteralKeyedByMemberNames_IsARegisteredMirror, which is indexed on the KEYS instead
+        // and would have found it.
+        new("web/src/components/TraceTable.tsx", SiteShape.TsRecordConst, "KIND_DOT", ["ReadingKind"],
+            "the API inspector's per-kind colour dot, read as `KIND_DOT[row.kind] ?? \"bg-neutral\"` where "
+            + "row.kind is typed ReadingKind; a missing member silently takes the neutral fallback, so the "
+            + "one visual cue separating a process result from telemetry disappears without an error"),
+
         // ── WriteOutcome and the two rejection vocabularies ────────────────────────────────────────
         //
         // NOT ON N-2's LIST, AND THE HIGHEST-CONSEQUENCE ARM ON IT. `WriteOutcome.Indeterminate` exists so
@@ -327,13 +375,25 @@ public class EnumSpellingContractTests
     /// enum's published string. This is what makes the sweep precise instead of noisy: it looks for
     /// "the thing that carries the value, compared against a literal", never for the literal alone.</param>
     /// <param name="Expected">See <see cref="Presence"/>.</param>
+    /// <param name="DeclaredNonMembers">Literals this carrier is KNOWN to hold that are deliberately not
+    /// member names. Empty for almost every carrier. It exists because one carrier really does have one,
+    /// the published contract says so in its own words, and pretending otherwise would have meant either a
+    /// permanently red assertion or a silently narrowed sweep — both worse than writing the exception down.
+    /// This is NOT a claim that these are the only sentinels that could ever appear: a NEW literal that
+    /// names no member turns this RED, which is the right direction, because somebody then has to say
+    /// whether it is a sentinel or a typo.</param>
     private sealed record CarrierPattern(
         string EnumTypeName,
         CorpusKind Corpus,
         string[] CarrierNames,
-        Presence Expected);
+        Presence Expected,
+        string[]? DeclaredNonMembers = null);
 
-    private enum CorpusKind { WebTypeScript, WpfMarkup, ProductCSharp }
+    /// <summary>The two C# arms are separate because the LITERAL DELIMITER is the discriminator, not the
+    /// file kind: SQL text embedded in C# quotes with <c>'…'</c>, C# itself with <c>"…"</c>. One pattern
+    /// covering both would have to accept either quote and would then match across a string boundary.
+    /// </summary>
+    private enum CorpusKind { WebTypeScript, WpfMarkup, ProductCSharp, ProductCSharpLiteral }
 
     private static IReadOnlyList<CarrierPattern> Carriers() =>
     [
@@ -346,6 +406,22 @@ public class EnumSpellingContractTests
 
         new("ReadingKind", CorpusKind.WebTypeScript, ["readingKind"], Presence.Any),
         new("ReadingKind", CorpusKind.ProductCSharp, ["reading_kind"], Presence.AtLeastOne),
+
+        // 🔴 REVIEW FIX I1/I5a — THE C# HALF WAS SQL-SHAPED ONLY, so a member spelling written as an
+        // ordinary C# double-quoted literal was outside a sweep whose corpus already contained the file.
+        // These three arms are addressed by the PascalCase property/type name, which is what survives a
+        // MEMBER rename and is therefore the only stable thing to anchor on.
+        //
+        // `DeviceClass` carries the one DeclaredNonMember in this file, and the declaration is not mine:
+        // Enums.cs's own DeviceClass doc says a mapping profile's field "is a plain string with no enum
+        // converter behind it, checked against nothing … this product itself also ships "Mixed" there,
+        // which is not a member of this enum at all." Four sites write exactly that. Recording "Mixed"
+        // here is the honest reading of that paragraph; dropping the carrier instead would have hidden
+        // FleetCore.cs:3548's bare "Automation" — the actual defect — behind the sentinel.
+        new("DeviceClass", CorpusKind.ProductCSharpLiteral, ["DeviceClass"], Presence.AtLeastOne,
+            DeclaredNonMembers: ["Mixed"]),
+        new("ReadingKind", CorpusKind.ProductCSharpLiteral, ["ReadingKind"], Presence.Any),
+        new("Verdict", CorpusKind.ProductCSharpLiteral, ["Verdict"], Presence.Any),
 
         new("WriteOutcome", CorpusKind.WebTypeScript, ["outcome"], Presence.AtLeastOne),
         new("SetpointRejectionReason", CorpusKind.WebTypeScript, ["rejectionReason"], Presence.Any),
@@ -375,11 +451,15 @@ public class EnumSpellingContractTests
     ///   <c>kind</c> would make this cry wolf, so only <c>readingKind</c> is registered and a comparison
     ///   written against a variable named <c>kind</c> is OUTSIDE. Same decision, same reason, for bare
     ///   <c>health</c>.</description></item>
-    ///   <item><description><b>A mirror TypeScript does not type.</b> The table sweep finds declarations
-    ///   NAMED for an exported enum (<c>Record&lt;DeviceClass, …&gt;</c>, <c>DeviceClass[]</c>,
-    ///   <c>type DeviceClass =</c>). <see cref="Verdict"/> has no TypeScript union at all — <c>VERDICT_META</c>
-    ///   is a <c>Record&lt;string, …&gt;</c> — so a SECOND verdict table added tomorrow would be invisible to
-    ///   the sweep and would have to be registered by hand.</description></item>
+    ///   <item><description><b>An object literal that MIXES member keys with other keys, or names only
+    ///   ONE member.</b> This is the boundary of Fact 5b's census, and it replaces what this entry used to
+    ///   say. The old text — "a mirror TypeScript does not type … a SECOND verdict table added TOMORROW
+    ///   would be invisible" — described a mechanism as a future risk while a live instance
+    ///   (<c>TraceTable.tsx</c>'s <c>KIND_DOT</c>) already sat inside the corpus, unregistered and unseen.
+    ///   That is the failure this file names in its own header. Fact 5b now indexes on the KEYS, so an
+    ///   untyped table is inside; what remains outside is a block whose keys are not drawn ENTIRELY from
+    ///   the vocabulary, and a block naming a single member. No instance of either is known today, and
+    ///   "no instance known" is a statement about this sweep's reach, not about the codebase.</description></item>
     ///   <item><description><b>Anything downstream of a hand-written re-spelling.</b> A member is often
     ///   turned into a DIFFERENT vocabulary in C# before it crosses the wire —
     ///   <c>MachineState</c> maps <see cref="Verdict"/> onto <c>"OK"/"WARN"/"FAIL"/"TELEMETRY"</c>, the
@@ -405,6 +485,39 @@ public class EnumSpellingContractTests
     ///   historian database hold these spellings too. The databases are the one population no static
     ///   instrument can reach at all: a rename does not migrate rows that were written years
     ///   ago.</description></item>
+    ///   <item><description>🔴 <b>A member spelling quoted in prose with NO carrier beside it.</b> Named
+    ///   instance, not a mechanism: <c>src/St4i.EngineApi/JsonConfig.cs:11</c> writes
+    ///   <c>Enums serialize as their C# member name (e.g. <![CDATA[<c>"Live"</c>, <c>"ProcessResult"</c>]]>)</c>.
+    ///   The sibling case <c>HistorianEndpoints.cs:63</c> IS swept, because <c>ReadingKind</c> stands next
+    ///   to its literal and a type name survives a member rename. This one has nothing stable beside it,
+    ///   and the obvious rule — "flag any quoted token that is currently a member name" — goes SILENT at
+    ///   exactly the rename it exists to catch, because after the rename the stale token is no longer a
+    ///   member name. There is no honest anchor here, so it is outside and it is written down by file and
+    ///   line rather than described.</description></item>
+    ///   <item><description><b>Completeness of an <c>if/else</c> chain, in either language.</b> Membership
+    ///   is checked at every arm that names a literal; completeness cannot be, because an implicit final
+    ///   <c>else</c> is indistinguishable from a deliberate default. Named instances:
+    ///   <c>ReadoutGrid.tsx:106/160</c> and <c>SchematicPanel.tsx:99/101/147/167</c>, where a NEW
+    ///   <see cref="DeviceClass"/> silently renders as the IoT schematic; and in C#,
+    ///   <c>MachineState.cs</c>'s <c>_ =&gt; "OK"</c>, where a new <see cref="Verdict"/> is reported to an
+    ///   operator as OK. Both are product-behaviour questions, not spelling ones, and both are recorded
+    ///   rather than fixed.</description></item>
+    ///   <item><description><b>A locale this file does not name.</b> The i18n mirrors are addressed as
+    ///   <c>en.ts</c> and <c>vi.ts</c>. A third locale added tomorrow with a <c>deviceClass:</c> block
+    ///   WOULD now be caught by Fact 5b's key-indexed census — that is what widening it bought — but it
+    ///   would be reported as unregistered rather than checked, and nothing here enumerates the locale
+    ///   directory to notice one is missing entirely.</description></item>
+    ///   <item><description><b>Loose or indirect comparison shapes.</b> <c>==</c> rather than
+    ///   <c>===</c>, <c>.includes(…)</c>, <c>new Set([…]).has(…)</c> on an unregistered const, and
+    ///   template-literal comparisons are all outside the TypeScript sweep's three patterns. Swept during
+    ///   review: no instance exists in <c>web/src</c> today, so this is a shape gap rather than a live
+    ///   one — and that is a fact with a date on it, not a property of the codebase.</description></item>
+    ///   <item><description><b>A union alias reflowed onto several lines.</b>
+    ///   <see cref="ExtractUnionAlias"/> reads the alias body to end-of-line. A formatter that wraps
+    ///   <c>api.ts</c>'s <see cref="DeviceClass"/> or <see cref="WriteOutcome"/> union turns green into a
+    ///   spurious RED. Left as-is deliberately: it fails LOUD, and this file's whole doctrine is that a
+    ///   noisy failure beats a silent one. It is a formatting coupling in a file whose rule is "point by
+    ///   name, never by position", and it is recorded so the next reader knows it is known.</description></item>
     /// </list>
     /// </summary>
     private static string ThingsThisInstrumentCannotSee => nameof(ThingsThisInstrumentCannotSee);
@@ -584,22 +697,37 @@ public class EnumSpellingContractTests
     /// run that introduced this file, several the measurement this task was handed had not named.
     /// </summary>
     [Fact]
-    public void EveryComparandAgainstARegisteredCarrier_NamesACurrentMember()
+    public void EveryLiteralBoundToARegisteredCarrier_NamesACurrentMember()
     {
         var failures = new List<string>();
 
         foreach (var (carrier, hits) in SweepAllCarriers())
         {
             var members = MemberNamesOf(carrier.EnumTypeName);
+            var declared = carrier.DeclaredNonMembers ?? [];
+
             foreach (var hit in hits)
             {
-                if (!members.Contains(hit.Literal, StringComparer.Ordinal))
+                if (members.Contains(hit.Literal, StringComparer.Ordinal))
                 {
-                    failures.Add(
-                        $"{hit.RelativePath}: `{hit.Carrier}` is compared against \"{hit.Literal}\", which is not "
-                        + $"a member of {carrier.EnumTypeName} ({string.Join(", ", members)}). Nothing this "
-                        + "product can emit will ever equal it, so this branch is unreachable — silently.");
+                    continue;
                 }
+
+                if (declared.Contains(hit.Literal, StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
+                failures.Add(
+                    $"{hit.RelativePath}: `{hit.Carrier}` is bound to \"{hit.Literal}\", which is not "
+                    + $"a member of {carrier.EnumTypeName} ({string.Join(", ", members)})"
+                    + (declared.Length > 0
+                        ? $" and is not one of the spellings recorded here as deliberately not a member "
+                          + $"({string.Join(", ", declared)})."
+                        : ".")
+                    + " If this site COMPARES, nothing this product can emit will ever equal it and the "
+                    + "branch is unreachable — silently. If it PRODUCES, this site is minting data spelled "
+                    + "a way nothing else in the product agrees with.");
             }
         }
 
@@ -665,6 +793,77 @@ public class EnumSpellingContractTests
             + "Register each one with what breaks if a member goes missing from it. This sweep is the only "
             + "thing here that can tell the registry it is incomplete, and it sees only what TypeScript "
             + "TYPES — see ThingsThisInstrumentCannotSee for what it still misses.");
+    }
+
+    // ══ FACT 5b — THE CENSUS THAT CAN ACTUALLY REFUTE THE REGISTRY ═════════════════════════════════
+
+    /// <summary>
+    /// 🔴 <b>REVIEW FIX C2 — the census above was indexed on the wrong thing, and this is what it should
+    /// have been indexed on all along.</b> Fact 5 asks "which declarations are TYPED on an exported enum",
+    /// which is a question about a declaration's ANNOTATION. Six of the seven member-keyed tables in this
+    /// codebase carry no such annotation — <c>KIND_DOT</c> and <c>VERDICT_META</c> are
+    /// <c>Record&lt;string, …&gt;</c>, and the four i18n blocks are bare object properties — so the only
+    /// thing able to tell the registry it was incomplete was blind to the shape that dominates it. It
+    /// missed a live site (<c>TraceTable.tsx</c>'s <c>KIND_DOT</c>) and a reviewer found it by reading the
+    /// tree.
+    ///
+    /// <para><b>Derived from the question instead of from the examples.</b> The question is "what in these
+    /// roots is keyed by a member's spelling". So the index is the KEYS: any object literal anywhere in the
+    /// browser client whose top-level keys are drawn ENTIRELY from the published member vocabulary, and
+    /// which names at least two of them, is a closed enumeration over this contract and must be registered.
+    /// A type annotation is not consulted, which is the whole point — <c>Record&lt;string, string&gt;</c>
+    /// and <c>Record&lt;ReadingKind, string&gt;</c> are exactly as load-bearing as each other.</para>
+    ///
+    /// <para><b>Why "at least two", stated as the threshold it is.</b> One key is not evidence of an
+    /// enumeration — <c>{ Pass: … }</c> could be any object with a field called Pass. Two or more keys all
+    /// drawn from the vocabulary and nothing else is. That is a deliberate floor and it is the boundary of
+    /// this census: a single-member table is outside, and so is a block that MIXES member names with other
+    /// keys. Both are named on <see cref="ThingsThisInstrumentCannotSee"/> rather than left implied.</para>
+    /// </summary>
+    [Fact]
+    public void EveryObjectLiteralKeyedByMemberNames_IsARegisteredMirror()
+    {
+        var vocabulary = ExportedEnums()
+            .SelectMany(t => t.GetEnumNames())
+            .ToHashSet(StringComparer.Ordinal);
+
+        var registered = Mirrors()
+            .Select(m => $"{m.RelativePath}::{m.Anchor}")
+            .ToHashSet(StringComparer.Ordinal);
+
+        var unregistered = new List<string>();
+
+        foreach (var file in WebFiles())
+        {
+            var text = File.ReadAllText(file);
+            var relative = Relative(file);
+
+            foreach (var block in MemberKeyedBlocks(text, relative, vocabulary))
+            {
+                if (block.Anchor is not null && registered.Contains($"{relative}::{block.Anchor}"))
+                {
+                    continue;
+                }
+
+                unregistered.Add(
+                    $"{relative}: an object literal keyed by member names "
+                    + $"({string.Join(", ", block.Keys)}) "
+                    + (block.Anchor is null
+                        ? "could not be traced to a named declaration, so it cannot even be registered as it "
+                          + "stands — give it a name."
+                        : $"is bound to `{block.Anchor}` and is not registered.")
+                    + " Nothing checks it against the member set, so a rename or an added member leaves it "
+                    + "holding a key the product no longer produces, or missing one it does.");
+            }
+        }
+
+        Assert.True(
+            unregistered.Count == 0,
+            "The browser client keys object literals on this assembly's member spellings in places this "
+            + "file's registry does not know about:"
+            + Environment.NewLine + string.Join(Environment.NewLine, unregistered)
+            + Environment.NewLine
+            + "Register each one with what breaks if a member goes missing from it.");
     }
 
     // ══ FACT 6 — THE UNIVERSAL NEGATIVES, CHECKED BY SOMETHING THAT COULD REFUTE THEM ══════════════
@@ -738,6 +937,38 @@ public class EnumSpellingContractTests
             + "having comparands and no longer do — a moved corpus, a renamed carrier, or a broken pattern, "
             + "not a clean codebase:"
             + Environment.NewLine + string.Join(Environment.NewLine, starved));
+
+        // 🔴 The Fact 5b scanner needs its own vacuity guard, and a COUNT would be the wrong one — a bare
+        // number is exactly the artefact nobody can defend when it moves. Instead: every site already
+        // registered as an object-shaped mirror must be REDISCOVERED by the scanner from the keys alone.
+        // If the tokenizer breaks, those stop being found and this goes red, naming them. That makes the
+        // census check itself against the registry in the direction opposite to the one Fact 5b checks.
+        var vocabulary = ExportedEnums().SelectMany(t => t.GetEnumNames()).ToHashSet(StringComparer.Ordinal);
+        var objectShaped = Mirrors()
+            .Where(m => m.Shape is SiteShape.TsObjectBlock or SiteShape.TsRecordConst)
+            .ToList();
+
+        var undiscovered = new List<string>();
+        foreach (var site in objectShaped)
+        {
+            var text = ReadSite(site.RelativePath);
+            var discovered = MemberKeyedBlocks(text, site.RelativePath, vocabulary)
+                .Any(b => string.Equals(b.Anchor, site.Anchor, StringComparison.Ordinal));
+
+            if (!discovered)
+            {
+                undiscovered.Add($"{site.RelativePath}::{site.Anchor}");
+            }
+        }
+
+        Assert.True(
+            undiscovered.Count == 0,
+            "The member-keyed block scan behind EveryObjectLiteralKeyedByMemberNames_IsARegisteredMirror no "
+            + "longer finds sites this file has registered by hand, so that census has quietly stopped being "
+            + "able to refute anything:"
+            + Environment.NewLine + string.Join(Environment.NewLine, undiscovered)
+            + Environment.NewLine
+            + "Fix the scanner. Do not delete the registry entries to make this green.");
     }
 
     // ══ EXTRACTION ═════════════════════════════════════════════════════════════════════════════════
@@ -817,14 +1048,44 @@ public class EnumSpellingContractTests
 
     private static IReadOnlyList<string> ExtractXamlTriggerValues(string text, MirrorSite site)
     {
-        var pattern = new Regex(
-            $@"<DataTrigger\b[^>]*Binding\s*=\s*""\{{Binding\s+{Regex.Escape(site.Anchor)}\s*\}}""[^>]*Value\s*=\s*""(?<v>[^""]*)""");
-        var values = pattern.Matches(text)
-            .Select(m => m.Groups["v"].Value)
+        var values = XamlTriggerValues(text, site.Anchor)
+            .Select(v => v.Value)
             .Distinct(StringComparer.Ordinal)
             .ToList();
         RequireNonEmpty(values.Count, site, $"DataTriggers bound to {{Binding {site.Anchor}}}");
         return values;
+    }
+
+    /// <summary>
+    /// 🔴 <b>REVIEW FIX M3.</b> The first version required the literal sequence
+    /// <c>Binding="{Binding X}"</c> … <c>Value="…"</c>, in that order, in one regex. XML attribute order
+    /// carries no meaning, and <c>{Binding Path=X}</c> is the same binding written the other legal way, so
+    /// both were SILENT misses — and silent in the corpus-wide sweep, where nothing else would notice.
+    /// This takes the whole <c>&lt;DataTrigger …&gt;</c> tag first and then reads its two attributes
+    /// independently, in either order, with <c>Path=</c> optional.
+    /// </summary>
+    private static IEnumerable<(string Carrier, string Value)> XamlTriggerValues(string text, string anchorPattern)
+    {
+        foreach (Match tag in Regex.Matches(text, @"<DataTrigger\b(?<body>[^>]*)>"))
+        {
+            var body = tag.Groups["body"].Value;
+
+            var binding = Regex.Match(
+                body,
+                $@"Binding\s*=\s*""\s*\{{\s*Binding\s+(?:Path\s*=\s*)?(?<c>{anchorPattern})\s*\}}""");
+            if (!binding.Success)
+            {
+                continue;
+            }
+
+            var value = Regex.Match(body, @"Value\s*=\s*""(?<v>[^""{}]*)""");
+            if (!value.Success)
+            {
+                continue;
+            }
+
+            yield return (binding.Groups["c"].Value, value.Groups["v"].Value);
+        }
     }
 
     private static IReadOnlyList<string> ExtractQuoted(string body, MirrorSite site)
@@ -1066,6 +1327,157 @@ public class EnumSpellingContractTests
         new($"{site.RelativePath}: could not find {what} for `{site.Anchor}`. "
             + "Fix the extractor or the registry — do not let the site go unread.");
 
+    // ══ THE MEMBER-KEYED BLOCK SCAN (Fact 5b) ══════════════════════════════════════════════════════
+    //
+    // One linear pass per file, maintaining a stack of open delimiters, so that EVERY object literal at
+    // EVERY nesting depth is seen — the i18n blocks are five levels down inside one exported object and no
+    // declaration-shaped pattern reaches them. `[` and `(` get frames too, otherwise a comma inside an
+    // array or an argument list would be read as a key separator of the enclosing object.
+
+    private sealed record MemberKeyedBlock(int Open, IReadOnlyList<string> Keys, string? Anchor);
+
+    private sealed class Frame(char open, int index)
+    {
+        public char Open { get; } = open;
+        public int Index { get; } = index;
+        public List<string> Keys { get; } = [];
+        public int SegmentStart { get; set; } = index + 1;
+    }
+
+    private static IReadOnlyList<MemberKeyedBlock> MemberKeyedBlocks(
+        string text, string relative, IReadOnlySet<string> vocabulary)
+    {
+        var found = new List<MemberKeyedBlock>();
+        var stack = new Stack<Frame>();
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+
+            if (IsQuote(c))
+            {
+                i = SkipQuotedOrTreatAsText(text, i);
+                continue;
+            }
+
+            if (IsCommentStart(text, i))
+            {
+                i = SkipCommentLoose(text, i);
+                continue;
+            }
+
+            if (c is '{' or '[' or '(')
+            {
+                stack.Push(new Frame(c, i));
+                continue;
+            }
+
+            if (c is '}' or ']' or ')')
+            {
+                // An unbalanced closer means this file contains something the scanner mis-tokenised (a
+                // regex literal, most likely). Dropping it is safe in the only direction that matters:
+                // this census can then only UNDER-report, and Fact 7 asserts the shapes it must still find.
+                if (stack.Count == 0)
+                {
+                    continue;
+                }
+
+                var frame = stack.Pop();
+                if (frame.Open == '{')
+                {
+                    AddKey(frame.Keys, text[frame.SegmentStart..i]);
+                    if (IsMemberKeyed(frame.Keys, vocabulary))
+                    {
+                        found.Add(new MemberKeyedBlock(
+                            frame.Index, frame.Keys, EnclosingDeclarationName(text, frame.Index)));
+                    }
+                }
+
+                continue;
+            }
+
+            if (c == ',' && stack.Count > 0 && stack.Peek().Open == '{')
+            {
+                var frame = stack.Peek();
+                AddKey(frame.Keys, text[frame.SegmentStart..i]);
+                frame.SegmentStart = i + 1;
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>Keys drawn ENTIRELY from the published vocabulary, at least two of them. See the threshold
+    /// paragraph on <see cref="EveryObjectLiteralKeyedByMemberNames_IsARegisteredMirror"/>.</summary>
+    private static bool IsMemberKeyed(IReadOnlyList<string> keys, IReadOnlySet<string> vocabulary) =>
+        keys.Count >= 2 && keys.All(vocabulary.Contains);
+
+    /// <summary>The name the block is bound to: <c>const NAME … = {</c> or <c>NAME: {</c>. Returns null
+    /// when neither shape fits, and the caller reports that as its own finding rather than skipping it —
+    /// an anonymous member-keyed literal is not something to pass over quietly.</summary>
+    private static string? EnclosingDeclarationName(string text, int open)
+    {
+        var before = text[..open].TrimEnd();
+        var tail = before.Length > 400 ? before[^400..] : before;
+
+        var asConst = Regex.Match(tail, @"(?:export\s+)?const\s+(?<a>[A-Za-z_$][\w$]*)\b[^=]*=$");
+        if (asConst.Success)
+        {
+            return asConst.Groups["a"].Value;
+        }
+
+        var asProperty = Regex.Match(
+            tail, @"(?:""(?<q>[^""]+)""|'(?<s>[^']+)'|(?<b>[A-Za-z_$][\w$]*))\s*:$");
+        if (asProperty.Success)
+        {
+            return asProperty.Groups["q"].Success ? asProperty.Groups["q"].Value
+                : asProperty.Groups["s"].Success ? asProperty.Groups["s"].Value
+                : asProperty.Groups["b"].Value;
+        }
+
+        return null;
+    }
+
+    /// <summary>Like <see cref="SkipQuoted"/> but corpus-wide and non-throwing. An apostrophe in JSX prose
+    /// (<c>don't</c>) is not a string opener, so a quote with no partner ON ITS OWN LINE is treated as
+    /// ordinary text; back-ticked templates may legitimately span lines and are allowed to.</summary>
+    private static int SkipQuotedOrTreatAsText(string text, int start)
+    {
+        var quote = text[start];
+        for (var i = start + 1; i < text.Length; i++)
+        {
+            if (text[i] == '\\')
+            {
+                i++;
+                continue;
+            }
+
+            if (text[i] == quote)
+            {
+                return i;
+            }
+
+            if (text[i] == '\n' && quote != '`')
+            {
+                return start;
+            }
+        }
+
+        return start;
+    }
+
+    private static int SkipCommentLoose(string text, int start)
+    {
+        if (text[start + 1] == '/')
+        {
+            var end = text.IndexOf('\n', start);
+            return end < 0 ? text.Length - 1 : end;
+        }
+
+        var close = text.IndexOf("*/", start + 2, StringComparison.Ordinal);
+        return close < 0 ? text.Length - 1 : close + 1;
+    }
+
     // ══ THE CARRIER SWEEP ══════════════════════════════════════════════════════════════════════════
 
     private sealed record CarrierHit(string RelativePath, string Carrier, string Literal);
@@ -1090,7 +1502,7 @@ public class EnumSpellingContractTests
         {
             CorpusKind.WebTypeScript => WebFiles(),
             CorpusKind.WpfMarkup => XamlFiles(),
-            CorpusKind.ProductCSharp => CSharpFiles(),
+            CorpusKind.ProductCSharp or CorpusKind.ProductCSharpLiteral => CSharpFiles(),
             _ => throw new InvalidOperationException($"Unhandled corpus {carrier.Corpus}."),
         };
 
@@ -1134,9 +1546,20 @@ public class EnumSpellingContractTests
                     break;
 
                 case CorpusKind.WpfMarkup:
-                    foreach (Match m in Regex.Matches(
-                        text,
-                        $@"<DataTrigger\b[^>]*Binding\s*=\s*""\{{Binding\s+(?<c>{names})\s*\}}""[^>]*Value\s*=\s*""(?<v>[^""{{}}]*)"""))
+                    // Attribute-order- and Path=-agnostic; see XamlTriggerValues (review fix M3).
+                    foreach (var (bound, literal) in XamlTriggerValues(text, names))
+                    {
+                        hits.Add(new CarrierHit(relative, bound, literal));
+                    }
+
+                    break;
+
+                case CorpusKind.ProductCSharpLiteral:
+                    // A member spelling written as an ordinary C# literal, whether COMPARED (`==`, `!=`)
+                    // or PRODUCED (`=`). Doc comments are swept for the same reason the SQL arm sweeps
+                    // them: `HistorianEndpoints.cs:63` restates `ReadingKind == "ProcessResult"` in prose
+                    // on a published surface, and it goes stale exactly as a query does.
+                    foreach (Match m in Regex.Matches(text, $@"\b(?<c>{names})\b\s*(?:==|!=|=)\s*""(?<v>[^""]*)"""))
                     {
                         hits.Add(new CarrierHit(relative, m.Groups["c"].Value, m.Groups["v"].Value));
                     }
