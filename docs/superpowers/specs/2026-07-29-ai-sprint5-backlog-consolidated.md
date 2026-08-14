@@ -152,9 +152,26 @@ Cổng đếm `server/routers/**` đã về **0** (1056 → 0, 43 commit). Nhưn
 
 - **F9. Bảo mật đăng nhập, tiền tồn tại, ngoài phạm vi.** Kiểm `isActive`/`lockedUntil` chạy TRƯỚC `bcrypt.compare`, nên chỉ cần username là phân biệt được "tồn tại + vô hiệu/khoá" với "không tồn tại"; nhánh unknown-user bỏ qua bcrypt ⇒ side-channel thời gian. Đợt di trú **không làm tệ hơn** (`INVALID_CREDENTIALS` vẫn gộp chung sai-mật-khẩu với không-có-tài-khoản).
 
-- **F10. Chưa kiểm bằng mắt trên trình duyệt.** 343 chỗ + 198 khoá từ điển của đợt cuối chưa từng render thật lần nào. Cổng tĩnh chứng minh khoá tồn tại, không chứng minh câu ghép ra đọc được. Cần một phiên có uỷ quyền rebuild + restart `:3000`, kiểm 1 ca mỗi họ.
+- **F10. ~~Chưa kiểm bằng mắt trên trình duyệt.~~ ✅ ĐÃ LÀM** (rebuild + restart `:3000`, 14 ảnh qua Playwright). Xem F11/F12 — nó tìm ra hai thứ mà mọi cổng xanh đều không thấy.
 
 **Công tắc quay lui:** `APP_ERROR_CODES_ENABLED=false` gỡ `appCode` khỏi phản hồi ⇒ client tự rơi về hành vi trước sprint, **không cần build lại FE**.
+
+---
+
+## 4d. NHÓM F (tiếp) — HAI PHÁT HIỆN CỦA LƯỢT KIỂM MẮT
+
+Toàn bộ 12 task của plan trả nợ E+F **đã hoàn tất và đã push**. Nhưng lượt kiểm mắt cuối cùng (F10) tìm ra hai điều mà **không cổng nào, không test nào bắt được**. Ghi vào đây vì trước đó chúng chỉ nằm trong sổ tiến độ tạm (`.superpowers/sdd/**`, bị gitignore — `git clean -fdx` là mất trắng).
+
+- **F11. `FEATURE_DISABLED` và `DB_UNAVAILABLE` hầu như KHÔNG BAO GIỜ tới người dùng thật. ⚠ ƯU TIÊN CAO.**
+  Ảnh chụp cho thấy `FEATURE_DISABLED` bị **một tầng UI nuốt** và thay bằng câu tự chế (`scanRobot`, banner `kbStudio`); `DB_UNAVAILABLE` **không hiện gì cả** — chỉ có trạng thái rỗng im lặng rồi bị đá về trang đăng nhập.
+  ⇒ Hai họ mã lỗi mà cả sprint dựng ra, dịch đủ ba thứ tiếng, và đợt F2 di trú 31 chỗ `"Database not available"` cho — **bị chặn trước khi chạm người dùng**. Cổng xanh, test xanh, nhưng **đường giao hàng đứt ở tầng UI**.
+  Đúng lớp lỗi Wave 2 đã gọi tên: *"nghiệm thu chỉ chứng minh đúng đường mình vừa đi"*.
+
+- **F12. Nhãn giao diện tiếng Việt lọt sang bản en/zh — KHÔNG chữa được bằng bản vá F8.**
+  Menu ở bản tiếng Anh vẫn hiện "Thay đổi kỹ thuật (ECN)", "Xưởng kỹ thuật", "Chỉ huy nhà máy", "Trung tâm bảo trì", "Bảo trì (CMMS)", "Vật tư đã dùng" — lặp nhất quán ở **cả en lẫn zh**.
+  ⚠ **Chẩn đoán đầu tiên SAI và đã bị đo lại bác bỏ.** Ban đầu quy cho "cùng gốc rễ F8 (khoá thiếu + `fallbackLng: 'vi'`)". Đo thật: khoá có ở `vi` mà thiếu ở `en` chỉ **4** (không phải 168); khoá khớp đúng mẫu bị đổ lỗi = **0**.
+  **Gốc rễ thật:** (a) hàng trăm lời gọi `t(key, "<mặc định tiếng Việt>")` mà khoá **vắng ở cả ba** locale — `defaultValue` LUÔN thắng, nên `fallbackLng: false` **về nguyên lý không thể chữa**; (b) **≥186 chuỗi tiếng Việt trần KHÔNG đi qua `t()`**, gồm đúng các nhãn thấy trong ảnh.
+  ⇒ Cần một đợt riêng cho nhãn giao diện. Là nợ **tiền tồn tại**, KHÔNG phải hồi quy do sprint gây ra.
 
 ---
 
