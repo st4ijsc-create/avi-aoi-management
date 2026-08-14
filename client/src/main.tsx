@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { isUnauthorizedError } from "@/lib/authRedirect";
 import { mapTrpcError } from "@/lib/trpcErrors";
+import { queryErrorToastKey, shouldToastQueryError } from "@/lib/queryErrorToast";
 import { toast } from "sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
@@ -49,6 +50,26 @@ queryClient.getQueryCache().subscribe(event => {
     const error = event.query.state.error;
     redirectToLoginIfUnauthorized(error);
     console.error("[API Query Error]", error);
+
+    /**
+     * F11 (nhóm C 2026-08-14) — lỗi query phải nói được cho người dùng.
+     *
+     * React Query v5 BỎ HẲN `onError` khỏi `useQuery`, nên cả 1310 lời gọi query trong
+     * `client/src` không có chỗ nào xử lý lỗi riêng — đây là nơi DUY NHẤT, và trước đây
+     * nó chỉ `console.error`. Lượt kiểm mắt đo được: `DB_UNAVAILABLE` không hiện gì cả,
+     * người dùng chỉ thấy màn hình rỗng im lặng.
+     *
+     * Ba cửa lọc, theo đúng thứ tự:
+     *  1. đang điều hướng về login ⇒ im (người dùng sắp rời trang);
+     *  2. query ĐÃ có dữ liệu cũ ⇒ im — đây là refetch nền hỏng, màn hình vẫn có nội
+     *     dung, quấy người đang làm việc bằng toast là sai;
+     *  3. gộp theo MÃ lỗi trong một cửa sổ ⇒ DB sập cho ra MỘT câu, không phải bốn mươi.
+     */
+    if (!isUnauthorizedError(error) && event.query.state.data === undefined) {
+      if (shouldToastQueryError(queryErrorToastKey(error), Date.now())) {
+        toast.error(mapTrpcError(error));
+      }
+    }
   }
 });
 
