@@ -350,6 +350,30 @@ public class EnumSpellingContractTests
             "the Vietnamese half of the same block"),
     ];
 
+    /// <summary>
+    /// 🔴 <b>P3 — THE BLOCK-LEVEL COUNTERPART OF <c>DeclaredNonMembers</c>, and the reason it has to
+    /// exist.</b> Fact 5b reports any object literal whose readable keys are all published member names.
+    /// Some such block may one day be a genuine coincidence — the flat vocabulary holds ordinary words like
+    /// <c>String</c>, <c>Double</c>, <c>Down</c>, <c>Pass</c> and <c>Connected</c> — or may be genuinely
+    /// MIXED, its non-member keys hidden inside a segment this parser cannot read. Until this list existed,
+    /// the failure message told a maintainer to "say so here" and there was nowhere to say it: the only
+    /// green-making move was to register a non-mirror as a mirror, which set equality would then refuse.
+    /// That is a permanently-red trap, and it is exactly the trap the carrier-side
+    /// <see cref="CarrierPattern.DeclaredNonMembers"/> was added to avoid. A hatch on one side and not the
+    /// other is not a boundary, it is an oversight.
+    ///
+    /// <para><b>It is EMPTY today, and that is a measurement rather than a placeholder</b> — the census
+    /// finds nine member-keyed blocks and every one of them is a real registered mirror. It carries the
+    /// same obligation the carrier hatch does: an entry here is re-checked by
+    /// <see cref="TheCorpusThisInstrumentScans_IsPresentAndPopulated"/>, which reds if the block it names
+    /// stops being found. An exemption nobody re-checks is how the next one walks through.</para>
+    /// </summary>
+    /// <param name="Why">Why this block's member-shaped keys are a coincidence rather than a dependency.
+    /// Required, and required to be specific: "not a mirror" is not a reason.</param>
+    private sealed record BlockDeclaredNotAMirror(string RelativePath, string Anchor, string Why);
+
+    private static IReadOnlyList<BlockDeclaredNotAMirror> BlocksDeclaredNotMirrors() => [];
+
     /// <summary>How present a carrier's comparands are required to be. The vacuity guard and the
     /// universal negative are different expectations and are written as different values, because
     /// "found nothing" means opposite things at the two.</summary>
@@ -870,6 +894,15 @@ public class EnumSpellingContractTests
                     continue;
                 }
 
+                // P3: recorded as NOT a mirror — a vocabulary coincidence, or a block whose non-member
+                // keys hide in a segment this parser cannot read. Empty today; re-checked in Fact 7.
+                if (block.Anchor is not null && BlocksDeclaredNotMirrors().Any(d =>
+                        string.Equals(d.RelativePath, relative, StringComparison.Ordinal)
+                        && string.Equals(d.Anchor, block.Anchor, StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
                 unregistered.Add(
                     $"{relative}: an object literal keyed by member names "
                     + $"({string.Join(", ", block.Keys)}) "
@@ -884,8 +917,9 @@ public class EnumSpellingContractTests
                           + "a computed key, a shorthand method or a getter. Every key this parser COULD "
                           + "read is a member name, which is why it is reported; if the unreadable "
                           + "segment(s) contribute non-member keys then this block is MIXED and is outside "
-                          + "this census by declaration, and the honest fix is to say so here rather than "
-                          + "to register it."
+                          + "this census by declaration. Say so in BlocksDeclaredNotMirrors() with a specific "
+                          + "reason — do NOT register a non-mirror as a mirror to silence this, because set "
+                          + "equality will then refuse it and you will have traded one red for a worse one."
                         : string.Empty));
             }
         }
@@ -1003,17 +1037,32 @@ public class EnumSpellingContractTests
             + Environment.NewLine
             + "Fix the scanner. Do not delete the registry entries to make this green.");
 
-        // 🔴 THE REDISCOVERY GUARD ABOVE REACHES SIX FILES. THIS ONE REACHES ALL OF THEM.
-        // The guard above justifies "the tokenizer still works" over the nine registered blocks in six
+        // 🔴 THE REDISCOVERY GUARD ABOVE REACHES SEVEN FILES. THIS ONE REACHES ALL OF THEM.
+        // The guard above justifies "the tokenizer still works" over the nine registered blocks in SEVEN
         // files, and that claim was then stated over the whole ~200-file corpus. It is not the same claim:
         // a regex literal carrying an unpaired quote or brace (`/'/`, `/[{]/`) desynchronises the frame
         // stack for the REST OF ITS FILE, and every block after it is missed SILENTLY — the one direction
-        // this instrument is not allowed to fail in. Balance is the cheapest property that detects it:
-        // every frame opened must be closed, and no closer may arrive with an empty stack.
+        // this instrument is not allowed to fail in.
+        //
+        // 🔴 WHAT THIS DETECTS, AND WHAT IT STILL DOES NOT (stated because "the assertion detects
+        // imbalance" was the whole of it before P1, and imbalance is the smaller property):
+        //   DETECTED  a frame left open at EOF                     (count never returns to zero)
+        //   DETECTED  a closer arriving on an empty stack          (stray closer)
+        //   DETECTED  a closer that does not match what it closes  (`{` closed by `]` — MIS-NESTING, which
+        //             can be perfectly count-balanced and which used to HARVEST the frame's keys at a
+        //             boundary that was not the object's)
+        //   NOT DETECTED  a BALANCED, CORRECTLY-NESTED phantom pair — a regex literal such as `/\{\}/`
+        //             opens and closes a frame that is not really there. It is invisible to all three
+        //             checks above by construction. Its blast radius is bounded and worth stating rather
+        //             than implying: because it is balanced AND correctly nested, it shifts no frame around
+        //             it, so it can only add a spurious block whose segment is regex text — which yields no
+        //             keys, fails IsMemberKeyed, and is discarded. It cannot move a real block's boundary.
+        //             Detecting it needs a real tokenizer that knows regex-literal position, which is a
+        //             different instrument; this is recorded, not fixed.
         var desynchronised = new List<string>();
         foreach (var file in WebFiles())
         {
-            if (!MemberKeyedBlocks(File.ReadAllText(file), Relative(file), vocabulary).Balanced)
+            if (!MemberKeyedBlocks(File.ReadAllText(file), Relative(file), vocabulary).Synchronised)
             {
                 desynchronised.Add(Relative(file));
             }
@@ -1021,12 +1070,13 @@ public class EnumSpellingContractTests
 
         Assert.True(
             desynchronised.Count == 0,
-            "The block scanner did not end these files with a balanced frame stack, so it mis-tokenised "
-            + "something and every member-keyed literal after that point was missed WITHOUT SAYING SO:"
+            "The block scanner lost frame-stack synchronisation in these files — a frame left open, a "
+            + "stray closer, or a closer that did not match what it closed — so it mis-tokenised something "
+            + "and member-keyed literals after that point were missed WITHOUT SAYING SO:"
             + Environment.NewLine + string.Join(Environment.NewLine, desynchronised)
             + Environment.NewLine
-            + "The known cause is a regex literal holding an unpaired quote or brace. Teach the scanner "
-            + "that shape — do not narrow the corpus to make this green.");
+            + "The known cause is a regex literal holding an unpaired or mismatched quote or brace. Teach "
+            + "the scanner that shape — do not narrow the corpus to make this green.");
 
         // 🔴 THE ONE CLAIM IN THIS FILE THAT NOTHING RE-CHECKED. Presence.None ships with a census that
         // could refute it; Presence.AtLeastOne ships with the starvation check above; a DeclaredNonMember
@@ -1056,6 +1106,34 @@ public class EnumSpellingContractTests
             + Environment.NewLine
             + "Delete the entry. Leaving a standing exemption for a literal nothing produces means the next "
             + "typo spelled that way is absolved in advance.");
+
+        // 🔴 P3 — AND THE BLOCK-LEVEL HATCH CARRIES THE SAME OBLIGATION. Symmetric with the carrier check
+        // immediately above, for the same reason: an exemption that outlives the thing it exempts is an
+        // absolution issued in advance. Vacuous while BlocksDeclaredNotMirrors() is empty, which it is
+        // today — and the loop is here so that the FIRST entry is re-checked, rather than the machinery
+        // arriving later alongside the entry that needed it.
+        var staleBlockExemptions = new List<string>();
+        foreach (var declared in BlocksDeclaredNotMirrors())
+        {
+            var text = ReadSite(declared.RelativePath);
+            var stillThere = MemberKeyedBlocks(text, declared.RelativePath, vocabulary).Blocks
+                .Any(b => string.Equals(b.Anchor, declared.Anchor, StringComparison.Ordinal));
+
+            if (!stillThere)
+            {
+                staleBlockExemptions.Add(
+                    $"{declared.RelativePath}::{declared.Anchor} is recorded as NOT a mirror ({declared.Why}), "
+                    + "and the census no longer finds a member-keyed block there at all.");
+            }
+        }
+
+        Assert.True(
+            staleBlockExemptions.Count == 0,
+            "These block-level exemptions no longer exempt anything that exists:"
+            + Environment.NewLine + string.Join(Environment.NewLine, staleBlockExemptions)
+            + Environment.NewLine
+            + "Delete the entry. A standing exemption for a block nobody writes any more will silently "
+            + "absolve the next block that happens to reuse the name.");
     }
 
     // ══ EXTRACTION ═════════════════════════════════════════════════════════════════════════════════
@@ -1433,10 +1511,12 @@ public class EnumSpellingContractTests
     private sealed record MemberKeyedBlock(
         int Open, IReadOnlyList<string> Keys, string? Anchor, int Unreadable);
 
-    /// <param name="Balanced">Whether every frame this file opened was closed. False means the tokenizer
-    /// lost sync — see <see cref="TheCorpusThisInstrumentScans_IsPresentAndPopulated"/>, which refuses it.
-    /// </param>
-    private sealed record TokenizedFile(IReadOnlyList<MemberKeyedBlock> Blocks, bool Balanced);
+    /// <param name="Synchronised">Whether this file's frame stack stayed coherent: every frame opened was
+    /// closed, no closer arrived on an empty stack, and — the part a pure count cannot see — every closer
+    /// MATCHED the delimiter it closed. False means the tokenizer lost sync; see
+    /// <see cref="TheCorpusThisInstrumentScans_IsPresentAndPopulated"/>, which refuses it, and which also
+    /// states what this still does NOT detect.</param>
+    private sealed record TokenizedFile(IReadOnlyList<MemberKeyedBlock> Blocks, bool Synchronised);
 
     private sealed class Frame(char open, int index)
     {
@@ -1453,6 +1533,7 @@ public class EnumSpellingContractTests
         var found = new List<MemberKeyedBlock>();
         var stack = new Stack<Frame>();
         var sawStrayCloser = false;
+        var sawMismatchedCloser = false;
 
         for (var i = 0; i < text.Length; i++)
         {
@@ -1481,7 +1562,7 @@ public class EnumSpellingContractTests
                 // A stray closer means this file holds something the scanner mis-tokenised — a regex
                 // literal carrying an unpaired quote or brace is the known shape. It is recorded, not
                 // shrugged off: an out-of-sync stack from here on would make this census miss blocks
-                // SILENTLY, and the balance assertion in Fact 7 is what turns that into a red.
+                // SILENTLY, and the assertion in Fact 7 is what turns that into a red.
                 if (stack.Count == 0)
                 {
                     sawStrayCloser = true;
@@ -1489,6 +1570,19 @@ public class EnumSpellingContractTests
                 }
 
                 var frame = stack.Pop();
+
+                // 🔴 P1 — THE CLOSER MUST MATCH THE THING IT CLOSES, and until this comparison existed it
+                // did not have to. `stack.Pop()` alone accepts `{` closed by `]`: the frame's Open was
+                // still '{', so its segment was HARVESTED AS IF THE OBJECT HAD CLOSED, at a boundary that
+                // is not the object's. That is a strictly larger class than an imbalance — a mis-nesting
+                // can be perfectly count-balanced — and it costs one comparison, so it is closed here
+                // rather than named as residue.
+                if (c != CloserFor(frame.Open))
+                {
+                    sawMismatchedCloser = true;
+                    continue;
+                }
+
                 if (frame.Open == '{')
                 {
                     Classify(frame, text[frame.SegmentStart..i]);
@@ -1511,8 +1605,16 @@ public class EnumSpellingContractTests
             }
         }
 
-        return new TokenizedFile(found, stack.Count == 0 && !sawStrayCloser);
+        return new TokenizedFile(found, stack.Count == 0 && !sawStrayCloser && !sawMismatchedCloser);
     }
+
+    private static char CloserFor(char open) => open switch
+    {
+        '{' => '}',
+        '[' => ']',
+        '(' => ')',
+        _ => '\0',
+    };
 
     /// <summary>Reads one comma-delimited segment: a key, nothing at all (a trailing comma or a comment),
     /// or content this parser cannot read as a key — which is counted rather than dropped.</summary>
