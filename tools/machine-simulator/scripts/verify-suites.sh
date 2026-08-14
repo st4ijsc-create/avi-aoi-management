@@ -2755,9 +2755,21 @@ attribute_build_servers() {
   # means "measured, and nothing survived" when the verdict is EFFECTIVE or NOTHING-TO-DO, and it
   # means "we never found out" when the verdict is UNMEASURED. The VERDICT is what separates them,
   # so the verdict is what this branches on -- never the emptiness of the list.
+  # 🔴 `FAILED` IS LISTED HERE AND IT IS CURRENTLY UNREACHABLE, WHICH IS THE REASON TO LIST IT
+  # (P-1 fix round 3, found by review). Today a FAILED post-build shutdown never gets this far:
+  # `assert_shutdown_ran` exits the run BEFORE `POST_SHUTDOWN_VERDICT` is even assigned. So the arm
+  # was complete BY ARRANGEMENT -- by the order of two adjacent statements at the call site -- rather
+  # than BY CONSTRUCTION. Swap those two lines, which is a reordering nobody would think twice about,
+  # and a FAILED shutdown reaches this guard, passes it, and yields a COMPUTED SURVIVAL/ARRIVAL SPLIT
+  # DERIVED FROM A COMMAND THAT NEVER RAN. That is a confident number about a call that did not
+  # happen, which is this file's oldest failure shape.
+  #
+  # A guard whose correctness lives in a neighbouring statement's position is not a guard, it is a
+  # coincidence with good manners. This one now stands on its own: every verdict under which the
+  # before-set is not trustworthy is named, whether or not today's control flow can deliver it.
   shutdown_known=1
   case "${POST_SHUTDOWN_VERDICT:-}" in
-    ""|UNMEASURED) shutdown_known=0 ;;
+    ""|UNMEASURED|FAILED) shutdown_known=0 ;;
   esac
   if [[ $shutdown_known -eq 1 ]]; then
     for p in ${now_pids//,/ }; do
@@ -2791,8 +2803,9 @@ attribute_build_servers() {
   echo "                                       ... ${arrived_late}${late_pids:+ (pids ${late_pids})}"
   else
   echo "    SURVIVAL/ARRIVAL split ............... NOT ATTRIBUTABLE ON THIS RUN. The post-build shutdown"
-  echo "                                           reported UNMEASURED, so there is no before-set to"
-  echo "                                           compare against. 'Cannot tell' -- NOT 'none survived'."
+  echo "                                           reported ${POST_SHUTDOWN_VERDICT:-<never reached>}, so there is no trustworthy"
+  echo "                                           before-set to compare against. 'Cannot tell' -- and"
+  echo "                                           emphatically NOT 'none of them survived'."
   fi
   echo "    posture actually carried, vs the posture this script declares TWICE (export + build prefix):"
   echo "      /nodeReuse:true .................... ${t}  <- CANNOT be this script's. Every node it starts"
@@ -2821,12 +2834,18 @@ attribute_build_servers() {
   echo "            Remedy: let the other build FINISH, then re-run."
   echo "        (2) ARRIVAL -- teardown worked and a foreign build started fresh nodes right after it."
   echo "            Remedy: waiting does NOT help; a live spawner will do it again. STOP it."
+  if [[ $shutdown_known -eq 1 ]]; then
   echo "      USE THE SURVIVAL/ARRIVAL SPLIT ABOVE to tell them apart -- it is measured at the shutdown"
   echo "      instant, which is the moment these two differ. Do NOT use the gate-entry axis for this:"
   echo "      it answers a different question, at a different moment, and anything a foreign build"
   echo "      spawned BETWEEN gate entry and that shutdown is a SURVIVAL that the entry axis calls an"
   echo "      arrival. That mistake is on the record in this file's own control pair (7 survivors of 8,"
   echo "      printed beside 'appeared ... 8'), which is why the split above is computed, not derived."
+  else
+  echo "      YOU CANNOT TELL THEM APART ON THIS RUN. The split that separates them was refused above,"
+  echo "      and the gate-entry axis is NOT a substitute -- it is keyed on a different moment and will"
+  echo "      report a SURVIVAL as an arrival. Re-run with the population readable rather than guessing."
+  fi
   echo "    * INHERITED > 0 while both shutdowns reported EFFECTIVE .. that combination is INTERNALLY"
   echo "      INCONSISTENT and is a symptom, not a diagnosis: EFFECTIVE means nothing in the entry set"
   echo "      survived, so a PID from that set being resident now is a PID-REUSE artefact -- the OS"
@@ -2955,6 +2974,19 @@ MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo > "$BUILD_LOG" 2>&1 |
 # that BG1002 and CS2001 did NOT reproduce on demand -- the CLASS did, every time, by simply running a
 # second build against this tree -- so "I could not reproduce it" is expected here and is not evidence
 # that the tree was at fault.
+#
+# 🔴 WHAT WOULD REFUTE ALL OF THE ABOVE, NAMED SO THAT IT CAN BE (§8.1(b); the exculpation is only
+# worth anything if it ships its own falsifier):
+#     ANY of these three signatures reproducing WITH NO FOREIGN BUILD ACTIVE ON THIS WORKSPACE.
+# Check before you believe this note: no second `dotnet build`/`msbuild`, no IDE build host (the
+# build-node census below names them), no watch task. If it reproduces on a quiet machine, this
+# paragraph is WRONG and the tree is the suspect again -- and note that the population census below
+# is the instrument for "was anything else active", so the two halves of this file check each other.
+#
+# What this exculpation actually rests on -- stated so nobody mistakes it for "it didn't reproduce, so
+# it's fine": a POSITIVE CONTROL. The same tree built clean, 0 errors / 116 warnings, immediately
+# BEFORE and immediately AFTER each occurrence. Non-reproduction of a SIGNATURE is a prediction of the
+# race mechanism, not the evidence of innocence; the clean builds either side are the evidence.
 #
 # 🔴 AND DO NOT REACH FOR THE MSB3061 ADVICE BELOW: that branch says "kill stray test hosts and re-run",
 # and it is UNREACHABLE for this mode -- a build that reports errors exits HERE first. So this failure
