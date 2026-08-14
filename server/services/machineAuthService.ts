@@ -100,7 +100,14 @@ export type WeakAuthPolicy = "allow" | "read-only" | "deny";
  * permissive than leaving the flag unset, and the loud log + the rotation report
  * are how a typo gets caught. Verify with telemetry — never assume a flip landed.
  */
-function parseWeakAuthPolicy(name: string, raw: string | undefined, fallback: WeakAuthPolicy): WeakAuthPolicy {
+/**
+ * ⚠ EXPORT có chủ ý (nhóm C, 2026-08-14). `readinessRouter.collectFlagMatrix()` từng tự
+ * viết lại một bản sao THÔ của phép đọc này (`env.X !== "false"`), nên khi chủ dự án làm
+ * ĐÚNG runbook doc 52 — đặt `MACHINE_SHARED_KEY_ALLOWED=deny` — đường cưỡng chế đóng thật
+ * còn bảng Trust & Enforcement lại báo "bypass, vẫn chấp nhận key cũ". Bảng nói ngược sự thật.
+ * Ai cần biết chính sách của một cờ xác thực yếu thì gọi hàm này, ĐỪNG so chuỗi lấy.
+ */
+export function parseWeakAuthPolicy(name: string, raw: string | undefined, fallback: WeakAuthPolicy): WeakAuthPolicy {
   const v = (raw ?? "").trim().toLowerCase();
   if (v === "") return fallback;
   if (v === "false" || v === "0" || v === "off" || v === "no" || v === "deny") return "deny";
