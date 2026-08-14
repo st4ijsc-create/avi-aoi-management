@@ -611,7 +611,8 @@
     "tabs": {
       "fleet": "设备群",
       "health": "健康与OEE",
-      "field": "现场设备"
+      "field": "现场设备",
+      "oee": "OEE与停机"
     }
   },
   "twinHub": {
@@ -9116,7 +9117,10 @@
     "manualRegistrationDesc": "手动注册设备到系统",
     "auditLogTitle": "审计日志",
     "auditLogDesc": "查看系统审计日志",
-    "autoRegistrationLegacy": "自动注册（旧版）"
+    "autoRegistrationLegacy": "自动注册（旧版）",
+    "machineType_SCREW_DRIVER": "拧螺丝机",
+    "machineType_GLUE_DISPENSER": "点胶机",
+    "machineType_CONVEYOR": "输送带"
   },
   "setup": {
     "pleaseCheckInfo": "请检查信息",

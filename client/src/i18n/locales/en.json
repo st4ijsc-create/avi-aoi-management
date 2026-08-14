@@ -611,7 +611,8 @@
     "tabs": {
       "fleet": "Fleet",
       "health": "Health & OEE",
-      "field": "Field Devices"
+      "field": "Field Devices",
+      "oee": "OEE & Downtime"
     }
   },
   "twinHub": {
@@ -9332,7 +9333,10 @@
     "manualRegistrationDesc": "Manually register machines and configure synchronization",
     "auditLogTitle": "Audit Log",
     "auditLogDesc": "View system audit trail",
-    "autoRegistrationLegacy": "Auto Registration (Legacy)"
+    "autoRegistrationLegacy": "Auto Registration (Legacy)",
+    "machineType_SCREW_DRIVER": "Screwdriver",
+    "machineType_GLUE_DISPENSER": "Glue Dispenser",
+    "machineType_CONVEYOR": "Conveyor"
   },
   "setup": {
     "pleaseCheckInfo": "Please check info",
