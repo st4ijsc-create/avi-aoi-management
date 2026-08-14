@@ -162,10 +162,22 @@ Cổng đếm `server/routers/**` đã về **0** (1056 → 0, 43 commit). Nhưn
 
 Toàn bộ 12 task của plan trả nợ E+F **đã hoàn tất và đã push**. Nhưng lượt kiểm mắt cuối cùng (F10) tìm ra hai điều mà **không cổng nào, không test nào bắt được**. Ghi vào đây vì trước đó chúng chỉ nằm trong sổ tiến độ tạm (`.superpowers/sdd/**`, bị gitignore — `git clean -fdx` là mất trắng).
 
-- **F11. `FEATURE_DISABLED` và `DB_UNAVAILABLE` hầu như KHÔNG BAO GIỜ tới người dùng thật. ⚠ ƯU TIÊN CAO.**
-  Ảnh chụp cho thấy `FEATURE_DISABLED` bị **một tầng UI nuốt** và thay bằng câu tự chế (`scanRobot`, banner `kbStudio`); `DB_UNAVAILABLE` **không hiện gì cả** — chỉ có trạng thái rỗng im lặng rồi bị đá về trang đăng nhập.
-  ⇒ Hai họ mã lỗi mà cả sprint dựng ra, dịch đủ ba thứ tiếng, và đợt F2 di trú 31 chỗ `"Database not available"` cho — **bị chặn trước khi chạm người dùng**. Cổng xanh, test xanh, nhưng **đường giao hàng đứt ở tầng UI**.
-  Đúng lớp lỗi Wave 2 đã gọi tên: *"nghiệm thu chỉ chứng minh đúng đường mình vừa đi"*.
+- **F11. ~~`FEATURE_DISABLED` và `DB_UNAVAILABLE` hầu như KHÔNG BAO GIỜ tới người dùng thật.~~ ✅ ĐÃ ĐÓNG 2026-08-14** — 4 commit `f5aa0aa3` · `560b75a5` · `834f2e3b` · `97f97296`.
+
+  ⚠ **Chẩn đoán ban đầu SAI hai chỗ, đọc mã mới rõ:**
+  1. Tôi viết *"`DB_UNAVAILABLE` … rồi bị đá về trang đăng nhập"*. **Không phải.** `redirectToLoginIfUnauthorized` chỉ điều hướng khi message khớp đúng `'Please login (10001)'`, nên `DB_UNAVAILABLE` không hề gây điều hướng. Việc "đá về login" trong ảnh là phiên hết hạn riêng xảy ra cùng lúc.
+  2. Tôi viết *"`FEATURE_DISABLED` bị một tầng UI **nuốt** và thay bằng câu tự chế"*. Đúng về hiện tượng nhưng **sai về bản chất**: tầng UI đó cố ý thay lỗi đỏ bằng một câu bình tĩnh, actionable (*"Preview mode… set X_ENABLED=true"*) — tốt hơn hẳn. Vấn đề thật nằm ở **cách nhận diện**.
+
+  **Bốn gốc rễ thật, đều đã vá:**
+  | | Bệnh | Đã sửa |
+  |---|---|---|
+  | a | 6 tuyến ném `UNAUTHORIZED` + `AUTH_REQUIRED` nhưng message khác `UNAUTHED_ERR_MSG` ⇒ **không điều hướng và cũng không hiện gì**; phiên hết hạn cho ra màn hình rỗng câm | nhận diện theo `appCode`, vị từ tách ra `lib/authRedirect.ts` |
+  | b | **8 màn** nhận diện cờ-tắt bằng `/disabled/i.test(e.message)` — khớp chữ tiếng Anh; 2 màn còn có tầng regex thứ hai để phân biệt hai cờ | helper `lib/featureFlagError.ts` dùng `appCode` + `params.feature` (17 khoá) |
+  | c | **248/910 mutation** không khai `onError` ⇒ bấm nút, hỏng, **không có gì xảy ra** | lưới cuối ở `MutationCache`, chỉ bắn khi component chưa tự xử lý (tránh toast đôi ở 662 chỗ) |
+  | d | React Query v5 **bỏ hẳn `onError` khỏi `useQuery`** ⇒ **cả 1310 query** không có chỗ xử lý lỗi; handler toàn cục chỉ `console.error` ⇒ `DB_UNAVAILABLE` im hoàn toàn | toast gộp theo `appCode` trong cửa sổ 10s; im với refetch nền đã có dữ liệu cũ |
+
+  Cả bốn đều có lưới + mutation-test (gỡ bản vá ⇒ đúng ca cần đỏ mới đỏ).
+  Bài học giữ lại: **cổng xanh và test xanh không chứng minh đường giao hàng thông** — chỉ lượt kiểm mắt mới thấy.
 
 - **F12. Nhãn giao diện tiếng Việt lọt sang bản en/zh — KHÔNG chữa được bằng bản vá F8.**
   Menu ở bản tiếng Anh vẫn hiện "Thay đổi kỹ thuật (ECN)", "Xưởng kỹ thuật", "Chỉ huy nhà máy", "Trung tâm bảo trì", "Bảo trì (CMMS)", "Vật tư đã dùng" — lặp nhất quán ở **cả en lẫn zh**.
