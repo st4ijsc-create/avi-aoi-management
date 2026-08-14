@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { UNAUTHED_ERR_MSG } from '@shared/const';
+import { isUnauthorizedError } from "@/lib/authRedirect";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -28,13 +28,16 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * F11 (nhóm C 2026-08-14) — vị từ nhận diện nằm ở `lib/authRedirect.ts` (thuần, test được).
+ * Tóm tắt lý do đổi: trước đây khớp ĐÚNG CHUỖI `UNAUTHED_ERR_MSG`, nên sáu tuyến khác cũng
+ * ném `UNAUTHORIZED` + `AUTH_REQUIRED` nhưng message khác thì không điều hướng — và handler
+ * bên dưới chỉ `console.error` nên cũng không hiện gì. Người dùng kẹt ở màn hình rỗng câm.
+ */
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
-
-  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
-
-  if (!isUnauthorized) return;
+  if (!isUnauthorizedError(error)) return;
 
   window.location.href = getLoginUrl();
 };
