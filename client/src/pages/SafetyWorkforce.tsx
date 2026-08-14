@@ -69,6 +69,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
+import { isFeatureDisabledError } from "@/lib/featureFlagError";
 
 // ── Typesafe shapes inferred from the safetyRouter output ─────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -263,7 +264,7 @@ export default function SafetyWorkforce() {
 
   // ── Mutation error handler — flag-off CONFLICT → calm info (not red) ─────────
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
-    if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
+    if (isFeatureDisabledError(e)) {
       if (/workforce/i.test(e.message)) {
         toast.info(t("workforce.flagOffToast", "Workforce is disabled (preview). Set WORKFORCE_ENABLED=true to act."));
         void utils.safety.status.invalidate();

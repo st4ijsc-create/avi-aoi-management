@@ -30,6 +30,7 @@ import type { AppRouter } from "../../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
+import { isFeatureDisabledError } from "@/lib/featureFlagError";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -389,7 +390,7 @@ export function IrMergePanel({
       onSaved?.();
     },
     onError: (e: { data?: { code?: string } | null; message: string }) => {
-      if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
+      if (isFeatureDisabledError(e)) {
         toast.info(t("ir.merge.flagOffToast", "IR programming is disabled (preview). Set DPC_IR_V2_ENABLED=true to save."));
       } else {
         toastTrpcError(e);

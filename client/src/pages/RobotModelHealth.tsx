@@ -35,6 +35,7 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { toastTrpcError } from "@/lib/trpcErrors";
+import { isFeatureDisabledError, featureKeyOf } from "@/lib/featureFlagError";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
@@ -175,8 +176,12 @@ export default function RobotModelHealth() {
   // Flag-off CONFLICT → calm info (not a scary red error). Both I2 flags surface a
   // "disabled" CONFLICT message from the router.
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
-    if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
-      if (/rollback/i.test(e.message)) {
+    if (isFeatureDisabledError(e)) {
+      // F11: trước đây phân nhánh bằng `/rollback/i.test(e.message)` — khớp chữ trong
+      // message TIẾNG ANH. Nay dùng khoá máy chủ gửi kèm (`modelAutoRollback` vs
+      // `robotAnomalyDetection`); giữ regex làm đường lui cho tuyến chưa di trú.
+      const feature = featureKeyOf(e);
+      if (feature === "modelAutoRollback" || (feature === undefined && /rollback/i.test(e.message))) {
         toast.info(t("robotHealth.rollbackFlagOffToast", "Model auto-rollback is disabled (preview). Set AI_MODEL_AUTOROLLBACK_ENABLED=true to evaluate."));
       } else {
         toast.info(t("robotHealth.anomalyFlagOffToast", "Robot anomaly detection is disabled (preview). Set AI_ROBOT_ANOMALY_ENABLED=true to scan."));

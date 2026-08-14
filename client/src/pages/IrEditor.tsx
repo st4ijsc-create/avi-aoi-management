@@ -28,6 +28,7 @@ import type { AppRouter } from "../../../server/routers";
 import { Link, useLocation, useSearch } from "wouter";
 import { useEngineering } from "@/contexts/EngineeringContext";
 import { parseDeepLink, withParams } from "@/lib/engineeringDeepLink";
+import { isFeatureDisabledError } from "@/lib/featureFlagError";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -998,7 +999,7 @@ export default function IrEditor() {
 
   // ── Mutations (gated: DPC_IR_V2_ENABLED + machine_control) ─────────────────
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
-    if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
+    if (isFeatureDisabledError(e)) {
       toast.info(t("ir.flagOffToast", "IR programming is disabled (preview). Set DPC_IR_V2_ENABLED=true to save/build."));
       void utils.ir.status.invalidate();
     } else {

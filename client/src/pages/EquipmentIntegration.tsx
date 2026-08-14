@@ -68,6 +68,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+import { isFeatureDisabledError } from "@/lib/featureFlagError";
 
 // ── Typesafe shapes inferred from the equipmentIntegrationRouter output ───────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -167,7 +168,7 @@ export default function EquipmentIntegration() {
 
   // Surface the FLAG-OFF CONFLICT gracefully (info, not a scary red error).
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
-    if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
+    if (isFeatureDisabledError(e)) {
       toast.info(t("eqIntegration.flagOffToast", "Equipment integration is disabled (preview). Set EQ_INTEG_ENABLED=true to act."));
       void utils.equipmentIntegration.status.invalidate();
     } else {

@@ -62,6 +62,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
+import { isFeatureDisabledError, featureKeyOf } from "@/lib/featureFlagError";
 
 // ── Typesafe shapes inferred from the fleetRouter output ──────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -349,8 +350,12 @@ export default function FleetOrchestration() {
   // Surface the FLAG-OFF CONFLICT gracefully (info, not a scary red error).
   // Covers both G1 (FLEET_ORCH_ENABLED) and G2 (FLEET_RESOURCE_ENABLED) disabled messages.
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
-    if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
-      if (/resource/i.test(e.message)) {
+    if (isFeatureDisabledError(e)) {
+      // F11: trước đây phân nhánh bằng `/resource/i.test(e.message)` — khớp chữ trong
+      // message TIẾNG ANH. Nay dùng khoá máy chủ gửi kèm (`fleetResourceLayer` vs
+      // `fleetOrchestration`); giữ regex làm đường lui cho tuyến chưa di trú.
+      const feature = featureKeyOf(e);
+      if (feature === "fleetResourceLayer" || (feature === undefined && /resource/i.test(e.message))) {
         toast.info(t("fleet.resourceFlagOffToast", "Fleet resource layer is disabled (preview). Set FLEET_RESOURCE_ENABLED=true to act."));
         void utils.fleet.resourceStatus.invalidate();
       } else {
