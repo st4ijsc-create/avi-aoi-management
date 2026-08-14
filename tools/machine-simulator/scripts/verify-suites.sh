@@ -95,7 +95,89 @@ export MSBUILDDISABLENODEREUSE=1
 # assembly reference, so that project's deliberate one-reference boundary is intact. Shared suite untouched.
 #
 # EXPECT_WARNINGS stays 116: the new file adds no warning (measured on a full -t:Rebuild).
-EXPECT_ABSTRACTIONS=152
+#
+# 🔴 TASK P-2 (.superpowers/sdd/enum-spelling-witnessed/task-1-brief.md) raises EXPECT_ABSTRACTIONS
+# 152 -> 159 (+7) and MOVES NO OTHER TOTAL. COUNTED FROM THE RUNNER (`dotnet test --list-tests`), not by
+# hand — the reason D-2 wrote down: a total that reconciles is not evidence that anybody knows where the
+# tests are. ONE new file, tests/St4i.Connector.Abstractions.Tests/EnumSpellingContractTests.cs, seven
+# [Fact]s and no [Theory] (a theory's row count is data, and a suite total that moves when a data row is
+# added is a total nobody can defend):
+#   + 1  PublishedString_IsTheMemberNameVerbatim_UnderEveryDerivationThisProductUses — the three
+#        derivations that turn a member's CLR name into a published string (ToString, the product's
+#        no-naming-policy JsonStringEnumConverter, ConnectorJson's camelCase one), plus the read of
+#        src/St4i.EngineApi/JsonConfig.cs that catches a naming policy being added there — which re-spells
+#        every member on the HTTP surface at once with NO member renamed.
+#   + 1  EveryExportedEnum_IsAccountedForInTheRegistry — the population is closed at the ASSEMBLY, not at
+#        a list in a comment: a ninth exported enum makes this red until somebody decides what depends on
+#        its spelling.
+#   + 1  EveryRegisteredMirror_ListsExactlyTheMemberNamesOfWhatItMirrors — set equality at the registered
+#        closed enumerations across TypeScript, the i18n resources and WPF markup. That count was 19 when
+#        this paragraph was written and is 20 after the review-fix round registered TraceTable.tsx's
+#        KIND_DOT — which is exactly why it is not stated as an invariant: registering a site is a normal
+#        edit and moves no total here. (The count moved within one round; a number that had been load
+#        bearing would have had to move with it.) Reports "not carried
+#        here" and "names no member" APART, for the same reason the credential bracket below reports added
+#        and removed apart: a net count cancels exactly the case worth seeing.
+#   + 1  EveryLiteralBoundToARegisteredCarrier_NamesACurrentMember — the corpus-wide sweep for "a carrier
+#        meeting a literal", which does NOT read the registry to decide where to look. RENAMED in the
+#        review-fix round (was EveryComparandAgainstARegisteredCarrier_…): it now sweeps PRODUCERS as well
+#        as comparisons, and the old name asserted the narrower half. No count change from the rename.
+#   + 1  EveryTsTypeAliasOrTableNamedForAPublishedEnum_IsARegisteredMirror — the census that can refute
+#        the registry. It is what found web/src/components/hmi/SchematicPanel.tsx's FIG_KEY, which the
+#        measurement this task was handed did not name.
+#   + 1  TheEnumsRecordedAsHavingNoComparand_StillHaveNone — DriverHealthState and CommandArgumentType are
+#        recorded as having no comparand in the declared corpus. A universal negative is only worth the
+#        census that could refute it, so the census is the assertion.
+#   + 1  TheCorpusThisInstrumentScans_IsPresentAndPopulated — every assertion above is a sweep, and every
+#        sweep over nothing passes.
+#
+# 🔴 THE REVIEW-FIX ROUND RAISES THIS AGAIN, 159 -> 160 (+1), AND IT IS THE ONLY TOTAL THAT MOVES. Counted
+# from the runner on the same rule as above. ONE new [Fact], in the same file, no new file anywhere:
+#   + 1  EveryObjectLiteralKeyedByMemberNames_IsARegisteredMirror — the census that can ACTUALLY refute the
+#        registry. The one above it (…TsTypeAliasOrTableNamedForAPublishedEnum…) is indexed on a
+#        declaration's TYPE ANNOTATION, and review found that SIX OF THE SEVEN member-keyed tables in this
+#        codebase carry none — VERDICT_META and KIND_DOT are Record<string,…>, the four i18n blocks are
+#        bare object properties. So the only thing able to tell the registry it was incomplete was blind to
+#        the shape that dominates it, and a LIVE unregistered site (web/src/components/TraceTable.tsx's
+#        KIND_DOT, keyed by the three ReadingKind spellings and read at line 225) sat inside the declared
+#        corpus, invisible to all three assertions. This one is indexed on the KEYS instead — any object
+#        literal whose top-level keys are drawn entirely from the published member vocabulary, naming at
+#        least two of them, must be registered — which is what the question asks about rather than what the
+#        six examples in front of the author happened to look like. PROVED by withdrawing KIND_DOT's
+#        registration and watching it name the site unaided.
+#        The old census is KEPT, not replaced: it still catches a typed declaration whose KEYS are wrong
+#        or absent, which the key-indexed one cannot see.
+# Grand total 2664 -> 2665, which is 160 + 23 + 1094 + 51 + 1337 read off the five constants below rather
+# than carried forward from K-1's paragraph — three of them have moved since K-1 wrote 2655.
+#
+# 🔴 THE SAME ROUND WIDENS TWO SWEEPS AND MOVES NO TOTAL DOING IT, which is the check that they were
+# widenings rather than new assertions: the C# arm now also reads ORDINARY DOUBLE-QUOTED literals bound to
+# a PascalCase carrier (it was single-quoted/SQL-shaped only, so FleetCore.cs:3548's bare
+# `DeviceClass = "Automation"` — where its own sibling MappingProfile.ForClass uses nameof — and two
+# doc-comment restatements of `ReadingKind == "ProcessResult"` were outside a sweep whose corpus already
+# held the file); and the WPF arm no longer requires `Binding=` before `Value=` nor rejects
+# `{Binding Path=Class}`, both of which were SILENT misses.
+#
+# WHY THE ABSTRACTIONS SUITE AND NOT ONE OF THE OTHER FOUR. The enums are St4i.Connector.Abstractions', the
+# left-hand side of every assertion is REFLECTION OVER THAT COMPILED ASSEMBLY, and the reader who has to be
+# told these names are published strings is the one reading that assembly — a third-party driver author,
+# per N-2. EngineApi.Tests owns the JSON derivation but none of the SQL or the markup; EdgeCore.Tests owns
+# the SQL but neither the browser client nor the markup. Choosing either would have been §8.1(f) exactly:
+# a domain inherited from where the file sits rather than derived from the question.
+#
+# 🔴 AND THE COST, STATED THE WAY K-1 STATED ITS OWN. This adds a THIRD source-tree dependency to a project
+# whose csproj says a third-party author's suite "would look exactly like this" — and a wider one than
+# K-1's: it now reads web/src and the WPF shell's markup, which no third-party author has. The ASSEMBLY
+# boundary is untouched (no ProjectReference, no PackageReference, System.* and Xunit only), but the claim
+# in that csproj comment is now weaker than it reads. Deliberate is not the same as free.
+#
+# EVERY OTHER SUITE IS UNCHANGED, and that is a check rather than a coincidence: P-2 adds no file outside
+# tests/St4i.Connector.Abstractions.Tests and changes no src/ file at all, so a moved total anywhere else
+# would mean this task reached somewhere it had no business reaching.
+#
+# EXPECT_WARNINGS stays 116: the new file builds with 0 warnings of its own (measured — the project builds
+# clean, and the full -t:Rebuild below is what pins the repository figure).
+EXPECT_ABSTRACTIONS=160
 EXPECT_CONFORMANCE=23
 # chore/test-hygiene raised this 735 -> 741 (+6): guards proving the test-isolation seam added to
 # CredentialStore, which was the only one of THIRTEEN stores without one — which is exactly why

@@ -33,6 +33,27 @@
 # first and then does the checkout, so the recovery point exists whether or not anyone
 # remembered to commit.
 #
+# 🔴 AND `restore` IS STILL NOT ENOUGH WHEN ONE FILE HOLDS BOTH THE MUTATION AND YOUR WORK.
+# Fired for real in task P-2 and recorded here because a rule that lives only in a report is
+# a rule the next implementer will never meet. `restore` ends in `git checkout -- <file>`,
+# which has FILE granularity; a mutation is a HUNK. When the mutated file also carries
+# uncommitted work, the verb's unit and the operation's unit disagree, and the safe-sounding
+# verb is the destructive one: P-2's implementer ran `restore` on a test file holding a
+# one-line control mutation plus ~490 lines of new work and lost all of it in one command,
+# having read the paragraph above earlier in the same session.
+#
+#   THE RULE, and it is the cheap one: NEVER MUTATE A FILE THAT HOLDS UNCOMMITTED WORK.
+#   Commit first, then mutate, then restore. The mutation round is cheap to repeat.
+#
+# The snapshot is why that incident is a paragraph instead of a lost round — the work came
+# back byte-for-byte out of the recovery directory. Note what that does and does not prove:
+# it is the FIRST evidence the latch works, it fired by accident rather than by test, and an
+# untested backup that has worked once is still an untested backup. A successor task that
+# touches this verb must exercise the RECOVERY PATH ITSELF in its control pair, not merely
+# the destroying path. The structural fix — revert a recorded diff, or refuse a file carrying
+# unrelated uncommitted hunks — is deliberately NOT made here: changing a recovery verb needs
+# its own control pair, and that control is destructive by nature.
+#
 # 🔴 AND BE HONEST ABOUT WHAT THAT BUYS (review of the round that added it). The first
 # draft of this block said "a written rule is not a trigger; the verb is." Half of that is
 # true and half is the same shape this script exists to catch: a claim in the voice of a
