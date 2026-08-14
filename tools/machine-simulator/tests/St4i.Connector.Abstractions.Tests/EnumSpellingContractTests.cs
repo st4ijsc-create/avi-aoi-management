@@ -451,15 +451,40 @@ public class EnumSpellingContractTests
     ///   <c>kind</c> would make this cry wolf, so only <c>readingKind</c> is registered and a comparison
     ///   written against a variable named <c>kind</c> is OUTSIDE. Same decision, same reason, for bare
     ///   <c>health</c>.</description></item>
-    ///   <item><description><b>An object literal that MIXES member keys with other keys, or names only
-    ///   ONE member.</b> This is the boundary of Fact 5b's census, and it replaces what this entry used to
+    ///   <item><description><b>An object literal with a READABLE non-member key, or one naming only ONE
+    ///   member.</b> This is the boundary of Fact 5b's census, and it replaces what this entry used to
     ///   say. The old text — "a mirror TypeScript does not type … a SECOND verdict table added TOMORROW
     ///   would be invisible" — described a mechanism as a future risk while a live instance
     ///   (<c>TraceTable.tsx</c>'s <c>KIND_DOT</c>) already sat inside the corpus, unregistered and unseen.
     ///   That is the failure this file names in its own header. Fact 5b now indexes on the KEYS, so an
-    ///   untyped table is inside; what remains outside is a block whose keys are not drawn ENTIRELY from
-    ///   the vocabulary, and a block naming a single member. No instance of either is known today, and
-    ///   "no instance known" is a statement about this sweep's reach, not about the codebase.</description></item>
+    ///   untyped table is inside.
+    ///   <para>🔴 The word READABLE is doing real work and the previous draft of this entry omitted it,
+    ///   which made the declared boundary differ from the implemented one. A segment this parser cannot
+    ///   read as a key — a spread (<c>...base</c>), a computed key (<c>[k]: v</c>), a shorthand method, a
+    ///   getter — does NOT put the block outside. Those blocks are still reported, and the count of
+    ///   unreadable segments is now carried into the failure message so a reader can judge, because the
+    ///   parser cannot rule out that the block is genuinely mixed. That direction is deliberate: it
+    ///   over-reports LOUDLY rather than skipping silently. What is truly outside is a block whose keys
+    ///   this parser CAN read and where at least one of them is not a member name.</para>
+    ///   <para>Also outside: a member-keyed literal written inside a <c>${…}</c> template substitution,
+    ///   because the backtick skip swallows the template whole. And for
+    ///   <see cref="CommandRejectionReason"/>, which has exactly two members, the two-key floor equals the
+    ///   whole enum, so a partial mirror of that one vocabulary is below the floor by construction. No
+    ///   instance of any of these is known today, and "no instance known" is a statement about this
+    ///   sweep's reach, not about the codebase.</para></description></item>
+    ///   <item><description><b>Which enum a block belongs to.</b> The vocabulary Fact 5b matches against is
+    ///   FLAT — the union of all eight enums' member names — so it can say "these keys are all published
+    ///   spellings" and cannot say "…of <see cref="Verdict"/>". That union contains ordinary words
+    ///   (<c>String</c>, <c>Double</c>, <c>Bool</c>, <c>Down</c>, <c>Pass</c>, <c>Fail</c>,
+    ///   <c>Connected</c>), so a future three-key block of unrelated origin could be demanded for
+    ///   registration under an enum it does not mirror — and could not then be registered honestly,
+    ///   because set equality would refuse it. A live near-miss exists and is worth knowing about:
+    ///   <c>web/src/i18n/en.ts</c>'s bridge <c>status:</c> block carries <c>Connected</c>,
+    ///   <c>Degraded</c> and <c>Down</c> — all three <see cref="DriverHealthState"/> spellings — and is
+    ///   saved only by ALSO carrying <c>title</c>, <c>Disabled</c>, <c>Connecting</c>, <c>Faulted</c> and
+    ///   more, which makes its readable keys not-entirely-vocabulary. "Entirely" is what stands between
+    ///   this census and that false positive; the floor is the right threshold and this is the cost of
+    ///   it.</description></item>
     ///   <item><description><b>Anything downstream of a hand-written re-spelling.</b> A member is often
     ///   turned into a DIFFERENT vocabulary in C# before it crosses the wire —
     ///   <c>MachineState</c> maps <see cref="Verdict"/> onto <c>"OK"/"WARN"/"FAIL"/"TELEMETRY"</c>, the
@@ -838,7 +863,7 @@ public class EnumSpellingContractTests
             var text = File.ReadAllText(file);
             var relative = Relative(file);
 
-            foreach (var block in MemberKeyedBlocks(text, relative, vocabulary))
+            foreach (var block in MemberKeyedBlocks(text, relative, vocabulary).Blocks)
             {
                 if (block.Anchor is not null && registered.Contains($"{relative}::{block.Anchor}"))
                 {
@@ -853,7 +878,15 @@ public class EnumSpellingContractTests
                           + "stands — give it a name."
                         : $"is bound to `{block.Anchor}` and is not registered.")
                     + " Nothing checks it against the member set, so a rename or an added member leaves it "
-                    + "holding a key the product no longer produces, or missing one it does.");
+                    + "holding a key the product no longer produces, or missing one it does."
+                    + (block.Unreadable > 0
+                        ? $" NOTE: {block.Unreadable} segment(s) here could not be read as keys — a spread, "
+                          + "a computed key, a shorthand method or a getter. Every key this parser COULD "
+                          + "read is a member name, which is why it is reported; if the unreadable "
+                          + "segment(s) contribute non-member keys then this block is MIXED and is outside "
+                          + "this census by declaration, and the honest fix is to say so here rather than "
+                          + "to register it."
+                        : string.Empty));
             }
         }
 
@@ -952,7 +985,7 @@ public class EnumSpellingContractTests
         foreach (var site in objectShaped)
         {
             var text = ReadSite(site.RelativePath);
-            var discovered = MemberKeyedBlocks(text, site.RelativePath, vocabulary)
+            var discovered = MemberKeyedBlocks(text, site.RelativePath, vocabulary).Blocks
                 .Any(b => string.Equals(b.Anchor, site.Anchor, StringComparison.Ordinal));
 
             if (!discovered)
@@ -969,6 +1002,60 @@ public class EnumSpellingContractTests
             + Environment.NewLine + string.Join(Environment.NewLine, undiscovered)
             + Environment.NewLine
             + "Fix the scanner. Do not delete the registry entries to make this green.");
+
+        // 🔴 THE REDISCOVERY GUARD ABOVE REACHES SIX FILES. THIS ONE REACHES ALL OF THEM.
+        // The guard above justifies "the tokenizer still works" over the nine registered blocks in six
+        // files, and that claim was then stated over the whole ~200-file corpus. It is not the same claim:
+        // a regex literal carrying an unpaired quote or brace (`/'/`, `/[{]/`) desynchronises the frame
+        // stack for the REST OF ITS FILE, and every block after it is missed SILENTLY — the one direction
+        // this instrument is not allowed to fail in. Balance is the cheapest property that detects it:
+        // every frame opened must be closed, and no closer may arrive with an empty stack.
+        var desynchronised = new List<string>();
+        foreach (var file in WebFiles())
+        {
+            if (!MemberKeyedBlocks(File.ReadAllText(file), Relative(file), vocabulary).Balanced)
+            {
+                desynchronised.Add(Relative(file));
+            }
+        }
+
+        Assert.True(
+            desynchronised.Count == 0,
+            "The block scanner did not end these files with a balanced frame stack, so it mis-tokenised "
+            + "something and every member-keyed literal after that point was missed WITHOUT SAYING SO:"
+            + Environment.NewLine + string.Join(Environment.NewLine, desynchronised)
+            + Environment.NewLine
+            + "The known cause is a regex literal holding an unpaired quote or brace. Teach the scanner "
+            + "that shape — do not narrow the corpus to make this green.");
+
+        // 🔴 THE ONE CLAIM IN THIS FILE THAT NOTHING RE-CHECKED. Presence.None ships with a census that
+        // could refute it; Presence.AtLeastOne ships with the starvation check above; a DeclaredNonMember
+        // shipped with neither. An exemption nobody re-checks is how the NEXT non-member walks through:
+        // if the four `DeviceClass = "Mixed"` sites disappeared, the entry would persist silently and
+        // would then absolve a future typo that happened to be spelled Mixed. So the exemption is asserted
+        // to still be EARNED, on exactly the terms the starvation check uses.
+        var unearned = new List<string>();
+        foreach (var (carrier, hits) in SweepAllCarriers())
+        {
+            foreach (var declared in carrier.DeclaredNonMembers ?? [])
+            {
+                if (!hits.Any(h => string.Equals(h.Literal, declared, StringComparison.Ordinal)))
+                {
+                    unearned.Add(
+                        $"{carrier.EnumTypeName} in {carrier.Corpus}: \"{declared}\" is recorded as a "
+                        + "spelling deliberately not a member, and no site writes it any more.");
+                }
+            }
+        }
+
+        Assert.True(
+            unearned.Count == 0,
+            "A declared non-member is an EXEMPTION from the membership assertion, and these are no longer "
+            + "paying for themselves:"
+            + Environment.NewLine + string.Join(Environment.NewLine, unearned)
+            + Environment.NewLine
+            + "Delete the entry. Leaving a standing exemption for a literal nothing produces means the next "
+            + "typo spelled that way is absolved in advance.");
     }
 
     // ══ EXTRACTION ═════════════════════════════════════════════════════════════════════════════════
@@ -1070,9 +1157,13 @@ public class EnumSpellingContractTests
         {
             var body = tag.Groups["body"].Value;
 
+            // 🔴 N7 — a DOTTED path (`{Binding Machine.Class}`) binds the same property through an
+            // intermediate object, and requiring the anchor immediately after `Binding ` left it silently
+            // unmatched. It is the last of the three shapes raised against this extractor, and closing it
+            // costs one optional group, so it is closed rather than declared like the other two were.
             var binding = Regex.Match(
                 body,
-                $@"Binding\s*=\s*""\s*\{{\s*Binding\s+(?:Path\s*=\s*)?(?<c>{anchorPattern})\s*\}}""");
+                $@"Binding\s*=\s*""\s*\{{\s*Binding\s+(?:Path\s*=\s*)?(?:[A-Za-z_][\w]*\.)*(?<c>{anchorPattern})\s*\}}""");
             if (!binding.Success)
             {
                 continue;
@@ -1334,21 +1425,34 @@ public class EnumSpellingContractTests
     // declaration-shaped pattern reaches them. `[` and `(` get frames too, otherwise a comma inside an
     // array or an argument list would be read as a key separator of the enclosing object.
 
-    private sealed record MemberKeyedBlock(int Open, IReadOnlyList<string> Keys, string? Anchor);
+    /// <param name="Unreadable">Segments inside this block that carry content but that
+    /// <see cref="AddKey"/> could not read as a key — a spread (<c>...base</c>), a computed key
+    /// (<c>[k]: v</c>), a shorthand method or a getter. Counted rather than silently dropped, because
+    /// dropping them is what made the boundary text and this code disagree; see
+    /// <see cref="ThingsThisInstrumentCannotSee"/> item 2.</param>
+    private sealed record MemberKeyedBlock(
+        int Open, IReadOnlyList<string> Keys, string? Anchor, int Unreadable);
+
+    /// <param name="Balanced">Whether every frame this file opened was closed. False means the tokenizer
+    /// lost sync — see <see cref="TheCorpusThisInstrumentScans_IsPresentAndPopulated"/>, which refuses it.
+    /// </param>
+    private sealed record TokenizedFile(IReadOnlyList<MemberKeyedBlock> Blocks, bool Balanced);
 
     private sealed class Frame(char open, int index)
     {
         public char Open { get; } = open;
         public int Index { get; } = index;
         public List<string> Keys { get; } = [];
+        public int Unreadable { get; set; }
         public int SegmentStart { get; set; } = index + 1;
     }
 
-    private static IReadOnlyList<MemberKeyedBlock> MemberKeyedBlocks(
+    private static TokenizedFile MemberKeyedBlocks(
         string text, string relative, IReadOnlySet<string> vocabulary)
     {
         var found = new List<MemberKeyedBlock>();
         var stack = new Stack<Frame>();
+        var sawStrayCloser = false;
 
         for (var i = 0; i < text.Length; i++)
         {
@@ -1374,22 +1478,25 @@ public class EnumSpellingContractTests
 
             if (c is '}' or ']' or ')')
             {
-                // An unbalanced closer means this file contains something the scanner mis-tokenised (a
-                // regex literal, most likely). Dropping it is safe in the only direction that matters:
-                // this census can then only UNDER-report, and Fact 7 asserts the shapes it must still find.
+                // A stray closer means this file holds something the scanner mis-tokenised — a regex
+                // literal carrying an unpaired quote or brace is the known shape. It is recorded, not
+                // shrugged off: an out-of-sync stack from here on would make this census miss blocks
+                // SILENTLY, and the balance assertion in Fact 7 is what turns that into a red.
                 if (stack.Count == 0)
                 {
+                    sawStrayCloser = true;
                     continue;
                 }
 
                 var frame = stack.Pop();
                 if (frame.Open == '{')
                 {
-                    AddKey(frame.Keys, text[frame.SegmentStart..i]);
+                    Classify(frame, text[frame.SegmentStart..i]);
                     if (IsMemberKeyed(frame.Keys, vocabulary))
                     {
                         found.Add(new MemberKeyedBlock(
-                            frame.Index, frame.Keys, EnclosingDeclarationName(text, frame.Index)));
+                            frame.Index, frame.Keys, EnclosingDeclarationName(text, frame.Index),
+                            frame.Unreadable));
                     }
                 }
 
@@ -1399,12 +1506,35 @@ public class EnumSpellingContractTests
             if (c == ',' && stack.Count > 0 && stack.Peek().Open == '{')
             {
                 var frame = stack.Peek();
-                AddKey(frame.Keys, text[frame.SegmentStart..i]);
+                Classify(frame, text[frame.SegmentStart..i]);
                 frame.SegmentStart = i + 1;
             }
         }
 
-        return found;
+        return new TokenizedFile(found, stack.Count == 0 && !sawStrayCloser);
+    }
+
+    /// <summary>Reads one comma-delimited segment: a key, nothing at all (a trailing comma or a comment),
+    /// or content this parser cannot read as a key — which is counted rather than dropped.</summary>
+    private static void Classify(Frame frame, string segment)
+    {
+        var before = frame.Keys.Count;
+        AddKey(frame.Keys, segment);
+        if (frame.Keys.Count > before)
+        {
+            return;
+        }
+
+        if (!IsBlankSegment(segment))
+        {
+            frame.Unreadable++;
+        }
+    }
+
+    private static bool IsBlankSegment(string segment)
+    {
+        var withoutComments = Regex.Replace(segment, @"/\*.*?\*/|//[^\r\n]*", string.Empty, RegexOptions.Singleline);
+        return string.IsNullOrWhiteSpace(withoutComments);
     }
 
     /// <summary>Keys drawn ENTIRELY from the published vocabulary, at least two of them. See the threshold
