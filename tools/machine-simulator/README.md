@@ -1921,7 +1921,7 @@ process ends before it serves anything; "comes up" means every endpoint works an
 | `alarms`, and `security.db` itself | **STOPS**, a moment later — these open as the host starts rather than before it |
 | `identity` | **MIXED, and read this one twice**: a directory that cannot be **created** stops the host; a directory that exists but cannot be **written** comes up on a fresh in-memory identity with an `Error` — a new device every start, which a Site that pinned the old fingerprint will refuse |
 | `connector-config` | **MIXED**: a store that cannot be **opened** stops the host; one that opens but cannot be **read** comes up with no persisted connectors |
-| `settings` (the FILE) | **MIXED, and measured**: a `fleet-settings.json` whose own bytes cannot be read stops the host; a deny on the **directory** alone changes nothing; a deny reaching **both** the directory and the file routes to the seed arm instead. One that reads but cannot be **activated** comes up and reports — that last arm is the ruling above |
+| `settings` (the FILE) | **Comes up and reports** (task Q-1). A `fleet-settings.json` that is present but cannot be read — a typo, a lock, a withheld permission — is applied to nothing, **left untouched on disk**, and named at `Error`. One that reads but cannot be **activated** comes up and reports too — that arm is the ruling above. *(Before Q-1 this row read "MIXED": some shapes stopped the host and one routed to the seed arm and overwrote the file. See `docs/startup-failure-posture.md` §3.1a for the measured table that is now history.)* |
 | `notifications`, `bridge-spool`, the UNS broker port | **Comes up**, warns, that subsystem is off for the run |
 | `connectors.json`, `fleet.json`, `ST4I_MODBUS_MAP`, `ST4I_OPCUA_MAP`, a persisted connector row | **Comes up**, warns, **only that source** disables itself. A connector that is configured but not running stays visible as exactly that — it is never shown as running |
 | `creds`, `opcua-pki` | **No startup decision** — both are resolved when something uses them, not while the host starts |
@@ -1943,34 +1943,30 @@ no row above.
 
 🔴 **Places that do NOT follow the rule. Named here rather than changed, because flipping any of them is an
 operator-observable startup change and none has a one-line fix.** The full statement of each is in
-`docs/startup-failure-posture.md`; this is what an operator needs:
+`docs/startup-failure-posture.md`; this is what an operator needs.
+🔨 **One of them HAS now been changed** — the settings-file entry immediately below, by task Q-1 under the
+owner's decision of 2026-08-16. It was flipped precisely *because* it was an operator-observable startup
+change: the observable it changed was operator data being destroyed. The sentence above still holds of every
+remaining entry, and none of those is fixed.
 
-- **`fleet-settings.json` is READ unguarded**, 104 lines before the guard that exists so that file can never
-  take the host down. *(That "104" is a distance pointer and it decays: measured today it is **106** to the
-  guard's declaration and **136** to its call. It is left unfitted on purpose — see the note at the
-  `settingsStore.Load()` site for why re-fitting a decaying pointer destroys the evidence that it decays.)*
-  🔴 **MEASURED (task M-1, `tools/settings-acl-probe`), and what happens depends on WHICH permission and on
-  WHAT OBJECT:** a deny on **the file** — read-data alone is enough — **stops the host**, because the
-  existence check still answers "yes" and the read then fails. A deny on **the directory alone** changes
-  nothing: the folder stops being listable, the file is still opened by name and read. A deny reaching
-  **both** — which is what the folder-properties dialog writes by default, since it propagates — makes the
-  existence check answer "no file" and routes to the **seed arm**. A holder's lock stops the host only when
-  it was taken **deny-share**; a `FileShare.Read` reader does not. *(The "stops the host" and "routes to the
-  seed arm" outcomes are derived: the probe measures the store, and the arm is read off the composition
-  root's own control flow.)* **The obvious guard would still be a defect** — treating an unreadable file as
-  "no file" applies the environment floor and persists it.
-  🔴 **Two different harms, and they have very different preconditions — read both.**
-  **(1) Your file is OVERWRITTEN with the environment floor, on an ordinary successful start, silently.**
-  Measured. This needs no failure of any kind: it happens whenever the settings file cannot be parsed or
-  read as "no file" **and at least one of `ST4I_SERVER_URL` / `ST4I_MACHINE_CODE` / `ST4I_VERIFY_TLS` is
-  set** — which is the headless service install those variables exist for. With none of the three set,
-  nothing is written. **The likeliest trigger is not a permission at all: it is a typo in the file.**
-  **(2) Your file is DELETED while the log says nothing you wrote was deleted.** Also measured — but this
-  one additionally requires the startup replay to **fail to activate**, which no environment-variable-only
-  route reaches today. It is a contract away, not live.
-  What is missing behind both is a third state, "a file exists and could not be read". **If you hand-edit
-  `fleet-settings.json`, keep a copy** — the same advice this section already gives for `products.json`.
-  Full tables in `docs/startup-failure-posture.md` §3.1a.
+- ~~**`fleet-settings.json` is READ unguarded**~~ 🔨 **FIXED (task Q-1). It used to be the worst entry in
+  this list and it is kept here, corrected, because an operator who read the old one needs to know it no
+  longer applies.** Until this fix, a `fleet-settings.json` that could not be read — most likely a **typo in
+  a file you hand-edited** — was treated as *no file at all*, and the "no file" branch is the one that is
+  allowed to write. **Two harms, both measured:** your file was **overwritten with the environment floor on
+  an ordinary successful start**, silently, whenever at least one of `ST4I_SERVER_URL` /
+  `ST4I_MACHINE_CODE` / `ST4I_VERIFY_TLS` was set — which is exactly the headless service install those
+  variables exist for; and on a narrower path it was **deleted while the log said nothing you wrote had been
+  deleted**.
+  **What happens now:** the host **comes up**, applies **nothing** (not the file, and not the environment
+  floor either — the file wins whenever there is one, and there is one), leaves your file **exactly as it
+  is**, and says so at `Error`, naming the file. Repair it and restart, or set the values with
+  `PUT /v1/settings`. `GET /v1/settings` reports what the process is actually running on, which is its
+  built-in defaults, and never claims your file was applied.
+  **Advice that has not changed: if you hand-edit `fleet-settings.json`, keep a copy** — the same advice
+  this section gives for `products.json`, and it is still the cheapest insurance.
+  Full history, the measured permission/lock table behind it, and what the fix costs:
+  `docs/startup-failure-posture.md` §3.1a and §3.1a-now.
 - **Two operator-editable catalogues end the process**: `products.json`/`recipes.json` and the ecosystem
   files beside the exe are deserialized with no error handling at all, so one typo in a file with no
   published schema stops the host — while `connectors.json` and `fleet.json`, the same kind of file in the
@@ -2041,29 +2037,28 @@ và đã ngã ngũ**: một ngoại lệ ném ra từ handler `ApplicationStarte
 vụ, và framework tự ghi lỗi ấy ở mức `Critical`.
 🔴 **Những chỗ KHÔNG theo quy tắc — nêu tên chứ không sửa**, vì lật chỗ nào cũng là thay đổi quan sát được
 trên đường khởi động và không chỗ nào có bản sửa một dòng. Bản đầy đủ nằm trong artefact; đây là phần người
-vận hành cần: `fleet-settings.json` **được ĐỌC không bọc**, cách chốt sinh ra để file ấy không bao giờ hạ được
-host **104 dòng**. 🔴 **ĐÃ ĐO (M-1, `tools/settings-acl-probe`), và chuyện gì xảy ra phụ thuộc vào CHẶN QUYỀN
-NÀO, TRÊN ĐỐI TƯỢNG NÀO:** chặn đọc trên **chính FILE** — chỉ riêng read-data cũng đủ — **làm chết host**, vì
-phép kiểm tồn tại vẫn trả lời "có" rồi lệnh đọc mới hỏng. Chặn đọc trên **riêng THƯ MỤC** thì **không đổi gì
-cả**: thư mục thôi liệt kê được, còn file vẫn được mở theo tên và đọc bình thường. **Phép chặn với tới CẢ HAI
-— thư mục VÀ file** (đúng cái hộp thoại Properties của Windows ghi ra theo mặc định, vì nó áp xuống cả các
-mục bên trong) mới làm phép kiểm tồn tại trả lời "không có file" và rơi vào **nhánh gieo mầm**. Một khoá do
-tiến trình khác giữ chỉ hạ được host khi nó mở ở chế độ **deny-share**; một người đọc `FileShare.Read` thì
-không. *(Hai kết cục "chết host" và "rơi vào nhánh gieo mầm" là SUY RA: bộ dò đo cái store, còn nhánh thì đọc
-từ luồng điều khiển của chính composition root.)* **Và bản vá hiển nhiên vẫn là một khiếm khuyết**: coi file
-không đọc được như "không có file" sẽ áp sàn môi trường rồi lưu nó.
-🔴 **HAI tác hại khác nhau, với hai điều kiện tiên quyết rất khác nhau — đọc cả hai.**
-**(1) File của bạn bị GHI ĐÈ bằng sàn môi trường, trong một lần khởi động THÀNH CÔNG bình thường, im
-lặng.** Đã đo. Nó không cần bất kỳ thất bại nào: chỉ cần file cài đặt không phân giải được (hoặc bị đọc
-thành "không có file") **và ít nhất MỘT trong `ST4I_SERVER_URL` / `ST4I_MACHINE_CODE` / `ST4I_VERIFY_TLS`
-được đặt** — đúng kiểu cài headless mà ba biến ấy sinh ra để phục vụ. Nếu không đặt biến nào trong ba, không
-có gì được ghi. **Nguyên nhân dễ xảy ra nhất KHÔNG phải một phép chặn quyền — mà là một lỗi gõ trong file.**
-**(2) File của bạn bị XOÁ trong khi log ghi rằng không có gì bạn viết bị xoá.** Cũng đã đo — nhưng tác hại
-này CÒN đòi lượt phát lại lúc khởi động phải **kích hoạt hỏng**, mà hôm nay không đường env-var-nào-đó với
-tới được. Nó cách một hợp đồng, chưa phải chuyện đang xảy ra.
-Đằng sau cả hai vẫn là thiếu một trạng thái thứ ba, "có file mà không đọc được". **Nếu bạn sửa tay
-`fleet-settings.json`, hãy giữ một bản sao** — đúng lời khuyên mục này đã dành cho `products.json`. Bảng đầy
-đủ ở `docs/startup-failure-posture.md` §3.1a. **Hai catalogue người vận hành sửa được thì làm chết tiến trình**:
+vận hành cần.
+🔨 **MỘT chỗ trong số đó thì ĐÃ được sửa** — mục file settings ngay dưới đây, bởi nhiệm vụ Q-1 theo phán
+quyết của chủ sở hữu ngày 2026-08-16. Nó được lật **chính vì** đó là một thay đổi quan sát được trên đường
+khởi động: thứ quan sát được mà nó đổi là **dữ liệu của người vận hành bị phá huỷ**. Câu trên vẫn đúng với
+mọi mục còn lại, và không mục nào trong số đó được sửa.
+🔨 **`fleet-settings.json` — ĐÃ SỬA (nhiệm vụ Q-1). Mục này từng là mục nặng nhất trong danh sách, và nó
+được GIỮ LẠI ở đây kèm đính chính, vì người đã đọc bản cũ cần biết bản cũ không còn đúng.** Trước bản sửa,
+một `fleet-settings.json` **không đọc được** — dễ xảy ra nhất là **một lỗi gõ trong file bạn tự sửa tay** —
+bị đối xử như **không có file**, mà nhánh "không có file" chính là nhánh **được phép ghi**. **Hai tác hại,
+cả hai đều đã đo:** file của bạn bị **GHI ĐÈ bằng sàn môi trường trong một lần khởi động THÀNH CÔNG bình
+thường**, im lặng, chỉ cần **ít nhất MỘT** trong `ST4I_SERVER_URL` / `ST4I_MACHINE_CODE` /
+`ST4I_VERIFY_TLS` được đặt — đúng kiểu cài headless mà ba biến ấy sinh ra để phục vụ; và trên một đường hẹp
+hơn, file bị **XOÁ trong khi log ghi rằng không có gì bạn viết bị xoá**.
+**Bây giờ thì sao:** host **vẫn lên**, **không áp gì cả** (không áp file, và cũng **không áp sàn môi
+trường** — file thắng bất cứ khi nào có file, mà ở đây có), **giữ nguyên file của bạn**, và **nói ra ở mức
+`Error`**, gọi đúng tên file. Hãy sửa file rồi khởi động lại, hoặc đặt giá trị bằng `PUT /v1/settings`.
+`GET /v1/settings` báo đúng thứ tiến trình đang thực sự chạy (các giá trị mặc định dựng sẵn) và **không bao
+giờ** tuyên bố file của bạn đã được áp.
+**Lời khuyên KHÔNG đổi: nếu bạn sửa tay `fleet-settings.json`, hãy giữ một bản sao** — đúng lời khuyên mục
+này đã dành cho `products.json`, và nó vẫn là bảo hiểm rẻ nhất. Toàn bộ lịch sử, bảng đo về quyền/khoá đứng
+sau nó, và cái giá của bản sửa: `docs/startup-failure-posture.md` §3.1a và §3.1a-now.
+**Hai catalogue người vận hành sửa được thì làm chết tiến trình**:
 `products.json`/`recipes.json` và các file ecosystem cạnh .exe được deserialize **không có bắt lỗi nào**, nên
 một lỗi gõ trong một file **không có schema công bố** sẽ chặn host — trong khi `connectors.json` và
 `fleet.json`, cùng loại file cùng thư mục, thì được dung thứ kèm cảnh báo; nếu bạn sửa tay hai catalogue ấy,

@@ -177,6 +177,50 @@ export MSBUILDDISABLENODEREUSE=1
 #
 # EXPECT_WARNINGS stays 116: the new file builds with 0 warnings of its own (measured — the project builds
 # clean, and the full -t:Rebuild below is what pins the repository figure).
+#
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 TASK Q-1 (.superpowers/sdd/third-state-unreadable/task-1-brief.md) raises EXPECT_EDGECORE 1094 -> 1101
+# (+7) and EXPECT_ENGINEAPI 1337 -> 1338 (+1). The other three constants DO NOT MOVE. Grand total
+# 2665 -> 2673, read off the five constants below rather than carried forward.
+#
+# 🔴 COUNTED FROM THE RUNNER, and this task is the reason to say HOW. `dotnet test --list-tests` reports
+# 1094 for EdgeCore AFTER the seven were added — the same figure the constant held BEFORE them. VSTest
+# discovery does not enumerate every data row, so the list count and the executed total are two different
+# numbers and only one of them is what this file asserts. Both suites were RUN to completion instead:
+# EdgeCore `Total: 1101`, EngineApi `Total: 1338`, both `Failed: 0`. Anyone re-deriving these with
+# --list-tests will get 1094/1338 and must not "correct" the constants to match.
+#
+# WHAT THE EIGHT ARE, and why the split is 7/1 rather than all in one place. The property Q-1 installs is
+# "a file that exists but could not be read is a THIRD outcome, never the absent one, and nothing writes on
+# it". That has two halves and they are separately falsifiable:
+#
+#   + 7  tests/St4i.EdgeCore.Tests/FleetSettingsStoreTests.cs — the STORE half, on FleetSettingsStore.Read's
+#        three outcomes. Six of the seven are one per branch of that method, and the four Unreadable ones
+#        are asserted MEMBER BY MEMBER rather than through one example (malformed JSON; an empty file;
+#        legal JSON that deserializes to nothing, which is the only unreadable shape that throws NOTHING and
+#        is what forces `Failure` to be nullable there; and a FileShare.None handle, which is the vector
+#        that has no bad bytes in it at all). That is deliberate: docs/startup-failure-posture.md §3.1a
+#        records TWICE that this exact question was answered from one member and written about the
+#        population. The seventh covers Delete() after its File.Exists gate was removed.
+#   + 1  tests/St4i.EngineApi.Tests/StartupSettingsReplayHardeningTests.cs — the COMPOSITION-ROOT half, and
+#        the control-pair witness §8.1(h6) asks for: it boots the real Program.cs over a hand-malformed
+#        fleet-settings.json with the env floor set, and reads the file's BYTES back off disk. It is one
+#        test rather than three because the assertion that carries it is a single comparison against the
+#        operator's original bytes — which is simultaneously "not overwritten" and "not deleted". Run at
+#        BOTH sides: at dd4a3e68 the bytes on disk are the environment floor; at this commit they are
+#        unchanged.
+#
+# EXPECT_ABSTRACTIONS / EXPECT_CONFORMANCE / EXPECT_EDGESERVICE STAY PUT, and that is a check rather than a
+# coincidence: Q-1 changes three files under src/ (FleetSettingsStore.cs, Program.cs, and a doc comment in
+# FleetCore.cs), all reached only by EdgeCore.Tests and EngineApi.Tests. A moved total in any of the other
+# three would mean this task reached somewhere it had no business reaching. P-2's enum-spelling witness in
+# the Abstractions suite is one of the three that must not move, and it did not: Q-1 adds a public enum to
+# St4i.EdgeCore, and that registry is closed at St4i.Connector.Abstractions' exported types.
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0. No suppression of any kind was added — no
+# NoWarn, no #pragma, no .editorconfig, no WarningLevel change. The three changed src/ files build with no
+# warning of their own (measured per-project; the full -t:Rebuild below is what pins the repository figure).
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
 EXPECT_ABSTRACTIONS=160
 EXPECT_CONFORMANCE=23
 # chore/test-hygiene raised this 735 -> 741 (+6): guards proving the test-isolation seam added to
@@ -1073,7 +1117,7 @@ EXPECT_CONFORMANCE=23
 # class comment rather than renamed, since renaming touches three unrelated classes to no measured end.
 # 🔴 Task K-1 raises this 1093 -> 1094 (+1): the one linked hygiene [Fact] every suite gets. Full
 # justification beside EXPECT_ABSTRACTIONS at the top of this file.
-EXPECT_EDGECORE=1094
+EXPECT_EDGECORE=1101
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -2302,7 +2346,7 @@ EXPECT_EDGESERVICE=51
 # adds no driver and no connector kind, and the shared suite's "FleetCore.StartLocked constructs drivers
 # under the same _gate lock Estop() takes" assertion string is still TRUE — J-2 moves no driver construction
 # and P7 is untouched. EXPECT_WARNINGS stays 116: no new warning (measured on a full -t:Rebuild).
-EXPECT_ENGINEAPI=1337
+EXPECT_ENGINEAPI=1338
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

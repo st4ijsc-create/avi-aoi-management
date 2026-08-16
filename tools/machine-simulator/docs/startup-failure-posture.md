@@ -2,9 +2,15 @@
 
 **Owner:** task J-3 (`.superpowers/sdd/startup-failure-posture/`), discharging the item booked at
 `FleetCore`'s P5; §2 ceiling 3 and §3.1a re-measured by task M-1
-(`.superpowers/sdd/settings-acl-probe/`). **Status:** descriptive — this records what the product does, and
-names where it does something else. **Nothing here is enforced by a test**, and two rows — and only two —
-are now backed by something that runs: `tools/settings-acl-probe`.
+(`.superpowers/sdd/settings-acl-probe/`); **row 36 CHANGED — not merely re-measured — by task Q-1**
+(`.superpowers/sdd/third-state-unreadable/`), executing the owner's decision 1 of 2026-08-16.
+**Status:** descriptive — this records what the product does, and names where it does something else.
+
+🔴 **Two claims in this paragraph's earlier version are now false, and they are corrected rather than
+quietly dropped.** *"Nothing here is enforced by a test"* — **row 36 now is**, by the two suites named at the
+end of §3.1a-now, which is the only row of the forty-one that any assertion is indexed on. And *"two rows —
+and only two — are backed by something that runs"* named `tools/settings-acl-probe`; the count of rows
+backed by an execution is now **three**, by **two** instruments that run. Every other row is still a read.
 
 This file exists because the rule was previously stated as a **scalar** ("thirty-six sites, thirty-two
 agree") in five places with **the members enumerated nowhere the tree could reach**. An independent
@@ -105,6 +111,16 @@ so **S** versus **U** is never observed — it is read off the composition root'
 a measured store outcome. Instrument 2 supplies the outcome; instrument 1 supplies the posture. A table that
 said otherwise would be making the exact substitution this file exists to stop.
 
+🔴 **Instrument 3 — the five test suites, added by task Q-1, and its reach is ONE row.** Row 36 is the only
+member of this set that any assertion is indexed on: `FleetSettingsStoreTests` at the store and
+`StartupSettingsReplayHardeningTests.AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo`
+through the real composition root, the latter being the one that observes **U** rather than deriving it — it
+boots `St4i.EngineApi` and issues a request, which is precisely the thing instrument 2 states it never does.
+That is one row of forty-one. **Forty are still a read**, and the reason the suites cannot simply be pointed
+at the rest is instrument 2's own: several of these rows can only be provoked by making something on disk
+unreadable, and a suite that has to skip when it cannot is a suite whose `Skipped` count is
+environment-dependent.
+
 **Where the two instruments DISAGREED is the useful part**, per §8.1: reading produced two opposite
 statements about §3.1a in two successive rounds, and the execution shows that **each described one member of
 a population and was written as a claim about the population**. Neither round was careless; the read had no
@@ -142,6 +158,9 @@ way to see that "unreadable" is not one state.
 
 **S** = the process ends. **U** = the host comes up and the failure is reported. **✓** = matches the rule.
 **✗** = divergence, named and deliberately not fixed (flipping any is an operator-observable startup change).
+🔴 **One row has now been flipped on purpose** — row 36, by task Q-1, under the owner's decision 1; the
+change to what an operator observes is the point of it rather than a side effect. The legend still holds of
+every remaining **✗**: none of those is fixed. See §3.1a-now.
 
 ### 3.1 `St4i.EngineApi` — `Program.cs`, in execution order
 
@@ -182,7 +201,7 @@ way to see that "unreadable" is not one state.
 | 33 | → **`SimulatedEcosystem` ctor + `Load()`** | `ecosystem\*.json` beside the binary | **no** | **S** | **✗ §3.5** |
 | 34 | → `ConnectorRegistry` factory | rows, `connectors.json` | no | **U** per entry (every arm is a `Try*`) | ✓ |
 | 35 | → `FleetCore.ResolveFleet` | `fleet.json`, `--fleet` | no | **U** | ✓ |
-| 36 | `settingsStore.Load()` | `fleet-settings.json` | no | **S** | **✗ §3.1a** |
+| 36 | `settingsStore.Read()` | `fleet-settings.json` | no | **U** — *fixed by Q-1, see §3.1a* | ✓ |
 | 37 | the startup settings replay | that triple | no | **U** — *posture B* | ✓ |
 | 38 | the seed-arm discard | same file | no | **U** (own try/catch) | ✓ |
 | 39 | `AlarmThresholds.FromEnvironment()` | four `ST4I_ALARM_*` knobs | **yes** | **silent** ×4 | **✗ §3.4** |
@@ -200,12 +219,19 @@ decisions. `TransportCoordinator.RebuildLive` → `wal.EnsureDir()` is the **sam
 how a WAL failure reaches the settings replay's guard, and is why the two headline sites are coupled rather
 than merely adjacent.
 
-### 3.1a — Divergence: `fleet-settings.json` is READ unguarded
+### 3.1a — ~~Divergence: `fleet-settings.json` is READ unguarded~~ 🔨 **FIXED by task Q-1 — this entry is now history plus one live paragraph**
 
-The site is the `settingsStore.Load()` call in `St4i.EngineApi/Program.cs`, above the
+🔴 **Read this heading before the tables below.** Everything in this entry was **measured**, and every
+measurement in it stands as a record of what the product did up to commit `dd4a3e68`. What has changed is
+the product: the owner's decision 1 of 2026-08-16 (`docs/owner-decisions.md`) ruled **FIX**, and task Q-1
+executed it. The entry is kept rather than deleted because it is the derivation of the rule that was
+applied, and because deleting the evidence for a fix is how the next round loses the reason. **What is
+still live is §3.1a-now at the end.**
+
+**The site was** the `settingsStore.Load()` call in `St4i.EngineApi/Program.cs`, above the
 `TryReplayStartupSettings` guard built so that file can never take the host down.
-`FleetSettingsStore.Load()` catches only `JsonException`, so a *corrupt* file is tolerated and an
-*unreadable* one is not: `File.ReadAllText` propagates `IOException` out of the composition root.
+`FleetSettingsStore.Load()` caught only `JsonException`, so a *corrupt* file was tolerated and an
+*unreadable* one was not: `File.ReadAllText` propagated `IOException` out of the composition root.
 
 🔴 **Every citation in this file names a SYMBOL, never a line number or a line distance** — deliberately, and
 it is the same discipline §3.1a's own neighbour argues for at `Program.cs`'s stale `~1550` pointer. A position
@@ -344,22 +370,80 @@ the success path — the `finally` inside `if (rebuildNeeded)` in `FleetCore.Upd
 `rebuildNeeded` assignment just above it. Driving that call for real would construct a `CredentialStore` and
 a transport, which is how a probe reaches roots it has no business reaching.)*
 
-**Severity ordering, which is the useful output for whoever takes the D1 decision:** the overwrite is
-**live**; the three deletions are **one contract away**. All four are the same missing third state — *"a file
-exists and could not be read"* — plus, for the malformed case, the fact that the tolerated-corrupt path and
-the no-file path are the same `null`. **The owner is choosing a justification, not a design**: one guard and
-one new state answers all four.
+**Severity ordering, which was the useful output for whoever took the decision:** the overwrite was
+**live**; the three deletions were **one contract away**. All four were the same missing third state — *"a
+file exists and could not be read"* — plus, for the malformed case, the fact that the tolerated-corrupt path
+and the no-file path were the same `null`. **The owner was choosing a justification, not a design**: one
+guard and one new state answers all four.
 
-**The obvious guard is still a defect, for a narrower reason.** Wrapping the read so it yields null makes an
-unreadable file indistinguishable from *no* file and moves the three throwing rows above onto the seed arm,
-where the environment floor is applied and `UpdateSettings` persists unconditionally. **What is missing is
-still a third state — "a file exists and could not be read"** — which neither the composition root nor
-`FleetSettingsStore` expresses. Building it changes what an operator observes at startup.
+**The obvious guard would still have been a defect, for a narrower reason, and this is the paragraph Q-1
+had to answer.** Wrapping the read so it yields null makes an unreadable file indistinguishable from *no*
+file and moves the three throwing rows above onto the seed arm, where the environment floor is applied and
+`UpdateSettings` persists unconditionally. So the fix could not be a `try`/`catch`. **What was missing was a
+third state — "a file exists and could not be read"** — which neither the composition root nor
+`FleetSettingsStore` expressed.
 
 **Re-running any of this:** `dotnet run --project tools/settings-acl-probe`. It builds its own temp sandbox,
 points the store at it through `FleetSettingsStore.EnvVarDir` — the same seam the composition root reads —
 refuses every path outside that sandbox before issuing a syscall, and verifies each ACL back by SDDL
 comparison. It never touches `%ProgramData%\ST4I`, and it proves the refusal rather than promising it.
+🔴 **Its outcomes are still true of the STORE calls it drives** (`Save`, `Delete`, `File.Exists`, the ACL
+shapes) — but its *derived* last column, "the arm that follows", is read off a composition root Q-1 has
+changed, so read that column against §3.1a-now rather than against the tables above.
+
+### 3.1a-now — what the code does after Q-1, and what that costs
+
+**One read, three outcomes.** `FleetSettingsStore.Read()` returns `Loaded` / `Absent` / `Unreadable`.
+`Load()` survives as `Read().Settings` — it answers *"is there a triple to apply"*, which is still a fair
+question and still the only one its two callers ask, and it is documented as **not** the read anything may
+branch a write on.
+
+🔴 **The existence probe is gone, and that is the mechanism rather than a tidy-up.** `Read()` opens the
+file and classifies what the open says. The only answers that mean *there is nothing here* are the
+filesystem's own `FileNotFoundException` / `DirectoryNotFoundException`; everything else is `Unreadable`.
+That is what closes the row above where **`File.Exists` answered `false` with the operator's file present** —
+the seed arm was never selected by tolerating a failure, it was selected by asking a *second surface* a
+question the read itself could answer, and two surfaces can disagree. The catch is of `Exception` rather
+than of an enumerated list, deliberately: an enumeration is a closed claim about a set nobody controls, and
+the cost of it being wrong is falling through to the one outcome that licenses an overwrite.
+
+**What the composition root does on `Unreadable`:** it does not replay, so `FleetHost.UpdateSettings` is
+never called, so the `finally` that persists is never reached; it does not enter the discard block, whose
+condition is now `Status == Absent && !replaySucceeded` rather than `!replayRestoredAFile && …`; and it logs
+at **`Error`**, naming the file, saying the file was not applied and was **not overwritten or deleted by
+this start**, and saying the host is up.
+
+**All four measured harms are answered by that one change, and the argument is checkable rather than
+asserted.** The overwrite is answered directly: no replay, no `Save`. The three deletions are answered
+because every one of them is gated on reaching the **seed arm**, and the seed arm is now selected only on
+`Absent` — an outcome a present file cannot produce, because the read is an open attempt. The narrowing is
+strictly one-directional (`Absent` implies the old `!replayRestoredAFile`, never the reverse), so no arm
+that used to be excluded is now included.
+
+**What it costs, stated rather than glossed.** A host with an unreadable settings file comes up on
+`FleetHost`'s built-in defaults and does **not** apply the `ST4I_*` floor either — FF-1's precedence says
+the file wins whenever there is one, and there is one; applying the floor would report a triple to the
+operator that they never set. `GET /v1/settings` therefore reports the defaults, truthfully, as what this
+process holds. That is the same honest divergence the failed-restore arm already carries.
+
+🔴 **Where it is visible, and where it deliberately is not.** The boot line at `Error` reaches the console
+and, under `AddWindowsService`, the Windows Event Log — the channel that matters for the headless install,
+which is the deployment this defect destroyed data on and the one with no UI to retype a triple into.
+**Nothing was added to `GET /v1/settings`**: that response is a published shape the browser client and
+third-party callers read, and widening it is the class of change the owner reserved to himself in decisions
+3 and 4. A field on the operating surface naming this condition is worth having and is a decision, not an
+implementation detail — recorded here rather than taken.
+
+**What witnesses it.** `FleetSettingsStoreTests` asserts the three outcomes at the store, with the
+unreadable population asserted **member by member** (malformed, empty, legal-JSON-yielding-nothing, and a
+`FileShare.None` handle) rather than through one example — the same "written from one member, stated about
+the population" failure this entry records twice against its own earlier rounds. The end-to-end witness is
+`StartupSettingsReplayHardeningTests.AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo`,
+which boots the real composition root over a hand-malformed file with the env floor set and reads the bytes
+back off disk. **It was run at `dd4a3e68` as well as after the fix**: at the base commit the file on disk
+is the environment floor and the operator's bytes are gone; after it, the bytes are byte-for-byte intact.
+
+**What is still true and still not enforced by a test:** everything else in this file. Q-1 moved one row.
 
 ### 3.2 — `ConnectorConfigStore`: a symmetry defect that does NOT need this rule
 
@@ -383,8 +467,14 @@ Guarding the constructor means building that state first.
 **Second instance of the same false-completeness shape, found by the sibling scan and named here rather than
 rewritten:** the doc block on `LogIfRegisterMachineCollided` in `Program.cs` claims the *"one bad source
 disables only itself"* posture is one *"every other startup config load in this file already has"* — false in
-the same way, and rows 7, 12, 24, 27, 32, 33 and 36 all contradict it. Neither claim is rewritten: doing so would settle a rule this task is not
+the same way, and rows 7, 12, 24, 27, 32 and 33 all contradict it. Neither claim is rewritten: doing so would settle a rule this task is not
 authorised to settle.
+🔴 **That list read "7, 12, 24, 27, 32, 33 and 36" until task Q-1, and 36 left it because Q-1 made row 36
+TRUE of the claim, not because the sentence was re-scoped.** An unreadable `fleet-settings.json` now does
+disable only itself: the host comes up, says so, and every other source is unaffected. The remaining six were
+re-checked one at a time rather than carried across — a list is an assertion about each member, so a member
+leaving reopens the rest. The false-completeness finding is untouched: six contradictions still falsify
+*"every other"*, and one fewer contradiction is not one step towards the claim being true.
 
 ### 3.3 — Divergence: the identity store decides one variable's failure three ways
 

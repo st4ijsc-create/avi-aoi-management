@@ -79,6 +79,20 @@ minh bằng cách chạy lại.
 > trong một lần khởi động bình thường**. Hai mục kia làm mất **một dòng log** và
 > gây **một thứ tự quan sát được**. Mất log là tệ; **mất cấu hình trên một cỗ máy
 > không có giao diện để gõ lại** là không phục hồi được.
+>
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ Q-1 (`.superpowers/sdd/third-state-unreadable/`)
+> **Phạm vi đã làm: đường settings, và chỉ đường ấy** — `FleetSettingsStore` (một
+> phép đọc **ba kết quả**: `Loaded` / `Absent` / `Unreadable`, và **bỏ hẳn phép kiểm
+> tồn tại**) cùng composition root `St4i.EngineApi/Program.cs` (một nhánh thứ ba: không
+> phát lại, không ghi, không xoá, báo ở mức `Error`). **Cả bốn** tác hại đã đo ở §3.1a
+> được đóng bằng **một** thay đổi, vì cả ba đường xoá đều bị chặn ở nhánh gieo mầm mà
+> nhánh ấy nay chỉ chọn được khi kết quả là `Absent`.
+> **Cặp đối chứng đã chạy hai phía**: cùng một test, cùng một file hỏng dựng bằng tay —
+> ở `dd4a3e68` file trên đĩa là **sàn môi trường** (dữ liệu vận hành viên MẤT), sau bản
+> sửa nội dung **còn nguyên từng byte**.
+> **Hàng 36** của `docs/startup-failure-posture.md` chuyển **S → U** và **✗ → ✓**.
+> **Mục 5–7 CHƯA làm**: quyết định này chỉ mở khoá mục 1; ba hình dạng xoá file (mục 5),
+> log hoãn của một lần cài đặt thất bại (mục 6) và nửa sau của S4 (mục 7) vẫn nguyên.
 
 ---
 
