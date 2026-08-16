@@ -94,7 +94,7 @@ export function HubLauncher({ categories, categoriesLabel }: HubLauncherProps) {
                   )}
                 >
                   {c.icon}
-                  <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                  <span className="min-w-0 flex-1 truncate">{t(c.label)}</span>
                   <span className="shrink-0 text-[10px] text-muted-foreground">{c.tools.length}</span>
                 </button>
               </li>
@@ -106,11 +106,11 @@ export function HubLauncher({ categories, categoriesLabel }: HubLauncherProps) {
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             {cat.icon}
-            <h2 className="text-base font-semibold">{cat.label}</h2>
+            <h2 className="text-base font-semibold">{t(cat.label)}</h2>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {cat.tools.map((tool) => (
-              <ToolTile key={tool.href} icon={tool.icon} label={tool.label} blurb={tool.blurb} href={tool.href} note={tool.note} beta={tool.beta} />
+              <ToolTile key={tool.href} icon={tool.icon} label={t(tool.label)} blurb={tool.blurb ? t(tool.blurb) : undefined} href={tool.href} note={tool.note ? t(tool.note) : undefined} beta={tool.beta} />
             ))}
           </div>
         </div>

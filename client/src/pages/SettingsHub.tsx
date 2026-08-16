@@ -16,32 +16,32 @@ import {
 const CATEGORIES: readonly HubCategory[] = [
   {
     key: "system",
-    label: "Hệ thống",
+    label: "settingsHub.system",
     icon: <ServerCog className="h-4 w-4" />,
     tools: [
-      { icon: SlidersHorizontal, label: "Cài đặt chung", blurb: "Giao diện · ngôn ngữ · tuỳ chọn ứng dụng", href: "/settings", requiredPermission: "settings_view" },
-      { icon: ServerCog, label: "Cấu hình hệ thống", blurb: "Tham số hệ thống cấp cao", href: "/system-config", requiredRole: "admin", note: "Admin" },
-      { icon: Wrench, label: "Cài đặt quản trị", blurb: "Tham số quản trị hệ thống", href: "/admin-setting", requiredRole: "admin", note: "Admin" },
-      { icon: DatabaseBackup, label: "Sao lưu & Phục hồi", blurb: "Backup/restore dữ liệu hệ thống", href: "/backup-restore", requiredRole: "admin", note: "Admin" },
-      { icon: KeyRound, label: "Bản quyền (License)", blurb: "Quản lý giấy phép", href: "/license", requiredRole: "admin", note: "Admin" },
-      { icon: Building2, label: "Đa cơ sở (Sites)", blurb: "Đăng ký & quản lý các cơ sở", href: "/sites", requiredRole: "admin", note: "Admin" },
+      { icon: SlidersHorizontal, label: "settingsHub.settings", blurb: "settingsHub.settingsBlurb", href: "/settings", requiredPermission: "settings_view" },
+      { icon: ServerCog, label: "settingsHub.systemConfig", blurb: "settingsHub.systemConfigBlurb", href: "/system-config", requiredRole: "admin", note: "Admin" },
+      { icon: Wrench, label: "settingsHub.adminSetting", blurb: "settingsHub.adminSettingBlurb", href: "/admin-setting", requiredRole: "admin", note: "Admin" },
+      { icon: DatabaseBackup, label: "settingsHub.backupRestore", blurb: "settingsHub.backupRestoreBlurb", href: "/backup-restore", requiredRole: "admin", note: "Admin" },
+      { icon: KeyRound, label: "settingsHub.license", blurb: "settingsHub.licenseBlurb", href: "/license", requiredRole: "admin", note: "Admin" },
+      { icon: Building2, label: "settingsHub.sites", blurb: "settingsHub.sitesBlurb", href: "/sites", requiredRole: "admin", note: "Admin" },
     ],
   },
   {
     key: "security",
-    label: "Bảo mật & Người dùng",
+    label: "settingsHub.security",
     icon: <ShieldCheck className="h-4 w-4" />,
     tools: [
-      { icon: ShieldCheck, label: "Trình tạo vai trò", blurb: "Định nghĩa vai trò & ma trận quyền", href: "/role-builder", requiredRole: "admin", note: "Admin" },
-      { icon: KeySquare, label: "Khóa API", blurb: "Cấp & thu hồi khóa API có phạm vi", href: "/api-keys", requiredRole: "admin", note: "Admin" },
+      { icon: ShieldCheck, label: "settingsHub.roleBuilder", blurb: "settingsHub.roleBuilderBlurb", href: "/role-builder", requiredRole: "admin", note: "Admin" },
+      { icon: KeySquare, label: "settingsHub.apiKeys", blurb: "settingsHub.apiKeysBlurb", href: "/api-keys", requiredRole: "admin", note: "Admin" },
     ],
   },
   {
     key: "devices",
-    label: "Thiết bị & Kết nối",
+    label: "settingsHub.devices",
     icon: <MonitorCog className="h-4 w-4" />,
     tools: [
-      { icon: MonitorCog, label: "Cài đặt giám sát thiết bị", blurb: "Cấu hình giám sát & ánh xạ/đăng ký thiết bị", href: "/monitoring-setting", requiredPermission: "machine_status" },
+      { icon: MonitorCog, label: "settingsHub.monitoringSetting", blurb: "settingsHub.monitoringSettingBlurb", href: "/monitoring-setting", requiredPermission: "machine_status" },
     ],
   },
   {
@@ -49,15 +49,15 @@ const CATEGORIES: readonly HubCategory[] = [
     label: "AI",
     icon: <Sparkles className="h-4 w-4" />,
     tools: [
-      { icon: Sparkles, label: "Cài đặt AI", blurb: "Cấu hình model server + AI gateway", href: "/ai-settings", requiredRole: "admin", note: "Admin" },
+      { icon: Sparkles, label: "settingsHub.aiSettings", blurb: "settingsHub.aiSettingsBlurb", href: "/ai-settings", requiredRole: "admin", note: "Admin" },
     ],
   },
   {
     key: "targets",
-    label: "Dữ liệu & Mục tiêu",
+    label: "settingsHub.targets",
     icon: <Target className="h-4 w-4" />,
     tools: [
-      { icon: Target, label: "Mục tiêu OEE", blurb: "Thiết lập mục tiêu OEE theo dây chuyền/máy", href: "/oee-target-settings", requiredPermission: "analytics_oee_targets" },
+      { icon: Target, label: "settingsHub.oeeTargetSettings", blurb: "settingsHub.oeeTargetSettingsBlurb", href: "/oee-target-settings", requiredPermission: "analytics_oee_targets" },
     ],
   },
 ];

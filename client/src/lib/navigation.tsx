@@ -206,7 +206,7 @@ export const navGroups: NavGroup[] = [
         href: "/control-tower",
         label: "nav.controlTower",
         icon: <LayoutDashboard className="h-4 w-4" />,
-        description: "Tổng quan nhà máy 1-cửa theo vai trò: OEE/andon/kế hoạch/AI · liên kết ra các màn chuyên sâu",
+        description: "nav.controlTowerDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
       },
@@ -245,7 +245,7 @@ export const navGroups: NavGroup[] = [
         href: "/executive",
         label: "nav.executiveMobile",
         icon: <LayoutGrid className="h-4 w-4" />,
-        description: "Bản tin điều hành gọn cho điện thoại: OEE/KPI · tóm tắt AI · phê duyệt chờ · cài như app (PWA)",
+        description: "nav.executiveMobileDesc",
         requiredPermission: "dashboard_corporate",
         permissionCategory: "dashboard",
         section: "dashboards",
@@ -321,7 +321,7 @@ export const navGroups: NavGroup[] = [
         href: "/war-room",
         label: "nav.warRoom",
         icon: <Presentation className="h-4 w-4" />,
-        description: "Bảng giao ban theo ca: OEE theo Line · top máy dừng · so sánh ca · kế hoạch vs thực tế",
+        description: "nav.warRoomDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "mes",
@@ -334,7 +334,7 @@ export const navGroups: NavGroup[] = [
         href: "/sla-cockpit",
         label: "nav.slaCockpit",
         icon: <Gauge className="h-4 w-4" />,
-        description: "SLA cảnh báo/Andon: thời gian tiếp nhận (MTTA) · khắc phục (MTTR) · vi phạm leo thang · quá hạn",
+        description: "nav.slaCockpitDesc",
         // Gate = /andon board (dashboard_view) → cùng đối tượng có andon/canView (supervisor/operator);
         // maintenance thiếu andon/canView sẽ thấy trạng thái rỗng trung thực (giống andon board).
         requiredPermission: "dashboard_view",
@@ -348,9 +348,9 @@ export const navGroups: NavGroup[] = [
         // cốt lõi tại line → tier simple. Gate machine_status (operator/maintenance đều
         // có). Nhãn tiếng Việt trực tiếp (i18n key hoãn — theo tiền lệ Feeder/ECN/NCR).
         href: "/product-changeover",
-        label: "Đổi sản phẩm",
+        label: "nav.productChangeover",
         icon: <Repeat className="h-4 w-4" />,
-        description: "Trình đổi sản phẩm tại line: quét mã → kiểm tra readiness · ánh xạ máy · feeder → xác nhận",
+        description: "nav.productChangeoverDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "mes",
@@ -464,7 +464,7 @@ export const navGroups: NavGroup[] = [
         href: "/routing-master",
         label: "nav.routingMaster",
         icon: <ClipboardList className="h-4 w-4" />,
-        description: "Routing master ISA-95: chuỗi công đoạn theo sản phẩm — nguồn ERP resolve operations",
+        description: "nav.routingMasterDesc",
         requiredPermission: "production_orders",
         permissionCategory: "production_orders",
         section: "ordersSchedule",
@@ -485,7 +485,7 @@ export const navGroups: NavGroup[] = [
         href: "/feeder-verify",
         label: "nav.materialsAtLine",
         icon: <ClipboardList className="h-4 w-4" />,
-        description: "Feeder scan-verify (chống gắn nhầm) · MSD floor-life (J-STD-020) · stencil cycle counter",
+        description: "nav.materialsAtLineDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "bom",
@@ -623,9 +623,9 @@ export const navGroups: NavGroup[] = [
         // Nhãn tiếng Việt trực tiếp (i18n key hoãn sang đợt i18n; locale ngoài phạm vi
         // sở hữu của agent này) — theo tiền lệ Feeder/ECN/NCR trong file này.
         href: "/factory-command",
-        label: "Chỉ huy nhà máy",
+        label: "nav.factoryCommand",
         icon: <Factory className="h-4 w-4" />,
-        description: "Sơ đồ 2D/3D toàn nhà máy theo Line · click máy xem chi tiết · vấn đề đang mở",
+        description: "nav.factoryCommandDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "monitoring",
@@ -811,9 +811,9 @@ export const navGroups: NavGroup[] = [
       {
         // doc 59 Cụm I — Trung tâm bảo trì: hub-launcher (work-order · CMMS · copilot).
         href: "/maintenance-hub",
-        label: "Trung tâm bảo trì",
+        label: "nav.maintenanceHub",
         icon: <Wrench className="h-4 w-4" />,
-        description: "Một cửa cho bảo trì: lệnh công việc · CMMS/độ tin cậy · copilot",
+        description: "nav.maintenanceHubDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "maintenance",
@@ -844,9 +844,9 @@ export const navGroups: NavGroup[] = [
         // + phụ tùng/độ tin cậy (MTTR/MTBF). Gate machine_control (bảo trì có mutation).
         // Nhãn tiếng Việt trực tiếp (i18n key hoãn — theo tiền lệ Feeder/ECN/NCR).
         href: "/cmms",
-        label: "Bảo trì (CMMS)",
+        label: "nav.cmms",
         icon: <Wrench className="h-4 w-4" />,
-        description: "Lịch bảo trì phòng ngừa · phụ tùng & độ tin cậy (MTTR/MTBF)",
+        description: "nav.cmmsDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
         section: "maintenance",
@@ -925,9 +925,9 @@ export const navGroups: NavGroup[] = [
         // doc 59 cụm phụ — Engineering Studio: launcher danh mục (soạn thảo/điều phối/
         // an toàn/chuẩn-hoá). Song song /engineering-home (landing tác vụ). Per-tile RBAC.
         href: "/engineering-studio",
-        label: "Xưởng kỹ thuật",
+        label: "nav.engineeringStudio",
         icon: <FlaskConical className="h-4 w-4" />,
-        description: "Soạn thảo · điều phối · an toàn · chuẩn hoá — một danh mục",
+        description: "nav.engineeringStudioDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
       },
@@ -946,9 +946,9 @@ export const navGroups: NavGroup[] = [
       {
         // doc 35 W4-D — plain labels (i18n keys deferred to the i18n polish pass)
         href: "/engineering-changes",
-        label: "Thay đổi kỹ thuật (ECN)",
+        label: "nav.engineeringChanges",
         icon: <GitCompare className="h-4 w-4" />,
-        description: "Phiếu thay đổi kỹ thuật: yêu cầu → phân tích tác động → duyệt (SoD) → hiệu lực; + backfill componentCode",
+        description: "nav.engineeringChangesDesc",
         // doc 54 Đ2 — ECN là tác vụ kỹ thuật: gate theo machine_control (engineer có)
         // thay masterdata (kỹ sư không có → trước bị Access Denied). SoD vẫn ở service.
         requiredPermission: "machine_control",
@@ -1117,9 +1117,9 @@ export const navGroups: NavGroup[] = [
       {
         // doc 59 Cụm G — Xưởng báo cáo: studio 4 tab (tạo/lịch/xuất/so sánh) hợp nhất.
         href: "/reporting-studio",
-        label: "Xưởng báo cáo",
+        label: "nav.reportingStudio",
         icon: <FileBarChart className="h-4 w-4" />,
-        description: "Tạo · lịch · xuất PDF/PPTX · so sánh — một studio",
+        description: "nav.reportingStudioDesc",
         requiredPermission: "reports_view",
         permissionCategory: "reports",
         section: "reports",
@@ -1268,9 +1268,9 @@ export const navGroups: NavGroup[] = [
       {
         // doc 35 W4-B — NCR/MRB; plain label (i18n polish deferred)
         href: "/nonconformance",
-        label: "Báo cáo không phù hợp (NCR/MRB)",
+        label: "nav.nonconformance",
         icon: <ClipboardList className="h-4 w-4" />,
-        description: "Nonconformance/MRB: mở → review → disposition (use-as-is/rework/scrap/return/RTV) → đóng, SoD",
+        description: "nav.nonconformanceDesc",
         requiredPermission: "analytics_spc",
         permissionCategory: "analytics",
         section: "targetsSettings",
@@ -1687,9 +1687,9 @@ export const navGroups: NavGroup[] = [
         // doc 59 cụm phụ — Settings Hub: một cửa cho mọi trang cài đặt (hệ thống/bảo mật/
         // thiết bị/AI/mục tiêu). Per-tile RBAC (tile admin ẩn cho non-admin).
         href: "/settings-hub",
-        label: "Trung tâm cài đặt",
+        label: "nav.settingsHub",
         icon: <SlidersHorizontal className="h-4 w-4" />,
-        description: "Cài đặt hệ thống · bảo mật · thiết bị · AI · mục tiêu — một nơi",
+        description: "nav.settingsHubDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
         section: "platform",
@@ -1894,9 +1894,9 @@ export const navGroups: NavGroup[] = [
         // Dữ liệu chủ / Cấu hình nhà máy&Quản trị) ⇄ launcher managers. Một cửa vào duy
         // nhất thay vì rải; các mục con vẫn giữ để deep-link.
         href: "/data-management",
-        label: "Trung tâm dữ liệu",
+        label: "nav.dataManagement",
         icon: <Database className="h-4 w-4" />,
-        description: "Một nơi cho mọi dữ liệu: sản phẩm · dữ liệu chủ · cấu hình nhà máy",
+        description: "nav.dataManagementDesc",
         requiredPermission: "masterdata",
         permissionCategory: "settings",
         section: "productProgram",
@@ -1905,9 +1905,9 @@ export const navGroups: NavGroup[] = [
         // doc 59 Cụm E — Xưởng sản phẩm: hub-launcher hợp nhất định-nghĩa/chuẩn-vàng theo
         // sản phẩm. Gate BẬC THẤP NHẤT (history_view) + per-tile RBAC trong hub.
         href: "/product-workspace",
-        label: "Xưởng sản phẩm",
+        label: "nav.productWorkspace",
         icon: <Package className="h-4 w-4" />,
-        description: "Định nghĩa sản phẩm · biến thể · chuẩn vàng · chất lượng — một nơi",
+        description: "nav.productWorkspaceDesc",
         requiredPermission: "history_view",
         permissionCategory: "history",
         section: "productProgram",
@@ -1971,9 +1971,9 @@ export const navGroups: NavGroup[] = [
         // OEE@v1 + công thức + lineage, chỉ đọc; trpc.semantics). Gate machine_status để
         // quản lý/kỹ sư đọc được định nghĩa KPI. Nhãn trực tiếp (i18n key hoãn — theo tiền lệ War-room).
         href: "/metric-catalog",
-        label: "Danh mục chỉ số (Metric Catalog)",
+        label: "nav.metricCatalog",
         icon: <BookOpen className="h-4 w-4" />,
-        description: "Semantic layer: định nghĩa KPI có phiên bản (OEE@v1) · công thức · nguồn dữ liệu (lineage)",
+        description: "nav.metricCatalogDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "masterData",

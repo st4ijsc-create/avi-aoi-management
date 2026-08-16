@@ -13,19 +13,19 @@ import { ClipboardList, Wrench, CalendarClock, Stethoscope } from "lucide-react"
 const CATEGORIES: readonly HubCategory[] = [
   {
     key: "work",
-    label: "Công việc & Độ tin cậy",
+    label: "maintHub.work",
     icon: <Wrench className="h-4 w-4" />,
     tools: [
-      { icon: ClipboardList, label: "Lệnh công việc", blurb: "Hàng đợi work-order + trạng thái", href: "/work-orders", requiredPermission: "machine_status" },
-      { icon: CalendarClock, label: "CMMS (PM + độ tin cậy)", blurb: "Lịch bảo trì phòng ngừa · MTBF/MTTR", href: "/cmms", requiredPermission: "machine_control" },
+      { icon: ClipboardList, label: "maintHub.workOrders", blurb: "maintHub.workOrdersBlurb", href: "/work-orders", requiredPermission: "machine_status" },
+      { icon: CalendarClock, label: "maintHub.cmms", blurb: "maintHub.cmmsBlurb", href: "/cmms", requiredPermission: "machine_control" },
     ],
   },
   {
     key: "diagnose",
-    label: "Chẩn đoán & Hỗ trợ",
+    label: "maintHub.diagnose",
     icon: <Stethoscope className="h-4 w-4" />,
     tools: [
-      { icon: Stethoscope, label: "Technician Copilot", blurb: "RCA + gợi ý sửa 1-chạm (HITL)", href: "/technician-copilot", requiredPermission: "machine_status" },
+      { icon: Stethoscope, label: "Technician Copilot", blurb: "maintHub.technicianCopilotBlurb", href: "/technician-copilot", requiredPermission: "machine_status" },
     ],
   },
 ];

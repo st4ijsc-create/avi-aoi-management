@@ -185,7 +185,49 @@ describe("F12 — chuỗi tiếng Việt TRẦN (cổng theo-khoá không thấy
  *   Việc phân loại 914 mục này là hạng mục RIÊNG (F13), chưa làm. Cổng dưới đây chỉ
  *   giữ cho nó KHÔNG PHÌNH THÊM trong lúc chờ.
  */
-const FROZEN_SHAPE3 = 914;
+/**
+ * 914 → 770: lọc bốn KHUÔN ĐÃ ĐÚNG ra khỏi phép đếm (xem `LA_KHUON_DUNG`) và bỏ
+ * comment cuối dòng. 144 mục kia chưa bao giờ là nợ — con số 914 đã nói quá.
+ * 770 → 652: F13 lô 1 — nhãn điều hướng + 6 hub đi qua `t()`, 167 khoá × 3 locale.
+ */
+const FROZEN_SHAPE3 = 652;
+
+/**
+ * Bỏ comment `//` ở CUỐI dòng. Phép bỏ comment ở trên chỉ xét ĐẦU dòng, nên
+ * `const X = ...; // ghi chú tiếng Việt` bị đếm thành nợ — nó không phải nợ.
+ * ⚠ Không cắt ở `://` (URL) và không cắt phần `//` nằm TRONG chuỗi.
+ */
+function boCommentCuoiDong(ln: string): string {
+  let trongChuoi: string | null = null;
+  for (let i = 0; i < ln.length - 1; i++) {
+    const c = ln[i];
+    if (trongChuoi) {
+      if (c === "\\") i++;
+      else if (c === trongChuoi) trongChuoi = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") { trongChuoi = c; continue; }
+    if (c === "/" && ln[i + 1] === "/") return ln.slice(0, i);
+  }
+  return ln;
+}
+
+/**
+ * Bốn khuôn ĐÃ ĐÚNG, không được tính là nợ — mỗi khuôn kèm lý do đo được:
+ *  · `pick("vi", "en", "zh")` — bộ chọn ba ngôn ngữ tự viết (`MachineAISummary`),
+ *    đã trả đúng chữ theo `i18n.language`; bọc `t()` là làm THỪA.
+ *  · `["khoa.i18n", "tiếng Việt"]` — tuple [khoá, mặc định], phần tử đầu LÀ khoá.
+ *  · `defaultValue: "…"` — đúng là defaultValue của i18n, nhánh (a) lo.
+ *  · `{ labelKey/key: "…", label/fallback: "…" }` — khoá đi kèm trên cùng dòng.
+ */
+function LA_KHUON_DUNG(ln: string): boolean {
+  if (/\bpick\s*\(\s*[`"']/.test(ln)) return true;
+  if (/\[\s*["'`][a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+["'`]\s*,\s*["'`]/.test(ln)) return true;
+  if (/\bdefaultValue\s*:/.test(ln)) return true;
+  if (/\b(labelKey|titleKey|descKey|key)\s*:\s*["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]/.test(ln)) return true;
+  if (/\b(fallback|labelFallback|titleFallback|descFallback)\s*:/.test(ln)) return true;
+  return false;
+}
 
 function demHinhDangBa(): { total: number; byFile: Array<[string, number]> } {
   const byFile: Array<[string, number]> = [];
@@ -206,7 +248,10 @@ function demHinhDangBa(): { total: number; byFile: Array<[string, number]> } {
       if (/\b(placeholder|title|label|aria-label|description|alt|tooltip)\s*=\s*["'`][^"'`]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(ln)) continue;
       // đang là defaultValue của `t(...)` cùng dòng → nhánh (a) lo, đúng khuôn
       if (/\bt\s*\(/.test(ln)) continue;
-      const chuoi = ln.match(/(["'`])((?:(?!\1)[^\\]|\\.)*)\1/g);
+      if (LA_KHUON_DUNG(ln)) continue;
+      const sach = boCommentCuoiDong(ln);
+      if (!CHU_VIET.test(sach)) continue;
+      const chuoi = sach.match(/(["'`])((?:(?!\1)[^\\]|\\.)*)\1/g);
       if (chuoi?.some((s) => CHU_VIET.test(s))) n++;
     }
     if (n) { byFile.push([file.replace(CLIENT_SRC, ""), n]); total += n; }
