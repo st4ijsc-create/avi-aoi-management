@@ -12,6 +12,7 @@
  * Write action gated by usePermissions("masterdata").
  */
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import { toastTrpcError } from "@/lib/trpcErrors";
 import { AlertTriangle, Gauge, Layers, RefreshCw, Search } from "lucide-react";
 
 export default function StencilPanel() {
+  const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission("masterdata", "canCreate") || hasPermission("masterdata", "canEdit");
 
@@ -91,7 +93,7 @@ export default function StencilPanel() {
             <CardTitle className="flex items-center gap-2 text-base">
               <Layers className="h-4 w-4 text-primary" /> Khuôn in (stencil)
             </CardTitle>
-            <CardDescription>Chọn khuôn in theo ID (tool id trong master khuôn/thiết bị)</CardDescription>
+            <CardDescription>{t("stencil.chonKhuonInTheoId", "Chọn khuôn in theo ID (tool id trong master khuôn/thiết bị)")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex gap-2">
@@ -99,7 +101,7 @@ export default function StencilPanel() {
                 value={toolIdInput}
                 onChange={(e) => setToolIdInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onSelect()}
-                placeholder="ID khuôn in, VD: 12"
+                placeholder={t("stencil.idKhuonInVd12", "ID khuôn in, VD: 12")}
                 inputMode="numeric"
               />
               <Button onClick={onSelect} variant="secondary">
@@ -116,7 +118,7 @@ export default function StencilPanel() {
                 <span className="flex items-center gap-2">
                   <Gauge className="h-4 w-4 text-primary" /> Trạng thái tuổi thọ
                   {s && !s.trackingEnabled && (
-                    <Badge variant="outline" className="text-xs">Advisory (STENCIL_TRACKING_ENABLED tắt)</Badge>
+                    <Badge variant="outline" className="text-xs">{t("stencil.advisoryStencilTrackingEnabledTat", "Advisory (STENCIL_TRACKING_ENABLED tắt)")}</Badge>
                   )}
                 </span>
                 <Button
@@ -134,7 +136,7 @@ export default function StencilPanel() {
             </CardHeader>
             <CardContent className="space-y-3">
               {status.isLoading ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Đang tải…</p>
+                <p className="py-6 text-center text-sm text-muted-foreground">{t("stencil.dangTai", "Đang tải…")}</p>
               ) : status.isError ? (
                 <p className="py-6 text-center text-sm text-destructive">Lỗi: {status.error?.message}</p>
               ) : s ? (
@@ -149,7 +151,7 @@ export default function StencilPanel() {
                         <AlertTriangle className="mr-1 h-3 w-3" /> Đã mòn
                       </Badge>
                     ) : (
-                      <Badge className="bg-green-600 hover:bg-green-600">Còn tốt</Badge>
+                      <Badge className="bg-green-600 hover:bg-green-600">{t("stencil.conTot", "Còn tốt")}</Badge>
                     )}
                   </div>
 
@@ -172,15 +174,15 @@ export default function StencilPanel() {
                       <div className="font-medium">{s.baselineUsed.toLocaleString()}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-muted-foreground">Đã ghi nhận</div>
+                      <div className="text-xs text-muted-foreground">{t("stencil.daGhiNhan", "Đã ghi nhận")}</div>
                       <div className="font-medium">{s.accruedPrints.toLocaleString()}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-muted-foreground">Còn lại</div>
+                      <div className="text-xs text-muted-foreground">{t("stencil.conLai", "Còn lại")}</div>
                       <div className="font-medium">{s.remaining == null ? "∞" : s.remaining.toLocaleString()}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-muted-foreground">Vệ sinh gần nhất</div>
+                      <div className="text-xs text-muted-foreground">{t("stencil.veSinhGanNhat", "Vệ sinh gần nhất")}</div>
                       <div className="font-medium">{s.lastCleanedAt ? new Date(s.lastCleanedAt).toLocaleDateString() : "—"}</div>
                     </div>
                   </div>
@@ -193,13 +195,13 @@ export default function StencilPanel() {
         {selectedToolId != null && (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Lịch sử sử dụng gần đây</CardTitle>
+              <CardTitle className="text-base">{t("stencil.lichSuSuDungGan", "Lịch sử sử dụng gần đây")}</CardTitle>
             </CardHeader>
             <CardContent>
               {usage.isLoading ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">Đang tải…</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">{t("stencil.dangTai2", "Đang tải…")}</p>
               ) : usageRows.length === 0 ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">Chưa có bản ghi sử dụng.</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">{t("stencil.chuaCoBanGhiSu", "Chưa có bản ghi sử dụng.")}</p>
               ) : (
                 <div className="divide-y">
                   {usageRows.map((r: any) => (
@@ -224,8 +226,8 @@ export default function StencilPanel() {
       {/* Right: record prints form */}
       <Card className="h-fit">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Ghi lượt in</CardTitle>
-          <CardDescription>Cộng dồn số chu kỳ in + tuỳ chọn vệ sinh / kiểm tra lực căng</CardDescription>
+          <CardTitle className="text-base">{t("stencil.ghiLuotIn", "Ghi lượt in")}</CardTitle>
+          <CardDescription>{t("stencil.congDonSoChuKy", "Cộng dồn số chu kỳ in + tuỳ chọn vệ sinh / kiểm tra lực căng")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {!canWrite && (
@@ -234,10 +236,10 @@ export default function StencilPanel() {
             </p>
           )}
           {selectedToolId == null && (
-            <p className="rounded bg-muted px-3 py-2 text-xs text-muted-foreground">Chọn khuôn in trước khi ghi.</p>
+            <p className="rounded bg-muted px-3 py-2 text-xs text-muted-foreground">{t("stencil.chonKhuonInTruocKhi", "Chọn khuôn in trước khi ghi.")}</p>
           )}
           <div className="space-y-1">
-            <Label>Số lượt in thêm</Label>
+            <Label>{t("stencil.soLuotInThem", "Số lượt in thêm")}</Label>
             <Input
               value={printCount}
               onChange={(e) => setPrintCount(e.target.value)}
@@ -256,7 +258,7 @@ export default function StencilPanel() {
             Đã vệ sinh khuôn (ghi mốc thời gian hiện tại)
           </label>
           <div className="space-y-1">
-            <Label>Giá trị lực căng (tuỳ chọn)</Label>
+            <Label>{t("stencil.giaTriLucCangTuy", "Giá trị lực căng (tuỳ chọn)")}</Label>
             <Input
               value={tensionValue}
               onChange={(e) => setTensionValue(e.target.value)}
@@ -266,8 +268,8 @@ export default function StencilPanel() {
             />
           </div>
           <div className="space-y-1">
-            <Label>Ghi chú (tuỳ chọn)</Label>
-            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ghi chú" disabled={!canWrite || selectedToolId == null} />
+            <Label>{t("stencil.ghiChuTuyChon", "Ghi chú (tuỳ chọn)")}</Label>
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("stencil.ghiChu", "Ghi chú")} disabled={!canWrite || selectedToolId == null} />
           </div>
           <Button onClick={onRecord} disabled={!canWrite || selectedToolId == null || record.isPending} className="w-full">
             Ghi lượt in

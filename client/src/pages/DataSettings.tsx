@@ -996,7 +996,7 @@ export default function DataSettings() {
                 >
                   <div className="flex items-center gap-2">
                     <Database className="h-4 w-4 text-green-500" />
-                    <span>Công cụ</span>
+                    <span>{t("dataSettings.congCu", "Công cụ")}</span>
                   </div>
                   {collapsedCategories['tools'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>

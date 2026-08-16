@@ -1,9 +1,11 @@
 import { Moon, Sun } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function ThemeToggle() {
+  const { t } = useTranslation();
   const { theme, toggleTheme, switchable } = useTheme();
 
   if (!switchable || !toggleTheme) return null;
@@ -15,7 +17,7 @@ export function ThemeToggle() {
           variant="ghost"
           size="icon"
           className="h-10 w-10 rounded-lg"
-          aria-label="Đổi giao diện sáng/tối"
+          aria-label={t("themeToggle.doiGiaoDienSangToi", "Đổi giao diện sáng/tối")}
           onClick={toggleTheme}
         >
           {theme === "dark" ? (

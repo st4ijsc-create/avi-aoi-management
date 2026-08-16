@@ -399,7 +399,7 @@ export default function DefectCatalogPage() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">{t("defectCatalog.nameVi", "Tên (VI)")}</Label>
-              <Input value={form.nameVi} onChange={(e) => setForm({ ...form, nameVi: e.target.value })} placeholder="Cầu thiếc" />
+              <Input value={form.nameVi} onChange={(e) => setForm({ ...form, nameVi: e.target.value })} placeholder={t("defectCatalog.cauThiec", "Cầu thiếc")} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">{t("defectCatalog.severity", "Mức độ")} *</Label>

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { format, differenceInMinutes, startOfHour, addHours } from "date-fns";
 import { vi } from "date-fns/locale";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -125,6 +126,7 @@ function TimelineBar({ timeline, hours }: { timeline: TimelineSegment[]; hours: 
 }
 
 export function UptimeTimeline({ data, hours }: UptimeTimelineProps) {
+  const { t } = useTranslation();
   const now = new Date();
   const startTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
 
@@ -195,7 +197,7 @@ export function UptimeTimeline({ data, hours }: UptimeTimelineProps) {
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-3 bg-muted/30 rounded" />
-          <span>Không có dữ liệu</span>
+          <span>{t("uptimeTl.khongCoDuLieu", "Không có dữ liệu")}</span>
         </div>
       </div>
     </div>

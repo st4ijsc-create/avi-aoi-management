@@ -369,7 +369,8 @@
       "open": "open",
       "topAnomaly": "Top anomaly",
       "allClear": "No open alerts — the system is stable."
-    }
+    },
+    "demCanhBaoChuaXu": "Counts unresolved alarms (all time): unresolved Andon + safety events. Different from the 'Alarm status (24h)' panel, which counts alarms raised within a 24h window. Click to open the Ops Console."
   },
   "comparisonStudio": {
     "title": "Comparison Studio",
@@ -11032,7 +11033,8 @@
     "workstationManagementDesc": "Configure workstation assignments and settings",
     "openWorkstationManagement": "Open Workstation Management",
     "openWorkstationManagementDesc": "Go to the dedicated workstation management page",
-    "goToWorkstationManagement": "Go to Workstation Management"
+    "goToWorkstationManagement": "Go to Workstation Management",
+    "congCu": "Tools"
   },
   "language": {
     "title": "Language",
@@ -13892,7 +13894,13 @@
     "staleData": "Data may be stale — the live feed dropped",
     "needsActionFirst": "Needs action first",
     "nRecords": "{{n}} records",
-    "oneRecord": "1 record"
+    "oneRecord": "1 record",
+    "khongCoCanhBaoDang": "No open alarms",
+    "ca5NguonAndonDu": "All 5 sources (Andon, forecast, interlock, MQTT, threshold) are quiet — the system is stable.",
+    "chonTatCaDangLoc": "Select all filtered",
+    "hetHanDuBao": "FORECAST EXPIRED",
+    "xacNhanXuLyXong": "Confirm resolved?",
+    "huy": "Cancel"
   },
   "cmd": {
     "title": "Ecosystem Command Center",
@@ -16750,7 +16758,8 @@
       "minQuestion": "Question must be at least 3 characters",
       "question": "Question",
       "run": "Ask LLaVA"
-    }
+    },
+    "tiengViet": "Tiếng Việt"
   },
   "wipDashboard": {
     "blocked": "Blocked",
@@ -18228,7 +18237,8 @@
     "topMachine": "Best machine",
     "trends": "Trends",
     "concerns": "Concerns",
-    "forecast": "Forecast"
+    "forecast": "Forecast",
+    "tiengViet": "Tiếng Việt"
   },
   "defectCatalog": {
     "title": "Defect Catalog (IPC-A-610)",
@@ -18266,7 +18276,8 @@
     "repairGuidanceVi": "Repair guidance (VI)",
     "active": "Active",
     "deleteTitle": "Delete defect code?",
-    "deleteDesc": "The defect code will be deactivated (soft delete). NG results already classified keep their historical link."
+    "deleteDesc": "The defect code will be deactivated (soft delete). NG results already classified keep their historical link.",
+    "cauThiec": "Solder bridge"
   },
   "warRoom": {
     "export": {
@@ -18414,5 +18425,259 @@
   "settingsHub": {
     "title": "Settings Center",
     "categories": "Settings categories"
+  },
+  "commandCenter": {
+    "xemChiTietThietBi": "View equipment details",
+    "cheDoHienThiSo": "Factory map display mode",
+    "dangChay": "Running",
+    "cho": "Idle",
+    "tamDungGiu": "Paused/Held",
+    "loiEStop": "Fault/E-stop",
+    "ngoaiTuyen": "Offline",
+    "luongSuKienHeSinh": "Ecosystem event stream is live over socket",
+    "ketNoiMayChuVan": "Server connection is live — realtime event stream not enabled (ECOSYSTEM_EVENTS flag)",
+    "soDonViWipDang": "WIP units currently on the line",
+    "canhBaoNghiemTrongCao": "Active critical / high alarms",
+    "canhBao": "Alarms",
+    "nhiemVuDoiRobotCho": "Robot fleet tasks (queued + running) / robots online",
+    "nhiemVu": "Tasks",
+    "soSiteDangBaoCao": "Reporting sites / total sites",
+    "soGoiYAiDang": "Active AI suggestions",
+    "goiYAi": "AI suggestions",
+    "oeeTrungBinhToanHe": "System-wide average OEE (%) · Plant-wide energy (kWh) — no ecosystem-wide rollup yet",
+    "oeeNangLuongToanHe": "OEE · Energy (system-wide)",
+    "cayPhanCap": "Hierarchy tree",
+    "timTheoTenMaNode": "Search by node name / code…",
+    "timKiemNodeTrongCay": "Search nodes in the hierarchy tree",
+    "cayPhanCapHeSinh": "Ecosystem hierarchy tree",
+    "locMucDoCanhBao": "Filter by alarm severity",
+    "khongCoCanhBaoDang": "No active alarms",
+    "trangThai": "Status",
+    "oeeMay": "Machine OEE",
+    "nhiemVu2": "Tasks",
+    "khongCoCanhBaoNghiem": "No critical/high alarms",
+    "cayPhanCapTooltip": "Site → factory → line → station → machine / robot"
+  },
+  "msd": {
+    "advisoryMsdTrackingEnabledTat": "Advisory (MSD_TRACKING_ENABLED off)",
+    "dongHoFloorLifeTheo": "J-STD-020 floor-life timer for reels taken out of the dry cabinet",
+    "dangTai": "Loading…",
+    "chuaCoExposureNaoDang": "No exposure is currently open.",
+    "linhKien": "Components",
+    "daPhoi": "Exposed",
+    "conLai": "Remaining",
+    "trangThai": "Status",
+    "thaoTac": "Actions",
+    "thamChieuMslFloorLife": "MSL → floor-life reference (J-STD-020)",
+    "soGioFloorLifeCho": "Allowed floor-life hours at ≤30°C / 60%RH",
+    "batDauDongHoFloor": "Start the floor-life timer when a reel leaves the dry cabinet",
+    "maLinhKien": "Component code",
+    "maReelTuyChon": "Reel code (optional)",
+    "quetNhapMaReel": "Scan/enter reel code",
+    "capMsl": "MSL level",
+    "ghiChuTuyChon": "Note (optional)",
+    "ghiChu": "Note"
+  },
+  "stencil": {
+    "chonKhuonInTheoId": "Select a stencil by ID (tool id in the tooling/equipment master)",
+    "idKhuonInVd12": "Stencil ID, e.g. 12",
+    "advisoryStencilTrackingEnabledTat": "Advisory (STENCIL_TRACKING_ENABLED off)",
+    "dangTai": "Loading…",
+    "conTot": "Serviceable",
+    "daGhiNhan": "Recorded",
+    "conLai": "Remaining",
+    "veSinhGanNhat": "Last cleaning",
+    "lichSuSuDungGan": "Recent usage history",
+    "dangTai2": "Loading…",
+    "chuaCoBanGhiSu": "No usage records yet.",
+    "ghiLuotIn": "Record print runs",
+    "congDonSoChuKy": "Accumulate print cycles + optional cleaning / tension check",
+    "chonKhuonInTruocKhi": "Select a stencil before recording.",
+    "soLuotInThem": "Additional print runs",
+    "giaTriLucCangTuy": "Tension value (optional)",
+    "ghiChuTuyChon": "Note (optional)",
+    "ghiChu": "Note"
+  },
+  "feederVerify": {
+    "quetKiemTra": "Verification scan",
+    "chonMayNhapSlotVa": "Select a machine, enter the slot and scan the reel",
+    "may": "Machine",
+    "chonMay": "Select machine…",
+    "slotViTriFeeder": "Slot / feeder position",
+    "maReelQuetBarcode": "Reel code (scan barcode)",
+    "quetHoacNhapMaReel": "Scan or enter reel/component code",
+    "trangThaiSetup": "Setup status",
+    "chonMayDeXemTrang": "Select a machine to view its status.",
+    "hoanTat": "Complete",
+    "chuaHoanTat": "Incomplete",
+    "coLech": "Mismatch",
+    "chuaCoLuotKiemNao": "No verification runs yet.",
+    "lichSuKiemTraGan": "Recent verification history",
+    "chuaCoDuLieu": "No data yet.",
+    "vatTuTaiLine": "Line-side materials",
+    "kiemTraNapFeederDong": "Feeder load verification · MSD floor-life timer (J-STD-020) · stencil print-cycle counter (doc 35 W4-C)"
+  },
+  "aiToolResult": {
+    "khongCoKetNoiCsdl": "No database connection.",
+    "tong": "Total",
+    "topMayNg": "Top NG machines:",
+    "khongCoMay": "No machines.",
+    "khongCoDiemDoNao": "No measurement point failed.",
+    "banGhiGanNhat": "Latest records:",
+    "batThuong": "Anomaly",
+    "duBao": "Forecast",
+    "heSoCb": "Cb index",
+    "suDung": "Usage",
+    "tramBiChanNhat": "Most blocked station",
+    "tramThieuLieuNhat": "Most starved station",
+    "ketQuaGanNhat": "Latest results:",
+    "chuaCoTelemetry": "No telemetry yet.",
+    "khongCoTelemetry": "No telemetry.",
+    "giaTri": "Value"
+  },
+  "mqttDash": {
+    "chonFactory": "Select factory...",
+    "chonWorkshop": "Select workshop...",
+    "chonLine": "Select line...",
+    "chonStation": "Select station...",
+    "machineTuyChon": "Machine (optional)",
+    "tuDongChonMayDau": "Auto-select the first machine",
+    "sanPhamTuyChon": "Product (optional)",
+    "chonSanPhamDeLoad": "Select a product to load measurement points...",
+    "tatCaOk": "All OK",
+    "tatCaNg": "All NG",
+    "tenDiemDo": "Measurement point",
+    "ketQua": "Result",
+    "giaTri": "Value",
+    "dong": "Close"
+  },
+  "ctPanels": {
+    "tuVanMucCanhBao": "Advisory — warning level and above, deduplicated (periodic/info reports excluded)",
+    "phatSinhTrong24h": "Raised in the last 24h",
+    "availabilityKhaDung": "Availability",
+    "performanceHieuSuat": "Performance",
+    "qualityChatLuong": "Quality",
+    "overallEquipmentEffectivenessHieuSuat": "Overall Equipment Effectiveness (A × P × Q)",
+    "availabilityKhaDung2": "Availability",
+    "performanceHieuSuat2": "Performance",
+    "qualityChatLuong2": "Quality"
+  },
+  "seedData": {
+    "duLieuCoSo": "Base data",
+    "taoNhaMayDayChuyen": "Create sample factories, lines, machines and products",
+    "dangTao": "Creating...",
+    "duLieuKiemTra": "Inspection data",
+    "tao100BanGhiKiem": "Create 100 sample inspection records (OK/NG)",
+    "dangTao2": "Creating...",
+    "phanTichTramLamViec": "Workstation analytics",
+    "tao500BanGhiPhan": "Create 500 analytics records for the last 7 days",
+    "dangTao3": "Creating..."
+  },
+  "showcase": {
+    "canhBaoLienKetCode": "Dangling-code link warning + unified delete/archive confirmation (doc 42 Batch 1).",
+    "valueKhongKhopOption": "Value does not match any option",
+    "chonVatLieu": "Select material…",
+    "importexportbarDoc42Dot4a": "ImportExportBar (doc 42 Batch 4A)",
+    "taiMau": "Download template",
+    "nhap": "Import",
+    "entityPickerKhongTonTai": "EntityPicker \"Not found\" & ConfirmDeleteDialog"
+  },
+  "dashboardRaw": {
+    "inLuuPdf": "Print / Save PDF",
+    "canhBaoKhanChuaXu": "Unhandled urgent alarms",
+    "ngTyLeNg": "NG % — NG rate",
+    "soBoNgTongSo": "NG boards / total inspections on the machine",
+    "ntfTyLeNtf": "NTF % — NTF rate",
+    "soBoNtfLoiAo": "NTF boards (false calls) / total inspections on the machine"
+  },
+  "corpDash": {
+    "xuHuongTyLeDat": "Monthly pass-rate trend — line chart with a 95% target reference line",
+    "sanLuongTheoThangBieu": "Monthly output — bar chart",
+    "phanBoSanLuongTheo": "Output distribution by group — pie chart",
+    "soSanhTyLeDat": "Pass-rate comparison across groups — horizontal bar chart",
+    "soSanhTrongKy": "Period-over-period comparison"
+  },
+  "drillDown": {
+    "chonKyDuLieu": "Select data period",
+    "homNay": "Today",
+    "7Ngay": "7 days",
+    "30Ngay": "30 days",
+    "toanThoiGian": "All time"
+  },
+  "aiLocalKb": {
+    "xinChaoToiCoThe": "Hello! How can I help you?",
+    "daLuuCache": "Cached",
+    "taiLieuThamKhao": "References:",
+    "lamMoi": "Refresh"
+  },
+  "langSettings": {
+    "saveLuu": "— Save / Lưu / 保存",
+    "cancelHuy": "— Cancel / Hủy / 取消",
+    "deleteXoa": "— Delete / Xóa / 删除",
+    "searchTimKiem": "— Search / Tìm kiếm / 搜索"
+  },
+  "licBanner": {
+    "licenseServerKhongKhaDung": "License Server unavailable",
+    "dongThongBao": "Dismiss notification",
+    "dongCanhBao": "Dismiss warning"
+  },
+  "qgTemplates": {
+    "canhBao": "Warn",
+    "tamDung": "Pause",
+    "dungHan": "Stop"
+  },
+  "teachJog": {
+    "jogPreviewCucBoCapture": "Jog (local preview) → Capture point → add job step.",
+    "buoc": "Step"
+  },
+  "entityCombo": {
+    "chon": "Select...",
+    "boChon": "— Clear —",
+    "khongCoDuLieu": "No data"
+  },
+  "excelIo": {
+    "chonFileExcelXlsxDe": "Choose an Excel file (.xlsx) to import. Download the template first if needed.",
+    "chonFileExcel": "Choose Excel file"
+  },
+  "prodCategory": {
+    "vdLinhKienDienTu": "e.g. Electronic components",
+    "moTaChiTietVe": "Detailed description of the category..."
+  },
+  "qualityHome": {
+    "daXemAcknowledge": "Acknowledge",
+    "daXemAcknowledge2": "Acknowledge"
+  },
+  "alertWidget": {
+    "canhBaoGanDay": "Recent alarms"
+  },
+  "ladderEditor": {
+    "outBieuThucBool": "OUT := boolean expression"
+  },
+  "licGate": {
+    "moduleChuaDuocCapPhep": "Module not licensed"
+  },
+  "dateField": {
+    "chonNgay": "Select date"
+  },
+  "schedReports": {
+    "viDu2025CongTy": "Example: © 2025 ABC Co., Ltd. All rights reserved."
+  },
+  "setupGuard": {
+    "dangKiemTraHeThong": "Checking the system..."
+  },
+  "themeToggle": {
+    "doiGiaoDienSangToi": "Toggle light/dark theme"
+  },
+  "uptimeTl": {
+    "khongCoDuLieu": "No data"
+  },
+  "mqttClients": {
+    "tiengViet": "Tiếng Việt"
+  },
+  "setupPage": {
+    "nguyenVanA": "John Doe"
+  },
+  "usersPage": {
+    "nguyenVanA": "John Doe"
   }
 }

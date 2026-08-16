@@ -369,7 +369,8 @@
       "open": "未处理",
       "topAnomaly": "首要异常",
       "allClear": "没有未处理告警——系统稳定。"
-    }
+    },
+    "demCanhBaoChuaXu": "统计未处理告警（全时段）：未解决的安灯 + 安全事件。与「告警状况（24 小时）」面板不同，后者统计 24 小时窗口内新增的数量。点击可打开运营控制台。"
   },
   "comparisonStudio": {
     "title": "对比工作室",
@@ -10815,7 +10816,8 @@
     "workstationManagementDesc": "配置工作站分配和设置",
     "openWorkstationManagement": "打开工作站管理",
     "openWorkstationManagementDesc": "前往专用工作站管理页面",
-    "goToWorkstationManagement": "前往工作站管理"
+    "goToWorkstationManagement": "前往工作站管理",
+    "congCu": "工具"
   },
   "language": {
     "title": "语言设置",
@@ -13675,7 +13677,13 @@
     "staleData": "数据可能已过期——实时连接已中断",
     "needsActionFirst": "需优先处理",
     "nRecords": "{{n}} 条记录",
-    "oneRecord": "1 条记录"
+    "oneRecord": "1 条记录",
+    "khongCoCanhBaoDang": "无未关闭告警",
+    "ca5NguonAndonDu": "全部 5 个来源（安灯、预测、联锁、MQTT、阈值）均无异常 — 系统稳定。",
+    "chonTatCaDangLoc": "选择当前筛选的全部",
+    "hetHanDuBao": "预测已过期",
+    "xacNhanXuLyXong": "确认已处理完成？",
+    "huy": "取消"
   },
   "cmd": {
     "title": "生态系统指挥中心",
@@ -17094,7 +17102,8 @@
       "minQuestion": "问题至少需 3 个字符",
       "question": "问题",
       "run": "询问 LLaVA"
-    }
+    },
+    "tiengViet": "Tiếng Việt"
   },
   "workforce": {
     "abort": "中止",
@@ -18236,7 +18245,8 @@
     "topMachine": "最佳设备",
     "trends": "趋势",
     "concerns": "关注点",
-    "forecast": "预测"
+    "forecast": "预测",
+    "tiengViet": "Tiếng Việt"
   },
   "defectCatalog": {
     "title": "缺陷目录（IPC-A-610）",
@@ -18274,7 +18284,8 @@
     "repairGuidanceVi": "返修指引（越南语）",
     "active": "启用中",
     "deleteTitle": "删除缺陷代码？",
-    "deleteDesc": "该缺陷代码将被停用（软删除）。已分类的 NG 结果仍保留历史关联。"
+    "deleteDesc": "该缺陷代码将被停用（软删除）。已分类的 NG 结果仍保留历史关联。",
+    "cauThiec": "连锡"
   },
   "warRoom": {
     "export": {
@@ -18422,5 +18433,259 @@
   "settingsHub": {
     "title": "设置中心",
     "categories": "设置分类"
+  },
+  "commandCenter": {
+    "xemChiTietThietBi": "查看设备详情",
+    "cheDoHienThiSo": "工厂平面图显示模式",
+    "dangChay": "运行中",
+    "cho": "等待",
+    "tamDungGiu": "暂停/保持",
+    "loiEStop": "故障/急停",
+    "ngoaiTuyen": "离线",
+    "luongSuKienHeSinh": "生态系统事件流正通过 socket 实时推送",
+    "ketNoiMayChuVan": "服务器连接正常 — 实时事件流未启用（ECOSYSTEM_EVENTS 标志）",
+    "soDonViWipDang": "产线在制品（WIP）数量",
+    "canhBaoNghiemTrongCao": "活动中的严重/高级告警",
+    "canhBao": "告警",
+    "nhiemVuDoiRobotCho": "机器人集群任务（排队+运行）/ 在线机器人",
+    "nhiemVu": "任务",
+    "soSiteDangBaoCao": "上报站点数 / 站点总数",
+    "soGoiYAiDang": "活动中的 AI 建议",
+    "goiYAi": "AI 建议",
+    "oeeTrungBinhToanHe": "全系统平均 OEE（%）· 全厂能耗（kWh）— 尚无生态系统级汇总",
+    "oeeNangLuongToanHe": "OEE · 能耗（全系统）",
+    "cayPhanCap": "层级树",
+    "timTheoTenMaNode": "按节点名称 / 编号搜索…",
+    "timKiemNodeTrongCay": "在层级树中搜索节点",
+    "cayPhanCapHeSinh": "生态系统层级树",
+    "locMucDoCanhBao": "按告警级别筛选",
+    "khongCoCanhBaoDang": "无活动告警",
+    "trangThai": "状态",
+    "oeeMay": "设备 OEE",
+    "nhiemVu2": "任务",
+    "khongCoCanhBaoNghiem": "无严重/高级告警",
+    "cayPhanCapTooltip": "站点 → 工厂 → 产线 → 工位 → 设备 / 机器人"
+  },
+  "msd": {
+    "advisoryMsdTrackingEnabledTat": "仅提示（MSD_TRACKING_ENABLED 已关闭）",
+    "dongHoFloorLifeTheo": "按 J-STD-020 对已出干燥柜料盘计时的车间寿命时钟",
+    "dangTai": "加载中…",
+    "chuaCoExposureNaoDang": "当前没有开启中的暴露记录。",
+    "linhKien": "元件",
+    "daPhoi": "已暴露",
+    "conLai": "剩余",
+    "trangThai": "状态",
+    "thaoTac": "操作",
+    "thamChieuMslFloorLife": "MSL → 车间寿命对照表（J-STD-020）",
+    "soGioFloorLifeCho": "≤30°C / 60%RH 条件下允许的车间寿命小时数",
+    "batDauDongHoFloor": "料盘出干燥柜时启动车间寿命计时",
+    "maLinhKien": "元件编号",
+    "maReelTuyChon": "料盘编号（可选）",
+    "quetNhapMaReel": "扫描/输入料盘编号",
+    "capMsl": "MSL 等级",
+    "ghiChuTuyChon": "备注（可选）",
+    "ghiChu": "备注"
+  },
+  "stencil": {
+    "chonKhuonInTheoId": "按 ID 选择钢网（工装/设备主数据中的 tool id）",
+    "idKhuonInVd12": "钢网 ID，例：12",
+    "advisoryStencilTrackingEnabledTat": "仅提示（STENCIL_TRACKING_ENABLED 已关闭）",
+    "dangTai": "加载中…",
+    "conTot": "状态良好",
+    "daGhiNhan": "已记录",
+    "conLai": "剩余",
+    "veSinhGanNhat": "最近清洗",
+    "lichSuSuDungGan": "近期使用记录",
+    "dangTai2": "加载中…",
+    "chuaCoBanGhiSu": "暂无使用记录。",
+    "ghiLuotIn": "记录印刷次数",
+    "congDonSoChuKy": "累计印刷周期 + 可选清洗 / 张力检查",
+    "chonKhuonInTruocKhi": "记录前请先选择钢网。",
+    "soLuotInThem": "新增印刷次数",
+    "giaTriLucCangTuy": "张力值（可选）",
+    "ghiChuTuyChon": "备注（可选）",
+    "ghiChu": "备注"
+  },
+  "feederVerify": {
+    "quetKiemTra": "校验扫描",
+    "chonMayNhapSlotVa": "选择设备、输入槽位并扫描料盘",
+    "may": "设备",
+    "chonMay": "选择设备…",
+    "slotViTriFeeder": "槽位 / 供料器位置",
+    "maReelQuetBarcode": "料盘编号（扫描条码）",
+    "quetHoacNhapMaReel": "扫描或输入料盘/元件编号",
+    "trangThaiSetup": "换线状态",
+    "chonMayDeXemTrang": "选择设备以查看状态。",
+    "hoanTat": "已完成",
+    "chuaHoanTat": "未完成",
+    "coLech": "存在偏差",
+    "chuaCoLuotKiemNao": "暂无校验记录。",
+    "lichSuKiemTraGan": "近期校验记录",
+    "chuaCoDuLieu": "暂无数据。",
+    "vatTuTaiLine": "产线物料",
+    "kiemTraNapFeederDong": "供料器上料校验 · MSD 车间寿命计时（J-STD-020）· 钢网印刷周期计数（doc 35 W4-C）"
+  },
+  "aiToolResult": {
+    "khongCoKetNoiCsdl": "无数据库连接。",
+    "tong": "总计",
+    "topMayNg": "NG 最多设备：",
+    "khongCoMay": "无设备。",
+    "khongCoDiemDoNao": "无不合格测点。",
+    "banGhiGanNhat": "最近记录：",
+    "batThuong": "异常",
+    "duBao": "预测",
+    "heSoCb": "Cb 指数",
+    "suDung": "使用率",
+    "tramBiChanNhat": "阻塞最严重工位",
+    "tramThieuLieuNhat": "缺料最严重工位",
+    "ketQuaGanNhat": "最新结果：",
+    "chuaCoTelemetry": "暂无遥测数据。",
+    "khongCoTelemetry": "无遥测数据。",
+    "giaTri": "值"
+  },
+  "mqttDash": {
+    "chonFactory": "选择工厂...",
+    "chonWorkshop": "选择车间...",
+    "chonLine": "选择产线...",
+    "chonStation": "选择工位...",
+    "machineTuyChon": "设备（可选）",
+    "tuDongChonMayDau": "自动选择第一台设备",
+    "sanPhamTuyChon": "产品（可选）",
+    "chonSanPhamDeLoad": "选择产品以加载测点...",
+    "tatCaOk": "全部 OK",
+    "tatCaNg": "全部 NG",
+    "tenDiemDo": "测点名称",
+    "ketQua": "结果",
+    "giaTri": "值",
+    "dong": "关闭"
+  },
+  "ctPanels": {
+    "tuVanMucCanhBao": "建议 — 警告级及以上，已去重（不含定期/信息类报告）",
+    "phatSinhTrong24h": "24 小时内新增",
+    "availabilityKhaDung": "可用率 (Availability)",
+    "performanceHieuSuat": "性能 (Performance)",
+    "qualityChatLuong": "质量 (Quality)",
+    "overallEquipmentEffectivenessHieuSuat": "设备综合效率 Overall Equipment Effectiveness（A × P × Q）",
+    "availabilityKhaDung2": "可用率 (Availability)",
+    "performanceHieuSuat2": "性能 (Performance)",
+    "qualityChatLuong2": "质量 (Quality)"
+  },
+  "seedData": {
+    "duLieuCoSo": "基础数据",
+    "taoNhaMayDayChuyen": "创建示例工厂、产线、设备和产品",
+    "dangTao": "创建中...",
+    "duLieuKiemTra": "检测数据",
+    "tao100BanGhiKiem": "创建 100 条示例检测记录（OK/NG）",
+    "dangTao2": "创建中...",
+    "phanTichTramLamViec": "工位分析",
+    "tao500BanGhiPhan": "创建最近 7 天的 500 条分析记录",
+    "dangTao3": "创建中..."
+  },
+  "showcase": {
+    "canhBaoLienKetCode": "无效编码链接警告 + 统一的删除/归档确认（doc 42 第 1 批）。",
+    "valueKhongKhopOption": "值与选项不匹配",
+    "chonVatLieu": "选择物料…",
+    "importexportbarDoc42Dot4a": "ImportExportBar（doc 42 第 4A 批）",
+    "taiMau": "下载模板",
+    "nhap": "导入",
+    "entityPickerKhongTonTai": "EntityPicker「不存在」与 ConfirmDeleteDialog"
+  },
+  "dashboardRaw": {
+    "inLuuPdf": "打印 / 保存 PDF",
+    "canhBaoKhanChuaXu": "未处理的紧急告警",
+    "ngTyLeNg": "NG % — 不良率",
+    "soBoNgTongSo": "不良板数 / 该设备检测总数",
+    "ntfTyLeNtf": "NTF % — 误判率",
+    "soBoNtfLoiAo": "NTF 板数（误报）/ 该设备检测总数"
+  },
+  "corpDash": {
+    "xuHuongTyLeDat": "月度合格率趋势 — 折线图，含 95% 目标参考线",
+    "sanLuongTheoThangBieu": "月度产量 — 柱状图",
+    "phanBoSanLuongTheo": "各集团产量分布 — 饼图",
+    "soSanhTyLeDat": "各集团合格率对比 — 横向柱状图",
+    "soSanhTrongKy": "期内对比"
+  },
+  "drillDown": {
+    "chonKyDuLieu": "选择数据周期",
+    "homNay": "今天",
+    "7Ngay": "7 天",
+    "30Ngay": "30 天",
+    "toanThoiGian": "全部时间"
+  },
+  "aiLocalKb": {
+    "xinChaoToiCoThe": "您好！有什么可以帮您？",
+    "daLuuCache": "已缓存",
+    "taiLieuThamKhao": "参考资料：",
+    "lamMoi": "刷新"
+  },
+  "langSettings": {
+    "saveLuu": "— Save / Lưu / 保存",
+    "cancelHuy": "— Cancel / Hủy / 取消",
+    "deleteXoa": "— Delete / Xóa / 删除",
+    "searchTimKiem": "— Search / Tìm kiếm / 搜索"
+  },
+  "licBanner": {
+    "licenseServerKhongKhaDung": "许可证服务器不可用",
+    "dongThongBao": "关闭通知",
+    "dongCanhBao": "关闭警告"
+  },
+  "qgTemplates": {
+    "canhBao": "警告",
+    "tamDung": "暂停",
+    "dungHan": "停机"
+  },
+  "teachJog": {
+    "jogPreviewCucBoCapture": "点动（本地预览）→ 捕获点位 → 添加作业步骤。",
+    "buoc": "步骤"
+  },
+  "entityCombo": {
+    "chon": "选择...",
+    "boChon": "— 清除 —",
+    "khongCoDuLieu": "无数据"
+  },
+  "excelIo": {
+    "chonFileExcelXlsxDe": "选择 Excel 文件（.xlsx）导入数据。如需要可先下载模板。",
+    "chonFileExcel": "选择 Excel 文件"
+  },
+  "prodCategory": {
+    "vdLinhKienDienTu": "例：电子元件",
+    "moTaChiTietVe": "该类别的详细说明..."
+  },
+  "qualityHome": {
+    "daXemAcknowledge": "已确认 / Acknowledge",
+    "daXemAcknowledge2": "已确认 / Acknowledge"
+  },
+  "alertWidget": {
+    "canhBaoGanDay": "近期告警"
+  },
+  "ladderEditor": {
+    "outBieuThucBool": "OUT := 布尔表达式"
+  },
+  "licGate": {
+    "moduleChuaDuocCapPhep": "模块未授权"
+  },
+  "dateField": {
+    "chonNgay": "选择日期"
+  },
+  "schedReports": {
+    "viDu2025CongTy": "示例：© 2025 ABC 有限公司。保留所有权利。"
+  },
+  "setupGuard": {
+    "dangKiemTraHeThong": "正在检查系统..."
+  },
+  "themeToggle": {
+    "doiGiaoDienSangToi": "切换浅色/深色主题"
+  },
+  "uptimeTl": {
+    "khongCoDuLieu": "无数据"
+  },
+  "mqttClients": {
+    "tiengViet": "Tiếng Việt"
+  },
+  "setupPage": {
+    "nguyenVanA": "张三"
+  },
+  "usersPage": {
+    "nguyenVanA": "张三"
   }
 }

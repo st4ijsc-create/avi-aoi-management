@@ -369,7 +369,8 @@
       "open": "đang mở",
       "topAnomaly": "Bất thường #1",
       "allClear": "Không có cảnh báo đang mở — hệ thống ổn định."
-    }
+    },
+    "demCanhBaoChuaXu": "Đếm cảnh báo chưa xử lý (mọi thời điểm): andon chưa resolve + sự kiện an toàn. Khác với panel 'Tình trạng cảnh báo (24h)' — đếm số phát sinh trong cửa sổ 24h. Bấm để mở Ops Console."
   },
   "comparisonStudio": {
     "title": "Xưởng So sánh",
@@ -11012,7 +11013,8 @@
     "workstationManagementDesc": "Cấu hình phân công và cài đặt trạm làm việc",
     "openWorkstationManagement": "Mở quản lý trạm làm việc",
     "openWorkstationManagementDesc": "Đi đến trang quản lý trạm làm việc chuyên dụng",
-    "goToWorkstationManagement": "Đi đến quản lý trạm làm việc"
+    "goToWorkstationManagement": "Đi đến quản lý trạm làm việc",
+    "congCu": "Công cụ"
   },
   "language": {
     "title": "Ngôn ngữ",
@@ -13872,7 +13874,13 @@
     "staleData": "Dữ liệu có thể đã cũ — mất kết nối cập nhật",
     "needsActionFirst": "Cần xử lý trước",
     "nRecords": "{{n}} bản ghi",
-    "oneRecord": "1 bản ghi"
+    "oneRecord": "1 bản ghi",
+    "khongCoCanhBaoDang": "Không có cảnh báo đang mở",
+    "ca5NguonAndonDu": "Cả 5 nguồn (Andon, dự báo, interlock, MQTT, ngưỡng) đều yên — hệ thống ổn định.",
+    "chonTatCaDangLoc": "Chọn tất cả đang lọc",
+    "hetHanDuBao": "HẾT HẠN DỰ BÁO",
+    "xacNhanXuLyXong": "Xác nhận xử lý xong?",
+    "huy": "Hủy"
   },
   "cmd": {
     "title": "Trung tâm điều hành hệ sinh thái",
@@ -16730,7 +16738,8 @@
       "minQuestion": "Câu hỏi phải có ít nhất 3 ký tự",
       "question": "Câu hỏi",
       "run": "Hỏi LLaVA"
-    }
+    },
+    "tiengViet": "Tiếng Việt"
   },
   "wipDashboard": {
     "blocked": "Bị chặn",
@@ -18208,7 +18217,8 @@
     "topMachine": "Máy tốt nhất",
     "trends": "Xu hướng",
     "concerns": "Quan ngại",
-    "forecast": "Dự báo"
+    "forecast": "Dự báo",
+    "tiengViet": "Tiếng Việt"
   },
   "defectCatalog": {
     "title": "Danh mục lỗi (IPC-A-610)",
@@ -18246,7 +18256,8 @@
     "repairGuidanceVi": "Hướng dẫn sửa chữa (VI)",
     "active": "Đang hoạt động",
     "deleteTitle": "Xoá mã lỗi?",
-    "deleteDesc": "Mã lỗi sẽ bị vô hiệu hoá (soft-delete). Kết quả NG đã phân loại vẫn giữ liên kết lịch sử."
+    "deleteDesc": "Mã lỗi sẽ bị vô hiệu hoá (soft-delete). Kết quả NG đã phân loại vẫn giữ liên kết lịch sử.",
+    "cauThiec": "Cầu thiếc"
   },
   "warRoom": {
     "export": {
@@ -18394,5 +18405,259 @@
   "settingsHub": {
     "title": "Trung tâm cài đặt",
     "categories": "Nhóm cài đặt"
+  },
+  "commandCenter": {
+    "xemChiTietThietBi": "Xem chi tiết thiết bị",
+    "cheDoHienThiSo": "Chế độ hiển thị sơ đồ nhà máy",
+    "dangChay": "Đang chạy",
+    "cho": "Chờ",
+    "tamDungGiu": "Tạm dừng/Giữ",
+    "loiEStop": "Lỗi/E-stop",
+    "ngoaiTuyen": "Ngoại tuyến",
+    "luongSuKienHeSinh": "Luồng sự kiện hệ sinh thái đang phát trực tiếp qua socket",
+    "ketNoiMayChuVan": "Kết nối máy chủ vẫn trực tiếp — luồng sự kiện realtime chưa bật (cờ ECOSYSTEM_EVENTS)",
+    "soDonViWipDang": "Số đơn vị WIP đang trên chuyền",
+    "canhBaoNghiemTrongCao": "Cảnh báo nghiêm trọng / cao đang hoạt động",
+    "canhBao": "Cảnh báo",
+    "nhiemVuDoiRobotCho": "Nhiệm vụ đội robot (chờ + đang chạy) / robot trực tuyến",
+    "nhiemVu": "Nhiệm vụ",
+    "soSiteDangBaoCao": "Số site đang báo cáo / tổng số site",
+    "soGoiYAiDang": "Số gợi ý AI đang hoạt động",
+    "goiYAi": "Gợi ý AI",
+    "oeeTrungBinhToanHe": "OEE trung bình toàn hệ (%) · Năng lượng toàn nhà máy (kWh) — chưa có tổng hợp toàn hệ sinh thái",
+    "oeeNangLuongToanHe": "OEE · Năng lượng (toàn hệ)",
+    "cayPhanCap": "Cây phân cấp",
+    "timTheoTenMaNode": "Tìm theo tên / mã node…",
+    "timKiemNodeTrongCay": "Tìm kiếm node trong cây phân cấp",
+    "cayPhanCapHeSinh": "Cây phân cấp hệ sinh thái",
+    "locMucDoCanhBao": "Lọc mức độ cảnh báo",
+    "khongCoCanhBaoDang": "Không có cảnh báo đang hoạt động",
+    "trangThai": "Trạng thái",
+    "oeeMay": "OEE máy",
+    "nhiemVu2": "Nhiệm vụ",
+    "khongCoCanhBaoNghiem": "Không có cảnh báo nghiêm trọng/cao",
+    "cayPhanCapTooltip": "Site → nhà máy → chuyền → trạm → máy / robot"
+  },
+  "msd": {
+    "advisoryMsdTrackingEnabledTat": "Advisory (MSD_TRACKING_ENABLED tắt)",
+    "dongHoFloorLifeTheo": "Đồng hồ floor-life theo J-STD-020 cho các reel đã lấy ra khỏi kho khô",
+    "dangTai": "Đang tải…",
+    "chuaCoExposureNaoDang": "Chưa có exposure nào đang mở.",
+    "linhKien": "Linh kiện",
+    "daPhoi": "Đã phơi",
+    "conLai": "Còn lại",
+    "trangThai": "Trạng thái",
+    "thaoTac": "Thao tác",
+    "thamChieuMslFloorLife": "Tham chiếu MSL → floor-life (J-STD-020)",
+    "soGioFloorLifeCho": "Số giờ floor-life cho phép ở ≤30°C / 60%RH",
+    "batDauDongHoFloor": "Bắt đầu đồng hồ floor-life khi lấy reel ra khỏi kho khô",
+    "maLinhKien": "Mã linh kiện",
+    "maReelTuyChon": "Mã reel (tuỳ chọn)",
+    "quetNhapMaReel": "Quét/nhập mã reel",
+    "capMsl": "Cấp MSL",
+    "ghiChuTuyChon": "Ghi chú (tuỳ chọn)",
+    "ghiChu": "Ghi chú"
+  },
+  "stencil": {
+    "chonKhuonInTheoId": "Chọn khuôn in theo ID (tool id trong master khuôn/thiết bị)",
+    "idKhuonInVd12": "ID khuôn in, VD: 12",
+    "advisoryStencilTrackingEnabledTat": "Advisory (STENCIL_TRACKING_ENABLED tắt)",
+    "dangTai": "Đang tải…",
+    "conTot": "Còn tốt",
+    "daGhiNhan": "Đã ghi nhận",
+    "conLai": "Còn lại",
+    "veSinhGanNhat": "Vệ sinh gần nhất",
+    "lichSuSuDungGan": "Lịch sử sử dụng gần đây",
+    "dangTai2": "Đang tải…",
+    "chuaCoBanGhiSu": "Chưa có bản ghi sử dụng.",
+    "ghiLuotIn": "Ghi lượt in",
+    "congDonSoChuKy": "Cộng dồn số chu kỳ in + tuỳ chọn vệ sinh / kiểm tra lực căng",
+    "chonKhuonInTruocKhi": "Chọn khuôn in trước khi ghi.",
+    "soLuotInThem": "Số lượt in thêm",
+    "giaTriLucCangTuy": "Giá trị lực căng (tuỳ chọn)",
+    "ghiChuTuyChon": "Ghi chú (tuỳ chọn)",
+    "ghiChu": "Ghi chú"
+  },
+  "feederVerify": {
+    "quetKiemTra": "Quét kiểm tra",
+    "chonMayNhapSlotVa": "Chọn máy, nhập slot và quét reel",
+    "may": "Máy",
+    "chonMay": "Chọn máy…",
+    "slotViTriFeeder": "Slot / vị trí feeder",
+    "maReelQuetBarcode": "Mã reel (quét barcode)",
+    "quetHoacNhapMaReel": "Quét hoặc nhập mã reel/linh kiện",
+    "trangThaiSetup": "Trạng thái setup",
+    "chonMayDeXemTrang": "Chọn máy để xem trạng thái.",
+    "hoanTat": "Hoàn tất",
+    "chuaHoanTat": "Chưa hoàn tất",
+    "coLech": "Có lệch",
+    "chuaCoLuotKiemNao": "Chưa có lượt kiểm nào.",
+    "lichSuKiemTraGan": "Lịch sử kiểm tra gần đây",
+    "chuaCoDuLieu": "Chưa có dữ liệu.",
+    "vatTuTaiLine": "Vật tư tại line",
+    "kiemTraNapFeederDong": "Kiểm tra nạp Feeder · đồng hồ floor-life MSD (J-STD-020) · đếm chu kỳ khuôn in Stencil (doc 35 W4-C)"
+  },
+  "aiToolResult": {
+    "khongCoKetNoiCsdl": "Không có kết nối CSDL.",
+    "tong": "Tổng",
+    "topMayNg": "Top máy NG:",
+    "khongCoMay": "Không có máy.",
+    "khongCoDiemDoNao": "Không có điểm đo nào lỗi.",
+    "banGhiGanNhat": "Bản ghi gần nhất:",
+    "batThuong": "Bất thường",
+    "duBao": "Dự báo",
+    "heSoCb": "Hệ số CB",
+    "suDung": "Sử dụng",
+    "tramBiChanNhat": "Trạm bị chặn nhất",
+    "tramThieuLieuNhat": "Trạm thiếu liệu nhất",
+    "ketQuaGanNhat": "Kết quả gần nhất:",
+    "chuaCoTelemetry": "Chưa có telemetry.",
+    "khongCoTelemetry": "Không có telemetry.",
+    "giaTri": "Giá trị"
+  },
+  "mqttDash": {
+    "chonFactory": "Chọn Factory...",
+    "chonWorkshop": "Chọn Workshop...",
+    "chonLine": "Chọn Line...",
+    "chonStation": "Chọn Station...",
+    "machineTuyChon": "Machine (tùy chọn)",
+    "tuDongChonMayDau": "Tự động chọn máy đầu tiên",
+    "sanPhamTuyChon": "Sản phẩm (tùy chọn)",
+    "chonSanPhamDeLoad": "Chọn sản phẩm để load điểm đo...",
+    "tatCaOk": "Tất cả OK",
+    "tatCaNg": "Tất cả NG",
+    "tenDiemDo": "Tên điểm đo",
+    "ketQua": "Kết quả",
+    "giaTri": "Giá trị",
+    "dong": "Đóng"
+  },
+  "ctPanels": {
+    "tuVanMucCanhBao": "Tư vấn — mức cảnh báo trở lên, đã khử trùng lặp (bỏ báo cáo định kỳ/info)",
+    "phatSinhTrong24h": "Phát sinh trong 24h",
+    "availabilityKhaDung": "Availability — Khả dụng",
+    "performanceHieuSuat": "Performance — Hiệu suất",
+    "qualityChatLuong": "Quality — Chất lượng",
+    "overallEquipmentEffectivenessHieuSuat": "Overall Equipment Effectiveness — Hiệu suất thiết bị tổng thể (A × P × Q)",
+    "availabilityKhaDung2": "Availability — Khả dụng",
+    "performanceHieuSuat2": "Performance — Hiệu suất",
+    "qualityChatLuong2": "Quality — Chất lượng"
+  },
+  "seedData": {
+    "duLieuCoSo": "Dữ liệu cơ sở",
+    "taoNhaMayDayChuyen": "Tạo nhà máy, dây chuyền, máy móc và sản phẩm mẫu",
+    "dangTao": "Đang tạo...",
+    "duLieuKiemTra": "Dữ liệu kiểm tra",
+    "tao100BanGhiKiem": "Tạo 100 bản ghi kiểm tra mẫu (OK/NG)",
+    "dangTao2": "Đang tạo...",
+    "phanTichTramLamViec": "Phân tích trạm làm việc",
+    "tao500BanGhiPhan": "Tạo 500 bản ghi phân tích 7 ngày gần đây",
+    "dangTao3": "Đang tạo..."
+  },
+  "showcase": {
+    "canhBaoLienKetCode": "Cảnh báo liên kết code rác + xác nhận xoá/lưu-trữ thống nhất (doc 42 Đợt 1).",
+    "valueKhongKhopOption": "Value không khớp option",
+    "chonVatLieu": "Chọn vật liệu…",
+    "importexportbarDoc42Dot4a": "ImportExportBar (doc 42 Đợt 4A)",
+    "taiMau": "Tải mẫu",
+    "nhap": "Nhập",
+    "entityPickerKhongTonTai": "EntityPicker \"Không tồn tại\" & ConfirmDeleteDialog"
+  },
+  "dashboardRaw": {
+    "inLuuPdf": "In / Lưu PDF",
+    "canhBaoKhanChuaXu": "Cảnh báo khẩn chưa xử lý",
+    "ngTyLeNg": "NG % — Tỷ lệ NG",
+    "soBoNgTongSo": "Số bo NG / tổng số kiểm tra trên máy",
+    "ntfTyLeNtf": "NTF % — Tỷ lệ NTF",
+    "soBoNtfLoiAo": "Số bo NTF (lỗi ảo) / tổng số kiểm tra trên máy"
+  },
+  "corpDash": {
+    "xuHuongTyLeDat": "Xu hướng tỷ lệ đạt theo tháng — biểu đồ đường, đường tham chiếu mục tiêu 95%",
+    "sanLuongTheoThangBieu": "Sản lượng theo tháng — biểu đồ cột",
+    "phanBoSanLuongTheo": "Phân bố sản lượng theo tập đoàn — biểu đồ tròn",
+    "soSanhTyLeDat": "So sánh tỷ lệ đạt giữa các tập đoàn — biểu đồ cột ngang",
+    "soSanhTrongKy": "So sánh trong kỳ"
+  },
+  "drillDown": {
+    "chonKyDuLieu": "Chọn kỳ dữ liệu",
+    "homNay": "Hôm nay",
+    "7Ngay": "7 ngày",
+    "30Ngay": "30 ngày",
+    "toanThoiGian": "Toàn thời gian"
+  },
+  "aiLocalKb": {
+    "xinChaoToiCoThe": "Xin chào! Tôi có thể giúp gì cho bạn?",
+    "daLuuCache": "Đã lưu cache",
+    "taiLieuThamKhao": "Tài liệu tham khảo:",
+    "lamMoi": "Làm mới"
+  },
+  "langSettings": {
+    "saveLuu": "— Save / Lưu / 保存",
+    "cancelHuy": "— Cancel / Hủy / 取消",
+    "deleteXoa": "— Delete / Xóa / 删除",
+    "searchTimKiem": "— Search / Tìm kiếm / 搜索"
+  },
+  "licBanner": {
+    "licenseServerKhongKhaDung": "License Server không khả dụng",
+    "dongThongBao": "Đóng thông báo",
+    "dongCanhBao": "Đóng cảnh báo"
+  },
+  "qgTemplates": {
+    "canhBao": "Cảnh báo",
+    "tamDung": "Tạm dừng",
+    "dungHan": "Dừng hẳn"
+  },
+  "teachJog": {
+    "jogPreviewCucBoCapture": "Jog (preview cục bộ) → Capture point → thêm job step.",
+    "buoc": "Bước"
+  },
+  "entityCombo": {
+    "chon": "Chọn...",
+    "boChon": "— Bỏ chọn —",
+    "khongCoDuLieu": "Không có dữ liệu"
+  },
+  "excelIo": {
+    "chonFileExcelXlsxDe": "Chọn file Excel (.xlsx) để import dữ liệu. Tải template mẫu nếu cần.",
+    "chonFileExcel": "Chọn file Excel"
+  },
+  "prodCategory": {
+    "vdLinhKienDienTu": "VD: Linh kiện điện tử",
+    "moTaChiTietVe": "Mô tả chi tiết về danh mục..."
+  },
+  "qualityHome": {
+    "daXemAcknowledge": "Đã xem / Acknowledge",
+    "daXemAcknowledge2": "Đã xem / Acknowledge"
+  },
+  "alertWidget": {
+    "canhBaoGanDay": "Cảnh báo gần đây"
+  },
+  "ladderEditor": {
+    "outBieuThucBool": "OUT := biểu thức bool"
+  },
+  "licGate": {
+    "moduleChuaDuocCapPhep": "Module chưa được cấp phép"
+  },
+  "dateField": {
+    "chonNgay": "Chọn ngày"
+  },
+  "schedReports": {
+    "viDu2025CongTy": "Ví dụ: © 2025 Công ty TNHH ABC. Mọi quyền được bảo lưu."
+  },
+  "setupGuard": {
+    "dangKiemTraHeThong": "Đang kiểm tra hệ thống..."
+  },
+  "themeToggle": {
+    "doiGiaoDienSangToi": "Đổi giao diện sáng/tối"
+  },
+  "uptimeTl": {
+    "khongCoDuLieu": "Không có dữ liệu"
+  },
+  "mqttClients": {
+    "tiengViet": "Tiếng Việt"
+  },
+  "setupPage": {
+    "nguyenVanA": "Nguyễn Văn A"
+  },
+  "usersPage": {
+    "nguyenVanA": "Nguyễn Văn A"
   }
 }

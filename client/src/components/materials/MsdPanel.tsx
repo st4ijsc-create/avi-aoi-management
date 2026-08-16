@@ -11,6 +11,7 @@
  * the Feeder-Verify page. Write actions are gated by usePermissions("masterdata").
  */
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -66,6 +67,7 @@ function fmtHours(h: number | null | undefined): string {
 }
 
 export default function MsdPanel() {
+  const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission("masterdata", "canCreate") || hasPermission("masterdata", "canEdit");
 
@@ -159,34 +161,34 @@ export default function MsdPanel() {
               <span className="flex items-center gap-2">
                 <Thermometer className="h-4 w-4 text-primary" /> Exposure đang mở
                 {mslTable.data && !mslTable.data.trackingEnabled && (
-                  <Badge variant="outline" className="text-xs">Advisory (MSD_TRACKING_ENABLED tắt)</Badge>
+                  <Badge variant="outline" className="text-xs">{t("msd.advisoryMsdTrackingEnabledTat", "Advisory (MSD_TRACKING_ENABLED tắt)")}</Badge>
                 )}
               </span>
               <Button variant="ghost" size="sm" onClick={refetchAll} disabled={active.isFetching}>
                 <RefreshCw className={`h-4 w-4 ${active.isFetching ? "animate-spin" : ""}`} />
               </Button>
             </CardTitle>
-            <CardDescription>Đồng hồ floor-life theo J-STD-020 cho các reel đã lấy ra khỏi kho khô</CardDescription>
+            <CardDescription>{t("msd.dongHoFloorLifeTheo", "Đồng hồ floor-life theo J-STD-020 cho các reel đã lấy ra khỏi kho khô")}</CardDescription>
           </CardHeader>
           <CardContent>
             {active.isLoading ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">Đang tải…</p>
+              <p className="py-6 text-center text-sm text-muted-foreground">{t("msd.dangTai", "Đang tải…")}</p>
             ) : active.isError ? (
               <p className="py-6 text-center text-sm text-destructive">Lỗi tải dữ liệu: {active.error?.message}</p>
             ) : rows.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">Chưa có exposure nào đang mở.</p>
+              <p className="py-6 text-center text-sm text-muted-foreground">{t("msd.chuaCoExposureNaoDang", "Chưa có exposure nào đang mở.")}</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-xs text-muted-foreground">
-                      <th className="py-2 pr-3 font-medium">Linh kiện</th>
+                      <th className="py-2 pr-3 font-medium">{t("msd.linhKien", "Linh kiện")}</th>
                       <th className="py-2 pr-3 font-medium">Reel</th>
                       <th className="py-2 pr-3 font-medium">MSL</th>
-                      <th className="py-2 pr-3 font-medium">Đã phơi</th>
-                      <th className="py-2 pr-3 font-medium">Còn lại</th>
-                      <th className="py-2 pr-3 font-medium">Trạng thái</th>
-                      <th className="py-2 pr-0 font-medium text-right">Thao tác</th>
+                      <th className="py-2 pr-3 font-medium">{t("msd.daPhoi", "Đã phơi")}</th>
+                      <th className="py-2 pr-3 font-medium">{t("msd.conLai", "Còn lại")}</th>
+                      <th className="py-2 pr-3 font-medium">{t("msd.trangThai", "Trạng thái")}</th>
+                      <th className="py-2 pr-0 font-medium text-right">{t("msd.thaoTac", "Thao tác")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -237,8 +239,8 @@ export default function MsdPanel() {
         {mslEntries.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Tham chiếu MSL → floor-life (J-STD-020)</CardTitle>
-              <CardDescription>Số giờ floor-life cho phép ở ≤30°C / 60%RH</CardDescription>
+              <CardTitle className="text-base">{t("msd.thamChieuMslFloorLife", "Tham chiếu MSL → floor-life (J-STD-020)")}</CardTitle>
+              <CardDescription>{t("msd.soGioFloorLifeCho", "Số giờ floor-life cho phép ở ≤30°C / 60%RH")}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
@@ -260,7 +262,7 @@ export default function MsdPanel() {
           <CardTitle className="flex items-center gap-2 text-base">
             <PackageOpen className="h-4 w-4 text-primary" /> Mở exposure
           </CardTitle>
-          <CardDescription>Bắt đầu đồng hồ floor-life khi lấy reel ra khỏi kho khô</CardDescription>
+          <CardDescription>{t("msd.batDauDongHoFloor", "Bắt đầu đồng hồ floor-life khi lấy reel ra khỏi kho khô")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {!canWrite && (
@@ -269,15 +271,15 @@ export default function MsdPanel() {
             </p>
           )}
           <div className="space-y-1">
-            <Label>Mã linh kiện</Label>
+            <Label>{t("msd.maLinhKien", "Mã linh kiện")}</Label>
             <Input value={componentCode} onChange={(e) => setComponentCode(e.target.value)} placeholder="VD: C0402-104" disabled={!canWrite} />
           </div>
           <div className="space-y-1">
-            <Label>Mã reel (tuỳ chọn)</Label>
-            <Input value={reelId} onChange={(e) => setReelId(e.target.value)} placeholder="Quét/nhập mã reel" disabled={!canWrite} />
+            <Label>{t("msd.maReelTuyChon", "Mã reel (tuỳ chọn)")}</Label>
+            <Input value={reelId} onChange={(e) => setReelId(e.target.value)} placeholder={t("msd.quetNhapMaReel", "Quét/nhập mã reel")} disabled={!canWrite} />
           </div>
           <div className="space-y-1">
-            <Label>Cấp MSL</Label>
+            <Label>{t("msd.capMsl", "Cấp MSL")}</Label>
             <Select value={mslLevel} onValueChange={(v) => setMslLevel(v as MslLevel)} disabled={!canWrite}>
               <SelectTrigger>
                 <SelectValue />
@@ -292,8 +294,8 @@ export default function MsdPanel() {
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Ghi chú (tuỳ chọn)</Label>
-            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ghi chú" disabled={!canWrite} />
+            <Label>{t("msd.ghiChuTuyChon", "Ghi chú (tuỳ chọn)")}</Label>
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("msd.ghiChu", "Ghi chú")} disabled={!canWrite} />
           </div>
           <Button onClick={onOpen} disabled={!canWrite || busy} className="w-full">
             <PackageOpen className="mr-2 h-4 w-4" /> Mở exposure

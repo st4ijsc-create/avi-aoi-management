@@ -147,7 +147,7 @@ export default function Setup() {
               <Input
                 id="name"
                 type="text"
-                placeholder="Nguyễn Văn A"
+                placeholder={t("setupPage.nguyenVanA", "Nguyễn Văn A")}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 onBlur={(e) => handleBlur("name", e.target.value)}

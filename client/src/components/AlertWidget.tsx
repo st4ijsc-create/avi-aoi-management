@@ -4,6 +4,7 @@
  */
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
@@ -13,6 +14,7 @@ import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
 
 export function AlertWidget() {
+  const { t } = useTranslation();
   const { data, isLoading, refetch } = trpc.mqttClientManagement.getAlertWidgetData.useQuery(
     undefined,
     { refetchInterval: 60000 } // Refresh every minute
@@ -79,7 +81,7 @@ export function AlertWidget() {
         {/* Recent Alerts */}
         {data?.recentAlerts && data.recentAlerts.length > 0 ? (
           <div className="space-y-2">
-            <div className="text-xs text-muted-foreground font-medium">Cảnh báo gần đây</div>
+            <div className="text-xs text-muted-foreground font-medium">{t("alertWidget.canhBaoGanDay", "Cảnh báo gần đây")}</div>
             {data.recentAlerts.slice(0, 3).map((alert) => (
               <div
                 key={alert.id}

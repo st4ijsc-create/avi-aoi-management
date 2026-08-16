@@ -1692,7 +1692,7 @@ export function MqttClientManagementContent() {
                           >
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="vi">Tiếng Việt</SelectItem>
+                              <SelectItem value="vi">{t("mqttClients.tiengViet", "Tiếng Việt")}</SelectItem>
                               <SelectItem value="en">English</SelectItem>
                               <SelectItem value="zh">中文</SelectItem>
                             </SelectContent>

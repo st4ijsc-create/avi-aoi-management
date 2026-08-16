@@ -309,7 +309,7 @@ function TopRisksPanel(): React.JSX.Element {
     <PanelShell
       icon={<Lightbulb className="h-4 w-4 text-primary" />}
       title={t("controlTower.topRisks.title", "Top AI insights")}
-      description="Tư vấn — mức cảnh báo trở lên, đã khử trùng lặp (bỏ báo cáo định kỳ/info)"
+      description={t("ctPanels.tuVanMucCanhBao", "Tư vấn — mức cảnh báo trở lên, đã khử trùng lặp (bỏ báo cáo định kỳ/info)")}
       linkHref="/management-insight"
       isLoading={q.isLoading}
       isError={q.isError}
@@ -384,7 +384,7 @@ function AlarmHealthPanel(): React.JSX.Element {
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat
-          label="Phát sinh trong 24h"
+          label={t("ctPanels.phatSinhTrong24h", "Phát sinh trong 24h")}
           value={int(d?.totalAlarms ?? null)}
           hint="Số cảnh báo phát sinh trong cửa sổ 24h (andon + AI dự báo), kể cả đã xử lý — khác số 'đang mở' trên dải KPI."
         />
@@ -496,16 +496,16 @@ function LineOeePanel(): React.JSX.Element {
                 {/* W4 (doc 67): A/P/Q trần khó hiểu với người mới — abbr giải nghĩa
                     (hover/đọc màn hình), giữ header ngắn để bảng không tràn. */}
                 <TableHead className="text-right">
-                  <abbr title="Availability — Khả dụng" className="no-underline">A%</abbr>
+                  <abbr title={t("ctPanels.availabilityKhaDung", "Availability — Khả dụng")} className="no-underline">A%</abbr>
                 </TableHead>
                 <TableHead className="text-right">
-                  <abbr title="Performance — Hiệu suất" className="no-underline">P%</abbr>
+                  <abbr title={t("ctPanels.performanceHieuSuat", "Performance — Hiệu suất")} className="no-underline">P%</abbr>
                 </TableHead>
                 <TableHead className="text-right">
-                  <abbr title="Quality — Chất lượng" className="no-underline">Q%</abbr>
+                  <abbr title={t("ctPanels.qualityChatLuong", "Quality — Chất lượng")} className="no-underline">Q%</abbr>
                 </TableHead>
                 <TableHead className="text-right">
-                  <abbr title="Overall Equipment Effectiveness — Hiệu suất thiết bị tổng thể (A × P × Q)" className="no-underline">OEE%</abbr>
+                  <abbr title={t("ctPanels.overallEquipmentEffectivenessHieuSuat", "Overall Equipment Effectiveness — Hiệu suất thiết bị tổng thể (A × P × Q)")} className="no-underline">OEE%</abbr>
                 </TableHead>
                 <TableHead className="text-right">{t("controlTower.lineOee.output", "Output")}</TableHead>
               </TableRow>
@@ -541,9 +541,9 @@ function LineOeePanel(): React.JSX.Element {
         {selected && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Stat label={<abbr title="Availability — Khả dụng" className="no-underline">A%</abbr>} value={pct(selected.availability)} />
-              <Stat label={<abbr title="Performance — Hiệu suất" className="no-underline">P%</abbr>} value={pct(selected.performance)} />
-              <Stat label={<abbr title="Quality — Chất lượng" className="no-underline">Q%</abbr>} value={pct(selected.quality)} />
+              <Stat label={<abbr title={t("ctPanels.availabilityKhaDung2", "Availability — Khả dụng")} className="no-underline">A%</abbr>} value={pct(selected.availability)} />
+              <Stat label={<abbr title={t("ctPanels.performanceHieuSuat2", "Performance — Hiệu suất")} className="no-underline">P%</abbr>} value={pct(selected.performance)} />
+              <Stat label={<abbr title={t("ctPanels.qualityChatLuong2", "Quality — Chất lượng")} className="no-underline">Q%</abbr>} value={pct(selected.quality)} />
               <Stat label="OEE%" value={pct(selected.oee)} tone={oeeTone(selected.oee)} />
             </div>
             <Stat label={t("controlTower.lineOee.output", "Output")} value={num(selected.output)} />

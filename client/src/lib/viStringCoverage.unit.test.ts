@@ -36,8 +36,27 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Hạ số này mỗi khi di trú xong một đợt. KHÔNG BAO GIỜ nâng lên. */
-const ALLOWED_RAW_VI_STRINGS = 610;
+/**
+ * Hạ số này mỗi khi di trú xong một đợt. KHÔNG BAO GIỜ nâng lên.
+ *
+ * 610 → 410 (2026-08-16): đã di trú **toàn bộ 200 chuỗi trên 39 file màn VẬN HÀNH**
+ * — số nhãn mà người vận hành đọc mỗi ca nay bằng 0.
+ *
+ * ⚠ 410 CÒN LẠI KHÔNG PHẢI SỐ DƯ TUỲ Ý — nó là chính xác 8 file `ApiDocs`
+ * (`pages/ApiDocs.tsx` 192 · `components/apiDocs/*` 218). Nội dung ở đó là **tài liệu
+ * tham chiếu API cho bên tích hợp**, dạng `factory.list - Danh sách nhà máy`: tên
+ * tuyến bằng tiếng Anh + mô tả bằng tiếng Việt. Đó là tài liệu, không phải nhãn giao
+ * diện, nên chủ dự án chốt để lại (2026-08-16). Xem `ALLOWED_RAW_VI_APIDOCS` bên dưới:
+ * nợ này bị GIAM trong thư mục ApiDocs, thêm chuỗi trần ở bất kỳ đâu khác vẫn ĐỎ.
+ */
+const ALLOWED_RAW_VI_STRINGS = 410;
+
+/**
+ * Trần riêng cho nhóm ApiDocs. Tồn tại để hai con số không thể bù trừ cho nhau:
+ * nếu ai đó dịch bớt ApiDocs mà thêm nhãn trần vào màn vận hành, tổng vẫn 410 và
+ * cổng trên sẽ xanh — chính là lớp lỗi "ngân sách tự thoả" đã trả giá ở Pha 7.
+ */
+const ALLOWED_RAW_VI_APIDOCS = 410;
 
 const CLIENT_SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LOCALES = resolve(CLIENT_SRC, "i18n/locales");
@@ -89,7 +108,10 @@ function demChuoiTran(): { total: number; byFile: Array<[string, number]> } {
     for (const ln of lines) {
       const tr = ln.trim();
       if (inBlock) { if (tr.includes("*/")) inBlock = false; continue; }
-      if (tr.startsWith("/*")) { inBlock = !tr.includes("*/"); continue; }
+      // ⚠ `{/*` cũng phải tính là mở khối. Bỏ sót nó, một comment JSX NHIỀU DÒNG có
+      // chữ Việt sẽ bị đếm thành nợ — và tệ hơn, bộ di trú tự động sẽ SỬA VÀO COMMENT.
+      // Đúng chuyện đó đã xảy ra ở `DashboardLayout.tsx` lượt 2026-08-16.
+      if (tr.startsWith("/*") || tr.startsWith("{/*")) { inBlock = !tr.includes("*/"); continue; }
       if (tr.startsWith("//") || tr.startsWith("*")) continue;
       if (!CHU_VIET.test(ln)) continue;
 
@@ -103,6 +125,9 @@ function demChuoiTran(): { total: number; byFile: Array<[string, number]> } {
   return { total, byFile };
 }
 
+/** Nhóm tài liệu tham chiếu API — cố ý ngoài phạm vi di trú, xem chú thích trần. */
+const LA_APIDOCS = /ApiDocs|apiDocs|api-docs/i;
+
 describe("F12 — chuỗi tiếng Việt TRẦN (cổng theo-khoá không thấy được)", () => {
   it(`tối đa ${ALLOWED_RAW_VI_STRINGS} chuỗi hướng-người-dùng chưa qua t()`, () => {
     const { total, byFile } = demChuoiTran();
@@ -114,6 +139,22 @@ describe("F12 — chuỗi tiếng Việt TRẦN (cổng theo-khoá không thấy
 
   it("ngân sách phải bám SÁT số thật — số dư che mất nợ mới", () => {
     expect(ALLOWED_RAW_VI_STRINGS).toBe(demChuoiTran().total);
+  });
+
+  // ⚠ Hai phép đo dưới đây là thứ khiến trần 410 KHÔNG phải một cái bao tải.
+  // Thiếu chúng, một nhãn trần mới ở màn vận hành có thể núp sau việc ai đó
+  // tình cờ dịch bớt ApiDocs, và tổng vẫn đúng 410.
+  it("màn VẬN HÀNH phải bằng 0 — mọi chuỗi trần ngoài ApiDocs đều là nợ MỚI", () => {
+    const { byFile } = demChuoiTran();
+    const vanHanh = byFile.filter(([f]) => !LA_APIDOCS.test(f));
+    if (vanHanh.length) console.error("[F12] nhãn trần MỚI ngoài ApiDocs:", vanHanh);
+    expect(vanHanh).toEqual([]);
+  });
+
+  it(`nhóm ApiDocs không được phình quá ${ALLOWED_RAW_VI_APIDOCS}`, () => {
+    const { byFile } = demChuoiTran();
+    const apiDocs = byFile.filter(([f]) => LA_APIDOCS.test(f)).reduce((s, [, n]) => s + n, 0);
+    expect(apiDocs).toBeLessThanOrEqual(ALLOWED_RAW_VI_APIDOCS);
   });
 });
 

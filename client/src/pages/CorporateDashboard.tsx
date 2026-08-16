@@ -559,7 +559,7 @@ export default function CorporateDashboard() {
                   <div
                     className={`w-full ${sparseTrend ? 'h-[160px]' : 'h-[280px]'}`}
                     role="img"
-                    aria-label="Xu hướng tỷ lệ đạt theo tháng — biểu đồ đường, đường tham chiếu mục tiêu 95%"
+                    aria-label={t("corpDash.xuHuongTyLeDat", "Xu hướng tỷ lệ đạt theo tháng — biểu đồ đường, đường tham chiếu mục tiêu 95%")}
                   >
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={monthlyTrend}>
@@ -598,7 +598,7 @@ export default function CorporateDashboard() {
                 )}
               </CardHeader>
               <CardContent>
-                <div className={sparseTrend ? 'h-[140px]' : 'h-[250px]'} role="img" aria-label="Sản lượng theo tháng — biểu đồ cột">
+                <div className={sparseTrend ? 'h-[140px]' : 'h-[250px]'} role="img" aria-label={t("corpDash.sanLuongTheoThangBieu", "Sản lượng theo tháng — biểu đồ cột")}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlyTrend}>
                       <CartesianGrid {...chartGridProps} />
@@ -633,7 +633,7 @@ export default function CorporateDashboard() {
                   <div
                     className="h-[300px]"
                     role="img"
-                    aria-label="Phân bố sản lượng theo tập đoàn — biểu đồ tròn"
+                    aria-label={t("corpDash.phanBoSanLuongTheo", "Phân bố sản lượng theo tập đoàn — biểu đồ tròn")}
                   >
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
@@ -675,7 +675,7 @@ export default function CorporateDashboard() {
                 <div
                   className="h-[300px]"
                   role="img"
-                  aria-label="So sánh tỷ lệ đạt giữa các tập đoàn — biểu đồ cột ngang"
+                  aria-label={t("corpDash.soSanhTyLeDat", "So sánh tỷ lệ đạt giữa các tập đoàn — biểu đồ cột ngang")}
                 >
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={assignedCorporationData} layout="vertical">
@@ -728,7 +728,7 @@ export default function CorporateDashboard() {
 
               {/* Mini so-sánh kỳ: yield tập đoàn này vs trung bình toàn + mục tiêu. */}
               <div className="space-y-2 rounded-lg border p-3">
-                <p className="text-xs font-medium text-muted-foreground">So sánh trong kỳ</p>
+                <p className="text-xs font-medium text-muted-foreground">{t("corpDash.soSanhTrongKy", "So sánh trong kỳ")}</p>
                 {(() => {
                   const dVsAvg = Math.round((drawerCorp.yield - corporateOverview.avgYield) * 100) / 100;
                   const dVsTarget = Math.round((drawerCorp.yield - 95) * 100) / 100;

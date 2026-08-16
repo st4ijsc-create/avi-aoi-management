@@ -978,7 +978,7 @@ export default function Dashboard() {
         </head>
         <body>
           ${opts.autoPrint ? `<div class="no-print" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#1e40af;">
-            ${t("dashboard.exportReport")}: chọn "Save as PDF / Lưu thành PDF" trong hộp thoại in. <button onclick="window.print()" style="margin-left:8px;padding:4px 10px;border:1px solid #1e40af;border-radius:6px;background:#fff;color:#1e40af;cursor:pointer;">In / Lưu PDF</button>
+            ${t("dashboard.exportReport")}: chọn "Save as PDF / Lưu thành PDF" trong hộp thoại in. <button onclick="window.print()" style="margin-left:8px;padding:4px 10px;border:1px solid #1e40af;border-radius:6px;background:#fff;color:#1e40af;cursor:pointer;">{t("dashboardRaw.inLuuPdf", "In / Lưu PDF")}</button>
           </div>` : ''}
           <div class="header">
             <h1>${t("dashboard.ngReportTitle")}</h1>
@@ -1498,7 +1498,7 @@ export default function Dashboard() {
           <div
             role="status"
             aria-live="polite"
-            aria-label="Cảnh báo khẩn chưa xử lý"
+            aria-label={t("dashboardRaw.canhBaoKhanChuaXu", "Cảnh báo khẩn chưa xử lý")}
             className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 space-y-1"
           >
             {urgentAlerts.slice(0, 3).map((a) => (
@@ -3231,8 +3231,8 @@ export default function Dashboard() {
                 </div>
                 <div>
                   {/* doc65 W1 — nhãn trung thực khớp thẻ máy: chỉ số này là tỷ lệ NG (ng/total) */}
-                  <p className="font-medium">NG % — Tỷ lệ NG</p>
-                  <p className="text-xs text-muted-foreground">Số bo NG / tổng số kiểm tra trên máy</p>
+                  <p className="font-medium">{t("dashboardRaw.ngTyLeNg", "NG % — Tỷ lệ NG")}</p>
+                  <p className="text-xs text-muted-foreground">{t("dashboardRaw.soBoNgTongSo", "Số bo NG / tổng số kiểm tra trên máy")}</p>
                 </div>
               </div>
               <Button
@@ -3250,8 +3250,8 @@ export default function Dashboard() {
                 </div>
                 <div>
                   {/* doc65 W1 — nhãn trung thực khớp thẻ máy: chỉ số này là tỷ lệ NTF (ntf/total) */}
-                  <p className="font-medium">NTF % — Tỷ lệ NTF</p>
-                  <p className="text-xs text-muted-foreground">Số bo NTF (lỗi ảo) / tổng số kiểm tra trên máy</p>
+                  <p className="font-medium">{t("dashboardRaw.ntfTyLeNtf", "NTF % — Tỷ lệ NTF")}</p>
+                  <p className="text-xs text-muted-foreground">{t("dashboardRaw.soBoNtfLoiAo", "Số bo NTF (lỗi ảo) / tổng số kiểm tra trên máy")}</p>
                 </div>
               </div>
               <Button

@@ -9,12 +9,14 @@
  */
 
 import { useLicenseEnforcement } from "@/hooks/useLicenseEnforcement";
+import { useTranslation } from "react-i18next";
 import { AlertTriangle, Lock, ShieldAlert, ShieldX, WifiOff, X } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 
 export function LicenseEnforcementBanner() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const enforcement = useLicenseEnforcement();
   const [dismissed, setDismissed] = useState(false);
@@ -39,7 +41,7 @@ export function LicenseEnforcementBanner() {
       <div className="bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700 border-b px-4 py-2 flex items-center gap-3">
         <WifiOff className="h-4 w-4 text-blue-500 dark:text-blue-400 shrink-0" />
         <div className="flex-1 text-sm text-blue-700 dark:text-blue-300">
-          <span className="font-medium">License Server không khả dụng</span>
+          <span className="font-medium">{t("licBanner.licenseServerKhongKhaDung", "License Server không khả dụng")}</span>
           <span className="ml-1 opacity-75">
             — Hệ thống vẫn hoạt động bình thường với license hiện tại.
             {enforcement.lastSuccessfulOnlineCheck && (
@@ -50,7 +52,7 @@ export function LicenseEnforcementBanner() {
         <button
           onClick={() => setDismissed(true)}
           className="shrink-0 p-1 rounded hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors text-blue-700 dark:text-blue-300"
-          aria-label="Đóng thông báo"
+          aria-label={t("licBanner.dongThongBao", "Đóng thông báo")}
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -130,7 +132,7 @@ export function LicenseEnforcementBanner() {
         <button
           onClick={() => setDismissed(true)}
           className={`shrink-0 p-1 rounded hover:bg-yellow-200 dark:hover:bg-yellow-800 transition-colors ${textClass}`}
-          aria-label="Đóng cảnh báo"
+          aria-label={t("licBanner.dongCanhBao", "Đóng cảnh báo")}
         >
           <X className="h-3.5 w-3.5" />
         </button>

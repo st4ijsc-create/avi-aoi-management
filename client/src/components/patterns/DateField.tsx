@@ -7,6 +7,7 @@
  * nguyên chuỗi ISO `yyyy-MM-dd` như native input nên KHÔNG đổi state/API của trang.
  */
 import { format, parse, isValid } from "date-fns";
+import { useTranslation } from "react-i18next";
 import { vi } from "date-fns/locale";
 import { CalendarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ export function DateField({
   value,
   onChange,
   "aria-label": ariaLabel,
-  placeholder = "Chọn ngày",
+  placeholder: placeholderProp,
   className,
 }: {
   /** Chuỗi ISO yyyy-MM-dd (như <input type="date">). Rỗng = chưa chọn. */
@@ -28,6 +29,9 @@ export function DateField({
   placeholder?: string;
   className?: string;
 }) {
+  const { t } = useTranslation();
+  // Mặc định giải ở thân hàm — `t` chưa có trong phạm vi danh sách tham số.
+  const placeholder = placeholderProp ?? t("dateField.chonNgay", "Chọn ngày");
   const date = value ? parse(value, "yyyy-MM-dd", new Date()) : undefined;
   const valid = date != null && isValid(date);
   return (

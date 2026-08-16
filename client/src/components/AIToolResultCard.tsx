@@ -6,6 +6,7 @@
  */
 
 import { Activity, AlertTriangle, CheckCircle2, Database, Gauge, TrendingDown, TrendingUp, XCircle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Line, LineChart, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -251,6 +252,7 @@ interface Props {
 }
 
 export function AIToolResultCard({ toolResult }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="rounded-xl border border-primary/20 bg-background/80 p-2.5 space-y-2 text-xs">
       <div className="flex items-center gap-1.5">
@@ -262,7 +264,7 @@ export function AIToolResultCard({ toolResult }: Props) {
       {toolResult.note === "DB_UNAVAILABLE" && (
         <div className="flex items-center gap-1.5 text-amber-600">
           <AlertTriangle className="size-3" />
-          <span>Không có kết nối CSDL.</span>
+          <span>{t("aiToolResult.khongCoKetNoiCsdl", "Không có kết nối CSDL.")}</span>
         </div>
       )}
 
@@ -337,11 +339,12 @@ export function AIToolResultCard({ toolResult }: Props) {
 
 // ---- today_stats ----
 function TodayStatsBody({ data }: { data: Extract<ToolResultPayload, { type: "today_stats" }>["data"] }) {
+  const { t } = useTranslation();
   const ngColor = data.ngRate >= 5 ? "text-red-600" : data.ngRate >= 2 ? "text-amber-600" : "text-emerald-600";
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-4 gap-1.5">
-        <Stat label="Tổng" value={data.total} icon={<Gauge className="size-3" />} />
+        <Stat label={t("aiToolResult.tong", "Tổng")} value={data.total} icon={<Gauge className="size-3" />} />
         <Stat label="OK" value={data.ok} color="text-emerald-600" icon={<CheckCircle2 className="size-3" />} />
         <Stat label="NG" value={data.ng} color="text-red-600" icon={<XCircle className="size-3" />} />
         <Stat label="NTF" value={data.ntf} color="text-amber-600" icon={<AlertTriangle className="size-3" />} />
@@ -352,7 +355,7 @@ function TodayStatsBody({ data }: { data: Extract<ToolResultPayload, { type: "to
       </div>
       {data.byMachine.length > 0 && (
         <div className="space-y-0.5">
-          <div className="text-muted-foreground text-[11px]">Top máy NG:</div>
+          <div className="text-muted-foreground text-[11px]">{t("aiToolResult.topMayNg", "Top máy NG:")}</div>
           {data.byMachine.slice(0, 3).map((m) => (
             <div key={m.machineId} className="flex items-center justify-between text-[11px]">
               <span className="truncate">{m.machineName}</span>
@@ -402,8 +405,9 @@ function LotStatusBody({ data }: { data: NonNullable<Extract<ToolResultPayload, 
 
 // ---- machine_status ----
 function MachineStatusBody({ data }: { data: Extract<ToolResultPayload, { type: "machine_status" }>["data"] }) {
+  const { t } = useTranslation();
   if (data.length === 0) {
-    return <div className="text-muted-foreground italic text-[11px]">Không có máy.</div>;
+    return <div className="text-muted-foreground italic text-[11px]">{t("aiToolResult.khongCoMay", "Không có máy.")}</div>;
   }
   return (
     <div className="space-y-1 max-h-48 overflow-y-auto">
@@ -465,8 +469,9 @@ function DefectTrendBody({ data }: { data: Extract<ToolResultPayload, { type: "d
 
 // ---- top_defects ----
 function TopDefectsBody({ data }: { data: Extract<ToolResultPayload, { type: "top_defects" }>["data"] }) {
+  const { t } = useTranslation();
   if (data.length === 0) {
-    return <div className="text-muted-foreground italic text-[11px]">Không có điểm đo nào lỗi.</div>;
+    return <div className="text-muted-foreground italic text-[11px]">{t("aiToolResult.khongCoDiemDoNao", "Không có điểm đo nào lỗi.")}</div>;
   }
   return (
     <div className="space-y-1">
@@ -489,6 +494,7 @@ function TopDefectsBody({ data }: { data: Extract<ToolResultPayload, { type: "to
 
 // ---- F6: process_result ----
 function ProcessResultBody({ data }: { data: Extract<ToolResultPayload, { type: "process_result" }>["data"] }) {
+  const { t } = useTranslation();
   const s = data.summary;
   const failColor = s.failRate >= 5 ? "text-red-600" : s.failRate >= 2 ? "text-amber-600" : "text-emerald-600";
   return (
@@ -505,7 +511,7 @@ function ProcessResultBody({ data }: { data: Extract<ToolResultPayload, { type: 
       </div>
       {data.rows.length > 0 && (
         <div className="space-y-0.5">
-          <div className="text-muted-foreground text-[11px]">Bản ghi gần nhất:</div>
+          <div className="text-muted-foreground text-[11px]">{t("aiToolResult.banGhiGanNhat", "Bản ghi gần nhất:")}</div>
           {data.rows.slice(0, 5).map((r, i) => (
             <div key={`${r.serialNumber}-${i}`} className="flex items-center gap-1.5 text-[11px]">
               <span className="font-mono truncate flex-1">{r.serialNumber}</span>
@@ -531,6 +537,7 @@ function resultColor(result: string): string {
 
 // ---- F6: process_metric_trend (sparkline) ----
 function MetricTrendBody({ data }: { data: Extract<ToolResultPayload, { type: "process_metric_trend" }>["data"] }) {
+  const { t } = useTranslation();
   const trendIcon =
     data.trend === "increasing" ? (
       <TrendingUp className="size-3 text-red-600" />
@@ -561,8 +568,8 @@ function MetricTrendBody({ data }: { data: Extract<ToolResultPayload, { type: "p
       )}
       <div className="grid grid-cols-3 gap-1.5">
         <Stat label="TB" value={data.mean} />
-        <Stat label="Bất thường" value={data.anomalyCount} color={data.anomalyCount > 0 ? "text-amber-600" : undefined} />
-        <Stat label="Dự báo" value={data.forecastNext ?? 0} color="text-primary" />
+        <Stat label={t("aiToolResult.batThuong", "Bất thường")} value={data.anomalyCount} color={data.anomalyCount > 0 ? "text-amber-600" : undefined} />
+        <Stat label={t("aiToolResult.duBao", "Dự báo")} value={data.forecastNext ?? 0} color="text-primary" />
       </div>
       <div className="flex items-center gap-1.5 text-[11px]">
         {trendIcon}
@@ -577,6 +584,7 @@ function MetricTrendBody({ data }: { data: Extract<ToolResultPayload, { type: "p
 
 // ---- F6: line_balance ----
 function LineBalanceBody({ data }: { data: NonNullable<Extract<ToolResultPayload, { type: "line_balance" }>["data"]> }) {
+  const { t } = useTranslation();
   const taktBreach =
     data.taktTimeMs != null && data.maxCycleTimeMs != null && data.maxCycleTimeMs > data.taktTimeMs;
   const ms = (v: number | null) => (v == null ? "?" : `${v}ms`);
@@ -587,8 +595,8 @@ function LineBalanceBody({ data }: { data: NonNullable<Extract<ToolResultPayload
         <LBCell label="Takt" value={ms(data.taktTimeMs)} />
         <LBCell label="Cycle TB" value={ms(data.avgCycleTimeMs)} />
         <LBCell label="Cycle max" value={ms(data.maxCycleTimeMs)} highlight={taktBreach} />
-        <LBCell label="Hệ số CB" value={pctV(data.balanceRatePct)} />
-        <LBCell label="Sử dụng" value={pctV(data.utilizationPct)} />
+        <LBCell label={t("aiToolResult.heSoCb", "Hệ số CB")} value={pctV(data.balanceRatePct)} />
+        <LBCell label={t("aiToolResult.suDung", "Sử dụng")} value={pctV(data.utilizationPct)} />
         <LBCell label="WIP" value={String(data.wipCount)} />
       </div>
       {taktBreach && (
@@ -601,13 +609,13 @@ function LineBalanceBody({ data }: { data: NonNullable<Extract<ToolResultPayload
         <div className="space-y-0.5 text-[11px]">
           {data.topBlocked && data.topBlocked.avgBlockedMs > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Trạm bị chặn nhất</span>
+              <span className="text-muted-foreground">{t("aiToolResult.tramBiChanNhat", "Trạm bị chặn nhất")}</span>
               <span className="text-red-600">#{data.topBlocked.stationId} ({data.topBlocked.avgBlockedMs}ms)</span>
             </div>
           )}
           {data.topStarved && data.topStarved.avgStarvedMs > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Trạm thiếu liệu nhất</span>
+              <span className="text-muted-foreground">{t("aiToolResult.tramThieuLieuNhat", "Trạm thiếu liệu nhất")}</span>
               <span className="text-amber-600">#{data.topStarved.stationId} ({data.topStarved.avgStarvedMs}ms)</span>
             </div>
           )}
@@ -661,6 +669,7 @@ function PalletizerStatusBody({
 }: {
   data: NonNullable<Extract<ToolResultPayload, { type: "palletizer_status" }>["data"]>;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5 text-[11px]">
@@ -674,7 +683,7 @@ function PalletizerStatusBody({
       </div>
       {data.latestResult && (
         <div className="flex items-center gap-1.5 text-[11px]">
-          <span className="text-muted-foreground">Kết quả gần nhất:</span>
+          <span className="text-muted-foreground">{t("aiToolResult.ketQuaGanNhat", "Kết quả gần nhất:")}</span>
           <Badge variant="outline" className={cn("h-4 px-1 text-[9px]", resultColor(data.latestResult.result))}>
             {data.latestResult.result}
           </Badge>
@@ -695,7 +704,7 @@ function PalletizerStatusBody({
           ))}
         </div>
       ) : (
-        <div className="text-muted-foreground italic text-[11px]">Chưa có telemetry.</div>
+        <div className="text-muted-foreground italic text-[11px]">{t("aiToolResult.chuaCoTelemetry", "Chưa có telemetry.")}</div>
       )}
     </div>
   );
@@ -703,14 +712,15 @@ function PalletizerStatusBody({
 
 // ---- F6: ot_telemetry ----
 function OtTelemetryBody({ data }: { data: Extract<ToolResultPayload, { type: "ot_telemetry" }>["data"] }) {
+  const { t } = useTranslation();
   if (data.rows.length === 0) {
-    return <div className="text-muted-foreground italic text-[11px]">Không có telemetry.</div>;
+    return <div className="text-muted-foreground italic text-[11px]">{t("aiToolResult.khongCoTelemetry", "Không có telemetry.")}</div>;
   }
   return (
     <div className="space-y-0.5 max-h-48 overflow-y-auto">
       <div className="grid grid-cols-[1fr_auto_auto] gap-2 text-[10px] text-muted-foreground border-b border-border/50 pb-0.5">
         <span>Tag</span>
-        <span className="text-right">Giá trị</span>
+        <span className="text-right">{t("aiToolResult.giaTri", "Giá trị")}</span>
         <span className="text-right">Quality</span>
       </div>
       {data.rows.map((r, i) => (

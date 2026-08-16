@@ -67,6 +67,7 @@ interface NgRow {
 }
 
 function NgItem({ row, onClick, onAck, ackDisabled }: { row: NgRow; onClick: () => void; onAck?: () => void; ackDisabled?: boolean }) {
+  const { t } = useTranslation();
   const when = row?.inspectedAt ? new Date(row.inspectedAt) : null;
   const whenStr = when && !isNaN(when.getTime()) ? when.toLocaleString() : "";
   return (
@@ -91,8 +92,8 @@ function NgItem({ row, onClick, onAck, ackDisabled }: { row: NgRow; onClick: () 
           className="h-7 w-7 shrink-0"
           disabled={ackDisabled}
           onClick={onAck}
-          title="Đã xem / Acknowledge"
-          aria-label="Đã xem / Acknowledge"
+          title={t("qualityHome.daXemAcknowledge", "Đã xem / Acknowledge")}
+          aria-label={t("qualityHome.daXemAcknowledge2", "Đã xem / Acknowledge")}
         >
           <CheckCheck className="size-4 text-success" />
         </Button>

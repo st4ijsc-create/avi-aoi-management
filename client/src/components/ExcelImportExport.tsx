@@ -136,11 +136,11 @@ export function ExcelImportExport({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Import {entityType} từ Excel</DialogTitle>
-            <DialogDescription>Chọn file Excel (.xlsx) để import dữ liệu. Tải template mẫu nếu cần.</DialogDescription>
+            <DialogDescription>{t("excelIo.chonFileExcelXlsxDe", "Chọn file Excel (.xlsx) để import dữ liệu. Tải template mẫu nếu cần.")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Chọn file Excel</Label>
+              <Label>{t("excelIo.chonFileExcel", "Chọn file Excel")}</Label>
               <input
                 ref={fileInputRef}
                 type="file"

@@ -771,14 +771,14 @@ export default function DrillDownDashboard(): React.JSX.Element {
           </label>
           <Select value={range} onValueChange={handleRangeChange}>
             {/* W4 touch: min-h-11 (44px) — operator panel-PC với găng tay. */}
-            <SelectTrigger id="drill-range" className="min-h-11 w-[180px]" aria-label="Chọn kỳ dữ liệu">
+            <SelectTrigger id="drill-range" className="min-h-11 w-[180px]" aria-label={t("drillDown.chonKyDuLieu", "Chọn kỳ dữ liệu")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="today">Hôm nay</SelectItem>
-              <SelectItem value="7d">7 ngày</SelectItem>
-              <SelectItem value="30d">30 ngày</SelectItem>
-              <SelectItem value="all">Toàn thời gian</SelectItem>
+              <SelectItem value="today">{t("drillDown.homNay", "Hôm nay")}</SelectItem>
+              <SelectItem value="7d">{t("drillDown.7Ngay", "7 ngày")}</SelectItem>
+              <SelectItem value="30d">{t("drillDown.30Ngay", "30 ngày")}</SelectItem>
+              <SelectItem value="all">{t("drillDown.toanThoiGian", "Toàn thời gian")}</SelectItem>
             </SelectContent>
           </Select>
         </div>

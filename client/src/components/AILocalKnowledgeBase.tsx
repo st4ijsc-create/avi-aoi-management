@@ -4,6 +4,7 @@
  */
 
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ interface ChatMessage {
 }
 
 export function AILocalKnowledgeBase() {
+  const { t } = useTranslation();
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [showSources, setShowSources] = useState<string | null>(null);
@@ -155,7 +157,7 @@ export function AILocalKnowledgeBase() {
               <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
                 <Sparkles className="h-7 w-7 text-primary" />
               </div>
-              <p className="font-semibold text-base">Xin chào! Tôi có thể giúp gì cho bạn?</p>
+              <p className="font-semibold text-base">{t("aiLocalKb.xinChaoToiCoThe", "Xin chào! Tôi có thể giúp gì cho bạn?")}</p>
               <p className="text-sm text-muted-foreground max-w-sm">
                 Hỏi tôi về cách sử dụng hệ thống, xem báo cáo, cài đặt máy móc, hay bất kỳ thắc mắc nào về nhà máy.
               </p>
@@ -233,13 +235,13 @@ export function AILocalKnowledgeBase() {
                             </Button>
                           )}
                           {msg.result.cached && (
-                            <Badge variant="secondary" className="text-xs h-5">Đã lưu cache</Badge>
+                            <Badge variant="secondary" className="text-xs h-5">{t("aiLocalKb.daLuuCache", "Đã lưu cache")}</Badge>
                           )}
                         </div>
                       )}
                       {showSources === msg.id && msg.result?.citations?.length > 0 && (
                         <div className="space-y-1.5 pt-2 border-t border-border/30">
-                          <p className="text-xs text-muted-foreground font-medium">Tài liệu tham khảo:</p>
+                          <p className="text-xs text-muted-foreground font-medium">{t("aiLocalKb.taiLieuThamKhao", "Tài liệu tham khảo:")}</p>
                           {msg.result.citations.slice(0, 3).map((cite: any, i: number) => (
                             <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground bg-background/60 rounded-lg p-2">
                               <span className="shrink-0 font-semibold text-primary">{i + 1}.</span>
@@ -333,7 +335,7 @@ export function AILocalKnowledgeBase() {
         <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm">
           <AlertCircle className="size-4 text-amber-600 shrink-0" />
           <p className="text-amber-800">
-            Dữ liệu chưa được tải. Nhấn <strong>Làm mới</strong> ở trên để khởi động lại.
+            Dữ liệu chưa được tải. Nhấn <strong>{t("aiLocalKb.lamMoi", "Làm mới")}</strong> ở trên để khởi động lại.
           </p>
         </div>
       )}

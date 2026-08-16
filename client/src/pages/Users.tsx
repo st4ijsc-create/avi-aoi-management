@@ -733,7 +733,7 @@ export default function Users() {
                 <Label htmlFor="name">{t('users.fullName')} *</Label>
                 <Input
                   id="name"
-                  placeholder="Nguyễn Văn A"
+                  placeholder={t("usersPage.nguyenVanA", "Nguyễn Văn A")}
                   value={createForm.name}
                   onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
                 />

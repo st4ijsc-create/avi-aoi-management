@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   Accordion,
   AccordionContent,
@@ -1684,6 +1685,7 @@ const SHOWCASE_MASTER_DATA = [
 ];
 
 function Wave2KitShowcase() {
+  const { t } = useTranslation();
   const [machineId, setMachineId] = useState<string | number | null>(null);
 
   return (
@@ -1717,12 +1719,12 @@ function Wave2KitShowcase() {
       {/* doc 42 INFRA-1: EntityPicker invalid-value guard + ConfirmDeleteDialog */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">EntityPicker "Không tồn tại" &amp; ConfirmDeleteDialog</CardTitle>
-          <CardDescription>Cảnh báo liên kết code rác + xác nhận xoá/lưu-trữ thống nhất (doc 42 Đợt 1).</CardDescription>
+          <CardTitle className="text-lg">{t("showcase.entityPickerKhongTonTai", 'EntityPicker "Không tồn tại" & ConfirmDeleteDialog')}</CardTitle>
+          <CardDescription>{t("showcase.canhBaoLienKetCode", "Cảnh báo liên kết code rác + xác nhận xoá/lưu-trữ thống nhất (doc 42 Đợt 1).")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-8">
           <div className="max-w-xs space-y-1">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Value không khớp option</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("showcase.valueKhongKhopOption", "Value không khớp option")}</p>
             <EntityPicker
               options={[
                 { value: "M-001", label: "Nhôm 6061", sublabel: "M-001" },
@@ -1730,7 +1732,7 @@ function Wave2KitShowcase() {
               ]}
               value="M-DELETED"
               onChange={() => {}}
-              placeholder="Chọn vật liệu…"
+              placeholder={t("showcase.chonVatLieu", "Chọn vật liệu…")}
             />
           </div>
           <div className="flex flex-col gap-3">
@@ -1765,7 +1767,7 @@ function Wave2KitShowcase() {
       {/* doc 42 INFRA-4A: ImportExportBar */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">ImportExportBar (doc 42 Đợt 4A)</CardTitle>
+          <CardTitle className="text-lg">{t("showcase.importexportbarDoc42Dot4a", "ImportExportBar (doc 42 Đợt 4A)")}</CardTitle>
           <CardDescription>
             Xuất Excel/CSV client-side · Tải mẫu · Nhập với preview + validate (dòng lỗi tô đỏ). Luật
             parse/validate dùng chung server qua <code>@shared/masterDataIO</code>.
@@ -1783,8 +1785,8 @@ function Wave2KitShowcase() {
             }}
           />
           <p className="text-xs text-muted-foreground">
-            Thử: bấm <strong>Tải mẫu</strong> → sửa vài dòng (bỏ trống Mã, nhập chữ vào Số lượng) →{" "}
-            <strong>Nhập</strong> lại để xem preview highlight lỗi.
+            Thử: bấm <strong>{t("showcase.taiMau", "Tải mẫu")}</strong> → sửa vài dòng (bỏ trống Mã, nhập chữ vào Số lượng) →{" "}
+            <strong>{t("showcase.nhap", "Nhập")}</strong> lại để xem preview highlight lỗi.
           </p>
         </CardContent>
       </Card>

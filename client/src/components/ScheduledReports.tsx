@@ -731,7 +731,7 @@ export default function ScheduledReports() {
                     id="footerText"
                     value={form.footerText}
                     onChange={(e) => setForm({ ...form, footerText: e.target.value })}
-                    placeholder="Ví dụ: © 2025 Công ty TNHH ABC. Mọi quyền được bảo lưu."
+                    placeholder={t("schedReports.viDu2025CongTy", "Ví dụ: © 2025 Công ty TNHH ABC. Mọi quyền được bảo lưu.")}
                     rows={3}
                   />
                   <p className="text-xs text-muted-foreground">

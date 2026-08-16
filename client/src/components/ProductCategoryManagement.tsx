@@ -577,7 +577,7 @@ export function ProductCategoryManagement() {
                   id="name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="VD: Linh kiện điện tử"
+                  placeholder={t("prodCategory.vdLinhKienDienTu", "VD: Linh kiện điện tử")}
                 />
               </div>
             </div>
@@ -588,7 +588,7 @@ export function ProductCategoryManagement() {
                 id="description"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Mô tả chi tiết về danh mục..."
+                placeholder={t("prodCategory.moTaChiTietVe", "Mô tả chi tiết về danh mục...")}
                 rows={3}
               />
             </div>

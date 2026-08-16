@@ -212,7 +212,7 @@ export default function AnalysisHubSection() {
                             <Select value={language} onValueChange={(v: "vi" | "en") => setLanguage(v)}>
                               <SelectTrigger><SelectValue /></SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="vi">Tiếng Việt</SelectItem>
+                                <SelectItem value="vi">{t("analysisHub.tiengViet", "Tiếng Việt")}</SelectItem>
                                 <SelectItem value="en">English</SelectItem>
                               </SelectContent>
                             </Select>

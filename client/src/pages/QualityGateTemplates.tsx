@@ -342,9 +342,9 @@ export function QualityGateTemplatesContent() {
                         <Select value={rule.action} onValueChange={(v) => handleRuleChange(index, "action", v)}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="alert">Cảnh báo</SelectItem>
-                            <SelectItem value="pause">Tạm dừng</SelectItem>
-                            <SelectItem value="stop">Dừng hẳn</SelectItem>
+                            <SelectItem value="alert">{t("qgTemplates.canhBao", "Cảnh báo")}</SelectItem>
+                            <SelectItem value="pause">{t("qgTemplates.tamDung", "Tạm dừng")}</SelectItem>
+                            <SelectItem value="stop">{t("qgTemplates.dungHan", "Dừng hẳn")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

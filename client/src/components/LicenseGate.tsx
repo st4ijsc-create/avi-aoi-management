@@ -9,6 +9,7 @@
  */
 
 import { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
 import { getModuleByRoute } from "../../../shared/module-registry";
@@ -23,6 +24,7 @@ interface LicenseGateProps {
 }
 
 export function LicenseGate({ children, route }: LicenseGateProps) {
+  const { t } = useTranslation();
   const [location] = useLocation();
   const { isRouteAllowed, noLicenseKey, isLoading } = useLicenseModules();
 
@@ -44,7 +46,7 @@ export function LicenseGate({ children, route }: LicenseGateProps) {
         <CardContent className="pt-8 pb-8 text-center space-y-4">
           <ShieldX className="w-16 h-16 text-destructive mx-auto" />
           <div>
-            <h2 className="text-xl font-semibold mb-1">Module chưa được cấp phép</h2>
+            <h2 className="text-xl font-semibold mb-1">{t("licGate.moduleChuaDuocCapPhep", "Module chưa được cấp phép")}</h2>
             <p className="text-muted-foreground text-sm">
               {mod ? (
                 <>

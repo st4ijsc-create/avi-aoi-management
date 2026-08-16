@@ -7,6 +7,7 @@
  * materialCode to materials.id / suppliers.id instead of typing codes by hand.
  */
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -36,12 +37,17 @@ export function EntityCombobox({
   options,
   value,
   onChange,
-  placeholder = "Chọn...",
-  emptyText = "Không có dữ liệu",
+  placeholder: placeholderProp,
+  emptyText: emptyTextProp,
   disabled,
   className,
   allowClear = true,
 }: EntityComboboxProps) {
+  const { t } = useTranslation();
+  // Mặc định phải giải ở THÂN hàm, không ở danh sách tham số: `t` chưa có trong
+  // phạm vi lúc khai báo tham số, và nhãn mặc định vẫn phải đổi theo ngôn ngữ.
+  const placeholder = placeholderProp ?? t("entityCombo.chon", "Chọn...");
+  const emptyText = emptyTextProp ?? t("entityCombo.khongCoDuLieu", "Không có dữ liệu");
   const [open, setOpen] = useState(false);
   const selected = useMemo(() => options.find((o) => o.id === value) ?? null, [options, value]);
 
@@ -76,7 +82,7 @@ export function EntityCombobox({
                   onSelect={() => { onChange(null, null); setOpen(false); }}
                 >
                   <Check className={cn("mr-2 h-4 w-4", value == null ? "opacity-100" : "opacity-0")} />
-                  <span className="text-muted-foreground">— Bỏ chọn —</span>
+                  <span className="text-muted-foreground">{t("entityCombo.boChon", "— Bỏ chọn —")}</span>
                 </CommandItem>
               )}
               {options.map((o) => (

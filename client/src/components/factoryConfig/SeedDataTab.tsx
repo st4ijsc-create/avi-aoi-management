@@ -4,6 +4,7 @@
  * parent state / refetch. PURE RELOCATION — identical JSX + handlers, no behavior change.
  */
 import { trpc } from "@/lib/trpc";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Database, Loader2 } from "lucide-react";
 
 export function SeedDataTab() {
+  const { t } = useTranslation();
   // Seed Data Mutations
   const seedDataMutation = trpc.seedData.seed.useMutation({
     onSuccess: () => toast.success('Đã tạo dữ liệu cơ sở mẫu thành công!'),
@@ -42,8 +44,8 @@ export function SeedDataTab() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="border-dashed">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Dữ liệu cơ sở</CardTitle>
-              <CardDescription className="text-xs">Tạo nhà máy, dây chuyền, máy móc và sản phẩm mẫu</CardDescription>
+              <CardTitle className="text-sm">{t("seedData.duLieuCoSo", "Dữ liệu cơ sở")}</CardTitle>
+              <CardDescription className="text-xs">{t("seedData.taoNhaMayDayChuyen", "Tạo nhà máy, dây chuyền, máy móc và sản phẩm mẫu")}</CardDescription>
             </CardHeader>
             <CardContent>
               <Button
@@ -52,14 +54,14 @@ export function SeedDataTab() {
                 className="w-full"
                 variant="outline"
               >
-                {seedDataMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Đang tạo...</> : 'Tạo dữ liệu cơ sở'}
+                {seedDataMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t("seedData.dangTao", "Đang tạo...")}</> : 'Tạo dữ liệu cơ sở'}
               </Button>
             </CardContent>
           </Card>
           <Card className="border-dashed">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Dữ liệu kiểm tra</CardTitle>
-              <CardDescription className="text-xs">Tạo 100 bản ghi kiểm tra mẫu (OK/NG)</CardDescription>
+              <CardTitle className="text-sm">{t("seedData.duLieuKiemTra", "Dữ liệu kiểm tra")}</CardTitle>
+              <CardDescription className="text-xs">{t("seedData.tao100BanGhiKiem", "Tạo 100 bản ghi kiểm tra mẫu (OK/NG)")}</CardDescription>
             </CardHeader>
             <CardContent>
               <Button
@@ -68,14 +70,14 @@ export function SeedDataTab() {
                 className="w-full"
                 variant="outline"
               >
-                {seedInspectionsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Đang tạo...</> : 'Tạo 100 bản ghi kiểm tra'}
+                {seedInspectionsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t("seedData.dangTao2", "Đang tạo...")}</> : 'Tạo 100 bản ghi kiểm tra'}
               </Button>
             </CardContent>
           </Card>
           <Card className="border-dashed">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Phân tích trạm làm việc</CardTitle>
-              <CardDescription className="text-xs">Tạo 500 bản ghi phân tích 7 ngày gần đây</CardDescription>
+              <CardTitle className="text-sm">{t("seedData.phanTichTramLamViec", "Phân tích trạm làm việc")}</CardTitle>
+              <CardDescription className="text-xs">{t("seedData.tao500BanGhiPhan", "Tạo 500 bản ghi phân tích 7 ngày gần đây")}</CardDescription>
             </CardHeader>
             <CardContent>
               <Button
@@ -84,7 +86,7 @@ export function SeedDataTab() {
                 className="w-full"
                 variant="outline"
               >
-                {seedWorkstationAnalyticsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Đang tạo...</> : 'Tạo dữ liệu phân tích'}
+                {seedWorkstationAnalyticsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t("seedData.dangTao3", "Đang tạo...")}</> : 'Tạo dữ liệu phân tích'}
               </Button>
             </CardContent>
           </Card>

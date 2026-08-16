@@ -963,8 +963,8 @@ export default function OpsConsole() {
                     <CardContent className="py-4">
                       <EmptyState
                         allClear
-                        title="Không có cảnh báo đang mở"
-                        description="Cả 5 nguồn (Andon, dự báo, interlock, MQTT, ngưỡng) đều yên — hệ thống ổn định."
+                        title={t("opsConsole.khongCoCanhBaoDang", "Không có cảnh báo đang mở")}
+                        description={t("opsConsole.ca5NguonAndonDu", "Cả 5 nguồn (Andon, dự báo, interlock, MQTT, ngưỡng) đều yên — hệ thống ổn định.")}
                       />
                     </CardContent>
                   </Card>
@@ -1124,7 +1124,7 @@ export default function OpsConsole() {
                               className="size-5"
                               checked={allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false}
                               onCheckedChange={toggleSelectAll}
-                              aria-label="Chọn tất cả đang lọc"
+                              aria-label={t("opsConsole.chonTatCaDangLoc", "Chọn tất cả đang lọc")}
                             />
                           </TableHead>
                           <TableHead>{t("opsConsole.colSeverity", "Severity")}</TableHead>
@@ -1218,7 +1218,7 @@ export default function OpsConsole() {
                                   <Badge className="animate-pulse bg-destructive font-bold">QUÁ HẠN {a.overdueMin}m</Badge>
                                 )}
                                 {a.expired && (
-                                  <Badge variant="outline">HẾT HẠN DỰ BÁO</Badge>
+                                  <Badge variant="outline">{t("opsConsole.hetHanDuBao", "HẾT HẠN DỰ BÁO")}</Badge>
                                 )}
                               </div>
                             </TableCell>
@@ -1420,7 +1420,7 @@ export default function OpsConsole() {
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Xác nhận xử lý xong?</AlertDialogTitle>
+              <AlertDialogTitle>{t("opsConsole.xacNhanXuLyXong", "Xác nhận xử lý xong?")}</AlertDialogTitle>
               <AlertDialogDescription>
                 {confirmTarget
                   ? confirmTarget.items.length === 1
@@ -1430,7 +1430,7 @@ export default function OpsConsole() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel className="h-11">Hủy</AlertDialogCancel>
+              <AlertDialogCancel className="h-11">{t("opsConsole.huy", "Hủy")}</AlertDialogCancel>
               <AlertDialogAction
                 className="h-11"
                 onClick={() => {

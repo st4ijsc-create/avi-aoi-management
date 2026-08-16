@@ -11,6 +11,7 @@
  * ROBOT_CONTROL_ENABLED + HITL — that is the hardware-validation step, not done here.
  */
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +31,7 @@ function definedPoints(text: string): string[] {
 }
 
 export function TeachJogPanel({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const { t } = useTranslation();
   const [pose, setPose] = useState<Pose>([0, 0, 200, 180, 0, 0]);
   const [step, setStep] = useState(5);
   const points = useMemo(() => definedPoints(value), [value]);
@@ -46,7 +48,7 @@ export function TeachJogPanel({ value, onChange }: { value: string; onChange: (n
   return (
     <div className="space-y-3 rounded-md border bg-muted/20 p-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">Jog (preview cục bộ) → Capture point → thêm job step.</span>
+        <span className="text-xs text-muted-foreground">{t("teachJog.jogPreviewCucBoCapture", "Jog (preview cục bộ) → Capture point → thêm job step.")}</span>
         <Badge variant="secondary" className="text-[10px]">no-HW preview</Badge>
       </div>
 
@@ -63,7 +65,7 @@ export function TeachJogPanel({ value, onChange }: { value: string; onChange: (n
       </div>
 
       <div className="flex items-center gap-2">
-        <Label className="text-xs">Bước</Label>
+        <Label className="text-xs">{t("teachJog.buoc", "Bước")}</Label>
         <Input type="number" className="h-7 w-20" value={step} onChange={(e) => setStep(Number(e.target.value) || 1)} />
         <Button size="sm" onClick={capture}><Crosshair className="mr-1 h-4 w-4" /> Capture point</Button>
       </div>

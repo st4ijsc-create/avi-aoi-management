@@ -302,7 +302,7 @@ function TabOcr() {
           <SelectContent>
             <SelectItem value="auto">{t("visionLab.ocr.auto", "Auto detect")}</SelectItem>
             <SelectItem value="en">English</SelectItem>
-            <SelectItem value="vi">Tiếng Việt</SelectItem>
+            <SelectItem value="vi">{t("visionLab.tiengViet", "Tiếng Việt")}</SelectItem>
           </SelectContent>
         </Select>
       </div>

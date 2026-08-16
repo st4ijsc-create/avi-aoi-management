@@ -414,7 +414,7 @@ function TreeNode({
             <button
               type="button"
               className="-my-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              title="Xem chi tiết thiết bị"
+              title={t("commandCenter.xemChiTietThietBi", "Xem chi tiết thiết bị")}
               aria-label={`Xem chi tiết ${node.name}`}
               onClick={(e) => { e.stopPropagation(); onSelect(node.id); onOpenDevice(node); }}
             >
@@ -789,7 +789,7 @@ function CenterOverview({
         <div className="flex items-center gap-2">
           {/* W6 (doc 67, việc 5): toggle 2D/3D — chỉ hiện khi 3D là lựa chọn khả dụng. */}
           {factoryId != null && webglOk && devices.length > 0 && (
-            <div className="flex items-center gap-0.5 rounded-md border p-0.5" role="group" aria-label="Chế độ hiển thị sơ đồ nhà máy">
+            <div className="flex items-center gap-0.5 rounded-md border p-0.5" role="group" aria-label={t("commandCenter.cheDoHienThiSo", "Chế độ hiển thị sơ đồ nhà máy")}>
               <Button
                 size="sm"
                 variant={viewMode === "2d" ? "secondary" : "ghost"}
@@ -872,11 +872,11 @@ function CenterOverview({
             {/* W4 (doc 67): nhãn chữ tiếng Việt cạnh chấm màu (không chỉ dựa màu). */}
             {/* GĐ2: legend đọc cùng nguồn stateHex — "Chờ" nay là muted-xám (đồng
                 bộ chấm 2D; đổi so với amber cũ là CHỦ ĐÍCH, xem ghi chú đầu file). */}
-            <Legend hex={stateHex("running")} label="Đang chạy" />
-            <Legend hex={stateHex("idle")} label="Chờ" />
-            <Legend hex="#f97316" label="Tạm dừng/Giữ" />
-            <Legend hex={stateHex("fault")} label="Lỗi/E-stop" />
-            <Legend hex="#64748b" label="Ngoại tuyến" />
+            <Legend hex={stateHex("running")} label={t("commandCenter.dangChay", "Đang chạy")} />
+            <Legend hex={stateHex("idle")} label={t("commandCenter.cho", "Chờ")} />
+            <Legend hex="#f97316" label={t("commandCenter.tamDungGiu", "Tạm dừng/Giữ")} />
+            <Legend hex={stateHex("fault")} label={t("commandCenter.loiEStop", "Lỗi/E-stop")} />
+            <Legend hex="#64748b" label={t("commandCenter.ngoaiTuyen", "Ngoại tuyến")} />
             {selectedDevice && (
               <span className="ml-auto text-foreground">
                 {selectedDevice.name} · {selectedDevice.state}
@@ -1214,14 +1214,14 @@ export default function CommandCenter() {
                    (tự lật light/dark, đồng bộ DS). */
                 <Badge
                   className="gap-1 bg-success text-success-foreground"
-                  title="Luồng sự kiện hệ sinh thái đang phát trực tiếp qua socket"
+                  title={t("commandCenter.luongSuKienHeSinh", "Luồng sự kiện hệ sinh thái đang phát trực tiếp qua socket")}
                 >
                   <Radio className="h-3.5 w-3.5" /> Sự kiện: trực tiếp
                 </Badge>
               ) : (
                 <Badge
                   className="gap-1 bg-warning text-warning-foreground"
-                  title="Kết nối máy chủ vẫn trực tiếp — luồng sự kiện realtime chưa bật (cờ ECOSYSTEM_EVENTS)"
+                  title={t("commandCenter.ketNoiMayChuVan", "Kết nối máy chủ vẫn trực tiếp — luồng sự kiện realtime chưa bật (cờ ECOSYSTEM_EVENTS)")}
                 >
                   <RefreshCw className="h-3.5 w-3.5" /> Sự kiện hệ sinh thái: định kỳ 15s
                 </Badge>
@@ -1255,7 +1255,7 @@ export default function CommandCenter() {
             2 chỉ số CHƯA-tổng-hợp-toàn-hệ (OEE + Năng lượng) gộp 1 ô muted CUỐI
             strip thay vì 2 ô "—" rời đầu/cuối. Nhãn rút gọn + title tooltip đầy đủ. */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-7">
-          <div title="Số đơn vị WIP đang trên chuyền">
+          <div title={t("commandCenter.soDonViWipDang", "Số đơn vị WIP đang trên chuyền")}>
             <MetricCard
               icon={<Boxes className="h-4 w-4" />}
               label="WIP"
@@ -1264,24 +1264,24 @@ export default function CommandCenter() {
               delta={kpi?.wip.value?.bottleneck ? `Nút cổ chai: ${kpi.wip.value.bottleneck}` : undefined}
             />
           </div>
-          <div title="Cảnh báo nghiêm trọng / cao đang hoạt động">
+          <div title={t("commandCenter.canhBaoNghiemTrongCao", "Cảnh báo nghiêm trọng / cao đang hoạt động")}>
             <MetricCard
               icon={<AlertTriangle className="h-4 w-4" />}
-              label="Cảnh báo"
+              label={t("commandCenter.canhBao", "Cảnh báo")}
               value={alarmsCrit == null ? "—" : `${alarmsCrit} / ${alarmsHigh}`}
               size="compact"
               tone={alarmsCrit ? "error" : "default"}
             />
           </div>
-          <div title="Nhiệm vụ đội robot (chờ + đang chạy) / robot trực tuyến">
+          <div title={t("commandCenter.nhiemVuDoiRobotCho", "Nhiệm vụ đội robot (chờ + đang chạy) / robot trực tuyến")}>
             <MetricCard
               icon={<Bot className="h-4 w-4" />}
-              label="Nhiệm vụ"
+              label={t("commandCenter.nhiemVu", "Nhiệm vụ")}
               value={fleetTasks == null ? "—" : `${fleetTasks} / ${fleetRobots}`}
               size="compact"
             />
           </div>
-          <div title="Số site đang báo cáo / tổng số site">
+          <div title={t("commandCenter.soSiteDangBaoCao", "Số site đang báo cáo / tổng số site")}>
             <MetricCard
               icon={<Network className="h-4 w-4" />}
               label="Site"
@@ -1291,10 +1291,10 @@ export default function CommandCenter() {
               tone={sitesDown > 0 ? "error" : sitesStale > 0 ? "warning" : "default"}
             />
           </div>
-          <div title="Số gợi ý AI đang hoạt động">
+          <div title={t("commandCenter.soGoiYAiDang", "Số gợi ý AI đang hoạt động")}>
             <MetricCard
               icon={<Sparkles className="h-4 w-4" />}
-              label="Gợi ý AI"
+              label={t("commandCenter.goiYAi", "Gợi ý AI")}
               value={aiVal}
               size="compact"
             />
@@ -1303,11 +1303,11 @@ export default function CommandCenter() {
               chưa có tổng hợp toàn hệ → "—"); trung thực độ phủ dữ liệu, không bịa. */}
           <div
             className="sm:col-span-2"
-            title="OEE trung bình toàn hệ (%) · Năng lượng toàn nhà máy (kWh) — chưa có tổng hợp toàn hệ sinh thái"
+            title={t("commandCenter.oeeTrungBinhToanHe", "OEE trung bình toàn hệ (%) · Năng lượng toàn nhà máy (kWh) — chưa có tổng hợp toàn hệ sinh thái")}
           >
             <MetricCard
               icon={<Zap className="h-4 w-4" />}
-              label="OEE · Năng lượng (toàn hệ)"
+              label={t("commandCenter.oeeNangLuongToanHe", "OEE · Năng lượng (toàn hệ)")}
               value={`${oeeVal} · ${energyVal}`}
               size="compact"
               delta={
@@ -1330,7 +1330,7 @@ export default function CommandCenter() {
               icon={<ServerCog className="h-4 w-4" />}
               // doc 68 §3.1 [P1]: header 1 dòng "Cây phân cấp" (thay "Cây phân cấp hệ
               // sinh thái" wrap 3 dòng); mô tả đường phân cấp đưa vào tooltip title.
-              title={<span title="Site → nhà máy → chuyền → trạm → máy / robot">Cây phân cấp</span>}
+              title={<span title={t("commandCenter.cayPhanCapTooltip", "Site → nhà máy → chuyền → trạm → máy / robot")}>{t("commandCenter.cayPhanCap", "Cây phân cấp")}</span>}
               action={
                 /* AUD-01 (doc 65 W2): tuổi dữ liệu cây — poll 10s, amber khi >2× chu kỳ. */
                 <PollFreshness
@@ -1354,8 +1354,8 @@ export default function CommandCenter() {
                     <Input
                       value={treeSearch}
                       onChange={(e) => setTreeSearch(e.target.value)}
-                      placeholder="Tìm theo tên / mã node…"
-                      aria-label="Tìm kiếm node trong cây phân cấp"
+                      placeholder={t("commandCenter.timTheoTenMaNode", "Tìm theo tên / mã node…")}
+                      aria-label={t("commandCenter.timKiemNodeTrongCay", "Tìm kiếm node trong cây phân cấp")}
                       className="h-8 text-sm"
                     />
                     <button
@@ -1381,7 +1381,7 @@ export default function CommandCenter() {
                   ) : (
                     <ScrollArea className={cn("pr-1", PANE_BODY_H)}>
                       {/* W4 (doc 67): role="tree" cho cây WAI-ARIA (treeitem/group bên trong). */}
-                      <div role="tree" aria-label="Cây phân cấp hệ sinh thái">
+                      <div role="tree" aria-label={t("commandCenter.cayPhanCapHeSinh", "Cây phân cấp hệ sinh thái")}>
                       {visibleSites.map((site) => (
                         <TreeNode
                           key={site.id}
@@ -1435,7 +1435,7 @@ export default function CommandCenter() {
             >
               {/* doc67 W8 [P2] — hàng chip lọc mức độ (luôn hiện để bỏ lọc được
                   cả khi danh sách lọc ra rỗng). */}
-              <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1" role="group" aria-label="Lọc mức độ cảnh báo">
+              <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1" role="group" aria-label={t("commandCenter.locMucDoCanhBao", "Lọc mức độ cảnh báo")}>
                 {([["all", "Tất cả"], ["critical", "Nghiêm trọng"], ["high", "Cao"]] as const).map(([v, label]) => (
                   <button
                     key={v}
@@ -1459,7 +1459,7 @@ export default function CommandCenter() {
                   /* GĐ2 (việc 4): rỗng = TIN TỐT → EmptyState allClear DS (icon
                      check success) thay div tự chế; nhánh "ngoài phạm vi chọn"
                      là trạng thái lọc, giữ dòng trung tính. */
-                  <EmptyState allClear compact title="Không có cảnh báo đang hoạt động" />
+                  <EmptyState allClear compact title={t("commandCenter.khongCoCanhBaoDang", "Không có cảnh báo đang hoạt động")} />
                 ) : (
                   <div className="py-8 text-center text-sm text-muted-foreground">
                     {t("cmd.noScopedAlarms", "No alarms in the selected scope.")}
@@ -1525,19 +1525,19 @@ export default function CommandCenter() {
                 <MetricCard
                   size="compact"
                   icon={<Activity className="h-4 w-4" />}
-                  label="Trạng thái"
+                  label={t("commandCenter.trangThai", "Trạng thái")}
                   value={drawerStateLabel}
                 />
                 <MetricCard
                   size="compact"
                   icon={<Gauge className="h-4 w-4" />}
-                  label="OEE máy"
+                  label={t("commandCenter.oeeMay", "OEE máy")}
                   value="—"
                 />
                 <MetricCard
                   size="compact"
                   icon={<ListChecks className="h-4 w-4" />}
-                  label="Nhiệm vụ"
+                  label={t("commandCenter.nhiemVu2", "Nhiệm vụ")}
                   value={drawerDevice.activeTaskId != null ? `#${drawerDevice.activeTaskId}` : "—"}
                 />
               </div>
@@ -1549,7 +1549,7 @@ export default function CommandCenter() {
                   Cảnh báo đang mở ({drawerOpenAlarms.length})
                 </div>
                 {drawerOpenAlarms.length === 0 ? (
-                  <EmptyState allClear compact title="Không có cảnh báo nghiêm trọng/cao" />
+                  <EmptyState allClear compact title={t("commandCenter.khongCoCanhBaoNghiem", "Không có cảnh báo nghiêm trọng/cao")} />
                 ) : (
                   <div className="space-y-1.5">
                     {drawerOpenAlarms.map((a) => renderAlarmRow(a, now - a.ts > DAY_MS))}

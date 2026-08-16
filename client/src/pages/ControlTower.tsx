@@ -414,7 +414,7 @@ function KpiStrip({
       <StatChip
         icon={<AlertTriangle />}
         label={t("controlTower.kpi.alarmsOpen", "Cảnh báo mở")}
-        title="Đếm cảnh báo chưa xử lý (mọi thời điểm): andon chưa resolve + sự kiện an toàn. Khác với panel 'Tình trạng cảnh báo (24h)' — đếm số phát sinh trong cửa sổ 24h. Bấm để mở Ops Console."
+        title={t("controlTower.demCanhBaoChuaXu", "Đếm cảnh báo chưa xử lý (mọi thời điểm): andon chưa resolve + sự kiện an toàn. Khác với panel 'Tình trạng cảnh báo (24h)' — đếm số phát sinh trong cửa sổ 24h. Bấm để mở Ops Console.")}
         value={alarmsCrit == null ? "—" : `${alarmsCrit} / ${alarmsHigh}`}
         tone={alarmsCrit ? "error" : "default"}
         onClick={() => setLocation("/ops-console")}
