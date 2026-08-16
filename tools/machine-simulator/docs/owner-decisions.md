@@ -79,6 +79,46 @@ minh bằng cách chạy lại.
 > trong một lần khởi động bình thường**. Hai mục kia làm mất **một dòng log** và
 > gây **một thứ tự quan sát được**. Mất log là tệ; **mất cấu hình trên một cỗ máy
 > không có giao diện để gõ lại** là không phục hồi được.
+>
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ Q-1 (`.superpowers/sdd/third-state-unreadable/`)
+> **Phạm vi đã làm: đường settings, và chỉ đường ấy** — `FleetSettingsStore` (một
+> phép đọc **ba kết quả**: `Loaded` / `Absent` / `Unreadable`, và **bỏ hẳn phép kiểm
+> tồn tại**) cùng composition root `St4i.EngineApi/Program.cs` (một nhánh thứ ba: không
+> phát lại, không ghi, không xoá, báo ở mức `Error`). **Cả bốn** tác hại đã đo ở §3.1a
+> được đóng bằng **một** thay đổi, vì cả ba đường xoá đều bị chặn ở nhánh gieo mầm mà
+> nhánh ấy nay chỉ chọn được khi kết quả là `Absent`.
+> **Cặp đối chứng đã chạy hai phía**: cùng một test, cùng một file hỏng dựng bằng tay —
+> ở `dd4a3e68` file trên đĩa là **sàn môi trường** (dữ liệu vận hành viên MẤT), sau bản
+> sửa nội dung **còn nguyên từng byte**.
+> **Hàng 36** của `docs/startup-failure-posture.md` chuyển **S → U** và **✗ → ✓**.
+> **Mục 5–7 CHƯA làm**: quyết định này chỉ mở khoá mục 1; ba hình dạng xoá file (mục 5),
+> log hoãn của một lần cài đặt thất bại (mục 6) và nửa sau của S4 (mục 7) vẫn nguyên.
+>
+> #### 🔴 Vòng sửa lỗi — MỘT SINH ĐÔI ĐÃ BỊ BỎ SÓT, VÀ ĐIỀU KIỆN CỦA NÓ CÒN YẾU HƠN
+> Review bác bỏ dòng loại trừ `SiteLinkStore` trong bảng phạm vi vòng 1: `SiteLinkStore.Load()`
+> **đúng nguyên văn** `FleetSettingsStore.Load()` trước Q-1, và `SiteBridgeManager.ApplyAsync`
+> gọi `Save` **VÔ ĐIỀU KIỆN** trên đường khởi động. Nên một `site-link.json` không đọc được bị
+> ghi đè bằng bản ghi mặc định trong một lần khởi động **thành công bình thường** — **host,
+> cổng và chứng chỉ tin cậy đã ghim đều mất**, thiết bị lặng lẽ đứng một mình — **không một dòng
+> log**, và **không cần biến môi trường nào** (UNS bật mặc định). Nặng hơn mục 1, vốn còn cần
+> một trong ba biến `ST4I_*`.
+> **Đã sửa** cùng thiết kế; cặp đối chứng chạy hai phía (ở `d83194bd` file trên đĩa là bản ghi
+> mặc định; sau bản sửa còn nguyên từng byte). Chi tiết: `docs/startup-failure-posture.md` §3.1b.
+>
+> #### Hai thứ CỐ Ý để lại cho chủ sở hữu quyết
+> 1. **`SiteBridgeManager.ReapplyCurrentAsync`** (từ `POST /v1/site/identity/rotate`) vẫn tới
+>    được `Save` vô điều kiện ấy, với một link do **tiến trình tự nghĩ ra** chứ không đọc từ đĩa.
+>    Do vận hành viên **khởi xướng** nhưng không phải do họ **chọn** — đóng nó là đổi HỢP ĐỒNG của
+>    `ApplyAsync`, mà ba nơi cùng gọi phương thức ấy.
+> 2. **`DeviceIdentityStore.TryLoad`** ghi đè `device-identity.bin` khi blob không đọc được.
+>    **Không sửa**, và lý do phải chịu được phản biện: nó **có báo** ở mức `Error` và nói trước
+>    rằng sẽ tái tạo; nội dung là **khoá do sản phẩm sinh**, không phải cấu hình vận hành viên gõ
+>    ra, nên tiền đề của luật không đúng ở đây; và bản sửa "không ghi đè" lại **tệ hơn** — nó tạo
+>    một vân tay MỚI mỗi lần khởi động, đúng thứ README §15.9 đã gọi tên là điều một Site đã ghim
+>    sẽ từ chối. **Phần dư phải quyết:** ghi đè là không hoàn nguyên được và **chặn luôn đường
+>    phục hồi bằng cách sửa môi trường** (một blob DPAPI sai máy/sai scope sẽ đọc lại được sau khi
+>    sửa — nếu nó còn tồn tại). Cách sửa đúng là **giữ blob cũ dưới tên khác**, tức **DI CHUYỂN dữ
+>    liệu**, mà nhiệm vụ này bắt buộc phải **dừng và báo** chứ không tự làm.
 
 ---
 
@@ -234,6 +274,70 @@ sửa **ba lần** với cùng một lý do: **KHÔNG TÁCH RỜI ĐƯỢC** kh�
 ### 7. Nửa sau của S4 (J-2)
 Dựng-trước-khi-tháo là một **sự đảo thứ tự mà vận hành viên QUAN SÁT ĐƯỢC**, và
 việc sửa nó đòi một cơ chế tháo dỡ **có tính giao dịch**. Bằng chứng: commit `99ab7b61`.
+
+---
+
+## 8. `ReapplyCurrentAsync` vẫn ghi đè một `site-link.json` không đọc được
+
+**Mục này sinh ra từ bản sửa của mục 1, và nó là PHẦN DƯ của chính luật mục 1.**
+Ghi ở đây chứ không chỉ trong báo cáo, vì đó đúng là thiếu sót mà file này được lập
+ra để chấm dứt: một điều "đã được nêu trong một báo cáo" là điều chủ sở hữu **không
+có đường nào mở ra đọc**.
+
+**Đo được:** `SiteBridgeManager.ReapplyCurrentAsync()` gọi `ApplyAsync(_current)`,
+mà `ApplyAsync` gọi `_store.Save(link)` **vô điều kiện**. Trên nhánh *không đọc
+được*, `_current` là bản ghi mặc định `new PersistedSiteLink()` — thứ **tiến trình
+tự nghĩ ra**, không đọc từ đĩa. Nên một lần xoay danh tính sẽ **ghi bản ghi mặc định
+đè lên các byte không đọc được của vận hành viên**, đúng thứ mục 1 vừa chặn ở đường
+khởi động.
+
+**Ở đâu:** `src/St4i.EdgeCore/Site/SiteBridgeManager.cs` (`ReapplyCurrentAsync` →
+`ApplyAsync` → `_store.Save`), tới được từ `POST /v1/site/identity/rotate` trong
+`src/St4i.EngineApi/Endpoints/SiteEndpoints.cs`.
+
+**Hậu quả vận hành:** host, cổng và chứng chỉ tin cậy đã ghim của Site mất — giống
+hệt mục 1 — nhưng chỉ khi có người **xoay danh tính** trong lúc file đang hỏng.
+
+**Vì sao KHÔNG sửa trong Q-1:** nó do vận hành viên **khởi xướng** nhưng không phải
+do họ **chọn** (họ chọn xoay khoá, không chọn ba giá trị link), mà đó chính là ranh
+giới luật này dựa vào. Đóng nó là đổi **HỢP ĐỒNG** của `ApplyAsync` — *khi nào* thì
+lưu — trên một phương thức có **ba** nơi gọi (`PUT /v1/site`, đường khởi động, và
+chính nó). Đó là một thay đổi thiết kế, không phải một cái chốt.
+
+**Nếu không quyết định:** hành vi giữ nguyên. Đường khởi động đã an toàn; đường này
+thì không, và không có gì báo cho ai biết ngoài các dòng đã ghi tại chỗ.
+
+**Bằng chứng:** commit `76b9e85d` (Q-1 vòng sửa lỗi);
+`docs/startup-failure-posture.md` §3.1b.
+
+---
+
+## 9. Một nhánh *không đọc được* nên áp **sàn môi trường** vào bộ nhớ hay không
+
+**Đo được:** sau Q-1, khi `fleet-settings.json` không đọc được, tiến trình lên bằng
+**mặc định dựng sẵn** của `FleetHost` (`DefaultServerUrl = ""`,
+`DefaultMachineCode = "ENGINE-API-01"`) chứ **không** áp bộ ba `ST4I_*` mà bản triển
+khai đã đặt.
+
+**Hai chiều, và phải nói cả hai:** với **FILE**, từ chối sàn là **an toàn hơn hẳn**
+— áp sàn nghĩa là `FleetCore.UpdateSettings` **lưu** nó, và chính việc lưu là mất
+dữ liệu. Với **CỖ MÁY ĐANG CHẠY**, nó có thể **tệ hơn**: một bản cài headless không
+những mất liên kết mà còn không dùng các giá trị dịch vụ của nó đã cấu hình.
+
+**Vì sao hai chiều ấy tách nhau được:** chỉ vì `UpdateSettings` **lưu vô điều
+kiện**. Một đường "áp mà không lưu" sẽ cho nhánh này tôn trọng sàn trong bộ nhớ mà
+vẫn để yên file.
+
+**Ở đâu:** `src/St4i.EdgeCore/Fleet/FleetCore.cs` (`UpdateSettings`, khối `finally`
+trong `if (rebuildNeeded)`), tiêu thụ bởi `src/St4i.EngineApi/Program.cs`.
+
+**Nếu không quyết định:** giữ nguyên — an toàn cho file, và một cỗ máy headless có
+file hỏng sẽ chạy trên giá trị mặc định cho tới khi có người sửa file.
+
+**Vì sao là quyết định của chủ sở hữu:** đổi *khi nào* `UpdateSettings` lưu là đổi
+hợp đồng mà `PUT /v1/settings` cũng dùng chung.
+
+**Bằng chứng:** `docs/startup-failure-posture.md` §3.1a-now.
 
 ---
 

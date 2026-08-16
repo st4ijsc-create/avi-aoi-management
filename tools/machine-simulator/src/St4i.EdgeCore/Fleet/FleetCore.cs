@@ -1195,6 +1195,14 @@ internal sealed class FleetCore
     /// <see cref="_language"/> (a pure display preference) or any mk_ key (stays in
     /// <see cref="CredentialStore"/>, DPAPI-encrypted — never written here).
     ///
+    /// 🔴 Task Q-1 — read "if one exists" below as <b>"if one was READ"</b>. <c>FleetSettingsStore.Load</c>
+    /// now answers null both when the slot on disk is empty and when a file is there that could not be
+    /// turned into a triple, and this constructor is entitled to treat those the same because it only ever
+    /// sets fields — it invents nothing and it writes nothing. The composition root, which DOES decide
+    /// whether anything gets written, branches on <c>FleetSettingsStore.Read</c> instead and reports the
+    /// unreadable case at <c>Error</c> a few statements after this constructor returns. That ordering is why
+    /// <c>Load</c> must not throw here: a throw would end the process before the line that names the file.
+    ///
     /// This ctor eagerly loads a persisted file (if one exists) straight into <see cref="_serverUrl"/>/
     /// <see cref="_machineCode"/>/<see cref="_verifyTls"/> — same "read it back on construction" idiom
     /// <see cref="MachineConfigStore"/>/<see cref="Historian.OeeSettingsStore"/> already use — so

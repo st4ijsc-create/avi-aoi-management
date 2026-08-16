@@ -930,6 +930,15 @@ builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<St4i.E
 // block above already gates on. When UNS is disabled, only the identity singleton above is registered (so
 // EC-3's identity endpoint still works standalone), and no SiteLinkStore/SiteBridgeManager is constructed
 // at all — byte-identical to pre-EC-2 behavior in that case.
+// 🔴 TASK Q-1 FIX ROUND — carried out of the block below so the REPORT can be emitted on app.Logger once
+// `app` exists, next to the settings file's own third-state report. The DECISION is taken below, where the
+// read happens; only the reporting is deferred, and it is deferred for one reason: every other line in that
+// block writes to Console.Error, which under AddWindowsService is NOT the Windows Event Log. The deployment
+// this defect destroys data on is the headless service install, so the notice has to go on the channel that
+// reaches it — the same argument §10.4 makes for the replay guard, and the same convention this file already
+// uses for LogIfRegisterMachineCollided and the notification/binding notices.
+St4i.EdgeCore.Site.SiteLinkRead? unreadableSiteLink = null;
+
 if (unsOptions.Enabled)
 {
     // GĐ3 closeout WI-3 — the durable northbound spool backing UnsBridge's forward path (WI-2 built the
@@ -961,6 +970,9 @@ if (unsOptions.Enabled)
     }
 
     var siteStore = new St4i.EdgeCore.Site.SiteLinkStore();
+    // 🔴 Task Q-1 fix round — three outcomes, read once, BEFORE anything that can write. See the block
+    // below the manager's construction for what each arm does and why.
+    var siteLinkRead = siteStore.Read();
     var siteBridgeManager = new St4i.EdgeCore.Site.SiteBridgeManager(
         unsOptions,
         deviceIdentityProvider,
@@ -969,17 +981,49 @@ if (unsOptions.Enabled)
         logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"),
         spool: bridgeSpool);
 
-    // Eager start (mirrors the UNS broker block above): ApplyAsync itself never throws (construct/connect
-    // failures are caught+logged inside it, leaving the manager's Status() at Disabled/Down) — this
-    // try/catch is only extra insurance so a truly unexpected failure here still can't crash startup.
-    try
+    // 🔴 TASK Q-1 FIX ROUND — THE TWIN OF THE SETTINGS DEFECT, AND ITS PRECONDITION WAS WEAKER.
+    //
+    // WHAT WAS HERE: `siteBridgeManager.ApplyAsync(siteStore.Load() ?? new PersistedSiteLink())`.
+    // `Load()` answered null both for "no file" and for "a file this process could not read", and
+    // `ApplyAsync` calls `_store.Save(link)` UNCONDITIONALLY — before the `link.Enabled` check and outside
+    // any success condition. So an unreadable site-link.json was REWRITTEN with the default record
+    // (Enabled=false, Host="", Port=8883, SiteTrustPem="") on a start where nothing failed. The operator
+    // lost the Site broker host, its port and the pinned trust anchor, and the device became standalone in
+    // silence: `Save` SUCCEEDED, so the manager's own error path never fired and no line was written
+    // anywhere. Gated on nothing — unlike the settings defect, which needed one of three ST4I_* variables
+    // set, this needed only that the local UNS spine be on, and it is on by default.
+    //
+    // THE FIX IS TO SKIP THE CALL, and it is exactly as narrow as that. On the Unreadable arm ApplyAsync is
+    // the writer, so not calling it is the whole remedy: with a default link the call disposes no bridge
+    // (there is none yet), starts no bridge (Enabled is false) and sets `_current` to a value identical to
+    // the field initializer it already holds. The ONLY observable it removes is the Save. The bridge is
+    // Disabled either way, `GET /v1/site` reports what this process is actually running, and the file is
+    // left exactly as it is.
+    //
+    // NOT DONE HERE, and named rather than left: `SiteBridgeManager.ReapplyCurrentAsync` (reachable from
+    // POST /v1/site/identity/rotate) also reaches that unconditional Save, with a link this process
+    // invented rather than read. On this arm `_current` is the default record, so a rotation would persist
+    // it over the unreadable file. It is operator-INITIATED but not operator-CHOSEN, which is the
+    // distinction the rule turns on, and closing it means changing when ApplyAsync persists — a change to a
+    // method three callers share. Reported, not taken.
+    if (siteLinkRead.Status == St4i.EdgeCore.Site.SiteLinkReadStatus.Unreadable)
     {
-        siteBridgeManager.ApplyAsync(siteStore.Load() ?? new St4i.EdgeCore.Site.PersistedSiteLink())
-            .GetAwaiter().GetResult();
+        unreadableSiteLink = siteLinkRead;
     }
-    catch (Exception ex)
+    else
     {
-        Console.Error.WriteLine($"[startup] Site bridge failed to start for this run — standalone: {ex.Message}");
+        // Eager start (mirrors the UNS broker block above): ApplyAsync itself never throws (construct/connect
+        // failures are caught+logged inside it, leaving the manager's Status() at Disabled/Down) — this
+        // try/catch is only extra insurance so a truly unexpected failure here still can't crash startup.
+        try
+        {
+            siteBridgeManager.ApplyAsync(siteLinkRead.Link ?? new St4i.EdgeCore.Site.PersistedSiteLink())
+                .GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[startup] Site bridge failed to start for this run — standalone: {ex.Message}");
+        }
     }
 
     // Registered via a factory lambda (NOT the raw-instance AddSingleton overload) so the built-in DI
@@ -1826,70 +1870,59 @@ if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
 // branch below goes through this exact same FleetHost.UpdateSettings call, so the transport/config-sync
 // rebuild + (new) persistence-on-change both happen identically regardless of which source won.
 //
-// 🔴 Task J-3 — NAMED, NOT CHANGED: this READ is unguarded, ABOVE the `TryReplayStartupSettings` guard that
-// exists precisely so this file can never take the host down. Load() tolerates a corrupt file (it catches JsonException and
-// returns null) but not an unreadable one — File.ReadAllText propagates IOException straight through here.
-// By the rule at wal.EnsureDir above (docs/startup-failure-posture.md §3.1a) this must come up: the failure
-// is nameable, so stopping is the quieter outcome.
+// 🔴 TASK Q-1 — THIS READ HAS THREE OUTCOMES NOW, AND THE THIRD ONE IS WHY THE TASK EXISTED.
 //
-// A DENY-SHARE LOCK IS ONE REACHABLE VECTOR — an editor or an AV scanner holding the file, including the
-// editor the RESTORE-arm remedy string below tells the operator to open it with. Measured: FileShare.None
-// reaches this line and throws; FileShare.Read does not.
+// WHAT WAS HERE, AND WHAT IT COST. `settingsStore.Load()` answered a triple or null, and null covered two
+// situations: no file on disk, and a file on disk this process could not turn into a triple. The branch
+// below reads null as the first one, so the second one selected the SEED arm — the environment floor,
+// applied through FleetHost.UpdateSettings, which persists in a `finally`. On an ordinary SUCCESSFUL start,
+// with no failure anywhere and no log line of any kind, fleet-settings.json was rewritten with the floor
+// merged with FleetHost's built-in defaults and the operator's content was gone. Measured both ways: with
+// none of ST4I_SERVER_URL/ST4I_MACHINE_CODE/ST4I_VERIFY_TLS set nothing is written and the file survives;
+// with any ONE of them set it is overwritten. Those three variables exist for the headless service install
+// (WS-F1 fix F1, above) — the deployment with no UI to retype the triple into.
 //
-// 🔴 AN ACL IS ALSO A VECTOR, AND THIS NOTE HAS NOW SAID BOTH THINGS. Round one said an ACL reaches this
-// read; round two said it does not, because Load() gates on File.Exists and File.Exists answers false on a
-// permission failure. Task M-1 RAN it — tools/settings-acl-probe, committed, re-runnable — and each
-// statement is true of ONE SHAPE and was written about the population. "Unreadable" is not one state; a
-// Windows ACL withholds rights individually. Measured, on this runtime:
-//   * a deny on the FILE (all four read rights, or ReadData alone) leaves File.Exists answering TRUE, so
-//     ReadAllText is reached and throws UnauthorizedAccessException STRAIGHT THROUGH THIS LINE;
-//   * a deny on the DIRECTORY does NOT reach the file at all — the directory stops being enumerable, the
-//     file is still opened by name and read, and this line returns the operator's triple unchanged;
-//   * File.Exists answers FALSE only when the deny reaches BOTH the directory AND the file, and the SEED
-//     arm is then selected with the operator's file sitting right there. It is NOT the inheritance flag —
-//     a discriminating shape denying both objects with two EXPLICIT, non-propagating rules answers false
-//     too. Propagation is just how the folder-properties dialog produces the combination;
-//   * none of the six read-denying shapes measured fails the `new FleetSettingsStore()` construction above —
-//     Directory.CreateDirectory succeeded on an existing but unreadable directory in every one. That
-//     constructor DOES throw on a WRITE denial with the root absent, which is a different arm from the one
-//     this paragraph is about.
-// docs/startup-failure-posture.md §3.1a carries the full table.
+// THE RULE, and it is about the read rather than about this file: a store's slot on disk being EMPTY is
+// what entitles a caller to establish a value of its own. A read that FAILED says nothing about the slot
+// except that something is in it, and whatever is in it is the last surviving record of what somebody
+// configured. So "could not read" is its own outcome, it is never the empty case, and nothing writes on it.
 //
-// 🔴 THE OBVIOUS GUARD IS STILL A DEFECT, FOR A NARROWER REASON. Wrapping this in a try/catch that yields
-// null makes an unreadable file indistinguishable from NO file and moves every shape that throws above onto
-// the SEED arm: the environment floor is applied and UpdateSettings persists unconditionally. What the
-// earlier note claimed next — that the seed-arm block then DELETES the operator's file while logging that
-// nothing was deleted — was MEASURED, and IT IS TRUE ON SOME SHAPES AND NOT OTHERS, which is the same
-// one-word-two-outcomes trap a third time. Running Save() then Delete() against a present file:
-//   * deny PROPAGATED to the children: Save throws out of the atomic rename (the TEMP FILE inherits the
-//     deny, so File.Move cannot resolve its own source) and Delete() is a NO-OP, because it gates on the
-//     same File.Exists that already answered false. The file SURVIVES, beside an orphaned
-//     fleet-settings.json.tmp-<guid> that nothing ever looks at again;
-//   * both objects denied WITHOUT propagation: Save SUCCEEDS and Delete SUCCEEDS. THE OPERATOR'S FILE IS
-//     GONE. Read rights were withheld; write and delete rights were not, and neither call reads anything;
-//   * a MALFORMED file with nothing denied at all: same — file GONE. That is the likeliest vector of the
-//     three, and the earlier note named none of them.
-// All three DELETIONS still need the replay to ALSO fail to activate; see the seed-arm block's own
-// enumeration below, which bottoms out at _onLiveSettingsRebuilt, an arbitrary host callback.
+// WHICH SIDE OF THE J-3 RULE THIS FALLS ON — the same side as the replay guard below, POSTURE B, and the
+// test is the one in docs/startup-failure-posture.md §1: would continuing HIDE the loss? It does not. The
+// Error line below names the file and says it was not applied; GET /v1/settings goes on truthfully
+// reporting the triple this process actually holds; and nothing left running claims the persisted triple
+// was applied or the Live transport rebuilt from it. Stopping would additionally remove PUT /v1/settings,
+// the only in-product correction, from a machine whose sole fault is a text file it is perfectly able to
+// ignore. The unguarded `wal.EnsureDir()` near the top of this file fails that same test the other way and
+// stops; both arms choose the louder failure. Row 36 of that file's set moves S -> U and its ✗ becomes ✓.
 //
-// 🔴 AND UNDERNEATH ALL THREE THERE IS A SHAPE GATED ON NOTHING, WHICH IS LIVE TODAY. Measured for the case
-// where the replay SUCCEEDS: Load() returns null with the file present, the seed request is the env floor,
-// and FleetCore.UpdateSettings performs its Save in a `finally` inside `if (rebuildNeeded)` — reached
-// whether the activation throws OR RETURNS. So fleet-settings.json is REWRITTEN with the environment floor
-// merged with FleetHost's built-in defaults, the operator's content is gone, and NOTHING SAYS SO: the Error
-// line belongs to a failed replay and the Warning line to the discard block, and on this path neither runs.
-// Its one precondition, and it is the reason this is a real report rather than a scare: rebuildNeeded is set
-// only if at least one of serverUrl/verifyTls/machineCode arrives non-null, and initialLiveVerifyTls above
-// is a bool? that stays null unless ST4I_VERIFY_TLS is set — so with NONE of the three ST4I_* variables set,
-// nothing is written at all. With any one set, it is. Those variables exist for the headless service install
-// (WS-F1 fix F1, above), which is exactly the deployment that has no UI to retype the triple into.
+// WHAT THIS ARM DELIBERATELY DOES NOT DO: it does not apply the environment floor in memory either. FF-1's
+// precedence says the file wins whenever there is one, and there IS one — this process simply cannot read
+// it. Applying the floor would put a triple in front of the operator that they never set, on a machine that
+// has a configuration, and GET /v1/settings would report it as though it were theirs.
 //
-// What is missing behind ALL FOUR is still one thing: a third state, "a file exists and could not be read",
-// which neither this composition root nor FleetSettingsStore expresses today — plus, for the malformed case,
-// that a tolerated-corrupt file and no file are the same null. Building it changes what an operator observes
-// at startup, so it is recorded and left. The choice facing the owner is a JUSTIFICATION, not a design: one
-// guard and one new state answers all four.
-var persistedSettings = settingsStore.Load();
+// The three deletions tabulated in docs/startup-failure-posture.md §3.1a are answered by the same change
+// rather than by a second guard: every one of them is gated on reaching the seed arm, and the seed arm is
+// now selected only on Absent — an outcome a present file cannot produce, because the read is an open
+// attempt and not an existence probe.
+//
+// THE VECTORS, KEPT BECAUSE THEY ARE WHY ONE OUTCOME COVERS A POPULATION WHOSE CAUSES DIFFER. Task M-1 ran
+// tools/settings-acl-probe (committed, re-runnable) against the store that used to sit behind this line, and
+// what it found is that "unreadable" was never one state: a deny-share lock (FileShare.None reaches the
+// read; FileShare.Read does not), a Windows ACL withholding read rights on the FILE, and an ACL reaching
+// BOTH the directory and the file each produced a DIFFERENT pair of answers out of the store's two surfaces.
+// The last one is the one that mattered: File.Exists answered FALSE with the operator's file present, so the
+// seed arm was selected — not by tolerating a failure, but by asking a second surface a question the read
+// itself could answer. The full table is in docs/startup-failure-posture.md §3.1a.
+// Q-1's read does not consult a second surface at all, so those three vectors and a malformed file now reach
+// one outcome by construction rather than by an enumeration somebody has to keep complete.
+//
+// TWO MEASUREMENTS FROM M-1 THAT ARE STILL LIVE AND ARE NOT ABOUT THIS LINE: none of the six read-denying
+// shapes fails the `new FleetSettingsStore()` construction above — Directory.CreateDirectory succeeded on an
+// existing but unreadable directory in every one — while that constructor DOES throw on a WRITE denial with
+// the root absent, which is a different arm (row 27) and is untouched here.
+var settingsRead = settingsStore.Read();
+var persistedSettings = settingsRead.Settings;
 var initialSettingsRequest = persistedSettings is not null
     ? new SettingsUpdateRequest(
         ServerUrl: persistedSettings.ServerUrl,
@@ -1901,6 +1934,65 @@ var initialSettingsRequest = persistedSettings is not null
         VerifyTls: initialLiveVerifyTls,
         Language: null,
         MachineCode: string.IsNullOrWhiteSpace(initialLiveMachineCode) ? null : initialLiveMachineCode);
+
+// 🔴 TASK Q-1 — THE THIRD ARM. Nothing is applied, nothing is written, nothing is deleted, and the fact is
+// put where somebody reads it.
+//
+// WHO HAS TO SEE THIS, answered rather than assumed. The deployment this defect destroys data on is the
+// headless Windows-Service install — the one with no UI. `LogError` is the channel that reaches it: this
+// product ships no appsettings.json (§10.4), so the framework's own default minimum applies, and under
+// AddWindowsService this level is a Windows Event Log entry an operator on shift can find. It is the same
+// channel and the same level the replay guard below already uses, for the same stated reason.
+// NOT ALSO PUT ON GET /v1/settings, and the reason is a boundary rather than an oversight: that response is
+// a published shape the browser client and third-party callers read, and widening it is the class of change
+// the owner reserved to himself in decisions 3 and 4. What that endpoint already does is the half that
+// matters — it reports the triple THIS PROCESS HOLDS, truthfully, and never claims the persisted one was
+// applied. A field naming this condition on the operating surface is worth having and is somebody's
+// decision, not this task's.
+//
+// THE MESSAGE'S SCOPE, because a data-preservation claim has to carry one: it says the file was not
+// overwritten and not deleted BY THIS START, which is exactly what the code above guarantees — the replay is
+// skipped, so FleetHost.UpdateSettings is never called, so the `finally` that persists is never reached, and
+// the discard block below cannot select this arm. It says nothing about later: a PUT /v1/settings will
+// overwrite the file, and that is the remedy rather than a loss.
+if (settingsRead.Status == FleetSettingsReadStatus.Unreadable)
+{
+    app.Logger.LogError(
+        settingsRead.Failure,
+        "STARTUP SETTINGS FILE COULD NOT BE READ — \"{SettingsFile}\" is present and this start could not " +
+        "turn it into settings ({Reason}). It was NOT applied, and it was NOT overwritten or deleted by " +
+        "this start: unreadable content is the only remaining record of what was configured here, so the " +
+        "environment floor was deliberately NOT written over it. The host is UP and every endpoint works; " +
+        "the Live transport was NOT rebuilt, and GET /v1/settings reports the values this process is " +
+        "actually running on. Repair or move the file aside and restart, or set the values with " +
+        "PUT /v1/settings.",
+        settingsRead.FilePath,
+        settingsRead.Reason);
+}
+
+// 🔴 TASK Q-1 FIX ROUND — the same arm for site-link.json, reported here rather than at the site block far
+// above, because that block writes to Console.Error and this level reaches the Windows Event Log under
+// AddWindowsService. The DECISION was taken there, beside the read; only the sentence is here.
+// The scope of the preservation claim is the same and is the same guarantee: the composition root did not
+// call ApplyAsync on this arm, and ApplyAsync holds the only Save of this file in the whole product, so
+// nothing wrote to it during this start.
+if (unreadableSiteLink is not null)
+{
+    app.Logger.LogError(
+        // 🔴 Fix round 2 (review N4) — the exception is passed, exactly as the settings arm above passes
+        // `settingsRead.Failure`. It was omitted only because `SiteLinkRead` had no such member, which made
+        // two arms deliberately built to be identical differ on the one thing a log sink can structure.
+        unreadableSiteLink.Failure,
+        "SITE LINK FILE COULD NOT BE READ — \"{SiteLinkFile}\" is present and this start could not turn it " +
+        "into a Site link ({Reason}). It was NOT applied, and it was NOT overwritten or deleted by this " +
+        "start: unreadable content is the only remaining record of the Site broker host, port and pinned " +
+        "trust anchor that were configured here, so the default standalone record was deliberately NOT " +
+        "written over it. THIS DEVICE IS RUNNING STANDALONE — no Site bridge was started, and " +
+        "GET /v1/site reports that truthfully rather than claiming a link. Repair or move the file aside " +
+        "and restart, or set the link with PUT /v1/site.",
+        unreadableSiteLink.FilePath,
+        unreadableSiteLink.Reason);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
 // 🔴 H-1a — THE STARTUP REPLAY IS HARDENED HERE, AND IT IS HARDENED **FIRST**.
@@ -2025,7 +2117,17 @@ static bool TryReplayStartupSettings(
 }
 
 var replayRestoredAFile = persistedSettings is not null;
-var replaySucceeded = TryReplayStartupSettings(
+
+// 🔴 TASK Q-1 — the short-circuit IS the fix, and it is written this way rather than as a second call site
+// because the replay helper below must keep exactly ONE call in this file: a second replay arm goes through
+// UpdateSettings, which persists in a `finally`, which is how branch review C1 destroyed the operator's file
+// the first time. StartupSettingsReplayHardeningTests counts that from src/ — and it counted THIS PARAGRAPH
+// when the sentence above spelled the helper's name followed by an open parenthesis, which is worth leaving
+// on the record: the census reads TEXT and cannot tell a comment from a call, that ceiling is stated in its
+// own doc, and the answer is to write the prose differently rather than to teach it to skip comments.
+// On the Unreadable arm this leaves replaySucceeded false with no replay having run — which is correct in
+// itself and is ALSO why the discard block below can no longer be entered from here; see its condition.
+var replaySucceeded = settingsRead.Status != FleetSettingsReadStatus.Unreadable && TryReplayStartupSettings(
     fleetHost,
     app.Logger,
     initialSettingsRequest,
@@ -2106,7 +2208,15 @@ var replaySucceeded = TryReplayStartupSettings(
 // injects the throw through a real TransportCoordinator holding different WalOptions, which is the same
 // call from options the early EnsureDir never saw.
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
-if (!replaySucceeded && !replayRestoredAFile)
+// 🔴 TASK Q-1 CHANGED THIS CONDITION, AND THE CHANGE IS THE POINT. It read `!replaySucceeded &&
+// !replayRestoredAFile`, and `!replayRestoredAFile` meant "Load() returned null", which covered BOTH no file
+// and a file that could not be read. That is how a Delete() written for a file this start had just created
+// became reachable with the operator's own file present — measured, and tabulated as the three deletion
+// shapes in docs/startup-failure-posture.md §3.1a. Gating on Absent says what was always meant: there was
+// nothing here before this start, so the only thing that can be on disk now is what this start wrote.
+// It is strictly narrower than what it replaces — Absent implies !replayRestoredAFile, never the reverse —
+// so no arm that used to be excluded is now included.
+if (settingsRead.Status == FleetSettingsReadStatus.Absent && !replaySucceeded)
 {
     try
     {
