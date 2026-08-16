@@ -2050,7 +2050,7 @@
     "twoFactorDescription": "Two factor description",
     "twoFactorAuthDescription": "Two factor auth description",
     "twoFactorAuth": "Two-factor authentication",
-    "systemDescription": "System description",
+    "systemDescription": "Sign in to continue to SYNAPSE — the manufacturing operations platform.",
     "storeSecurely": "Store securely",
     "setup2FADescription": "Setup 2 f a description",
     "setup2FA": "Setup 2 f a",
@@ -2098,7 +2098,7 @@
     "loginWithManus": "Sign in with Manus",
     "loginWithGoogle": "Sign in with Google",
     "loginWithGithub": "Sign in with GitHub",
-    "loginTitle": "Login title",
+    "loginTitle": "Sign-in required",
     "loginSuccess": "Login successful",
     "loginSubtitle": "Choose how you want to sign in",
     "loginFailed": "Login failed. Please try again.",
@@ -2156,7 +2156,15 @@
     "activeSessions": "Active sessions",
     "activeAgo": "Active ago",
     "active": "Active",
-    "qrCodeAlt": "QR Code"
+    "qrCodeAlt": "QR Code",
+    "twoFactor": {
+      "missingFields": "User ID and verification code are required",
+      "sessionInvalid": "Invalid sign-in session. Please sign in again.",
+      "userNotFound": "User not found",
+      "notEnabled": "Two-factor authentication is not enabled for this account",
+      "invalidToken": "Invalid verification code",
+      "failed": "Two-factor verification failed"
+    }
   },
   "backup": {
     "time": "Time",
@@ -18679,5 +18687,9 @@
   },
   "usersPage": {
     "nguyenVanA": "John Doe"
+  },
+  "connectionBanner": {
+    "netDown": "Network connection lost — data may be out of date. Waiting to reconnect…",
+    "socketDown": "Realtime connection lost — reconnecting…"
   }
 }

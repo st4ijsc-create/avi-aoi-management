@@ -71,7 +71,13 @@ export default function Login() {
       }, 500);
     } catch (error: any) {
       console.error("Login error:", error);
-      toast.error(error.message || t('auth.loginFailed'));
+      // ⚠ KHÔNG toast `error.message` ở đây. Đó là chuỗi THÔ của máy chủ, luôn tiếng
+      // Việt ("Tên đăng nhập hoặc mật khẩu không đúng") — nghiệm thu mắt 2026-08-16
+      // bắt được nó nổ ra cạnh bản dịch đúng, nên người dùng `zh` nhận MỘT LÚC HAI
+      // toast: một tiếng Trung đúng và một tiếng Việt.
+      // Máy chủ đã gửi appCode đúng (`INVALID_VALUE` + field `credentials`, xem
+      // `server/routers.ts` nhánh LoginError) và bộ xử lý toàn cục ở `main.tsx` dịch
+      // nó rồi — đó mới là chỗ DUY NHẤT được phép báo lỗi mutation không có onError.
     } finally {
       setIsLoading(false);
     }
@@ -98,7 +104,20 @@ export default function Login() {
       const data = await response.json();
 
       if (!response.ok) {
-        toast.error(data.error || t('auth.verificationFailed'));
+        // ⚠ KHÔNG dùng `data.error` — đó là câu THÔ của máy chủ, luôn tiếng Việt.
+        // `/api/auth/verify-2fa` là đường REST nên không đi qua errorFormatter của
+        // tRPC; nó nay gửi kèm `code` máy-đọc-được và client tự tra khoá i18n.
+        // `data.error` chỉ còn là lưới cuối nếu gặp mã chưa biết.
+        const KHOA_2FA: Record<string, string> = {
+          TWOFA_MISSING_FIELDS: 'auth.twoFactor.missingFields',
+          TWOFA_SESSION_INVALID: 'auth.twoFactor.sessionInvalid',
+          TWOFA_USER_NOT_FOUND: 'auth.twoFactor.userNotFound',
+          TWOFA_NOT_ENABLED: 'auth.twoFactor.notEnabled',
+          TWOFA_INVALID_TOKEN: 'auth.twoFactor.invalidToken',
+          TWOFA_FAILED: 'auth.twoFactor.failed',
+        };
+        const khoa = typeof data?.code === 'string' ? KHOA_2FA[data.code] : undefined;
+        toast.error(khoa ? t(khoa) : (data.error || t('auth.verificationFailed')));
         return;
       }
 

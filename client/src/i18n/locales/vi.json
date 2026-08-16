@@ -2155,7 +2155,15 @@
     "logout": "Đăng xuất",
     "active": "Đang hoạt động",
     "login": "Đăng nhập",
-    "qrCodeAlt": "Mã QR"
+    "qrCodeAlt": "Mã QR",
+    "twoFactor": {
+      "missingFields": "User ID và mã xác thực là bắt buộc",
+      "sessionInvalid": "Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.",
+      "userNotFound": "Không tìm thấy người dùng",
+      "notEnabled": "2FA chưa được bật cho tài khoản này",
+      "invalidToken": "Mã xác thực không hợp lệ",
+      "failed": "Xác thực 2FA thất bại"
+    }
   },
   "backup": {
     "selectCategoriesToBackup": "Chọn categories đến Sao lưu",
@@ -18659,5 +18667,9 @@
   },
   "usersPage": {
     "nguyenVanA": "Nguyễn Văn A"
+  },
+  "connectionBanner": {
+    "netDown": "Mất kết nối mạng — dữ liệu có thể không cập nhật. Đang chờ khôi phục…",
+    "socketDown": "Mất kết nối thời gian thực — đang thử kết nối lại…"
   }
 }

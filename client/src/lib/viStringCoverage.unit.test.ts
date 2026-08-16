@@ -158,6 +158,71 @@ describe("F12 — chuỗi tiếng Việt TRẦN (cổng theo-khoá không thấy
   });
 });
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * HÌNH DẠNG THỨ BA — string literal tiếng Việt trong BIỂU THỨC (không phải `>text<`,
+ * không phải `attr="text"`).
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * ⚠ CÁCH TÌM RA NÓ MỚI LÀ ĐIỀU ĐÁNG GHI. `demChuoiTran()` khai **0 nợ ở màn vận hành**
+ * và cả ba cổng đều xanh. Rồi lượt nghiệm thu BẰNG MẮT mở `/` với trình duyệt ngôn ngữ
+ * `en` và thấy một dải băng tiếng Việt chạy ngang đầu MỌI màn:
+ *
+ *     {!netUp ? "Mất kết nối mạng — …" : "Mất kết nối thời gian thực — …"}
+ *
+ * Chuỗi nằm ở hai NHÁNH TERNARY nên nó không mang hình dạng nào trong hai hình dạng
+ * cổng biết đọc. Cổng không sai số — nó đo một hình dạng mà lỗi này không có.
+ * ⇒ Bài học: một cổng tĩnh xanh chỉ chứng minh "không còn thứ TÔI BIẾT CÁCH NHÌN".
+ *   Nghiệm thu bằng mắt không phải bước làm cho đẹp; nó là bước duy nhất có thể
+ *   phát hiện một hình dạng chưa ai nghĩ tới.
+ *
+ * ⚠ 914 KHÔNG PHẢI SỐ NỢ ĐÃ THẨM ĐỊNH — nó là số ĐÓNG BĂNG. Đã lấy mẫu và biết chắc
+ *   trong đó có những thứ **không được dịch**:
+ *     · `ApiDocs`: `name: "Nhà máy Bắc Ninh"` — dữ liệu JSON MẪU trong tài liệu API
+ *     · `BulkImportDialog`: `findCol("code", "mã", "ma", …)` — BÍ DANH CỘT tiếng Việt
+ *       để khớp file Excel người dùng nhập; dịch chúng là làm HỎNG chức năng nhập
+ *     · `FirstRunTour` / `FactoryConfigAudit`: `{ key: "…", fallback: "…" }` — đã có
+ *       khoá i18n đi kèm, chuỗi Việt chỉ là lưới an toàn, đúng khuôn
+ *   Việc phân loại 914 mục này là hạng mục RIÊNG (F13), chưa làm. Cổng dưới đây chỉ
+ *   giữ cho nó KHÔNG PHÌNH THÊM trong lúc chờ.
+ */
+const FROZEN_SHAPE3 = 914;
+
+function demHinhDangBa(): { total: number; byFile: Array<[string, number]> } {
+  const byFile: Array<[string, number]> = [];
+  let total = 0;
+
+  for (const file of walkTsx(CLIENT_SRC)) {
+    const lines = readFileSync(file, "utf8").split("\n");
+    let inBlock = false;
+    let n = 0;
+    for (const ln of lines) {
+      const tr = ln.trim();
+      if (inBlock) { if (tr.includes("*/")) inBlock = false; continue; }
+      if (tr.startsWith("/*") || tr.startsWith("{/*")) { inBlock = !tr.includes("*/"); continue; }
+      if (tr.startsWith("//") || tr.startsWith("*")) continue;
+      if (!CHU_VIET.test(ln)) continue;
+      // hai hình dạng cũ đã có cổng riêng ở trên — không đếm hai lần
+      if (/>[^<>{}]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ][^<>{}]*</i.test(ln)) continue;
+      if (/\b(placeholder|title|label|aria-label|description|alt|tooltip)\s*=\s*["'`][^"'`]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(ln)) continue;
+      // đang là defaultValue của `t(...)` cùng dòng → nhánh (a) lo, đúng khuôn
+      if (/\bt\s*\(/.test(ln)) continue;
+      const chuoi = ln.match(/(["'`])((?:(?!\1)[^\\]|\\.)*)\1/g);
+      if (chuoi?.some((s) => CHU_VIET.test(s))) n++;
+    }
+    if (n) { byFile.push([file.replace(CLIENT_SRC, ""), n]); total += n; }
+  }
+  byFile.sort((a, b) => b[1] - a[1]);
+  return { total, byFile };
+}
+
+describe("F12 — hình dạng THỨ BA (bắt được nhờ nghiệm thu bằng mắt, không phải nhờ cổng)", () => {
+  it(`không được phình quá ${FROZEN_SHAPE3} — đóng băng, KHÔNG phải mục tiêu`, () => {
+    const { total, byFile } = demHinhDangBa();
+    if (total > FROZEN_SHAPE3) console.error("[F12/hình-3] phình ở:", byFile.slice(0, 10));
+    expect(total).toBeLessThanOrEqual(FROZEN_SHAPE3);
+  });
+});
+
 describe("F12 — parity FILE-VỚI-FILE (bổ sung cho i18n-check.mjs, không thay thế)", () => {
   it("khoá có ở vi thì PHẢI có ở en và zh — bất biến, KHÔNG phải ngân sách", () => {
     // Đây là phép so file-với-file. `i18n-check.mjs` dựng tập khoá từ THAM CHIẾU

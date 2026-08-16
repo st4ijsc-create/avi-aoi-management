@@ -2049,7 +2049,7 @@
     "twoFactorDescription": "Twofactor描述",
     "twoFactorAuthDescription": "使用双因素认证增强账户安全",
     "twoFactorAuth": "两步验证",
-    "systemDescription": "生产质量管理系统",
+    "systemDescription": "登录以继续使用 SYNAPSE — 生产运营平台。",
     "storeSecurely": "安全存储",
     "setup2FADescription": "设置2fa描述",
     "setup2FA": "设置双因素认证",
@@ -2155,7 +2155,15 @@
     "activeSessions": "活跃sessions",
     "activeAgo": "之前活跃",
     "active": "活跃",
-    "qrCodeAlt": "二维码"
+    "qrCodeAlt": "二维码",
+    "twoFactor": {
+      "missingFields": "用户 ID 和验证码为必填项",
+      "sessionInvalid": "登录会话无效。请重新登录。",
+      "userNotFound": "未找到用户",
+      "notEnabled": "此账户未启用双因素认证",
+      "invalidToken": "验证码无效",
+      "failed": "双因素验证失败"
+    }
   },
   "backup": {
     "time": "时间",
@@ -18687,5 +18695,9 @@
   },
   "usersPage": {
     "nguyenVanA": "张三"
+  },
+  "connectionBanner": {
+    "netDown": "网络连接中断 — 数据可能不是最新的。正在等待恢复…",
+    "socketDown": "实时连接中断 — 正在重新连接…"
   }
 }

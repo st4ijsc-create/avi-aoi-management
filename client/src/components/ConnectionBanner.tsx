@@ -6,9 +6,11 @@
  * banner when the network is offline or the realtime socket is disconnected.
  */
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getSharedSocket } from "../lib/socketManager";
 
 export function ConnectionBanner() {
+  const { t } = useTranslation();
   const [socketUp, setSocketUp] = useState(true);
   const [netUp, setNetUp] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
 
@@ -42,8 +44,8 @@ export function ConnectionBanner() {
       className="fixed top-0 inset-x-0 z-[2000] bg-amber-500 text-black text-xs sm:text-sm font-medium text-center py-1 px-3 shadow-md"
     >
       {!netUp
-        ? "Mất kết nối mạng — dữ liệu có thể không cập nhật. Đang chờ khôi phục…"
-        : "Mất kết nối thời gian thực — đang thử kết nối lại…"}
+        ? t("connectionBanner.netDown", "Mất kết nối mạng — dữ liệu có thể không cập nhật. Đang chờ khôi phục…")
+        : t("connectionBanner.socketDown", "Mất kết nối thời gian thực — đang thử kết nối lại…")}
     </div>
   );
 }

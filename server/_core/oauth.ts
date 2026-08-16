@@ -401,7 +401,7 @@ export function registerOAuthRoutes(app: Express) {
       const { userId, token } = req.body;
       
       if (!userId || !token) {
-        res.status(400).json({ error: "User ID và mã xác thực là bắt buộc" });
+        res.status(400).json({ code: "TWOFA_MISSING_FIELDS", error: "User ID và mã xác thực là bắt buộc" });
         return;
       }
 
@@ -424,21 +424,21 @@ export function registerOAuthRoutes(app: Express) {
           ipAddress: req.ip ?? req.socket.remoteAddress,
           userAgent: req.headers['user-agent'],
         }).catch(() => {});
-        res.status(401).json({ error: "Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại." });
+        res.status(401).json({ code: "TWOFA_SESSION_INVALID", error: "Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại." });
         return;
       }
 
       // Get user
       const user = await db.getUserById(userId);
       if (!user) {
-        res.status(404).json({ error: "Không tìm thấy người dùng" });
+        res.status(404).json({ code: "TWOFA_USER_NOT_FOUND", error: "Không tìm thấy người dùng" });
         return;
       }
       
       // Get 2FA status
       const twoFAStatus = await db.get2FAStatus(userId);
       if (!twoFAStatus?.twoFactorEnabled || !twoFAStatus.twoFactorSecret) {
-        res.status(400).json({ error: "2FA chưa được bật cho tài khoản này" });
+        res.status(400).json({ code: "TWOFA_NOT_ENABLED", error: "2FA chưa được bật cho tài khoản này" });
         return;
       }
       
@@ -461,7 +461,7 @@ export function registerOAuthRoutes(app: Express) {
           //   người dùng quay lại bước mật khẩu. Không có dòng này, MỘT vé = vô hạn lượt đoán.
           ghiNhanOtpSai(req);
           await db.createAuditLog({ userId: user.id, userName: user.name, action: 'login_2fa', entityType: 'auth', status: 'failure', ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
-          res.status(401).json({ error: "Mã xác thực không hợp lệ" });
+          res.status(401).json({ code: "TWOFA_INVALID_TOKEN", error: "Mã xác thực không hợp lệ" });
           return;
         }
       }
@@ -485,7 +485,7 @@ export function registerOAuthRoutes(app: Express) {
       });
     } catch (error) {
       console.error("[Auth] 2FA verification failed", error);
-      res.status(500).json({ error: "Xác thực 2FA thất bại" });
+      res.status(500).json({ code: "TWOFA_FAILED", error: "Xác thực 2FA thất bại" });
     }
   });
 
