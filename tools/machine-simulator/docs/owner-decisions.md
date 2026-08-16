@@ -15,6 +15,25 @@ chọn có hậu quả, thường là giữ nguyên hành vi hiện tại.
 
 ---
 
+## Trạng thái phán quyết — 2026-08-16
+
+Chủ sở hữu uỷ quyền quyết định toàn bộ danh sách này. Phán quyết ghi ngay dưới mỗi
+mục. **Ba mục KHÔNG được quyết đơn phương** và lý do nêu tại chỗ: chúng đổi thứ mà
+**người ngoài tổ chức này đang dựa vào** — payload MQTT, hình dạng dữ liệu trên dây,
+và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"làm hay không làm"*,
+**không phủ được sự đồng ý của bên thứ ba**.
+
+| # | mục | phán quyết |
+|---|---|---|
+| 1 | ghi đè im lặng | 🔨 **SỬA** — gộp với 5–7, cùng một thiết kế |
+| 2 | `Warn` tốt cho OEE | ✅ **GIỮ HÀNH VI, XUẤT BẢN NÓ** — đổi là viết lại lịch sử |
+| 3 | bất đối xứng Sparkplug | ✅ **GIỮ DÂY, ĐÃ GHI RÕ** — đổi payload là việc của bên đăng ký |
+| 4 | hình dạng hàng `Samples` | ⚖️ **ĐO TRƯỚC, RỒI CHỌN** — SDK đã xuất bản là ứng viên chuẩn |
+| 5–7 | trạng thái thứ ba còn thiếu | 🔨 **SỬA, LÀM TRƯỚC** — mục 1 là hệ quả nặng nhất của nó |
+| — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
+
+---
+
 ## 1. Một `fleet-settings.json` hỏng khiến lần khởi động THÀNH CÔNG BÌNH THƯỜNG ghi đè cấu hình của vận hành viên
 
 **Đo được:** nếu `fleet-settings.json` sai cú pháp (một lỗi gõ tay — file này sửa
@@ -40,6 +59,27 @@ biết cho tới khi máy chạy sai**.
 **Bằng chứng:** commit `811c9054` (M-1) — phát hiện bằng một dụng cụ độc lập, xác
 minh bằng cách chạy lại.
 
+> ### 🔨 PHÁN QUYẾT 2026-08-16 — SỬA, VÀ SỬA CÙNG MỤC 5–7
+> Đây là **khuyết tật mất dữ liệu** trên một đường **thành công**, không phải một
+> lựa chọn thiết kế. Không có cách đọc nào khiến "ghi đè cấu hình của vận hành viên
+> mà không một dòng log" là đúng.
+>
+> **Nhưng nó không được sửa tại chỗ.** Nó là **hệ quả nặng nhất của mục 5–7**: mã
+> chỉ biết *có file* và *không có file*, nên một file **hỏng** rơi vào nhánh *không
+> có*, và nhánh đó **được phép ghi**. Vá riêng chỗ này để lại đúng cái lỗ ấy ở ba
+> chỗ khác.
+>
+> **Luật, phát biểu một lần cho cả bốn mục:** một file **tồn tại nhưng không đọc
+> được** là một trạng thái **thứ ba**. Nó **không bao giờ** được đối xử như *không
+> tồn tại*, và **không bao giờ** bị ghi đè. Nội dung không đọc được là **bằng chứng
+> duy nhất còn lại** của điều vận hành viên đã cấu hình.
+>
+> **Thứ tự làm, và lý do — vì tài liệu này nói việc xếp thứ tự chọn một lời biện
+> minh:** mục này **đi trước**, vì nó là mục duy nhất **phá huỷ dữ liệu người dùng
+> trong một lần khởi động bình thường**. Hai mục kia làm mất **một dòng log** và
+> gây **một thứ tự quan sát được**. Mất log là tệ; **mất cấu hình trên một cỗ máy
+> không có giao diện để gõ lại** là không phục hồi được.
+
 ---
 
 ## 2. `Warn` được tính là TỐT cho OEE
@@ -64,6 +104,22 @@ tử lẫn mẫu.
 **Bằng chứng:** commit `72614dd9` (N-2). Tìm ra bằng việc **viết tài liệu**, không
 phải bằng test — vì tách riêng ra thì không đường nào sai cả.
 
+> ### ✅ PHÁN QUYẾT 2026-08-16 — GIỮ HÀNH VI, XUẤT BẢN NÓ
+> **Không đổi phép tính.** `Warn` tính là tốt là **quy ước OEE thông thường** — một
+> đơn vị đạt-kèm-cảnh-báo vẫn là đơn vị xuất xưởng được, và chất lượng đếm đơn vị
+> xuất xưởng. Lý do quyết định là chỗ khác: **đổi công thức là viết lại mọi con số
+> OEE đã báo cáo trong quá khứ**, kể cả những con số đã in ra PDF và đã gửi đi.
+> Không có phiên bản nào cho công thức ấy, nên không ai đọc lại được sẽ biết con số
+> họ cầm thuộc công thức nào.
+>
+> **Khuyết tật thật không phải phép tính — là việc nó chưa bao giờ được nói ra.**
+> Việc phải làm: **công bố định nghĩa ngay tại chỗ con số được đọc** — phản hồi API,
+> danh sách fleet, và bản PDF — bằng đúng ba câu: cái gì vào mẫu số, cái gì vào tử
+> số, `Skip` không vào cả hai. Kèm một câu nói rõ **con số này không có phiên bản**.
+>
+> Nếu sau này nhà máy muốn `Warn` không tính là tốt, việc đó cần **một công thức có
+> phiên bản**, không phải một lần sửa tại chỗ.
+
 ---
 
 ## 3. Telemetry còn sót trên một reading `ProcessResult`: được ghi, vào live state, nhưng KHÔNG lên Sparkplug
@@ -86,6 +142,25 @@ thấy lệch và không có lời giải thích.
 
 **Bằng chứng:** commit `72614dd9` (N-2).
 
+> ### ✅ PHÁN QUYẾT 2026-08-16 — GIỮ DÂY NGUYÊN, KHÔNG SỬA ĐƠN PHƯƠNG
+> **Đây là chỗ uỷ quyền không với tới.** Thêm telemetry vào nhánh `ProcessResult`
+> của Sparkplug **đổi payload MQTT** — và bên đăng ký nằm **ngoài repo này, ngoài
+> tổ chức này**. Một hệ thống phía trên đang phân bổ metric theo alias sẽ nhận thêm
+> metric mà nó chưa khai báo. Tôi có thể quyết *"nên hay không nên đổi"*; tôi
+> **không thể quyết thay người đang chạy hệ thống nhận**.
+>
+> **Và tách riêng ra thì hành vi hiện tại phòng thủ được:** hợp đồng nói mỗi `Kind`
+> nêu tên tập hợp của nó. Telemetry đặt trên một reading `ProcessResult` là **dữ
+> liệu ngoài hợp đồng**. Historian ghi nó là hào phóng; Sparkplug bỏ qua nó là
+> **đúng hợp đồng**. Cái sai duy nhất là **không ai được báo**.
+>
+> **Đã làm, và đủ:** cả ba kết quả đã được nêu tên trên chính thành viên đó trong
+> N-2 — ghi xuống, vào live state, **không publish** — nên tác giả driver đọc hợp
+> đồng sẽ thấy trước khi họ gửi.
+>
+> **Kích hoạt để mở lại:** khi có một bên đăng ký thật yêu cầu trường này. Lúc đó
+> nó là một **thay đổi hợp đồng có phiên bản**, không phải một bản vá.
+
 ---
 
 ## 4. `WaveformSeries.Samples` KHÔNG có hình dạng hàng cố định
@@ -105,6 +180,35 @@ kèm câu *"không được giả định hình dạng hàng chỉ từ kiểu n
 **Nếu không quyết định:** mỗi tác giả driver tự đoán, và nửa số đoán sẽ sai.
 
 **Bằng chứng:** commit `72614dd9` (N-2).
+
+> ### ⚖️ PHÁN QUYẾT 2026-08-16 — LUẬT ĐÃ CÓ SẴN TRONG DỮ LIỆU, CHỈ CHƯA AI VIẾT RA
+> **Đo lại trước khi quyết, và phép đo lật khung của chính mục này.** Mô tả cũ —
+> *"SDK nói `[[t,v]]`, `ScrewdriveSim` phát cặp, `WelderSim` phát một giá trị"* —
+> ngụ ý hai trên ba đồng ý với SDK. **Sai. Không producer nào phát `[[t,v]]` cả:**
+>
+> | nguồn | hàng | `RateHz` |
+> |---|---|---|
+> | SDK vendored (`St4iDeviceClient.cs:86`) | `// [[t,v],…]` | — |
+> | `ScrewdriveSim.cs:186` | `new[] { angle, torque }` — **(x, y), x là GÓC không phải thời gian** | **null** (dòng 189) |
+> | `WelderSim.cs:47` | `new[] { current }` — một giá trị | **được đặt** (dòng 40) |
+>
+> **Hai producer NHẤT QUÁN với nhau, và `RateHz` chính là thứ phân biệt:**
+> - `RateHz` **được đặt** ⇒ có trục thời gian đều ⇒ thời gian là **ngầm định**, suy
+>   ra từ chỉ số và tần số. Một giá trị mỗi hàng là **đúng và tiết kiệm**.
+> - `RateHz` **null** ⇒ **không có** trục thời gian đều ⇒ hàng phải **tự mang trục X
+>   của nó**: `[x, y]`. Ở `ScrewdriveSim`, x là **góc siết**, không phải thời gian.
+>
+> **Nên cái sai không phải hai producer — là chú thích trong SDK.** `[[t,v],…]` mô
+> tả **không producer nào**, và nó là thứ tác giả driver bên thứ ba đọc trước tiên.
+>
+> **Quyết định:** ✅ **`RateHz` là bộ phân biệt, và nó đã được thực thi nhất quán
+> sẵn rồi.** Viết luật ấy lên chính `WaveformSeries` — nơi hợp đồng sống — nêu tên
+> chú thích SDK là **đã biết sai** (file vendored, **cấm sửa**), và **cắm nhân chứng**
+> để nó không trôi lại.
+>
+> 🔴 **KHÔNG đổi hành vi.** Tuyên bố `[[t,v]]` là chuẩn sẽ **phá cả hai producer** và
+> vứt đi quan hệ với `RateHz` — đó là lý do mục này phải đo trước khi quyết, và là lý
+> do câu trả lời hiển nhiên lại là câu sai.
 
 ---
 
