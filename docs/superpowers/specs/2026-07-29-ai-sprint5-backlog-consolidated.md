@@ -212,7 +212,51 @@ Toàn bộ 12 task của plan trả nợ E+F **đã hoàn tất và đã push**.
 
   ⇒ **Bài học mang sang:** cổng tĩnh xanh chỉ chứng minh *"không còn thứ TÔI BIẾT CÁCH NHÌN"*.
 
-- **F13. Phân loại 914 chuỗi "hình dạng thứ ba" — CHƯA LÀM, đã đóng băng.**
+- **F13. Chuỗi "hình dạng thứ ba" — ĐANG LÀM.** `914 → 770 → 652 → 619` (`bd737e1d`, `4cfb1ce7`)
+
+  **Đính chính con số của chính tôi: 914 NÓI QUÁ.** Lọc bốn khuôn vốn đã đúng —
+  `pick(vi,en,zh)` (bộ chọn ba ngôn ngữ tự viết ở `MachineAISummary`) · tuple
+  `["khoá","mặc định"]` · `defaultValue:` · `{key, fallback}` — cộng comment `//` **cuối**
+  dòng (phép bỏ comment cũ chỉ xét **đầu** dòng) ⇒ số thật là **770**.
+
+  | Lô | Nội dung | Còn lại |
+  |---|---|---:|
+  | 1 | `navigation.tsx` (12 label + 18 desc) + 6 hub qua `HubLauncher`; 167 khoá | 652 |
+  | 2 | Bản đồ trạng thái/enum `CommandCenter` + `MasterDataManagement`; 42 khoá | 619 |
+
+  Lô 1 đóng đúng **năm nhãn của triệu chứng F12 gốc**: "Thay đổi kỹ thuật (ECN)",
+  "Xưởng kỹ thuật", "Chỉ huy nhà máy", "Trung tâm bảo trì", "Bảo trì (CMMS)". Chúng sống
+  lâu vì comment tại chỗ ghi *"i18n key hoãn — theo tiền lệ Feeder/ECN/NCR"*: nợ **có chủ
+  ý**, ghi lại đàng hoàng, rồi không ai quay lại.
+
+  ### ⚠ HAI CÁI BẪY ĐÃ SẬP — đọc trước khi làm lô 3
+
+  1. **`col.header` KHÔNG chỉ là nhãn.** Bộ di trú lô 2 đã chuyển 33 `header:` trong đặc
+     tả cột nhập, và bị hoàn nguyên trước khi commit: `shared/masterDataIO.ts:137` khớp
+     cột file Excel người dùng tải lên bằng `normalizeKey(col.header)`. Dịch nó ⇒ template
+     xuất ra mang tên cột là chuỗi khoá, **và mọi file cũ hết nhập được**. Muốn dịch phải
+     **tách khái niệm** (`header` khớp · `headerLabel` hiện) — việc riêng, không phải i18n.
+     ⇒ Trước khi bọc `t()`, hỏi: *"chuỗi này có ai KHỚP theo nó không?"*
+  2. **Tiếng Việt KHÔNG DẤU vô hình với mọi phép quét.** `high: "Cao"`,
+     `escalation: "Leo thang"` không có ký tự có dấu nào ⇒ cổng lẫn bộ di trú đều mù, và
+     chúng sẽ lặng lẽ hiện tiếng Việt cho người dùng en/zh mãi mãi. Bắt được nhờ **cầu chì
+     tự-kiểm của bộ áp bản dịch**, không phải nhờ cổng. Lô 3 phải soi tay nhóm này.
+
+  ### Cổng mới: `client/src/lib/navKeyResolution.unit.test.ts`
+  F13 chuyển nhãn thành **khoá lưu như dữ liệu** rồi `t()` sau. `t(key)` không có
+  defaultValue ⇒ khoá sai/thiếu thì i18next **trả lại chính chuỗi khoá**, không lỗi,
+  không cảnh báo. Hai cổng cũ đều mù (`i18n-check` chỉ thấy tham chiếu **tĩnh**;
+  `viStringCoverage` so file-với-file nên khoá vắng ở **cả ba** locale vẫn xanh). Cổng mới
+  đi từ mã nguồn ra locale, có cầu chì "phải thấy >150 khoá" để không canh tập rỗng.
+
+  ### Còn 619 — thành phần
+  `UserGuide` 86 (văn xuôi hướng dẫn) · `ApiDocs` ~60 (**ngoài phạm vi, đã chốt ở F12**) ·
+  `MasterDataManagement` 33 (**phần lớn là `header` — xem bẫy 1, KHÔNG đụng nếu chưa tách
+  khái niệm**) · `BulkImportDialog` 21 (**bí danh cột, phải giữ**) · còn lại rải rác.
+  ⇒ Nợ thật sự dịch được ước ~**450**, nhiều mục là template literal có nội suy nên phải
+  chuyển sang tham số i18n, không nối chuỗi.
+
+- **F13 (mô tả cũ). Phân loại 914 chuỗi "hình dạng thứ ba" — đã thay bằng mục trên.**
   Cổng `viStringCoverage` giữ nó không phình thêm. ⚠ **KHÔNG quét-và-thay hàng loạt** — đã lấy
   mẫu và biết chắc trong đó có thứ *phải* giữ tiếng Việt:
   · `ApiDocs`: `name: "Nhà máy Bắc Ninh"` — dữ liệu JSON **mẫu** của tài liệu API;
