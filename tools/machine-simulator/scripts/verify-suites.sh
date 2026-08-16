@@ -3436,18 +3436,34 @@ attribute_build_servers() {
 # soften one — reopens every assertion in this file, because it would make an unasserted measurement
 # load-bearing.
 #
-# 🔴 AND THE SIGNATURE LIST IS AN OPEN SET, WHICH IS THE POINT RATHER THAN AN APOLOGY. The record
-# this file carried listed THREE diagnostics (BG1002, CS2001, CS2012) in the voice of a complete
-# enumeration. A FOURTH then arrived — MSB3101, "cannot write state file ... being used by another
-# process", which is a WARNING, so it walks through the 0-errors gate untouched and stops the run at
-# the warning count instead. A universal claim ("these are the signatures") is only worth having if
-# something can refute it, and this one was refuted by the next measurement anybody took.
+# 🔴 AND THE SIGNATURE LIST IS AN OPEN SET — WHICH IS NOW A MEASUREMENT RATHER THAN A CAUTION. The
+# record this file carried listed THREE diagnostics (BG1002, CS2001, CS2012) in the voice of a
+# complete enumeration. A FOURTH then arrived: MSB3101, "cannot write state file ... being used by
+# another process", which is a WARNING, so it walks through the 0-errors gate untouched and stops the
+# run at the warning count instead — a different door, which is why nobody had met it.
 #
-#     LOWER BOUND: 4. DERIVATION: one member per distinct diagnostic OBSERVED on this tree with a
-#     foreign build active on the same workspace and a clean build immediately before and after.
-#     Four have been observed. The set is NOT closed and cannot be closed from here — its true
-#     membership is whatever MSBuild, Roslyn and the WPF markup pass emit when two processes contend
-#     for one output directory, and nothing on this machine can enumerate that.
+# THEN R-1 RAN ONE CONTROL — a real `dotnet build` on the same workspace, concurrent with this
+# script's own rebuild — AND THAT SINGLE RUN PRODUCED THREE MORE: MSB3030 ("could not copy the file
+# ... because it was not found"), CS0006 ("metadata file ... could not be found"), and MSB3491
+# ("could not write lines to file ... being used by another process"). The membership went 3 -> 4 ->
+# 7, and 3 of the 4 additions arrived in ONE trial. So the openness of this set is not a hedge; it
+# is the strongest thing measured about it.
+#
+#     LOWER BOUND: 7. DERIVATION: one member per distinct PRIMARY diagnostic observed on this tree
+#     with another build active on the same workspace and a clean build immediately before and
+#     after. PRIMARY means the diagnostic itself reports a file that vanished or could not be
+#     written — the direct signature of two processes contending for one output directory. The set
+#     is NOT closed and cannot be closed from here: its true membership is whatever MSBuild, Roslyn
+#     and the WPF markup pass emit under that contention, and nothing on this machine can enumerate
+#     that.
+#
+# 🔴 AND THE CASCADE IS NAMED SEPARATELY, because it is what a reader actually sees and it is
+# terrifying out of context. In that same control the top line of the error census was `190 error
+# CS0246`, with 168 CS0234, 46 CS0103, 12 CS0534 and 12 CS0012 under it — which reads as a tree that
+# has lost hundreds of symbols. It had lost NONE. All of them are downstream of ONE CS0006: a
+# reference assembly that a concurrent build deleted mid-compile, after which every type in it is
+# unresolvable. Counting a cascade as evidence of scale is how a race gets reported as a rewrite, so
+# the cascade codes are listed as derived and are deliberately NOT members of the set above.
 #
 # 🔴 SO THE VERDICT LINE BELOW DOES NOT REST ON THE LIST. It rests on the live process population,
 # which DOES close where this tool reaches: at an instant, the set of processes matching this file's
@@ -3461,12 +3477,14 @@ attribute_build_servers() {
 # for "was anything else active", so the two halves of this report check each other; if it says the
 # machine was empty and a signature is present anyway, this paragraph is WRONG and the tree is the
 # suspect again.
-FOREIGN_OBJ_RACE_CODES="BG1002 CS2001 CS2012 MSB3101"
-FOREIGN_OBJ_RACE_LOWER_BOUND=4
+FOREIGN_OBJ_RACE_CODES="BG1002 CS2001 CS2012 MSB3101 MSB3030 CS0006 MSB3491"
+FOREIGN_OBJ_RACE_LOWER_BOUND=7
+# Downstream of a member above (chiefly of CS0006), never a member itself. See the cascade note.
+FOREIGN_OBJ_RACE_CASCADE_CODES="CS0246 CS0234 CS0103 CS0534 CS0012"
 
 foreign_build_report() {
   local why="${1:?why}" census rest now_count now_pids now_posture t f n u
-  local p arrived=0 arr_pids="" entry_known=1 code found=0 hits sample
+  local p arrived=0 arr_pids="" entry_known=1 code found=0 hits sample casc holders
   echo "  ══ WAS ANOTHER BUILD TOUCHING THIS WORKSPACE? — MEASURED AT THIS EXIT, NOT GUESSED ══"
   echo "  This block asserts nothing and cannot change the verdict above. It exists because ${why},"
   echo "  and that outcome has a cause this gate can measure but never used to report."
@@ -3532,16 +3550,73 @@ foreign_build_report() {
   if [[ $found -eq 0 ]]; then
     echo "    none of the ${FOREIGN_OBJ_RACE_LOWER_BOUND} known members is present."
   fi
+  # 🔴 "CS2012 NAMES THE PROCESS" IS TRUE OF THE DIAGNOSTIC AND NOT OF EVERY INSTANCE OF IT, which
+  # the record above states universally and which R-1 measured both ways on this tree in one hour.
+  # The SDK appends "locked by <name>" only when it could resolve the handle's owner; when it could
+  # not, the message names the FILE and stops. The first draft of this block printed the header
+  # unconditionally and, on the run that could not resolve an owner, produced a 🔴 line with nothing
+  # under it -- an instrument announcing evidence it did not have, in the block whose whole subject
+  # is the difference between measuring and implying.
   if grep -q 'CS2012' "$BUILD_LOG" 2>/dev/null; then
-    echo "    🔴 START WITH CS2012: alone among these it NAMES THE PROCESS holding the file --"
-    grep -oE "locked by '[^']*'" "$BUILD_LOG" 2>/dev/null | sort -u | head -5 | sed 's/^/      /'
+    holders=$(grep -oE "locked by '[^']*'" "$BUILD_LOG" 2>/dev/null | sort -u | head -5)
+    if [[ -n "$holders" ]]; then
+      echo "    🔴 START WITH CS2012 -- on THIS run it named the process holding the file:"
+      printf '%s
+' "$holders" | sed 's/^/      /'
+    else
+      echo "    CS2012 is present and THIS log does not name a holding process: the SDK resolves the"
+      echo "    handle's owner only when it can, and here it could not. The message still names the"
+      echo "    FILE, which is the next thing to look at."
+    fi
   fi
-  echo "    THIS LIST IS OPEN, and its openness is measured rather than assumed: it stood at THREE"
-  echo "    members, stated as complete, until MSB3101 was observed passing the 0-errors gate and"
-  echo "    stopping the run at the warning count instead. LOWER BOUND ${FOREIGN_OBJ_RACE_LOWER_BOUND}, derived as one member per"
-  echo "    distinct diagnostic seen on this tree with another build active and a clean build either"
-  echo "    side of it. A red showing NONE of them is therefore not cleared by their absence -- the"
-  echo "    population block above is what decides, and this list only corroborates."
+  casc=""
+  for code in $FOREIGN_OBJ_RACE_CASCADE_CODES; do
+    hits=$(grep -c -- "$code" "$BUILD_LOG" 2>/dev/null || true)
+    [[ "${hits:-0}" == "0" ]] && continue
+    casc="${casc}${casc:+, }${code} x${hits}"
+  done
+  # 🔴 THE CASCADE NOTE IS CONDITIONAL ON A PRIMARY MEMBER BEING PRESENT, AND THAT CONDITION IS THE
+  # WHOLE SAFETY OF IT. These same codes are ALSO what an ordinary broken tree emits. Printing "do
+  # not read the largest number as the worst news" over a genuine regression would be this file
+  # talking a reader out of a real defect -- the one direction it must never fail in. So the
+  # reassurance is attached to the evidence that licenses it, and its absence is stated just as
+  # plainly.
+  if [[ -n "$casc" ]] && grep -q 'CS0006' "$BUILD_LOG" 2>/dev/null; then
+    echo "    AND THE CASCADE, WHICH IS NOT MORE EVIDENCE -- IT IS THE SAME EVIDENCE, COUNTED AGAIN:"
+    echo "      ${casc}"
+    echo "      CS0006 is present above, and that is the LINK: it names a metadata file that went"
+    echo "      missing, and every type that file declared is unresolvable afterwards. So these are"
+    echo "      downstream of it, and their SIZE says nothing about the size of the problem --"
+    echo "      measured here, ONE missing assembly produced 190 CS0246. Do not read the largest"
+    echo "      number as the worst news."
+  elif [[ -n "$casc" && $found -gt 0 ]]; then
+    echo "    RESOLUTION ERRORS AND A RACE SIGNATURE ARE BOTH PRESENT, AND THIS BLOCK CANNOT ORDER"
+    echo "    THEM:"
+    echo "      ${casc}"
+    echo "      A member above fired, so something did contend for this workspace -- but the member"
+    echo "      that fired does not name a missing metadata file (CS0006 is the one that does), so"
+    echo "      nothing here links these resolution errors to it. They may be downstream of the"
+    echo "      contention or they may be the tree's own. 🔴 Measured, R-1: this exact combination"
+    echo "      was produced with a deliberately broken source file AND a genuinely locked state"
+    echo "      file, where the two had NO causal relation at all -- which is why this arm exists"
+    echo "      rather than the confident sentence that used to stand here."
+  elif [[ -n "$casc" ]]; then
+    echo "    RESOLUTION ERRORS ARE PRESENT AND NO RACE SIGNATURE IS:"
+    echo "      ${casc}"
+    echo "      These codes appear BOTH downstream of a vanished reference assembly AND in an"
+    echo "      ordinarily broken tree, and on this run nothing above licenses the first reading."
+    echo "      🔴 So read them as the TREE'S. This gate will not talk you out of a real regression"
+    echo "      on the strength of a population reading that came back empty."
+  fi
+  echo "    THIS LIST IS OPEN, and its openness is MEASURED rather than assumed: it stood at THREE"
+  echo "    members, stated as complete, until MSB3101 was found passing the 0-errors gate and"
+  echo "    stopping the run at the warning count instead -- and then ONE control run with a real"
+  echo "    concurrent build added THREE more (MSB3030, CS0006, MSB3491). 3 -> 4 -> ${FOREIGN_OBJ_RACE_LOWER_BOUND}."
+  echo "    LOWER BOUND ${FOREIGN_OBJ_RACE_LOWER_BOUND}, derived as one member per distinct PRIMARY diagnostic seen on this"
+  echo "    tree with another build active and a clean build either side of it, where PRIMARY means"
+  echo "    the diagnostic itself names a file that vanished or could not be written."
+  echo "    A red showing NONE of them is therefore not cleared by their absence -- the population"
+  echo "    block above is what decides, and this list only corroborates."
   echo "    Full build log: $BUILD_LOG"
 }
 
@@ -3677,6 +3752,13 @@ MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo > "$BUILD_LOG" 2>&1 |
 # the resident `/nodeReuse:true` populations the build-node gate below reports. Same root cause,
 # different gate. THE TREE WAS FINE in every case.
 #
+# 🔴 R-1 NARROWED THE NEXT SENTENCE, AND THE NARROWING IS A MEASUREMENT. "CS2012 names the process" is
+# true of the DIAGNOSTIC and not of every INSTANCE of it: the SDK appends "locked by <name>" only when it
+# could resolve the handle's owner, and R-1 saw it both ways on this tree inside one hour -- once naming
+# `VBCSCompiler`, once naming only the file. The runnable block at the two build-phase exits below prints
+# the holder when the log carries one and says the log does not carry one when it does not; it no longer
+# announces a name it has not got. The sentence below is kept as written because it is the record of what
+# was believed, and this is the correction to it.
 # 🔴 START WITH CS2012 IF YOU SEE IT: alone among the three it NAMES THE PROCESS holding the file. The
 # other two only tell you a file vanished, which reads like a broken tree and is not one. Note also
 # that BG1002 and CS2001 did NOT reproduce on demand -- the CLASS did, every time, by simply running a
