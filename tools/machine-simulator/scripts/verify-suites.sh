@@ -2466,6 +2466,16 @@ LOGDIR="${TMPDIR:-/tmp}/st4i-verify-$$"
 #             perturbed by all of them. That gap is not closed here and it is not closeable by a
 #             lock: what closes it is the measurement at the failure exits below, which reads the
 #             live population instead of assuming exclusivity bought it.
+#
+# 🔴 WHY NOT WIDEN IT TO A MACHINE-WIDE LOCATION, stated properly because the first version of this
+# paragraph leaned on the task's constraints and that is the weaker argument (review, Minor 5). The
+# constraint bars deleting or cleaning under `%ProgramData%\ST4I\`; it does not bar a lock elsewhere.
+# The real objection is that widening the domain widens the WEDGE. A per-user lock left by a holder
+# this gate cannot adjudicate is removable by the person whose gate it is blocking. A machine-wide
+# lock published by one account is, by default ACL, NOT removable by another -- so the failure mode
+# of the wider design is "user B cannot run the gate at all, and cannot fix it either", which is
+# strictly worse than the coverage it buys. The narrow lock fails toward a nuisance one person can
+# clear; the wide lock fails toward an obstruction that needs an administrator.
 # The honest summary is that this lock closes SELF-collision, which is the only collision it can
 # observe, and the build-server census closes nothing but reports everything.
 #
@@ -2514,13 +2524,34 @@ gate_self_lineage() {
   printf '%s' "$acc"
 }
 
-# "ALIVE <name> <creation instant>" or "GONE". EMPTY MEANS CANNOT TELL and never means GONE — the
-# same rule the CPU detector, the settle poll and the credential bracket each state for themselves.
-# The filter is an exact process id: this query has no search in it, which is the §8.1(f) argument
-# above expressed as code rather than as a paragraph.
+# "ALIVE <name> <creation instant>", "GONE", or "UNPARSEABLE". EMPTY MEANS CANNOT TELL and never
+# means GONE — the same rule the CPU detector, the settle poll and the credential bracket each state
+# for themselves. The filter is an exact process id: this query has no search in it, which is the
+# §8.1(f) argument above expressed as code rather than as a paragraph.
+#
+# 🔴 THE INSTANT IS UTC TICKS, AND THE OBVIOUS RENDERING WAS WRONG IN THE DIRECTION THAT ACTS
+# (review, Critical 3). This used to return `CreationDate.ToString('o')`. MEASURED on this machine:
+# `CreationDate.Kind` is **Local**, and `'o'` renders the CURRENT offset —
+#     local   2026-08-17T00:05:11.6211420+07:00
+#     utc     2026-08-16T17:05:11.6211420Z
+# So a timezone or DST change between the moment a holder published its instant and the moment the
+# next run reads it produces A DIFFERENT STRING FOR THE SAME LIVE PROCESS. The pair check then fires,
+# the gate calls a live run a corpse, seizes its lock, and runs [1/3]'s name-wide taskkill through its
+# test hosts. That is destroy-instead-of-refuse, reintroduced by the discriminator built to end it —
+# and it was not found by any control, because no control changes the clock. Ticks on the UTC instant
+# have no offset to render and no format to disagree about.
+#
+# 🔴 AND THE ID IS VALIDATED BEFORE IT IS SPLICED, which closes a second hole in the same call. The id
+# arrives from a FILE. MEASURED: `ProcessId=abc` makes the query error, `-ErrorAction
+# SilentlyContinue` turns that into `$null`, and the caller read it as **GONE** — "cannot parse"
+# arriving as "dead", on the one path where "dead" authorises a seizure. That is the fail-quiet shape
+# the third-state work has just spent a round removing, rebuilt here by an omitted guard. A
+# non-numeric id is now its own answer and is never a statement about liveness.
 gate_process_identity() {
+  local pid="${1:?pid}"
+  case "$pid" in ''|*[!0-9]*) printf 'UNPARSEABLE'; return 0 ;; esac
   powershell -NoProfile -NonInteractive -Command \
-    "\$p = Get-CimInstance Win32_Process -Filter \"ProcessId=${1:?pid}\" -ErrorAction SilentlyContinue; if (\$null -ne \$p) { 'ALIVE {0} {1}' -f \$p.Name, \$p.CreationDate.ToString('o') } else { 'GONE' }" \
+    "\$p = Get-CimInstance Win32_Process -Filter \"ProcessId=${pid}\" -ErrorAction SilentlyContinue; if (\$null -ne \$p) { 'ALIVE {0} {1}' -f \$p.Name, \$p.CreationDate.ToUniversalTime().Ticks } else { 'GONE' }" \
     2>/dev/null | tr -d '\r' | head -1
 }
 
@@ -2530,24 +2561,55 @@ gate_lock_field() { sed -n "s/^${1:?field}=//p" "$GATE_LOCK_DIR/holder" 2>/dev/n
 # that its one PASS/FAIL line describes the tree. Borrowed from mutate-guard.sh, which spends exit 3
 # on exactly this distinction ("NO-VERDICT"). A caller that treats any non-zero as "the tests failed"
 # is wrong here, and the text says so rather than leaving it to the exit code to imply.
+# 🔴 THE HEADLINE AND THE REMEDY ARE PER-CALLER, AND THE FIRST DRAFT'S WERE UNIVERSAL — found by
+# WALKING the cannot-parse branch, which the round before had only named. Three states reach this
+# function and only ONE of them is "another run is already measuring this machine": the other two
+# are "this run cannot tell whether one is". Printing the certain headline over the uncertain states
+# is limb 5 again, and the remedy was worse than the headline. "There is nothing to clean up by
+# hand" is TRUE when a live holder was measured (wait, and it releases) and FALSE for a record this
+# version cannot parse — no future run can adjudicate that record either, so the advice promised a
+# self-healing that would never arrive and left the gate wedged with a reassuring sentence. Each
+# caller now supplies what its own state licenses: $1 the reason, $2 the remedy, $3 whether a live
+# holder was actually established.
 gate_lock_refuse() {
-  echo "REFUSED: another run of this gate is already measuring this machine."
-  echo "  $1"
+  local reason="${1:?reason}" remedy="${2:?remedy}" holder_alive="${3:-no}"
+  if [[ "$holder_alive" == "yes" ]]; then
+    echo "REFUSED: another run of this gate is already measuring this machine."
+  else
+    echo "REFUSED: this run cannot establish that it is the only thing measuring this machine."
+  fi
+  echo "  $reason"
   echo "  holder ... pid $(gate_lock_field winpid), ${_gl_holder_name:-<name unread>}, started $(gate_lock_field started) UTC"
   echo "             from $(gate_lock_field tree)"
   echo "             its logs: $(gate_lock_field logdir)"
   echo "  lock ..... $GATE_LOCK_DIR"
   echo "  this run . pid ${GATE_SELF_WINPID:-<unknown>} (lineage ${GATE_SELF_LINEAGE:-<unknown>}) -- NOT the holder"
+  # 🔴 "STOPPED BEFORE ITS FIRST ACTION" IS PRINTED ONLY WHEN IT IS TRUE (review, Important 3,
+  # second half). A run can seize one corpse and then be refused by the live holder that published
+  # next; on that path this run HAS acted -- it removed a lock directory. The claim is therefore
+  # made from the counter rather than from the shape of the code.
+  if [[ ${_gl_seizures:-0} -eq 0 ]]; then
   echo "  🔴 NOTHING WAS KILLED AND NOTHING WAS MEASURED. This run stopped before its first action, so"
-  echo "     the other run's test hosts, build servers and log directory are exactly as they were."
+  echo "     whatever holds that lock still has its test hosts, build servers and log directory"
+  echo "     exactly as they were."
+  else
+  echo "  🔴 NOTHING WAS KILLED, AND NOTHING WAS MEASURED ABOUT THE TREE. This run did remove"
+  echo "     ${_gl_seizures} lock director(ies) whose holders it had measured as gone. It ran no build and no"
+  echo "     suite, and whatever holds the lock named above still has its test hosts, build servers"
+  echo "     and log directory exactly as they were."
+  fi
   echo "     That is the entire point: the old conduct here was to kill every test host on the machine"
   echo "     by name and read the wreckage, which produced an ABORTED suite on a healthy tree and, in"
   echo "     one measured session, three log directories in twenty-seven minutes and a suite log"
   echo "     truncated at 221 bytes."
-  echo "  🔴 A PASS FROM A RACED RUN IS EXACTLY AS WORTHLESS AS A FAIL, so do not go read the other"
-  echo "     run's number instead. Wait for it to finish, then run one gate."
-  echo "  If you are certain no gate is running, the holder above is what to check first; remove the"
-  echo "  lock directory only after you have established that process does not exist."
+  echo "  🔴 A PASS FROM A RACED RUN IS EXACTLY AS WORTHLESS AS A FAIL, so do not go looking for"
+  echo "     another gate's number to read instead of this one."
+  # 🔴 THE BLANKET ADVICE TO REMOVE THE LOCK BY HAND IS GONE (review, Minor 6) — where a live holder
+  # was measured, removing it by hand is the ONE action on this machine that destroys a live run's
+  # lock, and an instrument does not close by recommending the thing it exists to prevent. Where no
+  # live holder was established, the opposite is true and saying "nothing to clean up" would wedge
+  # the gate forever. So the remedy comes from the caller and never from here.
+  echo "  $remedy"
   echo "  This is NOT a verdict about the tree: no build ran, no suite ran, exit 3."
   exit 3
 }
@@ -2560,15 +2622,28 @@ gate_lock_refuse() {
 # about, committed inside the message announcing a fix for it. So what is true of EVERY seizure is
 # stated once, here; what is true of ONE branch is supplied by that branch and nowhere else.
 gate_lock_seize() {
-  local why="${1:?why}" evidence="${2:?evidence}"
+  local why="${1:?why}" evidence="${2:?evidence}" staging
   echo "  seizing the exclusive-run lock: ${why}"
-  echo "    lock was: pid $(gate_lock_field winpid) ${_gl_holder_name:-} created $(gate_lock_field created), started $(gate_lock_field started) UTC"
+  echo "    lock was: pid $(gate_lock_field winpid) ${_gl_holder_name:-} created $(gate_lock_field created) (UTC ticks = $(gate_lock_field createdUtc)), started $(gate_lock_field started) UTC"
   echo "    ${evidence}"
-  echo "    NOTHING WAS KILLED to take this lock, and NO LIVE RUN'S LOCK WAS REMOVED. The reason is"
-  echo "    printed above and was measured on the process itself -- never inferred from the lock's"
-  echo "    AGE, which is the one property a lock left by a power loss and a lock held by a healthy"
-  echo "    run have in common. Orphan test hosts left behind are cleaned by [1/3] below."
-  rm -rf "$GATE_LOCK_DIR" 2>/dev/null
+  echo "    NOTHING WAS KILLED to take this lock, and NO LIVE RUN'S LOCK WAS REMOVED. Every arm that"
+  echo "    reaches this point has first asked Windows about that exact process id -- the reason is"
+  echo "    printed above and is never inferred from the lock's AGE, which is the one property a lock"
+  echo "    left by a power loss and a lock held by a healthy run have in common."
+  echo "    Orphan test hosts left behind are cleaned by [1/3] below."
+  # 🔴 REMOVED THE WAY IT IS PUBLISHED, WHICH THE FIRST DRAFT DID NOT DO (review, Important 4). This
+  # was `rm -rf "$GATE_LOCK_DIR"`, which passes through unlink(holder) then rmdir(dir) -- so between
+  # those two syscalls the published lock exists WITH NO HOLDER RECORD. That is precisely the state
+  # the publication note calls "not a state this design can produce", and whose handler refuses with
+  # a message saying so. The branch labelled unreachable was reachable by this file's own cleanup,
+  # and a rival starting inside that window got a spurious REFUSED. `mv -T` out first, then delete:
+  # the lock disappears in ONE operation, exactly as `gate_lock_release` already did it. The two
+  # removal paths now have one shape, which is also why a later reader cannot fix one and miss the
+  # other -- the drift this file has paid for at the process matcher.
+  staging="$GATE_LOCK_BASE/.seized-$$-${_gl_seizures}"
+  rm -rf "$staging" 2>/dev/null
+  mv -T "$GATE_LOCK_DIR" "$staging" 2>/dev/null && rm -rf "$staging" 2>/dev/null
+  _gl_seizures=$((_gl_seizures + 1))
 }
 
 gate_lock_acquire() {
@@ -2576,21 +2651,29 @@ gate_lock_acquire() {
   GATE_SELF_WINPID=$(cat "/proc/$$/winpid" 2>/dev/null)
   GATE_SELF_LINEAGE=$(gate_self_lineage)
   if [[ -z "$GATE_SELF_WINPID" ]]; then
-    echo "FAIL: this run cannot read its own Windows process id (/proc/$$/winpid)."
+    # 🔴 EXIT 3, NOT 1 (review, Important 8). This is not a verdict about the tree -- no build ran
+    # and no suite ran -- which is the exact distinction this task minted `exit 3` for two functions
+    # below. A `FAIL:` headline here is read as "the tests failed" by every caller that greps for it.
+    echo "NO-VERDICT: this run cannot read its own Windows process id (/proc/$$/winpid)."
     echo "  The lock records WHO holds it, and a holder that cannot name itself cannot be shown to be"
     echo "  dead by the run that comes after it -- it would wedge this gate until a human intervened."
     echo "  Failing closed rather than publishing a lock nobody can adjudicate."
-    exit 1
+    echo "  Nothing about the tree was measured. exit 3."
+    exit 3
   fi
   ident=$(gate_process_identity "$GATE_SELF_WINPID")
   state="${ident%% *}"
   if [[ "$state" != "ALIVE" ]]; then
-    echo "FAIL: Windows would not describe this run's own process (pid ${GATE_SELF_WINPID})."
+    echo "NO-VERDICT: Windows would not describe this run's own process (pid ${GATE_SELF_WINPID})."
     echo "  The query answered: '${ident:-<nothing>}'. An empty answer is 'cannot tell', which this"
     echo "  file never reads as a healthy one."
     echo "  Without an identity there is no lock to publish, and without a lock this gate cannot say"
-    echo "  it is the only thing measuring this machine. Nothing was built and no suite ran."
-    exit 1
+    echo "  it is the only thing measuring this machine."
+    echo "  🔴 THIS CHANGES WHICH RUNS GO GREEN: NONE. A machine whose PowerShell cannot answer was"
+    echo "  already certain to fail -- build_node_sample returns empty, the settle poll never settles,"
+    echo "  and the run FAILs there. This is that same doomed run failing minutes earlier with a"
+    echo "  message that names the cause. It is not a verdict about the tree. exit 3."
+    exit 3
   fi
   ident="${ident#ALIVE }"
   name="${ident%% *}"
@@ -2598,9 +2681,10 @@ gate_lock_acquire() {
   GATE_LOCK_TOKEN="${GATE_SELF_WINPID}@${created}"
 
   if ! mkdir -p "$GATE_LOCK_BASE" 2>/dev/null; then
-    echo "FAIL: cannot create the lock directory's parent: $GATE_LOCK_BASE"
+    echo "NO-VERDICT: cannot create the lock directory's parent: $GATE_LOCK_BASE"
     echo "  Fix TMPDIR (currently '${TMPDIR:-/tmp}'); do not run the gate without exclusivity."
-    exit 1
+    echo "  Nothing about the tree was measured. exit 3."
+    exit 3
   fi
 
   # Three attempts, not a poll: an attempt is only spent when a corpse was seized, and a corpse can
@@ -2610,8 +2694,9 @@ gate_lock_acquire() {
     staging="$GATE_LOCK_BASE/.claim-$$-$attempt"
     rm -rf "$staging" 2>/dev/null
     if ! mkdir -p "$staging" 2>/dev/null; then
-      echo "FAIL: cannot build a lock record under $GATE_LOCK_BASE"
-      exit 1
+      echo "NO-VERDICT: cannot build a lock record under $GATE_LOCK_BASE"
+      echo "  Nothing about the tree was measured. exit 3."
+      exit 3
     fi
     if ! {
       printf 'winpid=%s\n'  "$GATE_SELF_WINPID"
@@ -2624,9 +2709,10 @@ gate_lock_acquire() {
       printf 'msyspid=%s\n' "$$"
       printf 'lineage=%s\n' "$GATE_SELF_LINEAGE"
     } > "$staging/holder" 2>/dev/null; then
-      echo "FAIL: could not write this run's lock record to $staging/holder"
+      echo "NO-VERDICT: could not write this run's lock record to $staging/holder"
+      echo "  Nothing about the tree was measured. exit 3."
       rm -rf "$staging" 2>/dev/null
-      exit 1
+      exit 3
     fi
 
     # The publication. Succeeds only when no lock is published; never overwrites a published one.
@@ -2638,42 +2724,95 @@ gate_lock_acquire() {
     h_pid=$(gate_lock_field winpid)
     h_created=$(gate_lock_field created)
     _gl_holder_name=$(gate_lock_field name)
+    # 🔴 A FIELD THAT CANNOT BE PARSED IS NOT A DEAD HOLDER (review, Important 2). Both fields are
+    # numeric by construction -- a Windows process id and a UTC tick count -- so anything else means
+    # the record was not written by this version of this file, or was corrupted, or was edited by
+    # hand. Every one of those is "cannot tell", and "cannot tell" refuses. The `-z` guard alone let a
+    # NON-NUMERIC id reach the process query, where `-ErrorAction SilentlyContinue` turned the WQL
+    # error into `$null` and the caller read it as GONE -- measured, `ProcessId=abc` -> GONE. That is
+    # "cannot parse" arriving as "dead" on the one path where "dead" authorises a SEIZURE, which is
+    # the fail-quiet shape the third-state work has just spent a round removing.
+    case "$h_pid" in ''|*[!0-9]*) h_pid="" ;; esac
+    case "$h_created" in ''|*[!0-9]*) h_created="" ;; esac
     if [[ -z "$h_pid" || -z "$h_created" ]]; then
-      # Not reachable by construction (see the publication note above): a published lock carries its
-      # record at every instant it exists. Kept because "not reachable by construction" is a claim
-      # about today's code, and this file has paid twice for a branch whose first execution happened
-      # at the worst possible moment. Refusing is the safe direction: it destroys nothing.
-      gate_lock_refuse "The lock exists but names no holder, which this design cannot produce. Read it by hand before removing it."
+      # A lock with NO record is not reachable by construction (see the publication note above): a
+      # published lock carries its record at every instant it exists. A lock with an UNREADABLE
+      # record IS reachable -- by a hand edit, or by a record written by a different version of this
+      # file, which is exactly what a lock carrying the older offset-rendered `created=` would be.
+      # Both land here, and both refuse, which is the direction that destroys nothing.
+      gate_lock_refuse "Its holder record does not parse: the process id and the creation instant must both be numeric and at least one is not. That is 'cannot tell', and this gate does not seize on 'cannot tell'." \
+        "🔴 THIS ONE DOES NOT HEAL ITSELF, which is why it is the only state here that asks you to act: no future run can adjudicate a record it cannot read either, so the gate stays refused until the lock is removed. Check that no gate is running (a live one prints its own pid at start-up), then remove ${GATE_LOCK_DIR}. A record in this shape was written by something other than this version of this file."
     fi
 
-    case ",${GATE_SELF_LINEAGE}," in
-      *",$h_pid,"*)
-        # §8.1(f), as code. The one input under which "the holder is alive" is true and "another run
-        # holds this" is false. Enumerated, so the reader can check the claim rather than accept it.
-        gate_lock_seize "the lock names pid $h_pid, which is in THIS RUN'S OWN process lineage (${GATE_SELF_LINEAGE})."           "This is a RECORD LEFT BEHIND, not a second run. The named process IS alive -- and it is an ancestor of this one, so it is this run rather than a rival to it. A process cannot be a second run of itself."
-        continue ;;
-    esac
-
+    # 🔴 THE ORDER OF THE NEXT TWO TESTS IS LOAD-BEARING AND THE FIRST DRAFT HAD IT BACKWARDS
+    # (review, Important 1 and 2). The lineage test used to run BEFORE the process query, which cost
+    # two things at once. (a) A corpse whose id had been REISSUED to one of this run's ancestors took
+    # the lineage arm and was seized with the sentence "The named process IS alive" -- an outcome
+    # that happens to be right, reached through a premise nothing had checked at that moment.
+    # (b) The shared closing text asserted that the reason "was measured on the process itself",
+    # which on that arm was false, because that arm took no measurement. Query first, then classify,
+    # and the property stops being incidental and becomes structural:
+    #
+    #     NO SEIZURE IN THIS FUNCTION IS REACHED WITHOUT A LIVE QUERY ON THAT EXACT PROCESS ID.
+    #
+    # Check it by reading: every `gate_lock_seize` below sits inside the `$h_ident` case.
     h_ident=$(gate_process_identity "$h_pid")
     h_state="${h_ident%% *}"
     case "$h_state" in
       GONE)
-        gate_lock_seize "no process with id $h_pid exists on this machine."           "This is a CORPSE, not a run: the recorded process is gone, so nothing is holding this lock."
+        gate_lock_seize "no process with id $h_pid exists on this machine." "This is a CORPSE, not a run: the recorded process is gone, so nothing is holding this lock."
         continue ;;
       ALIVE)
         h_now="${h_ident##* }"
         if [[ "$h_now" != "$h_created" ]]; then
-          gate_lock_seize "a process with id $h_pid exists but was created at $h_now, not at the recorded $h_created."             "This is a CORPSE, not a run: the id was reissued to a later process, so the holder itself is gone. The id alone would have said 'alive' here; the creation instant is what refutes it."
+          gate_lock_seize "a process with id $h_pid exists but was created at $h_now, not at the recorded $h_created (UTC ticks)." "This is a CORPSE, not a run: the id was reissued to a later process, so the holder itself is gone. The id ALONE would have said 'alive' here; the creation instant is what refutes it."
           continue
         fi
-        gate_lock_refuse "Its process is ALIVE: id and creation instant both match what it recorded."
+        # §8.1(f) as code, now reached only with the identity confirmed. This is the one input under
+        # which "the holder is alive" is TRUE and "another run holds this" is FALSE. The lineage is
+        # enumerated in the message so a reader can check the claim rather than accept it.
+        case ",${GATE_SELF_LINEAGE}," in
+          *",$h_pid,"*)
+            gate_lock_seize "the lock names pid $h_pid, which is in THIS RUN'S OWN process lineage (${GATE_SELF_LINEAGE})." "This is a RECORD LEFT BEHIND, not a second run. That process was just measured ALIVE at the recorded creation instant -- and it is an ancestor of this one, so it is this run rather than a rival to it. A process cannot be a second run of itself."
+            continue ;;
+        esac
+        gate_lock_refuse "Its process is ALIVE: id and creation instant both match what it recorded." \
+          "There is nothing to clean up by hand, and doing so here is the one action that can destroy a live run's lock. Wait for that run to finish -- it releases the lock itself -- then run one gate." \
+          yes
+        ;;
+      UNPARSEABLE)
+        # Unreachable today: the field guard above already refused a non-numeric id. Handled anyway,
+        # because "unreachable by construction" is a claim about today's arrangement of two adjacent
+        # guards, and this file has paid for a branch whose first execution came at the worst moment.
+        gate_lock_refuse "Its recorded process id could not be used to ask Windows anything. 'Cannot tell' is not 'dead'." \
+          "Fix the process query, then re-run: if that holder is alive this run must not start, and if it is gone the next run will measure it gone and take the lock by itself."
         ;;
       *)
-        gate_lock_refuse "Whether its process still exists CANNOT BE READ (the process query answered '${h_ident:-<nothing>}'). 'Cannot tell' is not 'dead', and this gate will not take a lock it cannot prove is free."
+        gate_lock_refuse "Whether its process still exists CANNOT BE READ (the process query answered '${h_ident:-<nothing>}'). 'Cannot tell' is not 'dead', and this gate will not take a lock it cannot prove is free." \
+          "Fix the process query (PowerShell absent, refusing, or hung), then re-run: if that holder is alive this run must not start, and if it is gone the next run will measure it gone and take the lock by itself."
         ;;
     esac
   done
-  gate_lock_refuse "Three published locks in a row were seized as corpses and a fourth appeared. Something is publishing locks faster than they can be adjudicated; stop it before running a gate."
+  # 🔴 THIS USED TO REPORT AN OBSERVATION THE LOOP NEVER MAKES (review, Important 3). It said "a
+  # fourth appeared" -- but the loop ends on its COUNTER, having never attempted a fourth
+  # publication, so no fourth lock was ever seen. It then printed the holder's fields, read from a
+  # directory the last seizure had just removed, so every one of them was empty; and it closed with
+  # "this run stopped before its first action" after three removals. Three false clauses on one
+  # path, in the file whose whole subject is published sentences the run itself refutes. What is
+  # said now is what the counter knows and nothing beyond it.
+  echo "REFUSED: this run could not obtain the exclusive-run lock, and stopped rather than keep trying."
+  echo "  It adjudicated and removed ${_gl_seizures} lock(s) whose holders it had measured as gone, and each time"
+  echo "  another lock had already been published before it could take one."
+  echo "  The bound is on ATTEMPTS, not on time: there is no sleep in this mechanism and this run did"
+  echo "  not wait. Something on this machine is publishing gate locks faster than they can be"
+  echo "  adjudicated -- that is what to go and stop."
+  echo "  lock ..... $GATE_LOCK_DIR"
+  echo "  this run . pid ${GATE_SELF_WINPID:-<unknown>} (lineage ${GATE_SELF_LINEAGE:-<unknown>})"
+  echo "  🔴 WHAT THIS RUN DID DO, stated because the other refusal path can truthfully say it did"
+  echo "     nothing and this one cannot: it removed ${_gl_seizures} lock director(ies). It killed no process,"
+  echo "     ran no build, ran no suite, and measured nothing whatever about the tree."
+  echo "  This is NOT a verdict about the tree, exit 3."
+  exit 3
 }
 
 # 🔴 RELEASES ONLY WHAT IT STILL HOLDS. If the record on disk no longer carries this run's token then
@@ -2698,6 +2837,7 @@ gate_lock_release() {
 }
 
 _gl_holder_name=""
+_gl_seizures=0
 gate_lock_acquire
 # Armed the instant the lock is held and never before: a run that was REFUSED must not run a cleanup
 # path, because everything it could clean belongs to the run that refused it.
@@ -2952,8 +3092,20 @@ creds_bracket_text() {
 # status this trap propagates. Whoever adds a third EXIT trap to this file owns both of these.
 creds_bracket_trap() {
   local rc=$?
+  # 🔴 THE RELEASE HAPPENS AFTER THE BRACKET'S CLOSING SNAPSHOT, AND THE ORDER IS THE WHOLE POINT
+  # (review, Minor 1). The first draft released the lock FIRST. The credential bracket is a
+  # comparison between two instants, and the second instant is taken inside `creds_bracket_eval`
+  # below -- so releasing before it opens a window in which the NEXT run may already have started
+  # and be writing into the real credential root that this run is still about to measure. An entry
+  # it created would land in this run's AFTER set and be reported as this run's leak. The lock is
+  # what makes the bracket's two instants belong to one run; giving it up early gives that up.
+  # `creds_bracket_eval` is memoised, so calling it here is the same evaluation gate 3 may already
+  # have made, never a second snapshot.
+  local _cb_ok=0
+  creds_bracket_eval && _cb_ok=1
+  [[ $CREDS_REPORTED -eq 1 ]] && _cb_ok=1
   gate_lock_release
-  if creds_bracket_eval || [[ $CREDS_REPORTED -eq 1 ]]; then
+  if [[ $_cb_ok -eq 1 ]]; then
     exit "$rc"
   fi
   echo "FAIL (credential bracket):"
@@ -3051,7 +3203,12 @@ BUILD_SERVER_WHERE="Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe' OR
 #
 # 🔴 A THIRD LIMIT, STATED HERE WITH THE OTHER TWO RATHER THAN IN A REPORT (P-1 fix round 2). NONE of
 # this file's PowerShell call sites carries a timeout -- not this census, not `build_node_sample`, not
-# `testhost_cpu_seconds`. A PowerShell that HANGS rather than failing is therefore not "unreadable", it
+# `testhost_cpu_seconds`, not `build_server_parentage`, and -- added by R-1, which is the one that
+# changes the exposure -- not `gate_process_identity`, WHICH IS NOW THE FIRST THING EVERY RUN DOES.
+# A `powershell` that hangs there wedges the gate before it has printed anything at all, where the
+# older sites at least hung after some output. Same pre-existing class, worse position, unfixed here
+# for the reason the paragraph below gives: a timeout changes what "unreadable" MEANS to an
+# assertion, so it is a new mechanism needing its own control pair. A PowerShell that HANGS rather than failing is therefore not "unreadable", it
 # is "not yet answered", and it stalls whatever is waiting on it. That is a PRE-EXISTING class and it is
 # deliberately not fixed here: a timeout changes what "unreadable" MEANS to the settle poll, which is an
 # assertion, so it is a new mechanism that needs its own control pair and its own task. Recorded in the
@@ -3133,9 +3290,16 @@ report_build_server_parents() {
   echo "      A LIVE parent means the spawner is still running: waiting does not help, stopping it does."
   echo "      A GONE parent means the spawner has exited and its nodes outlived it: the population will"
   echo "      not grow again on its own, and 'dotnet build-server shutdown' on an idle machine clears it."
-  echo "      🔴 This gate does NOT act on either. It does not kill a process it did not start -- naming"
-  echo "      the culprit and executing it are different powers, and only the first one is safe to give"
-  echo "      an unattended checker."
+  echo "      🔴 This gate does NOT act on either: it never kills a BUILD SERVER it did not start."
+  echo "      Naming a culprit and executing it are different powers, and only the first is safe to"
+  echo "      give an unattended checker."
+  echo "      🔴 SCOPED DELIBERATELY, BECAUSE THE WIDER SENTENCE WAS FALSE AND THIS RUN REFUTES IT."
+  echo "      This block is only ever reached AFTER [1/3], which has already run a name-wide kill on"
+  echo "      testhost.exe and vstest.console.exe -- so a test host started by hand or by an IDE is"
+  echo "      already dead by the time you read this line. That kill is deliberate, it is what reaps"
+  echo "      the hosts of a run that DIED, and its residual reach is declared at the line that does"
+  echo "      it. What is claimed here is the narrow thing that is true: the build-server population"
+  echo "      named above is measured and never touched."
 }
 
 # ══ THE SHUTDOWN, WITH ITS EVIDENCE KEPT (task P-1) ═════════════════════════════════════════════
@@ -3422,12 +3586,35 @@ attribute_build_servers() {
 # arriving through the door marked "diagnosis" instead of the one marked "verdict".
 #
 # The condition is another build writing the same `obj` tree while this script's `-t:Rebuild` runs.
-# It is not exotic here and it is not the operator being careless: this script's own rebuild rewrites
-# every output directory in the tree, and a project-system build host watching that tree responds by
-# building. MEASURED, R-1: the gate's rebuild ran on a machine holding ZERO build servers, and came
-# out the other side with nine resident nodes carrying a flag this script never passes, all nine
-# sharing one live parent — the editor's build host. So "clean the machine first and then run" is not
-# a remedy that exists; the foreign build is CAUSED BY the window it then corrupts.
+#
+# WHAT IS MEASURED, R-1, and it is TWO things rather than three: the gate's rebuild ran on a machine
+# holding ZERO build servers and came out the other side with NINE resident nodes carrying a flag
+# this script never passes, all nine created inside the build window, all nine sharing ONE live
+# parent, and that parent resolved to the editor's project-system build host. That is ARRIVAL (when
+# they appeared) and ATTRIBUTION (who started them). Both are new, both are solid, and both are
+# exactly what the axes below report.
+#
+# 🔴 THE THIRD THING IS NOT MEASURED, THE FIRST DRAFT OF THIS PARAGRAPH ASSERTED IT AS FACT, AND IT
+# IS NOW REFUTED RATHER THAN MERELY UNSUPPORTED. The draft said the foreign build was CAUSED BY this
+# script's rebuild. Nine nodes appearing during the window is CO-OCCURRENCE, which is the identical
+# inference a control killed one function below ("these are downstream of it") -- the rule this file
+# bought there, not applied to this file's own headline. Both arms were then run:
+#
+#   * ISOLATING ARM -- build host alive (two pids, recorded), a 120 s window, no gate rebuild:
+#     build-server population read 0 at all seven readings. So the host is not building on a
+#     schedule of its own, and the arrival above was not simply the clock.
+#   * THE ARM THAT DECIDES IT -- build host alive AND VERIFIED ALIVE ON BOTH SIDES OF EVERY TRIAL
+#     (the same two pids before and after each), three consecutive rebuilds under this script's
+#     exact posture: 0 -> 1 every time, and the 1 is this script's own VBCSCompiler. ZERO
+#     /nodeReuse:true nodes, three times out of three, WITH THE ALLEGED PROVOKER DEMONSTRABLY
+#     RUNNING.
+#
+# A rebuild that provokes that host would have provoked it there. So the causal claim is WRONG, and
+# it is withdrawn rather than softened. What the nine nodes witness is the thing that actually
+# matters here and needs no causation at all: A FOREIGN BUILD CAN ARRIVE INSIDE THIS SCRIPT'S BUILD
+# WINDOW ON A MACHINE THAT WAS EMPTY WHEN THE RUN STARTED. That is enough to make "clean the machine
+# first and then run" an unreliable remedy, and it is the whole justification for measuring at the
+# exits below instead of assuming.
 #
 # 🔴 WHAT THIS BLOCK ASSERTS: NOTHING. It is printed on paths that have already decided to fail, and
 # it changes no verdict, no accepted set and no threshold. Trap 9's rule ("every number is asserted
@@ -3477,6 +3664,19 @@ attribute_build_servers() {
 # for "was anything else active", so the two halves of this report check each other; if it says the
 # machine was empty and a signature is present anyway, this paragraph is WRONG and the tree is the
 # suspect again.
+# 🔴 HOW OFTEN CS0006 ARRIVES WITHOUT A RACE, MEASURED ON THIS BUILD COMMAND RATHER THAN ASSUMED,
+# because the answer changes what the cascade note below is allowed to say and it is not the obvious
+# one. The natural claim is "CS0006 is what every project emits when a project it references failed
+# to compile". On THIS gate's command -- one `dotnet build -t:Rebuild` over the whole solution --
+# that is FALSE, and R-1 measured it twice: break a referenced project outright and MSBuild does not
+# build its dependents AT ALL, so the log carries the referenced project's own compile errors
+# (CS1519/CS1002 in the trial) and ZERO CS0006. The dependents never run, so they never miss
+# anything.
+# What DOES produce it here is the file being absent when a dependent compiles ANYWAY -- measured by
+# deleting one reference assembly out of obj/ during the build: 6 x CS0006 immediately. So on this
+# command the ordinary, no-race path to CS0006 is a HALF-POPULATED obj/ tree (an interrupted build,
+# a hand-deleted bin/, a partial clean), not a plain compile error upstream. Rarer than the natural
+# claim, and still real, which is why the caveat below is a caveat and not a removal.
 FOREIGN_OBJ_RACE_CODES="BG1002 CS2001 CS2012 MSB3101 MSB3030 CS0006 MSB3491"
 FOREIGN_OBJ_RACE_LOWER_BOUND=7
 # Downstream of a member above (chiefly of CS0006), never a member itself. See the cascade note.
@@ -3511,9 +3711,11 @@ foreign_build_report() {
     if [[ "${t:-0}" -gt 0 ]]; then
       echo "  🔴 YES -- A BUILD THAT IS NOT THIS ONE IS RESIDENT ON THIS MACHINE RIGHT NOW."
       echo "    ${t} process(es) carry /nodeReuse:true. This script refuses node reuse twice (the export"
-      echo "    at the top of this file and the prefix on its build line) and every node it starts"
-      echo "    carries the opposite flag and exits with the build -- measured in both directions, and"
-      echo "    re-measured in R-1: five consecutive rebuilds under this posture left zero of them."
+      echo "    at the top of this file and the prefix on its build line) and every MSBuild WORKER NODE"
+      echo "    it starts carries the opposite flag and exits with the build -- measured in both"
+      echo "    directions, and re-measured in R-1: five consecutive rebuilds under this posture left"
+      echo "    zero of them. (Its build does leave one VBCSCompiler, which carries no /nodeReuse token"
+      echo "    at all and is counted on the third line below -- node reuse does not govern it.)"
       if [[ $entry_known -eq 1 && $arrived -gt 0 ]]; then
         echo "    ${arrived} of them (pids ${arr_pids}) were NOT here when this run started, so they were"
         echo "    STARTED WHILE THIS RUN WAS GOING -- inside the window whose result you are reading."
@@ -3561,8 +3763,7 @@ foreign_build_report() {
     holders=$(grep -oE "locked by '[^']*'" "$BUILD_LOG" 2>/dev/null | sort -u | head -5)
     if [[ -n "$holders" ]]; then
       echo "    🔴 START WITH CS2012 -- on THIS run it named the process holding the file:"
-      printf '%s
-' "$holders" | sed 's/^/      /'
+      printf '%s\n' "$holders" | sed 's/^/      /'
     else
       echo "    CS2012 is present and THIS log does not name a holding process: the SDK resolves the"
       echo "    handle's owner only when it can, and here it could not. The message still names the"
@@ -3584,11 +3785,17 @@ foreign_build_report() {
   if [[ -n "$casc" ]] && grep -q 'CS0006' "$BUILD_LOG" 2>/dev/null; then
     echo "    AND THE CASCADE, WHICH IS NOT MORE EVIDENCE -- IT IS THE SAME EVIDENCE, COUNTED AGAIN:"
     echo "      ${casc}"
-    echo "      CS0006 is present above, and that is the LINK: it names a metadata file that went"
-    echo "      missing, and every type that file declared is unresolvable afterwards. So these are"
-    echo "      downstream of it, and their SIZE says nothing about the size of the problem --"
-    echo "      measured here, ONE missing assembly produced 190 CS0246. Do not read the largest"
-    echo "      number as the worst news."
+    echo "      CS0006 names a metadata file that was not there, and every type that file declared is"
+    echo "      unresolvable afterwards, so these counts are DOWNSTREAM OF IT. That much is a fact"
+    echo "      about the compile graph and holds whatever removed the file. Their SIZE therefore says"
+    echo "      nothing about the size of the problem: measured here, ONE missing assembly produced"
+    echo "      190 CS0246."
+    echo "      🔴 AND CS0006 DOES NOT TELL YOU WHICH CAUSE. It is emitted when a contending build"
+    echo "      deletes the file mid-compile, AND -- far more often -- when the project that produces"
+    echo "      it simply FAILED TO COMPILE. This block cannot separate those and does not try. If a"
+    echo "      referenced project in the log reported its own errors, that is the ordinary reading and"
+    echo "      THE TREE IS THE SUSPECT; the count above is then a fan-out of however many real root"
+    echo "      causes there are, and one root cause is still a real defect."
   elif [[ -n "$casc" && $found -gt 0 ]]; then
     echo "    RESOLUTION ERRORS AND A RACE SIGNATURE ARE BOTH PRESENT, AND THIS BLOCK CANNOT ORDER"
     echo "    THEM:"
@@ -3617,6 +3824,12 @@ foreign_build_report() {
   echo "    the diagnostic itself names a file that vanished or could not be written."
   echo "    A red showing NONE of them is therefore not cleared by their absence -- the population"
   echo "    block above is what decides, and this list only corroborates."
+  echo "    🔴 AND THE OTHER DIRECTION, WHICH IS THE ONE THAT COULD HURT: PRESENCE IS CORROBORATION,"
+  echo "    NOT CONVICTION. CS0006 and MSB3030 both also arise with NOTHING contending for this"
+  echo "    workspace -- a half-populated obj/ tree, an interrupted build, a deleted bin/ -- because"
+  echo "    all either one reports is that a file it needed was not there. Seeing them does not"
+  echo "    establish a race and does not exonerate the tree. Absence is no acquittal; presence is no"
+  echo "    conviction; the population block is the only thing in this output that MEASURES."
   echo "    Full build log: $BUILD_LOG"
 }
 
@@ -4264,6 +4477,24 @@ for entry in "${SUITES[@]}"; do
   # 9.77s CPU, creeping ~16ms at a time. That creep is enough to reset the consecutive-flat
   # counter on every iteration, so the detector below waits on it FOREVER. A process that is
   # stopped but not idle is invisible to "is the CPU flat" by construction.
+  #
+  # 🔴 R-1 SAW THAT SAME TEST DO SOMETHING ELSE, AND IT IS RECORDED HERE BECAUSE A LIMIT THAT LIVES
+  # ONLY IN A TASK REPORT IS A LIMIT THE NEXT READER DOES NOT HAVE — this file's own rule, written
+  # by the previous task at `build_server_census` and, until this line, applied everywhere except to
+  # itself. Trap 7(d) above is about that test WEDGING. R-1 observed it FAIL outright, ONCE IN FIVE
+  # otherwise-identical gate runs, on a run whose five suite totals were all exact:
+  #     Certificate_LoadedFromStore_CanCompleteARealMutualTlsHandshake
+  #     server-side handshake threw: System.IO.IOException ... SocketException (10054):
+  #     An existing connection was forcibly closed by the remote host
+  # It performs a REAL mutual-TLS handshake over loopback, so it can lose the connection for reasons
+  # that are nothing to do with the certificate it is asserting about. Different failure mode from
+  # the wedge, so the note above does not cover it, and somebody reading `EdgeCore 1105/1106` needs
+  # to find this rather than a paragraph about a hang.
+  # WHAT THIS IS NOT: it is not a claim the test is wrong, and it is emphatically not permission to
+  # ignore it. 1 in 5 is a frequency, not a diagnosis; nobody has found the mechanism, nothing here
+  # retries it, and NO ASSERTION WAS RELAXED FOR IT — a red from this test still fails the gate. If
+  # it reddens on a run you care about, the next question is whether the handshake or the tree
+  # failed, and this note exists so that question starts from a measurement instead of a surprise.
   #
   # So the CPU heuristic gets a companion it cannot argue with: a hard wall-clock ceiling.
   # The two answer different questions -- "is it doing anything?" and "has it taken longer than
