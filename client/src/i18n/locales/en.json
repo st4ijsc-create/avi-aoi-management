@@ -18866,5 +18866,63 @@
     "qualityGateTemplates": "Quality gate templates",
     "productComparison": "Product comparison",
     "productComparisonBlurb": "Compare measurement points across models"
+  },
+  "cmdCenter": {
+    "twin": {
+      "dangChay": "Running",
+      "cho": "Idle",
+      "tamDung": "Paused",
+      "loiEStop": "Fault/E-stop",
+      "ngoaiTuyen": "Offline",
+      "khongRo": "Unknown"
+    },
+    "status": {
+      "ok": "Normal",
+      "warn": "Warning",
+      "down": "Down",
+      "idle": "Idle",
+      "unknown": "Unknown"
+    },
+    "severity": {
+      "critical": "Critical",
+      "medium": "Medium",
+      "low": "Low",
+      "info": "Info",
+      "high": "High"
+    },
+    "kind": {
+      "inspection": "Inspection",
+      "safety": "Safety",
+      "quality_gate": "Quality gate",
+      "maintenance": "Maintenance",
+      "downtime": "Downtime",
+      "task": "Task",
+      "workorder": "Work order",
+      "anomaly": "Anomaly",
+      "program": "Program",
+      "twin": "Digital twin",
+      "yield": "Yield rate",
+      "event": "Event",
+      "escalation": "Escalation",
+      "andon": "Andon"
+    },
+    "moChiTiet": "open details"
+  },
+  "masterDataEnum": {
+    "supplier_type": {
+      "component": "Component",
+      "raw_material": "Raw material",
+      "service": "Service",
+      "equipment": "Equipment",
+      "subcontractor": "Subcontractor",
+      "other": "Other"
+    },
+    "approval": {
+      "pending": "Pending approval",
+      "approved": "Approved",
+      "conditional": "Conditional",
+      "rejected": "Rejected",
+      "suspended": "Suspended"
+    }
   }
 }

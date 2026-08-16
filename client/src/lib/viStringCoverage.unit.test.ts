@@ -189,8 +189,9 @@ describe("F12 — chuỗi tiếng Việt TRẦN (cổng theo-khoá không thấy
  * 914 → 770: lọc bốn KHUÔN ĐÃ ĐÚNG ra khỏi phép đếm (xem `LA_KHUON_DUNG`) và bỏ
  * comment cuối dòng. 144 mục kia chưa bao giờ là nợ — con số 914 đã nói quá.
  * 770 → 652: F13 lô 1 — nhãn điều hướng + 6 hub đi qua `t()`, 167 khoá × 3 locale.
+ * 652 → 619: F13 lô 2 — bản đồ trạng thái/enum của CommandCenter + MasterData.
  */
-const FROZEN_SHAPE3 = 652;
+const FROZEN_SHAPE3 = 619;
 
 /**
  * Bỏ comment `//` ở CUỐI dòng. Phép bỏ comment ở trên chỉ xét ĐẦU dòng, nên

@@ -64,19 +64,21 @@ const MASTER_DATA_TABS = [
 
 // ── doc 42 Đợt 4A #3 — nhãn tiếng Việt cho enum NCC (form + bảng + phê duyệt) ──
 const SUPPLIER_TYPE_LABELS: Record<string, string> = {
-  component: "Linh kiện", raw_material: "Nguyên liệu", service: "Dịch vụ",
-  equipment: "Thiết bị", subcontractor: "Nhà thầu phụ", other: "Khác",
+  component: "masterDataEnum.supplier_type.component", raw_material: "masterDataEnum.supplier_type.raw_material", service: "masterDataEnum.supplier_type.service",
+  equipment: "masterDataEnum.supplier_type.equipment", subcontractor: "masterDataEnum.supplier_type.subcontractor", other: "masterDataEnum.supplier_type.other",
 };
 const APPROVAL_LABELS: Record<string, string> = {
-  pending: "Chờ duyệt", approved: "Đã duyệt", conditional: "Có điều kiện",
-  rejected: "Từ chối", suspended: "Tạm ngưng",
+  pending: "masterDataEnum.approval.pending", approved: "masterDataEnum.approval.approved", conditional: "masterDataEnum.approval.conditional",
+  rejected: "masterDataEnum.approval.rejected", suspended: "masterDataEnum.approval.suspended",
 };
 const APPROVAL_TONE: Record<string, "success" | "warning" | "error" | "default"> = {
   pending: "warning", approved: "success", conditional: "warning",
   rejected: "error", suspended: "error",
 };
-const SUPPLIER_TYPE_OPTIONS = Object.entries(SUPPLIER_TYPE_LABELS).map(([value, label]) => ({ value, label }));
-const APPROVAL_OPTIONS = Object.entries(APPROVAL_LABELS).map(([value, label]) => ({ value, label }));
+// Nhãn phải dịch LÚC RENDER, không lúc dựng hằng số module — hằng số chạy một lần
+// trước khi i18n sẵn sàng và không đổi khi người dùng chuyển ngôn ngữ.
+const SUPPLIER_TYPE_OPTIONS = Object.entries(SUPPLIER_TYPE_LABELS).map(([value, labelKey]) => ({ value, labelKey }));
+const APPROVAL_OPTIONS = Object.entries(APPROVAL_LABELS).map(([value, labelKey]) => ({ value, labelKey }));
 
 // ── doc 42 Đợt 4A #1 — đặc tả cột import/export (header tiếng Việt + ví dụ) ────
 const SUPPLIER_IO_COLUMNS: MasterDataColumn[] = [
@@ -575,14 +577,14 @@ function SuppliersPanel() {
   const fields: Field[] = [
     { key: "code", label: t("masterData.code"), required: true },
     { key: "name", label: t("masterData.name"), required: true },
-    { key: "type", label: t("masterData.type"), type: "select", options: SUPPLIER_TYPE_OPTIONS },
+    { key: "type", label: t("masterData.type"), type: "select", options: SUPPLIER_TYPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) })) },
     { key: "contactName", label: t("masterData.contact") },
     { key: "contactEmail", label: t("masterData.email"), type: "email" },
     { key: "contactPhone", label: t("masterData.phone", { defaultValue: "Điện thoại" }) },
     { key: "address", label: t("masterData.address", { defaultValue: "Địa chỉ" }) },
     { key: "country", label: t("masterData.country") },
     { key: "rating", label: t("masterData.rating"), type: "number" },
-    { key: "approvalStatus", label: t("masterData.approval"), type: "select", options: APPROVAL_OPTIONS },
+    { key: "approvalStatus", label: t("masterData.approval"), type: "select", options: APPROVAL_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) })) },
     { key: "corporateCode", label: t("masterData.corporateCode", { defaultValue: "Mã tập đoàn" }) },
     { key: "factoryCode", label: t("masterData.factoryCode") },
     { key: "isActive", label: t("masterData.active"), type: "bool" },
@@ -598,18 +600,18 @@ function SuppliersPanel() {
   const columns: DataTableColumn<any>[] = [
     { id: "code", header: t("masterData.code"), cell: (r) => <span className="font-mono">{r.code}</span>, sortValue: (r) => r.code, filterValue: (r) => r.code ?? "" },
     { id: "name", header: t("masterData.name"), cell: (r) => r.name, sortValue: (r) => r.name, filterValue: (r) => r.name ?? "" },
-    { id: "type", header: t("masterData.type"), cell: (r) => SUPPLIER_TYPE_LABELS[r.type] ?? r.type ?? "-", sortValue: (r) => r.type, filterValue: (r) => (SUPPLIER_TYPE_LABELS[r.type] ?? r.type ?? "") },
+    { id: "type", header: t("masterData.type"), cell: (r) => (SUPPLIER_TYPE_LABELS[r.type] ? t(SUPPLIER_TYPE_LABELS[r.type]) : r.type ?? "-"), sortValue: (r) => r.type, filterValue: (r) => (SUPPLIER_TYPE_LABELS[r.type] ? t(SUPPLIER_TYPE_LABELS[r.type]) : r.type ?? "") },
     {
       id: "approval", header: t("masterData.approval"), sortValue: (r) => r.approvalStatus,
       cell: (r) => canEdit ? (
         <Select value={r.approvalStatus ?? "pending"} onValueChange={(val) => setApproval(r, val)}>
           <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
           <SelectContent>
-            {APPROVAL_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            {APPROVAL_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{t(o.labelKey)}</SelectItem>)}
           </SelectContent>
         </Select>
       ) : (
-        <StatusBadge status={String(r.approvalStatus ?? "")} tone={APPROVAL_TONE[r.approvalStatus] ?? "default"} label={APPROVAL_LABELS[r.approvalStatus] ?? r.approvalStatus} />
+        <StatusBadge status={String(r.approvalStatus ?? "")} tone={APPROVAL_TONE[r.approvalStatus] ?? "default"} label={APPROVAL_LABELS[r.approvalStatus] ? t(APPROVAL_LABELS[r.approvalStatus]) : r.approvalStatus} />
       ),
     },
     { id: "active", header: t("masterData.active"), cell: (r) => <ActiveBadge active={r.isActive} />, sortValue: (r) => (r.isActive ? 1 : 0) },

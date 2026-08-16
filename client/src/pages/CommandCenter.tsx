@@ -119,53 +119,53 @@ const statusDotClass = (s: NodeStatus): string =>
 // có trong JSON locale nên các chuỗi thô EN bị lộ; nhãn mới đi thẳng tiếng Việt). ──
 
 /** Trạng thái node cây/lưới (title + sr). */
-const STATUS_VI: Record<NodeStatus, string> = {
-  ok: "Bình thường",
-  warn: "Cảnh báo",
-  down: "Dừng",
-  idle: "Chờ",
-  unknown: "Không rõ",
+const STATUS_KEY: Record<NodeStatus, string> = {
+  ok: "cmdCenter.status.ok",
+  warn: "cmdCenter.status.warn",
+  down: "cmdCenter.status.down",
+  idle: "cmdCenter.status.idle",
+  unknown: "cmdCenter.status.unknown",
 };
 
 /** Mức độ cảnh báo trên rail. */
-const SEVERITY_VI: Record<EcosystemSeverity, string> = {
-  critical: "Nghiêm trọng",
-  high: "Cao",
-  medium: "Trung bình",
-  low: "Thấp",
-  info: "Thông tin",
+const SEVERITY_KEY: Record<EcosystemSeverity, string> = {
+  critical: "cmdCenter.severity.critical",
+  high: "cmdCenter.severity.high",
+  medium: "cmdCenter.severity.medium",
+  low: "cmdCenter.severity.low",
+  info: "cmdCenter.severity.info",
 };
 
 /** Loại sự kiện (kind) trên rail. */
-const KIND_VI: Record<string, string> = {
-  inspection: "Kiểm tra",
-  andon: "Andon",
-  safety: "An toàn",
+const KIND_KEY: Record<string, string> = {
+  inspection: "cmdCenter.kind.inspection",
+  andon: "cmdCenter.kind.andon",
+  safety: "cmdCenter.kind.safety",
   spc: "SPC",
-  quality_gate: "Cổng chất lượng",
-  escalation: "Leo thang",
-  maintenance: "Bảo trì",
-  downtime: "Dừng máy",
+  quality_gate: "cmdCenter.kind.quality_gate",
+  escalation: "cmdCenter.kind.escalation",
+  maintenance: "cmdCenter.kind.maintenance",
+  downtime: "cmdCenter.kind.downtime",
   oee: "OEE",
-  task: "Nhiệm vụ",
-  workorder: "Lệnh SX",
-  anomaly: "Bất thường",
-  program: "Chương trình",
-  twin: "Bản sao số",
+  task: "cmdCenter.kind.task",
+  workorder: "cmdCenter.kind.workorder",
+  anomaly: "cmdCenter.kind.anomaly",
+  program: "cmdCenter.kind.program",
+  twin: "cmdCenter.kind.twin",
   ng: "NG",
-  yield: "Tỷ lệ đạt",
-  event: "Sự kiện",
+  yield: "cmdCenter.kind.yield",
+  event: "cmdCenter.kind.event",
 };
 
 /** Nhóm trạng thái twin → nhãn tiếng Việt (đồng bộ với statusHexFromTwinState). */
-function twinStateCategoryVi(state: string | null | undefined): string {
+function twinStateCategoryKey(state: string | null | undefined): string {
   switch ((state ?? "").toLowerCase()) {
-    case "running": case "execute": case "active": return "Đang chạy";
-    case "idle": return "Chờ";
-    case "stopped": case "held": case "suspended": return "Tạm dừng";
-    case "aborted": case "error": case "fault": case "estop": return "Lỗi/E-stop";
-    case "offline": return "Ngoại tuyến";
-    default: return "Không rõ";
+    case "running": case "execute": case "active": return "cmdCenter.twin.dangChay";
+    case "idle": return "cmdCenter.twin.cho";
+    case "stopped": case "held": case "suspended": return "cmdCenter.twin.tamDung";
+    case "aborted": case "error": case "fault": case "estop": return "cmdCenter.twin.loiEStop";
+    case "offline": return "cmdCenter.twin.ngoaiTuyen";
+    default: return "cmdCenter.twin.khongRo";
   }
 }
 
@@ -303,7 +303,7 @@ function TreeNode({
   onSelect: (id: string) => void;
   /** doc 68 §3.1 [P1] — lá cây (máy/robot) → mở ContextDrawer chi tiết thiết bị. */
   onOpenDevice: (node: HierarchyNode) => void;
-  t: (k: string, f: string) => string;
+  t: ReturnType<typeof useTranslation>["t"];
   /** doc67 W8 — chuỗi tìm kiếm (lowercase) để highlight đoạn khớp trong tên. */
   highlight?: string;
 }) {
@@ -377,7 +377,7 @@ function TreeNode({
         )}
 
         {/* status dot */}
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDotClass(node.status))} title={STATUS_VI[node.status]} />
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDotClass(node.status))} title={t(STATUS_KEY[node.status])} />
 
         {/* kind icon + name */}
         <span className="shrink-0 text-muted-foreground">{kindIcon(node.kind)}</span>
@@ -634,7 +634,7 @@ function StatusGridFallback({
   factory, t, onDeviceOpen,
 }: {
   factory: HierarchyNode | null;
-  t: (k: string, f: string) => string;
+  t: ReturnType<typeof useTranslation>["t"];
   onDeviceOpen?: (dev: HierarchyNode) => void;
 }) {
   if (!factory || !factory.children?.length) {
@@ -681,13 +681,13 @@ function StatusGridFallback({
                         key={dev.id}
                         type="button"
                         className={cn(chipCls, "cursor-pointer transition-colors hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}
-                        title={`${dev.name} · ${STATUS_VI[dev.status]} — mở chi tiết`}
+                        title={`${dev.name} · ${t(STATUS_KEY[dev.status])} — ${t("cmdCenter.moChiTiet", "mở chi tiết")}`}
                         onClick={() => onDeviceOpen(dev)}
                       >
                         {chipInner}
                       </button>
                     ) : (
-                      <span key={dev.id} className={chipCls} title={`${dev.name} · ${STATUS_VI[dev.status]}`}>
+                      <span key={dev.id} className={chipCls} title={`${dev.name} · ${t(STATUS_KEY[dev.status])}`}>
                         {chipInner}
                       </span>
                     );
@@ -707,7 +707,7 @@ function CenterOverview({
 }: {
   factoryNode: HierarchyNode | null;
   factoryId: number | null;
-  t: (k: string, f: string) => string;
+  t: ReturnType<typeof useTranslation>["t"];
   /** doc 68 §3.1 [P1] — mở ContextDrawer chi tiết thiết bị (khối twin / chip 2D). */
   onDeviceOpen?: (d: DrawerDevice) => void;
 }) {
@@ -770,7 +770,7 @@ function CenterOverview({
   const stateSummary = useMemo(() => {
     const byCat = new Map<string, number>();
     for (const d of devices) {
-      const cat = twinStateCategoryVi(d.state);
+      const cat = t(twinStateCategoryKey(d.state));
       byCat.set(cat, (byCat.get(cat) ?? 0) + 1);
     }
     return [...byCat.entries()].map(([cat, n]) => `${n} ${cat.toLowerCase()}`).join(", ");
@@ -1110,10 +1110,10 @@ export default function CommandCenter() {
   // Nhãn trạng thái drawer: ưu tiên state PackML (twin); fallback status roll-up (cây).
   const drawerStateLabel = drawerDevice
     ? drawerDevice.state
-      ? twinStateCategoryVi(drawerDevice.state)
+      ? t(twinStateCategoryKey(drawerDevice.state))
       : drawerDevice.status
-        ? STATUS_VI[drawerDevice.status]
-        : "Không rõ"
+        ? t(STATUS_KEY[drawerDevice.status])
+        : t("cmdCenter.status.unknown")
     : "";
 
   // Cockpit = CTA bước-2 trong drawer (thay điều-hướng-ngay cũ ở nút cây). U3 routes.
@@ -1135,15 +1135,15 @@ export default function CommandCenter() {
   const renderAlarmRow = (a: AlarmRow, backlog: boolean) => {
     const clickable = a.scope?.machineId != null || a.scope?.robotId != null || a.kind === "andon" || a.kind === "safety";
     const backlogDays = Math.max(1, Math.floor((now - a.ts) / DAY_MS));
-    // W4 (doc 67): nhãn severity/kind tiếng Việt (SEVERITY_VI/KIND_VI).
+    // W4 (doc 67): nhãn severity/kind tiếng Việt (SEVERITY_KEY/KIND_KEY).
     // doc 68 §3.1 [P1]: thẻ COMPACT 2 dòng — dòng 1 mức độ/loại/tồn-đọng/thời gian,
     // dòng 2 tiêu đề (truncate) + tham chiếu máy/robot inline (bỏ dòng nguồn riêng;
     // "loại" đã ở badge dòng 1) để dải cảnh báo gọn hơn.
     const inner = (
       <>
         <div className="flex items-center gap-1.5">
-          <StatusBadge status={a.severity} label={SEVERITY_VI[a.severity]} tone={severityTone(a.severity)} className="px-1 py-0 text-[10px]" />
-          <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">{KIND_VI[a.kind] ?? a.kind}</Badge>
+          <StatusBadge status={a.severity} label={t(SEVERITY_KEY[a.severity])} tone={severityTone(a.severity)} className="px-1 py-0 text-[10px]" />
+          <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">{KIND_KEY[a.kind] ? t(KIND_KEY[a.kind]) : a.kind}</Badge>
           {backlog && (
             <Badge className="border-warning/40 bg-warning/15 px-1 py-0 text-[10px] font-medium text-warning" variant="outline">
               tồn đọng {backlogDays}d

@@ -18846,5 +18846,63 @@
     "qualityGateTemplates": "Mẫu cổng chất lượng",
     "productComparison": "So sánh sản phẩm",
     "productComparisonBlurb": "Đối chiếu điểm đo giữa các model"
+  },
+  "cmdCenter": {
+    "twin": {
+      "dangChay": "Đang chạy",
+      "cho": "Chờ",
+      "tamDung": "Tạm dừng",
+      "loiEStop": "Lỗi/E-stop",
+      "ngoaiTuyen": "Ngoại tuyến",
+      "khongRo": "Không rõ"
+    },
+    "status": {
+      "ok": "Bình thường",
+      "warn": "Cảnh báo",
+      "down": "Dừng",
+      "idle": "Chờ",
+      "unknown": "Không rõ"
+    },
+    "severity": {
+      "critical": "Nghiêm trọng",
+      "medium": "Trung bình",
+      "low": "Thấp",
+      "info": "Thông tin",
+      "high": "Cao"
+    },
+    "kind": {
+      "inspection": "Kiểm tra",
+      "safety": "An toàn",
+      "quality_gate": "Cổng chất lượng",
+      "maintenance": "Bảo trì",
+      "downtime": "Dừng máy",
+      "task": "Nhiệm vụ",
+      "workorder": "Lệnh SX",
+      "anomaly": "Bất thường",
+      "program": "Chương trình",
+      "twin": "Bản sao số",
+      "yield": "Tỷ lệ đạt",
+      "event": "Sự kiện",
+      "escalation": "Leo thang",
+      "andon": "Andon"
+    },
+    "moChiTiet": "mở chi tiết"
+  },
+  "masterDataEnum": {
+    "supplier_type": {
+      "component": "Linh kiện",
+      "raw_material": "Nguyên liệu",
+      "service": "Dịch vụ",
+      "equipment": "Thiết bị",
+      "subcontractor": "Nhà thầu phụ",
+      "other": "Khác"
+    },
+    "approval": {
+      "pending": "Chờ duyệt",
+      "approved": "Đã duyệt",
+      "conditional": "Có điều kiện",
+      "rejected": "Từ chối",
+      "suspended": "Tạm ngưng"
+    }
   }
 }

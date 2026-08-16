@@ -18874,5 +18874,63 @@
     "qualityGateTemplates": "质量门模板",
     "productComparison": "产品对比",
     "productComparisonBlurb": "跨型号比对测点"
+  },
+  "cmdCenter": {
+    "twin": {
+      "dangChay": "运行中",
+      "cho": "等待",
+      "tamDung": "暂停",
+      "loiEStop": "故障/急停",
+      "ngoaiTuyen": "离线",
+      "khongRo": "未知"
+    },
+    "status": {
+      "ok": "正常",
+      "warn": "警告",
+      "down": "停机",
+      "idle": "等待",
+      "unknown": "未知"
+    },
+    "severity": {
+      "critical": "严重",
+      "medium": "中",
+      "low": "低",
+      "info": "信息",
+      "high": "高"
+    },
+    "kind": {
+      "inspection": "检测",
+      "safety": "安全",
+      "quality_gate": "质量门",
+      "maintenance": "维护",
+      "downtime": "停机",
+      "task": "任务",
+      "workorder": "工单",
+      "anomaly": "异常",
+      "program": "程序",
+      "twin": "数字孪生",
+      "yield": "良率",
+      "event": "事件",
+      "escalation": "升级",
+      "andon": "安灯"
+    },
+    "moChiTiet": "查看详情"
+  },
+  "masterDataEnum": {
+    "supplier_type": {
+      "component": "元件",
+      "raw_material": "原材料",
+      "service": "服务",
+      "equipment": "设备",
+      "subcontractor": "外协厂商",
+      "other": "其他"
+    },
+    "approval": {
+      "pending": "待审批",
+      "approved": "已批准",
+      "conditional": "有条件批准",
+      "rejected": "已拒绝",
+      "suspended": "已暂停"
+    }
   }
 }

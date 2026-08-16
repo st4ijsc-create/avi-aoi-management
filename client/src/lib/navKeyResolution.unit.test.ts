@@ -38,10 +38,20 @@ const FILES_KHOA_DU_LIEU = [
   "pages/MaintenanceWorkspaceHub.tsx",
   "pages/ProductWorkspaceHub.tsx",
   "pages/SettingsHub.tsx",
+  // F13 lô 2 — bản đồ mã→khoá (`STATUS_KEY`, `SEVERITY_KEY`, `KIND_KEY`, `*_LABELS`)
+  "pages/CommandCenter.tsx",
+  "pages/MasterDataManagement.tsx",
 ];
 
 /** Trường được component gọi `t()` lên. `description` KHÔNG nằm đây — xem ghi chú dưới. */
 const TRUONG_QUA_T = ["label", "blurb", "note"];
+
+/**
+ * Không gian tên gốc của các khoá do F13 sinh. Quét theo TIỀN TỐ thay vì theo tên
+ * trường, vì bản đồ trạng thái có hình dạng `ok: "cmdCenter.status.ok"` — tên khoá
+ * bên trái là mã enum, không phải một trong `TRUONG_QUA_T`.
+ */
+const NS_F13 = /^(cmdCenter|masterDataEnum)\./;
 
 function flatten(obj: unknown, prefix = "", out: Record<string, unknown> = {}) {
   if (!obj || typeof obj !== "object") return out;
@@ -64,6 +74,10 @@ function khoaTrongMa(): Array<{ file: string; khoa: string }> {
     for (const truong of TRUONG_QUA_T) {
       const re = new RegExp(`\\b${truong}:\\s*"([^"]+)"`, "g");
       for (const m of src.matchAll(re)) if (LA_KHOA(m[1])) out.push({ file: rel, khoa: m[1] });
+    }
+    // Khuôn bản đồ: bất kỳ chuỗi nào mang tiền tố không-gian-tên của F13.
+    for (const m of src.matchAll(/"([a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+)"/g)) {
+      if (NS_F13.test(m[1]) && LA_KHOA(m[1])) out.push({ file: rel, khoa: m[1] });
     }
   }
   return out;
