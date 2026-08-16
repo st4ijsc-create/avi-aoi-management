@@ -25,11 +25,13 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 
 | # | mục | phán quyết |
 |---|---|---|
-| 1 | ghi đè im lặng | 🔨 **SỬA** — gộp với 5–7, cùng một thiết kế |
+| 1 | ghi đè im lặng | 🔨 **SỬA** — ~~gộp với 5–7~~ **(nhóm ấy SAI, xem §5–7)**; đã thi hành, Q-1 |
 | 2 | `Warn` tốt cho OEE | ✅ **GIỮ HÀNH VI, XUẤT BẢN NÓ** — đổi là viết lại lịch sử |
 | 3 | bất đối xứng Sparkplug | ✅ **GIỮ DÂY, ĐÃ GHI RÕ** — đổi payload là việc của bên đăng ký |
 | 4 | hình dạng hàng `Samples` | ⚖️ **ĐO TRƯỚC, RỒI CHỌN** — SDK đã xuất bản là ứng viên chuẩn |
-| 5–7 | trạng thái thứ ba còn thiếu | 🔨 **SỬA, LÀM TRƯỚC** — mục 1 là hệ quả nặng nhất của nó |
+| 5 | ~~ba hình dạng xoá file~~ | ⚠️ **TRÍCH DẪN KHÔNG CHỨNG MINH MÔ TẢ** — suy lại từ mã trước khi hỏi |
+| 6 | log hoãn của một lần cài đặt hỏng | 🔴 **CHỜ ANH** — đứng trên KHÔNG TÁCH RỜI ĐƯỢC, không phải trạng thái thứ ba |
+| 7 | nửa sau của S4 | 🔴 **CHỜ ANH** — thứ tự quan sát được + tháo dỡ giao dịch, không phải trạng thái thứ ba |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 ---
@@ -59,12 +61,16 @@ biết cho tới khi máy chạy sai**.
 **Bằng chứng:** commit `811c9054` (M-1) — phát hiện bằng một dụng cụ độc lập, xác
 minh bằng cách chạy lại.
 
-> ### 🔨 PHÁN QUYẾT 2026-08-16 — SỬA, VÀ SỬA CÙNG MỤC 5–7
+> ### 🔨 PHÁN QUYẾT 2026-08-16 — SỬA ~~, VÀ SỬA CÙNG MỤC 5–7~~
+> ⚠️ **Vế thứ hai của tiêu đề này SAI và đã bị rút 2026-08-17** — mục 6 và 7 không
+> phải trạng thái thứ ba, và mục 5 mất phần chung khi Q-1 đóng nó. Xem §5–7. Đoạn
+> dưới giữ nguyên văn làm hồ sơ về điều đã công bố, kèm dấu ở từng chỗ sai.
 > Đây là **khuyết tật mất dữ liệu** trên một đường **thành công**, không phải một
 > lựa chọn thiết kế. Không có cách đọc nào khiến "ghi đè cấu hình của vận hành viên
 > mà không một dòng log" là đúng.
 >
-> **Nhưng nó không được sửa tại chỗ.** Nó là **hệ quả nặng nhất của mục 5–7**: mã
+> **Nhưng nó không được sửa tại chỗ.** ~~Nó là **hệ quả nặng nhất của mục 5–7**~~
+> **[RÚT 2026-08-17 — mục 6 và 7 không cùng loại; xem §5–7]**: mã
 > chỉ biết *có file* và *không có file*, nên một file **hỏng** rơi vào nhánh *không
 > có*, và nhánh đó **được phép ghi**. Vá riêng chỗ này để lại đúng cái lỗ ấy ở ba
 > chỗ khác.
@@ -74,11 +80,11 @@ minh bằng cách chạy lại.
 > tồn tại*, và **không bao giờ** bị ghi đè. Nội dung không đọc được là **bằng chứng
 > duy nhất còn lại** của điều vận hành viên đã cấu hình.
 >
-> **Thứ tự làm, và lý do — vì tài liệu này nói việc xếp thứ tự chọn một lời biện
-> minh:** mục này **đi trước**, vì nó là mục duy nhất **phá huỷ dữ liệu người dùng
-> trong một lần khởi động bình thường**. Hai mục kia làm mất **một dòng log** và
-> gây **một thứ tự quan sát được**. Mất log là tệ; **mất cấu hình trên một cỗ máy
-> không có giao diện để gõ lại** là không phục hồi được.
+> ~~**Thứ tự làm, và lý do — vì tài liệu này nói việc xếp thứ tự chọn một lời biện
+> minh:**~~ **[RÚT 2026-08-17 — không có thiết kế chung nào để mà xếp thứ tự; xem
+> §5–7]** Phần vẫn đúng và là lý do mục này đi trước: nó là mục duy nhất **phá huỷ
+> dữ liệu người dùng trong một lần khởi động bình thường**. Mất log là tệ; **mất
+> cấu hình trên một cỗ máy không có giao diện để gõ lại** là không phục hồi được.
 >
 > ### ✅ ĐÃ THI HÀNH — nhiệm vụ Q-1 (`.superpowers/sdd/third-state-unreadable/`)
 > **Phạm vi đã làm: đường settings, và chỉ đường ấy** — `FleetSettingsStore` (một
@@ -91,8 +97,10 @@ minh bằng cách chạy lại.
 > ở `dd4a3e68` file trên đĩa là **sàn môi trường** (dữ liệu vận hành viên MẤT), sau bản
 > sửa nội dung **còn nguyên từng byte**.
 > **Hàng 36** của `docs/startup-failure-posture.md` chuyển **S → U** và **✗ → ✓**.
-> **Mục 5–7 CHƯA làm**: quyết định này chỉ mở khoá mục 1; ba hình dạng xoá file (mục 5),
-> log hoãn của một lần cài đặt thất bại (mục 6) và nửa sau của S4 (mục 7) vẫn nguyên.
+> **Mục 5, 6 và 7 CHƯA làm**: quyết định này chỉ mở khoá mục 1. ⚠️ Câu gốc gọi chúng
+> là một nhóm — **sai, rút 2026-08-17**: mục 6 đứng trên KHÔNG TÁCH RỜI ĐƯỢC, mục 7
+> trên thứ tự quan sát được, và mô tả của mục 5 không được commit đã trích chứng minh.
+> Xem §5–7.
 >
 > #### 🔴 Vòng sửa lỗi — MỘT SINH ĐÔI ĐÃ BỊ BỎ SÓT, VÀ ĐIỀU KIỆN CỦA NÓ CÒN YẾU HƠN
 > Review bác bỏ dòng loại trừ `SiteLinkStore` trong bảng phạm vi vòng 1: `SiteLinkStore.Load()`
@@ -252,28 +260,74 @@ kèm câu *"không được giả định hình dạng hàng chỉ từ kiểu n
 
 ---
 
-## 5–7. Ba mục cùng CHUNG một trạng thái thứ ba còn thiếu
+## 5–7. ~~Ba mục cùng CHUNG một trạng thái thứ ba còn thiếu~~ — **ĐẦU ĐỀ NÀY SAI, ĐÃ SỬA 2026-08-17**
 
-Ba mục dưới đây **không phải ba vấn đề** — chúng là **một** vấn đề xuất hiện ba
-lần. Hệ thống ở khắp nơi chỉ biết hai trạng thái: *"file có"* và *"file không có"*.
-Trạng thái thứ ba — 🔴 **"file CÓ nhưng KHÔNG ĐỌC ĐƯỢC"** — không tồn tại trong mã.
+> ### 🔴 ĐÍNH CHÍNH — khẳng định gộp nhóm là của tôi, và nó không đứng được
+> Bản đầu của file này gộp ba mục dưới thành *"một vấn đề xuất hiện ba lần"*, chung
+> **trạng thái thứ ba còn thiếu**, và kết luận **thứ tự làm chọn một lời biện minh
+> chứ không chọn một thiết kế**. Trước khi giao việc, tôi đi kiểm khẳng định ấy
+> **trên chính các commit tôi đã trích dẫn**. Nó **hỏng ở cả ba mục**:
+>
+> - **Mục 6 không phải trạng thái thứ ba.** `99ab7b61` nói nó đứng trên
+>   **KHÔNG TÁCH RỜI ĐƯỢC**: *các dòng halt được phát ra bởi mã BẮT BUỘC phải chạy
+>   thì một lần halt mới xảy ra, còn việc phát `deferredLogs` là một lựa chọn đứng
+>   riêng.* Đó là câu hỏi **hai thứ có tách rời được không**, không phải câu hỏi về
+>   trạng thái của một file.
+> - **Mục 7 cũng không.** `99ab7b61` nói dựng-trước-khi-tháo **đảo thứ tự khởi động
+>   lại mà vận hành viên quan sát được**, và việc quay lui bản commit **đổi nghĩa của
+>   một lời gọi thất bại đối với người gọi nó**. Đó là **thứ tự và tính giao dịch**.
+> - **Mục 5 tệ hơn: trích dẫn KHÔNG CHỨA điều tôi mô tả.** `eca39f89` không có chỗ
+>   nào nói về *"ba hình dạng xoá file"*. Thứ nó thật sự nói về xoá là
+>   **trạng thái thứ ba** — *"mảnh còn thiếu là một trạng thái thứ ba, 'một file tồn
+>   tại và không đọc được', thứ mà cả composition root lẫn store đều không biểu
+>   đạt"* — và **Q-1 đã đóng đúng mảnh đó** (commit `17fa6841`).
+>
+> **Nên: hai mục không cùng loại với nhau, và mục thứ ba đã bị Q-1 lấy mất phần
+> chung.** Câu *"thứ tự chọn một lời biện minh"* vì thế cũng sai — **không có thiết
+> kế chung nào để mà chọn**.
+>
+> **Đây đúng loài mà cả đợt làm việc này đi bắt:** một khẳng định về một **quần thể**
+> được nêu ra mà không có phép kiểm đếm có thể bác bỏ nó — và lần này nó ở trong
+> **artefact tôi lập ra để chấm dứt việc khẳng định không kiểm được**. Ba đoạn dưới
+> đây viết lại **theo cơ chế thật của từng mục**, và không mục nào tuyên bố có họ
+> hàng với mục nào.
 
-Vì thế **thứ tự làm ba mục này chọn một LỜI BIỆN MINH, không chọn một thiết kế**:
-thiết kế là như nhau ở cả ba. Quyết định của anh là làm cái nào **trước**, và điều
-đó quyết định câu chuyện được kể về vì sao nó được làm.
+### 5. ⚠️ MỤC NÀY CẦN SUY LẠI TỪ MÃ TRƯỚC KHI THÀNH MỘT QUYẾT ĐỊNH
+**Trạng thái:** mô tả *"ba hình dạng xoá file"* **không được chứng minh bởi commit
+đã trích** (`eca39f89`), và phần **trạng thái thứ ba** của D1 **đã được Q-1 đóng**.
 
-### 5. Ba hình dạng xoá file (J-3, mục D1)
-Ba đường xoá dữ liệu có hành vi khác nhau ở cùng một tình huống, cách nhau **một
-hợp đồng**. Bằng chứng: commit `eca39f89`.
+**Việc phải làm trước khi hỏi anh:** liệt kê các đường xoá dữ liệu vận hành viên
+trong `src/` **bằng một dụng cụ có miền phát biểu được**, rồi hỏi chúng có thật sự
+phân kỳ ở cùng một tình huống không. `Delete(` xuất hiện ở **ít nhất tám** file dưới
+`src/` (một cận dưới đếm được bằng máy, không phải một tổng số). Nếu chúng phân kỳ,
+đó là một quyết định; nếu không, mục này **đóng lại chứ không xoá đi**.
+
+🔴 **Không giao việc trên mục này cho tới khi phép liệt kê ấy tồn tại.** Giao việc
+theo mô tả hiện tại là truyền tiếp một cái khung mà không ai kiểm được.
 
 ### 6. Log hoãn lại của một lần cài đặt THẤT BẠI (J-2, phần dư 3)
-Khi cài đặt thất bại, các dòng log đã hoãn **không được phát ra**. Đã bị từ chối
-sửa **ba lần** với cùng một lý do: **KHÔNG TÁCH RỜI ĐƯỢC** khỏi phần còn lại của
-đường xử lý. Bằng chứng: commit `99ab7b61`.
+**Cơ chế, nguyên văn từ `99ab7b61`:** *"Nó chỉ còn đứng trên tính không tách rời:
+các dòng halt được phát ra bởi mã **bắt buộc phải chạy** thì một lần halt mới xảy ra,
+trong khi việc phát `deferredLogs` là **một lựa chọn đứng riêng**."*
+
+Đã bị từ chối sửa **ba lần**. Hai cơ sở trước đó **do chính người thực thi rút lại
+chứ không bảo vệ** — trong đó có một cơ sở họ thừa nhận là **làm yếu chính lập
+trường của mình**.
+
+**Nếu không quyết định:** khi cài đặt thất bại, những gì đã xảy ra trước đó
+**không được kể lại**, và người vận hành chỉ thấy lần thất bại.
 
 ### 7. Nửa sau của S4 (J-2)
-Dựng-trước-khi-tháo là một **sự đảo thứ tự mà vận hành viên QUAN SÁT ĐƯỢC**, và
-việc sửa nó đòi một cơ chế tháo dỡ **có tính giao dịch**. Bằng chứng: commit `99ab7b61`.
+**Cơ chế, nguyên văn từ `99ab7b61`:** đóng nó đòi **dựng đường ống mới trước khi
+tháo đường ống cũ**, việc này **đảo thứ tự khởi động lại mà vận hành viên quan sát
+được**; và **quay lui bản commit đổi nghĩa của một lời gọi thất bại đối với người gọi
+nó**. Cả hai đã được suy lại trên cơ chế của chúng.
+
+🔴 Và một câu đáng giữ nguyên văn: **"dựng trước khi tháo" là ĐIỀU KIỆN CẦN và
+KHÔNG ĐỦ — bản thân việc cài đặt cũng có thể ném lỗi.**
+
+**Nếu không quyết định:** thứ tự vẫn như cũ, và một lần khởi động lại thất bại vẫn
+để hệ thống ở trạng thái giữa chừng mà không có cơ chế lùi.
 
 ---
 
