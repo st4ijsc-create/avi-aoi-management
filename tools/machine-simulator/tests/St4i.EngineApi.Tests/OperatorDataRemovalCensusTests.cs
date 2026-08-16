@@ -58,8 +58,9 @@ namespace St4i.EngineApi.Tests;
 ///   reaches SQL, which Reach A cannot see at all; and it reaches ARGUMENT VALUES
 ///   (<c>overwrite: true</c>, <c>FileMode.Create</c>), which decide whether a removal-capable call removes
 ///   anything and which are invisible in a metadata signature.</description></item>
-///   <item><description><b>Reach C — execution.</b> Nine stores constructed for real over a deliberately
-///   unreadable artifact in this test's own temp directory, and the outcome observed. This is the only reach
+///   <item><description><b>Reach C — execution.</b> Every store in <see cref="OperatorArtifacts"/>,
+///   constructed for real over a deliberately unreadable artifact in this test's own temp directory, and the
+///   outcome observed. (That table is the population; its size is not restated here.) This is the only reach
 ///   that can answer "do they behave differently", because the other two can only read code.</description></item>
 /// </list></para>
 ///
@@ -69,26 +70,27 @@ namespace St4i.EngineApi.Tests;
 ///   <c>St4i.EdgeService</c>, <c>St4i.Connector.Conformance</c>, <c>St4iMachineSimulator</c> and
 ///   <c>St4i.DesktopShell</c>. No test project references the two WPF hosts at all. So in those four the
 ///   vocabulary is UNREFUTED: a removal spelled in a way Reach B's patterns do not match would be invisible.
-///   <para><b>Its SIZE, derived rather than left as an adjective</b> — the review's I6, and the brief's
-///   scalar rule applied where it belongs. Reach B carries <b>nine</b> shapes;
-///   <see cref="ApiEffects"/> classifies <b>twenty-six</b> members as removal-capable. Inside Reach A the
-///   difference is caught red by
-///   <see cref="EveryRemovalCapableCallTheIlSees_IsAlsoSeenByTheSourceScan"/>; outside it, it is silent.
-///   <c>File.Replace</c>, <c>File.Copy/3</c>, <c>File.WriteAllLines</c>, <c>File.CreateText</c>,
-///   <c>File.OpenWrite</c>, <c>FileInfo.MoveTo</c>, <c>FileInfo.Delete</c>, <c>DirectoryInfo.Delete</c>,
-///   <c>FileSystemInfo.Delete</c>, <c>StreamWriter..ctor/1</c> and the async writers have no Reach B
-///   pattern at all. Both numbers are asserted in
-///   <see cref="TheRemovalCapableApiSurface_IsDerivedFromTheIl_AndEveryMemberIsClassified"/> so the size of
-///   this hole cannot drift silently.</para>
+///   <para><b>Its SIZE, derived rather than left as an adjective</b> (review I6). The three counts that
+///   size it — how many shapes Reach B carries, how many members <see cref="ApiEffects"/> classifies as
+///   removal-capable, and how many of those have no Reach B pattern at all — are asserted at the end of
+///   <see cref="TheRemovalCapableApiSurface_IsDerivedFromTheIl_AndEveryMemberIsClassified"/> and are
+///   deliberately NOT repeated here. Read them there. What this paragraph is for is the part an assertion
+///   cannot carry: <c>File.Replace</c>, <c>File.Copy/3</c>, <c>File.WriteAllLines</c>,
+///   <c>File.CreateText</c>, <c>File.OpenWrite</c>, <c>FileInfo.MoveTo</c>, <c>FileInfo.Delete</c>,
+///   <c>DirectoryInfo.Delete</c>, <c>FileSystemInfo.Delete</c>, <c>StreamWriter..ctor/1</c> and the async
+///   writers are the KINDS of removal that have no text pattern; inside Reach A each is caught red by
+///   <see cref="EveryRemovalCapableCallTheIlSees_IsAlsoSeenByTheSourceScan"/>, and outside it each is
+///   silent.</para>
 ///   <para>🔴 <b>The bound offered on this hole is NARROWER than it first read.</b> It used to say "no
 ///   persistent store lives in any of the four". That is true and it is not the whole picture, and a
 ///   universal denial with nothing able to refute it is the shape this file exists to catch. What is
-///   measured: <see cref="ExpectedRemovalSites"/> lists <b>four</b> files in those four projects that DO
-///   destroy bytes — <c>App.xaml.cs</c>, <c>FleetService.cs</c>, <c>InspectorViewModel.cs</c>,
+///   measured: <see cref="ExpectedRemovalSites"/> pins, by name, the files in those four projects that DO
+///   destroy bytes — <c>App.xaml.cs</c>, <c>FleetService.cs</c>, <c>InspectorViewModel.cs</c> and
 ///   <c>MainWindow.xaml.cs</c> — and one of them, <c>InspectorViewModel</c>'s <c>File.WriteAllText</c> to
-///   an operator-CHOSEN export path, can overwrite an operator's file. What is true is only the narrow
-///   claim: none of the four owns a store whose artifact this product persists and re-reads, so none
-///   appears in the posture table.</para></description></item>
+///   an operator-CHOSEN export path, can overwrite an operator's file. (Named rather than counted: the
+///   pinned table is the census, and a count of it here would be a second copy of it.) What is true is only
+///   the narrow claim: none of the four owns a store whose artifact this product persists and re-reads, so
+///   none appears in the posture table.</para></description></item>
 ///   <item><description><b>SQL is unrefuted everywhere.</b> Reach A cannot see a string. The SQL vocabulary
 ///   is the set of SQL statements that remove or replace stored rows, which is a closed set in SQLite
 ///   (<c>DELETE</c>, <c>DROP</c>, <c>TRUNCATE</c>—absent in SQLite—, <c>REPLACE</c>/<c>INSERT OR REPLACE</c>,
@@ -121,9 +123,10 @@ namespace St4i.EngineApi.Tests;
 ///   "Checked, not assumed". Re-derived from scratch rather than corrected, because editing a census is how
 ///   the previous task produced three wrong counts in a row, and the derivation now lives in
 ///   <see cref="TheRawStringBlindSpot_IsMeasuredRatherThanDenied"/> so it can be refuted instead of
-///   believed. What is actually there: <b>67 raw-string blocks in 12 files</b>, and <b>ten of them, in six
-///   files, carry removal SQL</b>. The IL bound could never have applied — the content is SQL and Reach A
-///   cannot see a string.
+///   believed. How many blocks there are, in how many files, how many carry removal SQL and in how many
+///   files, are all asserted in that test and deliberately not copied here — the previous version of this
+///   sentence copied them and got them wrong. The IL bound could never have applied, whatever the counts:
+///   the content is SQL and Reach A cannot see a string.
 ///   <para><b>Why the census is nevertheless right about those ten:</b> the SQL pass scans every
 ///   non-comment LINE, literal or not (see its own header — which used to claim the opposite). Raw-string
 ///   content is therefore inside its corpus. The remaining lexer gaps are real and left standing:
@@ -137,6 +140,28 @@ namespace St4i.EngineApi.Tests;
 /// <para><b>PRECONDITION.</b> Like <c>PerHostDataRootsTests</c> and <c>EnumSpellingContractTests</c>, Reach B
 /// requires being run from inside the source tree. A scan that cannot find its corpus has measured nothing,
 /// and "nothing measured" must never read as "nothing wrong", so it fails rather than passing.</para>
+///
+/// <para>🔴 <b>THE RULE THIS FILE IS WRITTEN UNDER, AND IT WAS BOUGHT HERE RATHER THAN BROUGHT HERE.</b>
+///
+/// <code>
+///   WHERE AN ASSERTION HOLDS A NUMBER, DO NOT RESTATE THE NUMBER IN PROSE — NAME THE ASSERTION.
+/// </code>
+///
+/// <para>A scalar copied into a comment is <b>a second, uncounted copy that nothing checks</b>: the original
+/// defect with an extra step. The first version of this file argued at length that "a scalar summarising a
+/// set nobody has enumerated is not a fact", turned those scalars into assertions — and then <b>left the
+/// refuted numbers standing in the comments beside them</b>. Some survivors were contradicted by an
+/// assertion in the same method, one of them a few lines below a paragraph correcting that very number; and
+/// one had propagated arithmetically into a second wrong number, computed off a scalar the run had already
+/// refuted. A review named several instances; sweeping the file for the SHAPE rather than fixing the named
+/// instances found more than twice as many, <b>including one in this paragraph's own first draft</b>, which
+/// is why this paragraph now names no count either.</para>
+///
+/// <para>So the rule is not "assert your numbers". It is <b>"do not keep a copy"</b> — because the copy is
+/// what rots, and it rots in the artifact a reader trusts most, the one explaining what the assertion means.
+/// Every count below is therefore either absent from the prose and named by its assertion, or, where the
+/// number genuinely belongs in a sentence (a quoted claim, a record of a correction), stated together with
+/// how it was derived and what asserts it now.</para></para>
 /// </summary>
 public sealed class OperatorDataRemovalCensusTests
 {
@@ -189,10 +214,12 @@ public sealed class OperatorDataRemovalCensusTests
     //
     // 🔴 The brief's own warning, and the reason this section is not a grep: `Delete(` is a VOCABULARY, and a
     // vocabulary is a domain inherited from wherever its author happened to be standing. Measured on this
-    // tree, `grep -rn "Delete(" src/ --include=*.cs` returns 20 lines in 10 files, and it is wrong in BOTH
-    // directions at once: 13 of the 20 are `MapDelete(` route REGISTRATIONS or doc-comment prose, which
-    // remove nothing, and it misses every `File.Move(..., overwrite: true)`, every whole-file rewrite and
-    // every SQL statement — which is where nearly all of this product's byte destruction actually happens.
+    // tree, `grep -rn "Delete(" src/ --include=*.cs` is wrong in BOTH directions at once: most of what it
+    // returns is `MapDelete(` route REGISTRATIONS and doc-comment prose, which remove nothing, and it misses
+    // every `File.Move(..., overwrite: true)`, every whole-file rewrite and every SQL statement — which is
+    // where nearly all of this product's byte destruction actually happens. Every count in that sentence is
+    // asserted in TheDeleteVocabularyThisTaskArrivedWith_IsATrueLowerBound_AndUselessAsACensus and is not
+    // repeated here.
     //
     // So the population is closed somewhere a tool can reach instead: the TYPES through which a .NET program
     // can make an existing filesystem entry's bytes stop being retrievable. That set is small and arguable,
@@ -545,11 +572,11 @@ public sealed class OperatorDataRemovalCensusTests
     // previously claimed the SQL pass "reads ONLY inside literals" and the method's own doc comment claimed
     // it read "every statement in a string literal". Both were false, and their being false is WHY the SQL
     // census is correct: `StringLiteral` is not raw-string aware, so a literal-only pass would have had to
-    // extract `"""…"""` blocks — and ten such blocks in six files carry removal SQL
-    // (TheRawStringBlindSpot_IsMeasuredRatherThanDenied). The documented instrument would have missed all
-    // ten; the implemented one misses none. Two false self-descriptions cancelling each other, in a file
-    // whose own finding #2 is "the store describes itself falsely". The code is now the authority and this
-    // comment describes it.
+    // extract `"""…"""` blocks — and raw-string blocks in this tree DO carry removal SQL, counted and
+    // asserted in TheRawStringBlindSpot_IsMeasuredRatherThanDenied. The documented instrument would have
+    // missed every one of them; the implemented one misses none. Two false self-descriptions cancelling each
+    // other, in a file whose own finding #2 is "the store describes itself falsely". The code is now the
+    // authority and this comment describes it.
     //
     // What scanning whole lines costs, stated rather than discovered: a trailing `// … DELETE FROM …` on a
     // code line counts as a SQL removal site. That is a false positive by construction. It is accepted
@@ -684,8 +711,9 @@ public sealed class OperatorDataRemovalCensusTests
 
         var edgeCore = byAssembly["St4i.EdgeCore"].Select(c => c.Api).ToHashSet(StringComparer.Ordinal);
 
-        // Three shapes that MUST be visible, chosen because each is a different way for the decode to be
-        // broken: a plain static call, an overload the arity must separate, and a whole-file rewrite.
+        // The shapes below MUST be visible, and they are chosen so that each is a different way for the
+        // decode to be broken: a plain static call, an overload the arity must separate, and a whole-file
+        // rewrite. (Listed, not counted — the assertions are the list.)
         Assert.Contains("System.IO.File.Delete/1", edgeCore);
         Assert.Contains("System.IO.File.Move/3", edgeCore);
         Assert.Contains("System.IO.File.WriteAllText/2", edgeCore);
@@ -745,10 +773,14 @@ public sealed class OperatorDataRemovalCensusTests
         // 🔴 THE SIZE OF REACH B's HOLE, derived from this file's own data rather than left as an adjective
         // (review I6). The brief's scalar rule says a number is the right answer where the population is
         // closed at the tool's reach, and both of these are: the removal-capable half of a table in this
-        // file, and the pattern array beside it. Nine shapes against twenty-six removal-capable members —
-        // so seventeen removal-capable APIs have NO Reach B pattern. Inside Reach A every one of them is
-        // caught red by EveryRemovalCapableCallTheIlSees_IsAlsoSeenByTheSourceScan; in the four projects
-        // outside Reach A they are silent, and that difference IS the hole the class doc comment names.
+        // file, and the pattern array beside it. The three assertions below ARE that number — they are the
+        // only statement of it in this file, and nothing restates them in prose.
+        //
+        // 🔴 THIS BLOCK IS WHERE THE RULE AT THE TOP OF THE FILE WAS BOUGHT. It used to open by narrating
+        // the answer: "nine shapes against twenty-six removal-capable members, so seventeen have no Reach B
+        // pattern". Twenty-six was a guess the very next line refuted (the run says thirty-seven), and
+        // seventeen was 26 − 9 — a wrong scalar PROPAGATING ARITHMETICALLY into a second wrong scalar, in a
+        // comment sitting on top of the assertion that contradicted it. Nothing checks a sentence.
         var removalCapable = ApiEffects.Where(kv => Removes(kv.Value)).Select(kv => kv.Key).ToList();
         var unreachableByText = removalCapable.Where(api => ShapesFor(api).Length == 0)
             .OrderBy(a => a, StringComparer.Ordinal).ToList();
@@ -903,12 +935,15 @@ public sealed class OperatorDataRemovalCensusTests
 
     /// <summary>🔴 <b>§8.1(h5.1) — the number that arrived with this task is an ASSERTION, so it gets
     /// measured.</b> The brief and item 5 both say <c>Delete(</c> appears in "at least eight" files under
-    /// <c>src/</c>, and both label it a machine-countable lower bound rather than a total. It is a true
-    /// lower bound. It is also useless as a census, and the two facts are separable and both worth pinning:
-    /// the vocabulary is wrong in BOTH directions at once, which is the shape §8.1(f) keeps warning about.
+    /// <c>src/</c> — quoted here because it is the CLAIM under test, and it is the one number in this file's
+    /// prose that is not a copy of an assertion but the thing an assertion checks. It is a true lower bound.
+    /// It is also useless as a census, and the two facts are separable and both worth pinning: the
+    /// vocabulary is wrong in BOTH directions at once, which is the shape §8.1(f) keeps warning about.
     ///
-    /// <para>The arithmetic is done here rather than in prose because four counts in the previous task were
-    /// stated by hand and all four were wrong by the same mechanism.</para></summary>
+    /// <para>Every other quantity in this measurement lives in the assertions below and nowhere else. The
+    /// arithmetic is done here rather than in prose because four counts in the previous task were stated by
+    /// hand and all four were wrong by the same mechanism — and then this file did it again, in its own
+    /// comments, which is the rule recorded at the top.</para></summary>
     [Fact]
     public void TheDeleteVocabularyThisTaskArrivedWith_IsATrueLowerBound_AndUselessAsACensus()
     {
@@ -944,8 +979,10 @@ public sealed class OperatorDataRemovalCensusTests
         Assert.Equal(4, prose);
         Assert.Equal(11, invisibleToTheVocabulary.Count);
 
-        // Seven of the twenty are removals or a removal's declaration. Written as the subtraction rather
-        // than as a fourth literal, so it cannot drift away from the three above it.
+        // The remainder — the hits that really are removals or a removal's declaration — is written as the
+        // SUBTRACTION rather than as a fourth independent literal, so it cannot drift away from the three
+        // asserted above it. That is the same rule as the file header, applied to a number in code rather
+        // than in prose: one copy, and let arithmetic hold the rest.
         Assert.Equal(7, lines.Count - routeRegistrations - prose);
     }
 
@@ -992,9 +1029,9 @@ public sealed class OperatorDataRemovalCensusTests
     /// <summary>🔴 <b>The hole that was stated as already-checked and was false three ways.</b> The class
     /// doc comment used to assert, under the heading "Checked, not assumed", that raw strings were roughly
     /// thirty in one file plus one in another, that <b>none</b> contained a removal shape, and that the IL
-    /// cross-check closed the gap. Measured: sixty-seven blocks in twelve files, ten of them carrying
-    /// removal SQL, and the IL bound could never have applied because the content is SQL and Reach A cannot
-    /// see a string.
+    /// cross-check closed the gap. All three false. The measured counts are the four assertions below and
+    /// are stated nowhere else in this file; the IL bound could never have applied whatever they came to,
+    /// because the content is SQL and Reach A cannot see a string.
     ///
     /// <para>It is a test rather than a corrected sentence for the reason the brief gives: a universal
     /// denial is only worth anything when something exists that could refute it, and editing a census is
@@ -1017,14 +1054,16 @@ public sealed class OperatorDataRemovalCensusTests
         // The half that refutes the old sentence outright: raw-string blocks DO carry removal SQL.
         Assert.Equal(10, withRemovalSql.Count);
 
-        // 🔴 FIVE files, not six. The review that found the original sentence false gave "10 blocks in 6
-        // files" and then ENUMERATED FIVE. Re-deriving rather than adopting the number is the whole
-        // discipline the previous task was written up for, and it caught a scalar disagreeing with its own
-        // list one more time — this time in the correction, not in the thing corrected.
+        // 🔴 The review that found the original sentence false gave a block count and a FILE count, and
+        // then enumerated one fewer file than its own count claimed. Re-deriving rather than adopting is the
+        // whole discipline the previous task was written up for, and it caught a scalar disagreeing with
+        // its own list one more time — this time in the correction, not in the thing corrected. The right
+        // value is the assertion on the next line; the wrong one is deliberately not repeated here, because
+        // a refuted number quoted in a comment is exactly the second uncounted copy the file header refuses.
         Assert.Equal(5, filesWithRemovalSql.Count);
 
         // And the reason the census is nevertheless right about them: the SQL pass scans whole lines, so
-        // every one of those six files is already in the pinned SQL enumeration. This is the assertion that
+        // every one of those files is already in the pinned SQL enumeration. This is the assertion that
         // ties the blind spot to the thing that covers it — without it, the two facts sit side by side and
         // a reader has to take the connection on trust.
         var pinned = ExpectedSqlSites.Keys.ToHashSet(StringComparer.Ordinal);
@@ -1444,8 +1483,9 @@ public sealed class OperatorDataRemovalCensusTests
     /// "nothing is destroyed" half of it, MEASURED rather than asserted in prose.</b>
     ///
     /// <para><see cref="Observe"/> maps any exception to <see cref="Posture.Throws"/>. That is the right
-    /// shape for the question but it makes six of the nine published rows depend on a throw whose CAUSE
-    /// nothing checks. A store that threw here for a reason belonging to the rig would be recorded as
+    /// shape for the question but it makes every <see cref="Posture.Throws"/> row in
+    /// <see cref="ExpectedPostures"/> — the majority of them — depend on a throw whose CAUSE nothing
+    /// checks. A store that threw here for a reason belonging to the rig would be recorded as
     /// <c>Throws</c> and would look exactly like a store refusing a bad artifact. Two assertions separate
     /// them: the same store constructs cleanly over an EMPTY directory, so the throw is attributable to the
     /// artifact; and the unreadable artifact is still on disk, byte for byte, after the throw — which is the
@@ -1457,7 +1497,10 @@ public sealed class OperatorDataRemovalCensusTests
         var throwers = ExpectedPostures.Where(kv => kv.Value == Posture.Throws)
             .Select(kv => kv.Key).ToHashSet(StringComparer.Ordinal);
 
-        // Non-vacuity: this must actually be the six, not an empty set that would make the loop a no-op.
+        // Non-vacuity: the Throws set must be exactly this size, not an empty set that would turn the loop
+        // below into a no-op and every assertion in it into a sentence. The literal stays a LITERAL on
+        // purpose — deriving it from ExpectedPostures, which is where `throwers` already comes from, would
+        // make this a tautology and pin nothing. This is the one copy of that number in the file.
         Assert.Equal(6, throwers.Count);
 
         foreach (var artifact in OperatorArtifacts.Where(a => throwers.Contains(a.Store)))
@@ -1510,7 +1553,9 @@ public sealed class OperatorDataRemovalCensusTests
         //
         //   * `classes.Count > 1` is the HEADLINE: they diverge. It reddens only if every store is brought
         //     onto ONE posture. Removing a single posture class does not touch it. Control arm C4 is the
-        //     arm that actually drives it red, and it needed three stores mutated at once, not one.
+        //     arm that actually drives it red, and it needed EVERY store off its own posture at once —
+        //     a strictly larger mutation than arm C3's single one. (A count of the arm's mutations is not
+        //     given: the arms were reverted, so nothing in this tree could check it.)
         //
         //   * the class-set equality below is the PUBLISHED TABLE: three named classes with
         //     OeeSettingsStore alone in the third. That is what docs/owner-decisions.md item 5 prints, and
