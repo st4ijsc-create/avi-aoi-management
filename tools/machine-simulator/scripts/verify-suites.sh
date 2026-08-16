@@ -2391,7 +2391,50 @@ EXPECT_EDGESERVICE=51
 # adds no driver and no connector kind, and the shared suite's "FleetCore.StartLocked constructs drivers
 # under the same _gate lock Estop() takes" assertion string is still TRUE — J-2 moves no driver construction
 # and P7 is untouched. EXPECT_WARNINGS stays 116: no new warning (measured on a full -t:Rebuild).
-EXPECT_ENGINEAPI=1340
+#
+# 🔴 TASK S-1 raises this 1340 -> 1351 (+11), COUNTED FROM THE RUNNER (`dotnet test --list-tests`: 1340 ->
+# 1351), not by hand. ONE new file, `OperatorDataRemovalCensusTests.cs`; nothing is rewritten, split or
+# deleted, and NO src/ file is touched at all — S-1 is a measurement task and a measurement that edits what
+# it measures has destroyed its own baseline. That is also why EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE,
+# EXPECT_EDGECORE and EXPECT_EDGESERVICE are unchanged, and here that is a stronger statement than usual:
+# with zero src/ edits there is no mechanism by which any of them COULD move, so their staying put is a
+# check on this claim rather than a convenience. New grand total 2691.
+#
+# The file is the instrument `docs/owner-decisions.md` item 5 says must exist before that item can be a
+# decision. It stands in three places, and the split is why it is eleven tests and not three:
+#   TheIlWalker_ResolvesEveryTokenItFrames_AndSeesCallsItIsSupposedToSee                +1
+#   TheRemovalCapableApiSurface_IsDerivedFromTheIl_AndEveryMemberIsClassified           +1
+#   EveryRemovalCapableCallTheIlSees_IsAlsoSeenByTheSourceScan                          +1
+#       REACH A. A real IL decode (operand lengths read off System.Reflection.Emit.OpCodes, not a byte scan
+#       for 0x28) over every method body of the four assemblies this suite references. It exists to make
+#       the removal VOCABULARY a measurement instead of a guess: every member of a byte-owning BCL type the
+#       product actually calls must be classified, and every removal-capable call the IL contains must also
+#       have been found by the source patterns. The third one is the refuter — it is what can prove the
+#       text scan short, and `new FileInfo(p).Delete()` is a shape that makes it red (control run, S-1).
+#   TheDeleteVocabularyThisTaskArrivedWith_IsATrueLowerBound_AndUselessAsACensus        +1
+#   TheEnumerationOfRemovalCapableFilesystemSites_IsExactlyThis                         +1
+#   TheEnumerationOfRowRemovingSqlSites_IsExactlyThis                                   +1
+#   TheSourceScanner_FindsSitesItIsKnownToContain_AndIgnoresProseThatMerelyNamesThem    +1
+#       REACH B, over all EIGHT projects under src/ — including the two WPF hosts and the SQL, none of
+#       which Reach A can see. The first of the four measures the `Delete(` vocabulary this task arrived
+#       with: 20 lines in 10 files, of which 9 are MapDelete route registrations and 4 are prose, and
+#       ELEVEN files carrying a removal-capable filesystem call never spell `Delete(` at all.
+#   ThePostureRig_ReallyDoesPutUnreadableBytesWhereTheStoreLooks                        +1
+#   EveryOperatorArtifact_HasThePostureRecordedForIt_AtTheOneSituationHeldFixed         +1
+#   ThePosturesAtTheFixedSituation_AreNotAllTheSame                                     +1
+#   TheOneStoreThatCannotTellUnreadableFromAbsent_ReplacesTheOperatorsBytes             +1
+#       REACH C — EXECUTION, which is the only reach that can answer "do they behave differently". Nine
+#       stores constructed for real over an unreadable artifact in this run's own temp root (never anything
+#       under %ProgramData%\ST4I). THREE postures, measured: two express a third state, six throw, and ONE
+#       — OeeSettingsStore — cannot tell "unreadable" from "absent" and therefore replaces the operator's
+#       oee-settings.json on its next ordinary write, with no exception and no log line. The last test is
+#       that harm, executed. It PINS a live defect as a baseline and FIXES NOTHING: S-1 was forbidden to.
+#       If the owner rules FIX, that assertion inverts and the inversion is the diff.
+#
+# EXPECT_WARNINGS stays 116: the new file adds no warning (measured on a full -t:Rebuild), and
+# St4i.EngineApi.Tests is one of the NINE projects that do not set GenerateDocumentationFile, so its `///`
+# blocks are not compiled — see the EXPECT_WARNINGS block below, which says so about itself.
+EXPECT_ENGINEAPI=1351
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
