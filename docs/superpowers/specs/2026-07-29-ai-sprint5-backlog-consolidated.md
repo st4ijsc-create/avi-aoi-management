@@ -185,6 +185,43 @@ Toàn bộ 12 task của plan trả nợ E+F **đã hoàn tất và đã push**.
   **Gốc rễ thật:** (a) hàng trăm lời gọi `t(key, "<mặc định tiếng Việt>")` mà khoá **vắng ở cả ba** locale — `defaultValue` LUÔN thắng, nên `fallbackLng: false` **về nguyên lý không thể chữa**; (b) **≥186 chuỗi tiếng Việt trần KHÔNG đi qua `t()`**, gồm đúng các nhãn thấy trong ảnh.
   ⇒ Cần một đợt riêng cho nhãn giao diện. Là nợ **tiền tồn tại**, KHÔNG phải hồi quy do sprint gây ra.
 
+  ### ✅ F12 ĐÃ ĐÓNG — 2026-08-16 (`e4532027` → `2c7c0460`)
+
+  | Nhánh | Trước | Sau | Cổng canh |
+  |---|---:|---:|---|
+  | (a) `t(key,"vi")` khoá vắng cả ba locale | 533 | **0** | `i18n:check`, nền 817→340 |
+  | (b) chuỗi trần — màn **vận hành** | 200 | **0** | `viStringCoverage` |
+  | (b) chuỗi trần — nhóm **ApiDocs** | 410 | 410 *(để lại, có lý do)* | trần riêng, không bù trừ được |
+
+  **ApiDocs để lại là quyết định của chủ dự án, không phải bỏ sót.** 410 chuỗi trong 8 file
+  `ApiDocs` là *tài liệu tham chiếu API cho bên tích hợp* (`factory.list - Danh sách nhà máy`:
+  tên tuyến tiếng Anh + mô tả tiếng Việt) — tài liệu, không phải nhãn vận hành.
+
+  **Nghiệm thu bằng mắt bắt được BA lỗi mà cả ba cổng xanh đều không thấy** — đây mới là phần
+  đáng đọc của F12:
+  1. **Hình dạng thứ ba.** `{cond ? "…tiếng Việt…" : "…"}` — chuỗi ở nhánh ternary không mang
+     hình dạng `>text<` cũng không phải `attr="text"`, tức hai hình dạng duy nhất cổng biết đọc.
+     `ConnectionBanner` vì thế hiện tiếng Việt trên đầu **mọi màn** cho người dùng en/zh, trong
+     khi cổng khai *0 nợ*. Quét ra **914 chuỗi / 143 file** mang hình dạng này.
+  2. **Khoá CÓ MẶT nhưng nội dung là chữ giữ chỗ.** `en.json` có `auth.loginTitle` =
+     `"Login title"` và `auth.systemDescription` = `"System description"`. Mọi cổng đếm khoá đều
+     xanh; đó là màn **đầu tiên** người dùng tiếng Anh nhìn thấy.
+  3. **Chuỗi thô đến từ MÁY CHỦ.** Sai mật khẩu ⇒ người dùng `zh` nhận một lúc **hai** toast:
+     bản dịch đúng + `Tên đăng nhập hoặc mật khẩu không đúng`. Không có gì trong `client/src`
+     để quét ra lỗi này. Cùng khuôn ở 6 câu của REST `/api/auth/verify-2fa`.
+
+  ⇒ **Bài học mang sang:** cổng tĩnh xanh chỉ chứng minh *"không còn thứ TÔI BIẾT CÁCH NHÌN"*.
+
+- **F13. Phân loại 914 chuỗi "hình dạng thứ ba" — CHƯA LÀM, đã đóng băng.**
+  Cổng `viStringCoverage` giữ nó không phình thêm. ⚠ **KHÔNG quét-và-thay hàng loạt** — đã lấy
+  mẫu và biết chắc trong đó có thứ *phải* giữ tiếng Việt:
+  · `ApiDocs`: `name: "Nhà máy Bắc Ninh"` — dữ liệu JSON **mẫu** của tài liệu API;
+  · `BulkImportDialog`: `findCol("code", "mã", "ma", …)` — **bí danh cột** để khớp file Excel
+    người dùng nhập, dịch chúng là **làm hỏng chức năng nhập**;
+  · `FirstRunTour`/`FactoryConfigAudit`: `{ key: "…", fallback: "…" }` — đã có khoá i18n đi kèm,
+    chuỗi Việt chỉ là lưới an toàn, **đúng khuôn**.
+  Việc cần làm là *phân loại rồi mới di trú*, và ước lượng phần thật sự là nợ trước khi cam kết.
+
 ---
 
 ## 5. KHÔNG phải nợ — ngoại lệ CÓ CHỦ Ý đã chốt
