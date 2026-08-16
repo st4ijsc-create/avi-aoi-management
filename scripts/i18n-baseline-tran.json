@@ -1,6 +1,6 @@
 {
   "_note": "TRẦN của nợ i18n có trước. `node scripts/i18n-check.mjs --update-baseline` KHÔNG BAO GIỜ ghi file này — đó là toàn bộ lý do nó là một file RIÊNG. Nền (scripts/i18n-missing-baseline.json) vượt hai con số dưới đây ⇒ cổng ĐỎ. Hai con số này chỉ được HẠ. Nâng chúng là một quyết định phải nói ra trong review, và nó hiện thành một diff hai dòng trong một file chỉ có hai con số — thay vì một dòng lẫn giữa 817 cái tên.",
   "_luat": "∀ lượt chạy: |nền| ≤ trần. Cố ý là `≤` chứ KHÔNG phải `===` — bắt trần khít nền sẽ biến mọi lượt TRẢ NỢ hợp lệ thành ĐỎ, tức phạt đúng hành vi cần khuyến khích.",
-  "missingInAllLocales": 663,
+  "missingInAllLocales": 510,
   "missingInSomeLocales": 20
 }

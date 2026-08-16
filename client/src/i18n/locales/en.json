@@ -273,7 +273,11 @@
       "fleet": "Fleet tasks / robots",
       "sites": "Sites reporting",
       "ai": "AI insights",
-      "energy": "Energy kWh"
+      "energy": "Energy kWh",
+      "oeeGo": "Open the full OEE board",
+      "wipGo": "Open the full WIP board",
+      "alarmsOpen": "Open alarms",
+      "sitesGo": "Open the Corporate dashboard"
     },
     "corporate": {
       "title": "Corporate yield & OEE",
@@ -313,7 +317,8 @@
       "title": "OEE by line",
       "line": "Line",
       "output": "Output",
-      "empty": "No OEE for the current shift yet."
+      "empty": "No OEE for the current shift yet.",
+      "drawerDesc": "A/P/Q plus line downtime."
     },
     "planVsActual": {
       "title": "Plan vs actual",
@@ -335,12 +340,35 @@
       "title": "Andon rail",
       "counts": "{{active}} active · {{alerts}} open alerts",
       "signal": "Andon signal",
-      "empty": "No active Andon signals. All clear."
+      "empty": "No active Andon signals. All clear.",
+      "drawerDesc": "Andon alert detail — acknowledge in place."
     },
     "liveAlarms": {
       "title": "Live alarm rail",
       "desc": "Unified alert stream across the estate",
-      "empty": "No active alarms. All clear."
+      "empty": "No active alarms. All clear.",
+      "drawerDesc": "Alert detail from the unified stream.",
+      "sourceLabel": "Source"
+    },
+    "subtitleShort": "Live command board — KPIs & signals by role.",
+    "exitKiosk": "Exit kiosk mode",
+    "allClear": "Nothing unusual — stable.",
+    "openWarRoom": "Open War Room",
+    "openOps": "Open Ops Console",
+    "openCommandCenter": "Open Command Center",
+    "ack": "Acknowledge",
+    "acked": "Acknowledged",
+    "acking": "Acknowledging…",
+    "hero": {
+      "unknown": "Unknown",
+      "incident": "Incident",
+      "warning": "Warning",
+      "healthy": "Healthy",
+      "openOps": "Open Ops Console",
+      "critical": "critical",
+      "open": "open",
+      "topAnomaly": "Top anomaly",
+      "allClear": "No open alerts — the system is stable."
     }
   },
   "comparisonStudio": {
@@ -3286,7 +3314,29 @@
     "toDate": "To date",
     "aiQuickAsk": "Quickly ask AI about production...",
     "openFullChat": "Open full chat",
-    "productionDashboardDesc": "Real-time production overview by inspection station"
+    "productionDashboardDesc": "Real-time production overview by inspection station",
+    "createFromTemplate": "From template",
+    "createBlank": "Blank",
+    "properties": "Properties",
+    "propertiesHint": "Rename, describe, share, favourite, duplicate or delete.",
+    "editLayout": "Edit layout",
+    "duplicate": "Duplicate",
+    "public": "Public",
+    "favorite": "Favourite",
+    "delete": "Delete",
+    "quickStartPickTemplate": "Quick start — pick a template:",
+    "needsAttentionTitle": "Machines/stations needing attention",
+    "viewGrid": "View grid",
+    "worstMachinesFpy": "Worst machines (FPY)",
+    "worstStationsNg": "Highest-NG stations",
+    "dataPeriod": "Data period",
+    "machineKpiPeriod": "KPI · {{period}} period",
+    "ngHistoryDays": "NG, last {{n}} days",
+    "ngTotalShort": "Total NG {{n}}",
+    "noNgInPeriod": "No NG in this period.",
+    "ngHistoryAria": "NG history, {{n}} days",
+    "topDefectPoints": "Top defective measurement points",
+    "noDefectPoints": "No defective measurement points in this period."
   },
   "defects": {
     "trend": {
@@ -15033,7 +15083,28 @@
     "rollbackDone": "Rolled back to the previous version",
     "fleetHalted": "Rollout HALTED — canary did not pass",
     "rollbackTitle": "Roll back to the previous version?",
-    "rollbackDesc": "This records a NEW deployment of the previous successful build in stage \"{{stage}}\". It goes through the same safety gate (sign-off / flag) as a deploy."
+    "rollbackDesc": "This records a NEW deployment of the previous successful build in stage \"{{stage}}\". It goes through the same safety gate (sign-off / flag) as a deploy.",
+    "deployRequested": "Deploy request sent — awaiting a second approver in the Approvals inbox",
+    "readinessTitle": "Not yet eligible to deploy (actuation)",
+    "approvalInboxHint": "This will be submitted for APPROVAL — a second person signs in the Approvals inbox",
+    "requestDeployBtn": "Send deploy request",
+    "sodHintInbox": "Production deploys are submitted for APPROVAL: someone OTHER than you signs with their own session (separation of duties).",
+    "fleetTitle": "Fleet rollout (canary)",
+    "fleetHint": "Push the selected build to several machines SEQUENTIALLY through the same deploy path (all safety gates stay in force). Canary the first N machines; on failure it HALTS and (optionally) rolls back the machines already written.",
+    "fleetNeedBuild": "Select a build in the block",
+    "fleetTargets": "Target machines",
+    "fleetCanaryCount": "Canary machine count",
+    "fleetPromoteVerified": "Promote only when the canary is VERIFIED",
+    "fleetAutoRollback": "Auto-rollback if the canary fails",
+    "fleetDeployBtn": "Roll out (canary)",
+    "fleetPromoted": "Canary passed — promoted to the whole fleet",
+    "fleetCanaryOk": "Canary run finished",
+    "fleetHaltedShort": "HALTED — canary failed",
+    "fleetPromotedShort": "Promoted to the whole fleet",
+    "fleetCanaryOkShort": "Canary ran",
+    "rolledBack": "Rolled back",
+    "fleetMatrix": "Machine × version matrix",
+    "fleetMatrixEmpty": "No machine has reported a version yet"
   },
   "engineeringHome": {
     "needControl": "Requires control access",
@@ -17905,7 +17976,28 @@
   "opSession": {
     "pickShiftLine": "Select a shift and a line",
     "noUser": "Could not identify the user",
-    "noWorkshop": "Could not find the workshop for this line"
+    "noWorkshop": "Could not find the workshop for this line",
+    "title": "Work shift",
+    "current": "Current session: {{code}}",
+    "none": "Not clocked in — tap to start a production session",
+    "running": "Running",
+    "pausedState": "Paused",
+    "since": "Since {{time}}",
+    "pause": "Pause",
+    "resume": "Resume",
+    "close": "End shift",
+    "clockIn": "Clock in",
+    "clockInDesc": "Pick a shift and a line to open a new production session.",
+    "selectShift": "Select a shift…",
+    "line": "Line",
+    "selectLine": "Select a line…",
+    "clockingIn": "Clocking in…",
+    "clockedIn": "Clocked in — production session opened",
+    "paused": "Session paused",
+    "resumed": "Session resumed",
+    "closed": "Shift ended — session closed",
+    "noEdit": "You do not have permission to pause/end a shift — ask a supervisor to grant production-session rights.",
+    "noCreate": "You do not have permission to clock in — ask a supervisor to grant production-session rights."
   },
   "handover": {
     "pickBoth": "Select both the outgoing and incoming session",
@@ -17917,7 +18009,33 @@
       "failed": "Could not complete the action"
     },
     "deploy": {
-      "rejected": "Deploy rejected by the safety gate"
+      "rejected": "Deploy rejected by the safety gate",
+      "title": "Deploys awaiting approval",
+      "empty": "No deploy requests awaiting approval",
+      "openWorkspace": "Open the programming workspace",
+      "readiness": "You are not yet eligible to SIGN off a deploy:",
+      "verified": "Approved & deployed (read-back matched)",
+      "deployed": "Approved & deployed (read-back NOT verified)",
+      "simulated": "Approved (SIMULATED — deploy flag OFF)",
+      "done": "Approval processed",
+      "rejectedOk": "Deploy request rejected",
+      "col": {
+        "project": "Project / version",
+        "checks": "Sim & expected hash",
+        "requestedBy": "Requested by"
+      },
+      "simPass": "Sim PASS",
+      "simFail": "Sim FAIL",
+      "simNone": "Not simulated",
+      "hideDiff": "Hide diff",
+      "showDiff": "Show diff vs deployed build",
+      "ownHint": "Separation of duties: you cannot approve your own request",
+      "withdraw": "Withdraw request",
+      "approve": "Approve & deploy",
+      "rejectAria": "Reject deploy #{{id}}",
+      "approveAria": "Approve & deploy #{{id}}",
+      "withdrawTitle": "Withdraw deploy request #{{id}}",
+      "rejectTitle": "Reject deploy request #{{id}}"
     },
     "threshold": {
       "commentRequired": "A reason is required to reject"
@@ -18043,5 +18161,58 @@
     "noShiftCompare": "No shift comparison data yet",
     "planVsActual": "Plan vs Actual by line",
     "noPlan": "No plan for the selected shift/date"
+  },
+  "mpHealth": {
+    "title": "Measurement-point mapping health",
+    "subtitle": "Track the share of unmapped measurement points (__UNMAPPED__) and remap them onto real product models",
+    "totalResults": "Total results",
+    "unmatched": "Unmapped",
+    "rate": "Unmapped rate",
+    "byMachine": "By machine",
+    "machine": "Machine",
+    "total": "Total",
+    "unmappedPoints": "Unmapped measurement points",
+    "remapSelected": "Remap selected",
+    "adminOnly": "Only an admin can remap measurement points (it changes data structure).",
+    "results": "Results",
+    "suggestion": "Suggestion",
+    "noUnmapped": "No unmapped measurement points. 🎉",
+    "applySuggestion": "Apply suggestion",
+    "remapTitle": "Remap measurement points",
+    "remapDesc": "Pick the target product model. Points whose code already exists on the target are merged (results move to the target definition); the rest are moved to the target model.",
+    "remapCount": "{{n}} points selected",
+    "targetModel": "Target product model",
+    "pickModel": "Select a model…",
+    "remapDone": "Remapped: {{moved}} moved, {{merged}} merged, {{results}} results updated"
+  },
+  "synapse": {
+    "tab": {
+      "tools": "Tools"
+    },
+    "tools": {
+      "run": "Dry run",
+      "reset": "Reset",
+      "routeDesc": "Earliest-arrival route through the graph, avoiding booked slots (H4).",
+      "dagDesc": "Recipe check: missing refs + cycles → topological order (F8).",
+      "fourEyesDesc": "Does this action need four-eyes approval? (F5 policy).",
+      "policyDesc": "Dry-run a policy-as-code decision against a hypothetical context (F5).",
+      "sloDesc": "Status + burn-rate from observed (good, total) (F6).",
+      "compatDesc": "Check backward compatibility between two JSON Schemas (F7).",
+      "reconcileDesc": "Reconcile the internal ↔ external metric map and raise a ticket on drift (I6).",
+      "driftDesc": "Twin↔real drift for (simulated, actual) pairs (H6).",
+      "rlDesc": "RL scheduling advice by mode plus the heuristic/RL choice (H6)."
+    },
+    "edition": {
+      "current": "Current deployment"
+    },
+    "obs": {
+      "decisions": "Recent decision traces",
+      "noDecisions": "No decisions yet (enable FLEET_ORCH + OBSERVABILITY)."
+    },
+    "contracts": {
+      "noSchemas": "No schema registered yet.",
+      "served": "served via trpc.contracts / devPortal",
+      "noProviders": "No MES/ERP/WMS provider plugged in yet."
+    }
   }
 }

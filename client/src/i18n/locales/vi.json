@@ -273,7 +273,11 @@
       "fleet": "Tác vụ / robot",
       "sites": "Site báo cáo",
       "ai": "Insight AI",
-      "energy": "Điện kWh"
+      "energy": "Điện kWh",
+      "oeeGo": "Mở bảng OEE đầy đủ",
+      "wipGo": "Mở bảng WIP đầy đủ",
+      "alarmsOpen": "Cảnh báo mở",
+      "sitesGo": "Mở Corporate dashboard"
     },
     "corporate": {
       "title": "Yield & OEE tập đoàn",
@@ -313,7 +317,8 @@
       "title": "OEE theo chuyền",
       "line": "Chuyền",
       "output": "Sản lượng",
-      "empty": "Chưa có OEE cho ca hiện tại."
+      "empty": "Chưa có OEE cho ca hiện tại.",
+      "drawerDesc": "A/P/Q + thời gian dừng của tuyến."
     },
     "planVsActual": {
       "title": "Kế hoạch vs thực tế",
@@ -335,12 +340,35 @@
       "title": "Bảng Andon",
       "counts": "{{active}} đang hoạt động · {{alerts}} cảnh báo mở",
       "signal": "Tín hiệu Andon",
-      "empty": "Không có tín hiệu Andon. Tất cả ổn."
+      "empty": "Không có tín hiệu Andon. Tất cả ổn.",
+      "drawerDesc": "Chi tiết cảnh báo Andon — xác nhận (Ack) tại chỗ."
     },
     "liveAlarms": {
       "title": "Bảng cảnh báo trực tiếp",
       "desc": "Luồng cảnh báo hợp nhất toàn hệ thống",
-      "empty": "Không có cảnh báo. Tất cả ổn."
+      "empty": "Không có cảnh báo. Tất cả ổn.",
+      "drawerDesc": "Chi tiết cảnh báo trong luồng hợp nhất.",
+      "sourceLabel": "Nguồn"
+    },
+    "subtitleShort": "Bảng điều hành trực tiếp — KPI & tín hiệu theo vai trò.",
+    "exitKiosk": "Thoát chế độ kiosk",
+    "allClear": "Không có gì bất thường — ổn định.",
+    "openWarRoom": "Mở War Room",
+    "openOps": "Mở Ops Console",
+    "openCommandCenter": "Mở Command Center",
+    "ack": "Xác nhận",
+    "acked": "Đã xác nhận",
+    "acking": "Đang xác nhận…",
+    "hero": {
+      "unknown": "Chưa rõ",
+      "incident": "Sự cố",
+      "warning": "Cảnh báo",
+      "healthy": "Khỏe",
+      "openOps": "Mở Ops Console",
+      "critical": "nặng",
+      "open": "đang mở",
+      "topAnomaly": "Bất thường #1",
+      "allClear": "Không có cảnh báo đang mở — hệ thống ổn định."
     }
   },
   "comparisonStudio": {
@@ -3278,7 +3306,29 @@
     "rangeYesterday": "Hôm qua",
     "toDate": "Đến ngày",
     "aiQuickAsk": "Hỏi nhanh AI về sản xuất...",
-    "openFullChat": "Mở chat đầy đủ"
+    "openFullChat": "Mở chat đầy đủ",
+    "createFromTemplate": "Từ mẫu",
+    "createBlank": "Trống",
+    "properties": "Thuộc tính",
+    "propertiesHint": "Đổi tên, mô tả, chia sẻ, yêu thích, nhân bản hoặc xóa.",
+    "editLayout": "Sửa bố cục",
+    "duplicate": "Nhân bản",
+    "public": "Công khai",
+    "favorite": "Yêu thích",
+    "delete": "Xóa",
+    "quickStartPickTemplate": "Bắt đầu nhanh — chọn một mẫu:",
+    "needsAttentionTitle": "Máy/Trạm cần chú ý",
+    "viewGrid": "Xem lưới",
+    "worstMachinesFpy": "Máy kém nhất (FPY)",
+    "worstStationsNg": "Trạm lỗi cao nhất",
+    "dataPeriod": "Kỳ dữ liệu",
+    "machineKpiPeriod": "KPI · kỳ {{period}}",
+    "ngHistoryDays": "NG {{n}} ngày gần đây",
+    "ngTotalShort": "Tổng NG {{n}}",
+    "noNgInPeriod": "Không có NG trong kỳ.",
+    "ngHistoryAria": "Lịch sử NG {{n}} ngày",
+    "topDefectPoints": "Top điểm-đo lỗi",
+    "noDefectPoints": "Không có điểm-đo lỗi trong kỳ."
   },
   "defects": {
     "heatmap": {
@@ -15013,7 +15063,28 @@
     "rollbackDone": "Đã khôi phục về phiên bản trước",
     "fleetHalted": "Rollout đã DỪNG do canary không đạt",
     "rollbackTitle": "Khôi phục phiên bản trước?",
-    "rollbackDesc": "Sẽ ghi một deployment MỚI về build của lần deploy thành công trước ở giai đoạn \"{{stage}}\". Chịu cùng cổng an toàn (sign-off / flag) như deploy."
+    "rollbackDesc": "Sẽ ghi một deployment MỚI về build của lần deploy thành công trước ở giai đoạn \"{{stage}}\". Chịu cùng cổng an toàn (sign-off / flag) như deploy.",
+    "deployRequested": "Đã gửi yêu cầu deploy — chờ người thứ hai duyệt ở Hộp duyệt",
+    "readinessTitle": "Chưa đủ điều kiện để deploy (actuation)",
+    "approvalInboxHint": "Sẽ gửi CHỜ DUYỆT — người thứ hai ký ở Hộp duyệt",
+    "requestDeployBtn": "Gửi yêu cầu deploy",
+    "sodHintInbox": "Deploy production được gửi CHỜ DUYỆT: một người KHÁC bạn sẽ ký bằng session của họ (phân tách nhiệm vụ).",
+    "fleetTitle": "Triển khai đội máy (canary)",
+    "fleetHint": "Đẩy build đang chọn ra nhiều máy TUẦN TỰ qua đúng đường deploy (giữ nguyên mọi cổng an toàn). Canary N máy đầu; nếu không đạt sẽ DỪNG và (tùy chọn) tự khôi phục các máy đã ghi.",
+    "fleetNeedBuild": "Chọn một build ở khối \\",
+    "fleetTargets": "Máy đích",
+    "fleetCanaryCount": "Số máy canary",
+    "fleetPromoteVerified": "Chỉ promote khi canary VERIFIED",
+    "fleetAutoRollback": "Tự khôi phục nếu canary hỏng",
+    "fleetDeployBtn": "Triển khai (canary)",
+    "fleetPromoted": "Canary đạt — đã promote toàn đội máy",
+    "fleetCanaryOk": "Canary đã chạy xong",
+    "fleetHaltedShort": "DỪNG — canary không đạt",
+    "fleetPromotedShort": "Đã promote toàn đội máy",
+    "fleetCanaryOkShort": "Canary đã chạy",
+    "rolledBack": "Đã khôi phục",
+    "fleetMatrix": "Ma trận máy × version",
+    "fleetMatrixEmpty": "Chưa có máy nào ghi nhận phiên bản"
   },
   "engineeringHome": {
     "needControl": "Cần quyền điều khiển",
@@ -17885,7 +17956,28 @@
   "opSession": {
     "pickShiftLine": "Chọn ca và dây chuyền",
     "noUser": "Không xác định được người dùng",
-    "noWorkshop": "Không tìm thấy nhà xưởng của dây chuyền"
+    "noWorkshop": "Không tìm thấy nhà xưởng của dây chuyền",
+    "title": "Ca làm việc",
+    "current": "Phiên hiện tại: {{code}}",
+    "none": "Chưa vào ca — chạm để bắt đầu phiên sản xuất",
+    "running": "Đang chạy",
+    "pausedState": "Tạm dừng",
+    "since": "Từ {{time}}",
+    "pause": "Tạm dừng",
+    "resume": "Tiếp tục",
+    "close": "Kết thúc ca",
+    "clockIn": "Vào ca",
+    "clockInDesc": "Chọn ca và dây chuyền để mở phiên sản xuất mới.",
+    "selectShift": "Chọn ca…",
+    "line": "Dây chuyền",
+    "selectLine": "Chọn dây chuyền…",
+    "clockingIn": "Đang vào ca…",
+    "clockedIn": "Đã vào ca — phiên sản xuất đã mở",
+    "paused": "Đã tạm dừng phiên",
+    "resumed": "Đã tiếp tục phiên",
+    "closed": "Đã kết thúc ca — phiên đã đóng",
+    "noEdit": "Bạn chưa được cấp quyền tạm dừng/kết thúc ca — liên hệ giám sát để cấp quyền phiên sản xuất.",
+    "noCreate": "Bạn chưa được cấp quyền vào ca — liên hệ giám sát để cấp quyền phiên sản xuất."
   },
   "handover": {
     "pickBoth": "Chọn cả phiên bàn giao và phiên nhận",
@@ -17897,7 +17989,33 @@
       "failed": "Không thể hoàn tất hành động"
     },
     "deploy": {
-      "rejected": "Deploy bị từ chối bởi cổng an toàn"
+      "rejected": "Deploy bị từ chối bởi cổng an toàn",
+      "title": "Deploy chờ duyệt",
+      "empty": "Không có yêu cầu deploy nào chờ duyệt",
+      "openWorkspace": "Mở xưởng lập trình",
+      "readiness": "Bạn chưa đủ điều kiện để KÝ duyệt deploy:",
+      "verified": "Đã duyệt & deploy (read-back khớp)",
+      "deployed": "Đã duyệt & deploy (CHƯA xác minh read-back)",
+      "simulated": "Đã duyệt (SIMULATED — flag deploy OFF)",
+      "done": "Đã xử lý duyệt",
+      "rejectedOk": "Đã từ chối yêu cầu deploy",
+      "col": {
+        "project": "Dự án / phiên bản",
+        "checks": "Sim & hash dự kiến",
+        "requestedBy": "Người yêu cầu"
+      },
+      "simPass": "Sim ĐẠT",
+      "simFail": "Sim KHÔNG ĐẠT",
+      "simNone": "Chưa mô phỏng",
+      "hideDiff": "Ẩn diff",
+      "showDiff": "Xem diff vs bản đã deploy",
+      "ownHint": "Phân tách nhiệm vụ: bạn không thể tự duyệt yêu cầu của mình",
+      "withdraw": "Rút yêu cầu",
+      "approve": "Duyệt & deploy",
+      "rejectAria": "Từ chối deploy #{{id}}",
+      "approveAria": "Duyệt & deploy #{{id}}",
+      "withdrawTitle": "Rút yêu cầu deploy #{{id}}",
+      "rejectTitle": "Từ chối yêu cầu deploy #{{id}}"
     },
     "threshold": {
       "commentRequired": "Cần nhập lý do để từ chối"
@@ -18023,5 +18141,58 @@
     "noShiftCompare": "Chưa có dữ liệu so sánh ca",
     "planVsActual": "Kế hoạch vs Thực tế theo Line",
     "noPlan": "Chưa có kế hoạch cho ca/ngày đã chọn"
+  },
+  "mpHealth": {
+    "title": "Sức khoẻ ánh xạ điểm đo",
+    "subtitle": "Theo dõi tỉ lệ điểm đo chưa ánh xạ (__UNMAPPED__) và remap về model sản phẩm thật",
+    "totalResults": "Tổng kết quả",
+    "unmatched": "Chưa ánh xạ",
+    "rate": "Tỉ lệ chưa ánh xạ",
+    "byMachine": "Theo máy",
+    "machine": "Máy",
+    "total": "Tổng",
+    "unmappedPoints": "Điểm đo chưa ánh xạ",
+    "remapSelected": "Remap đã chọn",
+    "adminOnly": "Chỉ admin mới remap được điểm đo (thao tác thay đổi cấu trúc dữ liệu).",
+    "results": "Kết quả",
+    "suggestion": "Gợi ý",
+    "noUnmapped": "Không có điểm đo chưa ánh xạ. 🎉",
+    "applySuggestion": "Áp dụng gợi ý",
+    "remapTitle": "Remap điểm đo",
+    "remapDesc": "Chọn model sản phẩm đích. Điểm có cùng mã ở model đích sẽ được gộp (kết quả chuyển sang def đích); còn lại được di chuyển sang model đích.",
+    "remapCount": "{{n}} điểm đã chọn",
+    "targetModel": "Model sản phẩm đích",
+    "pickModel": "Chọn model…",
+    "remapDone": "Đã remap: {{moved}} chuyển, {{merged}} gộp, {{results}} kết quả cập nhật"
+  },
+  "synapse": {
+    "tab": {
+      "tools": "Công cụ"
+    },
+    "tools": {
+      "run": "Chạy thử",
+      "reset": "Đặt lại",
+      "routeDesc": "Tuyến đến sớm nhất qua đồ thị, tránh các slot đã đặt (H4).",
+      "dagDesc": "Kiểm tra công thức: thiếu ref + chu trình → thứ tự topo (F8).",
+      "fourEyesDesc": "Hành động này có cần phê duyệt 4-mắt không? (F5 policy).",
+      "policyDesc": "Chạy thử một quyết định policy-as-code cho ngữ cảnh giả định (F5).",
+      "sloDesc": "Trạng thái + burn-rate từ (good,total) quan sát (F6).",
+      "compatDesc": "Kiểm tra tương thích ngược giữa hai JSON-Schema (F7).",
+      "reconcileDesc": "Đối soát bản đồ metric nội bộ ↔ ngoài, sinh ticket khi lệch (I6).",
+      "driftDesc": "Độ lệch twin↔thực cho các cặp (mô phỏng, thực) (H6).",
+      "rlDesc": "Lời khuyên điều phối RL theo mode + lựa chọn heuristic/RL (H6)."
+    },
+    "edition": {
+      "current": "Deployment hiện tại"
+    },
+    "obs": {
+      "decisions": "Decision-trace gần đây",
+      "noDecisions": "Chưa có quyết định nào (bật FLEET_ORCH + OBSERVABILITY)."
+    },
+    "contracts": {
+      "noSchemas": "Chưa đăng ký schema nào.",
+      "served": "phục vụ qua trpc.contracts / devPortal",
+      "noProviders": "Chưa cắm provider MES/ERP/WMS."
+    }
   }
 }

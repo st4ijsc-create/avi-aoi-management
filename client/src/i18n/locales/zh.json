@@ -273,7 +273,11 @@
       "fleet": "任务 / 机器人",
       "sites": "上报站点",
       "ai": "AI 洞察",
-      "energy": "能耗 kWh"
+      "energy": "能耗 kWh",
+      "oeeGo": "打开完整 OEE 看板",
+      "wipGo": "打开完整 WIP 看板",
+      "alarmsOpen": "未处理告警",
+      "sitesGo": "打开集团看板"
     },
     "corporate": {
       "title": "集团良率与 OEE",
@@ -313,7 +317,8 @@
       "title": "各产线 OEE",
       "line": "产线",
       "output": "产量",
-      "empty": "当前班次尚无 OEE。"
+      "empty": "当前班次尚无 OEE。",
+      "drawerDesc": "可用率/性能/质量以及产线停机时间。"
     },
     "planVsActual": {
       "title": "计划对比实际",
@@ -335,12 +340,35 @@
       "title": "Andon 栏",
       "counts": "{{active}} 个活动 · {{alerts}} 个未处理报警",
       "signal": "Andon 信号",
-      "empty": "无活动 Andon 信号，一切正常。"
+      "empty": "无活动 Andon 信号，一切正常。",
+      "drawerDesc": "安灯警报详情——可就地确认。"
     },
     "liveAlarms": {
       "title": "实时报警栏",
       "desc": "全域统一报警流",
-      "empty": "无活动报警，一切正常。"
+      "empty": "无活动报警，一切正常。",
+      "drawerDesc": "统一告警流中的详情。",
+      "sourceLabel": "来源"
+    },
+    "subtitleShort": "实时指挥面板——按角色划分的 KPI 与信号。",
+    "exitKiosk": "退出信息亭模式",
+    "allClear": "一切正常——运行稳定。",
+    "openWarRoom": "打开作战室",
+    "openOps": "打开运营控制台",
+    "openCommandCenter": "打开指挥中心",
+    "ack": "确认",
+    "acked": "已确认",
+    "acking": "确认中…",
+    "hero": {
+      "unknown": "未知",
+      "incident": "事故",
+      "warning": "警告",
+      "healthy": "健康",
+      "openOps": "打开运营控制台",
+      "critical": "严重",
+      "open": "未处理",
+      "topAnomaly": "首要异常",
+      "allClear": "没有未处理告警——系统稳定。"
     }
   },
   "comparisonStudio": {
@@ -3278,7 +3306,29 @@
     "rangeYesterday": "昨日",
     "toDate": "截止日期",
     "aiQuickAsk": "快速向 AI 询问生产情况…",
-    "openFullChat": "打开完整对话"
+    "openFullChat": "打开完整对话",
+    "createFromTemplate": "从模板创建",
+    "createBlank": "空白",
+    "properties": "属性",
+    "propertiesHint": "重命名、描述、共享、收藏、复制或删除。",
+    "editLayout": "编辑布局",
+    "duplicate": "复制",
+    "public": "公开",
+    "favorite": "收藏",
+    "delete": "删除",
+    "quickStartPickTemplate": "快速开始——选择一个模板：",
+    "needsAttentionTitle": "需要关注的设备/工位",
+    "viewGrid": "查看网格",
+    "worstMachinesFpy": "FPY 最差的设备",
+    "worstStationsNg": "NG 最高的工位",
+    "dataPeriod": "数据周期",
+    "machineKpiPeriod": "KPI · {{period}} 周期",
+    "ngHistoryDays": "最近 {{n}} 天的 NG",
+    "ngTotalShort": "NG 合计 {{n}}",
+    "noNgInPeriod": "本周期内没有 NG。",
+    "ngHistoryAria": "NG 历史，{{n}} 天",
+    "topDefectPoints": "缺陷最多的测量点",
+    "noDefectPoints": "本周期内没有缺陷测量点。"
   },
   "defects": {
     "trend": {
@@ -15591,7 +15641,28 @@
     "rollbackDone": "已回滚到上一版本",
     "fleetHalted": "灰度发布已停止——canary 未通过",
     "rollbackTitle": "回滚到上一版本？",
-    "rollbackDesc": "这会在阶段“{{stage}}”中记录一次上一个成功构建的新部署。它与部署一样通过相同的安全闸口（签核 / 标志）。"
+    "rollbackDesc": "这会在阶段“{{stage}}”中记录一次上一个成功构建的新部署。它与部署一样通过相同的安全闸口（签核 / 标志）。",
+    "deployRequested": "部署请求已发送——等待审批箱中的第二位审批人",
+    "readinessTitle": "尚不具备部署（执行）资格",
+    "approvalInboxHint": "此项将提交审批——由第二人在审批箱中签署",
+    "requestDeployBtn": "发送部署请求",
+    "sodHintInbox": "生产部署需提交审批：由您以外的人使用其自身会话签署（职责分离）。",
+    "fleetTitle": "设备群部署（金丝雀）",
+    "fleetHint": "沿同一部署路径将所选版本顺序推送到多台设备（所有安全闸门依然生效）。先对前 N 台做金丝雀；若未通过则停止，并（可选）回滚已写入的设备。",
+    "fleetNeedBuild": "请在此区块中选择一个版本",
+    "fleetTargets": "目标设备",
+    "fleetCanaryCount": "金丝雀设备数量",
+    "fleetPromoteVerified": "仅当金丝雀已验证时才推广",
+    "fleetAutoRollback": "金丝雀失败时自动回滚",
+    "fleetDeployBtn": "开始部署（金丝雀）",
+    "fleetPromoted": "金丝雀通过——已推广至整个设备群",
+    "fleetCanaryOk": "金丝雀运行完成",
+    "fleetHaltedShort": "已停止——金丝雀未通过",
+    "fleetPromotedShort": "已推广至整个设备群",
+    "fleetCanaryOkShort": "金丝雀已运行",
+    "rolledBack": "已回滚",
+    "fleetMatrix": "设备 × 版本矩阵",
+    "fleetMatrixEmpty": "尚无设备上报版本"
   },
   "engineeringHome": {
     "needControl": "需要控制访问权限",
@@ -17913,7 +17984,28 @@
   "opSession": {
     "pickShiftLine": "请选择班次和产线",
     "noUser": "无法识别用户",
-    "noWorkshop": "找不到该产线所属的车间"
+    "noWorkshop": "找不到该产线所属的车间",
+    "title": "工作班次",
+    "current": "当前工段：{{code}}",
+    "none": "尚未上班打卡——点击开始生产工段",
+    "running": "进行中",
+    "pausedState": "已暂停",
+    "since": "自 {{time}}",
+    "pause": "暂停",
+    "resume": "继续",
+    "close": "结束班次",
+    "clockIn": "上班打卡",
+    "clockInDesc": "选择班次与产线以开启新的生产工段。",
+    "selectShift": "选择班次…",
+    "line": "产线",
+    "selectLine": "选择产线…",
+    "clockingIn": "打卡中…",
+    "clockedIn": "已打卡上班——生产工段已开启",
+    "paused": "工段已暂停",
+    "resumed": "工段已继续",
+    "closed": "班次已结束——工段已关闭",
+    "noEdit": "您没有暂停/结束班次的权限——请联系主管授予生产工段权限。",
+    "noCreate": "您没有上班打卡的权限——请联系主管授予生产工段权限。"
   },
   "handover": {
     "pickBoth": "请同时选择交接班次和接班班次",
@@ -17925,7 +18017,33 @@
       "failed": "无法完成该操作"
     },
     "deploy": {
-      "rejected": "部署被安全关卡拒绝"
+      "rejected": "部署被安全关卡拒绝",
+      "title": "待审批的部署",
+      "empty": "没有待审批的部署请求",
+      "openWorkspace": "打开编程工作区",
+      "readiness": "您尚不具备签署部署的资格：",
+      "verified": "已批准并部署（回读一致）",
+      "deployed": "已批准并部署（回读未验证）",
+      "simulated": "已批准（模拟——部署开关已关闭）",
+      "done": "审批已处理",
+      "rejectedOk": "部署请求已拒绝",
+      "col": {
+        "project": "项目 / 版本",
+        "checks": "仿真与预期哈希",
+        "requestedBy": "申请人"
+      },
+      "simPass": "仿真通过",
+      "simFail": "仿真未通过",
+      "simNone": "未仿真",
+      "hideDiff": "隐藏差异",
+      "showDiff": "查看与已部署版本的差异",
+      "ownHint": "职责分离：您不能审批自己的请求",
+      "withdraw": "撤回请求",
+      "approve": "批准并部署",
+      "rejectAria": "拒绝部署 #{{id}}",
+      "approveAria": "批准并部署 #{{id}}",
+      "withdrawTitle": "撤回部署请求 #{{id}}",
+      "rejectTitle": "拒绝部署请求 #{{id}}"
     },
     "threshold": {
       "commentRequired": "拒绝时必须填写理由"
@@ -18051,5 +18169,58 @@
     "noShiftCompare": "尚无班次对比数据",
     "planVsActual": "各产线计划与实际对比",
     "noPlan": "所选班次/日期没有计划"
+  },
+  "mpHealth": {
+    "title": "测量点映射健康度",
+    "subtitle": "追踪未映射测量点（__UNMAPPED__）的占比，并将其重新映射到真实产品型号",
+    "totalResults": "结果总数",
+    "unmatched": "未映射",
+    "rate": "未映射比例",
+    "byMachine": "按设备",
+    "machine": "设备",
+    "total": "合计",
+    "unmappedPoints": "未映射的测量点",
+    "remapSelected": "重新映射所选项",
+    "adminOnly": "只有管理员可以重新映射测量点（该操作会改变数据结构）。",
+    "results": "结果",
+    "suggestion": "建议",
+    "noUnmapped": "没有未映射的测量点。🎉",
+    "applySuggestion": "应用建议",
+    "remapTitle": "重新映射测量点",
+    "remapDesc": "选择目标产品型号。代码已存在于目标型号的点位将被合并（结果转移到目标定义）；其余点位将移动到目标型号。",
+    "remapCount": "已选择 {{n}} 个点位",
+    "targetModel": "目标产品型号",
+    "pickModel": "选择型号…",
+    "remapDone": "已重新映射：移动 {{moved}} 个，合并 {{merged}} 个，更新 {{results}} 条结果"
+  },
+  "synapse": {
+    "tab": {
+      "tools": "工具"
+    },
+    "tools": {
+      "run": "试运行",
+      "reset": "重置",
+      "routeDesc": "在图中寻找最早到达路径，避开已预订的时隙（H4）。",
+      "dagDesc": "配方检查：缺失引用 + 环路 → 拓扑排序（F8）。",
+      "fourEyesDesc": "此操作是否需要四眼审批？（F5 策略）。",
+      "policyDesc": "针对假定上下文试运行一次策略即代码决策（F5）。",
+      "sloDesc": "根据观测到的 (good, total) 计算状态与消耗率（F6）。",
+      "compatDesc": "检查两个 JSON Schema 之间的向后兼容性（F7）。",
+      "reconcileDesc": "对账内部与外部指标映射，出现偏差时生成工单（I6）。",
+      "driftDesc": "数字孪生与实际之间的偏差（仿真值，实际值）（H6）。",
+      "rlDesc": "按模式给出的强化学习调度建议，以及启发式/RL 的选择（H6）。"
+    },
+    "edition": {
+      "current": "当前部署"
+    },
+    "obs": {
+      "decisions": "近期决策轨迹",
+      "noDecisions": "尚无决策（请启用 FLEET_ORCH + OBSERVABILITY）。"
+    },
+    "contracts": {
+      "noSchemas": "尚未注册任何 schema。",
+      "served": "通过 trpc.contracts / devPortal 提供",
+      "noProviders": "尚未接入 MES/ERP/WMS 提供方。"
+    }
   }
 }
