@@ -12,11 +12,27 @@ end of §3.1a-now and §3.1b.
 
 🔴 **Two COUNTS this file briefly carried are withdrawn, and the second withdrawal is the more useful one.**
 
-1. *"the count of rows backed by an execution is now **three**"* was **wrong; it is still two.** Instrument
-   2 already covered rows 36 and 40, and instrument 3's reach is row 36 — a row inside that set. A second
-   instrument over an already-covered row does not raise the row count. §4's table said **two** in the same
-   file throughout, which is the contradiction this file exists to end. **Instruments that execute: three.
-   Rows backed by an execution: two.** Those are different numbers and they were being conflated.
+1. **The count of rows backed by an execution has now been wrong THREE times — "three", then "two" — and
+   the third correction is to stop offering a total.** Both earlier numbers were derived by naming members
+   and then reporting the result as a total, which is the one thing naming members cannot establish.
+
+   **What is derivable on this tree, and how:**
+   - **Instrument 2's reach IS enumerable**, because it is one committed program whose passes are named in
+     its own source and in §2: `tools/settings-acl-probe` answers **{36, 40}** and says so.
+   - **Instrument 3's reach is NOT enumerable from this file.** "The five test suites" is an open
+     population. Q-1 deliberately indexed witnesses on **36** and **18**; rows **37** and **38** are pinned
+     by `StartupSettingsReplayHardeningTests` assertions that predate Q-1 (that is what refuted the
+     withdrawn denial in point 2 below). Nobody has run the census that would find the rest.
+   - **So: at least FIVE rows — 18, 36, 37, 38, 40 — are backed by an execution, and NO TOTAL IS
+     OFFERED.** *"At least"* is doing real work rather than hedging: naming members establishes a **lower
+     bound** and nothing else. A total is an upper bound too, and that needs the census point 2 withdrew a
+     number for.
+
+   🔴 **The "two" this replaces was itself produced by the mechanism this file exists to end**, and it is
+   worth recording because it happened *inside the correction of the same defect*: it was derived from
+   instrument 3's **declared** reach ({36, 18}) at a moment when point 2 had already established that
+   instrument 3's declared reach was understated. **Instruments that execute: three. Rows: unbounded above,
+   five named below.** Those are different numbers and every earlier version conflated them.
 2. *"row 36 is the only row of the forty-one that any assertion is indexed on"* / *"forty are still a
    read"* is **withdrawn outright, not re-fitted.** It is a universal denial and it was refuted by the very
    file Q-1 added its witness to: `StartupSettingsReplayHardeningTests.AnUnactivatablePersistedTriple_…`
@@ -137,7 +153,11 @@ which is precisely the thing instrument 2 states it never does.
 version of this paragraph said row 36 was the only such row and that forty were still a read. That is a
 universal denial, and it was refuted by the same test file Q-1 added a witness to — rows 37 and 38 are each
 pinned by an assertion that predates Q-1. Nobody has run the census that would map assertions onto rows, so
-the honest statement is that **most** of this set is still a read and that the number is unmeasured. The
+the honest statement is that **most** of this set is still a read and that the number is unmeasured.
+**Note what that does to any count of rows-backed-by-an-execution: it makes this instrument's reach a LOWER
+BOUND and nothing more** — see the header, which names five and offers no total. A number derived from
+*this paragraph's* declared reach would be a total derived from a set this paragraph says it cannot
+enumerate, and that error has been made twice already. The
 reason the suites cannot simply be pointed at the rest is instrument 2's own: several of these rows can only
 be provoked by making something on disk unreadable, and a suite that has to skip when it cannot is a suite
 whose `Skipped` count is environment-dependent.
@@ -474,7 +494,9 @@ definition supplies, so it is not merely un-federated, it is un-federated *and* 
 deployment set. **The two only diverge because `UpdateSettings` persists unconditionally**; an
 apply-without-persisting path would let this arm honour the floor in memory and still leave the file alone.
 That is a change to `FleetCore.UpdateSettings`' contract, shared by `PUT /v1/settings`, and it is recorded
-as an owner decision rather than taken here.
+as **item 9 on `docs/owner-decisions.md`** rather than taken here. *(Fix round 2, review N5: this sentence
+previously said "recorded as an owner decision" while that file recorded no such item — a cross-reference
+that did not resolve. It was made true rather than deleted.)*
 
 ### 3.1b — the same defect at `site-link.json`, and it was WORSE (fixed by Q-1's fix round)
 
@@ -506,7 +528,18 @@ which on this arm is the default record the process invented, not anything read 
 performed while the file is unreadable still overwrites it. It is operator-**initiated** but not
 operator-**chosen**, and that is the distinction the rule turns on. Closing it means changing *when*
 `ApplyAsync` persists, on a method three callers share, which is a contract change rather than a guard.
-Recorded here for the owner's list.
+**On the owner's list as item 8 of `docs/owner-decisions.md`** — in that file's own shape (what was
+measured, where in the code, the operational consequence, what happens if nobody decides), because
+"declared in a report" is exactly the gap that file exists to close: the owner has no path to open a report.
+
+**The other writer, censused rather than asserted (fix round 2, review N3).**
+`SiteEndpointsTests.TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsApplyAsync` measures two populations
+apart, because they fail differently: every file in `src/` that names `SiteLinkStore` (a writer must, to
+obtain one) is swept for `.Save(` — **one site, `SiteBridgeManager.cs`** — and all of `src/` is swept for
+the literal `site-link.json`, which is how a writer that bypasses the store would appear — **one site, the
+store's own private `FileName` constant.** Its stated non-reach is the same one the settings census
+carries: a writer that never spells the type, or a path composed from fragments. The `Error` message's
+preservation claim rests on that census now instead of on inspection.
 
 **What is still true and still not enforced by a test:** everything else in this file. Q-1 moved one row's
 posture (36) and one row's data-safety (18).
@@ -611,7 +644,7 @@ chỗ chúng đồng thuận."* The memberships differ, and the differences deco
 | **Genuinely missed** — `ProductConfigStore`, `SimulatedEcosystem` (§3.5); the identity mint (§3.3, row 13); eight of the nine parse-ignores (§3.4) | Real. Two new divergences and one new arm. The first derivation's number absorbed them. |
 | **Granularity** — the five `FromEnvironment` factories now counted as their own rows, at the same granularity row 7 always had | Neither derivation was wrong; the rule for splitting arms was unstated, which is why it is now stated in §2. |
 | **Over-counted before** — `builder.Build()`, `WalFlushPump`, `SqliteUserStore` | Removed with reasons; `SqliteUserStore` was a double-count of a root **and** beyond the stated ceiling. |
-| ~~**Still unsettled** — row 40~~ | 🔴 **Run, by M-1's probe.** The predicted **U** was correct. That is one row of forty-one; the number of rows produced by an instrument that executes is now **two**. |
+| ~~**Still unsettled** — row 40~~ | 🔴 **Run, by M-1's probe.** The predicted **U** was correct. ~~the number of rows produced by an instrument that executes is now **two**~~ — **that scalar is withdrawn** (task Q-1, fix round 2). Instrument 2's reach is enumerable at **{36, 40}**; instrument 3's is not enumerable from this file, and **at least five rows — 18, 36, 37, 38, 40 — are backed by an execution, with no total offered.** The derivation is in the header; read it there rather than trusting a number here. |
 | 🔴 **Where the two instruments disagree — §3.1a** (M-1) | The read produced two **opposite** statements in successive rounds and the execution refutes both, because each described one member and was written about the population. This is the disagreement §8.1 asks for, and it is the only place this file has one. |
 
 **A number this list previously stated and which is now withdrawn: "thirteen of them are roots."** It is

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -232,6 +233,108 @@ public sealed class SiteEndpointsTests
     }
 
     private const string UnreadableSiteLinkMarker = "SITE LINK FILE COULD NOT BE READ";
+
+    /// <summary>
+    /// 🔴 <b>Fix round 2 (review N3) — the claim "<c>ApplyAsync</c> holds the only <c>Save</c> of this file
+    /// in the whole product" was load-bearing and had no census. This is it.</b>
+    ///
+    /// <para><b>Why it is load-bearing rather than decoration.</b> The <c>Error</c> message this task added
+    /// tells an operator the file *"was NOT overwritten or deleted by this start"*. That sentence is only
+    /// true because the composition root skipping <c>ApplyAsync</c> skips the **only** writer. A second
+    /// writer anywhere in <c>src/</c> makes the product tell the operator something false at the exact
+    /// moment they are deciding whether their configuration still exists. Its settings counterpart has had
+    /// a census since fix round 2 of H-1a
+    /// (<c>StartupSettingsReplayHardeningTests.TheStartupReplayHasExactlyOneArm_…</c>); this one did not,
+    /// and an enumeration is verified by the check that could refute it, never by re-reading the members it
+    /// names.</para>
+    ///
+    /// <para><b>TWO populations, asserted apart, because they fail differently.</b> (1) A writer that goes
+    /// <i>through the store</i> must name the type <c>SiteLinkStore</c> somewhere in its file in order to
+    /// obtain one — as a field type, a parameter type, a <c>new</c>, or a <c>GetRequiredService&lt;&gt;</c>
+    /// — so the file set is indexed on the TYPE NAME and the <c>.Save(</c> count is taken inside it.
+    /// (2) A writer that <i>bypasses the store</i> would not name the type at all; it would name the FILE,
+    /// so the literal <c>site-link.json</c> is swept separately across all of <c>src/</c>. Neither sweep
+    /// can see the other's population, which is why a single number would have been the weaker check.</para>
+    ///
+    /// <para>🔴 <b>What it cannot reach, stated rather than left to be discovered.</b> It is a source scan.
+    /// It cannot see a writer that obtains a <c>SiteLinkStore</c> without its file ever spelling the type
+    /// (through a non-generic factory or an untyped service locator), and it cannot see a path that
+    /// composes the file name from fragments. Those are the same stated non-reaches the settings census
+    /// carries, and the answer there is the same: the end-to-end witness above asserts a property of the
+    /// FILE, so a second writer of ANY shape fails it whatever it is called.</para>
+    /// </summary>
+    [Fact]
+    public void TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsApplyAsync()
+    {
+        var root = MachineSimulatorRoot();
+        var srcFiles = Directory
+            .EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                     && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .ToList();
+
+        // (1) Through the store: every file that names the type at all, then every `.Save(` inside it.
+        var writeSites = srcFiles
+            .Select(f => (Path: f, Lines: File.ReadAllLines(f)))
+            .Where(x => x.Lines.Any(l => l.Contains("SiteLinkStore", StringComparison.Ordinal)))
+            .SelectMany(x => x.Lines
+                .Select((line, n) => (File: Path.GetRelativePath(root, x.Path).Replace('\\', '/'), Line: n + 1, Text: line.Trim()))
+                .Where(y => Regex.IsMatch(y.Text, @"\.Save\s*\(") && !y.Text.StartsWith("//", StringComparison.Ordinal)))
+            .Select(y => $"{y.File}:{y.Line}")
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(writeSites.Count == 1,
+            $"site-link.json has {writeSites.Count} writer(s) in src/: {string.Join(", ", writeSites)}. " +
+            "There must be exactly ONE, in SiteBridgeManager.ApplyAsync. Program.cs's unreadable arm tells " +
+            "the operator the file 'was NOT overwritten or deleted by this start', and that sentence is " +
+            "true only because skipping ApplyAsync skips the only writer. A second writer makes the " +
+            "product lie at the moment an operator is deciding whether their Site configuration still " +
+            "exists. If a second one is deliberate, the Error message in Program.cs has to be rewritten in " +
+            "the same commit.");
+        Assert.Contains("SiteBridgeManager.cs", writeSites[0], StringComparison.Ordinal);
+
+        // (2) Bypassing the store: anything in src/ that names the FILE itself. The store owns the name and
+        // keeps it private, so the only legitimate occurrence is that private constant.
+        var fileNameSites = srcFiles
+            .SelectMany(f => File.ReadAllLines(f)
+                .Select((line, n) => (File: Path.GetRelativePath(root, f).Replace('\\', '/'), Line: n + 1, Text: line.Trim()))
+                .Where(x => x.Text.Contains("site-link.json", StringComparison.Ordinal)
+                         && !x.Text.StartsWith("//", StringComparison.Ordinal)
+                         && !x.Text.StartsWith("///", StringComparison.Ordinal)
+                         && !x.Text.StartsWith("*", StringComparison.Ordinal)))
+            .Select(x => $"{x.File}:{x.Line}")
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(fileNameSites.Count == 1,
+            $"The literal \"site-link.json\" appears at {fileNameSites.Count} non-comment site(s) in src/: " +
+            string.Join(", ", fileNameSites) + ". SiteLinkStore owns that name and keeps it private, so the " +
+            "only one should be its own FileName constant. A second occurrence is a path composed outside " +
+            "the store — which the writer census above cannot see, because such a caller need never name " +
+            "the type.");
+        Assert.Contains("SiteLinkStore.cs", fileNameSites[0], StringComparison.Ordinal);
+    }
+
+    private static string MachineSimulatorRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "README.md")) &&
+                File.Exists(Path.Combine(dir.FullName, "fleet.json")) &&
+                Directory.Exists(Path.Combine(dir.FullName, "docs")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException(
+            "Could not locate tools/machine-simulator by walking up from " +
+            $"\"{AppContext.BaseDirectory}\". Fix this walk — do NOT weaken the assertions above.");
+    }
 
     /// <summary>Captures LEVEL as well as text; <c>IsEnabled</c> is deliberately unconditional so a demoted
     /// call is still captured and caught by the level assertion rather than vanishing into an empty list

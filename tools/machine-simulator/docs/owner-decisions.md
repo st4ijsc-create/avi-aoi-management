@@ -277,6 +277,70 @@ việc sửa nó đòi một cơ chế tháo dỡ **có tính giao dịch**. B�
 
 ---
 
+## 8. `ReapplyCurrentAsync` vẫn ghi đè một `site-link.json` không đọc được
+
+**Mục này sinh ra từ bản sửa của mục 1, và nó là PHẦN DƯ của chính luật mục 1.**
+Ghi ở đây chứ không chỉ trong báo cáo, vì đó đúng là thiếu sót mà file này được lập
+ra để chấm dứt: một điều "đã được nêu trong một báo cáo" là điều chủ sở hữu **không
+có đường nào mở ra đọc**.
+
+**Đo được:** `SiteBridgeManager.ReapplyCurrentAsync()` gọi `ApplyAsync(_current)`,
+mà `ApplyAsync` gọi `_store.Save(link)` **vô điều kiện**. Trên nhánh *không đọc
+được*, `_current` là bản ghi mặc định `new PersistedSiteLink()` — thứ **tiến trình
+tự nghĩ ra**, không đọc từ đĩa. Nên một lần xoay danh tính sẽ **ghi bản ghi mặc định
+đè lên các byte không đọc được của vận hành viên**, đúng thứ mục 1 vừa chặn ở đường
+khởi động.
+
+**Ở đâu:** `src/St4i.EdgeCore/Site/SiteBridgeManager.cs` (`ReapplyCurrentAsync` →
+`ApplyAsync` → `_store.Save`), tới được từ `POST /v1/site/identity/rotate` trong
+`src/St4i.EngineApi/Endpoints/SiteEndpoints.cs`.
+
+**Hậu quả vận hành:** host, cổng và chứng chỉ tin cậy đã ghim của Site mất — giống
+hệt mục 1 — nhưng chỉ khi có người **xoay danh tính** trong lúc file đang hỏng.
+
+**Vì sao KHÔNG sửa trong Q-1:** nó do vận hành viên **khởi xướng** nhưng không phải
+do họ **chọn** (họ chọn xoay khoá, không chọn ba giá trị link), mà đó chính là ranh
+giới luật này dựa vào. Đóng nó là đổi **HỢP ĐỒNG** của `ApplyAsync` — *khi nào* thì
+lưu — trên một phương thức có **ba** nơi gọi (`PUT /v1/site`, đường khởi động, và
+chính nó). Đó là một thay đổi thiết kế, không phải một cái chốt.
+
+**Nếu không quyết định:** hành vi giữ nguyên. Đường khởi động đã an toàn; đường này
+thì không, và không có gì báo cho ai biết ngoài các dòng đã ghi tại chỗ.
+
+**Bằng chứng:** commit `76b9e85d` (Q-1 vòng sửa lỗi);
+`docs/startup-failure-posture.md` §3.1b.
+
+---
+
+## 9. Một nhánh *không đọc được* nên áp **sàn môi trường** vào bộ nhớ hay không
+
+**Đo được:** sau Q-1, khi `fleet-settings.json` không đọc được, tiến trình lên bằng
+**mặc định dựng sẵn** của `FleetHost` (`DefaultServerUrl = ""`,
+`DefaultMachineCode = "ENGINE-API-01"`) chứ **không** áp bộ ba `ST4I_*` mà bản triển
+khai đã đặt.
+
+**Hai chiều, và phải nói cả hai:** với **FILE**, từ chối sàn là **an toàn hơn hẳn**
+— áp sàn nghĩa là `FleetCore.UpdateSettings` **lưu** nó, và chính việc lưu là mất
+dữ liệu. Với **CỖ MÁY ĐANG CHẠY**, nó có thể **tệ hơn**: một bản cài headless không
+những mất liên kết mà còn không dùng các giá trị dịch vụ của nó đã cấu hình.
+
+**Vì sao hai chiều ấy tách nhau được:** chỉ vì `UpdateSettings` **lưu vô điều
+kiện**. Một đường "áp mà không lưu" sẽ cho nhánh này tôn trọng sàn trong bộ nhớ mà
+vẫn để yên file.
+
+**Ở đâu:** `src/St4i.EdgeCore/Fleet/FleetCore.cs` (`UpdateSettings`, khối `finally`
+trong `if (rebuildNeeded)`), tiêu thụ bởi `src/St4i.EngineApi/Program.cs`.
+
+**Nếu không quyết định:** giữ nguyên — an toàn cho file, và một cỗ máy headless có
+file hỏng sẽ chạy trên giá trị mặc định cho tới khi có người sửa file.
+
+**Vì sao là quyết định của chủ sở hữu:** đổi *khi nào* `UpdateSettings` lưu là đổi
+hợp đồng mà `PUT /v1/settings` cũng dùng chung.
+
+**Bằng chứng:** `docs/startup-failure-posture.md` §3.1a-now.
+
+---
+
 ## Không phải quyết định của chủ sở hữu, nhưng đang chặn công cụ đo
 
 Ghi ở đây vì nó làm hỏng **chính dụng cụ đo mọi thứ khác**, nên nó cạnh tranh thời

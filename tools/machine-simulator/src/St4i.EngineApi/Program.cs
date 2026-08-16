@@ -1979,6 +1979,10 @@ if (settingsRead.Status == FleetSettingsReadStatus.Unreadable)
 if (unreadableSiteLink is not null)
 {
     app.Logger.LogError(
+        // 🔴 Fix round 2 (review N4) — the exception is passed, exactly as the settings arm above passes
+        // `settingsRead.Failure`. It was omitted only because `SiteLinkRead` had no such member, which made
+        // two arms deliberately built to be identical differ on the one thing a log sink can structure.
+        unreadableSiteLink.Failure,
         "SITE LINK FILE COULD NOT BE READ — \"{SiteLinkFile}\" is present and this start could not turn it " +
         "into a Site link ({Reason}). It was NOT applied, and it was NOT overwritten or deleted by this " +
         "start: unreadable content is the only remaining record of the Site broker host, port and pinned " +

@@ -1934,9 +1934,12 @@ constructor and options factory they reach, asking at each statement whether a f
 was executed to produce it**, and it produced every row. 🔴 **A second instrument now exists and RUNS:
 `tools/settings-acl-probe`** (task M-1) — a committed console app outside the five test suites. **A THIRD
 runs too** (task Q-1): the five test suites, whose witnesses are indexed on the settings-file row and the
-Site-link row. **Three instruments, TWO rows backed by an execution** — instrument 3's rows are inside
-instrument 2's set, and a second instrument over an already-covered row does not raise the row count. Those
-two numbers are different and are stated apart on purpose. The probe answers
+Site-link row. 🔴 **Three instruments — and NO TOTAL is offered for how many rows an execution backs.** The
+probe's reach is enumerable (it is one program with named passes) and is two rows; the suites' reach is
+**not** enumerable from here, so counting it produces a number nobody has measured. That count has been
+stated wrongly twice. What is derivable is a **lower bound**: **at least five rows are backed by an
+execution.** `docs/startup-failure-posture.md`'s header carries the derivation; prefer it to any scalar.
+The probe answers
 **two** rows and no others: what curtailed access to the settings root or file actually does, and whether a
 throwing `ApplicationStarted` handler ends the host (it does not — the host serves, and the framework logs
 the throw at `Critical`). **Even in those two rows it measures the STORE, not the host** — no arm of it
@@ -2047,10 +2050,12 @@ một lượt ĐỌC bốn composition root cộng mọi constructor store và f
 chạy gì cả** — và nó sinh ra mọi hàng trong danh sách. 🔴 **Dụng cụ THỨ HAI, do nhiệm vụ M-1 thêm, là một
 phép CHẠY: `tools/settings-acl-probe`** — một console app đã commit, ngoài năm bộ test, trả lời đúng **HAI**
 hàng (§3.1a và hàng `ApplicationStarted`) và **không hàng nào khác**. 🔴 **Dụng cụ THỨ BA, do Q-1 thêm, cũng
-CHẠY:** năm bộ test, với nhân chứng cắm vào hàng file settings và hàng Site-link. **BA dụng cụ, nhưng chỉ
-HAI hàng được một phép chạy chống lưng** — các hàng của dụng cụ 3 nằm TRONG tập của dụng cụ 2, và thêm một
-dụng cụ lên một hàng đã được phủ thì không làm tăng số hàng. Hai con số ấy khác nhau và được nêu tách nhau
-có chủ ý. Thứ một lượt đọc không thấy là phần đồ
+CHẠY:** năm bộ test, với nhân chứng cắm vào hàng file settings và hàng Site-link. 🔴 **BA dụng cụ — và
+KHÔNG chốt một TỔNG SỐ nào** cho việc bao nhiêu hàng được một phép chạy chống lưng. Tầm với của bộ dò thì
+**liệt kê được** (nó là MỘT chương trình với các lượt chạy có tên) và bằng hai hàng; tầm với của năm bộ
+test thì **KHÔNG** liệt kê được từ đây, nên đếm nó ra một con số là đưa ra thứ chưa ai đo. Con số ấy **đã
+bị nói sai hai lần**. Thứ suy ra được là một **CẬN DƯỚI**: **ít nhất NĂM hàng** có một phép chạy chống
+lưng. Phần dẫn giải nằm ở đầu `docs/startup-failure-posture.md`; hãy đọc nó thay vì tin một con số. Thứ một lượt đọc không thấy là phần đồ
 thị DI được phân giải **muộn, sau khi host đã lên**. Hàng từng được đánh dấu **chưa ngã ngũ** thì **đã chạy
 và đã ngã ngũ**: một ngoại lệ ném ra từ handler `ApplicationStarted` **KHÔNG** làm chết host — host vẫn phục
 vụ, và framework tự ghi lỗi ấy ở mức `Critical`.

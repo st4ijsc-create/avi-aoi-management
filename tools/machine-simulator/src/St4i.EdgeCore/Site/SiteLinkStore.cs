@@ -34,12 +34,14 @@ public enum SiteLinkReadStatus
 /// <summary>🔴 Task Q-1 fix round — the outcome of one <see cref="SiteLinkStore.Read"/> call.</summary>
 public sealed class SiteLinkRead
 {
-    private SiteLinkRead(SiteLinkReadStatus status, PersistedSiteLink? link, string filePath, string? reason)
+    private SiteLinkRead(
+        SiteLinkReadStatus status, PersistedSiteLink? link, string filePath, string? reason, Exception? failure)
     {
         Status = status;
         Link = link;
         FilePath = filePath;
         Reason = reason;
+        Failure = failure;
     }
 
     /// <summary>Which of the three outcomes this read reached.</summary>
@@ -58,14 +60,23 @@ public sealed class SiteLinkRead
     /// is well-formed and deserializes to nothing).</summary>
     public string? Reason { get; }
 
+    /// <summary>The exception the read failed with, when there was one. 🔴 Added in fix round 2 (review N4):
+    /// without it this arm's <c>LogError</c> passed no exception while its settings twin passed one, so the
+    /// structured exception was dropped on one of two arms built to be identical. Nullable EVEN ON
+    /// <see cref="SiteLinkReadStatus.Unreadable"/>, for the same reason as
+    /// <see cref="Config.FleetSettingsRead.Failure"/>: a file holding the four bytes <c>null</c> is
+    /// well-formed JSON that deserializes to no object, so that shape reaches Unreadable without throwing.
+    /// Use <see cref="Reason"/> when a message must always say something.</summary>
+    public Exception? Failure { get; }
+
     internal static SiteLinkRead ForLoaded(string filePath, PersistedSiteLink link) =>
-        new(SiteLinkReadStatus.Loaded, link, filePath, null);
+        new(SiteLinkReadStatus.Loaded, link, filePath, null, null);
 
     internal static SiteLinkRead ForAbsent(string filePath) =>
-        new(SiteLinkReadStatus.Absent, null, filePath, null);
+        new(SiteLinkReadStatus.Absent, null, filePath, null, null);
 
-    internal static SiteLinkRead ForUnreadable(string filePath, string reason) =>
-        new(SiteLinkReadStatus.Unreadable, null, filePath, reason);
+    internal static SiteLinkRead ForUnreadable(string filePath, string reason, Exception? failure = null) =>
+        new(SiteLinkReadStatus.Unreadable, null, filePath, reason, failure);
 }
 
 /// <summary>
@@ -164,7 +175,7 @@ public sealed class SiteLinkStore
             catch (Exception ex)
             {
                 return SiteLinkRead.ForUnreadable(
-                    path, $"the file could not be opened or read ({ex.GetType().Name}: {ex.Message})");
+                    path, $"the file could not be opened or read ({ex.GetType().Name}: {ex.Message})", ex);
             }
 
             PersistedSiteLink? link;
@@ -175,7 +186,7 @@ public sealed class SiteLinkStore
             catch (JsonException ex)
             {
                 return SiteLinkRead.ForUnreadable(
-                    path, $"the file's contents are not a valid Site link ({ex.Message})");
+                    path, $"the file's contents are not a valid Site link ({ex.Message})", ex);
             }
 
             return link is not null

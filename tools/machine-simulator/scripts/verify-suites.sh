@@ -247,6 +247,24 @@ export MSBUILDDISABLENODEREUSE=1
 # Also in this round and moving NO total: the settings witness gained two assertions inside an existing test
 # (it asserted only "not the floor"; the documented claim is the stronger "FleetHost's built-in defaults",
 # so that is now what it asserts).
+#
+# 🔴 Q-1 FIX ROUND 2 raises EXPECT_ENGINEAPI 1339 -> 1340 (+1). Nothing else moves; grand total 2679 -> 2680.
+#
+#   + 1  tests/St4i.EngineApi.Tests/Site/SiteEndpointsTests.cs —
+#        TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsApplyAsync. Review N3: the claim "ApplyAsync holds
+#        the only Save of site-link.json in the whole product" is what makes the new Error message's
+#        sentence "it was NOT overwritten or deleted by this start" TRUE, and it had no census while its
+#        settings counterpart (TheStartupReplayHasExactlyOneArm_...) has had one since H-1a. An enumeration
+#        is verified by the check that could refute it, never by re-reading the members it names.
+#        TWO populations asserted APART, because they fail differently and a single number would cancel the
+#        case worth seeing: (1) every src/ file that NAMES SiteLinkStore — a writer must, to obtain one —
+#        swept for `.Save(`, expected 1 and in SiteBridgeManager.cs; (2) all of src/ swept for the LITERAL
+#        "site-link.json", which is how a writer that BYPASSES the store would appear, expected 1 and in the
+#        store's own private FileName constant. Same stated non-reach as the settings census.
+#
+# The other four fix-round-2 items move no total: the census recount (prose, four published statements),
+# SiteLinkRead gaining a `Failure` member so its LogError passes the exception its settings twin already
+# passed, and two new entries on docs/owner-decisions.md.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 EXPECT_ABSTRACTIONS=160
 EXPECT_CONFORMANCE=23
@@ -2373,7 +2391,7 @@ EXPECT_EDGESERVICE=51
 # adds no driver and no connector kind, and the shared suite's "FleetCore.StartLocked constructs drivers
 # under the same _gate lock Estop() takes" assertion string is still TRUE — J-2 moves no driver construction
 # and P7 is untouched. EXPECT_WARNINGS stays 116: no new warning (measured on a full -t:Rebuild).
-EXPECT_ENGINEAPI=1339
+EXPECT_ENGINEAPI=1340
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
