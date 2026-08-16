@@ -1915,7 +1915,7 @@ process ends before it serves anything; "comes up" means every endpoint works an
 | If this cannot be used at startup | What the host does |
 |---|---|
 | `security`, `historian`, `assets`, `machine-config` | **STOPS.** All would otherwise go on looking like they work |
-| `settings` (the DIRECTORY) | **MIXED, and measured**: a directory that cannot be **created** stops the host; one that exists but cannot be **read** does **not** — the host comes up, and which arm it takes then depends on whether the deny also reaches the file. Same shape as `identity` and `connector-config` below |
+| `settings` (the DIRECTORY) | **MIXED, and measured**: a directory that cannot be **created** stops the host; one that exists but cannot be **read** does **not** — the host comes up. *(Before task Q-1 the second arm then forked on whether the deny also reached the FILE, and one fork overwrote it. It no longer does: whatever the deny reaches, an unreadable file is reported and left alone — see the `fleet-settings.json` entry below.)* Directory-creation shape same as `identity` and `connector-config` below |
 | `wal`, `sitelink` | **STOPS** — but only when that subsystem is on. `ST4I_WAL_ENABLED=0` removes the WAL decision entirely, and `sitelink` is only touched when the UNS spine is enabled (`ST4I_UNS_ENABLED`). Both default to on, so the common case is a stop |
 | `products.json` / `recipes.json` / `ecosystem\*.json` beside the exe | **STOPS**, and this is one of the divergences — see the note after this table |
 | `alarms`, and `security.db` itself | **STOPS**, a moment later — these open as the host starts rather than before it |
@@ -1932,7 +1932,11 @@ one is a READ of the four composition roots (`St4i.EngineApi/Program.cs`, `St4i.
 `EdgeWorker`, `St4iMachineSimulator/App.xaml.cs`, `St4i.DesktopShell/App.xaml.cs`) plus every store
 constructor and options factory they reach, asking at each statement whether a failure is caught. **Nothing
 was executed to produce it**, and it produced every row. 🔴 **A second instrument now exists and RUNS:
-`tools/settings-acl-probe`** (task M-1) — a committed console app outside the five test suites. It answers
+`tools/settings-acl-probe`** (task M-1) — a committed console app outside the five test suites. **A THIRD
+runs too** (task Q-1): the five test suites, whose witnesses are indexed on the settings-file row and the
+Site-link row. **Three instruments, TWO rows backed by an execution** — instrument 3's rows are inside
+instrument 2's set, and a second instrument over an already-covered row does not raise the row count. Those
+two numbers are different and are stated apart on purpose. The probe answers
 **two** rows and no others: what curtailed access to the settings root or file actually does, and whether a
 throwing `ApplicationStarted` handler ends the host (it does not — the host serves, and the framework logs
 the throw at `Critical`). **Even in those two rows it measures the STORE, not the host** — no arm of it
@@ -1967,6 +1971,17 @@ remaining entry, and none of those is fixed.
   this section gives for `products.json`, and it is still the cheapest insurance.
   Full history, the measured permission/lock table behind it, and what the fix costs:
   `docs/startup-failure-posture.md` §3.1a and §3.1a-now.
+- 🔨 **`site-link.json` had the SAME defect, and it was worse — also FIXED (task Q-1, fix round).** An
+  unreadable Site link was rewritten with the default standalone record on an ordinary successful start:
+  **the Site broker host, its port and the trust certificate you pinned were gone**, the device quietly
+  stopped federating, and **there was no log line at all** — the overwrite succeeded, so nothing reported it.
+  Unlike the settings file above, this needed **no environment variable set**: the local UNS spine that
+  reaches this code is on by default. **What happens now:** the host comes up, applies nothing, leaves your
+  file exactly as it is, and says at `Error` that the device is running **standalone**; `GET /v1/site`
+  reports that truthfully rather than claiming a link. Repair it and restart, or set the link with
+  `PUT /v1/site`. **If you hand-edit `site-link.json`, keep a copy.** One route is knowingly still open and
+  is on the owner's list: rotating the device identity (`POST /v1/site/identity/rotate`) while the file is
+  unreadable still overwrites it. `docs/startup-failure-posture.md` §3.1b.
 - **Two operator-editable catalogues end the process**: `products.json`/`recipes.json` and the ecosystem
   files beside the exe are deserialized with no error handling at all, so one typo in a file with no
   published schema stops the host — while `connectors.json` and `fleet.json`, the same kind of file in the
@@ -2031,7 +2046,11 @@ SÁCH đã công bố**. **Bảng ở bản EN là thứ phải đọc trước 
 một lượt ĐỌC bốn composition root cộng mọi constructor store và factory options mà chúng với tới — **không
 chạy gì cả** — và nó sinh ra mọi hàng trong danh sách. 🔴 **Dụng cụ THỨ HAI, do nhiệm vụ M-1 thêm, là một
 phép CHẠY: `tools/settings-acl-probe`** — một console app đã commit, ngoài năm bộ test, trả lời đúng **HAI**
-hàng (§3.1a và hàng `ApplicationStarted`) và **không hàng nào khác**. Thứ một lượt đọc không thấy là phần đồ
+hàng (§3.1a và hàng `ApplicationStarted`) và **không hàng nào khác**. 🔴 **Dụng cụ THỨ BA, do Q-1 thêm, cũng
+CHẠY:** năm bộ test, với nhân chứng cắm vào hàng file settings và hàng Site-link. **BA dụng cụ, nhưng chỉ
+HAI hàng được một phép chạy chống lưng** — các hàng của dụng cụ 3 nằm TRONG tập của dụng cụ 2, và thêm một
+dụng cụ lên một hàng đã được phủ thì không làm tăng số hàng. Hai con số ấy khác nhau và được nêu tách nhau
+có chủ ý. Thứ một lượt đọc không thấy là phần đồ
 thị DI được phân giải **muộn, sau khi host đã lên**. Hàng từng được đánh dấu **chưa ngã ngũ** thì **đã chạy
 và đã ngã ngũ**: một ngoại lệ ném ra từ handler `ApplicationStarted` **KHÔNG** làm chết host — host vẫn phục
 vụ, và framework tự ghi lỗi ấy ở mức `Critical`.
@@ -2058,6 +2077,17 @@ giờ** tuyên bố file của bạn đã được áp.
 **Lời khuyên KHÔNG đổi: nếu bạn sửa tay `fleet-settings.json`, hãy giữ một bản sao** — đúng lời khuyên mục
 này đã dành cho `products.json`, và nó vẫn là bảo hiểm rẻ nhất. Toàn bộ lịch sử, bảng đo về quyền/khoá đứng
 sau nó, và cái giá của bản sửa: `docs/startup-failure-posture.md` §3.1a và §3.1a-now.
+🔨 **`site-link.json` CÓ ĐÚNG khuyết tật ấy, và còn NẶNG HƠN — cũng ĐÃ SỬA (Q-1, vòng sửa lỗi).** Một Site
+link không đọc được bị ghi đè bằng bản ghi mặc định "đứng một mình" trong một lần khởi động **thành công
+bình thường**: **host của broker Site, cổng, và chứng chỉ tin cậy bạn đã ghim đều mất**, thiết bị lặng lẽ
+thôi federate, và **không một dòng log nào** — vì lệnh ghi đè THÀNH CÔNG nên không có gì báo cả. Khác với
+file settings ở trên, chỗ này **không cần đặt biến môi trường nào**: hệ UNS cục bộ dẫn tới đoạn mã ấy vốn
+BẬT theo mặc định. **Bây giờ thì:** host vẫn lên, **không áp gì cả**, **giữ nguyên file của bạn**, và nói ở
+mức `Error` rằng thiết bị đang chạy **ĐỘC LẬP**; `GET /v1/site` báo đúng điều đó chứ không tuyên bố có link.
+Hãy sửa file rồi khởi động lại, hoặc đặt link bằng `PUT /v1/site`. **Nếu bạn sửa tay `site-link.json`, hãy
+giữ một bản sao.** Một đường vẫn **cố ý còn mở** và đã nằm trong danh sách của chủ sở hữu: xoay danh tính
+thiết bị (`POST /v1/site/identity/rotate`) trong lúc file không đọc được thì vẫn ghi đè lên nó.
+`docs/startup-failure-posture.md` §3.1b.
 **Hai catalogue người vận hành sửa được thì làm chết tiến trình**:
 `products.json`/`recipes.json` và các file ecosystem cạnh .exe được deserialize **không có bắt lỗi nào**, nên
 một lỗi gõ trong một file **không có schema công bố** sẽ chặn host — trong khi `connectors.json` và

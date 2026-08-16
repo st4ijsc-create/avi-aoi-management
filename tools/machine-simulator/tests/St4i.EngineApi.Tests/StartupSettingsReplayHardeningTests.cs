@@ -390,10 +390,17 @@ public sealed class StartupSettingsReplayHardeningTests
         // (2) The floor was not applied in memory either. FF-1's precedence says the file wins whenever
         // there is one, and there is one — this process simply cannot read it. Reporting the floor would
         // put a triple in front of the operator that they never set, on a machine that has a configuration.
+        // 🔴 Both halves, and the second was missing in fix round 1 (review M4). `NotEqual(floor…)` alone
+        // says only "not the floor" — it would pass on any third value, including a torn mix. README and
+        // docs/startup-failure-posture.md both state the stronger thing: the process comes up on FleetHost's
+        // BUILT-IN defaults, because nothing was applied at all. That is the claim, so that is what is
+        // asserted.
         var settings = await response.Content.ReadFromJsonAsync<SettingsDto>(JsonOptions);
         Assert.NotNull(settings);
         Assert.NotEqual(floorServerUrl, settings!.ServerUrl);
         Assert.NotEqual(floorMachineCode, settings.MachineCode);
+        Assert.Equal(FleetHost.DefaultServerUrl, settings.ServerUrl);
+        Assert.Equal(FleetHost.DefaultMachineCode, settings.MachineCode);
 
         // (3) It was said, at a level the framework's default filter emits (§10.4 — this product ships no
         // appsettings.json, so a demotion would leave (1) and (2) green while the operator learned nothing),

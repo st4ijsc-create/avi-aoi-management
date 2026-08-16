@@ -930,6 +930,15 @@ builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<St4i.E
 // block above already gates on. When UNS is disabled, only the identity singleton above is registered (so
 // EC-3's identity endpoint still works standalone), and no SiteLinkStore/SiteBridgeManager is constructed
 // at all — byte-identical to pre-EC-2 behavior in that case.
+// 🔴 TASK Q-1 FIX ROUND — carried out of the block below so the REPORT can be emitted on app.Logger once
+// `app` exists, next to the settings file's own third-state report. The DECISION is taken below, where the
+// read happens; only the reporting is deferred, and it is deferred for one reason: every other line in that
+// block writes to Console.Error, which under AddWindowsService is NOT the Windows Event Log. The deployment
+// this defect destroys data on is the headless service install, so the notice has to go on the channel that
+// reaches it — the same argument §10.4 makes for the replay guard, and the same convention this file already
+// uses for LogIfRegisterMachineCollided and the notification/binding notices.
+St4i.EdgeCore.Site.SiteLinkRead? unreadableSiteLink = null;
+
 if (unsOptions.Enabled)
 {
     // GĐ3 closeout WI-3 — the durable northbound spool backing UnsBridge's forward path (WI-2 built the
@@ -961,6 +970,9 @@ if (unsOptions.Enabled)
     }
 
     var siteStore = new St4i.EdgeCore.Site.SiteLinkStore();
+    // 🔴 Task Q-1 fix round — three outcomes, read once, BEFORE anything that can write. See the block
+    // below the manager's construction for what each arm does and why.
+    var siteLinkRead = siteStore.Read();
     var siteBridgeManager = new St4i.EdgeCore.Site.SiteBridgeManager(
         unsOptions,
         deviceIdentityProvider,
@@ -969,17 +981,49 @@ if (unsOptions.Enabled)
         logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"),
         spool: bridgeSpool);
 
-    // Eager start (mirrors the UNS broker block above): ApplyAsync itself never throws (construct/connect
-    // failures are caught+logged inside it, leaving the manager's Status() at Disabled/Down) — this
-    // try/catch is only extra insurance so a truly unexpected failure here still can't crash startup.
-    try
+    // 🔴 TASK Q-1 FIX ROUND — THE TWIN OF THE SETTINGS DEFECT, AND ITS PRECONDITION WAS WEAKER.
+    //
+    // WHAT WAS HERE: `siteBridgeManager.ApplyAsync(siteStore.Load() ?? new PersistedSiteLink())`.
+    // `Load()` answered null both for "no file" and for "a file this process could not read", and
+    // `ApplyAsync` calls `_store.Save(link)` UNCONDITIONALLY — before the `link.Enabled` check and outside
+    // any success condition. So an unreadable site-link.json was REWRITTEN with the default record
+    // (Enabled=false, Host="", Port=8883, SiteTrustPem="") on a start where nothing failed. The operator
+    // lost the Site broker host, its port and the pinned trust anchor, and the device became standalone in
+    // silence: `Save` SUCCEEDED, so the manager's own error path never fired and no line was written
+    // anywhere. Gated on nothing — unlike the settings defect, which needed one of three ST4I_* variables
+    // set, this needed only that the local UNS spine be on, and it is on by default.
+    //
+    // THE FIX IS TO SKIP THE CALL, and it is exactly as narrow as that. On the Unreadable arm ApplyAsync is
+    // the writer, so not calling it is the whole remedy: with a default link the call disposes no bridge
+    // (there is none yet), starts no bridge (Enabled is false) and sets `_current` to a value identical to
+    // the field initializer it already holds. The ONLY observable it removes is the Save. The bridge is
+    // Disabled either way, `GET /v1/site` reports what this process is actually running, and the file is
+    // left exactly as it is.
+    //
+    // NOT DONE HERE, and named rather than left: `SiteBridgeManager.ReapplyCurrentAsync` (reachable from
+    // POST /v1/site/identity/rotate) also reaches that unconditional Save, with a link this process
+    // invented rather than read. On this arm `_current` is the default record, so a rotation would persist
+    // it over the unreadable file. It is operator-INITIATED but not operator-CHOSEN, which is the
+    // distinction the rule turns on, and closing it means changing when ApplyAsync persists — a change to a
+    // method three callers share. Reported, not taken.
+    if (siteLinkRead.Status == St4i.EdgeCore.Site.SiteLinkReadStatus.Unreadable)
     {
-        siteBridgeManager.ApplyAsync(siteStore.Load() ?? new St4i.EdgeCore.Site.PersistedSiteLink())
-            .GetAwaiter().GetResult();
+        unreadableSiteLink = siteLinkRead;
     }
-    catch (Exception ex)
+    else
     {
-        Console.Error.WriteLine($"[startup] Site bridge failed to start for this run — standalone: {ex.Message}");
+        // Eager start (mirrors the UNS broker block above): ApplyAsync itself never throws (construct/connect
+        // failures are caught+logged inside it, leaving the manager's Status() at Disabled/Down) — this
+        // try/catch is only extra insurance so a truly unexpected failure here still can't crash startup.
+        try
+        {
+            siteBridgeManager.ApplyAsync(siteLinkRead.Link ?? new St4i.EdgeCore.Site.PersistedSiteLink())
+                .GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[startup] Site bridge failed to start for this run — standalone: {ex.Message}");
+        }
     }
 
     // Registered via a factory lambda (NOT the raw-instance AddSingleton overload) so the built-in DI
@@ -1924,6 +1968,26 @@ if (settingsRead.Status == FleetSettingsReadStatus.Unreadable)
         "PUT /v1/settings.",
         settingsRead.FilePath,
         settingsRead.Reason);
+}
+
+// 🔴 TASK Q-1 FIX ROUND — the same arm for site-link.json, reported here rather than at the site block far
+// above, because that block writes to Console.Error and this level reaches the Windows Event Log under
+// AddWindowsService. The DECISION was taken there, beside the read; only the sentence is here.
+// The scope of the preservation claim is the same and is the same guarantee: the composition root did not
+// call ApplyAsync on this arm, and ApplyAsync holds the only Save of this file in the whole product, so
+// nothing wrote to it during this start.
+if (unreadableSiteLink is not null)
+{
+    app.Logger.LogError(
+        "SITE LINK FILE COULD NOT BE READ — \"{SiteLinkFile}\" is present and this start could not turn it " +
+        "into a Site link ({Reason}). It was NOT applied, and it was NOT overwritten or deleted by this " +
+        "start: unreadable content is the only remaining record of the Site broker host, port and pinned " +
+        "trust anchor that were configured here, so the default standalone record was deliberately NOT " +
+        "written over it. THIS DEVICE IS RUNNING STANDALONE — no Site bridge was started, and " +
+        "GET /v1/site reports that truthfully rather than claiming a link. Repair or move the file aside " +
+        "and restart, or set the link with PUT /v1/site.",
+        unreadableSiteLink.FilePath,
+        unreadableSiteLink.Reason);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════

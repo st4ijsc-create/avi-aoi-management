@@ -320,7 +320,18 @@ public sealed class FleetSettingsStore
     /// removed. <see cref="File.Delete(string)"/> is already a no-op for a file that is not there, so the
     /// gate bought nothing and cost a false report. A missing DIRECTORY is swallowed for the same reason it
     /// was before: there is nothing to remove. Every other failure still propagates to the one caller, which
-    /// has a log channel and uses it.</remarks>
+    /// has a log channel and uses it.
+    ///
+    /// <para>🔴 <b>AND SAY THE OTHER HALF, HERE RATHER THAN AT THE CALL SITE: this method is now STRICTLY
+    /// MORE DESTRUCTIVE IN ISOLATION.</b> Under the measured both-objects-denied ACL the old gate answered
+    /// false and this silently did nothing; it now actually deletes. That is only safe because of something
+    /// this method cannot see — its single caller in <c>Program.cs</c> is gated on
+    /// <see cref="FleetSettingsReadStatus.Absent"/>, so by the time it runs the only file that can be on
+    /// disk is one that same start wrote. <b>Anyone adding a second caller must reproduce that gate</b>, and
+    /// a caller that reaches this on any other outcome is deleting an operator's file. The census in
+    /// <c>StartupSettingsReplayHardeningTests</c> asserts that there is exactly ONE caller; nothing asserts
+    /// what that caller is gated on, so this paragraph is the guard, and it is deliberately written where
+    /// the capability lives rather than where today's one use of it happens to be.</para></remarks>
     public void Delete()
     {
         lock (_gate)

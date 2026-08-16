@@ -220,6 +220,33 @@ export MSBUILDDISABLENODEREUSE=1
 # EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0. No suppression of any kind was added — no
 # NoWarn, no #pragma, no .editorconfig, no WarningLevel change. The three changed src/ files build with no
 # warning of their own (measured per-project; the full -t:Rebuild below is what pins the repository figure).
+#
+# 🔴 Q-1 FIX ROUND raises EXPECT_EDGECORE 1101 -> 1106 (+5) and EXPECT_ENGINEAPI 1338 -> 1339 (+1).
+# Grand total 2673 -> 2679. The other three constants still do not move.
+#
+# WHY A SECOND MOVE IN THE SAME TASK, which is a fact to justify rather than a number to paste over. Review
+# found that Q-1's scope table excluded `SiteLinkStore` with a reason that was FALSE: it is the pre-Q-1
+# `FleetSettingsStore` verbatim, and `SiteBridgeManager.ApplyAsync` calls `Save` UNCONDITIONALLY on the
+# startup path — so an unreadable site-link.json was overwritten with the default standalone record on an
+# ordinary successful start, losing the Site broker host, its port and the pinned trust anchor, with NO log
+# line and, unlike the settings twin, NO environment precondition at all (the UNS spine that gates the block
+# defaults on). The owner's ruling states the rule once for all four items, so the twin is in scope.
+#
+#   + 5  tests/St4i.EdgeCore.Tests/Site/SiteLinkStoreTests.cs — one per branch of the new
+#        SiteLinkStore.Read(), with the Unreadable population asserted member by member (malformed; legal
+#        JSON yielding no object; a FileShare.None handle) rather than from one example. The lock test
+#        carries the same anti-tautology second half its settings counterpart does: the same store reads the
+#        same file successfully once the handle is gone, which kills a Read() that always answered
+#        Unreadable.
+#   + 1  tests/St4i.EngineApi.Tests/Site/SiteEndpointsTests.cs — the twin's control-pair witness, through
+#        the real composition root, reading the file's BYTES off disk. Run at BOTH sides: at d83194bd the
+#        bytes on disk are the default standalone record; at this commit they are unchanged. It reuses that
+#        file's existing factory (two new OPTIONAL parameters, so every other test there is unaffected)
+#        rather than standing up a sixth copy of the env-var harness.
+#
+# Also in this round and moving NO total: the settings witness gained two assertions inside an existing test
+# (it asserted only "not the floor"; the documented claim is the stronger "FleetHost's built-in defaults",
+# so that is now what it asserts).
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 EXPECT_ABSTRACTIONS=160
 EXPECT_CONFORMANCE=23
@@ -1117,7 +1144,7 @@ EXPECT_CONFORMANCE=23
 # class comment rather than renamed, since renaming touches three unrelated classes to no measured end.
 # 🔴 Task K-1 raises this 1093 -> 1094 (+1): the one linked hygiene [Fact] every suite gets. Full
 # justification beside EXPECT_ABSTRACTIONS at the top of this file.
-EXPECT_EDGECORE=1101
+EXPECT_EDGECORE=1106
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -2346,7 +2373,7 @@ EXPECT_EDGESERVICE=51
 # adds no driver and no connector kind, and the shared suite's "FleetCore.StartLocked constructs drivers
 # under the same _gate lock Estop() takes" assertion string is still TRUE — J-2 moves no driver construction
 # and P7 is untouched. EXPECT_WARNINGS stays 116: no new warning (measured on a full -t:Rebuild).
-EXPECT_ENGINEAPI=1338
+EXPECT_ENGINEAPI=1339
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

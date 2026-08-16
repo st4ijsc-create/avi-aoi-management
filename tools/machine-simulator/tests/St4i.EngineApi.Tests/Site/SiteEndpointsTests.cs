@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Tests.Auth;
@@ -37,13 +38,24 @@ public sealed class SiteEndpointsTests
     /// directories otherwise — this class actually MUTATES the Site link via <c>PUT</c>, so it must not
     /// touch that real, shared location), and <c>ST4I_UNS_ENABLED</c> (so the UNS-off variant can prove
     /// <see cref="St4i.EdgeCore.Site.SiteBridgeManager"/> is genuinely absent from DI, not just disabled).</summary>
-    private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync(bool unsEnabled = true)
+    /// <param name="unsEnabled">See this method's own doc comment.</param>
+    /// <param name="siteLinkDirOverride">🔴 Task Q-1 fix round — lets a caller point the boot at a
+    /// <c>ST4I_SITELINK_DIR</c> it has already populated, which is the only way to observe what the
+    /// composition root does to a <c>site-link.json</c> that is ALREADY on disk when the host starts. Every
+    /// other test here starts from an empty directory.</param>
+    /// <param name="capturedLog">🔴 Task Q-1 fix round — captures LEVEL as well as text, for the same
+    /// reason <c>StartupSettingsReplayHardeningTests</c> does it: a demoted log call would leave every
+    /// string assertion green while the operator learned nothing.</param>
+    private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync(
+        bool unsEnabled = true,
+        string? siteLinkDirOverride = null,
+        List<(LogLevel Level, string Message)>? capturedLog = null)
     {
         var securityDir = Directory.CreateTempSubdirectory("st4i-site-ep-security-").FullName;
         var historianDir = Directory.CreateTempSubdirectory("st4i-site-ep-historian-").FullName;
         var walDir = Directory.CreateTempSubdirectory("st4i-site-ep-wal-").FullName;
         var settingsDir = Directory.CreateTempSubdirectory("st4i-site-ep-settings-").FullName;
-        var siteLinkDir = Directory.CreateTempSubdirectory("st4i-site-ep-sitelink-").FullName;
+        var siteLinkDir = siteLinkDirOverride ?? Directory.CreateTempSubdirectory("st4i-site-ep-sitelink-").FullName;
         var identityDir = Directory.CreateTempSubdirectory("st4i-site-ep-identity-").FullName;
         // GĐ3 sub-4 LC-1 review follow-up — isolated the same way as every other per-concern directory
         // above: without this, a real Policy DENY occurring anywhere in this class's requests
@@ -84,7 +96,11 @@ public sealed class SiteEndpointsTests
             Environment.SetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR", connectorConfigDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
-            var factory = new WebApplicationFactory<Program>();
+            var factory = capturedLog is null
+                ? new WebApplicationFactory<Program>()
+                : new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+                    b.ConfigureServices(services =>
+                        services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(capturedLog))));
             _ = factory.Server; // force the host to build NOW, while the env vars above are still set.
             return factory;
         }
@@ -139,6 +155,110 @@ public sealed class SiteEndpointsTests
         var request = new CertificateRequest("CN=st4i-site-endpoints-tests", ecdsa, HashAlgorithmName.SHA256);
         using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
         return cert.ExportCertificatePem();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task Q-1 fix round — the third state for site-link.json.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>Task Q-1 fix round — an ordinary, successful start must not destroy a <c>site-link.json</c>
+    /// it could not read. The control-pair witness for the twin: it FAILS at <c>d83194bd</c> and passes
+    /// after the fix, and what it reads is the bytes on disk.</b>
+    ///
+    /// <para><b>The defect.</b> <c>SiteLinkStore.Load()</c> answered null both for "no file" and for "a file
+    /// this process could not read". <c>Program.cs</c> turned that null into
+    /// <c>new PersistedSiteLink()</c> and handed it to <c>SiteBridgeManager.ApplyAsync</c>, which calls
+    /// <c>_store.Save(link)</c> <b>unconditionally</b> — before the <c>link.Enabled</c> check and outside any
+    /// success condition. So an unreadable file was rewritten with <c>Enabled=false, Host="", Port=8883,
+    /// SiteTrustPem=""</c> on a start where nothing failed. The Site broker host, its port and the pinned
+    /// trust anchor were gone and the device was silently standalone; because <c>Save</c> SUCCEEDED, the
+    /// manager's <c>_logError</c> never fired either.</para>
+    ///
+    /// <para>🔴 <b>Its precondition was WEAKER than the settings defect this task first fixed.</b> That one
+    /// needed at least one of three <c>ST4I_*</c> variables to be set. This one needs nothing an operator
+    /// has to have done: <c>UnsOptions.Enabled</c> defaults to <see langword="true"/>, which is why this
+    /// test sets no environment variable to provoke it and passes <c>unsEnabled</c> at its default.</para>
+    ///
+    /// <para><b>It reads the bytes, not <c>Load()</c>.</b> <c>Load()</c> answers null for a malformed file,
+    /// so a witness written through it would pass whether the file were intact, rewritten with the default
+    /// record, or deleted.</para>
+    /// </summary>
+    [Fact]
+    public async Task AMalformedSiteLinkFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo()
+    {
+        var siteLinkDir = Directory.CreateTempSubdirectory("st4i-q1-sitelink-unreadable-").FullName;
+        var siteLinkFile = Path.Combine(siteLinkDir, "site-link.json");
+
+        // A hand-edit with one typo in it — a missing closing brace. Every field is still legible, which is
+        // exactly why destroying it is a loss: these bytes are the only remaining record of the link.
+        const string OperatorsOwnBytes =
+            "{\n  \"Enabled\": true,\n  \"Host\": \"q1-site-operators-own.example.test\",\n" +
+            "  \"Port\": 8885,\n  \"SiteTrustPem\": \"-----BEGIN CERTIFICATE-----\\nQ1PIN\\n-----END CERTIFICATE-----\",\n";
+        File.WriteAllText(siteLinkFile, OperatorsOwnBytes);
+
+        var log = new List<(LogLevel Level, string Message)>();
+        await using var factory = await CreateFactoryAsync(siteLinkDirOverride: siteLinkDir, capturedLog: log);
+
+        // The host is UP — this arm reports, it does not stop.
+        await BootstrapAdminAsync(factory, "site-q1-admin", "AdminPass123!");
+        await CreateUserAsync(factory, "site-q1-operator", "OperatorPass123!", Roles.Operator);
+        using var operatorClient = await LoginAsAsync(factory, "site-q1-operator", "OperatorPass123!");
+        using var get = await operatorClient.GetAsync("/v1/site");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+
+        // (1) THE DATA-LOSS ASSERTION. The bytes are the operator's, unchanged, still there.
+        Assert.True(File.Exists(siteLinkFile), "site-link.json is GONE after a start in which nothing failed.");
+        Assert.Equal(OperatorsOwnBytes, File.ReadAllText(siteLinkFile));
+
+        // (2) And the process is honest about what it is running: standalone, no bridge. This is NOT the
+        // operator's link being reported back — it is the absence of one, which is the truth here.
+        var status = await get.Content.ReadFromJsonAsync<SiteStatusDto>(JsonOptions);
+        Assert.NotNull(status);
+        Assert.False(status!.Enabled);
+        Assert.Equal("Disabled", status.BridgeState);
+
+        // (3) It was said, at a level the framework's default filter emits, and it names the file.
+        List<(LogLevel Level, string Message)> notices;
+        lock (log) notices = log.Where(e => e.Message.Contains(UnreadableSiteLinkMarker, StringComparison.Ordinal)).ToList();
+
+        Assert.True(notices.Count > 0,
+            "The host booted, refused to apply a Site link it could not read, and said NOTHING — which is " +
+            "the whole defect: a device that has quietly stopped federating looks identical to one that was " +
+            "never configured. Captured lines: " +
+            string.Join(" | ", log.Select(e => $"[{e.Level}] {e.Message}")));
+        Assert.All(notices, entry => Assert.Equal(LogLevel.Error, entry.Level));
+        Assert.Contains(notices, e => e.Message.Contains("site-link.json", StringComparison.Ordinal));
+    }
+
+    private const string UnreadableSiteLinkMarker = "SITE LINK FILE COULD NOT BE READ";
+
+    /// <summary>Captures LEVEL as well as text; <c>IsEnabled</c> is deliberately unconditional so a demoted
+    /// call is still captured and caught by the level assertion rather than vanishing into an empty list
+    /// that reads identically to "the code path never ran". Same shape as
+    /// <c>StartupSettingsReplayHardeningTests</c>' own provider, duplicated rather than shared because the
+    /// two suites are separate assemblies with no common test-helper project between them.</summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly List<(LogLevel Level, string Message)> _entries;
+        public CapturingLoggerProvider(List<(LogLevel Level, string Message)> entries) => _entries = entries;
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(_entries);
+        public void Dispose() { }
+
+        private sealed class CapturingLogger : ILogger
+        {
+            private readonly List<(LogLevel Level, string Message)> _entries;
+            public CapturingLogger(List<(LogLevel Level, string Message)> entries) => _entries = entries;
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                lock (_entries) _entries.Add((logLevel, formatter(state, exception)));
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

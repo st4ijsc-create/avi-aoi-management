@@ -6,11 +6,25 @@
 (`.superpowers/sdd/third-state-unreadable/`), executing the owner's decision 1 of 2026-08-16.
 **Status:** descriptive — this records what the product does, and names where it does something else.
 
-🔴 **Two claims in this paragraph's earlier version are now false, and they are corrected rather than
-quietly dropped.** *"Nothing here is enforced by a test"* — **row 36 now is**, by the two suites named at the
-end of §3.1a-now, which is the only row of the forty-one that any assertion is indexed on. And *"two rows —
-and only two — are backed by something that runs"* named `tools/settings-acl-probe`; the count of rows
-backed by an execution is now **three**, by **two** instruments that run. Every other row is still a read.
+🔴 **One claim in this paragraph's earlier version is now false, and it is corrected rather than quietly
+dropped.** *"Nothing here is enforced by a test"* — **rows 36 and 18 now are**, by the suites named at the
+end of §3.1a-now and §3.1b.
+
+🔴 **Two COUNTS this file briefly carried are withdrawn, and the second withdrawal is the more useful one.**
+
+1. *"the count of rows backed by an execution is now **three**"* was **wrong; it is still two.** Instrument
+   2 already covered rows 36 and 40, and instrument 3's reach is row 36 — a row inside that set. A second
+   instrument over an already-covered row does not raise the row count. §4's table said **two** in the same
+   file throughout, which is the contradiction this file exists to end. **Instruments that execute: three.
+   Rows backed by an execution: two.** Those are different numbers and they were being conflated.
+2. *"row 36 is the only row of the forty-one that any assertion is indexed on"* / *"forty are still a
+   read"* is **withdrawn outright, not re-fitted.** It is a universal denial and it was refuted by the very
+   file Q-1 added its witness to: `StartupSettingsReplayHardeningTests.AnUnactivatablePersistedTriple_…`
+   pins **row 37** and `…AFailedEnvFloorSeed_LeavesNoFile_…` pins **row 38**, both predating Q-1. **No
+   replacement number is offered.** Producing one honestly needs a census that maps assertions onto rows,
+   and no such census exists; a universal negative is only checkable by an instrument that could refute it,
+   never by looking at the members it happens to name. Same disposition, and the same reason, as the
+   withdrawn *"thirteen of them are roots"* at the end of this file.
 
 This file exists because the rule was previously stated as a **scalar** ("thirty-six sites, thirty-two
 agree") in five places with **the members enumerated nowhere the tree could reach**. An independent
@@ -111,15 +125,22 @@ so **S** versus **U** is never observed — it is read off the composition root'
 a measured store outcome. Instrument 2 supplies the outcome; instrument 1 supplies the posture. A table that
 said otherwise would be making the exact substitution this file exists to stop.
 
-🔴 **Instrument 3 — the five test suites, added by task Q-1, and its reach is ONE row.** Row 36 is the only
-member of this set that any assertion is indexed on: `FleetSettingsStoreTests` at the store and
+🔴 **Instrument 3 — the five test suites, and what Q-1 pointed at this set with them.** Q-1's own witnesses
+are indexed on **row 36** (`FleetSettingsStoreTests` at the store, and
 `StartupSettingsReplayHardeningTests.AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo`
-through the real composition root, the latter being the one that observes **U** rather than deriving it — it
-boots `St4i.EngineApi` and issues a request, which is precisely the thing instrument 2 states it never does.
-That is one row of forty-one. **Forty are still a read**, and the reason the suites cannot simply be pointed
-at the rest is instrument 2's own: several of these rows can only be provoked by making something on disk
-unreadable, and a suite that has to skip when it cannot is a suite whose `Skipped` count is
-environment-dependent.
+through the real composition root) and on **row 18** (`SiteLinkStoreTests`, and
+`SiteEndpointsTests.AMalformedSiteLinkFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo`). The two
+composition-root witnesses **observe** rather than derive: each boots `St4i.EngineApi` and issues a request,
+which is precisely the thing instrument 2 states it never does.
+
+🔴 **No count of "how many rows are witnessed" is offered here, and the refusal is the point.** An earlier
+version of this paragraph said row 36 was the only such row and that forty were still a read. That is a
+universal denial, and it was refuted by the same test file Q-1 added a witness to — rows 37 and 38 are each
+pinned by an assertion that predates Q-1. Nobody has run the census that would map assertions onto rows, so
+the honest statement is that **most** of this set is still a read and that the number is unmeasured. The
+reason the suites cannot simply be pointed at the rest is instrument 2's own: several of these rows can only
+be provoked by making something on disk unreadable, and a suite that has to skip when it cannot is a suite
+whose `Skipped` count is environment-dependent.
 
 **Where the two instruments DISAGREED is the useful part**, per §8.1: reading produced two opposite
 statements about §3.1a in two successive rounds, and the execution shows that **each described one member of
@@ -183,7 +204,7 @@ every remaining **✗**: none of those is fixed. See §3.1a-now.
 | 15 | `BridgeSpoolOptions.FromEnvironment()` | `ST4I_BRIDGE_SPOOL_MAX_BYTES`, `…_MAX_AGE_HOURS` | **yes** | **silent** ×2 | **✗ §3.4** |
 | 16 | `BridgeSpool` ctor | `ST4I_BRIDGE_SPOOL_DIR` | no | **U** | ✓ |
 | 17 | `new SiteLinkStore()` — creates the dir; **only when UNS is enabled** | `ST4I_SITELINK_DIR` | yes | **S** | ✓ |
-| 18 | `siteBridgeManager.ApplyAsync` | sitelink contents | no | **U** | ✓ |
+| 18 | `siteBridgeManager.ApplyAsync` | sitelink contents | no | **U** | ✓ — posture unchanged; **§3.1b** |
 | 19 | `ModbusOptions.FromEnvironment()` | `ST4I_MODBUS_PORT` | **yes** | **silent** | **✗ §3.4** |
 | 20 | Modbus register-map load | `ST4I_MODBUS_MAP` | no | **U** | ✓ |
 | 21 | `OpcUaOptions.FromEnvironment()` | `ST4I_OPCUA_*` | — | no failure arm (no parse, no I/O) | n/a |
@@ -201,7 +222,7 @@ every remaining **✗**: none of those is fixed. See §3.1a-now.
 | 33 | → **`SimulatedEcosystem` ctor + `Load()`** | `ecosystem\*.json` beside the binary | **no** | **S** | **✗ §3.5** |
 | 34 | → `ConnectorRegistry` factory | rows, `connectors.json` | no | **U** per entry (every arm is a `Try*`) | ✓ |
 | 35 | → `FleetCore.ResolveFleet` | `fleet.json`, `--fleet` | no | **U** | ✓ |
-| 36 | `settingsStore.Read()` | `fleet-settings.json` | no | **U** — *fixed by Q-1, see §3.1a* | ✓ |
+| 36 | `settingsStore.Read()` | `fleet-settings.json` | no | **U** — *fixed by Q-1, see §3.1a-now* | ✓ |
 | 37 | the startup settings replay | that triple | no | **U** — *posture B* | ✓ |
 | 38 | the seed-arm discard | same file | no | **U** (own try/catch) | ✓ |
 | 39 | `AlarmThresholds.FromEnvironment()` | four `ST4I_ALARM_*` knobs | **yes** | **silent** ×4 | **✗ §3.4** |
@@ -443,7 +464,52 @@ which boots the real composition root over a hand-malformed file with the env fl
 back off disk. **It was run at `dd4a3e68` as well as after the fix**: at the base commit the file on disk
 is the environment floor and the operator's bytes are gone; after it, the bytes are byte-for-byte intact.
 
-**What is still true and still not enforced by a test:** everything else in this file. Q-1 moved one row.
+**What it costs, second half, because the first statement of it was one-sided.** The `ST4I_*` floor is
+**operator-supplied configuration too**, not a value the process invented, and this arm now declines to
+apply it in memory as well as on disk. Both directions have to be said: for the FILE, refusing the floor is
+strictly safer — applying it means `UpdateSettings` persists it, and persistence is the loss. For the
+RUNNING MACHINE it can be worse — a headless install whose settings file has gone unreadable comes up on
+`DefaultServerUrl = ""` / `DefaultMachineCode = "ENGINE-API-01"` rather than on the triple its service
+definition supplies, so it is not merely un-federated, it is un-federated *and* not using the values the
+deployment set. **The two only diverge because `UpdateSettings` persists unconditionally**; an
+apply-without-persisting path would let this arm honour the floor in memory and still leave the file alone.
+That is a change to `FleetCore.UpdateSettings`' contract, shared by `PUT /v1/settings`, and it is recorded
+as an owner decision rather than taken here.
+
+### 3.1b — the same defect at `site-link.json`, and it was WORSE (fixed by Q-1's fix round)
+
+**Found by review of Q-1's own scope table, which had excluded it with a false reason.** `SiteLinkStore` is
+documented as a deliberate copy of `FleetSettingsStore`'s shape, and it copied the defect with it:
+`Load()` answered `null` for *no file* and for *a file that could not be read* alike.
+
+**Why it was worse than row 36's, stated as a comparison because that is what the exclusion got wrong:**
+
+| | `fleet-settings.json` (row 36) | `site-link.json` (row 18) |
+|---|---|---|
+| what the failed read selects | the env-floor **seed** arm | `new PersistedSiteLink()` — the default record |
+| what writes | `FleetHost.UpdateSettings` → `Save` in a `finally` inside `if (rebuildNeeded)` | `SiteBridgeManager.ApplyAsync` → `_store.Save(link)`, **unconditional**, before the `Enabled` check |
+| precondition | **one of three `ST4I_*` variables set** | **none** — `UnsOptions.Enabled` defaults `true` |
+| what is lost | serverUrl / machineCode / verifyTls | Site broker **host**, **port**, and the pinned **trust anchor** |
+| log line | none | none — `Save` *succeeded*, so the manager's `_logError` never fired |
+
+**The fix, and it is narrower than row 36's.** `SiteLinkStore.Read()` is the same three-outcome read with
+the same construction and the same reasoning (no existence probe; the open is the classifier). On
+`Unreadable` the composition root simply **does not call `ApplyAsync`** — that call is the writer, and with
+a default link it otherwise disposes no bridge, starts no bridge and sets `_current` to a value identical to
+the field initializer it already holds, so **the only observable removed is the `Save`**. The device is
+standalone either way; now it says so at `Error` and the file survives. Row 18's posture is **unchanged at
+U ✓** — it always came up. What changed is that it no longer destroys the file on the way.
+
+🔴 **One route to the same write is NAMED AND NOT CLOSED.** `SiteBridgeManager.ReapplyCurrentAsync`
+(reachable from `POST /v1/site/identity/rotate`) reaches the same unconditional `Save`, with `_current` —
+which on this arm is the default record the process invented, not anything read from disk. So a rotation
+performed while the file is unreadable still overwrites it. It is operator-**initiated** but not
+operator-**chosen**, and that is the distinction the rule turns on. Closing it means changing *when*
+`ApplyAsync` persists, on a method three callers share, which is a contract change rather than a guard.
+Recorded here for the owner's list.
+
+**What is still true and still not enforced by a test:** everything else in this file. Q-1 moved one row's
+posture (36) and one row's data-safety (18).
 
 ### 3.2 — `ConnectorConfigStore`: a symmetry defect that does NOT need this rule
 
