@@ -619,7 +619,8 @@
   "datatable": {
     "columns": "Cột",
     "showColumns": "Hiện cột",
-    "chooseColumns": "Chọn cột hiển thị"
+    "chooseColumns": "Chọn cột hiển thị",
+    "rowsTotal": " dòng"
   },
   "filterbar": {
     "savedFilters": "Bộ lọc đã lưu",
@@ -652,6 +653,14 @@
       "floor": "Sửa mặt bằng",
       "cell": "Bản sao cell",
       "rf": "Cell kiểm RF"
+    },
+    "mode": {
+      "edit": "SƠ ĐỒ"
+    },
+    "legend": {
+      "live": "Dữ liệu máy/telemetry thật, thời gian thực",
+      "sim": "Phát lại mô phỏng đã ghi — KHÔNG phải cell thật",
+      "edit": "Công cụ soạn sơ đồ mặt bằng"
     }
   },
   "ecn": {
@@ -1220,7 +1229,11 @@
     "confirmMaintenanceConfirm": "Gọi bảo trì",
     "maintenanceCalled": "Đã gọi bảo trì — đội bảo trì sẽ được báo",
     "maintenanceCallError": "Không gọi được bảo trì",
-    "maintenanceCallTitle": "Yêu cầu bảo trì từ vận hành"
+    "maintenanceCallTitle": "Yêu cầu bảo trì từ vận hành",
+    "myFactory": "Nhà máy của tôi",
+    "viewWholePlant": "Xem cả nhà máy",
+    "changeover": "Đổi sản phẩm",
+    "myLine": "Dây chuyền của tôi"
   },
   "quality": {
     "title": "Không gian chất lượng",
@@ -1280,7 +1293,12 @@
     "acked": "Đã xác nhận",
     "ackHint": "Xác nhận đã tiếp nhận Andon này",
     "ackNoPerm": "Bạn không có quyền xác nhận Andon",
-    "ackDone": "Đã xác nhận Andon"
+    "ackDone": "Đã xác nhận Andon",
+    "boardTitle": "BẢNG ANDON",
+    "filtered": "đang lọc",
+    "tapToEnableSound": "Chạm để bật chuông",
+    "overdue": "QUÁ HẠN",
+    "lookupCode": "Tra mã"
   },
   "aiInbox": {
     "title": "Việc cần xử lý",
@@ -6286,7 +6304,9 @@
       "defect_caused_by": "lỗi gây bởi",
       "cause_resolved_by": "khắc phục bởi",
       "cause_prevented_by": "phòng ngừa bởi"
-    }
+    },
+    "canvasAria": "Sơ đồ nhân quả: máy, lỗi, nguyên nhân và hành động cùng các quan hệ có hướng",
+    "diagram": "Sơ đồ nhân quả"
   },
   "unsMapping": {
     "title": "Tag → UNS Mapping",
@@ -6332,7 +6352,8 @@
       "offset": "Offset (+)",
       "cast": "Ép kiểu",
       "deadband": "Deadband"
-    }
+    },
+    "subtitle": "Ánh xạ tag OT thô → topic UNS (ISA-95) + metric Sparkplug, kèm điều kiện (đổi tên, scale/offset, đơn vị, ép kiểu, deadband). Cấu hình không cần code. Chỉ ảnh hưởng chiều ĐỌC (telemetry → UNS); áp dụng khi cờ UNS_MAPPING_ENABLED bật."
   },
   "nav": {
     "masterDataAudit": "Nhật ký kiểm toán",
@@ -6919,7 +6940,10 @@
     "routingMaster": "Định tuyến sản xuất",
     "materialsAtLine": "Vật tư tại line",
     "comparisonStudio": "So sánh đa chiều",
-    "comparisonStudioDesc": "So sánh tuyến/ca/sản phẩm/kỳ + đường benchmark trong 1 công cụ"
+    "comparisonStudioDesc": "So sánh tuyến/ca/sản phẩm/kỳ + đường benchmark trong 1 công cụ",
+    "quickLinksLabel": "Liên kết nhanh",
+    "primaryNavLabel": "Điều hướng chính",
+    "unpin": "Bỏ ghim"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",
@@ -7129,7 +7153,14 @@
     "notes": "Ghi chú",
     "alert": "Cảnh báo",
     "deleteTarget": "Xóa mục tiêu",
-    "noOeeDataHelp": "Bắt đầu ghi nhận kiểm tra hoặc kết nối lại một máy để có dữ liệu OEE, thời gian dừng và biểu đồ so sánh."
+    "noOeeDataHelp": "Bắt đầu ghi nhận kiểm tra hoặc kết nối lại một máy để có dữ liệu OEE, thời gian dừng và biểu đồ so sánh.",
+    "title": "Bảng OEE",
+    "noData": "Chưa có dữ liệu",
+    "worldClass": "Hàng đầu (≥85%)",
+    "typical": "Trung bình (60–85%)",
+    "tabMachines": "Máy theo OEE",
+    "tabDowntime": "Thời gian dừng",
+    "tabHealth": "Sức khỏe máy"
   },
   "packages": {
     "imageAvailableAfterCommit": "Hình ảnh Có sẵn sau commit",
@@ -8866,7 +8897,8 @@
     "user": "Người dùng",
     "categoryMachineControl": "Điều khiển Máy",
     "system": "Hệ thống",
-    "module": "Mô-đun"
+    "module": "Mô-đun",
+    "machineControlFloorWarning": "Chỉ admin/supervisor/engineer + 2FA mới thực thi được lệnh"
   },
   "scheduledReports": {
     "deliveryChannels": "Kênh giao báo cáo",
@@ -8973,7 +9005,8 @@
     "deviceOn": "trên",
     "noSessionsDescription": "Không tìm thấy phiên đăng nhập nào đang hoạt động cho tài khoản này.",
     "unknownBrowser": "Trình duyệt không rõ",
-    "unknownOs": "Hệ điều hành không rõ"
+    "unknownOs": "Hệ điều hành không rõ",
+    "localhost": "Máy cục bộ"
   },
   "settings": {
     "yieldThresholdConfigDescription": "Đặt ngưỡng FPY / FY / NTF / UPH — vượt ngưỡng sẽ đổi màu trạng thái và phát cảnh báo",
@@ -9366,7 +9399,9 @@
     "autoRegistrationLegacy": "Đăng ký tự động (Cũ)",
     "machineType_SCREW_DRIVER": "Máy vặn vít",
     "machineType_GLUE_DISPENSER": "Máy tra keo",
-    "machineType_CONVEYOR": "Băng tải"
+    "machineType_CONVEYOR": "Băng tải",
+    "regenApiKeyConfirm": "Tạo lại API key sẽ VÔ HIỆU key hiện tại của máy cho tới khi cấu hình lại. Tiếp tục?",
+    "regenApiKey": "Tạo lại & sao chép key"
   },
   "setup": {
     "adminCreatedSuccess": "Quản trị viên Đã tạo Thành công",
@@ -10086,6 +10121,12 @@
       "perHour": "Mỗi giờ",
       "perShift": "Mỗi ca",
       "perDay": "Mỗi ngày"
+    },
+    "category": {
+      "metrics": "Chỉ số",
+      "charts": "Biểu đồ",
+      "data": "Dữ liệu",
+      "utility": "Tiện ích"
     }
   },
   "productOnboarding": {
@@ -10172,6 +10213,13 @@
       "finish": "Hoàn tất cấu hình",
       "finishing": "Đang hoàn tất…",
       "guardBlocked": "Còn {{count}} bước bắt buộc chưa hoàn thành"
+    },
+    "resume": {
+      "title": "Tiếp tục thiết lập đang dở",
+      "subtitle": "Bạn có bản thiết lập chưa hoàn tất. Chọn để tiếp tục đúng chỗ đã dừng thay vì bắt đầu lại.",
+      "continue": "Tiếp tục",
+      "discard": "Hủy bản nháp",
+      "discarded": "Đã hủy bản nháp thiết lập"
     }
   },
   "aoiOnboarding": {
@@ -10470,7 +10518,15 @@
     "pageTitle": "Quản lý đăng ký máy",
     "pageSubtitle": "Duyệt, từ chối và quản lý đăng ký máy AOI/AVI từ xa",
     "qr": {
-      "genError": "Không tạo được mã QR"
+      "genError": "Không tạo được mã QR",
+      "noMachines": "Không có máy nào để tạo QR",
+      "bulkButton": "In QR hàng loạt",
+      "rowAction": "Tạo nhãn QR",
+      "dialogTitle": "Nhãn QR dán lên máy",
+      "dialogDesc": "Quét nhãn để mở hồ sơ máy (/machine/:id). In và dán lên thân máy.",
+      "generating": "Đang tạo mã QR…",
+      "close": "Đóng",
+      "print": "In nhãn"
     },
     "lifecycle": {
       "columnTitle": "Vòng đời",
@@ -11565,7 +11621,10 @@
     "argNotInt": "Phải là số nguyên",
     "argMin": "Tối thiểu {{min}}",
     "argMax": "Tối đa {{max}}",
-    "argOption": "Không phải giá trị hợp lệ"
+    "argOption": "Không phải giá trị hợp lệ",
+    "simRequired": "Chưa mô phỏng đạt — hãy Simulate đến khi feasible trước khi Deploy",
+    "simGateOk": "Mô phỏng đã ĐẠT cho định nghĩa hiện tại — có thể Deploy.",
+    "simGateRequiredHint": "Sim-gate BẬT: phải Simulate ĐẠT (feasible) định nghĩa hiện tại trước khi Deploy. Mọi chỉnh sửa sẽ yêu cầu mô phỏng lại."
   },
   "aiHub": {
     "subtitle": "Các tính năng AI cho trí tuệ kiểm tra",
@@ -11713,7 +11772,8 @@
         "shift": "Ca",
         "day": "Ngày",
         "week": "Tuần"
-      }
+      },
+      "degraded": "Tóm tắt AI tạm không đạt chất lượng — đang hiển thị bản tóm tắt theo quy tắc từ KPI thực."
     },
     "alerts": {
       "title": "Cảnh báo / Insight AI đang hoạt động",
@@ -11926,7 +11986,8 @@
       "fix": "Đề xuất sửa",
       "explainReq": "Giải thích các chẩn đoán/lỗi sau, nguyên nhân gốc và hướng khắc phục:",
       "fixReq": "Rà soát và đề xuất cách sửa các chẩn đoán/lỗi sau (nêu đoạn sửa cụ thể):",
-      "copyOnly": "Editor dạng khối/LAD nên không chèn trực tiếp — dùng để giải thích, rà soát và sinh mã tham khảo (sao chép)."
+      "copyOnly": "Editor dạng khối/LAD nên không chèn trực tiếp — dùng để giải thích, rà soát và sinh mã tham khảo (sao chép).",
+      "loading": "Đang tải trình soạn…"
     },
     "kind": "Loại chương trình",
     "mode": "Chế độ",
@@ -12262,7 +12323,8 @@
     "provenanceGguf": "AI (GGUF Qwen3 cục bộ)",
     "provenanceOpenai": "AI (OpenAI)",
     "provenanceOffline": "Bản Mẫu (Ngoại Tuyến)",
-    "provenanceHint": "Nguồn tạo nội dung tường thuật của báo cáo này"
+    "provenanceHint": "Nguồn tạo nội dung tường thuật của báo cáo này",
+    "summary": "Tóm tắt"
   },
   "ts": {
     "title": "Phân Tích Chuỗi Thời Gian",
@@ -12284,7 +12346,13 @@
     "predicted": "Dự Đoán",
     "time": "Thời Gian",
     "showingFirst": "Hiển thị {{count}} kết quả đầu tiên",
-    "value": "Giá Trị"
+    "value": "Giá Trị",
+    "actual": "Thực tế",
+    "upperBound": "Cận trên",
+    "lowerBound": "Cận dưới",
+    "chartTitle": "Biểu đồ chuỗi thời gian",
+    "noChartData": "Không có dữ liệu để vẽ biểu đồ",
+    "anomalyMarks": "Điểm bất thường"
   },
   "energy": {
     "title": "Phân tích năng lượng",
@@ -12865,7 +12933,12 @@
         "circle": "Hình tròn",
         "square": "Hình vuông",
         "custom": "Tùy chỉnh"
-      }
+      },
+      "saved": "Đã lưu điểm chuẩn",
+      "deleted": "Đã xóa điểm chuẩn",
+      "codeRequired": "Mã là bắt buộc",
+      "codeInvalid": "Mã chỉ gồm chữ, số, gạch dưới, gạch ngang",
+      "nameRequired": "Tên là bắt buộc"
     }
   },
   "measurementPointP2": {
@@ -13417,7 +13490,9 @@
   "routeGuard": {
     "deniedTitle": "Không có quyền truy cập",
     "deniedMessage": "Bạn không có quyền truy cập trang này. Vui lòng liên hệ quản trị viên nếu bạn cho rằng đây là nhầm lẫn.",
-    "backToHome": "Về trang chính"
+    "backToHome": "Về trang chính",
+    "licenseTitle": "Tính năng chưa được kích hoạt",
+    "licenseMessage": "Ứng dụng này chưa có trong gói bản quyền của bạn. Liên hệ để nâng cấp hoặc dùng thử."
   },
   "advancedSection": {
     "title": "Nâng cao",
@@ -13604,7 +13679,16 @@
     "titleRequired": "Tiêu đề cần ít nhất 3 ký tự",
     "parts": {
       "codeRequired": "Nhập mã phụ tùng",
-      "qtyRequired": "Số lượng ≥ 1"
+      "qtyRequired": "Số lượng ≥ 1",
+      "title": "Vật tư đã dùng",
+      "recorded": "Đã ghi nhận vật tư",
+      "belowReorder": "Tồn kho phụ tùng dưới mức đặt lại",
+      "empty": "Chưa ghi nhận vật tư nào",
+      "code": "Mã phụ tùng",
+      "cost": "Chi phí",
+      "total": "Tổng chi phí",
+      "notes": "Ghi chú",
+      "record": "Ghi nhận"
     },
     "closeSection": "Đóng lệnh & ghi nhận kết quả",
     "closeWorkOrder": "Đóng lệnh",
@@ -13640,7 +13724,8 @@
       "BREAKDOWN": "Sự cố",
       "INSPECTION": "Kiểm tra"
     },
-    "selectMachine": "Chọn một máy…"
+    "selectMachine": "Chọn một máy…",
+    "openMachine": "Mở thiết bị"
   },
   "thresholdApprovals": {
     "title": "Duyệt ngưỡng",
@@ -13783,7 +13868,11 @@
     "showing": "Hiển thị {{n}}",
     "noAlerts": "Không có cảnh báo khớp bộ lọc",
     "soundOff": "Tắt âm",
-    "soundOn": "Bật âm"
+    "soundOn": "Bật âm",
+    "staleData": "Dữ liệu có thể đã cũ — mất kết nối cập nhật",
+    "needsActionFirst": "Cần xử lý trước",
+    "nRecords": "{{n}} bản ghi",
+    "oneRecord": "1 bản ghi"
   },
   "cmd": {
     "title": "Trung tâm điều hành hệ sinh thái",
@@ -13959,7 +14048,8 @@
       "alerts": "Cảnh báo SPC",
       "calibration": "Hiệu chuẩn",
       "msa": "Gauge R&R",
-      "ipc": "IPC-A-610"
+      "ipc": "IPC-A-610",
+      "diagnose": "Chẩn đoán"
     },
     "gates": {
       "realtimeStatus": "Trạng thái cổng thời gian thực",
@@ -14159,7 +14249,12 @@
       "simulated": "Mô phỏng"
     },
     "cockpit": "Cockpit",
-    "openCockpit": "Mở cockpit robot"
+    "openCockpit": "Mở cockpit robot",
+    "controlPermRequired": "Cần quyền điều khiển máy (machine_control)",
+    "openConsoleTip": "Mở Command Console để phát lệnh có gate (HITL + dry-run)",
+    "controlTip": "Mở Command Console cho robot này (phát lệnh có gate)",
+    "control": "Điều khiển",
+    "adminRequired": "Chỉ quản trị viên (admin) mới bật/tắt hoặc kiểm tra kết nối thiết bị"
   },
   "controlPlane": {
     "title": "Factory Control Plane",
@@ -14295,7 +14390,8 @@
       "tripError": "Không thể trip công tắc.",
       "untripError": "Không thể untrip công tắc.",
       "adminOnlyNote": "Chỉ admin đã bật 2FA mới có thể đổi trạng thái công tắc này."
-    }
+    },
+    "vramBrokerSource": "theo broker (số đang cưỡng chế)"
   },
   "agentCenter": {
     "title": "Agent Command Center",
@@ -14876,7 +14972,16 @@
     "alarmConsequence": "Hậu quả",
     "alarmTtr": "Phản ứng trong",
     "alarmNotRationalized": "chưa rationalize",
-    "minutes": "phút"
+    "minutes": "phút",
+    "teachSaved": "Đã lưu teach buffer vào project robot-tm (bản {{v}})",
+    "trendCaption": "Mini-trend từ {{n}} mẫu telemetry gần nhất (cũ → mới).",
+    "trendNone": "Chưa đủ mẫu telemetry để vẽ mini-trend (cần ≥ 2 mẫu).",
+    "alarmAckBlocked": "Ack/Shelve theo từng lần xảy ra chưa khả dụng cho alarm robot (feed từ safety_events không có ledger id). Bạn có thể shelve theo LỚP alarm ở Equipment Standards.",
+    "shelveClass": "Shelve theo lớp",
+    "shelveClassTip": "Mở Equipment Standards để shelve/rationalize LỚP alarm {{code}} (không phải lần xảy ra này)",
+    "teachSavePerm": "Cần quyền tạo chương trình (machine_control/canCreate)",
+    "teachSave": "Lưu vào project robot-tm",
+    "teachSaveHint": "Lưu tạo một artifact bản mới trong project robot-tm gắn robot này (tự tạo project nếu chưa có) — vào pipeline validate/build/deploy có gate. Không phát chuyển động."
   },
   "deviceAdapter": {
     "adaptersTitle": "Adapter",
@@ -14927,7 +15032,10 @@
       "tagUpdated": "Đã cập nhật tag",
       "updated": "Đã cập nhật adapter"
     },
-    "writableNote": "writable chỉ KHAI BÁO tag có thể là đích ghi; lệnh ghi thực tế chỉ thực hiện qua xác nhận HITL hoặc interlock đã duyệt."
+    "writableNote": "writable chỉ KHAI BÁO tag có thể là đích ghi; lệnh ghi thực tế chỉ thực hiện qua xác nhận HITL hoặc interlock đã duyệt.",
+    "manualHelp": "Sổ tay",
+    "autoForm": "Cấu hình theo manifest (tự sinh) — host + cổng sẽ tạo endpoint bên dưới",
+    "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}"
   },
   "engineering": {
     "gtNav": "Tiến độ luồng vàng",
@@ -15801,7 +15909,9 @@
     "subtitle": "Mỗi máy là một khối 3D tô màu theo trạng thái thực — bấm để xem chi tiết & mở mô phỏng cụm",
     "tip": "Kéo để xoay • lăn chuột để zoom • bấm khối máy để chọn",
     "title": "Bản đồ nhà máy 3D (live)",
-    "total": "Tổng máy"
+    "total": "Tổng máy",
+    "wsStale": "Trực tiếp (chậm)",
+    "wsLive": "Trực tiếp (WS)"
   },
   "ir": {
     "whenToUse": "Khi nào dùng — khối motion & I/O cấp thấp (IR). Cần pipeline build/deploy đầy đủ dùng Xưởng lập trình; cần IEC 61131 LAD/FBD/SFC dùng POU Studio.",
@@ -17544,7 +17654,9 @@
     "empty": {
       "title": "Chưa có dữ liệu cảnh báo",
       "desc": "Chưa ghi nhận Andon/cảnh báo AI nào trong cửa sổ đã chọn."
-    }
+    },
+    "liveHint": "Cập nhật trực tiếp qua socket",
+    "pollHint": "Socket offline — đang dùng poll dự phòng"
   },
   "slaCockpit": {
     "title": "Bảng SLA",
@@ -17877,13 +17989,32 @@
     "machine": "Máy",
     "clear": "Xoá phạm vi",
     "prefix": "Phạm vi",
-    "notWired": "trang này chưa lọc"
+    "notWired": "trang này chưa lọc",
+    "compactOpen": "Chọn phạm vi Chuyền / Máy"
   },
   "manualHelp": {
-    "error": "Không tra được tài liệu. Thử lại sau."
+    "error": "Không tra được tài liệu. Thử lại sau.",
+    "title": "Tra sổ tay (trích trang)",
+    "header": "Sổ tay nhà sản xuất",
+    "loading": "Đang tra tài liệu…",
+    "kbOff": "Kho tài liệu nhà sản xuất chưa được bật.",
+    "empty": "Không tìm thấy đoạn tài liệu phù hợp.",
+    "footnote": "Trích từ sổ tay nhà sản xuất — luôn đối chiếu bản gốc trước khi thao tác."
   },
   "controlReadiness": {
-    "loadError": "Không tải được ma trận readiness."
+    "loadError": "Không tải được ma trận readiness.",
+    "title": "Trung tâm Tin cậy & Thực thi",
+    "subtitle": "Ma trận đèn READ-ONLY trạng thái gate/flag runtime của tầng điều khiển & tin cậy. Mỗi mục: đang thật (armed) / dormant vì cờ tắt / bypass (một lớp bảo vệ bị tắt). Công cụ QA + audit — không mở đường ghi thiết bị.",
+    "armed": "Đang thật (armed)",
+    "dormant": "Dormant (cờ tắt)",
+    "bypass": "Bypass (bảo vệ tắt)",
+    "warn": "Cảnh báo",
+    "attention": "Có mục cần chú ý (bypass/cảnh báo). Xem các đèn cam/đỏ bên dưới — mỗi mục nêu rõ lý do và cách siết lại.",
+    "checks": "mục",
+    "empty": "Không có mục nào trong nhóm này.",
+    "privileged2fa": "User đặc quyền chưa bật 2FA",
+    "privileged2faDesc": "Các tài khoản này bị khóa mọi lệnh actuation/deploy cho tới khi bật 2FA.",
+    "generatedAt": "Cập nhật"
   },
   "ncr": {
     "loadError": "Không tải được danh sách NCR."
@@ -17982,7 +18113,22 @@
   "handover": {
     "pickBoth": "Chọn cả phiên bàn giao và phiên nhận",
     "notSame": "Phiên bàn giao và phiên nhận phải khác nhau",
-    "notesRequired": "Nhập ghi chú bàn giao"
+    "notesRequired": "Nhập ghi chú bàn giao",
+    "title": "Bàn giao ca",
+    "description": "Ghi lại việc chuyển giao trách nhiệm giữa ca đi và ca đến. Ghi chú sẽ hiển thị trên phiên nhận.",
+    "noPermission": "Bạn chưa được cấp quyền bàn giao ca — liên hệ giám sát để cấp quyền phiên sản xuất.",
+    "fromSession": "Phiên bàn giao (ca đi)",
+    "selectSession": "Chọn phiên…",
+    "toSession": "Phiên nhận (ca đến)",
+    "notes": "Ghi chú bàn giao",
+    "notesPlaceholder": "Tình trạng máy, việc đang dở, cảnh báo cho ca sau…",
+    "submitting": "Đang bàn giao…",
+    "submit": "Bàn giao ca",
+    "success": "Đã bàn giao ca — ghi chú đã lưu vào phiên nhận",
+    "liveTitle": "Phiên đang mở & bàn giao",
+    "liveDesc": "{{count}} phiên đang mở/tạm dừng — ghi chú bàn giao hiển thị trên phiên nhận",
+    "handedTo": "→ bàn giao cho phiên #{{id}}",
+    "noLive": "Không có phiên đang mở."
   },
   "approvalsInbox": {
     "ai": {
@@ -18194,5 +18340,59 @@
       "served": "phục vụ qua trpc.contracts / devPortal",
       "noProviders": "Chưa cắm provider MES/ERP/WMS."
     }
+  },
+  "reportAgg": {
+    "title": "Phân tích báo cáo sản xuất",
+    "desc": "Pareto lỗi theo nhóm, hiệu suất theo sản phẩm & xu hướng theo tuần (chỉ đọc)",
+    "unassigned": "Chưa gán",
+    "defectPareto": "Pareto lỗi theo nhóm",
+    "paretoMeta": "{{c}} lỗi phân loại / {{u}} chưa phân loại",
+    "emptyPareto": "Không có lỗi NG trong khoảng thời gian này.",
+    "count": "Số lỗi",
+    "cumulative": "Tích lũy %",
+    "yieldByProduct": "Hiệu suất theo sản phẩm",
+    "emptyYield": "Không có dữ liệu kiểm tra trong khoảng thời gian này.",
+    "yieldRate": "Hiệu suất %",
+    "yieldTrend": "Xu hướng hiệu suất theo tuần (ISO)",
+    "emptyTrend": "Không có dữ liệu tuần nào trong khoảng thời gian này.",
+    "recentReports": "Báo cáo gần đây",
+    "noReports": "Chưa có báo cáo nào được lưu."
+  },
+  "jsonSchemaForm": {
+    "noFields": "Manifest không khai báo trường cấu hình."
+  },
+  "stepUp": {
+    "title": "Xác thực 2 bước để triển khai",
+    "desc": "Nhập mã OTP 6 số từ ứng dụng xác thực để xác nhận lệnh triển khai/điều khiển."
+  },
+  "hub": {
+    "noAccess": "Bạn chưa có quyền với mục nào ở đây.",
+    "categories": "Danh mục"
+  },
+  "aiStudio": {
+    "categories": "Nhóm AI"
+  },
+  "dataHub": {
+    "title": "Quản lý dữ liệu",
+    "categories": "Nhóm dữ liệu"
+  },
+  "engineeringStudio": {
+    "title": "Xưởng kỹ thuật",
+    "categories": "Nhóm kỹ thuật"
+  },
+  "maintenanceHub": {
+    "title": "Bảo trì",
+    "categories": "Nhóm bảo trì"
+  },
+  "productWorkspace": {
+    "title": "Xưởng sản phẩm",
+    "categories": "Nhóm sản phẩm"
+  },
+  "reportingStudio": {
+    "title": "Xưởng báo cáo"
+  },
+  "settingsHub": {
+    "title": "Trung tâm cài đặt",
+    "categories": "Nhóm cài đặt"
   }
 }

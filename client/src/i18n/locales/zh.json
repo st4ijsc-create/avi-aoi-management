@@ -619,7 +619,8 @@
   "datatable": {
     "columns": "列",
     "showColumns": "显示列",
-    "chooseColumns": "选择显示的列"
+    "chooseColumns": "选择显示的列",
+    "rowsTotal": " 行"
   },
   "filterbar": {
     "savedFilters": "已保存的筛选",
@@ -652,6 +653,14 @@
       "floor": "布局编辑器",
       "cell": "单元孪生",
       "rf": "RF测试单元"
+    },
+    "mode": {
+      "edit": "布局图"
+    },
+    "legend": {
+      "live": "真实设备/遥测数据，实时",
+      "sim": "回放已录制的仿真——并非真实工作单元",
+      "edit": "平面布局编辑工具"
     }
   },
   "ecn": {
@@ -1220,7 +1229,11 @@
     "confirmMaintenanceConfirm": "呼叫维护",
     "maintenanceCalled": "已呼叫维护——将通知维护团队",
     "maintenanceCallError": "无法呼叫维护",
-    "maintenanceCallTitle": "来自产线的维护请求"
+    "maintenanceCallTitle": "来自产线的维护请求",
+    "myFactory": "我的工厂",
+    "viewWholePlant": "查看整个工厂",
+    "changeover": "产品换线",
+    "myLine": "我的产线"
   },
   "quality": {
     "title": "质量工作区",
@@ -1280,7 +1293,12 @@
     "acked": "已确认",
     "ackHint": "确认已接收此安灯",
     "ackNoPerm": "您没有确认安灯的权限",
-    "ackDone": "安灯已确认"
+    "ackDone": "安灯已确认",
+    "boardTitle": "安灯看板",
+    "filtered": "已筛选",
+    "tapToEnableSound": "点击启用提示音",
+    "overdue": "超时",
+    "lookupCode": "查询代码"
   },
   "aiInbox": {
     "title": "待办收件箱",
@@ -6136,7 +6154,9 @@
       "defect_caused_by": "由…导致",
       "cause_resolved_by": "由…解决",
       "cause_prevented_by": "由…预防"
-    }
+    },
+    "canvasAria": "因果图：设备、缺陷、原因与措施及其有向关系",
+    "diagram": "因果图"
   },
   "nav": {
     "masterDataAudit": "审计日志",
@@ -6723,7 +6743,10 @@
     "routingMaster": "生产路由",
     "materialsAtLine": "线边物料",
     "comparisonStudio": "多维对比",
-    "comparisonStudioDesc": "线/班/产品/周期对比 + 基准线,一个工具"
+    "comparisonStudioDesc": "线/班/产品/周期对比 + 基准线,一个工具",
+    "quickLinksLabel": "快捷链接",
+    "primaryNavLabel": "主导航",
+    "unpin": "取消固定"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
@@ -6933,7 +6956,14 @@
     "activeOEETargets": "活跃oeetargets",
     "active": "活跃",
     "deleteTarget": "删除目标",
-    "noOeeDataHelp": "开始记录检测或重新连接机器，以填充 OEE、停机时间与对比图表。"
+    "noOeeDataHelp": "开始记录检测或重新连接机器，以填充 OEE、停机时间与对比图表。",
+    "title": "OEE 看板",
+    "noData": "暂无数据",
+    "worldClass": "世界一流（≥85%）",
+    "typical": "一般水平（60–85%）",
+    "tabMachines": "按 OEE 排列的设备",
+    "tabDowntime": "停机时间",
+    "tabHealth": "设备健康度"
   },
   "packages": {
     "viewInspection": "查看检查",
@@ -8670,7 +8700,8 @@
     "activePermissions": "活跃权限",
     "categoryMachineControl": "机器控制",
     "system": "系统",
-    "module": "模块"
+    "module": "模块",
+    "machineControlFloorWarning": "只有启用双因素认证的管理员/主管/工程师才能执行指令"
   },
   "scheduledReports": {
     "weeklyReport": "周报",
@@ -8777,7 +8808,8 @@
     "deviceOn": "于",
     "noSessionsDescription": "未找到该账户的活跃登录会话。",
     "unknownBrowser": "未知浏览器",
-    "unknownOs": "未知操作系统"
+    "unknownOs": "未知操作系统",
+    "localhost": "本机"
   },
   "settings": {
     "yieldThresholdConfigDescription": "良率阈值配置描述",
@@ -9170,7 +9202,9 @@
     "autoRegistrationLegacy": "自动注册（旧版）",
     "machineType_SCREW_DRIVER": "拧螺丝机",
     "machineType_GLUE_DISPENSER": "点胶机",
-    "machineType_CONVEYOR": "输送带"
+    "machineType_CONVEYOR": "输送带",
+    "regenApiKeyConfirm": "重新生成 API 密钥会使该设备当前的密钥失效，直到重新配置为止。是否继续？",
+    "regenApiKey": "重新生成并复制密钥"
   },
   "setup": {
     "pleaseCheckInfo": "请检查信息",
@@ -9890,6 +9924,12 @@
       "perHour": "每小时",
       "perShift": "每班",
       "perDay": "每天"
+    },
+    "category": {
+      "metrics": "指标",
+      "charts": "图表",
+      "data": "数据",
+      "utility": "工具"
     }
   },
   "productOnboarding": {
@@ -9976,6 +10016,13 @@
       "finish": "完成配置",
       "finishing": "完成中…",
       "guardBlocked": "还有 {{count}} 个必填步骤未完成"
+    },
+    "resume": {
+      "title": "继续未完成的设置",
+      "subtitle": "您有一项未完成的设置。选择它可从中断处继续，而无需重新开始。",
+      "continue": "继续",
+      "discard": "放弃草稿",
+      "discarded": "设置草稿已放弃"
     }
   },
   "aoiOnboarding": {
@@ -10274,7 +10321,15 @@
     "pageTitle": "设备注册管理",
     "pageSubtitle": "审批、拒绝和管理远程AOI/AVI设备注册",
     "qr": {
-      "genError": "生成二维码失败"
+      "genError": "生成二维码失败",
+      "noMachines": "没有可生成二维码的设备",
+      "bulkButton": "批量打印二维码",
+      "rowAction": "生成二维码标签",
+      "dialogTitle": "贴于设备的二维码标签",
+      "dialogDesc": "扫描标签即可打开设备档案（/machine/:id）。请打印并粘贴在设备机身上。",
+      "generating": "正在生成二维码…",
+      "close": "关闭",
+      "print": "打印标签"
     },
     "lifecycle": {
       "columnTitle": "生命周期",
@@ -11369,7 +11424,10 @@
     "argNotInt": "必须是整数",
     "argMin": "最小 {{min}}",
     "argMax": "最大 {{max}}",
-    "argOption": "非允许的取值"
+    "argOption": "非允许的取值",
+    "simRequired": "仿真尚未通过——请先运行仿真直至可行，再进行部署",
+    "simGateOk": "当前定义的仿真已通过——可以部署。",
+    "simGateRequiredHint": "仿真闸门已开启：当前定义必须通过仿真（可行）后才能部署。任何修改都需要重新仿真。"
   },
   "aiHub": {
     "subtitle": "AI驱动的检测智能功能",
@@ -11517,7 +11575,8 @@
         "shift": "班次",
         "day": "日",
         "week": "周"
-      }
+      },
+      "degraded": "AI 摘要未达到质量标准——现改为显示基于真实 KPI 的规则化摘要。"
     },
     "alerts": {
       "title": "活跃的 AI 警报 / 洞察",
@@ -11730,7 +11789,8 @@
       "fix": "给出修复建议",
       "explainReq": "请解释以下诊断/错误、根本原因及修复方向：",
       "fixReq": "请审查并针对以下诊断/错误提出具体修复方案（给出补丁片段）：",
-      "copyOnly": "块/梯形图编辑器无法直接插入 — 可用于解释、审查与生成参考代码（复制）。"
+      "copyOnly": "块/梯形图编辑器无法直接插入 — 可用于解释、审查与生成参考代码（复制）。",
+      "loading": "正在加载编辑器…"
     },
     "kind": "程序类型",
     "mode": "模式",
@@ -12066,7 +12126,8 @@
     "provenanceGguf": "AI（本地 GGUF Qwen3）",
     "provenanceOpenai": "AI（OpenAI）",
     "provenanceOffline": "模板（离线）",
-    "provenanceHint": "本报告叙述内容的生成来源"
+    "provenanceHint": "本报告叙述内容的生成来源",
+    "summary": "摘要"
   },
   "ts": {
     "title": "时间序列分析",
@@ -12088,7 +12149,13 @@
     "predicted": "预测值",
     "time": "时间",
     "showingFirst": "显示前 {{count}} 个结果",
-    "value": "数值"
+    "value": "数值",
+    "actual": "实际值",
+    "upperBound": "上界",
+    "lowerBound": "下界",
+    "chartTitle": "时序图表",
+    "noChartData": "没有可绘制的数据",
+    "anomalyMarks": "异常点"
   },
   "energy": {
     "title": "能源分析",
@@ -12669,7 +12736,12 @@
         "circle": "圆形",
         "square": "方形",
         "custom": "自定义"
-      }
+      },
+      "saved": "基准点已保存",
+      "deleted": "基准点已删除",
+      "codeRequired": "代码为必填项",
+      "codeInvalid": "代码只能包含字母、数字、下划线和连字符",
+      "nameRequired": "名称为必填项"
     }
   },
   "measurementPointP2": {
@@ -13221,7 +13293,9 @@
   "routeGuard": {
     "deniedTitle": "无访问权限",
     "deniedMessage": "您没有访问此页面的权限。如果您认为这是误判，请联系管理员。",
-    "backToHome": "返回主页"
+    "backToHome": "返回主页",
+    "licenseTitle": "功能未激活",
+    "licenseMessage": "此应用不在您的许可套餐内。请联系我们升级或申请试用。"
   },
   "advancedSection": {
     "title": "高级",
@@ -13408,7 +13482,16 @@
     "titleRequired": "标题至少需要3个字符",
     "parts": {
       "codeRequired": "请输入部件代码",
-      "qtyRequired": "数量必须≥1"
+      "qtyRequired": "数量必须≥1",
+      "title": "已用备件",
+      "recorded": "备件已记录",
+      "belowReorder": "备件库存低于再订货点",
+      "empty": "尚未记录任何备件",
+      "code": "备件代码",
+      "cost": "成本",
+      "total": "总成本",
+      "notes": "备注",
+      "record": "记录"
     },
     "closeSection": "关闭并记录处理结果",
     "closeWorkOrder": "关闭工单",
@@ -13444,7 +13527,8 @@
       "BREAKDOWN": "故障",
       "INSPECTION": "检查"
     },
-    "selectMachine": "选择一台机器…"
+    "selectMachine": "选择一台机器…",
+    "openMachine": "打开设备"
   },
   "thresholdApprovals": {
     "title": "阈值审批",
@@ -13587,7 +13671,11 @@
     "showing": "显示 {{n}}",
     "noAlerts": "没有符合筛选条件的告警",
     "soundOff": "声音关闭",
-    "soundOn": "声音开启"
+    "soundOn": "声音开启",
+    "staleData": "数据可能已过期——实时连接已中断",
+    "needsActionFirst": "需优先处理",
+    "nRecords": "{{n}} 条记录",
+    "oneRecord": "1 条记录"
   },
   "cmd": {
     "title": "生态系统指挥中心",
@@ -13763,7 +13851,8 @@
       "alerts": "SPC 警报",
       "calibration": "校准",
       "msa": "量具 R&R",
-      "ipc": "IPC-A-610"
+      "ipc": "IPC-A-610",
+      "diagnose": "诊断"
     },
     "gates": {
       "realtimeStatus": "实时闸门状态",
@@ -13963,7 +14052,12 @@
       "simulated": "模拟"
     },
     "cockpit": "驾驶舱",
-    "openCockpit": "打开机器人驾驶舱"
+    "openCockpit": "打开机器人驾驶舱",
+    "controlPermRequired": "需要设备控制权限（machine_control）",
+    "openConsoleTip": "打开指令控制台以发出带闸门的指令（人工确认 + 试运行）",
+    "controlTip": "为此机器人打开指令控制台（带闸门的指令）",
+    "control": "控制",
+    "adminRequired": "只有管理员可以启用/停用设备或测试其连接"
   },
   "controlPlane": {
     "title": "工厂控制平面",
@@ -14799,7 +14893,8 @@
       "offset": "偏移（+）",
       "cast": "转换类型",
       "deadband": "死区"
-    }
+    },
+    "subtitle": "将原始 OT 标签映射到 UNS 主题（ISA-95）与 Sparkplug 指标，并支持变换（重命名、缩放/偏移、单位、类型转换、死区）。无需编码即可配置。仅影响读取方向（遥测 → UNS）；在 UNS_MAPPING_ENABLED 开启时生效。"
   },
   "aiBrain": {
     "engine": "引擎",
@@ -14873,7 +14968,8 @@
       "tripError": "触发开关失败。",
       "untripError": "解除开关失败。",
       "adminOnlyNote": "只有已启用双重验证（2FA）的管理员才能更改此开关。"
-    }
+    },
+    "vramBrokerSource": "以调度器为准（实际强制执行的数值）"
   },
   "agentCenter": {
     "title": "Agent 指挥中心",
@@ -15454,7 +15550,16 @@
     "alarmConsequence": "后果",
     "alarmTtr": "响应时限",
     "alarmNotRationalized": "未合理化",
-    "minutes": "分钟"
+    "minutes": "分钟",
+    "teachSaved": "示教缓存已保存至 robot-tm 项目（版本 {{v}}）",
+    "trendCaption": "由最近 {{n}} 个遥测样本生成的微趋势（旧 → 新）。",
+    "trendNone": "遥测样本不足，无法绘制微趋势（需要 ≥ 2 个）。",
+    "alarmAckBlocked": "机器人告警不支持按单次发生进行确认/搁置（safety_events 数据源不含台账 id）。您可以在设备标准中按告警类别进行搁置。",
+    "shelveClass": "按类别搁置",
+    "shelveClassTip": "打开设备标准以搁置/合理化告警类别 {{code}}（而非本次发生）",
+    "teachSavePerm": "需要程序创建权限（machine_control/canCreate）",
+    "teachSave": "保存至 robot-tm 项目",
+    "teachSaveHint": "保存会在绑定此机器人的 robot-tm 项目中创建一个新的构件版本（如无该项目则自动创建）——随后进入带闸门的验证/构建/部署流水线。不会发出任何运动指令。"
   },
   "deviceAdapter": {
     "adaptersTitle": "适配器",
@@ -15505,7 +15610,10 @@
       "tagUpdated": "标签已更新",
       "updated": "适配器已更新"
     },
-    "writableNote": "可写仅声明某标签为可能的写入目标；实际写入仅通过人工在环确认或已批准的联锁执行。"
+    "writableNote": "可写仅声明某标签为可能的写入目标；实际写入仅通过人工在环确认或已批准的联锁执行。",
+    "manualHelp": "手册",
+    "autoForm": "根据清单自动生成的配置——主机 + 端口将构成下方的端点",
+    "defaultPortHint": "{{protocol}} 默认端口：{{port}}"
   },
   "engineering": {
     "gtNav": "黄金链进度",
@@ -16220,7 +16328,9 @@
     "subtitle": "每台机器是一个按真实状态着色的 3D 方块 — 点击查看详情并打开单元仿真",
     "tip": "拖动以旋转 • 滚动以缩放 • 点击机器方块以选择",
     "title": "3D 工厂地图（实时）",
-    "total": "机器总数"
+    "total": "机器总数",
+    "wsStale": "实时（延迟）",
+    "wsLive": "实时（WS）"
   },
   "ir": {
     "whenToUse": "适用场景 — 低层运动与 I/O 块（IR）。完整的构建/部署流水线请使用工程工作区；IEC 61131 LAD/FBD/SFC 请使用 POU Studio。",
@@ -17572,7 +17682,9 @@
     "empty": {
       "title": "暂无报警数据",
       "desc": "所选窗口内未记录任何安灯/AI 预警。"
-    }
+    },
+    "liveHint": "通过 socket 实时更新",
+    "pollHint": "Socket 离线——正在使用轮询备用"
   },
   "slaCockpit": {
     "title": "SLA 驾驶舱",
@@ -17905,13 +18017,32 @@
     "machine": "机器",
     "clear": "清除范围",
     "prefix": "范围",
-    "notWired": "此页面尚未过滤"
+    "notWired": "此页面尚未过滤",
+    "compactOpen": "选择产线 / 设备范围"
   },
   "manualHelp": {
-    "error": "无法查询文档，请稍后重试。"
+    "error": "无法查询文档，请稍后重试。",
+    "title": "手册查询（页面摘录）",
+    "header": "制造商手册",
+    "loading": "正在检索文档…",
+    "kbOff": "制造商文档库尚未启用。",
+    "empty": "未找到匹配的文档片段。",
+    "footnote": "摘自制造商手册——操作前请务必核对原文。"
   },
   "controlReadiness": {
-    "loadError": "无法加载就绪矩阵。"
+    "loadError": "无法加载就绪矩阵。",
+    "title": "信任与执行中心",
+    "subtitle": "控制与信任层运行时闸门/开关的只读状态矩阵。每一项：已生效（armed）/ 因开关关闭而休眠（dormant）/ 旁路（bypass，某层防护被关闭）。这是 QA 与审计工具——不会开启任何设备写入通道。",
+    "armed": "已生效（armed）",
+    "dormant": "休眠（开关关闭）",
+    "bypass": "旁路（防护关闭）",
+    "warn": "警告",
+    "attention": "有项目需要关注（旁路/警告）。请查看下方的橙色/红色指示灯——每一项都说明了原因及收紧方式。",
+    "checks": "项",
+    "empty": "此分组中没有项目。",
+    "privileged2fa": "未启用双因素认证的特权用户",
+    "privileged2faDesc": "在启用双因素认证之前，这些账户被禁止执行任何执行/部署指令。",
+    "generatedAt": "更新于"
   },
   "ncr": {
     "loadError": "无法加载NCR列表。"
@@ -18010,7 +18141,22 @@
   "handover": {
     "pickBoth": "请同时选择交接班次和接班班次",
     "notSame": "交接班次和接班班次必须不同",
-    "notesRequired": "请输入交接备注"
+    "notesRequired": "请输入交接备注",
+    "title": "交接班",
+    "description": "记录交班与接班之间的责任移交。备注将显示在接班工段上。",
+    "noPermission": "您没有交接班权限——请联系主管授予生产工段权限。",
+    "fromSession": "交班工段（交出方）",
+    "selectSession": "选择工段…",
+    "toSession": "接班工段（接收方）",
+    "notes": "交接备注",
+    "notesPlaceholder": "设备状况、进行中的工作、给下一班的提醒…",
+    "submitting": "交接中…",
+    "submit": "交接班次",
+    "success": "班次已交接——备注已保存至接班工段",
+    "liveTitle": "进行中的工段与交接",
+    "liveDesc": "{{count}} 个工段进行中/已暂停——交接备注将显示在接班工段上",
+    "handedTo": "→ 已交接至工段 #{{id}}",
+    "noLive": "没有进行中的工段。"
   },
   "approvalsInbox": {
     "ai": {
@@ -18222,5 +18368,59 @@
       "served": "通过 trpc.contracts / devPortal 提供",
       "noProviders": "尚未接入 MES/ERP/WMS 提供方。"
     }
+  },
+  "reportAgg": {
+    "title": "生产报表分析",
+    "desc": "按类别的缺陷帕累托图、按产品的良率与周趋势（只读）",
+    "unassigned": "未分配",
+    "defectPareto": "按类别的缺陷帕累托图",
+    "paretoMeta": "已分类 {{c}} 个 / 未分类 {{u}} 个缺陷",
+    "emptyPareto": "本期内没有 NG 缺陷。",
+    "count": "缺陷数",
+    "cumulative": "累计百分比",
+    "yieldByProduct": "按产品的良率",
+    "emptyYield": "本期内没有检测数据。",
+    "yieldRate": "良率 %",
+    "yieldTrend": "按周（ISO）的良率趋势",
+    "emptyTrend": "本期内没有周数据。",
+    "recentReports": "近期报表",
+    "noReports": "尚未保存任何报表。"
+  },
+  "jsonSchemaForm": {
+    "noFields": "该清单未声明任何配置字段。"
+  },
+  "stepUp": {
+    "title": "部署需二次验证",
+    "desc": "请输入验证器应用中的 6 位一次性验证码，以确认部署/控制指令。"
+  },
+  "hub": {
+    "noAccess": "您对此处的任何项目均无权限。",
+    "categories": "分类"
+  },
+  "aiStudio": {
+    "categories": "AI 分类"
+  },
+  "dataHub": {
+    "title": "数据管理",
+    "categories": "数据分类"
+  },
+  "engineeringStudio": {
+    "title": "工程工作室",
+    "categories": "工程分类"
+  },
+  "maintenanceHub": {
+    "title": "维护",
+    "categories": "维护分类"
+  },
+  "productWorkspace": {
+    "title": "产品工作区",
+    "categories": "产品分类"
+  },
+  "reportingStudio": {
+    "title": "报表工作室"
+  },
+  "settingsHub": {
+    "title": "设置中心",
+    "categories": "设置分类"
   }
 }

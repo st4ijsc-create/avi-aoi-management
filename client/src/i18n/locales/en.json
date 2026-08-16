@@ -619,7 +619,8 @@
   "datatable": {
     "columns": "Columns",
     "showColumns": "Show columns",
-    "chooseColumns": "Choose visible columns"
+    "chooseColumns": "Choose visible columns",
+    "rowsTotal": " rows"
   },
   "filterbar": {
     "savedFilters": "Saved filters",
@@ -652,6 +653,14 @@
       "floor": "Floor Editor",
       "cell": "Cell Twin",
       "rf": "RF Test Cell"
+    },
+    "mode": {
+      "edit": "LAYOUT"
+    },
+    "legend": {
+      "live": "Real machine/telemetry data, in real time",
+      "sim": "Replay of a recorded simulation — NOT a real cell",
+      "edit": "Floor-plan editing tools"
     }
   },
   "ecn": {
@@ -1220,7 +1229,11 @@
     "confirmMaintenanceConfirm": "Call maintenance",
     "maintenanceCalled": "Maintenance called — the team will be notified",
     "maintenanceCallError": "Could not call maintenance",
-    "maintenanceCallTitle": "Maintenance request from the line"
+    "maintenanceCallTitle": "Maintenance request from the line",
+    "myFactory": "My factory",
+    "viewWholePlant": "View the whole plant",
+    "changeover": "Product changeover",
+    "myLine": "My line"
   },
   "quality": {
     "title": "Quality workspace",
@@ -1280,7 +1293,12 @@
     "acked": "Acknowledged",
     "ackHint": "Acknowledge that this Andon has been received",
     "ackNoPerm": "You do not have permission to acknowledge Andons",
-    "ackDone": "Andon acknowledged"
+    "ackDone": "Andon acknowledged",
+    "boardTitle": "ANDON BOARD",
+    "filtered": "filtered",
+    "tapToEnableSound": "Tap to enable sound",
+    "overdue": "OVERDUE",
+    "lookupCode": "Look up code"
   },
   "aiInbox": {
     "title": "Action Inbox",
@@ -6306,7 +6324,9 @@
       "defect_caused_by": "caused by",
       "cause_resolved_by": "resolved by",
       "cause_prevented_by": "prevented by"
-    }
+    },
+    "canvasAria": "Causal diagram: machines, defects, causes and actions with directed relations",
+    "diagram": "Causal diagram"
   },
   "unsMapping": {
     "title": "Tag → UNS Mapping",
@@ -6352,7 +6372,8 @@
       "offset": "Offset (+)",
       "cast": "Cast type",
       "deadband": "Deadband"
-    }
+    },
+    "subtitle": "Map raw OT tags → UNS topics (ISA-95) + Sparkplug metrics, with transforms (rename, scale/offset, unit, cast, deadband). No-code configuration. Affects the READ direction only (telemetry → UNS); applies when UNS_MAPPING_ENABLED is on."
   },
   "nav": {
     "masterDataAudit": "Audit log",
@@ -6939,7 +6960,10 @@
     "routingMaster": "Production Routing",
     "materialsAtLine": "Line Materials",
     "comparisonStudio": "Comparison Studio",
-    "comparisonStudioDesc": "Compare lines/shifts/products/periods + benchmark in one tool"
+    "comparisonStudioDesc": "Compare lines/shifts/products/periods + benchmark in one tool",
+    "quickLinksLabel": "Quick links",
+    "primaryNavLabel": "Primary navigation",
+    "unpin": "Unpin"
   },
   "aboutPage": {
     "layoutTitle": "About System",
@@ -7149,7 +7173,14 @@
     "activeOEETargets": "Active o e e targets",
     "active": "Active",
     "deleteTarget": "Delete target",
-    "noOeeDataHelp": "Start recording inspections or reconnect a machine to populate OEE, downtime, and comparison charts."
+    "noOeeDataHelp": "Start recording inspections or reconnect a machine to populate OEE, downtime, and comparison charts.",
+    "title": "OEE board",
+    "noData": "No data yet",
+    "worldClass": "World class (≥85%)",
+    "typical": "Typical (60–85%)",
+    "tabMachines": "Machines by OEE",
+    "tabDowntime": "Downtime",
+    "tabHealth": "Machine health"
   },
   "packages": {
     "viewInspection": "View inspection",
@@ -8886,7 +8917,8 @@
     "activePermissions": "Active permissions",
     "categoryMachineControl": "Machine Control",
     "system": "System",
-    "module": "Module"
+    "module": "Module",
+    "machineControlFloorWarning": "Only admin/supervisor/engineer with 2FA can execute commands"
   },
   "scheduledReports": {
     "deliveryChannels": "Delivery channels",
@@ -8993,7 +9025,8 @@
     "deviceOn": "on",
     "noSessionsDescription": "No active login sessions were found for this account.",
     "unknownBrowser": "Unknown browser",
-    "unknownOs": "Unknown OS"
+    "unknownOs": "Unknown OS",
+    "localhost": "Local machine"
   },
   "settings": {
     "yieldThresholdConfigDescription": "Yield threshold config description",
@@ -9386,7 +9419,9 @@
     "autoRegistrationLegacy": "Auto Registration (Legacy)",
     "machineType_SCREW_DRIVER": "Screwdriver",
     "machineType_GLUE_DISPENSER": "Glue Dispenser",
-    "machineType_CONVEYOR": "Conveyor"
+    "machineType_CONVEYOR": "Conveyor",
+    "regenApiKeyConfirm": "Regenerating the API key will INVALIDATE the machine's current key until it is reconfigured. Continue?",
+    "regenApiKey": "Regenerate & copy key"
   },
   "setup": {
     "pleaseCheckInfo": "Please check info",
@@ -10106,6 +10141,12 @@
       "perHour": "Per Hour",
       "perShift": "Per Shift",
       "perDay": "Per Day"
+    },
+    "category": {
+      "metrics": "Metrics",
+      "charts": "Charts",
+      "data": "Data",
+      "utility": "Utility"
     }
   },
   "productOnboarding": {
@@ -10192,6 +10233,13 @@
       "finish": "Finish setup",
       "finishing": "Finishing…",
       "guardBlocked": "{{count}} required step(s) remaining"
+    },
+    "resume": {
+      "title": "Resume an unfinished setup",
+      "subtitle": "You have an unfinished setup. Choose it to continue where you left off instead of starting over.",
+      "continue": "Continue",
+      "discard": "Discard draft",
+      "discarded": "Setup draft discarded"
     }
   },
   "aoiOnboarding": {
@@ -10490,7 +10538,15 @@
     "pageTitle": "Machine Registration Management",
     "pageSubtitle": "Approve, reject and manage remote AOI/AVI machine registrations",
     "qr": {
-      "genError": "Failed to generate the QR code"
+      "genError": "Failed to generate the QR code",
+      "noMachines": "No machines to generate a QR code for",
+      "bulkButton": "Print QR codes in bulk",
+      "rowAction": "Create QR label",
+      "dialogTitle": "QR label for the machine",
+      "dialogDesc": "Scan the label to open the machine record (/machine/:id). Print it and stick it on the machine body.",
+      "generating": "Generating QR code…",
+      "close": "Close",
+      "print": "Print label"
     },
     "lifecycle": {
       "columnTitle": "Lifecycle",
@@ -11585,7 +11641,10 @@
     "argNotInt": "Must be an integer",
     "argMin": "Min {{min}}",
     "argMax": "Max {{max}}",
-    "argOption": "Not an allowed value"
+    "argOption": "Not an allowed value",
+    "simRequired": "Simulation has not passed — run Simulate until it is feasible before you Deploy",
+    "simGateOk": "Simulation PASSED for the current definition — you may Deploy.",
+    "simGateRequiredHint": "Sim-gate ON: the current definition must PASS simulation (feasible) before Deploy. Any edit requires re-simulating."
   },
   "aiHub": {
     "subtitle": "AI-powered features for inspection intelligence",
@@ -11733,7 +11792,8 @@
         "shift": "Shift",
         "day": "Day",
         "week": "Week"
-      }
+      },
+      "degraded": "The AI summary did not meet the quality bar — showing a rule-based summary built from real KPIs instead."
     },
     "alerts": {
       "title": "Active AI Alerts / Insights",
@@ -11946,7 +12006,8 @@
       "fix": "Suggest a fix",
       "explainReq": "Explain the following diagnostics/errors, their root cause and how to fix them:",
       "fixReq": "Review and propose fixes for the following diagnostics/errors (give the concrete patch):",
-      "copyOnly": "Block/LAD editors can't take a direct insert — use this to explain, review and draft reference code (copy)."
+      "copyOnly": "Block/LAD editors can't take a direct insert — use this to explain, review and draft reference code (copy).",
+      "loading": "Loading the editor…"
     },
     "kind": "Program kind",
     "mode": "Mode",
@@ -12282,7 +12343,8 @@
     "provenanceGguf": "AI (local GGUF Qwen3)",
     "provenanceOpenai": "AI (OpenAI)",
     "provenanceOffline": "Template (offline)",
-    "provenanceHint": "Source of this report's narrative content"
+    "provenanceHint": "Source of this report's narrative content",
+    "summary": "Summary"
   },
   "ts": {
     "title": "Time Series Analysis",
@@ -12304,7 +12366,13 @@
     "predicted": "Predicted",
     "time": "Time",
     "showingFirst": "Showing first {{count}} results",
-    "value": "Value"
+    "value": "Value",
+    "actual": "Actual",
+    "upperBound": "Upper bound",
+    "lowerBound": "Lower bound",
+    "chartTitle": "Time-series chart",
+    "noChartData": "No data to plot",
+    "anomalyMarks": "Anomaly points"
   },
   "energy": {
     "title": "Energy Analytics",
@@ -12885,7 +12953,12 @@
         "circle": "Circle",
         "square": "Square",
         "custom": "Custom"
-      }
+      },
+      "saved": "Fiducial saved",
+      "deleted": "Fiducial deleted",
+      "codeRequired": "Code is required",
+      "codeInvalid": "Code may contain only letters, digits, underscore and hyphen",
+      "nameRequired": "Name is required"
     }
   },
   "measurementPointP2": {
@@ -13437,7 +13510,9 @@
   "routeGuard": {
     "deniedTitle": "Access denied",
     "deniedMessage": "You don't have permission to access this page. Please contact an administrator if you think this is a mistake.",
-    "backToHome": "Back to home"
+    "backToHome": "Back to home",
+    "licenseTitle": "Feature not activated",
+    "licenseMessage": "This application is not part of your licence package. Contact us to upgrade or start a trial."
   },
   "advancedSection": {
     "title": "Advanced",
@@ -13624,7 +13699,16 @@
     "titleRequired": "Title must be at least 3 characters",
     "parts": {
       "codeRequired": "Enter the part code",
-      "qtyRequired": "Quantity must be ≥ 1"
+      "qtyRequired": "Quantity must be ≥ 1",
+      "title": "Parts used",
+      "recorded": "Parts recorded",
+      "belowReorder": "Spare-part stock below the reorder level",
+      "empty": "No parts recorded yet",
+      "code": "Part code",
+      "cost": "Cost",
+      "total": "Total cost",
+      "notes": "Notes",
+      "record": "Record"
     },
     "closeSection": "Close & record resolution",
     "closeWorkOrder": "Close work order",
@@ -13660,7 +13744,8 @@
       "BREAKDOWN": "Breakdown",
       "INSPECTION": "Inspection"
     },
-    "selectMachine": "Select a machine…"
+    "selectMachine": "Select a machine…",
+    "openMachine": "Open device"
   },
   "thresholdApprovals": {
     "title": "Threshold Approvals",
@@ -13803,7 +13888,11 @@
     "showing": "Showing {{n}}",
     "noAlerts": "No alerts match the filters",
     "soundOff": "Sound off",
-    "soundOn": "Sound on"
+    "soundOn": "Sound on",
+    "staleData": "Data may be stale — the live feed dropped",
+    "needsActionFirst": "Needs action first",
+    "nRecords": "{{n}} records",
+    "oneRecord": "1 record"
   },
   "cmd": {
     "title": "Ecosystem Command Center",
@@ -13979,7 +14068,8 @@
       "alerts": "SPC Alerts",
       "calibration": "Calibration",
       "msa": "Gauge R&R",
-      "ipc": "IPC-A-610"
+      "ipc": "IPC-A-610",
+      "diagnose": "Diagnose"
     },
     "gates": {
       "realtimeStatus": "Realtime gate status",
@@ -14179,7 +14269,12 @@
       "simulated": "Simulated"
     },
     "cockpit": "Cockpit",
-    "openCockpit": "Open robot cockpit"
+    "openCockpit": "Open robot cockpit",
+    "controlPermRequired": "Requires machine control permission (machine_control)",
+    "openConsoleTip": "Open the Command Console to issue gated commands (HITL + dry-run)",
+    "controlTip": "Open the Command Console for this robot (gated commands)",
+    "control": "Control",
+    "adminRequired": "Only an administrator can enable/disable a device or test its connection"
   },
   "controlPlane": {
     "title": "Factory Control Plane",
@@ -14315,7 +14410,8 @@
       "tripError": "Failed to trip the kill-switch.",
       "untripError": "Failed to untrip the kill-switch.",
       "adminOnlyNote": "Only an admin with 2FA enabled can change this switch."
-    }
+    },
+    "vramBrokerSource": "per broker (the enforced figure)"
   },
   "agentCenter": {
     "title": "Agent Command Center",
@@ -14896,7 +14992,16 @@
     "alarmConsequence": "Consequence",
     "alarmTtr": "Respond within",
     "alarmNotRationalized": "not rationalized",
-    "minutes": "min"
+    "minutes": "min",
+    "teachSaved": "Teach buffer saved to the robot-tm project (version {{v}})",
+    "trendCaption": "Mini-trend from the last {{n}} telemetry samples (old → new).",
+    "trendNone": "Not enough telemetry samples for a mini-trend (needs ≥ 2).",
+    "alarmAckBlocked": "Per-occurrence Ack/Shelve is not available for robot alarms (the safety_events feed carries no ledger id). You can shelve the alarm CLASS in Equipment Standards.",
+    "shelveClass": "Shelve by class",
+    "shelveClassTip": "Open Equipment Standards to shelve/rationalise the alarm CLASS {{code}} (not this occurrence)",
+    "teachSavePerm": "Requires program-create permission (machine_control/canCreate)",
+    "teachSave": "Save to the robot-tm project",
+    "teachSaveHint": "Saving creates a new artifact version in the robot-tm project bound to this robot (creating the project if needed) — it enters the gated validate/build/deploy pipeline. No motion is emitted."
   },
   "deviceAdapter": {
     "adaptersTitle": "Adapter",
@@ -14947,7 +15052,10 @@
       "tagUpdated": "Tag updated",
       "updated": "Adapter updated"
     },
-    "writableNote": "Writable only DECLARES a tag as a possible write target; actual writes execute only via HITL confirmation or an approved interlock."
+    "writableNote": "Writable only DECLARES a tag as a possible write target; actual writes execute only via HITL confirmation or an approved interlock.",
+    "manualHelp": "Manual",
+    "autoForm": "Configuration from the manifest (auto-generated) — host + port build the endpoint below",
+    "defaultPortHint": "Default {{protocol}} port: {{port}}"
   },
   "engineering": {
     "gtNav": "Golden thread progress",
@@ -15821,7 +15929,9 @@
     "subtitle": "Each machine is a 3D block colored by real status — click to view details & open the cell simulation",
     "tip": "Drag to rotate • scroll to zoom • click a machine block to select",
     "title": "3D Factory Map (live)",
-    "total": "Total machines"
+    "total": "Total machines",
+    "wsStale": "Live (delayed)",
+    "wsLive": "Live (WS)"
   },
   "ir": {
     "whenToUse": "When to use — low-level motion & I/O blocks (IR). For the full build/deploy pipeline use the Engineering Workspace; for IEC 61131 LAD/FBD/SFC use POU Studio.",
@@ -17564,7 +17674,9 @@
     "empty": {
       "title": "No alarm data",
       "desc": "No Andon/AI alerts recorded in the selected window."
-    }
+    },
+    "liveHint": "Live via socket",
+    "pollHint": "Socket offline — falling back to polling"
   },
   "slaCockpit": {
     "title": "SLA Cockpit",
@@ -17897,13 +18009,32 @@
     "machine": "Machine",
     "clear": "Clear scope",
     "prefix": "Scope",
-    "notWired": "this page is not filtered yet"
+    "notWired": "this page is not filtered yet",
+    "compactOpen": "Select Line / Machine scope"
   },
   "manualHelp": {
-    "error": "Couldn't search the documentation. Try again later."
+    "error": "Couldn't search the documentation. Try again later.",
+    "title": "Manual lookup (page excerpt)",
+    "header": "Manufacturer manual",
+    "loading": "Searching the documentation…",
+    "kbOff": "The manufacturer document store is not enabled.",
+    "empty": "No matching documentation passage found.",
+    "footnote": "Excerpt from the manufacturer manual — always check the original before acting."
   },
   "controlReadiness": {
-    "loadError": "Failed to load the readiness matrix."
+    "loadError": "Failed to load the readiness matrix.",
+    "title": "Trust & Enforcement Center",
+    "subtitle": "READ-ONLY status matrix for the control and trust layer's runtime gates/flags. Each item: armed (really in force) / dormant because the flag is off / bypass (a protection layer is disabled). A QA + audit tool — it opens no write path to devices.",
+    "armed": "Armed (in force)",
+    "dormant": "Dormant (flag off)",
+    "bypass": "Bypass (protection off)",
+    "warn": "Warning",
+    "attention": "Some items need attention (bypass/warning). Check the amber/red lights below — each one states the reason and how to tighten it.",
+    "checks": "items",
+    "empty": "No items in this group.",
+    "privileged2fa": "Privileged users without 2FA",
+    "privileged2faDesc": "These accounts are blocked from every actuation/deploy command until they enable 2FA.",
+    "generatedAt": "Updated"
   },
   "ncr": {
     "loadError": "Failed to load NCRs."
@@ -18002,7 +18133,22 @@
   "handover": {
     "pickBoth": "Select both the outgoing and incoming session",
     "notSame": "The outgoing and incoming session must be different",
-    "notesRequired": "Enter handover notes"
+    "notesRequired": "Enter handover notes",
+    "title": "Shift handover",
+    "description": "Record the transfer of responsibility between the outgoing and incoming shift. The note appears on the receiving session.",
+    "noPermission": "You do not have permission to hand over a shift — ask a supervisor to grant production-session rights.",
+    "fromSession": "Handing-over session (outgoing)",
+    "selectSession": "Select a session…",
+    "toSession": "Receiving session (incoming)",
+    "notes": "Handover notes",
+    "notesPlaceholder": "Machine condition, work in progress, warnings for the next shift…",
+    "submitting": "Handing over…",
+    "submit": "Hand over shift",
+    "success": "Shift handed over — the note was saved to the receiving session",
+    "liveTitle": "Open sessions & handovers",
+    "liveDesc": "{{count}} sessions open/paused — the handover note appears on the receiving session",
+    "handedTo": "→ handed over to session #{{id}}",
+    "noLive": "No open sessions."
   },
   "approvalsInbox": {
     "ai": {
@@ -18214,5 +18360,59 @@
       "served": "served via trpc.contracts / devPortal",
       "noProviders": "No MES/ERP/WMS provider plugged in yet."
     }
+  },
+  "reportAgg": {
+    "title": "Production report analytics",
+    "desc": "Defect Pareto by category, yield by product and weekly trend (read-only)",
+    "unassigned": "Unassigned",
+    "defectPareto": "Defect Pareto by category",
+    "paretoMeta": "{{c}} classified / {{u}} unclassified defects",
+    "emptyPareto": "No NG defects in this period.",
+    "count": "Defect count",
+    "cumulative": "Cumulative %",
+    "yieldByProduct": "Yield by product",
+    "emptyYield": "No inspection data in this period.",
+    "yieldRate": "Yield %",
+    "yieldTrend": "Weekly yield trend (ISO)",
+    "emptyTrend": "No weekly data in this period.",
+    "recentReports": "Recent reports",
+    "noReports": "No reports saved yet."
+  },
+  "jsonSchemaForm": {
+    "noFields": "The manifest declares no configuration fields."
+  },
+  "stepUp": {
+    "title": "Two-step verification to deploy",
+    "desc": "Enter the 6-digit OTP from your authenticator app to confirm the deploy/control command."
+  },
+  "hub": {
+    "noAccess": "You do not have access to anything here.",
+    "categories": "Categories"
+  },
+  "aiStudio": {
+    "categories": "AI categories"
+  },
+  "dataHub": {
+    "title": "Data management",
+    "categories": "Data categories"
+  },
+  "engineeringStudio": {
+    "title": "Engineering Studio",
+    "categories": "Engineering categories"
+  },
+  "maintenanceHub": {
+    "title": "Maintenance",
+    "categories": "Maintenance categories"
+  },
+  "productWorkspace": {
+    "title": "Product Workspace",
+    "categories": "Product categories"
+  },
+  "reportingStudio": {
+    "title": "Reporting Studio"
+  },
+  "settingsHub": {
+    "title": "Settings Center",
+    "categories": "Settings categories"
   }
 }
