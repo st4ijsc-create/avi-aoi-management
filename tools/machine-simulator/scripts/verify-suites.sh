@@ -2434,7 +2434,43 @@ EXPECT_EDGESERVICE=51
 # EXPECT_WARNINGS stays 116: the new file adds no warning (measured on a full -t:Rebuild), and
 # St4i.EngineApi.Tests is one of the NINE projects that do not set GenerateDocumentationFile, so its `///`
 # blocks are not compiled — see the EXPECT_WARNINGS block below, which says so about itself.
-EXPECT_ENGINEAPI=1351
+#
+# 🔴 S-1 FIX ROUND 1 raises this again, 1351 -> 1354 (+3), counted from the runner. Same one file, still
+# zero src/ edits. The review found six defects and EVERY ONE was in the author's own justification rather
+# than in a measured number — so two of the three new tests exist to turn a SENTENCE that was believed into
+# a NUMBER that can be refuted, which is the only durable answer to that class of defect.
+#   TheRawStringBlindSpot_IsMeasuredRatherThanDenied                                    +1
+#       The class doc comment's own "what is outside" list said raw strings were "~30 in ProductConfigStore
+#       plus one in App.xaml.cs", that NONE carried a removal shape, and that the IL cross-check closed the
+#       gap. All three false, in the paragraph stating the instrument's limits, marked "Checked, not
+#       assumed". Re-derived from scratch: 67 blocks in 12 files, and TEN of them in FIVE files carry
+#       removal SQL. It also asserts those five are already in the pinned SQL enumeration, which is the tie
+#       between the blind spot and the thing that covers it.
+#   EveryEnumeratedRemovalSite_IsClassified_AndEveryMeasuredStoreIsAccountedFor         +1
+#       The doc comment claimed provenance was "checked for COVERAGE against the mechanically-enumerated
+#       set". Nothing did that: the two enumerations and the posture table were never referenced by one
+#       another, and SecurityDb sat in the posture table and in NEITHER enumeration with nothing able to
+#       notice. Now set equality both ways, plus the store->file link, plus SecurityDb declared as a store
+#       that owns an artifact and performs no removal itself (its DML lives in SqliteUserStore and
+#       SqliteAuditStore).
+#   TheThrowingStores_ConstructCleanlyOverAnEmptyDirectory_AndLeaveTheUnreadableBytesIntact  +1
+#       `Observe` maps ANY throw to Posture.Throws, so six of the nine published rows rested on a throw
+#       whose cause nothing checked — a rig-shaped throw would have propped them up identically. Each of the
+#       six now also constructs cleanly over an EMPTY directory (attribution) and leaves the unreadable
+#       bytes byte-identical (which is the evidence for "nothing is destroyed on this posture", previously
+#       prose). Note the read uses FileShare.ReadWrite: the three SQLite stores throw from the constructor,
+#       so nothing disposes the connection and the pool keeps the handle — that is the artifact being held,
+#       not the artifact being gone, and a stricter read would have reported it as a failure of this test.
+#
+# Two existing tests also gained assertions (no count change): the IL walker now asserts its decode-abort
+# counter is zero, symmetrically with the `unresolved` counter it always had; and the vocabulary test now
+# pins the SIZE of Reach B's hole — 37 removal-capable members classified, 9 text shapes, 21 removal-capable
+# members with no text pattern at all. The scanner control now pins `.SetLength(` at ZERO occurrences under
+# src/, which is the lower bound on the one escape that gets past all three reaches (Roslyn resolves
+# FileStream.SetLength to System.IO.Stream, deliberately outside ByteOwningTypes).
+#
+# New grand total 2694. EXPECT_WARNINGS stays 116.
+EXPECT_ENGINEAPI=1354
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

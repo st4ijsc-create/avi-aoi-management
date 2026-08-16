@@ -293,7 +293,18 @@ kèm câu *"không được giả định hình dạng hàng chỉ từ kiểu n
 >   > file sống), deny **cả hai đối tượng không lan truyền** (file MẤT), và **file hỏng
 >   > cú pháp** (file MẤT). Cùng một tình huống — nhánh gieo mầm — **hành vi khác nhau**,
 >   > và **cách nhau đúng một hợp đồng**: `_onLiveSettingsRebuilt`, thứ chính chỗ gọi
->   > gọi là một callback host tuỳ ý. Mô tả của tôi khớp từng chữ.
+>   > gọi là một callback host tuỳ ý. Mô tả của tôi khớp **cả ba chi, từng chi một**.
+>   >
+>   > ⚠️ **Bản đầu viết "khớp từng chữ". Đó là một lời diễn giải, không phải một trích
+>   > dẫn** — mỗi chi ánh xạ vào một mệnh đề nguyên văn trong §3.1a, nhưng không câu
+>   > nào trong §3.1a là bản sao của mô tả. Trong một nhiệm vụ mà luật vị ngữ là luật,
+>   > "từng chữ" là từ sai cho một lời diễn giải, kể cả khi lời diễn giải ấy đúng.
+>   >
+>   > 🔴 **Và có một lý do thứ hai khiến phép kiểm ban đầu trượt, do phản biện tìm ra
+>   > và đáng giữ:** ở `Program.cs` cụm từ ấy **bị ngắt dòng qua một dòng chú thích
+>   > tiếp nối**, nên `grep "deletion shapes"` trả về **rỗng** — chỉ một phép tìm biết
+>   > gộp dòng mới thấy. Tức đúng cái hình dạng §8.1(f) một tầng nữa: **con trỏ có
+>   > trong sản phẩm, và bản thân nó cũng vô hình trước dụng cụ hiển nhiên.**
 >   >
 >   > Chính Q-1 đã trỏ đúng chỗ ấy: chú thích Q-1 thêm vào `St4i.EngineApi/Program.cs`
 >   > viết nguyên văn *"tabulated as the three deletion shapes in
@@ -398,11 +409,18 @@ store khác, và khẳng định ấy sai.** Không có cách đọc nào khiế
   **đóng lại kèm bằng chứng**, và một câu trả lời không được sống lâu hơn cây mã
   nó nói về.
 
-**Ba đối chứng đã chạy hai bờ (§8.1(h6)), rồi hoàn nguyên:** thêm một
-`new FileInfo(p).Delete()` vào `WalMaintenance` — **vốn từ quét mã KHÔNG thấy**, và
-bờ IL **đỏ**, gọi đúng tên phương thức; cho `MachineConfigStore.Load` nuốt
-`JsonException` — bảng tư thế **đỏ**, gọi đúng tên store; bỏ khối `catch` của
-`OeeSettingsStore` — **ba** test đỏ cùng lúc. Dụng cụ đỏ được theo cả hai chiều.
+**Bốn đối chứng đã chạy, rồi hoàn nguyên (§8.1(h6)) — và nhãn của chúng đã được sửa
+sau phản biện, vì bản đầu gộp hai khẳng định khác nhau làm một:**
+
+| arm | can thiệp | đỏ ở đâu, và nó chứng minh ĐIỀU GÌ |
+|---|---|---|
+| **C1** | thêm `new FileInfo(p).Delete()` vào `WalMaintenance` | bờ **IL** đỏ, gọi đúng tên phương thức — còn phép liệt kê quét mã vẫn **xanh**. Chứng minh **vốn từ quét mã BÁC BỎ ĐƯỢC**, và đúng lúc nó mù |
+| **C2** | `MachineConfigStore.Load` nuốt `JsonException` | **bảng tư thế** đỏ, gọi đúng tên store. Chứng minh **một phân kỳ MỚI bị phát hiện** |
+| **C3** | bỏ khối `catch` của `OeeSettingsStore` | ba test đỏ. ⚠️ **KHÔNG phải "phân kỳ biến mất"** — bỏ một store vẫn còn **hai** tư thế, nên khẳng định `số lớp > 1` **vẫn xanh**. Nó đỏ ở **phép so khớp TẬP LỚP đã ghim**. Chứng minh **BẢNG đã công bố không sống lâu hơn cây mã** — mà bảng chính là thứ mục này in ra |
+| **C4** | bỏ `catch` ở **cả ba** — `FleetSettingsStore`, `SiteLinkStore`, `OeeSettingsStore` | cả chín store về **một** tư thế. Khẳng định **`số lớp > 1` đỏ**, in đúng câu *"mọi store nay hành xử như nhau… hãy đi đóng mục này, lấy chính lần chạy đó làm bằng chứng"*. Chứng minh **câu trả lời tiêu đề đỏ được** |
+
+C4 được thêm ở vòng sửa vì phản biện chỉ ra bản đầu **gán cho C3 phần chứng minh mà
+C3 không làm**. Bốn arm, hai bờ, không arm nào còn lại trong cây.
 
 #### Phần dư KHÔNG đóng được bằng phép đo này — nêu tên chứ không im lặng
 
@@ -410,11 +428,25 @@ bờ IL **đỏ**, gọi đúng tên phương thức; cho `MachineConfigStore.Lo
    "không đọc được = không có"**, và cả hai **cố ý** — chúng đứng ngoài bảng trên vì
    nội dung là **byte do sản phẩm sinh**, không phải cấu hình vận hành viên gõ ra, tức
    tiền đề của luật mục 1 không đúng ở đó. `DeviceIdentityStore` đã là **phần dư đã
-   ghi** ở cuối mục 1. `CredentialStore` thì chưa từng được ghi ở đâu: một `.bin`
-   hỏng, hoặc đúng hơn là một `.bin` **mã hoá dưới scope/máy khác**, đọc ra `null`,
-   và đường phục hồi là **claim lại rồi `Save` đè** — nên **một lỗi môi trường sửa
-   được sẽ bị biến thành mất mát không hoàn nguyên**. Đây là **cùng một câu** với
-   phần dư `DeviceIdentityStore`, ở một store thứ hai.
+   ghi** ở cuối mục 1.
+
+   > ⚠️ **Bản đầu của gạch đầu dòng này viết *"`CredentialStore` chưa từng được ghi ở
+   > đâu"*. SAI, và phản biện bác bỏ bằng chính mã mà nó trích.** Hình dạng ấy **đã
+   > được ghi**, ở hai chỗ: doc comment của chính `CredentialStore.Load` (nêu đích
+   > danh ca *"mã hoá dưới scope/entropy DPAPI khác — ví dụ một `.bin` thời tiền-FF-2
+   > mã hoá theo `CurrentUser` — hoặc copy từ máy khác"*), và
+   > `src/St4i.EngineApi/Alarms/NotificationSecretProtector.cs`, nơi gọi tên idiom và
+   > nói *"`CredentialStore.Load` và `DeviceIdentityStore.TryLoad` đều theo"* nó.
+   > Đây đúng nhánh **bác bỏ** của luật câu chữ: tôi dựng một phủ định phổ quát bằng
+   > cách **không tìm thấy**, chứ không bằng phép kiểm đếm có thể bác bỏ nó.
+   >
+   > **Cái CHƯA từng được ghi ở đâu là HẬU QUẢ.** Doc comment ấy trình bày `null`
+   > như một kết quả **lành** — *"để đường credential-rỗng bình thường của caller chạy
+   > thay vì một lần sập không bắt được"* — và **không chỗ nào nói rằng** đường
+   > "claim lại" sau đó **`Save` đè lên** một blob mà **chỉ cần sửa môi trường là đọc
+   > lại được**. Nên **một lỗi môi trường KHÔI PHỤC ĐƯỢC bị biến thành mất mát không
+   > hoàn nguyên**, và chính câu đó là thứ cần ghi. Phát hiện còn nguyên; vị ngữ của
+   > nó thì không.
 2. **Tư thế "ném" chưa được đo ở chỗ nó tiếp đất.** Phép đo dừng ở **store**. Việc
    một `SqliteException` từ `ConnectorConfigStore` có kết thúc tiến trình, hay bị
    bắt ở đâu đó rồi tiếp tục bằng một store rỗng, là câu hỏi của composition root
@@ -423,8 +455,33 @@ bờ IL **đỏ**, gọi đúng tên phương thức; cho `MachineConfigStore.Lo
 3. **Bốn trong tám project đứng ngoài bờ IL** (`St4i.EdgeService`,
    `St4i.Connector.Conformance`, `St4iMachineSimulator`, `St4i.DesktopShell` — không
    test project nào tham chiếu hai host WPF). Ở đó **vốn từ quét mã chưa bị bác bỏ
-   bởi bất cứ thứ gì**. Cái chặn thiệt hại: **không store bền vững nào nằm trong bốn
-   project đó**.
+   bởi bất cứ thứ gì**, và **kích thước lỗ hổng ấy nay đã đo**: quét mã có **9** hình
+   dạng, bảng phân loại có **37** thành viên có khả năng xoá, trong đó **21** thành
+   viên **không có một hình dạng quét mã nào**. Trong bờ IL cả 21 đều bị bắt đỏ; ngoài
+   bờ IL chúng im lặng.
+
+   > ⚠️ **Cái chặn thiệt hại đã được viết hẹp lại.** Bản đầu viết *"không store bền
+   > vững nào nằm trong bốn project đó"* — đúng, nhưng đó là một **phủ định phổ quát
+   > không có phép kiểm nào bác bỏ được**, đúng loài file này lập ra để chấm dứt. Cái
+   > **đo được**: phép liệt kê ghim **bốn** file trong các project ấy **CÓ** phá byte
+   > (`App.xaml.cs`, `FleetService.cs`, `InspectorViewModel.cs`,
+   > `MainWindow.xaml.cs`), và một trong số đó — `InspectorViewModel` ghi đè lên
+   > **đường dẫn xuất do vận hành viên tự chọn** — **có thể đè file của vận hành
+   > viên**. Câu đúng và hẹp: **không project nào trong bốn cái đó sở hữu một artefact
+   > mà sản phẩm này ghi rồi đọc lại**, nên không cái nào vào bảng tư thế.
+   >
+   > Phản biện đã chạy phép quét mà nhiệm vụ này **không** chạy, và kết quả **có lợi
+   > cho phép đo**: quét bốn project ấy bằng một vốn từ **rộng hơn** vốn từ quét mã —
+   > `File.Replace`/`Copy`/`WriteAllLines`/`CreateText`/`OpenWrite`, `MoveTo`,
+   > `Directory.Move`, `new StreamWriter`, `new FileStream`, `FileMode.*`, xoá trên
+   > `FileInfo`/`DirectoryInfo` — và **mọi kết quả đều nằm trong 9 hình dạng sẵn có**.
+   > **Hôm nay không có đường xoá file nào lọt ở đó.**
+   >
+   > 🔴 **Và điều quan trọng nhất về lỗ hổng này: nó không chạm tới câu trả lời.** Câu
+   > trả lời ("ba tư thế, `OeeSettingsStore` là cái phân kỳ") đứng trên **bờ THI
+   > HÀNH**, thứ không phụ thuộc chút nào vào tính đầy đủ của hai bờ kia. Một đường xoá
+   > lọt lưới sẽ làm **phép liệt kê dài ra**; nó **không thể làm các tư thế thôi phân
+   > kỳ**.
 4. **SQL không bị bác bỏ ở đâu cả** — bờ IL không nhìn thấy một chuỗi. Bảy file có
    câu lệnh SQL xoá/thay hàng đã được liệt kê và ghim, nhưng không gì ở đây chứng
    minh không có câu lệnh nào được ráp lúc chạy từ những mảnh mà không mẫu nào khớp.

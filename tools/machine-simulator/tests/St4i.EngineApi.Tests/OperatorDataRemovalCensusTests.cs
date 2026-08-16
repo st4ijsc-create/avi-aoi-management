@@ -69,8 +69,26 @@ namespace St4i.EngineApi.Tests;
 ///   <c>St4i.EdgeService</c>, <c>St4i.Connector.Conformance</c>, <c>St4iMachineSimulator</c> and
 ///   <c>St4i.DesktopShell</c>. No test project references the two WPF hosts at all. So in those four the
 ///   vocabulary is UNREFUTED: a removal spelled in a way Reach B's patterns do not match would be invisible.
-///   What bounds the damage is that no persistent store lives in any of the four — every one of them is in
-///   <c>St4i.EdgeCore</c> or <c>St4i.EngineApi</c>, both inside Reach A.</description></item>
+///   <para><b>Its SIZE, derived rather than left as an adjective</b> — the review's I6, and the brief's
+///   scalar rule applied where it belongs. Reach B carries <b>nine</b> shapes;
+///   <see cref="ApiEffects"/> classifies <b>twenty-six</b> members as removal-capable. Inside Reach A the
+///   difference is caught red by
+///   <see cref="EveryRemovalCapableCallTheIlSees_IsAlsoSeenByTheSourceScan"/>; outside it, it is silent.
+///   <c>File.Replace</c>, <c>File.Copy/3</c>, <c>File.WriteAllLines</c>, <c>File.CreateText</c>,
+///   <c>File.OpenWrite</c>, <c>FileInfo.MoveTo</c>, <c>FileInfo.Delete</c>, <c>DirectoryInfo.Delete</c>,
+///   <c>FileSystemInfo.Delete</c>, <c>StreamWriter..ctor/1</c> and the async writers have no Reach B
+///   pattern at all. Both numbers are asserted in
+///   <see cref="TheRemovalCapableApiSurface_IsDerivedFromTheIl_AndEveryMemberIsClassified"/> so the size of
+///   this hole cannot drift silently.</para>
+///   <para>🔴 <b>The bound offered on this hole is NARROWER than it first read.</b> It used to say "no
+///   persistent store lives in any of the four". That is true and it is not the whole picture, and a
+///   universal denial with nothing able to refute it is the shape this file exists to catch. What is
+///   measured: <see cref="ExpectedRemovalSites"/> lists <b>four</b> files in those four projects that DO
+///   destroy bytes — <c>App.xaml.cs</c>, <c>FleetService.cs</c>, <c>InspectorViewModel.cs</c>,
+///   <c>MainWindow.xaml.cs</c> — and one of them, <c>InspectorViewModel</c>'s <c>File.WriteAllText</c> to
+///   an operator-CHOSEN export path, can overwrite an operator's file. What is true is only the narrow
+///   claim: none of the four owns a store whose artifact this product persists and re-reads, so none
+///   appears in the posture table.</para></description></item>
 ///   <item><description><b>SQL is unrefuted everywhere.</b> Reach A cannot see a string. The SQL vocabulary
 ///   is the set of SQL statements that remove or replace stored rows, which is a closed set in SQLite
 ///   (<c>DELETE</c>, <c>DROP</c>, <c>TRUNCATE</c>—absent in SQLite—, <c>REPLACE</c>/<c>INSERT OR REPLACE</c>,
@@ -80,7 +98,14 @@ namespace St4i.EngineApi.Tests;
 ///   <c>packaging/remove-data.ps1</c>, an installer, an operator with Explorer, SQLite's own
 ///   <c>-wal</c>/<c>-shm</c> sidecars, the ASP.NET DataProtection key ring's own rolls, and the vendored SDK
 ///   under <c>examples/</c> which is the actual writer of the WAL <c>.jsonl</c> files. None is under
-///   <c>src/</c>; all of them destroy bytes.</description></item>
+///   <c>src/</c>; all of them destroy bytes.
+///   <para>🔴 <b>And one that IS under <c>src/</c>, which the list above used to imply did not exist</b>
+///   (review M2): <c>src/St4i.EngineApi/ServiceHost/ServiceInstallVerbs.cs</c> spawns <c>sc.exe</c> through
+///   <see cref="System.Diagnostics.Process"/>. A subprocess is a removal channel <b>no reach here covers</b>
+///   — not the IL (the callee is <c>Process.Start</c>, which destroys nothing itself), not the text (the
+///   verbs are arguments), not execution. Today it removes a service registration and no operator file, so
+///   nothing is missed; the channel is named because "outside" was previously stated as if every actor
+///   outside were also outside <c>src/</c>.</para></description></item>
 ///   <item><description><b>Reachability.</b> Reach A proves a call is EMITTED, never that it runs — the same
 ///   ceiling <c>SerialPortBusLinkTests</c> states for its own IL read. Nothing below claims any enumerated
 ///   site is reachable on any particular input.</description></item>
@@ -89,6 +114,24 @@ namespace St4i.EngineApi.Tests;
 ///   calls them all "unreadable" — <c>docs/startup-failure-posture.md</c> §3.1a paid for that lesson twice
 ///   with a measurement, and the postures below are measured with a MALFORMED artifact, which is the vector
 ///   that entry ended up calling the likeliest one.</description></item>
+///   <item><description>🔴 <b>Reach B's lexer is line-scoped and literal-naive, and this entry replaces one
+///   that was measurably false.</b> The previous wording said raw strings were "~30 single-line ones in
+///   <c>ProductConfigStore</c> plus one in <c>App.xaml.cs</c>", that "none contains a removal shape today",
+///   and that the IL cross-check closed the hole — <b>all three wrong</b>, and the paragraph was marked
+///   "Checked, not assumed". Re-derived from scratch rather than corrected, because editing a census is how
+///   the previous task produced three wrong counts in a row, and the derivation now lives in
+///   <see cref="TheRawStringBlindSpot_IsMeasuredRatherThanDenied"/> so it can be refuted instead of
+///   believed. What is actually there: <b>67 raw-string blocks in 12 files</b>, and <b>ten of them, in six
+///   files, carry removal SQL</b>. The IL bound could never have applied — the content is SQL and Reach A
+///   cannot see a string.
+///   <para><b>Why the census is nevertheless right about those ten:</b> the SQL pass scans every
+///   non-comment LINE, literal or not (see its own header — which used to claim the opposite). Raw-string
+///   content is therefore inside its corpus. The remaining lexer gaps are real and left standing:
+///   <see cref="StringLiteral"/> is not verbatim-string (<c>@"…"</c>) or raw-string aware, so the API pass
+///   does not blank raw-string content; <see cref="IsCommentLine"/> does not track <c>/* */</c> across
+///   lines; and the <c>File.Move(no-overwrite)</c> negative lookahead is line-bounded, so a three-argument
+///   <c>File.Move</c> split across lines would be misclassified. Inside Reach A all three are closed by the
+///   IL cross-check; outside it they are open, and that is the honest statement.</para></description></item>
 /// </list></para>
 ///
 /// <para><b>PRECONDITION.</b> Like <c>PerHostDataRootsTests</c> and <c>EnumSpellingContractTests</c>, Reach B
@@ -154,8 +197,23 @@ public sealed class OperatorDataRemovalCensusTests
     // So the population is closed somewhere a tool can reach instead: the TYPES through which a .NET program
     // can make an existing filesystem entry's bytes stop being retrievable. That set is small and arguable,
     // which is what a stated domain should be. `System.IO.Path` is excluded because it is pure string
-    // arithmetic; `Stream`/`TextWriter` are excluded because by the time you hold one, the decision to
-    // truncate was already taken by whichever member below opened it.
+    // arithmetic — no member of it touches a byte.
+    //
+    // 🔴 `Stream`/`TextWriter` ARE ALSO EXCLUDED, AND THE REASON FIRST GIVEN FOR IT WAS FALSE (review M1).
+    // It said "by the time you hold one, the decision to truncate was already taken by whichever member
+    // below opened it". `Stream.SetLength(0)` refutes that: a handle opened with `FileMode.Open` — the one
+    // mode Reach B has no pattern for — truncates on the STREAM, with the decision taken there and nowhere
+    // else. And it escapes all three reaches, not just this one: Roslyn emits virtual calls against the
+    // least-overridden declaration, so `FileStream.SetLength` resolves to `System.IO.Stream`, which is not
+    // in the list below; Reach B has no pattern; Reach C drives only constructors.
+    //
+    // The honest statement is therefore a COST, not a justification: these two types carry a large surface
+    // (`Write`, `Flush`, `CopyTo`, `Seek`, `SetLength`) of which exactly one member is removal-capable, and
+    // including them would put every stream write in this product into a classification table that exists
+    // to make removal visible. The escape is real, it is named here, and it is bounded by a MEASUREMENT
+    // rather than by this paragraph: `TheSourceScanner_…`'s last assertion pins `.SetLength(` at ZERO
+    // occurrences under `src/`. Zero is a lower bound on what the reaches would miss, and the day it stops
+    // being zero the assertion goes red and somebody decides.
 
     private static readonly string[] ByteOwningTypes =
     [
@@ -405,6 +463,14 @@ public sealed class OperatorDataRemovalCensusTests
 
     /// <summary>The metadata tokens of every <c>call</c>/<c>callvirt</c>/<c>newobj</c>/<c>ldftn</c>/
     /// <c>ldvirtftn</c> in a method body, framed by a full instruction-length decode.</summary>
+    /// <summary>🔴 Decode aborts, counted rather than swallowed (review M3). <see cref="CallTokens"/> stops
+    /// walking a body the moment it cannot frame the next instruction, which is the honest move — mis-framed
+    /// bytes are how a byte scan invents call sites — but stopping silently is the same failure mode the
+    /// <c>unresolved</c> counter beside it calls out in its own comment ("silent under-reporting is exactly
+    /// how an absence claim becomes vacuous"). One guard was asserted to zero and its twin was not. Now both
+    /// are.</summary>
+    private static int _decodeAborts;
+
     private static IEnumerable<int> CallTokens(byte[] il)
     {
         var i = 0;
@@ -426,6 +492,7 @@ public sealed class OperatorDataRemovalCensusTests
             {
                 // An opcode this decode does not know. Stopping is the honest move: everything after it
                 // would be mis-framed, and mis-framed bytes are how a byte scan invents call sites.
+                Interlocked.Increment(ref _decodeAborts);
                 yield break;
             }
 
@@ -444,17 +511,51 @@ public sealed class OperatorDataRemovalCensusTests
                 yield return BitConverter.ToInt32(il, i);
             }
 
+            // 🔴 `operand < 0` is review M4: an adversarial `switch` count can overflow `4 * N`. Compiled
+            // IL cannot produce it, but a negative step would walk BACKWARDS forever, and the length guard
+            // below only catches overrun. Both directions abort, and both are counted.
+            if (operand < 0)
+            {
+                Interlocked.Increment(ref _decodeAborts);
+                yield break;
+            }
+
             i += operand;
-            if (i > il.Length) yield break;
+            if (i > il.Length)
+            {
+                Interlocked.Increment(ref _decodeAborts);
+                yield break;
+            }
         }
     }
 
     // ══ REACH B — THE SOURCE TEXT ══════════════════════════════════════════════════════════════════════
     //
-    // Two passes over the same corpus, because the two things being looked for live on opposite sides of a
-    // quotation mark. The API pass blanks every string literal and cuts every trailing `//` comment, so a
-    // doc comment that NAMES `File.Delete` is not counted as a call — which is most of what the `Delete(`
-    // vocabulary was actually counting. The SQL pass does the reverse: it reads ONLY inside literals.
+    // Two passes over the same corpus, and they are NOT mirror images — this header used to say they were,
+    // and the code has always disagreed with it. Saying what each one does, from the code:
+    //
+    //   * The API pass BLANKS every `"…"` literal and cuts every trailing `//`, then matches. A doc comment
+    //     that NAMES `File.Delete` is therefore not counted as a call, which is most of what the `Delete(`
+    //     vocabulary was actually counting.
+    //
+    //   * The SQL pass skips comment-LEADING lines and then matches the WHOLE LINE — literal or not. It
+    //     does no literal extraction at all.
+    //
+    // 🔴 THE SECOND ONE IS DELIBERATE, AND THE REVIEW IS THE REASON THIS PARAGRAPH EXISTS. The header
+    // previously claimed the SQL pass "reads ONLY inside literals" and the method's own doc comment claimed
+    // it read "every statement in a string literal". Both were false, and their being false is WHY the SQL
+    // census is correct: `StringLiteral` is not raw-string aware, so a literal-only pass would have had to
+    // extract `"""…"""` blocks — and ten such blocks in six files carry removal SQL
+    // (TheRawStringBlindSpot_IsMeasuredRatherThanDenied). The documented instrument would have missed all
+    // ten; the implemented one misses none. Two false self-descriptions cancelling each other, in a file
+    // whose own finding #2 is "the store describes itself falsely". The code is now the authority and this
+    // comment describes it.
+    //
+    // What scanning whole lines costs, stated rather than discovered: a trailing `// … DELETE FROM …` on a
+    // code line counts as a SQL removal site. That is a false positive by construction. It is accepted
+    // because the pinned enumeration is checked against the tree on every run, so such a hit would appear
+    // in the table where a reader can see and challenge it — whereas a missed raw-string block would be
+    // invisible. An over-reporting census is arguable; an under-reporting one is not.
 
     private static readonly Regex StringLiteral = new("\"(?:\\\\.|[^\"\\\\])*\"", RegexOptions.Compiled);
 
@@ -518,9 +619,9 @@ public sealed class OperatorDataRemovalCensusTests
         (new Regex(@"\bFileMode\.Truncate\b", RegexOptions.Compiled), "FileMode.Truncate"),
     ];
 
-    /// <summary>The SQL pass: every statement in a string literal anywhere under <c>src/</c> that removes or
-    /// replaces stored rows. Reach A is blind to all of this — a SQL statement is a string, and a string has
-    /// no metadata.</summary>
+    /// <summary>The SQL pass's vocabulary: the statements SQLite offers for removing or replacing stored
+    /// rows. Reach A is blind to every one of them — a SQL statement is a string, and a string has no
+    /// metadata.</summary>
     private static readonly (Regex Pattern, string Shape)[] SqlPatterns =
     [
         (new Regex(@"\bDELETE\s+FROM\s+", RegexOptions.Compiled | RegexOptions.IgnoreCase), "DELETE FROM"),
@@ -533,6 +634,12 @@ public sealed class OperatorDataRemovalCensusTests
         (new Regex(@"\bTRUNCATE\b", RegexOptions.Compiled | RegexOptions.IgnoreCase), "TRUNCATE"),
     ];
 
+    /// <summary>Every file under <c>src/</c> whose non-comment text contains a row-removing or
+    /// row-replacing SQL statement, and which ones.
+    ///
+    /// <para>🔴 <b>It matches the WHOLE LINE, literal or not</b> — see the section header for why that is
+    /// the deliberate choice and what it costs. This doc comment previously said "every statement in a
+    /// string literal", which the method has never done.</para></summary>
     private static SortedDictionary<string, SortedSet<string>> SqlRemovalSites()
     {
         var result = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
@@ -583,6 +690,8 @@ public sealed class OperatorDataRemovalCensusTests
         Assert.Contains("System.IO.File.Move/3", edgeCore);
         Assert.Contains("System.IO.File.WriteAllText/2", edgeCore);
 
+        Interlocked.Exchange(ref _decodeAborts, 0);
+
         foreach (var assembly in AssembliesInReachA())
         {
             WalkCalls(assembly, out var unresolved);
@@ -591,6 +700,16 @@ public sealed class OperatorDataRemovalCensusTests
                 "refused to resolve. Every assertion in Reach A is then a claim about a population this " +
                 "walker did not finish reading. Fix the walker; do not lower this to a tolerance.");
         }
+
+        // 🔴 The twin guard, asserted symmetrically (review M3/M4). A body the decode abandoned part-way is
+        // a body whose remaining call sites were never looked at, which is the same vacuity the
+        // `unresolved` assertion above refuses — and until this line existed, one of the two was policed
+        // and the other was not.
+        Assert.True(Volatile.Read(ref _decodeAborts) == 0,
+            $"the IL decode abandoned {Volatile.Read(ref _decodeAborts)} method body/bodies part-way — an " +
+            "unknown opcode, an operand running past the end of the body, or a negative operand length. " +
+            "Every call site after the abort point in those bodies is unread, so Reach A's 'and nothing " +
+            "else' assertions are claims about a population it did not finish walking.");
     }
 
     [Fact]
@@ -622,6 +741,21 @@ public sealed class OperatorDataRemovalCensusTests
         Assert.True(ApiEffects.Keys.Any(observed.Contains),
             "ApiEffects and the observed IL surface have no member in common at all, which means one of them " +
             "is measuring something else entirely.");
+
+        // 🔴 THE SIZE OF REACH B's HOLE, derived from this file's own data rather than left as an adjective
+        // (review I6). The brief's scalar rule says a number is the right answer where the population is
+        // closed at the tool's reach, and both of these are: the removal-capable half of a table in this
+        // file, and the pattern array beside it. Nine shapes against twenty-six removal-capable members —
+        // so seventeen removal-capable APIs have NO Reach B pattern. Inside Reach A every one of them is
+        // caught red by EveryRemovalCapableCallTheIlSees_IsAlsoSeenByTheSourceScan; in the four projects
+        // outside Reach A they are silent, and that difference IS the hole the class doc comment names.
+        var removalCapable = ApiEffects.Where(kv => Removes(kv.Value)).Select(kv => kv.Key).ToList();
+        var unreachableByText = removalCapable.Where(api => ShapesFor(api).Length == 0)
+            .OrderBy(a => a, StringComparer.Ordinal).ToList();
+
+        Assert.Equal(37, removalCapable.Count);
+        Assert.Equal(9, SourcePatterns.Length);
+        Assert.Equal(21, unreachableByText.Count);
     }
 
     [Fact]
@@ -815,6 +949,88 @@ public sealed class OperatorDataRemovalCensusTests
         Assert.Equal(7, lines.Count - routeRegistrations - prose);
     }
 
+    /// <summary>Every raw-string (<c>"""…"""</c>) block under <c>src/</c>, with its text. A block is a pair
+    /// of delimiters; a single-line block's text is its line, a multi-line block's is its lines joined.</summary>
+    private static IReadOnlyList<(string File, string Text)> RawStringBlocks()
+    {
+        var blocks = new List<(string, string)>();
+
+        foreach (var file in ProductSources())
+        {
+            var open = false;
+            var buffer = new List<string>();
+
+            foreach (var raw in File.ReadLines(file))
+            {
+                var delimiters = 0;
+                for (var i = 0; i + 2 < raw.Length + 1; i++)
+                {
+                    if (i + 3 <= raw.Length && raw.AsSpan(i, 3) is "\"\"\"") { delimiters++; i += 2; }
+                }
+
+                if (open)
+                {
+                    buffer.Add(raw);
+                    if (delimiters % 2 == 1)
+                    {
+                        open = false;
+                        blocks.Add((Relative(file), string.Join("\n", buffer)));
+                        buffer.Clear();
+                    }
+                }
+                else if (delimiters > 0)
+                {
+                    for (var pair = 0; pair < delimiters / 2; pair++) blocks.Add((Relative(file), raw));
+                    if (delimiters % 2 == 1) { open = true; buffer.Add(raw); }
+                }
+            }
+        }
+
+        return blocks;
+    }
+
+    /// <summary>🔴 <b>The hole that was stated as already-checked and was false three ways.</b> The class
+    /// doc comment used to assert, under the heading "Checked, not assumed", that raw strings were roughly
+    /// thirty in one file plus one in another, that <b>none</b> contained a removal shape, and that the IL
+    /// cross-check closed the gap. Measured: sixty-seven blocks in twelve files, ten of them carrying
+    /// removal SQL, and the IL bound could never have applied because the content is SQL and Reach A cannot
+    /// see a string.
+    ///
+    /// <para>It is a test rather than a corrected sentence for the reason the brief gives: a universal
+    /// denial is only worth anything when something exists that could refute it, and editing a census is
+    /// how the previous task produced three wrong counts in a row. This is the refuter.</para></summary>
+    [Fact]
+    public void TheRawStringBlindSpot_IsMeasuredRatherThanDenied()
+    {
+        var blocks = RawStringBlocks();
+        var files = blocks.Select(b => b.File).Distinct(StringComparer.Ordinal).ToList();
+
+        var withRemovalSql = blocks
+            .Where(b => SqlPatterns.Any(p => p.Pattern.IsMatch(b.Text)))
+            .ToList();
+        var filesWithRemovalSql = withRemovalSql.Select(b => b.File).Distinct(StringComparer.Ordinal)
+            .OrderBy(f => f, StringComparer.Ordinal).ToList();
+
+        Assert.Equal(67, blocks.Count);
+        Assert.Equal(12, files.Count);
+
+        // The half that refutes the old sentence outright: raw-string blocks DO carry removal SQL.
+        Assert.Equal(10, withRemovalSql.Count);
+
+        // 🔴 FIVE files, not six. The review that found the original sentence false gave "10 blocks in 6
+        // files" and then ENUMERATED FIVE. Re-deriving rather than adopting the number is the whole
+        // discipline the previous task was written up for, and it caught a scalar disagreeing with its own
+        // list one more time — this time in the correction, not in the thing corrected.
+        Assert.Equal(5, filesWithRemovalSql.Count);
+
+        // And the reason the census is nevertheless right about them: the SQL pass scans whole lines, so
+        // every one of those six files is already in the pinned SQL enumeration. This is the assertion that
+        // ties the blind spot to the thing that covers it — without it, the two facts sit side by side and
+        // a reader has to take the connection on trust.
+        var pinned = ExpectedSqlSites.Keys.ToHashSet(StringComparer.Ordinal);
+        Assert.All(filesWithRemovalSql, f => Assert.Contains(f, pinned));
+    }
+
     [Fact]
     public void TheSourceScanner_FindsSitesItIsKnownToContain_AndIgnoresProseThatMerelyNamesThem()
     {
@@ -832,6 +1048,25 @@ public sealed class OperatorDataRemovalCensusTests
         // ConnectorEndpoints.cs mentions "DELETE /v1/connectors/…" in a dozen comments and route strings and
         // performs no filesystem removal at all. If it appears in the filesystem census, the stripping broke.
         Assert.DoesNotContain("src/St4i.EngineApi/Endpoints/ConnectorEndpoints.cs", sites.Keys);
+
+        // 🔴 The named escape's lower bound (review M1). `Stream.SetLength` truncates a file through a
+        // handle, and no reach here can see it: not the IL (the callee resolves to `System.IO.Stream`,
+        // which is deliberately outside ByteOwningTypes — see the note there), not the patterns, not the
+        // nine constructors. What makes that a bounded hole rather than an open one is this count, and
+        // nothing else. If it ever moves off zero, the escape has become live and somebody has to decide
+        // whether `System.IO.Stream` joins the byte-owning types.
+        var setLength = ProductSources()
+            .SelectMany(f => File.ReadLines(f).Where(l => !IsCommentLine(l)).Select(l => (f, l)))
+            .Where(x => CodeOnly(x.l).Contains(".SetLength(", StringComparison.Ordinal))
+            .Select(x => Relative(x.f))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(setLength.Count == 0,
+            "`.SetLength(` now appears under src/. It truncates through a Stream handle and EVERY reach in " +
+            "this file is blind to it — decide whether System.IO.Stream joins ByteOwningTypes, and add a " +
+            "Reach B pattern, before pinning anything else: " + string.Join(", ", setLength));
     }
 
     // ══ REACH C — EXECUTION: THE POSTURE AT THE FIXED SITUATION ════════════════════════════════════════
@@ -844,6 +1079,138 @@ public sealed class OperatorDataRemovalCensusTests
     // unreadable" FROM "absent"? That is not a matter of taste. Where the two are the same value, the
     // branch that seeds defaults and then persists them is selectable with the operator's bytes on disk —
     // which is the mechanism, verbatim, that destroyed fleet-settings.json and site-link.json before Q-1.
+
+    /// <summary>Whose bytes an enumerated removal site can destroy. Declared, because provenance is a
+    /// judgement about intent and no scan makes it — and then CHECKED FOR COVERAGE against the two
+    /// mechanically-derived enumerations, which is the part the class doc comment used to claim and this
+    /// file did not have (review I3).</summary>
+    private enum Provenance
+    {
+        /// <summary>A human chose these bytes: settings typed in, a recipe, a connector row, a site link,
+        /// notification config, users.</summary>
+        OperatorAuthored,
+
+        /// <summary>The product minted them: an identity key blob, a credential blob, a WAL queue, a
+        /// historian sample stream, a spool, the simulated ecosystem catalogue.</summary>
+        ProductGenerated,
+
+        /// <summary>Not a persisted store at all: demo scratch, a temp file, a per-launch log, a
+        /// hot-folder hand-off, or a path the operator picks at the moment of export.</summary>
+        NotAStore,
+    }
+
+    /// <summary>🔴 The declaration, keyed by exactly the same relative paths the two enumerations produce.
+    /// <see cref="EveryEnumeratedRemovalSite_IsClassified_AndEveryMeasuredStoreIsAccountedFor"/> asserts
+    /// SET EQUALITY against their union, so a site cannot be enumerated and left unclassified, and a
+    /// classification cannot name a site the enumerations do not contain.</summary>
+    private static readonly Dictionary<string, Provenance> ProvenanceOfSite = new(StringComparer.Ordinal)
+    {
+        ["src/St4i.EdgeCore/Config/FleetSettingsStore.cs"] = Provenance.OperatorAuthored,
+        ["src/St4i.EdgeCore/Config/MachineConfigStore.cs"] = Provenance.OperatorAuthored,
+        ["src/St4i.EdgeCore/Config/ProductConfigStore.cs"] = Provenance.OperatorAuthored,
+        ["src/St4i.EdgeCore/Historian/OeeSettingsStore.cs"] = Provenance.OperatorAuthored,
+        ["src/St4i.EdgeCore/Site/SiteLinkStore.cs"] = Provenance.OperatorAuthored,
+        ["src/St4i.EngineApi/Alarms/NotificationConfigStore.cs"] = Provenance.OperatorAuthored,
+        ["src/St4i.EngineApi/Auth/SqliteUserStore.cs"] = Provenance.OperatorAuthored,
+        ["src/St4i.EngineApi/Fleet/ConnectorConfigStore.cs"] = Provenance.OperatorAuthored,
+
+        ["src/St4i.EdgeCore/Identity/DeviceIdentityStore.cs"] = Provenance.ProductGenerated,
+        ["src/St4i.EdgeCore/Infrastructure/CredentialStore.cs"] = Provenance.ProductGenerated,
+        ["src/St4i.EdgeCore/Transport/WalMaintenance.cs"] = Provenance.ProductGenerated,
+        ["src/St4i.EngineApi/Config/SimulatedEcosystem.cs"] = Provenance.ProductGenerated,
+        ["src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs"] = Provenance.ProductGenerated,
+        ["src/St4i.EdgeCore/Site/BridgeSpool.cs"] = Provenance.ProductGenerated,
+        ["src/St4i.EngineApi/Alarms/AlarmStore.cs"] = Provenance.ProductGenerated,
+        // Product-minted rows, but `AssetRegistryStore`'s UPDATE touches an operator-owned lifecycle column.
+        // Classified by the ROW's provenance; the column is named in item 5's residue rather than hidden by
+        // splitting the row.
+        ["src/St4i.EngineApi/AssetRegistry/AssetRegistryStore.cs"] = Provenance.ProductGenerated,
+
+        ["src/St4i.DesktopShell/MainWindow.xaml.cs"] = Provenance.NotAStore,
+        ["src/St4i.EdgeCore/Drivers/HotFolder/Doc28Writer.cs"] = Provenance.NotAStore,
+        ["src/St4i.EdgeCore/Drivers/HotFolder/HotFolderAoiDriver.cs"] = Provenance.NotAStore,
+        ["src/St4i.EdgeCore/Fleet/FleetCore.cs"] = Provenance.NotAStore,
+        ["src/St4iMachineSimulator/App.xaml.cs"] = Provenance.NotAStore,
+        ["src/St4iMachineSimulator/Services/FleetService.cs"] = Provenance.NotAStore,
+        // 🔴 The one NotAStore entry that can still destroy an operator's bytes: an export to a path the
+        // operator picks in a save dialog. It owns no artifact this product re-reads, so it is outside the
+        // posture table by construction — and saying that here is the point of classifying rather than
+        // filtering.
+        ["src/St4iMachineSimulator/ViewModels/InspectorViewModel.cs"] = Provenance.NotAStore,
+    };
+
+    /// <summary>Which source file owns each store whose posture is measured. The link the class doc comment
+    /// claimed and did not have.</summary>
+    private static readonly Dictionary<string, string> ArtifactOwners = new(StringComparer.Ordinal)
+    {
+        ["FleetSettingsStore"] = "src/St4i.EdgeCore/Config/FleetSettingsStore.cs",
+        ["SiteLinkStore"] = "src/St4i.EdgeCore/Site/SiteLinkStore.cs",
+        ["MachineConfigStore"] = "src/St4i.EdgeCore/Config/MachineConfigStore.cs",
+        ["ProductConfigStore"] = "src/St4i.EdgeCore/Config/ProductConfigStore.cs",
+        ["OeeSettingsStore"] = "src/St4i.EdgeCore/Historian/OeeSettingsStore.cs",
+        ["SimulatedEcosystem"] = "src/St4i.EngineApi/Config/SimulatedEcosystem.cs",
+        ["ConnectorConfigStore"] = "src/St4i.EngineApi/Fleet/ConnectorConfigStore.cs",
+        ["NotificationConfigStore"] = "src/St4i.EngineApi/Alarms/NotificationConfigStore.cs",
+
+        // 🔴 `SecurityDb` is the one store in the posture table that appears in NEITHER enumeration, and the
+        // review found that by noticing the two halves were unlinked. It is correct and it is information:
+        // `SecurityDb` owns the FILE (`security.db`) and its schema ladder, while every row-removing
+        // statement against that database lives in `SqliteUserStore` and `SqliteAuditStore`. So it is a
+        // store with no removal site of its own, and it is declared as such here rather than being a silent
+        // gap between two tables that never met.
+        ["SecurityDb"] = NoRemovalSiteOfItsOwn,
+    };
+
+    private const string NoRemovalSiteOfItsOwn = "(owns a persisted artifact; performs no removal itself)";
+
+    [Fact]
+    public void EveryEnumeratedRemovalSite_IsClassified_AndEveryMeasuredStoreIsAccountedFor()
+    {
+        // 🔴 THE COVERAGE CHECK. Until the review, the class doc comment claimed provenance was "checked for
+        // COVERAGE against the mechanically-enumerated set" and nothing did that: the two enumerations and
+        // the posture table were never referenced by one another, and `SecurityDb` sat in the posture table
+        // and in neither enumeration with nothing to notice. A declaration that is never compared to the
+        // measurement is a filter wearing a census's clothes.
+        var enumerated = ExpectedRemovalSites.Keys
+            .Concat(ExpectedSqlSites.Keys)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var unclassified = enumerated.Except(ProvenanceOfSite.Keys, StringComparer.Ordinal)
+            .OrderBy(f => f, StringComparer.Ordinal).ToList();
+        Assert.True(unclassified.Count == 0,
+            "a removal site is enumerated and nobody has said whose bytes it can destroy:\n  " +
+            string.Join("\n  ", unclassified));
+
+        var invented = ProvenanceOfSite.Keys.Except(enumerated, StringComparer.Ordinal)
+            .OrderBy(f => f, StringComparer.Ordinal).ToList();
+        Assert.True(invented.Count == 0,
+            "the provenance table classifies a file neither enumeration contains — either it stopped " +
+            "removing anything (delete the entry and say so) or the enumeration lost it:\n  " +
+            string.Join("\n  ", invented));
+
+        // The other direction of the link: every store whose posture is published must be traceable to a
+        // classified site, or be declared as owning no removal of its own.
+        foreach (var (store, owner) in ArtifactOwners)
+        {
+            if (owner == NoRemovalSiteOfItsOwn) continue;
+            Assert.True(ProvenanceOfSite.ContainsKey(owner),
+                $"{store}'s posture is published but its owning file {owner} is not a classified removal site.");
+        }
+
+        Assert.Equal(
+            OperatorArtifacts.Select(a => a.Store).OrderBy(s => s, StringComparer.Ordinal).ToArray(),
+            ArtifactOwners.Keys.OrderBy(s => s, StringComparer.Ordinal).ToArray());
+
+        // And the classification the ANSWER rests on: every store carrying operator-authored bytes is
+        // declared as such on both sides, so the posture table cannot quietly come to include a
+        // product-generated artifact and dilute the divergence it reports.
+        foreach (var artifact in OperatorArtifacts.Where(a => a.OperatorAuthored))
+        {
+            var owner = ArtifactOwners[artifact.Store];
+            if (owner == NoRemovalSiteOfItsOwn) continue;
+            Assert.Equal(Provenance.OperatorAuthored, ProvenanceOfSite[owner]);
+        }
+    }
 
     private enum Posture
     {
@@ -861,11 +1228,19 @@ public sealed class OperatorDataRemovalCensusTests
 
     /// <summary>One operator-visible persisted artifact, the store that owns it, and how to put this test's
     /// unreadable bytes where that store will look for them.</summary>
+    /// <param name="Measure">The posture, observed over a directory holding one unreadable artifact.</param>
+    /// <param name="ConstructOverEmpty">🔴 The ATTRIBUTION control (review I1). <see cref="Observe"/> maps
+    /// <i>any</i> throw to <see cref="Posture.Throws"/>, so a store that threw for a reason belonging to the
+    /// RIG — a missing native dependency, a permission fault, a subdirectory it expected — would be recorded
+    /// as <c>Throws</c> and would silently prop up a published row. Constructing the same store over an
+    /// EMPTY directory separates the two: if that succeeds, the throw over the corrupt artifact is
+    /// attributable to the artifact.</param>
     private sealed record ArtifactUnderTest(
         string Store,
         string Artifact,
         bool OperatorAuthored,
-        Func<string, Posture> Measure);
+        Func<string, Posture> Measure,
+        Action<string> ConstructOverEmpty);
 
     /// <summary>A fresh directory holding exactly one artifact, whose bytes are not what its name promises.
     ///
@@ -904,53 +1279,55 @@ public sealed class OperatorDataRemovalCensusTests
     [
         new("FleetSettingsStore", "fleet-settings.json", true, dir => Observe(() =>
             new FleetSettingsStore(dir).Read().Status == FleetSettingsReadStatus.Unreadable
-                ? Posture.ThirdState : Posture.UnreadableIsAbsent)),
+                ? Posture.ThirdState : Posture.UnreadableIsAbsent),
+            dir => _ = new FleetSettingsStore(dir).Read()),
 
         new("SiteLinkStore", "site-link.json", true, dir => Observe(() =>
             new SiteLinkStore(dir).Read().Status == SiteLinkReadStatus.Unreadable
-                ? Posture.ThirdState : Posture.UnreadableIsAbsent)),
+                ? Posture.ThirdState : Posture.UnreadableIsAbsent),
+            dir => _ = new SiteLinkStore(dir).Read()),
 
         new("MachineConfigStore", "machine-operating-config.json", true, dir => Observe(() =>
         {
             _ = new MachineConfigStore(dir);
             return Posture.UnreadableIsAbsent;
-        })),
+        }), dir => _ = new MachineConfigStore(dir)),
 
         new("ProductConfigStore", "products.json", true, dir => Observe(() =>
         {
             _ = new ProductConfigStore(dir);
             return Posture.UnreadableIsAbsent;
-        })),
+        }), dir => _ = new ProductConfigStore(dir)),
 
         new("OeeSettingsStore", "oee-settings.json", true, dir => Observe(() =>
         {
             _ = new OeeSettingsStore(dir);
             return Posture.UnreadableIsAbsent;
-        })),
+        }), dir => _ = new OeeSettingsStore(dir)),
 
         new("SimulatedEcosystem", "ecosystem-products.json", false, dir => Observe(() =>
         {
             _ = new SimulatedEcosystem(dir);
             return Posture.UnreadableIsAbsent;
-        })),
+        }), dir => _ = new SimulatedEcosystem(dir)),
 
         new("ConnectorConfigStore", "connector-config.db", true, dir => Observe(() =>
         {
             _ = new ConnectorConfigStore(dir);
             return Posture.UnreadableIsAbsent;
-        })),
+        }), dir => _ = new ConnectorConfigStore(dir)),
 
         new("NotificationConfigStore", "notifications.db", true, dir => Observe(() =>
         {
             _ = new NotificationConfigStore(dir);
             return Posture.UnreadableIsAbsent;
-        })),
+        }), dir => _ = new NotificationConfigStore(dir)),
 
         new("SecurityDb", "security.db", true, dir => Observe(() =>
         {
             _ = new SecurityDb(dir);
             return Posture.UnreadableIsAbsent;
-        })),
+        }), dir => _ = new SecurityDb(dir)),
     ];
 
     /// <summary>🔴 <b>THE ANSWER, PINNED.</b> Measured, not read. Touching a store's behaviour at this
@@ -1063,13 +1440,85 @@ public sealed class OperatorDataRemovalCensusTests
         Assert.Contains("SOME-OTHER-MACHINE", after, StringComparison.Ordinal);
     }
 
+    /// <summary>🔴 <b>The <c>Throws</c> posture, ATTRIBUTED rather than inferred (review I1) — and the
+    /// "nothing is destroyed" half of it, MEASURED rather than asserted in prose.</b>
+    ///
+    /// <para><see cref="Observe"/> maps any exception to <see cref="Posture.Throws"/>. That is the right
+    /// shape for the question but it makes six of the nine published rows depend on a throw whose CAUSE
+    /// nothing checks. A store that threw here for a reason belonging to the rig would be recorded as
+    /// <c>Throws</c> and would look exactly like a store refusing a bad artifact. Two assertions separate
+    /// them: the same store constructs cleanly over an EMPTY directory, so the throw is attributable to the
+    /// artifact; and the unreadable artifact is still on disk, byte for byte, after the throw — which is the
+    /// evidence for the claim published in <c>docs/owner-decisions.md</c> that on this posture
+    /// <b>nothing is destroyed</b>, a sentence that until now was a reading.</para></summary>
+    [Fact]
+    public void TheThrowingStores_ConstructCleanlyOverAnEmptyDirectory_AndLeaveTheUnreadableBytesIntact()
+    {
+        var throwers = ExpectedPostures.Where(kv => kv.Value == Posture.Throws)
+            .Select(kv => kv.Key).ToHashSet(StringComparer.Ordinal);
+
+        // Non-vacuity: this must actually be the six, not an empty set that would make the loop a no-op.
+        Assert.Equal(6, throwers.Count);
+
+        foreach (var artifact in OperatorArtifacts.Where(a => throwers.Contains(a.Store)))
+        {
+            var empty = EmptyDir();
+            var ex = Record.Exception(() => artifact.ConstructOverEmpty(empty));
+            Assert.True(ex is null,
+                $"{artifact.Store} throws over an EMPTY directory too, so its published `Throws` posture is " +
+                $"not attributable to the unreadable artifact — it is a property of this rig or this " +
+                $"machine. Observed: {ex?.GetType().Name}: {ex?.Message}");
+
+            var corrupt = CorruptDirWith(artifact.Artifact);
+            var path = Path.Combine(corrupt, artifact.Artifact);
+            var before = ReadSharing(path);
+
+            Assert.Equal(Posture.Throws, artifact.Measure(corrupt));
+
+            Assert.True(File.Exists(path),
+                $"{artifact.Store} removed the unreadable artifact on its way out. The `Throws` row in " +
+                "docs/owner-decisions.md says nothing is destroyed on this posture; that is now false.");
+            Assert.Equal(before, ReadSharing(path));
+        }
+    }
+
+    /// <summary>Reads a file without demanding exclusivity.
+    ///
+    /// <para>🔴 Not incidental plumbing — it is a measurement this test produced. The three SQLite-backed
+    /// stores open the database from their constructors and the constructor THROWS, so nothing disposes the
+    /// connection and Microsoft.Data.Sqlite's pool keeps the handle. A plain
+    /// <see cref="File.ReadAllBytes(string)"/> then fails with "used by another process" — which would have
+    /// been reported as this test's own failure rather than as what it is. The artifact is intact; the
+    /// process is simply still holding it. Reading with <see cref="FileShare.ReadWrite"/> asks the question
+    /// this test means to ask ("are the bytes still there") instead of a stricter one it does not
+    /// ("can I take exclusive access").</para></summary>
+    private static byte[] ReadSharing(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        using var memory = new MemoryStream();
+        stream.CopyTo(memory);
+        return memory.ToArray();
+    }
+
     [Fact]
     public void ThePosturesAtTheFixedSituation_AreNotAllTheSame()
     {
-        // 🔴 THE ANSWER TO ITEM 5's QUESTION, asserted rather than written down. If somebody later brings
-        // every store onto one posture, this goes red — which is correct: the answer published in
-        // docs/owner-decisions.md would have stopped being true, and an item that says "they diverge" must
-        // not be able to outlive the divergence.
+        // 🔴 THE ANSWER TO ITEM 5's QUESTION, asserted rather than written down — and this test has TWO
+        // assertions guarding two DIFFERENT claims, which the first version of the report ran together
+        // (review I2).
+        //
+        //   * `classes.Count > 1` is the HEADLINE: they diverge. It reddens only if every store is brought
+        //     onto ONE posture. Removing a single posture class does not touch it. Control arm C4 is the
+        //     arm that actually drives it red, and it needed three stores mutated at once, not one.
+        //
+        //   * the class-set equality below is the PUBLISHED TABLE: three named classes with
+        //     OeeSettingsStore alone in the third. That is what docs/owner-decisions.md item 5 prints, and
+        //     it reddens the moment any class appears or disappears — which is the protection that matters
+        //     day to day, and the one arm C3 demonstrated.
+        //
+        // Both are kept, and they are labelled apart, because a single red here otherwise reads as "the
+        // divergence is gone" when it usually means "the table moved".
         var observed = OperatorArtifacts.ToDictionary(
             a => a.Store,
             a => a.Measure(CorruptDirWith(a.Artifact)),
