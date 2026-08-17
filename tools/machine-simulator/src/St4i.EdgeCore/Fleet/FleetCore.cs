@@ -2182,7 +2182,11 @@ internal sealed class FleetCore
     /// stop.</para></para>
     ///
     /// <para>🔴 <b>T-1 fix round 1 — <paramref name="installFaulted"/> GUARDS THE FLUSH, AND ONLY THE FLUSH,
-    /// AND ONLY WHILE AN INSTALL'S OWN EXCEPTION IS IN FLIGHT.</b> T-1 made the flush do real work on the
+    /// AND ONLY WHILE AN EXCEPTION FROM THE CALLER'S OWN BODY IS IN FLIGHT.</b> (🔴 Fix round 2: that clause
+    /// said "an INSTALL'S own exception", which is narrower than the flag — at <see cref="Start"/> the
+    /// <c>catch</c> spans the whole body, so <see cref="IUnsPublisher.PublishNodeBirth"/>'s throw, the
+    /// enumeration's P8, sets it too, AFTER a successful install. Intended, and argued at that declaration.)
+    /// T-1 made the flush do real work on the
     /// throw path, which put a host seam in front of a diagnostic that already existed: a host whose
     /// <c>ILogger</c> throws while reporting WHAT HAPPENED would replace the exception saying WHAT FAILED.
     /// That masking was <b>new</b> — round 1's justification claimed it was merely restored, and that claim
@@ -2435,6 +2439,16 @@ internal sealed class FleetCore
         // repair chosen here.
         var deferredLogs = new List<DeferredLogEntry>();
 
+        // 🔴 T-1 FIX ROUND 2 — THE NAME IS NARROWER THAN THE BEHAVIOUR, AND THE BEHAVIOUR IS THE INTENDED
+        // ONE. `installFaulted` reads as "StartLocked threw". The `catch` below spans the WHOLE `try`, so it
+        // is true for ANY exception leaving the start body — including PublishNodeBirth()'s, the
+        // enumeration's P8, which fires AFTER a successful install with `_running == true` already committed.
+        // That is correct rather than incidental: what the guard protects is "an exception is already
+        // travelling that says more than a logger failure would", and P8's does. Read it as START-BODY
+        // FAULTED. It is named here rather than renamed because the parameter is also `CompleteStartOffLock`'s
+        // and RebuildPipelineOffLock's, where "install" IS the whole body — one name cannot be exact at all
+        // three sites, so the site where it is loose is the one that says so.
+        //
         // 🔴 T-1 FIX ROUND 1 — THE FAULT FLAG. Set at exactly ONE site, by the `catch` below, and read at
         // exactly one, by CompleteStartOffLock's filter. It is the FAULT polarity deliberately: a COMPLETION
         // flag would have to be set correctly on this method's early returns as well as its normal exit, so a
