@@ -12,9 +12,25 @@ public static class FleetEndpoints
     public static void MapFleetEndpoints(this IEndpointRouteBuilder app)
     {
         // E1: Ok used to be hardcoded true — a client had no way to tell a genuinely faulted engine from a
-        // healthy one. LastError is null both before the fleet has ever been started and after a clean
-        // Stop(), so this stays true in both of those ordinary states too — it only goes false once
-        // something has actually gone wrong.
+        // healthy one. It only goes false once something has actually gone wrong, and it stays true through
+        // the ordinary states: before the fleet has ever been started, and after a Stop() of a fleet that
+        // was healthy when it stopped.
+        //
+        // 🔴 U-1 FIX ROUND 1 — THAT SENTENCE READ "LastError is null … AFTER A CLEAN Stop()", AND IT IS THE
+        // ONE AN OPERATOR MEETS. Stop()/StopLocked have never written this field — the write sites are
+        // FleetCore's StartSlot (a slot that faulted), RebuildPipelineOffLock (a restart that could not
+        // rebuild), and StartLocked's `LastError = null` — so a Stop() does not CLEAR anything; it only
+        // fails to set it. The clause was already loose at base and U-1 is what makes it operationally
+        // wrong, because U-1 gave the field a second producer that an operator will actually hit.
+        //
+        // THE OPERATIONAL FACT, STATED WHERE IT IS MET RATHER THAN ONLY AT THE FIELD: after a restart whose
+        // rebuild threw, this endpoint reports unhealthy and A Stop() DOES NOT CLEAR IT. The only thing that
+        // clears it is a Start() that actually installs — StartLocked's `LastError = null` sits past its own
+        // HALT latch, so a start the latch refuses does not clear it either. An operator who repairs the
+        // cause (a poisoned ST4I_MACHINE_CONFIG_DIR, say) must START the fleet to clear this endpoint; there
+        // is no acknowledge path and none was added. Monitoring integrations polling this route should read
+        // it as "the pipeline is not known-good since the last successful start", not as "something is
+        // failing right now".
         //
         // 🔴 U-1 — WHICH FAULTS THOSE ARE IS NOT DEFINED HERE; see FleetCore.LastError's own declaration,
         // which names both producers. This comment used to name ONE of them inline ("StartLocked's pipeline

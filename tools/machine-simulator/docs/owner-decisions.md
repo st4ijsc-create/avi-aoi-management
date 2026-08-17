@@ -621,15 +621,48 @@ KHÔNG ĐỦ — bản thân việc cài đặt cũng có thể ném lỗi.**
 > fleet đang dừng có quyền giữ cho lần khởi động sau. **Từng trường một đều nói thật.**
 > Thứ nói dối là **bề mặt TÓM TẮT chúng**: `GET /v1/health` đúng nghĩa đen là
 > `LastError is null`, nên nó trả lời **HEALTHY** cho một fleet mà một lần khởi động
-> lại nội bộ đã tháo xuống và không dựng lại được — **vĩnh viễn**, vì không gì khác ghi
-> trường ấy. Đó là đúng câu `FleetCore.cs` đã tự viết ra cho một ca khác, tại
-> `StartSlot`.
+> lại nội bộ đã tháo xuống và không dựng lại được. Đó là đúng câu `FleetCore.cs` đã tự
+> viết ra cho một ca khác, tại `StartSlot`.
+>
+> > 🔴 **ĐÍNH CHÍNH U-1 vòng sửa 1 — câu trên TỪNG kết thúc bằng *"— **vĩnh viễn**, vì
+> > không gì khác ghi trường ấy"*, và đó là một KHẲNG ĐỊNH PHỔ QUÁT bị chính đoạn văn
+> > của nó bác sáu dòng phía trên.** Trên nhánh **cú ném nằm trong lần DỰNG**
+> > (`BuildStartPlan`) nó **đúng**: `StopLocked` đã dọn sạch `_slots`, không còn slot
+> > nào để mà hỏng, nên trước U-1 không gì ghi `LastError` cho tới khi một lần khởi động
+> > **thành công** xảy ra. Trên nhánh **cú ném nằm trong lần CÀI ĐẶT** thì **SAI**:
+> > `StartSlot` chạy `_slots.Add(slot)` **TRƯỚC** `Task.Run`, nên các slot đã cài là
+> > thành viên sống; một slot trong số đó hỏng sau này sẽ thấy
+> > `removed = _slots.Remove(slot) == true` và **ghi `LastError`**. Trạng thái ấy có
+> > **một** lần tự báo — muộn, và **không phải cái đúng**.
+> >
+> > **Lần tự báo ấy phụ thuộc ba điều kiện**, nên "không vĩnh viễn" cũng không được nói
+> > như một sự bảo đảm: phải có một slot bị mắc kẹt **thật sự hỏng** (J-2 đã ghi: slot
+> > nào cư xử tử tế thì mắc kẹt suốt đời tiến trình); phải **chưa** có `Stop`/`Estop`
+> > nào dọn `_slots` (sau J-2 thì `removed == false`, và ghi chú tại `StopLocked` nói
+> > đúng điều đó); và exception ghi được là **của slot**, không phải của lần khởi động
+> > lại — nên ngay cả khi nó tới, nó **gọi tên sai thứ đã hỏng**.
+> >
+> > **U-1 đổi gì trên nhánh ấy:** báo cáo thành **tức thì** và mang **chính exception
+> > của lần cài đặt**, thay cho một lần tự báo muộn, có điều kiện, và gọi sai tên.
+> > Phán quyết **không đổi** — chỉ riêng nhánh DỰNG đã đủ mang nó.
+> >
+> > Đây là đúng loài mà `08fd75cb` vừa sửa ở bốn chỗ (*"GetDriverHealth không liệt kê
+> > gì"*): **tôi sửa tiền đề rồi để nguyên kết luận dựa trên nó**, trong đúng cái
+> > artefact mà chủ sở hữu mở ra đọc.
 >
 > **Cơ chế:** một lần ghi `LastError = ex` trong `catch` của `RebuildPipelineOffLock` —
-> **chốt duy nhất mà cả ba đường vào đều đi qua**. `ex` là **cùng một object** người
-> gọi nhận được, nên HTTP 500 và bề mặt health không thể nói khác nhau về chuyện gì đã
-> hỏng; trên đường thứ ba (revert của `Burst`, Task không ai quan sát) đó là **chỗ duy
-> nhất** exception ấy đậu lại.
+> **chốt duy nhất mà cả ba đường vào đều đi qua**. `ex` là **object mà method này ném
+> lại**, nên trên hai đường có người gọi thì HTTP 500 và bề mặt health mang **cùng một
+> instance** và không thể nói khác nhau về chuyện gì đã hỏng. 🔴 **KHÔNG phải một khẳng
+> định về thứ người gọi CUỐI CÙNG nhìn thấy** — hai cửa sổ che lấp mà chính file này đã
+> nêu tên vẫn có thể thay nó trên đường ra: cửa sổ bốn điều kiện của J-2 tại
+> `DisposeOrphanedConnectorDrivers`, và `finally` drain ngoài cùng của `RegisterMachine`.
+> (Bản đầu của đoạn này viết *"cùng một object người gọi nhận được"* — U-1 đã sửa câu ấy
+> trong `FleetCore.cs` ở `08fd75cb` và **để nguyên bản sao ở đây**, tức đúng lỗi
+> "rút lại ở một trong hai chỗ, khẳng định như cả hai" mà file kia đã ghi nhận hai lần.)
+> Cái U-1 thật sự mua: `ex` **sống sót trên một TRƯỜNG** kể cả khi một `finally` về sau
+> thay nó cho người gọi. Trên đường thứ ba (revert của `Burst`, Task không ai quan sát)
+> đó là **chỗ duy nhất** exception ấy đậu lại.
 >
 > **Vì sao KHÔNG "dựng trước khi tháo":** J-2 đã đo là **CẦN và KHÔNG ĐỦ**, và chứng
 > minh tính đủ đòi một lần cài đặt **khôi phục được đường ống nó thay thế** — mà các

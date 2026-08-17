@@ -2532,9 +2532,19 @@ EXPECT_EDGESERVICE=51
 # WHAT THE OWNER RULED, because the totals below only make sense against it: a restart whose rebuild
 # throws leaves the fleet STOPPED with its roster/scenario commit STANDING, and records the exception on
 # FleetCore.LastError — the field `GET /v1/health` is literally `LastError is null` over. Before this, a
-# fleet an internal restart had torn down and could not rebuild reported HEALTHY, permanently, because
-# nothing else set that field. Neither of the two mechanisms J-2 named was taken; both are refused with
-# reasons at the S4 row in FleetCore.cs's own banner.
+# fleet an internal restart had torn down and could not rebuild reported HEALTHY. Neither of the two
+# mechanisms J-2 named was taken; both are refused with reasons at the S4 row in FleetCore.cs's own banner.
+#
+# 🔴 U-1 FIX ROUND 1 — the sentence above ended "permanently, because nothing else set that field", and
+# that is a FALSE UNIVERSAL over the two arms. It holds when BuildStartPlan throws: StopLocked cleared
+# `_slots`, no slot survives that could fault, nothing writes the field. It fails when StartLocked throws
+# mid-slot-loop: StartSlot's `_slots.Add` runs BEFORE `Task.Run`, so a stranded slot that later faults
+# finds `removed == true` and sets LastError — a late, conditional (the slot must actually fault, and no
+# Stop/Estop must have cleared `_slots` first) and mis-attributed self-report, naming the slot's fault
+# rather than the restart's. Same family as the "GetDriverHealth lists NOTHING" universal corrected in
+# 08fd75cb, which fixed the premise here and left the conclusion resting on it. The verdict is unchanged:
+# the build-throws arm alone carries the finding, and on the install-throws arm U-1 replaces a contingent
+# late report with an immediate one carrying the install's own exception.
 #   ARegisterWhoseRebuildReallyThrows_LeavesTheFleetStopped_AndPutsTheSameExceptionOnTheHealthSurface  +1
 #       The control-pair test and the only REAL throw of the five: a machine whose MachineConfigStore
 #       record already carries a different configKind, so BuildStartPlan -> SimulatorFactory.Create ->

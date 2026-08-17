@@ -737,7 +737,15 @@ internal sealed class FleetCore
     /// orphan it); and <c>machine-operating-config.json</c> may hold records for the machines
     /// <see cref="BuildStartPlan"/> got through before the throw (<c>MachineConfigStore.Ensure</c> only ever
     /// SEEDS — it never modifies an existing record — so those are exactly what the next start would write,
-    /// which is why they are named rather than cleaned up).</para></item>
+    /// which is why they are named rather than cleaned up).
+    /// <para>🔴 <b>AND THE SIBLING U-1 DID NOT TOUCH: <see cref="Start"/>'s own fault path writes no
+    /// <see cref="LastError"/>.</b> The same P5 throw from the symmetric method still leaves a stopped fleet
+    /// reporting healthy. Recorded HERE as well as at <see cref="LastError"/>'s declaration, because the
+    /// task before this one shipped a fix whose verbatim twin was left silent and unnamed, and because a
+    /// reader arriving at this row is asking exactly "what else is like this". The reason it is out of item
+    /// 7's scope is at that declaration, and it rests on the STATE TRANSITION (a restart takes a running
+    /// fleet down; a <see cref="Start"/> stops nothing) rather than on "the caller is told", which is the
+    /// argument this row already rejects for its own two callers.</para></para></item>
     /// <item><b>S5 — CLOSED (G-2).</b> <see cref="Burst"/> → <see cref="RevertBurstAfterDelayAsync"/>.</item>
     /// <item><b>S6 — CLOSED (H-1a), and HOW it closed is the part worth carrying.</b>
     /// <see cref="UpdateSettings"/>'s committed triple versus its off-lock activation and persistence. G-2
@@ -2029,9 +2037,33 @@ internal sealed class FleetCore
     /// see that catch for why this field rather than a projection of its own, and for the identity guard both
     /// producers share). One event in two shapes: a pipeline stopped for a reason nobody asked for.
     ///
-    /// <para><b>Not a producer, and deliberately:</b> a connector that could not be built. That is reported
-    /// by <see cref="GetConfiguredConnectorIssues"/>/<c>GET /v1/connectors</c> and must never flip the whole
-    /// host unhealthy — see the connector loop in <see cref="StartLocked"/>.</para>
+    /// <para><b>NOT producers, and each for its own reason — enumerated, because a reader who finds the two
+    /// above stops looking:</b>
+    /// <list type="bullet">
+    /// <item><b>A connector that could not be built.</b> Reported by
+    /// <see cref="GetConfiguredConnectorIssues"/>/<c>GET /v1/connectors</c> and must never flip the whole host
+    /// unhealthy — see the connector loop in <see cref="StartLocked"/>.</item>
+    /// <item>🔴 <b><see cref="Start"/> — THE SILENT TWIN, named by U-1 rather than closed, because the
+    /// omission is the kind this file punishes when it is left unstated.</b> <see cref="Start"/>'s own
+    /// <c>catch</c> is <c>installFaulted = true; throw;</c> and writes nothing here. So the SAME P5 throw —
+    /// same <c>MachineConfigStore.Ensure</c>, same relocatable root — reached from the SYMMETRIC method
+    /// leaves a stopped fleet reporting HEALTHY, which is the state U-1 declares wrong one paragraph up.
+    /// <para><b>Why that is a different state and not the same defect, argued from the transition rather
+    /// than from who called:</b> this field now means <i>a pipeline stopped for a reason nobody asked for</i>.
+    /// A failed restart takes the fleet from RUNNING to STOPPED — nobody asked for that, and on
+    /// <see cref="Burst"/>'s revert nobody asked for the call at all. A failed <see cref="Start"/> stops
+    /// NOTHING: the fleet was stopped before it and is stopped after it, and the operator who asked for it
+    /// receives the exception. <b>The weaker leg is deliberately not leaned on:</b> "the caller is told" is
+    /// exactly the argument U-1 REJECTS for <see cref="RegisterMachine"/> and <see cref="ApplyScenario"/>,
+    /// both of which also have a caller, so it cannot carry this on its own. The transition leg is the one
+    /// that does the work.</para>
+    /// <para><b>Where the two genuinely converge, named rather than glossed:</b> a <see cref="Start"/> that
+    /// throws MID-SLOT-LOOP leaves live slots with <c>_running == false</c> — S3's residual (2) — and there
+    /// the fleet is neither running nor cleanly stopped while this field stays <see langword="null"/>. That
+    /// is the residual's own open question and it belongs to whoever takes it, not to item 7. Closing it is
+    /// two statements in a <c>catch</c> that already exists; U-1 does not take it because item 7's subject is
+    /// a commit whose pipeline never came back, and <see cref="Start"/> commits nothing.</para></item>
+    /// </list></para>
     ///
     /// <para><b>Cleared in exactly one place:</b> <see cref="StartLocked"/>, past its own latch. So a start
     /// that actually installs clears it, and one the HALT latch refuses does not.</para></summary>
@@ -3434,13 +3466,32 @@ internal sealed class FleetCore
             // On the third path — Burst's revert, whose Task nothing observes — this is the only place that
             // exception lands at all.
             //
-            // THE GUARD IS AN IDENTITY GUARD, the same rule StartSlot's `if (removed)` applies: report only
-            // while the state this fault describes still holds. `_running` is false on every uncontended
-            // reach of this catch — StartLocked's `_running = true` is its LAST statement, so nothing in it
-            // throws after that — so the guard costs nothing there. What it excludes is a concurrent Start
-            // that already installed; clobbering a live fleet's health with a superseded restart's fault is
-            // the defect RestartRace_OldPipelineFaultsAfterNewPipelineAlreadyStarted_DoesNotClobberIsRunningOrLastError
+            // THE GUARD IS A STATE GUARD WITH THE SAME PURPOSE as StartSlot's `if (removed)`, and 🔴 NOT the
+            // same rule — U-1 fix round 1 corrects that, because on this file the difference is the whole
+            // point of having the word. `removed` is a genuine IDENTITY test: it proves THIS SLOT is still
+            // the current one. `!_running` proves only that the fleet is down, never that THIS RESTART is
+            // why — a Start that installs and a Stop that follows, both inside the window between the throw
+            // and this acquisition, leave `_running` false and let a superseded restart's fault land on a
+            // fleet an operator deliberately stopped. Vanishingly narrow, and the report is not even false
+            // there (a restart did fail) — said plainly rather than relied on, which is this banner's own
+            // standard for "benign by a property of the current call site".
+            //
+            // `_running` is false on every uncontended reach of this catch — StartLocked's `_running = true`
+            // is its LAST statement, so nothing in it throws after that — so the guard costs nothing there.
+            // What it excludes is a concurrent Start that already installed; clobbering a live fleet's health
+            // with a superseded restart's fault is the defect
+            // RestartRace_OldPipelineFaultsAfterNewPipelineAlreadyStarted_DoesNotClobberIsRunningOrLastError
             // exists to prevent, reached from a second direction.
+            //
+            // 🔴 IT IS UNWITNESSED BY THE ENTIRE SUITE, AND THE DEFENCE IS THE DIRECTION OF THE FAILURE, NOT
+            // A TEST. Deleting `if (!_running)` leaves EVERY test green, not just the halt pin: the four
+            // witnesses that reach this catch all reach it with `_running` already false, the halt pin never
+            // reaches it, and RestartRace_… exercises a restart that SUCCEEDS, so this catch never runs in
+            // it. Writing a test for it would need a Start to win a race against a throwing rebuild, which
+            // is a scheduling assertion, not a property one. It is accepted ONLY because deletion can produce
+            // a false UNHEALTHY and never a false HEALTHY — an asymmetry in the safe direction, over four
+            // lines whose reasoning is checkable from StartLocked's statement order. Stated as a gap with
+            // zero mutation resistance rather than as a small one.
             //
             // THE HALT PATH STAYS SILENT, STRUCTURALLY RATHER THAN BY ASSERTION: both refusals RETURN — this
             // method's pre-check above, and StartLocked's latch — so neither can reach a `catch`. The one arm
@@ -3449,11 +3500,14 @@ internal sealed class FleetCore
             // own surface (GetSafetyStatus/EstopEngaged), and silence about what DID happen is what the owner
             // ruled against at item 6.
             //
-            // IT IS ONE MORE `lock (_gate)` REGION — the twenty-second in this file. It reads one field and
-            // writes one, reaches no I/O, no Dispose and no Cancel, and takes no other lock while held, so
-            // the nine-path set and the five-lock ordering set at the top of this file are both unchanged.
-            // The gate is NOT held on entry: a throw out of the `lock (_gate) { StartLocked(...) }` above
-            // releases it on the way out.
+            // IT IS ONE MORE `lock (_gate)` REGION. It reads one field and writes one, reaches no I/O, no
+            // Dispose and no Cancel, and takes no other lock while held, so the nine-path set and the
+            // five-lock ordering set at the top of this file are both unchanged. The gate is NOT held on
+            // entry: a throw out of the `lock (_gate) { StartLocked(...) }` above releases it on the way out.
+            // 🔴 U-1 fix round 1 — THE COUNT ITSELF IS DELIBERATELY NOT REPEATED HERE. Round 1 wrote "the
+            // twenty-second in this file", which made three copies of one number (the banner's, J-1b's site,
+            // and this one) where two is what U-1 found. The banner is the copy a re-deriver actually runs,
+            // so this site says only that it ADDS one and points there; the number lives at _gate.
             lock (_gate)
             {
                 if (!_running)
@@ -4976,10 +5030,20 @@ internal sealed class FleetCore
             //     records the same exception on LastError, so GET /v1/health reports it too. A sentence true
             //     at base and left standing beside its own change is the defect this file has a banner about.
             //   - "MAY STILL BE RUNNING AT THE BURST MULTIPLIER" pointed at the WRONG ARM and predates U-1.
-            //     ApplyScenario commits `_scenario` as its second statement, so the multiplier is already
-            //     back at `baseline` whichever way it then fails; and on the arm that is actually reachable —
-            //     the rebuild throwing — the fleet is not running at all. An operator following that line
-            //     went looking for a fleet cycling too fast and found one that had stopped.
+            //     It is a claim about the LIVE PIPELINE, and it is true on exactly one arm: ApplyScenario
+            //     throwing BEFORE its StopLocked, where the old pipeline is still up and its simulators were
+            //     built with burst-scaled CycleSeconds. Nothing can reach that arm today — the only
+            //     statement there is ApplyNetworkOutageLocked, whose ModeChanged event is dormant because
+            //     this call site passes the coordinator's current mode. On the arm that IS reachable, the
+            //     rebuild throwing, the fleet is not running at all. So the line was true only where nothing
+            //     goes and false where everything goes: an operator following it went looking for a fleet
+            //     cycling too fast and found one that had stopped.
+            //     🔴 U-1 fix round 1 — ROUND 1 REFUTED IT WITH THE WRONG EVIDENCE: it argued that
+            //     "ApplyScenario commits `_scenario` as its second statement, so the multiplier is already
+            //     back at `baseline`". That is about the RECORDED configuration; the clause is about what
+            //     the pipeline is DOING. Confusing those two is the exact distinction U-1's own ruling
+            //     spends its opening paragraph establishing, used backwards inside U-1's own correction.
+            //     The conclusion never depended on it and is unchanged.
             // The G-2 sentence this replaces was right about the one thing it was written for (the silence)
             // and is kept above; only the state description is corrected.
             //

@@ -37,11 +37,17 @@ namespace St4i.EngineApi.Tests;
 /// carries a different <c>configKind</c>, so <c>SimulatorFactory.Create</c> →
 /// <c>SimulatorBase</c>'s ctor → <c>MachineConfigStore.Ensure</c> throws
 /// <see cref="InvalidOperationException"/> inside <c>BuildStartPlan</c>. That is the production-reachable
-/// site the whole item is about, and it is the one that pins the ruling. The remaining tests use the
-/// <c>AdditionalPipelinesForTests</c> seam — the same deterministic <c>StartLocked</c> stand-in the S-set
-/// tests use — because the real P5 site cannot be armed twice against one roster: <c>Ensure</c> seeds a
-/// record on the first successful build, and a machine that already has a matching record never throws
-/// again. The property under test is the same on either site; only the frame the throw comes from differs.
+/// site the whole item is about, and it is the one that pins the ruling. <b>Three of the other four use the
+/// <c>AdditionalPipelinesForTests</c> seam</b> — the scenario, burst-revert and recovery tests, with the
+/// same deterministic <c>StartLocked</c> stand-in the S-set tests use — because the real P5 site cannot be
+/// armed twice against one roster: <c>Ensure</c> seeds a record on the first successful build, and a machine
+/// that already has a matching record never throws again. <b>The fourth,
+/// <c>ARebuildRefusedByTheHaltLatch_…</c>, uses NEITHER</b>: it drives <c>StartBuildObserverForTests</c> and
+/// needs no throw at all, because what it pins is a path on which nothing throws. The property under test is
+/// the same on either site; only the frame the throw comes from differs.
+/// <para>🔴 U-1 fix round 1 — this paragraph said "the REMAINING TESTS use the seam", which is false of the
+/// halt pin and is a scalar-shaped claim over a five-member set enumerable in one file. Corrected by
+/// naming the members, which is the rule this repository already applies to the S-list and the P-list.</para>
 /// </para>
 ///
 /// <para><b>What is deliberately NOT asserted here.</b> That the fleet comes back — it does not, and that is
@@ -110,8 +116,13 @@ public sealed class FleetHostFailedRestartReportsTests
     /// claim.</para>
     ///
     /// <para>At this branch's base the last two assertions fail on <c>LastError</c> being
-    /// <see langword="null"/> — a stopped, un-rebuildable fleet reporting healthy, permanently, because
-    /// nothing else sets that field.</para></summary>
+    /// <see langword="null"/> — a stopped, un-rebuildable fleet reporting healthy. 🔴 U-1 fix round 1: this
+    /// said "permanently, because nothing else sets that field", which is a FALSE UNIVERSAL and true only of
+    /// the arm THIS test drives. When the BUILD throws, <c>StopLocked</c> has cleared <c>_slots</c> and there
+    /// is no slot left that could ever fault, so at base nothing wrote the field. When the INSTALL throws
+    /// mid-loop, <c>StartSlot</c>'s <c>_slots.Add</c> runs BEFORE its <c>Task.Run</c>, so a stranded slot
+    /// that later faults finds <c>removed == true</c> and writes it — one late, conditional and
+    /// MIS-ATTRIBUTED self-report, naming the slot's fault instead of the restart's.</para></summary>
     [Fact]
     public void ARegisterWhoseRebuildReallyThrows_LeavesTheFleetStopped_AndPutsTheSameExceptionOnTheHealthSurface()
     {

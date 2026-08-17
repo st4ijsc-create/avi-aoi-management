@@ -811,9 +811,18 @@ export function useResetEstop() {
  * Polled slowly, mainly to drive the TopBar server-status dot. A failed fetch (network error / engine
  * process down) signals "offline" via TanStack Query's `isError` — that's the common case. E1 also made
  * `HealthDto.ok` real server-truth (`FleetHost.LastError is null`, `FleetEndpoints.cs`): a request that
- * SUCCEEDS can still come back `ok: false` if the fleet pipeline itself faulted (see
- * `FleetHost.StartLocked`'s catch), which `isError` alone would miss — TopBar's `ServerStatusDot` only
- * covers connectivity; the separate faulted-engine badge next to the page title is what surfaces `.ok`.
+ * SUCCEEDS can still come back `ok: false`, which `isError` alone would miss — TopBar's `ServerStatusDot`
+ * only covers connectivity; the separate faulted-engine badge next to the page title is what surfaces
+ * `.ok`.
+ *
+ * 🔴 U-1 fix round 1 — WHICH FAULTS MAKE IT FALSE IS DEFINED IN ONE PLACE, `FleetCore.LastError`'s own
+ * declaration, and deliberately not restated here. This comment used to name one producer inline, "see
+ * `FleetHost.StartLocked`'s catch" — a symbol that DOES NOT EXIST (that catch is `FleetCore.StartSlot`'s),
+ * and by U-1 also incomplete, since a restart whose rebuild throws now sets the field too. That is the
+ * third copy of a producer list; U-1 removed the second from `FleetEndpoints.cs` with the sentence "a
+ * second copy of a producer list is the copy nobody updates", and its own sweep stopped one file short of
+ * this one. Note the practical consequence for this hook: `ok: false` is STICKY — only a start that
+ * installs clears it, a `Stop()` does not.
  */
 export function useHealth(): UseQueryResult<Health> {
   return useQuery({
