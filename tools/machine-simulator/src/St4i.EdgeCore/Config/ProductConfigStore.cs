@@ -301,19 +301,38 @@ public sealed class ProductConfigStore
         // Persist freshly-seeded state immediately so a fresh install has real files on disk the
         // moment it boots, not just an in-memory seed that vanishes if the process exits before any
         // explicit mutation calls Save().
-        if (!productsExisted || !recipesExisted) Save();
+        //
+        // 🔴 TASK V-1 — ONLY the file that was actually seeded, and this used to be `Save()`, which writes
+        // BOTH. Measured on the shape that made it visible: with a hand-written `products.json` present and
+        // `recipes.json` missing, merely CONSTRUCTING this store rewrote `products.json` — reserialised
+        // from the typed model, so an operator's own formatting and any field `ProductModel` does not
+        // declare were gone, on a start where nothing failed and nobody asked for a change. Seeding one
+        // file is not a reason to rewrite the other, and the two files are documented at the top of this
+        // class as independently-versioned. The mutators still call `Save()` and still write both: there
+        // the caller asked for a change, and the round trip through the typed model is the store's stated
+        // contract rather than a side effect of a start.
+        if (!productsExisted) SaveProducts();
+        if (!recipesExisted) SaveRecipes();
     }
 
     /// <summary>Always called with <see cref="_gate"/> already held.</summary>
     private void Save()
     {
-        var productsPath = Path.Combine(RootDirectory, ProductsFileName);
-        var recipesPath = Path.Combine(RootDirectory, RecipesFileName);
-        WriteAllTextAtomic(productsPath, JsonSerializer.Serialize(
-            _products.Values.OrderBy(p => p.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
-        WriteAllTextAtomic(recipesPath, JsonSerializer.Serialize(
-            _recipes.Values.OrderBy(r => r.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
+        SaveProducts();
+        SaveRecipes();
     }
+
+    /// <summary>Always called with <see cref="_gate"/> already held.</summary>
+    private void SaveProducts() => WriteAllTextAtomic(
+        Path.Combine(RootDirectory, ProductsFileName),
+        JsonSerializer.Serialize(
+            _products.Values.OrderBy(p => p.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
+
+    /// <summary>Always called with <see cref="_gate"/> already held.</summary>
+    private void SaveRecipes() => WriteAllTextAtomic(
+        Path.Combine(RootDirectory, RecipesFileName),
+        JsonSerializer.Serialize(
+            _recipes.Values.OrderBy(r => r.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
 
     /// <summary>Task review #6 — <c>File.WriteAllText</c> writes IN PLACE: a crash/power-loss mid-write
     /// can leave a truncated/corrupt <c>products.json</c>/<c>recipes.json</c> that fails the next

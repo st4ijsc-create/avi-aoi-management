@@ -3,8 +3,12 @@ using System.Reflection.Emit;
 using System.Text.RegularExpressions;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Historian;
+using St4i.EdgeCore.Identity;
+using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Site;
+using St4i.EdgeCore.Uns;
 using St4i.EngineApi.Alarms;
+using St4i.EngineApi.AssetRegistry;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Config;
 using St4i.EngineApi.Fleet;
@@ -1191,6 +1195,17 @@ public sealed class OperatorDataRemovalCensusTests
         ["ConnectorConfigStore"] = "src/St4i.EngineApi/Fleet/ConnectorConfigStore.cs",
         ["NotificationConfigStore"] = "src/St4i.EngineApi/Alarms/NotificationConfigStore.cs",
 
+        // 🔴 TASK V-1 — five stores S-1 enumerated as removal sites and did NOT measure a posture for. Every
+        // one of them owns an artifact this product writes and re-reads, which is the property that puts a
+        // store in this table; S-1's table held the eight above plus SecurityDb and stopped there. The
+        // exclusion was never stated as a rule, so nothing could refute it — see
+        // EveryArtifactOwningStore_HasARow_AndTheOnesOutsideAreNamed.
+        ["AlarmStore"] = "src/St4i.EngineApi/Alarms/AlarmStore.cs",
+        ["AssetRegistryStore"] = "src/St4i.EngineApi/AssetRegistry/AssetRegistryStore.cs",
+        ["BridgeSpool"] = "src/St4i.EdgeCore/Site/BridgeSpool.cs",
+        ["DeviceIdentityStore"] = "src/St4i.EdgeCore/Identity/DeviceIdentityStore.cs",
+        ["SqliteHistorianStore"] = "src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs",
+
         // 🔴 `SecurityDb` is the one store in the posture table that appears in NEITHER enumeration, and the
         // review found that by noticing the two halves were unlinked. It is correct and it is information:
         // `SecurityDb` owns the FILE (`security.db`) and its schema ladder, while every row-removing
@@ -1339,10 +1354,9 @@ public sealed class OperatorDataRemovalCensusTests
         }), dir => _ = new ProductConfigStore(dir)),
 
         new("OeeSettingsStore", "oee-settings.json", true, dir => Observe(() =>
-        {
-            _ = new OeeSettingsStore(dir);
-            return Posture.UnreadableIsAbsent;
-        }), dir => _ = new OeeSettingsStore(dir)),
+            new OeeSettingsStore(dir).Status == OeeSettingsReadStatus.Unreadable
+                ? Posture.ThirdState : Posture.UnreadableIsAbsent),
+            dir => _ = new OeeSettingsStore(dir).Read()),
 
         new("SimulatedEcosystem", "ecosystem-products.json", false, dir => Observe(() =>
         {
@@ -1367,30 +1381,84 @@ public sealed class OperatorDataRemovalCensusTests
             _ = new SecurityDb(dir);
             return Posture.UnreadableIsAbsent;
         }), dir => _ = new SecurityDb(dir)),
+
+        // ── 🔴 TASK V-1 — the five S-1 enumerated and did not measure ────────────────────────────────
+        new("AlarmStore", "alarms.db", false, dir => Observe(() =>
+        {
+            _ = new AlarmStore(dir);
+            return Posture.UnreadableIsAbsent;
+        }), dir => _ = new AlarmStore(dir)),
+
+        new("AssetRegistryStore", "assets.db", false, dir => Observe(() =>
+        {
+            _ = new AssetRegistryStore(new UnsOptions(), dir);
+            return Posture.UnreadableIsAbsent;
+        }), dir => _ = new AssetRegistryStore(new UnsOptions(), dir)),
+
+        new("BridgeSpool", "bridge-spool.db", false, dir => Observe(() =>
+        {
+            _ = new BridgeSpool(dir);
+            return Posture.UnreadableIsAbsent;
+        }), dir => _ = new BridgeSpool(dir)),
+
+        // The logError callback is swallowed on purpose: this measures what the READ answers, and a store
+        // that reports and then answers "absent" anyway is still a store whose caller cannot branch. That
+        // distinction is the whole reason DeviceIdentityStore stays on this posture DELIBERATELY — see
+        // docs/owner-decisions.md item 1's residue 2 — and it is measured here rather than declared.
+        new("DeviceIdentityStore", "device-identity.bin", false, dir => Observe(() =>
+            new DeviceIdentityStore(dir, (_, _) => { }).TryLoad() is null
+                ? Posture.UnreadableIsAbsent : Posture.ThirdState),
+            dir => _ = new DeviceIdentityStore(dir, (_, _) => { }).TryLoad()),
+
+        new("SqliteHistorianStore", "historian.db", false, dir => Observe(() =>
+        {
+            _ = new SqliteHistorianStore(dir);
+            return Posture.UnreadableIsAbsent;
+        }), dir => _ = new SqliteHistorianStore(dir)),
     ];
 
     /// <summary>🔴 <b>THE ANSWER, PINNED.</b> Measured, not read. Touching a store's behaviour at this
-    /// situation moves a row here and reopens item 5 in <c>docs/owner-decisions.md</c> — which is the whole
-    /// point of pinning it rather than writing it in a report nobody can diff.</summary>
+    /// situation moves a row here, and after task V-1 that also means the law published in
+    /// <c>docs/startup-failure-posture.md</c> §3.6 has a new member to account for.</summary>
     private static readonly Dictionary<string, Posture> ExpectedPostures = new(StringComparer.Ordinal)
     {
-        // Q-1's two, and the only two that express the state at all.
+        // The read answers a distinct outcome, so the caller can decline the write. Q-1 built the first two;
+        // V-1 brought the third onto the same shape under the same law.
         ["FleetSettingsStore"] = Posture.ThirdState,
         ["SiteLinkStore"] = Posture.ThirdState,
+        ["OeeSettingsStore"] = Posture.ThirdState,
 
-        // Six that end the operation instead. Nothing is destroyed here; nothing continues either, and the
-        // store itself says nothing — the caller learns only by catching.
+        // The read ends the operation instead. Nothing is destroyed here (measured — see
+        // TheThrowingStores_…) and nothing continues either; the caller learns by catching.
         ["MachineConfigStore"] = Posture.Throws,
         ["ProductConfigStore"] = Posture.Throws,
         ["SimulatedEcosystem"] = Posture.Throws,
         ["ConnectorConfigStore"] = Posture.Throws,
         ["NotificationConfigStore"] = Posture.Throws,
         ["SecurityDb"] = Posture.Throws,
+        ["AlarmStore"] = Posture.Throws,
+        ["AssetRegistryStore"] = Posture.Throws,
+        ["BridgeSpool"] = Posture.Throws,
+        ["SqliteHistorianStore"] = Posture.Throws,
 
-        // 🔴 ONE. Measured, not read, and it is the whole reason item 5 is a decision rather than a note.
-        // See TheOneStoreThatCannotTellUnreadableFromAbsent_ReplacesTheOperatorsBytes for what it costs.
-        ["OeeSettingsStore"] = Posture.UnreadableIsAbsent,
+        // 🔴 The one row left on the posture the law forbids, and it is DECIDED rather than surviving.
+        // docs/owner-decisions.md item 1's residue 2 records why: the bytes are a product-minted key, the
+        // store DOES report at Error before regenerating, and the correct repair — keeping the old blob
+        // under another name — is a data MOVE, which V-1's brief requires be stopped and reported rather
+        // than performed. It is in this table so the exception is measured rather than asserted.
+        ["DeviceIdentityStore"] = Posture.UnreadableIsAbsent,
     };
+
+    /// <summary>🔴 <b>The exceptions to the law, by name.</b> A store may sit on
+    /// <see cref="Posture.UnreadableIsAbsent"/> only if it is here, and being here means somebody wrote down
+    /// a decision. <c>CredentialStore</c> is a member and is measured apart — see
+    /// <see cref="TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndIsMeasuredApartBecauseItHasNoPerCallSeam"/>
+    /// for why it cannot join the table above.</summary>
+    private static readonly string[] DecidedExceptionsToTheLaw =
+    [
+        "CredentialStore",
+        "DeviceIdentityStore",
+    ];
 
     [Fact]
     public void EveryOperatorArtifact_HasThePostureRecordedForIt_AtTheOneSituationHeldFixed()
@@ -1447,36 +1515,90 @@ public sealed class OperatorDataRemovalCensusTests
     /// with <b>no exception, no log line and no returned status</b>. This is the mechanism Q-1 fixed at
     /// <c>fleet-settings.json</c> and at <c>site-link.json</c>, still live at a third file.</para>
     ///
-    /// <para><b>THIS TEST FIXES NOTHING.</b> It is a baseline: S-1 is a measurement task, and a measurement
-    /// that quietly repairs what it measures destroys the thing the decision rests on. If the owner rules
-    /// FIX, this assertion inverts and that inversion is the diff.</para>
+    /// <para>🔴 <b>THIS ASSERTION IS INVERTED, AND THE INVERSION IS TASK V-1's DIFF.</b> S-1 was forbidden
+    /// to fix what it measured, so it pinned the live defect as a baseline and wrote that a FIX ruling would
+    /// invert it. The owner ruled <i>consolidate to one way</i>; the marker now SURVIVES and the write is
+    /// REFUSED. Run at <c>f18f5c29</c> this same test fails on its first surviving-marker assertion, with
+    /// the operator's bytes replaced by <c>SOME-OTHER-MACHINE</c>, which is the other half of the control
+    /// pair.</para>
     ///
     /// <para><b>What it does NOT establish:</b> that this is reachable on any particular deployment. It
     /// drives the store directly. What makes it more than a laboratory result is that the store's only
     /// mutator has exactly one production caller — <c>HistorianEndpoints.PutOeeSettingsAsync</c> — and that
-    /// caller passes one machine's values, which is precisely the shape that leaves every other machine's
+    /// caller passes one machine's values, which is precisely the shape that left every other machine's
     /// entry out of the rewrite.</para></summary>
     [Fact]
-    public void TheOneStoreThatCannotTellUnreadableFromAbsent_ReplacesTheOperatorsBytes()
+    public void TheStoreThatCouldNotTellUnreadableFromAbsent_NowRefusesTheWrite_AndTheOperatorsBytesSurvive()
     {
         const string Marker = "OPERATOR-WROTE-THIS-AND-IT-DID-NOT-PARSE";
 
         var dir = Path.Combine(Path.GetTempPath(), "st4i-removal-census", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, "oee-settings.json");
-        File.WriteAllText(path, "[ { \"machineCode\": \"" + Marker + "\", idealCycleSecondsOverride: 42 ]");
+        var operatorBytes = "[ { \"machineCode\": \"" + Marker + "\", idealCycleSecondsOverride: 42 ]";
+        File.WriteAllText(path, operatorBytes);
 
         // Positive control on the premise: the bytes really are there, and they really do not parse.
         Assert.Contains(Marker, File.ReadAllText(path), StringComparison.Ordinal);
-        Assert.Equal(Posture.UnreadableIsAbsent,
+        Assert.Equal(Posture.ThirdState,
             OperatorArtifacts.Single(a => a.Store == "OeeSettingsStore").Measure(CorruptDirWith("oee-settings.json")));
 
         var store = new OeeSettingsStore(dir);
-        store.Set("SOME-OTHER-MACHINE", idealCycleSecondsOverride: 7.5, plannedProductionRatio: null);
+        Assert.Equal(OeeSettingsReadStatus.Unreadable, store.Status);
 
-        var after = File.ReadAllText(path);
-        Assert.DoesNotContain(Marker, after, StringComparison.Ordinal);
-        Assert.Contains("SOME-OTHER-MACHINE", after, StringComparison.Ordinal);
+        // Reads keep working on the documented defaults — the store came up, which is what makes refusing
+        // the write a report rather than an outage.
+        var resolved = store.Resolve("SOME-OTHER-MACHINE", fallbackIdealCycleSeconds: 12.0);
+        Assert.Null(resolved.IdealCycleSecondsOverride);
+        Assert.Equal(1.0, resolved.PlannedProductionRatio);
+
+        var refusal = Assert.Throws<InvalidOperationException>(
+            () => store.Set("SOME-OTHER-MACHINE", idealCycleSecondsOverride: 7.5, plannedProductionRatio: null));
+        Assert.Contains("oee-settings.json", refusal.Message, StringComparison.Ordinal);
+
+        // 🔴 The measurement the whole task turns on: byte for byte, not merely "the marker is still there".
+        Assert.Equal(operatorBytes, File.ReadAllText(path));
+        Assert.DoesNotContain("SOME-OTHER-MACHINE", File.ReadAllText(path), StringComparison.Ordinal);
+
+        // And nothing was left beside it either — the atomic write's temp file is created by Save, which
+        // was never reached.
+        Assert.Equal(new[] { "oee-settings.json" },
+            Directory.GetFiles(dir).Select(Path.GetFileName).OrderBy(f => f, StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>🔴 <b>Task V-1 — the OTHER write S-1 found, and it needed no unreadable file at all.</b>
+    /// <c>ProductConfigStore.Load</c> seeded <c>recipes.json</c> when it was missing and then called a
+    /// <c>Save</c> that wrote BOTH files, so merely constructing the store rewrote a hand-written
+    /// <c>products.json</c> — reserialised out of the typed model, dropping any field <c>ProductModel</c>
+    /// does not declare, on a start where nothing failed. Run at <c>f18f5c29</c> this fails: the field is
+    /// gone and the bytes differ.</summary>
+    [Fact]
+    public void SeedingTheRecipesFile_DoesNotRewriteAHandWrittenProductsFile()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "st4i-removal-census", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var productsPath = Path.Combine(dir, "products.json");
+        var recipesPath = Path.Combine(dir, "recipes.json");
+
+        var operatorBytes =
+            "[ { \"code\": \"OP-BOARD\", \"name\": \"hand written\", \"annotationTheModelDoesNotDeclare\": 123 } ]";
+        File.WriteAllText(productsPath, operatorBytes);
+
+        // Premise: products.json is present and recipes.json is not, which is the only shape that reaches
+        // the seed-persist branch with an operator file already on disk.
+        Assert.False(File.Exists(recipesPath));
+
+        var store = new ProductConfigStore(dir);
+
+        Assert.Equal(operatorBytes, File.ReadAllText(productsPath));
+        Assert.Contains("annotationTheModelDoesNotDeclare", File.ReadAllText(productsPath), StringComparison.Ordinal);
+
+        // The half that must NOT change: the missing file is still seeded and persisted, so a fresh install
+        // still boots with real content. Both halves in one test, because fixing the first by dropping the
+        // second would be a regression this file could not see.
+        Assert.True(File.Exists(recipesPath));
+        Assert.NotEmpty(store.ListRecipes());
+        Assert.Equal("OP-BOARD", Assert.Single(store.ListProducts()).Code);
     }
 
     /// <summary>🔴 <b>The <c>Throws</c> posture, ATTRIBUTED rather than inferred (review I1) — and the
@@ -1501,7 +1623,8 @@ public sealed class OperatorDataRemovalCensusTests
         // below into a no-op and every assertion in it into a sentence. The literal stays a LITERAL on
         // purpose — deriving it from ExpectedPostures, which is where `throwers` already comes from, would
         // make this a tautology and pin nothing. This is the one copy of that number in the file.
-        Assert.Equal(6, throwers.Count);
+        // 🔴 Task V-1 moved it: four stores S-1 never measured are on this posture too.
+        Assert.Equal(10, throwers.Count);
 
         foreach (var artifact in OperatorArtifacts.Where(a => throwers.Contains(a.Store)))
         {
@@ -1544,41 +1667,181 @@ public sealed class OperatorDataRemovalCensusTests
         return memory.ToArray();
     }
 
+    /// <summary>🔴 <b>THE LAW, ASSERTED — task V-1, and this REPLACES S-1's headline.</b>
+    ///
+    /// <para>S-1's headline assertion was <c>classes.Count &gt; 1</c>: <i>the postures diverge</i>. It was
+    /// the right answer to item 5's question and it is the wrong guard for item 5's ANSWER, because the
+    /// answer is not one posture. <c>docs/startup-failure-posture.md</c> §1's test yields <b>S</b> at some
+    /// sites and <b>U</b> at others and both are the same rule; a store's read expresses that as
+    /// <see cref="Posture.Throws"/> or as <see cref="Posture.ThirdState"/>. So a guard that reddens when the
+    /// postures converge would redden on a tree that is MORE compliant, and stay green on the one thing the
+    /// law forbids.</para>
+    ///
+    /// <para>What the law forbids is <see cref="Posture.UnreadableIsAbsent"/>, and the derivation is short
+    /// enough to check: §1's two outcomes are <b>S</b> (the process ends) and <b>U</b> (the host comes up and
+    /// the failure is REPORTED), and both are loud. A read that answers the same value for <i>absent</i> and
+    /// for <i>present and unreadable</i> can produce neither — nothing throws, so not S; nothing
+    /// distinguished the cases, so there is nothing to report, so not U. It produces the third thing, which
+    /// is the host coming up and saying nothing, which is §1's own definition of the failure it exists to
+    /// forbid.</para>
+    ///
+    /// <para>Both directions redden, which is what makes this a measurement rather than a rule: a store
+    /// falling ONTO that posture reddens it, and a NAMED EXCEPTION leaving it reddens it too — because the
+    /// exception is written down in <c>docs/owner-decisions.md</c> and a decision must not outlive the tree
+    /// it was taken about.</para></summary>
     [Fact]
-    public void ThePosturesAtTheFixedSituation_AreNotAllTheSame()
+    public void NoStoreAnswersAbsentForAnArtifactThatIsPresent_ExceptTheOnesNamedAndDecided()
     {
-        // 🔴 THE ANSWER TO ITEM 5's QUESTION, asserted rather than written down — and this test has TWO
-        // assertions guarding two DIFFERENT claims, which the first version of the report ran together
-        // (review I2).
-        //
-        //   * `classes.Count > 1` is the HEADLINE: they diverge. It reddens only if every store is brought
-        //     onto ONE posture. Removing a single posture class does not touch it. Control arm C4 is the
-        //     arm that actually drives it red, and it needed EVERY store off its own posture at once —
-        //     a strictly larger mutation than arm C3's single one. (A count of the arm's mutations is not
-        //     given: the arms were reverted, so nothing in this tree could check it.)
-        //
-        //   * the class-set equality below is the PUBLISHED TABLE: three named classes with
-        //     OeeSettingsStore alone in the third. That is what docs/owner-decisions.md item 5 prints, and
-        //     it reddens the moment any class appears or disappears — which is the protection that matters
-        //     day to day, and the one arm C3 demonstrated.
-        //
-        // Both are kept, and they are labelled apart, because a single red here otherwise reads as "the
-        // divergence is gone" when it usually means "the table moved".
         var observed = OperatorArtifacts.ToDictionary(
             a => a.Store,
             a => a.Measure(CorruptDirWith(a.Artifact)),
             StringComparer.Ordinal);
 
-        var classes = observed.Values.Distinct().OrderBy(p => p.ToString(), StringComparer.Ordinal).ToList();
+        var cannotTell = observed.Where(kv => kv.Value == Posture.UnreadableIsAbsent)
+            .Select(kv => kv.Key).OrderBy(s => s, StringComparer.Ordinal).ToList();
 
-        Assert.True(classes.Count > 1,
-            "Every store now behaves the same way when its artifact is present and unreadable. That is the " +
-            "outcome item 5 of docs/owner-decisions.md would CLOSE on — go and close it, with this run as " +
-            "the evidence.");
+        var decided = DecidedExceptionsToTheLaw.ToHashSet(StringComparer.Ordinal);
 
-        // The names, so a reader of a red run knows which classes exist without re-deriving them.
+        var undecided = cannotTell.Where(s => !decided.Contains(s)).ToList();
+        Assert.True(undecided.Count == 0,
+            "A store answers the SAME thing for \"there is nothing here\" and \"there is something here I " +
+            "could not read\", and nobody has decided that it may. Its caller cannot branch, so the arm " +
+            "that seeds defaults and persists them is selectable with the operator's bytes on disk — the " +
+            "mechanism that destroyed fleet-settings.json and site-link.json before Q-1 and oee-settings.json " +
+            "before V-1. Give the read a third outcome, or throw, or add it to DecidedExceptionsToTheLaw " +
+            "WITH an item in docs/owner-decisions.md:\n  " + string.Join("\n  ", undecided));
+
+        // The other direction. A named exception that has come onto a compliant posture is good news and it
+        // still reddens: docs/owner-decisions.md and docs/startup-failure-posture.md §3.6 both name it, and
+        // a decision that outlives its tree is exactly what those files exist to stop.
+        var stillExceptional = cannotTell.ToHashSet(StringComparer.Ordinal);
+        var measurable = OperatorArtifacts.Select(a => a.Store).ToHashSet(StringComparer.Ordinal);
+        var noLongerNeeded = DecidedExceptionsToTheLaw
+            .Where(s => measurable.Contains(s) && !stillExceptional.Contains(s))
+            .OrderBy(s => s, StringComparer.Ordinal).ToList();
+        Assert.True(noLongerNeeded.Count == 0,
+            "A store named as a DECIDED exception to the law no longer needs the exception — its read now " +
+            "distinguishes the two cases. Remove it here and close its item in docs/owner-decisions.md, " +
+            "with this run as the evidence:\n  " + string.Join("\n  ", noLongerNeeded));
+
+        // And the whole table, so a red run says which postures exist without re-deriving them.
         Assert.Equal(
             ExpectedPostures.Values.Distinct().OrderBy(p => p.ToString(), StringComparer.Ordinal).ToList(),
-            classes);
+            observed.Values.Distinct().OrderBy(p => p.ToString(), StringComparer.Ordinal).ToList());
+    }
+
+    /// <summary>🔴 <b>Task V-1 — the population this table measures, closed against the enumerations rather
+    /// than declared.</b>
+    ///
+    /// <para>S-1's posture table held nine stores. Nine was not wrong; it was the size of a set nobody had
+    /// stated a membership rule for, and the brief that commissioned this task carried it forward as if it
+    /// were the population. The rule, stated here so it can be argued with: <b>a store belongs in the posture
+    /// table when it owns a persisted artifact this product WRITES and later RE-READS.</b> That is the only
+    /// shape at which "unreadable was treated as absent" can cost anything, because it needs both a read to
+    /// misclassify and a write to act on the misclassification.</para>
+    ///
+    /// <para>Applied to the two mechanical enumerations, that rule leaves exactly three files out, and each
+    /// is named below with the reason rather than filtered away. Provenance is NOT the rule — S-1's table
+    /// excluded the product-generated stores and that exclusion was never stated, so nothing could refute
+    /// it; five of them turned out to be measurable and four of the five are compliant, which is information
+    /// the published table did not carry.</para></summary>
+    [Fact]
+    public void EveryArtifactOwningStore_HasARow_AndTheOnesOutsideAreNamed()
+    {
+        // Files in the two enumerations that own NO artifact this product writes and re-reads. Every one is
+        // a write-only or third-party-owned path, and each reason is checkable by opening the file.
+        var ownsNoReReadArtifact = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["src/St4i.EdgeCore/Transport/WalMaintenance.cs"] =
+                "a static trimmer over a queue file it does not own; the WAL's writer is the vendored SDK",
+            ["src/St4i.EdgeCore/Infrastructure/CredentialStore.cs"] =
+                "owns one; static, with no per-call directory seam — measured in its own fact below",
+            ["src/St4i.EngineApi/Auth/SqliteUserStore.cs"] =
+                "rows inside security.db, whose FILE and schema ladder SecurityDb owns and is measured for",
+        };
+
+        var storeOwned = ArtifactOwners.Values.Where(v => v != NoRemovalSiteOfItsOwn)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var enumeratedStoreFiles = ProvenanceOfSite
+            .Where(kv => kv.Value != Provenance.NotAStore)
+            .Select(kv => kv.Key)
+            .ToList();
+
+        var unaccounted = enumeratedStoreFiles
+            .Where(f => !storeOwned.Contains(f) && !ownsNoReReadArtifact.ContainsKey(f))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(unaccounted.Count == 0,
+            "A file the enumerations classify as a STORE has no posture row and no stated reason for not " +
+            "having one. That is how nine became a population nobody had checked. Either measure it in " +
+            "OperatorArtifacts or say here why it owns no artifact this product writes and re-reads:\n  " +
+            string.Join("\n  ", unaccounted));
+
+        // And the reverse, so the exclusion list cannot rot into fiction: nothing may be excused that the
+        // enumerations no longer contain, or that the posture table now measures anyway.
+        var invented = ownsNoReReadArtifact.Keys
+            .Where(f => !ProvenanceOfSite.ContainsKey(f) || storeOwned.Contains(f))
+            .OrderBy(f => f, StringComparer.Ordinal).ToList();
+        Assert.True(invented.Count == 0,
+            "the exclusion list excuses a file the enumerations no longer classify as a store, or one the " +
+            "posture table now measures:\n  " + string.Join("\n  ", invented));
+    }
+
+    /// <summary>The law's named exceptions, exposed so the one store that cannot join the parallel table
+    /// can still be checked against the same list.</summary>
+    internal static IReadOnlyList<string> DecidedExceptions => DecidedExceptionsToTheLaw;
+}
+
+/// <summary>🔴 <b>Task V-1 — <c>CredentialStore</c>, measured, and measured APART for a reason that is
+/// itself a finding.</b>
+///
+/// <para>S-1 recorded this store as outside the posture table because its bytes are not operator-typed
+/// configuration. That reason is arguable — one of the <c>CredentialStore.Save</c> call sites is the operator
+/// PASTING an <c>mk_</c> key — but it is not the reason it cannot join the table. The reason is mechanical:
+/// <c>Load</c> is <see langword="static"/> and resolves the process-wide <c>ST4I_CREDS_DIR</c> per call, with
+/// no directory parameter, so a row in a table whose every other member takes an explicit directory would
+/// have to flip a process-global variable to be measured. That is the same "a measurement that makes the run
+/// environment-dependent is not a measurement" ceiling <c>docs/startup-failure-posture.md</c> §2 states for
+/// its own instrument 2.</para>
+///
+/// <para>So it is measured here instead, with no environment mutation at all: the machine CODE is the
+/// discriminator inside whatever creds root this run already resolved, and a code nothing else uses gives
+/// this fact an artifact of its own. It is nevertheless in the serialized env-var collection, because
+/// another class in that collection repointing <c>ST4I_CREDS_DIR</c> mid-fact would make this measure two
+/// different directories.</para></summary>
+[Collection(St4i.EngineApi.Tests.Auth.SecurityEnvVarTests.CollectionName)]
+public sealed class CredentialStorePostureCensusTests
+{
+    [Fact]
+    public void TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt()
+    {
+        Assert.Contains("CredentialStore", OperatorDataRemovalCensusTests.DecidedExceptions);
+
+        var root = CredentialStore.ResolveRoot();
+        Directory.CreateDirectory(root);
+
+        var present = "V1-CENSUS-PRESENT-" + Guid.NewGuid().ToString("N");
+        var absent = "V1-CENSUS-ABSENT-" + Guid.NewGuid().ToString("N");
+        var blob = Path.Combine(root, present + ".bin");
+        File.WriteAllBytes(blob, "these bytes are not a DPAPI envelope this machine can unprotect"u8.ToArray());
+
+        // Positive control on the premise, in both directions: the bytes really are on disk where the store
+        // looks, and the control code really has nothing.
+        Assert.True(File.Exists(blob));
+        Assert.False(File.Exists(Path.Combine(root, absent + ".bin")));
+
+        // 🔴 The measurement. Two situations that must never be handled the same way, one answer.
+        Assert.Null(CredentialStore.Load(present));
+        Assert.Null(CredentialStore.Load(absent));
+
+        // And the half that makes it a loss rather than a classification: the caller's re-claim path calls
+        // Save, which overwrites. A blob sealed under a different DPAPI scope or on a different machine is
+        // READABLE AGAIN once the environment is repaired — while it still exists. This asserts the
+        // overwrite rather than describing it, and it is why the item on the owner's list is about the
+        // CONSEQUENCE and not about the null.
+        CredentialStore.Save(present, "mk_reclaimed_after_the_unreadable_blob_was_ignored");
+        Assert.Equal("mk_reclaimed_after_the_unreadable_blob_was_ignored", CredentialStore.Load(present));
     }
 }

@@ -316,6 +316,20 @@ public static class HistorianEndpoints
             // Rejected mutation (400) — per the WS-D-D4 ordering rule, no audit row is written here.
             return Results.BadRequest(new ApiErrorDto(ex.Message));
         }
+        catch (InvalidOperationException ex)
+        {
+            // 🔴 Task V-1 — `oee-settings.json` is present and this process could not read it, so
+            // `OeeSettingsStore.Set` refused rather than writing one machine's values over a table it
+            // never managed to load. 409 rather than 400: the request is well-formed and the state of the
+            // resource is what makes it impossible, and 409's remedy is on the server rather than in the
+            // payload. No audit row, by the same WS-D-D4 ordering rule as the 400 above — nothing changed.
+            //
+            // This is the surface the loss is named on. Deliberately NOT added to the GET's response shape:
+            // `OeeSettingsDto` is published and widening it is the class of change the owner reserved in
+            // decisions 3 and 4, which is the same line Q-1 drew at `GET /v1/settings`. The store also
+            // reports once, at Error, through the `logError` callback Program.cs wires.
+            return Results.Json(new ApiErrorDto(ex.Message), statusCode: StatusCodes.Status409Conflict);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

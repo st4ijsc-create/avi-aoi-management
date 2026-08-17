@@ -280,6 +280,40 @@ public sealed class HistorianEndpointsOeeTests
         Assert.Equal(1.0, getDto.PlannedProductionRatio);
     }
 
+    /// <summary>🔴 <b>Task V-1 — the surface the loss is named on.</b> This store's only mutator rewrites the
+    /// whole table, so with <c>oee-settings.json</c> present and unparseable a PUT would replace every other
+    /// machine's entry with nothing. The write is REFUSED and the operator is told at the moment they would
+    /// have destroyed the file. Run at <c>f18f5c29</c> this returns <c>200</c> and the file on disk holds
+    /// one entry where the operator's bytes were.</summary>
+    [Fact]
+    public async Task OeeSettings_Put_WithAnUnreadableSettingsFile_Returns409_AndTheOperatorsBytesSurvive()
+    {
+        var dir = TempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+        var operatorBytes = "[ { \"machineCode\": \"SCRW-01\", idealCycleSecondsOverride: 42 ]";
+        File.WriteAllText(path, operatorBytes);
+
+        var settingsStore = new OeeSettingsStore(dir);
+        var fleetHost = NewFleetHost();
+
+        var result = await HistorianEndpoints.PutOeeSettingsAsync(
+            "SCRW-01", new OeeSettingsUpdateRequest(IdealCycleSecondsOverride: 0.5, PlannedProductionRatio: 0.75),
+            settingsStore, fleetHost);
+
+        var conflict = Assert.IsType<JsonHttpResult<ApiErrorDto>>(result);
+        Assert.Equal(StatusCodes.Status409Conflict, conflict.StatusCode);
+        Assert.Contains("oee-settings.json", conflict.Value!.Error, StringComparison.Ordinal);
+
+        Assert.Equal(operatorBytes, File.ReadAllText(path));
+
+        // GET keeps answering, truthfully, on what this process actually holds — refusing the write is a
+        // report, not an outage. The response SHAPE is deliberately unchanged: widening a published DTO is
+        // the class of change reserved to the owner, and the same line Q-1 drew at GET /v1/settings.
+        var getDto = ExpectOk<OeeSettingsDto>(HistorianEndpoints.GetOeeSettings("SCRW-01", settingsStore, fleetHost));
+        Assert.False(getDto.IsOverridden);
+        Assert.Equal(1.0, getDto.PlannedProductionRatio);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // GET /v1/historian/oee/fleet
     // ─────────────────────────────────────────────────────────────────────

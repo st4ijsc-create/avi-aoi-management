@@ -16,14 +16,14 @@ văn: *"Không mục nào trong đây đã bị sửa. Tất cả đều là hà
 Nó là một **khẳng định phổ quát trên chính danh sách bên dưới**, và mỗi lần một mục
 được thi hành thì không có gì bắt nó phải được suy lại — đúng loài khuyết tật file này
 lập ra để chấm dứt, nằm ngay trong lời mở đầu của nó. **Trạng thái nằm ở bảng phán
-quyết và ở từng mục, không ở đây:** mục 1 (Q-1), mục 6 (T-1) và mục 7 (U-1) đã thi
-hành; những mục còn lại vẫn là hành vi đang chạy hôm nay.
+quyết và ở từng mục, không ở đây, và câu này KHÔNG liệt kê lại các mục ấy nữa.**
 
-> 🔴 **U-1, 2026-08-17 — và câu ngay trên vừa được sửa LẦN THỨ HAI vì đúng lý do nó
-> được viết ra.** T-1 thay một khẳng định phổ quát bằng một **danh sách**, đúng cách;
-> nhưng một danh sách các mục đã thi hành **cũng đi cũ** mỗi lần một mục nữa được thi
-> hành, và U-1 làm nó cũ ngay trong vòng kế tiếp. Nó được cập nhật chứ không bị bỏ, vì
-> **bảng phán quyết mới là nguồn sự thật** và câu này chỉ là con trỏ tới nó.
+> 🔴 **V-1, 2026-08-17 — câu trên vừa được sửa LẦN THỨ BA, và lần này cơ chế bị bỏ chứ
+> không phải nội dung được cập nhật.** T-1 thay một khẳng định phổ quát bằng một danh
+> sách; U-1 làm danh sách ấy cũ ngay vòng kế tiếp và cập nhật nó; V-1 làm nó cũ lần
+> nữa. **Một bản sao thứ hai của bảng phán quyết sẽ đi cũ mỗi vòng, và đó là điều duy
+> nhất kiểm được về nó** — nên bản sao bị bỏ, và câu này chỉ còn là con trỏ. Đúng luật
+> "đừng giữ một bản sao" mà `OperatorDataRemovalCensusTests` đã mua bằng chính lỗi này.
 
 ---
 
@@ -41,10 +41,20 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 2 | `Warn` tốt cho OEE | ✅ **GIỮ HÀNH VI, XUẤT BẢN NÓ** — đổi là viết lại lịch sử |
 | 3 | bất đối xứng Sparkplug | ✅ **GIỮ DÂY, ĐÃ GHI RÕ** — đổi payload là việc của bên đăng ký |
 | 4 | hình dạng hàng `Samples` | ⚖️ **ĐO TRƯỚC, RỒI CHỌN** — SDK đã xuất bản là ứng viên chuẩn |
-| 5 | ~~ba hình dạng xoá file~~ → **`oee-settings.json`** | 🔴 **CHỜ ANH** — đã đo (S-1): ba tư thế, một cái mất dữ liệu im lặng |
+| 5 | ~~ba hình dạng xoá file~~ → **`oee-settings.json`** | 🔨 **GOM VỀ MỘT LUẬT** (2026-08-17) — đã thi hành, V-1 |
 | 6 | log hoãn của một lần cài đặt hỏng | 🔨 **PHÁT RA TRÊN ĐƯỜNG NÉM LỖI** (2026-08-17) — đã thi hành, T-1 |
 | 7 | nửa sau của S4 | 🔨 **DỪNG + GIỮ COMMIT + BÁO TRÊN `/v1/health`** (2026-08-17) — đã thi hành, U-1 |
+| 8 | `ReapplyCurrentAsync` ghi đè `site-link.json` | 🔴 **CHỜ ANH** — đã đo (Q-1 vòng sửa); **không đổi bởi V-1** |
+| 9 | sàn môi trường trên nhánh *không đọc được* | 🔴 **CHỜ ANH** — đã đo (Q-1); **không đổi bởi V-1** |
+| 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔴 **CHỜ ANH** — đã đo (V-1); phần dư của mục 5 |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
+
+> 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
+> khi câu mở đầu được sửa để trỏ vào đây làm nguồn sự thật.** Hai hàng ấy được thêm vào
+> **mà không quyết gì**: phán quyết của chúng vẫn đúng nguyên trạng thái mà mục 8 và mục
+> 9 đang ghi, và V-1 bị cấm đụng vào cả hai. Cái được sửa là **bảng không liệt kê đủ tập
+> mà nó tự nhận là tóm tắt** — đúng loài mà file này lập ra để chấm dứt, ở trong chính
+> bảng tóm tắt của nó.
 
 ---
 
@@ -354,6 +364,14 @@ từ Q-1. **Một handle deny-share, một ACL Windows và một ổ đĩa đầ
 huống này** — `docs/startup-failure-posture.md` §3.1a đã trả giá hai lần cho việc
 gộp chúng làm một.
 
+⚠️ **BẢNG NGAY DƯỚI ĐÂY LÀ HỒ SƠ CỦA CÂY MÃ TẠI `fac26188`, VÀ HAI Ô CỦA NÓ KHÔNG CÒN
+ĐÚNG — sửa 2026-08-17 (V-1).** `OeeSettingsStore` **không còn** ở dòng thứ ba (nó có
+phép đọc ba kết quả), và **"chín" không phải kích thước của quần thể** — nó là kích
+thước của tập S-1 chọn đo, và tập ấy không có luật thành viên nào để mà bác. Bảng được
+giữ nguyên văn làm hồ sơ, đúng như §3.1a của `startup-failure-posture.md` giữ các phép
+đo tiền-Q-1. **Bảng đang sống nằm ở `docs/startup-failure-posture.md` §3.6**, và bản
+ghim máy đọc được là `OperatorDataRemovalCensusTests.ExpectedPostures`.
+
 **Đo được — chín store, dựng thật, trên một artefact hỏng trong thư mục tạm của
 chính lần chạy test (không đụng gì dưới `%ProgramData%\ST4I\`). BA tư thế:**
 
@@ -459,6 +477,17 @@ C3 không làm**. Bốn arm, hai bờ, không arm nào còn lại trong cây.
    > lại được**. Nên **một lỗi môi trường KHÔI PHỤC ĐƯỢC bị biến thành mất mát không
    > hoàn nguyên**, và chính câu đó là thứ cần ghi. Phát hiện còn nguyên; vị ngữ của
    > nó thì không.
+   >
+   > 🔴 **V-1, 2026-08-17 — cả hai nay ĐO ĐƯỢC, và `CredentialStore` rời gạch đầu dòng
+   > này thành MỤC 10.** `DeviceIdentityStore` giữ nguyên quyết định và giữ nguyên chỗ
+   > (phần dư 2 của mục 1), nhưng nó nay là một **hàng trong bảng đã ghim** thay vì một
+   > lời khai báo — nên ngoại lệ không thể lặng lẽ trở thành luật, và nếu ai đó sửa nó
+   > thì phép ghim đỏ lên và bắt sửa quyết định. Lý do `CredentialStore` phải đo **riêng**
+   > là **cơ học chứ không phải một phán đoán**: `Load` là `static` và giải
+   > `ST4I_CREDS_DIR` toàn tiến trình ở mỗi lời gọi, không có tham số thư mục, nên nó
+   > không vào được một bảng song song mà mọi thành viên khác nhận thư mục tường minh.
+   > Lý do S-1 nêu (xuất xứ của byte) là một lý do KHÁC, và nó cãi được: một trong các
+   > chỗ gọi `CredentialStore.Save` là vận hành viên **dán** một khoá `mk_`.
 2. **Tư thế "ném" chưa được đo ở chỗ nó tiếp đất.** Phép đo dừng ở **store**. Việc
    một `SqliteException` từ `ConnectorConfigStore` có kết thúc tiến trình, hay bị
    bắt ở đâu đó rồi tiếp tục bằng một store rỗng, là câu hỏi của composition root
@@ -494,12 +523,89 @@ C3 không làm**. Bốn arm, hai bờ, không arm nào còn lại trong cây.
    > HÀNH**, thứ không phụ thuộc chút nào vào tính đầy đủ của hai bờ kia. Một đường xoá
    > lọt lưới sẽ làm **phép liệt kê dài ra**; nó **không thể làm các tư thế thôi phân
    > kỳ**.
+   >
+   > ⚠️ **Câu trên trích một câu trả lời nay đã cũ — sửa 2026-08-17 (V-1).** Lập luận
+   > vẫn đứng và nó là lý do câu này được giữ: một đường xoá lọt lưới làm phép liệt kê
+   > dài ra chứ không làm bờ THI HÀNH sai. Cái đổi là **kết quả** bờ ấy trả về, nay
+   > không còn ba tư thế và `OeeSettingsStore` không còn là cái phân kỳ. Xem
+   > `docs/startup-failure-posture.md` §3.6.
 4. **SQL không bị bác bỏ ở đâu cả** — bờ IL không nhìn thấy một chuỗi. Bảy file có
    câu lệnh SQL xoá/thay hàng đã được liệt kê và ghim, nhưng không gì ở đây chứng
    minh không có câu lệnh nào được ráp lúc chạy từ những mảnh mà không mẫu nào khớp.
 5. **Xoá bởi thứ không phải mã này** nằm ngoài toàn bộ: `packaging/remove-data.ps1`,
    trình cài đặt, sidecar `-wal`/`-shm` của SQLite, key ring của DataProtection, và
    SDK vendored dưới `examples/` — thứ **thật sự ghi** các file WAL `.jsonl`.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-17 — GOM VỀ **MỘT LUẬT**, KHÔNG PHẢI VỀ MỘT TƯ THẾ
+> Quyết bởi chủ sở hữu, ba chữ: *gom về một cách*. **"Một cách" hoá ra là một LUẬT, và
+> luật ấy không phải thứ mới** — nó là phép thử §1 của `docs/startup-failure-posture.md`
+> hỏi sớm hơn một câu lệnh:
+>
+> > **Một phép đọc phải phân biệt được *ở đây không có gì* với *ở đây có thứ tôi không
+> > dùng được*. Chỉ cái thứ nhất cho phép người gọi tự đặt ra một giá trị rồi lưu nó.**
+>
+> **Suy ra như sau, và nó KHÔNG phải một luật thứ hai.** §1 chỉ có hai kết cục, cả hai
+> đều **to tiếng**: **S** (tiến trình kết thúc) và **U** (host lên **và báo**). Một phép
+> đọc trả cùng một giá trị cho hai ca ấy không tới được cái nào: không ném nên không
+> phải **S**; không phân biệt nên không có gì để báo nên không phải **U**. Nó tới cái
+> thứ ba — host lên và im lặng — tức đúng định nghĩa của thứ §1 lập ra để cấm.
+>
+> **Nên luật này suy ra tư thế KHÁC NHAU ở các store khác nhau, và đó vẫn là một cách.**
+> Store nào **ném** thì người gọi nhận **S**; store nào có kết quả thứ ba thì người gọi
+> lên được và báo, tức **U**. Chỗ nào là chỗ nào vẫn do đúng phép thử §1 quyết, không
+> đổi. Thứ bị bỏ đi là **cái thứ ba, vốn không phải một tư thế mà là sự vắng mặt của
+> một tư thế**.
+>
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ V-1 (`.superpowers/sdd/one-unreadable-posture/`)
+> **Một store đổi:** `OeeSettingsStore` nay có đúng phép đọc ba kết quả của Q-1
+> (`Loaded`/`Absent`/`Unreadable`, **không có phép kiểm tồn tại**, phép mở chính là phép
+> phân loại); `Set` — mutator duy nhất, một chỗ gọi sản phẩm duy nhất — **TỪ CHỐI** khi
+> file không đọc được, nêu tên file và nói rõ file **không bị ghi đè**;
+> `PUT /v1/historian/oee/settings` trả **409** mang đúng câu ấy; và store báo **một lần**
+> ở mức `Error` qua callback `Program.cs` nối vào. Hình dạng phản hồi `GET` **không đổi**
+> — nới một DTO đã xuất bản là loại thay đổi anh giữ lại cho mình ở mục 3 và 4, đúng
+> ranh giới Q-1 đã vạch ở `GET /v1/settings`.
+>
+> **Phép liệt kê lại, và "chín" là một cận dưới đúng như brief đoán — nhưng lý do thì
+> khác.** Bảng của S-1 không có **luật thành viên** nào, nên không gì bác được nó. Luật
+> được phát biểu ra: *một store vào bảng khi nó sở hữu một artefact mà sản phẩm này GHI
+> rồi ĐỌC LẠI*. Áp luật ấy vào hai phép liệt kê máy móc có sẵn thì bảng dài thêm **năm**
+> store mà S-1 chưa đo (`AlarmStore`, `AssetRegistryStore`, `BridgeSpool`,
+> `SqliteHistorianStore`, `DeviceIdentityStore`), cộng `CredentialStore` đo riêng. Bốn
+> trong năm **ném** — tức tuân thủ, và đó là thông tin bảng đã xuất bản không mang.
+> Danh sách đầy đủ kèm lý do từng store: `docs/startup-failure-posture.md` §3.6.
+>
+> **Cặp đối chứng đã chạy hai phía:** cùng một file hỏng dựng bằng tay — ở `f18f5c29`
+> `Set` **thành công** và các byte của vận hành viên bị thay bằng một entry; sau bản sửa
+> `Set` ném, file **còn nguyên từng byte**, và trong thư mục không có gì khác.
+>
+> **Hai phát hiện còn lại của S-1, quyết TỪNG CÁI:**
+> - `ProductConfigStore.Load` ghi lại `products.json` khi chỉ thiếu `recipes.json` —
+>   🔨 **SỬA**, hẹp: chỉ ghi file nào thật sự được gieo mầm. Đo được: một `products.json`
+>   viết tay bị ghi lại, mất định dạng và mất mọi trường `ProductModel` không khai báo,
+>   trên một lần khởi động **không có gì hỏng và không ai yêu cầu đổi**. Các mutator vẫn
+>   ghi cả hai — ở đó người gọi đã yêu cầu đổi.
+> - `ConnectorConfigStore` migration v4 chạy `DROP TABLE connector_configs` viết cứng —
+>   ✅ **KHÔNG ĐỔI**, và lý do là một **assertion** chứ không phải một phép đọc: nó là
+>   nấc 4 của thang `PRAGMA user_version`, chạy trong **cùng một transaction** với cả
+>   thang, theo đúng thứ tự tạo/chép/xoá/đổi-tên mà tài liệu SQLite quy định để đổi
+>   PRIMARY KEY, và `SELECT` liệt kê từng cột. Việc các hàng sống sót được ghim bởi
+>   `ConnectorConfigStoreTests.MigrationV4_AGenuineVersion3Database_KeepsEveryRow_EveryField_AndGivesEachOneItsKindAsItsInstanceId`,
+>   thứ dựng một database v3 **thật** bằng SQL thô.
+>
+> **Một khẳng định của chính S-1 bị V-1 bác.** Assertion tiêu đề của S-1 là
+> `classes.Count > 1` — *các tư thế phân kỳ* — kèm câu "ai đưa mọi store về một tư thế
+> sẽ làm nó đỏ, và lúc đó mục này đóng". **Đó là cái chốt sai cho câu trả lời:** dưới
+> luật trên, một cây mà **mọi** store đều ném là **tuân thủ hoàn toàn** và chốt ấy sẽ
+> **đỏ**; một cây còn một store im lặng gộp hai ca là **vi phạm** và chốt ấy **xanh**.
+> Nó được thay bằng `NoStoreAnswersAbsentForAnArtifactThatIsPresent_ExceptTheOnesNamedAndDecided`,
+> đỏ theo **cả hai chiều**: một store rơi vào tư thế bị cấm, **và** một ngoại lệ đã được
+> nêu tên rời khỏi nó trong khi quyết định miễn trừ nó vẫn còn đứng.
+>
+> **Phần dư CHUYỂN CHỖ chứ không biến mất:** `CredentialStore` thành **mục 10** của file
+> này (nó là một quyết định, và một quyết định không được sống trong một báo cáo);
+> `DeviceIdentityStore` vẫn ở phần dư 2 của mục 1 — **không đổi**, nhưng nay **đo được**
+> trong bảng đã ghim thay vì chỉ được khai báo.
 
 ### 6. Log hoãn lại của một lần cài đặt THẤT BẠI (J-2, phần dư 3)
 **Cơ chế, nguyên văn từ `99ab7b61`:** *"Nó chỉ còn đứng trên tính không tách rời:
@@ -781,6 +887,46 @@ file hỏng sẽ chạy trên giá trị mặc định cho tới khi có ngườ
 hợp đồng mà `PUT /v1/settings` cũng dùng chung.
 
 **Bằng chứng:** `docs/startup-failure-posture.md` §3.1a-now.
+
+---
+
+## 10. `CredentialStore.Load` biến một lỗi môi trường KHÔI PHỤC ĐƯỢC thành mất mát không hoàn nguyên
+
+**Mục này sinh ra từ phần dư 1 của mục 5, và nó ở đây vì nó là một QUYẾT ĐỊNH.**
+Trước V-1 nó sống trong một gạch đầu dòng của một mục khác; luật của file này là một
+quyết định phải có mục của nó.
+
+**Đo được (V-1):** `CredentialStore.Load` trả **`null`** cho một blob **có mặt trên
+đĩa mà tiến trình này không giải mã được** — sai scope/entropy DPAPI (một `.bin` thời
+tiền-FF-2 mã theo `CurrentUser`), hoặc chép từ máy khác, hoặc hỏng — và trả **đúng
+`null` ấy** khi **không có file nào cả**. Người gọi không có gì để rẽ nhánh.
+
+**Cái chưa từng được ghi ở đâu là HẬU QUẢ.** Doc comment của chính `Load` trình bày
+`null` như một kết quả **lành** — *"để đường credential-rỗng bình thường của caller
+chạy thay vì một lần sập không bắt được"* — nhưng đường ấy là đường **claim lại**, và
+nó gọi `Save`, thứ **ghi đè**. Một blob sai scope/sai máy **đọc lại được sau khi sửa
+môi trường — nếu nó còn tồn tại**. Nên một lỗi sửa được bị biến thành mất mát không
+hoàn nguyên, im lặng.
+
+**Ở đâu:** `src/St4i.EdgeCore/Infrastructure/CredentialStore.cs` (`Load`, khối
+`catch (CryptographicException)`; `Save` → `File.WriteAllBytes`). Chỗ đọc:
+`src/St4i.EdgeCore/Fleet/FleetCore.cs` và `src/St4i.EdgeService/EdgeWorker.cs`.
+
+**Vì sao KHÔNG sửa trong V-1:** cách sửa đúng là **giữ blob cũ dưới tên khác**, tức
+**DI CHUYỂN dữ liệu vận hành viên trong sản phẩm** — thứ brief của V-1 bắt buộc phải
+**dừng và báo** chứ không tự làm. Cách sửa "cho nó ném" thì **tệ hơn**: nó biến một
+máy có credential hỏng thành một máy không khởi động được, mà chính đường claim-lại là
+đường phục hồi.
+
+**Nếu không quyết định:** giữ nguyên. Lần claim lại kế tiếp ghi đè blob cũ, và
+**không ai biết** rằng thứ vừa mất chỉ cần sửa môi trường là đọc lại được.
+
+**Bằng chứng — chạy lại được:**
+`tests/St4i.EngineApi.Tests/OperatorDataRemovalCensusTests.cs`,
+`CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt`
+— nó ghim **cả hai nửa**: hai ca cho cùng một `null`, và `Save` sau đó đè lên. Nó
+**ghim một khuyết tật đang sống làm đường cơ sở và KHÔNG sửa**, đúng như S-1 đã làm cho
+mục 5. Nếu anh quyết SỬA, khẳng định ấy đảo chiều và chỗ đảo chính là diff.
 
 ---
 
