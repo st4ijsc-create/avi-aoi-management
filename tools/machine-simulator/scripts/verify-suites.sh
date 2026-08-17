@@ -1182,7 +1182,43 @@ EXPECT_CONFORMANCE=23
 # four src files (OeeSettingsStore.cs, ProductConfigStore.cs, HistorianEndpoints.cs, Program.cs) and three
 # test files; a movement in any of the other three totals would mean it reached somewhere it had no
 # business reaching. EXPECT_CONFORMANCE in particular stays 23: V-1 adds no driver and no connector kind.
-EXPECT_EDGECORE=1118
+#
+# 🔴 V-1 FIX ROUND 1 (review I-3) raises EXPECT_EDGECORE 1118 -> 1121 (+3) and EXPECT_ENGINEAPI 1368 -> 1369
+# (+1). Grand total 2720 -> 2724. This is the one part of the fix round that is not documentation, and the
+# reason it is not: V-1 round 1 gated the refusal on a classification the CONSTRUCTOR cached, so what
+# shipped was "the file was unreadable when this store was built" and NOT "...is unreadable now". A host up
+# on a good file, an operator hand-editing that file into invalid JSON — the repair the refusal message
+# itself asks for — and one PUT afterwards still overwrote the operator's bytes silently. Same harm, same
+# store, same mutator, one moment later. NO INSTRUMENT IN THE TREE COULD SEE IT: Reach C only ever
+# constructs a store over an ALREADY-corrupt directory, so the census is blind to corruption that arrives
+# after construction. These four tests are that instrument.
+#
+#   tests/St4i.EdgeCore.Tests/Historian/OeeSettingsStoreTests.cs                               +3
+#       Set_WhenTheFileIsCorruptedAfterConstruction_Refuses_AndLeavesTheOperatorsBytes — the arm that was
+#           open, with the premise asserted (the store came up Loaded, so construction cannot explain the
+#           refusal) and the bytes compared byte-for-byte with no temp file beside them.
+#       Set_WhenAnUnreadableFileIsRepairedAfterConstruction_StillRefuses_UntilReload — the hole re-reading
+#           would have OPENED on its own: an unreadable load leaves the table EMPTY, so a repaired file
+#           reads Loaded while writing that table would discard the repair. Refusal holds, Reload is the
+#           way out, and the write then lands ON TOP of the repaired content.
+#       Read_RecordsWhatItAnswered_SoStatusMeansTheMostRecentRead — review M-2: `Status`'s doc sentence was
+#           false on the member the refusal hangs on.
+#
+#   tests/St4i.EngineApi.Tests/HistorianEndpointsOeeTests.cs                                    +1
+#       OeeSettings_Put_AfterTheFileIsCorruptedBeneathALiveStore_Returns409_AndDoesNotOverwrite — the same
+#       window at the operator's own surface, through the real handler.
+#
+# 🔴 THE CONTROL PAIR FOR THIS ROUND, RUN ON BOTH SIDES. Base is 5dbe09a6 (V-1 round 1, already green at
+# 2720), so the arms differ only in the fix. Same file on both, naming nothing the fix round introduced:
+#   BASE 5dbe09a6 — the post-construction corruption is OVERWRITTEN: Set returns normally and the
+#       operator's hand-edited bytes are replaced by the in-memory table.
+#   HEAD — Set throws OeeSettingsUnreadableException and the bytes are byte-for-byte unchanged.
+# Retained, with both transcripts, under .superpowers/sdd/one-unreadable-posture/evidence/ — the retention
+# rule adopted last task, and the gap this task's own review named (a `git hash-object` of a blob that was
+# never written to the object store proves nothing).
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0.
+EXPECT_EDGECORE=1121
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -2607,7 +2643,14 @@ EXPECT_EDGESERVICE=51
 # on this file HIDES the diagnostics inside it.
 
 # 🔴 TASK V-1 raises EXPECT_ENGINEAPI 1364 -> 1368 (+4), counted from the runner. Two files; nothing is
-# rewritten or deleted, and ONE test is REPLACED rather than added (so the census file is +3, not +4).
+# rewritten or deleted, and TWO tests are REPLACED rather than added (so the census file is +3, not +5).
+# 🔴 This said "ONE" until V-1's fix round (review M-4). The arithmetic was right and the sentence
+# undercounted: ThePosturesAtTheFixedSituation_AreNotAllTheSame became
+# NoStoreAnswersAbsentForAnArtifactThatIsPresent_ExceptTheOnesNamedAndDecided, AND
+# TheOneStoreThatCannotTellUnreadableFromAbsent_ReplacesTheOperatorsBytes became
+# TheStoreThatCouldNotTellUnreadableFromAbsent_NowRefusesTheWrite_AndTheOperatorsBytesSurvive — the
+# second being S-1's live-defect baseline with its assertions INVERTED, which is the more interesting
+# of the two and was the one the sentence dropped.
 #
 #   tests/St4i.EngineApi.Tests/OperatorDataRemovalCensusTests.cs                               +3
 #       ThePosturesAtTheFixedSituation_AreNotAllTheSame is REPLACED by
@@ -2650,7 +2693,10 @@ EXPECT_EDGESERVICE=51
 # GenerateDocumentationFile, so the `///` blocks V-1 adds are not compiled either way — tag balance on
 # every edited block was checked directly rather than inferred from that, because an unbalanced block
 # HIDES the diagnostics inside it.
-EXPECT_ENGINEAPI=1368
+#
+# 🔴 V-1 FIX ROUND 1 raises this 1368 -> 1369 (+1) — the endpoint arm of review I-3. Full justification
+# beside EXPECT_EDGECORE above, where the EdgeCore half of the same fix is accounted for.
+EXPECT_ENGINEAPI=1369
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

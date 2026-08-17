@@ -223,6 +223,28 @@ checked, so a row satisfying only the first half was recorded as compliant and s
 rounds of this file. That is a stronger finding than "the behaviour had no symbol": it **had** one, and the
 symbol was wrong. Row 18 is **U ✓** today because Q-1 gave it the `Error` line, not because its posture
 moved.
+
+🔴 **AND THE RESIDUAL, WHICH BELONGS HERE RATHER THAN IN A REPORT (fix round, review I-5).** Declaring **Q**
+invites re-checking the second conjunct of **every** row marked **U**, and **task V-1 did not do that.** It
+checked exactly one — row 18 — because row 18 is the only **U** row whose *reporting* half anything ever
+measured (§3.1b's own comparison table). **Every other U row's "and the failure is reported" half is
+unverified today**, and the number of them is deliberately not given here: counting them would be a scalar
+over a set nobody has swept, which is the defect this file exists to end.
+
+**Why declaring rather than sweeping was the decision.** §2 says most of this set is a **read**, and a
+read-based sweep of *"is this failure actually reported?"* would manufacture precisely the population claim
+this file was written to stop — an unfalsifiable assertion about forty rows, produced by the instrument that
+has already been wrong twice in the same direction. **What would close it** is an instrument, not a
+re-reading: something that boots a host into each failure and observes the log, which is the shape Q-1's two
+composition-root witnesses already have for rows 36 and 18 and nothing has for the rest.
+
+🔴 **`Q` is declared and no row is marked with it, and that is deliberate (review M-6).** The five rows that
+carry this posture already spell it **silent**, and §3.4 cites them under that word; re-spelling the posture
+column would edit rows of a published census in a task that changed no row of it, and *"none of those is
+fixed"* has to keep meaning what it meant. So one posture has two published spellings today. **What would
+end it** is a task authorised to rewrite the posture column, which would mark rows 7, 10, 15, 19 and 39 as
+**Q** and reduce `silent` to prose.
+
 🔴 **One row has now been flipped on purpose** — row 36, by task Q-1, under the owner's decision 1; the
 change to what an operator observes is the point of it rather than a side effect. The legend still holds of
 every remaining **✗**: none of those is fixed. See §3.1a-now.
@@ -706,6 +728,31 @@ rule, so nothing could refute it — and applying a rule moved the membership. P
 membership rule; five product-generated stores were outside S-1's table for a reason never written down, and
 four of the five turn out to be compliant, which is information the published table did not carry.
 
+🔴 **THE INSTRUMENT IS NARROWER THAN THE RULE, AND ONE MEMBER OF THE TABLE IS THE PROOF (fix round, review
+I-4).** The rule quantifies over *stores that own a persisted artefact*; the instrument sweeps only files
+the two enumerations classify, and both enumerations look for **removal-capable** shapes. `SecurityDb` owns
+`security.db` and its schema ladder, performs **no removal of its own**, and therefore appears in **neither**
+enumeration — it is a row in the posture table **because a human noticed**, which the census's own comment
+says in as many words. So a second `SecurityDb`-shaped store — one that owns an artefact and writes it with
+a shape outside the nine — **would be invisible to the rule that replaced "nine".** The membership set is
+complete **over the enumerations**, not **under the rule**, and the difference is exactly the size of that
+blind spot.
+
+**And the partition, stated as the code partitions it rather than as prose summarised it.** The first
+statement of this — *"14 + 1 + 3"* — was wrong twice: it counted `CredentialStore` both as one of the three
+exclusions and as the store measured apart, and it silently absorbed `SecurityDb`. What the assertions
+actually partition:
+
+> **23 enumerated files = 7 `NotAStore` + 16 store-classified**, and **16 = 13 with a posture row + 3
+> excluded with a stated reason**. The posture table has **14** rows: those 13 **plus `SecurityDb`**, which
+> is in neither enumeration. `CredentialStore` is one of the 3, and it is the one measured apart — the same
+> file, not two.
+
+Every number in that block is asserted by `EveryArtifactOwningStore_HasARow_AndTheOnesOutsideAreNamed` and
+`EveryEnumeratedRemovalSite_IsClassified_AndEveryMeasuredStoreIsAccountedFor`; it is written out here
+because the sentence it replaces was a scalar summarising a set the code partitions differently, which is
+the fifth withdrawal on this branch for that shape.
+
 #### The set, measured
 
 The instrument is S-1's, extended: `OperatorDataRemovalCensusTests`, Reach C, one corrupt artefact per store
@@ -726,6 +773,28 @@ Q-1's two, `Set` refuses while the file is unreadable, `PUT /v1/historian/oee/se
 naming the file, and the store reports once at `Error` through a callback `Program.cs` wires.
 **It is not a row in the table above in §3.1** — this store is resolved lazily from DI and nothing constructs
 it before the host serves, so it is not a startup-path decision and never was.
+
+🔴 **WHEN the refusal is decided, because V-1's FIRST ROUND closed the wrong moment and said nothing about
+it (fix round, review I-3).** Round one gated the refusal on a classification the **constructor** had
+cached, so what shipped was *"the file was unreadable when this store was built"*. A host running on a good
+file, an operator hand-editing that file into invalid JSON — the very repair the refusal message asks for —
+and one `PUT` afterwards still overwrote the operator's bytes **silently**: no throw, no 409, no log line.
+Same harm, same store, same mutator, one moment later. **No instrument in the tree could see it**, and the
+reason is worth keeping: Reach C only ever constructs a store over an *already-corrupt* directory, so the
+whole census is blind to corruption that arrives after construction.
+
+`Set` now takes **its own read, under the same lock, immediately before it writes**, so the guarantee is
+about the file at the moment of the write. Re-reading alone would have opened a second hole and the fix
+carries the guard for it: a file that was unreadable at load and has since been **repaired** reads `Loaded`
+while the in-memory table is still **empty**, so writing it would discard the repair — that arm keeps
+refusing, and `Reload` is the way out.
+
+**What it still does not reach, named rather than left to be found.** The read and the write are one
+critical section in this process, but the store holds no lock on the file: another process replacing the
+file with *other valid* content between them loses that content to the whole-file rewrite. That is a **lost
+update**, not this law's situation — the bytes were readable — and the store's single-writer contract is
+pinned elsewhere. Named because the first round's ceiling being unstated is the whole reason this paragraph
+exists.
 
 #### The two exceptions, and what each one costs
 

@@ -1452,8 +1452,15 @@ public sealed class OperatorDataRemovalCensusTests
     /// <summary>🔴 <b>The exceptions to the law, by name.</b> A store may sit on
     /// <see cref="Posture.UnreadableIsAbsent"/> only if it is here, and being here means somebody wrote down
     /// a decision. <c>CredentialStore</c> is a member and is measured apart — see
-    /// <see cref="TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndIsMeasuredApartBecauseItHasNoPerCallSeam"/>
-    /// for why it cannot join the table above.</summary>
+    /// <see cref="CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt"/>
+    /// for why it cannot join the table above.
+    ///
+    /// <para>🔴 <b>That cross-reference named a member that does not exist, until V-1's fix round (review
+    /// I-6), and nothing in this repository could have caught it</b> — these projects do not set
+    /// <c>GenerateDocumentationFile</c>, so there is no <c>CS1574</c> and the gate is green over a dangling
+    /// <c>cref</c>. This file's own neighbour paid for the same thing once already
+    /// (<c>docs/startup-failure-posture.md</c> §3.1a-now, fix round 2, review N5: <i>"a cross-reference that
+    /// did not resolve. It was made true rather than deleted"</i>). Same disposition here.</para></summary>
     private static readonly string[] DecidedExceptionsToTheLaw =
     [
         "CredentialStore",
@@ -1518,9 +1525,22 @@ public sealed class OperatorDataRemovalCensusTests
     /// <para>🔴 <b>THIS ASSERTION IS INVERTED, AND THE INVERSION IS TASK V-1's DIFF.</b> S-1 was forbidden
     /// to fix what it measured, so it pinned the live defect as a baseline and wrote that a FIX ruling would
     /// invert it. The owner ruled <i>consolidate to one way</i>; the marker now SURVIVES and the write is
-    /// REFUSED. Run at <c>f18f5c29</c> this same test fails on its first surviving-marker assertion, with
-    /// the operator's bytes replaced by <c>SOME-OTHER-MACHINE</c>, which is the other half of the control
-    /// pair.</para>
+    /// REFUSED.</para>
+    ///
+    /// <para>⚠️ <b>A sentence here claimed a run that CANNOT have happened — withdrawn in V-1's fix round,
+    /// kept visible rather than deleted (review I-1).</b> It read <i>"Run at <c>f18f5c29</c> this same test
+    /// fails on its first surviving-marker assertion"</i>. This file names <c>OeeSettingsReadStatus</c> and
+    /// <c>OeeSettingsStore.Status</c>, neither of which exists at <c>f18f5c29</c>, so it does not COMPILE
+    /// against that tree and <i>"this same test"</i> was never run there. It is the fifth instance of the
+    /// class V-1 withdrew four sentences for — <b>a claim about a measurement that was not the measurement
+    /// taken</b> — and the first to land inside a test file, where it reads as evidence.</para>
+    ///
+    /// <para><b>What actually ran on the base arm</b>, in the honest form Q-1 used at
+    /// <c>StartupSettingsReplayHardeningTests.AMalformedSettingsFile_…</c>: a separate control file naming
+    /// nothing V-1 introduced, so one file compiles and runs on both trees. Source and both transcripts are
+    /// RETAINED under <c>.superpowers/sdd/one-unreadable-posture/evidence/</c>. Base <c>f18f5c29</c>:
+    /// <c>Set</c> succeeded, the marker was gone and <c>SOME-OTHER-MACHINE</c> was on disk. HEAD: refused,
+    /// bytes byte-for-byte, no temp file beside them.</para>
     ///
     /// <para><b>What it does NOT establish:</b> that this is reachable on any particular deployment. It
     /// drives the store directly. What makes it more than a laboratory result is that the store's only
@@ -1552,7 +1572,7 @@ public sealed class OperatorDataRemovalCensusTests
         Assert.Null(resolved.IdealCycleSecondsOverride);
         Assert.Equal(1.0, resolved.PlannedProductionRatio);
 
-        var refusal = Assert.Throws<InvalidOperationException>(
+        var refusal = Assert.Throws<OeeSettingsUnreadableException>(
             () => store.Set("SOME-OTHER-MACHINE", idealCycleSecondsOverride: 7.5, plannedProductionRatio: null));
         Assert.Contains("oee-settings.json", refusal.Message, StringComparison.Ordinal);
 
@@ -1570,8 +1590,14 @@ public sealed class OperatorDataRemovalCensusTests
     /// <c>ProductConfigStore.Load</c> seeded <c>recipes.json</c> when it was missing and then called a
     /// <c>Save</c> that wrote BOTH files, so merely constructing the store rewrote a hand-written
     /// <c>products.json</c> — reserialised out of the typed model, dropping any field <c>ProductModel</c>
-    /// does not declare, on a start where nothing failed. Run at <c>f18f5c29</c> this fails: the field is
-    /// gone and the bytes differ.</summary>
+    /// does not declare, on a start where nothing failed.
+    ///
+    /// <para>⚠️ <b>This said <i>"Run at <c>f18f5c29</c> this fails"</i> and it is withdrawn (review
+    /// I-2).</b> Unlike its neighbour this file WOULD compile at base — but the base arm was taken with
+    /// <c>git checkout f18f5c29 -- src tests</c>, so this test was not present on that arm and did not run
+    /// there. The outcome is real and the attribution was not: it was measured by the retained control file
+    /// (<c>.superpowers/sdd/one-unreadable-posture/evidence/</c>), which at base reports
+    /// <c>products.json intact=False</c> and <c>undeclared field survived=False</c>.</para></summary>
     [Fact]
     public void SeedingTheRecipesFile_DoesNotRewriteAHandWrittenProductsFile()
     {

@@ -305,8 +305,9 @@ public sealed class OeeSettingsStoreTests : IDisposable
         Assert.Equal(OeeSettingsReadStatus.Unreadable, store.Status);
         Assert.NotNull(store.UnreadableReason);
 
-        var refusal = Assert.Throws<InvalidOperationException>(
+        var refusal = Assert.Throws<OeeSettingsUnreadableException>(
             () => store.Set("M2", idealCycleSecondsOverride: 1.0, plannedProductionRatio: 0.5));
+        Assert.IsAssignableFrom<InvalidOperationException>(refusal);
         Assert.Contains("oee-settings.json", refusal.Message, StringComparison.Ordinal);
 
         Assert.Equal(operatorBytes, File.ReadAllText(path));
@@ -364,6 +365,92 @@ public sealed class OeeSettingsStoreTests : IDisposable
         var clean = new OeeSettingsStore(NewTempDir(), (_, message) => quiet.Add(message));
         clean.Set("M1", idealCycleSecondsOverride: 2.0, plannedProductionRatio: null);
         Assert.Empty(quiet);
+    }
+
+    // ═══ V-1 FIX ROUND (review I-3) — THE REFUSAL IS DECIDED AT THE WRITE, NOT AT CONSTRUCTION ═════════
+    //
+    // Round one gated Set on a classification the CONSTRUCTOR cached, so the guarantee was "the file was
+    // unreadable when this store was built". Reach C only ever constructs a store over an already-corrupt
+    // directory, so no instrument in the tree could see the other moment. These three are that instrument.
+
+    /// <summary>🔴 The arm round one shipped open: a host running on a GOOD file, the operator hand-edits it
+    /// into invalid JSON — the very repair this store's message asks for — and one write arrives afterwards.
+    /// Before this fix <c>Set</c> wrote the in-memory table straight over those bytes with no throw, no 409
+    /// and no log line.</summary>
+    [Fact]
+    public void Set_WhenTheFileIsCorruptedAfterConstruction_Refuses_AndLeavesTheOperatorsBytes()
+    {
+        var dir = NewTempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+
+        var store = new OeeSettingsStore(dir);
+        store.Set("M1", idealCycleSecondsOverride: 2.0, plannedProductionRatio: 0.8);
+
+        // Premise: the store came up on a perfectly good file, so nothing about construction can explain
+        // the refusal below.
+        Assert.Equal(OeeSettingsReadStatus.Loaded, store.Status);
+
+        var handEdited = "[ { \"machineCode\": \"M1\", idealCycleSecondsOverride: 2.0 ]";
+        File.WriteAllText(path, handEdited);
+
+        var refusal = Assert.Throws<OeeSettingsUnreadableException>(
+            () => store.Set("M2", idealCycleSecondsOverride: 1.0, plannedProductionRatio: 0.5));
+        Assert.Equal(path, refusal.FilePath);
+
+        Assert.Equal(handEdited, File.ReadAllText(path));
+        Assert.Equal(new[] { "oee-settings.json" },
+            Directory.GetFiles(dir).Select(Path.GetFileName).OrderBy(f => f, StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>🔴 The hole re-reading would have OPENED if it were the only change. A file unreadable at
+    /// construction leaves the table EMPTY; if the operator then repairs the file the freshest read says
+    /// <c>Loaded</c>, and writing the empty table over the repair would destroy it. So this arm keeps
+    /// refusing, exactly as round one did, and <c>Reload</c> is the way out. Without it the fix would have
+    /// traded one silent overwrite for another.</summary>
+    [Fact]
+    public void Set_WhenAnUnreadableFileIsRepairedAfterConstruction_StillRefuses_UntilReload()
+    {
+        var dir = NewTempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+        File.WriteAllText(path, "{ not a list ]");
+        var store = new OeeSettingsStore(dir);
+
+        var repaired = "[ { \"machineCode\": \"REPAIRED\", \"plannedProductionRatio\": 0.25 } ]";
+        File.WriteAllText(path, repaired);
+
+        // The freshest read is fine — which is exactly why refusing here is the load-bearing half.
+        Assert.Equal(OeeSettingsReadStatus.Loaded, store.Read().Status);
+
+        Assert.Throws<OeeSettingsUnreadableException>(() => store.Set("M2", null, 0.5));
+        Assert.Equal(repaired, File.ReadAllText(path));
+
+        // …and the way out is the documented one, after which the write lands ON TOP of the repaired
+        // content rather than instead of it.
+        store.Reload();
+        Assert.Equal(0.5, store.Set("M2", null, 0.5).PlannedProductionRatio);
+        Assert.Equal(0.25, store.Resolve("REPAIRED", 1.0).PlannedProductionRatio);
+    }
+
+    /// <summary><c>Status</c>'s doc says what this store last established about the file (review M-2).
+    /// Before the fix round only the constructor and <c>Reload</c> wrote it, so the public <c>Read()</c> —
+    /// the method whose name IS the read — left it stale, on the member the whole refusal hangs on.</summary>
+    [Fact]
+    public void Read_RecordsWhatItAnswered_SoStatusMeansTheMostRecentRead()
+    {
+        var dir = NewTempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+        var store = new OeeSettingsStore(dir);
+        Assert.Equal(OeeSettingsReadStatus.Absent, store.Status);
+
+        File.WriteAllText(path, "[]");
+        Assert.Equal(OeeSettingsReadStatus.Loaded, store.Read().Status);
+        Assert.Equal(OeeSettingsReadStatus.Loaded, store.Status);
+        Assert.Null(store.UnreadableReason);
+
+        File.WriteAllText(path, "{ not a list ]");
+        Assert.Equal(OeeSettingsReadStatus.Unreadable, store.Read().Status);
+        Assert.Equal(OeeSettingsReadStatus.Unreadable, store.Status);
+        Assert.NotNull(store.UnreadableReason);
     }
 
     /// <summary>A repaired file is readable again by the same instance — the status is a property of the

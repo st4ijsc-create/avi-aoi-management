@@ -283,8 +283,13 @@ public sealed class HistorianEndpointsOeeTests
     /// <summary>🔴 <b>Task V-1 — the surface the loss is named on.</b> This store's only mutator rewrites the
     /// whole table, so with <c>oee-settings.json</c> present and unparseable a PUT would replace every other
     /// machine's entry with nothing. The write is REFUSED and the operator is told at the moment they would
-    /// have destroyed the file. Run at <c>f18f5c29</c> this returns <c>200</c> and the file on disk holds
-    /// one entry where the operator's bytes were.</summary>
+    /// have destroyed the file.
+    ///
+    /// <para>⚠️ <b>This said <i>"Run at <c>f18f5c29</c> this returns 200"</i> and it is withdrawn (review
+    /// I-2).</b> The claim is derivable from the base source and it is not something anybody ran: the base
+    /// arm was taken with <c>git checkout f18f5c29 -- src tests</c>, so this test was not on that tree. What
+    /// was measured at base is the store-level write, by the retained control file under
+    /// <c>.superpowers/sdd/one-unreadable-posture/evidence/</c>.</para></summary>
     [Fact]
     public async Task OeeSettings_Put_WithAnUnreadableSettingsFile_Returns409_AndTheOperatorsBytesSurvive()
     {
@@ -312,6 +317,40 @@ public sealed class HistorianEndpointsOeeTests
         var getDto = ExpectOk<OeeSettingsDto>(HistorianEndpoints.GetOeeSettings("SCRW-01", settingsStore, fleetHost));
         Assert.False(getDto.IsOverridden);
         Assert.Equal(1.0, getDto.PlannedProductionRatio);
+    }
+
+    /// <summary>🔴 <b>V-1 fix round (review I-3) — the window round one shipped OPEN, at the operator's own
+    /// surface.</b> The refusal used to be gated on a classification cached at construction, so a host that
+    /// came up on a good file and then had that file hand-edited into invalid JSON — the repair the refusal
+    /// message itself asks for — answered <c>200</c> to the next PUT and wrote the in-memory table straight
+    /// over the operator's bytes. Nothing constructs a store here after the corruption, which is exactly why
+    /// no instrument in the tree could see it: Reach C only ever builds a store over an already-corrupt
+    /// directory.</summary>
+    [Fact]
+    public async Task OeeSettings_Put_AfterTheFileIsCorruptedBeneathALiveStore_Returns409_AndDoesNotOverwrite()
+    {
+        var dir = TempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+        var settingsStore = new OeeSettingsStore(dir);
+        var fleetHost = NewFleetHost();
+
+        // A perfectly ordinary start: the store comes up, an operator sets a value, everything is fine.
+        var okResult = await HistorianEndpoints.PutOeeSettingsAsync(
+            "SCRW-01", new OeeSettingsUpdateRequest(IdealCycleSecondsOverride: 0.5, PlannedProductionRatio: null),
+            settingsStore, fleetHost);
+        Assert.Equal(0.5, ExpectOk<OeeSettingsDto>(okResult).IdealCycleSeconds);
+
+        // …and only NOW does the file stop being readable, with the store already live.
+        var handEdited = "[ { \"machineCode\": \"SCRW-01\", idealCycleSecondsOverride: 0.5 ]";
+        File.WriteAllText(path, handEdited);
+
+        var result = await HistorianEndpoints.PutOeeSettingsAsync(
+            "SCRW-01", new OeeSettingsUpdateRequest(IdealCycleSecondsOverride: 0.9, PlannedProductionRatio: null),
+            settingsStore, fleetHost);
+
+        var conflict = Assert.IsType<JsonHttpResult<ApiErrorDto>>(result);
+        Assert.Equal(StatusCodes.Status409Conflict, conflict.StatusCode);
+        Assert.Equal(handEdited, File.ReadAllText(path));
     }
 
     // ─────────────────────────────────────────────────────────────────────
