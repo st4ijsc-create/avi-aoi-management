@@ -199,7 +199,7 @@
        cref/paramref claims in this project and 237 across the eight, matching N-1's §4.3 table project by
        project (101/43/34/30/22/5/1/1). CS1570 and CS1587 are zero in all fifteen compilations, as claimed.
 
-       TWO NUMBERS HAVE MOVED, and both are explanations rather than corrections:
+       THREE NUMBERS HAVE MOVED, and all three are explanations rather than corrections:
          * Column (1) for St4i.EdgeCore reads 112 above and is 101 today. The column is pinned to
            811c9054 and this block already says the price columns are never rewritten, so 112 is not wrong —
            it is history. The 11 is N-1's own tree-wide malformed-block sweep landing inside this project:
@@ -207,6 +207,15 @@
            cancel.
          * The brief's "95 doc blocks in FleetCore.cs" was true through T-1 and is 96 now; U-1 (e902a5f2)
            added one. Measured at every commit that touched the file since 7be4326a.
+         * 🔴 "Column (2) totals 2775 members across the eight still-unset projects", four paragraphs above,
+           is a BASE figure written in the present tense — and a statement about something still moving,
+           offered as though it had stopped, is not a measurement. Today the same population is 2793:
+           St4i.EdgeCore.Tests 705 -> 714, St4i.EngineApi.Tests 742 -> 752, St4i.EngineApi 530 -> 529. The
+           other five rows are unchanged. It moves whenever anyone adds a public member to an unset project,
+           which is most tasks, so it is left as the base figure it is rather than re-pinned to a value that
+           will be wrong again next week. Read it as "this is what the table sums to", never as "this is the
+           bill today". (2870 beside EXPECT_WARNINGS in scripts/verify-suites.sh is the same figure plus
+           N-2's 95, and moves for the same reason.)
 
        🔴 THE SENTENCE THIS BLOCK FLAGGED AS NOT MEASURED IS NOW MEASURED, and the answer is yes-with-three-
        consequences. An .editorconfig section keyed on the vendored file's REAL path DOES match it: the tree
