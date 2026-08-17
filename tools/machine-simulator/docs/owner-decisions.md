@@ -19,7 +19,7 @@ và ở từng mục.
 
 ---
 
-## Trạng thái phán quyết — 2026-08-16
+## Trạng thái phán quyết — 2026-08-16, cập nhật 2026-08-18
 
 Chủ sở hữu uỷ quyền quyết định toàn bộ danh sách này. Phán quyết ghi ngay dưới mỗi
 mục. **Ba mục KHÔNG được quyết đơn phương** và lý do nêu tại chỗ: chúng đổi thứ mà
@@ -30,17 +30,17 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | # | mục | phán quyết |
 |---|---|---|
 | 1 | ghi đè im lặng | 🔨 **SỬA** — ~~gộp với 5–7~~ **(nhóm ấy SAI, xem §5–7)**; đã thi hành, Q-1 |
-| 2 | `Warn` tốt cho OEE | ✅ **GIỮ HÀNH VI, XUẤT BẢN NÓ** — đổi là viết lại lịch sử |
-| 3 | bất đối xứng Sparkplug | ✅ **GIỮ DÂY, ĐÃ GHI RÕ** — đổi payload là việc của bên đăng ký |
-| 4 | hình dạng hàng `Samples` | ⚖️ **ĐO TRƯỚC, RỒI CHỌN** — SDK đã xuất bản là ứng viên chuẩn |
+| 2 | `Warn` tốt cho OEE | ✅ **GIỮ HÀNH VI, XUẤT BẢN NÓ** — đổi là viết lại lịch sử; **việc còn nợ** (2026-08-18) |
+| 3 | bất đối xứng Sparkplug | ✅ **GIỮ DÂY, ĐÃ GHI RÕ** — đổi payload là việc của bên đăng ký; đã thi hành, N-2 |
+| 4 | hình dạng hàng `Samples` | ⚖️ **ĐO TRƯỚC, RỒI CHỌN** — SDK đã xuất bản là ứng viên chuẩn; **việc còn nợ** (2026-08-18) |
 | 5 | ~~ba hình dạng xoá file~~ → **`oee-settings.json`** | 🔨 **GOM VỀ MỘT LUẬT** (2026-08-17) — đã thi hành, V-1 |
 | 6 | log hoãn của một lần cài đặt hỏng | 🔨 **PHÁT RA TRÊN ĐƯỜNG NÉM LỖI** (2026-08-17) — đã thi hành, T-1 |
 | 7 | nửa sau của S4 | 🔨 **DỪNG + GIỮ COMMIT + BÁO TRÊN `/v1/health`** (2026-08-17) — đã thi hành, U-1 |
-| 8 | `ReapplyCurrentAsync` ghi đè `site-link.json` | 🔴 **CHỜ ANH** — đã đo (Q-1 vòng sửa); **không đổi bởi V-1** |
-| 9 | sàn môi trường trên nhánh *không đọc được* | 🔴 **CHỜ ANH** — đã đo (Q-1); **không đổi bởi V-1** |
-| 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔴 **CHỜ ANH** — đã đo (V-1); phần dư của mục 5 |
-| 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔴 **CHỜ ANH** — đã đo (V-1 vòng sửa 1); phần dư của mục 5 |
-| 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔴 **CHỜ ANH** — đã đo (W-1); **không bị đè bởi W-1** |
+| 8 | `ReapplyCurrentAsync` ghi đè `site-link.json` | 🔨 **CHẶN — cùng luật, tại chỗ gọi THỨ BA của `ApplyAsync`** (2026-08-18, điều phối viên quyết theo uỷ quyền); **việc còn nợ** |
+| 9 | sàn môi trường trên nhánh *không đọc được* | 🔴 **CHỜ ANH** — chủ sở hữu **HOÃN** 2026-08-18 (*"để lại sau cùng"*); một lần hoãn không phải một phán quyết |
+| 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔨 **GIỮ BLOB CŨ DƯỚI TÊN KHÁC** (2026-08-18) — DI CHUYỂN dữ liệu, **miễn trừ CHỈ cho mục này**; **việc còn nợ** |
+| 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); **việc còn nợ** |
+| 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -54,27 +54,204 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 
 # 🔴 PHẦN I — ĐANG CHỜ ANH
 
-Mọi mục trong phần này mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **không mục nào
-trong đây đã được quyết**. Phần này đứng TRƯỚC hồ sơ vì một lý do đo được: trước Y-1,
-mục đầu tiên thật sự đang chờ nằm ở **ba phần tư tài liệu tính từ đầu**, sau tất cả các
-mục đã quyết — một file lập ra để chủ sở hữu **mở được** đã thành một file **không
-quyết được từ trong đó**.
+**Một mục ở đây, và chỉ một: mục 9.** Nó mang `🔴 CHỜ ANH` ở bảng phán quyết trên.
 
-**Không gì bị xoá và không gì bị viết lại để làm phần này ngắn.** Các mục đã quyết, các
-khối đính chính và các ghi chép thi hành còn **nguyên văn** ở **Phần II** và **Phần
-III**; chúng chỉ **đi sau**, vì chúng là hồ sơ chứ không phải đầu vào của một quyết định.
+**Cho tới 2026-08-18 phần này có năm mục — 8, 9, 10, 11, 12.** Chủ sở hữu đã quyết bốn
+trong số đó (10, 11 và 12 do chính chủ sở hữu; **8** do điều phối viên quyết theo uỷ
+quyền) và **hoãn** mục 9. Bốn mục ấy **không rời khỏi file**: chúng chuyển sang **Phần
+II**, chỗ dành cho một mục đã có phán quyết mà việc thì chưa làm.
 
-Mỗi mục dưới đây mang **bằng chứng của nó ở dòng cuối của chính nó**, không phải ở một
-phụ lục. Đó là chỗ ranh giới được vạch: **đầu vào của quyết định** (hôm nay chuyện gì
-xảy ra, ai chịu, nếu không quyết thì sao, cái gì đã chặn nó khỏi được sửa luôn) đi
-trước, **bằng chứng** đi ngay sau nó **trong cùng một mục** — vì một khẳng định tách
-khỏi nhân chứng của nó là một khẳng định **không kiểm được**, đúng thứ file này lập ra
-để chấm dứt.
+⏸️ **Một lần hoãn không phải một phán quyết, và mục 9 ở lại đây vì thế.** Luật của file
+này đòi một **quyết định** ghi kèm ngày và người quyết; *"để lại sau cùng"* ghi **thứ
+tự**, không ghi **kết quả**.
 
-🔴 **Cái các mục này CHƯA có, nêu tên chứ không lấp:** ngoài mục 12, không mục nào bày
-ra **các lựa chọn kèm giá ĐÃ ĐO** của từng lựa chọn. Giá ấy phải được **đo**; một lần
-sắp xếp tài liệu không đo được nó, và một con số ước lượng đặt ở đây sẽ **đọc như một
-phép đo**. Chỗ thiếu được ghi ra thay vì được lấp. (Y-1, 2026-08-18.)
+Mục dưới đây mang **bằng chứng của nó ở dòng cuối của chính nó**, không phải ở một phụ
+lục. Đó là chỗ ranh giới được vạch: **đầu vào của quyết định** (hôm nay chuyện gì xảy
+ra, ai chịu, nếu không quyết thì sao, cái gì đã chặn nó khỏi được sửa luôn) đi trước,
+**bằng chứng** đi ngay sau nó **trong cùng một mục** — vì một khẳng định tách khỏi nhân
+chứng của nó là một khẳng định **không kiểm được**, đúng thứ file này lập ra để chấm dứt.
+
+🔴 **Cái mục 9 CHƯA có, nêu tên chứ không lấp:** nó không bày ra **các lựa chọn kèm giá
+ĐÃ ĐO** của từng lựa chọn. Giá ấy phải được **đo**; một lần ghi chép không đo được nó, và
+một con số ước lượng đặt ở đây sẽ **đọc như một phép đo**. (Y-1, 2026-08-18.)
+
+---
+
+## 9. Một nhánh *không đọc được* nên áp **sàn môi trường** vào bộ nhớ hay không
+
+**Đo được:** sau Q-1, khi `fleet-settings.json` không đọc được, tiến trình lên bằng
+**mặc định dựng sẵn** của `FleetHost` (`DefaultServerUrl = ""`,
+`DefaultMachineCode = "ENGINE-API-01"`) chứ **không** áp bộ ba `ST4I_*` mà bản triển
+khai đã đặt.
+
+**Hai chiều, và phải nói cả hai:** với **FILE**, từ chối sàn là **an toàn hơn hẳn**
+— áp sàn nghĩa là `FleetCore.UpdateSettings` **lưu** nó, và chính việc lưu là mất
+dữ liệu. Với **CỖ MÁY ĐANG CHẠY**, nó có thể **tệ hơn**: một bản cài headless không
+những mất liên kết mà còn không dùng các giá trị dịch vụ của nó đã cấu hình.
+
+**Vì sao hai chiều ấy tách nhau được:** chỉ vì `UpdateSettings` **lưu vô điều
+kiện**. Một đường "áp mà không lưu" sẽ cho nhánh này tôn trọng sàn trong bộ nhớ mà
+vẫn để yên file.
+
+**Ở đâu:** `src/St4i.EdgeCore/Fleet/FleetCore.cs` (`UpdateSettings`, khối `finally`
+trong `if (rebuildNeeded)`), tiêu thụ bởi `src/St4i.EngineApi/Program.cs`.
+
+**Nếu không quyết định:** giữ nguyên — an toàn cho file, và một cỗ máy headless có
+file hỏng sẽ chạy trên giá trị mặc định cho tới khi có người sửa file.
+
+**Vì sao là quyết định của chủ sở hữu:** đổi *khi nào* `UpdateSettings` lưu là đổi
+hợp đồng mà `PUT /v1/settings` cũng dùng chung.
+
+**Bằng chứng:** `docs/startup-failure-posture.md` §3.1a-now.
+
+> ### ⏸️ HOÃN 2026-08-18 — CHỦ SỞ HỮU ĐỂ MỤC NÀY LẠI SAU CÙNG
+> **Đây KHÔNG phải một phán quyết, và mục này KHÔNG rời khỏi phần đang chờ.** Chủ sở hữu
+> trả lời *"để lại sau cùng"*. Luật của file này nói một mục chỉ rời khỏi đây khi có một
+> **quyết định** ghi kèm ngày và người quyết; một lần hoãn ghi **thứ tự**, không ghi
+> **kết quả**. Nên mục 9 vẫn ở `🔴 CHỜ ANH`, và cái được ghi thêm là **đã có người đọc
+> nó và chọn chưa quyết** — thứ trước hôm nay không phân biệt được với **chưa ai đọc**.
+>
+> **Nếu không quyết định** vẫn đúng nguyên như đoạn trên: giữ nguyên, an toàn cho file,
+> và một cỗ máy headless có file hỏng chạy trên giá trị mặc định cho tới khi có người sửa
+> file.
+
+---
+
+# 🔨 PHẦN II — ĐÃ QUYẾT, VIỆC CÒN NỢ
+
+**Mỗi mục ở đây đã có một phán quyết ghi kèm ngày, và việc của nó chưa được thi hành.**
+Đó là một trạng thái **thứ ba**, và cho tới 2026-08-18 file này **không có chỗ cho nó**:
+chỉ có *đang chờ* và *đã xong*. Bốn mục vừa được quyết sẽ phải nằm hoặc cùng các mục
+**chưa ai đọc**, hoặc cùng các mục **đã chạy xong** — và cả hai đều sai. Mục 2 và mục 4
+đã ở trạng thái này từ **2026-08-16** mà không có gì nói ra, nên chỗ thiếu này cũ hơn
+các phán quyết vừa tạo ra nó.
+
+🔴 **Không gì ở đây được thi hành bởi lần ghi này.** Không một dòng thực thi nào đổi vào
+ngày quyết định; các nhiệm vụ riêng sẽ mang chúng đi. Các mục này ghi **điều đã quyết**,
+không ghi **cách làm**.
+
+⚠️ **Trạng thái vẫn chỉ có MỘT nguồn.** Việc một mục nằm ở phần nào là một **cái kệ**,
+không phải một khẳng định: nguồn sự thật là **bảng phán quyết** phía trên và **dòng phán
+quyết trong chính mục ấy**. Nếu banner của một phần và dòng phán quyết của một mục nói
+khác nhau thì **dòng phán quyết thắng**, và cái kệ là thứ đang sai. Một mục rời phần này
+sang **Phần III** khi dòng phán quyết của nó có thêm **một ghi chép thi hành ghi kèm
+ngày** — không sớm hơn.
+
+---
+
+## 2. `Warn` được tính là TỐT cho OEE
+
+**Đo được:** phép tổng hợp OEE rẽ nhánh trên các verdict **đã ghi xuống đĩa dưới
+dạng chuỗi**:
+
+- mẫu số: `verdict <> 'Skip'` — `src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs:590`
+- tử số: `verdict IN ('Pass', 'Warn')` — `src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs:600`
+- phạm vi: `reading_kind = 'ProcessResult'` — cùng file, dòng 581
+
+**Hậu quả:** một chu kỳ `Warn` được tính là **tốt** trong OEE, trong khi ở mọi chỗ
+khác của hợp đồng nó là *"không được phán quyết dứt khoát"*. `Skip` không nằm ở cả
+tử lẫn mẫu.
+
+**Chạm tới đâu:** `/v1/historian/oee`, danh sách OEE của fleet, và **bản PDF báo cáo**.
+
+**Nếu không quyết định:** OEE tiếp tục báo cáo `Warn` là tốt. Đây có thể là **đúng
+ý muốn** — nhiều nhà máy tính warn là hàng đạt — nhưng hiện **không nơi nào nói ra
+điều đó**, nên người đọc con số OEE không có cách nào biết.
+
+**Bằng chứng:** commit `72614dd9` (N-2). Tìm ra bằng việc **viết tài liệu**, không
+phải bằng test — vì tách riêng ra thì không đường nào sai cả.
+
+> ### ✅ PHÁN QUYẾT 2026-08-16 — GIỮ HÀNH VI, XUẤT BẢN NÓ
+> **Không đổi phép tính.** `Warn` tính là tốt là **quy ước OEE thông thường** — một
+> đơn vị đạt-kèm-cảnh-báo vẫn là đơn vị xuất xưởng được, và chất lượng đếm đơn vị
+> xuất xưởng. Lý do quyết định là chỗ khác: **đổi công thức là viết lại mọi con số
+> OEE đã báo cáo trong quá khứ**, kể cả những con số đã in ra PDF và đã gửi đi.
+> Không có phiên bản nào cho công thức ấy, nên không ai đọc lại được sẽ biết con số
+> họ cầm thuộc công thức nào.
+>
+> **Khuyết tật thật không phải phép tính — là việc nó chưa bao giờ được nói ra.**
+> Việc phải làm: **công bố định nghĩa ngay tại chỗ con số được đọc** — phản hồi API,
+> danh sách fleet, và bản PDF — bằng đúng ba câu: cái gì vào mẫu số, cái gì vào tử
+> số, `Skip` không vào cả hai. Kèm một câu nói rõ **con số này không có phiên bản**.
+>
+> Nếu sau này nhà máy muốn `Warn` không tính là tốt, việc đó cần **một công thức có
+> phiên bản**, không phải một lần sửa tại chỗ.
+>
+> #### ⏳ 2026-08-18 — TIẾP TỤC; HÀNH ĐỘNG VẪN CÒN NỢ, VÀ NÓ MỚI LÀM ĐƯỢC MỘT NỬA
+> Chủ sở hữu xác nhận mục này **tiếp tục** và việc của nó **chưa xong**. Đo lại tại
+> `3a1228ee`, vì "còn nợ" mà không đo thì cũng là một khẳng định không kiểm được:
+> - **ĐÃ làm:** định nghĩa **có** được viết ra — `src/St4i.Connector.Abstractions/Models/Enums.cs`,
+>   doc của kiểu `Verdict`, nói `Skip` bị loại khỏi mẫu số và `Pass`+`Warn` vào tử số, nên
+>   `Warn` là **tốt** cho OEE.
+> - **CHƯA làm:** phán quyết đòi công bố **ngay tại chỗ con số được đọc** — phản hồi API,
+>   danh sách fleet, bản PDF. `OeeResultDto`
+>   (`src/St4i.EngineApi/Endpoints/HistorianDtos.cs`) **không mang gì cả**. Một định nghĩa
+>   đặt trên `enum` là chỗ **tác giả driver** đọc, không phải chỗ **người cầm con số OEE**
+>   đọc, và mục này được lập ra cho người thứ hai.
+> - **CHƯA làm:** câu *"con số này không có phiên bản"* **không có ở đâu trong `src/`**.
+
+---
+
+## 4. `WaveformSeries.Samples` KHÔNG có hình dạng hàng cố định
+
+**Đo được:** ba nguồn, ba nghĩa, trên **bề mặt mà tác giả driver bên thứ ba đọc
+trước tiên**:
+- SDK vendored ghi `[[t,v],…]` — `examples/device-client/csharp/St4iDeviceClient.cs`
+- `ScrewdriveSim` phát ra **từng cặp**
+- `WelderSim` phát ra **một giá trị mỗi hàng**
+
+**Hiện đang:** ship dưới dạng **ghi rõ là mơ hồ** — cả ba hình dạng được nêu tên,
+kèm câu *"không được giả định hình dạng hàng chỉ từ kiểu này"*.
+
+**Vì sao chưa giải:** chọn một nghĩa là **đổi hành vi một bề mặt đã xuất bản**.
+Đó là quyết định của chủ sở hữu, không phải việc dọn dẹp kỹ thuật.
+
+**Nếu không quyết định:** mỗi tác giả driver tự đoán, và nửa số đoán sẽ sai.
+
+**Bằng chứng:** commit `72614dd9` (N-2).
+
+> ### ⚖️ PHÁN QUYẾT 2026-08-16 — LUẬT ĐÃ CÓ SẴN TRONG DỮ LIỆU, CHỈ CHƯA AI VIẾT RA
+> **Đo lại trước khi quyết, và phép đo lật khung của chính mục này.** Mô tả cũ —
+> *"SDK nói `[[t,v]]`, `ScrewdriveSim` phát cặp, `WelderSim` phát một giá trị"* —
+> ngụ ý hai trên ba đồng ý với SDK. **Sai. Không producer nào phát `[[t,v]]` cả:**
+>
+> | nguồn | hàng | `RateHz` |
+> |---|---|---|
+> | SDK vendored (`St4iDeviceClient.cs:86`) | `// [[t,v],…]` | — |
+> | `ScrewdriveSim.cs:186` | `new[] { angle, torque }` — **(x, y), x là GÓC không phải thời gian** | **null** (dòng 189) |
+> | `WelderSim.cs:47` | `new[] { current }` — một giá trị | **được đặt** (dòng 40) |
+>
+> **Hai producer NHẤT QUÁN với nhau, và `RateHz` chính là thứ phân biệt:**
+> - `RateHz` **được đặt** ⇒ có trục thời gian đều ⇒ thời gian là **ngầm định**, suy
+>   ra từ chỉ số và tần số. Một giá trị mỗi hàng là **đúng và tiết kiệm**.
+> - `RateHz` **null** ⇒ **không có** trục thời gian đều ⇒ hàng phải **tự mang trục X
+>   của nó**: `[x, y]`. Ở `ScrewdriveSim`, x là **góc siết**, không phải thời gian.
+>
+> **Nên cái sai không phải hai producer — là chú thích trong SDK.** `[[t,v],…]` mô
+> tả **không producer nào**, và nó là thứ tác giả driver bên thứ ba đọc trước tiên.
+>
+> **Quyết định:** ✅ **`RateHz` là bộ phân biệt, và nó đã được thực thi nhất quán
+> sẵn rồi.** Viết luật ấy lên chính `WaveformSeries` — nơi hợp đồng sống — nêu tên
+> chú thích SDK là **đã biết sai** (file vendored, **cấm sửa**), và **cắm nhân chứng**
+> để nó không trôi lại.
+>
+> 🔴 **KHÔNG đổi hành vi.** Tuyên bố `[[t,v]]` là chuẩn sẽ **phá cả hai producer** và
+> vứt đi quan hệ với `RateHz` — đó là lý do mục này phải đo trước khi quyết, và là lý
+> do câu trả lời hiển nhiên lại là câu sai.
+>
+> #### ⏳ 2026-08-18 — TIẾP TỤC; HÀNH ĐỘNG VẪN CÒN NỢ, VÀ NÓ CHƯA BẮT ĐẦU
+> Chủ sở hữu xác nhận mục này **tiếp tục** và việc của nó **chưa xong**. Đo lại tại
+> `3a1228ee` trên chính bề mặt phán quyết chỉ tới, `WaveformSeries`
+> (`src/St4i.Connector.Abstractions/Models/DeviceReading.cs`):
+> - doc của nó **vẫn là văn bản TRƯỚC phán quyết** — vẫn kết bằng *"A consumer must
+>   therefore not assume a row shape from this type alone"*, tức vẫn ship **sự mơ hồ đã
+>   ghi rõ**, đúng thứ phán quyết thay thế;
+> - nó **mô tả** tương quan `RateHz` (một giá trị mỗi hàng khi có `RateHz`, `[x, y]` khi
+>   `RateHz` null) nhưng **không phát biểu `RateHz` LÀ BỘ PHÂN BIỆT**, mà đó mới là luật;
+> - nó **không nêu tên chú thích SDK là ĐÃ BIẾT SAI** — nó viết *"matches neither
+>   exactly"*, một nhận xét, không phải một phán quyết;
+> - **không có nhân chứng nào được cắm**, mà phán quyết đòi *"cắm nhân chứng để nó không
+>   trôi lại"*.
 
 ---
 
@@ -111,34 +288,22 @@ thì không, và không có gì báo cho ai biết ngoài các dòng đã ghi t�
 **Bằng chứng:** commit `76b9e85d` (Q-1 vòng sửa lỗi);
 `docs/startup-failure-posture.md` §3.1b.
 
----
-
-## 9. Một nhánh *không đọc được* nên áp **sàn môi trường** vào bộ nhớ hay không
-
-**Đo được:** sau Q-1, khi `fleet-settings.json` không đọc được, tiến trình lên bằng
-**mặc định dựng sẵn** của `FleetHost` (`DefaultServerUrl = ""`,
-`DefaultMachineCode = "ENGINE-API-01"`) chứ **không** áp bộ ba `ST4I_*` mà bản triển
-khai đã đặt.
-
-**Hai chiều, và phải nói cả hai:** với **FILE**, từ chối sàn là **an toàn hơn hẳn**
-— áp sàn nghĩa là `FleetCore.UpdateSettings` **lưu** nó, và chính việc lưu là mất
-dữ liệu. Với **CỖ MÁY ĐANG CHẠY**, nó có thể **tệ hơn**: một bản cài headless không
-những mất liên kết mà còn không dùng các giá trị dịch vụ của nó đã cấu hình.
-
-**Vì sao hai chiều ấy tách nhau được:** chỉ vì `UpdateSettings` **lưu vô điều
-kiện**. Một đường "áp mà không lưu" sẽ cho nhánh này tôn trọng sàn trong bộ nhớ mà
-vẫn để yên file.
-
-**Ở đâu:** `src/St4i.EdgeCore/Fleet/FleetCore.cs` (`UpdateSettings`, khối `finally`
-trong `if (rebuildNeeded)`), tiêu thụ bởi `src/St4i.EngineApi/Program.cs`.
-
-**Nếu không quyết định:** giữ nguyên — an toàn cho file, và một cỗ máy headless có
-file hỏng sẽ chạy trên giá trị mặc định cho tới khi có người sửa file.
-
-**Vì sao là quyết định của chủ sở hữu:** đổi *khi nào* `UpdateSettings` lưu là đổi
-hợp đồng mà `PUT /v1/settings` cũng dùng chung.
-
-**Bằng chứng:** `docs/startup-failure-posture.md` §3.1a-now.
+> ### 🔨 PHÁN QUYẾT 2026-08-18 — CHẶN, CÙNG LUẬT, TẠI CHỖ GỌI THỨ BA
+> **Quyết bởi điều phối viên theo uỷ quyền, không phải bởi chủ sở hữu** — và uỷ quyền
+> ấy với tới được mục này: ba mục mà uỷ quyền KHÔNG phủ (2, 3, 4) là ba mục đổi thứ mà
+> **người ngoài tổ chức này** đang dựa vào, và mục 8 không đổi bề mặt nào ra ngoài.
+>
+> **Phán quyết:** cú ghi bị **CHẶN**, dưới **cùng cái luật** mục 1 và mục 5 đã đứng trên,
+> áp tại **chỗ gọi thứ ba** của `ApplyAsync` — chính là `ReapplyCurrentAsync`, cái thứ ba
+> trong ba chỗ gọi mà mục này đã liệt kê ở trên (`PUT /v1/site`, đường khởi động, và
+> chính nó).
+>
+> 🔴 **Không cơ chế, không mã, không thiết kế ở đây.** Mục này ghi **điều đã quyết**, và
+> việc chọn *cách* chặn — và trả cái giá mà chính mục này đã nêu tên, rằng đóng nó là đổi
+> **HỢP ĐỒNG** của một phương thức có ba nơi gọi — là việc của nhiệm vụ thi hành, không
+> phải của lần ghi này.
+>
+> **Việc còn nợ.** Không dòng thực thi nào đổi vào ngày quyết định.
 
 ---
 
@@ -192,6 +357,36 @@ phải một cái chốt.
 **ghim một khuyết tật đang sống làm đường cơ sở và KHÔNG sửa**, đúng như S-1 đã làm cho
 mục 5. Nếu anh quyết SỬA, khẳng định ấy đảo chiều và chỗ đảo chính là diff.
 
+> ### 🔨 PHÁN QUYẾT 2026-08-18 — GIỮ BLOB CŨ DƯỚI TÊN KHÁC, KHÔNG GHI ĐÈ
+> **Quyết bởi chủ sở hữu.** Trong hai phương án mục này nêu tên ở trên, phương án được
+> chọn là **giữ blob cũ dưới tên khác** — *không* phải phương án "cho `Load` ném".
+>
+> ⚠️ **Hai phương án ấy KHÔNG được đánh nhãn chữ cái trong mục này.** Chúng được nêu
+> trong văn xuôi ở đoạn *"Vì sao KHÔNG sửa trong V-1"*. Phán quyết được ghi **bằng mô tả
+> chứ không bằng nhãn**, vì một nhãn `(a)` không tồn tại ở đây sẽ trỏ vào hư không — và ở
+> **mục 12**, nơi các nhãn ấy CÓ tồn tại, `(a)` là đúng phương án **ngược lại** với điều
+> chủ sở hữu chọn. Nhãn không đi qua được ranh giới giữa hai mục.
+>
+> #### 🔴 ĐÂY LÀ MỘT MIỄN TRỪ, VÀ NÓ CHỈ ÁP CHO MỤC NÀY
+> Kể từ Q-1, **mọi brief đều bắt DI CHUYỂN dữ liệu vận hành viên phải DỪNG VÀ BÁO** thay
+> vì tự làm, và **nhiều nhiệm vụ đã dừng đúng trên luật ấy** — chính mục này là một trong
+> số đó (*"thứ brief của V-1 bắt buộc phải dừng và báo"*), và phần dư 2 của mục 1
+> (`DeviceIdentityStore`) là một mục khác.
+>
+> **Chủ sở hữu vừa cấp phép cho MỘT lần di chuyển, ở MỘT mục.** Luật **không** bị bãi bỏ
+> và **không** yếu đi ở bất cứ mục nào khác. Đọc dòng này như một giấy phép chung là đọc
+> sai nó — và đó đúng là cách một ràng buộc chết: không phải bị huỷ, mà bị suy rộng.
+> `DeviceIdentityStore` ở phần dư 2 của mục 1 **không** được miễn trừ bởi phán quyết này;
+> quyết định của nó đứng nguyên và chưa ai đụng tới.
+>
+> 🔴 **Không cơ chế ở đây:** tên nào, đặt ở đâu, dọn khi nào, và chuyện gì xảy ra nếu cái
+> tên ấy cũng đã tồn tại — tất cả là việc của nhiệm vụ thi hành.
+>
+> **Việc còn nợ.** Không dòng thực thi nào đổi vào ngày quyết định. Phép ghim
+> `CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt`
+> **vẫn đang khẳng định hành vi cũ**, đúng như đoạn trên nói: khi bản sửa tới, khẳng định
+> ấy đảo chiều, và chỗ đảo chính là diff.
+
 ---
 
 ## 11. Một `oee-settings.json` được KHÔI PHỤC vào lúc đang chạy bị ghi đè bằng bảng rỗng
@@ -243,6 +438,24 @@ Cách né duy nhất hôm nay là **khởi động lại host sau khi khôi ph�
 là khẳng định hành vi hiện tại đúng, mà đó chính là thứ đang chờ anh quyết.
 `Read_RecordsWhatItAnswered_SoStatusMeansTheMostRecentRead` **dựng đúng trạng thái ấy**
 và **dừng ngay trước `Set`**.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-18 — CHẶN CÚ GHI Ở ĐÚNG KIỂU LỆCH THỨ BA
+> **Quyết bởi chủ sở hữu:** cú ghi bị **CHẶN** ở đúng vị từ mà mục này đã đo —
+> bảng trong bộ nhớ dựng từ `Absent`, mà phép đọc ngay trước cú ghi trả `Loaded`.
+>
+> ⚠️ **Mục này không nêu lựa chọn nào có nhãn chữ cái** — nó nêu **một** hướng sửa, trong
+> đoạn *"Vì sao KHÔNG sửa trong V-1"*. Phán quyết được ghi bằng **vị từ đã đo**, không
+> bằng nhãn.
+>
+> **Cái giá mà chính mục này đã nêu tên và phán quyết không xoá:** hôm nay `Absent` lúc
+> nạp **cho phép** người gọi tự đặt giá trị, và đó chính là đường **khởi động lần đầu**.
+> Thu hẹp nó là **một thay đổi hợp đồng**. Nhiệm vụ thi hành phải giữ đường khởi động lần
+> đầu chạy được, và **cách** làm việc ấy không được quyết ở đây.
+>
+> **Việc còn nợ.** Không dòng thực thi nào đổi vào ngày quyết định. Ca này **vẫn chưa có
+> test nào ghim**, đúng như đoạn trên ghi — và lý do đã đổi: trước hôm nay nó chưa được
+> ghim vì ghim nó là khẳng định hành vi hiện tại đúng; nay hành vi hiện tại đã bị phán
+> quyết là **sai**, nên phép ghim thuộc về nhiệm vụ thi hành.
 
 ---
 
@@ -336,23 +549,78 @@ thấy nó.**
 
 **Bằng chứng:** commit merge của W-1.
 
+> ### 🔨 PHÁN QUYẾT 2026-08-18 — BẬT CỜ, VÀ KHÔNG MIỄN TRỪ GÌ CẢ
+> **Quyết bởi chủ sở hữu.**
+>
+> #### 🔴 ĐIỀU PHẢI NÓI TRƯỚC MỌI ĐIỀU KHÁC: ĐÂY KHÔNG PHẢI MỘT TRONG BỐN LỰA CHỌN TRÊN
+> Mục này công bố **bốn** lựa chọn có nhãn — **(a)**, **(b1)**, **(b2)**, **(c)**. Phán
+> quyết **không phải cái nào trong bốn**. Nó là *bật cờ **và** không nhận một lệnh đè
+> nào*, thứ mà cả bốn nhãn ấy đều không mô tả: **(c)** là không bật cờ, còn **(a)**,
+> **(b1)** và **(b2)** đều **LÀ** một lệnh đè — chính mục này viết *"Cả (b1) và (b2) đều
+> VẪN LÀ LỆNH ĐÈ"*.
+>
+> ⚠️ **Và nhãn `(a)` là chỗ nguy hiểm nhất trong cả file này để nhầm.** `(a)` là
+> `<NoWarn>CS1591;CS1573</NoWarn>` **cả assembly** — **im lặng tối đa**, tức đúng **thái
+> cực ngược lại** với điều vừa được quyết. Ai chép một nhãn từ chỗ khác vào đây sẽ thi
+> hành **ngược** phán quyết. Phán quyết được ghi **bằng mô tả, không bằng nhãn**.
+>
+> 🔴 **Vòng đầu mục này nêu ba lựa chọn và bị bắt vì thiếu cái thứ tư — cái HẸP NHẤT. Hôm
+> nay chủ sở hữu chọn một cái thứ NĂM, và nó cũng chưa từng được liệt kê.** Bảng bốn lựa
+> chọn tự nhận là *"nêu đủ chứ không nêu cái tiện"*. Nó không đủ. Đây là **lần thứ hai**
+> phép liệt kê lựa chọn của chính mục này bị chứng minh là thiếu, và lần này bằng chính
+> câu trả lời của người quyết. Bốn lựa chọn ấy **được giữ nguyên văn** ở trên làm hồ sơ.
+>
+> #### CÁI GIÁ, VÀ NÓ KHÔNG PHẢI MỘT LẦN SỬA
+> Phán quyết này **không** làm cờ bật được xanh, và mục này đã nói trước điều đó:
+> *"không lựa chọn nào tự nó làm cờ bật được xanh"*. Chia đôi phần phải trả, bằng đúng
+> các con số đã đo ở trên:
+>
+> - **532 cảnh báo là mã NGUỒN CỦA CHÍNH TA** (448 CS1591 + 84 CS1573). Chúng **trả bằng
+>   cách VIẾT** — 532 chú thích tài liệu — cộng **101** khẳng định `cref`/`paramref` sai
+>   phải **sửa** (75 CS1574 + 23 CS1734 + 3 CS0419). Tổng phần phải trả bằng tay: **633**,
+>   đúng con số mục này đã nêu. Để so sánh về **quy mô, không phải về giá**: N-2 viết
+>   **83** thành viên trong một nhiệm vụ (`72614dd9`). **Đây là NHIỀU VÒNG, không phải
+>   một nhiệm vụ**, và file này nên nói thẳng thay vì để nó đọc như một lần dọn dẹp.
+> - **103 cảnh báo nằm trong file SDK vendored** (95 CS1591 + 8 CS1573,
+>   `examples/device-client/csharp/St4iDeviceClient.cs`). Dưới phán quyết này chúng
+>   **không viết được** — repo này không được sửa file ấy — **và cũng không im lặng được**,
+>   vì không miễn trừ nào được nhận. Chúng phải được **GHIM như một khoản nợ có tên và
+>   không trả được**.
+>
+> **Đó là luật *"mọi cảnh báo hoặc được sửa, hoặc được nêu tên"* được tôn trọng — KHÔNG
+> phải một lệnh đè.** Khác nhau ở chỗ kiểm được: một lệnh đè làm cảnh báo **biến mất**;
+> một phép ghim để nó **phát ra** và bắt một con số đã công bố phải khớp, nên ngày nào nó
+> đổi thì có thứ đỏ lên.
+>
+> #### CON SỐ CỔNG PHẢI ĐỔI, VÀ NÓ KHÔNG ĐƯỢC ĐỔI Ở ĐÂY
+> `EXPECT_WARNINGS` hôm nay là **116** — đúng con số cổng vừa xanh trên. Dưới phán quyết
+> này nó phải lên **ÍT NHẤT 219** (116 + 103 cảnh báo vendored không trả được). 🔴 **"Ít
+> nhất" là một cận dưới, không phải một phép đo:** 219 chỉ đúng nếu **không** cảnh báo
+> nào khác còn lại lúc con số ấy được đặt, mà 633 cái của ta chỉ tắt dần qua nhiều vòng.
+> Con số thật **phải được ĐO tại lần bật cờ**, không được suy ra ở đây. Một cái trần nêu
+> quá nhỏ còn tệ hơn không nêu trần.
+>
+> 🔴 **Lần ghi này KHÔNG đụng `scripts/verify-suites.sh`, KHÔNG đụng
+> `Directory.Build.props`, và KHÔNG bật cờ.** Không dòng thực thi nào đổi vào ngày quyết
+> định. **Việc còn nợ**, và nó là nhiều vòng.
+
 ---
 
-# ✅ PHẦN II — HỒ SƠ: CÁC MỤC ĐÃ CÓ PHÁN QUYẾT
+# ✅ PHẦN III — ĐÃ QUYẾT VÀ ĐÃ THI HÀNH: HỒ SƠ
 
-Các mục dưới đây **đã có một phán quyết ghi kèm ngày**. Chúng ở lại trong file này vì
-luật của chính file: *một mục chỉ được rời khỏi đây khi có một quyết định ghi kèm ngày
-và người quyết* — và các **khối đính chính** trong chúng là **hồ sơ về điều file này đã
-từng công bố**; xoá chúng làm bản sửa **không còn bác bỏ được**.
-
-**Trạng thái từng mục KHÔNG được chép lại ở đây.** Mục nào đã thi hành, và bởi nhiệm vụ
-nào, nằm ở **bảng phán quyết** phía trên và trong chính mục ấy. Một bản sao thứ hai của
-trạng thái sẽ đi cũ mỗi vòng và đó là điều duy nhất kiểm được về nó — đúng lý do V-1 đã
-bỏ một bản sao như thế ở đoạn mở đầu. **Y-1 không dựng lại nó**, và đó là lý do phần này
-là một chỗ ĐỨNG chứ không phải một bản tóm tắt.
+Các mục ở đây **đã quyết, và việc đã làm xong**. Chúng ở lại trong file này vì luật của
+chính file: *một mục chỉ được rời khỏi đây khi có một quyết định ghi kèm ngày và người
+quyết* — và các **khối đính chính** trong chúng là **hồ sơ về điều file này đã từng công
+bố**; xoá chúng làm bản sửa **không còn bác bỏ được**.
 
 ⚠️ **Đọc `## 5–7.` như MỘT tiêu đề markdown chứa BA mục** — mục 5, mục 6 và mục 7. Đếm
 mục bằng `grep "^## "` đã sai một lần vì đúng chuyện đó.
+
+⚠️ **Mục 7 là mục đã thi hành duy nhất KHÔNG có tiêu đề `✅ ĐÃ THI HÀNH` của riêng nó.**
+Mục 1, 5 và 6 mỗi mục có một (Q-1, V-1, T-1); việc thi hành của U-1 ở mục 7 chỉ nằm
+trong văn xuôi. Bảng phán quyết vẫn mang `đã thi hành, U-1`, nên sự thật không mất — chỉ
+cái dấu **trong mục** là thiếu. Y-1 **không tự thêm** một ghi chép thi hành mà nó không
+thi hành: nêu tên ở đây thay vì viết hộ.
 
 ---
 
@@ -454,46 +722,6 @@ minh bằng cách chạy lại.
 
 ---
 
-## 2. `Warn` được tính là TỐT cho OEE
-
-**Đo được:** phép tổng hợp OEE rẽ nhánh trên các verdict **đã ghi xuống đĩa dưới
-dạng chuỗi**:
-
-- mẫu số: `verdict <> 'Skip'` — `src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs:590`
-- tử số: `verdict IN ('Pass', 'Warn')` — `src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs:600`
-- phạm vi: `reading_kind = 'ProcessResult'` — cùng file, dòng 581
-
-**Hậu quả:** một chu kỳ `Warn` được tính là **tốt** trong OEE, trong khi ở mọi chỗ
-khác của hợp đồng nó là *"không được phán quyết dứt khoát"*. `Skip` không nằm ở cả
-tử lẫn mẫu.
-
-**Chạm tới đâu:** `/v1/historian/oee`, danh sách OEE của fleet, và **bản PDF báo cáo**.
-
-**Nếu không quyết định:** OEE tiếp tục báo cáo `Warn` là tốt. Đây có thể là **đúng
-ý muốn** — nhiều nhà máy tính warn là hàng đạt — nhưng hiện **không nơi nào nói ra
-điều đó**, nên người đọc con số OEE không có cách nào biết.
-
-**Bằng chứng:** commit `72614dd9` (N-2). Tìm ra bằng việc **viết tài liệu**, không
-phải bằng test — vì tách riêng ra thì không đường nào sai cả.
-
-> ### ✅ PHÁN QUYẾT 2026-08-16 — GIỮ HÀNH VI, XUẤT BẢN NÓ
-> **Không đổi phép tính.** `Warn` tính là tốt là **quy ước OEE thông thường** — một
-> đơn vị đạt-kèm-cảnh-báo vẫn là đơn vị xuất xưởng được, và chất lượng đếm đơn vị
-> xuất xưởng. Lý do quyết định là chỗ khác: **đổi công thức là viết lại mọi con số
-> OEE đã báo cáo trong quá khứ**, kể cả những con số đã in ra PDF và đã gửi đi.
-> Không có phiên bản nào cho công thức ấy, nên không ai đọc lại được sẽ biết con số
-> họ cầm thuộc công thức nào.
->
-> **Khuyết tật thật không phải phép tính — là việc nó chưa bao giờ được nói ra.**
-> Việc phải làm: **công bố định nghĩa ngay tại chỗ con số được đọc** — phản hồi API,
-> danh sách fleet, và bản PDF — bằng đúng ba câu: cái gì vào mẫu số, cái gì vào tử
-> số, `Skip` không vào cả hai. Kèm một câu nói rõ **con số này không có phiên bản**.
->
-> Nếu sau này nhà máy muốn `Warn` không tính là tốt, việc đó cần **một công thức có
-> phiên bản**, không phải một lần sửa tại chỗ.
-
----
-
 ## 3. Telemetry còn sót trên một reading `ProcessResult`: được ghi, vào live state, nhưng KHÔNG lên Sparkplug
 
 **Đo được:** đường ống publish **mọi** reading. `BuildSparkplugMetrics`
@@ -532,55 +760,24 @@ thấy lệch và không có lời giải thích.
 >
 > **Kích hoạt để mở lại:** khi có một bên đăng ký thật yêu cầu trường này. Lúc đó
 > nó là một **thay đổi hợp đồng có phiên bản**, không phải một bản vá.
-
----
-
-## 4. `WaveformSeries.Samples` KHÔNG có hình dạng hàng cố định
-
-**Đo được:** ba nguồn, ba nghĩa, trên **bề mặt mà tác giả driver bên thứ ba đọc
-trước tiên**:
-- SDK vendored ghi `[[t,v],…]` — `examples/device-client/csharp/St4iDeviceClient.cs`
-- `ScrewdriveSim` phát ra **từng cặp**
-- `WelderSim` phát ra **một giá trị mỗi hàng**
-
-**Hiện đang:** ship dưới dạng **ghi rõ là mơ hồ** — cả ba hình dạng được nêu tên,
-kèm câu *"không được giả định hình dạng hàng chỉ từ kiểu này"*.
-
-**Vì sao chưa giải:** chọn một nghĩa là **đổi hành vi một bề mặt đã xuất bản**.
-Đó là quyết định của chủ sở hữu, không phải việc dọn dẹp kỹ thuật.
-
-**Nếu không quyết định:** mỗi tác giả driver tự đoán, và nửa số đoán sẽ sai.
-
-**Bằng chứng:** commit `72614dd9` (N-2).
-
-> ### ⚖️ PHÁN QUYẾT 2026-08-16 — LUẬT ĐÃ CÓ SẴN TRONG DỮ LIỆU, CHỈ CHƯA AI VIẾT RA
-> **Đo lại trước khi quyết, và phép đo lật khung của chính mục này.** Mô tả cũ —
-> *"SDK nói `[[t,v]]`, `ScrewdriveSim` phát cặp, `WelderSim` phát một giá trị"* —
-> ngụ ý hai trên ba đồng ý với SDK. **Sai. Không producer nào phát `[[t,v]]` cả:**
 >
-> | nguồn | hàng | `RateHz` |
-> |---|---|---|
-> | SDK vendored (`St4iDeviceClient.cs:86`) | `// [[t,v],…]` | — |
-> | `ScrewdriveSim.cs:186` | `new[] { angle, torque }` — **(x, y), x là GÓC không phải thời gian** | **null** (dòng 189) |
-> | `WelderSim.cs:47` | `new[] { current }` — một giá trị | **được đặt** (dòng 40) |
+> #### 🔴 2026-08-18 — MỘT CÂU TRẢ LỜI ĐÃ TỚI MỤC NÀY, VÀ MỤC NÀY KHÔNG CÓ CHỖ NHẬN NÓ
+> Đợt quyết định 2026-08-18 trả về *"**3, 9** — để lại sau cùng"*. **Mục 9 nhận được câu
+> ấy; mục 3 thì không**, và chỗ chênh được ghi ra chứ không hoà giải im lặng:
 >
-> **Hai producer NHẤT QUÁN với nhau, và `RateHz` chính là thứ phân biệt:**
-> - `RateHz` **được đặt** ⇒ có trục thời gian đều ⇒ thời gian là **ngầm định**, suy
->   ra từ chỉ số và tần số. Một giá trị mỗi hàng là **đúng và tiết kiệm**.
-> - `RateHz` **null** ⇒ **không có** trục thời gian đều ⇒ hàng phải **tự mang trục X
->   của nó**: `[x, y]`. Ở `ScrewdriveSim`, x là **góc siết**, không phải thời gian.
+> - Mục 3 **không nằm trong tập đang chờ**. Nó đã có phán quyết **2026-08-16** ở ngay
+>   trên, và bảng phán quyết ghi `✅` chứ chưa bao giờ ghi `🔴 CHỜ ANH`.
+> - Việc của nó **đã xong**: cả ba kết quả đã được nêu tên trên chính thành viên
+>   `Telemetry` của `DeviceReading` (N-2) — đo lại tại `3a1228ee` và còn nguyên.
+> - **Một lần hoãn không gắn được vào một mục đã quyết và đã thi hành.** Nó không có gì
+>   để hoãn.
 >
-> **Nên cái sai không phải hai producer — là chú thích trong SDK.** `[[t,v],…]` mô
-> tả **không producer nào**, và nó là thứ tác giả driver bên thứ ba đọc trước tiên.
->
-> **Quyết định:** ✅ **`RateHz` là bộ phân biệt, và nó đã được thực thi nhất quán
-> sẵn rồi.** Viết luật ấy lên chính `WaveformSeries` — nơi hợp đồng sống — nêu tên
-> chú thích SDK là **đã biết sai** (file vendored, **cấm sửa**), và **cắm nhân chứng**
-> để nó không trôi lại.
->
-> 🔴 **KHÔNG đổi hành vi.** Tuyên bố `[[t,v]]` là chuẩn sẽ **phá cả hai producer** và
-> vứt đi quan hệ với `RateHz` — đó là lý do mục này phải đo trước khi quyết, và là lý
-> do câu trả lời hiển nhiên lại là câu sai.
+> **Nên trạng thái mục 3 KHÔNG đổi**, và Y-1 **không** ghi một phán quyết mới ở đây. Điều
+> được ghi là **đã có một câu trả lời tới nhầm cửa** — thứ mà im lặng sẽ biến thành một
+> mục 3 vừa "đã quyết 2026-08-16" vừa "hoãn 2026-08-18", hai trạng thái không cùng đứng
+> được. Nếu chủ sở hữu thật sự muốn **mở lại** mục 3, đường để làm việc đó đã có sẵn và
+> nằm ngay trên: **kích hoạt để mở lại**, và nó đòi một bên đăng ký thật, không phải một
+> lần hoãn.
 
 ---
 
@@ -1150,7 +1347,7 @@ KHÔNG ĐỦ — bản thân việc cài đặt cũng có thể ném lỗi.**
 
 ---
 
-# PHẦN III — PHỤ LỤC: KHÔNG PHẢI QUYẾT ĐỊNH CỦA ANH, VÀ LỊCH SỬ CỦA CHÍNH FILE NÀY
+# PHẦN IV — PHỤ LỤC: KHÔNG PHẢI QUYẾT ĐỊNH CỦA ANH, VÀ LỊCH SỬ CỦA CHÍNH FILE NÀY
 
 Không gì trong phần này đang chờ anh quyết. Nó ở đây vì **xoá thì không được** — và nó
 ở CUỐI vì đặt nó trước các mục đang chờ là đúng khuyết tật Y-1 được giao để sửa.
