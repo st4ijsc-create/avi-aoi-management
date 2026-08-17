@@ -29,7 +29,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 2 | `Warn` tốt cho OEE | ✅ **GIỮ HÀNH VI, XUẤT BẢN NÓ** — đổi là viết lại lịch sử |
 | 3 | bất đối xứng Sparkplug | ✅ **GIỮ DÂY, ĐÃ GHI RÕ** — đổi payload là việc của bên đăng ký |
 | 4 | hình dạng hàng `Samples` | ⚖️ **ĐO TRƯỚC, RỒI CHỌN** — SDK đã xuất bản là ứng viên chuẩn |
-| 5 | ~~ba hình dạng xoá file~~ | ⚠️ **TRÍCH DẪN KHÔNG CHỨNG MINH MÔ TẢ** — suy lại từ mã trước khi hỏi |
+| 5 | ~~ba hình dạng xoá file~~ → **`oee-settings.json`** | 🔴 **CHỜ ANH** — đã đo (S-1): ba tư thế, một cái mất dữ liệu im lặng |
 | 6 | log hoãn của một lần cài đặt hỏng | 🔴 **CHỜ ANH** — đứng trên KHÔNG TÁCH RỜI ĐƯỢC, không phải trạng thái thứ ba |
 | 7 | nửa sau của S4 | 🔴 **CHỜ ANH** — thứ tự quan sát được + tháo dỡ giao dịch, không phải trạng thái thứ ba |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
@@ -282,6 +282,43 @@ kèm câu *"không được giả định hình dạng hàng chỉ từ kiểu n
 >   tại và không đọc được', thứ mà cả composition root lẫn store đều không biểu
 >   đạt"* — và **Q-1 đã đóng đúng mảnh đó** (commit `17fa6841`).
 >
+>   > 🔴 **ĐÍNH CHÍNH CỦA ĐÍNH CHÍNH — S-1, 2026-08-17. Đoạn trên đúng về trích dẫn
+>   > và SAI về kết luận rút ra từ nó.** Tôi kết luận mô tả *"ba hình dạng xoá file"*
+>   > là **không kiểm được**. Nó kiểm được. Nó chỉ **trích sai nguồn**.
+>   >
+>   > Ba hình dạng ấy **tồn tại, đã đo, và nằm trong repo**: bảng ba dòng ở
+>   > `docs/startup-failure-posture.md` §3.1a (*"The seed-arm shape | `Save(floor)` |
+>   > `Delete()` | What is on disk afterwards"*), do dụng cụ M-1 `tools/settings-acl-probe`
+>   > chạy ra (`811c9054`). Ba dòng: deny **lan truyền** (`Save` ném, `Delete` no-op,
+>   > file sống), deny **cả hai đối tượng không lan truyền** (file MẤT), và **file hỏng
+>   > cú pháp** (file MẤT). Cùng một tình huống — nhánh gieo mầm — **hành vi khác nhau**,
+>   > và **cách nhau đúng một hợp đồng**: `_onLiveSettingsRebuilt`, thứ chính chỗ gọi
+>   > gọi là một callback host tuỳ ý. Mô tả của tôi khớp **cả ba chi, từng chi một**.
+>   >
+>   > ⚠️ **Bản đầu viết "khớp từng chữ". Đó là một lời diễn giải, không phải một trích
+>   > dẫn** — mỗi chi ánh xạ vào một mệnh đề nguyên văn trong §3.1a, nhưng không câu
+>   > nào trong §3.1a là bản sao của mô tả. Trong một nhiệm vụ mà luật vị ngữ là luật,
+>   > "từng chữ" là từ sai cho một lời diễn giải, kể cả khi lời diễn giải ấy đúng.
+>   >
+>   > 🔴 **Và có một lý do thứ hai khiến phép kiểm ban đầu trượt, do phản biện tìm ra
+>   > và đáng giữ:** ở `Program.cs` cụm từ ấy **bị ngắt dòng qua một dòng chú thích
+>   > tiếp nối**, nên `grep "deletion shapes"` trả về **rỗng** — chỉ một phép tìm biết
+>   > gộp dòng mới thấy. Tức đúng cái hình dạng §8.1(f) một tầng nữa: **con trỏ có
+>   > trong sản phẩm, và bản thân nó cũng vô hình trước dụng cụ hiển nhiên.**
+>   >
+>   > Chính Q-1 đã trỏ đúng chỗ ấy: chú thích Q-1 thêm vào `St4i.EngineApi/Program.cs`
+>   > viết nguyên văn *"tabulated as the three deletion shapes in
+>   > `docs/startup-failure-posture.md` §3.1a"*. Nên đường dẫn tới bằng chứng nằm
+>   > **trong cây mã**, và tôi đã đi kiểm bằng cách mở **commit** thay vì đi theo
+>   > **con trỏ** — tức tôi kiểm sai artefact rồi ghi kết quả như một phán quyết về
+>   > mô tả.
+>   >
+>   > **Cái vẫn đúng, và nó mới là điều quan trọng:** cả ba hình dạng là **một chỗ
+>   > duy nhất** (cặp `Save`+`Delete` của nhánh gieo mầm), và **Q-1 đã đóng đúng chỗ
+>   > đó** — nhánh ấy nay chỉ chọn được khi `Absent`. Nên mục 5 **mất phần đã nêu**,
+>   > đúng như kết luận. Điều nó KHÔNG mất là câu hỏi tổng quát, và câu hỏi ấy giờ
+>   > **đã đo** — xem §5.
+>
 > **Nên: hai mục không cùng loại với nhau, và mục thứ ba đã bị Q-1 lấy mất phần
 > chung.** Câu *"thứ tự chọn một lời biện minh"* vì thế cũng sai — **không có thiết
 > kế chung nào để mà chọn**.
@@ -292,18 +329,165 @@ kèm câu *"không được giả định hình dạng hàng chỉ từ kiểu n
 > đây viết lại **theo cơ chế thật của từng mục**, và không mục nào tuyên bố có họ
 > hàng với mục nào.
 
-### 5. ⚠️ MỤC NÀY CẦN SUY LẠI TỪ MÃ TRƯỚC KHI THÀNH MỘT QUYẾT ĐỊNH
-**Trạng thái:** mô tả *"ba hình dạng xoá file"* **không được chứng minh bởi commit
-đã trích** (`eca39f89`), và phần **trạng thái thứ ba** của D1 **đã được Q-1 đóng**.
+### 5. `oee-settings.json` bị THAY bằng một entry duy nhất khi file cũ không đọc được — không lỗi, không log
 
-**Việc phải làm trước khi hỏi anh:** liệt kê các đường xoá dữ liệu vận hành viên
-trong `src/` **bằng một dụng cụ có miền phát biểu được**, rồi hỏi chúng có thật sự
-phân kỳ ở cùng một tình huống không. `Delete(` xuất hiện ở **ít nhất tám** file dưới
-`src/` (một cận dưới đếm được bằng máy, không phải một tổng số). Nếu chúng phân kỳ,
-đó là một quyết định; nếu không, mục này **đóng lại chứ không xoá đi**.
+**Mục này đã được ĐO (S-1, `fac26188`). Nó không đóng: nó đổi mục tiêu.** Bộ ba
+hình dạng cũ đúng là đã bị Q-1 đóng (xem đính chính ở §5–7). Câu hỏi tổng quát —
+*"các đường xoá còn lại có phân kỳ ở cùng một tình huống không?"* — nay có **câu
+trả lời có bằng chứng, và đó là CÓ**.
 
-🔴 **Không giao việc trên mục này cho tới khi phép liệt kê ấy tồn tại.** Giao việc
-theo mô tả hiện tại là truyền tiếp một cái khung mà không ai kiểm được.
+**Tình huống được giữ cố định, phát biểu một lần:** *artefact có mặt trên đĩa, và
+tiến trình không hiểu được các byte của nó.* Đây đúng là tình huống mục 5 thừa kế
+từ Q-1. **Một handle deny-share, một ACL Windows và một ổ đĩa đầy KHÔNG phải tình
+huống này** — `docs/startup-failure-posture.md` §3.1a đã trả giá hai lần cho việc
+gộp chúng làm một.
+
+**Đo được — chín store, dựng thật, trên một artefact hỏng trong thư mục tạm của
+chính lần chạy test (không đụng gì dưới `%ProgramData%\ST4I\`). BA tư thế:**
+
+| tư thế | store | nghĩa vận hành |
+|---|---|---|
+| **Trạng thái thứ ba** | `FleetSettingsStore`, `SiteLinkStore` | phép đọc trả về một kết quả RIÊNG; chỗ gọi **rẽ nhánh được** |
+| **Ném** | `MachineConfigStore`, `ProductConfigStore`, `SimulatedEcosystem`, `ConnectorConfigStore`, `NotificationConfigStore`, `SecurityDb` | thao tác dừng; **không mất byte nào**; store không phát biểu trạng thái, chỗ gọi chỉ biết bằng cách bắt |
+| 🔴 **Không đọc được = không tồn tại** | **`OeeSettingsStore`** | chỗ gọi **không có gì để rẽ nhánh**, vì hai ca trả về cùng một thứ |
+
+**Đo được, ở dòng cuối bảng — và đây là phần cần anh quyết:**
+`OeeSettingsStore.Load` bắt `JsonException` rồi khởi động từ store rỗng, tức **đúng
+bằng trạng thái trong bộ nhớ mà nó đạt tới khi file không hề tồn tại**. Mutator duy
+nhất của nó (`Set`) sau đó **ghi trạng thái ấy đè lên file**. Nên
+`oee-settings.json` của vận hành viên — **ideal-cycle override và
+planned-production ratio của MỌI máy** — bị thay bằng **một entry duy nhất** mà
+lần `PUT /v1/historian/oee/settings` kế tiếp mang theo. **Không ném, không một dòng
+log, không một trường trạng thái nào trả về.**
+
+Đây **đúng cơ chế** Q-1 đã sửa ở `fleet-settings.json` và `site-link.json`, **còn
+sống ở file thứ ba**.
+
+**Ở đâu:** `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` (`Load`, khối
+`catch (JsonException)`; `Set` → `Save` → `WriteAllTextAtomic`), tới được từ
+`src/St4i.EngineApi/Endpoints/HistorianEndpoints.cs` (`PutOeeSettingsAsync`, chính
+sách `Engineer`).
+
+**Hậu quả vận hành, và nó chạm vào mục 2:** hai giá trị ấy là **đầu vào của phép
+tính OEE**. Mất chúng không làm gì hỏng thấy được — nó làm **con số OEE đổi thầm
+lặng** về mặc định (`override = null`, `ratio = 1.0`) cho mọi máy trừ máy vừa được
+đặt. Mục 2 vừa quyết **giữ công thức OEE và xuất bản định nghĩa của nó vì đổi công
+thức là viết lại lịch sử**; mất file này viết lại lịch sử **mà không ai đổi công
+thức cả**.
+
+**Nếu không quyết định:** giữ nguyên. Một `oee-settings.json` hỏng cú pháp — file
+JSON, không schema, cùng loại với `fleet-settings.json` ở mục 1 — sẽ bị thay bởi
+lần đặt OEE kế tiếp, và **không ai biết cho tới khi có người đối chiếu báo cáo OEE
+với thứ họ nhớ đã cấu hình**.
+
+**Vì sao là quyết định của chủ sở hữu chứ không phải một cái chốt:** sửa nó là
+**đổi hợp đồng khởi tạo của store**, và có **ba** cách sửa cho ba kết quả khác nhau
+— cho nó ném như `MachineConfigStore`/`ProductConfigStore`, cho nó biểu đạt trạng
+thái thứ ba như hai store Q-1 đã sửa, hoặc giữ nguyên và **chỉ báo**. Chúng không
+tương đương: cái thứ nhất **dừng một endpoint đang phục vụ**, cái thứ hai đổi kiểu
+trả về của một phép đọc, cái thứ ba để nguyên mất mát nhưng làm nó **thấy được**.
+
+🔴 **Và có một sự thật kiểm được ngay tại chỗ khiến việc này không thể để trôi:
+store này TỰ MÔ TẢ SAI.** Chú thích ngay trong khối `catch` nói nó *"mirrors
+`MachineConfigStore`/`ProductConfigStore`'s 'never throw out of the constructor over
+a bad file' stance"* (`OeeSettingsStore.cs`, khối `catch (JsonException)` trong
+`Load`). **Đo được: hai store ấy CÓ ném** — cả hai đều nằm ở dòng "Ném" của bảng
+trên. Nên lý do duy nhất được ghi ra cho hành vi này **là một khẳng định về hai
+store khác, và khẳng định ấy sai.** Không có cách đọc nào khiến nó đúng.
+
+**Bằng chứng — chạy lại được, và ĐỎ được:**
+`tests/St4i.EngineApi.Tests/OperatorDataRemovalCensusTests.cs`.
+- `EveryOperatorArtifact_HasThePostureRecordedForIt_AtTheOneSituationHeldFixed` ghim
+  cả chín tư thế **đã đo**, không phải đã đọc.
+- `TheOneStoreThatCannotTellUnreadableFromAbsent_ReplacesTheOperatorsBytes` chạy
+  chính tác hại: ghi byte có dấu vào file, gọi `Set` cho một máy khác, đọc lại —
+  dấu **biến mất**. **Nó GHIM một khuyết tật đang sống làm đường cơ sở và KHÔNG
+  sửa**, vì S-1 bị cấm sửa. Nếu anh quyết SỬA, khẳng định ấy **đảo chiều**, và chỗ
+  đảo chính là diff.
+- `ThePosturesAtTheFixedSituation_AreNotAllTheSame` khẳng định **câu trả lời**. Ai
+  đưa mọi store về một tư thế sẽ làm nó đỏ — đúng như phải thế: mục này lúc đó
+  **đóng lại kèm bằng chứng**, và một câu trả lời không được sống lâu hơn cây mã
+  nó nói về.
+
+**Bốn đối chứng đã chạy, rồi hoàn nguyên (§8.1(h6)) — và nhãn của chúng đã được sửa
+sau phản biện, vì bản đầu gộp hai khẳng định khác nhau làm một:**
+
+| arm | can thiệp | đỏ ở đâu, và nó chứng minh ĐIỀU GÌ |
+|---|---|---|
+| **C1** | thêm `new FileInfo(p).Delete()` vào `WalMaintenance` | bờ **IL** đỏ, gọi đúng tên phương thức — còn phép liệt kê quét mã vẫn **xanh**. Chứng minh **vốn từ quét mã BÁC BỎ ĐƯỢC**, và đúng lúc nó mù |
+| **C2** | `MachineConfigStore.Load` nuốt `JsonException` | **bảng tư thế** đỏ, gọi đúng tên store. Chứng minh **một phân kỳ MỚI bị phát hiện** |
+| **C3** | bỏ khối `catch` của `OeeSettingsStore` | ba test đỏ. ⚠️ **KHÔNG phải "phân kỳ biến mất"** — bỏ một store vẫn còn **hai** tư thế, nên khẳng định `số lớp > 1` **vẫn xanh**. Nó đỏ ở **phép so khớp TẬP LỚP đã ghim**. Chứng minh **BẢNG đã công bố không sống lâu hơn cây mã** — mà bảng chính là thứ mục này in ra |
+| **C4** | bỏ `catch` ở **cả ba** — `FleetSettingsStore`, `SiteLinkStore`, `OeeSettingsStore` | cả chín store về **một** tư thế. Khẳng định **`số lớp > 1` đỏ**, in đúng câu *"mọi store nay hành xử như nhau… hãy đi đóng mục này, lấy chính lần chạy đó làm bằng chứng"*. Chứng minh **câu trả lời tiêu đề đỏ được** |
+
+C4 được thêm ở vòng sửa vì phản biện chỉ ra bản đầu **gán cho C3 phần chứng minh mà
+C3 không làm**. Bốn arm, hai bờ, không arm nào còn lại trong cây.
+
+#### Phần dư KHÔNG đóng được bằng phép đo này — nêu tên chứ không im lặng
+
+1. **`CredentialStore.Load` và `DeviceIdentityStore.TryLoad` có cùng hình dạng
+   "không đọc được = không có"**, và cả hai **cố ý** — chúng đứng ngoài bảng trên vì
+   nội dung là **byte do sản phẩm sinh**, không phải cấu hình vận hành viên gõ ra, tức
+   tiền đề của luật mục 1 không đúng ở đó. `DeviceIdentityStore` đã là **phần dư đã
+   ghi** ở cuối mục 1.
+
+   > ⚠️ **Bản đầu của gạch đầu dòng này viết *"`CredentialStore` chưa từng được ghi ở
+   > đâu"*. SAI, và phản biện bác bỏ bằng chính mã mà nó trích.** Hình dạng ấy **đã
+   > được ghi**, ở hai chỗ: doc comment của chính `CredentialStore.Load` (nêu đích
+   > danh ca *"mã hoá dưới scope/entropy DPAPI khác — ví dụ một `.bin` thời tiền-FF-2
+   > mã hoá theo `CurrentUser` — hoặc copy từ máy khác"*), và
+   > `src/St4i.EngineApi/Alarms/NotificationSecretProtector.cs`, nơi gọi tên idiom và
+   > nói *"`CredentialStore.Load` và `DeviceIdentityStore.TryLoad` đều theo"* nó.
+   > Đây đúng nhánh **bác bỏ** của luật câu chữ: tôi dựng một phủ định phổ quát bằng
+   > cách **không tìm thấy**, chứ không bằng phép kiểm đếm có thể bác bỏ nó.
+   >
+   > **Cái CHƯA từng được ghi ở đâu là HẬU QUẢ.** Doc comment ấy trình bày `null`
+   > như một kết quả **lành** — *"để đường credential-rỗng bình thường của caller chạy
+   > thay vì một lần sập không bắt được"* — và **không chỗ nào nói rằng** đường
+   > "claim lại" sau đó **`Save` đè lên** một blob mà **chỉ cần sửa môi trường là đọc
+   > lại được**. Nên **một lỗi môi trường KHÔI PHỤC ĐƯỢC bị biến thành mất mát không
+   > hoàn nguyên**, và chính câu đó là thứ cần ghi. Phát hiện còn nguyên; vị ngữ của
+   > nó thì không.
+2. **Tư thế "ném" chưa được đo ở chỗ nó tiếp đất.** Phép đo dừng ở **store**. Việc
+   một `SqliteException` từ `ConnectorConfigStore` có kết thúc tiến trình, hay bị
+   bắt ở đâu đó rồi tiếp tục bằng một store rỗng, là câu hỏi của composition root
+   và **không có arm nào ở đây khởi động `St4i.EngineApi`** — đúng cùng trần mà
+   `docs/startup-failure-posture.md` §2 tuyên bố cho instrument 2 của nó.
+3. **Bốn trong tám project đứng ngoài bờ IL** (`St4i.EdgeService`,
+   `St4i.Connector.Conformance`, `St4iMachineSimulator`, `St4i.DesktopShell` — không
+   test project nào tham chiếu hai host WPF). Ở đó **vốn từ quét mã chưa bị bác bỏ
+   bởi bất cứ thứ gì**, và **kích thước lỗ hổng ấy nay đã đo**: quét mã có **9** hình
+   dạng, bảng phân loại có **37** thành viên có khả năng xoá, trong đó **21** thành
+   viên **không có một hình dạng quét mã nào**. Trong bờ IL cả 21 đều bị bắt đỏ; ngoài
+   bờ IL chúng im lặng.
+
+   > ⚠️ **Cái chặn thiệt hại đã được viết hẹp lại.** Bản đầu viết *"không store bền
+   > vững nào nằm trong bốn project đó"* — đúng, nhưng đó là một **phủ định phổ quát
+   > không có phép kiểm nào bác bỏ được**, đúng loài file này lập ra để chấm dứt. Cái
+   > **đo được**: phép liệt kê ghim **bốn** file trong các project ấy **CÓ** phá byte
+   > (`App.xaml.cs`, `FleetService.cs`, `InspectorViewModel.cs`,
+   > `MainWindow.xaml.cs`), và một trong số đó — `InspectorViewModel` ghi đè lên
+   > **đường dẫn xuất do vận hành viên tự chọn** — **có thể đè file của vận hành
+   > viên**. Câu đúng và hẹp: **không project nào trong bốn cái đó sở hữu một artefact
+   > mà sản phẩm này ghi rồi đọc lại**, nên không cái nào vào bảng tư thế.
+   >
+   > Phản biện đã chạy phép quét mà nhiệm vụ này **không** chạy, và kết quả **có lợi
+   > cho phép đo**: quét bốn project ấy bằng một vốn từ **rộng hơn** vốn từ quét mã —
+   > `File.Replace`/`Copy`/`WriteAllLines`/`CreateText`/`OpenWrite`, `MoveTo`,
+   > `Directory.Move`, `new StreamWriter`, `new FileStream`, `FileMode.*`, xoá trên
+   > `FileInfo`/`DirectoryInfo` — và **mọi kết quả đều nằm trong 9 hình dạng sẵn có**.
+   > **Hôm nay không có đường xoá file nào lọt ở đó.**
+   >
+   > 🔴 **Và điều quan trọng nhất về lỗ hổng này: nó không chạm tới câu trả lời.** Câu
+   > trả lời ("ba tư thế, `OeeSettingsStore` là cái phân kỳ") đứng trên **bờ THI
+   > HÀNH**, thứ không phụ thuộc chút nào vào tính đầy đủ của hai bờ kia. Một đường xoá
+   > lọt lưới sẽ làm **phép liệt kê dài ra**; nó **không thể làm các tư thế thôi phân
+   > kỳ**.
+4. **SQL không bị bác bỏ ở đâu cả** — bờ IL không nhìn thấy một chuỗi. Bảy file có
+   câu lệnh SQL xoá/thay hàng đã được liệt kê và ghim, nhưng không gì ở đây chứng
+   minh không có câu lệnh nào được ráp lúc chạy từ những mảnh mà không mẫu nào khớp.
+5. **Xoá bởi thứ không phải mã này** nằm ngoài toàn bộ: `packaging/remove-data.ps1`,
+   trình cài đặt, sidecar `-wal`/`-shm` của SQLite, key ring của DataProtection, và
+   SDK vendored dưới `examples/` — thứ **thật sự ghi** các file WAL `.jsonl`.
 
 ### 6. Log hoãn lại của một lần cài đặt THẤT BẠI (J-2, phần dư 3)
 **Cơ chế, nguyên văn từ `99ab7b61`:** *"Nó chỉ còn đứng trên tính không tách rời:
