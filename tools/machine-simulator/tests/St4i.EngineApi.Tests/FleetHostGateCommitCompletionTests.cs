@@ -682,6 +682,248 @@ public sealed class FleetHostGateCommitCompletionTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // S3's residual (3) — T-1, and it is the OWNER'S ruling, not this file's judgement.
+    //
+    // Owner decision 6 (docs/owner-decisions.md §6) was refused three times on SYMMETRY: the two SIBLING
+    // non-installing paths — the HALT-latch refusal inside StartLocked and Start()'s _stopRequests abandon —
+    // were each decided silent at their own site, so letting the third path speak was held to be a change to
+    // what an operator sees, and therefore not an implementer's to make. The ruling that answered that
+    // escalation refused the symmetry on a measurement this repository already carried, in StopLocked's own
+    // comment: the two siblings are "nothing happened", while the throw path is "a great deal happened and
+    // THEN it broke" — the resolver ran and fell back, a connector was rejected, and slots may already be
+    // installed. Silence about what did not happen is right; silence about what did is not.
+    //
+    // Four tests. One is the ruling's witness; one re-verifies the surviving projection the ruling's own
+    // evidence rests on; two pin the siblings' silence, which the ruling must not disturb.
+    //
+    // 🔴 WHAT IS NOT WITNESSED HERE, because a sibling assertion already holds it: the CHANNEL choice inside
+    // the flush (a non-null Error goes to _logError, a null one to _logWarning) is unchanged by T-1 and its
+    // Error arm is asserted by Estop_WhenTheHostLoggerThrowsFlushingTheHaltPathLines_TheOldPipelineIsStillDisposed
+    // above. T-1 chooses no level: every line below carries the level its PRODUCER chose, and reaches the
+    // host through the same routing a SUCCESSFUL start already uses.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The unique profile name every T-1 test registers. It names no file under
+    /// <c>FleetCore.MappingDirectory</c>, which is what makes <c>MappingProfileResolver</c> emit its
+    /// fall-back warning; and it is distinctive enough that a count over the host's log lines cannot be
+    /// satisfied by some other line the harness produced.</summary>
+    private const string MissingProfile = "t1-no-such-profile";
+
+    private static MachineDescriptor T1Machine(string code, string? mappingProfile = null) =>
+        new(code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
+            DriverKinds.Simulated, "RC-T1", mappingProfile, CycleSeconds: 0.05);
+
+    private static int Lines(RecordingLogger logger, LogLevel level, string fragment) =>
+        logger.Entries.Count(e => e.Level == level && e.Message.Contains(fragment, StringComparison.Ordinal));
+
+    /// <summary>🔴 S3's residual (3) — CLOSED (T-1). The lines a failed install used to lose.
+    ///
+    /// <para><b>What this drives.</b> One start that does real work and then throws: a roster machine whose
+    /// <c>mappingProfile</c> names no file (the resolver runs, warns, and falls back — off the lock, in the
+    /// plan), a registered connector whose factory rejects its config (the connector loop records the
+    /// rejection — under the lock, in the install), and a group whose profile is null so <c>StartSlot</c>'s
+    /// <c>new EdgePipeline</c> throws after both. That is the shape residual (3) is about, and the two
+    /// buffered lines are produced by two DIFFERENT halves of the start — one before the lock, one inside it
+    /// — which is why both are asserted rather than one.</para>
+    ///
+    /// <para><b>The install failure is asserted FIRST and it is not decoration.</b> The flush now runs with
+    /// real entries on a path where it used to iterate nothing, and it invokes a host delegate; a host whose
+    /// logger throws would replace the exception that says why the start failed. <c>Assert.Throws</c> is what
+    /// keeps "the emission arrived" from ever being bought with "the failure did not".</para>
+    ///
+    /// <para><b>Exactly one of each, not at-least-one.</b> The list is allocated once per call and consumed
+    /// once, in the caller's <c>finally</c>; a doubled emission is the failure mode a retry-then-succeed
+    /// sequence would produce and it is the reason the count is pinned rather than the presence.</para>
+    ///
+    /// <para><b>Level.</b> Both are <c>Warning</c> — and T-1 did not choose that. The mapping fall-back and
+    /// the connector rejection are buffered with a null <c>Error</c> at their own producing sites, which is
+    /// the same entry a SUCCEEDING start hands to the same flush. What was fixed is reaching the emitter, not
+    /// the routing.</para></summary>
+    [Fact]
+    public void AStartThatThrowsWhileInstallingSlots_StillSaysWhatHappenedBeforeItThrew()
+    {
+        const string code = "T1-SPEAKS-01";
+        const string connectorId = "vendor.t1.orphan";
+
+        var logger = new RecordingLogger();
+        var registry = new ConnectorRegistry();
+        registry.Register(new OrphanLeakingFactory(connectorId, new DisposeCountingDriver("t1-orphan")), config: "garbage");
+
+        var host = CreateHost(logger, connectorRegistry: registry);
+        Assert.True(host.RegisterMachine(T1Machine(code, MissingProfile)));
+
+        host.AdditionalPipelinesForTests = () => new List<(string, IDeviceDriver, MappingProfile)>
+        {
+            ("t1-throwing", new DisposeCountingDriver("t1-throwing"), null!),
+        };
+
+        try
+        {
+            // The install really did fail, and the failure is what the caller still sees.
+            Assert.Throws<ArgumentNullException>(() => host.Start());
+            Assert.False(host.IsRunning);
+
+            // THE ASSERTION, half one — the mapping fall-back. This half has no projection anywhere: the
+            // resolver's whole output is the profile it returns and the callback it invokes
+            // (MappingProfileResolver.ResolveOne), so before T-1 a failed install erased it with no residue.
+            Assert.Equal(1, Lines(logger, LogLevel.Warning, MissingProfile));
+
+            // THE ASSERTION, half two — the connector rejection, which is the half that DOES have a
+            // projection (see the next test). It is asserted here anyway because the two halves are buffered
+            // by different code under different locks, and a fix that reached only one of them would pass a
+            // one-sided test.
+            Assert.Equal(1, Lines(logger, LogLevel.Warning, connectorId));
+        }
+        finally
+        {
+            host.AdditionalPipelinesForTests = null;
+            try { host.Stop(); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>🔴 The projection the ruling's evidence rests on, RE-VERIFIED rather than inherited
+    /// (§8.1(h5.1)) — and it is green on both sides of T-1's diff, which is the point of it.
+    ///
+    /// <para><c>_connectorStartIssues</c> is a FIELD, written one statement after the connector-rejection
+    /// line is buffered and in the same loop iteration, so it survives a throw that the line did not. That
+    /// asymmetry is what narrowed decision 6: half of what a failed install knew was already pollable at
+    /// <c>GET /v1/connectors</c>, and half of it was gone. This test pins the surviving half at the surface
+    /// an operator actually reads.</para>
+    ///
+    /// <para><b>It is deliberately NOT an assertion that the mapping half has no projection.</b> That is a
+    /// universal negative and nothing here could refute it. What is checkable, and is stated at the test
+    /// above instead, is the closed set: <c>MappingProfileResolver.ResolveOne</c> returns a profile and
+    /// invokes one of two callbacks, and writes nothing else anywhere.</para></summary>
+    [Fact]
+    public void AFailedInstallsRejectedConnector_IsStillReportedByTheProjectionThatOutlivesTheLine()
+    {
+        const string connectorId = "vendor.t1.projection";
+
+        var registry = new ConnectorRegistry();
+        registry.Register(new OrphanLeakingFactory(connectorId, new DisposeCountingDriver("t1-proj-orphan")), config: "garbage");
+
+        var host = CreateHost(connectorRegistry: registry);
+
+        host.AdditionalPipelinesForTests = () => new List<(string, IDeviceDriver, MappingProfile)>
+        {
+            ("t1-proj-throwing", new DisposeCountingDriver("t1-proj-throwing"), null!),
+        };
+
+        try
+        {
+            Assert.Throws<ArgumentNullException>(() => host.Start());
+
+            // THE ASSERTION: the failed start is over, the fleet is not running, and the connector issue is
+            // still there to be read.
+            Assert.False(host.IsRunning);
+            Assert.Contains(host.GetConfiguredConnectorIssues(), i => i.Id == connectorId);
+        }
+        finally
+        {
+            host.AdditionalPipelinesForTests = null;
+            try { host.Stop(); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>🔴 SIBLING PATH 1, which the ruling leaves SILENT: a start abandoned because a
+    /// <c>Stop()</c> landed in its off-lock build window.
+    ///
+    /// <para>The plan has already resolved this machine's mapping profile and already buffered the warning by
+    /// the time the abandon check runs — <c>StartBuildObserverForTests</c> fires as the build's last
+    /// statement — so the lines exist and are dropped on purpose. Nothing installed, so there is nothing that
+    /// happened for the fleet to report; the next start rebuilds the same plan and produces the same
+    /// messages. This is the path Start()'s own abandon comment decided, and T-1 does not reopen it.</para>
+    ///
+    /// <para><b>What makes this falsifiable rather than a green nothing:</b> the same warning is asserted
+    /// PRESENT on the throw path two tests above, from the same producer, through the same flush. A fix that
+    /// emitted from every non-installing path would turn this test red and that one green together.</para></summary>
+    [Fact]
+    public void AStartAbandonedByAConcurrentStopRequest_StillSaysNothing()
+    {
+        var logger = new RecordingLogger();
+        var host = CreateHost(logger);
+        Assert.True(host.RegisterMachine(T1Machine("T1-ABANDON-01", MissingProfile)));
+
+        var observations = 0;
+        var stopped = false;
+        host.StartBuildObserverForTests = () =>
+        {
+            if (Interlocked.Increment(ref observations) > 1) return;
+            stopped = Task.Run(() => host.Stop()).Wait(PollTimeout);
+        };
+
+        try
+        {
+            host.Start();
+
+            Assert.Equal(1, Volatile.Read(ref observations));
+            Assert.True(stopped, "the mid-build Stop must have completed");
+            Assert.False(host.IsRunning);
+
+            // THE ASSERTION: the abandoned start said nothing.
+            Assert.Equal(0, Lines(logger, LogLevel.Warning, MissingProfile));
+        }
+        finally
+        {
+            host.StartBuildObserverForTests = null;
+            try { host.Stop(); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>🔴 SIBLING PATH 2, which the ruling also leaves SILENT: an install refused by the HALT latch
+    /// inside <c>StartLocked</c>.
+    ///
+    /// <para>Reached the only way it still can be — a roster change on a RUNNING fleet restarts through
+    /// <c>RebuildPipelineOffLock</c>, which reads no <c>_stopRequests</c>, so an <c>Estop()</c> landing in
+    /// that rebuild's build window meets the latch and nothing else. Same path as
+    /// <c>FleetHostStartBuildHoistTests.AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock</c>,
+    /// asked a different question.</para>
+    ///
+    /// <para><b>The mechanism this pins is a STATEMENT ORDER</b>, and it is the one T-1 had to leave alone:
+    /// the plan's buffered lines join the caller's list only AFTER the latch has let the install through.
+    /// Hoisting that one statement above the latch is what puts new operator-visible output on the halt path,
+    /// and it is what turns this test red.</para></summary>
+    [Fact]
+    public void AnInstallRefusedByTheHaltLatch_StillSaysNothing()
+    {
+        var logger = new RecordingLogger();
+        var host = CreateHost(logger);
+        Assert.True(host.RegisterMachine(T1Machine("T1-LATCH-01")));
+
+        host.Start();
+        Assert.True(host.IsRunning);
+
+        // Armed only now, so the first start's own build does not consume the one-shot.
+        var observations = 0;
+        var halted = false;
+        host.StartBuildObserverForTests = () =>
+        {
+            if (Interlocked.Increment(ref observations) > 1) return;
+            halted = Task.Run(() => host.Estop()).Wait(PollTimeout);
+        };
+
+        try
+        {
+            // Restarts the running fleet, and the machine it registers is the one carrying the profile that
+            // does not exist — so the rebuild's plan holds the warning when the latch refuses it.
+            Assert.True(host.RegisterMachine(T1Machine("T1-LATCH-02", MissingProfile)));
+
+            Assert.Equal(1, Volatile.Read(ref observations));
+            Assert.True(halted, "the mid-rebuild Estop must have completed");
+            Assert.True(host.EstopEngaged);
+            Assert.False(host.IsRunning);
+
+            // THE ASSERTION: the refused install said nothing.
+            Assert.Equal(0, Lines(logger, LogLevel.Warning, MissingProfile));
+        }
+        finally
+        {
+            host.StartBuildObserverForTests = null;
+            try { host.Stop(); } catch { /* best-effort */ }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // S4 (first half) — the restart chokepoint's rebuild.
     // ─────────────────────────────────────────────────────────────────────
 

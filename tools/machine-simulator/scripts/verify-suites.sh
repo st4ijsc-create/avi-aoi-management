@@ -2470,7 +2470,36 @@ EXPECT_EDGESERVICE=51
 # FileStream.SetLength to System.IO.Stream, deliberately outside ByteOwningTypes).
 #
 # New grand total 2694. EXPECT_WARNINGS stays 116.
-EXPECT_ENGINEAPI=1354
+#
+# 🔴 TASK T-1 raises this again, 1354 -> 1358 (+4), counted from the runner. Grand total 2694 -> 2698.
+# One file touched on the test side (FleetHostGateCommitCompletionTests.cs); the src side is FleetCore.cs
+# only. Owner decision 6 (docs/owner-decisions.md §6) ruled 2026-08-17: a failed install must say what
+# already happened before it threw; the two SIBLING non-installing paths stay silent. All four tests are
+# consequence probes on the production path, in the file that already owns S3's residual.
+#   AStartThatThrowsWhileInstallingSlots_StillSaysWhatHappenedBeforeItThrew             +1
+#       THE RULING'S WITNESS. One start that does real work and then throws: a roster machine whose
+#       mappingProfile names no file (the resolver warns and falls back, off the lock, in the plan), a
+#       registered connector whose factory rejects (the connector loop records it, under the lock), then a
+#       null profile so StartSlot's `new EdgePipeline` throws after both. Asserts the install failure STILL
+#       reaches the caller first — the emission must never be bought with the failure — then exactly one of
+#       each line at Warning. Both halves are asserted because they are buffered by different code on
+#       different sides of the lock, and a fix reaching only one would pass a one-sided test.
+#   AFailedInstallsRejectedConnector_IsStillReportedByTheProjectionThatOutlivesTheLine  +1
+#       §8.1(h5.1) — the surviving projection the ruling's own evidence rests on, RE-MEASURED rather than
+#       inherited. GREEN ON BOTH SIDES of T-1's diff, deliberately: it measures a property T-1 did not
+#       change, and a control that only passes after the fix could not have verified the premise.
+#   AStartAbandonedByAConcurrentStopRequest_StillSaysNothing                            +1
+#   AnInstallRefusedByTheHaltLatch_StillSaysNothing                                     +1
+#       THE TWO SIBLINGS' SILENCE, pinned rather than asserted in prose. The same warning is asserted
+#       PRESENT on the throw path above, from the same producer through the same flush, so a fix that
+#       emitted from every non-installing path turns these red and that one green together. The second also
+#       turned out to KILL the HALT-latch mutation — re-run on this tree, three failures where the recorded
+#       figure at 1cbdc564 was two; see FleetHostStartBuildHoistTests' own verdict paragraph.
+#
+# EXPECT_WARNINGS stays 116: measured on a full rebuild after the change — FleetCore.cs gains one parameter
+# and loses a return type, and St4i.EngineApi.Tests is one of the NINE projects that do not set
+# GenerateDocumentationFile, so its `///` blocks are not compiled either. EXPECT_BUILD_NODES stays 0.
+EXPECT_ENGINEAPI=1358
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

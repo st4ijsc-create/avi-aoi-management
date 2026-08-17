@@ -631,13 +631,11 @@ internal sealed class FleetCore
     /// exposed to this member's own throw site, which inflates OEE Availability.</item>
     /// <item><b>S3 — CLOSED (G-2).</b> <see cref="Start"/> → <see cref="StartLocked"/> →
     /// <see cref="CompleteStartOffLock"/> — <b>with a residual, named rather than swept: see the
-    /// "S3's residual" note directly below this list. 🔴 J-2 closed two of the three consequences that note
-    /// records and added TWO it never had — a fourth and, at branch review, a fifth. <b>THREE of the five
-    /// are open</b>: (3), (4) and (5). <b>Exactly ONE of the three is an owner decision</b> — (3); (4) and
-    /// (5) are engineering, carried. (🔴 Branch review, Minor 1: this row said "one is open and is an owner
-    /// decision", conflating the count of open items with the count of owner decisions — a status summary
-    /// that cannot be reconstructed from the enumeration it summarises, which is the defect this banner
-    /// records against itself at the S-set headline.)</b></item>
+    /// "S3's residual" note directly below this list. <b>OPEN: (4) and (5), both engineering, both carried.
+    /// CLOSED: (1) and (2) by J-2, (3) by T-1 on the owner's ruling.</b> Membership, not a tally — this row
+    /// has produced two false summaries already (branch review Minor 1 conflated "open" with "owner
+    /// decision"; the count it replaced went stale the moment a member moved), and a list of names cannot go
+    /// stale in a way its own members contradict.</item>
     /// <item><b>S4 — PARTLY OPEN.</b> The restart chokepoint. The rebuild is now unconditional over an
     /// off-lock TEARDOWN that throws (<see cref="RegisterMachine"/>/<see cref="ApplyScenario"/>), but a
     /// <see cref="StartLocked"/> that throws ITSELF leaves the fleet stopped with the roster/scenario write
@@ -710,12 +708,19 @@ internal sealed class FleetCore
     /// <c>"Stop"</c>/<c>"Estop"</c>, and ignores <c>"EstopReset"</c> entirely. <b>S2</b> is its mirror on the
     /// halt path.</item>
     /// </list>
-    /// <b>S3's residual — TWO OF ITS THREE CONSEQUENCES CLOSED BY J-2, ONE STILL OPEN, AND A FOURTH THAT WAS
-    /// NEVER ON THIS LIST</b> (recorded by the sweep, dropped by G-2's round 1, restored by review I-5).
+    /// <b>S3's residual — READ THE PER-CONSEQUENCE VERDICTS, NOT THIS HEADING</b> (recorded by the sweep,
+    /// dropped by G-2's round 1, restored by review I-5).
     /// <b>The shape, stated once and in the present tense only where it is still true:</b> a throw inside
     /// <see cref="StartLocked"/> leaves partial work behind, and the question for each piece is who owns it
-    /// afterwards. The four pieces and their CURRENT verdicts are (1)–(4) below; read them, not this
-    /// sentence, for status.
+    /// afterwards. The pieces are labelled (1)…(5) below and each carries its own status and the task that
+    /// set it.
+    /// <para>🔴 <b>THE HEADING USED TO CARRY A TALLY</b> — "two of its three consequences closed, one still
+    /// open, and a fourth that was never on this list" — and a tally over this particular list is the defect
+    /// this same banner already fired on once, four paragraphs down: the list is not three, not four and not
+    /// homogeneous ((5) is on the S2/S7 axis and says so), so every task that moved a member had to decide
+    /// whether the heading still summarised it. T-1 moved (3) and the heading was wrong again. It is
+    /// REMOVED rather than re-counted, for the reason the sibling scalar was removed rather than
+    /// corrected.</para>
     /// <para>🔴 <b>WHAT THIS PARAGRAPH USED TO SAY, kept as history because the task that closed two of the
     /// four diagnosed this very sentence as the reason they stayed open — and deleting it would erase the
     /// evidence for that diagnosis.</b> It read: <i>"a throw inside <see cref="StartLocked"/> after the
@@ -734,15 +739,14 @@ internal sealed class FleetCore
     /// <b>🔴 THE MARKING IS PER-CLAUSE, AND IT IS NOT A TALLY — branch review, Important 1, which is the
     /// SECOND false sentence this one paragraph has produced.</b> Round 2 replaced the refuted headline
     /// ("the fourth was never true") with a scalar one ("three FALSE, one still TRUE, one HALF") and never
-    /// ran the new count against the clause set it summarises: the quotation carries <b>TWO</b> still-true
-    /// clauses, because clause 1 is COMPOUND and its <c>deferredLogs</c> half is still true — as this same
-    /// banner says two paragraphs down and as residual (3) says outright. A scalar summary over a compound
-    /// list is the defect this file has a banner about, so the scalar is GONE rather than corrected:
+    /// ran the new count against the clause set it summarises: clause 1 is COMPOUND, so the tally was wrong
+    /// about how many clauses there even were. A scalar summary over a compound list is the defect this file
+    /// has a banner about, so the scalar is GONE rather than corrected, and this list is the status:
     /// <list type="bullet">
     /// <item>1a. <i>"loses <c>orphanedConnectorDrivers</c> … they are locals"</i> — <b>FALSE.</b> It is the
     /// caller's list; see (1).</item>
-    /// <item>1b. <i>"loses <c>deferredLogs</c> … they are locals"</i> — <b>STILL TRUE.</b> That is residual
-    /// (3), open, and an owner decision.</item>
+    /// <item>1b. <i>"loses <c>deferredLogs</c> … they are locals"</i> — <b>WAS TRUE UNTIL T-1, NOW FALSE.</b>
+    /// That was residual (3); the owner ruled on it and the list is the caller's, exactly as 1a's is.</item>
     /// <item>2. <i>"leaves <see cref="_slots"/> non-empty with <c>_running == false</c>"</i> — <b>STILL
     /// TRUE.</b> J-2 made that state CLEANABLE, not unreachable.</item>
     /// <item>3. <i>"which <see cref="StopLocked"/>'s [old single test] …"</i> — <b>FALSE.</b> It is a
@@ -769,12 +773,11 @@ internal sealed class FleetCore
     /// release — <c>IMachineSimulator</c> has no <c>Dispose</c> — so hoisting it bought nothing here. The two
     /// things that were lost AS OF J-1, <c>orphanedConnectorDrivers</c> and <c>deferredLogs</c>, were locals
     /// of the INSTALL half, which J-1 left under the lock along with the connector loop that fills them
-    /// (<b>the first of those two is a caller-owned list as of J-2; only the second is still lost</b>). The one
-    /// thing J-1 makes cheap that was not cheap before is flushing a failed install's deferred lines: they
-    /// now exist in a <see cref="StartPlan"/> the caller is already holding
-    /// (<see cref="RebuildPipelineOffLock"/>'s local), so a future task can reach them without restructuring
-    /// anything. Not done here, and not claimed — it would emit lines on a path that today emits
-    /// none.</para>
+    /// (<b>the first became a caller-owned list at J-2, the second at T-1; neither is lost now</b>). J-1 also
+    /// made a partial route cheap that was not cheap before — the PLAN's lines exist in a
+    /// <see cref="StartPlan"/> the caller already holds — and T-1 did not use it: the plan carries only the
+    /// resolver's half, and the connector loop's lines are produced under the lock after it, so reaching
+    /// through the plan would have emitted one half of what happened and called it the whole.</para>
     ///
     /// <para>🔴 <b>J-2 — THE SENTENCE THAT USED TO END THE PARAGRAPH ABOVE THIS ONE WAS STALE, AND IT IS THE
     /// KIND THAT MAKES A READER STOP CHECKING.</b> It read: <i>"Reachability today is only
@@ -809,21 +812,46 @@ internal sealed class FleetCore
     /// first). Witnessed by
     /// <c>FleetHostGateCommitCompletionTests.AStartThatThrowsWhileInstallingSlots_LeavesSlotsTheHaltPathCanStillTearDown</c>.</para>
     ///
-    /// <para><b>(3) <c>deferredLogs</c> — STILL OPEN, and it is an owner decision about operator-facing
-    /// output, not an oversight.</b> Emitting them means printing lines on a path that prints none today.
-    /// The comparison to draw is with §10.4 of the Dot E blueprint, and it runs the OTHER way: there the
-    /// defect was a level TRANSLATION (three best-effort teardown lines went from silent to Error), whereas
-    /// this is silence on a REAL FAILURE — so the case for emitting is genuine and this is a decision rather
-    /// than a non-issue. What decides it against acting unilaterally is symmetry: the two SIBLING
-    /// non-installing paths — the HALT-latch refusal inside <see cref="StartLocked"/> and
-    /// <see cref="Start"/>'s <c>_stopRequests</c> abandon — have each already been decided the other way at
-    /// their own site, in as many words. Making the third path the only one that speaks is a change to what
-    /// an operator sees, and the branch has reserved that class twice already. One thing narrows it: the
-    /// connector-rejection half of these lines has a surviving projection — <c>_connectorStartIssues</c> is a
-    /// FIELD, written in the same loop iteration one statement after the line is buffered, so it survives a
-    /// throw the line does not, and <see cref="GetConfiguredConnectorIssues"/>/
-    /// <c>GET /v1/connectors</c> still report it after a failed start. The mapping-profile warnings have no
-    /// such projection and are the half that is genuinely lost.</para>
+    /// <para><b>(3) <c>deferredLogs</c> — CLOSED (T-1), BY THE OWNER, and the ground is stated here because
+    /// the argument that held it open for three rounds is refuted rather than overruled.</b> The list is the
+    /// caller's now, allocated in <see cref="Start"/>/<see cref="RebuildPipelineOffLock"/> and filled by
+    /// <see cref="StartLocked"/>, exactly as (1)'s is — so a throw inside the install no longer takes what
+    /// already happened out of scope. Witnessed by
+    /// <c>FleetHostGateCommitCompletionTests.AStartThatThrowsWhileInstallingSlots_StillSaysWhatHappenedBeforeItThrew</c>.
+    /// <para>🔴 <b>WHAT THIS PARAGRAPH USED TO ARGUE, AND WHY IT DID NOT STAND.</b> It refused to act
+    /// unilaterally on SYMMETRY: the two SIBLING non-installing paths — the HALT-latch refusal inside
+    /// <see cref="StartLocked"/> and <see cref="Start"/>'s <c>_stopRequests</c> abandon — were each decided
+    /// silent at their own site, so letting the third speak was called a change to what an operator sees.
+    /// <b>The symmetry rests on a premise this same file refutes at <see cref="StopLocked"/>, in the
+    /// paragraph written to distinguish the two questions:</b> "speaking for a start that never installed,
+    /// where the alternative is silence about nothing having happened" is TRUE of the two siblings and FALSE
+    /// of this path — on the throw path the resolver has already run and fallen back, a connector has already
+    /// been rejected, and slots MAY ALREADY BE INSTALLED, which is consequence (2) of this same residual.
+    /// Three paths that are not the same kind do not make a symmetry. Silence about what did not happen is
+    /// right, and the two siblings keep it — pinned, not asserted, by
+    /// <c>…AStartAbandonedByAConcurrentStopRequest_StillSaysNothing</c> and
+    /// <c>…AnInstallRefusedByTheHaltLatch_StillSaysNothing</c>. Silence about what DID happen is what
+    /// T-1 ended.</para>
+    /// <para><b>What is emitted, and at what level — T-1 chose neither.</b> Every entry carries the channel
+    /// its PRODUCER picked (<see cref="MappingProfileResolver"/>'s two callbacks; the connector loop's
+    /// null-<c>Error</c> warning) and reaches the host through <see cref="FlushDeferredLogs"/>'s existing
+    /// routing, which is the same routing a SUCCEEDING start already uses for the same lines. The throw path
+    /// is now IDENTICAL to the success path for the work that actually ran, which is the property that made
+    /// this a repair rather than a new operator-facing message: nothing is said that a successful start does
+    /// not already say.</para>
+    /// <para><b>The projection that narrowed this, RE-VERIFIED at T-1 rather than inherited (§8.1(h5.1)).</b>
+    /// <c>_connectorStartIssues</c> is a FIELD, written in the same loop iteration one statement after the
+    /// line is buffered, so it survives a throw the line did not, and
+    /// <see cref="GetConfiguredConnectorIssues"/>/<c>GET /v1/connectors</c> still report it after a failed
+    /// start — held now by
+    /// <c>…AFailedInstallsRejectedConnector_IsStillReportedByTheProjectionThatOutlivesTheLine</c>, which is
+    /// green on both sides of T-1's diff because it measures a property T-1 did not change. <b>The
+    /// mapping-profile warnings had no such projection and were the half genuinely lost</b>, and that is
+    /// checkable rather than a not-found: <see cref="MappingProfileResolver"/>'s per-descriptor resolve
+    /// returns a profile and invokes one of two callbacks, and writes nothing else anywhere. A log line was
+    /// therefore never the only shape available — the connector half proves it — and it is the shape taken
+    /// because giving the mapping half a projection of its own would have added state, a lifetime and a read
+    /// surface to say what the line already says, for one of the two halves only.</para></para>
     ///
     /// <para><b>(4) THE DRIVERS IN <c>groups</c> THAT NO SLOT TOOK — NAMED, NEW, and on no previous list.</b>
     /// If <see cref="StartSlot"/> throws at index <i>k</i>, every driver at index <i>k</i>+1 and beyond was
@@ -1996,35 +2024,31 @@ internal sealed class FleetCore
     /// reason — an operation that reaches outside this process must not run while <see cref="Estop"/>'s
     /// lock is held. See <see cref="CompleteStartOffLock"/>.
     ///
-    /// <para>🔴 <b>J-2 — THE TWO HALVES NO LONGER TRAVEL THE SAME WAY, and the difference is the fix.</b>
-    /// <see cref="OrphanedConnectorDrivers"/> is now allocated by the CALLER and passed INTO
-    /// <see cref="StartLocked"/>, which only fills it. <see cref="DeferredLogs"/> is unchanged — still built inside
-    /// <see cref="StartLocked"/>, still reaching a caller only on a return. So on a throw the first half is
-    /// intact and the second is <see langword="null"/>, which is the state
-    /// <see cref="CompleteStartOffLock"/> is written for. Why only one half moved is argued at
-    /// <see cref="StartLocked"/>: releasing a socket is owed whatever happened, emitting a line from a start
-    /// that never installed is a question about operator-facing output that two sibling paths have already
-    /// answered the other way.</para>
+    /// <para>🔴 <b>J-2 then T-1 — BOTH HALVES ARE THE CALLER'S NOW, AND THIS TYPE IS NO LONGER A RETURN
+    /// VALUE.</b> J-2 moved <see cref="OrphanedConnectorDrivers"/> out: allocated by the caller, passed INTO
+    /// <see cref="StartLocked"/>, which only fills it. T-1 moved <see cref="DeferredLogs"/> the same way, for
+    /// a different reason argued at <see cref="StartLocked"/> and in the S-set banner's residual (3) —
+    /// releasing a socket is owed whatever happened, whereas saying what happened before a failed install is
+    /// an owner's call about operator-facing output, and the owner made it. What survives is one pair
+    /// handed to <see cref="CompleteStartOffLock"/>, built at each caller from two locals a throw cannot
+    /// reach.</para>
     ///
-    /// <para>🔴 <b>Review I-3 — AND THE RETURNED <see cref="OrphanedConnectorDrivers"/> HALF IS DEAD, WHICH
-    /// THIS DOC PREVIOUSLY DENIED.</b> The sentence here said the record "carries it back so the completion
-    /// still takes one argument". It does not: <b>neither caller reads it.</b> Both build a fresh
-    /// <see cref="StartOutcome"/> from the list THEY own, because on the throw path there is no returned
-    /// value at all — which is the entire point. The returned half is therefore write-only, and the obvious
-    /// "simplification" back to <c>CompleteStartOffLock(outcome)</c> would restore the leak J-2 closed.
+    /// <para>🔴 <b>Review I-3 named the follow-up that T-1 took, and named its price too.</b> I-3 measured
+    /// that the RETURNED orphan half was already dead — neither caller read it — and recorded that having
+    /// <see cref="StartLocked"/> stop returning it would make the "simplification" back to
+    /// <c>CompleteStartOffLock(outcome)</c> a COMPILE ERROR rather than a red test, at the cost of an
+    /// executable change to the method that sits between every public entry and the HALT latch. T-1 makes
+    /// that same change to the OTHER half, so the return value would have been dead in both halves; it
+    /// returns <see langword="void"/> instead of carrying a value nothing reads. The price I-3 quoted was
+    /// paid: the HALT-latch mutation was re-run on this tree rather than cited from an earlier one, which is
+    /// the failure mode <c>FleetHostStartBuildHoistTests.AnEstopLandingDuringARestartsRebuild_…</c> exists to
+    /// record.
     ///
-    /// <para><b>That regression is guarded by a TEST, not by this paragraph, and the guard is measured:</b>
-    /// mutation <c>J2-B2</c> is exactly that edit — the completion reading <c>outcome</c> again — and it is
-    /// KILLED (1) by
-    /// <c>FleetHostGateCommitCompletionTests.AStartThatThrowsWhileInstallingSlots_StillDisposesTheConnectorDriverItOrphaned</c>,
-    /// and by that test alone. So the type does not prevent it and a red test does.
-    /// <b>The type-level alternative was considered and deliberately not taken in the review round:</b>
-    /// having <see cref="StartLocked"/> return only its <see cref="DeferredLogs"/> would make the
-    /// regression a COMPILE ERROR rather than a red test, which is strictly better — and it is an executable
-    /// change to the method that sits between every public entry and the HALT latch, so it costs a full
-    /// re-run of that latch's mutation cluster (§8.1(h)) to buy a stronger guard for a regression that
-    /// already has a witness. It is the right follow-up and it is named here rather than done
-    /// quietly.</para></para></summary>
+    /// <para><b>The regression I-3 was guarding is still guarded, and now by the compiler:</b> there is no
+    /// <c>outcome</c> for a completion to read back. The behavioural witness stays where it was —
+    /// <c>FleetHostGateCommitCompletionTests.AStartThatThrowsWhileInstallingSlots_StillDisposesTheConnectorDriverItOrphaned</c>
+    /// for the orphan half, and its T-1 sibling for the deferred half — because a compile error protects the
+    /// shape and a red test protects the consequence.</para></para></summary>
     private readonly record struct StartOutcome(
         List<IDeviceDriver> OrphanedConnectorDrivers,
         List<DeferredLogEntry> DeferredLogs);
@@ -2137,12 +2161,16 @@ internal sealed class FleetCore
     /// <see langword="null"/>. Both halves return immediately on null rather than the caller pre-allocating
     /// two empty lists per <see cref="Start"/>.
     ///
-    /// <para>🔴 <b>J-2 — and the sentence above USED to say "<c>default(StartOutcome)</c>", which is no
-    /// longer what a throwing start produces here.</b> Callers now allocate the orphan list themselves and
-    /// rebuild the pair around it, so on the throw path this method receives a real (possibly empty) orphan
-    /// list and a <see langword="null"/> <c>DeferredLogs</c>. The null tolerance is KEPT on both halves —
-    /// nothing forces a future caller to pre-allocate either one, and this method is the wrong place to
-    /// discover that it did not.</para></para></summary>
+    /// <para>🔴 <b>J-2 then T-1 — and the sentence above USED to say "<c>default(StartOutcome)</c>", which is
+    /// no longer what a throwing start produces here, in EITHER half.</b> Both production callers now
+    /// allocate both lists themselves and build the pair around them, so on the throw path this method
+    /// receives two real (possibly empty) lists and the completion does real work on both. The null tolerance
+    /// is KEPT on both halves anyway — nothing forces a future caller to pre-allocate either one, and this
+    /// method is the wrong place to discover that it did not. <b>And on the flush half it is not merely
+    /// defensive:</b> <see cref="WaitAndDisposeOldPipeline"/> is handed the <see cref="PipelineHandle"/> a
+    /// <see cref="StopLocked"/> early return produced, whose <c>DeferredLogs</c> IS
+    /// <see langword="null"/> — so the halt path still exercises this guard on every no-op
+    /// stop.</para></para></summary>
     private void CompleteStartOffLock(StartOutcome outcome)
     {
         try
@@ -2194,22 +2222,24 @@ internal sealed class FleetCore
         // logger failures, so neither is the strictly more important message; it is stated because the rule
         // is that it gets stated.
         //
-        // `default(StartOutcome)` is the value `outcome` still holds when the start threw before assigning
-        // one. 🔴 J-1 moved the likeliest such throw but did not remove it: the enumeration's P5
+        // THE THROW PATH IS WHAT THE `finally` IS FOR, and J-1 did not remove it: the enumeration's P5
         // (MachineConfigStore.Ensure) now fires out of BuildStartPlan, one statement EARLIER and off the
         // lock, rather than out of StartLocked.
         //
-        // 🔴 J-2 — AND THE SENTENCE THAT FOLLOWED THIS ONE IS NO LONGER TRUE, WHICH IS THE FIX. It read
-        // "Both of the outcome's halves return immediately on a null list either way, so the `finally` is a
-        // no-op on that path rather than a second fault" — accurate then, and the exact statement of the
+        // 🔴 J-2 then T-1 — AND THE SENTENCE THAT FOLLOWED THIS ONE IS NO LONGER TRUE, WHICH IS THE FIX. It
+        // read "Both of the outcome's halves return immediately on a null list either way, so the `finally`
+        // is a no-op on that path rather than a second fault" — accurate then, and the exact statement of the
         // leak: a `finally` that is a NO-OP on the throw path is a `finally` that releases nothing on the
-        // throw path. Only the DEFERRED-LOG half is still null there now (and still returns immediately,
-        // deliberately — see StartLocked); the ORPHAN half comes from the local declared below, so the
-        // completion does real work on exactly the path that used to lose it.
+        // throw path. J-2 fixed the ORPHAN half and this comment then said the DEFERRED-LOG half "is still
+        // null there"; T-1 fixed that half too, so neither is. Both lists are declared below, before the
+        // `try`, and the completion does real work on exactly the path that used to lose both.
         //
-        // Not "lost" traded for "twice": the outcome is produced exactly once per call and consumed exactly
-        // once, in the finally, on every path. StartLocked's own `if (IsRunning || _estopEngaged) return` is
-        // what makes a repeated Start a no-op rather than a second set of slots.
+        // Not "lost" traded for "twice": each list is allocated once per call and consumed exactly once, in
+        // the finally, on every path — including the paths that never reach StartLocked at all, where it is
+        // consumed EMPTY, which is what keeps the two silent siblings silent. StartLocked's own
+        // `if (IsRunning || _estopEngaged) return` is what makes a repeated Start a no-op rather than a
+        // second set of slots, and a retry that finally succeeds emits its own run's lines once, from its own
+        // lists — never the previous attempt's.
         //
         // 🔴 J-1 — this method now takes _gate TWICE, and the split is the whole change. The first
         // acquisition only copies what a build reads (SnapshotStartInputsLocked); the build itself runs
@@ -2337,8 +2367,14 @@ internal sealed class FleetCore
         // that method's pre-check runs before its `try` begins. The cost of the asymmetry is one empty list
         // allocated by a Start() that declines — which is the same list the latch path has always returned.
         bool started = false;
-        StartOutcome outcome = default;
         var orphanedConnectorDrivers = new List<IDeviceDriver>();
+
+        // 🔴 T-1 — the second caller-owned list, and it is here for exactly the reason the first one is: a
+        // list StartLocked declares is a list a throw from StartLocked deletes. What it buys is different
+        // from what the orphan list buys — no resource is released — so it is argued separately, at
+        // StartLocked and in the S-set banner's residual (3), and it is an OWNER'S ruling rather than a
+        // repair chosen here.
+        var deferredLogs = new List<DeferredLogEntry>();
         try
         {
             StartInputs inputs;
@@ -2375,15 +2411,21 @@ internal sealed class FleetCore
                 // none. The lines are not lost forever — the next start rebuilds the plan and produces the
                 // same messages — so what is lost is one emission per abandoned attempt, which under the
                 // repeating-Stop case below means they are never emitted at all while the loop continues.
-                // Left dropped, consistent with the latch path directly below: `outcome` stays
-                // default(StartOutcome) and CompleteStartOffLock is a no-op over it, so emitting here would
-                // mean carrying the plan into the finally purely to log from a start that never installed.
-                // Named rather than fixed, because "which arm's log behaviour is right" is a question about
-                // operator-facing output, not about this mechanism.
+                //
+                // 🔴 T-1 — STILL DROPPED, AND NOW BY A RULING RATHER THAN BY DEFAULT; the mechanical half of
+                // the old reason is also gone and is corrected rather than left. That reason was "`outcome`
+                // stays default(StartOutcome) and CompleteStartOffLock is a no-op over it": the completion is
+                // no longer a no-op anywhere, it flushes the caller's list, and on THIS return that list is
+                // EMPTY — the plan's lines join it only inside StartLocked, past the latch, and StartLocked
+                // is never called here. So the silence is produced by a statement order, not by a null. The
+                // owner ruled that a start which never installed stays silent because nothing happened, and
+                // that a start which threw MID-INSTALL speaks because a great deal did; this return is the
+                // first kind. Pinned by
+                // FleetHostGateCommitCompletionTests.AStartAbandonedByAConcurrentStopRequest_StillSaysNothing.
                 if (_stopRequests != inputs.StopRequests) return;
 
                 var wasRunning = IsRunning;
-                outcome = StartLocked(plan, orphanedConnectorDrivers);
+                StartLocked(plan, orphanedConnectorDrivers, deferredLogs);
                 started = !wasRunning && IsRunning;
 
                 // Review fix (Important) — the NBIRTH call is made HERE, still inside _gate, deliberately: two
@@ -2416,21 +2458,31 @@ internal sealed class FleetCore
                 // lock. 🔴 G-2 — and now in a `finally`, so a throw from the in-lock PublishNodeBirth seam
                 // can no longer strand the orphans or the warnings. Same two statements, same order.
                 //
-                // 🔴 J-2 — THE PAIR IS REBUILT HERE RATHER THAN PASSED THROUGH, and it is the same value on
-                // every path that had one. When StartLocked RETURNED, `outcome.OrphanedConnectorDrivers` is
-                // this very list — it was handed in — so naming the local instead changes nothing. When
-                // StartLocked THREW, `outcome` is still `default` and only its DeferredLogs half is null;
-                // the orphan half now comes from a variable the throw could not take away. Both halves of
-                // the completion still tolerate a null list, which is what makes the two cases one call.
+                // 🔴 J-2 — THE PAIR IS BUILT FROM LOCALS RATHER THAN FROM A RETURN VALUE, and it is the same
+                // value on every path that had one. Both lists were handed to StartLocked, so naming them
+                // here is what a returned outcome would have named on the paths that produced one — and on
+                // the throw path it is the only thing there is to name. 🔴 T-1 completed that move: the
+                // deferred half was still travelling by return, so it was still null exactly here.
                 //
-                // MASKING, stated because this call can now do real work on a path where it used to be a
-                // no-op: if StartLocked threw AND an orphan's DisposeAsync faults AND the host's _logDebug
-                // then throws on the buffered line, that host-logger exception replaces the exception that
-                // said why the START failed — the more actionable of the two. That is a four-condition
-                // window, and the trade is one masked message against a socket held for the life of the
-                // process; it is stated rather than hidden, and it is the same direction G-1's N-2 rule
-                // already chose at RegisterMachine.
-                CompleteStartOffLock(new StartOutcome(orphanedConnectorDrivers, outcome.DeferredLogs));
+                // MASKING — TWO ROUTES NOW, and the second is T-1's. If StartLocked threw AND an orphan's
+                // DisposeAsync faults AND the host's _logDebug then throws on the buffered line, that
+                // host-logger exception replaces the exception that said why the START failed: a
+                // four-condition window, traded for a socket that would otherwise be held for the life of
+                // the process. T-1 adds a shorter one — StartLocked threw AND the host's logger throws while
+                // this call flushes a deferred line — and the shorter window is stated rather than glossed,
+                // because two conditions is not four.
+                //
+                // 🔴 WHY IT IS ACCEPTED RATHER THAN GUARDED, and this is a comparison to a MEASURABLE prior
+                // tree rather than a preference. Before G-1 these same lines were emitted INLINE, inside
+                // StartLocked, at the connector loop — i.e. BEFORE the slot loop that is the throw site here
+                // — so a host logger that throws on them threw out of StartLocked and was already the only
+                // exception a caller ever saw. G-1's deferral is what removed that masking, and it removed
+                // the lines with it. Restoring the lines restores the exposure they always had; it does not
+                // invent one. What would remove it is suppressing a host-logger fault on the unwinding path
+                // only, which needs this `finally` to know whether an exception is in flight — a flag this
+                // method would have to set correctly on all three of its returns AND its throw, in the one
+                // method that sits between every public entry and the HALT latch. Named, not taken.
+                CompleteStartOffLock(new StartOutcome(orphanedConnectorDrivers, deferredLogs));
             }
             finally
             {
@@ -3070,14 +3122,16 @@ internal sealed class FleetCore
     /// <para><b>What this does NOT close, stated because it would be easy to claim.</b> A build that throws
     /// still leaves the fleet stopped with the roster/scenario write already committed — that is the second
     /// half of S4, and moving the throw site from inside the lock to outside it does not change what a
-    /// failed call means to its caller. The plan's own deferred lines are still lost on that path (they are
-    /// a local of the <c>try</c>), which is S3's named residual. Both are named in the banner at the top of
-    /// this file and neither is J-1's to decide.
-    /// <para>🔴 <b>J-2 — S4's second half is STILL open here and was re-derived rather than inherited; the
-    /// deferred-log sentence above is still exactly true; and the third thing that sentence never mentioned
-    /// — the orphaned connector drivers — is now CLOSED at this site.</b> They are allocated by this method
-    /// and handed to <see cref="StartLocked"/>, so the <c>finally</c> below releases them whether that call
-    /// returned or threw.</para></para></summary>
+    /// failed call means to its caller. That is named in the banner at the top of this file and it is not
+    /// J-1's to decide.
+    /// <para>🔴 <b>J-2 then T-1 — S4's second half is STILL open here and was re-derived rather than
+    /// inherited; the other two things that used to be lost at this site are not.</b> The orphaned connector
+    /// drivers (J-2) and the deferred lines (T-1) are both allocated by this method and handed to
+    /// <see cref="StartLocked"/>, so the <c>finally</c> below releases the first and emits the second whether
+    /// that call returned or threw. 🔴 The sentence this paragraph replaced said the plan's deferred lines
+    /// "are still lost on that path (they are a local of the <c>try</c>)" — it was true of the LIST, and it
+    /// was already imprecise about WHOSE local: the plan's lines are the plan's, and what lost them was the
+    /// list inside <see cref="StartLocked"/> they were copied into.</para></para></summary>
     private void RebuildPipelineOffLock(StartInputs inputs)
     {
         // 🔴 J-1b (brief at .superpowers/sdd/symmetric-precheck/task-1-brief.md — UNTRACKED, that whole
@@ -3146,20 +3200,22 @@ internal sealed class FleetCore
         // 🔴 J-2 — declared OUTSIDE the `try`, for the reason Start()'s copy of this line records in full:
         // an orphaned connector driver owns a live socket, and a StartLocked that throws must not be able to
         // take it out of scope. This is the symmetric site, changed the same way and in the same commit.
-        StartOutcome outcome = default;
+        // 🔴 T-1 — and the deferred lines are declared beside it now, for the reason Start()'s copy of THAT
+        // line records in full. Both are the caller's; StartLocked only fills them.
         var orphanedConnectorDrivers = new List<IDeviceDriver>();
+        var deferredLogs = new List<DeferredLogEntry>();
         try
         {
             var plan = BuildStartPlan(inputs);
-            lock (_gate) { outcome = StartLocked(plan, orphanedConnectorDrivers); }
+            lock (_gate) { StartLocked(plan, orphanedConnectorDrivers, deferredLogs); }
         }
         finally
         {
             // Review fix round 2 — off-lock, same reasoning as WaitAndDisposeOldPipeline at both call sites.
-            // 🔴 J-2 — the pair is rebuilt from the caller-owned orphan list plus whatever DeferredLogs the
-            // (possibly default) outcome carries; identical value when StartLocked returned, and the only
-            // reachable one when it threw. Start() carries the full argument, including the masking note.
-            CompleteStartOffLock(new StartOutcome(orphanedConnectorDrivers, outcome.DeferredLogs));
+            // 🔴 T-1 — the pair is built from two locals a throw cannot take away, so the completion does
+            // real work on both halves whether the install returned or threw. Start() carries the full
+            // argument, including the masking note.
+            CompleteStartOffLock(new StartOutcome(orphanedConnectorDrivers, deferredLogs));
         }
     }
 
@@ -3186,35 +3242,41 @@ internal sealed class FleetCore
     ///
     /// <para>🔴 <b>J-2 — <paramref name="orphanedConnectorDrivers"/> IS THE CALLER'S LIST, ALLOCATED BEFORE
     /// THE CALL, AND THAT IS THE WHOLE OF THE CHANGE.</b> It used to be a local here, handed back only in the
-    /// returned <see cref="StartOutcome"/> — so a throw anywhere after the connector loop took every orphan
+    /// returned <c>StartOutcome</c> — so a throw anywhere after the connector loop took every orphan
     /// out of scope with its socket open, and no caller <c>finally</c> could reach them because they had
     /// never existed anywhere a caller could name. The list is now named at the call site first; this method
     /// only fills it. The success path is byte-identical (same list, same contents, same order, disposed in
     /// the same place by the same caller) — only the guarantee is new, which is exactly the shape G-2's own
     /// <c>finally</c> fixes took.
     ///
-    /// <para><b>The OTHER local is deliberately NOT treated the same way, and saying so is the point.</b>
-    /// <c>deferredLogs</c> below is still a local, still lost when this method throws. That is not an
-    /// oversight and it is not free: emitting those lines would put operator-visible output on a path that
-    /// produces none today, and the two SIBLING non-installing paths — the HALT-latch refusal below and
-    /// <see cref="Start"/>'s stop-abandon return — have both already been decided the other way, in as many
-    /// words, at their own sites. Deciding the third differently is an operator-facing output change and an
-    /// owner call; see the S-set banner's residual note at <see cref="_gate"/>.</para></para></summary>
-    private StartOutcome StartLocked(StartPlan plan, List<IDeviceDriver> orphanedConnectorDrivers)
+    /// <para>🔴 <b>T-1 — <paramref name="deferredLogs"/> IS THE CALLER'S LIST FOR THE SAME MECHANICAL REASON
+    /// AND A DIFFERENT SUBSTANTIVE ONE, AND THE DIFFERENCE IS WHY IT TOOK AN OWNER.</b> Mechanically it is
+    /// the identical move and the success path is byte-identical the same way. Substantively, releasing a
+    /// socket is owed whatever happened, while SAYING what happened is operator-facing output — and this
+    /// paragraph used to argue that it therefore had to stay lost, on the ground that the two SIBLING
+    /// non-installing paths (the HALT-latch refusal below and <see cref="Start"/>'s stop-abandon return) were
+    /// each decided silent at their own site. <b>Those two paths install NOTHING; this one throws part-way
+    /// through installing</b> — the resolver has run and fallen back, a connector has been rejected, and
+    /// slots may already be live, which is the S-set banner's own consequence (2). The siblings are still
+    /// silent and each has its own witness. See residual (3) at <see cref="_gate"/> for the ruling, for the
+    /// level (chosen by each line's producer, not here) and for the projection the ruling rests on.</para>
+    ///
+    /// <para><b>This method returns <see langword="void"/> as of T-1, and that is a consequence rather than
+    /// a second change.</b> With both lists owned by the caller there is nothing left for a return value to
+    /// carry that a caller does not already hold — review I-3 measured the orphan half dead for exactly that
+    /// reason and named this as the follow-up worth taking, because it turns "read the outcome back in the
+    /// completion" from a red test into a compile error.</para></para></summary>
+    private void StartLocked(
+        StartPlan plan, List<IDeviceDriver> orphanedConnectorDrivers, List<DeferredLogEntry> deferredLogs)
     {
-        // 🔴 G-1 — every log line this method would have written while holding _gate lands here instead and
-        // is emitted by CompleteStartOffLock after the lock is released. A host wires _logWarning/_logError
-        // to its own ILogger, and under AddWindowsService that provider writes the Windows Event Log
-        // SYNCHRONOUSLY — so these were genuine I/O calls on the lock Estop() takes, not bookkeeping.
-        var deferredLogs = new List<DeferredLogEntry>();
-
         // Defense in depth: the client already disables START while latched, but the engine itself
         // must refuse too — a stale client, a second panel, or a direct API call must never be able to
         // restart the read pipeline while the HALT latch is still engaged.
-        // 🔴 J-2 — the refusal hands back the CALLER's list (empty, since the connector loop is far below)
-        // rather than a fresh one. Same value as before; what it removes is the second allocation and the
-        // question of which of the two lists a caller is looking at.
-        if (IsRunning || _estopEngaged) return new StartOutcome(orphanedConnectorDrivers, deferredLogs);
+        // 🔴 T-1 — the refusal returns with BOTH caller-owned lists exactly as it found them: the orphan
+        // list is empty because the connector loop is far below, and the deferred list is empty because the
+        // plan's lines are appended one statement AFTER this line. That statement order is the whole of why
+        // this refusal is still silent; see it, and see AnInstallRefusedByTheHaltLatch_StillSaysNothing.
+        if (IsRunning || _estopEngaged) return;
         LastError = null;
 
         // 🔴 J-1 — the plan's own deferred lines join the list ONLY once the latch above has let this call
@@ -3226,6 +3288,13 @@ internal sealed class FleetCore
         // below: a discarded plan holds nothing disposable (IMachineSimulator has no Dispose, and no
         // IDeviceDriver is constructed until after this point), which is exactly why driver construction
         // was left on THIS side of the lock rather than hoisted with the rest.
+        //
+        // 🔴 T-1 — THIS PLACEMENT IS NOW LOAD-BEARING RATHER THAN MERELY DELIBERATE, because the list it
+        // appends to is the CALLER's and the caller flushes it unconditionally. Before T-1 a hoist above the
+        // latch would have been invisible on the refusal path (the whole list died there anyway); now it is
+        // the difference between a refused install saying nothing and a refused install speaking on the halt
+        // path, which is the one thing residual (3)'s ruling did NOT authorise. Moving this line up is what
+        // turns AnInstallRefusedByTheHaltLatch_StillSaysNothing red.
         deferredLogs.AddRange(plan.DeferredLogs);
 
         // Assumes the caller already holds _gate (Start()/ApplyScenario()/RegisterMachine() all do) —
@@ -3606,8 +3675,6 @@ internal sealed class FleetCore
         // not-running -> running transition, whether or not any pipeline slot actually got built (an empty
         // product roster builds zero slots by design — see _running's own doc comment).
         _running = true;
-
-        return new StartOutcome(orphanedConnectorDrivers, deferredLogs);
     }
 
     /// <summary>Review fix round 2 — the off-lock counterpart to <see cref="StartLocked"/>'s orphan
@@ -3869,6 +3936,20 @@ internal sealed class FleetCore
         // consequence: nothing else about the system changes if it is or is not done. "Output that arrives
         // with a safety fix" and "output added because it seemed better" are different categories, and only
         // the second is the one this branch reserves.
+        //
+        // 🔴 T-1 — THE PARAGRAPH ABOVE IS UNCHANGED BECAUSE IT WAS RIGHT, AND IT IS WHAT DECIDED (3). Two
+        // things follow from it and only one of them was ever this comment's to say:
+        //   - INSEPARABILITY still holds. These three lines still arrive with the halt fix, and emitting the
+        //     deferred lines of a failed install is still a free-standing choice that changes nothing else.
+        //     That is why the two questions stayed separate and why this fix did not decide that one.
+        //   - "FREE-STANDING" was a statement about WHO decides, never about the answer. This comment's own
+        //     measurement — that (3)'s path did plenty before it threw, while its two siblings did nothing —
+        //     is the evidence residual (3)'s symmetry argument could not survive, and it was sitting here,
+        //     in this file, for three refusals. The owner ruled on 2026-08-17 (docs/owner-decisions.md §6):
+        //     emit on the throw path, leave the two siblings silent. The category that was reserved was
+        //     "output added because it seemed better"; a ruling is not that category.
+        // Nothing about THIS method moved for it. The lines below are still the halt path's own, still
+        // buffered, still flushed by WaitAndDisposeOldPipeline off this lock.
         //
         // 🔴 AND (h3) IS SYMMETRIC — THIS CHANGE ALSO REMOVES A REPORTING ROUTE, which both my sweep and its
         // first correction missed because both looked only for reports that START (re-review, Minor).
@@ -4341,13 +4422,21 @@ internal sealed class FleetCore
                 // method's own remarks below and the G-2 report for why that half needs an owner decision.
                 //
                 // 🔴 Scoped to that throw deliberately (whole-branch review I-3). An earlier wording
-                // generalised it to "nothing is owed, so nothing is lost", which is FALSE about it: by then
-                // StartLocked has lost `orphanedConnectorDrivers` and `deferredLogs` outright — they are its
-                // locals, unreachable from any caller's finally — and left `_slots` non-empty with
-                // `_running == false`, which StopLocked then refuses to tear down. That is S3's named
-                // residual, at the top of this file, and a reader sent away from it by this comment would
-                // miss the one thing they need. ApplyScenario's copy of this same argument never carried the
+                // generalised it to "nothing is owed, so nothing is lost", which is FALSE about it: a
+                // StartLocked that throws still leaves partial work behind, which is S3's named residual at
+                // the top of this file, and a reader sent away from it by this comment would miss the one
+                // thing they need. ApplyScenario's copy of this same argument never carried the
                 // generalisation; the two now agree.
+                //
+                // 🔴 T-1 — AND THE SENTENCE THAT SAID *WHAT* WAS LOST WAS ITSELF STALE, IN TWO OF ITS THREE
+                // CLAUSES, SINCE J-2. It read: StartLocked "has lost `orphanedConnectorDrivers` and
+                // `deferredLogs` outright — they are its locals" and "left `_slots` non-empty with
+                // `_running == false`, which StopLocked then refuses to tear down". J-2 made the orphan list
+                // the caller's and made StopLocked's guard a conjunction that tears that state DOWN, and this
+                // copy of the claim was not re-derived when it did; T-1 made the deferred list the caller's
+                // too. Nothing here relied on the false clauses, which is exactly why nothing caught them —
+                // the enumeration lives at the residual and this sentence was a summary of it. It is replaced
+                // by the pointer rather than re-summarised, because a second copy is what went stale.
                 //
                 // 🔴 J-1 — the `finally` below is now ONE statement, and that is a deliberate answer to
                 // §8.1(e) rather than a tidy-up. The paragraph that used to sit here reasoned about TWO
