@@ -283,11 +283,17 @@ export MSBUILDDISABLENODEREUSE=1
 #
 # 🔴 EDGECORE'S RUNNER NUMBER AND ITS RUN TOTAL ARE NOT THE SAME NUMBER, and this is where that shows.
 # `--list-tests` returned 161 / 24 / 1124 / 52 / 1370. Four of those are exactly the old constant plus the
-# facts added above. EDGECORE's is SEVEN SHORT of 1131, and it was seven short of 1129 before this task
-# too: discovery reports a theory whose data it cannot enumerate as one case, and the run expands it. So
-# the +2 here is the DELTA measured from the runner, applied to a base the runner has never agreed with —
-# stated rather than smoothed over, because "counted from the runner" is this file's rule and the one
-# suite where it does not land on the constant is the one worth naming.
+# facts added above. EDGECORE's is SEVEN SHORT of the 1131 a real run reports — discovery counts a theory
+# whose data it cannot enumerate as one case and the run expands it — so on that one suite the rule
+# "counted from the runner" cannot be applied to the constant directly, and pretending otherwise would be
+# the smoothing this file exists to refuse.
+#
+# WHAT IS MEASURED AND WHAT IS ARGUED, kept apart. MEASURED, on this tree: `--list-tests` 1124 against a
+# real run's `Total: 1131` — a gap of exactly 7, on the SAME tree, in the same session. ARGUED, not
+# measured: that the gap was also 7 at the base. The argument is that both facts X-1 adds are plain
+# `[Fact]`s — no `[Theory]`, no `MemberData`, no `InlineData` — and only theory expansion produces this
+# gap, so neither of them can have moved it. Nobody re-ran the base tree to check, and that is the whole
+# of the evidence for the 1129 half.
 #
 # WHAT THE NEW GUARD ASSERTS: that a test process leaves its OWN OUTPUT DIRECTORY — AppContext.BaseDirectory,
 # beside the built binary — exactly as it found it. That directory outlives every run (`dotnet build` does
