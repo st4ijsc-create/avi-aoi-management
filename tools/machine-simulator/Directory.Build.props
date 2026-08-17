@@ -187,5 +187,60 @@
        To re-run the measurement without changing anything, from tools/machine-simulator:
            dotnet build -t:Rebuild -p:GenerateDocumentationFile=true
        That command turns the whole tree on for one build and is the diagnostic that replaces J-3's
-       purpose-built parser. -->
+       purpose-built parser.
+
+       ══════════════════════════════════════════════════════════════════════════════════════════════════
+       🔴 W-1 (.superpowers/sdd/edgecore-doc-instrument/task-1-brief.md) — THIS BLOCK WAS RE-MEASURED
+       BEFORE IT WAS BUILT ON, AND THE PROSE IN St4i.EdgeCore NOW HAS A READER THAT IS NOT THE COMPILER.
+
+       RE-MEASUREMENT at 46439925, SDK 10.0.302, the command above. Every number in the table and the notes
+       above that describes TODAY reproduces EXACTLY: St4i.EdgeCore 543 CS1591 / 92 CS1573; 95 CS1591 + 8
+       CS1573 + 82 nullable inside the vendored file; 448 + 84 on our own source; 101 unresolvable
+       cref/paramref claims in this project and 237 across the eight, matching N-1's §4.3 table project by
+       project (101/43/34/30/22/5/1/1). CS1570 and CS1587 are zero in all fifteen compilations, as claimed.
+
+       TWO NUMBERS HAVE MOVED, and both are explanations rather than corrections:
+         * Column (1) for St4i.EdgeCore reads 112 above and is 101 today. The column is pinned to
+           811c9054 and this block already says the price columns are never rewritten, so 112 is not wrong —
+           it is history. The 11 is N-1's own tree-wide malformed-block sweep landing inside this project:
+           closing a malformed block removes its CS1570s and exposes what they hid, and the two do not
+           cancel.
+         * The brief's "95 doc blocks in FleetCore.cs" was true through T-1 and is 96 now; U-1 (e902a5f2)
+           added one. Measured at every commit that touched the file since 7be4326a.
+
+       🔴 THE SENTENCE THIS BLOCK FLAGGED AS NOT MEASURED IS NOW MEASURED, and the answer is yes-with-three-
+       consequences. An .editorconfig section keyed on the vendored file's REAL path DOES match it: the tree
+       goes 852 -> 757 with the property set on St4i.EdgeCore alone, exactly -95, and CS1591 disappears from
+       that file. What was not on record:
+         (1) It leaves EIGHT CS1573 in the same file. Option (b) above names CS1591 only, so as written it
+             exempts one of the vendored file's two documentation codes, not the file.
+         (2) An .editorconfig applies at or below its OWN directory, and that file's real path is outside
+             tools/machine-simulator — so the section cannot live in this product's tree at all. It has to
+             be planted at the REPOSITORY ROOT, above an unrelated TypeScript/Node application, invisible to
+             anyone reading this product.
+         (3) 757 is not 116. "Leaves the other 448 asserted" is true and is not "passing": (b) removes the
+             95 nobody may fix and leaves 641 warnings that must either be written or be pinned.
+       So (b) is still the narrower instrument and it is still an override, and it does not on its own make
+       the switch settable. W-1 did not take it. The decision is docs/owner-decisions.md item 12, which
+       carries this measurement where an owner will be standing; this file is not that place.
+
+       🔴 AND THE HALF THAT NEEDED NO SWITCH WAS TAKEN INSTEAD — tests/St4i.EdgeCore.Tests/
+       DocCommentProseTests.cs. It reads every `///` run in the tree as XML and checks every element NAME
+       against a registry, which is one thing the compiler does not do at all (Roslyn passes unknown
+       elements through, so `<summry>` deletes a summary in silence). It runs in the gate, on every build,
+       for ALL fifteen compilations and for files in none of them. It cannot see a cref; that is why item 12
+       exists. Its corpus at 46439925 was 530 files and 3,616 blocks — a MEASUREMENT, not a pin: the only
+       scalars any assertion there holds are the two FLOORS in
+       TheScanReachesItsCorpus_AndTheVendoredFileTheProjectNames (400 files, 2,500 blocks), which exist so a
+       walk that stopped finding the tree fails loudly instead of passing vacuously.
+
+       🔴 IT FOUND SOMETHING ON ITS FIRST RUN, which is the argument for it. One live malformed block in
+       tests/St4i.Connector.Abstractions.Tests/EnumSpellingContractTests.cs — a `<para>` closed by its parent
+       `</summary>` — introduced at 05a4f7a8 and present at the P-2, Q-1, R-1, S-1, T-1 and V-1 merges. Six
+       merged tasks, invisible to every one of them, because that project's switch is off too. Run against
+       committed history the same check reports 19 malformed blocks in 15 files at 811c9054, which is this
+       block's own published count arrived at independently, and the unclosed `<b>` T-1 shipped at 9209a81b.
+       The class N-1 emptied refilled five merges later; that is why it is now a standing assertion and not
+       a sweep. -->
+
 </Project>

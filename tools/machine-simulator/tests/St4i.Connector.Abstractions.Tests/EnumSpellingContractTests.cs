@@ -79,7 +79,7 @@ namespace St4i.Connector.Abstractions.Tests;
 /// direction that mattered, and a live unregistered site (<c>TraceTable.tsx</c>'s <c>KIND_DOT</c>) sat
 /// inside the corpus until a reviewer read the tree by hand.
 /// <see cref="EveryObjectLiteralKeyedByMemberNames_IsARegisteredMirror"/> is indexed on the KEYS instead,
-/// which is what the question actually asks about, and it finds that site on its own.</para>
+/// which is what the question actually asks about, and it finds that site on its own.</para></para>
 ///
 /// <para><b>PRECONDITION.</b> Like <c>ZeroDependencyTests</c> and <c>RealCredentialStoreLeakGuard</c>, this
 /// requires being run from inside the source tree: it walks up from <see cref="AppContext.BaseDirectory"/>

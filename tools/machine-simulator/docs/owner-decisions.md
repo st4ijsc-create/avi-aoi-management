@@ -48,6 +48,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 9 | sàn môi trường trên nhánh *không đọc được* | 🔴 **CHỜ ANH** — đã đo (Q-1); **không đổi bởi V-1** |
 | 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔴 **CHỜ ANH** — đã đo (V-1); phần dư của mục 5 |
 | 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔴 **CHỜ ANH** — đã đo (V-1 vòng sửa 1); phần dư của mục 5 |
+| 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔴 **CHỜ ANH** — đã đo (W-1); **không bị đè bởi W-1** |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -1014,6 +1015,69 @@ Cách né duy nhất hôm nay là **khởi động lại host sau khi khôi ph�
 là khẳng định hành vi hiện tại đúng, mà đó chính là thứ đang chờ anh quyết.
 `Read_RecordsWhatItAnswered_SoStatusMeansTheMostRecentRead` **dựng đúng trạng thái ấy**
 và **dừng ngay trước `Set`**.
+
+---
+
+## 12. `St4i.EdgeCore` không bao giờ đặt `GenerateDocumentationFile`, và bật nó đòi một lệnh đè trên một file ta KHÔNG được sửa
+
+**Đo bởi W-1 tại `46439925`, SDK 10.0.302, `dotnet build -t:Rebuild` từ
+`tools/machine-simulator`, đếm theo đúng cách bản tóm tắt của MSBuild đếm.** Không có
+con số nào dưới đây là ước lượng, và không có cái nào bị W-1 đè.
+
+| cấu hình | cảnh báo toàn cây |
+|---|---:|
+| như đang ship | **116** |
+| + bật cờ cho **riêng** `St4i.EdgeCore` | **852** |
+| + thêm một mục `.editorconfig` khoanh theo **đường dẫn THẬT** của file SDK vendored | **757** |
+
+Chênh 736 gồm: **543 CS1591** + **92 CS1573** (bao phủ tài liệu) và **101** khẳng định
+`cref`/`paramref` **không phân giải được** (75 CS1574, 23 CS1734, 3 CS0419).
+
+**Phần chia đôi mới là quyết định.** Trong 543 + 92 ấy:
+
+- **448 CS1591 + 84 CS1573 là mã NGUỒN CỦA CHÍNH TA.** Không gì cản viết chú thích cho
+  chúng ngoài việc **có nên hứa gì trên bề mặt ấy** — đúng câu hỏi mà bảy project chưa
+  đặt cờ khác đang mang (tổng 2775). Đây **không** phải chỗ cần lệnh đè.
+- **95 CS1591 + 8 CS1573 nằm trong
+  `examples/device-client/csharp/St4iDeviceClient.cs`** — file SDK vendored mà
+  `St4i.EdgeCore.csproj` `Compile`-link từ NGOÀI cây project, được xuất bản cho nhà phát
+  triển máy, giữ đồng bộ với SDK Python và Node, và **repo này KHÔNG được sửa**. 103 cảnh
+  báo ấy **không thể trả bằng cách viết**, nên chúng là **lý do duy nhất một lệnh đè trở
+  nên CẦN THIẾT** nếu cờ được bật.
+
+**Điều N-1 ghi là CHƯA ĐO, nay đã đo — và nó chạy được, kèm ba hệ quả không có trong hồ sơ:**
+
+1. Mục khoanh-theo-đường-dẫn **có** khớp: 852 → 757, đúng −95, CS1591 biến mất khỏi file
+   ấy. Nhưng N-1 chỉ nêu CS1591, nên **(b) như đã mô tả bỏ sót 8 CS1573 vẫn nằm nguyên
+   trong chính file không đụng được ấy**: nó miễn trừ MỘT trong HAI mã.
+2. `.editorconfig` chỉ áp cho file **tại hoặc dưới** thư mục của nó, và đường dẫn thật
+   của file ấy **nằm ngoài `tools/machine-simulator`**. Nên mục ấy **không thể sống trong
+   cây sản phẩm này**: nó phải đặt ở **gốc repository**, phía trên một ứng dụng
+   TypeScript/Node không liên quan, nơi **không ai đọc sản phẩm này nhìn thấy**.
+3. **757 vẫn không phải 116.** "Để 448 cái kia ĐƯỢC KHẲNG ĐỊNH" là đúng và **không**
+   đồng nghĩa "xanh": (b) gỡ 95 cái không ai sửa được và **để lại 641 cảnh báo mới** —
+   hoặc được viết, hoặc được ghim.
+
+**Ba lựa chọn, nêu đủ chứ không nêu cái tiện:**
+
+- **(a) `<NoWarn>CS1591;CS1573</NoWarn>` cả assembly** — im lặng 635; project ấy khi đó
+  **không khẳng định bao phủ tài liệu ở đâu cả**, kể cả 532 thành viên là mã của ta.
+- **(b) `.editorconfig` khoanh theo đường dẫn thật, hai mã** — im lặng đúng 103 cái không
+  ai được sửa, **để 532 cái của ta được khẳng định** — nghĩa là phải VIẾT chúng trước khi
+  cờ có thể bật xanh. Hẹp nhất, và phải đặt ở gốc repo (xem 2 ở trên).
+- **(c) không bật cờ** — trạng thái hiện tại. 101 khẳng định `cref` sai trong project này
+  (237 toàn cây) **không có gì canh**.
+
+🔴 **W-1 KHÔNG chọn giúp, và cũng KHÔNG để văn xuôi ấy tiếp tục không ai đọc.** Nửa
+**phân tích cú pháp** của câu hỏi không cần cờ nào cả và đã được đóng bằng một dụng cụ
+riêng: `tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs` đọc mọi khối `///` trong cả
+cây (530 file, 3.616 khối) như XML, cộng một phép kiểm **tên phần tử** mà **trình biên
+dịch không hề làm**. Nửa **phân giải** (`cref`) thì **chỉ** trình biên dịch thấy, nên nó
+nằm lại đây, ở mục này. Lần chạy đầu tiên của dụng cụ ấy tìm ra **một khối hỏng đang
+sống** trong `EnumSpellingContractTests.cs`, sinh ra ở `05a4f7a8` (P-2 vòng 2) và **sáu
+lần merge liên tiếp không ai thấy**.
+
+**Bằng chứng:** commit merge của W-1.
 
 ---
 
