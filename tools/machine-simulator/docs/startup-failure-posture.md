@@ -789,12 +789,27 @@ carries the guard for it: a file that was unreadable at load and has since been 
 while the in-memory table is still **empty**, so writing it would discard the repair — that arm keeps
 refusing, and `Reload` is the way out.
 
-**What it still does not reach, named rather than left to be found.** The read and the write are one
-critical section in this process, but the store holds no lock on the file: another process replacing the
-file with *other valid* content between them loses that content to the whole-file rewrite. That is a **lost
-update**, not this law's situation — the bytes were readable — and the store's single-writer contract is
-pinned elsewhere. Named because the first round's ceiling being unstated is the whole reason this paragraph
-exists.
+🔴 **What it still does not reach — and the first statement of this paragraph NAMED THE CEILING TOO SMALL,
+which is the second time that has happened in this section (review N-1).** It said the residue was a **lost
+update**: a writer slipping between the read and the write. That is a real but narrower thing, and it does
+not cover what is actually left. The refusal compares two facts and they can disagree **three** ways. Two
+are refused. The third is not:
+
+> `_tableBuiltFrom == Absent` **and** `fresh.Status == Loaded` — the store came up with **no file**, a file
+> has appeared since **with content**, the read immediately before the write **sees it**, and the write
+> proceeds: the empty table plus one machine, over a file just read successfully. No throw, no `409`, no log
+> line.
+
+**It needs no concurrency.** The trigger is restoring a backup into `%ProgramData%\ST4I\sim\historian` on a
+running host — the workflow that directory is advertised for on the store's own `directory` parameter. **A
+ceiling named too small is worth less than no ceiling, because it reads as a sweep**, and that is the whole
+reason this section exists.
+
+**It is named rather than closed, and the reason is the law's own boundary.** The bytes were **readable**
+throughout, so this is outside the situation §3.6 rules on — the law decides whether a read may conflate
+*absent* with *unusable*, and here the read conflated nothing. Closing it changes *when a write is
+licensed*, because `Absent` at load is what entitles a first boot to establish a value at all. That is a
+contract decision, booked as **item 11 of `docs/owner-decisions.md`**, not a latch this task may take.
 
 #### The two exceptions, and what each one costs
 

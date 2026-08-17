@@ -167,13 +167,32 @@ public sealed class OeeSettingsRead
 /// could see it</b>, because Reach C only ever constructs a store over an <i>already-corrupt</i> directory.
 /// <see cref="Set"/> now takes its own read, under the same lock, immediately before it writes.</para>
 ///
-/// <para><b>WHAT THAT STILL DOES NOT REACH, named rather than left to be found.</b> The read and the write
-/// are one critical section in THIS process, so nothing here can interleave — but this store holds no lock
-/// on the file itself. Another process (or a hand editor) replacing the file with <i>other valid</i> content
-/// between that read and that write loses it to the whole-file rewrite. That is a LOST UPDATE, not this
-/// law's situation — the bytes were readable — and this store's single-writer contract is pinned in
-/// <c>OperatorDataRemovalCensusTests</c>. It is written here because the first round's ceiling being
-/// unstated is the entire reason this paragraph exists.</para>
+/// <para>🔴 <b>WHAT THAT STILL DOES NOT REACH — AND THE FIRST STATEMENT OF THIS PARAGRAPH UNDERSTATED IT,
+/// WHICH IS THE SECOND TIME A CEILING HERE WAS NAMED TOO SMALL (review N-1).</b> The refusal compares two
+/// facts, <c>fresh.Status</c> and <see cref="_tableBuiltFrom"/>, and they can disagree <b>three</b> ways.
+/// Two are refused above. The third is not:
+///
+/// <code>
+///   _tableBuiltFrom == Absent   AND   fresh.Status == Loaded
+/// </code>
+///
+/// The store came up with <b>no file</b>; a file has appeared since, with content; the read immediately
+/// above <b>sees it</b>; and the predicate is false, so <see cref="Set"/> writes the empty table plus one
+/// machine <b>over a file it has just read successfully</b> — no throw, no <c>409</c>, no log line.</para>
+///
+/// <para><b>It needs no concurrency and no second writer.</b> The trigger is restoring a backup into
+/// <c>%ProgramData%\ST4I\sim\historian</c> on a running host — which is the workflow the <c>directory</c>
+/// parameter below advertises that folder for in as many words. The paragraph this replaces called the
+/// remaining ceiling a LOST UPDATE, a writer slipping between the read and the write; that is a different
+/// and narrower thing, and it does not cover this. A ceiling named too small is worth less than no ceiling,
+/// because it reads as a sweep.</para>
+///
+/// <para><b>Why it is NOT closed here.</b> Refusing on that pair changes <i>when a write is licensed</i> —
+/// today <see cref="OeeSettingsReadStatus.Absent"/> at load entitles a caller to establish a value, and that
+/// is the first-boot path. Narrowing it is a contract decision, not a latch, so it is booked as item 11 of
+/// <c>docs/owner-decisions.md</c> rather than taken. It is also OUTSIDE the situation this store's law is
+/// about: the bytes were readable throughout, so the law in <c>docs/startup-failure-posture.md</c> §3.6 does
+/// not decide it — which is exactly the shape §3.6 says the law does not reach.</para>
 /// </summary>
 public sealed class OeeSettingsStore
 {
@@ -357,19 +376,37 @@ public sealed class OeeSettingsStore
             if (fresh.Status == OeeSettingsReadStatus.Unreadable ||
                 _tableBuiltFrom == OeeSettingsReadStatus.Unreadable)
             {
+                // 🔴 THREE messages, not two (review N-2). The stale-table arm fires on `fresh == Loaded`
+                // AND on `fresh == Absent`, and one sentence cannot be true of both: an operator who took
+                // the sibling message's own advice and MOVED THE FILE ASIDE was being told "the file reads
+                // correctly again now" about a file that no longer exists. Naming the wrong state in the
+                // remedy is the same defect class as naming the wrong tree in a transcript.
                 throw new OeeSettingsUnreadableException(
                     SettingsFilePath,
-                    fresh.Status == OeeSettingsReadStatus.Unreadable
-                        ? $"\"{SettingsFilePath}\" is present and this process could not read it " +
-                          $"({fresh.Reason}). The file was NOT overwritten: it holds every machine's " +
-                          "ideal-cycle override and planned-production ratio and is the only record of " +
-                          "them, so writing one machine's values over it would discard the rest. Repair " +
-                          "the file or move it aside and restart, then set the value again."
-                        : $"\"{SettingsFilePath}\" could not be read when this process loaded it, so the " +
-                          "in-memory OEE settings are EMPTY and do not represent the file. The file reads " +
-                          "correctly again now, which means writing the empty table over it would discard " +
-                          "whatever repaired it. Nothing was overwritten. Restart the host (or call " +
-                          "Reload) so the repaired file is loaded, then set the value again.",
+                    fresh.Status switch
+                    {
+                        OeeSettingsReadStatus.Unreadable =>
+                            $"\"{SettingsFilePath}\" is present and this process could not read it " +
+                            $"({fresh.Reason}). The file was NOT overwritten: it holds every machine's " +
+                            "ideal-cycle override and planned-production ratio and is the only record of " +
+                            "them, so writing one machine's values over it would discard the rest. Repair " +
+                            "the file or move it aside and restart, then set the value again.",
+
+                        OeeSettingsReadStatus.Absent =>
+                            $"\"{SettingsFilePath}\" could not be read when this process loaded it, and it " +
+                            "is NOT THERE NOW — moved aside or deleted since. The in-memory OEE settings " +
+                            "are therefore EMPTY and are not a copy of anything: writing them would " +
+                            "publish an empty table as though it were configuration. Nothing was written. " +
+                            "Restart the host (or call Reload) so this process starts from what is " +
+                            "actually on disk, then set the value again.",
+
+                        _ =>
+                            $"\"{SettingsFilePath}\" could not be read when this process loaded it, so the " +
+                            "in-memory OEE settings are EMPTY and do not represent the file. The file " +
+                            "reads correctly again now, which means writing the empty table over it would " +
+                            "discard whatever repaired it. Nothing was overwritten. Restart the host (or " +
+                            "call Reload) so the repaired file is loaded, then set the value again.",
+                    },
                     fresh.Failure);
             }
 

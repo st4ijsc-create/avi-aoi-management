@@ -47,6 +47,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 8 | `ReapplyCurrentAsync` ghi đè `site-link.json` | 🔴 **CHỜ ANH** — đã đo (Q-1 vòng sửa); **không đổi bởi V-1** |
 | 9 | sàn môi trường trên nhánh *không đọc được* | 🔴 **CHỜ ANH** — đã đo (Q-1); **không đổi bởi V-1** |
 | 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔴 **CHỜ ANH** — đã đo (V-1); phần dư của mục 5 |
+| 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔴 **CHỜ ANH** — đã đo (V-1 vòng sửa 1); phần dư của mục 5 |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -579,6 +580,28 @@ C3 không làm**. Bốn arm, hai bờ, không arm nào còn lại trong cây.
 > `Set` **thành công** và các byte của vận hành viên bị thay bằng một entry; sau bản sửa
 > `Set` ném, file **còn nguyên từng byte**, và trong thư mục không có gì khác.
 >
+> #### 🔴 Vòng sửa lỗi 1 — PHÉP TỪ CHỐI ĐƯỢC QUYẾT LÚC GHI, KHÔNG PHẢI LÚC DỰNG; VÀ MỘT HỆ QUẢ VẬN HÀNH VIÊN THẤY ĐƯỢC
+> Vòng đầu chốt `Set` trên một phân loại **do hàm dựng lưu lại**, nên thứ xuất xưởng là
+> *"file không đọc được **lúc store được dựng**"* chứ không phải *"…lúc này"*. Một host
+> đang chạy trên file tốt, vận hành viên sửa tay file ấy thành JSON hỏng — **đúng việc mà
+> chính lời từ chối bảo họ đi làm** — rồi một `PUT` tới sau đó: vẫn ghi đè **im lặng**.
+> `Set` nay **tự đọc lại** ngay trước khi ghi, trong cùng một khoá.
+>
+> **Điều vận hành viên phải biết, vì nó thấy được:** nếu file **không đọc được lúc nạp**
+> và sau đó **được sửa lành**, `PUT` vẫn bị **TỪ CHỐI** cho tới khi host **khởi động
+> lại**. Đó là cố ý và là nửa chịu tải của bản sửa — bảng trong bộ nhớ lúc ấy **rỗng**,
+> nên ghi nó xuống sẽ **xoá đúng bản vừa sửa**. Lời từ chối nói thẳng điều đó và nói
+> cách thoát. Nếu file bị **dời đi** thay vì được sửa, thông điệp nói đúng ca ấy chứ
+> không nói *"file đọc lại được rồi"* (vòng sửa 1, review N-2).
+>
+> **Cặp đối chứng vòng sửa 1, chạy hai phía trên `5dbe09a6`:** file hỏng **SAU** khi
+> store được dựng — ở base `Set` **thành công** và các byte bị thay; sau bản sửa `Set`
+> ném và các byte **còn nguyên**. Nguồn và cả hai transcript được **giữ lại**.
+>
+> 🔴 **Còn một kiểu lệch thứ BA chưa đóng, và nó thành mục 11:** bảng dựng từ `Absent`
+> + file **có nội dung xuất hiện sau đó** ⇒ vẫn ghi đè. Không cần tranh chấp; kịch bản
+> là **khôi phục một bản sao lưu trên host đang chạy**. Xem §11.
+>
 > **Hai phát hiện còn lại của S-1, quyết TỪNG CÁI:**
 > - `ProductConfigStore.Load` ghi lại `products.json` khi chỉ thiếu `recipes.json` —
 >   🔨 **SỬA**, hẹp: chỉ ghi file nào thật sự được gieo mầm. Đo được: một `products.json`
@@ -939,6 +962,58 @@ phải một cái chốt.
 — nó ghim **cả hai nửa**: hai ca cho cùng một `null`, và `Save` sau đó đè lên. Nó
 **ghim một khuyết tật đang sống làm đường cơ sở và KHÔNG sửa**, đúng như S-1 đã làm cho
 mục 5. Nếu anh quyết SỬA, khẳng định ấy đảo chiều và chỗ đảo chính là diff.
+
+---
+
+## 11. Một `oee-settings.json` được KHÔI PHỤC vào lúc đang chạy bị ghi đè bằng bảng rỗng
+
+**Mục này sinh ra từ bản sửa của mục 5, và nó là chỗ HAI SỰ THẬT của bản sửa ấy còn
+lệch nhau lần thứ ba.** V-1 cho `Set` tự đọc lại ngay trước khi ghi, và so hai điều:
+*file lúc này* (`fresh.Status`) và *bảng trong bộ nhớ được dựng từ phép đọc nào*
+(`_tableBuiltFrom`). Hai cái ấy lệch nhau được **ba kiểu**. Hai kiểu bị từ chối. Kiểu
+thứ ba thì không.
+
+**Đo được:**
+
+```
+_tableBuiltFrom == Absent   VÀ   fresh.Status == Loaded
+```
+
+Tiến trình lên khi **không có file**; sau đó một file **có nội dung** xuất hiện; phép
+đọc ngay trước cú ghi **NHÌN THẤY nó**; vị từ từ chối là **sai**; nên `Set` ghi **bảng
+rỗng cộng một máy** đè lên một file mà nó **vừa đọc thành công**. **Không ném, không
+409, không một dòng log.**
+
+**Không cần tranh chấp, không cần người ghi thứ hai.** Kịch bản là **khôi phục một bản
+sao lưu vào `%ProgramData%\ST4I\sim\historian` trên một host đang chạy** — đúng công
+việc mà chú thích tham số `directory` của chính store ấy quảng cáo thư mục này để làm
+(*"một operator/backup tool tìm thấy mọi file cạnh historian ở một chỗ"*).
+
+**Ở đâu:** `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` (`Set`, vị từ hai điều
+kiện; `Save` → `WriteAllTextAtomic`), tới được từ
+`src/St4i.EngineApi/Endpoints/HistorianEndpoints.cs` (`PutOeeSettingsAsync`).
+
+**Hậu quả vận hành:** giống hệt mục 5 — ideal-cycle override và planned-production
+ratio của **mọi máy** biến mất, con số OEE đổi thầm lặng — nhưng ở một thời điểm khác:
+**ngay sau khi vận hành viên tưởng mình vừa khôi phục xong.**
+
+**Vì sao KHÔNG sửa trong V-1:** đóng nó là đổi **khi nào một cú ghi được phép**. Hôm
+nay `Absent` lúc nạp **cho phép** người gọi tự đặt giá trị — đó chính là đường
+**khởi động lần đầu**. Thu hẹp nó là một thay đổi hợp đồng, không phải một cái chốt.
+Và nó **nằm ngoài tình huống** mà luật của mục 5 nói tới: **các byte đọc được suốt**,
+nên luật ở `docs/startup-failure-posture.md` §3.6 **không quyết được** ca này — đúng
+chỗ §3.6 tự nói là luật không với tới.
+
+**Nếu không quyết định:** giữ nguyên. Một bản khôi phục thực hiện trên host đang chạy
+sẽ bị lần đặt OEE kế tiếp xoá, và **không ai biết** cho tới khi có người đối chiếu lại.
+Cách né duy nhất hôm nay là **khởi động lại host sau khi khôi phục**, và điều đó
+**không được ghi ở đâu cả** trước mục này.
+
+**Bằng chứng:** commit `a9326c79` (V-1 vòng sửa 1) và chú thích lớp của
+`OeeSettingsStore`. 🔴 **Chưa có test nào ghim ca này** — nó chưa được ghim vì ghim nó
+là khẳng định hành vi hiện tại đúng, mà đó chính là thứ đang chờ anh quyết.
+`Read_RecordsWhatItAnswered_SoStatusMeansTheMostRecentRead` **dựng đúng trạng thái ấy**
+và **dừng ngay trước `Set`**.
 
 ---
 

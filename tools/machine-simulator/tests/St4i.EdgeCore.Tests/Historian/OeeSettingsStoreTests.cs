@@ -431,6 +431,29 @@ public sealed class OeeSettingsStoreTests : IDisposable
         Assert.Equal(0.25, store.Resolve("REPAIRED", 1.0).PlannedProductionRatio);
     }
 
+    /// <summary>🔴 The stale-table refusal fires on TWO different fresh readings, and one sentence cannot be
+    /// true of both (review N-2). An operator who took the sibling message's own advice — <i>"move it aside
+    /// and restart"</i> — was being told <i>"the file reads correctly again now"</i> about a file that no
+    /// longer exists.</summary>
+    [Fact]
+    public void Set_WhenTheUnreadableFileWasMovedAside_RefusesWithoutClaimingItReadsCorrectly()
+    {
+        var dir = NewTempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+        File.WriteAllText(path, "{ not a list ]");
+        var store = new OeeSettingsStore(dir);
+
+        // Exactly what the other message tells an operator to do.
+        File.Delete(path);
+        Assert.Equal(OeeSettingsReadStatus.Absent, store.Read().Status);
+
+        var refusal = Assert.Throws<OeeSettingsUnreadableException>(() => store.Set("M2", null, 0.5));
+
+        Assert.DoesNotContain("reads correctly again now", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("NOT THERE NOW", refusal.Message, StringComparison.Ordinal);
+        Assert.False(File.Exists(path));
+    }
+
     /// <summary><c>Status</c>'s doc says what this store last established about the file (review M-2).
     /// Before the fix round only the constructor and <c>Reload</c> wrote it, so the public <c>Read()</c> —
     /// the method whose name IS the read — left it stale, on the member the whole refusal hangs on.</summary>

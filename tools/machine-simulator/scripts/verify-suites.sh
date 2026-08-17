@@ -1218,7 +1218,17 @@ EXPECT_CONFORMANCE=23
 # never written to the object store proves nothing).
 #
 # EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0.
-EXPECT_EDGECORE=1121
+#
+# 🔴 V-1 FIX ROUND 2 (review N-2) raises EXPECT_EDGECORE 1121 -> 1122 (+1). Grand total 2724 -> 2725.
+# EXPECT_ENGINEAPI does NOT move: the rest of the round is documentation and one owner item.
+#
+#   tests/St4i.EdgeCore.Tests/Historian/OeeSettingsStoreTests.cs                                +1
+#       Set_WhenTheUnreadableFileWasMovedAside_RefusesWithoutClaimingItReadsCorrectly. The stale-table
+#       refusal fires on TWO different fresh readings and one sentence cannot be true of both: an operator
+#       who took the SIBLING message's own advice ("move it aside and restart") was being told "the file
+#       reads correctly again now" about a file that no longer exists. Three messages now, and this pins
+#       the one that was wrong -- by what it must NOT say as well as by what it must.
+EXPECT_EDGECORE=1122
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
