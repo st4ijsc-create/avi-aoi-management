@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Infrastructure;
 using St4i.TestHygiene;
 using Xunit;
@@ -76,6 +77,36 @@ public class TestRunTempRootTests
         var real = Path.TrimEndingDirectorySeparator(Path.GetFullPath(CredentialStore.DefaultRoot()));
 
         Assert.NotEqual(real, resolved);
+        Assert.StartsWith(
+            Path.GetFullPath(TestRunTempRoot.Root!), resolved, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 🔴 Task X-1 — the THIRD redirect, and the store behind it is in neither of the two places the two
+    /// facts above are about. <see cref="MachineConfigStore"/> resolves to
+    /// <see cref="AppContext.BaseDirectory"/> — this assembly's own output directory, beside the built
+    /// binary — so neither the <c>TMP</c>/<c>TEMP</c> redirect nor <c>ST4I_CREDS_DIR</c> ever reached it,
+    /// and its file accumulated there across every run of every suite for as long as both existed.
+    ///
+    /// <para>Asserted the same way as the credential fact above and for the same reason: this pins the
+    /// AMBIENT state the whole suite runs under, which is the thing that actually stops the write.
+    /// <c>MachineConfigStoreRootResolutionTests</c> sets the variable itself and would keep passing with
+    /// the harness entirely absent.</para>
+    ///
+    /// <para><b>The predicate is "not the default root", not "some temp path".</b> Asserting a literal
+    /// would pass just as happily if the redirect pointed at another accumulating directory, which is the
+    /// defect and not the fix — so both halves are checked: it must not be
+    /// <see cref="MachineConfigStore.DefaultRoot"/>, and it must be inside this run's disposable root,
+    /// which is the only thing that makes it disappear at process exit.</para>
+    /// </summary>
+    [Fact]
+    public void MachineConfigStore_ResolvesAwayFromThisAssembliesOwnOutputDirectory()
+    {
+        var resolved = Path.TrimEndingDirectorySeparator(Path.GetFullPath(MachineConfigStore.ResolveRoot()));
+        var besideTheBinary =
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(MachineConfigStore.DefaultRoot()));
+
+        Assert.NotEqual(besideTheBinary, resolved);
         Assert.StartsWith(
             Path.GetFullPath(TestRunTempRoot.Root!), resolved, StringComparison.OrdinalIgnoreCase);
     }

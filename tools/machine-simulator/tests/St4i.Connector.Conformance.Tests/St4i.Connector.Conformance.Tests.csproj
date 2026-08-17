@@ -38,6 +38,20 @@
              silently vacuous when the store moves, and treating "I could not look" as "nothing was
              there". Deliberate is not free, which is why both are written down. -->
     <Compile Include="..\Shared\RealCredentialStoreLeakGuard.cs" Link="RealCredentialStoreLeakGuard.cs" />
+    <!-- Task X-1 — the same consequence-measuring shape turned on the OTHER directory that survives a run:
+         this assembly's OWN OUTPUT DIRECTORY, which `dotnet build` does not clean and which three of the
+         product's stores resolve to by default. LINKED into all five — the property is "no test process
+         changes its own output directory", and this project has nothing there today only because nothing
+         has yet asked it to.
+
+         AGAINST THIS PROJECT'S ONE-REFERENCE BOUNDARY, measured the same way as the line above:
+           * ASSEMBLY boundary: UNTOUCHED. The guard's only `using`s are System.* and Xunit; it adds no
+             ProjectReference and cannot see St4i.EdgeCore or St4i.EngineApi — which is exactly why it
+             names the two exempt stores by SOURCE PATH rather than by `cref`.
+           * NO NEW DEPENDENCY BEYOND (1) ABOVE. It reads the product source for the same reason and with
+             the same fail-closed behaviour, so this project's off-tree requirement is unchanged in kind.
+             It needs no access to any machine-wide directory: it watches only its own bin output. -->
+    <Compile Include="..\Shared\OwnOutputDirectoryGuard.cs" Link="OwnOutputDirectoryGuard.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />

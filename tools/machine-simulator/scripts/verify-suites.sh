@@ -266,8 +266,52 @@ export MSBUILDDISABLENODEREUSE=1
 # SiteLinkRead gaining a `Failure` member so its LogError passes the exception its settings twin already
 # passed, and two new entries on docs/owner-decisions.md.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_ABSTRACTIONS=160
-EXPECT_CONFORMANCE=23
+#
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 TASK X-1 (.superpowers/sdd/suites-hermetic/task-1-brief.md) — +1 ON ALL FIVE, AND +1 MORE ON EDGECORE.
+# 2732 -> 2738. COUNTED FROM THE RUNNER (`dotnet test --list-tests`) on every suite, not by hand. The full
+# justification lives here; the other four constants carry a pointer back to it.
+#
+# WHAT WAS ADDED, and it is two things rather than one:
+#   (1) tests/Shared/OwnOutputDirectoryGuard.cs — ONE [Fact], LINKED into all five projects exactly as
+#       TestRunTempRoot.cs and RealCredentialStoreLeakGuard.cs already are. +1 on each of the five.
+#   (2) tests/St4i.EdgeCore.Tests/TestRunTempRootTests.cs gains ONE [Fact],
+#       MachineConfigStore_ResolvesAwayFromThisAssembliesOwnOutputDirectory — the sibling of the
+#       CredentialStore_ResolvesAwayFromTheRealProgramDataCredentialDirectory fact already in that class,
+#       and it lives in EdgeCore.Tests because that is the only suite that can see MachineConfigStore.
+#       +1 on EDGECORE only. Nothing is rewritten, split or deleted anywhere.
+#
+# 🔴 EDGECORE'S RUNNER NUMBER AND ITS RUN TOTAL ARE NOT THE SAME NUMBER, and this is where that shows.
+# `--list-tests` returned 161 / 24 / 1124 / 52 / 1370. Four of those are exactly the old constant plus the
+# facts added above. EDGECORE's is SEVEN SHORT of 1131, and it was seven short of 1129 before this task
+# too: discovery reports a theory whose data it cannot enumerate as one case, and the run expands it. So
+# the +2 here is the DELTA measured from the runner, applied to a base the runner has never agreed with —
+# stated rather than smoothed over, because "counted from the runner" is this file's rule and the one
+# suite where it does not land on the constant is the one worth naming.
+#
+# WHAT THE NEW GUARD ASSERTS: that a test process leaves its OWN OUTPUT DIRECTORY — AppContext.BaseDirectory,
+# beside the built binary — exactly as it found it. That directory outlives every run (`dotnet build` does
+# not clean it, and neither does this script), and THREE of the product's stores resolve to it by default,
+# so a file one run writes is a file the next run reads. Measured on this machine before the fix:
+# St4i.EngineApi.Tests' output directory held a products.json of 625 products, 623 of them minted one per
+# run, and a machine-operating-config.json of 240,778 bytes whose AOI-01 History list stood at 624 entries.
+#
+# 🔴 THE GUARD DOES NOT MAKE THE SUITES HERMETIC AND MUST NOT BE READ AS SAYING SO. One of the three
+# stores was closed (MachineConfigStore, via the ST4I_MACHINE_CONFIG_DIR redirect that task H-1c's seam
+# made possible and tests/Shared/TestRunTempRoot.cs now sets). The other two — ProductConfigStore and
+# SimulatedEcosystem — have NO relocation variable of any kind, so no harness can move them; giving them
+# one is a change to src/ and to every shipped install's on-disk layout, which task X-1 was told to report
+# rather than do. They are EXEMPT from the guard, the exemption is derived from those two stores' own
+# sources, and the derivation re-checks its own justification on every run: the day either store gains an
+# EnvVarDir, the guard goes RED and demands the exemption be spent.
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0. No suppression of any kind was added and no
+# .editorconfig exists in this tree. None of the five test projects sets GenerateDocumentationFile, so the
+# new `///` blocks are not compiled either way — tag balance on every block was checked directly rather
+# than inferred from that, because an unbalanced block HIDES the diagnostics inside it.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_ABSTRACTIONS=161
+EXPECT_CONFORMANCE=24
 # chore/test-hygiene raised this 735 -> 741 (+6): guards proving the test-isolation seam added to
 # CredentialStore, which was the only one of THIRTEEN stores without one — which is exactly why
 # (🔴 Dot F branch review, F-7: this said FOURTEEN while the same file says THIRTEEN in three later
@@ -1283,7 +1327,12 @@ EXPECT_CONFORMANCE=23
 # EXPECT_CONFORMANCE, EXPECT_EDGESERVICE and EXPECT_ENGINEAPI are deliberately UNCHANGED: W-1 adds no
 # driver, no connector kind and no product code at all. A move in any of them would mean this task reached
 # somewhere it had no business reaching.
-EXPECT_EDGECORE=1129
+# 🔴 Task X-1 raises this 1129 -> 1131 (+2), the only suite to move by more than one: it takes the linked
+# OwnOutputDirectoryGuard [Fact] every suite gets, PLUS
+# TestRunTempRootTests.MachineConfigStore_ResolvesAwayFromThisAssembliesOwnOutputDirectory, which can only
+# live here because this is the only suite that can see MachineConfigStore. Full justification — including
+# why the runner's 1124 is not this number — beside EXPECT_ABSTRACTIONS at the top of this file.
+EXPECT_EDGECORE=1131
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -1345,7 +1394,11 @@ EXPECT_EDGECORE=1129
 # "opcua-pki", both of which survive deliberately. A moved count here would mean the reword changed behaviour.
 # 🔴 Task K-1 raises this 50 -> 51 (+1): the one linked hygiene [Fact] every suite gets. Full
 # justification beside EXPECT_ABSTRACTIONS at the top of this file.
-EXPECT_EDGESERVICE=51
+# 🔴 Task X-1 raises this 51 -> 52 (+1): the one linked OwnOutputDirectoryGuard [Fact] every suite gets.
+# Full justification beside EXPECT_ABSTRACTIONS at the top of this file. This suite writes nothing beside
+# its binary today, and the guard is here anyway for the reason K-1's is — a guard installed only where a
+# leak has already been paid for is a guard that arrives one incident late.
+EXPECT_EDGESERVICE=52
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
 #     +24  NotificationEndpointsTests    (new file — the eleven notification routes)
@@ -2761,7 +2814,12 @@ EXPECT_EDGESERVICE=51
 #
 # 🔴 V-1 FIX ROUND 1 raises this 1368 -> 1369 (+1) — the endpoint arm of review I-3. Full justification
 # beside EXPECT_EDGECORE above, where the EdgeCore half of the same fix is accounted for.
-EXPECT_ENGINEAPI=1369
+# 🔴 Task X-1 raises this 1369 -> 1370 (+1): the one linked OwnOutputDirectoryGuard [Fact] every suite
+# gets. Full justification beside EXPECT_ABSTRACTIONS at the top of this file. THIS is the suite the whole
+# measurement was taken on — all 20 of its WebApplicationFactory-building classes resolve
+# ProductConfigStore, SimulatedEcosystem and MachineConfigStore to the default beside-the-binary root, and
+# it is the only one of the five that had anything in its output directory at all.
+EXPECT_ENGINEAPI=1370
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

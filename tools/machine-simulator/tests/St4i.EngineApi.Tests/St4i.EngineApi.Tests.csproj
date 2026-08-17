@@ -18,6 +18,14 @@
          five suites for the same reason as the line above — each process is its own measurement, and a
          guard installed in one suite says nothing about the other four. -->
     <Compile Include="..\Shared\RealCredentialStoreLeakGuard.cs" Link="RealCredentialStoreLeakGuard.cs" />
+    <!-- Task X-1 — the same consequence-measuring shape turned on the OTHER directory that survives a run:
+         this assembly's OWN OUTPUT DIRECTORY, which `dotnet build` does not clean and which three of the
+         product's stores resolve to by default. THIS is the project the measurement was taken on: its
+         output directory held a products.json of 625 products (623 of them minted one per run) and a
+         machine-operating-config.json of 240,778 bytes. LINKED into all five anyway — see
+         tests/Shared/OwnOutputDirectoryGuard.cs for the domain it declares and for the two stores it
+         exempts because they have no relocation seam. -->
+    <Compile Include="..\Shared\OwnOutputDirectoryGuard.cs" Link="OwnOutputDirectoryGuard.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />

@@ -40,6 +40,22 @@ namespace St4i.TestHygiene;
 /// override at all, which is precisely why ~3,000 test credentials accumulated in the real one while
 /// every sibling store's equivalent went to a throwaway directory.</para>
 ///
+/// <para>🔴 <b>Task X-1 — <c>ST4I_MACHINE_CONFIG_DIR</c> is a THIRD redirect, and the store behind it is
+/// in neither of the two places this file was written about.</b> <c>MachineConfigStore</c>'s default root
+/// is <see cref="AppContext.BaseDirectory"/> — the test assembly's OWN OUTPUT DIRECTORY, beside the built
+/// binary — so neither the <c>TMP</c>/<c>TEMP</c> redirect nor <c>ST4I_CREDS_DIR</c> ever touched it.
+/// Measured on this machine before the redirect: that directory's
+/// <c>machine-operating-config.json</c> held <b>240,778</b> bytes across SEVEN machine codes, of which
+/// <b>165,046</b> were a single machine's <c>History</c> list at <b>624</b> entries — one appended per
+/// run of <c>St4i.EngineApi.Tests</c>, forever, on a machine code that never changes. Two tests in
+/// <c>AuditWiringTests</c> carry comments saying so and are written to survive it rather than to stop it.
+///
+/// <para><b>The two-thirds this redirect does NOT reach, named because the sentence above would
+/// otherwise read as the whole store population.</b> The product roots THREE stores beside the binary
+/// (<c>MachineConfigStore</c>'s own remarks enumerate them). Only this one has a relocation variable;
+/// <c>ProductConfigStore</c> and <c>SimulatedEcosystem</c> have none, so no value set here can move them.
+/// See <see cref="OwnOutputDirectoryWatch"/> for what that costs and how it is measured.</para></para>
+///
 /// <para><b>The one leak this cannot close, stated honestly — and measured.</b> A root is removed on
 /// <see cref="AppDomain.ProcessExit"/>, but that is not guaranteed to succeed:
 /// <list type="bullet">
@@ -97,6 +113,28 @@ internal static class TestRunTempRoot
             if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ST4I_CREDS_DIR")))
             {
                 Environment.SetEnvironmentVariable("ST4I_CREDS_DIR", Path.Combine(root, "creds"));
+            }
+
+            // 🔴 Task X-1 — MachineConfigStore is the OTHER direction of the same miss, and it is the one
+            // this file left open for eight tasks. Its default root is neither %TEMP% nor %ProgramData%:
+            // it is AppContext.BaseDirectory, i.e. THIS ASSEMBLY'S OWN OUTPUT DIRECTORY, so the two
+            // redirects above reach it exactly as far as they reached CredentialStore before it got a
+            // seam of its own — not at all. Spelled as a literal rather than as
+            // MachineConfigStore.EnvVarDir because two of the five projects this file is linked into
+            // reference only their own contract assembly and cannot see that constant;
+            // TestRunTempRootTests.MachineConfigStore_ResolvesAwayFromThisAssembliesOwnOutputDirectory
+            // is what pins the literal to the product's own name for it.
+            //
+            // WHAT THIS DOES NOT REACH, and it is two thirds of the population: ProductConfigStore
+            // (products.json, recipes.json) and St4i.EngineApi.Config.SimulatedEcosystem
+            // (ecosystem/ecosystem-*.json) resolve to the SAME directory and have NO relocation variable
+            // at all, so there is nothing here to set for them. Giving them one is a change to src/ and
+            // therefore out of this task's bounds. OwnOutputDirectoryGuard is where that gap is measured
+            // and named rather than asserted away.
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ST4I_MACHINE_CONFIG_DIR")))
+            {
+                Environment.SetEnvironmentVariable(
+                    "ST4I_MACHINE_CONFIG_DIR", Path.Combine(root, "machine-config"));
             }
 
             Root = root;
