@@ -279,12 +279,15 @@ internal sealed class FleetCore
     /// the narrower instrument §8.1(a3) names).
     ///
     /// <para>🔴 <b>J-1b — THAT NUMBER IS NOW HISTORICAL, AND THIS BRANCH IS WHAT MADE IT SO. Counted, not
-    /// recalled: twenty code-site <c>lock (_gate)</c> regions at this branch's base <c>0dcc2594</c> and
-    /// TWENTY-ONE here, because J-1b's pre-check in <see cref="RebuildPipelineOffLock"/> is the twenty-first.</b>
-    /// The instrument's RESULT is unaffected — the new region reads two fields and reaches no I/O, no
-    /// <c>Dispose</c> and no <c>Cancel</c>, so the set below is still the same nine paths and still 3/2/4 —
-    /// but anyone RE-DERIVING the set must walk twenty-one regions, not twenty, and would otherwise stop one
-    /// short of the newest one. This is the widened §8.1(h) firing on the branch that widened it: a sentence
+    /// recalled: twenty code-site <c>lock (_gate)</c> regions at this branch's base <c>0dcc2594</c>,
+    /// TWENTY-ONE after J-1b's pre-check in <see cref="RebuildPipelineOffLock"/>, and <b>TWENTY-TWO
+    /// here</b> — U-1 added the fault-report region in that same method's <c>catch</c>.</b>
+    /// The instrument's RESULT is unaffected — neither new region reaches I/O, a
+    /// <c>Dispose</c> or a <c>Cancel</c> (J-1b's reads two fields; U-1's reads one and writes one), so the
+    /// set below is still the same nine paths and still 3/2/4, and neither takes another lock while held, so
+    /// the five-lock ordering set further down gains no member — but anyone RE-DERIVING the set must walk
+    /// twenty-two regions, not twenty, and would otherwise stop short of the newest ones.
+    /// This is the widened §8.1(h) firing on the branch that widened it: a sentence
     /// true at the base commit, falsified by the diff, in the same banner that diff edits. Its past tense
     /// ("the instrument WAS") is a partial defence and was not enough; a count that a reader may re-run has
     /// to say WHEN it was taken.</para></para>
@@ -644,7 +647,9 @@ internal sealed class FleetCore
     /// has produced two false summaries already (branch review Minor 1 conflated "open" with "owner
     /// decision"; the count it replaced went stale the moment a member moved), and a list of names cannot go
     /// stale in a way its own members contradict.</item>
-    /// <item><b>S4 — PARTLY OPEN.</b> The restart chokepoint. The rebuild is now unconditional over an
+    /// <item><b>S4 — PARTLY OPEN as an S-SET ROW; its OWNER DECISION is CLOSED (U-1). The two are different
+    /// questions and this row is where they were most likely to be conflated.</b> The restart chokepoint.
+    /// The rebuild is now unconditional over an
     /// off-lock TEARDOWN that throws (<see cref="RegisterMachine"/>/<see cref="ApplyScenario"/>), but a
     /// <see cref="StartLocked"/> that throws ITSELF leaves the fleet stopped with the roster/scenario write
     /// already committed, and no <c>finally</c> can start a fleet that failed to start. Rolling the commit
@@ -695,7 +700,39 @@ internal sealed class FleetCore
     /// transport swap and through <see cref="Burst"/>'s revert baseline, which is captured from the
     /// pre-burst scenario. Owner decision, unchanged, and now argued from mechanisms rather than from
     /// "meaning".</item>
-    /// </list></para></item>
+    /// </list></para>
+    /// <para>🔴 <b>U-1 — THE OWNER RULED, AND THE RULING IS NOT EITHER OF THE TWO OPTIONS ABOVE.</b>
+    /// (<c>docs/owner-decisions.md</c> item 7.) <b>The decided state: the fleet stays STOPPED, the commit
+    /// STANDS, and the failure is RECORDED on <see cref="LastError"/></b> — the field <c>GET /v1/health</c>
+    /// answers from — by <see cref="RebuildPipelineOffLock"/>'s <c>catch</c>, which every one of the three
+    /// entry paths reaches. See that <c>catch</c> for the mechanism, the identity guard and the price.
+    /// <list type="bullet">
+    /// <item><b>Why not "build before tearing down".</b> J-2's bullet above is the reason and it was
+    /// re-derived rather than inherited: it is NECESSARY AND NOT SUFFICIENT, and sufficiency here would need
+    /// an install that restores the pipeline it replaced — the old slots are cancelled and disposed by then,
+    /// so there is nothing to restore. Taking it alone would buy an operator-observable ordering change for
+    /// a fix that leaves the state this item exists to end.</item>
+    /// <item><b>Why not rolling the commit back.</b> The two mechanisms in J-2's second bullet still hold,
+    /// and a third decides it: <b>a rollback does not bring the pipeline back.</b> Even a perfect one leaves
+    /// the fleet stopped, which is the half an operator actually has to act on. For
+    /// <see cref="ApplyScenario"/> it would additionally have to unwind
+    /// <see cref="ApplyNetworkOutageLocked"/>'s transport swap — a second throw site ON the failure path,
+    /// able to replace the exception that says why the restart failed. A rollback that can itself fail is
+    /// not a rollback.</item>
+    /// </list>
+    /// <b>WHAT U-1 DOES NOT CLOSE, so the row keeps its status.</b> The S-set property is that a commit made
+    /// under this lock owes a step after it; the commit still owes a pipeline it does not get, and no
+    /// <c>finally</c> can start a fleet that failed to start. U-1 changed what an operator can LEARN about
+    /// that state, not the state. <b>Where the fleet and its record still diverge, named with reasons rather
+    /// than left to be rediscovered:</b> <see cref="_scenario"/>/<see cref="_activePresetName"/> hold a
+    /// scenario no pipeline is applying (they are CONFIGURATION — what the next start will use — and
+    /// <see cref="IsRunning"/> already says no pipeline is applying it); <see cref="_fleet"/> holds the new
+    /// machine (append-only by invariant, and its durable asset row is delivered by
+    /// <see cref="RegisterMachine"/>'s outer <c>finally</c> AFTER the rebuild throws, so a rollback would
+    /// orphan it); and <c>machine-operating-config.json</c> may hold records for the machines
+    /// <see cref="BuildStartPlan"/> got through before the throw (<c>MachineConfigStore.Ensure</c> only ever
+    /// SEEDS — it never modifies an existing record — so those are exactly what the next start would write,
+    /// which is why they are named rather than cleaned up).</para></item>
     /// <item><b>S5 — CLOSED (G-2).</b> <see cref="Burst"/> → <see cref="RevertBurstAfterDelayAsync"/>.</item>
     /// <item><b>S6 — CLOSED (H-1a), and HOW it closed is the part worth carrying.</b>
     /// <see cref="UpdateSettings"/>'s committed triple versus its off-lock activation and persistence. G-2
@@ -1979,6 +2016,20 @@ internal sealed class FleetCore
         }
     }
 
+    /// <summary>The fault <c>GET /v1/health</c> answers from — that endpoint is literally
+    /// <c>LastError is null</c>. <b>TWO producers, named rather than counted, because a reader who finds one
+    /// of them stops looking:</b> <see cref="StartSlot"/>'s per-slot catch, for a slot that started and later
+    /// faulted at runtime; and <see cref="RebuildPipelineOffLock"/>'s fault path, for an internal restart
+    /// that tore the pipeline down and could not rebuild it (🔴 U-1, <c>docs/owner-decisions.md</c> item 7 —
+    /// see that catch for why this field rather than a projection of its own, and for the identity guard both
+    /// producers share). One event in two shapes: a pipeline stopped for a reason nobody asked for.
+    ///
+    /// <para><b>Not a producer, and deliberately:</b> a connector that could not be built. That is reported
+    /// by <see cref="GetConfiguredConnectorIssues"/>/<c>GET /v1/connectors</c> and must never flip the whole
+    /// host unhealthy — see the connector loop in <see cref="StartLocked"/>.</para>
+    ///
+    /// <para><b>Cleared in exactly one place:</b> <see cref="StartLocked"/>, past its own latch. So a start
+    /// that actually installs clears it, and one the HALT latch refuses does not.</para></summary>
     public Exception? LastError { get; private set; }
 
     public TransportMode Mode => _transportCoordinator.Mode;
@@ -3332,9 +3383,61 @@ internal sealed class FleetCore
             var plan = BuildStartPlan(inputs);
             lock (_gate) { StartLocked(plan, orphanedConnectorDrivers, deferredLogs); }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             installFaulted = true;
+
+            // 🔴 U-1 (docs/owner-decisions.md item 7) — S4's SECOND HALF, AND THIS WRITE IS THE WHOLE OF THE
+            // BEHAVIOUR CHANGE. A restart that fails leaves the fleet STOPPED with the roster/scenario write
+            // committed, and every per-field read surface is truthful about that: IsRunning says stopped,
+            // GetDriverHealth lists nothing, Fleet/CurrentScenario report what was committed. The surface that
+            // was NOT truthful is the one that SUMMARISES them — GET /v1/health is literally `LastError is
+            // null`, so it answered HEALTHY for a fleet an internal restart had torn down and could not
+            // rebuild. Every entry path reaches this catch, so one write covers all three.
+            //
+            // WHY THIS FIELD AND NOT A PROJECTION OF ITS OWN: the clearing rule already exists and is already
+            // the right one. StartLocked's `LastError = null` sits PAST its latch, so the report survives
+            // until a start actually installs, and a rebuild the latch refuses does not clear it. A new
+            // projection would add state, a lifetime and a read surface to say what this field already says.
+            //
+            // IT BROADENS A RESERVATION, and that is the price rather than a side effect: the connector loop
+            // below reserved this property for "a slot that started and later faulted at RUNTIME" (that
+            // sentence is corrected there, not only here). Both producers now report ONE event — a pipeline
+            // stopped for a reason nobody asked for. The connector-issue projection is untouched and still
+            // never reaches this field.
+            //
+            // `ex` IS THE SAME OBJECT THE CALLER RECEIVES on the two paths that have a caller, so an HTTP 500
+            // and the health surface cannot disagree about what failed. On the third — Burst's revert, whose
+            // Task nothing observes — this is the only place that exception lands at all.
+            //
+            // THE GUARD IS AN IDENTITY GUARD, the same rule StartSlot's `if (removed)` applies: report only
+            // while the state this fault describes still holds. `_running` is false on every uncontended
+            // reach of this catch — StartLocked's `_running = true` is its LAST statement, so nothing in it
+            // throws after that — so the guard costs nothing there. What it excludes is a concurrent Start
+            // that already installed; clobbering a live fleet's health with a superseded restart's fault is
+            // the defect RestartRace_OldPipelineFaultsAfterNewPipelineAlreadyStarted_DoesNotClobberIsRunningOrLastError
+            // exists to prevent, reached from a second direction.
+            //
+            // THE HALT PATH STAYS SILENT, STRUCTURALLY RATHER THAN BY ASSERTION: both refusals RETURN — this
+            // method's pre-check above, and StartLocked's latch — so neither can reach a `catch`. The one arm
+            // that reaches it while latched is an Estop landing INSIDE the build against a root whose write
+            // then throws. That one IS recorded, deliberately: the rebuild really did fail, the latch has its
+            // own surface (GetSafetyStatus/EstopEngaged), and silence about what DID happen is what the owner
+            // ruled against at item 6.
+            //
+            // IT IS ONE MORE `lock (_gate)` REGION — the twenty-second in this file. It reads one field and
+            // writes one, reaches no I/O, no Dispose and no Cancel, and takes no other lock while held, so
+            // the nine-path set and the five-lock ordering set at the top of this file are both unchanged.
+            // The gate is NOT held on entry: a throw out of the `lock (_gate) { StartLocked(...) }` above
+            // releases it on the way out.
+            lock (_gate)
+            {
+                if (!_running)
+                {
+                    LastError = ex;
+                }
+            }
+
             throw;
         }
         finally
@@ -3697,11 +3800,17 @@ internal sealed class FleetCore
         // returns false), or a third-party factory that throws despite IConnectorFactory.TryCreate's
         // contract not to — is logged and skipped, exactly like today's "malformed map file disables that
         // driver for this run without crashing the host" behavior for Modbus/OPC-UA specifically. This is
-        // deliberately NOT surfaced through LastError (that property is reserved for a slot that started
-        // and later faulted at RUNTIME — see StartSlot's catch below; touching it here would flip
-        // GET /v1/health unhealthy merely because an optional peripheral's config is bad, which is not
-        // today's behavior and is not this task's to change) — only a log warning, so the failure is
-        // visible without being mistaken for the whole fleet's health.
+        // deliberately NOT surfaced through LastError — touching it here would flip GET /v1/health unhealthy
+        // merely because an optional peripheral's config is bad, which is not today's behavior and is not
+        // this task's to change — only a log warning, so the failure is visible without being mistaken for
+        // the whole fleet's health.
+        //
+        // 🔴 U-1 — THE REASON GIVEN HERE USED TO BE A UNIVERSAL ABOUT THE FIELD ("that property is RESERVED
+        // for a slot that started and later faulted at RUNTIME"), and U-1 falsified it: a restart whose
+        // rebuild throws now writes LastError too (RebuildPipelineOffLock's catch). The EXCLUSION this
+        // paragraph states is unchanged and is what it was always for — a connector that could not be built
+        // is not a fault of the fleet — so the reason is restated as the exclusion it is rather than as a
+        // claim about the field's only producer. See LastError's own declaration for both producers.
         //
         // Review fix round 2 — `orphanedConnectorDrivers` COLLECTS (never disposes inline) any driver a
         // rejected/faulted connector still handed back; disposal happens in the caller, off `_gate`, via
@@ -4834,9 +4943,25 @@ internal sealed class FleetCore
             //
             // Catching here does not swallow anything that was ever reaching anyone; it converts silence
             // into one line on the channel a host actually reads. It deliberately does NOT retry, roll back
-            // or re-schedule: what state the fleet is left in after a failed restart is the half of S4 that
-            // needs an owner decision, and inventing one here would be exactly the new arbitration mechanism
-            // the brief refuses.
+            // or re-schedule.
+            //
+            // 🔴 U-1 — TWO CLAUSES OF THE MESSAGE BELOW WERE FALSIFIED, ONE BY THIS TASK AND ONE THAT WAS
+            // ALREADY WRONG. It read: "the fleet may still be running at the burst cycle-rate multiplier and
+            // no further revert is scheduled; … so this line is the only report of it".
+            //   - "THIS LINE IS THE ONLY REPORT" is what U-1 falsified. RebuildPipelineOffLock's catch now
+            //     records the same exception on LastError, so GET /v1/health reports it too. A sentence true
+            //     at base and left standing beside its own change is the defect this file has a banner about.
+            //   - "MAY STILL BE RUNNING AT THE BURST MULTIPLIER" pointed at the WRONG ARM and predates U-1.
+            //     ApplyScenario commits `_scenario` as its second statement, so the multiplier is already
+            //     back at `baseline` whichever way it then fails; and on the arm that is actually reachable —
+            //     the rebuild throwing — the fleet is not running at all. An operator following that line
+            //     went looking for a fleet cycling too fast and found one that had stopped.
+            // The G-2 sentence this replaces was right about the one thing it was written for (the silence)
+            // and is kept above; only the state description is corrected.
+            //
+            // WHAT DID NOT CHANGE: this catch still does not decide anything. The state a failed restart
+            // leaves the fleet in is decided at RebuildPipelineOffLock, once, for all three entry paths —
+            // which is why this site records nothing of its own.
             try
             {
                 ApplyScenario(_scenario with { CycleRateMultiplier = baseline }, presetName: _activePresetName);
@@ -4845,9 +4970,10 @@ internal sealed class FleetCore
             {
                 _logError?.Invoke(
                     ex,
-                    "FleetCore burst revert failed — the fleet may still be running at the burst cycle-rate " +
-                    "multiplier and no further revert is scheduled; this ran on an unobserved background task, " +
-                    "so this line is the only report of it");
+                    "FleetCore burst revert failed — no further revert is scheduled, so the fleet keeps the " +
+                    "cycle-rate multiplier it has now. This ran on an unobserved background task, so no caller " +
+                    "ever sees this exception; when the failure was the pipeline rebuild the fleet is left " +
+                    "STOPPED and GET /v1/health carries this same exception");
             }
         }
     }

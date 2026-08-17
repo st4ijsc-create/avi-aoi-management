@@ -282,6 +282,9 @@ public sealed class FleetHost
     /// — see <see cref="FleetCore.GetKpiCounters"/>.</summary>
     public (long TotalPass, long TotalJudged) GetKpiCounters() => _core.GetKpiCounters();
 
+    /// <summary>The fault <c>GET /v1/health</c> answers from. <b>Which faults reach it is defined once, at
+    /// <see cref="FleetCore.LastError"/>, and deliberately not restated here</b> — this pass-through is
+    /// exactly where a second, drifting copy of that list would live.</summary>
     public Exception? LastError => _core.LastError;
 
     public TransportMode Mode => _core.Mode;

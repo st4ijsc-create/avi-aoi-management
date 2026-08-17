@@ -11,11 +11,17 @@ public static class FleetEndpoints
 {
     public static void MapFleetEndpoints(this IEndpointRouteBuilder app)
     {
-        // E1: Ok used to be hardcoded true — a client had no way to tell a genuinely faulted engine
-        // (StartLocked's pipeline task threw, LastError set, IsRunning flipped back to false — see
-        // FleetCore.StartLocked's catch) from a healthy one. LastError is null both before the fleet has
-        // ever been started and after a clean Stop(), so this stays true in both of those ordinary
-        // states too — it only goes false once something has actually gone wrong.
+        // E1: Ok used to be hardcoded true — a client had no way to tell a genuinely faulted engine from a
+        // healthy one. LastError is null both before the fleet has ever been started and after a clean
+        // Stop(), so this stays true in both of those ordinary states too — it only goes false once
+        // something has actually gone wrong.
+        //
+        // 🔴 U-1 — WHICH FAULTS THOSE ARE IS NOT DEFINED HERE; see FleetCore.LastError's own declaration,
+        // which names both producers. This comment used to name ONE of them inline ("StartLocked's pipeline
+        // task threw … see FleetCore.StartLocked's catch"), which read as the definition and was already
+        // stale twice over: that catch lives in FleetCore.StartSlot, and since U-1 a restart whose rebuild
+        // throws sets the field too (docs/owner-decisions.md item 7). A second copy of a producer list is
+        // the copy nobody updates.
         // WS-D-D1 — anonymous: St4i.DesktopShell's readiness probe (and any external health check) must
         // work before/without ever logging in, now that the default-deny fallback policy requires auth on
         // everything else.

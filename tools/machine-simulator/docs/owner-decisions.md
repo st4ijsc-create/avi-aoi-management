@@ -16,8 +16,14 @@ văn: *"Không mục nào trong đây đã bị sửa. Tất cả đều là hà
 Nó là một **khẳng định phổ quát trên chính danh sách bên dưới**, và mỗi lần một mục
 được thi hành thì không có gì bắt nó phải được suy lại — đúng loài khuyết tật file này
 lập ra để chấm dứt, nằm ngay trong lời mở đầu của nó. **Trạng thái nằm ở bảng phán
-quyết và ở từng mục, không ở đây:** mục 1 (Q-1) và mục 6 (T-1) đã thi hành; những mục
-còn lại vẫn là hành vi đang chạy hôm nay.
+quyết và ở từng mục, không ở đây:** mục 1 (Q-1), mục 6 (T-1) và mục 7 (U-1) đã thi
+hành; những mục còn lại vẫn là hành vi đang chạy hôm nay.
+
+> 🔴 **U-1, 2026-08-17 — và câu ngay trên vừa được sửa LẦN THỨ HAI vì đúng lý do nó
+> được viết ra.** T-1 thay một khẳng định phổ quát bằng một **danh sách**, đúng cách;
+> nhưng một danh sách các mục đã thi hành **cũng đi cũ** mỗi lần một mục nữa được thi
+> hành, và U-1 làm nó cũ ngay trong vòng kế tiếp. Nó được cập nhật chứ không bị bỏ, vì
+> **bảng phán quyết mới là nguồn sự thật** và câu này chỉ là con trỏ tới nó.
 
 ---
 
@@ -37,7 +43,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 4 | hình dạng hàng `Samples` | ⚖️ **ĐO TRƯỚC, RỒI CHỌN** — SDK đã xuất bản là ứng viên chuẩn |
 | 5 | ~~ba hình dạng xoá file~~ → **`oee-settings.json`** | 🔴 **CHỜ ANH** — đã đo (S-1): ba tư thế, một cái mất dữ liệu im lặng |
 | 6 | log hoãn của một lần cài đặt hỏng | 🔨 **PHÁT RA TRÊN ĐƯỜNG NÉM LỖI** (2026-08-17) — đã thi hành, T-1 |
-| 7 | nửa sau của S4 | 🔴 **CHỜ ANH** — thứ tự quan sát được + tháo dỡ giao dịch, không phải trạng thái thứ ba |
+| 7 | nửa sau của S4 | 🔨 **DỪNG + GIỮ COMMIT + BÁO TRÊN `/v1/health`** (2026-08-17) — đã thi hành, U-1 |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 ---
@@ -602,6 +608,71 @@ KHÔNG ĐỦ — bản thân việc cài đặt cũng có thể ném lỗi.**
 
 **Nếu không quyết định:** thứ tự vẫn như cũ, và một lần khởi động lại thất bại vẫn
 để hệ thống ở trạng thái giữa chừng mà không có cơ chế lùi.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-17 — FLEET DỪNG, COMMIT ĐỨNG NGUYÊN, VÀ LẦN HỎNG ĐƯỢC GHI LÊN `GET /v1/health`
+> Quyết bởi chủ sở hữu. **Không phải phương án nào trong hai phương án J-2 nêu tên.**
+>
+> **Câu hỏi đã bị đặt sai, và chỗ sai là chỗ đáng giữ.** Brief nói *"thứ fleet LÀ và
+> thứ hồ sơ NÓI không khớp nhau"*. Đo lại từng bề mặt: `IsRunning` báo **dừng** —
+> đúng; `GetDriverHealth` không liệt kê gì — đúng; `Fleet` có máy vừa đăng ký — đúng;
+> `CurrentScenario` mang cấu hình vừa commit — đúng, vì đó là **cấu hình**, thứ mà một
+> fleet đang dừng có quyền giữ cho lần khởi động sau. **Từng trường một đều nói thật.**
+> Thứ nói dối là **bề mặt TÓM TẮT chúng**: `GET /v1/health` đúng nghĩa đen là
+> `LastError is null`, nên nó trả lời **HEALTHY** cho một fleet mà một lần khởi động
+> lại nội bộ đã tháo xuống và không dựng lại được — **vĩnh viễn**, vì không gì khác ghi
+> trường ấy. Đó là đúng câu `FleetCore.cs` đã tự viết ra cho một ca khác, tại
+> `StartSlot`.
+>
+> **Cơ chế:** một lần ghi `LastError = ex` trong `catch` của `RebuildPipelineOffLock` —
+> **chốt duy nhất mà cả ba đường vào đều đi qua**. `ex` là **cùng một object** người
+> gọi nhận được, nên HTTP 500 và bề mặt health không thể nói khác nhau về chuyện gì đã
+> hỏng; trên đường thứ ba (revert của `Burst`, Task không ai quan sát) đó là **chỗ duy
+> nhất** exception ấy đậu lại.
+>
+> **Vì sao KHÔNG "dựng trước khi tháo":** J-2 đã đo là **CẦN và KHÔNG ĐỦ**, và chứng
+> minh tính đủ đòi một lần cài đặt **khôi phục được đường ống nó thay thế** — mà các
+> slot cũ đã bị cancel và dispose xong từ trước. Lấy nó một mình là mua một thay đổi
+> thứ tự **quan sát được** để đổi lấy một bản sửa một nửa.
+>
+> **Vì sao KHÔNG quay lui commit:** hai cơ chế của J-2 vẫn đứng, và một cơ chế thứ ba
+> quyết định: **quay lui KHÔNG mang đường ống trở lại.** Dù quay lui hoàn hảo, fleet
+> vẫn dừng — và đó mới là nửa mà vận hành viên phải hành động. Riêng `ApplyScenario`
+> còn phải tháo cả cú swap transport của `ApplyNetworkOutageLocked`, tức **một chỗ ném
+> lỗi thứ hai NẰM TRÊN đường hỏng**, có thể thay mất chính exception nói vì sao khởi
+> động lại hỏng. Một cú quay lui có thể tự hỏng thì không phải quay lui.
+>
+> **CÁI GIÁ, nói thẳng vì nó là sản phẩm giao ra chứ không phải tác dụng phụ:** vòng
+> lặp connector trong `StartLocked` từng **dành riêng** trường này cho *"một slot đã
+> khởi động rồi mới hỏng lúc chạy"*. Câu ấy nay sai và đã được sửa **tại chỗ nó được
+> viết**, không chỉ ở chỗ mới. `GET /v1/health` nay báo **unhealthy** ở một trạng thái
+> trước đây nó báo healthy. Danh sách connector hỏng **không đổi** — vẫn chỉ đi qua
+> `GET /v1/connectors`, vẫn không bao giờ lật health.
+>
+> **CÁI KHÔNG ĐÓNG, nêu tên kèm lý do chứ không im lặng.** Hàng **S4** giữ nguyên nhãn
+> **PARTLY OPEN** như một dòng của tập S: commit vẫn nợ một đường ống mà nó không nhận
+> được, và không `finally` nào khởi động lại được một fleet đã hỏng lúc khởi động. U-1
+> đổi thứ **vận hành viên BIẾT ĐƯỢC**, không đổi trạng thái. Ba chỗ còn lệch, kèm lý
+> do, nằm ở hàng S4 trong chính banner của `FleetCore.cs`: `_scenario`/
+> `_activePresetName` (là cấu hình), `_fleet` (append-only, và hàng asset bền vững đã
+> được giao ở `finally` ngoài cùng), và các bản ghi
+> `machine-operating-config.json` đã seed trước cú ném (`Ensure` chỉ seed, không bao
+> giờ sửa bản ghi có sẵn — đúng thứ lần khởi động sau sẽ ghi).
+>
+> **Một arm được ghi CÓ CHỦ Ý:** một `Estop` rơi **bên trong** lần dựng, trên một data
+> root làm cú ghi ném lỗi, vẫn được ghi. Lần dựng lại **thật sự đã hỏng**, chốt HALT có
+> bề mặt riêng (`GetSafetyStatus`/`EstopEngaged`), và im lặng về **thứ ĐÃ xảy ra** là
+> đúng thứ mục 6 đã bác. Hai đường từ chối còn lại **RETURN** chứ không ném, nên chúng
+> không thể tới `catch` — im lặng ở đó là **cấu trúc**, không phải một điều kiện.
+>
+> **Cặp đối chứng đã chạy hai phía:** một lần dựng lại **ném thật** —
+> `MachineConfigStore.Ensure` từ chối vì lệch `configKind`, tức P5, không dùng seam —
+> ở base để fleet dừng với `LastError == null` (health báo **healthy**), sau bản sửa
+> `LastError` là **chính object** người gọi nhận. Witness:
+> `FleetHostFailedRestartReportsTests`, năm test.
+>
+> **Bằng chứng nằm trong repo:** thông điệp commit merge của U-1, banner S4 trong
+> `src/St4i.EdgeCore/Fleet/FleetCore.cs`, và khối biện minh `EXPECT_ENGINEAPI` trong
+> `scripts/verify-suites.sh`.
 
 ---
 
