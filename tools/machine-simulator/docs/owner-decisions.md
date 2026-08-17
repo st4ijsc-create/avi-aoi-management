@@ -558,12 +558,38 @@ trường của mình**.
 > lỗi) — ở `7bb0c5bd` cảnh báo mapping **không tới được host logger** (đếm được 0), sau
 > bản sửa đếm được đúng 1, và ngoại lệ nói vì sao cài đặt hỏng **vẫn tới người gọi**.
 >
-> **Phần dư được nêu tên, không im lặng:** cú flush nay chạy có nội dung trên đường
-> ném lỗi, nên một host mà `ILogger` của nó ném sẽ **thay thế** ngoại lệ nói vì sao
-> khởi động hỏng — cửa sổ **hai điều kiện**, ngắn hơn cửa sổ bốn điều kiện mà J-2 đã
-> nêu và chấp nhận ở cùng `finally` ấy. Nó **không mới**: trước G-1 những dòng này được
-> phát **tại chỗ** trong `StartLocked`, trước vòng lặp slot, nên một logger ném đã luôn
-> là ngoại lệ duy nhất người gọi thấy. Ghi ra chứ không giấu; xem chú thích ở `Start`.
+> #### 🔴 Vòng sửa lỗi 1 — MỘT CỬA SỔ CHE LẤP DO CHÍNH T-1 TẠO RA, VÀ LỜI BIỆN MINH ĐẦU SAI
+> Vòng đầu ghi cửa sổ này ra rồi **chấp nhận** nó: cú flush nay chạy có nội dung trên
+> đường ném lỗi, nên một host mà `ILogger` của nó ném sẽ **thay thế** ngoại lệ nói vì
+> sao khởi động hỏng. Lời biện minh khi ấy là *"nó không mới — trước G-1 những dòng này
+> được phát tại chỗ trong `StartLocked`, trước vòng lặp slot"*. **Phép đo ấy ĐÚNG và nó
+> chứng minh một điều KHÁC:** trước G-1 logger ném **TRƯỚC** chỗ ném lỗi, nên lần cài
+> đặt **không bao giờ tới được vòng lặp slot** — **không có chẩn đoán nào để mà mất**.
+>
+> **PHƠI BÀY thì được khôi phục. CHE LẤP thì là do T-1 phát minh ra.** *"Một logger hỏng
+> có thể là ngoại lệ duy nhất người gọi thấy"* là cũ; *"một logger hỏng có thể **PHÁ HUỶ
+> một chẩn đoán đã tồn tại**"* **không** với tới được trước G-1 (không có gì để phá) và
+> **không** với tới được ở base (cú flush duyệt qua rỗng). **Đo được, không phải lập
+> luận:** với mã nguồn vòng 1 (`9209a81b`), người gọi nhận `InvalidOperationException`
+> ("this host's log provider failed") ở chỗ lần cài đặt đã ném `ArgumentNullException`.
+>
+> **Đã ĐÓNG, không phải nêu tên.** Một nhiệm vụ có mục đích *"một lần cài đặt hỏng không
+> được im lặng"* thì không được xuất xưởng một *"logger hỏng làm im lặng chính lần
+> hỏng"*. Chốt là một **bộ lọc ngoại lệ** `installFaulted` bao quanh **CHỈ cú flush**
+> bên trong `CompleteStartOffLock`, được đặt từ **đúng một** `catch` ở mỗi chỗ gọi. Vòng
+> 1 đã định giá nó ở **cực SAI** (một cờ HOÀN TẤT phải đặt đúng ở mọi lối ra); ở **cực
+> LỖI** nó **đúng theo mặc định** — một `return` thêm về sau không đụng tới nó, chỉ một
+> ngoại lệ mới làm nó true. **Cố ý KHÔNG mở rộng:** cửa sổ bốn điều kiện của J-2 nằm ở
+> khâu **giải phóng driver** và được giữ **nguyên như J-2 đã để**; bao rộng hơn là đóng
+> hộ một đánh đổi của nhiệm vụ khác. Đường **thành công không đổi**, và điều đó được
+> ghim bởi một test đã có sẵn (`Start_WhenTheHostLoggerThrowsFlushingDeferredLines_…`,
+> một lần khởi động THÀNH CÔNG vẫn phải ném ra ngoài).
+>
+> **Bằng chứng nằm trong repo, không nằm trong ledger:** commit `9209a81b` (vòng 1) và
+> commit vòng sửa lỗi 1 trên nhánh `feat/deferred-logs-on-failed-install`. Đường dẫn
+> `.superpowers/sdd/` ở trên là **xuất xứ**, không phải chỗ đi lấy sự thật — thư mục ấy
+> **bị gitignore**, đúng lỗi mà `FleetCore.cs` đã ghi nhận một lần (branch review
+> Minor 13).
 
 ### 7. Nửa sau của S4 (J-2)
 **Cơ chế, nguyên văn từ `99ab7b61`:** đóng nó đòi **dựng đường ống mới trước khi

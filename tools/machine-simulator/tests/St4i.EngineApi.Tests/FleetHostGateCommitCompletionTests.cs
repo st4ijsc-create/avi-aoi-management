@@ -923,6 +923,74 @@ public sealed class FleetHostGateCommitCompletionTests
         }
     }
 
+    /// <summary>🔴 T-1 fix round 1 — <b>the guard on the masking T-1 itself invented, and it is the one thing
+    /// on this branch that had to be built rather than named.</b>
+    ///
+    /// <para><b>What review found.</b> Round 1 shipped the emission and justified leaving the window open by
+    /// measuring the pre-G-1 tree: those lines were emitted inline, ahead of the slot loop, so a host logger
+    /// that threw on them was already the only exception a caller saw. The measurement is true and it proves
+    /// something else — pre-G-1 the logger threw <b>ahead of</b> the throw site, so the install never reached
+    /// the slot loop and <b>there was no competing diagnostic to lose</b>. The exposure is old; the masking is
+    /// new. A task whose purpose is "a failed install must not be silent" cannot ship a reachable "a broken
+    /// logger silences the failure".</para>
+    ///
+    /// <para><b>What this drives.</b> The same three-way failing install as the ruling's witness, plus a host
+    /// logger armed to throw on the FIRST line the flush reaches. The assertion is the exception TYPE: the
+    /// install's own <c>ArgumentNullException</c>, not the logger's <c>InvalidOperationException</c>. Before
+    /// the guard this test gets the logger's.</para>
+    ///
+    /// <para><b>The other two assertions say what the guard did NOT change.</b> The completion's
+    /// <c>finally</c> still disposes the orphan — the guard is around the flush only, so J-2's four-condition
+    /// window at the disposal is left exactly as J-2 made it. And the flush still ABORTS at the throwing
+    /// line: the connector line behind it never reaches the host, which is unchanged behaviour and is pinned
+    /// so nobody reads the guard as "the flush continues".</para>
+    ///
+    /// <para><b>The success path is not touched, and is witnessed elsewhere:</b>
+    /// <c>Start_WhenTheHostLoggerThrowsFlushingDeferredLines_TheOrphanIsDisposedAndTheRunEventRecorded</c>
+    /// is a SUCCEEDING start whose host logger throws, and it still expects that throw to reach the caller.
+    /// If the guard ever widened past the faulting path, that test goes red.</para></summary>
+    [Fact]
+    public void AFailedInstallWhoseHostLoggerAlsoThrows_StillReportsWhyTheInstallFailed()
+    {
+        const string code = "T1-MASK-01";
+        const string connectorId = "vendor.t1.mask";
+
+        var logger = new RecordingLogger { ThrowOnFragment = MissingProfile };
+        var orphan = new DisposeCountingDriver("t1-mask-orphan");
+        var registry = new ConnectorRegistry();
+        registry.Register(new OrphanLeakingFactory(connectorId, orphan), config: "garbage");
+
+        var host = CreateHost(logger, connectorRegistry: registry);
+        Assert.True(host.RegisterMachine(T1Machine(code, MissingProfile)));
+
+        host.AdditionalPipelinesForTests = () => new List<(string, IDeviceDriver, MappingProfile)>
+        {
+            ("t1-mask-throwing", new DisposeCountingDriver("t1-mask-throwing"), null!),
+        };
+
+        try
+        {
+            // THE ASSERTION: the caller is told why the INSTALL failed, not that a logger did.
+            Assert.Throws<ArgumentNullException>(() => host.Start());
+
+            // The line really was attempted — a green run in which the flush never reached a throwing entry
+            // would prove nothing about the guard.
+            Assert.Equal(1, Lines(logger, LogLevel.Warning, MissingProfile));
+
+            // Unchanged by the guard, both directions: the disposal in the completion's `finally` still ran…
+            Assert.Equal(1, orphan.DisposeCount);
+
+            // …and the flush still stops at the throwing entry rather than resuming past it.
+            Assert.Equal(0, Lines(logger, LogLevel.Warning, connectorId));
+        }
+        finally
+        {
+            host.AdditionalPipelinesForTests = null;
+            logger.ThrowOnFragment = null;
+            try { host.Stop(); } catch { /* best-effort */ }
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // S4 (first half) — the restart chokepoint's rebuild.
     // ─────────────────────────────────────────────────────────────────────

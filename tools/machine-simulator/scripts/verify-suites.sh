@@ -2499,7 +2499,29 @@ EXPECT_EDGESERVICE=51
 # EXPECT_WARNINGS stays 116: measured on a full rebuild after the change — FleetCore.cs gains one parameter
 # and loses a return type, and St4i.EngineApi.Tests is one of the NINE projects that do not set
 # GenerateDocumentationFile, so its `///` blocks are not compiled either. EXPECT_BUILD_NODES stays 0.
-EXPECT_ENGINEAPI=1358
+#
+# 🔴 T-1 FIX ROUND 1 raises this once more, 1358 -> 1359 (+1), counted from the runner. Grand total
+# 2698 -> 2699. Same one test file. The added test is the witness for the one thing this round had to BUILD
+# rather than name.
+#   AFailedInstallWhoseHostLoggerAlsoThrows_StillReportsWhyTheInstallFailed             +1
+#       Round 1 shipped the emission and left a masking window open, justified by a measurement of the
+#       pre-G-1 tree. Review ruled the measurement true and the inference wrong: pre-G-1 the logger threw
+#       AHEAD of the throw site, so the install never reached the slot loop and there was no competing
+#       diagnostic to lose. The EXPOSURE is old; the MASKING is new — reachable neither pre-G-1 nor at base.
+#       Verified rather than argued: with round 1's src (commit 9209a81b) and this test present, the caller
+#       gets InvalidOperationException ("this host's log provider failed") where the install threw
+#       ArgumentNullException. The guard is an `installFaulted` exception filter around the FLUSH ONLY inside
+#       CompleteStartOffLock, set from one `catch` per caller. The test asserts the install's exception type
+#       reaches the caller, that the completion's `finally` still disposes the orphan (J-2's own
+#       four-condition window at the DISPOSAL is deliberately left as J-2 made it), and that the flush still
+#       aborts at the throwing entry rather than resuming.
+#       The success path is unchanged and is pinned by an EXISTING test in the same file —
+#       Start_WhenTheHostLoggerThrowsFlushingDeferredLines_TheOrphanIsDisposedAndTheRunEventRecorded is a
+#       SUCCEEDING start whose host logger throws, and it still expects that throw to reach the caller. If
+#       the guard ever widened past the faulting path, that test goes red.
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0 for this round too.
+EXPECT_ENGINEAPI=1359
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
