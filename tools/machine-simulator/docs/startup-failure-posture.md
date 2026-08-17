@@ -780,6 +780,13 @@ replaced by `NoStoreAnswersAbsentForAnArtifactThatIsPresent_ExceptTheOnesNamedAn
 both directions: a store falling onto **Q**, and a *named exception* leaving **Q** while the decision that
 excused it still stands.
 
+🔴 **And the narrower claim is the true one, said here because the paragraph above could be read as a wider
+one.** This is not "S-1 had no guard". Its per-store pin
+`EveryOperatorArtifact_HasThePostureRecordedForIt_AtTheOneSituationHeldFixed` reddens whenever ANY store's
+posture moves, it did so on this very task's diff, and it is untouched. What that pin cannot do is say
+whether a move is **compliant** — it only says the table is stale. The replaced assertion was the one that
+claimed to answer that, and it answered a different question.
+
 ---
 
 ## 4. Where two independent derivations disagreed

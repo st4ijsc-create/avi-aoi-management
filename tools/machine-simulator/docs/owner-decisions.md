@@ -909,14 +909,26 @@ môi trường — nếu nó còn tồn tại**. Nên một lỗi sửa được
 hoàn nguyên, im lặng.
 
 **Ở đâu:** `src/St4i.EdgeCore/Infrastructure/CredentialStore.cs` (`Load`, khối
-`catch (CryptographicException)`; `Save` → `File.WriteAllBytes`). Chỗ đọc:
-`src/St4i.EdgeCore/Fleet/FleetCore.cs` và `src/St4i.EdgeService/EdgeWorker.cs`.
+`catch (CryptographicException)`; `Save` → `File.WriteAllBytes`). **Chỗ gọi cố ý KHÔNG
+được liệt kê ở đây:** `Load` là `static` và được gọi từ nhiều project, nên một danh
+sách chỗ gọi viết tay là đúng loài khẳng định — một tập không ai kiểm đếm được, chép
+vào văn xuôi — mà file này lập ra để chấm dứt. Tìm bằng chính tên kiểu.
 
-**Vì sao KHÔNG sửa trong V-1:** cách sửa đúng là **giữ blob cũ dưới tên khác**, tức
-**DI CHUYỂN dữ liệu vận hành viên trong sản phẩm** — thứ brief của V-1 bắt buộc phải
-**dừng và báo** chứ không tự làm. Cách sửa "cho nó ném" thì **tệ hơn**: nó biến một
-máy có credential hỏng thành một máy không khởi động được, mà chính đường claim-lại là
-đường phục hồi.
+**Vì sao KHÔNG sửa trong V-1:** phương án giữ được các byte là **giữ blob cũ dưới tên
+khác**, tức **DI CHUYỂN dữ liệu vận hành viên trong sản phẩm** — thứ brief của V-1 bắt
+buộc phải **dừng và báo** chứ không tự làm. Phương án "cho `Load` ném" là **đổi hợp
+đồng của một phương thức `static` mà nhiều project gọi**, tức một quyết định chứ không
+phải một cái chốt.
+
+> ⚠️ **Bản nháp của đoạn trên còn một câu nữa và câu ấy KHÔNG ĐO ĐƯỢC — nó bị rút
+> TRƯỚC khi xuất bản, và được ghi lại ở đây vì im lặng về một câu đã rút là đúng thứ
+> file này bắt.** Nguyên văn: *"cho nó ném biến một máy có credential hỏng thành một
+> máy không khởi động được"*. Đo lại: `FleetCore.UpdateSettings` gọi
+> `CredentialStore.Load` bên trong phần **kích hoạt**, và phần ấy đã được
+> `TryReplayStartupSettings` của `St4i.EngineApi/Program.cs` **bọc lại** từ H-1a — chính
+> `FleetCore.cs` ghi rằng vòng lặp boot cũ đã biến mất **vì** lần phát lại được sửa. Nên
+> một cú ném ở đó làm hỏng **lần phát lại**, và "không khởi động được" là một kết luận
+> không ai đo. Câu bị rút, không bị sửa cho vừa.
 
 **Nếu không quyết định:** giữ nguyên. Lần claim lại kế tiếp ghi đè blob cũ, và
 **không ai biết** rằng thứ vừa mất chỉ cần sửa môi trường là đọc lại được.
