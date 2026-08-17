@@ -11,19 +11,11 @@ Mỗi mục nêu: **đo được cái gì**, **ở đâu trong mã**, **hậu qu
 **chuyện gì xảy ra nếu không quyết định** — vì "không quyết định" luôn là một lựa
 chọn có hậu quả, thường là giữ nguyên hành vi hiện tại.
 
-⚠️ **Câu này đúng khi file được lập và KHÔNG còn đúng — sửa 2026-08-17 (T-1).** Nguyên
-văn: *"Không mục nào trong đây đã bị sửa. Tất cả đều là hành vi đang chạy hôm nay."*
-Nó là một **khẳng định phổ quát trên chính danh sách bên dưới**, và mỗi lần một mục
-được thi hành thì không có gì bắt nó phải được suy lại — đúng loài khuyết tật file này
-lập ra để chấm dứt, nằm ngay trong lời mở đầu của nó. **Trạng thái nằm ở bảng phán
-quyết và ở từng mục, không ở đây, và câu này KHÔNG liệt kê lại các mục ấy nữa.**
-
-> 🔴 **V-1, 2026-08-17 — câu trên vừa được sửa LẦN THỨ BA, và lần này cơ chế bị bỏ chứ
-> không phải nội dung được cập nhật.** T-1 thay một khẳng định phổ quát bằng một danh
-> sách; U-1 làm danh sách ấy cũ ngay vòng kế tiếp và cập nhật nó; V-1 làm nó cũ lần
-> nữa. **Một bản sao thứ hai của bảng phán quyết sẽ đi cũ mỗi vòng, và đó là điều duy
-> nhất kiểm được về nó** — nên bản sao bị bỏ, và câu này chỉ còn là con trỏ. Đúng luật
-> "đừng giữ một bản sao" mà `OperatorDataRemovalCensusTests` đã mua bằng chính lỗi này.
+⚠️ **Đoạn mở đầu này đã bị sửa nhiều lần — T-1, U-1 và V-1 (2026-08-17) — và các khối
+đính chính ghi lại việc ấy được GIỮ NGUYÊN VĂN**, ở §"Lịch sử đính chính của chính file
+này" cuối file. Y-1 (2026-08-18) chỉ **chuyển chỗ**, không đổi một chữ. Đây là một **con
+trỏ, không phải bản sao**: trạng thái đang sống nằm ở **bảng phán quyết** ngay dưới đây
+và ở từng mục.
 
 ---
 
@@ -57,6 +49,310 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 > 9 đang ghi, và V-1 bị cấm đụng vào cả hai. Cái được sửa là **bảng không liệt kê đủ tập
 > mà nó tự nhận là tóm tắt** — đúng loài mà file này lập ra để chấm dứt, ở trong chính
 > bảng tóm tắt của nó.
+
+---
+
+# 🔴 PHẦN I — ĐANG CHỜ ANH
+
+Mọi mục trong phần này mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **không mục nào
+trong đây đã được quyết**. Phần này đứng TRƯỚC hồ sơ vì một lý do đo được: trước Y-1,
+mục đầu tiên thật sự đang chờ nằm ở **ba phần tư tài liệu tính từ đầu**, sau tất cả các
+mục đã quyết — một file lập ra để chủ sở hữu **mở được** đã thành một file **không
+quyết được từ trong đó**.
+
+**Không gì bị xoá và không gì bị viết lại để làm phần này ngắn.** Các mục đã quyết, các
+khối đính chính và các ghi chép thi hành còn **nguyên văn** ở **Phần II** và **Phần
+III**; chúng chỉ **đi sau**, vì chúng là hồ sơ chứ không phải đầu vào của một quyết định.
+
+Mỗi mục dưới đây mang **bằng chứng của nó ở dòng cuối của chính nó**, không phải ở một
+phụ lục. Đó là chỗ ranh giới được vạch: **đầu vào của quyết định** (hôm nay chuyện gì
+xảy ra, ai chịu, nếu không quyết thì sao, cái gì đã chặn nó khỏi được sửa luôn) đi
+trước, **bằng chứng** đi ngay sau nó **trong cùng một mục** — vì một khẳng định tách
+khỏi nhân chứng của nó là một khẳng định **không kiểm được**, đúng thứ file này lập ra
+để chấm dứt.
+
+🔴 **Cái các mục này CHƯA có, nêu tên chứ không lấp:** ngoài mục 12, không mục nào bày
+ra **các lựa chọn kèm giá ĐÃ ĐO** của từng lựa chọn. Giá ấy phải được **đo**; một lần
+sắp xếp tài liệu không đo được nó, và một con số ước lượng đặt ở đây sẽ **đọc như một
+phép đo**. Chỗ thiếu được ghi ra thay vì được lấp. (Y-1, 2026-08-18.)
+
+---
+
+## 8. `ReapplyCurrentAsync` vẫn ghi đè một `site-link.json` không đọc được
+
+**Mục này sinh ra từ bản sửa của mục 1, và nó là PHẦN DƯ của chính luật mục 1.**
+Ghi ở đây chứ không chỉ trong báo cáo, vì đó đúng là thiếu sót mà file này được lập
+ra để chấm dứt: một điều "đã được nêu trong một báo cáo" là điều chủ sở hữu **không
+có đường nào mở ra đọc**.
+
+**Đo được:** `SiteBridgeManager.ReapplyCurrentAsync()` gọi `ApplyAsync(_current)`,
+mà `ApplyAsync` gọi `_store.Save(link)` **vô điều kiện**. Trên nhánh *không đọc
+được*, `_current` là bản ghi mặc định `new PersistedSiteLink()` — thứ **tiến trình
+tự nghĩ ra**, không đọc từ đĩa. Nên một lần xoay danh tính sẽ **ghi bản ghi mặc định
+đè lên các byte không đọc được của vận hành viên**, đúng thứ mục 1 vừa chặn ở đường
+khởi động.
+
+**Ở đâu:** `src/St4i.EdgeCore/Site/SiteBridgeManager.cs` (`ReapplyCurrentAsync` →
+`ApplyAsync` → `_store.Save`), tới được từ `POST /v1/site/identity/rotate` trong
+`src/St4i.EngineApi/Endpoints/SiteEndpoints.cs`.
+
+**Hậu quả vận hành:** host, cổng và chứng chỉ tin cậy đã ghim của Site mất — giống
+hệt mục 1 — nhưng chỉ khi có người **xoay danh tính** trong lúc file đang hỏng.
+
+**Vì sao KHÔNG sửa trong Q-1:** nó do vận hành viên **khởi xướng** nhưng không phải
+do họ **chọn** (họ chọn xoay khoá, không chọn ba giá trị link), mà đó chính là ranh
+giới luật này dựa vào. Đóng nó là đổi **HỢP ĐỒNG** của `ApplyAsync` — *khi nào* thì
+lưu — trên một phương thức có **ba** nơi gọi (`PUT /v1/site`, đường khởi động, và
+chính nó). Đó là một thay đổi thiết kế, không phải một cái chốt.
+
+**Nếu không quyết định:** hành vi giữ nguyên. Đường khởi động đã an toàn; đường này
+thì không, và không có gì báo cho ai biết ngoài các dòng đã ghi tại chỗ.
+
+**Bằng chứng:** commit `76b9e85d` (Q-1 vòng sửa lỗi);
+`docs/startup-failure-posture.md` §3.1b.
+
+---
+
+## 9. Một nhánh *không đọc được* nên áp **sàn môi trường** vào bộ nhớ hay không
+
+**Đo được:** sau Q-1, khi `fleet-settings.json` không đọc được, tiến trình lên bằng
+**mặc định dựng sẵn** của `FleetHost` (`DefaultServerUrl = ""`,
+`DefaultMachineCode = "ENGINE-API-01"`) chứ **không** áp bộ ba `ST4I_*` mà bản triển
+khai đã đặt.
+
+**Hai chiều, và phải nói cả hai:** với **FILE**, từ chối sàn là **an toàn hơn hẳn**
+— áp sàn nghĩa là `FleetCore.UpdateSettings` **lưu** nó, và chính việc lưu là mất
+dữ liệu. Với **CỖ MÁY ĐANG CHẠY**, nó có thể **tệ hơn**: một bản cài headless không
+những mất liên kết mà còn không dùng các giá trị dịch vụ của nó đã cấu hình.
+
+**Vì sao hai chiều ấy tách nhau được:** chỉ vì `UpdateSettings` **lưu vô điều
+kiện**. Một đường "áp mà không lưu" sẽ cho nhánh này tôn trọng sàn trong bộ nhớ mà
+vẫn để yên file.
+
+**Ở đâu:** `src/St4i.EdgeCore/Fleet/FleetCore.cs` (`UpdateSettings`, khối `finally`
+trong `if (rebuildNeeded)`), tiêu thụ bởi `src/St4i.EngineApi/Program.cs`.
+
+**Nếu không quyết định:** giữ nguyên — an toàn cho file, và một cỗ máy headless có
+file hỏng sẽ chạy trên giá trị mặc định cho tới khi có người sửa file.
+
+**Vì sao là quyết định của chủ sở hữu:** đổi *khi nào* `UpdateSettings` lưu là đổi
+hợp đồng mà `PUT /v1/settings` cũng dùng chung.
+
+**Bằng chứng:** `docs/startup-failure-posture.md` §3.1a-now.
+
+---
+
+## 10. `CredentialStore.Load` biến một lỗi môi trường KHÔI PHỤC ĐƯỢC thành mất mát không hoàn nguyên
+
+**Mục này sinh ra từ phần dư 1 của mục 5, và nó ở đây vì nó là một QUYẾT ĐỊNH.**
+Trước V-1 nó sống trong một gạch đầu dòng của một mục khác; luật của file này là một
+quyết định phải có mục của nó.
+
+**Đo được (V-1):** `CredentialStore.Load` trả **`null`** cho một blob **có mặt trên
+đĩa mà tiến trình này không giải mã được** — sai scope/entropy DPAPI (một `.bin` thời
+tiền-FF-2 mã theo `CurrentUser`), hoặc chép từ máy khác, hoặc hỏng — và trả **đúng
+`null` ấy** khi **không có file nào cả**. Người gọi không có gì để rẽ nhánh.
+
+**Cái chưa từng được ghi ở đâu là HẬU QUẢ.** Doc comment của chính `Load` trình bày
+`null` như một kết quả **lành** — *"để đường credential-rỗng bình thường của caller
+chạy thay vì một lần sập không bắt được"* — nhưng đường ấy là đường **claim lại**, và
+nó gọi `Save`, thứ **ghi đè**. Một blob sai scope/sai máy **đọc lại được sau khi sửa
+môi trường — nếu nó còn tồn tại**. Nên một lỗi sửa được bị biến thành mất mát không
+hoàn nguyên, im lặng.
+
+**Ở đâu:** `src/St4i.EdgeCore/Infrastructure/CredentialStore.cs` (`Load`, khối
+`catch (CryptographicException)`; `Save` → `File.WriteAllBytes`). **Chỗ gọi cố ý KHÔNG
+được liệt kê ở đây:** `Load` là `static` và được gọi từ nhiều project, nên một danh
+sách chỗ gọi viết tay là đúng loài khẳng định — một tập không ai kiểm đếm được, chép
+vào văn xuôi — mà file này lập ra để chấm dứt. Tìm bằng chính tên kiểu.
+
+**Vì sao KHÔNG sửa trong V-1:** phương án giữ được các byte là **giữ blob cũ dưới tên
+khác**, tức **DI CHUYỂN dữ liệu vận hành viên trong sản phẩm** — thứ brief của V-1 bắt
+buộc phải **dừng và báo** chứ không tự làm. Phương án "cho `Load` ném" là **đổi hợp
+đồng của một phương thức `static` mà nhiều project gọi**, tức một quyết định chứ không
+phải một cái chốt.
+
+> ⚠️ **Bản nháp của đoạn trên còn một câu nữa và câu ấy KHÔNG ĐO ĐƯỢC — nó bị rút
+> TRƯỚC khi xuất bản, và được ghi lại ở đây vì im lặng về một câu đã rút là đúng thứ
+> file này bắt.** Nguyên văn: *"cho nó ném biến một máy có credential hỏng thành một
+> máy không khởi động được"*. Đo lại: `FleetCore.UpdateSettings` gọi
+> `CredentialStore.Load` bên trong phần **kích hoạt**, và phần ấy đã được
+> `TryReplayStartupSettings` của `St4i.EngineApi/Program.cs` **bọc lại** từ H-1a — chính
+> `FleetCore.cs` ghi rằng vòng lặp boot cũ đã biến mất **vì** lần phát lại được sửa. Nên
+> một cú ném ở đó làm hỏng **lần phát lại**, và "không khởi động được" là một kết luận
+> không ai đo. Câu bị rút, không bị sửa cho vừa.
+
+**Nếu không quyết định:** giữ nguyên. Lần claim lại kế tiếp ghi đè blob cũ, và
+**không ai biết** rằng thứ vừa mất chỉ cần sửa môi trường là đọc lại được.
+
+**Bằng chứng — chạy lại được:**
+`tests/St4i.EngineApi.Tests/OperatorDataRemovalCensusTests.cs`,
+`CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt`
+— nó ghim **cả hai nửa**: hai ca cho cùng một `null`, và `Save` sau đó đè lên. Nó
+**ghim một khuyết tật đang sống làm đường cơ sở và KHÔNG sửa**, đúng như S-1 đã làm cho
+mục 5. Nếu anh quyết SỬA, khẳng định ấy đảo chiều và chỗ đảo chính là diff.
+
+---
+
+## 11. Một `oee-settings.json` được KHÔI PHỤC vào lúc đang chạy bị ghi đè bằng bảng rỗng
+
+**Mục này sinh ra từ bản sửa của mục 5, và nó là chỗ HAI SỰ THẬT của bản sửa ấy còn
+lệch nhau lần thứ ba.** V-1 cho `Set` tự đọc lại ngay trước khi ghi, và so hai điều:
+*file lúc này* (`fresh.Status`) và *bảng trong bộ nhớ được dựng từ phép đọc nào*
+(`_tableBuiltFrom`). Hai cái ấy lệch nhau được **ba kiểu**. Hai kiểu bị từ chối. Kiểu
+thứ ba thì không.
+
+**Đo được:**
+
+```
+_tableBuiltFrom == Absent   VÀ   fresh.Status == Loaded
+```
+
+Tiến trình lên khi **không có file**; sau đó một file **có nội dung** xuất hiện; phép
+đọc ngay trước cú ghi **NHÌN THẤY nó**; vị từ từ chối là **sai**; nên `Set` ghi **bảng
+rỗng cộng một máy** đè lên một file mà nó **vừa đọc thành công**. **Không ném, không
+409, không một dòng log.**
+
+**Không cần tranh chấp, không cần người ghi thứ hai.** Kịch bản là **khôi phục một bản
+sao lưu vào `%ProgramData%\ST4I\sim\historian` trên một host đang chạy** — đúng công
+việc mà chú thích tham số `directory` của chính store ấy quảng cáo thư mục này để làm
+(*"một operator/backup tool tìm thấy mọi file cạnh historian ở một chỗ"*).
+
+**Ở đâu:** `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` (`Set`, vị từ hai điều
+kiện; `Save` → `WriteAllTextAtomic`), tới được từ
+`src/St4i.EngineApi/Endpoints/HistorianEndpoints.cs` (`PutOeeSettingsAsync`).
+
+**Hậu quả vận hành:** giống hệt mục 5 — ideal-cycle override và planned-production
+ratio của **mọi máy** biến mất, con số OEE đổi thầm lặng — nhưng ở một thời điểm khác:
+**ngay sau khi vận hành viên tưởng mình vừa khôi phục xong.**
+
+**Vì sao KHÔNG sửa trong V-1:** đóng nó là đổi **khi nào một cú ghi được phép**. Hôm
+nay `Absent` lúc nạp **cho phép** người gọi tự đặt giá trị — đó chính là đường
+**khởi động lần đầu**. Thu hẹp nó là một thay đổi hợp đồng, không phải một cái chốt.
+Và nó **nằm ngoài tình huống** mà luật của mục 5 nói tới: **các byte đọc được suốt**,
+nên luật ở `docs/startup-failure-posture.md` §3.6 **không quyết được** ca này — đúng
+chỗ §3.6 tự nói là luật không với tới.
+
+**Nếu không quyết định:** giữ nguyên. Một bản khôi phục thực hiện trên host đang chạy
+sẽ bị lần đặt OEE kế tiếp xoá, và **không ai biết** cho tới khi có người đối chiếu lại.
+Cách né duy nhất hôm nay là **khởi động lại host sau khi khôi phục**, và điều đó
+**không được ghi ở đâu cả** trước mục này.
+
+**Bằng chứng:** commit `a9326c79` (V-1 vòng sửa 1) và chú thích lớp của
+`OeeSettingsStore`. 🔴 **Chưa có test nào ghim ca này** — nó chưa được ghim vì ghim nó
+là khẳng định hành vi hiện tại đúng, mà đó chính là thứ đang chờ anh quyết.
+`Read_RecordsWhatItAnswered_SoStatusMeansTheMostRecentRead` **dựng đúng trạng thái ấy**
+và **dừng ngay trước `Set`**.
+
+---
+
+## 12. `St4i.EdgeCore` không bao giờ đặt `GenerateDocumentationFile`, và bật nó đòi một lệnh đè trên một file ta KHÔNG được sửa
+
+**Đo bởi W-1 tại `46439925`, SDK 10.0.302, `dotnet build -t:Rebuild` từ
+`tools/machine-simulator`, đếm theo đúng cách bản tóm tắt của MSBuild đếm.** Không có
+con số nào dưới đây là ước lượng, và không có cái nào bị W-1 đè.
+
+| cấu hình | cảnh báo toàn cây |
+|---|---:|
+| như đang ship | **116** |
+| + bật cờ cho **riêng** `St4i.EdgeCore` | **852** |
+| + `.editorconfig` ở **gốc repository**, chỉ CS1591 | **757** |
+| + `.editorconfig` ở **`examples/`**, chỉ CS1591 | **757** |
+| + `.editorconfig` **NGAY CẠNH file** (`examples/device-client/csharp/`), **cả hai mã** | **749** — và **không còn CS15xx nào** trong file ấy |
+
+Chênh 736 gồm: **543 CS1591** + **92 CS1573** (bao phủ tài liệu) và **101** khẳng định
+`cref`/`paramref` **không phân giải được** (75 CS1574, 23 CS1734, 3 CS0419).
+
+**Phần chia đôi mới là quyết định.** Trong 543 + 92 ấy:
+
+- **448 CS1591 + 84 CS1573 là mã NGUỒN CỦA CHÍNH TA.** Không gì cản viết chú thích cho
+  chúng ngoài việc **có nên hứa gì trên bề mặt ấy** — đúng câu hỏi mà bảy project chưa
+  đặt cờ khác đang mang (tổng 2775). Đây **không** phải chỗ cần lệnh đè.
+- **95 CS1591 + 8 CS1573 nằm trong
+  `examples/device-client/csharp/St4iDeviceClient.cs`** — file SDK vendored mà
+  `St4i.EdgeCore.csproj` `Compile`-link từ NGOÀI cây project, được xuất bản cho nhà phát
+  triển máy, giữ đồng bộ với SDK Python và Node, và **repo này KHÔNG được sửa**. 103 cảnh
+  báo ấy **không thể trả bằng cách viết**, nên chúng là **lý do duy nhất một lệnh đè trở
+  nên CẦN THIẾT** nếu cờ được bật.
+
+**Điều N-1 ghi là CHƯA ĐO, nay đã đo — kèm ba hệ quả, và MỘT TRONG BA CÁI TÔI VIẾT VÒNG
+ĐẦU LÀ SAI:**
+
+1. Mục khoanh-theo-đường-dẫn **có** khớp: 852 → 757, đúng −95, CS1591 biến mất khỏi file
+   ấy. Nhưng N-1 chỉ nêu CS1591, nên **(b) như đã mô tả bỏ sót 8 CS1573 vẫn nằm nguyên
+   trong chính file không đụng được ấy**: nó miễn trừ MỘT trong HAI mã. **Xác nhận.**
+2. 🔴 **VÒNG ĐẦU TÔI VIẾT — VÀ NÓ SAI:** *"mục ấy không thể sống trong cây sản phẩm này;
+   nó phải đặt ở gốc repository, phía trên một ứng dụng TypeScript/Node không liên quan."*
+   Tiền đề đúng — **mục (section)** chỉ khớp file **tại hoặc dưới** thư mục của nó — nhưng
+   **kết luận không theo**, vì **việc TÌM RA file `.editorconfig` đi theo chuỗi tổ tiên của
+   FILE NGUỒN, không phải của project**. Đo lại, ba vị trí, mỗi vị trí một lần build đầy
+   đủ: gốc repo → 757; `examples/` → 757; **ngay cạnh file, khai cả hai mã → 749, và không
+   còn một CS15xx nào trong file ấy.** Nên lệnh đè **ngồi cách chính file nó nói về hai
+   thư mục**, nằm **bên trong** ví dụ SDK mà nó miễn trừ, và **không** bị ép lên gốc repo.
+   Sửa tại chỗ chứ không thay lặng, vì câu sai ấy **đã nằm trong artefact của chủ sở hữu**.
+   **Phần còn lại của phản đối là một phản đối KHÁC và CHƯA ĐO:** thư mục ấy là ví dụ SDK
+   **được xuất bản**, giữ đồng bộ với SDK Python và Node — nên một file đặt ở đó **đi theo
+   bản phát hành tới nhà phát triển máy** và **có thể mất khi vendor lại**.
+3. **749 vẫn không phải 116**, và 757 cũng không. "Để 448 cái kia ĐƯỢC KHẲNG ĐỊNH" là đúng
+   và **không** đồng nghĩa "xanh": một miễn trừ **hoàn hảo** cho file vendored gỡ 103 cái
+   không ai sửa được và **để lại 633** — 532 cảnh báo bao phủ trên mã của ta, cộng 101
+   khẳng định `cref` sai — hoặc được viết, hoặc được ghim.
+
+**BỐN lựa chọn, nêu đủ chứ không nêu cái tiện. Vòng đầu tôi chỉ nêu ba, và cái thiếu là
+cái HẸP NHẤT — đó là một thiếu sót ẢNH HƯỞNG QUYẾT ĐỊNH, ngay trong artefact viết ra để
+quyết định:**
+
+- **(a) `<NoWarn>CS1591;CS1573</NoWarn>` cả assembly** — im lặng 635; project ấy khi đó
+  **không khẳng định bao phủ tài liệu ở đâu cả**, kể cả 532 thành viên là mã của ta.
+- **(b1) `.editorconfig` ở gốc repo hoặc ở `examples/`, chỉ CS1591** → **757**. Đây là
+  lựa chọn N-1 mô tả. Nó **để lại 8 CS1573** trong chính file không đụng được, và đặt một
+  file cấu hình phía trên cây mã không liên quan.
+- **(b2) 🔴 `.editorconfig` NGAY CẠNH file vendored, khai CS1591 + CS1573** → **749**, và
+  **không còn một cảnh báo tài liệu nào** phát ra từ file ấy. **Hẹp nhất trong cả bốn**:
+  miễn trừ **đúng** 103 cái không ai được sửa và **để cả 532 cái của ta được khẳng định**.
+  Giá phải trả, nêu ra chứ không giấu: file ấy nằm **trong ví dụ SDK được xuất bản**, nên
+  nó đi theo bản phát hành và **có thể biến mất trong lần vendor lại** — một phản đối
+  **chưa được đo**.
+- **(c) không bật cờ** — trạng thái hiện tại. 101 khẳng định `cref` sai trong project này
+  (237 toàn cây) **không có gì canh**.
+
+**Cả (b1) và (b2) đều VẪN LÀ LỆNH ĐÈ, và không lựa chọn nào tự nó làm cờ bật được xanh:**
+kể cả sau (b2), 633 cảnh báo còn lại phải được **viết** hoặc được **ghim**. Đó là quyết
+định của anh, không phải của người thực thi.
+
+🔴 **W-1 KHÔNG chọn giúp, và cũng KHÔNG để văn xuôi ấy tiếp tục không ai đọc.** Nửa
+**phân tích cú pháp** của câu hỏi không cần cờ nào cả và đã được đóng bằng một dụng cụ
+riêng: `tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs` đọc **mọi** khối `///` trong cả
+cây như XML, cộng một phép kiểm **tên phần tử** mà **trình biên dịch không hề làm**. (Kích
+thước tập quét **không** ghi ở đây: vòng đầu tôi ghi "530 file, 3.616 khối", ghép số file
+của một cây với số khối của một cây khác trên một quần thể khác. Luật mua được: **nêu tên
+assertion, đừng chép số của nó vào văn xuôi.**) Nửa **phân giải** (`cref`) thì **chỉ**
+trình biên dịch thấy, nên nó nằm lại đây, ở mục này. Lần chạy đầu tiên của dụng cụ ấy tìm
+ra **một khối hỏng đang sống** trong `EnumSpellingContractTests.cs`, sinh ra ở `05a4f7a8`
+(P-2 vòng 2) và có mặt ở **bảy** lần merge — liệt kê, chứ không nêu con số, vì chính con
+số là chỗ vòng đầu sai (thiếu U-1): `f89da589` (P-2), `17fa6841` (Q-1), `79dbf99a` (R-1),
+`7bb0c5bd` (S-1), `895c0c23` (T-1), `f18f5c29` (U-1), `46439925` (V-1). **Không lần nào
+thấy nó.**
+
+**Bằng chứng:** commit merge của W-1.
+
+---
+
+# ✅ PHẦN II — HỒ SƠ: CÁC MỤC ĐÃ CÓ PHÁN QUYẾT
+
+Các mục dưới đây **đã có một phán quyết ghi kèm ngày**. Chúng ở lại trong file này vì
+luật của chính file: *một mục chỉ được rời khỏi đây khi có một quyết định ghi kèm ngày
+và người quyết* — và các **khối đính chính** trong chúng là **hồ sơ về điều file này đã
+từng công bố**; xoá chúng làm bản sửa **không còn bác bỏ được**.
+
+**Trạng thái từng mục KHÔNG được chép lại ở đây.** Mục nào đã thi hành, và bởi nhiệm vụ
+nào, nằm ở **bảng phán quyết** phía trên và trong chính mục ấy. Một bản sao thứ hai của
+trạng thái sẽ đi cũ mỗi vòng và đó là điều duy nhất kiểm được về nó — đúng lý do V-1 đã
+bỏ một bản sao như thế ở đoạn mở đầu. **Y-1 không dựng lại nó**, và đó là lý do phần này
+là một chỗ ĐỨNG chứ không phải một bản tóm tắt.
+
+⚠️ **Đọc `## 5–7.` như MỘT tiêu đề markdown chứa BA mục** — mục 5, mục 6 và mục 7. Đếm
+mục bằng `grep "^## "` đã sai một lần vì đúng chuyện đó.
 
 ---
 
@@ -99,7 +395,11 @@ minh bằng cách chạy lại.
 > có*, và nhánh đó **được phép ghi**. Vá riêng chỗ này để lại đúng cái lỗ ấy ở ba
 > chỗ khác.
 >
-> **Luật, phát biểu một lần cho cả bốn mục:** một file **tồn tại nhưng không đọc
+> **Luật, phát biểu một lần cho ~~cả bốn mục~~** **[RÚT 2026-08-18 (Y-1) — *"cả bốn
+> mục"* CHÍNH LÀ khẳng định gộp nhóm đã bị rút 2026-08-17, và nó sống sót **không một
+> dấu nào** ở đây trong khi các câu liền kề trên và dưới nó đều đã được đánh dấu — dù
+> khối này tự nhận, sáu dòng phía trên, là *"giữ nguyên văn… kèm dấu ở từng chỗ sai"*.
+> Không chữ nào bị xoá; chỗ sai được đánh dấu. Xem §5–7.]**: một file **tồn tại nhưng không đọc
 > được** là một trạng thái **thứ ba**. Nó **không bao giờ** được đối xử như *không
 > tồn tại*, và **không bao giờ** bị ghi đè. Nội dung không đọc được là **bằng chứng
 > duy nhất còn lại** của điều vận hành viên đã cấu hình.
@@ -850,263 +1150,10 @@ KHÔNG ĐỦ — bản thân việc cài đặt cũng có thể ném lỗi.**
 
 ---
 
-## 8. `ReapplyCurrentAsync` vẫn ghi đè một `site-link.json` không đọc được
+# PHẦN III — PHỤ LỤC: KHÔNG PHẢI QUYẾT ĐỊNH CỦA ANH, VÀ LỊCH SỬ CỦA CHÍNH FILE NÀY
 
-**Mục này sinh ra từ bản sửa của mục 1, và nó là PHẦN DƯ của chính luật mục 1.**
-Ghi ở đây chứ không chỉ trong báo cáo, vì đó đúng là thiếu sót mà file này được lập
-ra để chấm dứt: một điều "đã được nêu trong một báo cáo" là điều chủ sở hữu **không
-có đường nào mở ra đọc**.
-
-**Đo được:** `SiteBridgeManager.ReapplyCurrentAsync()` gọi `ApplyAsync(_current)`,
-mà `ApplyAsync` gọi `_store.Save(link)` **vô điều kiện**. Trên nhánh *không đọc
-được*, `_current` là bản ghi mặc định `new PersistedSiteLink()` — thứ **tiến trình
-tự nghĩ ra**, không đọc từ đĩa. Nên một lần xoay danh tính sẽ **ghi bản ghi mặc định
-đè lên các byte không đọc được của vận hành viên**, đúng thứ mục 1 vừa chặn ở đường
-khởi động.
-
-**Ở đâu:** `src/St4i.EdgeCore/Site/SiteBridgeManager.cs` (`ReapplyCurrentAsync` →
-`ApplyAsync` → `_store.Save`), tới được từ `POST /v1/site/identity/rotate` trong
-`src/St4i.EngineApi/Endpoints/SiteEndpoints.cs`.
-
-**Hậu quả vận hành:** host, cổng và chứng chỉ tin cậy đã ghim của Site mất — giống
-hệt mục 1 — nhưng chỉ khi có người **xoay danh tính** trong lúc file đang hỏng.
-
-**Vì sao KHÔNG sửa trong Q-1:** nó do vận hành viên **khởi xướng** nhưng không phải
-do họ **chọn** (họ chọn xoay khoá, không chọn ba giá trị link), mà đó chính là ranh
-giới luật này dựa vào. Đóng nó là đổi **HỢP ĐỒNG** của `ApplyAsync` — *khi nào* thì
-lưu — trên một phương thức có **ba** nơi gọi (`PUT /v1/site`, đường khởi động, và
-chính nó). Đó là một thay đổi thiết kế, không phải một cái chốt.
-
-**Nếu không quyết định:** hành vi giữ nguyên. Đường khởi động đã an toàn; đường này
-thì không, và không có gì báo cho ai biết ngoài các dòng đã ghi tại chỗ.
-
-**Bằng chứng:** commit `76b9e85d` (Q-1 vòng sửa lỗi);
-`docs/startup-failure-posture.md` §3.1b.
-
----
-
-## 9. Một nhánh *không đọc được* nên áp **sàn môi trường** vào bộ nhớ hay không
-
-**Đo được:** sau Q-1, khi `fleet-settings.json` không đọc được, tiến trình lên bằng
-**mặc định dựng sẵn** của `FleetHost` (`DefaultServerUrl = ""`,
-`DefaultMachineCode = "ENGINE-API-01"`) chứ **không** áp bộ ba `ST4I_*` mà bản triển
-khai đã đặt.
-
-**Hai chiều, và phải nói cả hai:** với **FILE**, từ chối sàn là **an toàn hơn hẳn**
-— áp sàn nghĩa là `FleetCore.UpdateSettings` **lưu** nó, và chính việc lưu là mất
-dữ liệu. Với **CỖ MÁY ĐANG CHẠY**, nó có thể **tệ hơn**: một bản cài headless không
-những mất liên kết mà còn không dùng các giá trị dịch vụ của nó đã cấu hình.
-
-**Vì sao hai chiều ấy tách nhau được:** chỉ vì `UpdateSettings` **lưu vô điều
-kiện**. Một đường "áp mà không lưu" sẽ cho nhánh này tôn trọng sàn trong bộ nhớ mà
-vẫn để yên file.
-
-**Ở đâu:** `src/St4i.EdgeCore/Fleet/FleetCore.cs` (`UpdateSettings`, khối `finally`
-trong `if (rebuildNeeded)`), tiêu thụ bởi `src/St4i.EngineApi/Program.cs`.
-
-**Nếu không quyết định:** giữ nguyên — an toàn cho file, và một cỗ máy headless có
-file hỏng sẽ chạy trên giá trị mặc định cho tới khi có người sửa file.
-
-**Vì sao là quyết định của chủ sở hữu:** đổi *khi nào* `UpdateSettings` lưu là đổi
-hợp đồng mà `PUT /v1/settings` cũng dùng chung.
-
-**Bằng chứng:** `docs/startup-failure-posture.md` §3.1a-now.
-
----
-
-## 10. `CredentialStore.Load` biến một lỗi môi trường KHÔI PHỤC ĐƯỢC thành mất mát không hoàn nguyên
-
-**Mục này sinh ra từ phần dư 1 của mục 5, và nó ở đây vì nó là một QUYẾT ĐỊNH.**
-Trước V-1 nó sống trong một gạch đầu dòng của một mục khác; luật của file này là một
-quyết định phải có mục của nó.
-
-**Đo được (V-1):** `CredentialStore.Load` trả **`null`** cho một blob **có mặt trên
-đĩa mà tiến trình này không giải mã được** — sai scope/entropy DPAPI (một `.bin` thời
-tiền-FF-2 mã theo `CurrentUser`), hoặc chép từ máy khác, hoặc hỏng — và trả **đúng
-`null` ấy** khi **không có file nào cả**. Người gọi không có gì để rẽ nhánh.
-
-**Cái chưa từng được ghi ở đâu là HẬU QUẢ.** Doc comment của chính `Load` trình bày
-`null` như một kết quả **lành** — *"để đường credential-rỗng bình thường của caller
-chạy thay vì một lần sập không bắt được"* — nhưng đường ấy là đường **claim lại**, và
-nó gọi `Save`, thứ **ghi đè**. Một blob sai scope/sai máy **đọc lại được sau khi sửa
-môi trường — nếu nó còn tồn tại**. Nên một lỗi sửa được bị biến thành mất mát không
-hoàn nguyên, im lặng.
-
-**Ở đâu:** `src/St4i.EdgeCore/Infrastructure/CredentialStore.cs` (`Load`, khối
-`catch (CryptographicException)`; `Save` → `File.WriteAllBytes`). **Chỗ gọi cố ý KHÔNG
-được liệt kê ở đây:** `Load` là `static` và được gọi từ nhiều project, nên một danh
-sách chỗ gọi viết tay là đúng loài khẳng định — một tập không ai kiểm đếm được, chép
-vào văn xuôi — mà file này lập ra để chấm dứt. Tìm bằng chính tên kiểu.
-
-**Vì sao KHÔNG sửa trong V-1:** phương án giữ được các byte là **giữ blob cũ dưới tên
-khác**, tức **DI CHUYỂN dữ liệu vận hành viên trong sản phẩm** — thứ brief của V-1 bắt
-buộc phải **dừng và báo** chứ không tự làm. Phương án "cho `Load` ném" là **đổi hợp
-đồng của một phương thức `static` mà nhiều project gọi**, tức một quyết định chứ không
-phải một cái chốt.
-
-> ⚠️ **Bản nháp của đoạn trên còn một câu nữa và câu ấy KHÔNG ĐO ĐƯỢC — nó bị rút
-> TRƯỚC khi xuất bản, và được ghi lại ở đây vì im lặng về một câu đã rút là đúng thứ
-> file này bắt.** Nguyên văn: *"cho nó ném biến một máy có credential hỏng thành một
-> máy không khởi động được"*. Đo lại: `FleetCore.UpdateSettings` gọi
-> `CredentialStore.Load` bên trong phần **kích hoạt**, và phần ấy đã được
-> `TryReplayStartupSettings` của `St4i.EngineApi/Program.cs` **bọc lại** từ H-1a — chính
-> `FleetCore.cs` ghi rằng vòng lặp boot cũ đã biến mất **vì** lần phát lại được sửa. Nên
-> một cú ném ở đó làm hỏng **lần phát lại**, và "không khởi động được" là một kết luận
-> không ai đo. Câu bị rút, không bị sửa cho vừa.
-
-**Nếu không quyết định:** giữ nguyên. Lần claim lại kế tiếp ghi đè blob cũ, và
-**không ai biết** rằng thứ vừa mất chỉ cần sửa môi trường là đọc lại được.
-
-**Bằng chứng — chạy lại được:**
-`tests/St4i.EngineApi.Tests/OperatorDataRemovalCensusTests.cs`,
-`CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt`
-— nó ghim **cả hai nửa**: hai ca cho cùng một `null`, và `Save` sau đó đè lên. Nó
-**ghim một khuyết tật đang sống làm đường cơ sở và KHÔNG sửa**, đúng như S-1 đã làm cho
-mục 5. Nếu anh quyết SỬA, khẳng định ấy đảo chiều và chỗ đảo chính là diff.
-
----
-
-## 11. Một `oee-settings.json` được KHÔI PHỤC vào lúc đang chạy bị ghi đè bằng bảng rỗng
-
-**Mục này sinh ra từ bản sửa của mục 5, và nó là chỗ HAI SỰ THẬT của bản sửa ấy còn
-lệch nhau lần thứ ba.** V-1 cho `Set` tự đọc lại ngay trước khi ghi, và so hai điều:
-*file lúc này* (`fresh.Status`) và *bảng trong bộ nhớ được dựng từ phép đọc nào*
-(`_tableBuiltFrom`). Hai cái ấy lệch nhau được **ba kiểu**. Hai kiểu bị từ chối. Kiểu
-thứ ba thì không.
-
-**Đo được:**
-
-```
-_tableBuiltFrom == Absent   VÀ   fresh.Status == Loaded
-```
-
-Tiến trình lên khi **không có file**; sau đó một file **có nội dung** xuất hiện; phép
-đọc ngay trước cú ghi **NHÌN THẤY nó**; vị từ từ chối là **sai**; nên `Set` ghi **bảng
-rỗng cộng một máy** đè lên một file mà nó **vừa đọc thành công**. **Không ném, không
-409, không một dòng log.**
-
-**Không cần tranh chấp, không cần người ghi thứ hai.** Kịch bản là **khôi phục một bản
-sao lưu vào `%ProgramData%\ST4I\sim\historian` trên một host đang chạy** — đúng công
-việc mà chú thích tham số `directory` của chính store ấy quảng cáo thư mục này để làm
-(*"một operator/backup tool tìm thấy mọi file cạnh historian ở một chỗ"*).
-
-**Ở đâu:** `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` (`Set`, vị từ hai điều
-kiện; `Save` → `WriteAllTextAtomic`), tới được từ
-`src/St4i.EngineApi/Endpoints/HistorianEndpoints.cs` (`PutOeeSettingsAsync`).
-
-**Hậu quả vận hành:** giống hệt mục 5 — ideal-cycle override và planned-production
-ratio của **mọi máy** biến mất, con số OEE đổi thầm lặng — nhưng ở một thời điểm khác:
-**ngay sau khi vận hành viên tưởng mình vừa khôi phục xong.**
-
-**Vì sao KHÔNG sửa trong V-1:** đóng nó là đổi **khi nào một cú ghi được phép**. Hôm
-nay `Absent` lúc nạp **cho phép** người gọi tự đặt giá trị — đó chính là đường
-**khởi động lần đầu**. Thu hẹp nó là một thay đổi hợp đồng, không phải một cái chốt.
-Và nó **nằm ngoài tình huống** mà luật của mục 5 nói tới: **các byte đọc được suốt**,
-nên luật ở `docs/startup-failure-posture.md` §3.6 **không quyết được** ca này — đúng
-chỗ §3.6 tự nói là luật không với tới.
-
-**Nếu không quyết định:** giữ nguyên. Một bản khôi phục thực hiện trên host đang chạy
-sẽ bị lần đặt OEE kế tiếp xoá, và **không ai biết** cho tới khi có người đối chiếu lại.
-Cách né duy nhất hôm nay là **khởi động lại host sau khi khôi phục**, và điều đó
-**không được ghi ở đâu cả** trước mục này.
-
-**Bằng chứng:** commit `a9326c79` (V-1 vòng sửa 1) và chú thích lớp của
-`OeeSettingsStore`. 🔴 **Chưa có test nào ghim ca này** — nó chưa được ghim vì ghim nó
-là khẳng định hành vi hiện tại đúng, mà đó chính là thứ đang chờ anh quyết.
-`Read_RecordsWhatItAnswered_SoStatusMeansTheMostRecentRead` **dựng đúng trạng thái ấy**
-và **dừng ngay trước `Set`**.
-
----
-
-## 12. `St4i.EdgeCore` không bao giờ đặt `GenerateDocumentationFile`, và bật nó đòi một lệnh đè trên một file ta KHÔNG được sửa
-
-**Đo bởi W-1 tại `46439925`, SDK 10.0.302, `dotnet build -t:Rebuild` từ
-`tools/machine-simulator`, đếm theo đúng cách bản tóm tắt của MSBuild đếm.** Không có
-con số nào dưới đây là ước lượng, và không có cái nào bị W-1 đè.
-
-| cấu hình | cảnh báo toàn cây |
-|---|---:|
-| như đang ship | **116** |
-| + bật cờ cho **riêng** `St4i.EdgeCore` | **852** |
-| + `.editorconfig` ở **gốc repository**, chỉ CS1591 | **757** |
-| + `.editorconfig` ở **`examples/`**, chỉ CS1591 | **757** |
-| + `.editorconfig` **NGAY CẠNH file** (`examples/device-client/csharp/`), **cả hai mã** | **749** — và **không còn CS15xx nào** trong file ấy |
-
-Chênh 736 gồm: **543 CS1591** + **92 CS1573** (bao phủ tài liệu) và **101** khẳng định
-`cref`/`paramref` **không phân giải được** (75 CS1574, 23 CS1734, 3 CS0419).
-
-**Phần chia đôi mới là quyết định.** Trong 543 + 92 ấy:
-
-- **448 CS1591 + 84 CS1573 là mã NGUỒN CỦA CHÍNH TA.** Không gì cản viết chú thích cho
-  chúng ngoài việc **có nên hứa gì trên bề mặt ấy** — đúng câu hỏi mà bảy project chưa
-  đặt cờ khác đang mang (tổng 2775). Đây **không** phải chỗ cần lệnh đè.
-- **95 CS1591 + 8 CS1573 nằm trong
-  `examples/device-client/csharp/St4iDeviceClient.cs`** — file SDK vendored mà
-  `St4i.EdgeCore.csproj` `Compile`-link từ NGOÀI cây project, được xuất bản cho nhà phát
-  triển máy, giữ đồng bộ với SDK Python và Node, và **repo này KHÔNG được sửa**. 103 cảnh
-  báo ấy **không thể trả bằng cách viết**, nên chúng là **lý do duy nhất một lệnh đè trở
-  nên CẦN THIẾT** nếu cờ được bật.
-
-**Điều N-1 ghi là CHƯA ĐO, nay đã đo — kèm ba hệ quả, và MỘT TRONG BA CÁI TÔI VIẾT VÒNG
-ĐẦU LÀ SAI:**
-
-1. Mục khoanh-theo-đường-dẫn **có** khớp: 852 → 757, đúng −95, CS1591 biến mất khỏi file
-   ấy. Nhưng N-1 chỉ nêu CS1591, nên **(b) như đã mô tả bỏ sót 8 CS1573 vẫn nằm nguyên
-   trong chính file không đụng được ấy**: nó miễn trừ MỘT trong HAI mã. **Xác nhận.**
-2. 🔴 **VÒNG ĐẦU TÔI VIẾT — VÀ NÓ SAI:** *"mục ấy không thể sống trong cây sản phẩm này;
-   nó phải đặt ở gốc repository, phía trên một ứng dụng TypeScript/Node không liên quan."*
-   Tiền đề đúng — **mục (section)** chỉ khớp file **tại hoặc dưới** thư mục của nó — nhưng
-   **kết luận không theo**, vì **việc TÌM RA file `.editorconfig` đi theo chuỗi tổ tiên của
-   FILE NGUỒN, không phải của project**. Đo lại, ba vị trí, mỗi vị trí một lần build đầy
-   đủ: gốc repo → 757; `examples/` → 757; **ngay cạnh file, khai cả hai mã → 749, và không
-   còn một CS15xx nào trong file ấy.** Nên lệnh đè **ngồi cách chính file nó nói về hai
-   thư mục**, nằm **bên trong** ví dụ SDK mà nó miễn trừ, và **không** bị ép lên gốc repo.
-   Sửa tại chỗ chứ không thay lặng, vì câu sai ấy **đã nằm trong artefact của chủ sở hữu**.
-   **Phần còn lại của phản đối là một phản đối KHÁC và CHƯA ĐO:** thư mục ấy là ví dụ SDK
-   **được xuất bản**, giữ đồng bộ với SDK Python và Node — nên một file đặt ở đó **đi theo
-   bản phát hành tới nhà phát triển máy** và **có thể mất khi vendor lại**.
-3. **749 vẫn không phải 116**, và 757 cũng không. "Để 448 cái kia ĐƯỢC KHẲNG ĐỊNH" là đúng
-   và **không** đồng nghĩa "xanh": một miễn trừ **hoàn hảo** cho file vendored gỡ 103 cái
-   không ai sửa được và **để lại 633** — 532 cảnh báo bao phủ trên mã của ta, cộng 101
-   khẳng định `cref` sai — hoặc được viết, hoặc được ghim.
-
-**BỐN lựa chọn, nêu đủ chứ không nêu cái tiện. Vòng đầu tôi chỉ nêu ba, và cái thiếu là
-cái HẸP NHẤT — đó là một thiếu sót ẢNH HƯỞNG QUYẾT ĐỊNH, ngay trong artefact viết ra để
-quyết định:**
-
-- **(a) `<NoWarn>CS1591;CS1573</NoWarn>` cả assembly** — im lặng 635; project ấy khi đó
-  **không khẳng định bao phủ tài liệu ở đâu cả**, kể cả 532 thành viên là mã của ta.
-- **(b1) `.editorconfig` ở gốc repo hoặc ở `examples/`, chỉ CS1591** → **757**. Đây là
-  lựa chọn N-1 mô tả. Nó **để lại 8 CS1573** trong chính file không đụng được, và đặt một
-  file cấu hình phía trên cây mã không liên quan.
-- **(b2) 🔴 `.editorconfig` NGAY CẠNH file vendored, khai CS1591 + CS1573** → **749**, và
-  **không còn một cảnh báo tài liệu nào** phát ra từ file ấy. **Hẹp nhất trong cả bốn**:
-  miễn trừ **đúng** 103 cái không ai được sửa và **để cả 532 cái của ta được khẳng định**.
-  Giá phải trả, nêu ra chứ không giấu: file ấy nằm **trong ví dụ SDK được xuất bản**, nên
-  nó đi theo bản phát hành và **có thể biến mất trong lần vendor lại** — một phản đối
-  **chưa được đo**.
-- **(c) không bật cờ** — trạng thái hiện tại. 101 khẳng định `cref` sai trong project này
-  (237 toàn cây) **không có gì canh**.
-
-**Cả (b1) và (b2) đều VẪN LÀ LỆNH ĐÈ, và không lựa chọn nào tự nó làm cờ bật được xanh:**
-kể cả sau (b2), 633 cảnh báo còn lại phải được **viết** hoặc được **ghim**. Đó là quyết
-định của anh, không phải của người thực thi.
-
-🔴 **W-1 KHÔNG chọn giúp, và cũng KHÔNG để văn xuôi ấy tiếp tục không ai đọc.** Nửa
-**phân tích cú pháp** của câu hỏi không cần cờ nào cả và đã được đóng bằng một dụng cụ
-riêng: `tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs` đọc **mọi** khối `///` trong cả
-cây như XML, cộng một phép kiểm **tên phần tử** mà **trình biên dịch không hề làm**. (Kích
-thước tập quét **không** ghi ở đây: vòng đầu tôi ghi "530 file, 3.616 khối", ghép số file
-của một cây với số khối của một cây khác trên một quần thể khác. Luật mua được: **nêu tên
-assertion, đừng chép số của nó vào văn xuôi.**) Nửa **phân giải** (`cref`) thì **chỉ**
-trình biên dịch thấy, nên nó nằm lại đây, ở mục này. Lần chạy đầu tiên của dụng cụ ấy tìm
-ra **một khối hỏng đang sống** trong `EnumSpellingContractTests.cs`, sinh ra ở `05a4f7a8`
-(P-2 vòng 2) và có mặt ở **bảy** lần merge — liệt kê, chứ không nêu con số, vì chính con
-số là chỗ vòng đầu sai (thiếu U-1): `f89da589` (P-2), `17fa6841` (Q-1), `79dbf99a` (R-1),
-`7bb0c5bd` (S-1), `895c0c23` (T-1), `f18f5c29` (U-1), `46439925` (V-1). **Không lần nào
-thấy nó.**
-
-**Bằng chứng:** commit merge của W-1.
+Không gì trong phần này đang chờ anh quyết. Nó ở đây vì **xoá thì không được** — và nó
+ở CUỐI vì đặt nó trước các mục đang chờ là đúng khuyết tật Y-1 được giao để sửa.
 
 ---
 
@@ -1133,6 +1180,30 @@ nói ra**: hôm nay nhánh 0-lỗi in ra chín dòng `CS2001` và **không một
 nào**; phần ghi chép chỉ là chú thích mà **người mở file script ra mới thấy**.
 
 Bằng chứng: commit `8bc397b1` (P-1).
+
+---
+
+## Lịch sử đính chính của chính file này
+
+Hai khối dưới đây từng nằm **ngay dưới đoạn mở đầu** — tức là **thứ đầu tiên chủ sở hữu
+đọc được** khi mở file. Chúng **đúng về mặt hồ sơ và sai về mặt thứ tự**: một người tới
+để quyết đọc trước hết một bản đính chính về sai lầm của người viết ra danh sách. Y-1
+(2026-08-18) **chuyển** chúng xuống đây và để lại một con trỏ tại chỗ.
+**Không một chữ nào trong hai khối bị đổi.**
+
+⚠️ **Câu này đúng khi file được lập và KHÔNG còn đúng — sửa 2026-08-17 (T-1).** Nguyên
+văn: *"Không mục nào trong đây đã bị sửa. Tất cả đều là hành vi đang chạy hôm nay."*
+Nó là một **khẳng định phổ quát trên chính danh sách bên dưới**, và mỗi lần một mục
+được thi hành thì không có gì bắt nó phải được suy lại — đúng loài khuyết tật file này
+lập ra để chấm dứt, nằm ngay trong lời mở đầu của nó. **Trạng thái nằm ở bảng phán
+quyết và ở từng mục, không ở đây, và câu này KHÔNG liệt kê lại các mục ấy nữa.**
+
+> 🔴 **V-1, 2026-08-17 — câu trên vừa được sửa LẦN THỨ BA, và lần này cơ chế bị bỏ chứ
+> không phải nội dung được cập nhật.** T-1 thay một khẳng định phổ quát bằng một danh
+> sách; U-1 làm danh sách ấy cũ ngay vòng kế tiếp và cập nhật nó; V-1 làm nó cũ lần
+> nữa. **Một bản sao thứ hai của bảng phán quyết sẽ đi cũ mỗi vòng, và đó là điều duy
+> nhất kiểm được về nó** — nên bản sao bị bỏ, và câu này chỉ còn là con trỏ. Đúng luật
+> "đừng giữ một bản sao" mà `OperatorDataRemovalCensusTests` đã mua bằng chính lỗi này.
 
 ---
 
