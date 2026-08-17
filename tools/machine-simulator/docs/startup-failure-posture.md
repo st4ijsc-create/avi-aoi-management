@@ -205,8 +205,9 @@ way to see that "unreadable" is not one state.
 🔴 **THE LEGEND ABOVE DECLARED TWO POSTURE SYMBOLS AND THE POSTURE COLUMN HAS ALWAYS CARRIED MORE — task
 V-1, and it is checkable by reading the column rather than by trusting this paragraph.** Rows **7, 10, 15,
 19 and 39** are marked **silent**, and rows **1, 2 and 21** carry *exit by design* / *no failure arm*. So
-five rows have, since this file was written, used a third posture that the legend did not name. It is
-declared now:
+the column has used **three** markers the legend never declared, and the one that matters — because it is a
+FAILURE the rule has a verdict on, where the other two are "no failure arm" — is **silent**. It is declared
+now:
 
 > 🔴 **Q** *(the quieter arm)* **= the host comes up and the failure is NOT reported.** Never **✓**, and the
 > reason needs no separate argument: §1's rule says a host refuses to start *only when starting would be the
@@ -674,11 +675,19 @@ to report, so not **U**. What it produces is **Q** — the host comes up and say
 definition of the failure the rule exists to forbid. So the law is not a preference about store design; it
 is what §1 already says, evaluated at the statement where the information still exists.
 
-**The law yields DIFFERENT postures at different sites, and that is still one way.** A store that
-**throws** hands its caller **S**; a store with a distinct third outcome lets its caller come up and report,
-which is **U**. Both are loud, both are §1-compliant, and which one a site should have is decided by §1's
-existing test — *would continuing hide the loss?* — applied to that site, unchanged. What the law removes is
-the third thing, which is not a posture but the absence of one.
+**The law yields DIFFERENT postures at different sites, and that is still one way.** A store that **throws**
+and a store with a distinct third outcome are both **audible to their caller**; a store that answers
+*absent* is not. Which of **S** and **U** the caller then reaches is decided by §1's existing test — *would
+continuing hide the loss?* — applied to that site, unchanged. What the law removes is the third thing, which
+is not a posture but the absence of one.
+
+🔴 **A draft of that paragraph said "a store that throws hands its caller **S**", and it is FALSE on this
+tree — corrected here rather than quietly.** **Row 9** is the refutation: `NotificationConfigStore`'s
+constructor throws over a bad artefact (measured, and pinned in `ExpectedPostures`) and `Program.cs` wraps
+that construction in a `try`, so the host **comes up** and the row is **U ✓**. Throwing is a property of the
+STORE; **S** and **U** are properties of the CALLER. Collapsing the two is the same substitution §2 warns
+about when it says instrument 2 supplies the outcome and instrument 1 supplies the posture — and it would
+have been a sentence about a population this section cannot observe, since no arm of Reach C starts a host.
 
 🔴 **Where the law is NOT enough on its own, said because a claim of sufficiency is the kind of sentence
 this file exists to catch.** It decides *whether a read may conflate the two*. It does **not** decide
@@ -706,8 +715,8 @@ below is pinned by `ExpectedPostures` and asserted by
 
 | Posture | Store | Reason the law yields this one HERE |
 |---|---|---|
-| **third outcome → U** | `FleetSettingsStore`, `SiteLinkStore`, `OeeSettingsStore` | the arm a failed read selects **WRITES**. The caller must be able to decline it, and it can then name the loss and keep serving. Throwing instead would end a host, or an endpoint, over a file that is repairable by hand |
-| **throws → S** | `MachineConfigStore`, `ProductConfigStore`, `SimulatedEcosystem`, `ConnectorConfigStore`, `NotificationConfigStore`, `SecurityDb`, `AlarmStore`, `AssetRegistryStore`, `BridgeSpool`, `SqliteHistorianStore` | the read ends the operation, so no arm downstream of it can write. Nothing is destroyed — measured, not read: `TheThrowingStores_ConstructCleanlyOverAnEmptyDirectory_AndLeaveTheUnreadableBytesIntact` reads the bytes back after the throw |
+| **third outcome** | `FleetSettingsStore`, `SiteLinkStore`, `OeeSettingsStore` | the arm a failed read selects **WRITES**. The caller must be able to decline it, and it can then name the loss and keep serving. Throwing instead would end a host, or an endpoint, over a file that is repairable by hand |
+| **throws** | `MachineConfigStore`, `ProductConfigStore`, `SimulatedEcosystem`, `ConnectorConfigStore`, `NotificationConfigStore`, `SecurityDb`, `AlarmStore`, `AssetRegistryStore`, `BridgeSpool`, `SqliteHistorianStore` | the read ends the operation, so no arm downstream of it can write. Nothing is destroyed — measured, not read: `TheThrowingStores_ConstructCleanlyOverAnEmptyDirectory_AndLeaveTheUnreadableBytesIntact` reads the bytes back after the throw. **What the caller does with the throw varies and is §1's business, not this column's** — `ConnectorConfigStore` is unguarded (row 24, **S**) and `NotificationConfigStore` is wrapped (row 9, **U**) |
 | 🔴 **Q — cannot tell** | `DeviceIdentityStore`, `CredentialStore` | **decided exceptions, not survivors.** See below |
 
 **What moved, and it is one row.** `OeeSettingsStore` was the third-outcome shape's last missing member: its
