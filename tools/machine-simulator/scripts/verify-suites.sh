@@ -305,6 +305,12 @@ export MSBUILDDISABLENODEREUSE=1
 # sources, and the derivation re-checks its own justification on every run: the day either store gains an
 # EnvVarDir, the guard goes RED and demands the exemption be spent.
 #
+# 🔴 AND A THIRD THING WAS ADDED THAT MOVES NO TOTAL: the output-directory bracket in this file, above the
+# suite loop. It adds no test, exactly as K-1's credential bracket adds none, and it exists because the
+# C# guard's window hole was MEASURED OPEN on this task's own dirty arm — the guard reported green while
+# the pre-fix tree wrote machine-operating-config.json underneath it. A control pair resting on the guard
+# alone would have been scheduling-dependent, which is not a control.
+#
 # EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0. No suppression of any kind was added and no
 # .editorconfig exists in this tree. None of the five test projects sets GenerateDocumentationFile, so the
 # new `///` blocks are not compiled either way — tag balance on every block was checked directly rather
@@ -4922,6 +4928,139 @@ if [[ "${BUILD_NODES:-}" != "$EXPECT_BUILD_NODES" ]]; then
   attribute_build_servers
   exit 1
 fi
+# ══ THE BRACKET ON EACH SUITE'S OWN OUTPUT DIRECTORY (task X-1) ═════════════════════════════════
+#
+# WHAT THIS IS FOR. tests/Shared/OwnOutputDirectoryGuard.cs asserts that a test process leaves its own
+# output directory exactly as it found it. That directory outlives every run -- the build writes it, and
+# nothing ever cleans it -- and THREE of the product's stores resolve to it by default, so a file one run
+# writes is a file the next run reads. The C# guard has the same two holes K-1's credential guard has, it
+# names them in its own doc comment, and neither is closable from inside a test:
+#   * five suites are five processes, so five baselines and no delta across them;
+#   * its interval ends when its [Fact] runs, and xunit orders nothing.
+#
+# 🔴 THE SECOND HOLE IS MEASURED ON THIS TASK, not inherited from K-1's write-up, and it is why this
+# bracket exists rather than being booked. X-1's own §8.1(h6) DIRTY ARM -- the ST4I_MACHINE_CONFIG_DIR
+# redirect disabled, i.e. the exact pre-fix tree, over a 15-test filter of St4i.EngineApi.Tests -- wrote a
+# fresh machine-operating-config.json into that suite's output directory (1 entry, AOI-01, History list of
+# 1: one run's worth of the 624 that had accumulated) and the C# guard reported GREEN, because its [Fact]
+# was scheduled ahead of the writer. So the guard is the ATTRIBUTING half and never the complete one, and
+# a control pair resting on it alone would have been scheduling-dependent -- which is not a control.
+#
+# WHY THE SNAPSHOT IS HERE AND NOT AT THE TOP OF THE FILE. The BUILD writes these directories, so a
+# bracket spanning the build would report the build. Taking the BEFORE reading at this line -- after the
+# build gate, after the warnings gate, after the build-node gate, immediately before the first suite
+# starts -- makes the window exactly the test phase and nothing else. That placement is also why this
+# needs NO EXIT trap: every `exit 1` above this line happens before the snapshot exists, and nothing
+# between here and gate 3 exits, so the evaluation folded into FAILURES down there is always reached.
+# bash allows exactly ONE EXIT trap and `creds_bracket_trap` already owns it; a second would silently
+# replace it and leak the exclusive-run lock, which that function's own comment spells out.
+#
+# 🔴 WHAT IS EXEMPT, AND THE EXEMPTION IS DERIVED SO THAT IT CANNOT OUTLIVE ITS REASON. The product roots
+# three stores beside the binary. ONE of them, MachineConfigStore, has a relocation variable (task H-1c
+# built the seam; tests/Shared/TestRunTempRoot.cs now sets it), so its file leaves this directory
+# altogether and is NOT exempt -- it is the thing this bracket is watching for. The other two,
+# ProductConfigStore and SimulatedEcosystem, have NO variable of any kind: no value any harness can set
+# moves them, and giving them one is a change to src/ and to every shipped install's on-disk layout, which
+# task X-1 was told to REPORT rather than do. Their files are exempt, and the filenames are read out of
+# those two stores' OWN SOURCES together with the justification -- the sources must still declare their
+# filenames and must still declare NO EnvVarDir. The day either store gains a seam this derivation fails
+# the run and demands the exemption be spent instead of inherited.
+#
+# 🔴 WHAT THIS BRACKET DOES NOT SEE, on top of everything the C# guard's doc comment already lists.
+#   * APPEAR-AND-VANISH. A file created and deleted inside the window cancels out, exactly as for the
+#     credential bracket. Two readings cannot see it; only a watcher could.
+#   * CONTENT AT CONSTANT SIZE AND TIMESTAMP. This compares path + BYTE COUNT + MODIFICATION TIME, never
+#     content. A rewrite producing the same length within the same filesystem tick is invisible.
+#   * READS. This sees WRITES. A run that READS residue an earlier run left and writes nothing is green
+#     here and is still not hermetic. That half is not closed by any assertion in this file; it is closed
+#     by the directory being at its build-clean state, which is a fact about a machine on a day.
+#   * THE DOMAIN IS WIDER THAN THE CRITERION'S, exactly as the credential bracket's is. This measures
+#     THE DIRECTORIES over the window, not "the test processes". A `dotnet build` in another shell, an
+#     IDE writing into bin/, or a developer running the engine out of one of these folders reddens it and
+#     is not a test defect. The C# guard is what attributes; keep both.
+_x1_unseamed_srcs=(
+  "src/St4i.EdgeCore/Config/ProductConfigStore.cs"
+  "src/St4i.EngineApi/Config/SimulatedEcosystem.cs"
+)
+_x1_seamed_src="src/St4i.EdgeCore/Config/MachineConfigStore.cs"
+OUTDIR_EXEMPT=()
+for _src in "${_x1_unseamed_srcs[@]}"; do
+  if [[ ! -f "$_src" ]]; then
+    echo "FAIL: could not read \"$_src\" to derive which files an UNSEAMED beside-the-binary store persists."
+    echo "  Do NOT restate the filenames here -- a restated list outlives the reason it was written, which"
+    echo "  is the defect this derivation exists to prevent. Point this at the store's new home, or delete"
+    echo "  the exemption if the store is gone."
+    exit 1
+  fi
+  if grep -q 'EnvVarDir' "$_src"; then
+    echo "FAIL: \"$_src\" now declares a relocation seam (EnvVarDir), so it is NO LONGER an unseamed store"
+    echo "  and must not be exempt from this bracket. Set that variable in tests/Shared/TestRunTempRoot.cs"
+    echo "  beside ST4I_CREDS_DIR and ST4I_MACHINE_CONFIG_DIR, then remove this source from the list above."
+    echo "  This is the GOOD outcome: the exemption existed only because the store could not be moved."
+    exit 1
+  fi
+  mapfile -t _x1_names < <(
+    grep -oE 'const[[:space:]]+string[[:space:]]+[A-Za-z0-9_]*FileName[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"[^"]+\.json"' "$_src" \
+      | grep -oE '"[^"]+\.json"' | tr -d '"')
+  if [[ ${#_x1_names[@]} -eq 0 ]]; then
+    echo "FAIL: found no persisted-filename constant in \"$_src\", so this bracket cannot tell which of that"
+    echo "  store's files to exempt. A scan that stops matching must fail loudly rather than exempt nothing"
+    echo "  and report that store's every write as an unexplained one."
+    exit 1
+  fi
+  OUTDIR_EXEMPT+=("${_x1_names[@]}")
+done
+if [[ ! -f "$_x1_seamed_src" ]] || ! grep -q 'EnvVarDir' "$_x1_seamed_src"; then
+  echo "FAIL: \"$_x1_seamed_src\" no longer declares an EnvVarDir seam. TestRunTempRoot's"
+  echo "  ST4I_MACHINE_CONFIG_DIR redirect depends on it, so without it that store is writing into these"
+  echo "  directories again and the exemption above is describing a population that has changed shape."
+  echo "  Re-derive the whole arrangement rather than widening the exemption."
+  exit 1
+fi
+
+# The five directories, derived from SUITES rather than listed -- a sixth suite is bracketed the day it is
+# added. `bin/Debug/*` because the target framework differs across them (net10.0 vs net10.0-windows) and
+# spelling either would be a literal that rots.
+outdir_list() {
+  local entry proj d
+  for entry in "${SUITES[@]}"; do
+    proj="${entry%%:*}"
+    for d in "$proj"/bin/Debug/*/; do
+      [[ -d "$d" ]] && printf '%s\n' "${d%/}"
+    done
+  done
+}
+
+# path + byte count + modification time, one file per line, exempt basenames dropped. Enumerates metadata
+# and never opens, creates or deletes anything.
+outdir_snapshot() {
+  local d
+  while IFS= read -r d; do
+    find "$d" -type f -printf '%p\t%s\t%T@\n' || return 1
+  done < <(outdir_list) \
+    | awk -F'\t' -v ex="$(IFS='|'; printf '%s' "${OUTDIR_EXEMPT[*]}")" '
+        BEGIN { n = split(ex, a, "|"); for (i = 1; i <= n; i++) e[a[i]] = 1 }
+        { p = $1; sub(/^.*\//, "", p); if (!(p in e)) print }' \
+    | LC_ALL=C sort
+}
+
+OUTDIR_BEFORE="$LOGDIR/outdirs-before.txt"
+OUTDIR_AFTER="$LOGDIR/outdirs-after.txt"
+_x1_dircount=$(outdir_list | grep -c . || true)
+if [[ "${_x1_dircount:-0}" -ne "${#SUITES[@]}" ]]; then
+  echo "FAIL: found ${_x1_dircount:-0} suite output director(ies) under bin/Debug, expected ${#SUITES[@]}."
+  echo "  A bracket that watches fewer directories than there are suites is silently partial, and a"
+  echo "  partial reading here reads exactly like a clean one. Fix the layout or the glob."
+  exit 1
+fi
+if ! outdir_snapshot > "$OUTDIR_BEFORE"; then
+  echo "FAIL: could not take the output-directory bracket's BASELINE. Stopping rather than running the"
+  echo "  suites under a bracket that cannot fail."
+  exit 1
+fi
+# NOT a check -- a `note` is for a human reading alongside a verdict, never something a verdict depends on.
+note "suite output directories under watch: ${_x1_dircount} ($(grep -c . < "$OUTDIR_BEFORE" || true) files at start, exempt: ${OUTDIR_EXEMPT[*]})"
+
 echo "[2/3] Running ${#SUITES[@]} suites sequentially..."
 for entry in "${SUITES[@]}"; do
   proj="${entry%%:*}"; expected="${entry##*:}"; name=$(basename "$proj")
@@ -5134,6 +5273,65 @@ done
 if ! creds_bracket_eval; then
   CREDS_REPORTED=1
   FAILURES+=("$(creds_bracket_text)")
+fi
+
+# Task X-1 -- the closing reading of the output-directory bracket, folded into FAILURES for the same
+# reason the credential bracket is: one PASS/FAIL line on the normal path. No EXIT trap; see the block
+# above the suite loop for why this line is always reached whenever a baseline was taken.
+#
+# 🔴 THREE POPULATIONS, NOT TWO, AND A REWRITE IS ITS OWN ONE. Each line carries path + size + mtime, so
+# a rewritten file leaves BOTH sets: its old line vanished and its new line appeared. Reported as
+# APPEARED/DISAPPEARED it would read as two unrelated events at one path, which is the shape that sends a
+# reader looking for a deletion that never happened. Paths present on both sides are lifted out first and
+# reported as REWRITTEN.
+if [[ -s "$OUTDIR_BEFORE" || -f "$OUTDIR_BEFORE" ]]; then
+  if ! outdir_snapshot > "$OUTDIR_AFTER"; then
+    FAILURES+=("Suite output directories could NOT BE READ at the end of this run. NOTHING was measured by
+    this bracket -- that is not a pass and it is not evidence of a writer either. Check for a lock or for
+    a directory replaced mid-run; do not disarm the bracket.")
+  else
+    _x1_gone=$(LC_ALL=C comm -23 "$OUTDIR_BEFORE" "$OUTDIR_AFTER" | cut -f1 | LC_ALL=C sort -u)
+    _x1_new=$(LC_ALL=C comm -13 "$OUTDIR_BEFORE" "$OUTDIR_AFTER" | cut -f1 | LC_ALL=C sort -u)
+    _x1_rewritten=$(LC_ALL=C comm -12 <(printf '%s\n' "$_x1_gone") <(printf '%s\n' "$_x1_new") | grep -c . || true)
+    _x1_rewritten_list=$(LC_ALL=C comm -12 <(printf '%s\n' "$_x1_gone") <(printf '%s\n' "$_x1_new"))
+    _x1_appeared=$(LC_ALL=C comm -13 <(printf '%s\n' "$_x1_gone") <(printf '%s\n' "$_x1_new") | grep -v '^$' || true)
+    _x1_disappeared=$(LC_ALL=C comm -23 <(printf '%s\n' "$_x1_gone") <(printf '%s\n' "$_x1_new") | grep -v '^$' || true)
+    if [[ -n "$_x1_rewritten_list" || -n "$_x1_appeared" || -n "$_x1_disappeared" ]]; then
+      {
+        echo "Suite output directories CHANGED across the test phase -- a test process wrote beside its own binary."
+        [[ -n "$_x1_rewritten_list" ]] && {
+          echo "  REWRITTEN ($_x1_rewritten):"; printf '%s\n' "$_x1_rewritten_list" | head -25 | sed 's/^/      /'; }
+        [[ -n "$_x1_appeared" ]] && {
+          echo "  APPEARED ($(printf '%s\n' "$_x1_appeared" | grep -c .)):"; printf '%s\n' "$_x1_appeared" | head -25 | sed 's/^/      /'; }
+        [[ -n "$_x1_disappeared" ]] && {
+          echo "  DISAPPEARED ($(printf '%s\n' "$_x1_disappeared" | grep -c .)):"; printf '%s\n' "$_x1_disappeared" | head -25 | sed 's/^/      /'; }
+        echo "  WHY THIS MATTERS: nothing cleans those directories -- not this script, not \`dotnet build\` --"
+        echo "     so a file written during the test phase is a file the NEXT run READS. That channel is not"
+        echo "     theoretical: a 610-byte all-NUL recipes.json failed 190 tests in one run of"
+        echo "     St4i.EngineApi.Tests, and that suite's machine-operating-config.json reached 240,778 bytes"
+        echo "     with 624 History entries on ONE machine code -- one appended per run, forever."
+        echo "  DELETING THE FILE BUYS NOTHING HERE, unlike the credential bracket above: this compares the"
+        echo "     directories against their own state at the START of the same test phase, so removing a file"
+        echo "     first makes the run CREATE it, which is still a difference. Fix the WRITER."
+        echo "  HOW: if the store has a relocation variable, set it in tests/Shared/TestRunTempRoot.cs beside"
+        echo "     ST4I_CREDS_DIR and ST4I_MACHINE_CONFIG_DIR -- one line there covers every existing call site"
+        echo "     and every future one. If it has NO variable, giving it one changes src/ and every shipped"
+        echo "     install's on-disk layout: that is a product decision, and it is exactly why"
+        echo "     ProductConfigStore and SimulatedEcosystem are exempt here rather than fixed. Say so and"
+        echo "     stop -- the exemption is derived from those stores' own sources so that it cannot be"
+        echo "     extended by hand."
+        echo "  SCOPE: this measures THE DIRECTORIES over the test phase, not just the test processes. A"
+        echo "     second build, an IDE writing into bin/, or the engine being run out of one of these folders"
+        echo "     reddens it and is not a test defect -- check before hunting a test."
+        echo "  WHAT THE SUITE RESULTS ABOVE DO AND DO NOT TELL YOU: a red here with"
+        echo "     OwnOutputDirectoryGuardTests red in some suite NARROWS the writer to that process. A red"
+        echo "     here with all five suites GREEN is NOT decisive and must not be read as external: that"
+        echo "     guard's window ends when its own [Fact] runs, and X-1 MEASURED it staying green while the"
+        echo "     pre-fix tree wrote machine-operating-config.json underneath it."
+      } > "$LOGDIR/outdirs-report.txt"
+      FAILURES+=("$(cat "$LOGDIR/outdirs-report.txt")")
+    fi
+  fi
 fi
 
 echo "[3/3] Verdict:"

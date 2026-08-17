@@ -58,11 +58,15 @@ namespace St4i.TestHygiene;
 /// per-process measurements and never one repository-wide guarantee. A green from one suite says nothing
 /// about any other. Same structure, and same limitation, as
 /// <see cref="RealCredentialStoreLeakGuardTests"/>.</item>
-/// <item>🔴 <b>A window, not the whole process.</b> The interval ends when THIS fact runs, and xunit orders
-/// neither collections nor the classes inside them, so a writer scheduled after it is invisible. This is
-/// not a fear: task K-1 MEASURED the identical hole on the credential guard — its mutation M1 wrote a real
-/// DPAPI blob while the suite reported green, purely on scheduling. Nothing about this directory makes
-/// that hole smaller.</item>
+/// <item>🔴 <b>A window, not the whole process — MEASURED ON THIS TASK, not inherited.</b> The interval
+/// ends when THIS fact runs, and xunit orders neither collections nor the classes inside them, so a writer
+/// scheduled after it is invisible. Task X-1's own §8.1(h6) DIRTY ARM proved it rather than feared it:
+/// with the <c>ST4I_MACHINE_CONFIG_DIR</c> redirect disabled — the exact pre-fix tree — a 15-test filter
+/// of <c>St4i.EngineApi.Tests</c> wrote a fresh <c>machine-operating-config.json</c> into that suite's
+/// output directory (one entry, <c>AOI-01</c>, <c>History</c> list of 1 — one run's worth of the 624 that
+/// had accumulated) and THIS FACT REPORTED GREEN, because it was scheduled ahead of the writer. So a green
+/// here is "nothing was written BEFORE me", never "nothing was written". Task K-1 measured the identical
+/// hole on the credential guard with its mutation M1; nothing about this directory makes it smaller.</item>
 /// <item><b>Appear-and-vanish.</b> A file created and deleted inside the interval cancels out, exactly as
 /// it does for the gate's credential bracket. Two snapshots cannot see it; only a watcher could.
 /// 🔴 This is also the ONLY way to defeat this guard by deleting, and it is worth separating from the
@@ -112,6 +116,20 @@ namespace St4i.TestHygiene;
 /// whose own comment says it mints a fresh code precisely because the store persists across runs. Two are
 /// the seed. That growth is UNBOUNDED and this guard does not stop it; it only refuses to let it hide
 /// among writes nobody has accounted for.</para></para>
+///
+/// <para>🔴 <b>THE ANCHOR THAT CLOSES THE FIRST TWO HOLES IS BUILT — in <c>scripts/verify-suites.sh</c>,
+/// not here.</b> "One process, not the run" and "a window, not the whole process" have the same fix and it
+/// is not reachable from inside a test: the gate snapshots all five output directories after the build and
+/// compares them after the last suite, so its window is the WHOLE test phase and its scope is every
+/// process inside it. It sits after the build on purpose — the build writes these directories, so a
+/// bracket spanning it would report the build — and it carries the same derived exemption this file does.
+///
+/// <para>The two are complementary and neither replaces the other, exactly as for the credential pair:
+/// <b>the gate bracket is complete but anonymous</b> — a second build, or an IDE writing into <c>bin/</c>,
+/// reddens it too — while <b>this one is partial but attributes</b>, naming the process it saw. Reading
+/// them together narrows a red; the pair does NOT decide, because a test writing after its own
+/// <c>[Fact]</c> looks exactly like an external writer. That is not a worry carried over from K-1's
+/// write-up: it is the measured result of this task's own dirty arm, recorded above.</para></para>
 /// </summary>
 internal static class OwnOutputDirectoryWatch
 {
