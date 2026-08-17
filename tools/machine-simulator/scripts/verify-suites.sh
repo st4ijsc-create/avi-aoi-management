@@ -2470,7 +2470,58 @@ EXPECT_EDGESERVICE=51
 # FileStream.SetLength to System.IO.Stream, deliberately outside ByteOwningTypes).
 #
 # New grand total 2694. EXPECT_WARNINGS stays 116.
-EXPECT_ENGINEAPI=1354
+#
+# 🔴 TASK T-1 raises this again, 1354 -> 1358 (+4), counted from the runner. Grand total 2694 -> 2698.
+# One file touched on the test side (FleetHostGateCommitCompletionTests.cs); the src side is FleetCore.cs
+# only. Owner decision 6 (docs/owner-decisions.md §6) ruled 2026-08-17: a failed install must say what
+# already happened before it threw; the two SIBLING non-installing paths stay silent. All four tests are
+# consequence probes on the production path, in the file that already owns S3's residual.
+#   AStartThatThrowsWhileInstallingSlots_StillSaysWhatHappenedBeforeItThrew             +1
+#       THE RULING'S WITNESS. One start that does real work and then throws: a roster machine whose
+#       mappingProfile names no file (the resolver warns and falls back, off the lock, in the plan), a
+#       registered connector whose factory rejects (the connector loop records it, under the lock), then a
+#       null profile so StartSlot's `new EdgePipeline` throws after both. Asserts the install failure STILL
+#       reaches the caller first — the emission must never be bought with the failure — then exactly one of
+#       each line at Warning. Both halves are asserted because they are buffered by different code on
+#       different sides of the lock, and a fix reaching only one would pass a one-sided test.
+#   AFailedInstallsRejectedConnector_IsStillReportedByTheProjectionThatOutlivesTheLine  +1
+#       §8.1(h5.1) — the surviving projection the ruling's own evidence rests on, RE-MEASURED rather than
+#       inherited. GREEN ON BOTH SIDES of T-1's diff, deliberately: it measures a property T-1 did not
+#       change, and a control that only passes after the fix could not have verified the premise.
+#   AStartAbandonedByAConcurrentStopRequest_StillSaysNothing                            +1
+#   AnInstallRefusedByTheHaltLatch_StillSaysNothing                                     +1
+#       THE TWO SIBLINGS' SILENCE, pinned rather than asserted in prose. The same warning is asserted
+#       PRESENT on the throw path above, from the same producer through the same flush, so a fix that
+#       emitted from every non-installing path turns these red and that one green together. The second also
+#       turned out to KILL the HALT-latch mutation — re-run on this tree, three failures where the recorded
+#       figure at 1cbdc564 was two; see FleetHostStartBuildHoistTests' own verdict paragraph.
+#
+# EXPECT_WARNINGS stays 116: measured on a full rebuild after the change — FleetCore.cs gains one parameter
+# and loses a return type, and St4i.EngineApi.Tests is one of the NINE projects that do not set
+# GenerateDocumentationFile, so its `///` blocks are not compiled either. EXPECT_BUILD_NODES stays 0.
+#
+# 🔴 T-1 FIX ROUND 1 raises this once more, 1358 -> 1359 (+1), counted from the runner. Grand total
+# 2698 -> 2699. Same one test file. The added test is the witness for the one thing this round had to BUILD
+# rather than name.
+#   AFailedInstallWhoseHostLoggerAlsoThrows_StillReportsWhyTheInstallFailed             +1
+#       Round 1 shipped the emission and left a masking window open, justified by a measurement of the
+#       pre-G-1 tree. Review ruled the measurement true and the inference wrong: pre-G-1 the logger threw
+#       AHEAD of the throw site, so the install never reached the slot loop and there was no competing
+#       diagnostic to lose. The EXPOSURE is old; the MASKING is new — reachable neither pre-G-1 nor at base.
+#       Verified rather than argued: with round 1's src (commit 9209a81b) and this test present, the caller
+#       gets InvalidOperationException ("this host's log provider failed") where the install threw
+#       ArgumentNullException. The guard is an `installFaulted` exception filter around the FLUSH ONLY inside
+#       CompleteStartOffLock, set from one `catch` per caller. The test asserts the install's exception type
+#       reaches the caller, that the completion's `finally` still disposes the orphan (J-2's own
+#       four-condition window at the DISPOSAL is deliberately left as J-2 made it), and that the flush still
+#       aborts at the throwing entry rather than resuming.
+#       The success path is unchanged and is pinned by an EXISTING test in the same file —
+#       Start_WhenTheHostLoggerThrowsFlushingDeferredLines_TheOrphanIsDisposedAndTheRunEventRecorded is a
+#       SUCCEEDING start whose host logger throws, and it still expects that throw to reach the caller. If
+#       the guard ever widened past the faulting path, that test goes red.
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0 for this round too.
+EXPECT_ENGINEAPI=1359
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

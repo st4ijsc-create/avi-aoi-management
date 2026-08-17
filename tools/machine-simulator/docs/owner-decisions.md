@@ -11,7 +11,13 @@ Mỗi mục nêu: **đo được cái gì**, **ở đâu trong mã**, **hậu qu
 **chuyện gì xảy ra nếu không quyết định** — vì "không quyết định" luôn là một lựa
 chọn có hậu quả, thường là giữ nguyên hành vi hiện tại.
 
-**Không mục nào trong đây đã bị sửa.** Tất cả đều là hành vi đang chạy hôm nay.
+⚠️ **Câu này đúng khi file được lập và KHÔNG còn đúng — sửa 2026-08-17 (T-1).** Nguyên
+văn: *"Không mục nào trong đây đã bị sửa. Tất cả đều là hành vi đang chạy hôm nay."*
+Nó là một **khẳng định phổ quát trên chính danh sách bên dưới**, và mỗi lần một mục
+được thi hành thì không có gì bắt nó phải được suy lại — đúng loài khuyết tật file này
+lập ra để chấm dứt, nằm ngay trong lời mở đầu của nó. **Trạng thái nằm ở bảng phán
+quyết và ở từng mục, không ở đây:** mục 1 (Q-1) và mục 6 (T-1) đã thi hành; những mục
+còn lại vẫn là hành vi đang chạy hôm nay.
 
 ---
 
@@ -30,7 +36,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 3 | bất đối xứng Sparkplug | ✅ **GIỮ DÂY, ĐÃ GHI RÕ** — đổi payload là việc của bên đăng ký |
 | 4 | hình dạng hàng `Samples` | ⚖️ **ĐO TRƯỚC, RỒI CHỌN** — SDK đã xuất bản là ứng viên chuẩn |
 | 5 | ~~ba hình dạng xoá file~~ → **`oee-settings.json`** | 🔴 **CHỜ ANH** — đã đo (S-1): ba tư thế, một cái mất dữ liệu im lặng |
-| 6 | log hoãn của một lần cài đặt hỏng | 🔴 **CHỜ ANH** — đứng trên KHÔNG TÁCH RỜI ĐƯỢC, không phải trạng thái thứ ba |
+| 6 | log hoãn của một lần cài đặt hỏng | 🔨 **PHÁT RA TRÊN ĐƯỜNG NÉM LỖI** (2026-08-17) — đã thi hành, T-1 |
 | 7 | nửa sau của S4 | 🔴 **CHỜ ANH** — thứ tự quan sát được + tháo dỡ giao dịch, không phải trạng thái thứ ba |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
@@ -500,6 +506,90 @@ trường của mình**.
 
 **Nếu không quyết định:** khi cài đặt thất bại, những gì đã xảy ra trước đó
 **không được kể lại**, và người vận hành chỉ thấy lần thất bại.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-17 — PHÁT RA TRÊN ĐƯỜNG NÉM LỖI; HAI ĐƯỜNG ANH EM GIỮ IM LẶNG
+> Quyết bởi chủ sở hữu, trả lời sự leo thang. **Cơ sở "không tách rời được" KHÔNG bị
+> bác** — nó đúng, và nó là lý do ba dòng log của bản sửa HALT không phải câu hỏi này.
+> Cái bị bác là **lập luận ĐỐI XỨNG** đã giữ mục này ba vòng: rằng ba đường
+> không-cài-đặt-được phải được đối xử như nhau vì hai đường kia đã chọn im lặng.
+>
+> **Tiền đề ấy bị chính `FleetCore.cs` bác ở chỗ khác**, trong chú thích viết ra để
+> phân biệt hai câu hỏi (`StopLocked`): câu *"nói thay cho một lần khởi động chưa cài
+> gì, mà lựa chọn thay thế là im lặng về việc KHÔNG CÓ GÌ xảy ra"* **đúng với hai
+> đường anh em** và **sai với đường thứ ba** — trên đường ném lỗi resolver đã chạy và
+> đã fallback, một connector đã bị từ chối, và **các slot CÓ THỂ ĐÃ ĐƯỢC CÀI**. Ba
+> đường không cùng loại thì không có đối xứng để mà giữ.
+>
+> **Luật:** im lặng về **cái không xảy ra** là đúng; im lặng về **cái đã xảy ra** thì
+> không.
+>
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ T-1 (`.superpowers/sdd/deferred-logs-emitted/`)
+> **Cách sửa: `deferredLogs` thành danh sách của NGƯỜI GỌI**, đúng phép biến đổi J-2 đã
+> làm cho `orphanedConnectorDrivers`, tại chính hai chỗ gọi ấy (`Start`,
+> `RebuildPipelineOffLock`). `StartLocked` chỉ đổ vào; `finally` của người gọi phát ra
+> dù lời gọi trả về hay ném. `StartLocked` do đó **trả `void`** — cả hai nửa đã là của
+> người gọi nên giá trị trả về không còn ai đọc; đó đúng là việc-tiếp-theo mà review
+> I-3 đã nêu tên.
+>
+> **Phát ra cái gì, ở mức nào, và ai chọn mức ấy.** Mỗi dòng giữ nguyên kênh mà **chỗ
+> sinh ra nó** đã chọn — cảnh báo fallback mapping-profile và dòng từ chối connector là
+> `Warning`, một mapping file đọc không được là `Error` — và đi qua đúng bộ định tuyến
+> (`FlushDeferredLogs`) mà một lần khởi động **THÀNH CÔNG** đang dùng cho cùng những
+> dòng ấy. **T-1 không chọn mức nào**: đường ném lỗi nay **giống hệt** đường thành công
+> về phần việc đã thực sự chạy, nên không có câu nào được nói ra mà một lần khởi động
+> thành công không nói.
+>
+> **Hai đường anh em vẫn im lặng, và điều đó được ghim chứ không được khẳng định:**
+> chốt HALT trong `StartLocked` (`AnInstallRefusedByTheHaltLatch_StillSaysNothing`) và
+> `Start` bỏ dở vì `_stopRequests` (`AStartAbandonedByAConcurrentStopRequest_StillSaysNothing`).
+> Cơ chế giữ im lặng là một **thứ tự câu lệnh**: các dòng của plan chỉ nhập vào danh
+> sách người gọi **sau** chốt.
+>
+> **Hình chiếu đã xác minh lại (§8.1(h5.1)), không thừa kế:**
+> `_connectorStartIssues` vẫn sống sót qua cú ném và `GET /v1/connectors` vẫn báo —
+> `AFailedInstallsRejectedConnector_IsStillReportedByTheProjectionThatOutlivesTheLine`,
+> xanh ở **cả hai** phía diff vì nó đo một tính chất T-1 không đụng tới. **Nửa thật sự
+> bị mất là cảnh báo mapping-profile**, và điều đó kiểm được chứ không phải "tìm không
+> thấy": phép giải một descriptor của `MappingProfileResolver` trả về một profile và
+> gọi một trong hai callback, **không ghi gì khác ở đâu cả**.
+>
+> **Cặp đối chứng đã chạy hai phía:** cùng một test dựng một lần cài đặt hỏng thật
+> (một máy có `mappingProfile` không tồn tại + một connector bị từ chối + một slot ném
+> lỗi) — ở `7bb0c5bd` cảnh báo mapping **không tới được host logger** (đếm được 0), sau
+> bản sửa đếm được đúng 1, và ngoại lệ nói vì sao cài đặt hỏng **vẫn tới người gọi**.
+>
+> #### 🔴 Vòng sửa lỗi 1 — MỘT CỬA SỔ CHE LẤP DO CHÍNH T-1 TẠO RA, VÀ LỜI BIỆN MINH ĐẦU SAI
+> Vòng đầu ghi cửa sổ này ra rồi **chấp nhận** nó: cú flush nay chạy có nội dung trên
+> đường ném lỗi, nên một host mà `ILogger` của nó ném sẽ **thay thế** ngoại lệ nói vì
+> sao khởi động hỏng. Lời biện minh khi ấy là *"nó không mới — trước G-1 những dòng này
+> được phát tại chỗ trong `StartLocked`, trước vòng lặp slot"*. **Phép đo ấy ĐÚNG và nó
+> chứng minh một điều KHÁC:** trước G-1 logger ném **TRƯỚC** chỗ ném lỗi, nên lần cài
+> đặt **không bao giờ tới được vòng lặp slot** — **không có chẩn đoán nào để mà mất**.
+>
+> **PHƠI BÀY thì được khôi phục. CHE LẤP thì là do T-1 phát minh ra.** *"Một logger hỏng
+> có thể là ngoại lệ duy nhất người gọi thấy"* là cũ; *"một logger hỏng có thể **PHÁ HUỶ
+> một chẩn đoán đã tồn tại**"* **không** với tới được trước G-1 (không có gì để phá) và
+> **không** với tới được ở base (cú flush duyệt qua rỗng). **Đo được, không phải lập
+> luận:** với mã nguồn vòng 1 (`9209a81b`), người gọi nhận `InvalidOperationException`
+> ("this host's log provider failed") ở chỗ lần cài đặt đã ném `ArgumentNullException`.
+>
+> **Đã ĐÓNG, không phải nêu tên.** Một nhiệm vụ có mục đích *"một lần cài đặt hỏng không
+> được im lặng"* thì không được xuất xưởng một *"logger hỏng làm im lặng chính lần
+> hỏng"*. Chốt là một **bộ lọc ngoại lệ** `installFaulted` bao quanh **CHỈ cú flush**
+> bên trong `CompleteStartOffLock`, được đặt từ **đúng một** `catch` ở mỗi chỗ gọi. Vòng
+> 1 đã định giá nó ở **cực SAI** (một cờ HOÀN TẤT phải đặt đúng ở mọi lối ra); ở **cực
+> LỖI** nó **đúng theo mặc định** — một `return` thêm về sau không đụng tới nó, chỉ một
+> ngoại lệ mới làm nó true. **Cố ý KHÔNG mở rộng:** cửa sổ bốn điều kiện của J-2 nằm ở
+> khâu **giải phóng driver** và được giữ **nguyên như J-2 đã để**; bao rộng hơn là đóng
+> hộ một đánh đổi của nhiệm vụ khác. Đường **thành công không đổi**, và điều đó được
+> ghim bởi một test đã có sẵn (`Start_WhenTheHostLoggerThrowsFlushingDeferredLines_…`,
+> một lần khởi động THÀNH CÔNG vẫn phải ném ra ngoài).
+>
+> **Bằng chứng nằm trong repo, không nằm trong ledger:** commit `9209a81b` (vòng 1) và
+> commit vòng sửa lỗi 1 trên nhánh `feat/deferred-logs-on-failed-install`. Đường dẫn
+> `.superpowers/sdd/` ở trên là **xuất xứ**, không phải chỗ đi lấy sự thật — thư mục ấy
+> **bị gitignore**, đúng lỗi mà `FleetCore.cs` đã ghi nhận một lần (branch review
+> Minor 13).
 
 ### 7. Nửa sau của S4 (J-2)
 **Cơ chế, nguyên văn từ `99ab7b61`:** đóng nó đòi **dựng đường ống mới trước khi

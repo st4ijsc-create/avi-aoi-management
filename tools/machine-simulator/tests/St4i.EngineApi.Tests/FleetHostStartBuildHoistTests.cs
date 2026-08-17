@@ -384,7 +384,17 @@ public sealed class FleetHostStartBuildHoistTests
     /// <c>ASecondStartWinningTheRace_…</c>. That session's positive control (<c>_running = true</c> →
     /// <c>false</c> in <c>StartLocked</c>), run against THE SAME SUITE: KILLED 91.</b> Both numbers are here
     /// because a coverage claim whose evidence lives outside the repository is a coverage claim the next
-    /// person cannot check.</para></summary>
+    /// person cannot check.</para>
+    ///
+    /// <para>🔴 <b>Task T-1 re-ran that same deletion rather than citing the line above</b> — which is the
+    /// exact failure the paragraph above records, so citing it would have repeated it. T-1 changed
+    /// <c>StartLocked</c>'s signature, i.e. the method this latch lives in, and review I-3 had already priced
+    /// a signature change at "a full re-run of that latch's mutation cluster". <b>Verdict on the T-1 tree:
+    /// KILLED, three failures — this test, <c>ASecondStartWinningTheRace_…</c>, and
+    /// <c>FleetHostGateCommitCompletionTests.AnInstallRefusedByTheHaltLatch_StillSaysNothing</c>, which T-1
+    /// added for a different question and which turns out to guard this line too.</b> The cluster got
+    /// stronger, not weaker; the earlier figure is left standing because it is true of the commit it
+    /// names.</para></summary>
     [Fact]
     public void AnEstopLandingDuringARestartsRebuild_IsRefusedByTheLatchInsideTheLock()
     {
