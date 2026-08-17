@@ -3,7 +3,9 @@
 **Owner:** task J-3 (`.superpowers/sdd/startup-failure-posture/`), discharging the item booked at
 `FleetCore`'s P5; §2 ceiling 3 and §3.1a re-measured by task M-1
 (`.superpowers/sdd/settings-acl-probe/`); **row 36 CHANGED — not merely re-measured — by task Q-1**
-(`.superpowers/sdd/third-state-unreadable/`), executing the owner's decision 1 of 2026-08-16.
+(`.superpowers/sdd/third-state-unreadable/`), executing the owner's decision 1 of 2026-08-16;
+**§3 gained a third posture symbol and §3.6 was added by task V-1**
+(`.superpowers/sdd/one-unreadable-posture/`), executing the owner's decision 5 of 2026-08-17.
 **Status:** descriptive — this records what the product does, and names where it does something else.
 
 🔴 **One claim in this paragraph's earlier version is now false, and it is corrected rather than quietly
@@ -199,6 +201,50 @@ way to see that "unreadable" is not one state.
 
 **S** = the process ends. **U** = the host comes up and the failure is reported. **✓** = matches the rule.
 **✗** = divergence, named and deliberately not fixed (flipping any is an operator-observable startup change).
+
+🔴 **THE LEGEND ABOVE DECLARED TWO POSTURE SYMBOLS AND THE POSTURE COLUMN HAS ALWAYS CARRIED MORE — task
+V-1, and it is checkable by reading the column rather than by trusting this paragraph.** Rows **7, 10, 15,
+19 and 39** are marked **silent**, and rows **1, 2 and 21** carry *exit by design* / *no failure arm*. So
+the column has used **three** markers the legend never declared, and the one that matters — because it is a
+FAILURE the rule has a verdict on, where the other two are "no failure arm" — is **silent**. It is declared
+now:
+
+> 🔴 **Q** *(the quieter arm)* **= the host comes up and the failure is NOT reported.** Never **✓**, and the
+> reason needs no separate argument: §1's rule says a host refuses to start *only when starting would be the
+> QUIETER failure*, so **Q** is by construction the outcome the rule exists to forbid. Where a row already
+> reads **silent**, that word is this symbol; the word is left in place because those rows are cited by
+> §3.4 under it.
+
+**And the cost of not having declared it is measured, not hypothetical.** `site-link.json` — **row 18** —
+was **U ✓** before Q-1's fix round, and §3.1b's own table records that the failed read produced **no log
+line at all** (`Save` *succeeded*, so `SiteBridgeManager`'s error path never fired). **U** is a conjunction —
+*comes up* **and** *the failure is reported* — and nothing in this table forced the second half to be
+checked, so a row satisfying only the first half was recorded as compliant and stayed that way through two
+rounds of this file. That is a stronger finding than "the behaviour had no symbol": it **had** one, and the
+symbol was wrong. Row 18 is **U ✓** today because Q-1 gave it the `Error` line, not because its posture
+moved.
+
+🔴 **AND THE RESIDUAL, WHICH BELONGS HERE RATHER THAN IN A REPORT (fix round, review I-5).** Declaring **Q**
+invites re-checking the second conjunct of **every** row marked **U**, and **task V-1 did not do that.** It
+checked exactly one — row 18 — because row 18 is the only **U** row whose *reporting* half anything ever
+measured (§3.1b's own comparison table). **Every other U row's "and the failure is reported" half is
+unverified today**, and the number of them is deliberately not given here: counting them would be a scalar
+over a set nobody has swept, which is the defect this file exists to end.
+
+**Why declaring rather than sweeping was the decision.** §2 says most of this set is a **read**, and a
+read-based sweep of *"is this failure actually reported?"* would manufacture precisely the population claim
+this file was written to stop — an unfalsifiable assertion about forty rows, produced by the instrument that
+has already been wrong twice in the same direction. **What would close it** is an instrument, not a
+re-reading: something that boots a host into each failure and observes the log, which is the shape Q-1's two
+composition-root witnesses already have for rows 36 and 18 and nothing has for the rest.
+
+🔴 **`Q` is declared and no row is marked with it, and that is deliberate (review M-6).** The five rows that
+carry this posture already spell it **silent**, and §3.4 cites them under that word; re-spelling the posture
+column would edit rows of a published census in a task that changed no row of it, and *"none of those is
+fixed"* has to keep meaning what it meant. So one posture has two published spellings today. **What would
+end it** is a task authorised to rewrite the posture column, which would mark rows 7, 10, 15, 19 and 39 as
+**Q** and reduce `silent` to prose.
+
 🔴 **One row has now been flipped on purpose** — row 36, by task Q-1, under the owner's decision 1; the
 change to what an operator observes is the point of it rather than a side effect. The legend still holds of
 every remaining **✗**: none of those is fixed. See §3.1a-now.
@@ -630,6 +676,209 @@ By the test in §1 these predict **U**: nothing claims a product catalogue is lo
 failure is nameable. Actual: **S**. **These two were absorbed by a scalar in the first two rounds of this
 analysis and surfaced by an independent re-derivation** — which is the whole argument for publishing the list
 rather than the count.
+
+### 3.6 — 🔴 The law for *"the artefact is present and this process cannot use its bytes"*, and the set it was checked against (task V-1)
+
+**The owner's instruction was three words — *consolidate to one way*.** S-1 had measured three different
+behaviours at one situation and item 5 of `docs/owner-decisions.md` offered three different repairs. This
+section says what "one way" is, derives it from §1 rather than choosing it, and lists the members it was
+checked against.
+
+#### The law
+
+> **A read of a persisted artefact must distinguish *there is nothing here* from *there is something here I
+> could not use*. Only the first entitles any caller to establish a value of its own and persist it.**
+
+**How it is derived, and it is §1's own test asked one statement earlier — not a second rule.** §1 offers
+two outcomes and both are loud: **S**, the process ends, and **U**, the host comes up *and the failure is
+reported*. A read that answers the same value for *absent* and for *present but unusable* can produce
+neither. Nothing throws, so not **S**. Nothing distinguished the two cases, so there is nothing for anyone
+to report, so not **U**. What it produces is **Q** — the host comes up and says nothing — which is §1's own
+definition of the failure the rule exists to forbid. So the law is not a preference about store design; it
+is what §1 already says, evaluated at the statement where the information still exists.
+
+**The law yields DIFFERENT postures at different sites, and that is still one way.** A store that **throws**
+and a store with a distinct third outcome are both **audible to their caller**; a store that answers
+*absent* is not. Which of **S** and **U** the caller then reaches is decided by §1's existing test — *would
+continuing hide the loss?* — applied to that site, unchanged. What the law removes is the third thing, which
+is not a posture but the absence of one.
+
+🔴 **A draft of that paragraph said "a store that throws hands its caller **S**", and it is FALSE on this
+tree — corrected here rather than quietly.** **Row 9** is the refutation: `NotificationConfigStore`'s
+constructor throws over a bad artefact (measured, and pinned in `ExpectedPostures`) and `Program.cs` wraps
+that construction in a `try`, so the host **comes up** and the row is **U ✓**. Throwing is a property of the
+STORE; **S** and **U** are properties of the CALLER. Collapsing the two is the same substitution §2 warns
+about when it says instrument 2 supplies the outcome and instrument 1 supplies the posture — and it would
+have been a sentence about a population this section cannot observe, since no arm of Reach C starts a host.
+
+🔴 **Where the law is NOT enough on its own, said because a claim of sufficiency is the kind of sentence
+this file exists to catch.** It decides *whether a read may conflate the two*. It does **not** decide
+whether a given site should be **S** or **U** — §1 does that, and §1's own ✗ rows (§3.3, §3.4, §3.5) are
+untouched by V-1. Two catalogues that end the process where §1 predicts they should come up are still
+divergent, and still not fixed.
+
+#### The membership rule, stated because the previous count had none
+
+> **A store belongs in the posture set when it owns a persisted artefact this product WRITES and later
+> RE-READS.**
+
+That is the only shape at which conflating the two cases can cost anything: it needs a read to misclassify
+**and** a write to act on the misclassification. It is stated here because S-1's set of nine had no stated
+rule, so nothing could refute it — and applying a rule moved the membership. Provenance is **not** the
+membership rule; five product-generated stores were outside S-1's table for a reason never written down, and
+four of the five turn out to be compliant, which is information the published table did not carry.
+
+🔴 **THE INSTRUMENT IS NARROWER THAN THE RULE, AND ONE MEMBER OF THE TABLE IS THE PROOF (fix round, review
+I-4).** The rule quantifies over *stores that own a persisted artefact*; the instrument sweeps only files
+the two enumerations classify, and both enumerations look for **removal-capable** shapes. `SecurityDb` owns
+`security.db` and its schema ladder, performs **no removal of its own**, and therefore appears in **neither**
+enumeration — it is a row in the posture table **because a human noticed**, which the census's own comment
+says in as many words. So a second `SecurityDb`-shaped store — one that owns an artefact and writes it with
+a shape outside the nine — **would be invisible to the rule that replaced "nine".** The membership set is
+complete **over the enumerations**, not **under the rule**, and the difference is exactly the size of that
+blind spot.
+
+**And the partition, stated as the code partitions it rather than as prose summarised it.** The first
+statement of this — *"14 + 1 + 3"* — was wrong twice: it counted `CredentialStore` both as one of the three
+exclusions and as the store measured apart, and it silently absorbed `SecurityDb`. What the assertions
+actually partition:
+
+> **23 enumerated files = 7 `NotAStore` + 16 store-classified**, and **16 = 13 with a posture row + 3
+> excluded with a stated reason**. The posture table has **14** rows: those 13 **plus `SecurityDb`**, which
+> is in neither enumeration. `CredentialStore` is one of the 3, and it is the one measured apart — the same
+> file, not two.
+
+Every number in that block is asserted by `EveryArtifactOwningStore_HasARow_AndTheOnesOutsideAreNamed` and
+`EveryEnumeratedRemovalSite_IsClassified_AndEveryMeasuredStoreIsAccountedFor`; it is written out here
+because the sentence it replaces was a scalar summarising a set the code partitions differently, which is
+the fifth withdrawal on this branch for that shape.
+
+#### The set, measured
+
+The instrument is S-1's, extended: `OperatorDataRemovalCensusTests`, Reach C, one corrupt artefact per store
+built in the test run's own temp root. **No total is offered — the list is the artefact**, and every entry
+below is pinned by `ExpectedPostures` and asserted by
+`EveryOperatorArtifact_HasThePostureRecordedForIt_AtTheOneSituationHeldFixed`.
+
+| Posture | Store | Reason the law yields this one HERE |
+|---|---|---|
+| **third outcome** | `FleetSettingsStore`, `SiteLinkStore`, `OeeSettingsStore` | the arm a failed read selects **WRITES**. The caller must be able to decline it, and it can then name the loss and keep serving. Throwing instead would end a host, or an endpoint, over a file that is repairable by hand |
+| **throws** | `MachineConfigStore`, `ProductConfigStore`, `SimulatedEcosystem`, `ConnectorConfigStore`, `NotificationConfigStore`, `SecurityDb`, `AlarmStore`, `AssetRegistryStore`, `BridgeSpool`, `SqliteHistorianStore` | the read ends the operation, so no arm downstream of it can write. Nothing is destroyed — measured, not read: `TheThrowingStores_ConstructCleanlyOverAnEmptyDirectory_AndLeaveTheUnreadableBytesIntact` reads the bytes back after the throw. **What the caller does with the throw varies and is §1's business, not this column's** — `ConnectorConfigStore` is unguarded (row 24, **S**) and `NotificationConfigStore` is wrapped (row 9, **U**) |
+| 🔴 **Q — cannot tell** | `DeviceIdentityStore`, `CredentialStore` | **decided exceptions, not survivors.** See below |
+
+**What moved, and it is one row.** `OeeSettingsStore` was the third-outcome shape's last missing member: its
+`Load` caught `JsonException` and started from an empty store, and `Set` — its only mutator, with exactly one
+production caller — then wrote that empty state over the file. It now has the same three-outcome `Read` as
+Q-1's two, `Set` refuses while the file is unreadable, `PUT /v1/historian/oee/settings` answers **409**
+naming the file, and the store reports once at `Error` through a callback `Program.cs` wires.
+**It is not a row in the table above in §3.1** — this store is resolved lazily from DI and nothing constructs
+it before the host serves, so it is not a startup-path decision and never was.
+
+🔴 **WHEN the refusal is decided, because V-1's FIRST ROUND closed the wrong moment and said nothing about
+it (fix round, review I-3).** Round one gated the refusal on a classification the **constructor** had
+cached, so what shipped was *"the file was unreadable when this store was built"*. A host running on a good
+file, an operator hand-editing that file into invalid JSON — the very repair the refusal message asks for —
+and one `PUT` afterwards still overwrote the operator's bytes **silently**: no throw, no 409, no log line.
+Same harm, same store, same mutator, one moment later. **No instrument in the tree could see it**, and the
+reason is worth keeping: Reach C only ever constructs a store over an *already-corrupt* directory, so the
+whole census is blind to corruption that arrives after construction.
+
+`Set` now takes **its own read, under the same lock, immediately before it writes**, so the guarantee is
+about the file at the moment of the write. Re-reading alone would have opened a second hole and the fix
+carries the guard for it: a file that was unreadable at load and has since been **repaired** reads `Loaded`
+while the in-memory table is still **empty**, so writing it would discard the repair — that arm keeps
+refusing, and `Reload` is the way out.
+
+🔴 **What it still does not reach — and the first statement of this paragraph NAMED THE CEILING TOO SMALL,
+which is the second time that has happened in this section (review N-1).** It said the residue was a **lost
+update**: a writer slipping between the read and the write. That is a real but narrower thing, and it does
+not cover what is actually left. The refusal compares two facts and they can disagree **three** ways. Two
+are refused. The third is not:
+
+> `_tableBuiltFrom == Absent` **and** `fresh.Status == Loaded` — the store came up with **no file**, a file
+> has appeared since **with content**, the read immediately before the write **sees it**, and the write
+> proceeds: the empty table plus one machine, over a file just read successfully. No throw, no `409`, no log
+> line.
+
+**It needs no concurrency.** The trigger is restoring a backup into `%ProgramData%\ST4I\sim\historian` on a
+running host — the workflow that directory is advertised for on the store's own `directory` parameter. **A
+ceiling named too small is worth less than no ceiling, because it reads as a sweep**, and that is the whole
+reason this section exists.
+
+**It is named rather than closed, and the reason is the law's own boundary.** The bytes were **readable**
+throughout, so this is outside the situation §3.6 rules on — the law decides whether a read may conflate
+*absent* with *unusable*, and here the read conflated nothing. Closing it changes *when a write is
+licensed*, because `Absent` at load is what entitles a first boot to establish a value at all. That is a
+contract decision, booked as **item 11 of `docs/owner-decisions.md`**, not a latch this task may take.
+
+#### The two exceptions, and what each one costs
+
+- **`DeviceIdentityStore.TryLoad`** — decided in `docs/owner-decisions.md` item 1's residue 2, before V-1:
+  the bytes are a product-minted key, the store DOES report at `Error` and says it will regenerate, and the
+  correct repair is to keep the old blob under another name, which is a data **MOVE**. It is now measured
+  rather than declared, which is the change: it sits in the pinned posture table, so the exception cannot
+  quietly become the rule.
+- **`CredentialStore.Load`** — measured by V-1 and booked as item 10. Two facts that were not previously
+  written down together: the null it returns for an unusable blob is presented in its own doc comment as a
+  *benign* outcome, and the re-claim path it exists to enable calls `Save`, which overwrites. A blob sealed
+  under the wrong DPAPI scope or copied from another machine is **readable again once the environment is
+  repaired** — while it still exists. That is a recoverable environment fault converted into an
+  unrecoverable loss, and the repair is again a data **MOVE**.
+
+🔴 **Both exceptions have the same repair and V-1 was forbidden to perform it** — its brief requires that
+moving operator data in the product be stopped and reported rather than done. So they are named, measured,
+and on the owner's list; they are not left unclassified.
+
+#### What this set does NOT reach
+
+- **`CredentialStore` is measured APART, and the reason is mechanical rather than a judgement.** `Load` is
+  static and resolves the process-wide `ST4I_CREDS_DIR` per call with no directory parameter, so it cannot
+  join a parallel table whose every other member takes an explicit directory without flipping a global — the
+  same "environment-dependent is not measured" ceiling §2 states for instrument 2. S-1 excluded it for a
+  *provenance* reason instead, and that reason is arguable: one `CredentialStore.Save` call site is an
+  operator pasting an `mk_` key.
+- **One situation only**, as S-1 stated: present-and-unparseable. A deny-share lock, a Windows ACL and a full
+  volume are not this situation; §3.1a paid for that conflation twice.
+- **The `Throws` posture is still not measured where it LANDS.** Whether a `SqliteException` from a
+  constructor ends the process or is caught somewhere is a composition-root question, and no arm of Reach C
+  starts `St4i.EngineApi` — the same ceiling instrument 2 declares in §2. The **S** column of the table above
+  is therefore read off §3.1 for the rows that appear there, and is not observed for the stores that do not.
+
+#### Two other writes S-1 found at these stores, decided one at a time
+
+- **`ProductConfigStore.Load` rewrote `products.json` when only `recipes.json` was missing** — 🔨 **FIXED.**
+  Measured on the shape that shows it: with a hand-written `products.json` present and `recipes.json` absent,
+  merely constructing the store rewrote `products.json`, reserialised out of the typed model, so an
+  operator's own formatting and any field `ProductModel` does not declare were gone — on a start where
+  nothing failed and nobody asked for a change. The seed-persist branch now writes only the file it seeded.
+  The mutators still write both, deliberately: there the caller asked for a change. Witness:
+  `SeedingTheRecipesFile_DoesNotRewriteAHandWrittenProductsFile`, which pins the fix **and** that the
+  missing file is still seeded.
+- **`ConnectorConfigStore` migration v4 runs a hard-coded `DROP TABLE connector_configs` at startup** —
+  ✅ **NO CHANGE, and the reason is an assertion rather than a reading.** It is rung 4 of the
+  `PRAGMA user_version` ladder, gated on the stored version, running inside the ladder's single transaction,
+  in the create/copy/drop/rename order SQLite's own documentation prescribes for changing a PRIMARY KEY,
+  with the `SELECT` list spelled column by column so a positional `SELECT *` cannot silently misalign. That
+  the rows survive it is not asserted here: it is asserted by
+  `ConnectorConfigStoreTests.MigrationV4_AGenuineVersion3Database_KeepsEveryRow_EveryField_AndGivesEachOneItsKindAsItsInstanceId`,
+  which builds a genuine v3 database with raw SQL rather than re-opening one this build wrote.
+
+#### One claim of S-1's that V-1 refutes
+
+S-1's headline assertion was **`classes.Count > 1`** — *the postures diverge* — with the message that item 5
+would CLOSE on every store reaching one posture. **That is the wrong guard for the answer.** Under the law
+above, a tree where every store threw would be fully compliant and that assertion would be **red**; a tree
+where one store quietly conflated the two cases is non-compliant and it would be **green**. It has been
+replaced by `NoStoreAnswersAbsentForAnArtifactThatIsPresent_ExceptTheOnesNamedAndDecided`, which reddens in
+both directions: a store falling onto **Q**, and a *named exception* leaving **Q** while the decision that
+excused it still stands.
+
+🔴 **And the narrower claim is the true one, said here because the paragraph above could be read as a wider
+one.** This is not "S-1 had no guard". Its per-store pin
+`EveryOperatorArtifact_HasThePostureRecordedForIt_AtTheOneSituationHeldFixed` reddens whenever ANY store's
+posture moves, it did so on this very task's diff, and it is untouched. What that pin cannot do is say
+whether a move is **compliant** — it only says the table is stale. The replaced assertion was the one that
+claimed to answer that, and it answered a different question.
 
 ---
 

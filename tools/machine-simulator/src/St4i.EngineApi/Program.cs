@@ -1634,8 +1634,20 @@ builder.Services.AddSingleton(opcUaOptions);
 // ST4I_HISTORIAN_DIR (or SqliteHistorianStore's own default when unset) so every historian-adjacent file
 // lives in one place. Tests construct their own instance pointed at a temp directory instead of resolving
 // this registration.
-builder.Services.AddSingleton(
-    _ => new St4i.EdgeCore.Historian.OeeSettingsStore(string.IsNullOrWhiteSpace(historianDir) ? null : historianDir));
+//
+// 🔴 TASK V-1 — the logError callback is new, and it is the channel an unreadable `oee-settings.json` is
+// named on at Error. Same shape as the HistorianWriter registration above. This store is resolved LAZILY
+// (nothing constructs it before the host serves), so that line lands on the first request that touches OEE,
+// not at boot — which is why it is not a row in docs/startup-failure-posture.md's startup set and why the
+// PUT's own 409 is the surface that matters most: it reaches the person who would otherwise have destroyed
+// the file, at the moment they would have destroyed it.
+builder.Services.AddSingleton(sp =>
+{
+    var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Historian");
+    return new St4i.EdgeCore.Historian.OeeSettingsStore(
+        string.IsNullOrWhiteSpace(historianDir) ? null : historianDir,
+        (ex, message) => logger.LogError(ex, "{OeeSettingsMsg}", message));
+});
 
 // FF-1 (docs/plans/2026-07-27-ws-ff-fast-follows.md) — atomic-JSON-backed persistence for FleetHost's
 // serverUrl/machineCode/verifyTls (see FleetSettingsStore's own doc comment for the full precedence

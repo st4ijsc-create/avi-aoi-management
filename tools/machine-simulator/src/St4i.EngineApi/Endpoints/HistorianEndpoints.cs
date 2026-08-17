@@ -316,6 +316,30 @@ public static class HistorianEndpoints
             // Rejected mutation (400) — per the WS-D-D4 ordering rule, no audit row is written here.
             return Results.BadRequest(new ApiErrorDto(ex.Message));
         }
+        catch (OeeSettingsUnreadableException ex)
+        {
+            // 🔴 Task V-1 — `oee-settings.json` cannot be written without discarding bytes this process has
+            // not read, so `OeeSettingsStore.Set` refused rather than writing one machine's values over a
+            // table that does not represent the file. 409 rather than 400: the request is well-formed and
+            // the state of the resource is what makes it impossible, and 409's remedy is on the server
+            // rather than in the payload. No audit row, by the same WS-D-D4 ordering rule as the 400 above —
+            // nothing changed.
+            //
+            // 🔴 FIX ROUND (review M-1) — this caught `InvalidOperationException`, which is WIDER than the
+            // condition the response asserts. `ObjectDisposedException` derives from it, and so would
+            // anything a future statement added inside this `try` happened to throw; the response says "the
+            // file was NOT overwritten", which is a claim about what did NOT happen, and a wider catch made
+            // it a hope. The dedicated type makes it a property. Deliberately NOT an exception filter on
+            // `settingsStore.Status`: `Set` also refuses when the table was built from an unreadable read
+            // that has since been repaired, and on THAT arm `Status` reads `Loaded` — a filter would have
+            // missed it and answered 500.
+            //
+            // This is the surface the loss is named on. Deliberately NOT added to the GET's response shape:
+            // `OeeSettingsDto` is published and widening it is the class of change the owner reserved in
+            // decisions 3 and 4, which is the same line Q-1 drew at `GET /v1/settings`. The store also
+            // reports once, at Error, through the `logError` callback Program.cs wires.
+            return Results.Json(new ApiErrorDto(ex.Message), statusCode: StatusCodes.Status409Conflict);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

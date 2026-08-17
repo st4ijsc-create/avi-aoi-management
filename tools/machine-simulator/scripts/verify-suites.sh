@@ -1162,7 +1162,73 @@ EXPECT_CONFORMANCE=23
 # class comment rather than renamed, since renaming touches three unrelated classes to no measured end.
 # 🔴 Task K-1 raises this 1093 -> 1094 (+1): the one linked hygiene [Fact] every suite gets. Full
 # justification beside EXPECT_ABSTRACTIONS at the top of this file.
-EXPECT_EDGECORE=1106
+#
+# 🔴 TASK V-1 (.superpowers/sdd/one-unreadable-posture/task-1-brief.md) raises EXPECT_EDGECORE 1106 -> 1118
+# (+12) and EXPECT_ENGINEAPI 1364 -> 1368 (+4). Grand total 2704 -> 2720. ONE existing file gains all
+# twelve here; nothing is rewritten, split or deleted.
+#
+#   tests/St4i.EdgeCore.Tests/Historian/OeeSettingsStoreTests.cs                              +12
+#       The three-outcome read V-1 gave OeeSettingsStore, built to FleetSettingsStoreTests' own shape.
+#       Absent / Loaded / an empty JSON array that must stay Loaded (an operator who cleared the table),
+#       then the Unreadable POPULATION member by member — malformed, empty, literal `null` (the one shape
+#       that throws nothing), and a FileShare.None handle that is released again to prove the read is not
+#       simply answering Unreadable to everything. Then the refusal: Set over an unreadable file throws
+#       and the bytes are equal to what was written; the range guardrail still fires FIRST; Resolve keeps
+#       answering the documented defaults, which is what makes the refusal a report rather than an outage;
+#       the logError callback fires exactly once and a clean store fires none; and Reload after a repair
+#       clears the refusal, so "refuses while broken" is distinguishable from "refuses forever".
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGESERVICE are deliberately UNCHANGED. V-1 touches
+# four src files (OeeSettingsStore.cs, ProductConfigStore.cs, HistorianEndpoints.cs, Program.cs) and three
+# test files; a movement in any of the other three totals would mean it reached somewhere it had no
+# business reaching. EXPECT_CONFORMANCE in particular stays 23: V-1 adds no driver and no connector kind.
+#
+# 🔴 V-1 FIX ROUND 1 (review I-3) raises EXPECT_EDGECORE 1118 -> 1121 (+3) and EXPECT_ENGINEAPI 1368 -> 1369
+# (+1). Grand total 2720 -> 2724. This is the one part of the fix round that is not documentation, and the
+# reason it is not: V-1 round 1 gated the refusal on a classification the CONSTRUCTOR cached, so what
+# shipped was "the file was unreadable when this store was built" and NOT "...is unreadable now". A host up
+# on a good file, an operator hand-editing that file into invalid JSON — the repair the refusal message
+# itself asks for — and one PUT afterwards still overwrote the operator's bytes silently. Same harm, same
+# store, same mutator, one moment later. NO INSTRUMENT IN THE TREE COULD SEE IT: Reach C only ever
+# constructs a store over an ALREADY-corrupt directory, so the census is blind to corruption that arrives
+# after construction. These four tests are that instrument.
+#
+#   tests/St4i.EdgeCore.Tests/Historian/OeeSettingsStoreTests.cs                               +3
+#       Set_WhenTheFileIsCorruptedAfterConstruction_Refuses_AndLeavesTheOperatorsBytes — the arm that was
+#           open, with the premise asserted (the store came up Loaded, so construction cannot explain the
+#           refusal) and the bytes compared byte-for-byte with no temp file beside them.
+#       Set_WhenAnUnreadableFileIsRepairedAfterConstruction_StillRefuses_UntilReload — the hole re-reading
+#           would have OPENED on its own: an unreadable load leaves the table EMPTY, so a repaired file
+#           reads Loaded while writing that table would discard the repair. Refusal holds, Reload is the
+#           way out, and the write then lands ON TOP of the repaired content.
+#       Read_RecordsWhatItAnswered_SoStatusMeansTheMostRecentRead — review M-2: `Status`'s doc sentence was
+#           false on the member the refusal hangs on.
+#
+#   tests/St4i.EngineApi.Tests/HistorianEndpointsOeeTests.cs                                    +1
+#       OeeSettings_Put_AfterTheFileIsCorruptedBeneathALiveStore_Returns409_AndDoesNotOverwrite — the same
+#       window at the operator's own surface, through the real handler.
+#
+# 🔴 THE CONTROL PAIR FOR THIS ROUND, RUN ON BOTH SIDES. Base is 5dbe09a6 (V-1 round 1, already green at
+# 2720), so the arms differ only in the fix. Same file on both, naming nothing the fix round introduced:
+#   BASE 5dbe09a6 — the post-construction corruption is OVERWRITTEN: Set returns normally and the
+#       operator's hand-edited bytes are replaced by the in-memory table.
+#   HEAD — Set throws OeeSettingsUnreadableException and the bytes are byte-for-byte unchanged.
+# Retained, with both transcripts, under .superpowers/sdd/one-unreadable-posture/evidence/ — the retention
+# rule adopted last task, and the gap this task's own review named (a `git hash-object` of a blob that was
+# never written to the object store proves nothing).
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0.
+#
+# 🔴 V-1 FIX ROUND 2 (review N-2) raises EXPECT_EDGECORE 1121 -> 1122 (+1). Grand total 2724 -> 2725.
+# EXPECT_ENGINEAPI does NOT move: the rest of the round is documentation and one owner item.
+#
+#   tests/St4i.EdgeCore.Tests/Historian/OeeSettingsStoreTests.cs                                +1
+#       Set_WhenTheUnreadableFileWasMovedAside_RefusesWithoutClaimingItReadsCorrectly. The stale-table
+#       refusal fires on TWO different fresh readings and one sentence cannot be true of both: an operator
+#       who took the SIBLING message's own advice ("move it aside and restart") was being told "the file
+#       reads correctly again now" about a file that no longer exists. Three messages now, and this pins
+#       the one that was wrong -- by what it must NOT say as well as by what it must.
+EXPECT_EDGECORE=1122
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -2585,7 +2651,62 @@ EXPECT_EDGESERVICE=51
 # GenerateDocumentationFile, so their `///` blocks are not compiled either way. Tag balance on the two
 # edited `///` blocks was checked directly rather than inferred from that, because an unbalanced block
 # on this file HIDES the diagnostics inside it.
-EXPECT_ENGINEAPI=1364
+
+# 🔴 TASK V-1 raises EXPECT_ENGINEAPI 1364 -> 1368 (+4), counted from the runner. Two files; nothing is
+# rewritten or deleted, and TWO tests are REPLACED rather than added (so the census file is +3, not +5).
+# 🔴 This said "ONE" until V-1's fix round (review M-4). The arithmetic was right and the sentence
+# undercounted: ThePosturesAtTheFixedSituation_AreNotAllTheSame became
+# NoStoreAnswersAbsentForAnArtifactThatIsPresent_ExceptTheOnesNamedAndDecided, AND
+# TheOneStoreThatCannotTellUnreadableFromAbsent_ReplacesTheOperatorsBytes became
+# TheStoreThatCouldNotTellUnreadableFromAbsent_NowRefusesTheWrite_AndTheOperatorsBytesSurvive — the
+# second being S-1's live-defect baseline with its assertions INVERTED, which is the more interesting
+# of the two and was the one the sentence dropped.
+#
+#   tests/St4i.EngineApi.Tests/OperatorDataRemovalCensusTests.cs                               +3
+#       ThePosturesAtTheFixedSituation_AreNotAllTheSame is REPLACED by
+#       NoStoreAnswersAbsentForAnArtifactThatIsPresent_ExceptTheOnesNamedAndDecided — net 0. S-1's
+#       assertion was `classes.Count > 1`, which is the wrong guard for the answer the owner took: under
+#       the law in docs/startup-failure-posture.md §3.6 a tree where every store threw would be fully
+#       compliant and that assertion would be RED, while a tree with one store quietly conflating the two
+#       cases is non-compliant and it would be GREEN. The replacement reddens in both directions.
+#       EveryArtifactOwningStore_HasARow_AndTheOnesOutsideAreNamed                            +1
+#           The membership rule S-1's set of nine did not have, so "nine" could not be refuted. Applying
+#           it added five stores to the posture table and leaves exactly three enumerated files out, each
+#           with a stated reason that this fact checks in both directions.
+#       SeedingTheRecipesFile_DoesNotRewriteAHandWrittenProductsFile                          +1
+#           S-1's second finding, decided: seeding recipes.json no longer rewrites a hand-written
+#           products.json. Pins the fix AND that the missing file is still seeded.
+#       CredentialStorePostureCensusTests (NEW CLASS, same file)                              +1
+#           The store that cannot join the parallel table because Load is static and resolves a
+#           process-wide variable per call. Measured with no environment mutation — the machine CODE is
+#           the discriminator — and in the serialized env-var collection so a sibling repointing
+#           ST4I_CREDS_DIR cannot make it measure two directories.
+#
+#   tests/St4i.EngineApi.Tests/HistorianEndpointsOeeTests.cs                                   +1
+#       OeeSettings_Put_WithAnUnreadableSettingsFile_Returns409_AndTheOperatorsBytesSurvive. The surface
+#       the loss is named on, and the assertion that GET's published DTO shape did NOT widen.
+#
+# 🔴 THE TWO CONTROL PAIRS, RUN ON BOTH SIDES AND RECORDED AS OUTCOMES RATHER THAN AS AN EXPECTATION. Base
+# is f18f5c29 with src/ AND tests/ both at base, so the arms differ only in the tree, never in the file
+# that measures it:
+#   OeeSettingsStore — a hand-malformed oee-settings.json, then Set for a DIFFERENT machine.
+#       BASE: Set SUCCEEDS, the file on disk no longer contains the operator's marker and does contain
+#           SOME-OTHER-MACHINE. HEAD: Set throws InvalidOperationException naming the file, and the bytes
+#           are byte-for-byte what was written, with nothing else in the directory.
+#   ProductConfigStore — a hand-written products.json carrying a field ProductModel does not declare, with
+#       recipes.json absent, then merely CONSTRUCTING the store.
+#       BASE: products.json is rewritten and the field is gone. HEAD: byte-for-byte intact, and
+#           recipes.json is still seeded.
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0: measured on a full -t:Rebuild. No suppression
+# of any kind was added. St4i.EdgeCore and St4i.EngineApi are both among the projects that do NOT set
+# GenerateDocumentationFile, so the `///` blocks V-1 adds are not compiled either way — tag balance on
+# every edited block was checked directly rather than inferred from that, because an unbalanced block
+# HIDES the diagnostics inside it.
+#
+# 🔴 V-1 FIX ROUND 1 raises this 1368 -> 1369 (+1) — the endpoint arm of review I-3. Full justification
+# beside EXPECT_EDGECORE above, where the EdgeCore half of the same fix is accounted for.
+EXPECT_ENGINEAPI=1369
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
