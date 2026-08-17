@@ -714,11 +714,16 @@ internal sealed class FleetCore
     /// a fix that leaves the state this item exists to end.</item>
     /// <item><b>Why not rolling the commit back.</b> The two mechanisms in J-2's second bullet still hold,
     /// and a third decides it: <b>a rollback does not bring the pipeline back.</b> Even a perfect one leaves
-    /// the fleet stopped, which is the half an operator actually has to act on. For
-    /// <see cref="ApplyScenario"/> it would additionally have to unwind
-    /// <see cref="ApplyNetworkOutageLocked"/>'s transport swap — a second throw site ON the failure path,
-    /// able to replace the exception that says why the restart failed. A rollback that can itself fail is
-    /// not a rollback.</item>
+    /// the fleet stopped, which is the half an operator actually has to act on — so a rollback buys agreement
+    /// between a stopped fleet and its configuration and leaves untouched the thing an operator must respond
+    /// to. It is also not one statement: for <see cref="ApplyScenario"/> it would have to unwind
+    /// <see cref="ApplyNetworkOutageLocked"/>'s transport swap as well, and the five-lock note above records
+    /// that that path reaches <c>TransportCoordinator.ApplyMode</c> → <c>ModeChanged?.Invoke</c> — a
+    /// HOST-SUBSCRIBED event, dormant <i>only</i> because the one existing call site passes the coordinator's
+    /// CURRENT mode. A rollback would be a SECOND call site on a seam whose safety is a property of the first
+    /// one, added on the failure path. 🔴 Stated as the seam it is and not as "a second throw site": nothing
+    /// there throws today, and the banner's own rule is that "benign by a property of the current call site"
+    /// gets said plainly rather than either relied on or overstated.</item>
     /// </list>
     /// <b>WHAT U-1 DOES NOT CLOSE, so the row keeps its status.</b> The S-set property is that a commit made
     /// under this lock owes a step after it; the commit still owes a pipeline it does not get, and no
@@ -3390,10 +3395,20 @@ internal sealed class FleetCore
             // 🔴 U-1 (docs/owner-decisions.md item 7) — S4's SECOND HALF, AND THIS WRITE IS THE WHOLE OF THE
             // BEHAVIOUR CHANGE. A restart that fails leaves the fleet STOPPED with the roster/scenario write
             // committed, and every per-field read surface is truthful about that: IsRunning says stopped,
-            // GetDriverHealth lists nothing, Fleet/CurrentScenario report what was committed. The surface that
-            // was NOT truthful is the one that SUMMARISES them — GET /v1/health is literally `LastError is
-            // null`, so it answered HEALTHY for a fleet an internal restart had torn down and could not
-            // rebuild. Every entry path reaches this catch, so one write covers all three.
+            // GetDriverHealth lists exactly the slots the install left behind, Fleet/CurrentScenario report
+            // what was committed. The surface that was NOT truthful is the one that SUMMARISES them —
+            // GET /v1/health is literally `LastError is null`, so it answered HEALTHY for a fleet an internal
+            // restart had torn down and could not rebuild. Every entry path reaches this catch, so one write
+            // covers all three.
+            //
+            // 🔴 U-1 SELF-CORRECTION, and it is recorded rather than quietly rewritten because it is the
+            // shape this file has a banner about: the clause above read "GetDriverHealth lists NOTHING",
+            // which is a FALSE UNIVERSAL. It holds when BuildStartPlan throws (StopLocked cleared `_slots`
+            // and no slot was built) and fails when StartLocked throws mid-slot-loop — that state is
+            // consequence (2) of S3's residual, named in this file's own banner, so the counter-example was
+            // already written down two thousand lines up. `_slots` is reported truthfully either way, which
+            // is what the paragraph needed and all it needed; the universal was decoration that could be
+            // wrong, in the justification for a task whose subject is a surface that lied.
             //
             // WHY THIS FIELD AND NOT A PROJECTION OF ITS OWN: the clearing rule already exists and is already
             // the right one. StartLocked's `LastError = null` sits PAST its latch, so the report survives
@@ -3406,9 +3421,18 @@ internal sealed class FleetCore
             // stopped for a reason nobody asked for. The connector-issue projection is untouched and still
             // never reaches this field.
             //
-            // `ex` IS THE SAME OBJECT THE CALLER RECEIVES on the two paths that have a caller, so an HTTP 500
-            // and the health surface cannot disagree about what failed. On the third — Burst's revert, whose
-            // Task nothing observes — this is the only place that exception lands at all.
+            // `ex` IS THE OBJECT THIS METHOD RETHROWS, so on the two paths that have a caller the HTTP 500
+            // and the health surface carry the same instance and cannot disagree about what failed —
+            // Assert.Same in the witness, not a message match. 🔴 NOT a universal about what the caller
+            // finally sees, and the exceptions are the two masking windows this file already names: J-2's
+            // four-condition window at DisposeOrphanedConnectorDrivers, in the completion's `finally` below,
+            // and RegisterMachine's outer drain `finally`. Either can replace this exception on its way out.
+            // Both are documented at their own sites and neither is U-1's to close; what U-1 changes is that
+            // `ex` now survives on a FIELD even when a later `finally` replaces it in flight, which is
+            // strictly more than the caller had.
+            //
+            // On the third path — Burst's revert, whose Task nothing observes — this is the only place that
+            // exception lands at all.
             //
             // THE GUARD IS AN IDENTITY GUARD, the same rule StartSlot's `if (removed)` applies: report only
             // while the state this fault describes still holds. `_running` is false on every uncontended

@@ -24,8 +24,9 @@ namespace St4i.EngineApi.Tests;
 /// start: the commit stands, the pipeline is gone, and the fleet stays stopped.</para>
 ///
 /// <para><b>What was actually wrong was not any single field.</b> Every per-field surface was truthful about
-/// that state — <c>IsRunning</c> said stopped, <c>GetDriverHealth</c> listed nothing, <c>Fleet</c> and
-/// <c>CurrentScenario</c> reported what had been committed. The surface that was NOT truthful is the one that
+/// that state — <c>IsRunning</c> said stopped, <c>GetDriverHealth</c> listed exactly the slots the install
+/// had left behind (none when the BUILD threw, the partial set when the INSTALL did — S3's residual (2)),
+/// and <c>Fleet</c>/<c>CurrentScenario</c> reported what had been committed. The surface that was NOT truthful is the one that
 /// SUMMARISES them: <c>GET /v1/health</c> is literally <c>LastError is null</c>, so it answered <b>healthy</b>
 /// for a fleet an internal restart had torn down and could not rebuild. The owner's ruling keeps the state
 /// (stopped, commit standing) and records the fault on that field, from the one <c>catch</c> in
@@ -136,6 +137,11 @@ public sealed class FleetHostFailedRestartReportsTests
             // The decided state: stopped, with the commit standing.
             Assert.False(host.IsRunning);
             Assert.Contains(host.Fleet, d => string.Equals(d.Code, code, StringComparison.OrdinalIgnoreCase));
+
+            // Empty because the throw is inside the BUILD: StopLocked already cleared `_slots` and no slot
+            // was installed. NOT a general property of a failed restart — an install that throws mid-loop
+            // leaves the slots it managed to install (S3's residual (2)). Asserted here because on THIS arm
+            // it is what "the fleet is down" means.
             Assert.Empty(host.GetDriverHealth());
 
             // The reported state — `host.LastError is null` is the whole of GET /v1/health.

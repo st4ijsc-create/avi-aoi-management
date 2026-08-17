@@ -614,7 +614,9 @@ KHÔNG ĐỦ — bản thân việc cài đặt cũng có thể ném lỗi.**
 >
 > **Câu hỏi đã bị đặt sai, và chỗ sai là chỗ đáng giữ.** Brief nói *"thứ fleet LÀ và
 > thứ hồ sơ NÓI không khớp nhau"*. Đo lại từng bề mặt: `IsRunning` báo **dừng** —
-> đúng; `GetDriverHealth` không liệt kê gì — đúng; `Fleet` có máy vừa đăng ký — đúng;
+> đúng; `GetDriverHealth` liệt kê **đúng những slot mà lần cài đặt để lại** (không slot
+> nào khi cú ném nằm trong lần DỰNG; phần đã cài khi nó nằm trong lần CÀI ĐẶT — phần dư
+> (2) của S3) — đúng; `Fleet` có máy vừa đăng ký — đúng;
 > `CurrentScenario` mang cấu hình vừa commit — đúng, vì đó là **cấu hình**, thứ mà một
 > fleet đang dừng có quyền giữ cho lần khởi động sau. **Từng trường một đều nói thật.**
 > Thứ nói dối là **bề mặt TÓM TẮT chúng**: `GET /v1/health` đúng nghĩa đen là
@@ -636,10 +638,19 @@ KHÔNG ĐỦ — bản thân việc cài đặt cũng có thể ném lỗi.**
 >
 > **Vì sao KHÔNG quay lui commit:** hai cơ chế của J-2 vẫn đứng, và một cơ chế thứ ba
 > quyết định: **quay lui KHÔNG mang đường ống trở lại.** Dù quay lui hoàn hảo, fleet
-> vẫn dừng — và đó mới là nửa mà vận hành viên phải hành động. Riêng `ApplyScenario`
-> còn phải tháo cả cú swap transport của `ApplyNetworkOutageLocked`, tức **một chỗ ném
-> lỗi thứ hai NẰM TRÊN đường hỏng**, có thể thay mất chính exception nói vì sao khởi
-> động lại hỏng. Một cú quay lui có thể tự hỏng thì không phải quay lui.
+> vẫn dừng — nên quay lui mua được sự khớp nhau giữa một fleet đang dừng và cấu hình
+> của nó, mà **để nguyên đúng thứ vận hành viên phải hành động**. Nó cũng không phải
+> một câu lệnh: riêng `ApplyScenario` còn phải tháo cú swap transport của
+> `ApplyNetworkOutageLocked`, và ghi chú năm-khoá trong `FleetCore.cs` nói rằng đường
+> ấy tới `TransportCoordinator.ApplyMode` → `ModeChanged?.Invoke` — **một sự kiện do
+> host đăng ký**, nằm im **chỉ vì** chỗ gọi duy nhất hiện có truyền đúng mode hiện tại.
+> Quay lui là thêm **chỗ gọi thứ hai** vào một seam mà tính an toàn của nó là thuộc
+> tính của chỗ gọi thứ nhất, và thêm trên đường hỏng.
+>
+> ⚠️ Bản đầu của đoạn này gọi đó là *"một chỗ ném lỗi thứ hai"*. **Hôm nay ở đó không
+> gì ném cả** — sửa lại thành đúng thứ nó là (một seam), vì luật của chính banner ấy là
+> "vô hại nhờ một thuộc tính của chỗ gọi hiện tại" phải được **nói thẳng**, không được
+> dựa vào mà cũng không được thổi lên.
 >
 > **CÁI GIÁ, nói thẳng vì nó là sản phẩm giao ra chứ không phải tác dụng phụ:** vòng
 > lặp connector trong `StartLocked` từng **dành riêng** trường này cho *"một slot đã
