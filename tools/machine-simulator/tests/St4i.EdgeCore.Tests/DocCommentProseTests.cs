@@ -48,15 +48,49 @@ namespace St4i.EdgeCore.Tests;
 ///   instrument is strictly wider than the switch, which is why the registry below exists.</description></item>
 /// </list></para>
 ///
+/// <para><b>🔴 FOUR MORE BOUNDARIES, ADDED BY BRANCH REVIEW, EACH DEMONSTRATED LIVE RATHER THAN REASONED
+/// ABOUT.</b> They are here because the list above was otherwise careful enough to be read as complete.
+/// <list type="bullet">
+///   <item><description><b>Delimited <c>/** … */</c> doc comments are invisible to this reader, and the
+///   compiler DOES read them</b> — a delimited block with an unclosed tag produces CS1570 twice. That is a
+///   one-way gap in exactly the direction this file claims to close, so it is not merely named:
+///   <c>NoDelimitedDocCommentIsWrittenAnywhereInTheCorpus</c> asserts the corpus contains none, and the day
+///   somebody writes one the gate says so instead of silently not reading it. Zero today is therefore an
+///   ASSERTION and not a sample.</description></item>
+///   <item><description>🔴 <b>A <c>///</c> at the start of a line INSIDE a string literal is read as prose
+///   — a FALSE POSITIVE.</b> This reader is line-oriented and has no lexer, so a raw string literal whose
+///   content happens to look like a malformed doc block compiles cleanly and turns this suite RED. 58 files
+///   in the corpus contain a raw-string fence, so the surface is not exotic; the likeliest author to hit it
+///   is the next person writing a test ABOUT this file. <b>It is left in deliberately.</b> A line-oriented
+///   raw-string tracker was written and measured before this sentence was: the conservative version
+///   silently swallowed <b>87 real doc blocks</b> in the current tree. Between a loud false positive that
+///   names its file and line and is fixed in one edit, and a silent miss that reports a clean tree, this
+///   codebase's whole argument says take the loud one. Doing it properly needs a lexer, and a lexer in a
+///   gate is a bigger thing than the defect it prevents.</description></item>
+///   <item><description><b>ATTRIBUTE names are unchecked here AND by the compiler.</b>
+///   <c>&lt;param nmae="x"&gt;</c> and <c>&lt;see crf="X"/&gt;</c> both pass silently and land verbatim in
+///   the generated XML. The registry closes the element-name axis and leaves this one open; it is named
+///   because the registry's whole argument is about prose lost in silence, and this is the same loss by a
+///   different route. Neither reader in this repository covers it.</description></item>
+///   <item><description><b>A block that PARSES but means nothing defeats both halves by construction.</b>
+///   Fully escaped markup (<c>&amp;lt;summary&amp;gt;…</c>) parses to zero elements and renders as literal
+///   text; a block wholly inside a comment or a CDATA section parses and says nothing; an
+///   <c>&lt;inheritdoc/&gt;</c> inheriting from nothing resolves to nothing. This file asserts WELL-FORMED
+///   and REGISTERED, never MEANINGFUL, and no assertion here should ever be read as the third.</description></item>
+/// </list></para>
+///
 /// <para><b>🔴 THE RETROACTIVE CONTROL — this class was run against committed history before it was
 /// believed.</b> At <c>811c9054</c> (N-1's base) it reports <b>19 malformed blocks in 15 files</b>, which is
 /// N-1's own published count, arrived at independently. At <c>9209a81b</c> (T-1's feature commit) it reports
-/// the unclosed <c>&lt;b&gt;</c> in the S3 row of <c>FleetCore.cs</c>'s <c>_gate</c> summary. And at every
-/// merge from <c>f89da589</c> (P-2) to <c>46439925</c> (V-1) — <b>six merged tasks</b> — it reports the
-/// unclosed <c>&lt;para&gt;</c> in <c>EnumSpellingContractTests.cs</c>, which was live in the tree when this
-/// task started and which nothing in the gate could see, because that project's switch is off too. The
-/// class was emptied by N-1 and refilled five merges later; that is the argument for a standing check
-/// rather than a sweep.</para>
+/// the unclosed <c>&lt;b&gt;</c> in the S3 row of <c>FleetCore.cs</c>'s <c>_gate</c> summary. And it
+/// reports the unclosed <c>&lt;para&gt;</c> in <c>EnumSpellingContractTests.cs</c> at every one of these
+/// merges, which is the enumeration rather than its size — <c>f89da589</c> (P-2), <c>17fa6841</c> (Q-1),
+/// <c>79dbf99a</c> (R-1), <c>7bb0c5bd</c> (S-1), <c>895c0c23</c> (T-1), <c>f18f5c29</c> (U-1),
+/// <c>46439925</c> (V-1). 🔴 An earlier revision of this sentence said "six" and listed six of those
+/// seven, dropping U-1: a ceiling offered as complete and one short, which is worth less than no ceiling
+/// because it reads as a sweep. The defect was live in the tree when this task started and nothing in the
+/// gate could see it, because that project's switch is off too. The class was emptied by N-1 and refilled
+/// at the very next task; that is the argument for a standing check rather than a sweep.</para>
 ///
 /// <para><b>THE CORPUS IS EVERY <c>.cs</c> FILE UNDER <c>tools/machine-simulator</c>, not every file in a
 /// compilation</b> — deliberately, and it is the wider of the two: a file excluded from every csproj still
@@ -75,26 +109,38 @@ namespace St4i.EdgeCore.Tests;
 /// </summary>
 public sealed class DocCommentProseTests
 {
-    // ── The corpus floors. Measured at 46439925: 530 `.cs` files under tools/machine-simulator carrying
-    //    3,607 doc blocks (3,606 owned + 1 in the vendored file's own count is not included here; see
-    //    OwnedSourceFiles). These are set well below that on purpose — they exist to turn "the walk found
-    //    nothing" into a loud failure, NOT to pin a count that every subsequent task would have to bump.
+    // ── The corpus floors, and 🔴 THE ONLY TWO SCALARS THIS FILE PUBLISHES ABOUT ITS OWN CORPUS.
+    //    Branch review caught the previous version of this comment pairing a file count from one tree with
+    //    a block count from another over a different population, and the same unpairable pair had been
+    //    copied into three other documents. The rule bought by that: NAME THE ASSERTION, do not copy its
+    //    number into prose. So the corpus size is deliberately NOT published here — it is whatever
+    //    OwnedSourceFiles() and LinkedInSourceFiles() find, and TheScanReachesItsCorpus_… is the thing that
+    //    holds a number about it. These two are FLOORS: they exist to turn "the walk found nothing" into a
+    //    loud failure, never to pin a count every subsequent task would have to bump.
     private const int CorpusFileFloor = 400;
     private const int CorpusBlockFloor = 2500;
 
     // ── 🔴 THE REGISTERED ELEMENT NAMES. This is the one assertion here that is a NEW POLICY rather than a
     //    re-reading of an existing one, and it is stated as such. Roslyn does not check element names at
-    //    all; every name below is one this repository actually uses, censused over the whole corpus at
-    //    46439925 (18 distinct names, occurrence counts in the comment beside each group). A name that is
-    //    not here is either a typo — in which case the prose it wraps is silently dropped from every
-    //    rendered surface — or a deliberate new tag, in which case ADD IT HERE. Do not delete the check to
-    //    make a name pass.
+    //    all, so a name that is not here is either a typo — in which case the prose it wraps is silently
+    //    dropped from every rendered surface — or a deliberate new tag, in which case ADD IT HERE. Do not
+    //    delete the check to make a name pass.
+    //
+    //    🔴 THE SET IS THE DOCUMENTED STANDARD, NOT THIS TREE'S HABITS, and branch review is the reason.
+    //    The first version registered exactly the 18 names the corpus happened to use, which would have
+    //    failed CORRECT, STANDARD C# the first time anyone documented a generic type (`typeparam`) or wrote
+    //    a `<value>` on a property — an author with no defect, red at a gate. It also sat over the VENDORED
+    //    SDK file, where a re-vendor introducing any standard tag would have reddened a gate nobody here
+    //    may fix. Registering the whole documented set costs nothing in detection power: `<summry>` and
+    //    `<remark>` are still not in it.
     private static readonly HashSet<string> RegisteredElementNames = new(StringComparer.Ordinal)
     {
-        // Standard C# documentation elements.
-        "summary", "para", "param", "paramref", "returns", "remarks", "exception",
-        "see", "list", "item", "description", "c", "code", "inheritdoc",
-        // HTML-ish emphasis this tree uses inside prose; Roslyn passes them through untouched.
+        // The documented C# documentation-comment elements, whether or not this tree uses them yet.
+        "summary", "remarks", "returns", "value", "example", "para", "list", "listheader", "item", "term",
+        "description", "param", "paramref", "typeparam", "typeparamref", "exception", "permission",
+        "see", "seealso", "c", "code", "inheritdoc", "include",
+        // HTML-ish emphasis this tree uses inside prose; Roslyn passes them through untouched. These four
+        // are the ones actually in use that the documented set does not cover.
         "b", "i", "em", "h3",
     };
 
@@ -153,6 +199,16 @@ public sealed class DocCommentProseTests
         var trimmed = line.AsSpan().TrimStart();
         return trimmed.StartsWith("///", StringComparison.Ordinal)
             && !trimmed.StartsWith("////", StringComparison.Ordinal);
+    }
+
+    /// <summary>A line opening a DELIMITED doc comment, <c>/** … */</c>, which this reader does not read
+    /// and the compiler does. <c>/***</c> and longer are banner comments, not doc comments, and are not
+    /// matched.</summary>
+    private static bool IsDelimitedDocOpener(string line)
+    {
+        var trimmed = line.AsSpan().TrimStart();
+        return trimmed.StartsWith("/**", StringComparison.Ordinal)
+            && !trimmed.StartsWith("/***", StringComparison.Ordinal);
     }
 
     /// <summary>Every maximal run of consecutive <c>///</c> lines in a file, which is exactly the unit the
@@ -302,7 +358,10 @@ public sealed class DocCommentProseTests
             findings.Count == 0,
             $"{findings.Count} doc block(s) in this repository's own source are not well-formed XML. The compiler " +
             "abandons a block at its first fault, so each of these also HIDES every claim written inside it:" +
-            Environment.NewLine + Report(findings));
+            Environment.NewLine + Report(findings) + Environment.NewLine +
+            "  If a line above is INSIDE A STRING LITERAL, this reader is wrong and you wrote no defect — it " +
+            "is line-oriented and has no lexer (see the boundary list on this class, and the measured reason " +
+            "it was left that way). Indent the sample, or stop the line starting with ///.");
     }
 
     /// <summary>🔴 The same question asked of the VENDORED SDK file, kept as a separate population because
@@ -359,6 +418,45 @@ public sealed class DocCommentProseTests
             "anywhere reports this: an unknown element is passed through, so a typo silently drops the prose it " +
             "wraps. If the name is deliberate, add it to RegisteredElementNames and say why; if it is a typo, fix " +
             "it:" + Environment.NewLine + Report(findings));
+    }
+
+    /// <summary>🔴 The boundary that is asserted rather than merely stated. C# has a SECOND documentation
+    /// comment form, <c>/** … */</c>; the compiler reads it (a delimited block with an unclosed tag emits
+    /// CS1570) and this reader does not look at it at all. That is a one-way gap in exactly the direction
+    /// this file exists to close. There are none in the corpus, and this is what keeps it that way: a zero
+    /// that an assertion holds does not rot, and the alternative — writing the sentence "there are none
+    /// today" into a comment — is the failure class this whole batch has been paying for.</summary>
+    [Fact]
+    public void NoDelimitedDocCommentIsWrittenAnywhereInTheCorpus()
+    {
+        // The detector is proven HERE, in the same test, so that the zero below cannot be the zero of a
+        // detector that stopped detecting. §8.1(h6) applies to a census exactly as it applies to a check.
+        Assert.True(IsDelimitedDocOpener("    /** <summary>a delimited doc comment</summary> */"));
+        Assert.True(IsDelimitedDocOpener("/**"));
+        Assert.False(IsDelimitedDocOpener("    /*** a banner, not a doc comment ***/"));
+        Assert.False(IsDelimitedDocOpener("    /* an ordinary block comment */"));
+        Assert.False(IsDelimitedDocOpener("    /// an ordinary doc comment"));
+
+        var findings = new List<string>();
+        foreach (var file in OwnedSourceFiles().Concat(LinkedInSourceFiles()))
+        {
+            var lines = File.ReadAllLines(file);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                if (IsDelimitedDocOpener(lines[i]))
+                {
+                    findings.Add($"{Relative(file)}:{i + 1} — {lines[i].Trim()}");
+                }
+            }
+        }
+
+        Assert.True(
+            findings.Count == 0,
+            $"{findings.Count} delimited /** … */ doc comment(s) exist. THIS FILE CANNOT READ THEM — it is " +
+            "line-oriented and only recognises `///` runs — while the compiler can and does. So a defect " +
+            "written in one is invisible to the instrument in the eight projects whose switch is off, which " +
+            "is precisely the gap this file exists to close. Either rewrite them as `///`, or teach the " +
+            "reader above to read them. Do NOT delete this assertion:" + Environment.NewLine + Report(findings));
     }
 
     // ══ THE POSITIVE CONTROLS ════════════════════════════════════════════════════════════════════════════

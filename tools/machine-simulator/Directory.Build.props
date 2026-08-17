@@ -217,39 +217,61 @@
            bill today". (2870 beside EXPECT_WARNINGS in scripts/verify-suites.sh is the same figure plus
            N-2's 95, and moves for the same reason.)
 
-       🔴 THE SENTENCE THIS BLOCK FLAGGED AS NOT MEASURED IS NOW MEASURED, and the answer is yes-with-three-
-       consequences. An .editorconfig section keyed on the vendored file's REAL path DOES match it: the tree
-       goes 852 -> 757 with the property set on St4i.EdgeCore alone, exactly -95, and CS1591 disappears from
-       that file. What was not on record:
-         (1) It leaves EIGHT CS1573 in the same file. Option (b) above names CS1591 only, so as written it
-             exempts one of the vendored file's two documentation codes, not the file.
-         (2) An .editorconfig applies at or below its OWN directory, and that file's real path is outside
-             tools/machine-simulator — so the section cannot live in this product's tree at all. It has to
-             be planted at the REPOSITORY ROOT, above an unrelated TypeScript/Node application, invisible to
-             anyone reading this product.
-         (3) 757 is not 116. "Leaves the other 448 asserted" is true and is not "passing": (b) removes the
-             95 nobody may fix and leaves 641 warnings that must either be written or be pinned.
-       So (b) is still the narrower instrument and it is still an override, and it does not on its own make
-       the switch settable. W-1 did not take it. The decision is docs/owner-decisions.md item 12, which
-       carries this measurement where an owner will be standing; this file is not that place.
+       🔴 THE SENTENCE THIS BLOCK FLAGGED AS NOT MEASURED IS NOW MEASURED, and the answer is yes — with
+       three consequences, one of which W-1 GOT WRONG on its first pass and which branch review refuted by
+       running it. All four placements below are one full `dotnet build -t:Rebuild` each, with the property
+       set on St4i.EdgeCore alone:
+             852  no .editorconfig at all
+             757  .editorconfig at the REPOSITORY ROOT, CS1591 only
+             757  .editorconfig at examples/, CS1591 only
+             749  .editorconfig at examples/device-client/csharp/ — BESIDE the file — CS1591 AND CS1573,
+                  leaving ZERO CS15xx anywhere in that file
+         (1) A CS1591-only section leaves EIGHT CS1573 in the same untouchable file. Option (b) above names
+             CS1591 only, so as written it exempts one of the vendored file's two documentation codes, not
+             the file. Confirmed.
+         (2) 🔴 W-1 FIRST WROTE, AND IT IS FALSE: "the section cannot live in this product's tree at all; it
+             has to be planted at the REPOSITORY ROOT, above an unrelated TypeScript/Node application." The
+             premise is right — SECTIONS match at or below their own directory — and the conclusion does not
+             follow, because analyzer-config DISCOVERY walks the SOURCE FILE's ancestor chain, not the
+             project's. A section may therefore sit anywhere at or above the vendored file's real path,
+             INCLUDING the directory holding it. Corrected in place rather than replaced, because the false
+             version was load-bearing in an owner's artefact and a reader who bookmarked it must see it
+             retired. What survives of the objection is a DIFFERENT one, and it is NOT measured: that
+             directory is the published SDK sample kept in step with the Python and Node siblings, so a file
+             planted there ships to machine developers and can be lost to a re-vendoring.
+         (3) 749 is not 116, and neither is 757. "Leaves the other 448 asserted" is true and is not
+             "passing": a PERFECT exemption of the vendored file removes the 103 nobody may fix and leaves
+             633 — 532 coverage warnings on source we own, plus 101 false `cref` claims — to write or to pin.
+       So a path-scoped severity is still an override and still does not on its own make the switch
+       settable; what changed is that the NARROWEST version of it is cheaper and better-placed than W-1
+       first reported. W-1 did not take it. The decision is docs/owner-decisions.md item 12, which carries
+       the corrected option list where an owner will be standing; this file is not that place.
 
        🔴 AND THE HALF THAT NEEDED NO SWITCH WAS TAKEN INSTEAD — tests/St4i.EdgeCore.Tests/
        DocCommentProseTests.cs. It reads every `///` run in the tree as XML and checks every element NAME
        against a registry, which is one thing the compiler does not do at all (Roslyn passes unknown
        elements through, so `<summry>` deletes a summary in silence). It runs in the gate, on every build,
        for ALL fifteen compilations and for files in none of them. It cannot see a cref; that is why item 12
-       exists. Its corpus at 46439925 was 530 files and 3,616 blocks — a MEASUREMENT, not a pin: the only
-       scalars any assertion there holds are the two FLOORS in
-       TheScanReachesItsCorpus_AndTheVendoredFileTheProjectNames (400 files, 2,500 blocks), which exist so a
-       walk that stopped finding the tree fails loudly instead of passing vacuously.
+       exists. 🔴 ITS CORPUS SIZE IS DELIBERATELY NOT QUOTED HERE. The first revision of this paragraph said
+       "530 files and 3,616 blocks", which paired a file count from one tree with a block count from another
+       over a DIFFERENT population — the 3,616 includes the vendored file, which the file count does not —
+       and the same unpairable pair was copied into three other documents. The rule that buys: name the
+       assertion, never copy its number into prose. The only scalars any assertion there holds are the two
+       FLOORS in TheScanReachesItsCorpus_AndTheVendoredFileTheProjectNames (400 files, 2,500 blocks), which
+       exist so a walk that stopped finding the tree fails loudly instead of passing vacuously.
 
        🔴 IT FOUND SOMETHING ON ITS FIRST RUN, which is the argument for it. One live malformed block in
        tests/St4i.Connector.Abstractions.Tests/EnumSpellingContractTests.cs — a `<para>` closed by its parent
-       `</summary>` — introduced at 05a4f7a8 and present at the P-2, Q-1, R-1, S-1, T-1 and V-1 merges. Six
-       merged tasks, invisible to every one of them, because that project's switch is off too. Run against
-       committed history the same check reports 19 malformed blocks in 15 files at 811c9054, which is this
-       block's own published count arrived at independently, and the unclosed `<b>` T-1 shipped at 9209a81b.
-       The class N-1 emptied refilled five merges later; that is why it is now a standing assertion and not
-       a sweep. -->
+       `</summary>` — introduced at 05a4f7a8 and present at every merge from there to this branch's base.
+       The ENUMERATION, because its size is what went wrong the first time: f89da589 (P-2), 17fa6841 (Q-1),
+       79dbf99a (R-1), 7bb0c5bd (S-1), 895c0c23 (T-1), f18f5c29 (U-1), 46439925 (V-1). SEVEN merged tasks —
+       the first revision of this paragraph said six and listed six of those seven, dropping U-1, which is a
+       ceiling offered as complete and one short, in the block that installs the instrument against exactly
+       that. None of the seven could see it, because that project's switch is off too. Run against committed
+       history the same check reports 19 malformed blocks in 15 files at 811c9054, which is this block's own
+       published count arrived at independently, and the unclosed `<b>` T-1 shipped at 9209a81b. The class
+       N-1 emptied refilled at the very NEXT task; that is why it is now a standing assertion and not a
+       sweep. -->
+
 
 </Project>

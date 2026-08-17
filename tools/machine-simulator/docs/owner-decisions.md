@@ -1028,7 +1028,9 @@ con số nào dưới đây là ước lượng, và không có cái nào bị W
 |---|---:|
 | như đang ship | **116** |
 | + bật cờ cho **riêng** `St4i.EdgeCore` | **852** |
-| + thêm một mục `.editorconfig` khoanh theo **đường dẫn THẬT** của file SDK vendored | **757** |
+| + `.editorconfig` ở **gốc repository**, chỉ CS1591 | **757** |
+| + `.editorconfig` ở **`examples/`**, chỉ CS1591 | **757** |
+| + `.editorconfig` **NGAY CẠNH file** (`examples/device-client/csharp/`), **cả hai mã** | **749** — và **không còn CS15xx nào** trong file ấy |
 
 Chênh 736 gồm: **543 CS1591** + **92 CS1573** (bao phủ tài liệu) và **101** khẳng định
 `cref`/`paramref` **không phân giải được** (75 CS1574, 23 CS1734, 3 CS0419).
@@ -1045,37 +1047,64 @@ Chênh 736 gồm: **543 CS1591** + **92 CS1573** (bao phủ tài liệu) và **1
   báo ấy **không thể trả bằng cách viết**, nên chúng là **lý do duy nhất một lệnh đè trở
   nên CẦN THIẾT** nếu cờ được bật.
 
-**Điều N-1 ghi là CHƯA ĐO, nay đã đo — và nó chạy được, kèm ba hệ quả không có trong hồ sơ:**
+**Điều N-1 ghi là CHƯA ĐO, nay đã đo — kèm ba hệ quả, và MỘT TRONG BA CÁI TÔI VIẾT VÒNG
+ĐẦU LÀ SAI:**
 
 1. Mục khoanh-theo-đường-dẫn **có** khớp: 852 → 757, đúng −95, CS1591 biến mất khỏi file
    ấy. Nhưng N-1 chỉ nêu CS1591, nên **(b) như đã mô tả bỏ sót 8 CS1573 vẫn nằm nguyên
-   trong chính file không đụng được ấy**: nó miễn trừ MỘT trong HAI mã.
-2. `.editorconfig` chỉ áp cho file **tại hoặc dưới** thư mục của nó, và đường dẫn thật
-   của file ấy **nằm ngoài `tools/machine-simulator`**. Nên mục ấy **không thể sống trong
-   cây sản phẩm này**: nó phải đặt ở **gốc repository**, phía trên một ứng dụng
-   TypeScript/Node không liên quan, nơi **không ai đọc sản phẩm này nhìn thấy**.
-3. **757 vẫn không phải 116.** "Để 448 cái kia ĐƯỢC KHẲNG ĐỊNH" là đúng và **không**
-   đồng nghĩa "xanh": (b) gỡ 95 cái không ai sửa được và **để lại 641 cảnh báo mới** —
-   hoặc được viết, hoặc được ghim.
+   trong chính file không đụng được ấy**: nó miễn trừ MỘT trong HAI mã. **Xác nhận.**
+2. 🔴 **VÒNG ĐẦU TÔI VIẾT — VÀ NÓ SAI:** *"mục ấy không thể sống trong cây sản phẩm này;
+   nó phải đặt ở gốc repository, phía trên một ứng dụng TypeScript/Node không liên quan."*
+   Tiền đề đúng — **mục (section)** chỉ khớp file **tại hoặc dưới** thư mục của nó — nhưng
+   **kết luận không theo**, vì **việc TÌM RA file `.editorconfig` đi theo chuỗi tổ tiên của
+   FILE NGUỒN, không phải của project**. Đo lại, ba vị trí, mỗi vị trí một lần build đầy
+   đủ: gốc repo → 757; `examples/` → 757; **ngay cạnh file, khai cả hai mã → 749, và không
+   còn một CS15xx nào trong file ấy.** Nên lệnh đè **ngồi cách chính file nó nói về hai
+   thư mục**, nằm **bên trong** ví dụ SDK mà nó miễn trừ, và **không** bị ép lên gốc repo.
+   Sửa tại chỗ chứ không thay lặng, vì câu sai ấy **đã nằm trong artefact của chủ sở hữu**.
+   **Phần còn lại của phản đối là một phản đối KHÁC và CHƯA ĐO:** thư mục ấy là ví dụ SDK
+   **được xuất bản**, giữ đồng bộ với SDK Python và Node — nên một file đặt ở đó **đi theo
+   bản phát hành tới nhà phát triển máy** và **có thể mất khi vendor lại**.
+3. **749 vẫn không phải 116**, và 757 cũng không. "Để 448 cái kia ĐƯỢC KHẲNG ĐỊNH" là đúng
+   và **không** đồng nghĩa "xanh": một miễn trừ **hoàn hảo** cho file vendored gỡ 103 cái
+   không ai sửa được và **để lại 633** — 532 cảnh báo bao phủ trên mã của ta, cộng 101
+   khẳng định `cref` sai — hoặc được viết, hoặc được ghim.
 
-**Ba lựa chọn, nêu đủ chứ không nêu cái tiện:**
+**BỐN lựa chọn, nêu đủ chứ không nêu cái tiện. Vòng đầu tôi chỉ nêu ba, và cái thiếu là
+cái HẸP NHẤT — đó là một thiếu sót ẢNH HƯỞNG QUYẾT ĐỊNH, ngay trong artefact viết ra để
+quyết định:**
 
 - **(a) `<NoWarn>CS1591;CS1573</NoWarn>` cả assembly** — im lặng 635; project ấy khi đó
   **không khẳng định bao phủ tài liệu ở đâu cả**, kể cả 532 thành viên là mã của ta.
-- **(b) `.editorconfig` khoanh theo đường dẫn thật, hai mã** — im lặng đúng 103 cái không
-  ai được sửa, **để 532 cái của ta được khẳng định** — nghĩa là phải VIẾT chúng trước khi
-  cờ có thể bật xanh. Hẹp nhất, và phải đặt ở gốc repo (xem 2 ở trên).
+- **(b1) `.editorconfig` ở gốc repo hoặc ở `examples/`, chỉ CS1591** → **757**. Đây là
+  lựa chọn N-1 mô tả. Nó **để lại 8 CS1573** trong chính file không đụng được, và đặt một
+  file cấu hình phía trên cây mã không liên quan.
+- **(b2) 🔴 `.editorconfig` NGAY CẠNH file vendored, khai CS1591 + CS1573** → **749**, và
+  **không còn một cảnh báo tài liệu nào** phát ra từ file ấy. **Hẹp nhất trong cả bốn**:
+  miễn trừ **đúng** 103 cái không ai được sửa và **để cả 532 cái của ta được khẳng định**.
+  Giá phải trả, nêu ra chứ không giấu: file ấy nằm **trong ví dụ SDK được xuất bản**, nên
+  nó đi theo bản phát hành và **có thể biến mất trong lần vendor lại** — một phản đối
+  **chưa được đo**.
 - **(c) không bật cờ** — trạng thái hiện tại. 101 khẳng định `cref` sai trong project này
   (237 toàn cây) **không có gì canh**.
 
+**Cả (b1) và (b2) đều VẪN LÀ LỆNH ĐÈ, và không lựa chọn nào tự nó làm cờ bật được xanh:**
+kể cả sau (b2), 633 cảnh báo còn lại phải được **viết** hoặc được **ghim**. Đó là quyết
+định của anh, không phải của người thực thi.
+
 🔴 **W-1 KHÔNG chọn giúp, và cũng KHÔNG để văn xuôi ấy tiếp tục không ai đọc.** Nửa
 **phân tích cú pháp** của câu hỏi không cần cờ nào cả và đã được đóng bằng một dụng cụ
-riêng: `tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs` đọc mọi khối `///` trong cả
-cây (530 file, 3.616 khối) như XML, cộng một phép kiểm **tên phần tử** mà **trình biên
-dịch không hề làm**. Nửa **phân giải** (`cref`) thì **chỉ** trình biên dịch thấy, nên nó
-nằm lại đây, ở mục này. Lần chạy đầu tiên của dụng cụ ấy tìm ra **một khối hỏng đang
-sống** trong `EnumSpellingContractTests.cs`, sinh ra ở `05a4f7a8` (P-2 vòng 2) và **sáu
-lần merge liên tiếp không ai thấy**.
+riêng: `tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs` đọc **mọi** khối `///` trong cả
+cây như XML, cộng một phép kiểm **tên phần tử** mà **trình biên dịch không hề làm**. (Kích
+thước tập quét **không** ghi ở đây: vòng đầu tôi ghi "530 file, 3.616 khối", ghép số file
+của một cây với số khối của một cây khác trên một quần thể khác. Luật mua được: **nêu tên
+assertion, đừng chép số của nó vào văn xuôi.**) Nửa **phân giải** (`cref`) thì **chỉ**
+trình biên dịch thấy, nên nó nằm lại đây, ở mục này. Lần chạy đầu tiên của dụng cụ ấy tìm
+ra **một khối hỏng đang sống** trong `EnumSpellingContractTests.cs`, sinh ra ở `05a4f7a8`
+(P-2 vòng 2) và có mặt ở **bảy** lần merge — liệt kê, chứ không nêu con số, vì chính con
+số là chỗ vòng đầu sai (thiếu U-1): `f89da589` (P-2), `17fa6841` (Q-1), `79dbf99a` (R-1),
+`7bb0c5bd` (S-1), `895c0c23` (T-1), `f18f5c29` (U-1), `46439925` (V-1). **Không lần nào
+thấy nó.**
 
 **Bằng chứng:** commit merge của W-1.
 

@@ -72,14 +72,14 @@ namespace St4i.Connector.Abstractions.Tests;
 /// <see cref="EveryObjectLiteralKeyedByMemberNames_IsARegisteredMirror"/>,
 /// <see cref="EveryTsTypeAliasOrTableNamedForAPublishedEnum_IsARegisteredMirror"/> and
 /// <see cref="EveryLiteralBoundToARegisteredCarrier_NamesACurrentMember"/>, none of which reads the
-/// registry to decide what to look at.
+/// registry to decide what to look at.</para>
 /// <para>🔴 The FIRST version of that promise was not kept, and the correction is the point. The only
 /// census this file shipped with was indexed on a declaration's TYPE ANNOTATION, and six of the seven
 /// member-keyed tables in this codebase carry none — so it could not refute the registry in the one
 /// direction that mattered, and a live unregistered site (<c>TraceTable.tsx</c>'s <c>KIND_DOT</c>) sat
 /// inside the corpus until a reviewer read the tree by hand.
 /// <see cref="EveryObjectLiteralKeyedByMemberNames_IsARegisteredMirror"/> is indexed on the KEYS instead,
-/// which is what the question actually asks about, and it finds that site on its own.</para></para>
+/// which is what the question actually asks about, and it finds that site on its own.</para>
 ///
 /// <para><b>PRECONDITION.</b> Like <c>ZeroDependencyTests</c> and <c>RealCredentialStoreLeakGuard</c>, this
 /// requires being run from inside the source tree: it walks up from <see cref="AppContext.BaseDirectory"/>
