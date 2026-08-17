@@ -318,7 +318,12 @@ export MSBUILDDISABLENODEREUSE=1
 # alone would have been scheduling-dependent, which is not a control.
 #
 # EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0. No suppression of any kind was added and no
-# .editorconfig exists in this tree. None of the five test projects sets GenerateDocumentationFile, so the
+# TRACKED .editorconfig exists in this tree — the qualifier is the correction, not decoration (review Minor
+# 1): NINE exist under web/node_modules/, third-party and ignored, so the unqualified sentence was a
+# whole-tree sweep that is false of the filesystem. None can reach a .cs compilation (.editorconfig scoping
+# walks UP from a source file and web/node_modules is nobody's ancestor), so the risk was always nil and
+# the CEILING was always wrong — which is the brief's own fourth wording rule landing on the block that
+# quotes it. None of the five test projects sets GenerateDocumentationFile, so the
 # new `///` blocks are not compiled either way — tag balance on every block was checked directly rather
 # than inferred from that, because an unbalanced block HIDES the diagnostics inside it.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -4965,9 +4970,16 @@ fi
 # three stores beside the binary. ONE of them, MachineConfigStore, has a relocation variable (task H-1c
 # built the seam; tests/Shared/TestRunTempRoot.cs now sets it), so its file leaves this directory
 # altogether and is NOT exempt -- it is the thing this bracket is watching for. The other two,
-# ProductConfigStore and SimulatedEcosystem, have NO variable of any kind: no value any harness can set
-# moves them, and giving them one is a change to src/ and to every shipped install's on-disk layout, which
-# task X-1 was told to REPORT rather than do. Their files are exempt, and the filenames are read out of
+# ProductConfigStore and SimulatedEcosystem, declare no EnvVarDir, so no ENVIRONMENT VARIABLE moves them.
+#
+# 🔴 THAT IS NOT "NO SEAM", AND THE FIRST DRAFT OF THIS BLOCK SAID IT WAS (review Important 2). Both take
+# `string? directory = null` and the suites already run the RemoveAll/AddSingleton replacement idiom, so a
+# tests/-only closure IS available today. The refusal stands on the reason tests/Shared/TestRunTempRoot.cs
+# already gives for its own 263 call sites, not on an absent seam: closing a leak at N call sites fixes
+# today's N and none of tomorrow's, and the (N+1)th leaks silently with nothing in the way. Here N is 23
+# sites across 20 files. The mechanism-level fix is a relocation variable, and THAT is the src/ change --
+# shipped behaviour on every install -- which task X-1 was told to REPORT rather than do.
+# Their files are exempt, and the filenames are read out of
 # those two stores' OWN SOURCES together with the justification -- the sources must still declare their
 # filenames and must still declare NO EnvVarDir. The day either store gains a seam this derivation fails
 # the run and demands the exemption be spent instead of inherited.
@@ -5039,6 +5051,13 @@ outdir_list() {
 
 # path + byte count + modification time, one file per line, exempt basenames dropped. Enumerates metadata
 # and never opens, creates or deletes anything.
+#
+# 🔴 THIS FUNCTION'S FAIL-CLOSED ARM DEPENDS ON `set -o pipefail` AT LINE 51, TWO THOUSAND LINES AWAY, AND
+# THAT DEPENDENCY IS NAMED HERE BECAUSE DELETING IT WOULD DISARM THE ARM SILENTLY RATHER THAN BREAK IT
+# LOUDLY (review Minor 3). The body ends in a pipeline, so `find ... || return 1` runs in the LEFT-HAND
+# subshell; without pipefail the function would return `sort`'s status -- 0 -- and `if ! outdir_snapshot`
+# could never fire, which would make a directory that could not be READ read exactly like a clean one.
+# That is the absent-vs-unreadable hole the credential bracket had to close twice on its own snapshot.
 outdir_snapshot() {
   local d
   while IFS= read -r d; do
@@ -5052,20 +5071,36 @@ outdir_snapshot() {
 
 OUTDIR_BEFORE="$LOGDIR/outdirs-before.txt"
 OUTDIR_AFTER="$LOGDIR/outdirs-after.txt"
-_x1_dircount=$(outdir_list | grep -c . || true)
-if [[ "${_x1_dircount:-0}" -ne "${#SUITES[@]}" ]]; then
-  echo "FAIL: found ${_x1_dircount:-0} suite output director(ies) under bin/Debug, expected ${#SUITES[@]}."
-  echo "  A bracket that watches fewer directories than there are suites is silently partial, and a"
-  echo "  partial reading here reads exactly like a clean one. Fix the layout or the glob."
-  exit 1
-fi
+# 🔴 PER SUITE, NOT A TOTAL — review Important 3, and the first revision of this check FAILED OPEN in
+# exactly the case its own message claims to refuse. It compared `outdir_list | grep -c .` against
+# ${#SUITES[@]}: a suite carrying TWO target-framework directories (a retarget leftover) plus a suite
+# carrying NONE sums to five and passes, while one suite goes entirely unwatched. A sum cannot see a
+# cancellation, which is the same defect the credential bracket's own comment records for count deltas —
+# committed here in the check whose message is "a partial reading reads exactly like a clean one".
+for entry in "${SUITES[@]}"; do
+  proj="${entry%%:*}"
+  _x1_n=0
+  for d in "$proj"/bin/Debug/*/; do [[ -d "$d" ]] && _x1_n=$((_x1_n + 1)); done
+  if [[ $_x1_n -ne 1 ]]; then
+    echo "FAIL: suite \"$proj\" contributes ${_x1_n} output director(ies) under bin/Debug, expected exactly 1."
+    echo "  Checked PER SUITE on purpose: a total over the five cancels, so two directories on one suite"
+    echo "  would mask none on another and the bracket would watch four suites while reporting five."
+    echo "  Fix the layout or the glob; do not relax this to a sum."
+    exit 1
+  fi
+done
 if ! outdir_snapshot > "$OUTDIR_BEFORE"; then
   echo "FAIL: could not take the output-directory bracket's BASELINE. Stopping rather than running the"
   echo "  suites under a bracket that cannot fail."
   exit 1
 fi
 # NOT a check -- a `note` is for a human reading alongside a verdict, never something a verdict depends on.
-note "suite output directories under watch: ${_x1_dircount} ($(grep -c . < "$OUTDIR_BEFORE" || true) files at start, exempt: ${OUTDIR_EXEMPT[*]})"
+# 🔴 THE CAVEAT TRAVELS WITH THE GREEN TOO (review Minor 2). The failure text below carries the window
+# caveat; this line is what a reader meets when everything passes, and a green OwnOutputDirectoryGuardTests
+# is the single most misreadable output this change produces. Say what green does NOT mean, here.
+note "suite output directories under watch: ${#SUITES[@]} ($(grep -c . < "$OUTDIR_BEFORE" || true) files at start, exempt: ${OUTDIR_EXEMPT[*]})"
+note "  green here means NOTHING WAS LEFT BEHIND -- never that nothing was READ; a residue file loaded at"
+note "  startup and not written back is invisible to both halves of this instrument."
 
 echo "[2/3] Running ${#SUITES[@]} suites sequentially..."
 for entry in "${SUITES[@]}"; do
@@ -5290,7 +5325,10 @@ fi
 # APPEARED/DISAPPEARED it would read as two unrelated events at one path, which is the shape that sends a
 # reader looking for a deletion that never happened. Paths present on both sides are lifted out first and
 # reported as REWRITTEN.
-if [[ -s "$OUTDIR_BEFORE" || -f "$OUTDIR_BEFORE" ]]; then
+# `-f` alone (review Minor 4): `-s` implied `-f`, so the disjunction tested one condition twice. Kept as a
+# guard at all because the baseline is taken above under an `exit 1`, so reaching here without one would
+# mean a future edit introduced a path that skips it -- which should read as "not measured", not as green.
+if [[ -f "$OUTDIR_BEFORE" ]]; then
   if ! outdir_snapshot > "$OUTDIR_AFTER"; then
     FAILURES+=("Suite output directories could NOT BE READ at the end of this run. NOTHING was measured by
     this bracket -- that is not a pass and it is not evidence of a writer either. Check for a lock or for

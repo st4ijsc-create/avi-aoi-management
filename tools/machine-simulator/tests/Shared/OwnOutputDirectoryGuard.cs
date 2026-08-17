@@ -96,10 +96,19 @@ namespace St4i.TestHygiene;
 /// beside the binary — <c>MachineConfigStore</c>'s own remarks enumerate them — and exactly one of them,
 /// <c>MachineConfigStore</c>, has a relocation variable (task H-1c added it).
 /// <see cref="TestRunTempRoot"/> now sets that variable, so that store's file leaves this directory
-/// altogether. The other two, <c>ProductConfigStore</c> and <c>SimulatedEcosystem</c>, have NO seam of any
-/// kind: there is no value any harness can set that moves them, and giving them one is a change to
-/// <c>src/</c>, i.e. to shipped behaviour on every existing install. That is out of task X-1's bounds and
-/// is REPORTED rather than done.
+/// altogether. The other two, <c>ProductConfigStore</c> and <c>SimulatedEcosystem</c>, declare no
+/// <c>EnvVarDir</c>, so no ENVIRONMENT VARIABLE moves them.
+///
+/// <para>🔴 <b>That is NOT the same as "no seam", and the first draft of this paragraph said "no seam of
+/// any kind" — a claim refuted by opening either constructor</b> (branch review, Important 2). Both take
+/// <c>string? directory = null</c>, and this repository's suites already run the
+/// <c>RemoveAll</c>/<c>AddSingleton</c> replacement idiom, so a <c>tests/</c>-only closure IS available
+/// today. <b>The refusal stands on the reason <see cref="TestRunTempRoot"/> already gives for its own 263
+/// call sites, not on the absence of a seam</b>: closing a leak at N call sites fixes today's N and none
+/// of tomorrow's, and the (N+1)th leaks silently with nothing in the way. Here N is 23 sites across 20
+/// files. The mechanism-level fix is a relocation variable, and THAT is the <c>src/</c> change — shipped
+/// behaviour on every existing install — which is out of task X-1's bounds and is REPORTED rather than
+/// done.</para>
 ///
 /// <para>So this guard exempts those two stores' files — and it derives WHICH files from the stores' own
 /// source, together with the JUSTIFICATION for exempting them. Both halves are checked on every run:
