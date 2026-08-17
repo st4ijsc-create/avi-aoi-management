@@ -2521,7 +2521,71 @@ EXPECT_EDGESERVICE=51
 #       the guard ever widened past the faulting path, that test goes red.
 #
 # EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0 for this round too.
-EXPECT_ENGINEAPI=1359
+#
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+# 🔴 U-1 (docs/owner-decisions.md item 7 — S4's SECOND HALF) raises this 1359 -> 1364 (+5), counted from
+# the EXECUTED total, and MOVES NO OTHER TOTAL. One new file, tests/St4i.EngineApi.Tests/
+# FleetHostFailedRestartReportsTests.cs. The other four suites are untouched: the change is one `catch`
+# in FleetCore.RebuildPipelineOffLock plus comment corrections, and no suite outside EngineApi constructs
+# a FleetCore restart.
+#
+# WHAT THE OWNER RULED, because the totals below only make sense against it: a restart whose rebuild
+# throws leaves the fleet STOPPED with its roster/scenario commit STANDING, and records the exception on
+# FleetCore.LastError — the field `GET /v1/health` is literally `LastError is null` over. Before this, a
+# fleet an internal restart had torn down and could not rebuild reported HEALTHY. Neither of the two
+# mechanisms J-2 named was taken; both are refused with reasons at the S4 row in FleetCore.cs's own banner.
+#
+# 🔴 U-1 FIX ROUND 1 — the sentence above ended "permanently, because nothing else set that field", and
+# that is a FALSE UNIVERSAL over the two arms. It holds when BuildStartPlan throws: StopLocked cleared
+# `_slots`, no slot survives that could fault, nothing writes the field. It fails when StartLocked throws
+# mid-slot-loop: StartSlot's `_slots.Add` runs BEFORE `Task.Run`, so a stranded slot that later faults
+# finds `removed == true` and sets LastError — a late, conditional (the slot must actually fault, and no
+# Stop/Estop must have cleared `_slots` first) and mis-attributed self-report, naming the slot's fault
+# rather than the restart's. Same family as the "GetDriverHealth lists NOTHING" universal corrected in
+# 08fd75cb, which fixed the premise here and left the conclusion resting on it. The verdict is unchanged:
+# the build-throws arm alone carries the finding, and on the install-throws arm U-1 replaces a contingent
+# late report with an immediate one carrying the install's own exception.
+#   ARegisterWhoseRebuildReallyThrows_LeavesTheFleetStopped_AndPutsTheSameExceptionOnTheHealthSurface  +1
+#       The control-pair test and the only REAL throw of the five: a machine whose MachineConfigStore
+#       record already carries a different configKind, so BuildStartPlan -> SimulatorFactory.Create ->
+#       SimulatorBase's ctor -> MachineConfigStore.Ensure throws InvalidOperationException — the
+#       enumeration's P5, production-reachable, no seam. Asserts Assert.Same between the exception the
+#       caller receives and the one on LastError, so "the HTTP 500 and the health surface cannot disagree
+#       about what failed" is measured rather than claimed.
+#   AScenarioChangeWhoseRebuildThrows_ReportsTheSameFaultOnTheSameSurface                             +1
+#   AFailedBurstRevert_ReportsOnTheHealthSurface_ThoughNoCallerEverSeesTheException                   +1
+#       Entry paths 2 and 3. The third is the one that made a log line insufficient: Burst starts its
+#       revert as `_ = RevertBurstAfterDelayAsync(...)`, so no caller ever sees the exception at all.
+#       Both use the AdditionalPipelinesForTests stand-in rather than the real P5 site, and the reason is
+#       mechanical rather than convenience: Ensure SEEDS a record on the first successful build, so the
+#       real site cannot be armed a second time against one roster. Stated at the tests.
+#   ARebuildRefusedByTheHaltLatch_LeavesTheHealthSurfaceUntouched                                     +1
+#       The halt path still says nothing, pinned rather than asserted. It is silent STRUCTURALLY: both
+#       refusals RETURN (RebuildPipelineOffLock's pre-check, StartLocked's latch), so neither can reach a
+#       `catch`. Deleting the `if (!_running)` guard leaves this GREEN — that guard is about a concurrent
+#       Start, not about the latch — which is exactly why the two are witnessed separately.
+#   AStartThatInstallsAfterAFailedRestart_ClearsTheHealthSurfaceAgain                                 +1
+#       U-1 added no clearing rule; StartLocked's pre-existing `LastError = null` sits past its own latch.
+#       Without this pin, "stopped and unhealthy" being an absorbing state would be untested.
+#
+# 🔴 THE CONTROL PAIR, RUN ON BOTH SIDES AND RECORDED AS NUMBERS RATHER THAN AS AN EXPECTATION. Same test
+# file, both arms, only src/St4i.EdgeCore/Fleet/FleetCore.cs swapped between them:
+#   BASE (895c0c23, FleetCore.cs unmodified) — Failed: 4, Passed: 1. Every failure is LastError being
+#       null: Assert.Same reports "Actual: null" for the two paths with a caller, Assert.NotNull fails on
+#       the recovery test, and the burst path times out waiting for a field nothing writes.
+#   HEAD — Failed: 0, Passed: 5.
+# The ONE test green on BOTH arms is ARebuildRefusedByTheHaltLatch_LeavesTheHealthSurfaceUntouched, and
+# that is the right result rather than a weak test: it measures a property U-1 did not change (the halt
+# path says nothing here, on either side), which is what makes it a REGRESSION pin instead of a
+# demonstration. Same shape as T-1's own green-on-both-sides witness.
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0: measured on a full -t:Rebuild. The new test
+# file compiles with no warning of its own, and FleetCore.cs gains one `catch` variable, one lock region
+# and doc/comment text — St4i.EdgeCore and St4i.EngineApi are both among the projects that do NOT set
+# GenerateDocumentationFile, so their `///` blocks are not compiled either way. Tag balance on the two
+# edited `///` blocks was checked directly rather than inferred from that, because an unbalanced block
+# on this file HIDES the diagnostics inside it.
+EXPECT_ENGINEAPI=1364
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

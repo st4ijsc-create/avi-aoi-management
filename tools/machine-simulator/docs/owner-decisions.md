@@ -16,8 +16,14 @@ văn: *"Không mục nào trong đây đã bị sửa. Tất cả đều là hà
 Nó là một **khẳng định phổ quát trên chính danh sách bên dưới**, và mỗi lần một mục
 được thi hành thì không có gì bắt nó phải được suy lại — đúng loài khuyết tật file này
 lập ra để chấm dứt, nằm ngay trong lời mở đầu của nó. **Trạng thái nằm ở bảng phán
-quyết và ở từng mục, không ở đây:** mục 1 (Q-1) và mục 6 (T-1) đã thi hành; những mục
-còn lại vẫn là hành vi đang chạy hôm nay.
+quyết và ở từng mục, không ở đây:** mục 1 (Q-1), mục 6 (T-1) và mục 7 (U-1) đã thi
+hành; những mục còn lại vẫn là hành vi đang chạy hôm nay.
+
+> 🔴 **U-1, 2026-08-17 — và câu ngay trên vừa được sửa LẦN THỨ HAI vì đúng lý do nó
+> được viết ra.** T-1 thay một khẳng định phổ quát bằng một **danh sách**, đúng cách;
+> nhưng một danh sách các mục đã thi hành **cũng đi cũ** mỗi lần một mục nữa được thi
+> hành, và U-1 làm nó cũ ngay trong vòng kế tiếp. Nó được cập nhật chứ không bị bỏ, vì
+> **bảng phán quyết mới là nguồn sự thật** và câu này chỉ là con trỏ tới nó.
 
 ---
 
@@ -37,7 +43,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 4 | hình dạng hàng `Samples` | ⚖️ **ĐO TRƯỚC, RỒI CHỌN** — SDK đã xuất bản là ứng viên chuẩn |
 | 5 | ~~ba hình dạng xoá file~~ → **`oee-settings.json`** | 🔴 **CHỜ ANH** — đã đo (S-1): ba tư thế, một cái mất dữ liệu im lặng |
 | 6 | log hoãn của một lần cài đặt hỏng | 🔨 **PHÁT RA TRÊN ĐƯỜNG NÉM LỖI** (2026-08-17) — đã thi hành, T-1 |
-| 7 | nửa sau của S4 | 🔴 **CHỜ ANH** — thứ tự quan sát được + tháo dỡ giao dịch, không phải trạng thái thứ ba |
+| 7 | nửa sau của S4 | 🔨 **DỪNG + GIỮ COMMIT + BÁO TRÊN `/v1/health`** (2026-08-17) — đã thi hành, U-1 |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 ---
@@ -602,6 +608,115 @@ KHÔNG ĐỦ — bản thân việc cài đặt cũng có thể ném lỗi.**
 
 **Nếu không quyết định:** thứ tự vẫn như cũ, và một lần khởi động lại thất bại vẫn
 để hệ thống ở trạng thái giữa chừng mà không có cơ chế lùi.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-17 — FLEET DỪNG, COMMIT ĐỨNG NGUYÊN, VÀ LẦN HỎNG ĐƯỢC GHI LÊN `GET /v1/health`
+> Quyết bởi chủ sở hữu. **Không phải phương án nào trong hai phương án J-2 nêu tên.**
+>
+> **Câu hỏi đã bị đặt sai, và chỗ sai là chỗ đáng giữ.** Brief nói *"thứ fleet LÀ và
+> thứ hồ sơ NÓI không khớp nhau"*. Đo lại từng bề mặt: `IsRunning` báo **dừng** —
+> đúng; `GetDriverHealth` liệt kê **đúng những slot mà lần cài đặt để lại** (không slot
+> nào khi cú ném nằm trong lần DỰNG; phần đã cài khi nó nằm trong lần CÀI ĐẶT — phần dư
+> (2) của S3) — đúng; `Fleet` có máy vừa đăng ký — đúng;
+> `CurrentScenario` mang cấu hình vừa commit — đúng, vì đó là **cấu hình**, thứ mà một
+> fleet đang dừng có quyền giữ cho lần khởi động sau. **Từng trường một đều nói thật.**
+> Thứ nói dối là **bề mặt TÓM TẮT chúng**: `GET /v1/health` đúng nghĩa đen là
+> `LastError is null`, nên nó trả lời **HEALTHY** cho một fleet mà một lần khởi động
+> lại nội bộ đã tháo xuống và không dựng lại được. Đó là đúng câu `FleetCore.cs` đã tự
+> viết ra cho một ca khác, tại `StartSlot`.
+>
+> > 🔴 **ĐÍNH CHÍNH U-1 vòng sửa 1 — câu trên TỪNG kết thúc bằng *"— **vĩnh viễn**, vì
+> > không gì khác ghi trường ấy"*, và đó là một KHẲNG ĐỊNH PHỔ QUÁT bị chính đoạn văn
+> > của nó bác sáu dòng phía trên.** Trên nhánh **cú ném nằm trong lần DỰNG**
+> > (`BuildStartPlan`) nó **đúng**: `StopLocked` đã dọn sạch `_slots`, không còn slot
+> > nào để mà hỏng, nên trước U-1 không gì ghi `LastError` cho tới khi một lần khởi động
+> > **thành công** xảy ra. Trên nhánh **cú ném nằm trong lần CÀI ĐẶT** thì **SAI**:
+> > `StartSlot` chạy `_slots.Add(slot)` **TRƯỚC** `Task.Run`, nên các slot đã cài là
+> > thành viên sống; một slot trong số đó hỏng sau này sẽ thấy
+> > `removed = _slots.Remove(slot) == true` và **ghi `LastError`**. Trạng thái ấy có
+> > **một** lần tự báo — muộn, và **không phải cái đúng**.
+> >
+> > **Lần tự báo ấy phụ thuộc ba điều kiện**, nên "không vĩnh viễn" cũng không được nói
+> > như một sự bảo đảm: phải có một slot bị mắc kẹt **thật sự hỏng** (J-2 đã ghi: slot
+> > nào cư xử tử tế thì mắc kẹt suốt đời tiến trình); phải **chưa** có `Stop`/`Estop`
+> > nào dọn `_slots` (sau J-2 thì `removed == false`, và ghi chú tại `StopLocked` nói
+> > đúng điều đó); và exception ghi được là **của slot**, không phải của lần khởi động
+> > lại — nên ngay cả khi nó tới, nó **gọi tên sai thứ đã hỏng**.
+> >
+> > **U-1 đổi gì trên nhánh ấy:** báo cáo thành **tức thì** và mang **chính exception
+> > của lần cài đặt**, thay cho một lần tự báo muộn, có điều kiện, và gọi sai tên.
+> > Phán quyết **không đổi** — chỉ riêng nhánh DỰNG đã đủ mang nó.
+> >
+> > Đây là đúng loài mà `08fd75cb` vừa sửa ở bốn chỗ (*"GetDriverHealth không liệt kê
+> > gì"*): **tôi sửa tiền đề rồi để nguyên kết luận dựa trên nó**, trong đúng cái
+> > artefact mà chủ sở hữu mở ra đọc.
+>
+> **Cơ chế:** một lần ghi `LastError = ex` trong `catch` của `RebuildPipelineOffLock` —
+> **chốt duy nhất mà cả ba đường vào đều đi qua**. `ex` là **object mà method này ném
+> lại**, nên trên hai đường có người gọi thì HTTP 500 và bề mặt health mang **cùng một
+> instance** và không thể nói khác nhau về chuyện gì đã hỏng. 🔴 **KHÔNG phải một khẳng
+> định về thứ người gọi CUỐI CÙNG nhìn thấy** — hai cửa sổ che lấp mà chính file này đã
+> nêu tên vẫn có thể thay nó trên đường ra: cửa sổ bốn điều kiện của J-2 tại
+> `DisposeOrphanedConnectorDrivers`, và `finally` drain ngoài cùng của `RegisterMachine`.
+> (Bản đầu của đoạn này viết *"cùng một object người gọi nhận được"* — U-1 đã sửa câu ấy
+> trong `FleetCore.cs` ở `08fd75cb` và **để nguyên bản sao ở đây**, tức đúng lỗi
+> "rút lại ở một trong hai chỗ, khẳng định như cả hai" mà file kia đã ghi nhận hai lần.)
+> Cái U-1 thật sự mua: `ex` **sống sót trên một TRƯỜNG** kể cả khi một `finally` về sau
+> thay nó cho người gọi. Trên đường thứ ba (revert của `Burst`, Task không ai quan sát)
+> đó là **chỗ duy nhất** exception ấy đậu lại.
+>
+> **Vì sao KHÔNG "dựng trước khi tháo":** J-2 đã đo là **CẦN và KHÔNG ĐỦ**, và chứng
+> minh tính đủ đòi một lần cài đặt **khôi phục được đường ống nó thay thế** — mà các
+> slot cũ đã bị cancel và dispose xong từ trước. Lấy nó một mình là mua một thay đổi
+> thứ tự **quan sát được** để đổi lấy một bản sửa một nửa.
+>
+> **Vì sao KHÔNG quay lui commit:** hai cơ chế của J-2 vẫn đứng, và một cơ chế thứ ba
+> quyết định: **quay lui KHÔNG mang đường ống trở lại.** Dù quay lui hoàn hảo, fleet
+> vẫn dừng — nên quay lui mua được sự khớp nhau giữa một fleet đang dừng và cấu hình
+> của nó, mà **để nguyên đúng thứ vận hành viên phải hành động**. Nó cũng không phải
+> một câu lệnh: riêng `ApplyScenario` còn phải tháo cú swap transport của
+> `ApplyNetworkOutageLocked`, và ghi chú năm-khoá trong `FleetCore.cs` nói rằng đường
+> ấy tới `TransportCoordinator.ApplyMode` → `ModeChanged?.Invoke` — **một sự kiện do
+> host đăng ký**, nằm im **chỉ vì** chỗ gọi duy nhất hiện có truyền đúng mode hiện tại.
+> Quay lui là thêm **chỗ gọi thứ hai** vào một seam mà tính an toàn của nó là thuộc
+> tính của chỗ gọi thứ nhất, và thêm trên đường hỏng.
+>
+> ⚠️ Bản đầu của đoạn này gọi đó là *"một chỗ ném lỗi thứ hai"*. **Hôm nay ở đó không
+> gì ném cả** — sửa lại thành đúng thứ nó là (một seam), vì luật của chính banner ấy là
+> "vô hại nhờ một thuộc tính của chỗ gọi hiện tại" phải được **nói thẳng**, không được
+> dựa vào mà cũng không được thổi lên.
+>
+> **CÁI GIÁ, nói thẳng vì nó là sản phẩm giao ra chứ không phải tác dụng phụ:** vòng
+> lặp connector trong `StartLocked` từng **dành riêng** trường này cho *"một slot đã
+> khởi động rồi mới hỏng lúc chạy"*. Câu ấy nay sai và đã được sửa **tại chỗ nó được
+> viết**, không chỉ ở chỗ mới. `GET /v1/health` nay báo **unhealthy** ở một trạng thái
+> trước đây nó báo healthy. Danh sách connector hỏng **không đổi** — vẫn chỉ đi qua
+> `GET /v1/connectors`, vẫn không bao giờ lật health.
+>
+> **CÁI KHÔNG ĐÓNG, nêu tên kèm lý do chứ không im lặng.** Hàng **S4** giữ nguyên nhãn
+> **PARTLY OPEN** như một dòng của tập S: commit vẫn nợ một đường ống mà nó không nhận
+> được, và không `finally` nào khởi động lại được một fleet đã hỏng lúc khởi động. U-1
+> đổi thứ **vận hành viên BIẾT ĐƯỢC**, không đổi trạng thái. Ba chỗ còn lệch, kèm lý
+> do, nằm ở hàng S4 trong chính banner của `FleetCore.cs`: `_scenario`/
+> `_activePresetName` (là cấu hình), `_fleet` (append-only, và hàng asset bền vững đã
+> được giao ở `finally` ngoài cùng), và các bản ghi
+> `machine-operating-config.json` đã seed trước cú ném (`Ensure` chỉ seed, không bao
+> giờ sửa bản ghi có sẵn — đúng thứ lần khởi động sau sẽ ghi).
+>
+> **Một arm được ghi CÓ CHỦ Ý:** một `Estop` rơi **bên trong** lần dựng, trên một data
+> root làm cú ghi ném lỗi, vẫn được ghi. Lần dựng lại **thật sự đã hỏng**, chốt HALT có
+> bề mặt riêng (`GetSafetyStatus`/`EstopEngaged`), và im lặng về **thứ ĐÃ xảy ra** là
+> đúng thứ mục 6 đã bác. Hai đường từ chối còn lại **RETURN** chứ không ném, nên chúng
+> không thể tới `catch` — im lặng ở đó là **cấu trúc**, không phải một điều kiện.
+>
+> **Cặp đối chứng đã chạy hai phía:** một lần dựng lại **ném thật** —
+> `MachineConfigStore.Ensure` từ chối vì lệch `configKind`, tức P5, không dùng seam —
+> ở base để fleet dừng với `LastError == null` (health báo **healthy**), sau bản sửa
+> `LastError` là **chính object** người gọi nhận. Witness:
+> `FleetHostFailedRestartReportsTests`, năm test.
+>
+> **Bằng chứng nằm trong repo:** thông điệp commit merge của U-1, banner S4 trong
+> `src/St4i.EdgeCore/Fleet/FleetCore.cs`, và khối biện minh `EXPECT_ENGINEAPI` trong
+> `scripts/verify-suites.sh`.
 
 ---
 
