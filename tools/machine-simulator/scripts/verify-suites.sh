@@ -1228,7 +1228,62 @@ EXPECT_CONFORMANCE=23
 #       who took the SIBLING message's own advice ("move it aside and restart") was being told "the file
 #       reads correctly again now" about a file that no longer exists. Three messages now, and this pins
 #       the one that was wrong -- by what it must NOT say as well as by what it must.
-EXPECT_EDGECORE=1122
+#
+# 🔴 TASK W-1 (.superpowers/sdd/edgecore-doc-instrument/task-1-brief.md) raises EXPECT_EDGECORE 1122 -> 1129
+# (+7). Grand total 2725 -> 2732. ONE new file; nothing is rewritten, split or deleted.
+# (W-1 fix round 1 adds the seventh; the six below are the original round and the seventh is named after
+# them, so the arithmetic is readable rather than re-stated.)
+#
+#   tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs   (NEW FILE)                               +7
+#       The instrument this task exists to build: `///` prose in St4i.EdgeCore -- and in every other
+#       compilation in this tree -- now has something that reads it as SYNTAX. It is NOT the compiler, and
+#       that is measured rather than preferred: turning GenerateDocumentationFile on for St4i.EdgeCore alone
+#       takes this build from 116 warnings to 852 (measured, SDK 10.0.302, `dotnet build -t:Rebuild`), and
+#       nothing in the compiler separates the 543 CS1591 + 92 CS1573 coverage half from the 101 parse/resolve
+#       half. The coverage half is an owner decision (Directory.Build.props), so this task takes the half
+#       that needs no switch. Six tests:
+#       TheScanReachesItsCorpus_AndTheVendoredFileTheProjectNames -- the floor guard, first because
+#           everything else is vacuous without it; also derives the vendored SDK path from the csproj's own
+#           Compile Include rather than re-spelling it.
+#       EveryDocBlockInSourceThisRepositoryOwns_ParsesAsXml -- the assertion. Its corpus size is NOT quoted
+#           here on purpose: the first revision of this line said "530 files, 3,616 blocks", which paired a
+#           file count from one tree with a block count from another over a different population (the 3,616
+#           included the vendored file, which the file count does not). Measured at 3f6eccb1: 531 owned
+#           files carrying 3,603 owned blocks, plus one linked-in file carrying 15. Name the assertion, do
+#           not copy its number -- the only scalars it holds are its two floors.
+#       EveryDocBlockInTheVendoredSdkFileEdgeCoreCompiles_ParsesAsXml -- the SAME question asked of the file
+#           this repository may not edit, kept as a separate population because its remedy is a report to
+#           the SDK's owner and not an edit. Two separately fatal populations, never a net count.
+#       EveryElementNameInEveryDocBlock_IsOneThisRepositoryHasRegistered -- the one axis on which this
+#           instrument is WIDER than the switch: Roslyn ignores element names entirely, so `<summry>` drops
+#           a whole summary from every rendered surface and no build anywhere says so.
+#       NoDelimitedDocCommentIsWrittenAnywhereInTheCorpus -- W-1 FIX ROUND 1, and it is a boundary turned
+#           into an assertion rather than a sentence. C# has a SECOND doc-comment form, `/** ... */`; the
+#           compiler reads it (CS1570 on an unclosed tag, demonstrated by review) and this reader does not
+#           look at it at all -- a one-way gap in exactly the direction the file exists to close. There are
+#           none in the corpus and this is what keeps it so. Its detector is proven inside the same test, so
+#           the zero cannot be the zero of a detector that stopped detecting.
+#       TheParseCheck_ReportsABlockThatIsNotWellFormed        \  §8.1(h6). An instrument that cannot go red
+#       TheElementNameCheck_ReportsAnUnregisteredName          /  is not an instrument, and a green suite
+#           that would stay green with the checker broken witnesses nothing. Both drive the same functions
+#           the four assertions drive, on hand-built inputs, including the exact shapes T-1 and P-2 shipped.
+#
+# 🔴 WHAT IT FOUND ON ITS FIRST RUN, and it is why this is a standing check rather than a sweep. One live
+# malformed block: tests/St4i.Connector.Abstractions.Tests/EnumSpellingContractTests.cs, a `<para>` opened
+# and closed by its parent `</summary>`. Introduced at 05a4f7a8 (P-2 round 2) and present at every merge
+# from there to this branch's base -- the ENUMERATION, because its size is what went wrong the first time:
+#     f89da589 (P-2)  17fa6841 (Q-1)  79dbf99a (R-1)  7bb0c5bd (S-1)
+#     895c0c23 (T-1)  f18f5c29 (U-1)  46439925 (V-1)
+# Seven. The first revision of this note said SIX and listed six of those seven, dropping U-1 -- a ceiling
+# offered as complete and one short, which is the V-1 rule exactly, inside the note that installs the
+# instrument against it. None of the seven could see the defect, because that project does not set the
+# switch either. Fixed here by re-siting one `</para>` so the two paragraphs are siblings rather than
+# nested; no assertion in that file is touched, which is why EXPECT_ABSTRACTIONS stays 160.
+#
+# EXPECT_CONFORMANCE, EXPECT_EDGESERVICE and EXPECT_ENGINEAPI are deliberately UNCHANGED: W-1 adds no
+# driver, no connector kind and no product code at all. A move in any of them would mean this task reached
+# somewhere it had no business reaching.
+EXPECT_EDGECORE=1129
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4500,6 +4555,59 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # To ask the whole tree the question this gate only asks of six projects, from tools/machine-simulator:
 #     dotnet build -t:Rebuild -p:GenerateDocumentationFile=true
 # That is a diagnostic, not a gate: it does not change this number and nothing here asserts its output.
+#
+# 🔴 W-1 — 116 -> 116 AGAIN, AND FOR A THIRD DISTINCT REASON. N-1's zero was "nothing surfaced"; N-2's was
+# "95 surfaced and all 95 were WRITTEN". W-1's is neither: **this task did not turn the switch on for
+# St4i.EdgeCore, so nothing could surface**, and the reason it did not is measured rather than asserted.
+# Re-measured at 46439925 on SDK 10.0.302, `dotnet build -t:Rebuild`, counted the way the summary above
+# counts:
+#     116   as shipped                     (101 nullable in St4i.EdgeCore -- 82 of them in the vendored SDK
+#                                           file -- plus 9 NU1701, 2 CS8767, 2 CS8604, 1 xUnit2029,
+#                                           1 xUnit1013. NOTHING in that list is a doc comment.)
+#     852   + GenerateDocumentationFile on St4i.EdgeCore ALONE
+#     757   + an .editorconfig section scoped to the vendored file's REAL path, CS1591 only
+#     749   + the same section BESIDE that file naming BOTH its codes -- a perfect exemption of it
+# Nothing survives into this number because nothing was turned on; every one of the 116 is a pre-existing
+# warning of a class this task did not touch.
+#
+# 🔴 THE MIDDLE LINE IS THE OWNER DECISION AND IT IS NOT MINE. 852 - 116 = 736, of which 543 CS1591 and
+# 92 CS1573 are documentation COVERAGE. 448 + 84 of those are our own source and are the same decision the
+# other seven unset projects carry; 95 + 8 are inside examples/device-client/csharp/St4iDeviceClient.cs,
+# which this repository may not edit at all.
+#
+# 🔴 AND THE THIRD LINE SETTLES SOMETHING N-1 EXPLICITLY RECORDED AS UNMEASURED. N-1 wrote that a
+# path-scoped .editorconfig "has to be scoped to the real path ... and that should be verified by running it
+# rather than reasoned about". Run: it works, exactly -95, and CS1591 vanishes from that file. THREE things
+# that were not on record follow, and they are why "narrower" is not the same as "available":
+#   (1) It leaves EIGHT CS1573 in the same untouchable file. N-1's (a)-vs-(b) framing named CS1591 only, so
+#       (b) as described does not actually exempt the vendored file -- it exempts one of its two codes.
+#   (2) 🔴 THIS ONE WAS WRONG AND IS CORRECTED IN PLACE RATHER THAN REPLACED, because the wrong version was
+#       load-bearing in an OWNER'S artefact. It read: "the section cannot live in this product's tree at
+#       all: it has to be planted at the repository root, above an unrelated TypeScript/Node application."
+#       The premise is right -- .editorconfig SECTIONS match at or below their own directory, and that file's
+#       real path is outside tools/machine-simulator -- and the conclusion does not follow, because analyzer
+#       -config DISCOVERY walks the SOURCE FILE's ancestors, not the project's. Measured, three placements,
+#       one build each: repository root, CS1591 -> 757. examples/, CS1591 -> 757. examples/device-client/
+#       csharp/ -- BESIDE the file -- naming CS1591 AND CS1573 -> 749, with ZERO CS15xx left in that file.
+#       So the remedy sits two directories from the file it is about, inside the SDK example it exempts, and
+#       is not forced anywhere near the TypeScript application. What is left of the objection is a different
+#       one and is NOT measured: that directory is the published SDK sample kept in step with the Python and
+#       Node siblings, so a file planted there ships to machine developers and can be lost to a re-vendor.
+#   (3) 749 is still not 116, and 757 is not either. "Leaves the other 448 ASSERTED" is true and is not the
+#       same as "passing": a PERFECT exemption of the vendored file removes the 103 nobody may fix and leaves
+#       633 -- 532 coverage warnings on our own source plus 101 false `cref` claims -- to write or to pin.
+# So a path-scoped severity is an override, it does not on its own make the switch settable, and W-1 stops
+# and reports rather than taking it. No override has shipped since N-1 (f1dba1a8): N-2, P-1, P-2, Q-1, R-1,
+# S-1, T-1, U-1, V-1 and this branch -- the enumeration, because "the seventh in a row" was inherited from a
+# count nobody had re-derived and it understates by three.
+#
+# 🔴 WHAT DID CHANGE, AND IT IS NOT THIS NUMBER. The negative control three paragraphs above -- a `</para>`
+# deleted from FleetCore.cs, this gate FULL GREEN and unmoved -- no longer describes this gate. That defect
+# now fails DocCommentProseTests in the EdgeCore suite. The build half of the gate still does not notice it
+# and never will while the switch is off; the suite half does. Both halves were run on the same defect (the
+# transcripts are in the W-1 report). The boundary moved from "the gate cannot see a malformed block outside
+# the six" to "the gate cannot see an unresolvable `cref` outside the seven" -- 237 of those are on record
+# and NONE of them is indexed here.
 EXPECT_WARNINGS=116
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."

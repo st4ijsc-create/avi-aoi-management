@@ -72,7 +72,7 @@ namespace St4i.Connector.Abstractions.Tests;
 /// <see cref="EveryObjectLiteralKeyedByMemberNames_IsARegisteredMirror"/>,
 /// <see cref="EveryTsTypeAliasOrTableNamedForAPublishedEnum_IsARegisteredMirror"/> and
 /// <see cref="EveryLiteralBoundToARegisteredCarrier_NamesACurrentMember"/>, none of which reads the
-/// registry to decide what to look at.
+/// registry to decide what to look at.</para>
 /// <para>🔴 The FIRST version of that promise was not kept, and the correction is the point. The only
 /// census this file shipped with was indexed on a declaration's TYPE ANNOTATION, and six of the seven
 /// member-keyed tables in this codebase carry none — so it could not refute the registry in the one
