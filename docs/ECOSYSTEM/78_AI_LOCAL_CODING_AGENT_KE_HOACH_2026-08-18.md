@@ -24,13 +24,13 @@ Tôi khảo sát trước khi vẽ kế hoạch. Kết quả làm đổi hẳn h
 | Vòng lặp tác nhân đa bước | ✅ `aiLocalTools/toolLoop.ts`, `AI_TOOL_LOOP_ENABLED=1`, đa bước 0/8 → **8/8** | — |
 | Lập kế hoạch + lập lại kế hoạch | ✅ `aiAgentPlanner`, `aiAgentOrchestrator` (`AGENT_MAX_STEPS`, `AGENT_MAX_REPLANS`) | — |
 | Gọi tool bản địa | ✅ `openaiGateway.ts` + `AI_NATIVE_TOOLCALLS_ENABLED=true` | — |
-| Sổ đăng ký tool | ✅ **56 tool** | **0 tool chạm tệp, 0 tool chạy lệnh** |
+| Sổ đăng ký tool | ✅ ~~56~~ **80 tool** (52 read · 26 write · 2 client) | ~~0 tool chạm tệp~~ **0 tool chạy lệnh** |
 | RAG trên chính repo này | ✅ 7.349 chunk, `repoContextService`, `code-graph.json` | — |
 | Chữ gợi ý nội tuyến (ghost text) | ✅ `inlineCopilotExtension.ts`, model 1,5B riêng | — |
 | Xem khác biệt (diff) | ✅ `diffHunks.ts`, `HunkDiffView.tsx` | áp diff xuống đĩa |
 | Người-trong-vòng (HITL) | ✅ `proposeAction`/`confirmAction`, `isWriteTool`, `assertExecutable` | — |
 | Nhật ký WORM | ✅ `audit_logs`, `control_audit_log` (`avi_app` bị thu hồi DELETE) | — |
-| **Đọc/ghi tệp repo** | ❌ **không có** | **toàn bộ** |
+| **Đọc/ghi tệp repo** | ⚠ ~~không có~~ → xem ĐÍNH CHÍNH (c) | LLM tự **CHỌN** tệp (pha A) |
 | **Chạy lệnh (test, build, lint)** | ❌ **không có** | **toàn bộ** |
 | **Không gian làm việc nhiều tệp** | ❌ | **toàn bộ** |
 
@@ -48,7 +48,26 @@ cách gỡ dòng chú thích đó đi.
 (doc 09/D7 + doc 34/P2), không phải TypeScript của chính nền tảng. Đừng nhầm nó là "copilot code"
 theo nghĩa Claude Code — hai thứ khác nhau, và ghép nhầm sẽ đẻ ra một cái nửa nạc nửa mỡ.
 
-⇒ **Việc phải làm không phải "dựng một tác nhân lập trình". Việc phải làm là mở đúng bốn năng
+**(c) ★★★ ĐÍNH CHÍNH 2026-08-18 (sau khi thực thi pha A) — DÒNG "0 TOOL CHẠM TỆP" LÀ SAI.**
+
+`read_project_file` và `write_project_file` **đã đăng ký từ doc 34/P2**, kèm một cửa đĩa đã tôi
+luyện qua nhiều vòng đột biến — `realpathSync` cả gốc lẫn target, chặn `nlink > 1`, và một tầng
+`fd` hỏi `isFile`/`nlink`/`size` trên **chính fd sắp đọc** để chống TOCTOU. Nó sinh ra từ commit
+`bb9f42df` *"MỘT CỬA DUY NHẤT ra đĩa cho cả ĐỌC lẫn GHI"*. Và `programmingFileIo.census.test.ts`
+cưỡng chế *"mọi byte trong `aiLocalTools/**` phải đi qua ĐÚNG HAI hàm cửa"* — nên viết cửa thứ hai
+là **ĐỎ ngay lập tức**.
+
+Tôi đếm bằng một phép `grep` thô rồi kết luận "không có". Bảng ở trên là **phép đếm sai của tôi**,
+không phải hiện trạng. Ba hệ quả:
+1. Pha A **dùng lại** cửa ấy thay vì dựng cửa song song. Cái pha A thật sự thêm là **quyền TỰ CHỌN
+   tệp** cho LLM (trước đó chỉ người dùng liệt kê tệp), cộng hộp cát + ngân sách + bit RBAC riêng.
+2. **Pha C gần hơn nhiều so với kế hoạch tưởng** — `writeConfined` đã có sẵn và đã qua đột biến.
+   Phần còn thiếu của pha C chủ yếu là **hàng rào "tệp bẩn"** và đường HITL, không phải cửa ghi.
+3. Bài học chung: một phép đếm thô (`grep` theo một khuôn đặt tên) **không phải phép kiểm kê**.
+   Đây là lần thứ hai trong ngày cùng một lớp lỗi — lần trước là bảng hình dạng đường dẫn ảnh rút
+   từ **một thư mục máy chủ không hề phục vụ**.
+
+⇒ **Việc phải làm không phải "dựng một tác nhân lập trình". Việc phải làm là mở đúng những năng
 lực còn thiếu, trên một nền tác nhân đã chạy được, mà không phá lớp an toàn đang giữ nó.**
 
 ---
