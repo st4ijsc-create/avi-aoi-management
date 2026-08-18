@@ -664,6 +664,21 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
           "đúng câu giải thích vị trí gắn middleware (thứ mà một lượt sửa sau rất dễ làm hỏng).",
         soTuyen: 2,
       },
+      "server/routes/_uyQuyenAnh.ts": {
+        viSao:
+          "★ THÊM 2026-08-18 (uỷ quyền `/uploads/**` theo ĐƯỜNG DẪN) — **GẮN 0 TUYẾN.** Em ruột của " +
+          "`_congAnh.ts` ngay trên: file này là CHỦ của câu hỏi \"đường dẫn này thuộc nhà máy NÀO?\". " +
+          "Nó XUẤT `uyQuyenDuongDanAnh`/`chuanHoaDuongDanTai`/`hinhDangCuaDuongDan`, không nhập " +
+          "`express` như một giá trị, không nhận tham số `Express`. Chính `_core/index.ts` mới " +
+          "`app.use(...)` — và điểm gắn ấy đã nằm trong con số 104 của mục `_core/index.ts` " +
+          "(middleware uỷ quyền chạy TRONG cùng một `app.use(\"/uploads\", …)` với cổng xác thực, " +
+          "nên nó KHÔNG thêm một điểm gắn nào). " +
+          "⚠ 1 lượt khớp DUY NHẤT là DƯƠNG TÍNH GIẢ của `soGanTuyen()`: nó nằm trong CHÚ THÍCH giải " +
+          "thích rằng bên trong `app.use(\"/uploads\", …)` express đã cắt tiền tố khỏi `req.path`, nên " +
+          "bộ chuẩn hoá phải nhận CẢ hai dạng đường dẫn. Khai kèm SỐ thay vì nắn chú thích cho vừa " +
+          "bộ đếm — cùng lý do đã nêu ở bốn mục trên.",
+        soTuyen: 1,
+      },
     };
 
     const ganThang = MOI_FILE_SX.filter(

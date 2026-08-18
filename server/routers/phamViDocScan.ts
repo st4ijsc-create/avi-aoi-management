@@ -1025,6 +1025,20 @@ const HAM_DANH_TINH_REST = new Set([
   //   `x-master-key`. Bằng chứng thu hẹp vẫn là `danhTinhRoiTay` — giá trị phải ĐI VÀO lời gọi dữ
   //   liệu. Một tuyến gọi `phamViGoiNgoai(req)` rồi vứt kết quả đi vẫn ở nhóm **A**.
   "phamViGoiNgoai",
+  // ★★★ 2026-08-18 — **ĐÍNH CHÍNH BẢN MÔ TẢ NHIỆM VỤ.** Sổ nợ ghi *"5 tuyến ảnh vẫn bị xếp nhóm A
+  // vì bộ quét chưa biết tên hàm phân giải mới; sửa đúng là khai tên vào `TEN_PHAN_GIAI`"*. Khai
+  // vào đó thì **SAI CHIỀU**, và đây là lý do đo được: `TEN_PHAN_GIAI` có HAI tác dụng, và tác
+  // dụng thứ hai (`noiNhanLocCua`, BẬC 3) là *"callee mang tên này thì **KHÔNG** tính là bằng
+  // chứng thu hẹp"*. `mayTrongPhamViAnh`/`sanPhamTrongPhamViAnh` **chính là** bằng chứng thu hẹp
+  // của năm tuyến ấy, nên khai chúng ở đó sẽ **khoá chặt** cả năm vào nhóm A vĩnh viễn.
+  // ⇒ Thứ cần khai là **cửa DANH TÍNH**: `thuMoCongAnh` (`server/routes/_congAnh.ts`) đối chiếu ba
+  //   chứng thực ĐƯỢC ĐỐI CHIẾU — vé HMAC (`kiemChuKyAnh`), `MASTER_API_KEY` (`isValidMasterKey`),
+  //   cookie phiên (`thuXacThucRest`, đã có tên trong danh sách này) — rồi trả một `LoiVaoAnh`.
+  //   Đúng tiêu chuẩn của danh sách này, và nó để `mayTrongPhamViAnh` làm đúng việc của nó.
+  // ⚠ Khai tên ở đây **KHÔNG** khẳng định "đã thu hẹp": `thuMoCongAnh` trả `{kieu:"toanCuc"}` cho
+  //   nhánh master key. Tuyến nào gọi nó rồi vứt kết quả đi vẫn ở nhóm **A** — cùng luật đã ghi
+  //   cho `phamViGoiNgoai` ngay trên.
+  "thuMoCongAnh",
 ]);
 
 /**

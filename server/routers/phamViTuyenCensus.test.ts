@@ -28,8 +28,9 @@
  *       của người, và §6 dưới đây neo vào đúng cái tuyến đã được đo tay.
  *   (2) **Nó mù với tuyến TĨNH.** `app.use("/uploads", express.static(…))` phục vụ byte tệp,
  *       không qua một lượt đọc bảng nào — §1 ghim danh sách ấy để nó không im lặng lớn thêm.
- *   (3) **87 mục trong sổ là NỢ**, không phải 87 quyết định "chỗ này rò cũng được". §3 in con số
- *       ấy mỗi lượt chạy để không ai quên.
+ *   (3) **83 mục trong sổ là NỢ**, không phải 83 quyết định "chỗ này rò cũng được". §3 in con số
+ *       ấy mỗi lượt chạy để không ai quên. (88 → 83 ngày 2026-08-18 khi năm tuyến ảnh được trả —
+ *       xem `phamViTuyenBaseline.ts`; con số đến từ một lượt CHẠY LẠI bộ suy, không từ phép trừ.)
  */
 import { describe, it, expect } from "vitest";
 import { join, dirname } from "node:path";
@@ -63,7 +64,7 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
  * ⚠ Đổi một số ở đây là một **lời khai**, không phải một lượt bảo trì. Năm con số bị ràng buộc bởi
  * `A + C + D + S + U === tổng`, nên không sửa lén được một ô.
  */
-const GHIM = { A: 88, C: 38, D: 71, S: 10, U: 16, tong: 223 } as const;
+const GHIM = { A: 83, C: 38, D: 71, S: 15, U: 16, tong: 223 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -97,15 +98,18 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
     //    không một phép xác thực nào — món nợ CÓ THẬT, chỉ là món nợ cổng này không đo được"*.
     //    Món nợ ấy nay **đã được vá**: một middleware cổng ảnh (`server/routes/_congAnh.ts`) đứng
     //    TRƯỚC cả handler resize lẫn `express.static`, sau cờ `ANH_CONG_MO`.
-    // ⚠ Con số ghim đổi **609 → 642** vì lượt vá chèn middleware ấy lên phía trên, KHÔNG phải vì
-    //   một thư mục mới được gắn ra web: danh sách vẫn đúng HAI mục như cũ. Đây là con số ĐO
-    //   ĐƯỢC từ bộ quét, không phải một con số nới ra cho lưới xanh.
-    // ⚠ Bộ suy vẫn **mù** với bề mặt tĩnh (nó phục vụ byte tệp, không đọc bảng nào) — cổng này vì
-    //   thế KHÔNG chứng minh được `/uploads` đã có phòng vệ; phép chứng minh ấy nằm ở lượt HTTP
-    //   thật và `server/routes/congAnhPhamVi.db.test.ts`. Ghim danh sách để một lượt gắn thư mục
-    //   MỚI ra web vẫn phải được ký tên.
+    // ⚠ Con số ghim đổi **609 → 642 → 652** vì hai lượt vá chèn middleware lên phía trên, KHÔNG
+    //   phải vì một thư mục mới được gắn ra web: danh sách vẫn đúng HAI mục như cũ. Đây là con số
+    //   ĐO ĐƯỢC từ bộ quét, không phải một con số nới ra cho lưới xanh.
+    // ⚠⚠ Bộ suy vẫn **mù** với bề mặt tĩnh (nó phục vụ byte tệp, không đọc bảng nào) — cổng này vì
+    //   thế KHÔNG chứng minh được `/uploads` đã có phòng vệ, **kể cả sau lượt uỷ quyền theo đường
+    //   dẫn ngày 2026-08-18**. Phép chứng minh nằm ở ba chỗ KHÁC, và đây là chỗ trỏ tới chúng:
+    //   `server/routes/uyQuyenAnhHinhDang.test.ts` (hình dạng + traversal, thuần),
+    //   `server/routes/uyQuyenAnhPhamVi.db.test.ts` (âm đối xứng, CSDL thật), và một lượt HTTP
+    //   THẬT bằng socket thô (ghi trong báo cáo). Ghim danh sách để một lượt gắn thư mục MỚI ra
+    //   web vẫn phải được ký tên.
     expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
-      "server/_core/index.ts:642",
+      "server/_core/index.ts:652",
       "server/_core/vite.ts:58",
     ]);
   });
@@ -231,12 +235,21 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
     //   khỏi sổ), hoặc là một lượt XANH GIẢ. Vị từ `danhTinhRoiTay` đòi danh tính đi vào một lời
     //   gọi **NẰM TRÊN ĐƯỜNG ĐỌC** (BẬC 2 ở `phamViDocScan.danhTinhRoiTayRest`) — luật ấy sinh ra
     //   từ một đột biến ĐÃ CHẠY và ĐÃ bắt được một lượt xanh giả; nhưng nó vẫn không phân biệt
-    //   được *"đọc có cổng"* với *"đọc rồi lọc SAI trục"*. Cả 10 mục dưới đây đã được đọc TAY từng
+    //   được *"đọc có cổng"* với *"đọc rồi lọc SAI trục"*. Cả 15 mục dưới đây đã được đọc TAY từng
     //   dòng ngày 2026-08-18 và xác nhận là thu hẹp THẬT.
+    // ★ 2026-08-18 — NĂM mục ảnh chuyển từ nhóm A sang đây (10 → 15). Cả năm còn được kiểm bằng
+    //   một lượt **HTTP THẬT** (`aoi_management_test`, cổng 3099): tài khoản nhà máy A nhận
+    //   `403 · application/json · image_factory_scope_denied` trên đường dẫn của nhà máy B, và
+    //   `200 · image/png` trên đường dẫn của chính A. Xem `phamViTuyenBaseline.ts`.
     expect(cua("S").map(khoaTuyen).sort()).toEqual([
+      "server/_core/index.ts#GET /api/aoi/download/:packageId",
+      "server/_core/index.ts#GET /api/aoi/image/:packageId/:fileName",
       "server/_core/index.ts#GET /api/external/machines",
       "server/_core/index.ts#GET /api/external/machines/by-code/:code",
       "server/_core/index.ts#GET /api/external/stations",
+      "server/_core/index.ts#GET /api/inspection/:id/images",
+      "server/_core/index.ts#GET /api/measurement-point/:id/reference-image",
+      "server/_core/index.ts#GET /api/product-model/:id/reference-images",
       "server/_core/index.ts#GET /api/public/products/:productCode/reference-image-file",
       "server/api/export/biRouter.ts#GET /datasets",
       "server/api/export/biRouter.ts#GET /datasets/:name",

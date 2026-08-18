@@ -20,7 +20,7 @@
  *     sách đều lệch ⇒ **ĐỎ** (hai phép so CÓ HƯỚNG, không phải một phép so số lượng).
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * ★★★ LƯỢT TẠO SỔ ĐÃ TRẢ **3** MỤC — số 88 dưới đây là **91 − 3**, và đây là lời khai kèm số liệu
+ * ★★★ LƯỢT TẠO SỔ ĐÃ TRẢ **3** MỤC — số 88 khi ấy là **91 − 3**, và đây là lời khai kèm số liệu
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * Số đo được ngay trước khi vá: **A = 91**. Ba tuyến sau đã được thu hẹp về nhà máy của TÀI KHOẢN
  * gọi (`server/routes/_phamViNgoai.ts`) trong CHÍNH lượt này, nên chúng **chưa bao giờ** vào sổ:
@@ -34,21 +34,28 @@
  * thật. ⚠ Nhánh `x-master-key` giữ NGUYÊN TỪNG BYTE ở cả ba — chiều DƯƠNG chống vá quá tay.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * ⚠⚠⚠ **NĂM MỤC TRONG SỔ NÀY KHÔNG VÁ ĐƯỢC BẰNG MÃ — CHÚNG CẦN MỘT QUYẾT ĐỊNH SẢN PHẨM.**
+ * ★★★ 2026-08-18 (lượt uỷ quyền `/uploads/**`) — **NĂM MỤC ĐÃ TRẢ: 88 → 83.**
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * Năm tuyến sau **KHÔNG có một phép xác thực nào** (không middleware, không khoá, không cookie —
- * đã đọc từng dòng thân handler, không phải suy từ tên):
+ * Bản trước của khối này ghi rằng năm tuyến ảnh
  *
  *   `GET /api/inspection/:id/images` · `GET /api/measurement-point/:id/reference-image` ·
  *   `GET /api/product-model/:id/reference-images` · `GET /api/aoi/image/:packageId/:fileName` ·
  *   `GET /api/aoi/download/:packageId`
  *
- * Không có danh tính thì **không tồn tại trục nào để thu hẹp** — cách vá duy nhất là ĐÒI một
- * chứng thực, tức **đổi hợp đồng API**. Và hợp đồng ấy đang được dùng: ứng dụng Android ghi thẳng
- * *"/api/inspection/:id/images does not require auth — no headers needed"*
- * (`FactoryAlertSystem/src/services/imageService.ts:96`), còn `client/src/pages/AOIPackages.tsx`
- * mở `/api/aoi/image/…` bằng `window.open`. ⇒ Đây là việc của chủ dự án, **không** của một lượt
- * trả nợ tự quyết. Giữ trong sổ là lời khai đúng: nợ vẫn còn, và ai cũng đọc được nó ở đây.
+ * **KHÔNG vá được bằng mã** vì chúng không có một phép xác thực nào để bám vào. Lời khai ấy đã
+ * ĐÚNG vào lúc viết và nay **HẾT ĐÚNG**: cả năm đã đi qua `thuMoCongAnh` (ba lối vào có tên) rồi
+ * áp `mayTrongPhamViAnh` / `sanPhamTrongPhamViAnh` — đo lại bằng chính bộ suy, cả năm rơi vào
+ * nhóm **S** (`danhTinhRoiTay = true`).
+ *
+ * ⚠⚠ **CON SỐ HẠ THEO SỐ ĐO, KHÔNG THEO PHÉP TRỪ NHẨM.** Chạy lại `quetPhamViDoc` trên cây hiện
+ * tại: `A = 83 · C = 38 · D = 71 · S = 15 · U = 16 · tổng 223`. Trùng khớp với `88 − 5` và
+ * `10 + 5`, nhưng con số ghim đến từ **lượt chạy**, không từ dấu trừ — hai lượt sửa triệt tiêu
+ * nhau sẽ giữ nguyên tổng mà làm lệch **hai** danh sách, và ratchet bắt đúng chuyện đó.
+ *
+ * ⚠ Bộ quét trước đây **không thể** nhìn thấy lượt vá vì `thuMoCongAnh` chưa có tên trong
+ *   `HAM_DANH_TINH_REST`. Vì sao **KHÔNG** khai vào `TEN_PHAN_GIAI` (như sổ nợ trước đề nghị):
+ *   xem khối đính chính ngay tại chỗ khai tên (`phamViDocScan.ts`) — khai vào đó sẽ khoá chặt cả
+ *   năm tuyến vào nhóm A **vĩnh viễn**.
  *
  * ⚠ Khoá là `file#PHƯƠNGTHỨC đườngDẫn` — **KHÔNG mang số dòng** (dòng trôi ở mọi lượt sửa) và
  *   **KHÔNG mang tiền tố mount** (`app.use("/api/v1", …)`): bộ suy không đi đoán nơi gắn, vì đoán
@@ -58,9 +65,7 @@
  * Đừng sửa tay để làm cổng xanh — sửa mã, rồi xoá dòng.
  */
 export const NO_PHAM_VI_TUYEN: readonly string[] = [
-  // ── server/_core/index.ts (24) ─────────────────────────────────────────────────────────────────
-  "server/_core/index.ts#GET /api/aoi/download/:packageId",
-  "server/_core/index.ts#GET /api/aoi/image/:packageId/:fileName",
+  // ── server/_core/index.ts (19) ─────────────────────────────────────────────────────────────────
   "server/_core/index.ts#GET /api/external/alerts",
   "server/_core/index.ts#GET /api/external/alerts/:alertId",
   "server/_core/index.ts#GET /api/external/bulletins",
@@ -80,9 +85,6 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/_core/index.ts#GET /api/external/statistics/measurement-points",
   "server/_core/index.ts#GET /api/external/workstations",
   "server/_core/index.ts#GET /api/external/workstations/:id",
-  "server/_core/index.ts#GET /api/inspection/:id/images",
-  "server/_core/index.ts#GET /api/measurement-point/:id/reference-image",
-  "server/_core/index.ts#GET /api/product-model/:id/reference-images",
   // ── server/api/v1/advice.ts (1) ────────────────────────────────────────────────────────────────
   "server/api/v1/advice.ts#GET /recommendations",
   // ── server/api/v1/assets.ts (6) ────────────────────────────────────────────────────────────────

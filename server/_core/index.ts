@@ -49,6 +49,7 @@ import {
   thuMoCongAnh,
   type LoiVaoAnh,
 } from "../routes/_congAnh";
+import { uyQuyenDuongDanAnh } from "../routes/_uyQuyenAnh";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
 import { livenessProbe, readinessProbe } from "./healthProbes";
@@ -611,6 +612,13 @@ async function startServer() {
     //   express đã cắt tiền tố `/uploads` khỏi `req.path`. Chữ ký phủ đường dẫn ĐẦY ĐỦ, nên dùng
     //   `req.path` sẽ làm **mọi vé đều trượt** — và triệu chứng (app di động không xem được ảnh
     //   nào) trông y hệt "cấu hình khoá sai".
+    //
+    // ★★★ TẦNG HAI (2026-08-18) — **UỶ QUYỀN theo PHÂN TÍCH ĐƯỜNG DẪN**, chủ ở
+    //     `server/routes/_uyQuyenAnh.ts`. Tầng trên chỉ trả lời *"anh là ai"*; tầng này trả lời
+    //     *"tệp này của nhà máy nào"*. Thiếu nó, một tài khoản hợp lệ của nhà máy A đoán đúng
+    //     đường dẫn vẫn tải được ảnh của nhà máy B — đã đo với `supervisor1`.
+    // ⚠ `req.path` (KHÔNG phải `req.baseUrl + req.path`): bộ phân tích làm việc trên đường dẫn
+    //   DƯỚI gốc `uploads`. Nó vẫn nhận dạng còn tiền tố, nhưng đưa đúng thứ nó cần là rẻ hơn.
     app.use("/uploads", async (req, res, next) => {
       if (congAnhMo()) return next();
       const duongDan = `${req.baseUrl}${req.path}`;
@@ -619,6 +627,8 @@ async function startServer() {
         // 0 dòng im lặng: JSON có mã máy-đọc-được, KHÔNG phải 404 hay một ảnh rỗng.
         return res.status(cong.ma).json({ success: false, ...cong.than });
       }
+      const uq = await uyQuyenDuongDanAnh(cong.loiVao, req.path);
+      if (!uq.ok) return res.status(uq.ma).json(uq.than);
       return next();
     });
 

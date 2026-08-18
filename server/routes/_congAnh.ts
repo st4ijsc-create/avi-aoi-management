@@ -221,6 +221,34 @@ export function xoaNhoDemPhamViAnh(): void {
 }
 
 /**
+ * ★★★ 2026-08-18 — **TẬP `factories.id` trong phạm vi**, nhớ đệm CÙNG một chỗ với tập máy.
+ *
+ * ⚠⚠ ĐO ĐƯỢC, KHÔNG SUY RA. Bản đầu của `_uyQuyenAnh.theoMaNhaMay` gọi thẳng
+ * `idsTrongPhamVi("factory", …)` mỗi lượt và **tự khai là "so tiền tố O(1), không truy vấn"**. Phép
+ * đo bác bỏ ngay: **3.054 µs/ảnh** trên `aoi_management_test` — hàm ấy đi
+ * `resolveTenantFactoryScope` → `SELECT id FROM factories WHERE code IN (…)` **mỗi lần gọi**. Tức
+ * lời khai "O(1), 0 truy vấn" đúng về *hình dạng phép so* nhưng SAI về *chi phí lượt gọi*, và bộ
+ * đếm của chính module kia **mù** với nó (nó chỉ đếm truy vấn nó tự phát ra).
+ * ⇒ Nhớ đệm phải nằm ở ĐÂY, cạnh `machineIdsChoLoiVao`, dùng CHUNG khoá `userId:userRole` và CHUNG
+ *   TTL 30 giây — một chủ cho *"phạm vi của lối vào này"*, không phải hai chủ lệch nhau.
+ * Sau bản vá: **6 µs/ảnh** (đo lại cùng kịch bản).
+ */
+export async function nhaMayIdsChoLoiVao(loiVao: LoiVaoAnh): Promise<number[] | null> {
+  const nguoiXem = nguoiXemCuaLoiVao(loiVao);
+  if (!nguoiXem) return null;
+
+  const khoa = `F:${nguoiXem.userId}:${nguoiXem.userRole}`;
+  const now = Date.now();
+  const cu = nhoDemPhamVi.get(khoa);
+  if (cu && cu.hetHan > now) return cu.ids;
+
+  const { idsTrongPhamVi } = await import("../db/hierarchy");
+  const ids = await idsTrongPhamVi("factory", nguoiXem);
+  nhoDemPhamVi.set(khoa, { hetHan: now + TTL_NHO_DEM_MS, ids });
+  return ids;
+}
+
+/**
  * Tập `machines.id` mà lối vào này được phép thấy.
  *
  * `null` = không áp cổng nào (vé ký / master key / vai toàn quyền) ⇒ nơi gọi **không được** thêm
