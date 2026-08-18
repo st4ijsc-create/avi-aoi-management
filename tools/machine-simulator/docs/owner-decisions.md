@@ -360,21 +360,47 @@ tự đọc trên nền tảng.
 
 **Cặp đối chứng — khác nhau ĐÚNG MỘT BIẾN, và biến ấy là hình dạng hàng:**
 
-🔴 **Cột thứ ba ghi kết quả ở BƯỚC LƯỢC ĐỒ, không ghi kết quả của lần POST — và hai thứ ấy khác
-nhau ở đây.** **Cả hai POST đều BỊ TỪ CHỐI**, không POST nào tạo ra thứ gì. Dấu ✅ ở hàng B nghĩa là
-*"qua được bước lược đồ rồi dừng ở bước sau"*, **không** nghĩa *"chạy được"*.
+🔴 **CẢ HAI NHÁNH TRẢ HTTP 400 — QUAN SÁT ĐƯỢC TRÊN CẢ HAI, không suy ra ở nhánh nào.** Mã trạng
+thái **không** phải thứ phân biệt hai nhánh; **không POST nào tạo ra thứ gì**. Thứ phân biệt chúng là
+**CHỖ CHÚNG DỪNG** — và chính chỗ chênh ấy là bằng chứng về **thứ tự thi hành**, chứ không phải con
+số 400.
 
-| nhánh | payload | kết quả ở **bước lược đồ** | POST dừng ở đâu |
+| nhánh | payload | mã trạng thái | **chỗ dừng** — cái thật sự phân biệt |
 |---|---|---|---|
-| **A** — `weld_current`, `rateHz: 1000`, hàng **một** phần tử `[176.5]` — **đúng cái `WelderSim` phát** | `POST /api/v1/ingest/process-result` | 🔴 **TỪ CHỐI** — **ba** lỗi lược đồ tại `waveforms.0.samples.0.1`, `.1.1`, `.2.1`, *"Invalid input: expected number, received undefined"* | **HTTP 400** ở **bước lược đồ**; chưa bao giờ chạm tới cờ |
-| **B** — `torque_vs_angle`, **không** `rateHz`, hàng **hai** phần tử `[angle, torque]` — **đúng cái `ScrewdriveSim` phát** | cùng endpoint, cùng khoá | ✅ **qua sạch** — không một lỗi waveform nào | 🔴 **CŨNG BỊ TỪ CHỐI**, một bước muộn hơn: thân trả `{"code":"ingest_failed"…}` ở **bước cờ tính năng** |
+| **A** — `weld_current`, `rateHz: 1000`, hàng **một** phần tử `[176.5]` — **đúng cái `WelderSim` phát** | `POST /api/v1/ingest/process-result` | 🔴 **HTTP 400** | **chết ở KIỂM LƯỢC ĐỒ** — **ba** lỗi tại `waveforms.0.samples.0.1`, `.1.1`, `.2.1`, *"Invalid input: expected number, received undefined"*; **chưa bao giờ chạm tới cờ** |
+| **B** — `torque_vs_angle`, **không** `rateHz`, hàng **hai** phần tử `[angle, torque]` — **đúng cái `ScrewdriveSim` phát** | cùng endpoint, cùng khoá | 🔴 **HTTP 400** | **QUA lược đồ** (không một lỗi waveform nào) rồi **chết ở CỜ TÍNH NĂNG** — `{"ok":false,"error":{"code":"ingest_failed","message":"Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED)."}}` |
 
-📎 **Một biên trên hàng B, nêu vì nó là chỗ dễ bịa ra một con số:** cái được đo và trao lại cho nhánh
-B là **thân phản hồi** (`ingest_failed`), **không phải dòng trạng thái**. Ba nguồn mà mục này trích
-cho cờ mặc định tắt đều ánh xạ trạng thái ấy sang **HTTP 400** (*"PRECONDITION_FAILED ⇒ REST trả 400
-`ingest_failed`"*), nên **400 là ánh xạ đã ghi trong tài liệu, không phải một quan sát riêng của phép
-đo này**. Điều **đã đo** ở hàng B là: **bị từ chối**, và **bị từ chối ở bước cờ chứ không ở bước lược
-đồ**.
+**Vì sao bảng này mạnh hơn khi hai mã bằng nhau:** hai payload khác nhau **đúng một biến**, nhận
+**cùng một mã**, mà **chết ở hai chỗ khác nhau**. Một mã trạng thái chung không phân biệt được gì; hai
+chỗ dừng khác nhau thì phân biệt được **thứ tự các bước**. Nếu hàng B đọc như *"B chạy được"* thì bảng
+mất đúng cái nó tồn tại để nói.
+
+> 📎 **Khối này đọc, cho tới 2026-08-18 (đã công bố ở commit `e9a0e3f5`), NGUYÊN VĂN:** *"📎 **Một
+> biên trên hàng B, nêu vì nó là chỗ dễ bịa ra một con số:** cái được đo và trao lại cho nhánh B là
+> **thân phản hồi** (`ingest_failed`), **không phải dòng trạng thái**. Ba nguồn mà mục này trích cho
+> cờ mặc định tắt đều ánh xạ trạng thái ấy sang **HTTP 400** (*"PRECONDITION_FAILED ⇒ REST trả 400
+> `ingest_failed`"*), nên **400 là ánh xạ đã ghi trong tài liệu, không phải một quan sát riêng của
+> phép đo này**. Điều **đã đo** ở hàng B là: **bị từ chối**, và **bị từ chối ở bước cờ chứ không ở
+> bước lược đồ**."* — **RÚT 2026-08-18 (AB-1, vòng sửa thứ hai), giữ nguyên văn.**
+>
+> **Vì sao rút:** khối ấy đúng **về những gì AB-1 được trao**, và sai **về những gì đã được đo**. Một
+> **dòng trạng thái quan sát được vẫn tồn tại suốt thời gian đó** — trong file đã lưu của lần chạy
+> sạch, `item14-armA2.json` và `item14-armB2.json`, **cả hai kết thúc bằng `[HTTP 400]`**. Nên **400 ở
+> hàng B là một QUAN SÁT, không phải một ánh xạ**, và khối cũ hạ nó xuống sai hạng.
+>
+> 🔴 **VÀ ĐÂY LÀ MỘT HÌNH DẠNG THẤT BẠI CHUỖI-GIÁM-HỘ KHÁC VỚI HÌNH DẠNG ĐÃ GHI Ở §"biên ba tầng" —
+> nó đứng cạnh, không thay thế.** Hình dạng kia là *"một số liệu nhận lại được ghi như số liệu tự
+> đo"*. Hình dạng này là: **phép đo CÓ TỒN TẠI, ở phía điều phối viên, suốt thời gian ấy, và KHÔNG
+> ĐƯỢC CHUYỂN GIAO** — brief chỉ trao *"qua sạch lược đồ"* cho nhánh B, rồi vòng sửa lại trình bày
+> `400` như một **suy luận** (*"nhánh cờ trả `PRECONDITION_FAILED` ⇒ B cũng là 400"*) trong khi bản
+> gốc đang nằm trong tay người viết câu ấy. **Người ghi hồ sơ không thể phát hiện loại thiếu này từ
+> bên trong** — không dấu vết nào của nó xuất hiện trong thứ họ được trao. Cái chặn được nó là **luật
+> câu chữ**: từ chối viết một con số mình không có nguồn, khiến chỗ thiếu **phải lộ ra** ở phía giữ
+> nguồn. Ghi lại vì lần sau chỗ thiếu có thể không lộ ra.
+
+**Hạng nguồn của hai dòng này KHÔNG đổi: vẫn là NHẬN LẠI, AB-1 không tự chạy.** Cái đổi là chúng nay
+mang **dòng trạng thái thật** thay cho một ánh xạ, và **nêu tên artefact** giữ nó: `item14-armA2.json`,
+`item14-armB2.json`.
 
 **Thứ tự thi hành, suy ra từ chính chỗ chênh ấy:** **xác thực → kiểm lược đồ → cờ tính năng → nạp.**
 Nhánh A **chết ở bước lược đồ và chưa bao giờ chạm tới cờ**; nhánh B qua lược đồ rồi mới gặp cờ. Hai
@@ -547,6 +573,22 @@ sở hữu mở được: **một hồ sơ phải nêu hạng nguồn của từ
 lời cải chính khác — báo cáo nhiệm vụ, ledger `.superpowers/sdd/` — **đều bị gitignore và không tới
 được người đọc**.
 
+🔴 **VÀ CÓ MỘT HÌNH DẠNG THỨ HAI, khác hẳn, phát hiện muộn hơn cả ba tầng trên — nó ĐỨNG CẠNH, không
+thay thế.** Hình dạng trên là *"một số liệu **nhận lại** được ghi như số liệu **tự đo**"*: chỗ thiếu
+nằm ở **nhãn**. Hình dạng thứ hai là *"một phép đo **CÓ TỒN TẠI** ở phía người giao việc, **suốt thời
+gian ấy**, và **không được chuyển giao**"*: chỗ thiếu nằm ở **dữ liệu**, và nó **không để lại dấu vết
+nào trong thứ người ghi hồ sơ được trao**. Ca cụ thể được ghi đầy đủ tại khối 📎 dưới bảng đối chứng
+A/B — dòng trạng thái `[HTTP 400]` của **cả hai** nhánh nằm trong `item14-armA2.json` và
+`item14-armB2.json` trong khi hồ sơ đang gọi con số ấy là một **ánh xạ suy ra**.
+
+**Hai hình dạng đòi hai lớp phòng vệ khác nhau, và đó là lý do chúng phải đứng cạnh nhau:** hình dạng
+thứ nhất **người ghi hồ sơ tự bắt được** — chỉ cần hỏi *"tôi có tự đọc thứ này không?"*. Hình dạng
+thứ hai **không tự bắt được từ bên trong**: không câu hỏi nào về thứ mình đang cầm phát hiện được thứ
+mình không được đưa. Cái chặn nó là **luật câu chữ**: **từ chối viết một con số mình không có nguồn**,
+kể cả khi con số ấy gần như chắc chắn đúng — vì chính lời từ chối làm chỗ thiếu **lộ ra ở phía giữ
+nguồn**. Ở vòng này nó lộ ra; **lần sau nó có thể không lộ ra**, và khi ấy hồ sơ sẽ mang một con số
+suy luận đội lốt một phép đo.
+
 ### Câu *"cái sai là chú thích SDK"*: phép đo nói ngược **đối với bộ cưỡng chế lúc chạy** — và chỗ nó còn đứng được NÊU TÊN
 
 Phép đo phát biểu về **bộ validate lúc chạy**: chú thích SDK `[[t, v], …]` mô tả **đúng hình dạng
@@ -648,6 +690,13 @@ lại chứ không chạy lại** (lý do nêu tại §"ĐÃ ĐO"). **Không có
 này**, nên chỗ này là điểm yếu nhất của chuỗi giám hộ trong cả mục, và nó được nói ra thay vì để người
 đọc tự phát hiện. *"Không bản ghi process-result nào được tạo"* là **suy luận từ chỗ hai POST dừng**,
 không phải một truy vấn CSDL.
+
+📎 **MỞ RỘNG câu ngay trên, 2026-08-18 (AB-1, vòng sửa thứ hai) — câu ấy giữ nguyên văn vì nó KHÔNG
+sai, chỉ thiếu.** *"Không có transcript … **trong repo này**"* vẫn đúng từng chữ. Cái nay biết thêm:
+**transcript CÓ TỒN TẠI**, ở phía điều phối viên, và **được nêu tên** — `item14-armA2.json` và
+`item14-armB2.json`, mỗi file kết thúc bằng dòng `[HTTP 400]`. Nên chuỗi giám hộ **chặt hơn** cái câu
+trên mô tả: chủ sở hữu **hỏi được hai file ấy**, thay vì chỉ có lời khai. Đây là thao tác **MỞ RỘNG**
+(phép liệt kê thiếu), **không** phải RÚT — ba thao tác vẫn phân biệt như file này quy định.
 
 Phía sản phẩm:
 `src/St4i.EdgeCore/Drivers/Simulators/WelderSim.cs`, `…/ScrewdriveSim.cs`,
