@@ -258,7 +258,7 @@ public class CredentialStoreTests
             var names = Directory.GetFiles(root).Select(Path.GetFileName)
                 .OrderBy(n => n, StringComparer.Ordinal).ToList();
             var kept = Assert.Single(
-                names.Where(n => n!.StartsWith(code + ".bin.unreadable-", StringComparison.Ordinal)));
+                names, n => n!.StartsWith(code + ".bin.unreadable-", StringComparison.Ordinal));
             Assert.Equal(unusable, File.ReadAllBytes(Path.Combine(root, kept!)));
 
             // …and the directory holds exactly those two files, so nothing was deleted on the way.
@@ -355,7 +355,7 @@ public class CredentialStoreTests
             // The live blob is listed ONCE, under the machine code, and the kept-aside file contributes
             // no entry of its own — not under a stem ending in ".bin" and not under any other.
             var listed = CredentialStore.ListMachineCodes();
-            Assert.Single(listed.Where(c => string.Equals(c, code, StringComparison.OrdinalIgnoreCase)));
+            Assert.Single(listed, c => string.Equals(c, code, StringComparison.OrdinalIgnoreCase));
             Assert.DoesNotContain(listed, c => c.Contains("unreadable", StringComparison.OrdinalIgnoreCase));
         }
         finally
