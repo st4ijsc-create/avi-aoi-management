@@ -112,6 +112,9 @@ import {
   resolveOrCreateMeasurementPointDefId,
   assertValidPointDefId,
 } from "../services/measurementPointResolver";
+// ★★★ 2026-08-18 — mã tenant của một hàng ĐƯỢC GHI phải suy từ MÁY ĐÃ XÁC THỰC, không lấy từ
+// JSON. `macTenantChoGhi` phân giải + đối chiếu lời khai + ném khi lệch/không suy được.
+import { macTenantChoGhi } from "./phamViGhiMay";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Doc 51 P1 (CASE #5) — per-image base64 size cap.
@@ -1182,6 +1185,21 @@ export async function processInspectionSubmission(
       // before dispatching each item, so it never double-counts here).
       if (opts?.rateLimit) enforceMachineIngestRateLimit(auth);
 
+      // ══ 2026-08-18 — MÃ TENANT SUY TỪ MÁY, KHÔNG LẤY TỪ JSON ═══════════════
+      // Đặt NGAY ĐÂY, trước mọi tác dụng phụ (heartbeat, biến thể, commissioning):
+      // một máy cấu hình sai phải bị chặn TRƯỚC khi nó kịp chạm vào bất cứ thứ gì,
+      // chứ không phải sau khi đã cập nhật nhịp tim + tra biến thể của nhà máy khác.
+      // `input.companyCode/factoryCode/workshopCode/lineCode` vẫn được NHẬN — nhưng
+      // chỉ để ĐỐI CHIẾU; lệch ⇒ FORBIDDEN kèm `machine_tenant_claim_mismatch`.
+      // ⚠ `input.stageCode` KHÔNG nằm ở đây: nó không phải nút phân cấp (đo được:
+      // AVI/FCT/SPI/AOI/ICT, `line_stages` rỗng) ⇒ giữ nguyên văn. Xem phamViGhiMay.ts.
+      const macTenant = await macTenantChoGhi(machine, {
+        corporateCode: input.companyCode,
+        factoryCode: input.factoryCode,
+        workshopCode: input.workshopCode,
+        lineCode: input.lineCode,
+      });
+
       const normalizedProductModelCode = input.productModel?.trim();
       const productModelRecord = normalizedProductModelCode
         ? await db.getProductModelByCode(normalizedProductModelCode)
@@ -1422,11 +1440,17 @@ export async function processInspectionSubmission(
         batchNumber: input.batchNumber,
         overallResult: input.overallResult as any,
         originalResult: input.overallResult as any,
-        corporateCode: input.companyCode, // Mã tập đoàn
-        factoryCode: input.factoryCode, // Mã nhà máy
-        workshopCode: input.workshopCode, // Mã nhà xưởng
-        lineCode: input.lineCode, // Mã dây chuyền
-        stageCode: input.stageCode, // Mã công đoạn
+        // ⚠ BỐN Ô NÀY KHÔNG CÒN ĐẾN TỪ `input`. Chúng suy từ chuỗi phân cấp của MÁY ĐÃ XÁC
+        // THỰC (`macTenantChoGhi`, xem phamViGhiMay.ts); lời khai trong JSON đã được đối chiếu
+        // ở đầu hàm và một lượt lệch đã bị TỪ CHỐI trước khi tới đây. Đo trước khi vá trên
+        // `aoi_management`: 22.996/22.996 hàng suy được, 0 hàng khai lệch ⇒ đổi nguồn KHÔNG mất
+        // một hàng nào. ⚠ Đừng "đơn giản hoá" ngược về `input.*`: đó chính là cái ô chọn trên
+        // giao diện của kẻ tấn công mà `db/reportAggregators.ts` đã cấm thành văn.
+        corporateCode: macTenant.corporateCode, // Mã tập đoàn (suy; NULL khi nhà máy chưa gắn tập đoàn)
+        factoryCode: macTenant.factoryCode, // Mã nhà máy (suy)
+        workshopCode: macTenant.workshopCode, // Mã nhà xưởng (suy)
+        lineCode: macTenant.lineCode, // Mã dây chuyền (suy)
+        stageCode: input.stageCode, // Mã công đoạn — KHÔNG suy được, nguyên văn lời khai của máy
         productionOrderCode: input.productionOrderCode, // Mã lệnh sản xuất
         operatorId: input.operatorId, // Mã công nhân vận hành (badge code — kept verbatim)
         // W8-B (0192): resolved users.id (fail-open null) + panel context.
@@ -2028,7 +2052,9 @@ export async function processInspectionSubmission(
           inspectionTime: localInspTime.toISOString(),
         },
         idempotencyKey: `qr-${inspectionId}`,
-        corporateCode: input.companyCode ?? null,
+        // Cùng nguồn với hàng đã ghi: sự kiện ERP đi ra ngoài KHÔNG được mang một mã tập đoàn
+        // khác với mã đã đóng dấu vào `product_inspections` — đó là hai lời khai về cùng một bo.
+        corporateCode: macTenant.corporateCode ?? null,
       });
 
       // Update production order quantities if linked
@@ -2784,6 +2810,12 @@ export async function processProcessResultSubmission(
   // charges the limit itself once per item before dispatching).
   if (opts?.rateLimit) enforceMachineIngestRateLimit(auth);
 
+  // ══ 2026-08-18 — cùng luật với đường bo mạch ═══════════════════════════════
+  // `process_results` chỉ mang MỘT trục tự khai (`lineCode`; không có factoryCode/
+  // corporateCode), nhưng nó là ĐÚNG lớp lỗi ấy: một chuỗi trong JSON quyết định
+  // dây chuyền nào "sở hữu" chu kỳ này. Suy từ máy, đối chiếu lời khai, lệch ⇒ từ chối.
+  const macTenantProcess = await macTenantChoGhi(machine, { lineCode: input.lineCode });
+
   // Waveform TOTAL byte cap — permanent (BAD_REQUEST), never buffered.
   if (input.waveforms && input.waveforms.length > 0) {
     const bytes = Buffer.byteLength(JSON.stringify(input.waveforms), "utf8");
@@ -2830,7 +2862,7 @@ export async function processProcessResultSubmission(
       stepType: input.stepType,
       result: input.result,
       stationId: input.stationId,
-      lineCode: input.lineCode,
+      lineCode: macTenantProcess.lineCode, // suy từ máy — xem macTenantProcess ở trên
       productionOrderCode: input.productionOrderCode,
       lotCode: input.lotCode,
       metricSpecs: input.metrics,

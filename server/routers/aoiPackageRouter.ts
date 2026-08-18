@@ -44,6 +44,9 @@ import type { PointDefCache } from "./_shared";
 // OWN measurement_results inserts and must not store a machine "OK" that its
 // point-def limits say is NG.
 import { evaluatePointResult, isPointLimitEvalEnabled } from "../services/pointResultEvaluator";
+// ★★★ 2026-08-18 — mã tenant của một hàng ĐƯỢC GHI suy từ MÁY ĐÃ XÁC THỰC, không từ `meta.json`;
+// khoá lưu trữ gói cũng do máy chủ sinh theo chuỗi phân cấp ấy.
+import { macTenantChoGhi, khoaLuuTruGoi } from "./phamViGhiMay";
 
 // ============================================================
 // Image Cache Configuration
@@ -407,13 +410,18 @@ export const aoiPackageRouter = router({
 
       // Get machine hierarchy info for object key
       const machineRecord = machine;
-      // Build storage key: aoi/{factory}/{line}/{machine}/{yyyy}/{mm}/{dd}/{inspectionId}.zip
+      // ★★★ 2026-08-18 — ĐƯỜNG LƯU TỆP DO MÁY CHỦ SINH, theo chuỗi phân cấp SUY TỪ MÁY:
+      //   aoi/<corporateCode>/<factoryCode>/<workshopCode>/<lineCode>/<machineCode>/yyyy/mm/dd/<id>.zip
+      // Dòng cũ đã viết sẵn lời hứa `aoi/{factory}/{line}/{machine}/…` trong chú thích nhưng chỉ
+      // sinh ra `aoi/{machine}/…` — không một đoạn tenant nào. Sau lượt này, một lượt uỷ quyền
+      // đọc ảnh chỉ còn là phép so TIỀN TỐ đường dẫn (O(1), không truy vấn cho mỗi ảnh).
+      // ⚠ Gói CŨ giữ nguyên khoá cũ trong `inspection_packages."storageKey"`; mọi đường đọc lấy
+      // khoá TỪ HÀNG chứ không dựng lại đường dẫn ⇒ tệp cũ vẫn phục vụ được.
+      const macTenantGoi = await macTenantChoGhi(machineRecord, {});
       const now = new Date();
-      const yyyy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, "0");
-      const dd = String(now.getDate()).padStart(2, "0");
-
-      const objectKey = `aoi/${machineRecord.code}/${yyyy}/${mm}/${dd}/${input.inspectionId}.zip`;
+      const objectKey = macTenantGoi.chuoi
+        ? khoaLuuTruGoi(macTenantGoi.chuoi, input.inspectionId, now)
+        : `aoi/${machineRecord.code}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}/${input.inspectionId}.zip`;
       const expiresAt = new Date(Date.now() + PRESIGN_TTL_MINUTES * 60 * 1000);
 
       // In local/forge storage mode, we use direct upload to our server
@@ -554,6 +562,20 @@ export const aoiPackageRouter = router({
             const metaContent = await metaFile.async("string");
             metaData = metaJsonSchema.parse(JSON.parse(metaContent));
           }
+
+          // ★★★ 2026-08-18 — MÃ TENANT SUY TỪ MÁY ĐÃ XÁC THỰC, KHÔNG LẤY TỪ `meta.json`.
+          // `meta.json` nằm TRONG chính tệp ZIP mà máy vừa tải lên — nó là lời tự khai ở dạng
+          // thuần khiết nhất. Hai chỗ ghi dưới đây dùng nó: bản ghi kiểm mới
+          // (`product_inspections`) và hàng gói (`inspection_packages`, bảng CÓ RLS
+          // `app_tenant_allows("factoryCode", NULL)` ⇒ `factoryCode` NULL = **mọi nhà máy đều
+          // thấy** sau mig 0327; đo được 160/160 gói trong CSDL test đang là NULL).
+          // Lời khai vẫn được NHẬN, nhưng chỉ để ĐỐI CHIẾU — lệch ⇒ `machine_tenant_claim_mismatch`.
+          const macTenantCommit = await macTenantChoGhi(machine, {
+            corporateCode: metaData?.companyCode,
+            factoryCode: metaData?.factoryCode ?? metaData?.factory,
+            workshopCode: metaData?.workshopCode,
+            lineCode: metaData?.lineCode ?? metaData?.line,
+          });
 
           // Count images in ZIP
           const imageFiles = Object.keys(zip.files).filter(
@@ -706,11 +728,12 @@ export const aoiPackageRouter = router({
                   productModel: metaData.productModel || null,
                   batchNumber: metaData.batchNumber || null,
                   
-                  // Enterprise hierarchy - prioritize new fields
-                  corporateCode: metaData.companyCode || null,
-                  factoryCode: metaData.factoryCode || metaData.factory || null,
-                  workshopCode: metaData.workshopCode || null,
-                  lineCode: metaData.lineCode || metaData.line || null,
+                  // Enterprise hierarchy — SUY TỪ MÁY (xem `macTenantCommit` ở trên).
+                  // ⚠ `stageCode` KHÔNG suy được (không phải nút phân cấp) ⇒ nguyên văn lời khai.
+                  corporateCode: macTenantCommit.corporateCode ?? null,
+                  factoryCode: macTenantCommit.factoryCode ?? null,
+                  workshopCode: macTenantCommit.workshopCode ?? null,
+                  lineCode: macTenantCommit.lineCode ?? null,
                   stageCode: metaData.stageCode || null,
                   
                   // Production context
@@ -859,8 +882,11 @@ export const aoiPackageRouter = router({
               inspectionId: linkedInspectionId || null,
               serialNumber: metaData?.serialNumber || null,
               productModel: metaData?.productModel || null,
-              factoryCode: metaData?.factoryCode || metaData?.factory || null,
-              lineCode: metaData?.lineCode || metaData?.line || null,
+              // ⚠ `inspection_packages` là bảng CÓ RLS (`app_tenant_allows("factoryCode", NULL)`):
+              // một `factoryCode` NULL ở đây nghĩa là gói ảnh này hiện ra với MỌI nhà máy sau
+              // mig 0327. Nên nó suy từ máy, không lấy từ `meta.json` — xem `macTenantCommit`.
+              factoryCode: macTenantCommit.factoryCode ?? null,
+              lineCode: macTenantCommit.lineCode ?? null,
               overallResult: finalOverallResult,
               totalPoints: calculatedSummary.totalPoints,
               okCount: calculatedSummary.ok,

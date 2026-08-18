@@ -142,6 +142,51 @@ export function factoryIdCanThuHep(pv: PhamViMayGoi): number | null {
 }
 
 /**
+ * ★★★ 2026-08-18 (lượt GHI) — **CHUỖI PHÂN CẤP của một TRẠM, đã phân giải THÀNH MÃ.**
+ *
+ * Bản đọc (`factoryIdCuaTram`) chỉ cần `factories.id`; bản GHI
+ * (`server/routers/phamViGhiMay.ts`) cần MÃ để đóng dấu vào `product_inspections.factoryCode` /
+ * `workshopCode` / `lineCode` / `corporateCode`. Hai nhu cầu, **MỘT lần đi**: nếu bản ghi tự đi
+ * lại chuỗi `station → line → workshop → factory` thì đó là bản luật thứ tư, và bản lỏng nhất sẽ
+ * quyết định dữ liệu của ai rơi vào nhà máy nào.
+ *
+ * ⚠ `layMaNhaMay` mặc định `false` là **có chủ ý, không phải tuỳ chọn cho tiện**: nhánh `false`
+ * chạy ĐÚNG hai phép tra cứu như bản `factoryIdCuaTram` cũ, nên bề mặt đọc đang chạy sản xuất
+ * không nhận thêm một truy vấn nào và không đổi một byte hành vi nào. Chỉ đường GHI mới trả giá
+ * lượt tra `factories` thứ ba (và nó có bộ nhớ đệm theo máy — xem `phamViGhiMay.ts`).
+ */
+export interface ChuoiPhanCapCuaTram {
+  readonly factoryId: number;
+  readonly workshopCode: string;
+  readonly lineCode: string;
+  /** `undefined` khi nơi gọi KHÔNG yêu cầu mã nhà máy (`layMaNhaMay = false`). */
+  readonly nhaMay: { readonly code: string; readonly corporateCode: string | null } | undefined;
+}
+
+export async function chuoiPhanCapCuaTram(
+  station: { lineId: number },
+  layMaNhaMay = false,
+): Promise<ChuoiPhanCapCuaTram | null> {
+  const line = await db.getLineById(station.lineId);
+  if (!line) return null;
+  const workshop = await db.getWorkshopById(line.workshopId);
+  if (!workshop) return null;
+  let nhaMay: ChuoiPhanCapCuaTram["nhaMay"];
+  if (layMaNhaMay) {
+    // ⚠ `getFactoryById(id)` **KHÔNG truyền `scope`** — và đó là một quyết định, không phải bỏ
+    // sót: tham số ấy là trục phạm vi của NGƯỜI DÙNG (`trongPhamVi` → `resolveTenantFactoryScope`,
+    // đoản mạch về "toàn quyền" khi không có `userId`). Ở đây người gọi là một MÁY; thu hẹp theo
+    // một `userId` không tồn tại sẽ biến mọi lượt nộp thành `undefined` ⇒ từ chối toàn bộ đội máy.
+    // Dùng LẠI hàm này thay vì viết một `SELECT factories` thứ hai là có chủ ý: nó là MỘT mặt
+    // tra cứu duy nhất mà cả mã sản xuất lẫn lưới đơn vị (mock `../db`) đều nhìn thấy.
+    const factory = await db.getFactoryById(workshop.factoryId);
+    if (!factory) return null;
+    nhaMay = { code: factory.code, corporateCode: factory.corporateCode ?? null };
+  }
+  return { factoryId: workshop.factoryId, workshopCode: workshop.code, lineCode: line.code, nhaMay };
+}
+
+/**
  * `stations.id` → `factories.id`, ghép từ hai phép tra cứu KHOÁ CHÍNH đã có.
  *
  * ⚠ KHÔNG viết JOIN mới (xem lý do (2) ở đầu file). Ba cột trên đường đi đều `NOT NULL` + có FK
@@ -150,10 +195,7 @@ export function factoryIdCanThuHep(pv: PhamViMayGoi): number | null {
  * vừa biến mất giữa chừng — cả hai đều phải **fail-closed**, không được đoán.
  */
 export async function factoryIdCuaTram(station: { lineId: number }): Promise<number | null> {
-  const line = await db.getLineById(station.lineId);
-  if (!line) return null;
-  const workshop = await db.getWorkshopById(line.workshopId);
-  return workshop?.factoryId ?? null;
+  return (await chuoiPhanCapCuaTram(station))?.factoryId ?? null;
 }
 
 /**

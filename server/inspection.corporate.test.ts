@@ -68,39 +68,44 @@ describe('Inspection API with Corporate/Factory Codes', () => {
     }
   });
 
-  describe('submitInspection with corporate/factory codes', () => {
-    it('should create inspection with corporateCode and factoryCode', async () => {
+  /**
+   * ★★★ 2026-08-18 — **HAI CA TRONG KHỐI NÀY TỪNG ĐÓNG DẤU CHÍNH CÁI LỖ.**
+   *
+   * Bản cũ khẳng định, nguyên văn:
+   *   • máy thuộc nhà máy `TEST_CORP_FAC_*` khai `factoryCode: 'FAC-HN'` ⇒ hàng ghi **'FAC-HN'**;
+   *   • máy không khai gì ⇒ hàng ghi **NULL/NULL**, và gọi đó là *"backward compatibility"*.
+   *
+   * Cả hai đều là hình dạng ĐÚNG của lỗ: (1) lời tự khai quyết định bản ghi kiểm rơi vào phạm vi
+   * xem của nhà máy nào (`getAccessFilterConditions` lọc `factoryCode IN (…)`), và (2) hàng
+   * NULL/NULL rơi ra ngoài **cả hai** vế của phép lọc ⇒ biến mất khỏi mọi báo cáo bị thu hẹp.
+   * Một lưới khẳng định hành vi ấy không phải là lưới — nó là **giấy chứng nhận** cho cái lỗ.
+   *
+   * Từ lượt này, mã tenant SUY từ chuỗi `machine → station → line → workshop → factory`; JSON chỉ
+   * còn là lời khai để ĐỐI CHIẾU. Ba ca dưới đây đo đúng luật mới, giữ nguyên chiều DƯƠNG (máy
+   * khai đúng vẫn nộp được) để một bản vá "từ chối tất" không thể lọt.
+   */
+  describe('submitInspection — mã tenant SUY TỪ MÁY, không lấy từ JSON', () => {
+    it('★★★ khai mã của nhà máy KHÁC ⇒ TỪ CHỐI (trước đây: ghi thẳng lời khai vào cột)', async () => {
       const caller = appRouter.createCaller({ user: null });
-      
       const machine = await db.getMachineById(testMachineId);
       if (!machine) throw new Error('Machine not found');
 
-      const result = await caller.machineApi.submitInspection({
-        apiKey: machine.apiKey,
-        serialNumber: 'SN-CORP-001',
-        productModel: 'MODEL-A',
-        batchNumber: 'BATCH-001',
-        overallResult: 'OK',
-        companyCode: 'CORP-VN',
-        factoryCode: 'FAC-HN',
-        measurements: [],
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.inspectionId).toBeDefined();
-      
-      testInspectionId = result.inspectionId!;
-
-      // Verify inspection has corporate/factory codes
-      const inspection = await db.getProductInspectionById(testInspectionId);
-      expect(inspection).toBeDefined();
-      expect(inspection?.corporateCode).toBe('CORP-VN');
-      expect(inspection?.factoryCode).toBe('FAC-HN');
+      await expect(
+        caller.machineApi.submitInspection({
+          apiKey: machine.apiKey,
+          serialNumber: 'SN-CORP-001',
+          productModel: 'MODEL-A',
+          batchNumber: 'BATCH-001',
+          overallResult: 'OK',
+          companyCode: 'CORP-VN',
+          factoryCode: 'FAC-HN', // ← nhà máy của máy này KHÔNG phải 'FAC-HN'
+          measurements: [],
+        }),
+      ).rejects.toThrow(/machine_tenant_claim_mismatch/);
     });
 
-    it('should create inspection without corporate/factory codes (backward compatibility)', async () => {
+    it('★★★ KHÔNG khai mã nào ⇒ vẫn NHẬN, và hàng mang mã SUY RA (trước đây: NULL/NULL)', async () => {
       const caller = appRouter.createCaller({ user: null });
-      
       const machine = await db.getMachineById(testMachineId);
       if (!machine) throw new Error('Machine not found');
 
@@ -114,12 +119,35 @@ describe('Inspection API with Corporate/Factory Codes', () => {
 
       expect(result.success).toBe(true);
       expect(result.inspectionId).toBeDefined();
+      testInspectionId = result.inspectionId!;
 
-      // Verify inspection has null corporate/factory codes
       const inspection = await db.getProductInspectionById(result.inspectionId!);
       expect(inspection).toBeDefined();
+      const factory = await db.getFactoryById(testFactoryId);
+      expect(inspection?.factoryCode).toBe(factory?.code);
+      // Nhà máy dựng ở `beforeAll` không có mã tập đoàn ⇒ cột đúng là NULL (chuỗi phân cấp nói thế),
+      // KHÔNG phải vì lời khai bị bỏ qua.
       expect(inspection?.corporateCode).toBeNull();
-      expect(inspection?.factoryCode).toBeNull();
+    });
+
+    it('CHIỀU DƯƠNG — máy khai ĐÚNG mã nhà máy của chính nó ⇒ VẪN nộp được (chống vá quá tay)', async () => {
+      const caller = appRouter.createCaller({ user: null });
+      const machine = await db.getMachineById(testMachineId);
+      if (!machine) throw new Error('Machine not found');
+      const factory = await db.getFactoryById(testFactoryId);
+
+      const result = await caller.machineApi.submitInspection({
+        apiKey: machine.apiKey,
+        serialNumber: 'SN-CORP-OK-001',
+        productModel: 'MODEL-A',
+        overallResult: 'OK',
+        factoryCode: factory?.code,
+        measurements: [],
+      });
+
+      expect(result.success).toBe(true);
+      const inspection = await db.getProductInspectionById(result.inspectionId!);
+      expect(inspection?.factoryCode).toBe(factory?.code);
     });
   });
 
