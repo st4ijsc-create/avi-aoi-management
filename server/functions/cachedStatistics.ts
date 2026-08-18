@@ -173,7 +173,22 @@ export async function getCachedMachineStats(filters: {
   machineId: number;
   startDate?: Date;
   endDate?: Date;
+  /**
+   * ★ 2026-08-18 — phạm vi NGƯỜI XEM. `machineId` là lời TỰ KHAI của người gọi, nên nếu không
+   * kiểm, một id gõ tay đọc được sản lượng/tỉ lệ NG của máy bất kỳ. Bỏ trống = lối đi không mang
+   * danh tính (tác vụ nền, cache warming) ⇒ KHÔNG lọc, giữ nguyên hành vi cũ.
+   *
+   * ⚠ Cổng đặt TRƯỚC `cacheService` — nếu đặt sau, khoá cache (`stats:machine:<id>`) không mang
+   * danh tính nên một lượt đọc hợp lệ của người A sẽ nạp sẵn ô cache mà người B đọc trúng.
+   */
+  phamVi?: import("../db/hierarchy").PhamViNguoiXem;
 }): Promise<MachineStats> {
+  {
+    const { trongPhamVi } = await import("../db/hierarchy");
+    if (!(await trongPhamVi("machine", filters.machineId, filters.phamVi))) {
+      return { total: 0, okCount: 0, ngCount: 0, ntfCount: 0, yieldRate: "0", trend: [], recentInspections: [] };
+    }
+  }
   const cacheKey = cacheService.generateKey('stats:machine', {
     machineId: filters.machineId,
     startDate: filters.startDate,

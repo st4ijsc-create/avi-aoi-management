@@ -254,7 +254,7 @@ nhau**. Đây cũng chính là dữ liệu mà bản vá của **C-1** cần thu
 
 ## 5. 🟠 **IMPORTANT I-4 — TASK 3b ĐẾM BIT GHI (10 THỦ TỤC) RỒI TÁCH; KHÔNG AI ĐẾM BIT ĐỌC. LƯỢT CẤP QUYỀN SẮP TỚI MỞ 30 THỦ TỤC KHÁC MÀ CHỦ DỰ ÁN CHƯA ĐƯỢC HỎI.**
 
-Task 3b tồn tại vì một phép đếm: `machine_control/canDelete` nuôi **10 thủ tục ở 8 router** ⇒ tách bit.
+                                          Task 3b tồn tại vì một phép đếm: `machine_control/canDelete` nuôi **10 thủ tục ở 8 router** ⇒ tách bit.
 Quyết định N8 thì **cố ý** để mặt đọc `vram.state` ở lại `machine_control/canView`
 (`vramRouter.ts:68-70`), biện hộ bằng *"`canView` là bit chỉ đọc, bề mặt dùng chung của nó không có
 thủ tục phá huỷ nào"* — một câu **không kèm con số**.
