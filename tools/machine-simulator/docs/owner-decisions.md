@@ -42,7 +42,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); đã thi hành, Z-1 |
 | 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng |
 | 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔴 **CHỜ ANH** — phần dư của mục 11, mở 2026-08-18 (Z-1, vòng sửa 1); **ca THÔNG THƯỜNG hơn** trong hai ca cùng hình dạng |
-| 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI** |
+| 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT** |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -246,7 +246,7 @@ toàn bộ dân số, và cả hai theo nó. **Không gì cưỡng chế nó.**
 | `server/contracts/machineDataContract.ts` → `processWaveformV1` | cùng `z.tuple` hai số; *"Chuỗi mẫu [ [t, v], … ] — cặp (thời điểm, giá trị). Cap khớp runtime."* |
 | `docs/ECOSYSTEM/57_ST4I_STANDARD_PROCESS_FEED_SPEC.md` §3.3 — **đặc tả dây đã xuất bản** | `samples` **bắt buộc**: *"Mảng cặp `[t, v]` — `t` = trục hoành (**thời gian giây / góc °**…), `v` = giá trị."* `rateHz`: *"Tần số lấy mẫu (Hz) **nếu đều nhau**"* — một **mô tả**, không phải bộ phân biệt. `unit`: *"Đơn vị của trục giá trị (`v`)"* |
 | cùng file §8.1 — **ví dụ chuẩn tắc** | `torque_vs_angle`, `rateHz: 500`, `samples: [[0,0.02],[90,0.15],…,[412,0.82]]` — và `412` là chính metric `angle` của payload ấy, tức **trục hoành là GÓC trong khi `rateHz` được đặt** |
-| `server/api/v1/openapi.ts` | `samples: array of array of number` — **không ràng buộc độ dài hàng** |
+| `server/api/v1/openapi.ts` | `samples: array of array of number` — **không ràng buộc độ dài hàng** — 🔴 **hàng này nêu SAI artifact; xem §"chỗ lệch THỨ TƯ" bên dưới, RÚT 2026-08-18 (AB-1)** |
 | `client/src/components/apiDocs/AutomationProcessFeedSection.tsx` | trang API-docs công khai: `{ name, unit?, rateHz?, samples:[[t,v]] }` |
 | `server/contracts/machineDataContract.test.ts` | fixture: `rateHz: 1000` **kèm** hàng cặp |
 | `scripts/sim/screwdriver-emitter.mjs` | bộ phát chạy được: `rateHz: WAVE_RATE_HZ` **kèm** hàng cặp |
@@ -282,17 +282,163 @@ chối** một mảng một phần tử.
 **Và `WELD-01` (`machineType: "WELDER"`) NẰM TRONG roster được ship** (`fleet.json`), nên đường này
 **tồn tại trong bản cài mặc định**, không phải một nhánh giả định.
 
-### 🔴 Cái CHƯA ĐO, nêu tên chứ không lấp — và nó quyết định hậu quả là SỐNG hay chỉ là LÝ THUYẾT
+### ✅ ĐÃ ĐO 2026-08-18 (AB-1) — chỗ-thiếu bên dưới nay có một phép đo, và phép đo có HAI nửa
 
-**Đã có sóng `weld_current` nào thực sự được POST lên một máy chủ sống bao giờ chưa?** Không ai đo
-điều đó — không phản biện, không AA-1. Không có bằng chứng runtime trong cây. Hôm nay đây là mâu
-thuẫn giữa **hai hợp đồng đã xuất bản trong một repository**, và nó **tiềm ẩn cho tới lần
-`LiveTransport` chạy thật đầu tiên với một máy WELDER**. Đo nó cần một log ingest thật hoặc một lần
-chạy thật; **cả hai đều nằm ngoài vòng này**, và một phỏng đoán đặt ở đây sẽ **đọc như một phép đo**.
+> 📎 **Mục con này mang tiêu đề *"🔴 Cái CHƯA ĐO, nêu tên chứ không lấp — và nó quyết định hậu quả
+> là SỐNG hay chỉ là LÝ THUYẾT"* cho tới 2026-08-18, và thân của nó hỏi, NGUYÊN VĂN:** *"**Đã có sóng
+> `weld_current` nào thực sự được POST lên một máy chủ sống bao giờ chưa?** Không ai đo điều đó —
+> không phản biện, không AA-1. Không có bằng chứng runtime trong cây. Hôm nay đây là mâu thuẫn giữa
+> **hai hợp đồng đã xuất bản trong một repository**, và nó **tiềm ẩn cho tới lần `LiveTransport`
+> chạy thật đầu tiên với một máy WELDER**. Đo nó cần một log ingest thật hoặc một lần chạy thật;
+> **cả hai đều nằm ngoài vòng này**, và một phỏng đoán đặt ở đây sẽ **đọc như một phép đo**."* Cùng
+> với nó, đoạn *"Cái **đã** đo được, để không ai đọc câu trên rộng hơn nó: máy WELDER **có** trong
+> roster ship; đường mã **có** thật và không có nhánh nào chặn; và transport thật (`LiveTransport`)
+> là một trong ba chế độ (`Live`/`Demo`/`Auto`) mà `TransportCoordinator` chọn được."* — **RÚT
+> 2026-08-18 (AB-1)**, và lý do là **phép đo đã chạy**, không phải câu ấy từng sai: nó mô tả đúng
+> trạng thái hồ sơ cho tới đúng lúc ấy. Cụm *"trong một repository"* là chỗ **duy nhất** trong đoạn
+> bị rút vì **sai**, không vì cũ — xem §"Nguồn của luật" bên dưới.
+>
+> 📎 **KIỂU BẢO TỒN CỦA AB-1, nêu một lần cho toàn bộ phần AB-1 viết:** đúng **MỘT** kiểu, và là
+> kiểu mục này đang dùng — **TRÍCH NGUYÊN VĂN RỒI RÚT** trong khối 📎, kèm ngày và người rút, lý do
+> đứng ngay cạnh. **AB-1 không dùng dấu gạch ngang ở bất kỳ chỗ nào.** Các `~~…~~` sẵn có trong file
+> là của T-1, U-1, V-1 và Y-1; AB-1 **không đụng** tới chúng.
 
-Cái **đã** đo được, để không ai đọc câu trên rộng hơn nó: máy WELDER **có** trong roster ship;
-đường mã **có** thật và không có nhánh nào chặn; và transport thật (`LiveTransport`) là một trong ba
-chế độ (`Live`/`Demo`/`Auto`) mà `TransportCoordinator` chọn được.
+**Người đo, ngày đo, đo trên cái gì:** nhiệm vụ **AB-1**, **2026-08-18**, trên SYNAPSE **đang chạy**
+tại `http://localhost:3000` — **không** trên một cây mã, mà trên **cổng ingest thật**.
+
+**Chuẩn bị, ghi lại để chủ sở hữu GỠ ĐƯỢC và để phép đo LẶP LẠI ĐƯỢC:** một máy thử được đăng ký và
+**chủ sở hữu duyệt** trên nền tảng đang chạy — id **250**, `serialNumber` `ST4I-TRIAL-WELD-20260818`,
+code `SN-ST4I-TRIAL-WELD-20260818`, type `WELDER`, gắn station `SIM-L1-SPI-ST` / line `SIM-L1`; khoá
+máy cấp qua `claim`. 🔴 **Hai POST thử đều BỊ TỪ CHỐI, nên KHÔNG một bản ghi process-result nào được
+tạo.** Dấu vết còn lại trên SYNAPSE, **liệt kê hết ở đây**: bản ghi **máy id 250** (đã duyệt) và
+**khoá máy** cấp cho nó. Phép liệt kê ấy là nguồn — nếu có thứ ba, nó không nằm trong phép đo này.
+
+**Cặp đối chứng — khác nhau ĐÚNG MỘT BIẾN, và biến ấy là hình dạng hàng:**
+
+| nhánh | payload | kết quả |
+|---|---|---|
+| **A** — `weld_current`, `rateHz: 1000`, hàng **một** phần tử `[176.5]` — **đúng cái `WelderSim` phát** | `POST /api/v1/ingest/process-result` | 🔴 **HTTP 400**, **ba** lỗi lược đồ tại `waveforms.0.samples.0.1`, `.1.1`, `.2.1` — *"Invalid input: expected number, received undefined"* |
+| **B** — `torque_vs_angle`, **không** `rateHz`, hàng **hai** phần tử `[angle, torque]` — **đúng cái `ScrewdriveSim` phát** | cùng endpoint, cùng khoá | ✅ **qua sạch lược đồ**, không một lỗi waveform nào |
+
+**Thứ tự thi hành, suy ra từ chính chỗ chênh ấy:** **xác thực → kiểm lược đồ → cờ tính năng → nạp.**
+Nhánh A **chết ở bước lược đồ và chưa bao giờ chạm tới cờ**; nhánh B qua lược đồ rồi mới gặp cờ. Hai
+nhánh **dừng ở hai chỗ khác nhau**, và chính chỗ chúng dừng là cái làm thứ tự này **đo được** thay vì
+suy đoán được.
+
+### 🔴 Hậu quả nay ĐANG SỐNG — và cái làm nó DỊU ĐI đứng ngay cạnh; nêu một nửa là nói sai
+
+**Nửa làm nó nặng lên:** hậu quả **không còn là lý thuyết**. Một cổng ingest **đang chạy** từ chối
+**đúng hình dạng `WelderSim` phát**, và từ chối ở **bước lược đồ** — trước cả cờ tính năng. Không cần
+một lần `LiveTransport` chạy thật nữa để biết điều gì sẽ xảy ra: nó **vừa xảy ra**, có mã lỗi và có
+đường dẫn trường.
+
+**Nửa làm nó dịu đi, và nửa này cũng là một phép đo, không phải một lời an ủi:** cờ
+**`PROCESS_RESULT_INGEST_ENABLED` mặc định TẮT**, nên **không một bản triển khai nào nạp
+process-result trừ khi có người bật nó**. Nhánh B — nhánh **qua** được lược đồ — dừng đúng ở đó:
+`{"code":"ingest_failed","message":"Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED)."}`
+Đây là **quyết định thiết kế của nền tảng** (endpoint ship ở trạng thái tắt), **không** phải cấu hình
+sai của một bản triển khai. Nó được nêu ở ba chỗ — **phép liệt kê là nguồn, và con số nếu có thì viết
+sau nó**: `scripts/sim/screwdriver-emitter.mjs:18` (*"cờ master (mặc định OFF ⇒ endpoint ship dark…)"*);
+`examples/device-client/README.md:244` (*"cổng `process-result` mặc định **OFF** (ships dark…)"*);
+`.env.example` (*"false (mặc định) = endpoint trả PRECONDITION_FAILED (ship-dark…)"*).
+
+🔴 **Hai nửa phải đọc CÙNG NHAU, và chúng không triệt tiêu nhau.** Nửa sau nói **hôm nay chưa ai mất
+dữ liệu**; nó **không** nói hình dạng đã hợp lệ. Ngày ai đó bật cờ — và cờ tồn tại để được bật — nửa
+trước là cái còn lại. Ngược lại, một hồ sơ chỉ nêu nửa trước sẽ **định giá quá cao mức khẩn cấp** của
+một quyết định mà chủ sở hữu đang cân **cùng với** giá của việc đổi một bề mặt đã xuất bản.
+
+### Ba chỗ lệch tài liệu ↔ thực tế, đo được mà không cần khoá nào (AB-1, 2026-08-18)
+
+Chúng là **đầu vào của quyết định**, không phải phần phụ lục: chúng cho thấy **nền tảng không tự đồng
+ý với chính nó**, nên câu phải quyết **rộng hơn** *"sửa `WelderSim` hay sửa validator"*.
+
+1. **Độ dài hàng — thứ được XUẤT BẢN lỏng hơn thứ được CƯỠNG CHẾ.** OpenAPI **đang phục vụ**
+   (`GET /api/v1/openapi.json`, đọc 2026-08-18) khai
+   `components.schemas.ProcessResultIngest.properties.waveforms.items.properties.samples` là một mảng
+   có `items` **theo vị trí** — `[{number},{number}]` — **nhưng không `minItems`, không `maxItems`**.
+   Không ràng buộc độ dài ⇒ một hàng **một** phần tử **thoả** hợp đồng máy-đọc-được đã xuất bản, trong
+   khi `z.tuple` lúc chạy **từ chối** nó. Cùng tài liệu ấy tự khai `openapi: "3.0.3"`, và dạng mảng của
+   `items` là dạng **OpenAPI 3.0.x không định nghĩa** (3.0 đòi `items` là **một** Schema Object).
+   **Một client sinh từ tài liệu này sẽ làm gì với chỗ đó — CHƯA ĐO**, và nó không được đoán ở đây.
+2. **Khoá đi ở đâu.** OpenAPI đang phục vụ khai `apiKey` là **một thuộc tính trong body** của
+   `ProcessResultIngest` (`{"type":"string"}`); **server trả lời** rằng khoá phải đi ở header:
+   *"Provide Authorization: Bearer &lt;key&gt; or X-API-Key."*
+3. **Tiền tố khoá.** Tài liệu và OpenAPI gọi khoá máy là **`mk_`** — chuỗi `mach_` **không xuất hiện
+   lần nào** trong tài liệu đang phục vụ — trong khi khoá **thật sự được cấp** cho máy 250 mang tiền
+   tố **`mach_`**.
+
+🔴 **Và một chỗ lệch THỨ TƯ, tìm thấy khi đối chiếu lại nguồn của bảng §"hai quy ước" — nó sửa một
+hàng của chính bảng ấy.** Hàng `server/api/v1/openapi.ts` ghi *"`samples: array of array of number` —
+**không ràng buộc độ dài hàng**"*. Đo lại: file ấy **không** xuất bản literal đó. Nó khai
+`processResultIngestSchema` là bản **SINH RA từ hợp đồng Zod** `machineProcessResultContractV1`
+(dòng **182–183**, qua `machineProcessContractJsonSchema(...)`), còn literal
+`items: { type: "array", items: { type: "number" } }` ở **dòng 147** chỉ là bản **DỰ PHÒNG**
+(`processResultIngestFallback`), dùng khi bản sinh trả null. Thứ nền tảng **thật sự phục vụ** là bản
+sinh — cặp theo vị trí, không ràng buộc độ dài (mục **1** ngay trên).
+
+**Chỗ điều này KHÔNG lật kết luận là chỗ đáng ghi nhất:** dưới **cả hai** cách đọc, một hàng **một**
+phần tử **thoả** thứ được xuất bản — bản dự phòng vì hàng là mảng số **độ dài bất kỳ**, bản sinh vì
+**không có `minItems`**. Nên *"xuất bản lỏng hơn cưỡng chế"* **đứng vững**; cái sai là **hàng bảng nêu
+sai artifact**, và nó được **sửa tại chỗ, không xoá**.
+
+> 📎 **Hàng bảng ấy giữ nguyên văn tại chỗ của nó** — *"`samples: array of array of number` — **không
+> ràng buộc độ dài hàng**"* — **RÚT 2026-08-18 (AB-1)** với tư cách **mô tả thứ nền tảng xuất bản**.
+> Nó **vẫn đúng** với tư cách mô tả **bản dự phòng** trong file ấy, nên phép rút chỉ chạm vào **vai
+> trò** của câu, không chạm vào nội dung nó.
+
+### Nguồn của luật: nêu ĐÚNG cây mã, và nêu cái mà dụng cụ trong repo này KHÔNG thấy
+
+🔴 **Các đường `server/…`, `client/src/…`, `docs/ECOSYSTEM/…` và `scripts/sim/…` trong bảng trên
+không được đọc như đường trong repo này.** Cây mã của **nền tảng đang chạy** nằm ở một repo khác:
+**`D:\SOURCES\avi-aoi-management`** (nhánh `feat/hmi-dep` lúc đo). Hai chỗ mang luật được đối chiếu
+lại ở đó 2026-08-18 và **khớp từng ký tự** với cái bảng trên ghi: `server/routers/machineApiRouters.ts`
+→ `processWaveformSchema`; và `server/contracts/machineDataContract.ts` → `processWaveformV1`
+(**dòng 193–199**, file sạch, **cùng số dòng ở cả hai cây**).
+
+🔴 **Trỏ bằng TÊN chứ không bằng số dòng — và lý do là một phép đo:** khối `processWaveformSchema`
+**giống hệt nhau từng ký tự** ở ba cây, nhưng **số dòng của nó khác nhau ở cả ba** — **2610** trong
+cây `avi-aoi-sim` tại `HEAD`, **2624** tại `HEAD` của `avi-aoi-management`, **2650** trong **cây làm
+việc đang bẩn** của `avi-aoi-management`. Một trích dẫn theo số dòng chỉ có nghĩa khi **nêu kèm cây**,
+và số **2650 không lấy lại được từ một commit nào**. Cùng loài: cờ ingest nằm ở `.env.example` dòng
+**956** trong `avi-aoi-sim`, dòng **1100** trong `avi-aoi-management`, **cùng một đoạn chữ**.
+
+🔴 **BIÊN IM LẶNG của mọi dụng cụ chạy trong repo này, và nó là lý do câu trên phải nói ra cách quét:**
+cây làm việc của `avi-aoi-sim` là **SPARSE CHECKOUT**. `git sparse-checkout list` trả về **đúng hai**
+đường — `tools/machine-simulator` và `examples/device-client`. **`server/` và `web/` không nằm trên
+đĩa**, nên **mọi `grep -r`, `ls`, hay phép quét theo file trong repo này bỏ sót chúng mà không báo một
+lỗi nào**. Một **phủ định phổ quát** đo bằng những dụng cụ ấy chỉ phủ định **bên trong hai đường trên**;
+ngoài hai đường ấy nó **không phát biểu gì**.
+
+**Nhưng chúng KHÔNG vắng mặt khỏi repo này, và đây là chỗ dễ nói quá tay:**
+`server/routers/machineApiRouters.ts`, `server/contracts/machineDataContract.ts`,
+`docs/ECOSYSTEM/57_ST4I_STANDARD_PROCESS_FEED_SPEC.md` và `scripts/sim/screwdriver-emitter.mjs`
+**đều có trong cây Git của `avi-aoi-sim`** — đọc được bằng `git show HEAD:` — chỉ **không được
+materialise ra đĩa**. Nên hồ sơ trước **không đọc một file không tồn tại**; nó đọc **một bản sao nằm
+trong repo khác với repo build ra máy chủ đang chạy**. Hai bản của `machineApiRouters.ts` **khác nhau
+xét toàn file** và **trùng khít ở đúng khối mang luật** — đó là lý do kết luận cũ **đứng vững** *và*
+nguồn **vẫn phải sửa**.
+
+### Câu *"cái sai là chú thích SDK"*: phép đo nói ngược, và chỗ nó còn đứng được NÊU TÊN
+
+Phép đo phát biểu về **bộ validate lúc chạy**: chú thích SDK `[[t, v], …]` mô tả **đúng hình dạng
+nhánh B**, tức đúng hình dạng cổng ingest **nhận**; hình dạng `WelderSim` phát là hình dạng **bị từ
+chối**. Nên câu cũ — *"cái sai không phải hai producer, là chú thích trong SDK"* — **bị phép đo bác**,
+đọc theo bộ cưỡng chế lúc chạy.
+
+🔴 **Và phát biểu dừng ở đó, vì đi xa hơn một bước là dựng lại đúng câu vòng trước đã rút.** Cùng phép
+đo ấy, đối với **hợp đồng OpenAPI mà nền tảng tự xuất bản**, hàng một phần tử **không** nằm ngoài hợp
+đồng (§"ba chỗ lệch", mục 1). Vậy phát biểu đúng là: *"chú thích SDK khớp **bộ cưỡng chế lúc chạy**,
+và hình dạng `WelderSim` phát không khớp **bộ ấy**"* — và nó **thôi đúng** ngay khi bỏ chữ *"lúc
+chạy"* đi. Blockquote đã rút ở §"hợp nhất" bên dưới bị rút **đúng vì** lý do này, nên nó không được
+viết lại ở đây dưới vật liệu mới.
+
+**Câu cũ còn đứng ở đâu — nêu tên chứ không lấp:** trong **mục 4**, ba chỗ. *"Nên cái sai không phải
+hai producer — là chú thích trong SDK."* và *"nêu tên chú thích SDK là **đã biết sai**"* nằm trong
+khối **PHÁN QUYẾT 2026-08-16 của chính chủ sở hữu**; *"**CHÚ THÍCH SDK ĐƯỢC NÊU TÊN LÀ ĐÃ BIẾT SAI**"*
+nằm trong ghi chép thi hành của **AA-1**. 🔴 **AB-1 không sửa một chữ nào trong mục 4.** Hai chỗ đầu
+nằm trong phán quyết của chủ sở hữu, và rút một câu ở đó là **quyết thay họ** — đúng thứ nhiệm vụ này
+bị cấm. Chúng được **nêu tên tại đây** để người đọc mục 4 tìm được phép đo bác chúng; ô mục 4 của bảng
+phán quyết đầu file đã trỏ sang mục 14 từ trước.
 
 ### Hợp nhất vào đây: phát hiện §8.1 của chính AA-1, nay đọc NGƯỢC hẳn
 
@@ -332,17 +478,45 @@ là ba bản cài đặt của đặc tả, và bất kỳ lối ra nào đổi 
 ### Nếu không quyết định
 
 Giữ nguyên. `WelderSim` tiếp tục phát một hình dạng cổng ingest từ chối; không gì đỏ lên trong
-`tools/machine-simulator` vì không phép kiểm nào của nó nhìn sang phía tiêu thụ; và lần chạy `Live`
-đầu tiên với một máy WELDER sẽ là lần đầu tiên ai đó biết — **nếu** nó xảy ra.
+`tools/machine-simulator` vì không phép kiểm nào của nó nhìn sang phía tiêu thụ.
+
+> 📎 **Câu này kết bằng *"và lần chạy `Live` đầu tiên với một máy WELDER sẽ là lần đầu tiên ai đó
+> biết — **nếu** nó xảy ra."* cho tới 2026-08-18, RÚT cùng ngày (AB-1), giữ nguyên văn.** Nó đã sai
+> **đúng lúc phép đo chạy**: không cần một lần `Live` nào nữa, và *"ai đó"* đã biết — bằng HTTP 400
+> với ba đường dẫn trường, ghi ở §"ĐÃ ĐO" bên trên.
+
+**Cái thay vào chỗ ấy, và nó là hai vế:** hôm nay **không bản triển khai nào nạp process-result**,
+vì cờ `PROCESS_RESULT_INGEST_ENABLED` **mặc định tắt**; nên "không quyết định" **không** để lại một
+đường mất dữ liệu đang chảy. Cái nó để lại là **một hình dạng đã xuất bản mà cổng đã xuất bản từ
+chối**, nằm im cho tới **ngày ai đó bật cờ** — và cờ tồn tại để được bật.
 
 ### Vì sao là quyết định của chủ sở hữu
 
 Cả hai lối ra **đổi một bề mặt đã xuất bản mà người ngoài đang dựa vào** — hoặc payload của sản phẩm
 này, hoặc hợp đồng ingest cộng ba SDK anh em. Đúng lý do mục 3 và mục 4 là của chủ sở hữu.
 
-### Bằng chứng — đọc được, không cần chạy
+### Bằng chứng — nay có HAI loại: loại đọc được, và loại chỉ có khi CHẠY
 
-Các file nêu tên trong bảng trên, tại commit `84836ad6`. Phía sản phẩm:
+> 📎 **Tiêu đề mục con này đọc *"Bằng chứng — đọc được, không cần chạy"* cho tới 2026-08-18, RÚT
+> cùng ngày (AB-1), giữ nguyên văn.** Nó đúng khi cả mục chỉ có bằng chứng tĩnh; phép đo 2026-08-18
+> thêm một loại **không** đọc được từ cây mã — cặp đối chứng A/B trên cổng ingest đang chạy — nên
+> tiêu đề cũ nay **hứa hẹn ít hơn** cái mục này mang.
+
+> 📎 **Câu mở đầu đọc *"Các file nêu tên trong bảng trên, tại commit `84836ad6`."* cho tới 2026-08-18,
+> RÚT cùng ngày (AB-1), giữ nguyên văn.** `84836ad6` là một commit của **repo này**, nhưng các hàng
+> `server/…`, `client/src/…`, `docs/ECOSYSTEM/…` và `scripts/sim/…` của bảng ấy được đối chiếu ở
+> **`D:\SOURCES\avi-aoi-management`** — **một cây khác** — nên một commit-id của `avi-aoi-sim` không
+> định vị được chúng, và một số dòng đọc ở cây kia không tra lại được bằng nó.
+
+**Bằng chứng tĩnh, nêu kèm cây:** các file nêu tên trong bảng trên. Phía nền tảng, đối chiếu tại
+`D:\SOURCES\avi-aoi-management` nhánh `feat/hmi-dep` (2026-08-18), **trỏ bằng tên phần tử**:
+`processWaveformSchema` và `processWaveformV1`. Cùng các file ấy **cũng có trong cây Git của repo
+này** tại `84836ad6`, **không nằm trên đĩa** (sparse checkout) — xem §"Nguồn của luật".
+
+**Bằng chứng động, chỉ có khi chạy:** cặp đối chứng A/B ở §"ĐÃ ĐO", trên SYNAPSE tại
+`http://localhost:3000`, 2026-08-18, máy thử id **250**; **không bản ghi process-result nào được tạo**.
+
+Phía sản phẩm:
 `src/St4i.EdgeCore/Drivers/Simulators/WelderSim.cs`, `…/ScrewdriveSim.cs`,
 `src/St4i.EdgeCore/Mapping/Normalizer.cs`, `src/St4i.EdgeCore/Transport/LiveTransport.cs`,
 `tools/machine-simulator/fleet.json`. Nhân chứng đang giữ hành vi hiện tại (**không** giữ một phán
