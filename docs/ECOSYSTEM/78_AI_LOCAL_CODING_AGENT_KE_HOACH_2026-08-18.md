@@ -1,8 +1,16 @@
 # 78 — Nâng AI local thành TÁC NHÂN LẬP TRÌNH cho kỹ sư làm code cả hệ thống
 
-> **Trạng thái:** BẢN NHÁP CHỜ DUYỆT · 2026-08-18
+> **Trạng thái:** ✅ **ĐÃ DUYỆT** · 2026-08-18 · chủ dự án trả lời trực tiếp trong §7.
 > Chủ dự án yêu cầu: *"nâng cấp giao diện code cho AI local giống Claude Code để kỹ sư làm code cả hệ thống"*.
-> Tài liệu này **chưa thực thi bất cứ dòng nào**. Đọc §7 trước nếu chỉ có 2 phút.
+>
+> **Ba quyết định đã chốt** (nguyên văn ở §7):
+> 1. **CÓ cho AI ghi tệp** ⇒ làm cả pha A, B, **C**.
+> 2. **Hộp cát = chính repo này**, kèm hàng rào *"tệp có thay đổi chưa commit ⇒ TỪ CHỐI ghi"*.
+> 3. **Ghim theo vai `engineer`/`admin`** qua `requiredPermission`, không mở cho mọi tài khoản.
+>
+> ⚠ Quyết định 1+2 cộng lại nghĩa là: một tác nhân sẽ **ghi thẳng vào cây làm việc thật**. Hàng rào
+> "tệp bẩn" ở §4/PHA C vì thế **không phải một tuỳ chọn** — nó là điều kiện để quyết định 2 an toàn.
+> Nó chặn đúng sự cố đã xảy ra hôm nay (§3 mục 1: mất 123 dòng chưa commit).
 
 ---
 
@@ -166,9 +174,12 @@ sư hỏi nhiều nhất.
 ## 7. Ba câu cần chủ dự án quyết
 
 1. **Có chấp nhận cho AI ghi tệp không?** Nếu KHÔNG, dừng ở pha A+B: trợ lý đọc được mã thật và
-   chạy được test, người vẫn chép tay bản vá. Vẫn hơn hôm nay rất nhiều, và **rủi ro gần bằng 0**.
+   chạy được test, người vẫn chép tay bản vá. Vẫn hơn hôm nay rất nhiều, và **rủi ro gần bằng 0**. 
+   -> CÓ cho ghi
 2. **Hộp cát là repo này, hay một bản sao (worktree) riêng?** Bản sao an toàn hơn hẳn nhưng kỹ sư
    phải tự trộn ngược. Tôi nghiêng về **repo này + hàng rào "tệp bẩn thì từ chối"** vì bản sao sẽ
    ít người dùng.
+   ->  **repo này + hàng rào "tệp bẩn thì từ chối"**
 3. **Ai được dùng?** Đề nghị ghim theo vai (`engineer`/`admin`), đi qua đúng `requiredPermission`
    mà 56 tool hiện có đang dùng, chứ không mở cho mọi tài khoản đăng nhập.
+   -> Đồng ý
