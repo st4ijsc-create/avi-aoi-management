@@ -14,6 +14,12 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { resolveFactoryDateWindow } from "../utils/kpi";
+// ★★★ 2026-08-17 — TRỤC PHẠM VI. Ba thủ tục dưới đây là lớp vỏ tRPC MỎNG NHẤT phủ lên chính
+// những bộ tổng hợp vừa được vá; bỏ quên chúng là để nguyên cái lỗ ở một cửa khác, và tệ hơn —
+// tạo GIẤY CHỨNG NHẬN VÔ CAN cho `db/reportAggregators.ts` ("đã có trục phạm vi rồi").
+// ⚠ Danh tính từ `ctx.user`; `exportScopeArgs` chỉ nhận `{id, role}` nên `input.userId` không
+// diễn đạt được.
+import { exportScopeArgs } from "../_core/reportExportScope";
 import {
   getDefectParetoByCategory,
   getYieldByProduct,
@@ -45,7 +51,7 @@ export const reportAggregatorsRouter = router({
         topN: z.number().min(3).max(50).optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const w = resolveFactoryDateWindow(input.startDate, input.endDate);
       return getDefectParetoByCategory({
         startDate: w.start,
@@ -57,13 +63,14 @@ export const reportAggregatorsRouter = router({
         productModelId: input.productModelId,
         dimension: input.dimension,
         topN: input.topN,
+        ...exportScopeArgs(ctx.user),
       });
     }),
 
   /** Per-product output + canonical final yield over the window. */
   yieldByProduct: protectedProcedure
     .input(z.object(windowInput))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const w = resolveFactoryDateWindow(input.startDate, input.endDate);
       return getYieldByProduct({
         startDate: w.start,
@@ -73,13 +80,14 @@ export const reportAggregatorsRouter = router({
         lineId: input.lineId,
         machineId: input.machineId,
         productModelId: input.productModelId,
+        ...exportScopeArgs(ctx.user),
       });
     }),
 
   /** Yield trend bucketed by ISO week in the factory timezone. */
   yieldTrendByWeek: protectedProcedure
     .input(z.object(windowInput))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const w = resolveFactoryDateWindow(input.startDate, input.endDate);
       return getYieldTrendByWeek({
         startDate: w.start,
@@ -89,6 +97,7 @@ export const reportAggregatorsRouter = router({
         lineId: input.lineId,
         machineId: input.machineId,
         productModelId: input.productModelId,
+        ...exportScopeArgs(ctx.user),
       });
     }),
 });

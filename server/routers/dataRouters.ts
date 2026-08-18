@@ -674,11 +674,21 @@ export const exportRouter = router({
       startDate: z.date(),
       endDate: z.date(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const XLSX = await import('xlsx');
-      
-      const corporateStats = await db.getYieldRateByCorporate(input);
-      const factoryStats = await db.getYieldRateByFactory(input);
+
+      // ★★★ 2026-08-17 — điểm gọi này TRUYỀN THẲNG `input` xuống, nên hai hàm dưới không bao
+      // giờ thấy `userId` và khối lọc phạm vi của chúng (statistics.ts :2395, :2450) KHÔNG BAO
+      // GIỜ chạy ⇒ file .xlsx mang số liệu TOÀN CỤC. Thủ tục có `adminProcedure` +
+      // `requirePermission('reports_export','canExport')` nên nhẹ hơn ba router PDF/PPTX, nhưng
+      // "adminProcedure" ở đây là CỔNG VAI, không phải vai `admin`: một tài khoản không phải
+      // admin được cấp quyền xuất vẫn đi qua và vẫn đọc được mọi tenant.
+      // Cast `as 'admin' | 'user'` theo đúng khuôn 4 điểm gọi anh em ở :730-:750 cùng file
+      // (chữ ký hai hàm khai hẹp hơn `users.role` thật; giá trị lúc chạy đi nguyên vẹn và mọi
+      // vai không phải 'admin' đều rơi vào nhánh lọc — đó là hành vi đúng).
+      const actor = { userId: ctx.user.id, userRole: ctx.user.role as 'admin' | 'user' };
+      const corporateStats = await db.getYieldRateByCorporate({ ...input, ...actor });
+      const factoryStats = await db.getYieldRateByFactory({ ...input, ...actor });
 
       const wb = XLSX.utils.book_new();
       

@@ -72,7 +72,11 @@ async function getEmbedContext() {
 
   _llama = await getLlama({ gpu: process.env.GGUF_GPU === "false" ? false : "auto" });
   const modelPath = resolveEmbedModelPath();
-  _model = await _llama.loadModel({ modelPath, gpuLayers: -1 });
+  // ★ ĐO 2026-08-16 — node-llama-cpp v3 hiểu SỐ là *số lớp*, không theo quy ước llama.cpp
+  // ("-1 = tất cả"). Đo trực tiếp: gpuLayers:-1 ⇒ model.gpuLayers === 0 (CHẠY TOÀN CPU, im lặng);
+  // gpuLayers:"max" ⇒ 37. Mọi lượt kb:embed trước ngày này đều nhúng bằng CPU mà không ai biết.
+  // Cùng lớp lỗi đã được vá trong server/services/aiReranker.ts (xem chú thích ~dòng 682-687).
+  _model = await _llama.loadModel({ modelPath, gpuLayers: process.env.GGUF_GPU === "false" ? 0 : "max" });
   // Public factory in node-llama-cpp v3 (do NOT `new LlamaEmbeddingContext`).
   // dot2 Task 1 — "auto" cấp TOÀN BỘ cửa sổ ngữ cảnh gốc của model thay vì
   // EMBED_CTX production thật sự dùng (getEmbeddingContext, server/services/

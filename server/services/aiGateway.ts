@@ -64,6 +64,19 @@ export interface GatewayRequest extends RouteInput {
    * instead of a per-role one.
    */
   role?: string;
+  /**
+   * G3-B — nhãn MỊN HƠN cho **riêng vệt nhật ký** `ai_llm_audit.task` (varchar(32)); mặc định
+   * là chính `task`. `ai_gateway_metrics.task` VẪN ghi `task` (một `TaskKind` hợp lệ), nên
+   * không có cột nào đổi kiểu.
+   *
+   * ⚠ VÌ SAO KHÔNG THÊM `TaskKind` MỚI. Đường lập kế hoạch agent gọi model bằng **JSON ràng
+   * buộc bằng ngữ pháp** — đúng ngữ nghĩa định tuyến mà `extract` đã có (`jsonMode`, tầng
+   * nông). Đẻ một `TaskKind` mới sẽ kéo theo một nhánh định tuyến/ngưỡng CHƯA AI ĐO
+   * (`ROUTER_MODEL_PROFILES` nói rõ: ngưỡng phải rút từ phép đo, không được bịa). Nhãn này
+   * tách đúng thứ cần tách — *câu hỏi "vì sao AI đề xuất X" tra theo `task='agent_plan'`* —
+   * mà không đụng vào quyết định định tuyến.
+   */
+  auditTask?: string;
 }
 
 // Review fix (doc69 G2-4 W1-3) — "license_denied" is a DISTINCT value from "blocked" (the
@@ -81,12 +94,23 @@ export interface InferenceOutcome {
   outcome?: Outcome;
   /**
    * doc69 G2-5a — the ALREADY-OUTPUT-REDACTED response text (i.e. the return value of
-   * `GatewayPlan.sanitizeOutput(rawResponse)`), OPTIONAL. Only consulted for HIGH-RISK tasks
-   * (rca/report/vision — see `HIGH_RISK_TASKS`) to compute the LLM audit trail's
-   * `responseSha256`. Every other caller can omit it with zero behavior change (byte-identical
-   * to before this task) — it is never persisted raw, only hashed.
+   * `GatewayPlan.sanitizeOutput(rawResponse)`), OPTIONAL. Only consulted for AUDITED tasks
+   * (see `TASK_AUDIT_POLICY`) to compute the LLM audit trail's `responseSha256`. Every other
+   * caller can omit it with zero behavior change (byte-identical to before this task) — it is
+   * never persisted raw, only hashed.
    */
   responseText?: string;
+  /**
+   * G3-B — mẩu tóm tắt NGẮN, đã che bí mật, ghi vào `ai_llm_audit.redactedSnippet`.
+   *
+   * Băm sha256 chứng minh được *"đúng prompt này ra đúng câu trả lời này"* nhưng KHÔNG trả lời
+   * được *"vì sao AI đề xuất X"* — người điều tra không có preimage để đối chiếu. Cột
+   * `redactedSnippet` đã có sẵn từ migration 0299 (khai đúng là "một mẩu trích đã che, dành cho
+   * lượt bật sau"); đây là lượt bật đó, giới hạn cho các quyết định SINH RA HÀNH ĐỘNG
+   * (lập kế hoạch agent / replan). `aiLlmAudit.recordLlmAudit` còn che + cắt một lần NỮA trước
+   * khi ghi, nên một người gọi quên che cũng không rò được.
+   */
+  auditSnippet?: string;
 }
 
 /**
@@ -280,27 +304,72 @@ function aiGatewayLicenseGateEnabled(): boolean {
 }
 
 /**
- * doc69 G2-5a — privacy-safe LLM-call audit trail switch (`server/services/ai/aiLlmAudit.ts`).
- * Default ON: only LOW-VOLUME HIGH-RISK tasks are ever audited (see `HIGH_RISK_TASKS` below),
- * and only sha256 HASHES of the already-redacted prompt/response are stored (never raw text)
- * — safe to default on. Set to "false"/"0"/"off" to fully disable (e.g. during rollout, or for
- * a deployment that wants zero extra writes even for high-risk tasks).
+ * doc69 G2-5a / G3-B — privacy-safe LLM-call audit trail switch (`server/services/ai/aiLlmAudit.ts`).
+ * Default ON: only sha256 HASHES of the already-redacted prompt/response are stored (never raw
+ * text; plus an optional already-redacted `auditSnippet` for action-generating decisions) — safe
+ * to default on. WHICH tasks are audited is the `TASK_AUDIT_POLICY` predicate below (everything
+ * except the two declared high-frequency exemptions). Set to "false"/"0"/"off" to fully disable.
  */
 function llmAuditEnabled(): boolean {
   return envFlagDefaultOn("AI_LLM_AUDIT_ENABLED");
 }
 
 /**
- * doc69 G2-5a — "high-risk" / AI-influenced QUALITY decisions: root-cause analysis, generated
- * reports, and vision-based inspection calls — the tasks whose OUTPUT can directly steer a
- * quality/RCA decision. Deliberately NOT chat/intent/extract/embed/code/fim: those are either
- * high-volume (chat/embed) or not themselves the quality-affecting artifact (per the task
- * brief: "NOT every chat/embed call"). There is no separate "quality" TaskKind in
- * aiModelRouter.ts today — quality-affecting decisions in this codebase are routed as "rca"
- * (see aiRcaCopilot.ts) or "report" (see aiExecutiveReport.ts / aiProviderRouter.ts), so those
- * two plus "vision" (aiAdvancedVision.ts / describeImage) are the exact set audited.
+ * ★★★ G3-B — ĐẢO CHIỀU KHAI BÁO: **cái KHÔNG ghi phải được khai tên**, không phải cái ghi.
+ *
+ * Bản cũ là `HIGH_RISK_TASKS = new Set(["rca","report","vision"])` — một DANH SÁCH CHO PHÉP.
+ * Hình dạng ấy sai theo cấu tạo ở đúng một chỗ: **thêm một đường sinh chữ mới thì mặc định của
+ * nó là IM LẶNG.** Repo này đã dính đúng lớp lỗi "N+1 bản sao / N+1 mục phải nhớ khai" **17
+ * lần**, và lần này nó đã đẻ ra hậu quả đo được: `chat`, `intent`, và **cả đường lập kế hoạch
+ * agent** (thứ SINH RA HÀNH ĐỘNG GHI) không có lấy một bản ghi nào — điều tra "vì sao AI đề
+ * xuất hạ ngưỡng NG" mở bảng `ai_llm_audit` ra thì RỖNG.
+ *
+ * Nay: một BẢNG TOÀN PHẦN trên `TaskKind` (`satisfies Record<TaskKind, …>`), và vị từ
+ * `shouldAuditTask` mặc định **GHI** cho bất cứ thứ gì chưa khai. Hai cổng, hai lớp:
+ *   • **Biên dịch**: thêm một `TaskKind` mà quên khai ở đây ⇒ `tsc` ĐỎ ngay (bảng không còn
+ *     toàn phần). Đây là cổng thật sự — nó bắt lỗi TRƯỚC khi có ai chạy test.
+ *   • **Chạy**: một nhãn tác vụ lọt tới đây mà không có trong bảng (vd đi vòng qua ép kiểu,
+ *     hoặc một `TaskKind` mới ở nhánh khác chưa merge) ⇒ vẫn GHI. Im lặng không bao giờ là
+ *     mặc định.
+ *
+ * MIỄN TRỪ PHẢI CÓ LÝ DO ĐO ĐƯỢC, không phải "cảm giác là nhiều":
+ *   • `embed` — một lượt dựng lại RAG là **91.678 chunk** (số đo có thật trong repo này). Ghi
+ *     nhật ký cho từng chunk là 91.678 hàng cho MỘT lượt cron, và không hàng nào trả lời được
+ *     câu hỏi nào: nhúng không sinh ra chữ, không sinh ra quyết định.
+ *   • `fim` — tự động hoàn thành nội dòng, bắn theo TỪNG PHÍM. Cùng lập luận, cùng bằng chứng
+ *     (xem `aiProgrammingCopilot.completeInline`).
+ * Mọi thứ còn lại — kể cả `chat` và `intent`, vốn bị loại ở bản cũ vì "lưu lượng cao" — nay
+ * ĐƯỢC GHI: chúng sinh ra chữ mà con người đọc và hành động theo, và hàng ghi chỉ gồm băm +
+ * số đếm (không có văn bản thô), rẻ hơn nhiều bậc so với chính lượt suy luận vừa chạy.
  */
-const HIGH_RISK_TASKS: ReadonlySet<TaskKind> = new Set<TaskKind>(["rca", "report", "vision"]);
+export type TaskAuditPolicy = "audit" | "exempt";
+
+export const TASK_AUDIT_POLICY = {
+  chat: "audit",
+  intent: "audit",
+  extract: "audit",
+  rca: "audit",
+  report: "audit",
+  vision: "audit",
+  code: "audit",
+  embed: "exempt",
+  fim: "exempt",
+} as const satisfies Record<TaskKind, TaskAuditPolicy>;
+
+/**
+ * Vị từ nhật ký. Nhận `string` chứ không chỉ `TaskKind` — CỐ Ý: một nhãn lạ (chưa khai, hoặc
+ * đến từ nhánh chưa merge) phải rơi vào nhánh GHI, và ép kiểu tham số thành `TaskKind` sẽ
+ * biến chính ca canh điều đó thành ca không biên dịch được.
+ */
+export function shouldAuditTask(task: string): boolean {
+  return (TASK_AUDIT_POLICY as Record<string, TaskAuditPolicy | undefined>)[task] !== "exempt";
+}
+
+/** Nhãn ghi vào `ai_llm_audit.task` (varchar(32)) — `auditTask` nếu có, không thì chính `task`. */
+function auditTaskLabel(req: GatewayRequest): string {
+  const fine = (req.auditTask ?? "").trim();
+  return (fine || req.task).slice(0, 32);
+}
 
 /** doc69 G2-5a — fail-safe wrapper around the correlation-id backbone (observability/correlation.ts). */
 function safeGetCorrelationId(): string | null {
@@ -312,23 +381,23 @@ function safeGetCorrelationId(): string | null {
 }
 
 /**
- * doc69 G2-5a — audit ONE completed (or blocked) high-risk call. No-op for every other task
- * and when `AI_LLM_AUDIT_ENABLED` is off. `recordLlmAudit` itself is synchronous/fail-safe
- * (hash + buffer only — see aiLlmAudit.ts), so calling it here can never add I/O latency or
- * throw into `planInference`'s hot path.
+ * doc69 G2-5a / G3-B — audit ONE completed (or blocked) call whose task is NOT exempt (see
+ * `TASK_AUDIT_POLICY`). No-op when `AI_LLM_AUDIT_ENABLED` is off. `recordLlmAudit` itself is
+ * synchronous/fail-safe (hash + buffer only — see aiLlmAudit.ts), so calling it here can never
+ * add I/O latency or throw into `planInference`'s hot path.
  */
-function auditIfHighRisk(
+function auditIfRisky(
   req: GatewayRequest,
   decision: RouteDecision,
   safetyFlags: SafetyFlagsSummary,
   promptText: string,
   outcome: Outcome,
-  extra?: { responseText?: string; latencyMs?: number },
+  extra?: { responseText?: string; latencyMs?: number; auditSnippet?: string },
 ): void {
-  if (!llmAuditEnabled() || !HIGH_RISK_TASKS.has(req.task)) return;
+  if (!llmAuditEnabled() || !shouldAuditTask(req.task)) return;
   recordLlmAudit({
     userId: req.userId ?? null,
-    task: req.task,
+    task: auditTaskLabel(req),
     tier: decision.tier,
     model: decision.modelId ?? "default",
     outcome,
@@ -337,6 +406,7 @@ function auditIfHighRisk(
     latencyMs: extra?.latencyMs,
     safetyFlags,
     correlationId: safeGetCorrelationId(),
+    redactedSnippet: extra?.auditSnippet ?? null,
   });
 }
 
@@ -508,6 +578,25 @@ function ensureFlushTimer(): void {
   }, FLUSH_INTERVAL_MS);
   // Don't keep the process alive just for telemetry flushing.
   if (typeof flushTimer.unref === "function") flushTimer.unref();
+}
+
+/**
+ * G3-B — bản sao ĐÚNG của `aiLlmAudit.stopLlmAuditFlushTimer`, cho bộ đếm giờ xả metrics của
+ * chính file này. Sản xuất KHÔNG BAO GIỜ gọi (bộ đếm sống hết đời tiến trình, và `.unref()` đã
+ * bảo đảm nó không giữ tiến trình lại).
+ *
+ * ⚠ VÌ SAO CẦN: `setInterval` là trạng thái CỦA CẢ TIẾN TRÌNH, `vi.resetModules()` thì KHÔNG
+ * chạm tới nó. Một ca test gài bộ đếm này rồi `resetModules()` sẽ để lại một interval trỏ vào
+ * closure CŨ (buffer cũ, `getDb` mock cũ); ~5 s sau nó bắn vào giữa một ca KHÁC và gọi chính
+ * `db.insert` mà ca ấy đang đếm — lưới đỏ/xanh theo ĐỒNG HỒ chứ không theo mã. `aiLlmAudit.ts`
+ * đã phải học bài này một lần (xem chú thích ở `stopLlmAuditFlushTimer`); ở đây thiếu đúng cái
+ * móc đó, nên bài học chỉ được học một nửa. Idempotent, an toàn khi chưa từng gài.
+ */
+export function stopGatewayFlushTimer(): void {
+  if (flushTimer) {
+    clearInterval(flushTimer);
+    flushTimer = null;
+  }
 }
 
 /** Drain the buffer to the DB. Fail-safe: on error the rows are dropped (telemetry only). */
@@ -732,9 +821,9 @@ export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
   if (safety.flags.risk === "high" && safetyBlockHighRiskEnabled()) {
     bumpInputSafetyStats(safety.flags, true); // count as blocked in addition to the scan already counted above
     enqueue(toRow(req, decision, abVariant, { outcome: "blocked" }));
-    // doc69 G2-5a — audit the blocked ATTEMPT for high-risk tasks (promptSha256 only; the
+    // doc69 G2-5a — audit the blocked ATTEMPT for audited tasks (promptSha256 only; the
     // call never reached a model, so there is no response to hash).
-    auditIfHighRisk(req, decision, safety.flags, safety.text, "blocked");
+    auditIfRisky(req, decision, safety.flags, safety.text, "blocked");
     throw new SafetyBlockedError(
       `AI safety: request blocked (injection risk 'high', matched: ${safety.flags.matched.join(", ")}).`,
       safety.flags.matched,
@@ -787,12 +876,13 @@ export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
     if (recorded) return;
     recorded = true;
     enqueue(toRow(req, decision, abVariant, o));
-    // doc69 G2-5a — audit the completed call (success OR error) for high-risk tasks only.
-    // `o.responseText`, when supplied, is expected to already be output-redacted (see the
-    // field's doc comment on InferenceOutcome).
-    auditIfHighRisk(req, decision, safety.flags, safety.text, o.outcome ?? "ok", {
+    // doc69 G2-5a / G3-B — audit the completed call (success OR error) for every non-exempt
+    // task. `o.responseText`, when supplied, is expected to already be output-redacted (see
+    // the field's doc comment on InferenceOutcome).
+    auditIfRisky(req, decision, safety.flags, safety.text, o.outcome ?? "ok", {
       responseText: o.responseText,
       latencyMs: o.latencyMs,
+      auditSnippet: o.auditSnippet,
     });
   };
 
@@ -814,7 +904,7 @@ export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
  *
  * doc69 G2-5a review fix (Wave 1 W1-4a) — OPTIONAL third arg `opts.getResponseText`: an
  * extractor that turns the generic `T` result into a string for the LLM audit trail's
- * `responseSha256` (consulted ONLY for HIGH-RISK tasks — see `HIGH_RISK_TASKS` — the same
+ * `responseSha256` (consulted ONLY for AUDITED tasks — see `TASK_AUDIT_POLICY` — the same
  * way `o.responseText` already worked for direct `planInference().record()` callers). The
  * extracted string is passed through `plan.sanitizeOutput()` — the SAME output-redaction
  * every other gateway response goes through — before being handed to `record()`, so it is

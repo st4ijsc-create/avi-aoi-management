@@ -24,12 +24,31 @@ import {
 // sibling that bypassed all of this entirely) can reuse them verbatim (fix #3).
 import { applyReportScope, applyGlobalReportScope } from "../_core/aiAnalyticsScope";
 
-const reportParamsSchema = z.object({
+/**
+ * ⚠ Xuất ra để `aiReportRouter.langGate.test.ts` hỏi **chính lược đồ đang chạy** thay vì đọc lại
+ * mã nguồn bằng regex. Một lưới quét chuỗi `.default("vi")` sẽ xanh cả khi lược đồ bị thay ở chỗ
+ * khác; `safeParse` thì không nói dối được.
+ */
+export const reportParamsSchema = z.object({
   startDate: z.string().transform(s => new Date(s)),
   endDate: z.string().transform(s => new Date(s)),
   machineId: z.number().optional(),
   factoryId: z.number().optional(),
-  language: z.enum(["en", "vi"]).default("en"),
+  /**
+   * ★★★ G4-A VIỆC 1 lớp ① — HAI SỬA ĐỔI, MỖI CÁI ĐÓNG MỘT NỬA CỦA LỖ.
+   *
+   * (a) **`.default("vi")`, không còn `"en"`.** Đây là hệ chạy trong một nhà máy Việt Nam;
+   *     `AIReportsPage` gọi bốn thủ tục này mà **KHÔNG** kèm `language` (cả 4 tab), nên
+   *     `.default("en")` biến *mọi* lượt bấm "Tạo báo cáo" thành một lượt xin tiếng Anh — người
+   *     dùng không hề chọn, và không có bề mặt nào để chọn. Trang nay gửi ngôn ngữ i18n hiện
+   *     hành; mặc định này là lưới cho **mọi người gọi khác** (script, API ngoài) quên khai.
+   *
+   * (b) **Nới enum lên ba mã `vi`/`en`/`zh`.** Giao diện có tiếng Trung. Nếu (a) được vá mà enum
+   *     vẫn là `["en","vi"]` thì một phiên `zh` gửi `"zh"` sẽ nhận **400 BAD_REQUEST** — bản vá
+   *     lớp ① tự đẻ ra một lỗ mới ở lớp bên cạnh. Bảng câu `aiReportPhrases.ts` khai đủ ba ngôn
+   *     ngữ, cưỡng chế bằng KIỂU, nên ba mã đều có nội dung thật để trả về.
+   */
+  language: z.enum(["en", "vi", "zh"]).default("vi"),
 });
 
 export const aiReportRouter = router({
@@ -71,7 +90,7 @@ export const aiReportRouter = router({
         {
           machineId: input.machineId ?? null,
           user: { id: ctx.user.id, role: String(ctx.user.role), name: ctx.user.name ?? null },
-          lang: input.language === "vi" ? "vi" : "en",
+          lang: input.language,
         },
       );
 

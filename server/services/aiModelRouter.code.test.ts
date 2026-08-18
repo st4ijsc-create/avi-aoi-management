@@ -107,6 +107,28 @@ describe("code/fim routing — flag ON", () => {
     const { route } = await freshRouter();
     expect(route({ task: "code" }).contextSize).toBe(16384);
   });
+
+  /**
+   * ★ G5-B (2026-08-16) — ca này ĐỎ trước bản vá. `codeContextSize()` cũ kẹp thêm một hằng
+   * `Math.min(max, 32768)` viết cứng, nên NÂNG trần trong `.env` không có tác dụng: 131072 bị
+   * cắt về 32768 trong im lặng. Model mới có ctx native 262k ⇒ đây là chỗ trần "khai mà vô hiệu".
+   * ⚠ Ca này KHÔNG khẳng định trần NÊN là bao nhiêu — chỉ khẳng định **đổi nguồn thì trần đổi**.
+   */
+  it("★ nâng GGUF_MAX_CTX VƯỢT 32768 ⇒ trần hiệu dụng đi theo (không còn hằng cứng chặn lần hai)", async () => {
+    process.env.AI_CODE_ROUTER_ENABLED = "true";
+    for (const v of ["65536", "131072", "262144"]) {
+      process.env.GGUF_MAX_CTX = v;
+      const { route } = await freshRouter();
+      expect(route({ task: "code" }).contextSize, `GGUF_MAX_CTX=${v}`).toBe(Number(v));
+    }
+  });
+
+  it("mặc định (GGUF_MAX_CTX không gán) vẫn là 32768 — bản vá KHÔNG tự nâng trần", async () => {
+    process.env.AI_CODE_ROUTER_ENABLED = "true";
+    delete process.env.GGUF_MAX_CTX;
+    const { route } = await freshRouter();
+    expect(route({ task: "code" }).contextSize).toBe(32768);
+  });
 });
 
 describe("code/fim routing — precedence", () => {

@@ -218,7 +218,9 @@ async function loadFastModel() {
   if (!fs.existsSync(modelPath)) {
     throw new Error(`Fast model not found for rerank: ${modelPath}`);
   }
-  _model = await _llama.loadModel({ modelPath, gpuLayers: -1 });
+  // ★ ĐO 2026-08-16 — xem chú thích cùng nội dung ở scripts/ai-kb/_gguf-embed.mjs:
+  // v3 coi SỐ là *số lớp* ⇒ -1 nghĩa là 0 LỚP TRÊN GPU, không phải "tất cả".
+  _model = await _llama.loadModel({ modelPath, gpuLayers: process.env.GGUF_GPU === "false" ? 0 : "max" });
   const ctx = await _model.createContext({ contextSize: { min: 2048, max: 8192 } });
   _session = new LlamaChatSession({ contextSequence: ctx.getSequence() });
   return _session;

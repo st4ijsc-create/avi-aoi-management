@@ -7,6 +7,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
+// ★★★ 2026-08-17 — xem `_core/reportExportScope.ts`.
+import { exportScopeArgs, resolveExportScope } from "../_core/reportExportScope";
 import * as db from "../db";
 import { getDb } from "../db/connection";
 import { sql, eq, desc } from "drizzle-orm";
@@ -286,10 +288,21 @@ export const reportBuilderRouter = router({
         lineId: z.number().optional(),
       }).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { widgetType, config, filters } = input;
       const startDate = filters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const endDate = filters?.endDate || new Date();
+
+      // ⚠ Danh tính LẤY TỪ `ctx.user`, KHÔNG BAO GIỜ từ `input`. Năm điểm gọi trong `switch`
+      // dưới đây trước bản vá không truyền gì ⇒ mọi widget phát số TOÀN CỤC.
+      const actor = exportScopeArgs(ctx.user);
+      // ⚠ Bề mặt này KHÁC PDF/PPTX: nó trả JSON cho widget ĐANG SỐNG trên màn hình, không sinh
+      // file rời hệ thống. Nên KHÔNG `assertExportableScope` ở đây — từ chối sẽ giết cả trang
+      // dựng báo cáo. Thay vào đó số 0 đi KÈM LÝ DO, để widget nói "chưa được gán nhà máy" thay
+      // vì vẽ một ô "0" câm mà người đọc tự dịch thành "dây chuyền ngừng chạy".
+      // ⚠ CHỈ ba ô CHỮ (`scopeLabelsOf`) — `filter` của drizzle có tham chiếu vòng, spread nó
+      // vào đáp ứng tRPC là `Converting circular structure to JSON` ⇒ 500 cho mọi người dùng.
+      const scope = await resolveExportScope(ctx.user);
 
       switch (widgetType) {
         case "kpi_card": {
@@ -298,16 +311,21 @@ export const reportBuilderRouter = router({
             endDate,
             factoryId: filters?.factoryId,
             workshopId: filters?.workshopId,
+            ...actor,
           });
           const metric = config?.metric || "totalInspections";
           const value = (stats as any)?.[metric] ?? 0;
-          return { value, metric };
+          return { value, metric, ...scope };
         }
 
         case "yield_trend":
         case "line_chart": {
-          const data = await db.getNGTrendByDay({ startDate, endDate });
-          return { data };
+          // NỢ ĐÃ TRẢ 2026-08-17 — `getNGTrendByDay` nay nhận trục phạm vi.
+          // ⚠ `data` là MẢNG: nhãn do `withScopeLabels` đính KHÔNG liệt kê được nên không đi
+          // được qua superjson. Lý do rỗng của widget này lấy từ `...scope` ngay bên cạnh —
+          // đó là ô mang nhãn thật sự lên dây.
+          const data = await db.getNGTrendByDay({ startDate, endDate, ...actor });
+          return { data, ...scope };
         }
 
         case "ng_analysis":
@@ -316,18 +334,20 @@ export const reportBuilderRouter = router({
             startDate,
             endDate,
             limit: config?.limit || 10,
+            ...actor,
           });
-          return { data };
+          return { data, ...scope };
         }
 
         case "machine_comparison": {
+          // `workshopId` bỏ đi (hàm không nhận) + bỏ `as any` ⇒ tsc canh thật điểm gọi này.
           const data = await db.getTopBottomMachines({
             startDate,
             endDate,
             factoryId: filters?.factoryId,
-            workshopId: filters?.workshopId,
-          } as any);
-          return { data };
+            ...actor,
+          });
+          return { data, ...scope };
         }
 
         case "shift_analysis": {
@@ -335,8 +355,9 @@ export const reportBuilderRouter = router({
             startDate,
             endDate,
             factoryId: filters?.factoryId,
+            ...actor,
           });
-          return { data };
+          return { data, ...scope };
         }
 
         case "table": {
@@ -345,12 +366,13 @@ export const reportBuilderRouter = router({
             endDate,
             factoryId: filters?.factoryId,
             workshopId: filters?.workshopId,
+            ...actor,
           });
-          return { data: stats };
+          return { data: stats, ...scope };
         }
 
         default:
-          return { data: null };
+          return { data: null, ...scope };
       }
     }),
 });

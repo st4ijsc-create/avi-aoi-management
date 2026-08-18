@@ -1,0 +1,259 @@
+{
+  "_doc": [
+    "════════════════════════════════════════════════════════════════════════════════════════════",
+    "BỘ CA ĐỐI TRỌNG — ĐỊNH GIÁ CÁI *ĐƯỢC* CỦA 20 THẺ VẬN HÀNH ĐÃ DUYỆT (G4-C).",
+    "════════════════════════════════════════════════════════════════════════════════════════════",
+    "",
+    "⚠⚠ VÌ SAO BỘ NÀY PHẢI TỒN TẠI — LÝ DO CƠ CHẾ, KHÔNG PHẢI 'CHO ĐẦY ĐỦ':",
+    "`rag-operational-cases.json` (54 ca) được viết TRƯỚC khi có knowledge/operational-approved/**,",
+    "nên nó có ĐÚNG 0 ca mong đợi một đường dẫn trong thư mục ấy. Luật hit của nó là KHỚP ĐÚNG",
+    "đường dẫn ⇒ mọi ô top-5 mà một thẻ đã duyệt chiếm đều bị đếm là TRƯỢT. Tức là một mình nó",
+    "CHỈ đo được CHI PHÍ, và kết luận rút từ nó sẽ luôn là 'đừng index'. Cùng lớp lỗi đã gặp với",
+    "playbook (xem rag-playbook-cases.json) và với tài liệu kiến trúc (rag-architecture-cases.json).",
+    "",
+    "★ MỘT CA Ở ĐÂY TRÚNG KHI VÀ CHỈ KHI thẻ ĐÃ DUYỆT của đúng màn hình ấy lọt top-K.",
+    "  `knowledge/operational/<slug>.md` (thẻ SINH TỰ ĐỘNG cho cùng màn) CỐ Ý **không** nằm trong",
+    "  expectPaths và cũng **không** nằm trong distractors: nó không phải câu trả lời sai, nhưng nó",
+    "  cũng không phải cái đang được định giá. Đưa nó vào expectPaths là tự cho điểm bằng một tài",
+    "  liệu đã có sẵn từ trước — lượng từ TỰ THOẢ.",
+    "",
+    "⚠⚠ GIỚI HẠN PHẢI ĐỌC KÈM MỌI CON SỐ CỦA BỘ NÀY:",
+    "  Nó đo 'thẻ đã duyệt có được TRẢ VỀ không', KHÔNG đo 'câu trả lời có ĐÚNG không'. Với 14 thẻ",
+    "  `do_day: nhieu_o_trong`, phần lớn thân bài là dòng 'CHƯA GHI LẠI'. Một thẻ như thế được trả",
+    "  về là ĐÚNG khi ta muốn trợ lý nói 'quy trình này chưa được ghi lại', và là VÔ ÍCH khi người",
+    "  hỏi cần các bước thật. Con số ở đây KHÔNG phân biệt được hai trường hợp ấy. Vì vậy nó phải",
+    "  được đọc CẠNH bộ 54 ca (chi phí), không thay cho nó.",
+    "",
+    "CHẠY (kho chưa có thẻ ⇒ cần --allow-missing-expect, và cờ ấy KHÔNG làm cầu chì im):",
+    "  node scripts/ai-eval/eval-rag-operational.mjs --parity --allow-missing-expect \\",
+    "    --cases scripts/ai-eval/rag-operational-approved-cases.json --label <tên>",
+    "",
+    "domain 'day-du'   = 6 màn có phần triệu chứng/nguyên nhân/các bước SOẠN THẬT.",
+    "domain 'o-trong'  = 14 màn mà thân bài chủ yếu là ô 'CHƯA GHI LẠI'.",
+    "Hai domain tách ra để bảng 'theo miền' của harness trả lời thẳng câu hỏi quyết định:",
+    "index 6 hay index 20."
+  ],
+  "cases": [
+    {
+      "id": "APV01",
+      "domain": "day-du",
+      "question": "Tôi tạo đơn sản xuất xong nhưng không thấy nó trong danh sách, phải xử lý thế nào?",
+      "expectPaths": ["knowledge/operational-approved/production-orders.md"],
+      "distractors": [
+        "knowledge/operational/backup-restore.md",
+        "knowledge/operational/change-password.md",
+        "knowledge/operational/pdf-reports.md"
+      ]
+    },
+    {
+      "id": "APV02",
+      "domain": "day-du",
+      "question": "Gọi Andon rồi mà cảnh báo vẫn còn trên bảng TV, phải làm gì để nó biến mất?",
+      "expectPaths": ["knowledge/operational-approved/andon.md"],
+      "distractors": [
+        "knowledge/operational/license.md",
+        "knowledge/operational/powerpoint-export.md",
+        "knowledge/operational/component-library.md"
+      ]
+    },
+    {
+      "id": "APV03",
+      "domain": "day-du",
+      "question": "Cảnh báo cứ bắn lại liên tục cho cùng một máy, xử lý ra sao?",
+      "expectPaths": ["knowledge/operational-approved/alerts.md"],
+      "distractors": [
+        "knowledge/operational/import-export.md",
+        "knowledge/operational/mask-annotation.md",
+        "knowledge/operational/corporate-layout.md"
+      ]
+    },
+    {
+      "id": "APV04",
+      "domain": "day-du",
+      "question": "Tài khoản người dùng vừa tạo mà không đăng nhập được thì kiểm tra những gì?",
+      "expectPaths": ["knowledge/operational-approved/users.md"],
+      "distractors": [
+        "knowledge/operational/hot-folders.md",
+        "knowledge/operational/ir-editor.md",
+        "knowledge/operational/energy-analytics.md"
+      ]
+    },
+    {
+      "id": "APV05",
+      "domain": "day-du",
+      "question": "Thêm một mã lỗi mới vào danh mục lỗi thì thao tác thế nào?",
+      "expectPaths": ["knowledge/operational-approved/defect-catalog.md"],
+      "distractors": [
+        "knowledge/operational/backup-restore.md",
+        "knowledge/operational/federation-dashboard.md",
+        "knowledge/operational/change-password.md"
+      ]
+    },
+    {
+      "id": "APV06",
+      "domain": "day-du",
+      "question": "API key vừa tạo gọi vào thì bị từ chối, cần kiểm tra những gì?",
+      "expectPaths": ["knowledge/operational-approved/api-keys.md"],
+      "distractors": [
+        "knowledge/operational/layout.md",
+        "knowledge/operational/comparison-studio.md",
+        "knowledge/operational/operator-badges.md"
+      ]
+    },
+
+    {
+      "id": "APV07",
+      "domain": "o-trong",
+      "question": "Chỉ số OEE trên màn hình không khớp với số tổ trưởng tính tay thì xử lý thế nào?",
+      "expectPaths": ["knowledge/operational-approved/oee-dashboard.md"],
+      "distractors": [
+        "knowledge/operational/change-password.md",
+        "knowledge/operational/mask-annotation.md",
+        "knowledge/operational/hot-folders.md"
+      ]
+    },
+    {
+      "id": "APV08",
+      "domain": "o-trong",
+      "question": "Truy vết một bo mạch bị lỗi ngược về lô linh kiện thì thao tác từng bước ra sao?",
+      "expectPaths": ["knowledge/operational-approved/traceability.md"],
+      "distractors": [
+        "knowledge/operational/powerpoint-export.md",
+        "knowledge/operational/ai-gguf-models.md",
+        "knowledge/operational/license.md"
+      ]
+    },
+    {
+      "id": "APV09",
+      "domain": "o-trong",
+      "question": "Đăng ký một máy AOI mới vào hệ thống cần làm những bước nào?",
+      "expectPaths": ["knowledge/operational-approved/machine-registration.md"],
+      "distractors": [
+        "knowledge/operational/pdf-reports.md",
+        "knowledge/operational/corporate-layout.md",
+        "knowledge/operational/ai-image-search.md"
+      ]
+    },
+    {
+      "id": "APV10",
+      "domain": "o-trong",
+      "question": "Khai báo một sản phẩm mới trên hệ thống theo quy trình nào, ai được duyệt?",
+      "expectPaths": ["knowledge/operational-approved/products.md"],
+      "distractors": [
+        "knowledge/operational/backup-restore.md",
+        "knowledge/operational/energy-analytics.md",
+        "knowledge/operational/inbox.md"
+      ]
+    },
+    {
+      "id": "APV11",
+      "domain": "o-trong",
+      "question": "Dùng trợ lý lập trình để sinh chương trình cho máy thì bắt đầu từ đâu?",
+      "expectPaths": ["knowledge/operational-approved/programming-copilot.md"],
+      "distractors": [
+        "knowledge/operational/operator-badges.md",
+        "knowledge/operational/federation-dashboard.md",
+        "knowledge/operational/pdf-reports.md"
+      ]
+    },
+    {
+      "id": "APV12",
+      "domain": "o-trong",
+      "question": "Adapter thiết bị báo mất kết nối thì kiểm tra theo thứ tự nào?",
+      "expectPaths": ["knowledge/operational-approved/device-adapters.md"],
+      "distractors": [
+        "knowledge/operational/change-password.md",
+        "knowledge/operational/powerpoint-export.md",
+        "knowledge/operational/mask-annotation.md"
+      ]
+    },
+    {
+      "id": "APV13",
+      "domain": "o-trong",
+      "question": "Cần tra nhật ký kiểm toán để biết ai đã đổi ngưỡng cảnh báo thì làm thế nào?",
+      "expectPaths": ["knowledge/operational-approved/audit-logs.md"],
+      "distractors": [
+        "knowledge/operational/layout.md",
+        "knowledge/operational/component-library.md",
+        "knowledge/operational/ai-gguf-models.md"
+      ]
+    },
+    {
+      "id": "APV14",
+      "domain": "o-trong",
+      "question": "Sửa dữ liệu chủ master data thì ai duyệt và đi theo các bước nào?",
+      "expectPaths": ["knowledge/operational-approved/master-data.md"],
+      "distractors": [
+        "knowledge/operational/hot-folders.md",
+        "knowledge/operational/comparison-studio.md",
+        "knowledge/operational/license.md"
+      ]
+    },
+    {
+      "id": "APV15",
+      "domain": "o-trong",
+      "question": "Một edge node mất kết nối thì xử lý theo trình tự nào?",
+      "expectPaths": ["knowledge/operational-approved/edge-nodes.md"],
+      "distractors": [
+        "knowledge/operational/pdf-reports.md",
+        "knowledge/operational/operator-badges.md",
+        "knowledge/operational/mask-annotation.md"
+      ]
+    },
+    {
+      "id": "APV16",
+      "domain": "o-trong",
+      "question": "Lập kế hoạch bảo trì định kỳ cho máy trên hệ thống thì làm thế nào?",
+      "expectPaths": ["knowledge/operational-approved/maintenance-hub.md"],
+      "distractors": [
+        "knowledge/operational/import-export.md",
+        "knowledge/operational/ai-image-search.md",
+        "knowledge/operational/corporate-layout.md"
+      ]
+    },
+    {
+      "id": "APV17",
+      "domain": "o-trong",
+      "question": "Đóng một lệnh bảo trì trên hệ thống theo quy trình nào, ai xác nhận cuối?",
+      "expectPaths": ["knowledge/operational-approved/work-orders.md"],
+      "distractors": [
+        "knowledge/operational/change-password.md",
+        "knowledge/operational/federation-dashboard.md",
+        "knowledge/operational/ai-gguf-models.md"
+      ]
+    },
+    {
+      "id": "APV18",
+      "domain": "o-trong",
+      "question": "Ngân hàng mẫu bất thường dùng để làm gì và nạp mẫu vào bằng cách nào?",
+      "expectPaths": ["knowledge/operational-approved/anomaly-banks.md"],
+      "distractors": [
+        "knowledge/operational/backup-restore.md",
+        "knowledge/operational/layout.md",
+        "knowledge/operational/powerpoint-export.md"
+      ]
+    },
+    {
+      "id": "APV19",
+      "domain": "o-trong",
+      "question": "Số liệu phát thải carbon trên bảng điều khiển lấy từ đâu và ai xác nhận?",
+      "expectPaths": ["knowledge/operational-approved/carbon-dashboard.md"],
+      "distractors": [
+        "knowledge/operational/change-password.md",
+        "knowledge/operational/component-library.md",
+        "knowledge/operational/inbox.md"
+      ]
+    },
+    {
+      "id": "APV20",
+      "domain": "o-trong",
+      "question": "Xem phân tích kết quả kiểm tra AI để biết máy nào nhiều lỗi giả thì làm sao?",
+      "expectPaths": ["knowledge/operational-approved/ai-inspection-analytics.md"],
+      "distractors": [
+        "knowledge/operational/backup-restore.md",
+        "knowledge/operational/operator-badges.md",
+        "knowledge/operational/hot-folders.md"
+      ]
+    }
+  ]
+}

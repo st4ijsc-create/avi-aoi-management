@@ -8,6 +8,15 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+// ★★★ 2026-08-17 — PHẠM VI DỮ LIỆU của đường xuất báo cáo. Xem docblock đầy đủ ở
+// `_core/reportExportScope.ts`: `getDashboardStats` & co. chỉ lọc khi nơi gọi TRUYỀN `userId`,
+// và router này không truyền ⇒ mọi tài khoản đã đăng nhập tải về được PDF số liệu TOÀN CỤC.
+import {
+  exportScopeArgs,
+  exportScopeNote,
+  resolveExportScope,
+  assertExportableScope,
+} from "../_core/reportExportScope";
 import * as db from "../db";
 import { generateInspectionReportPDF, generateQualityReportPDF } from "../services/pdfTemplateService";
 import type { PDFReportConfig, QualityReportData, InspectionReportData } from "../services/pdfTemplateService";
@@ -143,15 +152,29 @@ export const pdfReportRouter = router({
         pageSize: z.enum(["A4", "LETTER"]).optional(),
       }).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { startDate, endDate, factoryId, workshopId, lineId } = input;
+
+      // ⚠ Danh tính LẤY TỪ `ctx.user`, KHÔNG BAO GIỜ từ `input` — một `input.userId` là lời tự
+      // khai của người gọi, tức bộ lọc phạm vi biến thành ô chọn trên giao diện kẻ tấn công.
+      const actor = exportScopeArgs(ctx.user);
+      const scope = await resolveExportScope(ctx.user);
+      // Phạm vi RỖNG (0 gán nhà máy) ⇒ TỪ CHỐI, không giao một file toàn số 0 trông như
+      // "nhà máy ngừng chạy". Admin không bao giờ rơi vào nhánh này. Lý lẽ đầy đủ ở
+      // `assertExportableScope`.
+      assertExportableScope(scope);
 
       // Run all 4 data queries in parallel instead of sequentially
       const [stats, trendData, topNG, topMachines] = await Promise.all([
-        db.getDashboardStats({ startDate, endDate, factoryId, workshopId }),
-        db.getNGTrendByDay({ startDate, endDate }),
-        db.getTopNGMeasurementPoints({ startDate, endDate, limit: 10 }),
-        db.getTopBottomMachines({ startDate, endDate, factoryId, workshopId } as any),
+        db.getDashboardStats({ startDate, endDate, factoryId, workshopId, ...actor }),
+        // NỢ ĐÃ TRẢ 2026-08-17: `getNGTrendByDay` nay có trục phạm vi (cổng bán-nối trên bí
+        // danh `pi`, xem `scopeGateOnAlias`), nên bảng "xu hướng theo ngày" của PDF đi cùng
+        // phạm vi với ba truy vấn còn lại thay vì toàn cục.
+        db.getNGTrendByDay({ startDate, endDate, ...actor }),
+        db.getTopNGMeasurementPoints({ startDate, endDate, limit: 10, ...actor }),
+        // `workshopId` ĐÃ BỊ BỎ ở đây: `getTopBottomMachines` không hề nhận tham số ấy — chính
+        // cái `as any` che nó cũng che luôn việc thiếu `userId`. Bỏ cast ⇒ tsc canh thật.
+        db.getTopBottomMachines({ startDate, endDate, factoryId, ...actor }),
       ]);
 
       // Build report data
@@ -185,7 +208,10 @@ export const pdfReportRouter = router({
           ngCount: Number(d.ngCount || 0),
           yieldRate: Number(d.totalCount) > 0 ? (Number(d.okCount) / Number(d.totalCount)) * 100 : 0,
         })),
-        filters: {},
+        // Tài liệu TỰ KHAI phạm vi của chính nó: một PDF 22.995 dòng của người gán MỘT nhà máy
+        // trông y hệt báo cáo toàn công ty 22.996 dòng, và file thì rời khỏi hệ thống rồi được
+        // chuyển tiếp/in ra — lúc ấy không còn ngữ cảnh nào để đính chính. `undefined` cho admin.
+        filters: { scopeNote: exportScopeNote(scope) },
       };
 
       // Get filter names

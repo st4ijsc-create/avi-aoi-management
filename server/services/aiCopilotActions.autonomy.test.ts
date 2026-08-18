@@ -10,10 +10,19 @@
  * stubbed, so a passing test here proves the actual policy + actual guardrail
  * enforcement, not a mock's opinion of them.
  *
- * A test-only tool (`test_autonomy_widget_update`) is registered inline instead of
- * importing a real writeHandler — every REAL write-tool name is either in the
- * hard-coded AUTONOMY_INELIGIBLE denylist (see autonomyPolicy.ts) or simply not what
- * this test wants to assert about; the mechanism under test is generic to any tool.
+ * A stub tool is registered inline (with its own execute spy) instead of importing a real
+ * writeHandler — the mechanism under test is generic to any tool and the spy is what makes
+ * "was it really executed?" observable.
+ *
+ * ⚠⚠ G3-C — **CÁI TÊN CỦA STUB KHÔNG CÒN TUỲ Ý.** Nó từng là `test_autonomy_widget_update`,
+ * một cái tên bịa. `evaluateAutonomyChain` nay có điều kiện 3b: một tool `kind:"write"` CÓ
+ * TRONG REGISTRY mà **chưa được triage** vào `AUTONOMY_INELIGIBLE` hay `AUTONOMY_REVIEWED_SAFE`
+ * thì **không đủ tư cách tự trị**, kể cả khi đã được allowlist — chính là hàng rào chống lớp lỗi
+ * "tool thứ N+1 mặc định tự trị được". Một cái tên bịa vì thế **phải** bị từ chối, và một test
+ * dựng để chứng minh "đường tự trị chạy" thì phải chạy trên một tool ĐÃ ĐƯỢC TRIAGE.
+ * ⇒ Stub mượn tên `acknowledge_alert` (một mục thật trong `AUTONOMY_REVIEWED_SAFE`). Đây đã là
+ * quy ước sẵn có của chính file này — ca denylist bên dưới cũng mượn tên thật `set_machine_param`.
+ * Registry của vitest cách ly theo FILE nên bản stub này không đè lên tool sản xuất ở đâu khác.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { z } from "zod";
@@ -125,7 +134,9 @@ vi.mock("./auditTrailService", () => ({
 import { registerTool, getTool, type Tool } from "./aiLocalTools/toolRegistry";
 import { proposeAction, confirmAction, type AdviceContract } from "./aiCopilotActions";
 
-const TOOL_NAME = "test_autonomy_widget_update";
+// G3-C — tên PHẢI nằm trong AUTONOMY_REVIEWED_SAFE (xem khối đầu file). Đổi sang một tên chưa
+// triage là ca này đỏ, và đó là hành vi ĐÚNG của điều kiện 3b.
+const TOOL_NAME = "acknowledge_alert";
 const executeSpy = vi.fn(async (p: { widgetId: number }, _ctx: unknown) => ({
   type: "action_result" as const,
   title: "ok",

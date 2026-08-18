@@ -10,12 +10,13 @@
  * suy từ số user role 'operator' đang hoạt động (fallback 1) nếu client không truyền.
  */
 import { z } from "zod";
-import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db/connection";
 import { andonEvents, predictiveAlerts, predictiveAlertOccurrences, machines, users } from "../../drizzle/schema";
 import { isMissingTable } from "../_core/dbErrors";
+import { resolveAlertScope, andonFactoryGate, predictiveAlertFactoryGate } from "../services/ecosystem/commandCenterScope";
 import {
   summarizeAlarmKpi,
   normalizeAndonState,
@@ -46,15 +47,23 @@ export const alarmKpiRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const windowHours = input?.windowHours ?? 8;
       const now = Date.now();
       const since = new Date(now - windowHours * 3600_000);
 
+      // ★★★ 2026-08-18 — `ctx` CÓ MÀ KHÔNG DÙNG (nhóm B mục #5). Thủ tục này đọc CÙNG
+      // NGUỒN với `commandCenter.recentAlerts` (`andon_events`) nên đi qua CÙNG cổng
+      // (`commandCenterScope`) — một luật, một chỗ sửa. Danh tính lấy từ `ctx.user`, KHÔNG
+      // bao giờ từ `input`: `input.lineId`/`input.machineId` là ô chọn trên giao diện, chúng
+      // THU HẸP thêm chứ không được phép MỞ RỘNG (ghép bằng AND, dưới cổng).
+      const tenant = await resolveAlertScope({ id: ctx.user.id, role: String(ctx.user.role) });
+
       // ── Andon events (đèn xưởng) ──────────────────────────────────────────────
       const andonConds = [gte(andonEvents.raisedAt, since)];
+      if (tenant.factoryIds) andonConds.push(andonFactoryGate(tenant.factoryIds));
       if (input?.lineId) andonConds.push(eq(andonEvents.lineId, input.lineId));
       const andonRows = await db
         .select({
@@ -85,6 +94,9 @@ export const alarmKpiRouter = router({
       // phải thiếu sót, bảng này thật sự không có cột đó.
       const loadPredRows = async () => {
         const predConds = [gte(predictiveAlertOccurrences.occurredAt, since)];
+        // ★ Cổng phạm vi nằm trên bảng CHA (`predictive_alerts`) — bảng đã được INNER JOIN
+        //   ngay dưới, nên vị từ không thể `42P01`.
+        if (tenant.factoryIds) predConds.push(predictiveAlertFactoryGate(tenant.factoryIds));
         if (input?.machineId) predConds.push(eq(predictiveAlerts.machineId, input.machineId));
         return db
           .select({
@@ -132,15 +144,23 @@ export const alarmKpiRouter = router({
       // THẬT SỰ cần lọc: giữ nguyên hình dạng truy vấn cũ (quét thẳng theo
       // idx_alert_occurrences_time, không JOIN) cho trường hợp phổ biến "toàn
       // nhà máy", không trả giá JOIN khi không cần.
+      //
+      // ★ 2026-08-18 — mốc này cũng phải NẰM TRONG PHẠM VI. Trước bản vá, người bị thu hẹp
+      //   nhận về mốc đầu tiên của sổ TOÀN CỤC: một dòng thời gian của nhà máy KHÁC rò ra
+      //   qua đúng cái ô sinh ra để giải thích số 0. Nhánh "quét thẳng, không JOIN" nay chỉ
+      //   dùng cho lối đi KHÔNG có cổng nào (admin / không danh tính) — đúng như cũ.
       let firstOccurredAt: string | null = null;
       if (occurrenceTableAvailable) {
         try {
-          const [row] = input?.machineId
+          const firstConds: SQL[] = [];
+          if (tenant.factoryIds) firstConds.push(predictiveAlertFactoryGate(tenant.factoryIds));
+          if (input?.machineId) firstConds.push(eq(predictiveAlerts.machineId, input.machineId));
+          const [row] = firstConds.length > 0
             ? await db
                 .select({ first: sql<Date | null>`MIN(${predictiveAlertOccurrences.occurredAt})` })
                 .from(predictiveAlertOccurrences)
                 .innerJoin(predictiveAlerts, eq(predictiveAlerts.id, predictiveAlertOccurrences.alertId))
-                .where(eq(predictiveAlerts.machineId, input.machineId))
+                .where(and(...firstConds))
             : await db
                 .select({ first: sql<Date | null>`MIN(${predictiveAlertOccurrences.occurredAt})` })
                 .from(predictiveAlertOccurrences);
@@ -259,6 +279,10 @@ export const alarmKpiRouter = router({
         // Sprint 5 §3.1 — available=false ⇒ bảng chưa có; available && !firstOccurredAt ⇒ sổ rỗng.
         occurrenceLog: { available: occurrenceTableAvailable, firstOccurredAt },
         generatedAt: new Date(now).toISOString(),
+        // ⚠ Trải ĐÚNG BA ô chữ (`tenant.labels`), không phải `tenant` — xem docblock
+        // `scopeLabelsOf`. Không có ba ô này thì một dải KPI toàn 0 của tài khoản 0-gán
+        // trông y hệt một ca trực yên tĩnh.
+        ...tenant.labels,
       };
     }),
 });

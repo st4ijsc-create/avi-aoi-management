@@ -19,10 +19,10 @@ const mocks = vi.hoisted(() => ({
   persistArtifact: vi.fn(),
   getDefectParetoByCategory: vi.fn(),
   getYieldByProduct: vi.fn(),
+  getYieldTrendByDay: vi.fn(),
   getYieldTrendByWeek: vi.fn(),
   getWorkstationHeatmap: vi.fn(),
   getShiftReport: vi.fn(),
-  getYieldTrendData: vi.fn(),
   getDb: vi.fn(),
 }));
 
@@ -36,12 +36,15 @@ vi.mock("./reportArtifactService", () => ({
 vi.mock("../db/reportAggregators", () => ({
   getDefectParetoByCategory: mocks.getDefectParetoByCategory,
   getYieldByProduct: mocks.getYieldByProduct,
+  // ★ 2026-08-17 — báo cáo `daily` chuyển từ `db/statistics.getYieldTrendData` (KHÔNG có trục
+  // `userId`; chỉ nhận MỘT `factoryCode` nên người gán hai nhà máy không diễn đạt được) sang
+  // `getYieldTrendByDay`, đi qua cùng `scopedConditions` với ba bộ tổng hợp còn lại.
+  getYieldTrendByDay: mocks.getYieldTrendByDay,
   getYieldTrendByWeek: mocks.getYieldTrendByWeek,
   getWorkstationHeatmap: mocks.getWorkstationHeatmap,
 }));
 vi.mock("../db/statistics", () => ({
   getShiftReport: mocks.getShiftReport,
-  getYieldTrendData: mocks.getYieldTrendData,
 }));
 vi.mock("../db/connection", () => ({
   getDb: mocks.getDb,
@@ -60,8 +63,8 @@ import {
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
 function seedAggregators(oeeRows: any[] = []) {
-  mocks.getYieldTrendData.mockResolvedValue([
-    { timeInterval: "2026-07-01", totalCount: 100, okCount: 95, ngCount: 3, ntfCount: 2, yieldRate: 97, ngRate: 3 },
+  mocks.getYieldTrendByDay.mockResolvedValue([
+    { day: "2026-07-01", total: 100, ok: 95, ng: 3, ntf: 2, yieldRate: 97, ngRate: 3 },
   ]);
   mocks.getYieldTrendByWeek.mockResolvedValue([
     { week: "2026-06-29", isoWeek: "2026-W27", total: 100, ok: 95, ng: 3, ntf: 2, yieldRate: 97 },
@@ -177,7 +180,7 @@ describe("buildRollupFilters", () => {
 
 describe("generateExternalReport — reportType wiring", () => {
   const cases: Array<[string, keyof typeof mocks]> = [
-    ["daily", "getYieldTrendData"],
+    ["daily", "getYieldTrendByDay"],
     ["weekly", "getYieldTrendByWeek"],
     ["shift", "getShiftReport"],
     ["defect", "getDefectParetoByCategory"],

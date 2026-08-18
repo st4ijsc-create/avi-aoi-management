@@ -117,11 +117,20 @@ export function deriveDefectSpikeSignal(input: DeriveDefectSpikeSignalInput): De
   // available (flag-gated at the caller), else the top Pareto defect, else an
   // honest generic (never a fabricated specific).
   const recommendations: string[] = [];
-  for (const c of correlationFactors.slice(0, 3)) {
-    if (c.direction === "none") continue;
+  // ★★★ HIỆU CHỈNH ĐA PHÉP THỬ — HẠ NGUỒN THỨ HAI (cùng gốc với aiRcaCopilot).
+  // Bản trước lấy `slice(0, 3)` và khuyến nghị MỌI yếu tố có hướng, chỉ đính thêm
+  // chữ ", significant" khi cờ bật. Vì `rankFactors` xếp yếu-tố-có-ý-nghĩa lên đầu,
+  // ba ô đầu tiên trong một lượt KHÔNG có yếu tố nào đạt chuẩn sẽ là **ba yếu tố
+  // nhiễu mạnh nhất** — và chúng vẫn được in ra thành câu mệnh lệnh
+  // "…correlate with more defects" gửi tới người vận hành. Đó đúng là "đi sửa nhầm
+  // máy": một cảnh báo có thật (defect spike là thật) kèm một hướng dẫn bịa.
+  // ⇒ CHỈ yếu tố còn ý nghĩa SAU hiệu chỉnh mới thành khuyến nghị. Không có cái nào
+  //   thì rơi xuống đúng chuỗi dự phòng ĐÃ CÓ (Pareto → câu tổng quát trung thực) —
+  //   KHÔNG có giả định "luôn có ít nhất một yếu tố".
+  for (const c of correlationFactors.filter((f) => f.significant && f.direction !== "none").slice(0, 3)) {
     recommendations.push(
       `Upstream factor "${c.factor}": ${c.direction === "higher_more_defects" ? "higher values" : "lower values"} correlate with more defects` +
-        ` (r=${c.pearson}, p=${c.pValue}${c.significant ? ", significant" : ""}, n=${c.n})`,
+        ` (r=${c.pearson}, p_raw=${c.pValue}, p_adj=${c.pValueAdjusted} across ${c.familySize} factor(s) tested, n=${c.n})`,
     );
   }
   if (pareto.length > 0) {

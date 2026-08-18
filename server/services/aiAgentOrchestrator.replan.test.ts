@@ -185,6 +185,11 @@ describe("observe→replan", () => {
     expect(call.executed).toHaveLength(1);
     expect(call.executed[0].result.status).toBe("done");
     expect(call.executed[0].result.payload).toMatchObject({ data: { n: 1 } });
+    // G3-B — CHỦ PHIÊN đi kèm: hạn mức/quota/nhật ký của cổng AI gắn vào ĐÚNG người, không
+    // dồn mọi phiên của mọi người vào một khoá "anon" dùng chung.
+    expect(call.userId).toBe(MANAGER.id);
+    expect(call.role).toBe(MANAGER.role);
+    expect(planGoal.mock.calls[0][1]).toMatchObject({ userId: MANAGER.id, role: MANAGER.role });
 
     // The ADAPTED tail (write_thing) ran instead of the stale guidance step.
     expect(adv.status).toBe("awaiting_confirm");
@@ -457,6 +462,40 @@ describe("offline / degrade", () => {
     expect(row.planJson.steps).toHaveLength(2); // untouched
     expect(row.planJson.steps[1]).toMatchObject({ kind: "guidance", rationale: "kept" });
     expect(row.stepResults.some((r: any) => r.message === "REPLANNED")).toBe(false); // nothing changed → no audit note
+  });
+
+  /**
+   * G3-B — bộ lập kế hoạch TỪ CHỐI điều chỉnh vì quan sát mang mệnh lệnh
+   * (`aiAgentPlanner.buildReplanPrompt` chấm `risk==='high'`). Orchestrator phải: (a) chạy tiếp
+   * bằng ĐÚNG kế hoạch đã duyệt, và (b) để lại dấu vết VÌ SAO — im lặng ở đây sẽ hạ một cuộc
+   * tấn công xuống thành "hôm nay AI hơi ngu".
+   */
+  it("replan bị TỪ CHỐI vì mệnh lệnh trong dữ liệu → kế hoạch giữ nguyên + có ghi chú REPLAN_REFUSED", async () => {
+    plan([
+      { kind: "read", tool: "read_thing", args: {} },
+      { kind: "guidance", rationale: "kept" },
+    ]);
+    replanFromObservations.mockResolvedValue({
+      changed: false,
+      steps: [{ kind: "guidance", rationale: "kept" }],
+      available: true,
+      refused: "menh_lenh_trong_du_lieu",
+      injectionMatched: ["vi_ignore_above_data"],
+      message: "Một kết quả tool có chứa mệnh lệnh nhúng",
+    });
+
+    const s = await startSession("goal", { user: MANAGER as any });
+    const adv = await approvePlan(s.sessionId!, { user: MANAGER as any });
+
+    expect(adv.ok).toBe(true);
+    const row = store.get(s.sessionId!)!;
+    expect(row.planJson.steps).toHaveLength(2); // không mọc thêm bước nào
+    expect(row.planJson.steps[1]).toMatchObject({ kind: "guidance", rationale: "kept" });
+    const note = row.stepResults.find((r: any) => r.message === "REPLAN_REFUSED");
+    expect(note).toBeTruthy();
+    expect(note.index).toBeLessThan(0); // ghi chú tổng hợp, không phải một bước thật
+    expect(note.payload.reason).toBe("menh_lenh_trong_du_lieu");
+    expect(note.payload.matched).toEqual(["vi_ignore_above_data"]);
   });
 
   it("replanFromObservations throwing never crashes the session", async () => {

@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "kind": "g5f-server-speed",
+  "label": "g5f-ARM0-30bA3B",
+  "startedAt": "2026-08-16T22:38:53.071Z",
+  "server": {
+    "url": "http://127.0.0.1:8091",
+    "modelPath": "D:/SOURCES/16.AI/Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf",
+    "nCtxPerSlot": 32768,
+    "totalSlots": 2,
+    "chatTemplateHasThink": true
+  },
+  "config": {
+    "levels": [
+      2048,
+      16384
+    ],
+    "iters": 2,
+    "maxTokens": 96
+  },
+  "levels": [
+    {
+      "promptTargetTokens": 2048,
+      "promptTokensMeasured": 2046,
+      "iters": [
+        {
+          "promptTokensMeasured": 2046,
+          "ttftMs": 255,
+          "totalMs": 609,
+          "promptN": 2131,
+          "promptMs": 231.609,
+          "prefillTokPerSec": 9200.851434961507,
+          "predictedN": 96,
+          "predictedMs": 353.772,
+          "decodeTokPerSec": 271.3612156982463,
+          "finish": "length",
+          "contentChars": 342,
+          "reasoningChars": 0
+        },
+        {
+          "promptTokensMeasured": 2046,
+          "ttftMs": 334,
+          "totalMs": 676,
+          "promptN": 2130,
+          "promptMs": 226.831,
+          "prefillTokPerSec": 9390.250891632979,
+          "predictedN": 96,
+          "predictedMs": 342.479,
+          "decodeTokPerSec": 280.30915764178246,
+          "finish": "length",
+          "contentChars": 354,
+          "reasoningChars": 0
+        }
+      ],
+      "ttftMs": {
+        "n": 2,
+        "mean": 294.5,
+        "min": 255,
+        "max": 334
+      },
+      "prefillTokPerSec": {
+        "n": 2,
+        "mean": 9295.6,
+        "min": 9200.851434961507,
+        "max": 9390.250891632979
+      },
+      "decodeTokPerSec": {
+        "n": 2,
+        "mean": 275.8,
+        "min": 271.3612156982463,
+        "max": 280.30915764178246
+      }
+    },
+    {
+      "promptTargetTokens": 16384,
+      "promptTokensMeasured": 16243,
+      "iters": [
+        {
+          "promptTokensMeasured": 16243,
+          "ttftMs": 1938,
+          "totalMs": 2380,
+          "promptN": 16268,
+          "promptMs": 1824.825,
+          "prefillTokPerSec": 8914.827449207458,
+          "predictedN": 96,
+          "predictedMs": 441.905,
+          "decodeTokPerSec": 217.24126226225098,
+          "finish": "length",
+          "contentChars": 334,
+          "reasoningChars": 0
+        },
+        {
+          "promptTokensMeasured": 16243,
+          "ttftMs": 2521,
+          "totalMs": 2966,
+          "promptN": 16268,
+          "promptMs": 1826.706,
+          "prefillTokPerSec": 8905.6476521126,
+          "predictedN": 96,
+          "predictedMs": 444.914,
+          "decodeTokPerSec": 215.77203684307528,
+          "finish": "length",
+          "contentChars": 343,
+          "reasoningChars": 0
+        }
+      ],
+      "ttftMs": {
+        "n": 2,
+        "mean": 2229.5,
+        "min": 1938,
+        "max": 2521
+      },
+      "prefillTokPerSec": {
+        "n": 2,
+        "mean": 8910.2,
+        "min": 8905.6476521126,
+        "max": 8914.827449207458
+      },
+      "decodeTokPerSec": {
+        "n": 2,
+        "mean": 216.5,
+        "min": 215.77203684307528,
+        "max": 217.24126226225098
+      }
+    }
+  ],
+  "prefixCache": {
+    "promptTokensMeasured": 24931,
+    "luot1TokenXuLy": 24946,
+    "ttft1Ms": 3903,
+    "luot2TokenXuLy": 1,
+    "ttft2Ms": 38,
+    "counter": "llamacpp:prompt_tokens_total"
+  },
+  "warmup": {
+    "ttftMs": 309,
+    "decodeTokPerSec": 138.26955650039753
+  },
+  "endedAt": "2026-08-16T22:39:06.686Z"
+}

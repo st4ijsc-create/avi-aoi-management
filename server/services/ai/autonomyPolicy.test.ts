@@ -220,7 +220,19 @@ describe("evaluateAutonomy — AND-chain (table-driven)", () => {
   });
 });
 
-describe("AUTONOMY_INELIGIBLE — hard-coded denylist coverage", () => {
+/**
+ * ⚠⚠ G3-C — **KHỐI NÀY LÀ SÀN, KHÔNG PHẢI LƯỚI.**
+ *
+ * Nó đối chiếu `AUTONOMY_INELIGIBLE` (danh sách viết cứng) với **một mảng viết cứng khác**, và
+ * **không** duyệt `listTools()`. Vì thế nó **không thể** thấy tool thứ N+1: một write tool thêm
+ * hôm nay không làm ca nào ở đây đỏ. Giữ lại vì nó vẫn có giá trị riêng — nó ghim rằng những cái
+ * tên NGUY HIỂM CỤ THỂ này không được ai lặng lẽ gỡ khỏi denylist (một mất mát mà census không
+ * phát biểu được, vì tool bị gỡ vẫn "đã phân loại" nếu ai đó dời nó sang REVIEWED_SAFE).
+ *
+ * ⇒ Lưới N+1 thật nằm ở **`autonomyWriteToolCensus.test.ts`**: nó duyệt registry SỐNG và đi qua
+ * `evaluateAutonomy()`. Đọc file đó trước khi thêm/bớt tên ở đây.
+ */
+describe("AUTONOMY_INELIGIBLE — hard-coded denylist coverage (SÀN — xem autonomyWriteToolCensus.test.ts)", () => {
   it("covers every machine-actuation / vision-disposition / program-file / interlock / setpoint write-tool type", () => {
     const mustBeIneligible = [
       "machine_start", "machine_stop", "machine_pause", "machine_reset",

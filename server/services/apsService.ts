@@ -70,6 +70,11 @@ export interface GenerateApsResult {
 export interface GenerateApsInput {
   factoryId?: number;
   lineId?: number;
+  /**
+   * ★ 2026-08-18 — phạm vi NGƯỜI XEM (từ `ctx.user`, không bao giờ từ `input`). Bỏ trống = lối đi
+   * không mang danh tính (tác vụ nền / admin) ⇒ KHÔNG lọc, giữ nguyên hành vi cũ từng byte.
+   */
+  phamVi?: db.PhamViNguoiXem;
 }
 
 export interface KpiComparePoint {
@@ -162,8 +167,9 @@ export async function generateApsSchedule(input: GenerateApsInput): Promise<Gene
     input.factoryId || input.lineId
       ? { factoryId: input.factoryId, lineId: input.lineId }
       : undefined,
+    input.phamVi,
   );
-  const lines = await db.getProductionLines();
+  const lines = await db.getProductionLines(input.phamVi);
 
   const schedulableLines = (lines as any[]).map((l) => ({
     id: l.id,
@@ -320,8 +326,9 @@ export async function compareApsKpi(input: GenerateApsInput): Promise<CompareAps
     input.factoryId || input.lineId
       ? { factoryId: input.factoryId, lineId: input.lineId }
       : undefined,
+    input.phamVi,
   );
-  const lines = await db.getProductionLines();
+  const lines = await db.getProductionLines(input.phamVi);
   const schedulableLines = (lines as any[]).map((l) => ({
     id: l.id,
     name: l.name,

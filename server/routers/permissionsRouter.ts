@@ -140,6 +140,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_workstation', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    // ★★ QĐ chủ dự án 2026-08-17 — mở `analytics_category` (VIEW-ONLY) để trợ lý trả lời được
+    // `get_model_metrics` (xếp hạng model theo NG). Mở luôn route `/category-analytics`
+    // (RouteGuard). Backfill cho user đã tồn tại: drizzle/0322_grant_analytics_category_supervisor_quality.sql
+    { category: 'analytics', moduleName: 'analytics_category', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'analytics', moduleName: 'analytics_root_cause', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     // Reports
     { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
@@ -193,6 +197,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'analytics', moduleName: 'analytics_advanced', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_spc', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    // ★★ QĐ chủ dự án 2026-08-17 — xem chú thích ở khối `supervisor`. VIEW-ONLY.
+    { category: 'analytics', moduleName: 'analytics_category', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'analytics', moduleName: 'analytics_root_cause', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     // Reports
     { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: true },
@@ -227,6 +233,13 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     // doc 40 Lan-P0 — operator TỰ mở/tạm dừng/kết thúc/bàn giao ca của mình (không cần
     // quyền tạo đơn sản xuất). Mở khóa OperatorSessionControl + ShiftHandoverDialog.
     { category: 'production', moduleName: 'production_session', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // ★★ QĐ chủ dự án 2026-08-17 — mở `analytics_defect_heatmap` (VIEW-ONLY) cho operator/
+    // maintenance/engineer, để trợ lý (`analytics_defect_heatmap_summary`) và giao diện
+    // (`/defect-heatmap`) đứng sau CÙNG MỘT luật. Đường "hạ bit tool xuống dashboard_view" đã bị
+    // BÁC BỎ (đẻ hai cửa vào một lớp dữ liệu; hai tool không cùng tập — xem §10b của
+    // services/aiLocalTools/toolPermissionQuantifier.test.ts).
+    // Backfill cho user đã tồn tại: drizzle/0323_grant_analytics_defect_heatmap_ops_roles.sql
+    { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Andon (F5a) — operators raise/ack/resolve Andons from the line
     { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     // Energy advanced (G2.6a) — operators view + manually record energy readings (telemetry, no machine write)
@@ -250,6 +263,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    // ★★ QĐ chủ dự án 2026-08-17 — xem chú thích ở khối `operator`. VIEW-ONLY.
+    { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Machine Control (Sprint F4a) — maintenance can set param/ack (canEdit) and view,
     // but NOT execute high-risk commands (canCreate:false → start/stop/recipe gated to supervisor/admin)
     { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
@@ -267,6 +282,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'analytics', moduleName: 'analytics_spc', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // ★★ QĐ chủ dự án 2026-08-17 — xem chú thích ở khối `operator`. VIEW-ONLY.
+    { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Reports
     { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Settings — engineer authors measurement points, products + alert thresholds

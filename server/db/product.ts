@@ -1,6 +1,7 @@
 import { getDb } from "./connection";
 import { rethrowDbError } from "../_core/dbErrors";
-import { eq, and, desc, asc, like, or, sql, isNull, isNotNull, gt, gte, inArray, SQL } from "drizzle-orm";
+import { eq, and, desc, asc, like, or, sql, isNull, isNotNull, gt, gte, inArray, SQL, type AnyColumn } from "drizzle-orm";
+import type { PhamViNguoiXem } from "./hierarchy";
 import {
   productModels, InsertProductModel,
   measurementPointDefs, InsertMeasurementPointDef, MeasurementPointDef,
@@ -78,15 +79,33 @@ export async function getProductModels(options?: {
   limit?: number;
   offset?: number;
   isActive?: boolean;
+  /**
+   * ★★★ 2026-08-18 — vị từ PHẠM VI **THÊM**, ghép vào cùng `AND` với các bộ lọc khác.
+   *
+   * Bỏ trống = **KHÔNG lọc** ⇒ ~30 nơi gọi cũ giữ nguyên TỪNG BYTE (cùng khuôn `scope?` tuỳ chọn
+   * đã dùng ở `db.getFactories` / `db.getMachines`). Nơi duy nhất truyền vào hiện nay là
+   * `publicProductApiRouter.listProducts`, với
+   * `publicProductScope.congSanPhamTrongNhaMay(productModels.id, factoryId)`.
+   *
+   * ⚠ Vì sao lọc ở ĐÂY chứ không lọc sau khi lấy: `limit`/`offset` được áp trong CHÍNH truy vấn
+   * này. Lọc sau sẽ trả về ít hơn `limit` hàng cho một trang "đầy" và làm `total` khai sai — đúng
+   * lớp lỗi "một con số đúng-về-thứ-khác".
+   */
+  congPhamVi?: SQL;
 }) {
   const db = await getDb();
   if (!db) return [];
-  
+
   // Build WHERE conditions
   const conditions: any[] = [];
 
   // P0: Always exclude soft-deleted rows
   conditions.push(isNull(productModels.deletedAt));
+
+  // ★ Phạm vi nhà máy (tuỳ chọn) — xem docblock của `congPhamVi` ở trên.
+  if (options?.congPhamVi) {
+    conditions.push(options.congPhamVi);
+  }
 
   // Only filter by isActive if explicitly specified
   if (options?.isActive !== undefined) {
@@ -158,13 +177,75 @@ export async function getProductModelById(id: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function getProductModelByCode(code: string) {
+export async function getProductModelByCode(code: string, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return undefined;
+  const cong = await congSanPhamTheoPhamVi(productModels.id, scope);
   const result = await db.select().from(productModels)
-    .where(and(eq(productModels.code, code), isNull(productModels.deletedAt)))
+    .where(and(eq(productModels.code, code), isNull(productModels.deletedAt), ...(cong ? [cong] : [])))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-18 (trả nợ nhóm A) — **PHẠM VI CỦA DỮ LIỆU SẢN PHẨM.**
+//
+// `product_models` KHÔNG có cột nhà máy nào (đã kiểm cả `drizzle/schema/product.ts` lẫn
+// `information_schema`). Sản phẩm là dữ liệu chủ DÙNG CHUNG; nó chỉ chạm tới một nhà máy qua ba
+// bảng LIÊN KẾT mang `machineId` (`product_machine_mappings` · `measurement_point_defs` ·
+// `product_inspections`).
+//
+// ⚠⚠ **KHÔNG dựng lại luật ấy ở đây.** Vị từ hợp-ba-đường đã tồn tại và đã được khảo sát trên
+// CSDL thật: `routers/publicProductScope.congSanPhamTrongNhaMay` (docblock của nó ghi phép đo cho
+// thấy CẢ BA đường đều load-bearing — bỏ đường nào cũng làm biến mất một sản phẩm đang dùng).
+// Ở đây chỉ **LƯỢNG HOÁ** vị từ ấy lên tập nhà máy của người xem. Một bản sao thứ hai của luật
+// sản-phẩm↔nhà-máy là cách hai bên lệch nhau, và **bản lỏng hơn** sẽ quyết định ai thấy gì.
+//
+// ⚠ `import()` ĐỘNG bắt buộc: `publicProductScope` nằm dưới `server/routers/**` và nhập `../db`;
+// một lời nhập TĨNH từ `server/db/product.ts` sẽ tạo vòng db → routers → db.
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Mệnh đề "cột id-sản-phẩm này thuộc một nhà máy trong phạm vi người xem".
+ * `undefined` = vai toàn quyền / lối đi không mang danh tính ⇒ nơi gọi không thêm gì.
+ */
+export async function congSanPhamTheoPhamVi(
+  cotSanPhamId: SQL | AnyColumn,
+  scope?: PhamViNguoiXem,
+): Promise<SQL | undefined> {
+  const { idsTrongPhamVi } = await import("./hierarchy");
+  const ids = await idsTrongPhamVi("factory", scope);
+  if (ids === null) return undefined;
+  if (ids.length === 0) return sql`1 = 0`;
+  const { congSanPhamTrongNhaMay } = await import("../routers/publicProductScope");
+  const nhanh = ids.map((f) => congSanPhamTrongNhaMay(cotSanPhamId, f));
+  return nhanh.length === 1 ? nhanh[0] : or(...nhanh);
+}
+
+/** Một sản phẩm CỤ THỂ có nằm trong phạm vi không (dùng LẠI đúng vị từ của đường danh sách). */
+export async function sanPhamTrongPhamVi(productModelId: number, scope?: PhamViNguoiXem): Promise<boolean> {
+  const cong = await congSanPhamTheoPhamVi(productModels.id, scope);
+  if (cong === undefined) return true;
+  const db = await getDb();
+  if (!db) return false; // CSDL vắng ⇒ fail-CLOSED
+  const rows = await db.select({ id: productModels.id }).from(productModels)
+    .where(and(eq(productModels.id, productModelId), cong)).limit(1);
+  return rows.length > 0;
+}
+
+/**
+ * Mệnh đề cho các bảng khoá theo ĐIỂM ĐO (`mp_lighting_profiles` · `measurement_samples` ·
+ * `mp_spc_alerts`): điểm đo phải thuộc một sản phẩm trong phạm vi.
+ */
+export async function congDiemDoTheoPhamVi(
+  cotPointDefId: SQL | AnyColumn,
+  scope?: PhamViNguoiXem,
+): Promise<SQL | undefined> {
+  const cong = await congSanPhamTheoPhamVi(measurementPointDefs.productModelId, scope);
+  if (cong === undefined) return undefined;
+  return sql`${cotPointDefId} IN (
+    SELECT ${measurementPointDefs.id} FROM ${measurementPointDefs} WHERE ${cong}
+  )`;
 }
 
 export async function updateProductModel(id: number, data: Partial<InsertProductModel>) {
@@ -662,13 +743,15 @@ export async function createMeasurementPointDef(
   return existing.id;
 }
 
-export async function listAllMeasurementPointDefs() {
+export async function listAllMeasurementPointDefs(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const cong = await congSanPhamTheoPhamVi(measurementPointDefs.productModelId, scope);
   return db.select().from(measurementPointDefs)
     .where(and(
       eq(measurementPointDefs.isActive, true),
       isNull(measurementPointDefs.deletedAt),
+      ...(cong ? [cong] : []),
     ))
     .orderBy(measurementPointDefs.orderIndex);
 }
@@ -681,21 +764,26 @@ export async function getAllMeasurementPoints() {
     .orderBy(measurementPointDefs.orderIndex);
 }
 
-export async function getMeasurementPointDefsByProductModel(productModelId: number) {
+export async function getMeasurementPointDefsByProductModel(productModelId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const cong = await congSanPhamTheoPhamVi(measurementPointDefs.productModelId, scope);
   return db.select().from(measurementPointDefs)
     .where(and(
       eq(measurementPointDefs.productModelId, productModelId),
       eq(measurementPointDefs.isActive, true),
       isNull(measurementPointDefs.deletedAt),
+      ...(cong ? [cong] : []),
     ))
     .orderBy(measurementPointDefs.orderIndex);
 }
 
-export async function getMeasurementPointDefsByMachine(machineId: number) {
+export async function getMeasurementPointDefsByMachine(machineId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  // ⚠ `machineId` là lời TỰ KHAI ⇒ chặn thẳng ở trục MÁY (rẻ hơn và chặt hơn trục sản phẩm).
+  const { trongPhamVi } = await import("./hierarchy");
+  if (!(await trongPhamVi("machine", machineId, scope))) return [];
   return db.select().from(measurementPointDefs)
     .where(and(
       eq(measurementPointDefs.machineId, machineId),
@@ -717,11 +805,12 @@ export async function getMeasurementPointDefsByWorkstation(workstationId: number
     .orderBy(measurementPointDefs.orderIndex);
 }
 
-export async function getMeasurementPointDefById(id: number) {
+export async function getMeasurementPointDefById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return undefined;
+  const cong = await congSanPhamTheoPhamVi(measurementPointDefs.productModelId, scope);
   const result = await db.select().from(measurementPointDefs)
-    .where(and(eq(measurementPointDefs.id, id), isNull(measurementPointDefs.deletedAt)))
+    .where(and(eq(measurementPointDefs.id, id), isNull(measurementPointDefs.deletedAt), ...(cong ? [cong] : [])))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -964,10 +1053,17 @@ export async function recordUnmatchedDefectCodes(
 export async function listUnmatchedDefectCodes(filters?: {
   onlyUnresolved?: boolean;
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   const conds: SQL[] = [];
+  {
+    // `unmatched_defect_codes` là MÃ LỖI thô do máy gửi lên, kèm `machineCode`/`machineId` (xem
+    // lược đồ) — nó phơi từ vựng lỗi nội bộ của tenant. Chiếu qua trục MÁY.
+    const { idsTrongPhamVi } = await import("./hierarchy");
+    const idsMay = await idsTrongPhamVi("machine", scope);
+    if (idsMay !== null) conds.push(inArray(unmatchedDefectCodes.machineId, idsMay.length ? idsMay : [-1]));
+  }
   if (filters?.onlyUnresolved) {
     conds.push(isNull(unmatchedDefectCodes.resolvedCatalogId));
   }
@@ -1004,10 +1100,16 @@ export async function getDefectTendencyByComponent(opts?: {
   fromTs?: Date;
   toTs?: Date;
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   const conds: SQL[] = [sql`${measurementResults.defectCatalogId} IS NOT NULL`];
+  {
+    // Truy vấn này JOIN `product_inspections` ⇒ trục MÁY là trục thật (đầy dữ liệu, NOT NULL).
+    const { idsTrongPhamVi } = await import("./hierarchy");
+    const idsMay = await idsTrongPhamVi("machine", scope);
+    if (idsMay !== null) conds.push(inArray(productInspections.machineId, idsMay.length ? idsMay : [-1]));
+  }
   if (opts?.productModelId) {
     conds.push(eq(measurementPointDefs.productModelId, opts.productModelId));
   }
@@ -1056,6 +1158,12 @@ export async function computeUnmappedPointRate(opts: {
   productModelId?: number;
   fromTs?: Date;
   toTs?: Date;
+  /**
+   * ★ 2026-08-18 — tập máy TRONG PHẠM VI người xem (`null`/bỏ trống = không lọc). Khác hẳn
+   * `machineId` phía trên: cái kia là bộ lọc GIAO DIỆN do người gọi tự khai, cái này là CỔNG.
+   * Cả hai được AND, nên lời tự khai chỉ thu hẹp thêm.
+   */
+  machineIds?: number[];
 }): Promise<{
   total: number;
   unmatched: number;
@@ -1067,6 +1175,9 @@ export async function computeUnmappedPointRate(opts: {
     return { total: 0, unmatched: 0, rate: 0, byMachine: [] };
   }
   const conds: SQL[] = [];
+  if (opts.machineIds !== undefined) {
+    conds.push(inArray(productInspections.machineId, opts.machineIds.length ? opts.machineIds : [-1]));
+  }
   if (opts.machineId) conds.push(eq(productInspections.machineId, opts.machineId));
   if (opts.fromTs) conds.push(sql`${productInspections.inspectionTime} >= ${opts.fromTs}`);
   if (opts.toTs) conds.push(sql`${productInspections.inspectionTime} <= ${opts.toTs}`);
@@ -1121,9 +1232,13 @@ export async function computeUnmappedPointRate(opts: {
  * best-effort remap suggestion (a real product model that has an active point
  * def with the SAME code). Ordered by result volume (most-impactful first).
  */
-export async function listUnmappedPointDefsWithStats(unmappedModelId: number) {
+export async function listUnmappedPointDefsWithStats(unmappedModelId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  // ⚠ Điểm đo `__UNMAPPED__` mang `machineId` của máy đã gửi mã lạ ⇒ chiếu qua trục MÁY. Điểm
+  // KHÔNG gắn máy không phân giải được ⇒ loại cho người bị thu hẹp (fail-closed).
+  const { idsTrongPhamVi } = await import("./hierarchy");
+  const idsMay = await idsTrongPhamVi("machine", scope);
   const defs = await db
     .select({
       id: measurementPointDefs.id,
@@ -1136,6 +1251,7 @@ export async function listUnmappedPointDefsWithStats(unmappedModelId: number) {
     .where(and(
       eq(measurementPointDefs.productModelId, unmappedModelId),
       isNull(measurementPointDefs.deletedAt),
+      ...(idsMay === null ? [] : [inArray(measurementPointDefs.machineId, idsMay.length ? idsMay : [-1])]),
     ))
     .orderBy(asc(measurementPointDefs.code));
   if (defs.length === 0) return [];
@@ -2191,7 +2307,7 @@ export async function deleteFiducialMark(id: number) {
 }
 
 // ============ PRODUCT-MACHINE MAPPING FUNCTIONS ============
-export async function getProductMachineMappings(machineId?: number, productModelId?: number) {
+export async function getProductMachineMappings(machineId?: number, productModelId?: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
@@ -2199,6 +2315,12 @@ export async function getProductMachineMappings(machineId?: number, productModel
   // lẫn productModelId đều set thì filter machineId bị mất → trả mapping của sản phẩm
   // trên MỌI máy (wizard đổi-sản-phẩm báo "sẵn sàng" sai). Gom điều kiện + and().
   const conds = [];
+  {
+    // Bảng gán mang `machineId` NOT NULL ⇒ trục MÁY là trục thật, không cần đi vòng qua sản phẩm.
+    const { idsTrongPhamVi } = await import("./hierarchy");
+    const idsMay = await idsTrongPhamVi("machine", scope);
+    if (idsMay !== null) conds.push(inArray(productMachineMappings.machineId, idsMay.length ? idsMay : [-1]));
+  }
   if (machineId) conds.push(eq(productMachineMappings.machineId, machineId));
   if (productModelId) conds.push(eq(productMachineMappings.productModelId, productModelId));
 
@@ -2266,9 +2388,11 @@ export async function deleteOrphanProductMachineMappings(): Promise<number> {
   return orphanIds.length;
 }
 
-export async function getMappingsByMachine(machineId: number) {
+export async function getMappingsByMachine(machineId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const { trongPhamVi } = await import("./hierarchy");
+  if (!(await trongPhamVi("machine", machineId, scope))) return [];
   
   return db.select({
     mapping: productMachineMappings,
@@ -2280,9 +2404,13 @@ export async function getMappingsByMachine(machineId: number) {
   .orderBy(desc(productMachineMappings.priority));
 }
 
-export async function getMappingsByProduct(productModelId: number) {
+export async function getMappingsByProduct(productModelId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  // ⚠ Kết quả trả về MÁY (mã · tên · loại) — nên cổng đặt trên `machineId`, không trên sản phẩm:
+  // một sản phẩm dùng chung hai nhà máy vẫn phải giấu máy của nhà máy kia.
+  const { idsTrongPhamVi } = await import("./hierarchy");
+  const idsMay = await idsTrongPhamVi("machine", scope);
   
   return db.select({
     mapping: productMachineMappings,
@@ -2290,7 +2418,10 @@ export async function getMappingsByProduct(productModelId: number) {
   })
   .from(productMachineMappings)
   .innerJoin(machines, eq(productMachineMappings.machineId, machines.id))
-  .where(eq(productMachineMappings.productModelId, productModelId))
+  .where(and(
+    eq(productMachineMappings.productModelId, productModelId),
+    ...(idsMay === null ? [] : [inArray(productMachineMappings.machineId, idsMay.length ? idsMay : [-1])]),
+  ))
   .orderBy(desc(productMachineMappings.priority));
 }
 
@@ -2775,13 +2906,15 @@ export async function getInstrumentHealth(instrumentId: number): Promise<{
 // ============================================================
 // P4.A G17 — MP Lighting Profile helpers
 // ============================================================
-export async function listMpLightingProfiles(pointDefId: number) {
+export async function listMpLightingProfiles(pointDefId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const cong = await congDiemDoTheoPhamVi(mpLightingProfiles.pointDefId, scope);
   return db.select().from(mpLightingProfiles)
     .where(and(
       eq(mpLightingProfiles.pointDefId, pointDefId),
       isNull(mpLightingProfiles.deletedAt),
+      ...(cong ? [cong] : []),
     ))
     .orderBy(asc(mpLightingProfiles.shotIndex));
 }
@@ -2874,10 +3007,14 @@ export async function listMeasurementSamples(opts: {
   windowSize?: number;
   fromTs?: Date;
   toTs?: Date;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   const conds: SQL[] = [eq(measurementSamples.pointDefId, opts.pointDefId)];
+  {
+    const cong = await congDiemDoTheoPhamVi(measurementSamples.pointDefId, scope);
+    if (cong) conds.push(cong);
+  }
   if (opts.fromTs) conds.push(gte(measurementSamples.sampledAt, opts.fromTs));
   if (opts.toTs) conds.push(sql`${measurementSamples.sampledAt} <= ${opts.toTs}`);
   const limit = opts.windowSize ?? 200;
@@ -2905,10 +3042,14 @@ export async function listSpcAlerts(opts: {
   pointDefId?: number;
   unackedOnly?: boolean;
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   const conds: SQL[] = [];
+  {
+    const cong = await congDiemDoTheoPhamVi(mpSpcAlerts.pointDefId, scope);
+    if (cong) conds.push(cong);
+  }
   if (opts.pointDefId) conds.push(eq(mpSpcAlerts.pointDefId, opts.pointDefId));
   if (opts.unackedOnly) conds.push(isNull(mpSpcAlerts.ackAt));
   return db.select().from(mpSpcAlerts)
@@ -2979,9 +3120,10 @@ export async function getMpDefectStatsForProduct(opts: {
   toTs?: Date;
   machineId?: number;
   productViewId?: number;
-}): Promise<MpDefectStat[]> {
+}, scope?: PhamViNguoiXem): Promise<MpDefectStat[]> {
   const db = await getDb();
   if (!db) return [];
+  if (!(await sanPhamTrongPhamVi(opts.productModelId, scope))) return [];
 
   const conds: SQL[] = [
     eq(measurementPointDefs.productModelId, opts.productModelId),

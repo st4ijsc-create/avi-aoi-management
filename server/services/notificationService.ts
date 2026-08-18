@@ -12,6 +12,8 @@ import {
 // doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the digest/personalization calls below
 // must PIN a text model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
 import { resolveLogicalModel } from './ai/modelResolver';
+// ★ G5-E — bộ cắt chuỗi suy luận (module LÁ, import TĨNH ⇒ hàng rào vô điều kiện theo cấu tạo).
+import { stripThinking } from './ai/thinkingStrip';
 
 // Store Socket.io server instance
 let io: SocketIOServer | null = null;
@@ -283,7 +285,9 @@ export async function generateNotificationSummary(
       temperature: 0.5,
     }, resolveLogicalModel('chat'));
 
-    return response.text?.trim() || null;
+    // ★ G5-E — đây là THÂN THÔNG BÁO đẩy tới điện thoại / bảng Andon: bề mặt hiển thị dễ quên
+    // nhất trong 12 chỗ, vì không ai gọi nó là "màn hình AI". Cắt chuỗi suy luận trước khi trả.
+    return stripThinking(response.text ?? '').answer.trim() || null;
   } catch {
     return null;
   }

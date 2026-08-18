@@ -37,6 +37,11 @@ import {
 } from "./programmingAdapter";
 import { selectGoldenExamples, formatGoldenExamplesForPrompt } from "./goldenExamples";
 import { getCodegenJsonSchema } from "./codegenSchemas";
+// G2-A — CHỈ MỤC REPO (7.306 chunk mô tả CHÍNH nền tảng này) + bộ cắt theo ngân sách token.
+import { gatherRepoIndexContext, catTheoNganSachToken } from "../ai/repoContextService";
+// Bộ ước lượng token DÙNG CHUNG với cổng từ-chối-trung-thực `kiemNganSachNguCanh()`. Không tự
+// viết `len/4` ở đây — hai cái thước khác nhau thì ngân sách và cổng sẽ trôi khỏi nhau.
+import { uocLuongSoToken } from "../aiLlamaServerClient";
 
 export type CopilotLang = "vi" | "en" | "zh";
 
@@ -193,6 +198,13 @@ export interface GenerateProgramInput {
   contextCode?: string;
   /** Output kind for mode="translate". */
   targetKind?: string;
+  /**
+   * G2-A (SECURITY) — vai RBAC THẬT của người gọi, chỉ để xuyên xuống cổng corpus Training Studio
+   * của `retrieveKnowledge` (xem `kbStudioAccess.ts`). PHẢI được điền SERVER-SIDE từ phiên đã xác
+   * thực — KHÔNG BAO GIỜ từ thân request. Vắng mặt ⇒ cổng đó fail-closed (không có nội dung
+   * Studio), đúng hành vi an toàn.
+   */
+  callerRole?: string;
 }
 
 export interface GenValidation {
@@ -292,6 +304,8 @@ function buildCodePrompt(
   contextCode: string | undefined,
   goldenBlock: string,
   ragContext: string,
+  /** G2-A — khối chỉ mục repo đã cắt theo ngân sách; "" = không có gì để chèn. */
+  repoBlock = "",
 ): string {
   const parts: string[] = [];
   if (mode === "translate") {
@@ -312,6 +326,7 @@ function buildCodePrompt(
   }
   if (goldenBlock) parts.push(`REFERENCE GOLDEN EXAMPLES (mimic this correct style/syntax):\n${goldenBlock}`);
   parts.push(`VENDOR MANUAL CONTEXT (cite by [n]; empty = none available):\n${ragContext || "(none)"}`);
+  if (repoBlock) parts.push(repoBlock);
   parts.push(`Now output the ${outKind} program only, in ONE fenced code block.`);
   return parts.join("\n\n");
 }
@@ -324,6 +339,8 @@ function buildExplainPrompt(
   request: string,
   code: string,
   ragContext: string,
+  /** G2-A — khối chỉ mục repo đã cắt theo ngân sách; "" = không có gì để chèn. */
+  repoBlock = "",
 ): string {
   const verb = mode === "review" ? "Review" : "Explain";
   const parts: string[] = [];
@@ -331,6 +348,7 @@ function buildExplainPrompt(
   if (request) parts.push(`FOCUS: ${request}`);
   parts.push(`PROGRAM:\n\`\`\`\n${code.trim()}\n\`\`\``);
   parts.push(`VENDOR MANUAL CONTEXT (cite by [n]; empty = none available):\n${ragContext || "(none)"}`);
+  if (repoBlock) parts.push(repoBlock);
   return parts.join("\n\n");
 }
 
@@ -342,6 +360,131 @@ function buildExplainPrompt(
  * context on the 30B is unnecessary for snippet generation and risks OOM. Both best-effort.
  */
 const CODE_CTX = Number(process.env.GGUF_CODE_CTX) || 8192;
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// G2-A (2026-08-16) — NGÂN SÁCH NGỮ CẢNH CÓ CHỦ ĐÍCH.
+//
+// ─── TRẦN THẬT LÀ BAO NHIÊU ────────────────────────────────────────────────────────────────
+// `runCodeModel` gọi `chatCompletion()`, và `chatCompletion()` **KHÔNG có đường llama-server**
+// (chỉ `generateText`/`generateJSON` đi qua `thuDuongServer`). Nghĩa là mọi lượt sinh mã chạy
+// IN-PROCESS với đúng `contextSize = min(route().contextSize, GGUF_CODE_CTX)` = **8.192**, chứ
+// KHÔNG phải 32.768 token/slot của llama-server. Ngân sách dưới đây vì thế cân theo 8.192 —
+// cân theo 32.768 là tự cho mình gấp 4 lần chỗ mình không có.
+//
+// ─── VÌ SAO PHẢI CÓ KHỐI NÀY (đây là một BẢN VÁ, không chỉ là "chỗ cho tính năng mới") ─────
+// Trước G2-A prompt sinh mã KHÔNG có một cái trần nào: `contextCode` được router cho tới
+// 2.000.000 ký tự (~714.000 token) và đi THẲNG vào prompt, `answerContext` của manual hãng
+// (topK=5) cũng vậy. Lưới `aiProgrammingCopilot.repoContext.test.ts` ĐO được prompt thật
+// **95.609 / 96.993 / 130.568 token** trên cửa sổ 8.192 — tức lượt gọi đó chắc chắn hỏng (hoặc
+// bị cổng `kiemNganSachNguCanh` từ chối trung thực trên đường server). Nối thêm chỉ mục repo mà
+// không dựng trần trước là đổ thêm nước vào cái xô đã tràn.
+//
+// ─── THỨ TỰ ƯU TIÊN KHI PHẢI CẮT (từ GIỮ CHẶT NHẤT tới BỎ TRƯỚC NHẤT) ──────────────────────
+//   1. system prompt + REQUEST — KHÔNG BAO GIỜ cắt. Đó là nhiệm vụ; cắt nó là trả lời câu khác.
+//   2. BUFFER NGƯỜI DÙNG (`contextCode`) — với complete/translate/review/explain nó CHÍNH LÀ
+//      đối tượng của yêu cầu. Không có nó thì câu trả lời vô nghĩa, nên nó đứng trên mọi ngữ cảnh
+//      truy hồi được.
+//   3. GOLDEN EXAMPLES — cú pháp ĐÚNG đã được kiểm chứng cho từng `kind`; đây là thứ trực tiếp
+//      quyết định mã có qua được `programmingAdapter.validate()` hay không.
+//   4. MANUAL HÃNG (RAG `answerContext`) — nền tảng cho cú pháp riêng của hãng; là thứ chống bịa.
+//   5. CHỈ MỤC REPO (G2-A) — **BỎ TRƯỚC NHẤT**. Nó là phần MỚI và CHƯA ĐƯỢC CHỨNG MINH; nó
+//      không được phép đẩy ra ngoài những thứ đã đo là có tác dụng. Đây là quyết định có chủ
+//      đích, không phải hệ quả của thứ tự dòng lệnh.
+//
+// Cách cưỡng chế: một CÁI HỒ token dùng chung. Mỗi phần lấy `min(trần riêng, hồ còn lại)` theo
+// đúng thứ tự trên, rồi trừ vào hồ. Trần riêng chống một phần phình ra nuốt hết; hồ chung chống
+// tổng vượt cửa sổ. Thiếu một trong hai thì vẫn có ca vỡ.
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Trần riêng của từng phần (token). Env cho phép người vận hành nắn mà không phải build lại. */
+export const NGAN_SACH_PHAN = {
+  /** Buffer người dùng dán tay / mã đang soạn. */
+  contextCode: 1600,
+  /** Few-shot cú pháp đúng theo `kind`. */
+  golden: 1200,
+  /** Ngữ cảnh manual hãng đã trích dẫn. */
+  vendorKb: 1800,
+  /** Chỉ mục repo (G2-A) — xem `repoContextService.REPO_INDEX_DEFAULT_MAX_TOKENS`. */
+  repoIndex: 900,
+} as const;
+
+/**
+ * Dự trữ cho phần KHUNG prompt (nhãn "TASK:", "REQUEST:", hàng rào ``` …) + sai số của chính bộ
+ * ước lượng. Ước lượng 2,8 ký tự/token đã nghiêng về phía CAO HƠN token thật, nhưng một cửa sổ
+ * "vừa khít" là một cửa sổ sẽ vỡ ở ca thứ N.
+ */
+const DU_TRU_KHUNG_TOKEN = 320;
+
+interface NganSachNguCanhCopilot {
+  /** Cửa sổ ngữ cảnh thật của lượt này. */
+  ctx: number;
+  /** Token dành riêng cho câu trả lời (lấy TỪ CHÍNH `route()` — không chép lại hằng số). */
+  traLoi: number;
+  /** Trần cho toàn bộ phần ĐƯA VÀO (system + user). */
+  tranVao: number;
+}
+
+/**
+ * Hỏi CHÍNH `aiModelRouter.route()` xem lượt sinh mã này được cấp bao nhiêu — rồi kẹp y hệt cách
+ * `runCodeModel`/`runStructuredCodeModel` kẹp. Cố ý KHÔNG chép hằng "1536/8192" vào đây: nếu
+ * router đổi quyết định mà ngân sách vẫn dùng số cũ thì cái thước và cái bị đo sẽ trôi khỏi nhau.
+ * Best-effort: router hỏng ⇒ dùng đúng mặc định mà `runCodeModel` dùng khi router hỏng.
+ */
+async function canNganSach(text: string): Promise<NganSachNguCanhCopilot> {
+  let traLoi = 1536;
+  let ctx = CODE_CTX;
+  try {
+    const { route } = await import("../aiModelRouter");
+    const d = route({ task: "code", text, requiredQuality: "high" });
+    traLoi = Math.max(512, d.maxTokens ?? traLoi);
+    ctx = Math.min(d.contextSize ?? CODE_CTX, CODE_CTX);
+  } catch {
+    /* giữ mặc định — giống hệt nhánh catch của runCodeModel */
+  }
+  return { ctx, traLoi, tranVao: Math.max(0, ctx - traLoi - DU_TRU_KHUNG_TOKEN) };
+}
+
+/** Một cái hồ token tiêu dần theo thứ tự ưu tiên. Không ai được lấy quá phần còn lại. */
+class HoToken {
+  constructor(private conLai: number) {}
+  get con(): number {
+    return Math.max(0, this.conLai);
+  }
+  /** Trừ thẳng (dùng cho phần KHÔNG cắt được: system + request). */
+  tru(n: number): void {
+    this.conLai -= n;
+  }
+  /**
+   * Lấy một khối do `sinh(cap)` tự dựng (vd khối chỉ mục repo phải đi truy hồi mới có), rồi TRỪ
+   * đúng số token của cái nó trả về.
+   *
+   * ★ Vì sao là MỘT hàm chứ không phải "gọi sinh() rồi nhớ gọi tru()": đột biến M6 của vòng đo
+   * G2-A — xoá lời gọi `ho.tru(r.tokens)` — **SỐNG SÓT toàn bộ lưới**, vì khối repo tình cờ là
+   * người tiêu dùng CUỐI CÙNG nên hôm nay quên trừ không đổi kết quả nào. Đó là nợ tiềm ẩn:
+   * người thêm một phần MỚI sau khối repo sẽ tính trên một cái hồ nói dối. Không vá bằng cách
+   * viết thêm một ca test canh lời gọi — vá bằng cách làm cho việc "quên" KHÔNG CÒN DIỄN ĐẠT
+   * ĐƯỢC: cái hồ tự trừ, người gọi không có nút nào để bỏ sót.
+   * `cap` = 0 ⇒ KHÔNG gọi `sinh` (cổng rẻ trước cổng tốn — không embed, không rerank).
+   */
+  async layKhoi(sinh: (cap: number) => Promise<string>, tranRieng: number): Promise<string> {
+    const cap = Math.min(tranRieng, this.con);
+    if (cap <= 0) return "";
+    const khoi = await sinh(cap);
+    if (!khoi) return "";
+    this.conLai -= uocLuongSoToken(khoi);
+    return khoi;
+  }
+  /** Cắt `text` cho vừa `min(tranRieng, còn lại)`, trừ đúng số đã dùng, trả văn bản đã cắt. */
+  lay(text: string | undefined, tranRieng: number, giu: "dau" | "cuoi" = "dau"): string {
+    const s = String(text ?? "");
+    if (!s) return "";
+    const cap = Math.min(tranRieng, this.con);
+    if (cap <= 0) return "";
+    const { text: out } = catTheoNganSachToken(s, cap, giu);
+    this.conLai -= uocLuongSoToken(out);
+    return out;
+  }
+}
 
 async function warmCodeModel(): Promise<void> {
   try {
@@ -402,18 +545,55 @@ function safeRecordMetric(plan: Awaited<ReturnType<typeof planMetric>>, outcome:
 }
 
 /**
- * Call the code-tier LLM. Fail-safe: returns null when GGUF is offline or on ANY error (the
- * caller degrades gracefully). Routes via aiModelRouter task:"code" to pick the code tier +
+ * ★★★ G5-D — KẾT CỤC CỦA MỘT LƯỢT GỌI MODEL SINH MÃ. Bốn ca, và **ba trong bốn ca trước đây bị
+ * bẹp thành cùng một `null`** ⇒ người dùng đọc đúng một câu *"AI code model offline — no
+ * suggestion generated (fail-safe)"* cho cả ba.
+ *
+ * Vì sao đó là lỗi chứ không phải "phòng thủ": ba ca ấy đòi ba hành động KHÁC HẲN nhau —
+ *   • `offline`  — chưa cài/chưa bật GGUF ⇒ việc của người vận hành, không phải của kỹ sư.
+ *   • `im-lang`  — model chạy, trả về rác/thoái hoá ⇒ thử lại, đổi cách hỏi.
+ *   • `hong`     — **HỆ THỐNG hỏng** (cổng G1-D chặn nạp trùng · vượt ngữ cảnh · model cạn token
+ *                  vào suy luận · llama-server chết). Kỹ sư có thử lại một trăm lần cũng vô ích,
+ *                  và câu "AI offline" gửi anh ta đi sai hướng.
+ * Theo đúng văn hoá **TỪ CHỐI TRUNG THỰC** đã có ở `aiLocalKnowledgeService`: nói ra chuyện gì
+ * hỏng, đừng giả vờ là "AI không nghĩ ra gì".
+ */
+type KetCucModelMa =
+  | { loai: "co-chu"; text: string }
+  | { loai: "offline" }
+  | { loai: "im-lang"; lyDo: string }
+  | { loai: "hong"; lyDo: string };
+
+/**
+ * Câu hiển thị cho một lượt KHÔNG có mã. ⚠ MỘT chỗ dựng câu cho MỌI điểm gọi — ba điểm gọi tự
+ * viết ba câu là ba cơ hội để một điểm quên mất ca `hong` và lại nuốt lỗi.
+ */
+function cauKhongCoMa(kc: Exclude<KetCucModelMa, { loai: "co-chu" }>, viec: string): string {
+  if (kc.loai === "offline") return `AI code model offline — no ${viec} generated (fail-safe).`;
+  if (kc.loai === "im-lang") return `Model chạy nhưng không đưa ra được ${viec} dùng được (${kc.lyDo}). Thử diễn đạt lại yêu cầu.`;
+  return (
+    `HỆ THỐNG HỎNG — không sinh được ${viec}, và đây KHÔNG phải "AI không nghĩ ra gì": ${kc.lyDo} ` +
+    `Thử lại y nguyên sẽ hỏng y nguyên; xem nhật ký máy chủ (và llama-server nếu đang bật) trước khi thử lại.`
+  );
+}
+
+/**
+ * Call the code-tier LLM. Routes via aiModelRouter task:"code" to pick the code tier +
  * token/temperature budget; strips any `<think>` block so reasoning never leaks. Everything
  * is dynamically imported (mirrors the codebase's lazy-engine pattern) so the module stays
  * light and never pulls node-llama-cpp at import time.
+ *
+ * ★ G5-D — KHÔNG CÒN NUỐT LỖI. Trước bản vá, mọi throw ở đây (kể cả *"llama-server còn sống nên
+ * CẤM nạp bản thứ hai"* của cổng G1-D — thứ xảy ra ở ĐÚNG cấu hình `GGUF_CODE_MODEL ==
+ * LLAMA_SERVER_MODEL`) chỉ để lại một `console.warn` rồi trả `null`, và người dùng đọc "AI
+ * offline". Nay lỗi được PHÂN LOẠI và mang lên tới câu trả lời.
  */
-async function runCodeModel(system: string, user: string): Promise<string | null> {
+async function runCodeModel(system: string, user: string): Promise<KetCucModelMa> {
   const metricStart = Date.now();
   let metricPlan: Awaited<ReturnType<typeof planMetric>> = null;
   try {
     const { isGgufAvailable, chatCompletion, stripThinking } = await import("../aiGgufEngine");
-    if (!(await isGgufAvailable())) return null;
+    if (!(await isGgufAvailable())) return { loai: "offline" };
 
     let maxTokens = 1536;
     let temperature = 0.3;
@@ -453,22 +633,32 @@ async function runCodeModel(system: string, user: string): Promise<string | null
       outcome: "ok",
     });
     const raw = res?.text ?? "";
-    const answer = stripThinking(raw).answer ?? raw;
+    // G5-D — `?? raw` đã bị XOÁ. `stripThinking().answer` LUÔN là một chuỗi (kiểu `string`, xem
+    // `ai/thinkingStrip.ts`), nên `??` không bao giờ chạy ⇒ **mã chết**. Nhưng nó ĐỌC như một
+    // fail-open: "cắt hỏng thì trả lại nguyên văn", tức đúng cái hàng rào R2 của `thinkingStrip`
+    // được dựng ra để bỏ. Một dòng mã chết trông giống một lỗ vẫn là nợ: người sửa sau đọc nó rồi
+    // tưởng đường lùi ấy có thật, và sẽ có ngày làm nó thành thật.
+    const answer = stripThinking(raw).answer;
     // FE-W0.3 (doc 46 §2.3) — reject a degenerate loop ("cell cell cell…") so the
-    // copilot degrades to its honest "no suggestion (fail-safe)" path rather than
-    // returning garbage code. Salvaging a head is unsafe for CODE, so unsalvageable
-    // OR salvaged-but-truncated → treat as no output (null).
+    // copilot degrades to its honest path rather than returning garbage code. Salvaging a head is
+    // unsafe for CODE, so unsalvageable OR salvaged-but-truncated → treat as no output.
     const { guardGeneratedText } = await import("../ai/generationGuard");
     const g = guardGeneratedText(answer);
     if (g.degraded) {
       console.warn(`[aiProgrammingCopilot] degenerate code output rejected (${g.reason}) — degrading to no-suggestion.`);
-      return null;
+      return { loai: "im-lang", lyDo: `đầu ra thoái hoá: ${g.reason}` };
     }
-    return g.text;
+    // Model chạy xong, không rác, nhưng KHÔNG có chữ. Đây là "không nghĩ ra gì" thật — ca duy nhất
+    // xứng đáng với câu ấy.
+    if (!g.text.trim()) return { loai: "im-lang", lyDo: "model trả về chuỗi rỗng" };
+    return { loai: "co-chu", text: g.text };
   } catch (e) {
     safeRecordMetric(metricPlan, { latencyMs: Date.now() - metricStart, outcome: "error" });
-    console.warn("[aiProgrammingCopilot] code model call failed (degrading):", (e as Error)?.message ?? e);
-    return null;
+    const chiTiet = (e as Error)?.message ?? String(e);
+    // ⚠ `console.warn` MỘT MÌNH chính là chỗ lỗi bị nuốt: không ai đọc log máy chủ khi bấm nút
+    // "sinh mã". Giữ log (cho người vận hành) VÀ mang lỗi lên câu trả lời (cho kỹ sư).
+    console.error("[aiProgrammingCopilot] lượt gọi model sinh mã HỎNG (không nuốt, báo lên UI):", chiTiet);
+    return { loai: "hong", lyDo: chiTiet };
   }
 }
 
@@ -539,6 +729,27 @@ async function runStructuredCodeModel(
     );
     return null;
   }
+}
+
+/**
+ * G2-A — lấy khối CHỈ MỤC REPO bằng phần token CÒN LẠI của hồ, rồi trừ đúng số đã dùng.
+ *
+ * Ba tính chất được cưỡng chế ở đây, không phải ở chỗ gọi:
+ *   • hồ cạn ⇒ trả "" mà KHÔNG truy hồi (không embed, không rerank — cổng rẻ trước cổng tốn);
+ *   • trần riêng `NGAN_SACH_PHAN.repoIndex` chống một lượt truy hồi "trúng đậm" nuốt hết chỗ;
+ *   • mọi lỗi ⇒ "" (fail-safe) — một lượt truy hồi hỏng không được làm mất lượt sinh mã.
+ */
+async function layNguCanhRepo(query: string, ho: HoToken, callerRole?: string): Promise<string> {
+  // `ho.layKhoi` tự kẹp theo hồ VÀ tự trừ — xem chú thích của nó về đột biến M6.
+  return ho.layKhoi(async (cap) => {
+    try {
+      const r = await gatherRepoIndexContext({ query, maxTokens: cap, callerRole });
+      return r.block;
+    } catch (e) {
+      console.warn("[aiProgrammingCopilot] G2-A chỉ mục repo hỏng (bỏ qua):", (e as Error)?.message ?? e);
+      return "";
+    }
+  }, NGAN_SACH_PHAN.repoIndex);
 }
 
 /** Retrieve cited programming-manual context (fail-safe → empty, never throws). */
@@ -687,6 +898,9 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   const ragSeed = request || (input?.contextCode ? String(input.contextCode).slice(0, 400) : outKind);
   const { answerContext, citations } = await retrieveContext(`${outKind} ${ragSeed}`.trim(), input?.vendor);
 
+  // G2-A — ngân sách ngữ cảnh của lượt này (xem khối NGAN_SACH_PHAN ở trên về thứ tự ưu tiên).
+  const nganSach = await canNganSach(request);
+
   // ── EXPLAIN / REVIEW: no codegen; grounded LLM explanation of the provided code. ──
   if (mode === "explain" || mode === "review") {
     const code = String(input?.contextCode ?? "").trim();
@@ -694,12 +908,31 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
       return { ok: false, refused: false, kind, citations, note: `mode="${mode}" needs contextCode (the program to ${mode}).` };
     }
     const system = buildSystemPrompt(mode, outKind, language);
-    const user = buildExplainPrompt(mode, outKind, language, request, code, answerContext);
-    const out = await runCodeModel(system, user);
-    if (out == null) {
-      return { ok: false, refused: false, kind, citations, note: "AI code model offline — no explanation generated (fail-safe)." };
+    const ho = new HoToken(nganSach.tranVao);
+    ho.tru(uocLuongSoToken(system) + uocLuongSoToken(request));
+    // Ưu tiên 2: chương trình đem đi giải thích/review CHÍNH LÀ đối tượng — giữ ĐẦU (khai báo
+    // biến / header là thứ không bỏ được khi đọc hiểu một chương trình).
+    const codeVua = ho.lay(code, NGAN_SACH_PHAN.contextCode, "dau");
+    // Ưu tiên 4: manual hãng.
+    const vendorVua = ho.lay(answerContext, NGAN_SACH_PHAN.vendorKb, "dau");
+    // Ưu tiên 5: chỉ mục repo — lấy phần CÒN LẠI, không bao giờ lấn phần trên.
+    const repo = await layNguCanhRepo(`${outKind} ${request || ragSeed}`.trim(), ho, input?.callerRole);
+    if (!codeVua) {
+      // Từ chối TRUNG THỰC thay vì gửi một prompt có khối PROGRAM rỗng rồi trả lời về hư không.
+      return {
+        ok: false,
+        refused: false,
+        kind,
+        citations,
+        note: `Ngân sách ngữ cảnh không đủ cho chương trình này (cửa sổ ${nganSach.ctx} token) — rút ngắn yêu cầu hoặc chương trình rồi thử lại.`,
+      };
     }
-    return { ok: true, refused: false, kind, explanation: out.trim(), citations };
+    const user = buildExplainPrompt(mode, outKind, language, request, codeVua, vendorVua, repo);
+    const out = await runCodeModel(system, user);
+    if (out.loai !== "co-chu") {
+      return { ok: false, refused: false, kind, citations, note: cauKhongCoMa(out, "explanation") };
+    }
+    return { ok: true, refused: false, kind, explanation: out.text.trim(), citations };
   }
 
   // ── GENERATE / COMPLETE / TRANSLATE: produce code, then VALIDATE before returning. ──
@@ -711,7 +944,21 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   });
   const goldenBlock = formatGoldenExamplesForPrompt(golden);
   const system = buildSystemPrompt(mode, outKind, language);
-  const user = buildCodePrompt(mode, kind, outKind, language, request, input?.contextCode, goldenBlock, answerContext);
+
+  // G2-A — lắp prompt QUA CÁI HỒ TOKEN, theo đúng thứ tự ưu tiên đã khai ở NGAN_SACH_PHAN.
+  const ho = new HoToken(nganSach.tranVao);
+  ho.tru(uocLuongSoToken(system) + uocLuongSoToken(request));
+  // Ưu tiên 2 — buffer người dùng. `complete` giữ ĐUÔI (con trỏ nằm ở cuối buffer đang soạn);
+  // `translate` giữ ĐẦU (bản dịch phải bắt đầu từ đầu chương trình nguồn).
+  const contextCodeVua = ho.lay(input?.contextCode, NGAN_SACH_PHAN.contextCode, mode === "complete" ? "cuoi" : "dau");
+  // Ưu tiên 3 — few-shot cú pháp đúng.
+  const goldenVua = ho.lay(goldenBlock, NGAN_SACH_PHAN.golden, "dau");
+  // Ưu tiên 4 — manual hãng.
+  const vendorVua = ho.lay(answerContext, NGAN_SACH_PHAN.vendorKb, "dau");
+  // Ưu tiên 5 — chỉ mục repo, phần CÒN LẠI. Hết hồ ⇒ không truy hồi luôn (cổng rẻ trước cổng tốn).
+  const repoBlock = await layNguCanhRepo(`${outKind} ${request}`.trim(), ho, input?.callerRole);
+
+  const user = buildCodePrompt(mode, kind, outKind, language, request, contextCodeVua, goldenVua, vendorVua, repoBlock);
 
   // Doc 34 · P4 (1b): STRUCTURED-JSON kinds (ir-flow / iec61131-pou) → GBNF grammar-constrained
   // generation so the model emits a schema-valid object (forced array wrapper + discriminator,
@@ -725,10 +972,10 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   }
   if (!code) {
     const out = await runCodeModel(system, user);
-    if (out == null) {
-      return { ok: false, refused: false, kind: outKind, citations, note: "AI code model offline — no suggestion generated (fail-safe)." };
+    if (out.loai !== "co-chu") {
+      return { ok: false, refused: false, kind: outKind, citations, note: cauKhongCoMa(out, "suggestion") };
     }
-    code = extractCode(out);
+    code = extractCode(out.text);
   }
   if (!code) {
     return { ok: false, refused: false, kind: outKind, citations, note: "The model returned no code." };
@@ -748,7 +995,9 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   const maxRepair = repairEnabled() ? repairMax() : 0;
   while (ran && !validation.ok && repairAttempts < maxRepair) {
     repairAttempts++;
-    const repairUser = buildRepairPrompt(outKind, request, code, validation.diagnostics, answerContext);
+    // G2-A — dùng bản manual ĐÃ CẮT (`vendorVua`), không phải `answerContext` nguyên bản: vòng tự
+    // sửa gửi thêm cả mã hỏng + danh sách lỗi, nên đây là prompt DÀI NHẤT của cả lượt.
+    const repairUser = buildRepairPrompt(outKind, request, code, validation.diagnostics, vendorVua);
     let fixed = "";
     if (jsonSchema) {
       const j = await runStructuredCodeModel(system, repairUser, jsonSchema);
@@ -756,7 +1005,13 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
     }
     if (!fixed) {
       const out = await runCodeModel(system, repairUser);
-      if (out != null) fixed = extractCode(out);
+      if (out.loai === "co-chu") fixed = extractCode(out.text);
+      // ⚠ Vòng TỰ SỬA cố ý KHÔNG dựng câu lỗi ở đây: lượt trước đã có mã + chẩn đoán để trả về, và
+      // thay nó bằng một câu lỗi là làm người dùng MẤT thứ đã có. Nhưng ca `hong` phải để lại dấu
+      // vết — nếu không, một cổng G1-D đang chặn sẽ trông y hệt "model không sửa được".
+      else if (out.loai === "hong") {
+        console.error(`[aiProgrammingCopilot] vòng tự sửa ${repairAttempts}: lượt gọi model HỎNG — ${out.lyDo}`);
+      }
     }
     if (!fixed) break; // model returned nothing — keep the previous attempt + its diagnostics
     const re = await runValidation(outKind, language, fixed);

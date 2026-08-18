@@ -470,9 +470,15 @@ export async function exportQualityReportToPowerPoint(
     ],
   });
 
+  // ★ 2026-08-17 — câu TỰ KHAI PHẠM VI nối vào phụ đề của slide tiêu đề khi số liệu đã bị thu
+  // hẹp theo nhà máy được gán cho người xuất (xem `QualityReportData.filters.scopeNote`).
+  // Slide bị chụp màn hình và chiếu lên tường; bộ số của MỘT nhà máy không được đi ra ngoài
+  // đội trong hình dạng của một báo cáo toàn công ty.
+  const period = `${new Date(data.period.start).toLocaleDateString("vi-VN")} - ${new Date(data.period.end).toLocaleDateString("vi-VN")}`;
+
   return exportDashboardToPowerPoint(slides, {
     ...config,
-    subtitle: `${new Date(data.period.start).toLocaleDateString("vi-VN")} - ${new Date(data.period.end).toLocaleDateString("vi-VN")}`,
+    subtitle: data.filters?.scopeNote ? `${period} • ${data.filters.scopeNote}` : period,
     includeCharts: true,
   });
 }

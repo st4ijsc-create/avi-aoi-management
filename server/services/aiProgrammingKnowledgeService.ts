@@ -137,6 +137,13 @@ export interface ProgKbSearchResult {
   answerContext: string;
   citations: ProgKbCitation[];
   chunks: ProgKbSearchChunk[];
+  /**
+   * G0 phần C — ms mà tầng rerank chiếm của lượt tìm này, đo tại ĐIỂM GỌI.
+   * `null` = rerank không chạy (cờ tắt / ≤1 ứng viên / corpus rỗng) — khác `0`
+   * ("đã chạy, dưới 1 ms"). Trước bản này `aiReranker.ts` không có một
+   * `Date.now()` nào nên chi phí này vô hình với copilot lập trình.
+   */
+  rerankMs?: number | null;
 }
 
 export interface ProgKbCollectionSummary {
@@ -486,7 +493,7 @@ interface ScoredChunk {
 }
 
 function emptyResult(query: string, enabled: boolean): ProgKbSearchResult {
-  return { query, enabled, semanticUsed: false, answerContext: "", citations: [], chunks: [] };
+  return { query, enabled, semanticUsed: false, answerContext: "", citations: [], chunks: [], rerankMs: null };
 }
 
 /**
@@ -551,6 +558,8 @@ export async function searchProgrammingKb(params: SearchProgrammingKbParams): Pr
   // is FAIL-SAFE (returns original order if disabled or on any error), so calling
   // it is always safe; it only reorders when RAG_RERANKER_ENABLED is also on.
   let ranked = scored.slice(0, topK);
+  // G0 phần C — null = tầng rerank không chạy cho lượt này (KHÁC 0 = chạy và nhanh).
+  let rerankMs: number | null = null;
   if (isRerankerEnabledForProgKb() && scored.length > 1) {
     const poolSize = Math.max(topK, Number(process.env.PROG_KB_RERANKER_POOL ?? 20));
     const pool = scored.slice(0, poolSize);
@@ -560,6 +569,10 @@ export async function searchProgrammingKb(params: SearchProgrammingKbParams): Pr
       text: s.chunk.text,
       score: clamp01(s.score),
     }));
+    // Đo TẠI ĐIỂM GỌI (gồm cả chi phí nạp backend lần đầu) — xem `rerankMs` ở
+    // ProgKbSearchResult. Đặt NGOÀI `try` để một lượt rerank HỎNG vẫn để lại số đo
+    // (thời gian vẫn bị tiêu, im lặng ở đây là mù đúng ca đáng quan tâm nhất).
+    const tRerank = Date.now();
     try {
       const reranked = await rerank(query, candidates, topK);
       const byUid = new Map(pool.map((s) => [s.uid, s]));
@@ -570,6 +583,10 @@ export async function searchProgrammingKb(params: SearchProgrammingKbParams): Pr
     } catch {
       // rerank() never throws, but stay defensive → keep cosine order.
       ranked = scored.slice(0, topK);
+    } finally {
+      rerankMs = Date.now() - tRerank;
+      // Log CÓ CẤU TRÚC — chỉ số đếm và ms, KHÔNG truy vấn, KHÔNG nội dung chunk.
+      console.log(`[aiProgrammingKnowledge] rerank pool=${candidates.length} topK=${topK} rerankMs=${rerankMs}`);
     }
   }
 
@@ -604,7 +621,7 @@ export async function searchProgrammingKb(params: SearchProgrammingKbParams): Pr
     })
     .join("\n\n");
 
-  return { query, enabled: true, semanticUsed, answerContext, citations, chunks };
+  return { query, enabled: true, semanticUsed, answerContext, citations, chunks, rerankMs };
 }
 
 // ─── Status / collections summary ─────────────────────────────────────────────

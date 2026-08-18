@@ -31,6 +31,13 @@ const llamaServerHealthyMock = vi.fn<(...a: any[]) => Promise<boolean>>(async ()
 
 vi.mock("./aiLlamaServerClient", () => ({
   shouldUseServerForText: (...a: any[]) => shouldUseServerForTextMock(...a),
+  // G1-D — vị từ hạt nhân dùng ở ĐIỂM NGHẼN `loadGgufModel` VÀ ở cổng cấm-lùi-nạp-trùng. Trong
+  // file này nó cố ý trả `false`: các ca ở đây canh đường LÙI IN-PROCESS (server down / lỗi), tức
+  // đúng đường mà G1-D chỉ cấm KHI server còn sống. Xem aiGgufEngine.serverCtxOverflow.test.ts.
+  laModelServerDangGiu: () => false,
+  kiemNganSachNguCanh: () => ({ vua: true, tokenVao: 1, tokenDanhChoTraLoi: 1024, tranMoiSlot: 32768 }),
+  serverSlotContextTokens: () => 32768,
+  laLoiTranNguCanh: () => false,
   preflightHealthy: (...a: any[]) => preflightHealthyMock(...a),
   serverGenerateText: (...a: any[]) => serverGenerateTextMock(...a),
   serverGenerateJSON: (...a: any[]) => serverGenerateJSONMock(...a),

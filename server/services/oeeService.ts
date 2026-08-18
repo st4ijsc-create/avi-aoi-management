@@ -51,7 +51,7 @@
  */
 
 import { getDb } from "../db/connection";
-import { and, eq, gte, lte, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, eq, gte, lte, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import { executeRows } from "../utils/kpi";
 import { publishToOutbox } from "./integration/outboxProducers"; // K0+-c: ADDITIVE ERP outbox (ERP_OUTBOX_ENABLED)
 import {
@@ -63,6 +63,66 @@ import {
   type InsertOEEMetric,
 } from "../../drizzle/schema";
 import { getMachineUptimeStats } from "../db/machine";
+import {
+  resolveTenantFactoryScope,
+  factoryIdGate,
+  type TenantFactoryScope,
+} from "../db/reportAggregators";
+import { UNSCOPED_LABELS, withScopeLabels, type ScopedRows } from "../_core/accessControlLabels";
+import type { TenantCodeScope } from "../_core/tenantCodeScope";
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-18 — NHÓM B #2. TRỤC PHẠM VI CỦA BA BỀ MẶT OEE.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//
+// **Lỗ đã đo.** `getAllMachinesOEELive` / `getLineOEE` / `getLineTaktUtilization` đọc thẳng
+// `FROM daily_statistics` KHÔNG có một mệnh đề tenant nào, rồi được phơi ra qua
+// `mqttClient.getAllOEE` (OEE Dashboard, MachineHealthMonitoring, CorporateDashboard,
+// ControlTower), `warRoom.briefing` và `productionDashboard.getLineBalance`. Mọi tài khoản đã
+// đăng nhập đọc được sản lượng/OEE của MỌI nhà máy.
+//
+// **Cách vá.** `daily_statistics` ĐÃ CÓ `factoryId` NOT NULL + chỉ mục `idx_stats_factory_date`
+// ⇒ KHÔNG cần DDL, KHÔNG cần bán-nối qua `product_inspections`. Phân giải tập `factories.id`
+// được phép MỘT LẦN (`resolveTenantFactoryScope` — bộ phân giải DÙNG CHUNG ở
+// `db/reportAggregators.ts`) rồi gắn vị từ `IN (…)` vào:
+//   • danh sách máy   — qua `machines → stations → production_lines → workshops."factoryId"`
+//                       (bước này CHỈ để biết máy thuộc nhà máy nào, KHÔNG suy lại quyền);
+//   • `daily_statistics."factoryId"` — thẳng, dùng chỉ mục.
+//
+// ⚠ Vì sao PHẢI chặn cả danh sách máy, không chỉ `daily_statistics`: availability đến từ
+// `machine_status_logs`, nên nếu chỉ chặn sản lượng thì máy nhà máy khác vẫn hiện với
+// availability/uptime thật — rò một nửa vẫn là rò.
+//
+// ⚠ `userId`/`userRole` LUÔN đến từ `ctx.user` (máy chủ tự xác thực). **CẤM lấy từ `input`** —
+// một `input.userId` là lời tự khai của người gọi. Bỏ trống = KHÔNG lọc: đúng hình dạng của lối
+// đi không mang danh tính (UNS publisher, metricRegistry, commandCenter, REST máy-với-máy) và là
+// chiều DƯƠNG chống vá quá tay.
+
+/**
+ * Phạm vi của NGƯỜI XEM — xem khối chú thích ngay trên.
+ *
+ * ★★★ 2026-08-18 — HAI TRỤC, loại trừ nhau ở mức KIỂU:
+ *   ① `userId`/`userRole` — người dùng thật (`ctx.user`).
+ *   ② `tenantScope`       — mã tenant TƯỜNG MINH của một khoá API (mig 0325). Cần vì một khoá
+ *      KHÔNG phải người dùng CSDL: lối đi REST `/api/v1/ecosystem/kpi` trước đây gọi
+ *      `buildKpiSummary` bằng một principal tổng hợp `{id: 0, role: "api"}`, nên ô OEE của dải
+ *      KPI đọc số của MỌI nhà máy dù khoá chỉ được cấp một nhà máy.
+ * Bỏ trống CẢ HAI = KHÔNG lọc (UNS publisher, metricRegistry, broadcaster nội bộ).
+ */
+export type OeeViewerScope =
+  | { userId?: number; userRole?: string; tenantScope?: never }
+  | { tenantScope: TenantCodeScope; userId?: never; userRole?: never };
+
+/**
+ * Mảnh ` AND <col> IN (…)` để NHÚNG vào một truy vấn thô. `factoryIds === null` (vai toàn quyền)
+ * ⇒ mảnh RỖNG: truy vấn giữ nguyên TỪNG BYTE, không có "cổng luôn đúng" nào chạy thêm.
+ *
+ * @param col biểu thức cột nhà máy của truy vấn đích, ví dụ sql`w."factoryId"` hoặc sql`"factoryId"`
+ */
+function factoryGateFragment(scope: TenantFactoryScope, col: SQL): SQL {
+  if (scope.factoryIds === null) return sql``;
+  return sql` AND ${factoryIdGate(col, scope.factoryIds)}`;
+}
 
 // SEMI E10 category → equipment state mapping. The `category` enum used by
 // downtime_events is application-specific (`unplanned`, `planned`, …); we
@@ -669,12 +729,22 @@ export async function resolveIdealCycleTimeSec(
 /**
  * Live OEE for every active machine. Returns one entry per machine; factors are
  * null where data is absent. This is the canonical backing for `getAllOEE`.
+ *
+ * ★ PHẠM VI (2026-08-18): truyền `userId`/`userRole` từ `ctx.user` ⇒ chỉ máy thuộc nhà máy được
+ * gán. Bỏ trống ⇒ KHÔNG lọc (lối đi không mang danh tính). Xem khối chú thích đầu file.
+ *
+ * ★ Kết quả là MẢNG CÓ NHÃN (`withScopeLabels`): `rows.scopeEmptyReason` / `rows.scopeMessage`
+ * nói RÕ "chưa được gán nhà máy" thay vì để một mảng rỗng bị đọc thành "không có dữ liệu".
+ * ⚠ Ba ô ấy KHÔNG liệt kê được nên KHÔNG đi qua tRPC/superjson (cố ý — xem `withScopeLabels`);
+ * nơi gọi TRONG máy chủ đọc được ngay, nơi gọi qua dây phải lấy lý do từ một truy vấn có mang
+ * nhãn trên cùng màn (`dashboard.getStats`) hoặc từ `warRoom.briefing`.
  */
 export async function getAllMachinesOEELive(params?: {
   windowHours?: number;
-}): Promise<LiveOEEMetrics[]> {
+} & OeeViewerScope): Promise<ScopedRows<LiveOEEMetrics>> {
+  const scope = await resolveTenantFactoryScope(params);
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels<LiveOEEMetrics>([], UNSCOPED_LABELS);
   const windowHours = params?.windowHours ?? 24;
   // doc 54 P2.2 §2 — availability integrates status logs to NOW; bind the production
   // window to the SAME [from, to=now] so the count numerator and the online-time
@@ -691,10 +761,24 @@ export async function getAllMachinesOEELive(params?: {
   // regardless of fleet size. Result shape is identical to the per-machine path.
 
   // 1) Active machines.
-  const machineRows = await db.select({ id: machines.id, code: machines.code })
-    .from(machines)
-    .where(eq(machines.isActive, true));
-  if (machineRows.length === 0) return [];
+  // ⚠ Vai toàn quyền giữ NGUYÊN truy vấn cũ (không JOIN thêm gì) — chiều DƯƠNG chống vá quá tay:
+  // một máy có chuỗi phân cấp gãy vẫn hiện đúng như trước. Chỉ khi CÓ phạm vi mới đi qua
+  // `stations → production_lines → workshops` để biết máy thuộc nhà máy nào (đây là phép TRA
+  // CỨU quan hệ, KHÔNG phải một bộ luật phân quyền thứ hai — luật nằm ở `factoryIds`).
+  const machineRows = scope.factoryIds === null
+    ? await db.select({ id: machines.id, code: machines.code })
+        .from(machines)
+        .where(eq(machines.isActive, true))
+    : (executeRows(await db.execute(sql`
+        SELECT m."id" AS id, m."code" AS code
+        FROM machines m
+        JOIN stations s ON s."id" = m."stationId"
+        JOIN production_lines l ON l."id" = s."lineId"
+        JOIN workshops w ON w."id" = l."workshopId"
+        WHERE m."isActive" = true
+          AND ${factoryIdGate(sql`w."factoryId"`, scope.factoryIds)}
+      `)) as Array<{ id: number; code: string }>).map((r) => ({ id: Number(r.id), code: r.code }));
+  if (machineRows.length === 0) return withScopeLabels<LiveOEEMetrics>([], scope.labels);
 
   // 2) Availability — online/offline seconds per machine from machine_status_logs,
   //    computed set-based with a window LEAD. Mirrors getMachineUptimeStats exactly:
@@ -733,6 +817,7 @@ export async function getAllMachinesOEELive(params?: {
       AVG(NULLIF("avgCycleTime", 0))::float AS avg_cycle
     FROM daily_statistics
     WHERE "date" >= ${from.toISOString()} AND "date" <= ${to.toISOString()}
+      ${factoryGateFragment(scope, sql`"factoryId"`)}
     GROUP BY "machineId"
   `)) as Array<{ machine_id: number; total: number; ok: number; ng: number; ntf: number; avg_cycle: number | null }>;
   const prodByMachine = new Map<number, { total: number; ok: number; ng: number; ntf: number; avgCycle: number | null }>();
@@ -801,7 +886,7 @@ export async function getAllMachinesOEELive(params?: {
   // 5) Assemble per machine (pure JS; SAME math as getMachineOEELive — honest N/A
   //    for any factor whose inputs are absent).
   const now = new Date();
-  return machineRows.map((m) => {
+  return withScopeLabels(machineRows.map((m) => {
     const up = uptimeByMachine.get(m.id) ?? { online: 0, offline: 0 };
     const prod = prodByMachine.get(m.id) ?? { total: 0, ok: 0, ng: 0, ntf: 0, avgCycle: null };
 
@@ -854,7 +939,7 @@ export async function getAllMachinesOEELive(params?: {
         hasProductionData,
       },
     } satisfies LiveOEEMetrics;
-  });
+  }), scope.labels);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -903,12 +988,13 @@ export async function getLineOEE(params?: {
   factoryId?: number;
   from?: Date;
   to?: Date;
-}): Promise<LineOEEMetrics[]> {
+} & OeeViewerScope): Promise<ScopedRows<LineOEEMetrics>> {
+  const scope = await resolveTenantFactoryScope(params);
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels<LineOEEMetrics>([], UNSCOPED_LABELS);
   const to = params?.to ?? new Date();
   const from = params?.from ?? new Date(to.getTime() - 24 * 60 * 60 * 1000);
-  if (to.getTime() <= from.getTime()) return [];
+  if (to.getTime() <= from.getTime()) return withScopeLabels<LineOEEMetrics>([], scope.labels);
 
   // 1) Active machine → line map (optionally scoped to one line / one factory).
   const mapRows = executeRows(await db.execute(sql`
@@ -920,8 +1006,11 @@ export async function getLineOEE(params?: {
     WHERE m."isActive" = true
       ${params?.lineId ? sql`AND l."id" = ${params.lineId}` : sql``}
       ${params?.factoryId ? sql`AND w."factoryId" = ${params.factoryId}` : sql``}
+      ${factoryGateFragment(scope, sql`w."factoryId"`)}
   `)) as Array<{ machine_id: number; line_id: number; line_name: string }>;
-  if (mapRows.length === 0) return [];
+  // ⚠ Cổng phạm vi đứng SAU bộ lọc `factoryId` do người gọi chọn, và là phép GIAO — một
+  // `factoryId` nằm ngoài phạm vi cho ra tập rỗng, KHÔNG mở rộng quyền.
+  if (mapRows.length === 0) return withScopeLabels<LineOEEMetrics>([], scope.labels);
 
   const lineNameById = new Map<number, string>();
   const machineToLine = new Map<number, number>();
@@ -967,6 +1056,7 @@ export async function getLineOEE(params?: {
       COALESCE(SUM("ntfCount"), 0)::int   AS ntf
     FROM daily_statistics
     WHERE "date" >= ${from.toISOString()} AND "date" <= ${to.toISOString()}
+      ${factoryGateFragment(scope, sql`"factoryId"`)}
     GROUP BY "machineId"
   `)) as Array<{ machine_id: number; total: number; ok: number; ng: number; ntf: number }>;
   const prodByMachine = new Map<number, { total: number; ok: number; ng: number; ntf: number }>();
@@ -1041,7 +1131,7 @@ export async function getLineOEE(params?: {
     }
   }
 
-  return lineOrder.map((lid) => {
+  return withScopeLabels(lineOrder.map((lid) => {
     const a = accByLine.get(lid)!;
     const totalStatus = a.online + a.offline;
     const hasUptimeData = totalStatus > 0;
@@ -1077,7 +1167,7 @@ export async function getLineOEE(params?: {
         hasIdeal: a.hasIdeal,
       },
     } satisfies LineOEEMetrics;
-  });
+  }), scope.labels);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1435,11 +1525,12 @@ export async function getLineTaktUtilization(params: {
   factoryId?: number;
   from: Date;
   to: Date;
-}): Promise<LineTaktResult[]> {
+} & OeeViewerScope): Promise<ScopedRows<LineTaktResult>> {
+  const scope = await resolveTenantFactoryScope(params);
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels<LineTaktResult>([], UNSCOPED_LABELS);
   const { from, to } = params;
-  if (to.getTime() <= from.getTime()) return [];
+  if (to.getTime() <= from.getTime()) return withScopeLabels<LineTaktResult>([], scope.labels);
   const windowSeconds = (to.getTime() - from.getTime()) / 1000;
   const windowHours = windowSeconds / 3600;
 
@@ -1454,11 +1545,12 @@ export async function getLineTaktUtilization(params: {
     WHERE m."isActive" = true
       ${params.lineId ? sql`AND l."id" = ${params.lineId}` : sql``}
       ${params.factoryId ? sql`AND w."factoryId" = ${params.factoryId}` : sql``}
+      ${factoryGateFragment(scope, sql`w."factoryId"`)}
   `)) as Array<{
     machine_id: number; station_id: number; station_name: string;
     line_id: number; line_name: string; capacity_per_hour: number | null;
   }>;
-  if (mapRows.length === 0) return [];
+  if (mapRows.length === 0) return withScopeLabels<LineTaktResult>([], scope.labels);
 
   // 2) online/offline seconds per machine over [from, to] (closed upper bound at `to`).
   const durationRows = executeRows(await db.execute(sql`
@@ -1491,6 +1583,7 @@ export async function getLineTaktUtilization(params: {
       AVG(NULLIF("avgCycleTime", 0))::float AS avg_cycle
     FROM daily_statistics
     WHERE "date" >= ${from.toISOString()} AND "date" <= ${to.toISOString()}
+      ${factoryGateFragment(scope, sql`"factoryId"`)}
     GROUP BY "machineId"
   `)) as Array<{ machine_id: number; total: number; avg_cycle: number | null }>;
   const prodByMachine = new Map<number, { total: number; avgCycle: number | null }>();
@@ -1531,7 +1624,7 @@ export async function getLineTaktUtilization(params: {
     if (prod.avgCycle != null && prod.avgCycle > 0) { sa.cycleSum += prod.avgCycle; sa.cycleN += 1; }
   }
 
-  return lineOrder.map((lid) => {
+  return withScopeLabels(lineOrder.map((lid) => {
     const la = lineAcc.get(lid)!;
     const demandUnits = la.capacityPerHour != null && la.capacityPerHour > 0
       ? Math.round(la.capacityPerHour * windowHours)
@@ -1571,5 +1664,5 @@ export async function getLineTaktUtilization(params: {
       stations,
       hasData: la.produced > 0 || availTime > 0,
     } satisfies LineTaktResult;
-  });
+  }), scope.labels);
 }

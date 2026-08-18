@@ -21,10 +21,34 @@
  * SET-BASED: một nhúm cố định truy vấn nhóm (không N+1 theo máy). KHÔNG có đường
  * điều khiển; mọi truy vấn đều getDb()-guarded (DB vắng → cấu trúc rỗng honest).
  */
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { executeRows } from "../utils/kpi";
 import { getLineOEE } from "./oeeService";
+import { resolveTenantFactoryScope, factoryIdGate, type TenantFactoryScope } from "../db/reportAggregators";
+import { UNSCOPED_LABELS, type ScopeLabels } from "../_core/accessControlLabels";
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-18 — NHÓM B #3. MỘT BẢN VÁ PHỦ BỐN PANEL.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//
+// **Lỗ đã đo.** `warRoom.briefing` → `getWarRoomBriefing` KHÔNG nhận `userId`. Bốn panel
+// (`lineOee`, `planVsActual`, `shiftCompare`, `topDowntime`) — dùng chung trên `/war-room`,
+// `/control-tower` và `/comparison-studio` — trả số liệu TOÀN CỤC cho mọi tài khoản đã đăng nhập.
+//
+// **Cách vá.** MỘT lượt `resolveTenantFactoryScope` ở đầu hàm; tập `factories.id` ấy được gắn
+// vào TỪNG nguồn của TỪNG panel, mỗi nguồn tại cột nhà máy CÓ SẴN của nó:
+//   • lineOee      ← `getLineOEE` (nhận `userId`/`userRole`, tự gác `daily_statistics` + máy)
+//   • planVsActual ← `production_orders."factoryId"`  (+ suy từ `lines`, đã bị gác)
+//   • topDowntime  ← `downtime_events` JOIN `workshops w."factoryId"`
+//   • shiftCompare ← `fact_inspection_hourly."factoryId"` + `machine_status_logs` JOIN
+//                    `workshops w2."factoryId"`
+//
+// ⚠ Panel nào bỏ sót cổng thì panel ấy RÒ RIÊNG — bốn panel nằm chung một đáp ứng nên một chỗ
+// hở là hở cả bản tin. Vì thế lưới `warRoomScope.db.test.ts` khẳng định CẢ BỐN, không phải một.
+//
+// ⚠ `factoryId` do người gọi truyền vào là bộ lọc TRÌNH BÀY; cổng phạm vi là mệnh đề AND thứ
+// hai ⇒ phép GIAO. Chọn một nhà máy ngoài phạm vi cho ra bản tin rỗng CÓ LÝ DO, không mở quyền.
 
 export interface WarRoomTopDowntime {
   machineCode: string;
@@ -55,7 +79,15 @@ export interface WarRoomPlanVsActual {
   actual: number;
   pct: number | null; // actual / expected × 100
 }
-export interface WarRoomBriefing {
+/**
+ * ⚠⚠ Ba ô nhãn nằm THẲNG trong hợp đồng (kế thừa `ScopeLabels`), KHÔNG có ô `filter` nào — nên
+ * `{ ...briefing }` trên đường ra tRPC không thể lôi đối tượng SQL drizzle (tham chiếu vòng) vào
+ * đáp ứng. Đây là hình dạng đã học được từ sự cố `dashboard.getStats` trả 500 ngày 2026-08-17.
+ *
+ * Bản tin RỖNG của một tài khoản chưa được gán nhà máy PHẢI đọc được lý do từ `scopeMessage` —
+ * bốn panel trống mà không nói gì thì dạy người trực ca rằng "nhà máy đang ngừng".
+ */
+export interface WarRoomBriefing extends ScopeLabels {
   asOf: string;
   lines: WarRoomLine[];
   shiftCompare: WarRoomShiftCompare[];
@@ -88,20 +120,46 @@ function shiftWindow(
   return { start, end };
 }
 
-const EMPTY: WarRoomBriefing = { asOf: new Date().toISOString(), lines: [], shiftCompare: [], planVsActual: [] };
+const EMPTY: WarRoomBriefing = {
+  asOf: new Date().toISOString(), lines: [], shiftCompare: [], planVsActual: [], ...UNSCOPED_LABELS,
+};
+
+/**
+ * Mảnh ` AND <col> IN (…)` nhúng vào truy vấn thô. Vai toàn quyền ⇒ mảnh RỖNG (truy vấn giữ
+ * nguyên từng byte). Cùng khuôn với `factoryGateFragment` của `oeeService` — cố ý GIỐNG NHAU về
+ * hình dạng, và cả hai đều gọi `factoryIdGate` của `db/reportAggregators` (một chỗ sửa duy nhất).
+ */
+function gate(scope: TenantFactoryScope, col: SQL): SQL {
+  if (scope.factoryIds === null) return sql``;
+  return sql` AND ${factoryIdGate(col, scope.factoryIds)}`;
+}
 
 export async function getWarRoomBriefing(params?: {
   factoryId?: number;
   date?: string; // ISO — defaults to today (server-local)
   shiftConfigId?: number;
+  /** ★ Danh tính NGƯỜI XEM — LUÔN từ `ctx.user`, CẤM lấy từ `input`. Bỏ trống = KHÔNG lọc. */
+  userId?: number;
+  userRole?: string;
 }): Promise<WarRoomBriefing> {
+  // Phân giải phạm vi TRƯỚC mọi lượt đọc — fail-closed, không có đường nào đọc số liệu trước nó.
+  const scope = await resolveTenantFactoryScope(params);
   const db = await getDb();
   const now = new Date();
   if (!db) return { ...EMPTY, asOf: now.toISOString() };
 
   const factoryId = params?.factoryId;
   const targetDay = params?.date ? new Date(params.date) : now;
-  if (Number.isNaN(targetDay.getTime())) return { ...EMPTY, asOf: now.toISOString() };
+  if (Number.isNaN(targetDay.getTime())) return { ...EMPTY, asOf: now.toISOString(), ...scope.labels };
+
+  // ★ PHẠM VI RỖNG (tài khoản chưa được gán nhà máy) — dừng NGAY, kèm LÝ DO.
+  // ⚠ Vì sao không để nó chạy tiếp cho các cổng `1 = 0` tự lo: `shift_configs` có hàng TOÀN CỤC
+  // (`factoryId IS NULL`) nên bản tin sẽ hiện lưới ca đầy đủ với sản lượng 0 — đúng cái hình
+  // dạng "dây chuyền đang ngừng" mà bản vá này đi xoá. Rỗng + câu giải thích thì trung thực; ba
+  // hàng ca trống thì không. (Các cổng bên dưới VẪN giữ nguyên: chúng canh chiều A-không-thấy-B.)
+  if (scope.factoryIds !== null && scope.factoryIds.length === 0) {
+    return { ...EMPTY, asOf: now.toISOString(), ...scope.labels };
+  }
 
   const dayStart = startOfDay(targetDay);
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
@@ -112,6 +170,7 @@ export async function getWarRoomBriefing(params?: {
     FROM shift_configs
     WHERE "isActive" = true
       ${factoryId ? sql`AND ("factoryId" = ${factoryId} OR "factoryId" IS NULL)` : sql``}
+      ${scope.factoryIds === null ? sql`` : sql`AND (${factoryIdGate(sql`"factoryId"`, scope.factoryIds)} OR "factoryId" IS NULL)`}
     ORDER BY "orderIndex", "startHour"
   `)) as Array<{ id: number; name: string; code: string; startHour: number; startMinute: number; endHour: number; endMinute: number }>;
 
@@ -129,28 +188,40 @@ export async function getWarRoomBriefing(params?: {
   if (to.getTime() <= from.getTime()) {
     // Future / not-yet-started period: still return the line skeleton (zeros) so
     // the UI can render the shift grid honestly rather than erroring.
-    return { asOf: now.toISOString(), lines: [], shiftCompare: [], planVsActual: [] };
+    return { asOf: now.toISOString(), lines: [], shiftCompare: [], planVsActual: [], ...scope.labels };
   }
 
   const elapsedFraction = Math.max(0, Math.min(1,
     (to.getTime() - periodStart.getTime()) / (periodEnd.getTime() - periodStart.getTime())));
 
   // ── (A) Line OEE / A / P / Q + output + ng (reuses the set-based rollup). ────
-  const lineOee = await getLineOEE({ factoryId, from, to });
+  // ⚠ Truyền THẲNG danh tính, KHÔNG truyền `scope.factoryIds`: `getLineOEE` tự gọi CÙNG bộ phân
+  // giải. Một hợp đồng duy nhất (`userId`/`userRole`) cho mọi nơi gọi ⇒ không ai truyền nhầm một
+  // tập id "đã lọc sẵn" mà thực ra chưa lọc. Giá: một lượt SELECT nhỏ có chỉ mục trên `factories`.
+  const lineOee = await getLineOEE({ factoryId, from, to, userId: params?.userId, userRole: params?.userRole });
 
   // ── (B) Plan target per line (production_orders overlapping the window). ─────
+  // ⚠⚠ TRUNG THỰC VỀ SỨC MẠNH CỦA LƯỚI: cổng phạm vi ở truy vấn NÀY và ở (C) bên dưới là
+  // **PHÒNG THỦ NHIỀU LỚP, KHÔNG QUAN SÁT ĐƯỢC từ đầu ra** — đã ĐO bằng đột biến (2026-08-18:
+  // gỡ cả hai cổng ⇒ lưới vẫn XANH). Lý do có tính cấu tạo: cả hai kết quả đều được TRA theo
+  // `lineId`, mà `lines` thì đã bị thu hẹp ở (A); một `lineId` của nhà máy khác có nằm trong
+  // `planByLine`/`dtByLine` cũng không có ai đọc tới. Giữ cổng lại vì nó rẻ và vì ngày nào đó
+  // (A) đổi cách dựng danh sách chuyền thì chúng thành lớp chặn THẬT — nhưng đừng tin rằng lưới
+  // đang canh chúng. Ai sửa hai truy vấn này phải tự nghiệm lại bằng tay.
   const planRows = executeRows(await db.execute(sql`
     SELECT "lineId" AS line_id, COALESCE(SUM("targetQuantity"), 0)::int AS target
     FROM production_orders
     WHERE "plannedStartDate" <= ${to.toISOString()}
       AND ("plannedEndDate" IS NULL OR "plannedEndDate" >= ${from.toISOString()})
       ${factoryId ? sql`AND "factoryId" = ${factoryId}` : sql``}
+      ${gate(scope, sql`"factoryId"`)}
     GROUP BY "lineId"
   `)) as Array<{ line_id: number; target: number }>;
   const planByLine = new Map<number, number>();
   for (const r of planRows) planByLine.set(Number(r.line_id), Number(r.target) || 0);
 
   // ── (C) Top downtime per line, grouped by (machineCode, reason), clipped. ────
+  // ⚠ Cổng dưới đây cũng thuộc diện "phòng thủ nhiều lớp, không quan sát được" — xem (B).
   const dtRows = executeRows(await db.execute(sql`
     SELECT l."id" AS line_id, d."machineCode" AS machine_code, d."reason" AS reason,
       SUM(
@@ -166,6 +237,7 @@ export async function getWarRoomBriefing(params?: {
     WHERE d."startTime" <= ${to.toISOString()}
       AND (d."endTime" IS NULL OR d."endTime" >= ${from.toISOString()})
       ${factoryId ? sql`AND w."factoryId" = ${factoryId}` : sql``}
+      ${gate(scope, sql`w."factoryId"`)}
     GROUP BY l."id", d."machineCode", d."reason"
   `)) as Array<{ line_id: number; machine_code: string; reason: string; minutes: number }>;
   const dtByLine = new Map<number, WarRoomTopDowntime[]>();
@@ -208,9 +280,9 @@ export async function getWarRoomBriefing(params?: {
     });
 
   // ── (E) Shift comparison — real shifts, today. ───────────────────────────────
-  const shiftCompare = await computeShiftCompare(db, targetDay, factoryId, shiftRows, now);
+  const shiftCompare = await computeShiftCompare(db, targetDay, factoryId, shiftRows, now, scope);
 
-  return { asOf: now.toISOString(), lines, shiftCompare, planVsActual };
+  return { asOf: now.toISOString(), lines, shiftCompare, planVsActual, ...scope.labels };
 }
 
 /**
@@ -229,6 +301,7 @@ async function computeShiftCompare(
   factoryId: number | undefined,
   shiftRows: Array<{ id: number; name: string; code: string; startHour: number; startMinute: number; endHour: number; endMinute: number }>,
   now: Date,
+  scope: TenantFactoryScope,
 ): Promise<WarRoomShiftCompare[]> {
   if (shiftRows.length === 0) return [];
   const dayStart = startOfDay(targetDay);
@@ -244,6 +317,7 @@ async function computeShiftCompare(
     FROM fact_inspection_hourly
     WHERE "bucketHour" >= ${dayStart.toISOString()} AND "bucketHour" < ${dayEnd.toISOString()}
       ${factoryId ? sql`AND "factoryId" = ${factoryId}` : sql``}
+      ${gate(scope, sql`"factoryId"`)}
     GROUP BY "shiftCode"
   `)) as Array<{ shift_code: string; total: number; ok: number; ng: number; ntf: number }>;
   const factByShift = new Map<string, { total: number; ok: number; ng: number; ntf: number }>();
@@ -261,6 +335,7 @@ async function computeShiftCompare(
     FROM fact_inspection_hourly
     WHERE "bucketHour" >= ${dayStart.toISOString()} AND "bucketHour" < ${dayEnd.toISOString()}
       ${factoryId ? sql`AND "factoryId" = ${factoryId}` : sql``}
+      ${gate(scope, sql`"factoryId"`)}
     GROUP BY "machineId", "shiftCode"
   `)) as Array<{ machine_id: number; shift_code: string; total: number }>;
 
@@ -312,6 +387,7 @@ async function computeShiftCompare(
         JOIN workshops w2 ON w2."id" = l."workshopId"
         WHERE sl."timestamp" >= ${w.start.toISOString()} AND sl."timestamp" <= ${sTo.toISOString()}
           ${factoryId ? sql`AND w2."factoryId" = ${factoryId}` : sql``}
+          ${gate(scope, sql`w2."factoryId"`)}
       )
       SELECT
         COALESCE(SUM(CASE WHEN status = 'online'

@@ -35,6 +35,10 @@ import { calculateCapabilityIndices } from "../utils/spc";
 // doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the narration/SPC-interpretation calls
 // below must PIN a text model (un-pinned calls used to land on the 0.6B RAG embedder).
 import { resolveLogicalModel } from "./ai/modelResolver";
+// ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) nên import TĨNH được ở đây dù engine
+// vẫn nạp động: hàng rào là vô điều kiện theo CẤU TẠO, không treo vào một `await import()` trong
+// try (import hỏng ⇒ catch chạy tiếp KHÔNG có bộ cắt = fail-open).
+import { stripThinking } from "./ai/thinkingStrip";
 // Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A4).
 import {
   finalYieldPassCondSql,
@@ -1865,7 +1869,11 @@ async function narrateAnalysis(type: string, data: unknown): Promise<string | nu
       maxTokens: 256,
       temperature: 0.5,
     }, resolveLogicalModel("chat"));
-    return result.text.trim() || null;
+    // ★ G5-E — `resolveLogicalModel("chat")` trả về model MẶC ĐỊNH khi GGUF_CHAT_MODEL không được
+    // đặt ⇒ đổi roster sang một model họ Qwen3.x là chỗ này phát `<think>` ra bảng phân tích.
+    // Cắt thẻ TRƯỚC mọi phép biến đổi khác (ở đây chỉ còn `.trim()`, vốn cũng là hành vi cũ ⇒
+    // bản vá là no-op với đầu ra không có thẻ).
+    return stripThinking(result.text).answer.trim() || null;
   } catch {
     return null;
   }
@@ -1956,7 +1964,8 @@ ${violationSummary || "Points beyond 3σ limits detected"}`,
       temperature: 0.3,
     }, resolveLogicalModel("chat"));
 
-    return { data, interpretation: response.text?.trim() || null };
+    // ★ G5-E — cắt chuỗi suy luận trước khi diễn giải SPC hiện ra bảng (xem `narrateAnalysis`).
+    return { data, interpretation: stripThinking(response.text ?? "").answer.trim() || null };
   } catch {
     return { data, interpretation: null };
   }

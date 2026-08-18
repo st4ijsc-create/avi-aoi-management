@@ -75,7 +75,7 @@ export const spcAnalysisRouter = router({
       productModelId: z.number().optional(),
       limit: z.number().default(10),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const filters = {
         startDate: input.startDate ? new Date(input.startDate) : undefined,
         endDate: input.endDate ? new Date(input.endDate) : undefined,
@@ -83,8 +83,11 @@ export const spcAnalysisRouter = router({
         factoryCode: input.factoryCode,
         productModelId: input.productModelId,
         limit: input.limit,
+        // Trục phạm vi (2026-08-17) — mọi thủ tục SPC đọc bản ghi kiểm đều phải mang danh tính.
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
       };
-      
+
       const data = await db.getTopNGMeasurementPointsEnhanced(filters);
       
       // Calculate cumulative percentage for Pareto chart
@@ -111,13 +114,15 @@ export const spcAnalysisRouter = router({
       interval: z.enum(['hour', 'day', 'week', 'month']).default('day'),
       predictDays: z.number().default(7),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const trendData = await db.getYieldTrendData({
         startDate: new Date(input.startDate),
         endDate: new Date(input.endDate),
         machineId: input.machineId,
         factoryCode: input.factoryCode,
         interval: input.interval,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
       });
       
       if (trendData.length < 2) {
@@ -184,11 +189,13 @@ export const spcAnalysisRouter = router({
       days: z.number().default(30),
       zScoreThreshold: z.number().default(2),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const data = await db.getRecentYieldData({
         machineId: input.machineId,
         factoryCode: input.factoryCode,
         days: input.days,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
       });
       
       if (data.length < 5) {
@@ -232,7 +239,7 @@ export const spcAnalysisRouter = router({
       machineId: z.number().optional(),
       factoryCode: z.string().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       // Get top NG points
       const topNG = await db.getTopNGMeasurementPointsEnhanced({
         startDate: input.startDate ? new Date(input.startDate) : undefined,
@@ -240,6 +247,8 @@ export const spcAnalysisRouter = router({
         machineId: input.machineId,
         factoryCode: input.factoryCode,
         limit: 5,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
       });
       
       // Get NG by workstation
@@ -248,6 +257,8 @@ export const spcAnalysisRouter = router({
         endDate: input.endDate ? new Date(input.endDate) : undefined,
         machineId: input.machineId,
         factoryCode: input.factoryCode,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
       });
       
       // Generate suggestions based on patterns
@@ -328,12 +339,14 @@ export const spcAnalysisRouter = router({
       machineId: z.number().optional(),
       factoryCode: z.string().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const data = await db.getNGByWorkstation({
         startDate: input.startDate ? new Date(input.startDate) : undefined,
         endDate: input.endDate ? new Date(input.endDate) : undefined,
         machineId: input.machineId,
         factoryCode: input.factoryCode,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
       });
       
       // Calculate totals and percentages
@@ -354,12 +367,14 @@ export const spcAnalysisRouter = router({
       factoryCode: z.string().optional(),
       limit: z.number().default(20),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const data = await db.getNGByWorkstation({
         startDate: input.startDate ? new Date(input.startDate) : undefined,
         endDate: input.endDate ? new Date(input.endDate) : undefined,
         machineId: input.machineId,
         factoryCode: input.factoryCode,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
       });
       
       // Sort by NG count descending and limit
@@ -407,7 +422,7 @@ export const spcAnalysisRouter = router({
       uslOverride: z.number().nullable().optional(),
       lslOverride: z.number().nullable().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { values: rawValues, pointDef } = await db.getFullAnalysisData({
         measurementPointDefId: input.measurementPointDefId,
         startDate: input.startDate ? new Date(input.startDate) : undefined,
@@ -433,6 +448,8 @@ export const spcAnalysisRouter = router({
         machineId: input.machineId,
         productModelId: input.productModelId,
         limit: 10,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
       });
       const paretoTotal = paretoRaw.reduce((s, it) => s + it.ngCount, 0);
       let paretoCum = 0;
@@ -568,7 +585,7 @@ export const spcAnalysisRouter = router({
       chartType: z.enum(['xbar_r', 'xbar_s', 'individual_mr']).default('xbar_r'),
       enabledRules: z.array(z.number().min(1).max(8)).default([1, 2, 3, 4, 5, 6, 7, 8]),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { values: rawValues } = await db.getFullAnalysisData({
         measurementPointDefId: input.measurementPointDefId,
         startDate: input.startDate ? new Date(input.startDate) : undefined,
@@ -645,13 +662,15 @@ export const spcAnalysisRouter = router({
       factoryCode: z.string().optional(),
       limit: z.number().default(20),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const data = await db.getNGByMeasurementPointForWorkstation({
         workstationId: input.workstationId,
         startDate: input.startDate ? new Date(input.startDate) : undefined,
         endDate: input.endDate ? new Date(input.endDate) : undefined,
         machineId: input.machineId,
         factoryCode: input.factoryCode,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
       });
       
       return data.slice(0, input.limit).map(item => ({

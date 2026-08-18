@@ -33,6 +33,12 @@ const h = vi.hoisted(() => ({
 vi.mock("../db", () => ({
   getScheduledReports: vi.fn(async () => []),
   getScheduledReportById: vi.fn(async () => h.reportRow),
+  // ★ 2026-08-17 (nhóm A) — nhánh NG_VISUAL nay phân giải PHẠM VI từ `createdBy` trước khi đọc
+  // dữ liệu, nên lượt chạy cần một người tạo lịch có thật. Vai `admin` được chọn có chủ đích:
+  // `getUserAssignmentCodes` đoản mạch ngay ở vai này nên lưới KHÔNG chạm CSDL, và nội dung
+  // báo cáo giữ nguyên phạm vi TOÀN CỤC — tức file này vẫn đo đúng thứ nó vốn đo (đường giao
+  // hàng), không vô tình biến thành một lưới phân quyền thứ hai.
+  getUserById: vi.fn(async () => ({ id: 7, username: "sched-owner", role: "admin", isActive: true })),
   updateScheduledReport: h.updateMock,
   createScheduledReportLog: h.logMock,
   getSmtpConfig: vi.fn(async () => ({

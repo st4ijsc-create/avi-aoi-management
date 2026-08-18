@@ -1,5 +1,7 @@
 import { getDb } from "./connection";
-import { eq, and, or, desc, gte, lte, sql, isNotNull, like } from "drizzle-orm";
+import { eq, and, or, desc, gte, lte, sql, isNotNull, like, inArray, type SQL } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { idsTrongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 import {
   mqttClients,
   type InsertMqttClient,
@@ -16,6 +18,30 @@ import {
 } from "../../drizzle/schema";
 
 
+/**
+ * ★★★ 2026-08-18 (trả nợ nhóm A) — **CỔNG PHẠM VI CHO HỌ BẢNG MQTT.**
+ *
+ * Ba bảng (`mqtt_clients`, `mqtt_message_logs`, `mqtt_error_summary`) KHÔNG có cột tenant nào;
+ * đường duy nhất ra được nhà máy là `stationId`. Nên phạm vi được chiếu xuống đúng cột ấy.
+ *
+ * ⚠⚠ **HÀNG MỒ CÔI (`stationId` NULL) BỊ LOẠI — có chủ ý, và nó có hệ quả nhìn thấy được.**
+ * `NULL IN (…)` cho `NULL`, mà `NULL` không phải `TRUE`, nên một thiết bị MQTT **chưa được gán
+ * trạm** (đúng hình dạng của mọi hàng `approvalStatus = 'PENDING'`) sẽ KHÔNG hiện với người bị
+ * thu hẹp. Đó là fail-closed đúng hướng: một thiết bị chưa gán chưa thuộc nhà máy nào, nên không
+ * ai được quyền suy ra nó thuộc về mình. Cửa DUYỆT (`mqttClient.approve`) là `adminProcedure`,
+ * và admin có `factoryIds === null` ⇒ họ vẫn thấy đủ. Không có chức năng nào chết vì luật này.
+ *
+ * `null` = vai toàn quyền / lối đi không mang danh tính ⇒ trả `undefined` = KHÔNG thêm mệnh đề.
+ */
+async function congTramMqtt(
+  col: AnyPgColumn,
+  scope?: PhamViNguoiXem,
+): Promise<SQL | undefined> {
+  const ids = await idsTrongPhamVi("station", scope);
+  if (ids === null) return undefined;
+  return inArray(col, ids.length > 0 ? ids : [-1]);
+}
+
 // ============= MQTT Client Functions =============
 
 export async function getMqttClients(filters?: {
@@ -23,11 +49,13 @@ export async function getMqttClients(filters?: {
   connectionStatus?: 'ONLINE' | 'OFFLINE' | 'DISCONNECTED';
   stationId?: number;
   mappingType?: 'AUTO' | 'MANUAL';
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
   const conditions = [eq(mqttClients.isActive, true)];
+  const cong = await congTramMqtt(mqttClients.stationId, scope);
+  if (cong) conditions.push(cong);
   
   if (filters?.approvalStatus) {
     conditions.push(eq(mqttClients.approvalStatus, filters.approvalStatus));
@@ -48,13 +76,17 @@ export async function getMqttClients(filters?: {
     .orderBy(desc(mqttClients.createdAt));
 }
 
-export async function getMqttClientById(id: number) {
+export async function getMqttClientById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   
+  const conditions = [eq(mqttClients.id, id)];
+  // ⚠ `id` đến từ `input`. Ngoài phạm vi ⇒ `null` (như không tồn tại), không phải một lỗi riêng.
+  const cong = await congTramMqtt(mqttClients.stationId, scope);
+  if (cong) conditions.push(cong);
   const results = await db.select()
     .from(mqttClients)
-    .where(eq(mqttClients.id, id))
+    .where(and(...conditions))
     .limit(1);
   
   return results[0] || null;
@@ -163,11 +195,13 @@ export async function getMqttErrorSummaries(filters?: {
   startDate?: Date;
   endDate?: Date;
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
-  const conditions = [];
+  const conditions: SQL[] = [];
+  const cong = await congTramMqtt(mqttErrorSummary.stationId, scope);
+  if (cong) conditions.push(cong);
   
   if (filters?.stationId) {
     conditions.push(eq(mqttErrorSummary.stationId, filters.stationId));
@@ -194,11 +228,13 @@ export async function getMqttMessageLogs(filters?: {
   stationId?: number;
   messageType?: 'NG_ALERT' | 'DAILY_SUMMARY' | 'WEEKLY_SUMMARY' | 'CUSTOM';
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
-  const conditions = [];
+  const conditions: SQL[] = [];
+  const cong = await congTramMqtt(mqttMessageLogs.stationId, scope);
+  if (cong) conditions.push(cong);
   
   if (filters?.clientId) {
     conditions.push(eq(mqttMessageLogs.targetClientId, filters.clientId));
@@ -220,12 +256,15 @@ export async function getMqttMessageLogs(filters?: {
 
 // ============ MQTT DASHBOARD STATISTICS ============
 
-export async function getMqttDashboardStats() {
+export async function getMqttDashboardStats(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   
+  const congClient = await congTramMqtt(mqttClients.stationId, scope);
+  const congLog = await congTramMqtt(mqttMessageLogs.stationId, scope);
   // Get client counts by status (only active clients)
-  const clients = await db.select().from(mqttClients).where(eq(mqttClients.isActive, true));
+  const clients = await db.select().from(mqttClients)
+    .where(and(eq(mqttClients.isActive, true), ...(congClient ? [congClient] : [])));
   
   const totalClients = clients.length;
   const onlineClients = clients.filter(c => c.connectionStatus === 'ONLINE').length;
@@ -239,7 +278,7 @@ export async function getMqttDashboardStats() {
   
   const messages = await db.select()
     .from(mqttMessageLogs)
-    .where(gte(mqttMessageLogs.createdAt, today));
+    .where(and(gte(mqttMessageLogs.createdAt, today), ...(congLog ? [congLog] : [])));
   
   const totalMessages = messages.length;
   const deliveredMessages = messages.filter(m => m.deliveryStatus === 'DELIVERED').length;
@@ -274,9 +313,10 @@ export async function getMqttDashboardStats() {
   };
 }
 
-export async function getMqttMessageTrend(days: number = 7) {
+export async function getMqttMessageTrend(days: number = 7, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const cong = await congTramMqtt(mqttMessageLogs.stationId, scope);
   
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
@@ -284,7 +324,7 @@ export async function getMqttMessageTrend(days: number = 7) {
   
   const messages = await db.select()
     .from(mqttMessageLogs)
-    .where(gte(mqttMessageLogs.createdAt, startDate))
+    .where(and(gte(mqttMessageLogs.createdAt, startDate), ...(cong ? [cong] : [])))
     .orderBy(mqttMessageLogs.createdAt);
   
   // Group by date
@@ -310,9 +350,10 @@ export async function getMqttMessageTrend(days: number = 7) {
   return Object.values(trend);
 }
 
-export async function getRecentMqttMessages(limit: number = 20) {
+export async function getRecentMqttMessages(limit: number = 20, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const cong = await congTramMqtt(mqttMessageLogs.stationId, scope);
   
   return db.select({
     id: mqttMessageLogs.id,
@@ -325,6 +366,7 @@ export async function getRecentMqttMessages(limit: number = 20) {
     inspectionId: mqttMessageLogs.inspectionId,
   })
     .from(mqttMessageLogs)
+    .where(cong)
     .orderBy(desc(mqttMessageLogs.createdAt))
     .limit(limit);
 }
@@ -375,16 +417,17 @@ export async function getOfflineMqttClientsWithFcmToken(stationId?: number) {
 
 // ============ MQTT REALTIME STATS FUNCTIONS ============
 
-export async function getMqttMessageCountSince(since: Date) {
+export async function getMqttMessageCountSince(since: Date, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return { total: 0, delivered: 0, failed: 0, ngAlerts: 0 };
+  const cong = await congTramMqtt(mqttMessageLogs.stationId, scope);
   
   const messages = await db.select({
     deliveryStatus: mqttMessageLogs.deliveryStatus,
     messageType: mqttMessageLogs.messageType,
   })
     .from(mqttMessageLogs)
-    .where(gte(mqttMessageLogs.createdAt, since));
+    .where(and(gte(mqttMessageLogs.createdAt, since), ...(cong ? [cong] : [])));
   
   return {
     total: messages.length,
@@ -437,9 +480,10 @@ export async function getMqttLatencyStats() {
 }
 
 
-export async function getMqttThroughputHistory(minutes: number = 60) {
+export async function getMqttThroughputHistory(minutes: number = 60, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const cong = await congTramMqtt(mqttMessageLogs.stationId, scope);
   
   const since = new Date(Date.now() - minutes * 60 * 1000);
   
@@ -449,7 +493,7 @@ export async function getMqttThroughputHistory(minutes: number = 60) {
     messageType: mqttMessageLogs.messageType,
   })
     .from(mqttMessageLogs)
-    .where(gte(mqttMessageLogs.createdAt, since))
+    .where(and(gte(mqttMessageLogs.createdAt, since), ...(cong ? [cong] : [])))
     .orderBy(mqttMessageLogs.createdAt);
   
   // Group by minute
@@ -705,12 +749,15 @@ export async function createMqttClient(data: {
 }
 
 // ============ MQTT CLIENT CONNECTION HISTORY ============
-export async function getMqttClientConnectionHistory(clientId: number, limit: number = 50) {
+export async function getMqttClientConnectionHistory(clientId: number, limit: number = 50, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
-  // Look up client's deviceId and clientId for topic-based matching
-  const client = await getMqttClientById(clientId);
+  // ⚠ Cổng đặt ở lượt tra CLIENT: ngoài phạm vi ⇒ `client` là `null` ⇒ nhánh dưới rơi về
+  // `targetClientId = clientId`, mà một client ngoài phạm vi thì không có bản ghi nào của người
+  // xem — nên phải chặn TƯỜNG MINH ở đây, đừng dựa vào phép lọc gián tiếp.
+  const client = await getMqttClientById(clientId, scope);
+  if (!client && (await idsTrongPhamVi("station", scope)) !== null) return [];
   const deviceIdPattern = client ? `%/${client.deviceId}/%` : null;
   const clientIdPattern = client?.clientId ? `%/${client.clientId}/%` : null;
   
@@ -739,11 +786,11 @@ export async function getMqttClientConnectionHistory(clientId: number, limit: nu
 }
 
 // ============ MQTT CLIENT HEALTH ============
-export async function getMqttClientHealth(clientId: number) {
+export async function getMqttClientHealth(clientId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   
-  const client = await getMqttClientById(clientId);
+  const client = await getMqttClientById(clientId, scope);
   if (!client) return null;
   
   // Get message stats for last 24 hours
@@ -823,13 +870,13 @@ function calculateClientHealthScore(client: any, stats: any): number {
   return Math.max(0, Math.round(score));
 }
 
-export async function getAllMqttClientsHealth() {
+export async function getAllMqttClientsHealth(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
-  const clients = await getMqttClients();
+  const clients = await getMqttClients(undefined, scope);
   const healthData = await Promise.all(
-    clients.map(client => getMqttClientHealth(client.id))
+    clients.map(client => getMqttClientHealth(client.id, scope))
   );
   
   return healthData.filter(h => h !== null);

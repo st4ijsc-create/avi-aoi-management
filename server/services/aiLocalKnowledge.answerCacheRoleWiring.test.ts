@@ -69,8 +69,12 @@ vi.mock("node:fs", () => ({
   readFileSync: (p: string) => (String(p).includes("chunks") ? chunksJsonl : embeddingsJsonl),
 }));
 
+// ⚠ G2-C — `tryExecuteToolLoop` PHẢI có mặt ở đây. Factory liệt kê tay làm MỌI symbol không được
+// nêu biến mất (đúng lớp lỗi đã ghi ở `ai/thinkingStrip.ts` §1 và `aiLlamaServerClient.ts`): thiếu dòng
+// này thì service gọi `undefined(...)` và toàn bộ file này đỏ — đã xảy ra thật khi thêm vòng lặp.
 vi.mock("./aiLocalTools", () => ({
   tryExecuteTool: vi.fn(async () => ({ result: null, decision: { tool: null, args: {}, reason: "EMPTY" } })),
+  tryExecuteToolLoop: vi.fn(async () => ({ result: null, decision: { tool: null, args: {}, reason: "EMPTY" }, loop: null })),
 }));
 
 const generateEmbedding = vi.fn();

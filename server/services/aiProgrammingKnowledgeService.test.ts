@@ -36,12 +36,17 @@ vi.mock("./aiGgufEngine", () => ({
 }));
 
 // Reranker → identity passthrough (keeps cosine order deterministic; no model).
+// G0 phần C — `RERANK_DELAY_MS` cho phép ca đo thời gian ép backend "tốn" một
+// khoảng THẬT, để chứng minh `rerankMs` là phép ĐO chứ không phải hằng số 0.
+let RERANK_DELAY_MS = 0;
 vi.mock("./aiReranker", () => ({
-  rerank: async (_q: string, candidates: Array<{ id: string }>, topN = 5) =>
-    candidates.slice(0, Math.max(1, topN)).map((candidate, i) => ({
+  rerank: async (_q: string, candidates: Array<{ id: string }>, topN = 5) => {
+    if (RERANK_DELAY_MS > 0) await new Promise((r) => setTimeout(r, RERANK_DELAY_MS));
+    return candidates.slice(0, Math.max(1, topN)).map((candidate, i) => ({
       candidate,
       rerankScore: candidates.length > 0 ? 1 - i / candidates.length : 0,
-    })),
+    }));
+  },
 }));
 
 // ─── Fixture corpus ───────────────────────────────────────────────────────────
@@ -183,6 +188,36 @@ describe("aiProgrammingKnowledgeService", () => {
     expect(res.chunks).toEqual([]);
     expect(res.answerContext).toBe("");
     expect(res.semanticUsed).toBe(false);
+  });
+
+  // ─── G0 phần C — chi phí rerank phải ĐO ĐƯỢC từ tầng trên ──────────────────
+
+  it("rerankMs mang số ĐO THẬT (backend chậm 40 ms ⇒ ≥ 35 ms), không phải hằng số", async () => {
+    RERANK_DELAY_MS = 40;
+    try {
+      const res = await searchProgrammingKb({ query: "MOV instruction" });
+      expect(typeof res.rerankMs).toBe("number");
+      expect(res.rerankMs!).toBeGreaterThanOrEqual(35);
+    } finally {
+      RERANK_DELAY_MS = 0;
+    }
+  });
+
+  it("PROG_KB_RERANKER_ENABLED=false ⇒ rerankMs = null (CHƯA CHẠY), KHÔNG phải 0", async () => {
+    process.env.PROG_KB_RERANKER_ENABLED = "false";
+    try {
+      const res = await searchProgrammingKb({ query: "MOV instruction" });
+      expect(res.citations.length).toBeGreaterThan(0); // vẫn trả kết quả cosine
+      expect(res.rerankMs).toBeNull();
+    } finally {
+      delete process.env.PROG_KB_RERANKER_ENABLED;
+    }
+  });
+
+  it("kết quả rỗng (cờ tắt) cũng khai rerankMs = null, không bỏ trống trường", async () => {
+    process.env.PROG_KB_ENABLED = "false";
+    const res = await searchProgrammingKb({ query: "MOV instruction" });
+    expect(res.rerankMs).toBeNull();
   });
 
   it("degrades to an empty result when the corpus dir is absent (never throws)", async () => {

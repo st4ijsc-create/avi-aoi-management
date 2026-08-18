@@ -33,6 +33,12 @@ const llamaServerHealthyMock = vi.fn<(...a: any[]) => Promise<boolean>>(async ()
 
 vi.mock("./aiLlamaServerClient", () => ({
   shouldUseServerForText: (...a: any[]) => shouldUseServerForTextMock(...a),
+  // G1-D — vị từ điểm nghẽn `loadGgufModel`. FIM dùng model CODER (Qwen2.5-Coder-1.5B), không
+  // bao giờ trùng model llama-server text đang giữ ⇒ `false` là câu trả lời ĐÚNG ở đây.
+  laModelServerDangGiu: () => false,
+  kiemNganSachNguCanh: () => ({ vua: true, tokenVao: 1, tokenDanhChoTraLoi: 1024, tranMoiSlot: 32768 }),
+  serverSlotContextTokens: () => 32768,
+  laLoiTranNguCanh: () => false,
   preflightHealthy: (...a: any[]) => preflightHealthyMock(...a),
   serverGenerateText: (...a: any[]) => serverGenerateTextMock(...a),
   serverGenerateJSON: (...a: any[]) => serverGenerateJSONMock(...a),

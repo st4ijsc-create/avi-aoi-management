@@ -24,6 +24,26 @@ import {
   countTokens,
 } from "../services/aiGgufEngine";
 import { getAIProviderStatus } from "../services/aiProviderManager";
+// ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) ⇒ import TĨNH, hàng rào vô điều kiện.
+import { stripThinking } from "../services/ai/thinkingStrip";
+
+/**
+ * ★ G5-E — `generate`/`chat` trả NGUYÊN VẸN đối tượng của engine cho playground/Vision-Lab: ô
+ * `text` đi thẳng vào mắt kỹ sư, không qua một bộ lọc nào. Cả hai đều cho phép `modelId` RỖNG ⇒
+ * dùng model MẶC ĐỊNH ⇒ đổi roster sang một model họ Qwen3.x là chỗ này phát `<think>`.
+ *
+ * `stripThinking().answer` đã `.trim()`. Playground là nơi soi đầu ra THÔ, nên khi không có gì bị
+ * cắt ta trả lại nguyên văn: bản vá là **no-op từng ký tự** với roster hiện tại
+ * (Qwen3-30B-A3B-Instruct không phát `<think>`). `answer === raw.trim()` xảy ra khi và chỉ khi
+ * phép quét không xoá ký tự phi-khoảng-trắng nào — mọi lượt cắt thật đều xoá ít nhất một cặp thẻ.
+ *
+ * Các ô đo lường (`tokensPrompt`/`tokensGenerated`/`modelId`) giữ nguyên: chúng nói về LƯỢT SINH,
+ * không phải về chữ hiển thị — nắn chúng theo phép cắt là làm sai số liệu.
+ */
+function catSuyLuanGiuBien<T extends { text: string }>(ket: T): T {
+  const cut = stripThinking(ket.text);
+  return { ...ket, text: cut.answer === ket.text.trim() ? ket.text : cut.answer };
+}
 
 export const aiGgufRouter = router({
   // ─── Status ──────────────────────────────────────────
@@ -95,7 +115,7 @@ export const aiGgufRouter = router({
     .mutation(async ({ input }) => {
       try {
         const { modelId, ...options } = input;
-        return await generateText(options, modelId);
+        return catSuyLuanGiuBien(await generateText(options, modelId));
       } catch (err: any) {
         throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "generateText" }, `Generation failed: ${err.message}`);
       }
@@ -119,7 +139,7 @@ export const aiGgufRouter = router({
     .mutation(async ({ input }) => {
       try {
         const { modelId, ...options } = input;
-        return await chatCompletion(options, modelId);
+        return catSuyLuanGiuBien(await chatCompletion(options, modelId));
       } catch (err: any) {
         throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "chatCompletion" }, `Chat completion failed: ${err.message}`);
       }

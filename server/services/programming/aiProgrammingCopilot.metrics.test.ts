@@ -57,6 +57,15 @@ vi.mock("../aiProgrammingKnowledgeService", () => ({
     chunks: [],
   })),
 }));
+// G2-A — `generateProgram` nay còn đi qua CHỈ MỤC REPO (gatherRepoIndexContext →
+// gatherRepoContext → retrieveKnowledge). File này đếm SỐ DÒNG METRIC, nên tầng đó phải là kho
+// RỖNG (không thêm lượt gọi engine nào) và tuyệt đối không được nạp 162 MB embeddings thật.
+vi.mock("../aiLocalKnowledgeService", () => ({
+  retrieveKnowledge: vi.fn(async () => ({
+    question: "", intent: "howto", language: "vi", entities: [], confidence: 0,
+    citations: [], contexts: [],
+  })),
+}));
 
 // ── aiGateway — CHỈ mock những gì aiProgrammingCopilot.ts thật sự dùng: `planInference`.
 // aiGateway KHÔNG xuất `enqueue` (đó là hàm nội bộ, không export) — mock nó là vô nghĩa; brief

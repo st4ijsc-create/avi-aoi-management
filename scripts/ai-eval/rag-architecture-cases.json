@@ -1,0 +1,140 @@
+{
+  "_doc": [
+    "════════════════════════════════════════════════════════════════════════════════════════════",
+    "G4-B — BỘ CA ĐỐI TRỌNG: ĐỊNH GIÁ CÁI MẤT KHI HẠ TRỌNG SỐ TÀI LIỆU NỘI BỘ.",
+    "════════════════════════════════════════════════════════════════════════════════════════════",
+    "",
+    "VÌ SAO PHẢI CÓ FILE NÀY — đây là một CẦU CHÌ CHỐNG LƯỢNG TỪ TỰ THOẢ, không phải thêm ca cho vui.",
+    "",
+    "Bộ 54 ca `rag-operational-cases.json` có ĐÚNG 0 ca mong đợi một đường dẫn `docs/**`: mọi",
+    "expectPaths của nó đều trỏ vào knowledge/{domain,operational,features}. Hệ quả về cấu tạo: hạ",
+    "trọng số `docs/superpowers` + `docs/ECOSYSTEM` xuống bao nhiêu cũng CHỈ CÓ THỂ làm bộ ấy đẹp",
+    "lên — tối ưu của nó là hạ về 0, tức XOÁ tài liệu kiến trúc khỏi kho. Chọn mức hạ chỉ bằng bộ",
+    "vận hành là đo bằng một cái thước không bao giờ đỏ được về phía mình đang đi.",
+    "",
+    "Bộ này đo phía CÒN LẠI: những câu mà câu trả lời đúng NẰM TRONG tài liệu thiết kế/audit nội bộ",
+    "và KHÔNG có ở đâu khác trong kho. Hạ quá tay ⇒ bộ này tụt. Mức trọng số được chọn phải đứng",
+    "được ở CẢ HAI bảng.",
+    "",
+    "⚠ distractor ở đây cố ý lấy từ knowledge/** — chính là những nguồn được NÂNG trọng số. Nếu việc",
+    "nâng nội dung vận hành đẩy nhầm thẻ vận hành lên trên câu hỏi kiến trúc, `distractorAboveRate`",
+    "của bộ này sẽ bắt được.",
+    "",
+    "CHẠY:  node scripts/ai-eval/eval-rag-operational.mjs --parity --cases scripts/ai-eval/rag-architecture-cases.json --label kien-truc",
+    "",
+    "⚠ Bộ này CỐ Ý NHỎ (10 ca). Nó là cầu chì, không phải bộ đo chính — đừng đọc con số tuyệt đối",
+    "của nó như chất lượng kho; chỉ đọc nó theo hướng 'có tụt khi hạ trọng số không'."
+  ],
+  "cases": [
+    {
+      "id": "AR01",
+      "domain": "kien-truc",
+      "question": "Tài liệu baseline audit toàn hệ thống mô tả hiện trạng 3 tầng Frontend Backend Database nằm ở đâu?",
+      "expectPaths": ["docs/ECOSYSTEM/01_SYSTEM_BASELINE_AUDIT_2026-06.md"],
+      "distractors": [
+        "knowledge/operational/about-system.md",
+        "knowledge/operational/admin-home.md",
+        "knowledge/features/admin/user-guide.md"
+      ]
+    },
+    {
+      "id": "AR02",
+      "domain": "kien-truc",
+      "question": "Design system nền tảng của frontend được thiết kế thế nào, biến CSS và component shadcn có bị đổi không?",
+      "expectPaths": ["docs/ECOSYSTEM/17_FRONTEND_DESIGN_SYSTEM_2026-06.md"],
+      "distractors": [
+        "knowledge/operational/admin-setting.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/operational/about-system.md"
+      ]
+    },
+    {
+      "id": "AR03",
+      "domain": "kien-truc",
+      "question": "Thiết kế hợp nhất hệ sinh thái điều phối robot và tự động hoá gồm những khối nào?",
+      "expectPaths": ["docs/ECOSYSTEM/16_AUTOMATION_ORCHESTRATION_ECOSYSTEM_UNIFIED_DESIGN_2026-06.md"],
+      "distractors": [
+        "knowledge/operational/robot-control.md",
+        "knowledge/operational/control-plane.md",
+        "knowledge/features/monitoring/machine-sync.md"
+      ]
+    },
+    {
+      "id": "AR04",
+      "domain": "kien-truc",
+      "question": "Chiến lược control plane nhà máy: nên tích hợp vào hệ hiện tại hay xây phần mềm riêng rồi upload?",
+      "expectPaths": ["docs/ECOSYSTEM/08_FACTORY_CONTROL_PLANE_STRATEGY_2026-06.md"],
+      "distractors": [
+        "knowledge/operational/control-plane.md",
+        "knowledge/operational/command-center.md",
+        "knowledge/features/monitoring/machine-registration.md"
+      ]
+    },
+    {
+      "id": "AR05",
+      "domain": "kien-truc",
+      "question": "Bản đối chiếu SYNAPSE với codebase AVI AOI đưa ra kế hoạch nâng cấp hệ sinh thái ra sao?",
+      "expectPaths": ["docs/ECOSYSTEM/33_SYNAPSE_ALIGNMENT_AUDIT_UNIFIED_DESIGN_AND_UPGRADE_PLAN_2026-07.md"],
+      "distractors": [
+        "knowledge/operational/about-system.md",
+        "knowledge/operational/command-console.md",
+        "knowledge/domain/aoi-workflow.md"
+      ]
+    },
+    {
+      "id": "AR06",
+      "domain": "kien-truc",
+      "question": "Blueprint chuẩn hoá kết nối thiết bị cho máy AVI AOI, máy tự động hoá nội bộ và thiết bị IoT tự phát triển?",
+      "expectPaths": ["docs/ECOSYSTEM/56_DEVICE_CONNECTIVITY_STANDARDIZATION_AUDIT_BLUEPRINT_AND_PLAN_2026-07-17.md"],
+      "distractors": [
+        "knowledge/operational/machine-registration.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/features/monitoring/machine-sync.md"
+      ]
+    },
+    {
+      "id": "AR07",
+      "domain": "kien-truc",
+      "question": "Kế hoạch audit và nâng cấp end to end luồng AOI AVI gồm những đợt nào?",
+      "expectPaths": ["docs/ECOSYSTEM/27_AOI_AVI_END_TO_END_AUDIT_UPGRADE_PLAN_2026-07.md"],
+      "distractors": [
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/operational/history.md"
+      ]
+    },
+    {
+      "id": "AR08",
+      "domain": "kien-truc",
+      "question": "Audit sâu module AI và kế hoạch vá khoảng trống được ghi ở tài liệu nào?",
+      "expectPaths": ["docs/ECOSYSTEM/69_AI_MODULE_DEEP_AUDIT_GAP_AND_UPGRADE_PLAN_2026-07-25.md"],
+      "distractors": [
+        "knowledge/operational/ai-brain.md",
+        "knowledge/operational/ai-home.md",
+        "knowledge/operational/ai-settings.md"
+      ]
+    },
+    {
+      "id": "AR09",
+      "domain": "kien-truc",
+      "question": "Kế hoạch audit và nâng cấp API máy AVI AOI mô tả những lỗ hổng P0 nào?",
+      "expectPaths": ["docs/ECOSYSTEM/51_AVI_AOI_MACHINE_API_AUDIT_AND_UPGRADE_PLAN_2026-07-13.md"],
+      "distractors": [
+        "knowledge/operational/api-keys.md",
+        "knowledge/operational/machine-registration.md",
+        "knowledge/features/monitoring/machine-sync.md"
+      ]
+    },
+    {
+      "id": "AR10",
+      "domain": "kien-truc",
+      "question": "Audit các tầng kết nối quản lý và xử lý của máy cùng kế hoạch hoàn thiện nằm ở đâu?",
+      "expectPaths": ["docs/ECOSYSTEM/37_MACHINE_CONNECT_MANAGE_PROCESS_LAYERS_AUDIT_AND_COMPLETION_PLAN_2026-07.md"],
+      "distractors": [
+        "knowledge/operational/machine-registration.md",
+        "knowledge/operational/control-plane.md",
+        "knowledge/domain/aoi-workflow.md"
+      ]
+    }
+  ]
+}

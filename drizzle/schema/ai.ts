@@ -345,6 +345,18 @@ export const defectHeatmapData = pgTable("defect_heatmap_data", {
   stationId: integer("stationId"),
   machineId: integer("machineId"),
   productModelId: integer("productModelId"),
+  // ── PHẠM VI NHÀ MÁY (mig 0324, 2026-08-17) ────────────────────────────────
+  // Cùng KHÔNG GIAN MÃ với `product_inspections.corporateCode/factoryCode` và
+  // `user_factory_assignments.factoryCode` (= `factories.code`) — đó là thứ quyền
+  // của người dùng so sánh, khác hẳn `factoryId` (khoá số, chưa từng được ghi).
+  //
+  // NULL = "KHÔNG RÕ NGUỒN GỐC", KHÔNG phải "toàn cục được phép xem". Một heatmap
+  // là con số GỘP; khi tập hàng đóng góp trải trên ≥2 nhà máy (hoặc trên 0 hàng)
+  // thì KHÔNG tồn tại một mã đúng để ghi, và điền bừa một mã mặc định sẽ biến
+  // "không biết" thành lời khai sai. Luật đọc vì thế FAIL-CLOSED: hàng NULL chỉ
+  // admin thấy (xem `resolveSavedHeatmapScope` trong services/defectSpatialHeatmap.ts).
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryCode: varchar("factoryCode", { length: 50 }),
   // Time period
   periodType: periodTypeEnum_1("periodType").notNull(),
   periodStart: timestamp("periodStart").notNull(),
@@ -379,6 +391,8 @@ export const defectHeatmapData = pgTable("defect_heatmap_data", {
   processingTimeMs: integer("processingTimeMs"),
 }, (table) => [
   index("idx_heatmap_factory").on(table.factoryId),
+  index("idx_heatmap_factory_code").on(table.factoryCode),
+  index("idx_heatmap_corporate_code").on(table.corporateCode),
   index("idx_heatmap_machine").on(table.machineId),
   index("idx_heatmap_product").on(table.productModelId),
   index("idx_heatmap_period").on(table.periodType),

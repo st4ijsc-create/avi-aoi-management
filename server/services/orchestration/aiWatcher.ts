@@ -14,6 +14,9 @@
  * inference slot. Flag-gated AI_ORCHESTRATION_ENABLED (default off → no cost).
  */
 import { eventBus, type DomainEvent } from "../../_core/eventBus";
+// ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) nên import TĨNH được ở đây dù engine
+// vẫn nạp động trong `try` — hàng rào không treo vào một `await import()` có thể hỏng.
+import { stripThinking } from "../ai/thinkingStrip";
 
 let enabled = false;
 const unsubscribers: Array<() => void> = [];
@@ -65,7 +68,12 @@ async function generateAdvisory(rule: string, machine: string, ctx: Record<strin
           },
           advRoute.modelId,
         );
-        return { result: res.text, tokensIn: res.tokensPrompt, tokensOut: res.tokensGenerated };
+        // ★ G5-E — lời khuyên này được LƯU VĨNH VIỄN vào `ai_insights.body` rồi hiện trong luồng
+        // điều phối. Nội tâm model không được nằm trong bản ghi vĩnh viễn: xoá sau khi đã lưu là
+        // việc không ai làm, và mỗi bản sao (báo cáo, xuất tệp) sẽ mang nó đi tiếp. Cắt TẠI ĐÂY,
+        // trước khi chữ rời hàm. Các ô đo lường (tokensIn/tokensOut) giữ nguyên — chúng nói về
+        // LƯỢT SINH chứ không về chữ hiển thị.
+        return { result: stripThinking(res.text).answer, tokensIn: res.tokensPrompt, tokensOut: res.tokensGenerated };
       },
     );
     return result.trim() || null;

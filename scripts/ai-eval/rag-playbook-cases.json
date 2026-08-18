@@ -1,0 +1,116 @@
+{
+  "_doc": [
+    "════════════════════════════════════════════════════════════════════════════════════════════",
+    "G4-B — BỘ CA PLAYBOOK: ĐỊNH GIÁ CÁI ĐƯỢC KHI NÂNG QUY TRÌNH ỨNG CỨU.",
+    "════════════════════════════════════════════════════════════════════════════════════════════",
+    "",
+    "VÌ SAO PHẢI CÓ FILE NÀY — cùng một lớp bẫy với `rag-architecture-cases.json`, lần này ở phía",
+    "ngược lại.",
+    "",
+    "Bộ 54 ca `rag-operational-cases.json` được viết KHI playbook còn 0 chunk, nên nó có ĐÚNG 0 ca",
+    "mong đợi một đường dẫn `knowledge/workflows/**`. Hệ quả về cấu tạo: nâng trọng số `playbook`",
+    "trên bộ ấy CHỈ CÓ THỂ làm số xấu đi — playbook đẩy lên là đẩy các đáp án được-tính-đúng xuống,",
+    "không bao giờ ghi được điểm. Đo trọng số playbook bằng bộ 54 ca là đo một CHI PHÍ không có",
+    "phần LỢI đi kèm, và kết luận rút ra sẽ luôn là 'đừng nâng' — bất kể sự thật.",
+    "",
+    "Bộ này đo phía còn lại: những câu ứng cứu sự cố mà câu trả lời ĐÚNG là một quy trình playbook",
+    "(có bước, có nhánh chẩn đoán, có bước xác nhận) chứ không phải một thẻ mô tả màn hình.",
+    "",
+    "⚠ distractor cố ý lấy từ chính những nguồn cạnh tranh (thẻ vận hành, tài liệu domain, tài liệu",
+    "dev) để bắt được trường hợp playbook đúng bị chúng chen lên trên.",
+    "",
+    "CHẠY:  node scripts/ai-eval/eval-rag-operational.mjs --parity --sweep --cases scripts/ai-eval/rag-playbook-cases.json --label playbook",
+    "",
+    "⚠ Bộ này CỐ Ý NHỎ (8 ca) — cầu chì, không phải bộ đo chính."
+  ],
+  "cases": [
+    {
+      "id": "PB01",
+      "domain": "ung-cuu",
+      "question": "Phát hiện chùm NG liên tiếp trên một máy AOI, quy trình điều tra và xử lý từng bước thế nào?",
+      "expectPaths": ["knowledge/workflows/ng-burst-response.playbook.yaml"],
+      "distractors": [
+        "knowledge/operational/api-keys.md",
+        "knowledge/operational/change-password.md",
+        "knowledge/operational/about-system.md"
+      ]
+    },
+    {
+      "id": "PB02",
+      "domain": "ung-cuu",
+      "question": "Sản phẩm bị máy chấm NG tại line AOI thì thao tác xử lý theo trình tự nào?",
+      "expectPaths": ["knowledge/workflows/ng-handling.playbook.yaml"],
+      "distractors": [
+        "knowledge/operational/api-keys.md",
+        "knowledge/operational/sessions.md",
+        "knowledge/operational/license.md"
+      ]
+    },
+    {
+      "id": "PB03",
+      "domain": "ung-cuu",
+      "question": "Có vi phạm SPC mức critical, các bước rà soát xu hướng và cân nhắc chỉnh ngưỡng là gì?",
+      "expectPaths": ["knowledge/workflows/spc-critical-review.playbook.yaml"],
+      "distractors": [
+        "knowledge/operational/change-password.md",
+        "knowledge/operational/backup-restore.md",
+        "knowledge/operational/audit-logs.md"
+      ]
+    },
+    {
+      "id": "PB04",
+      "domain": "lap-dat",
+      "question": "Trình tự lắp đặt và khai báo một máy mới vào hệ thống gồm những bước nào?",
+      "expectPaths": ["knowledge/workflows/install-new-machine.playbook.yaml"],
+      "distractors": [
+        "knowledge/operational/change-password.md",
+        "knowledge/operational/pdf-reports.md",
+        "knowledge/operational/audit-logs.md"
+      ]
+    },
+    {
+      "id": "PB05",
+      "domain": "san-xuat",
+      "question": "Đổi recipe khi bắt đầu chạy line thì làm theo các bước nào, cần quyền gì?",
+      "expectPaths": ["knowledge/workflows/change-recipe-line-start.playbook.yaml"],
+      "distractors": [
+        "knowledge/operational/api-keys.md",
+        "knowledge/operational/about-system.md",
+        "knowledge/operational/sessions.md"
+      ]
+    },
+    {
+      "id": "PB06",
+      "domain": "cai-dat",
+      "question": "Các bước tạo một điểm đo mới và đặt giới hạn spec cho nó?",
+      "expectPaths": ["knowledge/workflows/create-measurement-point.playbook.yaml"],
+      "distractors": [
+        "knowledge/operational/change-password.md",
+        "knowledge/operational/license.md",
+        "knowledge/operational/audit-logs.md"
+      ]
+    },
+    {
+      "id": "PB07",
+      "domain": "ung-cuu",
+      "question": "Cách phân biệt lỗi giả false call với lỗi thật lặp lại khi có cụm khuyết tật, và xử lý tiếp ra sao?",
+      "expectPaths": ["knowledge/workflows/ng-burst-response.playbook.yaml"],
+      "distractors": [
+        "knowledge/operational/api-keys.md",
+        "knowledge/operational/backup-restore.md",
+        "knowledge/operational/sessions.md"
+      ]
+    },
+    {
+      "id": "PB08",
+      "domain": "ung-cuu",
+      "question": "Quy trình cô lập hàng NG vào khay chờ phân loại rồi chuyển phân tích nguyên nhân gốc?",
+      "expectPaths": ["knowledge/workflows/ng-handling.playbook.yaml"],
+      "distractors": [
+        "knowledge/operational/license.md",
+        "knowledge/operational/about-system.md",
+        "knowledge/operational/change-password.md"
+      ]
+    }
+  ]
+}

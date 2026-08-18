@@ -27,11 +27,16 @@ export const warRoomRouter = router({
       date: z.string().datetime().optional(),
       shiftConfigId: z.number().int().positive().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return getWarRoomBriefing({
         factoryId: input?.factoryId,
         date: input?.date,
         shiftConfigId: input?.shiftConfigId,
+        // ★ NHÓM B #3 — danh tính lấy từ `ctx.user` (máy chủ tự xác thực). KHÔNG có ô nào trong
+        // `input` chạm tới được trục này: một `input.userId` là lời tự khai của người gọi và sẽ
+        // biến bộ lọc tenant thành ô chọn trên giao diện của kẻ tấn công.
+        userId: ctx.user?.id,
+        userRole: ctx.user?.role,
       });
     }),
 });

@@ -5,10 +5,15 @@
 
 import * as db from "../db";
 import { getDb } from "../db/connection";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
+// ★★★ 2026-08-17 — trục phạm vi cho BỐN truy vấn SQL THÔ dưới đây (xem docblock `applyScope`).
+import { resolveDataScope } from "../_core/accessControl";
+import { scopeLabelsOf, UNSCOPED_LABELS, type ScopeLabels } from "../_core/accessControlLabels";
 // doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the comparison narrative must PIN a text
 // model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
 import { resolveLogicalModel } from "./ai/modelResolver";
+// ★ G5-E — bộ cắt chuỗi suy luận (module LÁ, import TĨNH ⇒ hàng rào vô điều kiện theo cấu tạo).
+import { stripThinking } from "./ai/thinkingStrip";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -24,6 +29,25 @@ export interface ComparisonRequest {
   workshopId?: number;
   lineId?: number;
   machineId?: number;
+  /**
+   * ★★★ Danh tính NGƯỜI XEM — luôn từ `ctx.user`, **KHÔNG BAO GIỜ từ `input`**. Bỏ trống =
+   * không lọc (lối đi không mang danh tính). Đó cũng là hình dạng của LỖ đã đo: cả hai router
+   * `powerpoint.exportComparison` và `dataComparison.compare` là `protectedProcedure` mà bốn
+   * truy vấn dưới đây không có chỗ nào để nhận danh tính, nên mọi tài khoản đã đăng nhập —
+   * kể cả tài khoản 0 gán nhà máy — so sánh được số liệu TOÀN CỤC.
+   */
+  userId?: number;
+  userRole?: string;
+}
+
+/** Bộ lọc phân cấp + mệnh đề tenant đã phân giải. `scope` là SQL, **không đi ra ngoài**. */
+interface QueryFilters {
+  factoryId?: number;
+  workshopId?: number;
+  lineId?: number;
+  machineId?: number;
+  /** ⚠ Đối tượng SQL drizzle — CÓ THAM CHIẾU VÒNG. Chỉ dùng để ghép truy vấn. */
+  scope?: SQL;
 }
 
 export interface PeriodSummary {
@@ -35,7 +59,7 @@ export interface PeriodSummary {
   ngRate: number;
 }
 
-export interface ComparisonResult {
+export interface ComparisonResult extends ScopeLabels {
   currentPeriod: { start: string; end: string; summary: PeriodSummary };
   previousPeriod: { start: string; end: string; summary: PeriodSummary };
   changes: {
@@ -136,12 +160,44 @@ function computeRateChange(current: number, previous: number): { value: number; 
 }
 
 /**
+ * ★★★ 2026-08-17 — ÁP PHẠM VI VÀO **SQL THÔ**. Đọc trước khi sửa bất kỳ truy vấn nào dưới đây.
+ *
+ * `getAccessFilterConditions` (`_core/accessControl`) sinh mệnh đề bằng drizzle builder:
+ *
+ *     or(inArray(productInspections.corporateCode, […]), inArray(productInspections.factoryCode, […]))
+ *
+ * Đo bằng `PgDialect().sqlToQuery` (2026-08-17), nó kết xuất THÀNH:
+ *
+ *     ("product_inspections"."corporateCode" in ($1, $2) or "product_inspections"."factoryCode" in ($3))
+ *     params = ["C1","C2","F1"]
+ *
+ * ⇒ **Cột được đặt tên theo BẢNG, không theo bí danh.** Bốn truy vấn ở file này vốn viết
+ * `FROM product_inspections pi` — trong Postgres, một bí danh **CHE** tên bảng, nên nhúng mệnh
+ * đề trên vào sẽ vỡ ngay bằng `42P01 invalid reference to FROM-clause entry for table
+ * "product_inspections"`. Vì thế bản vá **BỎ BÍ DANH `pi`** (và đổi mọi `pi.` thành
+ * `product_inspections.`) thay vì tự dựng lại mệnh đề bằng tay.
+ *
+ * ⚠⚠ **KHÔNG nối chuỗi tay.** Cám dỗ ở đây là viết `AND "factoryCode" IN ('${codes.join("','")}')`.
+ * Đó là SQL injection qua đúng cái ô mà bản vá này sinh ra để bảo vệ, và nó còn tạo NGUỒN THỨ
+ * HAI của luật phân quyền — cái sẽ lệch khỏi `getAccessFilterConditions` ở lần sửa sau mà không
+ * lưới nào đỏ. Nhúng nguyên đối tượng `SQL` giữ tham số ở dạng **ràng buộc** ($1,$2,…) và giữ
+ * luật ở ĐÚNG MỘT chỗ.
+ *
+ * ⚠ Tài khoản 0 gán nhà máy: `getAccessFilterConditions` trả `1 = 0` (vị từ FALSE tường minh)
+ * ⇒ mọi truy vấn ở đây ra 0. Số 0 ấy đi kèm `scopeEmptyReason` ở `ComparisonResult` để bề mặt
+ * hiển thị nói ĐÚNG lý do thay vì "không có dữ liệu"; đường XUẤT FILE thì bị chặn từ router.
+ */
+function applyScope(filters?: QueryFilters): SQL {
+  return filters?.scope ? sql` AND ${filters.scope}` : sql``;
+}
+
+/**
  * Get period summary from DB via raw SQL
  */
 async function getPeriodSummary(
   start: Date,
   end: Date,
-  filters?: { factoryId?: number; workshopId?: number; lineId?: number; machineId?: number }
+  filters?: QueryFilters
 ): Promise<PeriodSummary> {
   const conn = await getDb();
   if (!conn) return { totalInspections: 0, okCount: 0, ngCount: 0, ntfCount: 0, yieldRate: 0, ngRate: 0 };
@@ -152,20 +208,21 @@ async function getPeriodSummary(
   const query = sql`
     SELECT
       COUNT(*)::int as "totalInspections",
-      SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END)::int as "okCount",
-      SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END)::int as "ngCount",
-      SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END)::int as "ntfCount"
-    FROM product_inspections pi
-    LEFT JOIN machines m ON pi."machineId" = m.id
+      SUM(CASE WHEN product_inspections."overallResult" = 'OK' THEN 1 ELSE 0 END)::int as "okCount",
+      SUM(CASE WHEN product_inspections."overallResult" = 'NG' THEN 1 ELSE 0 END)::int as "ngCount",
+      SUM(CASE WHEN product_inspections."overallResult" = 'NTF' THEN 1 ELSE 0 END)::int as "ntfCount"
+    FROM product_inspections
+    LEFT JOIN machines m ON product_inspections."machineId" = m.id
     LEFT JOIN stations st ON m."stationId" = st.id
     LEFT JOIN production_lines l ON st."lineId" = l.id
     LEFT JOIN workshops w ON l."workshopId" = w.id
-    WHERE pi."inspectionTime" >= ${startStr}
-      AND pi."inspectionTime" <= ${endStr}
+    WHERE product_inspections."inspectionTime" >= ${startStr}
+      AND product_inspections."inspectionTime" <= ${endStr}
       ${filters?.factoryId ? sql`AND w."factoryId" = ${filters.factoryId}` : sql``}
       ${filters?.workshopId ? sql`AND l."workshopId" = ${filters.workshopId}` : sql``}
       ${filters?.lineId ? sql`AND st."lineId" = ${filters.lineId}` : sql``}
-      ${filters?.machineId ? sql`AND pi."machineId" = ${filters.machineId}` : sql``}
+      ${filters?.machineId ? sql`AND product_inspections."machineId" = ${filters.machineId}` : sql``}
+      ${applyScope(filters)}
   `;
 
   const result: any = await conn.execute(query);
@@ -194,32 +251,33 @@ async function getDailyBreakdown(
   currentEnd: Date,
   previousStart: Date,
   previousEnd: Date,
-  filters?: { factoryId?: number; workshopId?: number; lineId?: number; machineId?: number }
+  filters?: QueryFilters
 ): Promise<ComparisonResult["dailyBreakdown"]> {
   const conn = await getDb();
   if (!conn) return [];
 
   const buildQuery = (start: Date, end: Date) => sql`
     SELECT
-      TO_CHAR(pi."inspectionTime", 'YYYY-MM-DD') as date,
+      TO_CHAR(product_inspections."inspectionTime", 'YYYY-MM-DD') as date,
       COUNT(*)::int as "totalInspections",
-      SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END)::int as "okCount",
-      SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END)::int as "ngCount",
+      SUM(CASE WHEN product_inspections."overallResult" = 'OK' THEN 1 ELSE 0 END)::int as "okCount",
+      SUM(CASE WHEN product_inspections."overallResult" = 'NG' THEN 1 ELSE 0 END)::int as "ngCount",
       CASE WHEN COUNT(*) > 0 THEN
-        ROUND(SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1)
+        ROUND(SUM(CASE WHEN product_inspections."overallResult" = 'OK' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1)
       ELSE 0 END as "yieldRate"
-    FROM product_inspections pi
-    LEFT JOIN machines m ON pi."machineId" = m.id
+    FROM product_inspections
+    LEFT JOIN machines m ON product_inspections."machineId" = m.id
     LEFT JOIN stations st ON m."stationId" = st.id
     LEFT JOIN production_lines l ON st."lineId" = l.id
     LEFT JOIN workshops w ON l."workshopId" = w.id
-    WHERE pi."inspectionTime" >= ${start.toISOString()}
-      AND pi."inspectionTime" <= ${end.toISOString()}
+    WHERE product_inspections."inspectionTime" >= ${start.toISOString()}
+      AND product_inspections."inspectionTime" <= ${end.toISOString()}
       ${filters?.factoryId ? sql`AND w."factoryId" = ${filters.factoryId}` : sql``}
       ${filters?.workshopId ? sql`AND l."workshopId" = ${filters.workshopId}` : sql``}
       ${filters?.lineId ? sql`AND st."lineId" = ${filters.lineId}` : sql``}
-      ${filters?.machineId ? sql`AND pi."machineId" = ${filters.machineId}` : sql``}
-    GROUP BY TO_CHAR(pi."inspectionTime", 'YYYY-MM-DD')
+      ${filters?.machineId ? sql`AND product_inspections."machineId" = ${filters.machineId}` : sql``}
+      ${applyScope(filters)}
+    GROUP BY TO_CHAR(product_inspections."inspectionTime", 'YYYY-MM-DD')
     ORDER BY date ASC
   `;
 
@@ -267,7 +325,7 @@ async function getMachineComparison(
   currentEnd: Date,
   previousStart: Date,
   previousEnd: Date,
-  filters?: { factoryId?: number; workshopId?: number; lineId?: number }
+  filters?: QueryFilters
 ): Promise<ComparisonResult["machineComparison"]> {
   const conn = await getDb();
   if (!conn) return [];
@@ -278,19 +336,20 @@ async function getMachineComparison(
       m.name as "machineName",
       m.code as "machineCode",
       COUNT(*)::int as "totalInspections",
-      SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END)::int as "okCount",
-      SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END)::int as "ngCount",
-      SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END)::int as "ntfCount"
-    FROM product_inspections pi
-    INNER JOIN machines m ON pi."machineId" = m.id
+      SUM(CASE WHEN product_inspections."overallResult" = 'OK' THEN 1 ELSE 0 END)::int as "okCount",
+      SUM(CASE WHEN product_inspections."overallResult" = 'NG' THEN 1 ELSE 0 END)::int as "ngCount",
+      SUM(CASE WHEN product_inspections."overallResult" = 'NTF' THEN 1 ELSE 0 END)::int as "ntfCount"
+    FROM product_inspections
+    INNER JOIN machines m ON product_inspections."machineId" = m.id
     LEFT JOIN stations st ON m."stationId" = st.id
     LEFT JOIN production_lines l ON st."lineId" = l.id
     LEFT JOIN workshops w ON l."workshopId" = w.id
-    WHERE pi."inspectionTime" >= ${start.toISOString()}
-      AND pi."inspectionTime" <= ${end.toISOString()}
+    WHERE product_inspections."inspectionTime" >= ${start.toISOString()}
+      AND product_inspections."inspectionTime" <= ${end.toISOString()}
       ${filters?.factoryId ? sql`AND w."factoryId" = ${filters.factoryId}` : sql``}
       ${filters?.workshopId ? sql`AND l."workshopId" = ${filters.workshopId}` : sql``}
       ${filters?.lineId ? sql`AND st."lineId" = ${filters.lineId}` : sql``}
+      ${applyScope(filters)}
     GROUP BY m.id, m.name, m.code
     ORDER BY COUNT(*) DESC
     LIMIT 20
@@ -344,7 +403,7 @@ async function getTopChangedPoints(
   currentEnd: Date,
   previousStart: Date,
   previousEnd: Date,
-  filters?: { factoryId?: number; workshopId?: number; lineId?: number }
+  filters?: QueryFilters
 ): Promise<ComparisonResult["topImprovedPoints"]> {
   const conn = await getDb();
   if (!conn) return [];
@@ -354,17 +413,18 @@ async function getTopChangedPoints(
       mpd.name as "pointName",
       SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END)::int as "ngCount"
     FROM measurement_results mr
-    INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
+    INNER JOIN product_inspections ON mr."inspectionId" = product_inspections.id
     LEFT JOIN measurement_point_defs mpd ON mr."pointDefId" = mpd.id
-    LEFT JOIN machines m ON pi."machineId" = m.id
+    LEFT JOIN machines m ON product_inspections."machineId" = m.id
     LEFT JOIN stations st ON m."stationId" = st.id
     LEFT JOIN production_lines l ON st."lineId" = l.id
     LEFT JOIN workshops w ON l."workshopId" = w.id
-    WHERE pi."inspectionTime" >= ${start.toISOString()}
-      AND pi."inspectionTime" <= ${end.toISOString()}
+    WHERE product_inspections."inspectionTime" >= ${start.toISOString()}
+      AND product_inspections."inspectionTime" <= ${end.toISOString()}
       ${filters?.factoryId ? sql`AND w."factoryId" = ${filters.factoryId}` : sql``}
       ${filters?.workshopId ? sql`AND l."workshopId" = ${filters.workshopId}` : sql``}
       ${filters?.lineId ? sql`AND st."lineId" = ${filters.lineId}` : sql``}
+      ${applyScope(filters)}
     GROUP BY mpd.name
     HAVING SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) > 0
     ORDER BY "ngCount" DESC
@@ -422,11 +482,24 @@ export async function generateComparison(request: ComparisonRequest): Promise<Co
     ? { start: request.previousStart, end: request.previousEnd }
     : calculatePreviousPeriod(periodType, currentStart, currentEnd);
 
-  const filters = {
+  // ⚠⚠ HAI BIẾN RIÊNG, CỐ Ý. `resolveDataScope` trả về CẢ `filter` (đối tượng SQL drizzle mang
+  // tham chiếu vòng `PgTable → PgSerial → table`). Viết `const scope = resolved` rồi
+  // `return { ...scope, … }` ở cuối hàm sẽ spread luôn `filter` vào đáp ứng tRPC và superjson
+  // chết bằng `Converting circular structure to JSON` — 500 cho MỌI người dùng. `tsc` KHÔNG bắt
+  // được (chỉ cấm thuộc tính thừa với *object literal*, không cấm khi gán một biến) và 220 ca
+  // test cũng không: lỗi chỉ lộ ra ở HTTP thật. Nên `filter` sống trong `filters.scope` (chỉ đi
+  // vào truy vấn) còn thứ đi ra ngoài là `scopeLabelsOf(...)` — ĐÚNG BA Ô CHỮ.
+  const resolved = request.userId
+    ? await resolveDataScope(request.userId, request.userRole ?? "user")
+    : null;
+  const labels: ScopeLabels = resolved ? scopeLabelsOf(resolved) : UNSCOPED_LABELS;
+
+  const filters: QueryFilters = {
     factoryId: request.factoryId,
     workshopId: request.workshopId,
     lineId: request.lineId,
     machineId: request.machineId,
+    scope: resolved?.filter,
   };
 
   // Run all queries in parallel for performance
@@ -460,6 +533,10 @@ export async function generateComparison(request: ComparisonRequest): Promise<Co
     dailyBreakdown,
     machineComparison,
     topImprovedPoints: topChangedPoints,
+    // ⚠ CHỈ ba ô CHỮ (`scopeLabelsOf`), KHÔNG phải `...resolved` — xem chú thích ở đầu hàm.
+    // Bề mặt hiển thị dùng `scopeEmptyReason`/`scopeMessage` để nói ĐÚNG lý do của một bảng
+    // toàn số 0, thay vì vẽ "không có dữ liệu" cho một tài khoản chưa được gán nhà máy.
+    ...labels,
   };
 }
 
@@ -500,7 +577,10 @@ async function narrateComparison(result: ComparisonResult): Promise<string | nul
       temperature: 0.5,
     }, resolveLogicalModel("chat"));
 
-    return response.text?.trim() || null;
+    // ★ G5-E — cắt chuỗi suy luận trước khi diễn giải so sánh kỳ hiện ra giao diện. Model ở đây
+    // là model MẶC ĐỊNH (`resolveLogicalModel("chat")` khi GGUF_CHAT_MODEL trống) ⇒ đổi roster
+    // sang họ Qwen3.x là chỗ này phát `<think>`.
+    return stripThinking(response.text ?? "").answer.trim() || null;
   } catch {
     return null;
   }

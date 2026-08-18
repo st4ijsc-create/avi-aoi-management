@@ -434,7 +434,11 @@ function parseLlmText(text: string): { headline: string; highlights: string[]; r
   let bucket: "highlights" | "risks" | "recommendations" | null = null;
   for (const line of lines) {
     const lower = line.toLowerCase();
-    if (/^(headline|tiêu đề)\b/i.test(line)) {
+    // ★ 2026-08-16 — `\b` sau `tiêu đề` KHÔNG BAO GIỜ khớp: JS coi ký tự từ là [A-Za-z0-9_],
+    // nên `ề` (non-word) đứng cạnh khoảng trắng (non-word) không tạo biên. Đo: "Tiêu đề: …"
+    // → false, "Headline: …" → true ⇒ BÁO CÁO ĐIỀU HÀNH TIẾNG VIỆT MẤT DÒNG TIÊU ĐỀ.
+    // Thay bằng biên nhận biết Unicode (cần cờ `u`). Cùng lớp lỗi đã vá ở intentClassifier.ts.
+    if (/^(headline|tiêu đề)(?![\p{L}\p{N}_])/iu.test(line)) {
       section.headline = line.replace(/^(headline|tiêu đề)\s*[:\-]?\s*/i, "").trim();
       bucket = null;
       continue;

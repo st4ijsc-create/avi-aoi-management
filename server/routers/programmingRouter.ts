@@ -891,8 +891,11 @@ export const programmingRouter = router({
         targetKind: KIND.optional(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const result = await generateProgram(input);
+    .mutation(async ({ input, ctx }) => {
+      // G2-A — `callerRole` được điền TỪ PHIÊN ĐÃ XÁC THỰC, KHÔNG từ thân request (schema zod ở
+      // trên cố tình KHÔNG khai trường này, nên client không thể tự đặt vai). Nó chỉ đi tới cổng
+      // corpus Training Studio của `retrieveKnowledge` khi copilot truy hồi chỉ mục repo.
+      const result = await generateProgram({ ...input, callerRole: String(ctx.user?.role ?? "") });
       // Doc 54 P3.4 (#1) — SAFETY GUARD. generateProgram HARD-REFUSE khi AUTHOR
       // (generate/complete/translate), NHƯNG review/explain trả THẲNG lời của model → có nguy cơ
       // "chứng nhận" logic an toàn. Nếu chương trình được phân tích chạm từ khoá an toàn (e-stop/

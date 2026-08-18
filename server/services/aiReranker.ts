@@ -89,6 +89,96 @@ function clip(text: string): string {
   return t.length > DOC_CHAR_CAP ? t.slice(0, DOC_CHAR_CAP) + "…" : t;
 }
 
+// ─── G0 phần C — ĐỒNG HỒ ──────────────────────────────────────────────────────
+//
+// ⚠ Trước bản này, cả file 759 dòng KHÔNG có một `Date.now()`/`performance.now()`
+// nào. Số duy nhất đang lưu hành về chi phí rerank là dòng chú thích ở
+// `getRankingContext()` bên dưới — *"CPU rerank of ~20 short docs is only tens of
+// ms"* — **không kèm bất kỳ phép đo nào**. Trong khi đó cấu hình đang chạy là
+// `RAG_RERANKER_MODE=gguf` + `RAG_RERANKER_GPU=false`, tức một cross-encoder
+// `bge-reranker-v2-m3-Q8_0` (635 MB, 25 lớp) chấm 20 tài liệu × 480 ký tự **trên
+// CPU**, NẰM TRÊN ĐƯỜNG PHỤC VỤ MỖI TRUY VẤN RAG. "Vài chục ms" là một GIẢ ĐỊNH,
+// không phải một kết quả.
+//
+// Ba phép đo tách bạch, vì chúng trả lời ba câu hỏi khác nhau:
+//   • `lastMs`        — TỔNG một lượt `rerank()` (thứ người dùng thật sự chờ);
+//   • `lastScoringMs` — riêng lượt chấm điểm của backend (rankAll / generateText);
+//   • `contextLoadMs` — MỘT LẦN duy nhất/tiến trình: nạp 635 MB + dựng ranking
+//     context. Gộp nó vào `lastMs` của lượt đầu tiên sẽ làm mọi trung bình sau đó
+//     nói dối theo hướng bi quan, nên nó được ghi RIÊNG.
+// `null` = CHƯA ĐO, không phải 0.
+export interface RerankTimings {
+  /** Số lượt `rerank()` đã chạy trong tiến trình này (kể cả lượt identity). */
+  runs: number;
+  /** Tổng ms của lượt gần nhất. null khi chưa có lượt nào. */
+  lastMs: number | null;
+  /** Riêng phần chấm điểm của backend ở lượt gần nhất. null với identity/lỗi. */
+  lastScoringMs: number | null;
+  /** Backend đã phục vụ lượt gần nhất. */
+  lastBackend: "gguf" | "llm" | "identity" | null;
+  /** Trung bình cộng `lastMs` trên toàn bộ `runs`. */
+  avgMs: number | null;
+  /** Lượt chậm nhất từ khi tiến trình khởi động. */
+  maxMs: number | null;
+  /**
+   * Thời gian nạp model + dựng ranking context (một lần/tiến trình, backend gguf).
+   * null = chưa từng nạp trong tiến trình này (hoặc đang dùng backend llm).
+   */
+  contextLoadMs: number | null;
+}
+
+let _runs = 0;
+let _lastMs: number | null = null;
+let _lastScoringMs: number | null = null;
+let _lastBackend: "gguf" | "llm" | "identity" | null = null;
+let _sumMs = 0;
+let _maxMs: number | null = null;
+let _ctxLoadMs: number | null = null;
+
+/** Đồng hồ đơn điệu — không nhảy khi đồng hồ hệ thống bị chỉnh giữa lượt đo. */
+function nowMs(): number {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function recordRun(totalMs: number, backend: "gguf" | "llm" | "identity", scoringMs: number | null): void {
+  _runs += 1;
+  _lastMs = Math.round(totalMs);
+  _lastScoringMs = scoringMs == null ? null : Math.round(scoringMs);
+  _lastBackend = backend;
+  _sumMs += _lastMs;
+  _maxMs = _maxMs == null ? _lastMs : Math.max(_maxMs, _lastMs);
+}
+
+/**
+ * Phép đo mới nhất + tổng hợp. THUẦN ĐỌC — không nạp model, không chạy suy luận.
+ * Dùng cho endpoint sức khoẻ / bảng điều khiển; cũng được nhúng vào
+ * `getRerankerStatus()`.
+ */
+export function getRerankerTimings(): RerankTimings {
+  return {
+    runs: _runs,
+    lastMs: _lastMs,
+    lastScoringMs: _lastScoringMs,
+    lastBackend: _lastBackend,
+    avgMs: _runs > 0 ? Math.round(_sumMs / _runs) : null,
+    maxMs: _maxMs,
+    contextLoadMs: _ctxLoadMs,
+  };
+}
+
+/** Xoá bộ đếm (test / lượt chẩn đoán). KHÔNG đụng tới model đã nạp. */
+export function resetRerankerTimings(): void {
+  _runs = 0;
+  _lastMs = null;
+  _lastScoringMs = null;
+  _lastBackend = null;
+  _sumMs = 0;
+  _maxMs = null;
+  _ctxLoadMs = null;
+}
+
 function docOf(c: RerankCandidate): string {
   const title = c.title ? c.title.trim() + " — " : "";
   return clip(title + (c.text ?? ""));
@@ -113,14 +203,25 @@ export async function rerank<T extends RerankCandidate>(
       rerankScore: candidates.length > 0 ? 1 - i / Math.max(1, candidates.length) : 0,
     }));
 
-  if (!isRerankerEnabled()) return identity();
-  if (!Array.isArray(candidates) || candidates.length === 0) return identity();
+  // G0 phần C — đồng hồ mở NGAY ĐẦU lượt: mọi đường thoát bên dưới (kể cả identity
+  // vì cờ tắt) đều đi qua `finishIdentity`/`recordRun`, nên KHÔNG có lượt nào rời
+  // hàm này mà không để lại phép đo.
+  const t0 = nowMs();
+  let scoringMs: number | null = null;
+  const finishIdentity = (backend: "gguf" | "llm" | "identity" = "identity"): RerankResult<T>[] => {
+    recordRun(nowMs() - t0, backend, scoringMs);
+    return identity();
+  };
+
+  if (!isRerankerEnabled()) return finishIdentity();
+  if (!Array.isArray(candidates) || candidates.length === 0) return finishIdentity();
 
   const pool = candidates.slice(0, MAX_CANDIDATES);
 
   try {
     let scores: number[] | null = null;
     let activeBackend: "gguf" | "llm" | "identity" = "identity";
+    const tScore = nowMs();
     if (getMode() === "gguf") {
       scores = await rankWithGguf(query, pool);
       if (scores) {
@@ -135,8 +236,13 @@ export async function rerank<T extends RerankCandidate>(
       scores = await rankWithLlm(query, pool);
       if (scores) activeBackend = "llm";
     }
+    scoringMs = nowMs() - tScore;
     logActiveBackendOnce(activeBackend);
-    if (!scores || scores.length !== pool.length) return identity();
+    if (!scores || scores.length !== pool.length) {
+      const out = finishIdentity(activeBackend);
+      logRerankTiming(activeBackend, pool.length, topN);
+      return out;
+    }
 
     const blended = pool.map((candidate, i) => {
       const orig = typeof candidate.score === "number" ? clamp01(candidate.score) : 0;
@@ -145,11 +251,37 @@ export async function rerank<T extends RerankCandidate>(
       return { candidate, rerankScore };
     });
     blended.sort((a, b) => b.rerankScore - a.rerankScore);
-    return blended.slice(0, Math.max(1, topN));
+    const out = blended.slice(0, Math.max(1, topN));
+    recordRun(nowMs() - t0, activeBackend, scoringMs);
+    logRerankTiming(activeBackend, pool.length, topN);
+    return out;
   } catch (err) {
     console.warn("[aiReranker] rerank failed, returning original order:", err);
-    return identity();
+    const out = finishIdentity();
+    logRerankTiming("identity", pool.length, topN);
+    return out;
   }
+}
+
+/**
+ * Dòng log CÓ CẤU TRÚC của một lượt rerank. CHỈ SỐ ĐẾM VÀ MILI-GIÂY — không câu
+ * hỏi, không tiêu đề, không nội dung tài liệu, không điểm số của từng chunk. Câu
+ * truy vấn RAG có thể chứa dữ liệu vận hành/nhân sự do người dùng gõ vào, và log
+ * máy chủ ở dự án này không phải mặt phẳng bảo mật ngang với DB — nên mặt tiếp
+ * xúc duy nhất được phép ra đây là các CON SỐ.
+ *
+ * KHÔNG log khi reranker đang TẮT: lượt đó tốn ~0 ms và nằm trên đường của MỌI
+ * truy vấn RAG ⇒ log là nhiễu thuần tuý.
+ */
+function logRerankTiming(backend: "gguf" | "llm" | "identity", docs: number, topN: number): void {
+  if (!isRerankerEnabled()) return;
+  const t = getRerankerTimings();
+  console.log(
+    `[aiReranker] rerank backend=${backend} docs=${docs} topN=${topN} ms=${t.lastMs ?? -1}` +
+      (t.lastScoringMs != null ? ` scoringMs=${t.lastScoringMs}` : "") +
+      (t.contextLoadMs != null ? ` ctxLoadMs=${t.contextLoadMs}` : "") +
+      ` avgMs=${t.avgMs ?? -1} maxMs=${t.maxMs ?? -1} runs=${t.runs}`,
+  );
 }
 
 function clamp01(n: number): number {
@@ -342,6 +474,12 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
   if (_rankCtx) return _rankCtx;
   if (_rankCtxFailed) return null;
 
+  // G0 phần C — đồng hồ của lượt nạp MỘT LẦN (635 MB, 25 lớp, CPU khi
+  // RAG_RERANKER_GPU=false). Ghi RIÊNG khỏi `lastMs` của lượt rerank: nếu gộp,
+  // lượt truy vấn RAG ĐẦU TIÊN của tiến trình sẽ mang toàn bộ chi phí nạp model
+  // và mọi trung bình về sau nói dối theo hướng bi quan.
+  const tLoad = nowMs();
+
   const modelPath = resolveRerankerModelPath();
   if (!modelPath) {
     // Configured filename didn't resolve (or GGUF_RERANKER_MODEL is unset).
@@ -379,8 +517,25 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     // doc 11 fix — the reranker is a tiny cross-encoder (~0.6B). By DEFAULT we load
     // it on CPU so it does NOT compete for VRAM with the big chat/RCA models
     // (Qwen3-30B ~17GB). Loading it on the GPU previously caused the 30B load to
-    // OOM on a 32GB card. CPU rerank of ~20 short docs is only tens of ms. Opt back
-    // onto the GPU with RAG_RERANKER_GPU=true (only if VRAM headroom allows).
+    // OOM on a 32GB card. Opt back onto the GPU with RAG_RERANKER_GPU=true (only
+    // if VRAM headroom allows).
+    //
+    // ★★★ G0 phần C — ĐÍNH CHÍNH MỘT CON SỐ ĐÃ LƯU HÀNH KHÔNG KÈM PHÉP ĐO.
+    // Dòng này trước đây khẳng định *"CPU rerank of ~20 short docs is only tens of
+    // ms"*. Đó là một GIẢ ĐỊNH: tới trước bản này cả file KHÔNG có một `Date.now()`
+    // nào, nên chưa ai từng đo. Nay đã đo, ĐÚNG cấu hình `.env` đang chạy
+    // (mode=gguf, RAG_RERANKER_GPU=false, bge-reranker-v2-m3-Q8_0 635 MB/25 lớp,
+    // 20 tài liệu × 480 ký tự), hai lượt độc lập / 10 mẫu trên máy dev này:
+    //     • dựng ranking context (một lần/tiến trình): 9.882 ms và 17.399 ms
+    //     • MỖI lượt rerank: 87.744 · 97.683 · 102.249 · 139.716 · 151.482 ·
+    //       154.554 · 192.452 · 196.268 · 201.071 · 257.003 ms
+    // Tức **87–257 GIÂY mỗi lượt**, không phải "vài chục ms" — lệch ~3 bậc độ lớn,
+    // và nó nằm trên đường phục vụ MỌI truy vấn RAG (aiLocalKnowledgeService:~1825).
+    // ⚠ Máy đo KHÔNG rỗi (app `node dist/index.js` ~6 GB + playwright đang chạy), nên
+    // đây là số của điều kiện thực tế trên máy đó, chưa phải số của một máy sạch —
+    // nhưng ngay cả cận dưới 87 s cũng đã bác bỏ dứt khoát câu "tens of ms".
+    // ⇒ Số đo trực tiếp của mỗi lượt nay có sẵn qua `getRerankerTimings()` /
+    //   `getRerankerStatus().timings`, đừng quay lại ước lượng bằng trực giác.
     const useGpu = String(process.env.RAG_RERANKER_GPU ?? "false").toLowerCase() === "true";
     const nlc = (await import("node-llama-cpp")) as any;
     const { getLlama, LlamaLogLevel } = nlc;
@@ -576,8 +731,12 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     // delta đúng bằng 0 — và 0 được ghi làm số liệu thật, nên sổ KHÔNG cộng nhầm cả trăm MiB
     // theo kích thước file cho một model không hề ở trên card.
     await localTicket?.commitMeasured();
+    // G0 phần C — SỐ THẬT của lượt nạp, thay cho câu "chỉ vài chục ms" không kèm
+    // phép đo ở chú thích `useGpu` phía trên.
+    _ctxLoadMs = Math.round(nowMs() - tLoad);
     console.log(
-      `[aiReranker] mode=gguf model=${path.basename(modelPath, ".gguf")} device=${useGpu ? "gpu" : "cpu"} (ranking context ready)`,
+      `[aiReranker] mode=gguf model=${path.basename(modelPath, ".gguf")} device=${useGpu ? "gpu" : "cpu"} ` +
+        `(ranking context ready in ${_ctxLoadMs}ms)`,
     );
     return _rankCtx;
   } catch (err) {
@@ -659,8 +818,16 @@ async function rankWithGguf(query: string, pool: RerankCandidate[]): Promise<num
   if (!ctx) return null;
   try {
     const docs = pool.map((c) => docOf(c));
+    // G0 phần C — đo RIÊNG lượt `rankAll`: đây là phép nhân cross-encoder thật
+    // (25 lớp × N tài liệu) và là thứ mà "chỉ vài chục ms" nói về. Log ở mức
+    // debug-thấp qua bộ đếm chung; dòng tổng kết do `logRerankTiming` phát.
+    const tRank = nowMs();
     const scores = await ctx.rankAll(query.slice(0, 1000), docs);
-    if (!Array.isArray(scores) || scores.length !== pool.length) return null;
+    const rankMs = Math.round(nowMs() - tRank);
+    if (!Array.isArray(scores) || scores.length !== pool.length) {
+      console.warn(`[aiReranker] gguf rankAll trả sai số lượng điểm (docs=${docs.length}) sau ${rankMs}ms — hạ cấp`);
+      return null;
+    }
     return scores.map((s) => clamp01(Number(s)));
   } catch (err) {
     console.warn("[aiReranker] GGUF rankAll failed, falling back:", err);
@@ -707,6 +874,8 @@ export function getRerankerStatus(): {
   modelConfigured: boolean;
   modelResolved: boolean;
   activeBackend: "gguf" | "llm" | "identity";
+  /** G0 phần C — phép đo thật của các lượt đã chạy (null = CHƯA ĐO, không phải 0). */
+  timings: RerankTimings;
 } {
   const enabled = isRerankerEnabled();
   const mode = getMode();
@@ -724,7 +893,7 @@ export function getRerankerStatus(): {
   } else {
     activeBackend = "llm";
   }
-  return { enabled, mode, modelConfigured, modelResolved, activeBackend };
+  return { enabled, mode, modelConfigured, modelResolved, activeBackend, timings: getRerankerTimings() };
 }
 
 /** Free the native ranking context/model (best-effort; not normally needed). */
@@ -756,4 +925,7 @@ export async function disposeReranker(): Promise<void> {
   _rankLlama = null;
   _rankCtxFailed = false;
   _backendLogged = false;
+  // Model đã bị dispose ⇒ số ms nạp cũ không còn mô tả trạng thái hiện tại. Về
+  // null (CHƯA ĐO) chứ không giữ số cũ — giữ lại là báo cáo một model không tồn tại.
+  _ctxLoadMs = null;
 }

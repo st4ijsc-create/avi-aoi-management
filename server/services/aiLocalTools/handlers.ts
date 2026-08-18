@@ -8,10 +8,59 @@
  *  - get_machine_status  → machines list (online/offline/heartbeat)
  *  - get_defect_trend    → 7-day NG-rate trend
  *  - get_top_defects     → top measurement points with most NG (last N days)
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ G3-A — CẢ CHÍN TOOL Ở FILE NÀY NAY ĐỨNG SAU MỘT CỔNG QUYỀN.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Trước G3-A chúng **không có `requiredPermission`, không `__authCtx`, không `checkPermission`** —
+ * bất kỳ ai đăng nhập được đều đọc được. Khai thác đo được: một `operator` bị giao diện chặn khỏi
+ * màn OEE / dashboard tập đoàn chỉ cần **hỏi trợ lý** *"hôm nay NG bao nhiêu, OEE line 2, so sánh
+ * các nhà máy"* là nhận đủ. Rủi ro vừa tăng một bậc vì `AI_NATIVE_TOOLCALLS_ENABLED` và vòng lặp
+ * tool tự do đã BẬT: model tự chọn tool, nhiều vòng, không còn regex chọn hộ.
+ *
+ * ⚠ NGUYÊN TẮC ÁNH XẠ (áp cho cả 19 tool của đợt này): **KHÔNG bịa quyền mới.** Mỗi tool nhận đúng
+ * bộ quyền mà **màn hình đang hiển thị chính dữ liệu ấy** đang dùng (`client/src/lib/navigation.tsx`
+ * → `requiredPermission`), để trợ lý và giao diện nói **cùng một luật** — không lỏng hơn (thành cửa
+ * sau) và không chặt hơn (thành "vá an ninh bằng cách chặn tất cả mọi người").
+ *
+ *   get_today_stats · get_defect_trend · get_ng_compare · get_top_defects → `dashboard_view`
+ *       `/dashboard` (`Dashboard.tsx`) render đúng bốn thứ này: `dashboard.getDailyStats` /
+ *       `getStatsWithComparison`, `workstation.ngTrend`, `workstation.ngComparison`,
+ *       `workstation.topNGMeasurementPoints`. Bốn thủ tục tRPC ấy là `protectedProcedure` TRẦN
+ *       (`systemRouters.ts:226-290`) ⇒ cổng DUY NHẤT của chúng hôm nay là cổng trang `/dashboard`.
+ *   get_lot_status      → `production_orders` (`/production-orders`).
+ *   get_machine_status  → `machine_status`    (`/device-monitor`, `/line-view`, `/control-tower`).
+ *   get_factory_stats   → `dashboard_corporate` (`/corporate-dashboard`; mô tả module trong
+ *       `permissionsRouter.getAvailableModules` viết đúng chữ **"so sánh nhà máy"**).
+ *   get_oee             → `analytics_oee`    (mô tả module: "Dashboard OEE"). ⚠ Chọn thế còn vì
+ *       tool anh em `analytics_query_oee` **đã** đứng sau đúng bit này: nếu `get_oee` lỏng hơn thì
+ *       `analytics_oee` bị lách **ngay bên trong chính trợ lý** — chỉ cần hỏi tool kia.
+ *   get_model_metrics   → `analytics_category` (`/category-analytics` — màn duy nhất chia
+ *       OK/NG/yield theo sản phẩm). Ánh xạ YẾU NHẤT của đợt: xem ghi chú tại tool đó.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-08-18 (nhóm B #1) — **CỔNG QUYỀN KHÔNG PHẢI PHẠM VI DỮ LIỆU.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bảng ánh xạ ở trên trả lời *"ai được GỌI tool nào"*. Nó **không** phát biểu **"ai được THẤY dữ
+ * liệu của nhà máy nào"** — và trong một tuần, đúng chỗ lẫn lộn ấy là chỗ lỗ sống:
+ *
+ *   • `get_factory_stats` liệt kê **MỌI nhà máy theo mã + TÊN** cho bất kỳ ai giữ
+ *     `dashboard_corporate/canView`. Rò **cấu trúc tổ chức**, không chỉ con số.
+ *   • `get_ng_compare` cộng **TOÀN BỘ `daily_statistics`** — mọi nhà máy — sau một bit
+ *     `dashboard_view/canView` mà gần như mọi vai đều có.
+ *
+ * Cả hai nay gọi `readToolRbac.giaiPhamViNhaMay()` NGAY SAU `getDb()` và lọc theo
+ * `dailyStatistics.factoryId` (cột **NOT NULL** + index `idx_stats_factory_date` ⇒ 0 DDL).
+ * Phạm vi rỗng ⇒ `ketQuaPhamViRong()` — TỪ CHỐI TRUNG THỰC, không phải "không có nhà máy nào".
+ *
+ * ⚠ VÌ SAO CỔNG PHẠM VI ĐỨNG **SAU** `getDb()` (khác `rbacGate`, vốn phải đứng TRƯỚC): không có
+ * CSDL thì cũng không có phép đo nào về phạm vi, và trả `PERMISSION_DENIED` lúc ấy là **nói sai**
+ * (đổ cho quyền một sự cố hạ tầng) — `DB_UNAVAILABLE` mới đúng. Không có gì rò ở nhánh ấy vì
+ * không có một hàng nào được đọc.
  */
 
 import { z } from "zod";
-import { and, desc, eq, gte, lt, sql, ilike, asc } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, sql, ilike, asc } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
   productInspections,
@@ -24,9 +73,25 @@ import {
   oeeMetrics,
   productModels,
 } from "../../../drizzle/schema";
-import { registerTool, type Tool, type ToolResult } from "./toolRegistry";
+import { registerTool, type Tool, type ToolPermission, type ToolResult } from "./toolRegistry";
+import { authCtxParam, giaiPhamViNhaMay, ketQuaPhamViRong, rbacGate } from "./readToolRbac";
 
 // -------- helpers --------
+
+/**
+ * ★★★ G3-A — MỘT hằng cho MỖI tool, dùng ở CẢ HAI chỗ: `requiredPermission` (lời khai, đọc bởi
+ * `proposeAction`/UI/lưới) và `rbacGate(...)` (phép cưỡng chế lúc chạy). Một biến ⇒ không có hai
+ * chỗ để lệch nhau. `toolPermissionQuantifier.test.ts` §4 vẫn ĐO cặp thật sự tới `checkPermission`.
+ */
+const PERM_TODAY_STATS: ToolPermission = { module: "dashboard_view", action: "canView" };
+const PERM_LOT_STATUS: ToolPermission = { module: "production_orders", action: "canView" };
+const PERM_MACHINE_STATUS: ToolPermission = { module: "machine_status", action: "canView" };
+const PERM_DEFECT_TREND: ToolPermission = { module: "dashboard_view", action: "canView" };
+const PERM_TOP_DEFECTS: ToolPermission = { module: "dashboard_view", action: "canView" };
+const PERM_FACTORY_STATS: ToolPermission = { module: "dashboard_corporate", action: "canView" };
+const PERM_NG_COMPARE: ToolPermission = { module: "dashboard_view", action: "canView" };
+const PERM_OEE: ToolPermission = { module: "analytics_oee", action: "canView" };
+const PERM_MODEL_METRICS: ToolPermission = { module: "analytics_category", action: "canView" };
 
 function startOfTodayLocal(): Date {
   const d = new Date();
@@ -74,7 +139,7 @@ interface TodayStatsData {
   byMachine: Array<{ machineId: number; machineName: string; total: number; ng: number; ngRate: number }>;
 }
 
-const todayStatsParams = z.object({}).strict();
+const todayStatsParams = z.object({ __authCtx: authCtxParam }).strict();
 
 const getTodayStats: Tool<z.infer<typeof todayStatsParams>, TodayStatsData> = {
   name: "get_today_stats",
@@ -84,7 +149,16 @@ const getTodayStats: Tool<z.infer<typeof todayStatsParams>, TodayStatsData> = {
     "hôm nay", "ngày hôm nay", "today", "ca này", "đến giờ", "hiện tại bao nhiêu",
     "đã kiểm tra", "tỉ lệ ng", "tỷ lệ ng", "ng rate", "sản lượng",
   ],
-  handler: async () => {
+  kind: "read",
+  requiredPermission: PERM_TODAY_STATS,
+  handler: async ({ __authCtx }) => {
+    const title = "Sản lượng hôm nay";
+    const denied = await rbacGate<TodayStatsData>(__authCtx, PERM_TODAY_STATS, "today_stats", title, {
+      date: fmtDateISO(new Date()),
+      total: 0, ok: 0, ng: 0, ntf: 0, ngRate: 0, byMachine: [],
+    });
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) {
       return noDbResult<TodayStatsData>("today_stats", "Sản lượng hôm nay", {
@@ -170,6 +244,7 @@ interface LotStatusData {
 
 const lotStatusParams = z.object({
   orderCode: z.string().min(1).max(100),
+  __authCtx: authCtxParam,
 }).strict();
 
 const getLotStatus: Tool<z.infer<typeof lotStatusParams>, LotStatusData | null> = {
@@ -181,7 +256,14 @@ const getLotStatus: Tool<z.infer<typeof lotStatusParams>, LotStatusData | null> 
     "tiến độ", "tiến trình", "đơn hàng",
     "lô ", "trạng thái lô", "trạng thái lệnh", "tình trạng lô", "lot status",
   ],
-  handler: async ({ orderCode }) => {
+  kind: "read",
+  requiredPermission: PERM_LOT_STATUS,
+  handler: async ({ orderCode, __authCtx }) => {
+    const denied = await rbacGate<LotStatusData | null>(
+      __authCtx, PERM_LOT_STATUS, "lot_status", `Lệnh ${orderCode}`, null,
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) {
       return noDbResult<LotStatusData | null>("lot_status", `Lệnh ${orderCode}`, null);
@@ -262,6 +344,7 @@ interface MachineStatusItem {
 
 const machineStatusParams = z.object({
   onlyOffline: z.boolean().optional().default(false),
+  __authCtx: authCtxParam,
 }).strict();
 
 const getMachineStatus: Tool<z.infer<typeof machineStatusParams>, MachineStatusItem[]> = {
@@ -272,7 +355,14 @@ const getMachineStatus: Tool<z.infer<typeof machineStatusParams>, MachineStatusI
     "máy nào", "trạng thái máy", "máy đang", "máy chạy", "máy dừng", "máy lỗi",
     "machine status", "online", "offline", "heartbeat", "máy bảo trì",
   ],
-  handler: async ({ onlyOffline }) => {
+  kind: "read",
+  requiredPermission: PERM_MACHINE_STATUS,
+  handler: async ({ onlyOffline, __authCtx }) => {
+    const denied = await rbacGate<MachineStatusItem[]>(
+      __authCtx, PERM_MACHINE_STATUS, "machine_status", "Trạng thái máy", [],
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) {
       return noDbResult<MachineStatusItem[]>("machine_status", "Trạng thái máy", []);
@@ -335,6 +425,7 @@ interface DefectTrendData {
 
 const defectTrendParams = z.object({
   days: z.number().int().min(2).max(30).optional().default(7),
+  __authCtx: authCtxParam,
 }).strict();
 
 const getDefectTrend: Tool<z.infer<typeof defectTrendParams>, DefectTrendData> = {
@@ -345,7 +436,14 @@ const getDefectTrend: Tool<z.infer<typeof defectTrendParams>, DefectTrendData> =
     "xu hướng", "trend", "tuần qua", "7 ngày", "ngày qua", "biểu đồ ng",
     "tỷ lệ ng theo ngày", "tỉ lệ ng theo ngày",
   ],
-  handler: async ({ days }) => {
+  kind: "read",
+  requiredPermission: PERM_DEFECT_TREND,
+  handler: async ({ days, __authCtx }) => {
+    const denied = await rbacGate<DefectTrendData>(
+      __authCtx, PERM_DEFECT_TREND, "defect_trend", `Xu hướng NG ${days} ngày`, { days, series: [] },
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) {
       return noDbResult<DefectTrendData>("defect_trend", `Xu hướng NG ${days} ngày`, { days, series: [] });
@@ -411,6 +509,7 @@ interface TopDefectItem {
 const topDefectsParams = z.object({
   days: z.number().int().min(1).max(30).optional().default(7),
   limit: z.number().int().min(1).max(20).optional().default(5),
+  __authCtx: authCtxParam,
 }).strict();
 
 const getTopDefects: Tool<z.infer<typeof topDefectsParams>, TopDefectItem[]> = {
@@ -421,7 +520,22 @@ const getTopDefects: Tool<z.infer<typeof topDefectsParams>, TopDefectItem[]> = {
     "lỗi nhiều nhất", "top lỗi", "điểm đo lỗi", "ng nhiều nhất", "defect nhiều",
     "top defect", "lỗi phổ biến",
   ],
-  handler: async ({ days, limit }) => {
+  kind: "read",
+  /**
+   * ⚠ QUAN SÁT ĐƯỢC GHI LẠI, KHÔNG PHẢI SỬA LÉN: tool `analytics_defect_heatmap_summary` trả
+   * **gần như cùng một tập** (top điểm đo NG, qua `getTopNGMeasurementPointsEnhanced`) nhưng đứng
+   * sau `analytics_defect_heatmap`. Vênh ấy **có sẵn ở giao diện**: `/dashboard` bày
+   * `workstation.topNGMeasurementPoints` cho mọi người có `dashboard_view`, trong khi
+   * `/defect-heatmap` đòi `analytics_defect_heatmap`. Đợt này chọn **bám theo giao diện**
+   * (`dashboard_view`) vì siết chặt hơn UI sẽ từ chối đúng những người đang thấy con số ấy hằng
+   * ngày trên dashboard của họ. Việc thống nhất hai cổng là một quyết định RBAC của chủ dự án —
+   * ghi vào sổ nợ, không tự quyết ở đây.
+   */
+  requiredPermission: PERM_TOP_DEFECTS,
+  handler: async ({ days, limit, __authCtx }) => {
+    const denied = await rbacGate<TopDefectItem[]>(__authCtx, PERM_TOP_DEFECTS, "top_defects", "Top lỗi", []);
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) {
       return noDbResult<TopDefectItem[]>("top_defects", "Top lỗi", []);
@@ -485,6 +599,7 @@ interface FactoryStatsItem {
 
 const factoryStatsParams = z.object({
   days: z.number().int().min(1).max(30).optional().default(1),
+  __authCtx: authCtxParam,
 }).strict();
 
 const getFactoryStats: Tool<z.infer<typeof factoryStatsParams>, FactoryStatsItem[]> = {
@@ -495,12 +610,35 @@ const getFactoryStats: Tool<z.infer<typeof factoryStatsParams>, FactoryStatsItem
     "nhà máy", "factory", "các nhà máy", "theo nhà máy", "tổng hợp factory",
     "so sánh nhà máy", "so sánh factory", "ranking nhà máy",
   ],
-  handler: async ({ days }) => {
+  kind: "read",
+  requiredPermission: PERM_FACTORY_STATS,
+  handler: async ({ days, __authCtx }) => {
+    const denied = await rbacGate<FactoryStatsItem[]>(
+      __authCtx, PERM_FACTORY_STATS, "factory_stats", "Sản lượng theo nhà máy", [],
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDbResult<FactoryStatsItem[]>("factory_stats", "Sản lượng theo nhà máy", []);
 
+    // ── PHẠM VI DỮ LIỆU (2026-08-18, nhóm B #1) ─────────────────────────────────────────────
+    // `rbacGate` ở trên kiểm **"được gọi tool này không"**; nó KHÔNG phát biểu gì về
+    // **"được thấy dữ liệu tới đâu"**. Trước dòng này, bất kỳ ai giữ bit `dashboard_corporate/
+    // canView` nhận về **MỌI nhà máy theo mã + TÊN** — tức rò cả cấu trúc tổ chức, không chỉ số.
+    // Xem `readToolRbac.giaiPhamViNhaMay` cho lý lẽ đầy đủ.
+    const phamVi = await giaiPhamViNhaMay(__authCtx);
+    if (phamVi.kind === "empty") {
+      return ketQuaPhamViRong<FactoryStatsItem[]>("factory_stats", "Sản lượng theo nhà máy", []);
+    }
+
     const start = startOfDay(new Date());
     start.setDate(start.getDate() - (days - 1));
+
+    // Vai toàn quyền ⇒ KHÔNG thêm mệnh đề nào (giữ nguyên hành vi cũ, byte-for-byte).
+    const dieuKien =
+      phamVi.kind === "scoped"
+        ? and(gte(dailyStatistics.date, start), inArray(dailyStatistics.factoryId, phamVi.factoryIds))
+        : gte(dailyStatistics.date, start);
 
     const rows = await db
       .select({
@@ -513,7 +651,7 @@ const getFactoryStats: Tool<z.infer<typeof factoryStatsParams>, FactoryStatsItem
       })
       .from(dailyStatistics)
       .leftJoin(factories, eq(factories.id, dailyStatistics.factoryId))
-      .where(gte(dailyStatistics.date, start))
+      .where(dieuKien)
       .groupBy(dailyStatistics.factoryId, factories.code, factories.name)
       .orderBy(desc(sql`coalesce(sum(${dailyStatistics.totalCount}),0)`));
 
@@ -535,11 +673,17 @@ const getFactoryStats: Tool<z.infer<typeof factoryStatsParams>, FactoryStatsItem
       ? data.map((d) => `${d.factoryCode} (${d.factoryName}): ${d.total} sp, NG ${d.ng} (${d.ngRate}%)`).join("; ")
       : "Không có dữ liệu sản lượng trong khoảng thời gian này.";
 
+    // Nói RÕ con số này thuộc phạm vi nào — một tổng "toàn hệ thống" và một tổng "các nhà máy
+    // của tôi" trông GIỐNG HỆT nhau nếu không ghi phạm vi ra (cùng luật với `scopeNote` ở
+    // `analyticsTools.analytics_defect_heatmap_summary`).
+    const ghiPhamVi =
+      phamVi.kind === "scoped" ? ` (phạm vi: ${phamVi.factoryIds.length} nhà máy được gán cho tài khoản)` : "";
+
     return {
       type: "factory_stats",
       title: `Sản lượng theo nhà máy (${days} ngày)`,
       data,
-      textSummary: `Tổng hợp ${data.length} nhà máy trong ${days} ngày: ${summary}`,
+      textSummary: `Tổng hợp ${data.length} nhà máy trong ${days} ngày${ghiPhamVi}: ${summary}`,
     };
   },
 };
@@ -565,16 +709,33 @@ interface NgCompareData {
 
 const ngCompareParams = z.object({
   period: z.enum(["week", "month"]).optional().default("month"),
+  __authCtx: authCtxParam,
 }).strict();
 
-async function _sumNgRange(db: any, start: Date, end: Date): Promise<{ total: number; ng: number }> {
+/**
+ * ⚠ `factoryIds` là **PHẠM VI DỮ LIỆU**, không phải một bộ lọc tuỳ chọn: `undefined` nghĩa là
+ * *"vai TOÀN QUYỀN, không lọc"* và chỉ được truyền như thế khi `giaiPhamViNhaMay` trả `global`.
+ * Một mảng RỖNG không bao giờ tới đây (nơi gọi đã từ chối ở nhánh `empty`) — nếu tới thì
+ * `inArray(x, [])` của drizzle sinh `false`, tức vẫn hỏng theo chiều ĐÓNG.
+ */
+async function _sumNgRange(
+  db: any,
+  start: Date,
+  end: Date,
+  factoryIds?: number[],
+): Promise<{ total: number; ng: number }> {
+  const dieuKien = [
+    gte(dailyStatistics.date, start),
+    lt(dailyStatistics.date, end),
+    ...(factoryIds ? [inArray(dailyStatistics.factoryId, factoryIds)] : []),
+  ];
   const r = await db
     .select({
       total: sql<number>`coalesce(sum(${dailyStatistics.totalCount}),0)::int`,
       ng: sql<number>`coalesce(sum(${dailyStatistics.ngCount}),0)::int`,
     })
     .from(dailyStatistics)
-    .where(and(gte(dailyStatistics.date, start), lt(dailyStatistics.date, end)));
+    .where(and(...dieuKien));
   const row = r[0] ?? { total: 0, ng: 0 };
   return { total: Number(row.total ?? 0), ng: Number(row.ng ?? 0) };
 }
@@ -588,7 +749,20 @@ const getNgCompare: Tool<z.infer<typeof ngCompareParams>, NgCompareData> = {
     "tuần này", "tuần trước", "kỳ trước", "month over month", "mom", "wow",
     "so sánh kỳ", "tăng giảm so",
   ],
-  handler: async ({ period }) => {
+  kind: "read",
+  requiredPermission: PERM_NG_COMPARE,
+  handler: async ({ period, __authCtx }) => {
+    const rong = (label: string, s: Date, e: Date): NgComparePeriod =>
+      ({ label, start: fmtDateISO(s), end: fmtDateISO(e), total: 0, ng: 0, ngRate: 0 });
+    const denied = await rbacGate<NgCompareData>(__authCtx, PERM_NG_COMPARE, "ng_compare", `So sánh NG (${period})`, {
+      period,
+      current: rong("kỳ này", new Date(), new Date()),
+      previous: rong("kỳ trước", new Date(), new Date()),
+      deltaPct: 0,
+      deltaRel: 0,
+    });
+    if (denied) return denied;
+
     const db = await getDb();
     const now = new Date();
     let curStart: Date, curEnd: Date, prevStart: Date, prevEnd: Date;
@@ -618,9 +792,24 @@ const getNgCompare: Tool<z.infer<typeof ngCompareParams>, NgCompareData> = {
       });
     }
 
+    // ── PHẠM VI DỮ LIỆU (2026-08-18, nhóm B #1) ─────────────────────────────────────────────
+    // Cùng lỗ với `get_factory_stats`: cổng `dashboard_view/canView` là bit gần như mọi vai đều
+    // có, và trước dòng này `_sumNgRange` cộng **TOÀN BỘ `daily_statistics` của mọi nhà máy**.
+    const phamVi = await giaiPhamViNhaMay(__authCtx);
+    if (phamVi.kind === "empty") {
+      return ketQuaPhamViRong<NgCompareData>("ng_compare", `So sánh NG (${period})`, {
+        period,
+        current: rong("kỳ này", curStart, curEnd),
+        previous: rong("kỳ trước", prevStart, prevEnd),
+        deltaPct: 0,
+        deltaRel: 0,
+      });
+    }
+    const idNhaMay = phamVi.kind === "scoped" ? phamVi.factoryIds : undefined;
+
     const [cur, prev] = await Promise.all([
-      _sumNgRange(db, curStart, curEnd),
-      _sumNgRange(db, prevStart, prevEnd),
+      _sumNgRange(db, curStart, curEnd, idNhaMay),
+      _sumNgRange(db, prevStart, prevEnd, idNhaMay),
     ]);
 
     const curRate = pct(cur.ng, cur.total);
@@ -644,7 +833,8 @@ const getNgCompare: Tool<z.infer<typeof ngCompareParams>, NgCompareData> = {
       textSummary:
         `${data.current.label}: NG ${cur.ng}/${cur.total} (${curRate}%). ` +
         `${data.previous.label}: NG ${prev.ng}/${prev.total} (${prevRate}%). ` +
-        `Tỉ lệ NG ${dir} ${Math.abs(deltaPct)} điểm % (${deltaRel >= 0 ? "+" : ""}${deltaRel}% tương đối).`,
+        `Tỉ lệ NG ${dir} ${Math.abs(deltaPct)} điểm % (${deltaRel >= 0 ? "+" : ""}${deltaRel}% tương đối)` +
+        `${idNhaMay ? ` — phạm vi: ${idNhaMay.length} nhà máy được gán cho tài khoản` : ""}.`,
     };
   },
 };
@@ -664,6 +854,7 @@ interface OeeItem {
 const oeeParams = z.object({
   machineCode: z.string().min(1).max(50).optional(),
   days: z.number().int().min(1).max(30).optional().default(7),
+  __authCtx: authCtxParam,
 }).strict();
 
 const getOee: Tool<z.infer<typeof oeeParams>, OeeItem[]> = {
@@ -674,7 +865,12 @@ const getOee: Tool<z.infer<typeof oeeParams>, OeeItem[]> = {
     "oee", "hiệu suất tổng thể", "availability", "performance", "quality",
     "chỉ số oee", "overall equipment", "hiệu quả thiết bị",
   ],
-  handler: async ({ machineCode, days }) => {
+  kind: "read",
+  requiredPermission: PERM_OEE,
+  handler: async ({ machineCode, days, __authCtx }) => {
+    const denied = await rbacGate<OeeItem[]>(__authCtx, PERM_OEE, "oee", "OEE", []);
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDbResult<OeeItem[]>("oee", "OEE", []);
 
@@ -750,6 +946,7 @@ interface ModelMetricItem {
 const modelMetricsParams = z.object({
   days: z.number().int().min(1).max(30).optional().default(7),
   limit: z.number().int().min(1).max(20).optional().default(5),
+  __authCtx: authCtxParam,
 }).strict();
 
 const getModelMetrics: Tool<z.infer<typeof modelMetricsParams>, ModelMetricItem[]> = {
@@ -760,7 +957,29 @@ const getModelMetrics: Tool<z.infer<typeof modelMetricsParams>, ModelMetricItem[
     "mẫu sản phẩm", "product model", "model nào", "sản phẩm nào", "theo sản phẩm",
     "ranking sản phẩm", "ranking model", "ng theo model", "ng theo sản phẩm",
   ],
-  handler: async ({ days, limit }) => {
+  kind: "read",
+  /**
+   * ⚠⚠ ÁNH XẠ YẾU NHẤT CỦA ĐỢT — NÓI RA THAY VÌ IM.
+   * Không màn hình nào của hệ xếp hạng **model sản phẩm** theo tỉ lệ NG. Ba ứng viên và vì sao:
+   *   • `analytics_product_comparison` — mô tả khớp NGUYÊN VĂN ("So sánh chỉ số giữa các sản
+   *     phẩm/model") nhưng **không nav item nào và không router nào** dùng tên này ⇒ gán vào đó là
+   *     gán vào một quyền không ai cấp bao giờ, tức **bịa quyền mới** trá hình.
+   *   • `history_view` (`/product-comparison`) — trang ấy so sánh **cấu hình điểm đo**, không phải
+   *     tỉ lệ NG; và `history_view` mọi vai đều có ⇒ cổng không chặn ai.
+   *   • `analytics_category` (`/category-analytics`) — trang DUY NHẤT thật sự chia OK/NG/yield theo
+   *     **sản phẩm** (một cấp thô hơn: theo danh mục). ⇐ CHỌN cái này.
+   * ⚠ HỆ QUẢ PHẢI BIẾT TRƯỚC: hôm nay chỉ `admin` được seed `analytics_category`, nên `supervisor`
+   * và `quality_inspector` sẽ bị từ chối tool này. Đó **đúng bằng** những gì giao diện đang làm với
+   * họ (`/category-analytics` cũng đóng) ⇒ trợ lý và UI nói cùng một luật. Muốn mở là **một hàng
+   * `permissions`**, không phải một lần sửa mã.
+   */
+  requiredPermission: PERM_MODEL_METRICS,
+  handler: async ({ days, limit, __authCtx }) => {
+    const denied = await rbacGate<ModelMetricItem[]>(
+      __authCtx, PERM_MODEL_METRICS, "model_metrics", "Top model NG", [],
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDbResult<ModelMetricItem[]>("model_metrics", "Top model NG", []);
 

@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 1,
+  "kind": "server-longctx",
+  "label": "g5a-server-qwen3.8-27B-2026-08-16",
+  "startedAt": "2026-08-16T16:40:14.895Z",
+  "server": {
+    "url": "http://127.0.0.1:8091",
+    "modelPath": "D:/SOURCES/16.AI/Qwen3.8-27B-Q4_K_M.gguf",
+    "nCtxPerSlot": 32768,
+    "totalSlots": 2
+  },
+  "vramMib": {
+    "atStart": 28445,
+    "atEnd": 28524
+  },
+  "config": {
+    "levels": [
+      2048,
+      8192,
+      16384,
+      30000
+    ],
+    "iters": 2,
+    "maxTokens": 96
+  },
+  "levels": [
+    {
+      "promptTargetTokens": 2048,
+      "iters": [
+        {
+          "promptTokensMeasured": 2043,
+          "ttftMs": 951.2,
+          "totalMs": 2339,
+          "promptN": 2054,
+          "promptMs": 947.6,
+          "prefillTokPerSec": 2167.6,
+          "predictedN": 96,
+          "predictedMs": 1387.9,
+          "decodeTokPerSec": 69.2
+        },
+        {
+          "promptTokensMeasured": 2051,
+          "ttftMs": 902.5,
+          "totalMs": 2296.5,
+          "promptN": 2062,
+          "promptMs": 714.9,
+          "prefillTokPerSec": 2884.2,
+          "predictedN": 96,
+          "predictedMs": 1393.8,
+          "decodeTokPerSec": 68.9
+        }
+      ],
+      "ttftMs": {
+        "n": 2,
+        "mean": 926.9,
+        "min": 902.5,
+        "max": 951.2
+      },
+      "prefillTokPerSec": {
+        "n": 2,
+        "mean": 2525.9,
+        "min": 2167.6,
+        "max": 2884.2
+      },
+      "decodeTokPerSec": {
+        "n": 2,
+        "mean": 69.1,
+        "min": 68.9,
+        "max": 69.2
+      },
+      "vramAfterMib": 28532
+    },
+    {
+      "promptTargetTokens": 8192,
+      "iters": [
+        {
+          "promptTokensMeasured": 8193,
+          "ttftMs": 2788.1,
+          "totalMs": 4213.1,
+          "promptN": 8204,
+          "promptMs": 2475.4,
+          "prefillTokPerSec": 3314.3,
+          "predictedN": 96,
+          "predictedMs": 1424.4,
+          "decodeTokPerSec": 67.4
+        },
+        {
+          "promptTokensMeasured": 8181,
+          "ttftMs": 2981.3,
+          "totalMs": 4439.2,
+          "promptN": 8192,
+          "promptMs": 2464.4,
+          "prefillTokPerSec": 3324.2,
+          "predictedN": 96,
+          "predictedMs": 1457.4,
+          "decodeTokPerSec": 65.9
+        }
+      ],
+      "ttftMs": {
+        "n": 2,
+        "mean": 2884.7,
+        "min": 2788.1,
+        "max": 2981.3
+      },
+      "prefillTokPerSec": {
+        "n": 2,
+        "mean": 3319.3,
+        "min": 3314.3,
+        "max": 3324.2
+      },
+      "decodeTokPerSec": {
+        "n": 2,
+        "mean": 66.7,
+        "min": 65.9,
+        "max": 67.4
+      },
+      "vramAfterMib": 28524
+    },
+    {
+      "promptTargetTokens": 16384,
+      "iters": [
+        {
+          "promptTokensMeasured": 16384,
+          "ttftMs": 5629,
+          "totalMs": 7119,
+          "promptN": 16395,
+          "promptMs": 5045,
+          "prefillTokPerSec": 3249.8,
+          "predictedN": 96,
+          "predictedMs": 1489.4,
+          "decodeTokPerSec": 64.5
+        },
+        {
+          "promptTokensMeasured": 16392,
+          "ttftMs": 5840.5,
+          "totalMs": 7329.6,
+          "promptN": 16403,
+          "promptMs": 5034.4,
+          "prefillTokPerSec": 3258.2,
+          "predictedN": 96,
+          "predictedMs": 1488,
+          "decodeTokPerSec": 64.5
+        }
+      ],
+      "ttftMs": {
+        "n": 2,
+        "mean": 5734.8,
+        "min": 5629,
+        "max": 5840.5
+      },
+      "prefillTokPerSec": {
+        "n": 2,
+        "mean": 3254,
+        "min": 3249.8,
+        "max": 3258.2
+      },
+      "decodeTokPerSec": {
+        "n": 2,
+        "mean": 64.5,
+        "min": 64.5,
+        "max": 64.5
+      },
+      "vramAfterMib": 28524
+    },
+    {
+      "promptTargetTokens": 30000,
+      "iters": [
+        {
+          "promptTokensMeasured": 30000,
+          "ttftMs": 11098.3,
+          "totalMs": 12649.1,
+          "promptN": 30011,
+          "promptMs": 9771.2,
+          "prefillTokPerSec": 3071.4,
+          "predictedN": 96,
+          "predictedMs": 1547.9,
+          "decodeTokPerSec": 62
+        },
+        {
+          "promptTokensMeasured": 30018,
+          "ttftMs": 11094.9,
+          "totalMs": 12621,
+          "promptN": 30029,
+          "promptMs": 9718.7,
+          "prefillTokPerSec": 3089.8,
+          "predictedN": 96,
+          "predictedMs": 1523.8,
+          "decodeTokPerSec": 63
+        }
+      ],
+      "ttftMs": {
+        "n": 2,
+        "mean": 11096.6,
+        "min": 11094.9,
+        "max": 11098.3
+      },
+      "prefillTokPerSec": {
+        "n": 2,
+        "mean": 3080.6,
+        "min": 3071.4,
+        "max": 3089.8
+      },
+      "decodeTokPerSec": {
+        "n": 2,
+        "mean": 62.5,
+        "min": 62,
+        "max": 63
+      },
+      "vramAfterMib": 28524
+    }
+  ],
+  "prefixCache": {
+    "promptTokensMeasured": 25031,
+    "metricPromptTokensTotal": {
+      "before": 113350,
+      "afterFirst": 138392,
+      "afterSecond": 138908
+    },
+    "firstPassProcessed": 25042,
+    "secondPassProcessed": 516,
+    "firstTtftMs": 9425.1,
+    "secondTtftMs": 290.4,
+    "firstPromptMs": 7953.7,
+    "secondPromptMs": 261.7,
+    "firstPromptN": 25042,
+    "secondPromptN": 516
+  }
+}

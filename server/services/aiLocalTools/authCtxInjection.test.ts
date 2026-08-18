@@ -173,33 +173,46 @@ describe("★★★ N-1 — `__authCtx` BỊA trong args KHÔNG BAO GIỜ trở 
 
   it("★ tool KHÔNG khai `__authCtx` trong schema: args vẫn bị làm sạch, và không bị nhét khoá lạ", async () => {
     /**
-     * `get_today_stats` (họ `handlers.ts`) không khai `__authCtx`. Bất biến: `__authCtx` bịa **biến
-     * mất**, và ta **không** nhét vào một khoá mà schema `.strict()` của nó không có.
+     * ⚠⚠ ĐÍNH CHÍNH (G3-A): bản trước dùng **`get_today_stats`** làm ví dụ cho *"tool không khai
+     * `__authCtx`"*. Tiền đề ấy **nay SAI** — G3-A đã gắn cổng quyền cho cả chín tool của
+     * `handlers.ts`, nên chúng đều khai ô đó. Đây đúng là hình dạng *"ca xanh nhờ một sự thật về
+     * MỘT TOOL CỤ THỂ, không nhờ bất biến"*: bất biến vẫn đúng nguyên vẹn, chỉ có **người mẫu**
+     * không còn hợp lệ.
+     *
+     * ⇒ Ca này nay **tự dựng người mẫu** (một tool thăm dò có schema `.strict()` KHÔNG khai
+     * `__authCtx`) để bất biến không còn phụ thuộc vào việc tool sản xuất nào tình cờ chưa có cổng.
+     * Bất biến: `__authCtx` bịa **biến mất**, và ta **KHÔNG** nhét vào một khoá mà schema
+     * `.strict()` không có (nhét vào là làm vỡ mọi `safeParse` về sau).
      */
-    classifier.args = { __authCtx: BIA };
-    const { getTool } = await import("./toolRegistry");
-    const t = getTool("get_today_stats");
-    if (!t) return; // tool không có ở bản dựng này ⇒ bất biến không áp dụng
+    const { z } = await import("zod");
+    const { registerTool, getTool } = await import("./toolRegistry");
     const nhan: unknown[] = [];
-    const goc = t.handler!;
-    t.handler = async (p: unknown) => {
-      nhan.push(p);
-      return { type: "today_stats", title: "x", data: {}, textSummary: "x" } as never;
-    };
-    try {
-      const mod = await import("./intentClassifier");
-      const spy = vi.spyOn(mod, "classifyToolIntent").mockReturnValue({
-        tool: "get_today_stats",
-        args: classifier.args,
-        reason: "TEST_SEAM",
-      } as never);
-      await tryExecuteTool("hôm nay thế nào", undefined, PHIEN);
-      spy.mockRestore();
-      expect(nhan.length).toBe(1);
-      expect(Object.hasOwn(nhan[0] as object, "__authCtx"), "không khai ⇒ KHÔNG được nhét vào").toBe(false);
-    } finally {
-      t.handler = goc;
-    }
+    registerTool({
+      name: "__probe_khong_khai_authctx",
+      description: "probe",
+      parameters: z.object({ ghiChu: z.string().optional() }).strict(),
+      triggers: [],
+      handler: async (p: unknown) => {
+        nhan.push(p);
+        return { type: "action_result", title: "x", data: {}, textSummary: "x" } as never;
+      },
+    } as never);
+    expect(getTool("__probe_khong_khai_authctx"), "tool thăm dò phải vào được sổ").toBeTruthy();
+
+    classifier.args = { __authCtx: BIA, ghiChu: "xin chào" };
+    const mod = await import("./intentClassifier");
+    const spy = vi.spyOn(mod, "classifyToolIntent").mockReturnValue({
+      tool: "__probe_khong_khai_authctx",
+      args: classifier.args,
+      reason: "TEST_SEAM",
+    } as never);
+    await tryExecuteTool("bất kỳ câu nào", undefined, PHIEN);
+    spy.mockRestore();
+
+    expect(nhan.length).toBe(1);
+    expect(Object.hasOwn(nhan[0] as object, "__authCtx"), "không khai ⇒ KHÔNG được nhét vào").toBe(false);
+    // …và phần args HỢP LỆ vẫn tới nơi (không "làm sạch" bằng cách vứt hết).
+    expect((nhan[0] as Record<string, unknown>).ghiChu).toBe("xin chào");
   });
 });
 

@@ -18,6 +18,15 @@ import {
 import * as db from "../db";
 import { getDb } from "../db/connection";
 
+/**
+ * Các ca dưới đây đo PHÉP GOM (bucketing / coordinate space), không đo phạm vi dữ liệu.
+ * Vai `admin` ⇒ `getAccessFilterConditions` trả `undefined` ⇒ KHÔNG bộ lọc nào được áp
+ * ⇒ hành vi y hệt trước bản vá phạm vi 2026-08-17, nên các phép đo cũ giữ nguyên nghĩa.
+ * (`userId` không cần có thật: `getUserAssignmentCodes` ngắt mạch ở vai `admin` trước
+ * khi chạm CSDL.) Trục phạm vi có lưới RIÊNG: `defectSpatialHeatmap.scope.test.ts`.
+ */
+const ADMIN_SCOPE = { userId: 1, userRole: "admin" } as const;
+
 function row(partial: Partial<SpatialDefectRow> & { bboxX: number; bboxY: number }): SpatialDefectRow {
   return {
     bboxW: 0,
@@ -201,6 +210,7 @@ describe("computeSpatialHeatmap (DB integration)", () => {
       gridWidth: 10,
       gridHeight: 10,
       mode: "bbox",
+      scope: ADMIN_SCOPE,
     });
 
     expect(r.realCoordinates).toBe(true);
@@ -235,6 +245,7 @@ describe("computeSpatialHeatmap (DB integration)", () => {
       gridWidth: 10,
       gridHeight: 10,
       mode: "bbox",
+      scope: ADMIN_SCOPE,
     });
     expect(r.totalDefects).toBe(2); // only the two classified rows
     expect(r.grid[0][0]).toBe(2);
@@ -250,6 +261,7 @@ describe("computeSpatialHeatmap (DB integration)", () => {
       gridWidth: 10,
       gridHeight: 10,
       mode: "pointDef",
+      scope: ADMIN_SCOPE,
     });
     expect(r.realCoordinates).toBe(false);
     expect(r.mode).toBe("pointDef");

@@ -1,0 +1,203 @@
+{
+  "label": "live-gateway-ghosttext-2026-08-16",
+  "startedAt": "2026-08-16T09:10:52.720Z",
+  "base": "http://127.0.0.1:3000",
+  "gateway": {
+    "authGate": {
+      "expect": 401,
+      "got": 401,
+      "pass": true
+    },
+    "models": {
+      "status": 200,
+      "ms": 5.5,
+      "ids": [
+        "chat",
+        "code",
+        "fast",
+        "fim",
+        "embed"
+      ],
+      "roots": [
+        "Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL",
+        "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL",
+        "Qwen3-4B-Instruct-2507-UD-Q4_K_XL",
+        "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M",
+        "Qwen3-Embedding-0.6B-f16"
+      ],
+      "pass": true
+    },
+    "chatNonStream_fast": {
+      "model": "fast",
+      "status": 200,
+      "ms": 8472.4,
+      "content": "PONG",
+      "usage": {
+        "prompt_tokens": 12,
+        "completion_tokens": 2,
+        "total_tokens": 14
+      },
+      "error": null,
+      "vramBeforeMib": 3001,
+      "vramAfterMib": 8045,
+      "pass": true
+    },
+    "chatNonStream_code": {
+      "model": "code",
+      "status": 500,
+      "ms": 64861,
+      "content": null,
+      "usage": null,
+      "error": {
+        "message": "Failed to load model",
+        "type": "server_error"
+      },
+      "raw": "{\"error\":{\"message\":\"Failed to load model\",\"type\":\"server_error\"}}",
+      "vramBeforeMib": 8045,
+      "vramAfterMib": 1295,
+      "pass": false
+    },
+    "chatStream": {
+      "status": 200,
+      "contentType": "text/event-stream",
+      "ttftMs": 15.1,
+      "totalMs": 8453.3,
+      "sseChunks": 3,
+      "sawDone": true,
+      "text": "1, 2, 3, 4, 5, 6, 7, 8, 9, 10",
+      "pass": true
+    },
+    "completionsFim": {
+      "status": 200,
+      "ms": 8206.2,
+      "text": "VAR_OUTPUT c : INT; END_VAR\nc := a + b;\nEND_FUNCTION_BLOCK\n",
+      "error": null,
+      "vramBeforeMib": 6339,
+      "vramAfterMib": 8029,
+      "pass": true
+    },
+    "completionsStream": {
+      "status": 200,
+      "ttftMs": 78.5,
+      "totalMs": 78.7,
+      "sseChunks": 2,
+      "sawDone": true,
+      "text": "10;\nVAR y : INT := 20;\nVAR z : INT",
+      "pass": true
+    },
+    "embeddings": {
+      "status": 200,
+      "ms": 9239.9,
+      "dimensions": 1024,
+      "error": null,
+      "vramBeforeMib": 8029,
+      "vramAfterMib": 9774,
+      "pass": true
+    }
+  },
+  "ghostText": {
+    "login": {
+      "user": "supervisor1",
+      "status": 200,
+      "requires2FA": false,
+      "ok": true,
+      "cookieCount": 1
+    },
+    "measurement": {
+      "path": "HTTP POST /api/trpc/programming.copilotComplete (ĐƯỜNG THẬT của ghost-text)",
+      "n": 20,
+      "warmup": 3,
+      "httpStatusAllOk": false,
+      "nonEmptyCompletions": 0,
+      "p50Ms": 16.5,
+      "p95Ms": 30.9,
+      "minMs": 13.3,
+      "maxMs": 135.7,
+      "meanMs": 24.8,
+      "clientDebounceMs": 350,
+      "p50PlusDebounceMs": 366.5,
+      "p95PlusDebounceMs": 380.9,
+      "vramBeforeMib": 9776,
+      "vramAfterWarmMib": 9776,
+      "vramAfterMib": 9775,
+      "rawMs": [
+        19.3,
+        15.3,
+        16.5,
+        16.2,
+        16.9,
+        29.2,
+        30.9,
+        135.7,
+        18.2,
+        15.2,
+        15.9,
+        13.3,
+        20.4,
+        27.8,
+        30.1,
+        13.3,
+        14.6,
+        13.9,
+        17.2,
+        15.3
+      ],
+      "sampleCompletion": ""
+    }
+  },
+  "vramTimeline": [
+    {
+      "tag": "gw-start",
+      "usedMib": 3001
+    },
+    {
+      "tag": "before-chat-fast",
+      "usedMib": 3001
+    },
+    {
+      "tag": "after-chat-fast",
+      "usedMib": 8045
+    },
+    {
+      "tag": "before-chat-code",
+      "usedMib": 8045
+    },
+    {
+      "tag": "after-chat-code",
+      "usedMib": 1295
+    },
+    {
+      "tag": "before-fim",
+      "usedMib": 6339
+    },
+    {
+      "tag": "after-fim",
+      "usedMib": 8029
+    },
+    {
+      "tag": "before-embed",
+      "usedMib": 8029
+    },
+    {
+      "tag": "after-embed",
+      "usedMib": 9774
+    },
+    {
+      "tag": "gw-end",
+      "usedMib": 9776
+    },
+    {
+      "tag": "before-ghosttext",
+      "usedMib": 9776
+    },
+    {
+      "tag": "after-ghosttext-warm",
+      "usedMib": 9776
+    },
+    {
+      "tag": "after-ghosttext",
+      "usedMib": 9775
+    }
+  ],
+  "finishedAt": "2026-08-16T09:12:33.764Z"
+}

@@ -8,8 +8,10 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
+import { factoryIdsInScope, resolveFactoryScope } from "../_core/aiAnalyticsScope";
+import { resolveDataScope, scopeLabelsOf, type ScopeLabels } from "../_core/accessControl";
 import {
   analyzeTimeSeries,
   analyzeMultivariate,
@@ -161,7 +163,7 @@ export const aiTimeSeriesRouter = router({
       machineId: z.number().int().positive().optional(),
       machineType: z.enum(MACHINE_TYPES).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database unavailable");
 
@@ -172,6 +174,41 @@ export const aiTimeSeriesRouter = router({
       const conditions = [gte(dailyStatistics.date, startDate), lte(dailyStatistics.date, endDate)];
       if (input.machineId) conditions.push(eq(dailyStatistics.machineId, input.machineId));
       if (input.machineType) conditions.push(eq(machines.machineType, input.machineType));
+
+      // ── PHẠM VI DỮ LIỆU (2026-08-18, nhóm B #4) ────────────────────────────────────────────
+      // `protectedProcedure` chỉ kiểm ĐÃ ĐĂNG NHẬP; trước dòng này thủ tục quét **TOÀN BỘ
+      // `daily_statistics` của mọi nhà máy** rồi trả về một chuỗi thời gian gộp — bất kỳ tài
+      // khoản nào cũng đọc được sản lượng/tỉ lệ NG của mọi nhà máy trong hệ.
+      // Dùng ĐÚNG bộ phân giải đã có cho bề mặt AI (`_core/aiAnalyticsScope`, xây trên cùng
+      // `accessControl.getUserAssignmentCodes` mà `/history` dùng) — không cơ chế thứ hai.
+      // ★ `daily_statistics.factoryId` là NOT NULL + có index `idx_stats_factory_date` ⇒ 0 DDL.
+      const phamVi = await resolveFactoryScope(ctx.user);
+      if (!phamVi.isGlobal) {
+        const factoryIds = await factoryIdsInScope(phamVi);
+        if (factoryIds.length === 0) {
+          // ⚠ TỪ CHỐI TRUNG THỰC — nói ĐÚNG lý do. Một câu "không có dữ liệu" ở đây dạy người
+          // dùng rằng hệ thống hỏng trong khi sự thật là phạm vi của họ rỗng.
+          throw appError(
+            "FORBIDDEN",
+            "PERMISSION_DENIED",
+            { action: "viewAiTimeSeries", reason: "noFactoryAssigned" },
+            "Tài khoản của bạn CHƯA ĐƯỢC GÁN nhà máy nào, nên phạm vi xem của bạn đang RỖNG và " +
+              "chuỗi thời gian này không được phép trả về số liệu của bất kỳ nhà máy nào. Đây là " +
+              "giới hạn PHẠM VI của tài khoản, KHÔNG phải kết luận về tình trạng nhà xưởng. Liên hệ " +
+              "quản trị viên để được gán nhà máy.",
+          );
+        }
+        conditions.push(inArray(dailyStatistics.factoryId, factoryIds));
+      }
+
+      /**
+       * ⚠⚠ BA Ô NHÃN LẤY QUA `scopeLabelsOf()`, **KHÔNG** `{...resolved}`.
+       * `resolveDataScope` trả về CẢ `filter` — một đối tượng SQL của drizzle mang tham chiếu
+       * VÒNG. Spread nguyên khối ⇒ superjson chết `Converting circular structure to JSON` ⇒ **500
+       * cho mọi người dùng**, và `tsc` KHÔNG bắt được (thuộc tính thừa chỉ bị cấm với object
+       * literal). Đo được ngày 2026-08-17 trên `dashboard.getStats`. Xem `accessControlLabels.ts`.
+       */
+      const nhan: ScopeLabels = scopeLabelsOf(await resolveDataScope(ctx.user.id, String(ctx.user.role)));
 
       // Always leftJoin machines (cheap, indexed FK) so the machineType filter
       // above can apply without a second query shape — same pattern as
@@ -200,14 +237,23 @@ export const aiTimeSeriesRouter = router({
         return { timestamp: ts, value };
       });
 
+      /**
+       * ⚠ MỘT nơi gắn nhãn cho MỌI nhánh trả về. Gắn tay ở bảy chỗ `return` là bảy bản sao, và
+       * bản sao thứ tám (nhánh mới) sẽ lặng lẽ trả về một kết quả KHÔNG NÓI phạm vi của nó —
+       * đúng lớp lỗi mà `withScopeLabels` được dựng ra để xoá ở các bề mặt khác.
+       */
+      const coNhan = <T extends object>(r: T): T & ScopeLabels => ({ ...r, ...nhan });
+
       if (tsPoints.length < 3) {
-        return {
+        // ⚠ "Insufficient data" của một phạm vi RỖNG và của một dây chuyền sạch trông GIỐNG HỆT
+        // nhau — nhãn ở trên là thứ duy nhất phân biệt được hai thứ đó cho giao diện.
+        return coNhan({
           summary: `Insufficient data: ${tsPoints.length} point(s) found for "${input.metric}" over ${input.period}. Need at least 3.`,
           dataPoints: tsPoints.map((p) => ({
             timestamp: new Date(p.timestamp).toLocaleDateString("vi-VN"),
             value: p.value,
           })),
-        };
+        });
       }
 
       const metricLabel = input.metric.replace(/_/g, " ");
@@ -215,7 +261,7 @@ export const aiTimeSeriesRouter = router({
       switch (input.analysisType) {
         case "analyze": {
           const result = ewma(tsPoints, 0.3, 3.0);
-          return {
+          return coNhan({
             summary: `EWMA analysis · ${metricLabel} · ${input.period} · ${tsPoints.length} data points · Anomalies: ${result.anomalies.length}`,
             dataPoints: tsPoints.map((p, i) => ({
               timestamp: new Date(p.timestamp).toLocaleDateString("vi-VN"),
@@ -228,7 +274,7 @@ export const aiTimeSeriesRouter = router({
               severity: a.score > 5 ? "high" : "medium",
               description: `Value ${a.value.toFixed(2)} (score ${a.score.toFixed(2)})`,
             })),
-          };
+          });
         }
 
         case "forecast": {
@@ -238,7 +284,7 @@ export const aiTimeSeriesRouter = router({
             value: p.value,
           }));
           const fp = ewmaForecast(tsPoints, 0.3, horizon);
-          return {
+          return coNhan({
             // doc69 A4 (audit U5) — this branch only ever calls ewmaForecast (pure
             // EWMA), never holtWinters; the summary previously claimed "Holt-Winters
             // / EWMA" regardless, mislabeling the actual algorithm used.
@@ -251,12 +297,12 @@ export const aiTimeSeriesRouter = router({
                 predicted: f.predicted,
               })),
             ],
-          };
+          });
         }
 
         case "anomaly": {
           const result = ewma(tsPoints, 0.3, 2.0);
-          return {
+          return coNhan({
             summary: `Anomaly detection · ${metricLabel} · ${input.period} · Found: ${result.anomalies.length}`,
             dataPoints: tsPoints.map((p, i) => ({
               timestamp: new Date(p.timestamp).toLocaleDateString("vi-VN"),
@@ -269,26 +315,26 @@ export const aiTimeSeriesRouter = router({
               severity: a.score > 4 ? "high" : "medium",
               description: `Outlier value ${a.value.toFixed(2)}, anomaly score ${a.score.toFixed(2)}`,
             })),
-          };
+          });
         }
 
         case "decompose": {
           const period = Math.max(2, Math.min(Math.floor(tsPoints.length / 3), 7));
           const decomp = seasonalDecompose(tsPoints, period);
-          return {
+          return coNhan({
             summary: `Seasonal decomposition · ${metricLabel} · period=${period}`,
             dataPoints: tsPoints.map((p, i) => ({
               timestamp: new Date(p.timestamp).toLocaleDateString("vi-VN"),
               value: p.value,
               predicted: isNaN(decomp.trend[i]) ? p.value : decomp.trend[i],
             })),
-          };
+          });
         }
 
         case "changepoints": {
           const cps = detectChangePoints(tsPoints, 4.0);
           const cpSet = new Set(cps.map((c) => c.index));
-          return {
+          return coNhan({
             summary: `Change point detection · ${metricLabel} · ${input.period} · Found: ${cps.length}`,
             dataPoints: tsPoints.map((p, i) => ({
               timestamp: new Date(p.timestamp).toLocaleDateString("vi-VN"),
@@ -300,11 +346,11 @@ export const aiTimeSeriesRouter = router({
               type: c.direction,
               description: `CUSUM ${c.cumulativeSum.toFixed(2)} — ${c.direction}`,
             })),
-          };
+          });
         }
 
         default:
-          return { summary: "Unknown analysis type", dataPoints: [] };
+          return coNhan({ summary: "Unknown analysis type", dataPoints: [] });
       }
     }),
 });

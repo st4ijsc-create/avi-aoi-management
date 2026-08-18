@@ -1,5 +1,6 @@
-import { eq, and, desc, gte, lte, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql, inArray, or, isNull } from "drizzle-orm";
 import { getDb } from "./connection";
+import { idsTrongPhamVi, trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 import { executeRows } from "../utils/kpi";
 import {
   machines,
@@ -26,9 +27,10 @@ export async function createMachineStatusLog(data: InsertMachineStatusLog) {
   return result.id;
 }
 
-export async function getMachineStatusLogs(machineId: number, limit: number = 100) {
+export async function getMachineStatusLogs(machineId: number, limit: number = 100, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await trongPhamVi("machine", machineId, scope))) return [];
 
   return db.select()
     .from(machineStatusLogs)
@@ -49,10 +51,14 @@ export async function getLatestMachineStatus(machineId: number) {
   return result.length > 0 ? result[0] : null;
 }
 
-export async function getAllMachinesWithStatus() {
+export async function getAllMachinesWithStatus(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
+  // ⚠ Đây là BẢNG KIỂM KÊ TOÀN NHÀ XƯỞNG: mỗi hàng mang máy + trạm + tuyến + xưởng + NHÀ MÁY.
+  // Trước bản vá, mọi tài khoản qua được `machine_monitoring/canView` đọc được cả đội của mọi
+  // tenant. Bộ lọc theo `input.lineId/factoryId` ở router là bộ lọc GIAO DIỆN, không phải cổng.
+  const idsMay = await idsTrongPhamVi("machine", scope);
   const allMachines = await db.select({
     machine: machines,
     station: stations,
@@ -65,7 +71,10 @@ export async function getAllMachinesWithStatus() {
     .innerJoin(productionLines, eq(stations.lineId, productionLines.id))
     .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
     .innerJoin(factories, eq(workshops.factoryId, factories.id))
-    .where(eq(machines.isActive, true));
+    .where(and(
+      eq(machines.isActive, true),
+      ...(idsMay === null ? [] : [inArray(machines.id, idsMay.length ? idsMay : [-1])]),
+    ));
 
   if (allMachines.length === 0) return [];
 
@@ -149,9 +158,10 @@ export async function getAllMachinesWithStatus() {
   });
 }
 
-export async function getMachineUptimeStats(machineId: number, hours: number = 24) {
+export async function getMachineUptimeStats(machineId: number, hours: number = 24, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return { uptimePercent: 0, totalOnlineTime: 0, totalOfflineTime: 0 };
+  if (!(await trongPhamVi("machine", machineId, scope))) return { uptimePercent: 0, totalOnlineTime: 0, totalOfflineTime: 0 };
 
   const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
   
@@ -209,11 +219,12 @@ export async function markOfflineNotificationSent(logId: number) {
     .where(eq(machineStatusLogs.id, logId));
 }
 
-export async function getUnnotifiedOfflineMachines(thresholdMinutes: number = 5) {
+export async function getUnnotifiedOfflineMachines(thresholdMinutes: number = 5, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
   const thresholdTime = new Date(Date.now() - thresholdMinutes * 60 * 1000);
+  const idsMay = await idsTrongPhamVi("machine", scope);
   
   const offlineLogs = await db.select({
     log: machineStatusLogs,
@@ -224,7 +235,8 @@ export async function getUnnotifiedOfflineMachines(thresholdMinutes: number = 5)
     .where(and(
       eq(machineStatusLogs.status, 'offline'),
       eq(machineStatusLogs.notificationSent, false),
-      lte(machineStatusLogs.timestamp, thresholdTime)
+      lte(machineStatusLogs.timestamp, thresholdTime),
+      ...(idsMay === null ? [] : [inArray(machines.id, idsMay.length ? idsMay : [-1])]),
     ));
 
   const machineLatestOffline = new Map<number, typeof offlineLogs[0]>();
@@ -283,9 +295,10 @@ export async function getLatestMachineHeartbeat(machineId: number) {
   return result.length > 0 ? result[0] : null;
 }
 
-export async function getHeartbeatHistory(machineId: number, hours: number = 24) {
+export async function getHeartbeatHistory(machineId: number, hours: number = 24, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await trongPhamVi("machine", machineId, scope))) return [];
 
   const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
   
@@ -299,9 +312,10 @@ export async function getHeartbeatHistory(machineId: number, hours: number = 24)
 }
 
 // ============ UPTIME TIMELINE ============
-export async function getUptimeTimeline(machineId: number, hours: number = 24) {
+export async function getUptimeTimeline(machineId: number, hours: number = 24, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await trongPhamVi("machine", machineId, scope))) return [];
 
   const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
   
@@ -342,17 +356,22 @@ export async function getUptimeTimeline(machineId: number, hours: number = 24) {
   return segments;
 }
 
-export async function getAllMachinesUptimeTimeline(hours: number = 24) {
+export async function getAllMachinesUptimeTimeline(hours: number = 24, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
+  // Lọc tập máy MỘT lần ở đây là đủ: hai lời gọi con bên dưới nhận id đã nằm trong phạm vi.
+  const idsMay = await idsTrongPhamVi("machine", scope);
   const allMachines = await db.select({
     id: machines.id,
     code: machines.code,
     name: machines.name,
   })
     .from(machines)
-    .where(eq(machines.isActive, true));
+    .where(and(
+      eq(machines.isActive, true),
+      ...(idsMay === null ? [] : [inArray(machines.id, idsMay.length ? idsMay : [-1])]),
+    ));
 
   const timelinePromises = allMachines.map(async (machine) => {
     const timeline = await getUptimeTimeline(machine.id, hours);
@@ -372,14 +391,29 @@ export async function getAllMachinesUptimeTimeline(hours: number = 24) {
 }
 
 // ============ ALERT CONFIGURATION ============
-export async function getAlertConfiguration() {
+/**
+ * ⚠ Cấu hình ngưỡng "máy mất kết nối" — một hàng CẤU HÌNH, không phải số đo. Hàng không gắn
+ * máy/nhà máy là mặc định TOÀN CỤC ⇒ giữ (cùng luật với `oee_targets`). Nơi gọi duy nhất là
+ * `adminProcedure`, nên trên thực tế cổng này không bao giờ phát biểu — nó tồn tại để không có
+ * ĐƯỜNG NÀO đọc hàng gắn nhà máy khác nếu mai này sàn được nới.
+ */
+export async function getAlertConfiguration(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
 
+  const [idsMay, idsNhaMay] = await Promise.all([
+    idsTrongPhamVi("machine", scope),
+    idsTrongPhamVi("factory", scope),
+  ]);
+  const cong = idsMay === null || idsNhaMay === null ? undefined : or(
+    and(isNull(alertSettings.machineId), isNull(alertSettings.factoryId)),
+    inArray(alertSettings.machineId, idsMay.length ? idsMay : [-1]),
+    inArray(alertSettings.factoryId, idsNhaMay.length ? idsNhaMay : [-1]),
+  );
   // Get from alertSettings table with type 'machine_offline'
   const result = await db.select()
     .from(alertSettings)
-    .where(eq(alertSettings.alertType, 'machine_offline'))
+    .where(and(eq(alertSettings.alertType, 'machine_offline'), ...(cong ? [cong] : [])))
     .limit(1);
 
   if (result.length === 0) {
@@ -440,9 +474,10 @@ export async function updateAlertConfiguration(config: {
 }
 
 // ============ MACHINE STATUS REPORT ============
-export async function getMachineStatusReport(machineId: number, startDate: Date, endDate: Date) {
+export async function getMachineStatusReport(machineId: number, startDate: Date, endDate: Date, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
+  if (!(await trongPhamVi("machine", machineId, scope))) return null;
 
   const logs = await db.select()
     .from(machineStatusLogs)
@@ -516,22 +551,30 @@ export async function getMachineStatusReport(machineId: number, startDate: Date,
 
 // ============ MANUAL MACHINE CONNECTIONS FUNCTIONS ============
 
-export async function listManualConnections() {
+export async function listManualConnections(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(manualMachineConnections).orderBy(desc(manualMachineConnections.createdAt));
+  // ⚠ Bảng này mang ĐỊA CHỈ IP + CỔNG của từng máy — một bản đồ mạng nội bộ của tenant.
+  const idsMay = await idsTrongPhamVi("machine", scope);
+  return db.select().from(manualMachineConnections)
+    .where(idsMay === null ? undefined : inArray(manualMachineConnections.machineId, idsMay.length ? idsMay : [-1]))
+    .orderBy(desc(manualMachineConnections.createdAt));
 }
 
-export async function getManualConnectionById(id: number) {
+export async function getManualConnectionById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   const results = await db.select().from(manualMachineConnections).where(eq(manualMachineConnections.id, id));
-  return results[0] || null;
+  const hang = results[0];
+  if (!hang) return null;
+  if (!(await trongPhamVi("machine", hang.machineId, scope))) return null;
+  return hang;
 }
 
-export async function getManualConnectionByMachineId(machineId: number) {
+export async function getManualConnectionByMachineId(machineId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
+  if (!(await trongPhamVi("machine", machineId, scope))) return null;
   const results = await db.select().from(manualMachineConnections).where(eq(manualMachineConnections.machineId, machineId));
   return results[0] || null;
 }
@@ -605,7 +648,7 @@ export async function getWorkstationErrors(filters: {
   machineId?: number;
   limit?: number;
   includeResolved?: boolean;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
@@ -613,6 +656,12 @@ export async function getWorkstationErrors(filters: {
   
   // Get NG inspections as "errors"
   conditions.push(eq(productInspections.overallResult, 'NG'));
+  // ⚠ Cổng phạm vi chiếu xuống `machineId` và được AND vào SAU bộ lọc `stationId`/`machineId` của
+  // người gọi: một `stationId` TỰ KHAI của nhà máy khác vì thế cho giao 0 hàng, chứ không mở cửa.
+  {
+    const idsMay = await idsTrongPhamVi("machine", scope);
+    if (idsMay !== null) conditions.push(inArray(productInspections.machineId, idsMay.length > 0 ? idsMay : [-1]));
+  }
   
   if (filters.stationId) {
     // Get machines for this station
@@ -657,11 +706,15 @@ export async function getWorkstationErrorSummary(filters: {
   stationId?: number;
   startDate?: Date;
   endDate?: Date;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return { total: 0, byMachine: [], byHour: [], byDefectType: [] };
   
   const conditions = [eq(productInspections.overallResult, 'NG')];
+  {
+    const idsMay = await idsTrongPhamVi("machine", scope);
+    if (idsMay !== null) conditions.push(inArray(productInspections.machineId, idsMay.length > 0 ? idsMay : [-1]));
+  }
   
   if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
@@ -728,10 +781,12 @@ export async function recordMachineHealthSnapshot(data: InsertMachineHealthHisto
 export async function getMachineHealthHistory(
   machineId: number,
   range: "day" | "week" | "month" = "week",
-  limit: number = 500
+  limit: number = 500,
+  scope?: PhamViNguoiXem,
 ) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await trongPhamVi("machine", machineId, scope))) return [];
   const hours = range === "day" ? 24 : range === "week" ? 24 * 7 : 24 * 30;
   const since = new Date(Date.now() - hours * 60 * 60 * 1000);
   return db

@@ -59,6 +59,52 @@ function generateKey(): { plaintext: string; prefix: string } {
   return { plaintext, prefix };
 }
 
+/**
+ * ★★ PHẠM VI TENANT (mig 0325) — BA trạng thái, khai TƯỜNG MINH.
+ *
+ * `scopes` ở trên nói *"khoá LÀM ĐƯỢC GÌ"*; ba ô dưới đây nói *"khoá THẤY ĐƯỢC GÌ"*.
+ *   `null`      → CHƯA KHAI ⇒ `bi:read`/`export:read` bị 403 (mặc định của mọi khoá cũ)
+ *   'factory'   → phải kèm ≥1 mã ⇒ chỉ nhà máy ấy
+ *   'global'    → toàn cục, và hai mã phải để TRỐNG
+ * Cùng ràng buộc với CHECK `api_keys_data_scope_mode_chk` ở CSDL — cố ý trùng: zod cho câu lỗi
+ * đọc được, CHECK bịt mọi đường ghi khác (psql, script, một router tương lai quên kiểm).
+ */
+const tenantScopeSchema = z
+  .object({
+    dataScopeMode: z.enum(["factory", "global"]).nullish(),
+    corporateCode: z.string().max(50).nullish(),
+    factoryCode: z.string().max(50).nullish(),
+  })
+  .refine(
+    (v) => {
+      const corp = v.corporateCode?.trim() || null;
+      const fac = v.factoryCode?.trim() || null;
+      if (v.dataScopeMode === "factory") return corp !== null || fac !== null;
+      // Cả 'global' lẫn CHƯA KHAI đều không được mang mã lơ lửng.
+      return corp === null && fac === null;
+    },
+    {
+      message:
+        "Phạm vi 'factory' phải kèm mã tập đoàn hoặc mã nhà máy; phạm vi 'global' và phạm vi " +
+        "chưa khai phải để trống cả hai mã.",
+    },
+  );
+
+/** Chuẩn hoá ba ô về đúng hình dạng CSDL chấp nhận (chuỗi rỗng ⇒ NULL, không phải ""). */
+function normalizeTenantScope(input: {
+  dataScopeMode?: "factory" | "global" | null;
+  corporateCode?: string | null;
+  factoryCode?: string | null;
+}) {
+  const mode = input.dataScopeMode ?? null;
+  if (mode !== "factory") return { dataScopeMode: mode, corporateCode: null, factoryCode: null };
+  return {
+    dataScopeMode: mode,
+    corporateCode: input.corporateCode?.trim() || null,
+    factoryCode: input.factoryCode?.trim() || null,
+  };
+}
+
 /** Project a row to the SAFE shape (NEVER exposes keyHash). */
 function publicRow(r: typeof apiKeys.$inferSelect) {
   return {
@@ -73,6 +119,10 @@ function publicRow(r: typeof apiKeys.$inferSelect) {
     createdBy: r.createdBy,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
+    // mig 0325 — hiển thị để quản trị viên THẤY khoá nào chưa khai phạm vi.
+    dataScopeMode: r.dataScopeMode,
+    corporateCode: r.corporateCode,
+    factoryCode: r.factoryCode,
   };
 }
 
@@ -109,12 +159,14 @@ export const apiKeyRouter = router({
   create: protectedProcedure
     .use(requirePermission("admin_system", "canCreate"))
     .input(
-      z.object({
-        name: z.string().min(1).max(255),
-        description: z.string().max(2000).nullish(),
-        scopes: scopeSchema,
-        expiresAt: z.union([z.string(), z.date()]).nullish(),
-      }),
+      z
+        .object({
+          name: z.string().min(1).max(255),
+          description: z.string().max(2000).nullish(),
+          scopes: scopeSchema,
+          expiresAt: z.union([z.string(), z.date()]).nullish(),
+        })
+        .and(tenantScopeSchema),
     )
     .mutation(async ({ input, ctx }) => {
       const d = await db();
@@ -131,6 +183,9 @@ export const apiKeyRouter = router({
           isActive: true,
           expiresAt: toExpiry(input.expiresAt),
           createdBy: ctx.user?.id ?? null,
+          // ⚠ KHÔNG mặc định 'global'. Khoá mới sinh ra CHƯA KHAI (`null`) trừ khi người tạo
+          //   chọn tường minh — một mặc định "toàn cục cho tiện" ở đây sẽ vô hiệu hoá cả 0325.
+          ...normalizeTenantScope(input),
         })
         .returning();
       // The plaintext is surfaced HERE ONLY — never persisted, never returned again.
@@ -141,14 +196,16 @@ export const apiKeyRouter = router({
   update: protectedProcedure
     .use(requirePermission("admin_system", "canEdit"))
     .input(
-      z.object({
-        id: z.number().int().positive(),
-        name: z.string().min(1).max(255).optional(),
-        description: z.string().max(2000).nullish(),
-        scopes: scopeSchema.optional(),
-        expiresAt: z.union([z.string(), z.date()]).nullish(),
-        isActive: z.boolean().optional(),
-      }),
+      z
+        .object({
+          id: z.number().int().positive(),
+          name: z.string().min(1).max(255).optional(),
+          description: z.string().max(2000).nullish(),
+          scopes: scopeSchema.optional(),
+          expiresAt: z.union([z.string(), z.date()]).nullish(),
+          isActive: z.boolean().optional(),
+        })
+        .and(tenantScopeSchema),
     )
     .mutation(async ({ input }) => {
       const d = await db();
@@ -161,6 +218,12 @@ export const apiKeyRouter = router({
       if (input.scopes !== undefined) patch.scopes = input.scopes;
       if (input.isActive !== undefined) patch.isActive = input.isActive;
       if (input.expiresAt !== undefined) patch.expiresAt = toExpiry(input.expiresAt);
+      // ⚠ Ba ô phạm vi luôn đi CÙNG NHAU. Vá lẻ một ô (chỉ `factoryCode`, giữ nguyên `mode`)
+      //   sinh ra đúng hình dạng lệch mà CHECK cấm, và bắt người dùng nhận một lỗi CSDL thô
+      //   thay vì một câu đọc được. Client gửi cả ba, hoặc không gửi ô nào.
+      if (input.dataScopeMode !== undefined || input.corporateCode !== undefined || input.factoryCode !== undefined) {
+        Object.assign(patch, normalizeTenantScope(input));
+      }
 
       const [row] = await d.update(apiKeys).set(patch).where(eq(apiKeys.id, input.id)).returning();
       return publicRow(row);

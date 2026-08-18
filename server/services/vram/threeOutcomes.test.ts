@@ -1094,6 +1094,8 @@ describe("§5 ★★ CA BẮT BUỘC — KHÔNG CÓ ĐƯỜNG NÀO IM LẶNG", (
     }));
     vi.doMock("../aiLlamaServerClient", () => ({
       shouldUseServerForText: () => false, shouldUseServerForFim: () => false,
+      // G1-D — vị từ điểm nghẽn `loadGgufModel` (chống nạp bản thứ hai của model llama-server giữ).
+      laModelServerDangGiu: () => false,
       preflightHealthy: async () => false, preflightHealthyForFim: async () => false,
       llamaServerStrict: () => false, llamaServerEnabled: () => false, llamaServerHealthy: async () => false,
     }));

@@ -1,5 +1,6 @@
-import { eq, and, desc, asc, or, isNull, ilike, SQL } from "drizzle-orm";
+import { eq, and, desc, asc, or, isNull, ilike, inArray, SQL } from "drizzle-orm";
 import { getDb } from "./connection";
+import { idsTrongPhamVi, trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 import {
   shiftConfigs, InsertShiftConfig,
   productionOrders, InsertProductionOrder,
@@ -59,6 +60,18 @@ export async function getDefaultShiftConfigs() {
 
 
 // ============ PRODUCTION ORDER FUNCTIONS ============
+/**
+ * ★★★ 2026-08-18 (trả nợ nhóm A) — **TRỤC PHẠM VI CỦA LỆNH SẢN XUẤT LÀ `lineId`, KHÔNG PHẢI
+ * `factoryId`.**
+ *
+ * `production_orders` mang CẢ HAI cột và chúng có thể BẤT ĐỒNG — không ràng buộc nào bắt
+ * `factoryId` phải khớp nhà máy của `lineId`. Chọn cột ghi rời là mở lại đúng lớp lỗi "hàng mang
+ * `factoryId` của nhà máy KHÁC" đã cắn tuần này (`daily_statistics`). Luật đã ghi ở
+ * `services/ecosystem/commandCenterScope.scopedWorkOrderIds` — đây là cùng luật, cùng cột.
+ *
+ * ⚠ Cổng được AND vào **SAU** bộ lọc `factoryId`/`lineId` của người gọi, nên một `factoryId` TỰ
+ * KHAI chỉ THU HẸP thêm; nó không bao giờ mở được cửa sang nhà máy khác.
+ */
 export async function getProductionOrders(filters?: {
   factoryId?: number;
   workshopId?: number;
@@ -67,11 +80,15 @@ export async function getProductionOrders(filters?: {
   companyCode?: string;
   search?: string;
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
   const conditions = [];
+  {
+    const idsTuyen = await idsTrongPhamVi("line", scope);
+    if (idsTuyen !== null) conditions.push(inArray(productionOrders.lineId, idsTuyen.length ? idsTuyen : [-1]));
+  }
   if (filters?.factoryId) conditions.push(eq(productionOrders.factoryId, filters.factoryId));
   if (filters?.workshopId) conditions.push(eq(productionOrders.workshopId, filters.workshopId));
   if (filters?.lineId) conditions.push(eq(productionOrders.lineId, filters.lineId));
@@ -93,18 +110,22 @@ export async function getProductionOrders(filters?: {
     .limit(limit);
 }
 
-export async function getProductionOrderById(id: number) {
+export async function getProductionOrderById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   const result = await db.select().from(productionOrders).where(eq(productionOrders.id, id)).limit(1);
-  return result.length > 0 ? result[0] : null;
+  if (result.length === 0) return null;
+  if (!(await trongPhamVi("line", result[0].lineId, scope))) return null;
+  return result[0];
 }
 
-export async function getProductionOrderByCode(orderCode: string) {
+export async function getProductionOrderByCode(orderCode: string, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   const result = await db.select().from(productionOrders).where(eq(productionOrders.orderCode, orderCode)).limit(1);
-  return result.length > 0 ? result[0] : null;
+  if (result.length === 0) return null;
+  if (!(await trongPhamVi("line", result[0].lineId, scope))) return null;
+  return result[0];
 }
 
 export async function createProductionOrder(data: InsertProductionOrder) {
@@ -154,23 +175,26 @@ export async function updateProductionOrderQuantities(id: number, result: 'OK' |
 }
 
 // ============ LINE STAGE FUNCTIONS ============
-export async function getLineStages(lineId?: number) {
+export async function getLineStages(lineId?: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  
-  if (lineId) {
-    return db.select().from(lineStages)
-      .where(eq(lineStages.lineId, lineId))
-      .orderBy(lineStages.orderIndex);
-  }
-  
-  return db.select().from(lineStages).orderBy(lineStages.orderIndex);
+  const idsTuyen = await idsTrongPhamVi("line", scope);
+  const dieuKien = [
+    ...(idsTuyen === null ? [] : [inArray(lineStages.lineId, idsTuyen.length ? idsTuyen : [-1])]),
+    ...(lineId ? [eq(lineStages.lineId, lineId)] : []),
+  ];
+  return db.select().from(lineStages)
+    .where(dieuKien.length ? and(...dieuKien) : undefined)
+    .orderBy(lineStages.orderIndex);
 }
 
-export async function getLineStageById(id: number) {
+export async function getLineStageById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   const result = await db.select().from(lineStages).where(eq(lineStages.id, id));
+  // ⚠ Hàm này trả về MẢNG (hợp đồng cũ, không sửa ở đây). Ngoài phạm vi ⇒ mảng RỖNG, đúng hình
+  // dạng "không tìm thấy" mà nơi gọi đã xử lý được.
+  if (result.length > 0 && !(await trongPhamVi("line", result[0].lineId, scope))) return [];
   return result || null;
 }
 
@@ -211,11 +235,15 @@ export async function getLineProductAssignments(filters?: {
   productModelId?: number;
   productionOrderId?: number;
   isActive?: boolean;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
   const conditions = [];
+  {
+    const idsTuyen = await idsTrongPhamVi("line", scope);
+    if (idsTuyen !== null) conditions.push(inArray(lineProductAssignments.lineId, idsTuyen.length ? idsTuyen : [-1]));
+  }
   if (filters?.lineId) conditions.push(eq(lineProductAssignments.lineId, filters.lineId));
   if (filters?.productModelId) conditions.push(eq(lineProductAssignments.productModelId, filters.productModelId));
   if (filters?.productionOrderId) conditions.push(eq(lineProductAssignments.productionOrderId, filters.productionOrderId));
@@ -412,31 +440,42 @@ export async function deleteLineProcessAssignmentsByLine(lineId: number) {
 }
 
 // ============ PRODUCTION ORDER TEMPLATES ============
-export async function listOrderTemplates(factoryId?: number) {
+export async function listOrderTemplates(factoryId?: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
-  let query = db.select().from(productionOrderTemplates).where(eq(productionOrderTemplates.isActive, true));
-  if (factoryId) {
-    query = db.select().from(productionOrderTemplates).where(
-      and(
-        eq(productionOrderTemplates.isActive, true),
-        or(
-          eq(productionOrderTemplates.factoryId, factoryId),
-          isNull(productionOrderTemplates.factoryId)
-        )
-      )
+  // ⚠ `factoryId` NULL = mẫu DÙNG CHUNG cho mọi nhà máy (chú thích ở lược đồ). Nó không mang số
+  // đo của ai cả nên KHÔNG bị loại — loại nó đi thì người bị thu hẹp mất luôn bộ mẫu mặc định và
+  // màn hình đọc thành "chưa có mẫu nào". Đây là ngoại lệ CÓ LÝ DO, giống `oee_targets`.
+  const idsNhaMay = await idsTrongPhamVi("factory", scope);
+  const dieuKien = [eq(productionOrderTemplates.isActive, true)];
+  if (idsNhaMay !== null) {
+    const cong = or(
+      isNull(productionOrderTemplates.factoryId),
+      inArray(productionOrderTemplates.factoryId, idsNhaMay.length ? idsNhaMay : [-1]),
     );
+    if (cong) dieuKien.push(cong);
   }
-  return await query;
+  if (factoryId) {
+    const cong = or(
+      eq(productionOrderTemplates.factoryId, factoryId),
+      isNull(productionOrderTemplates.factoryId),
+    );
+    if (cong) dieuKien.push(cong);
+  }
+  return await db.select().from(productionOrderTemplates).where(and(...dieuKien));
 }
 
-export async function getOrderTemplate(id: number) {
+export async function getOrderTemplate(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   
   const results = await db.select().from(productionOrderTemplates).where(eq(productionOrderTemplates.id, id));
-  return results[0] || null;
+  const mau = results[0];
+  if (!mau) return null;
+  // `factoryId` NULL = mẫu dùng chung ⇒ ai cũng đọc được (xem `listOrderTemplates`).
+  if (mau.factoryId !== null && !(await trongPhamVi("factory", mau.factoryId, scope))) return null;
+  return mau;
 }
 
 export async function createOrderTemplate(data: InsertProductionOrderTemplate) {
@@ -462,12 +501,16 @@ export async function deleteOrderTemplate(id: number) {
 }
 
 // ============ WIP TRACKING ============
-export async function getWIPStatus(factoryId?: number) {
+export async function getWIPStatus(factoryId?: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return { orders: [], summary: { total: 0, inProgress: 0, completed: 0, pending: 0 } };
   
   // Get all orders with line info
   const conditions: SQL[] = [];
+  {
+    const idsTuyen = await idsTrongPhamVi("line", scope);
+    if (idsTuyen !== null) conditions.push(inArray(productionOrders.lineId, idsTuyen.length ? idsTuyen : [-1]));
+  }
   if (factoryId) conditions.push(eq(productionOrders.factoryId, factoryId));
   
   const allOrders = await db.select({
@@ -560,9 +603,10 @@ export async function getWIPStatus(factoryId?: number) {
   return { orders, summary };
 }
 
-export async function getWIPByLine(lineId: number) {
+export async function getWIPByLine(lineId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await trongPhamVi("line", lineId, scope))) return [];
   
   return await db.select().from(productionOrders)
     .where(and(
@@ -704,10 +748,27 @@ export async function createScheduleRun(
   return { id: runId };
 }
 
-export async function listScheduleRuns(filters?: { factoryId?: number; lineId?: number; limit?: number }) {
+export async function listScheduleRuns(filters?: { factoryId?: number; lineId?: number; limit?: number }, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
+  {
+    // `schedule_runs` có CẢ HAI cột và cả hai đều nullable (null/null = chạy TOÀN CỤC). Ưu tiên
+    // liên kết tuyến; hàng toàn cục là kết quả lập lịch cho mọi nhà máy nên nó CHỨA dữ liệu của
+    // tenant khác ⇒ bị LOẠI cho người bị thu hẹp (khác với `oee_targets`/mẫu lệnh, vốn chỉ là
+    // ngưỡng cấu hình không mang số đo).
+    const [idsTuyen, idsNhaMay] = await Promise.all([
+      idsTrongPhamVi("line", scope),
+      idsTrongPhamVi("factory", scope),
+    ]);
+    if (idsTuyen !== null && idsNhaMay !== null) {
+      const cong = or(
+        inArray(scheduleRuns.lineId, idsTuyen.length ? idsTuyen : [-1]),
+        and(isNull(scheduleRuns.lineId), inArray(scheduleRuns.factoryId, idsNhaMay.length ? idsNhaMay : [-1])),
+      );
+      if (cong) conditions.push(cong);
+    }
+  }
   if (filters?.factoryId) conditions.push(eq(scheduleRuns.factoryId, filters.factoryId));
   if (filters?.lineId) conditions.push(eq(scheduleRuns.lineId, filters.lineId));
   const limit = Math.min(Math.max(filters?.limit ?? 50, 1), 500);
@@ -717,11 +778,21 @@ export async function listScheduleRuns(filters?: { factoryId?: number; lineId?: 
     .limit(limit);
 }
 
-export async function getScheduleRunById(id: number) {
+export async function getScheduleRunById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   const [run] = await db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id)).limit(1);
   if (!run) return null;
+  {
+    const capCanh: "line" | "factory" | null = run.lineId !== null ? "line" : run.factoryId !== null ? "factory" : null;
+    const idCanh = run.lineId ?? run.factoryId;
+    // Cả hai NULL = chạy TOÀN CỤC ⇒ chứa lịch của mọi nhà máy ⇒ fail-CLOSED cho người bị thu hẹp.
+    if (capCanh === null || idCanh === null) {
+      if ((await idsTrongPhamVi("line", scope)) !== null) return null;
+    } else if (!(await trongPhamVi(capCanh, idCanh, scope))) {
+      return null;
+    }
+  }
   const items = await db.select().from(scheduleRunItems).where(eq(scheduleRunItems.runId, id));
   return { ...run, items };
 }

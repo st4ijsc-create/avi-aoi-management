@@ -5,6 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { parse as parseYaml } from "yaml";
+// G4-B — làm phẳng playbook `.yaml` (tách ra để test được; file này chạy `run()` khi nạp).
+import { playbookToText, playbookTitle } from "./_playbook-text.mjs";
 
 const ROOT = process.cwd();
 const KNOWLEDGE_DIR = path.join(ROOT, "knowledge");
@@ -350,7 +352,24 @@ function run() {
   // retrieved context regardless of which part gets cited. A malformed/missing front
   // matter never throws — it just falls back to "N/A" so one bad card can't break the
   // whole chunk build.
-  const operationalFiles = collectMarkdownFiles(path.join(ROOT, "knowledge", "operational"));
+  //
+  // ─── G4-C — HAI thư mục, CÙNG một hạng nguồn "operational". VÌ SAO PHẢI LÀ THƯ MỤC RIÊNG ───
+  // `knowledge/operational/`          = SINH RA từ catalog (162 thẻ, mỗi lượt build viết đè).
+  // `knowledge/operational-approved/` = do NGƯỜI duyệt (20 thẻ, chủ dự án duyệt 2026-08-17).
+  //
+  // ⚠⚠ Không được để thẻ đã duyệt trong `knowledge/operational/`, và lý do KHÔNG phải là "trùng
+  //    tên": `build-operational-cards.mjs:217` chạy
+  //        fs.rmSync(OUT_DIR, { recursive: true, force: true });
+  //    ⇒ nó **XOÁ SẠCH CẢ THƯ MỤC** trước khi ghi. Lời khuyên "đổi tên thành <slug>-vanhanh.md để
+  //    tránh bị ghi đè" (knowledge/drafts/operational/_README.md, bản trước) là **SAI**: đổi tên
+  //    không cứu được file khỏi một lượt `rmSync` đệ quy. Một lượt `npm run kb:sync` là mất trắng
+  //    20 thẻ người duyệt, và mất im lặng.
+  //
+  // Cùng `sourceType: "operational"` (⇒ cùng trọng số 1,15 của SOURCE_TYPE_WEIGHTS, cùng đường
+  // deep-link của aiOperationalGrounding), khác thư mục ⇒ khác vòng đời ghi.
+  const operationalFiles = collectMarkdownFiles(path.join(ROOT, "knowledge", "operational")).concat(
+    collectMarkdownFiles(path.join(ROOT, "knowledge", "operational-approved")),
+  );
   for (const absoluteFile of operationalFiles) {
     const relFile = path.relative(ROOT, absoluteFile).split(path.sep).join("/");
     const fullText = fs.readFileSync(absoluteFile, "utf8");
@@ -379,6 +398,60 @@ function run() {
       const withMeta = `${metaLine}\n\n${text}`;
       chunks.push(makeChunk("operational", relFile, partIndex, `${title} (part ${partIndex + 1})`, withMeta));
     });
+  }
+
+  // ─── G4-B nhiệm vụ 1 — PLAYBOOK ỨNG CỨU SỰ CỐ (sourceType "playbook") ────────
+  // `knowledge/workflows/*.playbook.yaml` = 6 quy trình do NGƯỜI soạn (NG burst · xử lý NG ·
+  // rà soát SPC critical · lắp máy mới · đổi recipe · tạo điểm đo). Trước G4-B chúng có
+  // **0 chunk**: mọi khối phía trên đều đi qua `collectMarkdownFiles()`, vốn chỉ nhận `.md`
+  // (dòng ~72). Nội dung ứng cứu giá trị nhất của kho đã VÔ HÌNH với trợ lý kể từ khi được viết.
+  //
+  // Một chunk VI + một chunk EN cho mỗi playbook (không trộn ngôn ngữ — xem `_playbook-text.mjs`).
+  // `partIndex` chạy liên tục trong cùng một sourcePath nên id vẫn ổn định + duy nhất.
+  //
+  // ⚠ MỘT playbook hỏng (YAML sai, thiếu `title`) KHÔNG được phép làm gãy cả đợt dựng kho —
+  // nó chỉ bị bỏ qua kèm cảnh báo, cùng kỷ luật với khối front-matter của thẻ vận hành ở trên.
+  {
+    const workflowsDir = path.join(ROOT, "knowledge", "workflows");
+    let playbookCount = 0;
+    if (fs.existsSync(workflowsDir)) {
+      const files = fs
+        .readdirSync(workflowsDir)
+        .filter((f) => f.toLowerCase().endsWith(".playbook.yaml"))
+        .sort(); // xác định — không phụ thuộc thứ tự thư mục
+      for (const name of files) {
+        const absoluteFile = path.join(workflowsDir, name);
+        const relFile = path.relative(ROOT, absoluteFile).split(path.sep).join("/");
+        let pb;
+        try {
+          pb = parseYaml(fs.readFileSync(absoluteFile, "utf8"));
+        } catch (e) {
+          console.warn(`[kb] ⚠ BỎ QUA playbook không parse được: ${relFile} — ${e?.message ?? e}`);
+          continue;
+        }
+        let partIndex = 0;
+        for (const lang of ["vi", "en"]) {
+          const text = playbookToText(pb, lang);
+          if (!text) continue;
+          const title = playbookTitle(pb, lang);
+          for (const piece of chunkText(text, MAX_CHARS)) {
+            chunks.push(makeChunk("playbook", relFile, partIndex, title, piece));
+            partIndex += 1;
+            playbookCount += 1;
+          }
+        }
+        if (partIndex === 0) {
+          console.warn(`[kb] ⚠ playbook KHÔNG sinh được chunk nào (thiếu title/steps?): ${relFile}`);
+        }
+      }
+    }
+    // Không im lặng: 0 playbook nghĩa là hoặc thư mục biến mất, hoặc đuôi file đổi — cả hai đều
+    // đưa kho về đúng trạng thái hỏng mà G4-B vừa sửa, và một cổng xanh sẽ không nói gì.
+    if (playbookCount === 0) {
+      console.warn(
+        "[kb] ⚠ 0 chunk playbook — kiểm tra knowledge/workflows/*.playbook.yaml có còn không.",
+      );
+    }
   }
 
   // Guard: stable ids must be unique. A collision would make the retrieval

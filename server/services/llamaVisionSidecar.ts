@@ -82,7 +82,19 @@ const GPU_LAYERS = (() => {
 /** Context size (-c) for the vision sidecar. Default 8192. Qwen2.5-VL/Qwen3-VL's native 128k+ ctx
  *  would otherwise allocate several GB of KV-cache per process — wasteful for single-image
  *  describe/QA. B0.2: enforce a sane upper cap (LLAMA_VISION_CTX_MAX, default 16384) so a
- *  misconfigured value can't blow the VRAM budget; default 8192 stays well within it. */
+ *  misconfigured value can't blow the VRAM budget; default 8192 stays well within it.
+ *
+ *  ★★ G1-C (2026-08-16) — ĐÃ CÂN NHẮC HẠ 8192 → 4096 ĐỂ LẤY LẠI VRAM, VÀ **BÁC BỎ**. Ghi lại ở
+ *  đây để người sau không thử lại rồi phá đúng luồng này. Bằng chứng ĐỌC TỪ MÃ, không phải đoán:
+ *    • `aiVisionLanguage.generateQAReport()` gửi **tối đa 10 ẢNH trong MỘT request**
+ *      (`images.slice(0, 10)` → `describeImageViaSidecar({ images })`), kèm `maxTokens: 2048`.
+ *    • `describeImageViaSidecar` KHÔNG hề thu nhỏ ảnh: buffer thô → `toDataUrl()` → base64. Không
+ *      có `sharp`/`resize` nào trên đường này ⇒ ảnh được token hoá ở ĐỘ PHÂN GIẢI GỐC.
+ *    • Với Qwen3-VL (patch 16 + merge 2×2 ⇒ ô 32px), một ảnh 1024×1024 ≈ 1.024 token. Ngay cả ở
+ *      mức DÈ DẶT 256 token/ảnh: 10 × 256 = 2.560 token ảnh + 2.048 token sinh = **4.608 > 4096**
+ *      ⇒ TRÀN NGAY ở giả định lạc quan nhất. Ở phân giải AOI thật (~1024px) thì còn vượt cả 8192.
+ *  ⇒ Dư địa VRAM được lấy bằng LƯỢNG HOÁ KV-CACHE (`--cache-type-k/v` bên dưới) thay vì cắt `-c`:
+ *    tiết kiệm cùng cỡ mà KHÔNG thu hẹp cửa sổ mà luồng 10-ảnh đang thật sự dùng. */
 const VISION_CTX_MAX = (() => {
   const n = parseInt(process.env.LLAMA_VISION_CTX_MAX || "16384", 10);
   return Number.isFinite(n) && n > 0 ? n : 16384;
@@ -109,6 +121,76 @@ const VISION_PARALLEL = (() => {
   const n = parseInt(process.env.LLAMA_VISION_PARALLEL || "1", 10);
   return Number.isFinite(n) && n > 0 ? n : 1;
 })();
+
+/**
+ * ─── G1-C (2026-08-16) — LƯỢNG HOÁ KV-CACHE cho hộ tiêu thụ LỚN NHẤT hệ ──────────────────────
+ *
+ * Hộ này đo được **7.825 MiB** và chính nó đẩy kịch bản "chat + RAG + thị giác cùng thức" **vượt
+ * trần 88 MiB**. Cách rẻ nhất để lấy lại dư địa mà KHÔNG cắt `-c` (xem ghi chú VISION_CTX ở trên:
+ * `generateQAReport` gửi tới **10 ảnh/lượt** nên 4096 sẽ PHÁ luồng đó) là lượng hoá KV-cache.
+ *
+ * ⚠⚠ **K PHẢI ≥ q8_0. TUYỆT ĐỐI KHÔNG q4_0 CHO K** — perplexity ratio đo được **199,7**, tức
+ * model nói nhảm hoàn toàn. V thì chịu được q4_0 (K nhạy hơn V nhiều bậc). Đây KHÔNG phải lời
+ * khuyên phong cách: nó được CƯỠNG CHẾ bằng `K_CACHE_FORBIDDEN` dưới đây, vì một dòng chú thích
+ * không ngăn được người sau gõ `q4_0` vào env — mà hậu quả thì im lặng (không crash, chỉ nhảm).
+ *
+ * Tên cờ đã XÁC MINH bằng `llama-server.exe --help` trên chính binary đang cấu hình
+ * (`D:/SOURCES/16.AI/llama-cuda/llama-server.exe`, build **9814 (487a6cc16)**):
+ *   `-ctk, --cache-type-k TYPE` / `-ctv, --cache-type-v TYPE`
+ *   allowed values: f32, f16, bf16, q8_0, q4_0, q4_1, iq4_nl, q5_0, q5_1   (default: f16)
+ */
+const CACHE_TYPES_ALLOWED = new Set([
+  "f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1",
+]);
+/** Các kiểu 4-bit — cấm cho K (xem ghi chú trên). */
+const K_CACHE_FORBIDDEN = new Set(["q4_0", "q4_1", "iq4_nl"]);
+
+function readCacheType(env: string, fallback: string, forbidFourBit: boolean): string {
+  const raw = (process.env[env] || "").trim().toLowerCase();
+  if (!raw) return fallback;
+  if (!CACHE_TYPES_ALLOWED.has(raw)) {
+    console.warn(
+      `[llamaVisionSidecar] ${env}="${raw}" không nằm trong tập llama-server chấp nhận ` +
+        `(${[...CACHE_TYPES_ALLOWED].join(", ")}); dùng "${fallback}". ` +
+        `Một giá trị lạ sẽ khiến sidecar KHÔNG khởi động được.`,
+    );
+    return fallback;
+  }
+  if (forbidFourBit && K_CACHE_FORBIDDEN.has(raw)) {
+    console.warn(
+      `[llamaVisionSidecar] ⚠ ${env}="${raw}" BỊ TỪ CHỐI: KV-cache K lượng hoá 4-bit làm ` +
+        `perplexity nổ (ratio đo được 199,7 với q4_0) — model sẽ nói nhảm mà KHÔNG crash, tức hỏng ` +
+        `trong im lặng. Ép về "${fallback}" (K phải ≥ q8_0).`,
+    );
+    return fallback;
+  }
+  return raw;
+}
+
+/**
+ * ★★★ ĐO 2026-08-16 (G1-A, cùng build 9814 / RTX 5090 sm_120) — MẶC ĐỊNH ĐỔI VỀ `f16`.
+ *
+ * Chỉ thị ban đầu đặt q8_0/q4_0 dựa trên con số perplexity ratio 1,006 được công bố rộng rãi.
+ * Con số đó nói về CHẤT LƯỢNG và HOÀN TOÀN KHÔNG nói gì về TỐC ĐỘ. Phép đo đổi đúng một biến
+ * là kiểu cache (prompt 4.121 token, model 30B, cùng binary llama-server này):
+ *
+ *   cache K/V     prefill tok/s   decode tok/s   TTFT        VRAM
+ *   f16 / f16         6.485          176         656 ms      chuẩn
+ *   q8_0 / f16          104,8         11,7    39.351 ms      −810 MiB
+ *   q8_0 / q4_0         100,2         23,2      >10 phút     −1.939 MiB
+ *
+ * ⇒ Prefill CHẬM 62–85×, decode chậm 8–15×. Trên build/GPU này, MỌI lượng tử hoá KV rơi khỏi
+ * đường kernel nhanh (prefill còn tụt dần theo độ dài — dấu hiệu đường O(n²)). Tiết kiệm VRAM
+ * có thật, nhưng đổi bằng thông lượng ở mức không chấp nhận được — nhất là với thị giác, nơi
+ * một request có thể mang 10 ảnh (xem generateQAReport).
+ *
+ * `K_CACHE_FORBIDDEN` bên dưới GIỮ NGUYÊN: nó canh trường hợp ai đó cố ý đặt env, và lý do
+ * cấm 4-bit cho K (perplexity 199,7) vẫn đúng — chỉ là nay ta không dùng lượng hoá KV nữa.
+ * Bật lại khi: (a) nâng build llama.cpp có kernel KV lượng hoá cho sm_120, VÀ (b) đo lại thấy
+ * prefill không sụt. Đừng bật vì "tiết kiệm VRAM" — cái giá nằm ở chỗ không ai nghĩ tới.
+ */
+const VISION_CACHE_TYPE_K = readCacheType("LLAMA_VISION_CACHE_TYPE_K", "f16", true);
+const VISION_CACHE_TYPE_V = readCacheType("LLAMA_VISION_CACHE_TYPE_V", "f16", false);
 
 function baseUrl(): string {
   return `http://${VISION_HOST}:${VISION_PORT}`;
@@ -358,6 +440,19 @@ export async function ensureSidecar(): Promise<void> {
       "-ngl", String(GPU_LAYERS),
       "-c", String(VISION_CTX),
       "-np", String(VISION_PARALLEL),
+      // ─── G1-C (2026-08-16) — Flash-Attention + KV-cache lượng hoá ────────────────────────────
+      // Tên cờ XÁC MINH bằng `llama-server.exe --help` trên chính binary đang cấu hình
+      // (build 9814 / 487a6cc16): `-fa, --flash-attn [on|off|auto]`.
+      // ★ ĐÍNH CHÍNH brief: build này KHÔNG dùng `--flash-attn` dạng cờ boolean trần — nó nhận
+      //   MỘT GIÁ TRỊ, và mặc định đã là `auto` (tức FA nhiều khả năng ĐÃ bật sẵn trên build CUDA
+      //   này, không phải "thiếu hoàn toàn" như brief giả định). Vẫn truyền `on` TƯỜNG MINH vì:
+      //   (a) `auto` có thể lặng lẽ hạ xuống off tuỳ backend/kiến trúc, và
+      //   (b) lượng hoá KV-cache V bên dưới PHỤ THUỘC vào FA đang bật — để `auto` tự quyết thì
+      //       cấu hình VRAM của ta thành bất định. Truyền giá trị rõ ràng, không dựa vào mặc định.
+      "--flash-attn", "on",
+      // K ≥ q8_0 được CƯỠNG CHẾ ở readCacheType() — xem ghi chú K_CACHE_FORBIDDEN phía trên.
+      "--cache-type-k", VISION_CACHE_TYPE_K,
+      "--cache-type-v", VISION_CACHE_TYPE_V,
       // Qwen3-VL (and modern VLMs) need the jinja chat template for correct multimodal formatting.
       "--jinja",
     ];

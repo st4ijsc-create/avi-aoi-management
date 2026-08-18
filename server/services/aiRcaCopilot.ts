@@ -20,6 +20,9 @@ import { and, desc, eq, gte } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { rootCauseAnalysis } from "../../drizzle/schema";
 import { getTool, isWriteTool, type Tool, type ToolLang } from "./aiLocalTools/toolRegistry";
+// ★ G4-A VIỆC 1 lớp ③ — bảng câu ba ngôn ngữ dùng chung với `aiReportGenerator`. Lý lẽ vì sao
+// KHÔNG dùng `client/src/i18n/locales/*.json`: xem đầu `aiReportPhrases.ts`.
+import { cauBaoCao } from "./aiReportPhrases";
 import { proposeAction, type CopilotUser } from "./aiCopilotActions";
 import type { FactorCorrelation } from "./ai/defectCorrelationService";
 
@@ -445,7 +448,15 @@ interface RawHypothesis {
   };
 }
 
-function buildEvidenceDigest(ev: EvidenceBundle): string {
+/**
+ * ⚠ EXPORT ĐỂ KIỂM ĐƯỢC (theo đúng lệ đã có ở `defectCorrelationService`: "PURE core
+ * exported cho test"). Hàm này và `hasMeaningfulEvidence` là HAI ĐIỂM QUYẾT ĐỊNH mà
+ * lượt hiệu chỉnh đa phép thử đã đổi hành vi; để chúng private nghĩa là đường duy
+ * nhất chạm tới chúng là `runRca`, vốn nạp một model GGUF 7B thật (>5 s) — nên trên
+ * thực tế **không có lưới nào canh chúng**. Một đột biến sống (M5) đã chứng minh
+ * đúng điều đó: đổi `hasMeaningfulEvidence` cho nhiễu đi qua ⇒ toàn bộ bộ ca vẫn xanh.
+ */
+export function buildEvidenceDigest(ev: EvidenceBundle): string {
   const lines: string[] = [];
   if (ev.paretoTop.length) lines.push(`Pareto top defects: ${ev.paretoTop.map((p) => `${p.category} (${p.count}, ${p.percentage.toFixed(1)}%)`).join("; ")}`);
   if (ev.spc) lines.push(`SPC: Cpk=${ev.spc.cpk ?? "n/a"}, out-of-control points=${ev.spc.outOfControlCount}, rules=[${ev.spc.violations.join(", ")}]`);
@@ -457,23 +468,63 @@ function buildEvidenceDigest(ev: EvidenceBundle): string {
   if (ev.causalText) lines.push(`Causal graph:\n${ev.causalText}`);
   // W5-B2 (G4.17) — QUANTITATIVE evidence: give the model the measured association
   // (direction + r + p-value) so hypotheses cite numbers, not just a qualitative list.
+  //
+  // ★★★ HIỆU CHỈNH ĐA PHÉP THỬ — VÌ SAO KHỐI NÀY PHẢI ĐỔI CÁCH NÓI.
+  // Trước bản này khối chỉ in `p=<p THÔ>` và dán nhãn `SIGNIFICANT` theo ngưỡng thô
+  // `p < 0.05`. `correlateStationDefect` thử HÀNG CHỤC yếu tố mỗi lượt ⇒ kỳ vọng
+  // ~1 yếu tố SAI mang nhãn `SIGNIFICANT` mỗi lượt phân tích. Model đọc đúng cái
+  // nhãn ấy và dựng một giả thuyết nguyên nhân quanh nó — **nguyên nhân giả, có số
+  // liệu hậu thuẫn.** Nay in CẢ HAI con số (`p_raw` và `p_adj`) kèm cỡ họ phép thử,
+  // và nhãn chỉ gắn theo p ĐÃ HIỆU CHỈNH.
   if (ev.quantitativeCorrelations.length) {
+    const m = ev.quantitativeCorrelations[0]?.familySize ?? ev.quantitativeCorrelations.length;
+    const method = ev.quantitativeCorrelations[0]?.correctionMethod ?? "benjamini_hochberg";
     lines.push(
-      "Quantitative upstream-parameter correlations (defect vs prior-station params):\n" +
+      `Quantitative upstream-parameter correlations (defect vs prior-station params).` +
+        ` ${m} factor(s) tested this run; p_adj = ${method} FDR-adjusted across all of them.` +
+        ` Treat ONLY factors marked SIGNIFICANT as statistically supported:\n` +
         ev.quantitativeCorrelations
           .map(
             (c) =>
               `- ${c.factor}: ${c.direction === "higher_more_defects" ? "higher→more defects" : c.direction === "lower_more_defects" ? "lower→more defects" : "no clear direction"}` +
-              ` (r=${c.pearson}, p=${c.pValue}, logit_coef=${c.logisticCoef}, n=${c.n}, meanNG=${c.meanDefect} vs meanOK=${c.meanOk}${c.significant ? ", SIGNIFICANT" : ""})`,
+              ` (r=${c.pearson}, p_raw=${c.pValue}, p_adj=${c.pValueAdjusted}, logit_coef=${c.logisticCoef}, n=${c.n},` +
+              ` meanNG=${c.meanDefect} vs meanOK=${c.meanOk}` +
+              `${c.significant ? ", SIGNIFICANT after correction" : ", NOT significant after correction"})`,
           )
           .join("\n"),
     );
+    // ★ TỪ CHỐI TRUNG THỰC, NÓI THẲNG VỚI MODEL. Nếu KHÔNG yếu tố nào sống sót, câu
+    // đúng là "đã đo và không tìm thấy", KHÔNG phải im lặng để model tự chọn cái p
+    // thô nhỏ nhất mà kể thành nguyên nhân. Đây là mặt prompt của cùng một luật đã
+    // có ở 8 cổng `aiLocalKnowledgeService`.
+    if (!ev.quantitativeCorrelations.some((c) => c.significant)) {
+      lines.push(
+        `NOTE: after ${method} correction across ${m} tested factor(s), NO upstream parameter reached significance.` +
+          ` The raw p-values above are UNCORRECTED and expected to contain false positives at this family size.` +
+          ` Do NOT present any of these parameters as an established cause; if the other evidence is also weak,` +
+          ` say plainly that the data does not identify a cause yet and recommend what to measure next.`,
+      );
+    }
   }
   return lines.join("\n");
 }
 
-/** True when there is enough signal to even attempt synthesis. */
-function hasMeaningfulEvidence(ev: EvidenceBundle): boolean {
+/**
+ * True when there is enough signal to even attempt synthesis.
+ *
+ * ⚠ HẠ NGUỒN CỦA HIỆU CHỈNH ĐA PHÉP THỬ — đây là chỗ "giả định luôn có factor
+ * significant" nấp kỹ nhất. Trước bản này, **BẤT KỲ** tương quan nào, kể cả một
+ * tương quan hoàn toàn ngẫu nhiên, cũng làm hàm này trả `true` và khởi động cả một
+ * lượt tổng hợp giả thuyết. Các loại bằng chứng khác (`paretoTop` là SỐ ĐẾM,
+ * `spc` là ĐIỂM VƯỢT KIỂM SOÁT) là **sự kiện quan sát được**; một tương quan
+ * không sống sót qua hiệu chỉnh thì **không phải một sự kiện** — nó là nhiễu.
+ * ⇒ Tương quan định lượng chỉ được tính là "bằng chứng có nghĩa" khi có ÍT NHẤT
+ *   MỘT yếu tố còn ý nghĩa SAU hiệu chỉnh. Hệ quả CỐ Ý: RCA sẽ trả
+ *   `INSUFFICIENT_EVIDENCE` (`needsHumanInvestigation: true`) thường hơn ở những
+ *   ca mà bằng chứng DUY NHẤT là một tương quan nhiễu — đó là kết quả ĐÚNG, và nó
+ *   đi qua đúng đường từ-chối-trung-thực đã có sẵn, không phải một câu bịa mới.
+ */
+export function hasMeaningfulEvidence(ev: EvidenceBundle): boolean {
   return (
     ev.paretoTop.length > 0 ||
     (ev.spc != null && (ev.spc.outOfControlCount > 0 || ev.spc.cpk != null)) ||
@@ -481,7 +532,7 @@ function hasMeaningfulEvidence(ev: EvidenceBundle): boolean {
     ev.visionDescription != null ||
     ev.similarIncidents.length > 0 ||
     ev.causalText.length > 0 ||
-    ev.quantitativeCorrelations.length > 0
+    ev.quantitativeCorrelations.some((c) => c.significant)
   );
 }
 
@@ -497,20 +548,27 @@ async function synthesize(input: RunRcaInput, lang: ToolLang, ev: EvidenceBundle
     const { routeInference } = await import("./aiGateway");
     const { generateJSON } = await import("./aiGgufEngine");
 
-    const sys =
-      "You are an SMT/AOI manufacturing root-cause analyst. Using ONLY the supplied evidence, " +
-      "produce ranked hypotheses for the defect. NEVER invent evidence. If evidence is weak, " +
-      "return fewer hypotheses with lower confidence. Output strictly the JSON schema. " +
-      "recommendedFix.kind must be WRITE (maps to a known write-tool), MANUAL (hands-on steps), " +
-      "or INVESTIGATE (more data needed). For WRITE, set tool + args only if you are confident.";
-    const userPrompt =
-      `Defect type: ${input.defectType ?? "(unspecified)"}\n` +
-      `Machine: ${input.machineId ?? "(unspecified)"}\n\n` +
-      `EVIDENCE:\n${buildEvidenceDigest(ev) || "(no quantitative evidence available)"}\n\n` +
-      `Known write-tools you may reference for a WRITE fix: adjust_ng_threshold, configure_inspection_param, ` +
-      `create_ng_threshold, update_product_quality_target, set_machine_param, acknowledge_machine_alarm, ` +
-      `create_maintenance_workorder.\n` +
-      `Return up to ${MAX_HYPOTHESES} hypotheses ranked by confidence (0..1, descending).`;
+    // ★★★ G4-A VIỆC 1 lớp ③ — **`lang` ĐÃ ĐƯỢC TRUYỀN VÀO TỪ ĐẦU, VÀ THÂN HÀM NÀY CHƯA TỪNG
+    // DÙNG NÓ MỘT LẦN NÀO.** Câu dẫn hệ thống và câu hỏi đều 100% tiếng Anh ⇒ model trả lời tiếng
+    // Anh, và `RcaResult.lang` khai `"vi"` **bên cạnh** một nội dung tiếng Anh — tức bản ghi tự
+    // khai một điều sai. Đây chính là bug "RCA sinh tiếng Anh" ghi từ Đợt 0, còn nguyên tại gốc.
+    // ⚠ Không đủ nếu chỉ dịch câu dẫn: `buildEvidenceDigest` sinh nhãn tiếng Anh (`Pareto top
+    //   defects:`, `SPC:`…) và một model đa ngữ **trôi theo ngôn ngữ của dữ liệu**. Vì vậy mỗi bản
+    //   của `rcaCopilot_heThong` kết bằng một câu nêu ĐÍCH DANH ngôn ngữ phải dùng cho MỌI trường
+    //   văn xuôi. Nhãn bằng chứng cố ý GIỮ tiếng Anh: chúng là **khoá dữ liệu**, không phải văn
+    //   xuôi cho người đọc (luật phân công ở `aiReportPhrases.ts`).
+    const sys = cauBaoCao(lang, "rcaCopilot_heThong", {});
+    const khongNeu = cauBaoCao(lang, "rcaCopilot_khongNeu", {});
+    const userPrompt = cauBaoCao(lang, "rcaCopilot_nhan", {
+      defectType: input.defectType ?? khongNeu,
+      machine: input.machineId != null ? String(input.machineId) : khongNeu,
+      evidence: buildEvidenceDigest(ev) || cauBaoCao(lang, "rcaCopilot_khongCoBangChung", {}),
+      max: MAX_HYPOTHESES,
+      tools:
+        "adjust_ng_threshold, configure_inspection_param, create_ng_threshold, " +
+        "update_product_quality_target, set_machine_param, acknowledge_machine_alarm, " +
+        "create_maintenance_workorder",
+    });
 
     // Review fix (doc69 G2-5a, Wave 1 W1-4a) — pass the REAL assembled prompt (sys+userPrompt,
     // the exact text actually sent to generateJSON below) as `text` instead of just the
@@ -568,11 +626,21 @@ async function synthesize(input: RunRcaInput, lang: ToolLang, ev: EvidenceBundle
  */
 export function rankAndValidateHypotheses(
   raw: RawHypothesis[],
-  opts?: { max?: number; minConfidence?: number; lookupTool?: (name: string) => Tool<any, any> | undefined },
+  opts?: {
+    max?: number;
+    minConfidence?: number;
+    lookupTool?: (name: string) => Tool<any, any> | undefined;
+    /**
+     * ★ G4-A — ngôn ngữ của câu **thay thế** khi model không kèm `rationale`. Mặc định `vi`:
+     * nhà máy Việt Nam. Xem `normalizeFix`.
+     */
+    lang?: ToolLang;
+  },
 ): RcaHypothesis[] {
   const max = opts?.max ?? MAX_HYPOTHESES;
   const minConf = opts?.minConfidence ?? MIN_HYPOTHESIS_CONFIDENCE;
   const lookup = opts?.lookupTool ?? getTool;
+  const lang: ToolLang = opts?.lang ?? "vi";
 
   const cleaned: RcaHypothesis[] = [];
   for (const h of raw ?? []) {
@@ -583,7 +651,7 @@ export function rankAndValidateHypotheses(
     if (confidence < minConf) continue;
 
     const evidence = Array.isArray(h?.evidence) ? h.evidence.filter((e): e is string => typeof e === "string") : [];
-    const fix = normalizeFix(h?.recommendedFix, lookup);
+    const fix = normalizeFix(h?.recommendedFix, lookup, lang);
     cleaned.push({ cause, confidence, evidence, recommendedFix: fix });
   }
   cleaned.sort((a, b) => b.confidence - a.confidence);
@@ -593,8 +661,14 @@ export function rankAndValidateHypotheses(
 function normalizeFix(
   raw: RawHypothesis["recommendedFix"],
   lookup: (name: string) => Tool<any, any> | undefined,
+  lang: ToolLang,
 ): RcaRecommendedFix {
-  const rationale = typeof raw?.rationale === "string" && raw.rationale.trim() ? raw.rationale.trim() : "No rationale provided.";
+  // ★ G4-A — `"No rationale provided."` là câu **duy nhất** ở đây mà người dùng đọc được, và nó
+  // xuất hiện đúng lúc model im lặng — tức nó là câu hay hiện ra nhất ở các lượt kém chất lượng.
+  const rationale =
+    typeof raw?.rationale === "string" && raw.rationale.trim()
+      ? raw.rationale.trim()
+      : cauBaoCao(lang, "rcaCopilot_khongCoLyLe", {});
   const steps = Array.isArray(raw?.steps) ? raw!.steps.filter((s): s is string => typeof s === "string") : undefined;
   const kindRaw = typeof raw?.kind === "string" ? raw.kind.toUpperCase() : "INVESTIGATE";
 
@@ -645,7 +719,7 @@ export async function runRca(input: RunRcaInput): Promise<RcaResult> {
       return degradeResult(input, lang, evidence, "INSUFFICIENT_EVIDENCE");
     }
     const raw = await synthesize(input, lang, evidence);
-    const hypotheses = rankAndValidateHypotheses(raw);
+    const hypotheses = rankAndValidateHypotheses(raw, { lang });
     if (hypotheses.length === 0) {
       return degradeResult(input, lang, evidence, "NO_CONFIDENT_HYPOTHESIS");
     }

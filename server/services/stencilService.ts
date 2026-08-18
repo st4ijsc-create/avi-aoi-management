@@ -12,6 +12,7 @@
  * (DEFAULT OFF). Nothing here writes the tools master or controls a machine.
  */
 import { getDb } from "../db";
+import { chayTheoPhamViTenantHienTai } from "../db/tenantContext";
 import { eq, desc, sql } from "drizzle-orm";
 import { stencilUsageLogs, tools, type InsertStencilUsageLog } from "../../drizzle/schema";
 
@@ -79,11 +80,18 @@ export async function getStatus(stencilToolId: number): Promise<StencilStatus> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const [tool] = await db
-    .select({ id: tools.id, code: tools.code, name: tools.name, lifeLimit: tools.lifeLimit, lifeUsed: tools.lifeUsed })
-    .from(tools)
-    .where(eq(tools.id, stencilToolId))
-    .limit(1);
+  // `tools` BẬT RLS (mig 0122, vị từ theo factoryCode/corporateCode). Đọc bản ghi
+  // khuôn in dưới phạm vi tenant của người gọi ⇒ người thuộc nhà máy khác không
+  // đọc được thông số khuôn của nhà máy này (`tool` = undefined ⇒ trạng thái
+  // rỗng, KHÔNG ném lỗi — hàm này vốn đã chịu được `tool` rỗng, xem `?? null`
+  // bên dưới). Tác vụ nền / cờ tắt ⇒ pass-through y như trước.
+  const [tool] = await chayTheoPhamViTenantHienTai(db, (h) =>
+    h
+      .select({ id: tools.id, code: tools.code, name: tools.name, lifeLimit: tools.lifeLimit, lifeUsed: tools.lifeUsed })
+      .from(tools)
+      .where(eq(tools.id, stencilToolId))
+      .limit(1),
+  );
 
   const [agg] = await db
     .select({

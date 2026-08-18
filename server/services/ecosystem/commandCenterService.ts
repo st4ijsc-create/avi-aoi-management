@@ -29,8 +29,16 @@
  * short-TTL cache below. `kpiSummary` reuses already-aggregated service functions.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, type SQL } from "drizzle-orm";
 import { getDb } from "../../db/connection";
+import {
+  andonFactoryGate,
+  safetyFactoryGate,
+  wipFactoryGate,
+  robotFactoryGate,
+  taskFactoryGate,
+  machineIdFactoryGate,
+} from "./commandCenterScope";
 import {
   factories,
   machines as machinesTable,
@@ -46,6 +54,7 @@ import { resolveForMachineType } from "../standards/deviceTypeRegistry";
 import { ecosystemEventsEnabled, type EcosystemSeverity, type EcosystemKind } from "./ecosystemEvents";
 import { getAllMachinesOEELive } from "../oeeService";
 import { countInbox, type InboxUser } from "../aiActionInbox";
+import type { TenantCodeScope } from "../../_core/tenantCodeScope";
 
 // ════════════════════════════════════════════════════════════════════════════
 // TYPES — the exact shapes the FE (U2 page) consumes.
@@ -486,17 +495,36 @@ function freshness(fetchedAt: Date | null, pollIntervalSec: number, siteStatus: 
  * Seed alert list (newest first) for the rail. Normalizes the EXISTING andon +
  * safety stores into the U1 envelope. Live deltas come from `alerts:stream` (U1).
  */
-export async function buildRecentAlerts(opts?: { limit?: number; corporateCode?: string | null }): Promise<SeedAlert[]> {
+export async function buildRecentAlerts(opts?: {
+  limit?: number;
+  corporateCode?: string | null;
+  /**
+   * ★★★ 2026-08-18 — TRỤC PHẠM VI. Tập `factories.id` người xem được thấy, LUÔN đến từ
+   * `ctx.user` qua `resolveAlertScope` (xem `commandCenterScope.ts`).
+   *
+   * `null`/bỏ trống = KHÔNG lọc — đúng hình dạng của admin và của lối đi không mang danh
+   * tính. `[]` = phạm vi RỖNG, và nó KHÔNG được phép biến thành "không lọc": mọi truy vấn
+   * đi qua `andonFactoryGate`/`safetyFactoryGate`, hai hàm này đưa tập rỗng thành `1 = 0`
+   * TƯỜNG MINH. Đó là đúng lớp lỗi `or()!` đã cho 4 tài khoản 0-gán đọc trọn CSDL.
+   */
+  factoryIds?: number[] | null;
+}): Promise<SeedAlert[]> {
   const db = await getDb();
   if (!db) return [];
   const limit = Math.max(1, Math.min(opts?.limit ?? 30, 200));
+  const factoryIds = opts?.factoryIds ?? null;
 
   const seeds: SeedAlert[] = [];
   try {
+    // ⚠ Cổng phải nằm TRONG `where` (trước `limit`), không lọc sau khi lấy hàng: một
+    // `limit 30` toàn cảnh báo nhà máy khác rồi mới lọc sẽ trả 0 dòng cho người có cảnh
+    // báo thật — "0 trung thực" giả, còn tệ hơn số 0 im lặng.
+    const andonConds = [isNull(andonEvents.resolvedAt)];
+    if (factoryIds) andonConds.push(andonFactoryGate(factoryIds));
     const andons = await db
       .select({ id: andonEvents.id, state: andonEvents.state, title: andonEvents.title, message: andonEvents.message, machineId: andonEvents.machineId, lineId: andonEvents.lineId, stationId: andonEvents.stationId, raisedAt: andonEvents.raisedAt })
       .from(andonEvents)
-      .where(isNull(andonEvents.resolvedAt))
+      .where(and(...andonConds))
       .orderBy(desc(andonEvents.raisedAt))
       .limit(limit);
     for (const a of andons) seeds.push(andonToSeed(a));
@@ -504,9 +532,15 @@ export async function buildRecentAlerts(opts?: { limit?: number; corporateCode?:
     /* andon absent */
   }
   try {
+    // `and()` không đối số trả `undefined`, và `.where(undefined)` là "không lọc" — đúng
+    // hình dạng của admin. KHÔNG dùng `$dynamic()` ở đây: nó đổi hình dạng đối tượng truy
+    // vấn và làm vỡ các lưới đang giả lập `getDb` bằng một builder tối giản.
+    const safetyConds: SQL[] = [];
+    if (factoryIds) safetyConds.push(safetyFactoryGate(factoryIds));
     const safety = await db
       .select({ id: safetyEvents.id, eventType: safetyEvents.eventType, robotId: safetyEvents.robotId, lineId: safetyEvents.lineId, stationId: safetyEvents.stationId, isNearMiss: safetyEvents.isNearMiss, outcome: safetyEvents.outcome, createdAt: safetyEvents.createdAt })
       .from(safetyEvents)
+      .where(and(...safetyConds))
       .orderBy(desc(safetyEvents.createdAt))
       .limit(limit);
     for (const s of safety) seeds.push(safetyToSeed(s));
@@ -527,6 +561,18 @@ export async function buildRecentAlerts(opts?: { limit?: number; corporateCode?:
 function field<T>(value: T | null, source: string, available = value != null): KpiField<T> {
   return { value, source, available };
 }
+
+/**
+ * ★★★ 2026-08-18 — Nhãn nguồn của ô `sites` khi người xem BỊ THU HẸP. Là hằng số xuất khẩu
+ * để lưới canh được ĐÚNG lời khai này (một chuỗi viết thẳng trong thân hàm thì sửa lúc nào
+ * cũng được mà không ai đỏ), và để lời khai chỉ nằm ở MỘT chỗ.
+ *
+ * Vì sao ô này không vá được: xem docblock dài tại chỗ dùng trong `buildKpiSummary`.
+ */
+export const SITES_UNRESOLVABLE_SOURCE =
+  "federation.site_kpi_rollup (KHÔNG phân giải được về nhà máy: `sites` là một BẢN TRIỂN " +
+  "KHAI TỪ XA chứa nhiều nhà máy, lược đồ không có cạnh site ↔ nhà máy ở cả hai chiều, và " +
+  "hàng roll-up là số ĐÃ GỘP SẴN trên tập nhà máy đó ⇒ fail-closed cho người xem bị thu hẹp)";
 
 /** Average the non-null OEE factors across all machines (mean of live per-machine OEE). */
 export function aggregateOee(rows: Array<{ availability: number | null; performance: number | null; quality: number | null; oee: number | null }>): {
@@ -558,14 +604,67 @@ export function aggregateOee(rows: Array<{ availability: number | null; performa
  *   • aiInsights ← aiActionInbox.countInbox(user) (per-user scoped)
  *   • sites   ← federation site roll-ups (reporting/stale/down via freshness)
  *   • fleet   ← tasks (pending/running) + robots (online) counts (fleet data path)
+ *
+ * ★★★ 2026-08-18 — TRẠNG THÁI PHẠM VI của từng ô (dải này KHÔNG còn đồng nhất, nên phải
+ * đọc được ở một chỗ thay vì suy ra từ sáu đoạn mã rải rác):
+ *   oee        THU HẸP — truyền danh tính xuống cổng RIÊNG của `oeeService`; tầng dự phòng
+ *                        `oee_metrics` có cổng riêng qua `machineIdFactoryGate`.
+ *   wip        THU HẸP — `wipFactoryGate` (chỉ liên kết; bảng không có cột tenant).
+ *   alarms     THU HẸP — `andonFactoryGate` + `safetyFactoryGate` (từ lượt trước).
+ *   fleet      THU HẸP — `taskFactoryGate` + `robotFactoryGate`.
+ *   sites      **KHÔNG THU HẸP ĐƯỢC** ⇒ fail-closed. Lời khai đầy đủ ở chỗ dùng bên dưới.
+ *   aiInsights ĐÃ hẹp sẵn theo người dùng (`countInbox` tự tra bản gán).
+ *   energy     null trung thực — chưa có hàm tổng hợp nào để mà thu hẹp.
  */
-export async function buildKpiSummary(user: InboxUser, scope?: HierarchyScope): Promise<KpiSummary> {
+export async function buildKpiSummary(
+  user: InboxUser,
+  scope?: HierarchyScope,
+  /**
+   * ★★★ 2026-08-18 — TRỤC PHẠM VI của DẢI KPI. `factoryIds`: `null`/bỏ trống = KHÔNG lọc
+   * (admin, lối đi không mang danh tính). `[]` = phạm vi RỖNG ⇒ `1 = 0` tường minh.
+   *
+   * `userId`/`userRole` đi kèm vì ô `oee` KHÔNG tự lọc được: nguồn của nó
+   * (`oeeService.getAllMachinesOEELive`) đã có cổng phạm vi RIÊNG nhận DANH TÍNH. Truyền
+   * danh tính xuống là dùng lại cổng ấy; dựng thêm một bộ lọc `factoryIds` ở đây sẽ là
+   * nguồn luật THỨ HAI cho cùng một câu hỏi — và hai bộ luật canh cùng một con số là cách
+   * một trong hai lặng lẽ sai mà không lưới nào đỏ.
+   *
+   * ★ LƯỢT NÀY ĐÃ TRẢ: `oee` · `wip` · `alarms` · `fleet` nay đều thu hẹp theo người xem.
+   * Ô `sites` KHÔNG thu hẹp được — nó bị CHẶN, kèm lời khai đầy đủ tại chỗ dùng bên dưới.
+   *
+   * ★★★ 2026-08-18 (lượt sau) — LỐI ĐI REST `/v1` NAY CŨNG CÓ PHẠM VI. Ô `tenantScope` mang
+   * mã tenant TƯỜNG MINH của khoá API (`api_keys.dataScopeMode/corporateCode/factoryCode`,
+   * mig 0325). Đúng là một khoá không phải người dùng CSDL — nhưng "không phải người dùng"
+   * KHÔNG kéo theo "được xem tất cả": chính vì thế trục ② tồn tại. `api/v1/moduleReads.ts` nay
+   * truyền phạm vi thật của khoá thay cho principal tổng hợp `{id: 0, role: "api"}`.
+   *
+   * ⚠ `tenantScope` phải đi XUỐNG TẬN `getAllMachinesOEELive`, không chỉ dừng ở `factoryIds`.
+   * Ô `oee` có HAI TẦNG: tầng 1 (live) tự phân giải phạm vi TỪ DANH TÍNH, tầng 2 (snapshot
+   * `oee_metrics`) dùng `factoryIds` ở đây. Nếu chỉ truyền `factoryIds` thì tầng 1 vẫn TOÀN CỤC
+   * — và vì tầng 1 hầu như luôn có dữ liệu, luồng KHÔNG BAO GIỜ rơi xuống tầng 2, nên bản vá sẽ
+   * xanh mà lỗ vẫn mở nguyên. Đây là mặt đối xứng của cái bẫy đã ghi ở tầng 2.
+   */
+  tenant?: {
+    factoryIds: number[] | null;
+    userId?: number | null;
+    userRole?: string | null;
+    tenantScope?: TenantCodeScope | null;
+  },
+): Promise<KpiSummary> {
   const db = await getDb();
+  const factoryIds = tenant?.factoryIds ?? null;
 
   // ── OEE (reuse oeeService) ──
+  // ★ 2026-08-18 — chỉ TRUYỀN PHẠM VI XUỐNG. `getAllMachinesOEELive` tự gọi
+  //   `resolveTenantFactoryScope` và tự chiếu qua stations→lines→workshops; ở đây không
+  //   có, và không được có, một bản sao của luật ấy.
   let oee: KpiSummary["oee"];
   try {
-    const rows = await getAllMachinesOEELive();
+    const rows = await getAllMachinesOEELive(
+      tenant?.tenantScope
+        ? { tenantScope: tenant.tenantScope }
+        : { userId: tenant?.userId ?? undefined, userRole: tenant?.userRole ?? undefined },
+    );
     oee = rows.length
       ? field(aggregateOee(rows), "oeeService.getAllMachinesOEELive", true)
       : field<{ a: number | null; p: number | null; q: number | null; oee: number | null }>(null, "oeeService.getAllMachinesOEELive", false);
@@ -583,6 +682,13 @@ export async function buildKpiSummary(user: InboxUser, scope?: HierarchyScope): 
     try {
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
+      // ★★ 2026-08-18 — TẦNG DỰ PHÒNG CŨNG PHẢI CÓ CỔNG. Đây là chỗ một bản vá "ô oee" dễ
+      //    hụt nhất: tầng 1 đã thu hẹp đúng, nên với người xem hẹp nó thường trả RỖNG — và
+      //    khi rỗng thì luồng rơi thẳng xuống đây. Nếu tầng 2 còn toàn cục thì bản vá không
+      //    những vô tác dụng, nó còn khiến ĐÚNG những người bị thu hẹp là nhóm luôn đọc số
+      //    toàn cục. `oee_metrics` chỉ có `machineId`, nên đi qua `machineIdFactoryGate`.
+      const snapConds = [gte(oeeMetrics.timestamp, startOfToday)];
+      if (factoryIds) snapConds.push(machineIdFactoryGate(oeeMetrics.machineId, factoryIds));
       const snapRows = await db
         .select({
           availability: oeeMetrics.availability,
@@ -591,7 +697,7 @@ export async function buildKpiSummary(user: InboxUser, scope?: HierarchyScope): 
           oee: oeeMetrics.oee,
         })
         .from(oeeMetrics)
-        .where(gte(oeeMetrics.timestamp, startOfToday));
+        .where(and(...snapConds));
       const agg = aggregateOee(
         (snapRows as Array<{ availability: number | null; performance: number | null; quality: number | null; oee: number | null }>).map((r) => ({
           availability: r.availability != null ? Number(r.availability) / 100 : null,
@@ -621,17 +727,27 @@ export async function buildKpiSummary(user: InboxUser, scope?: HierarchyScope): 
     sitesField = field<{ total: number; reporting: number; stale: number; down: number }>(null, "federation.site_kpi_rollup", false);
   } else {
     // WIP — count active WIP units; bottleneck = station/line with the most.
+    // ★ 2026-08-18 — THU HẸP THEO NGƯỜI XEM. `wip_tracking` KHÔNG có cột tenant nào, nên
+    //   cổng chỉ có đường LIÊN KẾT (line/trạm/máy hiện tại) và KHÔNG có lối lùi — hàng mồ
+    //   côi fail-closed. Đo trên `aoi_management` cùng ngày: 7.047 hàng, 0 hàng mồ côi.
     try {
       const { wipTracking } = await import("../../../drizzle/schema");
-      const rows = await db.select({ id: wipTracking.id }).from(wipTracking).where(isNull(wipTracking.exitedAt));
+      const wipConds = [isNull(wipTracking.exitedAt)];
+      if (factoryIds) wipConds.push(wipFactoryGate(factoryIds));
+      const rows = await db.select({ id: wipTracking.id }).from(wipTracking).where(and(...wipConds));
       wip = field({ count: rows.length, bottleneck: null }, "mesControlTower.wip_tracking");
     } catch {
       wip = field<{ count: number; bottleneck: string | null }>(null, "mesControlTower.wip_tracking", false);
     }
 
     // Alarms — andon unresolved (by state) + safety recent (critical). Severity buckets.
+    // ★ 2026-08-18 — THU HẸP THEO NGƯỜI XEM. Cùng cổng với `buildRecentAlerts`, nên con số
+    //   trên dải KPI và số dòng trên rail báo động không thể lệch nhau (hai luật khác nhau
+    //   canh cùng một màn hình là cách một trong hai lặng lẽ sai mà không lưới nào đỏ).
     try {
-      const andons = await db.select({ state: andonEvents.state }).from(andonEvents).where(isNull(andonEvents.resolvedAt));
+      const andonConds = [isNull(andonEvents.resolvedAt)];
+      if (factoryIds) andonConds.push(andonFactoryGate(factoryIds));
+      const andons = await db.select({ state: andonEvents.state }).from(andonEvents).where(and(...andonConds));
       let critical = 0;
       let high = 0;
       for (const a of andons) {
@@ -642,7 +758,9 @@ export async function buildKpiSummary(user: InboxUser, scope?: HierarchyScope): 
       let safetyCritical = 0;
       try {
         // Non-near-miss safety events count as critical alarms (advisory records).
-        const safety = await db.select({ id: safetyEvents.id }).from(safetyEvents).where(eq(safetyEvents.isNearMiss, false));
+        const safetyConds = [eq(safetyEvents.isNearMiss, false)];
+        if (factoryIds) safetyConds.push(safetyFactoryGate(factoryIds));
+        const safety = await db.select({ id: safetyEvents.id }).from(safetyEvents).where(and(...safetyConds));
         safetyCritical = safety.length;
       } catch {
         /* safety absent */
@@ -654,15 +772,27 @@ export async function buildKpiSummary(user: InboxUser, scope?: HierarchyScope): 
     }
 
     // Fleet — task + robot counts (fleet data path; NOT re-running allocation logic).
+    // ★ 2026-08-18 — THU HẸP THEO NGƯỜI XEM, HAI BẢNG HAI LUẬT:
+    //   • `robots` không có cột tenant ⇒ chỉ `lineId`/`stationId`, không lối lùi;
+    //   • `tasks` CÓ `factoryId` nhưng đó là ô GHI RỜI ⇒ hạng chót, sau robot được gán và
+    //     sau lệnh sản xuất. Xem `taskFactoryGate` để biết thứ tự đầy đủ.
     try {
-      const taskRows = await db.select({ status: tasks.status }).from(tasks);
+      const taskConds = factoryIds ? [taskFactoryGate(factoryIds)] : [];
+      const taskRows = await db
+        .select({ status: tasks.status })
+        .from(tasks)
+        .where(taskConds.length ? and(...taskConds) : undefined);
       let tasksPending = 0;
       let tasksRunning = 0;
       for (const t of taskRows) {
         if (t.status === "pending" || t.status === "assigned") tasksPending++;
         else if (t.status === "running") tasksRunning++;
       }
-      const robotRows = await db.select({ status: robots.status }).from(robots);
+      const robotConds = factoryIds ? [robotFactoryGate(factoryIds)] : [];
+      const robotRows = await db
+        .select({ status: robots.status })
+        .from(robots)
+        .where(robotConds.length ? and(...robotConds) : undefined);
       const robotsOnline = robotRows.filter((r) => r.status !== "offline").length;
       fleet = field({ tasksPending, tasksRunning, robotsOnline }, "fleet.tasks+robots");
     } catch {
@@ -670,29 +800,63 @@ export async function buildKpiSummary(user: InboxUser, scope?: HierarchyScope): 
     }
 
     // Sites — federation roll-up freshness buckets (honest with 0/1 site).
-    try {
-      const siteRows = await db.select().from(sites);
-      const scoped = scope?.corporateCode ? siteRows.filter((s) => s.corporateCode === scope.corporateCode) : siteRows;
-      if (scoped.length === 0) {
-        sitesField = field({ total: 0, reporting: 0, stale: 0, down: 0 }, "federation.sites");
-      } else {
-        const snaps = await db.select().from(siteKpiRollup).where(and(eq(siteKpiRollup.window, "snapshot"), isNull(siteKpiRollup.bucketStart)));
-        const bySite = new Map(snaps.map((r) => [r.siteId, r]));
-        const now = Date.now();
-        let reporting = 0;
-        let stale = 0;
-        let down = 0;
-        for (const s of scoped) {
-          const snap = bySite.get(s.id);
-          if (snap) reporting++;
-          const f = freshness(snap?.fetchedAt ?? null, s.pollIntervalSec, s.status, now);
-          if (f.state === "stale") stale++;
-          else if (f.state === "down") down++;
+    //
+    // ★★★ 2026-08-18 — Ô NÀY **KHÔNG VÁ ĐƯỢC**, và đây là LỜI KHAI chứ không phải bỏ sót.
+    //
+    // **Khảo sát.** `site_kpi_rollup` có `siteId` (FK → `sites`) + `corporateCode` (chép rời
+    // từ `sites`). `sites` có `code`/`corporateCode`/`baseUrl`/`authTokenRef` — KHÔNG có
+    // `factoryId`, và `factories` cũng KHÔNG có `siteId`. Giữa "site" và "nhà máy" không tồn
+    // tại một cạnh nào trong lược đồ, ở CẢ HAI chiều.
+    //
+    // **Vì sao đó không phải thiếu cột mà là bản chất.** Một `sites` KHÔNG phải một nhà máy:
+    // nó là MỘT BẢN TRIỂN KHAI TỪ XA (`baseUrl` + token), và một bản triển khai chứa NHIỀU
+    // nhà máy. Nên một hàng `site_kpi_rollup` là số ĐÃ GỘP SẴN trải trên tập nhà máy đó —
+    // `totalInspections`/`ngCount`/`oee` của nó không tách lại theo nhà máy được. Với một
+    // hàng gộp như thế thì KHÔNG MÃ NÀO ĐÚNG: mọi `factoryId` gán cho nó đều là bịa.
+    //
+    // **Nên làm gì.** Theo đúng tiền lệ `defect_heatmap_data` đã chốt tuần này — nguồn gốc
+    // KHÔNG RÕ thì đọc **fail-closed**, và **điền bừa một mã mặc định là TỆ HƠN để trống**.
+    // Ở đây "fail-closed" KHÔNG được là `{ total: 0, … }`: số 0 trên dải KPI là một LỜI KHAI
+    // ("liên bang có 0 site đang báo cáo") và nó SAI. Nên ô này trả `available: false` — giao
+    // diện vẽ "—", tức "chưa đo được", đúng thứ đang xảy ra.
+    //
+    // **Vì sao admin vẫn thấy.** `factoryIds === null` (vai toàn quyền / lối đi không mang
+    // danh tính) đi thẳng vào nhánh cũ, KHÔNG đổi một byte nào.
+    //
+    // ⚠ Muốn ô này sống lại cho người xem hẹp thì phải sửa DỮ LIỆU, không phải sửa mã: cần
+    // một cạnh site ↔ nhà máy (ví dụ `site_factories`) và một roll-up ở hạt NHÀ MÁY. Chừng
+    // nào chưa có, mọi bộ lọc viết ở đây đều là đoán.
+    if (factoryIds) {
+      sitesField = field<{ total: number; reporting: number; stale: number; down: number }>(
+        null,
+        SITES_UNRESOLVABLE_SOURCE,
+        false,
+      );
+    } else {
+      try {
+        const siteRows = await db.select().from(sites);
+        const scoped = scope?.corporateCode ? siteRows.filter((s) => s.corporateCode === scope.corporateCode) : siteRows;
+        if (scoped.length === 0) {
+          sitesField = field({ total: 0, reporting: 0, stale: 0, down: 0 }, "federation.sites");
+        } else {
+          const snaps = await db.select().from(siteKpiRollup).where(and(eq(siteKpiRollup.window, "snapshot"), isNull(siteKpiRollup.bucketStart)));
+          const bySite = new Map(snaps.map((r) => [r.siteId, r]));
+          const now = Date.now();
+          let reporting = 0;
+          let stale = 0;
+          let down = 0;
+          for (const s of scoped) {
+            const snap = bySite.get(s.id);
+            if (snap) reporting++;
+            const f = freshness(snap?.fetchedAt ?? null, s.pollIntervalSec, s.status, now);
+            if (f.state === "stale") stale++;
+            else if (f.state === "down") down++;
+          }
+          sitesField = field({ total: scoped.length, reporting, stale, down }, "federation.site_kpi_rollup");
         }
-        sitesField = field({ total: scoped.length, reporting, stale, down }, "federation.site_kpi_rollup");
+      } catch {
+        sitesField = field<{ total: number; reporting: number; stale: number; down: number }>(null, "federation.site_kpi_rollup", false);
       }
-    } catch {
-      sitesField = field<{ total: number; reporting: number; stale: number; down: number }>(null, "federation.site_kpi_rollup", false);
     }
   }
 

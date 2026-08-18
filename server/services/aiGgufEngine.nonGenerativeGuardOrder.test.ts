@@ -32,6 +32,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./aiLlamaServerClient", () => ({
   shouldUseServerForText: () => false,
+  // G1-D — vị từ hạt nhân "model này có phải cái llama-server đang giữ không" (điểm nghẽn loadGgufModel).
+  laModelServerDangGiu: () => false,
   shouldUseServerForFim: () => false,
   preflightHealthy: async () => false,
   preflightHealthyForFim: async () => false,

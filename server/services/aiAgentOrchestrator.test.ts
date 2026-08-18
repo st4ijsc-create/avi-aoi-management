@@ -10,7 +10,8 @@
  *    only ever invokes proposeAction + confirmAction, both mocked & asserted).
  *  - MAX_WRITES_PER_SESSION → paused. RBAC-denied propose → paused cleanly.
  *  - A failing read step → paused with a clean step trail.
- *  - The agentic gate uses the SERVER role: worker/engineer → { enabled:false }.
+ *  - The agentic gate uses the SERVER role: an unknown/legacy role (worker) →
+ *    { enabled:false }; `engineer` IS allowed (quyết định chính sách 2026-08-17).
  *
  * getDb (ai_agent_sessions), the planner, and the HITL action service are all
  * mocked, so no model and no real DB are required.
@@ -151,10 +152,44 @@ function plan(steps: any[]) {
 }
 
 describe("agentic gate (server role)", () => {
-  it("manager is allowed; worker/engineer are not", () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠ QUYẾT ĐỊNH CHÍNH SÁCH CỦA CHỦ DỰ ÁN — 2026-08-17: **`engineer` ĐƯỢC chạy agent.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ĐÂY KHÔNG PHẢI "dọn lưới cho xanh". Lịch sử của ô này:
+   *
+   *   • Ca này ra đời khi `AGENTIC_ROLES` **thật sự** không có `engineer`.
+   *   • 2026-06-27 (B1 go-live) mã **đổi**: `supervisor` + `maintenance` + `engineer` được thêm
+   *     vào `AGENTIC_ROLES` theo quyết định người dùng — nhưng ca này **không** được cập nhật.
+   *   • Từ đó lưới ĐỎ liên tục và bị mang sang **năm pha** dưới nhãn "nợ có trước, loại trừ tường
+   *     minh" (xem `docs/superpowers/plans/2026-08-06-vram-pha5-tra-no.md`, `…pha4-review…`).
+   *     Một ô đỏ mãn tính là một ô **không ai còn đọc** — nó che mất ô đỏ THẬT tiếp theo.
+   *
+   * 2026-08-17 chủ dự án chấm dứt tình trạng lấp lửng và chốt: **CÓ, `engineer` được chạy agent.**
+   * Vì vậy nguồn sự thật là `AGENTIC_ROLES`, và ca test được sửa để **phát biểu đúng chính sách**.
+   *
+   * ⚠ Lưới **KHÔNG bị nới**: vế ÂM vẫn còn người thật (`worker` — nhãn không nằm trong `roleEnum`)
+   * và ca dưới chứng minh mọi vai NGOÀI danh sách vẫn bị chặn. Bỏ `engineer` khỏi `AGENTIC_ROLES`
+   * ⇒ ca này ĐỎ ngay.
+   *
+   * ⚠ Mọi bước GHI của phiên agent **vẫn** đi qua HITL propose→confirm + RBAC theo từng tool —
+   * quyết định này chỉ mở **cửa vào** phiên nhiều bước, không cấp thêm một bit quyền nào.
+   */
+  it("manager + engineer are allowed; an unknown role (worker) is not", () => {
     expect(canUseAgentic(MANAGER)).toBe(true);
     expect(canUseAgentic(WORKER)).toBe(false);
-    expect(canUseAgentic({ role: "engineer" })).toBe(false);
+    // Chính sách 2026-08-17 — khớp với `AGENTIC_ROLES` (mã đã cho từ 2026-06-27).
+    expect(canUseAgentic({ role: "engineer" })).toBe(true);
+  });
+
+  it("★ vai NGOÀI `AGENTIC_ROLES` vẫn bị chặn — quyết định 2026-08-17 KHÔNG mở cho mọi người", () => {
+    for (const role of ["operator", "quality_inspector", "viewer", "user", "worker", ""]) {
+      expect(canUseAgentic({ role }), `vai "${role}" KHÔNG được phép chạy agent`).toBe(false);
+    }
+    // …và các vai kỹ thuật đã được chốt ở B1 go-live 2026-06-27 thì được.
+    for (const role of ["admin", "supervisor", "maintenance", "engineer"]) {
+      expect(canUseAgentic({ role }), `vai "${role}" PHẢI được phép chạy agent`).toBe(true);
+    }
   });
 
   it("startSession for a disallowed role returns { enabled:false } and creates NO row", async () => {

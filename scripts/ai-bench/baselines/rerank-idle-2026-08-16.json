@@ -1,0 +1,406 @@
+{
+  "schemaVersion": 1,
+  "kind": "rerank-idle",
+  "label": "rerank-idle-2026-08-16",
+  "startedAt": "2026-08-16T10:00:09.377Z",
+  "finishedAt": "2026-08-16T11:05:58.131Z",
+  "note": "Xác minh độ trễ reranker TRÊN MÁY RỖI. Phán quyết: con số 87–257 s của lượt đo trước TÁI HIỆN về bậc độ lớn (p50 = 75,0 s ở cấu hình sản xuất), KHÔNG phải nhiễu do máy tải nặng; đuôi 257 s mới là do tải. Chú thích 'CPU rerank of ~20 short docs is only tens of ms' ở aiReranker.ts:~530 sai ~3 bậc. ⚠ GIẢ THUYẾT contextSize:'auto'=8192 là thủ phạm ĐÃ BỊ PHÉP ĐO BÁC BỎ: ép 256/512/1024/2048 vẫn 74–80 s (phẳng). Build có AVX2/FMA/AVX_VNNI/BMI2 nên cũng không phải build. threads chỉ mua 1,39×. Thủ phạm thật: rankAll() chạy NỐI TIẾP N lượt forward của cross-encoder 568M trên CPU (LlamaRankingContext.js:56 Promise.all + :126 withLock ⇒ tuần tự), ~3,75 s/tài liệu. RAG_RERANKER_GPU=true đưa xuống ~7,3 ms/tài liệu = NHANH GẤP ~490×.",
+  "hardware": {
+    "platform": "win32 10.0.26200",
+    "nodeVersion": "v24.18.0",
+    "cpu": "12th Gen Intel(R) Core(TM) i9-12900K",
+    "cpuLogical": 24,
+    "cpuMathCores": 16,
+    "llamaMaxThreads": 16,
+    "llamaBuildType": "prebuilt",
+    "llamaCpuFeatures": "CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX_VNNI = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | LLAMAFILE = 1 | REPACK = 1 |",
+    "totalMemMB": 65310,
+    "gpuName": "NVIDIA GeForce RTX 5090",
+    "vramTotalMiB": 32607
+  },
+  "machineConditions": {
+    "comment": "MÁY RỖI. Đây là điều kiện để lần sau so sánh được.",
+    "cpuLoadPctSamples": [
+      13,
+      10,
+      6
+    ],
+    "freeRamMBSamples": [
+      41411,
+      40799,
+      41236
+    ],
+    "gpuBefore": {
+      "usedMiB": 9729,
+      "freeMiB": 22462,
+      "utilPct": 8
+    },
+    "otherProcesses": "app `node dist/index.js` PID 584 (~5,8 GB WS) đang chạy nhưng nghỉ; KHÔNG có playwright."
+  },
+  "model": {
+    "file": "bge-reranker-v2-m3-Q8_0.gguf",
+    "path": "D:\\SOURCES\\16.AI\\bge-reranker-v2-m3-Q8_0.gguf",
+    "sizeBytes": 628833412,
+    "architecture": "bert",
+    "trainContextSize": 8192,
+    "supportsRanking": true,
+    "gpuLayersCpuMode": 0,
+    "gpuLayersGpuMode": 25
+  },
+  "config": {
+    "envUnderTest": {
+      "RAG_RERANKER_ENABLED": "true",
+      "RAG_RERANKER_MODE": "gguf",
+      "RAG_RERANKER_MAX_CANDIDATES": 20,
+      "RAG_RERANKER_DOC_CHARS": 480,
+      "RAG_RERANKER_POOL": 20
+    },
+    "docChars": 480,
+    "tokensPerPair": {
+      "query": 26,
+      "doc": 131,
+      "pairApprox": 161
+    },
+    "samplesPerCell": 9,
+    "firstSampleDiscarded": true,
+    "callPath": "getLlama → loadModel(gpuLayers) → createRankingContext({contextSize:'auto'}) → rankAll(query, docs[])"
+  },
+  "contextSizeAutoResolves": {
+    "cpu": {
+      "contextSize": 8192,
+      "batchSize": 512,
+      "totalSequences": 1,
+      "flashAttention": "auto"
+    },
+    "gpu": {
+      "contextSize": 8192,
+      "batchSize": 512,
+      "totalSequences": 1,
+      "flashAttention": "auto"
+    },
+    "verdict": "'auto' = 8192 = trainContextSize (TỐI ĐA của model), batchSize 512. NHƯNG đây KHÔNG phải thủ phạm — xem contextSizeControl: ép xuống 256 vẫn chậm y hệt."
+  },
+  "oneTimeLoadMs": {
+    "cpu": {
+      "backendMs": 19.283,
+      "modelLoadMs": 3144.471,
+      "firstCreateRankingContextMs": 1558.048,
+      "totalFirstTimeMs": 4721.802,
+      "subsequentCreateRankingContextMs": {
+        "n": 8,
+        "minMs": 4.403,
+        "p50Ms": 4.67,
+        "p95Ms": 5.986,
+        "maxMs": 5.986,
+        "meanMs": 5.134,
+        "perDocMs": null
+      }
+    },
+    "gpu": {
+      "backendMs": 614.399,
+      "modelLoadMs": 3507.538,
+      "firstCreateRankingContextMs": 847.116,
+      "totalFirstTimeMs": 4969.053,
+      "subsequentCreateRankingContextMs": {
+        "n": 8,
+        "minMs": 4.164,
+        "p50Ms": 4.743,
+        "p95Ms": 6.411,
+        "maxMs": 6.411,
+        "meanMs": 5.123,
+        "perDocMs": null
+      }
+    },
+    "productionPathCtxLoadMs": {
+      "cpu": 12247,
+      "gpu": 11807,
+      "comment": "Số của getRerankerTimings().contextLoadMs — CAO HƠN đường trần vì có thêm chi phí bộ điều phối VRAM."
+    }
+  },
+  "perRerankMs": {
+    "cpu": {
+      "5": {
+        "n": 8,
+        "minMs": 18016.781,
+        "p50Ms": 18601.989,
+        "p95Ms": 18970.358,
+        "maxMs": 18970.358,
+        "meanMs": 18558.888,
+        "perDocMs": 3720.398
+      },
+      "10": {
+        "n": 8,
+        "minMs": 36767.455,
+        "p50Ms": 37519.3,
+        "p95Ms": 38675.225,
+        "maxMs": 38675.225,
+        "meanMs": 37617.599,
+        "perDocMs": 3751.93
+      },
+      "20": {
+        "n": 8,
+        "minMs": 72313.854,
+        "p50Ms": 74967.141,
+        "p95Ms": 78703.231,
+        "maxMs": 78703.231,
+        "meanMs": 75452.401,
+        "perDocMs": 3748.357
+      }
+    },
+    "gpu": {
+      "5": {
+        "n": 8,
+        "minMs": 45.151,
+        "p50Ms": 48.44,
+        "p95Ms": 51.02,
+        "maxMs": 51.02,
+        "meanMs": 48.194,
+        "perDocMs": 9.688
+      },
+      "10": {
+        "n": 8,
+        "minMs": 67.173,
+        "p50Ms": 68.908,
+        "p95Ms": 72.388,
+        "maxMs": 72.388,
+        "meanMs": 69.787,
+        "perDocMs": 6.891
+      },
+      "20": {
+        "n": 8,
+        "minMs": 137.408,
+        "p50Ms": 153.012,
+        "p95Ms": 184.895,
+        "maxMs": 184.895,
+        "meanMs": 154.411,
+        "perDocMs": 7.651
+      }
+    },
+    "scalingVerdict": "TUYẾN TÍNH theo số tài liệu trên CPU (3,72 / 3,75 / 3,75 s mỗi tài liệu ở 5/10/20). Không tệ hơn tuyến tính, cũng không có lợi thế theo lô — vì rankAll đánh giá TỪNG tài liệu tuần tự dưới withLock."
+  },
+  "gpuVsCpu": {
+    "cpuP50Ms": 74967.141,
+    "gpuP50Ms": 153.012,
+    "speedup": 489.9,
+    "vramCostMiB": 803,
+    "vramBrokerOutcome": "CẤP PHÁT — bộ điều phối VRAM KHÔNG từ chối (backend=gguf, chạy thật trên 25/25 lớp GPU). Cảnh báo duy nhất: ước lượng cho 'cuda-backend:reranker' = 0 vì chưa có số học được, và trần thiết bị đang dùng hằng số dự phòng 32607 MiB."
+  },
+  "contextSizeControl": {
+    "comment": "20 tài liệu, CPU, ép contextSize cố định. Nếu 'auto'=8192 là thủ phạm thì các giá trị nhỏ phải nhanh lên rõ rệt. KHÔNG.",
+    "cpu": {
+      "256": {
+        "resolvedContextSize": 256,
+        "resolvedBatchSize": 256,
+        "n": 3,
+        "minMs": 74759.968,
+        "p50Ms": 76390.525,
+        "p95Ms": 78415.423,
+        "maxMs": 78415.423,
+        "meanMs": 76521.972,
+        "perDocMs": 3819.526
+      },
+      "512": {
+        "resolvedContextSize": 512,
+        "resolvedBatchSize": 512,
+        "n": 3,
+        "minMs": 76615.879,
+        "p50Ms": 77232.726,
+        "p95Ms": 79517.959,
+        "maxMs": 79517.959,
+        "meanMs": 77788.855,
+        "perDocMs": 3861.636
+      },
+      "1024": {
+        "resolvedContextSize": 1024,
+        "resolvedBatchSize": 512,
+        "n": 3,
+        "minMs": 76930.191,
+        "p50Ms": 80151.41,
+        "p95Ms": 80828.273,
+        "maxMs": 80828.273,
+        "meanMs": 79303.291,
+        "perDocMs": 4007.571
+      },
+      "2048": {
+        "resolvedContextSize": 2048,
+        "resolvedBatchSize": 512,
+        "n": 3,
+        "minMs": 73769.219,
+        "p50Ms": 73782.644,
+        "p95Ms": 77567.914,
+        "maxMs": 77567.914,
+        "meanMs": 75039.926,
+        "perDocMs": 3689.132
+      }
+    },
+    "gpu": {
+      "512": {
+        "resolvedContextSize": 512,
+        "n": 3,
+        "minMs": 131.148,
+        "p50Ms": 131.498,
+        "p95Ms": 138.142,
+        "maxMs": 138.142,
+        "meanMs": 133.596,
+        "perDocMs": 6.575
+      },
+      "8192": {
+        "resolvedContextSize": 8192,
+        "n": 3,
+        "minMs": 135.445,
+        "p50Ms": 142.072,
+        "p95Ms": 143.984,
+        "maxMs": 143.984,
+        "meanMs": 140.5,
+        "perDocMs": 7.104
+      }
+    },
+    "verdict": "BÁC BỎ. 256 → 76,4 s ; 8192('auto') → 75,0 s. Phẳng trong sai số. contextSize KHÔNG phải thủ phạm."
+  },
+  "otherLevers": {
+    "threadsCpu": {
+      "comment": "createRankingContext mặc định threads=6 (LlamaRankingContext.js:153); aiReranker.ts KHÔNG truyền threads ⇒ production chạy 6. 20 tài liệu.",
+      "byThreads": {
+        "6": {
+          "samplesMs": [
+            73200.893,
+            73938.328,
+            74097.424
+          ],
+          "medianMs": 73938.328,
+          "perDocMs": 3696.916
+        },
+        "12": {
+          "samplesMs": [
+            59386.642,
+            58966.682,
+            60173.385
+          ],
+          "medianMs": 59386.642,
+          "perDocMs": 2969.332
+        },
+        "24": {
+          "samplesMs": [
+            53074.384,
+            52816.783,
+            53059.253
+          ],
+          "medianMs": 53059.253,
+          "perDocMs": 2652.963
+        }
+      },
+      "verdict": "6→24 luồng chỉ nhanh 1,39× (73,9 s → 53,1 s). KHÔNG cứu được CPU. Cần sửa mã mới đặt được (không có biến môi trường)."
+    },
+    "docCharsCpu": {
+      "120": {
+        "n": 3,
+        "minMs": 31221.699,
+        "p50Ms": 31425.368,
+        "p95Ms": 31617.778,
+        "maxMs": 31617.778,
+        "meanMs": 31421.615,
+        "perDocMs": 1571.268
+      },
+      "240": {
+        "n": 3,
+        "minMs": 44722.617,
+        "p50Ms": 44990.908,
+        "p95Ms": 45418.111,
+        "maxMs": 45418.111,
+        "meanMs": 45043.879,
+        "perDocMs": 2249.545
+      },
+      "480": {
+        "n": 8,
+        "minMs": 72313.854,
+        "p50Ms": 74967.141,
+        "p95Ms": 78703.231,
+        "maxMs": 78703.231,
+        "meanMs": 75452.401,
+        "perDocMs": 3748.357
+      },
+      "comment": "20 tài liệu, CPU, contextSize auto. Đòn bẩy DUY NHẤT còn lại đặt được bằng biến môi trường ngoài MAX_CANDIDATES.",
+      "tokens": {
+        "120": {
+          "query": 26,
+          "doc": 39,
+          "pairApprox": 69
+        },
+        "240": {
+          "query": 26,
+          "doc": 67,
+          "pairApprox": 97
+        },
+        "480": {
+          "query": 26,
+          "doc": 131,
+          "pairApprox": 161
+        }
+      },
+      "verdict": "TUYẾN TÍNH THEO SỐ TOKEN, hệ số chặn ≈ 0: 69 tok → 1,571 s/tài liệu ; 97 tok → 2,250 s ; 161 tok → 3,748 s ⇒ ≈ 23,7 ms MỖI TOKEN, tức ~42 token/s. Không có chi phí cố định mỗi lượt gọi đáng kể ⇒ giảm DOC_CHARS có tác dụng THẬT và tỉ lệ thuận. ⚠ 42 token/s là BẤT THƯỜNG chậm cho model 0,6B có AVX2 — nhất quán với việc đánh giá TỪNG TOKEN thay vì prefill theo lô, nhưng TÔI KHÔNG CHỨNG MINH được cơ chế đó, chỉ đo được hệ quả."
+    }
+  },
+  "productionPath": {
+    "comment": "Import server/services/aiReranker.ts qua tsx, gọi rerank(), đọc getRerankerTimings(). Chứng minh số trên là của ĐƯỜNG SẢN XUẤT, không phải bản dựng lại.",
+    "cpu": {
+      "backend": "gguf",
+      "contextLoadMs": 12247,
+      "perRun": {
+        "n": 4,
+        "minMs": 72104.998,
+        "p50Ms": 72211.794,
+        "p95Ms": 74830.428,
+        "maxMs": 74830.428,
+        "meanMs": 73227.383,
+        "perDocMs": 3610.59
+      },
+      "rawMs": [
+        88190,
+        73762,
+        72212,
+        72105,
+        74830
+      ]
+    },
+    "gpu": {
+      "backend": "gguf",
+      "contextLoadMs": 11807,
+      "perRun": {
+        "n": 8,
+        "minMs": 133.602,
+        "p50Ms": 145.32,
+        "p95Ms": 151.417,
+        "maxMs": 151.417,
+        "meanMs": 145.047,
+        "perDocMs": 7.266
+      },
+      "rawMs": [
+        12109,
+        147,
+        145,
+        145,
+        133,
+        147,
+        150,
+        140,
+        151
+      ]
+    }
+  },
+  "recommendation": {
+    "primary": "RAG_RERANKER_GPU=true — đổi 1 cờ, mỗi truy vấn RAG nhanh hơn ~490× (75,0 s → 0,153 s), tốn ~800 MiB VRAM trong khi card còn ~22 GB trống.",
+    "ifMustStayOnCpu": [
+      "RAG_RERANKER_MAX_CANDIDATES=5 và RAG_RERANKER_POOL=5 — chi phí TUYẾN TÍNH theo số tài liệu ⇒ 75,0 s → 18,6 s. Vẫn KHÔNG dùng được.",
+      "RAG_RERANKER_DOC_CHARS=120 — tuyến tính theo token ⇒ 75,0 s → 31,4 s. Cộng với MAX_CANDIDATES=5 thì ≈ 7,9 s. Vẫn quá chậm cho đường phục vụ.",
+      "Hoặc RAG_RERANKER_MODE=llm / RAG_RERANKER_ENABLED=false để bỏ hẳn cross-encoder khỏi đường phục vụ."
+    ],
+    "doNotBother": "Ép contextSize nhỏ: ĐÃ ĐO, không có tác dụng (phẳng 256→8192).",
+    "codeChangeOptional": "Truyền threads vào createRankingContext (aiReranker.ts:729) chỉ mua 1,39× — không đáng nếu đã bật GPU."
+  },
+  "measurementIntegrity": {
+    "firstSampleDiscarded": "Mọi ô đều bỏ mẫu đầu (nó gánh chi phí nạp/khởi động lười).",
+    "twoIndependentHarnesses": "Bản dựng trực tiếp node-llama-cpp và đường sản xuất aiReranker.ts KHỚP nhau (CPU 75,0 vs 72,2 s p50; GPU 153 vs 145 ms p50).",
+    "rejectedHypothesis": "contextSize:'auto' — nghi vấn chính của brief — bị chính phép đo đối chứng BÁC BỎ.",
+    "notMeasured": "KHÔNG đo: reranker chạy đồng thời với chat/AOI đang tải GPU; hành vi khi bộ điều phối VRAM TỪ CHỐI (không tái tạo được lời từ chối vì card còn 22 GB trống)."
+  }
+}

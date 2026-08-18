@@ -17,9 +17,9 @@ vi.mock("../_core/accessControl", () => ({
 const dbm = vi.hoisted(() => ({
   createAuditLog: vi.fn(async (): Promise<any> => ({ id: 1 })),
   getDb: vi.fn(async (): Promise<any> => ({ fake: true })),
-  getMachineByCode: vi.fn(async (_code?: string): Promise<any> => undefined),
-  getMachinesPaged: vi.fn(async (_opts?: any): Promise<any> => ({ items: [], total: 0 })),
-  getMachineRegistrationSummary: vi.fn(async (): Promise<any> => ({
+  getMachineByCode: vi.fn(async (_code?: string, _pv?: any): Promise<any> => undefined),
+  getMachinesPaged: vi.fn(async (_opts?: any, _pv?: any): Promise<any> => ({ items: [], total: 0 })),
+  getMachineRegistrationSummary: vi.fn(async (_pv?: any): Promise<any> => ({
     pending: 2, approved: 10, rejected: 1, total: 13,
   })),
 }));
@@ -28,6 +28,17 @@ vi.mock("../db", () => dbm);
 import { machineRouter } from "./hierarchyRouters";
 
 const userCtx = { user: { id: 7, name: "Admin", role: "admin" }, req: { headers: {} } } as any;
+
+/**
+ * ★ 2026-08-18 (đợt trả nợ phạm vi đọc) — **PHẠM VI NGƯỜI XEM là một đối số THẬT, nên nó được
+ * canh chứ không được bỏ qua bằng `expect.anything()`.**
+ *
+ * Ba ô dưới đây từng ghim ĐÚNG MỘT đối số (`toHaveBeenCalledWith("AOI-02")`). Khi router bắt đầu
+ * đưa `ctx.user` xuống tầng dữ liệu, chúng ĐỎ — và đó là lưới làm đúng việc: chữ ký lời gọi đã
+ * đổi thật. Bản sửa KHÔNG nới lỏng phép so; nó ghim thêm ô mới, nên nếu ai đó lỡ tay bỏ phạm vi
+ * đi (hoặc lấy danh tính từ `input`) thì ba ô này ĐỎ trở lại.
+ */
+const PHAM_VI = { userId: 7, userRole: "admin" } as const;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -39,7 +50,7 @@ describe("F3 — machine.checkCode", () => {
   it("free code → available (no holder leaked)", async () => {
     const res = await machineRouter.createCaller(userCtx).checkCode({ code: "AOI-NEW-01" });
     expect(res).toEqual({ available: true, holder: null });
-    expect(dbm.getMachineByCode).toHaveBeenCalledWith("AOI-NEW-01");
+    expect(dbm.getMachineByCode).toHaveBeenCalledWith("AOI-NEW-01", PHAM_VI);
   });
 
   it("code held by an ACTIVE machine → unavailable with holder identity", async () => {
@@ -66,14 +77,14 @@ describe("F3 — machine.checkCode", () => {
     // Trim applies BEFORE the lookup.
     dbm.getMachineByCode.mockResolvedValue(undefined);
     await caller.checkCode({ code: "  AOI-02  " });
-    expect(dbm.getMachineByCode).toHaveBeenCalledWith("AOI-02");
+    expect(dbm.getMachineByCode).toHaveBeenCalledWith("AOI-02", PHAM_VI);
   });
 });
 
 describe("F9 — machine.listPaged", () => {
   it("no input → bounded defaults (limit 50, offset 0)", async () => {
     await machineRouter.createCaller(userCtx).listPaged();
-    expect(dbm.getMachinesPaged).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+    expect(dbm.getMachinesPaged).toHaveBeenCalledWith({ limit: 50, offset: 0 }, PHAM_VI);
   });
 
   it("passes search + registrationStatus + paging through to the db layer", async () => {
@@ -83,7 +94,7 @@ describe("F9 — machine.listPaged", () => {
     });
     expect(dbm.getMachinesPaged).toHaveBeenCalledWith({
       search: "aoi", registrationStatus: "approved", limit: 25, offset: 50,
-    });
+    }, PHAM_VI);
     expect(res).toEqual({ items: [{ id: 1 }], total: 120 });
   });
 
@@ -132,5 +143,6 @@ describe("F9 — machine.registrationSummary", () => {
     const res = await machineRouter.createCaller(userCtx).registrationSummary();
     expect(res).toEqual({ pending: 2, approved: 10, rejected: 1, total: 13 });
     expect(dbm.getMachineRegistrationSummary).toHaveBeenCalledTimes(1);
+    expect(dbm.getMachineRegistrationSummary).toHaveBeenCalledWith(PHAM_VI);
   });
 });

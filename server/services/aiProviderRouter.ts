@@ -28,6 +28,12 @@ import { planInference, RateLimitError, type GatewayPlan } from "./aiGateway";
 // `generateNarrativeStream` to redact secret-shaped text on individual streamed token chunks
 // (see the class doc comment in aiSafety.ts for why a fixed-size window fails on long secrets).
 import { StreamingSecretRedactor } from "./ai/aiSafety";
+// ★ G5-E — bộ cắt chuỗi suy luận cho nhánh KHÔNG-streaming (`runText`). Khác
+// `generateNarrativeStream` — vốn được cắt Ở HẠ NGUỒN bởi ống SSE `/api/ai/stream/narrative` —
+// `runText` KHÔNG có bề mặt nào cắt hộ: bên gọi (báo cáo điều hành, RCA) hiển thị thẳng `text`.
+// ⚠ THỨ TỰ: cắt thẻ TRƯỚC `plan.sanitizeOutput`. Cắt thẻ là phép XOÁ nên nó NỐI hai nửa một bí mật
+// vốn bị khối <think> chẻ rời ⇒ bộ canh NỘI DUNG phải đứng CUỐI (xem `ai/thinkingStrip.ts`).
+import { stripThinking } from "./ai/thinkingStrip";
 import type { TaskKind } from "./aiModelRouter";
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -246,9 +252,15 @@ async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
       ...(req.stopSequences ? { stopSequences: req.stopSequences } : {}),
     // doc 48 R1 — PIN the model (2nd arg → engine getOrLoadModel). undefined = engine default.
     }, req.modelId);
+    // ★ G5-E — cắt thẻ TRƯỚC, che bí mật SAU. `answer` đã `.trim()`, mà `runText` xưa nay KHÔNG
+    // trim ⇒ khi không có gì bị cắt phải trả lại NGUYÊN VĂN để bản vá là no-op TỪNG KÝ TỰ với
+    // roster hiện tại. `answer === r.text.trim()` xảy ra khi và chỉ khi phép quét không xoá ký tự
+    // phi-khoảng-trắng nào (mọi lượt cắt thật đều xoá ít nhất một cặp thẻ).
+    const catNoiTam = stripThinking(r.text);
+    const chuHienThi = catNoiTam.answer === r.text.trim() ? r.text : catNoiTam.answer;
     const result: NarrativeResult = {
       // doc69 G2-2 — output safety: redact any secret the model echoed back before it returns.
-      text: plan?.sanitizeOutput(r.text) ?? r.text,
+      text: plan?.sanitizeOutput(chuHienThi) ?? chuHienThi,
       provider: "gguf",
       model: r.modelId,
       totalTimeMs: r.totalTimeMs,

@@ -409,7 +409,30 @@ const analyticsDefectPareto: Tool<z.infer<typeof paretoParams>, ParetoToolData |
 interface HeatmapSummaryData {
   totalNG: number;
   hotspots: Array<{ pointCode: string; pointName: string; ngCount: number; ngRate: number; percentage: number }>;
+  /**
+   * Nhà máy mà con số này thực sự nói về. `null` = người gọi là vai TOÀN QUYỀN
+   * (admin) ⇒ tổng hợp toàn hệ thống, y như trước bản vá 2026-08-17.
+   */
+  factoryScope?: string | null;
 }
+
+/**
+ * Câu "rỗng" TRUNG THỰC cho tài khoản chưa được gán nhà máy. Cùng luật với
+ * `readToolRbac.cauTuChoi`: nói ĐÚNG lý do, không bao giờ giả vờ "không có dữ liệu".
+ */
+const HEATMAP_NO_SCOPE_MSG: Record<Lang, string> = {
+  vi:
+    "Tài khoản của bạn chưa được gán nhà máy nào, nên không có bản ghi kiểm nào nằm trong " +
+    "phạm vi bạn được xem. Đây là phạm vi rỗng — KHÔNG phải kết luận rằng dây chuyền không " +
+    "có lỗi. Liên hệ quản trị viên để được gán nhà máy.",
+  en:
+    "Your account is not assigned to any factory, so no inspection records fall within your " +
+    "data scope. This is an EMPTY SCOPE — not a finding that the line has no defects. " +
+    "Contact an administrator to be assigned a factory.",
+  zh:
+    "您的账户尚未分配任何工厂，因此没有任何检测记录处于您的数据范围内。这是范围为空——" +
+    "并不代表产线没有缺陷。请联系管理员分配工厂。",
+};
 
 const heatmapParams = z
   .object({
@@ -451,16 +474,49 @@ const analyticsDefectHeatmapSummary: Tool<z.infer<typeof heatmapParams>, Heatmap
     const db = await getDb();
     if (!db) return noDbResult<HeatmapSummaryData | null>("analytics_heatmap", title, null);
 
+    // ── PHẠM VI DỮ LIỆU (2026-08-17) ────────────────────────────────────────
+    // `rbacGate` ở trên chỉ kiểm QUYỀN ("được xem loại dữ liệu này không?"), KHÔNG
+    // giới hạn PHẠM VI ("được xem dữ liệu của NHỮNG nhà máy nào?") — hai thứ khác
+    // nhau, và trước hôm nay chỉ có cái thứ nhất tồn tại ở đây. Dùng ĐÚNG bộ phân
+    // giải phạm vi đã có cho các bề mặt AI (`_core/aiAnalyticsScope`, vốn xây trên
+    // cùng `accessControl.getUserAssignmentCodes` mà `/history` dùng) — không có cơ
+    // chế thứ hai. `import()` động: giữ `_core/aiAnalyticsScope` (kéo theo aiGateway)
+    // ra khỏi đồ thị nạp của sổ đăng ký tool.
+    const { resolveFactoryScope, firstFactoryCodeInScope } = await import("../../_core/aiAnalyticsScope");
+    const auth = authCtxSchema.safeParse(__authCtx);
+    if (!auth.success) {
+      // Không thể tới đây (rbacGate đã chặn) — nhưng nếu tới thì ĐÓNG, không mở.
+      return deniedResult<HeatmapSummaryData | null>("analytics_heatmap", title, null, "analytics_defect_heatmap", lang);
+    }
+    const scope = await resolveFactoryScope({ id: auth.data.userId, role: auth.data.role } as never);
+    let factoryCode: string | undefined;
+    if (!scope.isGlobal) {
+      // Người gọi bị giới hạn: thu về ĐÚNG MỘT mã nhà máy trong phạm vi của họ
+      // (`getTopNGMeasurementPointsEnhanced` chỉ nhận một mã). Không phân giải được
+      // ⇒ phạm vi RỖNG ⇒ trả câu trung thực và KHÔNG chạm một hàng dữ liệu nào.
+      const picked = await firstFactoryCodeInScope(scope);
+      if (!picked) {
+        return {
+          type: "analytics_heatmap",
+          title,
+          data: { totalNG: 0, hotspots: [], factoryScope: null },
+          textSummary: HEATMAP_NO_SCOPE_MSG[lang],
+          note: "SCOPE_EMPTY",
+        };
+      }
+      factoryCode = picked;
+    }
+
     const startDate = sinceDays(days);
     const endDate = new Date();
     let rows: Awaited<ReturnType<typeof getTopNGMeasurementPointsEnhanced>>;
     try {
-      rows = await getTopNGMeasurementPointsEnhanced({ startDate, endDate, machineId, productModelId, limit: topN });
+      rows = await getTopNGMeasurementPointsEnhanced({ startDate, endDate, machineId, productModelId, factoryCode, limit: topN });
     } catch {
       return {
         type: "analytics_heatmap",
         title,
-        data: { totalNG: 0, hotspots: [] },
+        data: { totalNG: 0, hotspots: [], factoryScope: factoryCode ?? null },
         textSummary: `Không truy vấn được điểm nóng lỗi trong ${days} ngày qua.`,
         note: "QUERY_ERROR",
       };
@@ -474,14 +530,17 @@ const analyticsDefectHeatmapSummary: Tool<z.infer<typeof heatmapParams>, Heatmap
       ngRate: round2(Number(r.ngRate ?? 0)),
       percentage: totalNG > 0 ? round2((Number(r.ngCount) / totalNG) * 100) : 0,
     }));
-    const data: HeatmapSummaryData = { totalNG, hotspots };
+    const data: HeatmapSummaryData = { totalNG, hotspots, factoryScope: factoryCode ?? null };
+    // Nói RÕ con số này thuộc nhà máy nào — một tổng "toàn hệ thống" và một tổng
+    // "một nhà máy" trông giống hệt nhau nếu không ghi phạm vi ra.
+    const scopeNote = factoryCode ? ` (phạm vi: nhà máy ${factoryCode})` : "";
 
     if (totalNG === 0) {
       return {
         type: "analytics_heatmap",
         title,
         data,
-        textSummary: `Không có lỗi NG để dựng heatmap trong ${days} ngày qua.`,
+        textSummary: `Không có lỗi NG để dựng heatmap trong ${days} ngày qua${scopeNote}.`,
         note: "NOT_FOUND",
       };
     }
@@ -490,7 +549,7 @@ const analyticsDefectHeatmapSummary: Tool<z.infer<typeof heatmapParams>, Heatmap
       type: "analytics_heatmap",
       title,
       data,
-      textSummary: `Điểm nóng lỗi (${days} ngày): tổng ${totalNG} NG. Top vị trí: ${listing}.`,
+      textSummary: `Điểm nóng lỗi (${days} ngày)${scopeNote}: tổng ${totalNG} NG. Top vị trí: ${listing}.`,
     };
   },
 };

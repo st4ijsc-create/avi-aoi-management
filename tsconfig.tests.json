@@ -136,7 +136,6 @@
     "server/services/aiKbFeedbackSignal.test.ts",
     "server/services/aiLlmFinetuneSidecar.test.ts",
     "server/services/aiLocalKnowledgeSafety.test.ts",
-    "server/services/aiLocalTools/handlersF7.test.ts",
     "server/services/aiLocalTools/intentClassifier.gd3.test.ts",
     "server/services/aiLocalTools/machineControl.tools.test.ts",
     "server/services/aiLocalTools/programmingTools.test.ts",

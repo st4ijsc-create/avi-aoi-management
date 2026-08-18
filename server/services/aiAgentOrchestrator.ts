@@ -77,7 +77,13 @@ function toCount(n: unknown): number {
  *  B1 go-live 2026-06-27: added the engineering roles supervisor + maintenance
  *  (technician) per user decision — they run multi-step sessions; every write step
  *  still goes through HITL propose→confirm gated by per-tool RBAC. (manager/it_admin
- *  are legacy labels not in roleEnum; kept harmless.) */
+ *  are legacy labels not in roleEnum; kept harmless.)
+ *
+ *  ⚠ 2026-08-17 — chủ dự án XÁC NHẬN LẠI: `engineer` ĐƯỢC chạy agent. Từ 2026-06-27 mã đã
+ *  cho phép, nhưng `aiAgentOrchestrator.test.ts` vẫn khẳng định ngược lại và ĐỎ suốt năm pha
+ *  dưới nhãn "nợ có trước". Quyết định chốt danh sách này là NGUỒN SỰ THẬT; ca test đã được
+ *  sửa cho khớp (KHÔNG phải ngược lại). Thêm/bớt một vai ở đây ⇒ hai ca ở
+ *  `describe("agentic gate (server role)")` ĐỎ ngay. */
 const AGENTIC_ROLES = new Set(["manager", "it_admin", "admin", "supervisor", "maintenance", "engineer"]);
 
 /** Session TTL (mirrors the pending-action 5' but generous for a multi-step flow). */
@@ -158,7 +164,9 @@ export async function startSession(
     expiresAt,
   });
 
-  const planResult = await planGoal(goal, { lang });
+  // G3-B — chủ phiên đi kèm lượt lập kế hoạch: hạn mức/quota/nhật ký của cổng AI gắn vào ĐÚNG
+  // người (trước đây mọi lượt của mọi người dồn chung một khoá "anon").
+  const planResult = await planGoal(goal, { lang, userId: ctx.user.id, role: ctx.user.role });
   // Enforce the step cap defensively (planner already cuts).
   const plan: AgentPlan = { ...planResult.plan, steps: planResult.plan.steps.slice(0, maxSteps()) };
 
@@ -453,10 +461,40 @@ async function advanceImpl(
 
           let outcome: ReplanResult;
           try {
-            outcome = await replanFromObservations({ goal: row.goal, executed, remaining, lang });
+            outcome = await replanFromObservations({
+              goal: row.goal,
+              executed,
+              remaining,
+              lang,
+              // G3-B — xem ghi chú ở startSession: hạn mức/quota/nhật ký gắn vào chủ phiên.
+              userId: row.userId,
+              role: row.userRole,
+            });
           } catch {
             // Never let a replan failure crash the session — keep the existing tail.
             outcome = { changed: false, steps: remaining, available: true };
+          }
+
+          // G3-B — một quan sát mang MỆNH LỆNH ⇒ bộ lập kế hoạch từ chối điều chỉnh (xem
+          // aiAgentPlanner.buildReplanPrompt). Ghi lại vào vệt stepResults để người vận hành
+          // thấy VÌ SAO kế hoạch không đổi — im lặng ở đây là cách một cuộc tấn công bị đẩy
+          // xuống thành "hình như AI hôm nay hơi ngu". Sentinel index < 0, cùng lối với
+          // "REPLANNED" bên dưới (mọi consumer đã phải lọc index < 0).
+          if (outcome.refused) {
+            stepResults.push({
+              index: -1 - cursor,
+              kind: "guidance",
+              tool: null,
+              status: "skipped",
+              message: "REPLAN_REFUSED",
+              payload: {
+                note: outcome.message ?? "Quan sát chứa mệnh lệnh — giữ nguyên kế hoạch đã duyệt.",
+                reason: outcome.refused,
+                matched: outcome.injectionMatched ?? [],
+                atCursor: cursor,
+                replanCount,
+              },
+            });
           }
 
           if (outcome.changed) {

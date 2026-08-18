@@ -32,6 +32,8 @@ import { ggufModelFileExists } from "./aiGgufEngine";
 // for the full STEP 0 comparison / reconciliation notes). This import is equally side-effect-free
 // (env reads only), so route() stays pure/synchronous.
 import { resolveTaskModel } from "./ai/modelResolver";
+// G5-B — trần `n_ctx` có MỘT nguồn sự thật (xem ai/ggufCtxCap.ts). Cũng chỉ đọc env ⇒ route() vẫn thuần.
+import { ggufMaxCtx } from "./ai/ggufCtxCap";
 
 export type TaskKind =
   | "chat"
@@ -290,18 +292,212 @@ function fimModelId(): string | undefined {
 }
 
 /**
- * Requested context size for the ON `code` tier: up to GGUF_MAX_CTX but capped at a sane 32K
- * default (doc 34 §5.1: default 32K, open 128K only for large repo/manual reads). The engine
- * clamps this into [256, GGUF_MAX_CTX] on first load, so requesting the operator's max is safe.
+ * Requested context size for the ON `code` tier: the operator's configured ceiling.
+ *
+ * ★ G5-B (2026-08-16) — TRẦN TỪNG BỊ CHẶN HAI LẦN. Bản cũ đọc lại `GGUF_MAX_CTX` rồi kẹp thêm
+ * `Math.min(max, 32768)` bằng một hằng viết cứng. Vì `aiGgufEngine` ĐÃ có trần riêng cùng tên,
+ * hằng ở đây chỉ làm đúng một việc: **vô hiệu hoá mọi lượt nâng trần trong `.env`** — nâng lên
+ * 65536/131072/262144 đều bị cắt về 32768 mà không log gì. Với model ctx native 262k sắp lên
+ * sản xuất, đó là "cờ khai mà vô hiệu" ở đúng chỗ tốn kém nhất.
+ *
+ * Nay: MỘT nguồn — `ggufMaxCtx()` (mặc định vẫn 32768, không tự nâng). Engine kẹp lần cuối vào
+ * `[GGUF_MIN_CTX, ggufMaxCtx()]` khi nạp, cùng nguồn, nên xin đúng trần của người vận hành là an
+ * toàn và **có tác dụng thật**.
  */
 function codeContextSize(): number {
-  const n = parseInt(process.env.GGUF_MAX_CTX || "32768", 10);
-  const max = Number.isFinite(n) && n > 0 ? n : 32768;
-  return Math.min(max, 32768);
+  return ggufMaxCtx();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★ G5-B (2026-08-16) — HỒ SƠ ĐẶC TÍNH MODEL: NGƯỠNG ĐỊNH TUYẾN RÚT TỪ ĐÂU, ĐO NGÀY NÀO
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * Ba ngưỡng của bộ định tuyến — `easyMaxChars`, `hardMinChars`, `latencyPinMs` — KHÔNG phải hằng
+ * số phổ quát. Chúng được rút ra từ MỘT phép đo trên MỘT roster: Qwen3-30B-A3B (MoE, 3B active,
+ * cold-load 6,04 s, 192,5 tok/s) + Qwen3-4B (cold-load 1,22 s, 234,9 tok/s), đo 2026-08-02 trên
+ * RTX 5090. Trước bản vá này chúng nằm trần trong biểu thức, kèm một câu chú thích — đổi roster
+ * sang model **dense 27B** (đặc tính khác hẳn: decode ~78 tok/s, KV 64 KiB/token thay vì 96) thì
+ * các số ấy **vẫn chạy, vẫn xanh, và không còn đúng**. Không có gì đỏ, không có gì kêu.
+ *
+ * Bản vá KHÔNG đổi thuật toán định tuyến. Nó làm ba việc, đúng ba việc:
+ *   1. đưa mọi số phụ thuộc đặc tính model vào MỘT bảng khai báo, kèm **nguồn + ngày đo**;
+ *   2. cho phép khai đè bằng env (`AI_ROUTER_*`) để người đo lại ngưỡng không phải sửa mã;
+ *   3. **KÊU** khi đang chạy một model mà ta CHƯA đo — thay vì im lặng dùng số của model khác.
+ *
+ * ⚠ Cố ý KHÔNG bịa ngưỡng mới cho model dense. Chưa ai đo cold-load của nó trên máy này; một con
+ * số phát minh ở đây sẽ có **hình dạng đúng bằng một kết luận thật** mà không phải kết luận nào.
+ * Hồ sơ dense thừa kế ngưỡng MoE **và khai rõ là thừa kế** cho tới khi có phép đo tại chỗ.
+ */
+export type ProfileProvenance = "measured-here" | "third-party" | "none";
+
+export interface RouterModelProfile {
+  label: string;
+  /** Vị từ nhận diện: khớp basename của GGUF_DEFAULT_MODEL. */
+  matches: RegExp;
+  /** Basename mẫu — dùng cho lưới kiểm chồng lấn giữa các hồ sơ. */
+  sampleBasename: string;
+  /** Nguồn + NGÀY của phép đo mà các số dưới đây rút ra. */
+  measuredOn: string;
+  provenance: ProfileProvenance;
+  /** `null` = CHƯA ĐO (không được điền số bịa vào đây). */
+  deepColdLoadMs: number | null;
+  deepDecodeTokPerSec: number | null;
+  fastColdLoadMs: number | null;
+  fastDecodeTokPerSec: number | null;
+  /** ─ Ngưỡng RÚT RA ─ */
+  latencyPinMs: number;
+  easyMaxChars: number;
+  hardMinChars: number;
+  /** Khai rõ khi ngưỡng KHÔNG rút từ phép đo của chính model này. */
+  thresholdsInheritedFrom: string | null;
+  note: string;
+}
+
+/** Ngưỡng gốc — đo tại chỗ 2026-08-02 (B0/TASK B, RTX 5090). Mọi hồ sơ thừa kế đều trỏ về đây. */
+const MOE_THRESHOLDS = { latencyPinMs: 700, easyMaxChars: 160, hardMinChars: 700 } as const;
+
+export const ROUTER_MODEL_PROFILES: readonly RouterModelProfile[] = [
+  {
+    label: "Qwen3-30B-A3B (MoE, 3B active) + Qwen3-4B",
+    matches: /30b[-_. ]?a3b/i,
+    sampleBasename: "Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL",
+    measuredOn: "2026-08-02 · B0/TASK B · RTX 5090 · đo TẠI CHỖ",
+    provenance: "measured-here",
+    deepColdLoadMs: 6040,
+    deepDecodeTokPerSec: 192.5,
+    fastColdLoadMs: 1220,
+    fastDecodeTokPerSec: 234.9,
+    ...MOE_THRESHOLDS,
+    thresholdsInheritedFrom: null,
+    note:
+      "easyMaxChars/hardMinChars ưu tiên 4B cho câu ngắn; latencyPinMs 700 chọn BẢO THỦ (nhỏ hơn " +
+      "nhiều so với cold-load 6,04 s) để chỉ ghim Tier 1 khi ngân sách thực sự chật.",
+  },
+  {
+    label: "Qwen3.x-27B dense (qwen35)",
+    matches: /qwen3[.\-_0-9]*27b/i,
+    sampleBasename: "Qwen3.8-27B-Instruct-Q4_K_M",
+    measuredOn:
+      "2026-08-16 · witcheer @ RTX 5090, llama-bench Q4_K_M (doc 77 §4.2) — ĐO CỦA NGƯỜI KHÁC, " +
+      "KHÔNG phải phép đo trên máy này",
+    provenance: "third-party",
+    deepColdLoadMs: null, // CHƯA ĐO trên máy này — không điền số bịa.
+    deepDecodeTokPerSec: 78,
+    fastColdLoadMs: null,
+    fastDecodeTokPerSec: null, // roster gộp: fast = default = cùng model dense.
+    ...MOE_THRESHOLDS,
+    thresholdsInheritedFrom: "Qwen3-30B-A3B (MoE)",
+    note:
+      "Ngưỡng đang THỪA KẾ từ hồ sơ MoE vì chưa đo cold-load/decode tại chỗ. Đo xong thì khai bằng " +
+      "AI_ROUTER_LATENCY_PIN_MS / AI_ROUTER_EASY_MAX_CHARS / AI_ROUTER_HARD_MIN_CHARS, hoặc thêm " +
+      "số đo vào chính hồ sơ này.",
+  },
+];
+
+/** Hồ sơ cho model KHÔNG khớp mục nào — mặc định phải là "chưa đo", không phải "coi như MoE". */
+const UNKNOWN_PROFILE: RouterModelProfile = {
+  label: "model chưa có hồ sơ",
+  matches: /$^/,
+  sampleBasename: "",
+  measuredOn: "chưa đo",
+  provenance: "none",
+  deepColdLoadMs: null,
+  deepDecodeTokPerSec: null,
+  fastColdLoadMs: null,
+  fastDecodeTokPerSec: null,
+  ...MOE_THRESHOLDS,
+  thresholdsInheritedFrom: "Qwen3-30B-A3B (MoE)",
+  note: "Không khớp hồ sơ nào trong ROUTER_MODEL_PROFILES — đang chạy bằng ngưỡng của roster cũ.",
+};
+
+const routerProfileWarned = new Set<string>();
+function warnRouterProfile(msg: string): void {
+  if (routerProfileWarned.has(msg)) return;
+  routerProfileWarned.add(msg);
+  console.warn(`[aiModelRouter] ${msg}`);
+}
+
+/** Đọc một số dương từ env; rác ⇒ undefined + kêu MỘT lần (không lặng lẽ thành 0/NaN). */
+function envPositiveInt(name: string): number | undefined {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    warnRouterProfile(`${name}="${raw}" không phải số dương — BỎ QUA, dùng giá trị của hồ sơ model.`);
+    return undefined;
+  }
+  return Math.floor(n);
+}
+
+export interface ActiveRouterProfile extends RouterModelProfile {
+  /** Basename model sâu đang cấu hình (GGUF_DEFAULT_MODEL). */
+  deepModel: string;
+  /** Tên các biến env đã khai đè ngưỡng. */
+  overriddenBy: string[];
+  /**
+   * true khi ngưỡng đang dùng KHÔNG rút từ phép đo của chính model đang chạy **và** người vận hành
+   * cũng chưa khai đè bằng env. Đây là điều kiện phải KÊU.
+   */
+  needsLocalMeasurement: boolean;
+}
+
+/**
+ * Hồ sơ đang hiệu lực = (hồ sơ khớp GGUF_DEFAULT_MODEL, hoặc UNKNOWN) ⊕ khai đè từ env.
+ * Thuần: chỉ đọc env, không I/O, không log (trừ cảnh báo env rác — một lần/đời tiến trình).
+ */
+export function activeRouterProfile(): ActiveRouterProfile {
+  const deepModel = defaultModelId() || "";
+  const base = ROUTER_MODEL_PROFILES.find((p) => p.matches.test(deepModel)) ?? UNKNOWN_PROFILE;
+
+  const latencyPinMs = envPositiveInt("AI_ROUTER_LATENCY_PIN_MS");
+  const easyMaxChars = envPositiveInt("AI_ROUTER_EASY_MAX_CHARS");
+  const hardMinChars = envPositiveInt("AI_ROUTER_HARD_MIN_CHARS");
+  const overriddenBy = [
+    latencyPinMs !== undefined ? "AI_ROUTER_LATENCY_PIN_MS" : "",
+    easyMaxChars !== undefined ? "AI_ROUTER_EASY_MAX_CHARS" : "",
+    hardMinChars !== undefined ? "AI_ROUTER_HARD_MIN_CHARS" : "",
+  ].filter(Boolean);
+
+  return {
+    ...base,
+    deepModel,
+    overriddenBy,
+    latencyPinMs: latencyPinMs ?? base.latencyPinMs,
+    easyMaxChars: easyMaxChars ?? base.easyMaxChars,
+    hardMinChars: hardMinChars ?? base.hardMinChars,
+    // Khai đè ĐỦ CẢ BA ⇒ coi như đã đo và khai; thiếu một cái thì vẫn còn số thừa kế đang lái.
+    needsLocalMeasurement: base.provenance !== "measured-here" && overriddenBy.length < 3,
+  };
+}
+
+/**
+ * Hồ sơ dùng cho MỘT quyết định định tuyến, kèm lượt kêu (một lần/đời tiến trình) khi đang chạy
+ * model chưa có phép đo tại chỗ. Kêu từ chính đường `route()` nên không cần ai nhớ gắn vào boot.
+ */
+function profileForDecision(): ActiveRouterProfile {
+  const p = activeRouterProfile();
+  if (p.needsLocalMeasurement) {
+    warnRouterProfile(
+      `ngưỡng định tuyến đang dùng KHÔNG rút từ phép đo của model đang chạy. ` +
+        `Model: "${p.deepModel || "(chưa gán)"}" → hồ sơ "${p.label}" (${p.measuredOn}). ` +
+        `Ngưỡng easy≤${p.easyMaxChars} / hard>${p.hardMinChars} / ghim<${p.latencyPinMs}ms thừa kế từ ` +
+        `"${p.thresholdsInheritedFrom ?? "?"}". Đo lại rồi khai bằng AI_ROUTER_LATENCY_PIN_MS / ` +
+        `AI_ROUTER_EASY_MAX_CHARS / AI_ROUTER_HARD_MIN_CHARS (cả ba), hoặc bổ sung số đo vào ` +
+        `ROUTER_MODEL_PROFILES.`,
+    );
+  }
+  return p;
 }
 
 // ─── Difficulty classifier (Tier-0, heuristic, no LLM) ─────────
-const MULTISTEP_HINTS = /\b(and then|sau đó|từng bước|step by step|compare|so sánh|analy[sz]e|phân tích|root cause|nguyên nhân|why|tại sao|forecast|dự báo|optimi|tối ưu|plan|kế hoạch)\b/i;
+// ★ 2026-08-16 — ĐO trên cả 18 nhánh: ĐÚNG MỘT nhánh chết với `\b` là `sau đó`, vì nó KẾT THÚC
+// bằng `ó` (JS coi ký tự từ là [A-Za-z0-9_], nên `ó` cạnh khoảng trắng không tạo biên phải).
+// 17 nhánh còn lại đều bắt đầu VÀ kết thúc bằng ký tự ASCII nên vẫn khớp bình thường —
+// kể cả `phân tích`, `nguyên nhân`, `dự báo`, `tối ưu` (dấu nằm GIỮA, không ở mép).
+// Hậu quả đo được: "chạy A sau đó chạy B" → false, "and then" → true ⇒ câu NHIỀU BƯỚC tiếng Việt
+// bị chấm nhẹ độ khó và định tuyến sang model yếu hơn mức cần.
+// Dùng biên Unicode cho cả hai mép (cờ `u`). Cùng lớp lỗi đã vá ở intentClassifier.ts (25 nhánh).
+const MULTISTEP_HINTS = /(?<![\p{L}\p{N}_])(and then|sau đó|từng bước|step by step|compare|so sánh|analy[sz]e|phân tích|root cause|nguyên nhân|why|tại sao|forecast|dự báo|optimi|tối ưu|plan|kế hoạch)(?![\p{L}\p{N}_])/iu;
 
 /**
  * Ước lượng độ khó thuần heuristic (nhanh, không gọi model). Có thể nâng cấp sau
@@ -329,14 +525,14 @@ export function classifyDifficulty(input: RouteInput): Difficulty {
     return len > 800 || multistep ? "medium" : "easy";
   }
 
-  // chat & mặc định — ngưỡng đã tinh chỉnh theo benchmark RTX 5090 (B0/TASK B):
-  // 4B=234.9 tok/s (load 1.22s) vs 30B-A3B=192.5 tok/s (load 6.04s) → ưu tiên 4B cho tác vụ ngắn,
-  // chỉ trả về "hard" (→30B) khi thực sự dài/đa bước để bù chi phí cold-load ~6s.
-  //   easy   : len < 160 (nâng từ 120) & không đa bước
-  //   medium : 160 ≤ len ≤ 700
-  //   hard   : len > 700 HOẶC đa bước (multistep)  [rca/report/write đã là hard ở nhánh trên]
-  if (len < 160 && !multistep) return "easy";
-  if (len > 700 || multistep) return "hard";
+  // chat & mặc định — ngưỡng PHỤ THUỘC ĐẶC TÍNH MODEL, nay lấy từ hồ sơ đang hiệu lực thay vì
+  // số trần (xem ROUTER_MODEL_PROFILES ở trên: nguồn + ngày đo + đường khai đè bằng env).
+  //   easy   : len < easyMaxChars & không đa bước
+  //   medium : easyMaxChars ≤ len ≤ hardMinChars
+  //   hard   : len > hardMinChars HOẶC đa bước  [rca/report/write đã là hard ở nhánh trên]
+  const { easyMaxChars, hardMinChars } = profileForDecision();
+  if (len < easyMaxChars && !multistep) return "easy";
+  if (len > hardMinChars || multistep) return "hard";
   return "medium";
 }
 
@@ -401,17 +597,20 @@ export function route(input: RouteInput): RouteDecision {
   // medium/hard (cần ngữ cảnh RAG/SOP). Hint chỉ áp dụng ở lần nạp model đầu (xem RouteDecision).
   const tier1Model = fastModelId() ?? defaultModelId();
 
-  // TASK B — Latency-budget rule (benchmark RTX 5090): 30B-A3B cold-load ~6.04s sẽ phá vỡ ngân sách
-  // dưới 700ms. Nếu ngân sách < 700ms VÀ độ khó ≤ medium → ghim Tier 1 (4B, load 1.22s, 234.9 tok/s).
-  // "hard" (và no-budget) vẫn dùng deep tier (30B). 4B+30B+embed đồng trú (GGUF_MAX_LOADED_MODELS=4).
+  // TASK B — Latency-budget rule: cold-load của model sâu phá vỡ ngân sách chật. Ngân sách <
+  // `latencyPinMs` VÀ độ khó ≤ medium → ghim Tier 1. "hard" (và no-budget) vẫn dùng deep tier.
+  // ★ G5-B: `latencyPinMs` KHÔNG còn là số trần — nó đến từ hồ sơ đặc tính model (nguồn + ngày đo
+  // ở ROUTER_MODEL_PROFILES), khai đè được bằng AI_ROUTER_LATENCY_PIN_MS. Đổi roster mà chưa đo
+  // lại ⇒ hồ sơ tự KÊU một lần thay vì im lặng dùng số của model cũ.
+  const profile = profileForDecision();
   if (
     typeof input.latencyBudgetMs === "number" &&
-    input.latencyBudgetMs < 700 &&
+    input.latencyBudgetMs < profile.latencyPinMs &&
     (difficulty === "trivial" || difficulty === "easy" || difficulty === "medium")
   ) {
     const ctx = difficulty === "medium" ? 4096 : difficulty === "easy" ? 2048 : 1024;
     return decide(1, tier1Model, false, difficulty === "medium" ? 1024 : 512, 0.3, wantJson,
-      `latency budget ${input.latencyBudgetMs}ms < 700ms & difficulty ${difficulty} → pin Tier 1 fast (4B, avoid 30B cold-load)`, ctx);
+      `latency budget ${input.latencyBudgetMs}ms < ${profile.latencyPinMs}ms (hồ sơ "${profile.label}") & difficulty ${difficulty} → pin Tier 1 fast (tránh cold-load model sâu)`, ctx);
   }
 
   switch (difficulty) {

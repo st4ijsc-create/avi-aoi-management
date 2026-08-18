@@ -5,6 +5,50 @@ import * as db from "../db";
 import { statsCache, CACHE_KEYS, CACHE_TTL } from "../_core/cache";
 import { getHourlyStatsViaMV } from "../functions/cachedStatistics";
 
+/**
+ * ⚠⚠ 2026-08-17 — KHOÁ CACHE PHẢI MANG DANH TÍNH.
+ *
+ * `dashboard.getStats` tính giá trị VỚI phạm vi của người gọi (`userId`/`userRole` truyền
+ * xuống `getDashboardStats`), nhưng khoá cũ sinh từ `input` KHÔNG có hai ô ấy ⇒ số liệu đã
+ * lọc theo phạm vi của người này được phục vụ lại cho người khác: admin nạp trước thì người 0
+ * gán nhà máy nhận nguyên số toàn cục (kèm `scopeEmptyReason: null`), vô hiệu hoá TOÀN BỘ bản
+ * vá phạm vi ở tầng dưới. Đây là lối rò THỨ HAI, độc lập với `getAccessFilterConditions`.
+ *
+ * Tách thành hàm XUẤT RA để `accessControlScope.test.ts` đo được CHÍNH bộ sinh khoá mà router
+ * dùng. (Lượt đầu ca kiểm tự dựng lại khoá trong test — một thước TỰ THOẢ: đột biến bỏ danh
+ * tính khỏi router vẫn XANH. Đã đo, và đó là lý do hàm này tồn tại.)
+ */
+export function dashboardStatsCacheKey(
+  input: Record<string, unknown>,
+  user: { id: number; role: string },
+): string {
+  return scopedStatsCacheKey(CACHE_KEYS.DASHBOARD_STATS, input, user);
+}
+
+/**
+ * ★★★ 2026-08-17 (đợt hai) — BỘ SINH KHOÁ DUY NHẤT cho MỌI thủ tục thống kê có nhớ đệm.
+ *
+ * Cùng một lớp lỗi với `dashboardStatsCacheKey`, nhưng ở BỐN chỗ nữa (`getMachineStats`,
+ * `getAllMachinesStats` — cả khoá gộp lẫn khoá TỪNG MÁY — và `getDailyStats`): giá trị nay được
+ * tính VỚI phạm vi của người gọi, còn khoá vẫn sinh từ mỗi `input`. Ai nạp cache trước thì phần
+ * còn lại của nhà máy đọc số của người đó. Bản vá ở tầng `server/db/statistics.ts` bị vô hiệu
+ * hoá HOÀN TOÀN mà mọi lưới ở tầng db vẫn xanh — nên nó phải được sửa CÙNG LÚC, không để lại.
+ *
+ * Xuất ra để lưới đo được CHÍNH bộ sinh khoá mà router dùng (một ca kiểm tự dựng lại khoá trong
+ * test là thước TỰ THOẢ — đã đo và đã bỏ, xem `accessControlScope.test.ts`).
+ */
+export function scopedStatsCacheKey(
+  prefix: string,
+  input: Record<string, unknown>,
+  user: { id: number; role: string },
+): string {
+  return statsCache.generateKey(prefix, {
+    ...input,
+    __userId: user.id,
+    __userRole: user.role,
+  });
+}
+
 export const dashboardRouter = router({
   getStats: protectedProcedure
     .input(z.object({
@@ -15,8 +59,8 @@ export const dashboardRouter = router({
       endDate: z.date().optional(),
     }))
     .query(async ({ input, ctx }) => {
-      // Check cache first
-      const cacheKey = statsCache.generateKey(CACHE_KEYS.DASHBOARD_STATS, input);
+      // Khoá PHẢI mang danh tính — xem docblock `dashboardStatsCacheKey`.
+      const cacheKey = dashboardStatsCacheKey(input, ctx.user);
       const cached = statsCache.get<Awaited<ReturnType<typeof db.getDashboardStats>>>(cacheKey);
       if (cached) return cached;
 
@@ -34,13 +78,16 @@ export const dashboardRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
-      // Check cache first
-      const cacheKey = statsCache.generateKey(CACHE_KEYS.MACHINE_STATS, input);
+    .query(async ({ input, ctx }) => {
+      // Khoá PHẢI mang danh tính — xem docblock `scopedStatsCacheKey`.
+      const cacheKey = scopedStatsCacheKey(CACHE_KEYS.MACHINE_STATS, input, ctx.user);
       const cached = statsCache.get<Awaited<ReturnType<typeof db.getMachineStats>>>(cacheKey);
       if (cached) return cached;
 
-      const stats = await db.getMachineStats(input.machineId, input.startDate, input.endDate);
+      const stats = await db.getMachineStats(input.machineId, input.startDate, input.endDate, {
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
+      });
       statsCache.set(cacheKey, stats, CACHE_TTL.SHORT);
       return stats;
     }),
@@ -54,9 +101,10 @@ export const dashboardRouter = router({
       factoryId: z.number().int().positive().optional(),
       lineId: z.number().int().positive().optional(),
     }))
-    .query(async ({ input }) => {
-      // Check cache first to avoid N+1 queries
-      const cacheKey = statsCache.generateKey(CACHE_KEYS.MACHINE_STATS + '_all', input);
+    .query(async ({ input, ctx }) => {
+      // Check cache first to avoid N+1 queries.
+      // Khoá mang danh tính — số liệu bên dưới đã lọc theo phạm vi của người gọi.
+      const cacheKey = scopedStatsCacheKey(CACHE_KEYS.MACHINE_STATS + '_all', input, ctx.user);
 
       const compute = async () => {
         const machinesWithHierarchy = (await db.getMachinesWithHierarchy()).filter(
@@ -67,11 +115,21 @@ export const dashboardRouter = router({
         );
         const stats = await Promise.all(
           machinesWithHierarchy.map(async (item) => {
-            // Use per-machine cache to avoid redundant DB calls
-            const perMachineCacheKey = statsCache.generateKey(CACHE_KEYS.MACHINE_STATS, { machineId: item.machine.id, startDate: input.startDate, endDate: input.endDate });
+            // Use per-machine cache to avoid redundant DB calls.
+            // ⚠ Khoá TỪNG MÁY này DÙNG CHUNG không gian khoá với `getMachineStats` ở trên — nếu
+            // chỉ một trong hai mang danh tính thì cái kia vẫn phục vụ chéo. Cả hai cùng đi qua
+            // `scopedStatsCacheKey`.
+            const perMachineCacheKey = scopedStatsCacheKey(
+              CACHE_KEYS.MACHINE_STATS,
+              { machineId: item.machine.id, startDate: input.startDate, endDate: input.endDate },
+              ctx.user,
+            );
             let machineStats = statsCache.get<Awaited<ReturnType<typeof db.getMachineStats>>>(perMachineCacheKey);
             if (!machineStats) {
-              machineStats = await db.getMachineStats(item.machine.id, input.startDate, input.endDate);
+              machineStats = await db.getMachineStats(item.machine.id, input.startDate, input.endDate, {
+                userId: ctx.user.id,
+                userRole: ctx.user.role,
+              });
               statsCache.set(perMachineCacheKey, machineStats, CACHE_TTL.SHORT);
             }
             return {
@@ -101,13 +159,16 @@ export const dashboardRouter = router({
       workshopId: z.number().optional(),
       days: z.number().default(30),
     }))
-    .query(async ({ input }) => {
-      // Check cache first
-      const cacheKey = statsCache.generateKey(CACHE_KEYS.DAILY_STATS, input);
+    .query(async ({ input, ctx }) => {
+      // Khoá PHẢI mang danh tính — xem docblock `scopedStatsCacheKey`.
+      const cacheKey = scopedStatsCacheKey(CACHE_KEYS.DAILY_STATS, input, ctx.user);
       const cached = statsCache.get<Awaited<ReturnType<typeof db.getDailyStats>>>(cacheKey);
       if (cached) return cached;
 
-      const stats = await db.getDailyStats(input.factoryId, input.workshopId, input.days);
+      const stats = await db.getDailyStats(input.factoryId, input.workshopId, input.days, {
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
+      });
       statsCache.set(cacheKey, stats, CACHE_TTL.MEDIUM);
       return stats;
     }),
@@ -187,10 +248,19 @@ export const dashboardRouter = router({
       machineId: z.number().optional(),
       hours: z.number().default(24),
     }))
-    .query(async ({ input }) => {
-      const viaMv = await getHourlyStatsViaMV(input).catch(() => null);
-      if (viaMv) return viaMv;
-      return db.getHourlyStats(input);
+    .query(async ({ input, ctx }) => {
+      // ⚠⚠ ĐƯỜNG VÒNG QUA VẬT LIỆU HOÁ. `hourly_yield_cache` chỉ khoá theo MÁY — nó KHÔNG mang
+      // cột tenant nào, nên không có cách nào thu hẹp nó về phạm vi người gọi. Nếu để nguyên
+      // `getHourlyStatsViaMV` chạy trước, mọi người dùng bị giới hạn phạm vi vẫn nhận số liệu
+      // TOÀN CỤC và bản vá ở `db.getHourlyStats` không bao giờ được thực thi — đúng lớp lỗi
+      // "vá xong rồi bị một lối tắt đi vòng" (trả nợ đẻ nợ).
+      // Vì thế MV chỉ được dùng cho lối đi KHÔNG bị thu hẹp (vai admin). Người bị thu hẹp đi
+      // đường sống — chậm hơn nhưng ĐÚNG. Sửa đúng đắn về sau là thêm cột tenant vào MV.
+      if (ctx.user.role === 'admin') {
+        const viaMv = await getHourlyStatsViaMV(input).catch(() => null);
+        if (viaMv) return viaMv;
+      }
+      return db.getHourlyStats({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 
   // Dashboard Templates

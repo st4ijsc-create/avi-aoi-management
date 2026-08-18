@@ -289,10 +289,31 @@ export const apiKeys = pgTable("api_keys", {
   machineId: integer("machineId"),
   // Revocation audit stamp (isActive=false remains the enforcement bit).
   revokedAt: timestamp("revokedAt"),
+
+  // ── PHẠM VI TENANT (mig 0325, 2026-08-17) ──────────────────────────────────
+  // `scopes` ở trên trả lời "khoá này LÀM ĐƯỢC GÌ". Ba cột dưới đây trả lời
+  // "khoá này THẤY ĐƯỢC GÌ" — trước 0325 KHÔNG có cột nào trả lời câu ấy, nên
+  // mọi khoá mang `bi:read` đều kéo được số của TOÀN BỘ nhà máy.
+  //
+  // ⚠ BA trạng thái, phân biệt bằng `dataScopeMode` chứ KHÔNG bằng mã rỗng:
+  //   NULL       = CHƯA KHAI  → `bi:read`/`export:read` bị TỪ CHỐI (403).
+  //   'factory'  = một nhà máy (≥1 mã bên dưới) → lọc đúng phạm vi ấy.
+  //   'global'   = toàn cục TƯỜNG MINH → thấy tất cả.
+  // Nếu để `factoryCode IS NULL` mang nghĩa "toàn cục" thì mọi khoá quên khai sẽ
+  // IM LẶNG thành khoá toàn cục — đúng lớp lỗi `or()` rỗng vừa vá tuần này
+  // (giá trị VẮNG MẶT bị đọc thành "không lọc"). Ràng buộc CHECK
+  // `api_keys_data_scope_mode_chk` (0325) cấm mọi tổ hợp lệch ở tầng CSDL.
+  dataScopeMode: varchar("dataScopeMode", { length: 16 }),
+  // Cùng KHÔNG GIAN MÃ với `product_inspections.corporateCode/factoryCode`,
+  // `factories.code` và `user_factory_assignments.factoryCode` — mã CHUỖI, không
+  // phải khoá số (`machineId` ở trên là khoá số và phục vụ việc khác hẳn).
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryCode: varchar("factoryCode", { length: 50 }),
 }, (table) => [
   index("idx_api_keys_hash").on(table.keyHash),
   index("idx_api_keys_active").on(table.isActive),
   index("idx_api_keys_machine").on(table.machineId),
+  index("idx_api_keys_data_scope_mode").on(table.dataScopeMode),
 ]);
 
 export type ApiKey = typeof apiKeys.$inferSelect;

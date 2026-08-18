@@ -1,10 +1,21 @@
 import * as db from "../db";
+// ★★★ 2026-08-17 — trục phạm vi của đường xuất báo cáo. Xem `_core/reportExportScope.ts`.
+import {
+  resolveExportScope,
+  exportScopeNote,
+  assertExportableScope,
+  type ExportActor,
+} from "../_core/reportExportScope";
 
 export interface NGVisualReportData {
   period: {
     start: Date;
     end: Date;
   };
+  /** Đã áp bộ lọc phạm vi hay chưa (false = người xuất là vai toàn quyền). */
+  scopeApplied: boolean;
+  /** Câu TỰ KHAI phạm vi in vào email/tệp gửi đi khi số liệu đã bị thu hẹp. */
+  scopeNote?: string;
   summary: {
     totalInspections: number;
     totalNG: number;
@@ -42,7 +53,19 @@ export interface ReportCustomization {
 }
 
 /**
- * Generate NG Visual report data for a specific period
+ * Generate NG Visual report data for a specific period.
+ *
+ * ★★★ 2026-08-17 — `actor` là BẮT BUỘC. Trước đây hàm này không nhận danh tính nào, nên cả BA
+ * nguồn dữ liệu bên dưới (`getNGTrendByDay`, `getTopNGMeasurementPoints`, `getWorkstationHeatmap`)
+ * chạy TOÀN CỤC — mà đây là loại báo cáo MẶC ĐỊNH của đường hẹn giờ (`NG_VISUAL` + `CUSTOM`),
+ * tức lỗ rò nằm trên đường đi qua nhiều lượt gửi nhất.
+ *
+ * ⚠ Lỗ này thuộc lớp "hàm ĐÚNG mà nơi gọi bỏ rơi danh tính": cả ba nguồn ĐÃ có sẵn trục
+ * `userId`/`userRole` và tự lọc đúng khi được truyền. Vì vậy bản vá là truyền xuống, KHÔNG phải
+ * viết thêm luật lọc — không có nguồn luật thứ hai nào ra đời ở đây.
+ *
+ * Đặt `actor` vào chữ ký (không phải tuỳ chọn) để "quên truyền" thành lỗi BIÊN DỊCH chứ không
+ * phải một lỗ im lặng — cùng khuôn với `scheduledReportService.previewReport`.
  */
 export async function generateNGVisualReport(options: {
   startDate: Date;
@@ -50,8 +73,18 @@ export async function generateNGVisualReport(options: {
   factoryId?: number;
   workshopId?: number;
   lineId?: number;
+  actor: ExportActor;
 }): Promise<NGVisualReportData> {
-  const { startDate, endDate, factoryId, workshopId, lineId } = options;
+  const { startDate, endDate, factoryId, workshopId, lineId, actor } = options;
+
+  // Cổng phạm vi đứng TRƯỚC mọi truy vấn. Tài khoản 0 gán nhà máy bị TỪ CHỐI với câu nói rõ
+  // "chưa được gán nhà máy" thay vì nhận một tệp toàn số 0 — một email KPI toàn 0 gửi mỗi sáng
+  // dạy người đọc rằng DÂY CHUYỀN ĐANG NGỪNG CHẠY, kết luận sai và đẩy họ đi tìm lỗi ở đúng chỗ
+  // không có lỗi. ⚠ Admin KHÔNG bị chặn: `scopeEmptyReason` chỉ khác null khi không phải admin
+  // VÀ không có gán nào.
+  const scope = await resolveExportScope(actor);
+  assertExportableScope(scope);
+  const scopeArgs = { userId: actor.id, userRole: actor.role };
 
   // Get factory/workshop/line names for filters
   let filters: NGVisualReportData["filters"] = {};
@@ -72,6 +105,7 @@ export async function generateNGVisualReport(options: {
   const allTrendData = await db.getNGTrendByDay({
     startDate,
     endDate,
+    ...scopeArgs,
   });
 
   const totalInspections = allTrendData.reduce((sum, day) => sum + day.totalCount, 0);
@@ -91,6 +125,7 @@ export async function generateNGVisualReport(options: {
     startDate,
     endDate,
     limit: 10,
+    ...scopeArgs,
   });
 
   // Get workstation NG heatmap (Wave R1, doc 32 §2 item 10 — was a mock empty
@@ -102,6 +137,7 @@ export async function generateNGVisualReport(options: {
     factoryId,
     workshopId,
     lineId,
+    ...scopeArgs,
   });
 
   // Get trend data (last 30 days)
@@ -110,6 +146,7 @@ export async function generateNGVisualReport(options: {
   const trendData = await db.getNGTrendByDay({
     startDate: trendStartDate,
     endDate,
+    ...scopeArgs,
   });
 
   return {
@@ -117,6 +154,11 @@ export async function generateNGVisualReport(options: {
       start: startDate,
       end: endDate,
     },
+    // ⚠ CHỈ ba ô CHỮ đi ra ngoài (`resolveExportScope` đã qua `scopeLabelsOf`). Gán
+    // `scope = resolved` nguyên khối sẽ kéo theo `filter` — đối tượng SQL có tham chiếu vòng —
+    // và giết mọi lượt tuần tự hoá tệp/JSON, một lỗi `tsc` KHÔNG bắt được.
+    scopeApplied: scope.scopeApplied,
+    scopeNote: exportScopeNote(scope),
     summary: {
       totalInspections: summaryData.totalInspections || 0,
       totalNG: summaryData.totalNG || 0,
@@ -184,6 +226,14 @@ export function generateNGVisualEmailHTML(
     }
   }
 
+  // ⚠ Câu TỰ KHAI phạm vi, in NGAY dưới tiêu đề. Một báo cáo của một nhà máy (22.995 bản ghi)
+  // trông y hệt báo cáo toàn công ty (22.996) — chênh đúng một hàng — và tệp này rời khỏi hệ
+  // thống rồi được chuyển tiếp, in ra, dán vào slide họp; lúc ấy không còn ngữ cảnh nào để đính
+  // chính. Admin (`scopeApplied=false`) không nhận câu này: báo cáo của họ ĐÚNG là toàn hệ thống.
+  const scopeNoteHtml = data.scopeNote
+    ? `<p style="color: rgba(255,255,255,0.95); font-size: 13px; margin-top: 12px; background: rgba(0,0,0,0.18); display: inline-block; padding: 6px 12px; border-radius: 6px;"><strong>${data.scopeNote}</strong></p>`
+    : "";
+
   const logoHtml = logoUrl
     ? `<img src="${logoUrl}" alt="Logo" style="max-height: 50px; max-width: 200px; margin-bottom: 15px;" />`
     : "";
@@ -204,6 +254,7 @@ export function generateNGVisualEmailHTML(
       ${formatDate(data.period.start)} - ${formatDate(data.period.end)}
     </p>
     ${filterText}
+    ${scopeNoteHtml}
   </div>
 
   <div style="background: #ffffff; padding: 30px; border-radius: 0 0 10px 10px;">
@@ -265,7 +316,7 @@ export function generateNGVisualEmailHTML(
           ${data.topNGPoints.length === 0 ? `
             <tr>
               <td colspan="4" style="padding: 20px; text-align: center; color: #999; font-style: italic;">
-                Không có dữ liệu NG trong khoảng thời gian này
+                Không ghi nhận NG nào trong phạm vi và khoảng thời gian của báo cáo này
               </td>
             </tr>
           ` : ""}
@@ -420,7 +471,16 @@ export async function generateNGVisualExcel(
   data: NGVisualReportData,
   customization?: ReportCustomization
 ): Promise<Buffer> {
-  const ExcelJS = await import("exceljs");
+  // ⚠⚠ BUG CÓ SẴN, ĐO ĐƯỢC 2026-08-17 khi nghiệm thu sống: `exceljs` là gói CJS và **KHÔNG có**
+  // export tên `Workbook` khi nạp qua ESM (`node -e "import('exceljs').then(m => …)"` cho
+  // `named: undefined · default: function`). Mã cũ viết `new ExcelJS.Workbook()` thẳng trên
+  // namespace ⇒ `TypeError: ExcelJS.Workbook is not a constructor` — tức tệp đính kèm XLSX của
+  // báo cáo NG Visual **chưa bao giờ sinh được** trên bản build thật (`--format=esm
+  // --packages=external`); lỗi bị `catch` ở `reportScheduler` nuốt thành một dòng log rồi email
+  // vẫn gửi đi KHÔNG kèm tệp. Ba nơi khác trong repo (`masterDataIO`, `universalExportService`)
+  // đều dùng default import và chạy đúng — đây là chỗ duy nhất lệch khuôn.
+  const ExcelJSModule = await import("exceljs");
+  const ExcelJS = (ExcelJSModule as unknown as { default?: typeof ExcelJSModule }).default ?? ExcelJSModule;
   const workbook = new ExcelJS.Workbook();
   
   const primaryColor = customization?.primaryColor || "#667eea";
@@ -440,17 +500,29 @@ export async function generateNGVisualExcel(
   const periodCell = summarySheet.getCell("A2");
   periodCell.value = `Từ ${new Date(data.period.start).toLocaleDateString("vi-VN")} đến ${new Date(data.period.end).toLocaleDateString("vi-VN")}`;
   periodCell.alignment = { horizontal: "center" };
-  
+
+  // ⚠ Tệp XLSX cũng phải TỰ KHAI phạm vi — nó rời hệ thống và được chuyển tiếp y như PDF/HTML.
+  if (data.scopeNote) {
+    summarySheet.mergeCells("A3:D3");
+    const scopeCell = summarySheet.getCell("A3");
+    scopeCell.value = data.scopeNote;
+    scopeCell.font = { bold: true, size: 10 };
+    scopeCell.alignment = { horizontal: "center", wrapText: true };
+  }
+
   // Summary data
   summarySheet.addRow([]);
-  summarySheet.addRow(["Chỉ số", "Giá trị"]);
+  // ⚠ Số hàng tiêu đề KHÔNG còn cố định là 4: khi có câu tự khai phạm vi thì mọi thứ dịch xuống
+  // một dòng. Đọc số hàng THẬT thay vì ghim hằng số — ghim hằng số là cách bản vá phạm vi lặng
+  // lẽ tô đậm nhầm dòng "Tổng số kiểm tra".
+  const summaryHeaderRow = summarySheet.addRow(["Chỉ số", "Giá trị"]);
   summarySheet.addRow(["Tổng số kiểm tra", data.summary.totalInspections]);
   summarySheet.addRow(["Tổng số NG", data.summary.totalNG]);
   summarySheet.addRow(["Tỷ lệ NG (%)", data.summary.ngRate.toFixed(2)]);
   summarySheet.addRow(["TB NG/sản phẩm", data.summary.avgNGPerProduct.toFixed(2)]);
-  
+
   // Style header row
-  const headerRow = summarySheet.getRow(4);
+  const headerRow = summaryHeaderRow;
   headerRow.font = { bold: true };
   headerRow.fill = {
     type: "pattern",

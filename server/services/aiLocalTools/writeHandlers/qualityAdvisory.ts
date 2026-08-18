@@ -25,6 +25,36 @@
  *   - Fail-safe execute: DB/advisor unavailability returns an honest note,
  *     never a fabricated success.
  * ════════════════════════════════════════════════════════════════════════════
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ G3-A — HAI TOOL NÀY TỪNG ĐƯỢC GÁC BẰNG MỘT **BIT XEM**. ĐÓ LÀ KHÔNG GÁC GÌ CẢ.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Trước đợt này: `run_rca_analysis` → `machine_monitoring/canView`, `request_threshold_review` →
+ * `settings_alerts/canView`. Cả hai **INSERT** thật (`persistRca` ghi `root_cause_analysis`;
+ * vòng lặp dưới `db.insert(thresholdApprovals)`), mà `canView` là bit **gần như mọi vai đều có**
+ * (operator, viewer, engineer…). `proposeAction` đọc thẳng `tool.requiredPermission` để gọi
+ * `checkPermission` ⇒ lời khai **CHÍNH LÀ** phép cưỡng chế, nên hai dòng ấy là cổng thật sự đang
+ * mở.
+ *
+ * Bit mới chọn theo **HÀNH VI**, và đúng bằng bit mà chủ sở hữu dữ liệu đang dùng:
+ *
+ *   run_rca_analysis → `analytics_root_cause/canCreate`
+ *       Bản ghi nó tạo là `root_cause_analysis` — bảng do module `analytics_root_cause` sở hữu
+ *       (`aiRouters.ts:341` sửa chính bảng ấy sau `analytics_root_cause/canEdit`;
+ *       `/root-cause-analysis` cũng khai bit này). `canCreate` vì hành vi là **TẠO** một bản ghi.
+ *       ⚠ Module CŨ (`machine_monitoring`) sai cả tên lẫn mức: nó là bit **xem trạng thái máy**,
+ *       không liên quan quyền sở hữu dữ liệu RCA. Đổi cả hai, không chỉ mức.
+ *       ⇒ Ai còn chạy được: admin · supervisor · quality_inspector (đúng ba vai được seed
+ *       `analytics_root_cause.canCreate`) — tức đúng những người đang mở được màn RCA.
+ *
+ *   request_threshold_review → `settings_alerts/canCreate`
+ *       Giữ NGUYÊN module (`/threshold-approvals` khai `settings_alerts`), chỉ nâng mức XEM→TẠO vì
+ *       nó tạo hàng `threshold_approvals`. ⇒ admin · supervisor · quality_inspector · maintenance ·
+ *       engineer giữ nguyên khả năng; operator/viewer (không có hàng `settings_alerts` nào) bị chặn.
+ *
+ * ⚠ LUẬT TỔNG QUÁT ĐÃ ĐƯỢC CƯỠNG CHẾ, KHÔNG CHỈ VÁ HAI CA: `toolPermissionQuantifier.test.ts` §8
+ * phát biểu *"∀ write tool: action ∈ {canCreate, canEdit, canDelete}"* — write tool thứ 27 nào ra
+ * đời với `canView` sẽ ĐỎ ngay, không cần ai nhớ lại đợt này.
  */
 
 import { z } from "zod";
@@ -95,7 +125,7 @@ export const runRcaAnalysisTool: Tool<RunRcaAnalysisParams, { rcaId: number | nu
   name: "run_rca_analysis",
   description:
     "Chạy RCA Copilot (gom bằng chứng Pareto/SPC/anomaly/vision/corrections + xếp hạng giả thuyết) " +
-    "cho một máy và lưu kết quả. WRITE-ACTION (ghi bản ghi phân tích): cần quyền machine_monitoring/canView " +
+    "cho một máy và lưu kết quả. WRITE-ACTION (ghi bản ghi phân tích): cần quyền analytics_root_cause/canCreate " +
     "+ xác nhận của người dùng. KHÔNG thay đổi tham số máy hay ngưỡng nào.",
   parameters: runRcaAnalysisParams,
   triggers: [
@@ -103,7 +133,7 @@ export const runRcaAnalysisTool: Tool<RunRcaAnalysisParams, { rcaId: number | nu
     "run rca", "root cause analysis", "diagnose machine", "运行根因分析",
   ],
   kind: "write",
-  requiredPermission: { module: "machine_monitoring", action: "canView" },
+  requiredPermission: { module: "analytics_root_cause", action: "canCreate" },
   summarize: summarizeRunRca,
   preview: previewRunRca,
   execute: async (p, ctx) => {
@@ -199,14 +229,14 @@ export const requestThresholdReviewTool: Tool<
   description:
     "Chạy Threshold Advisor cho các điểm đo của một máy (hoặc một điểm cụ thể) và tạo yêu cầu " +
     "duyệt ngưỡng trong hàng đợi threshold_approvals. WRITE-ACTION (tạo yêu cầu, không áp ngưỡng): " +
-    "cần quyền settings_alerts/canView + xác nhận; ngưỡng chỉ đổi khi quản lý duyệt + áp dụng.",
+    "cần quyền settings_alerts/canCreate + xác nhận; ngưỡng chỉ đổi khi quản lý duyệt + áp dụng.",
   parameters: requestThresholdReviewParams,
   triggers: [
     "xem lại ngưỡng", "duyệt lại ngưỡng đo", "kiểm tra độ nhạy",
     "review thresholds", "threshold review", "review sensitivity", "阈值复查",
   ],
   kind: "write",
-  requiredPermission: { module: "settings_alerts", action: "canView" },
+  requiredPermission: { module: "settings_alerts", action: "canCreate" },
   summarize: summarizeReview,
   preview: previewReview,
   execute: async (p, ctx) => {

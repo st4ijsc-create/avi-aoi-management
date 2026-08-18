@@ -7,6 +7,29 @@
  * layout survives only as the explicit `mode: "pointDef"` fallback, labeled
  * "logical positions" (realCoordinates:false). Coordinate-space rules are
  * documented in services/defectSpatialHeatmap.ts.
+ *
+ * ── PHẠM VI NHÀ MÁY (2026-08-17) ────────────────────────────────────────────
+ * ⚠ MỌI thủ tục ở đây đọc dữ liệu của một tenant và PHẢI lọc theo phạm vi của người
+ * gọi. Cơ chế là MỘT: `getUserAssignmentCodes` (`_core/accessControl`) — đúng cái
+ * `/history` dùng — gói lại trong `services/defectSpatialHeatmap.ts`:
+ *   • `resolveCallerScope` + `scopedConditions` → điều kiện trên `product_inspections`
+ *     (dùng cho các thủ tục TÍNH TRỰC TIẾP);
+ *   • `resolveSavedHeatmapScope`               → điều kiện trên `defect_heatmap_data`
+ *     (dùng cho các thủ tục PHÁT LẠI heatmap đã lưu; cột phạm vi thêm ở mig 0324).
+ *
+ * FAIL-CLOSED VỚI HÀNG KHÔNG RÕ NGUỒN GỐC: `defect_heatmap_data.factoryCode` NULL nghĩa
+ * là heatmap ấy gộp ≥2 nhà máy (hoặc 0 hàng) nên KHÔNG mã nào đúng. Hàng như vậy chỉ
+ * admin đọc/xoá được. `generate` chỉ ghi mã khi tập hàng đóng góp có ĐÚNG MỘT cặp mã.
+ *
+ * CÂU "RỖNG" PHẢI TRUNG THỰC: khi người gọi không có gán nhà máy nào, mọi thủ tục trả
+ * `scopeEmptyReason:"no_factory_assignment"` + `scopeMessage` nói rõ lý do. Giao diện
+ * KHÔNG được trình bày trạng thái ấy như "không có dữ liệu"/"không có lỗi nào".
+ *
+ * ⚠ THAY ĐỔI HÌNH DẠNG TRẢ VỀ (cùng ngày): `list` → `{heatmaps,total,+3 ô phạm vi}`,
+ * `getLatest`/`getById` → `{heatmap,+3 ô}`, `getRealTimeHotspots` → `{hotspots,+3 ô}`.
+ * Ba ô phạm vi KHÔNG thể đi kèm một mảng trần hay một `null` trần, và một câu rỗng
+ * không tới được người dùng thì bằng như không có. Người tiêu thụ thật lúc di trú:
+ * chỉ `client/src/pages/ApiDocs.tsx` (đoạn mã ví dụ) — đã cập nhật.
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -24,9 +47,16 @@ import {
   measurementPointDefs,
   productModels
 } from "../../drizzle/schema";
-import { eq, and, gte, lte, desc, sql, isNull } from "drizzle-orm";
+import { eq, and, gte, lte, desc, sql, isNull, type SQL } from "drizzle-orm";
 import { resolveFactoryDateWindow } from "../utils/kpi";
-import { computeSpatialHeatmap } from "../services/defectSpatialHeatmap";
+import {
+  computeSpatialHeatmap,
+  resolveCallerScope,
+  resolveContributingScope,
+  resolveSavedHeatmapScope,
+  scopeLabels,
+  scopedConditions,
+} from "../services/defectSpatialHeatmap";
 
 const heatmapQueryInput = z.object({
   machineId: z.number().optional(),
@@ -57,7 +87,7 @@ export const defectHeatmapRouter = router({
     .input(heatmapQueryInput.extend({
       periodType: z.enum(["HOURLY", "DAILY", "WEEKLY", "MONTHLY"]).default("DAILY"),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -67,7 +97,7 @@ export const defectHeatmapRouter = router({
       const window = resolveFactoryDateWindow(input.startDate, input.endDate);
       const endInclusive = window.endExclusive ? new Date(window.end.getTime() - 1) : window.end;
 
-      const result = await computeSpatialHeatmap(db, {
+      const query = {
         startDate: window.start,
         endDate: endInclusive,
         machineId: input.machineId,
@@ -77,14 +107,23 @@ export const defectHeatmapRouter = router({
         gridHeight: input.gridHeight,
         mode: input.mode,
         weightBySeverity: input.weightBySeverity,
-      });
+        // Phạm vi dữ liệu lấy từ PHIÊN THẬT (`ctx.user`, do `requireUser` bảo đảm),
+        // không bao giờ từ `input` — client không được tự khai mình là ai.
+        scope: { userId: ctx.user.id, userRole: String(ctx.user.role) },
+      };
+      const result = await computeSpatialHeatmap(db, query);
+      // "Heatmap này thuộc nhà máy nào?" — ĐO trên đúng tập hàng vừa sinh ra con số, không
+      // suy từ `input.machineId`. ≥2 nhà máy (hoặc 0 hàng) ⇒ NULL = KHÔNG RÕ NGUỒN GỐC, và
+      // luật đọc fail-closed sẽ chỉ cho admin thấy hàng ấy. Xem `resolveContributingScope`.
+      const contributing = await resolveContributingScope(db, query);
 
-      // Persist (schema unchanged — hotspot json keeps the legacy keys, with
-      // `defectTypes` now carrying real defect-class codes instead of the
-      // useless constant 'NG').
+      // Persist (hotspot json keeps the legacy keys, with `defectTypes` now
+      // carrying real defect-class codes instead of the useless constant 'NG').
       const [saved] = await db.insert(defectHeatmapData).values({
         machineId: input.machineId,
         productModelId: input.productModelId,
+        corporateCode: contributing.corporateCode,
+        factoryCode: contributing.factoryCode,
         periodType: input.periodType,
         periodStart: window.start,
         periodEnd: window.end,
@@ -125,6 +164,11 @@ export const defectHeatmapRouter = router({
         excludedNoBbox: result.excludedNoBbox,
         excludedNoBboxPct: result.excludedNoBboxPct,
         maxDefectsInCell: result.maxDefectsInCell,
+        // Phạm vi: một grid 0 lỗi của người CHƯA ĐƯỢC GÁN NHÀ MÁY không được
+        // trình bày như "không có lỗi nào" (xem defectSpatialHeatmap.ts).
+        scopeApplied: result.scopeApplied,
+        scopeEmptyReason: result.scopeEmptyReason,
+        scopeMessage: result.scopeMessage,
         // W8-B panel-aware extras (undefined outside mode "panelBoard").
         panelAware: result.panelAware,
         panelDefId: result.panelDefId,
@@ -137,7 +181,7 @@ export const defectHeatmapRouter = router({
   // Read-only compute (no persist) — used by the board-heatmap UI.
   getBboxHeatmap: protectedProcedure
     .input(heatmapQueryInput)
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -153,26 +197,37 @@ export const defectHeatmapRouter = router({
         gridHeight: input.gridHeight,
         mode: input.mode,
         weightBySeverity: input.weightBySeverity,
+        // Xem `generate` ở trên: danh tính từ phiên, không từ input.
+        scope: { userId: ctx.user.id, userRole: String(ctx.user.role) },
       });
     }),
 
+  // ─── PHÁT LẠI heatmap ĐÃ LƯU (mig 0324 cho cột phạm vi) ───────────────────
   // Get heatmap data by ID
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+
+      const scope = await resolveSavedHeatmapScope({ userId: ctx.user.id, userRole: String(ctx.user.role) });
+      // KHÔNG có gán nhà máy nào: điều kiện này ĐỘC LẬP với `id` nên nói thẳng lý do KHÔNG
+      // tạo ra oracle tồn tại — và một câu "Heatmap không tồn tại" ở đây sẽ là nói dối
+      // (nó có thể đang tồn tại; chỉ là người này không được thấy gì cả).
+      if (scope.noAssignment) return { heatmap: null, ...scopeLabels(scope) };
 
       const [heatmap] = await db
         .select()
         .from(defectHeatmapData)
-        .where(eq(defectHeatmapData.id, input.id));
+        .where(and(eq(defectHeatmapData.id, input.id), ...(scope.filter ? [scope.filter] : [])));
 
+      // Ngoài phạm vi và không tồn tại phải KHÔNG phân biệt được: nhánh này id-phụ-thuộc nên
+      // mọi câu chi tiết hơn đều là một oracle "hàng #id có thật không".
       if (!heatmap) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "heatmap" }, "Heatmap không tồn tại");
       }
 
-      return heatmap;
+      return { heatmap, ...scopeLabels(scope) };
     }),
 
   // List heatmaps
@@ -184,14 +239,18 @@ export const defectHeatmapRouter = router({
       limit: z.number().min(1).max(100).default(20),
       offset: z.number().min(0).default(0),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const scope = await resolveSavedHeatmapScope({ userId: ctx.user.id, userRole: String(ctx.user.role) });
       const db = await getDb();
-      if (!db) return { heatmaps: [], total: 0 };
+      if (!db) return { heatmaps: [], total: 0, ...scopeLabels(scope) };
 
-      const conditions = [];
+      const conditions: SQL[] = [];
       if (input.machineId) conditions.push(eq(defectHeatmapData.machineId, input.machineId));
       if (input.productModelId) conditions.push(eq(defectHeatmapData.productModelId, input.productModelId));
       if (input.periodType) conditions.push(eq(defectHeatmapData.periodType, input.periodType));
+      // ⑦ Phạm vi người gọi — trên CẢ hai truy vấn: một `total` không lọc là chính con số
+      // rò rỉ ("bạn không thấy hàng nào nhưng hệ thống có 400 hàng ở nhà máy khác").
+      if (scope.filter) conditions.push(scope.filter);
 
       const heatmaps = await db
         .select()
@@ -209,6 +268,7 @@ export const defectHeatmapRouter = router({
       return {
         heatmaps,
         total: countResult?.count || 0,
+        ...scopeLabels(scope),
       };
     }),
 
@@ -219,14 +279,18 @@ export const defectHeatmapRouter = router({
       productModelId: z.number().optional(),
       periodType: z.enum(["HOURLY", "DAILY", "WEEKLY", "MONTHLY"]).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const scope = await resolveSavedHeatmapScope({ userId: ctx.user.id, userRole: String(ctx.user.role) });
       const db = await getDb();
-      if (!db) return null;
+      if (!db) return { heatmap: null, ...scopeLabels(scope) };
 
-      const conditions = [];
+      const conditions: SQL[] = [];
       if (input.machineId) conditions.push(eq(defectHeatmapData.machineId, input.machineId));
       if (input.productModelId) conditions.push(eq(defectHeatmapData.productModelId, input.productModelId));
       if (input.periodType) conditions.push(eq(defectHeatmapData.periodType, input.periodType));
+      // ⑧ "Mới nhất" phải là mới nhất TRONG PHẠM VI — lọc SAU khi đã lấy 1 hàng sẽ biến một
+      // hàng ngoài phạm vi thành một câu "không có gì" sai (hàng của bạn vẫn ở phía dưới).
+      if (scope.filter) conditions.push(scope.filter);
 
       const [heatmap] = await db
         .select()
@@ -235,17 +299,30 @@ export const defectHeatmapRouter = router({
         .orderBy(desc(defectHeatmapData.generatedAt))
         .limit(1);
 
-      return heatmap || null;
+      return { heatmap: heatmap ?? null, ...scopeLabels(scope) };
     }),
 
   // Delete heatmap
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
-      await db.delete(defectHeatmapData).where(eq(defectHeatmapData.id, input.id));
+      // ⑩ Cùng một cơ chế: xoá được heatmap của nhà máy khác là một lỗ GHI, nặng hơn lỗ đọc.
+      // `.returning()` cho biết có thật sự xoá được hàng nào không ⇒ "thành công" không còn là
+      // một lời khai vô điều kiện như trước.
+      const scope = await resolveSavedHeatmapScope({ userId: ctx.user.id, userRole: String(ctx.user.role) });
+      const deleted = scope.noAssignment
+        ? []
+        : await db
+            .delete(defectHeatmapData)
+            .where(and(eq(defectHeatmapData.id, input.id), ...(scope.filter ? [scope.filter] : [])))
+            .returning({ id: defectHeatmapData.id });
+
+      if (deleted.length === 0) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "heatmap" }, "Heatmap không tồn tại");
+      }
       return { success: true };
     }),
 
@@ -255,14 +332,18 @@ export const defectHeatmapRouter = router({
       startDate: z.string(),
       endDate: z.string(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const scope = await resolveCallerScope({ userId: ctx.user.id, userRole: String(ctx.user.role) });
       const db = await getDb();
-      if (!db) return { machines: [], summary: { total: 0, byMachine: [] } };
+      if (!db) return { machines: [], summary: { total: 0, byMachine: [] }, ...scopeLabels(scope) };
 
       const periodStart = new Date(input.startDate);
       const periodEnd = new Date(input.endDate);
 
-      // Get defect counts by machine
+      // ④ Đếm lỗi theo máy — phạm vi người gọi.
+      // ⚠ Ghi rõ giới hạn: DANH SÁCH MÁY bên dưới KHÔNG bị lọc theo nhà máy (máy là dữ liệu
+      // cấu hình, đọc được ở mọi màn khác của ứng dụng qua `machineRouter`); thứ được lọc ở
+      // đây là SỐ LIỆU KIỂM. Người ngoài phạm vi vẫn thấy tên máy nhưng thấy 0 lỗi + lý do.
       const machineDefects = await db
         .select({
           machineId: productInspections.machineId,
@@ -271,10 +352,10 @@ export const defectHeatmapRouter = router({
         })
         .from(measurementResults)
         .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
-        .where(and(
+        .where(and(...scopedConditions([
           gte(productInspections.inspectionTime, periodStart),
           lte(productInspections.inspectionTime, periodEnd),
-        ))
+        ], scope)))
         .groupBy(productInspections.machineId);
 
       // Get machine list
@@ -304,12 +385,13 @@ export const defectHeatmapRouter = router({
       return {
         machines: machineOverlay,
         summary: {
-          total: machineDefects.reduce((sum, m) => sum + (m.defectCount || 0), 0),
+          total: machineDefects.reduce((sum, m) => sum + Number(m.defectCount || 0), 0),
           byMachine: machineDefects.map(m => ({
             machineId: m.machineId,
             count: m.defectCount || 0,
           })),
         },
+        ...scopeLabels(scope),
       };
     }),
 
@@ -319,17 +401,18 @@ export const defectHeatmapRouter = router({
       machineId: z.number().optional(),
       hours: z.number().min(1).max(24).default(1),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const scope = await resolveCallerScope({ userId: ctx.user.id, userRole: String(ctx.user.role) });
       const db = await getDb();
-      if (!db) return [];
+      if (!db) return { hotspots: [], ...scopeLabels(scope) };
 
       const since = new Date(Date.now() - input.hours * 60 * 60 * 1000);
-      
-      const conditions = [
+
+      const conditions: SQL[] = [
         gte(productInspections.inspectionTime, since),
         eq(measurementResults.result, "NG"),
       ];
-      
+
       if (input.machineId) conditions.push(eq(productInspections.machineId, input.machineId));
 
       const recentDefects = await db
@@ -341,12 +424,13 @@ export const defectHeatmapRouter = router({
         })
         .from(measurementResults)
         .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
-        .where(and(...conditions))
+        // ⑤ Hotspot "thời gian thực" — phạm vi người gọi.
+        .where(and(...scopedConditions(conditions, scope)))
         .groupBy(productInspections.machineId, measurementResults.pointDefId, measurementResults.result)
         .orderBy(desc(sql`COUNT(*)`))
         .limit(20);
 
-      return recentDefects;
+      return { hotspots: recentDefects, ...scopeLabels(scope) };
     }),
 
   // ─── Quality Cockpit: product defect overlay ──────────────────────────────
@@ -361,10 +445,11 @@ export const defectHeatmapRouter = router({
       startDate: z.string(),
       endDate: z.string(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const scope = await resolveCallerScope({ userId: ctx.user.id, userRole: String(ctx.user.role) });
       const db = await getDb();
       if (!db) {
-        return { product: null, points: [], maxNg: 0, totalNg: 0, totalInspected: 0 };
+        return { product: null, points: [], maxNg: 0, totalNg: 0, totalInspected: 0, ...scopeLabels(scope) };
       }
 
       const periodStart = new Date(input.startDate);
@@ -385,7 +470,7 @@ export const defectHeatmapRouter = router({
         .where(eq(productModels.id, input.productModelId));
 
       if (!product) {
-        return { product: null, points: [], maxNg: 0, totalNg: 0, totalInspected: 0 };
+        return { product: null, points: [], maxNg: 0, totalNg: 0, totalInspected: 0, ...scopeLabels(scope) };
       }
 
       // The measurement-point definitions carry the REAL anchor positions.
@@ -408,7 +493,7 @@ export const defectHeatmapRouter = router({
         ));
 
       // Aggregate measurement results per point in the window (NG + total).
-      const conditions = [
+      const conditions: SQL[] = [
         gte(productInspections.inspectionTime, periodStart),
         lte(productInspections.inspectionTime, periodEnd),
         eq(productInspections.productModelId, input.productModelId),
@@ -425,7 +510,9 @@ export const defectHeatmapRouter = router({
         })
         .from(measurementResults)
         .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
-        .where(and(...conditions))
+        // ⑥ Mật độ lỗi theo điểm đo — phạm vi người gọi. (Định nghĩa điểm đo + ảnh mẫu là
+        // dữ liệu MASTER của sản phẩm, không phải bản ghi kiểm, nên không nằm trên trục này.)
+        .where(and(...scopedConditions(conditions, scope)))
         .groupBy(measurementResults.pointDefId);
 
       const statsByPoint = new Map<number, { ngCount: number; totalCount: number }>();
@@ -467,7 +554,7 @@ export const defectHeatmapRouter = router({
         };
       });
 
-      return { product, points, maxNg, totalNg, totalInspected };
+      return { product, points, maxNg, totalNg, totalInspected, ...scopeLabels(scope) };
     }),
 });
 

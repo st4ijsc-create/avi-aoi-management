@@ -560,13 +560,16 @@ export const productionDashboardRouter = router({
       startDate: z.coerce.date(),
       endDate: z.coerce.date(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { getLineTaktUtilization } = await import("../services/oeeService");
+      // ★ NHÓM B #2 — phạm vi tenant từ `ctx.user` (takt/utilization đọc `daily_statistics`).
       return getLineTaktUtilization({
         lineId: input.lineId,
         factoryId: input.factoryId,
         from: input.startDate,
         to: input.endDate,
+        userId: ctx.user?.id,
+        userRole: ctx.user?.role,
       });
     }),
 });

@@ -126,6 +126,12 @@ describe("deriveDefectSpikeSignal — real forecast signal (doc69 A2)", () => {
         n: 40,
         pearson: 0.62,
         pValue: 0.0004,
+        // Hiệu chỉnh đa phép thử: p thô 4e-4 trên họ 12 phép thử ⇒ BH cho 4.8e-3,
+        // vẫn dưới 0.05 ⇒ SỐNG SÓT. Đây là yếu tố ĐÁNG được khuyến nghị.
+        pValueAdjusted: 0.0048,
+        correctionMethod: "benjamini_hochberg",
+        familySize: 12,
+        alpha: 0.05,
         logisticCoef: 0.11,
         direction: "higher_more_defects",
         significant: true,
@@ -136,6 +142,40 @@ describe("deriveDefectSpikeSignal — real forecast signal (doc69 A2)", () => {
     const signal = deriveDefectSpikeSignal({ trend, forecast, pareto: [], correlationFactors });
     expect(signal!.recommendations[0]).toContain("reflow.peakTempC");
     expect(signal!.recommendations[0]).toContain("higher values");
+    // Hoá đơn thống kê phải đi kèm khuyến nghị: cả p thô, p hiệu chỉnh, và cỡ họ.
+    expect(signal!.recommendations[0]).toContain("p_adj=0.0048");
+    expect(signal!.recommendations[0]).toContain("12 factor(s) tested");
+  });
+
+  it("★ yếu tố KHÔNG sống sót hiệu chỉnh KHÔNG được thành khuyến nghị — rơi xuống câu trung thực", () => {
+    // Cùng một tương quan "trông thuyết phục" (p thô = 0.004 < 0.05), nhưng trên họ 30
+    // phép thử thì BH cho 0.12 ⇒ KHÔNG sống sót. Trước bản hiệu chỉnh, yếu tố này vẫn
+    // được in ra thành câu mệnh lệnh "…correlate with more defects" gửi tới người vận
+    // hành — một cảnh báo THẬT kèm hướng dẫn đi sửa NHẦM MÁY.
+    const trend = flatTrend(14, 5);
+    const forecast: YieldForecast[] = [{ date: day(15), predicted: 85, lowerBound: 70, upperBound: 95, confidence: 0.7 }];
+    const correlationFactors: FactorCorrelation[] = [
+      {
+        factor: "noise.pressureBar",
+        n: 40,
+        pearson: 0.44,
+        pValue: 0.004,
+        pValueAdjusted: 0.12,
+        correctionMethod: "benjamini_hochberg",
+        familySize: 30,
+        alpha: 0.05,
+        logisticCoef: 0.07,
+        direction: "higher_more_defects",
+        significant: false,
+        meanDefect: 4.2,
+        meanOk: 4.0,
+      },
+    ];
+    const signal = deriveDefectSpikeSignal({ trend, forecast, pareto: [], correlationFactors });
+    expect(signal!.recommendations.join(" ")).not.toContain("noise.pressureBar");
+    // …và KHÔNG giả định "luôn có ít nhất một yếu tố": rơi đúng vào câu tổng quát trung thực.
+    expect(signal!.recommendations).toHaveLength(1);
+    expect(signal!.recommendations[0]).toMatch(/no single dominant factor/i);
   });
 });
 

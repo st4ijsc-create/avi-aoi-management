@@ -8,6 +8,20 @@
  * writeTags. Anything actionable is words only; the user must go through the
  * existing HITL confirm flow.
  *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ G3-A — "CHỈ PHÂN TÍCH, KHÔNG GHI" **KHÔNG** CÓ NGHĨA LÀ "KHÔNG CẦN QUYỀN".
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Hai tool ở đây không ghi gì thật, nhưng chúng **ĐỌC** — và đầu ra của chúng (nút thắt chuyền,
+ * tương quan thông số ↔ chất lượng) là **chính thứ** hai màn phân tích của hệ đang đứng sau cổng.
+ * Trước đợt này chúng không có cổng nào ⇒ ai đăng nhập cũng hỏi được.
+ *
+ *   analyze_line_bottleneck  → `analytics_oee`      — cùng nguồn `getLineBalanceSeries` với
+ *       `get_line_balance`; hai màn bày nó (`/wip-dashboard`, `/mes-control-tower`) đều khai
+ *       `analytics_oee`. Để tool này lỏng hơn `get_line_balance` là mở cửa sau cho chính nó.
+ *   correlate_process_quality → `analytics_advanced` — `/correlation-analysis` (và
+ *       `/data-comparison`, `/comparison-studio`) khai đúng bit này; mô tả module là
+ *       "Phân tích Nâng cao — Truy cập SPC, phân tích xu hướng, v.v.".
+ *
  * Self-registers on import (see index.ts → `import "./insightHandlersF6"`).
  */
 
@@ -18,7 +32,12 @@ import { processResults, machines } from "../../../drizzle/schema";
 import { getLineBalanceSeries, resolveLineIdByCode } from "../../db/lineBalance";
 import { analyzeTimeSeries, forecastWithConfidenceInterval, type TimeSeriesPoint } from "../aiTimeSeriesEngine";
 import { pearsonCorrelation } from "../../utils/statistics";
-import { registerTool, type Tool, type ToolResult } from "./toolRegistry";
+import { registerTool, type Tool, type ToolPermission, type ToolResult } from "./toolRegistry";
+import { authCtxParam, rbacGate } from "./readToolRbac";
+
+/** G3-A — MỘT hằng cho mỗi tool, dùng ở CẢ `requiredPermission` LẪN `rbacGate`. */
+const PERM_BOTTLENECK: ToolPermission = { module: "analytics_oee", action: "canView" };
+const PERM_CORRELATION: ToolPermission = { module: "analytics_advanced", action: "canView" };
 
 function startOfDay(d: Date): Date {
   const c = new Date(d);
@@ -61,6 +80,7 @@ const bottleneckParams = z
     lineCode: z.string().min(1).max(50).optional(),
     lineId: z.number().int().positive().optional(),
     days: z.number().int().min(2).max(30).optional().default(7),
+    __authCtx: authCtxParam,
   })
   .strict()
   .refine((v) => !!(v.lineCode || v.lineId), { message: "Cần lineCode hoặc lineId" });
@@ -74,7 +94,14 @@ const analyzeLineBottleneck: Tool<z.infer<typeof bottleneckParams>, BottleneckDa
     "phân tích nút thắt", "dự báo nghẽn", "sẽ nghẽn", "nút thắt dự báo", "xu hướng nút thắt",
     "dự báo nút thắt", "bottleneck forecast",
   ],
-  handler: async ({ lineCode, lineId, days }) => {
+  kind: "read",
+  requiredPermission: PERM_BOTTLENECK,
+  handler: async ({ lineCode, lineId, days, __authCtx }) => {
+    const denied = await rbacGate<BottleneckData | null>(
+      __authCtx, PERM_BOTTLENECK, "line_insight", "Phân tích nút thắt", null,
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDbResult<BottleneckData | null>("line_insight", "Phân tích nút thắt", null);
 
@@ -183,6 +210,7 @@ const correlationParams = z
     downstreamStepType: z.string().min(1).max(64).optional(),
     days: z.number().int().min(1).max(30).optional().default(7),
     machineCode: z.string().min(1).max(50).optional(),
+    __authCtx: authCtxParam,
   })
   .strict();
 
@@ -195,7 +223,14 @@ const correlateProcessQuality: Tool<z.infer<typeof correlationParams>, Correlati
     "tương quan", "ảnh hưởng đến ng", "liên quan đến lỗi", "ảnh hưởng tới ng",
     "correlation", "tác động đến lỗi", "có gây lỗi", "ảnh hưởng chất lượng",
   ],
-  handler: async ({ upstreamStepType, metricKey, downstreamStepType, days, machineCode }) => {
+  kind: "read",
+  requiredPermission: PERM_CORRELATION,
+  handler: async ({ upstreamStepType, metricKey, downstreamStepType, days, machineCode, __authCtx }) => {
+    const denied = await rbacGate<CorrelationData | null>(
+      __authCtx, PERM_CORRELATION, "correlation_insight", "Tương quan chất lượng", null,
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDbResult<CorrelationData | null>("correlation_insight", "Tương quan chất lượng", null);
 

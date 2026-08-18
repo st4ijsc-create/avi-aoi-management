@@ -1,14 +1,17 @@
 /**
- * AI LLM Audit (doc69 G2-5a, Wave 1 W1-4a) — privacy-safe audit trail for HIGH-RISK
- * AI-influenced decisions (rca / report / vision — see `aiGateway.ts`'s `HIGH_RISK_TASKS` and
- * the wiring inside `planInference`).
+ * AI LLM Audit (doc69 G2-5a, Wave 1 W1-4a) — privacy-safe audit trail for AI-influenced
+ * decisions. G3-B: cái gì được ghi nay do VỊ TỪ `aiGateway.shouldAuditTask` quyết định (mọi
+ * `TaskKind` trừ `embed`/`fim` đã khai miễn trừ), thay cho danh sách cho phép cũ
+ * `HIGH_RISK_TASKS = {rca, report, vision}` — xem `TASK_AUDIT_POLICY` trong `aiGateway.ts`.
  *
  * WHY: G2-1..G2-4 gave the gateway compact TELEMETRY (`ai_gateway_metrics`: tokensIn/out,
  * tier, model, outcome, userId) but no durable "who asked what, what did the model answer,
  * for which quality decision" trail. This module is that trail.
  *
  * PRIVACY: this module NEVER stores raw prompt/response text — only sha256 HASHES + char
- * counts + a compact safety-flags summary (see `aiSafety.ts`'s `SafetyFlagsSummary`). The
+ * counts + a compact safety-flags summary (see `aiSafety.ts`'s `SafetyFlagsSummary`), PLUS
+ * (G3-B) the OPTIONAL `redactedSnippet` a caller may pass for an action-generating decision —
+ * itself re-redacted + length-capped here, see `LlmAuditEntry.redactedSnippet`. The
  * CALLER (`aiGateway.planInference`) is responsible for passing already-REDACTED text (its
  * own `safeText` / `sanitizeOutput()` output) — this module hashes exactly what it is given
  * and never re-derives, logs, or persists the input itself. No secret enters a hash preimage
@@ -19,8 +22,9 @@
  * the hot path (hash + push, no await, no DB round-trip) and the actual DB write is batched
  * off it via `flushLlmAudit()`. This also means an audit call can NEVER make `planInference`
  * slower or fail because of a DB hiccup — the DB is only touched later, off the request path.
- * Low volume (only rca/report/vision), so a small buffer + explicit `flushLlmAudit()` (also
- * exported for tests/manual flush, exactly like `aiGateway.flush()`) is plenty.
+ * Moderate volume (G3-B: every non-exempt task, see `TASK_AUDIT_POLICY`), so a small buffer +
+ * explicit `flushLlmAudit()` (also exported for tests/manual flush, exactly like
+ * `aiGateway.flush()`) is plenty.
  *
  * FAIL-SAFE (mirrors the G2-4 `aiGatewayQuota.ts` pattern): hashing errors are caught inside
  * `recordLlmAudit` (never throws — the entry is simply dropped); DB errors inside
@@ -53,7 +57,14 @@
  * called; not gating itself keeps it trivially unit-testable in isolation.
  */
 import { createHash } from "node:crypto";
-import type { SafetyFlagsSummary } from "./aiSafety";
+import { redactSecretsAndPII, type SafetyFlagsSummary } from "./aiSafety";
+
+/**
+ * G3-B — trần ký tự cho `redactedSnippet`. Cột là `text` (không trần ở DB), nên trần phải nằm
+ * ở đây: một `payload` tool 1 MB đi vào mẩu tóm tắt sẽ biến bảng nhật ký thành bãi chứa dữ liệu
+ * sản xuất — đúng thứ module này tồn tại để KHÔNG làm.
+ */
+export const AUDIT_SNIPPET_MAX_CHARS = 2000;
 
 export interface LlmAuditEntry {
   userId?: number | null;
@@ -73,6 +84,20 @@ export interface LlmAuditEntry {
   /** Compact G2-2 safety summary (injection risk + redaction counts) — no raw text. */
   safetyFlags?: SafetyFlagsSummary | null;
   correlationId?: string | null;
+  /**
+   * G3-B — mẩu tóm tắt NGẮN, có thể đọc được, cho các quyết định SINH RA HÀNH ĐỘNG (lập kế
+   * hoạch agent / replan): mục tiêu, kế hoạch sinh ra, quan sát dẫn tới replan, quyết định cuối.
+   *
+   * ⚠ ĐÂY LÀ NGOẠI LỆ DUY NHẤT của quy tắc "chỉ băm, không lưu chữ" ở đầu file — và nó có lý do:
+   * một chuỗi băm chứng minh được *"đúng prompt này ra đúng câu trả lời này"* nhưng KHÔNG trả
+   * lời được *"vì sao AI đề xuất X"*, vì người điều tra không cầm preimage. Ba lớp giữ cho ngoại
+   * lệ này không thành lỗ:
+   *   1. người gọi truyền văn bản ĐÃ che (`GatewayPlan.safeText`/`sanitizeOutput`);
+   *   2. module này che **LẦN NỮA** bằng `redactSecretsAndPII` — người gọi quên che thì vẫn kín;
+   *   3. cắt cứng ở `AUDIT_SNIPPET_MAX_CHARS`.
+   * Bỏ trống ⇒ cột giữ nguyên NULL, y như trước (mọi đường gọi cũ không đổi một byte).
+   */
+  redactedSnippet?: string | null;
 }
 
 interface AuditRow {
@@ -88,11 +113,27 @@ interface AuditRow {
   latencyMs: number;
   safetyFlagsJson: SafetyFlagsSummary | null;
   correlationId: string | null;
+  redactedSnippet: string | null;
   createdAt: Date;
 }
 
 function sha256(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+/**
+ * G3-B — lớp che THỨ HAI cho mẩu tóm tắt (xem `LlmAuditEntry.redactedSnippet`). Thuần, không
+ * ném (`redactSecretsAndPII` đã bảo đảm cả hai). Cắt SAU khi che để một bí mật nằm vắt qua
+ * mốc cắt không bị xén thành một mẩu lọt lưới.
+ */
+function prepareSnippet(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const masked = redactSecretsAndPII(trimmed).text;
+  return masked.length > AUDIT_SNIPPET_MAX_CHARS
+    ? `${masked.slice(0, AUDIT_SNIPPET_MAX_CHARS)}…[đã cắt]`
+    : masked;
 }
 
 function envInt(name: string, fallback: number): number {
@@ -105,7 +146,10 @@ function envInt(name: string, fallback: number): number {
 // ─── In-memory buffer (batched, explicit/timer flush — mirrors aiGateway.ts's metrics
 // buffer) ─────────────────────────────────────────────────────────────────────────────────
 const buffer: AuditRow[] = [];
-const BUFFER_MAX = 200; // low volume (rca/report/vision only) — generous cap
+// G3-B: `chat`/`intent`/`extract`/`code` giờ CŨNG được ghi (chỉ `embed`/`fim` miễn trừ — hai
+// đường thật sự cao tần: 91.678 chunk/lượt dựng RAG, và một lượt/phím). Hàng vẫn chỉ là băm +
+// số đếm, và bộ đệm xả mỗi ~5 s, nên trần 200 vẫn rộng rãi cho lưu lượng của một nhà máy.
+const BUFFER_MAX = 200;
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 const FLUSH_INTERVAL_MS = envInt("AI_LLM_AUDIT_FLUSH_MS", 5_000);
 
@@ -189,6 +233,7 @@ export function recordLlmAudit(entry: LlmAuditEntry): void {
       latencyMs: Math.max(0, Math.trunc(entry.latencyMs ?? 0)),
       safetyFlagsJson: entry.safetyFlags ?? null,
       correlationId: entry.correlationId ?? null,
+      redactedSnippet: prepareSnippet(entry.redactedSnippet),
       createdAt: new Date(),
     };
     buffer.push(row);

@@ -15,6 +15,10 @@
  *   2. NOT isKillSwitchTripped() — durable, DB-backed, read FRESH every call (no caching).
  *   3. action.type ∉ AUTONOMY_INELIGIBLE — hard-coded denylist. Wins over EVERYTHING,
  *      including a misconfigured allowlist. Never reachable via env/config.
+ *   3b. If action.type resolves to a REGISTERED `kind:"write"` tool, it must ALSO be named
+ *      in AUTONOMY_REVIEWED_SAFE (with a written reason). A write tool that is in NEITHER
+ *      set — i.e. one nobody has triaged — is ineligible (TYPE_UNCLASSIFIED). See the
+ *      block above AUTONOMY_REVIEWED_SAFE for why this condition exists at all.
  *   4. action.type ∈ allowlist   — env AI_AUTONOMY_ALLOWLIST, default EMPTY. Nothing
  *      auto-executes until an operator explicitly opts a type in.
  *   5. action.idempotencyKey is present — guards at-most-one execution (defense-in-depth;
@@ -47,6 +51,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import type { AdviceContract, CopilotUser } from "../aiCopilotActions";
+import { getTool, isWriteTool } from "../aiLocalTools/toolRegistry";
 import type { ToolLang, ToolExecContext } from "../aiLocalTools/toolRegistry";
 
 // ── Master flag + allowlist + rate cap (env, PURE — no I/O) ──────────────────
@@ -137,6 +142,81 @@ export const AUTONOMY_INELIGIBLE: ReadonlySet<string> = new Set<string>([
   "set_spec_limits", // server/services/aiLocalTools/writeHandlers.ts (sample/tutorial tool)
 ]);
 
+/**
+ * ★★★ G3-C VIỆC 1 — **DANH SÁCH LÀ MỘT BẢN LIỆT KÊ, VÀ MỘT BẢN LIỆT KÊ KHÔNG BAO GIỜ BIẾT VỀ
+ * TOOL THỨ N+1.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `AUTONOMY_INELIGIBLE` ở trên là 21 tên viết cứng. Lưới canh nó (`autonomyPolicy.test.ts`) đối
+ * chiếu 21 tên ấy với **một mảng 21 tên viết cứng KHÁC** — hai bản sao của cùng một bản liệt kê,
+ * không bên nào đọc registry. Hậu quả đo được: **thêm một write tool mới hôm nay và nó MẶC ĐỊNH
+ * đủ tư cách tự trị** (chỉ cần ai đó ghi tên nó vào `AI_AUTONOMY_ALLOWLIST`), mà **không một ca
+ * nào đỏ**. Đây đúng lớp lỗi "N+1" repo này đã dính nhiều lần.
+ *
+ * ⇒ Đảo từ DANH SÁCH sang **VỊ TỪ TRÊN REGISTRY SỐNG**: *mọi* tool `kind:"write"` trong
+ * `listTools()` phải nằm trong **một trong hai** tập — `AUTONOMY_INELIGIBLE` (cấm tuyệt đối) hoặc
+ * `AUTONOMY_REVIEWED_SAFE` (đã có người đọc và **viết ra lý do**). Tool chưa phân loại ⇒ **CẤM**,
+ * cả ở lưới (census) lẫn **lúc chạy** (điều kiện 3b trong `evaluateAutonomyChain`).
+ *
+ * ⚠⚠ **VÌ SAO PHẢI CƯỠNG CHẾ LÚC CHẠY, KHÔNG CHỈ Ở TEST.** Một lưới chỉ đọc `AUTONOMY_INELIGIBLE
+ * .has(name)` là **đọc TÊN ĐỊNH DANH, không đọc thứ tên đó trỏ tới**: xoá nguyên điều kiện 3 khỏi
+ * `evaluateAutonomyChain` thì cái Set vẫn còn đủ 21 tên và lưới ấy vẫn **XANH** trong khi mọi lệnh
+ * `machine_start` đã tự trị được. Nên tập phân loại này phải **là thứ thật sự cưỡng chế**, và mọi
+ * ca phải đi qua `evaluateAutonomy()` — không khẳng định trên `Set.has`.
+ *
+ * ⚠ Vì sao là `Map<tên, lý do>` chứ không phải `Set<tên>`: một cái tên nằm im trong Set không nói
+ * được **ai đã đọc nó và vì sao nó an toàn**. Bắt viết lý do làm cho việc thêm tên vào đây là một
+ * **quyết định có chữ ký**, không phải một thao tác làm-cho-lưới-xanh.
+ *
+ * ⚠ MẶC ĐỊNH ĐÚNG LÀ "CẤM": khi không chắc, xếp vào `AUTONOMY_INELIGIBLE`. Denylist là backstop,
+ * thừa thì vô hại, thiếu thì là lỗ.
+ *
+ * ĐO ĐƯỢC (2026-08-17, registry sống sau khi nạp `aiLocalTools/index` + `visionDefectProposal`):
+ * 77 tool — 49 read · 26 write · 2 client. Nạp thêm `visionDefectProposal` (KHÔNG nằm trong đồ
+ * thị nhập của `aiLocalTools/index`; `aiVisionRouter.ts` mới là người nạp nó) ⇒ **27 write tool**.
+ * 21 tool denylisted + 6 tool dưới đây = 27, phủ kín. Con số "26 − 21 = 5" là **phép trừ sai**:
+ * `propose_defect_from_vision` có trong denylist nhưng KHÔNG có trong registry khi chỉ nạp
+ * `aiLocalTools/index`, nên chỗ chênh thật là **6 tool**, đúng bằng nhóm dưới đây.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+export const AUTONOMY_REVIEWED_SAFE: ReadonlyMap<string, string> = new Map<string, string>([
+  // server/services/aiLocalTools/writeHandlers/alerts.ts — ba tool này chỉ đổi TRẠNG THÁI GHI NHẬN
+  // của một cảnh báo (ai đã xem / đã xử lý). Không chạm tham số máy, không đổi phán quyết NG/OK,
+  // không đổi spec/limit; và mọi tác động đều đảo lại được bằng một thao tác người dùng.
+  ["acknowledge_alert", "chỉ ghi nhận đã-xem một cảnh báo; không tham số máy, không phán quyết chất lượng, đảo lại được"],
+  ["acknowledge_predictive_alert", "như trên, trên cảnh báo dự đoán (bảng riêng); không chạm thiết bị"],
+  ["resolve_predictive_alert", "đóng một cảnh báo dự đoán; chỉ là trạng thái sổ sách, không lệnh xuống máy"],
+  // server/services/aiLocalTools/writeHandlers/maintenance.ts
+  ["create_maintenance_workorder", "tạo một phiếu công việc bảo trì ở trạng thái chờ; con người vẫn phải nhận và thực thi, không có byte nào rời hệ thống xuống máy"],
+  // server/services/aiLocalTools/writeHandlers/qualityAdvisory.ts — hai tool "ghi ra một BẢN GHI",
+  // không phải "áp một THAY ĐỔI". `request_threshold_review` cố ý CHỈ tạo YÊU CẦU duyệt ngưỡng —
+  // chính vì việc ĐỔI ngưỡng nằm ở `adjust_ng_threshold`/`create_ng_threshold` và cả hai đã bị cấm.
+  ["run_rca_analysis", "chạy + lưu một phân tích nguyên nhân gốc; đầu ra là văn bản phân tích, không đổi cấu hình nào"],
+  ["request_threshold_review", "chỉ TẠO YÊU CẦU duyệt ngưỡng cho con người; việc ÁP ngưỡng nằm ở adjust_/create_ng_threshold và cả hai đã INELIGIBLE"],
+]);
+
+/** Ba trạng thái phân loại tự trị của một tool. `CHUA_PHAN_LOAI` là trạng thái ĐỎ. */
+export type PhanLoaiTuTri = "INELIGIBLE" | "REVIEWED_SAFE" | "CHUA_PHAN_LOAI";
+
+/** Phân loại một tên tool theo hai tập trên. Denylist thắng nếu (do sai sót) có ở cả hai. */
+export function phanLoaiTuTri(toolName: string): PhanLoaiTuTri {
+  if (AUTONOMY_INELIGIBLE.has(toolName)) return "INELIGIBLE";
+  if (AUTONOMY_REVIEWED_SAFE.has(toolName)) return "REVIEWED_SAFE";
+  return "CHUA_PHAN_LOAI";
+}
+
+/**
+ * VỊ TỪ CENSUS — nhận một ảnh chụp registry (`listTools()`) và trả về **tên những write tool
+ * chưa được phân loại**. Rỗng = phủ kín. Không tự gọi `listTools()` để người gọi quyết định
+ * ảnh chụp nào đang được đo (test nạp thêm module đăng ký ngoài `aiLocalTools/index`).
+ */
+export function writeToolChuaPhanLoai(tools: readonly { name: string; kind?: string }[]): string[] {
+  return tools
+    .filter((t) => t.kind === "write" && phanLoaiTuTri(t.name) === "CHUA_PHAN_LOAI")
+    .map((t) => t.name)
+    .sort();
+}
+
 // ── Stable decision-reason codes (audited + asserted in tests) ───────────────
 
 export const AUTONOMY_REASONS = {
@@ -144,6 +224,12 @@ export const AUTONOMY_REASONS = {
   MASTER_DISABLED: "MASTER_DISABLED",
   KILL_SWITCH_TRIPPED: "KILL_SWITCH_TRIPPED",
   TYPE_INELIGIBLE: "TYPE_INELIGIBLE_DENYLISTED",
+  /**
+   * G3-C — write tool CÓ TRONG REGISTRY nhưng KHÔNG có tên trong `AUTONOMY_INELIGIBLE` cũng
+   * KHÔNG có trong `AUTONOMY_REVIEWED_SAFE`: chưa ai triage nó. Mặc định là CẤM, kể cả khi
+   * người vận hành đã ghi nó vào `AI_AUTONOMY_ALLOWLIST`.
+   */
+  TYPE_UNCLASSIFIED: "TYPE_UNCLASSIFIED_WRITE_TOOL",
   TYPE_NOT_ALLOWLISTED: "TYPE_NOT_ALLOWLISTED",
   NO_IDEMPOTENCY_KEY: "NO_IDEMPOTENCY_KEY",
   RATE_CAP_EXCEEDED: "RATE_CAP_EXCEEDED",
@@ -306,6 +392,18 @@ async function evaluateAutonomyChain(action: AutonomyAction, ctx: AutonomyContex
   //    misconfigured allowlist can never override it.
   if (AUTONOMY_INELIGIBLE.has(action.type)) {
     return { allowed: false, reason: AUTONOMY_REASONS.TYPE_INELIGIBLE };
+  }
+
+  // 3b. G3-C — VỊ TỪ, KHÔNG PHẢI DANH SÁCH. Tra `action.type` trong registry SỐNG: nếu nó là một
+  //     tool `kind:"write"` thật sự đang đăng ký mà CHƯA được triage vào một trong hai tập, cấm.
+  //     ⇒ Một write tool MỚI thêm hôm nay **mặc định KHÔNG** đủ tư cách tự trị, kể cả khi có người
+  //     ghi tên nó vào allowlist. Đây là chỗ điều kiện này phải sống: cưỡng chế ở đường quyết
+  //     định, chứ một khẳng định `Set.has(...)` trong test thì đột biến "xoá điều kiện 3" sống sót.
+  //     ⚠ `getTool` trả `undefined` cho tên không (chưa) đăng ký ⇒ điều kiện này KHÔNG phát biểu
+  //     gì về nó; hình dạng ấy vẫn bị các điều kiện 4-7 chặn như trước (allowlist rỗng mặc định),
+  //     và `proposeAction` chỉ đề xuất được từ một `Tool` có thật nên đường thật luôn tra được.
+  if (isWriteTool(getTool(action.type)) && !AUTONOMY_REVIEWED_SAFE.has(action.type)) {
+    return { allowed: false, reason: AUTONOMY_REASONS.TYPE_UNCLASSIFIED };
   }
 
   // 4. Allowlist — empty by default ⇒ nothing qualifies until explicitly configured.

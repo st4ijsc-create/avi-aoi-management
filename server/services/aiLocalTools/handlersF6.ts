@@ -6,11 +6,27 @@
  * packaging throughput, palletizer status, OT telemetry). They follow the same
  * KHUÔN as handlers.ts: zod `.strict()` params, a `getDb()` guard returning
  * `noDbResult`, Drizzle queries (delegated to db/* helpers), and a Vietnamese
- * `textSummary`. Every tool here is `kind: 'read'` — NO preview/execute/
- * requiredPermission. Any actionable suggestion is plain text pointing at the
- * existing HITL write-tools (F4/GĐ2); nothing is executed here.
+ * `textSummary`. Every tool here is `kind: 'read'` — NO preview/execute.
+ * Any actionable suggestion is plain text pointing at the existing HITL
+ * write-tools (F4/GĐ2); nothing is executed here.
  *
- * Self-registers on import (see index.ts → `import "./handlersF6"`).
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ G3-A — CÂU "NO requiredPermission" Ở TRÊN TỪNG ĐÚNG, VÀ ĐÓ LÀ MỘT LỖ.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Sáu tool ở đây đọc kết quả công đoạn, xu hướng thông số, cân bằng chuyền, sản lượng đóng gói,
+ * trạng thái palletizer và telemetry OT của **bất kỳ máy nào** — trước đợt này **không một cổng
+ * quyền nào**. Ánh xạ theo đúng màn hình đang bày chính dữ liệu ấy:
+ *
+ *   get_machine_process_result · get_process_metric_trend · get_packaging_throughput
+ *   · get_palletizer_status · get_ot_telemetry_latest → `machine_status`
+ *       `/process-analytics` (`ProcessAnalytics.tsx` — `processResult.listBySerial` / `stats` /
+ *       `metricSeries`) và `/device-monitor` · `/robot-control` đều đứng sau `machine_status`
+ *       trong `client/src/lib/navigation.tsx`.
+ *   get_line_balance → `analytics_oee`
+ *       Dữ liệu cân bằng chuyền chỉ hiện ở HAI màn: `/wip-dashboard` (`WipLineBalance.tsx` →
+ *       `wip.lineBalance`) và `/mes-control-tower` (`mesControlTower.lineBalance`). **Cả hai** khai
+ *       `requiredPermission: "analytics_oee"`. ⚠ Đừng nhầm với `/line-view` (`machine_status`) —
+ *       màn ấy đọc `lineController.*`, không phải cân bằng chuyền.
  */
 
 import { z } from "zod";
@@ -30,9 +46,14 @@ import {
   resolveLineIdByCode,
 } from "../../db/lineBalance";
 import { analyzeTimeSeries, type TimeSeriesPoint } from "../aiTimeSeriesEngine";
-import { registerTool, type Tool, type ToolResult } from "./toolRegistry";
+import { registerTool, type Tool, type ToolPermission, type ToolResult } from "./toolRegistry";
+import { authCtxParam, rbacGate } from "./readToolRbac";
 
 // ── shared helpers ──────────────────────────────────────────────────────────
+
+/** G3-A — MỘT hằng cho mỗi tool, dùng ở CẢ `requiredPermission` LẪN `rbacGate` (xem handlers.ts). */
+const PERM_PROCESS: ToolPermission = { module: "machine_status", action: "canView" };
+const PERM_LINE_BALANCE: ToolPermission = { module: "analytics_oee", action: "canView" };
 
 function startOfDay(d: Date): Date {
   const c = new Date(d);
@@ -110,6 +131,7 @@ const processResultParams = z
     stepType: z.string().min(1).max(64).optional(),
     days: z.number().int().min(1).max(30).optional().default(1),
     limit: z.number().int().min(1).max(50).optional().default(20),
+    __authCtx: authCtxParam,
   })
   .strict()
   .refine((v) => !!(v.serialNumber || v.machineCode || v.stepType), {
@@ -125,11 +147,18 @@ const getMachineProcessResult: Tool<z.infer<typeof processResultParams>, Process
     "kết quả công đoạn", "process result", "pass fail", "kết quả máy",
     "công đoạn của", "fail rate công đoạn", "tỉ lệ fail công đoạn",
   ],
-  handler: async ({ serialNumber, machineCode, stepType, days, limit }) => {
+  kind: "read",
+  requiredPermission: PERM_PROCESS,
+  handler: async ({ serialNumber, machineCode, stepType, days, limit, __authCtx }) => {
     const empty: ProcessResultData = {
       rows: [],
       summary: { pass: 0, fail: 0, warn: 0, skip: 0, failRate: 0 },
     };
+    const denied = await rbacGate<ProcessResultData>(
+      __authCtx, PERM_PROCESS, "process_result", "Kết quả công đoạn", empty,
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDbResult<ProcessResultData>("process_result", "Kết quả công đoạn", empty);
 
@@ -219,6 +248,7 @@ const metricTrendParams = z
     source: z.enum(["process", "telemetry"]).optional().default("process"),
     days: z.number().int().min(1).max(30).optional().default(7),
     bucket: z.enum(["hour", "day"]).optional().default("hour"),
+    __authCtx: authCtxParam,
   })
   .strict();
 
@@ -231,10 +261,17 @@ const getProcessMetricTrend: Tool<z.infer<typeof metricTrendParams>, MetricTrend
     "xu hướng chỉ số", "trend chỉ số", "metric trend", "xu hướng đo",
     "lực siết", "mô-men", "torque", "lượng keo", "dispense", "cycle time", "thời gian chu kỳ",
   ],
-  handler: async ({ machineCode, stepType, metricKey, tagKey, source, days, bucket }) => {
+  kind: "read",
+  requiredPermission: PERM_PROCESS,
+  handler: async ({ machineCode, stepType, metricKey, tagKey, source, days, bucket, __authCtx }) => {
     const empty: MetricTrendData = {
       metricKey, source, bucket, series: [], trend: "stable", mean: 0, anomalyCount: 0, forecastNext: null,
     };
+    const denied = await rbacGate<MetricTrendData>(
+      __authCtx, PERM_PROCESS, "process_metric_trend", `Xu hướng ${metricKey}`, empty,
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDbResult<MetricTrendData>("process_metric_trend", `Xu hướng ${metricKey}`, empty);
 
@@ -328,6 +365,7 @@ const lineBalanceParams = z
     lineCode: z.string().min(1).max(50).optional(),
     lineId: z.number().int().positive().optional(),
     days: z.number().int().min(1).max(14).optional().default(1),
+    __authCtx: authCtxParam,
   })
   .strict()
   .refine((v) => !!(v.lineCode || v.lineId), { message: "Cần lineCode hoặc lineId" });
@@ -340,7 +378,14 @@ const getLineBalance: Tool<z.infer<typeof lineBalanceParams>, LineBalanceData | 
     "cân bằng chuyền", "cân bằng line", "nút thắt", "bottleneck", "nghẽn",
     "line balance", "takt", "cycle time chuyền",
   ],
-  handler: async ({ lineCode, lineId, days }) => {
+  kind: "read",
+  requiredPermission: PERM_LINE_BALANCE,
+  handler: async ({ lineCode, lineId, days, __authCtx }) => {
+    const denied = await rbacGate<LineBalanceData | null>(
+      __authCtx, PERM_LINE_BALANCE, "line_balance", "Cân bằng chuyền", null,
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDbResult<LineBalanceData | null>("line_balance", "Cân bằng chuyền", null);
 
@@ -421,6 +466,7 @@ const throughputParams = z
     machineCode: z.string().min(1).max(50).optional(),
     lineCode: z.string().min(1).max(50).optional(),
     days: z.number().int().min(1).max(14).optional().default(1),
+    __authCtx: authCtxParam,
   })
   .strict();
 
@@ -431,8 +477,15 @@ const getPackagingThroughput: Tool<z.infer<typeof throughputParams>, ThroughputD
   triggers: [
     "throughput", "sản lượng đóng gói", "đóng gói", "packaging", "năng suất đóng gói",
   ],
-  handler: async ({ machineCode, lineCode, days }) => {
+  kind: "read",
+  requiredPermission: PERM_PROCESS,
+  handler: async ({ machineCode, lineCode, days, __authCtx }) => {
     const empty: ThroughputData = { bucket: "hour", series: [], totalPass: 0 };
+    const denied = await rbacGate<ThroughputData>(
+      __authCtx, PERM_PROCESS, "throughput", "Sản lượng đóng gói", empty,
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDbResult<ThroughputData>("throughput", "Sản lượng đóng gói", empty);
 
@@ -500,7 +553,7 @@ interface PalletizerData {
 }
 
 const palletizerParams = z
-  .object({ machineCode: z.string().min(1).max(50).optional() })
+  .object({ machineCode: z.string().min(1).max(50).optional(), __authCtx: authCtxParam })
   .strict();
 
 const getPalletizerStatus: Tool<z.infer<typeof palletizerParams>, PalletizerData | null> = {
@@ -508,7 +561,14 @@ const getPalletizerStatus: Tool<z.infer<typeof palletizerParams>, PalletizerData
   description: "Trạng thái máy xếp pallet (palletizer): telemetry mới nhất, kết quả công đoạn gần nhất, heartbeat.",
   parameters: palletizerParams,
   triggers: ["palletizer", "xếp pallet", "máy xếp pallet", "robot pallet", "trạng thái pallet"],
-  handler: async ({ machineCode }) => {
+  kind: "read",
+  requiredPermission: PERM_PROCESS,
+  handler: async ({ machineCode, __authCtx }) => {
+    const denied = await rbacGate<PalletizerData | null>(
+      __authCtx, PERM_PROCESS, "palletizer_status", "Trạng thái palletizer", null,
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDbResult<PalletizerData | null>("palletizer_status", "Trạng thái palletizer", null);
 
@@ -614,6 +674,7 @@ const otTelemetryParams = z
     machineCode: z.string().min(1).max(50).optional(),
     tagKey: z.string().min(1).max(128).optional(),
     limit: z.number().int().min(1).max(50).optional().default(10),
+    __authCtx: authCtxParam,
   })
   .strict()
   .refine((v) => !!v.machineCode, { message: "Cần machineCode" });
@@ -623,8 +684,13 @@ const getOtTelemetryLatest: Tool<z.infer<typeof otTelemetryParams>, OtTelemetryD
   description: "Giá trị telemetry OT mới nhất của một máy (kèm đơn vị từ deviceTags).",
   parameters: otTelemetryParams,
   triggers: ["telemetry", "tag value", "giá trị tag", "ot telemetry", "đọc tag", "cảm biến máy"],
-  handler: async ({ machineCode, tagKey, limit }) => {
+  kind: "read",
+  requiredPermission: PERM_PROCESS,
+  handler: async ({ machineCode, tagKey, limit, __authCtx }) => {
     const empty: OtTelemetryData = { rows: [] };
+    const denied = await rbacGate<OtTelemetryData>(__authCtx, PERM_PROCESS, "ot_telemetry", "Telemetry OT", empty);
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDbResult<OtTelemetryData>("ot_telemetry", "Telemetry OT", empty);
     if (!machineCode) {

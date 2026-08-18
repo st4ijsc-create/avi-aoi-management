@@ -230,9 +230,20 @@ describe("stripThinking helper", () => {
     expect(out.thinking).toBe("");
   });
 
-  it("fail-safe: keeps the original when stripping would leave an empty answer", async () => {
+  /**
+   * ★ ĐỔI CÓ CHỦ Ý — G5-B (2026-08-16). Ca này TRƯỚC ĐÂY khẳng định điều NGƯỢC LẠI:
+   *     expect(out.answer).toBe("<think>only reasoning, no answer</think>")
+   * tức là nó **đóng dấu hợp lệ cho một đường rò**: cắt xong không còn gì ⇒ trả nguyên văn cả
+   * khối suy luận kèm thẻ ra giao diện. Chú thích cũ gọi đó là "fail-safe" nhưng "noisy answer"
+   * ở đây chính là thứ hàm này tồn tại để giấu. Ca kích hoạt không hiếm: model reasoning tiêu hết
+   * `maxTokens` vào `<think>` trước khi kịp trả lời.
+   * Lưới đầy đủ cho lớp lỗi này: `aiGgufEngine.stripThinking.test.ts` §R2.
+   */
+  it("★ fail-SAFE: cắt xong rỗng ⇒ trả RỖNG, KHÔNG trả nguyên văn khối suy luận", async () => {
     const { stripThinking } = await import("./aiGgufEngine");
     const out = stripThinking("<think>only reasoning, no answer</think>");
-    expect(out.answer).toBe("<think>only reasoning, no answer</think>");
+    expect(out.answer).toBe("");
+    expect(out.answer).not.toContain("only reasoning");
+    expect(out.thinking).toContain("only reasoning");
   });
 });

@@ -863,7 +863,7 @@ Respond in JSON format:
       startDate: z.date(),
       endDate: z.date(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const productModel = await db.getProductModelById(input.productModelId);
       if (!productModel) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, 'Product model not found');
@@ -872,6 +872,8 @@ Respond in JSON format:
         productModelId: input.productModelId,
         startDate: input.startDate,
         endDate: input.endDate,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
       });
       return {
         productModel: { id: productModel.id, code: productModel.code, name: productModel.name },

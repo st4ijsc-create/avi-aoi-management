@@ -13,6 +13,12 @@
 
 import { createHash } from "crypto";
 import { generateNarrative as routerNarrative } from "./aiProviderRouter";
+// ★★★ G4-A VIỆC 1 lớp ② — 14 chuỗi văn xuôi của file này TRƯỚC ĐÂY hard-code tiếng Anh, kể cả
+// khi người gọi truyền `language: "vi"`: chỉ `narrative` (phần do MODEL sinh) đổi ngôn ngữ, còn
+// `anomalies` / `recommendations` / `actionItems` / `trends` / `concerns` / `forecast` (phần do
+// MÃ sinh) thì không. Bảng câu ba ngôn ngữ + lý lẽ vì sao KHÔNG dùng `locales/*.json`: xem
+// `aiReportPhrases.ts`.
+import { cauBaoCao, type ReportLang } from "./aiReportPhrases";
 
 function narrativeCacheKey(systemPrompt: string, data: string): string {
   return "narrative:" + createHash("sha1").update(systemPrompt + "\u0000" + data).digest("hex").slice(0, 16);
@@ -38,7 +44,15 @@ export interface ReportParams {
   machineId?: number;
   factoryId?: number;
   reportType: "daily" | "rca" | "model_performance" | "executive";
-  language?: "en" | "vi";
+  /**
+   * ★ G4-A — **MẶC ĐỊNH LÀ `vi`, KHÔNG PHẢI `en`.** Đây là hệ chạy trong một nhà máy Việt Nam;
+   * một người gọi quên khai ngôn ngữ thì kết quả đúng là tiếng Việt. Mặc định `en` cũ chính là
+   * lớp ① của lỗi (`AIReportsPage` không gửi ô này cho **cả 4 tab**, router `.default("en")`).
+   * ⚠ Kiểu nới từ `"en"|"vi"` lên **ba** mã của hệ i18n (`vi`/`en`/`zh`): giao diện có tiếng
+   * Trung, nên một phiên `zh` mà zod chỉ nhận `["en","vi"]` sẽ là một lỗi 400 **do chính bản vá
+   * lớp ① đẻ ra** — vá một lớp mà mở một lỗ mới ở lớp bên cạnh.
+   */
+  language?: ReportLang;
 }
 
 export interface NarrativeMetadata {
@@ -143,44 +157,59 @@ export interface ExecutiveSummary {
 
 // ─── Offline Narrative Fallback ───────────────────────────────────────────
 
-function generateOfflineNarrative(systemPrompt: string, data: string): string {
-  const isVi = systemPrompt.includes("tiếng Việt") || systemPrompt.includes("Việt");
+/**
+ * ★★★ G4-A — **LỚP THỨ TƯ CỦA CÙNG MỘT LỖI, KHÔNG NẰM TRONG BA LỚP ĐÃ NÊU.**
+ *
+ * ⚠⚠⚠ Bản trước suy ra ngôn ngữ bằng cách **ĐÁNH HƠI CÂU DẪN**:
+ *   `const isVi = systemPrompt.includes("tiếng Việt") || systemPrompt.includes("Việt");`
+ * Một kênh phụ, không phải một tham số. Ba hệ quả cơ học của nó:
+ *   • Sửa lại câu dẫn cho gọn (bỏ chữ "tiếng Việt") ⇒ bản mẫu ngoại tuyến **âm thầm** quay về
+ *     tiếng Anh, và **không có gì đỏ** — chính là cách một bản vá ngôn ngữ tự tháo ra sau này.
+ *   • Nó chỉ biết **hai** trạng thái. Tiếng Trung không tồn tại trong phép suy này ⇒ một phiên
+ *     `zh` nhận **tiếng Anh**, kể cả sau khi ba lớp kia đã vá.
+ *   • Đường này là đường **ngoại tuyến** — tức đúng đường chạy khi không có model. Nó không phải
+ *     ca hiếm: mọi lượt `narrative` hỏng đều rơi vào đây.
+ * ⇒ Nay `lang` là **tham số**, đi thẳng từ `ReportParams.language`.
+ */
+function generateOfflineNarrative(lang: ReportLang, data: string): string {
+  const c = <K extends Parameters<typeof cauBaoCao>[1]>(k: K, p: Parameters<typeof cauBaoCao<K>>[2]) =>
+    cauBaoCao(lang, k, p);
   try {
     const d = JSON.parse(data) as Record<string, unknown>;
 
     // Daily quality summary
     if ("yieldRate" in d && "topDefects" in d) {
-      const yieldRate = Number(d.yieldRate ?? 0).toFixed(1);
-      const total = d.total ?? 0;
-      const ng = d.ng ?? 0;
       const topDefects = (d.topDefects as Array<{ type: string; count: number }> | undefined) ?? [];
-      const topType = topDefects[0]?.type ?? (isVi ? "không xác định" : "unknown");
       const anomalies = (d.anomalies as string[] | undefined) ?? [];
-      if (isVi) {
-        return `Trong kỳ báo cáo ${d.period ?? ""}, hệ thống đã kiểm tra ${total} sản phẩm với tỷ lệ đạt ${yieldRate}% và ${ng} sản phẩm lỗi. ` +
-          (topDefects.length > 0 ? `Loại lỗi phổ biến nhất là "${topType}". ` : "") +
-          (anomalies.length > 0 ? `Phát hiện bất thường: ${anomalies.join("; ")}. ` : "") +
-          `Cần theo dõi và so sánh với kỳ trước để xác định xu hướng.`;
-      }
-      return `During period ${d.period ?? ""}, ${total} inspections were completed with a ${yieldRate}% yield rate and ${ng} defective items. ` +
-        (topDefects.length > 0 ? `The most common defect type was "${topType}". ` : "") +
-        (anomalies.length > 0 ? `Anomalies detected: ${anomalies.join("; ")}. ` : "") +
-        `Continue monitoring and compare with previous periods to identify trends.`;
+      return (
+        c("offline_ngay", {
+          period: String(d.period ?? ""),
+          total: String(d.total ?? 0),
+          yieldRate: Number(d.yieldRate ?? 0).toFixed(1),
+          ng: String(d.ng ?? 0),
+        }) +
+        (topDefects.length > 0
+          ? c("offline_ngayLoiPhoBien", { type: topDefects[0]?.type ?? c("offline_khongXacDinh", {}) })
+          : "") +
+        (anomalies.length > 0 ? c("offline_ngayBatThuong", { list: anomalies.join("; ") }) : "") +
+        c("offline_ngayKhep", {})
+      );
     }
 
     // RCA report
     if ("triggerReason" in d && "contributingFactors" in d) {
       const factors = (d.contributingFactors as Array<{ factor: string; impact: number }> | undefined) ?? [];
-      const topFactor = factors[0]?.factor ?? (isVi ? "không xác định" : "unknown");
       const actions = (d.actionItems as string[] | undefined) ?? [];
-      if (isVi) {
-        return `Cuộc điều tra nguyên nhân gốc được kích hoạt bởi: ${d.triggerReason}. ` +
-          (factors.length > 0 ? `Yếu tố đóng góp chính là "${topFactor}" (${Number(factors[0]?.impact ?? 0).toFixed(1)}% tác động). ` : "") +
-          (actions.length > 0 ? `Hành động đề xuất: ${actions.slice(0, 3).join("; ")}.` : "");
-      }
-      return `Root cause investigation triggered by: ${d.triggerReason}. ` +
-        (factors.length > 0 ? `The primary contributing factor was "${topFactor}" (${Number(factors[0]?.impact ?? 0).toFixed(1)}% impact). ` : "") +
-        (actions.length > 0 ? `Recommended actions: ${actions.slice(0, 3).join("; ")}.` : "");
+      return (
+        c("offline_rca", { trigger: String(d.triggerReason) }) +
+        (factors.length > 0
+          ? c("offline_rcaYeuTo", {
+              factor: factors[0]?.factor ?? c("offline_khongXacDinh", {}),
+              impact: Number(factors[0]?.impact ?? 0).toFixed(1),
+            })
+          : "") +
+        (actions.length > 0 ? c("offline_rcaHanhDong", { list: actions.slice(0, 3).join("; ") }) : "")
+      );
     }
 
     // Model performance report
@@ -193,51 +222,47 @@ function generateOfflineNarrative(systemPrompt: string, data: string): string {
       // offline narrative must NOT assert "performing within acceptable ranges" — that's
       // a fabricated health claim over data we never collected.
       const allUnavailable = models.length > 0 && models.every((m) => !m.dataAvailable);
-      if (isVi) {
-        return `Báo cáo hiệu suất gồm ${models.length} mô hình AI. ` +
-          (driftCount > 0
-            ? `${driftCount} mô hình phát hiện dịch chuyển độ chính xác. `
-            : allUnavailable
-              ? "Số liệu hiệu suất model chưa khả dụng cho kỳ báo cáo này — chưa có hoạt động suy luận thực nào được ghi nhận. "
-              : "Tất cả mô hình hoạt động trong ngưỡng cho phép. ") +
-          (recs.length > 0 ? `Khuyến nghị: ${recs[0]}.` : "");
-      }
-      return `Performance report covers ${models.length} AI models. ` +
-        (driftCount > 0
-          ? `${driftCount} model(s) show accuracy drift. `
+      // ⚠ Rẽ nhánh nằm ở ĐÂY và chọn giữa BA KHOÁ — không bao giờ nằm trong thân một ô ngôn ngữ
+      //   (bài học I-3, xem `aiReportPhrases.ts`).
+      const giua =
+        driftCount > 0
+          ? c("offline_modelDichChuyen", { n: driftCount })
           : allUnavailable
-            ? "Model performance metrics unavailable for this period — no real inference activity recorded yet. "
-            : "All models performing within acceptable ranges. ") +
-        (recs.length > 0 ? `Recommendation: ${recs[0]}.` : "");
+            ? c("soLieuModelChuaCo", {}) + ". "
+            : c("moiModelTrongNguong", {}) + ". ";
+      return (
+        c("offline_model", { n: models.length }) +
+        giua +
+        (recs.length > 0 ? c("offline_modelKhuyenNghi", { first: recs[0]! }) : "")
+      );
     }
 
     // Executive summary
     if ("currentYield" in d && "kpis" in d || "currentYield" in d) {
-      const yieldVal = Number(d.currentYield ?? 0).toFixed(1);
       const yieldChange = Number(d.currentYield ?? 0) - Number(d.prevYield ?? 0);
-      const changeStr = yieldChange >= 0 ? `+${yieldChange.toFixed(1)}` : yieldChange.toFixed(1);
       const trends = (d.trends as string[] | undefined) ?? [];
       const concerns = (d.concerns as string[] | undefined) ?? [];
-      if (isVi) {
-        return `Tóm tắt điều hành kỳ ${d.period ?? ""}: tỷ lệ sản xuất đạt ${yieldVal}% (${changeStr}% so với kỳ trước). ` +
-          (trends.length > 0 ? `Xu hướng: ${trends[0]}. ` : "") +
-          (concerns.length > 0 ? `Vấn đề cần chú ý: ${concerns[0]}.` : "Không có vấn đề nghiêm trọng trong kỳ này.");
-      }
-      return `Executive summary for period ${d.period ?? ""}: overall yield ${yieldVal}% (${changeStr}pp vs previous period). ` +
-        (trends.length > 0 ? `Key trend: ${trends[0]}. ` : "") +
-        (concerns.length > 0 ? `Concern: ${concerns[0]}.` : "No critical issues identified in this period.");
+      return (
+        c("offline_dieuHanh", {
+          period: String(d.period ?? ""),
+          yieldVal: Number(d.currentYield ?? 0).toFixed(1),
+          change: yieldChange >= 0 ? `+${yieldChange.toFixed(1)}` : yieldChange.toFixed(1),
+        }) +
+        (trends.length > 0 ? c("offline_dieuHanhXuHuong", { first: trends[0]! }) : "") +
+        (concerns.length > 0
+          ? c("offline_dieuHanhQuanNgai", { first: concerns[0]! })
+          : c("offline_dieuHanhKhongVanDe", {}))
+      );
     }
   } catch (err) {
     console.warn("[aiReportGenerator] offline narrative parse failed:", err);
   }
-  return isVi
-    ? "Báo cáo được tạo tự động từ dữ liệu cục bộ (chế độ offline)."
-    : "Report generated automatically from local data (offline mode).";
+  return cauBaoCao(lang, "offline_chung", {});
 }
 
 // ─── Narrative (delegates to aiProviderRouter) ─────────────────────────────
 
-async function generateNarrative(systemPrompt: string, data: string): Promise<{ text: string; metadata: NarrativeMetadata }> {
+async function generateNarrative(lang: ReportLang, systemPrompt: string, data: string): Promise<{ text: string; metadata: NarrativeMetadata }> {
   const timestamp = new Date();
   try {
     const result = await routerNarrative({
@@ -265,7 +290,7 @@ async function generateNarrative(systemPrompt: string, data: string): Promise<{ 
 
   // Last resort: offline static template
   return {
-    text: generateOfflineNarrative(systemPrompt, data),
+    text: generateOfflineNarrative(lang, data),
     metadata: {
       generatedBy: "offline",
       confidence: 0.4,
@@ -519,7 +544,7 @@ async function collectModelPerformanceData(startDate: Date, endDate: Date) {
  * Generate a Daily Quality Summary report.
  */
 export async function generateDailyQualitySummary(params: ReportParams): Promise<QualitySummary> {
-  const { startDate, endDate, machineId, language = "en" } = params;
+  const { startDate, endDate, machineId, language = "vi" } = params;
   const period = `${startDate.toISOString().split("T")[0]} to ${endDate.toISOString().split("T")[0]}`;
 
   const [stats, topDefects] = await Promise.all([
@@ -540,23 +565,27 @@ export async function generateDailyQualitySummary(params: ReportParams): Promise
   // Simple anomaly detection: flag if defect rate > 10% or unusual patterns
   const anomalies: string[] = [];
   const defectRate = total > 0 ? (ng / total) * 100 : 0;
-  if (defectRate > 10) anomalies.push(`High defect rate: ${defectRate.toFixed(1)}%`);
+  if (defectRate > 10) anomalies.push(cauBaoCao(language, "tyLeLoiCao", { rate: defectRate.toFixed(1) }));
   if (topDefectsFormatted.length > 0 && topDefectsFormatted[0].percentage > 50) {
-    anomalies.push(`Dominant defect type "${topDefectsFormatted[0].type}" accounts for ${topDefectsFormatted[0].percentage.toFixed(1)}% of all defects`);
+    anomalies.push(
+      cauBaoCao(language, "loiApDao", {
+        type: topDefectsFormatted[0].type,
+        pct: topDefectsFormatted[0].percentage.toFixed(1),
+      }),
+    );
   }
 
   const recommendations: string[] = [];
-  if (defectRate > 5) recommendations.push("Review inspection criteria and machine calibration");
+  if (defectRate > 5) recommendations.push(cauBaoCao(language, "khuyenNghiSoatTieuChi", {}));
   if (topDefectsFormatted.length > 0) {
-    recommendations.push(`Focus improvement on "${topDefectsFormatted[0].type}" defect type`);
+    recommendations.push(cauBaoCao(language, "khuyenNghiTapTrungLoi", { type: topDefectsFormatted[0].type }));
   }
-  recommendations.push("Continue monitoring and compare with previous periods");
+  recommendations.push(cauBaoCao(language, "khuyenNghiTheoDoiTiep", {}));
 
   // Generate narrative
   const narrativeResult = await generateNarrative(
-    language === "vi"
-      ? "Bạn là chuyên gia chất lượng AOI. Viết tóm tắt báo cáo chất lượng hàng ngày bằng tiếng Việt."
-      : "You are an AOI quality expert. Write a brief daily quality summary report.",
+    language,
+    cauBaoCao(language, "dan_tomTatNgay", {}),
     JSON.stringify({ period, total, ok, ng, yieldRate, topDefects: topDefectsFormatted, anomalies }),
   );
 
@@ -578,8 +607,8 @@ export async function generateDailyQualitySummary(params: ReportParams): Promise
  * Generate a Root Cause Investigation report (triggered by defect spike).
  */
 export async function generateRCAReport(params: ReportParams & { triggerReason?: string }): Promise<RCAReport> {
-  const { startDate, endDate, machineId, language = "en" } = params;
-  const triggerReason = params.triggerReason ?? "Defect rate spike detected";
+  const { startDate, endDate, machineId, language = "vi" } = params;
+  const triggerReason = params.triggerReason ?? cauBaoCao(language, "rcaKichHoatMacDinh", {});
 
   const [stats, topDefects, machinePerf] = await Promise.all([
     collectInspectionStats(startDate, endDate, machineId),
@@ -592,16 +621,16 @@ export async function generateRCAReport(params: ReportParams & { triggerReason?:
 
   // Build timeline (simplified: hourly breakdown not available, use defect progression)
   const timeline = [
-    { time: startDate.toISOString(), event: "Investigation period start" },
-    { time: triggerReason, event: "Alert triggered" },
-    { time: endDate.toISOString(), event: "Investigation period end" },
+    { time: startDate.toISOString(), event: cauBaoCao(language, "moc_batDauDieuTra", {}) },
+    { time: triggerReason, event: cauBaoCao(language, "moc_canhBaoKichHoat", {}) },
+    { time: endDate.toISOString(), event: cauBaoCao(language, "moc_ketThucDieuTra", {}) },
   ];
 
   // Contributing factors from top defects and machine performance
   const contributingFactors = topDefects.slice(0, 5).map(d => ({
     factor: d.type,
     impact: ng > 0 ? (d.count / ng) * 100 : 0,
-    evidence: `${d.count} occurrences out of ${ng} total defects`,
+    evidence: cauBaoCao(language, "bangChungSoLan", { count: d.count, total: ng }),
   }));
 
   // Machine correlations
@@ -616,21 +645,20 @@ export async function generateRCAReport(params: ReportParams & { triggerReason?:
 
   const actionItems: string[] = [];
   if (contributingFactors.length > 0) {
-    actionItems.push(`Investigate root cause of "${contributingFactors[0].factor}" defect type`);
+    actionItems.push(cauBaoCao(language, "hanhDongTruyNguyenNhan", { type: contributingFactors[0].factor }));
   }
   const worstMachine = machinePerf.sort((a, b) =>
     (b.total > 0 ? b.ng / b.total : 0) - (a.total > 0 ? a.ng / a.total : 0)
   )[0];
   if (worstMachine) {
-    actionItems.push(`Check machine "${worstMachine.machineCode}" — highest defect rate`);
+    actionItems.push(cauBaoCao(language, "hanhDongKiemTraMay", { code: worstMachine.machineCode }));
   }
-  actionItems.push("Review process parameters for anomalous period");
-  actionItems.push("Schedule preventive maintenance if machine degradation suspected");
+  actionItems.push(cauBaoCao(language, "hanhDongSoatThamSo", {}));
+  actionItems.push(cauBaoCao(language, "hanhDongLenBaoTri", {}));
 
   const narrativeResult = await generateNarrative(
-    language === "vi"
-      ? "Bạn là chuyên gia phân tích nguyên nhân gốc AOI. Viết báo cáo RCA chi tiết bằng tiếng Việt."
-      : "You are an AOI root cause analysis expert. Write a concise RCA report.",
+    language,
+    cauBaoCao(language, "dan_rca", {}),
     JSON.stringify({ triggerReason, total, ng, contributingFactors, correlations, actionItems }),
   );
 
@@ -649,7 +677,7 @@ export async function generateRCAReport(params: ReportParams & { triggerReason?:
  * Generate Model Performance report.
  */
 export async function generateModelPerformanceReport(params: ReportParams): Promise<ModelPerformanceReport> {
-  const { startDate, endDate, language = "en" } = params;
+  const { startDate, endDate, language = "vi" } = params;
   const models = await collectModelPerformanceData(startDate, endDate);
 
   const retrainRecommendations: string[] = [];
@@ -658,37 +686,39 @@ export async function generateModelPerformanceReport(params: ReportParams): Prom
     // verdict (drift/decline/accuracy/error-rate checks below all assume real metrics).
     if (!m.dataAvailable) continue;
     if (m.driftDetected) {
-      retrainRecommendations.push(`Model "${m.modelCode}" shows accuracy drift — recommend retraining`);
+      retrainRecommendations.push(cauBaoCao(language, "retrainDichChuyen", { code: m.modelCode }));
     }
     if (m.accuracyTrend === "declining") {
-      retrainRecommendations.push(`Model "${m.modelCode}" accuracy is declining — investigate data distribution changes`);
+      retrainRecommendations.push(cauBaoCao(language, "retrainSuyGiam", { code: m.modelCode }));
     }
     if (m.currentAccuracy != null && m.totalPredictions != null && m.currentAccuracy < 0.9 && m.totalPredictions > 100) {
-      retrainRecommendations.push(`Model "${m.modelCode}" accuracy below 90% — consider model architecture update`);
+      retrainRecommendations.push(cauBaoCao(language, "retrainDuoiNguong", { code: m.modelCode }));
     }
     // doc69 A4 — NEW: real error-rate signal from inference_results (was unavailable before).
     if (m.errorRate != null && m.totalPredictions != null && m.totalPredictions >= MIN_SAMPLES_FOR_ERROR_ALERT && m.errorRate > 0.1) {
       retrainRecommendations.push(
-        `Model "${m.modelCode}" inference error rate ${(m.errorRate * 100).toFixed(1)}% over ${m.totalPredictions} predictions — investigate pipeline/model health`,
+        cauBaoCao(language, "retrainLoiSuyLuan", {
+          code: m.modelCode,
+          pct: (m.errorRate * 100).toFixed(1),
+          n: m.totalPredictions,
+        }),
       );
     }
   }
 
   if (retrainRecommendations.length === 0) {
     const allUnavailable = models.length > 0 && models.every((m) => !m.dataAvailable);
+    // ⚠ Rẽ nhánh chọn giữa HAI KHOÁ, không nằm trong thân một ô ngôn ngữ (bài học I-3).
     retrainRecommendations.push(
       allUnavailable
-        ? language === "vi"
-          ? "Số liệu hiệu suất model chưa khả dụng cho kỳ báo cáo này — chưa có hoạt động suy luận thực nào được ghi nhận"
-          : "Model performance metrics unavailable for this period — no real inference activity recorded yet"
-        : "All models performing within acceptable ranges — no immediate action needed",
+        ? cauBaoCao(language, "soLieuModelChuaCo", {})
+        : cauBaoCao(language, "moiModelTrongNguong", {}),
     );
   }
 
   const narrativeResult = await generateNarrative(
-    language === "vi"
-      ? "Bạn là chuyên gia AI/ML. Viết báo cáo hiệu suất model bằng tiếng Việt."
-      : "You are an AI/ML expert. Write a brief model performance summary report.",
+    language,
+    cauBaoCao(language, "dan_hieuSuatModel", {}),
     JSON.stringify({ models, retrainRecommendations }),
   );
 
@@ -699,7 +729,7 @@ export async function generateModelPerformanceReport(params: ReportParams): Prom
  * Generate Executive Summary report (weekly/monthly).
  */
 export async function generateExecutiveSummary(params: ReportParams): Promise<ExecutiveSummary> {
-  const { startDate, endDate, language = "en" } = params;
+  const { startDate, endDate, language = "vi" } = params;
   const period = `${startDate.toISOString().split("T")[0]} to ${endDate.toISOString().split("T")[0]}`;
 
   // Current period stats
@@ -731,23 +761,22 @@ export async function generateExecutiveSummary(params: ReportParams): Promise<Ex
   const worstMachine = sorted[sorted.length - 1]?.machineCode ?? "N/A";
 
   const trends: string[] = [];
-  if (currentYield > prevYield) trends.push(`Yield improved by ${(currentYield - prevYield).toFixed(1)} percentage points`);
-  if (currentYield < prevYield) trends.push(`Yield decreased by ${(prevYield - currentYield).toFixed(1)} percentage points`);
-  if (currentTotal > prevTotal * 1.1) trends.push("Production volume increased significantly");
-  if (currentTotal < prevTotal * 0.9) trends.push("Production volume decreased");
+  if (currentYield > prevYield) trends.push(cauBaoCao(language, "xuHuongYieldTang", { pts: (currentYield - prevYield).toFixed(1) }));
+  if (currentYield < prevYield) trends.push(cauBaoCao(language, "xuHuongYieldGiam", { pts: (prevYield - currentYield).toFixed(1) }));
+  if (currentTotal > prevTotal * 1.1) trends.push(cauBaoCao(language, "xuHuongSanLuongTang", {}));
+  if (currentTotal < prevTotal * 0.9) trends.push(cauBaoCao(language, "xuHuongSanLuongGiam", {}));
 
   const concerns: string[] = [];
-  if (currentDefectRate > 5) concerns.push(`Defect rate at ${currentDefectRate.toFixed(1)}% — above target`);
-  if (currentYield < prevYield - 2) concerns.push("Significant yield decline vs previous period");
+  if (currentDefectRate > 5) concerns.push(cauBaoCao(language, "quanNgaiTyLeLoi", { rate: currentDefectRate.toFixed(1) }));
+  if (currentYield < prevYield - 2) concerns.push(cauBaoCao(language, "quanNgaiYieldSut", {}));
 
   const forecast = currentYield > prevYield
-    ? "Positive trend — yield expected to continue improving with current practices"
-    : "Declining trend — corrective actions recommended to prevent further degradation";
+    ? cauBaoCao(language, "duBaoTichCuc", {})
+    : cauBaoCao(language, "duBaoSutGiam", {});
 
   const narrativeResult = await generateNarrative(
-    language === "vi"
-      ? "Bạn là giám đốc chất lượng. Viết tóm tắt executive summary bằng tiếng Việt cho ban lãnh đạo."
-      : "You are a quality director. Write a concise executive summary for management.",
+    language,
+    cauBaoCao(language, "dan_dieuHanh", {}),
     JSON.stringify({
       period, currentTotal, currentYield, currentDefectRate,
       prevYield, prevDefectRate, topMachine, worstMachine, trends, concerns,

@@ -1,0 +1,638 @@
+{
+  "_doc": [
+    "BỘ CA ĐO ĐỘ TIN CẬY GỌI TOOL (tool-calling) — G0 phần A.",
+    "",
+    "MỌI tên tool dưới đây được lấy TỪ REGISTRY THẬT (server/services/aiLocalTools/**),",
+    "dump lúc chạy bằng listTools() — 77 tool đã đăng ký (49 read · 26 write · 2 client).",
+    "Harness `eval-toolcall.mjs` tự kiểm tra lại điều này: một `expectTool` không có trong",
+    "registry là LỖI CỦA BỘ CA, không phải một ca trượt (xem selfcheck).",
+    "",
+    "★ NGUYÊN TẮC ĐẶT KỲ VỌNG: `expectTool` là SỰ THẬT NGHIỆP VỤ (tool nào ĐÚNG cho câu hỏi",
+    "này), KHÔNG phải hành vi hiện tại của regex. Bộ ca này được viết để LÀM ĐỎ chỗ regex sai.",
+    "Ai 'sửa' một ca cho khớp hành vi hiện tại là đang nắn thước đo cho vừa vật được đo.",
+    "",
+    "`acceptTools` chỉ dùng khi HAI tool đều bảo vệ được về nghiệp vụ, và PHẢI có `note` nói rõ",
+    "vì sao. Báo cáo in CẢ HAI con số: strict (đúng `expectTool`) và lenient (thuộc tập chấp nhận).",
+    "",
+    "NHÓM:",
+    "  select     (a) — chọn đúng tool. Mỗi ca có dấu đều có một biến thể KHÔNG DẤU (`variantOf`)",
+    "                    để đo trực tiếp mức tụt khi người dùng gõ không dấu.",
+    "  args       (b) — trích đúng tham số (machineCode / lineCode / days / mã lô / serial…).",
+    "  refuse     (c) — PHẢI KHÔNG chọn tool nào (`expectTool: null`). Đo dương-tính-giả.",
+    "  distractor (d) — cặp câu gần giống nhau PHẢI ra hai tool KHÁC nhau (`pairId`).",
+    "",
+    "TRƯỜNG:",
+    "  expectArgs    — tập con args BẮT BUỘC phải có, đúng giá trị (so sánh sâu).",
+    "  forbidArgKeys — khoá PHẢI KHÔNG xuất hiện (bắt lỗi 'đoán bừa tham số').",
+    "  expectClarify — true: khi từ chối, phải kèm câu hỏi lại (clarifyMessage), không im lặng.",
+    "  noDiacritics  — true: câu gõ không dấu (detectLanguage/trigger tiếng Việt trượt theo cấu tạo)."
+  ],
+  "cases": [
+    {
+      "id": "A01",
+      "group": "select",
+      "question": "Máy nào đang offline?",
+      "expectTool": "get_machine_status",
+      "note": "Trạng thái máy AOI/AVI — tool có tham số onlyOffline."
+    },
+    {
+      "id": "A01n",
+      "group": "select",
+      "variantOf": "A01",
+      "noDiacritics": true,
+      "question": "may nao dang offline",
+      "expectTool": "get_machine_status",
+      "note": "Cùng ý định, gõ không dấu. Trigger 'máy nào'/'máy đang' có dấu ⇒ chỉ còn 'offline' đỡ."
+    },
+    {
+      "id": "A02",
+      "group": "select",
+      "question": "Hôm nay sản lượng và tỉ lệ NG bao nhiêu?",
+      "expectTool": "get_today_stats"
+    },
+    {
+      "id": "A02n",
+      "group": "select",
+      "variantOf": "A02",
+      "noDiacritics": true,
+      "question": "hom nay san luong va ti le NG bao nhieu",
+      "expectTool": "get_today_stats"
+    },
+    {
+      "id": "A03",
+      "group": "select",
+      "question": "Danh sách cảnh báo đang mở",
+      "expectTool": "list_active_alerts"
+    },
+    {
+      "id": "A03n",
+      "group": "select",
+      "variantOf": "A03",
+      "noDiacritics": true,
+      "question": "danh sach canh bao dang mo",
+      "expectTool": "list_active_alerts"
+    },
+    {
+      "id": "A04",
+      "group": "select",
+      "question": "Ai đã đổi ngưỡng NG gần đây?",
+      "expectTool": "get_change_history",
+      "note": "Câu hỏi về NHẬT KÝ THAY ĐỔI, không phải giá trị ngưỡng hiện tại."
+    },
+    {
+      "id": "A04n",
+      "group": "select",
+      "variantOf": "A04",
+      "noDiacritics": true,
+      "question": "ai da doi nguong NG gan day",
+      "expectTool": "get_change_history"
+    },
+    {
+      "id": "A05",
+      "group": "select",
+      "question": "Truy xuất nguồn gốc serial SN12345",
+      "expectTool": "trace_genealogy"
+    },
+    {
+      "id": "A05n",
+      "group": "select",
+      "variantOf": "A05",
+      "noDiacritics": true,
+      "question": "truy xuat nguon goc serial SN12345",
+      "expectTool": "trace_genealogy"
+    },
+    {
+      "id": "A06",
+      "group": "select",
+      "question": "Điện tiêu thụ 7 ngày qua thế nào?",
+      "expectTool": "get_energy_metrics"
+    },
+    {
+      "id": "A06n",
+      "group": "select",
+      "variantOf": "A06",
+      "noDiacritics": true,
+      "question": "dien tieu thu 7 ngay qua the nao",
+      "expectTool": "get_energy_metrics"
+    },
+    {
+      "id": "A07",
+      "group": "select",
+      "question": "Còn bao nhiêu VRAM trống?",
+      "expectTool": "get_vram_state",
+      "note": "ĐỐI CHỨNG DƯƠNG cho trục dấu: trigger 'vram' là ASCII ⇒ biến thể không dấu PHẢI vẫn trúng. Nếu A07n cũng trượt thì nguyên nhân KHÔNG phải chuyện dấu."
+    },
+    {
+      "id": "A07n",
+      "group": "select",
+      "variantOf": "A07",
+      "noDiacritics": true,
+      "question": "con bao nhieu VRAM trong",
+      "expectTool": "get_vram_state"
+    },
+    {
+      "id": "A08",
+      "group": "select",
+      "question": "Kiểm tra cú pháp đoạn ST này giúp tôi: ```VAR x : BOOL; END_VAR```",
+      "expectTool": "syntax_check_program",
+      "note": "Câu KÈM mã và KÈM tên ngôn ngữ ⇒ đủ cả `kind` lẫn `code` (schema đòi cả hai). Câu không kèm mã thuộc nhóm 'refuse', không phải nhóm này."
+    },
+    {
+      "id": "A08n",
+      "group": "select",
+      "variantOf": "A08",
+      "noDiacritics": true,
+      "question": "kiem tra cu phap doan ST nay giup toi: ```VAR x : BOOL; END_VAR```",
+      "expectTool": "syntax_check_program"
+    },
+    {
+      "id": "A09",
+      "group": "select",
+      "question": "Danh sách người dùng có vai trò operator",
+      "expectTool": "list_users_by_role"
+    },
+    {
+      "id": "A09n",
+      "group": "select",
+      "variantOf": "A09",
+      "noDiacritics": true,
+      "question": "danh sach nguoi dung co vai tro operator",
+      "expectTool": "list_users_by_role"
+    },
+    {
+      "id": "A10",
+      "group": "select",
+      "question": "Mô phỏng chương trình gcode này trước khi chạy: ```G01 X10 Y20```",
+      "expectTool": "simulate_program"
+    },
+    {
+      "id": "A10n",
+      "group": "select",
+      "variantOf": "A10",
+      "noDiacritics": true,
+      "question": "mo phong chuong trinh gcode nay truoc khi chay: ```G01 X10 Y20```",
+      "expectTool": "simulate_program"
+    },
+    {
+      "id": "A11",
+      "group": "select",
+      "question": "Đọc file recipes/aoi-01.st cho tôi xem",
+      "expectTool": "read_project_file"
+    },
+    {
+      "id": "A11n",
+      "group": "select",
+      "variantOf": "A11",
+      "noDiacritics": true,
+      "question": "doc file recipes/aoi-01.st cho toi xem",
+      "expectTool": "read_project_file"
+    },
+    {
+      "id": "A12",
+      "group": "select",
+      "question": "API key nào sắp hết hạn?",
+      "expectTool": "list_api_keys"
+    },
+    {
+      "id": "A12n",
+      "group": "select",
+      "variantOf": "A12",
+      "noDiacritics": true,
+      "question": "api key nao sap het han",
+      "expectTool": "list_api_keys"
+    },
+
+    {
+      "id": "B01",
+      "group": "args",
+      "question": "OEE của máy AOI-01 trong 14 ngày qua",
+      "expectTool": "get_oee",
+      "expectArgs": { "machineCode": "AOI-01", "days": 14 }
+    },
+    {
+      "id": "B02",
+      "group": "args",
+      "question": "Xu hướng tỉ lệ NG 10 ngày qua",
+      "expectTool": "get_defect_trend",
+      "expectArgs": { "days": 10 }
+    },
+    {
+      "id": "B03",
+      "group": "args",
+      "question": "Trạng thái lệnh sản xuất PO12345",
+      "expectTool": "get_lot_status",
+      "expectArgs": { "orderCode": "PO12345" },
+      "note": "MÃ ĐẦY ĐỦ là 'PO12345'. Nếu bộ trích trả '12345' thì nó đã cắt mất tiền tố ⇒ tra DB trượt IM LẶNG."
+    },
+    {
+      "id": "B04",
+      "group": "args",
+      "question": "Tiến độ lô L20260505-001 đến đâu rồi?",
+      "expectTool": "get_lot_status",
+      "expectArgs": { "orderCode": "L20260505-001" }
+    },
+    {
+      "id": "B05",
+      "group": "args",
+      "question": "Cân bằng chuyền L-01 hôm nay",
+      "expectTool": "get_line_balance",
+      "expectArgs": { "lineCode": "L-01", "days": 1 }
+    },
+    {
+      "id": "B06",
+      "group": "args",
+      "question": "Xu hướng torque của máy SCR-01 trong 7 ngày",
+      "expectTool": "get_process_metric_trend",
+      "expectArgs": { "machineCode": "SCR-01", "metricKey": "torque", "days": 7 }
+    },
+    {
+      "id": "B07",
+      "group": "args",
+      "question": "Đặt spec điểm đo #12: USL=10.5, LSL=9.5, target=10",
+      "expectTool": "set_spec_limits",
+      "expectArgs": { "measurementPointDefId": 12, "usl": 10.5, "lsl": 9.5, "target": 10 }
+    },
+    {
+      "id": "B08",
+      "group": "args",
+      "question": "Danh sách cảnh báo CRITICAL chưa xác nhận",
+      "expectTool": "list_active_alerts",
+      "expectArgs": { "severity": "CRITICAL", "acknowledged": false }
+    },
+    {
+      "id": "B09",
+      "group": "args",
+      "question": "Work order đang mở của máy AOI-01",
+      "expectTool": "list_work_orders",
+      "expectArgs": { "status": "open", "machineCode": "AOI-01" },
+      "note": "★ GỐC RỄ ĐÃ ĐO (2026-08-16): bộ lọc trạng thái viết `/\\b(đang\\s*mở|…)/i`, mà trong JS `\\b` chỉ nhận [A-Za-z0-9_] ⇒ `\\b` đứng trước 'đ' KHÔNG BAO GIỜ là biên ⇒ nhánh này CHẾT. Đối chứng đo được: cùng file, 'chưa xác nhận' (bắt đầu bằng 'c' ASCII) khớp bình thường (ca B08)."
+    },
+    {
+      "id": "B10",
+      "group": "args",
+      "question": "Điện tiêu thụ của máy AOI-01 trong 30 ngày",
+      "expectTool": "get_energy_metrics",
+      "expectArgs": { "machineCode": "AOI-01", "sinceDays": 30 }
+    },
+    {
+      "id": "B11",
+      "group": "args",
+      "question": "Truy xuất nguồn gốc của serial SN12345",
+      "expectTool": "trace_genealogy",
+      "expectArgs": { "serialNumber": "SN12345" },
+      "forbidArgKeys": ["lotId"]
+    },
+    {
+      "id": "B12",
+      "group": "args",
+      "question": "Bất thường mức HIGH của máy AOI-01",
+      "expectTool": "list_anomalies",
+      "expectArgs": { "machineCode": "AOI-01", "severity": "HIGH" }
+    },
+    {
+      "id": "B13",
+      "group": "args",
+      "question": "Mã lỗi AL.E6 của servo nghĩa là gì?",
+      "expectTool": "lookup_error_code",
+      "expectArgs": { "code": "AL.E6" }
+    },
+    {
+      "id": "B14",
+      "group": "args",
+      "question": "Xu hướng NG trong 45 ngày qua",
+      "expectTool": "get_defect_trend",
+      "expectArgs": { "days": 30 },
+      "note": "Kiểm tra CHẶN TRẦN: schema cho tối đa 30 ngày ⇒ 45 phải bị kẹp về 30, không được trượt safeParse."
+    },
+    {
+      "id": "B15",
+      "group": "args",
+      "question": "Recipe đang chạy trên máy AOI-01 là gì?",
+      "expectTool": "list_recipes",
+      "expectArgs": { "machineCode": "AOI-01" }
+    },
+
+    {
+      "id": "C01",
+      "group": "refuse",
+      "question": "Xin chào, bạn có khỏe không?",
+      "expectTool": null,
+      "note": "Xã giao — không có dữ liệu thời gian thực nào cần tra."
+    },
+    {
+      "id": "C02",
+      "group": "refuse",
+      "question": "Hệ thống SYNAPSE là gì?",
+      "expectTool": null,
+      "note": "Câu hỏi kiến thức ⇒ phải rơi về RAG, không gọi tool."
+    },
+    {
+      "id": "C03",
+      "group": "refuse",
+      "question": "Trạng thái lô sản xuất thế nào rồi?",
+      "expectTool": null,
+      "expectClarify": true,
+      "note": "Rõ ràng muốn tra lô nhưng THIẾU mã ⇒ phải hỏi lại, không được đoán một mã bất kỳ."
+    },
+    {
+      "id": "C04",
+      "group": "refuse",
+      "question": "Đặt USL cho điểm đo giúp tôi",
+      "expectTool": null,
+      "expectClarify": true,
+      "note": "Hành động GHI thiếu cả id lẫn giá trị ⇒ tuyệt đối không được đề xuất. ★ CÙNG GỐC RỄ với B09: SET_SPEC_INTENT mở bằng `\\b(đặt|cập nhật|…)` ⇒ nhánh 'đặt/cập nhật' CHẾT vì `\\b` trước 'đ'/'c…ậ'; hôm nay nó chỉ sống nhờ nhánh thứ hai `(usl|lsl)…=`. Hệ quả: từ chối ĐÚNG nhưng KHÔNG hỏi lại — người dùng không biết còn thiếu gì."
+    },
+    {
+      "id": "C05",
+      "group": "refuse",
+      "question": "Phân tích tương quan giúp tôi với",
+      "expectTool": null,
+      "expectClarify": true,
+      "note": "Thiếu chỉ số đo + công đoạn thượng nguồn."
+    },
+    {
+      "id": "C06",
+      "group": "refuse",
+      "question": "Cho tôi xem dữ liệu",
+      "expectTool": null
+    },
+    {
+      "id": "C07",
+      "group": "refuse",
+      "question": "Quy trình xử lý hàng NG là gì?",
+      "expectTool": null,
+      "note": "BẪY: 'quy trình' là trigger của get_routing (công đoạn sản xuất của chuyền/sản phẩm). Đây là câu hỏi SOP ⇒ phải về RAG."
+    },
+    {
+      "id": "C08",
+      "group": "refuse",
+      "question": "Cảm ơn bạn nhiều nhé",
+      "expectTool": null
+    },
+    {
+      "id": "C09",
+      "group": "refuse",
+      "question": "Làm sao để tạo một lot mới trên hệ thống?",
+      "expectTool": null,
+      "note": "BẪY: 'lot' là trigger get_lot_status. Đây là câu HƯỚNG DẪN THAO TÁC ⇒ RAG."
+    },
+    {
+      "id": "C10",
+      "group": "refuse",
+      "question": "Máy này thế nào?",
+      "expectTool": null,
+      "note": "Không có ngữ cảnh trang (không truyền selectedMachineCode) ⇒ 'máy này' KHÔNG xác định được máy nào. Phải hỏi lại, không được trả số liệu của một máy tuỳ ý."
+    },
+    {
+      "id": "C11",
+      "group": "refuse",
+      "question": "Báo cáo OEE xem ở màn hình nào?",
+      "expectTool": null,
+      "note": "BẪY: hỏi ĐIỀU HƯỚNG (màn nào), không hỏi SỐ LIỆU. Chọn get_oee ở đây là trả nhầm loại câu trả lời."
+    },
+    {
+      "id": "C12",
+      "group": "refuse",
+      "question": "Tôi cần giúp đỡ",
+      "expectTool": null
+    },
+    {
+      "id": "C13",
+      "group": "refuse",
+      "question": "Bạn có thể làm được những gì?",
+      "expectTool": null
+    },
+
+    {
+      "id": "D01a",
+      "group": "distractor",
+      "pairId": "D01",
+      "question": "Pareto lỗi 7 ngày qua",
+      "expectTool": "analytics_defect_pareto",
+      "note": "Pareto = PHÂN BỔ theo loại lỗi (80/20)."
+    },
+    {
+      "id": "D01b",
+      "group": "distractor",
+      "pairId": "D01",
+      "question": "Xu hướng lỗi 7 ngày qua",
+      "expectTool": "get_defect_trend",
+      "note": "Xu hướng = DIỄN BIẾN THEO THỜI GIAN. Khác hẳn phân bổ."
+    },
+    {
+      "id": "D02a",
+      "group": "distractor",
+      "pairId": "D02",
+      "question": "OEE của máy AOI-01 trong 7 ngày qua",
+      "expectTool": "get_oee"
+    },
+    {
+      "id": "D02b",
+      "group": "distractor",
+      "pairId": "D02",
+      "question": "Yield FPY của chuyền trong 7 ngày qua",
+      "expectTool": "analytics_query_yield",
+      "note": "OEE ≠ yield: OEE = Availability×Performance×Quality; yield = tỉ lệ đạt."
+    },
+    {
+      "id": "D03a",
+      "group": "distractor",
+      "pairId": "D03",
+      "question": "OEE hôm nay bao nhiêu?",
+      "expectTool": "get_oee",
+      "note": "Ảnh chụp OEE, không so kỳ."
+    },
+    {
+      "id": "D03b",
+      "group": "distractor",
+      "pairId": "D03",
+      "question": "So sánh OEE tuần này với tuần trước",
+      "expectTool": "analytics_query_oee",
+      "note": "Có so kỳ ⇒ tool analytics có compareToPrior."
+    },
+    {
+      "id": "D04a",
+      "group": "distractor",
+      "pairId": "D04",
+      "question": "Máy nào đang dừng?",
+      "expectTool": "get_machine_status",
+      "note": "Trạng thái HIỆN TẠI."
+    },
+    {
+      "id": "D04b",
+      "group": "distractor",
+      "pairId": "D04",
+      "question": "Dự báo rủi ro hỏng của máy AOI-01",
+      "expectTool": "analytics_pdm_forecast",
+      "note": "Bảo trì dự đoán — TƯƠNG LAI."
+    },
+    {
+      "id": "D05a",
+      "group": "distractor",
+      "pairId": "D05",
+      "question": "Cân bằng chuyền L-01 hôm nay",
+      "expectTool": "get_line_balance",
+      "expectArgs": { "lineCode": "L-01" }
+    },
+    {
+      "id": "D05b",
+      "group": "distractor",
+      "pairId": "D05",
+      "question": "Dự báo nút thắt chuyền L-01 tuần tới",
+      "expectTool": "analyze_line_bottleneck",
+      "expectArgs": { "lineCode": "L-01" },
+      "note": "Có từ dự báo ⇒ tool INSIGHT, không phải ảnh chụp cân bằng."
+    },
+    {
+      "id": "D06a",
+      "group": "distractor",
+      "pairId": "D06",
+      "question": "Xu hướng torque của máy SCR-01 trong 7 ngày",
+      "expectTool": "get_process_metric_trend"
+    },
+    {
+      "id": "D06b",
+      "group": "distractor",
+      "pairId": "D06",
+      "question": "Torque có tương quan với NG ở công đoạn function không?",
+      "expectTool": "correlate_process_quality",
+      "note": "Cùng nhắc 'torque' nhưng hỏi QUAN HỆ NHÂN QUẢ, không hỏi diễn biến."
+    },
+    {
+      "id": "D07a",
+      "group": "distractor",
+      "pairId": "D07",
+      "question": "Bản đồ nhiệt vị trí lỗi 7 ngày qua",
+      "expectTool": "analytics_defect_heatmap_summary",
+      "note": "Vị trí KHÔNG GIAN trên bo."
+    },
+    {
+      "id": "D07b",
+      "group": "distractor",
+      "pairId": "D07",
+      "question": "Điểm đo nào có nhiều NG nhất 7 ngày qua?",
+      "expectTool": "get_top_defects",
+      "note": "Xếp hạng ĐIỂM ĐO — đúng mô tả của get_top_defects."
+    },
+    {
+      "id": "D08a",
+      "group": "distractor",
+      "pairId": "D08",
+      "question": "Điểm nào vượt kiểm soát SPC?",
+      "expectTool": "analytics_spc_status"
+    },
+    {
+      "id": "D08b",
+      "group": "distractor",
+      "pairId": "D08",
+      "question": "Danh sách bất thường của máy AOI-01",
+      "expectTool": "list_anomalies",
+      "note": "Bất thường do bộ phát hiện anomaly ghi nhận ≠ vi phạm luật SPC."
+    },
+    {
+      "id": "D09a",
+      "group": "distractor",
+      "pairId": "D09",
+      "question": "Danh sách work order bảo trì đang mở",
+      "expectTool": "list_work_orders"
+    },
+    {
+      "id": "D09b",
+      "group": "distractor",
+      "pairId": "D09",
+      "question": "Danh sách cảnh báo đang mở chưa xác nhận",
+      "expectTool": "list_active_alerts"
+    },
+    {
+      "id": "D10a",
+      "group": "distractor",
+      "pairId": "D10",
+      "question": "Ngưỡng hiện tại của điểm đo #12 là bao nhiêu?",
+      "expectTool": "list_thresholds",
+      "note": "ĐỌC. Không được biến thành hành động GHI."
+    },
+    {
+      "id": "D10b",
+      "group": "distractor",
+      "pairId": "D10",
+      "question": "Cập nhật spec điểm đo #12: USL=10.5, LSL=9.5",
+      "expectTool": "set_spec_limits",
+      "expectArgs": { "measurementPointDefId": 12, "usl": 10.5, "lsl": 9.5 },
+      "note": "GHI — phải qua luồng xác nhận HITL."
+    },
+    {
+      "id": "D11a",
+      "group": "distractor",
+      "pairId": "D11",
+      "question": "Điện tiêu thụ của máy AOI-01 trong 7 ngày",
+      "expectTool": "get_energy_metrics"
+    },
+    {
+      "id": "D11b",
+      "group": "distractor",
+      "pairId": "D11",
+      "question": "Sản lượng đóng gói của chuyền L-01 hôm nay",
+      "expectTool": "get_packaging_throughput"
+    },
+    {
+      "id": "D12a",
+      "group": "distractor",
+      "pairId": "D12",
+      "question": "Truy xuất nguồn gốc serial SN12345",
+      "expectTool": "trace_genealogy"
+    },
+    {
+      "id": "D12b",
+      "group": "distractor",
+      "pairId": "D12",
+      "question": "Trạng thái lệnh sản xuất L20260505-001",
+      "expectTool": "get_lot_status",
+      "expectArgs": { "orderCode": "L20260505-001" }
+    },
+    {
+      "id": "D13a",
+      "group": "distractor",
+      "pairId": "D13",
+      "question": "Tra cứu tài liệu lập trình Zmotion về lệnh MOVE",
+      "expectTool": "retrieve_programming_kb"
+    },
+    {
+      "id": "D13b",
+      "group": "distractor",
+      "pairId": "D13",
+      "question": "Mã lỗi F0301 nghĩa là gì?",
+      "expectTool": "lookup_error_code",
+      "expectArgs": { "code": "F0301" }
+    },
+    {
+      "id": "D14a",
+      "group": "distractor",
+      "pairId": "D14",
+      "question": "Đọc giá trị tag của máy AOI-01",
+      "expectTool": "get_ot_telemetry_latest"
+    },
+    {
+      "id": "D14b",
+      "group": "distractor",
+      "pairId": "D14",
+      "question": "Trạng thái máy xếp pallet hiện giờ",
+      "expectTool": "get_palletizer_status"
+    },
+    {
+      "id": "D15a",
+      "group": "distractor",
+      "pairId": "D15",
+      "question": "Sức khỏe thiết bị của máy SCR-01 ra sao?",
+      "expectTool": "get_device_health",
+      "note": "Một thiết bị CỤ THỂ: lệch cấu hình, Cpk, năng lực quá trình."
+    },
+    {
+      "id": "D15b",
+      "group": "distractor",
+      "pairId": "D15",
+      "question": "Danh sách máy có nguy cơ hỏng",
+      "expectTool": "get_machine_health",
+      "note": "Xếp hạng RỦI RO toàn đội máy."
+    }
+  ]
+}

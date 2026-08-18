@@ -44,6 +44,14 @@ import {
 // Pha 1 Task 5 — dây nối sổ cái VRAM. `import type` (bị xoá hoàn toàn lúc biên dịch) + `import()`
 // động ở từng điểm cấp phát, để module telemetry KHÔNG nằm trên đường nạp của file này.
 import type { VramTicket } from "./vram/vramWiring";
+// ★ G2-B — khuôn dây tool-calling GỐC. Module LÁ (0 import, 0 I/O) ⇒ import TĨNH với chi phí ~0.
+// `LoiToolCallKhongHoTro` được định nghĩa NGAY TẠI FILE NÀY (không ở module lá) vì nó nói về một
+// sự thật của ENGINE — "đường in-process không làm được" — chứ không phải về khuôn dây.
+import type {
+  WireTool as NativeTool,
+  WireToolCall as NativeToolCall,
+  WireToolCallDelta as NativeToolCallDelta,
+} from "./ai/nativeToolCalls";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -93,6 +101,16 @@ export interface GgufGenerateOptions {
   stopSequences?: string[];
   /** Force JSON output */
   jsonMode?: boolean;
+  /**
+   * G5-D — **TẮT SUY LUẬN cho lượt này** (chọn tool, phân loại ý định, trích xuất có cấu trúc —
+   * những lượt mà chuỗi suy luận chỉ tốn token chứ không cải thiện đầu ra).
+   * Chỉ có tác dụng trên đường `llama-server` (gửi `chat_template_kwargs.enable_thinking=false`,
+   * cách truyền đã xác minh sống — xem `aiLlamaServerClient.lapCoTatSuyLuan`) **và** chỉ khi chat
+   * template của model CÓ ĐỌC `enable_thinking`. Đường in-process bỏ qua.
+   * ⚠ Đây là phép TỐI ƯU, KHÔNG phải lưới an toàn: template không đọc cờ ⇒ cờ bị bỏ qua im lặng.
+   * `maxTokens` mới là thứ giữ cho lượt gọi sống trong ca đó.
+   */
+  disableThinking?: boolean;
   /** Language hint */
   language?: "en" | "vi";
   /**
@@ -104,8 +122,19 @@ export interface GgufGenerateOptions {
 }
 
 export interface GgufChatMessage {
-  role: "system" | "user" | "assistant";
+  /**
+   * G2-B — `"tool"` là vai THỨ TƯ, và nó KHÔNG phải trang trí: vòng đời tool-call chuẩn là
+   * `assistant(tool_calls) → tool(tool_call_id, kết quả) → assistant(kết luận)`. Bóp vai này về
+   * `"user"` (đúng thứ `openaiGateway.toGgufMessages` từng làm) là **nuốt mất mắt xích giữa** ⇒
+   * chat template Qwen3 không dựng được khối `<tool_response>` và model không bao giờ kết luận
+   * được từ kết quả tool.
+   */
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
+  /** G2-B — BẮT BUỘC trên message `role:"tool"`: khớp lại với `tool_calls[i].id` của lượt trước. */
+  tool_call_id?: string;
+  /** G2-B — chỉ trên `role:"assistant"`: các lượt gọi model đã phát ra ở lượt trước. */
+  tool_calls?: NativeToolCall[];
 }
 
 export interface GgufChatOptions {
@@ -116,8 +145,49 @@ export interface GgufChatOptions {
   topK?: number;
   repeatPenalty?: number;
   jsonMode?: boolean;
+  /** G5-D — xem `GgufGenerateOptions.disableThinking`. */
+  disableThinking?: boolean;
   /** B0.2 — Per-task KV-cache sizing hint (n_ctx on first load). See GgufGenerateOptions.contextSize. */
   contextSize?: number;
+  /**
+   * ★★★ G2-B — TOOL-CALLING GỐC. Có mặt ⇒ lượt gọi này **BẮT BUỘC** đi qua `llama-server`
+   * (`aiLlamaServerClient`), nơi chat template của model dựng khối `<tools>` và bộ phân giải của
+   * server trả `message.tool_calls`.
+   *
+   * ⚠⚠ Đường in-process (`node-llama-cpp`) **KHÔNG** làm được việc này. Trước G2-B nó sẽ lặng lẽ
+   * bẹp hội thoại thành `"User: …\nAssistant: …"`, bỏ rơi `tools` **không một lời**, rồi trả về
+   * một câu chữ thường — tức đúng khuôn "im lặng trả mảng rỗng" mà G2-B tồn tại để xoá. Nay nó
+   * NÉM `LoiToolCallKhongHoTro`. Xem `chatCompletion()`/`chatCompletionStream()`.
+   */
+  tools?: NativeTool[];
+  /** G2-B — chỉ `"auto"` tới được đây; `"none"` được cưỡng chế ở tầng trên bằng cách KHÔNG truyền
+   * `tools` xuống (xem `ai/nativeToolCalls.ts` — b9814 không tôn trọng `tool_choice:"none"`). */
+  toolChoice?: "auto";
+}
+
+/** G2-B — re-export để consumer chỉ cần một cửa (`aiGgufEngine`) như mọi type khác của engine. */
+export type { NativeTool, NativeToolCall, NativeToolCallDelta };
+
+/**
+ * ★★★ G2-B — **"ĐƯỜNG NÀY KHÔNG BIẾT GỌI TOOL"**, nói thành lời.
+ *
+ * Đây là bản thay thế trực tiếp cho hành vi cũ mà nhiệm vụ G2-B xoá bỏ: `_core/llm.ts` trả
+ * `tool_calls: []` như HẰNG SỐ, và `openaiGateway.ts` bỏ qua `body.tools` không một lời. Cả hai
+ * đều cho ra cùng một hình dạng — "model không muốn gọi tool" — cho một sự thật hoàn toàn khác:
+ * *không ai từng hỏi model cả*. Một mảng rỗng không phân biệt được hai chuyện đó; một exception thì có.
+ *
+ * ⚠ Ném ở ĐÂU: đúng chỗ đường đi rẽ sang in-process (`node-llama-cpp`) trong khi caller ĐÃ nêu
+ * `tools`. KHÔNG ném khi caller không nêu `tools` — mọi lượt chat cũ giữ nguyên hành vi.
+ */
+export class LoiToolCallKhongHoTro extends Error {
+  readonly code = "tool_calls_unsupported_path";
+  constructor(chiTiet: string) {
+    super(
+      `[gguf] tool-calling GỐC không chạy được trên đường in-process (node-llama-cpp): ${chiTiet}. ` +
+        `Cần llama-server (LLAMA_SERVER_ENABLED=true + LLAMA_SERVER_URL) phục vụ đúng model đang yêu cầu.`,
+    );
+    this.name = "LoiToolCallKhongHoTro";
+  }
 }
 
 export interface GgufModelInfo {
@@ -132,24 +202,65 @@ export interface GgufModelInfo {
 
 export interface GgufGenerateResult {
   text: string;
+  /**
+   * G5-D — chuỗi SUY LUẬN của model, TÁCH BẠCH khỏi `text`. Chỉ có trên đường `llama-server` khi
+   * server chạy chế độ tách (`/props → reasoning_format: "deepseek"`, tức model lai + `--jinja`);
+   * đường in-process luôn để trống (node-llama-cpp không tách ô này).
+   * ⚠ Trường CHẨN ĐOÁN, KHÔNG phải chữ cho người dùng. Nối nó vào `text` ở bất kỳ đâu là rò nội
+   * tâm model ra giao diện (xem `ai/thinkingStrip.ts`).
+   */
+  reasoning?: string;
   tokensGenerated: number;
   tokensPrompt: number;
   totalTimeMs: number;
   tokensPerSecond: number;
   modelId: string;
+  /**
+   * ★★★ G2-B — các lượt gọi tool model TỰ QUYẾT ĐỊNH phát ra. `undefined` = lượt này không có
+   * tool-call. ⚠ **KHÔNG BAO GIỜ gán `[]` cho một đường chưa hỗ trợ** — đó chính là lời nói dối
+   * mà `_core/llm.ts:302` đã kể suốt (`tool_calls: []` HẰNG SỐ, không ai phân biệt được
+   * "model không muốn gọi tool" với "đường này không biết gọi tool"). Đường không hỗ trợ phải NÉM.
+   */
+  toolCalls?: NativeToolCall[];
+  /** G2-B — `"tool_calls"` khi model dừng để gọi tool; `"stop"`/`"length"`/… như thường. */
+  finishReason?: string;
 }
 
 export interface GgufStreamChunk {
-  type: "token" | "done" | "error";
+  /**
+   * G2-B — `"tool_call_delta"` là loại THỨ TƯ. Nó mang mảnh `delta.tool_calls` NGUYÊN VĂN của
+   * llama-server để tầng trên (gateway `/v1`) phát lại đúng khuôn OpenAI mà không phải đợi hết
+   * luồng. ⚠ Nó **KHÔNG BAO GIỜ** được biến thành `{type:"token"}`: mọi consumer coi `token` là
+   * chữ để IN RA MÀN HÌNH — cùng lớp lỗi với `reasoning_content` (xem `suyLuanTrongChunk`).
+   */
+  type: "token" | "done" | "error" | "tool_call_delta";
   token?: string;
+  /** G2-B — chỉ trên chunk `"tool_call_delta"`: mảnh `delta.tool_calls` nguyên văn. */
+  toolCallDelta?: NativeToolCallDelta[];
+  /** G2-B — chỉ trên chunk `"done"`: các lượt gọi tool ĐÃ GOM ĐỦ của lượt này. */
+  toolCalls?: NativeToolCall[];
+  /** G2-B — chỉ trên chunk `"done"`. */
+  finishReason?: string;
   /** Accumulated text so far (only on "done") */
   fullText?: string;
   tokensGenerated?: number;
   tokensPrompt?: number;
   totalTimeMs?: number;
+  /**
+   * G1 — TTFT (time-to-first-token) ĐO ĐƯỢC của lượt này, ms: từ lúc bắt đầu gửi tới mảnh chữ ĐẦU
+   * TIÊN. Chỉ có trên đường streaming qua `llama-server` (nơi con số này là thước đo prefix-cache
+   * ăn hay không); đường in-process để trống. Trường phụ, chỉ có ở chunk "done".
+   */
+  ttftMs?: number;
   tokensPerSecond?: number;
   modelId?: string;
   error?: string;
+  /**
+   * G5-D — toàn bộ chuỗi suy luận gom được từ `delta.reasoning_content` (chỉ có ở chunk "done",
+   * chỉ trên đường llama-server). ⚠ **Không bao giờ** được phát ra như `{type:"token"}`: mọi
+   * consumer coi `token` là chữ để in ra màn hình.
+   */
+  reasoningText?: string;
 }
 
 // ─── Model Registry & Caching ──────────────────────────────────
@@ -266,6 +377,8 @@ const GGUF_EMBED_DIM = (() => {
  * quyết định gì bằng chúng.
  */
 import { ggufMaxLoadedModels, ggufMaxVramBytes } from "./vram/vramCaps";
+// G5-B — MỘT nguồn sự thật cho trần `n_ctx` (xem ai/ggufCtxCap.ts). Thuần env-read, không I/O.
+import { ggufMaxCtx, GGUF_MIN_CTX } from "./ai/ggufCtxCap";
 /** Number of parallel sequences per context. Default 4. */
 const GGUF_SEQUENCES = (() => {
   const n = parseInt(process.env.GGUF_SEQUENCES || "4", 10);
@@ -280,18 +393,25 @@ const GGUF_DEFAULT_CTX = (() => {
   const n = parseInt(process.env.GGUF_DEFAULT_CTX || "4096", 10);
   return Number.isFinite(n) && n > 0 ? n : 4096;
 })();
-/** Hard upper bound for any requested per-task context size (guards against absurd KV-cache). */
-const GGUF_MAX_CTX = (() => {
-  const n = parseInt(process.env.GGUF_MAX_CTX || "32768", 10);
-  return Number.isFinite(n) && n > 0 ? n : 32768;
-})();
+/**
+ * Hard upper bound for any requested per-task context size (guards against absurd KV-cache).
+ *
+ * ★ G5-B (2026-08-16) — phép phân tích `GGUF_MAX_CTX` KHÔNG còn ở đây. Trần này từng được khai
+ * HAI LẦN độc lập (ở đây và ở `aiModelRouter.codeContextSize()`, nơi còn kẹp thêm một hằng
+ * `32768` viết cứng) ⇒ nâng `.env` lên trên 32768 KHÔNG có tác dụng với tầng `code`, mà không có
+ * gì đỏ. Nay cả hai gọi `ggufMaxCtx()` — xem `server/services/ai/ggufCtxCap.ts`.
+ *
+ * Vẫn chốt MỘT LẦN lúc import (đúng như bản cũ) để không đổi ngữ nghĩa của engine: `EMBED_CTX` bên
+ * dưới và `resolveContextSize()` cùng nhìn một con số ổn định trong đời tiến trình.
+ */
+const GGUF_MAX_CTX = ggufMaxCtx();
 
-/** Clamp a requested context size into [256, GGUF_MAX_CTX]; undefined → GGUF_DEFAULT_CTX. */
+/** Clamp a requested context size into [GGUF_MIN_CTX, GGUF_MAX_CTX]; undefined → GGUF_DEFAULT_CTX. */
 function resolveContextSize(requested?: number): number {
   if (typeof requested !== "number" || !Number.isFinite(requested) || requested <= 0) {
     return GGUF_DEFAULT_CTX;
   }
-  return Math.min(Math.max(Math.floor(requested), 256), GGUF_MAX_CTX);
+  return Math.min(Math.max(Math.floor(requested), GGUF_MIN_CTX), GGUF_MAX_CTX);
 }
 
 /** Đợt 1 Task 2 — "auto" cấp TOÀN BỘ cửa sổ ngữ cảnh model được huấn luyện, trong khi
@@ -862,6 +982,19 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
     existing.lastUsedAt = new Date();
     return modelId;
   }
+
+  /**
+   * ★★★ G1-D — **ĐIỂM NGHẼN**. Đặt ở ĐÂY chứ không ở từng người gọi, và đó là toàn bộ giá trị của
+   * bản vá này: `llama.loadModel()` chỉ được gọi từ trong hàm này (lưới
+   * `aiGgufEngine.diemNghenNap.test.ts` cưỡng chế câu đó bằng cách quét mã nguồn), nên MỘT vị từ ở
+   * đây phủ được MỌI đường vào — kể cả những đường **chưa bao giờ hỏi llama-server**:
+   * `generateTextStream` (đường ops-chat thật), `chatCompletionStream`, `chatCompletion`,
+   * `warmModel`, và router HTTP `aiGgufRouter.loadModel`.
+   * ⚠ Nằm SAU nhánh "đã nạp rồi" ở trên: model đã nằm sẵn thì lượt gọi này không tốn thêm byte nào,
+   * chặn nó là từ chối một thứ vô hại.
+   * ⚠ Nằm TRƯỚC `motLuotThoi()`: một lượt bị cấm không được chiếm khoá in-flight của lượt khác.
+   */
+  await chanNapTrungModelServer(modelId, "loadGgufModel");
 
   // Đợt 1 Task 1 — khoá in-flight (nay qua helper `motLuotThoi()`, xem khai báo `inFlightLoads`).
   return motLuotThoi(inFlightLoads, modelId, async () => {
@@ -1730,6 +1863,22 @@ export function initDeepModelWarmup(): void {
           console.warn("[aiGgufEngine] deep-model boot warm skipped — GGUF_DEFAULT_MODEL is not set.");
           return;
         }
+        /**
+         * ★ G1-D — BỎ QUA khi `llama-server` đang phục vụ ĐÚNG model này. Cả hàm `warmModel` sinh
+         * ra để giành chỗ VRAM cho bản in-process; khi model đã thường trú trong tiến trình
+         * llama-server thì lượt warm này chính là lượt nạp BẢN THỨ HAI mà G1-D cấm. Không có dòng
+         * này thì `chanNapTrungModelServer()` vẫn chặn đúng, nhưng mỗi lần khởi động sẽ ghi một
+         * dòng `warm_failed` cho một việc ta CỐ Ý không làm — đúng thứ rác mà M-5 (xem
+         * `noteWarmFailure`) đã dọn một lần rồi.
+         */
+        const srv = await import("./aiLlamaServerClient");
+        if (srv.laModelServerDangGiu(deep)) {
+          console.log(
+            `[aiGgufEngine] deep-model boot warm BỎ QUA — llama-server đang phục vụ "${deep}" ` +
+              `(LLAMA_SERVER_MODEL). Làm ấm bản in-process ở đây là nạp BẢN THỨ HAI của cùng model.`,
+          );
+          return;
+        }
         const ok = await warmModel(deep);
         console.log(
           ok
@@ -1742,6 +1891,328 @@ export function initDeepModelWarmup(): void {
     })();
   }, delayMs);
   if (typeof timer.unref === "function") timer.unref();
+}
+
+// ═══ G1-D — CHỐNG NẠP **BẢN THỨ HAI** CỦA MODEL MÀ `llama-server` ĐANG PHỤC VỤ ════════════════
+//
+// SỐ ĐO SỐNG (2026-08-16, RTX 5090 32.607 MiB): `llama-server` giữ ~20.275 MiB trọng số + 6.144 MiB
+// KV (2 slot × 32.768 token, xác nhận qua `GET /props`); `nvidia-smi` còn **5.673 MiB TRỐNG**.
+// Trọng số 30B nạp in-process cần ~19.000 MiB. ⇒ Lượt nạp thứ hai KHÔNG THỂ vừa. Ba kết cục, cả ba
+// đều xấu: `cudaMalloc OOM` · broker VRAM từ chối · hoặc — tệ nhất — `vramLoadOutcome.reclaim()`
+// gọi `preempt()` và **giết sidecar thị giác 7,8 GB đang phục vụ** để lấy chỗ cho một lượt nạp
+// chắc chắn vẫn hỏng (7,8 GB vẫn thiếu ~11 GB). Người dùng chỉ thấy "câu hỏi dài bị lỗi".
+
+/**
+ * Sự kiện cho `vram_events` — G1-D dứt khoát KHÔNG được là một nhánh im lặng. Lớp lỗi "hỏng trong
+ * im lặng" đã xuất hiện quá nhiều lần trong repo này (xem `noteWarmFailure` ngay dưới đây, sinh ra
+ * từ đúng lớp đó: 0/24 lượt hỏng KHÔNG có vết nào).
+ * ⚠ Best-effort tuyệt đối: nhật ký hỏng KHÔNG được làm hỏng đường sinh chữ.
+ */
+function ghiSuKienChanNapTrung(event: string, modelId: string, viTri: string, chiTiet: Record<string, unknown>): void {
+  void (async () => {
+    try {
+      const { logVramEvent } = await import("./vram/vramEventLog");
+      logVramEvent({
+        event,
+        owner: `gguf:${modelId}`,
+        leaseKind: "gguf-model",
+        priority: "interactive",
+        detail: {
+          modelId,
+          viTri,
+          ...chiTiet,
+          note:
+            "G1-D: llama-server đang phục vụ chính model này. Nạp thêm một bản in-process là nạp " +
+            "BẢN THỨ HAI (~19.000 MiB) trong khi card chỉ còn ~5.673 MiB trống.",
+        },
+      });
+    } catch {
+      /* nhật ký hỏng KHÔNG được làm hỏng lượt sinh chữ */
+    }
+  })();
+}
+
+/** Câu từ chối — tiếng Việt, nói rõ NGUYÊN NHÂN và CÁCH SỬA, không phải một mã lỗi trần trụi. */
+function cauTuChoiNapTrung(modelId: string, viTri: string): string {
+  return (
+    `[aiGgufEngine] TỪ CHỐI TRUNG THỰC (G1-D, ${viTri}): llama-server ĐANG PHỤC VỤ model ` +
+    `"${modelId}" và vẫn trả lời thăm dò sức khoẻ ⇒ nó vẫn đang giữ trọng số trên card. Nạp model ` +
+    `đó vào tiến trình này là nạp BẢN THỨ HAI (~19.000 MiB) trong khi card chỉ còn ~5.673 MiB ` +
+    `trống — kết cục là OOM, hoặc bộ điều phối VRAM giết mất một hộ khác đang phục vụ. ` +
+    `CÁCH SỬA: gửi lượt sinh chữ này qua llama-server (đường /v1), hoặc tắt server ` +
+    `(LLAMA_SERVER_ENABLED=false) nếu muốn chạy in-process, hoặc trỏ LLAMA_SERVER_MODEL sang model khác.`
+  );
+}
+
+/**
+ * ★★★ VỊ TỪ CƯỠNG CHẾ — gọi ở ĐIỂM NGHẼN `loadGgufModel()` và ở điểm rẽ nhánh server.
+ *
+ * BA NHÁNH, và ranh giới giữa chúng là **BẰNG CHỨNG**, không phải phỏng đoán:
+ *   1. Model này KHÔNG phải model server giữ (FIM · fast · embed · vision · reranker) ⇒ CHO QUA,
+ *      không tốn một lượt thăm dò nào. Đây là ĐA SỐ lượt gọi.
+ *   2. Đúng model server giữ, nhưng server **KHÔNG trả lời** thăm dò ⇒ CHO QUA. Tiến trình không
+ *      trả lời thì hoặc đã chết (VRAM đã về), hoặc sắp bị người trông vòng đời khởi động lại; lùi
+ *      về in-process ở đây chính là lưới an toàn mà `.env` cố ý dựng (`LLAMA_SERVER_STRICT` để
+ *      TẮT). ⚠ Vẫn KÊU TO + ghi sự kiện: đây là một lượt nạp ~19 GB, không được lặng lẽ.
+ *   3. Đúng model server giữ VÀ server còn sống ⇒ **NÉM**. Đây là bất biến của cả task.
+ *
+ * ⚠ `preflightHealthy()` chỉ chạy ở nhánh 2/3 (tức chỉ khi vị từ đã `true`) nên đường nóng
+ * (embedder, FIM, fast) KHÔNG tốn thêm gì. Ở nhánh có tốn: một lượt nạp 30B mất 10–60 s, thăm dò
+ * 2 s là ~3% — trả để không mất 19 GB.
+ */
+async function chanNapTrungModelServer(modelId: string, viTri: string): Promise<void> {
+  const srv = await import("./aiLlamaServerClient");
+  if (!srv.laModelServerDangGiu(modelId)) return; // nhánh 1 — đa số
+
+  const conSong = await srv.preflightHealthy().catch(() => false);
+  if (!conSong) {
+    // nhánh 2 — cho qua, nhưng KHÔNG im lặng.
+    console.warn(
+      `[aiGgufEngine] G1-D (${viTri}): llama-server được cấu hình phục vụ "${modelId}" nhưng KHÔNG ` +
+        `trả lời thăm dò ⇒ coi như nó không còn giữ VRAM, CHO PHÉP nạp in-process (~19.000 MiB). ` +
+        `Nếu tiến trình đó thực ra còn sống mà chỉ đang treo, lượt nạp này sẽ bị bộ điều phối VRAM từ chối.`,
+    );
+    ghiSuKienChanNapTrung("nap_trung_cho_qua_server_im", modelId, viTri, { serverConSong: false });
+    return;
+  }
+
+  // nhánh 3 — CẤM.
+  const msg = cauTuChoiNapTrung(modelId, viTri);
+  console.error(msg);
+  ghiSuKienChanNapTrung("nap_trung_bi_chan", modelId, viTri, { serverConSong: true });
+  throw new Error(msg);
+}
+
+/**
+ * ★ G5-D · P1 — quy một HỘI THOẠI về ĐÚNG hình dạng mà `kiemNganSachNguCanh()` cân được, để đường
+ * `chatCompletion` dùng **CHUNG** cổng ngân sách với `generateText`/`generateJSON` thay vì có một
+ * phép cân thứ hai (hằng 2,8 ký tự/token và trần mỗi slot chỉ được khai ở ĐÚNG một chỗ, trong
+ * `aiLlamaServerClient`). Đây là phép ĐỔI HÌNH DẠNG, KHÔNG phải bản sao của cổng.
+ *
+ * ⚠ Ở TRONG module này, KHÔNG ở `aiLlamaServerClient`: repo có ít nhất một test mock client bằng
+ * factory LIỆT KÊ TAY (`aiGgufEngine.nonGenerativeGuardOrder.test.ts`), và mọi symbol không được
+ * liệt kê sẽ biến mất. Đặt một hàm nằm trên đường ngân sách ở nơi một mock xoá được nó là đúng lớp
+ * lỗi đã ghi ở `ai/thinkingStrip.ts` §1. Ở đây nó là hàm cục bộ tĩnh — không mock nào chạm tới.
+ *
+ * ⚠ ĐẾM **MỌI** LƯỢT, kể cả `assistant`: bỏ sót một vai là ước lượng hụt, và một ước lượng hụt làm
+ * cổng cho lọt đúng cái prompt nó được dựng ra để chặn. Lưới canh: `aiGgufEngine.chatServer.test.ts`.
+ */
+export function nganSachTuHoiThoai(options: GgufChatOptions): {
+  systemPrompt?: string;
+  prompt: string;
+  maxTokens?: number;
+} {
+  const heThong = options.messages
+    .filter((m) => m.role === "system")
+    .map((m) => m.content)
+    .join("\n\n");
+  const conLai = options.messages
+    .filter((m) => m.role !== "system")
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
+  return { systemPrompt: heThong || undefined, prompt: conLai, maxTokens: options.maxTokens };
+}
+
+/** Model đã nằm sẵn trong tiến trình này ⇒ lùi in-process KHÔNG tốn thêm byte nào ⇒ được phép. */
+function daNamSanTrongTienTrinh(modelId?: string): boolean {
+  const id = modelId ? toBasename(modelId) : resolveDefaultModelBasename();
+  return !!id && loadedModels.has(id);
+}
+
+/** Kết cục của một lượt thử đường server: đã trả lời xong, hoặc "cứ đi tiếp xuống in-process". */
+type KetCucDuongServer<T> = { xong: true; ketQua: T } | { xong: false };
+
+/**
+ * ★ MỘT thân duy nhất cho cả `generateText` lẫn `generateJSON`.
+ *
+ * TRƯỚC G1-D hai hàm đó có HAI khối gần-giống-nhau, và một bản vá chỉ sửa một khối là đúng hình
+ * dạng lỗi "N+1" mà repo này đã dính 17 lần. Nay chỉ còn MỘT chỗ quyết định "gửi server / lùi
+ * in-process / từ chối", nên không có khối thứ hai để quên.
+ *
+ * Thứ tự cổng (quan trọng — cổng rẻ trước, cổng tốn sau):
+ *   (a) NGÂN SÁCH NGỮ CẢNH — ước lượng token; vượt ctx/slot ⇒ TỪ CHỐI NGAY, không POST, không nạp.
+ *       ⚠ Không "lùi in-process cho chắc": in-process có CÙNG trần (GGUF_MAX_CTX = 32.768) nên
+ *       lượt lùi đó chắc chắn cũng hỏng — chỉ khác là nó đốt 19 GB trước khi hỏng.
+ *   (b) preflight → gọi → nếu hỏng: server còn sống ⇒ CẤM lùi (trừ khi model đã nằm sẵn).
+ */
+async function thuDuongServer<T>(
+  modelId: string | undefined,
+  // G5-D · P1 — kiểu thu hẹp về ĐÚNG thứ cổng (a) cần. Trước đó là `GgufGenerateOptions`, khiến
+  // đường CHAT (không có trường `prompt`) không dùng lại được thân này và sẽ phải có bản sao thứ
+  // tư. Thu hẹp kiểu, không nới cổng: `kiemNganSachNguCanh()` vẫn nhận đúng ba trường như cũ.
+  options: { systemPrompt?: string; prompt: string; maxTokens?: number },
+  goi: (srv: typeof import("./aiLlamaServerClient")) => Promise<T>,
+  ten: string,
+): Promise<KetCucDuongServer<T>> {
+  const srv = await import("./aiLlamaServerClient");
+  if (!srv.shouldUseServerForText(modelId)) return { xong: false };
+
+  congNganSachNguCanh(srv, modelId, options, ten); // cổng (a)
+  if (!(await congPreflight(srv, ten))) return { xong: false }; // cổng (b)
+
+  try {
+    return { xong: true, ketQua: await goi(srv) };
+  } catch (e) {
+    // cổng (c) — ném, hoặc trả về để lùi in-process. `daPhatChu:false`: đường không-streaming
+    // không thể "đã trả một nửa", nên nó không có cổng đứt-giữa-chừng.
+    quyetDinhSauLoiServer(srv, modelId, e, ten, false);
+    return { xong: false };
+  }
+}
+
+/**
+ * ★ CỔNG (a) — NGÂN SÁCH NGỮ CẢNH, chạy TRƯỚC khi POST.
+ *
+ * ⚠ Tách khỏi `thuDuongServer` để đường STREAMING dùng CHUNG đúng thân này. Nếu để mỗi đường tự
+ * viết lại phép cân ngân sách thì đó chính là hình dạng "N+1" đã dính 17 lần trong repo: một bản
+ * vá sửa một thân, thân kia trôi đi, và lưới vẫn xanh vì nó chỉ đo thân được sửa.
+ */
+function congNganSachNguCanh(
+  srv: typeof import("./aiLlamaServerClient"),
+  modelId: string | undefined,
+  options: { systemPrompt?: string; prompt: string; maxTokens?: number },
+  ten: string,
+): void {
+  const ns = srv.kiemNganSachNguCanh(options);
+  if (ns.vua) return;
+
+  const msg =
+    `[aiGgufEngine] TỪ CHỐI TRUNG THỰC (G1-D, ${ten}): phần đưa vào ước tính ~${ns.tokenVao} token ` +
+    `cộng ${ns.tokenDanhChoTraLoi} token dành cho câu trả lời = ~${ns.tokenVao + ns.tokenDanhChoTraLoi}, ` +
+    `vượt trần ${ns.tranMoiSlot} token MỖI SLOT của llama-server. Không gửi lên server, và KHÔNG ` +
+    `nạp BẢN THỨ HAI của model vào tiến trình này (đường in-process có CÙNG trần ${ns.tranMoiSlot} ` +
+    `nên cũng sẽ hỏng, chỉ khác là tốn thêm ~19.000 MiB VRAM trước khi hỏng). ` +
+    `CÁCH SỬA: rút ngắn câu hỏi, hoặc giảm số đoạn ngữ cảnh (RAG) đưa vào, hoặc giảm maxTokens.`;
+  console.error(msg);
+  ghiSuKienChanNapTrung("ngu_canh_vuot_tran_slot", toBasename(modelId) || resolveDefaultModelBasename() || "default", ten, {
+    tokenVao: ns.tokenVao,
+    tokenDanhChoTraLoi: ns.tokenDanhChoTraLoi,
+    tranMoiSlot: ns.tranMoiSlot,
+  });
+  throw new Error(msg);
+}
+
+/**
+ * CỔNG (b) — thăm dò sức khoẻ TRƯỚC lượt gửi. `true` = đi tiếp đường server; `false` = lùi
+ * in-process (server im ⇒ nó không còn giữ VRAM ⇒ lùi là ĐÚNG, và đó là lưới an toàn mà `.env`
+ * cố ý dựng khi để `LLAMA_SERVER_STRICT` TẮT). Ném khi STRICT bật.
+ */
+async function congPreflight(srv: typeof import("./aiLlamaServerClient"), ten: string): Promise<boolean> {
+  const healthy = await srv.preflightHealthy().catch(() => false);
+  if (healthy) return true;
+  if (srv.llamaServerStrict()) {
+    throw new Error("[aiGgufEngine] llama-server preflight health check failed (LLAMA_SERVER_STRICT=true)");
+  }
+  console.warn(
+    `[aiGgufEngine] llama-server preflight health check failed (${ten}) — falling back in-process (server unreachable/unhealthy)`,
+  );
+  return false;
+}
+
+/**
+ * CỔNG (c) — lượt gọi server đã HỎNG: được lùi in-process hay phải từ chối?
+ *
+ * Trả về bình thường = "cứ lùi in-process". Ném = "không được lùi". HAI lý do độc lập để ném, và
+ * chúng KHÔNG cùng bản chất — đây là chỗ dễ gộp nhầm:
+ *
+ *   • `daPhatChu` (CHỈ đường streaming) — chữ ĐÃ ra tới người dùng. Cái ngăn cản ở đây **không
+ *     phải VRAM**, mà là TÍNH TOÀN VẸN của câu trả lời: chạy lại lượt này nối nửa câu của lượt
+ *     suy luận thứ nhất với cả câu của lượt thứ hai, và không một dòng nào báo cho người đọc.
+ *     Vì thế nó ném KỂ CẢ khi model đã nằm sẵn in-process (ngoại lệ VRAM không áp dụng được).
+ *   • `laModelServerDangGiu && !daNamSanTrongTienTrinh` (lỗ G1-D gốc) — lùi = nạp BẢN THỨ HAI.
+ */
+function quyetDinhSauLoiServer(
+  srv: typeof import("./aiLlamaServerClient"),
+  modelId: string | undefined,
+  e: unknown,
+  ten: string,
+  daPhatChu: boolean,
+): void {
+  if (srv.llamaServerStrict()) throw e;
+  const chiTiet = (e as Error)?.message || String(e);
+  const ten4Log = toBasename(modelId) || resolveDefaultModelBasename() || "default";
+
+  if (daPhatChu) {
+    const msg =
+      `[aiGgufEngine] TỪ CHỐI TRUNG THỰC (G1, ${ten}): luồng chữ từ llama-server ĐỨT GIỮA CHỪNG ` +
+      `sau khi đã phát chữ ra người dùng: ${chiTiet}. KHÔNG chạy lại lượt này trên đường in-process — ` +
+      `người đọc sẽ nhận một câu trả lời NỐI HAI NỬA của hai lượt suy luận khác nhau mà không có gì ` +
+      `báo hiệu (và với model 30B thì lượt chạy lại còn là BẢN THỨ HAI ~19.000 MiB). ` +
+      `CÁCH SỬA: hỏi lại; nếu lặp lại nhiều lần, xem nhật ký llama-server (:8091) — nhiều khả năng ` +
+      `tiến trình đó bị giết giữa lượt hoặc mạng loopback bị ngắt.`;
+    console.error(msg);
+    ghiSuKienChanNapTrung("stream_dut_giua_chung", ten4Log, ten, { loiServer: chiTiet, daPhatChu: true });
+    throw new Error(msg);
+  }
+
+  /**
+   * ★★★ ĐÂY LÀ LỖ G1-D. Mã trước bản vá chỉ `console.warn` rồi **đi tiếp** xuống đường
+   * in-process — cho CHÍNH model mà server vừa trả lời preflight, tức nó CÒN SỐNG và CÒN GIỮ
+   * ~20 GB. Lượt "lùi cho an toàn" đó là lượt nạp bản thứ hai.
+   * ⚠ Ngoại lệ DUY NHẤT: model đã nằm sẵn trong tiến trình ⇒ lùi không tốn thêm byte nào.
+   */
+  if (srv.laModelServerDangGiu(modelId) && !daNamSanTrongTienTrinh(modelId)) {
+    const msg =
+      `[aiGgufEngine] TỪ CHỐI TRUNG THỰC (G1-D, ${ten}): llama-server còn SỐNG (vừa qua thăm dò) ` +
+      `nhưng lượt sinh chữ hỏng: ${chiTiet}` +
+      (srv.laLoiTranNguCanh(e)
+        ? ` — nguyên nhân là VƯỢT NGỮ CẢNH: prompt + câu trả lời không lọt ${srv.serverSlotContextTokens()} ` +
+          `token mỗi slot. Hãy rút ngắn câu hỏi hoặc giảm số đoạn ngữ cảnh (RAG).`
+        : ".") +
+      ` KHÔNG lùi về đường in-process cho chính model đó: server vẫn đang giữ bản thứ nhất, nên ` +
+      `lượt lùi sẽ là BẢN THỨ HAI (~19.000 MiB) trong khi card chỉ còn ~5.673 MiB trống.`;
+    console.error(msg);
+    ghiSuKienChanNapTrung("lui_in_process_bi_chan", ten4Log, ten, {
+      loiServer: chiTiet,
+      tranNguCanh: srv.laLoiTranNguCanh(e),
+    });
+    throw new Error(msg);
+  }
+
+  console.warn(`[aiGgufEngine] llama-server ${ten} failed, falling back in-process: ${chiTiet}`);
+}
+
+/**
+ * ★★★ G1 — MỘT thân duy nhất cho cả `generateTextStream` lẫn `chatCompletionStream`, song sinh với
+ * `thuDuongServer` và dùng CHUNG cả ba cổng của nó (không có bản sao thứ hai để trôi).
+ *
+ * Giá trị TRẢ VỀ của generator (`true`/`false`) là hợp đồng: `true` = "đã phục vụ xong, đừng chạy
+ * đường in-process"; `false` = "chưa đụng gì tới người dùng, cứ lùi". `yield*` ở chỗ gọi lấy đúng
+ * giá trị đó, nên chỗ gọi không phải đoán bằng cách đếm chunk.
+ *
+ * ⚠ `daPhatChu` được cập nhật NGAY TRƯỚC mỗi `yield`, không phải sau vòng lặp: nếu consumer đóng
+ * generator giữa chừng hoặc lỗi bật ra ở đúng mảnh đó, bit này vẫn phản ánh sự thật *"người dùng
+ * đã nhìn thấy chữ chưa"*.
+ */
+async function* thuDuongServerStream(
+  modelId: string | undefined,
+  nganSach: { systemPrompt?: string; prompt: string; maxTokens?: number },
+  moLuong: (srv: typeof import("./aiLlamaServerClient")) => AsyncGenerator<GgufStreamChunk>,
+  ten: string,
+): AsyncGenerator<GgufStreamChunk, boolean> {
+  const srv = await import("./aiLlamaServerClient");
+  if (!srv.shouldUseServerForText(modelId)) return false;
+
+  congNganSachNguCanh(srv, modelId, nganSach, ten); // cổng (a)
+  if (!(await congPreflight(srv, ten))) return false; // cổng (b)
+
+  let daPhatChu = false;
+  try {
+    for await (const chunk of moLuong(srv)) {
+      if (chunk.type === "token" && typeof chunk.token === "string" && chunk.token.length > 0) daPhatChu = true;
+      // ★ G2-B — mảnh `tool_call_delta` cũng ĐÃ RỜI máy chủ tới client. Bit này trả lời câu
+      // *"lùi in-process bây giờ có tạo ra một đầu ra CHẮP VÁ không?"* — và với tool-call thì có:
+      // client đã nhận nửa cái `arguments` JSON. Không đánh dấu ở đây là để ngỏ đúng ca ấy.
+      if (chunk.type === "tool_call_delta") daPhatChu = true;
+      yield chunk;
+    }
+    return true;
+  } catch (e) {
+    // Ưu tiên cờ do CHÍNH client gắn (nó biết chính xác thời điểm hỏng); `daPhatChu` cục bộ là
+    // lưới thứ hai cho lỗi đến từ nơi khác.
+    quyetDinhSauLoiServer(srv, modelId, e, ten, daPhatChu || srv.daPhatChuTruocKhiHong(e)); // cổng (c)
+    return false;
+  }
 }
 
 /**
@@ -1757,28 +2228,11 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
   // fails/times out during the actual call. Either way, in-process runs and the answer is
   // still returned — unless LLAMA_SERVER_STRICT=true, which throws instead of silently
   // degrading (see module header of aiLlamaServerClient.ts).
+  // G1-D — toàn bộ khối cũ nay nằm trong `thuDuongServer()` (MỘT thân, dùng chung với
+  // generateJSON) và có thêm hai cổng: ngân sách ngữ cảnh + cấm lùi-nạp-trùng. Xem hàm đó.
   {
-    const srv = await import("./aiLlamaServerClient");
-    if (srv.shouldUseServerForText(modelId)) {
-      const healthy = await srv.preflightHealthy().catch(() => false);
-      if (!healthy) {
-        if (srv.llamaServerStrict()) {
-          throw new Error("[aiGgufEngine] llama-server preflight health check failed (LLAMA_SERVER_STRICT=true)");
-        }
-        console.warn(
-          "[aiGgufEngine] llama-server preflight health check failed — falling back in-process (server unreachable/unhealthy)",
-        );
-      } else {
-        try {
-          return await srv.serverGenerateText(options, modelId);
-        } catch (e) {
-          if (srv.llamaServerStrict()) throw e;
-          console.warn(
-            `[aiGgufEngine] llama-server generation failed, falling back in-process: ${(e as Error)?.message || e}`,
-          );
-        }
-      }
-    }
+    const kc = await thuDuongServer(modelId, options, (srv) => srv.serverGenerateText(options, modelId), "generation");
+    if (kc.xong) return kc.ketQua;
   }
 
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
@@ -1857,6 +2311,41 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
  * Chat completion with message history
  */
 export async function chatCompletion(options: GgufChatOptions, modelId?: string): Promise<GgufGenerateResult> {
+  // ★★★ G5-D · P1 — ĐƯỜNG `llama-server` CHO CHAT. Đây là mảnh CÒN THIẾU: `generateText` và
+  // `generateJSON` đã đi qua `thuDuongServer()` từ G1-D, `chatCompletion` thì KHÔNG — nên
+  // `aiProgrammingCopilot.runCodeModel()` (dùng đúng hàm này) chưa bao giờ hỏi server.
+  //
+  // ★ VÌ SAO ĐÓ LÀ LỖI CHẶN: khi `GGUF_CODE_MODEL == LLAMA_SERVER_MODEL` — chính là cấu hình
+  // "MỘT model duy nhất" mà phép A/B cần — lượt in-process bên dưới đòi nạp đúng model server
+  // đang giữ, cổng `chanNapTrungModelServer()` NÉM (đúng chức trách), copilot nuốt lỗi, và **mọi
+  // yêu cầu sinh mã trả "không có gợi ý" trong im lặng**.
+  //
+  // ⚠ DÙNG CHUNG `thuDuongServer()`, KHÔNG viết khối thứ tư: cả ba cổng của G1-D
+  // (`kiemNganSachNguCanh` · preflight · `quyetDinhSauLoiServer` với `laModelServerDangGiu`) áp
+  // nguyên vẹn cho đường này. Một bản sao ở đây là bản sao thứ tư của cùng chuỗi quyết định — đúng
+  // hình dạng "N+1" đã dính 17 lần.
+  // ⚠ Ngân sách cân qua `nganSachTuHoiThoai()` (đếm MỌI lượt, kể cả `assistant`) rồi đưa vào ĐÚNG
+  // `kiemNganSachNguCanh()` cũ — hằng 2,8 ký tự/token và trần mỗi slot KHÔNG được viết lại ở đây.
+  {
+    const kc = await thuDuongServer(
+      modelId,
+      nganSachTuHoiThoai(options),
+      (srv) => srv.serverChatCompletion(options, modelId),
+      "chat",
+    );
+    if (kc.xong) return kc.ketQua;
+  }
+
+  // ★★★ G2-B — CỬA MỘT CHIỀU. Tới đây nghĩa là đường server đã KHÔNG phục vụ được lượt này (server
+  // tắt / không giữ model này / preflight trượt / lỗi rồi lùi). Đường còn lại là in-process, và nó
+  // KHÔNG dựng được khối `<tools>` của chat template. Đi tiếp = trả một câu chữ thường cho một
+  // caller đang chờ `tool_calls` ⇒ đúng lớp "hỏng trong im lặng" mà G2-B xoá. Xem LoiToolCallKhongHoTro.
+  if (options.tools?.length) {
+    throw new LoiToolCallKhongHoTro(
+      `chatCompletion đã rơi khỏi đường llama-server với ${options.tools.length} tool được yêu cầu`,
+    );
+  }
+
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   // review toàn nhánh I-1 — nhả tham chiếu đúng MỘT lần cho lượt gọi này, kể cả khi withGgufSlot()
   // TỪ CHỐI slot (khi đó `fn` không chạy ⇒ `finally` bên trong nó cũng không chạy). Xem
@@ -1883,7 +2372,11 @@ export async function chatCompletion(options: GgufChatOptions, modelId?: string)
     prompt += `System: ${systemMsg.content}\n\n`;
   }
   for (const msg of userMessages) {
-    prompt += `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}\n`;
+    // G2-B — vai `tool` phải có NHÃN RIÊNG kể cả trên đường bẹp-thành-chuỗi này. Giữ nhãn
+    // "Assistant" (hành vi cũ của nhánh `: "Assistant"`) là bảo model rằng CHÍNH NÓ đã nói ra
+    // kết quả tool — một lời khai sai ngay trong prompt.
+    const nhan = msg.role === "user" ? "User" : msg.role === "tool" ? "Tool" : "Assistant";
+    prompt += `${nhan}: ${msg.content}\n`;
   }
   prompt += "Assistant: ";
 
@@ -1945,28 +2438,15 @@ export async function generateJSON<T = unknown>(
   // R5 — schema-constrained JSON via the PERSISTENT llama-server when configured
   // (own VRAM), keeping the in-process embedder free. OFF by default → in-process.
   // doc69 G2-6 — same preflight-then-generate fail-safe as generateText() above.
+  // G1-D — cùng thân với generateText (xem `thuDuongServer`): một chỗ quyết định duy nhất.
   {
-    const srv = await import("./aiLlamaServerClient");
-    if (srv.shouldUseServerForText(modelId)) {
-      const healthy = await srv.preflightHealthy().catch(() => false);
-      if (!healthy) {
-        if (srv.llamaServerStrict()) {
-          throw new Error("[aiGgufEngine] llama-server preflight health check failed (LLAMA_SERVER_STRICT=true)");
-        }
-        console.warn(
-          "[aiGgufEngine] llama-server preflight health check failed — falling back in-process (server unreachable/unhealthy)",
-        );
-      } else {
-        try {
-          return await srv.serverGenerateJSON<T>(jsonSchema, options, modelId);
-        } catch (e) {
-          if (srv.llamaServerStrict()) throw e;
-          console.warn(
-            `[aiGgufEngine] llama-server JSON generation failed, falling back in-process: ${(e as Error)?.message || e}`,
-          );
-        }
-      }
-    }
+    const kc = await thuDuongServer(
+      modelId,
+      options,
+      (srv) => srv.serverGenerateJSON<T>(jsonSchema, options, modelId),
+      "JSON generation",
+    );
+    if (kc.xong) return kc.ketQua;
   }
 
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
@@ -2395,6 +2875,25 @@ export async function* generateTextStream(
   modelId?: string,
   signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk> {
+  /**
+   * ★★★ G1 — ĐƯỜNG OPS-CHAT THẬT (`aiLocalKnowledgeService` → `ggufStream`) NAY HỎI llama-server.
+   *
+   * Trước bản vá này hàm đi thẳng `getOrLoadModel()`. Hai hệ quả cùng lúc: prefix-cache 44–74×
+   * (G1-A) KHÔNG phục vụ đường người dùng thật đi, và với model 30B mà server đang giữ thì mọi
+   * lượt stream đâm vào cổng G1-D rồi chết — đúng, nhưng câu trả lời không ra.
+   * Ba cổng dùng CHUNG với `generateText`/`generateJSON` (xem `thuDuongServerStream`), cộng một
+   * cổng riêng của stream: đứt-giữa-chừng-sau-khi-đã-phát-chữ ⇒ cấm chạy lại.
+   */
+  {
+    const daPhucVu = yield* thuDuongServerStream(
+      modelId,
+      options,
+      (srv) => srv.serverGenerateTextStream(options, modelId, signal),
+      "streaming generation",
+    );
+    if (daPhucVu) return;
+  }
+
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   // review toàn nhánh I-1 — nhả tham chiếu đúng MỘT lần cho lượt gọi này, kể cả khi withGgufSlot()
   // TỪ CHỐI slot (khi đó `fn` không chạy ⇒ `finally` bên trong nó cũng không chạy). Xem
@@ -2517,6 +3016,37 @@ export async function* chatCompletionStream(
   modelId?: string,
   signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk> {
+  /**
+   * ★★★ G1 — đường `/v1/chat/completions` của gateway. Cùng bốn cổng với `generateTextStream`.
+   *
+   * ⚠ Ngân sách ngữ cảnh phải tính trên TOÀN BỘ lịch sử hội thoại, không chỉ tin nhắn cuối: cái
+   * llama.cpp cân là `prompt + n_predict` của lượt gửi, mà lượt gửi mang cả `messages`. Ghép các
+   * `content` bằng "\n" chỉ để ƯỚC LƯỢNG độ dài — thân yêu cầu thật vẫn gửi `messages` nguyên vẹn
+   * (`serverChatCompletionStream`), để server áp đúng chat template và prefix-cache ăn được.
+   */
+  {
+    const nganSach = {
+      prompt: options.messages.map((m) => m.content).join("\n"),
+      maxTokens: options.maxTokens,
+    };
+    const daPhucVu = yield* thuDuongServerStream(
+      modelId,
+      nganSach,
+      (srv) => srv.serverChatCompletionStream(options, modelId, signal),
+      "streaming chat completion",
+    );
+    if (daPhucVu) return;
+  }
+
+  // ★★★ G2-B — CỬA MỘT CHIỀU, xem khối cùng tên ở `chatCompletion()`. Ném (chứ không `yield` một
+  // chunk `error`) là CÓ CHỦ ĐÍCH: chunk `error` đi ra client như một sự cố sinh chữ giữa chừng,
+  // còn đây là một lỗi CẤU HÌNH xảy ra TRƯỚC khi phát byte nào — nó phải thành HTTP 4xx/5xx có mã.
+  if (options.tools?.length) {
+    throw new LoiToolCallKhongHoTro(
+      `chatCompletionStream đã rơi khỏi đường llama-server với ${options.tools.length} tool được yêu cầu`,
+    );
+  }
+
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   // review toàn nhánh I-1 — nhả tham chiếu đúng MỘT lần cho lượt gọi này, kể cả khi withGgufSlot()
   // TỪ CHỐI slot (khi đó `fn` không chạy ⇒ `finally` bên trong nó cũng không chạy). Xem
@@ -2542,7 +3072,11 @@ export async function* chatCompletionStream(
     prompt += `System: ${systemMsg.content}\n\n`;
   }
   for (const msg of userMessages) {
-    prompt += `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}\n`;
+    // G2-B — vai `tool` phải có NHÃN RIÊNG kể cả trên đường bẹp-thành-chuỗi này. Giữ nhãn
+    // "Assistant" (hành vi cũ của nhánh `: "Assistant"`) là bảo model rằng CHÍNH NÓ đã nói ra
+    // kết quả tool — một lời khai sai ngay trong prompt.
+    const nhan = msg.role === "user" ? "User" : msg.role === "tool" ? "Tool" : "Assistant";
+    prompt += `${nhan}: ${msg.content}\n`;
   }
   prompt += "Assistant: ";
 
@@ -3091,68 +3625,28 @@ function assertEmbeddingDim(dim: number, resolvedId: string): void {
   }
 }
 
-// ─── Thinking / reasoning model output handling (B6.2) ─────────
+// ─── Thinking / reasoning model output handling — RE-EXPORT (khoi da doi cho, G5-C) ─────
 
 /**
- * B6.2 — Strip a "Thinking" model's chain-of-thought block from its final answer.
+ * ★★★ KHOI CAT CHUOI SUY LUAN DA CHUYEN SANG `server/services/ai/thinkingStrip.ts`.
  *
- * Qwen3-*-Thinking models emit their reasoning inside `<think>...</think>` before the
- * user-facing answer. We must NEVER leak that raw reasoning into the product UI, so the
- * caller passes generated text through this helper to separate the two parts.
+ * VI SAO DOI CHO (G5-C 2026-08-17) — doc day du o dau file moi. Tom tat HAI ly do co che:
+ *   1. Nhieu test `vi.mock("./aiGgufEngine", …)` bang factory liet ke tay vai ham. Bo cat song
+ *      trong module nay se thanh `undefined` trong nhung test ay ⇒ duong dang do la duong KHONG
+ *      co hang rao, ma khong ca nao do.
+ *   2. `aiLocalKnowledgeService` co y KHONG import tinh module nay (nang) — no dung
+ *      `await import()` trong `try`. Lay bo cat tu day = import hong thi chay tiep KHONG co bo
+ *      cat = fail-open. Module la moi import tinh duoc voi chi phi ~0 ⇒ hang rao VO DIEU KIEN.
  *
- * Behaviour:
- *  - Removes every `<think>…</think>` pair (case-insensitive, multi-line, multiple blocks).
- *  - Tolerates an UNCLOSED `<think>` (output truncated by maxTokens): everything from the
- *    opening tag to end-of-string is treated as reasoning and dropped.
- *  - Tolerates a stray leading `</think>` with no opening tag (some chat templates pre-open
- *    the think block) by dropping everything up to and including that first `</think>`.
- *  - Fail-safe: any unexpected input returns the original text rather than throwing, and if
- *    stripping would leave an EMPTY answer we keep the original (better a noisy answer than none).
- *
- * Returns both the cleaned `answer` and the extracted `thinking` (joined, for optional
- * audit/telemetry) so a caller can log reasoning separately without exposing it.
+ * Re-export nguyen ven de moi ben goi cu (`aiProgrammingCopilot`, cac test cua G5-B) khong doi
+ * mot dong — va de chinh dieu do CHUNG MINH phep doi cho la bao toan hanh vi.
  */
-export function stripThinking(text: string): { answer: string; thinking: string } {
-  if (typeof text !== "string" || text.length === 0) {
-    return { answer: text ?? "", thinking: "" };
-  }
-  try {
-    const thoughts: string[] = [];
-
-    // 1) Stray leading "</think>" without a matching "<think>" → everything before it is reasoning.
-    let work = text;
-    const firstOpen = work.search(/<think>/i);
-    const firstClose = work.search(/<\/think>/i);
-    if (firstClose !== -1 && (firstOpen === -1 || firstClose < firstOpen)) {
-      thoughts.push(work.slice(0, firstClose));
-      work = work.slice(firstClose + "</think>".length);
-    }
-
-    // 2) Remove all well-formed <think>…</think> pairs.
-    work = work.replace(/<think>([\s\S]*?)<\/think>/gi, (_m, inner) => {
-      thoughts.push(String(inner));
-      return "";
-    });
-
-    // 3) Unclosed trailing <think> (truncated by maxTokens) → drop to end.
-    const danglingOpen = work.search(/<think>/i);
-    if (danglingOpen !== -1) {
-      thoughts.push(work.slice(danglingOpen + "<think>".length));
-      work = work.slice(0, danglingOpen);
-    }
-
-    const answer = work.trim();
-    const thinking = thoughts.join("\n").trim();
-    // Fail-safe: never return an empty answer if the original had content.
-    if (!answer && text.trim()) {
-      return { answer: text.trim(), thinking };
-    }
-    return { answer, thinking };
-  } catch {
-    // Never let reasoning-stripping break a generation result.
-    return { answer: text, thinking: "" };
-  }
-}
+export {
+  thinkingTagNames,
+  thinkingStartsOpen,
+  stripThinking,
+  StreamingThinkingStripper,
+} from "./ai/thinkingStrip";
 
 // ─── Utilities ─────────────────────────────────────────────────
 

@@ -62,6 +62,16 @@ vi.mock("../aiProgrammingKnowledgeService", () => ({
     chunks: [],
   })),
 }));
+// G2-A — kể từ khi `generateProgram` được nối vào CHỈ MỤC REPO, nó đi qua
+// `gatherRepoIndexContext → gatherRepoContext → retrieveKnowledge`. Không mock tầng này thì
+// unit test sẽ nạp THẬT `knowledge/embeddings.jsonl` (162 MB) và thử gọi GGUF ⇒ chậm/treo.
+// Mặc định ở đây: kho RỖNG — nghĩa là mọi ca cũ của file này giữ nguyên prompt như trước G2-A.
+vi.mock("../aiLocalKnowledgeService", () => ({
+  retrieveKnowledge: vi.fn(async () => ({
+    question: "", intent: "howto", language: "vi", entities: [], confidence: 0,
+    citations: [], contexts: [],
+  })),
+}));
 
 import {
   suggestProgram,
