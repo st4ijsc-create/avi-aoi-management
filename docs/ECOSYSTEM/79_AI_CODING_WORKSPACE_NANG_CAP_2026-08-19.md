@@ -80,6 +80,22 @@ vô nghĩa. Thiết kế an toàn:
 **Cổng ra:** đột biến — mở một đường ra ngoài mọi gốc trong danh sách ⇒ TỪ CHỐI; chuyển giữa hai
 dự án ⇒ cây tệp + tool bám đúng gốc; gốc không trong danh sách trắng ⇒ không chọn được.
 
+### THAM KHẢO GIAO DIỆN — Claude Code (chủ dự án cung cấp ảnh, 2026-08-19)
+
+Bố cục đích cho lần nâng UI (làm cùng trục 2 hoặc sau):
+- **Bộ chọn dự án ở đầu vùng nhập** — nút *"Select folder…"* + nhãn *"Local"* (chỉ dấu chạy cục
+  bộ). Đây chính là mặt người-dùng của trục 2 (đa gốc): người chọn **một dự án trong danh sách
+  trắng** rồi cả phiên bám gốc đó.
+- **Danh sách phiên bên trái** — *"Sessions you start will show up here"*. Mỗi phiên là một mạch
+  hội thoại tác nhân trên một dự án; lưu lại để mở lại. (Hiện workspace chưa có lịch sử phiên.)
+- **Ô nhập lớn** kiểu *"Describe a task or ask a question"* — hợp với persona lập trình của trục 1
+  (mô tả một việc, không phải hỏi vận hành).
+- Tab **Home / Code** tách ngữ cảnh.
+
+⚠ Đây là tham khảo BỐ CỤC, không phải yêu cầu sao chép từng pixel. Ưu tiên vẫn là chức năng (trục
+1 + 2) chạy thật; UI theo mẫu này khi hai trục đã vững. Danh sách phiên là hạng mục MỚI (cần lưu
+trữ) — đánh giá riêng, không gộp vào trục 1.
+
 ---
 
 ## 2. Rủi ro, nói thẳng
