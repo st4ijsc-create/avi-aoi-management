@@ -30,8 +30,8 @@
     "purpose": null
   },
   {
-    "path": "/dashboard",
-    "component": "Dashboard",
+    "path": "/api-docs",
+    "component": "ApiDocs",
     "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
@@ -40,14 +40,694 @@
     "purpose": null
   },
   {
-    "path": "/andon",
-    "component": "AndonBoard",
+    "path": "/component-showcase",
+    "component": "ComponentShowcase",
     "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
     "redirectTo": null,
-    "purpose": "F5a: Andon board (ALERT-ONLY)"
+    "purpose": "Wave 1: dev showcase of DS + foundation primitives"
+  },
+  {
+    "path": "/dashboard",
+    "component": "Dashboard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/dashboard",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ops-console",
+    "component": "OpsConsole",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ops-console",
+    "redirectTo": null,
+    "purpose": "P1 (doc 12 §8): unified Ops Console / War-Room (consolidates Andon + Predictive + alert sources)"
+  },
+  {
+    "path": "/andon",
+    "component": "AndonBoard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/andon",
+    "redirectTo": null,
+    "purpose": "W5-C (doc 27 F7): dedicated Andon/TV wall board (huge type, auto-cycle, socket-first + poll fallback)"
+  },
+  {
+    "path": "/predictive-alerts",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/ops-console",
+    "purpose": null
+  },
+  {
+    "path": "/dashboard-center",
+    "component": "DashboardCenter",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/dashboard-center",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/drill-down",
+    "component": "DrillDownDashboard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/drill-down",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/corporate-dashboard",
+    "component": "CorporateDashboard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/corporate-dashboard",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/control-tower",
+    "component": "ControlTower",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/control-tower",
+    "redirectTo": null,
+    "purpose": "doc 46 FE-W3.1 (D4): persona-configurable Executive Control Tower — consolidates 6 command screens (compose + cross-link)"
+  },
+  {
+    "path": "/executive",
+    "component": "ExecutiveMobile",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/executive",
+    "redirectTo": null,
+    "purpose": "doc 46 FE-W3.5 (D5): executive mobile/PWA view (OEE/KPI + AI summary + approvals)"
+  },
+  {
+    "path": "/corporate-layout",
+    "component": "CorporateLayout",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "dashboard_corporate",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/production-dashboard",
+    "component": "ProductionDashboard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/production-dashboard",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/war-room",
+    "component": "WarRoom",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc 40 Wave 4c §11: \"Giao ban 7h\" theo ca — KPI + OEE theo line + top downtime + so sánh ca + plan-vs-actual (trpc.warRoom.briefing)"
+  },
+  {
+    "path": "/mes-control-tower",
+    "component": "MESControlTower",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/mes-control-tower",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/wip-dashboard",
+    "component": "WipLineBalance",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/wip-dashboard",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/traceability",
+    "component": "TraceabilityLineage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/traceability",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/digital-twin",
+    "component": "TwinHub",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/digital-twin",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/history",
+    "component": "History",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/history",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/inspection/:id",
+    "component": "InspectionDetail",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "history_view",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/aoi-packages",
+    "component": "AOIPackages",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/aoi-packages",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/production-orders",
+    "component": "ProductionOrders",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/production-orders",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/production-scheduling",
+    "component": "ProductionScheduling",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/production-scheduling",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/production-signoff",
+    "component": "ProductionSessionSignOff",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/production-signoff",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/history-export-scheduling",
+    "component": "HistoryExportScheduling",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/history-export-scheduling",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/bom-management",
+    "component": "BomManagement",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/bom-management",
+    "redirectTo": null,
+    "purpose": "G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)"
+  },
+  {
+    "path": "/product-comparison",
+    "component": "ProductComparison",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "history_view",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/station-analysis/:id",
+    "component": "StationAnalysis",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "analytics_spc",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Wave 1: code-split (2.7k LOC)"
+  },
+  {
+    "path": "/quality-cockpit",
+    "component": "QualityCockpit",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/quality-cockpit",
+    "redirectTo": null,
+    "purpose": "P3-W2 (doc 12 §8): flagship Quality Cockpit (SPC/Pareto/Heatmap/Gates/Annotation tabs)"
+  },
+  {
+    "path": "/quality-home",
+    "component": "QualityHome",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/quality-home",
+    "redirectTo": null,
+    "purpose": "Role landing: quality_inspector inspection workspace (P1 doc 07 §④)"
+  },
+  {
+    "path": "/golden-samples",
+    "component": "GoldenSamplesPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/golden-samples",
+    "redirectTo": null,
+    "purpose": "W7-C (doc 27 V8/V11): golden-sample capture + approval + align/diff management"
+  },
+  {
+    "path": "/defect-catalog",
+    "component": "DefectCatalogPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/defect-catalog",
+    "redirectTo": null,
+    "purpose": "Doc 31 Đợt B (OP4): IPC-A-610 defect catalog curation + unmatched-code + repair guidance"
+  },
+  {
+    "path": "/measurement-point-health",
+    "component": "MeasurementPointHealthPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/measurement-point-health",
+    "redirectTo": null,
+    "purpose": "Doc 31 Đợt B (MP3): __UNMAPPED__ unmatched-rate metric + bulk remap"
+  },
+  {
+    "path": "/repair-station",
+    "component": "RepairStation",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/repair-station",
+    "redirectTo": null,
+    "purpose": "W8-C (doc 27 V10): dedicated repair workstation (scan serial → repair walk → re-inspect; ?kiosk=1)"
+  },
+  {
+    "path": "/quality-gate-templates",
+    "component": "QualityGateTemplates",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/quality-gate-templates",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/quality-gates",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/quality-cockpit?tab=gates",
+    "purpose": null
+  },
+  {
+    "path": "/spc-analysis",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/quality-cockpit?tab=spc",
+    "purpose": null
+  },
+  {
+    "path": "/spc-advanced",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/quality-cockpit?tab=spc",
+    "purpose": null
+  },
+  {
+    "path": "/pareto-analysis",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/quality-cockpit?tab=pareto",
+    "purpose": null
+  },
+  {
+    "path": "/annotation-statistics",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/quality-cockpit?tab=annotation",
+    "purpose": null
+  },
+  {
+    "path": "/annotation-comparison",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/quality-cockpit?tab=annotation",
+    "purpose": null
+  },
+  {
+    "path": "/defect-heatmap",
+    "component": "DefectHeatmapPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/defect-heatmap",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/defect-prediction",
+    "component": "DefectPredictionPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "analytics_advanced",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/root-cause-analysis",
+    "component": "RootCauseAnalysisPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "analytics_root_cause",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/device-monitor",
+    "component": "DeviceHub",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/device-monitor",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/factory-command",
+    "component": "FactoryCommandView",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc 40 Wave 4d §13.1: màn hình chỉ huy toàn nhà máy (2D/3D theo Line, click máy → drawer chi tiết)"
+  },
+  {
+    "path": "/line-view/:lineId?",
+    "component": "LineView",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc 44 W3-B4 §G5.10: Line View HMI (LDS-L5 Ch.4.2) — sơ đồ tuyến + FSM 7 trạng thái + readiness + lệnh tuyến (ConfirmWithReason → lineController.command)"
+  },
+  {
+    "path": "/sop/:sopId?",
+    "component": "SopViewer",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc 44 W6-1 §G5.14: e-SOP viewer (LDS-L5 §6.2) — bước theo ngữ cảnh + checklist bắt buộc confirm"
+  },
+  {
+    "path": "/sop-management",
+    "component": "SopManagement",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "settings_products",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc 44 W6-1 §G5.14: quản trị e-SOP (soạn bước/phiên bản/kích hoạt)"
+  },
+  {
+    "path": "/alarm-kpi",
+    "component": "AlarmKpiDashboard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc 44 W6-1 §G5.11: ISA-18.2 alarm KPI (rate/flood/standing/bad-actors/distribution)"
+  },
+  {
+    "path": "/sla-cockpit",
+    "component": "SlaCockpit",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/sla-cockpit",
+    "redirectTo": null,
+    "purpose": "doc 46 FE-W2: Andon/alert SLA cockpit (MTTA/MTTR/escalation-breach; trpc.andon.metrics + andon.list)"
+  },
+  {
+    "path": "/machine-status",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/device-monitor",
+    "purpose": null
+  },
+  {
+    "path": "/machine-health",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/device-monitor?tab=health",
+    "purpose": null
+  },
+  {
+    "path": "/oee-dashboard",
+    "component": "OEEDashboard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/oee-dashboard",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/factory-live-map",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/digital-twin?tab=map",
+    "purpose": null
+  },
+  {
+    "path": "/field-devices",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/device-monitor?tab=field",
+    "purpose": null
+  },
+  {
+    "path": "/connectivity",
+    "component": "ConnectivityHub",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "mqtt_monitoring",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-dashboard",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/connectivity?tab=overview",
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-bulletin",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/connectivity?tab=bulletin",
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-replay",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/connectivity?tab=replay",
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-clients",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/connectivity?tab=clients",
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-alerts",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/connectivity?tab=alerts",
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-profiles",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/connectivity?tab=profiles",
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-topics",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/connectivity?tab=topics",
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-ng-rate",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/connectivity?tab=ngrate",
+    "purpose": null
+  },
+  {
+    "path": "/machine-onboarding",
+    "component": "MachineOnboardingWizard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/machine-onboarding",
+    "redirectTo": "/device-onboarding",
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/aoi-onboarding",
+    "component": "AoiOnboardingWizard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/aoi-onboarding",
+    "redirectTo": "/device-onboarding",
+    "purpose": "W2-D (doc 27 §3 C4): guided AOI/AVI connection wizard — vendor adapter + dry-run + credential + commissioning sign-off (soft gate)"
+  },
+  {
+    "path": "/product-onboarding",
+    "component": "ProductOnboardingWizard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/product-onboarding",
+    "redirectTo": null,
+    "purpose": "WD-1 (doc 31 Đợt D · UX1): product-side onboarding wizard — resumable guided setup (fiducials/points/limits/golden/panel/release/mapping)"
+  },
+  {
+    "path": "/product-changeover",
+    "component": "ProductChangeoverWizard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/product-changeover",
+    "redirectTo": null,
+    "purpose": "doc 40 Wave 4 — operator changeover: quét sản phẩm mới → kiểm tra readiness/mapping/feeder → xác nhận đổi"
+  },
+  {
+    "path": "/machine-registration",
+    "component": "MachineRegistration",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/machine-registration",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
   },
   {
     "path": "/device-adapters",
@@ -60,14 +740,154 @@
     "purpose": "G2.2a: OT adapter/tag CONFIG"
   },
   {
-    "path": "/command-audit",
-    "component": "CommandAuditLog",
+    "path": "/uns-mapping",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/connectivity?tab=uns",
+    "purpose": null
+  },
+  {
+    "path": "/system-health",
+    "component": "SystemHealth",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Tier-1b (doc 24): OT store-and-forward + connection HA supervisors + DINOv2 model health + commissioning + twin export"
+  },
+  {
+    "path": "/control-readiness",
+    "component": "ControlReadiness",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_control",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc 40 Wave 3A (§11): Trust & Enforcement Center — READ-ONLY gate/flag readiness matrix"
+  },
+  {
+    "path": "/edge-nodes",
+    "component": "EdgeNodesPage",
     "guarded": true,
     "requiredRole": [],
     "requiredPermission": null,
-    "navHref": "/command-audit",
+    "navHref": "/edge-nodes",
     "redirectTo": null,
-    "purpose": "G2.2a: command audit (READ-ONLY)"
+    "purpose": "E4: edge node registry management"
+  },
+  {
+    "path": "/hot-folders",
+    "component": "HotFolderConfigPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/hot-folders",
+    "redirectTo": null,
+    "purpose": "Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion config + status + dry-run"
+  },
+  {
+    "path": "/robot-control",
+    "component": "RobotControl",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_control",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "P4-D: robot/AGV registry + telemetry + job log (read-mostly; motion via internal HITL dispatcher)"
+  },
+  {
+    "path": "/command-console",
+    "component": "CommandConsole",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_control",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "ENG-F1 (doc 40): gated command console — phát 1 lệnh robot đơn lẻ qua HITL dispatcher (mọi gate giữ nguyên)"
+  },
+  {
+    "path": "/fleet-orchestration",
+    "component": "FleetOrchestration",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_control",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "G1 (doc 16 §7 Khối 2): fleet task allocation + zone traffic (read-mostly; mutations gated by FLEET_ORCH_ENABLED)"
+  },
+  {
+    "path": "/control-plane",
+    "component": "ControlPlane",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_control",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "P4-D: Factory Control Plane (equipment capability/PackML + FOE + edge runtime, read-only projections)"
+  },
+  {
+    "path": "/safety-workforce",
+    "component": "SafetyWorkforce",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "S1 (doc 16 §8): advisory safety monitoring + mixed-workforce board + human↔robot handover (read-mostly; mutations gated by SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)"
+  },
+  {
+    "path": "/robot-model-health",
+    "component": "RobotModelHealth",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "I2 (doc 16 §9 Khối 4): advisory robot-behaviour anomaly + AI model rollback audit (read-mostly; mutations gated by AI_ROBOT_ANOMALY_ENABLED / AI_MODEL_AUTOROLLBACK_ENABLED)"
+  },
+  {
+    "path": "/equipment-standards",
+    "component": "EquipmentStandards",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "E1 (doc 16 §10 Khối 5): device-type hierarchy + ISA-18.2 alarm taxonomy + Equipment Standards Board (governance metadata only; mutations gated by EQ_GOVERN_ENABLED)"
+  },
+  {
+    "path": "/equipment-integration",
+    "component": "EquipmentIntegration",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "I1 (doc 16 §6 Khối 1B): FOCAS/Euromap integration frameworks (read-only) + recipe versioning genealogy (mutations gated by EQ_INTEG_ENABLED)"
+  },
+  {
+    "path": "/engineering-home",
+    "component": "EngineeringHub",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/engineering-home",
+    "redirectTo": null,
+    "purpose": "W6-26 (doc 25 T8): Engineering hub-and-spoke front door (task-grouped tiles + golden-thread)"
+  },
+  {
+    "path": "/engineering",
+    "component": "EngineeringWorkspace",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/engineering",
+    "redirectTo": null,
+    "purpose": "Doc 09 D1: Unified Engineering Workspace (author/build/simulate/deploy device programs)"
   },
   {
     "path": "/recipes",
@@ -100,94 +920,114 @@
     "purpose": "E3b: visual orchestration studio (author → simulate → deploy/run)"
   },
   {
-    "path": "/engineering",
-    "component": "EngineeringWorkspace",
+    "path": "/ir-editor",
+    "component": "IrEditor",
     "guarded": true,
     "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/engineering",
+    "requiredPermission": "machine_control",
+    "navHref": null,
     "redirectTo": null,
-    "purpose": "Doc 09 D1: Unified Engineering Workspace (author/build/simulate/deploy device programs)"
+    "purpose": "D1 (doc 16 §11.1 Khối 6): Visual IR Editor — author motion/IO blocks, lint + transpile preview (mutations gated by DPC_IR_V2_ENABLED)"
   },
   {
-    "path": "/rf-test-cell",
-    "component": "RfTestCellSim",
+    "path": "/pou-studio",
+    "component": "PouStudio",
     "guarded": true,
     "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/rf-test-cell",
+    "requiredPermission": "machine_control",
+    "navHref": null,
     "redirectTo": null,
-    "purpose": "Realtime digital-twin playback of an RF shielded test cell (feeder XYZ + robot + RF tester)"
+    "purpose": "P4 (doc 24 Wave-3): IEC 61131 POU Studio — structured LAD/FBD/SFC + PLCopen XML round-trip + transpile-to-ST (pure preview, open runtime only)"
   },
   {
-    "path": "/factory-live-map",
-    "component": "FactoryLiveMap3D",
+    "path": "/programming-copilot",
+    "component": "ProgrammingCopilot",
     "guarded": true,
     "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/factory-live-map",
+    "requiredPermission": "machine_status",
+    "navHref": null,
     "redirectTo": null,
-    "purpose": "L4 plant view: 3D factory floor, machines coloured by live status, drill-down"
+    "purpose": "Doc 34 P3: in-app Programming Copilot — LLM codegen (generate/complete/translate/review/explain), validated by the safety substrate; advisory + display-only"
   },
   {
     "path": "/factory-floor-editor",
-    "component": "FactoryFloorEditor",
-    "guarded": true,
+    "component": "(inline)",
+    "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
-    "navHref": "/factory-floor-editor",
-    "redirectTo": null,
-    "purpose": "2D drag editor: set real floor-plan coords (layoutPositionX/Y) the 3D view reads"
+    "navHref": null,
+    "redirectTo": "/digital-twin?tab=floor",
+    "purpose": null
+  },
+  {
+    "path": "/rf-test-cell",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/digital-twin?tab=rf",
+    "purpose": null
   },
   {
     "path": "/cell-twin",
-    "component": "CellTwinPlayer",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/cell-twin",
-    "redirectTo": null,
-    "purpose": "Generic data-driven realtime twin playback for ANY orchestration workflow"
-  },
-  {
-    "path": "/edge-nodes",
-    "component": "EdgeNodesPage",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/edge-nodes",
-    "redirectTo": null,
-    "purpose": "E4: edge node registry management"
-  },
-  {
-    "path": "/api-keys",
-    "component": "ApiKeysPage",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/api-keys",
-    "redirectTo": null,
-    "purpose": "Control plane: scoped API-key admin CRUD (create-show-once)"
-  },
-  {
-    "path": "/bom-management",
-    "component": "BomManagement",
+    "component": "(inline)",
     "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
-    "redirectTo": null,
-    "purpose": "G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)"
+    "redirectTo": "/digital-twin?tab=cell",
+    "purpose": null
   },
   {
-    "path": "/master-data",
-    "component": "MasterDataManagement",
+    "path": "/digital-twin-center",
+    "component": "(inline)",
     "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
+    "redirectTo": "/digital-twin?tab=center",
+    "purpose": null
+  },
+  {
+    "path": "/command-center",
+    "component": "CommandCenter",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
     "redirectTo": null,
-    "purpose": "Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)"
+    "purpose": "U2 (doc 21 §6 G-3): Ecosystem Command Center — single pane (hierarchy tree + factory twin + KPI strip + unified live alarm rail)"
+  },
+  {
+    "path": "/machine/:id",
+    "component": "MachineCockpit",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "U3 (doc 21 §6 G-4): /machine/:id unified per-machine cockpit (tabbed: overview/health/oee/alarms/recipes/programs/genealogy/3d/actions)"
+  },
+  {
+    "path": "/robot/:id",
+    "component": "RobotCockpit",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "U3 (doc 21 §6 G-4/G-5): /robot/:id unified per-robot cockpit (LIVE robot:telemetry; tabbed overview/joints/jobs/tasks/programs/safety/anomalies/alarms/3d/teach/actions)"
+  },
+  {
+    "path": "/technician-copilot",
+    "component": "TechnicianCopilot",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/technician-copilot",
+    "redirectTo": null,
+    "purpose": "LUỒNG ③: RCA Copilot — one-tap fix approval"
   },
   {
     "path": "/work-orders",
@@ -200,6 +1040,216 @@
     "purpose": "Maintenance work-order CRUD + CLOSE→MTTR (machine_monitoring)"
   },
   {
+    "path": "/cmms",
+    "component": "MaintenanceHub",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_control",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc 40 Wave 4c §11: CMMS hub — lịch bảo trì phòng ngừa + parts/reliability (agent C)"
+  },
+  {
+    "path": "/feeder-verify",
+    "component": "FeederVerify",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/feeder-verify",
+    "redirectTo": null,
+    "purpose": "doc 35 W4-C: SMT feeder-setup scan verification (slot↔BOM/program, anti-mispick)"
+  },
+  {
+    "path": "/alerts",
+    "component": "Alerts",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/alerts",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/monitoring-setting",
+    "component": "MonitoringSettings",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "machine_status",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/command-audit",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/audit-logs?tab=command",
+    "purpose": null
+  },
+  {
+    "path": "/reporting-studio",
+    "component": "ReportingStudio",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/reporting-studio",
+    "redirectTo": null,
+    "purpose": "doc 59 Cụm G"
+  },
+  {
+    "path": "/reports",
+    "component": "Reports",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/reports",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/scheduled-reports",
+    "component": "ScheduledReports",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/scheduled-reports",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/enhanced-scheduled-reports",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/scheduled-reports",
+    "purpose": null
+  },
+  {
+    "path": "/report-builder",
+    "component": "ReportBuilder",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/report-builder",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/category-analytics",
+    "component": "CategoryAnalytics",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/category-analytics",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/correlation-analysis",
+    "component": "CorrelationAnalysis",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/correlation-analysis",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/data-comparison",
+    "component": "DataComparison",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/data-comparison",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/comparison-studio",
+    "component": "ComparisonStudio",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/comparison-studio",
+    "redirectTo": null,
+    "purpose": "doc 46 FE-W3.3: unified multi-dim comparison (line/shift/product/period + benchmark)"
+  },
+  {
+    "path": "/realtime-report",
+    "component": "RealtimeReportView",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/realtime-report",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/energy-analytics",
+    "component": "EnergyAnalyticsPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/energy-analytics",
+    "redirectTo": null,
+    "purpose": "G2.6b: energy analytics (READ/ANALYTICS only)"
+  },
+  {
+    "path": "/process-analytics",
+    "component": "ProcessAnalyticsPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/process-analytics",
+    "redirectTo": null,
+    "purpose": "doc 56 Đ3 — automation process-result analytics"
+  },
+  {
+    "path": "/device-onboarding",
+    "component": "DeviceOnboardingHubV2",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/device-onboarding",
+    "redirectTo": null,
+    "purpose": "doc 56 Đ2b — unified add-device wizard V2 (self-gated OFF)"
+  },
+  {
+    "path": "/carbon-dashboard",
+    "component": "CarbonDashboard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/carbon-dashboard",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/pdf-reports",
+    "component": "PdfReports",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/pdf-reports",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/powerpoint-export",
+    "component": "PowerPointExport",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/powerpoint-export",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
     "path": "/threshold-approvals",
     "component": "ThresholdApprovalsPage",
     "guarded": true,
@@ -208,6 +1258,296 @@
     "navHref": "/threshold-approvals",
     "redirectTo": null,
     "purpose": "Threshold approval review queue (approve/reject/withdraw)"
+  },
+  {
+    "path": "/engineering-changes",
+    "component": "EngineeringChanges",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/engineering-changes",
+    "redirectTo": null,
+    "purpose": "doc 35 W4-D: ECN/ECO change control (request→impact→approve→effectivity) + componentCode backfill"
+  },
+  {
+    "path": "/nonconformance",
+    "component": "NonconformanceReports",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/nonconformance",
+    "redirectTo": null,
+    "purpose": "doc 35 W4-B: NCR/MRB management (raise→review→disposition→close, SoD)"
+  },
+  {
+    "path": "/routing-master",
+    "component": "RoutingMaster",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/routing-master",
+    "redirectTo": null,
+    "purpose": "doc 35 W4-E: ISA-95 routing master + steps (ERP order resolves operations against this)"
+  },
+  {
+    "path": "/oee-target-settings",
+    "component": "OEETargetSettings",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/oee-target-settings",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/analytics-setting",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/reports",
+    "purpose": null
+  },
+  {
+    "path": "/ai-chat",
+    "component": "AIChatPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-home",
+    "component": "AIHome",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-hub",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/ai-home",
+    "purpose": null
+  },
+  {
+    "path": "/management-insight",
+    "component": "ManagementInsight",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "B4.5: manager-facing insight (NL Q&A + exec summary + AI alerts)"
+  },
+  {
+    "path": "/ai-local-kb",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/ai-chat",
+    "purpose": null
+  },
+  {
+    "path": "/ai-brain",
+    "component": "AIBrainDashboard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-brain",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-command-center",
+    "component": "AIAgentCommandCenter",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-command-center",
+    "redirectTo": null,
+    "purpose": "doc69 GĐ4/E2-3: Agent Command Center (roster + savings + task feed + HITL drill-in)"
+  },
+  {
+    "path": "/ai-specialist-studio",
+    "component": "AISpecialistStudio",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-specialist-studio",
+    "redirectTo": null,
+    "purpose": "Wave 1 T4: dispatch card + result card for the 4 specialist agents (trpc.aiSpecialistAgent.*)"
+  },
+  {
+    "path": "/ai-monitoring",
+    "component": "ModelMonitoringPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-monitoring",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-performance",
+    "component": "AIPerformanceDashboard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-performance",
+    "redirectTo": null,
+    "purpose": "doc 69 Wave E1 (T7) — split out of AIPerformanceDashboard (evaluation before/after"
+  },
+  {
+    "path": "/ai-experiments",
+    "component": "AIExperimentsPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-experiments",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-models",
+    "component": "AIModelManagementPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-models",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/model-versions",
+    "component": "ModelVersionsPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/model-versions",
+    "redirectTo": null,
+    "purpose": "doc 69 T6 — AIHub retired: merged into AIHome (/ai-home). Source file kept on"
+  },
+  {
+    "path": "/ai-settings",
+    "component": "AISettingsPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-settings",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-active-learning",
+    "component": "AIActiveLearningPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-active-learning",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-batch-jobs",
+    "component": "BatchInferencePage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-batch-jobs",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-data-processing",
+    "component": "AIDataProcessingPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-data-processing",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-datasets",
+    "component": "AIDatasetsPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-datasets",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-training-studio",
+    "component": "KbStudioPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-training-studio",
+    "redirectTo": null,
+    "purpose": "doc69 GĐ5/Wave E3 (E3-2): Training Studio — corpus registry + job-tracked ingest (Source/Jobs/Corpus/Eval/Model Builder)"
+  },
+  {
+    "path": "/ai-time-series",
+    "component": "AITimeSeriesPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-time-series",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-reports",
+    "component": "AIReportsPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-reports",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-quality-gate",
+    "component": "AIQualityGatePage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-quality-gate",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-image-search",
+    "component": "AIImageSearchPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-image-search",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-advanced-vision-lab",
+    "component": "AdvancedVisionLabPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-advanced-vision-lab",
+    "redirectTo": null,
+    "purpose": null
   },
   {
     "path": "/anomaly-banks",
@@ -220,54 +1560,566 @@
     "purpose": "Anomaly memory bank management (rebuild/delete per scope, admin)"
   },
   {
-    "path": "/history",
-    "component": "History",
-    "guarded": false,
+    "path": "/mask-annotation",
+    "component": "MaskAnnotationPage",
+    "guarded": true,
     "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/mask-annotation",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/causal-graph",
+    "component": "CausalGraphEditorPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/causal-graph",
+    "redirectTo": null,
+    "purpose": "Causal knowledge-graph admin editor (validated atomic write)"
+  },
+  {
+    "path": "/ai-inspection-analytics",
+    "component": "AIInspectionAnalyticsPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "analytics_ai_performance",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-gguf-models",
+    "component": "AIGgufModelsPage",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
     "requiredPermission": null,
     "navHref": null,
     "redirectTo": null,
     "purpose": null
   },
   {
-    "path": "/inspection/:id",
-    "component": "InspectionDetail",
+    "path": "/ai-ab-testing",
+    "component": "(inline)",
     "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
+    "redirectTo": "/ai-performance",
+    "purpose": null
+  },
+  {
+    "path": "/admin-home",
+    "component": "AdminHome",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Doc 10 U5: admin governance briefing landing"
+  },
+  {
+    "path": "/users",
+    "component": "Users",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/users",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/role-builder",
+    "component": "RoleBuilder",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/role-builder",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/audit-logs",
+    "component": "AuditLogs",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "admin_system",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/admin-monitoring",
+    "component": "AdminMonitoring",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": "admin_system",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/enhanced-audit",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/audit-logs?tab=enhanced",
+    "purpose": null
+  },
+  {
+    "path": "/license",
+    "component": "LicenseManagement",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/license",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/api-keys",
+    "component": "ApiKeysPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/api-keys",
+    "redirectTo": null,
+    "purpose": "Control plane: scoped API-key admin CRUD (create-show-once)"
+  },
+  {
+    "path": "/sites",
+    "component": "SitesRegistry",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": "admin_system",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Doc 13 / F0: Multi-site Federation sites registry (admin)"
+  },
+  {
+    "path": "/federation-dashboard",
+    "component": "FederationDashboard",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": "admin_system",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Doc 13 / F2: cross-site federation roll-up (admin)"
+  },
+  {
+    "path": "/modules",
+    "component": "ModulesMarketplace",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": "admin_system",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Doc 13 / F3: read-only modules + license marketplace (admin)"
+  },
+  {
+    "path": "/synapse-platform",
+    "component": "SynapsePlatformPage",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": "admin_system",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc 33: read-only SYNAPSE platform cockpit"
+  },
+  {
+    "path": "/backup-restore",
+    "component": "BackupRestore",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/backup-restore",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/system-config",
+    "component": "SystemConfiguration",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/admin-setting",
+    "component": "AdminSettings",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/admin-setting",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/import-export",
+    "component": "ImportExport",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/user-assignments",
+    "component": "UserAssignments",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": "admin_users",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/corporate-management",
+    "component": "CorporateManagement",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/data-management",
+    "component": "DataManagementHub",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/data-management",
+    "redirectTo": null,
+    "purpose": "doc 59 Cụm D: hub \"nhà Data\" thống nhất (rail category ⇄ launcher)"
+  },
+  {
+    "path": "/product-workspace",
+    "component": "ProductWorkspaceHub",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/product-workspace",
+    "redirectTo": null,
+    "purpose": "doc 59 Cụm E"
+  },
+  {
+    "path": "/ai-studio",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/ai-home",
+    "purpose": null
+  },
+  {
+    "path": "/maintenance-hub",
+    "component": "MaintenanceWorkspaceHub",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/maintenance-hub",
+    "redirectTo": null,
+    "purpose": "doc 59 Cụm I"
+  },
+  {
+    "path": "/settings-hub",
+    "component": "SettingsHub",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/settings-hub",
+    "redirectTo": null,
+    "purpose": "doc 59 cụm phụ — Settings hub"
+  },
+  {
+    "path": "/engineering-studio",
+    "component": "EngineeringStudioHub",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/engineering-studio",
+    "redirectTo": null,
+    "purpose": "doc 59 cụm phụ — Engineering Studio"
+  },
+  {
+    "path": "/master-data",
+    "component": "MasterDataManagement",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/master-data",
+    "redirectTo": null,
+    "purpose": "Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)"
+  },
+  {
+    "path": "/operator-badges",
+    "component": "OperatorBadges",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/operator-badges",
+    "redirectTo": null,
+    "purpose": "W8-B (doc 29 §3): operator/badge master — badgeCode → users.id with validity windows"
+  },
+  {
+    "path": "/component-library",
+    "component": "ComponentLibrary",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/component-library",
+    "redirectTo": null,
+    "purpose": "W8-A (doc 27 M12a / doc 29 §1): component package/footprint master + material links"
+  },
+  {
+    "path": "/master-data-audit",
+    "component": "MasterDataAudit",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/master-data-audit",
+    "redirectTo": null,
+    "purpose": "doc 42 Đợt 4B (H4): master-data audit trail (read-only \"ai đổi gì, khi nào\")"
+  },
+  {
+    "path": "/data-quality",
+    "component": "DataQualityDashboard",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/data-quality",
+    "redirectTo": null,
+    "purpose": "doc 42 Đợt 5 (K1): master-data quality dashboard (missing-field / orphan-ref profiler, read-only)"
+  },
+  {
+    "path": "/metric-catalog",
+    "component": "MetricCatalog",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/metric-catalog",
+    "redirectTo": null,
+    "purpose": "doc 46 FE-W2: semantic-layer Metric Catalog (KPI definitions/versions/lineage; trpc.semantics)"
+  },
+  {
+    "path": "/products",
+    "component": "ProductModels",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/products",
     "redirectTo": null,
     "purpose": null
+  },
+  {
+    "path": "/product-mapping",
+    "component": "ProductMachineMapping",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/product-mapping",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
   },
   {
     "path": "/layout",
     "component": "Layout",
-    "guarded": false,
+    "guarded": true,
     "requiredRole": [],
     "requiredPermission": null,
-    "navHref": null,
+    "navHref": "/layout",
     "redirectTo": null,
-    "purpose": null
+    "purpose": "doc64 S5-OPT: eager→lazy"
   },
   {
     "path": "/layout/:id",
     "component": "Layout",
-    "guarded": false,
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "settings_factory",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/workstation-management",
+    "component": "WorkstationManagement",
+    "guarded": true,
     "requiredRole": [],
     "requiredPermission": null,
-    "navHref": null,
+    "navHref": "/workstation-management",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/process-management",
+    "component": "ProcessManagement",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/process-management",
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/datasettings",
+    "component": "DataSettings",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/datasettings",
     "redirectTo": null,
     "purpose": null
   },
   {
     "path": "/settings",
     "component": "Settings",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "settings_view",
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/custom-dashboard",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/dashboard-center?tab=custom-dashboard",
+    "purpose": null
+  },
+  {
+    "path": "/inbox",
+    "component": "InboxPage",
     "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
     "redirectTo": null,
-    "purpose": null
+    "purpose": "P3-W2: full-screen Action Inbox route (read-open)"
+  },
+  {
+    "path": "/approvals-inbox",
+    "component": "ApprovalsInbox",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc 39 W6: unified HITL pending-approvals inbox (threshold + AI action; self-gates actions)"
+  },
+  {
+    "path": "/today",
+    "component": "TodayPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "P3-W2: full-screen Today Briefing route (read-open)"
+  },
+  {
+    "path": "/operator",
+    "component": "OperatorHome",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Role landing: simplified big-button floor operator shell"
+  },
+  {
+    "path": "/maintenance-home",
+    "component": "MaintenanceHome",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "F1 (doc 23): maintenance/technician workspace front door (role landing)"
+  },
+  {
+    "path": "/supervisor-home",
+    "component": "SupervisorHome",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Doc 10 U1: supervisor/manager briefing landing"
+  },
+  {
+    "path": "/viewer-home",
+    "component": "ViewerHome",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Doc 10 U3: viewer/user read-only landing"
+  },
+  {
+    "path": "/profile",
+    "component": "Profile",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/change-password",
+    "component": "ChangePassword",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/sessions",
+    "component": "SessionManagement",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
   },
   {
     "path": "/request-role",
@@ -280,18 +2132,28 @@
     "purpose": "Doc 10 U12: request a higher role"
   },
   {
-    "path": "/datasettings",
-    "component": "DataSettings",
+    "path": "/user-guide",
+    "component": "UserGuide",
     "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
     "redirectTo": null,
-    "purpose": null
+    "purpose": "doc64 S5-OPT: eager→lazy"
+  },
+  {
+    "path": "/about-system",
+    "component": "AboutSystem",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc64 S5-OPT: eager→lazy"
   },
   {
     "path": "/admin",
-    "component": "RedirectToAdminSetting",
+    "component": "RedirectToAdminHome",
     "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
@@ -320,1121 +2182,33 @@
     "purpose": null
   },
   {
-    "path": "/dashboard-center",
-    "component": "DashboardCenter",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/dashboard-center",
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/api-docs",
-    "component": "ApiDocs",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/products",
-    "component": "ProductModels",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/corporate-layout",
-    "component": "CorporateLayout",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/corporate-dashboard",
-    "component": "CorporateDashboard",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/corporate-management",
-    "component": "CorporateManagement",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/reports",
-    "component": "Reports",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/alerts",
-    "component": "Alerts",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/users",
-    "component": "Users",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/users",
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/product-mapping",
-    "component": "ProductMachineMapping",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/production-orders",
-    "component": "ProductionOrders",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/machine-status",
-    "component": "MachineStatusMonitor",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/profile",
-    "component": "Profile",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/change-password",
-    "component": "ChangePassword",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/audit-logs",
-    "component": "AuditLogs",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/sessions",
-    "component": "SessionManagement",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/production-signoff",
-    "component": "ProductionSessionSignOff",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/product-comparison",
-    "component": "ProductComparison",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/mqtt-dashboard",
-    "component": "MqttDashboard",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/mqtt-alerts",
-    "component": "MqttAlertRules",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/mqtt-clients",
-    "component": "MqttClientManagement",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/mqtt-profiles",
-    "component": "MqttProfileManagement",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/mqtt-topics",
-    "component": "MqttTopicsMessages",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/custom-dashboard",
-    "component": "CustomDashboard",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/system-config",
-    "component": "SystemConfiguration",
-    "guarded": true,
-    "requiredRole": [
-      "admin"
-    ],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/import-export",
-    "component": "ImportExport",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/user-assignments",
-    "component": "UserAssignments",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/scheduled-reports",
-    "component": "ScheduledReports",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/spc-analysis",
-    "component": "SPCAnalysis",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/process-management",
-    "component": "ProcessManagement",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/workstation-management",
-    "component": "WorkstationManagement",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/category-analytics",
-    "component": "CategoryAnalytics",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/user-guide",
-    "component": "UserGuide",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/about-system",
-    "component": "AboutSystem",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
     "path": "/dashboard-templates",
-    "component": "DashboardTemplates",
+    "component": "(inline)",
     "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/backup-restore",
-    "component": "BackupRestore",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/backup-restore",
-    "redirectTo": null,
+    "redirectTo": "/dashboard-center?tab=dashboard-templates",
     "purpose": null
   },
   {
     "path": "/template-marketplace",
-    "component": "TemplateMarketplace",
+    "component": "(inline)",
     "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/oee-dashboard",
-    "component": "OEEDashboard",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/mqtt-replay",
-    "component": "MQTTReplay",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/oee-target-settings",
-    "component": "OEETargetSettings",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/machine-health",
-    "component": "MachineHealthMonitoring",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/mes-control-tower",
-    "component": "MESControlTower",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/wip-dashboard",
-    "component": "WipLineBalance",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/traceability",
-    "component": "TraceabilityLineage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/digital-twin",
-    "component": "DigitalTwinDashboard",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/realtime-report",
-    "component": "RealtimeReportView",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/carbon-dashboard",
-    "component": "CarbonDashboard",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/energy-analytics",
-    "component": "EnergyAnalyticsPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": "G2.6b: energy analytics (READ/ANALYTICS only)"
-  },
-  {
-    "path": "/drill-down",
-    "component": "DrillDownDashboard",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/annotation-statistics",
-    "component": "AnnotationStatistics",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/annotation-comparison",
-    "component": "AnnotationComparisonPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/defect-heatmap",
-    "component": "DefectHeatmapPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/defect-prediction",
-    "component": "DefectPredictionPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/root-cause-analysis",
-    "component": "RootCauseAnalysisPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/causal-graph",
-    "component": "CausalGraphEditorPage",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/causal-graph",
-    "redirectTo": null,
-    "purpose": "Causal knowledge-graph admin editor (validated atomic write)"
-  },
-  {
-    "path": "/predictive-alerts",
-    "component": "PredictiveAlertsPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
+    "redirectTo": "/dashboard-center?tab=dashboard-marketplace",
     "purpose": null
   },
   {
     "path": "/dashboard-marketplace",
-    "component": "DashboardMarketplace",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/history-export-scheduling",
-    "component": "HistoryExportScheduling",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-hub",
-    "component": "AIHub",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-chat",
-    "component": "AIChatPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-quality-gate",
-    "component": "AIQualityGatePage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-active-learning",
-    "component": "AIActiveLearningPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-image-search",
-    "component": "AIImageSearchPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-reports",
-    "component": "AIReportsPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-time-series",
-    "component": "AITimeSeriesPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-performance",
-    "component": "AIPerformanceDashboard",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-batch-jobs",
-    "component": "BatchInferencePage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-ab-testing",
     "component": "(inline)",
     "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
-    "redirectTo": "/ai-performance",
-    "purpose": null
-  },
-  {
-    "path": "/ai-monitoring",
-    "component": "ModelMonitoringPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-models",
-    "component": "AIModelManagementPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/model-versions",
-    "component": "ModelVersionsPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-settings",
-    "component": "AISettingsPage",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/ai-settings",
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-data-processing",
-    "component": "AIDataProcessingPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-inspection-analytics",
-    "component": "AIInspectionAnalyticsPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-advanced-vision-lab",
-    "component": "AdvancedVisionLabPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-gguf-models",
-    "component": "AIGgufModelsPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/ai-brain",
-    "component": "AIBrainDashboard",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/management-insight",
-    "component": "ManagementInsight",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": "B4.5: manager-facing insight (NL Q&A + exec summary + AI alerts)"
-  },
-  {
-    "path": "/ai-local-kb",
-    "component": "AILocalKnowledgeBasePage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/technician-copilot",
-    "component": "TechnicianCopilot",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": "LUỒNG ③: RCA Copilot — one-tap fix approval"
-  },
-  {
-    "path": "/operator",
-    "component": "OperatorHome",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": "Role landing: simplified big-button floor operator shell"
-  },
-  {
-    "path": "/quality-home",
-    "component": "QualityHome",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": "Role landing: quality_inspector inspection workspace (P1 doc 07 §④)"
-  },
-  {
-    "path": "/supervisor-home",
-    "component": "SupervisorHome",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": "Doc 10 U1: supervisor/manager briefing landing"
-  },
-  {
-    "path": "/viewer-home",
-    "component": "ViewerHome",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": "Doc 10 U3: viewer/user read-only landing"
-  },
-  {
-    "path": "/admin-home",
-    "component": "AdminHome",
-    "guarded": true,
-    "requiredRole": [
-      "admin"
-    ],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": "Doc 10 U5: admin governance briefing landing"
-  },
-  {
-    "path": "/test-annotation",
-    "component": "TestAnnotationPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/mask-annotation",
-    "component": "MaskAnnotationPage",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/aoi-packages",
-    "component": "AOIPackages",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/mqtt-bulletin",
-    "component": "MqttBulletin",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/spc-advanced",
-    "component": "(inline)",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": "/spc-analysis",
-    "purpose": null
-  },
-  {
-    "path": "/correlation-analysis",
-    "component": "CorrelationAnalysis",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/quality-gates",
-    "component": "QualityGates",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/role-builder",
-    "component": "RoleBuilder",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/role-builder",
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/enhanced-audit",
-    "component": "EnhancedAuditLogs",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/enhanced-audit",
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/pdf-reports",
-    "component": "PdfReports",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/data-comparison",
-    "component": "DataComparison",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/report-builder",
-    "component": "ReportBuilder",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/powerpoint-export",
-    "component": "PowerPointExport",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/enhanced-scheduled-reports",
-    "component": "EnhancedScheduledReports",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/pareto-analysis",
-    "component": "ParetoAnalysis",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/quality-gate-templates",
-    "component": "QualityGateTemplates",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/production-scheduling",
-    "component": "ProductionScheduling",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/machine-registration",
-    "component": "MachineRegistration",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/machine-onboarding",
-    "component": "MachineOnboardingWizard",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/license",
-    "component": "LicenseManagement",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/license",
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/mqtt-ng-rate",
-    "component": "MqttNgRateThreshold",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/monitoring-setting",
-    "component": "MonitoringSettings",
-    "guarded": true,
-    "requiredRole": [
-      "admin"
-    ],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/analytics-setting",
-    "component": "AnalyticsSettings",
-    "guarded": true,
-    "requiredRole": [
-      "admin"
-    ],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/admin-setting",
-    "component": "AdminSettings",
-    "guarded": true,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": "/admin-setting",
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/production-dashboard",
-    "component": "ProductionDashboard",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/station-analysis/:id",
-    "component": "StationAnalysis",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
+    "redirectTo": "/dashboard-center?tab=dashboard-marketplace",
     "purpose": null
   },
   {

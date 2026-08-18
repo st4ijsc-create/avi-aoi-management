@@ -28,5 +28,5 @@ Màn hình `/user-assignments` (User Assignments).
 - Module: `CORE_ADMIN` (CORE — luôn bật).
 
 ## Endpoint liên quan
-- Router tRPC: `userAssignmentRouter` (server/routers/userRouters.ts, ~29 thủ tục query/mutation).
+- Router tRPC: `userAssignmentRouter` (server/routers/userRouters.ts, ~28 thủ tục query/mutation).
 

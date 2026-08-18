@@ -27,5 +27,5 @@ Màn hình `/ai-models` (AI Models).
 - Module: `MOD_AI` (OPTIONAL — cần license).
 
 ## Endpoint liên quan
-- Router tRPC: `aiModelRouter` (server/routers/aiModelRouter.ts, ~18 thủ tục query/mutation).
+- Router tRPC: `aiModelRouter` (server/routers/aiModelRouter.ts, ~23 thủ tục query/mutation).
 

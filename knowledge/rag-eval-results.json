@@ -140,6 +140,9 @@
       "recall": 1
     }
   },
-  "gate": null,
-  "timestamp": "2026-08-02T03:19:11.061Z"
+  "gate": {
+    "min": 0.8,
+    "domainMin": 0.6
+  },
+  "timestamp": "2026-08-14T20:01:19.010Z"
 }

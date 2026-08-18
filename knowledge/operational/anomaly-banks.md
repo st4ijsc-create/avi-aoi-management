@@ -1,8 +1,7 @@
 ---
 route: /anomaly-banks
 permission: null
-role:
-  - admin
+role: []
 screenVi: Ngân hàng bất thường
 screenEn: Anomaly Banks
 inSidebar: true
@@ -23,6 +22,6 @@ Anomaly memory bank management (rebuild/delete per scope, admin)
 - English: AI › Anomaly Banks
 
 ## Quyền yêu cầu
-- Vai trò bắt buộc: admin
+- Không giới hạn quyền cụ thể (mọi người dùng đã đăng nhập).
 - Module: `MOD_AI` (OPTIONAL — cần license).
 

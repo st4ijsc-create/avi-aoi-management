@@ -28,5 +28,5 @@ Màn hình `/users` (Users).
 - Module: `CORE_ADMIN` (CORE — luôn bật).
 
 ## Endpoint liên quan
-- Router tRPC: `userRouter` (server/routers/userRouters.ts, ~29 thủ tục query/mutation).
+- Router tRPC: `userRouter` (server/routers/userRouters.ts, ~28 thủ tục query/mutation).
 

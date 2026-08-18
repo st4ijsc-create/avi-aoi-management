@@ -66,9 +66,7 @@
     "sourcePath": "knowledge/operational/ai-active-learning.md",
     "route": "/ai-active-learning",
     "permission": null,
-    "role": [
-      "admin"
-    ],
+    "role": [],
     "screenVi": "Học Tích Cực",
     "screenEn": "Active Learning",
     "inSidebar": true,
@@ -114,9 +112,7 @@
     "sourcePath": "knowledge/operational/ai-brain.md",
     "route": "/ai-brain",
     "permission": null,
-    "role": [
-      "admin"
-    ],
+    "role": [],
     "screenVi": "AI Brain",
     "screenEn": "AI Brain",
     "inSidebar": true,
@@ -138,6 +134,20 @@
     "navGroupEn": "AI",
     "module": "MOD_AI",
     "license": "OPTIONAL"
+  },
+  {
+    "slug": "ai-command-center",
+    "sourcePath": "knowledge/operational/ai-command-center.md",
+    "route": "/ai-command-center",
+    "permission": null,
+    "role": [],
+    "screenVi": "Agent Command Center",
+    "screenEn": "Agent Command Center",
+    "inSidebar": true,
+    "navGroupVi": "AI",
+    "navGroupEn": "AI",
+    "module": null,
+    "license": null
   },
   {
     "slug": "ai-data-processing",
@@ -344,6 +354,20 @@
     "license": "OPTIONAL"
   },
   {
+    "slug": "ai-specialist-studio",
+    "sourcePath": "knowledge/operational/ai-specialist-studio.md",
+    "route": "/ai-specialist-studio",
+    "permission": null,
+    "role": [],
+    "screenVi": "Xưởng Agent chuyên môn",
+    "screenEn": "Specialist Studio",
+    "inSidebar": true,
+    "navGroupVi": "AI",
+    "navGroupEn": "AI",
+    "module": null,
+    "license": null
+  },
+  {
     "slug": "ai-time-series",
     "sourcePath": "knowledge/operational/ai-time-series.md",
     "route": "/ai-time-series",
@@ -358,6 +382,20 @@
     "navGroupEn": "AI",
     "module": "MOD_AI",
     "license": "OPTIONAL"
+  },
+  {
+    "slug": "ai-training-studio",
+    "sourcePath": "knowledge/operational/ai-training-studio.md",
+    "route": "/ai-training-studio",
+    "permission": null,
+    "role": [],
+    "screenVi": "Training Studio",
+    "screenEn": "Training Studio",
+    "inSidebar": true,
+    "navGroupVi": "AI",
+    "navGroupEn": "AI",
+    "module": null,
+    "license": null
   },
   {
     "slug": "alarm-kpi",
@@ -406,9 +444,7 @@
     "sourcePath": "knowledge/operational/anomaly-banks.md",
     "route": "/anomaly-banks",
     "permission": null,
-    "role": [
-      "admin"
-    ],
+    "role": [],
     "screenVi": "Ngân hàng bất thường",
     "screenEn": "Anomaly Banks",
     "inSidebar": true,
@@ -1304,9 +1340,7 @@
     "sourcePath": "knowledge/operational/mask-annotation.md",
     "route": "/mask-annotation",
     "permission": null,
-    "role": [
-      "admin"
-    ],
+    "role": [],
     "screenVi": "Gán Nhãn Mask",
     "screenEn": "Mask Labeling",
     "inSidebar": true,

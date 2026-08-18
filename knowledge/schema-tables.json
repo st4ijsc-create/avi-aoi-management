@@ -194,6 +194,22 @@
         "type": "timestamp"
       },
       {
+        "field": "runbookRef",
+        "type": "text"
+      },
+      {
+        "field": "recommendationRef",
+        "type": "text"
+      },
+      {
+        "field": "occurrenceCount",
+        "type": "integer"
+      },
+      {
+        "field": "lastOccurredAt",
+        "type": "timestamp"
+      },
+      {
         "field": "expiresAt",
         "type": "timestamp"
       },
@@ -207,6 +223,35 @@
       }
     ],
     "fks": []
+  },
+  {
+    "table": "predictive_alert_occurrences",
+    "file": "drizzle/schema/ai.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "alertId",
+        "type": "integer"
+      },
+      {
+        "field": "occurredAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "severity",
+        "type": "varchar"
+      },
+      {
+        "field": "confidenceScore",
+        "type": "decimal"
+      }
+    ],
+    "fks": [
+      "predictiveAlerts.id"
+    ]
   },
   {
     "table": "alert_escalations",
@@ -977,11 +1022,94 @@
         "type": "json"
       },
       {
+        "field": "stage",
+        "type": "text"
+      },
+      {
+        "field": "stageHistory",
+        "type": "jsonb"
+      },
+      {
+        "field": "stageEnteredAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "owner",
+        "type": "varchar"
+      },
+      {
+        "field": "trainedOn",
+        "type": "text"
+      },
+      {
         "field": "createdBy",
         "type": "integer"
       },
       {
         "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "ai_model_cards",
+    "file": "drizzle/schema/ai.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "modelId",
+        "type": "integer"
+      },
+      {
+        "field": "intendedUse",
+        "type": "text"
+      },
+      {
+        "field": "trainingDataDesc",
+        "type": "text"
+      },
+      {
+        "field": "evalSummary",
+        "type": "text"
+      },
+      {
+        "field": "limitations",
+        "type": "text"
+      },
+      {
+        "field": "riskClass",
+        "type": "varchar"
+      },
+      {
+        "field": "owner",
+        "type": "varchar"
+      },
+      {
+        "field": "approvedBy",
+        "type": "integer"
+      },
+      {
+        "field": "approvedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
         "type": "timestamp"
       }
     ],
@@ -2585,6 +2713,57 @@
     "fks": []
   },
   {
+    "table": "ai_specialist_feedback",
+    "file": "drizzle/schema/ai.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "sessionId",
+        "type": "integer"
+      },
+      {
+        "field": "userId",
+        "type": "integer"
+      },
+      {
+        "field": "agentId",
+        "type": "varchar"
+      },
+      {
+        "field": "moduleName",
+        "type": "varchar"
+      },
+      {
+        "field": "rating",
+        "type": "varchar"
+      },
+      {
+        "field": "usefulSections",
+        "type": "json"
+      },
+      {
+        "field": "reason",
+        "type": "text"
+      },
+      {
+        "field": "repoContextUsed",
+        "type": "boolean"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "ai_anomaly_memory_bank",
     "file": "drizzle/schema/ai.ts",
     "columns": [
@@ -2623,6 +2802,14 @@
       {
         "field": "imageUrl",
         "type": "text"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
       },
       {
         "field": "createdAt",
@@ -2674,6 +2861,22 @@
       {
         "field": "degraded",
         "type": "boolean"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "calibratedThreshold",
+        "type": "decimal"
+      },
+      {
+        "field": "calibrationTarget",
+        "type": "json"
       },
       {
         "field": "builtAt",
@@ -2885,6 +3088,10 @@
         "type": "integer"
       },
       {
+        "field": "replanCount",
+        "type": "integer"
+      },
+      {
         "field": "playbookId",
         "type": "varchar"
       },
@@ -2902,6 +3109,293 @@
       },
       {
         "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "ai_gateway_metrics",
+    "file": "drizzle/schema/ai.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "tier",
+        "type": "integer"
+      },
+      {
+        "field": "task",
+        "type": "varchar"
+      },
+      {
+        "field": "model",
+        "type": "varchar"
+      },
+      {
+        "field": "abVariant",
+        "type": "varchar"
+      },
+      {
+        "field": "tokensIn",
+        "type": "integer"
+      },
+      {
+        "field": "tokensOut",
+        "type": "integer"
+      },
+      {
+        "field": "latencyMs",
+        "type": "integer"
+      },
+      {
+        "field": "outcome",
+        "type": "varchar"
+      },
+      {
+        "field": "fastModelConfigured",
+        "type": "boolean"
+      },
+      {
+        "field": "userId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "ai_gateway_quota",
+    "file": "drizzle/schema/ai.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "userId",
+        "type": "integer"
+      },
+      {
+        "field": "role",
+        "type": "varchar"
+      },
+      {
+        "field": "dailyTokenBudget",
+        "type": "integer"
+      },
+      {
+        "field": "enabled",
+        "type": "boolean"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "ai_llm_audit",
+    "file": "drizzle/schema/ai.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "userId",
+        "type": "integer"
+      },
+      {
+        "field": "task",
+        "type": "varchar"
+      },
+      {
+        "field": "tier",
+        "type": "integer"
+      },
+      {
+        "field": "model",
+        "type": "varchar"
+      },
+      {
+        "field": "outcome",
+        "type": "varchar"
+      },
+      {
+        "field": "promptSha256",
+        "type": "varchar"
+      },
+      {
+        "field": "responseSha256",
+        "type": "varchar"
+      },
+      {
+        "field": "promptChars",
+        "type": "integer"
+      },
+      {
+        "field": "responseChars",
+        "type": "integer"
+      },
+      {
+        "field": "latencyMs",
+        "type": "integer"
+      },
+      {
+        "field": "safetyFlagsJson",
+        "type": "json"
+      },
+      {
+        "field": "correlationId",
+        "type": "varchar"
+      },
+      {
+        "field": "redactedSnippet",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "kb_answer_feedback",
+    "file": "drizzle/schema/ai.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "query",
+        "type": "text"
+      },
+      {
+        "field": "answerId",
+        "type": "varchar"
+      },
+      {
+        "field": "rating",
+        "type": "integer"
+      },
+      {
+        "field": "citations",
+        "type": "jsonb"
+      },
+      {
+        "field": "userId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "ai_embedding_datasets",
+    "file": "drizzle/schema/aiEmbeddingHead.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "modelId",
+        "type": "integer"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "classLabels",
+        "type": "jsonb"
+      },
+      {
+        "field": "labelDistribution",
+        "type": "jsonb"
+      },
+      {
+        "field": "sampleCount",
+        "type": "integer"
+      },
+      {
+        "field": "inputDim",
+        "type": "integer"
+      },
+      {
+        "field": "splitSeed",
+        "type": "integer"
+      },
+      {
+        "field": "splitConfig",
+        "type": "jsonb"
+      },
+      {
+        "field": "checksum",
+        "type": "varchar"
+      },
+      {
+        "field": "samples",
+        "type": "jsonb"
+      },
+      {
+        "field": "dropped",
+        "type": "jsonb"
+      },
+      {
+        "field": "source",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
         "type": "timestamp"
       }
     ],
@@ -2949,6 +3443,140 @@
       },
       {
         "field": "acknowledgedBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "robot_behavior_anomalies",
+    "file": "drizzle/schema/aiLoop.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "robotId",
+        "type": "integer"
+      },
+      {
+        "field": "kind",
+        "type": "varchar"
+      },
+      {
+        "field": "score",
+        "type": "decimal"
+      },
+      {
+        "field": "confidence",
+        "type": "decimal"
+      },
+      {
+        "field": "severity",
+        "type": "varchar"
+      },
+      {
+        "field": "evidence",
+        "type": "jsonb"
+      },
+      {
+        "field": "alertId",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "acknowledgedBy",
+        "type": "integer"
+      },
+      {
+        "field": "acknowledgedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "detectedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "model_rollback_events",
+    "file": "drizzle/schema/aiLoop.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "modelId",
+        "type": "integer"
+      },
+      {
+        "field": "fromVersionId",
+        "type": "integer"
+      },
+      {
+        "field": "toVersionId",
+        "type": "integer"
+      },
+      {
+        "field": "fromVersion",
+        "type": "varchar"
+      },
+      {
+        "field": "toVersion",
+        "type": "varchar"
+      },
+      {
+        "field": "trigger",
+        "type": "varchar"
+      },
+      {
+        "field": "reason",
+        "type": "text"
+      },
+      {
+        "field": "metrics",
+        "type": "jsonb"
+      },
+      {
+        "field": "alertId",
+        "type": "integer"
+      },
+      {
+        "field": "triggeredBy",
+        "type": "integer"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
         "type": "integer"
       },
       {
@@ -3068,6 +3696,14 @@
       {
         "field": "acknowledgedBy",
         "type": "integer"
+      },
+      {
+        "field": "acknowledgedByName",
+        "type": "varchar"
+      },
+      {
+        "field": "ackComment",
+        "type": "text"
       },
       {
         "field": "createdAt",
@@ -3286,6 +3922,108 @@
     "fks": []
   },
   {
+    "table": "aoi_commissioning_records",
+    "file": "drizzle/schema/aoiCommissioning.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "configSnapshot",
+        "type": "jsonb"
+      },
+      {
+        "field": "signedBy",
+        "type": "integer"
+      },
+      {
+        "field": "signedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "note",
+        "type": "text"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "config_snapshots",
+    "file": "drizzle/schema/assetRegistry.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "entityType",
+        "type": "text"
+      },
+      {
+        "field": "entityId",
+        "type": "integer"
+      },
+      {
+        "field": "configHash",
+        "type": "text"
+      },
+      {
+        "field": "approvedHash",
+        "type": "text"
+      },
+      {
+        "field": "approvedBy",
+        "type": "integer"
+      },
+      {
+        "field": "approvedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "driftDetectedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "status",
+        "type": "text"
+      },
+      {
+        "field": "payloadSummary",
+        "type": "jsonb"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "users",
     "file": "drizzle/schema/auth.ts",
     "columns": [
@@ -3299,10 +4037,6 @@
       },
       {
         "field": "username",
-        "type": "varchar"
-      },
-      {
-        "field": "passwordHash",
         "type": "varchar"
       },
       {
@@ -3338,10 +4072,6 @@
         "type": "boolean"
       },
       {
-        "field": "twoFactorSecret",
-        "type": "varchar"
-      },
-      {
         "field": "twoFactorEnabled",
         "type": "boolean"
       },
@@ -3351,6 +4081,14 @@
       },
       {
         "field": "lockedUntil",
+        "type": "timestamp"
+      },
+      {
+        "field": "passwordChangedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "passwordInvalidBefore",
         "type": "timestamp"
       },
       {
@@ -3367,6 +4105,31 @@
       }
     ],
     "fks": []
+  },
+  {
+    "table": "user_secrets",
+    "file": "drizzle/schema/auth.ts",
+    "columns": [
+      {
+        "field": "userId",
+        "type": "integer"
+      },
+      {
+        "field": "passwordHash",
+        "type": "varchar"
+      },
+      {
+        "field": "twoFactorSecret",
+        "type": "varchar"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "users.id"
+    ]
   },
   {
     "table": "permissions",
@@ -3519,11 +4282,11 @@
       },
       {
         "field": "sessionToken",
-        "type": "varchar"
+        "type": "text"
       },
       {
         "field": "deviceName",
-        "type": "varchar"
+        "type": "text"
       },
       {
         "field": "deviceType",
@@ -3539,7 +4302,7 @@
       },
       {
         "field": "ipAddress",
-        "type": "varchar"
+        "type": "text"
       },
       {
         "field": "location",
@@ -3562,7 +4325,9 @@
         "type": "timestamp"
       }
     ],
-    "fks": []
+    "fks": [
+      "users.id"
+    ]
   },
   {
     "table": "user_corporate_assignments",
@@ -3614,6 +4379,300 @@
       {
         "field": "createdAt",
         "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "totp_consumed",
+    "file": "drizzle/schema/auth.ts",
+    "columns": [
+      {
+        "field": "userId",
+        "type": "integer"
+      },
+      {
+        "field": "tokenHash",
+        "type": "bytea"
+      },
+      {
+        "field": "luot",
+        "type": "varchar"
+      },
+      {
+        "field": "expiresAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "component_packages",
+    "file": "drizzle/schema/componentLibrary.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "ipcName",
+        "type": "varchar"
+      },
+      {
+        "field": "family",
+        "type": "varchar"
+      },
+      {
+        "field": "mountType",
+        "type": "varchar"
+      },
+      {
+        "field": "bodyLengthMm",
+        "type": "decimal"
+      },
+      {
+        "field": "bodyWidthMm",
+        "type": "decimal"
+      },
+      {
+        "field": "bodyHeightMm",
+        "type": "decimal"
+      },
+      {
+        "field": "pinCount",
+        "type": "integer"
+      },
+      {
+        "field": "pitchMm",
+        "type": "decimal"
+      },
+      {
+        "field": "hasPolarity",
+        "type": "boolean"
+      },
+      {
+        "field": "polarityMark",
+        "type": "varchar"
+      },
+      {
+        "field": "leadType",
+        "type": "varchar"
+      },
+      {
+        "field": "inspectionNotes",
+        "type": "text"
+      },
+      {
+        "field": "defaultDefects",
+        "type": "jsonb"
+      },
+      {
+        "field": "origin",
+        "type": "varchar"
+      },
+      {
+        "field": "isActive",
+        "type": "boolean"
+      },
+      {
+        "field": "deletedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "component_footprints",
+    "file": "drizzle/schema/componentLibrary.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "packageId",
+        "type": "integer"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "density",
+        "type": "varchar"
+      },
+      {
+        "field": "padCount",
+        "type": "integer"
+      },
+      {
+        "field": "geometry",
+        "type": "jsonb"
+      },
+      {
+        "field": "courtyardMm",
+        "type": "jsonb"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "contract_schemas",
+    "file": "drizzle/schema/contracts.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "subject",
+        "type": "text"
+      },
+      {
+        "field": "version",
+        "type": "integer"
+      },
+      {
+        "field": "compatibility",
+        "type": "text"
+      },
+      {
+        "field": "schemaJson",
+        "type": "jsonb"
+      },
+      {
+        "field": "schemaRef",
+        "type": "text"
+      },
+      {
+        "field": "status",
+        "type": "text"
+      },
+      {
+        "field": "owner",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "contract_quarantine",
+    "file": "drizzle/schema/contracts.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "subject",
+        "type": "text"
+      },
+      {
+        "field": "source",
+        "type": "text"
+      },
+      {
+        "field": "payload",
+        "type": "jsonb"
+      },
+      {
+        "field": "errors",
+        "type": "jsonb"
+      },
+      {
+        "field": "receivedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "status",
+        "type": "text"
+      },
+      {
+        "field": "reviewedBy",
+        "type": "integer"
+      },
+      {
+        "field": "reviewedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "control_audit_log",
+    "file": "drizzle/schema/controlAudit.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "entityType",
+        "type": "varchar"
+      },
+      {
+        "field": "entityId",
+        "type": "varchar"
+      },
+      {
+        "field": "action",
+        "type": "varchar"
+      },
+      {
+        "field": "actorId",
+        "type": "integer"
+      },
+      {
+        "field": "beforeJson",
+        "type": "jsonb"
+      },
+      {
+        "field": "afterJson",
+        "type": "jsonb"
+      },
+      {
+        "field": "reason",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "prevHash",
+        "type": "text"
+      },
+      {
+        "field": "hash",
+        "type": "text"
+      },
+      {
+        "field": "hashTs",
+        "type": "bigint"
       }
     ],
     "fks": []
@@ -3902,6 +4961,270 @@
     "fks": []
   },
   {
+    "table": "role_dashboard_defaults",
+    "file": "drizzle/schema/dashboard.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "role",
+        "type": "varchar"
+      },
+      {
+        "field": "dashboardTemplateId",
+        "type": "integer"
+      },
+      {
+        "field": "customDashboardId",
+        "type": "integer"
+      },
+      {
+        "field": "landingPath",
+        "type": "varchar"
+      },
+      {
+        "field": "updatedBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "defect_dispositions",
+    "file": "drizzle/schema/defectDisposition.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "inspectionId",
+        "type": "integer"
+      },
+      {
+        "field": "measurementResultId",
+        "type": "integer"
+      },
+      {
+        "field": "serialNumber",
+        "type": "varchar"
+      },
+      {
+        "field": "disposition",
+        "type": "varchar"
+      },
+      {
+        "field": "workOrderId",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "assignee",
+        "type": "integer"
+      },
+      {
+        "field": "note",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "engineering_changes",
+    "file": "drizzle/schema/ecn.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "ecnKey",
+        "type": "varchar"
+      },
+      {
+        "field": "title",
+        "type": "varchar"
+      },
+      {
+        "field": "changeType",
+        "type": "varchar"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "bomId",
+        "type": "integer"
+      },
+      {
+        "field": "recipeId",
+        "type": "integer"
+      },
+      {
+        "field": "programId",
+        "type": "integer"
+      },
+      {
+        "field": "processId",
+        "type": "integer"
+      },
+      {
+        "field": "targetDescription",
+        "type": "text"
+      },
+      {
+        "field": "reason",
+        "type": "text"
+      },
+      {
+        "field": "impactSummary",
+        "type": "jsonb"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "effectivityDate",
+        "type": "timestamp"
+      },
+      {
+        "field": "requestedBy",
+        "type": "integer"
+      },
+      {
+        "field": "reviewedBy",
+        "type": "integer"
+      },
+      {
+        "field": "approvedBy",
+        "type": "integer"
+      },
+      {
+        "field": "implementedBy",
+        "type": "integer"
+      },
+      {
+        "field": "closedBy",
+        "type": "integer"
+      },
+      {
+        "field": "decisionComment",
+        "type": "text"
+      },
+      {
+        "field": "note",
+        "type": "text"
+      },
+      {
+        "field": "submittedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "reviewedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "approvedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "implementedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "closedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "engineering_change_items",
+    "file": "drizzle/schema/ecn.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "ecnId",
+        "type": "integer"
+      },
+      {
+        "field": "entityType",
+        "type": "varchar"
+      },
+      {
+        "field": "entityRef",
+        "type": "integer"
+      },
+      {
+        "field": "entityCode",
+        "type": "varchar"
+      },
+      {
+        "field": "action",
+        "type": "varchar"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "note",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "edge_nodes",
     "file": "drizzle/schema/edge.ts",
     "columns": [
@@ -3940,6 +5263,1483 @@
       {
         "field": "healthJson",
         "type": "jsonb"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "enterprise_id_map",
+    "file": "drizzle/schema/enterpriseIntegration.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "system",
+        "type": "varchar"
+      },
+      {
+        "field": "entityType",
+        "type": "varchar"
+      },
+      {
+        "field": "externalId",
+        "type": "text"
+      },
+      {
+        "field": "internalId",
+        "type": "text"
+      },
+      {
+        "field": "externalRef",
+        "type": "jsonb"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "enterprise_sync_log",
+    "file": "drizzle/schema/enterpriseIntegration.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "system",
+        "type": "varchar"
+      },
+      {
+        "field": "direction",
+        "type": "varchar"
+      },
+      {
+        "field": "operation",
+        "type": "varchar"
+      },
+      {
+        "field": "externalId",
+        "type": "text"
+      },
+      {
+        "field": "internalId",
+        "type": "text"
+      },
+      {
+        "field": "idempotencyKey",
+        "type": "varchar"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "detail",
+        "type": "jsonb"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "recipe_load_log",
+    "file": "drizzle/schema/equipmentIntegration.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "action",
+        "type": "varchar"
+      },
+      {
+        "field": "recipeId",
+        "type": "integer"
+      },
+      {
+        "field": "recipeCode",
+        "type": "varchar"
+      },
+      {
+        "field": "recipeVersion",
+        "type": "integer"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "fromRecipeId",
+        "type": "integer"
+      },
+      {
+        "field": "fromVersion",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "performedBy",
+        "type": "integer"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "meta",
+        "type": "jsonb"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "device_types",
+    "file": "drizzle/schema/equipmentStandards.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "typeKey",
+        "type": "varchar"
+      },
+      {
+        "field": "parentTypeKey",
+        "type": "varchar"
+      },
+      {
+        "field": "version",
+        "type": "varchar"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "label",
+        "type": "varchar"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "attributesSchema",
+        "type": "jsonb"
+      },
+      {
+        "field": "supportedCommands",
+        "type": "jsonb"
+      },
+      {
+        "field": "supportedStates",
+        "type": "jsonb"
+      },
+      {
+        "field": "extensionFields",
+        "type": "jsonb"
+      },
+      {
+        "field": "mappedMachineTypes",
+        "type": "jsonb"
+      },
+      {
+        "field": "adapterKind",
+        "type": "varchar"
+      },
+      {
+        "field": "changelog",
+        "type": "text"
+      },
+      {
+        "field": "publishedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "origin",
+        "type": "varchar"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "alarm_taxonomy",
+    "file": "drizzle/schema/equipmentStandards.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "vendor",
+        "type": "varchar"
+      },
+      {
+        "field": "machineType",
+        "type": "varchar"
+      },
+      {
+        "field": "deviceTypeKey",
+        "type": "varchar"
+      },
+      {
+        "field": "nativeCode",
+        "type": "varchar"
+      },
+      {
+        "field": "standardCode",
+        "type": "varchar"
+      },
+      {
+        "field": "severity",
+        "type": "varchar"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "recommendedAction",
+        "type": "text"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "master_alarms",
+    "file": "drizzle/schema/equipmentStandards.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "alarmKey",
+        "type": "varchar"
+      },
+      {
+        "field": "assetType",
+        "type": "varchar"
+      },
+      {
+        "field": "vendor",
+        "type": "varchar"
+      },
+      {
+        "field": "nativeCode",
+        "type": "varchar"
+      },
+      {
+        "field": "label",
+        "type": "varchar"
+      },
+      {
+        "field": "priority",
+        "type": "varchar"
+      },
+      {
+        "field": "consequence",
+        "type": "varchar"
+      },
+      {
+        "field": "timeToRespond",
+        "type": "integer"
+      },
+      {
+        "field": "setpoint",
+        "type": "varchar"
+      },
+      {
+        "field": "deadband",
+        "type": "varchar"
+      },
+      {
+        "field": "rationalization",
+        "type": "text"
+      },
+      {
+        "field": "cause",
+        "type": "text"
+      },
+      {
+        "field": "shelvedUntil",
+        "type": "timestamp"
+      },
+      {
+        "field": "isSuppressed",
+        "type": "boolean"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "device_type_change_requests",
+    "file": "drizzle/schema/equipmentStandards.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "crKey",
+        "type": "varchar"
+      },
+      {
+        "field": "targetTypeKey",
+        "type": "varchar"
+      },
+      {
+        "field": "kind",
+        "type": "varchar"
+      },
+      {
+        "field": "proposedSchema",
+        "type": "jsonb"
+      },
+      {
+        "field": "requestedBy",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "reviewedBy",
+        "type": "integer"
+      },
+      {
+        "field": "reviewNotes",
+        "type": "text"
+      },
+      {
+        "field": "conformanceStatus",
+        "type": "varchar"
+      },
+      {
+        "field": "stage",
+        "type": "varchar"
+      },
+      {
+        "field": "semverBump",
+        "type": "varchar"
+      },
+      {
+        "field": "publishedVersion",
+        "type": "varchar"
+      },
+      {
+        "field": "backwardIncompatible",
+        "type": "varchar"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "reviewedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "publishedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "erp_oauth_clients",
+    "file": "drizzle/schema/erpOauth.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "clientId",
+        "type": "varchar"
+      },
+      {
+        "field": "clientSecretHash",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "scopes",
+        "type": "jsonb"
+      },
+      {
+        "field": "enabled",
+        "type": "boolean"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "lastUsedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "factory_zones",
+    "file": "drizzle/schema/factoryZones.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "color",
+        "type": "varchar"
+      },
+      {
+        "field": "points",
+        "type": "jsonb"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "sites",
+    "file": "drizzle/schema/federation.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "baseUrl",
+        "type": "text"
+      },
+      {
+        "field": "region",
+        "type": "varchar"
+      },
+      {
+        "field": "authType",
+        "type": "varchar"
+      },
+      {
+        "field": "authTokenRef",
+        "type": "varchar"
+      },
+      {
+        "field": "unsBrokerUrl",
+        "type": "text"
+      },
+      {
+        "field": "pollIntervalSec",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "isLocal",
+        "type": "boolean"
+      },
+      {
+        "field": "lastSyncAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "lastError",
+        "type": "text"
+      },
+      {
+        "field": "consecutiveFailures",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "site_kpi_rollup",
+    "file": "drizzle/schema/federation.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "siteId",
+        "type": "integer"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "category",
+        "type": "varchar"
+      },
+      {
+        "field": "window",
+        "type": "varchar"
+      },
+      {
+        "field": "bucketStart",
+        "type": "timestamp"
+      },
+      {
+        "field": "asOf",
+        "type": "timestamp"
+      },
+      {
+        "field": "totalInspections",
+        "type": "integer"
+      },
+      {
+        "field": "okCount",
+        "type": "integer"
+      },
+      {
+        "field": "ngCount",
+        "type": "integer"
+      },
+      {
+        "field": "ntfCount",
+        "type": "integer"
+      },
+      {
+        "field": "yieldRate",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "ngRate",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "throughput",
+        "type": "integer"
+      },
+      {
+        "field": "oee",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "avgCycleTime",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "defectPareto",
+        "type": "jsonb"
+      },
+      {
+        "field": "detailRows",
+        "type": "jsonb"
+      },
+      {
+        "field": "alertRollup",
+        "type": "jsonb"
+      },
+      {
+        "field": "metrics",
+        "type": "jsonb"
+      },
+      {
+        "field": "source",
+        "type": "varchar"
+      },
+      {
+        "field": "fetchedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "sites.id"
+    ]
+  },
+  {
+    "table": "site_sync_log",
+    "file": "drizzle/schema/federation.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "siteId",
+        "type": "integer"
+      },
+      {
+        "field": "startedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "finishedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "ok",
+        "type": "boolean"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "httpStatus",
+        "type": "integer"
+      },
+      {
+        "field": "error",
+        "type": "text"
+      },
+      {
+        "field": "durationMs",
+        "type": "integer"
+      },
+      {
+        "field": "metricsFetched",
+        "type": "integer"
+      },
+      {
+        "field": "endpointsHit",
+        "type": "jsonb"
+      }
+    ],
+    "fks": [
+      "sites.id"
+    ]
+  },
+  {
+    "table": "field_device_health",
+    "file": "drizzle/schema/fieldHealth.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "deviceKey",
+        "type": "varchar"
+      },
+      {
+        "field": "deviceKind",
+        "type": "varchar"
+      },
+      {
+        "field": "robotId",
+        "type": "integer"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "state",
+        "type": "varchar"
+      },
+      {
+        "field": "lastHeartbeat",
+        "type": "timestamp"
+      },
+      {
+        "field": "heartbeatTtlMs",
+        "type": "integer"
+      },
+      {
+        "field": "discoveredVia",
+        "type": "varchar"
+      },
+      {
+        "field": "endpoint",
+        "type": "varchar"
+      },
+      {
+        "field": "lastEventAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "tasks",
+    "file": "drizzle/schema/fleet.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "taskKey",
+        "type": "varchar"
+      },
+      {
+        "field": "sourceWorkOrderId",
+        "type": "integer"
+      },
+      {
+        "field": "requiredCapability",
+        "type": "varchar"
+      },
+      {
+        "field": "priority",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "assignedDeviceId",
+        "type": "integer"
+      },
+      {
+        "field": "assignedDeviceKind",
+        "type": "varchar"
+      },
+      {
+        "field": "locationStart",
+        "type": "varchar"
+      },
+      {
+        "field": "locationEnd",
+        "type": "varchar"
+      },
+      {
+        "field": "estimatedDurationMs",
+        "type": "integer"
+      },
+      {
+        "field": "actualDurationMs",
+        "type": "integer"
+      },
+      {
+        "field": "retryCount",
+        "type": "integer"
+      },
+      {
+        "field": "payload",
+        "type": "jsonb"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "lastError",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "assignedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "startedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "completedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "zones",
+    "file": "drizzle/schema/fleet.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "zoneType",
+        "type": "varchar"
+      },
+      {
+        "field": "maxConcurrentRobots",
+        "type": "integer"
+      },
+      {
+        "field": "bounds",
+        "type": "jsonb"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "zone_reservations",
+    "file": "drizzle/schema/fleet.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "zoneId",
+        "type": "integer"
+      },
+      {
+        "field": "deviceId",
+        "type": "integer"
+      },
+      {
+        "field": "deviceKind",
+        "type": "varchar"
+      },
+      {
+        "field": "taskId",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "reservedFrom",
+        "type": "timestamp"
+      },
+      {
+        "field": "reservedUntil",
+        "type": "timestamp"
+      },
+      {
+        "field": "releasedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "operation_codes",
+    "file": "drizzle/schema/fleetResource.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "requiredCapability",
+        "type": "varchar"
+      },
+      {
+        "field": "requiredSkillIds",
+        "type": "jsonb"
+      },
+      {
+        "field": "toolType",
+        "type": "varchar"
+      },
+      {
+        "field": "estimatedCycleMs",
+        "type": "integer"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "isActive",
+        "type": "boolean"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "operation_program_map",
+    "file": "drizzle/schema/fleetResource.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "operationCodeId",
+        "type": "integer"
+      },
+      {
+        "field": "programProjectId",
+        "type": "integer"
+      },
+      {
+        "field": "deviceKind",
+        "type": "varchar"
+      },
+      {
+        "field": "compatible",
+        "type": "boolean"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "program_variants",
+    "file": "drizzle/schema/fleetResource.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "programProjectId",
+        "type": "integer"
+      },
+      {
+        "field": "variant",
+        "type": "varchar"
+      },
+      {
+        "field": "trafficSplitPct",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "rolloutStartAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "metrics",
+        "type": "jsonb"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "shared_resources",
+    "file": "drizzle/schema/fleetResource.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "type",
+        "type": "varchar"
+      },
+      {
+        "field": "currentOwnerDeviceId",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "locationZoneId",
+        "type": "integer"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "resource_reservations",
+    "file": "drizzle/schema/fleetResource.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "resourceId",
+        "type": "integer"
+      },
+      {
+        "field": "taskId",
+        "type": "integer"
+      },
+      {
+        "field": "deviceId",
+        "type": "integer"
+      },
+      {
+        "field": "deviceKind",
+        "type": "varchar"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "reservedFrom",
+        "type": "timestamp"
+      },
+      {
+        "field": "reservedUntil",
+        "type": "timestamp"
+      },
+      {
+        "field": "releasedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "charger_stations",
+    "file": "drizzle/schema/fleetResource.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "locationZoneId",
+        "type": "integer"
+      },
+      {
+        "field": "chargerType",
+        "type": "varchar"
+      },
+      {
+        "field": "powerWatts",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "battery_charging_plans",
+    "file": "drizzle/schema/fleetResource.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "deviceId",
+        "type": "integer"
+      },
+      {
+        "field": "deviceKind",
+        "type": "varchar"
+      },
+      {
+        "field": "chargerStationId",
+        "type": "integer"
+      },
+      {
+        "field": "plannedStartAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "estimatedDurationMs",
+        "type": "integer"
+      },
+      {
+        "field": "currentEnergyPct",
+        "type": "integer"
+      },
+      {
+        "field": "reason",
+        "type": "text"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
       },
       {
         "field": "createdAt",
@@ -4220,6 +7020,117 @@
     "fks": []
   },
   {
+    "table": "golden_sample_references",
+    "file": "drizzle/schema/goldenSample.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "productCode",
+        "type": "varchar"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "recipeCode",
+        "type": "varchar"
+      },
+      {
+        "field": "stationCode",
+        "type": "varchar"
+      },
+      {
+        "field": "roiKey",
+        "type": "varchar"
+      },
+      {
+        "field": "version",
+        "type": "integer"
+      },
+      {
+        "field": "active",
+        "type": "boolean"
+      },
+      {
+        "field": "grayBase64",
+        "type": "text"
+      },
+      {
+        "field": "width",
+        "type": "integer"
+      },
+      {
+        "field": "height",
+        "type": "integer"
+      },
+      {
+        "field": "format",
+        "type": "varchar"
+      },
+      {
+        "field": "imageUrl",
+        "type": "text"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "approvedBy",
+        "type": "integer"
+      },
+      {
+        "field": "approvedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "approvalNote",
+        "type": "text"
+      },
+      {
+        "field": "alignBeforeDiff",
+        "type": "boolean"
+      },
+      {
+        "field": "sourceInspectionId",
+        "type": "integer"
+      },
+      {
+        "field": "sourceMeasurementId",
+        "type": "integer"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "corporates",
     "file": "drizzle/schema/hierarchy.ts",
     "columns": [
@@ -4315,6 +7226,22 @@
         "type": "decimal"
       },
       {
+        "field": "floorPlanImageUrl",
+        "type": "text"
+      },
+      {
+        "field": "floorPlanImageKey",
+        "type": "varchar"
+      },
+      {
+        "field": "floorWidthM",
+        "type": "decimal"
+      },
+      {
+        "field": "floorDepthM",
+        "type": "decimal"
+      },
+      {
         "field": "isActive",
         "type": "boolean"
       },
@@ -4327,7 +7254,9 @@
         "type": "timestamp"
       }
     ],
-    "fks": []
+    "fks": [
+      "corporates.code"
+    ]
   },
   {
     "table": "workshops",
@@ -4370,7 +7299,9 @@
         "type": "timestamp"
       }
     ],
-    "fks": []
+    "fks": [
+      "factories.id"
+    ]
   },
   {
     "table": "production_lines",
@@ -4417,7 +7348,9 @@
         "type": "timestamp"
       }
     ],
-    "fks": []
+    "fks": [
+      "workshops.id"
+    ]
   },
   {
     "table": "stations",
@@ -4460,7 +7393,9 @@
         "type": "timestamp"
       }
     ],
-    "fks": []
+    "fks": [
+      "productionLines.id"
+    ]
   },
   {
     "table": "machines",
@@ -4535,12 +7470,36 @@
         "type": "varchar"
       },
       {
+        "field": "ipAddress",
+        "type": "varchar"
+      },
+      {
+        "field": "port",
+        "type": "integer"
+      },
+      {
+        "field": "connectionProtocol",
+        "type": "varchar"
+      },
+      {
         "field": "syncMode",
         "type": "statusEnum_1"
       },
       {
         "field": "registrationStatus",
         "type": "varchar"
+      },
+      {
+        "field": "lifecycleStatus",
+        "type": "varchar"
+      },
+      {
+        "field": "urn",
+        "type": "text"
+      },
+      {
+        "field": "isa95Path",
+        "type": "text"
       },
       {
         "field": "lastSyncAt",
@@ -4567,6 +7526,14 @@
         "type": "jsonb"
       },
       {
+        "field": "deviceTypeKey",
+        "type": "varchar"
+      },
+      {
+        "field": "capabilitiesValidation",
+        "type": "jsonb"
+      },
+      {
         "field": "layout",
         "type": "jsonb"
       },
@@ -4579,7 +7546,9 @@
         "type": "timestamp"
       }
     ],
-    "fks": []
+    "fks": [
+      "stations.id"
+    ]
   },
   {
     "table": "workstations",
@@ -4631,6 +7600,80 @@
       },
       {
         "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "hot_folder_configs",
+    "file": "drizzle/schema/hotFolder.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "adapterKey",
+        "type": "varchar"
+      },
+      {
+        "field": "watchPath",
+        "type": "text"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "hot_folder_files",
+    "file": "drizzle/schema/hotFolder.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "configId",
+        "type": "integer"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "fileName",
+        "type": "varchar"
+      },
+      {
+        "field": "contentHash",
+        "type": "varchar"
+      },
+      {
+        "field": "idempotencyKey",
+        "type": "varchar"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "inspectionId",
+        "type": "integer"
+      },
+      {
+        "field": "errorReason",
+        "type": "text"
+      },
+      {
+        "field": "processedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
         "type": "timestamp"
       }
     ],
@@ -4777,11 +7820,96 @@
         "type": "jsonb"
       },
       {
+        "field": "ingestMode",
+        "type": "varchar"
+      },
+      {
+        "field": "programReleaseId",
+        "type": "integer"
+      },
+      {
+        "field": "ntfScore",
+        "type": "real"
+      },
+      {
+        "field": "panelSerial",
+        "type": "varchar"
+      },
+      {
+        "field": "boardIndex",
+        "type": "integer"
+      },
+      {
+        "field": "operatorUserId",
+        "type": "integer"
+      },
+      {
+        "field": "serverReceivedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "timeSkewSeconds",
+        "type": "integer"
+      },
+      {
+        "field": "clockSkewFlagged",
+        "type": "boolean"
+      },
+      {
+        "field": "timeSource",
+        "type": "varchar"
+      },
+      {
+        "field": "idempotencyKey",
+        "type": "varchar"
+      },
+      {
+        "field": "pointsConfigVersion",
+        "type": "integer"
+      },
+      {
+        "field": "configVersionStatus",
+        "type": "varchar"
+      },
+      {
+        "field": "variantId",
+        "type": "integer"
+      },
+      {
         "field": "createdAt",
         "type": "timestamp"
       },
       {
         "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "machines.id"
+    ]
+  },
+  {
+    "table": "inspection_idempotency_keys",
+    "file": "drizzle/schema/inspection.ts",
+    "columns": [
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "idempotencyKey",
+        "type": "varchar"
+      },
+      {
+        "field": "inspectionId",
+        "type": "integer"
+      },
+      {
+        "field": "inspectionTime",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
         "type": "timestamp"
       }
     ],
@@ -4892,6 +8020,10 @@
         "type": "varchar"
       },
       {
+        "field": "defectCodeRaw",
+        "type": "varchar"
+      },
+      {
         "field": "defectBboxX",
         "type": "integer"
       },
@@ -4920,7 +8052,11 @@
         "type": "timestamp"
       }
     ],
-    "fks": []
+    "fks": [
+      "productInspections.id",
+      "measurementPointDefs.id",
+      "defectCatalog.id"
+    ]
   },
   {
     "table": "inspection_packages",
@@ -5833,6 +8969,104 @@
       {
         "field": "updatedAt",
         "type": "timestamp"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "revokedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "integration_outbox",
+    "file": "drizzle/schema/integrationOutbox.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "eventType",
+        "type": "varchar"
+      },
+      {
+        "field": "payload",
+        "type": "jsonb"
+      },
+      {
+        "field": "targetEndpoint",
+        "type": "text"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "attempts",
+        "type": "integer"
+      },
+      {
+        "field": "nextAttemptAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "lastError",
+        "type": "text"
+      },
+      {
+        "field": "idempotencyKey",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "sentAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "integration_inbound_idempotency",
+    "file": "drizzle/schema/integrationOutbox.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "resource",
+        "type": "varchar"
+      },
+      {
+        "field": "idempotencyKey",
+        "type": "varchar"
+      },
+      {
+        "field": "schemaVersion",
+        "type": "varchar"
+      },
+      {
+        "field": "result",
+        "type": "jsonb"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
       }
     ],
     "fks": []
@@ -6066,6 +9300,139 @@
       {
         "field": "createdAt",
         "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "kb_corpora",
+    "file": "drizzle/schema/kbStudio.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "kb_ingest_jobs",
+    "file": "drizzle/schema/kbStudio.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "corpus",
+        "type": "varchar"
+      },
+      {
+        "field": "sourceType",
+        "type": "varchar"
+      },
+      {
+        "field": "sourceRef",
+        "type": "varchar"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "chunksAdded",
+        "type": "integer"
+      },
+      {
+        "field": "error",
+        "type": "text"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "finishedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "kb_studio_chunks",
+    "file": "drizzle/schema/kbStudio.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "corpus",
+        "type": "varchar"
+      },
+      {
+        "field": "sourceType",
+        "type": "varchar"
+      },
+      {
+        "field": "sourceRef",
+        "type": "varchar"
+      },
+      {
+        "field": "chunkIndex",
+        "type": "integer"
+      },
+      {
+        "field": "text",
+        "type": "text"
+      },
+      {
+        "field": "embedding",
+        "type": "text"
+      },
+      {
+        "field": "embeddingDim",
+        "type": "integer"
+      },
+      {
+        "field": "tokenCount",
+        "type": "integer"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "embeddingVec",
+        "type": "pgvector"
       }
     ],
     "fks": []
@@ -6590,6 +9957,371 @@
     "fks": []
   },
   {
+    "table": "line_states",
+    "file": "drizzle/schema/lineController.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "lineId",
+        "type": "integer"
+      },
+      {
+        "field": "state",
+        "type": "text"
+      },
+      {
+        "field": "heldReason",
+        "type": "text"
+      },
+      {
+        "field": "recipeSetRef",
+        "type": "text"
+      },
+      {
+        "field": "activeOrderId",
+        "type": "integer"
+      },
+      {
+        "field": "taktTargetS",
+        "type": "real"
+      },
+      {
+        "field": "enteredAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "productionLines.id"
+    ]
+  },
+  {
+    "table": "line_state_transitions",
+    "file": "drizzle/schema/lineController.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "lineId",
+        "type": "integer"
+      },
+      {
+        "field": "fromState",
+        "type": "text"
+      },
+      {
+        "field": "toState",
+        "type": "text"
+      },
+      {
+        "field": "reason",
+        "type": "text"
+      },
+      {
+        "field": "triggeredBy",
+        "type": "text"
+      },
+      {
+        "field": "correlationId",
+        "type": "text"
+      },
+      {
+        "field": "policyRef",
+        "type": "text"
+      },
+      {
+        "field": "metadata",
+        "type": "jsonb"
+      },
+      {
+        "field": "ts",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "recipe_sets",
+    "file": "drizzle/schema/lineController.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "text"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "version",
+        "type": "integer"
+      },
+      {
+        "field": "locked",
+        "type": "boolean"
+      },
+      {
+        "field": "lockedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "lockedBy",
+        "type": "text"
+      },
+      {
+        "field": "status",
+        "type": "text"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "productModels.id"
+    ]
+  },
+  {
+    "table": "recipe_set_items",
+    "file": "drizzle/schema/lineController.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "recipeSetId",
+        "type": "integer"
+      },
+      {
+        "field": "stationId",
+        "type": "integer"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "machineRecipeId",
+        "type": "integer"
+      },
+      {
+        "field": "required",
+        "type": "boolean"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "recipeSets.id",
+      "machines.id",
+      "machineRecipes.id"
+    ]
+  },
+  {
+    "table": "feeder_setup_verifications",
+    "file": "drizzle/schema/lineMaterials.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "lineId",
+        "type": "integer"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "programId",
+        "type": "integer"
+      },
+      {
+        "field": "slotCode",
+        "type": "varchar"
+      },
+      {
+        "field": "expectedComponentCode",
+        "type": "varchar"
+      },
+      {
+        "field": "scannedComponentCode",
+        "type": "varchar"
+      },
+      {
+        "field": "scannedReel",
+        "type": "varchar"
+      },
+      {
+        "field": "feederMaterialId",
+        "type": "integer"
+      },
+      {
+        "field": "verdict",
+        "type": "varchar"
+      },
+      {
+        "field": "verifiedBy",
+        "type": "integer"
+      },
+      {
+        "field": "verifiedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "msd_exposure_logs",
+    "file": "drizzle/schema/lineMaterials.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "componentCode",
+        "type": "varchar"
+      },
+      {
+        "field": "reelId",
+        "type": "varchar"
+      },
+      {
+        "field": "materialId",
+        "type": "integer"
+      },
+      {
+        "field": "mslLevel",
+        "type": "varchar"
+      },
+      {
+        "field": "removedFromDryAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "floorLifeHoursAllowed",
+        "type": "decimal"
+      },
+      {
+        "field": "exposedHoursAccrued",
+        "type": "decimal"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "bakeStartedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "closedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "loggedBy",
+        "type": "integer"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "stencil_usage_logs",
+    "file": "drizzle/schema/lineMaterials.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "stencilToolId",
+        "type": "integer"
+      },
+      {
+        "field": "printCount",
+        "type": "integer"
+      },
+      {
+        "field": "cleanedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "tensionCheckAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "tensionValue",
+        "type": "decimal"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "recordedBy",
+        "type": "integer"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "machine_status_logs",
     "file": "drizzle/schema/machine.ts",
     "columns": [
@@ -6822,6 +10554,116 @@
     "fks": []
   },
   {
+    "table": "machine_config_state",
+    "file": "drizzle/schema/machineConfigState.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "configKind",
+        "type": "varchar"
+      },
+      {
+        "field": "desiredCode",
+        "type": "varchar"
+      },
+      {
+        "field": "desiredVersion",
+        "type": "varchar"
+      },
+      {
+        "field": "desiredChecksum",
+        "type": "varchar"
+      },
+      {
+        "field": "notifiedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "reportedCode",
+        "type": "varchar"
+      },
+      {
+        "field": "reportedVersion",
+        "type": "varchar"
+      },
+      {
+        "field": "reportedChecksum",
+        "type": "varchar"
+      },
+      {
+        "field": "reportedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "driftState",
+        "type": "varchar"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "work_order_parts",
+    "file": "drizzle/schema/maintenanceParts.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "workOrderId",
+        "type": "integer"
+      },
+      {
+        "field": "sparePartId",
+        "type": "integer"
+      },
+      {
+        "field": "partCode",
+        "type": "varchar"
+      },
+      {
+        "field": "quantityUsed",
+        "type": "integer"
+      },
+      {
+        "field": "unitCost",
+        "type": "decimal"
+      },
+      {
+        "field": "consumedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "consumedBy",
+        "type": "integer"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "suppliers",
     "file": "drizzle/schema/masterdata.ts",
     "columns": [
@@ -6966,6 +10808,10 @@
       {
         "field": "packageType",
         "type": "varchar"
+      },
+      {
+        "field": "packageId",
+        "type": "integer"
       },
       {
         "field": "msl",
@@ -7395,6 +11241,37 @@
     "fks": []
   },
   {
+    "table": "calendar_day_shifts",
+    "file": "drizzle/schema/masterdata.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "calendarDayId",
+        "type": "integer"
+      },
+      {
+        "field": "shiftConfigId",
+        "type": "integer"
+      },
+      {
+        "field": "isActive",
+        "type": "boolean"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "warehouses",
     "file": "drizzle/schema/masterdata.ts",
     "columns": [
@@ -7522,6 +11399,65 @@
       },
       {
         "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "measurement_corrections",
+    "file": "drizzle/schema/measurementCorrections.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "measurementResultId",
+        "type": "integer"
+      },
+      {
+        "field": "inspectionId",
+        "type": "integer"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "pointDefId",
+        "type": "integer"
+      },
+      {
+        "field": "originalResult",
+        "type": "varchar"
+      },
+      {
+        "field": "correctedResult",
+        "type": "varchar"
+      },
+      {
+        "field": "source",
+        "type": "varchar"
+      },
+      {
+        "field": "reason",
+        "type": "text"
+      },
+      {
+        "field": "operatorUserId",
+        "type": "integer"
+      },
+      {
+        "field": "imageKey",
+        "type": "varchar"
+      },
+      {
+        "field": "imageUrl",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
         "type": "timestamp"
       }
     ],
@@ -7745,8 +11681,16 @@
         "type": "varchar"
       },
       {
+        "field": "supplierId",
+        "type": "integer"
+      },
+      {
         "field": "materialCode",
         "type": "varchar"
+      },
+      {
+        "field": "materialId",
+        "type": "integer"
       },
       {
         "field": "materialName",
@@ -7798,6 +11742,10 @@
       {
         "field": "materialCode",
         "type": "varchar"
+      },
+      {
+        "field": "materialId",
+        "type": "integer"
       },
       {
         "field": "materialName",
@@ -7938,6 +11886,14 @@
         "type": "boolean"
       },
       {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
         "field": "createdAt",
         "type": "timestamp"
       },
@@ -8031,6 +11987,14 @@
       {
         "field": "resolutionNotes",
         "type": "text"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
       },
       {
         "field": "createdAt",
@@ -8233,6 +12197,10 @@
         "type": "varchar"
       },
       {
+        "field": "materialId",
+        "type": "integer"
+      },
+      {
         "field": "componentName",
         "type": "varchar"
       },
@@ -8290,6 +12258,10 @@
       {
         "field": "componentCode",
         "type": "varchar"
+      },
+      {
+        "field": "materialId",
+        "type": "integer"
       },
       {
         "field": "supplierLotId",
@@ -8454,6 +12426,10 @@
         "type": "integer"
       },
       {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
         "field": "approvalStatus",
         "type": "approvalStatusEnum"
       },
@@ -8507,6 +12483,14 @@
       },
       {
         "field": "fcmToken",
+        "type": "varchar"
+      },
+      {
+        "field": "password",
+        "type": "varchar"
+      },
+      {
+        "field": "passwordHash",
         "type": "varchar"
       },
       {
@@ -8801,11 +12785,74 @@
         "type": "integer"
       },
       {
+        "field": "resolvedByName",
+        "type": "varchar"
+      },
+      {
         "field": "resolutionNote",
         "type": "text"
       },
       {
+        "field": "escalatedAt",
+        "type": "timestamp"
+      },
+      {
         "field": "triggeredAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "alert_escalation_rules",
+    "file": "drizzle/schema/mqtt.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "severity",
+        "type": "varchar"
+      },
+      {
+        "field": "alertType",
+        "type": "varchar"
+      },
+      {
+        "field": "escalateAfterMin",
+        "type": "integer"
+      },
+      {
+        "field": "notifyRoles",
+        "type": "jsonb"
+      },
+      {
+        "field": "notifyUserIds",
+        "type": "jsonb"
+      },
+      {
+        "field": "enabled",
+        "type": "boolean"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
         "type": "timestamp"
       }
     ],
@@ -9337,7 +13384,27 @@
         "type": "integer"
       },
       {
+        "field": "acknowledgedByName",
+        "type": "varchar"
+      },
+      {
+        "field": "ackComment",
+        "type": "text"
+      },
+      {
         "field": "resolvedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "resolvedByName",
+        "type": "varchar"
+      },
+      {
+        "field": "resolutionNote",
+        "type": "text"
+      },
+      {
+        "field": "escalatedAt",
         "type": "timestamp"
       },
       {
@@ -9960,6 +14027,259 @@
     "fks": []
   },
   {
+    "table": "nonconformance_reports",
+    "file": "drizzle/schema/ncr.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "ncrKey",
+        "type": "varchar"
+      },
+      {
+        "field": "source",
+        "type": "varchar"
+      },
+      {
+        "field": "linkedInspectionId",
+        "type": "integer"
+      },
+      {
+        "field": "lotNumber",
+        "type": "varchar"
+      },
+      {
+        "field": "serialNumber",
+        "type": "varchar"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "defectSummary",
+        "type": "text"
+      },
+      {
+        "field": "disposition",
+        "type": "varchar"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "quarantineLocationId",
+        "type": "integer"
+      },
+      {
+        "field": "raisedBy",
+        "type": "integer"
+      },
+      {
+        "field": "reviewedBy",
+        "type": "integer"
+      },
+      {
+        "field": "decidedBy",
+        "type": "integer"
+      },
+      {
+        "field": "closedBy",
+        "type": "integer"
+      },
+      {
+        "field": "reason",
+        "type": "text"
+      },
+      {
+        "field": "note",
+        "type": "text"
+      },
+      {
+        "field": "raisedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "reviewedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "decidedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "closedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "golden_revalidation_flags",
+    "file": "drizzle/schema/ncr.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "reason",
+        "type": "text"
+      },
+      {
+        "field": "triggeredByReleaseId",
+        "type": "integer"
+      },
+      {
+        "field": "clearedBy",
+        "type": "integer"
+      },
+      {
+        "field": "clearedByRef",
+        "type": "varchar"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "clearedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "ntf_classifier_models",
+    "file": "drizzle/schema/ntfClassifier.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "version",
+        "type": "varchar"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "featureSchema",
+        "type": "varchar"
+      },
+      {
+        "field": "classLabels",
+        "type": "jsonb"
+      },
+      {
+        "field": "featureNames",
+        "type": "jsonb"
+      },
+      {
+        "field": "artifact",
+        "type": "jsonb"
+      },
+      {
+        "field": "datasetChecksum",
+        "type": "varchar"
+      },
+      {
+        "field": "sampleCount",
+        "type": "integer"
+      },
+      {
+        "field": "trainCount",
+        "type": "integer"
+      },
+      {
+        "field": "valCount",
+        "type": "integer"
+      },
+      {
+        "field": "testCount",
+        "type": "integer"
+      },
+      {
+        "field": "labelDistribution",
+        "type": "jsonb"
+      },
+      {
+        "field": "metrics",
+        "type": "jsonb"
+      },
+      {
+        "field": "valMetrics",
+        "type": "jsonb"
+      },
+      {
+        "field": "baselineMetrics",
+        "type": "jsonb"
+      },
+      {
+        "field": "gate",
+        "type": "jsonb"
+      },
+      {
+        "field": "classBalance",
+        "type": "jsonb"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "activatedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "oee_metrics",
     "file": "drizzle/schema/oee.ts",
     "columns": [
@@ -10197,6 +14517,61 @@
     "fks": []
   },
   {
+    "table": "operator_badges",
+    "file": "drizzle/schema/operatorBadge.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "badgeCode",
+        "type": "varchar"
+      },
+      {
+        "field": "userId",
+        "type": "integer"
+      },
+      {
+        "field": "displayName",
+        "type": "varchar"
+      },
+      {
+        "field": "source",
+        "type": "varchar"
+      },
+      {
+        "field": "validFrom",
+        "type": "timestamp"
+      },
+      {
+        "field": "validTo",
+        "type": "timestamp"
+      },
+      {
+        "field": "issuedBy",
+        "type": "integer"
+      },
+      {
+        "field": "isActive",
+        "type": "boolean"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "orchestration_workflows",
     "file": "drizzle/schema/orchestration.ts",
     "columns": [
@@ -10358,6 +14733,94 @@
     "fks": []
   },
   {
+    "table": "orchestration_workflow_versions",
+    "file": "drizzle/schema/orchestration.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "workflowId",
+        "type": "integer"
+      },
+      {
+        "field": "ref",
+        "type": "varchar"
+      },
+      {
+        "field": "version",
+        "type": "integer"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "definitionJson",
+        "type": "jsonb"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "order_state_transitions",
+    "file": "drizzle/schema/orderLifecycle.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "orderId",
+        "type": "integer"
+      },
+      {
+        "field": "fromState",
+        "type": "varchar"
+      },
+      {
+        "field": "toState",
+        "type": "varchar"
+      },
+      {
+        "field": "reason",
+        "type": "text"
+      },
+      {
+        "field": "triggeredBy",
+        "type": "varchar"
+      },
+      {
+        "field": "correlationId",
+        "type": "varchar"
+      },
+      {
+        "field": "metadata",
+        "type": "jsonb"
+      },
+      {
+        "field": "ts",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "productionOrders.id"
+    ]
+  },
+  {
     "table": "device_adapters",
     "file": "drizzle/schema/ot.ts",
     "columns": [
@@ -10473,6 +14936,14 @@
         "type": "boolean"
       },
       {
+        "field": "deadband",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "samplingMs",
+        "type": "integer"
+      },
+      {
         "field": "createdAt",
         "type": "timestamp"
       },
@@ -10489,38 +14960,54 @@
     "columns": [
       {
         "field": "id",
-        "type": "serial"
+        "type": "bigserial"
       },
       {
-        "field": "adapterId",
-        "type": "integer"
+        "field": "ts",
+        "type": "timestamp"
       },
       {
         "field": "machineId",
         "type": "integer"
       },
       {
-        "field": "tagKey",
-        "type": "varchar"
+        "field": "deviceId",
+        "type": "text"
       },
       {
-        "field": "valueNumeric",
-        "type": "decimal"
+        "field": "protocol",
+        "type": "telemetryProtocolEnum"
       },
       {
-        "field": "valueText",
-        "type": "varchar"
+        "field": "metric",
+        "type": "text"
+      },
+      {
+        "field": "numValue",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "textValue",
+        "type": "text"
+      },
+      {
+        "field": "boolValue",
+        "type": "boolean"
+      },
+      {
+        "field": "unit",
+        "type": "text"
       },
       {
         "field": "quality",
-        "type": "varchar"
+        "type": "telemetryQualityEnum"
       },
       {
-        "field": "timestamp",
-        "type": "timestamp"
+        "field": "meta",
+        "type": "jsonb"
       },
       {
-        "field": "createdAt",
+        "field": "ingestedAt",
         "type": "timestamp"
       }
     ],
@@ -10575,6 +15062,22 @@
         "type": "integer"
       },
       {
+        "field": "isGolden",
+        "type": "boolean"
+      },
+      {
+        "field": "approvedBy",
+        "type": "integer"
+      },
+      {
+        "field": "approvedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "approvalNote",
+        "type": "text"
+      },
+      {
         "field": "createdAt",
         "type": "timestamp"
       },
@@ -10583,7 +15086,9 @@
         "type": "timestamp"
       }
     ],
-    "fks": []
+    "fks": [
+      "machines.id"
+    ]
   },
   {
     "table": "recipe_deployments",
@@ -10634,7 +15139,69 @@
         "type": "timestamp"
       }
     ],
-    "fks": []
+    "fks": [
+      "machineRecipes.id",
+      "machines.id"
+    ]
+  },
+  {
+    "table": "changeover_requests",
+    "file": "drizzle/schema/ot.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "recipeId",
+        "type": "integer"
+      },
+      {
+        "field": "requestedBy",
+        "type": "integer"
+      },
+      {
+        "field": "requestNote",
+        "type": "text"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "decidedBy",
+        "type": "integer"
+      },
+      {
+        "field": "decisionNote",
+        "type": "text"
+      },
+      {
+        "field": "decidedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "deploymentId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "machines.id",
+      "machineRecipes.id",
+      "recipeDeployments.id"
+    ]
   },
   {
     "table": "command_log",
@@ -10717,6 +15284,14 @@
         "type": "varchar"
       },
       {
+        "field": "correlationId",
+        "type": "text"
+      },
+      {
+        "field": "deadlineMs",
+        "type": "integer"
+      },
+      {
         "field": "sentAt",
         "type": "timestamp"
       },
@@ -10726,6 +15301,352 @@
       },
       {
         "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "commissioning_records",
+    "file": "drizzle/schema/ot.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "adapterId",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "fatReference",
+        "type": "varchar"
+      },
+      {
+        "field": "signedBy",
+        "type": "integer"
+      },
+      {
+        "field": "signedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "expiresAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "revokedBy",
+        "type": "integer"
+      },
+      {
+        "field": "revokedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "revokeReason",
+        "type": "text"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "uns_tag_mappings",
+    "file": "drizzle/schema/ot.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "adapterId",
+        "type": "integer"
+      },
+      {
+        "field": "tag",
+        "type": "varchar"
+      },
+      {
+        "field": "unsTopic",
+        "type": "varchar"
+      },
+      {
+        "field": "sparkplugMetric",
+        "type": "varchar"
+      },
+      {
+        "field": "transform",
+        "type": "jsonb"
+      },
+      {
+        "field": "enabled",
+        "type": "boolean"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "parameter_guardrails",
+    "file": "drizzle/schema/parameterGuardrails.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "scope",
+        "type": "text"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "machineType",
+        "type": "text"
+      },
+      {
+        "field": "paramKey",
+        "type": "text"
+      },
+      {
+        "field": "minValue",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "maxValue",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "maxStep",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "unit",
+        "type": "text"
+      },
+      {
+        "field": "requiresTwinValidation",
+        "type": "boolean"
+      },
+      {
+        "field": "setBy",
+        "type": "integer"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "parameter_change_log",
+    "file": "drizzle/schema/parameterGuardrails.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "paramKey",
+        "type": "text"
+      },
+      {
+        "field": "oldValue",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "newValue",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "source",
+        "type": "text"
+      },
+      {
+        "field": "guardrailId",
+        "type": "integer"
+      },
+      {
+        "field": "verifyStatus",
+        "type": "text"
+      },
+      {
+        "field": "verifyAfter",
+        "type": "timestamp"
+      },
+      {
+        "field": "verifiedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "metricsBefore",
+        "type": "jsonb"
+      },
+      {
+        "field": "metricsAfter",
+        "type": "jsonb"
+      },
+      {
+        "field": "correlationId",
+        "type": "text"
+      },
+      {
+        "field": "ts",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "policy_definitions",
+    "file": "drizzle/schema/policyStore.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "policyId",
+        "type": "text"
+      },
+      {
+        "field": "version",
+        "type": "integer"
+      },
+      {
+        "field": "effect",
+        "type": "text"
+      },
+      {
+        "field": "actionPattern",
+        "type": "text"
+      },
+      {
+        "field": "resourcePattern",
+        "type": "text"
+      },
+      {
+        "field": "conditions",
+        "type": "jsonb"
+      },
+      {
+        "field": "priority",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "text"
+      },
+      {
+        "field": "source",
+        "type": "text"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "updatedBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "policy_decision_log",
+    "file": "drizzle/schema/policyStore.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "requestId",
+        "type": "text"
+      },
+      {
+        "field": "subject",
+        "type": "text"
+      },
+      {
+        "field": "action",
+        "type": "text"
+      },
+      {
+        "field": "resource",
+        "type": "text"
+      },
+      {
+        "field": "decision",
+        "type": "text"
+      },
+      {
+        "field": "reasonCode",
+        "type": "text"
+      },
+      {
+        "field": "policyRef",
+        "type": "text"
+      },
+      {
+        "field": "obligations",
+        "type": "jsonb"
+      },
+      {
+        "field": "latencyMs",
+        "type": "real"
+      },
+      {
+        "field": "contextSummary",
+        "type": "jsonb"
+      },
+      {
+        "field": "ts",
         "type": "timestamp"
       }
     ],
@@ -10792,7 +15713,207 @@
         "type": "integer"
       },
       {
+        "field": "serverReceivedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "timeSource",
+        "type": "varchar"
+      },
+      {
+        "field": "idempotencyKey",
+        "type": "varchar"
+      },
+      {
+        "field": "waveforms",
+        "type": "jsonb"
+      },
+      {
         "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "process_idempotency_keys",
+    "file": "drizzle/schema/process.ts",
+    "columns": [
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "idempotencyKey",
+        "type": "varchar"
+      },
+      {
+        "field": "resultId",
+        "type": "integer"
+      },
+      {
+        "field": "measuredAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "process_step_types",
+    "file": "drizzle/schema/process.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "nameVi",
+        "type": "varchar"
+      },
+      {
+        "field": "nameEn",
+        "type": "varchar"
+      },
+      {
+        "field": "machineType",
+        "type": "varchar"
+      },
+      {
+        "field": "active",
+        "type": "boolean"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "process_spec_limits",
+    "file": "drizzle/schema/process.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "machineType",
+        "type": "varchar"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "stepType",
+        "type": "varchar"
+      },
+      {
+        "field": "metricKey",
+        "type": "varchar"
+      },
+      {
+        "field": "unit",
+        "type": "varchar"
+      },
+      {
+        "field": "lsl",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "usl",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "nominal",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "active",
+        "type": "boolean"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "approvedBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "process_result_daily",
+    "file": "drizzle/schema/processMart.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "day",
+        "type": "date"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "machineType",
+        "type": "machineTypeEnum"
+      },
+      {
+        "field": "stepType",
+        "type": "varchar"
+      },
+      {
+        "field": "pass",
+        "type": "integer"
+      },
+      {
+        "field": "fail",
+        "type": "integer"
+      },
+      {
+        "field": "warn",
+        "type": "integer"
+      },
+      {
+        "field": "skip",
+        "type": "integer"
+      },
+      {
+        "field": "total",
+        "type": "integer"
+      },
+      {
+        "field": "firstPassYield",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
         "type": "timestamp"
       }
     ],
@@ -10837,6 +15958,14 @@
       {
         "field": "lifecycleStatus",
         "type": "lifecycleStatusEnum"
+      },
+      {
+        "field": "revision",
+        "type": "varchar"
+      },
+      {
+        "field": "clonedFromId",
+        "type": "integer"
       },
       {
         "field": "referenceImageUrl",
@@ -11233,12 +16362,28 @@
         "type": "integer"
       },
       {
+        "field": "componentCode",
+        "type": "varchar"
+      },
+      {
+        "field": "refDesignator",
+        "type": "varchar"
+      },
+      {
+        "field": "variantId",
+        "type": "integer"
+      },
+      {
         "field": "isActive",
         "type": "boolean"
       },
       {
         "field": "deletedAt",
         "type": "timestamp"
+      },
+      {
+        "field": "deletedAtVersion",
+        "type": "integer"
       },
       {
         "field": "createdAt",
@@ -11280,7 +16425,105 @@
         "type": "varchar"
       },
       {
+        "field": "productPointsConfigVersion",
+        "type": "integer"
+      },
+      {
         "field": "changedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "product_variants",
+    "file": "drizzle/schema/product.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "isBase",
+        "type": "boolean"
+      },
+      {
+        "field": "pointsConfigVersion",
+        "type": "integer"
+      },
+      {
+        "field": "referenceImageUrl",
+        "type": "text"
+      },
+      {
+        "field": "referenceImageKey",
+        "type": "varchar"
+      },
+      {
+        "field": "coordinateMode",
+        "type": "varchar"
+      },
+      {
+        "field": "lifecycleStatus",
+        "type": "varchar"
+      },
+      {
+        "field": "deletedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "variant_point_overrides",
+    "file": "drizzle/schema/product.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "variantId",
+        "type": "integer"
+      },
+      {
+        "field": "basePointDefId",
+        "type": "integer"
+      },
+      {
+        "field": "action",
+        "type": "varchar"
+      },
+      {
+        "field": "patchJson",
+        "type": "jsonb"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
         "type": "timestamp"
       }
     ],
@@ -11509,6 +16752,18 @@
         "type": "varchar"
       },
       {
+        "field": "repairGuidance",
+        "type": "text"
+      },
+      {
+        "field": "repairGuidanceVi",
+        "type": "text"
+      },
+      {
+        "field": "aliasOfCode",
+        "type": "varchar"
+      },
+      {
         "field": "isActive",
         "type": "boolean"
       },
@@ -11522,6 +16777,53 @@
       },
       {
         "field": "deletedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "unmatched_defect_codes",
+    "file": "drizzle/schema/product.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "seenCount",
+        "type": "integer"
+      },
+      {
+        "field": "resolvedCatalogId",
+        "type": "integer"
+      },
+      {
+        "field": "firstSeenAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "lastSeenAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
         "type": "timestamp"
       }
     ],
@@ -12140,6 +17442,10 @@
         "type": "integer"
       },
       {
+        "field": "idealCycleTimeSec",
+        "type": "integer"
+      },
+      {
         "field": "notes",
         "type": "text"
       },
@@ -12152,7 +17458,10 @@
         "type": "timestamp"
       }
     ],
-    "fks": []
+    "fks": [
+      "productModels.id",
+      "machines.id"
+    ]
   },
   {
     "table": "measurement_point_templates",
@@ -12699,6 +18008,105 @@
     "fks": []
   },
   {
+    "table": "inspection_program_releases",
+    "file": "drizzle/schema/product.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "version",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "snapshot",
+        "type": "jsonb"
+      },
+      {
+        "field": "checksum",
+        "type": "varchar"
+      },
+      {
+        "field": "pointCount",
+        "type": "integer"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "submittedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "approvedBy",
+        "type": "integer"
+      },
+      {
+        "field": "approvedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "approvalNote",
+        "type": "text"
+      },
+      {
+        "field": "rejectedBy",
+        "type": "integer"
+      },
+      {
+        "field": "rejectedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "rejectReason",
+        "type": "text"
+      },
+      {
+        "field": "releasedBy",
+        "type": "integer"
+      },
+      {
+        "field": "releasedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "supersededAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "previousReleaseId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "cad_import_jobs",
     "file": "drizzle/schema/product.ts",
     "columns": [
@@ -12958,6 +18366,10 @@
       {
         "field": "recordedAt",
         "type": "timestamp"
+      },
+      {
+        "field": "correlationId",
+        "type": "text"
       }
     ],
     "fks": []
@@ -13159,6 +18571,18 @@
       {
         "field": "dependencies",
         "type": "json"
+      },
+      {
+        "field": "externalId",
+        "type": "text"
+      },
+      {
+        "field": "sourceSystem",
+        "type": "text"
+      },
+      {
+        "field": "lifecycleState",
+        "type": "varchar"
       },
       {
         "field": "createdBy",
@@ -13546,6 +18970,171 @@
     "fks": []
   },
   {
+    "table": "product_onboarding_drafts",
+    "file": "drizzle/schema/productOnboarding.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "currentStep",
+        "type": "integer"
+      },
+      {
+        "field": "stepState",
+        "type": "jsonb"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "product_panel_defs",
+    "file": "drizzle/schema/productPanel.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "rows",
+        "type": "integer"
+      },
+      {
+        "field": "cols",
+        "type": "integer"
+      },
+      {
+        "field": "nUp",
+        "type": "integer"
+      },
+      {
+        "field": "panelWidthMm",
+        "type": "decimal"
+      },
+      {
+        "field": "panelHeightMm",
+        "type": "decimal"
+      },
+      {
+        "field": "boardWidthMm",
+        "type": "decimal"
+      },
+      {
+        "field": "boardHeightMm",
+        "type": "decimal"
+      },
+      {
+        "field": "originCorner",
+        "type": "varchar"
+      },
+      {
+        "field": "serialScheme",
+        "type": "varchar"
+      },
+      {
+        "field": "fiducials",
+        "type": "jsonb"
+      },
+      {
+        "field": "version",
+        "type": "integer"
+      },
+      {
+        "field": "isActive",
+        "type": "boolean"
+      },
+      {
+        "field": "deletedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "product_panel_boards",
+    "file": "drizzle/schema/productPanel.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "panelDefId",
+        "type": "integer"
+      },
+      {
+        "field": "boardIndex",
+        "type": "integer"
+      },
+      {
+        "field": "offsetXMm",
+        "type": "decimal"
+      },
+      {
+        "field": "offsetYMm",
+        "type": "decimal"
+      },
+      {
+        "field": "rotationDeg",
+        "type": "decimal"
+      },
+      {
+        "field": "mirrored",
+        "type": "boolean"
+      },
+      {
+        "field": "skipped",
+        "type": "boolean"
+      },
+      {
+        "field": "refDesPrefix",
+        "type": "varchar"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "program_projects",
     "file": "drizzle/schema/programming.ts",
     "columns": [
@@ -13579,6 +19168,14 @@
       },
       {
         "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
         "type": "integer"
       },
       {
@@ -13633,11 +19230,31 @@
         "type": "programArtifactStatusEnum"
       },
       {
+        "field": "reviewStatus",
+        "type": "programArtifactReviewStatusEnum"
+      },
+      {
+        "field": "reviewedBy",
+        "type": "integer"
+      },
+      {
+        "field": "reviewedAt",
+        "type": "timestamp"
+      },
+      {
         "field": "diagnosticsJson",
         "type": "jsonb"
       },
       {
         "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
         "type": "integer"
       },
       {
@@ -13688,6 +19305,14 @@
         "type": "integer"
       },
       {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
         "field": "createdAt",
         "type": "timestamp"
       }
@@ -13728,6 +19353,14 @@
       },
       {
         "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
         "type": "integer"
       },
       {
@@ -13794,6 +19427,14 @@
         "type": "text"
       },
       {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
         "field": "createdAt",
         "type": "timestamp"
       }
@@ -13837,11 +19478,219 @@
         "type": "boolean"
       },
       {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
         "field": "createdAt",
         "type": "timestamp"
       },
       {
         "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "report_artifacts",
+    "file": "drizzle/schema/reportArtifact.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "reportType",
+        "type": "varchar"
+      },
+      {
+        "field": "format",
+        "type": "varchar"
+      },
+      {
+        "field": "title",
+        "type": "varchar"
+      },
+      {
+        "field": "params",
+        "type": "jsonb"
+      },
+      {
+        "field": "storageKey",
+        "type": "text"
+      },
+      {
+        "field": "storageUrl",
+        "type": "text"
+      },
+      {
+        "field": "fileHash",
+        "type": "varchar"
+      },
+      {
+        "field": "fileSize",
+        "type": "integer"
+      },
+      {
+        "field": "contentType",
+        "type": "varchar"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "source",
+        "type": "varchar"
+      },
+      {
+        "field": "expiresAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "dim_shift",
+    "file": "drizzle/schema/reportingMart.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "shiftCode",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "startHour",
+        "type": "integer"
+      },
+      {
+        "field": "startMinute",
+        "type": "integer"
+      },
+      {
+        "field": "endHour",
+        "type": "integer"
+      },
+      {
+        "field": "endMinute",
+        "type": "integer"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "dim_product",
+    "file": "drizzle/schema/reportingMart.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "category",
+        "type": "varchar"
+      },
+      {
+        "field": "revision",
+        "type": "varchar"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "fact_inspection_hourly",
+    "file": "drizzle/schema/reportingMart.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "bucketHour",
+        "type": "timestamp"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "shiftCode",
+        "type": "varchar"
+      },
+      {
+        "field": "totalCount",
+        "type": "integer"
+      },
+      {
+        "field": "okCount",
+        "type": "integer"
+      },
+      {
+        "field": "ngCount",
+        "type": "integer"
+      },
+      {
+        "field": "ntfCount",
+        "type": "integer"
+      },
+      {
+        "field": "yieldPct",
+        "type": "decimal"
+      },
+      {
+        "field": "fpyPct",
+        "type": "decimal"
+      },
+      {
+        "field": "computedAt",
         "type": "timestamp"
       }
     ],
@@ -13959,6 +19808,26 @@
         "type": "text"
       },
       {
+        "field": "batteryLevel",
+        "type": "decimal"
+      },
+      {
+        "field": "jointStates",
+        "type": "jsonb"
+      },
+      {
+        "field": "safetyZoneId",
+        "type": "integer"
+      },
+      {
+        "field": "firmwareVersion",
+        "type": "varchar"
+      },
+      {
+        "field": "lastHeartbeat",
+        "type": "timestamp"
+      },
+      {
         "field": "timestamp",
         "type": "timestamp"
       },
@@ -14031,6 +19900,712 @@
       },
       {
         "field": "completedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "routing_master",
+    "file": "drizzle/schema/routing.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "version",
+        "type": "integer"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "routing_steps",
+    "file": "drizzle/schema/routing.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "routingId",
+        "type": "integer"
+      },
+      {
+        "field": "stepNo",
+        "type": "integer"
+      },
+      {
+        "field": "operationCode",
+        "type": "varchar"
+      },
+      {
+        "field": "stationOrMachineType",
+        "type": "varchar"
+      },
+      {
+        "field": "standardTimeSec",
+        "type": "integer"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "rul_estimates",
+    "file": "drizzle/schema/rulFailureMode.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "machineType",
+        "type": "text"
+      },
+      {
+        "field": "componentKey",
+        "type": "text"
+      },
+      {
+        "field": "method",
+        "type": "text"
+      },
+      {
+        "field": "rulHours",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "ageHours",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "shape",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "scale",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "observations",
+        "type": "integer"
+      },
+      {
+        "field": "failures",
+        "type": "integer"
+      },
+      {
+        "field": "censored",
+        "type": "integer"
+      },
+      {
+        "field": "confidence",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "note",
+        "type": "text"
+      },
+      {
+        "field": "computedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "failure_events",
+    "file": "drizzle/schema/rulFailureMode.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "machineType",
+        "type": "text"
+      },
+      {
+        "field": "componentKey",
+        "type": "text"
+      },
+      {
+        "field": "failureMode",
+        "type": "text"
+      },
+      {
+        "field": "failureModeReason",
+        "type": "text"
+      },
+      {
+        "field": "occurredAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "ttfHours",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "censored",
+        "type": "boolean"
+      },
+      {
+        "field": "source",
+        "type": "text"
+      },
+      {
+        "field": "sourceId",
+        "type": "integer"
+      },
+      {
+        "field": "features",
+        "type": "jsonb"
+      },
+      {
+        "field": "confidence",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "camera_calibrations",
+    "file": "drizzle/schema/safetyVision.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "cameraId",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "homography",
+        "type": "jsonb"
+      },
+      {
+        "field": "pairs",
+        "type": "jsonb"
+      },
+      {
+        "field": "residualMm",
+        "type": "real"
+      },
+      {
+        "field": "safetyZoneId",
+        "type": "integer"
+      },
+      {
+        "field": "robotId",
+        "type": "integer"
+      },
+      {
+        "field": "stationId",
+        "type": "integer"
+      },
+      {
+        "field": "lineId",
+        "type": "integer"
+      },
+      {
+        "field": "imageWidth",
+        "type": "integer"
+      },
+      {
+        "field": "imageHeight",
+        "type": "integer"
+      },
+      {
+        "field": "enabled",
+        "type": "boolean"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "safety_plc_configs",
+    "file": "drizzle/schema/safetyVision.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "vendor",
+        "type": "varchar"
+      },
+      {
+        "field": "backend",
+        "type": "varchar"
+      },
+      {
+        "field": "endpoint",
+        "type": "varchar"
+      },
+      {
+        "field": "statusMap",
+        "type": "jsonb"
+      },
+      {
+        "field": "robotId",
+        "type": "integer"
+      },
+      {
+        "field": "stationId",
+        "type": "integer"
+      },
+      {
+        "field": "lineId",
+        "type": "integer"
+      },
+      {
+        "field": "enabled",
+        "type": "boolean"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "operator_assignments",
+    "file": "drizzle/schema/safetyWorkforce.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "operatorId",
+        "type": "integer"
+      },
+      {
+        "field": "lineId",
+        "type": "integer"
+      },
+      {
+        "field": "stationId",
+        "type": "integer"
+      },
+      {
+        "field": "shiftConfigId",
+        "type": "integer"
+      },
+      {
+        "field": "skillLevel",
+        "type": "varchar"
+      },
+      {
+        "field": "role",
+        "type": "varchar"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "assignedStart",
+        "type": "timestamp"
+      },
+      {
+        "field": "assignedEnd",
+        "type": "timestamp"
+      },
+      {
+        "field": "confirmedBy",
+        "type": "integer"
+      },
+      {
+        "field": "confirmedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "closedBy",
+        "type": "integer"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "collaboration_sessions",
+    "file": "drizzle/schema/safetyWorkforce.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "taskId",
+        "type": "integer"
+      },
+      {
+        "field": "operationCode",
+        "type": "varchar"
+      },
+      {
+        "field": "humanOperatorId",
+        "type": "integer"
+      },
+      {
+        "field": "robotDeviceId",
+        "type": "integer"
+      },
+      {
+        "field": "phase",
+        "type": "varchar"
+      },
+      {
+        "field": "handshakeState",
+        "type": "varchar"
+      },
+      {
+        "field": "startedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "endedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "abortedBy",
+        "type": "integer"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "safety_events",
+    "file": "drizzle/schema/safetyWorkforce.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "eventType",
+        "type": "varchar"
+      },
+      {
+        "field": "robotId",
+        "type": "integer"
+      },
+      {
+        "field": "deviceId",
+        "type": "integer"
+      },
+      {
+        "field": "lineId",
+        "type": "integer"
+      },
+      {
+        "field": "stationId",
+        "type": "integer"
+      },
+      {
+        "field": "sourceInterlockEventId",
+        "type": "integer"
+      },
+      {
+        "field": "humanPosition",
+        "type": "jsonb"
+      },
+      {
+        "field": "robotState",
+        "type": "jsonb"
+      },
+      {
+        "field": "responseTimeMs",
+        "type": "integer"
+      },
+      {
+        "field": "detectedBy",
+        "type": "varchar"
+      },
+      {
+        "field": "handledBy",
+        "type": "varchar"
+      },
+      {
+        "field": "outcome",
+        "type": "varchar"
+      },
+      {
+        "field": "isNearMiss",
+        "type": "boolean"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "auditedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "auditedBy",
+        "type": "integer"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "safety_zones",
+    "file": "drizzle/schema/safetyZones.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "robotId",
+        "type": "integer"
+      },
+      {
+        "field": "deviceId",
+        "type": "integer"
+      },
+      {
+        "field": "stationId",
+        "type": "integer"
+      },
+      {
+        "field": "lineId",
+        "type": "integer"
+      },
+      {
+        "field": "geometry",
+        "type": "jsonb"
+      },
+      {
+        "field": "speedReduceDistanceMm",
+        "type": "integer"
+      },
+      {
+        "field": "stopDistanceMm",
+        "type": "integer"
+      },
+      {
+        "field": "ratedStopDistanceMm",
+        "type": "integer"
+      },
+      {
+        "field": "reactionSpeedPct",
+        "type": "integer"
+      },
+      {
+        "field": "enabled",
+        "type": "boolean"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
         "type": "timestamp"
       }
     ],
@@ -14219,6 +20794,347 @@
       }
     ],
     "fks": []
+  },
+  {
+    "table": "security_ca_metadata",
+    "file": "drizzle/schema/security.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "trustDomain",
+        "type": "varchar"
+      },
+      {
+        "field": "subjectCn",
+        "type": "varchar"
+      },
+      {
+        "field": "certPem",
+        "type": "text"
+      },
+      {
+        "field": "pubkeyPem",
+        "type": "text"
+      },
+      {
+        "field": "fingerprintSha256",
+        "type": "varchar"
+      },
+      {
+        "field": "algorithm",
+        "type": "varchar"
+      },
+      {
+        "field": "notBefore",
+        "type": "timestamp"
+      },
+      {
+        "field": "notAfter",
+        "type": "timestamp"
+      },
+      {
+        "field": "active",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "device_certificates",
+    "file": "drizzle/schema/security.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "deviceId",
+        "type": "varchar"
+      },
+      {
+        "field": "kind",
+        "type": "deviceCertKindEnum"
+      },
+      {
+        "field": "subjectCn",
+        "type": "varchar"
+      },
+      {
+        "field": "spiffeId",
+        "type": "varchar"
+      },
+      {
+        "field": "serialNumber",
+        "type": "varchar"
+      },
+      {
+        "field": "fingerprintSha256",
+        "type": "varchar"
+      },
+      {
+        "field": "certPem",
+        "type": "text"
+      },
+      {
+        "field": "pubkeyPem",
+        "type": "text"
+      },
+      {
+        "field": "issuedBy",
+        "type": "integer"
+      },
+      {
+        "field": "rotatedFromId",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "deviceCertStatusEnum"
+      },
+      {
+        "field": "notBefore",
+        "type": "timestamp"
+      },
+      {
+        "field": "notAfter",
+        "type": "timestamp"
+      },
+      {
+        "field": "revokedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "revokedReason",
+        "type": "text"
+      },
+      {
+        "field": "metadata",
+        "type": "jsonb"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "securityCaMetadata.id"
+    ]
+  },
+  {
+    "table": "service_identities",
+    "file": "drizzle/schema/security.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "serviceName",
+        "type": "varchar"
+      },
+      {
+        "field": "spiffeId",
+        "type": "varchar"
+      },
+      {
+        "field": "certPem",
+        "type": "text"
+      },
+      {
+        "field": "pubkeyPem",
+        "type": "text"
+      },
+      {
+        "field": "fingerprintSha256",
+        "type": "varchar"
+      },
+      {
+        "field": "issuedBy",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "serviceIdentityStatusEnum"
+      },
+      {
+        "field": "notBefore",
+        "type": "timestamp"
+      },
+      {
+        "field": "notAfter",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "securityCaMetadata.id"
+    ]
+  },
+  {
+    "table": "sops",
+    "file": "drizzle/schema/sop.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "code",
+        "type": "varchar"
+      },
+      {
+        "field": "title",
+        "type": "varchar"
+      },
+      {
+        "field": "description",
+        "type": "text"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "stationId",
+        "type": "integer"
+      },
+      {
+        "field": "version",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "productModels.id",
+      "stations.id"
+    ]
+  },
+  {
+    "table": "sop_steps",
+    "file": "drizzle/schema/sop.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "sopId",
+        "type": "integer"
+      },
+      {
+        "field": "stepNo",
+        "type": "integer"
+      },
+      {
+        "field": "text",
+        "type": "text"
+      },
+      {
+        "field": "mediaRef",
+        "type": "varchar"
+      },
+      {
+        "field": "requiresConfirm",
+        "type": "boolean"
+      },
+      {
+        "field": "expectedInput",
+        "type": "varchar"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "sops.id"
+    ]
+  },
+  {
+    "table": "sop_executions",
+    "file": "drizzle/schema/sop.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "sopId",
+        "type": "integer"
+      },
+      {
+        "field": "unitSerial",
+        "type": "varchar"
+      },
+      {
+        "field": "lineId",
+        "type": "integer"
+      },
+      {
+        "field": "stationId",
+        "type": "integer"
+      },
+      {
+        "field": "operatorId",
+        "type": "integer"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "stepConfirmations",
+        "type": "jsonb"
+      },
+      {
+        "field": "startedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "finishedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "sops.id"
+    ]
   },
   {
     "table": "spc_configurations",
@@ -14755,6 +21671,84 @@
     ]
   },
   {
+    "table": "decision_traces",
+    "file": "drizzle/schema/synapseObservability.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "decisionType",
+        "type": "varchar"
+      },
+      {
+        "field": "subject",
+        "type": "varchar"
+      },
+      {
+        "field": "chosen",
+        "type": "varchar"
+      },
+      {
+        "field": "candidatesJson",
+        "type": "jsonb"
+      },
+      {
+        "field": "version",
+        "type": "varchar"
+      },
+      {
+        "field": "correlationId",
+        "type": "varchar"
+      },
+      {
+        "field": "ts",
+        "type": "bigint"
+      },
+      {
+        "field": "note",
+        "type": "text"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "orchestration_run_events",
+    "file": "drizzle/schema/synapseObservability.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "runId",
+        "type": "integer"
+      },
+      {
+        "field": "seq",
+        "type": "integer"
+      },
+      {
+        "field": "type",
+        "type": "varchar"
+      },
+      {
+        "field": "taskId",
+        "type": "varchar"
+      },
+      {
+        "field": "ts",
+        "type": "bigint"
+      },
+      {
+        "field": "dataJson",
+        "type": "jsonb"
+      }
+    ],
+    "fks": []
+  },
+  {
     "table": "audit_logs",
     "file": "drizzle/schema/system.ts",
     "columns": [
@@ -14937,6 +21931,10 @@
         "type": "boolean"
       },
       {
+        "field": "deliveryChannels",
+        "type": "jsonb"
+      },
+      {
         "field": "lastSentAt",
         "type": "timestamp"
       },
@@ -15001,6 +21999,61 @@
       },
       {
         "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "report_deliveries",
+    "file": "drizzle/schema/system.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "scheduledReportId",
+        "type": "integer"
+      },
+      {
+        "field": "channel",
+        "type": "varchar"
+      },
+      {
+        "field": "target",
+        "type": "text"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "attempts",
+        "type": "integer"
+      },
+      {
+        "field": "lastError",
+        "type": "text"
+      },
+      {
+        "field": "payloadMeta",
+        "type": "jsonb"
+      },
+      {
+        "field": "nextAttemptAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "sentAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
         "type": "timestamp"
       }
     ],
@@ -15409,5 +22462,308 @@
     "fks": [
       "users.id"
     ]
+  },
+  {
+    "table": "equipment_3d_models",
+    "file": "drizzle/schema/twin.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "modelKey",
+        "type": "varchar"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "equipmentId",
+        "type": "varchar"
+      },
+      {
+        "field": "equipmentClass",
+        "type": "varchar"
+      },
+      {
+        "field": "modelUri",
+        "type": "text"
+      },
+      {
+        "field": "modelKind",
+        "type": "varchar"
+      },
+      {
+        "field": "version",
+        "type": "integer"
+      },
+      {
+        "field": "sourceFormat",
+        "type": "varchar"
+      },
+      {
+        "field": "conversionStatus",
+        "type": "varchar"
+      },
+      {
+        "field": "bounds",
+        "type": "jsonb"
+      },
+      {
+        "field": "status",
+        "type": "varchar"
+      },
+      {
+        "field": "scope",
+        "type": "varchar"
+      },
+      {
+        "field": "notes",
+        "type": "text"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "simulation_runs",
+    "file": "drizzle/schema/twinFidelity.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "simId",
+        "type": "text"
+      },
+      {
+        "field": "twinRef",
+        "type": "text"
+      },
+      {
+        "field": "mode",
+        "type": "text"
+      },
+      {
+        "field": "scenario",
+        "type": "jsonb"
+      },
+      {
+        "field": "result",
+        "type": "jsonb"
+      },
+      {
+        "field": "fidelity",
+        "type": "jsonb"
+      },
+      {
+        "field": "status",
+        "type": "text"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "finishedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "twin_trust",
+    "file": "drizzle/schema/twinFidelity.ts",
+    "columns": [
+      {
+        "field": "twinRef",
+        "type": "text"
+      },
+      {
+        "field": "trusted",
+        "type": "boolean"
+      },
+      {
+        "field": "fidelityPct",
+        "type": "doublePrecision"
+      },
+      {
+        "field": "consecutiveBreaches",
+        "type": "integer"
+      },
+      {
+        "field": "lastCheckAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "reason",
+        "type": "text"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "vram_events",
+    "file": "drizzle/schema/vram.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "resourceKind",
+        "type": "varchar"
+      },
+      {
+        "field": "event",
+        "type": "varchar"
+      },
+      {
+        "field": "owner",
+        "type": "varchar"
+      },
+      {
+        "field": "leaseKind",
+        "type": "varchar"
+      },
+      {
+        "field": "priority",
+        "type": "varchar"
+      },
+      {
+        "field": "estimatedBytes",
+        "type": "bigint"
+      },
+      {
+        "field": "actualBytes",
+        "type": "bigint"
+      },
+      {
+        "field": "estimateSource",
+        "type": "varchar"
+      },
+      {
+        "field": "deviceUsedBytes",
+        "type": "bigint"
+      },
+      {
+        "field": "ledgerTotalBytes",
+        "type": "bigint"
+      },
+      {
+        "field": "driftBytes",
+        "type": "bigint"
+      },
+      {
+        "field": "wouldRefuse",
+        "type": "varchar"
+      },
+      {
+        "field": "detail",
+        "type": "jsonb"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "vram_leases",
+    "file": "drizzle/schema/vram.ts",
+    "columns": [
+      {
+        "field": "leaseKey",
+        "type": "varchar"
+      },
+      {
+        "field": "processKey",
+        "type": "varchar"
+      },
+      {
+        "field": "pid",
+        "type": "integer"
+      },
+      {
+        "field": "role",
+        "type": "varchar"
+      },
+      {
+        "field": "leaseId",
+        "type": "varchar"
+      },
+      {
+        "field": "owner",
+        "type": "varchar"
+      },
+      {
+        "field": "leaseKind",
+        "type": "varchar"
+      },
+      {
+        "field": "priority",
+        "type": "varchar"
+      },
+      {
+        "field": "bytes",
+        "type": "bigint"
+      },
+      {
+        "field": "measured",
+        "type": "boolean"
+      },
+      {
+        "field": "refCount",
+        "type": "integer"
+      },
+      {
+        "field": "reclaimer",
+        "type": "varchar"
+      },
+      {
+        "field": "acquiredAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "identityTruncated",
+        "type": "jsonb"
+      }
+    ],
+    "fks": []
   }
 ]

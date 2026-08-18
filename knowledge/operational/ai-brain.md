@@ -1,8 +1,7 @@
 ---
 route: /ai-brain
 permission: null
-role:
-  - admin
+role: []
 screenVi: AI Brain
 screenEn: AI Brain
 inSidebar: true
@@ -23,6 +22,6 @@ Màn hình `/ai-brain` (AI Brain).
 - English: AI › AI Brain
 
 ## Quyền yêu cầu
-- Vai trò bắt buộc: admin
+- Không giới hạn quyền cụ thể (mọi người dùng đã đăng nhập).
 - Module: `MOD_AI` (OPTIONAL — cần license).
 

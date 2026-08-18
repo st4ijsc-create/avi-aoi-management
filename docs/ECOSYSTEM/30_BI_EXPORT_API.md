@@ -49,9 +49,30 @@ GET /api/export/measurements.csv    GET /api/export/measurements.json
 - **Tenant scoping**: session callers see only rows their corporate/factory
   assignments allow (same access filter as the History list). API-key callers with
   `export:read` see all rows (keys are admin-issued).
-- **JSON shape**: `{"dataset":"...","from":"...","to":"...","rows":[...],"count":N}`
-  (rows streamed; the document is a single valid JSON object).
+- **JSON shape**: `{"dataset":"...","from":"...","to":"...","rows":[...],"count":N,"complete":true}`
+  (rows streamed; the document is a single valid JSON object). `"complete":true` is
+  written **only after** the row count has been reconciled — see below.
 - **CSV**: RFC-4180 (quoted/escaped, CRLF), header row first, dates as ISO-8601 UTC.
+
+#### ★ Completeness contract (2026-08-18) — how to know the file is not truncated
+
+A truncated CSV is still a *valid* CSV: header intact, last row whole, no error. A real
+incident (`measurements.csv` delivered 27 000 of 27 599 rows, HTTP 200, six runs out of six)
+proved the receiver had no way to tell. Three signals now make truncation detectable:
+
+| Signal | Where | Check |
+| --- | --- | --- |
+| `X-Export-Expected-Rows: N` | response header, sent **before** the body | compare with the rows you parsed |
+| `# EXPORT_COMPLETE rows=N` | **last line** of a complete CSV | if the last line is not this, the file is short |
+| `"complete": true` | last field of a complete JSON | truncated JSON does not parse at all |
+
+If the server cannot deliver `N` rows it **destroys the connection** instead of ending it
+cleanly, so `curl` exits non-zero (18/56) and `fetch`/`axios` reject. It never ends a short
+stream politely. Every outcome is logged with numbers
+(`expected=… written=… missing=…`) and recorded in `audit_logs.details`
+(`expectedRows`, `rows`, `outcome` ∈ `complete | short | failed | client_aborted`).
+
+CSV consumers that must ignore the receipt line: skip lines starting with `#`.
 - **Rate limit**: 10 exports / 5 min / principal (`EXPORT_RATE_LIMIT_PER_5MIN`) on
   top of the global API limiter.
 - **Audit**: every call writes an `audit_logs` row (action `export`) with who,

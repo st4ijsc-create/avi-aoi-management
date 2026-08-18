@@ -1,10 +1,17 @@
 [
   {
-    "id": "dashboard",
-    "label": "nav.dashboardGroup",
+    "id": "overview",
+    "label": "nav.overviewGroup",
     "requiredRole": null,
     "permissionCategory": "dashboard",
     "items": [
+      {
+        "href": "/control-tower",
+        "label": "nav.controlTower",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
       {
         "href": "/dashboard",
         "label": "nav.dashboardMain",
@@ -20,93 +27,6 @@
         "permissionCategory": "dashboard"
       },
       {
-        "href": "/dashboard-center",
-        "label": "nav.dashboardCenter",
-        "requiredRole": "admin",
-        "requiredPermission": "admin_system",
-        "permissionCategory": "admin"
-      },
-      {
-        "href": "/dashboard-marketplace",
-        "label": "nav.dashboardMarketplace",
-        "requiredRole": null,
-        "requiredPermission": "dashboard_view",
-        "permissionCategory": "dashboard"
-      }
-    ]
-  },
-  {
-    "id": "ai-assistant",
-    "label": "nav.aiAssistantGroup",
-    "requiredRole": null,
-    "permissionCategory": null,
-    "items": [
-      {
-        "href": "/operator",
-        "label": "nav.operatorHome",
-        "requiredRole": null,
-        "requiredPermission": null,
-        "permissionCategory": null
-      },
-      {
-        "href": "/ai-chat",
-        "label": "nav.aiAssistant",
-        "requiredRole": null,
-        "requiredPermission": null,
-        "permissionCategory": null
-      }
-    ]
-  },
-  {
-    "id": "quality",
-    "label": "nav.qualityGroup",
-    "requiredRole": null,
-    "permissionCategory": "history",
-    "items": [
-      {
-        "href": "/quality-home",
-        "label": "nav.qualityHome",
-        "requiredRole": null,
-        "requiredPermission": "history_view",
-        "permissionCategory": "history"
-      },
-      {
-        "href": "/quality-gates",
-        "label": "nav.qualityGates",
-        "requiredRole": null,
-        "requiredPermission": "analytics_spc",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/spc-analysis",
-        "label": "nav.spcAnalysis",
-        "requiredRole": null,
-        "requiredPermission": "analytics_spc",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/pareto-analysis",
-        "label": "nav.paretoAnalysis",
-        "requiredRole": null,
-        "requiredPermission": "analytics_advanced",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/defect-heatmap",
-        "label": "nav.defectHeatmap",
-        "requiredRole": null,
-        "requiredPermission": "analytics_defect_heatmap",
-        "permissionCategory": "analytics"
-      }
-    ]
-  },
-  {
-    "id": "corporate",
-    "label": "nav.corporateGroup",
-    "requiredRole": null,
-    "permissionCategory": "dashboard",
-    "items": [
-      {
         "href": "/corporate-dashboard",
         "label": "nav.corporateDashboard",
         "requiredRole": null,
@@ -114,18 +34,32 @@
         "permissionCategory": "dashboard"
       },
       {
-        "href": "/corporate-layout",
-        "label": "nav.corporateStructure",
+        "href": "/executive",
+        "label": "nav.executiveMobile",
         "requiredRole": null,
         "requiredPermission": "dashboard_corporate",
         "permissionCategory": "dashboard"
       },
       {
-        "href": "/corporate-management",
-        "label": "nav.corporateManagement",
-        "requiredRole": "admin",
-        "requiredPermission": "dashboard_corporate",
+        "href": "/ops-console",
+        "label": "nav.opsConsole",
+        "requiredRole": null,
+        "requiredPermission": "andon",
+        "permissionCategory": "andon"
+      },
+      {
+        "href": "/andon",
+        "label": "nav.andonBoard",
+        "requiredRole": null,
+        "requiredPermission": "dashboard_view",
         "permissionCategory": "dashboard"
+      },
+      {
+        "href": "/command-center",
+        "label": "nav.commandCenter",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       }
     ]
   },
@@ -143,198 +77,26 @@
         "permissionCategory": "dashboard"
       },
       {
-        "href": "/history",
-        "label": "nav.historyPage",
-        "requiredRole": null,
-        "requiredPermission": "history_view",
-        "permissionCategory": "history"
-      },
-      {
-        "href": "/aoi-packages",
-        "label": "nav.aoiPackages",
-        "requiredRole": null,
-        "requiredPermission": "history_view",
-        "permissionCategory": "history"
-      },
-      {
-        "href": "/history-export-scheduling",
-        "label": "nav.exportSchedule",
-        "requiredRole": null,
-        "requiredPermission": "reports_schedule",
-        "permissionCategory": "reports"
-      },
-      {
-        "href": "/production-orders",
-        "label": "nav.productionOrdersPage",
-        "requiredRole": null,
-        "requiredPermission": "production_orders",
-        "permissionCategory": "production"
-      },
-      {
-        "href": "/production-scheduling",
-        "label": "nav.productionScheduling",
-        "requiredRole": null,
-        "requiredPermission": "production_orders",
-        "permissionCategory": "production"
-      },
-      {
-        "href": "/production-signoff",
-        "label": "nav.productionSignoff",
-        "requiredRole": null,
-        "requiredPermission": "production_orders",
-        "permissionCategory": "production"
-      }
-    ]
-  },
-  {
-    "id": "maintenance-workspace",
-    "label": "nav.maintenanceGroup",
-    "requiredRole": null,
-    "permissionCategory": "machine_monitoring",
-    "items": [
-      {
-        "href": "/technician-copilot",
-        "label": "nav.technicianCopilot",
+        "href": "/war-room",
+        "label": "nav.warRoom",
         "requiredRole": null,
         "requiredPermission": "machine_status",
         "permissionCategory": "machine_monitoring"
       },
       {
-        "href": "/work-orders",
-        "label": "nav.workOrders",
+        "href": "/sla-cockpit",
+        "label": "nav.slaCockpit",
         "requiredRole": null,
-        "requiredPermission": "machine_monitoring",
-        "permissionCategory": "machine_monitoring"
+        "requiredPermission": "dashboard_view",
+        "permissionCategory": "dashboard"
       },
       {
-        "href": "/alerts",
-        "label": "nav.alertsList",
-        "requiredRole": null,
-        "requiredPermission": "mqtt_alerts",
-        "permissionCategory": "mqtt"
-      }
-    ]
-  },
-  {
-    "id": "monitoring",
-    "label": "nav.monitoringGroup",
-    "requiredRole": null,
-    "permissionCategory": "machine_monitoring",
-    "items": [
-      {
-        "href": "/mqtt-dashboard",
-        "label": "nav.mqttDashboard",
-        "requiredRole": null,
-        "requiredPermission": "mqtt_monitoring",
-        "permissionCategory": "mqtt"
-      },
-      {
-        "href": "/mqtt-bulletin",
-        "label": "nav.mqttBulletin",
-        "requiredRole": null,
-        "requiredPermission": "mqtt_bulletin",
-        "permissionCategory": "mqtt"
-      },
-      {
-        "href": "/machine-status",
-        "label": "nav.machineStatusPage",
+        "href": "/product-changeover",
+        "label": "Đổi sản phẩm",
         "requiredRole": null,
         "requiredPermission": "machine_status",
         "permissionCategory": "machine_monitoring"
       },
-      {
-        "href": "/machine-onboarding",
-        "label": "nav.machineOnboarding",
-        "requiredRole": null,
-        "requiredPermission": "machine_status",
-        "permissionCategory": "machine_monitoring"
-      },
-      {
-        "href": "/machine-registration",
-        "label": "nav.machineRegistration",
-        "requiredRole": null,
-        "requiredPermission": "machine_status",
-        "permissionCategory": "machine_monitoring"
-      },
-      {
-        "href": "/mqtt-clients",
-        "label": "nav.mqttClients",
-        "requiredRole": "admin",
-        "requiredPermission": "mqtt_monitoring",
-        "permissionCategory": "mqtt"
-      },
-      {
-        "href": "/mqtt-replay",
-        "label": "nav.mqttReplay",
-        "requiredRole": null,
-        "requiredPermission": "mqtt_monitoring",
-        "permissionCategory": "mqtt"
-      },
-      {
-        "href": "/monitoring-setting",
-        "label": "nav.monitoringSetting",
-        "requiredRole": null,
-        "requiredPermission": "machine_status",
-        "permissionCategory": "machine_monitoring"
-      },
-      {
-        "href": "/work-orders",
-        "label": "nav.workOrders",
-        "requiredRole": null,
-        "requiredPermission": "machine_monitoring",
-        "permissionCategory": "machine_monitoring"
-      }
-    ]
-  },
-  {
-    "id": "oee-health",
-    "label": "nav.oeeHealthGroup",
-    "requiredRole": null,
-    "permissionCategory": "analytics",
-    "items": [
-      {
-        "href": "/oee-dashboard",
-        "label": "nav.oeeDashboard",
-        "requiredRole": null,
-        "requiredPermission": "analytics_oee",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/machine-health",
-        "label": "nav.machineHealth",
-        "requiredRole": null,
-        "requiredPermission": "analytics_machine_health",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/realtime-report",
-        "label": "nav.realtimeReport",
-        "requiredRole": null,
-        "requiredPermission": "analytics_oee",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/carbon-dashboard",
-        "label": "nav.carbonDashboard",
-        "requiredRole": null,
-        "requiredPermission": "analytics_oee",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/energy-analytics",
-        "label": "nav.energyAnalytics",
-        "requiredRole": null,
-        "requiredPermission": "energy",
-        "permissionCategory": "analytics"
-      }
-    ]
-  },
-  {
-    "id": "mes-trace",
-    "label": "nav.mesTraceGroup",
-    "requiredRole": null,
-    "permissionCategory": "analytics",
-    "items": [
       {
         "href": "/mes-control-tower",
         "label": "nav.mesControlTower",
@@ -362,32 +124,102 @@
         "requiredRole": null,
         "requiredPermission": "analytics_oee",
         "permissionCategory": "analytics"
+      },
+      {
+        "href": "/history",
+        "label": "nav.historyPage",
+        "requiredRole": null,
+        "requiredPermission": "history_view",
+        "permissionCategory": "history"
+      },
+      {
+        "href": "/aoi-packages",
+        "label": "nav.aoiPackages",
+        "requiredRole": null,
+        "requiredPermission": "history_view",
+        "permissionCategory": "history"
+      },
+      {
+        "href": "/product-comparison",
+        "label": "products.comparison",
+        "requiredRole": null,
+        "requiredPermission": "history_view",
+        "permissionCategory": "history"
+      },
+      {
+        "href": "/production-orders",
+        "label": "nav.productionOrdersPage",
+        "requiredRole": null,
+        "requiredPermission": "production_orders",
+        "permissionCategory": "production"
+      },
+      {
+        "href": "/production-scheduling",
+        "label": "nav.productionScheduling",
+        "requiredRole": null,
+        "requiredPermission": "production_orders",
+        "permissionCategory": "production"
+      },
+      {
+        "href": "/production-signoff",
+        "label": "nav.productionSignoff",
+        "requiredRole": null,
+        "requiredPermission": "production_orders",
+        "permissionCategory": "production"
+      },
+      {
+        "href": "/history-export-scheduling",
+        "label": "nav.exportSchedule",
+        "requiredRole": null,
+        "requiredPermission": "reports_schedule",
+        "permissionCategory": "reports"
+      },
+      {
+        "href": "/routing-master",
+        "label": "nav.routingMaster",
+        "requiredRole": null,
+        "requiredPermission": "production_orders",
+        "permissionCategory": "production_orders"
+      },
+      {
+        "href": "/bom-management",
+        "label": "nav.bomManagement",
+        "requiredRole": null,
+        "requiredPermission": "mes_bom",
+        "permissionCategory": "mes_bom"
+      },
+      {
+        "href": "/feeder-verify",
+        "label": "nav.materialsAtLine",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       }
     ]
   },
   {
-    "id": "analytics",
-    "label": "nav.analyticsGroup",
+    "id": "quality",
+    "label": "nav.qualityGroup",
     "requiredRole": null,
-    "permissionCategory": "analytics",
+    "permissionCategory": "history",
     "items": [
       {
-        "href": "/reports",
-        "label": "nav.reportsPage",
+        "href": "/quality-cockpit",
+        "label": "nav.qualityCockpit",
         "requiredRole": null,
-        "requiredPermission": "reports_view",
-        "permissionCategory": "reports"
-      },
-      {
-        "href": "/category-analytics",
-        "label": "nav.categoryAnalytics",
-        "requiredRole": null,
-        "requiredPermission": "analytics_category",
+        "requiredPermission": "analytics_spc",
         "permissionCategory": "analytics"
       },
       {
-        "href": "/spc-analysis",
-        "label": "nav.spcAnalysis",
+        "href": "/quality-home",
+        "label": "nav.qualityHome",
+        "requiredRole": null,
+        "requiredPermission": "history_view",
+        "permissionCategory": "history"
+      },
+      {
+        "href": "/quality-gate-templates",
+        "label": "nav.qualityGateTemplates",
         "requiredRole": null,
         "requiredPermission": "analytics_spc",
         "permissionCategory": "analytics"
@@ -400,75 +232,152 @@
         "permissionCategory": "analytics"
       },
       {
-        "href": "/pareto-analysis",
-        "label": "nav.paretoAnalysis",
+        "href": "/golden-samples",
+        "label": "nav.goldenSamples",
         "requiredRole": null,
-        "requiredPermission": "analytics_advanced",
-        "permissionCategory": "analytics"
+        "requiredPermission": "history_view",
+        "permissionCategory": "history"
       },
       {
-        "href": "/correlation-analysis",
-        "label": "nav.correlationAnalysis",
+        "href": "/repair-station",
+        "label": "nav.repairStation",
         "requiredRole": null,
-        "requiredPermission": "analytics_advanced",
-        "permissionCategory": "analytics"
+        "requiredPermission": "history_view",
+        "permissionCategory": "history"
       },
       {
-        "href": "/report-builder",
-        "label": "nav.reportBuilder",
+        "href": "/defect-catalog",
+        "label": "nav.defectCatalog",
         "requiredRole": null,
-        "requiredPermission": "reports_view",
-        "permissionCategory": "reports"
+        "requiredPermission": "history_view",
+        "permissionCategory": "history"
       },
       {
-        "href": "/pdf-reports",
-        "label": "nav.pdfReports",
+        "href": "/measurement-point-health",
+        "label": "nav.measurementPointHealth",
         "requiredRole": null,
-        "requiredPermission": "reports_view",
-        "permissionCategory": "reports"
-      },
-      {
-        "href": "/powerpoint-export",
-        "label": "nav.powerpointExport",
-        "requiredRole": null,
-        "requiredPermission": "reports_view",
-        "permissionCategory": "reports"
-      },
-      {
-        "href": "/analytics-setting",
-        "label": "nav.analyticsSetting",
-        "requiredRole": null,
-        "requiredPermission": "reports_view",
-        "permissionCategory": "reports"
-      },
-      {
-        "href": "/threshold-approvals",
-        "label": "nav.thresholdApprovals",
-        "requiredRole": null,
-        "requiredPermission": "settings_alerts",
-        "permissionCategory": "analytics"
+        "requiredPermission": "history_view",
+        "permissionCategory": "history"
       }
     ]
   },
   {
-    "id": "ai-analytics",
-    "label": "nav.aiAnalyticsGroup",
+    "id": "devices",
+    "label": "nav.devicesGroup",
     "requiredRole": null,
-    "permissionCategory": "analytics",
+    "permissionCategory": "machine_monitoring",
     "items": [
       {
-        "href": "/ai-hub",
-        "label": "nav.aiHub",
+        "href": "/factory-command",
+        "label": "Chỉ huy nhà máy",
         "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       },
       {
-        "href": "/ai-chat",
-        "label": "nav.aiChat",
+        "href": "/line-view",
+        "label": "lineView.title",
         "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/device-monitor",
+        "label": "nav.deviceMonitor",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/oee-dashboard",
+        "label": "nav.oeeDashboard",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/system-health",
+        "label": "nav.systemHealth",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/process-analytics",
+        "label": "nav.processAnalytics",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/device-onboarding",
+        "label": "nav.deviceOnboarding",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/machine-registration",
+        "label": "nav.machineRegistration",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/monitoring-setting?tab=device-management",
+        "label": "monitoringSettings.sidebar.deviceManagement",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/device-adapters",
+        "label": "nav.deviceAdapters",
+        "requiredRole": null,
+        "requiredPermission": "machine_control",
+        "permissionCategory": "machine_control"
+      },
+      {
+        "href": "/hot-folders",
+        "label": "nav.hotFolders",
+        "requiredRole": null,
+        "requiredPermission": "machine_control",
+        "permissionCategory": "machine_control"
+      },
+      {
+        "href": "/connectivity",
+        "label": "nav.connectivity",
+        "requiredRole": null,
+        "requiredPermission": "mqtt_monitoring",
+        "permissionCategory": "mqtt"
+      },
+      {
+        "href": "/edge-nodes",
+        "label": "nav.edgeNodes",
+        "requiredRole": null,
+        "requiredPermission": "machine_control",
+        "permissionCategory": "machine_control"
+      },
+      {
+        "href": "/robot-control",
+        "label": "nav.robotControl",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/control-plane",
+        "label": "nav.controlPlane",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/maintenance-hub",
+        "label": "Trung tâm bảo trì",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       },
       {
         "href": "/technician-copilot",
@@ -478,158 +387,58 @@
         "permissionCategory": "machine_monitoring"
       },
       {
-        "href": "/management-insight",
-        "label": "nav.managementInsight",
+        "href": "/work-orders",
+        "label": "nav.workOrders",
         "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       },
       {
-        "href": "/causal-graph",
-        "label": "nav.causalGraph",
+        "href": "/cmms",
+        "label": "Bảo trì (CMMS)",
         "requiredRole": null,
-        "requiredPermission": "analytics_root_cause",
-        "permissionCategory": "analytics"
+        "requiredPermission": "machine_control",
+        "permissionCategory": "machine_control"
+      },
+      {
+        "href": "/alerts",
+        "label": "nav.alertsList",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       }
     ]
   },
   {
-    "id": "ai-quality",
-    "label": "nav.aiQualityGroup",
+    "id": "engineering",
+    "label": "nav.engineeringGroup",
     "requiredRole": null,
-    "permissionCategory": "analytics",
+    "permissionCategory": "machine_monitoring",
     "items": [
       {
-        "href": "/ai-quality-gate",
-        "label": "nav.aiQualityGate",
+        "href": "/engineering-home",
+        "label": "nav.engineeringHome",
         "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
+        "requiredPermission": "machine_control",
+        "permissionCategory": "machine_control"
       },
       {
-        "href": "/ai-active-learning",
-        "label": "nav.aiActiveLearning",
+        "href": "/engineering-studio",
+        "label": "Xưởng kỹ thuật",
         "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
+        "requiredPermission": "machine_control",
+        "permissionCategory": "machine_control"
       },
       {
-        "href": "/mask-annotation",
-        "label": "nav.maskAnnotation",
+        "href": "/engineering",
+        "label": "nav.engineeringWorkspace",
         "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
+        "requiredPermission": "machine_control",
+        "permissionCategory": "machine_control"
       },
       {
-        "href": "/ai-image-search",
-        "label": "nav.aiImageSearch",
-        "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
-      }
-    ]
-  },
-  {
-    "id": "ai-models",
-    "label": "nav.aiModelsGroup",
-    "requiredRole": null,
-    "permissionCategory": "analytics",
-    "items": [
-      {
-        "href": "/ai-models",
-        "label": "nav.aiModelManagement",
-        "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/model-versions",
-        "label": "nav.modelVersions",
-        "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/ai-brain",
-        "label": "nav.aiBrainDashboard",
-        "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/ai-monitoring",
-        "label": "nav.aiMonitoring",
-        "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/ai-performance",
-        "label": "nav.aiPerformance",
-        "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/ai-batch-jobs",
-        "label": "nav.aiBatchJobs",
-        "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/ai-time-series",
-        "label": "nav.aiTimeSeries",
-        "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/ai-data-processing",
-        "label": "nav.aiDataProcessing",
-        "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/ai-reports",
-        "label": "nav.aiReports",
-        "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/anomaly-banks",
-        "label": "nav.anomalyBanks",
-        "requiredRole": null,
-        "requiredPermission": "analytics_ai_performance",
-        "permissionCategory": "analytics"
-      },
-      {
-        "href": "/ai-settings",
-        "label": "nav.aiSettings",
-        "requiredRole": "admin",
-        "requiredPermission": "admin_system",
-        "permissionCategory": "admin"
-      }
-    ]
-  },
-  {
-    "id": "ot-control",
-    "label": "nav.otGroup",
-    "requiredRole": null,
-    "permissionCategory": "machine_control",
-    "items": [
-      {
-        "href": "/andon",
-        "label": "nav.andonBoard",
-        "requiredRole": null,
-        "requiredPermission": "andon",
-        "permissionCategory": "andon"
-      },
-      {
-        "href": "/device-adapters",
-        "label": "nav.deviceAdapters",
+        "href": "/engineering-changes",
+        "label": "Thay đổi kỹ thuật (ECN)",
         "requiredRole": null,
         "requiredPermission": "machine_control",
         "permissionCategory": "machine_control"
@@ -656,145 +465,179 @@
         "permissionCategory": "machine_control"
       },
       {
-        "href": "/engineering",
-        "label": "nav.engineeringWorkspace",
+        "href": "/ir-editor",
+        "label": "nav.irEditor",
         "requiredRole": null,
-        "requiredPermission": "machine_control",
-        "permissionCategory": "machine_control"
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       },
       {
-        "href": "/factory-live-map",
-        "label": "nav.factoryLiveMap",
+        "href": "/pou-studio",
+        "label": "nav.pouStudio",
         "requiredRole": null,
-        "requiredPermission": "machine_control",
-        "permissionCategory": "machine_control"
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       },
       {
-        "href": "/factory-floor-editor",
-        "label": "nav.factoryFloorEditor",
+        "href": "/programming-copilot",
+        "label": "nav.programmingCopilot",
         "requiredRole": null,
-        "requiredPermission": "machine_control",
-        "permissionCategory": "machine_control"
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       },
       {
-        "href": "/rf-test-cell",
-        "label": "nav.rfTestCell",
+        "href": "/fleet-orchestration",
+        "label": "nav.fleetOrchestration",
         "requiredRole": null,
-        "requiredPermission": "machine_control",
-        "permissionCategory": "machine_control"
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       },
       {
-        "href": "/cell-twin",
-        "label": "nav.cellTwin",
+        "href": "/safety-workforce",
+        "label": "nav.safetyWorkforce",
         "requiredRole": null,
-        "requiredPermission": "machine_control",
-        "permissionCategory": "machine_control"
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       },
       {
-        "href": "/command-audit",
-        "label": "nav.commandAudit",
+        "href": "/equipment-standards",
+        "label": "nav.equipmentStandards",
         "requiredRole": null,
-        "requiredPermission": "machine_control",
-        "permissionCategory": "machine_control"
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       },
       {
-        "href": "/edge-nodes",
-        "label": "nav.edgeNodes",
+        "href": "/equipment-integration",
+        "label": "nav.equipmentIntegration",
         "requiredRole": null,
-        "requiredPermission": "machine_control",
-        "permissionCategory": "machine_control"
-      },
-      {
-        "href": "/bom-management",
-        "label": "nav.bomManagement",
-        "requiredRole": null,
-        "requiredPermission": "mes_bom",
-        "permissionCategory": "mes_bom"
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
       }
     ]
   },
   {
-    "id": "data-management",
-    "label": "nav.dataGroup",
+    "id": "analytics",
+    "label": "nav.analyticsGroup",
     "requiredRole": null,
-    "permissionCategory": "settings",
+    "permissionCategory": "analytics",
     "items": [
       {
-        "href": "/products",
-        "label": "nav.productsPage",
+        "href": "/reporting-studio",
+        "label": "Xưởng báo cáo",
         "requiredRole": null,
-        "requiredPermission": "settings_products",
-        "permissionCategory": "settings"
+        "requiredPermission": "reports_view",
+        "permissionCategory": "reports"
       },
       {
-        "href": "/product-mapping",
-        "label": "nav.productMapping",
+        "href": "/reports",
+        "label": "nav.reportsPage",
         "requiredRole": null,
-        "requiredPermission": "settings_product_mapping",
-        "permissionCategory": "settings"
+        "requiredPermission": "reports_view",
+        "permissionCategory": "reports"
       },
       {
-        "href": "/layout",
-        "label": "nav.factoryLayout",
+        "href": "/scheduled-reports",
+        "label": "nav.scheduledReports",
         "requiredRole": null,
-        "requiredPermission": "settings_factory",
-        "permissionCategory": "settings"
+        "requiredPermission": "reports_schedule",
+        "permissionCategory": "reports"
       },
       {
-        "href": "/datasettings",
-        "label": "nav.dataSettingsPage",
+        "href": "/report-builder",
+        "label": "nav.reportBuilder",
         "requiredRole": null,
-        "requiredPermission": "settings_factory",
-        "permissionCategory": "settings"
+        "requiredPermission": "reports_view",
+        "permissionCategory": "reports"
       },
       {
-        "href": "/master-data",
-        "label": "nav.masterData",
+        "href": "/category-analytics",
+        "label": "nav.categoryAnalytics",
         "requiredRole": null,
-        "requiredPermission": "masterdata",
-        "permissionCategory": "settings"
+        "requiredPermission": "analytics_category",
+        "permissionCategory": "analytics"
       },
       {
-        "href": "/workstation-management",
-        "label": "nav.workstationManagement",
+        "href": "/correlation-analysis",
+        "label": "nav.correlationAnalysis",
         "requiredRole": null,
-        "requiredPermission": "settings_factory",
-        "permissionCategory": "settings"
+        "requiredPermission": "analytics_advanced",
+        "permissionCategory": "analytics"
       },
       {
-        "href": "/process-management",
-        "label": "nav.processManagement",
+        "href": "/data-comparison",
+        "label": "nav.dataComparison",
         "requiredRole": null,
-        "requiredPermission": "settings_factory",
-        "permissionCategory": "settings"
-      }
-    ]
-  },
-  {
-    "id": "alerts",
-    "label": "nav.alertsGroup",
-    "requiredRole": null,
-    "permissionCategory": "mqtt",
-    "items": [
-      {
-        "href": "/alerts",
-        "label": "nav.alertsList",
-        "requiredRole": null,
-        "requiredPermission": "mqtt_alerts",
-        "permissionCategory": "mqtt"
+        "requiredPermission": "analytics_advanced",
+        "permissionCategory": "analytics"
       },
       {
-        "href": "/mqtt-alerts",
-        "label": "nav.alertRules",
+        "href": "/comparison-studio",
+        "label": "nav.comparisonStudio",
         "requiredRole": null,
-        "requiredPermission": "mqtt_alerts",
-        "permissionCategory": "mqtt"
+        "requiredPermission": "analytics_advanced",
+        "permissionCategory": "analytics"
       },
       {
-        "href": "/predictive-alerts",
-        "label": "nav.predictiveAlerts",
+        "href": "/realtime-report",
+        "label": "nav.realtimeReport",
         "requiredRole": null,
-        "requiredPermission": "analytics_predictive_alerts",
+        "requiredPermission": "analytics_oee",
+        "permissionCategory": "analytics"
+      },
+      {
+        "href": "/defect-prediction",
+        "label": "nav.defectPrediction",
+        "requiredRole": null,
+        "requiredPermission": "analytics_advanced",
+        "permissionCategory": "analytics"
+      },
+      {
+        "href": "/root-cause-analysis",
+        "label": "nav.rootCauseAnalysis",
+        "requiredRole": null,
+        "requiredPermission": "analytics_root_cause",
+        "permissionCategory": "analytics"
+      },
+      {
+        "href": "/energy-analytics",
+        "label": "nav.energyAnalytics",
+        "requiredRole": null,
+        "requiredPermission": "energy",
+        "permissionCategory": "analytics"
+      },
+      {
+        "href": "/carbon-dashboard",
+        "label": "nav.carbonDashboard",
+        "requiredRole": null,
+        "requiredPermission": "analytics_oee",
+        "permissionCategory": "analytics"
+      },
+      {
+        "href": "/pdf-reports",
+        "label": "nav.pdfReports",
+        "requiredRole": null,
+        "requiredPermission": "reports_view",
+        "permissionCategory": "reports"
+      },
+      {
+        "href": "/powerpoint-export",
+        "label": "nav.powerpointExport",
+        "requiredRole": null,
+        "requiredPermission": "reports_view",
+        "permissionCategory": "reports"
+      },
+      {
+        "href": "/threshold-approvals",
+        "label": "nav.thresholdApprovals",
+        "requiredRole": null,
+        "requiredPermission": "settings_alerts",
+        "permissionCategory": "analytics"
+      },
+      {
+        "href": "/nonconformance",
+        "label": "Báo cáo không phù hợp (NCR/MRB)",
+        "requiredRole": null,
+        "requiredPermission": "analytics_spc",
         "permissionCategory": "analytics"
       },
       {
@@ -807,24 +650,206 @@
     ]
   },
   {
-    "id": "settings",
-    "label": "nav.generalSettings",
+    "id": "ai",
+    "label": "nav.aiGroup",
     "requiredRole": null,
-    "permissionCategory": "settings",
+    "permissionCategory": null,
     "items": [
       {
-        "href": "/settings",
-        "label": "nav.generalSettings",
-        "requiredRole": null,
-        "requiredPermission": "settings_view",
-        "permissionCategory": "settings"
-      },
-      {
-        "href": "/request-role",
-        "label": "nav.requestRole",
+        "href": "/ai-home",
+        "label": "nav.aiHome",
         "requiredRole": null,
         "requiredPermission": null,
-        "permissionCategory": "settings"
+        "permissionCategory": null
+      },
+      {
+        "href": "/ai-chat",
+        "label": "nav.aiChat",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": null
+      },
+      {
+        "href": "/inbox",
+        "label": "nav.inbox",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": null
+      },
+      {
+        "href": "/management-insight",
+        "label": "nav.managementInsight",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": null
+      },
+      {
+        "href": "/ai-brain",
+        "label": "nav.aiBrainDashboard",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-command-center",
+        "label": "nav.aiCommandCenter",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-specialist-studio",
+        "label": "nav.aiSpecialistStudio",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-monitoring",
+        "label": "nav.aiMonitoring",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-active-learning",
+        "label": "nav.aiActiveLearning",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-batch-jobs",
+        "label": "nav.aiBatchJobs",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-data-processing",
+        "label": "nav.aiDataProcessing",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-inspection-analytics",
+        "label": "nav.aiInspectionAnalytics",
+        "requiredRole": null,
+        "requiredPermission": "analytics_ai_performance",
+        "permissionCategory": "analytics"
+      },
+      {
+        "href": "/ai-performance",
+        "label": "nav.aiPerformance",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-experiments",
+        "label": "nav.aiExperiments",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-time-series",
+        "label": "nav.aiTimeSeries",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-reports",
+        "label": "nav.aiReports",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-quality-gate",
+        "label": "nav.aiQualityGate",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-image-search",
+        "label": "nav.aiImageSearch",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-advanced-vision-lab",
+        "label": "nav.advancedVisionLab",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/anomaly-banks",
+        "label": "nav.anomalyBanks",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/mask-annotation",
+        "label": "nav.maskAnnotation",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/causal-graph",
+        "label": "nav.causalGraph",
+        "requiredRole": null,
+        "requiredPermission": "analytics_root_cause",
+        "permissionCategory": "analytics"
+      },
+      {
+        "href": "/ai-datasets",
+        "label": "nav.aiDatasets",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-training-studio",
+        "label": "nav.aiTrainingStudio",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/ai-models",
+        "label": "nav.aiModelManagement",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/model-versions",
+        "label": "nav.modelVersions",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/robot-model-health",
+        "label": "nav.robotModelHealth",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/ai-settings",
+        "label": "nav.aiSettings",
+        "requiredRole": "admin",
+        "requiredPermission": "admin_system",
+        "permissionCategory": "admin"
       }
     ]
   },
@@ -834,6 +859,20 @@
     "requiredRole": "admin",
     "permissionCategory": "admin",
     "items": [
+      {
+        "href": "/settings-hub",
+        "label": "Trung tâm cài đặt",
+        "requiredRole": "admin",
+        "requiredPermission": null,
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/dashboard-center",
+        "label": "nav.dashboardCenter",
+        "requiredRole": "admin",
+        "requiredPermission": "admin_system",
+        "permissionCategory": "admin"
+      },
       {
         "href": "/admin-home",
         "label": "nav.adminHome",
@@ -856,6 +895,13 @@
         "permissionCategory": "admin"
       },
       {
+        "href": "/audit-logs?tab=enhanced",
+        "label": "nav.enhancedAudit",
+        "requiredRole": "admin",
+        "requiredPermission": "admin_system",
+        "permissionCategory": "admin"
+      },
+      {
         "href": "/license",
         "label": "nav.licenseManagement",
         "requiredRole": "admin",
@@ -870,6 +916,34 @@
         "permissionCategory": "admin"
       },
       {
+        "href": "/sites",
+        "label": "nav.sites",
+        "requiredRole": "admin",
+        "requiredPermission": "admin_system",
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/federation-dashboard",
+        "label": "nav.federationDashboard",
+        "requiredRole": "admin",
+        "requiredPermission": "admin_system",
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/modules",
+        "label": "nav.modules",
+        "requiredRole": "admin",
+        "requiredPermission": "admin_system",
+        "permissionCategory": "admin"
+      },
+      {
+        "href": "/synapse-platform",
+        "label": "nav.synapsePlatform",
+        "requiredRole": "admin",
+        "requiredPermission": "admin_system",
+        "permissionCategory": "admin"
+      },
+      {
         "href": "/backup-restore",
         "label": "nav.backupRestore",
         "requiredRole": "admin",
@@ -877,11 +951,195 @@
         "permissionCategory": "admin"
       },
       {
-        "href": "/enhanced-audit",
-        "label": "nav.enhancedAudit",
+        "href": "/sessions",
+        "label": "nav.sessions",
         "requiredRole": "admin",
         "requiredPermission": "admin_system",
         "permissionCategory": "admin"
+      },
+      {
+        "href": "/corporate-management",
+        "label": "nav.corporateManagement",
+        "requiredRole": "admin",
+        "requiredPermission": "dashboard_corporate",
+        "permissionCategory": "dashboard"
+      },
+      {
+        "href": "/settings",
+        "label": "nav.generalSettings",
+        "requiredRole": null,
+        "requiredPermission": "settings_view",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/admin-setting",
+        "label": "nav.adminSetting",
+        "requiredRole": "admin",
+        "requiredPermission": "admin_system",
+        "permissionCategory": "admin"
+      }
+    ]
+  },
+  {
+    "id": "data-management",
+    "label": "nav.dataGroup",
+    "requiredRole": null,
+    "permissionCategory": "settings",
+    "items": [
+      {
+        "href": "/data-management",
+        "label": "Trung tâm dữ liệu",
+        "requiredRole": null,
+        "requiredPermission": "masterdata",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/product-workspace",
+        "label": "Xưởng sản phẩm",
+        "requiredRole": null,
+        "requiredPermission": "history_view",
+        "permissionCategory": "history"
+      },
+      {
+        "href": "/master-data",
+        "label": "nav.masterData",
+        "requiredRole": null,
+        "requiredPermission": "masterdata",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/component-library",
+        "label": "nav.componentLibrary",
+        "requiredRole": null,
+        "requiredPermission": "masterdata",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/operator-badges",
+        "label": "nav.operatorBadges",
+        "requiredRole": null,
+        "requiredPermission": "masterdata",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/master-data-audit",
+        "label": "nav.masterDataAudit",
+        "requiredRole": null,
+        "requiredPermission": "masterdata",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/data-quality",
+        "label": "nav.dataQuality",
+        "requiredRole": null,
+        "requiredPermission": "masterdata",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/metric-catalog",
+        "label": "Danh mục chỉ số (Metric Catalog)",
+        "requiredRole": null,
+        "requiredPermission": "machine_status",
+        "permissionCategory": "machine_monitoring"
+      },
+      {
+        "href": "/products",
+        "label": "nav.productsPage",
+        "requiredRole": null,
+        "requiredPermission": "settings_products",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/product-onboarding",
+        "label": "nav.productOnboarding",
+        "requiredRole": null,
+        "requiredPermission": "settings_products",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/product-mapping",
+        "label": "nav.productMapping",
+        "requiredRole": null,
+        "requiredPermission": "settings_product_mapping",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/datasettings",
+        "label": "nav.dataSettingsPage",
+        "requiredRole": null,
+        "requiredPermission": "settings_factory",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/layout",
+        "label": "nav.factoryLayout",
+        "requiredRole": null,
+        "requiredPermission": "settings_factory",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/workstation-management",
+        "label": "nav.workstationManagement",
+        "requiredRole": null,
+        "requiredPermission": "settings_factory",
+        "permissionCategory": "settings"
+      },
+      {
+        "href": "/process-management",
+        "label": "nav.processManagement",
+        "requiredRole": null,
+        "requiredPermission": "settings_factory",
+        "permissionCategory": "settings"
+      }
+    ]
+  },
+  {
+    "id": "me",
+    "label": "nav.meGroup",
+    "requiredRole": null,
+    "permissionCategory": null,
+    "items": [
+      {
+        "href": "/inbox",
+        "label": "nav.inbox",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": null
+      },
+      {
+        "href": "/today",
+        "label": "nav.today",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": null
+      },
+      {
+        "href": "/operator",
+        "label": "nav.operatorHome",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": null
+      },
+      {
+        "href": "/profile",
+        "label": "nav.profile",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": null
+      },
+      {
+        "href": "/change-password",
+        "label": "nav.changePassword",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": null
+      },
+      {
+        "href": "/request-role",
+        "label": "nav.requestRole",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": null
       },
       {
         "href": "/user-guide",
@@ -896,13 +1154,6 @@
         "requiredRole": null,
         "requiredPermission": null,
         "permissionCategory": null
-      },
-      {
-        "href": "/admin-setting",
-        "label": "nav.adminSetting",
-        "requiredRole": "admin",
-        "requiredPermission": "admin_system",
-        "permissionCategory": "admin"
       }
     ]
   }

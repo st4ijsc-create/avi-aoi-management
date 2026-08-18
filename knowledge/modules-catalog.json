@@ -4,13 +4,22 @@
     "name": "Authentication & Authorization",
     "description": "Đăng nhập, phân quyền, quản lý phiên, 2FA, hồ sơ cá nhân",
     "isCore": true,
-    "navGroupId": null,
+    "navGroupId": "me",
     "routes": [
       "/login",
       "/setup",
       "/setup-admin",
       "/profile",
-      "/change-password"
+      "/change-password",
+      "Me",
+      "/inbox",
+      "/today",
+      "/operator",
+      "/maintenance-home",
+      "/supervisor-home",
+      "/viewer-home",
+      "/request-role",
+      "/about-system"
     ],
     "permissionCategories": [],
     "featureCodes": []
@@ -20,11 +29,16 @@
     "name": "Dashboard",
     "description": "Bảng điều khiển chính, drill-down analysis, custom dashboard, templates, marketplace",
     "isCore": true,
-    "navGroupId": "dashboard",
+    "navGroupId": "overview",
     "routes": [
       "/",
       "/dashboard",
       "/drill-down",
+      "/command-center",
+      "/ops-console",
+      "/andon",
+      "/predictive-alerts",
+      "/dashboard-center",
       "/custom-dashboard",
       "/dashboard-templates",
       "/template-marketplace",
@@ -73,16 +87,23 @@
     "navGroupId": "admin",
     "routes": [
       "/admin",
+      "/admin-home",
       "/users",
       "/role-builder",
       "/enhanced-audit",
       "/audit-logs",
+      "/command-audit",
       "/api-docs",
+      "/api-keys",
       "/user-guide",
       "/license",
       "/backup-restore",
       "/sessions",
-      "/user-assignments"
+      "/user-assignments",
+      "/admin-setting",
+      "/import-export",
+      "/synapse-platform",
+      "/modules"
     ],
     "permissionCategories": [
       "admin"
@@ -122,20 +143,13 @@
     "name": "Machine Monitoring",
     "description": "Giám sát máy, MQTT dashboard, OEE, sức khỏe thiết bị, bulletin, quản lý workstation",
     "isCore": false,
-    "navGroupId": "monitoring",
+    "navGroupId": "devices",
     "routes": [
-      "/machine-status",
-      "/machine-registration",
-      "/mqtt-dashboard",
-      "/mqtt-clients",
-      "/mqtt-topics",
-      "/mqtt-replay",
-      "/mqtt-profiles",
-      "/mqtt-bulletin",
-      "/mqtt-ng-rate",
-      "/oee-dashboard",
-      "/machine-health",
-      "/workstation-management"
+      "Giám sát máy",
+      "s silently dropped).\r\n      ",
+      ",\r\n      // doc 44 W3-B4 (G5.10) — Line View HMI (LDS-L5 Ch.4.2): giám sát tuyến + lệnh tuyến\r\n      // (mutation tự gate actuationProcedure server-side) → app Giám sát máy.\r\n      ",
+      ",\r\n      ",
+      ", "
     ],
     "permissionCategories": [
       "machine_monitoring",
@@ -162,16 +176,11 @@
   },
   {
     "code": "MOD_ALERTS",
-    "name": "Alert Management",
-    "description": "Cảnh báo, quy tắc cảnh báo MQTT, cảnh báo dự đoán, mục tiêu OEE",
+    "name": "Alert Management (deprecated)",
+    "description": "DEPRECATED (doc 36 D3): gộp vào MOD_MONITORING (alerts/mqtt-alerts) + MOD_ANALYTICS (oee-target-settings). Giữ đăng ký để tương thích license cũ; không sở hữu route nào.",
     "isCore": false,
     "navGroupId": "alerts",
-    "routes": [
-      "/alerts",
-      "/mqtt-alerts",
-      "/predictive-alerts",
-      "/oee-target-settings"
-    ],
+    "routes": [],
     "permissionCategories": [
       "mqtt",
       "analytics"
@@ -189,13 +198,23 @@
     "isCore": false,
     "navGroupId": "production",
     "routes": [
-      "/production-orders",
+      "Sản xuất (MES)",
+      "/production-dashboard",
+      "/mes-control-tower",
+      "/wip-dashboard",
+      "/traceability",
+      "/digital-twin",
       "/history",
-      "/aoi-packages",
-      "/history-export-scheduling",
-      "/production-scheduling",
       "/inspection",
-      "/process-management"
+      "/aoi-packages",
+      "/product-comparison",
+      "/production-orders",
+      "/production-scheduling",
+      "/production-signoff",
+      "/history-export-scheduling",
+      "/bom-management",
+      "/routing-master",
+      "/feeder-verify"
     ],
     "permissionCategories": [
       "production",
@@ -230,25 +249,18 @@
     "routes": [
       "/reports",
       "/scheduled-reports",
-      "/category-analytics",
-      "/spc-analysis",
-      "/spc-advanced",
-      "/correlation-analysis",
-      "/quality-gates",
-      "/pareto-analysis",
-      "/quality-gate-templates",
-      "/annotation-statistics",
-      "/annotation-comparison",
-      "/defect-heatmap",
-      "/defect-prediction",
-      "/root-cause-analysis",
-      "/pdf-reports",
-      "/data-comparison",
-      "/report-builder",
-      "/powerpoint-export",
       "/enhanced-scheduled-reports",
-      "/product-comparison",
-      "/test-annotation"
+      "/report-builder",
+      "/category-analytics",
+      "/correlation-analysis",
+      "/data-comparison",
+      "/realtime-report",
+      "/energy-analytics",
+      "/carbon-dashboard",
+      "/pdf-reports",
+      "/powerpoint-export",
+      "/oee-target-settings",
+      "/analytics-setting"
     ],
     "permissionCategories": [
       "analytics",
@@ -281,11 +293,17 @@
     "isCore": false,
     "navGroupId": "data-management",
     "routes": [
+      "Quản lý dữ liệu",
+      "/master-data",
+      "/operator-badges",
+      "/component-library",
       "/products",
+      "/product-onboarding",
       "/product-mapping",
       "/layout",
-      "/datasettings",
-      "/import-export"
+      "/workstation-management",
+      "/process-management",
+      "/datasettings"
     ],
     "permissionCategories": [
       "settings"
@@ -306,10 +324,12 @@
     "name": "AI & Local Intelligence",
     "description": "Hệ AI cục bộ (local-first): AI Hub, Copilot/Chat, Vision Lab, GGUF/ONNX models, image search, quality-gate AI, active learning, time-series, knowledge base (RAG)",
     "isCore": false,
-    "navGroupId": "ai-analytics",
+    "navGroupId": "ai",
     "routes": [
       "/ai-hub",
       "/ai-chat",
+      "/management-insight",
+      "/ai-brain",
       "/ai-quality-gate",
       "/ai-active-learning",
       "/ai-image-search",
@@ -323,11 +343,14 @@
       "/ai-models",
       "/model-versions",
       "/ai-settings",
+      "/robot-model-health",
       "/ai-inspection-analytics",
       "/ai-advanced-vision-lab",
       "/ai-gguf-models",
       "/ai-local-kb",
-      "/mask-annotation"
+      "/mask-annotation",
+      "/anomaly-banks",
+      "/causal-graph"
     ],
     "permissionCategories": [
       "analytics"
@@ -345,6 +368,8 @@
       "AI_MONITORING",
       "AI_LOCAL_KB",
       "AI_GGUF_LOCAL_LLM",
+      "AI_ANOMALY_BANKS",
+      "AI_CAUSAL_GRAPH",
       "MAX_AI_MODELS",
       "MAX_AI_BATCH_JOBS"
     ]
@@ -354,14 +379,18 @@
     "name": "OT & Machine Control",
     "description": "Kết nối & điều khiển thiết bị OT: Andon, device adapters (OPC-UA/Modbus/S7/...), recipes, interlock an toàn, command audit, BOM/material. Mọi lệnh ghi đi qua HITL + interlock + audit append-only.",
     "isCore": false,
-    "navGroupId": "ot-control",
+    "navGroupId": "engineering",
     "routes": [
-      "/andon",
-      "/device-adapters",
-      "/recipes",
       "/interlock-rules",
-      "/command-audit",
-      "/bom-management"
+      "/fleet-orchestration",
+      "/safety-workforce",
+      "/equipment-standards",
+      "/equipment-integration",
+      "/factory-floor-editor",
+      "/control-plane",
+      "/robot-control",
+      "/rf-test-cell",
+      "/cell-twin"
     ],
     "permissionCategories": [
       "machine_control",
@@ -376,8 +405,33 @@
       "OT_INTERLOCK",
       "OT_COMMAND_AUDIT",
       "OT_MES_BOM",
+      "OT_FLEET_ORCHESTRATION",
+      "OT_SAFETY_WORKFORCE",
+      "OT_ENGINEERING_WORKSPACE",
+      "OT_ORCHESTRATION_STUDIO",
+      "OT_CELL_TWIN",
       "OT_DEVICE_WRITE",
       "MAX_DEVICE_ADAPTERS"
+    ]
+  },
+  {
+    "code": "MOD_FEDERATION",
+    "name": "Multi-Site Federation",
+    "description": "Đăng ký & tổng hợp nhiều site (đa nhà máy): sites registry, enrollment, probe read-only; cross-site roll-up dashboard (F1+). Core CHỈ đọc — không điều khiển site.",
+    "isCore": false,
+    "navGroupId": "admin",
+    "routes": [
+      "/sites",
+      "/federation-dashboard"
+    ],
+    "permissionCategories": [
+      "admin"
+    ],
+    "featureCodes": [
+      "FEDERATION_SITES",
+      "FEDERATION_DASHBOARD",
+      "FEDERATION_MARKETPLACE",
+      "MAX_FEDERATION_SITES"
     ]
   }
 ]

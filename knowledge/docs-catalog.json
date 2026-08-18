@@ -132,6 +132,12 @@
     "headings": 4
   },
   {
+    "file": "docs/BENCHMARK.md",
+    "title": "SYNAPSE Ingest Benchmark & Release Gate",
+    "length": 5608,
+    "headings": 4
+  },
+  {
     "file": "docs/CODEBASE_RESEARCH_REPORT.md",
     "title": "Comprehensive Codebase Research Report",
     "length": 43109,
@@ -148,6 +154,12 @@
     "title": "Hướng dẫn Upload từ phần mềm C# (AOI/AVI)",
     "length": 10434,
     "headings": 7
+  },
+  {
+    "file": "docs/DEPLOYMENT_CANARY.md",
+    "title": "Shadow → Canary deployment for the app (GitOps)",
+    "length": 5064,
+    "headings": 5
   },
   {
     "file": "docs/DEPLOYMENT_GUIDE.md",
@@ -224,20 +236,416 @@
   {
     "file": "docs/ECOSYSTEM/11_AI_ASSISTANT_KNOWLEDGE_REMEDIATION_2026-06.md",
     "title": "11 — Trợ lý thông minh: Audit + Kế hoạch \"Hệ thống có gì, AI biết cái đó\"",
-    "length": 20331,
+    "length": 22297,
     "headings": 9
+  },
+  {
+    "file": "docs/ECOSYSTEM/12_ECOSYSTEM_UNIFIED_REDESIGN_2026-06.md",
+    "title": "12 — Thiết kế lại Hệ sinh thái Hợp nhất (Unified Ecosystem Redesign)",
+    "length": 34945,
+    "headings": 12
+  },
+  {
+    "file": "docs/ECOSYSTEM/13_FEDERATION_INITIATIVE_2026-06.md",
+    "title": "13 — Multi-Site Federation Initiative (2026-06)",
+    "length": 24398,
+    "headings": 12
+  },
+  {
+    "file": "docs/ECOSYSTEM/14_AR_GUIDED_ASSEMBLY_DESIGN_2026-06.md",
+    "title": "14 — AR / HMI Guided Assembly — Detailed Design (2026-06)",
+    "length": 29975,
+    "headings": 13
+  },
+  {
+    "file": "docs/ECOSYSTEM/15_MENU_IA_FLYOUT_REDESIGN_2026-06.md",
+    "title": "15 · Menu IA + Flyout/Mega-menu Redesign",
+    "length": 16886,
+    "headings": 8
+  },
+  {
+    "file": "docs/ECOSYSTEM/16_AUTOMATION_ORCHESTRATION_ECOSYSTEM_UNIFIED_DESIGN_2026-06.md",
+    "title": "16 — Hệ sinh thái Điều phối Robot & Tự động hóa: Thiết kế Hợp nhất & Nâng cấp",
+    "length": 41461,
+    "headings": 17
+  },
+  {
+    "file": "docs/ECOSYSTEM/17_FRONTEND_DESIGN_SYSTEM_2026-06.md",
+    "title": "17 — Frontend Design System (DS) — Foundation",
+    "length": 51349,
+    "headings": 11
+  },
+  {
+    "file": "docs/ECOSYSTEM/18_AUTOMATION_ECOSYSTEM_PROGRESS_AND_FORWARD_PLAN_2026-07.md",
+    "title": "18 — Hệ sinh thái Tự động hóa: Tổng hợp Cải tiến, Đánh giá lại Module & Hướng Hoàn thiện",
+    "length": 15236,
+    "headings": 8
+  },
+  {
+    "file": "docs/ECOSYSTEM/19_AUTOMATION_ACTIVATION_RUNBOOK_2026-07.md",
+    "title": "19 — Automation Ecosystem: Activation Runbook (V1)",
+    "length": 16691,
+    "headings": 7
+  },
+  {
+    "file": "docs/ECOSYSTEM/20_GROUP_C_PRE_HARDWARE_ANALYSIS_2026-07.md",
+    "title": "20 — Phân tích lại Nhóm C & Kế hoạch làm-trước-khi-có-phần-cứng",
+    "length": 22545,
+    "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/22_ECOSYSTEM_FEASIBILITY_REVIEW_AND_IMPROVEMENT_PLAN_2026-07.md",
+    "title": "22 — Đánh giá Tính khả thi Hệ sinh thái & Kế hoạch Cải tiến (2 góc nhìn: Chuyên gia + Người dùng lần đầu)",
+    "length": 26625,
+    "headings": 8
+  },
+  {
+    "file": "docs/ECOSYSTEM/23_AUTOMATION_FLAG_FLIP_AND_SMOKE_TEST_RUNBOOK_2026-07.md",
+    "title": "23 — Runbook: Bật cờ (flag-flip) & Smoke-test cho các tính năng Automation",
+    "length": 10961,
+    "headings": 7
+  },
+  {
+    "file": "docs/ECOSYSTEM/23_FRONTEND_ECOSYSTEM_REDESIGN_AUDIT_AND_PLAN_2026-07.md",
+    "title": "23 — Frontend Ecosystem Redesign: Audit & Improvement Plan (2026-07)",
+    "length": 18532,
+    "headings": 9
+  },
+  {
+    "file": "docs/ECOSYSTEM/24_ADVANCED_CAPABILITIES_AOI_CONTROL_PROGRAMMING_TWIN_DESIGN_AND_PLAN_2026-07.md",
+    "title": "24 — Advanced Capabilities Deep Audit + Reference-Standard Design & Execution Plan (2026-07)",
+    "length": 34966,
+    "headings": 11
+  },
+  {
+    "file": "docs/ECOSYSTEM/24_HARDWARE_PROCUREMENT_PLAN_P6_2026-07.md",
+    "title": "24 — Kế hoạch Mua sắm Phần cứng (P6) & Nghiệm thu An toàn",
+    "length": 6641,
+    "headings": 7
+  },
+  {
+    "file": "docs/ECOSYSTEM/25_MACHINE_CONTROL_TIER_AUDIT_DESIGN_AND_UPGRADE_PLAN_2026-07.md",
+    "title": "25_MACHINE_CONTROL_TIER_AUDIT_DESIGN_AND_UPGRADE_PLAN_2026-07.md",
+    "length": 25358,
+    "headings": 8
+  },
+  {
+    "file": "docs/ECOSYSTEM/26_ENGINEERING_CONTROL_FRONTEND_UX_PERSONA_REVIEW_2026-07.md",
+    "title": "26 — Module \"Kỹ thuật & Điều khiển\": Báo cáo trải nghiệm Frontend theo cấp độ người dùng",
+    "length": 19335,
+    "headings": 7
+  },
+  {
+    "file": "docs/ECOSYSTEM/27_AOI_AVI_END_TO_END_AUDIT_UPGRADE_PLAN_2026-07.md",
+    "title": "Doc 27 — Audit toàn trình AOI/AVI & Kế hoạch nâng cấp lên mức chuyên nghiệp hoàn chỉnh",
+    "length": 78202,
+    "headings": 14
+  },
+  {
+    "file": "docs/ECOSYSTEM/28_ST4I_STANDARD_INSPECTION_FEED_SPEC.md",
+    "title": "ST4I Standard Inspection Feed — Specification v1",
+    "length": 20503,
+    "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/29_COMPONENT_PANEL_OPERATOR_MASTER_DESIGN.md",
+    "title": "Doc 29 — Thiết kế master data: Component library · Panel/Board multi-up · Operator/Badge · Capabilities validation",
+    "length": 15036,
+    "headings": 6
+  },
+  {
+    "file": "docs/ECOSYSTEM/30_BI_EXPORT_API.md",
+    "title": "30 — Raw Export & BI Dataset API (doc 27 §6 A10 · W5-D · 2026-07-04)",
+    "length": 6740,
+    "headings": 3
+  },
+  {
+    "file": "docs/ECOSYSTEM/31_PRODUCT_MEASUREMENT_POINT_DATA_AUDIT_UPGRADE_2026-07.md",
+    "title": "Doc 31 — Audit lớp dữ liệu Sản phẩm & Điểm đo phục vụ AOI/AVI & Kế hoạch hoàn thiện",
+    "length": 37188,
+    "headings": 11
+  },
+  {
+    "file": "docs/ECOSYSTEM/32_PRODUCTION_REPORTING_EXPORT_AUDIT_AND_PLAN_2026-07.md",
+    "title": "32 — AVI/AOI Production Reporting & Export: Audit + Ý tưởng + Kế hoạch thực hiện",
+    "length": 32429,
+    "headings": 9
+  },
+  {
+    "file": "docs/ECOSYSTEM/33_SYNAPSE_ALIGNMENT_AUDIT_UNIFIED_DESIGN_AND_UPGRADE_PLAN_2026-07.md",
+    "title": "33 — SYNAPSE: Đánh giá · Đối chiếu · Thiết kế Hợp nhất & Kế hoạch Nâng cấp Hệ sinh thái",
+    "length": 66594,
+    "headings": 13
+  },
+  {
+    "file": "docs/ECOSYSTEM/34_AI_LOCAL_AUTOMATION_PROGRAMMING_COPILOT_DESIGN_AND_UPGRADE_PLAN_2026-07.md",
+    "title": "Doc 34 — Trợ lý AI Local cho Lập trình Tự động hóa",
+    "length": 48189,
+    "headings": 12
+  },
+  {
+    "file": "docs/ECOSYSTEM/34_QUICKSTART_PROGRAMMING_COPILOT.md",
+    "title": "Doc 34 — Quick-start: Trợ lý AI Lập trình Tự động hóa (ở đâu & dùng thế nào)",
+    "length": 3432,
+    "headings": 5
+  },
+  {
+    "file": "docs/ECOSYSTEM/35_PROFESSIONAL_ECOSYSTEM_DEEP_AUDIT_GAP_AND_EXECUTION_PLAN_2026-07.md",
+    "title": "35 — Audit sâu Hệ sinh thái vs Chuẩn Platform Tự động hóa Chuyên nghiệp: GAP 4 trục & Kế hoạch Thực thi",
+    "length": 34694,
+    "headings": 12
+  },
+  {
+    "file": "docs/ECOSYSTEM/35_SYNAPSE_FLAG_FLIP_AND_ACTIVATION_RUNBOOK_2026-07.md",
+    "title": "35 — SYNAPSE Flag-Flip & Activation Runbook (C1)",
+    "length": 3759,
+    "headings": 4
+  },
+  {
+    "file": "docs/ECOSYSTEM/36_APP_LAUNCHER_IA_MENU_REORG_PLAN_2026-07.md",
+    "title": "Doc 36 — App Launcher IA: Tái cấu trúc menu để bán theo module (Phương án A)",
+    "length": 22733,
+    "headings": 12
+  },
+  {
+    "file": "docs/ECOSYSTEM/37_MACHINE_CONNECT_MANAGE_PROCESS_LAYERS_AUDIT_AND_COMPLETION_PLAN_2026-07.md",
+    "title": "37 — Audit Toàn Tầng KẾT NỐI · QUẢN LÝ · XỬ LÝ Máy móc: Hiện trạng · Đánh giá % · Kế hoạch hoàn thiện",
+    "length": 46390,
+    "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/38_POST_IMPROVEMENT_REAUDIT_BACKEND_DB_OPTIMIZATION_AND_CONTROL_COMPLETION_PLAN_2026-07.md",
+    "title": "Doc 38 — Re-audit sau cải tiến · Tối ưu Backend/Database chịu tải · Bổ sung backend thật cho tầng Quản-lý-Điều-khiển & Lập-trình-Điều-khiển · Phân quyền theo cấp người dùng",
+    "length": 32198,
+    "headings": 9
+  },
+  {
+    "file": "docs/ECOSYSTEM/40_MACHINE_MONITORING_ENGINEERING_CONTROL_COMPLETION_AUDIT_2_2026-07.md",
+    "title": "Doc 40 — Đánh giá độ hoàn thiện lần 2: Machine Monitoring & Engineering + Control — Kèm kế hoạch nâng cấp (CHỜ DUYỆT)",
+    "length": 79501,
+    "headings": 14
+  },
+  {
+    "file": "docs/ECOSYSTEM/41_DOC40_WAVE0-3_EXECUTION_AND_HANDOFF_RUNBOOK_2026-07.md",
+    "title": "Doc 41 — Thực thi Doc 40 Wave 0–3 + Runbook bàn giao để TEST",
+    "length": 19585,
+    "headings": 6
+  },
+  {
+    "file": "docs/ECOSYSTEM/43_PRODUCTMODELS_UX_REDESIGN_2026-07-11.md",
+    "title": "Doc 43 — Review & Redesign ProductModels.tsx (/products) — 2026-07-11",
+    "length": 6978,
+    "headings": 6
+  },
+  {
+    "file": "docs/ECOSYSTEM/44_SYNAPSE_TRANSFORMATION_AUDIT_AND_UPGRADE_PLAN_2026-07-12.md",
+    "title": "44 — CHUYỂN HÓA HỆ SINH THÁI THÀNH SYNAPSE",
+    "length": 62468,
+    "headings": 18
+  },
+  {
+    "file": "docs/ECOSYSTEM/45_W0_OWNER_RUNBOOK_2026-07-12.md",
+    "title": "Doc 45 — SYN-W0 Owner Runbook: hạ tầng nền + kích hoạt cờ (2026-07-12)",
+    "length": 27259,
+    "headings": 12
+  },
+  {
+    "file": "docs/ECOSYSTEM/48_SYNAPSE_ECOSYSTEM_REASSESSMENT_2026-07-13.md",
+    "title": "48 — SYNAPSE: ĐÁNH GIÁ TỔNG THỂ HẬU-NÂNG-CẤP + KẾ HOẠCH LÊN ≥95%",
+    "length": 16164,
+    "headings": 7
+  },
+  {
+    "file": "docs/ECOSYSTEM/49_R1_EXECUTION_STATUS_2026-07-13.md",
+    "title": "49 — R1 THỰC THI: WIRING + ACTIVATION (doc 48 R1) · 2026-07-13",
+    "length": 10388,
+    "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/50_RBAC_PROCEDURE_MIGRATION_R4_2026-07-13.md",
+    "title": "50 — RBAC procedure migration (doc 48 R4) · 2026-07-13",
+    "length": 6792,
+    "headings": 5
+  },
+  {
+    "file": "docs/ECOSYSTEM/51_AVI_AOI_MACHINE_API_AUDIT_AND_UPGRADE_PLAN_2026-07-13.md",
+    "title": "Doc 51 — Audit toàn diện API máy AVI/AOI + Kế hoạch nâng cấp hoàn thiện",
+    "length": 59773,
+    "headings": 15
+  },
+  {
+    "file": "docs/ECOSYSTEM/52_P0_MACHINE_AUTH_ROTATION_RUNBOOK.md",
+    "title": "Doc 52 — P0 Runbook: Siết danh tính máy (rotation khoá `mk_`) + Checklist go-live",
+    "length": 20893,
+    "headings": 8
+  },
+  {
+    "file": "docs/ECOSYSTEM/53_P1_INGEST_BENCHMARK_HARNESS.md",
+    "title": "53 — P1: Harness benchmark ingest AVI/AOI (QĐ#7)",
+    "length": 16560,
+    "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/54_DEVICES_AND_ENGINEERING_LIVE_COMPLETION_AUDIT_2026-07-16.md",
+    "title": "Doc 54 — Đánh giá hoàn thiện LIVE: Module \"Thiết bị & Giám sát\" + \"Kỹ thuật & Điều khiển\"",
+    "length": 43884,
+    "headings": 13
+  },
+  {
+    "file": "docs/ECOSYSTEM/55_REMAINING_ITEMS_AUDIT_AND_COMPLETION_PLAN_2026-07-17.md",
+    "title": "Doc 55 — Audit + Kế hoạch hoàn thiện 3 mục còn lại của doc 51",
+    "length": 19532,
+    "headings": 8
+  },
+  {
+    "file": "docs/ECOSYSTEM/56B_D3_PILOT_LIVE_EVIDENCE_2026-07-18.md",
+    "title": "Doc 56B — Đ3 PILOT: Bằng chứng LIVE E2E (2026-07-18)",
+    "length": 10490,
+    "headings": 9
+  },
+  {
+    "file": "docs/ECOSYSTEM/56_DEVICE_CONNECTIVITY_STANDARDIZATION_AUDIT_BLUEPRINT_AND_PLAN_2026-07-17.md",
+    "title": "Doc 56 — AUDIT + BLUEPRINT + KẾ HOẠCH: Chuẩn hóa kết nối thiết bị AVI/AOI · Máy tự động hóa nội bộ · IoT tự phát triển",
+    "length": 379863,
+    "headings": 31
+  },
+  {
+    "file": "docs/ECOSYSTEM/57_ST4I_STANDARD_PROCESS_FEED_SPEC.md",
+    "title": "ST4I Standard Process Feed — Specification v1",
+    "length": 24031,
+    "headings": 14
+  },
+  {
+    "file": "docs/ECOSYSTEM/58_DEVICE_ONBOARDING_GUIDE_2026-07-18.md",
+    "title": "Doc 58 — Hướng dẫn kết nối thiết bị nội bộ (đội cơ điện) — 2026-07-18",
+    "length": 10757,
+    "headings": 9
+  },
+  {
+    "file": "docs/ECOSYSTEM/59_FRONTEND_IA_CONSOLIDATION_AUDIT_AND_PLAN_2026-07-18.md",
+    "title": "Doc 59 — Audit IA Frontend + Kế hoạch hợp nhất giao diện theo vai trò (2026-07-18)",
+    "length": 14748,
+    "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/61_MACHINE_DEVELOPER_INTEGRATION_GUIDE_2026-07-18.md",
+    "title": "Doc 61 — Machine Developer Integration Guide (ST4I AVI/AOI Management)",
+    "length": 37439,
+    "headings": 16
+  },
+  {
+    "file": "docs/ECOSYSTEM/62_MACHINE_SIMULATOR_EDGE_MIDDLEWARE_DESIGN_2026-07-18.md",
+    "title": "Doc 62 — ST4I Machine Simulator Studio → Edge Middleware (Design Spec)",
+    "length": 24095,
+    "headings": 15
+  },
+  {
+    "file": "docs/ECOSYSTEM/63_FRONTEND_REDESIGN_HMI_P0-P8_2026-07-18.md",
+    "title": "63 — Thiết kế lại & nâng cấp Frontend HMI (SYNAPSE / LDS-L5) — P0→P8",
+    "length": 18152,
+    "headings": 12
+  },
+  {
+    "file": "docs/ECOSYSTEM/64_IA10_ISA95_SCOPE_AXIS_SPRINT_2026-07-19.md",
+    "title": "64 — Sprint IA-10: Trục phạm vi ISA-95 (scoped-query axis)",
+    "length": 18463,
+    "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/65_FRONTEND_PRO_SCORE_2026-07-19.md",
+    "title": "Doc 65 — GATE \"CHUYÊN NGHIỆP ≥95%\" CHO FRONTEND (2026-07-19)",
+    "length": 17689,
+    "headings": 14
+  },
+  {
+    "file": "docs/ECOSYSTEM/65_SIMULATOR_UI_WEB_UPGRADE_PLAN_2026-07-19.md",
+    "title": "Doc 65 — Kế hoạch Audit + Nâng cấp UI Simulator lên Web chuyên nghiệp (trắng/navy)",
+    "length": 10659,
+    "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/66_ECOSYSTEM_MIDDLEWARE_COMMERCIALIZATION_PLAN_2026-07-19.md",
+    "title": "Doc 66 — Kế hoạch Middleware Trung gian cho Hệ sinh thái: bán 1 máy & bán nhiều máy",
+    "length": 13588,
+    "headings": 11
+  },
+  {
+    "file": "docs/ECOSYSTEM/67_OVERVIEW_MODULE_PRODUCT_REVIEW_2026-07-19.md",
+    "title": "Doc 67 — Product Review module \"Tổng quan\": Báo cáo cải tiến tổng thể + Kết quả thực thi W1-W8",
+    "length": 17415,
+    "headings": 7
+  },
+  {
+    "file": "docs/ECOSYSTEM/68_OVERVIEW_VISUAL_REDESIGN_2026-07-20.md",
+    "title": "Doc 68 — Tái thiết kế THỊ GIÁC module \"Tổng quan\" + Navbar (CHỜ DUYỆT)",
+    "length": 16320,
+    "headings": 6
+  },
+  {
+    "file": "docs/ECOSYSTEM/69_AI_MODULE_DEEP_AUDIT_GAP_AND_UPGRADE_PLAN_2026-07-25.md",
+    "title": "Doc 69 — Audit sâu, GAP & Kế hoạch nâng cấp hoàn thiện MODULE \"AI\"",
+    "length": 56834,
+    "headings": 18
+  },
+  {
+    "file": "docs/ECOSYSTEM/70_AI_PERSISTENT_LLAMA_SERVER_RUNBOOK_2026-07-26.md",
+    "title": "70 — Persistent llama-server Runbook (deep model) + Thinking-tier honesty + Stream-copilot status",
+    "length": 21868,
+    "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/71_AI_BOOTSTRAP_FIRST_CLASSIFIER_RUNBOOK_2026-07-26.md",
+    "title": "71 — Bootstrap-First-Classifier Runbook + \"No Active Classifier\" Health Signal",
+    "length": 17224,
+    "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/72_AI_PROGRAMMING_KB_GROUNDING_ENABLE_RUNBOOK_2026-07-27.md",
+    "title": "72 — Enabling Programming-KB Grounding (`PROG_KB_ENABLED`) + PROVEN-LIVE Runbook",
+    "length": 15529,
+    "headings": 9
+  },
+  {
+    "file": "docs/ECOSYSTEM/73_AI_VIDEO_TRANSCRIPTION_INGEST_RUNBOOK_2026-07-27.md",
+    "title": "73 — Local Video Transcription Ingest Runbook (ffmpeg + whisper.cpp)",
+    "length": 12117,
+    "headings": 9
+  },
+  {
+    "file": "docs/ECOSYSTEM/74_AI_KB_SCANNED_PDF_OCR_INGEST_RUNBOOK_2026-07-27.md",
+    "title": "74 — Scanned-PDF OCR Ingest Runbook (pdftoppm + the existing ONNX OCR engine)",
+    "length": 16641,
+    "headings": 13
+  },
+  {
+    "file": "docs/ECOSYSTEM/75_AI_LORA_FINETUNE_RUNBOOK_2026-07-27.md",
+    "title": "75 — AI LoRA/QLoRA Fine-Tune Runbook (doc69 Giai đoạn 5 / Wave E3, task E3-6)",
+    "length": 18818,
+    "headings": 10
   },
   {
     "file": "docs/ECOSYSTEM/ADAPTER_SDK.md",
     "title": "Adapter SDK & Unified Machine API (`/api/v1`) — Integration Guide",
-    "length": 13804,
-    "headings": 7
+    "length": 21172,
+    "headings": 8
+  },
+  {
+    "file": "docs/ECOSYSTEM/CONTINUE_VSCODE_SETUP.md",
+    "title": "VS Code + Continue — ST4I Local Automation-Programming Copilot (doc 34 P3)",
+    "length": 3133,
+    "headings": 4
+  },
+  {
+    "file": "docs/ECOSYSTEM/DEVELOPER_PORTAL.md",
+    "title": "SYNAPSE Developer Portal (P6)",
+    "length": 2395,
+    "headings": 5
   },
   {
     "file": "docs/ECOSYSTEM/PHASE1_TENANT_RLS_ROLLOUT.md",
     "title": "Phase 1 WS1.2/WS4 — Tenant RLS rollout (safe-by-default)",
-    "length": 11312,
-    "headings": 7
+    "length": 14105,
+    "headings": 8
   },
   {
     "file": "docs/ECOSYSTEM/PHASE2_OT_ENABLEMENT.md",
@@ -268,6 +676,24 @@
     "title": "PHASE B — AI BRAIN OPERATIONAL RUNBOOK",
     "length": 18743,
     "headings": 8
+  },
+  {
+    "file": "docs/ECOSYSTEM/PR_AUTOMATION_ORCHESTRATION.md",
+    "title": "TITLE",
+    "length": 5375,
+    "headings": 9
+  },
+  {
+    "file": "docs/EDGE_GATEWAY.md",
+    "title": "Edge Gateway (Tầng-1 §5) — standalone edge node per line",
+    "length": 9783,
+    "headings": 7
+  },
+  {
+    "file": "docs/EDITIONS.md",
+    "title": "SYNAPSE Editions — Machine · Line · Site",
+    "length": 5367,
+    "headings": 6
   },
   {
     "file": "docs/examples/CSharp_API_Examples.md",
@@ -332,7 +758,7 @@
   {
     "file": "docs/MQTT_CONFIGURATION.md",
     "title": "Hướng dẫn Cấu hình MQTT Broker",
-    "length": 27016,
+    "length": 28024,
     "headings": 14
   },
   {
@@ -360,6 +786,30 @@
     "headings": 10
   },
   {
+    "file": "docs/REBRAND_R3.md",
+    "title": "Rebrand R-3 — MQTT wire namespace `avi/` → `synapse/`",
+    "length": 5554,
+    "headings": 6
+  },
+  {
+    "file": "docs/SAFETY_PLC_ADAPTER.md",
+    "title": "Safety-PLC E-Stop Adapter — Seam, FAT Requirements & Interim Risk",
+    "length": 5056,
+    "headings": 5
+  },
+  {
+    "file": "docs/security/IR_RUNBOOK.md",
+    "title": "Incident Response Runbook — SYNAPSE / AVI-AOI OT Platform",
+    "length": 8797,
+    "headings": 6
+  },
+  {
+    "file": "docs/security/ZONE_CONDUIT_62443.md",
+    "title": "Zone & Conduit Model — IEC 62443-3-2",
+    "length": 7735,
+    "headings": 5
+  },
+  {
     "file": "docs/SERVER_PERFORMANCE_ASSESSMENT.md",
     "title": "Đánh giá Hiệu suất Hệ thống cho 20 Máy trên Mạng LAN",
     "length": 10812,
@@ -376,6 +826,480 @@
     "title": "StationDetailInspection Process (FactoryAlertSystem)",
     "length": 9811,
     "headings": 7
+  },
+  {
+    "file": "docs/STREAMING.md",
+    "title": "SYNAPSE Streaming Bus & Stream Processing",
+    "length": 7531,
+    "headings": 6
+  },
+  {
+    "file": "docs/superpowers/plans/2026-07-18-machine-simulator-edge-middleware.md",
+    "title": "ST4I Machine Simulator Studio → Edge Middleware — Implementation Plan",
+    "length": 61273,
+    "headings": 26
+  },
+  {
+    "file": "docs/superpowers/plans/2026-07-19-simulator-web-ui.md",
+    "title": "Simulator Web UI (Doc 65) — Implementation Plan",
+    "length": 19513,
+    "headings": 13
+  },
+  {
+    "file": "docs/superpowers/plans/2026-07-27-ai-wave0-activation.md",
+    "title": "AI Wave 0 — Activation Implementation Plan",
+    "length": 13227,
+    "headings": 2
+  },
+  {
+    "file": "docs/superpowers/plans/2026-07-28-ai-specialist-studio.md",
+    "title": "Xưởng Agent chuyên môn (AI Specialist Studio) — Wave 1 Implementation Plan",
+    "length": 68305,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/plans/2026-07-28-ai-wave2-delivery.md",
+    "title": "Wave 2 — \"Giao được hàng\" Implementation Plan",
+    "length": 51094,
+    "headings": 10
+  },
+  {
+    "file": "docs/superpowers/plans/2026-07-29-ai-sprint5-error-codes.md",
+    "title": "Sprint 5 — A4: Mã lỗi máy-đọc-được + i18n toàn ứng dụng Implementation Plan",
+    "length": 43874,
+    "headings": 12
+  },
+  {
+    "file": "docs/superpowers/plans/2026-07-29-ai-sprint5-group-a-b1.md",
+    "title": "Sprint 5 — Nhóm A + B1 Implementation Plan",
+    "length": 62798,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/plans/2026-07-29-ai-wave3-alert-trust.md",
+    "title": "Wave 3 — \"Đáng tin để hành động\" Implementation Plan",
+    "length": 42484,
+    "headings": 10
+  },
+  {
+    "file": "docs/superpowers/plans/2026-07-29-ai-wave4-alert-kpi-truth.md",
+    "title": "Wave 4 — \"Đo đúng cái vừa sửa\" Implementation Plan",
+    "length": 28267,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/plans/2026-07-30-ai-sprint5-debt-e-f.md",
+    "title": "Sprint 5 — Trả nợ nhóm E + F (17 mục) Implementation Plan",
+    "length": 19883,
+    "headings": 16
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-01-do0-model-roster-survey.md",
+    "title": "Đợt 0 — Khảo sát roster model AI Implementation Plan",
+    "length": 18587,
+    "headings": 12
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-01-dot1-gianh-lai-vram.md",
+    "title": "Đợt 1 — Giành lại VRAM Implementation Plan",
+    "length": 23114,
+    "headings": 8
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-02-dot2-do-duoc-va-gianh-not.md",
+    "title": "Đợt 2 — Làm cho đo được, rồi giành nốt Implementation Plan",
+    "length": 27530,
+    "headings": 10
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-02-vram-pha1-so-cai-va-bao-dong.md",
+    "title": "Pha 1 — Sổ cái & Báo động (module điều phối VRAM)",
+    "length": 54629,
+    "headings": 3
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-03-vram-pha1-5-go-chan.md",
+    "title": "Pha 1.5 — Gỡ chặn Pha 2 (module điều phối VRAM)",
+    "length": 35167,
+    "headings": 3
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-03-vram-pha2a-do-dung-va-liet-ke.md",
+    "title": "Pha 2A — Đo đúng khi có đồng thời, và liệt kê đủ đường cấp phát",
+    "length": 32840,
+    "headings": 3
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-04-vram-pha2b-cuong-che.md",
+    "title": "Pha 2B — Cưỡng chế: từ chối trung thực thay cho tràn im lặng",
+    "length": 18777,
+    "headings": 3
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-05-vram-pha3-so-chung.md",
+    "title": "Pha 3 — Sổ chung xuyên tiến trình: từ \"mỗi tiến trình một sổ\" về MỘT MỐI",
+    "length": 11821,
+    "headings": 3
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-05-vram-pha4-mat-tiep-xuc-agent.md",
+    "title": "Pha 4 — Mặt tiếp xúc backend cho AI Agent: lắp KIM vào những chiếc đồng hồ đã dựng",
+    "length": 18318,
+    "headings": 3
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-06-vram-pha5-tra-no.md",
+    "title": "Pha 5 — Trả nợ Pha 4 (N8–N14) Implementation Plan",
+    "length": 33767,
+    "headings": 4
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-06-vram-pha6-backlog.md",
+    "title": "Pha 6 — Backlog sau Pha 5 Implementation Plan",
+    "length": 16215,
+    "headings": 5
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-07-vram-pha7-backlog.md",
+    "title": "Pha 7 — Backlog sau Pha 6 Implementation Plan",
+    "length": 27551,
+    "headings": 7
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-09-vram-pha8-tra-no.md",
+    "title": "Pha 8 — Trả nợ Pha 6/7 · Implementation Plan",
+    "length": 13484,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/plans/2026-08-14-f12-nhan-giao-dien-en-zh.md",
+    "title": "F12 — Nhãn giao diện thôi lọt tiếng Việt sang en/zh",
+    "length": 5953,
+    "headings": 10
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-01-do0-roster-survey.md",
+    "title": "Đợt 0 — Khảo sát roster model AI (32,6 GB VRAM)",
+    "length": 144210,
+    "headings": 7
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-01-do0-vi-ab.md",
+    "title": "Đợt 0 Task 4 — A/B chất lượng tiếng Việt (Model 1 / Model 2, ẩn danh)",
+    "length": 35835,
+    "headings": 32
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-01-dot1-vram-reclaim.md",
+    "title": "Đợt 1 — Giành lại VRAM: báo cáo thực thi",
+    "length": 49708,
+    "headings": 4
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-02-dot2-report.md",
+    "title": "Đợt 2 — Làm cho đo được, rồi giành nốt: báo cáo thực thi",
+    "length": 147205,
+    "headings": 14
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-02-vram-pha1-report.md",
+    "title": "Pha 1 điều phối VRAM — Báo cáo đo & phán quyết cổng ra (Task 7)",
+    "length": 65356,
+    "headings": 13
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-03-t511-per-process-feasibility.md",
+    "title": "T5-11 — Báo cáo phép thử khả thi: đo VRAM THEO TIẾN TRÌNH trên Windows WDDM",
+    "length": 18270,
+    "headings": 8
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-03-vram-pha1-5-report.md",
+    "title": "Pha 1.5 điều phối VRAM — Báo cáo ĐO LẠI trên mã đã sạch (Task 5)",
+    "length": 102252,
+    "headings": 12
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-04-vram-pha2a-review-toan-nhanh.md",
+    "title": "Review TOÀN NHÁNH — Pha 2A (đo đúng và liệt kê)",
+    "length": 21916,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-04-vram-pha2a-task5-ban-liet-ke-cap-phat.md",
+    "title": "Vòng sửa 1 — sau review (1 Critical · 7 Important · 6 Minor)",
+    "length": 57493,
+    "headings": 33
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-04-vram-pha2a-task6-bien-lang-cua-ta.md",
+    "title": "Task 6 — Biên lắng của bộ đếm phải là CỦA TA · BÁO CÁO",
+    "length": 25751,
+    "headings": 12
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-04-vram-pha2b-review-toan-nhanh.md",
+    "title": "REVIEW TOÀN NHÁNH — Pha 2B (cưỡng chế VRAM)",
+    "length": 16685,
+    "headings": 3
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-04-vram-pha2b-so-theo-doi.md",
+    "title": "SDD ledger — plan: docs/superpowers/plans/2026-08-04-vram-pha2b-cuong-che.md",
+    "length": 58838,
+    "headings": 0
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-05-vram-pha3-review-toan-nhanh.md",
+    "title": "Review TOÀN NHÁNH — Pha 3 (sổ chung xuyên tiến trình)",
+    "length": 19987,
+    "headings": 11
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-05-vram-pha3-so-theo-doi.md",
+    "title": "SDD ledger — plan: docs/superpowers/plans/2026-08-05-vram-pha3-so-chung.md",
+    "length": 40480,
+    "headings": 6
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-05-vram-pha3-tra-no.md",
+    "title": "Trả hai món nợ Pha 3 để lại",
+    "length": 22354,
+    "headings": 14
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-05-vram-pha3-wholebranch-fix-report.md",
+    "title": "Lượt vá sau review TOÀN NHÁNH — Pha 3",
+    "length": 8993,
+    "headings": 8
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-05-vram-pha4-nghiem-thu-song.md",
+    "title": "Pha 4 — Task 5: NGHIỆM THU SỐNG (Agent thật truy vấn và ra lệnh)",
+    "length": 71915,
+    "headings": 16
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-06-vram-pha4-review-toan-nhanh.md",
+    "title": "REVIEW TOÀN NHÁNH — Pha 4 (mặt tiếp xúc AI Agent cho module điều phối VRAM)",
+    "length": 31647,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-06-vram-pha4-wholebranch-fix-report.md",
+    "title": "VÁ REVIEW TOÀN NHÁNH — Pha 4 (module điều phối VRAM)",
+    "length": 16584,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-06-vram-pha5-cap-quyen.md",
+    "title": "LƯỢT CẤP QUYỀN — Pha 5 module điều phối VRAM",
+    "length": 24486,
+    "headings": 10
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-06-vram-pha5-nghiem-thu-song.md",
+    "title": "NGHIỆM THU SỐNG — Pha 5 · module điều phối VRAM",
+    "length": 40748,
+    "headings": 19
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-06-vram-pha5-review-toan-nhanh.md",
+    "title": "Review TOÀN NHÁNH — Pha 5 (trả nợ N8–N14) · module điều phối VRAM",
+    "length": 32065,
+    "headings": 13
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-06-vram-pha5-wholebranch-fix-report.md",
+    "title": "Vá phát hiện review TOÀN NHÁNH — Pha 5 (module điều phối VRAM)",
+    "length": 20994,
+    "headings": 12
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-06-vram-pha6-task4-hai-be-mat.md",
+    "title": "Pha 6 · Task 4 — N1 + N4: hai bề mặt CHƯA TỪNG CHẠY",
+    "length": 29075,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-07-vram-pha6-review-toan-nhanh.md",
+    "title": "Review TOÀN NHÁNH — Pha 6 (backlog sau Pha 5), dải `ebfec4a5..8b066230`",
+    "length": 29489,
+    "headings": 11
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-07-vram-pha6-wholebranch-fix-report.md",
+    "title": "Vá review TOÀN NHÁNH — Pha 6 · dải `8b066230..a38c8f3d`",
+    "length": 26406,
+    "headings": 12
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-08-vram-pha7-task5-migration-de-xuat.md",
+    "title": "Pha 7 · Task 5 — HAI MỤC CẦN DDL: **ĐỀ XUẤT MIGRATION** (soạn, chưa áp)",
+    "length": 44565,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-08-vram-pha7-task5-nghiem-thu-song.md",
+    "title": "Pha 7 · Task 5 — **NGHIỆM THU SỐNG** (hai mục DDL vừa áp)",
+    "length": 23788,
+    "headings": 11
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-09-vram-pha7-review-toan-nhanh.md",
+    "title": "Pha 7 — Review TOÀN NHÁNH (lượt thứ CHÍN)",
+    "length": 31087,
+    "headings": 8
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-09-vram-pha7-task10-xoay-bi-mat.md",
+    "title": "Pha 7 · Task 10 — CHẠY SCRIPT XOAY BÍ MẬT 2FA (thao tác phá huỷ trên dữ liệu thật)",
+    "length": 20468,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-09-vram-pha7-task9-migration-de-xuat.md",
+    "title": "Pha 7 · Task 9 — BA MỤC DDL TRONG MỘT LƯỢT: **ĐỀ XUẤT MIGRATION** (soạn, chưa áp)",
+    "length": 96517,
+    "headings": 20
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-10-vram-pha8-review-toan-nhanh.md",
+    "title": "Pha 8 — Review TOÀN NHÁNH (lượt thứ MƯỜI)",
+    "length": 22790,
+    "headings": 12
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-10-vram-pha8-wholebranch-fix-report.md",
+    "title": "Vá review TOÀN NHÁNH Pha 8 — báo cáo",
+    "length": 20153,
+    "headings": 10
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-11-vram-muc4-nghiem-thu-song.md",
+    "title": "Nghiệm thu SỐNG — \"mục 4\": cưỡng chế `mustChangePassword` trên bề mặt NGOÀI tRPC",
+    "length": 11592,
+    "headings": 10
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-11-vram-pha8-siet-failopen-0318.md",
+    "title": "Pha 8 — SIẾT fail-open · áp mig `0318` · redeploy (2026-08-11)",
+    "length": 17462,
+    "headings": 8
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-11-vram-pha9-0321-va-0125.md",
+    "title": "Pha 9 — `0321` (đường B) và `0125` (đo ở DB test)",
+    "length": 24624,
+    "headings": 6
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-11-vram-pha9-ddl-0319-0321.md",
+    "title": "VRAM Pha 9 — DDL `0319` · `0320` · `0321` + điều tra 4 migration `success=false`",
+    "length": 20271,
+    "headings": 7
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-11-vram-pha9-lot-va-ma.md",
+    "title": "Pha 9 — lượt vá mã: I-5 · M-4 · ca đỏ `api.test.ts` · nửa còn lại của I-3 · hạn cookie phiên",
+    "length": 19985,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-11-vram-pha9-nhom-a.md",
+    "title": "Pha 9 — Nhóm A (nợ AN NINH): báo cáo thực thi",
+    "length": 17114,
+    "headings": 10
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-11-vram-pha9-nhom-b.md",
+    "title": "Pha 9 — nhóm B: nợ LƯỚI và HẠ TẦNG ĐO",
+    "length": 16737,
+    "headings": 10
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-11-vram-pha9-review-toan-nhanh.md",
+    "title": "Pha 9 — REVIEW TOÀN NHÁNH (lượt thứ MƯỜI MỘT)",
+    "length": 27050,
+    "headings": 7
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-11-vram-pha9-wholebranch-fix-report.md",
+    "title": "Pha 9 — VÁ REVIEW TOÀN NHÁNH (lượt thứ mười một)",
+    "length": 22711,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-12-nhom-c-khao-sat.md",
+    "title": "Nhóm C — Khảo sát backlog \"CHỜ DUYỆT\" của 7 tài liệu audit (2026-06 → 2026-07-17)",
+    "length": 35905,
+    "headings": 7
+  },
+  {
+    "file": "docs/superpowers/reports/2026-08-12-nhom-c-xu-ly.md",
+    "title": "Nhóm C — Xử lý các phát hiện của lượt khảo sát",
+    "length": 24636,
+    "headings": 7
+  },
+  {
+    "file": "docs/superpowers/specs/2026-07-28-ai-specialist-studio-design.md",
+    "title": "Thiết kế: Xưởng Agent chuyên môn (AI Specialist Studio) — Wave 1",
+    "length": 16800,
+    "headings": 12
+  },
+  {
+    "file": "docs/superpowers/specs/2026-07-28-ai-wave2-delivery-design.md",
+    "title": "Thiết kế: Wave 2 — \"Giao được hàng\" (AI đến đúng nơi kỹ sư làm việc)",
+    "length": 16682,
+    "headings": 10
+  },
+  {
+    "file": "docs/superpowers/specs/2026-07-29-ai-sprint5-backlog-consolidated.md",
+    "title": "Sprint 5 — Backlog hợp nhất sau Wave 0→4",
+    "length": 19990,
+    "headings": 11
+  },
+  {
+    "file": "docs/superpowers/specs/2026-07-29-ai-sprint5-design.md",
+    "title": "Sprint 5 — Thiết kế: hết làm phiền người thật, và số liệu nói thật",
+    "length": 16423,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/specs/2026-07-29-ai-wave3-alert-trust-design.md",
+    "title": "Thiết kế: Wave 3 — \"Đáng tin để hành động\" (ngừng sản xuất nhiễu tại nguồn)",
+    "length": 12625,
+    "headings": 9
+  },
+  {
+    "file": "docs/superpowers/specs/2026-07-29-ai-wave4-alert-kpi-truth-design.md",
+    "title": "Thiết kế: Wave 4 — \"Đo đúng cái vừa sửa\" (trả nợ do Wave 3 tạo ra)",
+    "length": 8069,
+    "headings": 10
+  },
+  {
+    "file": "docs/superpowers/specs/2026-08-01-ai-local-hybrid-internal-code-profile-design.md",
+    "title": "Hồ sơ Hybrid — bắt đầu bằng hồ sơ NỘI BỘ thiên hướng code",
+    "length": 41283,
+    "headings": 8
+  },
+  {
+    "file": "docs/superpowers/specs/2026-08-01-ai-local-model-strategy-design.md",
+    "title": "Chiến lược model AI Local dài hạn — hệ sinh thái AOI/AVI",
+    "length": 58849,
+    "headings": 8
+  },
+  {
+    "file": "docs/superpowers/specs/2026-08-01-ai-model-roster-survey-design.md",
+    "title": "Đợt 0 — Khảo sát roster model AI rồi mới quyết",
+    "length": 7594,
+    "headings": 8
+  },
+  {
+    "file": "docs/superpowers/specs/2026-08-02-vram-broker-design.md",
+    "title": "Thiết kế: Module điều phối VRAM chung cho AI Local",
+    "length": 36144,
+    "headings": 16
   },
   {
     "file": "docs/SYSTEM_EVALUATION_REPORT.md",
@@ -452,7 +1376,7 @@
   {
     "file": "docs/upgrade-2026/RUNBOOK-tier3.md",
     "title": "RUNBOOK — Vận hành AI 4.0 (Local GGUF + Tier 3) cho đội",
-    "length": 6172,
+    "length": 6458,
     "headings": 9
   },
   {
@@ -548,19 +1472,19 @@
   {
     "file": "apidocs/AUTHENTICATION.md",
     "title": "Authentication — Xác thực API",
-    "length": 2931,
-    "headings": 5
+    "length": 7462,
+    "headings": 6
   },
   {
     "file": "apidocs/ERROR_CODES.md",
     "title": "Error Codes — Mã lỗi API",
-    "length": 4651,
+    "length": 9469,
     "headings": 6
   },
   {
     "file": "apidocs/EXAMPLES.md",
     "title": "Integration Examples — Ví dụ tích hợp đa ngôn ngữ",
-    "length": 16453,
+    "length": 21257,
     "headings": 7
   },
   {
@@ -572,13 +1496,13 @@
   {
     "file": "apidocs/MACHINE_API.md",
     "title": "Machine API — Tích hợp máy kiểm tra AOI",
-    "length": 17825,
-    "headings": 14
+    "length": 30025,
+    "headings": 16
   },
   {
     "file": "apidocs/measurement-geometry-and-fiducials.md",
     "title": "Measurement Geometry & Fiducial Marks — P1 API Reference",
-    "length": 8228,
+    "length": 6531,
     "headings": 4
   },
   {
@@ -596,8 +1520,8 @@
   {
     "file": "apidocs/README.md",
     "title": "AVI-AOI Management System — API Documentation",
-    "length": 7240,
-    "headings": 8
+    "length": 10156,
+    "headings": 9
   },
   {
     "file": "apidocs/STATION_ANALYSIS_ANDROID_GUIDE.md",
@@ -608,7 +1532,7 @@
   {
     "file": "apidocs/SYNC_API.md",
     "title": "API Đồng bộ Ảnh & Điểm đo cho bên thứ 3",
-    "length": 36124,
+    "length": 37035,
     "headings": 13
   },
   {

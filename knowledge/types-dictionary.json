@@ -8,6 +8,32 @@
     ]
   },
   {
+    "file": "server/api/export/biRouter.ts",
+    "interfaces": [],
+    "aliases": [
+      "BiDatasetName"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/api/export/exportRouter.ts",
+    "interfaces": [
+      "ExportPrincipal",
+      "ParsedWindow",
+      "AggregateDataset"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/api/v1/assets.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "bodySchema"
+    ]
+  },
+  {
     "file": "server/api/v1/auth.ts",
     "interfaces": [
       "ApiPrincipal"
@@ -25,12 +51,71 @@
     "zodSchemas": []
   },
   {
+    "file": "server/api/v1/erpIntake.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "orderIntakeSchema",
+      "bomLineSchema",
+      "bomIntakeSchema"
+    ]
+  },
+  {
+    "file": "server/api/v1/erpOauth.ts",
+    "interfaces": [
+      "IssuedToken",
+      "VerifiedToken"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/api/v1/events.ts",
+    "interfaces": [
+      "UnifiedEvent"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/api/v1/genealogyApi.ts",
+    "interfaces": [
+      "GenealogyStep",
+      "GenealogyMaterial",
+      "GenealogyRecord"
+    ],
+    "aliases": [],
+    "zodSchemas": [
+      "searchSchema"
+    ]
+  },
+  {
+    "file": "server/api/v1/ordersLifecycle.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "listQuerySchema",
+      "allocateBodySchema",
+      "reasonBodySchema"
+    ]
+  },
+  {
     "file": "server/api/v1/scopes.ts",
     "interfaces": [],
     "aliases": [
       "ApiScope"
     ],
     "zodSchemas": []
+  },
+  {
+    "file": "server/api/v1/timeseries.ts",
+    "interfaces": [
+      "TimeseriesPointOut"
+    ],
+    "aliases": [],
+    "zodSchemas": [
+      "bodySchema"
+    ]
   },
   {
     "file": "server/api/v1/webhookBridge.ts",
@@ -44,7 +129,8 @@
     "file": "server/constants/machineTypes.ts",
     "interfaces": [],
     "aliases": [
-      "MachineType"
+      "MachineType",
+      "DeviceClass"
     ],
     "zodSchemas": []
   },
@@ -54,11 +140,17 @@
       "ValidateResult"
     ],
     "aliases": [
-      "MachineContractVersion"
+      "MachineContractVersion",
+      "ProcessContractVersion"
     ],
     "zodSchemas": [
       "measurementV1",
-      "machineDataContractV1"
+      "machineDataContractV1",
+      "measurementV11",
+      "machineDataContractV11",
+      "processMetricV1",
+      "processWaveformV1",
+      "machineProcessResultContractV1"
     ]
   },
   {
@@ -88,9 +180,14 @@
   {
     "file": "server/db/aiSpecialist.ts",
     "interfaces": [
-      "ModuleImprovementStats"
+      "ModuleImprovementStats",
+      "UpsertSpecialistFeedbackInput",
+      "QualityScoreboardRow",
+      "QualityScoreboard"
     ],
-    "aliases": [],
+    "aliases": [
+      "SpecialistRating"
+    ],
     "zodSchemas": []
   },
   {
@@ -105,10 +202,25 @@
     "zodSchemas": []
   },
   {
+    "file": "server/db/andonBoard.ts",
+    "interfaces": [
+      "AndonBoardMachineTile",
+      "AndonBoardLine",
+      "AndonBoardTickerItem",
+      "AndonBoardData",
+      "MachineHierarchyRow",
+      "MachineDayCounts",
+      "ActiveAndonRow"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/db/auth.ts",
     "interfaces": [],
     "aliases": [
-      "UserRole"
+      "UserRole",
+      "BiMatNguoiDung"
     ],
     "zodSchemas": []
   },
@@ -136,12 +248,37 @@
     "zodSchemas": []
   },
   {
+    "file": "server/db/goldenSample.ts",
+    "interfaces": [
+      "GoldenKey",
+      "ApproveGoldenInput",
+      "ListGoldenFilter",
+      "ProductGoldenFilter",
+      "GoldenRefProvenance"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/db/hierarchy.ts",
+    "interfaces": [],
+    "aliases": [
+      "MachineClaimToken",
+      "MachineEnrollmentToken",
+      "PublicEnrollmentTokenRow"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/db/inspection.ts",
     "interfaces": [
+      "CreateInspectionOutcome",
       "CursorPaginationResult",
       "CursorPaginationParams"
     ],
-    "aliases": [],
+    "aliases": [
+      "InspectionListRow"
+    ],
     "zodSchemas": []
   },
   {
@@ -157,6 +294,7 @@
     "file": "server/db/machineRecipe.ts",
     "interfaces": [
       "CreateRecipeInput",
+      "ApproveRecipeInput",
       "DeployRecipeInput"
     ],
     "aliases": [],
@@ -175,7 +313,11 @@
     "file": "server/db/processResult.ts",
     "interfaces": [
       "ProcessResultStats",
-      "MetricSeriesPoint"
+      "MetricSeriesPoint",
+      "ProcessStepTypeRow",
+      "MetricPoint",
+      "TypeRollupRow",
+      "DailyRollupRow"
     ],
     "aliases": [
       "ProcessResultRow"
@@ -185,7 +327,14 @@
   {
     "file": "server/db/product.ts",
     "interfaces": [
-      "MpDefectStat"
+      "PointsConfigBump",
+      "VariantPointsConfigBump",
+      "CloneProductModelSummary",
+      "CreateMeasurementPointOutcome",
+      "RevertPointsSummary",
+      "PointTombstone",
+      "MpDefectStat",
+      "EffectivePointsInput"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -194,6 +343,44 @@
     "file": "server/db/production.ts",
     "interfaces": [
       "ScheduleOptimizationResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/db/reportAggregators.ts",
+    "interfaces": [
+      "ReportRollupFilters",
+      "DimensionCountRow",
+      "DimensionParetoItem",
+      "DimensionParetoResult",
+      "ProductYieldRow",
+      "WeeklyYieldRow",
+      "WorkstationHeatmapRow"
+    ],
+    "aliases": [
+      "DefectDimension"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/db/shiftResolution.ts",
+    "interfaces": [
+      "ShiftWindowMeta",
+      "ResolvedShift",
+      "InspectionForShift"
+    ],
+    "aliases": [
+      "ShiftSource"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/db/statistics.ts",
+    "interfaces": [
+      "PanelYieldStats",
+      "ShiftReportRow",
+      "DrillAggRow"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -216,6 +403,14 @@
     "zodSchemas": []
   },
   {
+    "file": "server/db/timescale.ts",
+    "interfaces": [
+      "TsdbLatestRow"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/db/twin.ts",
     "interfaces": [
       "WipByStationRow",
@@ -223,6 +418,31 @@
     ],
     "aliases": [],
     "zodSchemas": []
+  },
+  {
+    "file": "server/functions/cachedStatistics.ts",
+    "interfaces": [
+      "MvFreshness",
+      "MvHourlyRow"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/lib/fiducialRegistration.ts",
+    "interfaces": [
+      "RegistrationResult"
+    ],
+    "aliases": [
+      "ObservedFiducial",
+      "FiducialPair",
+      "Matrix2x3",
+      "RegistrationReason"
+    ],
+    "zodSchemas": [
+      "observedFiducialSchema",
+      "fiducialPairSchema"
+    ]
   },
   {
     "file": "server/lib/measurementGeometry.ts",
@@ -252,6 +472,27 @@
     ]
   },
   {
+    "file": "server/license/deviceMetering.ts",
+    "interfaces": [
+      "MeteredDevice",
+      "DeviceUsage"
+    ],
+    "aliases": [
+      "DeviceKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/license/ed25519License.ts",
+    "interfaces": [
+      "Ed25519Keypair",
+      "FingerprintSources",
+      "FingerprintResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/license/license-guard.ts",
     "interfaces": [
       "LicenseGuardStatus"
@@ -273,6 +514,16 @@
       "LicenseStateCache"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/license/licensePolicy.ts",
+    "interfaces": [
+      "BatchDecision"
+    ],
+    "aliases": [
+      "LicenseState"
+    ],
     "zodSchemas": []
   },
   {
@@ -324,6 +575,14 @@
     ]
   },
   {
+    "file": "server/mqttAlertScheduler.ts",
+    "interfaces": [
+      "EscalationSweepDeps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/mqttConnectionStatus.test.ts",
     "interfaces": [],
     "aliases": [],
@@ -338,23 +597,8 @@
   {
     "file": "server/queryMonitor.ts",
     "interfaces": [
-      "QueryMetrics"
-    ],
-    "aliases": [],
-    "zodSchemas": []
-  },
-  {
-    "file": "server/queryValidationMiddleware.ts",
-    "interfaces": [
-      "QueryInfo"
-    ],
-    "aliases": [],
-    "zodSchemas": []
-  },
-  {
-    "file": "server/queryValidator.ts",
-    "interfaces": [
-      "QueryValidationResult"
+      "SlowQueryEntry",
+      "QueryAggregate"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -406,6 +650,14 @@
     ]
   },
   {
+    "file": "server/routers/aiProgrammingKbRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "SearchInput"
+    ]
+  },
+  {
     "file": "server/routers/aiReportRouter.ts",
     "interfaces": [],
     "aliases": [],
@@ -424,7 +676,9 @@
   },
   {
     "file": "server/routers/aiSpecialistAgentRouter.ts",
-    "interfaces": [],
+    "interfaces": [
+      "RepoContextSummary"
+    ],
     "aliases": [],
     "zodSchemas": [
       "runInputSchema"
@@ -440,12 +694,62 @@
     ]
   },
   {
+    "file": "server/routers/alertEscalationRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "ruleCreateSchema"
+    ]
+  },
+  {
+    "file": "server/routers/alertRouters.ts",
+    "interfaces": [
+      "AlertBreach"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routers/annotationComparisonRouter.ts",
+    "interfaces": [
+      "ComparisonDetailRow",
+      "MeasurementComparison",
+      "ComparisonPattern"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routers/annotationRouters.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "drillPeriodInput"
+    ]
+  },
+  {
+    "file": "server/routers/aoiOnboardingRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "hotFolderSchema"
+    ]
+  },
+  {
     "file": "server/routers/aoiPackageRouter.ts",
     "interfaces": [],
     "aliases": [],
     "zodSchemas": [
       "metaJsonSchema"
     ]
+  },
+  {
+    "file": "server/routers/bootstrapRouter.ts",
+    "interfaces": [],
+    "aliases": [
+      "BootstrapRouter"
+    ],
+    "zodSchemas": []
   },
   {
     "file": "server/routers/causalGraphRouter.ts",
@@ -458,11 +762,35 @@
     ]
   },
   {
+    "file": "server/routers/componentLibraryRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "idInput"
+    ]
+  },
+  {
     "file": "server/routers/defectHeatmapRouter.ts",
     "interfaces": [],
     "aliases": [
       "DefectHeatmapRouter"
     ],
+    "zodSchemas": [
+      "heatmapQueryInput"
+    ]
+  },
+  {
+    "file": "server/routers/deployProcedureScan.ts",
+    "interfaces": [
+      "ThuTucDeploy",
+      "KetQuaQuet",
+      "MutationPhaHuy",
+      "KetQuaQuetPhaHuy",
+      "DiemDocBiMat",
+      "TenSqlBiMat",
+      "ThuTucDocBiMat"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -472,6 +800,15 @@
     "zodSchemas": [
       "adapterCreateInput",
       "tagCreateInput"
+    ]
+  },
+  {
+    "file": "server/routers/ecnRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "impactSummarySchema",
+      "itemSchema"
     ]
   },
   {
@@ -499,6 +836,32 @@
     ]
   },
   {
+    "file": "server/routers/enhancedAuditRouter.ts",
+    "interfaces": [
+      "MasterDataAuditItem"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routers/goldenSampleRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "keyInput"
+    ]
+  },
+  {
+    "file": "server/routers/hoXacThucScan.ts",
+    "interfaces": [
+      "TaiNguyenXacThuc",
+      "DonViXuLy",
+      "CapSongSong"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/routers/interlockRouter.ts",
     "interfaces": [],
     "aliases": [],
@@ -508,18 +871,46 @@
   },
   {
     "file": "server/routers/machineApiRouters.ts",
-    "interfaces": [],
-    "aliases": [],
+    "interfaces": [
+      "ClockSkewAssessment",
+      "KeyRotationSignal",
+      "BatchInspectionItemResult",
+      "BatchProcessResultItemResult"
+    ],
+    "aliases": [
+      "InspectionTimeSource",
+      "SubmitInspectionInput",
+      "SubmitInspectionBatchItem",
+      "SubmitProcessResultInput"
+    ],
     "zodSchemas": [
-      "measurementPointSyncSchema"
+      "measurementPointSyncSchema",
+      "submitInspectionCoreObject",
+      "processMetricSchema",
+      "processWaveformSchema",
+      "submitProcessResultCoreObject",
+      "submitProcessResultBatchInputSchema"
     ]
   },
   {
     "file": "server/routers/masterDataRouter.ts",
-    "interfaces": [],
+    "interfaces": [
+      "ImportOutcome",
+      "BulkOutcome",
+      "QualityIssue",
+      "QualityEntity",
+      "QualityDrillSample",
+      "QualityEntityExtended"
+    ],
     "aliases": [],
     "zodSchemas": [
-      "idInput"
+      "idInput",
+      "importInput",
+      "bulkIdsInput",
+      "supplierImportSchema",
+      "materialClassImportSchema",
+      "materialImportSchema",
+      "customerImportSchema"
     ]
   },
   {
@@ -541,12 +932,59 @@
     ]
   },
   {
+    "file": "server/routers/observabilityRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "obsSchema"
+    ]
+  },
+  {
+    "file": "server/routers/operatorBadgeRouter.ts",
+    "interfaces": [],
+    "aliases": [
+      "OperatorBadgeRouter"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routers/productPanelRouter.ts",
+    "interfaces": [],
+    "aliases": [
+      "ProductPanelRouter"
+    ],
+    "zodSchemas": [
+      "boardInputSchema"
+    ]
+  },
+  {
+    "file": "server/routers/productRouters.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "centroidColumnMapSchema",
+      "centroidParseOptionsSchema",
+      "centroidTransformOptionsSchema"
+    ]
+  },
+  {
     "file": "server/routers/publicProductApiRouter.ts",
     "interfaces": [],
     "aliases": [],
     "zodSchemas": [
       "authInput"
     ]
+  },
+  {
+    "file": "server/routers/readinessRouter.ts",
+    "interfaces": [
+      "ReadinessItem"
+    ],
+    "aliases": [
+      "ReadinessGroup",
+      "ReadinessState"
+    ],
+    "zodSchemas": []
   },
   {
     "file": "server/routers/reportBuilderRouter.ts",
@@ -558,12 +996,83 @@
     ]
   },
   {
+    "file": "server/routers/reportingMartRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "windowInput"
+    ]
+  },
+  {
+    "file": "server/routers/routingRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "stepInput"
+    ]
+  },
+  {
+    "file": "server/routers/rumRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "rumSampleSchema",
+      "rumReportInputSchema"
+    ]
+  },
+  {
+    "file": "server/routers/safetyRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "simHumanSchema",
+      "simRobotSchema",
+      "personDetectionSchema",
+      "calibrationPairSchema",
+      "plcStatusSnapshotSchema"
+    ]
+  },
+  {
+    "file": "server/routers/simTargetsRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "endpointInput"
+    ]
+  },
+  {
+    "file": "server/routers/simulationRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "stationSpecSchema",
+      "lineModelSchema",
+      "stationParamSchema"
+    ]
+  },
+  {
+    "file": "server/routers/sopRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "stepInput"
+    ]
+  },
+  {
     "file": "server/routers/trainingBatchCommentsRouter.ts",
     "interfaces": [],
     "aliases": [
       "TrainingBatchCommentsRouter"
     ],
     "zodSchemas": []
+  },
+  {
+    "file": "server/routers/unsMappingRouter.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "createInput"
+    ]
   },
   {
     "file": "server/routers/vda5050Router.ts",
@@ -600,6 +1109,353 @@
     "zodSchemas": []
   },
   {
+    "file": "server/routes/aiLocalKnowledgeApi.ts",
+    "interfaces": [
+      "ChatVisionNote"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routes/openaiGateway.ts",
+    "interfaces": [
+      "OpenAiGatewayConfig"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routes/_congLoopback.ts",
+    "interfaces": [
+      "KetQuaXacThuc"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routes/_xacThucRest.ts",
+    "interfaces": [],
+    "aliases": [
+      "LyDoTuChoiRest",
+      "KetQuaXacThucRest"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/aiLlmAudit.ts",
+    "interfaces": [
+      "LlmAuditEntry"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/aiSafety.ts",
+    "interfaces": [
+      "InjectionScanResult",
+      "RedactionCount",
+      "RedactionResult",
+      "OutputCheckResult",
+      "SafetyFlagsSummary",
+      "SafetyResult"
+    ],
+    "aliases": [
+      "InjectionRisk"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/autonomyPolicy.ts",
+    "interfaces": [
+      "AutonomyAction",
+      "AutonomyContext",
+      "AutonomyDecision"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/costSensitiveThreshold.ts",
+    "interfaces": [
+      "CostMatrix",
+      "CostThresholdDecision",
+      "DecideThresholdOptions",
+      "TriageOverride"
+    ],
+    "aliases": [
+      "SeverityMap",
+      "CostAction",
+      "GateDecision"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/defectCorrelationService.ts",
+    "interfaces": [
+      "LogisticFit",
+      "FactorCorrelation",
+      "CorrelateInput",
+      "CorrelateResult"
+    ],
+    "aliases": [
+      "CorrelationDirection"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/embeddingHead.ts",
+    "interfaces": [
+      "CollectPairsOptions",
+      "SnapshotDatasetOptions",
+      "DatasetVersion",
+      "TrainRegisterOptions",
+      "TrainRegisterResult",
+      "HeadInferenceResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/embeddingHeadTrainer.ts",
+    "interfaces": [
+      "LabeledEmbedding",
+      "EmbeddingDatasetSample",
+      "EmbeddingDatasetSnapshot",
+      "SplitDataset",
+      "TrainHeadConfig",
+      "ClassBalanceInfo",
+      "HeadArtifact",
+      "TrainHeadResult",
+      "HeadPrediction"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/failureModeClassifier.ts",
+    "interfaces": [
+      "FailureModeSpec",
+      "SpectralFeatures",
+      "ClassifyInput",
+      "FailureModeResult",
+      "SensorReadingRow"
+    ],
+    "aliases": [
+      "FailureMode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/featureStore.ts",
+    "interfaces": [
+      "FeatureComputeContext",
+      "FeatureDefinition",
+      "InferenceAuditEntry"
+    ],
+    "aliases": [
+      "FeatureValue"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/generationGuard.ts",
+    "interfaces": [
+      "DegenerateOptions",
+      "DegenerateResult",
+      "GuardResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/materialForecastService.ts",
+    "interfaces": [
+      "TimeToEmpty"
+    ],
+    "aliases": [
+      "ForecastStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/measurementCorrectionsService.ts",
+    "interfaces": [
+      "RecordCorrectionInput",
+      "RecordCorrectionResult",
+      "MachineFalseCallSummaryRow",
+      "AgreementTrendPoint",
+      "CorrectionTrainingSample"
+    ],
+    "aliases": [
+      "CorrectionSource"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/microBatcher.ts",
+    "interfaces": [
+      "MicroBatcherOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/modelAutoRollback.ts",
+    "interfaces": [
+      "LiveSignal",
+      "RollbackDecision",
+      "RollbackOutcome",
+      "ManualRollbackOptions"
+    ],
+    "aliases": [
+      "RollbackTrigger"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/modelPerfSnapshotProducer.ts",
+    "interfaces": [
+      "FeedbackDatum",
+      "PerformanceAggregate",
+      "SnapshotSweepResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/modelResolver.ts",
+    "interfaces": [],
+    "aliases": [
+      "ResolvableTask"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/modelStagePipeline.ts",
+    "interfaces": [
+      "PromotionFacts",
+      "PromotionDecision",
+      "PromoteResult"
+    ],
+    "aliases": [
+      "PromotionErrorCode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/ntfClassifierService.ts",
+    "interfaces": [
+      "NtfVocab",
+      "NtfClassifierArtifact",
+      "LabeledNtfContext",
+      "NtfGateResult",
+      "NtfTrainCore",
+      "TrainNtfOptions",
+      "TrainNtfResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/ntfPredictorService.ts",
+    "interfaces": [
+      "NtfSignals",
+      "NtfScoreResult",
+      "NtfFeatureContext"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/ocrService.ts",
+    "interfaces": [
+      "OcrModelPaths",
+      "OcrLine",
+      "OcrResult",
+      "LabelCheckResult",
+      "CtcDecodeResult"
+    ],
+    "aliases": [
+      "OcrEngine"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/parameterGuardrailService.ts",
+    "interfaces": [
+      "RecordChangeInput",
+      "SetGuardrailInput",
+      "VerifySweepResult"
+    ],
+    "aliases": [
+      "GuardrailSummary",
+      "CheckResult",
+      "TwinValidationStatus",
+      "MachineMetrics",
+      "SetGuardrailResult"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/rcaActionSuggester.ts",
+    "interfaces": [
+      "SuggestedAction",
+      "RCAInsightLike",
+      "SuggestActionsContext"
+    ],
+    "aliases": [
+      "RcaSuggestedActionTool"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/repoContextService.ts",
+    "interfaces": [
+      "RepoFileRead",
+      "RepoContextResult",
+      "GatherRepoContextInput"
+    ],
+    "aliases": [
+      "RepoReadRejectReason"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/rlDispatchAdvisor.ts",
+    "interfaces": [
+      "RlAdvisorState",
+      "RlAdvice"
+    ],
+    "aliases": [
+      "RlMode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/robotBehaviorAnomaly.ts",
+    "interfaces": [
+      "RobotAnomaly",
+      "TelemetrySnapshot",
+      "JobDuration",
+      "DetectInput"
+    ],
+    "aliases": [
+      "RobotAnomalyKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/rulEstimatorService.ts",
+    "interfaces": [
+      "FailureObservation",
+      "WeibullFit",
+      "RulEstimate",
+      "EstimateRulOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiABTesting.ts",
     "interfaces": [
       "CanaryGuardrailOptions",
@@ -611,6 +1467,7 @@
   {
     "file": "server/services/aiActionInbox.ts",
     "interfaces": [
+      "ScopedMachine",
       "InboxItem",
       "InboxListResult"
     ],
@@ -645,10 +1502,33 @@
       "AugmentedImage",
       "VisualQAResult",
       "TriageItem",
-      "BatchTriageResult"
+      "BatchTriageResult",
+      "NormalizeIlluminationOptions",
+      "GoldenDiffOptions",
+      "GoldenDiffResult",
+      "GoldenDiffForKeyResult"
     ],
     "aliases": [
       "AugmentTransform"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiAgentCenterService.ts",
+    "interfaces": [
+      "AgentRosterEntry",
+      "TaskFeedItem",
+      "CommandCenterReadModel",
+      "RawAgentState",
+      "GetReadModelOptions",
+      "WindowSavings",
+      "ModelSavingsBreakdown",
+      "SavingsSummary",
+      "GetSavingsSummaryOptions"
+    ],
+    "aliases": [
+      "AgentStatus",
+      "AgentKind"
     ],
     "zodSchemas": []
   },
@@ -657,7 +1537,8 @@
     "interfaces": [
       "AgentUser",
       "StartSessionResult",
-      "AdvanceResult"
+      "AdvanceResult",
+      "OpsSessionSummary"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -665,9 +1546,22 @@
   {
     "file": "server/services/aiAgentPlanner.ts",
     "interfaces": [
-      "PlanResult"
+      "PlanResult",
+      "ReplanExecutedEntry",
+      "ReplanInput",
+      "ReplanResult"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiAgentRealtime.ts",
+    "interfaces": [
+      "AiAgentNudgePayload"
+    ],
+    "aliases": [
+      "AiAgentEventKind"
+    ],
     "zodSchemas": []
   },
   {
@@ -676,6 +1570,17 @@
       "RebuildDecisionInput",
       "RebuildDecision",
       "AnomalyBankRunStats"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiAnomalyCalibration.ts",
+    "interfaces": [
+      "LabelledScore",
+      "RocPoint",
+      "CalibrationTarget",
+      "CalibrationResult"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -709,7 +1614,22 @@
       "ProposalDraft",
       "DecideResult",
       "ThresholdRow",
-      "AutoProposeRunResult"
+      "AutoProposeRunResult",
+      "AdvancedTriggerConfig",
+      "YieldWindowMetrics",
+      "NtfWindowMetrics",
+      "CpkTrendMetrics",
+      "AdvancedSweepStats"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiBootstrapClassifier.ts",
+    "interfaces": [
+      "BootstrapFirstClassifierOptions",
+      "BootstrapFirstClassifierResult",
+      "BootstrapDeps"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -744,11 +1664,10 @@
     "zodSchemas": []
   },
   {
-    "file": "server/services/aiChatAssistant.ts",
+    "file": "server/services/aiClassifierHealth.ts",
     "interfaces": [
-      "ChatMessage",
-      "ChatRequest",
-      "ChatResponse"
+      "ClassifierHealthResult",
+      "ClassifierHealthDeps"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -757,11 +1676,27 @@
     "file": "server/services/aiCopilotActions.ts",
     "interfaces": [
       "CopilotUser",
+      "AdviceGuardrail",
+      "AdviceContract",
       "PendingActionDTO",
       "ProposeResult",
-      "ConfirmResult"
+      "ConfirmResult",
+      "ConfirmContractDeps"
     ],
-    "aliases": [],
+    "aliases": [
+      "AdviceRequirement"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiCostModel.ts",
+    "interfaces": [
+      "CloudPriceRow",
+      "ResolvedCloudPrice"
+    ],
+    "aliases": [
+      "ModelPriceClass"
+    ],
     "zodSchemas": []
   },
   {
@@ -782,7 +1717,9 @@
     "file": "server/services/aiDriftMonitor.ts",
     "interfaces": [
       "DistributionSummary",
-      "DriftCheckResult"
+      "DriftCheckResult",
+      "KsResult",
+      "ConceptDriftKsResult"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -814,6 +1751,7 @@
     "interfaces": [
       "KpiBundle",
       "ExecutiveSummaryStructured",
+      "PersistExecutiveSummaryResult",
       "PersistedExecSummary"
     ],
     "aliases": [
@@ -834,6 +1772,28 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiGateway.ts",
+    "interfaces": [
+      "GatewayRequest",
+      "InferenceOutcome",
+      "GatewayPlan",
+      "GatewayStats"
+    ],
+    "aliases": [
+      "Outcome"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiGatewayQuota.ts",
+    "interfaces": [
+      "QuotaBudget",
+      "QuotaCheckResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiGgufEngine.ts",
     "interfaces": [
       "GgufModelConfig",
@@ -843,6 +1803,7 @@
       "GgufModelInfo",
       "GgufGenerateResult",
       "GgufStreamChunk",
+      "GgufFimOptions",
       "LlavaModelConfig",
       "DescribeImageOptions"
     ],
@@ -854,13 +1815,15 @@
     "interfaces": [
       "EmbeddingResult",
       "SimilarImage",
+      "Dinov2ModelHealth",
       "ClusterResult",
       "VectorSearchFilters",
       "SimilarSearchOutcome"
     ],
     "aliases": [
       "EmbeddingSource",
-      "SearchMode"
+      "SearchMode",
+      "EmbeddingTier"
     ],
     "zodSchemas": []
   },
@@ -898,9 +1861,18 @@
       "SpcViolation",
       "ControlChartData",
       "ShiftAnalysis",
-      "ComprehensiveReport"
+      "MachineTypeBreakdown",
+      "RobotHealthSnapshot",
+      "RobotAnomalySummary",
+      "RobotsSection",
+      "ComprehensiveReport",
+      "DefectClassParetoItem",
+      "DefectClassParetoResult",
+      "DefectClassParetoParams"
     ],
-    "aliases": [],
+    "aliases": [
+      "YieldForecastMethod"
+    ],
     "zodSchemas": []
   },
   {
@@ -928,6 +1900,27 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiKbFeedbackSignal.ts",
+    "interfaces": [
+      "RecordAnswerFeedbackInput",
+      "RecordAnswerFeedbackResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiLlmFinetuneSidecar.ts",
+    "interfaces": [
+      "LoraHyperparams",
+      "StartLoraFinetuneRequest",
+      "StartLoraFinetuneResult"
+    ],
+    "aliases": [
+      "LoraGenerateFn"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiLocalKnowledgeService.ts",
     "interfaces": [
       "KbChunk",
@@ -947,6 +1940,14 @@
       "UserLevel",
       "StreamEvent"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiLocalKnowledgeStudio.ts",
+    "interfaces": [
+      "StudioHit"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -975,6 +1976,20 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiLocalTools/readToolsProgramming.ts",
+    "interfaces": [
+      "ConfinedTarget"
+    ],
+    "aliases": [
+      "WorkspaceRejectReason",
+      "ConfinementRejectReason",
+      "ConfineOutcome",
+      "ConfinedReadOutcome",
+      "ConfinedWriteOutcome"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiLocalTools/toolRegistry.ts",
     "interfaces": [
       "ToolResult",
@@ -992,10 +2007,32 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiLocalTools/vramPhrases.ts",
+    "interfaces": [
+      "Cum"
+    ],
+    "aliases": [
+      "Tham",
+      "KhongTham",
+      "Dong",
+      "VramPhraseKey"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiLocalTools/writeHandlers/maintenance.ts",
     "interfaces": [],
     "aliases": [
       "CreateMaintenanceWorkOrderParams"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/qualityAdvisory.ts",
+    "interfaces": [],
+    "aliases": [
+      "RunRcaAnalysisParams",
+      "RequestThresholdReviewParams"
     ],
     "zodSchemas": []
   },
@@ -1029,6 +2066,15 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiModelAvailability.ts",
+    "interfaces": [
+      "ModelAvailabilityItem",
+      "ModelAvailabilityReport"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiModelCard.ts",
     "interfaces": [
       "ModelCard"
@@ -1039,15 +2085,58 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiModelCardGate.ts",
+    "interfaces": [
+      "ModelCardStatus",
+      "CardGateResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiModelRouter.ts",
     "interfaces": [
       "RouteInput",
-      "RouteDecision"
+      "RouteDecision",
+      "ThinkingTierStatus"
     ],
     "aliases": [
       "TaskKind",
       "Difficulty"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiModelService.ts",
+    "interfaces": [
+      "ActivateContext",
+      "ManualActivateOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiOperationalGrounding.ts",
+    "interfaces": [
+      "OperationalCardMeta",
+      "OperationalGroundingInput",
+      "ResolveOperationalNavigateOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiPatchAnomaly.ts",
+    "interfaces": [
+      "PatchHotspot",
+      "PatchHeatmap",
+      "PatchScoreResult",
+      "PatchEmbedResult",
+      "BuildPatchBankParams",
+      "BuildPatchBankResult",
+      "PatchScoreParams"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -1071,6 +2160,29 @@
       "PlaybookStepType",
       "PermissionAction"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiPredictiveAlertService.ts",
+    "interfaces": [
+      "DefectSpikeSignal",
+      "DeriveDefectSpikeSignalInput"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiProgrammingKnowledgeService.ts",
+    "interfaces": [
+      "ProgKbChunk",
+      "ProgKbCitation",
+      "ProgKbSearchChunk",
+      "ProgKbSearchResult",
+      "ProgKbCollectionSummary",
+      "ProgKbStatus",
+      "SearchProgrammingKbParams"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -1105,9 +2217,13 @@
     "file": "server/services/aiQualityGate.ts",
     "interfaces": [
       "QualityGateDecision",
+      "InlineGateBreakerSnapshot",
+      "InlineGateInput",
       "QualityGateStats"
     ],
-    "aliases": [],
+    "aliases": [
+      "InlineGateOutcome"
+    ],
     "zodSchemas": []
   },
   {
@@ -1146,6 +2262,21 @@
       "RerankResult"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiSegDetectEval.ts",
+    "interfaces": [
+      "EvalBox",
+      "DetEvalReport",
+      "MaskLike",
+      "SegPair",
+      "SegEvalReport",
+      "SegDetectGateResult"
+    ],
+    "aliases": [
+      "SegDetectMetric"
+    ],
     "zodSchemas": []
   },
   {
@@ -1190,6 +2321,14 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiSmartAlertRouter.ts",
+    "interfaces": [
+      "QualityGateAlertInput"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiSpecialistAgentService.ts",
     "interfaces": [
       "SpecialistAgentInfo",
@@ -1201,7 +2340,27 @@
       "ModuleAuditPreset"
     ],
     "aliases": [
-      "SpecialistAgentId"
+      "SpecialistAgentId",
+      "SpecialistBridgeTool"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiSpi3d.ts",
+    "interfaces": [
+      "HeightMap",
+      "PadMask",
+      "PadGeometry",
+      "SpiCalibration",
+      "SpiThresholds",
+      "PadSpiResult",
+      "BoardSpiResult",
+      "Point3D",
+      "ComputeOptions",
+      "Spi3dEnrichInput"
+    ],
+    "aliases": [
+      "SpiDefectClass"
     ],
     "zodSchemas": []
   },
@@ -1220,6 +2379,7 @@
     "interfaces": [
       "TuneConfig",
       "TuneDecision",
+      "NgEvidenceItem",
       "ThresholdTuneRunStats"
     ],
     "aliases": [],
@@ -1263,7 +2423,9 @@
   },
   {
     "file": "server/services/aiTrainingPipeline.ts",
-    "interfaces": [],
+    "interfaces": [
+      "ProposeRetrainJobOptions"
+    ],
     "aliases": [
       "TrainingMode"
     ],
@@ -1280,6 +2442,73 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/alarmKpiMath.ts",
+    "interfaces": [
+      "AlarmEventLite",
+      "AlarmRate",
+      "FloodResult",
+      "StandingResult",
+      "BadActor",
+      "PriorityDistribution",
+      "AlarmKpiSummary"
+    ],
+    "aliases": [
+      "AlarmPriority"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/alerts/buildOccurrence.ts",
+    "interfaces": [
+      "OccurrenceInput",
+      "OccurrenceRow"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/alerts/classifySuppression.ts",
+    "interfaces": [
+      "SuppressionInput",
+      "SuppressionThresholds"
+    ],
+    "aliases": [
+      "SuppressionReason"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/alerts/decideAlertWrite.ts",
+    "interfaces": [
+      "OpenAlertSnapshot",
+      "IncomingAlert"
+    ],
+    "aliases": [
+      "AlertSeverity",
+      "AlertWriteDecision"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/alerts/decideNotify.ts",
+    "interfaces": [
+      "NotifyInput",
+      "NotifyDecision"
+    ],
+    "aliases": [
+      "NotifyReason"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/andon/andonRobotDispatch.ts",
+    "interfaces": [
+      "AndonDispatchResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/andon/andonService.ts",
     "interfaces": [
       "RaiseAndonInput",
@@ -1288,6 +2517,15 @@
     "aliases": [
       "AndonState",
       "AndonReason"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aoiCommissioningService.ts",
+    "interfaces": [],
+    "aliases": [
+      "AoiIngestMode",
+      "AoiCommissioningStatus"
     ],
     "zodSchemas": []
   },
@@ -1334,6 +2572,36 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/assetRegistry/configDriftService.ts",
+    "interfaces": [
+      "AdapterConfigInput",
+      "TagConfigInput",
+      "AdapterDriftView"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/assetRegistry/urnService.ts",
+    "interfaces": [
+      "AssetIdentityCodes",
+      "AssetIdentity"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/audit/controlAuditService.ts",
+    "interfaces": [
+      "AuditEventInput",
+      "AuditHashFields",
+      "HashedAuditRow",
+      "ChainVerification"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/auditTrailService.ts",
     "interfaces": [
       "AuditContext",
@@ -1356,8 +2624,83 @@
   {
     "file": "server/services/backupService.ts",
     "interfaces": [
+      "ConfigBundleFileInfo",
+      "ConfigBundleResult",
       "BackupResult",
       "RestoreResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/cacheService.ts",
+    "interfaces": [
+      "CacheL2"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/cad/centroidImportService.ts",
+    "interfaces": [
+      "CentroidApplyDefaults",
+      "CentroidPointSource",
+      "BuildPointDefsResult",
+      "CentroidPreviewInput",
+      "CentroidCommitInput",
+      "CentroidApplyInput",
+      "CentroidApplyResult",
+      "ExistingPointLite",
+      "CoordinateMatchRow",
+      "CoordinateUnmatchedRow",
+      "CoordinateMatchResult",
+      "CoordinateApplyResult"
+    ],
+    "aliases": [
+      "LegacyMeasurementType",
+      "CoordinateApplyInput"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/cad/centroidParser.ts",
+    "interfaces": [
+      "CentroidColumnMap",
+      "CentroidParseOptions",
+      "ParsedCentroidRow",
+      "CentroidParseResult",
+      "CentroidInspectResult",
+      "CentroidTransformOptions",
+      "CentroidCandidate",
+      "CentroidTransformResult",
+      "TransformProductInfo",
+      "CentroidBuildOptions",
+      "CentroidBuildResult"
+    ],
+    "aliases": [
+      "CoordinateUnit"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/cfx/cfxClient.ts",
+    "interfaces": [
+      "CfxEndpoint",
+      "CfxEndpointStats",
+      "AmqpConnectionLike",
+      "AmqpContainerLike",
+      "AmqpEventContextLike",
+      "CfxClientDeps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/cfx/cfxMessages.ts",
+    "interfaces": [
+      "CfxEnvelope",
+      "CfxParseHints",
+      "CfxMapContext"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -1372,6 +2715,107 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/componentLinkBackfill.ts",
+    "interfaces": [
+      "ComponentLinkBackfillOptions",
+      "ComponentLinkUnmatched",
+      "ComponentLinkBackfillResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/componentPackageAnalytics.ts",
+    "interfaces": [
+      "PackageParetoParams",
+      "PackageCountRow",
+      "PackageParetoItem",
+      "PackageParetoResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/configDriftService.ts",
+    "interfaces": [
+      "ConfigDescriptor",
+      "ResolverMachine"
+    ],
+    "aliases": [
+      "DriftState"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/contracts/apiSpec.ts",
+    "interfaces": [
+      "RestEndpoint",
+      "UnsChannel",
+      "SpecInfo"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/contracts/ingestValidation.ts",
+    "interfaces": [
+      "InboundVerdict"
+    ],
+    "aliases": [
+      "IngestSource",
+      "IngestValidationMode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/contracts/providers/exampleRestProvider.ts",
+    "interfaces": [
+      "RestProviderConfig"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/contracts/reconciliation.ts",
+    "interfaces": [
+      "ReconcileInput",
+      "Discrepancy",
+      "ReconciliationReport"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/contracts/reconciliationCron.ts",
+    "interfaces": [
+      "ReconcileProvider",
+      "CycleResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/contracts/schemaRegistry.ts",
+    "interfaces": [
+      "SchemaVersion",
+      "CompatResult",
+      "PersistMeta",
+      "SeedResult"
+    ],
+    "aliases": [
+      "JsonSchema"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/cpkSnapshotScheduler.ts",
+    "interfaces": [
+      "CpkSnapshotStats"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/dataComparisonService.ts",
     "interfaces": [
       "ComparisonRequest",
@@ -1381,6 +2825,51 @@
     "aliases": [
       "ComparisonPeriod"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/dbRequirementsCheck.ts",
+    "interfaces": [
+      "DbRequirementsResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/defectDispositionService.ts",
+    "interfaces": [
+      "CreateDispositionInput",
+      "DispositionWithNames",
+      "ReInspectStatus",
+      "RepairQueueFilters",
+      "RepairQueueRow",
+      "DispositionTransitionEvent",
+      "RepairStats"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/defectSpatialHeatmap.ts",
+    "interfaces": [
+      "SpatialDefectRow",
+      "HeatmapHotspot",
+      "SpatialHeatmapResult",
+      "BucketOptions",
+      "SpatialHeatmapQuery"
+    ],
+    "aliases": [
+      "HeatmapCoordinateSpace"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/devportal/devPortal.ts",
+    "interfaces": [
+      "PortalIndex",
+      "SandboxResult"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -1424,6 +2913,80 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/ecnService.ts",
+    "interfaces": [
+      "CreateEcnItemInput",
+      "CreateEcnInput",
+      "ListEcnFilter",
+      "TransitionEcnInput"
+    ],
+    "aliases": [
+      "EcnAction"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ecosystem/assetCockpitService.ts",
+    "interfaces": [
+      "Section",
+      "NormalizedAssetAlarm",
+      "GatedAction",
+      "MachineIdentity",
+      "MachineLiveState",
+      "ResolvedCapabilitySection",
+      "MachineDetail",
+      "RobotIdentity",
+      "RobotLiveTelemetry",
+      "RobotDetail"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ecosystem/commandCenterService.ts",
+    "interfaces": [
+      "NodeCounts",
+      "HierarchyNode",
+      "KpiField",
+      "KpiSummary",
+      "SeedAlert",
+      "CommandCenterStatus",
+      "HierarchyScope"
+    ],
+    "aliases": [
+      "NodeStatus",
+      "NodeKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ecosystem/ecosystemEvents.ts",
+    "interfaces": [
+      "TaskEventPayload",
+      "WorkOrderEventPayload",
+      "AnomalyEventPayload",
+      "ProgramDeployedPayload",
+      "TwinDerivedPayload",
+      "EcosystemScope",
+      "EcosystemEvent"
+    ],
+    "aliases": [
+      "EcosystemEventType",
+      "EcosystemSeverity",
+      "EcosystemKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ecosystem/integrityCheck.ts",
+    "interfaces": [
+      "SoftRefOrphanReport",
+      "IntegrityReport"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/edge/edgeCoordinator.ts",
     "interfaces": [
       "EdgeResult",
@@ -1436,6 +2999,18 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/edge/edgeGatewayRuntime.ts",
+    "interfaces": [
+      "EdgeGatewayHealth",
+      "EdgeNodeConfig",
+      "EdgeGatewayHandles"
+    ],
+    "aliases": [
+      "ReachabilityProbe"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/edge/edgeRuntime.ts",
     "interfaces": [
       "ExecuteAssignedResult",
@@ -1444,6 +3019,30 @@
     "aliases": [
       "CentralSync",
       "HeartbeatSender"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/edge/joinWizardService.ts",
+    "interfaces": [
+      "PeerAdvertisement",
+      "DiscoveryResult",
+      "JoinBridgeConfig",
+      "JoinBridgeHandle"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/energy/energyMeterTemplate.ts",
+    "interfaces": [
+      "EnergyRegister",
+      "EnergyMeterTemplate",
+      "EnergyMeterAdapterPlan"
+    ],
+    "aliases": [
+      "EnergyIngestMetric",
+      "EnergyTemplateValidation"
     ],
     "zodSchemas": []
   },
@@ -1460,15 +3059,20 @@
     "zodSchemas": []
   },
   {
-    "file": "server/services/enhancedScheduledReportService.ts",
+    "file": "server/services/equipment/adapterAlarmBridge.ts",
     "interfaces": [
-      "EnhancedScheduleConfig",
-      "ScheduledReportResult"
+      "GemAlarmLike"
     ],
-    "aliases": [
-      "EnhancedReportType",
-      "AttachmentFormat"
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/equipment/alarmNormalizer.ts",
+    "interfaces": [
+      "RawVendorAlarm",
+      "NormalizedAlarmResult"
     ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -1490,6 +3094,21 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/equipment/companionSpecs.ts",
+    "interfaces": [
+      "CompanionSpecNode",
+      "CompanionSpec",
+      "DerivedSpecCapability",
+      "SpecConformance"
+    ],
+    "aliases": [
+      "CompanionSpecId",
+      "OpcuaNodeDataType",
+      "OpcuaNodeClass"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/equipment/equipmentAdapter.ts",
     "interfaces": [
       "EquipmentConnConfig",
@@ -1500,7 +3119,8 @@
       "EquipmentAdapter"
     ],
     "aliases": [
-      "DelegateRegistry"
+      "DelegateRegistry",
+      "EquipmentAdapterFactory"
     ],
     "zodSchemas": []
   },
@@ -1514,11 +3134,496 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/equipment/recipeVersioningService.ts",
+    "interfaces": [],
+    "aliases": [
+      "RecipeDesignStatus",
+      "RecipeAction"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/euromap/euromapAdapter.ts",
+    "interfaces": [
+      "EuromapAlarm",
+      "EuromapNativeReadout",
+      "EuromapSnapshot"
+    ],
+    "aliases": [
+      "EuromapTransport"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/euromap/euromapOpcuaReader.ts",
+    "interfaces": [
+      "EuromapNodeMap",
+      "EuromapOpcuaConfig"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/externalReportService.ts",
+    "interfaces": [
+      "ExternalReportFilters",
+      "GenerateExternalReportInput",
+      "GenerateExternalReportResult"
+    ],
+    "aliases": [
+      "ExternalReportType"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/factoryCommandPriority.ts",
+    "interfaces": [
+      "IssueImpactContext"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/factoryCommandService.ts",
+    "interfaces": [
+      "CommandMachineNode",
+      "CommandIssue",
+      "FactoryCommandOverview",
+      "CommandMachineDetail"
+    ],
+    "aliases": [
+      "CommandMachineStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/faiGateService.ts",
+    "interfaces": [
+      "FaiGateStatus"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/falseCallEscapeService.ts",
+    "interfaces": [
+      "FalseCallTrendPoint",
+      "EscapeTrendPoint",
+      "FalseCallEscapeKpi",
+      "FalseCallEscapeParams"
+    ],
+    "aliases": [
+      "TuningHint"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/federation/siteClient.ts",
+    "interfaces": [
+      "ParetoEntry",
+      "FleetMetrics",
+      "SafetyMetrics",
+      "PdmMetrics",
+      "SiteKpiSnapshot",
+      "FetchResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/feederVerifyService.ts",
+    "interfaces": [
+      "VerifyScanInput",
+      "VerifyScanResult",
+      "SetupSlotStatus",
+      "SetupStatus",
+      "RunGateResult",
+      "LineMachineGate",
+      "LineRunGateResult"
+    ],
+    "aliases": [
+      "FeederVerdict"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/field/commandAuthz.ts",
+    "interfaces": [
+      "PermissionTuple",
+      "AuthorizeInput",
+      "AuthorizeResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/field/discoveryService.ts",
+    "interfaces": [
+      "DiscoverInput",
+      "DiscoveredCandidate",
+      "DiscoverResult",
+      "RegisterDiscoveredInput",
+      "RegisterDiscoveredResult"
+    ],
+    "aliases": [
+      "DiscoveryProtocol"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/field/fieldHealthService.ts",
+    "interfaces": [
+      "RecordHeartbeatInput",
+      "SweepResult"
+    ],
+    "aliases": [
+      "LivenessState"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/fleet/chargingPlanner.ts",
+    "interfaces": [
+      "ChargeNeed",
+      "SweepResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/fleet/fleetOrchestrator.ts",
+    "interfaces": [
+      "PromoteResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/fleet/resourceManager.ts",
+    "interfaces": [
+      "ClaimInput",
+      "ClaimResult",
+      "AvailabilityRow",
+      "ReleaseResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/fleet/skillRegistry.ts",
+    "interfaces": [
+      "QualifiedProgram",
+      "ResolvedOperation"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/fleet/taskAllocator.ts",
+    "interfaces": [
+      "AllocCandidate",
+      "AllocTaskInput",
+      "ScoredCandidate",
+      "AllocationDecision",
+      "AllocateResult",
+      "RebalanceResult",
+      "DrainResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/fleet/trafficManager.ts",
+    "interfaces": [
+      "ReserveInput",
+      "ReserveResult",
+      "ReleaseResult",
+      "WaitEdge",
+      "DeadlockAction",
+      "ResolveDeadlockResult",
+      "LivePlanResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/fleet/variantPicker.ts",
+    "interfaces": [
+      "VariantArm",
+      "PickedVariant",
+      "VariantMetrics"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/fleetStatusService.ts",
+    "interfaces": [
+      "EdgeNodesPlane",
+      "DeviceAdaptersPlane",
+      "UnifiedFleetStatus"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/focas/focasAdapter.ts",
+    "interfaces": [
+      "FocasAlarm",
+      "FocasNativeReadout",
+      "UnifiedEquipmentSnapshot",
+      "FocasSnapshot"
+    ],
+    "aliases": [
+      "FocasReadFunction"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/fontAssets.ts",
+    "interfaces": [
+      "VietnameseFontBuffers",
+      "VietnameseFontBase64"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/genealogyLineageService.ts",
+    "interfaces": [
+      "LineageEdge",
+      "LineageNode",
+      "LineageTree",
+      "LineageResult"
+    ],
+    "aliases": [
+      "LineageDirection"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/goldenRevalidationService.ts",
+    "interfaces": [
+      "MarkRevalidationInput",
+      "ClearRevalidationInput"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/goldenSampleService.ts",
+    "interfaces": [
+      "EncodedReference",
+      "SetReferenceInput",
+      "SubmitDraftInput",
+      "ResolvedGoldenReference"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/imageAlignment.ts",
     "interfaces": [
       "GrayImage",
       "AlignOptions",
       "AlignmentResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/imageLifecycleService.ts",
+    "interfaces": [
+      "DeleteKeysResult",
+      "PruneImagesResult",
+      "DiskUsageEvaluation",
+      "StorageObject",
+      "ReapOrphansResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/imageRegistration.ts",
+    "interfaces": [
+      "GrayImage",
+      "AffineMatrix",
+      "RegisterOptions",
+      "RegistrationResult"
+    ],
+    "aliases": [
+      "RegistrationModel"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/inspection/inspectionStoreForward.ts",
+    "interfaces": [
+      "BufferedSubmission",
+      "InspectionStoreForwardMetrics",
+      "InspectionStoreForwardStatus"
+    ],
+    "aliases": [
+      "ProcessFn",
+      "DedupFn"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/inspectionProgramService.ts",
+    "interfaces": [
+      "CreateReleaseInput",
+      "PointFieldChange",
+      "ProgramDiff",
+      "CompareResult"
+    ],
+    "aliases": [
+      "ReleaseWithNames"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/instruments/scpiAdapter.ts",
+    "interfaces": [
+      "ScpiEndpoint",
+      "ScpiIdentity"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/instruments/zplPrinterAdapter.ts",
+    "interfaces": [
+      "ZplEndpoint",
+      "SerialLabelOptions",
+      "PrintResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/integration/b2mmlCodec.ts",
+    "interfaces": [
+      "XmlNode",
+      "OrderMessage",
+      "BomLineMessage",
+      "BomMessage",
+      "PerformanceMessage"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/integration/cmmsConnector.ts",
+    "interfaces": [
+      "MaintenanceRecommendationInput",
+      "SyncPredictiveResult",
+      "CanonicalSchedule",
+      "UpsertScheduleResult",
+      "PullSchedulesConfig",
+      "PullSchedulesResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/integration/enterpriseIntegration.testkit.ts",
+    "interfaces": [
+      "FakeDbState"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/integration/enterpriseIntegrationCore.ts",
+    "interfaces": [
+      "UpsertIdMapInput",
+      "RecordSyncInput",
+      "EnterpriseOutboundInput",
+      "EnterpriseOutboundResult",
+      "RestPullConfig"
+    ],
+    "aliases": [
+      "SyncDirection",
+      "SyncStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/integration/erpOutbox.ts",
+    "interfaces": [
+      "EnqueueOutboxInput",
+      "EnqueueResult",
+      "DrainResult"
+    ],
+    "aliases": [
+      "OutboxEventType"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/integration/plmConnector.ts",
+    "interfaces": [
+      "CanonicalProduct",
+      "CanonicalBomLine",
+      "CanonicalBom",
+      "CanonicalRecipe",
+      "CanonicalEcn",
+      "UpsertResult",
+      "PullPlmConfig",
+      "PullPlmResult"
+    ],
+    "aliases": [
+      "PlmEntity"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/integration/reconciliationProviders.ts",
+    "interfaces": [
+      "RestMetricSource",
+      "FnMetricSource",
+      "GenericReconcileConfig",
+      "WmsInventoryReconcileConfig"
+    ],
+    "aliases": [
+      "MetricSource"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/integration/wmsConnector.ts",
+    "interfaces": [
+      "MaterialRequestInput",
+      "MaterialConfirmInput",
+      "FinishedGoodsPalletInput",
+      "WmsInventoryFieldMap",
+      "WmsInventoryItem",
+      "IngestInventoryResult",
+      "PullInventoryConfig"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/integrityScanService.ts",
+    "interfaces": [
+      "IntegrityRelationship",
+      "RelationshipScanResult",
+      "IntegrityScanRunResult",
+      "ConstraintState"
+    ],
+    "aliases": [
+      "IntegrityKind",
+      "RepairStrategy"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/interlock/interlockGate.ts",
+    "interfaces": [
+      "InterlockGateViolation",
+      "InterlockGateResult"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -1535,6 +3640,19 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/iolink/ioLinkProfile.ts",
+    "interfaces": [
+      "IoLinkMasterProfile",
+      "IoLinkPortConfig",
+      "IoLinkAdapterPlan"
+    ],
+    "aliases": [
+      "IoLinkProtocol",
+      "IoLinkValidation"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/kb/kbVectorStore.ts",
     "interfaces": [
       "KbSearchHit"
@@ -1543,11 +3661,181 @@
     "zodSchemas": []
   },
   {
-    "file": "server/services/kbSyncScheduler.ts",
+    "file": "server/services/kbDocParser.ts",
     "interfaces": [
-      "KbSyncRunStats"
+      "ParsedDocumentMeta",
+      "ParsedDocument"
+    ],
+    "aliases": [
+      "KbSourceType",
+      "KbImageKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kbImageDescriber.ts",
+    "interfaces": [],
+    "aliases": [
+      "DescribeForKnowledgeResult"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kbIngestService.ts",
+    "interfaces": [
+      "IngestDocumentInput",
+      "IngestDocumentResult"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kbPdfOcr.ts",
+    "interfaces": [
+      "OcrScannedPdfResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kbStudioService.ts",
+    "interfaces": [
+      "CorpusWithStats",
+      "ListCorporaResult",
+      "CreateCorpusInput",
+      "DeleteCorpusResult",
+      "ListJobsInput",
+      "ListJobsResult",
+      "CreateJobInput",
+      "CreateJobResult",
+      "CorpusPreviewChunk",
+      "CorpusPreviewResult",
+      "TrainingChunk",
+      "ListCorpusChunksForTrainingResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kbSyncScheduler.ts",
+    "interfaces": [
+      "KbSyncRunStats",
+      "KbSyncDeferHolder",
+      "KbSyncRefusalNote",
+      "KbSyncDeferState",
+      "KbSyncRetryNowResult"
+    ],
+    "aliases": [
+      "KbSyncDeferPlan",
+      "KbSyncDeferResumePlan",
+      "KbSyncRetryNowRefusal"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kbVectorStore.ts",
+    "interfaces": [
+      "KbChunkInput",
+      "UpsertChunksResult",
+      "KbChunkHit"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kbVideoTranscriber.ts",
+    "interfaces": [
+      "SttConfig",
+      "TranscribeVideoInput",
+      "TranscribeVideoOptions",
+      "TranscribeVideoResult",
+      "IngestVideoInput"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kbWebFetcher.ts",
+    "interfaces": [
+      "ValidatedTarget",
+      "FetchUrlResult",
+      "IngestUrlInput"
+    ],
+    "aliases": [
+      "HopResult"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/lineController/lineControllerService.ts",
+    "interfaces": [
+      "TransitionOptions",
+      "LineStateDetail",
+      "LineStageView",
+      "LineStagesResult",
+      "LineControllerEvent",
+      "SweepStats"
+    ],
+    "aliases": [
+      "TransitionFailure",
+      "TransitionSuccess",
+      "TransitionResult",
+      "LineCommand",
+      "OrderContextResult"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/lineController/lineReadiness.ts",
+    "interfaces": [
+      "ReadinessCheck",
+      "LineReadinessResult",
+      "ReadinessOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/lineController/lineStateRepo.ts",
+    "interfaces": [
+      "LineRow",
+      "ApplyTransitionParams",
+      "LineWithState",
+      "LineMachineRow",
+      "StationRowLite",
+      "RecipeSetItemDetail"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/lineController/recipeSetService.ts",
+    "interfaces": [
+      "CreateRecipeSetInput",
+      "AddRecipeSetItemInput",
+      "RecipeSetDetail",
+      "RecipeSetMissing",
+      "DistributeItemResult",
+      "DistributeResult",
+      "DistributeOptions",
+      "RecipeSetLockStatus"
+    ],
+    "aliases": [
+      "RecipeSetFailure",
+      "RecipeSetVerification"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/liveStatsRollupService.ts",
+    "interfaces": [
+      "InspectionResultRow",
+      "ResultCounts",
+      "LiveStatsRollupStats"
+    ],
+    "aliases": [
+      "ResultBucket"
+    ],
     "zodSchemas": []
   },
   {
@@ -1568,11 +3856,76 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/lotAcceptanceService.ts",
+    "interfaces": [
+      "AcceptancePlanResolved",
+      "LotDisposition"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/machineAuthService.ts",
+    "interfaces": [
+      "MachineAuthResult",
+      "WeakAuthUsageRow",
+      "MachineKeyExpiryInsightPayload"
+    ],
+    "aliases": [
+      "WeakAuthPolicy",
+      "PublicMachineKeyRow"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/mammoth.d.ts",
+    "interfaces": [
+      "MammothMessage",
+      "MammothRawTextResult",
+      "MammothInput"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/measurementPointResolver.ts",
+    "interfaces": [
+      "MeasurementPointResolverContext",
+      "UnmappedRateFilter"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/mqttBulletinService.ts",
     "interfaces": [
       "BulletinPayload"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/mqttService.ts",
+    "interfaces": [
+      "MqttTlsBaseOpts",
+      "MqttAclContext",
+      "MqttAclDecision",
+      "BrokerConnectionState",
+      "ClientPresenceState"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/msdService.ts",
+    "interfaces": [
+      "MsdComputation",
+      "OpenExposureInput"
+    ],
+    "aliases": [
+      "MsdStatus",
+      "MslLevel"
+    ],
     "zodSchemas": []
   },
   {
@@ -1588,11 +3941,34 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/mtconnect/mtconnectFieldMap.ts",
+    "interfaces": [
+      "MtcConditionAlarm",
+      "MtcUemProjection"
+    ],
+    "aliases": [
+      "MtcExecState"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/mtconnect/mtconnectPoller.ts",
     "interfaces": [
       "MtcSource"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ncrService.ts",
+    "interfaces": [
+      "CreateNcrInput",
+      "ListNcrFilter",
+      "TransitionNcrInput"
+    ],
+    "aliases": [
+      "NcrAction"
+    ],
     "zodSchemas": []
   },
   {
@@ -1604,11 +3980,121 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/observability/correlation.ts",
+    "interfaces": [
+      "CorrelationContext"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/observability/decisionTrace.ts",
+    "interfaces": [
+      "DecisionCandidate",
+      "DecisionTrace",
+      "DecisionQuery"
+    ],
+    "aliases": [
+      "DecisionTraceInput",
+      "DecisionSink"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/observability/decisionTracePersistence.ts",
+    "interfaces": [
+      "PersistedDecisionQuery"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/observability/dora.ts",
+    "interfaces": [
+      "DeploymentEvent",
+      "DoraMetrics"
+    ],
+    "aliases": [
+      "DeploymentStatus",
+      "DoraRating"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/observability/doraService.ts",
+    "interfaces": [
+      "RecordDeploymentInput",
+      "RecordDeploymentResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/observability/otelBridge.ts",
+    "interfaces": [
+      "SpanCtx"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/observability/slo.ts",
+    "interfaces": [
+      "SloTarget",
+      "SloObservation",
+      "SloStatus"
+    ],
+    "aliases": [
+      "SloKind",
+      "BurnSeverity"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/observability/sloAlerting.ts",
+    "interfaces": [
+      "SloEvaluation"
+    ],
+    "aliases": [
+      "SloObservationProvider"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/oeeService.ts",
     "interfaces": [
       "StateDurations",
       "OEEBreakdown",
-      "OEEAlert"
+      "OEEAlert",
+      "LiveOEEMetrics",
+      "LineOEEMetrics",
+      "DowntimeParetoRow",
+      "DowntimeParetoResult",
+      "ReliabilityMachine",
+      "ReliabilityResult",
+      "StationBalanceRow",
+      "LineTaktResult"
+    ],
+    "aliases": [
+      "AvailabilityBasis"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/oeeSnapshotScheduler.ts",
+    "interfaces": [
+      "OeeSnapshotStats"
+    ],
+    "aliases": [
+      "OeePeriodType"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/operatorBadgeService.ts",
+    "interfaces": [
+      "ResolvedOperator",
+      "IssueBadgeInput"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -1629,13 +4115,38 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/orchestration/dag.ts",
+    "interfaces": [
+      "DagNode",
+      "DagValidation"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/orchestration/eventSourcing.ts",
+    "interfaces": [
+      "RunEvent",
+      "RunState",
+      "ResumePlan"
+    ],
+    "aliases": [
+      "TaskStatus",
+      "RunStatus",
+      "RunEventType"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/orchestration/foe/foeEngine.ts",
     "interfaces": [
       "FoeUser",
       "DeployResult",
+      "DeployOpts",
       "StartRunResult",
       "RunView",
-      "GateDecision"
+      "GateDecision",
+      "RehydrateResult"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -1688,6 +4199,95 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/orchestration/materialReplenishment.ts",
+    "interfaces": [
+      "MaterialTaskPayload",
+      "EnsureTransportTaskInput",
+      "EnsureTransportTaskResult",
+      "MaterialReplenishSweepStats"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/orchestration/slaPolicy.ts",
+    "interfaces": [
+      "PrioritizedTask",
+      "FourEyesDecision"
+    ],
+    "aliases": [
+      "PriorityBand"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/orchestration/templates/qtRunner.ts",
+    "interfaces": [
+      "QtPumpResult",
+      "StartQtRunResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/orchestration/templates/qtStepHandlers.ts",
+    "interfaces": [
+      "QtStepContext",
+      "QtStepResult",
+      "QtBusinessStep"
+    ],
+    "aliases": [
+      "QtCompensationDecl"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/orchestration/templates/qtTemplates.ts",
+    "interfaces": [],
+    "aliases": [
+      "QtTemplateRef"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/orchestration/templates/registerQtTemplates.ts",
+    "interfaces": [
+      "RegisterQtTemplatesResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/orders/orderLifecycleService.ts",
+    "interfaces": [
+      "TransitionOptions",
+      "AppliedTransition",
+      "TransitionResult",
+      "AllocateOptions",
+      "AllocateResult",
+      "CompensationResult",
+      "CancelResult",
+      "OrderLifecycleView",
+      "ListOrdersFilter",
+      "OrderDetail",
+      "OrderTrace"
+    ],
+    "aliases": [
+      "OrderLifecycleState",
+      "LegacyOrderStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ot/adapterFacade.ts",
+    "interfaces": [
+      "AdapterFacadeContext",
+      "OtAdapterFacade"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/ot/commandDispatcher.ts",
     "interfaces": [
       "DispatchWrite",
@@ -1700,6 +4300,29 @@
     "aliases": [
       "DispatchStatus",
       "DispatchTrigger"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ot/commissioningService.ts",
+    "interfaces": [
+      "CreateCommissioningInput"
+    ],
+    "aliases": [
+      "CommissioningStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ot/connectionSupervisor.ts",
+    "interfaces": [
+      "EndpointConfig",
+      "BackoffConfig",
+      "SupervisorOptions",
+      "SupervisorStatus"
+    ],
+    "aliases": [
+      "SupervisorState"
     ],
     "zodSchemas": []
   },
@@ -1759,6 +4382,41 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/ot/drivers/slmpEncoder.ts",
+    "interfaces": [
+      "SlmpConfig",
+      "ParsedSlmpDevice",
+      "SlmpRequest",
+      "SlmpResponse"
+    ],
+    "aliases": [
+      "SlmpFrame"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ot/mappingAsCode.ts",
+    "interfaces": [
+      "AdapterRowInput",
+      "TagRowInput",
+      "UnsRowInput",
+      "FieldChange",
+      "MappingDiff",
+      "CurrentDbState",
+      "ExportResult",
+      "ImportOptions",
+      "AppliedCounts",
+      "ImportResult"
+    ],
+    "aliases": [
+      "MappingImportErrorCode",
+      "MappingFile",
+      "MappingFileTag",
+      "MappingFileUns"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/ot/otDriver.ts",
     "interfaces": [
       "OtTagAddress",
@@ -1768,6 +4426,11 @@
       "OtSubscriptionHandle",
       "OtCommandResult",
       "OtWrite",
+      "CanonicalCommand",
+      "CanonicalCommandAck",
+      "SafetyState",
+      "TagDescriptor",
+      "AssetDescriptor",
       "OtDriver"
     ],
     "aliases": [
@@ -1775,8 +4438,51 @@
       "OtDataType",
       "OtQuality",
       "OnOtSample",
+      "CanonicalCommandStatus",
       "OtDriverFactory"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ot/otManager.ts",
+    "interfaces": [
+      "DeadbandStats"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ot/storeForward.ts",
+    "interfaces": [
+      "StoreForwardStatus",
+      "DurableBufferStatus",
+      "PendingUnsSample"
+    ],
+    "aliases": [
+      "InsertFn"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/panel/panelService.ts",
+    "interfaces": [
+      "PanelBoardInput",
+      "PanelDefInput"
+    ],
+    "aliases": [
+      "PanelDefWithBoards"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/panel/panelTransform.ts",
+    "interfaces": [
+      "XY",
+      "BoardPlacement",
+      "BoardDims",
+      "BoardAssignment"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -1801,6 +4507,136 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/plugins/otConnectorManifests.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "otConnectorConfig"
+    ]
+  },
+  {
+    "file": "server/services/plugins/pluginConformance.ts",
+    "interfaces": [
+      "ConformanceCheck",
+      "PluginConformanceReport"
+    ],
+    "aliases": [
+      "CheckStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/plugins/pluginDriverBridge.ts",
+    "interfaces": [
+      "PluginDriverOptions",
+      "RegisterResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/plugins/pluginDriverManifests.ts",
+    "interfaces": [
+      "PluginDriverManifest"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/plugins/sidecar/pluginLifecycle.ts",
+    "interfaces": [
+      "TransitionResult"
+    ],
+    "aliases": [
+      "PluginPhase",
+      "PluginAction"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/plugins/sidecar/pluginQuota.ts",
+    "interfaces": [
+      "RateLimiterState",
+      "RateLimiterConfig",
+      "ResourceBudget"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/plugins/sidecar/pluginSignature.ts",
+    "interfaces": [
+      "SignedPlugin",
+      "SignatureVerdict"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/plugins/sidecar/pluginSupervisor.ts",
+    "interfaces": [
+      "ChildHandle",
+      "RestartPolicy",
+      "RestartDecision",
+      "SupervisorStatus"
+    ],
+    "aliases": [
+      "Spawner",
+      "Scheduler"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/plugins/sidecar/sampleSidecar.ts",
+    "interfaces": [
+      "SidecarRequest",
+      "SidecarResponse"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/plugins/sidecar/stdioTransport.ts",
+    "interfaces": [
+      "JsonLineRequest",
+      "JsonLineResponse"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/plugins/templates/deviceConnectorSidecar.ts",
+    "interfaces": [
+      "SidecarRequest",
+      "SidecarResponse",
+      "TagAddress",
+      "TagWrite",
+      "WireSample",
+      "CommandResult",
+      "ConnectorState"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/pointResultEvaluator.ts",
+    "interfaces": [
+      "PointLimitSource",
+      "MeasurementValues",
+      "PointEvalResult",
+      "UnitConversion",
+      "PointLimitSnapshot",
+      "SnapshotGateResolution",
+      "GateLimitResolution"
+    ],
+    "aliases": [
+      "ResultVerdict",
+      "SnapshotGateBasis",
+      "GateLimitBasis"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/powerpointService.ts",
     "interfaces": [
       "PowerPointConfig",
@@ -1815,16 +4651,44 @@
       "ReliabilityStats",
       "RiskFactor",
       "FailureRiskResult",
-      "RiskInputs"
+      "RiskInputs",
+      "SensorReadingPoint"
     ],
-    "aliases": [],
+    "aliases": [
+      "SensorFeature"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/process/processStoreForward.ts",
+    "interfaces": [
+      "BufferedProcessSubmission",
+      "ProcessStoreForwardMetrics",
+      "ProcessStoreForwardStatus"
+    ],
+    "aliases": [
+      "ProcessFn",
+      "DedupFn"
+    ],
     "zodSchemas": []
   },
   {
     "file": "server/services/processResultService.ts",
     "interfaces": [
+      "ProcessMetricSpec",
       "RecordProcessResultInput",
-      "RecordProcessResultOutput"
+      "RecordProcessResultOutput",
+      "SpecGateMetricVerdict",
+      "SpecGateResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/processSpc.ts",
+    "interfaces": [
+      "ProcessMetricSample",
+      "ProcessControlChart"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -1849,14 +4713,53 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/productPackageService.ts",
+    "interfaces": [
+      "ImportPackageResult"
+    ],
+    "aliases": [
+      "ProductPackage"
+    ],
+    "zodSchemas": [
+      "productPackageSchema"
+    ]
+  },
+  {
+    "file": "server/services/productReadinessService.ts",
+    "interfaces": [
+      "ReadinessChecklistItem",
+      "ProductReadiness",
+      "ReadinessAggregate"
+    ],
+    "aliases": [
+      "ReadinessItemStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/programming/aiProgrammingCopilot.ts",
     "interfaces": [
       "SuggestInput",
       "SuggestResult",
-      "ExplainResult"
+      "ExplainResult",
+      "GenerateProgramInput",
+      "GenValidation",
+      "GenCitation",
+      "GenerateProgramResult",
+      "CompleteInlineInput",
+      "CompleteInlineResult"
     ],
     "aliases": [
-      "CopilotLang"
+      "CopilotLang",
+      "CopilotMode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/codegenSchemas.ts",
+    "interfaces": [],
+    "aliases": [
+      "CodegenJsonSchema"
     ],
     "zodSchemas": []
   },
@@ -1873,11 +4776,243 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/programming/fleetRollout.ts",
+    "interfaces": [
+      "FleetRolloutStrategy",
+      "FleetRolloutInput",
+      "FleetMachineResult",
+      "FleetRolloutResult",
+      "FleetRolloutDeps",
+      "FleetMatrixEntry"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/goldenExamples.ts",
+    "interfaces": [
+      "GoldenExampleMeta",
+      "GoldenExample",
+      "SelectGoldenParams"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/programming/iec61131/boolEval.ts",
     "interfaces": [
       "BoolEvalResult"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/iec61131/plcopenXml.ts",
+    "interfaces": [],
+    "aliases": [
+      "ImportResult"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/iec61131/pouLinter.ts",
+    "interfaces": [
+      "PouLintDiagnostic",
+      "PouLintResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/iec61131/pouModel.ts",
+    "interfaces": [
+      "LadContact",
+      "LadSeries",
+      "LadParallel"
+    ],
+    "aliases": [
+      "IecType",
+      "IecTypeCategory",
+      "VarSection",
+      "PouVar",
+      "LadElement",
+      "LadCoil",
+      "LadRung",
+      "LadBody",
+      "FbdSource",
+      "FbdBlock",
+      "FbdAssign",
+      "FbdNetwork",
+      "FbdBody",
+      "SfcQualifier",
+      "SfcAction",
+      "SfcStep",
+      "SfcTransition",
+      "SfcBody",
+      "StBody",
+      "PouBody",
+      "PouBodyLanguage",
+      "PouType",
+      "Pou",
+      "PouProject"
+    ],
+    "zodSchemas": [
+      "pouVarSchema",
+      "ladCoilSchema",
+      "ladRungSchema",
+      "ladBodySchema",
+      "fbdBlockSchema",
+      "fbdAssignSchema",
+      "fbdNetworkSchema",
+      "fbdBodySchema",
+      "sfcActionSchema",
+      "sfcStepSchema",
+      "sfcTransitionSchema",
+      "sfcBodySchema",
+      "stBodySchema",
+      "pouSchema",
+      "pouProjectSchema"
+    ]
+  },
+  {
+    "file": "server/services/programming/iec61131/pouToSt.ts",
+    "interfaces": [
+      "TranspilePouResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/ir/hilGate.ts",
+    "interfaces": [
+      "HilStageResult",
+      "HilStageDeps"
+    ],
+    "aliases": [
+      "HilSkipReason"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/ir/irDiff.ts",
+    "interfaces": [
+      "BlockPosition",
+      "IndexedBlock",
+      "ParamChange",
+      "IrChange",
+      "IrDiff"
+    ],
+    "aliases": [
+      "SlotKey",
+      "IrChangeKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/ir/irExpr.ts",
+    "interfaces": [
+      "ExprLit",
+      "ExprVar",
+      "ExprBinOpNode"
+    ],
+    "aliases": [
+      "ExprBinOp",
+      "Expr",
+      "NumericOrExpr"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/ir/irMerge.ts",
+    "interfaces": [
+      "MergeConflict",
+      "MergeResult"
+    ],
+    "aliases": [
+      "MergeConflictType"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/ir/irModel.ts",
+    "interfaces": [
+      "IfConditionBlock",
+      "LoopBlock",
+      "FunctionBlockDef"
+    ],
+    "aliases": [
+      "Pose",
+      "CompareOperator",
+      "SignalCondition",
+      "NodeUi",
+      "CallArg",
+      "CallBlock",
+      "MoveLinearBlock",
+      "MoveJointBlock",
+      "GripBlock",
+      "ReleaseBlock",
+      "SetOutputBlock",
+      "WaitBlock",
+      "SetVariableBlock",
+      "CounterBlock",
+      "WaitUntilBlock",
+      "SetAnalogBlock",
+      "PidControlBlock",
+      "IrBlock",
+      "IrBlockType",
+      "FbParamKind",
+      "FbParamType",
+      "FbParam",
+      "TargetDeviceType",
+      "Flow"
+    ],
+    "zodSchemas": [
+      "poseSchema",
+      "signalConditionSchema",
+      "nodeUiSchema",
+      "moveLinearBlockSchema",
+      "moveJointBlockSchema",
+      "gripBlockSchema",
+      "releaseBlockSchema",
+      "setOutputBlockSchema",
+      "setVariableBlockSchema",
+      "counterBlockSchema",
+      "waitUntilBlockSchema",
+      "setAnalogBlockSchema",
+      "callArgSchema",
+      "callBlockSchema",
+      "fbParamSchema",
+      "flowSchema"
+    ]
+  },
+  {
+    "file": "server/services/programming/ir/irSafetyLinter.ts",
+    "interfaces": [
+      "LintDiagnostic",
+      "LintResult",
+      "WorkspaceAABB",
+      "LimitProfile"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/ir/transpilers/irToUrscript.ts",
+    "interfaces": [
+      "TranspileResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/ir/transpilers/registry.ts",
+    "interfaces": [
+      "GatedTranspileResult"
+    ],
+    "aliases": [
+      "TranspileTarget",
+      "Transpiler"
+    ],
     "zodSchemas": []
   },
   {
@@ -1897,7 +5032,8 @@
       "ProgrammingAdapter"
     ],
     "aliases": [
-      "ProgrammingKind"
+      "ProgrammingKind",
+      "ProgrammingAdapterFactory"
     ],
     "zodSchemas": []
   },
@@ -1905,7 +5041,123 @@
     "file": "server/services/programming/programmingService.ts",
     "interfaces": [
       "DpcUser",
-      "DeployRequest"
+      "VerifyResult",
+      "DeployRequest",
+      "DeployApprovalRequest"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/safetyLinter.ts",
+    "interfaces": [
+      "SafetyLintFinding",
+      "SafetyLimits"
+    ],
+    "aliases": [
+      "SafetyLintCategory"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/sim/collision.ts",
+    "interfaces": [
+      "Obstacle",
+      "CollisionEvent",
+      "CollisionOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/sim/ik.ts",
+    "interfaces": [
+      "IkResult",
+      "IkOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/sim/kinematicModel.ts",
+    "interfaces": [
+      "SphereBV",
+      "CapsuleBV",
+      "AabbBV",
+      "JointDynamics",
+      "KinematicJoint",
+      "KinematicModel",
+      "LinkPose",
+      "UrdfChainAdapterOptions"
+    ],
+    "aliases": [
+      "Vec3",
+      "Mat4",
+      "BoundingVolume",
+      "JointType",
+      "WorldBV"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/sim/kinematicSimGate.ts",
+    "interfaces": [
+      "JointLimitViolation",
+      "SafetyZoneViolation",
+      "SimGateResult",
+      "SafetyZone",
+      "SimScene",
+      "RunGateOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/sim/physics.ts",
+    "interfaces": [
+      "TrajectorySample",
+      "DynamicsViolation",
+      "PhysicsResult",
+      "PhysicsOptions",
+      "PhysicsBackend",
+      "ResolveBackendOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/programming/zmotion/zmotionBasicAdapter.ts",
+    "interfaces": [
+      "ZauxBinding"
+    ],
+    "aliases": [
+      "ZmcRunMode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/qualityControlProposer.ts",
+    "interfaces": [
+      "ControlProvenance",
+      "ControlProposal",
+      "SpiTrendSample",
+      "SpiOffsetOptions",
+      "SpiOffsetResult",
+      "BuildProposalsInput",
+      "CopilotTargetUser",
+      "ProposeControlDeps",
+      "ControlProposeResult"
+    ],
+    "aliases": [
+      "ControlProposalKind",
+      "RiskLevel"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/qualityGateEvaluator.ts",
+    "interfaces": [
+      "GateEvaluationContext"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -1931,12 +5183,99 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/recipes/recipeSchemas.ts",
+    "interfaces": [
+      "RecipeValidationResult"
+    ],
+    "aliases": [
+      "RecipeTypedSchemaMode",
+      "RecipeKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/reportArtifactService.ts",
+    "interfaces": [
+      "ArtifactViewer",
+      "PersistArtifactInput",
+      "PersistArtifactResult",
+      "DownloadTarget",
+      "ListArtifactsFilters",
+      "ListArtifactsResult",
+      "CleanupResult"
+    ],
+    "aliases": [
+      "ReportArtifactFormat",
+      "ReportArtifactSource",
+      "ArtifactErrorReason"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/reportDeliveryService.ts",
+    "interfaces": [
+      "DeliveryChannelsConfig",
+      "DeliverableReport",
+      "EnqueueDeliveriesResult",
+      "AdapterOutcome",
+      "PushTransportStatus",
+      "PushOutcome",
+      "DeliveryDrainResult"
+    ],
+    "aliases": [
+      "DeliveryChannel"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/reportGenerator.ts",
     "interfaces": [
       "NGVisualReportData",
       "ReportCustomization"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/reportScheduler.ts",
+    "interfaces": [
+      "BuiltReportEmail"
+    ],
+    "aliases": [
+      "ScheduledReportType"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/robot/drivers/deltaRobotDriver.ts",
+    "interfaces": [
+      "DeltaReply"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/robot/drivers/fanucDriver.ts",
+    "interfaces": [
+      "FanucCartesian"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/robot/drivers/mitsubishiRobotDriver.ts",
+    "interfaces": [
+      "MelfaReply"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/robot/index.ts",
+    "interfaces": [],
+    "aliases": [
+      "RobotValidationStatus"
+    ],
     "zodSchemas": []
   },
   {
@@ -1977,6 +5316,188 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/robot/ursim/ursimClient.ts",
+    "interfaces": [
+      "UrsimEndpoint",
+      "DashboardReply"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/robot/ursim/ursimDeployService.ts",
+    "interfaces": [
+      "UrsimDeployRequest",
+      "UrsimDeployResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/robot/ursim/ursimHarness.ts",
+    "interfaces": [
+      "UrsimValidationResult",
+      "UrsimValidationOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ros2/ros2Bridge.ts",
+    "interfaces": [
+      "Ros2TopicSub",
+      "Ros2BridgeConfig"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ros2/rosbridgeClient.ts",
+    "interfaces": [
+      "RosbridgeOptions"
+    ],
+    "aliases": [
+      "Ros2Message",
+      "Ros2MessageHandler"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/routingService.ts",
+    "interfaces": [
+      "CreateRoutingInput",
+      "ListRoutingFilter",
+      "RoutingWithSteps",
+      "UpdateRoutingInput",
+      "UpsertStepInput"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/safety/estop/safetyEstopAdapter.ts",
+    "interfaces": [
+      "EstopTarget",
+      "EstopResult",
+      "SafetyPlcHealth",
+      "SafetyPlcAdapter",
+      "EstopRequestResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/safety/estop/vendorAdapters.ts",
+    "interfaces": [
+      "EstopStateReading",
+      "ZoneStateReading",
+      "SelfTestResult",
+      "SafetyPlcVendorAdapter",
+      "SafetyPlcVendorConfig"
+    ],
+    "aliases": [
+      "ReadQuality"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/safety/nearMissAdvisor.ts",
+    "interfaces": [
+      "ProximityDetection",
+      "SpeedReductionProposal",
+      "NearMissResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/safety/plc/safetyPlcAdapter.ts",
+    "interfaces": [
+      "PlcAdvisoryFinding",
+      "SafetyPlcBackendReader",
+      "PlcConfigFilter",
+      "UpsertPlcConfigInput",
+      "PlcConfigWriteResult",
+      "PlcReadResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/safety/safetyAuditService.ts",
+    "interfaces": [
+      "RecordSafetyEventInput",
+      "RecordResult",
+      "FeedFilter",
+      "NearMissTrendBucket"
+    ],
+    "aliases": [
+      "SafetyEventType",
+      "SafetyDetectedBy",
+      "SafetyHandledBy",
+      "SafetyOutcome"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/safety/safetyZoneService.ts",
+    "interfaces": [
+      "ZoneQueryFilter",
+      "CreateZoneInput",
+      "ZoneWriteResult",
+      "UpdateZoneInput",
+      "SpeedReductionProposal",
+      "ZoneReactionRecord",
+      "EvaluateAndRecordInput",
+      "EvaluateAndRecordResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/safety/vision/homography.ts",
+    "interfaces": [
+      "PixelPoint",
+      "FloorPoint",
+      "CalibrationPair"
+    ],
+    "aliases": [
+      "Homography"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/safety/vision/humanDetectionProducer.ts",
+    "interfaces": [
+      "PersonDetection",
+      "DetectionBackend",
+      "DetectionFrameInput",
+      "CalibrationFilter",
+      "UpsertCalibrationInput",
+      "CalibrationWriteResult",
+      "ProduceInput",
+      "ProduceResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/safety/zoneIntrusionEvaluator.ts",
+    "interfaces": [
+      "Point3",
+      "HumanPos",
+      "RobotPos",
+      "SafetyZoneSpec",
+      "ZoneGeometryLite",
+      "ZoneReaction",
+      "EvaluateOptions"
+    ],
+    "aliases": [
+      "ReactionLevel"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/scheduledReportService.ts",
     "interfaces": [
       "ScheduledReport",
@@ -1987,6 +5508,25 @@
     "aliases": [
       "ReportFrequency",
       "ReportType"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/secsgem/gem300.ts",
+    "interfaces": [
+      "HostCommandParam",
+      "CommandParamAck",
+      "ReportDefinition",
+      "EventReportLink",
+      "EquipmentConstantValue",
+      "RecipeLike",
+      "PpStore",
+      "HostCommandProposal",
+      "HitlDispatchContext",
+      "Gem300Config"
+    ],
+    "aliases": [
+      "CanonicalCommand"
     ],
     "zodSchemas": []
   },
@@ -2007,6 +5547,21 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/secsgem/gemStateModel.ts",
+    "interfaces": [
+      "CommStateChange",
+      "ControlStateChange",
+      "GemStateListeners"
+    ],
+    "aliases": [
+      "GemCommState",
+      "GemCommEvent",
+      "GemControlState",
+      "GemControlEvent"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/secsgem/hsmsClient.ts",
     "interfaces": [
       "HsmsConfig",
@@ -2019,9 +5574,57 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/secsgem/liveDispatch.ts",
+    "interfaces": [
+      "GemAlarmDispatchOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/secsgem/s1Messages.ts",
+    "interfaces": [
+      "Secs2Message",
+      "OnlineData",
+      "EstablishCommsAck",
+      "OnlineAck"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/secsgem/s5s6Messages.ts",
+    "interfaces": [
+      "ParsedS5F1",
+      "ParsedReport",
+      "ParsedS6F11",
+      "LiveDispatchHandlers"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/secsgem/secs2Codec.ts",
+    "interfaces": [],
+    "aliases": [
+      "Secs2FormatCode",
+      "Secs2Item"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/secsgem/secsGemBringup.ts",
+    "interfaces": [
+      "SecsGemEquipmentConfig"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/secsgem/secsGemRegistry.ts",
     "interfaces": [
-      "SecsGemConnector"
+      "SecsGemConnector",
+      "SecsGemHealth"
     ],
     "aliases": [
       "SecsGemFactory"
@@ -2040,18 +5643,710 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/security/anomalousLoginDetector.ts",
+    "interfaces": [
+      "LoginHistory",
+      "LoginObservation",
+      "AnomalyResult",
+      "LoginContext",
+      "AnomalyHookResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/auditChain.ts",
+    "interfaces": [
+      "AuditRecordInput",
+      "AuditRecord",
+      "ChainVerification"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/deviceIdentityService.ts",
+    "interfaces": [
+      "IssueDeviceCertResult",
+      "IssueDeviceCertOptions",
+      "VerifyDeviceCertResult"
+    ],
+    "aliases": [
+      "DeviceKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/internalCa.ts",
+    "interfaces": [
+      "InternalCa",
+      "CaCertBundle"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/policyEngine.ts",
+    "interfaces": [
+      "PolicyCondition",
+      "Policy",
+      "PolicyDecision",
+      "PolicyRule",
+      "StandardDecision"
+    ],
+    "aliases": [
+      "PolicyEffect",
+      "CompareOp"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/policyEvaluate.ts",
+    "interfaces": [
+      "PolicyEvaluationResult",
+      "EvaluatePolicyOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/policyGate.ts",
+    "interfaces": [
+      "PolicyGateResult",
+      "ActionPolicyResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/policyStore.ts",
+    "interfaces": [
+      "PolicyFileDef",
+      "PolicySyncResult",
+      "DecisionLogEntry",
+      "PolicyListing",
+      "DecisionLogFilters"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/requireServiceIdentity.ts",
+    "interfaces": [
+      "PeerIdentityResult"
+    ],
+    "aliases": [
+      "HeaderBag"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/secretManager.ts",
+    "interfaces": [
+      "GetSecretOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/serviceIdentityService.ts",
+    "interfaces": [
+      "JwtSvidClaims",
+      "VerifyJwtSvidResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/siemExporter.ts",
+    "interfaces": [
+      "SiemEvent"
+    ],
+    "aliases": [
+      "SiemCategory",
+      "SiemOutcome",
+      "SiemSeverity",
+      "SiemTransport"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/security/x509Mint.ts",
+    "interfaces": [
+      "Ed25519Keypair",
+      "MintOptions",
+      "MintResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/semantics/metricRegistry.ts",
+    "interfaces": [
+      "MetricInputDef",
+      "MetricDefinition",
+      "MetricResult"
+    ],
+    "aliases": [
+      "MetricComputeErrorCode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/sensorIngestService.ts",
+    "interfaces": [
+      "ParsedSensorTopic",
+      "ParsedSensorReading"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/simOtTelemetryService.ts",
+    "interfaces": [
+      "SimMachineIdentity",
+      "SimOtTelemetryStats"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/simulation/desEngine.ts",
+    "interfaces": [
+      "Rng",
+      "StationSpec",
+      "LineModel",
+      "SimConfig",
+      "StationStat",
+      "CycleTimeStat",
+      "DesResult"
+    ],
+    "aliases": [
+      "ProcessDist",
+      "OnFail",
+      "SourceSpec"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/simulation/desModel.ts",
+    "interfaces": [
+      "StationParam",
+      "BuildModelOptions",
+      "ScenarioComparison",
+      "ThroughputAdvisory",
+      "CapacityReconciliation"
+    ],
+    "aliases": [
+      "ScenarioOp"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/simulation/monteCarlo.ts",
+    "interfaces": [
+      "MonteCarloResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/sopExecutionLogic.ts",
+    "interfaces": [
+      "SopStepLite",
+      "SopStepConfirmation",
+      "StepConfirmResult",
+      "ExecutionProgress"
+    ],
+    "aliases": [
+      "StepConfirmCode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/sopService.ts",
+    "interfaces": [
+      "ListSopFilter",
+      "SopStepInput",
+      "CreateSopInput",
+      "UpdateSopInput",
+      "StartExecutionInput",
+      "ConfirmStepResult",
+      "FinishExecutionResult",
+      "SopReadinessContribution"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/spcCentralAlertBridge.ts",
+    "interfaces": [
+      "SpcCentralAlertContext"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/standards/alarmMasterService.ts",
+    "interfaces": [
+      "DbAlarmTaxonomyRow",
+      "ShelveCheckable",
+      "AlarmTarget",
+      "SuppressionResult",
+      "AlarmKpiEvent",
+      "AlarmKpiOptions",
+      "AlarmKpiResult"
+    ],
+    "aliases": [
+      "AlarmConsequence",
+      "AlarmPriority",
+      "TimeBand"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/standards/alarmTaxonomy.ts",
+    "interfaces": [
+      "AlarmMapping",
+      "NormalizedAlarm"
+    ],
+    "aliases": [
+      "AlarmSeverity"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/standards/capabilitiesValidation.ts",
+    "interfaces": [
+      "CapabilitiesValidationResult",
+      "CapabilitiesDriftEntry",
+      "CapabilitiesDriftReport"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/standards/complianceService.ts",
+    "interfaces": [
+      "ComplianceInput",
+      "ComplianceMetrics"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/standards/conformanceTest.ts",
+    "interfaces": [
+      "ConformanceViolation",
+      "ConformanceResult",
+      "ConformanceSubject"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/standards/deviceTypeRegistry.ts",
+    "interfaces": [
+      "DeviceTypeNode",
+      "ResolvedDeviceType",
+      "DeviceTypeTreeNode",
+      "SemVer"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/standards/governanceService.ts",
+    "interfaces": [
+      "BackwardCompatResult",
+      "PublishDecision"
+    ],
+    "aliases": [
+      "CrStatus",
+      "CrKind",
+      "SemverBump",
+      "ConformanceGate",
+      "PromotionStage"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/stateStore/stateStore.ts",
+    "interfaces": [
+      "StateSnapshotValue",
+      "StateSnapshot"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/stateStore/unsStreamGateway.ts",
+    "interfaces": [
+      "UnsSocketLike",
+      "UnsEventPayload",
+      "UnsDelta"
+    ],
+    "aliases": [
+      "UnsAspect",
+      "UnsSeverity"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/stencilService.ts",
+    "interfaces": [
+      "RecordPrintsInput",
+      "StencilStatus"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/streaming/lakeSink.ts",
+    "interfaces": [
+      "LakeS3Config",
+      "LakeRow",
+      "Partition"
+    ],
+    "aliases": [
+      "LakeSinkMode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/streaming/streamBridge.ts",
+    "interfaces": [
+      "StreamMessage",
+      "Subscription",
+      "PublishOptions",
+      "PublishResult",
+      "ReplayResult",
+      "SubscribeOptions",
+      "StreamBridge"
+    ],
+    "aliases": [
+      "StreamBackend"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/streaming/streamProcessor.ts",
+    "interfaces": [
+      "WindowEvent",
+      "ClosedWindow",
+      "LineEnrichment",
+      "RawTelemetrySample",
+      "StreamProcessorOptions",
+      "StreamProcessorStartInfo"
+    ],
+    "aliases": [
+      "Outcome",
+      "AddResult",
+      "EnrichResolver",
+      "OutcomeClassifier"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/telemetryBus.ts",
+    "interfaces": [
+      "CanonicalSample"
+    ],
+    "aliases": [
+      "TelemetryProtocol",
+      "TelemetryQuality",
+      "TelemetryTap"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/thresholdApprovalCount.ts",
+    "interfaces": [
+      "PendingByPointResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/thresholdGovernanceService.ts",
+    "interfaces": [
+      "ThresholdGateResult"
+    ],
+    "aliases": [
+      "ThresholdEditDecision"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/traffic/infraCoordinator.ts",
+    "interfaces": [
+      "InfraResource",
+      "RequestResult"
+    ],
+    "aliases": [
+      "InfraKind",
+      "GrantState"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/traffic/spaceTimeAStar.ts",
+    "interfaces": [
+      "GraphEdge",
+      "RouteGraph",
+      "RouteStep",
+      "PlannedRoute",
+      "PlanOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/traffic/spaceTimeReservation.ts",
+    "interfaces": [
+      "TimeInterval",
+      "ReserveResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/driftDetector.ts",
+    "interfaces": [
+      "MetricPair",
+      "DriftItem",
+      "DriftReport"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/dstarLite.ts",
+    "interfaces": [
+      "Cell",
+      "DStarLiteState",
+      "DStarLiteResult",
+      "CellChange",
+      "ReplanOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/modelRegistry.ts",
+    "interfaces": [
+      "ResolveTarget",
+      "RegisterModelInput",
+      "RegisterResult"
+    ],
+    "aliases": [
+      "ModelKind",
+      "SourceFormat",
+      "ConversionStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/occupancyGrid.ts",
+    "interfaces": [
+      "GridConfig",
+      "OccupancyGrid",
+      "RectObstacle",
+      "Point2D",
+      "PlanGridResult",
+      "BuildFactoryGridOptions",
+      "BuildFactoryGridResult",
+      "DynamicObstacle"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/pipeline/gltfAssembly.ts",
+    "interfaces": [
+      "TriMeshData",
+      "NamedTriMesh",
+      "AddedMesh",
+      "AssembleGltfResult"
+    ],
+    "aliases": [
+      "Vec3"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/pipeline/modelConversionService.ts",
+    "interfaces": [
+      "ConvertUrdfInput",
+      "ConvertResult",
+      "ConvertStepInput",
+      "ConvertStepResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/pipeline/occt-import-js.d.ts",
+    "interfaces": [
+      "OcctFloatArray",
+      "OcctIndexArray",
+      "OcctMeshAttributes",
+      "OcctBrepFace",
+      "OcctMesh",
+      "OcctNode",
+      "OcctReadResult",
+      "OcctReadParams",
+      "OcctModule",
+      "OcctFactoryArg"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/pipeline/stepToGltf.ts",
+    "interfaces": [
+      "StepToGltfResult",
+      "StepToGltfOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/pipeline/urdfParser.ts",
+    "interfaces": [
+      "UrdfOrigin",
+      "UrdfVisual",
+      "UrdfLink",
+      "UrdfJointLimit",
+      "UrdfJoint",
+      "UrdfRobot"
+    ],
+    "aliases": [
+      "Vec3",
+      "UrdfGeometry",
+      "UrdfJointType"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/pipeline/urdfToGltf.ts",
+    "interfaces": [
+      "ExternalMeshRef",
+      "UrdfToGltfResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/pipeline/urdfToKinematicChain.ts",
+    "interfaces": [
+      "UrdfChainOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/sceneGraph.ts",
+    "interfaces": [
+      "SceneAlarm",
+      "DeviceNode",
+      "StationNode",
+      "LineNode",
+      "ZoneNode",
+      "SceneGraph",
+      "SceneGraphInputs"
+    ],
+    "aliases": [
+      "NormalizedState"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/twinFidelityService.ts",
+    "interfaces": [
+      "FidelityInput",
+      "FidelityEvaluation",
+      "TrustDecision",
+      "FidelityCheckResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/twinReplay.ts",
+    "interfaces": [
+      "ReplaySnapshot",
+      "ReplayResult",
+      "ReplayQuery"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/twinSchema.ts",
+    "interfaces": [
+      "DtdlProperty",
+      "DtdlTelemetry",
+      "DtdlRelationship",
+      "DtdlComponent",
+      "DtdlInterface",
+      "TwinTelemetryChannel",
+      "TwinRelationship",
+      "FactoryTwin",
+      "ZoneTwin",
+      "LineTwin",
+      "StationTwin",
+      "DeviceTwin",
+      "RobotTwin",
+      "TwinModelOptions"
+    ],
+    "aliases": [
+      "DtdlSchema",
+      "DtdlContent",
+      "TwinNodeType",
+      "TwinRelationshipName",
+      "AnyTwin"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/twin/usdExport.ts",
+    "interfaces": [
+      "UsdExportOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/universalExportService.ts",
     "interfaces": [
       "ExportColumn",
-      "ExportOptions"
+      "ReportBranding",
+      "ExportOptions",
+      "CappedRows",
+      "RenderReportInput",
+      "RenderReportOutput"
     ],
-    "aliases": [],
+    "aliases": [
+      "ReportLocale",
+      "ReportFormat"
+    ],
     "zodSchemas": []
   },
   {
     "file": "server/services/uns/aoiBridge.ts",
     "interfaces": [
       "AoiBridgeMapping"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/uns/packmlStateBridge.ts",
+    "interfaces": [
+      "PackmlIdentity",
+      "PackmlTransition",
+      "ReconstructedPackml"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -2096,10 +6391,55 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/uns/topicV2.ts",
+    "interfaces": [
+      "Isa95PathV2",
+      "TelemetryMetricV2"
+    ],
+    "aliases": [
+      "UnsAspect",
+      "CanonicalEventSeverity",
+      "CanonicalEventType",
+      "CanonicalHealthStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/uns/unsAggregates.ts",
+    "interfaces": [
+      "UnsAggregatesRunStats"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/unsBridge.ts",
     "interfaces": [
       "Isa95Path",
       "ParsedTopic"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/unsMappingService.ts",
+    "interfaces": [
+      "ResolvedMapping",
+      "MappedPublishCtx",
+      "MappingPreview",
+      "CreateMappingInput"
+    ],
+    "aliases": [
+      "OtScalar",
+      "MappedPublishDecision",
+      "UpdateMappingPatch"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/unsPublisher.ts",
+    "interfaces": [
+      "CmdAckMessage"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -2147,6 +6487,155 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/vision/acquisition/acquisitionWorker.ts",
+    "interfaces": [
+      "AcquisitionQualitySummary",
+      "AcquisitionLedgerEntry",
+      "AcquisitionWorkerStatus",
+      "StartWorkerResult"
+    ],
+    "aliases": [
+      "AcquisitionWorkerConfig",
+      "AcquisitionWorkerState",
+      "WorkerSubmitFn"
+    ],
+    "zodSchemas": [
+      "fileSourceSchema",
+      "mockSourceSchema",
+      "genicamSourceSchema"
+    ]
+  },
+  {
+    "file": "server/services/vision/acquisition/fileImageSource.ts",
+    "interfaces": [
+      "FileImageSourceOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vision/acquisition/frameToCanonicalInspection.ts",
+    "interfaces": [
+      "FrameInspectionContext",
+      "EmbedFrameOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vision/acquisition/genICamImageSource.ts",
+    "interfaces": [
+      "GenICamImageSourceOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vision/acquisition/imageSource.ts",
+    "interfaces": [
+      "FrameMetadata",
+      "Frame",
+      "ImageSourceOptions",
+      "ImageSource",
+      "AcquiredBuffer"
+    ],
+    "aliases": [
+      "TriggerMode",
+      "ImageSourceKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vision/acquisition/index.ts",
+    "interfaces": [
+      "ImageSourceKindInfo"
+    ],
+    "aliases": [
+      "CreateImageSourceOptions"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vision/acquisition/mockImageSource.ts",
+    "interfaces": [
+      "MockImageSourceOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vision/adapters/st4iStandard.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "bboxSchema",
+      "values3dSchema",
+      "headerSchema",
+      "measurementSchema",
+      "attachmentsSchema"
+    ]
+  },
+  {
+    "file": "server/services/vision/heightMapSource.ts",
+    "interfaces": [
+      "HeightMapProbeResult",
+      "HeightMapAcquireContext",
+      "HeightMapAcquisition",
+      "HeightMapSource",
+      "HeightMapEnrichOutcome"
+    ],
+    "aliases": [
+      "HeightMapSourceKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vision/hotFolderParsers.ts",
+    "interfaces": [
+      "CsvPayloadEnvelope",
+      "ParsedResultFile"
+    ],
+    "aliases": [
+      "HotFolderFormat"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vision/hotFolderService.ts",
+    "interfaces": [
+      "ReadRetryOptions",
+      "ProcessFileResult",
+      "ProcessDeps",
+      "ScanResult",
+      "DryRunInput",
+      "HotFolderConfigInput",
+      "HotFolderStatusRow"
+    ],
+    "aliases": [
+      "SubmitInspectionFn",
+      "ProcessOutcome",
+      "DryRunResult"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vision/validationHarness.ts",
+    "interfaces": [
+      "GageRRResult",
+      "AccuracyStats",
+      "RegistrationStudyCase",
+      "SpiStudyCase",
+      "ValidationStudy",
+      "SyntheticStudyOptions",
+      "RegistrationCaseResult",
+      "SpiCaseResult",
+      "ValidationReport",
+      "CorpusManifest"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/vision/visionAdapterRegistry.ts",
     "interfaces": [
       "CanonicalMeasurement",
@@ -2158,6 +6647,344 @@
       "CanonicalResult",
       "CanonicalDefectSeverity",
       "VisionAdapterFactory"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/visionDefectProposal.ts",
+    "interfaces": [
+      "DefectCatalogLite",
+      "DefectMatch"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/drizzleCotDoc.ts",
+    "interfaces": [
+      "CotDrizzle"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/types.ts",
+    "interfaces": [
+      "VramReserveRequest",
+      "VramLease",
+      "VramReserveResult",
+      "VramSnapshot"
+    ],
+    "aliases": [
+      "VramPriority",
+      "VramLeaseKind",
+      "VramEstimateSource",
+      "VramMeasureSource",
+      "VramReclaimerId",
+      "BaselineOrigin",
+      "VramBaselineDistrustReason"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramAdoption.ts",
+    "interfaces": [
+      "MoTaSidecarNhanNuoi",
+      "HangMaCanXoa",
+      "HoCanNhanNuoi",
+      "KeHoachNhanNuoi",
+      "DauVaoNhanNuoi"
+    ],
+    "aliases": [
+      "TrangThaiTienTrinh"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramBroker.ts",
+    "interfaces": [
+      "VramLedgerHolderView",
+      "VramPreemptStep",
+      "VramDecisionContext",
+      "VramReserveDecision",
+      "VramReserveOutcome",
+      "VramDecisionState"
+    ],
+    "aliases": [
+      "VramPreemptAuthority",
+      "VramPreemptOwnerPlan"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramColumnLimits.ts",
+    "interfaces": [],
+    "aliases": [
+      "VramLeaseColumn"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramCommands.ts",
+    "interfaces": [
+      "VramCommandScope",
+      "VramPreemptCommandResult",
+      "VramReleaseStaleCommandResult",
+      "VramRetryDeferredCommandResult"
+    ],
+    "aliases": [
+      "VramCommandName",
+      "VramPreemptCommandOutcome",
+      "VramPreemptCommandReason",
+      "VramReleaseStaleCommandReason",
+      "VramRetryDeferredCommandReason"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramDefer.ts",
+    "interfaces": [
+      "VramDeferState",
+      "VramDeferRefusalText",
+      "XinVramCoHoanTuyChon"
+    ],
+    "aliases": [
+      "VramDeferPlan"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramEnforcement.ts",
+    "interfaces": [
+      "EnforcementInput",
+      "EnforcementDecision"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramEventLog.ts",
+    "interfaces": [
+      "VramEventInput"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramGpuHolders.ts",
+    "interfaces": [
+      "GpuHolder",
+      "GpuHolderCensus",
+      "ProcTableRow"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramHeadroom.ts",
+    "interfaces": [
+      "HeadroomInput",
+      "HeadroomResult",
+      "HeadroomTickFields",
+      "HeadroomPolicy"
+    ],
+    "aliases": [
+      "HeadroomBasis",
+      "HeadroomDegradation"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramLoadOutcome.ts",
+    "interfaces": [
+      "VramExhaustionVerdict",
+      "VramLoadPlan",
+      "VramLoadOutcome",
+      "VramLoadOutcomeSpec",
+      "VramLayerNormalization"
+    ],
+    "aliases": [
+      "VramExhaustionScope",
+      "VramGpuLayerValue",
+      "VramLoadStep",
+      "VramLoadOutcomeKind",
+      "VramNormalizeReason"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramMeasureLock.ts",
+    "interfaces": [
+      "MeasureWindowResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramPreempt.ts",
+    "interfaces": [
+      "VramPreemptResult",
+      "VramPreemptOwnerResult"
+    ],
+    "aliases": [
+      "VramReclaimFailure",
+      "VramPreemptOwnerFailure"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramProbe.ts",
+    "interfaces": [],
+    "aliases": [
+      "VramSource"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramProcessProbe.ts",
+    "interfaces": [
+      "VramProcessSample",
+      "RawProcRow"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramReadModel.ts",
+    "interfaces": [
+      "VramAgentDisplayText",
+      "VramAgentHolderView",
+      "VramAgentOwnerPattern",
+      "VramAgentDeferHostView",
+      "VramAgentDeferView",
+      "VramAgentEffectiveHeadroom",
+      "VramAgentState"
+    ],
+    "aliases": [
+      "VramAgentHolderReclaim",
+      "VramAgentNoReclaimWhy",
+      "VramAgentAttributable",
+      "VramAgentForeignLedger",
+      "VramAgentTick",
+      "VramAgentDeferStatus",
+      "VramAgentDeferRetryReach",
+      "VramDeferRetryUnreachable"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramReconciler.ts",
+    "interfaces": [
+      "VramReconcileResult",
+      "VramReleaseStaleResult",
+      "CuaThuHoiNgoaiTienTrinh",
+      "VramTickRecord"
+    ],
+    "aliases": [
+      "VramReleaseStaleRefusal"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramRefusal.ts",
+    "interfaces": [
+      "VramHolderFact",
+      "VramRefusalInput",
+      "VramRefusalFacts",
+      "VramUnattributedFacts"
+    ],
+    "aliases": [
+      "VramDegradationReason",
+      "VramUnledgeredFact",
+      "VramRefusalAppCode",
+      "VramRefusalCaveat"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramSharedLedger.ts",
+    "interfaces": [
+      "SharedLeaseRow",
+      "SharedLeaseRowKetQua",
+      "SharedBaselineRecord",
+      "SharedLedgerReplica"
+    ],
+    "aliases": [
+      "SharedLedgerWrite",
+      "SharedLedgerFact"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramSharedLedgerStore.ts",
+    "interfaces": [
+      "SharedLedgerGateway"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramTickCell.ts",
+    "interfaces": [
+      "VramDecisionTickFields",
+      "VramDecisionTick"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramWiring.ts",
+    "interfaces": [
+      "VramTicket",
+      "VramAllocationOptions"
+    ],
+    "aliases": [
+      "VramReleaseProof"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/warRoomService.ts",
+    "interfaces": [
+      "WarRoomTopDowntime",
+      "WarRoomLine",
+      "WarRoomShiftCompare",
+      "WarRoomPlanVsActual",
+      "WarRoomBriefing"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/wipIngestService.ts",
+    "interfaces": [
+      "WipIngestInput"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/workforce/collaborationService.ts",
+    "interfaces": [
+      "StartCollabInput"
+    ],
+    "aliases": [
+      "CollabPhase",
+      "HandshakeState"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/workforce/workforceService.ts",
+    "interfaces": [
+      "BoardHuman",
+      "BoardRobot",
+      "BoardStation",
+      "AssignInput",
+      "AssignResult"
+    ],
+    "aliases": [
+      "BoardResource"
     ],
     "zodSchemas": []
   },
@@ -2177,6 +7004,18 @@
       "CadParseResult"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/utils/factoryTime.ts",
+    "interfaces": [
+      "WallClock",
+      "WallClockInput",
+      "NextRunOptions"
+    ],
+    "aliases": [
+      "ScheduleFrequency"
+    ],
     "zodSchemas": []
   },
   {
@@ -2239,6 +7078,19 @@
     ],
     "aliases": [],
     "zodSchemas": []
+  },
+  {
+    "file": "server/utils/measurementPointImport.ts",
+    "interfaces": [
+      "BuildInsertResult"
+    ],
+    "aliases": [
+      "LegacyMeasurementType",
+      "DeepImportPoint"
+    ],
+    "zodSchemas": [
+      "deepImportPointSchema"
+    ]
   },
   {
     "file": "server/utils/monteCarloFlow.ts",
@@ -2348,6 +7200,46 @@
     "zodSchemas": []
   },
   {
+    "file": "server/_core/aiAnalyticsScope.ts",
+    "interfaces": [
+      "FactoryScope",
+      "AnalyticsScopeInput",
+      "ReportScopeInput",
+      "ReportScopeCtx"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/appErrorCodes.ts",
+    "interfaces": [],
+    "aliases": [
+      "AppErrorCode",
+      "AppErrorParams"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/backupCodeSecret.ts",
+    "interfaces": [],
+    "aliases": [
+      "MaDuPhongDaBam"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/busFanout.ts",
+    "interfaces": [
+      "FanoutEnvelope",
+      "BusFanout",
+      "RedisLikePubSub"
+    ],
+    "aliases": [
+      "FanoutInjector"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/_core/context.ts",
     "interfaces": [],
     "aliases": [
@@ -2364,6 +7256,22 @@
     "zodSchemas": []
   },
   {
+    "file": "server/_core/dbErrors.ts",
+    "interfaces": [
+      "DbErrorOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/deploymentProfile.ts",
+    "interfaces": [
+      "DeploymentProfile"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/_core/eventBus.ts",
     "interfaces": [
       "DomainEvent"
@@ -2371,6 +7279,24 @@
     "aliases": [
       "EventType"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/hangRaoKhongAiCanh.test.ts",
+    "interfaces": [],
+    "aliases": [
+      "X"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/healthProbes.ts",
+    "interfaces": [
+      "LivenessResult",
+      "ReadinessResult",
+      "ReadinessDeps"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -2407,6 +7333,24 @@
     "zodSchemas": []
   },
   {
+    "file": "server/_core/machinePresenceStore.ts",
+    "interfaces": [
+      "MachinePresenceEntry",
+      "MachinePresenceStore",
+      "RedisLike"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/machineProxyError.ts",
+    "interfaces": [
+      "MachineProxyErrorInfo"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/_core/map.ts",
     "interfaces": [],
     "aliases": [
@@ -2422,6 +7366,30 @@
       "ElevationResult",
       "TimeZoneResult",
       "RoadsResult"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/metrics.ts",
+    "interfaces": [],
+    "aliases": [
+      "RumWebVitalMetric"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/mockKhongFactory.test.ts",
+    "interfaces": [],
+    "aliases": [
+      "LuotAutomock"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/moduleAccessMap.ts",
+    "interfaces": [],
+    "aliases": [
+      "ModuleCode"
     ],
     "zodSchemas": []
   },
@@ -2446,10 +7414,92 @@
     "zodSchemas": []
   },
   {
+    "file": "server/_core/originCheck.ts",
+    "interfaces": [
+      "OriginCheckConfig"
+    ],
+    "aliases": [
+      "OriginCheckMode",
+      "OriginVerdict"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/pendingTwoFactor.ts",
+    "interfaces": [],
+    "aliases": [
+      "LyDoTuChoiVe"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/publicSession.ts",
+    "interfaces": [],
+    "aliases": [
+      "SessionFieldVisibility",
+      "PublicSessionField",
+      "ServerOnlySessionField",
+      "PublicSession"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/publicUser.ts",
+    "interfaces": [],
+    "aliases": [
+      "UserFieldVisibility",
+      "PublicUserField",
+      "ServerOnlyUserField",
+      "PublicUser",
+      "ServerOnlyUserSecretField",
+      "MocMatKhau",
+      "MeUser"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/quetDiemXacThuc.ts",
+    "interfaces": [],
+    "aliases": [
+      "DiemXacThuc",
+      "DiemThieuNeo"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/rateLimitConfig.ts",
+    "interfaces": [
+      "MinimalRedisClient"
+    ],
+    "aliases": [
+      "RateLimitStoreKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/samlProvider.ts",
+    "interfaces": [
+      "SamlConfig",
+      "ParsedSamlAssertion",
+      "SamlUserProfile"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/_core/sdk.ts",
     "interfaces": [],
     "aliases": [
-      "SessionPayload"
+      "SessionPayload",
+      "TuyChonXacThuc"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/securityHeaders.ts",
+    "interfaces": [],
+    "aliases": [
+      "CspMode"
     ],
     "zodSchemas": []
   },
@@ -2458,17 +7508,44 @@
     "interfaces": [
       "InspectionAlert",
       "DashboardUpdate",
+      "TelemetryBroadcastSample",
       "MqttMessageEvent",
       "SpcViolationAlert",
       "AndonRealtimeEvent",
+      "SafetyRealtimeEvent",
       "TwinStationSnapshot",
       "TwinUpdateEvent",
+      "TwinDeviceDelta",
+      "DeviceStreamDelta",
+      "RobotTelemetryLive",
+      "SiteUpdateEvent",
       "AlertEscalationEvent",
       "DiscoveredMachine",
       "OEEMetrics",
       "DowntimeEvent",
       "MaintenanceAlert",
       "MachineBenchmark"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/socketMachineAuth.ts",
+    "interfaces": [
+      "SocketMachineAuthResult",
+      "SocketAuthMachine",
+      "SocketMachineAuthMismatchRow"
+    ],
+    "aliases": [
+      "SocketMachineAuthMode",
+      "SocketMachineAuthMethod"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/totpOnce.ts",
+    "interfaces": [
+      "KetQuaTotp"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -2521,6 +7598,71 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/agentCenter/AgentCard.tsx",
+    "interfaces": [
+      "AgentCardProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/agentCenter/AgentDrillInDrawer.tsx",
+    "interfaces": [
+      "AgentDrillInDrawerProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/agentCenter/AgentFloor.tsx",
+    "interfaces": [
+      "AgentFloorProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/agentCenter/KillSwitchBar.tsx",
+    "interfaces": [
+      "KillSwitchBarProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/agentCenter/LiveTaskFeed.tsx",
+    "interfaces": [
+      "LiveTaskFeedProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/agentCenter/TokenSavingsRail.tsx",
+    "interfaces": [
+      "TokenSavingsRailProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/agentCenter/types.ts",
+    "interfaces": [],
+    "aliases": [
+      "CommandCenterReadModel",
+      "AgentRosterEntry",
+      "AgentStatus",
+      "AgentKind",
+      "OpsSessionSummary",
+      "TaskFeedItem",
+      "SavingsSummary",
+      "ModelSavingsBreakdown",
+      "AgentSessionDetail",
+      "KillSwitchStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/AgentPlanCard.tsx",
     "interfaces": [
       "AgentPlanStepView",
@@ -2530,6 +7672,16 @@
     "aliases": [
       "AgentStepKind",
       "AgentSessionStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/ai/ProposeDefectButton.tsx",
+    "interfaces": [
+      "ProposeDefectFinding"
+    ],
+    "aliases": [
+      "VisionSource"
     ],
     "zodSchemas": []
   },
@@ -2556,6 +7708,7 @@
   {
     "file": "client/src/components/AIGuidedActionCards.tsx",
     "interfaces": [
+      "RcaSuggestedActionCard",
       "AIGuidedActionCardsProps"
     ],
     "aliases": [],
@@ -2566,6 +7719,28 @@
     "interfaces": [],
     "aliases": [
       "ToolResultPayload"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/aoiOnboarding/types.ts",
+    "interfaces": [
+      "DryRunRenderModel",
+      "AoiWizardState",
+      "AoiDraftSnapshot",
+      "StepProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/AsyncBoundary.tsx",
+    "interfaces": [
+      "AsyncBoundaryProps",
+      "QueryBoundaryProps"
+    ],
+    "aliases": [
+      "AsyncSkeletonPreset"
     ],
     "zodSchemas": []
   },
@@ -2585,6 +7760,23 @@
     "interfaces": [],
     "aliases": [
       "ConfirmDialogVariant"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/controlTower/PanelShell.tsx",
+    "interfaces": [
+      "PanelShellProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/controlTower/personas.ts",
+    "interfaces": [],
+    "aliases": [
+      "Persona",
+      "PanelKey"
     ],
     "zodSchemas": []
   },
@@ -2609,12 +7801,76 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/DataTable.tsx",
+    "interfaces": [
+      "DataTableColumn",
+      "DataTableProps",
+      "VirtualWindow"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/deviceOnboarding/types.ts",
+    "interfaces": [
+      "ProtocolOption",
+      "IotChannelOption",
+      "GuardrailRow",
+      "AutomationDraft",
+      "MetricRow",
+      "IotDraft"
+    ],
+    "aliases": [
+      "AutomationProtocol",
+      "IotChannel",
+      "IotMachineType"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/diff/LineDiff.tsx",
+    "interfaces": [],
+    "aliases": [
+      "DiffRow"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/DispositionPanel.tsx",
+    "interfaces": [
+      "DispositionPanelProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/DraggableDashboardWidgets.tsx",
     "interfaces": [
       "WidgetConfig"
     ],
     "aliases": [
       "WidgetId"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/drilldown/DrillNode.tsx",
+    "interfaces": [
+      "DrillRow",
+      "DrillNodeLeafAction",
+      "DrillNodeProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/drilldown/DrillSpine.tsx",
+    "interfaces": [
+      "DrillDownState",
+      "DrillSpineProps"
+    ],
+    "aliases": [
+      "DrillLevel"
     ],
     "zodSchemas": []
   },
@@ -2629,7 +7885,130 @@
   {
     "file": "client/src/components/engineering/CodeEditor.tsx",
     "interfaces": [
+      "CodeDiagnostic",
       "CodeEditorProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/engineering/inlineCopilotController.ts",
+    "interfaces": [
+      "CompletionWindow",
+      "BuildWindowOptions",
+      "InlineCopilotSnapshot",
+      "InlineCopilotControllerOptions"
+    ],
+    "aliases": [
+      "FetchInlineCompletion"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/engineering/inlineCopilotExtension.ts",
+    "interfaces": [
+      "InlineCopilotExtensionOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/EntityCombobox.tsx",
+    "interfaces": [
+      "EntityOption"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/ExportMenu.tsx",
+    "interfaces": [
+      "ExportMenuProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/factory-scene/sceneTypes.ts",
+    "interfaces": [
+      "MachineNode",
+      "FactorySceneProps",
+      "ScenePalette",
+      "PlacedMachine",
+      "SceneLayout"
+    ],
+    "aliases": [
+      "MachineStatus",
+      "OverlayMode",
+      "ShapeKey"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/factoryConfig/ConfigHealthPanel.tsx",
+    "interfaces": [
+      "ConfigHealthPanelProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/factoryConfig/entityTypes.ts",
+    "interfaces": [],
+    "aliases": [
+      "Factory",
+      "Workshop",
+      "Line",
+      "Station",
+      "Machine",
+      "ShiftConfig",
+      "LineStage"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/factoryConfig/factoryConfigIO.ts",
+    "interfaces": [
+      "FieldDef",
+      "LevelDef",
+      "ParsedRow",
+      "ValidationCtx"
+    ],
+    "aliases": [
+      "FactoryLevel",
+      "FieldType"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/factoryConfig/factoryModel.ts",
+    "interfaces": [
+      "NavTarget",
+      "PathCrumb",
+      "TreeNode",
+      "Finding",
+      "FactoryModel",
+      "UseFactoryModelResult"
+    ],
+    "aliases": [
+      "Sev",
+      "FactoryConfigLevel",
+      "Navigate"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/factoryConfig/FactorySetupWizard.tsx",
+    "interfaces": [
+      "FactorySetupWizardProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/factoryConfig/FactoryTree.tsx",
+    "interfaces": [
+      "FactoryTreeProps"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -2640,6 +8019,51 @@
       "MachineNode"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/FalseCallEscapePanel.tsx",
+    "interfaces": [
+      "FalseCallEscapeScope"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/FalseCallTrendCard.tsx",
+    "interfaces": [
+      "FalseCallTrendScope"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/FilterBar.tsx",
+    "interfaces": [
+      "FilterBarProps"
+    ],
+    "aliases": [
+      "FilterDef",
+      "FilterValues"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/FormScaffold.tsx",
+    "interfaces": [
+      "FormScaffoldProps"
+    ],
+    "aliases": [],
+    "zodSchemas": [
+      "schema"
+    ]
+  },
+  {
+    "file": "client/src/components/FreshnessStrip.tsx",
+    "interfaces": [],
+    "aliases": [
+      "FreshnessState"
+    ],
     "zodSchemas": []
   },
   {
@@ -2662,11 +8086,81 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/kbStudio/kbStudioSourceState.ts",
+    "interfaces": [
+      "KbIngestStatusQuery"
+    ],
+    "aliases": [
+      "SourceTabRenderState"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/kbStudio/SourceTab.tsx",
+    "interfaces": [
+      "SourceTabProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/lineView/LineCommandBar.tsx",
+    "interfaces": [
+      "LineCommandBarProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/lineView/lineFsm.ts",
+    "interfaces": [],
+    "aliases": [
+      "LineViewState",
+      "LineViewCommand"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/lineView/ReadinessPanel.tsx",
+    "interfaces": [
+      "ReadinessCheckView",
+      "ReadinessResultView",
+      "ReadinessPanelProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/lineView/StationFlow.tsx",
+    "interfaces": [
+      "StationStageView",
+      "StationFlowProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/lineView/TransitionsTable.tsx",
+    "interfaces": [
+      "TransitionRowView"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/MachineAISummary.tsx",
     "interfaces": [
       "MachineAISummaryProps"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/machineRegistration/CredentialShowOnceDialog.tsx",
+    "interfaces": [],
+    "aliases": [
+      "CredentialShowOncePayload"
+    ],
     "zodSchemas": []
   },
   {
@@ -2689,11 +8183,30 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/MetricDefinitionBadge.tsx",
+    "interfaces": [
+      "MetricDefinitionBadgeProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/NotificationSoundCustomization.tsx",
     "interfaces": [],
     "aliases": [
       "SoundType",
       "AlertType"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/onboarding/step5Pipeline.ts",
+    "interfaces": [
+      "DeploymentRowLike",
+      "PipelineDerivation"
+    ],
+    "aliases": [
+      "StageState"
     ],
     "zodSchemas": []
   },
@@ -2709,6 +8222,28 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/opsconsole/model.tsx",
+    "interfaces": [
+      "NormalAlert",
+      "DecoratedAlert",
+      "AlertGroup",
+      "ClosedAlertRow"
+    ],
+    "aliases": [
+      "Severity",
+      "AlertSource"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/orchestration/WorkflowGraphCanvas.tsx",
+    "interfaces": [
+      "WorkflowGraphCanvasProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/orchestration/workflowTypes.ts",
     "interfaces": [
       "StudioStep",
@@ -2716,8 +8251,189 @@
       "StudioDef"
     ],
     "aliases": [
-      "StepKind"
+      "StepKind",
+      "OnPreconditionFail"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/ConfirmDeleteDialog.tsx",
+    "interfaces": [
+      "ConfirmDeleteDialogProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/ConfirmWithReason.tsx",
+    "interfaces": [
+      "ConfirmWithReasonProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/ConnectionChip.tsx",
+    "interfaces": [
+      "ConnectionChipProps"
+    ],
+    "aliases": [
+      "ConnectionState"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/DensityProvider.tsx",
+    "interfaces": [
+      "DensityClasses"
+    ],
+    "aliases": [
+      "Density"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/EntityPicker.tsx",
+    "interfaces": [
+      "EntityOption",
+      "EntityPickerProps",
+      "EntitySelectProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/Heading.tsx",
+    "interfaces": [
+      "HeadingProps",
+      "TextProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/ImportExportBar.tsx",
+    "interfaces": [
+      "ImportResultSummary",
+      "ImportExportBarProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/isaStateBadges.tsx",
+    "interfaces": [],
+    "aliases": [
+      "SemanticTone"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/MetricCard.tsx",
+    "interfaces": [
+      "MetricCardProps"
+    ],
+    "aliases": [
+      "MetricTone"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/PageContainer.tsx",
+    "interfaces": [
+      "PageContainerProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/PageHeader.tsx",
+    "interfaces": [
+      "BreadcrumbCrumb",
+      "PageHeaderProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/RadialGauge.tsx",
+    "interfaces": [
+      "RadialGaugeProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/ScopeFilterBar.tsx",
+    "interfaces": [
+      "ScopeValues",
+      "ScopeFilterBarProps"
+    ],
+    "aliases": [
+      "ScopeControl"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/SectionCard.tsx",
+    "interfaces": [
+      "SectionCardProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/Sparkline.tsx",
+    "interfaces": [
+      "SparkPoint",
+      "SparklineProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/StatChip.tsx",
+    "interfaces": [
+      "StatChipProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/StatusBadge.tsx",
+    "interfaces": [
+      "StatusMapEntry",
+      "StatusBadgeProps"
+    ],
+    "aliases": [
+      "BadgeVariant"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/ThemedCharts.tsx",
+    "interfaces": [
+      "ChartSeries",
+      "BaseChartProps",
+      "ThemedPieChartProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/tokens.ts",
+    "interfaces": [],
+    "aliases": [
+      "Tone"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/ToolTile.tsx",
+    "interfaces": [
+      "ToolTileProps"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -2729,11 +8445,234 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/ProductDefectHeatmap.tsx",
+    "interfaces": [
+      "ProductDefectHeatmapScope"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/productModels/batchSuggestLogic.ts",
+    "interfaces": [
+      "BatchSuggestItem",
+      "BatchPartition",
+      "AdvisorRecommendationLike",
+      "SubmitOutcome",
+      "RunCancellableBatchSubmitOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/productModels/pendingSuggestionLogic.ts",
+    "interfaces": [
+      "DecideGateInput",
+      "DecideGateResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/productModels/resolveAppliedThreshold.ts",
+    "interfaces": [
+      "AppliedThreshold",
+      "CurrentPointSnapshot",
+      "ResolveAppliedThresholdInput",
+      "ResolvedAppliedThreshold"
+    ],
+    "aliases": [
+      "AppliedThresholdToast"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/productModels/types.ts",
+    "interfaces": [
+      "MeasurementPoint",
+      "ProductModel"
+    ],
+    "aliases": [
+      "RouterOutputs",
+      "ToleranceMode",
+      "MaterialCondition"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/productOnboarding/types.ts",
+    "interfaces": [
+      "StepMeta",
+      "ManualStepMark",
+      "OnboardingReadinessInput",
+      "OnboardingReadiness"
+    ],
+    "aliases": [
+      "StepStatus",
+      "OnboardingStepState"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/products/PointCriteriaEditor.tsx",
+    "interfaces": [],
+    "aliases": [
+      "PointCriteriaItem"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/products/PointTemplateDialog.tsx",
+    "interfaces": [
+      "PointTemplateRow"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/products/ProductReadinessPanel.tsx",
+    "interfaces": [
+      "ReadinessItem",
+      "ReadinessData"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/products/ProductVariantsTab.tsx",
+    "interfaces": [
+      "ProductVariantsTabProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/programming/flowHistory.ts",
+    "interfaces": [
+      "FlowHistory"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/programming/IrDiffPanel.tsx",
+    "interfaces": [],
+    "aliases": [
+      "SavedFlowRow"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/programming/IrGraphCanvas.tsx",
+    "interfaces": [
+      "IrGraphCanvasProps"
+    ],
+    "aliases": [
+      "GraphDiagnostic"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/programming/IrMergePanel.tsx",
+    "interfaces": [],
+    "aliases": [
+      "IrProjectRow"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/programming/irTree.ts",
+    "interfaces": [],
+    "aliases": [
+      "NodeUi",
+      "Pose",
+      "CompareOp",
+      "SignalCondition",
+      "ExprBinOp",
+      "Expr",
+      "NumericOrExpr",
+      "MoveLinearBlock",
+      "MoveJointBlock",
+      "GripBlock",
+      "ReleaseBlock",
+      "SetOutputBlock",
+      "WaitBlock",
+      "IfConditionBlock",
+      "LoopBlock",
+      "SetVariableBlock",
+      "CounterBlock",
+      "WaitUntilBlock",
+      "SetAnalogBlock",
+      "PidControlBlock",
+      "CallArg",
+      "CallBlock",
+      "IrBlock",
+      "BlockType",
+      "FbParamKind",
+      "FbParamType",
+      "FbParam",
+      "FunctionBlockDef",
+      "TargetDeviceType",
+      "Flow",
+      "Slot"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/programming/PouCanvas.tsx",
+    "interfaces": [
+      "PouCanvasProps"
+    ],
+    "aliases": [
+      "PouCanvasDiag"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/programming/ProgrammingCopilotPanel.tsx",
+    "interfaces": [
+      "CopilotSeed",
+      "ProgrammingCopilotPanelProps"
+    ],
+    "aliases": [
+      "CopilotKind",
+      "CopilotMode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/QualityAIInsightCard.tsx",
+    "interfaces": [
+      "QualityAIInsightCardProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/QuickIssueReport.tsx",
     "interfaces": [
       "QuickIssueReportProps"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/RealtimeBadge.tsx",
+    "interfaces": [],
+    "aliases": [
+      "RealtimeMode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/RelatedViews.tsx",
+    "interfaces": [
+      "RelatedViewLink",
+      "RelatedViewsProps"
+    ],
+    "aliases": [
+      "RelatedPageId"
+    ],
     "zodSchemas": []
   },
   {
@@ -2745,10 +8684,53 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/RepairAISummary.tsx",
+    "interfaces": [
+      "RepairAISummaryProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/ReportExportButton.tsx",
     "interfaces": [
       "ReportSection",
+      "ReportScope",
       "ReportExportConfig"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/reportPagination.ts",
+    "interfaces": [
+      "PaginationBlock",
+      "AtomicPlacement",
+      "TableSlicePlacement",
+      "PaginatedPage",
+      "PaginateOptions"
+    ],
+    "aliases": [
+      "BlockKind",
+      "Placement"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/reportPrintView.tsx",
+    "interfaces": [
+      "PrintChartSpec",
+      "CapturePrintChartsOptions",
+      "NormalizedCaptureOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/RoleTileGrid.tsx",
+    "interfaces": [
+      "RoleTile",
+      "RoleTileGridProps"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -2757,6 +8739,49 @@
     "file": "client/src/components/RouteGuard.tsx",
     "interfaces": [
       "RouteGuardProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/ShiftHandoverDialog.tsx",
+    "interfaces": [
+      "ShiftHandoverDialogProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/traceability/genealogyAggregate.ts",
+    "interfaces": [
+      "ChainRow",
+      "StationHit",
+      "MergeHit",
+      "SerialSummary",
+      "ContainerRollup",
+      "LotAggregate",
+      "AffectedScope"
+    ],
+    "aliases": [
+      "Verdict",
+      "LotType"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/traceability/savedSearches.ts",
+    "interfaces": [
+      "SavedSearch"
+    ],
+    "aliases": [
+      "ForwardMode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin/ArticulatedRobot.tsx",
+    "interfaces": [
+      "ColorSource"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -2796,6 +8821,49 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/workspace/ContextDrawer.tsx",
+    "interfaces": [
+      "ContextDrawerProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/workspace/HubLauncher.tsx",
+    "interfaces": [
+      "HubTool",
+      "HubCategory",
+      "HubLauncherProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/workspace/TabbedHub.tsx",
+    "interfaces": [
+      "TabbedHubTab",
+      "TabbedHubProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/workspace/WorkspaceShell.tsx",
+    "interfaces": [
+      "WorkspaceShellProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/config/brand.ts",
+    "interfaces": [
+      "Brand"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/constants/machineTypes.ts",
     "interfaces": [],
     "aliases": [
@@ -2808,6 +8876,54 @@
     "interfaces": [
       "CopilotSelection",
       "CopilotPrefill"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/contexts/AssetScopeContext.tsx",
+    "interfaces": [
+      "AxisScope",
+      "AxisLabels"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/contexts/EngineeringContext.tsx",
+    "interfaces": [
+      "EngineeringSelection",
+      "EngineeringContextValue"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/contexts/ProgrammingCopilotContext.tsx",
+    "interfaces": [
+      "CopilotDiagnostic",
+      "CopilotBinding"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/contexts/SiteContext.tsx",
+    "interfaces": [
+      "SiteSummary",
+      "SiteContextValue",
+      "SiteProviderProps"
+    ],
+    "aliases": [
+      "SiteScope"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/hooks/useActuationReadiness.ts",
+    "interfaces": [
+      "ActuationBlocker",
+      "ActuationReadiness"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -2830,10 +8946,38 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/hooks/useAppLauncherMode.ts",
+    "interfaces": [
+      "UseAppLauncherModeResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/hooks/useComposition.ts",
     "interfaces": [
       "UseCompositionReturn",
       "UseCompositionOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/hooks/useEcosystemEvents.ts",
+    "interfaces": [
+      "EcosystemScope",
+      "EcosystemEvent"
+    ],
+    "aliases": [
+      "EcosystemSeverity",
+      "EcosystemKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/hooks/useEngineeringStream.ts",
+    "interfaces": [
+      "EngineeringSample"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -2849,6 +8993,8 @@
   {
     "file": "client/src/hooks/useKbChatStream.ts",
     "interfaces": [
+      "ChatImageAttachment",
+      "KbVisionNote",
       "KbCitation",
       "KbStructured",
       "KbConversationTurn",
@@ -2860,7 +9006,9 @@
       "KbStreamRequest",
       "KbStreamCallbacks"
     ],
-    "aliases": [],
+    "aliases": [
+      "ChatImageError"
+    ],
     "zodSchemas": []
   },
   {
@@ -2871,6 +9019,25 @@
     "aliases": [
       "LicenseSystemState"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/hooks/useMachineTypes.ts",
+    "interfaces": [
+      "MachineTypeEntry",
+      "UseMachineTypesResult"
+    ],
+    "aliases": [
+      "DeviceClass"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/hooks/useNavMode.ts",
+    "interfaces": [
+      "UseNavModeResult"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -2886,6 +9053,14 @@
     "interfaces": [
       "PaginationState",
       "UsePaginationReturn"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/hooks/usePollingInterval.ts",
+    "interfaces": [
+      "VisibilityDocLike"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -2932,10 +9107,26 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/lib/aiReportExport.ts",
+    "interfaces": [],
+    "aliases": [
+      "AiReportTab"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/lib/aiRole.ts",
     "interfaces": [],
     "aliases": [
       "AiUserRole"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/alertConfidence.ts",
+    "interfaces": [],
+    "aliases": [
+      "ConfidenceBand"
     ],
     "zodSchemas": []
   },
@@ -2949,6 +9140,83 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/lib/andonBoard.ts",
+    "interfaces": [
+      "AndonBoardParams"
+    ],
+    "aliases": [
+      "TileStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/apps.ts",
+    "interfaces": [
+      "AppDescriptor"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/breadcrumbs.ts",
+    "interfaces": [
+      "Breadcrumb"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/canonicalStatusColor.ts",
+    "interfaces": [],
+    "aliases": [
+      "SemanticTone",
+      "CanonicalStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/congDoiMatKhau.ts",
+    "interfaces": [],
+    "aliases": [
+      "NguoiDungCuaCong"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/dashboardTemplateApply.ts",
+    "interfaces": [
+      "TemplateLayoutItem"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/domains.ts",
+    "interfaces": [
+      "DomainTile"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/engineeringDeepLink.ts",
+    "interfaces": [
+      "DeepLinkParams"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/errorCodes.ts",
+    "interfaces": [
+      "VramPreemptCommandForI18n",
+      "VramReleaseStaleCommandForI18n",
+      "VramRetryDeferredCommandForI18n"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/lib/exportUtils.ts",
     "interfaces": [
       "ExportData"
@@ -2957,12 +9225,30 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/lib/kinematics.ts",
+    "interfaces": [
+      "KinematicJoint",
+      "KinematicModel",
+      "LinkPose"
+    ],
+    "aliases": [
+      "Vec3",
+      "Mat4",
+      "JointType"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/lib/navigation.tsx",
     "interfaces": [
       "NavItem",
       "NavGroup"
     ],
-    "aliases": [],
+    "aliases": [
+      "NavTier",
+      "NavMode",
+      "L2Entry"
+    ],
     "zodSchemas": []
   },
   {
@@ -2982,6 +9268,165 @@
       "FlushResult"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/reportsData.ts",
+    "interfaces": [
+      "MachineComparisonRow",
+      "TopBottomMachines",
+      "FactoryComparisonRow"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/reportSections.ts",
+    "interfaces": [
+      "StationFilterOpts",
+      "FactoryAggRow",
+      "ProductionSectionsInput",
+      "StationSectionsInput"
+    ],
+    "aliases": [
+      "ReportScopeMeta",
+      "ReportTFn"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/resolveOklchColors.ts",
+    "interfaces": [
+      "ResolvePrintColorsOptions"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/restAuthError.ts",
+    "interfaces": [
+      "ThanLoiRest"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/serverReportExport.ts",
+    "interfaces": [
+      "ExportColumnSpec",
+      "ReportExportRequest"
+    ],
+    "aliases": [
+      "ExportFormat",
+      "ExportLanguage"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/severityCanonical.ts",
+    "interfaces": [
+      "SeverityMeta"
+    ],
+    "aliases": [
+      "CanonicalSeverity"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/stateVocabulary.ts",
+    "interfaces": [
+      "StateToken"
+    ],
+    "aliases": [
+      "StateFamily"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/unsStreamClient.ts",
+    "interfaces": [
+      "UnsClientSnapshot",
+      "UnsClientEvent",
+      "UnsStreamState",
+      "UnsSocketLike",
+      "UnsStreamOptions",
+      "UnsStreamController",
+      "UseUnsStreamOptions",
+      "UseUnsStreamResult"
+    ],
+    "aliases": [
+      "UnsAspect",
+      "UnsMinSeverity",
+      "UnsConn",
+      "UnsAction"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/vramCommandReach.ts",
+    "interfaces": [
+      "VramCommandReach"
+    ],
+    "aliases": [
+      "VramDeferRetryReachKind",
+      "VramCommandRole",
+      "CoBitQuyen"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/vramReadSurface.ts",
+    "interfaces": [
+      "VramReadSurfaceQuery"
+    ],
+    "aliases": [
+      "VramReadSurfaceKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/pages/alarmKpiEmptyState.ts",
+    "interfaces": [],
+    "aliases": [
+      "OccurrenceLogNotice"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/pages/ComponentShowcase.tsx",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "demoFormSchema"
+    ]
+  },
+  {
+    "file": "client/src/pages/machineWorkspace/MachineRail.tsx",
+    "interfaces": [
+      "MachineRailProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/pages/RfTestCellSim.tsx",
+    "interfaces": [
+      "RfMetric",
+      "DutRecord"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/pages/thresholdApprovalsBatch.ts",
+    "interfaces": [
+      "RawBatchItem",
+      "NormalizedBatchItem",
+      "BatchSummary"
+    ],
+    "aliases": [
+      "BatchResultCategory"
+    ],
     "zodSchemas": []
   },
   {
@@ -3005,6 +9450,33 @@
     "zodSchemas": []
   },
   {
+    "file": "shared/editions.ts",
+    "interfaces": [
+      "EditionDescriptor"
+    ],
+    "aliases": [
+      "EditionCode",
+      "InfraProfile",
+      "Topology"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "shared/masterDataIO.ts",
+    "interfaces": [
+      "MasterDataColumn",
+      "ImportRowError",
+      "ImportCellError",
+      "MasterDataRowDetail",
+      "MasterDataParseResult"
+    ],
+    "aliases": [
+      "MasterDataColumnType",
+      "MasterDataFormat"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "shared/module-registry.ts",
     "interfaces": [
       "ModuleFeature",
@@ -3016,8 +9488,38 @@
     "zodSchemas": []
   },
   {
+    "file": "shared/permissions.ts",
+    "interfaces": [],
+    "aliases": [
+      "PermissionModule"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "shared/plugin/manifest.ts",
+    "interfaces": [
+      "PluginPermissions",
+      "PluginManifest",
+      "ManifestValidation"
+    ],
+    "aliases": [
+      "PluginKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "shared/textSafety.ts",
+    "interfaces": [
+      "CatChuoiKetQua"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/ai.ts",
     "interfaces": [
+      "ModelStageHistoryEntry",
+      "AgentBranchCondition",
       "AgentPlanStep",
       "AgentPlan",
       "AgentStepResult"
@@ -3029,6 +9531,8 @@
       "InsertAnnotationHistory",
       "PredictiveAlert",
       "InsertPredictiveAlert",
+      "PredictiveAlertOccurrence",
+      "InsertPredictiveAlertOccurrence",
       "RootCauseAnalysis",
       "InsertRootCauseAnalysis",
       "AnnotationComparisonSession",
@@ -3051,8 +9555,12 @@
       "InsertTrainingBatchTagAssignment",
       "AiModel",
       "InsertAiModel",
+      "ModelStage",
       "ModelVersion",
       "InsertModelVersion",
+      "ModelCardRiskClass",
+      "AiModelCard",
+      "InsertAiModelCard",
       "InferenceResult",
       "InsertInferenceResult",
       "BatchInferenceJob",
@@ -3099,6 +9607,8 @@
       "InsertAiSpecialistSession",
       "AiSpecialistSessionStep",
       "InsertAiSpecialistSessionStep",
+      "AiSpecialistFeedback",
+      "InsertAiSpecialistFeedback",
       "AiAnomalyMemoryBankRow",
       "InsertAiAnomalyMemoryBankRow",
       "AiAnomalyProfile",
@@ -3108,7 +9618,26 @@
       "AiPendingAction",
       "InsertAiPendingAction",
       "AiAgentSession",
-      "InsertAiAgentSession"
+      "InsertAiAgentSession",
+      "AiGatewayMetric",
+      "InsertAiGatewayMetric",
+      "AiGatewayQuota",
+      "InsertAiGatewayQuota",
+      "AiLlmAuditRow",
+      "InsertAiLlmAudit",
+      "KbAnswerFeedback",
+      "InsertKbAnswerFeedback"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/aiEmbeddingHead.ts",
+    "interfaces": [
+      "EmbeddingDatasetSampleRow"
+    ],
+    "aliases": [
+      "AiEmbeddingDataset",
+      "InsertAiEmbeddingDataset"
     ],
     "zodSchemas": []
   },
@@ -3118,6 +9647,17 @@
     "aliases": [
       "AiInsight",
       "InsertAiInsight"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/aiLoop.ts",
+    "interfaces": [],
+    "aliases": [
+      "RobotBehaviorAnomaly",
+      "InsertRobotBehaviorAnomaly",
+      "ModelRollbackEvent",
+      "InsertModelRollbackEvent"
     ],
     "zodSchemas": []
   },
@@ -3146,9 +9686,31 @@
     "zodSchemas": []
   },
   {
+    "file": "drizzle/schema/aoiCommissioning.ts",
+    "interfaces": [],
+    "aliases": [
+      "AoiCommissioningRecord",
+      "InsertAoiCommissioningRecord"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/assetRegistry.ts",
+    "interfaces": [],
+    "aliases": [
+      "ConfigSnapshotEntityType",
+      "ConfigSnapshotStatus",
+      "ConfigSnapshot",
+      "InsertConfigSnapshot"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/auth.ts",
     "interfaces": [],
     "aliases": [
+      "UserSecrets",
+      "InsertUserSecrets",
       "User",
       "InsertUser",
       "Permission",
@@ -3162,7 +9724,45 @@
       "UserCorporateAssignment",
       "InsertUserCorporateAssignment",
       "UserFactoryAssignment",
-      "InsertUserFactoryAssignment"
+      "InsertUserFactoryAssignment",
+      "TotpConsumedRow",
+      "InsertTotpConsumedRow"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/componentLibrary.ts",
+    "interfaces": [],
+    "aliases": [
+      "ComponentPackageFamily",
+      "ComponentPackage",
+      "InsertComponentPackage",
+      "ComponentFootprint",
+      "InsertComponentFootprint"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/contracts.ts",
+    "interfaces": [],
+    "aliases": [
+      "ContractCompatibility",
+      "ContractSchemaStatus",
+      "ContractSchema",
+      "InsertContractSchema",
+      "ContractQuarantineSource",
+      "ContractQuarantineStatus",
+      "ContractQuarantine",
+      "InsertContractQuarantine"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/controlAudit.ts",
+    "interfaces": [],
+    "aliases": [
+      "ControlAuditLog",
+      "InsertControlAuditLog"
     ],
     "zodSchemas": []
   },
@@ -3179,7 +9779,36 @@
       "DashboardTemplate",
       "InsertDashboardTemplate",
       "WidgetStylePreset",
-      "InsertWidgetStylePreset"
+      "InsertWidgetStylePreset",
+      "RoleDashboardDefault",
+      "InsertRoleDashboardDefault"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/defectDisposition.ts",
+    "interfaces": [],
+    "aliases": [
+      "DefectDispositionType",
+      "DefectDispositionStatus",
+      "DefectDisposition",
+      "InsertDefectDisposition"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/ecn.ts",
+    "interfaces": [
+      "EcnImpactSummary"
+    ],
+    "aliases": [
+      "EcnChangeType",
+      "EcnStatus",
+      "EngineeringChange",
+      "InsertEngineeringChange",
+      "EcnItemAction",
+      "EngineeringChangeItem",
+      "InsertEngineeringChangeItem"
     ],
     "zodSchemas": []
   },
@@ -3189,6 +9818,129 @@
     "aliases": [
       "EdgeNode",
       "InsertEdgeNode"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/enterpriseIntegration.ts",
+    "interfaces": [],
+    "aliases": [
+      "EnterpriseSystem",
+      "EnterpriseIdMap",
+      "InsertEnterpriseIdMap",
+      "EnterpriseSyncLog",
+      "InsertEnterpriseSyncLog"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/equipmentIntegration.ts",
+    "interfaces": [],
+    "aliases": [
+      "RecipeLoadLog",
+      "InsertRecipeLoadLog"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/equipmentStandards.ts",
+    "interfaces": [
+      "DeviceTypeAttribute"
+    ],
+    "aliases": [
+      "DeviceType",
+      "InsertDeviceType",
+      "AlarmTaxonomyEntry",
+      "InsertAlarmTaxonomyEntry",
+      "DeviceTypeChangeRequest",
+      "InsertDeviceTypeChangeRequest",
+      "MasterAlarm",
+      "InsertMasterAlarm"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/erpOauth.ts",
+    "interfaces": [],
+    "aliases": [
+      "ErpOauthClient",
+      "InsertErpOauthClient"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/factoryZones.ts",
+    "interfaces": [],
+    "aliases": [
+      "ZonePoint",
+      "FactoryZone",
+      "InsertFactoryZone"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/federation.ts",
+    "interfaces": [
+      "SiteDetailRow",
+      "SiteAlertEntry",
+      "SiteAlertRollup"
+    ],
+    "aliases": [
+      "Site",
+      "InsertSite",
+      "SiteStatus",
+      "SiteAuthType",
+      "RollupWindow",
+      "RollupSource",
+      "SiteKpiRollup",
+      "InsertSiteKpiRollup",
+      "RollupCategory",
+      "SyncStatus",
+      "SiteSyncLog",
+      "InsertSiteSyncLog"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/fieldHealth.ts",
+    "interfaces": [],
+    "aliases": [
+      "FieldDeviceHealth",
+      "InsertFieldDeviceHealth"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/fleet.ts",
+    "interfaces": [],
+    "aliases": [
+      "Task",
+      "InsertTask",
+      "Zone",
+      "InsertZone",
+      "ZoneReservation",
+      "InsertZoneReservation"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/fleetResource.ts",
+    "interfaces": [],
+    "aliases": [
+      "OperationCode",
+      "InsertOperationCode",
+      "OperationProgramMap",
+      "InsertOperationProgramMap",
+      "ProgramVariant",
+      "InsertProgramVariant",
+      "SharedResource",
+      "InsertSharedResource",
+      "ResourceReservation",
+      "InsertResourceReservation",
+      "ChargerStation",
+      "InsertChargerStation",
+      "BatteryChargingPlan",
+      "InsertBatteryChargingPlan"
     ],
     "zodSchemas": []
   },
@@ -3210,10 +9962,20 @@
     "zodSchemas": []
   },
   {
+    "file": "drizzle/schema/goldenSample.ts",
+    "interfaces": [],
+    "aliases": [
+      "GoldenSampleReference",
+      "InsertGoldenSampleReference"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/hierarchy.ts",
     "interfaces": [],
     "aliases": [
       "MachineCapabilities",
+      "CapabilitiesValidationStamp",
       "MachineLayout",
       "Corporate",
       "InsertCorporate",
@@ -3225,10 +9987,22 @@
       "InsertProductionLine",
       "Station",
       "InsertStation",
+      "MachineLifecycleStatus",
       "Machine",
       "InsertMachine",
       "Workstation",
       "InsertWorkstation"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/hotFolder.ts",
+    "interfaces": [],
+    "aliases": [
+      "HotFolderConfig",
+      "InsertHotFolderConfig",
+      "HotFolderFile",
+      "InsertHotFolderFile"
     ],
     "zodSchemas": []
   },
@@ -3238,6 +10012,8 @@
     "aliases": [
       "ProductInspection",
       "InsertProductInspection",
+      "InspectionIdempotencyKey",
+      "InsertInspectionIdempotencyKey",
       "MeasurementResult",
       "InsertMeasurementResult",
       "InspectionPackage",
@@ -3275,6 +10051,17 @@
     "zodSchemas": []
   },
   {
+    "file": "drizzle/schema/integrationOutbox.ts",
+    "interfaces": [],
+    "aliases": [
+      "IntegrationOutbox",
+      "InsertIntegrationOutbox",
+      "IntegrationInboundIdempotency",
+      "InsertIntegrationInboundIdempotency"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/interlock.ts",
     "interfaces": [],
     "aliases": [
@@ -3291,6 +10078,19 @@
     "aliases": [
       "KbChunk",
       "InsertKbChunk"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/kbStudio.ts",
+    "interfaces": [],
+    "aliases": [
+      "KbCorpus",
+      "InsertKbCorpus",
+      "KbIngestJob",
+      "InsertKbIngestJob",
+      "KbStudioChunk",
+      "InsertKbStudioChunk"
     ],
     "zodSchemas": []
   },
@@ -3327,6 +10127,36 @@
     "zodSchemas": []
   },
   {
+    "file": "drizzle/schema/lineController.ts",
+    "interfaces": [],
+    "aliases": [
+      "LineControllerState",
+      "LineStateRow",
+      "InsertLineStateRow",
+      "LineStateTransitionRow",
+      "InsertLineStateTransitionRow",
+      "RecipeSetStatus",
+      "RecipeSetRow",
+      "InsertRecipeSetRow",
+      "RecipeSetItemRow",
+      "InsertRecipeSetItemRow"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/lineMaterials.ts",
+    "interfaces": [],
+    "aliases": [
+      "FeederSetupVerification",
+      "InsertFeederSetupVerification",
+      "MsdExposureLog",
+      "InsertMsdExposureLog",
+      "StencilUsageLog",
+      "InsertStencilUsageLog"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/machine.ts",
     "interfaces": [],
     "aliases": [
@@ -3338,6 +10168,24 @@
       "InsertManualMachineConnection",
       "MachineHealthHistory",
       "InsertMachineHealthHistory"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/machineConfigState.ts",
+    "interfaces": [],
+    "aliases": [
+      "MachineConfigState",
+      "InsertMachineConfigState"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/maintenanceParts.ts",
+    "interfaces": [],
+    "aliases": [
+      "WorkOrderPart",
+      "InsertWorkOrderPart"
     ],
     "zodSchemas": []
   },
@@ -3367,12 +10215,23 @@
       "InsertPlantCalendar",
       "CalendarDay",
       "InsertCalendarDay",
+      "CalendarDayShift",
+      "InsertCalendarDayShift",
       "Warehouse",
       "InsertWarehouse",
       "StorageLocation",
       "InsertStorageLocation",
       "InventoryBalance",
       "InsertInventoryBalance"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/measurementCorrections.ts",
+    "interfaces": [],
+    "aliases": [
+      "MeasurementCorrection",
+      "InsertMeasurementCorrection"
     ],
     "zodSchemas": []
   },
@@ -3427,6 +10286,8 @@
       "InsertMqttAlertRule",
       "MqttAlertHistory",
       "InsertMqttAlertHistory",
+      "AlertEscalationRule",
+      "InsertAlertEscalationRule",
       "MqttMessageHistory",
       "InsertMqttMessageHistory",
       "MqttClientProfile",
@@ -3463,6 +10324,30 @@
     "zodSchemas": []
   },
   {
+    "file": "drizzle/schema/ncr.ts",
+    "interfaces": [],
+    "aliases": [
+      "NcrSource",
+      "NcrDisposition",
+      "NcrStatus",
+      "NonconformanceReport",
+      "InsertNonconformanceReport",
+      "GoldenRevalidationStatus",
+      "GoldenRevalidationFlag",
+      "InsertGoldenRevalidationFlag"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/ntfClassifier.ts",
+    "interfaces": [],
+    "aliases": [
+      "NtfClassifierModel",
+      "InsertNtfClassifierModel"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/oee.ts",
     "interfaces": [],
     "aliases": [
@@ -3476,11 +10361,22 @@
     "zodSchemas": []
   },
   {
+    "file": "drizzle/schema/operatorBadge.ts",
+    "interfaces": [],
+    "aliases": [
+      "OperatorBadge",
+      "InsertOperatorBadge"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/orchestration.ts",
     "interfaces": [],
     "aliases": [
       "OrchestrationWorkflow",
       "InsertOrchestrationWorkflow",
+      "OrchestrationWorkflowVersion",
+      "InsertOrchestrationWorkflowVersion",
       "OrchestrationRun",
       "InsertOrchestrationRun",
       "OrchestrationRunStep",
@@ -3489,8 +10385,19 @@
     "zodSchemas": []
   },
   {
-    "file": "drizzle/schema/ot.ts",
+    "file": "drizzle/schema/orderLifecycle.ts",
     "interfaces": [],
+    "aliases": [
+      "OrderStateTransition",
+      "InsertOrderStateTransition"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/ot.ts",
+    "interfaces": [
+      "UnsTagTransform"
+    ],
     "aliases": [
       "DeviceAdapter",
       "InsertDeviceAdapter",
@@ -3502,8 +10409,44 @@
       "InsertMachineRecipe",
       "RecipeDeployment",
       "InsertRecipeDeployment",
+      "ChangeoverRequest",
+      "InsertChangeoverRequest",
       "CommandLog",
-      "InsertCommandLog"
+      "InsertCommandLog",
+      "CommissioningRecord",
+      "InsertCommissioningRecord",
+      "UnsTagMapping",
+      "InsertUnsTagMapping"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/parameterGuardrails.ts",
+    "interfaces": [],
+    "aliases": [
+      "ParameterGuardrailScope",
+      "ParameterChangeSource",
+      "ParameterVerifyStatus",
+      "ParameterGuardrail",
+      "InsertParameterGuardrail",
+      "ParameterChangeLogRow",
+      "InsertParameterChangeLog"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/policyStore.ts",
+    "interfaces": [
+      "PolicyConditionJson"
+    ],
+    "aliases": [
+      "PolicyDefinitionEffect",
+      "PolicyDefinitionStatus",
+      "PolicyDefinitionSource",
+      "PolicyDefinition",
+      "InsertPolicyDefinition",
+      "PolicyDecisionLogRow",
+      "InsertPolicyDecisionLogRow"
     ],
     "zodSchemas": []
   },
@@ -3512,7 +10455,22 @@
     "interfaces": [],
     "aliases": [
       "ProcessResult",
-      "InsertProcessResult"
+      "InsertProcessResult",
+      "ProcessIdempotencyKey",
+      "InsertProcessIdempotencyKey",
+      "ProcessStepType",
+      "InsertProcessStepType",
+      "ProcessSpecLimit",
+      "InsertProcessSpecLimit"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/processMart.ts",
+    "interfaces": [],
+    "aliases": [
+      "ProcessResultDaily",
+      "InsertProcessResultDaily"
     ],
     "zodSchemas": []
   },
@@ -3528,12 +10486,18 @@
       "InsertMeasurementPointDef",
       "MeasurementPointVersion",
       "InsertMeasurementPointVersion",
+      "ProductVariant",
+      "InsertProductVariant",
+      "VariantPointOverride",
+      "InsertVariantPointOverride",
       "MpLightingProfile",
       "InsertMpLightingProfile",
       "MeasurementTypeCatalog",
       "InsertMeasurementTypeCatalog",
       "DefectCatalog",
       "InsertDefectCatalog",
+      "UnmatchedDefectCode",
+      "InsertUnmatchedDefectCode",
       "MeasurementInstrument",
       "InsertMeasurementInstrument",
       "InstrumentCalibration",
@@ -3568,6 +10532,8 @@
       "InsertMpSpcRolling",
       "ThresholdApproval",
       "InsertThresholdApproval",
+      "InspectionProgramRelease",
+      "InsertInspectionProgramRelease",
       "CadImportJob",
       "InsertCadImportJob",
       "CadImportCandidate",
@@ -3605,6 +10571,26 @@
     "zodSchemas": []
   },
   {
+    "file": "drizzle/schema/productOnboarding.ts",
+    "interfaces": [],
+    "aliases": [
+      "ProductOnboardingDraft",
+      "InsertProductOnboardingDraft"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/productPanel.ts",
+    "interfaces": [],
+    "aliases": [
+      "ProductPanelDef",
+      "InsertProductPanelDef",
+      "ProductPanelBoard",
+      "InsertProductPanelBoard"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/programming.ts",
     "interfaces": [],
     "aliases": [
@@ -3624,6 +10610,28 @@
     "zodSchemas": []
   },
   {
+    "file": "drizzle/schema/reportArtifact.ts",
+    "interfaces": [],
+    "aliases": [
+      "ReportArtifact",
+      "InsertReportArtifact"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/reportingMart.ts",
+    "interfaces": [],
+    "aliases": [
+      "DimShift",
+      "InsertDimShift",
+      "DimProduct",
+      "InsertDimProduct",
+      "FactInspectionHourly",
+      "InsertFactInspectionHourly"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/robot.ts",
     "interfaces": [],
     "aliases": [
@@ -3632,6 +10640,72 @@
       "RobotTelemetry",
       "RobotJob",
       "InsertRobotJob"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/routing.ts",
+    "interfaces": [],
+    "aliases": [
+      "RoutingStatus",
+      "RoutingMaster",
+      "InsertRoutingMaster",
+      "RoutingStep",
+      "InsertRoutingStep"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/rulFailureMode.ts",
+    "interfaces": [],
+    "aliases": [
+      "RulMethod",
+      "RulEstimateRow",
+      "InsertRulEstimate",
+      "FailureEventSource",
+      "FailureEventRow",
+      "InsertFailureEvent"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/safetyVision.ts",
+    "interfaces": [
+      "SafetyPlcTagRef",
+      "SafetyPlcStatusMap",
+      "SafetyPlcStatusSnapshot"
+    ],
+    "aliases": [
+      "CameraCalibration",
+      "InsertCameraCalibration",
+      "SafetyPlcBackend",
+      "SafetyPlcVendor",
+      "SafetyPlcConfig",
+      "InsertSafetyPlcConfig"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/safetyWorkforce.ts",
+    "interfaces": [],
+    "aliases": [
+      "OperatorAssignment",
+      "InsertOperatorAssignment",
+      "CollaborationSession",
+      "InsertCollaborationSession",
+      "SafetyEvent",
+      "InsertSafetyEvent"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/safetyZones.ts",
+    "interfaces": [
+      "ZoneGeometry"
+    ],
+    "aliases": [
+      "SafetyZone",
+      "InsertSafetyZone"
     ],
     "zodSchemas": []
   },
@@ -3647,6 +10721,36 @@
       "InsertMachineCapacity",
       "MachineSensorReading",
       "InsertMachineSensorReading"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/security.ts",
+    "interfaces": [],
+    "aliases": [
+      "SecurityCaMetadata",
+      "InsertSecurityCaMetadata",
+      "DeviceCertificate",
+      "InsertDeviceCertificate",
+      "ServiceIdentity",
+      "InsertServiceIdentity"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/sop.ts",
+    "interfaces": [
+      "SopStepConfirmation"
+    ],
+    "aliases": [
+      "SopStatus",
+      "SopExecutionStatus",
+      "SopRow",
+      "InsertSopRow",
+      "SopStepRow",
+      "InsertSopStepRow",
+      "SopExecutionRow",
+      "InsertSopExecutionRow"
     ],
     "zodSchemas": []
   },
@@ -3674,6 +10778,15 @@
     "zodSchemas": []
   },
   {
+    "file": "drizzle/schema/synapseObservability.ts",
+    "interfaces": [],
+    "aliases": [
+      "DecisionTraceRow",
+      "OrchestrationRunEventRow"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/system.ts",
     "interfaces": [],
     "aliases": [
@@ -3685,6 +10798,8 @@
       "InsertScheduledReport",
       "ScheduledReportLog",
       "InsertScheduledReportLog",
+      "ReportDelivery",
+      "InsertReportDelivery",
       "SmtpConfig",
       "InsertSmtpConfig",
       "SystemConfig",
@@ -3697,6 +10812,35 @@
       "InsertUserNotificationPreference",
       "ReportTemplate",
       "InsertReportTemplate"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/twin.ts",
+    "interfaces": [],
+    "aliases": [
+      "Equipment3dModel",
+      "InsertEquipment3dModel"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/twinFidelity.ts",
+    "interfaces": [],
+    "aliases": [
+      "SimulationRunMode",
+      "SimulationRunStatus"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/vram.ts",
+    "interfaces": [],
+    "aliases": [
+      "VramEvent",
+      "InsertVramEvent",
+      "VramLeaseRow",
+      "InsertVramLeaseRow"
     ],
     "zodSchemas": []
   }

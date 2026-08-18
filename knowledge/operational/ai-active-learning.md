@@ -1,8 +1,7 @@
 ---
 route: /ai-active-learning
 permission: null
-role:
-  - admin
+role: []
 screenVi: Học Tích Cực
 screenEn: Active Learning
 inSidebar: true
@@ -23,7 +22,7 @@ Màn hình `/ai-active-learning` (Active Learning).
 - English: AI › Active Learning
 
 ## Quyền yêu cầu
-- Vai trò bắt buộc: admin
+- Không giới hạn quyền cụ thể (mọi người dùng đã đăng nhập).
 - Module: `MOD_AI` (OPTIONAL — cần license).
 
 ## Endpoint liên quan

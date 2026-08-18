@@ -1,8 +1,7 @@
 ---
 route: /mask-annotation
 permission: null
-role:
-  - admin
+role: []
 screenVi: Gán Nhãn Mask
 screenEn: Mask Labeling
 inSidebar: true
@@ -23,6 +22,6 @@ Màn hình `/mask-annotation` (Mask Labeling).
 - English: AI › Mask Labeling
 
 ## Quyền yêu cầu
-- Vai trò bắt buộc: admin
+- Không giới hạn quyền cụ thể (mọi người dùng đã đăng nhập).
 - Module: `MOD_AI` (OPTIONAL — cần license).
 

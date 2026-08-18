@@ -25,5 +25,5 @@ Threshold approval review queue (approve/reject/withdraw)
 - Permission: `settings_alerts`
 
 ## Endpoint liên quan
-- Router tRPC: `thresholdApprovalRouter` (server/routers/thresholdApprovalRouter.ts, ~8 thủ tục query/mutation).
+- Router tRPC: `thresholdApprovalRouter` (server/routers/thresholdApprovalRouter.ts, ~9 thủ tục query/mutation).
 

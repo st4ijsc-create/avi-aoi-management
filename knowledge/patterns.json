@@ -1,13 +1,13 @@
 {
-  "protectedProcedureCount": 1216,
-  "publicProcedureCount": 69,
-  "zodObjectCount": 1425,
-  "totalSourceFiles": 1226,
-  "totalRouterFiles": 149,
-  "totalServiceFiles": 330,
-  "totalDocsFiles": 103,
-  "totalRoutes": 144,
-  "totalNavGroups": 18,
-  "totalSchemaTables": 237,
-  "totalModules": 12
+  "protectedProcedureCount": 1879,
+  "publicProcedureCount": 81,
+  "zodObjectCount": 2111,
+  "totalSourceFiles": 3040,
+  "totalRouterFiles": 328,
+  "totalServiceFiles": 1177,
+  "totalDocsFiles": 257,
+  "totalRoutes": 220,
+  "totalNavGroups": 10,
+  "totalSchemaTables": 356,
+  "totalModules": 13
 }
