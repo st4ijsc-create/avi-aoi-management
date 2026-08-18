@@ -56,10 +56,11 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 
 **Một mục ở đây, và chỉ một: mục 9.** Nó mang `🔴 CHỜ ANH` ở bảng phán quyết trên.
 
-**Cho tới 2026-08-18 phần này có năm mục — 8, 9, 10, 11, 12.** Chủ sở hữu đã quyết bốn
-trong số đó (10, 11 và 12 do chính chủ sở hữu; **8** do điều phối viên quyết theo uỷ
-quyền) và **hoãn** mục 9. Bốn mục ấy **không rời khỏi file**: chúng chuyển sang **Phần
-II**, chỗ dành cho một mục đã có phán quyết mà việc thì chưa làm.
+**Cho tới 2026-08-18 phần này có năm mục — 8, 9, 10, 11, 12.** Bốn trong số đó nay **đã
+được quyết**, và **ai quyết cái nào là một phần của hồ sơ, không được gộp lại**: mục
+**10, 11 và 12 do CHỦ SỞ HỮU**; mục **8 do ĐIỀU PHỐI VIÊN, theo uỷ quyền**. Mục 9 bị
+**hoãn**. Bốn mục đã quyết **không rời khỏi file**: chúng chuyển sang **Phần II**, chỗ
+dành cho một mục đã có phán quyết mà việc thì chưa làm.
 
 ⏸️ **Một lần hoãn không phải một phán quyết, và mục 9 ở lại đây vì thế.** Luật của file
 này đòi một **quyết định** ghi kèm ngày và người quyết; *"để lại sau cùng"* ghi **thứ
