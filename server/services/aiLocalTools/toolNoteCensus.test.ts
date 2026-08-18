@@ -145,6 +145,29 @@ const CENSUS: Record<string, XepLoai> = {
   NO_REQUESTS_CREATED: "chan",
   /** `writeHandlers/yield.ts` — hằng chữ THƯỜNG, không phải SCREAMING_SNAKE. Vẫn là 0 dữ liệu. */
   "Threshold not found": "chan",
+  // ── doc 78 PHA A (2026-08-18) — HỘP CÁT REPO (`repoReadTools.ts`) ──────────────────────────
+  /**
+   * ⚠⚠ CẢ TÁM MÃ DƯỚI ĐÂY LÀ `chan`, VÀ ĐÓ LÀ MỘT PHÉP ĐO, KHÔNG PHẢI MỘT PHẢN XẠ.
+   *
+   * Ba tool đọc repo trả `data` RỖNG ở mọi nhánh mang `note`: không tệp nào được mở, không mục nào
+   * được liệt kê, không dòng nào khớp. Để LLM diễn giải một trong tám ca ấy là mời nó **bịa nội
+   * dung một file** — lớp lỗi nguy hiểm nhất có thể có ở một tác nhân lập trình, vì bản vá bịa ra
+   * TRÔNG GIỐNG HỆT một bản vá thật.
+   *
+   * ⚠ `NO_MATCH` và `GREP_DEADLINE` là hai ca gần biên nhất — chúng nghe như "đã có câu trả lời:
+   * không có gì". Xếp `chan` vì `textSummary` của chúng phát biểu một sự thật mà **văn vẻ hoá sẽ
+   * làm hỏng**: *"đã quét N tệp"* và *"đây là BẢN CẮT vì hết giờ, KHÔNG phải kết luận rằng mẫu này
+   * không có trong repo"*. Một model diễn giải lại hai câu ấy sẽ rất dễ rút gọn thành *"không có
+   * trong repo"* — tức biến một phép đo BỘ PHẬN thành một khẳng định TOÀN THỂ.
+   */
+  DENIED_SECRET: "chan",
+  DENIED_DIR: "chan",
+  DENIED_EXT: "chan",
+  BUDGET_EXCEEDED: "chan",
+  NOT_A_DIRECTORY: "chan",
+  NO_MATCH: "chan",
+  GREP_DEADLINE: "chan",
+  INVALID_PATTERN: "chan",
 };
 
 describe("§1 — mọi mã `note` trong mã nguồn đều đã được PHÁN QUYẾT", () => {

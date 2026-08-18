@@ -80,6 +80,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'settings', moduleName: 'settings_smtp', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'settings', moduleName: 'settings_notification_sounds', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_cache', canView: true, canCreate: false, canEdit: true, canDelete: true, canExport: false },
+    // ★★★ doc 78 PHA A — bit "AI đọc mã nguồn". Với `admin` hàng này là để BẢNG QUYỀN của giao
+    // diện đủ mục; cổng thì không cần nó (`checkPermission` short-circuit `true` cho vai admin khi
+    // chưa bật scoped-admin). VIEW-ONLY, cùng lý do đã ghi ở khối `engineer`.
+    { category: 'settings', moduleName: 'ai_repo_read', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Admin
     { category: 'admin', moduleName: 'admin_users', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'admin', moduleName: 'admin_permissions', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
@@ -294,6 +298,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'settings', moduleName: 'settings_measurement_points', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_products', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // ★★★ doc 78 PHA A (2026-08-18) — trợ lý AI ĐỌC mã nguồn nền tảng (`read_file`/`list_files`/
+    // `grep_repo`). VIEW-ONLY: pha A không ghi gì; pha C (ghi tệp) sẽ xin `canEdit` RIÊNG, để
+    // "đọc được" và "ghi được" không bao giờ là cùng một bit. Backfill: mig 0330.
+    { category: 'settings', moduleName: 'ai_repo_read', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Machine Monitoring
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
@@ -809,6 +817,9 @@ export const permissionsRouter = router({
         { category: 'settings', moduleName: 'settings_smtp', displayName: 'Cấu hình Email', description: 'Cấu hình SMTP, mẫu email thông báo' },
         { category: 'settings', moduleName: 'settings_notification_sounds', displayName: 'Âm thanh Thông báo', description: 'Tùy chỉnh âm thanh cảnh báo/thông báo' },
         { category: 'settings', moduleName: 'settings_cache', displayName: 'Quản lý Cache', description: 'Xem thống kê cache, xóa cache' },
+        // doc 78 PHA A — bit này phải HIỆN trong bảng phân quyền, nếu không quản trị viên không có
+        // đường cấp/thu hồi nó cho một người cụ thể (và bit sẽ chỉ đổi được bằng migration).
+        { category: 'settings', moduleName: 'ai_repo_read', displayName: 'AI đọc mã nguồn', description: 'Cho trợ lý AI đọc/liệt kê/tìm trong mã nguồn nền tảng (read_file, list_files, grep_repo) — CHỈ ĐỌC, trong hộp cát repo, cấm .env và khoá bí mật' },
 
         // ======================== ADMIN ========================
         { category: 'admin', moduleName: 'admin_users', displayName: 'QL Người dùng', description: 'Tạo/sửa/xóa tài khoản người dùng' },

@@ -23,6 +23,10 @@ import "./readToolsP2d";
 // file write, HITL). Safe adapters + confined workspace; no device, no DB writes.
 import "./readToolsProgramming";
 import "./writeHandlers/programmingFile";
+// doc 78 PHA A — READ tool cho HỘP CÁT REPO (`read_file`/`list_files`/`grep_repo`). Đây là lượt
+// ĐẢO có kiểm soát quyết định "repoContextService KHÔNG đăng ký vào toolRegistry": nay LLM tự chọn
+// được tệp, nhưng chỉ trong hộp cát của `repoSandbox.ts` và sau bit `ai_repo_read`.
+import "./repoReadTools";
 // Pha 4 Task 4 — VRAM broker state (READ-ONLY). Đây là NGƯỜI ĐỌC THẬT của `buildVramAgentState()`
 // cho AI Agent: Agent repo này đi qua toolRegistry, KHÔNG qua tRPC. Ba lệnh phá huỷ CỐ Ý không
 // đăng ký ở đây — xem khối đầu `vramTools.ts`.

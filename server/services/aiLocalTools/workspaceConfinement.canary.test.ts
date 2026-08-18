@@ -134,12 +134,25 @@ describe("★★★ I-3 — KHÔNG byte nào của một inode nlink>1 rời kh�
   });
 
   it("★★ BẢN KIỂM ĐẾM — đúng những tool đã biết nhận `path`; một tool MỚI phải được nhìn thấy một lần", () => {
+    /**
+     * ★ 2026-08-18 (doc 78 PHA A) — **BA CÁI TÊN MỚI, VÀ CHÚNG ĐƯỢC THÊM SAU KHI ĐỌC LƯỚI NÀY.**
+     *
+     * `read_file`/`list_files`/`grep_repo` (`repoReadTools.ts`) nhận `path` **cố ý**: đặt tên ô là
+     * `path` chính là cách chúng RƠI VÀO lưới này. Đặt tên khác (`file`, `duongDan`) để tránh lưới
+     * là một lượt lách, và lách một lưới an ninh của chính mình là hình dạng tệ nhất trong repo này.
+     *
+     * ⚠ Ba tool ấy dùng gốc hộp cát KHÁC (`repoSandbox.gocHopCat()` = thư mục repo, không phải
+     * `PROG_WORKSPACE_DIR`), nên `looks-fine.st` không tồn tại với chúng và ca canary ở trên xanh
+     * vì **hai lý do độc lập**: đuôi `.st` ngoài danh sách TRẮNG **và** tệp không có ở gốc repo.
+     * Ca canary RIÊNG cho hộp cát repo — với hard link/symlink dựng NGAY TRONG repo — nằm ở
+     * `repoSandbox.census.test.ts`; lưới này KHÔNG chứng minh gì về gốc ấy.
+     */
     const ten = listTools().filter(nhanThamSoPath).map((t) => t.name).sort();
     expect(
       ten,
       "một tool MỚI nhận `path` là một CỬA MỚI ra đĩa. Đọc lưới này, chứng minh nó đi qua cửa " +
         "chung, rồi mới thêm tên vào đây.",
-    ).toEqual(["read_project_file", "write_project_file"]);
+    ).toEqual(["grep_repo", "list_files", "read_file", "read_project_file", "write_project_file"]);
   });
 
   it("★★★ ĐỐI CHỨNG DƯƠNG — file thường trong workspace VẪN đi qua được cả hai cửa", async () => {

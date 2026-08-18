@@ -5,9 +5,38 @@
  * chỉ được nhét vào prompt dưới dạng TÊN file, nên agent tư vấn mù. Service này
  * nạp nội dung THẬT (có giới hạn), file phụ thuộc (code-graph.json) và mảnh RAG.
  *
- * AN TOÀN: chỉ-đọc, KHÔNG có bất kỳ đường ghi nào; KHÔNG đăng ký vào toolRegistry
- * nên LLM không thể tự gọi với tham số tuỳ ý — chỉ service gọi với danh sách file
- * do NGƯỜI DÙNG nhập. Bí mật bị chặn 2 lớp: theo tên file + redactSecretsOnly().
+ * AN TOÀN: chỉ-đọc, KHÔNG có bất kỳ đường ghi nào. Bí mật bị chặn 2 lớp: theo tên file +
+ * redactSecretsOnly().
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐÍNH CHÍNH 2026-08-18 (doc 78 · PHA A) — LỜI KHAI CŨ Ở ĐÂY **NAY SAI**, VÀ ĐÂY LÀ CHỖ NÓ
+ *     ĐƯỢC SỬA CHỨ KHÔNG PHẢI CHỖ NÓ ĐƯỢC XOÁ.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Nguyên văn câu cũ: *"KHÔNG đăng ký vào toolRegistry nên LLM không thể tự gọi với tham số tuỳ ý —
+ * chỉ service gọi với danh sách file do NGƯỜI DÙNG nhập."*
+ *
+ * Câu ấy vẫn **đúng về CHÍNH MODULE NÀY** — `gatherRepoContext` hôm nay vẫn không phải một tool, và
+ * người gọi nó vẫn là `aiSpecialistAgentRouter` + `aiProgrammingCopilot`. Nhưng **KẾT LUẬN** mà nó
+ * ngụ ý — *"vì thế LLM không tự chọn được tệp để đọc"* — đã **hết đúng**: chủ dự án duyệt doc 78
+ * PHA A ngày 2026-08-18, và ba tool `read_file`/`list_files`/`grep_repo`
+ * (`server/services/aiLocalTools/repoReadTools.ts`) **đã đăng ký vào `toolRegistry`**. LLM nay tự
+ * chọn được tệp.
+ *
+ * ⚠ Để nguyên câu cũ là biến nó thành một **lời khai SAI trong mã an toàn** — nguy hiểm hơn không
+ *   có lời khai nào, vì người đọc sau sẽ tin rằng bề mặt "LLM tự chọn tệp" chưa tồn tại và sẽ không
+ *   đi tìm hàng rào của nó.
+ *
+ * ⚠ HAI ĐƯỜNG, HAI LUẬT — đừng nhầm chúng là một:
+ *   • ĐƯỜNG NÀY (`gatherRepoContext`): danh sách file do NGƯỜI DÙNG nhập; cấm theo tên/thư mục/đuôi
+ *     ngay trong file này (`classifyRepoPath`); trần byte theo tham số của người gọi.
+ *   • ĐƯỜNG TOOL (`repoSandbox.ts`): đường dẫn do **LLM** chọn; thêm cửa đĩa dùng chung
+ *     (`confineTargetUnder` + `readConfined`: realpath, `nlink > 1`, tầng fd chống TOCTOU), ngân
+ *     sách byte theo PHIÊN, và cổng RBAC `ai_repo_read/canView`.
+ *   Đường tool CHẶT HƠN ở mọi tầng, đúng như phải thế: nguồn của đường dẫn kém tin cậy hơn hẳn.
+ *
+ * ⚠ `classifyRepoPath` dưới đây **KHÔNG** phải cửa của đường tool và không được dùng làm cửa ấy:
+ *   nó là hàm THUẦN, không biết gì về symlink, hard link hay realpath — ba thứ mà một đường dẫn do
+ *   model chọn bắt buộc phải bị kiểm.
  */
 import fs from "node:fs";
 import path from "node:path";

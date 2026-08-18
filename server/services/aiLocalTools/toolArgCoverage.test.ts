@@ -76,6 +76,13 @@ const CAU_HOI_THAM_SO: Record<string, string> = {
   get_machine_process_result: "kết quả công đoạn của máy AOI-01 hôm nay",
   get_ot_telemetry_latest: "đọc tag máy AOI-01",
   get_process_metric_trend: "xu hướng torque máy SCR-01 7 ngày",
+  /**
+   * doc 78 PHA A — hộp cát repo. ⚠ Hai câu này cố ý KHÔNG dùng cụm *"đọc file"* trần: cụm ấy thuộc
+   * về `read_project_file` (workspace lập trình), và ranh giới giữa hai tool nằm ở TRIGGER —
+   * xem khối trigger của `repoReadTools.ts`.
+   */
+  grep_repo: "tìm trong mã nguồn chuỗi argsWithAuthCtx",
+  read_file: "xem mã nguồn server/services/aiLocalTools/toolRegistry.ts",
   lookup_error_code: "mã lỗi AL.E6 của servo là gì",
   read_project_file: "đọc file main.st",
   retrieve_programming_kb: "tra cứu tài liệu hãng về lệnh MOVJ của robot",

@@ -114,6 +114,20 @@ export const PERMISSION_MODULES = [
   "settings_smtp",
   "settings_notification_sounds",
   "settings_cache",
+  /**
+   * ★★★ doc 78 PHA A (2026-08-18) — **BIT RIÊNG CHO "AI ĐỌC MÃ NGUỒN NỀN TẢNG".**
+   *
+   * Chủ dự án chốt: ba tool `read_file`/`list_files`/`grep_repo` ghim theo vai `engineer`/`admin`.
+   * ĐO trên `DEFAULT_ROLE_PERMISSIONS`: trong 20 module `engineer` giữ, đúng HAI cái không ai khác
+   * giữ (`settings_factory`, `settings_measurement_points`) — mượn một trong hai là neo theo TẬP
+   * VAI chứ không theo NGHĨA, và ngày ai đó cấp `settings_factory` cho `supervisor` thì quyền đọc
+   * mã nguồn mở theo trong im lặng. Cùng lý lẽ đã dựng `vram_control` ⇒ một `moduleName` mới
+   * (`varchar(100)` tự do ⇒ một HÀNG, không DDL; `category` dùng lại `settings` đã có trong pgEnum).
+   * Seed: `admin` + `engineer` (0330 backfill cho tài khoản cũ).
+   * ⚠ KHÔNG được thêm alias trỏ vào/ra tên này — alias sẽ resolve nó sang module khác và phá đúng
+   *   phép tách này (cùng cảnh báo đã ghi ở `VRAM_CONTROL_MODULE`).
+   */
+  "ai_repo_read",
   // Admin
   "admin_users",
   "admin_permissions",

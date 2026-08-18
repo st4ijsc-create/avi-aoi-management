@@ -384,6 +384,65 @@ function extractProjectPath(question: string): string | undefined {
   return question.match(FILE_PATH_REGEX)?.[1] ?? question.match(FILE_PATH_CJK_REGEX)?.[1];
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// doc 78 PHA A — bộ trích cho HỘP CÁT REPO (`read_file` · `list_files` · `grep_repo`)
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★ Đường dẫn TRONG REPO. Neo vào **ĐUÔI TỆP**, không vào từ khoá — vì câu hỏi thật thường không
+ * có chữ "file" (*"hàm này ở toolRegistry.ts"*).
+ *
+ * ⚠⚠ Bộ đuôi ở đây **KHÔNG** phải bản sao của `repoSandbox.DUOI_CHO_PHEP`, và cố ý: đây là một
+ * phép **NHẬN DẠNG** (thứ gì trông giống đường dẫn), còn cái kia là một phép **CHO PHÉP** (thứ gì
+ * được đọc). Nếu người dùng nêu `anh.png`, bộ trích này **phải** nhận ra nó là một đường dẫn để
+ * hộp cát trả về `DENIED_EXT` — một lời từ chối ĐÚNG. Nếu bộ trích im lặng bỏ qua, tool nhận `{}`
+ * và trả `MISSING_REQUIRED_ARG` — một lời khai **SAI** (*"bạn chưa nêu đường dẫn"* trong khi họ đã
+ * nêu). Hai bảng khác nhau vì chúng trả lời hai câu hỏi khác nhau.
+ *
+ * ⚠ Trả **NGUYÊN VĂN** — `..`, đường tuyệt đối, `C:` đều đi qua để **cửa** `repoSandbox` là cái từ
+ * chối, đúng nguyên tắc đã dùng cho `extractProjectPath`.
+ */
+const REPO_PATH_REGEX =
+  /(?:^|[\s"'`:：(\[])((?:[\w.@~$-]+[/\\])*[\w.@~$-]+\.(?:tsx?|jsx?|mjs|cjs|mts|cts|json|sql|md|css|scss|html?|ya?ml|toml|txt|sh|png|jpe?g|jsonl|log|pem|key|env))(?=$|[\s"'`,;)\]。，、])/i;
+
+/** Thư mục trong repo: một token có `/` mà KHÔNG có đuôi tệp (vd `server/services/aiLocalTools`). */
+const REPO_DIR_REGEX = /(?:^|[\s"'`:：(\[])((?:[\w.@~$-]+\/){1,}[\w.@~$-]*)(?=$|[\s"'`,;)\]。，、])/;
+
+function extractRepoPath(question: string): string | undefined {
+  return question.match(REPO_PATH_REGEX)?.[1];
+}
+
+function extractRepoDir(question: string): string | undefined {
+  const tep = extractRepoPath(question);
+  if (tep !== undefined) return undefined; // có đuôi tệp ⇒ không phải một thư mục
+  return question.match(REPO_DIR_REGEX)?.[1]?.replace(/\/+$/, "") || undefined;
+}
+
+/** Mẫu nằm trong dấu nháy — ưu tiên cao nhất, vì người dùng đã tự khoanh vùng nó. */
+const GREP_QUOTED_REGEX = /["'`]([^"'`\n]{2,200})["'`]/;
+/** Mẫu đứng sau một từ khoá tìm kiếm. */
+const GREP_KEYED_REGEX =
+  /(?:grep|tìm\s*kiếm|tìm|search(?:\s+for)?|find|查找|搜索)\s*(?:trong\s*(?:mã(?:\s*nguồn)?|repo|code)\s*)?(?:chuỗi|hàm|biến|cờ|string|function|symbol|flag)?\s*[:：]?\s*([^\s"'`,;]{2,200})/i;
+/** *"X gọi ở đâu"* / *"X dùng ở đâu"* — hình dạng câu hỏi kỹ sư hỏi nhiều nhất. */
+const GREP_WHERE_REGEX =
+  /([A-Za-z_$][\w$.]{2,120})\s*(?:này\s*)?(?:được\s*)?(?:gọi|dùng|sử\s*dụng|khai\s*báo|định\s*nghĩa)\s*(?:ở|tại)\s*đâu/i;
+
+/**
+ * ★ Mẫu cần tìm. Ba luật, theo thứ tự **độ tường minh giảm dần**.
+ *
+ * ⚠ Trả NGUYÊN VĂN, không escape: một mẫu hỏng cú pháp regex phải tới được tool để nhận
+ * `INVALID_PATTERN` — người dùng cần biết mẫu của họ sai, không phải nhận một kết quả rỗng bí ẩn.
+ */
+function extractGrepPattern(question: string): string | undefined {
+  const nhay = question.match(GREP_QUOTED_REGEX)?.[1];
+  if (nhay) return nhay;
+  const oDau = question.match(GREP_WHERE_REGEX)?.[1];
+  if (oDau) return oDau;
+  const khoa = question.match(GREP_KEYED_REGEX)?.[1];
+  // ⚠ Loại một token chỉ gồm chữ cái tiếng Việt có dấu / từ nối — nó là VĂN XUÔI, không phải mẫu.
+  if (khoa && !/^(?:trong|the|này|nay|nào|nao|gì|gi|đâu|dau)$/i.test(khoa)) return khoa;
+  return undefined;
+}
+
 /**
  * Biểu thức số học. Cắt phần mở đầu (từ khoá + vài từ đệm lịch sự) và phần đuôi hỏi han, rồi
  * **giao nguyên phần còn lại** cho hộp cát.
@@ -1006,6 +1065,32 @@ function extractArgsRaw(
     case "read_project_file": {
       const p = extractProjectPath(question);
       return p ? { path: p } : {};
+    }
+    // ── doc 78 PHA A — hộp cát REPO ────────────────────────────────────────────────────────────
+    /**
+     * ⚠⚠ `read_file` (repo) và `read_project_file` (workspace lập trình) là **hai tool khác nhau
+     * trên hai hộp cát khác nhau**, và ranh giới giữa chúng nằm ở **TRIGGER**, không ở đây. Xem
+     * khối trigger của `repoReadTools.ts`: bản đầu dùng chung cụm *"đọc file"* nên hai tool **hoà
+     * điểm**, và người thắng là **người đăng ký trước** (thứ tự `import` trong `index.ts`) — một
+     * hành vi sản phẩm quyết định bởi một chi tiết không ai coi là hành vi sản phẩm.
+     */
+    case "read_file": {
+      const p = extractRepoPath(question) ?? extractProjectPath(question);
+      return p ? { path: p } : {};
+    }
+    case "list_files": {
+      const d = extractRepoDir(question);
+      return d ? { path: d } : {};
+    }
+    case "grep_repo": {
+      const args: Record<string, unknown> = {};
+      const mau = extractGrepPattern(question);
+      if (mau) args.pattern = mau;
+      const d = extractRepoDir(question);
+      // ⚠ Chỉ nhận thư mục khi nó KHÁC mẫu — nếu không, *"tìm trong server/index.ts"* sẽ vừa là
+      //   mẫu vừa là phạm vi, và phạm vi ấy trỏ vào một TỆP ⇒ `NOT_A_DIRECTORY`.
+      if (d && d !== mau) args.path = d;
+      return args;
     }
     case "get_today_stats":
       // Tool KHÔNG có tham số nào — `{}` ở đây là một câu trả lời ĐẦY ĐỦ, khác hẳn nhánh dưới.
