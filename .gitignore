@@ -208,3 +208,8 @@ scripts/audit/.s6-results.json
 # bằng chứng của một lượt đo, không phải tài sản của mã nguồn; không tài liệu nào
 # tham chiếu tới chúng. Chỉ chặn ở gốc (`/`), không đụng ảnh trong `client/`, `docs/`.
 /*.png
+
+# ── sandbox-projects: dự án thử cho AI code — chặn tạo tác build ─────────────
+sandbox-projects/**/bin/
+sandbox-projects/**/obj/
+sandbox-projects/**/node_modules/
