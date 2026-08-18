@@ -189,6 +189,8 @@ const FILE_DANG_KY_WRITE_TOOL_DA_NAP = [
   "services/aiLocalTools/writeHandlers/measurementPoint.ts",
   "services/aiLocalTools/writeHandlers/programmingFile.ts",
   "services/aiLocalTools/writeHandlers/qualityAdvisory.ts",
+  // doc 78 PHA B — `run_command` (nạp qua `import "./writeHandlers/repoCommand"` ở aiLocalTools/index.ts).
+  "services/aiLocalTools/writeHandlers/repoCommand.ts",
   "services/aiLocalTools/writeHandlers/visionControl.ts",
   "services/aiLocalTools/writeHandlers/yield.ts",
   "services/visionDefectProposal.ts",

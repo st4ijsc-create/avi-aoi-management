@@ -128,6 +128,23 @@ export const PERMISSION_MODULES = [
    *   phép tách này (cùng cảnh báo đã ghi ở `VRAM_CONTROL_MODULE`).
    */
   "ai_repo_read",
+  /**
+   * ★★★ doc 78 PHA B (2026-08-18) — **AI CHẠY LỆNH trong danh sách TRẮNG** (`run_command`).
+   *
+   * MODULE RIÊNG, không phải một `action` khác của `ai_repo_read`. Lý do là một phép đo về **chỗ
+   * quyền được cấp**, không phải sở thích đặt tên: một `moduleName` = MỘT HÀNG `permissions` với
+   * năm ô tick, nên gộp chung nghĩa là một lượt "cấp cho đủ" trên dòng *"AI đọc mã nguồn"* sẽ mở
+   * quyền **SINH TIẾN TRÌNH trên máy chủ** trong im lặng — đúng chế độ hỏng mà mig 0330 viết ra để
+   * tránh. Thêm nữa, câu từ chối nêu đích danh `module/action`, nên `ai_repo_read/canCreate` cho một
+   * người vừa xin **chạy test** là một lời khai SAI về lý do.
+   * ⚠ Mig 0330 đã đặt trước `ai_repo_read/canEdit` cho PHA C (ghi tệp) — đọc/ghi **cùng một đối
+   *   tượng** thì đúng là chỗ dùng hai `action` trên một `module`. Chạy lệnh là **đối tượng KHÁC**
+   *   (tiến trình, CPU, thời gian máy). Tiền lệ trực tiếp: `vram_control` tách khỏi mặt đọc VRAM.
+   * Chỉ `canCreate` ("tạo một lượt chạy"). Seed: `admin` + `engineer` (0331 backfill).
+   * ⚠ KHÔNG được thêm alias trỏ vào/ra tên này — alias sẽ resolve nó sang module khác và phá đúng
+   *   phép tách này (cùng cảnh báo ở `ai_repo_read` và `VRAM_CONTROL_MODULE`).
+   */
+  "ai_repo_exec",
   // Admin
   "admin_users",
   "admin_permissions",

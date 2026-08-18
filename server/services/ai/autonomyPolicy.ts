@@ -128,6 +128,17 @@ export const AUTONOMY_INELIGIBLE: ReadonlySet<string> = new Set<string>([
   "propose_defect_from_vision",
   // PLC/robot program files — control logic, not data — server/services/aiLocalTools/writeHandlers/programmingFile.ts
   "write_project_file",
+  /**
+   * ★★★ doc 78 PHA B — `run_command` (server/services/aiLocalTools/writeHandlers/repoCommand.ts).
+   *
+   * Nó SINH TIẾN TRÌNH trên máy chủ: tiêu CPU/RAM thật, chạy tới 4 phút, và `npx vitest run <đường>`
+   * **thi hành mã của chính repo** với một đường dẫn do model chọn. Danh sách trắng + hộp cát chặn
+   * được *lệnh nào được chạy*; chúng KHÔNG phát biểu gì về *bao nhiêu lượt* hay *lúc nào* — và đó
+   * đúng là thứ tự trị quyết định. Một vòng lặp tác nhân tự trị gọi `npm run check` mỗi bước là một
+   * cách làm nghẽn máy chủ mà không lệnh nào trong đó "sai".
+   * ⇒ Con người bấm duyệt từng lượt. Không có cấu hình nào mở được điều này (denylist thắng allowlist).
+   */
+  "run_command",
   // Safety interlock rules — server/services/aiLocalTools/writeHandlers/interlock.ts
   "propose_interlock_rule",
   // Quality setpoints / spec limits / thresholds: "safety-critical setpoints" per the D2

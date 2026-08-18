@@ -120,8 +120,27 @@ export const WIRED_ALLOCATION_SITE_COUNT = 15;
  * Nó tồn tại vì `readVramState()` gọi `nvidia-smi` qua `promisify(execFile)`; hàm đó là bộ đọc của
  * `enforceVramGuard()`, và khi guard bị XOÁ (§8) nó thành **MÃ CHẾT** nên bị xoá theo. Số ĐIỂM GỌI
  * `beginVramAllocation()` KHÔNG đổi (`WIRED_ALLOCATION_SITE_COUNT` vẫn 15).
+ *
+ * ⚠ 159 → **162** (doc 78 PHA B, 2026-08-18): BA dòng mới, tất cả thuộc
+ * `server/services/aiLocalTools/repoCommandSandbox.ts` — `child_process` ×1 (dòng `import`) +
+ * `spawn(` ×2 (một cho lệnh trong danh sách trắng, một cho `taskkill /T` khi hết giờ). Cả ba
+ * `wired: false`: danh sách trắng gồm đúng `npm run check`, `npm run check:tests`,
+ * `npx vitest run <đường>`, `git status`, `git diff` — không lệnh nào chạm GPU. Số ĐIỂM GỌI
+ * `beginVramAllocation()` KHÔNG đổi (`WIRED_ALLOCATION_SITE_COUNT` vẫn 15).
+ * ⚠⚠ Nhưng bảng này **bắt buộc phân loại**, không chỉ ghi nhận: `npx vitest run <đường>` mang một
+ * đối số TỰ DO, nên nó chạy được **bất kỳ tệp lưới nào của repo** — và trong repo có lưới chạm
+ * GPU. Lượt chạy ấy là tiến trình CHÁU, KHÔNG giấy phép nào phủ, đúng cùng lớp với
+ * `kbSyncScheduler.ts:505` (npm → node → _gguf-embed.mjs). Khác một điểm quan trọng: ở đây con
+ * người phải bấm duyệt từng lượt (HITL), nên nó không thể tự nổ ra trong một vòng lặp.
+ *
+ * ⚠⚠ 162 → **172** (cùng lượt): **MƯỜI dòng là NỢ CÓ SẴN, không phải của PHA B.**
+ * `scripts/ai-bench/bench-longctx.mjs` (6) và `scripts/ai-eval/eval-rag-operational.mjs` (4) vào
+ * repo ở commit **702cf1dd** (2026-08-18, "G0-G5") mà không ai ghi vào bảng ⇒ ca `1` và `3c` của
+ * lưới **ĐÃ ĐỎ TỪ TRƯỚC** doc 78 PHA B. Phát hiện ra vì PHA B thêm ba dòng của mình rồi ĐỌC danh
+ * sách "chưa khai" thay vì chỉ nhìn con số tổng. Cả mười đều `wired: false` — chiều PESSIMISTIC,
+ * đúng luật mục D (script chạy ngoài tiến trình API thì sổ cái không thể biết tới).
  */
-export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 159;
+export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 172;
 
 /**
  * ★★ HAI CÁI BẪY ĐẾM-HAI-LẦN, khai TƯỜNG MINH thay vì lọc ngầm bằng regex.
@@ -295,6 +314,10 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/plugins/sidecar/nodeSpawner.ts", symbol: "spawn(", wired: false, note: ":47 spawnSidecarWithTransport() — cùng lớp với :42, dùng bởi pluginConformance." },
   { file: "server/services/plugins/sidecar/nodeSpawner.ts", symbol: "spawn(", wired: false, note: ":65 createNodeSpawner() — cùng lớp với :42, dùng bởi pluginSidecarBootstrap lúc boot." },
   { file: "server/services/plugins/sidecar/pluginSupervisor.ts", symbol: "spawn(", wired: false, note: ":110 this.deps.spawn(...) — gọi THÀNH VIÊN qua injected dependency. ⚠ Dòng này VÔ HÌNH với bản quét đầu tiên (lỗ C-1 #1) và chỉ hiện ra sau khi mẫu `spawn(` bỏ ràng buộc `(?<![.\\w])`." },
+  // ───── doc 78 PHA B — TÁC NHÂN LẬP TRÌNH CHẠY LỆNH TRONG DANH SÁCH TRẮNG ─────
+  { file: "server/services/aiLocalTools/repoCommandSandbox.ts", symbol: "child_process", wired: false, note: "import spawn — bộ chạy lệnh của `run_command` (doc 78 PHA B). Danh sách TRẮNG 5 mục: npm run check · npm run check:tests · npx vitest run <đường> · git status · git diff. KHÔNG mục nào chạm GPU, và không có shell nào trên đường đi." },
+  { file: "server/services/aiLocalTools/repoCommandSandbox.ts", symbol: "spawn(", wired: false, note: "★ `chayLenhTrongHopCat()` — lượt sinh tiến trình DUY NHẤT của lệnh trong danh sách trắng, `cwd = gocHopCat()`, `shell: false`, môi trường ĐÃ LỌC. ⚠ `npx vitest run <đường>` mang đối số TỰ DO ⇒ chạy được lưới bất kỳ của repo, kể cả lưới chạm GPU, dưới dạng tiến trình CHÁU và KHÔNG giấy phép nào phủ — cùng lớp với kbSyncScheduler.ts:505. Khác biệt: mỗi lượt đòi con người bấm duyệt (HITL) nên nó không tự nổ trong một vòng lặp." },
+  { file: "server/services/aiLocalTools/repoCommandSandbox.ts", symbol: "spawn(", wired: false, note: "`gietCayTienTrinh()` — `taskkill /PID <pid> /T /F` khi hết giờ (Windows). Đây là lượt spawn để GIẾT, không phải để chạy: nó GIẢI PHÓNG tài nguyên chứ không cấp phát. Trên POSIX nhánh tương ứng là `process.kill(-pid)` và không sinh tiến trình nào." },
   { file: "server/services/apsSolver.ts", symbol: "child_process", wired: false, note: ":15 import spawn — solver CP-SAT/OR-Tools, xem :276." },
   { file: "server/services/apsSolver.ts", symbol: "spawn(", wired: false, note: ":276 runApsSolver() → APS_SOLVER_CMD, mặc định .venv python + scripts/aps_solver.py (CP-SAT). Solver tổ hợp CHẠY CPU — KHÔNG phải hộ VRAM. Ở đây để bắt buộc phân loại." },
   { file: "server/services/backupService.ts", symbol: "child_process", wired: false, note: ":10 import spawn/execFile — pg_dump và psql, KHÔNG chạm GPU." },
@@ -332,6 +355,25 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "scripts/ai-kb/_gguf-embed.mjs", symbol: "import node-llama-cpp", wired: true, note: ":66 lượt nạp thư viện của module nhúng dùng chung — phủ CÓ ĐIỀU KIỆN (chỉ 2/5 đường vào đi qua giấy phép)." },
   { file: "scripts/ai-kb/eval-rag.mjs", symbol: "import node-llama-cpp", wired: true, note: ":210 lượt nạp thư viện — phủ CÓ ĐIỀU KIỆN, chỉ khi scheduler spawn với cờ --ci." },
   { file: "scripts/ai-kb/embed-programming.mjs", symbol: "import node-llama-cpp", wired: false, note: ":100 lượt nạp thư viện — script chỉ chạy TAY, không giấy phép nào phủ." },
+
+  // ───── NỢ CÓ SẴN, khai muộn: hai script GPU vào repo ở commit 702cf1dd (2026-08-18, "G0-G5")
+  //       mà KHÔNG được ghi vào bảng ⇒ ca `1` và `3c` của lưới ĐỎ **trước** doc 78 PHA B, với đúng
+  //       10 dòng dưới đây. Phát hiện khi PHA B thêm ba dòng của mình và đọc danh sách "chưa khai".
+  //       ⚠ Cả 10 đều `wired: false` — đó là chiều PESSIMISTIC và là chiều ĐÚNG theo luật đã viết ở
+  //       đầu mục D: script chạy NGOÀI tiến trình API thì sổ cái (một biến trong bộ nhớ của MỘT
+  //       tiến trình) không thể biết tới chúng. Không script nào trong hai file này được `server/`
+  //       spawn (đo: `grep -rn` trong server/ chỉ thấy chúng bị NHẮC TÊN trong chú thích).
+  { file: "scripts/ai-bench/bench-longctx.mjs", symbol: "child_process", wired: false, note: ":28 import execFileSync — dùng cho nvidia-smi ở :84, đọc chứ không cấp phát." },
+  { file: "scripts/ai-bench/bench-longctx.mjs", symbol: "execFileSync(", wired: false, note: ':84 execFileSync("nvidia-smi", ["--query-gpu=…"]) — đầu dò toàn thiết bị, KHÔNG cấp phát.' },
+  { file: "scripts/ai-bench/bench-longctx.mjs", symbol: "import node-llama-cpp", wired: false, note: ':143 `await import("node-llama-cpp")` — bench đo trần ngữ cảnh dài. Chạy TAY, không giấy phép nào phủ.' },
+  { file: "scripts/ai-bench/bench-longctx.mjs", symbol: "getLlama(", wired: false, note: ':145 getLlama({gpu: "auto"}) — khởi tạo backend CUDA RIÊNG của tiến trình bench.' },
+  { file: "scripts/ai-bench/bench-longctx.mjs", symbol: ".loadModel(", wired: false, note: ':150 gpuLayers "max" — nạp toàn bộ lớp lên GPU.' },
+  { file: "scripts/ai-bench/bench-longctx.mjs", symbol: ".createContext(", wired: false, note: ":172 contextSize = requestedCtx (bench quét NHIỀU mức ngữ cảnh trong MỘT lượt chạy). ⚠ Docstring của chính file nói `contextSize` là PER-SEQUENCE ⇒ tổng ô KV = contextSize × sequences: một bench ngữ cảnh dài là hộ tiêu thụ LỚN, và nó chạy tay nên KHÔNG giấy phép nào chừa chỗ cho nó." },
+  { file: "scripts/ai-eval/eval-rag-operational.mjs", symbol: "import node-llama-cpp", wired: false, note: ':366 `await import("node-llama-cpp")`. `npm run ai:eval:rag` — chạy TAY; KHÔNG phải `scripts/ai-kb/eval-rag.mjs` (file KHÁC, được scheduler spawn với --ci và do đó ĐƯỢC phủ). Hai cái tên gần giống nhau là một cái bẫy đọc lướt.' },
+  { file: "scripts/ai-eval/eval-rag-operational.mjs", symbol: "getLlama(", wired: false, note: ':367 getLlama({gpu: GGUF_GPU === "false" ? false : "auto"}) — mặc định LÊN GPU.' },
+  { file: "scripts/ai-eval/eval-rag-operational.mjs", symbol: ".loadModel(", wired: false, note: ':395 gpuLayers = RAG_EVAL_GPU_LAYERS ?? "max". Docstring tại chỗ ĐÃ ĐO: `-1` cho ra `model.gpuLayers = 0` (CPU im lặng) còn `"max"` cho 37 lớp.' },
+  { file: "scripts/ai-eval/eval-rag-operational.mjs", symbol: ".createContext(", wired: false, note: ":396 contextSize { min: 2048, max: 8192 } — CÓ CHẶN TRÊN (khác lớp `auto` nguy hiểm ở embed-programming.mjs)." },
+
   { file: "scripts/ai-bench/bench.mjs", symbol: "import node-llama-cpp", wired: false, note: ":279 importLlama() nạp thư viện cho lượt bench THẬT (có nạp model ở :618)." },
   { file: "scripts/ai-bench/bench.mjs", symbol: "import node-llama-cpp", wired: false, note: ":517 lượt nạp CHỈ để kiểm module có import được không — engine KHÔNG được khởi tạo ở đây." },
   { file: "scripts/ai-kb/reembed-images-onnx.mjs", symbol: "import onnxruntime-node", wired: false, note: ":40 import tĩnh — session ONNX ở :184 với EP động, chạy tay, không giấy phép." },

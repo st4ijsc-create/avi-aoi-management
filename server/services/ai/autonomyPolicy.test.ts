@@ -241,6 +241,8 @@ describe("AUTONOMY_INELIGIBLE — hard-coded denylist coverage (SÀN — xem aut
       // D2 review Fix 1 — found by a FULL server-tree scan (outside aiLocalTools/writeHandlers*).
       "propose_defect_from_vision",
       "write_project_file",
+      // doc 78 PHA B — sinh tiến trình trên máy chủ (npm run check / npx vitest run …).
+      "run_command",
       "propose_interlock_rule",
       "adjust_ng_threshold", "create_ng_threshold", "configure_inspection_param",
       "update_product_quality_target", "set_yield_threshold",

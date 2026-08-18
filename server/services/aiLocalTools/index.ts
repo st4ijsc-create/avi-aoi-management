@@ -27,6 +27,10 @@ import "./writeHandlers/programmingFile";
 // ĐẢO có kiểm soát quyết định "repoContextService KHÔNG đăng ký vào toolRegistry": nay LLM tự chọn
 // được tệp, nhưng chỉ trong hộp cát của `repoSandbox.ts` và sau bit `ai_repo_read`.
 import "./repoReadTools";
+// doc 78 PHA B — `run_command`: chạy lệnh trong DANH SÁCH TRẮNG. WRITE tool ⇒ đi qua
+// `proposeAction`/`confirmAction`, KHÔNG BAO GIỜ tự chạy. Chính sách + bộ chạy ở
+// `repoCommandSandbox.ts` (cùng gốc hộp cát, cùng sổ ngân sách byte với pha A).
+import "./writeHandlers/repoCommand";
 // Pha 4 Task 4 — VRAM broker state (READ-ONLY). Đây là NGƯỜI ĐỌC THẬT của `buildVramAgentState()`
 // cho AI Agent: Agent repo này đi qua toolRegistry, KHÔNG qua tRPC. Ba lệnh phá huỷ CỐ Ý không
 // đăng ký ở đây — xem khối đầu `vramTools.ts`.

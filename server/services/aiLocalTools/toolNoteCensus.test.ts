@@ -168,6 +168,28 @@ const CENSUS: Record<string, XepLoai> = {
   NO_MATCH: "chan",
   GREP_DEADLINE: "chan",
   INVALID_PATTERN: "chan",
+  // ── doc 78 PHA B (2026-08-18) — CHẠY LỆNH (`writeHandlers/repoCommand.ts`) ──────────────────
+  /**
+   * ⚠⚠ SÁU MÃ, TẤT CẢ `chan` — VÀ CÁI **KHÔNG** CÓ TRONG DANH SÁCH NÀY MỚI LÀ PHÉP ĐO.
+   *
+   * Năm mã đầu là những lượt **lệnh CHƯA HỀ CHẠY** (bị chặn ở lớp ký tự · ngoài danh sách trắng ·
+   * đường dẫn xấu · không phân giải được tệp chạy · spawn hỏng): `data` rỗng hoàn toàn, không một
+   * byte hiện trường nào. `CMD_TIMEOUT` là ca gần biên nhất — nó CÓ đầu ra thật — nhưng đầu ra ấy
+   * là **BẢN CẮT của một lệnh chưa xong**, và `textSummary` của nó nói đúng câu *"đây KHÔNG phải
+   * kết luận lệnh chạy xong"*. Để LLM văn vẻ hoá câu ấy là mời nó rút thành *"build hỏng"* — biến
+   * một phép đo BỘ PHẬN thành khẳng định TOÀN THỂ, đúng lý lẽ đã dùng cho `GREP_DEADLINE`.
+   *
+   * ★★★ Và điều quan trọng: **một lượt chạy THOÁT ĐƯỢC không đặt `note` nào, kể cả khi mã thoát
+   * khác 0.** `npm run check` trả mã 2 kèm 40 dòng lỗi kiểu là một phát biểu ĐẦY ĐỦ về hiện
+   * trường. Gắn `note` cho nó sẽ chặn đúng nhịp mà cả pha B tồn tại để nối (*"đọc lỗi THẬT rồi sửa
+   * tiếp"*, doc 78 §2) — nên nhánh ấy cố ý KHÔNG có tên ở bảng này.
+   */
+  CMD_METACHAR: "chan",
+  CMD_NOT_ALLOWED: "chan",
+  CMD_ARG_PATH_REJECTED: "chan",
+  CMD_RESOLVE_ERROR: "chan",
+  CMD_SPAWN_ERROR: "chan",
+  CMD_TIMEOUT: "chan",
 };
 
 describe("§1 — mọi mã `note` trong mã nguồn đều đã được PHÁN QUYẾT", () => {
