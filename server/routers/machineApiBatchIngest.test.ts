@@ -51,10 +51,15 @@ vi.mock("../db", () => {
     createProductInspection: vi.fn(),
     createMeasurementResults: vi.fn(async () => undefined),
     getMachineStats: vi.fn(async () => ({ total: 10, ok: 10, ng: 0, ntf: 0, yieldRate: 100 })),
-    getStationById: vi.fn(async () => undefined),
-    getLineById: vi.fn(async () => undefined),
-    getWorkshopById: vi.fn(async () => undefined),
-    getFactoryById: vi.fn(async () => undefined),
+    // ⚠ 2026-08-18 — CHUỖI PHÂN CẤP PHẢI PHÂN GIẢI ĐƯỢC. Đường ingest nay SUY mã tenant từ máy
+    // (`phamViGhiMay.macTenantChoGhi`) và TỪ CHỐI một máy không ra được nhà máy. Bốn stub cũ trả
+    // `undefined` mô tả một cái máy KHÔNG THUỘC NHÀ MÁY NÀO — trạng thái mà lược đồ KHÔNG cho
+    // phép tồn tại (`machines.stationId` NOT NULL + ba FK `ON DELETE RESTRICT`), nên stub cũ là
+    // một lời khai SAI VỀ THẾ GIỚI, không phải một lối tắt vô hại.
+    getStationById: vi.fn(async () => ({ id: 1, code: "ST-MOCK", lineId: 1 })),
+    getLineById: vi.fn(async () => ({ id: 1, code: "LINE-MOCK", workshopId: 1 })),
+    getWorkshopById: vi.fn(async () => ({ id: 1, code: "WS-MOCK", factoryId: 1 })),
+    getFactoryById: vi.fn(async () => ({ id: 1, code: "FAC-MOCK", corporateCode: "CORP-MOCK" })),
     getDefectCatalogByCode: vi.fn(async () => undefined),
     recordUnmatchedDefectCodes: vi.fn(async () => undefined),
     getMeasurementPointDefByCode: vi.fn(async () => undefined),

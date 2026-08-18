@@ -15,6 +15,23 @@ import { getConfiguredApiKey } from './serverConfig';
 // Default timeout for image API requests (ms)
 const API_TIMEOUT = 15000;
 
+/**
+ * Nối thêm tham số truy vấn vào một URL ảnh — **cách DUY NHẤT đúng** kể từ khi máy chủ cấp vé ký.
+ *
+ * ⚠⚠ Khuôn cũ rải khắp app là `` `${url}?w=200&q=60` `` (xem
+ * `screens/stationDetail/components/panelParts.tsx`, `gallery.tsx`, `ImageViewerModal.tsx`). Với
+ * một URL đã mang vé (`…png?exp=…&pv=anh&sig=…`) khuôn ấy tạo ra **HAI dấu `?`** ⇒ URL hỏng ⇒ ảnh
+ * không tải được. Dùng hàm này thay cho mọi lượt nối tay.
+ */
+export function themThamSoAnh(url: string, tham: Record<string, string | number>): string {
+  if (!url) return url;
+  const noi = url.includes('?') ? '&' : '?';
+  const chuoi = Object.entries(tham)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .join('&');
+  return chuoi ? `${url}${noi}${chuoi}` : url;
+}
+
 class ImageService {
   private baseUrl: string = '';
   private apiKey: string = '';
@@ -48,6 +65,12 @@ class ImageService {
    * Build full URL từ relative path
    * @param relativePath - Relative URL từ MQTT (e.g., "/uploads/inspections/142/R105.jpg")
    * @returns Full URL (e.g., "http://192.168.1.100:3000/uploads/inspections/142/R105.jpg")
+   *
+   * ⚠ Hàm này CỐ Ý giữ nguyên query của `relativePath`. Máy chủ nay trả về đường dẫn đã kèm
+   *   **vé ký** (`?exp=&pv=&sig=`) cho `<Image source={{uri}}>` — RN không gửi được cookie lẫn
+   *   header tuỳ biến, nên query là kênh chứng thực duy nhất. Cắt/ghi đè query ở đây sẽ làm mọi
+   *   ảnh chết khi máy chủ bật `ANH_CONG_MO=false`.
+   * ⚠ Nơi nào cần thêm `?w=`/`?q=` PHẢI nối bằng `&` khi URL đã có `?` — xem `themThamSo` dưới.
    */
   buildImageUrl(relativePath: string): string {
     if (!relativePath) {
@@ -93,7 +116,20 @@ class ImageService {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       };
-      // /api/inspection/:id/images does not require auth — no headers needed
+      // ★★★ Dòng chú thích cũ ở đây ghi "does not require auth — no headers needed", và câu ấy
+      //     ĐÚNG với máy chủ cũ: tuyến này nhận một SỐ NGUYÊN TUẦN TỰ rồi trả số serial + đường
+      //     dẫn ảnh cho bất kỳ ai trong mạng nhà máy, không cần một chứng thực nào. Đó là lỗ đang
+      //     được đóng, không phải một tính năng.
+      //
+      // ⚠ Máy chủ nay nhận `x-master-key` ở tuyến này (và sẽ TỪ CHỐI lượt gọi trần khi
+      //   `ANH_CONG_MO=false`). App đã có sẵn khoá — cùng khoá `checkServerConnection` đang dùng
+      //   bên dưới, và cùng khuôn với alertApiService/stationService/dashboardService.
+      // ⚠ Gửi khoá KỂ CẢ KHI máy chủ còn mở: bản app này phải chạy được ở CẢ HAI phía của lượt
+      //   bật cờ, vì đội máy ngoài hiện trường không cập nhật đồng thời với máy chủ.
+      const apiKey = this.apiKey || getConfiguredApiKey();
+      if (apiKey) {
+        headers['x-master-key'] = apiKey;
+      }
 
       const response = await fetch(url, {
         method: 'GET',

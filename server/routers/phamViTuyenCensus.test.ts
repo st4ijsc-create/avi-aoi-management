@@ -93,10 +93,19 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
   it("★★ BỀ MẶT TĨNH được GHIM — bộ suy KHÔNG phát biểu được gì về nó", () => {
     // `express.static` phục vụ byte tệp thẳng từ đĩa: không lượt đọc bảng nào, nên MỌI vị từ ở đây
     // đều mù với nó. Ghim danh sách để một lượt gắn thư mục MỚI ra web phải được ký tên.
-    // ⚠ `/uploads` đang phục vụ ảnh kiểm của MỌI nhà máy mà không một phép xác thực nào — đó là
-    //   một món nợ CÓ THẬT, chỉ là món nợ mà cổng này không đo được. Đã báo cho chủ dự án.
+    // ⚠⚠ SỬA 2026-08-18 — câu cũ ở đây ghi: *"`/uploads` đang phục vụ ảnh kiểm của MỌI nhà máy mà
+    //    không một phép xác thực nào — món nợ CÓ THẬT, chỉ là món nợ cổng này không đo được"*.
+    //    Món nợ ấy nay **đã được vá**: một middleware cổng ảnh (`server/routes/_congAnh.ts`) đứng
+    //    TRƯỚC cả handler resize lẫn `express.static`, sau cờ `ANH_CONG_MO`.
+    // ⚠ Con số ghim đổi **609 → 642** vì lượt vá chèn middleware ấy lên phía trên, KHÔNG phải vì
+    //   một thư mục mới được gắn ra web: danh sách vẫn đúng HAI mục như cũ. Đây là con số ĐO
+    //   ĐƯỢC từ bộ quét, không phải một con số nới ra cho lưới xanh.
+    // ⚠ Bộ suy vẫn **mù** với bề mặt tĩnh (nó phục vụ byte tệp, không đọc bảng nào) — cổng này vì
+    //   thế KHÔNG chứng minh được `/uploads` đã có phòng vệ; phép chứng minh ấy nằm ở lượt HTTP
+    //   thật và `server/routes/congAnhPhamVi.db.test.ts`. Ghim danh sách để một lượt gắn thư mục
+    //   MỚI ra web vẫn phải được ký tên.
     expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
-      "server/_core/index.ts:609",
+      "server/_core/index.ts:642",
       "server/_core/vite.ts:58",
     ]);
   });

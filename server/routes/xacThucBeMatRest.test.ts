@@ -592,8 +592,15 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
           "NỢ ĐÃ KHAI (review Pha 9 I-1): điểm gắn tuyến THẲNG vào `app`, gồm 58 tuyến `/api/external/*` (trục khoá máy, do `thuHoiPhienMoiBeMat.test.ts` canh). Gọi thật đòi dựng gần trọn ứng dụng ⇒ chưa vào lưới hành vi này. Con số bị ghim để tuyến kế tiếp là một quyết định nói ra. " +
           "★ 2026-08-16 (G1-E) 98 → 100. Thành phần của +2, ĐẾM TAY: (1) MỘT tuyến THẬT — `app.get('/api/health/ai', createAiReadinessHandler())`, cổng sẵn sàng hệ con AI, khai riêng ở mục `server/_core/aiReadiness.ts` bên dưới. " +
           "(2) MỘT DƯƠNG TÍNH GIẢ — `soGanTuyen()` đếm theo VĂN BẢN nên khớp cả trong CHÚ THÍCH: dòng giải thích `/api/health` rơi vào SPA catch-all có chứa nguyên văn `app.use(\"*\")`. " +
-          "⚠ Ghi lại thay vì sửa chú thích cho vừa lưới — nắn văn bản cho khớp phép đo chính là cách một lưới thật biến thành lưới giả. Nợ đúng ở đây là bộ đếm nên bỏ qua comment; chưa vá vì nó đụng vị từ dùng chung của §6.",
-        soTuyen: 100,
+          "⚠ Ghi lại thay vì sửa chú thích cho vừa lưới — nắn văn bản cho khớp phép đo chính là cách một lưới thật biến thành lưới giả. Nợ đúng ở đây là bộ đếm nên bỏ qua comment; chưa vá vì nó đụng vị từ dùng chung của §6. " +
+          "★ 2026-08-18 (cổng ảnh) 100 → 104. Thành phần của +4, ĐẾM BẰNG DIFF VỚI `HEAD` (không đếm tay, không đoán): " +
+          "(1) MỘT tuyến THẬT — `app.use(\"/uploads\", …)`, middleware cổng ảnh đứng TRƯỚC cả handler resize lẫn " +
+          "`express.static`; chủ của phán quyết nằm ở `server/routes/_congAnh.ts`, khai riêng ở mục bên dưới. " +
+          "(2) BA DƯƠNG TÍNH GIẢ — ba dòng CHÚ THÍCH ngay trên middleware ấy trích nguyên văn `app.get(\"/uploads/*\")`, " +
+          "`app.use(\"/uploads\", express.static(...))` và `app.use(\"/uploads\", …)` để ghi lại VÌ SAO thứ tự gắn có ý " +
+          "nghĩa (đặt sau dòng resize thì mọi yêu cầu kèm `?w=` đi vòng qua cổng — một bản vá xanh mà cửa vẫn mở). " +
+          "⚠ Vẫn ghi lại thay vì sửa chú thích cho vừa bộ đếm, đúng lý do đã nêu ở lượt +2 phía trên.",
+        soTuyen: 104,
       },
       "server/api/v1/guard.ts": {
         viSao:
@@ -642,6 +649,20 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
           "Một lượt khớp duy nhất nằm trong docblock, chỗ khai bề mặt `app.use(\"/uploads\", express.static(…))` là " +
           "món nợ mà bộ suy KHÔNG đo được. Cùng lớp dương tính giả với mục trên.",
         soTuyen: 1,
+      },
+      "server/routes/_congAnh.ts": {
+        viSao:
+          "★ THÊM 2026-08-18 (cổng ảnh) — **GẮN 0 TUYẾN.** File này là CHỦ của phán quyết " +
+          "\"lượt gọi này có được đọc BYTE ẢNH không?\": nó XUẤT `thuMoCongAnh`/`mayTrongPhamViAnh`/" +
+          "`sanPhamTrongPhamViAnh` và không nhập `express` như một giá trị, không nhận tham số " +
+          "`Express`, không được gọi từ đường khởi động nào. Chính `_core/index.ts` mới `app.use(...)`. " +
+          "⚠ 2 lượt khớp đều là DƯƠNG TÍNH GIẢ của `soGanTuyen()`: cả hai nằm trong CHÚ THÍCH, chỗ " +
+          "trích lại nguyên văn bề mặt `app.use(\"/uploads\", express.static(uploadsRoot))` để nói rõ " +
+          "lỗ nào đang được đóng và vì sao middleware phải đứng TRƯỚC nó. " +
+          "Khai ra kèm SỐ thay vì nắn chú thích cho vừa bộ đếm — cùng lý do đã nêu ở ba mục trên: " +
+          "sửa văn bản cho khớp phép đo là cách biến lưới thật thành lưới giả, và ở đây nó sẽ xoá mất " +
+          "đúng câu giải thích vị trí gắn middleware (thứ mà một lượt sửa sau rất dễ làm hỏng).",
+        soTuyen: 2,
       },
     };
 

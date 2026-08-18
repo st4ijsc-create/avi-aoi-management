@@ -114,6 +114,14 @@ vi.mock("../db", () => {
     getMachineByCode: vi.fn(),
     getMachineById: vi.fn(),
     updateMachineHeartbeat: vi.fn(async () => undefined),
+    // ⚠ 2026-08-18 — CHUỖI PHÂN CẤP PHẢI PHÂN GIẢI ĐƯỢC. Đường ingest nay SUY `lineCode` từ máy
+    // (`phamViGhiMay.macTenantChoGhi`) thay vì đọc `input.lineCode`, và TỪ CHỐI một máy không ra
+    // được nhà máy. Bốn hàm này KHÔNG có trong mock trước đây — tức lược đồ giả ở đây mô tả một
+    // cái máy không thuộc nhà máy nào, trạng thái mà CSDL thật không cho phép tồn tại.
+    getStationById: vi.fn(async () => ({ id: 1, code: "ST-MOCK", lineId: 1 })),
+    getLineById: vi.fn(async () => ({ id: 1, code: "LINE-MOCK", workshopId: 1 })),
+    getWorkshopById: vi.fn(async () => ({ id: 1, code: "WS-MOCK", factoryId: 1 })),
+    getFactoryById: vi.fn(async () => ({ id: 1, code: "FAC-MOCK", corporateCode: "CORP-MOCK" })),
     insertProcessResult: vi.fn(async (_row: any) => {
       if (state.insertThrows) throw state.insertThrows;
       state.processInserts += 1;

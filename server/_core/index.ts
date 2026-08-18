@@ -38,6 +38,17 @@ import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
 import { registerOpenAiGateway } from "../routes/openaiGateway";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
+import { kyNeuLaDuongDanNoiBo } from "./anhKyUrl";
+import {
+  congAnhMo,
+  machineIdsChoLoiVao,
+  mayTrongPhamViAnh,
+  phamViDaApAnh,
+  sanPhamTrongPhamViAnh,
+  thanTuChoiPhamViAnh,
+  thuMoCongAnh,
+  type LoiVaoAnh,
+} from "../routes/_congAnh";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
 import { livenessProbe, readinessProbe } from "./healthProbes";
@@ -589,6 +600,28 @@ async function startServer() {
       fs.mkdirSync(factoryAlertReleasesDir, { recursive: true });
     }
 
+    // ════════════════════════════════════════════════════════════════════════════════════════
+    // ★★★ CỔNG ẢNH cho `/uploads/**` — chủ ở `server/routes/_congAnh.ts`
+    // ════════════════════════════════════════════════════════════════════════════════════════
+    // ⚠ VỊ TRÍ CÓ Ý NGHĨA: phải đứng TRƯỚC cả `app.get("/uploads/*")` (resize) lẫn
+    //   `app.use("/uploads", express.static(...))`. Đặt sau dòng resize thì mọi yêu cầu kèm `?w=`
+    //   đi vòng qua cổng — một bản vá xanh mà cửa vẫn mở đúng bằng một query param.
+    //
+    // ⚠ `req.baseUrl + req.path` chứ KHÔNG phải `req.path`: bên trong `app.use("/uploads", …)`,
+    //   express đã cắt tiền tố `/uploads` khỏi `req.path`. Chữ ký phủ đường dẫn ĐẦY ĐỦ, nên dùng
+    //   `req.path` sẽ làm **mọi vé đều trượt** — và triệu chứng (app di động không xem được ảnh
+    //   nào) trông y hệt "cấu hình khoá sai".
+    app.use("/uploads", async (req, res, next) => {
+      if (congAnhMo()) return next();
+      const duongDan = `${req.baseUrl}${req.path}`;
+      const cong = await thuMoCongAnh(req as express.Request, "anh", duongDan);
+      if (!cong.ok) {
+        // 0 dòng im lặng: JSON có mã máy-đọc-được, KHÔNG phải 404 hay một ảnh rỗng.
+        return res.status(cong.ma).json({ success: false, ...cong.than });
+      }
+      return next();
+    });
+
     // Image resize middleware for /uploads (supports ?w=WIDTH&q=QUALITY like AOI package endpoint)
     app.get("/uploads/*", async (req, res, next) => {
       const w = req.query.w ? Math.min(Math.max(parseInt(String(req.query.w), 10) || 0, 32), 1920) : 0;
@@ -672,6 +705,17 @@ async function startServer() {
         return res.status(400).json({ success: false, message: "Invalid inspection ID" });
       }
 
+      // ★★★ CỔNG ẢNH — `:id` ở đây là một **số nguyên TUẦN TỰ**, nên trước lượt vá này ai ở trong
+      //     mạng nhà máy chỉ cần đếm `1..N` là gom được số serial + ảnh của MỌI nhà máy.
+      // ⚠ Sau cờ `ANH_CONG_MO` vì app RN đang gọi tuyến này KHÔNG kèm một chứng thực nào
+      //   (`FactoryAlertSystem/src/services/imageService.ts:96` ghi thẳng "does not require auth").
+      let loiVaoAnh: LoiVaoAnh = { kieu: "toanCuc" };
+      if (!congAnhMo()) {
+        const cong = await thuMoCongAnh(req, "anh", req.path);
+        if (!cong.ok) return res.status(cong.ma).json({ success: false, ...cong.than });
+        loiVaoAnh = cong.loiVao;
+      }
+
       const { eq, and } = await import("drizzle-orm");
       const schema = await import("../../drizzle/schema");
       const { getDb } = await import("../db/connection");
@@ -697,6 +741,15 @@ async function startServer() {
         return res.status(404).json({ success: false, message: "Inspection not found" });
       }
 
+      // ⚠ Phép kiểm phạm vi đứng SAU lượt tra bản ghi vì nó cần `machineId`; nhưng nó đứng TRƯỚC
+      //   mọi ô dữ liệu rời khỏi máy chủ. **403 có mã**, không phải 404: bản ghi CÓ TỒN TẠI, người
+      //   hỏi chỉ không được xem — nói "không tồn tại" là một lời khai sai chỉ đổi chiều.
+      if (!(await mayTrongPhamViAnh(loiVaoAnh, inspection[0].machineId))) {
+        return res
+          .status(403)
+          .json(thanTuChoiPhamViAnh("inspection", String(inspectionId)));
+      }
+
       // Fetch measurement results with images
       const results = await dbInstance
         .select({
@@ -718,6 +771,14 @@ async function startServer() {
         .where(eq(schema.measurementResults.inspectionId, inspectionId));
 
       // Only return entries that have images
+      //
+      // ★★★ ĐÂY LÀ NƠI CẤP VÉ. Tuyến này đã xác thực và đã kiểm phạm vi ở trên, nên nó là chỗ
+      //     ĐÚNG để trao cho app di động những URL mà `<Image source={{uri}}>` dùng thẳng được —
+      //     RN không gửi được cookie lẫn header tuỳ biến, query string là kênh duy nhất còn lại.
+      //
+      // ⚠ Vé được cấp **KỂ CẢ KHI CỜ CÒN MỞ**, và đó là chủ ý: nhờ vậy lượt bật `ANH_CONG_MO=false`
+      //   không làm gãy app nào vừa nạp danh sách ảnh — URL chúng đang cầm đã hợp lệ sẵn. Bật cờ
+      //   trong khi chỉ cấp vé lúc-đã-bật sẽ tạo một khoảng chết đúng bằng thời gian mở lại màn hình.
       const pointsWithImages = results
         .filter((r) => r.imageUrl && !r.imageUrl.endsWith("..."))
         .map((r) => ({
@@ -726,8 +787,10 @@ async function startServer() {
           pointName: r.pointName || undefined,
           result: r.result,
           measuredValue: r.measuredValue,
-          imageUrl: r.imageUrl,
-          referenceImageUrl: r.referenceImageUrl || undefined,
+          imageUrl: kyNeuLaDuongDanNoiBo(r.imageUrl as string, "anh"),
+          referenceImageUrl: r.referenceImageUrl
+            ? kyNeuLaDuongDanNoiBo(r.referenceImageUrl, "anh")
+            : undefined,
         }));
 
       res.json({
@@ -737,6 +800,9 @@ async function startServer() {
         overallResult: inspection[0].overallResult,
         inspectionTime: inspection[0].inspectionTime,
         totalPoints: results.length,
+        // ⚠ BOOLEAN, không phải nhãn `no_factory_assignment` — nhãn ấy nói về một TÀI KHOẢN chưa
+        //   được gán nhà máy, còn ở đây hai lối vào kia là một VÉ và một KHOÁ.
+        scopeApplied: phamViDaApAnh(loiVaoAnh),
         pointsWithImages,
       });
     } catch (error: any) {
@@ -759,6 +825,14 @@ async function startServer() {
         return res.status(400).json({ success: false, message: "Invalid point definition ID" });
       }
 
+      // ★★★ CƯỠNG CHẾ **KHÔNG QUA CỜ** — và đây là một phép đo, không phải một lựa chọn dũng cảm:
+      //     người gọi DUY NHẤT tìm được trong toàn repo là `test-android-api.mjs:351`, và nó **đã
+      //     gửi sẵn `X-API-Key`** (helper `restGet`, :82-84). Không một màn hình trình duyệt hay
+      //     màn hình RN nào chạm tuyến này. Để nó sau cờ là trì hoãn vô cớ.
+      const cong = await thuMoCongAnh(req, "anh", req.path);
+      if (!cong.ok) return res.status(cong.ma).json({ success: false, ...cong.than });
+      const loiVaoAnh = cong.loiVao;
+
       const { eq } = await import("drizzle-orm");
       const schema = await import("../../drizzle/schema");
       const { getDb } = await import("../db/connection");
@@ -779,6 +853,7 @@ async function startServer() {
           cropWidth: schema.measurementPointDefs.cropWidth,
           cropHeight: schema.measurementPointDefs.cropHeight,
           productModelId: schema.measurementPointDefs.productModelId,
+          machineId: schema.measurementPointDefs.machineId,
         })
         .from(schema.measurementPointDefs)
         .where(eq(schema.measurementPointDefs.id, pointDefId))
@@ -789,6 +864,21 @@ async function startServer() {
       }
 
       const point = result[0];
+
+      // ⚠⚠ HAI TRỤC, vì `measurement_point_defs.machineId` là **NULLABLE**. Điểm đo gắn máy thì
+      //    chiếu thẳng qua máy; điểm đo KHÔNG gắn máy thuộc về một sản phẩm dùng chung và phải
+      //    chiếu qua hợp-ba-đường. Bỏ nhánh thứ hai ⇒ mọi điểm đo `machineId IS NULL` bị từ chối
+      //    với chính chủ của nó (vá quá tay), giữ mỗi nhánh thứ hai ⇒ điểm đo gắn máy của nhà máy
+      //    khác lọt qua. Cần CẢ HAI.
+      const trongPhamViDiem =
+        point.machineId != null
+          ? await mayTrongPhamViAnh(loiVaoAnh, point.machineId)
+          : await sanPhamTrongPhamViAnh(loiVaoAnh, point.productModelId);
+      if (!trongPhamViDiem) {
+        return res
+          .status(403)
+          .json(thanTuChoiPhamViAnh("measurementPoint", String(pointDefId)));
+      }
 
       // Also get product model reference image
       let productReferenceImageUrl: string | null = null;
@@ -812,7 +902,9 @@ async function startServer() {
         pointDefId: point.id,
         pointCode: point.code,
         pointName: point.name,
-        referenceImageUrl: point.referenceImageUrl,
+        referenceImageUrl: point.referenceImageUrl
+          ? kyNeuLaDuongDanNoiBo(point.referenceImageUrl, "anh")
+          : point.referenceImageUrl,
         position: {
           x: point.positionX,
           y: point.positionY,
@@ -820,7 +912,10 @@ async function startServer() {
           cropWidth: point.cropWidth,
           cropHeight: point.cropHeight,
         },
-        productReferenceImageUrl,
+        scopeApplied: phamViDaApAnh(loiVaoAnh),
+        productReferenceImageUrl: productReferenceImageUrl
+          ? kyNeuLaDuongDanNoiBo(productReferenceImageUrl, "anh")
+          : productReferenceImageUrl,
       });
     } catch (error: any) {
       console.error("[API] measurement-point reference-image error:", error);
@@ -834,6 +929,17 @@ async function startServer() {
       const productModelId = parseInt(req.params.id, 10);
       if (isNaN(productModelId)) {
         return res.status(400).json({ success: false, message: "Invalid product model ID" });
+      }
+
+      // ★★★ CƯỠNG CHẾ **KHÔNG QUA CỜ** — người gọi duy nhất đo được là `test-android-api.mjs:373`,
+      //     và nó đã gửi sẵn `X-API-Key`. Xem lý do đầy đủ ở tuyến `/api/measurement-point/...`.
+      const cong = await thuMoCongAnh(req, "anh", req.path);
+      if (!cong.ok) return res.status(cong.ma).json({ success: false, ...cong.than });
+      const loiVaoAnh = cong.loiVao;
+      if (!(await sanPhamTrongPhamViAnh(loiVaoAnh, productModelId))) {
+        return res
+          .status(403)
+          .json(thanTuChoiPhamViAnh("productModel", String(productModelId)));
       }
 
       const { eq } = await import("drizzle-orm");
@@ -886,15 +992,20 @@ async function startServer() {
           id: pm[0].id,
           code: pm[0].code,
           name: pm[0].name,
-          referenceImageUrl: pm[0].referenceImageUrl,
+          referenceImageUrl: pm[0].referenceImageUrl
+            ? kyNeuLaDuongDanNoiBo(pm[0].referenceImageUrl, "anh")
+            : pm[0].referenceImageUrl,
           imageWidth: pm[0].imageWidth,
           imageHeight: pm[0].imageHeight,
         },
+        scopeApplied: phamViDaApAnh(loiVaoAnh),
         points: points.map((p) => ({
           id: p.id,
           code: p.code,
           name: p.name,
-          referenceImageUrl: p.referenceImageUrl,
+          referenceImageUrl: p.referenceImageUrl
+            ? kyNeuLaDuongDanNoiBo(p.referenceImageUrl, "anh")
+            : p.referenceImageUrl,
           position: {
             x: p.positionX,
             y: p.positionY,
@@ -4654,6 +4765,16 @@ async function startServer() {
     try {
       const { packageId, fileName } = req.params;
 
+      // ★★★ CỔNG ẢNH — sau cờ `ANH_CONG_MO` vì app RN nạp tuyến này **gián tiếp**: nó nhận
+      //     `imageUrl = /api/aoi/image/...` từ `/api/inspection/:id/images` rồi ghép base và đưa
+      //     thẳng vào `<Image source={{uri}}>` (không cookie, không header).
+      let loiVaoAnh: LoiVaoAnh = { kieu: "toanCuc" };
+      if (!congAnhMo()) {
+        const cong = await thuMoCongAnh(req, "anh", req.path);
+        if (!cong.ok) return res.status(cong.ma).json({ success: false, ...cong.than });
+        loiVaoAnh = cong.loiVao;
+      }
+
       // Detect content type from file extension (fallback: detect from magic bytes later)
       const ext = (fileName.split('.').pop() || '').toLowerCase();
       const mimeMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', svg: 'image/svg+xml' };
@@ -4681,6 +4802,13 @@ async function startServer() {
 
       if (pkgs.length === 0) return res.status(404).json({ message: "Package not found" });
       const pkg = pkgs[0];
+
+      // ⚠ Trục thu hẹp là `inspection_packages.machineId` (NOT NULL) — **KHÔNG** phải `factoryCode`
+      //   trên cùng bảng: cột ấy nullable và **tự khai từ `meta.json` của máy gửi lên**, tức là lời
+      //   khai của bên được kiểm. `machineId` do máy chủ phân giải khi nhận gói.
+      if (!(await mayTrongPhamViAnh(loiVaoAnh, pkg.machineId))) {
+        return res.status(403).json(thanTuChoiPhamViAnh("inspectionPackage", packageId));
+      }
 
       // Extract & serve image (import the helper from router)
       const { storagePut: _, storageGet } = await import("../storage");
@@ -4806,6 +4934,19 @@ async function startServer() {
   app.get("/api/aoi/download/:packageId", async (req, res) => {
     try {
       const { packageId } = req.params;
+
+      // ★★★ CỔNG — mục `"zip"`, KHÔNG phải `"anh"`. Đây là chỗ ô `pv` của vé có tải trọng thật:
+      //     một vé cấp để **xem ảnh** không mở được lượt tải **toàn bộ gói ZIP gốc** (gói mang cả
+      //     `meta.json` lẫn mọi ảnh của lần kiểm), kể cả khi vé còn hạn và chữ ký hoàn toàn hợp lệ.
+      // ⚠ Sau cờ vì ba script trong repo (`test-aoi-package.mjs:285,375`, `scripts/test-aoi-upload.ts:391`)
+      //   đang gọi tuyến này trần — trong đó có bộ kiểm mà agent giữ phần GHI có thể đang chạy.
+      let loiVaoAnh: LoiVaoAnh = { kieu: "toanCuc" };
+      if (!congAnhMo()) {
+        const cong = await thuMoCongAnh(req, "zip", req.path);
+        if (!cong.ok) return res.status(cong.ma).json({ success: false, ...cong.than });
+        loiVaoAnh = cong.loiVao;
+      }
+
       const database = await getDb();
       if (!database) return res.status(500).json({ message: "Database unavailable" });
 
@@ -4819,6 +4960,9 @@ async function startServer() {
 
       if (pkgs.length === 0) return res.status(404).json({ message: "Package not found" });
       const pkg = pkgs[0];
+      if (!(await mayTrongPhamViAnh(loiVaoAnh, pkg.machineId))) {
+        return res.status(403).json(thanTuChoiPhamViAnh("inspectionPackage", packageId));
+      }
       if (!pkg.storageKey) return res.status(404).json({ message: "ZIP not available" });
 
       const storageMode = process.env.STORAGE_MODE ?? "forge";
