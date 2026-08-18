@@ -353,6 +353,39 @@ public sealed class HistorianEndpointsOeeTests
         Assert.Equal(handEdited, File.ReadAllText(path));
     }
 
+    /// <summary>🔴 <b>Task Z-1 — item 11, at the operator's own surface, and it is the arm where the file
+    /// reads PERFECTLY.</b> A host comes up with no settings file, a backup is restored into the historian
+    /// directory underneath it, and the next <c>PUT</c> used to answer <c>200</c> and write the empty
+    /// in-memory table plus one machine over the restored file.
+    ///
+    /// <para>It also pins the widening the endpoint needed to keep answering <c>409</c>: the store now
+    /// raises a SECOND refusal type, so the handler catches their shared base. Reusing the
+    /// <c>Unreadable</c> type would have kept this test green through a published name asserting something
+    /// false about a file that read correctly.</para></summary>
+    [Fact]
+    public async Task OeeSettings_Put_AfterABackupIsRestoredUnderALiveStore_Returns409_AndDoesNotOverwriteIt()
+    {
+        var dir = TempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+        var settingsStore = new OeeSettingsStore(dir);
+        var fleetHost = NewFleetHost();
+
+        // A clean start: no file at all, which is the state that entitles a first write.
+        Assert.False(File.Exists(path));
+
+        var restored = "[ { \"machineCode\": \"SCRW-01\", \"plannedProductionRatio\": 0.33 } ]";
+        File.WriteAllText(path, restored);
+
+        var result = await HistorianEndpoints.PutOeeSettingsAsync(
+            "SCRW-01", new OeeSettingsUpdateRequest(IdealCycleSecondsOverride: 0.5, PlannedProductionRatio: 0.75),
+            settingsStore, fleetHost);
+
+        var conflict = Assert.IsType<JsonHttpResult<ApiErrorDto>>(result);
+        Assert.Equal(StatusCodes.Status409Conflict, conflict.StatusCode);
+        Assert.Contains("oee-settings.json", conflict.Value!.Error, StringComparison.Ordinal);
+        Assert.Equal(restored, File.ReadAllText(path));
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // GET /v1/historian/oee/fleet
     // ─────────────────────────────────────────────────────────────────────

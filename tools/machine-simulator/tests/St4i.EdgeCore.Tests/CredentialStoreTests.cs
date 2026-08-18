@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.AccessControl;
@@ -205,6 +206,220 @@ public class CredentialStoreTests
         {
             Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, previous);
             try { Directory.Delete(redirected, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 TASK Z-1 — item 10 of docs/owner-decisions.md, decided by the OWNER on 2026-08-18:
+    // KEEP THE OLD BLOB UNDER ANOTHER NAME rather than overwrite it.
+    //
+    // What was measured before this: Load answers null both for "no file" and for "a file this process
+    // cannot unprotect", the caller cannot branch, so it takes the re-claim path, and the re-claim path
+    // calls Save — which overwrote. A blob sealed under a different DPAPI scope or copied from another
+    // machine is READABLE AGAIN once the environment is repaired, while it still exists. So a
+    // recoverable environment fault became an unrecoverable loss, silently.
+    //
+    // These five are the fix, measured at the three outcomes Save now distinguishes plus the two
+    // properties an operator depends on: that the kept file is findable, and that it is never reported
+    // as a stored credential.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 <b>The one the decision is about.</b> A blob is present, this process cannot decrypt
+    /// it, and a re-claim arrives. The new credential must land AND the old bytes must still be on disk
+    /// afterwards, byte for byte, under a name that says what they are.</summary>
+    [Fact]
+    public void Save_OverABlobThisProcessCannotDecrypt_KeepsTheOldBytesAside_UnderANameThatSaysWhy()
+    {
+        var previous = Environment.GetEnvironmentVariable(CredentialStore.EnvVarDir);
+        var root = Path.Combine(Path.GetTempPath(), "st4i-creds-keepaside-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, root);
+            Directory.CreateDirectory(root);
+
+            var code = "Z1-UNUSABLE-" + Guid.NewGuid().ToString("N")[..8];
+            var live = Path.Combine(root, code + ".bin");
+            var unusable = "these bytes are not a DPAPI envelope this machine can unprotect"u8.ToArray();
+            File.WriteAllBytes(live, unusable);
+
+            // Premise, in both directions: the bytes are where the store looks, and the store really
+            // cannot use them — so the caller really is on the re-claim path.
+            Assert.True(File.Exists(live));
+            Assert.Null(CredentialStore.Load(code));
+
+            CredentialStore.Save(code, "mk_reclaimed_after_the_unreadable_blob_was_kept");
+
+            // The re-claim still works — this is a data MOVE, not a refusal. Refusing here would leave a
+            // machine unable to onboard over a blob nobody can read, which is a worse end than the one
+            // the decision was taken to prevent.
+            Assert.Equal("mk_reclaimed_after_the_unreadable_blob_was_kept", CredentialStore.Load(code));
+
+            // 🔴 The measurement: the old bytes are still on disk, byte for byte, beside the live blob.
+            var names = Directory.GetFiles(root).Select(Path.GetFileName)
+                .OrderBy(n => n, StringComparer.Ordinal).ToList();
+            var kept = Assert.Single(
+                names.Where(n => n!.StartsWith(code + ".bin.unreadable-", StringComparison.Ordinal)));
+            Assert.Equal(unusable, File.ReadAllBytes(Path.Combine(root, kept!)));
+
+            // …and the directory holds exactly those two files, so nothing was deleted on the way.
+            Assert.Equal(
+                new[] { code + ".bin", kept }.OrderBy(n => n, StringComparer.Ordinal).ToList(), names);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, previous);
+            try { Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>🔴 The half that stops the fix from being a sweep: a blob this process CAN unprotect is
+    /// still replaced, and nothing is kept aside. That is an ordinary re-key, the caller holds the new
+    /// key, and no recoverable bytes are at stake — keeping a copy of every superseded credential would
+    /// be an accumulating pile of live secrets nobody asked for.</summary>
+    [Fact]
+    public void Save_OverAUsableBlob_ReplacesIt_AndKeepsNothingAside()
+    {
+        var previous = Environment.GetEnvironmentVariable(CredentialStore.EnvVarDir);
+        var root = Path.Combine(Path.GetTempPath(), "st4i-creds-rekey-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, root);
+
+            var code = "Z1-REKEY-" + Guid.NewGuid().ToString("N")[..8];
+            CredentialStore.Save(code, "mk_first");
+            Assert.Equal("mk_first", CredentialStore.Load(code));
+
+            CredentialStore.Save(code, "mk_second");
+
+            Assert.Equal("mk_second", CredentialStore.Load(code));
+            Assert.Equal(new[] { code + ".bin" },
+                Directory.GetFiles(root).Select(Path.GetFileName).ToArray());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, previous);
+            try { Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>The third outcome, and the one a first onboarding takes: nothing at the path, so nothing
+    /// to keep. Without this the two above would both be consistent with a Save that keeps something
+    /// aside on every call.</summary>
+    [Fact]
+    public void Save_WithNothingAtThePath_WritesTheOneFile_AndKeepsNothingAside()
+    {
+        var previous = Environment.GetEnvironmentVariable(CredentialStore.EnvVarDir);
+        var root = Path.Combine(Path.GetTempPath(), "st4i-creds-firstsave-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, root);
+
+            var code = "Z1-FIRST-" + Guid.NewGuid().ToString("N")[..8];
+            CredentialStore.Save(code, "mk_first_ever");
+
+            Assert.Equal(new[] { code + ".bin" },
+                Directory.GetFiles(root).Select(Path.GetFileName).ToArray());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, previous);
+            try { Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>🔴 <b>Pinned rather than reasoned about, because the reasoning is wrong on Windows often
+    /// enough to matter.</b> <c>ListMachineCodes</c> enumerates <c>*.bin</c>, and a three-character
+    /// extension makes Win32 pattern matching return names whose extension merely BEGINS with it
+    /// (<c>*.xls</c> famously returns <c>book.xlsx</c>). A kept-aside blob reported as a stored
+    /// credential would tell the Settings view that a machine still has a key it cannot use.</summary>
+    [Fact]
+    public void ListMachineCodes_DoesNotReportABlobThatWasKeptAside()
+    {
+        var previous = Environment.GetEnvironmentVariable(CredentialStore.EnvVarDir);
+        var root = Path.Combine(Path.GetTempPath(), "st4i-creds-listing-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, root);
+            Directory.CreateDirectory(root);
+
+            var code = "Z1-LISTING-" + Guid.NewGuid().ToString("N")[..8];
+            File.WriteAllBytes(Path.Combine(root, code + ".bin"), "not a DPAPI envelope"u8.ToArray());
+            CredentialStore.Save(code, "mk_after_the_keep_aside");
+
+            var kept = Directory.GetFiles(root)
+                .Select(Path.GetFileName)
+                .Where(f => f!.Contains(".bin.unreadable-", StringComparison.Ordinal))
+                .ToList();
+            Assert.Single(kept);
+
+            // The live blob is listed ONCE, under the machine code, and the kept-aside file contributes
+            // no entry of its own — not under a stem ending in ".bin" and not under any other.
+            var listed = CredentialStore.ListMachineCodes();
+            Assert.Single(listed.Where(c => string.Equals(c, code, StringComparison.OrdinalIgnoreCase)));
+            Assert.DoesNotContain(listed, c => c.Contains("unreadable", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, previous);
+            try { Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>🔴 <b>The name collision the decision explicitly left to this task, forced rather than
+    /// hoped for.</b> The kept-aside name carries a UTC stamp to the SECOND, so two keeps inside one
+    /// second would land on the same name; running two saves back to back and hoping the clock cooperates
+    /// would be a test whose subject depends on how fast the machine is. So the colliding names are
+    /// PRE-CREATED — both the current second and the next one, which closes the roll-over between
+    /// computing the stamp here and <c>Save</c> computing its own — and the assertion is that neither
+    /// pre-created file changed by one byte.
+    ///
+    /// <para>The guarantee underneath is structural, not arithmetic: the move uses the
+    /// <c>File.Move</c> overload WITHOUT the overwrite flag, which throws rather than replaces. The
+    /// free-name search only decides how readable the result is.</para></summary>
+    [Fact]
+    public void Save_KeepingABlobAside_NeverOverwritesAKeptBlobThatIsAlreadyThere()
+    {
+        var previous = Environment.GetEnvironmentVariable(CredentialStore.EnvVarDir);
+        var root = Path.Combine(Path.GetTempPath(), "st4i-creds-collide-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, root);
+            Directory.CreateDirectory(root);
+
+            var code = "Z1-COLLIDE-" + Guid.NewGuid().ToString("N")[..8];
+            var live = Path.Combine(root, code + ".bin");
+
+            // Both candidate stamps, so the collision happens whichever side of a second boundary Save
+            // lands on. The sentinel content is what proves neither was touched.
+            var now = DateTime.UtcNow;
+            var occupied = new[] { now, now.AddSeconds(1) }
+                .Select(t => Path.Combine(
+                    root,
+                    code + ".bin.unreadable-" + t.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)))
+                .ToList();
+            var sentinel = "AN EARLIER KEPT BLOB THAT MUST SURVIVE"u8.ToArray();
+            foreach (var taken in occupied) File.WriteAllBytes(taken, sentinel);
+
+            var unusable = "the blob being kept aside now"u8.ToArray();
+            File.WriteAllBytes(live, unusable);
+
+            CredentialStore.Save(code, "mk_after_a_collision");
+
+            // Neither pre-existing kept blob moved by a byte.
+            foreach (var taken in occupied) Assert.Equal(sentinel, File.ReadAllBytes(taken));
+
+            // …and this keep found a free name of its own and holds the bytes it was given.
+            var fresh = Directory.GetFiles(root)
+                .Where(f => Path.GetFileName(f)!.StartsWith(code + ".bin.unreadable-", StringComparison.Ordinal)
+                         && !occupied.Contains(f, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+            Assert.Equal(unusable, File.ReadAllBytes(Assert.Single(fresh)));
+            Assert.Equal("mk_after_a_collision", CredentialStore.Load(code));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, previous);
+            try { Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
         }
     }
 

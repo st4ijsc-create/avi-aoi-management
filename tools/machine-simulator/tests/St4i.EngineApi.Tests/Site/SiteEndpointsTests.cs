@@ -286,7 +286,9 @@ public sealed class SiteEndpointsTests
 
         Assert.True(writeSites.Count == 1,
             $"site-link.json has {writeSites.Count} writer(s) in src/: {string.Join(", ", writeSites)}. " +
-            "There must be exactly ONE, in SiteBridgeManager.ApplyAsync. Program.cs's unreadable arm tells " +
+            "There must be exactly ONE, in SiteBridgeManager's shared apply body (ApplyCoreAsync), reached " +
+            "with persist:true from ApplyAsync and NOT reached at all from ReapplyCurrentAsync — task Z-1, " +
+            "owner-decisions item 8. Program.cs's unreadable arm tells " +
             "the operator the file 'was NOT overwritten or deleted by this start', and that sentence is " +
             "true only because skipping ApplyAsync skips the only writer. A second writer makes the " +
             "product lie at the moment an operator is deciding whether their Site configuration still " +

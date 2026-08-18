@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Linq;
@@ -52,6 +53,48 @@ namespace St4i.EdgeCore.Infrastructure;
 /// so a <c>.bin</c> file written by a pre-FF-2 build can no longer be decrypted here — <see cref="Load"/>
 /// treats that (and any other corrupt/foreign blob) as "no stored key" rather than throwing, so the
 /// caller's normal empty-credential path (re-claim) kicks in instead of a crash.
+///
+/// <para>🔴 <b>Task Z-1 — THE RE-CLAIM PATH NO LONGER DESTROYS THE BLOB IT COULD NOT READ</b> (owner
+/// decision file, item 10, decided by the OWNER on 2026-08-18: <i>keep the old blob under another name</i>,
+/// explicitly NOT the other option that item named, which was to make <see cref="Load"/> throw).</para>
+///
+/// <para><b>What was measured (V-1).</b> <see cref="Load"/> answers <see langword="null"/> both for
+/// <i>there is no file</i> and for <i>there is a file this process cannot unprotect</i>, and the second is
+/// usually a RECOVERABLE environment fault: a pre-FF-2 <c>CurrentUser</c> blob, or one copied from another
+/// machine, becomes readable again the moment the environment is put back — <b>while it still exists</b>.
+/// The caller cannot branch, so it takes the re-claim path, and the re-claim path calls <see cref="Save"/>,
+/// which used to overwrite. A repairable fault was silently converted into an unrecoverable loss.</para>
+///
+/// <para><b>Where the law is applied, and why HERE rather than at the read.</b> The law
+/// (<c>docs/startup-failure-posture.md</c> §3.6) is that only <i>there is nothing here</i> entitles a caller
+/// to establish a value of its own and persist it. The value being established is the NEW <c>mk_</c> key and
+/// the statement that persists it is <see cref="Save"/>, so that is the statement the licence belongs to —
+/// and it is the one place in this static class that can classify the target without changing a signature
+/// several projects call. <see cref="Save"/> now distinguishes three outcomes at the moment of the write:
+/// <list type="bullet">
+/// <item><description><b>nothing at the path</b> — write, exactly as before.</description></item>
+/// <item><description><b>a blob this process CAN unprotect</b> — write, exactly as before. Nothing
+/// recoverable is at stake: whoever is calling holds a key and is deliberately re-keying a credential this
+/// machine can already read.</description></item>
+/// <item><description><b>a blob that is there and this process cannot use</b> — the old file is MOVED to a
+/// sibling name that says what it is, and only then is the new one written. Nothing is deleted and nothing
+/// is overwritten.</description></item>
+/// </list></para>
+///
+/// <para><b>The name is the discoverable record, and that is deliberate</b>: the old blob is renamed to
+/// <c>&lt;machine code&gt;.bin.unreadable-&lt;UTC timestamp&gt;</c> beside the live one, so an operator
+/// listing the creds directory sees which machine it belonged to, that it could not be read, and when. It is
+/// NOT reported through any logger seam, because this class is <see langword="static"/> and has none — it
+/// announces the move on the same <c>[credentialstore]</c> standard-error channel it already uses for its
+/// ACL warning, and that channel is not the Windows Event Log under <c>AddWindowsService</c>. So the FILE is
+/// the record an operator can rely on finding, which is why its name carries the whole story.</para>
+///
+/// <para><b>What the sideline is NOT.</b> It does not make the store readable again — the environment fault
+/// still has to be fixed, by hand, and then the kept blob decrypted by whatever repaired it. It is not
+/// pruned, ever, by anything in this product: a decommissioning wipe removes it because
+/// <c>packaging/remove-data.ps1</c> removes the whole <c>creds</c> directory, and nothing else does. And it
+/// never appears in <see cref="ListMachineCodes"/>, which enumerates <c>*.bin</c> — a machine whose only
+/// remaining file is a sidelined one has NO stored credential, which is the truth.</para>
 /// </summary>
 public static class CredentialStore
 {
@@ -67,7 +110,19 @@ public static class CredentialStore
     /// <summary>DPAPI-protects <paramref name="mkKey"/> and writes it to this machine's credential file
     /// (creating the containing directory tree if needed, and locking down its ACL — see this class's
     /// own doc comment and <see cref="SecurityDirAcl"/> — every time, so an install upgraded from a
-    /// pre-FF-2 build gets self-healed on the very next credential save, not just a fresh one).</summary>
+    /// pre-FF-2 build gets self-healed on the very next credential save, not just a fresh one).
+    ///
+    /// <para>🔴 <b>Task Z-1 — a blob already at the path that this process CANNOT UNPROTECT is moved aside
+    /// first, never overwritten.</b> See this class's own doc comment for the decision, the three outcomes
+    /// and the name the old blob is kept under. A blob this process CAN unprotect is still replaced, because
+    /// that is an ordinary re-key and nothing recoverable is at stake.</para>
+    ///
+    /// <para><b>New failure mode, stated because it is a widening of what this method can throw.</b> If the
+    /// old blob has to be kept and keeping it FAILS — the file is locked, or the ACL refuses the rename —
+    /// the exception propagates and the new credential is NOT written. That is the correct end: the
+    /// alternative is to destroy the bytes this method exists to preserve. It is reachable only when a blob
+    /// is present AND unusable AND unmovable; with nothing at the path, or a usable blob at it, this method
+    /// throws exactly what it always did.</para></summary>
     public static void Save(string machineCode, string mkKey)
     {
         ArgumentException.ThrowIfNullOrEmpty(machineCode);
@@ -83,15 +138,100 @@ public static class CredentialStore
         // SecurityDirAcl.Apply's own doc comment), not just when the directory is first created.
         SecurityDirAcl.Apply(dir, msg => Console.Error.WriteLine($"[credentialstore] {msg}"));
 
+        // 🔴 TASK Z-1 — item 10. Ordered BEFORE the write and after the directory exists, so the write below
+        // can only ever land on a path that holds nothing or held something this process could read.
+        KeepAnUnusableBlobAside(path);
+
         var plain = Encoding.UTF8.GetBytes(mkKey);
         var protectedBytes = ProtectedData.Protect(plain, Entropy, DataProtectionScope.LocalMachine);
         File.WriteAllBytes(path, protectedBytes);
     }
 
+    /// <summary>What the old blob is renamed to, between the <c>.bin</c> and the UTC stamp. Kept as a
+    /// constant because it is the string an operator greps the creds directory for.</summary>
+    private const string KeptAsideMarker = ".unreadable-";
+
+    /// <summary>🔴 Task Z-1 — the three-outcome classification of what is already at
+    /// <paramref name="path"/>, taken at the moment of the write. Returns having done nothing when there is
+    /// nothing there, and when what is there unprotects cleanly; moves the file aside otherwise.
+    ///
+    /// <para><b>There is no existence probe</b>, for the reason <c>docs/startup-failure-posture.md</c>
+    /// §3.1a-now gives at every other store in this product: the open IS the classifier, and only the
+    /// filesystem's own missing-file / missing-directory answers mean <i>absent</i>. Any other read failure
+    /// means something is there that this process cannot use, which is the outcome that must NOT be
+    /// overwritten. Being wrong in the other direction is the one that costs bytes.</para></summary>
+    private static void KeepAnUnusableBlobAside(string path)
+    {
+        try
+        {
+            var existing = File.ReadAllBytes(path);
+            try
+            {
+                _ = ProtectedData.Unprotect(existing, Entropy, DataProtectionScope.LocalMachine);
+                return; // Present and usable: an ordinary re-key. Replacing it is what the caller asked for.
+            }
+            catch (CryptographicException)
+            {
+                // Present and NOT usable — wrong DPAPI scope, another machine, or corrupt. Fall through.
+            }
+        }
+        catch (FileNotFoundException)
+        {
+            return; // Absent. The one outcome that entitles the caller to establish a value here.
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return; // Absent, same reasoning.
+        }
+        catch (Exception)
+        {
+            // Something is at the path and this process could not even read it. That is not "nothing here",
+            // so it falls through to the move rather than to the write.
+        }
+
+        var kept = ReserveKeptAsidePath(path);
+        // File.Move WITHOUT the overwrite flag, deliberately: it THROWS if the destination exists, so a
+        // stale answer from the probe inside ReserveKeptAsidePath can cost a failed Save but can never cost
+        // a kept blob. The probe picks a readable name; this overload is what makes the guarantee.
+        File.Move(path, kept);
+
+        Console.Error.WriteLine(
+            $"[credentialstore] The stored credential at \"{path}\" is present and this process could NOT " +
+            $"decrypt it (wrong DPAPI scope, a different machine, or corrupt). It was NOT overwritten — it " +
+            $"was kept at \"{kept}\" and a freshly claimed credential was written in its place. If the cause " +
+            "was an environment change, that file becomes readable again once the environment is put back; " +
+            "nothing in this product ever deletes it.");
+    }
+
+    /// <summary>A free sibling path for a blob being kept aside:
+    /// <c>&lt;machine code&gt;.bin.unreadable-&lt;yyyyMMddTHHmmssZ&gt;</c>, with <c>-2</c>, <c>-3</c>… only
+    /// if that exact name is already taken (two unusable blobs kept aside for the same machine inside one
+    /// second). The extension deliberately does NOT end in <c>.bin</c>, so
+    /// <see cref="ListMachineCodes"/> cannot report a kept-aside blob as a stored credential.</summary>
+    private static string ReserveKeptAsidePath(string path)
+    {
+        var stamp = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+        var baseName = path + KeptAsideMarker + stamp;
+
+        var candidate = baseName;
+        for (var n = 2; File.Exists(candidate); n++)
+        {
+            candidate = $"{baseName}-{n}";
+        }
+
+        return candidate;
+    }
+
     /// <summary>Lists the machine codes that currently have a saved credential file — the raw filename
     /// stems under the creds directory (Task 19a: Settings' stored-credentials view), NOT their
     /// decrypted mk_ values. Returns an empty list (not an exception) if the creds directory doesn't
-    /// exist yet, e.g. a fresh install that has never called <see cref="Save"/>.</summary>
+    /// exist yet, e.g. a fresh install that has never called <see cref="Save"/>.
+    ///
+    /// <para>🔴 Task Z-1 — a blob <see cref="Save"/> kept aside is deliberately NOT listed here: its name
+    /// does not end in <c>.bin</c>, and a machine whose only remaining file is a kept-aside one genuinely has
+    /// no stored credential. Pinned rather than reasoned about —
+    /// <c>CredentialStoreTests.ListMachineCodes_DoesNotReportABlobThatWasKeptAside</c>, because
+    /// <c>*.bin</c> is a three-character extension and Windows pattern matching treats those specially.</para></summary>
     public static IReadOnlyList<string> ListMachineCodes()
     {
         var dir = CredsDir();
@@ -111,7 +251,25 @@ public static class CredentialStore
     /// <c>CurrentUser</c>-encrypted <c>.bin</c> — or one copied in from a different machine all throw
     /// <see cref="CryptographicException"/> from <see cref="ProtectedData.Unprotect"/>; all of those are
     /// treated the same as "no stored key" so a caller's normal empty-credential path (forcing a
-    /// re-claim) runs instead of an unhandled crash).</summary>
+    /// re-claim) runs instead of an unhandled crash).
+    ///
+    /// <para>🔴 <b>Task Z-1 — this <see langword="null"/> IS STILL AMBIGUOUS, ON PURPOSE, AND THAT IS THE
+    /// DECIDED SHAPE.</b> Item 10 of <c>docs/owner-decisions.md</c> named two repairs and the owner chose the
+    /// one that is NOT here: making this method throw would have changed the contract of a
+    /// <see langword="static"/> method several projects call, so the loss is stopped at
+    /// <see cref="Save"/> instead, which keeps the unusable blob under another name rather than overwriting
+    /// it. A caller still cannot tell the two cases apart from this return value, and it no longer has to:
+    /// taking the re-claim path can no longer destroy the bytes that would have come back once the
+    /// environment was repaired. What this method's <see langword="null"/> costs after Z-1 is that the
+    /// operator is not TOLD at read time — they find out from the kept-aside file, or from the line
+    /// <see cref="Save"/> writes when it keeps one.</para>
+    ///
+    /// <para>🔴 <b>And one narrower thing that is NOT the decided exception:</b> the
+    /// <see cref="File.Exists(string)"/> probe below is a second surface answering a question this read could
+    /// answer itself, which every other store in this product removed at task Q-1. It makes an unreadable
+    /// directory or a locked file throw out of this method rather than return <see langword="null"/> — a
+    /// different outcome from the one this doc comment describes, at a site nothing measures. Item 10 decided
+    /// the OVERWRITE; it did not decide this, and Z-1 did not take it.</para></summary>
     public static string? Load(string machineCode)
     {
         ArgumentException.ThrowIfNullOrEmpty(machineCode);

@@ -36,10 +36,10 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 5 | ~~ba hình dạng xoá file~~ → **`oee-settings.json`** | 🔨 **GOM VỀ MỘT LUẬT** (2026-08-17) — đã thi hành, V-1 |
 | 6 | log hoãn của một lần cài đặt hỏng | 🔨 **PHÁT RA TRÊN ĐƯỜNG NÉM LỖI** (2026-08-17) — đã thi hành, T-1 |
 | 7 | nửa sau của S4 | 🔨 **DỪNG + GIỮ COMMIT + BÁO TRÊN `/v1/health`** (2026-08-17) — đã thi hành, U-1 |
-| 8 | `ReapplyCurrentAsync` ghi đè `site-link.json` | 🔨 **CHẶN — cùng luật, tại chỗ gọi THỨ BA của `ApplyAsync`** (2026-08-18, điều phối viên quyết theo uỷ quyền); **việc còn nợ** |
+| 8 | `ReapplyCurrentAsync` ghi đè `site-link.json` | 🔨 **CHẶN — cùng luật, tại chỗ gọi THỨ BA của `ApplyAsync`** (2026-08-18, điều phối viên quyết theo uỷ quyền); đã thi hành, Z-1 |
 | 9 | sàn môi trường trên nhánh *không đọc được* | 🔴 **CHỜ ANH** — chủ sở hữu **HOÃN** 2026-08-18 (*"để lại sau cùng"*); một lần hoãn không phải một phán quyết |
-| 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔨 **GIỮ BLOB CŨ DƯỚI TÊN KHÁC** (2026-08-18) — DI CHUYỂN dữ liệu, **miễn trừ CHỈ cho mục này**; **việc còn nợ** |
-| 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); **việc còn nợ** |
+| 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔨 **GIỮ BLOB CŨ DƯỚI TÊN KHÁC** (2026-08-18) — DI CHUYỂN dữ liệu, **miễn trừ CHỈ cho mục này**; đã thi hành, Z-1 |
+| 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); đã thi hành, Z-1 |
 | 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
@@ -61,6 +61,11 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 **10, 11 và 12 do CHỦ SỞ HỮU**; mục **8 do ĐIỀU PHỐI VIÊN, theo uỷ quyền**. Mục 9 bị
 **hoãn**. Bốn mục đã quyết **không rời khỏi file**: chúng chuyển sang **Phần II**, chỗ
 dành cho một mục đã có phán quyết mà việc thì chưa làm.
+
+**Và ba trong bốn mục ấy đã đi tiếp, cùng ngày:** mục **8, 10 và 11** được thi hành bởi
+nhiệm vụ **Z-1** (2026-08-18) và nay nằm ở **Phần III**, mỗi mục mang một **ghi chép thi
+hành ghi kèm ngày** — đúng điều kiện mà banner Phần II đặt ra. Mục **12** ở lại Phần II
+(nhiều vòng, chưa làm). Mục **9** ở lại đây.
 
 ⏸️ **Một lần hoãn không phải một phán quyết, và mục 9 ở lại đây vì thế.** Luật của file
 này đòi một **quyết định** ghi kèm ngày và người quyết; *"để lại sau cùng"* ghi **thứ
@@ -137,6 +142,11 @@ quyết trong chính mục ấy**. Nếu banner của một phần và dòng ph�
 khác nhau thì **dòng phán quyết thắng**, và cái kệ là thứ đang sai. Một mục rời phần này
 sang **Phần III** khi dòng phán quyết của nó có thêm **một ghi chép thi hành ghi kèm
 ngày** — không sớm hơn.
+
+🔨 **Ba mục đã rời phần này theo đúng điều kiện ấy, 2026-08-18:** mục **8, 10 và 11**, do
+nhiệm vụ **Z-1** thi hành; mỗi mục mang một ghi chép thi hành ghi kèm ngày ở cuối khối
+phán quyết của chính nó, và bảng phán quyết đầu file mang `đã thi hành, Z-1`. Phần này
+còn lại **mục 2, mục 4** (cùng ở trạng thái này từ 2026-08-16) và **mục 12**.
 
 ---
 
@@ -253,210 +263,6 @@ kèm câu *"không được giả định hình dạng hàng chỉ từ kiểu n
 >   exactly"*, một nhận xét, không phải một phán quyết;
 > - **không có nhân chứng nào được cắm**, mà phán quyết đòi *"cắm nhân chứng để nó không
 >   trôi lại"*.
-
----
-
-## 8. `ReapplyCurrentAsync` vẫn ghi đè một `site-link.json` không đọc được
-
-**Mục này sinh ra từ bản sửa của mục 1, và nó là PHẦN DƯ của chính luật mục 1.**
-Ghi ở đây chứ không chỉ trong báo cáo, vì đó đúng là thiếu sót mà file này được lập
-ra để chấm dứt: một điều "đã được nêu trong một báo cáo" là điều chủ sở hữu **không
-có đường nào mở ra đọc**.
-
-**Đo được:** `SiteBridgeManager.ReapplyCurrentAsync()` gọi `ApplyAsync(_current)`,
-mà `ApplyAsync` gọi `_store.Save(link)` **vô điều kiện**. Trên nhánh *không đọc
-được*, `_current` là bản ghi mặc định `new PersistedSiteLink()` — thứ **tiến trình
-tự nghĩ ra**, không đọc từ đĩa. Nên một lần xoay danh tính sẽ **ghi bản ghi mặc định
-đè lên các byte không đọc được của vận hành viên**, đúng thứ mục 1 vừa chặn ở đường
-khởi động.
-
-**Ở đâu:** `src/St4i.EdgeCore/Site/SiteBridgeManager.cs` (`ReapplyCurrentAsync` →
-`ApplyAsync` → `_store.Save`), tới được từ `POST /v1/site/identity/rotate` trong
-`src/St4i.EngineApi/Endpoints/SiteEndpoints.cs`.
-
-**Hậu quả vận hành:** host, cổng và chứng chỉ tin cậy đã ghim của Site mất — giống
-hệt mục 1 — nhưng chỉ khi có người **xoay danh tính** trong lúc file đang hỏng.
-
-**Vì sao KHÔNG sửa trong Q-1:** nó do vận hành viên **khởi xướng** nhưng không phải
-do họ **chọn** (họ chọn xoay khoá, không chọn ba giá trị link), mà đó chính là ranh
-giới luật này dựa vào. Đóng nó là đổi **HỢP ĐỒNG** của `ApplyAsync` — *khi nào* thì
-lưu — trên một phương thức có **ba** nơi gọi (`PUT /v1/site`, đường khởi động, và
-chính nó). Đó là một thay đổi thiết kế, không phải một cái chốt.
-
-**Nếu không quyết định:** hành vi giữ nguyên. Đường khởi động đã an toàn; đường này
-thì không, và không có gì báo cho ai biết ngoài các dòng đã ghi tại chỗ.
-
-**Bằng chứng:** commit `76b9e85d` (Q-1 vòng sửa lỗi);
-`docs/startup-failure-posture.md` §3.1b.
-
-> ### 🔨 PHÁN QUYẾT 2026-08-18 — CHẶN, CÙNG LUẬT, TẠI CHỖ GỌI THỨ BA
-> **Quyết bởi điều phối viên theo uỷ quyền, không phải bởi chủ sở hữu** — và uỷ quyền
-> ấy với tới được mục này: ba mục mà uỷ quyền KHÔNG phủ (2, 3, 4) là ba mục đổi thứ mà
-> **người ngoài tổ chức này** đang dựa vào, và mục 8 không đổi bề mặt nào ra ngoài.
->
-> **Phán quyết:** cú ghi bị **CHẶN**, dưới **cùng cái luật** mục 1 và mục 5 đã đứng trên,
-> áp tại **chỗ gọi thứ ba** của `ApplyAsync` — chính là `ReapplyCurrentAsync`, cái thứ ba
-> trong ba chỗ gọi mà mục này đã liệt kê ở trên (`PUT /v1/site`, đường khởi động, và
-> chính nó).
->
-> 🔴 **Không cơ chế, không mã, không thiết kế ở đây.** Mục này ghi **điều đã quyết**, và
-> việc chọn *cách* chặn — và trả cái giá mà chính mục này đã nêu tên, rằng đóng nó là đổi
-> **HỢP ĐỒNG** của một phương thức có ba nơi gọi — là việc của nhiệm vụ thi hành, không
-> phải của lần ghi này.
->
-> **Việc còn nợ.** Không dòng thực thi nào đổi vào ngày quyết định.
-
----
-
-## 10. `CredentialStore.Load` biến một lỗi môi trường KHÔI PHỤC ĐƯỢC thành mất mát không hoàn nguyên
-
-**Mục này sinh ra từ phần dư 1 của mục 5, và nó ở đây vì nó là một QUYẾT ĐỊNH.**
-Trước V-1 nó sống trong một gạch đầu dòng của một mục khác; luật của file này là một
-quyết định phải có mục của nó.
-
-**Đo được (V-1):** `CredentialStore.Load` trả **`null`** cho một blob **có mặt trên
-đĩa mà tiến trình này không giải mã được** — sai scope/entropy DPAPI (một `.bin` thời
-tiền-FF-2 mã theo `CurrentUser`), hoặc chép từ máy khác, hoặc hỏng — và trả **đúng
-`null` ấy** khi **không có file nào cả**. Người gọi không có gì để rẽ nhánh.
-
-**Cái chưa từng được ghi ở đâu là HẬU QUẢ.** Doc comment của chính `Load` trình bày
-`null` như một kết quả **lành** — *"để đường credential-rỗng bình thường của caller
-chạy thay vì một lần sập không bắt được"* — nhưng đường ấy là đường **claim lại**, và
-nó gọi `Save`, thứ **ghi đè**. Một blob sai scope/sai máy **đọc lại được sau khi sửa
-môi trường — nếu nó còn tồn tại**. Nên một lỗi sửa được bị biến thành mất mát không
-hoàn nguyên, im lặng.
-
-**Ở đâu:** `src/St4i.EdgeCore/Infrastructure/CredentialStore.cs` (`Load`, khối
-`catch (CryptographicException)`; `Save` → `File.WriteAllBytes`). **Chỗ gọi cố ý KHÔNG
-được liệt kê ở đây:** `Load` là `static` và được gọi từ nhiều project, nên một danh
-sách chỗ gọi viết tay là đúng loài khẳng định — một tập không ai kiểm đếm được, chép
-vào văn xuôi — mà file này lập ra để chấm dứt. Tìm bằng chính tên kiểu.
-
-**Vì sao KHÔNG sửa trong V-1:** phương án giữ được các byte là **giữ blob cũ dưới tên
-khác**, tức **DI CHUYỂN dữ liệu vận hành viên trong sản phẩm** — thứ brief của V-1 bắt
-buộc phải **dừng và báo** chứ không tự làm. Phương án "cho `Load` ném" là **đổi hợp
-đồng của một phương thức `static` mà nhiều project gọi**, tức một quyết định chứ không
-phải một cái chốt.
-
-> ⚠️ **Bản nháp của đoạn trên còn một câu nữa và câu ấy KHÔNG ĐO ĐƯỢC — nó bị rút
-> TRƯỚC khi xuất bản, và được ghi lại ở đây vì im lặng về một câu đã rút là đúng thứ
-> file này bắt.** Nguyên văn: *"cho nó ném biến một máy có credential hỏng thành một
-> máy không khởi động được"*. Đo lại: `FleetCore.UpdateSettings` gọi
-> `CredentialStore.Load` bên trong phần **kích hoạt**, và phần ấy đã được
-> `TryReplayStartupSettings` của `St4i.EngineApi/Program.cs` **bọc lại** từ H-1a — chính
-> `FleetCore.cs` ghi rằng vòng lặp boot cũ đã biến mất **vì** lần phát lại được sửa. Nên
-> một cú ném ở đó làm hỏng **lần phát lại**, và "không khởi động được" là một kết luận
-> không ai đo. Câu bị rút, không bị sửa cho vừa.
-
-**Nếu không quyết định:** giữ nguyên. Lần claim lại kế tiếp ghi đè blob cũ, và
-**không ai biết** rằng thứ vừa mất chỉ cần sửa môi trường là đọc lại được.
-
-**Bằng chứng — chạy lại được:**
-`tests/St4i.EngineApi.Tests/OperatorDataRemovalCensusTests.cs`,
-`CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt`
-— nó ghim **cả hai nửa**: hai ca cho cùng một `null`, và `Save` sau đó đè lên. Nó
-**ghim một khuyết tật đang sống làm đường cơ sở và KHÔNG sửa**, đúng như S-1 đã làm cho
-mục 5. Nếu anh quyết SỬA, khẳng định ấy đảo chiều và chỗ đảo chính là diff.
-
-> ### 🔨 PHÁN QUYẾT 2026-08-18 — GIỮ BLOB CŨ DƯỚI TÊN KHÁC, KHÔNG GHI ĐÈ
-> **Quyết bởi chủ sở hữu.** Trong hai phương án mục này nêu tên ở trên, phương án được
-> chọn là **giữ blob cũ dưới tên khác** — *không* phải phương án "cho `Load` ném".
->
-> ⚠️ **Hai phương án ấy KHÔNG được đánh nhãn chữ cái trong mục này.** Chúng được nêu
-> trong văn xuôi ở đoạn *"Vì sao KHÔNG sửa trong V-1"*. Phán quyết được ghi **bằng mô tả
-> chứ không bằng nhãn**, vì một nhãn `(a)` không tồn tại ở đây sẽ trỏ vào hư không — và ở
-> **mục 12**, nơi các nhãn ấy CÓ tồn tại, `(a)` là đúng phương án **ngược lại** với điều
-> chủ sở hữu chọn. Nhãn không đi qua được ranh giới giữa hai mục.
->
-> #### 🔴 ĐÂY LÀ MỘT MIỄN TRỪ, VÀ NÓ CHỈ ÁP CHO MỤC NÀY
-> Kể từ Q-1, **mọi brief đều bắt DI CHUYỂN dữ liệu vận hành viên phải DỪNG VÀ BÁO** thay
-> vì tự làm, và **nhiều nhiệm vụ đã dừng đúng trên luật ấy** — chính mục này là một trong
-> số đó (*"thứ brief của V-1 bắt buộc phải dừng và báo"*), và phần dư 2 của mục 1
-> (`DeviceIdentityStore`) là một mục khác.
->
-> **Chủ sở hữu vừa cấp phép cho MỘT lần di chuyển, ở MỘT mục.** Luật **không** bị bãi bỏ
-> và **không** yếu đi ở bất cứ mục nào khác. Đọc dòng này như một giấy phép chung là đọc
-> sai nó — và đó đúng là cách một ràng buộc chết: không phải bị huỷ, mà bị suy rộng.
-> `DeviceIdentityStore` ở phần dư 2 của mục 1 **không** được miễn trừ bởi phán quyết này;
-> quyết định của nó đứng nguyên và chưa ai đụng tới.
->
-> 🔴 **Không cơ chế ở đây:** tên nào, đặt ở đâu, dọn khi nào, và chuyện gì xảy ra nếu cái
-> tên ấy cũng đã tồn tại — tất cả là việc của nhiệm vụ thi hành.
->
-> **Việc còn nợ.** Không dòng thực thi nào đổi vào ngày quyết định. Phép ghim
-> `CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt`
-> **vẫn đang khẳng định hành vi cũ**, đúng như đoạn trên nói: khi bản sửa tới, khẳng định
-> ấy đảo chiều, và chỗ đảo chính là diff.
-
----
-
-## 11. Một `oee-settings.json` được KHÔI PHỤC vào lúc đang chạy bị ghi đè bằng bảng rỗng
-
-**Mục này sinh ra từ bản sửa của mục 5, và nó là chỗ HAI SỰ THẬT của bản sửa ấy còn
-lệch nhau lần thứ ba.** V-1 cho `Set` tự đọc lại ngay trước khi ghi, và so hai điều:
-*file lúc này* (`fresh.Status`) và *bảng trong bộ nhớ được dựng từ phép đọc nào*
-(`_tableBuiltFrom`). Hai cái ấy lệch nhau được **ba kiểu**. Hai kiểu bị từ chối. Kiểu
-thứ ba thì không.
-
-**Đo được:**
-
-```
-_tableBuiltFrom == Absent   VÀ   fresh.Status == Loaded
-```
-
-Tiến trình lên khi **không có file**; sau đó một file **có nội dung** xuất hiện; phép
-đọc ngay trước cú ghi **NHÌN THẤY nó**; vị từ từ chối là **sai**; nên `Set` ghi **bảng
-rỗng cộng một máy** đè lên một file mà nó **vừa đọc thành công**. **Không ném, không
-409, không một dòng log.**
-
-**Không cần tranh chấp, không cần người ghi thứ hai.** Kịch bản là **khôi phục một bản
-sao lưu vào `%ProgramData%\ST4I\sim\historian` trên một host đang chạy** — đúng công
-việc mà chú thích tham số `directory` của chính store ấy quảng cáo thư mục này để làm
-(*"một operator/backup tool tìm thấy mọi file cạnh historian ở một chỗ"*).
-
-**Ở đâu:** `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` (`Set`, vị từ hai điều
-kiện; `Save` → `WriteAllTextAtomic`), tới được từ
-`src/St4i.EngineApi/Endpoints/HistorianEndpoints.cs` (`PutOeeSettingsAsync`).
-
-**Hậu quả vận hành:** giống hệt mục 5 — ideal-cycle override và planned-production
-ratio của **mọi máy** biến mất, con số OEE đổi thầm lặng — nhưng ở một thời điểm khác:
-**ngay sau khi vận hành viên tưởng mình vừa khôi phục xong.**
-
-**Vì sao KHÔNG sửa trong V-1:** đóng nó là đổi **khi nào một cú ghi được phép**. Hôm
-nay `Absent` lúc nạp **cho phép** người gọi tự đặt giá trị — đó chính là đường
-**khởi động lần đầu**. Thu hẹp nó là một thay đổi hợp đồng, không phải một cái chốt.
-Và nó **nằm ngoài tình huống** mà luật của mục 5 nói tới: **các byte đọc được suốt**,
-nên luật ở `docs/startup-failure-posture.md` §3.6 **không quyết được** ca này — đúng
-chỗ §3.6 tự nói là luật không với tới.
-
-**Nếu không quyết định:** giữ nguyên. Một bản khôi phục thực hiện trên host đang chạy
-sẽ bị lần đặt OEE kế tiếp xoá, và **không ai biết** cho tới khi có người đối chiếu lại.
-Cách né duy nhất hôm nay là **khởi động lại host sau khi khôi phục**, và điều đó
-**không được ghi ở đâu cả** trước mục này.
-
-**Bằng chứng:** commit `a9326c79` (V-1 vòng sửa 1) và chú thích lớp của
-`OeeSettingsStore`. 🔴 **Chưa có test nào ghim ca này** — nó chưa được ghim vì ghim nó
-là khẳng định hành vi hiện tại đúng, mà đó chính là thứ đang chờ anh quyết.
-`Read_RecordsWhatItAnswered_SoStatusMeansTheMostRecentRead` **dựng đúng trạng thái ấy**
-và **dừng ngay trước `Set`**.
-
-> ### 🔨 PHÁN QUYẾT 2026-08-18 — CHẶN CÚ GHI Ở ĐÚNG KIỂU LỆCH THỨ BA
-> **Quyết bởi chủ sở hữu:** cú ghi bị **CHẶN** ở đúng vị từ mà mục này đã đo —
-> bảng trong bộ nhớ dựng từ `Absent`, mà phép đọc ngay trước cú ghi trả `Loaded`.
->
-> ⚠️ **Mục này không nêu lựa chọn nào có nhãn chữ cái** — nó nêu **một** hướng sửa, trong
-> đoạn *"Vì sao KHÔNG sửa trong V-1"*. Phán quyết được ghi bằng **vị từ đã đo**, không
-> bằng nhãn.
->
-> **Cái giá mà chính mục này đã nêu tên và phán quyết không xoá:** hôm nay `Absent` lúc
-> nạp **cho phép** người gọi tự đặt giá trị, và đó chính là đường **khởi động lần đầu**.
-> Thu hẹp nó là **một thay đổi hợp đồng**. Nhiệm vụ thi hành phải giữ đường khởi động lần
-> đầu chạy được, và **cách** làm việc ấy không được quyết ở đây.
->
-> **Việc còn nợ.** Không dòng thực thi nào đổi vào ngày quyết định. Ca này **vẫn chưa có
-> test nào ghim**, đúng như đoạn trên ghi — và lý do đã đổi: trước hôm nay nó chưa được
-> ghim vì ghim nó là khẳng định hành vi hiện tại đúng; nay hành vi hiện tại đã bị phán
-> quyết là **sai**, nên phép ghim thuộc về nhiệm vụ thi hành.
 
 ---
 
@@ -617,11 +423,23 @@ bố**; xoá chúng làm bản sửa **không còn bác bỏ được**.
 ⚠️ **Đọc `## 5–7.` như MỘT tiêu đề markdown chứa BA mục** — mục 5, mục 6 và mục 7. Đếm
 mục bằng `grep "^## "` đã sai một lần vì đúng chuyện đó.
 
-⚠️ **Mục 7 là mục đã thi hành duy nhất KHÔNG có tiêu đề `✅ ĐÃ THI HÀNH` của riêng nó.**
+⚠️ **~~Mục 7 là mục đã thi hành duy nhất KHÔNG có tiêu đề `✅ ĐÃ THI HÀNH` của riêng
+nó.~~ ĐÃ ĐÓNG 2026-08-18 — đoạn dưới giữ nguyên văn làm hồ sơ về điều file này đã công
+bố, và về việc Y-1 đã đúng khi từ chối.**
 Mục 1, 5 và 6 mỗi mục có một (Q-1, V-1, T-1); việc thi hành của U-1 ở mục 7 chỉ nằm
 trong văn xuôi. Bảng phán quyết vẫn mang `đã thi hành, U-1`, nên sự thật không mất — chỉ
 cái dấu **trong mục** là thiếu. Y-1 **không tự thêm** một ghi chép thi hành mà nó không
 thi hành: nêu tên ở đây thay vì viết hộ.
+
+**Z-1 đã thêm cái dấu ấy, và chỉ cái dấu.** Nó không viết một câu nào về việc U-1 đã làm
+gì — toàn bộ nội dung thi hành của mục 7 vẫn là văn của U-1, ở nguyên chỗ cũ — và chính
+tiêu đề mới **ghi rõ rằng Z-1 thêm nó ngày 2026-08-18**, cùng commit gộp `f18f5c29` đã
+kiểm. Đó là ranh giới Y-1 vạch ra: viết một **hồ sơ** mình không thi hành là viết hộ;
+thêm một **cái dấu** nhất quán và ký tên vào chính cái dấu thì không.
+
+⚠️ **Phần này nay có SÁU mục, không phải bốn** — 1, 3, 5–7 (ba mục), và **8, 10, 11** do
+Z-1 mang sang từ Phần II ngày 2026-08-18. Lời cảnh báo về `grep "^## "` phía trên vẫn
+đúng và nay còn đáng đọc hơn: `## 5–7.` là **một** tiêu đề chứa **ba** mục.
 
 ---
 
@@ -1345,6 +1163,373 @@ KHÔNG ĐỦ — bản thân việc cài đặt cũng có thể ném lỗi.**
 > **Bằng chứng nằm trong repo:** thông điệp commit merge của U-1, banner S4 trong
 > `src/St4i.EdgeCore/Fleet/FleetCore.cs`, và khối biện minh `EXPECT_ENGINEAPI` trong
 > `scripts/verify-suites.sh`.
+>
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ U-1, gộp tại `f18f5c29`
+> 🔴 **DẤU NÀY DO Z-1 THÊM NGÀY 2026-08-18, KHÔNG PHẢI DO U-1 VIẾT.** Ba điều, và chỉ ba: việc thi
+> hành là của **U-1**; nó **gộp tại `f18f5c29`** (đã kiểm bằng `git log` trên chính repo này —
+> *"merge: U-1 — item 7, a fleet that could not restart reported healthy, permanently"*); và **dòng
+> tiêu đề này là thứ Z-1 thêm**, không phải thứ vốn đã ở đây.
+>
+> **Vì sao đây không phải viết hộ một hồ sơ mình không thi hành, và Y-1 đã đúng khi từ chối viết một
+> hồ sơ.** Cái thiếu ở mục 7 chưa bao giờ là **nội dung** thi hành: toàn bộ nội dung ấy — cơ chế, cái
+> giá, cái không đóng, cặp đối chứng, nhân chứng — nằm nguyên trong khối phán quyết phía trên, do
+> **chính U-1 viết**. Bảng phán quyết ở đầu file cũng đã mang `đã thi hành, U-1` suốt thời gian ấy.
+> Thiếu là **cái dấu**, thứ mà mục 1, 5 và 6 đều có. Z-1 không viết một câu nào về việc U-1 đã làm
+> gì; nó thêm một tiêu đề nhất quán và **ghi rõ ai thêm nó**, để không ai đọc dòng này như lời của
+> U-1.
+
+---
+
+## 8. `ReapplyCurrentAsync` vẫn ghi đè một `site-link.json` không đọc được
+
+**Mục này sinh ra từ bản sửa của mục 1, và nó là PHẦN DƯ của chính luật mục 1.**
+Ghi ở đây chứ không chỉ trong báo cáo, vì đó đúng là thiếu sót mà file này được lập
+ra để chấm dứt: một điều "đã được nêu trong một báo cáo" là điều chủ sở hữu **không
+có đường nào mở ra đọc**.
+
+**Đo được:** `SiteBridgeManager.ReapplyCurrentAsync()` gọi `ApplyAsync(_current)`,
+mà `ApplyAsync` gọi `_store.Save(link)` **vô điều kiện**. Trên nhánh *không đọc
+được*, `_current` là bản ghi mặc định `new PersistedSiteLink()` — thứ **tiến trình
+tự nghĩ ra**, không đọc từ đĩa. Nên một lần xoay danh tính sẽ **ghi bản ghi mặc định
+đè lên các byte không đọc được của vận hành viên**, đúng thứ mục 1 vừa chặn ở đường
+khởi động.
+
+**Ở đâu:** `src/St4i.EdgeCore/Site/SiteBridgeManager.cs` (`ReapplyCurrentAsync` →
+`ApplyAsync` → `_store.Save`), tới được từ `POST /v1/site/identity/rotate` trong
+`src/St4i.EngineApi/Endpoints/SiteEndpoints.cs`.
+
+**Hậu quả vận hành:** host, cổng và chứng chỉ tin cậy đã ghim của Site mất — giống
+hệt mục 1 — nhưng chỉ khi có người **xoay danh tính** trong lúc file đang hỏng.
+
+**Vì sao KHÔNG sửa trong Q-1:** nó do vận hành viên **khởi xướng** nhưng không phải
+do họ **chọn** (họ chọn xoay khoá, không chọn ba giá trị link), mà đó chính là ranh
+giới luật này dựa vào. Đóng nó là đổi **HỢP ĐỒNG** của `ApplyAsync` — *khi nào* thì
+lưu — trên một phương thức có **ba** nơi gọi (`PUT /v1/site`, đường khởi động, và
+chính nó). Đó là một thay đổi thiết kế, không phải một cái chốt.
+
+**Nếu không quyết định:** hành vi giữ nguyên. Đường khởi động đã an toàn; đường này
+thì không, và không có gì báo cho ai biết ngoài các dòng đã ghi tại chỗ.
+
+**Bằng chứng:** commit `76b9e85d` (Q-1 vòng sửa lỗi);
+`docs/startup-failure-posture.md` §3.1b.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-18 — CHẶN, CÙNG LUẬT, TẠI CHỖ GỌI THỨ BA
+> **Quyết bởi điều phối viên theo uỷ quyền, không phải bởi chủ sở hữu** — và uỷ quyền
+> ấy với tới được mục này: ba mục mà uỷ quyền KHÔNG phủ (2, 3, 4) là ba mục đổi thứ mà
+> **người ngoài tổ chức này** đang dựa vào, và mục 8 không đổi bề mặt nào ra ngoài.
+>
+> **Phán quyết:** cú ghi bị **CHẶN**, dưới **cùng cái luật** mục 1 và mục 5 đã đứng trên,
+> áp tại **chỗ gọi thứ ba** của `ApplyAsync` — chính là `ReapplyCurrentAsync`, cái thứ ba
+> trong ba chỗ gọi mà mục này đã liệt kê ở trên (`PUT /v1/site`, đường khởi động, và
+> chính nó).
+>
+> 🔴 **Không cơ chế, không mã, không thiết kế ở đây.** Mục này ghi **điều đã quyết**, và
+> việc chọn *cách* chặn — và trả cái giá mà chính mục này đã nêu tên, rằng đóng nó là đổi
+> **HỢP ĐỒNG** của một phương thức có ba nơi gọi — là việc của nhiệm vụ thi hành, không
+> phải của lần ghi này.
+>
+> **Việc còn nợ.** Không dòng thực thi nào đổi vào ngày quyết định. *(Đúng vào ngày quyết
+> định — nay đã thi hành; xem ghi chép ngay dưới, Z-1, 2026-08-18. Câu trên giữ nguyên
+> văn làm hồ sơ chứ không phải trạng thái đang sống.)*
+>
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ Z-1 (2026-08-18), `.superpowers/sdd/one-law-three-sites/`
+> **Cơ chế, SUY từ luật chứ không chép từ hai site kia.** Luật nói chỉ *"không có gì ở đây"* mới cho
+> người gọi tự lập một giá trị rồi ghi xuống. `ReapplyCurrentAsync` **không lập ra giá trị nào**: nó
+> áp lại, nguyên vẹn, đúng cái link nó đang giữ. Nên nó **không bao giờ** cầm giấy phép ghi — không
+> phải chỉ trên nhánh *không đọc được*. `ApplyAsync` và `ReapplyCurrentAsync` nay dùng chung một thân
+> riêng tư và khác nhau đúng **một điều: có ghi hay không**. Bảo đảm vì thế là **cấu trúc**, không
+> phải một phép kiểm: *đường xoay danh tính không thể ghi file này*, và không cần phép đọc, cờ hay
+> thứ tự nào để giữ câu ấy đúng.
+>
+> **Vì sao KHÔNG "từ chối" như ở `OeeSettingsStore`.** Một cú ném ở đây là sai kết cục: lần xoay vẫn
+> **phải** re-key cái bridge đang sống, và lời gọi này là thứ duy nhất làm việc ấy. Cùng một luật,
+> ba site, ba hình dạng.
+>
+> **Ba chỗ gọi, nêu tên đủ, vì chính mục này đã đo rằng đóng nó đổi HỢP ĐỒNG cho cả ba:**
+> 1. `PUT /v1/site` (`SiteEndpoints.PutSiteAsync`) — **vẫn ghi**: vận hành viên **đưa** ba giá trị
+>    ấy, ghi chúng xuống chính là yêu cầu.
+> 2. đường khởi động (`Program.cs`) — **vẫn ghi**: link tới từ đĩa, hoặc phép đọc trả `Absent` và lần
+>    khởi động đầu được quyền tự lập. Trên nhánh `Unreadable`, composition root **không gọi** nó, từ
+>    vòng sửa lỗi của Q-1.
+> 3. `ReapplyCurrentAsync` (từ `POST /v1/site/identity/rotate`) — **không còn ghi**.
+>
+> **CÁI GIÁ, nói thẳng vì nó là sản phẩm giao ra chứ không phải tác dụng phụ:** trên cây lành,
+> `Current` là thứ vừa được áp và file đã giữ đúng nó, nên cú ghi bị bỏ là một no-op về nội dung —
+> **trừ một ca**: nếu `Save` trong một lần `ApplyAsync` trước đó đã **hỏng** (đã báo *"chỉ sống cho
+> lần chạy này và sẽ KHÔNG sống sót một lần khởi động lại"*), thì một lần xoay danh tính **từng thử
+> lại** cú ghi ấy và có thể lặng lẽ sửa được nó. Lần thử lại ấy **mất đi**. Nó chưa bao giờ là hợp
+> đồng được ghi ở đâu, và một cú ghi không ai yêu cầu chính là loài khuyết tật luật này lập ra để
+> đóng — nhưng nó **là** một hành vi bị bản sửa này lấy đi, và nêu tên ở đây thay vì để ai đó phát
+> hiện sau. Đường sửa của vận hành viên không đổi và chính dòng log kia đã nói: gửi lại
+> `PUT /v1/site`.
+>
+> **TRẦN của bản sửa này:** nó **không** đụng gì tới việc `PUT /v1/site` vẫn ghi đè một
+> `site-link.json` không đọc được. Trên đường ấy vận hành viên **chọn** ba giá trị, nên luật không
+> cấm — nhưng cũng **không ai đo** rằng họ biết mình đang ghi đè cái gì. Đó là một câu hỏi khác,
+> chưa ai hỏi, và Z-1 không hỏi hộ.
+>
+> **Hàng 18 của `docs/startup-failure-posture.md` KHÔNG chuyển**, và đó là một phép đo chứ không
+> phải một chỗ bỏ sót: thời điểm ghi trên đường khởi động không đổi. Cái được sửa ở hàng ấy là
+> chuyện khác và được ghi tại chỗ: `U` là một **liên từ** (lên **và** báo), và trước hôm nay chỉ nửa
+> đầu của nó từng được kiểm ở trang ấy.
+
+---
+
+## 10. `CredentialStore.Load` biến một lỗi môi trường KHÔI PHỤC ĐƯỢC thành mất mát không hoàn nguyên
+
+**Mục này sinh ra từ phần dư 1 của mục 5, và nó ở đây vì nó là một QUYẾT ĐỊNH.**
+Trước V-1 nó sống trong một gạch đầu dòng của một mục khác; luật của file này là một
+quyết định phải có mục của nó.
+
+**Đo được (V-1):** `CredentialStore.Load` trả **`null`** cho một blob **có mặt trên
+đĩa mà tiến trình này không giải mã được** — sai scope/entropy DPAPI (một `.bin` thời
+tiền-FF-2 mã theo `CurrentUser`), hoặc chép từ máy khác, hoặc hỏng — và trả **đúng
+`null` ấy** khi **không có file nào cả**. Người gọi không có gì để rẽ nhánh.
+
+**Cái chưa từng được ghi ở đâu là HẬU QUẢ.** Doc comment của chính `Load` trình bày
+`null` như một kết quả **lành** — *"để đường credential-rỗng bình thường của caller
+chạy thay vì một lần sập không bắt được"* — nhưng đường ấy là đường **claim lại**, và
+nó gọi `Save`, thứ **ghi đè**. Một blob sai scope/sai máy **đọc lại được sau khi sửa
+môi trường — nếu nó còn tồn tại**. Nên một lỗi sửa được bị biến thành mất mát không
+hoàn nguyên, im lặng.
+
+**Ở đâu:** `src/St4i.EdgeCore/Infrastructure/CredentialStore.cs` (`Load`, khối
+`catch (CryptographicException)`; `Save` → `File.WriteAllBytes`). **Chỗ gọi cố ý KHÔNG
+được liệt kê ở đây:** `Load` là `static` và được gọi từ nhiều project, nên một danh
+sách chỗ gọi viết tay là đúng loài khẳng định — một tập không ai kiểm đếm được, chép
+vào văn xuôi — mà file này lập ra để chấm dứt. Tìm bằng chính tên kiểu.
+
+**Vì sao KHÔNG sửa trong V-1:** phương án giữ được các byte là **giữ blob cũ dưới tên
+khác**, tức **DI CHUYỂN dữ liệu vận hành viên trong sản phẩm** — thứ brief của V-1 bắt
+buộc phải **dừng và báo** chứ không tự làm. Phương án "cho `Load` ném" là **đổi hợp
+đồng của một phương thức `static` mà nhiều project gọi**, tức một quyết định chứ không
+phải một cái chốt.
+
+> ⚠️ **Bản nháp của đoạn trên còn một câu nữa và câu ấy KHÔNG ĐO ĐƯỢC — nó bị rút
+> TRƯỚC khi xuất bản, và được ghi lại ở đây vì im lặng về một câu đã rút là đúng thứ
+> file này bắt.** Nguyên văn: *"cho nó ném biến một máy có credential hỏng thành một
+> máy không khởi động được"*. Đo lại: `FleetCore.UpdateSettings` gọi
+> `CredentialStore.Load` bên trong phần **kích hoạt**, và phần ấy đã được
+> `TryReplayStartupSettings` của `St4i.EngineApi/Program.cs` **bọc lại** từ H-1a — chính
+> `FleetCore.cs` ghi rằng vòng lặp boot cũ đã biến mất **vì** lần phát lại được sửa. Nên
+> một cú ném ở đó làm hỏng **lần phát lại**, và "không khởi động được" là một kết luận
+> không ai đo. Câu bị rút, không bị sửa cho vừa.
+
+**Nếu không quyết định:** giữ nguyên. Lần claim lại kế tiếp ghi đè blob cũ, và
+**không ai biết** rằng thứ vừa mất chỉ cần sửa môi trường là đọc lại được.
+
+**Bằng chứng — chạy lại được:**
+`tests/St4i.EngineApi.Tests/OperatorDataRemovalCensusTests.cs`,
+`CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt`
+**[TÊN NÀY ĐÃ ĐỔI 2026-08-18 — nay là `…_AndTheReclaimNowKeepsItAside`. Tên cũ giữ ở đây
+vì nó là tên mà mục này đã công bố, và vì chính chỗ đổi tên là bằng chứng rằng khẳng định
+đã đảo chiều: một tên nói *"lần claim lại ghi đè"* sau bản sửa là một chuỗi đã công bố
+nói sai.]**
+— nó ghim **cả hai nửa**: hai ca cho cùng một `null`, và `Save` sau đó đè lên. Nó
+**ghim một khuyết tật đang sống làm đường cơ sở và KHÔNG sửa**, đúng như S-1 đã làm cho
+mục 5. Nếu anh quyết SỬA, khẳng định ấy đảo chiều và chỗ đảo chính là diff.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-18 — GIỮ BLOB CŨ DƯỚI TÊN KHÁC, KHÔNG GHI ĐÈ
+> **Quyết bởi chủ sở hữu.** Trong hai phương án mục này nêu tên ở trên, phương án được
+> chọn là **giữ blob cũ dưới tên khác** — *không* phải phương án "cho `Load` ném".
+>
+> ⚠️ **Hai phương án ấy KHÔNG được đánh nhãn chữ cái trong mục này.** Chúng được nêu
+> trong văn xuôi ở đoạn *"Vì sao KHÔNG sửa trong V-1"*. Phán quyết được ghi **bằng mô tả
+> chứ không bằng nhãn**, vì một nhãn `(a)` không tồn tại ở đây sẽ trỏ vào hư không — và ở
+> **mục 12**, nơi các nhãn ấy CÓ tồn tại, `(a)` là đúng phương án **ngược lại** với điều
+> chủ sở hữu chọn. Nhãn không đi qua được ranh giới giữa hai mục.
+>
+> #### 🔴 ĐÂY LÀ MỘT MIỄN TRỪ, VÀ NÓ CHỈ ÁP CHO MỤC NÀY
+> Kể từ Q-1, **mọi brief đều bắt DI CHUYỂN dữ liệu vận hành viên phải DỪNG VÀ BÁO** thay
+> vì tự làm, và **nhiều nhiệm vụ đã dừng đúng trên luật ấy** — chính mục này là một trong
+> số đó (*"thứ brief của V-1 bắt buộc phải dừng và báo"*), và phần dư 2 của mục 1
+> (`DeviceIdentityStore`) là một mục khác.
+>
+> **Chủ sở hữu vừa cấp phép cho MỘT lần di chuyển, ở MỘT mục.** Luật **không** bị bãi bỏ
+> và **không** yếu đi ở bất cứ mục nào khác. Đọc dòng này như một giấy phép chung là đọc
+> sai nó — và đó đúng là cách một ràng buộc chết: không phải bị huỷ, mà bị suy rộng.
+> `DeviceIdentityStore` ở phần dư 2 của mục 1 **không** được miễn trừ bởi phán quyết này;
+> quyết định của nó đứng nguyên và chưa ai đụng tới.
+>
+> 🔴 **Không cơ chế ở đây:** tên nào, đặt ở đâu, dọn khi nào, và chuyện gì xảy ra nếu cái
+> tên ấy cũng đã tồn tại — tất cả là việc của nhiệm vụ thi hành.
+>
+> **Việc còn nợ.** *(Đúng vào ngày quyết định — nay đã thi hành; xem ghi chép ngay dưới,
+> Z-1, 2026-08-18. Giữ nguyên văn làm hồ sơ, kể cả câu về phép ghim, vì chỗ nó đảo chiều
+> chính là diff mà nó hứa.)* Không dòng thực thi nào đổi vào ngày quyết định. Phép ghim
+> `CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt`
+> **vẫn đang khẳng định hành vi cũ**, đúng như đoạn trên nói: khi bản sửa tới, khẳng định
+> ấy đảo chiều, và chỗ đảo chính là diff. *(Bản sửa đã tới cùng ngày. Phép ghim ấy nay tên
+> là `…_AndTheReclaimNowKeepsItAside` và khẳng định các byte cũ **SỐNG SÓT**; nửa đầu — hai
+> ca cho cùng một `null` — **không** đảo, và điều đó là một phát hiện chứ không phải chỗ
+> bỏ sót: chủ sở hữu chọn giữ blob chứ không chọn cho `Load` ném.)*
+>
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ Z-1 (2026-08-18), `.superpowers/sdd/one-law-three-sites/`
+> **Ở ĐÂU, và vì sao ở đó chứ không ở `Load`.** Giấy phép mà luật nói tới thuộc về **câu lệnh ghi**:
+> giá trị được tự lập là **khoá `mk_` mới**, và câu lệnh ghi nó xuống là `Save`. Nên `Save` — chứ
+> không phải `Load` — nay phân **ba kết cục** ngay tại thời điểm ghi: **không có gì ở path** ⇒ ghi, y
+> như cũ; **một blob tiến trình này GIẢI MÃ ĐƯỢC** ⇒ ghi, y như cũ (đó là một lần re-key bình
+> thường, người gọi đang cầm khoá, không có gì khôi phục được đang bị đe doạ); **một blob có mặt mà
+> tiến trình này không dùng được** ⇒ **di chuyển** file cũ sang một tên anh em rồi mới ghi. Không xoá
+> gì, không đè gì.
+>
+> 🔴 **CÁI GÌ ĐƯỢC DI CHUYỂN, VÀ NGƯỜI VẬN HÀNH TÌM LẠI NÓ BẰNG CÁCH NÀO** — đây là nửa mà phán quyết
+> nói *"tên nào, đặt ở đâu, dọn khi nào, và chuyện gì xảy ra nếu cái tên ấy cũng đã tồn tại"* là việc
+> của nhiệm vụ thi hành:
+> * **cái gì:** đúng file `.bin` đang nằm ở đó, **nguyên từng byte** — không giải mã, không sửa,
+>   không diễn giải.
+> * **đặt ở đâu và tên gì:** **cùng thư mục creds**, tên
+>   `<mã máy>.bin.unreadable-<dấu thời gian UTC>` (ví dụ `PRESS-01.bin.unreadable-20260818T101530Z`).
+>   Cùng chỗ, vì thư mục ấy là thứ duy nhất vận hành viên được chỉ tới; tên mang **mã máy** để biết
+>   của ai, chữ **unreadable** để biết vì sao, và **thời điểm** để phân biệt nhiều lần.
+> * **nếu tên ấy đã tồn tại:** thêm `-2`, `-3`… Phép di chuyển dùng overload `File.Move` **KHÔNG có
+>   cờ overwrite** — nó **ném** khi đích đã có — nên *"một blob đã giữ không bao giờ bị thay"* là một
+>   **tính chất**, không phải một ý định.
+> * **dọn khi nào: KHÔNG BAO GIỜ, bởi sản phẩm.** Một lần gỡ cài đặt xoá nó vì
+>   `packaging/remove-data.ps1` xoá **cả thư mục** `creds`; ngoài ra không gì trong sản phẩm động vào
+>   nó.
+> * **`ListMachineCodes` không liệt kê nó** (nó duyệt `*.bin`), và điều đó được **ghim** chứ không
+>   được lập luận — `.bin` là đuôi ba ký tự, và khớp mẫu của Windows đối xử với đuôi ba ký tự theo
+>   một cách riêng. Một máy chỉ còn lại file đã giữ thì **thật sự không có credential nào**.
+> * **báo cho ai:** một dòng trên đúng kênh `[credentialstore]` (standard error) mà chính lớp này đã
+>   dùng cho cảnh báo ACL, nêu **cả hai** đường dẫn. 🔴 **TRẦN, nói thẳng:** lớp này là `static` và
+>   **không có seam logger nào**; dưới `AddWindowsService`, standard error **không phải** Windows
+>   Event Log. Nên **hồ sơ mà vận hành viên chắc chắn tìm được là CHÍNH CÁI FILE** — đó là lý do cái
+>   tên phải mang đủ câu chuyện.
+>
+> **TRẦN khác, nêu tên chứ không lấp:**
+> * `Load` **vẫn trả cùng một `null`** cho hai ca — đó là phương án chủ sở hữu **đã chọn**, chứ không
+>   phải một chỗ bỏ sót. Vậy `CredentialStore` **vẫn ở** `DecidedExceptionsToTheLaw` và vẫn là một
+>   ngoại lệ của luật đọc; cái được đóng là **hậu quả**, không phải sự lẫn lộn.
+> * `Load` còn một phép **kiểm tồn tại** (`File.Exists`) — đúng thứ mọi store khác đã bỏ ở Q-1. Nó
+>   làm một file bị khoá hay một thư mục bị ACL từ chối **ném** ra khỏi `Load` thay vì trả `null`,
+>   tức một kết cục khác với chính chú thích của nó. Mục 10 quyết **cú ghi đè**; **không** quyết cái
+>   này, và Z-1 không tự lấy.
+> * `Save` nay **có thêm một cửa ném**: nếu blob cũ cần giữ mà **giữ không được** (file bị khoá, ACL
+>   từ chối đổi tên), ngoại lệ đi ra và credential mới **không** được ghi. Đó là kết cục đúng — lựa
+>   chọn còn lại là phá đúng thứ bản sửa này lập ra để giữ — nhưng nó là một cửa mới và được nêu tên.
+> * **Miễn trừ KHÔNG lan.** `DeviceIdentityStore` (phần dư 2 của mục 1) **không** được phán quyết
+>   này miễn trừ; hàng của nó trong `ExpectedPostures` đứng nguyên và điều đó được ghi ngay tại hàng
+>   ấy.
+
+---
+
+## 11. Một `oee-settings.json` được KHÔI PHỤC vào lúc đang chạy bị ghi đè bằng bảng rỗng
+
+**Mục này sinh ra từ bản sửa của mục 5, và nó là chỗ HAI SỰ THẬT của bản sửa ấy còn
+lệch nhau lần thứ ba.** V-1 cho `Set` tự đọc lại ngay trước khi ghi, và so hai điều:
+*file lúc này* (`fresh.Status`) và *bảng trong bộ nhớ được dựng từ phép đọc nào*
+(`_tableBuiltFrom`). Hai cái ấy lệch nhau được **ba kiểu**. Hai kiểu bị từ chối. Kiểu
+thứ ba thì không.
+
+**Đo được:**
+
+```
+_tableBuiltFrom == Absent   VÀ   fresh.Status == Loaded
+```
+
+Tiến trình lên khi **không có file**; sau đó một file **có nội dung** xuất hiện; phép
+đọc ngay trước cú ghi **NHÌN THẤY nó**; vị từ từ chối là **sai**; nên `Set` ghi **bảng
+rỗng cộng một máy** đè lên một file mà nó **vừa đọc thành công**. **Không ném, không
+409, không một dòng log.**
+
+**Không cần tranh chấp, không cần người ghi thứ hai.** Kịch bản là **khôi phục một bản
+sao lưu vào `%ProgramData%\ST4I\sim\historian` trên một host đang chạy** — đúng công
+việc mà chú thích tham số `directory` của chính store ấy quảng cáo thư mục này để làm
+(*"một operator/backup tool tìm thấy mọi file cạnh historian ở một chỗ"*).
+
+**Ở đâu:** `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` (`Set`, vị từ hai điều
+kiện; `Save` → `WriteAllTextAtomic`), tới được từ
+`src/St4i.EngineApi/Endpoints/HistorianEndpoints.cs` (`PutOeeSettingsAsync`).
+
+**Hậu quả vận hành:** giống hệt mục 5 — ideal-cycle override và planned-production
+ratio của **mọi máy** biến mất, con số OEE đổi thầm lặng — nhưng ở một thời điểm khác:
+**ngay sau khi vận hành viên tưởng mình vừa khôi phục xong.**
+
+**Vì sao KHÔNG sửa trong V-1:** đóng nó là đổi **khi nào một cú ghi được phép**. Hôm
+nay `Absent` lúc nạp **cho phép** người gọi tự đặt giá trị — đó chính là đường
+**khởi động lần đầu**. Thu hẹp nó là một thay đổi hợp đồng, không phải một cái chốt.
+Và nó **nằm ngoài tình huống** mà luật của mục 5 nói tới: **các byte đọc được suốt**,
+nên luật ở `docs/startup-failure-posture.md` §3.6 **không quyết được** ca này — đúng
+chỗ §3.6 tự nói là luật không với tới.
+
+**Nếu không quyết định:** giữ nguyên. Một bản khôi phục thực hiện trên host đang chạy
+sẽ bị lần đặt OEE kế tiếp xoá, và **không ai biết** cho tới khi có người đối chiếu lại.
+Cách né duy nhất hôm nay là **khởi động lại host sau khi khôi phục**, và điều đó
+**không được ghi ở đâu cả** trước mục này.
+
+**Bằng chứng:** commit `a9326c79` (V-1 vòng sửa 1) và chú thích lớp của
+`OeeSettingsStore`. 🔴 ~~**Chưa có test nào ghim ca này**~~ **[HẾT ĐÚNG 2026-08-18 —
+Z-1 ghim nó, xem ghi chép thi hành cuối mục; câu gốc giữ nguyên vì nó là lý do mà cả
+mục này dựa vào]** — nó chưa được ghim vì ghim nó
+là khẳng định hành vi hiện tại đúng, mà đó chính là thứ đang chờ anh quyết.
+`Read_RecordsWhatItAnswered_SoStatusMeansTheMostRecentRead` **dựng đúng trạng thái ấy**
+và **dừng ngay trước `Set`**.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-18 — CHẶN CÚ GHI Ở ĐÚNG KIỂU LỆCH THỨ BA
+> **Quyết bởi chủ sở hữu:** cú ghi bị **CHẶN** ở đúng vị từ mà mục này đã đo —
+> bảng trong bộ nhớ dựng từ `Absent`, mà phép đọc ngay trước cú ghi trả `Loaded`.
+>
+> ⚠️ **Mục này không nêu lựa chọn nào có nhãn chữ cái** — nó nêu **một** hướng sửa, trong
+> đoạn *"Vì sao KHÔNG sửa trong V-1"*. Phán quyết được ghi bằng **vị từ đã đo**, không
+> bằng nhãn.
+>
+> **Cái giá mà chính mục này đã nêu tên và phán quyết không xoá:** hôm nay `Absent` lúc
+> nạp **cho phép** người gọi tự đặt giá trị, và đó chính là đường **khởi động lần đầu**.
+> Thu hẹp nó là **một thay đổi hợp đồng**. Nhiệm vụ thi hành phải giữ đường khởi động lần
+> đầu chạy được, và **cách** làm việc ấy không được quyết ở đây.
+>
+> **Việc còn nợ.** *(Đúng vào ngày quyết định — nay đã thi hành; xem ghi chép ngay dưới,
+> Z-1, 2026-08-18. Ca này NAY ĐÃ CÓ test ghim, và cả cái trần còn lại cũng có; câu dưới
+> giữ nguyên văn làm hồ sơ.)* Không dòng thực thi nào đổi vào ngày quyết định. Ca này **vẫn chưa có
+> test nào ghim**, đúng như đoạn trên ghi — và lý do đã đổi: trước hôm nay nó chưa được
+> ghim vì ghim nó là khẳng định hành vi hiện tại đúng; nay hành vi hiện tại đã bị phán
+> quyết là **sai**, nên phép ghim thuộc về nhiệm vụ thi hành.
+>
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ Z-1 (2026-08-18), `.superpowers/sdd/one-law-three-sites/`
+> **Cơ chế:** `Set` giữ nguyên vị từ V-1 đã có và **thêm một nhánh thứ hai**, đúng cặp mục này đã đo
+> — `_tableBuiltFrom == Absent` **và** `fresh.Status == Loaded` — ném
+> `OeeSettingsFileAppearedException`, và `PUT /v1/historian/oee/settings` trả **409** như nhánh kia.
+> `Reload` (trong sản xuất: khởi động lại) là đường ra, y như nhánh file-đã-được-sửa.
+>
+> 🔴 **Vì sao là một KIỂU THỨ HAI chứ không phải một thông điệp rộng hơn.** Trên nhánh này **file đọc
+> hoàn toàn được**. Nhét nó vào `OeeSettingsUnreadableException` là để một **tên đã công bố** khẳng
+> định một điều sai về một file đọc được — đúng loài mà P-2 đo ở một thành viên enum. Nên hai nhánh
+> có chung một lớp cơ sở mới, `OeeSettingsWriteRefusedException`, và endpoint bắt lớp cơ sở ấy. Bắt
+> rộng hơn **không** phải khẳng định rộng hơn: đúng **hai** kiểu dẫn xuất từ nó, cả hai đều do `Set`
+> ném và chỉ `Set` ném, cả hai đều nghĩa là *"không có gì được ghi"*.
+>
+> **CÁI GIÁ mục này đã nêu tên, và bản sửa KHÔNG trả bằng cách bỏ nó:** `Absent` lúc nạp vẫn cho
+> phép người gọi tự đặt giá trị. Đường **khởi động lần đầu** sống sót nhờ **sự thật thứ hai** chứ
+> không nhờ một ngoại lệ: một lần khởi động sạch để phép đọc mới cũng là `Absent`, nên cặp không
+> khớp và cú ghi đi qua — rồi một `Set` thành công đẩy **cả hai** sự thật sang `Loaded`, nên cú ghi
+> kế tiếp nằm ngoài nhánh này **theo cấu trúc** chứ không nhờ may.
+>
+> **BẢN SỬA RỘNG HƠN CÁI HẠI ĐÃ ĐO, CÓ CHỦ Ý, và ghim chứ không im:** một file **mảng rỗng** `[]`
+> xuất hiện sau khi store lên cũng bị từ chối. Vị từ chủ sở hữu quyết không có mệnh đề nào về **nội
+> dung**, và `[]` là `Loaded` không có entry — đúng trạng thái mà chú thích `Read` của chính store
+> gọi là *"thứ một vận hành viên vừa dọn bảng để lại"*. Công bố một bảng tự nghĩ ra đè lên một trạng
+> thái cố ý cũng là một việc như đè lên một bảng có dữ liệu.
+>
+> 🔴 **TRẦN — VÀ NÓ LÀ CÙNG MỘT THAO TÁC CỦA VẬN HÀNH VIÊN, CHỈ KHÁC LÀ ĐĨA ĐÃ CÓ FILE.** Vị từ được
+> quyết đóng ca khôi phục rơi vào một host lên khi **không có file**. Còn hai cặp vẫn ghi:
+> * `_tableBuiltFrom == Loaded` **và** `fresh.Status == Loaded`, **mà hai phép đọc khác nội dung** —
+>   host lên trên một file tốt, vận hành viên khôi phục đè lên nó, cả hai sự thật vẫn là `Loaded`, và
+>   `Set` kế tiếp ghi bảng **trước khi khôi phục** đè lên file **sau khi khôi phục**. Store **không
+>   ghi lại DANH TÍNH** của các byte mà bảng được dựng từ đó, chỉ ghi kết cục của phép đọc, nên nó
+>   không phân biệt được. **Đây là hình dạng THÔNG THƯỜNG hơn của một lần khôi phục**, không phải
+>   hình dạng hiếm: một host từng có cấu hình OEE thì có file.
+> * `_tableBuiltFrom == Loaded` **và** `fresh.Status == Absent` — file bị bỏ đi sau khi nạp, `Set`
+>   dựng lại nó từ bảng. Không mất thứ gì tiến trình này đã đọc; thứ bị bỏ là **chính hành động bỏ
+>   đi**, nếu nó là cố ý.
+>
+> Đóng một trong hai đòi một sự thật store này không giữ, và giữ nó là **đổi lần thứ hai** cái *khi
+> nào một cú ghi được phép*. Z-1 **thi hành đúng vị từ đã quyết và không nới nó**. Ca thứ nhất được
+> **ghim SỐNG** —
+> `OeeSettingsStoreTests.Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling`
+> — đúng cách S-1 ghim khuyết tật của mục 5 làm đường cơ sở: nếu một nhiệm vụ sau đóng nó, khẳng định
+> ấy đảo chiều và chỗ đảo chính là diff. **Nó KHÔNG được thêm vào danh sách chờ chủ sở hữu**: mục 11
+> đã đóng, và chưa ai được hỏi về ca này.
 
 ---
 
