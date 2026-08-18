@@ -1,0 +1,177 @@
+-- ============================================================================
+-- 0328 — NĂM BẢNG NÓNG: bật RLS cho ĐÚNG cái làm được, và ghi lý do ĐO ĐƯỢC cho
+--        bốn cái KHÔNG làm được.
+--
+-- ⚠ Migration này CỐ Ý phủ ÍT. Ba trong năm bảng KHÔNG THỂ bật RLS (Postgres/
+--   TimescaleDB từ chối), bảng thứ tư CÓ THỂ nhưng ĐẮT 108× nên KHÔNG bật. Chỉ
+--   MỘT bảng được bật. Con số ở dưới là đo thật, không phải ước lượng.
+--
+-- ── VÌ SAO 0125 KHÔNG BAO GIỜ ĂN (đây là câu trả lời, không phải phỏng đoán) ──
+-- `docs/ECOSYSTEM/PHASE1_TENANT_RLS_ROLLOUT.md` khai 0125 đã bật RLS cho
+-- `oee_metrics` / `process_results` / `wip_tracking`, và `drizzle/optional/0002`
+-- cho `product_inspections` / `inspection_packages`. Đo 2026-08-18: cả năm bảng
+-- `relrowsecurity = FALSE` trên CẢ HAI CSDL, 0 chính sách.
+--
+-- Sổ migration đã biết điều đó từ lâu và KHÔNG AI ĐỌC:
+--
+--     SELECT filename, success FROM "__applied_migrations"
+--      WHERE filename LIKE '%0125%';
+--     → 0125_tenant_rls_hot_tables.sql | success = FALSE     (cả dev lẫn test)
+--
+-- Chạy lại đúng câu lệnh của 0125 bằng owner `aoi` cho ra nguyên văn:
+--
+--     ALTER TABLE product_inspections ENABLE ROW LEVEL SECURITY;
+--     ERROR:  0A000: operation not supported on hypertables that have
+--             columnstore enabled
+--
+-- Ba hàm phân giải (`app_factory_of_machine_code`, `app_factory_of_line_code`,
+-- `app_factory_of_line_id`) nằm TRƯỚC khối `DO` trong 0125 nên đã commit; khối
+-- `DO` vỡ ở câu `ALTER TABLE` ĐẦU TIÊN. Vì thế hiện trạng là "có hàm, không có
+-- chính sách" — đúng như đo được. Đây KHÔNG phải lỗi quyền (42501), không phải
+-- lỗi thứ tự, và không sửa được bằng cách chạy lại.
+--
+-- ── (1) product_inspections · oee_metrics · process_results — KHÔNG BẬT ĐƯỢC ──
+-- Cả ba là hypertable TimescaleDB 2.28.2 (PostgreSQL 17.10) và cả ba có
+-- `compression_enabled = true`:
+--
+--     SELECT hypertable_name, compression_enabled
+--       FROM timescaledb_information.hypertables;
+--     → product_inspections t · oee_metrics t · process_results t
+--
+-- TimescaleDB TỪ CHỐI `ENABLE ROW LEVEL SECURITY` trên hypertable đã bật
+-- columnstore (SQLSTATE 0A000). Đo lại trên CẢ HAI CSDL, cả ba bảng, cùng một
+-- lỗi. Lưu ý `oee_metrics` và `process_results` hiện có **0 chunk đã nén** — vẫn
+-- bị từ chối, vì TimescaleDB xét CẤU HÌNH columnstore chứ không xét chunk nào
+-- đang nén thật. ⇒ không có mẹo nào lách được ngoài việc TẮT columnstore cho cả
+-- hypertable, tức giải nén toàn bộ dữ liệu lịch sử và từ bỏ tỉ lệ nén — một
+-- đánh đổi hạ tầng KHÔNG thuộc phạm vi việc này và phải do chủ dự án quyết.
+--
+-- Số hàng liên quan (dev / test):
+--     product_inspections  22.996 / 33.481   (22.995 mang SIM/SIM-FAC, 1 vô chủ)
+--     oee_metrics             897 /  1.006   (100% phân giải về SIM-FAC)
+--     process_results       5.932 /  5.892   (5.892 → SIM-FAC, 40 không phân giải được)
+--
+-- ⇒ ĐƯỜNG ĐI TIẾP cho ba bảng này KHÔNG PHẢI RLS. Chúng phải tiếp tục dựa vào
+--   cổng ở tầng ứng dụng (`accessControl.resolveDataScope` + `where` theo
+--   `factoryCode`). Ghi thẳng ra đây để lần sau không ai tốn một ngày nữa.
+--
+-- ── (2) wip_tracking — BẬT ĐƯỢC, nhưng KHÔNG BẬT vì ĐẮT 108× ────────────────
+-- `wip_tracking` là bảng thường (không hypertable) ⇒ `ENABLE RLS` chạy được.
+-- Nhưng nó KHÔNG có cột mã tenant nào, chỉ `lineId` ⇒ vị từ buộc phải gọi
+-- `app_factory_of_line_id("lineId")` — một hàm SECURITY DEFINER đi qua 3 bảng.
+--
+-- ĐO TRÊN `aoi_management` (7.047 hàng thật, EXPLAIN ANALYZE, tốt nhất 4 lượt):
+--
+--   truy vấn                | RLS TẮT  | vị từ 0125 | vị từ có canh
+--   ------------------------|----------|------------|---------------
+--   count(*)      cờ TẮT    | 0,45 ms  |  48,71 ms  |   1,06 ms
+--   count(*)      cờ BẬT    | 0,47 ms  |  49,64 ms  |  50,93 ms
+--   GROUP BY status cờ BẬT  | 0,76 ms  |  50,03 ms  |  50,31 ms
+--   ORDER BY id LIMIT 50    | 0,02 ms  |  50,01 ms  |  50,72 ms
+--
+-- Ba điều đo được, cả ba đều BÁC BỎ ghi chú hiệu năng của 0125:
+--
+--   (a) 0125 §PERFORMANCE NOTE viết "the planner evaluates them at most once per
+--       distinct argument per statement". SAI. 7.047 hàng chỉ có ĐÚNG 3 giá trị
+--       `lineId` phân biệt; nếu đúng "một lần mỗi đối số" thì chi phí ≈ 0. Đo
+--       được 48 ms ⇒ hàm chạy MỖI HÀNG. `STABLE` chỉ cho phép bỏ qua đánh giá
+--       lại trong cùng một biểu thức, KHÔNG ghi nhớ theo giá trị đối số.
+--
+--   (b) 0125 §SAFETY MODEL hứa "while the flag is OFF the predicate is TRUE
+--       regardless of the join". ĐÚNG về KẾT QUẢ, SAI về CHI PHÍ: cột "cờ TẮT"
+--       vẫn là 48,71 ms. Lý do: `app_factory_of_line_id(...)` là ĐỐI SỐ của
+--       `app_tenant_allows(...)`; SQL đánh giá đối số TRƯỚC khi gọi hàm, nên
+--       nhánh đoản mạch `rls_active <> 'on'` bên trong KHÔNG BAO GIỜ cứu được
+--       phép nối. Mọi truy vấn `wip_tracking` của MỌI người dùng — kể cả khi cờ
+--       tắt hoàn toàn — trả giá 108×.
+--
+--   (c) Vị từ "có canh" (đưa hai `current_setting` ra NGOÀI, trước lời gọi) chữa
+--       được đường cờ-tắt (1,06 ms, còn 2,4×) nhưng KHÔNG chữa được đường cưỡng
+--       chế: 50,9 ms. Nặng nhất là truy vấn phân trang `ORDER BY id LIMIT 50`:
+--       0,02 ms → 50,7 ms = **2.400×**, vì vị từ an ninh phải chạy trên MỌI hàng
+--       trước khi `LIMIT` được áp — một màn danh sách WIP biến thành quét toàn
+--       bảng có gọi hàm từng hàng.
+--
+-- ⇒ KHÔNG BẬT. Muốn phủ `wip_tracking` bằng RLS thì phải phi chuẩn hoá một cột
+--   `factoryCode` vào bảng + backfill + sửa đường ghi — một việc RIÊNG, có rủi ro
+--   riêng, không nhét vào đây được. Cho tới lúc đó `wip_tracking` vẫn do tầng
+--   ứng dụng canh.
+--
+-- Migration này DỌN LUÔN ý định của 0125 cho `wip_tracking` (DROP POLICY +
+-- DISABLE RLS, idempotent): nếu TimescaleDB sau này nới hạn chế columnstore và
+-- ai đó chạy lại 0125, khối `DO` sẽ đi qua và âm thầm dựng lại đúng vị từ 108×
+-- đã bị bác bỏ ở trên. Ghi quyết định vào DDL để nó không quay lại bằng cửa sau.
+--
+-- ── (3) inspection_packages — BẬT ────────────────────────────────────────────
+-- Bảng THƯỜNG (không hypertable, không columnstore) và có cột mã tenant TRỰC
+-- TIẾP `factoryCode` ⇒ vị từ là `app_tenant_allows("factoryCode", NULL)`, đối số
+-- là một Var thuần nên Postgres NỘI TUYẾN được `app_tenant_allows` — không có
+-- lời gọi hàm nào mỗi hàng. Đây là bảng DUY NHẤT trong năm bảng vừa bật được
+-- vừa đáng bật.
+--
+-- ĐO Ở QUY MÔ THẬT trên `aoi_management`: nạp 50.000 hàng trong một giao dịch
+-- rồi ROLLBACK (không hàng nào được commit; đếm lại sau đó = 0). Dữ liệu nạp
+-- CHIA BA NHÓM có chủ đích — 45.000 `SIM-FAC` · 5.000 `FAC-KHAC` · 5.000 NULL —
+-- để lượng từ KHÔNG TỰ THOẢ (một chính sách "cấm tất" hay "cho tất" đều lộ ra):
+--
+--   tình huống      | RLS TẮT          | RLS BẬT
+--   ----------------|------------------|---------------------------
+--   cờ tắt          | 50.000 · 4,01 ms | 50.000 ·  9,97 ms  (2,5×)
+--   đúng tenant     | 50.000 · 4,77 ms | 45.000 · 21,21 ms  (5,3×)
+--   SAI tenant      | 50.000 · 4,74 ms |  5.000 · 30,79 ms
+--   bypass          | 50.000 · 4,27 ms | 50.000 · 11,51 ms
+--
+--   • "đúng tenant" = 45.000 → 5.000 hàng `FAC-KHAC` BỊ CHẶN (hàng rào thật).
+--   • "SAI tenant"  = 5.000  → đúng số hàng NULL, tức nhánh 0327 còn nguyên và
+--     KHÔNG có hàng mang mã nào lọt. Hai ô này bác bỏ lẫn nhau nên không ô nào
+--     có thể xanh giả.
+--   • 2,5×/5,3× trên 50.000 hàng là trần trên cố ý: bảng thật đang có **0 hàng
+--     (dev) / 158 hàng (test)** và luôn được truy theo `id`/`inspectionId`,
+--     không quét toàn bảng.
+--
+-- SỐ HÀNG SẼ MẤT khi bật, với người dùng có phạm vi thật (`engineer1`/`SIM-FAC`):
+--   dev 0/0 · test 0/158. Toàn bộ 158 hàng test có `factoryCode = NULL` ⇒ nhánh
+--   0327 ("không mang mã nào = dùng chung") CHO XEM. **KHÔNG hàng nào biến mất.**
+--
+-- NÓI THẲNG PHẦN CHƯA CÓ TÁC DỤNG: vì 0/158 hàng hiện có mang mã, RLS ở bảng này
+-- hôm nay cưỡng chế **con số không** trên dữ liệu đang có. Nó là hàng rào cho
+-- TƯƠNG LAI: `server/routers/aoiPackageRouter.ts` CÓ ghi
+-- `factoryCode: metaData?.factoryCode || metaData?.factory || null` khi máy gửi
+-- gói lên, nên gói từ một máy có khai nhà máy sẽ mang mã và sẽ bị canh. Trình mô
+-- phỏng hiện không gửi trường đó — đó là lý do 158 hàng đều NULL.
+--
+-- ── AN TOÀN ────────────────────────────────────────────────────────────────
+-- Không đụng cột, không đụng dữ liệu, không sửa `app_tenant_allows`. Vị từ vẫn
+-- TRƠ khi `app.tenant_rls_active` chưa bật. Đường ghi không mang danh tính (máy
+-- đẩy gói qua MQTT/edge, cron, khoá master s2s) không bao giờ đặt GUC ⇒ luôn rơi
+-- vào nhánh đầu tiên ⇒ INSERT/SELECT chạy y như trước. Chạy lại vô hại.
+--
+-- ⚠ PHẢI chạy bằng owner `aoi` (`avi_app` bị 42501) và áp cho CẢ HAI CSDL.
+--   Khuôn: scripts/apply-migration-0328.mjs
+--
+-- ── HOÀN NGUYÊN ────────────────────────────────────────────────────────────
+--   DROP POLICY IF EXISTS tenant_select ON inspection_packages;
+--   DROP POLICY IF EXISTS tenant_modify ON inspection_packages;
+--   ALTER TABLE inspection_packages DISABLE ROW LEVEL SECURITY;
+-- Hoặc đặt TENANT_RLS_ENABLED=false — GUC không bao giờ bật, vị từ đoản mạch.
+-- ============================================================================
+
+-- ── (3) inspection_packages: BẬT ────────────────────────────────────────────
+ALTER TABLE inspection_packages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_select ON inspection_packages;
+CREATE POLICY tenant_select ON inspection_packages FOR SELECT
+  USING (app_tenant_allows("factoryCode", NULL));
+DROP POLICY IF EXISTS tenant_modify ON inspection_packages;
+CREATE POLICY tenant_modify ON inspection_packages FOR ALL
+  USING      (app_tenant_allows("factoryCode", NULL))
+  WITH CHECK (app_tenant_allows("factoryCode", NULL));
+
+-- ── (2) wip_tracking: GIỮ TẮT — chốt lại quyết định đã đo (108× / 2.400×) ────
+-- Idempotent; là no-op ở mọi môi trường 0125 chưa từng ăn (tức là mọi môi trường
+-- hiện biết). Có mặt ở đây để quyết định không bị 0125 dựng lại qua cửa sau.
+DROP POLICY IF EXISTS tenant_select ON wip_tracking;
+DROP POLICY IF EXISTS tenant_modify ON wip_tracking;
+ALTER TABLE wip_tracking DISABLE ROW LEVEL SECURITY;
+
+-- ── (1) product_inspections · oee_metrics · process_results ─────────────────
+-- KHÔNG có câu lệnh nào. TimescaleDB từ chối (0A000). Xem phần đầu tệp.

@@ -19,11 +19,14 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
+import { phamViCua } from "./_phamViNguoiXem";
+import { congMaTenant, idsTrongPhamVi, type CapPhanCap, type PhamViNguoiXem } from "../db/hierarchy";
 import { requirePermission } from "../_core/accessControl";
 import { rethrowDbError, withDbErrors, isUniqueViolation } from "../_core/dbErrors";
 import { getDb } from "../db/connection";
+import { chayTheoPhamViTenantHienTai } from "../db/tenantContext";
 import {
   suppliers, InsertSupplier,
   materials, InsertMaterial,
@@ -46,22 +49,145 @@ import {
 
 const MODULE = "masterdata";
 
-// ── Generic getDb-guarded CRUD helpers (fail-safe) ──────────────────────────
-async function listAll<T extends { id: any; createdAt: any }>(table: T, activeOnly?: boolean) {
-  const db = await getDb();
-  if (!db) return [];
-  const q = db.select().from(table as any);
-  if (activeOnly && (table as any).isActive) {
-    return q.where(eq((table as any).isActive, true)).orderBy(desc((table as any).createdAt));
-  }
-  return q.orderBy(desc((table as any).createdAt));
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-18 (trả nợ nhóm A) — **TRỤC PHẠM VI CỦA DỮ LIỆU CHỦ LÀ *MÃ*, KHÔNG PHẢI *ID*.**
+//
+// Khảo sát cột trên `aoi_management` ngày 2026-08-18:
+//
+//   suppliers · materials · tools · customers   → `factoryCode` + `corporateCode`  (đầy 100%)
+//   plant_calendars · warehouses                → `factoryCode`                    (đầy 100%)
+//   shift_configs                               → `factoryId` (SỐ, không phải mã)
+//   storage_locations                           → chỉ `warehouseId`   ⇒ qua KHO
+//   inventory_balances                          → chỉ `warehouseCode` ⇒ qua KHO
+//   calendar_days · calendar_day_shifts         → chỉ `calendarId`    ⇒ qua LỊCH
+//   unit_conversions · units_of_measure · material_classes → KHÔNG có cột tenant nào
+//
+// ⇒ Ba nhóm, ba cách chiếu — và nhóm thứ tư (`unit_conversions`, `material_classes`, `uom`) là
+// **danh mục DÙNG CHUNG thật sự**: bảng quy đổi đơn vị đo không thuộc về nhà máy nào. Chúng KHÔNG
+// bị lọc, và đó là một quyết định có lý do, không phải bỏ sót — lọc chúng sẽ làm mọi màn nhập
+// liệu của người bị thu hẹp mất danh sách đơn vị và không nhập được gì.
+//
+// ⚠ `listAll`/`getOne` là hai ĐIỂM NGHẼN của gần như toàn bộ file này. Cổng đặt tại đây tự động
+// áp cho mọi bảng CÓ cột mã tenant và **không đổi một byte** cho bảng không có — đó là lý do nó
+// nằm ở đây chứ không chép vào từng thủ tục.
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Bảng này có mang cặp cột mã tenant không (hỏi trên ĐỐI TƯỢNG BẢNG lúc chạy, không chép tay). */
+function cotMaTenant(table: any): { factoryCode?: any; corporateCode?: any } {
+  return {
+    ...(table?.factoryCode !== undefined ? { factoryCode: table.factoryCode } : {}),
+    ...(table?.corporateCode !== undefined ? { corporateCode: table.corporateCode } : {}),
+  };
 }
 
-async function getOne(table: any, id: number) {
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// ★★ 2026-08-18 — HAI ĐIỂM NGHẼN NÀY NHẬN NUÔI CƯỠNG CHẾ Ở TẦNG CSDL (RLS).
+//
+// ⚠ ĐỌC KỸ: đây là PHÒNG VỆ THEO CHIỀU SÂU, **KHÔNG** phải hàng rào duy nhất.
+// Cổng thật ở đây vẫn là `congMaTenant(...)` ngay bên dưới — một mệnh đề `where`
+// do tầng ứng dụng dựng, có kênh giải thích cho người dùng và có lưới riêng.
+// `chayTheoPhamViTenantHienTai` chỉ THÊM một lớp thứ hai ở tầng CSDL, để một lỗi
+// tương lai làm rơi mệnh đề `where` không tự động biến thành rò dữ liệu xuyên
+// nhà máy. Bỏ lớp này đi thì hành vi hôm nay KHÔNG đổi; bỏ `congMaTenant` đi thì
+// đổi. Đừng đảo thứ tự quan trọng đó khi đọc mã.
+//
+// ── VÌ SAO CHỌN ĐÚNG HAI HÀM NÀY (đo trên `aoi_management`, 2026-08-18) ──────
+// 42 bảng đang bật RLS. 40 bảng dùng vị từ `app_tenant_allows`; đếm từng bảng:
+//
+//     TỔNG 388 hàng — trong đó **CHỈ 36 hàng mang bất kỳ mã tenant nào**, và
+//     36 hàng ấy nằm gọn trong ĐÚNG BỐN bảng:
+//       materials 20 · tools 8 · suppliers 5 · customers 3
+//     36 bảng còn lại (alarm_taxonomy 175, device_types 31, …) là 100% NULL/NULL
+//     ⇒ sau 0327 chúng là ALLOW vĩnh viễn, bọc thêm nơi gọi mua được SỐ KHÔNG.
+//
+// `listAll`/`getOne` chạm CẢ BỐN bảng ấy (suppliers · materials · customers ·
+// tools, qua ~14 thủ tục tRPC). ⇒ hai hàm này phủ **toàn bộ phần RLS hiện có thể
+// cưỡng chế được bất cứ điều gì**. Đó là lý do chọn chúng, không phải vì chúng to.
+//
+// SỐ HÀNG SẼ MẤT với người dùng có phạm vi thật (`engineer1`/`SIM-FAC`): **0**.
+// Cả 36 hàng có mã đều là `SIM-FAC`/`SIM`; 0 hàng NULL/NULL trong bốn bảng ấy.
+//
+// ── PHẦN KHÔNG ĐỔI MỘT BYTE ────────────────────────────────────────────────
+// `material_classes` · `skills` · `units_of_measure` · `unit_conversions` ·
+// `plant_calendars` · `warehouses` KHÔNG bật RLS ⇒ đi qua đây là pass-through
+// thuần ở tầng CSDL. Ba lối không-cưỡng-chế (cờ tắt · không danh tính · tài
+// khoản 0 gán nhà máy) giữ nguyên: `chayTheoPhamViTenantHienTai` chạy `fn(db)`
+// THẲNG, không giao dịch, không GUC — xem `quyetDinhCuongChe`.
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── Generic getDb-guarded CRUD helpers (fail-safe) ──────────────────────────
+async function listAll<T extends { id: any; createdAt: any }>(table: T, activeOnly?: boolean, scope?: PhamViNguoiXem) {
+  const db = await getDb();
+  if (!db) return [];
+  const cot = cotMaTenant(table);
+  const cong = Object.keys(cot).length > 0 ? await congMaTenant(cot, scope) : undefined;
+  const dieuKien: SQL[] = [];
+  if (activeOnly && (table as any).isActive) dieuKien.push(eq((table as any).isActive, true));
+  if (cong) dieuKien.push(cong);
+  // ⚠ `congMaTenant` phải được TÍNH XONG TRƯỚC khi mở giao dịch: nó `await` một
+  // truy vấn phụ (`getUserAssignmentCodes`) đi trên connection KHÁC của pool.
+  // Gọi nó BÊN TRONG `h` sẽ nối một câu lệnh lạ vào giao dịch mang GUC.
+  return chayTheoPhamViTenantHienTai(db, async (h) => {
+    const q = h.select().from(table as any);
+    return await (dieuKien.length ? q.where(and(...dieuKien)) : q).orderBy(desc((table as any).createdAt));
+  });
+}
+
+async function getOne(table: any, id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
-  const [row] = await db.select().from(table).where(eq(table.id, id)).limit(1);
-  return row ?? null;
+  // ⚠ `id` đến từ `input` — lời TỰ KHAI. Ngoài phạm vi ⇒ `null` (như không tồn tại).
+  const cot = cotMaTenant(table);
+  const cong = Object.keys(cot).length > 0 ? await congMaTenant(cot, scope) : undefined;
+  return chayTheoPhamViTenantHienTai(db, async (h) => {
+    const [row] = await h.select().from(table)
+      .where(cong ? and(eq(table.id, id), cong) : eq(table.id, id))
+      .limit(1);
+    return row ?? null;
+  });
+}
+
+/**
+ * Mệnh đề mã tenant cho truy vấn **THÔ CÓ BÍ DANH**.
+ *
+ * ⚠ Vì sao không dùng lại `congMaTenant`: drizzle kết xuất cột theo TÊN BẢNG (`"suppliers"."…"`),
+ * còn các truy vấn `db.execute(sql`…`)` ở `qualityRouter` viết `FROM suppliers s` — một khi đã
+ * đặt bí danh, tên bảng KHÔNG còn tham chiếu được và Postgres vỡ `42P01`. Nên ở đây dựng tham
+ * chiếu cột bằng `sql.raw` trên chính bí danh ấy. Tập mã vẫn lấy từ ĐÚNG một nguồn
+ * (`getUserAssignmentCodes`).
+ */
+async function congMaTho(biDanh: string, scope?: PhamViNguoiXem): Promise<SQL> {
+  if (!scope?.userId || scope.userRole === "admin") return sql`TRUE`;
+  const { getUserAssignmentCodes } = await import("../_core/accessControl");
+  const { corporateCodes, factoryCodes, isAdmin } = await getUserAssignmentCodes(scope.userId, scope.userRole ?? "user");
+  if (isAdmin) return sql`TRUE`;
+  const nhanh: SQL[] = [];
+  if (factoryCodes.length > 0) {
+    nhanh.push(sql`${sql.raw(`"${biDanh}"."factoryCode"`)} IN (${sql.join(factoryCodes.map((c) => sql`${c}`), sql`, `)})`);
+  }
+  if (corporateCodes.length > 0) {
+    nhanh.push(sql`${sql.raw(`"${biDanh}"."corporateCode"`)} IN (${sql.join(corporateCodes.map((c) => sql`${c}`), sql`, `)})`);
+  }
+  // ⚠ 0 gán ⇒ `1 = 0` TƯỜNG MINH, KHÔNG BAO GIỜ `TRUE`.
+  if (nhanh.length === 0) return sql`1 = 0`;
+  return sql`(${sql.join(nhanh, sql` OR `)})`;
+}
+
+/** Mệnh đề `<biểu thức> IN (…tập id của một tầng phân cấp…)` cho truy vấn THÔ. */
+async function congIdTho(bieuThuc: string, cap: CapPhanCap, scope?: PhamViNguoiXem): Promise<SQL> {
+  const ids = await idsTrongPhamVi(cap, scope);
+  if (ids === null) return sql`TRUE`;
+  if (ids.length === 0) return sql`1 = 0`;
+  return sql`${sql.raw(bieuThuc)} IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`;
+}
+
+/** Mệnh đề "sản phẩm thuộc phạm vi" cho truy vấn THÔ — dùng LẠI vị từ duy nhất của repo. */
+async function congSanPhamTho(bieuThuc: string, scope?: PhamViNguoiXem): Promise<SQL> {
+  const ids = await idsTrongPhamVi("factory", scope);
+  if (ids === null) return sql`TRUE`;
+  if (ids.length === 0) return sql`1 = 0`;
+  const { congSanPhamTrongNhaMay } = await import("./publicProductScope");
+  return sql`(${sql.join(ids.map((f) => congSanPhamTrongNhaMay(sql.raw(bieuThuc), f)), sql` OR `)})`;
 }
 
 async function insertOne(table: any, values: Record<string, any>): Promise<number> {
@@ -263,11 +389,11 @@ const suppliersRouter = router({
   list: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ activeOnly: z.boolean().optional() }).optional())
-    .query(({ input }) => listAll(suppliers, input?.activeOnly)),
+    .query(({ input, ctx }) => listAll(suppliers, input?.activeOnly, phamViCua(ctx))),
   get: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(idInput)
-    .query(({ input }) => getOne(suppliers, input.id)),
+    .query(({ input, ctx }) => getOne(suppliers, input.id, phamViCua(ctx))),
   create: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(z.object({
@@ -340,13 +466,14 @@ const suppliersRouter = router({
    *  (map code→count, dùng cảnh báo tham chiếu mồ côi trước khi xoá). */
   usageCounts: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return {} as Record<string, number>;
+      const cong = await congMaTenant(cotMaTenant(materials), phamViCua(ctx));
       const rows = await db
         .select({ code: materials.defaultSupplierCode, count: sql<number>`count(*)::int` })
         .from(materials)
-        .where(isNotNull(materials.defaultSupplierCode))
+        .where(and(isNotNull(materials.defaultSupplierCode), ...(cong ? [cong] : [])))
         .groupBy(materials.defaultSupplierCode);
       const out: Record<string, number> = {};
       for (const r of rows) if (r.code) out[String(r.code)] = Number(r.count);
@@ -378,7 +505,7 @@ const materialImportSchema = z.object({
 const materialsRouter = router({
   listClasses: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
-    .query(() => listAll(materialClasses)),
+    .query(({ ctx }) => listAll(materialClasses, undefined, phamViCua(ctx))),
   createClass: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(z.object({
@@ -409,13 +536,14 @@ const materialsRouter = router({
    *  materials.materialClass (map code→count) để cảnh báo tham chiếu trước khi xoá. */
   classUsageCounts: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return {} as Record<string, number>;
+      const cong = await congMaTenant(cotMaTenant(materials), phamViCua(ctx));
       const rows = await db
         .select({ code: materials.materialClass, count: sql<number>`count(*)::int` })
         .from(materials)
-        .where(isNotNull(materials.materialClass))
+        .where(and(isNotNull(materials.materialClass), ...(cong ? [cong] : [])))
         .groupBy(materials.materialClass);
       const out: Record<string, number> = {};
       for (const r of rows) if (r.code) out[String(r.code)] = Number(r.count);
@@ -425,11 +553,11 @@ const materialsRouter = router({
   list: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ activeOnly: z.boolean().optional() }).optional())
-    .query(({ input }) => listAll(materials, input?.activeOnly)),
+    .query(({ input, ctx }) => listAll(materials, input?.activeOnly, phamViCua(ctx))),
   get: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(idInput)
-    .query(({ input }) => getOne(materials, input.id)),
+    .query(({ input, ctx }) => getOne(materials, input.id, phamViCua(ctx))),
   create: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(z.object({
@@ -527,11 +655,11 @@ const customersRouter = router({
   list: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ activeOnly: z.boolean().optional() }).optional())
-    .query(({ input }) => listAll(customers, input?.activeOnly)),
+    .query(({ input, ctx }) => listAll(customers, input?.activeOnly, phamViCua(ctx))),
   get: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(idInput)
-    .query(({ input }) => getOne(customers, input.id)),
+    .query(({ input, ctx }) => getOne(customers, input.id, phamViCua(ctx))),
   create: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(z.object({
@@ -593,11 +721,11 @@ const skillsRouter = router({
   list: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ activeOnly: z.boolean().optional() }).optional())
-    .query(({ input }) => listAll(skills, input?.activeOnly)),
+    .query(({ input, ctx }) => listAll(skills, input?.activeOnly, phamViCua(ctx))),
   get: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(idInput)
-    .query(({ input }) => getOne(skills, input.id)),
+    .query(({ input, ctx }) => getOne(skills, input.id, phamViCua(ctx))),
   create: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(z.object({
@@ -777,11 +905,11 @@ const toolsRouter = router({
   list: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ activeOnly: z.boolean().optional() }).optional())
-    .query(({ input }) => listAll(tools, input?.activeOnly)),
+    .query(({ input, ctx }) => listAll(tools, input?.activeOnly, phamViCua(ctx))),
   get: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(idInput)
-    .query(({ input }) => getOne(tools, input.id)),
+    .query(({ input, ctx }) => getOne(tools, input.id, phamViCua(ctx))),
   create: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(z.object({
@@ -830,11 +958,11 @@ const uomRouter = router({
   list: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ activeOnly: z.boolean().optional() }).optional())
-    .query(({ input }) => listAll(unitsOfMeasure, input?.activeOnly)),
+    .query(({ input, ctx }) => listAll(unitsOfMeasure, input?.activeOnly, phamViCua(ctx))),
   get: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(idInput)
-    .query(({ input }) => getOne(unitsOfMeasure, input.id)),
+    .query(({ input, ctx }) => getOne(unitsOfMeasure, input.id, phamViCua(ctx))),
   create: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(z.object({
@@ -867,7 +995,7 @@ const uomRouter = router({
   // Conversions (from × factor + offset = to)
   listConversions: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
-    .query(() => listAll(unitConversions)),
+    .query(({ ctx }) => listAll(unitConversions, undefined, phamViCua(ctx))),
   createConversion: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(z.object({
@@ -916,11 +1044,11 @@ const calendarRouter = router({
   list: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ activeOnly: z.boolean().optional() }).optional())
-    .query(({ input }) => listAll(plantCalendars, input?.activeOnly)),
+    .query(({ input, ctx }) => listAll(plantCalendars, input?.activeOnly, phamViCua(ctx))),
   get: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(idInput)
-    .query(({ input }) => getOne(plantCalendars, input.id)),
+    .query(({ input, ctx }) => getOne(plantCalendars, input.id, phamViCua(ctx))),
   create: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(z.object({
@@ -993,22 +1121,39 @@ const calendarRouter = router({
   /** Danh sách ca (shift_configs) đang bật — để UI chọn gán vào 1 ngày lịch. */
   listShiftConfigs: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return [];
+      // ⚠ `shift_configs` mang `factoryId` (SỐ), không phải mã ⇒ chiếu qua tập `factories.id`.
+      const idsNhaMay = await idsTrongPhamVi("factory", phamViCua(ctx));
       return db
         .select()
         .from(shiftConfigs)
-        .where(eq(shiftConfigs.isActive, true))
+        .where(and(
+          eq(shiftConfigs.isActive, true),
+          ...(idsNhaMay === null ? [] : [inArray(shiftConfigs.factoryId, idsNhaMay.length ? idsNhaMay : [-1])]),
+        ))
         .orderBy(asc(shiftConfigs.orderIndex), asc(shiftConfigs.id));
     }),
   /** Ca đã gán cho 1 ngày lịch — JOIN shift_configs để trả kèm mã/tên/giờ ca. */
   listDayShifts: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ calendarDayId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
+      // ⚠ `calendar_day_shifts` chỉ có `calendarDayId` ⇒ chiếu NGƯỢC qua `calendar_days.calendarId`
+      // → `plant_calendars.factoryCode`. `calendarDayId` là lời TỰ KHAI, nên phải kiểm chính nó.
+      {
+        const congLich = await congMaTenant(cotMaTenant(plantCalendars), phamViCua(ctx));
+        if (congLich) {
+          const [thuoc] = await db.select({ id: calendarDays.id }).from(calendarDays)
+            .innerJoin(plantCalendars, eq(plantCalendars.id, calendarDays.calendarId))
+            .where(and(eq(calendarDays.id, input.calendarDayId), congLich))
+            .limit(1);
+          if (!thuoc) return [];
+        }
+      }
       return db
         .select({
           id: calendarDayShifts.id,
@@ -1067,11 +1212,11 @@ const inventoryRouter = router({
   listWarehouses: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ activeOnly: z.boolean().optional() }).optional())
-    .query(({ input }) => listAll(warehouses, input?.activeOnly)),
+    .query(({ input, ctx }) => listAll(warehouses, input?.activeOnly, phamViCua(ctx))),
   getWarehouse: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(idInput)
-    .query(({ input }) => getOne(warehouses, input.id)),
+    .query(({ input, ctx }) => getOne(warehouses, input.id, phamViCua(ctx))),
   createWarehouse: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(z.object({
@@ -1105,13 +1250,21 @@ const inventoryRouter = router({
   listLocations: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ warehouseId: z.number().int().positive().optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
+      // ⚠ `storage_locations` chỉ có `warehouseId` ⇒ chiếu qua `warehouses.factoryCode`.
+      const congKho = await congMaTenant(cotMaTenant(warehouses), phamViCua(ctx));
+      const dieuKien: SQL[] = [];
+      if (input?.warehouseId != null) dieuKien.push(eq(storageLocations.warehouseId, input.warehouseId));
+      if (congKho) {
+        dieuKien.push(inArray(
+          storageLocations.warehouseId,
+          db.select({ id: warehouses.id }).from(warehouses).where(congKho),
+        ));
+      }
       const q = db.select().from(storageLocations);
-      return (input?.warehouseId != null
-        ? q.where(eq(storageLocations.warehouseId, input.warehouseId))
-        : q).orderBy(asc(storageLocations.id));
+      return (dieuKien.length ? q.where(and(...dieuKien)) : q).orderBy(asc(storageLocations.id));
     }),
   createLocation: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
@@ -1149,19 +1302,41 @@ const inventoryRouter = router({
       materialCode: z.string().max(64).optional(),
       warehouseCode: z.string().max(64).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const conds = [];
       if (input?.materialCode != null) conds.push(eq(inventoryBalances.materialCode, input.materialCode));
       if (input?.warehouseCode != null) conds.push(eq(inventoryBalances.warehouseCode, input.warehouseCode));
+      // ⚠ `inventory_balances` KHÔNG có cột tenant — chỉ `warehouseCode` (NOT NULL) ⇒ chiếu qua KHO.
+      // Đây là TỒN KHO THẬT theo lô: một bảng kê hàng của tenant, không phải danh mục dùng chung.
+      const congKho = await congMaTenant(cotMaTenant(warehouses), phamViCua(ctx));
+      if (congKho) {
+        conds.push(inArray(
+          inventoryBalances.warehouseCode,
+          db.select({ code: warehouses.code }).from(warehouses).where(congKho),
+        ));
+      }
       const q = db.select().from(inventoryBalances);
       return (conds.length ? q.where(and(...conds)) : q).orderBy(desc(inventoryBalances.updatedAt));
     }),
   getBalance: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(idInput)
-    .query(({ input }) => getOne(inventoryBalances, input.id)),
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const congKho = await congMaTenant(cotMaTenant(warehouses), phamViCua(ctx));
+      const [row] = await db.select().from(inventoryBalances)
+        .where(congKho
+          ? and(eq(inventoryBalances.id, input.id), inArray(
+              inventoryBalances.warehouseCode,
+              db.select({ code: warehouses.code }).from(warehouses).where(congKho),
+            ))
+          : eq(inventoryBalances.id, input.id))
+        .limit(1);
+      return row ?? null;
+    }),
   upsertBalance: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(z.object({
@@ -1280,9 +1455,16 @@ const qualityRouter = router({
   /** Chỉ số chất lượng dữ liệu cho từng thực thể master-data (canView). */
   summary: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
-    .query(async (): Promise<QualityEntity[]> => {
+    .query(async ({ ctx }): Promise<QualityEntity[]> => {
       const db = await getDb();
       if (!db) return [];
+      // ⚠ Bốn thẻ đầu ĐẾM trên dữ liệu chủ có mã tenant ⇒ phải thu hẹp, nếu không người bị thu hẹp
+      // đọc được QUY MÔ danh mục nhà cung cấp / khách hàng của tenant khác. Thẻ thứ năm
+      // (`unit_conversions`) là bảng quy đổi đơn vị DÙNG CHUNG — không lọc, xem docblock đầu file.
+      const pv = phamViCua(ctx);
+      const [congS, congM, congC, congT] = await Promise.all([
+        congMaTho("s", pv), congMaTho("m", pv), congMaTho("c", pv), congMaTho("t", pv),
+      ]);
 
       const [sup, mat, cus, tl, conv] = await Promise.all([
         db.execute(sql`
@@ -1292,6 +1474,7 @@ const qualityRouter = router({
             (COUNT(*) FILTER (WHERE s."contactEmail" IS NULL OR s."contactEmail" = ''))::int AS missing_email,
             (COUNT(*) FILTER (WHERE (s."contactName" IS NULL OR s."contactName" = '') AND (s."contactPhone" IS NULL OR s."contactPhone" = '')))::int AS missing_contact
           FROM suppliers s
+          WHERE ${congS}
         `),
         db.execute(sql`
           SELECT
@@ -1301,6 +1484,7 @@ const qualityRouter = router({
             (COUNT(*) FILTER (WHERE m."unit" IS NOT NULL AND m."unit" <> '' AND NOT EXISTS (SELECT 1 FROM units_of_measure u WHERE u.code = m."unit")))::int AS orphan_unit,
             (COUNT(*) FILTER (WHERE m."mpn" IS NULL OR m."mpn" = ''))::int AS missing_mpn
           FROM materials m
+          WHERE ${congM}
         `),
         db.execute(sql`
           SELECT
@@ -1308,6 +1492,7 @@ const qualityRouter = router({
             (COUNT(*) FILTER (WHERE c."contactEmail" IS NULL OR c."contactEmail" = ''))::int AS missing_email,
             (COUNT(*) FILTER (WHERE (c."contactEmail" IS NULL OR c."contactEmail" = '') AND (c."contactName" IS NULL OR c."contactName" = '') AND (c."contactPhone" IS NULL OR c."contactPhone" = '')))::int AS missing_contact
           FROM customers c
+          WHERE ${congC}
         `),
         db.execute(sql`
           SELECT
@@ -1315,6 +1500,7 @@ const qualityRouter = router({
             (COUNT(*) FILTER (WHERE t."location" IS NULL OR t."location" = ''))::int AS missing_location,
             (COUNT(*) FILTER (WHERE t."type" = 'other'))::int AS untyped
           FROM tools t
+          WHERE ${congT}
         `),
         db.execute(sql`
           SELECT
@@ -1392,9 +1578,18 @@ const qualityRouter = router({
    */
   engineering: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
-    .query(async (): Promise<QualityEntityExtended[]> => {
+    .query(async ({ ctx }): Promise<QualityEntityExtended[]> => {
       const db = await getDb();
       if (!db) return [];
+      // ⚠ Bốn thẻ này ĐẾM và LẤY MẪU trên điểm đo / máy / trạm / sản phẩm — mỗi mẫu drill là 25
+      // dòng mang MÃ và TÊN thật. Bốn trục khác nhau, mỗi trục dùng lại đúng bộ suy đã có.
+      const pv = phamViCua(ctx);
+      const [congDiem, congMay, congTram, congSp] = await Promise.all([
+        congSanPhamTho('pd."productModelId"', pv),
+        congIdTho('m."id"', "machine", pv),
+        congIdTho('st."id"', "station", pv),
+        congSanPhamTho('pm."id"', pv),
+      ]);
 
       const [ptCnt, ptRows, mcCnt, mcRows, stCnt, stRows, pmCnt, pmRows] = await Promise.all([
         db.execute(sql`
@@ -1404,7 +1599,7 @@ const qualityRouter = router({
             (COUNT(*) FILTER (WHERE pd."positionX" = 0 AND pd."positionY" = 0))::int AS origin_coord,
             (COUNT(*) FILTER (WHERE pd."componentCode" IS NULL OR pd."componentCode" = ''))::int AS no_component
           FROM measurement_point_defs pd
-          WHERE pd."deletedAt" IS NULL AND pd."isActive" = true
+          WHERE pd."deletedAt" IS NULL AND pd."isActive" = true AND ${congDiem}
         `),
         db.execute(sql`
           SELECT pd.id, pd.code, pd."productModelId" AS pmid,
@@ -1412,7 +1607,7 @@ const qualityRouter = router({
             CASE WHEN pd."positionX" = 0 AND pd."positionY" = 0 THEN 1 ELSE 0 END AS f_origin,
             CASE WHEN pd."componentCode" IS NULL OR pd."componentCode" = '' THEN 1 ELSE 0 END AS f_comp
           FROM measurement_point_defs pd
-          WHERE pd."deletedAt" IS NULL AND pd."isActive" = true
+          WHERE pd."deletedAt" IS NULL AND pd."isActive" = true AND ${congDiem}
             AND ( (pd."lowerLimit" IS NULL AND pd."upperLimit" IS NULL AND pd."criteria" IS NULL)
                OR (pd."positionX" = 0 AND pd."positionY" = 0)
                OR (pd."componentCode" IS NULL OR pd."componentCode" = '') )
@@ -1425,14 +1620,14 @@ const qualityRouter = router({
             (COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM stations s WHERE s.id = m."stationId" AND s."isActive" = true)))::int AS no_station,
             (COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM product_machine_mappings pmm WHERE pmm."machineId" = m.id AND pmm."isActive" = true)))::int AS no_product
           FROM machines m
-          WHERE m."isActive" = true
+          WHERE m."isActive" = true AND ${congMay}
         `),
         db.execute(sql`
           SELECT m.id, m.code, m.name,
             CASE WHEN NOT EXISTS (SELECT 1 FROM stations s WHERE s.id = m."stationId" AND s."isActive" = true) THEN 1 ELSE 0 END AS f_station,
             CASE WHEN NOT EXISTS (SELECT 1 FROM product_machine_mappings pmm WHERE pmm."machineId" = m.id AND pmm."isActive" = true) THEN 1 ELSE 0 END AS f_product
           FROM machines m
-          WHERE m."isActive" = true
+          WHERE m."isActive" = true AND ${congMay}
             AND ( NOT EXISTS (SELECT 1 FROM stations s WHERE s.id = m."stationId" AND s."isActive" = true)
                OR NOT EXISTS (SELECT 1 FROM product_machine_mappings pmm WHERE pmm."machineId" = m.id AND pmm."isActive" = true) )
           ORDER BY m.id
@@ -1443,12 +1638,12 @@ const qualityRouter = router({
             (COUNT(*))::int AS total,
             (COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM production_lines l WHERE l.id = st."lineId" AND l."isActive" = true)))::int AS no_line
           FROM stations st
-          WHERE st."isActive" = true
+          WHERE st."isActive" = true AND ${congTram}
         `),
         db.execute(sql`
           SELECT st.id, st.code, st.name
           FROM stations st
-          WHERE st."isActive" = true
+          WHERE st."isActive" = true AND ${congTram}
             AND NOT EXISTS (SELECT 1 FROM production_lines l WHERE l.id = st."lineId" AND l."isActive" = true)
           ORDER BY st.id
           LIMIT 25
@@ -1458,12 +1653,12 @@ const qualityRouter = router({
             (COUNT(*))::int AS total,
             (COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM measurement_point_defs pd WHERE pd."productModelId" = pm.id AND pd."deletedAt" IS NULL AND pd."isActive" = true)))::int AS no_points
           FROM product_models pm
-          WHERE pm."isActive" = true AND pm."deletedAt" IS NULL
+          WHERE pm."isActive" = true AND pm."deletedAt" IS NULL AND ${congSp}
         `),
         db.execute(sql`
           SELECT pm.id, pm.code, pm.name
           FROM product_models pm
-          WHERE pm."isActive" = true AND pm."deletedAt" IS NULL
+          WHERE pm."isActive" = true AND pm."deletedAt" IS NULL AND ${congSp}
             AND NOT EXISTS (SELECT 1 FROM measurement_point_defs pd WHERE pd."productModelId" = pm.id AND pd."deletedAt" IS NULL AND pd."isActive" = true)
           ORDER BY pm.id
           LIMIT 25

@@ -266,15 +266,29 @@ const auditMutationMiddleware = t.middleware(async (opts) => {
  * server/db/tenantContext.withTenantScope(db, ctx.tenantScope, fn) to activate
  * the RLS policies. Default off → zero cost and no behaviour change.
  */
-const tenantRlsEnabled = process.env.TENANT_RLS_ENABLED === "true";
-
+/**
+ * ⚠ ĐỌC TẠI THỜI ĐIỂM GỌI, không phải lúc nạp module.
+ *
+ * Bản cũ là `const tenantRlsEnabled = process.env.TENANT_RLS_ENABLED === "true"`
+ * ở cấp module. `server/db/tenantContext.ts` thì lại có `isTenantRlsEnabled()`
+ * đọc lúc gọi, kèm docblock nói rõ "để test/vận hành lật cờ mà không cần khởi
+ * động lại". Hai nửa của CÙNG một cơ chế đọc cờ ở HAI thời điểm khác nhau: một
+ * bài test `vi.stubEnv` lật cờ rồi gọi router sẽ thấy tầng dữ liệu cưỡng chế
+ * trong khi middleware vẫn nghĩ cờ đang tắt (hoặc ngược lại) — lưới xanh mà cơ
+ * chế lệch pha. Nay cả hai dùng CHUNG một hàm.
+ */
 const tenantScopeMiddleware = t.middleware(async (opts) => {
   const { ctx, next } = opts;
-  if (!tenantRlsEnabled || !ctx.user) return next();
+  const { isTenantRlsEnabled, chayVoiDanhTinhTenant } = await import("../db/tenantContext");
+  if (!isTenantRlsEnabled() || !ctx.user) return next();
   try {
     const { getTenantScope } = await import("./accessControl");
     const scope = await getTenantScope(ctx.user.id, String(ctx.user.role));
-    return next({ ctx: { ...ctx, tenantScope: scope } });
+    // NỬA THỨ HAI của điểm nối: đặt phạm vi vào AsyncLocalStorage cho toàn bộ
+    // nhánh async của request. Tầng dữ liệu đọc lại bằng
+    // `chayTheoPhamViTenantHienTai(db, fn)` mà KHÔNG cần `ctx` luồn qua chữ ký.
+    // `ctx.tenantScope` vẫn được giữ nguyên cho nơi gọi cũ.
+    return await chayVoiDanhTinhTenant(scope, () => next({ ctx: { ...ctx, tenantScope: scope } }));
   } catch {
     return next(); // never block a request on scope derivation
   }

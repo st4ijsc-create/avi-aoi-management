@@ -1,0 +1,91 @@
+-- ============================================================================
+-- 0327 — GỠ MÌN: hàng KHÔNG MANG MÃ TENANT phải được XEM, không bị ẩn.
+--
+-- ⚠⚠ ĐÂY LÀ ĐIỀU KIỆN TIÊN QUYẾT để nối `runWithTenantScope` vào đường dữ liệu.
+-- Không có nó, bật GUC = XOÁ TRẮNG MÀN HÌNH.
+--
+-- ── CÁI ĐƯỢC ĐO (2026-08-18, CSDL `aoi_management`, vai `avi_app`) ───────────
+-- 42 bảng đang BẬT RLS; 40 bảng dùng vị từ `app_tenant_allows(...)`. Đếm thật:
+--
+--   TỔNG 388 hàng, trong đó **352 hàng có CẢ `corporateCode` LẪN `factoryCode`
+--   = NULL**. Ví dụ: alarm_taxonomy 175/175, device_types 31/31,
+--   maintenance_work_orders 26/26, ai_anomaly_memory_bank 49/49.
+--
+-- Chạy thử bằng chính vai ứng dụng `avi_app`, đặt GUC `app.tenant_rls_active=on`
+-- + `app.tenant_factory_codes='SIM-FAC'` (đúng phạm vi của `engineer1`):
+--
+--   bảng            | không GUC | GUC + SIM-FAC | GUC + tenant SAI | GUC + bypass
+--   device_types    |    31     |     **0**     |        0         |     31
+--   alarm_taxonomy  |   175     |     **0**     |        0         |    175
+--   suppliers       |     5     |       5       |        0         |      5
+--
+-- ⇒ Hai bảng đó VỀ 0 với một người dùng HỢP LỆ, được gán đúng nhà máy. Đó không
+--   phải cách ly — đó là sự cố.
+--
+-- ── VÌ SAO ─────────────────────────────────────────────────────────────────
+-- Vị từ cũ (0122/0125/0156, giống hệt nhau):
+--     rls_active <> 'on'  OR  bypass = 'on'
+--  OR (p_factory   IS NOT NULL AND p_factory   ∈ danh sách)
+--  OR (p_corporate IS NOT NULL AND p_corporate ∈ danh sách)
+--
+-- Với hàng NULL/NULL và GUC đã bật, không nhánh nào đúng ⇒ **FALSE ⇒ ẨN**.
+--
+-- ── TIỀN ĐỀ SAI ĐÃ ĐƯỢC GHI THÀNH VĂN BẢN (đính chính tại đây) ───────────────
+-- `docs/ECOSYSTEM/PHASE1_TENANT_RLS_ROLLOUT.md` §U6-a viết nguyên văn:
+--     "existing rows get `NULL` = unscoped = allow-all under the inert policy
+--      — fully backward-compatible"
+-- Câu đó **SAI**. `NULL` chỉ allow-all khi GUC CHƯA bật (lúc đó mọi thứ đều
+-- allow-all, kể cả hàng có mã). Ngay khi bật GUC — tức đúng lúc chính sách bắt
+-- đầu có nghĩa — `NULL` trở thành **DENY**. Ba đợt migration đã dựa vào lời hứa
+-- này để bật RLS lên 42 bảng.
+--
+-- ── CÁI MIGRATION NÀY LÀM ──────────────────────────────────────────────────
+-- Thêm ĐÚNG MỘT nhánh vào `app_tenant_allows`: hàng **không mang bất kỳ mã
+-- tenant nào** (cả hai đối số NULL) = dữ liệu tham chiếu DÙNG CHUNG toàn hệ ⇒
+-- ALLOW. Đây chính là ngữ nghĩa mà cả ba tài liệu triển khai đã hứa, và cũng là
+-- ngữ nghĩa 0122 đã dùng khi CỐ Ý bỏ `material_classes`/`skills` ra ngoài với lý
+-- do "global reference data".
+--
+--     ┌──────────────────────────┬───────────────┬───────────────┐
+--     │ hàng                     │ TRƯỚC 0327    │ SAU 0327      │
+--     ├──────────────────────────┼───────────────┼───────────────┤
+--     │ mã khớp phạm vi          │ THẤY          │ THẤY          │
+--     │ mã KHÔNG khớp phạm vi    │ ẨN  ← hàng rào│ ẨN  ← hàng rào│
+--     │ KHÔNG có mã nào (NULL)   │ ẨN  ← MÌN     │ THẤY          │
+--     └──────────────────────────┴───────────────┴───────────────┘
+--
+-- Hàng rào THẬT (dòng giữa) KHÔNG bị đụng tới. Chỉ gỡ quả mìn ở dòng cuối.
+--
+-- ── ĐÁNH ĐỔI, NÓI THẲNG ────────────────────────────────────────────────────
+-- Hàng ĐÁNG LẼ phải thuộc một tenant nhưng bị bỏ trống mã sẽ hiển thị cho mọi
+-- người. Đó là NHƯỢNG BỘ CÓ Ý THỨC, và nó KHÔNG làm xấu đi hiện trạng: hôm nay
+-- `runWithTenantScope` có 0 nơi gọi sản xuất ⇒ GUC không bao giờ được bật ⇒ mọi
+-- hàng đều hiển thị cho mọi người. 0327 giữ nguyên mức đó cho hàng vô chủ và
+-- BỔ SUNG hàng rào thật cho hàng có chủ. Muốn siết tiếp: điền mã tenant vào dữ
+-- liệu (backfill), KHÔNG phải bằng cách để chính sách ẩn dữ liệu vô chủ.
+--
+-- ── AN TOÀN ────────────────────────────────────────────────────────────────
+-- CHỈ `CREATE OR REPLACE FUNCTION`. Không đụng cột, không đụng dữ liệu, không
+-- thêm/bớt chính sách nào. Vẫn TRƠ HOÀN TOÀN khi `app.tenant_rls_active` chưa
+-- bật (nhánh đầu tiên không đổi). Chạy lại vô hại.
+--
+-- ⚠ PHẢI chạy bằng owner `aoi` (`avi_app` bị 42501) và áp cho CẢ HAI CSDL
+--   (`aoi_management`, `aoi_management_test`).
+--   Khuôn: scripts/apply-migration-0327.mjs
+--
+-- ── HOÀN NGUYÊN ────────────────────────────────────────────────────────────
+-- Chạy lại đúng thân hàm cũ (bỏ nhánh `p_factory IS NULL AND p_corporate IS NULL`).
+-- Hoặc đơn giản đặt TENANT_RLS_ENABLED=false — GUC không bao giờ bật, toàn bộ
+-- vị từ đoản mạch về TRUE.
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION app_tenant_allows(p_factory text, p_corporate text)
+  RETURNS boolean LANGUAGE sql STABLE AS $$
+  SELECT coalesce(current_setting('app.tenant_rls_active', true), 'off') <> 'on'   -- trơ khi chưa kích hoạt
+      OR coalesce(current_setting('app.tenant_bypass',     true), 'off') =  'on'   -- admin / dịch vụ
+      -- ── 0327: hàng KHÔNG mang mã tenant nào = dữ liệu dùng chung ⇒ CHO XEM ──
+      -- (nhánh MỚI DUY NHẤT; không nhánh nào bên dưới bị sửa)
+      OR (p_factory IS NULL AND p_corporate IS NULL)
+      OR (p_factory   IS NOT NULL AND p_factory   = ANY (string_to_array(coalesce(current_setting('app.tenant_factory_codes',   true), ''), ',')))
+      OR (p_corporate IS NOT NULL AND p_corporate = ANY (string_to_array(coalesce(current_setting('app.tenant_corporate_codes', true), ''), ',')))
+$$;
