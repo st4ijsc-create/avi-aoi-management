@@ -4,6 +4,30 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- 🔴 AF-1 (.superpowers/sdd/item12-stage3/task-1-brief.md) — ITEM 12 OF docs/owner-decisions.md,
+         ENFORCED, STAGE 3 OF 8. The owner ruled option (b): turn this switch on here, WITH NO EXEMPTION
+         OF ANY KIND, and let the debt be NAMED rather than silenced.
+
+         WHAT THIS ONE PROPERTY COSTS, MEASURED on a full `dotnet build -t:Rebuild` of this solution at
+         the commit that adds it — never derived by arithmetic, because stage 1 measured that the number
+         is NOT preserved under payment (writing `<param>` for SOME parameters of a member converts one
+         CS1591 into one CS1573, so a subtraction would understate):
+           116 -> 852 warnings across the tree, all of them in this compilation (+736), 0 errors.
+           736 = 543 CS1591 + 92 CS1573 + 75 CS1574 + 23 CS1734 + 3 CS0419.
+         Of those 736, 103 (95 CS1591 + 8 CS1573) fall in the vendored SDK file this project
+         `Compile Include`s — examples/device-client/csharp/St4iDeviceClient.cs — which this repository
+         MAY NOT EDIT. They are the named debt. They must remain VISIBLE; silencing them is an owner
+         decision and lowering a pin to hide them is how a named debt stops being named.
+
+         🔴 THE DEBT IS NOT PAID BY THIS COMMIT AND ITEM 12 STAYS IN PART II BECAUSE OF IT. 633 of the
+         736 are ours to pay (101 unresolvable `cref`/`paramref` claims — assertions that are already
+         FALSE — plus 532 coverage gaps across 90 files) and stages 4..8 pay them, each re-MEASURING its
+         own constant. The two instruments that keep this honest in the meantime are the origin-split
+         ledger beside EXPECT_WARNINGS in scripts/verify-suites.sh (which pins 103 vendored + 633 ours
+         by (bucket, code), both directions) and SuppressionCensusTests, which pins THIS row: the census
+         went red on this edit before its table was moved, which is the evidence that it watches the
+         switch rather than the warnings. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\..\..\examples\device-client\csharp\St4iDeviceClient.cs" Link="Sdk\St4iDeviceClient.cs" />

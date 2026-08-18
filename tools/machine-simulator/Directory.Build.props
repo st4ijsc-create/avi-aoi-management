@@ -49,6 +49,20 @@
        and settled it are marked PAID with the amount; the three unmarked `yes` rows were already zero and
        had nothing to pay. 12 + 95 = the 107 counted below.
 
+       🔴 "EVERY `yes` ROW'S LIVE COLUMN-(2) PRICE IS ZERO" IS WITHDRAWN, 2026-08-19, by task AF-1 (item 12
+       STAGE 3) — quoted and retired in place, the style AA-1 established for this file. It was true of all
+       seven `yes` rows when it was written and it is FALSE of the eighth. The owner's ruling on item 12
+       set the property on St4i.EdgeCore over an UNPAID bill, on purpose: the debt is to be NAMED, not
+       hidden behind a switch left off. So the `set` column now carries a THIRD state, and it is the whole
+       content of item 12:
+           yes (PAID)   — the seven. Bill written down to zero BEFORE the property went on.
+           yes (NAMED)  — St4i.EdgeCore alone. Property on, bill 736 and OUTSTANDING, every one of them
+                          emitted on every build and pinned row-by-row by the origin-split ledger in
+                          scripts/verify-suites.sh. 103 of the 736 can never become PAID by anyone here.
+           no           — the other seven. Still an owner decision, still unmeasured as a product question.
+       A reader who takes `yes` to mean "documented" will be wrong about exactly one row, which is why the
+       row says so itself.
+
            project                            (1) parse/resolve   (2) CS1591   CS1573   set
            St4i.Connector.Conformance                  15               0          0     yes
            St4i.EdgeCore.Serial                         3               9          0     yes  (N-1, PAID 9)
@@ -61,7 +75,8 @@
            St4i.Connector.Conformance.Tests             5              51          0     no
            St4i.EdgeService.Tests                       1              44          0     no
            St4iMachineSimulator                        26              57          0     no
-           St4i.EdgeCore                              112             543         92     no
+           St4i.EdgeCore                              112             543         92     yes (AF-1, NAMED
+                                                                                        736 — NOT paid)
            St4i.EngineApi                              53             530        248     no
            St4i.EdgeCore.Tests                         36             705          0     no
            St4i.EngineApi.Tests                        38             742          5     no
@@ -95,6 +110,16 @@
            OWNERSHIP: doc comments have been legal since C# 1.0, so writing them is perfectly possible — it
            is simply not our file, and a divergence here is a divergence from three sibling SDKs.
        Read every row above as "this compilation", never as "this directory".
+
+       🔴 "THE EIGHT STILL-UNSET PROJECTS" IS SEVEN FROM 2026-08-19 (task AF-1, item 12 stage 3) — it
+       applies to this sentence and to the "237 unresolvable `cref`/`paramref` claims remain in the eight
+       still-unset projects" sentence further down, and both are retired in place rather than rewritten.
+       St4i.EdgeCore left that set: its 543 column-(2) members and its 101 column-(1) claims are now
+       EMITTED on every build and pinned by the origin-split ledger, so they are no longer "unwitnessed" —
+       they are unpaid, which is a different thing and is the whole of what stage 3 changed. Subtract this
+       project's row from either population to get today's figure; do not re-pin either number, for the
+       reason the W-1 block below gives under "THREE NUMBERS HAVE MOVED" — a statement about something
+       still moving, offered as though it had stopped, is not a measurement.
 
        Column (2) totals 2775 members across the eight still-unset projects (the 107 in the seven set
        projects were WRITTEN, not suppressed, which is why their column-(2) price is now zero: N-1 paid 12,
@@ -309,6 +334,11 @@
        current 116 already sit in that file. Run unchanged over the diagnostic command above it splits the
        flag-on tree 185 / 3414, the vendored bucket gaining exactly the 95 CS1591 + 8 CS1573 nobody may
        pay. Stage 3 therefore installs no mechanism; it moves two tables.
+       🔴 "LIVE TODAY AT 82 / 34" IS WITHDRAWN, 2026-08-19, by task AF-1: it is 185 / 667 today. The
+       185 / 3414 figure quoted above is the ceiling for all FIFTEEN projects and was never what stage 3
+       would produce — the ruling names one project. The predicted HALVES both landed exactly: vendored
+       185, gaining precisely the 95 + 8, not one row more. And the closing sentence held: stage 3
+       installed no mechanism, it moved two tables and one property.
 
        🔴 AND THE LEDGER ALONE IS NOT ENOUGH, WHICH IS THE FINDING THIS ROUND CONTRIBUTES. It can only see
        an override that removes a warning that EXISTS. With the switch off, CS1591 and CS1573 stand at zero
@@ -321,6 +351,45 @@
        paragraphs up says option (b) has to be planted, and which no other scan in this repository reaches.
        It also pins THIS block's own table: which of the fifteen projects set the property. Turning it OFF
        on one of the seven removes an assertion and moves no warning count at all, and until that row
-       existed nothing here could have seen it. -->
+       existed nothing here could have seen it.
+       🔴 "ONE OF THE SEVEN" IS EIGHT FROM 2026-08-19 (task AF-1), and the eighth is the exception that
+       makes the row worth having: turning St4i.EdgeCore's switch back off would drop 736 warnings, which
+       to the warning ledger alone is indistinguishable from a stage that PAID them. The census table is
+       the only thing in the repository that tells those two apart.
+
+       ══════════════════════════════════════════════════════════════════════════════════════════════════
+       🔴 AF-1 (.superpowers/sdd/item12-stage3/task-1-brief.md) — owner item 12, STAGE 3. THE SWITCH IS ON
+       FOR St4i.EdgeCore, AND FOR NOTHING ELSE. NOT ONE WARNING WAS PAID AND NOT ONE WAS SILENCED. This is
+       the ONLY stage of item 12 permitted to make the number go UP; every stage after it may only make it
+       go down, and one that raises it is a finding to explain rather than a constant to update.
+
+       MEASURED, on the tree this commit produces — `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
+       over the whole solution, SDK 10.0.302, 15/15 compilations, `Build succeeded.`, `0 Error(s)`:
+           852 warnings, up from 116. The 736 the switch added are, enumerated before they are totalled,
+           543 CS1591 + 92 CS1573 + 75 CS1574 + 23 CS1734 + 3 CS0419, every one of them in the
+           St4i.EdgeCore compilation, and every one of the other 116 unchanged code for code.
+       Split by origin: VENDORED 185 / OURS 667. The vendored bucket gained exactly the 103 nobody may pay
+       (95 CS1591 + 8 CS1573) and not one row more; the ours bucket gained exactly 633. Both numbers were
+       READ OUT of the partition, never subtracted — stage 1 measured that this population is not preserved
+       under payment (writing SOME of a member's `<param>` tags converts a CS1591 into a CS1573), so a
+       difference is not a measurement here.
+
+       🔴 NOTHING DRIFTED, AND THAT IS THE FINDING RATHER THAN THE ABSENCE OF ONE. 852 was measured by
+       AD-1 at 59bebd21 and re-derived by AE-1 at 3b773e11; this is the first time it has been measured as
+       the tree's OWN number rather than as a diagnostic, and two merges (AC-1, AE-1) sit between the first
+       measurement and this one without moving it. Also reproduced exactly here: 543 / 92 / 101 cref-class
+       in this project / 448 + 84 ours / 95 + 8 + 82 in the vendored file / 633.
+
+       🔴 AND THE SWITCH SHIPS A FILE, WHICH NOTHING IN THIS REPOSITORY HAD EVER MEASURED. It writes
+       St4i.EdgeCore.xml (1.3 MB, 959 members) into the output of EVERY downstream consumer, and a
+       `dotnet publish` of St4i.EngineApi leaves it loose beside the single-file exe — measured by
+       publishing to a scratch directory, NOT by touching publish-desktop/. packaging/installer harvests
+       that whole directory and its transform excludes exactly two .exe names, so the file is INSTALLED.
+       It is a new customer-delivered artefact. Three siblings already ship the same way from the seven
+       rows above (St4i.DesktopShell.xml, St4i.Connector.Abstractions.xml, St4i.EdgeCore.Serial.xml) and
+       nobody had recorded that either. Named in docs/owner-decisions.md item 12; not decided here.
+
+       🔴 ITEM 12 STAYS IN PART II. The switch is on, the 633 are not paid, and a flag turned on over an
+       open debt is a PARTIAL enforcement. Stages 4..8 pay it; each re-measures its own constant. -->
 
 </Project>

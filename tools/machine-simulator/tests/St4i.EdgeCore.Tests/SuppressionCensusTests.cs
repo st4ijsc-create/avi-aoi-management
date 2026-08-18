@@ -20,6 +20,19 @@ namespace St4i.EdgeCore.Tests;
 /// St4i.EdgeCore today moves not one row of that ledger, not one digit of the total, and then silences 543
 /// warnings the moment the switch is turned on. Measured, both halves, in this task's report.</para>
 ///
+/// <para><b>🔴 STAGE 3 HAS RUN — task AF-1, 2026-08-19 — AND THE EXAMPLE ABOVE IS SPENT WHILE THE ARGUMENT
+/// IS NOT.</b> The switch is now ON for St4i.EdgeCore, so THAT <c>&lt;NoWarn&gt;</c> would move 543 rows of
+/// the origin-split ledger and be caught by it. Do not conclude that this file was scaffolding for stage 2.
+/// The property it asserts is about codes standing at <b>zero</b>, and after stage 3 the codes standing at
+/// zero are the ones stages 4..8 are driving to zero, one file at a time: the day a stage finishes paying
+/// CS1574, an override naming CS1574 is invisible to the warning ledger again and visible only here. The
+/// inverse hole is also still open and still only visible here — turning the switch OFF on any of the eight
+/// projects that now have it on removes an assertion and moves NO warning count, because those projects
+/// stand at zero doc warnings. The eighth, St4i.EdgeCore, is the exception in DEGREE and not in kind: it
+/// stands at 736, so turning it off would drop all 736 at once and — to the warning ledger alone, which
+/// sees only that rows fell — be indistinguishable from a stage that PAID them. This table is the only
+/// thing in the repository that tells those two apart.</para>
+///
 /// <para><b>SO THE PROPERTY ASSERTED HERE IS ABOUT INSTRUCTIONS, NOT ABOUT DIAGNOSTICS:</b> the set of
 /// places in this repository that can make a compiler diagnostic stop being reported is EXACTLY the
 /// enumerated set below, and the set of projects that turn documentation diagnostics ON is exactly the other
@@ -455,6 +468,13 @@ public sealed class SuppressionCensusTests
     /// no warning count anywhere, because those seven stand at zero. Nothing in this repository could see
     /// that before this row existed. Stage 3 of item 12 moves exactly one row here — St4i.EdgeCore, off to
     /// on — and having to move it deliberately, with a sentence, is the point.
+    /// <para>🔴 <b>STAGE 3 RAN ON 2026-08-19 (task AF-1) AND MOVED EXACTLY THAT ONE ROW</b>, so the table is
+    /// now EIGHT on / SEVEN off plus the vendored sample's own project. It went red on the flip before the
+    /// row was edited — 1 failed / 4 passed, this assertion, naming the path and the direction — which is
+    /// the measurement that this table watches the DECLARATION and not the diagnostics. The sentence in the
+    /// paragraph above is unchanged for the other seven `on` rows and now has one exception in degree: with
+    /// 736 warnings behind it, turning St4i.EdgeCore's switch back off would drop all 736 and look, to the
+    /// warning ledger alone, like a stage that paid them.</para>
     /// <para>🔴 EVERY <c>.csproj</c> ROW PLUS ANY <c>.props</c>/<c>.targets</c> THAT DECLARES IT, and the
     /// second half was missing on this file's first revision (found by branch review). Reading only
     /// <c>.csproj</c> pinned one spelling of the switch out of two: MSBuild imports
@@ -474,10 +494,40 @@ public sealed class SuppressionCensusTests
         ["tools/machine-simulator/tools/serial-bench/St4i.SerialBench.csproj"] = "on",
         ["tools/machine-simulator/tools/settings-acl-probe/St4i.SettingsAclProbe.csproj"] = "on",
 
-        // 🔴 The eight that are OFF, and item 12 is about the first of them. They are not off by neglect:
-        // the switch carries a documentation-COVERAGE policy this product has never adopted, priced project
-        // by project in Directory.Build.props.
-        ["tools/machine-simulator/src/St4i.EdgeCore/St4i.EdgeCore.csproj"] = "off",
+        // 🔴 THE ONE ROW ITEM 12 IS ABOUT, MOVED off -> on ON 2026-08-19 BY TASK AF-1 (stage 3), enforcing
+        // the owner's ruling with NO exemption of any kind. It is the eighth `on` and it is deliberately
+        // NOT written up beside the other seven: those seven stand at ZERO documentation warnings because
+        // N-1 and N-2 WROTE the comments first, and this one stands at 736 because the ruling was that the
+        // debt be NAMED rather than paid before it is named.
+        //
+        // WHAT MOVING THIS ROW COST, MEASURED on a full `dotnet build -t:Rebuild` of the solution at the
+        // commit that moved it — never derived by subtraction, because stage 1 measured that the
+        // population is not preserved under payment:
+        //   the tree goes 116 -> 852 warnings, 0 errors, 15/15 compilations;
+        //   736 of the 852 are this row (543 CS1591, 92 CS1573, 75 CS1574, 23 CS1734, 3 CS0419);
+        //   103 of those 736 (95 CS1591 + 8 CS1573) are in the vendored SDK file this repository may not
+        //   edit, and they are the NAMED DEBT — they must stay visible, and the origin-split ledger in
+        //   scripts/verify-suites.sh pins them as an equality in both directions;
+        //   the other 633 are ours, unpaid, and stages 4..8 pay them one measurement at a time.
+        //
+        // 🔴 THIS ASSERTION WENT RED ON THE FLIP BEFORE THIS LINE WAS EDITED — 1 failed / 4 passed, this
+        // test, naming this path at "on" against "off". That is the evidence that it watches the SWITCH
+        // and not the warnings: nothing else in this repository could have seen the edit, in either
+        // direction. The rule that follows from it is the reason the row is not simply retyped: move a row
+        // here only in the same commit as the property, and write the sentence.
+        //
+        // 🔴 AND A SECOND FACT ARRIVED WITH IT, MEASURED, WHICH NO ROW HERE ASSERTS: this switch also
+        // SHIPS A FILE. `St4i.EdgeCore.xml` (1.3 MB, 959 members) now lands beside the single-file engine
+        // in the published payload and is harvested whole into the MSI. Three sibling .xml files from the
+        // seven `on` rows above already ship the same way and never entered this repository's record.
+        // See docs/owner-decisions.md item 12 and .superpowers/sdd/item12-stage3/task-1-report.md; this
+        // table is about DECLARATIONS, so the fact is named there rather than asserted here.
+        ["tools/machine-simulator/src/St4i.EdgeCore/St4i.EdgeCore.csproj"] = "on",
+
+        // 🔴 The seven that are still OFF. They are not off by neglect: the switch carries a
+        // documentation-COVERAGE policy this product has never adopted, priced project by project in
+        // Directory.Build.props. Turning ANY of them on is an owner decision, not an implementer one —
+        // item 12's ruling names St4i.EdgeCore and nothing else.
         ["tools/machine-simulator/src/St4i.EngineApi/St4i.EngineApi.csproj"] = "off",
         ["tools/machine-simulator/src/St4iMachineSimulator/St4iMachineSimulator.csproj"] = "off",
         ["tools/machine-simulator/tests/St4i.Connector.Abstractions.Tests/St4i.Connector.Abstractions.Tests.csproj"] = "off",
@@ -640,8 +690,8 @@ public sealed class SuppressionCensusTests
             "OBSERVED:\n" + Render(observed));
     }
 
-    /// <summary>🔴 The switch, per project — the one row stage 3 of item 12 is going to move, and the
-    /// direction nothing else could see: OFF.</summary>
+    /// <summary>🔴 The switch, per project — the one row stage 3 of item 12 moved (2026-08-19, task AF-1),
+    /// and the direction nothing else could see: OFF.</summary>
     [Fact]
     public void TheDocumentationSwitchIsSetOnExactlyTheseProjects()
     {
@@ -651,13 +701,18 @@ public sealed class SuppressionCensusTests
             observed.Count == ExpectedDocumentationSwitch.Count &&
             observed.All(kv => ExpectedDocumentationSwitch.TryGetValue(kv.Key, out var e) && e == kv.Value),
             "The GenerateDocumentationFile census moved. Read the direction before anything else:\n" +
-            "  on -> off  REMOVES an assertion and moves NO warning count, because every project that has it " +
-            "on stands at zero doc warnings — N-1 and N-2 wrote 107 comments to get them there. Nothing else " +
-            "in this repository can see this happen.\n" +
-            "  off -> on  is item 12 being enforced. For St4i.EdgeCore that is stage 3 and it is measured: " +
-            "the tree goes to 852 warnings, of which 103 sit in the vendored SDK file nobody may edit. It " +
-            "must arrive with the origin-split ledger in scripts/verify-suites.sh moved in the same commit, " +
-            "and with no override of any kind.\n" +
+            "  on -> off  REMOVES an assertion. For the seven projects N-1 and N-2 documented it moves NO " +
+            "warning count at all, because those seven stand at zero doc warnings — 107 comments were " +
+            "written to get them there. For St4i.EdgeCore, whose switch stage 3 turned on over an UNPAID " +
+            "debt, it drops all 736 at once and looks — to the warning ledger, which sees only that rows " +
+            "fell — exactly like a stage that paid them. Nothing else in this repository can tell those " +
+            "apart.\n" +
+            "  off -> on  is item 12 being enforced. For St4i.EdgeCore that WAS stage 3, done 2026-08-19, " +
+            "and it is measured: the tree went 116 -> 852 warnings, of which 103 sit in the vendored SDK " +
+            "file nobody may edit and 633 are ours and unpaid. It arrived with the origin-split ledger in " +
+            "scripts/verify-suites.sh moved in the same commit and with no override of any kind. For any " +
+            "OTHER project, off -> on is an owner decision that item 12 does not authorise: the ruling " +
+            "names St4i.EdgeCore and the measured price of all fifteen is 3599.\n" +
             "  an `import-declares:` row is a .props or .targets file declaring the switch for EVERY project " +
             "under it at once. Directory.Build.targets is imported AFTER the project body, so `false` there " +
             "BEATS all fifteen csproj rows above while moving no warning count at all — that is the same " +
