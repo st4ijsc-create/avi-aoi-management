@@ -190,8 +190,46 @@ describe("F12 — chuỗi tiếng Việt TRẦN (cổng theo-khoá không thấy
  * comment cuối dòng. 144 mục kia chưa bao giờ là nợ — con số 914 đã nói quá.
  * 770 → 652: F13 lô 1 — nhãn điều hướng + 6 hub đi qua `t()`, 167 khoá × 3 locale.
  * 652 → 619: F13 lô 2 — bản đồ trạng thái/enum của CommandCenter + MasterData.
+ *
+ * ★★ 623 → 500 (2026-08-18): **KHÔNG di trú thêm chuỗi nào — THƯỚC ĐANG ĐẾM SAI 123 mục.**
+ * Bộ đếm chạy THEO TỪNG DÒNG, nên hai khuôn mà chính docblock trên đã khai là ĐÚNG lại bị
+ * tính là nợ chỉ vì chúng xuống dòng:
+ *
+ *   (c) `t(` trải nhiều dòng — 107 mục. Nhánh miễn trừ cũ (`/\bt\s*\(/`) chỉ thấy khoá và
+ *       chuỗi mặc định khi chúng CÙNG một dòng:
+ *           t(
+ *             "vramBroker.subtitle",
+ *             "Đọc từ chính phép ghép mà reserve() chạy — …",   ← bị đếm là nợ
+ *           )
+ *   (d) cặp `labelKey:` / `labelDefault:` tách hai dòng — 21 mục. Dòng 222 khai khuôn
+ *       `{ labelKey: "…", fallback: "…" }` là đúng, nhưng `LA_KHUON_DUNG` đòi cùng dòng.
+ *
+ * ⚠ CÁCH PHÁT HIỆN — đáng ghi hơn con số. Cổng ĐỎ ở 623 và một agent quy lỗi cho hai file
+ * màn hình. Đọc thẳng vào những dòng bị tố thì KHÔNG CÓ mục nào ở đó: lời khai sai. Đếm lại
+ * bằng cách so từng file với bản HEAD ra 3 file / 6 mục, và cả 6 đều nằm trong hai khuôn
+ * trên. Tức con số 623 chưa bao giờ là số nợ — **cái phình lên là sai số của thiết bị đo.**
+ *
+ * ★ VÌ SAO 500 CHỨ KHÔNG PHẢI 495 — bản vá này suýt tự đào một lỗ. Miễn trừ (c) nguy hiểm ở
+ * một chỗ: `t()` còn nhận đối số NỘI SUY, nên `t("khoá", { ten: "Nhà máy" })` cũng được miễn
+ * trong khi "Nhà máy" là chuỗi trần thật. Lượt ĐỘT BIẾN đã đo đúng điều đó: bản vá đầu (495)
+ * để lọt hoàn toàn một chuỗi Việt nhét vào object nội suy — cổng vẫn xanh. Nên (c) không
+ * miễn dòng mang hình dạng thuộc tính object (`LA_THUOC_TINH_OBJECT`), và 5 dòng ở
+ * `lineView/LineCommandBar.tsx` quay lại được đếm.
+ *
+ * ⚠ 5 dòng ấy KHÔNG phải lỗi — chúng là `t(khoá, {…}[c])`, object được index rồi mới truyền
+ * vào nên vẫn ở vị trí mặc định. Nhưng chúng KHÔNG PHÂN BIỆT ĐƯỢC với đối số nội suy nếu chỉ
+ * nhìn theo dòng, mà một cái thước phải chọn: hoặc bỏ sót nội suy thật, hoặc đếm dôi 5 mục
+ * lành. **Chọn đếm dôi.** Một thước hơi chặt làm phiền người viết; một thước có lỗ thì im
+ * lặng — và mọi bài học đắt nhất của repo này đều đến từ vế thứ hai. (Sáu chuỗi ấy trùng
+ * nguyên văn `vi.json`; bỏ hẳn default thì mất lưới an toàn cho khuôn khoá-template mà
+ * `i18n-check.mjs` vốn mù, nên để nguyên và tính là nợ.)
+ *
+ * ⚠ Vì sao hạ hẳn xuống 500 chứ không giữ 619 cho "có chỗ thở": 619 sau khi vá thước là
+ * 119 ô trống KHÔNG tương ứng với bất kỳ chuỗi nào. Đó đúng là khuôn "ngân sách tự thoả"
+ * đã trả giá ở Pha 7 — nợ mới lẻn vào tận 119 mục mà cổng vẫn xanh. Nên ca "bám SÁT" dưới
+ * đây đòi BẰNG ĐÚNG, cùng kỷ luật với `ALLOWED_RAW_VI_STRINGS` của hình dạng 1.
  */
-const FROZEN_SHAPE3 = 619;
+const FROZEN_SHAPE3 = 500;
 
 /**
  * Bỏ comment `//` ở CUỐI dòng. Phép bỏ comment ở trên chỉ xét ĐẦU dòng, nên
@@ -230,20 +268,97 @@ function LA_KHUON_DUNG(ln: string): boolean {
   return false;
 }
 
-function demHinhDangBa(): { total: number; byFile: Array<[string, number]> } {
+/** Dòng KHAI một khoá i18n (`labelKey: "a.b.c"`), bất kể có gì khác trên dòng. */
+const KHAI_KHOA = /\b(labelKey|titleKey|descKey|key)\s*:\s*["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]/;
+
+/** Dòng CHỈ gồm `tên: "một chuỗi"` — không lời gọi, không toán tử, không gì khác. */
+const CHI_LA_CAP_THUOC_TINH = /^\s*[A-Za-z_$][\w$]*\s*:\s*(["'`])(?:(?!\1)[^\\]|\\.)*\1\s*,?\s*$/;
+
+/** Dòng MỞ ĐẦU bằng một thuộc tính object (`tên:` hoặc `"tên":`). */
+const LA_THUOC_TINH_OBJECT = /^\s*(?:[A-Za-z_$][\w$]*|["'][^"']+["'])\s*:/;
+
+/** Mở một lời gọi `t(` mà đối số ĐẦU là khoá i18n — kể cả khi khoá nằm ở dòng sau. */
+const MO_T_CO_KHOA =
+  /\bt\s*\(\s*(?:["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]|`[^`]*\$\{|$)/;
+
+/**
+ * Đếm ngoặc tròn NẰM NGOÀI chuỗi — dùng để biết một lời gọi `t(` đã đóng chưa.
+ * Dùng lại đúng phép quét trạng thái chuỗi của `boCommentCuoiDong` để hai chỗ
+ * không thể lệch nhau.
+ */
+function demNgoacNgoaiChuoi(ln: string): number {
+  let trongChuoi: string | null = null;
+  let d = 0;
+  for (let i = 0; i < ln.length; i++) {
+    const c = ln[i];
+    if (trongChuoi) {
+      if (c === "\\") i++;
+      else if (c === trongChuoi) trongChuoi = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") { trongChuoi = c; continue; }
+    if (c === "(") d++;
+    else if (c === ")") d--;
+  }
+  return d;
+}
+
+/**
+ * ★ Trần an toàn cho phép theo dõi `t(` nhiều dòng. Nếu phép đếm ngoặc lạc (template
+ * literal lồng `${…}` có thể nuốt một dấu đóng), độ sâu sẽ KHÔNG BAO GIỜ về 0 và phần
+ * còn lại của file được miễn trừ trong im lặng — đúng lớp lỗi "thước rỗng" đã trả giá
+ * ở Pha 4. Quá trần thì BỎ theo dõi (quay lại đếm), và số lần chạm trần được IN RA
+ * thay vì nuốt: một con số > 0 nghĩa là phép đo đang lạc, phải xem lại.
+ */
+const TRAN_DONG_TRONG_MOT_T = 12;
+
+function demHinhDangBa(): {
+  total: number;
+  byFile: Array<[string, number]>;
+  chamTran: number;
+} {
   const byFile: Array<[string, number]> = [];
   let total = 0;
+  let chamTran = 0;
 
   for (const file of walkTsx(CLIENT_SRC)) {
     const lines = readFileSync(file, "utf8").split("\n");
     let inBlock = false;
     let n = 0;
+    /** >0 nghĩa là đang ở TRONG thân một lời gọi `t(` mở từ dòng trước. */
+    let sauT = 0;
+    let dongTrongT = 0;
+    let dongMaTruoc = "";
     for (const ln of lines) {
       const tr = ln.trim();
       if (inBlock) { if (tr.includes("*/")) inBlock = false; continue; }
       if (tr.startsWith("/*") || tr.startsWith("{/*")) { inBlock = !tr.includes("*/"); continue; }
       if (tr.startsWith("//") || tr.startsWith("*")) continue;
+
+      // ── theo dõi `t(` trải nhiều dòng ────────────────────────────────────────
+      const dangTrongThanT = sauT > 0;
+      if (sauT > 0) {
+        sauT += demNgoacNgoaiChuoi(ln);
+        if (++dongTrongT > TRAN_DONG_TRONG_MOT_T) { chamTran++; sauT = 0; }
+        else if (sauT <= 0) sauT = 0;
+      } else if (MO_T_CO_KHOA.test(ln)) {
+        const d = demNgoacNgoaiChuoi(ln);
+        if (d > 0) { sauT = d; dongTrongT = 0; }
+      }
+      const khoaODongTruoc = KHAI_KHOA.test(dongMaTruoc);
+      dongMaTruoc = ln;
+
       if (!CHU_VIET.test(ln)) continue;
+      // (c) thân của một `t("khoá.i18n", …)` mở từ dòng TRƯỚC — cùng lý do như
+      //     nhánh cùng-dòng bên dưới, chỉ khác chỗ xuống dòng. Xem ghi chú F12b.
+      //     ⚠ TRỪ dòng mang hình dạng thuộc tính `tên: "…"`: `t()` còn nhận đối số
+      //     NỘI SUY, nên `t("khoá", { ten: "Nhà máy" })` phải VẪN bị đếm. Bỏ ngoại lệ
+      //     này thì đột biến M2 lọt — đã đo, xem docblock của `FROZEN_SHAPE3`.
+      if (dangTrongThanT && !LA_THUOC_TINH_OBJECT.test(ln)) continue;
+      // (d) cặp `labelKey:` / `labelDefault:` bị tách hai dòng. Khuôn này đã được
+      //     `LA_KHUON_DUNG` khai là ĐÚNG; điều kiện thứ hai (`CHI_LA_CAP_THUOC_TINH`)
+      //     giữ cho miễn trừ không lan sang dòng bất kỳ đứng sau một khoá.
+      if (khoaODongTruoc && CHI_LA_CAP_THUOC_TINH.test(ln)) continue;
       // hai hình dạng cũ đã có cổng riêng ở trên — không đếm hai lần
       if (/>[^<>{}]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ][^<>{}]*</i.test(ln)) continue;
       if (/\b(placeholder|title|label|aria-label|description|alt|tooltip)\s*=\s*["'`][^"'`]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(ln)) continue;
@@ -258,7 +373,7 @@ function demHinhDangBa(): { total: number; byFile: Array<[string, number]> } {
     if (n) { byFile.push([file.replace(CLIENT_SRC, ""), n]); total += n; }
   }
   byFile.sort((a, b) => b[1] - a[1]);
-  return { total, byFile };
+  return { total, byFile, chamTran };
 }
 
 describe("F12 — hình dạng THỨ BA (bắt được nhờ nghiệm thu bằng mắt, không phải nhờ cổng)", () => {
@@ -266,6 +381,26 @@ describe("F12 — hình dạng THỨ BA (bắt được nhờ nghiệm thu bằn
     const { total, byFile } = demHinhDangBa();
     if (total > FROZEN_SHAPE3) console.error("[F12/hình-3] phình ở:", byFile.slice(0, 10));
     expect(total).toBeLessThanOrEqual(FROZEN_SHAPE3);
+  });
+
+  /**
+   * Cùng kỷ luật với ca "bám SÁT" của hình dạng 1 (`ALLOWED_RAW_VI_STRINGS`): một cái
+   * chốt chỉ siết được nếu số dư KHÔNG tồn tại. Chính 124 ô dư sinh ra từ sai số thiết
+   * bị đo ở trên là bằng chứng — nợ mới có thể lẻn vào tận 124 mục mà cổng vẫn xanh.
+   * Di trú xong một đợt thì ca này ĐỎ và bắt hạ số; đó là hành vi mong muốn.
+   */
+  it("ngân sách hình-3 phải bám SÁT số thật — số dư che mất nợ mới", () => {
+    expect(FROZEN_SHAPE3).toBe(demHinhDangBa().total);
+  });
+
+  /**
+   * ★ Canh chính THIẾT BỊ ĐO. Phép theo dõi `t(` nhiều dòng dựa trên đếm ngoặc; nếu nó
+   * lạc, độ sâu không về 0 và cả phần đuôi file được miễn trừ trong im lặng — cổng sẽ
+   * XANH HƠN mà không ai biết vì sao. Trần `TRAN_DONG_TRONG_MOT_T` chặn việc đó, và ca
+   * này khẳng định trần CHƯA BAO GIỜ phải ra tay: chạm trần = phép đếm đang lạc thật.
+   */
+  it("phép theo dõi `t(` nhiều dòng KHÔNG được lạc — 0 lần chạm trần", () => {
+    expect(demHinhDangBa().chamTran).toBe(0);
   });
 });
 
