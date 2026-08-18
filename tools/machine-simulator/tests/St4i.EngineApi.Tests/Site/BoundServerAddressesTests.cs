@@ -21,12 +21,26 @@ namespace St4i.EngineApi.Tests.Site;
 ///
 /// <para><b>What this file measures, and why nothing already here could.</b> Every other
 /// <see cref="SiteAdvertiser"/> test supplies its bound addresses as a <c>string[]</c> (see
-/// <c>SiteAdvertiserTests.Bound</c>), and the twelve <c>WebApplicationFactory&lt;Program&gt;</c> classes
-/// run on <c>TestServer</c>. Both of those satisfy the <c>IReadOnlyCollection&lt;string&gt;</c> conversion
-/// the composition root used to depend on; Kestrel's own address collection does not. So the two tests
-/// below start a REAL Kestrel host and read its REAL <see cref="IServerAddressesFeature"/> — the one
-/// surface the suite had never touched, and the reason 2755 green tests coexisted with a build in which no
-/// Site could ever advertise.</para>
+/// <c>SiteAdvertiserTests.Bound</c>), and the <c>WebApplicationFactory&lt;Program&gt;</c> classes — TWENTY
+/// files, one top-level class each, enumerated by
+/// <c>grep -rl "new WebApplicationFactory&lt;Program&gt;" tests/</c> rather than remembered, and the count
+/// is not an invariant — run on <c>TestServer</c>. Both of those satisfy the
+/// <c>IReadOnlyCollection&lt;string&gt;</c> conversion the composition root used to depend on; Kestrel's own
+/// address collection does not. So the two tests below start a REAL Kestrel host and read its REAL
+/// <see cref="IServerAddressesFeature"/> — the one surface the suite had never touched, and the reason 2755
+/// green tests coexisted with a build in which no Site could ever advertise.</para>
+///
+/// <para>🔴 <b>"The conversion succeeds there" is only half of why those twenty were silent, and the other
+/// half had to be measured (branch review, Important 2).</b> <see cref="SiteAdvertiser"/> is an
+/// <c>IHostedService</c>, so it RUNS under every one of those hosts, and
+/// <see cref="SiteAdvertiser.ResolvePort"/> raises the same "no server addresses are bound yet" sentence
+/// for an EMPTY collection as for a null one — a succeeding conversion over an empty list would have
+/// produced the identical failure twenty times a run with nothing asserting on it. It does not: measured
+/// under <c>WebApplicationFactory&lt;Program&gt;</c>, the feature is a <c>List&lt;string&gt;</c> holding
+/// exactly <c>http://localhost:5199</c> (<c>Program.cs</c>' own <c>UseUrls</c> default, carried into the
+/// feature by the web host), so the port resolves and no failure is raised there. What remains true, and is
+/// NOT this defect's to fix: not one of those classes asserts anything about the advertiser's error
+/// channel, so had that set been empty the suite would have been just as quiet.</para>
 ///
 /// <para><b>Neither test asserts <see cref="ISiteAdvertiser.IsAdvertising"/> is
 /// <see langword="true"/></b> — same reason <c>SiteAdvertiserTests</c> does not: whether a multicast group

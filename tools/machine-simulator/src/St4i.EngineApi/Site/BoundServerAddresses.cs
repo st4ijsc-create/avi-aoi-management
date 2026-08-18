@@ -38,14 +38,42 @@ namespace St4i.EngineApi.Site;
 /// asymmetry is the whole finding, and this type exists so there is ONE reader of this feature to be
 /// right or wrong, instead of two spellings that agree only by luck.</para>
 ///
-/// <para><b>Why no test saw it.</b> <c>SiteAdvertiserTests</c> supplies in-memory delegates whose
-/// collections are <c>string[]</c>/<c>List&lt;string&gt;</c> — both of which DO implement
-/// <see cref="IReadOnlyCollection{T}"/>, so the cast succeeds there. The twelve
-/// <c>WebApplicationFactory&lt;Program&gt;</c> suites run on <c>TestServer</c>, not Kestrel, and
-/// <c>TestServer</c>'s address feature is the plain
+/// <para><b>Why no test saw it — and the population is ENUMERATED before it is counted, because a first
+/// draft of this paragraph said "twelve" and the enumeration says otherwise (branch review, Important 1).</b>
+/// Two groups, and they are blind for two DIFFERENT reasons:
+/// <list type="number">
+/// <item><b><c>SiteAdvertiserTests</c></b> supplies in-memory delegates whose collections are
+/// <c>string[]</c>/<c>List&lt;string&gt;</c> — both of which DO implement
+/// <see cref="IReadOnlyCollection{T}"/>, so the conversion succeeds and the port resolves. That group is
+/// blind because it never touches the production delegate at all.</item>
+/// <item><b>The <c>WebApplicationFactory&lt;Program&gt;</c> classes</b> — enumerated by
+/// <c>grep -rl "new WebApplicationFactory&lt;Program&gt;" tests/</c>, which at the time of writing returns
+/// TWENTY files carrying one top-level class each. <b>The count is not load-bearing and is not an
+/// invariant</b>; a twenty-first is a normal edit. What is load-bearing is the mechanism below, which does
+/// not depend on how many there are.</item>
+/// </list></para>
+///
+/// <para>🔴 <b>And that second group needed a MEASUREMENT, not an inference, because
+/// <see cref="SiteAdvertiser"/> is an <c>IHostedService</c> and therefore RUNS under every one of those
+/// hosts.</b> The comfortable half of the story is that <c>TestServer</c>'s address feature is the plain
 /// <c>Microsoft.AspNetCore.Hosting.Server.Features.ServerAddressesFeature</c> backed by a
-/// <c>List&lt;string&gt;</c>. The defective conversion is reachable ONLY from a process that actually
-/// binds Kestrel, which is why a trial run found it and the suite did not.</para>
+/// <c>List&lt;string&gt;</c>, which satisfies the conversion. That half alone does NOT settle anything:
+/// <see cref="SiteAdvertiser.ResolvePort"/> raises the SAME "no server addresses are bound yet" sentence
+/// for an EMPTY collection as for a null one, so a conversion that succeeds over an empty list would have
+/// produced the identical failure under all twenty hosts, every run, for a different reason. Measured on
+/// this tree rather than argued: under <c>WebApplicationFactory&lt;Program&gt;</c> the server is
+/// <c>Microsoft.AspNetCore.TestHost.TestServer</c>, the feature is present, the collection is a
+/// <c>List&lt;string&gt;</c> of <b>ONE</b> entry — <c>http://localhost:5199</c>, which is
+/// <c>Program.cs</c>' own <c>UseUrls</c> default carried into the feature by the web host — the conversion
+/// succeeds, and <see cref="SiteAdvertiser.ResolvePort"/> would NOT have thrown. So those hosts were
+/// genuinely silent rather than ignored, and the defective conversion really is reachable only from a
+/// process that binds Kestrel.</para>
+///
+/// <para><b>The residue that survives that measurement, said because it is a real hole and it is not this
+/// defect's:</b> none of those classes asserts anything about the advertiser's error channel. Had the
+/// address set been empty, every one of them would have carried the failure and no assertion would have
+/// looked. The suite's silence about this subsystem is structural, and it is only THIS defect that it does
+/// not hide.</para>
 /// </summary>
 internal static class BoundServerAddresses
 {
