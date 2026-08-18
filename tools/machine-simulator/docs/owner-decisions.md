@@ -303,22 +303,78 @@ chối** một mảng một phần tử.
 > đứng ngay cạnh. **AB-1 không dùng dấu gạch ngang ở bất kỳ chỗ nào.** Các `~~…~~` sẵn có trong file
 > là của T-1, U-1, V-1 và Y-1; AB-1 **không đụng** tới chúng.
 
-**Người đo, ngày đo, đo trên cái gì:** nhiệm vụ **AB-1**, **2026-08-18**, trên SYNAPSE **đang chạy**
-tại `http://localhost:3000` — **không** trên một cây mã, mà trên **cổng ingest thật**.
+**Ngày đo:** **2026-08-18**, trên SYNAPSE **đang chạy** tại `http://localhost:3000` — **không** trên
+một cây mã, mà trên **cổng ingest thật**.
+
+🔴 **AI đo cái gì — ba hạng nguồn, phân biệt ngay ở đây chứ không ở một ledger bên ngoài.** Lý do
+phân biệt nằm ở **đoạn mở đầu của chính file này**: các ledger dưới `.superpowers/sdd/` **bị
+gitignore**, nên một lời cải chính cất ở đó **không bao giờ vào repo và chủ sở hữu không có đường dẫn
+nào để mở**. Một khẳng định mà lời cải chính của nó nằm ngoài tầm với của người đọc là **đúng khuyết
+tật file này lập ra để chấm dứt**, nên nó được viết vào đây:
+
+| hạng | gồm những gì | ai đo |
+|---|---|---|
+| **AB-1 tự đo** | tài liệu OpenAPI **đang phục vụ** (một `GET` thuần đọc); `processWaveformSchema`; `processWaveformV1`; ba nguồn của cờ mặc định tắt; số dòng ở các cây; `git sparse-checkout list` | **AB-1**, 2026-08-18 |
+| **NHẬN LẠI, không tự chạy** | **cặp đối chứng A/B** (payload, mã trạng thái, chuỗi lỗi, đường dẫn trường), **máy id 250**, khoá đã cấp, tiền tố **`mach_`** | **điều phối viên** đo; AB-1 **ghi lại, không chạy lại** |
+| **chưa ai kiểm** | client sinh từ tài liệu đang phục vụ sẽ xử lý `items` dạng mảng ra sao; CSDL có thật sự trống bản ghi process-result hay không | **không ai** |
+
+**Vì sao AB-1 không chạy lại cặp A/B, nêu ra để người sau khỏi đọc đó là cẩu thả:** chạy lại là
+**ghi thêm vào SYNAPSE của chủ sở hữu** — thêm máy, thêm khoá, và có thể thêm bản ghi — trong một
+nhiệm vụ được giao là **ghi hồ sơ**. Cái giá ấy cao hơn cái được. Nên hai dòng bảng dưới đây là
+**bằng chứng động duy nhất của cả mục, và là hạng NHẬN LẠI**; mọi mảnh tĩnh quanh chúng thì AB-1 tự
+đọc, và chúng **nhất quán** với hai kết quả ấy.
+
+> 📎 **BA CÂU ĐÃ CÔNG BỐ Ở LẦN GHI ĐẦU CỦA MỤC NÀY (commit `f4b810b0`, 2026-08-18) NAY BỊ RÚT — giữ
+> nguyên văn, cùng một kiểu bảo tồn, RÚT cùng ngày (AB-1, vòng sửa sau phản biện).** Cả ba là **một**
+> khuyết tật: **một số liệu NHẬN LẠI được ghi như một số liệu TỰ ĐO**, và lời cải chính bị đặt ở một
+> file `.superpowers/sdd/` **bị gitignore** — tức ngoài tầm với của chủ sở hữu. Liệt kê:
+>
+> 1. *"**Người đo, ngày đo, đo trên cái gì:** nhiệm vụ **AB-1**, **2026-08-18**, trên SYNAPSE **đang
+>    chạy** tại `http://localhost:3000`…"* — gán **AB-1** làm người đo cho **cả** cặp A/B, thứ AB-1
+>    **không chạy**. Thay bằng bảng ba hạng nguồn ngay trên.
+> 2. Ô `kết quả` của **hàng B** trong bảng đối chứng: *"✅ **qua sạch lược đồ**, không một lỗi waveform
+>    nào"*, dưới một cột chỉ tên là *"kết quả"*. Tách rời khỏi ngữ cảnh, nó đọc như *"B chạy được"*,
+>    trong khi **B cũng bị từ chối**. Cột nay nói rõ nó chỉ ghi **bước lược đồ**, và hàng B mang thêm
+>    chỗ nó thật sự dừng.
+> 3. *"Hai POST thử đều BỊ TỪ CHỐI, nên **KHÔNG một bản ghi process-result nào được tạo**."* cùng vế
+>    lặp lại của nó ở §"Bằng chứng động" — một **phủ định phổ quát về CSDL đang sống của chủ sở hữu**,
+>    viết như một phép đo trong khi **không ai truy vấn CSDL**. Nay nêu đúng hạng: một **suy luận**,
+>    kèm cơ sở và kèm cách kiểm dứt điểm.
 
 **Chuẩn bị, ghi lại để chủ sở hữu GỠ ĐƯỢC và để phép đo LẶP LẠI ĐƯỢC:** một máy thử được đăng ký và
 **chủ sở hữu duyệt** trên nền tảng đang chạy — id **250**, `serialNumber` `ST4I-TRIAL-WELD-20260818`,
 code `SN-ST4I-TRIAL-WELD-20260818`, type `WELDER`, gắn station `SIM-L1-SPI-ST` / line `SIM-L1`; khoá
-máy cấp qua `claim`. 🔴 **Hai POST thử đều BỊ TỪ CHỐI, nên KHÔNG một bản ghi process-result nào được
-tạo.** Dấu vết còn lại trên SYNAPSE, **liệt kê hết ở đây**: bản ghi **máy id 250** (đã duyệt) và
-**khoá máy** cấp cho nó. Phép liệt kê ấy là nguồn — nếu có thứ ba, nó không nằm trong phép đo này.
+máy cấp qua `claim`. 🔴 **Hai POST thử đều BỊ TỪ CHỐI, và cả hai bị chặn TRƯỚC bước nạp** — nhánh A
+ở bước lược đồ, nhánh B ở bước cờ.
+
+🔴 **Từ đó suy ra "không bản ghi process-result nào được tạo" — và đây là một SUY LUẬN, không phải
+một phép đo, nên nó được nêu đúng hạng của nó.** **Không ai truy vấn CSDL**: không đếm, không
+`SELECT`, không đọc log ingest. Cơ sở của suy luận là thứ tự thi hành đo được ở dưới (cả hai nhánh
+dừng trước **nạp**) cộng ba nguồn tài liệu nói nhánh cờ trả `PRECONDITION_FAILED`. **Cái duy nhất
+kiểm được nó dứt điểm là một truy vấn trên CSDL của chủ sở hữu, và nhiệm vụ này không có quyền ấy.**
+Nên khi gỡ, **hãy kiểm bằng một truy vấn** thay vì tin dòng này.
+
+**Dấu vết còn lại trên SYNAPSE, liệt kê hết ở đây:** bản ghi **máy id 250** (đã duyệt), và **khoá
+máy** cấp cho nó. Phép liệt kê ấy là nguồn — và nó cũng thuộc hạng **NHẬN LẠI**, không phải thứ AB-1
+tự đọc trên nền tảng.
 
 **Cặp đối chứng — khác nhau ĐÚNG MỘT BIẾN, và biến ấy là hình dạng hàng:**
 
-| nhánh | payload | kết quả |
-|---|---|---|
-| **A** — `weld_current`, `rateHz: 1000`, hàng **một** phần tử `[176.5]` — **đúng cái `WelderSim` phát** | `POST /api/v1/ingest/process-result` | 🔴 **HTTP 400**, **ba** lỗi lược đồ tại `waveforms.0.samples.0.1`, `.1.1`, `.2.1` — *"Invalid input: expected number, received undefined"* |
-| **B** — `torque_vs_angle`, **không** `rateHz`, hàng **hai** phần tử `[angle, torque]` — **đúng cái `ScrewdriveSim` phát** | cùng endpoint, cùng khoá | ✅ **qua sạch lược đồ**, không một lỗi waveform nào |
+🔴 **Cột thứ ba ghi kết quả ở BƯỚC LƯỢC ĐỒ, không ghi kết quả của lần POST — và hai thứ ấy khác
+nhau ở đây.** **Cả hai POST đều BỊ TỪ CHỐI**, không POST nào tạo ra thứ gì. Dấu ✅ ở hàng B nghĩa là
+*"qua được bước lược đồ rồi dừng ở bước sau"*, **không** nghĩa *"chạy được"*.
+
+| nhánh | payload | kết quả ở **bước lược đồ** | POST dừng ở đâu |
+|---|---|---|---|
+| **A** — `weld_current`, `rateHz: 1000`, hàng **một** phần tử `[176.5]` — **đúng cái `WelderSim` phát** | `POST /api/v1/ingest/process-result` | 🔴 **TỪ CHỐI** — **ba** lỗi lược đồ tại `waveforms.0.samples.0.1`, `.1.1`, `.2.1`, *"Invalid input: expected number, received undefined"* | **HTTP 400** ở **bước lược đồ**; chưa bao giờ chạm tới cờ |
+| **B** — `torque_vs_angle`, **không** `rateHz`, hàng **hai** phần tử `[angle, torque]` — **đúng cái `ScrewdriveSim` phát** | cùng endpoint, cùng khoá | ✅ **qua sạch** — không một lỗi waveform nào | 🔴 **CŨNG BỊ TỪ CHỐI**, một bước muộn hơn: thân trả `{"code":"ingest_failed"…}` ở **bước cờ tính năng** |
+
+📎 **Một biên trên hàng B, nêu vì nó là chỗ dễ bịa ra một con số:** cái được đo và trao lại cho nhánh
+B là **thân phản hồi** (`ingest_failed`), **không phải dòng trạng thái**. Ba nguồn mà mục này trích
+cho cờ mặc định tắt đều ánh xạ trạng thái ấy sang **HTTP 400** (*"PRECONDITION_FAILED ⇒ REST trả 400
+`ingest_failed`"*), nên **400 là ánh xạ đã ghi trong tài liệu, không phải một quan sát riêng của phép
+đo này**. Điều **đã đo** ở hàng B là: **bị từ chối**, và **bị từ chối ở bước cờ chứ không ở bước lược
+đồ**.
 
 **Thứ tự thi hành, suy ra từ chính chỗ chênh ấy:** **xác thực → kiểm lược đồ → cờ tính năng → nạp.**
 Nhánh A **chết ở bước lược đồ và chưa bao giờ chạm tới cờ**; nhánh B qua lược đồ rồi mới gặp cờ. Hai
@@ -337,17 +393,32 @@ một lần `LiveTransport` chạy thật nữa để biết điều gì sẽ x�
 process-result trừ khi có người bật nó**. Nhánh B — nhánh **qua** được lược đồ — dừng đúng ở đó:
 `{"code":"ingest_failed","message":"Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED)."}`
 Đây là **quyết định thiết kế của nền tảng** (endpoint ship ở trạng thái tắt), **không** phải cấu hình
-sai của một bản triển khai. Nó được nêu ở ba chỗ — **phép liệt kê là nguồn, và con số nếu có thì viết
-sau nó**: `scripts/sim/screwdriver-emitter.mjs:18` (*"cờ master (mặc định OFF ⇒ endpoint ship dark…)"*);
-`examples/device-client/README.md:244` (*"cổng `process-result` mặc định **OFF** (ships dark…)"*);
-`.env.example` (*"false (mặc định) = endpoint trả PRECONDITION_FAILED (ship-dark…)"*).
+sai của một bản triển khai. **Phép liệt kê là nguồn, và con số đứng SAU nó, không đứng trước** — nó
+được nêu ở những chỗ sau, mỗi chỗ ghim bằng một sha bất biến:
+
+- `scripts/sim/screwdriver-emitter.mjs`, **dòng 18** tại `avi-aoi-sim@84836ad6` và tại
+  `avi-aoi-management@f98f6146`/`@e9e1ea4c` — *"cờ master (mặc định OFF ⇒ endpoint ship dark…"*, vắt
+  sang dòng 19;
+- `examples/device-client/README.md`, **dòng 244** tại `avi-aoi-sim@84836ad6` — *"cổng
+  `process-result` mặc định **OFF** (ships dark…)"*;
+- `.env.example` — *"false (mặc định) = endpoint trả PRECONDITION_FAILED (ship-dark…)"*; **cố ý
+  không gắn số dòng**, vì số ấy khác nhau giữa hai cây và **đã dịch một lần** trong ngày (xem
+  §"Nguồn của luật").
+
+**Đếm sau khi liệt kê: ba chỗ.**
 
 🔴 **Hai nửa phải đọc CÙNG NHAU, và chúng không triệt tiêu nhau.** Nửa sau nói **hôm nay chưa ai mất
 dữ liệu**; nó **không** nói hình dạng đã hợp lệ. Ngày ai đó bật cờ — và cờ tồn tại để được bật — nửa
 trước là cái còn lại. Ngược lại, một hồ sơ chỉ nêu nửa trước sẽ **định giá quá cao mức khẩn cấp** của
 một quyết định mà chủ sở hữu đang cân **cùng với** giá của việc đổi một bề mặt đã xuất bản.
 
-### Ba chỗ lệch tài liệu ↔ thực tế, đo được mà không cần khoá nào (AB-1, 2026-08-18)
+### Ba chỗ lệch tài liệu ↔ thực tế — HAI chỗ đo được không cần khoá, chỗ thứ ba đòi một khoá (2026-08-18)
+
+> 📎 **Tiêu đề này đọc *"Ba chỗ lệch tài liệu ↔ thực tế, đo được mà không cần khoá nào (AB-1,
+> 2026-08-18)"* cho tới 2026-08-18, RÚT cùng ngày (AB-1, vòng sửa), giữ nguyên văn.** Nó **tự phủ
+> định mục 3 nằm dưới nó**: nửa sau của chỗ lệch 3 — *"khoá thật sự được cấp mang `mach_`"* — **chỉ
+> biết được bằng cách CẤP một khoá**, tức bước `claim`. Và nó gắn tên **AB-1** cho một tập gồm cả số
+> liệu hạng **NHẬN LẠI** (xem bảng ba hạng nguồn ở §"ĐÃ ĐO").
 
 Chúng là **đầu vào của quyết định**, không phải phần phụ lục: chúng cho thấy **nền tảng không tự đồng
 ý với chính nó**, nên câu phải quyết **rộng hơn** *"sửa `WelderSim` hay sửa validator"*.
@@ -363,9 +434,13 @@ Chúng là **đầu vào của quyết định**, không phải phần phụ l�
 2. **Khoá đi ở đâu.** OpenAPI đang phục vụ khai `apiKey` là **một thuộc tính trong body** của
    `ProcessResultIngest` (`{"type":"string"}`); **server trả lời** rằng khoá phải đi ở header:
    *"Provide Authorization: Bearer &lt;key&gt; or X-API-Key."*
-3. **Tiền tố khoá.** Tài liệu và OpenAPI gọi khoá máy là **`mk_`** — chuỗi `mach_` **không xuất hiện
-   lần nào** trong tài liệu đang phục vụ — trong khi khoá **thật sự được cấp** cho máy 250 mang tiền
-   tố **`mach_`**.
+3. **Tiền tố khoá — và hai nửa của nó KHÔNG cùng một hạng nguồn.** *Nửa đầu, **AB-1 tự đo, không cần
+   khoá*:* tài liệu và OpenAPI gọi khoá máy là **`mk_`**; quét toàn văn tài liệu đang phục vụ (đã
+   tải về từ `GET /api/v1/openapi.json`, đếm chuỗi con trên chính file ấy) cho **`mk_` 5 lần** và
+   **`mach_` 0 lần**. Phạm vi của phép quét ấy là **đúng một tài liệu**, và nó không phát biểu gì về
+   phần còn lại của nền tảng. *Nửa sau, **hạng NHẬN LẠI, và đòi một khoá*:* khoá **thật sự được cấp**
+   cho máy 250 mang tiền tố **`mach_`** — biết được **chỉ qua bước `claim`**, tức qua việc cấp thêm
+   một khoá, nên **AB-1 không kiểm lại nửa này** và không ai khác kiểm nó mà không cấp thêm.
 
 🔴 **Và một chỗ lệch THỨ TƯ, tìm thấy khi đối chiếu lại nguồn của bảng §"hai quy ước" — nó sửa một
 hàng của chính bảng ấy.** Hàng `server/api/v1/openapi.ts` ghi *"`samples: array of array of number` —
@@ -390,35 +465,89 @@ sai artifact**, và nó được **sửa tại chỗ, không xoá**.
 
 🔴 **Các đường `server/…`, `client/src/…`, `docs/ECOSYSTEM/…` và `scripts/sim/…` trong bảng trên
 không được đọc như đường trong repo này.** Cây mã của **nền tảng đang chạy** nằm ở một repo khác:
-**`D:\SOURCES\avi-aoi-management`** (nhánh `feat/hmi-dep` lúc đo). Hai chỗ mang luật được đối chiếu
-lại ở đó 2026-08-18 và **khớp từng ký tự** với cái bảng trên ghi: `server/routers/machineApiRouters.ts`
-→ `processWaveformSchema`; và `server/contracts/machineDataContract.ts` → `processWaveformV1`
-(**dòng 193–199**, file sạch, **cùng số dòng ở cả hai cây**).
+**`D:\SOURCES\avi-aoi-management`** (nhánh `feat/hmi-dep`, đối chiếu tại `f98f6146` rồi kiểm lại tại
+`e9e1ea4c`). Hai chỗ mang luật được đối chiếu lại ở đó 2026-08-18 và **khớp từng ký tự** với cái bảng
+trên ghi, **trỏ bằng tên**: `server/routers/machineApiRouters.ts` → `processWaveformSchema`; và
+`server/contracts/machineDataContract.ts` → `processWaveformV1` (bắt đầu ở **dòng 193** tại **cả ba**
+sha `f98f6146`, `e9e1ea4c` và `avi-aoi-sim@84836ad6` — con số này **chưa** dịch, khác với khối kia).
 
-🔴 **Trỏ bằng TÊN chứ không bằng số dòng — và lý do là một phép đo:** khối `processWaveformSchema`
-**giống hệt nhau từng ký tự** ở ba cây, nhưng **số dòng của nó khác nhau ở cả ba** — **2610** trong
-cây `avi-aoi-sim` tại `HEAD`, **2624** tại `HEAD` của `avi-aoi-management`, **2650** trong **cây làm
-việc đang bẩn** của `avi-aoi-management`. Một trích dẫn theo số dòng chỉ có nghĩa khi **nêu kèm cây**,
-và số **2650 không lấy lại được từ một commit nào**. Cùng loài: cờ ingest nằm ở `.env.example` dòng
-**956** trong `avi-aoi-sim`, dòng **1100** trong `avi-aoi-management`, **cùng một đoạn chữ**.
+🔴 **Trỏ bằng TÊN chứ không bằng số dòng — và lý do là một phép đo, đo được HAI lần, lần thứ hai bác
+chính cách lần thứ nhất được viết ra.** Khối `processWaveformSchema` **giống hệt nhau từng ký tự** ở
+các cây, nhưng **số dòng của nó thì không**, và **nó dịch trong chưa đầy một ngày**:
+
+| cây, ghim bằng SHA BẤT BIẾN | dòng của `processWaveformSchema` |
+|---|---|
+| `avi-aoi-sim` @ `84836ad6` | **2610** |
+| `avi-aoi-management` @ `f98f6146` | **2624** |
+| `avi-aoi-management` @ `54c4cf46` và @ `e9e1ea4c` | **2650** |
+
+Cùng loài, cùng ngày: cờ ingest nằm ở `.env.example` dòng **956** trong `avi-aoi-sim` @ `84836ad6`,
+và ở `avi-aoi-management` nó **dịch từ 1100 sang 1121** trong cùng khoảng ấy. Cái đẩy khối đi được
+nêu tên: commit **`2b732b99`** chạm vào `server/routers/machineApiRouters.ts`.
+
+> 📎 **Đoạn này đọc, cho tới 2026-08-18:** *"**2610** trong cây `avi-aoi-sim` tại `HEAD`, **2624** tại
+> `HEAD` của `avi-aoi-management`, **2650** trong **cây làm việc đang bẩn** của `avi-aoi-management`.
+> Một trích dẫn theo số dòng chỉ có nghĩa khi **nêu kèm cây**, và số **2650 không lấy lại được từ một
+> commit nào**."* — **RÚT cùng ngày (AB-1, vòng sửa), giữ nguyên văn.** Ba chỗ sai, và cả ba là **một**
+> lỗi: **`HEAD` là một con trỏ DI ĐỘNG**, và ba con số được neo vào nó trong một repo **đang được
+> commit**. (i) *"2650 không lấy lại được từ một commit nào"* là một **phủ định phổ quát ở thì hiện
+> tại** — nó chết khi nội dung cây bẩn **được commit**, và **2650 nay là số dòng tại một cây SẠCH**.
+> (ii) *"2624 tại `HEAD`"* — `HEAD` đã đi tiếp **hai lần** trong cùng ngày. (iii) *"nêu kèm cây"* là
+> **chưa đủ**: phải nêu kèm **COMMIT**. 🔴 **Và chỗ đau là chỗ nó xảy ra: đây là đoạn DẠY rằng đừng
+> trỏ bằng số dòng.** Nó vấp đúng luật nó phát biểu, nên nó ở lại đây làm nhân chứng.
+
+🔴 **Hệ quả, và nó áp cho cả BẰNG CHỨNG chứ không chỉ cho LUẬT:** mọi số dòng trong mục này chỉ đọc
+được **kèm một SHA bất biến**. Chỗ nào một cái tên tra được thì **cái tên là con trỏ**, không phải con
+số: `processWaveformSchema`, `processWaveformV1`, `processResultIngestFallback`,
+`machineProcessResultContractV1`, `machineProcessContractJsonSchema`. **Không ghim vào `HEAD` ở bất kỳ
+đâu** — một lần nữa là một phép đo về thứ **còn đang chuyển động, đưa ra như thể nó đã dừng**.
 
 🔴 **BIÊN IM LẶNG của mọi dụng cụ chạy trong repo này, và nó là lý do câu trên phải nói ra cách quét:**
 cây làm việc của `avi-aoi-sim` là **SPARSE CHECKOUT**. `git sparse-checkout list` trả về **đúng hai**
-đường — `tools/machine-simulator` và `examples/device-client`. **`server/` và `web/` không nằm trên
-đĩa**, nên **mọi `grep -r`, `ls`, hay phép quét theo file trong repo này bỏ sót chúng mà không báo một
-lỗi nào**. Một **phủ định phổ quát** đo bằng những dụng cụ ấy chỉ phủ định **bên trong hai đường trên**;
-ngoài hai đường ấy nó **không phát biểu gì**.
+đường — `tools/machine-simulator` và `examples/device-client`. **Mọi thứ ngoài hai đường ấy không nằm
+trên đĩa**, nên **mọi `grep -r`, `ls`, hay phép quét theo file trong repo này bỏ sót chúng mà không
+báo một lỗi nào**. Một **phủ định phổ quát** đo bằng những dụng cụ ấy chỉ phủ định **bên trong hai
+đường trên**; ngoài hai đường ấy nó **không phát biểu gì**.
+
+> 📎 **Câu này nêu ví dụ *"**`server/` và `web/` không nằm trên đĩa**"* cho tới 2026-08-18, RÚT cùng
+> ngày (AB-1, vòng sửa), giữ nguyên văn.** **`web/` không tồn tại trong repo này** — `git ls-tree -r`
+> cho **0** đường bắt đầu bằng `web/`. Thư mục anh em thật là **`client/`** (**711** file trong cây,
+> vắng trên đĩa), và `client/` **chính là nơi chứa một artifact bảng §"hai quy ước" đang trích**:
+> `client/src/components/apiDocs/AutomationProcessFeedSection.tsx`. Cùng loài và cũng vắng trên đĩa:
+> `docs/`, `scripts/`, `contracts/`, `apidocs/` — **tất cả đều mang artifact mục này trích**. 🔴 **Một
+> cái trần nêu quá nhỏ còn tệ hơn không nêu trần**, và ví dụ cũ nêu hai thư mục trong khi tập bị giấu
+> là *"mọi thứ trừ hai đường sparse"*.
 
 **Nhưng chúng KHÔNG vắng mặt khỏi repo này, và đây là chỗ dễ nói quá tay:**
 `server/routers/machineApiRouters.ts`, `server/contracts/machineDataContract.ts`,
 `docs/ECOSYSTEM/57_ST4I_STANDARD_PROCESS_FEED_SPEC.md` và `scripts/sim/screwdriver-emitter.mjs`
-**đều có trong cây Git của `avi-aoi-sim`** — đọc được bằng `git show HEAD:` — chỉ **không được
+**đều có trong cây Git của `avi-aoi-sim`** — đọc được bằng `git show 84836ad6:` — chỉ **không được
 materialise ra đĩa**. Nên hồ sơ trước **không đọc một file không tồn tại**; nó đọc **một bản sao nằm
 trong repo khác với repo build ra máy chủ đang chạy**. Hai bản của `machineApiRouters.ts` **khác nhau
 xét toàn file** và **trùng khít ở đúng khối mang luật** — đó là lý do kết luận cũ **đứng vững** *và*
 nguồn **vẫn phải sửa**.
 
-### Câu *"cái sai là chú thích SDK"*: phép đo nói ngược, và chỗ nó còn đứng được NÊU TÊN
+### 🔴 Biên của chuỗi giám hộ trong chính vòng này — MỘT LOÀI, BA TẦNG, để lại cho người sau
+
+Mục này được viết qua ba tay, và **cả ba đều nhận lại ít nhất một con số thay vì tự đo nó**. Liệt kê
+trước, không đếm trước:
+
+- **AB-1** (người ghi mục này) nhận **cặp đối chứng A/B**, máy 250 và tiền tố `mach_` từ **điều phối
+  viên**, và **không chạy lại** — lý do và cái giá nêu ở §"ĐÃ ĐO".
+- **Vòng phản biện** của chính nhiệm vụ này **không chạy cổng** `verify-suites`; nó **nhận** các con
+  số 2755 / 116 / 0-build-node từ điều phối viên, và **tự khai điều đó**, tự áp cùng một luật mà nó
+  dùng để bắt lỗi AB-1.
+- **Điều phối viên** là nguồn của cả hai, và **không phần nào của nó được đọc lại độc lập bên trong
+  vòng này**.
+
+**Đếm sau khi liệt kê: ba tầng, một loài.** Cái đáng để lại **không** phải "ai lười", mà là hình
+dạng: **miền của một dụng cụ hẹp hơn miền của câu nói dùng nó**, và khi ba người nối tiếp nhau, các
+biên ấy **chồng lên nhau chứ không triệt tiêu nhau**. Nên luật rút ra, viết ở đây vì đây là chỗ chủ
+sở hữu mở được: **một hồ sơ phải nêu hạng nguồn của từng khẳng định NGAY TẠI CHỖ**, vì mọi chỗ cất
+lời cải chính khác — báo cáo nhiệm vụ, ledger `.superpowers/sdd/` — **đều bị gitignore và không tới
+được người đọc**.
+
+### Câu *"cái sai là chú thích SDK"*: phép đo nói ngược **đối với bộ cưỡng chế lúc chạy** — và chỗ nó còn đứng được NÊU TÊN
 
 Phép đo phát biểu về **bộ validate lúc chạy**: chú thích SDK `[[t, v], …]` mô tả **đúng hình dạng
 nhánh B**, tức đúng hình dạng cổng ingest **nhận**; hình dạng `WelderSim` phát là hình dạng **bị từ
@@ -513,8 +642,12 @@ này, hoặc hợp đồng ingest cộng ba SDK anh em. Đúng lý do mục 3 v�
 `processWaveformSchema` và `processWaveformV1`. Cùng các file ấy **cũng có trong cây Git của repo
 này** tại `84836ad6`, **không nằm trên đĩa** (sparse checkout) — xem §"Nguồn của luật".
 
-**Bằng chứng động, chỉ có khi chạy:** cặp đối chứng A/B ở §"ĐÃ ĐO", trên SYNAPSE tại
-`http://localhost:3000`, 2026-08-18, máy thử id **250**; **không bản ghi process-result nào được tạo**.
+**Bằng chứng động, chỉ có khi chạy — và nó là hạng NHẬN LẠI:** cặp đối chứng A/B ở §"ĐÃ ĐO", trên
+SYNAPSE tại `http://localhost:3000`, 2026-08-18, máy thử id **250**. **Do điều phối viên đo; AB-1 ghi
+lại chứ không chạy lại** (lý do nêu tại §"ĐÃ ĐO"). **Không có transcript của hai POST ấy trong repo
+này**, nên chỗ này là điểm yếu nhất của chuỗi giám hộ trong cả mục, và nó được nói ra thay vì để người
+đọc tự phát hiện. *"Không bản ghi process-result nào được tạo"* là **suy luận từ chỗ hai POST dừng**,
+không phải một truy vấn CSDL.
 
 Phía sản phẩm:
 `src/St4i.EdgeCore/Drivers/Simulators/WelderSim.cs`, `…/ScrewdriveSim.cs`,
