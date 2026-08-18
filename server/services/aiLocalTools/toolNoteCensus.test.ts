@@ -190,6 +190,24 @@ const CENSUS: Record<string, XepLoai> = {
   CMD_RESOLVE_ERROR: "chan",
   CMD_SPAWN_ERROR: "chan",
   CMD_TIMEOUT: "chan",
+  // ── doc 78 PHA C (2026-08-19) — GHI TỆP (`writeHandlers/applyDiff.ts`) ──────────────────────
+  /**
+   * ⚠⚠ NĂM MÃ MỚI, TẤT CẢ `chan` — mỗi mã là một lượt **TỪ CHỐI GHI** kèm `data` rỗng
+   * (`ok:false`, không byte nào rời cửa `writeConfined`). Để LLM văn vẻ hoá một lượt từ chối ghi là
+   * mời nó rút *"đã áp xong"* từ một lượt CHƯA áp — nguy hiểm nhất có thể có ở một tác nhân ghi mã.
+   *   • `FILE_DIRTY`        — tệp có thay đổi CHƯA COMMIT (hàng rào cốt lõi chống sự cố 2026-08-18).
+   *   • `BASE_MISMATCH`     — băm(tệp thật) ≠ băm(original) ⇒ nhìn phiên bản CŨ / tệp đổi dưới chân.
+   *   • `GIT_STATUS_FAILED` — không hỏi được git ⇒ không chứng minh được sạch ⇒ fail-closed.
+   *   • `NO_CHANGE`         — original === modified ⇒ không có gì để áp.
+   *   • `FILE_TOO_LARGE`    — tệp lớn hơn trần so-khớp ⇒ không băm khớp an toàn được.
+   * (PATH_REJECTED · DENIED_SECRET · DENIED_DIR · DENIED_EXT · MISSING_REQUIRED_ARG · NOT_A_FILE ·
+   *  BUDGET_EXCEEDED · WRITE_ERROR đã có ở trên — apply_diff DÙNG LẠI, không đẻ mã trùng nghĩa.)
+   */
+  FILE_DIRTY: "chan",
+  BASE_MISMATCH: "chan",
+  GIT_STATUS_FAILED: "chan",
+  NO_CHANGE: "chan",
+  FILE_TOO_LARGE: "chan",
 };
 
 describe("§1 — mọi mã `note` trong mã nguồn đều đã được PHÁN QUYẾT", () => {

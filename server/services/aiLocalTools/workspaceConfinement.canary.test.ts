@@ -148,11 +148,18 @@ describe("★★★ I-3 — KHÔNG byte nào của một inode nlink>1 rời kh�
      * `repoSandbox.census.test.ts`; lưới này KHÔNG chứng minh gì về gốc ấy.
      */
     const ten = listTools().filter(nhanThamSoPath).map((t) => t.name).sort();
+    /**
+     * ★ 2026-08-19 (doc 78 PHA C) — `apply_diff` nhận `path` **cố ý** (đặt tên khác để né lưới là
+     * một lượt lách). Nó ghi vào gốc hộp cát repo (`repoSandbox.gocHopCat()`), không phải
+     * `PROG_WORKSPACE_DIR`, nên `looks-fine.st` (hard link, đuôi `.st` ngoài danh sách TRẮNG) không
+     * tồn tại với nó VÀ bị `duoiDuocPhep` chặn ⇒ ca canary ở trên xanh vì hai lý do độc lập. Hàng rào
+     * "tệp bẩn"/băm/TOCTOU riêng của apply_diff nằm ở `applyDiff.census.test.ts`.
+     */
     expect(
       ten,
       "một tool MỚI nhận `path` là một CỬA MỚI ra đĩa. Đọc lưới này, chứng minh nó đi qua cửa " +
         "chung, rồi mới thêm tên vào đây.",
-    ).toEqual(["grep_repo", "list_files", "read_file", "read_project_file", "write_project_file"]);
+    ).toEqual(["apply_diff", "grep_repo", "list_files", "read_file", "read_project_file", "write_project_file"]);
   });
 
   it("★★★ ĐỐI CHỨNG DƯƠNG — file thường trong workspace VẪN đi qua được cả hai cửa", async () => {

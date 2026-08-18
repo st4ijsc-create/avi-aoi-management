@@ -31,6 +31,10 @@ import "./repoReadTools";
 // `proposeAction`/`confirmAction`, KHÔNG BAO GIỜ tự chạy. Chính sách + bộ chạy ở
 // `repoCommandSandbox.ts` (cùng gốc hộp cát, cùng sổ ngân sách byte với pha A).
 import "./writeHandlers/repoCommand";
+// doc 78 PHA C — `apply_diff`: GHI tệp repo qua NGƯỜI DUYỆT. WRITE tool ⇒ HITL. Bốn hàng rào: tệp
+// bẩn (git status của đúng tệp) · băm chống TOCTOU (so ở propose + confirm) · hộp cát (writeConfined,
+// cùng cửa đã tôi qua đột biến) · RBAC ai_repo_read/canEdit. KHÔNG viết cửa ghi thứ hai.
+import "./writeHandlers/applyDiff";
 // Pha 4 Task 4 — VRAM broker state (READ-ONLY). Đây là NGƯỜI ĐỌC THẬT của `buildVramAgentState()`
 // cho AI Agent: Agent repo này đi qua toolRegistry, KHÔNG qua tRPC. Ba lệnh phá huỷ CỐ Ý không
 // đăng ký ở đây — xem khối đầu `vramTools.ts`.

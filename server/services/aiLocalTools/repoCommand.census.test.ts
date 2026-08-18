@@ -104,7 +104,13 @@ describe("§0 — CẦU CHÌ: lưới đang quét vật thật", () => {
   });
 
   it("★ bit RBAC của nó KHÁC bit đọc mã nguồn của pha A", () => {
-    const doc = listTools().filter((t) => t.requiredPermission?.module === "ai_repo_read").map((t) => t.name).sort();
+    // ⚠ 2026-08-19 (doc 78 PHA C): lọc theo action `canView` — pha C (`apply_diff`) đứng sau CÙNG
+    //   module `ai_repo_read` nhưng action `canEdit` (ghi tệp). Câu khẳng định ở đây là về ba tool
+    //   ĐỌC của pha A, nên nó ghim theo action đọc, không theo cả module.
+    const doc = listTools()
+      .filter((t) => t.requiredPermission?.module === "ai_repo_read" && t.requiredPermission?.action === "canView")
+      .map((t) => t.name)
+      .sort();
     expect(doc, "pha A phải còn nguyên ba tool đọc").toEqual(["grep_repo", "list_files", "read_file"]);
     expect(doc).not.toContain("run_command");
   });
@@ -687,13 +693,26 @@ function diemGoi(ten: string): Array<{ file: string; dong: number; trongHam: str
 }
 
 describe("§J — BẢN KIỂM ĐẾM ĐIỂM GỌI: ai được sinh tiến trình, và ở đâu", () => {
-  it("★★★ `chayLenhTrongHopCat` có ĐÚNG MỘT điểm gọi trong mã sản phẩm, và nó nằm trong `execute`", () => {
+  it("★★★ `chayLenhTrongHopCat` chỉ được gọi ở HAI chỗ đã biết, và người viết phải thấy mỗi chỗ một lần", () => {
+    /**
+     * ★ 2026-08-19 (doc 78 PHA C) — ĐIỂM GỌI THỨ HAI: `repoGitStatus.ts [trangThaiGitCuaTep]`.
+     *
+     * Pha C cần hàng rào "tệp bẩn": `git status --porcelain -- <tệp>`. Lệnh này **CỐ ĐỊNH** (chỉ ô
+     * `<tệp>` biến thiên, đã qua `phanQuyetDuongDan`+`confineTargetUnder` của người gọi), nên nó KHÔNG
+     * đi qua danh sách trắng của `run_command` (danh sách ấy dành cho lệnh do MODEL chọn). Nó là một
+     * lệnh CHỈ HỎI (không đổi byte nào của cây làm việc), gói trong ĐÚNG MỘT hàm để §J chỉ mọc thêm
+     * một dòng. `repoCommand.ts [execute]` vẫn là điểm gọi cho lệnh model-chọn — vẫn qua
+     * `tachArgv`+`phanQuyetLenh` TRƯỚC.
+     */
     const dg = diemGoi("chayLenhTrongHopCat");
     expect(
-      dg.map((d) => `${d.file} [${d.trongHam}]`),
-      "một điểm gọi MỚI là một đường sinh tiến trình mới. Nó phải đi qua `tachArgv` + `phanQuyetLenh` " +
-        "TRƯỚC, và người viết phải nhìn thấy lưới này một lần.",
-    ).toEqual(["services/aiLocalTools/writeHandlers/repoCommand.ts [execute]"]);
+      dg.map((d) => `${d.file} [${d.trongHam}]`).sort(),
+      "một điểm gọi MỚI là một đường sinh tiến trình mới. Lệnh model-chọn phải qua `tachArgv` + " +
+        "`phanQuyetLenh` TRƯỚC; lệnh cố định (git-status của pha C) phải nằm gọn trong một hàm.",
+    ).toEqual([
+      "services/aiLocalTools/repoGitStatus.ts [trangThaiGitCuaTep]",
+      "services/aiLocalTools/writeHandlers/repoCommand.ts [execute]",
+    ]);
   });
 
   it("★★★ `preview()` (`xemTruoc`) KHÔNG gọi bộ chạy — bài học C-1 của `programmingFile.ts`", () => {

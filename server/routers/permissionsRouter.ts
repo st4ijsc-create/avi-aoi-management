@@ -80,10 +80,11 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'settings', moduleName: 'settings_smtp', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'settings', moduleName: 'settings_notification_sounds', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_cache', canView: true, canCreate: false, canEdit: true, canDelete: true, canExport: false },
-    // ★★★ doc 78 PHA A — bit "AI đọc mã nguồn". Với `admin` hàng này là để BẢNG QUYỀN của giao
-    // diện đủ mục; cổng thì không cần nó (`checkPermission` short-circuit `true` cho vai admin khi
-    // chưa bật scoped-admin). VIEW-ONLY, cùng lý do đã ghi ở khối `engineer`.
-    { category: 'settings', moduleName: 'ai_repo_read', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // ★★★ doc 78 PHA A+C — bit "AI đọc/GHI mã nguồn". Với `admin` hàng này là để BẢNG QUYỀN của
+    // giao diện đủ mục; cổng thì không cần nó (`checkPermission` short-circuit `true` cho vai admin
+    // khi chưa bật scoped-admin). `canView`=đọc (pha A: read_file/list_files/grep_repo);
+    // `canEdit`=GHI (pha C: apply_diff — đọc/ghi cùng một đối tượng tệp repo ⇒ cùng module, khác action).
+    { category: 'settings', moduleName: 'ai_repo_read', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
     // ★★★ doc 78 PHA B — bit "AI chạy lệnh". MODULE RIÊNG, không phải một `action` khác của
     // `ai_repo_read`: gộp chung là để một ô tick trên dòng "AI đọc mã nguồn" mở quyền SINH TIẾN
     // TRÌNH trong im lặng (xem khối RBAC ở writeHandlers/repoCommand.ts). Chỉ `canCreate`.
@@ -302,10 +303,11 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'settings', moduleName: 'settings_measurement_points', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_products', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
-    // ★★★ doc 78 PHA A (2026-08-18) — trợ lý AI ĐỌC mã nguồn nền tảng (`read_file`/`list_files`/
-    // `grep_repo`). VIEW-ONLY: pha A không ghi gì; pha C (ghi tệp) sẽ xin `canEdit` RIÊNG, để
-    // "đọc được" và "ghi được" không bao giờ là cùng một bit. Backfill: mig 0330.
-    { category: 'settings', moduleName: 'ai_repo_read', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // ★★★ doc 78 PHA A+C — trợ lý AI ĐỌC (`read_file`/`list_files`/`grep_repo`, canView) VÀ GHI
+    // (`apply_diff`, canEdit) mã nguồn nền tảng. "Đọc được" và "ghi được" là HAI action KHÁC nhau
+    // trên CÙNG một module (cùng đối tượng: tệp repo) — thu quyền ghi mà giữ quyền đọc chỉ cần bỏ
+    // một ô tick. Backfill: mig 0330 (canView) + mig 0332 (canEdit).
+    { category: 'settings', moduleName: 'ai_repo_read', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
     // ★★★ doc 78 PHA B (2026-08-18) — trợ lý AI CHẠY LỆNH trong danh sách TRẮNG (`run_command`:
     // npm run check · npm run check:tests · npx vitest run <đường> · git status · git diff).
     // Chỉ `canCreate` ("tạo một lượt chạy"); tool là WRITE nên MỌI lượt vẫn phải qua HITL.
@@ -828,7 +830,7 @@ export const permissionsRouter = router({
         { category: 'settings', moduleName: 'settings_cache', displayName: 'Quản lý Cache', description: 'Xem thống kê cache, xóa cache' },
         // doc 78 PHA A — bit này phải HIỆN trong bảng phân quyền, nếu không quản trị viên không có
         // đường cấp/thu hồi nó cho một người cụ thể (và bit sẽ chỉ đổi được bằng migration).
-        { category: 'settings', moduleName: 'ai_repo_read', displayName: 'AI đọc mã nguồn', description: 'Cho trợ lý AI đọc/liệt kê/tìm trong mã nguồn nền tảng (read_file, list_files, grep_repo) — CHỈ ĐỌC, trong hộp cát repo, cấm .env và khoá bí mật' },
+        { category: 'settings', moduleName: 'ai_repo_read', displayName: 'AI đọc/ghi mã nguồn', description: 'Cho trợ lý AI ĐỌC mã nguồn nền tảng (canView: read_file/list_files/grep_repo) và GHI/SỬA tệp (canEdit: apply_diff) — trong hộp cát repo, cấm .env và khoá bí mật. GHI luôn qua XÁC NHẬN của người dùng (HITL), TỪ CHỐI tệp có thay đổi chưa commit, và so băm chống ghi nhầm phiên bản.' },
         // doc 78 PHA B — bit RIÊNG cho mặt CHẠY LỆNH. Tách khỏi `ai_repo_read` theo đúng tiền lệ
         // `vram_control` (mặt lệnh tách khỏi mặt đọc): cấp quyền ĐỌC mã nguồn không được kéo theo
         // quyền SINH TIẾN TRÌNH trên máy chủ. Đây là DÒNG CATALOG — nó KHÔNG cấp quyền cho ai.

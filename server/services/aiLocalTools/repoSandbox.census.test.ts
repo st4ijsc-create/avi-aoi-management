@@ -149,8 +149,17 @@ beforeEach(() => {
 // Tập tool — suy từ SỔ ĐĂNG KÝ SỐNG, không chép tay
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 const BIT = "ai_repo_read";
+/**
+ * ★ 2026-08-19 (doc 78 PHA C) — LỌC THÊM `action === "canView"`.
+ *
+ * Pha C (`apply_diff`) đứng sau **cùng module** `ai_repo_read` nhưng action `canEdit` (đọc/ghi cùng
+ * một đối tượng — tệp repo — nên cùng module, khác action). Lưới NÀY canh ba tool ĐỌC; một write
+ * tool lọt vào đây sẽ ĐỎ ngay ca "mọi tool trong tập đều có `handler`" (apply_diff không có
+ * `handler`). Nên tập ĐỌC được ghim theo đúng action đọc; canary/hàng-rào của apply_diff nằm ở
+ * `applyDiff.census.test.ts`.
+ */
 function toolHopCat(): Tool<any, any>[] {
-  return listTools().filter((t) => t.requiredPermission?.module === BIT);
+  return listTools().filter((t) => t.requiredPermission?.module === BIT && t.requiredPermission?.action === "canView");
 }
 
 /**
