@@ -1512,11 +1512,20 @@ EXPECT_CONFORMANCE=24
 # this 1147 -> 1152 (+5). Grand total 2758 -> 2763. ONE new file,
 # tests/St4i.EdgeCore.Tests/SuppressionCensusTests.cs; nothing is rewritten, split or deleted, and the five
 # are named rather than counted:
-#     TheCensusReachesItsCorpus_AndTheVendoredFilesAncestorChain
+#     TheCensusReachesItsCorpus_AndBothAncestorChainsThatReachThisSolution
 #     TheEnumerationOfSuppressionInstructions_IsExactlyThis
-#     TheEnumerationOfAnalyzerConfigFilesThatWouldReachTheVendoredFile_IsExactlyThis
+#     TheEnumerationOfAnalyzerConfigFilesThatWouldReachThisSolution_IsExactlyThis
 #     TheDocumentationSwitchIsSetOnExactlyTheseProjects
 #     TheDetector_ReportsEachMechanismItClaimsToRead
+#
+# 🔴 TWO OF THOSE FIVE WERE RENAMED WITHIN THIS BRANCH, AND THE OLD NAMES ARE WRITTEN OUT HERE BECAUSE A
+# MEMBER NAME IS A PUBLISHED STRING AND A REMOVED ONE IS TOO (P-2's rule, applied to itself). As they stood
+# at 116d8bdb:
+#     TheCensusReachesItsCorpus_AndTheVendoredFilesAncestorChain
+#     TheEnumerationOfAnalyzerConfigFilesThatWouldReachTheVendoredFile_IsExactlyThis
+# Both named ONE ancestor chain, both were accurate about the scan they described, and that accuracy is
+# exactly what hid the defect branch review found: there are TWO chains that reach this solution. The scan
+# now walks both and the names say so. THE TOTAL DOES NOT MOVE: five facts before, five after.
 #
 # EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGESERVICE and EXPECT_ENGINEAPI are deliberately
 # UNCHANGED, and that is a check rather than a convenience: AE-1 adds one file to one suite and changes the
@@ -5058,8 +5067,29 @@ VENDORED_SOURCE_CSPROJ="src/St4i.EdgeCore/St4i.EdgeCore.csproj"
 # which file this is and a re-vendoring that MOVES the file moves this ledger's definition with it instead of
 # quietly reclassifying 82 warnings as ours. More than one outside-cone item is a new population with its own
 # owner and its own remedy, so it is a decision to be made here rather than absorbed.
-VENDORED_LINKED=$(grep -oE '<Compile[[:space:]]+Include="[^"]*"' "$VENDORED_SOURCE_CSPROJ" 2>/dev/null \
-  | sed -E 's/.*Include="([^"]*)".*/\1/' | tr '\\' '/' | grep -E '^\.\./' || true)
+#
+# 🔴 AND "OUTSIDE THE CONE" IS DECIDED THE SAME WAY IN BOTH INSTRUMENTS, which it was not on this branch's
+# first revision (found by branch review). This block used to filter on the literal prefix `../`, while
+# DocCommentProseTests and SuppressionCensusTests resolve the item and ask whether the result lies under the
+# project directory. The two agree on today's spelling and disagree on others -- an absolute path, or one
+# built from an MSBuild property, is "outside" to the C# pair and invisible to a `../` filter, which would
+# have made this gate FAIL LOUD (zero outside-cone items) while the tests passed. Fail-loud is the safe
+# direction and a two-criteria "single source of truth" is still a fiction, so the criterion is now RESOLVE
+# THEN COMPARE in all three. Sentence retired: "three instruments read one place" was true only of the file
+# they read, not of the question they asked it.
+VENDORED_PROJECT_DIR=$(cygpath -m "$(realpath -m "$(dirname "$VENDORED_SOURCE_CSPROJ")")")
+VENDORED_LINKED=$(
+  grep -oE '<Compile[[:space:]]+Include="[^"]*"' "$VENDORED_SOURCE_CSPROJ" 2>/dev/null \
+  | sed -E 's/.*Include="([^"]*)".*/\1/' | tr '\\' '/' \
+  | while IFS= read -r inc; do
+      [[ -n "$inc" ]] || continue
+      abs=$(cd "$(dirname "$VENDORED_SOURCE_CSPROJ")" && cygpath -m "$(realpath -m "$inc")" 2>/dev/null) || continue
+      case "$(printf '%s' "$abs" | tr 'A-Z' 'a-z')" in
+        "$(printf '%s/' "$VENDORED_PROJECT_DIR" | tr 'A-Z' 'a-z')"*) ;;
+        *) printf '%s\n' "$abs" ;;
+      esac
+    done
+)
 VENDORED_LINKED_COUNT=$(printf '%s\n' "$VENDORED_LINKED" | grep -c . || true)
 if [[ "$VENDORED_LINKED_COUNT" != "1" ]]; then
   echo "FAIL: St4i.EdgeCore.csproj declares ${VENDORED_LINKED_COUNT} Compile items from outside its own"
@@ -5068,7 +5098,7 @@ if [[ "$VENDORED_LINKED_COUNT" != "1" ]]; then
   echo "  Decide which, and say so beside the ledger: ${VENDORED_LINKED//$'\n'/, }"
   exit 1
 fi
-VENDORED_FILE=$(cd "$(dirname "$VENDORED_SOURCE_CSPROJ")" && cygpath -m "$(realpath -m "$VENDORED_LINKED")")
+VENDORED_FILE="$VENDORED_LINKED"
 if [[ ! -f "$VENDORED_FILE" ]]; then
   echo "FAIL: ${VENDORED_FILE} -- named by St4i.EdgeCore.csproj's Compile Include, absent on disk."
   echo "  The warning ledger derives its VENDORED bucket from that path. A ledger whose bucket cannot"

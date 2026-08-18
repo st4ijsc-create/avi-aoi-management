@@ -45,13 +45,25 @@ namespace St4i.EdgeCore.Tests;
 ///   <item><description><b>The vendored SDK file itself</b>, resolved out of <c>St4i.EdgeCore.csproj</c>'s own
 ///   <c>Compile Include</c> rather than re-spelled, so a re-vendoring moves this scan instead of emptying
 ///   it.</description></item>
-///   <item><description>🔴 <b>Every directory on that file's ANCESTOR CHAIN, up to and including the
-///   repository root.</b> This is the half no existing instrument has. EditorConfig discovery walks the
-///   SOURCE FILE's ancestors, not the project's — measured in <c>Directory.Build.props</c>, three placements,
-///   one build each — so the narrowest possible exemption of the vendored file sits at
+///   <item><description>🔴 <b>Every directory on BOTH ANCESTOR CHAINS that reach this solution, up to and
+///   including the repository root</b> — the chain above the VENDORED FILE and the chain above the PRODUCT
+///   TREE. This is the half no existing instrument has. EditorConfig discovery walks the SOURCE FILE's
+///   ancestors, not the project's — measured in <c>Directory.Build.props</c>, three placements, one build
+///   each — so the narrowest possible exemption of the vendored file sits at
 ///   <c>examples/device-client/csharp/</c>, which is OUTSIDE <c>tools/machine-simulator</c> and therefore
 ///   outside <c>DocCommentProseTests</c>, outside the token censuses, and outside every path any gate in this
-///   repository has ever looked at.</description></item>
+///   repository has ever looked at.
+///   <para>🔴 <b>THE SECOND CHAIN WAS MISSING ON THIS FILE'S FIRST REVISION, AND THE HOLE WAS EXACTLY THE
+///   SHAPE OF THE ONE THIS FILE EXISTS TO CLOSE</b> (found by branch review, not by me). The walk starts AT
+///   <c>tools/machine-simulator</c>, so its PARENT, <c>tools/</c>, belonged to neither the product tree nor
+///   the vendored file's chain — and <c>tools/</c> is a direct ancestor of every source file of all fifteen
+///   projects. A <c>tools/.editorconfig</c> reading
+///   <c>dotnet_diagnostic.CS1591.severity = none</c> would silence the 543 warnings stages 4..8 exist to pay,
+///   move no number anywhere today, and be seen by nothing — the same structure as the pre-emptive
+///   <c>&lt;NoWarn&gt;</c> this file was written to catch, aimed at OUR population instead of the vendored
+///   one. The claim below said the enumerated set was EXACT while the domain was one directory short, which
+///   is §8.1(f) verbatim. Both chains are scanned now; today that adds ZERO rows to all three tables, because
+///   <c>tools/</c> holds exactly one entry and it is a directory.</para></description></item>
 /// </list>
 /// And what is outside, named rather than implied:
 /// <list type="bullet">
@@ -62,8 +74,16 @@ namespace St4i.EdgeCore.Tests;
 ///   developer's home directory would report a different tree per person, which is the failure class
 ///   §8.1 keeps paying for.</description></item>
 ///   <item><description><b>Directories of this repository that a sparse checkout omits.</b> The scan is the
-///   product tree plus one ancestor chain, both present in every checkout, so this file measures the same
-///   population everywhere. It is NOT a repository-wide sweep and must not be read as one.</description></item>
+///   product tree plus the two ancestor chains, all present in every checkout, so this file measures the same
+///   population everywhere. It is NOT a repository-wide sweep and must not be read as one. In particular
+///   <c>server/</c> and <c>client/</c> are absent from this checkout and nothing here says anything about
+///   them.</description></item>
+///   <item><description><b>Sibling directories of an ancestor.</b> The chains are walked, not their
+///   siblings: an analyzer-config file in <c>examples/device-client/python/</c> reaches nothing this solution
+///   compiles, and is neither scanned nor claimed.</description></item>
+///   <item><description><b>MSBuild <c>Condition</c> attributes are not evaluated.</b> A
+///   <c>&lt;GenerateDocumentationFile Condition="…"&gt;true&lt;/…&gt;</c> reads here as a plain declaration.
+///   No project uses one today; the day one does, this file reports the declaration and not its effect.</description></item>
 ///   <item><description><b>Suppression that is not spelled as one of the four mechanisms below</b> — an
 ///   analyzer package removed from a project, a <c>Compile Remove</c>, a target that swallows output, a
 ///   custom <c>DiagnosticSuppressor</c>. None exists here today and none is detected here.</description></item>
@@ -87,7 +107,7 @@ namespace St4i.EdgeCore.Tests;
 /// <para><b>PRECONDITION.</b> Like <c>DocCommentProseTests</c> and <c>ZeroDependencyTests</c>, this requires
 /// being run from inside the source tree. A scan that cannot find its corpus has measured nothing, and
 /// "nothing measured" must never read as "nothing wrong" — so
-/// <see cref="TheCensusReachesItsCorpus_AndTheVendoredFilesAncestorChain"/> fails loudly instead.</para>
+/// <see cref="TheCensusReachesItsCorpus_AndBothAncestorChainsThatReachThisSolution"/> fails loudly instead.</para>
 /// </summary>
 public sealed class SuppressionCensusTests
 {
@@ -109,9 +129,19 @@ public sealed class SuppressionCensusTests
 
     private static readonly Regex DiagnosticCode = new(@"[A-Za-z]{2,}[0-9]+", RegexOptions.Compiled);
 
-    /// <summary>Assembled at runtime — see the class remark on the matcher counting itself.</summary>
+    /// <summary>Assembled at runtime — see the class remark on the matcher counting itself.
+    /// <para>🔴 THE FIRST REVISION OF THIS PATTERN COULD NOT SEE THE SPELLING THE TOOLING ACTUALLY EMITS,
+    /// and its positive control did not try it (found by branch review). It required the type name
+    /// immediately after <c>[</c>, so an ATTRIBUTE TARGET — <c>[assembly: …]</c>, <c>[module: …]</c> — slid
+    /// past, and that is precisely what Visual Studio writes into <c>GlobalSuppressions.cs</c> for
+    /// "Suppress in Suppression File". The bare <c>…Attribute</c> suffix, legal C#, slid past too. Not a live
+    /// hole — this attribute cannot silence a compiler <c>CSxxxx</c>, so item 12's exposure never ran through
+    /// it — but the analyzer diagnostics in the OURS bucket (<c>xUnit1013</c>, <c>xUnit2029</c>) can be
+    /// silenced this way, and a control that certifies a blind detector is worth less than no control.</para></summary>
     private static readonly Regex SuppressAttribute =
-        new(@"\[\s*(?:[A-Za-z_.]+\.)?(?:Unconditional)?" + "Suppress" + "Message" + @"\s*\(", RegexOptions.Compiled);
+        new(@"\[\s*(?:(?:assembly|module|type|method|property|field|event|param|return)\s*:\s*)?" +
+            @"(?:[A-Za-z_][A-Za-z_0-9]*\s*\.\s*)*(?:Unconditional)?" + "Suppress" + "Message" +
+            @"(?:Attribute)?\s*\(", RegexOptions.Compiled);
 
     private static readonly Regex AnalyzerConfigSeverity =
         new(@"^\s*dotnet_(?:diagnostic|analyzer_diagnostic)(?:\.(?<code>[A-Za-z]{2,}[0-9]+))?(?:\.category-[A-Za-z]+)?\.severity\s*=\s*(?<level>[A-Za-z_]+)",
@@ -177,19 +207,18 @@ public sealed class SuppressionCensusTests
             "domain it cannot describe.");
     }
 
-    /// <summary>Every directory an analyzer-config file could sit in and still reach the vendored file,
-    /// bounded at the repository root. Ordered from the file's own directory outward.</summary>
-    private static IReadOnlyList<string> VendoredFileAncestorChain()
+    /// <summary>Every directory from <paramref name="startDirectory"/> outward to the repository root,
+    /// inclusive — i.e. every place an analyzer-config file could sit and still be discovered from a source
+    /// file inside it. Ordered innermost first.</summary>
+    private static IReadOnlyList<string> AncestorChainToRepositoryRoot(string startDirectory)
     {
-        var root = RepositoryRoot();
+        var root = RepositoryRoot().TrimEnd(Path.DirectorySeparatorChar);
         var chain = new List<string>();
-        var dir = new DirectoryInfo(Path.GetDirectoryName(VendoredSdkFile())!);
+        var dir = new DirectoryInfo(startDirectory);
         while (dir is not null)
         {
             chain.Add(dir.FullName);
-            if (string.Equals(dir.FullName.TrimEnd(Path.DirectorySeparatorChar),
-                              root.TrimEnd(Path.DirectorySeparatorChar),
-                              StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(dir.FullName.TrimEnd(Path.DirectorySeparatorChar), root, StringComparison.OrdinalIgnoreCase))
             {
                 break;
             }
@@ -199,6 +228,17 @@ public sealed class SuppressionCensusTests
 
         return chain;
     }
+
+    /// <summary>🔴 BOTH chains, because there are two source populations and they hang off different parents.
+    /// The vendored file's chain reaches the 103 warnings nobody may pay; the PRODUCT TREE's chain reaches
+    /// every source file of all fifteen projects — and its first link, the product tree's own parent, belongs
+    /// to neither the recursive walk (which starts inside it) nor the vendored chain (which goes through
+    /// <c>examples/</c>). That link was missing until branch review named it; see the class remark.</summary>
+    private static IReadOnlyList<string> AncestorChainsReachingThisSolution() =>
+        AncestorChainToRepositoryRoot(Path.GetDirectoryName(VendoredSdkFile())!)
+            .Concat(AncestorChainToRepositoryRoot(BuildOutputProbe.MachineSimulatorRoot()))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private static IReadOnlyList<string> FilesUnderProductTree()
     {
@@ -223,11 +263,11 @@ public sealed class SuppressionCensusTests
     }
 
     /// <summary>The whole scanned domain: the product tree, the vendored file, and every file sitting
-    /// directly in one of the vendored file's ancestor directories.</summary>
+    /// directly in one of the ancestor directories of EITHER.</summary>
     private static IReadOnlyList<string> ScannedFiles()
     {
         var files = new List<string>(FilesUnderProductTree()) { VendoredSdkFile() };
-        foreach (var dir in VendoredFileAncestorChain())
+        foreach (var dir in AncestorChainsReachingThisSolution())
         {
             files.AddRange(Directory.EnumerateFiles(dir));
         }
@@ -410,60 +450,109 @@ public sealed class SuppressionCensusTests
                 f => $"{File.ReadLines(f).Count()} line(s)",
                 StringComparer.Ordinal);
 
-    /// <summary>🔴 The switch itself, per project, and the INVERSE of a suppression: turning
+    /// <summary>🔴 The switch itself, and the INVERSE of a suppression: turning
     /// <c>GenerateDocumentationFile</c> OFF on one of the seven that has it on removes an assertion and moves
     /// no warning count anywhere, because those seven stand at zero. Nothing in this repository could see
     /// that before this row existed. Stage 3 of item 12 moves exactly one row here — St4i.EdgeCore, off to
-    /// on — and having to move it deliberately, with a sentence, is the point.</summary>
+    /// on — and having to move it deliberately, with a sentence, is the point.
+    /// <para>🔴 EVERY <c>.csproj</c> ROW PLUS ANY <c>.props</c>/<c>.targets</c> THAT DECLARES IT, and the
+    /// second half was missing on this file's first revision (found by branch review). Reading only
+    /// <c>.csproj</c> pinned one spelling of the switch out of two: MSBuild imports
+    /// <c>Directory.Build.targets</c> AFTER the project body, so a single new
+    /// <c>Directory.Build.targets</c> carrying <c>false</c> BEATS every csproj here, turns the switch off on
+    /// all seven, and — because those seven stand at zero — moves no warning count at all. Both tables were
+    /// blind to it. The tree carries exactly one <c>Directory.Build.props</c> and no <c>.targets</c> at all
+    /// today, and the props file names the property only inside XML comments, so this addition contributes
+    /// ZERO rows and would contribute one the moment either fact changed.</para></summary>
     private static readonly Dictionary<string, string> ExpectedDocumentationSwitch = new(StringComparer.Ordinal)
     {
-        ["src/St4i.Connector.Abstractions/St4i.Connector.Abstractions.csproj"] = "on",
-        ["src/St4i.Connector.Conformance/St4i.Connector.Conformance.csproj"] = "on",
-        ["src/St4i.DesktopShell/St4i.DesktopShell.csproj"] = "on",
-        ["src/St4i.EdgeCore.Serial/St4i.EdgeCore.Serial.csproj"] = "on",
-        ["src/St4i.EdgeService/St4i.EdgeService.csproj"] = "on",
-        ["tools/serial-bench/St4i.SerialBench.csproj"] = "on",
-        ["tools/settings-acl-probe/St4i.SettingsAclProbe.csproj"] = "on",
+        ["tools/machine-simulator/src/St4i.Connector.Abstractions/St4i.Connector.Abstractions.csproj"] = "on",
+        ["tools/machine-simulator/src/St4i.Connector.Conformance/St4i.Connector.Conformance.csproj"] = "on",
+        ["tools/machine-simulator/src/St4i.DesktopShell/St4i.DesktopShell.csproj"] = "on",
+        ["tools/machine-simulator/src/St4i.EdgeCore.Serial/St4i.EdgeCore.Serial.csproj"] = "on",
+        ["tools/machine-simulator/src/St4i.EdgeService/St4i.EdgeService.csproj"] = "on",
+        ["tools/machine-simulator/tools/serial-bench/St4i.SerialBench.csproj"] = "on",
+        ["tools/machine-simulator/tools/settings-acl-probe/St4i.SettingsAclProbe.csproj"] = "on",
 
         // 🔴 The eight that are OFF, and item 12 is about the first of them. They are not off by neglect:
         // the switch carries a documentation-COVERAGE policy this product has never adopted, priced project
         // by project in Directory.Build.props.
-        ["src/St4i.EdgeCore/St4i.EdgeCore.csproj"] = "off",
-        ["src/St4i.EngineApi/St4i.EngineApi.csproj"] = "off",
-        ["src/St4iMachineSimulator/St4iMachineSimulator.csproj"] = "off",
-        ["tests/St4i.Connector.Abstractions.Tests/St4i.Connector.Abstractions.Tests.csproj"] = "off",
-        ["tests/St4i.Connector.Conformance.Tests/St4i.Connector.Conformance.Tests.csproj"] = "off",
-        ["tests/St4i.EdgeCore.Tests/St4i.EdgeCore.Tests.csproj"] = "off",
-        ["tests/St4i.EdgeService.Tests/St4i.EdgeService.Tests.csproj"] = "off",
-        ["tests/St4i.EngineApi.Tests/St4i.EngineApi.Tests.csproj"] = "off",
+        ["tools/machine-simulator/src/St4i.EdgeCore/St4i.EdgeCore.csproj"] = "off",
+        ["tools/machine-simulator/src/St4i.EngineApi/St4i.EngineApi.csproj"] = "off",
+        ["tools/machine-simulator/src/St4iMachineSimulator/St4iMachineSimulator.csproj"] = "off",
+        ["tools/machine-simulator/tests/St4i.Connector.Abstractions.Tests/St4i.Connector.Abstractions.Tests.csproj"] = "off",
+        ["tools/machine-simulator/tests/St4i.Connector.Conformance.Tests/St4i.Connector.Conformance.Tests.csproj"] = "off",
+        ["tools/machine-simulator/tests/St4i.EdgeCore.Tests/St4i.EdgeCore.Tests.csproj"] = "off",
+        ["tools/machine-simulator/tests/St4i.EdgeService.Tests/St4i.EdgeService.Tests.csproj"] = "off",
+        ["tools/machine-simulator/tests/St4i.EngineApi.Tests/St4i.EngineApi.Tests.csproj"] = "off",
+
+        // The vendored SDK sample's own project, which sits in the vendored file's directory and is therefore
+        // inside the scanned domain. It is not one of the fifteen and this repository does not build it; it
+        // is listed because the domain reaches it and an unlisted file in a scanned directory is a hole.
+        ["examples/device-client/csharp/ExampleScrewdriver.csproj"] = "off",
     };
 
+    /// <summary>Declarations of the switch, keyed by repository-relative path. A <c>.csproj</c> always gets a
+    /// row (<c>off</c> when it declares nothing — that IS the fact item 12 is about); a <c>.props</c> or
+    /// <c>.targets</c> gets one only when it declares the property, so the ordinary case contributes
+    /// nothing and any new declaration is a new row.</summary>
     private static Dictionary<string, string> ObservedDocumentationSwitch()
     {
-        var root = BuildOutputProbe.MachineSimulatorRoot();
-        return FilesUnderProductTree()
-            .Where(f => Path.GetExtension(f).Equals(".csproj", StringComparison.OrdinalIgnoreCase))
-            .ToDictionary(
-                f => Path.GetRelativePath(root, f).Replace(Path.DirectorySeparatorChar, '/'),
-                f =>
+        var observed = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var file in ScannedFiles())
+        {
+            var extension = Path.GetExtension(file);
+            var isProject = extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase);
+            var isImport = extension.Equals(".props", StringComparison.OrdinalIgnoreCase) ||
+                           extension.Equals(".targets", StringComparison.OrdinalIgnoreCase);
+            if (!isProject && !isImport)
+            {
+                continue;
+            }
+
+            List<string> declared;
+            try
+            {
+                declared = XDocument.Parse(File.ReadAllText(file))
+                    .Descendants()
+                    .Where(e => e.Name.LocalName == "GenerateDocumentationFile")
+                    .Select(e => e.Value.Trim())
+                    .ToList();
+            }
+            catch (System.Xml.XmlException)
+            {
+                observed[Relative(file)] = "UNPARSEABLE";
+                continue;
+            }
+
+            if (declared.Count == 0)
+            {
+                if (isProject)
                 {
-                    var declared = XDocument.Parse(File.ReadAllText(f))
-                        .Descendants()
-                        .Where(e => e.Name.LocalName == "GenerateDocumentationFile")
-                        .Select(e => e.Value.Trim())
-                        .ToList();
-                    return declared.Count == 0
-                        ? "off"
-                        : (declared.All(v => v.Equals("true", StringComparison.OrdinalIgnoreCase)) ? "on" : "off:" + string.Join("/", declared));
-                },
-                StringComparer.Ordinal);
+                    observed[Relative(file)] = "off";
+                }
+
+                continue;
+            }
+
+            observed[Relative(file)] = declared.All(v => v.Equals("true", StringComparison.OrdinalIgnoreCase))
+                ? (isProject ? "on" : "import-declares:true")
+                : (isProject ? "off:" + string.Join("/", declared) : "import-declares:" + string.Join("/", declared));
+        }
+
+        return observed;
     }
 
     // ══ THE ASSERTIONS ═══════════════════════════════════════════════════════════════════════════════════
 
-    /// <summary>The corpus guard. Named first because everything below is vacuous without it.</summary>
+    /// <summary>The corpus guard. Named first because everything below is vacuous without it.
+    /// <para>🔴 RENAMED WITHIN THIS BRANCH, and recorded rather than done quietly, because a member name is a
+    /// published string (P-2). It was
+    /// <c>TheCensusReachesItsCorpus_AndTheVendoredFilesAncestorChain</c> at <c>116d8bdb</c>. The old name was
+    /// TRUE of the old scan and is exactly what made the old scan wrong: there are TWO chains that reach this
+    /// solution, and naming one of them is how the other went unwatched.</para></summary>
     [Fact]
-    public void TheCensusReachesItsCorpus_AndTheVendoredFilesAncestorChain()
+    public void TheCensusReachesItsCorpus_AndBothAncestorChainsThatReachThisSolution()
     {
         var scanned = ScannedFiles();
         Assert.True(
@@ -476,18 +565,26 @@ public sealed class SuppressionCensusTests
         var vendored = VendoredSdkFile();
         Assert.True(File.Exists(vendored), $"{vendored} — named by St4i.EdgeCore.csproj's Compile Include, absent on disk.");
 
-        var chain = VendoredFileAncestorChain();
+        var chains = AncestorChainsReachingThisSolution()
+            .Select(d => d.TrimEnd(Path.DirectorySeparatorChar))
+            .ToList();
         Assert.True(
-            chain.Count >= 4,
-            "The vendored file's ancestor chain up to the repository root has only " + chain.Count +
-            " director(ies): " + string.Join(", ", chain) + ". It was written when that chain ran " +
-            "examples/device-client/csharp -> examples/device-client -> examples -> repository root. A shorter " +
-            "chain means the file moved INTO the product tree or the root walk stopped early; either way the " +
-            "directory an exempting .editorconfig would be planted in is no longer being watched.");
-        Assert.Contains(RepositoryRoot(), chain);
-        Assert.DoesNotContain(
-            BuildOutputProbe.MachineSimulatorRoot(),
-            chain.Select(d => d.TrimEnd(Path.DirectorySeparatorChar)).ToList());
+            chains.Count >= 5,
+            "The two ancestor chains reaching this solution hold only " + chains.Count + " distinct " +
+            "director(ies): " + string.Join(", ", chains) + ". They were written when the union ran " +
+            "examples/device-client/csharp -> examples/device-client -> examples -> repository root, PLUS " +
+            "tools/machine-simulator -> tools -> repository root. A shorter union means a walk stopped early " +
+            "or a population moved, and every directory that drops out is a place an exempting .editorconfig " +
+            "could sit unwatched.");
+
+        // 🔴 The three links this file exists to watch, asserted by NAME rather than left to the count above:
+        // the directory holding the vendored file, the PRODUCT TREE'S PARENT (the link branch review found
+        // missing, and the one that reaches all fifteen projects), and the repository root that bounds both.
+        Assert.Contains(Path.GetDirectoryName(vendored)!.TrimEnd(Path.DirectorySeparatorChar), chains);
+        Assert.Contains(
+            Directory.GetParent(BuildOutputProbe.MachineSimulatorRoot())!.FullName.TrimEnd(Path.DirectorySeparatorChar),
+            chains);
+        Assert.Contains(RepositoryRoot().TrimEnd(Path.DirectorySeparatorChar), chains);
     }
 
     /// <summary>🔴 The assertion this task exists to install. Adding ANY override anywhere this scan reaches
@@ -511,10 +608,16 @@ public sealed class SuppressionCensusTests
     }
 
     /// <summary>🔴 The population whose remedy is a FILE rather than a line, kept separate because the
-    /// narrowest override item 12 records can only arrive as one — and can only be planted OUTSIDE
-    /// tools/machine-simulator, where nothing else in this repository looks.</summary>
+    /// narrowest override item 12 records can only arrive as one — and can be planted OUTSIDE
+    /// tools/machine-simulator, where nothing else in this repository looks.
+    /// <para>🔴 RENAMED WITHIN THIS BRANCH and recorded rather than done quietly, because a member name is a
+    /// published string (P-2). It was
+    /// <c>TheEnumerationOfAnalyzerConfigFilesThatWouldReachTheVendoredFile_IsExactlyThis</c> at
+    /// <c>116d8bdb</c>. The old name described the old domain accurately, and the old domain was one
+    /// directory short: a config reaching OUR 543 rather than THEIR 103 was outside both the name and the
+    /// scan.</para></summary>
     [Fact]
-    public void TheEnumerationOfAnalyzerConfigFilesThatWouldReachTheVendoredFile_IsExactlyThis()
+    public void TheEnumerationOfAnalyzerConfigFilesThatWouldReachThisSolution_IsExactlyThis()
     {
         var observed = ObservedAnalyzerConfigFiles();
 
@@ -522,12 +625,16 @@ public sealed class SuppressionCensusTests
             observed.Count == ExpectedAnalyzerConfigFiles.Count &&
             observed.All(kv => ExpectedAnalyzerConfigFiles.TryGetValue(kv.Key, out var e) && e == kv.Value),
             "The analyzer-config census moved. An .editorconfig or .globalconfig appeared, vanished or " +
-            "changed size somewhere in the product tree or on the vendored SDK file's ancestor chain.\n" +
-            "  MEASURED (Directory.Build.props records the three placements and one build each): a severity " +
-            "section at the repository root, at examples/, or beside the vendored file itself all reach it, " +
-            "because analyzer-config discovery walks the SOURCE FILE's ancestors and not the project's. " +
-            "Beside the file, naming both its documentation codes, is a perfect exemption of the 103 warnings " +
-            "item 12 exists to keep NAMED.\n" +
+            "changed size in the product tree, or on EITHER ancestor chain that reaches this solution.\n" +
+            "  MEASURED (Directory.Build.props records three placements, one build each): a severity section " +
+            "at the repository root, at examples/, or beside the vendored file itself all reach it, because " +
+            "analyzer-config discovery walks the SOURCE FILE's ancestors and not the project's. Beside that " +
+            "file, naming both its documentation codes, is a perfect exemption of the 103 warnings item 12 " +
+            "exists to keep NAMED.\n" +
+            "  AND THE OTHER CHAIN IS THE ONE THAT REACHES US: the product tree's own parent is an ancestor " +
+            "of every source file of all fifteen projects, so a section there silences OUR population — the " +
+            "543 that stages 4..8 exist to pay — while moving no warning count today. That directory was " +
+            "outside this scan until branch review named it.\n" +
             "  A style-only config is a legitimate thing to want. Add its row here and say in the commit that " +
             "it carries no dotnet_diagnostic severity — do not delete this assertion.\n" +
             "OBSERVED:\n" + Render(observed));
@@ -551,6 +658,10 @@ public sealed class SuppressionCensusTests
             "the tree goes to 852 warnings, of which 103 sit in the vendored SDK file nobody may edit. It " +
             "must arrive with the origin-split ledger in scripts/verify-suites.sh moved in the same commit, " +
             "and with no override of any kind.\n" +
+            "  an `import-declares:` row is a .props or .targets file declaring the switch for EVERY project " +
+            "under it at once. Directory.Build.targets is imported AFTER the project body, so `false` there " +
+            "BEATS all fifteen csproj rows above while moving no warning count at all — that is the same " +
+            "inverse hole as the first line, wearing a different spelling.\n" +
             "  a NEW project appearing/vanishing is neither, and needs its own row.\n" +
             "OBSERVED:\n" + Render(observed));
     }
@@ -581,7 +692,16 @@ public sealed class SuppressionCensusTests
         Assert.True(IsSuppressAttributeLine(attr));
         Assert.True(IsSuppressAttributeLine("    [System.Diagnostics.CodeAnalysis." + "Suppress" + "Message(\"x\", \"CS1591\")]"));
         Assert.True(IsSuppressAttributeLine("[Unconditional" + "Suppress" + "Message(\"x\", \"IL2026\")]"));
+        // 🔴 THE FOUR SPELLINGS THE FIRST REVISION OF THIS CONTROL DID NOT TRY, AND THE PATTERN COULD NOT
+        //    SEE. The first two are what Visual Studio writes into GlobalSuppressions.cs; a control that
+        //    omits the tooling's own output certifies a detector that is blind where it will actually be
+        //    used. Found by branch review.
+        Assert.True(IsSuppressAttributeLine("[assembly: " + "Suppress" + "Message(\"x\", \"xUnit1013\")]"));
+        Assert.True(IsSuppressAttributeLine("[assembly: System.Diagnostics.CodeAnalysis." + "Suppress" + "Message(\"x\", \"xUnit2029\")]"));
+        Assert.True(IsSuppressAttributeLine("[module: " + "Suppress" + "Message(\"x\", \"xUnit1013\")]"));
+        Assert.True(IsSuppressAttributeLine("[" + "Suppress" + "MessageAttribute(\"x\", \"xUnit1013\")]"));
         Assert.False(IsSuppressAttributeLine("// prose naming the " + "Suppress" + "Message attribute without applying it"));
+        Assert.False(IsSuppressAttributeLine("[Obsolete(\"not this one\")]"));
 
         // ── MSBuild, parsed as XML so a commented-out element is not a finding. Both spellings below appear
         //    inside XML comments in Directory.Build.props, which is why this matters and is not pedantry.

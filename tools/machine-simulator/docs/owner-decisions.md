@@ -1023,7 +1023,7 @@ mới không chú thích. Sổ tách đôi đóng chỗ mù ấy.)*
 | đợt | làm gì | `EXPECT_WARNINGS` |
 |---|---|---:|
 | **1** *(xong)* | ĐO. Không đổi một dòng thực thi. | 116 |
-| **2** | **Cài sổ theo mã, cờ VẪN TẮT** — nâng phép kiểm đếm theo mã mà `verify-suites.sh` đã tính-mà-chỉ-in lên thành khẳng định, kèm cặp chứng âm/dương ở §4. Sửa luôn con số 237 còn sót ở `verify-suites.sh` và `Directory.Build.props`. | 116 |
+| **2** | 🔴 **[«Cài sổ theo mã» RÚT 2026-08-19 bởi AE-1 — sai, xem §7 ngay dưới bảng này; ô giữ nguyên văn làm hồ sơ]** **Cài sổ theo mã, cờ VẪN TẮT** — nâng phép kiểm đếm theo mã mà `verify-suites.sh` đã tính-mà-chỉ-in lên thành khẳng định, kèm cặp chứng âm/dương ở §4. Sửa luôn con số 237 còn sót ở `verify-suites.sh` và `Directory.Build.props`. | 116 |
 | **3** | **THI HÀNH: bật cờ, không một lệnh đè nào.** Tách sổ, ghim riêng 103 vendored. | **852** (đo lại) |
 | **4** | Trả **nhóm A**: 101 khẳng định SAI, 29 file. | đo lại |
 | **5–8** | Trả **nhóm B** theo cụm file: hai file mô hình lớn (71 + 64) → `Config/*` → `Drivers/*` → phần còn lại. | đo lại; đích **219** |
@@ -1046,8 +1046,13 @@ harvest WiX quyết định, và AD-1 **không đo** — brief cấm dựng MSI,
 **Cờ vẫn TẮT. Không một cảnh báo nào được trả. Không một lệnh đè nào được thêm.** Mục này **ở lại
 Phần II**; đây là phép đo, không phải ghi chép thi hành.
 
-🔴 **Ô "đợt 2" trong bảng §5 nói *"Cài sổ theo mã"*. Câu ấy được RÚT tại chỗ, 2026-08-19, bởi AE-1,
-vì nó SAI và sai ngay hôm nay** — giữ nguyên văn ở trên làm hồ sơ, đúng kiểu file này đã lập:
+🔴 **Ô "đợt 2" trong bảng §5 nói *"Cài sổ theo mã"*. Câu ấy được RÚT — dấu rút đặt TRONG chính ô ấy,
+lý do ở đây — 2026-08-19, bởi AE-1, vì nó SAI và sai ngay hôm nay** — giữ nguyên văn trong ô làm hồ
+sơ, đúng kiểu file này đã lập.
+
+*(Bản đầu của câu này viết "RÚT **tại chỗ**" trong khi ô bảng **không mang dấu rút nào** và phép rút
+nằm cách 23 dòng — phản biện bắt được, và nó là artefact **duy nhất** trong đợt này mà lời không
+khớp việc. Nay dấu rút thật sự ở trong ô.)*
 
 * **Trục MÃ không tách được hai quần thể.** Đo tại `3b773e11`: **CS8601 đứng 2 trong file vendored
   và 7 trong mã của ta; CS8604 đứng 1 và 14.** Một cuốn sổ theo mã **triệt tiêu được ngay hôm nay**.
@@ -1083,8 +1088,10 @@ canh: tắt công tắc trên một trong bảy **gỡ một khẳng định và
 ours**, bucket vendored nhận **đúng 103 cái không ai trả được**.
 
 🔴 **Một con số của mục này đã trôi, và đúng một:** *"237 toàn cây"* → **239** (đã rút ở lựa chọn (c)
-bởi AD-1). AE-1 tái lập nó tại `3b773e11` và rút thêm **bốn** bản sao còn sót trong
-`scripts/verify-suites.sh` và `Directory.Build.props` — đợt 1 kê **ba**, có **năm**. Mọi con số khác
+bởi AD-1). AE-1 tái lập nó tại `3b773e11` và rút **năm** dấu — `verify-suites.sh` hai chỗ,
+`Directory.Build.props` ba chỗ; đợt 1 kê **ba**. 🔴 *(Bản đầu của câu này viết "**bốn**" trong khi
+phép liệt kê ngay bên nó có năm hàng. Phản biện bắt được, và nó là **đúng khuyết tật câu này đang tố
+cáo**, lệch một ô: liệt kê trước, con số viết sau.)* Mọi con số khác
 của mục này (`852` theo số học, `736`, `543`/`532`, `103`, `82`, `633`, `101`) **không trôi**. Và
 điều đáng chú ý hơn con số: **con số duy nhất đã dịch là con số duy nhất không có khẳng định nào
 canh.**
