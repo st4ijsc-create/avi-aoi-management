@@ -276,9 +276,15 @@ public static class HistorianEndpoints
     /// against each other. Two machines are comparable here only because they were computed by the same
     /// formula in the same call — and since that formula is unversioned, a row copied out of this list and
     /// compared against a number captured on another date is NOT known to be comparable, and nothing in
-    /// either number says so. A machine whose drivers ship cycles under a reading kind other than
-    /// <c>ProcessResult</c> also appears here with all-zero counts, which is indistinguishable from a
-    /// machine that simply ran nothing in the window.</para></summary>
+    /// either number says so.</para>
+    ///
+    /// <para>🔴 <b>An all-zero row here has at least THREE causes and the row does not say which.</b> The
+    /// machine ran nothing in the window; or its drivers ship cycles under a reading kind other than
+    /// <c>ProcessResult</c>, which the counts skip entirely; or — the common one on a SIMULATOR — every
+    /// row it wrote is recorded as FABRICATED, which the provenance filter excludes from both counts
+    /// unless the caller passes <c>includeFabricated=true</c> or the install is in demo mode. A fleet list
+    /// read column-wise makes those three look identical. See <see cref="OeeResultDto"/> for both filters
+    /// stated in full.</para></summary>
     internal static async Task<IResult> GetOeeFleetAsync(
         string? from, string? to, IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct,
         bool? includeFabricated = null, DemoModeGate? demoGate = null)
@@ -696,6 +702,15 @@ public static class HistorianEndpoints
     /// breakdown's <c>Pass</c> and <c>Warn</c> rows therefore does not in general reproduce
     /// <c>Good Count</c>, and its <c>Skip</c> row counts cycles that are in neither OEE number. The two are
     /// allowed, and expected, to differ — see this class's own doc comment.</para>
+    ///
+    /// <para>🔴 <b>And a printed OEE block of all zeros is not "the machine ran nothing".</b> Both counts
+    /// also pass a PROVENANCE filter that, by default, excludes every row recorded as fabricated —
+    /// simulated or demo data — unless the request asked for it or the install is in demo mode. On this
+    /// product, which is a simulator, that filter is the ordinary reason a report prints zeros. It reaches
+    /// the Verdict Breakdown too: <see cref="GetReportPdfAsync"/> resolves the flag ONCE and hands the same
+    /// value to both queries, so the two tables go empty together and neither one's emptiness explains the
+    /// other's. The reading-kind filter is where the two genuinely differ. See <see cref="OeeResultDto"/>
+    /// for both filters in full.</para>
     ///
     /// <para>🔴 <b>AND THE PRINTED NUMBER CARRIES NO FORMULA VERSION.</b> This document records the machine
     /// and the period and nothing about the definition that produced the percentages, so a PDF filed today

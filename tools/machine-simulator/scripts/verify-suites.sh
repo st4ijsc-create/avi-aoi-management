@@ -1421,27 +1421,31 @@ EXPECT_CONFORMANCE=24
 # WaveformSeries/Verdict/OeeResultDto/GetOeeFleetAsync/BuildReportPdf, and docs/owner-decisions.md.
 #
 #   tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs   (owner item 4, the witness)      +4
-#       The decision of 2026-08-16 says `RateHz` is the DISCRIMINATOR for a `WaveformSeries.Samples` row
-#       and that both built-in producers already honour it, then asks for a witness "so it does not drift
-#       back". Nothing pinned it: every `RateHz` use in tests/ was round-trip serialization, which asserts
-#       a value SURVIVES and never that it CORRELATES with a row shape.
-#       EveryWaveformTheBuiltInSimulatorsEmit_ObeysTheRateHzRowShapeRule_AndBothArmsAreExercised     +1
-#           Swept over ALL EIGHT built-in simulators rather than the two known producers, so a THIRD
-#           producer is covered the day it appears. Two FLOORS stop it passing vacuously: a tree emitting
-#           no rated series, or no untimed series, fails here instead of reporting a clean sweep of nothing.
-#       TheTwoBuiltInProducers_SitOnOppositeArmsOfTheRule_AndElementZeroIsAnAngleNotATime            +1
-#           The producers named individually, because the owner's claim is about THEM and a green sweep is
-#           not that claim. It also pins the SEMANTIC half: on the rated arm the sample count over the rate
-#           reproduces this same reading's own weld_time, and on the untimed arm element 0 rises to this
-#           same reading's own angle metric — so element 0 is demonstrably an ANGLE and not a time.
-#       TheRowShapeCheck_GoesRedOnEveryWayTheRuleCanBreak                                            +1
-#       TheRowShapeCheck_GoesRedOnARealProducersOwnSeries_WhenOnlyTheDiscriminatorMoves              +1
-#           §8.1(h6), two banks. The first drives the predicate with hand-built series covering every break
-#           (a pair on the rated arm, a scalar/triple/empty row on the untimed arm, a ragged series whose
-#           FIRST rows comply, and the exact shape the vendored SDK's own worked examples send). The second
-#           drives the same predicate with the producers' REAL rows and moves nothing but the discriminator:
-#           the identical rows are legal on one arm and illegal on the other, which is what "RateHz is the
-#           discriminator" means operationally.
+#       Owner item 4 asked for a witness "so it does not drift back". Nothing pinned anything: every
+#       `RateHz` use in tests/ was round-trip serialization, which asserts a value SURVIVES and never that
+#       it CORRELATES with a row shape. What the four facts pin is the row shape THIS PRODUCT'S TWO
+#       PRODUCERS EMIT — a measured fact — and NOT which row shape is canonical, which is open owner item
+#       14 (see the retraction block below).
+#       EveryWaveformTheBuiltInSimulatorsEmit_MatchesTheRowShapeThoseProducersUse_AndBothArmsAreExercised +1
+#           Swept over all eight built-in simulators. Two FLOORS: a tree emitting no rated series, or no
+#           untimed series, fails here instead of reporting a clean sweep of nothing. The floors count
+#           SERIES that touched each arm, not rows inspected — stated precisely because they are weaker
+#           than a row census (a series with an empty Samples list passes a floor and contributes no
+#           inspected row); what actually forecloses a vacuous pass is the next fact.
+#       TheTwoBuiltInProducers_SitOnOppositeSidesOfTheRateHzSplit_AndElementZeroIsAnAngleNotATime    +1
+#           The producers named individually, each pinned to a concrete number out of the SAME reading: on
+#           the rated side the sample count over the rate reproduces that reading's own weld_time, and on
+#           the untimed side element 0 rises to that reading's own angle metric — so element 0 is
+#           demonstrably an ANGLE and not a time.
+#       TheRowShapeCheck_GoesRedOnEveryDeviationFromTheProducersShape                                +1
+#       TheRowShapeCheck_GoesRedOnARealProducersOwnSeries_WhenOnlyTheRateHzFieldMoves                +1
+#           §8.1(h6), two banks. 🔴 SAY IT PLAINLY RATHER THAN LET THE LIST IMPLY OTHERWISE: the FIRST of
+#           these two is a test of TEST CODE. It drives a private predicate in its own file with data it
+#           builds itself, so NO product change can redden it — which is exactly why it stayed green on
+#           both control arms below. It is a legitimate bank-one control and it is NOT an assertion about
+#           the product; only three of these +4 are. The second bank drives the same predicate with the
+#           producers' REAL rows and moves nothing but the RateHz field: the identical rows sit on one side
+#           of the split or the other with not one sample touched.
 #
 # 🔴 THE CONTROL PAIR, RUN ON BOTH ARMS AGAINST THE PRODUCT AND RECORDED AS OUTCOMES. The witness file is
 # identical on every arm; only src/ moves, and both mutations were reverted (`git status` clean on both
@@ -1449,10 +1453,28 @@ EXPECT_CONFORMANCE=24
 #   HEAD (both simulators as shipped) — Failed: 0, Passed: 4.
 #   DIRTY 1: WelderSim emits `[t, current]` while still setting RateHz — Failed: 3, Passed: 1.
 #   DIRTY 2: ScrewdriveSim keeps its `[angle, torque]` rows and claims RateHz = 500 — Failed: 3, Passed: 1.
-#       This second arm is not hypothetical: it is exactly the shape the vendored device-client SDK's own
-#       screwdriver examples publish, reproduced inside the product.
-# The ONE test green on every arm is TheRowShapeCheck_GoesRedOnEveryWayTheRuleCanBreak, and that is the
-# right result rather than a weak test: it measures the PREDICATE, which neither mutation touches.
+# The ONE test green on every arm is the bank-one control named above, and that is the right result rather
+# than a weak test: it measures the PREDICATE, which neither mutation touches.
+#
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 AA-1 REVIEW ROUND 1 — THIS BLOCK MOVES NO TOTAL (still 1147) AND RETRACTS TWO CLAIMS IT PUBLISHED.
+# Kept verbatim rather than rewritten, because they were shipped and read:
+#   * "Swept over ALL EIGHT built-in simulators rather than the two known producers, so a THIRD producer
+#     is covered the day it appears." — an OVERCLAIM. BuiltInSimulators() is a HAND-WRITTEN list of the
+#     eight classes that exist today; a NINTH simulator class would not be swept and nothing anywhere
+#     would say so (there is no reflection census of SimulatorBase in this suite). True narrower claim:
+#     if one of the eight LISTED simulators starts emitting a waveform, it is swept.
+#   * "the exact shape the vendored device-client SDK's own worked examples send" / "This second arm is
+#     not hypothetical: it is exactly the shape the vendored device-client SDK's own screwdriver examples
+#     publish." — the framing was that those examples are wrong. They are not: they match the platform's
+#     own published feed specification and its runtime ingest validator, which require exactly two numbers
+#     per row with rateHz an independent optional field. The assertion that reused that example's own
+#     figures has been REMOVED from the first bank rather than reworded — a test is the worst place to
+#     settle a question nobody has decided.
+# The four [Fact] names above changed with them (the old names asserted "the Rule"). A member name is a
+# published string, so the rename is recorded here rather than done quietly. THE TOTAL DOES NOT MOVE:
+# four facts before, four after, none added, none split, none deleted.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
 #
 # EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0 — measured on a full `dotnet build -t:Rebuild`
 # of the whole solution AFTER the change, never on an incremental build, because an incremental build only

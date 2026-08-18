@@ -39,59 +39,69 @@ public record MetricSample(string Name, double Value, string? Unit = null, doubl
 /// converts the values themselves. 🔴 It says nothing about the FIRST element of a two-element row: the
 /// built-in <c>torque_vs_angle</c> series carries <c>Nm</c> here while its first element is an angle in
 /// degrees, and this type has no field that carries that unit. A consumer that needs it must obtain it
-/// from the series <paramref name="Name"/> or from outside this contract.</param>
+/// from the series <paramref name="Name"/> or from outside this contract. This one is NOT in dispute
+/// between the two conventions described under <paramref name="Samples"/>: the platform's own feed
+/// specification defines the same field as the unit of the VALUE axis, arrived at there independently of
+/// the derivation from <c>torque_vs_angle</c> above.</param>
 /// <param name="RateHz">The sampling rate in hertz, or <see langword="null"/> for a series that is not
-/// sampled against a uniform time base. 🔴 It is also the DISCRIMINATOR for the shape of a
-/// <paramref name="Samples"/> row — whether it is set is what a consumer reads FIRST, before touching a
-/// row. See <paramref name="Samples"/> for the rule.</param>
+/// sampled against a uniform time base. 🔴 Whether it ALSO determines how many elements a
+/// <paramref name="Samples"/> row holds is an open owner decision — see that parameter, which states both
+/// published conventions and names the one that is enforced at runtime. RETRACTED 2026-08-18 (task AA-1,
+/// review round 1), kept verbatim: <c>"It is also the DISCRIMINATOR for the shape of a Samples row —
+/// whether it is set is what a consumer reads FIRST, before touching a row."</c></param>
 /// <param name="Samples">The sample rows, passed to the wire unchanged.
 ///
-/// <para>🔴 <b>THE ROW-SHAPE RULE, discriminated by <paramref name="RateHz"/>.</b> A row is a
-/// <see langword="double"/>[] and its LENGTH is fixed by whether <paramref name="RateHz"/> is set:
-/// <list type="bullet">
-///   <item><description><b><paramref name="RateHz"/> is set</b> — the series has a uniform time base, so
-///   the time axis is IMPLICIT and is not carried in the rows. Every row then holds <b>exactly one</b>
-///   element: the measured value, in <paramref name="Unit"/>. The row at index <c>i</c> is the sample at
-///   <c>i / RateHz</c> seconds from the start of the series.</description></item>
-///   <item><description><b><paramref name="RateHz"/> is null</b> — there is no uniform time base, so each
-///   row must carry its own X. Every row then holds <b>exactly two</b> elements, <c>[x, y]</c>: element 0
-///   is the series' own independent variable and is <b>not</b> a time, element 1 is the measured value in
-///   <paramref name="Unit"/>.</description></item>
-/// </list>
-/// Any other row is outside this contract — three elements, no elements, one element on a null-rate
-/// series, two elements on a rated one. An empty <paramref name="Samples"/> list satisfies the rule
-/// vacuously, because the rule is stated per row.</para>
+/// <para>🔴 <b>TWO PUBLISHED CONVENTIONS DISAGREE ABOUT A ROW'S LENGTH, ONE OF THEM IS ENFORCED AT
+/// RUNTIME, AND WHICH IS CANONICAL IS AN OPEN OWNER DECISION — <c>docs/owner-decisions.md</c> item 14,
+/// opened 2026-08-18 and NOT decided.</b> This parameter states what is MEASURED on each side and
+/// deliberately picks neither. Read both before writing a driver.</para>
 ///
-/// <para><b>What it buys a consumer, and it is the point of writing it down:</b> from
-/// <paramref name="RateHz"/> alone, before reading a single row, a consumer knows whether it must
-/// RECONSTRUCT the X axis from the row index or READ it out of element 0 — and knows that on the
-/// null-rate arm element 0 is not a timestamp. Neither was decidable from this type before.</para>
-///
-/// <para><b>The two built-in producers, which is where the rule was measured rather than chosen.</b> The
+/// <para><b>(A) What this product's two built-in producers do — measured, and not in dispute.</b> The
 /// <c>weld_current</c> series (welder simulator) computes a rate from the weld duration, so
-/// <paramref name="RateHz"/> is always set, and emits one-element <c>[current]</c> rows. The
+/// <paramref name="RateHz"/> is always set, and emits <b>one-element</b> <c>[current]</c> rows, leaving
+/// the time axis implicit — row <c>i</c> is the sample at <c>i / RateHz</c> seconds. The
 /// <c>torque_vs_angle</c> series (screwdriver simulator) passes <see langword="null"/> for
-/// <paramref name="RateHz"/> and emits two-element <c>[angle, torque]</c> rows, where the angle is a
-/// tightening angle in degrees and not a time.</para>
+/// <paramref name="RateHz"/> and emits <b>two-element</b> <c>[angle, torque]</c> rows, where element 0 is
+/// a tightening angle in degrees and not a time. Those two are consistent with each other, and
+/// <c>WaveformSeriesRowShapeContractTests</c> holds them there. An empty <paramref name="Samples"/> list
+/// says nothing either way.</para>
 ///
-/// <para>🔴 <b>KNOWN WRONG, and named because a driver author reads it first: the reference device-client
-/// SDK shipped alongside this product.</b> Its C# and its Python client both document this same wire field
-/// as <c>[[t,v],…]</c>, and its worked screwdriver examples (C#, Python, and the SDK README) all send
-/// two-element rows WITH <c>rateHz</c> set — a combination the rule above does not define — whose first
-/// element is a tightening ANGLE rather than a time. That is a defect in those published files, not a
-/// second convention: this repository does not edit them, and the rule above is the one to read. The
-/// sentence this parameter USED to close with is kept verbatim so that a reader who wrote code against it
-/// sees it retired rather than silently replaced — RETIRED 2026-08-18 by owner decision of 2026-08-16
-/// (<c>docs/owner-decisions.md</c> item 4): <c>"A consumer must therefore not assume a row shape from this
-/// type alone."</c> There is a row shape, it is the rule above, and both producers already honour it.</para>
+/// <para><b>(B) What the platform this product ships onto requires — measured, and ENFORCED.</b> The
+/// ingest route a normalized reading reaches validates <c>samples</c> as an array of <b>exactly two</b>
+/// numbers per row, with <c>rateHz</c> a separate OPTIONAL field describing whether sampling was uniform
+/// rather than discriminating anything. The published feed specification agrees and states that element 0
+/// is the abscissa <b>whether it is a time in seconds or an angle in degrees</b>; its canonical example
+/// carries <c>rateHz</c> AND two-element rows together. On that convention <c>torque_vs_angle</c> is
+/// valid and the one-element <c>weld_current</c> row is <b>not a shape that route accepts</b>.</para>
 ///
-/// <para><b>NOTHING ENFORCES IT, and that is a property of the rule rather than a caveat about it.</b>
-/// This type accepts any <see langword="double"/>[]; the normalizer copies rows to the wire unchanged; the
-/// conformance harness compares rows element by element without ever asking a row's length; and no reader
-/// in this repository indexes an element of a row at all. So the rule binds a PRODUCER by contract, not by
-/// construction, and a violating row is carried rather than rejected. What holds the two built-in
-/// producers to it is a standing assertion, <c>WaveformSeriesRowShapeContractTests</c>, which also refuses
-/// to pass when neither arm of the rule is exercised.</para></param>
+/// <para>🔴 <b>THREE SENTENCES PUBLISHED HERE ON 2026-08-18 ARE RETRACTED, kept verbatim so a reader who
+/// wrote code against them sees them withdrawn rather than silently replaced.</b> All three came from a
+/// measurement that stopped at this product's own producers and never reached the consumer at the far end
+/// of the wire. RETRACTED 2026-08-18, task AA-1, review round 1:
+/// <list type="bullet">
+///   <item><description><c>"Any other row is outside this contract — three elements, no elements, one
+///   element on a null-rate series, two elements on a rated one."</c> — the last of those four is the
+///   shape the ingest route REQUIRES.</description></item>
+///   <item><description><c>"That is a defect in those published files, not a second convention."</c> —
+///   there IS a second convention; it is specified, documented and runtime-enforced, and the reference
+///   SDK's examples match it rather than diverge from it.</description></item>
+///   <item><description><c>"no reader in this repository indexes an element of a row at all"</c> — the
+///   ingest validator does something stronger than indexing: it destructures a fixed two-element tuple,
+///   and it rejects what does not fit.</description></item>
+/// </list></para>
+///
+/// <para><b>What a consumer may rely on TODAY, stated narrowly because that is all that is measured.</b>
+/// Inside this assembly's own process nothing constrains a row: this type accepts any
+/// <see langword="double"/>[], the normalizer copies rows to the wire unchanged, and the conformance
+/// harness compares rows whole rather than asking their length. Past the wire the two-number rule applies
+/// and this type cannot negotiate it. <paramref name="RateHz"/> may be read as a statement about the
+/// UNIFORMITY of sampling; whether it also determines a row's length is precisely what item 14 must
+/// settle.</para>
+///
+/// <para>The sentence this parameter closed with BEFORE 2026-08-18 is kept verbatim too, because the
+/// grounds on which it was retired are themselves now in question and item 14 reopens them — RETIRED
+/// 2026-08-18 by owner decision of 2026-08-16 (<c>docs/owner-decisions.md</c> item 4): <c>"A consumer
+/// must therefore not assume a row shape from this type alone."</c></para></param>
 public record WaveformSeries(string Name, string? Unit, double? RateHz, IReadOnlyList<double[]> Samples);
 
 /// <summary>

@@ -32,7 +32,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 1 | ghi đè im lặng | 🔨 **SỬA** — ~~gộp với 5–7~~ **(nhóm ấy SAI, xem §5–7)**; đã thi hành, Q-1 |
 | 2 | `Warn` tốt cho OEE | ✅ **GIỮ HÀNH VI, XUẤT BẢN NÓ** — đổi là viết lại lịch sử; đã thi hành, AA-1 (2026-08-18) |
 | 3 | bất đối xứng Sparkplug | ✅ **GIỮ DÂY, ĐÃ GHI RÕ** — đổi payload là việc của bên đăng ký; đã thi hành, N-2 |
-| 4 | hình dạng hàng `Samples` | ✅ **`RateHz` LÀ BỘ PHÂN BIỆT** (2026-08-16) — ô này ghi *"⚖️ ĐO TRƯỚC, RỒI CHỌN — SDK đã xuất bản là ứng viên chuẩn"* cho tới 2026-08-18, **RÚT: dòng phán quyết của §4 nói NGƯỢC LẠI** — nhận `[[t,v]]` làm chuẩn sẽ phá cả hai bộ sinh; đã thi hành, AA-1 |
+| 4 | hình dạng hàng `Samples` | ✅ **`RateHz` LÀ BỘ PHÂN BIỆT** (2026-08-16); văn xuôi đã thi hành, AA-1 — 🔴 **tiền đề của phán quyết nay bị BÁC: xem mục 14.** Hai câu trước của ô này giữ nguyên văn, không xoá: (i) tới 2026-08-18 ô ghi *"⚖️ ĐO TRƯỚC, RỒI CHỌN — SDK đã xuất bản là ứng viên chuẩn; **việc còn nợ** (2026-08-18)"*; (ii) AA-1 **rút** câu ấy với lý do *"dòng phán quyết của §4 nói NGƯỢC LẠI — nhận `[[t,v]]` làm chuẩn sẽ phá cả hai bộ sinh"*. 🔴 **Phép rút (ii) nay BỊ RÚT LẠI** (AA-1 vòng phản biện 1): đo tiếp cho thấy câu (i) **đúng** — đặc tả đã xuất bản là ứng viên chuẩn, và là ứng viên **duy nhất có bộ cưỡng chế lúc chạy**. **Không câu nào được coi là thắng** cho tới khi mục 14 được quyết |
 | 5 | ~~ba hình dạng xoá file~~ → **`oee-settings.json`** | 🔨 **GOM VỀ MỘT LUẬT** (2026-08-17) — đã thi hành, V-1 |
 | 6 | log hoãn của một lần cài đặt hỏng | 🔨 **PHÁT RA TRÊN ĐƯỜNG NÉM LỖI** (2026-08-17) — đã thi hành, T-1 |
 | 7 | nửa sau của S4 | 🔨 **DỪNG + GIỮ COMMIT + BÁO TRÊN `/v1/health`** (2026-08-17) — đã thi hành, U-1 |
@@ -42,6 +42,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); đã thi hành, Z-1 |
 | 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng |
 | 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔴 **CHỜ ANH** — phần dư của mục 11, mở 2026-08-18 (Z-1, vòng sửa 1); **ca THÔNG THƯỜNG hơn** trong hai ca cùng hình dạng |
+| 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI** |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -55,12 +56,17 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 
 # 🔴 PHẦN I — ĐANG CHỜ ANH
 
-**Hai mục ở đây: mục 9 và mục 13.** Cả hai mang `🔴 CHỜ ANH` ở bảng phán quyết trên.
+**Ba mục ở đây: mục 9, mục 13 và mục 14.** Cả ba mang `🔴 CHỜ ANH` ở bảng phán quyết trên.
 
 > 🔴 **Câu này đọc *"Một mục ở đây, và chỉ một: mục 9"* cho tới 2026-08-18, và nó thành sai
 > ĐÚNG LÚC mục 13 được thêm — cùng nhiệm vụ, cùng ngày (phản biện I-2).** Giữ lại ở đây vì
 > đó là hình dạng mà file này bắt: một con số đếm một tập, viết ở một chỗ, trong khi tập
 > ấy đổi ở chỗ khác.
+>
+> 🔴 **Và nó thành sai LẦN THỨ HAI, cùng ngày, cùng cơ chế — AA-1 vòng phản biện 1 thêm mục
+> 14.** Câu *"Hai mục ở đây: mục 9 và mục 13"* giữ nguyên văn ở đây, **RÚT 2026-08-18**. Hai
+> lần trong một ngày là đủ để nói ra cái chung: **con số này đếm một tập mà bất kỳ vòng phản
+> biện nào cũng có thể nới**, nên nó phải được đọc cùng bảng phán quyết, không thay bảng.
 
 **Cho tới 2026-08-18 phần này có năm mục — 8, 9, 10, 11, 12.** Bốn trong số đó nay **đã
 được quyết**, và **ai quyết cái nào là một phần của hồ sơ, không được gộp lại**: mục
@@ -207,6 +213,113 @@ chiều và chỗ đảo chính là diff. Cùng chỗ: chú thích lớp của `
 
 ---
 
+## 14. Hai hợp đồng đã xuất bản nói ngược nhau về hình dạng một hàng `Samples`, MỘT trong hai được cưỡng chế lúc chạy, và bộ phát của chính sản phẩm này vi phạm nó
+
+**Mục này sinh ra từ bản thi hành của mục 4, đúng như mục 8 sinh ra từ mục 1, mục 10 từ mục 5, và
+mục 13 từ mục 11.** Nó được mở bởi **vòng phản biện 1 của AA-1 (2026-08-18)**, và nó là **điều kiện
+"dừng và báo" mà brief của mục 4 đã đặt ra, xảy ra thật** — chỉ không trên trục brief dự đoán:
+không phải **bộ sinh chống bộ sinh**, mà là **bộ sinh chống bộ TIÊU THỤ**.
+
+🔴 **KHÔNG AI ĐƯỢC QUYẾT ĐIỀU NÀY NGOÀI CHỦ SỞ HỮU, và lý do giống hệt mục 3 và mục 4:** nó đổi
+**hình dạng dữ liệu trên dây** mà **người ngoài tổ chức này đang dựa vào**. Uỷ quyền phủ được *"làm
+hay không làm"*, **không phủ được sự đồng ý của bên thứ ba**.
+
+### Đo được: hai quy ước, và chỉ một cái có bộ cưỡng chế
+
+**Quy ước A — của sản phẩm này** (`tools/machine-simulator`), suy từ hai bộ sinh:
+`RateHz` được đặt ⇒ hàng **một** phần tử, trục thời gian ngầm định; `RateHz` null ⇒ hàng **hai**
+phần tử `[x, y]`. `WelderSim.BuildCurrentWaveform` và `ScrewdriveSim.BuildTorqueAngleWaveform` là
+toàn bộ dân số, và cả hai theo nó. **Không gì cưỡng chế nó.**
+
+**Quy ước B — của nền tảng**, và nó **được cưỡng chế lúc chạy**:
+
+| chỗ | nó nói gì |
+|---|---|
+| `server/routers/machineApiRouters.ts` → `processWaveformSchema` — **bộ validate RUNTIME của route ingest** | `samples: z.array(z.tuple([z.number(), z.number()])).max(100_000)` — **mỗi hàng đúng HAI số**; `rateHz: z.number().positive().optional()` là một trường **độc lập**. Chú thích ngay trên: *"[t, value] pairs."* |
+| `server/contracts/machineDataContract.ts` → `processWaveformV1` | cùng `z.tuple` hai số; *"Chuỗi mẫu [ [t, v], … ] — cặp (thời điểm, giá trị). Cap khớp runtime."* |
+| `docs/ECOSYSTEM/57_ST4I_STANDARD_PROCESS_FEED_SPEC.md` §3.3 — **đặc tả dây đã xuất bản** | `samples` **bắt buộc**: *"Mảng cặp `[t, v]` — `t` = trục hoành (**thời gian giây / góc °**…), `v` = giá trị."* `rateHz`: *"Tần số lấy mẫu (Hz) **nếu đều nhau**"* — một **mô tả**, không phải bộ phân biệt. `unit`: *"Đơn vị của trục giá trị (`v`)"* |
+| cùng file §8.1 — **ví dụ chuẩn tắc** | `torque_vs_angle`, `rateHz: 500`, `samples: [[0,0.02],[90,0.15],…,[412,0.82]]` — và `412` là chính metric `angle` của payload ấy, tức **trục hoành là GÓC trong khi `rateHz` được đặt** |
+| `server/api/v1/openapi.ts` | `samples: array of array of number` — **không ràng buộc độ dài hàng** |
+| `client/src/components/apiDocs/AutomationProcessFeedSection.tsx` | trang API-docs công khai: `{ name, unit?, rateHz?, samples:[[t,v]] }` |
+| `server/contracts/machineDataContract.test.ts` | fixture: `rateHz: 1000` **kèm** hàng cặp |
+| `scripts/sim/screwdriver-emitter.mjs` | bộ phát chạy được: `rateHz: WAVE_RATE_HZ` **kèm** hàng cặp |
+| `docs/ECOSYSTEM/62_…_DESIGN_2026-07-18.md` §6 | `waveforms[]{name,unit,rateHz,samples[[t,v]]}` — 🔴 **chính tài liệu mà `WelderSim` tự trích trong doc comment lớp của nó** |
+
+**Chúng bất đồng ở đúng một chỗ, và chỗ ấy là nơi sản phẩm này đứng sai:** dưới quy ước B,
+`ScrewdriveSim` **hợp lệ** (nhờ `rateHz` là optional), còn `WelderSim` **không**.
+
+### Ở đâu: mắt xích đầy đủ, nêu tên từng cái
+
+`WelderSim.BuildCurrentWaveform` (hàng một phần tử) → `Normalizer` (`payload["samples"] = w.Samples`,
+chép nguyên) → `LiveTransport.SendProcessResultAsync` → `St4iDeviceClient.SubmitProcessResultAsync`
+→ `POST /api/v1/ingest/process-result` → `processWaveformSchema`. Một `z.tuple` hai phần tử **từ
+chối** một mảng một phần tử.
+
+**Và `WELD-01` (`machineType: "WELDER"`) NẰM TRONG roster được ship** (`fleet.json`), nên đường này
+**tồn tại trong bản cài mặc định**, không phải một nhánh giả định.
+
+### 🔴 Cái CHƯA ĐO, nêu tên chứ không lấp — và nó quyết định hậu quả là SỐNG hay chỉ là LÝ THUYẾT
+
+**Đã có sóng `weld_current` nào thực sự được POST lên một máy chủ sống bao giờ chưa?** Không ai đo
+điều đó — không phản biện, không AA-1. Không có bằng chứng runtime trong cây. Hôm nay đây là mâu
+thuẫn giữa **hai hợp đồng đã xuất bản trong một repository**, và nó **tiềm ẩn cho tới lần
+`LiveTransport` chạy thật đầu tiên với một máy WELDER**. Đo nó cần một log ingest thật hoặc một lần
+chạy thật; **cả hai đều nằm ngoài vòng này**, và một phỏng đoán đặt ở đây sẽ **đọc như một phép đo**.
+
+Cái **đã** đo được, để không ai đọc câu trên rộng hơn nó: máy WELDER **có** trong roster ship;
+đường mã **có** thật và không có nhánh nào chặn; và transport thật (`LiveTransport`) là một trong ba
+chế độ (`Live`/`Demo`/`Auto`) mà `TransportCoordinator` chọn được.
+
+### Hợp nhất vào đây: phát hiện §8.1 của chính AA-1, nay đọc NGƯỢC hẳn
+
+AA-1 tìm ra và gọi là *"nặng hơn nhiều"* — và nó **vẫn nặng**, nhưng theo chiều ngược lại:
+
+- `[[t, v], ...]` cũng nằm trong **SDK Python** (`examples/device-client/python/st4i_device_client.py`,
+  **hai chỗ**), không chỉ trong client C#;
+- **ba ví dụ CHẠY ĐƯỢC** — `examples/device-client/csharp/ExampleScrewdriver.cs`,
+  `examples/device-client/python/example_screwdriver.py`, `examples/device-client/README.md` — đều
+  gửi `rateHz` **kèm** hàng hai phần tử, phần tử 0 là **góc**.
+
+AA-1 kết luận chúng là **bản sao lỗi**. **Sai.** Chúng **khớp đặc tả 57 §8.1 từng con số** (kể cả
+`rateHz: 500` và `412`). Nên câu hỏi AA-1 đặt — *"ai sửa họ SDK, và bao giờ?"* — có một câu chị em
+**nặng hơn nhiều**, và mục này **ghi nó xuống chứ không trả lời**:
+
+> **Họ SDK khớp đặc tả. Cái lệch là bộ phát của chúng ta.**
+
+### Hậu quả vận hành, hai chiều, phải nói cả hai
+
+- **Nếu quy ước B là chuẩn:** `WelderSim` phải đổi sang hàng `[t, current]`. Đó là **đổi một payload
+  đã xuất bản** của sản phẩm này — cùng hạng thay đổi mà mục 3 và mục 4 dành riêng cho chủ sở hữu.
+- **Nếu quy ước A là chuẩn:** `processWaveformSchema`, `processWaveformV1`, đặc tả 57, OpenAPI, trang
+  API-docs, doc 62 §6, và **cả ba ví dụ SDK** phải đổi. Đó là **đổi một hợp đồng ingest đã xuất bản**
+  mà **mọi driver bên thứ ba đang viết theo**, và nó **nới** một validator (nới thì payload cũ vẫn
+  chạy, nhưng ba bản dịch SDK phải đi cùng nhau).
+- **Một khả năng thứ ba, nêu ra vì bảng lựa chọn của mục 12 đã bị bắt vì nêu thiếu:** cả hai cùng
+  đúng ở **hai lớp khác nhau** — kiểu trong-tiến-trình cho phép cả hai, và **chỉ đường dây** ép cặp.
+  Nếu vậy thì cái phải đổi là `Normalizer`, không phải `WelderSim`. **Chưa đo, và không quyết ở đây.**
+
+### Nếu không quyết định
+
+Giữ nguyên. `WelderSim` tiếp tục phát một hình dạng cổng ingest từ chối; không gì đỏ lên trong
+`tools/machine-simulator` vì không phép kiểm nào của nó nhìn sang phía tiêu thụ; và lần chạy `Live`
+đầu tiên với một máy WELDER sẽ là lần đầu tiên ai đó biết — **nếu** nó xảy ra.
+
+### Vì sao là quyết định của chủ sở hữu
+
+Cả hai lối ra **đổi một bề mặt đã xuất bản mà người ngoài đang dựa vào** — hoặc payload của sản phẩm
+này, hoặc hợp đồng ingest cộng ba SDK anh em. Đúng lý do mục 3 và mục 4 là của chủ sở hữu.
+
+### Bằng chứng — đọc được, không cần chạy
+
+Các file nêu tên trong bảng trên, tại commit `84836ad6`. Phía sản phẩm:
+`src/St4i.EdgeCore/Drivers/Simulators/WelderSim.cs`, `…/ScrewdriveSim.cs`,
+`src/St4i.EdgeCore/Mapping/Normalizer.cs`, `src/St4i.EdgeCore/Transport/LiveTransport.cs`,
+`tools/machine-simulator/fleet.json`. Nhân chứng đang giữ hành vi hiện tại (**không** giữ một phán
+quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` — nếu anh quyết theo quy
+ước B, **nó đỏ lên, và chỗ đỏ chính là diff**, đúng hình dạng mà S-1 dùng cho mục 5 và V-1 cho mục 10.
+
+---
+
 # 🔨 PHẦN II — ĐÃ QUYẾT, VIỆC CÒN NỢ
 
 **Mỗi mục ở đây đã có một phán quyết ghi kèm ngày, và việc của nó chưa được thi hành.**
@@ -247,6 +360,15 @@ phải một sở thích: một trong ba chỗ ấy là **khối `///` trong C#*
 ngang nào nằm trong `RegisteredElementNames` của `DocCommentProseTests`, nên gạch ngang
 không thể là kiểu chung của cả ba. Các dấu `~~…~~` còn lại trong file này là của T-1, U-1,
 V-1 và Y-1; AA-1 **không đụng** tới chúng.
+
+📎 **Vòng phản biện 1 của AA-1 (2026-08-18) rút thêm SÁU câu, và dùng ĐÚNG kiểu ấy** — trích
+nguyên văn, ghi ngày, ghi người, lý do ngay cạnh, không gạch ngang: ba câu trên
+`WaveformSeries` (`<param name="Samples">`), một trên `<param name="RateHz">`, hai trong
+`WaveformSeriesRowShapeContractTests` và khối biện minh cạnh `EXPECT_EDGECORE`. Cộng **một
+phép RÚT LẠI MỘT PHÉP RÚT** ở ô mục 4 của bảng phán quyết, nơi cả ba lớp câu — bản gốc, phép
+rút của AA-1, và phép rút lại — đều đứng nguyên văn cạnh nhau. Ba thao tác vẫn phân biệt như
+cũ: **RÚT** (câu đã công bố nay sai), **CẬP NHẬT** (trạng thái đổi), **MỞ RỘNG** (phép liệt kê
+thiếu). Vòng này không dùng thao tác nào thứ tư.
 
 ---
 
@@ -639,6 +761,32 @@ phải bằng test — vì tách riêng ra thì không đường nào sai cả.
 > một chỗ bị quên** — nó là **một quyết định chưa được hỏi**: *có thêm một trường mang định nghĩa
 > (hoặc một mã công thức) vào `OeeResultDto` và một dòng vào PDF hay không*. Nếu chủ sở hữu muốn,
 > đó là một mục mới, vì nó nới một hình dạng đã xuất bản.
+>
+> #### 🔴 ĐÍNH CHÍNH 2026-08-18 (AA-1 vòng phản biện 1) — TRẦN TRÊN NÊU QUÁ NHỎ, VÀ CÓ MỘT CHỖ THỨ TƯ
+> **Có một chỗ thứ TƯ con số OEE hiện ra, và nó gần "người cầm con số" hơn cả ba chỗ đã chọn: giao
+> diện web.** Liệt kê, không tóm tắt: `web/src/routes/Reports.tsx` (bốn `KpiTile`, trong đó
+> `reports.kpi.quality` in `oee.data.quality * 100` và `reports.kpi.oee` in `oee.data.oee * 100` —
+> đây là chỗ một quản đốc **thật sự đọc** con số Quality); `web/src/components/OeeLossChart.tsx` (cột
+> *"Quality loss"*); và `web/src/lib/api.ts`, interface `OeeResult`, mười lăm trường, mang một khối
+> chú thích tự nhận *"Wire shapes mirror … `OeeResultDto` … **exactly**"* và giải thích ngữ nghĩa
+> từng trường — mà **không nói gì** về `Warn` hay `Skip`.
+>
+> 🔴 **Và lý lẽ của trần trên KHÔNG áp cho chỗ ấy.** Trần quy phần còn nợ cho **lệnh cấm đổi payload**.
+> Lý lẽ ấy đúng cho bản PDF và cho việc thêm một trường vào `OeeResultDto`. Nó **không đúng** cho một
+> khối chú thích TypeScript trên `web/src/lib/api.ts`: viết ở đó **không đổi một payload, không đổi
+> một pixel, không chạm cổng** — đúng hạng sửa mà AA-1 đã làm ở bốn file `.cs`. Nên trần như viết
+> **nêu quá nhỏ**, và luật câu chữ nói thẳng: *một cái trần nêu quá nhỏ còn tệ hơn không nêu trần.*
+>
+> **Vì sao vòng này vẫn không viết nó:** vòng phản biện 1 bị cấm sửa bất cứ thứ gì dưới `web/`. Nên
+> đây là **một việc còn nợ có địa chỉ**, không phải một lệnh cấm — khác hẳn nửa PDF/DTO, thứ cần một
+> phán quyết. **Ai nhặt nó lên không cần hỏi chủ sở hữu.**
+>
+> **Và định nghĩa ở cả ba chỗ đã được BỔ SUNG một bộ lọc thứ hai** mà vòng đầu bỏ sót: ngoài
+> `reading_kind = 'ProcessResult'`, cả hai câu đếm còn đi qua **cổng provenance**
+> (`ApplyRealPresenceGateAsync`, quyết bởi `ResolveIncludeFabricated` / `DemoModeGate`), thứ **mặc
+> định loại mọi hàng ghi là FABRICATED**. Trên **chính sản phẩm này** — một simulator — đó thường là
+> thứ **quyết định** con số bằng 0, và cả ba khối văn xuôi trước đây quy triệu chứng *"toàn số 0"*
+> **chỉ** cho reading-kind. Nay cả ba nêu đủ hai bộ lọc.
 
 ---
 
@@ -830,6 +978,40 @@ kèm câu *"không được giả định hình dạng hàng chỉ từ kiểu n
 > `ConnectorRoundTripTests` — đó là một khẳng định về **bộ tuần tự hoá**, không phải một phản ví dụ
 > của luật. Đóng cái trần này nghĩa là **thêm phép kiểm và từ chối một payload**, tức đổi hành vi,
 > tức một mục mới cho chủ sở hữu.
+>
+> #### 🔴 ĐÍNH CHÍNH 2026-08-18, cùng ngày, cùng nhiệm vụ (AA-1 vòng phản biện 1) — GHI CHÉP TRÊN ĐÚNG VỀ PHÉP ĐO CỦA NÓ VÀ SAI VỀ PHẠM VI CỦA PHÉP ĐO ẤY
+> **Phần đứng vững:** hai bộ sinh đã được đo, chúng nhất quán với nhau, và số dòng của bảng không
+> trôi. Không câu nào ở trên về **hành vi của hai bộ sinh** bị rút.
+>
+> **Phần sai, và nó là phần được xuất bản lên một bề mặt hợp đồng N-2:** phép đo dừng ở
+> `tools/machine-simulator/`, tức **dừng ở phía SINH**. Ở phía **TIÊU THỤ**, trong cùng repository và
+> cùng commit, `POST /api/v1/ingest/process-result` **cưỡng chế hình dạng NGƯỢC LẠI** — mỗi hàng đúng
+> **hai** số, `rateHz` là trường tuỳ chọn độc lập — và dưới hợp đồng ấy `WelderSim` phát một payload
+> **bị TỪ CHỐI**. Toàn bộ phép đo nằm ở **mục 14**, vừa mở ở Phần I.
+>
+> **Ba câu AA-1 xuất bản lên `WaveformSeries` đã được RÚT tại chỗ chúng được viết**, giữ nguyên văn,
+> kèm ngày — cùng một kiểu bảo tồn (📎 đầu Phần II). Chúng là:
+> *"Any other row is outside this contract — … two elements on a rated one."*;
+> *"That is a defect in those published files, not a second convention."*;
+> *"no reader in this repository indexes an element of a row at all."*
+> Câu thứ ba còn bị **chính file test mà AA-1 thêm vào** bác — nó đánh chỉ số vào phần tử ở **ba**
+> chỗ; phép đếm sinh ra câu ấy chạy ở **base**, câu được giao ở **HEAD**. Đúng loài *"động vào là mở
+> lại khẳng định"*, và phép đếm **đã được chạy lại trên cây được giao** vòng này.
+>
+> **Câu quảng cáo về nhân chứng cũng bị rút:** *"một bộ sinh THỨ BA cũng bị kiểm mà không ai phải nhớ
+> thêm nó vào"*. `BuiltInSimulators()` là **danh sách viết cứng** tám lớp; một lớp **thứ CHÍN** sẽ
+> không bị quét và không gì báo. Câu đúng là câu hẹp hơn: **một trong tám lớp đã liệt kê** bắt đầu
+> phát waveform thì bị quét.
+>
+> **Nhân chứng đã được sửa để ghim CÁI ĐÚNG:** nó giữ **hành vi đo được của hai bộ sinh** — không ai
+> tranh cãi — và **assertion nói ví dụ chuẩn tắc của nền tảng là sai đã bị GỠ**, kể cả các con số nó
+> mượn từ đặc tả. Tổng suite **không dịch** (vẫn 1147, bốn `[Fact]` trước và sau); bốn tên `[Fact]`
+> đổi vì tên cũ khẳng định *"the Rule"*, và một tên thành viên là một chuỗi đã công bố — phép đổi tên
+> được ghi ngay cạnh `EXPECT_EDGECORE`.
+>
+> 🔴 **Điều mục này KHÔNG làm:** nó **không quyết** quy ước nào thắng, và không được đọc như thế.
+> Phán quyết 2026-08-16 vẫn nguyên văn ở trên; cái mới là **tiền đề của nó đã bị bác**, và chỗ để
+> quyết là **mục 14**.
 
 ---
 
@@ -1814,6 +1996,42 @@ và **dừng ngay trước `Set`**.
 
 Không gì trong phần này đang chờ anh quyết. Nó ở đây vì **xoá thì không được** — và nó
 ở CUỐI vì đặt nó trước các mục đang chờ là đúng khuyết tật Y-1 được giao để sửa.
+
+---
+
+## Tồn dư của AA-1 (2026-08-18, vòng phản biện 1) — GHI, KHÔNG SỬA
+
+Năm mục dưới đây là **Minor** trong phản biện của AA-1. Chúng **không** đang chờ chủ sở hữu và
+**không** ai được đọc chúng như một phán quyết đang treo. Chúng ở đây thay vì chỉ ở trong một báo
+cáo vì đúng lý do file này tồn tại: *một điều "đã được nêu trong một báo cáo" là điều chủ sở hữu
+**không có đường nào mở ra đọc**.* Vòng ấy **cố ý không sửa** cái nào.
+
+1. **Hai "sàn" của nhân chứng đếm SERIES, không đếm HÀNG.** Một cây mà cả hai bộ sinh phát series
+   **rỗng** sẽ qua cả hai sàn và soi **0** hàng. Hôm nay không với tới được (`WaveformPoints` là
+   `const` ở cả hai bộ sinh), nên đây là lỗi **câu chữ**, không phải lỗ hổng chạy được — và mô tả
+   trong nhân chứng lẫn cạnh `EXPECT_EDGECORE` **đã được sửa cho đúng**. Cách chữa thật: một sàn thứ
+   ba đếm **hàng đã soi**. Chưa làm.
+2. **Một trong bốn `[Fact]` là một test của MÃ TEST.** `TheRowShapeCheck_GoesRedOnEveryDeviation…`
+   chỉ lái một hàm `private` trong chính file ấy; **không thay đổi nào của sản phẩm** làm nó đỏ. Hợp
+   lệ như bờ 1 của §8.1(h6), và nay **được nói thẳng ngay cạnh hằng số**: chỉ **ba** trong `+4` là
+   khẳng định về sản phẩm.
+3. **Lập luận "đếm hai lần" cho `GetOeeAsync` đúng, nhưng tiền đề sai.** *"Mỗi cái trong ba có đúng
+   một chỗ của riêng nó"* — không đúng: `GetOeeAsync` và `GetOeeFleetAsync` là **hai route trả về
+   MỘT hình dạng**, nên ánh xạ là **2 bề mặt → 3 chỗ đặt văn**. `GetOeeAsync` hôm nay **không có doc
+   comment nào**, chỉ một banner `//`; một dòng `<see cref="OeeResultDto"/>` đóng được và không mâu
+   thuẫn với lập luận chống-đếm-hai-lần. Chưa làm.
+4. **Một bề mặt thứ tư mà đoạn mới trên `Verdict` không nêu: `MachineState.PassRate`.** Nó áp **đúng
+   cùng một luật** (`!= Skip` vào mẫu, `Pass or Warn` vào tử) và nổi lên qua `FleetProjections` tới
+   `web/.../ReadoutGrid.tsx` và `src/St4iMachineSimulator/Views/DashboardView.xaml`. Phép liệt kê
+   thiếu này **thừa hưởng** từ câu có sẵn của enum, không do AA-1 tạo ra; phản biện **xác nhận** câu
+   mới trên `OeeResultDto` viện dẫn nó là **đúng**.
+5. **Phép quét §8.1(h5.4) chưa đủ.** Còn thiếu, có tên: `Normalizer.ComputeOverallResult` (`_`→`"OK"`)
+   và `Normalizer.VerdictToResult` (`_`→`"skip"`) — **hai mặc định của cùng một file bất đồng nhau**
+   về một verdict lạ; `MachineState.StatusText` và `MachineViewModel.StatusText` (cả hai `_ => "OK"`);
+   `Doc28Writer.MapVerdict` (`Warn`→`"NTF"`) với `Doc28Parser.MapVerdict` (`"NTF"`→`Verdict.Skip`),
+   tức trên vòng doc28 kín **`Warn` suy biến thành `Skip`**; và `UnsPublisher`. **Không cái nào mâu
+   thuẫn với định nghĩa vừa công bố** — phản biện kiểm chỗ nguy nhất và `Doc28Parser` đặt
+   `Kind = Inspection`, mà OEE lọc `ProcessResult`, nên đường ấy **không** chảy vào OEE.
 
 ---
 

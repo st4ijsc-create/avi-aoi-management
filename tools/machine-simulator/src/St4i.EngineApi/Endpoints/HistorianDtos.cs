@@ -72,11 +72,23 @@ public sealed record PruneResultDto(int DeletedRows);
 /// nothing on either copy to tell the two apart. Any future change to what counts as good needs a VERSIONED
 /// formula and a field here to carry the version — not an edit in place.</para>
 ///
-/// <para><b>The scope of the counts, which is not visible from this shape either:</b> only rows stored
-/// under the <c>ProcessResult</c> reading kind are counted at all. A cycle a driver shipped under another
-/// kind is stored and returned by the results query, and contributes nothing to either count — not a zero,
-/// absent. See the <c>DeviceReading.Kind</c> member's own doc comment in
-/// <c>St4i.Connector.Abstractions</c> for what that costs.</para>
+/// <para><b>The scope of the counts, which is not visible from this shape either — and it is TWO filters,
+/// not one.</b>
+/// <list type="bullet">
+///   <item><description><b>Reading kind.</b> Only rows stored under the <c>ProcessResult</c> kind are
+///   counted at all. A cycle a driver shipped under another kind is stored and returned by the results
+///   query, and contributes nothing to either count — not a zero, absent. See the
+///   <c>DeviceReading.Kind</c> member's own doc comment in <c>St4i.Connector.Abstractions</c>.</description></item>
+///   <item><description>🔴 <b>Provenance, and on THIS product it is usually the decisive one.</b> By
+///   default a row recorded as FABRICATED (simulated or demo data) is excluded from both counts. If the
+///   window holds at least one row recorded as real, only real rows are counted; if it holds none, rows
+///   written before that column existed are counted as well — but a fabricated row is never counted
+///   unless the caller passes <c>includeFabricated=true</c> or the install is in demo mode. Since this
+///   product is a SIMULATOR, a machine whose cycles are all simulated therefore reports
+///   <c>TotalCount</c> 0, <c>GoodCount</c> 0 and — because zero over zero is defined as zero here —
+///   <c>Quality</c> and <c>Oee</c> of 0, which is not the same fact as "this machine ran
+///   nothing".</description></item>
+/// </list></para>
 /// </summary>
 public sealed record OeeResultDto(
     string MachineCode, DateTimeOffset From, DateTimeOffset To,
