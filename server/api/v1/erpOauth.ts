@@ -35,6 +35,7 @@ import { eq } from "drizzle-orm";
 import { sendOk, sendError, wrap, ApiHttpError } from "./envelope";
 import type { ApiPrincipal } from "./auth";
 import { hashApiKey } from "./auth";
+import { UNDECLARED_TENANT_SCOPE } from "./apiKeyScope";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -132,7 +133,12 @@ export async function verifyToken(token: string): Promise<VerifiedToken | null> 
  * requireScope pipeline (scopeSatisfied) works unchanged. Called from auth.ts.
  */
 export function tokenToPrincipal(v: VerifiedToken): ApiPrincipal {
-  return { kind: "oauth", name: v.clientId, scopes: v.scopes };
+  // mig 0325 — phạm vi tenant CHƯA KHAI. Token ERP mang `scope` (làm được gì) nhưng KHÔNG
+  // mang một claim nào nói *thấy được gì*; `erp_oauth_clients` cũng chưa có cột tenant. Suy
+  // ra "toàn cục" từ chỗ vắng mặt ấy là đúng lớp lỗi 0325 đang đóng, nên fail-closed: một
+  // client ERP muốn đọc BI/export sẽ bị 403 cho tới khi có đường khai phạm vi cho nó (nợ đã
+  // ghi lại — hôm nay các tuyến ERP chỉ dùng `erp:write`, không chạm `bi:read`/`export:read`).
+  return { kind: "oauth", name: v.clientId, scopes: v.scopes, tenantScope: UNDECLARED_TENANT_SCOPE };
 }
 
 // ── Constant-time secret compare ─────────────────────────────────────────────

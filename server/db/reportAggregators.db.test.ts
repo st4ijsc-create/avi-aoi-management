@@ -158,18 +158,34 @@ describe.skipIf(!DB_URL)("R1-B report aggregators (seeded, factory-TZ)", () => {
   }, 120_000);
 
   afterAll(async () => {
+    // ⚠⚠ 2026-08-17 — `product_inspections` là bảng WORM: vai `avi_app` chỉ có SELECT/INSERT/
+    // UPDATE, KHÔNG có DELETE. Khối dọn dẹp này vì thế **ném lỗi ngay ở dòng thứ hai** và bỏ dở
+    // toàn bộ phần còn lại — suite đỏ ở `afterAll` dù cả 5 ca đều xanh, và máy/trạm/chuyền/xưởng
+    // của mọi lượt chạy đọng lại vĩnh viễn (CSDL test đang có 1.669 máy "đang hoạt động" vì
+    // chuyện này). Dọn bằng đúng quyền được cấp: UPDATE đẩy hàng ra khỏi cửa sổ đo, rồi mới thử
+    // DELETE và nuốt lỗi. Cùng khuôn với `services/scheduledReportScope.db.test.ts`.
+    const safe = async (run: () => Promise<unknown>) => {
+      try { await run(); } catch { /* WORM hoặc FK chặn — đã có đường dọn thay thế */ }
+    };
     try {
-      if (ids.resultIds.length) await sql`DELETE FROM measurement_results WHERE id IN ${sql(ids.resultIds)}`;
-      if (ids.inspIds.length) await sql`DELETE FROM product_inspections WHERE id IN ${sql(ids.inspIds)}`;
-      await sql`DELETE FROM measurement_point_defs WHERE id IN ${sql([ids.pointWs, ids.pointNoWs].filter(Boolean))}`;
-      await sql`DELETE FROM defect_catalog WHERE id IN ${sql([ids.dcSolder, ids.dcComp, ids.dcPcb].filter(Boolean))}`;
-      if (ids.workstation) await sql`DELETE FROM workstations WHERE id = ${ids.workstation}`;
-      await sql`DELETE FROM machines WHERE id IN ${sql([ids.machine1, ids.machine2].filter(Boolean))}`;
-      await sql`DELETE FROM product_models WHERE id IN ${sql([ids.product1, ids.product2].filter(Boolean))}`;
-      if (ids.station) await sql`DELETE FROM stations WHERE id = ${ids.station}`;
-      if (ids.line) await sql`DELETE FROM production_lines WHERE id = ${ids.line}`;
-      if (ids.workshop) await sql`DELETE FROM workshops WHERE id = ${ids.workshop}`;
-      if (ids.factory) await sql`DELETE FROM factories WHERE id = ${ids.factory}`;
+      if (ids.resultIds.length) await safe(() => sql`DELETE FROM measurement_results WHERE id IN ${sql(ids.resultIds)}`);
+      if (ids.inspIds.length) {
+        await safe(() => sql`
+          UPDATE product_inspections SET "inspectionTime" = '1990-01-01T00:00:00Z'
+          WHERE id IN ${sql(ids.inspIds)}`);
+        await safe(() => sql`DELETE FROM product_inspections WHERE id IN ${sql(ids.inspIds)}`);
+      }
+      await safe(() => sql`DELETE FROM measurement_point_defs WHERE id IN ${sql([ids.pointWs, ids.pointNoWs].filter(Boolean))}`);
+      await safe(() => sql`DELETE FROM defect_catalog WHERE id IN ${sql([ids.dcSolder, ids.dcComp, ids.dcPcb].filter(Boolean))}`);
+      if (ids.workstation) await safe(() => sql`DELETE FROM workstations WHERE id = ${ids.workstation}`);
+      // Hàng kiểm sót lại giữ khoá ngoại trỏ vào máy ⇒ TẮT máy để lượt sau không nhặt lại.
+      await safe(() => sql`UPDATE machines SET "isActive" = false WHERE id IN ${sql([ids.machine1, ids.machine2].filter(Boolean))}`);
+      await safe(() => sql`DELETE FROM machines WHERE id IN ${sql([ids.machine1, ids.machine2].filter(Boolean))}`);
+      await safe(() => sql`DELETE FROM product_models WHERE id IN ${sql([ids.product1, ids.product2].filter(Boolean))}`);
+      if (ids.station) await safe(() => sql`DELETE FROM stations WHERE id = ${ids.station}`);
+      if (ids.line) await safe(() => sql`DELETE FROM production_lines WHERE id = ${ids.line}`);
+      if (ids.workshop) await safe(() => sql`DELETE FROM workshops WHERE id = ${ids.workshop}`);
+      if (ids.factory) await safe(() => sql`DELETE FROM factories WHERE id = ${ids.factory}`);
     } finally {
       await sql?.end();
       if (prevFactoryTz === undefined) delete process.env.FACTORY_TZ; else process.env.FACTORY_TZ = prevFactoryTz;

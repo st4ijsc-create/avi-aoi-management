@@ -24,6 +24,12 @@ import { isValidMasterKey } from "../../_core/masterKey";
 import { getMachineByApiKey } from "../../db";
 import { sendError } from "./envelope";
 import { ALL_SCOPES, scopeSatisfied, type ApiScope } from "./scopes";
+import {
+  GLOBAL_TENANT_SCOPE,
+  UNDECLARED_TENANT_SCOPE,
+  tenantScopeFromRow,
+  type ApiKeyTenantScope,
+} from "./apiKeyScope";
 
 /** The authenticated principal attached to the request after auth succeeds. */
 export interface ApiPrincipal {
@@ -35,6 +41,15 @@ export interface ApiPrincipal {
   /** For machine principals, the resolved machine id (used by ingest). */
   machineId?: number;
   apiKeyId?: number;
+  /**
+   * ★★★ mig 0325 — *"khoá này THẤY ĐƯỢC GÌ"* (`scopes` ở trên chỉ nói *"LÀM ĐƯỢC GÌ"*).
+   *
+   * ⚠ Ô này BẮT BUỘC, cố ý: mỗi điểm DỰNG principal phải QUYẾT ĐỊNH phạm vi tenant, và
+   * `tsc` chỉ ra ngay chỗ nào quên. Một ô tuỳ chọn sẽ biến "quên điền" thành `undefined`
+   * — mà `undefined` là đúng hình dạng mà `inspectionTenantFilter` phải đọc thành TỪ CHỐI,
+   * nên nó im lặng đi qua và không ai biết đường đó tồn tại. Xem `apiKeyScope.ts`.
+   */
+  tenantScope: ApiKeyTenantScope;
 }
 
 declare global {
@@ -84,9 +99,14 @@ export async function resolvePrincipal(key: string): Promise<ApiPrincipal | null
   }
 
   // 1) Master super-key.
+  //    Phạm vi tenant = TOÀN CỤC TƯỜNG MINH. Đây KHÔNG phải "NULL được đọc thành toàn cục":
+  //    `MASTER_API_KEY` không phải một hàng trong `api_keys` mà là một biến môi trường mà ai
+  //    đó đã CỐ Ý đặt trên máy chủ — chính là "một quyết định ai đó ghi ra" mà spec đòi. Khoá
+  //    này vốn đã mang `scopes: ["*"]`; thu hẹp phạm vi dữ liệu của nó mà không thu hẹp quyền
+  //    sẽ chỉ tạo ra một cấu hình không ai dùng được, không tăng thêm an toàn nào.
   try {
     if (isValidMasterKey(key)) {
-      return { kind: "master", name: "master", scopes: ["*"] };
+      return { kind: "master", name: "master", scopes: ["*"], tenantScope: GLOBAL_TENANT_SCOPE };
     }
   } catch {
     /* fall through */
@@ -114,6 +134,9 @@ export async function resolvePrincipal(key: string): Promise<ApiPrincipal | null
           name: row.name,
           scopes: Array.isArray(row.scopes) ? row.scopes : [],
           apiKeyId: row.id,
+          // mig 0325 — ba trạng thái đọc thẳng từ hàng. Hàng chưa khai (mặc định của
+          // MỌI khoá có trước 0325) ⇒ `mode: null` ⇒ `bi:read`/`export:read` bị 403.
+          tenantScope: tenantScopeFromRow(row),
         };
       }
     }
@@ -125,7 +148,17 @@ export async function resolvePrincipal(key: string): Promise<ApiPrincipal | null
   try {
     const machine = await getMachineByApiKey(key);
     if (machine) {
-      return { kind: "machine", name: machine.code, scopes: ["ingest:write"], machineId: machine.id };
+      // Phạm vi tenant CHƯA KHAI: khoá theo máy chỉ mang `ingest:write` (đường GHI), nên
+      // nó không bao giờ thoả `bi:read`/`export:read` và không bao giờ chạm hai tuyến ĐỌC
+      // đang được cưỡng chế. Điền 'global' ở đây để "cho tiện" sẽ là cấp sẵn quyền đọc
+      // toàn cục cho 27 khoá máy ngay khi ai đó nới `scopes` của chúng.
+      return {
+        kind: "machine",
+        name: machine.code,
+        scopes: ["ingest:write"],
+        machineId: machine.id,
+        tenantScope: UNDECLARED_TENANT_SCOPE,
+      };
     }
   } catch (err) {
     console.error("[api/v1 auth] machine apiKey lookup failed:", (err as Error)?.message ?? err);

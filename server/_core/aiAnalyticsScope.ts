@@ -35,7 +35,7 @@
  * before invoking them.
  */
 import { appError } from "./appError";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, or } from "drizzle-orm";
 import type { User } from "../../drizzle/schema";
 import { factories, machines, productionLines, stations, workshops } from "../../drizzle/schema";
 import { getDb } from "../db/connection";
@@ -133,6 +133,49 @@ export async function firstFactoryCodeInScope(scope: FactoryScope): Promise<stri
     .orderBy(asc(factories.code))
     .limit(1);
   return row?.code ?? null;
+}
+
+/**
+ * ★★★ 2026-08-18 (nhóm B #1/#4) — **PHẠM VI THEO `factories.id`**, cho các bề mặt lọc bằng
+ * KHOÁ SỐ chứ không bằng mã chuỗi.
+ *
+ * `firstFactoryCodeInScope` cố tình thu về **ĐÚNG MỘT** mã, vì nơi gọi nó
+ * (`getTopNGMeasurementPointsEnhanced`) chỉ nhận một `factoryCode`. Nhưng ba bề mặt của đợt này —
+ * `get_factory_stats` (tổng hợp **NHIỀU** nhà máy theo định nghĩa), `get_ng_compare` và
+ * `aiTimeSeries.analyzeMetric` — đọc thẳng `daily_statistics`, bảng có `factoryId` **NOT NULL**
+ * kèm index `idx_stats_factory_date`. Thu về một mã ở đó sẽ **cắt mất** dữ liệu hợp lệ của một
+ * người được gán hai nhà máy (chặt quá tay), còn bỏ trống thì rò **toàn hệ thống**.
+ *
+ * ⇒ Hàm này trả **TẬP** id nhà máy trong phạm vi, theo ĐÚNG luật `getAccessFilterConditions` đang
+ * dùng (`corporateCode` HOẶC `factoryCode`) — không luật thứ hai. Mảng **RỖNG** nghĩa là *"phạm vi
+ * rỗng"*, và nơi gọi **PHẢI** hiểu nó là **từ chối**, KHÔNG BAO GIỜ là "không lọc gì cả".
+ *
+ * ⚠ Gọi với `scope.isGlobal === true` là một **lỗi lập trình**: vai toàn quyền không có tập id nào
+ * để liệt kê (và liệt kê được cũng sai — nhà máy tạo sau lượt liệt kê sẽ vô hình). Nơi gọi phải
+ * rẽ nhánh trên `isGlobal` TRƯỚC. Hàm ném để lỗi ấy kêu thay vì lặng lẽ trả rỗng ⇒ khoá admin.
+ */
+export async function factoryIdsInScope(scope: FactoryScope): Promise<number[]> {
+  if (scope.isGlobal) {
+    throw new Error(
+      "factoryIdsInScope() gọi với phạm vi TOÀN CỤC — vai toàn quyền không được liệt kê theo tập id. " +
+        "Nơi gọi phải rẽ nhánh trên `scope.isGlobal` trước (bỏ hẳn mệnh đề lọc).",
+    );
+  }
+  if (scope.factoryCodes.length === 0 && scope.corporateCodes.length === 0) return [];
+  const db = await getDb();
+  if (!db) return [];
+  const dieuKien = [
+    scope.factoryCodes.length > 0 ? inArray(factories.code, scope.factoryCodes) : undefined,
+    scope.corporateCodes.length > 0 ? inArray(factories.corporateCode, scope.corporateCodes) : undefined,
+  ].filter((c): c is Exclude<typeof c, undefined> => c !== undefined);
+  // `dieuKien` chắc chắn có ≥1 phần tử ở nhánh này (đã loại trường hợp cả hai rỗng ở trên),
+  // nên `or()` không thể trả undefined — KHÔNG dùng `!` (xem docblock DENY_ALL_ROWS ở
+  // accessControl.ts: đúng dấu `!` ấy đã che một lỗ "undefined ⇒ thấy TẤT CẢ").
+  const rows = await db
+    .select({ id: factories.id })
+    .from(factories)
+    .where(dieuKien.length === 1 ? dieuKien[0] : or(...dieuKien));
+  return rows.map((r) => Number(r.id)).filter((n) => Number.isFinite(n));
 }
 
 /** machines.id → its owning factory's code (station → line → workshop → factory), or null. */

@@ -29,6 +29,7 @@ import { API_SCOPES } from "./scopes";
 import { sendOk, wrap, ApiHttpError } from "./envelope";
 import type { DeviceTypeNode } from "../../services/standards/deviceTypeRegistry";
 import type { AlarmMapping } from "../../services/standards/alarmTaxonomy";
+import type { TenantCodeScope } from "../../_core/tenantCodeScope";
 
 /** Parse a positive-integer path/query param or throw a 400. */
 function posInt(raw: unknown, label: string): number {
@@ -378,7 +379,32 @@ export function registerModuleReadRoutes(r: Router): void {
       // An external API principal is not a DB user — buildKpiSummary only reads the
       // AI-inbox count with this identity (id 0 → honest empty), never writes.
       const principal = req.apiPrincipal?.name ?? "api-key";
-      const summary = await buildKpiSummary({ id: 0, role: "api", name: principal }, scope);
+
+      // ★★★ 2026-08-18 — PHẠM VI THẬT CỦA KHOÁ, thay cho principal tổng hợp `{id:0, role:"api"}`.
+      //
+      // ⚠ Trước bản vá này, `{id: 0, role: "api"}` là danh tính DUY NHẤT đi xuống, và
+      //   `buildKpiSummary` không nhận `tenant` nào ⇒ **mọi ô của dải KPI đọc số của TOÀN BỘ nhà
+      //   máy**, kể cả khi khoá chỉ được cấp một nhà máy (mig 0325). `{id: 0}` chưa bao giờ là
+      //   một phạm vi — nó chỉ khiến ô `aiInsights` trả rỗng một cách trung thực, và điều đó đã
+      //   che mất năm ô còn lại.
+      //
+      // ⚠ `scope` (factoryId/corporateCode từ QUERY) là lời TỰ KHAI của người gọi và chỉ là bộ
+      //   lọc TRÌNH BÀY. Trục phạm vi thật đến từ `req.apiPrincipal.tenantScope` — máy chủ tự
+      //   tra từ `api_keys`. Hai thứ này không được lẫn: một `?corporateCode=` không được phép
+      //   NỚI phạm vi của khoá ra.
+      const { tenantCodeScopeOf } = await import("./apiKeyScope");
+      const tenantCodes = tenantCodeScopeOf(req.apiPrincipal?.tenantScope);
+      let tenant:
+        | { factoryIds: number[] | null; tenantScope?: TenantCodeScope | null }
+        | undefined;
+      if (tenantCodes) {
+        const { resolveTenantCodeFactoryIds } = await import("../../db/reportAggregators");
+        const { factoryIds } = await resolveTenantCodeFactoryIds(tenantCodes);
+        // `[]` ⇒ mọi cổng sinh `1 = 0` TƯỜNG MINH. KHÔNG có đường nào biến rỗng thành "không lọc".
+        tenant = { factoryIds, tenantScope: tenantCodes };
+      }
+
+      const summary = await buildKpiSummary({ id: 0, role: "api", name: principal }, scope, tenant);
       sendOk(res, { ...summary, status: commandCenterStatus() });
     }),
   );

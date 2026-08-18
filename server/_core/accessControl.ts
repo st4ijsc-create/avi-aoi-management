@@ -8,7 +8,7 @@
  */
 
 import { appError } from "./appError";
-import { eq, and, inArray, or, SQL } from "drizzle-orm";
+import { eq, and, inArray, or, sql, SQL } from "drizzle-orm";
 import { productInspections } from "../../drizzle/schema";
 import { getUserCorporateAssignments, getUserFactoryAssignments } from "../db/auth";
 import { getDb } from "../db/connection";
@@ -71,12 +71,78 @@ export async function getTenantScope(
 }
 
 /**
+ * ⚠⚠⚠ 2026-08-17 — VỊ TỪ FALSE TƯỜNG MINH. Đừng thay bằng `or()`.
+ *
+ * Mã cũ ở đây là `return or()!;` kèm chú thích *"empty or() produces FALSE"*. **Chú thích ấy
+ * SAI.** `drizzle-orm/sql/expressions/conditions.js`:
+ *
+ *     const conditions = unfilteredConditions.filter(c => c !== void 0);
+ *     if (conditions.length === 0) return void 0;      // ← undefined, KHÔNG phải FALSE
+ *
+ * Dấu `!` (non-null assertion) dập tắt đúng cái cảnh báo TypeScript lẽ ra đã chỉ vào chỗ này.
+ * Cả 10 điểm gọi đều viết `if (accessFilter) conditions.push(accessFilter)`, nên `undefined`
+ * = **KHÔNG có mệnh đề WHERE** = **thấy TẤT CẢ** — ngược hẳn hợp đồng mà docblock tự khai.
+ * Đo được ngày 2026-08-17 trên `aoi_management` (chạy chính mã này, trước/sau bản vá):
+ * `supervisor1`/`operator1`/`maint1`/`p1_audit_op` (0 gán nhà máy) đọc được **22.996/22.996**
+ * bản ghi kiểm — tức TOÀN BỘ, kể cả hàng không mang mã tenant. Sau bản vá: **0/22.996**.
+ * Đối chứng DƯƠNG giữ nguyên: `admin` 22.996 (không lọc) và `engineer1` (gán `SIM-FAC`)
+ * 22.995 — vẫn đúng bằng phạm vi của nó, KHÔNG bị vá quá tay.
+ *
+ * `accessControlScope.test.ts` NEO thẳng vào giá trị trả về (`expect(filter).toBeDefined()`),
+ * không chỉ canh kết quả truy vấn — hoàn nguyên về `or()!` là ĐỎ ngay, không cần tới CSDL.
+ */
+const DENY_ALL_ROWS: SQL = sql`1 = 0`;
+
+// Nhãn "phạm vi rỗng" sống ở một module KHÔNG phụ thuộc để `server/db/**` nhập TĨNH được mà
+// không tạo vòng import qua `_core/trpc` — re-export ở đây để nơi gọi cũ không phải đổi đường.
+export {
+  SCOPE_EMPTY_NO_FACTORY_ASSIGNMENT,
+  NO_FACTORY_ASSIGNMENT_MESSAGE,
+  UNSCOPED_LABELS,
+  scopeLabelsOf,
+  withScopeLabels,
+} from "./accessControlLabels";
+export type { ScopeEmptyReason, ScopeLabels, ScopedRows } from "./accessControlLabels";
+
+import {
+  SCOPE_EMPTY_NO_FACTORY_ASSIGNMENT,
+  NO_FACTORY_ASSIGNMENT_MESSAGE,
+  type ScopeLabels,
+} from "./accessControlLabels";
+
+export interface ResolvedDataScope extends ScopeLabels {
+  /** Điều kiện SQL thu hẹp về tenant của người gọi. `undefined` = vai toàn quyền. */
+  filter: SQL | undefined;
+}
+
+/**
+ * Bộ phân giải phạm vi DÙNG CHUNG cho các bề mặt đọc bản ghi kiểm: vừa trả điều kiện SQL,
+ * vừa trả câu giải thích để giao diện KHÔNG được phép trình bày phạm vi rỗng thành
+ * "không có dữ liệu". Khuôn theo `services/defectSpatialHeatmap.ts` (bản vá đã làm đúng).
+ */
+export async function resolveDataScope(
+  userId: number,
+  userRole: string,
+): Promise<ResolvedDataScope> {
+  const { corporateCodes, factoryCodes, isAdmin } = await getUserAssignmentCodes(userId, userRole);
+  const noAssignment = !isAdmin && corporateCodes.length === 0 && factoryCodes.length === 0;
+  const filter = await getAccessFilterConditions(userId, userRole);
+
+  return {
+    filter,
+    scopeApplied: filter !== undefined,
+    scopeEmptyReason: noAssignment ? SCOPE_EMPTY_NO_FACTORY_ASSIGNMENT : null,
+    scopeMessage: noAssignment ? NO_FACTORY_ASSIGNMENT_MESSAGE : null,
+  };
+}
+
+/**
  * Build SQL access filter conditions for the productInspections table.
- * 
+ *
  * - Admin users: returns undefined (no filter).
  * - Non-admin with assignments: returns OR condition matching corporate/factory codes.
  * - Non-admin with NO assignments: returns a condition that matches nothing (1=0).
- * 
+ *
  * @returns SQL condition to AND into the query's where clause, or undefined for admin
  */
 export async function getAccessFilterConditions(
@@ -99,11 +165,15 @@ export async function getAccessFilterConditions(
   }
 
   if (accessConditions.length === 0) {
-    // User has no assignments at all → deny all data
-    return or()!; // empty or() produces FALSE
+    // User has no assignments at all → deny all data.
+    // ⚠ KHÔNG dùng `or()` ở đây — xem docblock của DENY_ALL_ROWS ở trên.
+    return DENY_ALL_ROWS;
   }
 
-  return or(...accessConditions)!;
+  // `accessConditions` chắc chắn có ≥1 phần tử ở nhánh này nên `or()` không thể trả undefined;
+  // kiểu trả về của hàm đã là `SQL | undefined` nên KHÔNG cần `!` (dấu `!` chính là thứ đã che
+  // mất lỗi ở nhánh rỗng phía trên — không tái lập nó ở đây).
+  return or(...accessConditions);
 }
 
 /**

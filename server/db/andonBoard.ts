@@ -17,7 +17,7 @@
  *   - grouping/assembly is pure TS (assembleAndonBoard) so it is unit-testable
  *     without a DB.
  */
-import { and, desc, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, gte, inArray, isNull, lt, lte, sql, type SQL } from "drizzle-orm";
 import { getDb } from "./connection";
 import {
   productInspections,
@@ -30,9 +30,17 @@ import {
   roundPct,
   executeRows,
 } from "../utils/kpi";
-import { getFactoryTimezone, startOfDayInZone } from "../utils/factoryTime";
+import {
+  getFactoryTimezone,
+  startOfDayInZone,
+  wallClockInZone,
+  wallClockToUtc,
+} from "../utils/factoryTime";
 import { getMachinesWithHierarchy } from "./hierarchy";
 import { getActiveAlertsCount } from "./statistics";
+// Nhãn phạm vi từ module KHÔNG phụ thuộc (nhập tĩnh an toàn — `_core/accessControl` vẫn phải
+// nạp bằng `import()` động vì nó kéo theo `_core/trpc`).
+import { UNSCOPED_LABELS, type ScopeEmptyReason, type ScopeLabels, scopeLabelsOf } from "../_core/accessControlLabels";
 
 // ── Wire shapes ─────────────────────────────────────────────────────────────
 
@@ -80,9 +88,36 @@ export interface AndonBoardTickerItem {
   raisedAt: Date;
 }
 
+/**
+ * ★★ Nửa đêm KẾ TIẾP theo giờ NHÀ MÁY — biên TRÊN (loại trừ) của cửa sổ "hôm nay".
+ *
+ * Tính bằng lịch tường (`wallClockInZone` → +1 ngày → `wallClockToUtc`), KHÔNG phải
+ * `dayStart + 24h`: cộng thẳng 24 giờ sẽ sai đúng vào ngày chuyển DST của những múi có DST
+ * (`Asia/Ho_Chi_Minh` không có DST, nhưng hàm này phải đúng cho mọi `FACTORY_TZ`).
+ *
+ * ⚠ Ngữ nghĩa "hôm nay" KHÔNG đổi: vẫn là ngày theo lịch của NHÀ MÁY (`FACTORY_TZ`, mặc định
+ * `Asia/Ho_Chi_Minh`), chỉ thêm biên trên. Kết quả là một mốc UTC thật; `postgres` chạy
+ * `TimeZone=Etc/UTC` và cột `inspectionTime` là `timestamp` không múi được drizzle đọc/ghi theo
+ * UTC, nên hai vế của phép so sánh cùng một hệ quy chiếu.
+ */
+export function startOfNextDayInZone(date: Date, timeZone: string = getFactoryTimezone()): Date {
+  const wc = wallClockInZone(date, timeZone);
+  const next = new Date(Date.UTC(wc.year, wc.month - 1, wc.day + 1));
+  return wallClockToUtc(
+    { year: next.getUTCFullYear(), month: next.getUTCMonth() + 1, day: next.getUTCDate() },
+    timeZone,
+  );
+}
+
 export interface AndonBoardData {
   generatedAt: string;
   dayStart: string;
+  /**
+   * Biên TRÊN (loại trừ) của cửa sổ "hôm nay" — nửa đêm kế tiếp theo giờ nhà máy.
+   * ⚠ 2026-08-17: trước bản vá cửa sổ chỉ có chặn DƯỚI, nên một bản ghi mang `inspectionTime`
+   * ở TƯƠNG LAI (lệch đồng hồ máy, nhập sai, dữ liệu test) được đếm vào bảng "hôm nay" MÃI MÃI.
+   */
+  dayEnd: string;
   timezone: string;
   kpis: {
     total: number;
@@ -103,6 +138,13 @@ export interface AndonBoardData {
   };
   lines: AndonBoardLine[];
   andons: AndonBoardTickerItem[];
+  /**
+   * ⚠ 2026-08-17 — TRẠNG THÁI RỖNG TRUNG THỰC. Một bảng toàn số 0 của tài khoản CHƯA ĐƯỢC
+   * GÁN NHÀ MÁY không được trình bày giống hệt một bảng toàn số 0 của ca chưa chạy. Giao diện
+   * phải đọc ô này trước khi in "chưa có sản lượng" (xem `common.scopeEmpty.*`).
+   */
+  scopeEmptyReason: ScopeEmptyReason | null;
+  scopeMessage: string | null;
 }
 
 // ── Pure assembly (unit-tested without a DB) ────────────────────────────────
@@ -160,8 +202,12 @@ export function assembleAndonBoard(input: {
   uphLastHour: number;
   openAlerts: number;
   dayStart: Date;
+  /** Biên TRÊN (loại trừ) của "hôm nay" — nửa đêm kế tiếp theo giờ nhà máy. */
+  dayEnd: Date;
   timezone: string;
   now?: Date;
+  /** Nhãn phạm vi của người gọi; bỏ trống = lối đi không mang danh tính người dùng. */
+  scope?: ScopeLabels;
 }): AndonBoardData {
   const countsByMachine = new Map<number, MachineDayCounts>(
     input.counts.map((c) => [c.machineId, c]),
@@ -258,6 +304,7 @@ export function assembleAndonBoard(input: {
   return {
     generatedAt: (input.now ?? new Date()).toISOString(),
     dayStart: input.dayStart.toISOString(),
+    dayEnd: input.dayEnd.toISOString(),
     timezone: input.timezone,
     kpis: {
       ...totals,
@@ -270,6 +317,8 @@ export function assembleAndonBoard(input: {
     },
     lines,
     andons,
+    scopeEmptyReason: (input.scope ?? UNSCOPED_LABELS).scopeEmptyReason,
+    scopeMessage: (input.scope ?? UNSCOPED_LABELS).scopeMessage,
   };
 }
 
@@ -284,11 +333,12 @@ export async function getAndonBoardData(opts: {
   const timezone = getFactoryTimezone();
   const now = new Date();
   const dayStart = startOfDayInZone(now, timezone);
+  const dayEnd = startOfNextDayInZone(now, timezone);
   const db = await getDb();
   const empty = assembleAndonBoard({
     machineRows: [], counts: [], activeAndons: [],
     fpy: { firstPass: 0, firstTotal: 0 }, uphLastHour: 0, openAlerts: 0,
-    dayStart, timezone, now,
+    dayStart, dayEnd, timezone, now,
   });
   if (!db) return empty;
 
@@ -301,20 +351,52 @@ export async function getAndonBoardData(opts: {
   });
   const machineIds = machineRows.map((r) => r.machine.id);
 
+  // Per-user access scope, resolved BEFORE the early returns below so a board of zeros always
+  // carries the reason it is empty.
+  // ⚠ `resolveDataScope` trả CẢ điều kiện SQL lẫn câu giải thích: một tài khoản 0 gán nhà máy
+  // nhận vị từ FALSE (không phải `undefined` = không lọc, xem `_core/accessControl.ts`) và
+  // bảng toàn số 0 của nó phải nói ra lý do, không được im lặng thành "chưa có sản lượng".
+  // ⚠ `scope` chỉ mang BA Ô NHÃN — `filter` được giữ RIÊNG ở `scopeFilter`, không bao giờ trộn
+  // vào đối tượng sẽ đi ra đáp ứng. Trộn vào là `Converting circular structure to JSON`
+  // (đối tượng SQL của drizzle có vòng `PgTable → PgSerial → table`), và `tsc` KHÔNG bắt được:
+  // xem docblock `scopeLabelsOf` trong `_core/accessControlLabels.ts`.
+  let scope: ScopeLabels = UNSCOPED_LABELS;
+  let scopeFilter: SQL | undefined;
+  if (opts.userId && opts.userRole !== "admin") {
+    const { resolveDataScope } = await import("../_core/accessControl");
+    const resolvedScope = await resolveDataScope(opts.userId, opts.userRole || "user");
+    scopeFilter = resolvedScope.filter;
+    scope = scopeLabelsOf(resolvedScope);
+  }
+
   // Today window conditions (+ optional per-user access filter, same as getDashboardStats).
-  const conds: SQL[] = [gte(productInspections.inspectionTime, dayStart)];
+  // ⚠⚠ 2026-08-17 — CỬA SỔ PHẢI ĐÓNG CẢ HAI ĐẦU. Bản cũ chỉ có `gte(dayStart)`; một bản ghi
+  // mang `inspectionTime` ở TƯƠNG LAI (đồng hồ máy lệch, nhập tay sai, dữ liệu test) thoả điều
+  // kiện ấy MÃI MÃI, nên nó được cộng vào bảng Andon "hôm nay" của mọi ngày kể từ đó — sản
+  // lượng, FPY và UPH đều sai theo hướng LẠC QUAN mà không có dấu hiệu gì trên bảng.
+  // Biên trên là nửa đêm KẾ TIẾP theo giờ nhà máy và LOẠI TRỪ (`lt`, không phải `lte`): bản ghi
+  // lúc 23:59:59.999 hôm nay VẪN được đếm, bản ghi đúng 00:00:00 ngày mai thì KHÔNG.
+  const conds: SQL[] = [
+    gte(productInspections.inspectionTime, dayStart),
+    lt(productInspections.inspectionTime, dayEnd),
+  ];
   if (opts.factoryId != null || (opts.lineIds && opts.lineIds.length > 0)) {
-    if (machineIds.length === 0) return empty; // filter resolves to nothing — honest zeros
+    // filter resolves to nothing — honest zeros, but still carrying the scope reason
+    if (machineIds.length === 0) return { ...empty, scopeEmptyReason: scope.scopeEmptyReason, scopeMessage: scope.scopeMessage };
     conds.push(inArray(productInspections.machineId, machineIds));
   }
-  if (opts.userId && opts.userRole !== "admin") {
-    const { getAccessFilterConditions } = await import("../_core/accessControl");
-    const accessFilter = await getAccessFilterConditions(opts.userId, opts.userRole || "user");
-    if (accessFilter) conds.push(accessFilter);
-  }
+  if (scopeFilter) conds.push(scopeFilter);
   const whereToday = and(...conds);
+  // ⚠ CỬA SỔ THỨ HAI, CÙNG LỚP LỖI. "UPH 60 phút gần nhất" nghĩa là `[now − 60′, now]`; bản cũ
+  // chỉ chặn dưới nên một bản ghi ở tương lai (vẫn trong ngày) cũng được cộng vào nhịp sản xuất
+  // của giờ vừa rồi. Biên trên `dayEnd` KHÔNG cứu được chuyện này — 14:00 hôm nay vẫn < nửa đêm
+  // — nên cửa sổ cuộn phải tự đóng ở `now`.
   const lastHourStart = new Date(now.getTime() - 60 * 60 * 1000);
-  const whereLastHour = and(...conds, gte(productInspections.inspectionTime, lastHourStart));
+  const whereLastHour = and(
+    ...conds,
+    gte(productInspections.inspectionTime, lastHourStart),
+    lte(productInspections.inspectionTime, now),
+  );
 
   const [perMachine, fpyResult, lastHourRows, activeAndonRows, openAlerts] = await Promise.all([
     db.select({
@@ -368,7 +450,9 @@ export async function getAndonBoardData(opts: {
     uphLastHour: Number(lastHourRows[0]?.total) || 0,
     openAlerts,
     dayStart,
+    dayEnd,
     timezone,
     now,
+    scope,
   });
 }

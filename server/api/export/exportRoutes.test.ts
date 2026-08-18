@@ -24,6 +24,8 @@ const h = vi.hoisted(() => ({
   sessionUser: null as Record<string, unknown> | null,
   measurementPages: [] as Array<Array<Record<string, unknown>>>,
   oeeExecRows: [] as Array<Record<string, unknown>>,
+  /** Số hàng KỲ VỌNG mà truy vấn đếm trả về (mặc định = tổng số hàng đã dựng). */
+  expectedOverride: null as number | null,
 }));
 
 // Master key: only "MASTER" is valid in this test.
@@ -53,29 +55,64 @@ vi.mock("../../db/inspection", () => ({
 
 // Measurements keyset query → fake drizzle chain returning scripted pages.
 // Also exposes `execute` (used by the /oee aggregate dataset).
-vi.mock("../../db/connection", () => ({
-  getDb: vi.fn(async () => ({
-    execute: async (_q: unknown) => h.oeeExecRows,
-    select: (_cols: unknown) => ({
-      from: (_t: unknown) => ({
-        innerJoin: (_t2: unknown, _on: unknown) => ({
-          leftJoin: (_t3: unknown, _on2: unknown) => ({
-            leftJoin: (_t4: unknown, _on3: unknown) => ({
-              where: (_pred: unknown) => ({
-                orderBy: (_o: unknown) => ({
-                  limit: async (_n: number) => h.measurementPages.shift() ?? [],
-                }),
-              }),
-            }),
-          }),
-        }),
-      }),
-    }),
-  })),
+// 2026-08-18 — hình dạng truy vấn đo lường đã đổi (xem §NGUYÊN NHÂN GỐC trong exportRouter.ts):
+// chọn id bằng semi-join EXISTS rồi lấy hình chiếu theo id, cộng MỘT truy vấn đếm dựng thước
+// kỳ vọng. Mock nhận diện truy vấn theo TẬP CỘT được chọn nên không phụ thuộc thứ tự gọi.
+vi.mock("../../db/connection", () => {
+  const CHAIN = ["select", "from", "innerJoin", "leftJoin", "where", "orderBy", "limit"] as const;
+  type Ops = Array<{ kind: string; arg: unknown }>;
+
+  function resolveOps(ops: Ops): unknown {
+    const cols = (ops[0]?.arg ?? {}) as Record<string, unknown>;
+    if ("n" in cols) {
+      // Truy vấn ĐẾM: đo lường (kèm maxId) hoặc bản ghi kiểm (chỉ n).
+      const flat = h.measurementPages.flat();
+      const maxId = flat.length ? Math.max(...flat.map((r) => Number(r.id))) : 0;
+      return [{ n: h.expectedOverride ?? flat.length, maxId }];
+    }
+    if ("hit" in cols) return [];
+    if ("id" in cols && Object.keys(cols).length === 1) {
+      return (h.measurementPages[0] ?? []).map((r) => ({ id: r.id }));
+    }
+    return h.measurementPages.shift() ?? [];
+  }
+
+  function make(ops: Ops): Record<string, unknown> {
+    const self: Record<string, unknown> = {
+      getSQL: () => ({ queryChunks: [] }),
+      then: (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
+        Promise.resolve().then(() => resolveOps(ops)).then(res, rej),
+    };
+    for (const m of CHAIN) self[m] = (...a: unknown[]) => make([...ops, { kind: m, arg: a[0] }]);
+    return self;
+  }
+
+  // ⚠ Gốc KHÔNG thenable: `await getDb()` sẽ "mở" mọi đối tượng có `.then`.
+  return {
+    getDb: vi.fn(async () => ({
+      execute: async (_q: unknown) => h.oeeExecRows,
+      select: (...a: unknown[]) => make([{ kind: "select", arg: a[0] }]),
+    })),
+  };
+});
+
+// Bộ lọc phạm vi theo người dùng — countInspectionsInWindow dùng lại đúng nhánh này.
+vi.mock("../../_core/accessControl", () => ({
+  resolveDataScope: vi.fn(async () => ({ filter: undefined })),
 }));
 
 // Aggregate datasets (yield / defect-pareto) reuse the R1 report aggregators.
+//
+// ⚠ 2026-08-18 — `resolveTenantFactoryScope` / `resolveTenantCodeFactoryIds` PHẢI có trong mock
+//   này: từ lượt vá trục phạm vi, `/oee.*` gọi `reportFactoryIdsOf` → một trong hai hàm ấy. Thiếu
+//   chúng thì tuyến oee ném `is not a function` và ca ĐỎ vì một lý do chẳng liên quan tới oee.
+//   Trả `factoryIds: null` = "không áp cổng" — giữ nguyên hình dạng truy vấn cũ mà ca này canh.
 vi.mock("../../db/reportAggregators", () => ({
+  resolveTenantFactoryScope: vi.fn(async () => ({
+    factoryIds: null,
+    labels: { scopeApplied: false, scopeEmptyReason: null, scopeMessage: null },
+  })),
+  resolveTenantCodeFactoryIds: vi.fn(async () => ({ factoryIds: [], outcome: "no_match" })),
   getYieldByProduct: vi.fn(async () => [
     { productModelId: 5, productCode: "PM-5", productName: "Board X", total: 100, ok: 95, ng: 4, ntf: 1, yieldRate: 96 },
   ]),
@@ -149,6 +186,7 @@ beforeEach(() => {
   h.auditMock.mockClear();
   h.measurementPages = [];
   h.oeeExecRows = [];
+  h.expectedOverride = null;
   seedTwoPages();
 });
 
@@ -218,7 +256,9 @@ describe("CSV streaming", () => {
 
     const text = await res.text();
     const lines = text.split("\r\n").filter((l) => l.length > 0);
-    expect(lines).toHaveLength(1 + 3); // header + 3 rows over 2 pages
+    // header + 3 rows + DÒNG CHỨNG NHẬN cuối (2026-08-18, chống cắt-im-lặng).
+    expect(lines).toHaveLength(1 + 3 + 1);
+    expect(lines.at(-1)).toBe("# EXPORT_COMPLETE rows=3");
     expect(lines[0]).toBe(toCsvLine([...INSPECTION_EXPORT_COLUMNS]).trim());
     // Escaping: comma-carrying serial is quoted; embedded quotes doubled.
     expect(lines[1]).toContain('"SN-1,comma"');
@@ -305,7 +345,8 @@ describe("measurements endpoint", () => {
     });
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\r\n").filter(Boolean);
-    expect(lines).toHaveLength(1 + 2);
+    expect(lines).toHaveLength(1 + 2 + 1); // + dòng chứng nhận
+    expect(lines.at(-1)).toBe("# EXPORT_COMPLETE rows=2");
     expect(lines[0].split(",")[0]).toBe("id");
     expect(lines[1]).toContain("MISSING");
   });

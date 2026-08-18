@@ -16,6 +16,10 @@ import {
   factories,
 } from "../../drizzle/schema";
 import { getUserCorporateAssignments, getUserFactoryAssignments } from "./auth";
+// ⚠ CHỈ nhập KIỂU (`import type`) — bị xoá lúc biên dịch, nên không tạo vòng import
+// router → db → `_core/accessControl` → `_core/trpc`. Giá trị vẫn nạp qua `import()` động,
+// đúng khuôn sẵn có trong file này.
+import { UNSCOPED_LABELS, type ScopeEmptyReason, type ScopeLabels, scopeLabelsOf } from "../_core/accessControlLabels";
 
 // ============ LIST PROJECTION (doc 27 gap B9) ============
 /**
@@ -725,6 +729,14 @@ export interface CursorPaginationResult<T> {
   prevCursor: string | null;
   hasMore: boolean;
   totalCount?: number;
+  /**
+   * ⚠ 2026-08-17 — TRẠNG THÁI RỖNG TRUNG THỰC. `data: []` của một tài khoản CHƯA ĐƯỢC GÁN
+   * NHÀ MÁY không được trình bày giống hệt `data: []` của một bộ lọc không khớp gì. Giao
+   * diện phải đọc ô này trước khi in "không có dữ liệu" (xem `common.scopeEmpty.*`).
+   * `null` = phạm vi bình thường; `undefined` = lối đi không mang danh tính người dùng.
+   */
+  scopeEmptyReason?: ScopeEmptyReason | null;
+  scopeMessage?: string | null;
 }
 
 export interface CursorPaginationParams {
@@ -771,11 +783,16 @@ export async function getProductInspectionsCursor(params: CursorPaginationParams
   const limit = Math.min(params.limit || 50, 500); // Max 500 per request
   const conditions: SQL[] = [];
 
-  // Access filter by user assignments
+  // Access filter by user assignments.
+  // ⚠ `resolveDataScope` trả CẢ điều kiện SQL lẫn câu giải thích: một tài khoản 0 gán nhà máy
+  // nhận vị từ FALSE (không phải `undefined` = không lọc, xem `_core/accessControl.ts`) và
+  // `data: []` của nó phải đi kèm lý do, không được im lặng thành "không có dữ liệu".
+  let scope: ScopeLabels = UNSCOPED_LABELS;
   if (params.userId && params.userRole !== 'admin') {
-    const { getAccessFilterConditions } = await import("../_core/accessControl");
-    const accessFilter = await getAccessFilterConditions(params.userId, params.userRole || 'user');
-    if (accessFilter) conditions.push(accessFilter);
+    const { resolveDataScope } = await import("../_core/accessControl");
+    const resolved = await resolveDataScope(params.userId, params.userRole || 'user');
+    if (resolved.filter) conditions.push(resolved.filter);
+    scope = scopeLabelsOf(resolved);
   }
 
   // Build filter conditions
@@ -850,6 +867,8 @@ export async function getProductInspectionsCursor(params: CursorPaginationParams
     nextCursor: hasMore && lastItem ? encodeCursor(lastItem.id, lastItem.inspectionTime) : null,
     prevCursor: firstItem ? encodeCursor(firstItem.id, firstItem.inspectionTime) : null,
     hasMore,
+    scopeEmptyReason: scope.scopeEmptyReason,
+    scopeMessage: scope.scopeMessage,
   };
 }
 
