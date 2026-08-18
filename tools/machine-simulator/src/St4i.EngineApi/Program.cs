@@ -915,11 +915,22 @@ builder.Services.AddSingleton<St4i.EngineApi.Site.ISiteDiscovery>(sp =>
 // IHostApplicationLifetime.ApplicationStarted (same ordering constraint the WS-D-D5 binding-risk check
 // further below already relies on for this exact feature) — Start() itself never throws either way (see
 // that class' own doc comment), so a machine with no usable multicast-capable NIC still starts normally.
+//
+// 🔴 TASK AC-1 — THE READ GOES THROUGH BoundServerAddresses.Read AND MUST NOT BE INLINED BACK.
+// This line used to be `… ?.Addresses as IReadOnlyCollection<string>`. IServerAddressesFeature.Addresses is
+// declared ICollection<string>, and Kestrel's runtime type for it implements ICollection<string> WITHOUT
+// implementing IReadOnlyCollection<string> — so that `as` produced null on every call, in every process,
+// whether or not anything was bound, and the advertiser reported the timing message "No server addresses
+// are bound yet" for a fault that had nothing to do with timing. The deferral above was never the problem
+// and is unchanged: on the published build the failure is logged AFTER "Now listening on:" and AFTER
+// "Application started.". See BoundServerAddresses' own doc comment for the measurement, and note that the
+// WS-D-D5 check further below reads the SAME feature with `.ToArray()` and was therefore never blind —
+// that asymmetry is why this now has one named reader instead of two spellings.
 builder.Services.AddSingleton<St4i.EngineApi.Site.SiteAdvertiser>(sp =>
     new St4i.EngineApi.Site.SiteAdvertiser(
         unsOptions,
         deviceIdentityProvider,
-        () => sp.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses as IReadOnlyCollection<string>,
+        () => St4i.EngineApi.Site.BoundServerAddresses.Read(sp.GetRequiredService<IServer>()),
         sp.GetRequiredService<IHostApplicationLifetime>(),
         logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("SiteAdvertiser").LogError(ex, "{Msg}", msg)));
 builder.Services.AddSingleton<St4i.EngineApi.Site.ISiteAdvertiser>(sp => sp.GetRequiredService<St4i.EngineApi.Site.SiteAdvertiser>());

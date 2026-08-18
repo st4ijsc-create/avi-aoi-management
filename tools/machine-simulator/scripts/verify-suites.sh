@@ -2996,7 +2996,39 @@ EXPECT_EDGESERVICE=52
 # 🔴 Task Z-1 raises this 1370 -> 1371 (+1): item 11 measured at the operator's own surface, the PUT that
 # answers 409 after a backup is restored under a live store. Full justification beside EXPECT_EDGECORE
 # above, including why an inverted census assertion and a renamed census member move this by ZERO.
-EXPECT_ENGINEAPI=1371
+#
+# 🔴 TASK AC-1 (.superpowers/sdd/trial-run-defects/task-1-brief.md) raises this 1371 -> 1374 (+3), COUNTED
+# FROM THE RUNNER, and MOVES NO OTHER TOTAL — the other four suites are untouched by this task, which
+# changes two files under src/St4i.EngineApi and none under src/St4i.EdgeCore. Grand total 2755 -> 2758.
+# Both defects it addresses are startup behaviour of a REAL PROCESS, so both new instruments had to reach a
+# surface no suite had: a started Kestrel host, and a directory this run cannot write to.
+#   + 2  tests/St4i.EngineApi.Tests/Site/BoundServerAddressesTests.cs — two [Fact]s, no [Theory].
+#        Program.cs supplied SiteAdvertiser's address delegate as
+#        `…Features.Get<IServerAddressesFeature>()?.Addresses as IReadOnlyCollection<string>`. Kestrel's
+#        runtime type for that property implements ICollection<string> and NOT IReadOnlyCollection<string>,
+#        so the `as` yielded null on EVERY call in EVERY process and the advertiser reported "No server
+#        addresses are bound yet" on a fully-listening host. Nothing in 2755 tests could see it: the
+#        existing SiteAdvertiser tests pass string[] (which satisfies the conversion) and every
+#        WebApplicationFactory class runs on TestServer, whose address feature is a List<string>. These two
+#        start a real Kestrel host on 127.0.0.1:0. Counter-pair, both arms run: with the old expression
+#        restored inside BoundServerAddresses.Read, 2 failed / 0 passed and the second failure quotes the
+#        published build's line verbatim; with the fix, 2 passed / 0 failed.
+#   + 1  OperatorDataRemovalCensusTests.OverANonWritableRoot_TheTwoSeamlessBesideTheBinaryStoresEndTheProcess_AndTheSeamedOneDoesNot
+#        — docs/startup-failure-posture.md §3.5 said in a parenthesis that a read-only install directory is
+#        a second fatal arm for ProductConfigStore and SimulatedEcosystem. Nothing executed it. This applies
+#        one deny ACE, asserts the ACE bit BEFORE asserting anything about a store, and measures the split:
+#        those two throw, MachineConfigStore (whose constructor only reads) does not. Non-vacuity was run,
+#        not argued — with the SetAccessControl call removed the fact goes RED on its first assertion.
+# No src/ behaviour changed for that third one: AC-1 ruled ProductConfigStore's beside-the-binary DEFAULT to
+# be the same documented product behaviour X-1 ruled for MachineConfigStore, and its ABSENT SEAM to be a
+# separate, deliberate, thrice-derived decision (OwnOutputDirectoryGuard's exemption, this script's own
+# output-directory bracket, and PerHostDataRootsTests' partition all derive from that absence). Adding a
+# seam would redden all three and would not move the fatal arm, because a seam leaves the default where it
+# is. See README §15.9 and docs/startup-failure-posture.md §3.5.
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0: measured on a full -t:Rebuild after this task.
+# Nothing was suppressed — no .editorconfig, no <NoWarn>, no #pragma, no SuppressMessage.
+EXPECT_ENGINEAPI=1374
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
