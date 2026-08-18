@@ -71,12 +71,21 @@ public interface ISiteAdvertiser : IAsyncDisposable
 /// types out of the directly-testable class" idiom this project's own
 /// <c>St4i.EngineApi.Auth.BindingRisk.Describe(string[])</c> already established (see its own tests): the
 /// production DI registration in <c>Program.cs</c> supplies
-/// <c>() =&gt; sp.GetRequiredService&lt;IServer&gt;().Features.Get&lt;IServerAddressesFeature&gt;()?.Addresses</c>,
-/// while every test here supplies a trivial in-memory delegate instead. <c>IServerAddressesFeature</c> is
-/// only populated once Kestrel has ACTUALLY begun listening (see the WS-D-D5 binding-risk check in
-/// <c>Program.cs</c> for the same constraint already documented there) — which is why <c>StartAsync</c>
-/// below defers the real <see cref="Start"/> attempt to <see cref="IHostApplicationLifetime.ApplicationStarted"/>
-/// rather than calling it immediately.</para>
+/// <c>() =&gt; BoundServerAddresses.Read(sp.GetRequiredService&lt;IServer&gt;())</c>, while every test here
+/// supplies a trivial in-memory delegate instead. <c>IServerAddressesFeature</c> is only populated once
+/// Kestrel has ACTUALLY begun listening (see the WS-D-D5 binding-risk check in <c>Program.cs</c> for the
+/// same constraint already documented there) — which is why <c>StartAsync</c> below defers the real
+/// <see cref="Start"/> attempt to <see cref="IHostApplicationLifetime.ApplicationStarted"/> rather than
+/// calling it immediately.
+///
+/// <para>🔴 <b>Task AC-1 — that deferral was measured to work, and the delegate beside it was measured to
+/// be blind.</b> The registration used to end in <c>as IReadOnlyCollection&lt;string&gt;</c>, a reference
+/// conversion Kestrel's own address collection cannot satisfy, so the delegate answered
+/// <see langword="null"/> unconditionally and <see cref="ResolvePort"/> raised its "not bound yet" message
+/// on a fully-listening host. The test-supplied delegates here were never affected, because
+/// <c>string[]</c>/<c>List&lt;string&gt;</c> both satisfy that conversion — which is exactly why every test
+/// in this file stayed green while no shipped process could ever advertise. See
+/// <see cref="BoundServerAddresses"/>.</para></para>
 ///
 /// <para><b>Never-crashes-the-host, same discipline as <c>AlarmEvaluatorService</c>
 /// (<c>St4i.EngineApi.Alarms</c>, the FIRST <see cref="IHostedService"/> in this project — this is the
@@ -356,7 +365,15 @@ public sealed class SiteAdvertiser : ISiteAdvertiser, IHostedService
     /// <paramref name="addresses"/> is <see langword="null"/>/empty, or none of them parse — e.g. this
     /// hosted service's own <see cref="StartAsync"/> ran before Kestrel actually bound anything, which
     /// <see cref="Start"/> reports the same way it would report any other startup failure: log + never
-    /// advertise, never throw out of the caller.</summary>
+    /// advertise, never throw out of the caller.
+    /// <para>🔴 <b>Task AC-1 — the message names ONE cause and the caller can supply another.</b> "No
+    /// server addresses are bound yet" is what a caller sees whenever it hands over
+    /// <see langword="null"/>/empty, and on the published build it was raised on a host that WAS listening,
+    /// because the composition root's delegate could not convert Kestrel's collection and answered
+    /// <see langword="null"/>. The wording is kept — for a genuine early call it is the right sentence —
+    /// and the correction belongs at the delegate, which is now <see cref="BoundServerAddresses.Read"/>.
+    /// Read that failure as "this caller produced no addresses", never as "the host is not
+    /// listening".</para></summary>
     internal static int ResolvePort(IReadOnlyCollection<string>? addresses)
     {
         if (addresses is null || addresses.Count == 0)

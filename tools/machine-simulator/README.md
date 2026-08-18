@@ -1619,6 +1619,31 @@ nobody moved is worse than an honest absence — see `PerHostDataRootsTests`'
 `EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared`. If a deployment genuinely needs them separated
 today, **install the two hosts into two directories** — which is what the default installer does.
 
+##### 🔴 Task AC-1 — a trial run met this section from the outside, and the ruling it asked for
+
+A rebuilt `publish-desktop/` was started with **all fourteen** `ST4I_*_DIR` roots redirected, and reported
+`products.json`/`recipes.json` beside the binary as a new defect. It is this section, re-observed from a
+running process — and the observation was **short by half**: that start wrote **four** files, not two.
+`ecosystem\ecosystem-products.json` and `ecosystem\ecosystem-recipes.json` landed in the same second, from
+the third store of the same table — all four stamped `2026-08-18 07:23:42Z` on the artefact that run left
+behind. **Three stores, five filenames, four files on a first run** (`MachineConfigStore`'s is written later,
+at `Ensure`) — read the table above, never a count carried out of a run report.
+
+**The ruling, because "is `ProductConfigStore` the same case as `MachineConfigStore`" has three answers and
+they are not the same answer.**
+
+| Asked about | Same case? | Why |
+|---|---|---|
+| the **default root** (`AppContext.BaseDirectory`) | **yes** | documented product behaviour for both — task X-1's ruling, and each constructor's own doc comment. Not a defect, and not changed here. |
+| the **seam** | **no** | `MachineConfigStore` has `ST4I_MACHINE_CONFIG_DIR`; `ProductConfigStore` has none, and the absence is not an oversight — **three instruments derive from it** (`OwnOutputDirectoryGuard`'s exemption, which requires that source to declare NO `EnvVarDir`; `verify-suites.sh`'s output-directory bracket, which carries the same derivation; and `PerHostDataRootsTests`, which asserts the beside-the-binary population holds exactly `ST4I_MACHINE_CONFIG_DIR`). |
+| the **constructor** | **no, and this is the one that costs** | `MachineConfigStore`'s constructor reads and does not write — **given a root that already exists**, which is what an install directory is. (It does call `Directory.CreateDirectory` first, so a root that does not exist AND cannot be created still throws; the split below is the shape of the ROOT plus the constructor's behaviour, never the constructor alone.) `ProductConfigStore`'s and `SimulatedEcosystem`'s **seed and persist**, so a directory they cannot write to ends the process before the host exists — measured on the shipped exe, exit code `0xE0434352`. See `docs/startup-failure-posture.md` §3.5, rows 32/33. |
+
+🔴 **A seam would not have moved the third row.** A relocation variable with an unchanged default leaves every
+existing install writing exactly where it writes today; what moves that row is moving the DEFAULT, and moving
+a store's default relocates live customer data on the next start — a deployment decision, not a seam, in the
+same words `MachineConfigStore.DefaultRoot`'s remarks already use. AC-1 measured the arm and **reported** the
+decision rather than taking it.
+
 *(VI: 🔴 **Quần thể store THỨ HAI — ghi CẠNH FILE BINARY, và chỉ cô lập một cách TÌNH CỜ.** Mọi thứ bên trên
 nói về **mười ba** thư mục **toàn máy** dưới `%ProgramData%\ST4I\sim\`. Sản phẩm còn ghi **ba** store bền vững
 **ngay cạnh .exe của engine** (`AppContext.BaseDirectory`), và với ba store ấy quy tắc trên **không** áp dụng:

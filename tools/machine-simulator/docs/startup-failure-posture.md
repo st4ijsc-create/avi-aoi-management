@@ -706,6 +706,54 @@ failure is nameable. Actual: **S**. **These two were absorbed by a scalar in the
 analysis and surfaced by an independent re-derivation** — which is the whole argument for publishing the list
 rather than the count.
 
+#### 🔴 The parenthesis above, MEASURED — and the directory the product's own installer chooses (task AC-1)
+
+*"a read-only install directory is a second fatal arm"* was a reading of two constructors. It has now been
+run. A **copy** of `publish-desktop\engine\St4i.EngineApi.exe` — the published build a trial run had already
+exercised — was placed in a scratch directory (so the four store files began ABSENT, which is the shape a
+fresh install has) and started from that directory carrying one deny ACE for the running account
+(`CreateFiles` + `CreateDirectories`), with all fourteen `ST4I_*_DIR` roots redirected to a scratch tree so
+nothing under `%ProgramData%\ST4I\` was touched. **It died before the host existed**: an unhandled
+`System.UnauthorizedAccessException` out of `SimulatedEcosystem..ctor` → `Directory.CreateDirectory`, exit
+code `-532462766` (`0xE0434352`), no `Now listening on:` line, and nothing an operator could act on beyond a
+CLR stack trace. The same binary, same roots, **without** the deny, came up normally.
+
+**The population is three stores and the file count is four, and the count is the part that gets misquoted.**
+That normal run left `products.json`, `recipes.json`, `ecosystem\ecosystem-products.json` and
+`ecosystem\ecosystem-recipes.json` beside the binary — all four written by the SAME start, none of them
+reachable by any environment variable. The brief that commissioned AC-1 named the first two; naming two of
+four is the same class of error §3.5 was written to record, one population lower down. **The COUNT is the
+fact and the byte sizes are not**: the seed carries timestamps, so `ecosystem-products.json` measured
+36,141 B on this task's run and 36,145 B on the trial run's own artefact — the same file, two lengths, and a
+reason to quote the population rather than a size.
+
+🔴 **Which directory this arm is about, stated because it decides who the paragraph is for.**
+`packaging/installer/Package.wxs` puts `INSTALLFOLDER` under `ProgramFiles6432Folder` — the shipped MSI
+installs to `%ProgramFiles%\ST4I\Machine Simulator\`, engine in an `engine\` subfolder — and the harvest
+ships **none** of the four files (measured on the built `.msi`: it carries the literal `fleet.json` and does
+not carry `products.json`). Absent files are exactly the shape that makes these two constructors write. An
+engine launched by the desktop shell runs as the **interactive user**, which cannot create files under
+`%ProgramFiles%`; the optional `ADDLOCAL=ServiceFeature` install runs as **LocalSystem**, which can. So the
+arm is not hypothetical and it is not uniform across the two supported ways to start this product.
+
+**What was NOT measured, named rather than implied:** no install was actually performed under
+`%ProgramFiles%`. The deny ACE is a PROXY for it, and the two differ in at least one respect — UAC file
+virtualization, which does not apply to a 64-bit process carrying a manifest but has not been measured for
+this exe. Nor was the LocalSystem service arm run.
+
+**The third store of the same population is NOT on this arm, and that is the useful half.**
+`MachineConfigStore`'s constructor only reads (`CreateDirectory` on an existing directory, then a `Load` that
+returns early when the file is absent), so the same non-writable directory costs it nothing until something
+asks it to persist — which happens later, at `Ensure`, under the fleet's global lock. Pinned by
+`OperatorDataRemovalCensusTests.OverANonWritableRoot_TheTwoSeamlessBesideTheBinaryStoresEndTheProcess_AndTheSeamedOneDoesNot`,
+which asserts its own deny ACE bit before it asserts anything about a store.
+
+**Rows 32 and 33 are unchanged: still S, still ✗.** AC-1 measured this arm and did not repair it, because the
+repair is not a seam. Giving these two stores a relocation variable leaves every existing default exactly
+where it is and therefore does not move this arm at all; moving the default root does move it, and moving a
+store's default relocates live customer data on the next start — which `MachineConfigStore.DefaultRoot`'s own
+remarks already call a deployment decision rather than a seam. That decision is reported, not taken.
+
 ### 3.6 — 🔴 The law for *"the artefact is present and this process cannot use its bytes"*, and the set it was checked against (task V-1)
 
 **The owner's instruction was three words — *consolidate to one way*.** S-1 had measured three different

@@ -1,5 +1,7 @@
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.RegularExpressions;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Historian;
@@ -1833,6 +1835,86 @@ public sealed class OperatorDataRemovalCensusTests
         Assert.True(invented.Count == 0,
             "the exclusion list excuses a file the enumerations no longer classify as a store, or one the " +
             "posture table now measures:\n  " + string.Join("\n  ", invented));
+    }
+
+    /// <summary>🔴 <b>Task AC-1 — the arm <c>docs/startup-failure-posture.md</c> §3.5 states inside a
+    /// parenthesis, turned from a reading into a measurement.</b> That sentence is <i>"Both also call
+    /// <c>Save()</c> on first run when a file is missing, so a read-only install directory is a second fatal
+    /// arm."</i> Nothing executed it. This does, and it also measures the third store of the same
+    /// beside-the-binary population, which is where the interesting part is.
+    ///
+    /// <para><b>What it settles, and why AC-1 needed it settled.</b> The published build writes FOUR files
+    /// beside its own <c>.exe</c> — <c>products.json</c>, <c>recipes.json</c>,
+    /// <c>ecosystem\ecosystem-products.json</c>, <c>ecosystem\ecosystem-recipes.json</c> — with no
+    /// relocation variable of any kind, while the fourteen <c>ST4I_*_DIR</c> roots obey theirs. The obvious
+    /// reading is that <see cref="ProductConfigStore"/> is simply the same case as
+    /// <see cref="MachineConfigStore"/>, whose beside-the-binary default task X-1 ruled to be documented
+    /// product behaviour. On the DEFAULT they are the same case. <b>On the constructor they are not, and
+    /// this fact is the difference</b>: <see cref="MachineConfigStore"/>'s constructor only READS, so a
+    /// directory it cannot write to costs it nothing until something asks it to persist; the other two
+    /// SEED-AND-PERSIST during construction, are constructor parameters of <c>FleetHost</c>, and are
+    /// therefore built by the unguarded <c>GetRequiredService&lt;FleetHost&gt;()</c> at startup. A
+    /// non-writable install directory ends those two processes before the host exists.</para>
+    ///
+    /// <para><b>Measured on the shipped artefact as well as here</b> (AC-1's report carries the transcript):
+    /// <c>publish-desktop\engine\St4i.EngineApi.exe</c>, run from a directory carrying exactly the deny ACE
+    /// this fact applies, died with an unhandled <see cref="UnauthorizedAccessException"/> out of
+    /// <c>SimulatedEcosystem..ctor</c> and exit code <c>0xE0434352</c> — no host, no listener, no operator
+    /// message beyond a CLR stack trace. In production it is <see cref="Directory.CreateDirectory"/> that
+    /// throws first there, because that store's default root is an <c>ecosystem</c> SUBDIRECTORY that does
+    /// not exist yet; here the directory is handed in and already exists, so the same store reaches its
+    /// first write instead. Both are the same arm and both are fatal; the ORDER between the two stores is
+    /// not asserted, because it is an artifact of which root each one was given.</para>
+    ///
+    /// <para><b>The rig is asserted before the stores are.</b> A deny ACE that failed to apply would make
+    /// every "throws" assertion below pass for the wrong reason, so the probe write must fail first — and
+    /// the <see cref="MachineConfigStore"/> leg is the other half of the same guard: if the rig had made
+    /// the directory unusable rather than unwritable, that constructor would throw too and the split this
+    /// fact reports would be an artifact.</para></summary>
+    [Fact]
+    public void OverANonWritableRoot_TheTwoSeamlessBesideTheBinaryStoresEndTheProcess_AndTheSeamedOneDoesNot()
+    {
+        var dir = EmptyDir();
+        var me = WindowsIdentity.GetCurrent().User;
+        Assert.NotNull(me);
+
+        var info = new DirectoryInfo(dir);
+        var deny = new FileSystemAccessRule(
+            me,
+            FileSystemRights.CreateFiles | FileSystemRights.CreateDirectories,
+            AccessControlType.Deny);
+
+        var applied = info.GetAccessControl(AccessControlSections.Access);
+        applied.AddAccessRule(deny);
+        info.SetAccessControl(applied);
+
+        try
+        {
+            // The rig, asserted rather than assumed: this run really cannot create a file here.
+            var probe = Record.Exception(() => File.WriteAllText(Path.Combine(dir, "probe.txt"), "x"));
+            Assert.IsType<UnauthorizedAccessException>(probe);
+
+            var products = Record.Exception(() => new ProductConfigStore(dir));
+            Assert.IsType<UnauthorizedAccessException>(products);
+
+            var ecosystem = Record.Exception(() => new SimulatedEcosystem(dir));
+            Assert.IsType<UnauthorizedAccessException>(ecosystem);
+
+            // The seamed store of the same population, over the same directory: no write in the
+            // constructor, so no throw. This is what makes the two above a property of THOSE stores.
+            Assert.Null(Record.Exception(() => new MachineConfigStore(dir)));
+
+            // Nothing was left behind by the two that threw — a partial artefact would be a different and
+            // worse finding than a refusal.
+            Assert.Empty(Directory.GetFileSystemEntries(dir));
+        }
+        finally
+        {
+            var restored = info.GetAccessControl(AccessControlSections.Access);
+            restored.RemoveAccessRule(deny);
+            info.SetAccessControl(restored);
+            try { Directory.Delete(dir, recursive: true); } catch { /* best-effort cleanup */ }
+        }
     }
 
     /// <summary>The law's named exceptions, exposed so the one store that cannot join the parallel table
