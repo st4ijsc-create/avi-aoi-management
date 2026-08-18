@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { trpc } from '@/lib/trpc';
+import { ScopeEmptyNotice } from '@/components/ScopeEmptyNotice';
+import { scopeEmptyReasonOf } from '@/lib/scopeEmpty';
 import { 
   ArrowUp, 
   ArrowDown, 
@@ -141,6 +143,14 @@ export default function HistoryComparison() {
     limit: 1000,
     offset: 0,
   });
+
+  /**
+   * ★ 2026-08-17 — hai kỳ so sánh đều đến từ "inspection.search", vốn MANG nhãn phạm vi.
+   * Trước bản vá màn này KHÔNG có trạng thái rỗng nào: nó vẽ 0 / 0,00% / mũi tên 0% và một
+   * thẻ "Phân tích tóm tắt" TRỐNG RỖNG — tức là trình bày phạm vi rỗng như một kết quả so
+   * sánh hợp lệ. Đó là dạng nói dối im lặng nhất trong cả đợt này.
+   */
+  const scopeEmptyReason = scopeEmptyReasonOf(period1Data, period2Data);
 
   // Calculate stats for each period
   const stats1: ComparisonStats = useMemo(() => {
@@ -331,6 +341,13 @@ export default function HistoryComparison() {
           </div>
         </CardContent>
       </Card>
+
+      {/*
+        ⚠ 2026-08-17 — MỌI SỐ DƯỚI ĐÂY LÀ 0 VÌ PHẠM VI RỖNG, không phải vì hai kỳ giống nhau.
+        Trước bản vá, tài khoản CHƯA ĐƯỢC GÁN NHÀ MÁY đọc những con số này như một phép đo về
+        nhà máy. Chúng không phải phép đo — chúng là hệ quả của một phạm vi rỗng.
+      */}
+      <ScopeEmptyNotice reason={scopeEmptyReason} />
 
       {/* Comparison Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">

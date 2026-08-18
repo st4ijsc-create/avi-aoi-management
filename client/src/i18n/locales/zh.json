@@ -2460,6 +2460,11 @@
     "many": "{{count}} 项权限即将过期（最早 {{days}} 天后）——请联系管理员续期。"
   },
   "common": {
+    "scopeEmpty": {
+      "title": "您的账户尚未分配任何工厂",
+      "hint": "因此没有任何检测记录处于您的数据范围内。这是范围为空——并不代表产线已停机。请联系管理员分配工厂。",
+      "badge": "范围为空——未分配工厂"
+    },
     "viewOnlyHint": "您仅有查看权限",
     "densityComfortable": "宽松密度",
     "densityCompact": "紧凑密度",
@@ -3451,6 +3456,9 @@
       "excludedNoBbox": "已排除 {{count}} 个无 bbox 的 NG（{{pct}}%）",
       "noBboxData": "此范围内无带 bbox 坐标的缺陷",
       "noBboxDataHint": "存在 {{count}} 条无 bbox 的 NG 结果（历史数据）。切换到逻辑位置回退可按测量点查看密度。",
+      "scopeEmptyTitle": "您的账户尚未分配任何工厂",
+      "scopeEmptyHint": "因此没有任何检测记录处于您的数据范围内。这是范围为空——并不代表产线没有缺陷。请联系管理员分配工厂。",
+      "scopeEmptyBadge": "范围为空——未分配工厂",
       "hotspots": "热点",
       "hotspotAtPx": "≈ ({{x}}, {{y}}) px",
       "hotspotAtCell": "单元格 ({{x}}, {{y}})",
@@ -5271,7 +5279,9 @@
     "7daysShort": "7天",
     "avgHealth": "平均健康度",
     "noHealthHistory": "暂无健康历史",
-    "noHealthHistoryDesc": "健康历史会随着机器上报遥测数据逐步记录。所选范围内尚无任何记录。"
+    "noHealthHistoryDesc": "健康历史会随着机器上报遥测数据逐步记录。所选范围内尚无任何记录。",
+    "noFleetHealth": "最近 24 小时内没有任何上报",
+    "noFleetHealthDesc": "您范围内的设备在过去 24 小时内未上报 OEE 或健康评分。设备恢复上报遥测数据后，此处将显示数值。"
   },
   "mqtt": {
     "topicsMessages": {
@@ -13401,7 +13411,19 @@
     "toastCreated": "已创建 API 密钥",
     "toastUpdated": "已更新密钥",
     "toastRevoked": "已吊销密钥",
-    "toastDeleted": "已删除密钥"
+    "toastDeleted": "已删除密钥",
+    "colDataScope": "数据范围",
+    "fieldDataScope": "数据范围（该密钥能看到什么）*",
+    "scopeUndeclared": "尚未声明 — 该密钥无法读取任何数据指标（bi:read / export:read 将被拒绝）",
+    "scopeFactory": "单一工厂 — 该密钥仅能看到所选工厂的数据",
+    "scopeGlobal": "全局（显式声明）— 该密钥可看到所有工厂的数据",
+    "scopeUndeclaredShort": "尚未声明",
+    "scopeGlobalShort": "全局",
+    "fieldFactoryCode": "工厂",
+    "fieldCorporateCode": "集团代码（可选 — 若仅按工厂限制则留空）",
+    "pickFactory": "— 请选择工厂 —",
+    "scopeFactoryNeedsCode": "请选择一个工厂（或填写集团代码）—「单一工厂」范围不可两者皆空。",
+    "scopeUndeclaredWarn": "未声明范围的密钥在调用 /api/bi 或 /api/export 时会被拒绝（403）。这是安全默认值，并非故障。"
   },
   "hotFolders": {
     "title": "热文件夹接入 (AOI/AVI)",
@@ -17581,7 +17603,27 @@
     "savedVersion": "已保存为草稿 v{{v}} — 在工程中构建与部署。"
   },
   "diff": {
-    "identical": "两个版本完全相同"
+    "identical": "两个版本完全相同",
+    "hunk": {
+      "sectionTitle": "逐块应用",
+      "count": "{{n}} 个修改块",
+      "appliedN": "已接受 {{n}}",
+      "applyAll": "全部应用",
+      "revertAll": "全部撤销",
+      "accept": "接受此块",
+      "undo": "撤销",
+      "on": "已接受",
+      "range": "第 {{from}}–{{to}} 行",
+      "insertTop": "插入到文件开头",
+      "insertAfter": "插入到第 {{n}} 行之后",
+      "none": "建议与当前缓冲区一致 — 没有可应用的修改块。",
+      "oversize": "文件过大，无法拆分为修改块 — 仅保留整文件的一个块。",
+      "eolMismatch": "建议使用的换行符与缓冲区不同 — 比较前先按缓冲区换行符对齐（取消勾选则逐字比较）。",
+      "staleTitle": "生成建议之后缓冲区已被修改。未应用任何块，以免覆盖你刚输入的代码。",
+      "resync": "基于当前缓冲区重新计算差异",
+      "refusedChanged": "生成建议之后缓冲区已被修改 — 未应用，以免覆盖你的代码。",
+      "refusedUnknown": "该修改块已失效 — 请重新计算差异。"
+    }
   },
   "sop": {
     "status": {

@@ -61,6 +61,8 @@ import {
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
+import { ScopeEmptyNotice, ScopeAwareEmpty } from "@/components/ScopeEmptyNotice";
+import { scopeEmptyReasonOf } from "@/lib/scopeEmpty";
 import {
   PageHeader,
   PageContainer,
@@ -1296,11 +1298,33 @@ export default function Dashboard() {
 
   const stats = (statsWithComparison as StatsWithComparison | undefined)?.current;
   const trends = (statsWithComparison as StatsWithComparison | undefined)?.trends;
+
+  /**
+   * ★ 2026-08-17 — LÝ DO RỖNG CỦA CẢ TRANG, gom MỘT LẦN rồi phát cho từng khối.
+   *
+   * `getStatsWithComparison` (→ `getDashboardStats`) và `getTopBottomMachines` đều mang nhãn.
+   * ⚠ `dashboard.getShiftStats` và `workstation.*` thì KHÔNG: hoặc trả thẳng một mảng (nhãn
+   * không đi qua được tRPC — xem `withScopeLabels`), hoặc chưa gắn nhãn ở máy chủ. Những khối
+   * ấy lấy lý do TỪ ĐÂY, đúng cách docblock `withScopeLabels` chỉ định: một truy vấn CÙNG MÀN
+   * có mang nhãn.
+   */
+  const scopeEmptyReason = scopeEmptyReasonOf(
+    (statsWithComparison as StatsWithComparison | undefined)?.current as { scopeEmptyReason?: string | null } | undefined,
+    topBottomMachines as { scopeEmptyReason?: string | null } | undefined,
+  );
+
+  /**
+   * ⚠ `showNoTodayDataBanner` PHẢI tắt khi phạm vi rỗng. Câu của nó — "Hôm nay chưa có bản
+   * ghi nào" — là một kết luận về DÂY CHUYỀN, và với tài khoản chưa gán nhà máy thì đó là kết
+   * luận SAI: dây chuyền có thể đang chạy đầy tải, chỉ là người này không được xem. Dải phạm
+   * vi rỗng ngay bên dưới đã nói đúng lý do rồi.
+   */
   const showNoTodayDataBanner =
     timeRange === "today" &&
     !statsLoading &&
     Boolean(statsWithComparison) &&
-    (stats?.total ?? 0) <= 0;
+    (stats?.total ?? 0) <= 0 &&
+    scopeEmptyReason === null;
 
   // Prepare sparkline data. Doc 27 Đợt 5 / W5-E (Đợt-1.4 leftover): fpy comes
   // from the SERVER canonical fields (getDailyStats now returns true per-day
@@ -1573,6 +1597,19 @@ export default function Dashboard() {
           </Card>
         )}
 
+        {/*
+          ⚠ 2026-08-17 — LÝ DO CỦA MỘT MÀN HÌNH TOÀN SỐ 0.
+          Trang này vẽ KPI, thẻ theo ca và bảng xếp hạng máy. Với tài khoản CHƯA ĐƯỢC GÁN NHÀ
+          MÁY, cả ba đều ra 0 một cách hoàn toàn hợp lệ — và trước bản vá thì trông y hệt "ca
+          chưa chạy", nên người dùng đi chỉnh bộ lọc / đi báo hỏng ở đúng chỗ không có gì hỏng.
+          Máy chủ nay khai lý do máy-đọc-được ở `scopeEmptyReason`; dải này chỉ việc đọc.
+          `getStatsWithComparison` (→ `getDashboardStats`) là nguồn mang nhãn cho cả trang, còn
+          `getTopBottomMachines` mang nhãn riêng của nó — lấy cái nào có trước.
+          ⚠ `dashboard.getShiftStats` trả về MẢNG nên nhãn KHÔNG đi qua được tRPC (mảng không
+          mang được thuộc tính); thẻ theo ca dùng chung dải này. Xem `withScopeLabels`.
+        */}
+        <ScopeEmptyNotice reason={scopeEmptyReason} />
+
         {/* Summary Stats Cards with Trends - Moved to top */}
         {statsLoading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -1812,7 +1849,11 @@ export default function Dashboard() {
                               </span>
                             </button>
                           ))}
-                          {worstMachines.length === 0 && <p className="text-xs text-muted-foreground py-2">{t("dashboard.noDataYet")}</p>}
+                          {worstMachines.length === 0 && (
+                            <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                              <p className="text-xs text-muted-foreground py-2">{t("dashboard.noDataYet")}</p>
+                            </ScopeAwareEmpty>
+                          )}
                         </div>
                       </div>
                       <div>
@@ -1841,7 +1882,11 @@ export default function Dashboard() {
                               </button>
                             );
                           })}
-                          {worstStations.length === 0 && <p className="text-xs text-muted-foreground py-2">{t("dashboard.noDataYet")}</p>}
+                          {worstStations.length === 0 && (
+                            <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                              <p className="text-xs text-muted-foreground py-2">{t("dashboard.noDataYet")}</p>
+                            </ScopeAwareEmpty>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1902,14 +1947,21 @@ export default function Dashboard() {
                     ))}
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center gap-2 py-2 text-muted-foreground text-sm text-center">
-                    <CheckCircle2 className="h-4 w-4 text-success" />
-                    <span>
-                      {(currentStats?.total ?? 0) > 0
-                        ? t("dashboard.noAlerts")
-                        : t("dashboard.noDataForAlerts", "No inspection data yet. Alerts will appear once production data is available.")}
-                    </span>
-                  </div>
+                  /* ⚠ KHỐI NÀY LÀ CHỖ NGHIỆM THU THỊ GIÁC 2026-08-17 BẮT ĐƯỢC LỜI NÓI DỐI:
+                     dải phạm-vi-rỗng ở trên nói đúng, còn ở đây vẫn là "Tạm chưa có dữ liệu
+                     kiểm". Cả hai vế đều phải đi qua cổng: `noAlerts` ("mọi chỉ số trong
+                     ngưỡng") cũng là một KẾT LUẬN về dây chuyền mà tài khoản chưa gán nhà máy
+                     không có cơ sở để phát biểu. */
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                    <div className="flex items-center justify-center gap-2 py-2 text-muted-foreground text-sm text-center">
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                      <span>
+                        {(currentStats?.total ?? 0) > 0
+                          ? t("dashboard.noAlerts")
+                          : t("dashboard.noDataForAlerts", "No inspection data yet. Alerts will appear once production data is available.")}
+                      </span>
+                    </div>
+                  </ScopeAwareEmpty>
                 )}
               </CardContent>
             </Card>
@@ -1951,7 +2003,11 @@ export default function Dashboard() {
                   );
                 })}
                 {(!shiftStats || (shiftStats as ShiftStats[]).length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  /* `getShiftStats` trả thẳng MẢNG ⇒ nhãn không qua được tRPC; lấy lý do từ
+                     `scopeEmptyReason` cấp trang (nhóm b, đúng chỉ dẫn `withScopeLabels`). */
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                    <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  </ScopeAwareEmpty>
                 )}
               </div>
             </CardContent>
@@ -1980,7 +2036,9 @@ export default function Dashboard() {
                   </div>
                 ))}
                 {(!topBottomMachines || (topBottomMachines as { top: any[] }).top?.length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                    <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  </ScopeAwareEmpty>
                 )}
               </div>
             </CardContent>
@@ -2009,7 +2067,9 @@ export default function Dashboard() {
                   </div>
                 ))}
                 {(!topBottomMachines || (topBottomMachines as { bottom: any[] }).bottom?.length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                    <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  </ScopeAwareEmpty>
                 )}
               </div>
             </CardContent>
@@ -2102,7 +2162,9 @@ export default function Dashboard() {
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
+                <ScopeAwareEmpty reason={scopeEmptyReason} variant="block" className="h-full">
                 <div className="h-full flex items-center justify-center text-muted-foreground">{t("dashboard.noDataYet")}</div>
+                </ScopeAwareEmpty>
               )}
             </div>
             </ChartErrorBoundary>
@@ -2146,7 +2208,9 @@ export default function Dashboard() {
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="block" className="h-full">
                   <div className="h-full flex items-center justify-center text-muted-foreground">{t("dashboard.noDataYet")}</div>
+                  </ScopeAwareEmpty>
                 )}
                 </div>
                 </ChartErrorBoundary>
@@ -2178,7 +2242,9 @@ export default function Dashboard() {
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="block" className="h-full">
                   <div className="h-full flex items-center justify-center text-muted-foreground">{t("dashboard.noDataYet")}</div>
+                  </ScopeAwareEmpty>
                 )}
                 </div>
                 </ChartErrorBoundary>
@@ -2230,6 +2296,7 @@ export default function Dashboard() {
                     })
                 ) : (
                   <EmptyState
+                    scopeEmptyReason={scopeEmptyReason}
                     variant="no-analytics"
                     title={t("dashboard.noWorkstationData")}
                     description={t("dashboard.noWorkstationDataDesc")}
@@ -2343,7 +2410,9 @@ export default function Dashboard() {
                         </div>
                       </div>
                     ) : (
+                      <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
                       <div className="text-muted-foreground text-sm">{t("common.noData")}</div>
+                      </ScopeAwareEmpty>
                     )}
                   </CardContent>
                 </Card>
@@ -2372,7 +2441,9 @@ export default function Dashboard() {
                         </div>
                       </div>
                     ) : (
+                      <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
                       <div className="text-muted-foreground text-sm">{t("common.noData")}</div>
+                      </ScopeAwareEmpty>
                     )}
                   </CardContent>
                 </Card>
@@ -2410,7 +2481,9 @@ export default function Dashboard() {
                         </div>
                       </div>
                     ) : (
+                      <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
                       <div className="text-muted-foreground text-sm">{t("common.noData")}</div>
+                      </ScopeAwareEmpty>
                     )}
                   </CardContent>
                 </Card>
@@ -2537,6 +2610,7 @@ export default function Dashboard() {
                     </div>
                   ) : (
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       variant="no-analytics"
                       title={t("dashboard.noTrendData")}
                       description={t("dashboard.noTrendDataDesc")}
@@ -2579,6 +2653,7 @@ export default function Dashboard() {
                     />
                   ) : (
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       variant="no-analytics"
                       title={t("dashboard.noWorkstationData")}
                       description={t("dashboard.noWorkstationDataDesc")}
@@ -2620,6 +2695,7 @@ export default function Dashboard() {
                     />
                   ) : (
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       variant="no-analytics"
                       title={t("dashboard.noPointData")}
                       description={t("dashboard.noPointDataDesc")}
@@ -2677,8 +2753,10 @@ export default function Dashboard() {
           ) : machinesByLine.size === 0 ? (
             <Card className="glass-card">
               <CardContent className="py-12 text-center">
-                <Cpu className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">{t("dashboard.noMachinesInFilter")}</p>
+                <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
+                  <Cpu className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">{t("dashboard.noMachinesInFilter")}</p>
+                </ScopeAwareEmpty>
               </CardContent>
             </Card>
           ) : (
@@ -3171,6 +3249,7 @@ export default function Dashboard() {
                         </div>
                       ))}
                       {(!filteredInspections?.data || filteredInspections.data.length === 0) && (
+                        <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
                         <div className="text-center py-8">
                           <p className="text-muted-foreground">{t("dashboard.noInspectionResults")}</p>
                           {machineDialogStatusFilter !== "all" && (
@@ -3184,6 +3263,7 @@ export default function Dashboard() {
                             </Button>
                           )}
                         </div>
+                        </ScopeAwareEmpty>
                       )}
                       {filteredInspections?.total && filteredInspections.total > 50 && (
                         <p className="text-center text-xs text-muted-foreground py-2">
@@ -3367,6 +3447,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <EmptyState
+                scopeEmptyReason={scopeEmptyReason}
                 variant="no-analytics"
                 title={t("dashboard.noMeasurementPoints")}
                 description={t("dashboard.noMeasurementPointsDesc")}

@@ -43,6 +43,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
 import { MetricCard, PageHeader, StatusBadge, SectionCard, severityDotClass, stateHex, toneHex } from "@/components/patterns";
 import { EmptyState } from "@/components/EmptyState";
+import { isScopeEmpty } from "@/lib/scopeEmpty";
 import { relTimeShort } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1458,8 +1459,21 @@ export default function CommandCenter() {
                 alarms.length === 0 ? (
                   /* GĐ2 (việc 4): rỗng = TIN TỐT → EmptyState allClear DS (icon
                      check success) thay div tự chế; nhánh "ngoài phạm vi chọn"
-                     là trạng thái lọc, giữ dòng trung tính. */
-                  <EmptyState allClear compact title={t("commandCenter.khongCoCanhBaoDang", "Không có cảnh báo đang hoạt động")} />
+                     là trạng thái lọc, giữ dòng trung tính.
+                     ★★★ 2026-08-18 (nhóm B #5): "rỗng = TIN TỐT" chỉ ĐÚNG khi phạm vi
+                     người xem KHÔNG rỗng. `recentAlerts` nay lọc theo nhà máy được gán,
+                     nên một tài khoản 0-gán nhận 0 dòng — và câu "Không có cảnh báo đang
+                     hoạt động" kèm icon check XANH nói với người vận hành rằng xưởng đang
+                     yên ổn. Đó là lời khai SAI VỀ THẾ GIỚI ở đúng chỗ nguy hiểm nhất. */
+                  isScopeEmpty(alertsQ.data?.scopeEmptyReason) ? (
+                    <EmptyState
+                      compact
+                      title={t("common.scopeEmpty.title")}
+                      description={alertsQ.data?.scopeMessage ?? t("common.scopeEmpty.hint")}
+                    />
+                  ) : (
+                    <EmptyState allClear compact title={t("commandCenter.khongCoCanhBaoDang", "Không có cảnh báo đang hoạt động")} />
+                  )
                 ) : (
                   <div className="py-8 text-center text-sm text-muted-foreground">
                     {t("cmd.noScopedAlarms", "No alarms in the selected scope.")}

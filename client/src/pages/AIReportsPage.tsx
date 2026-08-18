@@ -69,8 +69,27 @@ function NarrativeProvenanceBadge({ meta, t }: { meta: NarrativeMeta; t: (k: str
   );
 }
 
+/**
+ * ★★★ G4-A VIỆC 1 lớp ① — **NGÔN NGỮ CỦA BÁO CÁO PHẢI ĐI THEO NGÔN NGỮ GIAO DIỆN.**
+ *
+ * Trước bản vá, `handleGenerate` gửi `{ startDate, endDate }` cho **cả 4 tab** và **không hề có ô
+ * `language`**; máy chủ khai `.default("en")` ⇒ trong một nhà máy Việt Nam, mọi báo cáo điều hành
+ * đều ra tiếng Anh, và **không có bề mặt nào để người dùng chọn khác đi**.
+ *
+ * ⚠ `i18n.language` có thể là mã vùng (`"vi-VN"`, `"zh-CN"`) hoặc một ngôn ngữ hệ chưa hỗ trợ.
+ * Hàm này quy về đúng ba mã mà `aiReportRouter` nhận. Rơi về `"vi"` (không phải `"en"`) là lựa
+ * chọn có chủ ý: đây là mặc định của hệ, và một mã lạ **không được** lặng lẽ biến báo cáo thành
+ * tiếng Anh — đó chính là hình dạng của lỗi vừa vá.
+ */
+function ngonNguBaoCao(lng: string | undefined): "vi" | "en" | "zh" {
+  const g = (lng ?? "vi").toLowerCase();
+  if (g.startsWith("en")) return "en";
+  if (g.startsWith("zh")) return "zh";
+  return "vi";
+}
+
 export default function AIReportsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // i18next's TFunction has an overloaded signature that TS won't structurally
   // match against a plain `(k, d?) => string` prop type (same reason
   // buildExportConfig below wraps `t` instead of passing it directly) — wrap
@@ -100,7 +119,14 @@ export default function AIReportsPage() {
     dailySummary.isPending || rcaReport.isPending || modelPerformance.isPending || executiveSummary.isPending;
 
   const handleGenerate = () => {
-    const params = { startDate: dateRange.from, endDate: dateRange.to };
+    // ⚠ `language` phải nằm ở ĐÂY — một object `params` dùng chung cho cả bốn nhánh — chứ không
+    //   thêm vào từng `mutate()`. Bốn chỗ khai riêng là bốn chỗ để quên chỗ thứ tư, và đó đúng là
+    //   hình dạng cũ của lỗi (một ô thiếu, lặp lại y hệt ở cả 4 tab).
+    const params = {
+      startDate: dateRange.from,
+      endDate: dateRange.to,
+      language: ngonNguBaoCao(i18n.language),
+    };
     switch (activeTab) {
       case "daily":
         dailySummary.mutate(params);

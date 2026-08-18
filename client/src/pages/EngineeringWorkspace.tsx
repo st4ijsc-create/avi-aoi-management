@@ -597,6 +597,11 @@ export default function EngineeringWorkspace() {
         setCode((prev) => (prev.trim() ? `${prev}\n\n${gen}` : gen));
         toast.success(t("progCopilot.inserted", "Inserted generated code into the editor"));
       },
+      // G2-D — byte-exact buffer REPLACE, used by the per-hunk apply surface. Deliberately
+      // NOT `onApply` (which appends): a hunk's line coordinates only mean something if the
+      // buffer becomes exactly the projected text. No toast here — accepting/undoing hunks is
+      // a rapid toggle and a toast per click would be noise.
+      onApplyText: (next: string) => setCode(next),
     }),
     [copilotInitialKind, code, diagnostics],
   );

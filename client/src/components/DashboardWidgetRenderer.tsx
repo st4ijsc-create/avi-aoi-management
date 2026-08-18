@@ -5,6 +5,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
+import { isScopeEmpty } from "@/lib/scopeEmpty";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -114,12 +115,20 @@ function WidgetError({ message }: { message?: string }) {
   );
 }
 
-function WidgetEmpty() {
+/**
+ * ⚠ 2026-08-17 — ô rỗng của widget nói ĐÚNG LÝ DO khi phạm vi rỗng.
+ *
+ * Không có `reason` (hoặc `reason` là null) thì câu cũ giữ nguyên: một widget của dây chuyền
+ * thật sự chưa chạy VẪN phải nói "chưa có dữ liệu". Chỉ khi máy chủ khai
+ * `scopeEmptyReason="no_factory_assignment"` thì ô này mới đổi câu.
+ */
+function WidgetEmpty({ reason }: { reason?: string | null } = {}) {
   const { t } = useTranslation();
+  const scopeEmpty = isScopeEmpty(reason);
   return (
-    <div className="h-full flex items-center justify-center text-muted-foreground">
-      <Info className="w-4 h-4 mr-1" />
-      <span className="text-xs">{t('dashboard.noData')}</span>
+    <div className={`h-full flex items-center justify-center ${scopeEmpty ? "text-warning" : "text-muted-foreground"}`}>
+      {scopeEmpty ? <AlertTriangle className="w-4 h-4 mr-1" /> : <Info className="w-4 h-4 mr-1" />}
+      <span className="text-xs">{scopeEmpty ? t('common.scopeEmpty.badge') : t('dashboard.noData')}</span>
     </div>
   );
 }
@@ -142,6 +151,10 @@ function YieldRateWidget({ config, size }: { config: Record<string, any>; size: 
 
   if (isLoading) return <WidgetLoading />;
   if (isError || !stats) return <WidgetError />;
+  // ⚠ 0% tỷ lệ đạt của một phạm vi rỗng KHÔNG phải một phép đo — đừng vẽ nó thành đồng hồ.
+  if (isScopeEmpty(((stats as any).current ?? {}).scopeEmptyReason)) {
+    return <WidgetEmpty reason={((stats as any).current ?? {}).scopeEmptyReason} />;
+  }
 
   const current = (stats as any).current as { yieldRate: number; total: number; ok: number; ng: number; ntf: number } | undefined;
   const trends = (stats as any).trends as { fpy: number } | null | undefined;
@@ -448,7 +461,7 @@ function TopNGPointsWidget({ config, size }: { config: Record<string, any>; size
     });
   }
 
-  if (bottomMachines.length === 0) return <WidgetEmpty />;
+  if (bottomMachines.length === 0) return <WidgetEmpty reason={(topBottom as any)?.scopeEmptyReason} />;
 
   // sort by NG count desc
   bottomMachines.sort((a, b) => b.ng - a.ng);
@@ -508,6 +521,9 @@ function ThroughputWidget({ config, size }: { config: Record<string, any>; size:
 
   if (isLoading) return <WidgetLoading />;
   if (isError || !stats) return <WidgetError />;
+  // ⚠ Phạm vi rỗng KHÔNG phải lỗi tải — trước bản vá nó rơi vào ô đỏ ở dòng trên khi `stats`
+  // vắng, và người dùng đi báo hỏng hệ thống.
+  if (isScopeEmpty((stats as any).scopeEmptyReason)) return <WidgetEmpty reason={(stats as any).scopeEmptyReason} />;
 
   const total = (stats as any)?.total ?? 0;
   const hoursElapsed = Math.max(1, (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60));
@@ -575,6 +591,9 @@ function KPICardWidget({ config }: { config: Record<string, any> }) {
 
   if (isLoading) return <WidgetLoading />;
   if (!stats) return <WidgetEmpty />;
+  if (isScopeEmpty(((stats as any).current ?? {}).scopeEmptyReason)) {
+    return <WidgetEmpty reason={((stats as any).current ?? {}).scopeEmptyReason} />;
+  }
 
   const current = (stats as any).current;
   const trends = (stats as any).trends;
@@ -675,6 +694,7 @@ function PieChartWidget({ config }: { config: Record<string, any> }) {
 
   if (isLoading) return <WidgetLoading />;
   if (!stats) return <WidgetEmpty />;
+  if (isScopeEmpty((stats as any).scopeEmptyReason)) return <WidgetEmpty reason={(stats as any).scopeEmptyReason} />;
 
   const s = stats as any;
   const pieData = [
@@ -683,7 +703,7 @@ function PieChartWidget({ config }: { config: Record<string, any> }) {
     { name: "NTF", value: Number(s.ntf) || 0, color: STATUS_COLORS.ntf },
   ].filter(d => d.value > 0);
 
-  if (pieData.length === 0) return <WidgetEmpty />;
+  if (pieData.length === 0) return <WidgetEmpty reason={(stats as any).scopeEmptyReason} />;
 
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -720,6 +740,7 @@ function GaugeWidget({ config }: { config: Record<string, any> }) {
 
   if (isLoading) return <WidgetLoading />;
   if (!stats) return <WidgetEmpty />;
+  if (isScopeEmpty((stats as any).scopeEmptyReason)) return <WidgetEmpty reason={(stats as any).scopeEmptyReason} />;
 
   const value = (stats as any)?.yieldRate ?? 0;
   const min = Number(config.min) || 0;
@@ -862,8 +883,9 @@ function TrendIndicatorWidget({ config }: { config: Record<string, any> }) {
   if (isLoading) return <WidgetLoading />;
   if (!stats) return <WidgetEmpty />;
 
+  const trendScopeReason = ((stats as any).current ?? {}).scopeEmptyReason;
   const trends = (stats as any).trends;
-  if (!trends) return <WidgetEmpty />;
+  if (isScopeEmpty(trendScopeReason) || !trends) return <WidgetEmpty reason={trendScopeReason} />;
 
   const items = [
     { label: t('dashboard.output'), value: trends.output, icon: <Activity className="w-3 h-3" /> },
@@ -953,6 +975,7 @@ function TargetProgressWidget({ config }: { config: Record<string, any> }) {
 
   if (isLoading) return <WidgetLoading />;
   if (!stats) return <WidgetEmpty />;
+  if (isScopeEmpty((stats as any).scopeEmptyReason)) return <WidgetEmpty reason={(stats as any).scopeEmptyReason} />;
 
   const current = (stats as any)?.total ?? 0;
   const pct = Math.min((current / target) * 100, 100);

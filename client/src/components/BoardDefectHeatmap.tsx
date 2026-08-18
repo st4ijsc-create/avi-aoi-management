@@ -243,6 +243,13 @@ export function BoardDefectHeatmap() {
       {/* Honest status badges */}
       {data && (
         <div className="flex flex-wrap items-center gap-2">
+          {/* 2026-08-17 — phạm vi RỖNG phải nói ra, không được im lặng thành "0 lỗi". */}
+          {data.scopeEmptyReason === "no_factory_assignment" && (
+            <Badge variant="destructive" className="gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              {t("defects.heatmap.scopeEmptyBadge")}
+            </Badge>
+          )}
           {data.realCoordinates ? (
             <Badge variant="secondary" className="gap-1">
               <MapPin className="h-3 w-3" />
@@ -278,6 +285,21 @@ export function BoardDefectHeatmap() {
           <CardContent className="pt-6">
             {isLoading ? (
               <Skeleton className="w-full h-[480px]" />
+            ) : data?.scopeEmptyReason === "no_factory_assignment" ? (
+              /**
+               * ⚠ 2026-08-17 — TRẠNG THÁI RỖNG TRUNG THỰC.
+               * Lưới 0 lỗi của một tài khoản CHƯA ĐƯỢC GÁN NHÀ MÁY không được trình
+               * bày giống hệt lưới 0 lỗi của một dây chuyền sạch. Giả vờ "không có
+               * dữ liệu" dạy người vận hành rằng hệ thống hỏng, trong khi sự thật là
+               * phạm vi của họ rỗng — và họ sẽ đi tìm lỗi ở đúng chỗ không có lỗi.
+               */
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <AlertTriangle className="h-12 w-12 mb-3 text-warning" />
+                <p className="font-medium">{t("defects.heatmap.scopeEmptyTitle")}</p>
+                <p className="text-xs mt-2 max-w-md text-muted-foreground">
+                  {t("defects.heatmap.scopeEmptyHint")}
+                </p>
+              </div>
             ) : !data || data.totalDefects === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
                 <Grid3X3 className="h-12 w-12 mb-3 opacity-40" />
@@ -345,7 +367,9 @@ export function BoardDefectHeatmap() {
             ))}
             {(!data?.hotspots || data.hotspots.length === 0) && (
               <p className="text-sm text-muted-foreground text-center py-6">
-                {t("defects.heatmap.noBboxData")}
+                {data?.scopeEmptyReason === "no_factory_assignment"
+                  ? t("defects.heatmap.scopeEmptyTitle")
+                  : t("defects.heatmap.noBboxData")}
               </p>
             )}
           </CardContent>

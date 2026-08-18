@@ -200,6 +200,7 @@ export function ProgrammingCopilotDock() {
               vendorInitial={binding.vendor}
               contextCode={binding.code}
               onApply={binding.onApply}
+              onApplyText={binding.onApplyText}
               seed={seed}
             />
           </Suspense>

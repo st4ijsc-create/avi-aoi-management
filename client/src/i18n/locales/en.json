@@ -2468,6 +2468,11 @@
     "many": "{{count}} permissions are expiring (soonest in {{days}} day(s)) — contact an admin to renew."
   },
   "common": {
+    "scopeEmpty": {
+      "title": "Your account is not assigned to any factory",
+      "hint": "No inspection records therefore fall within your data scope. This is an EMPTY SCOPE — not a finding that the line has stopped running. Contact an administrator to be assigned a factory.",
+      "badge": "Empty scope — no factory assigned"
+    },
     "viewOnlyHint": "You have view-only access",
     "densityComfortable": "Comfortable density",
     "densityCompact": "Compact density",
@@ -3461,6 +3466,9 @@
       "excludedNoBbox": "{{count}} NG without bbox excluded ({{pct}}%)",
       "noBboxData": "No defects with bbox coordinates in this scope",
       "noBboxDataHint": "{{count}} NG results exist but carry no bbox (legacy data). Switch to the logical-position fallback to see their density by point.",
+      "scopeEmptyTitle": "Your account is not assigned to any factory",
+      "scopeEmptyHint": "No inspection records therefore fall within your data scope. This is an EMPTY SCOPE — not a finding that the line has no defects. Contact an administrator to be assigned a factory.",
+      "scopeEmptyBadge": "Empty scope — no factory assigned",
       "hotspots": "Hotspots",
       "hotspotAtPx": "≈ ({{x}}, {{y}}) px",
       "hotspotAtCell": "Cell ({{x}}, {{y}})",
@@ -5428,6 +5436,8 @@
     "avgHealth": "Average health",
     "noHealthHistory": "No health history yet",
     "noHealthHistoryDesc": "Health history is recorded over time as the machine reports telemetry. Nothing has been logged for the selected range yet.",
+    "noFleetHealth": "Nothing reported in the last 24 hours",
+    "noFleetHealthDesc": "Machines within your scope have not reported OEE or a health score in the past 24 hours. Figures appear here once they start sending telemetry again.",
     "editLayout": "Edit layout",
     "view3dMap": "3D map"
   },
@@ -13618,7 +13628,19 @@
     "toastCreated": "API key created",
     "toastUpdated": "Key updated",
     "toastRevoked": "Key revoked",
-    "toastDeleted": "Key deleted"
+    "toastDeleted": "Key deleted",
+    "colDataScope": "Data scope",
+    "fieldDataScope": "DATA scope (what the key can SEE) *",
+    "scopeUndeclared": "Undeclared — the key CANNOT read any figures (bi:read / export:read are denied)",
+    "scopeFactory": "One factory — the key only sees data from the selected factory",
+    "scopeGlobal": "Global (explicit) — the key sees data from EVERY factory",
+    "scopeUndeclaredShort": "Undeclared",
+    "scopeGlobalShort": "Global",
+    "fieldFactoryCode": "Factory",
+    "fieldCorporateCode": "Corporate code (optional — leave blank to restrict by factory only)",
+    "pickFactory": "— pick a factory —",
+    "scopeFactoryNeedsCode": "Pick a factory (or enter a corporate code) — the 'one factory' scope cannot leave both blank.",
+    "scopeUndeclaredWarn": "A key with no declared scope is DENIED (403) on /api/bi and /api/export. This is the safe default, not a fault."
   },
   "hotFolders": {
     "title": "Hot-folder Ingest (AOI/AVI)",
@@ -17402,7 +17424,27 @@
     }
   },
   "diff": {
-    "identical": "The two versions are identical"
+    "identical": "The two versions are identical",
+    "hunk": {
+      "sectionTitle": "Apply hunk by hunk",
+      "count": "{{n}} hunks",
+      "appliedN": "{{n}} accepted",
+      "applyAll": "Apply all",
+      "revertAll": "Undo all",
+      "accept": "Accept hunk",
+      "undo": "Undo",
+      "on": "Accepted",
+      "range": "Lines {{from}}–{{to}}",
+      "insertTop": "Insert at top of file",
+      "insertAfter": "Insert after line {{n}}",
+      "none": "The suggestion matches the current buffer — nothing to apply.",
+      "oversize": "File too large to split into hunks — a single whole-file hunk only.",
+      "eolMismatch": "The suggestion uses different line endings than the buffer — re-line it to the buffer before diffing (uncheck to compare verbatim).",
+      "staleTitle": "The buffer changed after this suggestion was generated. Nothing is applied, so your edits are not overwritten.",
+      "resync": "Recompute the diff from the current buffer",
+      "refusedChanged": "The buffer changed after the suggestion was generated — not applied, to avoid overwriting your code.",
+      "refusedUnknown": "This hunk is no longer valid — recompute the diff."
+    }
   },
   "programRelease": {
     "button": "Program release",

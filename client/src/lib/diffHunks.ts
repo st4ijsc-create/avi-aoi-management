@@ -1,0 +1,330 @@
+/**
+ * G2-D — APPLY-DIFF THEO TỪNG KHỐI (hunk). Logic THUẦN, không React, không CodeMirror.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * VÌ SAO CÓ FILE NÀY
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * Trước bản vá, áp một gợi ý của Copilot là chuyện ĂN CẢ HOẶC BỎ CẢ: `onApply(resultCode)`
+ * ghi trọn kết quả vào buffer. Người dùng nhận 200 dòng chỉ để sửa 3 dòng. File này tách
+ * diff SẴN CÓ (`computeLineDiff` trong components/diff/LineDiff.tsx — KHÔNG viết thuật
+ * toán diff thứ hai) thành các KHỐI độc lập, nhận/bỏ được từng khối.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * HAI QUYẾT ĐỊNH THIẾT KẾ QUAN TRỌNG — ĐỌC TRƯỚC KHI SỬA
+ * ══════════════════════════════════════════════════════════════════════════════════
+ *
+ * (1) `split("\n")` / `join("\n")` là SONG ÁNH TUYỆT ĐỐI.
+ *     `t.split("\n").join("\n") === t` với MỌI chuỗi t. Nó giữ nguyên:
+ *       · ký tự `\r` của CRLF (nằm ở CUỐI mỗi phần tử dòng),
+ *       · dòng rỗng cuối cùng do newline cuối file sinh ra,
+ *       · mọi khoảng trắng đầu/cuối dòng.
+ *     Vì thế mô hình "mảng dòng" ở đây KHÔNG mất một byte nào, và không có bước
+ *     chuẩn hoá ngầm nào được phép chen vào. Đó là điều làm cho bất biến
+ *     `projectHunks(plan, MỌI id).text === plan.modified` đúng TỪNG KÝ TỰ.
+ *     ⚠ Đừng "dọn dẹp" bằng `.trim()`, `.trimEnd()` hay `split(/\r?\n/)` ở bất kỳ đâu
+ *       trong file này — mỗi cái đều là một lượt nuốt mã của người dùng.
+ *
+ * (2) Áp khối là PHÉP CHIẾU TỪ BẢN GỐC, không phải phép sửa tại chỗ.
+ *     `projectHunks(plan, tậpChọn)` luôn dựng lại chuỗi bằng MỘT lượt duyệt bản gốc:
+ *       [dòng chưa đụng] + [dòng thêm của khối] + [dòng chưa đụng] + …
+ *     Nhờ vậy "dịch chuyển offset" — chỗ dễ sai nhất của apply-diff — bị TRIỆT TIÊU
+ *     theo cấu tạo chứ không phải được tính đúng: không có toạ độ nào bị viết lại sau
+ *     mỗi lần áp, nên không có gì để lệch. Hệ quả kèm theo, đều là thật:
+ *       · thứ tự chọn khối KHÔNG ảnh hưởng kết quả (#2 rồi #5 ≡ #5 rồi #2),
+ *       · HOÀN TÁC = bỏ id khỏi tập rồi chiếu lại — không tích luỹ sai số,
+ *       · áp mọi khối cho ra ĐÚNG bản `modified`, đó là ca chống hồi quy với đường cũ.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * AN TOÀN DỮ LIỆU — buffer đổi giữa chừng
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * Một `HunkPlan` gắn chặt với chuỗi `original` mà nó được tính ra. Nếu người dùng gõ
+ * thêm vào editor sau khi gợi ý hiện lên, mọi khối đều nói về một văn bản KHÔNG CÒN
+ * TỒN TẠI. `applyHunkSelection` vì thế đòi cả buffer sống lẫn tập khối "đang được coi
+ * là đã áp", và TỪ CHỐI (`reason: "buffer-changed"`) nếu hai thứ không khớp từng ký tự.
+ * Kết quả từ chối KHÔNG mang trường `text` — không có gì để lỡ tay ghi ra.
+ */
+import { computeLineDiff } from "@/components/diff/LineDiff";
+
+export type Eol = "\r\n" | "\n";
+
+/** Một khối thay đổi liền mạch: xoá `removed`, chèn `added` tại `[origStart, origEnd)`. */
+export interface DiffHunk {
+  /** Định danh ỔN ĐỊNH: cùng (original, modified) ⇒ cùng id. Dùng làm khoá React + khoá chọn. */
+  id: string;
+  /** Thứ tự trong plan, 0-based (khối #0 là khối trên cùng). */
+  index: number;
+  /** Chỉ số dòng 0-based trong `original.split("\n")`, bao gồm. */
+  origStart: number;
+  /** Chỉ số dòng 0-based trong `original.split("\n")`, KHÔNG bao gồm. Bằng origStart ⇒ khối chỉ-thêm. */
+  origEnd: number;
+  /** Chỉ số dòng 0-based trong `modified.split("\n")`, bao gồm. */
+  modStart: number;
+  /** Chỉ số dòng 0-based trong `modified.split("\n")`, KHÔNG bao gồm. */
+  modEnd: number;
+  /** Các dòng bị xoá (nguyên văn, còn cả `\r` nếu file dùng CRLF). */
+  removed: string[];
+  /** Các dòng được chèn vào (nguyên văn). */
+  added: string[];
+}
+
+export interface HunkPlan {
+  /** Bản gốc mà mọi toạ độ khối nói về. Đây LÀ hợp đồng an toàn — đừng thay nó. */
+  original: string;
+  /** Bản đích HIỆU LỰC (sau khi khớp EOL nếu có yêu cầu). `projectHunks(mọi id)` bằng đúng chuỗi này. */
+  modified: string;
+  hunks: DiffHunk[];
+  /** Chữ ký ngắn của `original` — để hiển thị/nhật ký, KHÔNG phải phép kiểm an toàn. */
+  baseSignature: string;
+  /** `modified` đã bị đổi kiểu xuống dòng cho khớp `original` hay chưa. */
+  eolMatched: boolean;
+  /** File vượt ngưỡng LCS ⇒ chỉ có MỘT khối cả-file (cầu chì chống treo trình duyệt). */
+  oversize: boolean;
+}
+
+export interface ComputeHunkOptions {
+  /**
+   * Kéo `modified` về đúng kiểu xuống dòng của `original` TRƯỚC khi so.
+   * Không bật: model trả LF cho một buffer CRLF ⇒ mọi dòng đều "khác" ⇒ một khối nuốt cả file.
+   * Đó là kết quả TRUNG THỰC nhưng vô dụng — nên UI bật cờ này khi phát hiện lệch EOL,
+   * và khi đó `plan.modified` (chứ không phải chuỗi model trả) mới là cái sẽ được ghi.
+   */
+  matchEol?: boolean;
+  /** Ngưỡng số dòng cho phép chạy LCS O(n·m). Vượt ⇒ một khối cả-file. */
+  maxLines?: number;
+}
+
+export type ProjectResult =
+  | { ok: true; text: string; appliedIds: string[] }
+  | { ok: false; reason: "unknown-hunk"; id: string };
+
+export type HunkApplyResult =
+  | { ok: true; text: string; appliedIds: string[] }
+  | { ok: false; reason: "unknown-hunk"; id: string }
+  | { ok: false; reason: "buffer-changed"; expected: string; actual: string };
+
+/**
+ * Ngưỡng mặc định. `computeLineDiff` dựng bảng LCS (n+1)×(m+1) — 1500×1500 ≈ 2,25 triệu ô
+ * là mức còn chạy tức thì trên luồng UI; gấp đôi con số này bắt đầu thấy giật.
+ */
+export const DEFAULT_MAX_DIFF_LINES = 1500;
+
+/** djb2 → base36. Chỉ dùng cho ĐỊNH DANH và CHỮ KÝ HIỂN THỊ, không dùng để so an toàn. */
+function hash32(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * Chữ ký ngắn của một văn bản: `<độ dài>.<hash>`. Dùng để BÁO CÁO lệch (nhật ký, thông
+ * báo) mà không rò nội dung mã ra ngoài. Phép kiểm an toàn thật vẫn là so chuỗi đầy đủ.
+ */
+export function textSignature(text: string): string {
+  return `${text.length}.${hash32(text)}`;
+}
+
+/** Kiểu xuống dòng ÁP ĐẢO của một văn bản. Không có newline nào ⇒ "\n". */
+export function detectEol(text: string): Eol {
+  let crlf = 0;
+  let lf = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) {
+      lf++;
+      if (i > 0 && text.charCodeAt(i - 1) === 13) crlf++;
+    }
+  }
+  if (crlf === 0) return "\n";
+  return crlf * 2 >= lf ? "\r\n" : "\n";
+}
+
+/** Đổi mọi xuống dòng về `eol`. Đi qua LF trước nên KHÔNG nhân đôi `\r`. */
+export function normalizeEol(text: string, eol: Eol): string {
+  const lf = text.replace(/\r\n/g, "\n");
+  return eol === "\r\n" ? lf.replace(/\n/g, "\r\n") : lf;
+}
+
+function makeHunk(
+  index: number,
+  origStart: number,
+  origEnd: number,
+  modStart: number,
+  modEnd: number,
+  removed: string[],
+  added: string[],
+): DiffHunk {
+  // Băm gồm CẢ hai độ dài: không có dấu ngăn nào thì {removed:["ab"],added:[]} và
+  // {removed:[],added:["ab"]} sẽ băm ra cùng một id. File nguồn giữ thuần ASCII.
+  const sig = hash32(
+    [origStart, removed.length, added.length, ...removed, ...added].join("|"),
+  );
+  return {
+    id: `h${origStart}_${origEnd}_${modStart}.${sig}`,
+    index,
+    origStart,
+    origEnd,
+    modStart,
+    modEnd,
+    removed,
+    added,
+  };
+}
+
+/**
+ * Tách diff giữa `original` và `modified` thành các khối độc lập.
+ * KHÔNG tự viết diff — dùng `computeLineDiff` (LCS) đã có, chỉ GOM các hàng
+ * del/add liền nhau thành khối và quy đổi sang toạ độ dòng hai phía.
+ */
+export function computeHunkPlan(
+  original: string,
+  modified: string,
+  opts: ComputeHunkOptions = {},
+): HunkPlan {
+  const maxLines = opts.maxLines ?? DEFAULT_MAX_DIFF_LINES;
+  const target = opts.matchEol ? normalizeEol(modified, detectEol(original)) : modified;
+  const base = {
+    original,
+    modified: target,
+    baseSignature: textSignature(original),
+    eolMatched: target !== modified,
+  };
+
+  if (original === target) return { ...base, hunks: [], oversize: false };
+
+  const aLines = original.split("\n");
+  const bLines = target.split("\n");
+
+  if (aLines.length > maxLines || bLines.length > maxLines) {
+    // Cầu chì: một khối duy nhất phủ cả file. Bất biến B1 vẫn giữ (áp khối đó ⇒ modified),
+    // chỉ mất khả năng chọn lẻ — và nói thẳng điều đó qua cờ `oversize`.
+    return {
+      ...base,
+      oversize: true,
+      hunks: [makeHunk(0, 0, aLines.length, 0, bLines.length, aLines, bLines)],
+    };
+  }
+
+  const rows = computeLineDiff(original, target);
+  const hunks: DiffHunk[] = [];
+  let ai = 0;
+  let bi = 0;
+  let cur: { origStart: number; modStart: number; removed: string[]; added: string[] } | null = null;
+
+  const flush = () => {
+    if (!cur) return;
+    hunks.push(makeHunk(hunks.length, cur.origStart, ai, cur.modStart, bi, cur.removed, cur.added));
+    cur = null;
+  };
+
+  for (const r of rows) {
+    if (r.kind === "same") {
+      flush();
+      ai++;
+      bi++;
+      continue;
+    }
+    if (!cur) cur = { origStart: ai, modStart: bi, removed: [], added: [] };
+    if (r.kind === "del") {
+      cur.removed.push(r.text);
+      ai++;
+    } else {
+      cur.added.push(r.text);
+      bi++;
+    }
+  }
+  flush();
+
+  return { ...base, hunks, oversize: false };
+}
+
+/**
+ * Chiếu một TẬP khối đã chọn lên bản gốc → văn bản kết quả.
+ *
+ * Một lượt duyệt duy nhất, không sửa tại chỗ ⇒ không có phép dịch offset nào để làm sai,
+ * và thứ tự các id trong `selectedIds` KHÔNG ảnh hưởng kết quả.
+ * `selectedIds` rỗng ⇒ trả về đúng bản gốc.
+ */
+export function projectHunks(plan: HunkPlan, selectedIds: Iterable<string>): ProjectResult {
+  const wanted = new Set(selectedIds);
+  const byId = new Map(plan.hunks.map((h) => [h.id, h]));
+  for (const id of wanted) {
+    if (!byId.has(id)) return { ok: false, reason: "unknown-hunk", id };
+  }
+
+  // plan.hunks đã tăng dần theo origStart — lọc giữ nguyên thứ tự đó.
+  const chosen = plan.hunks.filter((h) => wanted.has(h.id));
+  const lines = plan.original.split("\n");
+  const out: string[] = [];
+  let cursor = 0;
+  for (const h of chosen) {
+    for (let i = cursor; i < h.origStart; i++) out.push(lines[i]);
+    for (const l of h.added) out.push(l);
+    cursor = h.origEnd; // ⚠ toạ độ GỐC, không phải toạ độ đã dịch — xem chú thích đầu file.
+  }
+  for (let i = cursor; i < lines.length; i++) out.push(lines[i]);
+
+  return { ok: true, text: out.join("\n"), appliedIds: chosen.map((h) => h.id) };
+}
+
+/** Áp mọi khối — bằng đúng `plan.modified`, từng ký tự. Là "áp tất cả" của đường cũ. */
+export function applyAllHunks(plan: HunkPlan): string {
+  const r = projectHunks(plan, plan.hunks.map((h) => h.id));
+  /* c8 ignore next */
+  return r.ok ? r.text : plan.modified;
+}
+
+export interface ApplyHunkSelectionArgs {
+  plan: HunkPlan;
+  /** Tập khối mà phía gọi TIN rằng đang được phản ánh trong `currentText`. */
+  applied: Iterable<string>;
+  /** Tập khối muốn có sau lượt này (bật thêm = nhận, bỏ bớt = hoàn tác). */
+  next: Iterable<string>;
+  /** Buffer SỐNG ngay lúc này. */
+  currentText: string;
+}
+
+/**
+ * Cổng an toàn của toàn bộ tính năng.
+ *
+ * Cho phép ghi CHỈ KHI buffer sống bằng ĐÚNG cái mà `applied` chiếu ra — tức là
+ * "buffer đang chứa đúng thứ lượt trước ta ghi (hoặc bản gốc nếu chưa ghi gì)".
+ * Người dùng gõ thêm một ký tự, đổi một khoảng trắng, hay đổi kiểu xuống dòng ⇒ LỆCH ⇒
+ * TỪ CHỐI. Nhánh từ chối không mang `text`: không có đường nào để ghi đè nhầm.
+ */
+export function applyHunkSelection({
+  plan,
+  applied,
+  next,
+  currentText,
+}: ApplyHunkSelectionArgs): HunkApplyResult {
+  const expected = projectHunks(plan, applied);
+  if (!expected.ok) return expected;
+
+  const wanted = projectHunks(plan, next);
+  if (!wanted.ok) return wanted;
+
+  if (currentText !== expected.text) {
+    return {
+      ok: false,
+      reason: "buffer-changed",
+      expected: textSignature(expected.text),
+      actual: textSignature(currentText),
+    };
+  }
+  return wanted;
+}
+
+/** Đếm dòng thêm/xoá của một khối (nhãn "+n −m"). */
+export function hunkStats(h: DiffHunk): { added: number; removed: number } {
+  return { added: h.added.length, removed: h.removed.length };
+}
+
+/** Tổng dòng thêm/xoá của cả plan. */
+export function planStats(plan: HunkPlan): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const h of plan.hunks) {
+    added += h.added.length;
+    removed += h.removed.length;
+  }
+  return { added, removed };
+}

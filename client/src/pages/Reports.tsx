@@ -4,6 +4,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, chartGridProps, chartAxisProps, chartTooltipStyle, chartTooltipLabelStyle } from "@/components/patterns";
 import { EmptyState } from "@/components/EmptyState";
+import { ScopeEmptyNotice } from "@/components/ScopeEmptyNotice";
+import { scopeEmptyReasonOf } from "@/lib/scopeEmpty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -124,6 +126,13 @@ export function ReportsContent() {
     endDate: reportWindow.endDate,
     limit: 10,
   });
+  /**
+   * ★ 2026-08-17 — Lý do rỗng của CẢ TRANG báo cáo, gom một lần.
+   * "getTopBottomMachines" là truy vấn duy nhất trên màn này mang nhãn phạm vi; các bảng/biểu
+   * đồ khác ("corporateFactoryStats.*", "getDailyStats") lấy lý do từ đây (nhóm b).
+   */
+  const scopeEmptyReason = scopeEmptyReasonOf(topBottomMachines);
+
   // Per-factory yield rollup (final yield, decision #4) for the factory tab.
   const { data: factoryYield } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery({
     startDate: reportWindow.startDate,
@@ -478,6 +487,12 @@ export function ReportsContent() {
         title={t('reports.title')}
         description={t('reports.subtitle', 'Quality yield, defect trends and cost-of-poor-quality analytics')}
       />
+      {/*
+        ⚠ 2026-08-17 — LÝ DO CỦA MỘT BÁO CÁO TOÀN SỐ 0. Với tài khoản CHƯA ĐƯỢC GÁN NHÀ MÁY, so
+        sánh máy / xu hướng / pareto đều trống một cách hợp lệ; không nói ra thì người đọc hiểu
+        thành "nhà máy không sản xuất gì". `getTopBottomMachines` mang `scopeEmptyReason`.
+      */}
+      <ScopeEmptyNotice reason={scopeEmptyReason} className="mt-4" />
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4 mb-6 mt-4">
         <div className="flex items-center gap-2">
@@ -725,7 +740,7 @@ export function ReportsContent() {
             </CardHeader>
             <CardContent>
               {machineComparisonData.length === 0 ? (
-                <EmptyState variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+                <EmptyState scopeEmptyReason={scopeEmptyReason} variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
               ) : (
               <Table>
                 <TableHeader>
@@ -996,7 +1011,7 @@ export function ReportsContent() {
             </CardHeader>
             <CardContent>
               {machineComparisonData.length === 0 ? (
-                <EmptyState variant="no-analytics" title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+                <EmptyState scopeEmptyReason={scopeEmptyReason} variant="no-analytics" title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
               ) : (
               <div className="h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1031,7 +1046,7 @@ export function ReportsContent() {
             </CardHeader>
             <CardContent>
               {machineComparisonData.length === 0 ? (
-                <EmptyState variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+                <EmptyState scopeEmptyReason={scopeEmptyReason} variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
               ) : (
               <Table>
                 <TableHeader>
@@ -1082,7 +1097,7 @@ export function ReportsContent() {
             </CardHeader>
             <CardContent>
               {factoryComparisonData.length === 0 ? (
-                <EmptyState variant="no-analytics" title={t('reports.factoryStatsEmpty', 'Per-factory statistics are not available yet.')} />
+                <EmptyState scopeEmptyReason={scopeEmptyReason} variant="no-analytics" title={t('reports.factoryStatsEmpty', 'Per-factory statistics are not available yet.')} />
               ) : (
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1299,6 +1314,7 @@ export function ReportsContent() {
                 );
               })() : (
                 <EmptyState
+                  scopeEmptyReason={scopeEmptyReason}
                   variant="no-data"
                   title={t('reports.copqEmpty', 'Không có dữ liệu COPQ cho khoảng thời gian đã chọn')}
                 />

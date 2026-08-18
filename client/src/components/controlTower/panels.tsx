@@ -26,6 +26,7 @@ import {
   Wrench, Radio, AlertTriangle, ShieldAlert, Lightbulb, CheckCircle2,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { isScopeEmpty } from "@/lib/scopeEmpty";
 import { cn } from "@/lib/utils";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -156,12 +157,16 @@ function CorporatePanel(): React.JSX.Element {
       isLoading={isLoading}
       isError={statsQ.isError}
       error={statsQ.error}
-      isEmpty={!isLoading && !s}
+      isEmpty={!isLoading && (!s || isScopeEmpty((s as { scopeEmptyReason?: string | null }).scopeEmptyReason))}
       onRetry={statsQ.refetch}
       dataUpdatedAt={statsQ.dataUpdatedAt}
       pollIntervalMs={POLL_SLOW}
       preset="stats"
-      emptyText={t("controlTower.corporate.empty", "No inspection data yet.")}
+      emptyText={
+        isScopeEmpty((s as { scopeEmptyReason?: string | null } | undefined)?.scopeEmptyReason)
+          ? t("common.scopeEmpty.badge")
+          : t("controlTower.corporate.empty", "No inspection data yet.")
+      }
     >
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -379,9 +384,24 @@ function AlarmHealthPanel(): React.JSX.Element {
       // dữ liệu không "kêu oan" lúc socket im ắng (không có event = không có gì mới).
       pollIntervalMs={isLive ? POLL_SLOW : POLL_FAST}
       preset="stats"
-      emptyAllClear
-      emptyText={t("controlTower.alarmHealth.empty", "No alarm activity in the window.")}
+      // ★★★ 2026-08-18 (nhóm B #5) — xem ghi chú ở LiveAlarmsPanel: `alarmKpi.summary` nay
+      // thu hẹp theo nhà máy được gán, nên "no alarm activity / All clear" phải nhường chỗ
+      // cho lý do PHẠM VI khi máy chủ khai `no_factory_assignment`.
+      emptyAllClear={!isScopeEmpty(d?.scopeEmptyReason)}
+      emptyText={
+        isScopeEmpty(d?.scopeEmptyReason)
+          ? t("common.scopeEmpty.badge")
+          : t("controlTower.alarmHealth.empty", "No alarm activity in the window.")
+      }
     >
+      {isScopeEmpty(d?.scopeEmptyReason) && (
+        // Panel này gần như không bao giờ rơi vào nhánh `isEmpty` (luôn có đối tượng KPI, chỉ
+        // là toàn số 0), nên câu giải thích phải nằm NGAY CẠNH các số 0 — dải thông báo ở đầu
+        // trang không sửa được lớp lỗi này: mắt người đọc khối gần chỗ đang nhìn.
+        <div className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-400">
+          {t("common.scopeEmpty.badge")}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat
           label={t("ctPanels.phatSinhTrong24h", "Phát sinh trong 24h")}
@@ -784,8 +804,12 @@ function AndonRailPanel(): React.JSX.Element {
         // W6: live → hết poll, ngưỡng stale nới theo POLL_SLOW (xem AlarmHealthPanel).
         pollIntervalMs={isLive ? POLL_SLOW : POLL_FAST}
         preset="list"
-        emptyAllClear
-        emptyText={t("controlTower.andonRail.empty", "No active Andon signals. All clear.")}
+        emptyAllClear={!isScopeEmpty(board?.scopeEmptyReason)}
+        emptyText={
+          isScopeEmpty(board?.scopeEmptyReason)
+            ? t("common.scopeEmpty.badge")
+            : t("controlTower.andonRail.empty", "No active Andon signals. All clear.")
+        }
       >
         <div className="space-y-1.5">
           {open.slice(0, 8).map((a) => (
@@ -907,8 +931,16 @@ function LiveAlarmsPanel(): React.JSX.Element {
         // W6: live → hết poll, ngưỡng stale nới theo POLL_SLOW (xem AlarmHealthPanel).
         pollIntervalMs={isLive ? POLL_SLOW : POLL_FAST}
         preset="list"
-        emptyAllClear
-        emptyText={t("controlTower.liveAlarms.empty", "No active alarms. All clear.")}
+        // ★★★ 2026-08-18 (nhóm B #5) — `emptyAllClear` VÔ ĐIỀU KIỆN + "All clear" là lời khai
+        // SAI VỀ THẾ GIỚI khi phạm vi người xem rỗng: máy chủ nay lọc báo động theo nhà máy
+        // được gán, nên một tài khoản 0-gán nhận 0 dòng và màn hình cũ nói với người vận hành
+        // rằng xưởng "đang yên ổn". Cùng khuôn với AndonRailPanel ngay dưới.
+        emptyAllClear={!isScopeEmpty(q.data?.scopeEmptyReason)}
+        emptyText={
+          isScopeEmpty(q.data?.scopeEmptyReason)
+            ? t("common.scopeEmpty.badge")
+            : t("controlTower.liveAlarms.empty", "No active alarms. All clear.")
+        }
       >
         <div className="space-y-1.5">
           {alerts.slice(0, 10).map((a) => (

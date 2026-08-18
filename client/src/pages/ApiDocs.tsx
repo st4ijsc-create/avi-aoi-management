@@ -3427,16 +3427,23 @@ const { data: ngByWS } = trpc.spcAnalysis.ngByWorkstation.useQuery({
                   </div>
                   <div>
                     <h4 className="mb-2 font-semibold">defectHeatmap.list / getLatest</h4>
-                    <CodeBlock code={`const { data } = trpc.defectHeatmap.list.useQuery({
+                    <CodeBlock code={`// Kết quả đã LỌC THEO NHÀ MÁY của người đăng nhập (mig 0324).
+// Heatmap gộp nhiều nhà máy được lưu với factoryCode = NULL và chỉ admin đọc được.
+const { data } = trpc.defectHeatmap.list.useQuery({
   machineId: 1,
   productModelId: 5,
   periodType: "DAILY",
   limit: 10
 });
+// data: { heatmaps, total, scopeApplied, scopeEmptyReason, scopeMessage }
+// scopeEmptyReason === "no_factory_assignment" ⇒ HIỂN THỊ scopeMessage,
+// TUYỆT ĐỐI không hiển thị "không có dữ liệu" (phạm vi rỗng ≠ hệ thống rỗng).
+
 const { data: latest } = trpc.defectHeatmap.getLatest.useQuery({
   machineId: 1,
   periodType: "DAILY"
-});`} />
+});
+// latest: { heatmap, scopeApplied, scopeEmptyReason, scopeMessage }`} />
                   </div>
                   <div>
                     <h4 className="mb-2 font-semibold">defectHeatmap.getMachineOverlay — Overlay lên layout máy</h4>
@@ -3450,7 +3457,9 @@ const { data: latest } = trpc.defectHeatmap.getLatest.useQuery({
                     <CodeBlock code={`const { data } = trpc.defectHeatmap.getRealTimeHotspots.useQuery({
   machineId: 1,
   hours: 1 // 1-24 hours
-});`} />
+});
+// data: { hotspots, scopeApplied, scopeEmptyReason, scopeMessage } — KHÔNG còn mảng trần:
+// một mảng rỗng không mang được lý do "bạn chưa được gán nhà máy".`} />
                   </div>
                 </CardContent>
               </Card>

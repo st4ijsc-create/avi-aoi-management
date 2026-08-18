@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
+import { ScopeEmptyNotice } from "@/components/ScopeEmptyNotice";
 import { 
   Building2,
   Factory,
@@ -358,6 +359,12 @@ export default function CorporateDashboard() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+      {/*
+        ⚠ 2026-08-17 — hero "tỷ lệ đạt" và "sản lượng" của trang này lấy từ `dashboard.getStats`, vốn mang nhãn.
+        Trước bản vá, tài khoản CHƯA ĐƯỢC GÁN NHÀ MÁY đọc những con số này như một phép đo về
+        nhà máy. Chúng không phải phép đo — chúng là hệ quả của một phạm vi rỗng.
+      */}
+        <ScopeEmptyNotice reason={(dashboardStats as { scopeEmptyReason?: string | null } | undefined)?.scopeEmptyReason} />
         {/* Header */}
         <PageHeader
           icon={<Building2 className="h-6 w-6" />}

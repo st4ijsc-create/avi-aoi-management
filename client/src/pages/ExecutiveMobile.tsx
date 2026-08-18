@@ -277,6 +277,14 @@ export default function ExecutiveMobile(): React.JSX.Element {
   // ── (1) KPI briefing sources ─────────────────────────────────────────────────
   // Today's throughput / yield / FPY (same shape CorporateDashboard consumes).
   const statsQ = trpc.dashboard.getStats.useQuery({ startDate: startOfToday }, LIVE_OPTS);
+  /**
+   * ★ 2026-08-17 — "dashboard.getStats" là truy vấn duy nhất trên màn này mang nhãn phạm vi;
+   * mọi ô rỗng khác (rủi ro / phê duyệt / báo cáo AI) lấy lý do từ đây (nhóm b). Không có nó,
+   * ba thẻ "bạn đã xử lý hết" hiện ra như lời khen cho một tài khoản chưa được gán nhà máy.
+   */
+  const scopeEmptyReason =
+    (statsQ.data as { scopeEmptyReason?: string | null } | undefined)?.scopeEmptyReason ?? null;
+
   // Live per-machine OEE — corporate-wide average, honest-null when no telemetry.
   const oeeQ = trpc.mqttClient.getAllOEE.useQuery(undefined, LIVE_OPTS);
   // War-room briefing → output-vs-plan (permission-gated; honest N/A otherwise).
@@ -839,6 +847,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
                    ro" là TIN TỐT. Điều kiện chỉ-khi-success của W2 giữ nguyên
                    (nhánh isError đã render ErrorInline ở trên). */
                 <EmptyState
+                  scopeEmptyReason={scopeEmptyReason}
                   allClear
                   compact
                   title={t("executiveMobile.risks.empty", "No active risks flagged")}
@@ -970,6 +979,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
                       W7 GĐ2: tự chế → EmptyState allClear ("đã xử lý hết" = tin tốt). */}
                   {!approvalsLoading && approvalsTotal === 0 && !aiInboxTruncated && (
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       allClear
                       compact
                       title={t("executiveMobile.approvals.empty", "You're all caught up.")}
@@ -1066,6 +1076,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
                    có báo cáo" là thiếu dữ liệu, không phải tin tốt. Icon Sparkles giữ
                    ngữ nghĩa AI của bản cũ; điều kiện chỉ-khi-success W2 giữ nguyên. */
                 <EmptyState
+                  scopeEmptyReason={scopeEmptyReason}
                   compact
                   icon={Sparkles}
                   title={t("executiveMobile.ai.empty", "No executive report yet.")}

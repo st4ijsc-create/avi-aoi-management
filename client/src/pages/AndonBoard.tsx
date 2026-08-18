@@ -575,6 +575,30 @@ export default function AndonBoard() {
         </div>
       </header>
 
+      {/**
+       * ⚠ 2026-08-17 — TRẠNG THÁI RỖNG TRUNG THỰC.
+       * Một bảng Andon toàn số 0 của tài khoản CHƯA ĐƯỢC GÁN NHÀ MÁY trông y hệt một ca chưa
+       * chạy. Trên bảng treo tường, hiểu nhầm đó tốn cả ca sản xuất: người vận hành tin là
+       * "chưa có hàng" trong khi thật ra họ đang nhìn một phạm vi rỗng. Máy chủ khai lý do ở
+       * `scopeEmptyReason` — dải này bắt buộc phải hiện, và cố ý dùng tone cảnh báo.
+       */}
+      {board?.scopeEmptyReason === "no_factory_assignment" && (
+        <div
+          role="status"
+          className="flex items-center justify-center gap-[0.8vw] border-b-2 border-warning bg-warning/15 px-[1.2vw] py-[0.8vh] text-center"
+        >
+          <AlertTriangle className="size-[1.6vw] min-h-5 min-w-5 shrink-0 text-warning" aria-hidden />
+          <div className="min-w-0">
+            <p className="text-[clamp(0.9rem,1.4vw,1.8rem)] font-bold">
+              {t("common.scopeEmpty.title")}
+            </p>
+            <p className="text-[clamp(0.65rem,0.9vw,1rem)] text-muted-foreground">
+              {t("common.scopeEmpty.hint")}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Lines + machine tiles ── */}
       {/* overflow-y-auto: with many lines nothing is silently clipped (a real TV
           should be given ?lines=…/?factory=… or ?cycle=… to fit one screen). */}
@@ -594,7 +618,11 @@ export default function AndonBoard() {
         )}
         {board && lines.length === 0 && (
           <div className="flex h-full items-center justify-center text-[clamp(1rem,2vw,2.5rem)] text-muted-foreground">
-            {t("andonBoard.noMachines", "Không có máy nào khớp bộ lọc")}
+            {/* ⚠ "Không có máy nào khớp bộ lọc" đổ lỗi cho BỘ LỌC. Với tài khoản chưa gán nhà
+                máy thì bộ lọc vô can — lưới máy trống vì phạm vi rỗng. */}
+            {board.scopeEmptyReason === "no_factory_assignment"
+              ? t("common.scopeEmpty.badge")
+              : t("andonBoard.noMachines", "Không có máy nào khớp bộ lọc")}
           </div>
         )}
 
@@ -736,9 +764,17 @@ export default function AndonBoard() {
             Andon
           </span>
           {board && board.andons.length === 0 ? (
-            <span className="px-[1vw] text-[clamp(0.7rem,1vw,1.3rem)] font-semibold text-success">
-              {t("andonBoard.tickerEmpty", "Không có Andon đang mở — mọi line hoạt động bình thường")}
-            </span>
+            /* ⚠ "mọi line hoạt động bình thường" là KẾT LUẬN về nhà máy — trên một bảng
+               treo tường thì đó là lời trấn an sai cho tài khoản chưa gán nhà máy. */
+            board.scopeEmptyReason === "no_factory_assignment" ? (
+              <span className="px-[1vw] text-[clamp(0.7rem,1vw,1.3rem)] font-semibold text-warning">
+                {t("common.scopeEmpty.badge")}
+              </span>
+            ) : (
+              <span className="px-[1vw] text-[clamp(0.7rem,1vw,1.3rem)] font-semibold text-success">
+                {t("andonBoard.tickerEmpty", "Không có Andon đang mở — mọi line hoạt động bình thường")}
+              </span>
+            )
           ) : (
             // W4 (doc 67): ≤ 4 andons → static wrapped list (no marquee — Ack is
             // always tappable). More → marquee with duration ∝ item count;

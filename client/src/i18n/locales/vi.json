@@ -2460,6 +2460,11 @@
     "many": "{{count}} quyền sắp hết hạn (sớm nhất sau {{days}} ngày) — liên hệ quản trị để gia hạn."
   },
   "common": {
+    "scopeEmpty": {
+      "title": "Tài khoản của bạn chưa được gán nhà máy nào",
+      "hint": "Vì thế KHÔNG có bản ghi kiểm nào nằm trong phạm vi bạn được xem. Đây là phạm vi rỗng — KHÔNG phải kết luận rằng dây chuyền đang ngừng chạy. Liên hệ quản trị viên để được gán nhà máy.",
+      "badge": "Phạm vi rỗng — chưa gán nhà máy"
+    },
     "viewOnlyHint": "Bạn chỉ có quyền xem",
     "densityComfortable": "Mật độ thoải mái",
     "densityCompact": "Mật độ gọn",
@@ -3415,6 +3420,9 @@
       "excludedNoBbox": "Loại trừ {{count}} NG không có bbox ({{pct}}%)",
       "noBboxData": "Không có lỗi kèm tọa độ bbox trong phạm vi này",
       "noBboxDataHint": "Có {{count}} kết quả NG nhưng không kèm bbox (dữ liệu cũ). Bật chế độ vị trí logic để xem mật độ theo điểm đo.",
+      "scopeEmptyTitle": "Bạn chưa được gán nhà máy nào",
+      "scopeEmptyHint": "Vì thế KHÔNG có bản ghi kiểm nào nằm trong phạm vi bạn được xem. Đây là phạm vi rỗng — KHÔNG phải kết luận rằng dây chuyền không có lỗi. Liên hệ quản trị viên để được gán nhà máy.",
+      "scopeEmptyBadge": "Phạm vi rỗng — chưa gán nhà máy",
       "hotspots": "Điểm nóng",
       "hotspotAtPx": "≈ ({{x}}, {{y}}) px",
       "hotspotAtCell": "Ô ({{x}}, {{y}})",
@@ -5420,6 +5428,8 @@
     "avgHealth": "Sức khỏe trung bình",
     "noHealthHistory": "Chưa có lịch sử sức khỏe",
     "noHealthHistoryDesc": "Lịch sử sức khỏe được ghi theo thời gian khi máy báo cáo telemetry. Chưa có gì được ghi cho khoảng thời gian đã chọn.",
+    "noFleetHealth": "Chưa có dữ liệu trong cửa sổ 24 giờ",
+    "noFleetHealthDesc": "Các máy trong phạm vi của bạn chưa báo OEE hay điểm sức khỏe nào trong 24 giờ qua. Số liệu sẽ hiện khi máy bắt đầu gửi telemetry trở lại.",
     "editLayout": "Sửa mặt bằng",
     "view3dMap": "Bản đồ 3D"
   },
@@ -13598,7 +13608,19 @@
     "toastCreated": "Đã tạo khoá API",
     "toastUpdated": "Đã cập nhật khoá",
     "toastRevoked": "Đã thu hồi khoá",
-    "toastDeleted": "Đã xoá khoá"
+    "toastDeleted": "Đã xoá khoá",
+    "colDataScope": "Phạm vi dữ liệu",
+    "fieldDataScope": "Phạm vi DỮ LIỆU (khoá THẤY được gì) *",
+    "scopeUndeclared": "Chưa khai — khoá KHÔNG đọc được số liệu (bi:read / export:read bị từ chối)",
+    "scopeFactory": "Một nhà máy — khoá chỉ thấy dữ liệu của nhà máy được chọn",
+    "scopeGlobal": "Toàn cục (tường minh) — khoá thấy dữ liệu MỌI nhà máy",
+    "scopeUndeclaredShort": "Chưa khai",
+    "scopeGlobalShort": "Toàn cục",
+    "fieldFactoryCode": "Nhà máy",
+    "fieldCorporateCode": "Mã tập đoàn (tuỳ chọn — để trống nếu chỉ giới hạn theo nhà máy)",
+    "pickFactory": "— chọn nhà máy —",
+    "scopeFactoryNeedsCode": "Chọn một nhà máy (hoặc nhập mã tập đoàn) — phạm vi 'một nhà máy' không được để trống cả hai.",
+    "scopeUndeclaredWarn": "Khoá chưa khai phạm vi sẽ bị TỪ CHỐI (403) khi gọi /api/bi hoặc /api/export. Đây là mặc định an toàn, không phải lỗi."
   },
   "hotFolders": {
     "title": "Hot-folder Ingest (AOI/AVI)",
@@ -17382,7 +17404,27 @@
     }
   },
   "diff": {
-    "identical": "Hai phiên bản giống nhau"
+    "identical": "Hai phiên bản giống nhau",
+    "hunk": {
+      "sectionTitle": "Áp theo từng khối",
+      "count": "{{n}} khối",
+      "appliedN": "Đã nhận {{n}}",
+      "applyAll": "Áp tất cả",
+      "revertAll": "Hoàn tác hết",
+      "accept": "Nhận khối",
+      "undo": "Hoàn tác",
+      "on": "Đã nhận",
+      "range": "Dòng {{from}}–{{to}}",
+      "insertTop": "Chèn ở đầu tệp",
+      "insertAfter": "Chèn sau dòng {{n}}",
+      "none": "Gợi ý trùng khớp buffer hiện tại — không có khối nào để áp.",
+      "oversize": "Tệp quá lớn để tách khối — chỉ còn một khối cả tệp.",
+      "eolMismatch": "Gợi ý dùng kiểu xuống dòng khác buffer — khớp lại theo buffer trước khi so (bỏ chọn để so nguyên văn).",
+      "staleTitle": "Buffer đã đổi từ lúc sinh gợi ý. Không áp khối nào để tránh ghi đè mã bạn vừa gõ.",
+      "resync": "Tính lại diff từ buffer hiện tại",
+      "refusedChanged": "Buffer đã thay đổi từ lúc sinh gợi ý — không áp để tránh ghi đè mã của bạn.",
+      "refusedUnknown": "Khối không còn hợp lệ — hãy tính lại diff."
+    }
   },
   "programRelease": {
     "button": "Phát hành chương trình",

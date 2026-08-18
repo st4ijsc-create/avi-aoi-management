@@ -249,7 +249,14 @@ export default function QualityHome() {
           ) : ngQuery.isError ? (
             <p className="text-sm text-muted-foreground">{t("quality.recentNgError")}</p>
           ) : ngRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t("quality.recentNgEmpty")}</p>
+            <p className="text-sm text-muted-foreground">
+              {/* ⚠ 2026-08-17 — "chưa có NG gần đây" là một KẾT LUẬN về chất lượng. Tài khoản
+                  chưa gán nhà máy nhận 0 dòng vì phạm vi rỗng; `inspection.search` đã khai lý
+                  do ở `scopeEmptyReason`, trước bản vá thì màn này vứt đi. */}
+              {ngQuery.data?.scopeEmptyReason === "no_factory_assignment"
+                ? t("common.scopeEmpty.badge")
+                : t("quality.recentNgEmpty")}
+            </p>
           ) : (
             <div className="space-y-1.5">
               {ngRows.map((row, i) => (

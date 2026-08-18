@@ -13,6 +13,10 @@ import {
   chartAxisProps,
   chartTooltipStyle,
 } from "@/components/patterns";
+// ⚠ 2026-08-18 — câu rỗng TRUNG THỰC. Màn này ăn toàn mảng trần (`getAllOEE`,
+// `getAllMachineHealth`, `machine.list`) nên nhãn phạm vi phải tới bằng
+// `mqttClient.getScopeLabels`. MỘT nguồn câu chữ (`common.scopeEmpty.*`), không chép chuỗi.
+import { ScopeEmptyNotice, ScopeAwareEmpty, scopeEmptyReasonOf } from "@/components/ScopeEmptyNotice";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -200,6 +204,13 @@ export function MachineHealthMonitoringContent() {
   // Queries
   const { data: machines } = trpc.machine.list.useQuery();
   const { data: allOEE, refetch: refetchOEE, isLoading: oeeLoading } = trpc.mqttClient.getAllOEE.useQuery();
+  // ★ LÝ DO phạm vi rỗng. Cả ba truy vấn danh sách của màn này trả MẢNG TRẦN, và nhãn của
+  // `withScopeLabels` không-liệt-kê-được nên chết ở biên superjson — không có truy vấn nào trên
+  // màn mang nhãn để mượn. Vì thế hỏi riêng (xem docblock `mqttClient.getScopeLabels`).
+  // ⚠ Chỉ đổi câu khi máy chủ khai ĐÚNG mã `no_factory_assignment`. Một đội máy CÓ gán mà chưa
+  // máy nào báo OEE trong cửa sổ vẫn nhận `null` ⇒ giữ nguyên câu "chưa có dữ liệu" cũ.
+  const { data: healthScope } = trpc.mqttClient.getScopeLabels.useQuery();
+  const scopeEmptyReason = scopeEmptyReasonOf(healthScope);
   // REAL per-machine health scores (same source the Details tab reads). Used to
   // drive the fleet overview so it agrees with the detail view. Machines without
   // a calculated score come back as null → rendered as an honest "—".
@@ -392,6 +403,11 @@ export function MachineHealthMonitoringContent() {
           }
         />
 
+        {/* ★ Dải phạm-vi-rỗng — tự trả `null` khi phạm vi bình thường, nên gọi vô điều kiện.
+            ⚠ Một mình dải này KHÔNG đủ: các thẻ số bên dưới vẫn hiện "0" và mắt đọc khối gần
+            nhất, nên khối tổng quan còn được bọc `ScopeAwareEmpty` riêng. */}
+        <ScopeEmptyNotice reason={scopeEmptyReason} />
+
         {/* Machine Selection */}
         <Card>
           <CardContent className="pt-6">
@@ -456,6 +472,21 @@ export function MachineHealthMonitoringContent() {
                   <CardContent className="pt-6"><div className="h-72 bg-muted rounded" /></CardContent>
                 </Card>
               </div>
+            ) : machineComparisonData.length === 0 ? (
+              /* ★ 2026-08-18 — TRƯỚC bản vá này, 0 máy KHÔNG hiện câu nào cả: bốn thẻ "0", một
+                 biểu đồ trống và một bảng không dòng. Đó là lời khai *"đội máy khoẻ 0/0"* —
+                 tệ hơn một câu sai, vì nó trông như một phép đo đã chạy xong.
+                 `EmptyState` tự chọn giữa HAI câu theo `scopeEmptyReason`, và câu phạm-vi-rỗng
+                 THẮNG cả `title`/`description` truyền vào (xem docblock của nó):
+                   · `no_factory_assignment` ⇒ "chưa được gán nhà máy" (lỗi ở BẢNG PHÂN QUYỀN);
+                   · `null` ⇒ "chưa có dữ liệu trong cửa sổ 24 giờ" (lỗi ở DÂY CHUYỀN).
+                 Hai lý do "0 máy" ấy cùng tồn tại trên CSDL dev, nên phải phân biệt được. */
+              <EmptyState
+                scopeEmptyReason={scopeEmptyReason}
+                variant="no-analytics"
+                title={t('machines.noFleetHealth')}
+                description={t('machines.noFleetHealthDesc')}
+              />
             ) : (
             <>
             {/* Summary Cards */}
@@ -758,12 +789,16 @@ export function MachineHealthMonitoringContent() {
                 </Card>
               </>
             ) : (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <Heart className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">{t('machines.selectMachineForHealthMonitoring')}</p>
-                </CardContent>
-              </Card>
+              /* ⚠ "Chọn một máy" là NGÕ CỤT khi phạm vi rỗng — ô chọn máy phía trên không có mục
+                 nào. Phạm vi bình thường mà chưa chọn thì câu cũ vẫn đúng. */
+              <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Heart className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">{t('machines.selectMachineForHealthMonitoring')}</p>
+                  </CardContent>
+                </Card>
+              </ScopeAwareEmpty>
             )}
           </TabsContent>
 
@@ -855,10 +890,17 @@ export function MachineHealthMonitoringContent() {
                       </div>
                     ))}
                   {scoredMachines.filter(m => m.healthScore < 80).length === 0 && (
-                    <div className="text-center py-8">
-                      <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-4" />
-                      <p className="text-muted-foreground">{t('machines.allMachinesGood')}</p>
-                    </div>
+                    /* ★★ "Tất cả máy đều tốt" trên một phạm vi RỖNG là lời khai SAI VỀ THẾ GIỚI ở
+                       đúng chỗ nguy hiểm nhất: một lời TRẤN AN cũng là một kết luận, và người đọc
+                       nó sẽ THÔI đi kiểm tra. Cùng lớp lỗi đã vá ở `controlTower/panels.tsx`
+                       ("All clear" cho tài khoản 0 gán). Phạm vi bình thường mà đội máy thật sự
+                       khoẻ thì câu này vẫn ĐÚNG — giữ nguyên. */
+                    <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
+                      <div className="text-center py-8">
+                        <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-4" />
+                        <p className="text-muted-foreground">{t('machines.allMachinesGood')}</p>
+                      </div>
+                    </ScopeAwareEmpty>
                   )}
                 </div>
               </CardContent>

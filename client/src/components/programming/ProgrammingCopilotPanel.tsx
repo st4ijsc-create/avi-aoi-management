@@ -26,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
+import { HunkDiffView } from "@/components/diff/HunkDiffView";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -107,6 +108,14 @@ export interface ProgrammingCopilotPanelProps {
   contextCode?: string;
   /** When provided, an "Apply" action inserts the generated code into the host. */
   onApply?: (code: string) => void;
+  /**
+   * G2-D — REPLACE the host buffer wholesale with an exact string. Distinct from `onApply`,
+   * whose host-side semantics are the host's own business (EngineeringWorkspace APPENDS the
+   * generated code — see its binding). Per-hunk apply needs a byte-exact "the buffer is now
+   * EXACTLY this" channel, so it gets its own optional prop: the legacy path is untouched and
+   * a host that doesn't opt in simply doesn't show the hunk surface.
+   */
+  onApplyText?: (text: string) => void;
   /** doc 41 — one-shot host instruction (dock inline actions). */
   seed?: CopilotSeed;
   className?: string;
@@ -121,6 +130,7 @@ export function ProgrammingCopilotPanel({
   vendorInitial,
   contextCode,
   onApply,
+  onApplyText,
   seed,
   className,
 }: ProgrammingCopilotPanelProps) {
@@ -140,9 +150,21 @@ export function ProgrammingCopilotPanel({
     setCtxCode(contextCode ?? "");
   }, [contextCode]);
 
+  // G2-D — the host buffer SNAPSHOT the per-hunk diff is computed against. Taken once, when a
+  // result arrives; it must NOT follow the live buffer, otherwise "the buffer changed under me"
+  // could never be detected (the base would silently chase the user's typing — exactly the
+  // silent-overwrite failure this feature exists to prevent).
+  const [hunkBase, setHunkBase] = useState<string | null>(null);
+  const hostBuffer = contextCode ?? "";
+  const hostBufferRef = useRef(hostBuffer);
+  useEffect(() => {
+    hostBufferRef.current = hostBuffer;
+  }, [hostBuffer]);
+
   const gen = trpc.programming.copilotGenerate.useMutation({
     onSuccess: (data) => {
       setResultCode((data as GenResult)?.code ?? "");
+      setHunkBase(hostBufferRef.current);
     },
     onError: () => {
       toast.error(t("progCopilot.failed", "Code generation failed"));
@@ -404,6 +426,21 @@ export function ProgrammingCopilotPanel({
                     height={editorHeight}
                     aria-label="copilot-result"
                   />
+                  {/* G2-D — per-hunk apply. ADDITIVE: the "Apply to editor" button above keeps
+                      the old all-or-nothing path exactly as it was; this surface only appears
+                      when the host opted in with onApplyText (a byte-exact buffer replace). */}
+                  {onApplyText && hunkBase != null && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t("diff.hunk.sectionTitle", "Áp theo từng khối")}</Label>
+                      <HunkDiffView
+                        base={hunkBase}
+                        suggested={resultCode}
+                        currentText={hostBuffer}
+                        onApplyText={onApplyText}
+                        onResync={() => setHunkBase(hostBufferRef.current)}
+                      />
+                    </div>
+                  )}
                   {/* Diagnostics */}
                   {result.validation && result.validation.diagnostics.length > 0 && (
                     <div className="rounded-md border bg-muted/30 p-2 text-xs">

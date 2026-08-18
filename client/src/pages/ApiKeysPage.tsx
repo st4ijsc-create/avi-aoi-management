@@ -32,8 +32,10 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { KeyRound, Plus, Copy, AlertTriangle, Ban, Trash2, Pencil, ShieldCheck } from "lucide-react";
+import { KeyRound, Plus, Copy, AlertTriangle, Ban, Trash2, Pencil, ShieldCheck, Globe } from "lucide-react";
 import { toast } from "sonner";
+
+type TenantScopeMode = "factory" | "global";
 
 type ApiKeyRow = {
   id: number;
@@ -44,7 +46,30 @@ type ApiKeyRow = {
   isActive: boolean;
   expiresAt?: string | Date | null;
   lastUsedAt?: string | Date | null;
+  // mig 0325 — phạm vi DỮ LIỆU (khác `scopes` = phạm vi HÀNH ĐỘNG). `null` = CHƯA KHAI.
+  dataScopeMode?: TenantScopeMode | null;
+  corporateCode?: string | null;
+  factoryCode?: string | null;
 };
+
+/** Ba lựa chọn hiện trên giao diện — đúng ba trạng thái của CSDL, không nhiều không ít. */
+const SCOPE_CHOICES = [
+  {
+    value: "" as const,
+    labelKey: "apiKeys.scopeUndeclared",
+    labelDefault: "Chưa khai — khoá KHÔNG đọc được số liệu (bi:read / export:read bị từ chối)",
+  },
+  {
+    value: "factory" as const,
+    labelKey: "apiKeys.scopeFactory",
+    labelDefault: "Một nhà máy — khoá chỉ thấy dữ liệu của nhà máy được chọn",
+  },
+  {
+    value: "global" as const,
+    labelKey: "apiKeys.scopeGlobal",
+    labelDefault: "Toàn cục (tường minh) — khoá thấy dữ liệu MỌI nhà máy",
+  },
+];
 
 function fmtDate(v?: string | Date | null): string {
   if (!v) return "—";
@@ -70,6 +95,10 @@ export default function ApiKeysPage() {
   const listQ = trpc.apiKey.list.useQuery(undefined, { enabled: canView });
   const scopesQ = trpc.apiKey.scopes.useQuery(undefined, { enabled: canView });
   const scopeVocab = scopesQ.data ?? [];
+  // Danh sách nhà máy THẬT — ô phạm vi phải so khớp `factories.code`; gõ tay một mã sai sẽ tạo
+  // ra một khoá hợp lệ về hình thức nhưng đọc ra 0 dòng, và không ai biết vì sao.
+  const factoriesQ = trpc.factory.list.useQuery(undefined, { enabled: canView });
+  const factoryOptions = (factoriesQ.data ?? []) as Array<{ code: string; name?: string | null; corporateCode?: string | null }>;
 
   const invalidate = () => void utils.apiKey.list.invalidate();
 
@@ -80,8 +109,26 @@ export default function ApiKeysPage() {
   const [scopes, setScopes] = useState<string[]>([]);
   const [expiresAt, setExpiresAt] = useState("");
   const [plaintext, setPlaintext] = useState<string | null>(null);
+  // ⚠ Mặc định là CHƯA KHAI (""), KHÔNG phải "global". Một mặc định "toàn cục cho tiện" ở ô
+  //   này sẽ vô hiệu hoá toàn bộ 0325 ngay tại chỗ dễ bấm nhất.
+  const [scopeMode, setScopeMode] = useState<"" | TenantScopeMode>("");
+  const [scopeFactory, setScopeFactory] = useState("");
+  const [scopeCorporate, setScopeCorporate] = useState("");
 
-  const resetCreate = () => { setName(""); setDescription(""); setScopes([]); setExpiresAt(""); };
+  const resetCreate = () => {
+    setName(""); setDescription(""); setScopes([]); setExpiresAt("");
+    setScopeMode(""); setScopeFactory(""); setScopeCorporate("");
+  };
+
+  /** Ba ô luôn gửi CÙNG NHAU, đã chuẩn hoá — server và CHECK của CSDL đòi đúng hình dạng này. */
+  const tenantPayload = (mode: "" | TenantScopeMode, fac: string, corp: string) =>
+    mode === "factory"
+      ? { dataScopeMode: "factory" as const, factoryCode: fac || null, corporateCode: corp || null }
+      : { dataScopeMode: (mode || null) as TenantScopeMode | null, factoryCode: null, corporateCode: null };
+
+  /** 'factory' mà chưa chọn nhà máy = lời khai rỗng ⇒ chặn ngay ở nút bấm. */
+  const tenantIncomplete = (mode: "" | TenantScopeMode, fac: string, corp: string) =>
+    mode === "factory" && !fac && !corp;
 
   const createM = trpc.apiKey.create.useMutation({
     onSuccess: (r) => {
@@ -99,12 +146,18 @@ export default function ApiKeysPage() {
   const [editScopes, setEditScopes] = useState<string[]>([]);
   const [editExpires, setEditExpires] = useState("");
   const [editActive, setEditActive] = useState(true);
+  const [editScopeMode, setEditScopeMode] = useState<"" | TenantScopeMode>("");
+  const [editScopeFactory, setEditScopeFactory] = useState("");
+  const [editScopeCorporate, setEditScopeCorporate] = useState("");
 
   const openEdit = (row: ApiKeyRow) => {
     setEditRow(row);
     setEditScopes(row.scopes ?? []);
     setEditExpires(row.expiresAt ? new Date(row.expiresAt).toISOString().slice(0, 16) : "");
     setEditActive(row.isActive);
+    setEditScopeMode(row.dataScopeMode ?? "");
+    setEditScopeFactory(row.factoryCode ?? "");
+    setEditScopeCorporate(row.corporateCode ?? "");
   };
 
   const updateM = trpc.apiKey.update.useMutation({
@@ -141,6 +194,89 @@ export default function ApiKeysPage() {
     ))),
     [],
   );
+
+  /**
+   * Ô chọn PHẠM VI DỮ LIỆU — dùng chung cho hộp thoại Tạo và Sửa (một nguồn, không chép tay
+   * hai lần rồi để hai bên lệch nhau).
+   */
+  const tenantScopeFields = (
+    mode: "" | TenantScopeMode,
+    setMode: (v: "" | TenantScopeMode) => void,
+    fac: string,
+    setFac: (v: string) => void,
+    corp: string,
+    setCorp: (v: string) => void,
+  ) => (
+    <div className="space-y-1.5">
+      <Label className="text-xs flex items-center gap-1">
+        <Globe className="h-3.5 w-3.5" /> {t("apiKeys.fieldDataScope", "Phạm vi DỮ LIỆU (khoá THẤY được gì) *")}
+      </Label>
+      <div className="space-y-1 rounded-md border p-2">
+        {SCOPE_CHOICES.map((c) => (
+          <label key={c.value || "none"} className="flex cursor-pointer items-start gap-2 rounded px-1 py-0.5 text-sm hover:bg-muted">
+            <input
+              type="radio"
+              className="mt-1"
+              checked={mode === c.value}
+              onChange={() => setMode(c.value)}
+            />
+            <span className="text-[12px]">{t(c.labelKey, c.labelDefault)}</span>
+          </label>
+        ))}
+        {mode === "factory" && (
+          <div className="mt-2 space-y-2 border-t pt-2">
+            <div className="space-y-1">
+              <Label className="text-[11px]">{t("apiKeys.fieldFactoryCode", "Nhà máy")}</Label>
+              <select
+                className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                value={fac}
+                onChange={(e) => {
+                  setFac(e.target.value);
+                  const picked = factoryOptions.find((f) => f.code === e.target.value);
+                  if (picked?.corporateCode) setCorp(picked.corporateCode);
+                }}
+              >
+                <option value="">{t("apiKeys.pickFactory", "— chọn nhà máy —")}</option>
+                {factoryOptions.map((f) => (
+                  <option key={f.code} value={f.code}>{f.code}{f.name ? ` — ${f.name}` : ""}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">{t("apiKeys.fieldCorporateCode", "Mã tập đoàn (tuỳ chọn — để trống nếu chỉ giới hạn theo nhà máy)")}</Label>
+              <Input value={corp} onChange={(e) => setCorp(e.target.value)} placeholder="VD: SIM" />
+            </div>
+            {tenantIncomplete(mode, fac, corp) && (
+              <p className="text-[11px] text-destructive">
+                {t("apiKeys.scopeFactoryNeedsCode", "Chọn một nhà máy (hoặc nhập mã tập đoàn) — phạm vi 'một nhà máy' không được để trống cả hai.")}
+              </p>
+            )}
+          </div>
+        )}
+        {mode === "" && (
+          <p className="mt-1 text-[11px] text-warning">
+            {t(
+              "apiKeys.scopeUndeclaredWarn",
+              "Khoá chưa khai phạm vi sẽ bị TỪ CHỐI (403) khi gọi /api/bi hoặc /api/export. Đây là mặc định an toàn, không phải lỗi.",
+            )}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+
+  /** Nhãn phạm vi dữ liệu trong bảng — trạng thái CHƯA KHAI phải NHÌN THẤY được, không im lặng. */
+  const dataScopeCell = (r: ApiKeyRow) => {
+    if (r.dataScopeMode === "global") {
+      return <StatusBadge status="global" tone="info" label={t("apiKeys.scopeGlobalShort", "Toàn cục")} />;
+    }
+    if (r.dataScopeMode === "factory") {
+      return (
+        <span className="font-mono text-[11px]">{r.factoryCode ?? r.corporateCode}</span>
+      );
+    }
+    return <StatusBadge status="undeclared" tone="warning" label={t("apiKeys.scopeUndeclaredShort", "Chưa khai")} />;
+  };
 
   if (!canView) {
     return (
@@ -182,6 +318,7 @@ export default function ApiKeysPage() {
                   <TableHead>{t("apiKeys.colName", "Tên")}</TableHead>
                   <TableHead>{t("apiKeys.colPrefix", "Tiền tố")}</TableHead>
                   <TableHead>{t("apiKeys.colScopes", "Phạm vi")}</TableHead>
+                  <TableHead>{t("apiKeys.colDataScope", "Phạm vi dữ liệu")}</TableHead>
                   <TableHead>{t("apiKeys.colStatus", "Trạng thái")}</TableHead>
                   <TableHead>{t("apiKeys.colExpires", "Hết hạn")}</TableHead>
                   <TableHead>{t("apiKeys.colLastUsed", "Dùng gần nhất")}</TableHead>
@@ -191,7 +328,7 @@ export default function ApiKeysPage() {
               <TableBody>
                 {rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="p-0">
+                    <TableCell colSpan={8} className="p-0">
                       <EmptyState variant="no-data" icon={KeyRound} compact title={t("apiKeys.empty", "Chưa có khoá nào.")} />
                     </TableCell>
                   </TableRow>
@@ -203,6 +340,7 @@ export default function ApiKeysPage() {
                       <TableCell className="font-medium">{r.name}{r.description ? <div className="text-[11px] text-muted-foreground">{r.description}</div> : null}</TableCell>
                       <TableCell className="font-mono text-xs">{r.keyPrefix ?? "—"}…</TableCell>
                       <TableCell className="max-w-[260px]"><div className="flex flex-wrap">{scopeBadges(r.scopes)}</div></TableCell>
+                      <TableCell>{dataScopeCell(r)}</TableCell>
                       <TableCell>
                         {!r.isActive ? (
                           <StatusBadge status="revoked" tone="warning" label={t("apiKeys.revoked", "Đã thu hồi")} />
@@ -268,6 +406,7 @@ export default function ApiKeysPage() {
                 ))}
               </div>
             </div>
+            {tenantScopeFields(scopeMode, setScopeMode, scopeFactory, setScopeFactory, scopeCorporate, setScopeCorporate)}
             <div className="space-y-1.5">
               <Label className="text-xs">{t("apiKeys.fieldExpires", "Hết hạn (tuỳ chọn)")}</Label>
               <Input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
@@ -276,8 +415,14 @@ export default function ApiKeysPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>{t("common.cancel", "Huỷ")}</Button>
             <Button
-              disabled={!name.trim() || scopes.length === 0 || createM.isPending}
-              onClick={() => createM.mutate({ name: name.trim(), description: description || undefined, scopes, expiresAt: expiresAt || undefined })}
+              disabled={!name.trim() || scopes.length === 0 || tenantIncomplete(scopeMode, scopeFactory, scopeCorporate) || createM.isPending}
+              onClick={() => createM.mutate({
+                name: name.trim(),
+                description: description || undefined,
+                scopes,
+                expiresAt: expiresAt || undefined,
+                ...tenantPayload(scopeMode, scopeFactory, scopeCorporate),
+              })}
             >
               {t("apiKeys.create", "Tạo khoá")}
             </Button>
@@ -323,6 +468,7 @@ export default function ApiKeysPage() {
                 ))}
               </div>
             </div>
+            {tenantScopeFields(editScopeMode, setEditScopeMode, editScopeFactory, setEditScopeFactory, editScopeCorporate, setEditScopeCorporate)}
             <div className="space-y-1.5">
               <Label className="text-xs">{t("apiKeys.fieldExpires", "Hết hạn (tuỳ chọn)")}</Label>
               <Input type="datetime-local" value={editExpires} onChange={(e) => setEditExpires(e.target.value)} />
@@ -335,12 +481,13 @@ export default function ApiKeysPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditRow(null)}>{t("common.cancel", "Huỷ")}</Button>
             <Button
-              disabled={editScopes.length === 0 || updateM.isPending}
+              disabled={editScopes.length === 0 || tenantIncomplete(editScopeMode, editScopeFactory, editScopeCorporate) || updateM.isPending}
               onClick={() => editRow && updateM.mutate({
                 id: editRow.id,
                 scopes: editScopes,
                 expiresAt: editExpires ? new Date(editExpires).toISOString() : null,
                 isActive: editActive,
+                ...tenantPayload(editScopeMode, editScopeFactory, editScopeCorporate),
               })}
             >
               {t("common.save", "Lưu")}

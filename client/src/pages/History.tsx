@@ -77,6 +77,8 @@ import {
 import BarcodeScanner from "@/components/BarcodeScanner";
 import ImageGallery, { GalleryImage } from "@/components/ImageGallery";
 import { EmptyState, NoWorkstationData, NoChartData } from "@/components/EmptyState";
+import { ScopeEmptyNotice, ScopeAwareEmpty } from "@/components/ScopeEmptyNotice";
+import { scopeEmptyReasonOf } from "@/lib/scopeEmpty";
 import HistoryComparison from "@/components/HistoryComparison";
 import { AnnotationSearch } from "@/components/AnnotationSearch";
 import { ChartErrorBoundary, TableErrorBoundary, AnalyticsErrorBoundary } from "@/components/ErrorBoundary";
@@ -297,6 +299,14 @@ export default function History() {
     limit: analysisLimit, // Progressive loading for analysis
     offset: 0,
   });
+
+  /**
+   * ★ 2026-08-17 — LÝ DO RỖNG CỦA CẢ TRANG, gom MỘT LẦN.
+   * "inspection.search" mang nhãn (data phân trang + allData cho phân tích).
+   * ⚠ "inspection.topNGPoints" và các truy vấn "workstation.*" KHÔNG mang nhãn — mảng trần
+   * không đi qua được tRPC (xem "withScopeLabels") — nên chúng lấy lý do TỪ ĐÂY (nhóm b).
+   */
+  const scopeEmptyReason = scopeEmptyReasonOf(data, allData);
 
   const { data: machines } = trpc.machine.list.useQuery();
 
@@ -990,6 +1000,14 @@ export default function History() {
           description={t("history.subtitle")}
         />
 
+        {/*
+          ⚠ 2026-08-17 — LÝ DO CỦA MỘT TRANG 0 DÒNG. Tài khoản CHƯA ĐƯỢC GÁN NHÀ MÁY nhận 0 bản
+          ghi, 0 điểm NG và mọi biểu đồ trống — hợp lệ, nhưng trông y hệt "bộ lọc không khớp".
+          `inspection.search` mang `scopeEmptyReason` cho cả trang; `inspection.topNGPoints` trả
+          MẢNG nên nhãn không đi qua được tRPC và dùng chung dải này (xem `withScopeLabels`).
+        */}
+        <ScopeEmptyNotice reason={scopeEmptyReason} />
+
         {/* Recent Searches Chips */}
         {recentSearches.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
@@ -1285,7 +1303,11 @@ export default function History() {
                     <CardTitle className="text-lg">{t("history.searchResults")}</CardTitle>
                     <CardDescription>
                       {/* doc65 PRO-100: dấu phân cách nghìn theo vi-VN (22.996) */}
-                      {data?.total ? t("history.foundResults", { count: data.total.toLocaleString("vi-VN") as unknown as number }) : t("dashboard.noDataYet")}
+                      {data?.total
+                        ? t("history.foundResults", { count: data.total.toLocaleString("vi-VN") as unknown as number })
+                        : scopeEmptyReason
+                          ? t("common.scopeEmpty.badge")
+                          : t("dashboard.noDataYet")}
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1679,6 +1701,7 @@ export default function History() {
                   </div>
                 ) : (
                   <EmptyState
+                    scopeEmptyReason={scopeEmptyReason}
                     icon={HistoryIcon}
                     title={t("common.noResults")}
                     description={t("history.tryChangingFilters")}
@@ -1954,6 +1977,7 @@ export default function History() {
               <Card className="glass-card">
                 <CardContent>
                   <EmptyState
+                    scopeEmptyReason={scopeEmptyReason}
                     icon={BarChart3}
                     title={t("history.noDataToAnalyze")}
                     description={t("history.tryDifferentFilters")}
@@ -2115,7 +2139,7 @@ export default function History() {
                           );
                         })
                       ) : (
-                        <div className="col-span-full"><NoWorkstationData /></div>
+                        <div className="col-span-full"><NoWorkstationData scopeEmptyReason={scopeEmptyReason} /></div>
                       )}
                     </div>
                   </div>
@@ -2156,7 +2180,7 @@ export default function History() {
                         </BarChart>
                       </ResponsiveContainer>
                     ) : (
-                      <NoChartData />
+                      <NoChartData scopeEmptyReason={scopeEmptyReason} />
                     )}
                   </div>
                   </ChartErrorBoundary>
@@ -2197,6 +2221,7 @@ export default function History() {
                       ))
                     ) : (
                       <EmptyState
+                        scopeEmptyReason={scopeEmptyReason}
                         variant="no-analytics"
                         title={t("history.noPointData")}
                         description={t("history.noPointDataDesc")}
@@ -2257,6 +2282,7 @@ export default function History() {
                           <TableRow>
                             <TableCell colSpan={7}>
                               <EmptyState
+                                scopeEmptyReason={scopeEmptyReason}
                                 variant="no-data"
                                 title={t("dashboard.noWorkstationData")}
                                 description={t("dashboard.noWorkstationDataDesc")}
@@ -2417,6 +2443,7 @@ export default function History() {
                             ) : (
                               <div className="h-full flex items-center justify-center">
                                 <EmptyState
+                                  scopeEmptyReason={scopeEmptyReason}
                                   variant="no-analytics"
                                   title={t("history.noErrorDataToShow")}
                                   compact
@@ -2694,11 +2721,16 @@ export default function History() {
                             ))}
                           </div>
                         ) : (
+                          /* ⚠ "Tiến trình ổn định" là một KẾT LUẬN về dây chuyền. Tài khoản
+                             chưa gán nhà máy không có cơ sở phát biểu nó — 0 vi phạm ở đây chỉ
+                             vì 0 bản ghi lọt vào phạm vi. */
+                          <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
                           <div className="p-6 rounded-lg bg-success/20 text-center">
                             <CheckCircle2 className="h-8 w-8 text-success mx-auto mb-2" />
                             <span className="font-medium text-success block">{t("history.processStable")}</span>
                             <span className="text-sm text-muted-foreground mt-1 block">{t("history.noWesternElectricViolation")}</span>
                           </div>
+                          </ScopeAwareEmpty>
                         );
                       })()}
                     </CardContent>
@@ -2708,6 +2740,7 @@ export default function History() {
                 <Card className="glass-card">
                   <CardContent>
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       icon={TrendingUp}
                       title={t("history.noSPCData")}
                       description={t("history.tryDifferentFilters")}
@@ -2954,6 +2987,7 @@ export default function History() {
                 <Card className="glass-card">
                   <CardContent>
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       icon={Brain}
                       title={t("history.noAIData")}
                       description={t("history.minDataRequired")}
@@ -3274,6 +3308,7 @@ export default function History() {
                 <Card className="glass-card">
                   <CardContent>
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       icon={Target}
                       title={t("history.noYieldData")}
                       description={t("history.tryDifferentFilters")}
@@ -3330,6 +3365,7 @@ export default function History() {
                   />
                 ) : (
                   <EmptyState
+                    scopeEmptyReason={scopeEmptyReason}
                     icon={Image}
                     title={t("history.noImages")}
                     description={t("history.noImagesDesc")}

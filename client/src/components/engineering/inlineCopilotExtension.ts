@@ -32,20 +32,27 @@ import {
   type InlineCopilotControllerOptions,
 } from "./inlineCopilotController";
 
-interface GhostSuggestion {
+export interface GhostSuggestion {
   text: string;
   pos: number;
 }
 
-/** Set (or clear, with `null`) the current ghost suggestion. */
-const setGhost = StateEffect.define<GhostSuggestion | null>();
+/**
+ * Set (or clear, with `null`) the current ghost suggestion.
+ *
+ * EXPORTED (G2-D): the per-hunk apply surface writes whole new documents into this editor, so
+ * "a doc change wipes any ghost suggestion still on screen" stopped being an internal detail
+ * and became a CONTRACT between two features. Exporting the effect + field is what lets that
+ * contract be MEASURED headlessly (see ./inlineCopilotGhost.unit.test.ts) instead of argued.
+ */
+export const setGhost = StateEffect.define<GhostSuggestion | null>();
 
 /**
  * The suggestion currently shown (or null). Cleared by ANY doc change or selection move
  * (the "any edit invalidates it" requirement) UNLESS that same transaction also carries a
  * `setGhost` effect (our own accept/dismiss/set dispatches), in which case the effect wins.
  */
-const ghostField = StateField.define<GhostSuggestion | null>({
+export const ghostField = StateField.define<GhostSuggestion | null>({
   create: () => null,
   update(value, tr) {
     for (const e of tr.effects) {

@@ -12,6 +12,9 @@ import { PageHeader } from "@/components/patterns";
 import { E10StateBadge } from "@/components/patterns/isaStateBadges";
 import { isIsa101V2 } from "@/lib/hmiFlags";
 import { RelatedViews } from "@/components/RelatedViews";
+// ⚠ 2026-08-18 — câu rỗng TRUNG THỰC. Màn này ăn toàn mảng trần nên nhãn phạm vi phải tới
+// bằng `mqttClient.getScopeLabels` (xem docblock ở thủ tục ấy). MỘT nguồn câu chữ, không chép.
+import { ScopeEmptyNotice, ScopeAwareEmpty, scopeEmptyReasonOf } from "@/components/ScopeEmptyNotice";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -190,6 +193,14 @@ export function OEEDashboardContent() {
     { machineId: assetScope.machineId, lineId: assetScope.lineId },
     { refetchInterval: 60_000 },
   );
+  // ★ LÝ DO phạm vi rỗng. `getAllOEE` trả MẢNG nên ba ô nhãn không qua được superjson
+  // (`withScopeLabels` đính chúng không-liệt-kê-được, CỐ Ý). Không có truy vấn nào khác trên màn
+  // này mang nhãn — `machine.list` cũng là mảng trần — nên phải hỏi riêng.
+  // ⚠ Đây KHÔNG phải "0 máy thì báo phạm vi rỗng": chỉ đổi câu khi máy chủ khai ĐÚNG mã
+  // `no_factory_assignment`. Một nhà máy thật sự chưa có máy nào báo OEE trong cửa sổ 24h vẫn
+  // nhận `null` ⇒ vẫn nói "chưa có dữ liệu". Hai lý do "0 máy" là HAI thứ khác nhau.
+  const { data: oeeScope } = trpc.mqttClient.getScopeLabels.useQuery();
+  const scopeEmptyReason = scopeEmptyReasonOf(oeeScope);
   const { data: machineOEE } = trpc.mqttClient.getMachineOEE.useQuery(
     { machineId: selectedMachine! },
     { enabled: !!selectedMachine }
@@ -579,6 +590,11 @@ export function OEEDashboardContent() {
           }
         />
 
+        {/* ★ Dải phạm-vi-rỗng. Tự trả `null` khi phạm vi bình thường nên gọi vô điều kiện.
+            ⚠ Dải này KHÔNG đủ một mình — mắt đọc khối GẦN NHẤT chỗ đang nhìn, nên từng khối
+            rỗng bên dưới còn được bọc `ScopeAwareEmpty` riêng. */}
+        <ScopeEmptyNotice reason={scopeEmptyReason} />
+
         {/* U7 cross-links — OEE-focused view; the Command Center KPI strip + the
             device monitor give the wider live picture. */}
         <RelatedViews
@@ -604,8 +620,11 @@ export function OEEDashboardContent() {
                   (card này từng chèn progress giữa làm caption tụt ~16px so 3 card kia). */}
               <p className="text-xs text-muted-foreground mt-1">
                 {/* doc65 V5: không phán xét khi CHƯA có dữ liệu — 0 máy giám sát ≠ "cần cải thiện" */}
+                {/* ⚠ 2026-08-18: và 0 máy VÌ PHẠM VI RỖNG ≠ "chưa có dữ liệu". Ô 0% này là thứ
+                    được chụp màn hình; để nó nói "chưa có dữ liệu" cho người 0 gán nhà máy là dạy
+                    họ rằng NHÀ MÁY KHÔNG CHẠY. `scopeEmptyReason` khác null mới đổi câu. */}
                 {!allOEE?.length
-                  ? t('oee.noData', 'Chưa có dữ liệu')
+                  ? (scopeEmptyReason ? t('common.scopeEmpty.badge') : t('oee.noData', 'Chưa có dữ liệu'))
                   : avgOEE >= 85 ? t('oee.worldClass', 'Hàng đầu (≥85%)') : avgOEE >= 60 ? t('oee.typical', 'Trung bình (60–85%)') : t('oee.needsImprovement')}
               </p>
               {/* doc65 V1: thanh tiến trình phải mang màu THEO NGƯỠNG — 0% mà thanh teal đầy là nói dối thị giác */}
@@ -704,12 +723,14 @@ export function OEEDashboardContent() {
                     </div>
                   ))}
                   {(!allOEE || allOEE.length === 0) && (
-                    <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-center">
-                      <p className="font-medium text-foreground">{t('oee.noOeeData')}</p>
-                      <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-                        {t('oee.noOeeDataHelp', 'Start recording inspections or reconnect a machine to populate OEE, downtime, and comparison charts.')}
-                      </p>
-                    </div>
+                    <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
+                      <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-center">
+                        <p className="font-medium text-foreground">{t('oee.noOeeData')}</p>
+                        <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+                          {t('oee.noOeeDataHelp', 'Start recording inspections or reconnect a machine to populate OEE, downtime, and comparison charts.')}
+                        </p>
+                      </div>
+                    </ScopeAwareEmpty>
                   )}
                 </CardContent>
               </Card>
@@ -811,10 +832,15 @@ export function OEEDashboardContent() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-                      <Gauge className="h-12 w-12 mb-4" />
-                      <p>{t('oee.selectMachineForDetails')}</p>
-                    </div>
+                    /* ⚠ "Chọn một máy để xem" là NGÕ CỤT khi phạm vi rỗng: danh sách bên trái
+                       không có máy nào để chọn, nên lời mời ấy đẩy người dùng đi tìm lỗi ở bộ lọc.
+                       Phạm vi bình thường mà chưa chọn máy thì câu cũ vẫn đúng — giữ nguyên. */
+                    <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
+                      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+                        <Gauge className="h-12 w-12 mb-4" />
+                        <p>{t('oee.selectMachineForDetails')}</p>
+                      </div>
+                    </ScopeAwareEmpty>
                   )}
                 </CardContent>
               </Card>
