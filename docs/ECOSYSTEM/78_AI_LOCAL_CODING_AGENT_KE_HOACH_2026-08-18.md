@@ -11,6 +11,28 @@
 > ⚠ Quyết định 1+2 cộng lại nghĩa là: một tác nhân sẽ **ghi thẳng vào cây làm việc thật**. Hàng rào
 > "tệp bẩn" ở §4/PHA C vì thế **không phải một tuỳ chọn** — nó là điều kiện để quyết định 2 an toàn.
 > Nó chặn đúng sự cố đã xảy ra hôm nay (§3 mục 1: mất 123 dòng chưa commit).
+>
+> ═══════════════════════════════════════════════════════════════════════════════════════════
+> **✅ ĐÃ THỰC THI TRỌN — cả bốn pha (2026-08-19)**
+> ═══════════════════════════════════════════════════════════════════════════════════════════
+> | Pha | Tool | Bit RBAC (mig) | HITL | Cổng |
+> |---|---|---|---|---|
+> | A | `read_file` `list_files` `grep_repo` | `ai_repo_read/canView` (0330) | — | hộp cát 6 lớp, 8 đột biến |
+> | B | `run_command` (danh sách TRẮNG 5 lệnh) | `ai_repo_exec/canCreate` (0331) | ✅ | 2 lớp độc lập, giết cây tiến trình |
+> | C | `apply_diff` | `ai_repo_read/canEdit` (0332) | ✅ | tệp bẩn + TOCTOU + WORM |
+> | D | không gian làm việc `/ai-coding-workspace` | route ghim `ai_repo_read` | — | **nghiệm thu THỊ GIÁC** |
+>
+> **Nghiệm thu thị giác pha D (Playwright, tài khoản `engineer` thật, cổng 3000 live)** — tôi tự chụp
+> và tự đọc ảnh, không tin subagent:
+> - Khung ba phần render đúng: cây tệp · trình xem · hội thoại tác nhân.
+> - **Cây tệp = repo THẬT** (`list_files` chạy qua `repoWorkspace.listFiles`): server/, client/, drizzle/…
+> - **Trình xem hiện nội dung THẬT** (`read_file`): mở `AI_ANALYTICS_ACTION_ITEMS.md` → 12.519 B markdown đầy đủ.
+> - **Hộp cát pha A CƯỠNG CHẾ qua UI**: click `.gitignore` → *"Phần mở rộng (không có đuôi) không nằm
+>   trong danh sách TRẮNG của hộp cát… danh sách TRẮNG, không phải danh sách đen"* — câu từ chối
+>   tiếng Việt qua `t()`, đúng lý do. Đây là bằng chứng hàng rào chạy thật, không chỉ trong lưới.
+>
+> Vòng khép kín *đọc → đề xuất diff → người duyệt → chạy test → đọc lỗi thật → sửa tiếp* nay chạy được;
+> nhịp do NGƯỜI điều khiển (đúng thiết kế HITL, tác nhân không tự nối apply_diff→run_command).
 
 ---
 
