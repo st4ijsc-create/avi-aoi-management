@@ -18974,5 +18974,61 @@
       "rejected": "已拒绝",
       "suspended": "已暂停"
     }
+  },
+  "repoWs": {
+    "title": "AI 编程工作区",
+    "subtitle": "读代码 → 提出 diff → 人工审核 → 运行测试 → 读真实错误再继续修复",
+    "noPermission": "您没有读取源码的权限（ai_repo_read）。请联系管理员。",
+    "badge": {
+      "read": "读取",
+      "exec": "运行命令",
+      "execOff": "运行命令（已隐藏）"
+    },
+    "tree": {
+      "title": "文件树",
+      "loading": "加载中…",
+      "error": "无法读取目录",
+      "denied": "服务器拒绝：缺少 ai_repo_read 权限",
+      "empty": "沙箱没有可显示的条目",
+      "refresh": "刷新"
+    },
+    "viewer": {
+      "title": "查看器",
+      "empty": "在左侧文件树中选择一个文件以查看内容。",
+      "loading": "正在读取文件…",
+      "denied": "无法读取（被沙箱/服务器拒绝）。",
+      "redacted": "已脱敏",
+      "truncated": "已截断",
+      "diffFor": "Diff 预览"
+    },
+    "chat": {
+      "title": "智能体会话",
+      "empty": "让智能体读取真实代码、提出 diff（由你审核），再运行测试并阅读真实错误。",
+      "thinking": "思考中…",
+      "noAnswer": "（无回答内容）",
+      "streamFailed": "流式失败——请重试。",
+      "cmdOutput": "命令输出（已加入上下文以便继续修复）",
+      "applied": "已应用 diff——已重新读取文件。",
+      "confirmFailed": "无法执行。"
+    },
+    "diff": {
+      "cardTitle": "建议编辑文件——需要你审核",
+      "file": "文件",
+      "writesAll": "确认将把整个建议更改写入磁盘。接受/撤销单个代码块仅在中间面板预览——不改变实际写入的内容。",
+      "confirm": "批准并写入",
+      "cancel": "取消",
+      "executed": "文件已写入。",
+      "cancelled": "已取消。",
+      "denied": "已拒绝。",
+      "expired": "已过期。"
+    },
+    "suggest": {
+      "read": "读取 server/routers.ts 并总结",
+      "grep": "在仓库中查找 executeDecision 的调用位置",
+      "check": "运行 npm run check 并阅读错误"
+    },
+    "exec": {
+      "noPerm": "您的账户没有运行命令的权限（ai_repo_exec）——运行测试的建议已隐藏。若直接调用，服务器仍会拦截。"
+    }
   }
 }

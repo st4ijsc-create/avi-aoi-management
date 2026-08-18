@@ -136,6 +136,10 @@ export interface KbPendingAction {
   actionId: string;
   token: string;
   tool: string;
+  // doc 78 PHA D — args THẬT của lượt đề xuất (server gửi nguyên PendingActionDTO qua SSE). Với
+  // `apply_diff` là `{ path, original, modified }` — đủ để client dựng HunkDiffView (diff đầy đủ).
+  // Chỉ để HIỂN THỊ; mọi lượt ghi vẫn qua confirmAction (server đọc args từ hàng ai_pending_actions).
+  args?: Record<string, unknown>;
   summary: string;
   preview: {
     entityType: string;

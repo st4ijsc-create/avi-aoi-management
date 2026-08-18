@@ -18946,5 +18946,61 @@
       "rejected": "Từ chối",
       "suspended": "Tạm ngưng"
     }
+  },
+  "repoWs": {
+    "title": "Không gian lập trình AI",
+    "subtitle": "Đọc mã → đề xuất diff → người duyệt → chạy test → đọc lỗi thật rồi sửa tiếp",
+    "noPermission": "Bạn không có quyền ĐỌC mã nguồn (ai_repo_read). Liên hệ quản trị viên.",
+    "badge": {
+      "read": "đọc",
+      "exec": "chạy lệnh",
+      "execOff": "chạy lệnh (ẩn)"
+    },
+    "tree": {
+      "title": "Cây tệp",
+      "loading": "Đang tải…",
+      "error": "Không đọc được thư mục",
+      "denied": "Server từ chối: thiếu quyền ai_repo_read",
+      "empty": "Không có mục nào hộp cát cho phép hiện",
+      "refresh": "Làm mới"
+    },
+    "viewer": {
+      "title": "Trình xem",
+      "empty": "Chọn một tệp ở cây bên trái để xem nội dung.",
+      "loading": "Đang đọc tệp…",
+      "denied": "Không đọc được (bị hộp cát/server từ chối).",
+      "redacted": "Đã che bí mật",
+      "truncated": "Đã cắt bớt",
+      "diffFor": "Xem trước diff"
+    },
+    "chat": {
+      "title": "Hội thoại tác nhân",
+      "empty": "Hỏi để tác nhân đọc mã thật, đề xuất diff (bạn duyệt), rồi chạy test và đọc lỗi thật.",
+      "thinking": "Đang suy nghĩ…",
+      "noAnswer": "(không có nội dung trả lời)",
+      "streamFailed": "Luồng bị lỗi — thử lại.",
+      "cmdOutput": "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)",
+      "applied": "Đã áp diff — đã đọc lại tệp.",
+      "confirmFailed": "Không thực thi được."
+    },
+    "diff": {
+      "cardTitle": "Đề xuất SỬA tệp — cần bạn duyệt",
+      "file": "Tệp",
+      "writesAll": "Xác nhận sẽ ghi TOÀN BỘ thay đổi đề xuất xuống đĩa. Nhận/hoàn tác từng khối chỉ để xem trước ở khung giữa — không đổi thứ được ghi.",
+      "confirm": "Duyệt & ghi",
+      "cancel": "Hủy",
+      "executed": "Đã ghi tệp.",
+      "cancelled": "Đã hủy.",
+      "denied": "Bị từ chối.",
+      "expired": "Đã hết hạn."
+    },
+    "suggest": {
+      "read": "Đọc file server/routers.ts và tóm tắt",
+      "grep": "Tìm nơi gọi executeDecision trong repo",
+      "check": "Chạy npm run check rồi đọc lỗi"
+    },
+    "exec": {
+      "noPerm": "Tài khoản của bạn không có quyền CHẠY LỆNH (ai_repo_exec) — gợi ý chạy test bị ẩn. Nếu gọi thẳng, server vẫn chặn."
+    }
   }
 }

@@ -96,6 +96,8 @@ const ModelVersionsPage = React.lazy(() => import("./pages/ModelVersionsPage"));
 // disk unreferenced (not deleted, per task brief) — /ai-hub now redirects below.
 const AIHome = React.lazy(() => import("./pages/AIHome"));
 const AIChatPage = React.lazy(() => import("./pages/AIChatPage"));
+// doc 78 PHA D — Không gian lập trình AI (cây tệp · trình xem+diff · hội thoại tác nhân). RBAC ai_repo_read.
+const AICodingWorkspace = React.lazy(() => import("./pages/AICodingWorkspace"));
 const AIQualityGatePage = React.lazy(() => import("./pages/AIQualityGatePage"));
 const AIActiveLearningPage = React.lazy(() => import("./pages/AIActiveLearningPage"));
 const AIImageSearchPage = React.lazy(() => import("./pages/AIImageSearchPage"));
@@ -490,6 +492,8 @@ function Router() {
           keep working via redirect. Workspace (read-open to all roles): chat /
           AI Home / management-insight / inbox. */}
       <Route path="/ai-chat"><AIPageWrapper><AIChatPage /></AIPageWrapper></Route>
+      {/* doc 78 PHA D — Không gian lập trình AI: ghim RBAC ai_repo_read (engineer/admin), KHÔNG mở cho mọi tài khoản. */}
+      <Route path="/ai-coding-workspace"><RouteGuard requirePermission="ai_repo_read"><AIPageWrapper><AICodingWorkspace /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-home"><AIPageWrapper><AIHome /></AIPageWrapper></Route>
       <Route path="/ai-hub"><Redirect to="/ai-home" /></Route>
       <Route path="/management-insight"><AIPageWrapper><ManagementInsight /></AIPageWrapper></Route>

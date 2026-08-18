@@ -18966,5 +18966,61 @@
       "rejected": "Rejected",
       "suspended": "Suspended"
     }
+  },
+  "repoWs": {
+    "title": "AI Coding Workspace",
+    "subtitle": "Read code → propose diff → human review → run tests → read real errors, then keep fixing",
+    "noPermission": "You do not have permission to READ source code (ai_repo_read). Contact an administrator.",
+    "badge": {
+      "read": "read",
+      "exec": "run command",
+      "execOff": "run command (hidden)"
+    },
+    "tree": {
+      "title": "File tree",
+      "loading": "Loading…",
+      "error": "Could not read directory",
+      "denied": "Server refused: missing ai_repo_read permission",
+      "empty": "No entries the sandbox allows to show",
+      "refresh": "Refresh"
+    },
+    "viewer": {
+      "title": "Viewer",
+      "empty": "Pick a file in the tree on the left to view its contents.",
+      "loading": "Reading file…",
+      "denied": "Could not read (refused by the sandbox/server).",
+      "redacted": "Secrets redacted",
+      "truncated": "Truncated",
+      "diffFor": "Diff preview"
+    },
+    "chat": {
+      "title": "Agent conversation",
+      "empty": "Ask the agent to read real code, propose a diff (you review), then run tests and read the real errors.",
+      "thinking": "Thinking…",
+      "noAnswer": "(no answer content)",
+      "streamFailed": "Stream failed — try again.",
+      "cmdOutput": "Command output (added to context so you can keep fixing)",
+      "applied": "Diff applied — file re-read.",
+      "confirmFailed": "Could not execute."
+    },
+    "diff": {
+      "cardTitle": "Proposed file EDIT — needs your review",
+      "file": "File",
+      "writesAll": "Confirming writes the ENTIRE proposed change to disk. Accepting/reverting individual hunks only previews it in the middle pane — it does not change what gets written.",
+      "confirm": "Approve & write",
+      "cancel": "Cancel",
+      "executed": "File written.",
+      "cancelled": "Cancelled.",
+      "denied": "Refused.",
+      "expired": "Expired."
+    },
+    "suggest": {
+      "read": "Read server/routers.ts and summarize it",
+      "grep": "Find where executeDecision is called in the repo",
+      "check": "Run npm run check and read the errors"
+    },
+    "exec": {
+      "noPerm": "Your account has no RUN-COMMAND permission (ai_repo_exec) — the run-tests suggestion is hidden. If called directly, the server still blocks it."
+    }
   }
 }
