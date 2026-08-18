@@ -1506,7 +1506,41 @@ EXPECT_CONFORMANCE=24
 # every edited block was nonetheless checked directly by running DocCommentProseTests, because an
 # unbalanced block HIDES the diagnostics inside it and no compiler anywhere checks an element NAME. No
 # suppression of any kind was added, which makes this the TENTH consecutive task with none.
-EXPECT_EDGECORE=1147
+#
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 TASK AE-1 (.superpowers/sdd/item12-stage2/task-1-brief.md) — owner decision item 12, STAGE 2 — raises
+# this 1147 -> 1152 (+5). Grand total 2758 -> 2763. ONE new file,
+# tests/St4i.EdgeCore.Tests/SuppressionCensusTests.cs; nothing is rewritten, split or deleted, and the five
+# are named rather than counted:
+#     TheCensusReachesItsCorpus_AndTheVendoredFilesAncestorChain
+#     TheEnumerationOfSuppressionInstructions_IsExactlyThis
+#     TheEnumerationOfAnalyzerConfigFilesThatWouldReachTheVendoredFile_IsExactlyThis
+#     TheDocumentationSwitchIsSetOnExactlyTheseProjects
+#     TheDetector_ReportsEachMechanismItClaimsToRead
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGESERVICE and EXPECT_ENGINEAPI are deliberately
+# UNCHANGED, and that is a check rather than a convenience: AE-1 adds one file to one suite and changes the
+# build gate; a total moving anywhere else would mean it reached somewhere it had no business reaching.
+#
+# 🔴 WHY THAT FILE IS IN THIS SUITE AND NOT SOMEWHERE MORE OBVIOUS. It scans a domain that is not this
+# project's — the whole product tree PLUS the vendored SDK file's ancestor chain, which lives OUTSIDE
+# tools/machine-simulator. It sits here because this is the suite that already owns the vendored file's
+# identity (DocCommentProseTests derives the same path from the same csproj), and one suite owning one
+# question is worth more than a tidier home.
+#
+# 🔴 WHAT IT IS FOR, in one sentence, because a census of suppressions reads like bureaucracy until you
+# see what it protects: the origin-split warning ledger added to the build gate below can only see an
+# override that removes a warning WHICH EXISTS. With GenerateDocumentationFile off, CS1591 and CS1573 are
+# emitted nowhere, so `<NoWarn>$(NoWarn);CS1591</NoWarn>` committed today moves NO number in this file and
+# then silences 543 warnings the day stage 3 turns the switch on. That file is what makes "no override has
+# shipped since N-1" — asserted in prose in four documents and by nothing anywhere — into an assertion.
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0, measured on a full `dotnet build -t:Rebuild` of
+# the whole solution, never on an incremental one. The new file compiles with no warning of its own. NO
+# SUPPRESSION OF ANY KIND WAS ADDED — which makes this the FOURTEENTH consecutive task with none, and the
+# first one whose successor can no longer take that on trust.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1152
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4808,6 +4842,25 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # documentation COVERAGE (CS1591, 2870 members) and that is an owner decision, not an implementer one; see
 # Directory.Build.props for the measured per-project price of all fifteen.
 #
+# 🔴 THE THREE NUMBERS IN THE PARAGRAPH DIRECTLY ABOVE ARE WITHDRAWN, 2026-08-19, BY TASK AE-1 (item 12
+# stage 2) — quoted rather than rewritten, because a reader who bookmarked them must see them retired and
+# because the paragraph is the record of what was believed. Withdrawn: "237 already-false claims",
+# "233 distinct source sites", "259 if you count the way MSBuild does". Re-measured at 3b773e11 on SDK
+# 10.0.302 by task AD-1 (item 12 stage 1) and independently reproduced by this task, both from a full
+# `dotnet build -t:Rebuild -p:GenerateDocumentationFile=true` — a DIAGNOSTIC that sets the property for one
+# invocation and writes nothing to the tree:
+#     239   already-false cref/paramref claims across the eight unset projects (101/43/34/32/22/5/1/1)
+#     235   distinct source sites  (239 - 4: five of the 239 are ONE defect in tests/Shared/
+#           TestRunTempRoot.cs, Compile-linked into all five test projects)
+#     261   counting the way MSBuild does, because the WPF markup pass compiles St4iMachineSimulator again
+# The class GREW BY TWO WHILE NOTHING WATCHED IT, and both arrived in one commit, 4d1422a7, inside the last
+# merge before item 12's stage 1 began: a CS1574 in BoundServerAddressesTests.cs (a `cref="Collection"` that
+# does not resolve) and a CS0419 in OperatorDataRemovalCensusTests.cs (an ambiguous
+# `cref="Directory.CreateDirectory"`). That is N-1's lesson repeating one layer up — N-1 emptied the
+# malformed-BLOCK class and the very next task refilled it, which is why DocCommentProseTests is a standing
+# assertion; the unresolvable-CREF class is refilling on the same rhythm and STILL has nothing watching it.
+# It is item 12's stage 3 that closes it, not this one.
+#
 # 🔴 THAT LAST PARAGRAPH IS A MEASUREMENT, NOT A CAVEAT — negative control, run on this gate, N-1.
 # One `</para>` was deleted from a doc block in FleetCore.cs, recreating one of the four malformed blocks
 # J-3 needed a purpose-built parser to find. The defect was confirmed present by two independent instruments
@@ -4874,7 +4927,14 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # and never will while the switch is off; the suite half does. Both halves were run on the same defect (the
 # transcripts are in the W-1 report). The boundary moved from "the gate cannot see a malformed block outside
 # the six" to "the gate cannot see an unresolvable `cref` outside the seven" -- 237 of those are on record
-# and NONE of them is indexed here.
+# and NONE of them is indexed here.  [🔴 "237" WITHDRAWN 2026-08-19 by task AE-1: re-measured 239. See the
+# withdrawal block above for the two that arrived and where. The sentence's point is unchanged and is worse
+# than it reads: none of the 239 is indexed here, and the number is moving.]
+#
+# 🔴 AE-1 (item 12 stage 2) ADDED A SECOND ASSERTION BELOW THIS ONE AND DID NOT TOUCH THIS LITERAL. Read the
+# block that follows before concluding that 116 is still the whole of what this gate says about warnings: it
+# is not, and the reason is that 116 is a SCALAR OVER A UNION and therefore cannot see one population fall
+# while another rises. It stays 116 because nothing was paid, nothing was silenced and nothing regressed.
 EXPECT_WARNINGS=116
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
@@ -4901,6 +4961,177 @@ if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   foreign_build_report "this run's warning count moved off its pinned value"
   exit 1
 fi
+
+# ══ THE ORIGIN-SPLIT WARNING LEDGER — task AE-1, owner item 12, STAGE 2 ═══════════════════════════════
+#
+# 🔴 THE ASSERTION DIRECTLY ABOVE IS A SCALAR OVER A UNION, AND A SCALAR OVER A UNION IS BLIND TO
+# CANCELLATION. That is not a hypothesis about a future tree; it is a property of the number, and item 12's
+# owner decision deliberately manufactures the conditions under which it bites. The decision puts a population
+# NOBODY MAY PAY (the vendored SDK file's warnings, 82 today and 185 with the documentation switch on) beside
+# a population that stages 4..N exist to PAY DOWN (ours). Pay three in our source while a re-vendoring adds
+# three to theirs and 116 does not move: the gate stays green and BOTH events vanish. A long run of deliberate
+# reductions in one ledger, next to a ledger that can rise, is exactly the interval during which a rise is
+# invisible -- and that interval is the plan.
+#
+# 🔴 SO THE FIX IS NOT A BIGGER NUMBER, IT IS A PARTITIONED ONE. This block asserts EQUALITY on an ENUMERATED
+# map from (ORIGIN BUCKET, WARNING CODE) to COUNT. Every row is pinned; a row appearing, disappearing or
+# changing value is red, in either direction, for either bucket. Deliberately NOT a ratchet, for the reason
+# EXPECT_WARNINGS already gives at length -- an override can only ever REDUCE, so a one-sided bound would
+# swallow the whole class of defect this ledger exists to catch.
+#
+# ── WHY (BUCKET x CODE), AND NOT THE THREE PARTITIONS THAT LOOK EQUIVALENT. Each was measured on this tree
+#    at 3b773e11, and each fails on a case the tree exhibits TODAY:
+#      * BY CODE ALONE (which is what stage 1's plan proposed, and it is not enough): CS8601 stands at 2 in
+#        the vendored file and 7 in ours; CS8604 at 1 and 14. Both populations already emit the same code, so
+#        a code-keyed ledger cancels TODAY, with the switch off. Under the switch it gets worse, not better:
+#        CS1591 becomes 95 theirs and 2745 ours, CS1573 8 and 374 -- i.e. the two codes stages 4..N pay are
+#        precisely the two codes a re-vendoring moves.
+#      * BY PROJECT: the vendored file is COMPILED INTO St4i.EdgeCore. A project-keyed ledger cannot separate
+#        these two populations at all, by construction -- they are the same project.
+#      * BY FILE: correct but unusable. 90 files carry our own coverage bill; a per-file ledger would have to
+#        be edited by every task that touches any of them, and a ledger nobody can leave alone stops being
+#        read. It is also STILL not fine enough: one file emits codes with different remedies -- the vendored
+#        file's 82 nullable warnings are blocked MECHANICALLY (its own header pins C# 7.3+, so `string?` is
+#        illegal there) while its 103 documentation warnings are blocked only by OWNERSHIP.
+#    (bucket x code) is the COARSEST partition that is finer than every remedy boundary item 12 draws.
+#
+# ── THE TEST THIS SATISFIES, stated as the falsifiable form and not as an intention:
+#      A mechanism NAMES a debt rather than SUPPRESSING it if and only if putting one more override on top of
+#      it turns the gate RED.
+#    Under `<NoWarn>` a second override changes nothing, which is why `<NoWarn>` is never naming. Under this
+#    ledger the FIRST override is already red: an .editorconfig planted beside the vendored file drops that
+#    bucket's rows, the diff below names the bucket, the file it is derived from, the code and both counts.
+#    Measured, both halves, transcripts in .superpowers/sdd/item12-stage2/task-1-report.md.
+#
+# 🔴 AND THIS HALF ALONE DOES NOT PASS THAT TEST, WHICH IS WHY THERE IS A SECOND ONE. This ledger can only see
+# an override that removes a warning THAT EXISTS TODAY. `<NoWarn>$(NoWarn);CS1591</NoWarn>` on St4i.EdgeCore,
+# committed TODAY, moves not one row here -- CS1591's count is 0 in both buckets while the switch is off -- and
+# it would then silence all 543 the moment stage 3 turns the switch on, with no gate anywhere noticing. That is
+# not a corner: it is the exact shape of the failure stage 3 is exposed to. The other half is
+# tests/St4i.EdgeCore.Tests/SuppressionCensusTests.cs, which enumerates SUPPRESSION INSTRUCTIONS rather than
+# warnings and therefore does not need the code to exist yet. Neither half is redundant and neither is
+# sufficient: this one catches suppression of what IS emitted plus every drift in the populations; that one
+# catches the instruction itself, including for codes standing at zero.
+#
+# ── DOMAIN, DECLARED BEFORE THE CODE (§8.1(f)) -- and what is OUTSIDE it:
+#      * It reads THIS run's `-t:Rebuild` log and nothing else. An incremental build never shows the whole
+#        repository's number; that warning already sits on EXPECT_WARNINGS and it governs this too.
+#      * It counts the way MSBuild's own summary counts: once per COMPILATION that emits it. One defect in
+#        tests/Shared/TestRunTempRoot.cs counts five times; one in St4iMachineSimulator counts twice, because
+#        the WPF markup pass compiles it again as `_wpftmp`. These are MEMBER/OCCURRENCE counts, never
+#        distinct source sites -- 543 CS1591 in St4i.EdgeCore sit on 532 distinct sites, because 11 positional
+#        `record`s emit two at one location (the type and its primary constructor). Anyone counting this
+#        ledger by `grep`ping locations is 11 short.
+#      * ORIGIN here means the file the diagnostic NAMES, not the project that emitted it and not the file
+#        that caused it. A warning with no source location at all (`CSC : warning xUnit1013`, and NU1701,
+#        which names a csproj) lands in OURS -- correctly, since nothing in the vendored file can produce one.
+#      * It is keyed on ENGLISH MSBuild rendering, the same handover already recorded at EXPECT_WARNINGS. On a
+#        localized SDK the match misses, the buckets come out empty and the sum check below REDS. Fails safe.
+#      * It says NOTHING about doc-comment coverage today, because with the switch off no such diagnostic is
+#        emitted anywhere. What it does say today is not nothing and not asleep: 82 of the 116 already live in
+#        the vendored file, so the split it asserts is LIVE, NON-EMPTY and unequal from the day it ships.
+#
+# 🔴 ITS STAGE-3 BEHAVIOUR IS MEASURED, NOT PROMISED. The same function below, run unchanged over a
+# `dotnet build -t:Rebuild -p:GenerateDocumentationFile=true` log (a DIAGNOSTIC: no file in the tree was
+# touched, the switch is not set anywhere, `git status --porcelain` was empty either side), splits the whole
+# tree into VENDORED 185 / OURS 3414. The vendored bucket gains exactly the 103 nobody may pay -- 95 CS1591
+# and 8 CS1573 -- and not one row more. Stage 3 therefore installs no mechanism; it moves two tables.
+VENDORED_SOURCE_CSPROJ="src/St4i.EdgeCore/St4i.EdgeCore.csproj"
+# 🔴 THE VENDORED FILE'S IDENTITY IS DERIVED, NEVER RE-SPELLED. It is read out of the csproj's own
+# `Compile Include`, exactly as DocCommentProseTests derives it, so the two instruments cannot disagree about
+# which file this is and a re-vendoring that MOVES the file moves this ledger's definition with it instead of
+# quietly reclassifying 82 warnings as ours. More than one outside-cone item is a new population with its own
+# owner and its own remedy, so it is a decision to be made here rather than absorbed.
+VENDORED_LINKED=$(grep -oE '<Compile[[:space:]]+Include="[^"]*"' "$VENDORED_SOURCE_CSPROJ" 2>/dev/null \
+  | sed -E 's/.*Include="([^"]*)".*/\1/' | tr '\\' '/' | grep -E '^\.\./' || true)
+VENDORED_LINKED_COUNT=$(printf '%s\n' "$VENDORED_LINKED" | grep -c . || true)
+if [[ "$VENDORED_LINKED_COUNT" != "1" ]]; then
+  echo "FAIL: St4i.EdgeCore.csproj declares ${VENDORED_LINKED_COUNT} Compile items from outside its own"
+  echo "  directory; the warning ledger below was written when there was exactly one (the vendored"
+  echo "  device-client SDK). Every extra one is a population with its own owner and its own remedy."
+  echo "  Decide which, and say so beside the ledger: ${VENDORED_LINKED//$'\n'/, }"
+  exit 1
+fi
+VENDORED_FILE=$(cd "$(dirname "$VENDORED_SOURCE_CSPROJ")" && cygpath -m "$(realpath -m "$VENDORED_LINKED")")
+if [[ ! -f "$VENDORED_FILE" ]]; then
+  echo "FAIL: ${VENDORED_FILE} -- named by St4i.EdgeCore.csproj's Compile Include, absent on disk."
+  echo "  The warning ledger derives its VENDORED bucket from that path. A ledger whose bucket cannot"
+  echo "  exist would sort every one of those warnings into OURS and pass on the totals."
+  exit 1
+fi
+VENDORED_KEY=$(printf '%s' "$VENDORED_FILE" | tr 'A-Z' 'a-z')
+
+# One pass over the SUMMARY block only. MSBuild prints every warning twice -- once inline, once in the
+# summary -- and a reader that took both would report exactly double, which is the shape of a census that
+# looks careful and is wrong by a constant. The sum check below is what makes that unmistakable rather than
+# plausible: two independent counts (MSBuild's own "N Warning(s)" and this partition) must agree.
+warning_ledger() {
+  awk -v vend="$VENDORED_KEY" '
+    /^Build succeeded\./ { insummary = 1; next }
+    !insummary { next }
+    {
+      if (match($0, /: warning [A-Za-z]+[0-9]+/) == 0) next
+      prefix = substr($0, 1, RSTART - 1)
+      code   = substr($0, RSTART + 10, RLENGTH - 10)
+      gsub(/\\/, "/", prefix)
+      prefix = tolower(prefix)
+      bucket = (index(prefix, vend) > 0) ? "VENDORED" : "OURS"
+      n[bucket "\t" code]++
+    }
+    END { for (k in n) { split(k, a, "\t"); printf "%s %s %d\n", a[1], a[2], n[k] } }
+  ' "$BUILD_LOG" | LC_ALL=C sort
+}
+
+# 🔴 THE PINNED LEDGER. Move a row only in the same breath as the change that moved it, and say why HERE --
+# a warning that arrives with a task is a fact to be justified, not a number to be pasted over. The two
+# buckets are pinned separately ON PURPOSE: that separation is the entire deliverable, and merging them back
+# into one sorted list would restore precisely the blindness this block exists to remove.
+#
+#   VENDORED = examples/device-client/csharp/St4iDeviceClient.cs, the published reference SDK kept in step
+#              with its Python and Node siblings. THIS REPOSITORY MAY NOT EDIT IT. A row moving here is a
+#              re-vendoring or an override, never a defect to fix in place, and never a number to lower.
+#   OURS     = every other compilation unit in this solution. A row moving here is ours to explain.
+EXPECT_WARNING_LEDGER="OURS CS8601 7
+OURS CS8604 14
+OURS CS8767 2
+OURS NU1701 9
+OURS xUnit1013 1
+OURS xUnit2029 1
+VENDORED CS8600 5
+VENDORED CS8601 2
+VENDORED CS8603 2
+VENDORED CS8604 1
+VENDORED CS8618 35
+VENDORED CS8625 37"
+
+OBSERVED_WARNING_LEDGER="$(warning_ledger)"
+LEDGER_SUM=$(printf '%s\n' "$OBSERVED_WARNING_LEDGER" | awk '{s+=$3} END {printf "%d", s+0}')
+if [[ "$LEDGER_SUM" != "${WARNINGS:-}" ]]; then
+  echo "FAIL: the warning ledger partitioned ${LEDGER_SUM} warnings but MSBuild reported ${WARNINGS:-unknown}."
+  echo "  These are two independent counts of one population and they must agree. They do not, so the"
+  echo "  partition below is not a census of this build and NOTHING it says may be believed -- including"
+  echo "  a green one. Likeliest causes: the 'Build succeeded.' summary marker moved or is absent, or a"
+  echo "  localized SDK is not rendering 'warning CSxxxx' in English."
+  echo "  full log: $BUILD_LOG"
+  exit 1
+fi
+if [[ "$OBSERVED_WARNING_LEDGER" != "$EXPECT_WARNING_LEDGER" ]]; then
+  echo "FAIL: the warning ledger moved. The TOTAL may not have."
+  echo "  This assertion exists because ${EXPECT_WARNINGS} is a scalar over a union and a scalar over a union"
+  echo "  cannot see one population fall while another rises. Rows are (BUCKET CODE COUNT); '<' is expected,"
+  echo "  '>' is what this build produced:"
+  diff <(printf '%s\n' "$EXPECT_WARNING_LEDGER") <(printf '%s\n' "$OBSERVED_WARNING_LEDGER") | sed 's/^/    /'
+  echo "  VENDORED means: ${VENDORED_FILE}"
+  echo "    -- derived from St4i.EdgeCore.csproj's Compile Include, not spelled here. This repository may not"
+  echo "       edit that file. A row falling in this bucket is an OVERRIDE (an .editorconfig at or above that"
+  echo "       path, a <NoWarn>, a #pragma) or a re-vendoring; it is never a fix, and lowering the pin to"
+  echo "       match is how a debt stops being named."
+  echo "  OURS means: every other compilation unit in this solution."
+  echo "  full log: $BUILD_LOG"
+  foreign_build_report "this run's warning ledger moved off its pinned rows"
+  exit 1
+fi
+note "warning ledger: $(printf '%s\n' "$OBSERVED_WARNING_LEDGER" | awk '$1=="VENDORED"{v+=$3} $1=="OURS"{o+=$3} END {printf "%d vendored / %d ours", v+0, o+0}') -- every (bucket,code) row asserted, not printed"
 
 # ── Gate 2: each suite, sequentially, asserting an EXACT total. ──────────────────
 # Trap 2. `Failed: 0` is not evidence: an aborted run prints it with a short total.
