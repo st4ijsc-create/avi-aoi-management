@@ -74,6 +74,9 @@
            `Compile`-linked into ALL FIVE test projects, so one doc defect in either counts FIVE times. It is
            not hypothetical: 5 of the 237 below are ONE defect in TestRunTempRoot.cs, which is why the
            distinct-source-site count is 233.
+           🔴 "237"/"233" WITHDRAWN 2026-08-19 by task AE-1 — 239 and 235 today; the 5-for-1 structure this
+           bullet is actually about is UNCHANGED and was re-measured (5 warnings, 1 source site). The point
+           of the bullet survives its numbers, which is why the numbers are retired rather than the bullet.
          * And `St4i.EdgeCore` compiles `examples/device-client/csharp/St4iDeviceClient.cs`, linked in from
            OUTSIDE tools/machine-simulator (see St4i.EdgeCore.csproj's `Compile Include`). Its 95 CS1591 and
            8 CS1573 are inside St4i.EdgeCore's row above — and it is a VENDORED reference SDK. That is not an
@@ -174,6 +177,15 @@
        and NOT fixed: a fix there is guarded by nothing and witnessed by nothing until the switch can be set.
        (That total is unchanged by N-2: this project's column (1) was already zero, which is exactly why it
        was the row that could move.)
+       🔴 "237" IN THE SENTENCE ABOVE IS WITHDRAWN, 2026-08-19, by task AE-1 (item 12 stage 2) — quoted and
+       retired in place rather than rewritten, the style AA-1 established for this file. It is 239 today
+       (101/43/34/32/22/5/1/1), 235 distinct source sites, 261 counting the way MSBuild counts. AD-1
+       measured it at 59bebd21 and this task reproduced it at 3b773e11 on the same SDK 10.0.302. Both of the
+       +2 landed in ONE commit, 4d1422a7 — a CS1574 in tests/St4i.EngineApi.Tests/Site/
+       BoundServerAddressesTests.cs and a CS0419 in tests/St4i.EngineApi.Tests/
+       OperatorDataRemovalCensusTests.cs — i.e. in the last merge before item 12's stage 1. The sentence's
+       own claim is what let that happen, so it is not merely stale: "guarded by nothing and witnessed by
+       nothing" was true, and the class grew by two while it was true.
 
        🔴 A malformed block HIDES the diagnostics inside it — measured here, not assumed. Closing the 19
        blocks made the compiler report EIGHT further defects it had previously abandoned the block before
@@ -198,6 +210,13 @@
        CS1573 + 82 nullable inside the vendored file; 448 + 84 on our own source; 101 unresolvable
        cref/paramref claims in this project and 237 across the eight, matching N-1's §4.3 table project by
        project (101/43/34/30/22/5/1/1). CS1570 and CS1587 are zero in all fifteen compilations, as claimed.
+       🔴 "237" AND "101/43/34/30/22/5/1/1" IN THE SENTENCE ABOVE ARE WITHDRAWN, 2026-08-19, by task AE-1.
+       They were true at 46439925 and are not true now: 239, 101/43/34/**32**/22/5/1/1, the +2 both in
+       commit 4d1422a7 (see the withdrawal three paragraphs up). Everything ELSE in that sentence still
+       reproduces exactly, re-measured at 3b773e11 by this task — 543 / 92 / 95 + 8 + 82 / 448 + 84 / 101,
+       and CS1570 = CS1587 = 0 in every compilation. The one figure that moved is the one this file has
+       never had an assertion for; the ones that held are the ones the switch or DocCommentProseTests
+       watches. That correlation is the argument for item 12, restated as a measurement.
 
        THREE NUMBERS HAVE MOVED, and all three are explanations rather than corrections:
          * Column (1) for St4i.EdgeCore reads 112 above and is 101 today. The column is pinned to
@@ -271,7 +290,37 @@
        history the same check reports 19 malformed blocks in 15 files at 811c9054, which is this block's own
        published count arrived at independently, and the unclosed `<b>` T-1 shipped at 9209a81b. The class
        N-1 emptied refilled at the very NEXT task; that is why it is now a standing assertion and not a
-       sweep. -->
+       sweep.
 
+       ══════════════════════════════════════════════════════════════════════════════════════════════════
+       🔴 AE-1 (.superpowers/sdd/item12-stage2/task-1-brief.md) — owner item 12, STAGE 2. THE SWITCH IS
+       STILL OFF. NOT ONE WARNING WAS PAID AND NOT ONE WAS SILENCED. What this round installs is the
+       BOOK-KEEPING the decision needs before it can be enforced, and the argument is one measured fact:
+
+           the (a)-vs-(b) choice above puts a population NOBODY MAY PAY — the vendored file's 103 — beside
+           a population that stages 4..N exist to PAY DOWN. A single warning TOTAL cannot tell those two
+           apart, so a payment of k in ours and a re-vendoring of +k in theirs leave the total unmoved and
+           the gate green. That is not a risk of the plan; it is the plan's own shape.
+
+       So scripts/verify-suites.sh now asserts, beside EXPECT_WARNINGS and without touching it, an
+       ORIGIN-SPLIT LEDGER: an enumerated map from (bucket, warning code) to count, equality in both
+       directions, with VENDORED derived from THIS csproj's own `Compile Include` rather than re-spelled.
+       Live today at 82 vendored / 34 ours — the split is not waiting for stage 3, because 82 of the
+       current 116 already sit in that file. Run unchanged over the diagnostic command above it splits the
+       flag-on tree 185 / 3414, the vendored bucket gaining exactly the 95 CS1591 + 8 CS1573 nobody may
+       pay. Stage 3 therefore installs no mechanism; it moves two tables.
+
+       🔴 AND THE LEDGER ALONE IS NOT ENOUGH, WHICH IS THE FINDING THIS ROUND CONTRIBUTES. It can only see
+       an override that removes a warning that EXISTS. With the switch off, CS1591 and CS1573 stand at zero
+       everywhere — so `<NoWarn>$(NoWarn);CS1591</NoWarn>` added to St4i.EdgeCore TODAY moves no number in
+       any instrument in this repository, and silences 543 the day the switch is thrown. Option (a) four
+       paragraphs up can therefore be taken PRE-EMPTIVELY, invisibly, by anybody, at any time between now
+       and stage 3. tests/St4i.EdgeCore.Tests/SuppressionCensusTests.cs closes that: it enumerates
+       SUPPRESSION INSTRUCTIONS instead of warnings, over the product tree AND every directory on the
+       vendored file's ancestor chain up to the repository root — which is where the measurement three
+       paragraphs up says option (b) has to be planted, and which no other scan in this repository reaches.
+       It also pins THIS block's own table: which of the fifteen projects set the property. Turning it OFF
+       on one of the seven removes an assertion and moves no warning count at all, and until that row
+       existed nothing here could have seen it. -->
 
 </Project>
