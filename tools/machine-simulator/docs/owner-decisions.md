@@ -1272,6 +1272,18 @@ thì không, và không có gì báo cho ai biết ngoài các dòng đã ghi t�
 > phải một chỗ bỏ sót: thời điểm ghi trên đường khởi động không đổi. Cái được sửa ở hàng ấy là
 > chuyện khác và được ghi tại chỗ: `U` là một **liên từ** (lên **và** báo), và trước hôm nay chỉ nửa
 > đầu của nó từng được kiểm ở trang ấy.
+>
+> **CẶP ĐỐI CHỨNG ĐÃ CHẠY HAI PHÍA.** Một file điều khiển duy nhất cho cả ba site,
+> `Z1ThreeSiteControl.cs`, **không nêu tên bất cứ thứ gì Z-1 tạo ra** — nên nó **dịch được ở cả hai
+> cây** và thật sự đã chạy ở cả hai (mỗi phía **3/3 xanh**). Nó **ghi lại** kết cục và chỉ khẳng định
+> **tiền đề**, nên phía base là một **phép đo** chứ không phải một transcript hỏng. Kịch bản: file
+> không đọc được trên đĩa, manager lên mà chưa nạp gì, `Rotate()` rồi `ReapplyCurrentAsync()`.
+> * base `f7c9216e`: `operator bytes intact=False | file is now the default record=True` — trên đĩa
+>   còn đúng `{ "Enabled": false, "Host": "", "Port": 8883, ... }`.
+> * HEAD `587553fc`: `operator bytes intact=True | file is now the default record=False` — nguyên từng
+>   byte, một file trong thư mục, không có file tạm nào bên cạnh.
+>
+> Nguồn và hai file kết quả giữ ở `.superpowers/sdd/one-law-three-sites/evidence/`.
 
 ---
 
@@ -1411,6 +1423,19 @@ mục 5. Nếu anh quyết SỬA, khẳng định ấy đảo chiều và chỗ 
 > * **Miễn trừ KHÔNG lan.** `DeviceIdentityStore` (phần dư 2 của mục 1) **không** được phán quyết
 >   này miễn trừ; hàng của nó trong `ExpectedPostures` đứng nguyên và điều đó được ghi ngay tại hàng
 >   ấy.
+>
+> **CẶP ĐỐI CHỨNG ĐÃ CHẠY HAI PHÍA** (cùng file điều khiển với mục 8 và 11 — xem mục 8 để biết vì sao
+> nó dịch được ở cả hai cây). Kịch bản: một `.bin` có mặt mà tiến trình này không giải mã được,
+> `Load` trả `null` (tiền đề đã khẳng định), rồi một lần claim lại gọi `Save`.
+> * base `f7c9216e`: `files in creds dir=1 [<mã máy>.bin] | old bytes survive somewhere=False | under
+>   name=(gone) | reclaimed key readable=True` — khoá mới đọc được, **các byte cũ biến mất**.
+> * HEAD `587553fc`: `files in creds dir=2 [<mã máy>.bin, <mã máy>.bin.unreadable-20260818T030723Z] |
+>   old bytes survive somewhere=True | reclaimed key readable=True | ListMachineCodes count for this
+>   code=1` — khoá mới vẫn đọc được, **các byte cũ còn nguyên dưới tên đã nêu**, và **`ListMachineCodes`
+>   vẫn chỉ đếm MỘT** dù thư mục có hai file: đó là phép đo cho câu *"nó không bị liệt kê"*, không phải
+>   một lập luận về khớp mẫu.
+>
+> Nguồn và hai file kết quả giữ ở `.superpowers/sdd/one-law-three-sites/evidence/`.
 
 ---
 
@@ -1530,6 +1555,17 @@ và **dừng ngay trước `Set`**.
 > — đúng cách S-1 ghim khuyết tật của mục 5 làm đường cơ sở: nếu một nhiệm vụ sau đóng nó, khẳng định
 > ấy đảo chiều và chỗ đảo chính là diff. **Nó KHÔNG được thêm vào danh sách chờ chủ sở hữu**: mục 11
 > đã đóng, và chưa ai được hỏi về ca này.
+>
+> **CẶP ĐỐI CHỨNG ĐÃ CHẠY HAI PHÍA** (cùng file điều khiển với mục 8 và 10 — xem mục 8 để biết vì sao
+> nó dịch được ở cả hai cây). Kịch bản: store lên khi **không có file**, một bản khôi phục **hai máy**
+> xuất hiện, rồi một `Set` cho **máy thứ ba**.
+> * base `f7c9216e`: `Set RETURNED (no refusal) | restored bytes intact=False | RESTORED-A
+>   survived=False | RESTORED-B survived=False | SOME-OTHER-MACHINE on disk=True` — **cả hai máy vừa
+>   khôi phục biến mất**, thay bằng đúng một entry mà lần `PUT` mang tới.
+> * HEAD `587553fc`: `Set THREW OeeSettingsFileAppearedException | restored bytes intact=True |
+>   RESTORED-A survived=True | RESTORED-B survived=True | SOME-OTHER-MACHINE on disk=False`.
+>
+> Nguồn và hai file kết quả giữ ở `.superpowers/sdd/one-law-three-sites/evidence/`.
 
 ---
 
