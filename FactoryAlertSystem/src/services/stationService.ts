@@ -25,6 +25,7 @@ import { authService } from './authService';
 import { hierarchyService, HierarchyFactory } from './hierarchyService';
 import { debugLogger } from '../utils/debugLogger';
 import { requireServerBaseUrl } from './serverConfig';
+import { themThamSoAnh } from './imageService';
 
 /**
  * Raw station item from API: GET /api/external/stations
@@ -1449,10 +1450,20 @@ class StationService {
     const base = getBaseUrl();
     const fullUrl = `${base}${url}`;
     // If URL is an API endpoint that requires auth, append masterKey query param
+    //
+    // ⚠⚠ 2026-08-18 — ĐÂY LÀ CHỖ DUY NHẤT trong app còn nối tham số bằng `?` CỨNG, và nó
+    // nối vào ĐÚNG tuyến nay được máy chủ cấp VÉ KÝ. Một URL đã mang vé có dạng
+    // `…/reference-image-file?exp=…&pv=anh&sig=…`; nối thêm `?masterKey=…` tạo ra HAI dấu
+    // `?` ⇒ URL hỏng ⇒ ảnh không tải được, và triệu chứng sẽ xuất hiện ĐÚNG LÚC bật cờ
+    // `ANH_CONG_MO` chứ không phải lúc sửa mã.
+    //
+    // ⚠ Ba chỗ nối tham số khác của app (`panelParts.tsx`, `ImageViewerModal.tsx`,
+    // `gallery.tsx`) đã tự tính `sep = includes('?') ? '&' : '?'` nên VỐN ĐÚNG — đã đọc
+    // từng chỗ, không sửa. Chỉ chỗ này sai.
     if (url.includes('/reference-image-file')) {
       const apiKey = getApiKey();
       if (apiKey) {
-        return `${fullUrl}?masterKey=${encodeURIComponent(apiKey)}`;
+        return themThamSoAnh(fullUrl, { masterKey: apiKey });
       }
     }
     return fullUrl;

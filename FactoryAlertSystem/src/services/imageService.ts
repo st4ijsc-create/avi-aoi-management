@@ -18,10 +18,16 @@ const API_TIMEOUT = 15000;
 /**
  * Nối thêm tham số truy vấn vào một URL ảnh — **cách DUY NHẤT đúng** kể từ khi máy chủ cấp vé ký.
  *
- * ⚠⚠ Khuôn cũ rải khắp app là `` `${url}?w=200&q=60` `` (xem
- * `screens/stationDetail/components/panelParts.tsx`, `gallery.tsx`, `ImageViewerModal.tsx`). Với
- * một URL đã mang vé (`…png?exp=…&pv=anh&sig=…`) khuôn ấy tạo ra **HAI dấu `?`** ⇒ URL hỏng ⇒ ảnh
- * không tải được. Dùng hàm này thay cho mọi lượt nối tay.
+ * Với một URL đã mang vé (`…png?exp=…&pv=anh&sig=…`), nối tham số bằng `?` CỨNG sẽ tạo ra
+ * **HAI dấu `?`** ⇒ URL hỏng ⇒ ảnh không tải được — và triệu chứng xuất hiện ĐÚNG LÚC bật cờ
+ * `ANH_CONG_MO`, không phải lúc sửa mã.
+ *
+ * ⚠ ĐÍNH CHÍNH 2026-08-18 — bản ghi chú đầu của khối này khai khuôn hỏng "rải khắp app" và
+ * nêu tên `panelParts.tsx`, `gallery.tsx`, `ImageViewerModal.tsx`. **Đã đọc từng chỗ: cả ba
+ * VỐN ĐÚNG** — chúng tự tính `sep = url.includes('?') ? '&' : '?'`. Chỗ duy nhất sai là
+ * `services/stationService.ts#resolveImageUrl`, và nó nối vào ĐÚNG tuyến được cấp vé ký
+ * (`/reference-image-file`). Một ghi chú tố nhầm ba file lành còn tệ hơn không có ghi chú:
+ * người sau sẽ đi "sửa" mã đang chạy đúng, rồi tin là đã xong.
  */
 export function themThamSoAnh(url: string, tham: Record<string, string | number>): string {
   if (!url) return url;
