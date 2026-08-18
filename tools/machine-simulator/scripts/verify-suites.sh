@@ -1414,7 +1414,99 @@ EXPECT_CONFORMANCE=24
 # EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0 (measured on a full solution build). No
 # suppression of any kind was added — no .editorconfig, no <NoWarn>, no #pragma — which makes this the
 # ninth consecutive task with none.
-EXPECT_EDGECORE=1143
+
+# 🔴 TASK AA-1 (.superpowers/sdd/oee-definition-and-row-shape/task-1-brief.md) raises this 1143 -> 1147
+# (+4). Grand total 2751 -> 2755. ONE new file, four plain [Fact]s, nothing rewritten, split or deleted —
+# and it is the ONLY executable line this task changes. Everything else AA-1 does is prose: doc comments on
+# WaveformSeries/Verdict/OeeResultDto/GetOeeFleetAsync/BuildReportPdf, and docs/owner-decisions.md.
+#
+#   tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs   (owner item 4, the witness)      +4
+#       Owner item 4 asked for a witness "so it does not drift back". Nothing pinned anything: every
+#       `RateHz` use in tests/ was round-trip serialization, which asserts a value SURVIVES and never that
+#       it CORRELATES with a row shape. What the four facts pin is the row shape THIS PRODUCT'S TWO
+#       PRODUCERS EMIT — a measured fact — and NOT which row shape is canonical, which is open owner item
+#       14 (see the retraction block below).
+#       EveryWaveformTheBuiltInSimulatorsEmit_MatchesTheRowShapeThoseProducersUse_AndBothArmsAreExercised +1
+#           Swept over all eight built-in simulators. Two FLOORS: a tree emitting no rated series, or no
+#           untimed series, fails here instead of reporting a clean sweep of nothing. The floors count
+#           SERIES that touched each arm, not rows inspected — stated precisely because they are weaker
+#           than a row census (a series with an empty Samples list passes a floor and contributes no
+#           inspected row); what actually forecloses a vacuous pass is the next fact.
+#       TheTwoBuiltInProducers_SitOnOppositeSidesOfTheRateHzSplit_AndElementZeroIsAnAngleNotATime    +1
+#           The producers named individually, each pinned to a concrete number out of the SAME reading: on
+#           the rated side the sample count over the rate reproduces that reading's own weld_time, and on
+#           the untimed side element 0 rises to that reading's own angle metric — so element 0 is
+#           demonstrably an ANGLE and not a time.
+#       TheRowShapeCheck_GoesRedOnEveryDeviationFromTheProducersShape                                +1
+#       TheRowShapeCheck_GoesRedOnARealProducersOwnSeries_WhenOnlyTheRateHzFieldMoves                +1
+#           §8.1(h6), two banks. 🔴 SAY IT PLAINLY RATHER THAN LET THE LIST IMPLY OTHERWISE: the FIRST of
+#           these two is a test of TEST CODE. It drives a private predicate in its own file with data it
+#           builds itself, so NO product change can redden it — which is exactly why it stayed green on
+#           both control arms below. It is a legitimate bank-one control and it is NOT an assertion about
+#           the product; only three of these +4 are. The second bank drives the same predicate with the
+#           producers' REAL rows and moves nothing but the RateHz field: the identical rows sit on one side
+#           of the split or the other with not one sample touched.
+#
+# 🔴 THE CONTROL PAIR, RUN ON BOTH ARMS AGAINST THE PRODUCT AND RECORDED AS OUTCOMES. The witness file is
+# identical on every arm; only src/ moves, and both mutations were reverted (`git status` clean on both
+# simulators before the gate ran):
+#   HEAD (both simulators as shipped) — Failed: 0, Passed: 4.
+#   DIRTY 1: WelderSim emits `[t, current]` while still setting RateHz — Failed: 3, Passed: 1.
+#   DIRTY 2: ScrewdriveSim keeps its `[angle, torque]` rows and claims RateHz = 500 — Failed: 3, Passed: 1.
+# The ONE test green on every arm is the bank-one control named above, and that is the right result rather
+# than a weak test: it measures the PREDICATE, which neither mutation touches.
+#
+# 🔴 WHEN THESE THREE NUMBERS WERE MEASURED, said because the diff cannot show it. They were taken TWICE:
+# once against the original witness (2026-08-18, round 0) and AGAIN against the rewritten witness after
+# review round 1 renamed every fact and deleted the spec-shaped assertion. Both runs produced 0/4, 3/1 and
+# 3/1, which is why these lines do not appear in the round-1 diff at all — an unchanged number leaves no
+# hunk. The re-review read that absence as "not re-measured"; it is the opposite, and the fix is to record
+# the provenance rather than to write down an inference that did not happen.
+#
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 AA-1 REVIEW ROUND 1, 2026-08-18 — THIS BLOCK MOVES NO TOTAL (still 1147) AND RETRACTS TWO CLAIMS
+# IT PUBLISHED. Kept verbatim rather than rewritten, because they were shipped and read. (The date is
+# on this line because AA-1's own preservation rule, stated in docs/owner-decisions.md's 📎 note, is
+# "verbatim, dated, attributed, reason alongside" — and until the re-review caught it, this was the one
+# of the four retraction sites that carried no date. A style declared and then not followed is a false
+# claim about itself.)
+#   * "Swept over ALL EIGHT built-in simulators rather than the two known producers, so a THIRD producer
+#     is covered the day it appears." — an OVERCLAIM. BuiltInSimulators() is a HAND-WRITTEN list of the
+#     eight classes that exist today; a NINTH simulator class would not be swept and nothing anywhere
+#     would say so (there is no reflection census of SimulatorBase in this suite). True narrower claim:
+#     if one of the eight LISTED simulators starts emitting a waveform, it is swept.
+#   * "the exact shape the vendored device-client SDK's own worked examples send" / "This second arm is
+#     not hypothetical: it is exactly the shape the vendored device-client SDK's own screwdriver examples
+#     publish." — the framing was that those examples are wrong. They are not: they match the platform's
+#     own published feed specification and its runtime ingest validator, which require exactly two numbers
+#     per row with rateHz an independent optional field. The assertion that reused that example's own
+#     figures has been REMOVED from the first bank rather than reworded — a test is the worst place to
+#     settle a question nobody has decided.
+# The four [Fact] names above changed with them (the old names asserted "the Rule"). A member name is a
+# published string, so the rename is recorded here rather than done quietly. THE TOTAL DOES NOT MOVE:
+# four facts before, four after, none added, none split, none deleted.
+#
+# 🔴 AND THE FOUR NAMES THAT WERE TAKEN AWAY ARE WRITTEN OUT HERE, because the sentence above only
+# works in one direction otherwise. If a member name is a published string, then a member name that has
+# been REMOVED is a published string too, and somebody who wrote
+# `--filter FullyQualifiedName~<old name>` has no way back from a list of the new ones. The four, as
+# they stood at 84836ad6, in the same order as the four above:
+#     EveryWaveformTheBuiltInSimulatorsEmit_ObeysTheRateHzRowShapeRule_AndBothArmsAreExercised
+#     TheTwoBuiltInProducers_SitOnOppositeArmsOfTheRule_AndElementZeroIsAnAngleNotATime
+#     TheRowShapeCheck_GoesRedOnEveryWayTheRuleCanBreak
+#     TheRowShapeCheck_GoesRedOnARealProducersOwnSeries_WhenOnlyTheDiscriminatorMoves
+# The private predicate was renamed with them: RowShapeViolation -> RowShapeDeviation.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0 — measured on a full `dotnet build -t:Rebuild`
+# of the whole solution AFTER the change, never on an incremental build, because an incremental build only
+# reports the projects it rebuilt and the previous task went red at the gate for exactly that. The new test
+# file compiles with no warning of its own. Of the four source files whose `///` blocks AA-1 edits, only
+# St4i.Connector.Abstractions sets GenerateDocumentationFile, so only its blocks are compiled at all —
+# every edited block was nonetheless checked directly by running DocCommentProseTests, because an
+# unbalanced block HIDES the diagnostics inside it and no compiler anywhere checks an element NAME. No
+# suppression of any kind was added, which makes this the TENTH consecutive task with none.
+EXPECT_EDGECORE=1147
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
