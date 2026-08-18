@@ -2786,7 +2786,20 @@ async function startServer() {
       const database = await getDb();
       if (!database) return res.status(500).json({ success: false, message: "Database not available" });
       const { alertHistory, mqttAlertHistory, mqttConnectionAlerts, mqttBulletinHistory } = await import("../../drizzle/schema");
-      const { sql, count, eq: eqOp, gte } = await import("drizzle-orm");
+      // ★★★ 2026-08-18 — `and`/`isNull`/`eq` được nhập THÊM để thay ba template `sql` thô bên dưới.
+      //
+      // LỖI ĐÃ ĐO: tuyến này trả **500** và rò NGUYÊN VĂN câu SQL ra client. Gốc rễ là
+      // `sql\`${cot} >= ${since}\`` — nội suy một **đối tượng `Date`** vào template THÔ của drizzle.
+      // Template thô bind giá trị làm tham số mà **không** đi qua `mapToDriverValue` của cột, nên
+      // `Date` tới thẳng bộ tuần tự hoá và ném `TypeError: The "string" argument must be of type
+      // string … Received an instance of Date`.
+      //
+      // ⚠ Vì sao khó thấy: dòng NGAY TRÊN (`gte(alertHistory.createdAt, since)`) truyền **cùng một
+      // biến `since`** và chạy tốt — helper có kiểu áp đúng mapper (Date → chuỗi ISO). Hai dòng
+      // cạnh nhau, cùng một giá trị, một chạy một vỡ. Và chạy `sql.unsafe()` với chính câu ấy
+      // ngoài app cũng **chạy được**, nên phép tái lập bằng driver trần khai VÔ CAN cho một lỗi có
+      // thật — khác biệt nằm ở tầng drizzle, không ở tầng driver.
+      const { sql, count, eq: eqOp, gte, and, isNull } = await import("drizzle-orm");
 
       // Default: today's summary
       const sinceParam = req.query.since as string | undefined;
@@ -2801,7 +2814,7 @@ async function startServer() {
       const [alertPending] = await database
         .select({ total: count() })
         .from(alertHistory)
-        .where(sql`${alertHistory.createdAt} >= ${since} AND ${alertHistory.acknowledgedAt} IS NULL`);
+        .where(and(gte(alertHistory.createdAt, since), isNull(alertHistory.acknowledgedAt)));
 
       // MQTT alert counts
       const [mqttAlertCount] = await database
@@ -2812,7 +2825,7 @@ async function startServer() {
       const [mqttAlertPending] = await database
         .select({ total: count() })
         .from(mqttAlertHistory)
-        .where(sql`${mqttAlertHistory.triggeredAt} >= ${since} AND ${mqttAlertHistory.isResolved} = false`);
+        .where(and(gte(mqttAlertHistory.triggeredAt, since), eqOp(mqttAlertHistory.isResolved, false)));
 
       // Connection alert counts
       const [connAlertCount] = await database
@@ -2823,7 +2836,11 @@ async function startServer() {
       const [connAlertPending] = await database
         .select({ total: count() })
         .from(mqttConnectionAlerts)
-        .where(sql`${mqttConnectionAlerts.triggeredAt} >= ${since} AND ${mqttConnectionAlerts.isResolved} = false AND ${mqttConnectionAlerts.isAcknowledged} = false`);
+        .where(and(
+          gte(mqttConnectionAlerts.triggeredAt, since),
+          eqOp(mqttConnectionAlerts.isResolved, false),
+          eqOp(mqttConnectionAlerts.isAcknowledged, false),
+        ));
 
       // Recent bulletins count
       const [bulletinCount] = await database
