@@ -5025,6 +5025,22 @@ fi
 #      * ORIGIN here means the file the diagnostic NAMES, not the project that emitted it and not the file
 #        that caused it. A warning with no source location at all (`CSC : warning xUnit1013`, and NU1701,
 #        which names a csproj) lands in OURS -- correctly, since nothing in the vendored file can produce one.
+#
+# 🔴 AND ORIGIN IS READ FROM THE SOURCE LOCATION ONLY -- THE TEXT BEFORE `: warning` -- NEVER FROM THE
+# WHOLE LINE. That distinction is worth 12 warnings TODAY, measured on this tree, and it is written here
+# because the obvious implementation is the wrong one and the next person will reach for it:
+#     src\St4i.EdgeCore\Transport\LiveTransport.cs(75,24): warning CS8604: Possible null reference argument
+#     for parameter 'queuePath' in 'St4iDeviceClient.St4iDeviceClient(string serverUrl, ...)'
+# That warning is OURS -- our file, our line, our fix -- and its MESSAGE names the vendored type because
+# our transport calls into it. Twelve of the current 116 have that shape (thirteen with the documentation
+# switch on). A ledger that matched the vendored file's identity anywhere in the line would report
+# 94 vendored / 22 ours instead of 82 / 34, and would file twelve of OUR OWN warnings under the population
+# this repository is forbidden to edit -- the worst possible direction, because that bucket's whole meaning
+# is "nobody here may touch these".
+# Earlier per-population figures in this repository were derived by filtering the log on the file PATH, and
+# they are correct -- but only because the path they matched carries the `.cs` extension while the message
+# names the bare type. That is luck rather than method: one differently worded diagnostic and it inverts.
+# The awk below takes `substr($0, 1, RSTART - 1)` for exactly this reason. Do not "simplify" it to a grep.
 #      * It is keyed on ENGLISH MSBuild rendering, the same handover already recorded at EXPECT_WARNINGS. On a
 #        localized SDK the match misses, the buckets come out empty and the sum check below REDS. Fails safe.
 #      * It says NOTHING about doc-comment coverage today, because with the switch off no such diagnostic is
