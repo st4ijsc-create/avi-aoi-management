@@ -19,6 +19,7 @@ import type { PanelTimeRange } from '../types';
 import { formatPercent } from '../utils/format';
 import { TIME_RANGE_OPTIONS, getTimeRangeLabel, getTimeRangeSubtitle } from '../utils/timeRange';
 import { getS } from '../styles';
+import { nguonAnh } from '../../../services/imageService';
 
 
 /**
@@ -490,7 +491,7 @@ const RealCaptureCard: React.FC<{ imageUrl: string; index: number; isNG: boolean
           <>
             <Image
               key={`img-${retryKey}`}
-              source={{ uri: fullUrl }}
+              source={nguonAnh(fullUrl)}
               style={{ width: '100%', height: '100%' }}
               resizeMode="cover"
               resizeMethod="resize"

@@ -10,10 +10,88 @@
  */
 
 import { InspectionImagesResponse, InspectionPointImage } from '../types';
-import { getConfiguredApiKey } from './serverConfig';
+import { getConfiguredApiKey, getServerBaseUrl } from './serverConfig';
 
 // Default timeout for image API requests (ms)
 const API_TIMEOUT = 15000;
+
+/**
+ * ★★★ **CHỦ DUY NHẤT** của câu hỏi *"cái `<Image>` này đi qua cổng ảnh bằng GÌ?"*
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * VÌ SAO CẦN — ĐO ĐƯỢC, KHÔNG SUY RA (2026-08-18, máy chủ đang chạy `ANH_CONG_MO=false`)
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Máy chủ **chỉ ký vé** cho ảnh trả về từ BA tuyến (`/api/inspection/:id/images`,
+ * `/api/measurement-point/:id/reference-image`, `/api/product-model/:id/reference-images`).
+ * Các tuyến app dùng NHIỀU HƠN vẫn trả **đường dẫn THÔ**:
+ *
+ *   | tuyến                                            | dạng `imageUrl` trả về            | đo được |
+ *   |--------------------------------------------------|-----------------------------------|---------|
+ *   | `/api/public/products/:code/measurement-points`   | `/uploads/measurement-points/…`   | ⛔ THÔ  |
+ *   | `/api/external/inspections/images`                | `/uploads/inspections/…`          | ⛔ THÔ  |
+ *   | `/api/external/stations/:id/inspection-points`    | `/uploads/…`                      | ⛔ THÔ  |
+ *   | tải trọng cảnh báo qua **MQTT**                   | `/uploads/inspections/…`          | ⛔ THÔ  |
+ *
+ * Một đường dẫn THÔ gõ vào `/uploads/**` hôm nay trả **401 `AUTH_REQUIRED`** (đo bằng HTTP thật).
+ * ⇒ Không có hàm này thì mọi ảnh của app hiện ô vỡ, trừ hai màn đi qua `fetchInspectionImages`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ TIỀN ĐỀ "RN KHÔNG GỬI ĐƯỢC HEADER TUỲ BIẾN" LÀ **SAI**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Chú thích ở `server/_core/anhKyUrl.ts` và `server/routes/_congAnh.ts` khai rằng
+ * `<Image source={{uri}}>` của React Native **không** mang được header tuỳ biến, và toàn bộ cơ chế
+ * vé ký được dựng trên tiền đề ấy. Đã kiểm trong chính `node_modules` của repo này:
+ *   - `react-native/Libraries/Image/ImageSource.d.ts:35` → `headers?: {[key: string]: string}`
+ *   - `react-native/Libraries/Image/ImageSource.js:118` → truyền `headers` xuống lớp native
+ *   - `ReactAndroid/.../views/image/ReactImageView.java:403` → `setHeaders(ReadableMap)`
+ * ⇒ Kênh header **CÓ THẬT** trên Android. Vé ký vẫn là đường chính (nó đã có sẵn và hẹp hơn);
+ *   header `x-master-key` là đường phủ cho những URL máy chủ **không ký**.
+ *
+ * ⚠ VÌ SAO GẮN KHOÁ CẢ KHI URL **ĐÃ CÓ VÉ**: vé sống **900 giây**. Một tablet để mở màn trạm quá
+ *   15 phút sẽ thấy ảnh chết dần — đúng lớp lỗi khó tố nhất ("lúc đầu xem được, sau thì không").
+ *   Header là lưới đỡ cho vé hết hạn. Vé vẫn được giữ NGUYÊN trong URL, không cắt.
+ *
+ * ⚠⚠ **KHÔNG BAO GIỜ** gắn khoá vào URL trỏ sang máy chủ KHÁC: đó là rò khoá toàn quyền sang một
+ *   host lạ. Chỉ gắn khi URL là đường dẫn tương đối, hoặc tuyệt đối và **cùng gốc** với máy chủ
+ *   đã cấu hình. `data:` cũng không gắn (không có lượt gọi mạng nào).
+ *
+ * ⚠ Cố ý **KHÔNG** dùng `?masterKey=`: đã đo, `/uploads/**` trả **401** với kênh query ấy
+ *   (`_congAnh.ts` từ chối có chủ ý vì khoá rò qua log/URL). Chỉ tuyến
+ *   `/api/public/products/:code/reference-image-file` nhận `?masterKey=` — và chỗ đó đã có
+ *   `stationService#resolveImageUrl` lo, không đụng tới.
+ */
+export interface NguonAnh {
+  readonly uri: string;
+  readonly headers?: Record<string, string>;
+}
+
+/** URL này có trỏ về đúng máy chủ app đã cấu hình không (⇒ có được gắn khoá không). */
+function laMayChuCuaTa(uri: string): boolean {
+  if (!/^https?:\/\//i.test(uri)) return true; // đường dẫn tương đối ⇒ luôn là máy chủ của ta
+  const base = getServerBaseUrl();
+  if (!base) return false; // chưa cấu hình ⇒ không biết là ai ⇒ KHÔNG gắn khoá
+  const goc = (u: string) => {
+    const m = /^https?:\/\/([^/?#]+)/i.exec(u);
+    return m ? m[1].toLowerCase() : '';
+  };
+  const g = goc(uri);
+  return g !== '' && g === goc(base);
+}
+
+/**
+ * Dựng `source` cho `<Image>` sao cho nó qua được cổng ảnh.
+ *
+ * Dùng ở **mọi** điểm render ảnh của app. An toàn khi gọi thừa: với `data:`, với URL của host lạ,
+ * và với chuỗi rỗng nó trả về đúng `{ uri }` như cũ — nên không có điểm render nào bị nó làm hỏng.
+ */
+export function nguonAnh(uri: string | null | undefined): NguonAnh {
+  const u = uri || '';
+  if (!u || u.startsWith('data:')) return { uri: u };
+  if (!laMayChuCuaTa(u)) return { uri: u };
+  const apiKey = getConfiguredApiKey();
+  if (!apiKey) return { uri: u };
+  return { uri: u, headers: { 'x-master-key': apiKey } };
+}
 
 /**
  * Nối thêm tham số truy vấn vào một URL ảnh — **cách DUY NHẤT đúng** kể từ khi máy chủ cấp vé ký.

@@ -15,6 +15,7 @@ import { STATION_T } from '../translations';
 import type { ViewerImageData } from '../types';
 import { getS } from '../styles';
 import { MAX_IMAGE_RETRY, RETRY_DELAYS } from './panelParts';
+import { nguonAnh } from '../../../services/imageService';
 
 // ============================================
 // IMAGE VIEWER MODAL (fullscreen with zoom/pan)
@@ -228,7 +229,7 @@ const ImageViewerModal: React.FC<{
                 {!displayLoaded && !!thumbUrl && (
                   <Image
                     key={`viewer-thumb-${imgRetryKey}`}
-                    source={{ uri: thumbUrl }}
+                    source={nguonAnh(thumbUrl)}
                     style={[ivS.image, { position: 'absolute' }]}
                     resizeMode="contain"
                     resizeMethod="resize"
@@ -239,7 +240,7 @@ const ImageViewerModal: React.FC<{
                 {/* Display image — medium-res for server, original for external */}
                 <Image
                   key={`viewer-display-${imgRetryKey}`}
-                  source={{ uri: displayUrl }}
+                  source={nguonAnh(displayUrl)}
                   style={ivS.image}
                   resizeMode="contain"
                   resizeMethod="resize"

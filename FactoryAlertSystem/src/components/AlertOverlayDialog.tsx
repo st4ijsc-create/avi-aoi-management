@@ -24,6 +24,7 @@ import { Alert, AlertSeverity } from '../types';
 import { SEVERITY_CONFIG } from '../utils/constants';
 import { formatRelativeTime, getSeverityLabel, getSeverityIcon } from '../utils/helpers';
 import { useTheme, Theme } from '../context/ThemeContext';
+import { nguonAnh } from '../services/imageService';
 
 // Severity gradient colors
 const SEVERITY_GRADIENTS: Record<AlertSeverity, string[]> = {
@@ -282,7 +283,7 @@ const AlertOverlayDialog: React.FC<AlertOverlayDialogProps> = ({
             {hasImage && (
               <View style={styles.imageContainer}>
                 <Image
-                  source={{ uri: alert.imageUrl || alert.error.imageUrl }}
+                  source={nguonAnh(alert.imageUrl || alert.error.imageUrl)}
                   style={styles.errorImage}
                   resizeMode="contain"
                 />
@@ -435,7 +436,7 @@ const AlertOverlayDialog: React.FC<AlertOverlayDialogProps> = ({
                           onPress={() => setSelectedNgImage(point.imageUrl!)}
                           activeOpacity={0.7}
                         >
-                          <Image source={{ uri: point.imageUrl }} style={styles.ngImageThumb} resizeMode="cover" />
+                          <Image source={nguonAnh(point.imageUrl)} style={styles.ngImageThumb} resizeMode="cover" />
                           <View style={styles.ngImageOverlay}>
                             <Icon name="magnify-plus-outline" size={16} color="#FFFFFF" />
                           </View>
@@ -490,7 +491,7 @@ const AlertOverlayDialog: React.FC<AlertOverlayDialogProps> = ({
             <TouchableOpacity style={styles.ngImageFullClose} onPress={() => setSelectedNgImage(null)}>
               <Icon name="close-circle" size={32} color="#FFFFFF" />
             </TouchableOpacity>
-            <Image source={{ uri: selectedNgImage }} style={styles.ngImageFull} resizeMode="contain" />
+            <Image source={nguonAnh(selectedNgImage)} style={styles.ngImageFull} resizeMode="contain" />
             <Text style={styles.ngImageFullLabel}>{t.ngPointImage}</Text>
           </View>
         )}
