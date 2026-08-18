@@ -13,6 +13,7 @@ import {
   duongDanChuanHoa,
   hanKySeconds,
   kiemChuKyAnh,
+  kyAnhTrongThan,
   kyDuongDanAnh,
   kyNeuLaDuongDanNoiBo,
 } from "./anhKyUrl";
@@ -178,5 +179,153 @@ describe("anhKyUrl — vé ảnh ký HMAC", () => {
     // vẫn khớp nhau và không lối thoát nào mở ra.
     expect(duongDanChuanHoa("/uploads/100%.jpg")).toBe("/uploads/100%.jpg");
     expect(duongDanChuanHoa("/uploads/a.jpg?w=200")).toBe("/uploads/a.jpg");
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // §13-§19 — `kyAnhTrongThan`: ký cả một THÂN PHẢN HỒI
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+
+  /** Vé trong URL này có KIỂM ĐƯỢC không (chứ không chỉ "trông giống vé"). */
+  function veHopLe(url: string, muc: "anh" | "zip" = "anh"): boolean {
+    return kiemChuKyAnh(duongDanCua(url), queryCua(url), muc).ok;
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────────────────────
+  it("§13 — ký NHIỀU TẦNG và trong MẢNG; mỗi vé phải KIỂM ĐƯỢC, không chỉ 'trông giống vé'", () => {
+    // ⚠ Hình dạng lấy đúng từ `/api/external/statistics/measurement-points` (sâu 4 tầng) — nơi một
+    //   bộ ký theo-tên-trường ở tầng ngoài sẽ bỏ sót toàn bộ.
+    const than = kyAnhTrongThan(
+      {
+        success: true,
+        data: {
+          points: [
+            {
+              pointCode: "R105",
+              images: {
+                okImages: [{ imageUrl: "/uploads/inspections/1/a.jpg" }],
+                ngImages: [
+                  { imageUrl: "/uploads/inspections/1/b.jpg" },
+                  { imageUrl: "/api/aoi/image/PKG1/c.png" },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      "anh",
+    );
+
+    const ok = than.data.points[0].images.okImages[0].imageUrl;
+    const ng0 = than.data.points[0].images.ngImages[0].imageUrl;
+    const ng1 = than.data.points[0].images.ngImages[1].imageUrl;
+
+    // Chiều DƯƠNG mạnh: vé phải qua được CHÍNH bộ kiểm mà cổng ảnh dùng.
+    expect(veHopLe(ok)).toBe(true);
+    expect(veHopLe(ng0)).toBe(true);
+    expect(veHopLe(ng1)).toBe(true);
+    // …và đúng đường dẫn gốc, không bị đổi.
+    expect(duongDanCua(ok)).toBe("/uploads/inspections/1/a.jpg");
+    expect(duongDanCua(ng1)).toBe("/api/aoi/image/PKG1/c.png");
+    // Trường không phải ảnh không bị đụng.
+    expect(than.data.points[0].pointCode).toBe("R105");
+    expect(than.success).toBe(true);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────────────────────
+  it("§14 — CHỈ ký tiền tố CÓ CỔNG CANH; mọi dạng khác giữ NGUYÊN VĂN (chống vá quá tay)", () => {
+    // ⚠ Ca này là cầu chì chống "ký cho đủ bảng": ký một tiền tố không có bộ kiểm ở đầu kia chỉ làm
+    //   URL dài hơn chứ không mở được gì, và với `data:`/URL tuyệt đối thì nó PHÁ ảnh đang chạy.
+    const goc = {
+      tuyetDoi: "http://kho-cu.local/uploads/x.jpg",
+      dataUri: "data:image/png;base64,AAAA",
+      khoaTho: "inspections/1/a.jpg", // `imageKey` — KHÔNG có tiền tố `/uploads/`
+      apiKhac: "/api/external/reports/9/download",
+      rong: "",
+      soLuong: 42,
+      vang: null,
+    };
+    const than = kyAnhTrongThan(goc, "anh");
+    expect(than.tuyetDoi).toBe(goc.tuyetDoi);
+    expect(than.dataUri).toBe(goc.dataUri);
+    expect(than.khoaTho).toBe(goc.khoaTho);
+    expect(than.apiKhac).toBe(goc.apiKhac);
+    expect(than.rong).toBe("");
+    expect(than.soLuong).toBe(42);
+    expect(than.vang).toBeNull();
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────────────────────
+  it("§15 — vé cấp bởi `kyAnhTrongThan` HẾT HẠN thì bộ kiểm phải TỪ CHỐI", () => {
+    // ⚠ Đột biến tối thiểu của brief: "vé hết hạn vẫn qua ⇒ ĐỎ". Ca này phát biểu điều ngược lại.
+    process.env.ANH_KY_TTL_SECONDS = "60";
+    const than = kyAnhTrongThan({ imageUrl: "/uploads/inspections/1/a.jpg" }, "anh");
+    const url = than.imageUrl;
+    // Còn hạn ⇒ qua.
+    expect(kiemChuKyAnh(duongDanCua(url), queryCua(url), "anh", T0).ok).toBe(true);
+    // Quá hạn 61 giây ⇒ TRƯỢT, và trượt vì ĐÚNG lý do.
+    const qua = kiemChuKyAnh(duongDanCua(url), queryCua(url), "anh", Date.now() + 61_000);
+    expect(qua.ok).toBe(false);
+    expect(qua.ok === false && qua.lyDo).toBe("het-han");
+    delete process.env.ANH_KY_TTL_SECONDS;
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────────────────────
+  it("§16 — MỤC được truyền qua: vé `zip` KHÔNG mở được tuyến ảnh", () => {
+    const than = kyAnhTrongThan({ u: "/uploads/a.jpg" }, "zip");
+    expect(veHopLe(than.u, "zip")).toBe(true);
+    expect(veHopLe(than.u, "anh")).toBe(false);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────────────────────
+  it("§17 — KHÔNG sửa tại chỗ: đối tượng gốc vẫn giữ đường dẫn THÔ", () => {
+    // ⚠ Người gọi có thể vẫn đang giữ đối tượng gốc để ghi log hoặc để so khớp. Một hàm ký mà sửa
+    //   tại chỗ sẽ làm những chỗ ấy hỏng theo, ở xa nơi gây ra.
+    const goc = { data: [{ imageUrl: "/uploads/a.jpg" }] };
+    const than = kyAnhTrongThan(goc, "anh");
+    expect(goc.data[0].imageUrl).toBe("/uploads/a.jpg");
+    expect(than.data[0].imageUrl).not.toBe("/uploads/a.jpg");
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────────────────────
+  it("§18 — THAM CHIẾU VÒNG và đối tượng KHÔNG-THUẦN không làm hàm treo hay méo hình dạng", () => {
+    // ⚠⚠ Ràng buộc sống-còn của repo: `ResolvedDataScope.filter` là SQL drizzle **có tham chiếu
+    //   vòng**, và `tsc` KHÔNG bắt được. Một bộ đi-sâu ngây thơ sẽ treo ở đây.
+    const vong: Record<string, unknown> = { imageUrl: "/uploads/a.jpg" };
+    vong.tuTro = vong;
+    class SqlGia {
+      constructor(public queryChunks: unknown[]) {}
+    }
+    const sqlGia = new SqlGia([]);
+    (sqlGia.queryChunks as unknown[]).push(sqlGia); // vòng bên trong một CLASS
+
+    const ngay = new Date("2026-08-18T00:00:00.000Z");
+    const dem = Buffer.from("abc");
+
+    const than = kyAnhTrongThan({ vong, sqlGia, ngay, dem, u: "/uploads/b.jpg" }, "anh");
+
+    // Không treo, và đường dẫn ngoài cùng vẫn được ký.
+    expect(veHopLe(than.u)).toBe(true);
+    // Đối tượng KHÔNG-THUẦN được trả NGUYÊN (cùng tham chiếu) — hình dạng không bị méo.
+    expect(than.ngay).toBe(ngay);
+    expect(than.ngay instanceof Date).toBe(true);
+    expect(than.dem).toBe(dem);
+    expect(Buffer.isBuffer(than.dem)).toBe(true);
+    expect(than.sqlGia).toBe(sqlGia);
+    // Object THUẦN có vòng: vẫn ký được trường ảnh, và không đệ quy vô hạn.
+    expect(veHopLe((than.vong as { imageUrl: string }).imageUrl)).toBe(true);
+    // JSON hoá được ⇒ `res.json` sẽ không chết (ràng buộc superjson/JSON của repo).
+    expect(() => JSON.stringify({ u: than.u, ngay: than.ngay })).not.toThrow();
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────────────────────
+  it("§19 — LUỸ ĐẲNG: ký lại một thân ĐÃ ký vẫn cho vé HỢP LỆ, không chồng query", () => {
+    // ⚠ Quan trọng vì `/api/inspection/:id/images` đã ký TỪNG TRƯỜNG từ trước; nếu sau này ai đó
+    //   bọc thêm `kyAnhTrongThan` ở biên tuyến ấy, kết quả phải vẫn dùng được.
+    const mot = kyAnhTrongThan({ u: "/uploads/a.jpg" }, "anh");
+    const hai = kyAnhTrongThan(mot, "anh");
+    expect(veHopLe(hai.u)).toBe(true);
+    expect(duongDanCua(hai.u)).toBe("/uploads/a.jpg");
+    expect((hai.u.match(/\?/g) || []).length).toBe(1);
+    expect((hai.u.match(/sig=/g) || []).length).toBe(1);
   });
 });

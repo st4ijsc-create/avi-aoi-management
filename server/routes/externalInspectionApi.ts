@@ -26,6 +26,9 @@
  */
 import express from "express";
 import { sql } from "drizzle-orm";
+// ★★★ Vé ảnh ngắn hạn — chủ DUY NHẤT của phép ký là `_core/anhKyUrl`. Xem khối chú thích tại mỗi
+//     lời gọi `kyAnhTrongThan` bên dưới để biết vì sao ký ở BIÊN phản hồi chứ không từng trường.
+import { kyAnhTrongThan } from "../_core/anhKyUrl";
 // Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A3/A4).
 import {
   finalYield,
@@ -758,14 +761,28 @@ export function registerExternalInspectionRoutes(
         stationName: r.stationName || "",
       }));
 
-      res.json({
-        success: true,
-        data: {
-          dateRange: { startDate: startStr, endDate: endStr },
-          pagination: { total, limit, offset, hasMore: offset + limit < total },
-          images,
-        },
-      });
+      // ★★★ NƠI CẤP VÉ. `validateExternalAuth` đã chạy ở trên ⇒ lượt gọi này đã được chứng thực,
+      //     nên đây là chỗ ĐÚNG để trao URL mà `<Image source={{uri}}>` của app dùng thẳng được.
+      //
+      // ⚠ Ký ở BIÊN (cả thân) chứ không từng trường: `images[]` được dựng bởi một `map` chép tay
+      //   22 trường, và `imageUrl` chỉ là một trong số đó. Thêm một trường ảnh thứ hai vào `map` ấy
+      //   mà quên ký là chuyện xảy ra trong im lặng — ký ở biên làm điều đó **không diễn đạt được**.
+      //
+      // ⚠ Vé được cấp KỂ CẢ khi `ANH_CONG_MO` còn mở, cùng lý do với `/api/inspection/:id/images`:
+      //   để lượt bật cưỡng chế không tạo khoảng chết cho app đang cầm URL cũ.
+      res.json(
+        kyAnhTrongThan(
+          {
+            success: true,
+            data: {
+              dateRange: { startDate: startStr, endDate: endStr },
+              pagination: { total, limit, offset, hasMore: offset + limit < total },
+              images,
+            },
+          },
+          "anh",
+        ),
+      );
     } catch (error: any) {
       console.error("[External] inspections/images error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get inspection images" });
@@ -1015,27 +1032,35 @@ export function registerExternalInspectionRoutes(
         stationCode: r.stationCode || "",
       }));
 
-      res.json({
-        success: true,
-        data: {
-          pointDef: {
-            id: Number(pointDef.id),
-            code: pointDef.code || "",
-            name: pointDef.name || "",
-            measurementType: pointDef.measurementType || "OTHER",
-            unit: pointDef.unit || "",
-            lowerLimit: pointDef.lowerLimit != null ? Number(pointDef.lowerLimit) : null,
-            upperLimit: pointDef.upperLimit != null ? Number(pointDef.upperLimit) : null,
-            nominalValue: pointDef.nominalValue != null ? Number(pointDef.nominalValue) : null,
-            productModelId: pointDef.productModelId ? Number(pointDef.productModelId) : null,
-            productCode: pointDef.productCode || "",
-            productName: pointDef.productName || "",
+      // ★★★ NƠI CẤP VÉ — cùng lý do với `/api/external/inspections/images` ở trên.
+      //     `measurements[].imageUrl` đến thẳng từ `measurement_results.imageUrl` (1.996 hàng đo
+      //     được trên `aoi_management`, **toàn bộ** ở dạng `/uploads/inspections/…`).
+      res.json(
+        kyAnhTrongThan(
+          {
+            success: true,
+            data: {
+              pointDef: {
+                id: Number(pointDef.id),
+                code: pointDef.code || "",
+                name: pointDef.name || "",
+                measurementType: pointDef.measurementType || "OTHER",
+                unit: pointDef.unit || "",
+                lowerLimit: pointDef.lowerLimit != null ? Number(pointDef.lowerLimit) : null,
+                upperLimit: pointDef.upperLimit != null ? Number(pointDef.upperLimit) : null,
+                nominalValue: pointDef.nominalValue != null ? Number(pointDef.nominalValue) : null,
+                productModelId: pointDef.productModelId ? Number(pointDef.productModelId) : null,
+                productCode: pointDef.productCode || "",
+                productName: pointDef.productName || "",
+              },
+              dateRange: { startDate: startStr, endDate: endStr },
+              pagination: { total, limit, offset, hasMore: offset + limit < total },
+              measurements,
+            },
           },
-          dateRange: { startDate: startStr, endDate: endStr },
-          pagination: { total, limit, offset, hasMore: offset + limit < total },
-          measurements,
-        },
-      });
+          "anh",
+        ),
+      );
     } catch (error: any) {
       console.error("[External] inspections/measurements error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get measurements" });

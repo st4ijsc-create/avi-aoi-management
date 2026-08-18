@@ -38,7 +38,7 @@ import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
 import { registerOpenAiGateway } from "../routes/openaiGateway";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
-import { kyNeuLaDuongDanNoiBo } from "./anhKyUrl";
+import { kyAnhTrongThan, kyNeuLaDuongDanNoiBo } from "./anhKyUrl";
 import {
   congAnhMo,
   machineIdsChoLoiVao,
@@ -2333,7 +2333,10 @@ async function startServer() {
         return base;
       });
 
-      res.json({
+      // ★★★ NƠI CẤP VÉ. `points[].images.okImages[].imageUrl` / `.ngImages[].imageUrl` nằm sâu
+      //     **bốn** tầng (`data.points[].images.*Images[].imageUrl`) và chỉ xuất hiện khi
+      //     `?includeImages=true` — đúng loại trường mà một bộ ký theo-tên-trường sẽ bỏ sót.
+      res.json(kyAnhTrongThan({
         success: true,
         data: {
           productModel: {
@@ -2348,7 +2351,7 @@ async function startServer() {
           totalPoints: points.length,
           points,
         },
-      });
+      }, "anh"));
     } catch (error: any) {
       console.error("[External] measurement-point-stats error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get measurement point statistics" });
@@ -3414,7 +3417,17 @@ async function startServer() {
         }
       }
 
-      res.json({ success: true, data: pointsToReturn, total: pointsToReturn.length });
+      // ★★★ NƠI CẤP VÉ. `validateExternalAuth` đã chạy ⇒ lượt gọi đã được chứng thực.
+      //
+      // ⚠⚠ ĐÂY LÀ VÍ DỤ MẪU CHO "VÌ SAO KÝ Ở BIÊN": `pointsToReturn` gộp từ **HAI** vòng lặp riêng
+      //   (điểm-qua-máy và điểm-qua-workstation), mỗi vòng chép tay `referenceImageUrl` một lần.
+      //   Ký từng trường sẽ phải nhớ sửa cả hai — và nhánh thứ ba của người sau sẽ lặng lẽ trả thô.
+      res.json(
+        kyAnhTrongThan(
+          { success: true, data: pointsToReturn, total: pointsToReturn.length },
+          "anh",
+        ),
+      );
     } catch (error: any) {
       console.error("[External] station inspection-points error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get inspection points" });
@@ -4140,14 +4153,15 @@ async function startServer() {
         };
       });
 
-      res.json({
+      // ★★★ NƠI CẤP VÉ — `inspections[].failedPoints[].imageUrl` (`measurement_results.imageUrl`).
+      res.json(kyAnhTrongThan({
         success: true,
         data: {
           dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
           pagination: { total, limit, offset, hasMore: offset + limit < total },
           inspections: data,
         },
-      });
+      }, "anh"));
     } catch (error: any) {
       console.error("[External] station fail-history error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get fail history" });
@@ -4440,7 +4454,11 @@ async function startServer() {
         };
       });
 
-      res.json({
+      // ★★★ NƠI CẤP VÉ — `productImage.url` (`product_models.referenceImageUrl`) và
+      //     `points[].errorImages[].imageUrl` (`measurement_results.imageUrl`).
+      // ⚠ `productImage.url` hiện đo được là `data:` trên `aoi_management` (10/10 hàng) ⇒ phép ký
+      //   để nguyên nó, đúng theo `kyDuongDanAnh` chỉ chạm chuỗi có tiền tố có cổng canh.
+      res.json(kyAnhTrongThan({
         success: true,
         data: {
           dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
@@ -4449,7 +4467,7 @@ async function startServer() {
           boardInfo,
           points,
         },
-      });
+      }, "anh"));
     } catch (error: any) {
       console.error("[External] station point-detail error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get point detail" });
@@ -5155,7 +5173,16 @@ async function startServer() {
         masterKey: masterKey || undefined,
         productCode: req.params.productCode,
       });
-      res.json(result);
+      // ★★★ NƠI CẤP VÉ — tuyến app di động gọi NHIỀU NHẤT (đo bằng grep người gọi trong
+      //     `FactoryAlertSystem/src/`: đây là 1 trong 8 tuyến REST duy nhất app chạm tới).
+      //
+      // ⚠⚠ KÝ Ở **VỎ REST NÀY**, KHÔNG Ở THỦ TỤC tRPC BÊN DƯỚI. `publicProductApi.getMeasurementPoints`
+      //   cũng được trình duyệt gọi thẳng qua `/api/trpc/…`, và trình duyệt **đã** qua cổng bằng
+      //   cookie. Quan trọng hơn: giá trị `referenceImageUrl`/`imageUrl` mà tRPC phát ra được client
+      //   **gửi ngược về làm KHOÁ KHỚP** ở `annotationRouters` (`WHERE "imageUrl" = ${input.imageUrl}`)
+      //   và `db/aiSegmentation.ts:40`. Ký ở tầng tRPC sẽ làm những phép so ấy **không bao giờ khớp**
+      //   nữa — hỏng trong im lặng. Vỏ REST này không có đường quay ngược ấy.
+      res.json(kyAnhTrongThan(result, "anh"));
     } catch (error: any) {
       const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
