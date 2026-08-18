@@ -1,0 +1,9 @@
+{
+  "name": "aoi",
+  "deviceClass": "AoiAvi",
+  "defaultStepType": "inspection",
+  "defaultRecipeCode": "RC-AOI-A",
+  "unitMap": {
+    "score": "score"
+  }
+}

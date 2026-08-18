@@ -1,0 +1,185 @@
+<UserControl x:Class="St4iMachineSimulator.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:St4iMachineSimulator.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:SettingsViewModel}"
+             d:DesignWidth="1000" d:DesignHeight="900">
+    <!--
+        Task 19a — Settings (doc 62 §5.10 "Settings"): the live-server connection (ServerUrl/VerifyTls/
+        which stored credential authenticates it) plus the SAME Live/Demo/Auto Mode selector the shell's
+        top bar has — changing it here switches the transport exactly like the top-bar combo does (both
+        bind through TransportCoordinator, see SettingsViewModel's remarks). "Kiểm cờ" probes the
+        server's published OpenAPI. Below that: the stored-credentials view (list + "check machineCode"
+        lookup), a "Paste mk_" fast path, and placeholder Kiosk/Attract/Language toggles (wired for real
+        in Task 19b/20).
+    -->
+    <UserControl.Resources>
+        <Style x:Key="PanelStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource Brush.Bg.Panel}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="Margin" Value="0,0,0,16" />
+        </Style>
+
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="SectionSubtextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+        </Style>
+
+        <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+
+        <Style x:Key="ValueStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style x:Key="FieldStackStyle" TargetType="StackPanel">
+            <Setter Property="Orientation" Value="Vertical" />
+            <Setter Property="Margin" Value="0,0,16,0" />
+            <Setter Property="Width" Value="240" />
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="4">
+            <!-- ═══ Header ════════════════════════════════════════════════ -->
+            <StackPanel Margin="0,0,0,16">
+                <TextBlock Text="{DynamicResource Str_Settings_Title}" FontSize="20" FontWeight="Bold" />
+                <TextBlock Style="{StaticResource SectionSubtextStyle}"
+                           Text="Kết nối server, chế độ truyền (Live/Demo/Auto), khóa mk_ đã lưu, và các tuỳ chọn trưng bày." />
+            </StackPanel>
+
+            <!-- ═══ Connection + Mode ════════════════════════════════════════ -->
+            <Border Style="{StaticResource PanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="{DynamicResource Str_Settings_ConnectionHeader}" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Style="{StaticResource SectionSubtextStyle}"
+                               Text="Đổi ServerUrl/VerifyTls/Machine code sẽ tự dựng lại LiveTransport. Đổi Mode ở đây tương đương đổi ở thanh trên." />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <StackPanel Style="{StaticResource FieldStackStyle}">
+                            <TextBlock Text="Server URL" Style="{StaticResource FieldLabelStyle}" />
+                            <!-- LostFocus (not PropertyChanged): each change here rebuilds a fresh
+                                 LiveTransport/HttpClient (TransportCoordinator.RebuildLive) — committing
+                                 per-keystroke would rebuild (and leak, before the disposal fix) one per
+                                 character typed. -->
+                            <TextBox Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FieldStackStyle}" Width="160">
+                            <TextBlock Text="Machine code (cho mk_)" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding MachineCode, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FieldStackStyle}" Width="140">
+                            <TextBlock Text="Mode" Style="{StaticResource FieldLabelStyle}" />
+                            <ComboBox ItemsSource="{Binding AvailableModes}" SelectedItem="{Binding Mode, Mode=TwoWay}" />
+                        </StackPanel>
+                        <StackPanel VerticalAlignment="Bottom" Margin="0,0,0,7">
+                            <CheckBox Content="Verify TLS" IsChecked="{Binding VerifyTls, Mode=TwoWay}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <Button Content="{DynamicResource Str_Settings_CheckServer}" Style="{StaticResource TopBarButtonStyle}"
+                                Command="{Binding CheckFlagsCommand}" Margin="0,0,12,0" />
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ProbeSummary}" Style="{StaticResource ValueStyle}" />
+                            <TextBlock Visibility="{Binding ProbeRan, Converter={StaticResource BoolToVisibilityConverter}}"
+                                       Style="{StaticResource SectionSubtextStyle}">
+                                <Run Text="Reachable=" /><Run Text="{Binding ProbeReachable, Mode=OneWay}" />
+                                <Run Text=" · Status=" /><Run Text="{Binding ProbeStatus, Mode=OneWay}" />
+                                <Run Text=" · Paths=" /><Run Text="{Binding ProbePathCount, Mode=OneWay}" />
+                            </TextBlock>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ Stored credentials ═══════════════════════════════════════ -->
+            <Border Style="{StaticResource PanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="{DynamicResource Str_Settings_CredentialsHeader}" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Style="{StaticResource SectionSubtextStyle}"
+                               Text="Danh sách machine code đã có mk_ (DPAPI, theo user Windows hiện tại) và tra cứu nhanh một machine code." />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button Content="{DynamicResource Str_Settings_Refresh}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding RefreshCredentialsCommand}" Margin="0,0,12,0" />
+                        <ItemsControl ItemsSource="{Binding StoredMachineCodes}" VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{StaticResource Brush.Bg.PanelRaised}"
+                                            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+                                            CornerRadius="4" Padding="8,3" Margin="0,0,8,4">
+                                        <TextBlock Text="{Binding}" FontSize="11" FontFamily="Consolas" />
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <StackPanel Style="{StaticResource FieldStackStyle}" Width="220">
+                            <TextBlock Text="Kiểm tra machine code" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding CheckMachineCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <Button Content="{DynamicResource Str_Settings_Check}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding CheckCredentialCommand}"
+                                VerticalAlignment="Bottom" Margin="0,0,16,0" />
+                        <TextBlock Text="{Binding CheckResult}" Style="{StaticResource ValueStyle}" VerticalAlignment="Bottom" />
+                    </StackPanel>
+
+                    <TextBlock Text="Paste mk_ key" Style="{StaticResource SectionHeaderStyle}" Margin="0,18,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <StackPanel Style="{StaticResource FieldStackStyle}" Width="180">
+                            <TextBlock Text="Machine code" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding PasteMachineCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FieldStackStyle}" Width="320">
+                            <TextBlock Text="mk_ key" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding PasteMkKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <Button Content="{DynamicResource Str_Settings_Save}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding PasteMkCommand}" VerticalAlignment="Bottom" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding PasteStatus}" Style="{StaticResource SectionSubtextStyle}" Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ Kiosk / Attract / Language (Task 20 — wired for real) ════ -->
+            <Border Style="{StaticResource PanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="{DynamicResource Str_Settings_ExhibitHeader}" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Style="{StaticResource SectionSubtextStyle}"
+                               Text="Kiosk: toàn màn hình không viền (F11 để bật/tắt, Esc để thoát). Attract: sau ~45s không thao tác, tự chuyển màn hình trình diễn. Ngôn ngữ đổi ngay lập tức." />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <CheckBox Content="{DynamicResource Str_Settings_Kiosk}" IsChecked="{Binding Kiosk, Mode=TwoWay}" Margin="0,0,24,0" />
+                        <CheckBox Content="{DynamicResource Str_Settings_Attract}" IsChecked="{Binding Attract, Mode=TwoWay}" Margin="0,0,24,0" />
+                        <StackPanel Style="{StaticResource FieldStackStyle}" Width="140">
+                            <TextBlock Text="{DynamicResource Str_Settings_Language}" Style="{StaticResource FieldLabelStyle}" />
+                            <ComboBox ItemsSource="{Binding AvailableLanguages}" SelectedItem="{Binding Language, Mode=TwoWay}" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -1,8 +1,0 @@
-<Window x:Class="St4iMachineSimulator.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ST4I Machine Simulator Studio" Height="450" Width="800">
-    <Grid>
-        <TextBlock Text="ST4I Machine Simulator Studio" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="20" />
-    </Grid>
-</Window>

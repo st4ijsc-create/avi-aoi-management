@@ -6,10 +6,33 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- Task 20 — exhibition branding: the app's .exe icon (Task 1 omitted this). A single, embedded,
+         multi-size (16/32/48) .ico — see Assets/icon.ico's own generation notes in the Task 20 report. -->
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\St4i.EdgeCore\St4i.EdgeCore.csproj" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" Version="2.0.0-rc5.4" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.9" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Task 20 — the sidebar/top-bar logo (referenced via a relative pack URI, e.g.
+         Source="Assets/logo.png", from ShellView.xaml) needs to be an embedded WPF Resource, not just a
+         loose file on disk — SDK-style WPF projects don't glob non-.xaml assets into Resource
+         automatically the way they do for .xaml Page items. -->
+    <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\icon.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Task 22 — packaging: ships the default fleet.json + mapping/*.json presets (authored one level
+         up, at tools/machine-simulator/, alongside this project's own src/ sibling) next to the built/
+         published exe, at plain "fleet.json"/"mapping\*.json" (Link strips the "..\..\" so the output
+         layout matches what FleetService.ResolveFleetPath looks for via AppContext.BaseDirectory) —
+         PreserveNewest so a `dotnet build` doesn't re-copy on every incremental build, but a genuinely
+         edited source file still propagates. Loose files (not embedded Resources, unlike Assets\ above)
+         so an operator can hand-edit fleet.json next to a published single-file exe with no rebuild. -->
+    <None Include="..\..\fleet.json" CopyToOutputDirectory="PreserveNewest" Link="fleet.json" />
+    <None Include="..\..\mapping\*.json" CopyToOutputDirectory="PreserveNewest" Link="mapping\%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

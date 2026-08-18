@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Linq;
 
 namespace St4i.EdgeCore.Infrastructure;
 
@@ -30,6 +31,23 @@ public static class CredentialStore
         File.WriteAllBytes(path, protectedBytes);
     }
 
+    /// <summary>Lists the machine codes that currently have a saved credential file — the raw filename
+    /// stems under the creds directory (Task 19a: Settings' stored-credentials view), NOT their
+    /// decrypted mk_ values. Returns an empty list (not an exception) if the creds directory doesn't
+    /// exist yet, e.g. a fresh install that has never called <see cref="Save"/>.</summary>
+    public static IReadOnlyList<string> ListMachineCodes()
+    {
+        var dir = CredsDir();
+        if (!Directory.Exists(dir)) return Array.Empty<string>();
+
+        return Directory.EnumerateFiles(dir, "*.bin")
+            .Select(Path.GetFileNameWithoutExtension)
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Select(name => name!)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     /// <summary>Reads and DPAPI-unprotects the stored key for <paramref name="machineCode"/>, or
     /// <c>null</c> if no credential file exists for it.</summary>
     public static string? Load(string machineCode)
@@ -44,11 +62,13 @@ public static class CredentialStore
         return Encoding.UTF8.GetString(plain);
     }
 
-    private static string PathFor(string machineCode)
+    private static string PathFor(string machineCode) =>
+        Path.Combine(CredsDir(), SanitizeFileName(machineCode) + ".bin");
+
+    private static string CredsDir()
     {
         var root = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-        var dir = Path.Combine(root, "ST4I", "sim", "creds");
-        return Path.Combine(dir, SanitizeFileName(machineCode) + ".bin");
+        return Path.Combine(root, "ST4I", "sim", "creds");
     }
 
     /// <summary>Strips characters that aren't valid in a Windows filename so an arbitrary
