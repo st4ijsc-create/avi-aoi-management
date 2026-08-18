@@ -589,8 +589,11 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
     const GAN_THANG: Readonly<Record<string, { viSao: string; soTuyen: number }>> = {
       "server/_core/index.ts": {
         viSao:
-          "NỢ ĐÃ KHAI (review Pha 9 I-1): 98 điểm gắn tuyến THẲNG vào `app`, gồm 58 tuyến `/api/external/*` (trục khoá máy, do `thuHoiPhienMoiBeMat.test.ts` canh). Gọi thật đòi dựng gần trọn ứng dụng ⇒ chưa vào lưới hành vi này. Con số bị ghim để tuyến thứ 99 là một quyết định nói ra.",
-        soTuyen: 98,
+          "NỢ ĐÃ KHAI (review Pha 9 I-1): điểm gắn tuyến THẲNG vào `app`, gồm 58 tuyến `/api/external/*` (trục khoá máy, do `thuHoiPhienMoiBeMat.test.ts` canh). Gọi thật đòi dựng gần trọn ứng dụng ⇒ chưa vào lưới hành vi này. Con số bị ghim để tuyến kế tiếp là một quyết định nói ra. " +
+          "★ 2026-08-16 (G1-E) 98 → 100. Thành phần của +2, ĐẾM TAY: (1) MỘT tuyến THẬT — `app.get('/api/health/ai', createAiReadinessHandler())`, cổng sẵn sàng hệ con AI, khai riêng ở mục `server/_core/aiReadiness.ts` bên dưới. " +
+          "(2) MỘT DƯƠNG TÍNH GIẢ — `soGanTuyen()` đếm theo VĂN BẢN nên khớp cả trong CHÚ THÍCH: dòng giải thích `/api/health` rơi vào SPA catch-all có chứa nguyên văn `app.use(\"*\")`. " +
+          "⚠ Ghi lại thay vì sửa chú thích cho vừa lưới — nắn văn bản cho khớp phép đo chính là cách một lưới thật biến thành lưới giả. Nợ đúng ở đây là bộ đếm nên bỏ qua comment; chưa vá vì nó đụng vị từ dùng chung của §6.",
+        soTuyen: 100,
       },
       "server/api/v1/guard.ts": {
         viSao:
@@ -606,6 +609,39 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
         viSao:
           "Phục vụ tài nguyên tĩnh của trình dựng (dev middleware + `app.use('*')` bắt-tất cho SPA) — không đọc dữ liệu người dùng.",
         soTuyen: 2,
+      },
+      "server/_core/aiReadiness.ts": {
+        viSao:
+          "★ THÊM 2026-08-16 (G1-E) — `GET /api/health/ai`: cổng SẴN SÀNG của hệ con AI, KHÔNG phải bề mặt phiên. " +
+          "AUTH-FREE CÓ CHỦ Ý để giám sát ngoài gọi được; đầu ra đã lọc (không API key, không đường dẫn tuyệt đối — " +
+          "`/props` trả `model_path` tuyệt đối, chỉ lấy basename; hostname rút còn `loopback|remote`+cổng). " +
+          "Ai coi roster model là nhạy cảm thì đặt `HEALTH_AI_REQUIRE_LOOPBACK=true` ⇒ 403 cho caller ngoài loopback. " +
+          "Nằm dưới `/api/` nên vẫn được `apiLimiter` 300/phút che. " +
+          "Handler tách khỏi `_core/index.ts` CỐ Ý để test mount được ĐÚNG CÁI ĐANG CHẠY (kèm SPA catch-all phía sau) — " +
+          "xem `aiReadinessRoute.test.ts`, nơi chứng minh `/api/health` trả HTML 200 còn `/api/health/ai` trả JSON. " +
+          "★ SỐ 2 Ở ĐÂY KHÔNG PHẢI 2 TUYẾN. File này gắn **0** tuyến — nó chỉ XUẤT một handler, `_core/index.ts` mới `app.get(...)`. " +
+          "`soGanTuyen()` đếm theo VĂN BẢN nên khớp hai lần nhắc `app.use(\"*\")` trong CHÚ THÍCH (dòng ~12 và ~511, " +
+          "chỗ giải thích vì sao `/api/health` trả HTML thay vì JSON). Ghi lại thay vì viết lại chú thích cho vừa bộ đếm — " +
+          "cùng lý do đã nêu ở mục `server/_core/index.ts`: nắn văn bản cho khớp phép đo là cách biến lưới thật thành lưới giả.",
+        soTuyen: 2,
+      },
+      "server/routers/phamViDocScan.ts": {
+        viSao:
+          "★ THÊM 2026-08-18 (điều tra dân số phạm vi đọc · §D) — **GẮN 0 TUYẾN.** File này là một BỘ SUY TĨNH: " +
+          "nó đọc `server/**` bằng TypeScript AST và PHÂN LOẠI mọi tuyến Express, nên văn bản của nó nhắc lại các " +
+          "hình dạng `app.get(\"/…\")`/`app.use(\"/…\")` trong chú thích và trong thông điệp lỗi. Nó không nhập `express`, " +
+          "không nhận tham số `Express`, và không được gọi từ đường khởi động nào. " +
+          "⚠ 7 lượt khớp là DƯƠNG TÍNH GIẢ của `soGanTuyen()` — đúng lớp đã ghi ở hai mục trên. " +
+          "Khai ra kèm SỐ thay vì viết lại chú thích cho vừa bộ đếm: nắn văn bản cho khớp phép đo là cách " +
+          "biến lưới thật thành lưới giả (và ở đây còn tệ hơn — nó sẽ làm hỏng chính lời giải thích của bộ suy).",
+        soTuyen: 7,
+      },
+      "server/routers/phamViTuyenBaseline.ts": {
+        viSao:
+          "★ THÊM 2026-08-18 — **GẮN 0 TUYẾN.** Đây là SỔ NỢ (một mảng chuỗi) của bản điều tra dân số tuyến Express. " +
+          "Một lượt khớp duy nhất nằm trong docblock, chỗ khai bề mặt `app.use(\"/uploads\", express.static(…))` là " +
+          "món nợ mà bộ suy KHÔNG đo được. Cùng lớp dương tính giả với mục trên.",
+        soTuyen: 1,
       },
     };
 

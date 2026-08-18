@@ -472,6 +472,26 @@ async function startServer() {
     }
   });
 
+  // ── G1-E (2026-08-16) — SẴN SÀNG THẬT CỦA HẠ TẦNG AI ────────────────────────────────────────
+  // VÌ SAO THÊM MỚI CHỨ KHÔNG SỬA `/health`: `/health` + `/livez` + `/readyz` ở trên đang là cổng
+  // HEALTHCHECK/canary. Nếu nhét "llama-server chết" vào chúng, một instance VẪN PHỤC VỤ TỐT (mã
+  // lùi về in-process, câu trả lời vẫn ra) sẽ bị kéo khỏi rotation. Nên tách vai:
+  //   /readyz         → "nhận traffic được không?"  (cổng ROLLOUT — không đổi)
+  //   /api/health/ai  → "còn ĐỦ NĂNG LỰC AI không?" (cổng CẢNH BÁO — mới)
+  // ⚠ `/api/health` KHÔNG hề là route — nó rơi vào SPA catch-all (`vite.ts` `app.use("*")`) nên
+  //   trả 200 + text/html. Mọi nghiệm thu "health 200" cũ vì thế YẾU HƠN tưởng. Endpoint này nằm
+  //   dưới `/api/` nên vẫn được apiLimiter (300/phút) che, và vì là GET nên origin-check không chạm.
+  // Mã HTTP: 200 tất-cả-ok · 207 có hệ con degraded · 503 có hệ con down (xem aiReadiness.ts).
+  // Handler nằm ở `aiReadiness.ts` (createAiReadinessHandler) để bộ test mount ĐÚNG CÁI NÀY vào
+  // một app Express có SPA catch-all phía sau — chứng minh route không bị nuốt, không test bản sao.
+  try {
+    const { createAiReadinessHandler } = await import("./aiReadiness");
+    app.get('/api/health/ai', createAiReadinessHandler());
+    console.log('[AIHealth] readiness endpoint ready: GET /api/health/ai (200 ok · 207 degraded · 503 down)');
+  } catch (err) {
+    console.error('[AIHealth] wiring failed:', (err as any)?.message || err);
+  }
+
   // W0-I (doc 44 G5.7) — CSP violation report endpoint + origin-check chống CSRF.
   // Mount SAU health/metrics (không chạm health probe), TRƯỚC mọi route /api & tRPC.
   // /api/csp-report vẫn đi qua apiLimiter (mounted trên /api/ ở trên) nên được
@@ -1806,6 +1826,25 @@ async function startServer() {
         return res.status(404).json({ success: false, message: "Machine not found" });
       }
 
+      // ★★★ 2026-08-18 (§D · HẠNG 2 của bảng xếp hạng lộ dữ liệu) — **TUYẾN NÀY TRẢ MỘT BÍ MẬT.**
+      //
+      // Ô `apiKey` dưới đây là **khoá của máy** — thứ mở được `/api/public/**`, `/api/machine/**`
+      // và cả `/api/v1/**` với tư cách chính máy đó. `validateMasterKey` chỉ là BÍ DANH của
+      // `validateExternalAuth`, tức nhánh **Bearer** cũng vào được: bất kỳ tài khoản nào đăng
+      // nhập qua `/api/external/auth/login` đọc được khoá của máy thuộc nhà máy KHÁC, rồi dùng
+      // khoá ấy đi tiếp. Đây là lý do nó xếp trên các tuyến trả nhiều DỮ LIỆU hơn: một lượt gọi
+      // trái phép ở đây trả về **phương tiện lấy thêm sự thật**, không chỉ sự thật.
+      //
+      // ⚠ 403 chứ KHÔNG phải 404: máy có tồn tại. Trả 404 sẽ dạy người tích hợp rằng mã máy sai,
+      //   và họ sẽ đi tạo một máy trùng mã — cùng lớp lỗi mà `tuChoiNgoaiPhamVi` đã ghi.
+      const { phamViGoiNgoai, nguoiXemCuaPhamVi, thanTuChoiPhamViNgoai } = await import(
+        "../routes/_phamViNgoai"
+      );
+      const nguoiXem = nguoiXemCuaPhamVi(phamViGoiNgoai(req));
+      if (nguoiXem !== undefined && !(await getMachineByCode(code, nguoiXem))) {
+        return res.status(403).json(thanTuChoiPhamViNgoai("machine", code));
+      }
+
       res.json({
         success: true,
         machine: {
@@ -1830,11 +1869,22 @@ async function startServer() {
   app.get("/api/external/machines", validateMasterKey, async (req, res) => {
     try {
       const { getMachines } = await import("../db");
-      const machines = await getMachines();
+      // ★★★ 2026-08-18 (§D · **HẠNG 1** của bảng xếp hạng lộ dữ liệu) — một lượt gọi trả `apiKey`
+      // của **TOÀN BỘ** đội máy. Xem lời khai đầy đủ ở tuyến `by-code/:code` ngay trên: đây là
+      // cùng bí mật, nhân với cả nhà máy. Phạm vi đến từ `req.externalUser` (máy chủ tự đặt),
+      // **không** từ `req.query` — xem `_phamViNgoai.ts`.
+      // ⚠ Nhánh `x-master-key` giữ NGUYÊN TỪNG BYTE (`nguoiXem === undefined` ⇒ không cổng nào):
+      //   đó là chiều DƯƠNG chống vá quá tay, và là quyết định đã ghi cho khoá TOÀN CỤC TƯỜNG MINH.
+      const { phamViGoiNgoai, nguoiXemCuaPhamVi, phamViDaAp } = await import("../routes/_phamViNgoai");
+      const phamVi = phamViGoiNgoai(req);
+      const machines = await getMachines(nguoiXemCuaPhamVi(phamVi));
 
       res.json({
         success: true,
         total: machines.length,
+        // ⚠ 0 dòng im lặng là nói dối: phía gọi phải phân biệt được "nhà máy tôi không có máy nào"
+        //   với "tôi vừa bị thu hẹp". Ô này THÊM VÀO, không đổi ô nào đang có.
+        scopeApplied: phamViDaAp(phamVi),
         machines: machines.map(m => ({
           id: m.id,
           code: m.code,
@@ -2699,7 +2749,14 @@ async function startServer() {
     try {
       const { reportType, format, dateFrom, dateTo, filters, locale } = req.body || {};
       // JWT callers carry a user (→ createdBy); master-key server-to-server does not.
-      const createdBy = (req as any).externalUser?.id ?? null;
+      const externalUser = (req as any).externalUser;
+      const createdBy = externalUser?.id ?? null;
+      // ★★★ 2026-08-17 — TRỤC PHẠM VI. `createdBy` chỉ là dấu vết; `actor` mới đi vào truy vấn.
+      // ⚠ Danh tính lấy từ `req.externalUser` (do `validateExternalAuth` đặt sau khi xác thực
+      // JWT), KHÔNG BAO GIỜ từ `req.body`. Khoá master server-to-server không có người dùng nào
+      // để thu hẹp ⇒ `undefined` = không lọc, giữ nguyên hành vi tin-cậy-máy-chủ đã có.
+      const actor =
+        externalUser?.id != null ? { id: externalUser.id, role: String(externalUser.role ?? "user") } : undefined;
 
       const { generateExternalReport, ExternalReportError } = await import("../services/externalReportService");
       try {
@@ -2711,6 +2768,7 @@ async function startServer() {
           filters,
           locale,
           createdBy,
+          actor,
           source: "external",
         });
         return res.json({
@@ -2968,8 +3026,13 @@ async function startServer() {
   app.get("/api/external/stations", validateExternalAuth, async (req, res) => {
     try {
       const { getStations } = await import("../db");
-      const stations = await getStations();
-      res.json({ success: true, data: stations });
+      // ★★★ 2026-08-18 (§D · HẠNG 3) — bản đồ TRẠM của toàn bộ các nhà máy, cho bất kỳ tài khoản
+      // nào đăng nhập được. `getStations` đã nhận `PhamViNguoiXem` từ đợt trả nợ tRPC; ở đây chỉ
+      // là nối đúng trục ấy vào cửa REST, KHÔNG một dòng SQL phân cấp mới nào.
+      const { phamViGoiNgoai, nguoiXemCuaPhamVi, phamViDaAp } = await import("../routes/_phamViNgoai");
+      const phamVi = phamViGoiNgoai(req);
+      const stations = await getStations(nguoiXemCuaPhamVi(phamVi));
+      res.json({ success: true, scopeApplied: phamViDaAp(phamVi), data: stations });
     } catch (error: any) {
       console.error("[External] stations list error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get stations" });
@@ -4818,6 +4881,33 @@ async function startServer() {
   // REST proxy for publicProductApi (for non-tRPC clients: Android, C#, Python…)
   // Auth: header X-Master-Key / X-API-Key / X-Machine-Code  OR  query masterKey / apiKey / machineCode
   // ────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * ★★★ 2026-08-18 — ánh xạ mã tRPC → mã trạng thái HTTP cho cụm `/api/public/**`.
+   *
+   * ⚠ Bảng cũ viết tay ở SÁU chỗ và **không có nhánh `FORBIDDEN`**, nên khi
+   * `publicProductApi` bắt đầu từ chối vì PHẠM VI, mọi lượt chặn rơi vào `: 500`. Đo được trên
+   * HTTP thật (2026-08-18): `GET /api/public/products/by-code/<sp của nhà máy khác>` trả **500**
+   * với đúng câu "outside the factory of the calling machine".
+   *
+   * 500 ở đây là một **lời khai sai**: nó nói *"máy chủ hỏng"* trong khi sự thật là *"bạn không
+   * được phép"*. Client bên thứ ba (Android/C#/Python) sẽ THỬ LẠI một yêu cầu không bao giờ
+   * thành công, và người trực đi tìm lỗi ở chỗ không có lỗi — đúng lớp lỗi mà cả lượt vá này
+   * tồn tại để xoá.
+   */
+  const statusCuaLoiCong = (error: { code?: string }): number => {
+    switch (error?.code) {
+      case "UNAUTHORIZED":
+      case "BAD_REQUEST":
+        return 401;
+      case "FORBIDDEN":
+        return 403;
+      case "NOT_FOUND":
+        return 404;
+      default:
+        return 500;
+    }
+  };
   app.get("/api/public/products", async (req, res) => {
     try {
       const ctx = await createContext({ req, res });
@@ -4836,7 +4926,7 @@ async function startServer() {
       });
       res.json(result);
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
@@ -4856,7 +4946,7 @@ async function startServer() {
       });
       res.json(result);
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
@@ -4876,7 +4966,7 @@ async function startServer() {
       });
       res.json(result);
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
@@ -4896,7 +4986,7 @@ async function startServer() {
       });
       res.json(result);
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
@@ -4916,7 +5006,7 @@ async function startServer() {
       });
       res.json(result);
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
@@ -4929,25 +5019,57 @@ async function startServer() {
       const apiKey = req.header("x-api-key") || (req.query.apiKey as string) || "";
       const machineCode = req.header("x-machine-code") || (req.query.machineCode as string) || "";
 
-      // Validate access
-      let authorized = false;
+      // ★★★ 2026-08-18 — TUYẾN NÀY LÀ LỖ THỨ CHÍN, và nó **vô hình với cổng điều tra dân số**.
+      //
+      // Bản mô tả nhiệm vụ liệt kê 8 thủ tục `publicProcedure` của `publicProductApiRouter`. Tuyến
+      // này phục vụ ĐÚNG cùng dữ liệu (ảnh mẫu sản phẩm) cho ĐÚNG cùng người gọi bằng ĐÚNG cùng ba
+      // chứng thực — nhưng nó là một tuyến **Express**, không đi qua tRPC. Nó chép tay lại phép
+      // xác thực thành một BOOLEAN `authorized`, rồi đọc `getProductModelByCode` KHÔNG LỌC và
+      // stream byte ảnh ra ngoài. Vá xong tám thủ tục kia mà bỏ tuyến này thì cái cổng chỉ cách
+      // một URL là đi vòng được.
+      //
+      // ⚠⚠ Vì sao KHÔNG cổng nào bắt được nó: `phamViDocScan.ts` chỉ nhìn thấy các ô trong
+      // `router({…})` của tRPC, nên một tuyến `app.get(...)` không bao giờ được ĐẾM — nó không nằm
+      // trong 2.209 thủ tục, không nằm trong sổ nợ, và §4 không thể đỏ vì nó. Đã đo trên HTTP thật
+      // (2026-08-18, cổng 3111 chạy bản ĐÃ VÁ): máy của nhà máy A tải được ảnh sản phẩm của nhà
+      // máy B, **HTTP 200, image/png**. Đó là bằng chứng trực tiếp cho câu ghi ở đầu
+      // `phamViDocCensus.test.ts`: *cổng xanh KHÔNG chứng minh không còn rò rỉ.*
+      //
+      // Cách vá: dùng LẠI đúng bộ phân giải của tám thủ tục kia (`phamViNhaMayCuaMay` +
+      // `sanPhamTrongNhaMay`) thay vì chép một luật thứ hai — hai bản luật là cách chúng lệch nhau,
+      // và bản lỏng hơn sẽ quyết định ai thấy gì.
+      const { phamViNhaMayCuaMay, factoryIdCanThuHep, sanPhamTrongNhaMay, PHAM_VI_TOAN_CUC } =
+        await import("../routers/publicProductScope");
+      let phamVi: Awaited<ReturnType<typeof phamViNhaMayCuaMay>> | null = null;
       if (isValidMasterKey(masterKey)) {
-        authorized = true;
+        phamVi = PHAM_VI_TOAN_CUC; // TOÀN CỤC TƯỜNG MINH — cùng quyết định với `validateAccess`.
       } else if (apiKey) {
         const machine = await import("../db").then(m => m.getMachineByApiKey(apiKey));
-        if (machine) authorized = true;
+        if (machine) phamVi = await phamViNhaMayCuaMay(machine);
       } else if (machineCode) {
         const machine = await import("../db").then(m => m.getMachineByCode(machineCode.trim()));
-        if (machine) authorized = true;
+        if (machine) phamVi = await phamViNhaMayCuaMay(machine);
       }
-      if (!authorized) {
+      if (!phamVi) {
         return res.status(401).json({ success: false, error: "Unauthorized" });
       }
+      const factoryIdCong = factoryIdCanThuHep(phamVi);
 
       const db = await import("../db");
       const product = await db.getProductModelByCode(req.params.productCode);
       if (!product || !product.referenceImageUrl) {
         return res.status(404).json({ success: false, error: "Product or image not found" });
+      }
+      // ⚠ Cổng đặt SAU lượt tra sản phẩm nhưng TRƯỚC mọi lượt đọc byte — và trả **403**, không
+      //   phải 404: 404 ở đây sẽ nói "sản phẩm không tồn tại" cho một sản phẩm CÓ TỒN TẠI, tức
+      //   vẫn là một lời khai sai, chỉ đổi chiều.
+      if (factoryIdCong !== null && !(await sanPhamTrongNhaMay(product.id, factoryIdCong))) {
+        return res.status(403).json({
+          success: false,
+          error:
+            `machine_factory_scope_denied: product '${product.code}' is outside the factory of the ` +
+            `calling machine. The reference image is refused instead of being streamed.`,
+        });
       }
 
       let imageData: Buffer;
@@ -5001,7 +5123,7 @@ async function startServer() {
       });
       res.json(result);
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
@@ -5471,6 +5593,18 @@ async function startServer() {
     reportThinkingTierStatus();
   } catch (err) {
     console.error("[AIModels] thinking-tier status check failed:", (err as any)?.message || err);
+  }
+
+  // G1-C (2026-08-16) — TỔNG QUÁT HOÁ bản vá doc69 G2-6 ở ngay trên. Lớp lỗi "cờ *_ENABLED khai
+  // BẬT nhưng model tương ứng rỗng/không có trên đĩa ⇒ tầng âm thầm rơi về thứ khác, KHÔNG có gì
+  // đỏ" đã tái diễn nhiều lần, nhưng mới chỉ được vá RIÊNG cho AI_THINKING_TIER_ENABLED. Bảng
+  // khai báo trong modelTierFlagAudit phủ luôn code-router / reranker-gguf / sidecar thị giác, và
+  // thêm cặp cờ↔model mới chỉ tốn MỘT dòng trong bảng. Non-fatal: cảnh báo, không chặn boot.
+  try {
+    const { reportModelTierFlags } = await import("../services/ai/modelTierFlagAudit");
+    await reportModelTierFlags();
+  } catch (err) {
+    console.error("[AITierFlags] tier-flag audit failed:", (err as any)?.message || err);
   }
 
   // P1 WS1.1 — Data retention pruning: MOVED to the W4-D background scheduler
