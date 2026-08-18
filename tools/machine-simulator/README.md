@@ -1624,10 +1624,10 @@ today, **install the two hosts into two directories** — which is what the defa
 A rebuilt `publish-desktop/` was started with **all fourteen** `ST4I_*_DIR` roots redirected, and reported
 `products.json`/`recipes.json` beside the binary as a new defect. It is this section, re-observed from a
 running process — and the observation was **short by half**: that start wrote **four** files, not two.
-`ecosystem\ecosystem-products.json` (36,141 B) and `ecosystem\ecosystem-recipes.json` (564 B) landed in the
-same second, from the third store of the same table. **Three stores, five filenames, four files on a first
-run** (`MachineConfigStore`'s is written later, at `Ensure`) — read the table above, never a count carried
-out of a run report.
+`ecosystem\ecosystem-products.json` and `ecosystem\ecosystem-recipes.json` landed in the same second, from
+the third store of the same table — all four stamped `2026-08-18 07:23:42Z` on the artefact that run left
+behind. **Three stores, five filenames, four files on a first run** (`MachineConfigStore`'s is written later,
+at `Ensure`) — read the table above, never a count carried out of a run report.
 
 **The ruling, because "is `ProductConfigStore` the same case as `MachineConfigStore`" has three answers and
 they are not the same answer.**

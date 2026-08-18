@@ -709,19 +709,23 @@ rather than the count.
 #### 🔴 The parenthesis above, MEASURED — and the directory the product's own installer chooses (task AC-1)
 
 *"a read-only install directory is a second fatal arm"* was a reading of two constructors. It has now been
-run. `publish-desktop\engine\St4i.EngineApi.exe` — the published build a trial run had already exercised —
-was started from a directory carrying one deny ACE for the running account (`CreateFiles` +
-`CreateDirectories`), with all fourteen `ST4I_*_DIR` roots redirected to a scratch tree so nothing under
-`%ProgramData%\ST4I\` was touched. **It died before the host existed**: an unhandled
+run. A **copy** of `publish-desktop\engine\St4i.EngineApi.exe` — the published build a trial run had already
+exercised — was placed in a scratch directory (so the four store files began ABSENT, which is the shape a
+fresh install has) and started from that directory carrying one deny ACE for the running account
+(`CreateFiles` + `CreateDirectories`), with all fourteen `ST4I_*_DIR` roots redirected to a scratch tree so
+nothing under `%ProgramData%\ST4I\` was touched. **It died before the host existed**: an unhandled
 `System.UnauthorizedAccessException` out of `SimulatedEcosystem..ctor` → `Directory.CreateDirectory`, exit
 code `-532462766` (`0xE0434352`), no `Now listening on:` line, and nothing an operator could act on beyond a
 CLR stack trace. The same binary, same roots, **without** the deny, came up normally.
 
 **The population is three stores and the file count is four, and the count is the part that gets misquoted.**
-That normal run left `products.json` (34,355 B), `recipes.json` (610 B), `ecosystem\ecosystem-products.json`
-(36,141 B) and `ecosystem\ecosystem-recipes.json` (564 B) beside the binary — all four written by the SAME
-start, none of them reachable by any environment variable. The brief that commissioned AC-1 named the first
-two; naming two of four is the same class of error §3.5 was written to record, one population lower down.
+That normal run left `products.json`, `recipes.json`, `ecosystem\ecosystem-products.json` and
+`ecosystem\ecosystem-recipes.json` beside the binary — all four written by the SAME start, none of them
+reachable by any environment variable. The brief that commissioned AC-1 named the first two; naming two of
+four is the same class of error §3.5 was written to record, one population lower down. **The COUNT is the
+fact and the byte sizes are not**: the seed carries timestamps, so `ecosystem-products.json` measured
+36,141 B on this task's run and 36,145 B on the trial run's own artefact — the same file, two lengths, and a
+reason to quote the population rather than a size.
 
 🔴 **Which directory this arm is about, stated because it decides who the paragraph is for.**
 `packaging/installer/Package.wxs` puts `INSTALLFOLDER` under `ProgramFiles6432Folder` — the shipped MSI
