@@ -316,7 +316,7 @@ public static class HistorianEndpoints
             // Rejected mutation (400) — per the WS-D-D4 ordering rule, no audit row is written here.
             return Results.BadRequest(new ApiErrorDto(ex.Message));
         }
-        catch (OeeSettingsUnreadableException ex)
+        catch (OeeSettingsWriteRefusedException ex)
         {
             // 🔴 Task V-1 — `oee-settings.json` cannot be written without discarding bytes this process has
             // not read, so `OeeSettingsStore.Set` refused rather than writing one machine's values over a
@@ -333,6 +333,14 @@ public static class HistorianEndpoints
             // `settingsStore.Status`: `Set` also refuses when the table was built from an unreadable read
             // that has since been repaired, and on THAT arm `Status` reads `Loaded` — a filter would have
             // missed it and answered 500.
+            //
+            // 🔴 TASK Z-1 — THIS CAUGHT `OeeSettingsUnreadableException` AND NOW CATCHES THE BASE,
+            // `OeeSettingsWriteRefusedException`, BECAUSE THE STORE GAINED A SECOND REFUSAL. Item 11 of
+            // docs/owner-decisions.md: the store came up with no file, one has APPEARED since, and the write
+            // is refused although the file reads perfectly. Widening the CATCH is not widening the CLAIM —
+            // exactly two types derive from that base, both are raised by `Set` and only by `Set`, and both
+            // mean "nothing was written". Reusing the `Unreadable` type for the new arm would have been the
+            // cheaper diff and a false one: its name asserts something about a file that read correctly.
             //
             // This is the surface the loss is named on. Deliberately NOT added to the GET's response shape:
             // `OeeSettingsDto` is published and widening it is the class of change the owner reserved in

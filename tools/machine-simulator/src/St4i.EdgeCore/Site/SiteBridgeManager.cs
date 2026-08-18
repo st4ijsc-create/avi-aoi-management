@@ -11,9 +11,14 @@ namespace St4i.EdgeCore.Site;
 /// serializing gate, so a rapid double-submit can never race two bridges into existence at once.
 ///
 /// <para><b>Startup contract:</b> the caller (<c>Program.cs</c>) constructs a manager, then calls
-/// <c>ApplyAsync(store.Load() ?? new PersistedSiteLink())</c> once, synchronously, before the host starts
-/// serving traffic — mirroring the exact "eager, wrapped in its own try/catch, never crashes startup"
-/// shape <c>Program.cs</c>'s own UNS-broker startup block already uses. A construct/connect failure here
+/// <see cref="ApplyAsync"/> once, synchronously, before the host starts serving traffic — mirroring the
+/// exact "eager, wrapped in its own try/catch, never crashes startup" shape <c>Program.cs</c>'s own
+/// UNS-broker startup block already uses. 🔴 <b>This said <c>ApplyAsync(store.Load() ?? new
+/// PersistedSiteLink())</c>, which is what <c>Program.cs</c> stopped doing at task Q-1's fix round</b> — it
+/// branches on <see cref="SiteLinkStore.Read"/>'s three outcomes and does not call this method at all when
+/// the file is <see cref="SiteLinkReadStatus.Unreadable"/>, because this method holds the file's only
+/// writer. Corrected while task Z-1 was closing the other route to that writer, rather than left standing
+/// next to a paragraph describing the code as it now is. A construct/connect failure here
 /// is caught and logged (never propagated) — the device comes up with the bridge simply
 /// <see cref="BridgeState.Down"/>/absent rather than refusing to start at all, same "additive, never
 /// allowed to fail the host it's bolted onto" posture as every other optional subsystem in this
@@ -77,11 +82,33 @@ public sealed class SiteBridgeManager : IAsyncDisposable
     /// if <see cref="PersistedSiteLink.Enabled"/>. Never throws: a persistence failure or a bridge
     /// construct/connect failure is caught and logged, leaving <see cref="Status"/> reporting
     /// <see cref="BridgeState.Disabled"/> (no bridge) rather than propagating out to the caller (EC-3's PUT
-    /// handler, or this class's own startup caller).</summary>
-    public async Task ApplyAsync(PersistedSiteLink link)
+    /// handler, or this class's own startup caller).
+    ///
+    /// <para>🔴 <b>Task Z-1 — THIS OVERLOAD IS THE ONE THAT PERSISTS, AND THAT IS NOW A STATEMENT ABOUT THE
+    /// CALLER RATHER THAN ABOUT THE METHOD</b> (owner decision file, item 8, decided 2026-08-18). Three
+    /// call sites reach the shared body below; exactly two of them come through THIS signature:
+    /// <list type="bullet">
+    /// <item><description><c>PUT /v1/site</c> (<c>SiteEndpoints.PutSiteAsync</c>) — the operator SUPPLIED
+    /// the three values. Persisting them is the request.</description></item>
+    /// <item><description>the startup path (<c>Program.cs</c>) — the link came off disk, or the read said
+    /// <see cref="SiteLinkReadStatus.Absent"/> and first boot is entitled to establish one. On
+    /// <see cref="SiteLinkReadStatus.Unreadable"/> the composition root does not call this at
+    /// all.</description></item>
+    /// <item><description><see cref="ReapplyCurrentAsync"/> — carries no value of its own, and no longer
+    /// comes through here. See its own doc comment.</description></item>
+    /// </list></para></summary>
+    public Task ApplyAsync(PersistedSiteLink link)
     {
         ArgumentNullException.ThrowIfNull(link);
+        return ApplyCoreAsync(link, persist: true);
+    }
 
+    /// <summary>The body both entry points share. <paramref name="persist"/> is the ONLY difference between
+    /// them, and it is private on purpose: whether a caller may write <c>site-link.json</c> is a property of
+    /// where the link came from, so it is decided by which entry point was called and can never be passed in
+    /// from outside this class.</summary>
+    private async Task ApplyCoreAsync(PersistedSiteLink link, bool persist)
+    {
         // Fast path: once disposed, _gate itself is disposed too (see DisposeAsync) — check BEFORE ever
         // touching it, so a late ApplyAsync call after shutdown degrades to a no-op instead of throwing
         // ObjectDisposedException out of what production wiring treats as a never-throwing call.
@@ -106,14 +133,17 @@ public sealed class SiteBridgeManager : IAsyncDisposable
                 }
             }
 
-            try
+            if (persist)
             {
-                _store.Save(link);
-            }
-            catch (Exception ex)
-            {
-                _logError?.Invoke(ex, "Failed to persist the Site link — the new link is active for this " +
-                                      "run only and will NOT survive a restart");
+                try
+                {
+                    _store.Save(link);
+                }
+                catch (Exception ex)
+                {
+                    _logError?.Invoke(ex, "Failed to persist the Site link — the new link is active for this " +
+                                          "run only and will NOT survive a restart");
+                }
             }
 
             _current = link;
@@ -159,8 +189,42 @@ public sealed class SiteBridgeManager : IAsyncDisposable
     /// bridge silently presenting the pre-rotation certificate forever, which is exactly the bug this
     /// method exists to prevent. A no-op (bridge stays <see cref="BridgeState.Disabled"/>) if the current
     /// link isn't <see cref="PersistedSiteLink.Enabled"/> — nothing to re-key when there's no bridge.
-    /// Same never-throws contract as <see cref="ApplyAsync"/> itself (this literally IS that call).</summary>
-    public Task ReapplyCurrentAsync() => ApplyAsync(_current);
+    /// Same never-throws contract as <see cref="ApplyAsync"/> itself.
+    ///
+    /// <para>🔴 <b>Task Z-1 — IT DOES NOT PERSIST, AND THAT IS THE WHOLE OF ITEM 8</b> (owner decision file,
+    /// item 8, decided 2026-08-18 by the coordinator under delegation; the same law as items 1 and 5, at the
+    /// THIRD caller of <see cref="ApplyAsync"/>).</para>
+    ///
+    /// <para><b>What was measured.</b> This method used to be <c>ApplyAsync(_current)</c>, and
+    /// <see cref="ApplyAsync"/> wrote <c>site-link.json</c> unconditionally. On the arm where the file is
+    /// UNREADABLE, <c>Program.cs</c> deliberately never calls <see cref="ApplyAsync"/>, so
+    /// <see cref="Current"/> is still the field initialiser — <c>new PersistedSiteLink()</c>, a record this
+    /// PROCESS invented and never read from disk. One <c>POST /v1/site/identity/rotate</c> therefore wrote
+    /// <c>Enabled=false, Host="", Port=8883, SiteTrustPem=""</c> over the operator's unreadable bytes: the
+    /// Site broker host, its port and the pinned trust anchor, gone, in a request that succeeded. Nothing
+    /// logged, because the <see cref="SiteLinkStore.Save"/> SUCCEEDED.</para>
+    ///
+    /// <para><b>Why declining to persist is the mechanism the law yields HERE.</b> The law is that only
+    /// <i>there is nothing here</i> entitles a caller to establish a value of its own and write it down. This
+    /// method establishes NOTHING: it re-applies, unchanged, the link it is already holding. So it never
+    /// holds a licence to write, on any arm — not merely on the unreadable one — and the guarantee is
+    /// therefore STRUCTURAL rather than conditional: the rotate path cannot write this file, and no future
+    /// read, flag or ordering is needed to keep that true. Refusing (throwing) would have been the wrong
+    /// outcome at this site even though it is the right one at <c>OeeSettingsStore.Set</c>: a rotation must
+    /// still re-key the live bridge, and this call is the only thing that does it. Same law, different site,
+    /// different shape.</para>
+    ///
+    /// <para>🔴 <b>WHAT IT COSTS, because it is not free and the cost is not on the unreadable arm.</b> On a
+    /// HEALTHY tree <see cref="Current"/> is whatever was last applied, and the file already holds it — so
+    /// the write this removes was a no-op in content, with ONE exception: if the
+    /// <see cref="SiteLinkStore.Save"/> inside an earlier <see cref="ApplyAsync"/> had FAILED (logged as
+    /// <i>"active for this run only and will NOT survive a restart"</i>), a later rotation used to retry it
+    /// and could silently repair it. That retry is gone. It was never a documented contract, nobody asked
+    /// for a write at that moment, and a write nobody asked for is the entire defect class this law exists
+    /// to close — but it is a real behaviour that this change removes, and it is named here rather than
+    /// discovered later. The remedy an operator has is unchanged and already told to them by that same log
+    /// line: re-submit <c>PUT /v1/site</c>.</para></summary>
+    public Task ReapplyCurrentAsync() => ApplyCoreAsync(_current, persist: false);
 
     /// <summary>Idempotent. Tears down the currently-running bridge (if any) — DI disposes this manager on
     /// host shutdown since it's registered as an <see cref="IAsyncDisposable"/> singleton.</summary>

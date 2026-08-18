@@ -476,6 +476,140 @@ public sealed class OeeSettingsStoreTests : IDisposable
         Assert.NotNull(store.UnreadableReason);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 TASK Z-1 — item 11 of docs/owner-decisions.md, decided by the OWNER on 2026-08-18: BLOCK THE
+    // WRITE on the third way the two facts can disagree.
+    //
+    // V-1 refused the two pairs in which one of `_tableBuiltFrom` / `fresh.Status` is Unreadable, and
+    // named the third as its ceiling. It needs no concurrency: a backup restored into the historian
+    // directory on a running host is enough, and that directory is advertised for exactly that job.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 <b>The measurement.</b> The store comes up with no file; a file appears with content;
+    /// the read immediately before the write SEES it; and before Z-1 the write proceeded — the empty
+    /// table plus one machine, over a file just read successfully, with no throw, no 409 and no log
+    /// line.</summary>
+    [Fact]
+    public void Set_WhenAFileAppearsAfterTheStoreCameUpWithNone_Refuses_AndTheRestoredFileSurvives()
+    {
+        var dir = NewTempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+        var store = new OeeSettingsStore(dir);
+        Assert.Equal(OeeSettingsReadStatus.Absent, store.Status);
+
+        // The restore. Two machines' settings, which is what makes the loss worth refusing over.
+        var restored =
+            "[ { \"machineCode\": \"RESTORED-A\", \"plannedProductionRatio\": 0.25 }, " +
+            "{ \"machineCode\": \"RESTORED-B\", \"idealCycleSecondsOverride\": 4.5 } ]";
+        File.WriteAllText(path, restored);
+
+        // The read is fine — which is exactly why this arm is NOT the unreadable one, and why refusing
+        // here needed a decision rather than a latch.
+        Assert.Equal(OeeSettingsReadStatus.Loaded, store.Read().Status);
+
+        var refusal = Assert.Throws<OeeSettingsFileAppearedException>(
+            () => store.Set("SOME-OTHER-MACHINE", idealCycleSecondsOverride: 7.5, plannedProductionRatio: null));
+        Assert.Equal(path, refusal.FilePath);
+        Assert.IsAssignableFrom<OeeSettingsWriteRefusedException>(refusal);
+
+        // 🔴 Byte for byte, not merely "the markers are still there".
+        Assert.Equal(restored, File.ReadAllText(path));
+        Assert.DoesNotContain("SOME-OTHER-MACHINE", File.ReadAllText(path), StringComparison.Ordinal);
+
+        // Nothing beside it either — the atomic write's temp file is created by Save, never reached.
+        Assert.Equal(new[] { "oee-settings.json" },
+            Directory.GetFiles(dir).Select(Path.GetFileName).OrderBy(f => f, StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>🔴 <b>The price the decision named and the fix had to avoid paying: FIRST BOOT.</b>
+    /// <c>Absent</c> at load is what entitles a caller to establish a value at all, and narrowing that is
+    /// the contract change item 11 is. This is the arm that must NOT be refused — and it survives on the
+    /// SECOND fact rather than on an exemption, because on a clean start the fresh read is
+    /// <c>Absent</c> too.</summary>
+    [Fact]
+    public void Set_TheFirstTimeAfterACleanStart_StillEstablishesTheFile()
+    {
+        var dir = NewTempDir();
+        var store = new OeeSettingsStore(dir);
+        Assert.Equal(OeeSettingsReadStatus.Absent, store.Status);
+
+        Assert.Equal(0.8, store.Set("M1", idealCycleSecondsOverride: 2.0, plannedProductionRatio: 0.8).PlannedProductionRatio);
+        Assert.True(File.Exists(Path.Combine(dir, "oee-settings.json")));
+
+        // …and the write moved BOTH facts, so the very next one is outside the new arm by construction
+        // rather than by luck.
+        Assert.Equal(0.5, store.Set("M2", null, 0.5).PlannedProductionRatio);
+        Assert.Equal(0.8, store.Resolve("M1", 1.0).PlannedProductionRatio);
+    }
+
+    /// <summary>The documented way out, which is the same one the other refusals have: load what is
+    /// actually on disk, then write ON TOP of it rather than instead of it.</summary>
+    [Fact]
+    public void Set_AfterReloadingTheFileThatAppeared_LandsOnTopOfIt()
+    {
+        var dir = NewTempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+        var store = new OeeSettingsStore(dir);
+
+        File.WriteAllText(path, "[ { \"machineCode\": \"RESTORED\", \"plannedProductionRatio\": 0.25 } ]");
+        Assert.Throws<OeeSettingsFileAppearedException>(() => store.Set("M2", null, 0.5));
+
+        store.Reload();
+
+        Assert.Equal(0.5, store.Set("M2", null, 0.5).PlannedProductionRatio);
+        Assert.Equal(0.25, store.Resolve("RESTORED", 1.0).PlannedProductionRatio);
+    }
+
+    /// <summary>🔴 <b>The refusal is WIDER than the harm that was measured, deliberately, and this pins
+    /// the widening rather than leaving it to be discovered.</b> The owner's predicate is the two facts,
+    /// with no clause about content; an empty array that appears after the store came up is
+    /// <c>Loaded</c> with no entries, which this store's own <c>Read</c> documents as the state an
+    /// operator who CLEARED the table leaves. Publishing an invented table over a deliberate one is the
+    /// same act as publishing it over a populated one, so it refuses too.</summary>
+    [Fact]
+    public void Set_WhenAnEmptyTableFileAppearsAfterTheStoreCameUpWithNone_AlsoRefuses()
+    {
+        var dir = NewTempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+        var store = new OeeSettingsStore(dir);
+
+        File.WriteAllText(path, "[]");
+
+        Assert.Throws<OeeSettingsFileAppearedException>(() => store.Set("M1", null, 0.5));
+        Assert.Equal("[]", File.ReadAllText(path));
+    }
+
+    /// <summary>🔴 <b>The ceiling, measured rather than described.</b> The predicate the owner decided
+    /// closes the restore that lands on a host which came up with NO file. The same restore onto a host
+    /// that came up with a file still writes: both readings are <c>Loaded</c>, and nothing in this store
+    /// records the IDENTITY of the bytes the table was built from, so it cannot tell that the file it
+    /// just read is not the file it built from.
+    ///
+    /// <para>This asserts the LIVE residue on purpose, the way S-1 pinned item 5's defect as a baseline:
+    /// if a later task closes it, this assertion inverts and the inversion is that task's diff. It is
+    /// named in <c>OeeSettingsStore</c>'s own class comment and in
+    /// <c>docs/startup-failure-posture.md</c> §3.6.</para></summary>
+    [Fact]
+    public void Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling()
+    {
+        var dir = NewTempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+        File.WriteAllText(path, "[ { \"machineCode\": \"AT-BOOT\", \"plannedProductionRatio\": 0.9 } ]");
+
+        var store = new OeeSettingsStore(dir);
+        Assert.Equal(OeeSettingsReadStatus.Loaded, store.Status);
+
+        // The very same operator action as the test above — a backup restored on a running host — only
+        // this host had a file when it started.
+        File.WriteAllText(path, "[ { \"machineCode\": \"RESTORED-ONLY\", \"plannedProductionRatio\": 0.25 } ]");
+
+        store.Set("AT-BOOT", null, 0.1);
+
+        // The restored entry is gone: the table written back is the one built at construction.
+        Assert.DoesNotContain("RESTORED-ONLY", File.ReadAllText(path), StringComparison.Ordinal);
+        Assert.Contains("AT-BOOT", File.ReadAllText(path), StringComparison.Ordinal);
+    }
+
     /// <summary>A repaired file is readable again by the same instance — the status is a property of the
     /// last read, not a latch. Without this, "refuses forever" would be indistinguishable from "refuses
     /// while broken".</summary>

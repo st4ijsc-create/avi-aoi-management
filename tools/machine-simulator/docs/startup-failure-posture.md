@@ -270,7 +270,7 @@ every remaining **✗**: none of those is fixed. See §3.1a-now.
 | 15 | `BridgeSpoolOptions.FromEnvironment()` | `ST4I_BRIDGE_SPOOL_MAX_BYTES`, `…_MAX_AGE_HOURS` | **yes** | **silent** ×2 | **✗ §3.4** |
 | 16 | `BridgeSpool` ctor | `ST4I_BRIDGE_SPOOL_DIR` | no | **U** | ✓ |
 | 17 | `new SiteLinkStore()` — creates the dir; **only when UNS is enabled** | `ST4I_SITELINK_DIR` | yes | **S** | ✓ |
-| 18 | `siteBridgeManager.ApplyAsync` | sitelink contents | no | **U** | ✓ — posture unchanged; **§3.1b** |
+| 18 | `siteBridgeManager.ApplyAsync` | sitelink contents | no | **U** | ✓ — **both halves checked**, see §3.1b |
 | 19 | `ModbusOptions.FromEnvironment()` | `ST4I_MODBUS_PORT` | **yes** | **silent** | **✗ §3.4** |
 | 20 | Modbus register-map load | `ST4I_MODBUS_MAP` | no | **U** | ✓ |
 | 21 | `OpcUaOptions.FromEnvironment()` | `ST4I_OPCUA_*` | — | no failure arm (no parse, no I/O) | n/a |
@@ -568,18 +568,47 @@ the field initializer it already holds, so **the only observable removed is the 
 standalone either way; now it says so at `Error` and the file survives. Row 18's posture is **unchanged at
 U ✓** — it always came up. What changed is that it no longer destroys the file on the way.
 
-🔴 **One route to the same write is NAMED AND NOT CLOSED.** `SiteBridgeManager.ReapplyCurrentAsync`
-(reachable from `POST /v1/site/identity/rotate`) reaches the same unconditional `Save`, with `_current` —
-which on this arm is the default record the process invented, not anything read from disk. So a rotation
-performed while the file is unreadable still overwrites it. It is operator-**initiated** but not
-operator-**chosen**, and that is the distinction the rule turns on. Closing it means changing *when*
-`ApplyAsync` persists, on a method three callers share, which is a contract change rather than a guard.
-**On the owner's list as item 8 of `docs/owner-decisions.md`** — in that file's own shape (what was
-measured, where in the code, the operational consequence, what happens if nobody decides), because
-"declared in a report" is exactly the gap that file exists to close: the owner has no path to open a report.
+🔴 **ROW 18'S `U` IS A CONJUNCTION AND ONLY ONE HALF OF IT WAS EVER CHECKED HERE — CORRECTED BY TASK Z-1,
+2026-08-18.** §1 defines **U** as *the host comes up **and** the failure is reported*. The comparison table
+above records this row's log line as **"none"**, and that row is about the **pre-Q-1** tree, where `Save`
+succeeded so nothing fired — but nothing on this page said so, and a reader checking row 18 against §1 finds
+a published **U ✓** sitting three paragraphs from a published "none". Both halves, at HEAD, named by the
+statement that supplies each:
+
+- **comes up** — `Program.cs` wraps the eager apply in its own `try`/`catch`, and `ApplyAsync` never throws
+  out of it in the first place.
+- **and reports** — on the `Unreadable` arm the composition root does not call `ApplyAsync` at all and logs
+  at **`Error`**, naming the file and saying it was not overwritten or deleted by this start. On the arms
+  where the link IS applied, the manager's own `_logError` fires for a failed persist and for a bridge that
+  could not be constructed.
+
+So the ✓ holds, and it holds because of a statement in `Program.cs` rather than anything inside row 18's own
+call. That is the kind of thing a conjunction hides when only its first half is examined.
+
+🔨 **The route this entry NAMED AND DID NOT CLOSE is now closed — task Z-1, on owner decision item 8
+(2026-08-18).** `SiteBridgeManager.ReapplyCurrentAsync` (reachable from `POST /v1/site/identity/rotate`)
+reached the same unconditional `Save`, with `_current` — which on this arm is the default record the process
+invented, not anything read from disk — so a rotation performed while the file was unreadable overwrote it.
+It is operator-**initiated** but not operator-**chosen**, and that is the distinction the rule turns on.
+
+**What changed, and it is a contract change rather than a guard, exactly as this entry predicted.**
+`ApplyAsync` and `ReapplyCurrentAsync` now share a private body and differ by one thing: whether they
+persist. `ApplyAsync` — the operator's `PUT /v1/site` and the startup path — still does.
+`ReapplyCurrentAsync` does **not**, on **any** arm, because it establishes no value of its own: it re-applies
+the link it is already holding, so it never holds the licence the law grants. The guarantee is therefore
+structural rather than conditional, which is the difference between "the rotate path cannot write this file"
+and "the rotate path checks something first". **Row 18 does not move**: the startup path's write timing is
+untouched, and this closes a route that never ran at startup.
+
+**What it costs, named because it is not free.** On a healthy tree `Current` is what was last applied and the
+file already holds it, so the removed write was a no-op in content — with one exception: a rotation used to
+RETRY a `Save` that had failed inside an earlier `ApplyAsync` (the one logged as *"active for this run only
+and will NOT survive a restart"*), and could silently repair it. That retry is gone. It was never a
+documented contract and nobody asked for a write at that moment, which is the whole defect class — but it is
+a real behaviour this change removes.
 
 **The other writer, censused rather than asserted (fix round 2, review N3).**
-`SiteEndpointsTests.TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsApplyAsync` measures two populations
+`SiteEndpointsTests.TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsTheSharedApplyBody` measures two populations
 apart, because they fail differently: every file in `src/` that names `SiteLinkStore` (a writer must, to
 obtain one) is swept for `.Save(` — **one site, `SiteBridgeManager.cs`** — and all of `src/` is swept for
 the literal `site-link.json`, which is how a writer that bypasses the store would appear — **one site, the
@@ -789,11 +818,11 @@ carries the guard for it: a file that was unreadable at load and has since been 
 while the in-memory table is still **empty**, so writing it would discard the repair — that arm keeps
 refusing, and `Reload` is the way out.
 
-🔴 **What it still does not reach — and the first statement of this paragraph NAMED THE CEILING TOO SMALL,
-which is the second time that has happened in this section (review N-1).** It said the residue was a **lost
-update**: a writer slipping between the read and the write. That is a real but narrower thing, and it does
-not cover what is actually left. The refusal compares two facts and they can disagree **three** ways. Two
-are refused. The third is not:
+🔴 **What V-1 did not reach — and the first statement of that paragraph NAMED THE CEILING TOO SMALL, which
+was the second time that had happened in this section (review N-1).** It said the residue was a **lost
+update**: a writer slipping between the read and the write. That is a real but narrower thing, and it did
+not cover what was actually left. The refusal compares two facts and they can disagree **three** ways. V-1
+refused two. The third:
 
 > `_tableBuiltFrom == Absent` **and** `fresh.Status == Loaded` — the store came up with **no file**, a file
 > has appeared since **with content**, the read immediately before the write **sees it**, and the write
@@ -805,11 +834,45 @@ running host — the workflow that directory is advertised for on the store's ow
 ceiling named too small is worth less than no ceiling, because it reads as a sweep**, and that is the whole
 reason this section exists.
 
-**It is named rather than closed, and the reason is the law's own boundary.** The bytes were **readable**
-throughout, so this is outside the situation §3.6 rules on — the law decides whether a read may conflate
-*absent* with *unusable*, and here the read conflated nothing. Closing it changes *when a write is
-licensed*, because `Absent` at load is what entitles a first boot to establish a value at all. That is a
-contract decision, booked as **item 11 of `docs/owner-decisions.md`**, not a latch this task may take.
+🔨 **REFUSED SINCE TASK Z-1 (owner decision item 11, 2026-08-18).** `Set` raises
+`OeeSettingsFileAppearedException` on exactly that pair, `PUT /v1/historian/oee/settings` answers **409**,
+and `Reload` (in production, a restart) is the way out. The store now has **two** refusal types over a shared
+base, `OeeSettingsWriteRefusedException`, which the endpoint catches; a second arm was needed rather than a
+wider message because on this one **the file reads perfectly**, and a published type named *Unreadable*
+saying otherwise is a name asserting something false. **First boot is kept by the second fact rather than by
+an exemption**: a clean start leaves the fresh read `Absent` too, so the pair does not match and the write
+proceeds.
+
+🔴 **AND THE CEILING NOW, STATED AT ITS FULL SIZE BECAUSE THIS SECTION HAS BEEN CORRECTED TWICE FOR STATING
+ONE TOO SMALL.** The decided predicate closes the restore that lands on a host which came up with **no
+file**. Two pairs still write, and the first of them is **the same operator action**:
+
+> `_tableBuiltFrom == Loaded` **and** `fresh.Status == Loaded`, **with the two readings of different
+> content**. A host comes up on a good file, an operator restores a backup over it, both facts still read
+> `Loaded`, and the next `Set` writes the pre-restore table over the restored file. Nothing in the store
+> records WHICH bytes the table was built from — only the outcome of that read — so it cannot tell the two
+> apart. This is the more ordinary shape of a restore, not the rarer one: a host that has ever had OEE
+> settings has a file.
+
+> `_tableBuiltFrom == Loaded` **and** `fresh.Status == Absent` — the file was removed after the load, and
+> `Set` re-creates it from the table. Nothing this process read is discarded; what is discarded is the
+> removal, if it was deliberate.
+
+Closing either needs a fact this store does not keep, and keeping it changes *when a write is licensed* a
+second time — so it is **named, not taken**. The first is pinned LIVE by
+`OeeSettingsStoreTests.Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling`,
+the way S-1 pinned item 5's defect as a baseline: if a later task closes it, that assertion inverts and the
+inversion is the diff. ~~**It is not on the owner's list**, because item 11 is now closed and nobody has
+been asked about this one.~~
+
+🔴 **[WITHDRAWN 2026-08-18, same day, same task — review I-2.]** That sentence was wrong, and wrong in this
+file's own worst shape: *"nobody has been asked"* is the REASON TO ASK, not a reason to stay quiet, and
+Z-1's own report said the opposite of what Z-1 published here. Items 8 and 10 — the two Z-1 had just closed
+— were both born exactly this way, as named residues escalated onto that list. It is now **item 13 of
+`docs/owner-decisions.md`**, in `PHẦN I — ĐANG CHỜ ANH`, undecided, with the measured-cost gap NAMED rather
+than filled: nobody has measured how many legitimate `PUT`s today would become `409` under a store that
+compares byte IDENTITY rather than read OUTCOME, and an estimate placed there would read as a measurement.
+The words are kept and the error is marked.
 
 #### The two exceptions, and what each one costs
 
@@ -824,10 +887,19 @@ contract decision, booked as **item 11 of `docs/owner-decisions.md`**, not a lat
   under the wrong DPAPI scope or copied from another machine is **readable again once the environment is
   repaired** — while it still exists. That is a recoverable environment fault converted into an
   unrecoverable loss, and the repair is again a data **MOVE**.
+  🔨 **The MOVE is now performed — task Z-1, on the owner's decision of 2026-08-18.** `Save` classifies what
+  is already at the path in three outcomes and, on *present and this process cannot use it*, renames the old
+  blob to `<machine code>.bin.unreadable-<UTC stamp>` beside the live one before writing. The re-claim still
+  succeeds; the bytes survive. 🔴 **The `Q` posture is UNCHANGED and that is the decided outcome, not an
+  omission**: the owner chose keep-aside over the other repair item 10 named (making `Load` throw), so the
+  read still conflates the two cases and this store still needs its exception. What is closed is the
+  CONSEQUENCE, not the conflation.
 
-🔴 **Both exceptions have the same repair and V-1 was forbidden to perform it** — its brief requires that
-moving operator data in the product be stopped and reported rather than done. So they are named, measured,
-and on the owner's list; they are not left unclassified.
+🔴 **Both exceptions had the same repair, V-1 was forbidden to perform it, and the owner has since granted
+it at ONE of them.** V-1's brief required that moving operator data in the product be stopped and reported
+rather than done, and several tasks stopped on exactly that rule. Item 10 is now executed.
+**`DeviceIdentityStore` is NOT exempted by that decision** — item 1's residue 2 stands untouched, and reading
+one item's exemption as a general licence is how a constraint dies: not repealed, generalised.
 
 #### What this set does NOT reach
 

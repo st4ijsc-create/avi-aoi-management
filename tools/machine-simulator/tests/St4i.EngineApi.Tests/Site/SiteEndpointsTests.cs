@@ -256,6 +256,15 @@ public sealed class SiteEndpointsTests
     /// so the literal <c>site-link.json</c> is swept separately across all of <c>src/</c>. Neither sweep
     /// can see the other's population, which is why a single number would have been the weaker check.</para>
     ///
+    /// <para>🔴 <b>Task Z-1 — RENAMED from <c>…_AndItIsApplyAsync</c>, because that name became false in
+    /// the same diff that made it false.</b> Owner-decisions item 8 moved the persist decision to the
+    /// caller, so the one <c>.Save(</c> now lives in <c>ApplyCoreAsync</c> and <c>ApplyAsync</c> contains
+    /// none. The first round of Z-1 corrected the failure MESSAGE and left the member name — which is the
+    /// exact defect class Z-1 itself invoked (P-2: a member's spelling is a published string) to justify
+    /// adding a whole exception base rather than widening one type's meaning. Same law, same task, two
+    /// answers, until review I-4 caught it. The property being measured is unchanged: ONE writer in
+    /// <c>src/</c>, and skipping the entry point that reaches it skips the only writer.</para>
+    ///
     /// <para>🔴 <b>What it cannot reach, stated rather than left to be discovered.</b> It is a source scan.
     /// It cannot see a writer that obtains a <c>SiteLinkStore</c> without its file ever spelling the type
     /// (through a non-generic factory or an untyped service locator), and it cannot see a path that
@@ -264,7 +273,7 @@ public sealed class SiteEndpointsTests
     /// FILE, so a second writer of ANY shape fails it whatever it is called.</para>
     /// </summary>
     [Fact]
-    public void TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsApplyAsync()
+    public void TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsTheSharedApplyBody()
     {
         var root = MachineSimulatorRoot();
         var srcFiles = Directory
@@ -286,7 +295,9 @@ public sealed class SiteEndpointsTests
 
         Assert.True(writeSites.Count == 1,
             $"site-link.json has {writeSites.Count} writer(s) in src/: {string.Join(", ", writeSites)}. " +
-            "There must be exactly ONE, in SiteBridgeManager.ApplyAsync. Program.cs's unreadable arm tells " +
+            "There must be exactly ONE, in SiteBridgeManager's shared apply body (ApplyCoreAsync), reached " +
+            "with persist:true from ApplyAsync and NOT reached at all from ReapplyCurrentAsync — task Z-1, " +
+            "owner-decisions item 8. Program.cs's unreadable arm tells " +
             "the operator the file 'was NOT overwritten or deleted by this start', and that sentence is " +
             "true only because skipping ApplyAsync skips the only writer. A second writer makes the " +
             "product lie at the moment an operator is deciding whether their Site configuration still " +

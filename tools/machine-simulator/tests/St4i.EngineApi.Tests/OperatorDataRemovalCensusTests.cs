@@ -878,7 +878,14 @@ public sealed class OperatorDataRemovalCensusTests
 
         // ── product-generated artifacts ───────────────────────────────────────────────────────────────
         ["src/St4i.EdgeCore/Identity/DeviceIdentityStore.cs"] = "File.Move(overwrite:true), File.WriteAllBytes, File.WriteAllText",
-        ["src/St4i.EdgeCore/Infrastructure/CredentialStore.cs"] = "File.WriteAllBytes",
+        // 🔴 TASK Z-1 — this row GAINED `File.Move(no-overwrite)`, and the enumeration's own failure text
+        // asks which artifact the new site targets and whose bytes those are. It targets THIS store's own
+        // `<machine code>.bin`, and the bytes are a DPAPI-sealed `mk_` credential — product-generated, so
+        // the provenance row below is unchanged. It is the overload WITHOUT the overwrite flag on purpose:
+        // classified `Effect.None` because it THROWS when the destination exists, which is what makes
+        // "a kept blob is never replaced" a property rather than an intention. Owner decision item 10,
+        // 2026-08-18: keep an unusable blob aside instead of overwriting it.
+        ["src/St4i.EdgeCore/Infrastructure/CredentialStore.cs"] = "File.Move(no-overwrite), File.WriteAllBytes",
         ["src/St4i.EdgeCore/Transport/WalMaintenance.cs"] = "File.Delete, File.Move(overwrite:true), File.WriteAllText",
         ["src/St4i.EngineApi/Config/SimulatedEcosystem.cs"] = "File.Move(overwrite:true), File.WriteAllText",
 
@@ -1446,14 +1453,27 @@ public sealed class OperatorDataRemovalCensusTests
         // store DOES report at Error before regenerating, and the correct repair — keeping the old blob
         // under another name — is a data MOVE, which V-1's brief requires be stopped and reported rather
         // than performed. It is in this table so the exception is measured rather than asserted.
+        //
+        // 🔴 TASK Z-1 — THE OWNER GRANTED THAT MOVE, AND GRANTED IT AT ONE ITEM ONLY. Item 10
+        // (CredentialStore) is now executed; item 1's residue 2 (this row) is NOT exempted by that
+        // decision and nobody has touched it. Reading the sibling's exemption as a general licence is how
+        // a constraint dies — not repealed, generalised.
         ["DeviceIdentityStore"] = Posture.UnreadableIsAbsent,
     };
 
     /// <summary>🔴 <b>The exceptions to the law, by name.</b> A store may sit on
     /// <see cref="Posture.UnreadableIsAbsent"/> only if it is here, and being here means somebody wrote down
     /// a decision. <c>CredentialStore</c> is a member and is measured apart — see
-    /// <see cref="CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt"/>
+    /// <see cref="CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimNowKeepsItAside"/>
     /// for why it cannot join the table above.
+    ///
+    /// <para>🔴 <b>Task Z-1 — <c>CredentialStore</c> STAYS on this list, and that is the decided outcome
+    /// rather than an omission.</b> Item 10 named two repairs and the owner chose the one that leaves
+    /// <c>Load</c> alone: the null is still ambiguous, so the READ is still non-compliant with §3.6's law
+    /// and the exception is still needed. What changed is the CONSEQUENCE — the re-claim path can no
+    /// longer destroy the blob, because <c>Save</c> keeps an unusable one aside. A store may be on this
+    /// list only while a decision says so, and item 10's decision now says so with a reason that is
+    /// executed rather than pending.</para>
     ///
     /// <para>🔴 <b>That cross-reference named a member that does not exist, until V-1's fix round (review
     /// I-6), and nothing in this repository could have caught it</b> — these projects do not set
@@ -1840,8 +1860,21 @@ public sealed class OperatorDataRemovalCensusTests
 [Collection(St4i.EngineApi.Tests.Auth.SecurityEnvVarTests.CollectionName)]
 public sealed class CredentialStorePostureCensusTests
 {
+    /// <summary>🔴 <b>Task Z-1 — THIS IS THE ASSERTION ITEM 10 SAID WOULD INVERT, AND THIS IS THE
+    /// INVERSION.</b> V-1 pinned a live defect as a baseline and did not fix it, exactly as S-1 did for
+    /// item 5; <c>docs/owner-decisions.md</c> item 10 recorded that <i>"when the fix arrives, that
+    /// assertion inverts, and the inversion is the diff"</i>. The owner decided on 2026-08-18 to keep the
+    /// old blob under another name, so the last two lines now assert that the bytes SURVIVE where they
+    /// previously asserted that a re-claim replaced them.
+    ///
+    /// <para><b>The first half does NOT invert, and that is the finding rather than an oversight.</b>
+    /// <c>Load</c> still answers the same <see langword="null"/> for both situations — the owner
+    /// explicitly chose the keep-aside repair over the make-<c>Load</c>-throw one, because the second
+    /// changes the contract of a <see langword="static"/> method several projects call. So this store is
+    /// still on <see cref="OperatorDataRemovalCensusTests.DecidedExceptions"/>, still non-compliant with
+    /// the read law, and no longer destructive.</para></summary>
     [Fact]
-    public void TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimOverwritesIt()
+    public void TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaimNowKeepsItAside()
     {
         Assert.Contains("CredentialStore", OperatorDataRemovalCensusTests.DecidedExceptions);
 
@@ -1851,7 +1884,8 @@ public sealed class CredentialStorePostureCensusTests
         var present = "V1-CENSUS-PRESENT-" + Guid.NewGuid().ToString("N");
         var absent = "V1-CENSUS-ABSENT-" + Guid.NewGuid().ToString("N");
         var blob = Path.Combine(root, present + ".bin");
-        File.WriteAllBytes(blob, "these bytes are not a DPAPI envelope this machine can unprotect"u8.ToArray());
+        var unusable = "these bytes are not a DPAPI envelope this machine can unprotect"u8.ToArray();
+        File.WriteAllBytes(blob, unusable);
 
         // Positive control on the premise, in both directions: the bytes really are on disk where the store
         // looks, and the control code really has nothing.
@@ -1862,12 +1896,17 @@ public sealed class CredentialStorePostureCensusTests
         Assert.Null(CredentialStore.Load(present));
         Assert.Null(CredentialStore.Load(absent));
 
-        // And the half that makes it a loss rather than a classification: the caller's re-claim path calls
-        // Save, which overwrites. A blob sealed under a different DPAPI scope or on a different machine is
-        // READABLE AGAIN once the environment is repaired — while it still exists. This asserts the
-        // overwrite rather than describing it, and it is why the item on the owner's list is about the
-        // CONSEQUENCE and not about the null.
-        CredentialStore.Save(present, "mk_reclaimed_after_the_unreadable_blob_was_ignored");
-        Assert.Equal("mk_reclaimed_after_the_unreadable_blob_was_ignored", CredentialStore.Load(present));
+        // 🔴 THE INVERTED HALF. The caller's re-claim path calls Save, and Save used to OVERWRITE — a blob
+        // sealed under a different DPAPI scope or on a different machine is READABLE AGAIN once the
+        // environment is repaired, while it still exists, so a recoverable fault became an unrecoverable
+        // loss. Task Z-1, on the owner's decision: the re-claim still succeeds, and the bytes it could not
+        // read are kept beside it under a name that says what they are.
+        CredentialStore.Save(present, "mk_reclaimed_after_the_unreadable_blob_was_kept");
+        Assert.Equal("mk_reclaimed_after_the_unreadable_blob_was_kept", CredentialStore.Load(present));
+
+        var kept = Directory.GetFiles(root)
+            .Where(f => Path.GetFileName(f)!.StartsWith(present + ".bin.unreadable-", StringComparison.Ordinal))
+            .ToList();
+        Assert.Equal(unusable, File.ReadAllBytes(Assert.Single(kept)));
     }
 }

@@ -238,6 +238,87 @@ public sealed class SiteBridgeManagerTests : IDisposable
         Assert.NotEqual(originalFingerprint, manager.Status().DeviceFingerprint);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 TASK Z-1 — item 8 of docs/owner-decisions.md, decided 2026-08-18 (coordinator, under
+    // delegation): BLOCK the write, same law as items 1 and 5, at the THIRD caller of ApplyAsync.
+    //
+    // Q-1's fix round closed the STARTUP route to the unconditional Save — Program.cs simply does not
+    // call ApplyAsync when site-link.json is Unreadable — and NAMED this one as still open:
+    // ReapplyCurrentAsync, reachable from POST /v1/site/identity/rotate, re-applies `Current`, which on
+    // that arm is the record the PROCESS invented and never read from disk. So a rotation overwrote the
+    // operator's unreadable bytes: Site broker host, port and pinned trust anchor, gone, in a request
+    // that succeeded and logged nothing.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 <b>The measurement item 8 is about.</b> The file is unreadable, so nothing ever loaded
+    /// it and <c>Current</c> is the field initialiser. A rotation used to persist that invented record
+    /// straight over the operator's bytes.</summary>
+    [Fact]
+    public async Task ReapplyCurrentAsync_WithAnUnreadableSiteLinkFile_LeavesEveryByteWhereItWas()
+    {
+        var identityProvider = NewIdentityProvider();
+        var dir = NewTempDir();
+        var path = Path.Combine(dir, "site-link.json");
+        var operatorBytes = "{ \"host\": \"site.example.internal\", \"port\": 8883, trustPem: broken ]";
+        File.WriteAllText(path, operatorBytes);
+
+        // Premise: this is the arm Program.cs refuses to apply on, so nothing has been read into the
+        // manager and Current is the default record — the one the process invented.
+        var store = new SiteLinkStore(dir);
+        Assert.Equal(SiteLinkReadStatus.Unreadable, store.Read().Status);
+        await using var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store);
+        Assert.False(manager.Current.Enabled);
+
+        // Exactly what POST /v1/site/identity/rotate does after the identity is rotated.
+        identityProvider.Rotate();
+        await manager.ReapplyCurrentAsync();
+
+        Assert.Equal(operatorBytes, File.ReadAllText(path));
+
+        // …and nothing was left beside it either: the store's atomic write creates a temp file in the
+        // same directory, and it was never reached.
+        Assert.Equal(new[] { "site-link.json" },
+            Directory.GetFiles(dir).Select(Path.GetFileName).OrderBy(f => f, StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>🔴 <b>The half that says the guarantee is STRUCTURAL rather than conditional.</b> The fix
+    /// is not "do not persist when the file is unreadable" — this method establishes no value of its own
+    /// on ANY arm, so it never persists at all. Here the file reads perfectly and has been changed under
+    /// the manager; a re-apply must still leave it exactly as found, because a re-apply is not a request
+    /// to write anything.
+    ///
+    /// <para>Without this, the fix would be one flag away from silently reverting the day some future
+    /// arm forgot to set it.</para></summary>
+    [Fact]
+    public async Task ReapplyCurrentAsync_DoesNotPersist_EvenWhenTheFileReadsPerfectly()
+    {
+        var identityProvider = NewIdentityProvider();
+        var dir = NewTempDir();
+        var path = Path.Combine(dir, "site-link.json");
+        var store = new SiteLinkStore(dir);
+        await using var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store);
+
+        // ApplyAsync — the operator-driven path — still persists. That is the contract this task did not
+        // touch, and it is the premise of the assertion below.
+        await manager.ApplyAsync(EnabledLink());
+        Assert.Contains("18999", File.ReadAllText(path), StringComparison.Ordinal);
+
+        // Somebody edits the file by hand, correctly. It is now different from what the manager holds.
+        var handWritten = "{\n  \"Enabled\": false,\n  \"Host\": \"edited-by-hand\",\n  \"Port\": 1883,\n  \"SiteTrustPem\": \"\"\n}";
+        File.WriteAllText(path, handWritten);
+
+        await manager.ReapplyCurrentAsync();
+
+        Assert.Equal(handWritten, File.ReadAllText(path));
+        Assert.Equal(new[] { "site-link.json" },
+            Directory.GetFiles(dir).Select(Path.GetFileName).OrderBy(f => f, StringComparer.Ordinal).ToArray());
+
+        // And the re-apply did the thing it exists to do: the bridge is still the one Current describes,
+        // not the hand-written link, because nothing re-read the file either.
+        Assert.NotEqual(BridgeState.Disabled, manager.Status().State);
+        Assert.Equal("127.0.0.1", manager.Current.Host);
+    }
+
     [Fact]
     public async Task ReapplyCurrentAsync_WithNoBridgeRunning_IsANoOp_StatusStaysDisabled()
     {

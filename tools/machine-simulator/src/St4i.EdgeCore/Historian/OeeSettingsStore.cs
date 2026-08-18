@@ -52,21 +52,33 @@ public enum OeeSettingsReadStatus
 }
 
 /// <summary>
-/// 🔴 Task V-1 fix round — thrown by <see cref="OeeSettingsStore.Set"/> when writing would put the store's
-/// in-memory table over bytes this process has not successfully read.
+/// 🔴 Task Z-1 — <b>the whole condition <see cref="OeeSettingsStore.Set"/> refuses on</b>: writing would
+/// put this store's in-memory table over a file the table is not a copy of, so the write would discard
+/// whatever is on disk. Every refusal <see cref="OeeSettingsStore.Set"/> raises derives from this, and
+/// nothing else in the product does.
 ///
-/// <para><b>Why a type rather than a bare <see cref="InvalidOperationException"/> (review M-1).</b> The
-/// endpoint that answers <c>409</c> has to catch exactly this condition and no other, because its response
-/// asserts <i>"the file was NOT overwritten"</i> — a claim about what did not happen. A catch of
-/// <see cref="InvalidOperationException"/> is wider than that claim:
+/// <para><b>Why a type rather than a bare <see cref="InvalidOperationException"/> (review M-1, task
+/// V-1).</b> The endpoint that answers <c>409</c> has to catch exactly this condition and no other, because
+/// its response asserts <i>"the file was NOT overwritten"</i> — a claim about what did not happen. A catch
+/// of <see cref="InvalidOperationException"/> is wider than that claim:
 /// <see cref="ObjectDisposedException"/> derives from it, and so would anything a future statement inside
 /// the same <c>try</c> happened to throw. Then the assertion in the response would be a hope. With a type it
 /// is a property. It still DERIVES from <see cref="InvalidOperationException"/>, so a caller that only wants
 /// "the store refused" keeps working.</para>
+///
+/// <para>🔴 <b>Why this base exists at all, and it is a NAME defect that made it necessary.</b> V-1 shipped
+/// one type, <see cref="OeeSettingsUnreadableException"/>, and Z-1 adds a second refusal —
+/// <see cref="OeeSettingsFileAppearedException"/> — whose file is <b>perfectly readable</b>. Widening the
+/// existing type to cover it would have left a published type name asserting <i>unreadable</i> about a case
+/// where the read succeeded, which is the defect class P-2 measured at an enum member: a member's spelling
+/// is a published string and nothing in this tree reads it as one. So the shared condition gets the shared
+/// name, each arm keeps a name that is true of it, and the endpoint catches the base — which is still
+/// exactly the condition its response asserts, because these two are the only types that derive from
+/// it.</para>
 /// </summary>
-public sealed class OeeSettingsUnreadableException : InvalidOperationException
+public abstract class OeeSettingsWriteRefusedException : InvalidOperationException
 {
-    internal OeeSettingsUnreadableException(string filePath, string message, Exception? inner)
+    private protected OeeSettingsWriteRefusedException(string filePath, string message, Exception? inner)
         : base(message, inner)
     {
         FilePath = filePath;
@@ -75,6 +87,38 @@ public sealed class OeeSettingsUnreadableException : InvalidOperationException
     /// <summary>The file the refusal is about, so a caller can name it without restating the store's
     /// private file-name constant.</summary>
     public string FilePath { get; }
+}
+
+/// <summary>
+/// 🔴 Task V-1 fix round — thrown by <see cref="OeeSettingsStore.Set"/> when writing would put the store's
+/// in-memory table over bytes this process has not successfully read: either the file is unreadable at the
+/// moment of the write, or the table was built from a read that failed and so is empty and represents
+/// nothing.
+/// </summary>
+public sealed class OeeSettingsUnreadableException : OeeSettingsWriteRefusedException
+{
+    internal OeeSettingsUnreadableException(string filePath, string message, Exception? inner)
+        : base(filePath, message, inner)
+    {
+    }
+}
+
+/// <summary>
+/// 🔴 Task Z-1 (owner decision, item 11 of <c>docs/owner-decisions.md</c>, 2026-08-18) — thrown by
+/// <see cref="OeeSettingsStore.Set"/> when this store came up with <b>no file</b> and a file has
+/// <b>appeared since</b> that the in-memory table was never built from.
+///
+/// <para>The distinguishing fact from <see cref="OeeSettingsUnreadableException"/> is that the read
+/// SUCCEEDED — <c>fresh.Status</c> is <see cref="OeeSettingsReadStatus.Loaded"/> — and the write is refused
+/// anyway, because a successful read is not the same fact as <i>the table came from this file</i>. The known
+/// trigger is restoring a backup into the historian directory on a running host.</para>
+/// </summary>
+public sealed class OeeSettingsFileAppearedException : OeeSettingsWriteRefusedException
+{
+    internal OeeSettingsFileAppearedException(string filePath, string message)
+        : base(filePath, message, null)
+    {
+    }
 }
 
 /// <summary>🔴 Task V-1 — the outcome of one <see cref="OeeSettingsStore.Read"/> call.</summary>
@@ -167,32 +211,53 @@ public sealed class OeeSettingsRead
 /// could see it</b>, because Reach C only ever constructs a store over an <i>already-corrupt</i> directory.
 /// <see cref="Set"/> now takes its own read, under the same lock, immediately before it writes.</para>
 ///
-/// <para>🔴 <b>WHAT THAT STILL DOES NOT REACH — AND THE FIRST STATEMENT OF THIS PARAGRAPH UNDERSTATED IT,
-/// WHICH IS THE SECOND TIME A CEILING HERE WAS NAMED TOO SMALL (review N-1).</b> The refusal compares two
-/// facts, <c>fresh.Status</c> and <see cref="_tableBuiltFrom"/>, and they can disagree <b>three</b> ways.
-/// Two are refused above. The third is not:
+/// <para>🔴 <b>THE THIRD DISAGREEMENT IS NOW REFUSED TOO — TASK Z-1, ON THE OWNER'S DECISION OF
+/// 2026-08-18 (item 11).</b> The refusal compares two facts, <c>fresh.Status</c> and
+/// <see cref="_tableBuiltFrom"/>, and they can disagree three ways. V-1 refused two and NAMED the third as
+/// its ceiling — after first naming it too small, as a lost update, which it is not:
 ///
 /// <code>
 ///   _tableBuiltFrom == Absent   AND   fresh.Status == Loaded
 /// </code>
 ///
-/// The store came up with <b>no file</b>; a file has appeared since, with content; the read immediately
-/// above <b>sees it</b>; and the predicate is false, so <see cref="Set"/> writes the empty table plus one
-/// machine <b>over a file it has just read successfully</b> — no throw, no <c>409</c>, no log line.</para>
+/// The store came up with <b>no file</b>; a file has appeared since; the read immediately above <b>sees
+/// it</b>; and before Z-1 the predicate was false, so <see cref="Set"/> wrote the empty table plus one
+/// machine <b>over a file it had just read successfully</b> — no throw, no <c>409</c>, no log line. It needs
+/// no concurrency and no second writer: the trigger is restoring a backup into
+/// <c>%ProgramData%\ST4I\sim\historian</c> on a running host, which is the workflow the <c>directory</c>
+/// parameter below advertises that folder for in as many words. <see cref="Set"/> now raises
+/// <see cref="OeeSettingsFileAppearedException"/> on that pair, and <c>Reload</c> (in production, a restart)
+/// is the way out, exactly as it is for the repaired-file arm.</para>
 ///
-/// <para><b>It needs no concurrency and no second writer.</b> The trigger is restoring a backup into
-/// <c>%ProgramData%\ST4I\sim\historian</c> on a running host — which is the workflow the <c>directory</c>
-/// parameter below advertises that folder for in as many words. The paragraph this replaces called the
-/// remaining ceiling a LOST UPDATE, a writer slipping between the read and the write; that is a different
-/// and narrower thing, and it does not cover this. A ceiling named too small is worth less than no ceiling,
-/// because it reads as a sweep.</para>
+/// <para><b>The first-boot path is what the refusal had to avoid taking with it, and it is kept by the
+/// SECOND fact rather than by an exemption.</b> A clean start leaves <see cref="_tableBuiltFrom"/> at
+/// <see cref="OeeSettingsReadStatus.Absent"/>, and on the first <c>PUT</c> the fresh read is
+/// <see cref="OeeSettingsReadStatus.Absent"/> too — no file has appeared — so the pair does not match and
+/// the write proceeds and establishes the file. A successful <see cref="Set"/> then moves both facts to
+/// <see cref="OeeSettingsReadStatus.Loaded"/>, so the very next write is outside this arm by construction.
+/// An EMPTY ARRAY that appears after the store came up IS refused, deliberately: an empty array is
+/// <see cref="OeeSettingsReadStatus.Loaded"/> with no entries, which this store's own <see cref="Read"/>
+/// documents as the state an operator who cleared the table leaves, and publishing an invented table over a
+/// deliberate one is the same act as publishing it over a populated one.</para>
 ///
-/// <para><b>Why it is NOT closed here.</b> Refusing on that pair changes <i>when a write is licensed</i> —
-/// today <see cref="OeeSettingsReadStatus.Absent"/> at load entitles a caller to establish a value, and that
-/// is the first-boot path. Narrowing it is a contract decision, not a latch, so it is booked as item 11 of
-/// <c>docs/owner-decisions.md</c> rather than taken. It is also OUTSIDE the situation this store's law is
-/// about: the bytes were readable throughout, so the law in <c>docs/startup-failure-posture.md</c> §3.6 does
-/// not decide it — which is exactly the shape §3.6 says the law does not reach.</para>
+/// <para>🔴 <b>WHAT IS STILL NOT REACHED, AND IT IS THE SAME OPERATOR WORKFLOW WITH A FILE ALREADY ON
+/// DISK.</b> Naming this small would repeat exactly what V-1 was corrected for, so it is stated at its full
+/// size. Two pairs still write:
+/// <list type="bullet">
+/// <item><description><c>_tableBuiltFrom == Loaded</c> AND <c>fresh.Status == Loaded</c> — <b>and the two
+/// readings can be of DIFFERENT CONTENT.</b> A host comes up on a good file, an operator restores a backup
+/// over it, and both facts still read <c>Loaded</c>, so nothing here can tell that the file just read is not
+/// the file the table was built from. The next <see cref="Set"/> writes the pre-restore table over the
+/// restored file. That is item 11's own harm, on the arm where the operator had a file to begin with — which
+/// is the more ordinary shape of a restore, not the rarer one.</description></item>
+/// <item><description><c>_tableBuiltFrom == Loaded</c> AND <c>fresh.Status == Absent</c> — the file has been
+/// removed since the load, and <see cref="Set"/> re-creates it from the table. Nothing this process read is
+/// discarded; what is discarded is the removal itself, if that removal was deliberate.</description></item>
+/// </list>
+/// Closing either one needs a fact this store does not keep — the IDENTITY of the bytes the table was built
+/// from, not merely the outcome of that read — and deciding to keep it changes <i>when a write is
+/// licensed</i> a second time. Z-1 executes the predicate the owner decided and does not widen it; the
+/// residue is written here rather than left to be discovered.</para>
 /// </summary>
 public sealed class OeeSettingsStore
 {
@@ -243,8 +308,9 @@ public sealed class OeeSettingsStore
     ///
     /// <para><b>This is NOT the whole condition <see cref="Set"/> refuses on</b>, and a caller must not treat
     /// it as one: <see cref="Set"/> also refuses when the in-memory table was built from an unreadable read
-    /// that has since been repaired, a state in which this property reads <c>Loaded</c>. Catch
-    /// <see cref="OeeSettingsUnreadableException"/> rather than pre-testing this.</para></summary>
+    /// that has since been repaired, and (task Z-1) when the store came up with no file and one has appeared
+    /// since — this property reads <c>Loaded</c> in BOTH of those states. Catch
+    /// <see cref="OeeSettingsWriteRefusedException"/> rather than pre-testing this.</para></summary>
     public OeeSettingsReadStatus Status
     {
         get { lock (_gate) { return _status; } }
@@ -335,7 +401,13 @@ public sealed class OeeSettingsStore
     /// mutation, so the ordering contract above still holds: a refused call leaves the store and the file
     /// exactly as they were. Repair or move the file aside and construct the store again (in production, a
     /// restart) — there is no in-product override, deliberately, because an override is a licence to
-    /// overwrite.</para></summary>
+    /// overwrite.</para>
+    ///
+    /// <para>🔴 <b>Task Z-1 — REFUSES a SECOND way, with <see cref="OeeSettingsFileAppearedException"/>, and
+    /// on that arm the file reads perfectly.</b> The store came up with no file and one has appeared since,
+    /// so the table is not a copy of it. Same ordering, same "nothing was written" guarantee, same way out
+    /// (<see cref="Reload"/>, or a restart). Catch <see cref="OeeSettingsWriteRefusedException"/> to mean
+    /// "the store declined and the file is untouched" without caring which arm fired.</para></summary>
     public OeeMachineSettings Set(string machineCode, double? idealCycleSecondsOverride, double? plannedProductionRatio)
     {
         ArgumentException.ThrowIfNullOrEmpty(machineCode);
@@ -408,6 +480,32 @@ public sealed class OeeSettingsStore
                             "call Reload) so the repaired file is loaded, then set the value again.",
                     },
                     fresh.Failure);
+            }
+
+            // 🔴 TASK Z-1 — THE THIRD DISAGREEMENT, REFUSED ON THE OWNER'S DECISION OF 2026-08-18 (item 11).
+            // V-1 refused the two pairs in which one of the two facts is Unreadable and named this one as
+            // what it did not reach. It is NOT the same situation as the arm above and must not be spelled
+            // as one: the read SUCCEEDED. What is missing is not readability, it is PROVENANCE — the table
+            // was built when there was no file, so it is empty and is not a copy of the file that is there
+            // now, and writing it would publish an invented table over one this process never read into
+            // itself. No concurrency is needed to reach it; a backup restored into the historian directory
+            // on a running host is enough, and that directory is advertised for exactly that workflow.
+            //
+            // The FIRST-BOOT path survives on the second fact rather than on an exemption: a clean start
+            // leaves `_tableBuiltFrom` at Absent AND the fresh read at Absent, so the pair does not match.
+            // The `Loaded` half is the whole difference between "nobody has established a value yet" and
+            // "somebody put a file here that I have never read".
+            if (_tableBuiltFrom == OeeSettingsReadStatus.Absent &&
+                fresh.Status == OeeSettingsReadStatus.Loaded)
+            {
+                throw new OeeSettingsFileAppearedException(
+                    SettingsFilePath,
+                    $"\"{SettingsFilePath}\" WAS NOT THERE when this process loaded it, and it IS THERE NOW " +
+                    "— restored, or created by hand, since this store came up. The in-memory OEE settings " +
+                    "are therefore EMPTY and are not a copy of that file: writing them would replace every " +
+                    "machine's ideal-cycle override and planned-production ratio in it with nothing. The " +
+                    "file reads correctly and NOTHING WAS WRITTEN. Restart the host (or call Reload) so " +
+                    "this process starts from what is actually on disk, then set the value again.");
             }
 
             if (!_settings.TryGetValue(machineCode, out var existing))

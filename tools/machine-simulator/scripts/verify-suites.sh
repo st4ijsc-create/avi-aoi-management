@@ -251,7 +251,8 @@ export MSBUILDDISABLENODEREUSE=1
 # 🔴 Q-1 FIX ROUND 2 raises EXPECT_ENGINEAPI 1339 -> 1340 (+1). Nothing else moves; grand total 2679 -> 2680.
 #
 #   + 1  tests/St4i.EngineApi.Tests/Site/SiteEndpointsTests.cs —
-#        TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsApplyAsync. Review N3: the claim "ApplyAsync holds
+#        TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsTheSharedApplyBody (named ..._AndItIsApplyAsync
+#        until task Z-1 moved the Save into ApplyCoreAsync). Review N3: the claim "ApplyAsync holds
 #        the only Save of site-link.json in the whole product" is what makes the new Error message's
 #        sentence "it was NOT overwritten or deleted by this start" TRUE, and it had no census while its
 #        settings counterpart (TheStartupReplayHasExactlyOneArm_...) has had one since H-1a. An enumeration
@@ -1349,7 +1350,71 @@ EXPECT_CONFORMANCE=24
 # TestRunTempRootTests.MachineConfigStore_ResolvesAwayFromThisAssembliesOwnOutputDirectory, which can only
 # live here because this is the only suite that can see MachineConfigStore. Full justification — including
 # why the runner's 1124 is not this number — beside EXPECT_ABSTRACTIONS at the top of this file.
-EXPECT_EDGECORE=1131
+#
+# 🔴 TASK Z-1 (.superpowers/sdd/one-law-three-sites/task-1-brief.md) raises EXPECT_EDGECORE 1131 -> 1143
+# (+12) and EXPECT_ENGINEAPI 1370 -> 1371 (+1). Grand total 2738 -> 2751. THREE existing files gain the
+# twelve; nothing is rewritten, split or deleted. Z-1 closes the last three items of ONE law
+# (docs/owner-decisions.md items 8, 10 and 11), and the three sites need three DIFFERENT mechanisms, so the
+# twelve are grouped by site rather than by file:
+#
+#   tests/St4i.EdgeCore.Tests/Historian/OeeSettingsStoreTests.cs   (item 11, the owner's predicate)    +5
+#       Set_WhenAFileAppearsAfterTheStoreCameUpWithNone_Refuses_AndTheRestoredFileSurvives -- the
+#           measurement: table built from Absent, disk now Loaded, write refused, bytes byte-for-byte.
+#       Set_TheFirstTimeAfterACleanStart_StillEstablishesTheFile -- the price the decision named and the
+#           fix must not pay. It survives on the SECOND fact (the fresh read is Absent too), not on an
+#           exemption, which is why it is asserted rather than argued.
+#       Set_AfterReloadingTheFileThatAppeared_LandsOnTopOfIt -- the documented way out.
+#       Set_WhenAnEmptyTableFileAppearsAfterTheStoreCameUpWithNone_AlsoRefuses -- the refusal is WIDER
+#           than the measured harm, deliberately; pinned so the widening is a decision and not a surprise.
+#       Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling -- 🔴 the
+#           RESIDUE, pinned LIVE the way S-1 pinned item 5's defect. The owner's predicate closes the
+#           restore onto a host that came up with NO file; the same restore onto a host that came up WITH
+#           one still writes, because both readings are Loaded and nothing records which bytes the table
+#           came from. If a later task closes it, this assertion inverts and the inversion is that diff.
+#
+#   tests/St4i.EdgeCore.Tests/CredentialStoreTests.cs              (item 10, the owner's data MOVE)    +5
+#       Save_OverABlobThisProcessCannotDecrypt_KeepsTheOldBytesAside_UnderANameThatSaysWhy -- the one the
+#           decision is about: the re-claim still succeeds AND the bytes survive.
+#       Save_OverAUsableBlob_ReplacesIt_AndKeepsNothingAside      \  the two arms that stop the fix being
+#       Save_WithNothingAtThePath_WritesTheOneFile_AndKeepsNothingAside  /  a sweep. Three outcomes, three
+#           facts; without them, "keeps a copy of every credential ever written" would pass the first one.
+#       ListMachineCodes_DoesNotReportABlobThatWasKeptAside -- `*.bin` is a THREE-character extension and
+#           Win32 pattern matching returns names whose extension merely begins with it. Measured, not
+#           reasoned about, because being wrong here tells the Settings view a machine has a key it hasn't.
+#       Save_KeepingABlobAside_NeverOverwritesAKeptBlobThatIsAlreadyThere -- the collision item 10 left to
+#           the executing task, FORCED rather than hoped for: both candidate second-stamps are pre-created,
+#           so the collision happens whichever side of a second boundary the save lands on.
+#
+#   tests/St4i.EdgeCore.Tests/Site/SiteBridgeManagerTests.cs       (item 8, the third caller)          +2
+#       ReapplyCurrentAsync_WithAnUnreadableSiteLinkFile_LeavesEveryByteWhereItWas -- the measurement:
+#           rotate while the file is unreadable, and the record the PROCESS invented no longer lands on it.
+#       ReapplyCurrentAsync_DoesNotPersist_EvenWhenTheFileReadsPerfectly -- the half that makes the
+#           guarantee STRUCTURAL. The fix is not "skip the write when the file is unreadable"; a re-apply
+#           establishes no value on ANY arm, so it never persists. Without this the fix is one forgotten
+#           flag away from reverting silently.
+#
+#   tests/St4i.EngineApi.Tests/HistorianEndpointsOeeTests.cs       (item 11 at the operator surface)   +1
+#       OeeSettings_Put_AfterABackupIsRestoredUnderALiveStore_Returns409_AndDoesNotOverwriteIt -- and it
+#           also pins the catch widening: the store now raises a SECOND refusal type and the handler
+#           catches their shared base. Reusing the `Unreadable` type would have kept the 409 green behind a
+#           published name asserting something false about a file that read correctly.
+#
+# 🔴 ONE EXISTING ASSERTION INVERTED AND ONE MEMBER RENAMED, WHICH IS WHY EXPECT_ENGINEAPI MOVES BY ONLY
+# ONE. CredentialStorePostureCensusTests.TheCredentialStore_CannotTellAnUnusableBlobFromNoBlob_AndTheReclaim-
+# OverwritesIt is now ...AndTheReclaimNowKeepsItAside, and its last assertion says the old bytes SURVIVE
+# where it used to say a re-claim replaced them. docs/owner-decisions.md item 10 predicted exactly that
+# ("when the fix arrives, that assertion inverts, and the inversion is the diff"). A rename, not an
+# addition — the count is unchanged and the NAME had to move because a member name is a published string.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGESERVICE are deliberately UNCHANGED. Z-1 touches
+# three stores in St4i.EdgeCore and one endpoint in St4i.EngineApi; a move anywhere else would mean this
+# task reached somewhere it had no business reaching. EXPECT_CONFORMANCE in particular stays 24: Z-1 adds
+# no driver and no connector kind.
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0 (measured on a full solution build). No
+# suppression of any kind was added — no .editorconfig, no <NoWarn>, no #pragma — which makes this the
+# ninth consecutive task with none.
+EXPECT_EDGECORE=1143
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -2836,7 +2901,10 @@ EXPECT_EDGESERVICE=52
 # measurement was taken on — all 20 of its WebApplicationFactory-building classes resolve
 # ProductConfigStore, SimulatedEcosystem and MachineConfigStore to the default beside-the-binary root, and
 # it is the only one of the five that had anything in its output directory at all.
-EXPECT_ENGINEAPI=1370
+# 🔴 Task Z-1 raises this 1370 -> 1371 (+1): item 11 measured at the operator's own surface, the PUT that
+# answers 409 after a backup is restored under a live store. Full justification beside EXPECT_EDGECORE
+# above, including why an inverted census assertion and a renamed census member move this by ZERO.
+EXPECT_ENGINEAPI=1371
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
