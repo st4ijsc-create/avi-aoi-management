@@ -213,7 +213,14 @@ chiều và chỗ đảo chính là diff. Cùng chỗ: chú thích lớp của `
 
 ---
 
-## 14. Hai hợp đồng đã xuất bản nói ngược nhau về hình dạng một hàng `Samples`, MỘT trong hai được cưỡng chế lúc chạy, và bộ phát của chính sản phẩm này vi phạm nó
+## 14. Hai hợp đồng đã xuất bản nói ngược nhau về hình dạng một hàng `Samples`; cái được CƯỠNG CHẾ lúc chạy hẹp hơn cái nền tảng tự XUẤT BẢN; và bộ phát của sản phẩm này phát một hình dạng cổng ingest TỪ CHỐI
+
+> 📎 **Tiêu đề này, NGUYÊN VĂN, cho tới 2026-08-18 — RÚT cùng ngày (AA-1, vòng phản biện của vòng
+> sửa):** *"14. Hai hợp đồng đã xuất bản nói ngược nhau về hình dạng một hàng `Samples`, MỘT trong hai
+> được cưỡng chế lúc chạy, và bộ phát của chính sản phẩm này vi phạm nó"*. *"Vi phạm"* chỉ đúng **nếu**
+> quy ước B đã là luật — mà đó chính là câu mục này tồn tại để hỏi. Câu thay thế là câu trung tính
+> vốn đã có sẵn trong ô bảng phán quyết. Cùng lý do, hai cụm chữ nữa trong mục này được rút, ở §"hai
+> quy ước" và ở cuối §"hợp nhất" bên dưới.
 
 **Mục này sinh ra từ bản thi hành của mục 4, đúng như mục 8 sinh ra từ mục 1, mục 10 từ mục 5, và
 mục 13 từ mục 11.** Nó được mở bởi **vòng phản biện 1 của AA-1 (2026-08-18)**, và nó là **điều kiện
@@ -245,8 +252,25 @@ toàn bộ dân số, và cả hai theo nó. **Không gì cưỡng chế nó.**
 | `scripts/sim/screwdriver-emitter.mjs` | bộ phát chạy được: `rateHz: WAVE_RATE_HZ` **kèm** hàng cặp |
 | `docs/ECOSYSTEM/62_…_DESIGN_2026-07-18.md` §6 | `waveforms[]{name,unit,rateHz,samples[[t,v]]}` — 🔴 **chính tài liệu mà `WelderSim` tự trích trong doc comment lớp của nó** |
 
-**Chúng bất đồng ở đúng một chỗ, và chỗ ấy là nơi sản phẩm này đứng sai:** dưới quy ước B,
-`ScrewdriveSim` **hợp lệ** (nhờ `rateHz` là optional), còn `WelderSim` **không**.
+**Chúng bất đồng ở đúng một chỗ, và chỗ ấy là nơi hai quy ước cho KẾT QUẢ KHÁC NHAU:** dưới quy ước
+B, `ScrewdriveSim` **hợp lệ** (nhờ `rateHz` là optional), còn `WelderSim` **không**.
+
+> 📎 **Câu này đọc *"và chỗ ấy là **nơi sản phẩm này đứng sai**"* cho tới 2026-08-18, RÚT cùng ngày
+> (AA-1, vòng phản biện của vòng sửa), giữ nguyên văn.** *"Đứng sai"* giả định B đã thắng.
+
+🔴 **VÀ QUY ƯỚC B KHÔNG ĐỒNG NHẤT VỚI CHÍNH NÓ — đọc lại bảng ngay trên trước khi quyết.** Hàng
+`server/api/v1/openapi.ts` ghi **không ràng buộc độ dài hàng**. Đó là **hợp đồng máy-đọc-được đã xuất
+bản**, thứ một bên thứ ba sinh client từ đó. Nên:
+
+- thứ **CƯỠNG CHẾ** (`z.tuple` hai số) **HẸP HƠN** thứ nền tảng **XUẤT BẢN** (OpenAPI cho phép hàng
+  một phần tử);
+- một payload hàng-một-phần-tử **hợp lệ với OpenAPI đã công bố** và **bị runtime từ chối**;
+- và `server/contracts/machineDataContract.ts` **tự đặt cho mình đúng cái luật bị vi phạm ở đây**:
+  *"Contract này PHẢI khớp runtime để APIdocs không mời gọi payload bị từ chối (doc 61 §4.8)."*
+
+**Nên phép đo không nói "một bên sai".** Nó nói: **một sản phẩm và một nền tảng bất đồng, và nền
+tảng bất đồng với chính nó ở BA mức** — runtime chặt, OpenAPI lỏng, đặc tả chặt. Cái phải quyết vì
+thế **rộng hơn** *"đổi `WelderSim` hay đổi validator"*.
 
 ### Ở đâu: mắt xích đầy đủ, nêu tên từng cái
 
@@ -281,10 +305,17 @@ AA-1 tìm ra và gọi là *"nặng hơn nhiều"* — và nó **vẫn nặng**,
   gửi `rateHz` **kèm** hàng hai phần tử, phần tử 0 là **góc**.
 
 AA-1 kết luận chúng là **bản sao lỗi**. **Sai.** Chúng **khớp đặc tả 57 §8.1 từng con số** (kể cả
-`rateHz: 500` và `412`). Nên câu hỏi AA-1 đặt — *"ai sửa họ SDK, và bao giờ?"* — có một câu chị em
-**nặng hơn nhiều**, và mục này **ghi nó xuống chứ không trả lời**:
+`rateHz: 500` và `412`). Nên câu hỏi AA-1 đặt — *"ai sửa họ SDK, và bao giờ?"* — có một câu chị em,
+và mục này **ghi nó xuống chứ không trả lời**: **họ SDK không phải một bản sao lỗi cần chữa; chúng
+là ba bản cài đặt của đặc tả, và bất kỳ lối ra nào đổi đặc tả cũng phải đổi cả ba cùng nhau.**
 
-> **Họ SDK khớp đặc tả. Cái lệch là bộ phát của chúng ta.**
+> 📎 **Chỗ này là một blockquote in đậm đứng riêng, đọc: *"Họ SDK khớp đặc tả. Cái lệch là bộ phát
+> của chúng ta."* — RÚT 2026-08-18 (AA-1, vòng phản biện của vòng sửa), giữ nguyên văn.** Nó là câu
+> **nghiêng nhất** trong cả mục: một khuyến nghị chọn B, đặt ở chỗ mắt người đọc dừng lại, trong một
+> mục mà chủ sở hữu mở ra để **quyết**. Và **chính bảng phía trên bác nó**: OpenAPI đã xuất bản của
+> nền tảng **cho phép** hàng một phần tử, nên *"cái lệch là bộ phát của chúng ta"* đúng với **bộ
+> validate lúc chạy** và **sai với hợp đồng nền tảng tự công bố**. Phát biểu đúng là phát biểu hai
+> chiều ở §"quy ước B không đồng nhất" bên trên.
 
 ### Hậu quả vận hành, hai chiều, phải nói cả hai
 
@@ -361,14 +392,35 @@ ngang nào nằm trong `RegisteredElementNames` của `DocCommentProseTests`, n�
 không thể là kiểu chung của cả ba. Các dấu `~~…~~` còn lại trong file này là của T-1, U-1,
 V-1 và Y-1; AA-1 **không đụng** tới chúng.
 
-📎 **Vòng phản biện 1 của AA-1 (2026-08-18) rút thêm SÁU câu, và dùng ĐÚNG kiểu ấy** — trích
-nguyên văn, ghi ngày, ghi người, lý do ngay cạnh, không gạch ngang: ba câu trên
-`WaveformSeries` (`<param name="Samples">`), một trên `<param name="RateHz">`, hai trong
-`WaveformSeriesRowShapeContractTests` và khối biện minh cạnh `EXPECT_EDGECORE`. Cộng **một
-phép RÚT LẠI MỘT PHÉP RÚT** ở ô mục 4 của bảng phán quyết, nơi cả ba lớp câu — bản gốc, phép
-rút của AA-1, và phép rút lại — đều đứng nguyên văn cạnh nhau. Ba thao tác vẫn phân biệt như
-cũ: **RÚT** (câu đã công bố nay sai), **CẬP NHẬT** (trạng thái đổi), **MỞ RỘNG** (phép liệt kê
-thiếu). Vòng này không dùng thao tác nào thứ tư.
+📎 **Các vòng phản biện của AA-1 (2026-08-18) rút thêm, và dùng ĐÚNG kiểu ấy** — trích nguyên
+văn, ghi ngày, ghi người, lý do ngay cạnh, không gạch ngang. 🔴 **LIỆT KÊ, KHÔNG ĐẾM** — câu
+này ghi *"rút thêm **SÁU** câu"* cho tới 2026-08-18 và **RÚT cùng ngày**, vì phép liệt kê ngay
+cạnh nó **không chứa đủ sáu**: nó bỏ sót phép rút ở banner Phần I, và gộp hai đoạn trích trong
+`verify-suites.sh` thành một. Đây là **lần thứ ba trong ba nhiệm vụ liên tiếp** một con số vô
+hướng tóm tắt một tập mà phép liệt kê ngay cạnh bác bỏ nó. Nên: **phép liệt kê là nguồn, và
+không con số nào đứng trước nó.**
+
+**Vòng phản biện 1** — `src/St4i.Connector.Abstractions/Models/DeviceReading.cs`,
+`<param name="Samples">`: *"Any other row is outside this contract…"*; *"That is a defect in
+those published files, not a second convention."*; *"no reader in this repository indexes an
+element of a row at all"*. Cùng file, `<param name="RateHz">`: *"It is also the DISCRIMINATOR
+for the shape of a Samples row…"*. `tests/…/WaveformSeriesRowShapeContractTests.cs`
+`<summary>`: *"no reader in src/ or tests/ indexes an ELEMENT of a row at all"*; *"a THIRD
+producer added later is checked without anybody remembering to add it here"*.
+`scripts/verify-suites.sh`, khối cạnh `EXPECT_EDGECORE`: *"Swept over ALL EIGHT built-in
+simulators … so a THIRD producer is covered the day it appears."*; và *"the exact shape the
+vendored device-client SDK's own worked examples send"* cùng *"This second arm is not
+hypothetical…"*. `docs/owner-decisions.md` §4, ghi chép thi hành: *"một bộ sinh THỨ BA cũng bị
+kiểm mà không ai phải nhớ thêm nó vào"*. Banner **Phần I**: *"Hai mục ở đây: mục 9 và mục 13."*
+Cộng **một phép RÚT LẠI MỘT PHÉP RÚT** ở ô mục 4 của bảng phán quyết, nơi cả ba lớp câu — bản
+gốc, phép rút của AA-1, và phép rút lại — đứng nguyên văn cạnh nhau.
+
+**Vòng phản biện của vòng sửa** — mục **14**: tiêu đề (*"…vi phạm nó"*), câu *"nơi sản phẩm này
+đứng sai"*, và blockquote *"Họ SDK khớp đặc tả. Cái lệch là bộ phát của chúng ta."* Cộng chính
+câu *"SÁU"* ngay trên.
+
+Ba thao tác vẫn phân biệt như cũ: **RÚT** (câu đã công bố nay sai), **CẬP NHẬT** (trạng thái
+đổi), **MỞ RỘNG** (phép liệt kê thiếu). Không thao tác nào thứ tư được dùng.
 
 ---
 
@@ -2032,6 +2084,29 @@ cáo vì đúng lý do file này tồn tại: *một điều "đã được nêu
    tức trên vòng doc28 kín **`Warn` suy biến thành `Skip`**; và `UnsPublisher`. **Không cái nào mâu
    thuẫn với định nghĩa vừa công bố** — phản biện kiểm chỗ nguy nhất và `Doc28Parser` đặt
    `Kind = Inspection`, mà OEE lọc `ProcessResult`, nên đường ấy **không** chảy vào OEE.
+
+### Tồn dư thêm từ vòng phản biện của vòng sửa (2026-08-18) — GHI, KHÔNG SỬA
+
+Vòng ấy phán 🟢 **gộp được** và nêu bốn việc rẻ, **cả bốn đã làm** (ba cụm chữ nghiêng ở mục 14,
+con số *"SÁU"* ở khối 📎, ngày cho khối rút trong `verify-suites.sh`, và bốn tên `[Fact]` cũ). Ba
+điều còn lại **cố ý không sửa** ở vòng này, vì nó bị giới hạn ở văn xuôi và không được đụng `src/`
+hay nhân chứng:
+
+6. 🔴 **Kiểu bảo tồn áp CÓ CHỌN LỌC trên `WaveformSeries`, và tôi cho rằng phản biện ĐÚNG.** Các câu
+   nay **sai** thì được giữ nguyên văn; nhưng một câu nay **bị thay khung** đã bị xoá không dấu vết:
+   *"What it buys a consumer, and it is the point of writing it down: from `RateHz` alone, before
+   reading a single row, a consumer knows whether it must RECONSTRUCT the X axis from the row index
+   or READ it out of element 0 … Neither was decidable from this type before."* Câu ấy **cũng sai**
+   dưới quy ước B (ở đó người tiêu thụ **luôn** đọc phần tử 0), nên theo đúng luật tôi tự đặt nó
+   **phải được rút nguyên văn, không phải xoá**. Nó được xuất bản ở `84836ad6`. **Không sửa được ở
+   vòng này** (cấm đụng `src/`); nêu tên ở đây để nó không biến mất khỏi hồ sơ.
+7. **Hai câu tiếng Việt trong file này được chữa KỀ BÊN chứ không trích tại chỗ** — §4 (*"không một
+   chỗ nào trong `src/` hay `tests/` đánh chỉ số vào một PHẦN TỬ của hàng"*) và §2 (định nghĩa nêu
+   một bộ lọc). Cả hai đính chính nằm **cùng mục, cùng blockquote**, nên người đọc tuần tự vẫn gặp;
+   nhưng chúng **không kín bằng** ba chỗ kia, nơi câu cũ đứng trong ngoặc kép ngay tại chỗ.
+8. **Tên `TheRowShapeCheck_GoesRedOnARealProducersOwnSeries_WhenOnlyTheRateHzFieldMoves` lệch nhẹ
+   với thân của nó** — ca cuối **nối dài một hàng**, tức không phải *"chỉ trường `RateHz` dịch"*.
+   Lệch **thừa hưởng** từ tên cũ (`…WhenOnlyTheDiscriminatorMoves`), không do vòng nào của AA-1 tạo.
 
 ---
 

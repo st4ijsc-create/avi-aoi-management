@@ -1456,9 +1456,20 @@ EXPECT_CONFORMANCE=24
 # The ONE test green on every arm is the bank-one control named above, and that is the right result rather
 # than a weak test: it measures the PREDICATE, which neither mutation touches.
 #
+# 🔴 WHEN THESE THREE NUMBERS WERE MEASURED, said because the diff cannot show it. They were taken TWICE:
+# once against the original witness (2026-08-18, round 0) and AGAIN against the rewritten witness after
+# review round 1 renamed every fact and deleted the spec-shaped assertion. Both runs produced 0/4, 3/1 and
+# 3/1, which is why these lines do not appear in the round-1 diff at all — an unchanged number leaves no
+# hunk. The re-review read that absence as "not re-measured"; it is the opposite, and the fix is to record
+# the provenance rather than to write down an inference that did not happen.
+#
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-# 🔴 AA-1 REVIEW ROUND 1 — THIS BLOCK MOVES NO TOTAL (still 1147) AND RETRACTS TWO CLAIMS IT PUBLISHED.
-# Kept verbatim rather than rewritten, because they were shipped and read:
+# 🔴 AA-1 REVIEW ROUND 1, 2026-08-18 — THIS BLOCK MOVES NO TOTAL (still 1147) AND RETRACTS TWO CLAIMS
+# IT PUBLISHED. Kept verbatim rather than rewritten, because they were shipped and read. (The date is
+# on this line because AA-1's own preservation rule, stated in docs/owner-decisions.md's 📎 note, is
+# "verbatim, dated, attributed, reason alongside" — and until the re-review caught it, this was the one
+# of the four retraction sites that carried no date. A style declared and then not followed is a false
+# claim about itself.)
 #   * "Swept over ALL EIGHT built-in simulators rather than the two known producers, so a THIRD producer
 #     is covered the day it appears." — an OVERCLAIM. BuiltInSimulators() is a HAND-WRITTEN list of the
 #     eight classes that exist today; a NINTH simulator class would not be swept and nothing anywhere
@@ -1474,6 +1485,17 @@ EXPECT_CONFORMANCE=24
 # The four [Fact] names above changed with them (the old names asserted "the Rule"). A member name is a
 # published string, so the rename is recorded here rather than done quietly. THE TOTAL DOES NOT MOVE:
 # four facts before, four after, none added, none split, none deleted.
+#
+# 🔴 AND THE FOUR NAMES THAT WERE TAKEN AWAY ARE WRITTEN OUT HERE, because the sentence above only
+# works in one direction otherwise. If a member name is a published string, then a member name that has
+# been REMOVED is a published string too, and somebody who wrote
+# `--filter FullyQualifiedName~<old name>` has no way back from a list of the new ones. The four, as
+# they stood at 84836ad6, in the same order as the four above:
+#     EveryWaveformTheBuiltInSimulatorsEmit_ObeysTheRateHzRowShapeRule_AndBothArmsAreExercised
+#     TheTwoBuiltInProducers_SitOnOppositeArmsOfTheRule_AndElementZeroIsAnAngleNotATime
+#     TheRowShapeCheck_GoesRedOnEveryWayTheRuleCanBreak
+#     TheRowShapeCheck_GoesRedOnARealProducersOwnSeries_WhenOnlyTheDiscriminatorMoves
+# The private predicate was renamed with them: RowShapeViolation -> RowShapeDeviation.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 #
 # EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0 — measured on a full `dotnet build -t:Rebuild`
