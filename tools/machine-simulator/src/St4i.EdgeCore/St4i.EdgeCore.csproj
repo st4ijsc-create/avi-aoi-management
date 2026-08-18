@@ -5,8 +5,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <!-- 🔴 AF-1 (.superpowers/sdd/item12-stage3/task-1-brief.md) — ITEM 12 OF docs/owner-decisions.md,
-         ENFORCED, STAGE 3 OF 8. The owner ruled option (b): turn this switch on here, WITH NO EXEMPTION
-         OF ANY KIND, and let the debt be NAMED rather than silenced.
+         ENFORCED, STAGE 3 OF 8. The ruling is: turn this switch on here, WITH NO EXEMPTION OF ANY KIND,
+         and let the debt be NAMED rather than silenced.
+
+         🔴 IT IS NOT ONE OF THE FOUR LABELLED OPTIONS, AND THE FIRST DRAFT OF THIS COMMENT SAID IT WAS.
+         That draft wrote "the owner ruled option (b)". The decision itself warns, in the sentence
+         immediately above it, that copying a label into an implementation site is how the ruling gets
+         enforced BACKWARDS: (a) is an assembly-wide `<NoWarn>`, i.e. MAXIMUM silence, the exact opposite
+         of what was decided; (b1) and (b2) are overrides too, by the decision's own words; (c) is not
+         turning the switch on at all. The ruling is a FIFTH thing that none of the four labels names, and
+         it is recorded BY DESCRIPTION, never by label. Corrected here rather than quietly rewritten,
+         because a wrong label at the enforcement site is worth more than a wrong number.
 
          WHAT THIS ONE PROPERTY COSTS, MEASURED on a full `dotnet build -t:Rebuild` of this solution at
          the commit that adds it — never derived by arithmetic, because stage 1 measured that the number
