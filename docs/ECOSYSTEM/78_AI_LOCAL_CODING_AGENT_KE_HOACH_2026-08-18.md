@@ -138,6 +138,11 @@ và **chống vá quá tay**: đọc một file mã bình thường vẫn CHẠY
   đã bị khuôn N+1 cắn nhiều lần và có hẳn một tên gọi cho nó. Trắng: `npm run check`,
   `npm run check:tests`, `npx vitest run <đường>`, `npm run build`, `git status`, `git diff`.
 - **`git checkout`, `git reset`, `rm`, `DROP` KHÔNG bao giờ vào danh sách trắng** — xem §3 mục 1.
+- ⚠ **`npm run build` CỐ Ý bị LOẠI** (chủ dự án xác nhận 2026-08-19). Ban đầu §4 liệt kê nó, nhưng
+  pha B chỉ ra nó ghi đè `dist/index.js` — tức phá đúng dấu vết đang dùng để nhận diện tiến trình
+  nào phục vụ cổng 3000 (so giờ khởi động với giờ build) — và là lệnh **duy nhất** có tác dụng phụ
+  ghi đĩa, tức lách hàng rào "tệp bẩn" của pha C bằng một lệnh. Danh sách trắng cuối: `npm run check`
+  · `npm run check:tests` · `npx vitest run <đường>` · `git status` · `git diff`.
 - Hạn thời gian, hạn kích thước đầu ra, chạy trong thư mục repo, **không có mạng**.
 
 **Cổng ra:** đột biến — thêm một lệnh ngoài danh sách trắng ⇒ ĐỎ; hạn thời gian bị gỡ ⇒ ĐỎ.
