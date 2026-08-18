@@ -30,9 +30,9 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | # | mục | phán quyết |
 |---|---|---|
 | 1 | ghi đè im lặng | 🔨 **SỬA** — ~~gộp với 5–7~~ **(nhóm ấy SAI, xem §5–7)**; đã thi hành, Q-1 |
-| 2 | `Warn` tốt cho OEE | ✅ **GIỮ HÀNH VI, XUẤT BẢN NÓ** — đổi là viết lại lịch sử; **việc còn nợ** (2026-08-18) |
+| 2 | `Warn` tốt cho OEE | ✅ **GIỮ HÀNH VI, XUẤT BẢN NÓ** — đổi là viết lại lịch sử; đã thi hành, AA-1 (2026-08-18) |
 | 3 | bất đối xứng Sparkplug | ✅ **GIỮ DÂY, ĐÃ GHI RÕ** — đổi payload là việc của bên đăng ký; đã thi hành, N-2 |
-| 4 | hình dạng hàng `Samples` | ⚖️ **ĐO TRƯỚC, RỒI CHỌN** — SDK đã xuất bản là ứng viên chuẩn; **việc còn nợ** (2026-08-18) |
+| 4 | hình dạng hàng `Samples` | ✅ **`RateHz` LÀ BỘ PHÂN BIỆT** (2026-08-16) — ô này ghi *"⚖️ ĐO TRƯỚC, RỒI CHỌN — SDK đã xuất bản là ứng viên chuẩn"* cho tới 2026-08-18, **RÚT: dòng phán quyết của §4 nói NGƯỢC LẠI** — nhận `[[t,v]]` làm chuẩn sẽ phá cả hai bộ sinh; đã thi hành, AA-1 |
 | 5 | ~~ba hình dạng xoá file~~ → **`oee-settings.json`** | 🔨 **GOM VỀ MỘT LUẬT** (2026-08-17) — đã thi hành, V-1 |
 | 6 | log hoãn của một lần cài đặt hỏng | 🔨 **PHÁT RA TRÊN ĐƯỜNG NÉM LỖI** (2026-08-17) — đã thi hành, T-1 |
 | 7 | nửa sau của S4 | 🔨 **DỪNG + GIỮ COMMIT + BÁO TRÊN `/v1/health`** (2026-08-17) — đã thi hành, U-1 |
@@ -229,124 +229,24 @@ ngày** — không sớm hơn.
 
 🔨 **Ba mục đã rời phần này theo đúng điều kiện ấy, 2026-08-18:** mục **8, 10 và 11**, do
 nhiệm vụ **Z-1** thi hành; mỗi mục mang một ghi chép thi hành ghi kèm ngày ở cuối khối
-phán quyết của chính nó, và bảng phán quyết đầu file mang `đã thi hành, Z-1`. Phần này
-còn lại **mục 2, mục 4** (cùng ở trạng thái này từ 2026-08-16) và **mục 12**.
+phán quyết của chính nó, và bảng phán quyết đầu file mang `đã thi hành, Z-1`.
 
----
+🔨 **HAI MỤC NỮA ĐÃ RỜI, cùng điều kiện, 2026-08-18: mục 2 và mục 4, do nhiệm vụ AA-1 thi
+hành.** Câu tiếp theo của đoạn trên, **RÚT 2026-08-18 (AA-1)** vì chính lần ghi này làm nó
+sai, giữ nguyên văn: *"Phần này còn lại **mục 2, mục 4** (cùng ở trạng thái này từ
+2026-08-16) và **mục 12**."* Nó là một phép liệt kê đã công bố, và một phép liệt kê sai là
+đúng loài file này lập ra để chấm dứt. **Phần này nay còn lại đúng MỘT mục: mục 12** — ở
+lại vì việc của nó là **nhiều vòng** và chưa vòng nào chạy, không phải vì thiếu phán quyết.
 
-## 2. `Warn` được tính là TỐT cho OEE
-
-**Đo được:** phép tổng hợp OEE rẽ nhánh trên các verdict **đã ghi xuống đĩa dưới
-dạng chuỗi**:
-
-- mẫu số: `verdict <> 'Skip'` — `src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs:590`
-- tử số: `verdict IN ('Pass', 'Warn')` — `src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs:600`
-- phạm vi: `reading_kind = 'ProcessResult'` — cùng file, dòng 581
-
-**Hậu quả:** một chu kỳ `Warn` được tính là **tốt** trong OEE, trong khi ở mọi chỗ
-khác của hợp đồng nó là *"không được phán quyết dứt khoát"*. `Skip` không nằm ở cả
-tử lẫn mẫu.
-
-**Chạm tới đâu:** `/v1/historian/oee`, danh sách OEE của fleet, và **bản PDF báo cáo**.
-
-**Nếu không quyết định:** OEE tiếp tục báo cáo `Warn` là tốt. Đây có thể là **đúng
-ý muốn** — nhiều nhà máy tính warn là hàng đạt — nhưng hiện **không nơi nào nói ra
-điều đó**, nên người đọc con số OEE không có cách nào biết.
-
-**Bằng chứng:** commit `72614dd9` (N-2). Tìm ra bằng việc **viết tài liệu**, không
-phải bằng test — vì tách riêng ra thì không đường nào sai cả.
-
-> ### ✅ PHÁN QUYẾT 2026-08-16 — GIỮ HÀNH VI, XUẤT BẢN NÓ
-> **Không đổi phép tính.** `Warn` tính là tốt là **quy ước OEE thông thường** — một
-> đơn vị đạt-kèm-cảnh-báo vẫn là đơn vị xuất xưởng được, và chất lượng đếm đơn vị
-> xuất xưởng. Lý do quyết định là chỗ khác: **đổi công thức là viết lại mọi con số
-> OEE đã báo cáo trong quá khứ**, kể cả những con số đã in ra PDF và đã gửi đi.
-> Không có phiên bản nào cho công thức ấy, nên không ai đọc lại được sẽ biết con số
-> họ cầm thuộc công thức nào.
->
-> **Khuyết tật thật không phải phép tính — là việc nó chưa bao giờ được nói ra.**
-> Việc phải làm: **công bố định nghĩa ngay tại chỗ con số được đọc** — phản hồi API,
-> danh sách fleet, và bản PDF — bằng đúng ba câu: cái gì vào mẫu số, cái gì vào tử
-> số, `Skip` không vào cả hai. Kèm một câu nói rõ **con số này không có phiên bản**.
->
-> Nếu sau này nhà máy muốn `Warn` không tính là tốt, việc đó cần **một công thức có
-> phiên bản**, không phải một lần sửa tại chỗ.
->
-> #### ⏳ 2026-08-18 — TIẾP TỤC; HÀNH ĐỘNG VẪN CÒN NỢ, VÀ NÓ MỚI LÀM ĐƯỢC MỘT NỬA
-> Chủ sở hữu xác nhận mục này **tiếp tục** và việc của nó **chưa xong**. Đo lại tại
-> `3a1228ee`, vì "còn nợ" mà không đo thì cũng là một khẳng định không kiểm được:
-> - **ĐÃ làm:** định nghĩa **có** được viết ra — `src/St4i.Connector.Abstractions/Models/Enums.cs`,
->   doc của kiểu `Verdict`, nói `Skip` bị loại khỏi mẫu số và `Pass`+`Warn` vào tử số, nên
->   `Warn` là **tốt** cho OEE.
-> - **CHƯA làm:** phán quyết đòi công bố **ngay tại chỗ con số được đọc** — phản hồi API,
->   danh sách fleet, bản PDF. `OeeResultDto`
->   (`src/St4i.EngineApi/Endpoints/HistorianDtos.cs`) **không mang gì cả**. Một định nghĩa
->   đặt trên `enum` là chỗ **tác giả driver** đọc, không phải chỗ **người cầm con số OEE**
->   đọc, và mục này được lập ra cho người thứ hai.
-> - **CHƯA làm:** câu *"con số này không có phiên bản"* **không có ở đâu trong `src/`**.
-
----
-
-## 4. `WaveformSeries.Samples` KHÔNG có hình dạng hàng cố định
-
-**Đo được:** ba nguồn, ba nghĩa, trên **bề mặt mà tác giả driver bên thứ ba đọc
-trước tiên**:
-- SDK vendored ghi `[[t,v],…]` — `examples/device-client/csharp/St4iDeviceClient.cs`
-- `ScrewdriveSim` phát ra **từng cặp**
-- `WelderSim` phát ra **một giá trị mỗi hàng**
-
-**Hiện đang:** ship dưới dạng **ghi rõ là mơ hồ** — cả ba hình dạng được nêu tên,
-kèm câu *"không được giả định hình dạng hàng chỉ từ kiểu này"*.
-
-**Vì sao chưa giải:** chọn một nghĩa là **đổi hành vi một bề mặt đã xuất bản**.
-Đó là quyết định của chủ sở hữu, không phải việc dọn dẹp kỹ thuật.
-
-**Nếu không quyết định:** mỗi tác giả driver tự đoán, và nửa số đoán sẽ sai.
-
-**Bằng chứng:** commit `72614dd9` (N-2).
-
-> ### ⚖️ PHÁN QUYẾT 2026-08-16 — LUẬT ĐÃ CÓ SẴN TRONG DỮ LIỆU, CHỈ CHƯA AI VIẾT RA
-> **Đo lại trước khi quyết, và phép đo lật khung của chính mục này.** Mô tả cũ —
-> *"SDK nói `[[t,v]]`, `ScrewdriveSim` phát cặp, `WelderSim` phát một giá trị"* —
-> ngụ ý hai trên ba đồng ý với SDK. **Sai. Không producer nào phát `[[t,v]]` cả:**
->
-> | nguồn | hàng | `RateHz` |
-> |---|---|---|
-> | SDK vendored (`St4iDeviceClient.cs:86`) | `// [[t,v],…]` | — |
-> | `ScrewdriveSim.cs:186` | `new[] { angle, torque }` — **(x, y), x là GÓC không phải thời gian** | **null** (dòng 189) |
-> | `WelderSim.cs:47` | `new[] { current }` — một giá trị | **được đặt** (dòng 40) |
->
-> **Hai producer NHẤT QUÁN với nhau, và `RateHz` chính là thứ phân biệt:**
-> - `RateHz` **được đặt** ⇒ có trục thời gian đều ⇒ thời gian là **ngầm định**, suy
->   ra từ chỉ số và tần số. Một giá trị mỗi hàng là **đúng và tiết kiệm**.
-> - `RateHz` **null** ⇒ **không có** trục thời gian đều ⇒ hàng phải **tự mang trục X
->   của nó**: `[x, y]`. Ở `ScrewdriveSim`, x là **góc siết**, không phải thời gian.
->
-> **Nên cái sai không phải hai producer — là chú thích trong SDK.** `[[t,v],…]` mô
-> tả **không producer nào**, và nó là thứ tác giả driver bên thứ ba đọc trước tiên.
->
-> **Quyết định:** ✅ **`RateHz` là bộ phân biệt, và nó đã được thực thi nhất quán
-> sẵn rồi.** Viết luật ấy lên chính `WaveformSeries` — nơi hợp đồng sống — nêu tên
-> chú thích SDK là **đã biết sai** (file vendored, **cấm sửa**), và **cắm nhân chứng**
-> để nó không trôi lại.
->
-> 🔴 **KHÔNG đổi hành vi.** Tuyên bố `[[t,v]]` là chuẩn sẽ **phá cả hai producer** và
-> vứt đi quan hệ với `RateHz` — đó là lý do mục này phải đo trước khi quyết, và là lý
-> do câu trả lời hiển nhiên lại là câu sai.
->
-> #### ⏳ 2026-08-18 — TIẾP TỤC; HÀNH ĐỘNG VẪN CÒN NỢ, VÀ NÓ CHƯA BẮT ĐẦU
-> Chủ sở hữu xác nhận mục này **tiếp tục** và việc của nó **chưa xong**. Đo lại tại
-> `3a1228ee` trên chính bề mặt phán quyết chỉ tới, `WaveformSeries`
-> (`src/St4i.Connector.Abstractions/Models/DeviceReading.cs`):
-> - doc của nó **vẫn là văn bản TRƯỚC phán quyết** — vẫn kết bằng *"A consumer must
->   therefore not assume a row shape from this type alone"*, tức vẫn ship **sự mơ hồ đã
->   ghi rõ**, đúng thứ phán quyết thay thế;
-> - nó **mô tả** tương quan `RateHz` (một giá trị mỗi hàng khi có `RateHz`, `[x, y]` khi
->   `RateHz` null) nhưng **không phát biểu `RateHz` LÀ BỘ PHÂN BIỆT**, mà đó mới là luật;
-> - nó **không nêu tên chú thích SDK là ĐÃ BIẾT SAI** — nó viết *"matches neither
->   exactly"*, một nhận xét, không phải một phán quyết;
-> - **không có nhân chứng nào được cắm**, mà phán quyết đòi *"cắm nhân chứng để nó không
->   trôi lại"*.
+📎 **MỘT KIỂU BẢO TỒN DUY NHẤT, và nó được nêu ở đây một lần cho cả nhiệm vụ.** Ở mọi chỗ
+AA-1 rút một câu đã công bố — đoạn này, ô mục 4 trong bảng phán quyết đầu file, và
+`<param name="Samples">` của `WaveformSeries` — kiểu là **TRÍCH NGUYÊN VĂN RỒI RÚT**: câu cũ
+được chép lại nguyên văn trong dấu ngoặc kép, kèm ngày rút và người rút, và lý do đứng ngay
+cạnh. **Không dùng gạch ngang ở bất kỳ chỗ nào AA-1 viết.** Lý do là một ràng buộc chứ không
+phải một sở thích: một trong ba chỗ ấy là **khối `///` trong C#**, nơi không có phần tử gạch
+ngang nào nằm trong `RegisteredElementNames` của `DocCommentProseTests`, nên gạch ngang
+không thể là kiểu chung của cả ba. Các dấu `~~…~~` còn lại trong file này là của T-1, U-1,
+V-1 và Y-1; AA-1 **không đụng** tới chúng.
 
 ---
 
@@ -523,9 +423,17 @@ thêm một **cái dấu** nhất quán và ký tên vào chính cái dấu thì
 
 ⚠️ **Phần này chứa những mục nào — LIỆT KÊ, vì một con số ở đây vừa tự bác bỏ mình.**
 Các mục: **1, 3, 5, 6, 7** (ở đây từ trước), cộng **8, 10, 11** do Z-1 mang sang từ Phần II
-ngày 2026-08-18. Chúng nằm dưới các tiêu đề `## 1.`, `## 3.`, `## 5–7.`, `## 8.`, `## 10.`,
-`## 11.` — **tiêu đề và mục KHÔNG bằng nhau**, đúng như cảnh báo `grep "^## "` ngay phía
+ngày 2026-08-18, cộng **2 và 4** do AA-1 mang sang cùng ngày. Chúng nằm dưới các tiêu đề
+`## 1.`, `## 2.`, `## 3.`, `## 4.`, `## 5–7.`, `## 8.`, `## 10.`, `## 11.` —
+**tiêu đề và mục KHÔNG bằng nhau**, đúng như cảnh báo `grep "^## "` ngay phía
 trên nói, vì `## 5–7.` là **một** tiêu đề chứa **ba** mục.
+
+> 📎 **AA-1 (2026-08-18) — phép liệt kê trên được MỞ RỘNG, không thay.** Câu trước đó liệt kê
+> tám mục dưới sáu tiêu đề và đúng ở thời điểm nó được viết; nó sai kể từ lúc mục 2 và mục 4
+> chuyển sang, cùng ngày, cùng file. Cách chữa là **thêm vào phép liệt kê**, không phải viết
+> một con số mới: hôm nay là **mười** mục dưới **tám** tiêu đề, và cả hai con số ấy chỉ đọc
+> được từ danh sách ngay trên chứ không được ghi làm một khẳng định riêng — đúng luật mà khối
+> đính chính ngay dưới đây mua được.
 
 > 🔴 **ĐÍNH CHÍNH 2026-08-18, cùng ngày, cùng nhiệm vụ (phản biện I-3).** Chỗ này Z-1 vừa
 > viết *"Phần này nay có SÁU mục, không phải bốn"*. Cả hai số đều sai: **sáu** đếm **tiêu
@@ -636,6 +544,104 @@ minh bằng cách chạy lại.
 
 ---
 
+## 2. `Warn` được tính là TỐT cho OEE
+
+**Đo được:** phép tổng hợp OEE rẽ nhánh trên các verdict **đã ghi xuống đĩa dưới
+dạng chuỗi**:
+
+- mẫu số: `verdict <> 'Skip'` — `src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs:590`
+- tử số: `verdict IN ('Pass', 'Warn')` — `src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs:600`
+- phạm vi: `reading_kind = 'ProcessResult'` — cùng file, dòng 581
+
+**Hậu quả:** một chu kỳ `Warn` được tính là **tốt** trong OEE, trong khi ở mọi chỗ
+khác của hợp đồng nó là *"không được phán quyết dứt khoát"*. `Skip` không nằm ở cả
+tử lẫn mẫu.
+
+**Chạm tới đâu:** `/v1/historian/oee`, danh sách OEE của fleet, và **bản PDF báo cáo**.
+
+**Nếu không quyết định:** OEE tiếp tục báo cáo `Warn` là tốt. Đây có thể là **đúng
+ý muốn** — nhiều nhà máy tính warn là hàng đạt — nhưng hiện **không nơi nào nói ra
+điều đó**, nên người đọc con số OEE không có cách nào biết.
+
+**Bằng chứng:** commit `72614dd9` (N-2). Tìm ra bằng việc **viết tài liệu**, không
+phải bằng test — vì tách riêng ra thì không đường nào sai cả.
+
+> ### ✅ PHÁN QUYẾT 2026-08-16 — GIỮ HÀNH VI, XUẤT BẢN NÓ
+> **Không đổi phép tính.** `Warn` tính là tốt là **quy ước OEE thông thường** — một
+> đơn vị đạt-kèm-cảnh-báo vẫn là đơn vị xuất xưởng được, và chất lượng đếm đơn vị
+> xuất xưởng. Lý do quyết định là chỗ khác: **đổi công thức là viết lại mọi con số
+> OEE đã báo cáo trong quá khứ**, kể cả những con số đã in ra PDF và đã gửi đi.
+> Không có phiên bản nào cho công thức ấy, nên không ai đọc lại được sẽ biết con số
+> họ cầm thuộc công thức nào.
+>
+> **Khuyết tật thật không phải phép tính — là việc nó chưa bao giờ được nói ra.**
+> Việc phải làm: **công bố định nghĩa ngay tại chỗ con số được đọc** — phản hồi API,
+> danh sách fleet, và bản PDF — bằng đúng ba câu: cái gì vào mẫu số, cái gì vào tử
+> số, `Skip` không vào cả hai. Kèm một câu nói rõ **con số này không có phiên bản**.
+>
+> Nếu sau này nhà máy muốn `Warn` không tính là tốt, việc đó cần **một công thức có
+> phiên bản**, không phải một lần sửa tại chỗ.
+>
+> #### ⏳ 2026-08-18 — TIẾP TỤC; HÀNH ĐỘNG VẪN CÒN NỢ, VÀ NÓ MỚI LÀM ĐƯỢC MỘT NỬA
+> Chủ sở hữu xác nhận mục này **tiếp tục** và việc của nó **chưa xong**. Đo lại tại
+> `3a1228ee`, vì "còn nợ" mà không đo thì cũng là một khẳng định không kiểm được:
+> - **ĐÃ làm:** định nghĩa **có** được viết ra — `src/St4i.Connector.Abstractions/Models/Enums.cs`,
+>   doc của kiểu `Verdict`, nói `Skip` bị loại khỏi mẫu số và `Pass`+`Warn` vào tử số, nên
+>   `Warn` là **tốt** cho OEE.
+> - **CHƯA làm:** phán quyết đòi công bố **ngay tại chỗ con số được đọc** — phản hồi API,
+>   danh sách fleet, bản PDF. `OeeResultDto`
+>   (`src/St4i.EngineApi/Endpoints/HistorianDtos.cs`) **không mang gì cả**. Một định nghĩa
+>   đặt trên `enum` là chỗ **tác giả driver** đọc, không phải chỗ **người cầm con số OEE**
+>   đọc, và mục này được lập ra cho người thứ hai.
+> - **CHƯA làm:** câu *"con số này không có phiên bản"* **không có ở đâu trong `src/`**.
+>
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ AA-1 (2026-08-18), `.superpowers/sdd/oee-definition-and-row-shape/`
+> **Không một con số OEE nào đổi, và không một dòng thực thi nào đổi.** Phép tính, hai câu SQL,
+> `OeeCalculator` và hình dạng `OeeResultDto` giữ nguyên từng byte; toàn bộ bản sửa là **văn xuôi
+> ở ba chỗ con số hiện ra**. Đó là điều phán quyết đòi: khuyết tật là sự im lặng, không phải công
+> thức.
+>
+> **BA CHỖ, VÀ VÌ SAO ĐÚNG BA.** Phán quyết nêu *"phản hồi API, danh sách fleet, bản PDF"*. Trong
+> mã hôm nay mỗi cái có đúng một chỗ của riêng nó:
+> 1. **`OeeResultDto`** (`src/St4i.EngineApi/Endpoints/HistorianDtos.cs`) — hình dạng phản hồi mà
+>    **cả hai** route OEE trả về. Route một-máy `GetOeeAsync` trả **chính DTO này**, nên nêu nó
+>    thành một chỗ thứ tư là **đếm hai lần cùng một bề mặt**, không phải kỹ hơn.
+> 2. **`HistorianEndpoints.GetOeeFleetAsync`** — danh sách fleet, một `OeeResultDto` mỗi máy trong
+>    roster.
+> 3. **`HistorianEndpoints.BuildReportPdf`** — khối OEE của bản PDF.
+>
+> **VIẾT BẰNG TIẾNG CỦA NGƯỜI CẦM CON SỐ, không phải tiếng của tác giả driver.** Ở cả ba chỗ, luật
+> được phát biểu bằng **các con số mà chính bề mặt ấy in ra** — `TotalCount` là mẫu số (mọi chu kỳ
+> process-result trong cửa sổ có verdict khác `Skip`), `GoodCount` là tử số (trong đó, những cái
+> `Pass` hoặc `Warn`), `Fail` nằm ở mẫu chứ không ở tử, `Skip` **không nằm ở đâu cả**, và
+> `Quality = GoodCount / TotalCount`. Không chỗ nào bắt người đọc phải mở `enum Verdict` ra mới
+> hiểu được con số họ đang cầm.
+>
+> **CÂU *"CÔNG THỨC NÀY KHÔNG CÓ PHIÊN BẢN"* — viết ở chỗ nó ràng buộc, tức cả ba chỗ.** Nó ràng
+> buộc **người so hai con số**, nên nó đứng ở nơi con số được giao: trên `OeeResultDto` (không có
+> trường phiên bản nào, và **cái thiếu ấy nhìn thấy được ngay tại chỗ khai báo**), ở route fleet
+> (nơi các hàng được so **với nhau**), và trong `BuildReportPdf` (bản in **rời khỏi toà nhà** và
+> không mang gì để đối chiếu về sau).
+>
+> **KHẲNG ĐỊNH PHỦ ĐỊNH ĐÃ ĐƯỢC KIỂM, không phải được nhận.** Hồ sơ ghi *"câu ấy không có ở đâu
+> trong `src/`"*. AA-1 quét lại `src/` ở `ec17f4f1` bằng bốn phép, và nói rõ đã quét cái gì:
+> `no version` không phân biệt hoa thường; `unversion|un-version|not versioned|never versioned|versionless`;
+> mọi dòng chứa `formula`; và `version` trong bán kính ba dòng quanh `formula`. **Kết quả trùng hồ
+> sơ:** đúng **một** khớp, `src/St4i.EngineApi/Alarms/WebhookNotification.cs`, và nó nói về
+> `User-Agent` — một thứ khác hẳn. Bốn phép ấy là thứ **có thể bác bỏ** khẳng định, và không phép
+> nào bác được.
+>
+> 🔴 **TRẦN CỦA BẢN SỬA NÀY, nêu ra chứ không giấu: định nghĩa nay đọc được ở ba chỗ trong MÃ, chứ
+> không ở ba chỗ trong TAY người cầm con số.** Một người đang cầm bản PDF in ra, hay đang đọc JSON
+> trả về, **vẫn không thấy** câu nào — vì đưa nó vào PDF hay vào DTO là **đổi một payload đã xuất
+> bản**, đúng hạng thay đổi mà phán quyết mục 3 và mục 4 dành riêng cho chủ sở hữu, và đúng ranh
+> giới `PutOeeSettingsAsync` đã vạch khi từ chối nới `OeeSettingsDto`. Nên phần còn nợ **không phải
+> một chỗ bị quên** — nó là **một quyết định chưa được hỏi**: *có thêm một trường mang định nghĩa
+> (hoặc một mã công thức) vào `OeeResultDto` và một dòng vào PDF hay không*. Nếu chủ sở hữu muốn,
+> đó là một mục mới, vì nó nới một hình dạng đã xuất bản.
+
+---
+
 ## 3. Telemetry còn sót trên một reading `ProcessResult`: được ghi, vào live state, nhưng KHÔNG lên Sparkplug
 
 **Đo được:** đường ống publish **mọi** reading. `BuildSparkplugMetrics`
@@ -692,6 +698,138 @@ thấy lệch và không có lời giải thích.
 > được. Nếu chủ sở hữu thật sự muốn **mở lại** mục 3, đường để làm việc đó đã có sẵn và
 > nằm ngay trên: **kích hoạt để mở lại**, và nó đòi một bên đăng ký thật, không phải một
 > lần hoãn.
+
+---
+
+## 4. `WaveformSeries.Samples` KHÔNG có hình dạng hàng cố định
+
+**Đo được:** ba nguồn, ba nghĩa, trên **bề mặt mà tác giả driver bên thứ ba đọc
+trước tiên**:
+- SDK vendored ghi `[[t,v],…]` — `examples/device-client/csharp/St4iDeviceClient.cs`
+- `ScrewdriveSim` phát ra **từng cặp**
+- `WelderSim` phát ra **một giá trị mỗi hàng**
+
+**Hiện đang:** ship dưới dạng **ghi rõ là mơ hồ** — cả ba hình dạng được nêu tên,
+kèm câu *"không được giả định hình dạng hàng chỉ từ kiểu này"*.
+
+**Vì sao chưa giải:** chọn một nghĩa là **đổi hành vi một bề mặt đã xuất bản**.
+Đó là quyết định của chủ sở hữu, không phải việc dọn dẹp kỹ thuật.
+
+**Nếu không quyết định:** mỗi tác giả driver tự đoán, và nửa số đoán sẽ sai.
+
+**Bằng chứng:** commit `72614dd9` (N-2).
+
+> ### ⚖️ PHÁN QUYẾT 2026-08-16 — LUẬT ĐÃ CÓ SẴN TRONG DỮ LIỆU, CHỈ CHƯA AI VIẾT RA
+> **Đo lại trước khi quyết, và phép đo lật khung của chính mục này.** Mô tả cũ —
+> *"SDK nói `[[t,v]]`, `ScrewdriveSim` phát cặp, `WelderSim` phát một giá trị"* —
+> ngụ ý hai trên ba đồng ý với SDK. **Sai. Không producer nào phát `[[t,v]]` cả:**
+>
+> | nguồn | hàng | `RateHz` |
+> |---|---|---|
+> | SDK vendored (`St4iDeviceClient.cs:86`) | `// [[t,v],…]` | — |
+> | `ScrewdriveSim.cs:186` | `new[] { angle, torque }` — **(x, y), x là GÓC không phải thời gian** | **null** (dòng 189) |
+> | `WelderSim.cs:47` | `new[] { current }` — một giá trị | **được đặt** (dòng 40) |
+>
+> **Hai producer NHẤT QUÁN với nhau, và `RateHz` chính là thứ phân biệt:**
+> - `RateHz` **được đặt** ⇒ có trục thời gian đều ⇒ thời gian là **ngầm định**, suy
+>   ra từ chỉ số và tần số. Một giá trị mỗi hàng là **đúng và tiết kiệm**.
+> - `RateHz` **null** ⇒ **không có** trục thời gian đều ⇒ hàng phải **tự mang trục X
+>   của nó**: `[x, y]`. Ở `ScrewdriveSim`, x là **góc siết**, không phải thời gian.
+>
+> **Nên cái sai không phải hai producer — là chú thích trong SDK.** `[[t,v],…]` mô
+> tả **không producer nào**, và nó là thứ tác giả driver bên thứ ba đọc trước tiên.
+>
+> **Quyết định:** ✅ **`RateHz` là bộ phân biệt, và nó đã được thực thi nhất quán
+> sẵn rồi.** Viết luật ấy lên chính `WaveformSeries` — nơi hợp đồng sống — nêu tên
+> chú thích SDK là **đã biết sai** (file vendored, **cấm sửa**), và **cắm nhân chứng**
+> để nó không trôi lại.
+>
+> 🔴 **KHÔNG đổi hành vi.** Tuyên bố `[[t,v]]` là chuẩn sẽ **phá cả hai producer** và
+> vứt đi quan hệ với `RateHz` — đó là lý do mục này phải đo trước khi quyết, và là lý
+> do câu trả lời hiển nhiên lại là câu sai.
+>
+> #### ⏳ 2026-08-18 — TIẾP TỤC; HÀNH ĐỘNG VẪN CÒN NỢ, VÀ NÓ CHƯA BẮT ĐẦU
+> Chủ sở hữu xác nhận mục này **tiếp tục** và việc của nó **chưa xong**. Đo lại tại
+> `3a1228ee` trên chính bề mặt phán quyết chỉ tới, `WaveformSeries`
+> (`src/St4i.Connector.Abstractions/Models/DeviceReading.cs`):
+> - doc của nó **vẫn là văn bản TRƯỚC phán quyết** — vẫn kết bằng *"A consumer must
+>   therefore not assume a row shape from this type alone"*, tức vẫn ship **sự mơ hồ đã
+>   ghi rõ**, đúng thứ phán quyết thay thế;
+> - nó **mô tả** tương quan `RateHz` (một giá trị mỗi hàng khi có `RateHz`, `[x, y]` khi
+>   `RateHz` null) nhưng **không phát biểu `RateHz` LÀ BỘ PHÂN BIỆT**, mà đó mới là luật;
+> - nó **không nêu tên chú thích SDK là ĐÃ BIẾT SAI** — nó viết *"matches neither
+>   exactly"*, một nhận xét, không phải một phán quyết;
+> - **không có nhân chứng nào được cắm**, mà phán quyết đòi *"cắm nhân chứng để nó không
+>   trôi lại"*.
+>
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ AA-1 (2026-08-18), `.superpowers/sdd/oee-definition-and-row-shape/`
+> **Không một hàng `Samples` nào đổi, và không một dòng thực thi nào đổi.** Cả hai bộ sinh giữ
+> nguyên từng byte. Bản sửa là **một luật thay cho một lời phủ định**, cộng **một nhân chứng**.
+>
+> **BẢNG ĐO CỦA MỤC NÀY ĐƯỢC ĐỐI CHIẾU, KHÔNG CHÉP — và nó đứng vững ở `ec17f4f1`.** Bảng được đo
+> ở `3a1228ee`; mọi số dòng trong đó **vẫn đúng nguyên** hôm nay (`ScrewdriveSim.cs:186`/`:189`,
+> `WelderSim.cs:47`/`:40`, `St4iDeviceClient.cs:86`), nên **không có con số nào dịch**. Cách đo
+> không phải đọc bằng mắt: một nhân chứng chạy **cả tám** simulator dựng sẵn qua nhiều chu kỳ và
+> khẳng định luật trên **mọi** series chúng phát ra, nên một bộ sinh **thứ ba** cũng bị kiểm mà
+> không ai phải nhớ thêm nó vào.
+>
+> **LUẬT, phát biểu ở dạng BÁC BỎ ĐƯỢC — và nó chặt hơn cách mục này phát biểu.** Cách phát biểu
+> cũ (*"`RateHz` được đặt ⇒ một giá trị mỗi hàng; `RateHz` null ⇒ `[x, y]`"*) **chưa bác bỏ được**:
+> nó không nói gì về **hàng ba phần tử**, về **hàng rỗng**, hay về một hàng dài hơn *"một"*. Luật
+> viết lên hợp đồng nói bằng **độ dài hàng, và bằng chữ ĐÚNG**:
+> - `RateHz` **được đặt** ⇒ mỗi hàng có **đúng MỘT** phần tử, là giá trị đo trong `Unit`; hàng thứ
+>   `i` là mẫu tại `i / RateHz` giây. Trục thời gian **không** nằm trong hàng.
+> - `RateHz` **null** ⇒ mỗi hàng có **đúng HAI** phần tử `[x, y]`; phần tử 0 là biến độc lập của
+>   chính series ấy và **không phải thời gian** (ở `torque_vs_angle` nó là **góc siết**, độ).
+> - Mọi hàng khác **nằm ngoài hợp đồng**. Một `Samples` **rỗng** thoả mãn **vô can**, vì luật phát
+>   biểu **theo từng hàng**.
+>
+> **Người tiêu thụ làm được gì sau khi đọc mà trước đó thì không:** từ **một mình `RateHz`**, trước
+> khi chạm vào một hàng nào, họ biết phải **dựng lại** trục X từ chỉ số hay **đọc** nó ở phần tử 0
+> — và biết rằng ở nhánh null, phần tử 0 **không phải** một mốc thời gian.
+>
+> 🔴 **MỘT HỆ QUẢ CỦA LUẬT MÀ HỢP ĐỒNG ĐANG NÓI SAI, và nó được sửa cùng lúc:** `Unit` mô tả
+> **giá trị đo** — phần tử duy nhất ở nhánh có `RateHz`, phần tử **thứ hai** ở nhánh null — chứ
+> không mô tả cả hàng. `torque_vs_angle` mang `Unit = "Nm"` trong khi phần tử 0 của nó là **độ**,
+> và **kiểu này không có trường nào mang đơn vị ấy**. Doc cũ viết *"đơn vị mà các giá trị lấy mẫu
+> được biểu diễn"*, tức khẳng định sai về phần tử 0.
+>
+> **LỜI PHỦ ĐỊNH ĐÃ ĐƯỢC RÚT, giữ nguyên văn tại chỗ** (cùng một kiểu bảo tồn AA-1 dùng ở mọi chỗ
+> — xem ghi chú 📎 ở đầu Phần II): câu *"A consumer must therefore not assume a row shape from this
+> type alone."* nay đứng trong doc của `WaveformSeries` **trong ngoặc kép, kèm nhãn RÚT 2026-08-18
+> và lý do**, để người đã viết mã theo nó **thấy nó bị rút** chứ không thấy nó biến mất.
+>
+> 🔴 **CHÚ THÍCH SDK ĐƯỢC NÊU TÊN LÀ ĐÃ BIẾT SAI — VÀ TẬP ẤY RỘNG HƠN MỘT DÒNG.** Mục này nêu một
+> chỗ (`St4iDeviceClient.cs:86`). AA-1 quét cả họ SDK và tìm thêm **hai loại**:
+> - `[[t, v], ...]` cũng nằm trong **SDK Python** (`examples/device-client/python/st4i_device_client.py`,
+>   hai chỗ), nên chú thích sai đã **được nhân bản** sang một client anh em.
+> - Nặng hơn: các **ví dụ chạy được** của họ SDK không chỉ mô tả sai — chúng **gửi** một hình dạng
+>   luật không định nghĩa: `examples/device-client/csharp/ExampleScrewdriver.cs`,
+>   `examples/device-client/python/example_screwdriver.py` và `examples/device-client/README.md` đều
+>   đặt `rateHz` **kèm** hàng hai phần tử, và ở cả ba, phần tử 0 là **góc siết** chứ không phải thời
+>   gian. **Đó là thứ tác giả driver bên thứ ba copy**, chứ không phải dòng chú thích.
+> **Không file nào trong `examples/` bị sửa** — đúng như mục này (và mục 12) bắt buộc. Chúng được
+> **nêu tên trên hợp đồng**, kèm chỗ đọc đúng.
+>
+> **NHÂN CHỨNG, và bằng chứng nó ĐỎ ĐƯỢC.**
+> `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs`, bốn `[Fact]`
+> (`EXPECT_EDGECORE` 1143 → 1147, biện minh đầy đủ ngay cạnh hằng số). Cặp đối chứng chạy **cả hai
+> phía**, chỉ `src/` đổi, cả hai lần đổi đã hoàn nguyên: **HEAD** — Failed 0 / Passed 4;
+> **`WelderSim` phát `[t, current]` mà vẫn đặt `RateHz`** — Failed 3 / Passed 1;
+> **`ScrewdriveSim` giữ nguyên hàng `[angle, torque]` mà khai `RateHz = 500`** — Failed 3 / Passed 1.
+> Cánh tay thứ hai ấy **chính là hình dạng các ví dụ SDK đang xuất bản**. Test xanh ở cả ba lần là
+> cái đo **vị từ** chứ không đo bộ sinh, nên đó là kết quả đúng.
+>
+> 🔴 **TRẦN CỦA BẢN SỬA NÀY: KHÔNG GÌ CƯỠNG CHẾ LUẬT.** Kiểu này nhận mọi `double[]`; normalizer
+> chép hàng ra dây nguyên vẹn; `LiveTransport` chép ngược lại nguyên vẹn; bộ so của conformance
+> harness so từng phần tử mà **không bao giờ hỏi độ dài hàng**; và **không một chỗ nào trong `src/`
+> hay `tests/` đánh chỉ số vào một PHẦN TỬ của hàng**. Nên luật ràng buộc **bộ sinh bằng hợp đồng,
+> không bằng cấu trúc**, và một hàng vi phạm sẽ **được chở đi** chứ không bị từ chối. Nhân chứng
+> giữ **hai bộ sinh của sản phẩm này**, không giữ driver bên thứ ba, và không giữ họ SDK. Một
+> series cố ý **lởm chởm** vẫn đi qua vòng round-trip nguyên vẹn hôm nay, cố ý, trong fixture của
+> `ConnectorRoundTripTests` — đó là một khẳng định về **bộ tuần tự hoá**, không phải một phản ví dụ
+> của luật. Đóng cái trần này nghĩa là **thêm phép kiểm và từ chối một payload**, tức đổi hành vi,
+> tức một mục mới cho chủ sở hữu.
 
 ---
 

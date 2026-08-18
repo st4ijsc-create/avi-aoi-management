@@ -1414,7 +1414,55 @@ EXPECT_CONFORMANCE=24
 # EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0 (measured on a full solution build). No
 # suppression of any kind was added — no .editorconfig, no <NoWarn>, no #pragma — which makes this the
 # ninth consecutive task with none.
-EXPECT_EDGECORE=1143
+
+# 🔴 TASK AA-1 (.superpowers/sdd/oee-definition-and-row-shape/task-1-brief.md) raises this 1143 -> 1147
+# (+4). Grand total 2751 -> 2755. ONE new file, four plain [Fact]s, nothing rewritten, split or deleted —
+# and it is the ONLY executable line this task changes. Everything else AA-1 does is prose: doc comments on
+# WaveformSeries/Verdict/OeeResultDto/GetOeeFleetAsync/BuildReportPdf, and docs/owner-decisions.md.
+#
+#   tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs   (owner item 4, the witness)      +4
+#       The decision of 2026-08-16 says `RateHz` is the DISCRIMINATOR for a `WaveformSeries.Samples` row
+#       and that both built-in producers already honour it, then asks for a witness "so it does not drift
+#       back". Nothing pinned it: every `RateHz` use in tests/ was round-trip serialization, which asserts
+#       a value SURVIVES and never that it CORRELATES with a row shape.
+#       EveryWaveformTheBuiltInSimulatorsEmit_ObeysTheRateHzRowShapeRule_AndBothArmsAreExercised     +1
+#           Swept over ALL EIGHT built-in simulators rather than the two known producers, so a THIRD
+#           producer is covered the day it appears. Two FLOORS stop it passing vacuously: a tree emitting
+#           no rated series, or no untimed series, fails here instead of reporting a clean sweep of nothing.
+#       TheTwoBuiltInProducers_SitOnOppositeArmsOfTheRule_AndElementZeroIsAnAngleNotATime            +1
+#           The producers named individually, because the owner's claim is about THEM and a green sweep is
+#           not that claim. It also pins the SEMANTIC half: on the rated arm the sample count over the rate
+#           reproduces this same reading's own weld_time, and on the untimed arm element 0 rises to this
+#           same reading's own angle metric — so element 0 is demonstrably an ANGLE and not a time.
+#       TheRowShapeCheck_GoesRedOnEveryWayTheRuleCanBreak                                            +1
+#       TheRowShapeCheck_GoesRedOnARealProducersOwnSeries_WhenOnlyTheDiscriminatorMoves              +1
+#           §8.1(h6), two banks. The first drives the predicate with hand-built series covering every break
+#           (a pair on the rated arm, a scalar/triple/empty row on the untimed arm, a ragged series whose
+#           FIRST rows comply, and the exact shape the vendored SDK's own worked examples send). The second
+#           drives the same predicate with the producers' REAL rows and moves nothing but the discriminator:
+#           the identical rows are legal on one arm and illegal on the other, which is what "RateHz is the
+#           discriminator" means operationally.
+#
+# 🔴 THE CONTROL PAIR, RUN ON BOTH ARMS AGAINST THE PRODUCT AND RECORDED AS OUTCOMES. The witness file is
+# identical on every arm; only src/ moves, and both mutations were reverted (`git status` clean on both
+# simulators before the gate ran):
+#   HEAD (both simulators as shipped) — Failed: 0, Passed: 4.
+#   DIRTY 1: WelderSim emits `[t, current]` while still setting RateHz — Failed: 3, Passed: 1.
+#   DIRTY 2: ScrewdriveSim keeps its `[angle, torque]` rows and claims RateHz = 500 — Failed: 3, Passed: 1.
+#       This second arm is not hypothetical: it is exactly the shape the vendored device-client SDK's own
+#       screwdriver examples publish, reproduced inside the product.
+# The ONE test green on every arm is TheRowShapeCheck_GoesRedOnEveryWayTheRuleCanBreak, and that is the
+# right result rather than a weak test: it measures the PREDICATE, which neither mutation touches.
+#
+# EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0 — measured on a full `dotnet build -t:Rebuild`
+# of the whole solution AFTER the change, never on an incremental build, because an incremental build only
+# reports the projects it rebuilt and the previous task went red at the gate for exactly that. The new test
+# file compiles with no warning of its own. Of the four source files whose `///` blocks AA-1 edits, only
+# St4i.Connector.Abstractions sets GenerateDocumentationFile, so only its blocks are compiled at all —
+# every edited block was nonetheless checked directly by running DocCommentProseTests, because an
+# unbalanced block HIDES the diagnostics inside it and no compiler anywhere checks an element NAME. No
+# suppression of any kind was added, which makes this the TENTH consecutive task with none.
+EXPECT_EDGECORE=1147
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:

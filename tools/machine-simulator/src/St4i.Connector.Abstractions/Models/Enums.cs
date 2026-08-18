@@ -162,6 +162,14 @@ public enum DriverHealthState
 /// member doc says the value MEANS — a <see cref="Warn"/> cycle need not have been within specification,
 /// and both credit it as though it were — so the choice between these members sets a number on the API,
 /// the fleet list and the report PDF long after the reading itself is gone.</para>
+///
+/// <para>🔴 <b>Those three surfaces are NAMED here because this is the driver author's side of the rule and
+/// not the number holder's, and a definition that lives only on this enum is unreadable to the person
+/// holding the number.</b> In the host they are the OEE response shape <c>OeeResultDto</c>, the fleet route
+/// <c>HistorianEndpoints.GetOeeFleetAsync</c>, and the report builder
+/// <c>HistorianEndpoints.BuildReportPdf</c>; each states the same rule in that surface's own terms (the
+/// counts it prints), and each also says that the formula behind those counts carries no version. They are
+/// named as strings rather than linked, because this assembly deliberately references nothing.</para>
 /// </summary>
 public enum Verdict
 {

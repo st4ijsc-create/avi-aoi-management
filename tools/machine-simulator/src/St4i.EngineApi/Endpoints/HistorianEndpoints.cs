@@ -259,6 +259,26 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
     // GET /v1/historian/oee/fleet?from=&to=
     // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>One <see cref="OeeResultDto"/> per roster machine, over one shared window, each produced by
+    /// the same <see cref="ComputeOeeAsync"/> the single-machine route uses — never a second formula.
+    ///
+    /// <para>🔴 <b>WHAT EVERY NUMBER IN THIS LIST COUNTS — owner decision of 2026-08-16
+    /// (<c>docs/owner-decisions.md</c> item 2), repeated at this route because a fleet list is read
+    /// COLUMN-WISE and a definition one surface away is a definition nobody reads.</b> For every row:
+    /// <c>TotalCount</c> is every process-result cycle in the window whose stored verdict is not
+    /// <c>Skip</c>; <c>GoodCount</c> is those of them judged <c>Pass</c> or <c>Warn</c>; a <c>Fail</c> is in
+    /// the first and not the second; a <c>Skip</c> is in neither. So <b>a warned cycle raises this
+    /// machine's Quality exactly as a passed one does</b>. See <see cref="OeeResultDto"/> for the full
+    /// statement and for the fact that the formula carries NO VERSION.</para>
+    ///
+    /// <para>🔴 <b>The hazard this route has and the single-machine one does not:</b> the rows are compared
+    /// against each other. Two machines are comparable here only because they were computed by the same
+    /// formula in the same call — and since that formula is unversioned, a row copied out of this list and
+    /// compared against a number captured on another date is NOT known to be comparable, and nothing in
+    /// either number says so. A machine whose drivers ship cycles under a reading kind other than
+    /// <c>ProcessResult</c> also appears here with all-zero counts, which is indistinguishable from a
+    /// machine that simply ran nothing in the window.</para></summary>
     internal static async Task<IResult> GetOeeFleetAsync(
         string? from, string? to, IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct,
         bool? includeFabricated = null, DemoModeGate? demoGate = null)
@@ -659,7 +679,30 @@ public static class HistorianEndpoints
     /// A zero-count breakdown (the brief's "zero results in the period" robustness case) renders a plain
     /// "No data in this period." paragraph instead of an empty table — the OEE block itself always renders
     /// (its numbers are simply all-zero in that case, exactly like <c>/oee</c>'s own empty-window
-    /// behavior), so the returned PDF is never a bare/empty document even at zero rows.</summary>
+    /// behavior), so the returned PDF is never a bare/empty document even at zero rows.
+    ///
+    /// <para>🔴 <b>WHAT THE OEE BLOCK PRINTED HERE COUNTS — owner decision of 2026-08-16
+    /// (<c>docs/owner-decisions.md</c> item 2), repeated at this builder because this is the copy that
+    /// LEAVES THE BUILDING.</b> The block prints <c>Quality</c>, <c>Total Count</c> and <c>Good Count</c>:
+    /// <c>Total Count</c> is every process-result cycle in the period whose stored verdict is not
+    /// <c>Skip</c>, <c>Good Count</c> is those of them judged <c>Pass</c> or <c>Warn</c>, a <c>Fail</c> is
+    /// in the first and not the second, and a <c>Skip</c> is in neither. So <b>a warned cycle is printed as
+    /// good</b>. See <see cref="OeeResultDto"/> for the full statement.</para>
+    ///
+    /// <para>🔴 <b>The reader of THIS document can see the two tables disagree, which the API reader
+    /// cannot, so it is said here.</b> The Verdict Breakdown printed immediately below the OEE block lists a
+    /// raw count per verdict over the SAME machine and period with no reading-kind filter at all, while
+    /// <c>Total Count</c> and <c>Good Count</c> above it are <c>ProcessResult</c>-only. Adding the
+    /// breakdown's <c>Pass</c> and <c>Warn</c> rows therefore does not in general reproduce
+    /// <c>Good Count</c>, and its <c>Skip</c> row counts cycles that are in neither OEE number. The two are
+    /// allowed, and expected, to differ — see this class's own doc comment.</para>
+    ///
+    /// <para>🔴 <b>AND THE PRINTED NUMBER CARRIES NO FORMULA VERSION.</b> This document records the machine
+    /// and the period and nothing about the definition that produced the percentages, so a PDF filed today
+    /// and a PDF filed next year cannot be told apart by their formula — which is exactly why the owner
+    /// kept the calculation and published the definition instead. A future change to what counts as good
+    /// requires a versioned formula, not an edit here; changing it in place would silently restate every
+    /// report already printed and sent.</para></summary>
     private static byte[] BuildReportPdf(
         MachineDescriptor descriptor, DateTimeOffset from, DateTimeOffset to,
         OeeResultDto oee, IReadOnlyDictionary<string, long> verdictCounts)
