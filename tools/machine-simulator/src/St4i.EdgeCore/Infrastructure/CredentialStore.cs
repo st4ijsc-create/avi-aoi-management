@@ -185,8 +185,13 @@ public static class CredentialStore
         }
         catch (Exception)
         {
-            // Something is at the path and this process could not even read it. That is not "nothing here",
-            // so it falls through to the move rather than to the write.
+            // Two different arms land here and the comment must cover both (review M-2):
+            //   * the READ failed for a reason that is not "absent" — something is at the path and this
+            //     process could not even get its bytes; and
+            //   * the read SUCCEEDED and Unprotect threw something other than CryptographicException
+            //     (PlatformNotSupportedException off Windows is the concrete one).
+            // Neither is "nothing here", so both fall through to the move rather than to the write. Being
+            // wrong in this direction costs a rename; being wrong in the other direction costs the bytes.
         }
 
         var kept = ReserveKeptAsidePath(path);
@@ -231,7 +236,12 @@ public static class CredentialStore
     /// does not end in <c>.bin</c>, and a machine whose only remaining file is a kept-aside one genuinely has
     /// no stored credential. Pinned rather than reasoned about —
     /// <c>CredentialStoreTests.ListMachineCodes_DoesNotReportABlobThatWasKeptAside</c>, because
-    /// <c>*.bin</c> is a three-character extension and Windows pattern matching treats those specially.</para></summary>
+    /// <c>*.bin</c> is a three-character extension and Windows pattern matching treats those specially.
+    /// <b>That sentence was FALSE when it was first published (review I-1): the test it names asserted a
+    /// FILTERED <c>Assert.Single</c>, which survives an extra member whose spelling the filter does not
+    /// describe — and the stem of a kept-aside blob is exactly such a member. The test now compares the
+    /// WHOLE list; the claim is a pin again.</b> Its ceiling is one volume's 8.3-name configuration, stated
+    /// on the test itself.</para></summary>
     public static IReadOnlyList<string> ListMachineCodes()
     {
         var dir = CredsDir();

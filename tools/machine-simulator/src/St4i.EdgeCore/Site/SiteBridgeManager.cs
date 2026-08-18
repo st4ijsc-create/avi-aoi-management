@@ -85,8 +85,8 @@ public sealed class SiteBridgeManager : IAsyncDisposable
     /// handler, or this class's own startup caller).
     ///
     /// <para>🔴 <b>Task Z-1 — THIS OVERLOAD IS THE ONE THAT PERSISTS, AND THAT IS NOW A STATEMENT ABOUT THE
-    /// CALLER RATHER THAN ABOUT THE METHOD</b> (owner decision file, item 8, decided 2026-08-18). It has
-    /// three callers and only two of them reach this signature:
+    /// CALLER RATHER THAN ABOUT THE METHOD</b> (owner decision file, item 8, decided 2026-08-18). Three
+    /// call sites reach the shared body below; exactly two of them come through THIS signature:
     /// <list type="bullet">
     /// <item><description><c>PUT /v1/site</c> (<c>SiteEndpoints.PutSiteAsync</c>) — the operator SUPPLIED
     /// the three values. Persisting them is the request.</description></item>
@@ -109,7 +109,6 @@ public sealed class SiteBridgeManager : IAsyncDisposable
     /// from outside this class.</summary>
     private async Task ApplyCoreAsync(PersistedSiteLink link, bool persist)
     {
-
         // Fast path: once disposed, _gate itself is disposed too (see DisposeAsync) — check BEFORE ever
         // touching it, so a late ApplyAsync call after shutdown degrades to a no-op instead of throwing
         // ObjectDisposedException out of what production wiring treats as a never-throwing call.

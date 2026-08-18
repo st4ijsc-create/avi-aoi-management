@@ -41,6 +41,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔨 **GIỮ BLOB CŨ DƯỚI TÊN KHÁC** (2026-08-18) — DI CHUYỂN dữ liệu, **miễn trừ CHỈ cho mục này**; đã thi hành, Z-1 |
 | 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); đã thi hành, Z-1 |
 | 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng |
+| 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔴 **CHỜ ANH** — phần dư của mục 11, mở 2026-08-18 (Z-1, vòng sửa 1); **ca THÔNG THƯỜNG hơn** trong hai ca cùng hình dạng |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -54,7 +55,12 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 
 # 🔴 PHẦN I — ĐANG CHỜ ANH
 
-**Một mục ở đây, và chỉ một: mục 9.** Nó mang `🔴 CHỜ ANH` ở bảng phán quyết trên.
+**Hai mục ở đây: mục 9 và mục 13.** Cả hai mang `🔴 CHỜ ANH` ở bảng phán quyết trên.
+
+> 🔴 **Câu này đọc *"Một mục ở đây, và chỉ một: mục 9"* cho tới 2026-08-18, và nó thành sai
+> ĐÚNG LÚC mục 13 được thêm — cùng nhiệm vụ, cùng ngày (phản biện I-2).** Giữ lại ở đây vì
+> đó là hình dạng mà file này bắt: một con số đếm một tập, viết ở một chỗ, trong khi tập
+> ấy đổi ở chỗ khác.
 
 **Cho tới 2026-08-18 phần này có năm mục — 8, 9, 10, 11, 12.** Bốn trong số đó nay **đã
 được quyết**, và **ai quyết cái nào là một phần của hồ sơ, không được gộp lại**: mục
@@ -120,6 +126,84 @@ hợp đồng mà `PUT /v1/settings` cũng dùng chung.
 > **Nếu không quyết định** vẫn đúng nguyên như đoạn trên: giữ nguyên, an toàn cho file,
 > và một cỗ máy headless có file hỏng chạy trên giá trị mặc định cho tới khi có người sửa
 > file.
+
+---
+
+## 13. Một bản KHÔI PHỤC đè lên một `oee-settings.json` ĐÃ CÓ vẫn bị ghi đè — cùng hình dạng mục 11, và là ca THÔNG THƯỜNG hơn trong hai ca
+
+**Mục này sinh ra từ bản thi hành của mục 11, và nó ở đây vì tiền lệ của chính file này:**
+mục **8** sinh ra đúng như thế (phần dư của mục 1) và mục **10** sinh ra đúng như thế
+(phần dư 1 của mục 5). Cả hai đã được nêu tên, leo lên, và được phán. Chôn phần dư này
+trong một báo cáo là đảo ngược đúng cơ chế đã tạo ra hai mục ấy — và luật của file này nói
+thẳng: *một điều "đã được nêu trong một báo cáo" là điều chủ sở hữu **không có đường nào
+mở ra đọc**.*
+
+> ⚠️ **Z-1 đã suýt chôn nó, và điều đó được ghi lại chứ không im.** Khối thi hành của mục
+> 11 và `docs/startup-failure-posture.md` §3.6 lúc đầu viết *"Nó KHÔNG được thêm vào danh
+> sách chờ chủ sở hữu"*, trong khi báo cáo của chính Z-1 viết *"đó là câu đáng đưa lại cho
+> chủ sở hữu"*. **Hai artefact của cùng một nhiệm vụ nói ngược nhau, và cái được xuất bản
+> nói cái yếu hơn.** Phản biện (I-2) bắt được, điều phối viên phán **mở mục**. Cả hai câu
+> sai đã được sửa tại chỗ chúng được viết, không chỉ ở đây.
+
+**Đo được:** `OeeSettingsStore.Set` so **hai sự thật** — `_tableBuiltFrom` (bảng trong bộ
+nhớ được dựng từ phép đọc nào) và `fresh.Status` (file lúc này). Mục 11 đóng cặp
+`Absent`/`Loaded`. Cặp còn lại vẫn ghi:
+
+```
+_tableBuiltFrom == Loaded   VÀ   fresh.Status == Loaded,   mà HAI PHÉP ĐỌC KHÁC NỘI DUNG
+```
+
+Host lên trên một file tốt → vận hành viên khôi phục một bản sao lưu **đè lên nó** → cả hai
+sự thật vẫn là `Loaded` → `Set` kế tiếp ghi bảng **trước khi khôi phục** đè lên file **sau
+khi khôi phục**. Store chỉ ghi lại **kết cục** của phép đọc, **không ghi DANH TÍNH** của
+các byte mà bảng được dựng từ đó, nên nó không phân biệt được hai file. **Không ném, không
+409, không một dòng log** — y hệt mục 11 trước khi mục 11 được đóng.
+
+🔴 **Và đây là ca THÔNG THƯỜNG hơn trong hai ca.** Mục 11 đóng ca mà host lên khi **không
+có file**. Bất kỳ máy nào **từng đặt cấu hình OEE** thì **có** file — nên hình dạng còn mở
+là hình dạng mà một lần khôi phục thật hay gặp hơn, không phải hình dạng hiếm.
+
+**Ở đâu:** `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` (`Set`, vị từ hai điều kiện;
+`Save` → `WriteAllTextAtomic`), tới được từ
+`src/St4i.EngineApi/Endpoints/HistorianEndpoints.cs` (`PutOeeSettingsAsync`).
+
+**Hậu quả vận hành:** giống hệt mục 5 và mục 11 — ideal-cycle override và
+planned-production ratio của **mọi máy** trong bản khôi phục biến mất, con số OEE đổi thầm
+lặng, **ngay sau khi vận hành viên tưởng mình vừa khôi phục xong**. Cách né duy nhất hôm
+nay vẫn là **khởi động lại host sau khi khôi phục** (hoặc gọi `Reload`).
+
+**Cái gì đã chặn nó khỏi được sửa luôn trong Z-1:** phán quyết mục 11 ghi **một vị từ đã
+đo**, và vị từ ấy không bao trùm cặp này. Nới nó ra là **quyết lại** một phán quyết của chủ
+sở hữu, thứ nhiệm vụ thi hành không được làm. Về mặt cơ chế thì cũng không phải một cái
+chốt: đóng nó đòi store **ghi lại danh tính các byte** mà bảng được dựng từ đó — nội dung,
+hoặc một dấu hiệu nhận dạng của file — chứ không chỉ kết cục phép đọc, tức **thêm một sự
+thật mới vào store**.
+
+**Vì sao là quyết định của chủ sở hữu:** nó đổi **khi nào `PUT /v1/historian/oee/settings`
+thất bại với người vận hành**. Một store phân biệt được "file tôi vừa đọc không phải file
+tôi dựng bảng từ đó" sẽ trả **409** ở những lúc hôm nay nó trả **200** — kể cả khi thứ đổi
+file là một biên tập bằng tay hợp lệ, không phải một bản khôi phục. Đó là cái giá vận hành
+viên trả, nên là quyết định của họ, đúng cùng lý do mục 11 đã là quyết định của họ.
+
+**Nếu không quyết định:** giữ nguyên. Một bản khôi phục thực hiện trên host đang chạy **có
+file** sẽ bị lần đặt OEE kế tiếp xoá, và **không ai biết** cho tới khi có người đối chiếu
+lại — đúng câu mà mục 11 đã viết, cho ca còn lại.
+
+🔴 **Cái mục này CHƯA có, nêu tên chứ không lấp:** nó **không** bày ra các lựa chọn kèm
+**giá ĐÃ ĐO** của từng lựa chọn — bao nhiêu `PUT` hợp lệ hôm nay sẽ thành 409, và một phép
+so danh tính (nội dung? thời gian sửa? kích thước?) tốn gì trên một file mà `Set` đã đọc
+sẵn trong cùng một khoá. **Giá ấy phải được đo**; lần ghi này không đo được nó, và một con
+số ước lượng đặt ở đây sẽ **đọc như một phép đo**. Đây đúng là chỗ thiếu mà mục 9 cũng
+đang mang, và nó được nêu tên vì lý do y hệt.
+
+**Bằng chứng — chạy lại được, và nó ghim khuyết tật ĐANG SỐNG:**
+`tests/St4i.EdgeCore.Tests/Historian/OeeSettingsStoreTests.cs`,
+`Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling`
+— nó dựng host lên **có** file, khôi phục đè lên, gọi `Set`, và khẳng định entry vừa khôi
+phục **biến mất**. Nó **ghim một khuyết tật đang sống làm đường cơ sở và KHÔNG sửa**, đúng
+như S-1 đã làm cho mục 5 và V-1 đã làm cho mục 10. Nếu anh quyết SỬA, khẳng định ấy đảo
+chiều và chỗ đảo chính là diff. Cùng chỗ: chú thích lớp của `OeeSettingsStore` và
+`docs/startup-failure-posture.md` §3.6.
 
 ---
 
@@ -437,9 +521,20 @@ tiêu đề mới **ghi rõ rằng Z-1 thêm nó ngày 2026-08-18**, cùng commi
 kiểm. Đó là ranh giới Y-1 vạch ra: viết một **hồ sơ** mình không thi hành là viết hộ;
 thêm một **cái dấu** nhất quán và ký tên vào chính cái dấu thì không.
 
-⚠️ **Phần này nay có SÁU mục, không phải bốn** — 1, 3, 5–7 (ba mục), và **8, 10, 11** do
-Z-1 mang sang từ Phần II ngày 2026-08-18. Lời cảnh báo về `grep "^## "` phía trên vẫn
-đúng và nay còn đáng đọc hơn: `## 5–7.` là **một** tiêu đề chứa **ba** mục.
+⚠️ **Phần này chứa những mục nào — LIỆT KÊ, vì một con số ở đây vừa tự bác bỏ mình.**
+Các mục: **1, 3, 5, 6, 7** (ở đây từ trước), cộng **8, 10, 11** do Z-1 mang sang từ Phần II
+ngày 2026-08-18. Chúng nằm dưới các tiêu đề `## 1.`, `## 3.`, `## 5–7.`, `## 8.`, `## 10.`,
+`## 11.` — **tiêu đề và mục KHÔNG bằng nhau**, đúng như cảnh báo `grep "^## "` ngay phía
+trên nói, vì `## 5–7.` là **một** tiêu đề chứa **ba** mục.
+
+> 🔴 **ĐÍNH CHÍNH 2026-08-18, cùng ngày, cùng nhiệm vụ (phản biện I-3).** Chỗ này Z-1 vừa
+> viết *"Phần này nay có SÁU mục, không phải bốn"*. Cả hai số đều sai: **sáu** đếm **tiêu
+> đề** chứ không đếm mục (mục là **tám**), và **bốn** không mô tả cây nào — trước Z-1 phần
+> này có **ba** tiêu đề và **năm** mục. Nó nằm **hai dòng dưới** đúng câu cảnh báo rằng đếm
+> mục bằng tiêu đề đã sai một lần. Đó chính là luật đợt này mua được — *một số vô hướng tóm
+> tắt một tập chưa ai liệt kê thì không phải một sự thật* — và ở đây tập **đã được liệt kê
+> ngay cạnh**, nên phép liệt kê tự bác con số. Thay bằng phép liệt kê; câu sai giữ lại ở
+> đây làm hồ sơ chứ không xoá.
 
 ---
 
@@ -1553,8 +1648,16 @@ và **dừng ngay trước `Set`**.
 > **ghim SỐNG** —
 > `OeeSettingsStoreTests.Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling`
 > — đúng cách S-1 ghim khuyết tật của mục 5 làm đường cơ sở: nếu một nhiệm vụ sau đóng nó, khẳng định
-> ấy đảo chiều và chỗ đảo chính là diff. **Nó KHÔNG được thêm vào danh sách chờ chủ sở hữu**: mục 11
-> đã đóng, và chưa ai được hỏi về ca này.
+> ấy đảo chiều và chỗ đảo chính là diff. ~~**Nó KHÔNG được thêm vào danh sách chờ chủ sở hữu**: mục 11
+> đã đóng, và chưa ai được hỏi về ca này.~~
+>
+> 🔴 **[RÚT 2026-08-18, cùng ngày, cùng nhiệm vụ — phản biện I-2.]** Câu bị gạch trên là **sai**, và
+> nó sai theo đúng hình dạng mà file này lập ra để chấm dứt: báo cáo của chính Z-1 viết ngược lại
+> (*"đó là câu đáng đưa lại cho chủ sở hữu"*), nên hai artefact của một nhiệm vụ nói khác nhau và
+> **cái được xuất bản nói cái yếu hơn**. Lập luận *"chưa ai được hỏi"* là **lý do để hỏi**, không phải
+> lý do để im — mục 8 và mục 10, hai mục Z-1 vừa đóng, sinh ra chính xác bằng cách ấy. Phần dư này nay
+> là **mục 13** của file này, ở **Phần I — ĐANG CHỜ ANH**, chưa được quyết. Chữ giữ nguyên, chỗ sai
+> đánh dấu.
 >
 > **CẶP ĐỐI CHỨNG ĐÃ CHẠY HAI PHÍA** (cùng file điều khiển với mục 8 và 10 — xem mục 8 để biết vì sao
 > nó dịch được ở cả hai cây). Kịch bản: store lên khi **không có file**, một bản khôi phục **hai máy**

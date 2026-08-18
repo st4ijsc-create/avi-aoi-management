@@ -331,7 +331,21 @@ public class CredentialStoreTests
     /// enough to matter.</b> <c>ListMachineCodes</c> enumerates <c>*.bin</c>, and a three-character
     /// extension makes Win32 pattern matching return names whose extension merely BEGINS with it
     /// (<c>*.xls</c> famously returns <c>book.xlsx</c>). A kept-aside blob reported as a stored
-    /// credential would tell the Settings view that a machine still has a key it cannot use.</summary>
+    /// credential would tell the Settings view that a machine still has a key it cannot use.
+    ///
+    /// <para>🔴 <b>THE FIRST VERSION OF THIS TEST SURVIVED THE EXACT FAILURE IT IS NAMED FOR (review
+    /// I-1), and the shape of the mistake is worth keeping.</b> It asserted <c>Assert.Single(listed,
+    /// c =&gt; c == code)</c> and <c>Assert.DoesNotContain(listed, c =&gt; c.Contains("unreadable"))</c>.
+    /// A FILTERED <c>Assert.Single</c> asserts <i>exactly one element MATCHES</i> — not <i>the list has
+    /// one element</i> — and the stem Win32 would have reported for
+    /// <c>&lt;code&gt;.bin.unreadable-&lt;stamp&gt;</c> is <c>&lt;code&gt;.bin</c>, which is neither
+    /// equal to <c>code</c> nor contains <c>"unreadable"</c>. So both assertions were green on a tree
+    /// where the kept blob WAS listed. The list is now compared WHOLE, which is the only shape that can
+    /// see an extra member nobody predicted the spelling of.</para>
+    ///
+    /// <para><b>What this still does not reach:</b> one volume, one 8.3-name configuration. The
+    /// dangerous direction — a volume on which <c>*.bin</c> matches MORE — is exactly the direction a
+    /// per-machine measurement cannot close, and it is named here rather than left to the reader.</para></summary>
     [Fact]
     public void ListMachineCodes_DoesNotReportABlobThatWasKeptAside()
     {
@@ -352,11 +366,12 @@ public class CredentialStoreTests
                 .ToList();
             Assert.Single(kept);
 
-            // The live blob is listed ONCE, under the machine code, and the kept-aside file contributes
-            // no entry of its own — not under a stem ending in ".bin" and not under any other.
+            // 🔴 THE WHOLE LIST, not a filter over it. This directory holds exactly two files and this
+            // store owns both, so the entire answer is enumerable — and only comparing the whole answer
+            // can catch an extra member whose spelling nobody predicted, which is precisely what a
+            // filtered assertion could not do here (see this test's own doc comment).
             var listed = CredentialStore.ListMachineCodes();
-            Assert.Single(listed, c => string.Equals(c, code, StringComparison.OrdinalIgnoreCase));
-            Assert.DoesNotContain(listed, c => c.Contains("unreadable", StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(new[] { code }, listed);
         }
         finally
         {
@@ -389,13 +404,14 @@ public class CredentialStoreTests
             var code = "Z1-COLLIDE-" + Guid.NewGuid().ToString("N")[..8];
             var live = Path.Combine(root, code + ".bin");
 
-            // Both candidate stamps, so the collision happens whichever side of a second boundary Save
-            // lands on. The sentinel content is what proves neither was touched.
+            // Every candidate stamp in a five-second window, so the collision happens whichever second
+            // Save's own clock read lands in. The sentinel content is what proves none was touched.
             var now = DateTime.UtcNow;
-            var occupied = new[] { now, now.AddSeconds(1) }
-                .Select(t => Path.Combine(
+            var occupied = Enumerable.Range(-1, 5)
+                .Select(offset => Path.Combine(
                     root,
-                    code + ".bin.unreadable-" + t.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)))
+                    code + ".bin.unreadable-" + now.AddSeconds(offset)
+                        .ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)))
                 .ToList();
             var sentinel = "AN EARLIER KEPT BLOB THAT MUST SURVIVE"u8.ToArray();
             foreach (var taken in occupied) File.WriteAllBytes(taken, sentinel);
@@ -413,7 +429,14 @@ public class CredentialStoreTests
                 .Where(f => Path.GetFileName(f)!.StartsWith(code + ".bin.unreadable-", StringComparison.Ordinal)
                          && !occupied.Contains(f, StringComparer.OrdinalIgnoreCase))
                 .ToList();
-            Assert.Equal(unusable, File.ReadAllBytes(Assert.Single(fresh)));
+            var chosen = Assert.Single(fresh);
+            Assert.Equal(unusable, File.ReadAllBytes(chosen));
+
+            // 🔴 AND THE COLLISION REALLY HAPPENED (review M-1). Without this the test degrades SILENTLY
+            // into a weaker one: if Save's stamp had fallen outside the pre-occupied window it would have
+            // taken a free base name, no collision would have occurred, and every assertion above would
+            // still be green. The "-2" suffix is the only observable that says the free-name search ran.
+            Assert.EndsWith("-2", chosen, StringComparison.Ordinal);
             Assert.Equal("mk_after_a_collision", CredentialStore.Load(code));
         }
         finally

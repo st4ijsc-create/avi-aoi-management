@@ -251,7 +251,8 @@ export MSBUILDDISABLENODEREUSE=1
 # 🔴 Q-1 FIX ROUND 2 raises EXPECT_ENGINEAPI 1339 -> 1340 (+1). Nothing else moves; grand total 2679 -> 2680.
 #
 #   + 1  tests/St4i.EngineApi.Tests/Site/SiteEndpointsTests.cs —
-#        TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsApplyAsync. Review N3: the claim "ApplyAsync holds
+#        TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsTheSharedApplyBody (named ..._AndItIsApplyAsync
+#        until task Z-1 moved the Save into ApplyCoreAsync). Review N3: the claim "ApplyAsync holds
 #        the only Save of site-link.json in the whole product" is what makes the new Error message's
 #        sentence "it was NOT overwritten or deleted by this start" TRUE, and it had no census while its
 #        settings counterpart (TheStartupReplayHasExactlyOneArm_...) has had one since H-1a. An enumeration

@@ -608,7 +608,7 @@ documented contract and nobody asked for a write at that moment, which is the wh
 a real behaviour this change removes.
 
 **The other writer, censused rather than asserted (fix round 2, review N3).**
-`SiteEndpointsTests.TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsApplyAsync` measures two populations
+`SiteEndpointsTests.TheSiteLinkFileHasExactlyOneWriterInSrc_AndItIsTheSharedApplyBody` measures two populations
 apart, because they fail differently: every file in `src/` that names `SiteLinkStore` (a writer must, to
 obtain one) is swept for `.Save(` — **one site, `SiteBridgeManager.cs`** — and all of `src/` is swept for
 the literal `site-link.json`, which is how a writer that bypasses the store would appear — **one site, the
@@ -862,8 +862,17 @@ Closing either needs a fact this store does not keep, and keeping it changes *wh
 second time — so it is **named, not taken**. The first is pinned LIVE by
 `OeeSettingsStoreTests.Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling`,
 the way S-1 pinned item 5's defect as a baseline: if a later task closes it, that assertion inverts and the
-inversion is the diff. **It is not on the owner's list**, because item 11 is now closed and nobody has been
-asked about this one.
+inversion is the diff. ~~**It is not on the owner's list**, because item 11 is now closed and nobody has
+been asked about this one.~~
+
+🔴 **[WITHDRAWN 2026-08-18, same day, same task — review I-2.]** That sentence was wrong, and wrong in this
+file's own worst shape: *"nobody has been asked"* is the REASON TO ASK, not a reason to stay quiet, and
+Z-1's own report said the opposite of what Z-1 published here. Items 8 and 10 — the two Z-1 had just closed
+— were both born exactly this way, as named residues escalated onto that list. It is now **item 13 of
+`docs/owner-decisions.md`**, in `PHẦN I — ĐANG CHỜ ANH`, undecided, with the measured-cost gap NAMED rather
+than filled: nobody has measured how many legitimate `PUT`s today would become `409` under a store that
+compares byte IDENTITY rather than read OUTCOME, and an estimate placed there would read as a measurement.
+The words are kept and the error is marked.
 
 #### The two exceptions, and what each one costs
 
