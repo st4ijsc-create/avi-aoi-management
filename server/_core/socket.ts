@@ -1995,19 +1995,37 @@ export async function getActiveDowntime(machineId: number): Promise<DowntimeEven
 }
 
 // Get downtime history — đọc từ DB, lọc theo machineId/category/khoảng thời gian.
+/**
+ * ★ NHÓM A #3 (ca chuẩn của chủ dự án) — trước bản vá, `mqttClient.getDowntimeHistory` gọi hàm
+ * này **không có `ctx`** ⇒ mọi tài khoản đọc được 1.000 sự kiện dừng máy GẦN NHẤT của **toàn bộ
+ * đội máy**: mã máy, thời điểm, phân loại và lý do dừng của nhà máy người khác.
+ *
+ * ⚠ `userId`/`userRole` chỉ được đến từ `ctx.user`. Bỏ trống = KHÔNG lọc — đó là lối đi của
+ * broadcaster socket và tác vụ nền, và là chiều DƯƠNG chống vá quá tay.
+ */
 export async function getDowntimeHistory(options?: {
   machineId?: number;
   category?: DowntimeEvent['category'];
   startDate?: Date;
   endDate?: Date;
+  userId?: number;
+  userRole?: string;
 }): Promise<DowntimeEvent[]> {
   const { getDb } = await import('../db');
   const dbConnection = await getDb();
   if (!dbConnection) return [];
   const { downtimeEvents } = await import('../../drizzle/schema');
-  const { and, eq, gte, lte, desc } = await import('drizzle-orm');
+  const { and, eq, gte, lte, desc, inArray } = await import('drizzle-orm');
 
   const conds = [];
+  // ⚠ Cổng phạm vi ĐẶT TRƯỚC bộ lọc `machineId` của người gọi — nếu đặt sau, một `machineId` tự
+  // khai của nhà máy khác vẫn lọt qua vì hai mệnh đề `eq`/`inArray` được AND với nhau chứ không
+  // kiểm nhau. Tập RỖNG ⇒ `[-1]` ⇒ 0 hàng TƯỜNG MINH (không phải "quên lọc").
+  const { machineIdsTrongPhamVi } = await import('../db/hierarchy');
+  const trongPhamVi = await machineIdsTrongPhamVi({ userId: options?.userId, userRole: options?.userRole });
+  if (trongPhamVi !== null) {
+    conds.push(inArray(downtimeEvents.machineId, trongPhamVi.length > 0 ? trongPhamVi : [-1]));
+  }
   if (options?.machineId) conds.push(eq(downtimeEvents.machineId, options.machineId));
   if (options?.category) conds.push(eq(downtimeEvents.category, options.category));
   if (options?.startDate) conds.push(gte(downtimeEvents.startTime, options.startDate));

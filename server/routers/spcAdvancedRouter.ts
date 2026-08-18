@@ -9,6 +9,7 @@ import { router, moduleProcedure } from "../_core/trpc";
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_QUALITY");
 import * as db from "../db";
+import { phamViCua } from "./_phamViNguoiXem";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import {
@@ -171,14 +172,14 @@ export const spcConfigRouter = router({
       measurementPointDefId: z.number().optional(),
       isActive: z.boolean().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.listSpcConfigurations(input ?? {});
+    .query(async ({ input, ctx }) => {
+      return db.listSpcConfigurations(input ?? {}, phamViCua(ctx));
     }),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const config = await db.getSpcConfiguration(input.id);
+    .query(async ({ input, ctx }) => {
+      const config = await db.getSpcConfiguration(input.id, phamViCua(ctx));
       if (!config) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'spcConfiguration' }, 'SPC configuration not found');
       return config;
     }),
@@ -244,14 +245,14 @@ export const workstationSpcRouter = router({
       machineId: z.number().optional(),
       subgroupSize: z.number().min(2).max(25).default(5),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const rawData = await db.getMeasurementValuesForSPC({
         measurementPointDefId: input.measurementPointDefId,
         startDate: input.startDate ? new Date(input.startDate) : undefined,
         endDate: input.endDate ? new Date(input.endDate) : undefined,
         machineId: input.machineId,
         limit: 5000,
-      });
+      }, phamViCua(ctx));
 
       if (rawData.length < input.subgroupSize * 2) {
         return { subgroups: [], controlLimits: null, insufficient: true, sampleCount: rawData.length };
@@ -283,12 +284,12 @@ export const workstationSpcRouter = router({
       startDate: z.string().optional(),
       endDate: z.string().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const data = await db.getWorkstationMeasurementComparison({
         productModelId: input.productModelId,
         startDate: input.startDate ? new Date(input.startDate) : undefined,
         endDate: input.endDate ? new Date(input.endDate) : undefined,
-      });
+      }, phamViCua(ctx));
 
       return data.map((ws: any) => ({
         workstationId: ws.workstationId,
@@ -310,7 +311,7 @@ export const workstationSpcRouter = router({
       endDate: z.string().optional(),
       machineId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       // Get spec limits from measurement point definition
       const pointDefs = await db.getLinkedMeasurementPointsForWorkstation(0); // we'll fetch directly
       // Actually, we need a direct point lookup - use getMeasurementValuesForSPC and get spec from schema
@@ -320,7 +321,7 @@ export const workstationSpcRouter = router({
         endDate: input.endDate ? new Date(input.endDate) : undefined,
         machineId: input.machineId,
         limit: 10000,
-      });
+      }, phamViCua(ctx));
 
       if (rawData.length < 30) {
         return { insufficient: true, sampleCount: rawData.length, indices: null };
@@ -373,13 +374,13 @@ export const correlationRouter = router({
       endDate: z.string().optional(),
       machineId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const rawPairs = await db.getMeasurementPairsForCorrelation({
         pointIds: input.pointIds,
         startDate: input.startDate ? new Date(input.startDate) : undefined,
         endDate: input.endDate ? new Date(input.endDate) : undefined,
         machineId: input.machineId,
-      });
+      }, phamViCua(ctx));
 
       // Group values by inspectionId, then extract paired values
       const byInspection = new Map<number, Map<number, number>>();
@@ -462,8 +463,8 @@ export const correlationRouter = router({
       workstationId: z.number().optional(),
       limit: z.number().default(20),
     }).optional())
-    .query(async ({ input }) => {
-      return db.listCorrelationAnalyses(input ?? {});
+    .query(async ({ input, ctx }) => {
+      return db.listCorrelationAnalyses(input ?? {}, phamViCua(ctx));
     }),
 });
 
@@ -479,14 +480,14 @@ export const spcRuleViolationRouter = router({
       subgroupSize: z.number().min(2).max(25).default(5),
       rules: z.array(z.enum(['western_electric', 'nelson'])).default(['western_electric', 'nelson']),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const rawData = await db.getMeasurementValuesForSPC({
         measurementPointDefId: input.measurementPointDefId,
         startDate: input.startDate ? new Date(input.startDate) : undefined,
         endDate: input.endDate ? new Date(input.endDate) : undefined,
         machineId: input.machineId,
         limit: 5000,
-      });
+      }, phamViCua(ctx));
 
       if (rawData.length < input.subgroupSize * 3) {
         return { insufficient: true, violations: [], sampleCount: rawData.length };
@@ -580,12 +581,12 @@ export const spcRuleViolationRouter = router({
       endDate: z.string().optional(),
       limit: z.number().default(50),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return db.listSpcRuleViolations({
         ...input,
         startDate: input?.startDate ? new Date(input.startDate) : undefined,
         endDate: input?.endDate ? new Date(input.endDate) : undefined,
-      });
+      }, phamViCua(ctx));
     }),
 
   /** Acknowledge a violation */
@@ -612,8 +613,8 @@ export const spcRuleViolationRouter = router({
       workstationId: z.number().optional(),
       productModelId: z.number().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getActiveViolationCount(input ?? {});
+    .query(async ({ input, ctx }) => {
+      return db.getActiveViolationCount(input ?? {}, phamViCua(ctx));
     }),
 });
 
@@ -704,13 +705,13 @@ export const cpkTrendRouter = router({
       endDate: z.string().optional(),
       limit: z.number().default(50),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const data = await db.getCpkTrend({
         measurementPointDefId: input.measurementPointDefId,
         startDate: input.startDate ? new Date(input.startDate) : undefined,
         endDate: input.endDate ? new Date(input.endDate) : undefined,
         limit: input.limit,
-      });
+      }, phamViCua(ctx));
 
       // Compute trend direction
       const cpkValues = data.map((d: any) => Number(d.cpk)).filter(v => !isNaN(v));
@@ -763,12 +764,12 @@ export const cpkTrendRouter = router({
       startDate: z.string().optional(),
       endDate: z.string().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return db.getCpkSummaryByWorkstation({
         productModelId: input?.productModelId,
         startDate: input?.startDate ? new Date(input.startDate) : undefined,
         endDate: input?.endDate ? new Date(input.endDate) : undefined,
-      });
+      }, phamViCua(ctx));
     }),
 });
 
@@ -782,15 +783,15 @@ export const qualityGateRouter = router({
       productModelId: z.number().optional(),
       isActive: z.boolean().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.listQualityGates(input ?? {});
+    .query(async ({ input, ctx }) => {
+      return db.listQualityGates(input ?? {}, phamViCua(ctx));
     }),
 
   /** Get single quality gate */
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const gate = await db.getQualityGate(input.id);
+    .query(async ({ input, ctx }) => {
+      const gate = await db.getQualityGate(input.id, phamViCua(ctx));
       if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' }, `Quality gate ${input.id} not found`);
       return gate;
     }),
@@ -859,8 +860,8 @@ export const qualityGateRouter = router({
       qualityGateId: z.number(),
       machineId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
-      const gate = await db.getQualityGate(input.qualityGateId);
+    .query(async ({ input, ctx }) => {
+      const gate = await db.getQualityGate(input.qualityGateId, phamViCua(ctx));
       if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' }, `Quality gate ${input.qualityGateId} not found`);
 
       // Get recent inspection data for this gate's scope
@@ -872,6 +873,15 @@ export const qualityGateRouter = router({
       const { desc, and, eq, sql } = await import('drizzle-orm');
 
       const conditions: any[] = [];
+      // ⚠ Cổng phạm vi trên chính bản ghi kiểm: một cổng chất lượng "mặc định" (không gắn máy) đọc
+      // sản lượng của MỌI máy, nên phải siết ở đây chứ không chỉ ở lượt tra cổng phía trên.
+      {
+        const idsMay = await db.machineIdsTrongPhamVi(phamViCua(ctx));
+        if (idsMay !== null) {
+          const { inArray } = await import('drizzle-orm');
+          conditions.push(inArray(productInspections.machineId, idsMay.length ? idsMay : [-1]));
+        }
+      }
       if (gate.machineId) conditions.push(eq(productInspections.machineId, gate.machineId));
       if (input.machineId) conditions.push(eq(productInspections.machineId, input.machineId));
       if (gate.productModelId) conditions.push(eq(productInspections.productModelId, gate.productModelId));
@@ -964,12 +974,12 @@ export const qualityGateRouter = router({
       endDate: z.string().optional(),
       limit: z.number().default(50),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return db.listQualityGateEvents({
         ...input,
         startDate: input?.startDate ? new Date(input.startDate) : undefined,
         endDate: input?.endDate ? new Date(input.endDate) : undefined,
-      });
+      }, phamViCua(ctx));
     }),
 
   /** Trigger a gate event manually */
@@ -1016,7 +1026,7 @@ export const qualityGateRouter = router({
 
   /** Get active gate events for dashboard */
   activeEvents: protectedProcedure
-    .query(async () => {
-      return db.getActiveGateEvents();
+    .query(async ({ ctx }) => {
+      return db.getActiveGateEvents(phamViCua(ctx));
     }),
 });

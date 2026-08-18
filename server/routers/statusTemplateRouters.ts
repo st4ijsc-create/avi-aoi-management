@@ -8,6 +8,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import * as db from "../db";
+import { phamViCua } from "./_phamViNguoiXem";
 // Doc 31 Đợt C (MP7/MP8) — deep bulk-import derivation + lifecycle gate.
 import {
   deepImportPointSchema,
@@ -27,8 +28,8 @@ export const machineStatusRouter = router({
       lineId: z.number().int().positive().optional(),
       factoryId: z.number().int().positive().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      const rows = await db.getAllMachinesWithStatus();
+    .query(async ({ input, ctx }) => {
+      const rows = await db.getAllMachinesWithStatus(phamViCua(ctx));
       if (!input || (input.machineId === undefined && input.lineId === undefined && input.factoryId === undefined)) {
         return rows;
       }
@@ -44,8 +45,8 @@ export const machineStatusRouter = router({
       machineId: z.number(),
       limit: z.number().min(1).max(1000).default(100),
     }))
-    .query(async ({ input }) => {
-      return db.getMachineStatusLogs(input.machineId, input.limit);
+    .query(async ({ input, ctx }) => {
+      return db.getMachineStatusLogs(input.machineId, input.limit, phamViCua(ctx));
     }),
 
   getHeartbeats: protectedProcedure
@@ -54,8 +55,8 @@ export const machineStatusRouter = router({
       machineId: z.number(),
       hours: z.number().min(1).max(168).default(24),
     }))
-    .query(async ({ input }) => {
-      return db.getHeartbeatHistory(input.machineId, input.hours);
+    .query(async ({ input, ctx }) => {
+      return db.getHeartbeatHistory(input.machineId, input.hours, phamViCua(ctx));
     }),
 
   getUptimeStats: protectedProcedure
@@ -64,16 +65,16 @@ export const machineStatusRouter = router({
       machineId: z.number(),
       hours: z.number().min(1).max(720).default(24),
     }))
-    .query(async ({ input }) => {
-      return db.getMachineUptimeStats(input.machineId, input.hours);
+    .query(async ({ input, ctx }) => {
+      return db.getMachineUptimeStats(input.machineId, input.hours, phamViCua(ctx));
     }),
 
   getUnnotifiedOffline: adminProcedure
     .input(z.object({
       thresholdMinutes: z.number().min(1).max(60).default(5),
     }))
-    .query(async ({ input }) => {
-      return db.getUnnotifiedOfflineMachines(input.thresholdMinutes);
+    .query(async ({ input, ctx }) => {
+      return db.getUnnotifiedOfflineMachines(input.thresholdMinutes, phamViCua(ctx));
     }),
 
   markNotificationSent: adminProcedure
@@ -89,21 +90,21 @@ export const machineStatusRouter = router({
       machineId: z.number(),
       hours: z.number().min(1).max(720).default(24),
     }))
-    .query(async ({ input }) => {
-      return db.getUptimeTimeline(input.machineId, input.hours);
+    .query(async ({ input, ctx }) => {
+      return db.getUptimeTimeline(input.machineId, input.hours, phamViCua(ctx));
     }),
 
   getAllUptimeTimelines: protectedProcedure
     .input(z.object({
       hours: z.number().min(1).max(720).default(24),
     }))
-    .query(async ({ input }) => {
-      return db.getAllMachinesUptimeTimeline(input.hours);
+    .query(async ({ input, ctx }) => {
+      return db.getAllMachinesUptimeTimeline(input.hours, phamViCua(ctx));
     }),
 
   // Alert Configuration
-  getAlertConfig: adminProcedure.query(async () => {
-    return db.getAlertConfiguration();
+  getAlertConfig: adminProcedure.query(async ({ ctx }) => {
+    return db.getAlertConfiguration(phamViCua(ctx));
   }),
 
   updateAlertConfig: adminProcedure
@@ -123,11 +124,12 @@ export const machineStatusRouter = router({
       startDate: z.string(),
       endDate: z.string(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return db.getMachineStatusReport(
         input.machineId,
         new Date(input.startDate),
-        new Date(input.endDate)
+        new Date(input.endDate),
+        phamViCua(ctx),
       );
     }),
 });
@@ -374,20 +376,20 @@ export const bulkImportRouter = router({
 
 // ============ MANUAL MACHINE MAPPING ROUTER ============
 export const manualMappingRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.listManualConnections();
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.listManualConnections(phamViCua(ctx));
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getManualConnectionById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getManualConnectionById(input.id, phamViCua(ctx));
     }),
 
   getByMachineId: protectedProcedure
     .input(z.object({ machineId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getManualConnectionByMachineId(input.machineId);
+    .query(async ({ input, ctx }) => {
+      return db.getManualConnectionByMachineId(input.machineId, phamViCua(ctx));
     }),
 
   create: adminProcedure

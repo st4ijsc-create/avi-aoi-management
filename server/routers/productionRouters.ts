@@ -4,6 +4,7 @@ import { requirePermission } from "../_core/accessControl";
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { adminProcedure } from "./_shared";
+import { phamViCua } from "./_phamViNguoiXem";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -20,20 +21,20 @@ export const productionOrderRouter = router({
       search: z.string().max(200).optional(),
       limit: z.number().int().min(1).max(1000).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getProductionOrders(input);
+    .query(async ({ input, ctx }) => {
+      return db.getProductionOrders(input, phamViCua(ctx));
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getProductionOrderById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getProductionOrderById(input.id, phamViCua(ctx));
     }),
 
   getByCode: protectedProcedure
     .input(z.object({ orderCode: z.string() }))
-    .query(async ({ input }) => {
-      return db.getProductionOrderByCode(input.orderCode);
+    .query(async ({ input, ctx }) => {
+      return db.getProductionOrderByCode(input.orderCode, phamViCua(ctx));
     }),
 
   create: writeProcedure.use(requirePermission("production_orders", "canCreate"))
@@ -121,8 +122,8 @@ export const productionOrderRouter = router({
       endDate: z.date(),
       excludeOrderId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
-      const orders = await db.getProductionOrders({ lineId: input.lineId });
+    .query(async ({ input, ctx }) => {
+      const orders = await db.getProductionOrders({ lineId: input.lineId }, phamViCua(ctx));
       
       const overlappingOrders = orders.filter(order => {
         // Skip the order being rescheduled
@@ -310,14 +311,14 @@ export const productionOrderRouter = router({
   // Order Templates
   listTemplates: protectedProcedure
     .input(z.object({ factoryId: z.number().optional() }).optional())
-    .query(async ({ input }) => {
-      return db.listOrderTemplates(input?.factoryId);
+    .query(async ({ input, ctx }) => {
+      return db.listOrderTemplates(input?.factoryId, phamViCua(ctx));
     }),
 
   getTemplate: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getOrderTemplate(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getOrderTemplate(input.id, phamViCua(ctx));
     }),
 
   createTemplate: writeProcedure.use(requirePermission("production_orders", "canCreate"))
@@ -401,14 +402,14 @@ export const productionOrderRouter = router({
   // WIP Tracking
   getWIPStatus: protectedProcedure
     .input(z.object({ factoryId: z.number().optional() }).optional())
-    .query(async ({ input }) => {
-      return db.getWIPStatus(input?.factoryId);
+    .query(async ({ input, ctx }) => {
+      return db.getWIPStatus(input?.factoryId, phamViCua(ctx));
     }),
 
   getWIPByLine: protectedProcedure
     .input(z.object({ lineId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getWIPByLine(input.lineId);
+    .query(async ({ input, ctx }) => {
+      return db.getWIPByLine(input.lineId, phamViCua(ctx));
     }),
 
   // Scheduling Optimization
@@ -625,9 +626,9 @@ export const productionOrderRouter = router({
       factoryId: z.number().optional(),
       lineId: z.number().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { compareApsKpi } = await import("../services/apsService");
-      return compareApsKpi({ factoryId: input?.factoryId, lineId: input?.lineId });
+      return compareApsKpi({ factoryId: input?.factoryId, lineId: input?.lineId, phamVi: phamViCua(ctx) });
     }),
 
   applyScheduleRun: adminProcedure
@@ -649,14 +650,14 @@ export const productionOrderRouter = router({
       lineId: z.number().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.listScheduleRuns(input);
+    .query(async ({ input, ctx }) => {
+      return db.listScheduleRuns(input, phamViCua(ctx));
     }),
 
   getScheduleRun: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getScheduleRunById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getScheduleRunById(input.id, phamViCua(ctx));
     }),
 
   // Read-only what-if: simulate a disruption on one line.
@@ -762,14 +763,14 @@ async function buildMaintenanceBlackouts(
 export const lineStageRouter = router({
   list: protectedProcedure
     .input(z.object({ lineId: z.number().optional() }).optional())
-    .query(async ({ input }) => {
-      return db.getLineStages(input?.lineId);
+    .query(async ({ input, ctx }) => {
+      return db.getLineStages(input?.lineId, phamViCua(ctx));
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getLineStageById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getLineStageById(input.id, phamViCua(ctx));
     }),
 
   create: writeProcedure.use(requirePermission("settings_factory", "canCreate"))
@@ -831,8 +832,8 @@ export const lineProductAssignmentRouter = router({
       productionOrderId: z.number().optional(),
       isActive: z.boolean().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getLineProductAssignments(input);
+    .query(async ({ input, ctx }) => {
+      return db.getLineProductAssignments(input, phamViCua(ctx));
     }),
 
   create: writeProcedure.use(requirePermission("production_line_assignments", "canCreate"))

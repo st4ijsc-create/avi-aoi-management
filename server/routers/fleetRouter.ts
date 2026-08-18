@@ -36,6 +36,9 @@ const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
 import { tasks, zones, zoneReservations, robots, robotTelemetry } from "../../drizzle/schema";
 import { operationCodes, operationProgramMap, programVariants, sharedResources, resourceReservations, chargerStations, batteryChargingPlans } from "../../drizzle/schema/fleetResource";
 import { fleetOrchEnabled, allocateTask, rebalanceDeviceTasks, deviceSupportsCapability } from "../services/fleet/taskAllocator";
+import { phamViCua } from "./_phamViNguoiXem";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { taskFactoryGate, robotFactoryGate } from "../services/ecosystem/commandCenterScope";
 import { publishTaskEvent } from "../services/ecosystem/ecosystemEvents";
 import { reserveZone, releaseZone, getZoneOccupancy, detectDeadlocks, resolveDeadlock } from "../services/fleet/trafficManager";
 // G2 (doc 16 §7 c&d / §15 G2) — Skill/Resource/Charging. Flag: FLEET_RESOURCE_ENABLED.
@@ -67,6 +70,28 @@ function requireResourceFlag() {
 const TASK_STATUSES = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
 
 export const fleetRouter = router({
+/**
+ * ★★★ 2026-08-18 (trả nợ nhóm A) — **TRỤC PHẠM VI CỦA ĐỘI THIẾT BỊ, ĐO TRƯỚC KHI VÁ.**
+ *
+ * Khảo sát trên `aoi_management` ngày 2026-08-18 (hàng · hàng có `factoryId`):
+ *
+ *   zones 4·4 · operation_codes 3·3 · program_variants 3·3 · shared_resources 3·3 ·
+ *   charger_stations 2·2 · tasks 2·2 · robots 3·3(`lineId`)
+ *   zone_reservations 0 · resource_reservations 0 · battery_charging_plans 0
+ *
+ * ⇒ Bảy bảng của khối này mang **`factoryId` ghi thẳng trên hàng** và cột ấy ĐẦY, nên cổng chiếu
+ * xuống đúng cột đó. Hàng `factoryId` NULL không tồn tại hôm nay; nếu mai có, nó bị LOẠI cho
+ * người bị thu hẹp (fail-closed) — một tài nguyên không khai nhà máy không thuộc về ai.
+ *
+ * ⚠ HAI NGOẠI LỆ dùng lại cổng ĐÃ CÓ thay vì hỏi `factoryId`:
+ *   • `tasks` → `taskFactoryGate` (thiết bị → lệnh sản xuất → mới tới `factoryId`; luật "ưu tiên
+ *     LIÊN KẾT" đã ghi ở `commandCenterScope`, vì `tasks.factoryId` là một ô GHI RỜI có thể bất
+ *     đồng với thiết bị được gán).
+ *   • `robots` → `robotFactoryGate` (robot KHÔNG có cột tenant, chỉ `lineId`/`stationId`).
+ * Dựng cổng thứ hai cho hai bảng này là tạo NGUỒN THỨ HAI của cùng một luật — và bản yếu hơn sẽ
+ * quyết định ai thấy gì.
+ */
+
   /** UI gating hint — is the fleet flag on? */
   status: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
@@ -84,9 +109,13 @@ export const fleetRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
       const conds = [];
+      {
+        const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+        if (ids !== null) conds.push(taskFactoryGate(ids));
+      }
       if (input?.status) conds.push(eq(tasks.status, input.status));
       if (input?.deviceId != null) conds.push(eq(tasks.assignedDeviceId, input.deviceId));
       return d
@@ -100,9 +129,14 @@ export const fleetRouter = router({
   getTask: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      const [row] = await d.select().from(tasks).where(eq(tasks.id, input.id)).limit(1);
+      // ⚠ `id` là lời TỰ KHAI. Ngoài phạm vi ⇒ NOT_FOUND, cùng câu chữ với "không tồn tại": một
+      // câu "bạn không được xem tác vụ 42" vẫn xác nhận rằng tác vụ 42 có thật.
+      const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+      const [row] = await d.select().from(tasks)
+        .where(and(eq(tasks.id, input.id), ...(ids === null ? [] : [taskFactoryGate(ids)])))
+        .limit(1);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fleetTask" }, `Task ${input.id} not found`);
       return row;
     }),
@@ -110,9 +144,12 @@ export const fleetRouter = router({
   // ── ZONES + occupancy (read) ──────────────────────────────────────────────
   listZones: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const d = await db();
-      const rows = await d.select().from(zones).orderBy(zones.code);
+      const idsNhaMay = await idsTrongPhamVi("factory", phamViCua(ctx));
+      const rows = await d.select().from(zones)
+        .where(idsNhaMay === null ? undefined : inArray(zones.factoryId, idsNhaMay.length ? idsNhaMay : [-1]))
+        .orderBy(zones.code);
       // Derive occupancy (active reservation count) per zone.
       const out = [];
       for (const z of rows) out.push({ ...z, occupancy: await getZoneOccupancy(z.id) });
@@ -131,9 +168,13 @@ export const fleetRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
       const conds = [];
+      {
+        const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+        if (ids !== null) conds.push(inArray(zoneReservations.factoryId, ids.length ? ids : [-1]));
+      }
       if (input?.zoneId != null) conds.push(eq(zoneReservations.zoneId, input.zoneId));
       if (input?.deviceId != null) conds.push(eq(zoneReservations.deviceId, input.deviceId));
       if (input?.status) conds.push(eq(zoneReservations.status, input.status));
@@ -148,7 +189,19 @@ export const fleetRouter = router({
   /** Live deadlock check over the reservation wait-graph (read-only). */
   deadlocks: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => detectDeadlocks()),
+    .query(async ({ ctx }) => {
+      // ⚠ `detectDeadlocks()` dựng đồ thị CHỜ trên toàn bộ `zone_reservations`; mỗi chu trình là
+      // một danh sách **THIẾT BỊ** đang chờ nhau. Nó vì thế phơi ra thiết bị nào của nhà máy nào
+      // đang kẹt. Lọc SAU khi dựng đồ thị là đúng chỗ: một chu trình có MỘT mắt ngoài phạm vi thì
+      // người xem không được thấy cả chu trình (thấy một nửa còn tệ hơn — nó gợi ý phần còn lại).
+      const ketQua = await detectDeadlocks();
+      const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+      if (ids === null) return ketQua;
+      const d = await db();
+      const trongPv = await d.select({ id: robots.id }).from(robots).where(robotFactoryGate(ids));
+      const cho = new Set(trongPv.map((r) => r.id));
+      return { ...ketQua, cycles: ketQua.cycles.filter((c) => c.every((deviceId) => cho.has(deviceId))) };
+    }),
 
   /**
    * W4-18 (3) — live robot positions for the fleet MAP. Latest telemetry pose per
@@ -158,9 +211,11 @@ export const fleetRouter = router({
    */
   robotPositions: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const d = await db();
-      const robotRows = await d.select().from(robots).where(eq(robots.isEnabled, true));
+      const idsNhaMay = await idsTrongPhamVi("factory", phamViCua(ctx));
+      const robotRows = await d.select().from(robots)
+        .where(and(eq(robots.isEnabled, true), ...(idsNhaMay === null ? [] : [robotFactoryGate(idsNhaMay)])));
       if (robotRows.length === 0) return [];
       const ids = robotRows.map((r) => r.id);
       const telRows = await d
@@ -448,16 +503,29 @@ export const fleetRouter = router({
   listOperations: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ limit: z.number().int().min(1).max(500).default(200) }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      return d.select().from(operationCodes).orderBy(operationCodes.code).limit(input?.limit ?? 200);
+      const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+      return d.select().from(operationCodes)
+        .where(ids === null ? undefined : inArray(operationCodes.factoryId, ids.length ? ids : [-1]))
+        .orderBy(operationCodes.code).limit(input?.limit ?? 200);
     }),
 
   /** Resolve an operation → { requiredCapability, requiredSkillIds, qualifiedPrograms }. */
   resolveOperation: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ code: z.string().min(1).max(64), deviceKind: z.string().max(32).optional() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // ⚠ `code` là lời TỰ KHAI: `operation_codes.code` là mã nghiệp vụ đoán được, và kết quả trả
+      // về gồm danh sách CHƯƠNG TRÌNH đủ điều kiện — tức bí quyết vận hành của tenant.
+      const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+      if (ids !== null) {
+        const d = await db();
+        const [co] = await d.select({ id: operationCodes.id }).from(operationCodes)
+          .where(and(eq(operationCodes.code, input.code), inArray(operationCodes.factoryId, ids.length ? ids : [-1])))
+          .limit(1);
+        if (!co) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "operationCode" }, `Operation "${input.code}" not found`);
+      }
       const r = await resolveOperation(input.code, input.deviceKind ?? null);
       if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "operationCode" }, `Operation "${input.code}" not found`);
       return r;
@@ -533,12 +601,17 @@ export const fleetRouter = router({
   listVariants: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ programProjectId: z.number().int().positive().optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+      const conds = [
+        ...(ids === null ? [] : [inArray(programVariants.factoryId, ids.length ? ids : [-1])]),
+        ...(input?.programProjectId != null ? [eq(programVariants.programProjectId, input.programProjectId)] : []),
+      ];
       return d
         .select()
         .from(programVariants)
-        .where(input?.programProjectId != null ? eq(programVariants.programProjectId, input.programProjectId) : undefined)
+        .where(conds.length ? and(...conds) : undefined)
         .orderBy(programVariants.programProjectId, programVariants.variant);
     }),
 
@@ -546,7 +619,21 @@ export const fleetRouter = router({
   pickVariant: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ programProjectId: z.number().int().positive(), seed: z.string().min(1).max(256) }))
-    .query(async ({ input }) => pickVariantForProgram(input.programProjectId, input.seed)),
+    .query(async ({ input, ctx }) => {
+      // ⚠ `programProjectId` là lời TỰ KHAI — hàm dưới trả về NHÁNH A/B đang chạy kèm chỉ số cuộn
+      // của chương trình đó. Không có nhánh nào của chương trình nằm trong phạm vi ⇒ `null`.
+      const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+      if (ids !== null) {
+        const d = await db();
+        const [co] = await d.select({ id: programVariants.id }).from(programVariants)
+          .where(and(
+            eq(programVariants.programProjectId, input.programProjectId),
+            inArray(programVariants.factoryId, ids.length ? ids : [-1]),
+          )).limit(1);
+        if (!co) return null;
+      }
+      return pickVariantForProgram(input.programProjectId, input.seed);
+    }),
 
   /** Record an A/B outcome against a variant arm (folds into rolling metrics). */
   recordVariantOutcome: actuationProcedure
@@ -589,9 +676,13 @@ export const fleetRouter = router({
   listResources: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ type: z.string().max(24).optional(), status: z.string().max(16).optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
       const conds = [];
+      {
+        const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+        if (ids !== null) conds.push(inArray(sharedResources.factoryId, ids.length ? ids : [-1]));
+      }
       if (input?.type) conds.push(eq(sharedResources.type, input.type));
       if (input?.status) conds.push(eq(sharedResources.status, input.status));
       const rows = await d
@@ -617,9 +708,13 @@ export const fleetRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
       const conds = [];
+      {
+        const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+        if (ids !== null) conds.push(inArray(resourceReservations.factoryId, ids.length ? ids : [-1]));
+      }
       if (input?.resourceId != null) conds.push(eq(resourceReservations.resourceId, input.resourceId));
       if (input?.deviceId != null) conds.push(eq(resourceReservations.deviceId, input.deviceId));
       if (input?.status) conds.push(eq(resourceReservations.status, input.status));
@@ -690,9 +785,12 @@ export const fleetRouter = router({
   // ── G2-d PREDICTIVE CHARGING ───────────────────────────────────────────────
   listChargers: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const d = await db();
-      return d.select().from(chargerStations).orderBy(chargerStations.code);
+      const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+      return d.select().from(chargerStations)
+        .where(ids === null ? undefined : inArray(chargerStations.factoryId, ids.length ? ids : [-1]))
+        .orderBy(chargerStations.code);
     }),
 
   listChargingPlans: protectedProcedure
@@ -706,9 +804,13 @@ export const fleetRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
       const conds = [];
+      {
+        const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+        if (ids !== null) conds.push(inArray(batteryChargingPlans.factoryId, ids.length ? ids : [-1]));
+      }
       if (input?.deviceId != null) conds.push(eq(batteryChargingPlans.deviceId, input.deviceId));
       if (input?.status) conds.push(eq(batteryChargingPlans.status, input.status));
       return d

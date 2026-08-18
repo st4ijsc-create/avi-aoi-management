@@ -1,4 +1,6 @@
 import { protectedProcedure, router } from "../_core/trpc";
+import { phamViCua } from "./_phamViNguoiXem";
+import { trongPhamVi } from "../db/hierarchy";
 import { z } from "zod";
 import { getDb } from "../db/connection";
 import { eq, and, desc, gte, lte, sql, inArray, SQL, asc, isNotNull } from "drizzle-orm";
@@ -41,11 +43,11 @@ export const stationAnalysisRouter = router({
     .input(z.object({
       stationId: z.number(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return [];
 
       const models = await database.select({
@@ -72,9 +74,13 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return null;
+      // ⚠ Ô đầu trang (tên trạm · tuyến · xưởng · NHÀ MÁY) được đọc TRƯỚC điểm nghẽn, nên nó cần
+      // cổng RIÊNG: nếu không, một `stationId` tự khai vẫn trả về tên nhà máy của tenant khác kèm
+      // một dải KPI toàn số 0 — rò đúng thứ nhạy cảm nhất của màn này.
+      if (!(await trongPhamVi("station", input.stationId, phamViCua(ctx)))) return null;
 
       // Get station with hierarchy
       const stationRows = await database.select({
@@ -93,7 +99,7 @@ export const stationAnalysisRouter = router({
       if (stationRows.length === 0) return null;
       const row = stationRows[0];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) {
         return {
           ...row,
@@ -187,11 +193,11 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
@@ -233,11 +239,11 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [
@@ -302,11 +308,11 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [
@@ -349,7 +355,7 @@ export const stationAnalysisRouter = router({
       uslOverride: z.number().nullable().optional(),
       lslOverride: z.number().nullable().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       const emptyResult = {
         subgroups: [] as any[], controlLimits: null, xBarPoints: [] as any[], rPoints: [] as any[],
@@ -360,7 +366,7 @@ export const stationAnalysisRouter = router({
       };
       if (!database) return emptyResult;
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return emptyResult;
 
       // Get measurement point definition for spec limits
@@ -543,11 +549,11 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { points: [], mean: 0, ucl: 100, lcl: 0, stddev: 0, cpk: 0, ppk: 0 };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { points: [], mean: 0, ucl: 100, lcl: 0, stddev: 0, cpk: 0, ppk: 0 };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
@@ -661,11 +667,11 @@ export const stationAnalysisRouter = router({
       productModelId: z.number().optional(),
       limit: z.number().min(1).max(200).default(50),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [
@@ -737,11 +743,11 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { alerts: [], patterns: [], recommendations: [] };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { alerts: [], patterns: [], recommendations: [] };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
@@ -989,11 +995,11 @@ export const stationAnalysisRouter = router({
       productModelId: z.number().optional(),
       bins: z.number().min(5).max(50).default(20),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { bins: [], stats: { mean: 0, median: 0, mode: 0, stddev: 0, skewness: 0, kurtosis: 0, n: 0, min: 0, max: 0 } };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { bins: [], stats: { mean: 0, median: 0, mode: 0, stddev: 0, skewness: 0, kurtosis: 0, n: 0, min: 0, max: 0 } };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
@@ -1091,11 +1097,11 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { points: [], correlation: 0, rSquared: 0, trendLine: { slope: 0, intercept: 0 } };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { points: [], correlation: 0, rSquared: 0, trendLine: { slope: 0, intercept: 0 } };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
@@ -1160,11 +1166,11 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { matrix: [], defectTypes: [], periods: [], totals: { byDefect: {}, byPeriod: {}, grand: 0 } };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { matrix: [], defectTypes: [], periods: [], totals: { byDefect: {}, byPeriod: {}, grand: 0 } };
 
       const conditions: SQL[] = [
@@ -1229,11 +1235,11 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { categories: [], topDefect: null };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { categories: [], topDefect: null };
 
       const conditions: SQL[] = [
@@ -1370,11 +1376,11 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { byMachine: [], byShift: [], byDay: [] };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { byMachine: [], byShift: [], byDay: [] };
 
       const baseCond: SQL[] = [inArray(productInspections.machineId, machineIds)];
@@ -1466,11 +1472,11 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { anomalies: [], forecast: [], clusters: [], insights: [], processCapability: null };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { anomalies: [], forecast: [], clusters: [], insights: [], processCapability: null };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
@@ -1675,11 +1681,11 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return null;
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { points: [], productImage: null, boardInfo: null };
 
       // Date filters for inspections
@@ -1905,10 +1911,24 @@ function normalCdf(x: number): number {
   const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
   return 0.5 * (1.0 + sign * y);
 }
+/**
+ * ★★★ 2026-08-18 (trả nợ nhóm A) — **ĐIỂM NGHẼN DUY NHẤT của cả 16 thủ tục trong file này.**
+ *
+ * Mọi thủ tục ở đây đọc `product_inspections` qua `inArray(machineId, machineIds)` và **đều** có
+ * nhánh `if (machineIds.length === 0) return <rỗng>` sẵn. Nên cổng phạm vi chỉ cần đặt ĐÚNG MỘT
+ * chỗ: `stationId` ngoài phạm vi ⇒ tập máy rỗng ⇒ cả 16 bề mặt trả rỗng theo đúng hình dạng
+ * chúng đã tự khai. Vá 16 chỗ bằng tay là 16 cơ hội chép sai.
+ *
+ * ⚠ `stationId` đến từ `input` — lời TỰ KHAI của người gọi. Trước bản vá, gõ tay một `stationId`
+ * của nhà máy khác là đọc được **toàn bộ bản ghi kiểm** của trạm ấy: lịch sử hỏng, SPC theo điểm
+ * đo, biểu đồ phân tán, ma trận khuyết tật, phân tích AI.
+ */
 async function getStationMachineIds(
   database: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   stationId: number,
+  scope?: Parameters<typeof trongPhamVi>[2],
 ): Promise<number[]> {
+  if (!(await trongPhamVi("station", stationId, scope))) return [];
   const rows = await database.select({ id: machines.id })
     .from(machines)
     .where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)));

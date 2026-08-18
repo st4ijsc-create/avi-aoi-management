@@ -13,7 +13,9 @@ import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
 import { createNcr } from "../services/ncrService"; // W4-B: optional lot-disposition → NCR link
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
+import { phamViCua } from "./_phamViNguoiXem";
+import { congMaTenant, idsTrongPhamVi, trongPhamVi } from "../db/hierarchy";
 import {
   wipTracking,
   stationDwellTime,
@@ -44,6 +46,29 @@ async function resolveMaterialId(database: any, id?: number | null, code?: strin
   return row?.id ?? null;
 }
 
+/**
+ * ★★★ 2026-08-18 (trả nợ nhóm A) — **BA TRỤC PHẠM VI CỦA CONTROL TOWER, ĐO TRƯỚC KHI VÁ.**
+ *
+ * Khảo sát cột trên `aoi_management` ngày 2026-08-18 (số hàng · số hàng có liên kết):
+ *
+ *  ┌──────────────────────────┬─────────┬─────────────────────────────────────┬──────────┐
+ *  │ bảng                     │ hàng    │ đường LIÊN KẾT ra nhà máy            │ mồ côi   │
+ *  ├──────────────────────────┼─────────┼─────────────────────────────────────┼──────────┤
+ *  │ wip_tracking             │  7.047  │ lineId · currentStationId ·          │ 0        │
+ *  │                          │         │ currentMachineId (đủ cả ba)         │          │
+ *  │ station_dwell_time       │  8.651  │ stationId (NOT NULL, đủ)            │ 0        │
+ *  │ line_balance_metrics     │     38  │ lineId (NOT NULL, đủ)               │ 0        │
+ *  │ maintenance_work_orders  │     26  │ machineId (NOT NULL, đủ)            │ 0        │
+ *  │ supplier_lots            │      3  │ materialCode → materials.factoryCode │ 0        │
+ *  │ material_receipts        │      0  │ materialCode → materials.factoryCode │ (n/a)    │
+ *  │ lot_disposition          │      0  │ KHÔNG CÓ — chỉ lotNumber/serialNumber│ (n/a)    │
+ *  └──────────────────────────┴─────────┴─────────────────────────────────────┴──────────┘
+ *
+ * ⚠⚠ `lot_disposition` KHÔNG có đường nào ra nhà máy. Nó được phán quyết **GIÁN TIẾP**: chỉ đọc
+ * được các quyết định của một lô/serial khi người xem **CÓ** hàng WIP của chính lô/serial ấy
+ * trong phạm vi. Đó là fail-closed đúng hướng — nếu không, một `lotNumber` đoán được sẽ mở ra
+ * lịch sử huỷ/trả hàng của tenant khác, tức đúng thứ nhạy cảm nhất của họ.
+ */
 export const mesControlTowerRouter = router({
   // --- G5: WIP units ---
   listWip: protectedProcedure
@@ -52,10 +77,12 @@ export const mesControlTowerRouter = router({
       status: z.string().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
       const conds = [] as any[];
+      const congWip = await congWipTracking(phamViCua(ctx));
+      if (congWip) conds.push(congWip);
       if (input?.lineId) conds.push(eq(wipTracking.lineId, input.lineId));
       if (input?.status) conds.push(eq(wipTracking.status, input.status as any));
       const q = database.select().from(wipTracking)
@@ -68,13 +95,18 @@ export const mesControlTowerRouter = router({
   // --- G5: WIP count by status (for realtime board) ---
   wipSummary: protectedProcedure
     .input(z.object({ lineId: z.number().int().positive().optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [] as { status: string; count: number }[];
+      const congWip = await congWipTracking(phamViCua(ctx));
+      const conds = [
+        ...(congWip ? [congWip] : []),
+        ...(input?.lineId ? [eq(wipTracking.lineId, input.lineId)] : []),
+      ];
       const rows = await database
         .select({ status: wipTracking.status, count: sql<number>`count(*)::int` })
         .from(wipTracking)
-        .where(input?.lineId ? eq(wipTracking.lineId, input.lineId) : undefined)
+        .where(conds.length ? and(...conds) : undefined)
         .groupBy(wipTracking.status);
       return rows as { status: string; count: number }[];
     }),
@@ -85,11 +117,16 @@ export const mesControlTowerRouter = router({
       lineId: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(200).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
+      const idsTuyen = await idsTrongPhamVi("line", phamViCua(ctx));
+      const conds = [
+        ...(idsTuyen === null ? [] : [inArray(lineBalanceMetrics.lineId, idsTuyen.length ? idsTuyen : [-1])]),
+        ...(input?.lineId ? [eq(lineBalanceMetrics.lineId, input.lineId)] : []),
+      ];
       return await database.select().from(lineBalanceMetrics)
-        .where(input?.lineId ? eq(lineBalanceMetrics.lineId, input.lineId) : undefined)
+        .where(conds.length ? and(...conds) : undefined)
         .orderBy(desc(lineBalanceMetrics.periodStart))
         .limit(input?.limit ?? 50);
     }),
@@ -101,10 +138,12 @@ export const mesControlTowerRouter = router({
       sinceHours: z.number().int().min(1).max(24 * 30).optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
       const conds = [] as any[];
+      const idsTram = await idsTrongPhamVi("station", phamViCua(ctx));
+      if (idsTram !== null) conds.push(inArray(stationDwellTime.stationId, idsTram.length ? idsTram : [-1]));
       if (input?.stationId) conds.push(eq(stationDwellTime.stationId, input.stationId));
       if (input?.sinceHours) {
         const since = new Date(Date.now() - input.sinceHours * 3600 * 1000);
@@ -119,13 +158,25 @@ export const mesControlTowerRouter = router({
   // --- P3: id→name lookup for lines/stations/machines so the hub shows real
   // hierarchy names instead of raw numeric ids ("St #5"). One small payload that
   // the client turns into Maps; avoids N per-row joins. ---
-  nameLookup: protectedProcedure.query(async () => {
+  nameLookup: protectedProcedure.query(async ({ ctx }) => {
     const database = await getDb();
     if (!database) return { lines: [], stations: [], machines: [] };
+    // ⚠ Đây là một BẢN ĐỒ TOÀN CÔNG TY thu nhỏ (mã + tên của mọi tuyến/trạm/máy). Nó nhẹ nên dễ
+    // bị coi là vô hại — nhưng nó chính là thứ cho phép đoán `lineId`/`stationId` để gõ vào các
+    // thủ tục khác. Lọc ở đây là điều kiện để những cổng kia không bị dò tuần tự.
+    const phamVi = phamViCua(ctx);
+    const [idsTuyen, idsTram, idsMay] = await Promise.all([
+      idsTrongPhamVi("line", phamVi),
+      idsTrongPhamVi("station", phamVi),
+      idsTrongPhamVi("machine", phamVi),
+    ]);
     const [lineRows, stationRows, machineRows] = await Promise.all([
-      database.select({ id: productionLines.id, code: productionLines.code, name: productionLines.name }).from(productionLines),
-      database.select({ id: stations.id, code: stations.code, name: stations.name, lineId: stations.lineId }).from(stations),
-      database.select({ id: machines.id, code: machines.code, name: machines.name }).from(machines),
+      database.select({ id: productionLines.id, code: productionLines.code, name: productionLines.name }).from(productionLines)
+        .where(idsTuyen === null ? undefined : inArray(productionLines.id, idsTuyen.length ? idsTuyen : [-1])),
+      database.select({ id: stations.id, code: stations.code, name: stations.name, lineId: stations.lineId }).from(stations)
+        .where(idsTram === null ? undefined : inArray(stations.id, idsTram.length ? idsTram : [-1])),
+      database.select({ id: machines.id, code: machines.code, name: machines.name }).from(machines)
+        .where(idsMay === null ? undefined : inArray(machines.id, idsMay.length ? idsMay : [-1])),
     ]);
     return { lines: lineRows, stations: stationRows, machines: machineRows };
   }),
@@ -135,7 +186,7 @@ export const mesControlTowerRouter = router({
   // genealogy serials, and any dwell rows recorded for it. ---
   serialTrace: protectedProcedure
     .input(z.object({ serialNumber: z.string().min(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       const empty = {
         serialNumber: input.serialNumber,
@@ -148,18 +199,29 @@ export const mesControlTowerRouter = router({
       };
       if (!database) return empty;
       const sn = input.serialNumber;
+      const phamVi = phamViCua(ctx);
+      const congWip = await congWipTracking(phamVi);
+      const idsTram = await idsTrongPhamVi("station", phamVi);
+      const congDwell = idsTram === null
+        ? undefined
+        : inArray(stationDwellTime.stationId, idsTram.length ? idsTram : [-1]);
       const [wipUnits, dwell, children] = await Promise.all([
         database.select().from(wipTracking)
-          .where(eq(wipTracking.serialNumber, sn))
+          .where(and(eq(wipTracking.serialNumber, sn), ...(congWip ? [congWip] : [])))
           .orderBy(desc(wipTracking.enteredAt)),
         database.select().from(stationDwellTime)
-          .where(eq(stationDwellTime.serialNumber, sn))
+          .where(and(eq(stationDwellTime.serialNumber, sn), ...(congDwell ? [congDwell] : [])))
           .orderBy(desc(stationDwellTime.enteredAt)),
         // genealogy downstream: units whose parent is this serial
         database.select().from(wipTracking)
-          .where(eq(wipTracking.parentSerialNumber, sn))
+          .where(and(eq(wipTracking.parentSerialNumber, sn), ...(congWip ? [congWip] : [])))
           .orderBy(desc(wipTracking.enteredAt)),
       ]);
+      // ⚠⚠ `lot_disposition` KHÔNG có cột nào ra được nhà máy — xem docblock đầu router. Người bị
+      // thu hẹp chỉ đọc được quyết định của một serial khi họ CÓ bằng chứng WIP/dwell của chính
+      // serial ấy trong phạm vi. Không có bằng chứng ⇒ rỗng, chứ KHÔNG rơi về lối `serialNumber`
+      // (lối ấy sẽ trả lịch sử huỷ/trả hàng của tenant khác cho một serial đoán được).
+      if (congWip !== undefined && wipUnits.length === 0 && dwell.length === 0) return empty;
       const lotNumbers = [...new Set(wipUnits.map((w) => w.lotNumber).filter((x): x is string => !!x))];
       const dispositions = lotNumbers.length
         ? await database.select().from(lotDisposition)
@@ -175,12 +237,19 @@ export const mesControlTowerRouter = router({
   // --- G6: lot genealogy (2-way) ---
   lotGenealogy: protectedProcedure
     .input(z.object({ lotNumber: z.string().min(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
-      if (!database) return { lot: input.lotNumber, supplierLots: [], dispositions: [], wipUnits: [] };
+      const rong = { lot: input.lotNumber, supplierLots: [], dispositions: [], wipUnits: [] };
+      if (!database) return rong;
+      const congWip = await congWipTracking(phamViCua(ctx));
+      const wipTrongPv = await database.select().from(wipTracking)
+        .where(and(eq(wipTracking.lotNumber, input.lotNumber), ...(congWip ? [congWip] : [])));
+      // ⚠ Cùng luật với `serialTrace`: không có hàng WIP nào của lô này trong phạm vi ⇒ người xem
+      // không có quyền đọc phả hệ của lô (nhà cung cấp, quyết định huỷ/trả) — fail-closed.
+      if (congWip !== undefined && wipTrongPv.length === 0) return rong;
       const [dispositions, wipUnits] = await Promise.all([
         database.select().from(lotDisposition).where(eq(lotDisposition.lotNumber, input.lotNumber)),
-        database.select().from(wipTracking).where(eq(wipTracking.lotNumber, input.lotNumber)),
+        Promise.resolve(wipTrongPv),
       ]);
       const supplierLotIds = [...new Set(dispositions.map((d) => d.supplierLotId).filter((x): x is number => x != null))];
       const supplierLotRows = supplierLotIds.length
@@ -211,10 +280,12 @@ export const mesControlTowerRouter = router({
       machineId: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
       const conds = [] as any[];
+      const idsMay = await idsTrongPhamVi("machine", phamViCua(ctx));
+      if (idsMay !== null) conds.push(inArray(maintenanceWorkOrders.machineId, idsMay.length ? idsMay : [-1]));
       if (input?.status) conds.push(eq(maintenanceWorkOrders.status, input.status as any));
       if (input?.machineId) conds.push(eq(maintenanceWorkOrders.machineId, input.machineId));
       return await database.select().from(maintenanceWorkOrders)
@@ -225,12 +296,14 @@ export const mesControlTowerRouter = router({
 
   // --- G7: work-order status summary ---
   workOrderSummary: protectedProcedure
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const database = await getDb();
       if (!database) return [] as { status: string; count: number }[];
+      const idsMay = await idsTrongPhamVi("machine", phamViCua(ctx));
       const rows = await database
         .select({ status: maintenanceWorkOrders.status, count: sql<number>`count(*)::int` })
         .from(maintenanceWorkOrders)
+        .where(idsMay === null ? undefined : inArray(maintenanceWorkOrders.machineId, idsMay.length ? idsMay : [-1]))
         .groupBy(maintenanceWorkOrders.status);
       return rows as { status: string; count: number }[];
     }),
@@ -241,7 +314,11 @@ export const mesControlTowerRouter = router({
       machineId: z.number().int().positive(),
       sinceDays: z.number().int().min(1).max(365).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // ⚠ `machineId` là lời TỰ KHAI — MTBF/MTTR của một máy là số đo vận hành thật của tenant.
+      if (!(await trongPhamVi("machine", input.machineId, phamViCua(ctx)))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
+      }
       const { computeMttrMtbf } = await import("../services/pdmWorkOrderService");
       const days = input.sinceDays ?? 90;
       const from = new Date(Date.now() - days * 24 * 3600 * 1000);
@@ -257,10 +334,17 @@ export const mesControlTowerRouter = router({
   // --- G6: material receipts (list + create) ---
   listMaterialReceipts: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(500).optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
+      // `material_receipts` không có cột tenant — chiếu qua `materials.factoryCode` bằng MÃ vật tư
+      // (`materialCode` NOT NULL, luôn có; `materialId` đo được là 0/0 hàng có giá trị).
+      const congVatTu = await congMaTenant({ factoryCode: materials.factoryCode, corporateCode: materials.corporateCode }, phamViCua(ctx));
       return database.select().from(materialReceipts)
+        .where(congVatTu === undefined ? undefined : inArray(
+          materialReceipts.materialCode,
+          database.select({ code: materials.code }).from(materials).where(congVatTu),
+        ))
         .orderBy(desc(materialReceipts.receivedDate))
         .limit(input?.limit ?? 100);
     }),
@@ -302,10 +386,15 @@ export const mesControlTowerRouter = router({
   // --- G6: supplier lots (list + create) ---
   listSupplierLots: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(500).optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
+      const congVatTu = await congMaTenant({ factoryCode: materials.factoryCode, corporateCode: materials.corporateCode }, phamViCua(ctx));
       return database.select().from(supplierLots)
+        .where(congVatTu === undefined ? undefined : inArray(
+          supplierLots.materialCode,
+          database.select({ code: materials.code }).from(materials).where(congVatTu),
+        ))
         .orderBy(desc(supplierLots.createdAt))
         .limit(input?.limit ?? 100);
     }),
@@ -387,3 +476,22 @@ export const mesControlTowerRouter = router({
       return { id: row.id, ncrId };
     }),
 });
+
+/**
+ * Cổng phạm vi cho `wip_tracking` — bảng KHÔNG có cột tenant nào, nối bằng cả BA cột liên kết.
+ * Hàng mồ côi (cả ba NULL) bị loại; đo được 0/7.047 hàng mồ côi nên luật này không mất hàng nào.
+ * `undefined` = vai toàn quyền ⇒ nơi gọi không thêm mệnh đề nào.
+ */
+async function congWipTracking(scope: Parameters<typeof idsTrongPhamVi>[1]) {
+  const [idsTuyen, idsTram, idsMay] = await Promise.all([
+    idsTrongPhamVi("line", scope),
+    idsTrongPhamVi("station", scope),
+    idsTrongPhamVi("machine", scope),
+  ]);
+  if (idsTuyen === null || idsTram === null || idsMay === null) return undefined;
+  return or(
+    inArray(wipTracking.lineId, idsTuyen.length ? idsTuyen : [-1]),
+    inArray(wipTracking.currentStationId, idsTram.length ? idsTram : [-1]),
+    inArray(wipTracking.currentMachineId, idsMay.length ? idsMay : [-1]),
+  );
+}

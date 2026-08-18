@@ -14,6 +14,7 @@ import { appError } from "../_core/appError";
 import { protectedProcedure, writeProcedure, qualityProcedure, router } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { adminProcedure } from "./_shared";
+import { phamViCua } from "./_phamViNguoiXem";
 import * as db from "../db";
 
 /**
@@ -23,9 +24,19 @@ import * as db from "../db";
  */
 async function resolveAnalyticsMachineIds(scope: {
   machineId?: number; lineId?: number; factoryId?: number;
-}): Promise<number[] | undefined> {
-  if (scope.machineId) return [scope.machineId];
-  if (!scope.lineId && !scope.factoryId) return undefined;
+}, phamVi?: db.PhamViNguoiXem): Promise<number[] | undefined> {
+  // ★★★ 2026-08-18 (trả nợ nhóm A) — ba ô `machineId`/`lineId`/`factoryId` của `input` là lời
+  // TỰ KHAI của người gọi: trước bản vá, một `factoryId` gõ tay mở thẳng số liệu dừng máy và
+  // MTBF/MTTR của nhà máy bất kỳ. Phạm vi của NGƯỜI XEM được GIAO (intersect) vào sau, nên lời
+  // tự khai chỉ có thể THU HẸP, không bao giờ mở rộng.
+  const trongPv = await import("../db").then((m) => m.machineIdsTrongPhamVi(phamVi));
+  const giao = (ids: number[] | undefined): number[] | undefined => {
+    if (trongPv === null) return ids;
+    const cho = new Set(trongPv);
+    return (ids ?? trongPv).filter((id) => cho.has(id));
+  };
+  if (scope.machineId) return giao([scope.machineId]);
+  if (!scope.lineId && !scope.factoryId) return giao(undefined);
   const { getDb } = await import("../db/connection");
   const database = await getDb();
   if (!database) return [];
@@ -41,7 +52,7 @@ async function resolveAnalyticsMachineIds(scope: {
       ${scope.lineId ? sql`AND l."id" = ${scope.lineId}` : sql``}
       ${scope.factoryId ? sql`AND w."factoryId" = ${scope.factoryId}` : sql``}
   `)) as Array<{ id: number }>;
-  return rows.map((r) => Number(r.id));
+  return giao(rows.map((r) => Number(r.id)));
 }
 
 // ============================================================
@@ -56,20 +67,20 @@ export const mqttClientRouter = router({
       stationId: z.number().optional(),
       mappingType: z.enum(['AUTO', 'MANUAL']).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getMqttClients(input);
+    .query(async ({ input, ctx }) => {
+      return db.getMqttClients(input, phamViCua(ctx));
     }),
 
   // Get single client by ID
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMqttClientById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getMqttClientById(input.id, phamViCua(ctx));
     }),
 
   // Get pending approval count
-  pendingCount: protectedProcedure.query(async () => {
-    const clients = await db.getMqttClients({ approvalStatus: 'PENDING' });
+  pendingCount: protectedProcedure.query(async ({ ctx }) => {
+    const clients = await db.getMqttClients({ approvalStatus: 'PENDING' }, phamViCua(ctx));
     return { count: clients.length };
   }),
 
@@ -162,8 +173,8 @@ export const mqttClientRouter = router({
       endDate: z.date().optional(),
       limit: z.number().default(50),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getMqttErrorSummaries(input);
+    .query(async ({ input, ctx }) => {
+      return db.getMqttErrorSummaries(input, phamViCua(ctx));
     }),
 
   // Get message logs
@@ -174,8 +185,8 @@ export const mqttClientRouter = router({
       messageType: z.enum(['NG_ALERT', 'DAILY_SUMMARY', 'WEEKLY_SUMMARY', 'CUSTOM']).optional(),
       limit: z.number().default(100),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getMqttMessageLogs(input);
+    .query(async ({ input, ctx }) => {
+      return db.getMqttMessageLogs(input, phamViCua(ctx));
     }),
 
   // Manually trigger summary (for testing)
@@ -194,22 +205,22 @@ export const mqttClientRouter = router({
     }),
 
   // Dashboard statistics
-  dashboardStats: protectedProcedure.query(async () => {
-    return db.getMqttDashboardStats();
+  dashboardStats: protectedProcedure.query(async ({ ctx }) => {
+    return db.getMqttDashboardStats(phamViCua(ctx));
   }),
 
   // Message trend for charts
   messageTrend: protectedProcedure
     .input(z.object({ days: z.number().default(7) }).optional())
-    .query(async ({ input }) => {
-      return db.getMqttMessageTrend(input?.days || 7);
+    .query(async ({ input, ctx }) => {
+      return db.getMqttMessageTrend(input?.days || 7, phamViCua(ctx));
     }),
 
   // Recent messages for activity feed
   recentMessages: protectedProcedure
     .input(z.object({ limit: z.number().default(20) }).optional())
-    .query(async ({ input }) => {
-      return db.getRecentMqttMessages(input?.limit || 20);
+    .query(async ({ input, ctx }) => {
+      return db.getRecentMqttMessages(input?.limit || 20, phamViCua(ctx));
     }),
 
   // Update FCM token for push notifications
@@ -363,8 +374,9 @@ export const mqttClientRouter = router({
     }),
 
   // Realtime MQTT statistics for monitoring dashboard
-  realtimeStats: protectedProcedure.query(async () => {
+  realtimeStats: protectedProcedure.query(async ({ ctx }) => {
     const { getExternalMqttInfo, isMqttRunning } = await import('../services/mqttService');
+    const phamVi = phamViCua(ctx);
     
     // Get message stats from last hour for throughput calculation
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -373,9 +385,9 @@ export const mqttClientRouter = router({
     
     // Get message counts
     const [hourlyStats, fiveMinStats, oneMinStats] = await Promise.all([
-      db.getMqttMessageCountSince(oneHourAgo),
-      db.getMqttMessageCountSince(fiveMinAgo),
-      db.getMqttMessageCountSince(oneMinAgo),
+      db.getMqttMessageCountSince(oneHourAgo, phamVi),
+      db.getMqttMessageCountSince(fiveMinAgo, phamVi),
+      db.getMqttMessageCountSince(oneMinAgo, phamVi),
     ]);
     
     // Calculate throughput (messages per minute)
@@ -425,8 +437,8 @@ export const mqttClientRouter = router({
   // Throughput history for line chart (last 60 minutes by default)
   throughputHistory: protectedProcedure
     .input(z.object({ minutes: z.number().default(60) }).optional())
-    .query(async ({ input }) => {
-      return db.getMqttThroughputHistory(input?.minutes || 60);
+    .query(async ({ input, ctx }) => {
+      return db.getMqttThroughputHistory(input?.minutes || 60, phamViCua(ctx));
     }),
 
   // ============ MQTT MESSAGE REPLAY ============
@@ -505,7 +517,13 @@ export const mqttClientRouter = router({
 
   getMachineOEE: protectedProcedure
     .input(z.object({ machineId: z.number(), windowHours: z.number().int().positive().max(720).optional() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // ⚠ `machineId` là lời TỰ KHAI của người gọi — ngoài phạm vi thì KHÔNG được trả số liệu
+      // OEE/sản lượng của máy đó. Ném NOT_FOUND (không phải FORBIDDEN): một câu "bạn không được
+      // xem máy 42" vẫn xác nhận rằng máy 42 có thật.
+      if (!(await db.trongPhamVi('machine', input.machineId, phamViCua(ctx)))) {
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'machine' }, 'Machine not found');
+      }
       const { getMachineOEELive, resolveIdealCycleTimeSec } = await import('../services/oeeService');
       const idealCycleTimeSec = await resolveIdealCycleTimeSec(input.machineId);
       const live = await getMachineOEELive({
@@ -542,6 +560,44 @@ export const mqttClientRouter = router({
       };
     }),
 
+  /**
+   * ★★★ 2026-08-18 — BA Ô NHÃN PHẠM VI, tách thành thủ tục RIÊNG vì mảng KHÔNG chở được nhãn.
+   *
+   * **Vấn đề.** `getAllOEE` (ngay dưới) trả về MẢNG. `getAllMachinesOEELive` có đính nhãn bằng
+   * `withScopeLabels`, nhưng ba ô ấy `enumerable: false` nên `JSON`/superjson bỏ qua — CỐ Ý, xem
+   * docblock `server/_core/accessControlLabels.ts`. Nhãn vì thế CHẾT ở biên tRPC.
+   *
+   * `/dashboard`, `/control-tower`, `/corporate-dashboard` không đau vì trên cùng màn còn
+   * `dashboard.getStats` (trả object, có nhãn). **`/oee-dashboard` và `/machine-health` không có
+   * truy vấn nào như thế** — `machine.list`, `getAllOEE`, `getAllMachineHealth` đều là mảng trần.
+   * Người 0 gán nhà máy thấy 0 máy, và giao diện dịch nó thành *"chưa có dữ liệu"*; trên màn OEE
+   * câu ấy đọc thành **"nhà máy không chạy"** — sai về thế giới.
+   *
+   * **Vì sao KHÔNG đổi `getAllOEE` sang `{ machines, ...nhãn }`.** `client/src/pages/Dashboard.tsx`
+   * đọc nó qua một phép ÉP KIỂU (`allOEE as LiveOEERow[] | undefined` rồi `Array.isArray(q) ? q : []`).
+   * Đổi hợp đồng ⇒ `Array.isArray` thành `false` ⇒ widget lặng lẽ trả `[]` MÃI MÃI, và `tsc`
+   * KHÔNG đỏ vì `as` đã cắt đường suy kiểu. Một thủ tục riêng không đụng nơi gọi cũ nào.
+   *
+   * ⚠ Dùng ĐÚNG `resolveTenantFactoryScope` — bộ phân giải mà chính đường dữ liệu
+   * (`getAllMachinesOEELive`) dùng — chứ KHÔNG tự tính lại bằng `resolveDataScope`. Hai bộ suy
+   * độc lập canh hai nửa của một câu là lớp lỗi đã cắn dự án này: nhãn khai "phạm vi ổn" trong khi
+   * bộ lọc cắt sạch (hoặc ngược lại) mà không lưới nào đỏ, vì mỗi bên đều tự nhất quán.
+   * `oeeScopeLabels.db.test.ts` có một ô canh riêng phép ĐỒNG THUẬN ấy cho cả ba vai.
+   *
+   * ⚠ Trả `scope.labels` — ĐÚNG ba ô chữ. `filter` của drizzle mang tham chiếu vòng và đã cho
+   * `dashboard.getStats` trả 500 cho MỌI người dùng (2026-08-17); `resolveTenantFactoryScope` đã
+   * lọc qua `scopeLabelsOf` nên nó không có đường ra tới đây.
+   */
+  getScopeLabels: protectedProcedure.query(async ({ ctx }) => {
+    const { resolveTenantFactoryScope } = await import('../db/reportAggregators');
+    const scope = await resolveTenantFactoryScope({
+      // ⚠⚠ CẤM lấy danh tính từ `input` — một `input.userId` là lời TỰ KHAI của người gọi.
+      userId: ctx.user?.id,
+      userRole: ctx.user?.role,
+    });
+    return scope.labels;
+  }),
+
   // doc 64 IA-10 S2 (DEP-S2) — nhận scope trục (optional): machineId lọc trực tiếp;
   // lineId tra machines→stations của chuyền (1 query indexed) rồi lọc theo set.
   getAllOEE: protectedProcedure
@@ -549,9 +605,16 @@ export const mqttClientRouter = router({
       machineId: z.number().int().positive().optional(),
       lineId: z.number().int().positive().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
     const { getAllMachinesOEELive } = await import('../services/oeeService');
-    let all = await getAllMachinesOEELive();
+    // ★ NHÓM B #2 — phạm vi tenant từ `ctx.user`. Trước bản vá này thủ tục phơi OEE/sản lượng
+    // của MỌI nhà máy cho mọi tài khoản đã đăng nhập (OEE Dashboard, MachineHealthMonitoring,
+    // CorporateDashboard, ControlTower đều ăn từ đây). CẤM lấy danh tính từ `input`.
+    // ⚠ Ba ô nhãn của `getAllMachinesOEELive` KHÔNG liệt kê được nên không qua được superjson —
+    // đó là CỐ Ý (xem `withScopeLabels`), và cũng là lý do hợp đồng MẢNG ở đây giữ nguyên: giao
+    // diện lấy lý do "chưa được gán nhà máy" từ truy vấn có mang nhãn cùng màn (`dashboard.getStats`).
+    let all: Array<Awaited<ReturnType<typeof getAllMachinesOEELive>>[number]> =
+      await getAllMachinesOEELive({ userId: ctx.user?.id, userRole: ctx.user?.role });
     if (input?.machineId !== undefined) {
       all = all.filter((m) => m.machineId === input.machineId);
     } else if (input?.lineId !== undefined) {
@@ -612,7 +675,10 @@ export const mqttClientRouter = router({
       goodCount: z.number().int().nonnegative(),
       idealCycleTimeSec: z.number().positive(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await db.trongPhamVi('machine', input.machineId, phamViCua(ctx)))) {
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'machine' }, 'Machine not found');
+      }
       const { computeOEE, getActiveOEETarget, evaluateOEEAlert } = await import('../services/oeeService');
       const breakdown = await computeOEE(input);
       const target = await getActiveOEETarget({ machineId: input.machineId, at: input.to });
@@ -650,7 +716,8 @@ export const mqttClientRouter = router({
 
   getActiveDowntime: protectedProcedure
     .input(z.object({ machineId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await db.trongPhamVi('machine', input.machineId, phamViCua(ctx)))) return null;
       const { getActiveDowntime } = await import('../_core/socket');
       return getActiveDowntime(input.machineId);
     }),
@@ -662,9 +729,12 @@ export const mqttClientRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
+    // ★ NHÓM A #3 — trước bản vá: `.query(async ({ input }) => …)`, KHÔNG nhận `ctx` ⇒ 1.000 sự
+    // kiện dừng máy gần nhất của TOÀN ĐỘI đi ra cho mọi tài khoản. `input` KHÔNG được mang danh
+    // tính; `ctx.user` là nguồn duy nhất.
+    .query(async ({ input, ctx }) => {
       const { getDowntimeHistory } = await import('../_core/socket');
-      return getDowntimeHistory(input);
+      return getDowntimeHistory({ ...input, userId: ctx.user?.id, userRole: ctx.user?.role });
     }),
 
   // ============ DOWNTIME PARETO (doc 54 P2.5) ============
@@ -681,9 +751,9 @@ export const mqttClientRouter = router({
       groupBy: z.enum(['category', 'reason']).default('category'),
       limit: z.number().int().positive().max(100).default(20),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { getDowntimePareto } = await import('../services/oeeService');
-      const machineIds = await resolveAnalyticsMachineIds(input);
+      const machineIds = await resolveAnalyticsMachineIds(input, phamViCua(ctx));
       return getDowntimePareto({
         machineIds,
         from: input.from,
@@ -706,9 +776,9 @@ export const mqttClientRouter = router({
       to: z.coerce.date(),
       failureCategories: z.array(z.enum(['planned', 'unplanned', 'breakdown', 'changeover', 'maintenance', 'other'])).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { getReliabilityMetrics } = await import('../services/oeeService');
-      const machineIds = await resolveAnalyticsMachineIds(input);
+      const machineIds = await resolveAnalyticsMachineIds(input, phamViCua(ctx));
       return getReliabilityMetrics({
         machineIds,
         from: input.from,
@@ -805,9 +875,14 @@ export const mqttClientRouter = router({
   // Map lookup, so mapping it over the machine list is cheap). Machines with no
   // calculated score yet are returned with healthScore: null so the fleet view
   // can render an honest "—" instead of fabricating a value from OEE.
-  getAllMachineHealth: protectedProcedure.query(async () => {
+  // ★ NHÓM A #2 — trước bản vá: `.query(async () => …)`, KHÔNG nhận `ctx`, `db.getMachines()`
+  // không lọc ⇒ màn Machine Health hiện TOÀN ĐỘI máy của mọi nhà máy cho mọi tài khoản.
+  // ⚠ Kết quả là MẢNG TRẦN nên KHÔNG chở được nhãn phạm vi qua superjson (cố ý — xem
+  // `withScopeLabels`). Màn `/machine-health` lấy lý do rỗng từ `mqttClient.getScopeLabels`
+  // (ngay trên, dòng ~573), thủ tục nhẹ dựng riêng cho đúng việc ấy.
+  getAllMachineHealth: protectedProcedure.query(async ({ ctx }) => {
     const { getMachineHealthScore } = await import('../_core/socket');
-    const machines = await db.getMachines();
+    const machines = await db.getMachines({ userId: ctx.user?.id, userRole: ctx.user?.role });
     return machines.map((m) => {
       const health = getMachineHealthScore(m.id);
       return {
@@ -826,8 +901,8 @@ export const mqttClientRouter = router({
       range: z.enum(['day', 'week', 'month']).default('week'),
       limit: z.number().int().positive().max(2000).default(500),
     }))
-    .query(async ({ input }) => {
-      return db.getMachineHealthHistory(input.machineId, input.range, input.limit);
+    .query(async ({ input, ctx }) => {
+      return db.getMachineHealthHistory(input.machineId, input.range, input.limit, phamViCua(ctx));
     }),
 
   // ============ MQTT CLIENT MANUAL CREATE ============
@@ -860,19 +935,19 @@ export const mqttClientRouter = router({
       clientId: z.number(),
       limit: z.number().default(50),
     }))
-    .query(async ({ input }) => {
-      return db.getMqttClientConnectionHistory(input.clientId, input.limit);
+    .query(async ({ input, ctx }) => {
+      return db.getMqttClientConnectionHistory(input.clientId, input.limit, phamViCua(ctx));
     }),
 
   // ============ CLIENT HEALTH DASHBOARD ============
   clientHealth: protectedProcedure
     .input(z.object({ clientId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMqttClientHealth(input.clientId);
+    .query(async ({ input, ctx }) => {
+      return db.getMqttClientHealth(input.clientId, phamViCua(ctx));
     }),
 
-  allClientsHealth: protectedProcedure.query(async () => {
-    return db.getAllMqttClientsHealth();
+  allClientsHealth: protectedProcedure.query(async ({ ctx }) => {
+    return db.getAllMqttClientsHealth(phamViCua(ctx));
   }),
 
   // ============ WORKSTATION ERROR DISPLAY ============
@@ -883,8 +958,8 @@ export const mqttClientRouter = router({
       limit: z.number().default(50),
       includeResolved: z.boolean().default(false),
     }))
-    .query(async ({ input }) => {
-      return db.getWorkstationErrors(input);
+    .query(async ({ input, ctx }) => {
+      return db.getWorkstationErrors(input, phamViCua(ctx));
     }),
 
   workstationErrorSummary: protectedProcedure
@@ -893,8 +968,8 @@ export const mqttClientRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
-      return db.getWorkstationErrorSummary(input);
+    .query(async ({ input, ctx }) => {
+      return db.getWorkstationErrorSummary(input, phamViCua(ctx));
     }),
 
   // ============ MACHINE BENCHMARKING ============
@@ -1058,16 +1133,34 @@ export const mqttClientRouter = router({
 // ============================================================
 export const oeeRouter = router({
   // List all OEE targets
-  listTargets: protectedProcedure.query(async () => {
-    const { getDb } = await import('../db');
+  listTargets: protectedProcedure.query(async ({ ctx }) => {
+    const { getDb, machineIdsTrongPhamVi, idsTrongPhamVi } = await import('../db');
     const { oeeTargets } = await import('../../drizzle/schema');
-    const { desc, eq } = await import('drizzle-orm');
+    const { desc, eq, and, or, inArray, isNull } = await import('drizzle-orm');
     const db = await getDb();
     if (!db) return [];
-    
+
+    // ⚠ `oee_targets` KHÔNG có cột tenant — chỉ `machineId`/`lineId`, cả hai nullable. Phạm vi
+    // được chiếu xuống CẢ HAI cột liên kết.
+    // ⚠⚠ Hàng có CẢ HAI cột NULL là mục tiêu MẶC ĐỊNH của hệ thống — nó không thuộc nhà máy nào
+    // nên KHÔNG bị loại. Loại nó đi thì màn OEE của người bị thu hẹp mất luôn ngưỡng mặc định và
+    // mọi máy đọc thành "chưa đặt mục tiêu" — một lời khai sai về thế giới, đúng lớp lỗi mà cả
+    // đợt này đi xoá. Đây là NGOẠI LỆ có lý do, không phải một lỗ hổng bỏ ngỏ: hàng ấy không mang
+    // số đo của ai cả.
+    const idsMay = await machineIdsTrongPhamVi(phamViCua(ctx));
+    const idsTuyen = await idsTrongPhamVi('line', phamViCua(ctx));
+    const dieuKien = [eq(oeeTargets.isActive, true)];
+    if (idsMay !== null && idsTuyen !== null) {
+      const cong = or(
+        and(isNull(oeeTargets.machineId), isNull(oeeTargets.lineId)),
+        inArray(oeeTargets.machineId, idsMay.length > 0 ? idsMay : [-1]),
+        inArray(oeeTargets.lineId, idsTuyen.length > 0 ? idsTuyen : [-1]),
+      );
+      if (cong) dieuKien.push(cong);
+    }
     const result = await db.select()
       .from(oeeTargets)
-      .where(eq(oeeTargets.isActive, true))
+      .where(and(...dieuKien))
       .orderBy(desc(oeeTargets.createdAt));
     return result || [];
   }),

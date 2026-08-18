@@ -44,6 +44,8 @@ import {
   getUnmappedProductModelId,
   type UnmappedRateFilter,
 } from "../services/measurementPointResolver";
+import { phamViCua } from "./_phamViNguoiXem";
+import { tuChoiNgoaiPhamVi } from "./publicProductScope";
 // Doc 31 UX2/PM9 (WD-2) — product config-completeness ("readiness") score.
 import {
   computeProductReadiness,
@@ -397,10 +399,10 @@ export const productModelRouter = router({
 
   getByCode: protectedProcedure
     .input(z.object({ code: z.string() }))
-    .query(async ({ input }) => {
-      const productModel = await db.getProductModelByCode(input.code);
+    .query(async ({ input, ctx }) => {
+      const productModel = await db.getProductModelByCode(input.code, phamViCua(ctx));
       if (!productModel) return null;
-      const measurementPoints = await db.getMeasurementPointDefsByProductModel(productModel.id);
+      const measurementPoints = await db.getMeasurementPointDefsByProductModel(productModel.id, phamViCua(ctx));
       return { productModel, measurementPoints };
     }),
 
@@ -410,16 +412,27 @@ export const productModelRouter = router({
   // wizard via computeProductReadiness(). Returns null when the product is unknown.
   getReadiness: protectedProcedure
     .input(z.object({ productModelId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // ⚠ `productModelId` là lời TỰ KHAI. Điểm "sẵn sàng" phơi cấu hình sản phẩm (số điểm đo, %
+      // có giới hạn, có ảnh mẫu chưa…) — bí quyết công nghệ của tenant. Ngoài phạm vi ⇒ `null`,
+      // đúng hình dạng "không biết sản phẩm này" mà hàm đã tự khai.
+      if (!(await db.sanPhamTrongPhamVi(input.productModelId, phamViCua(ctx)))) return null;
       return computeProductReadiness(input.productModelId);
     }),
 
   // Batched readiness for the product-list badges — CONSTANT query cost (no N+1).
   getReadinessBatch: protectedProcedure
     .input(z.object({ ids: z.array(z.number().int().positive()).max(300) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       if (input.ids.length === 0) return [];
-      return computeProductReadinessBatch(input.ids);
+      // ⚠ Bản LÔ là chỗ dễ quên nhất: `getReadiness` được vá mà `getReadinessBatch` thì không sẽ
+      // để nguyên một cửa đọc 300 sản phẩm mỗi lượt. Lọc danh sách TRƯỚC khi tính.
+      const trongPv: number[] = [];
+      for (const id of input.ids) {
+        if (await db.sanPhamTrongPhamVi(id, phamViCua(ctx))) trongPv.push(id);
+      }
+      if (trongPv.length === 0) return [];
+      return computeProductReadinessBatch(trongPv);
     }),
 
   create: protectedProcedure.use(requirePermission("settings_products", "canCreate"))
@@ -999,26 +1012,26 @@ export const productModelRouter = router({
 // ============ MEASUREMENT POINT DEFINITION ROUTER ============
 export const measurementPointRouter = router({
   list: protectedProcedure
-    .query(async () => {
-      return db.listAllMeasurementPointDefs();
+    .query(async ({ ctx }) => {
+      return db.listAllMeasurementPointDefs(phamViCua(ctx));
     }),
 
   listByProductModel: protectedProcedure
     .input(z.object({ productModelId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMeasurementPointDefsByProductModel(input.productModelId);
+    .query(async ({ input, ctx }) => {
+      return db.getMeasurementPointDefsByProductModel(input.productModelId, phamViCua(ctx));
     }),
 
   listByMachine: protectedProcedure
     .input(z.object({ machineId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMeasurementPointDefsByMachine(input.machineId);
+    .query(async ({ input, ctx }) => {
+      return db.getMeasurementPointDefsByMachine(input.machineId, phamViCua(ctx));
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMeasurementPointDefById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getMeasurementPointDefById(input.id, phamViCua(ctx));
     }),
 
   create: protectedProcedure.use(requirePermission("settings_measurement_points", "canCreate"))
@@ -1668,22 +1681,27 @@ export const measurementPointRouter = router({
       fromTs: z.coerce.date().optional(),
       toTs: z.coerce.date().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // ⚠ Tỉ lệ điểm đo chưa ánh xạ là một số ĐO trên bản ghi kiểm của tenant. `machineIds` là
+      // CỔNG (từ `ctx.user`), còn `input.machineId` là bộ lọc giao diện — hai thứ khác nhau, được
+      // AND lại, nên một `machineId` tự khai chỉ thu hẹp thêm.
+      const idsMay = await db.machineIdsTrongPhamVi(phamViCua(ctx));
       const filter: UnmappedRateFilter = {
         machineId: input?.machineId,
         productModelId: input?.productModelId,
         fromTs: input?.fromTs,
         toTs: input?.toTs,
+        machineIds: idsMay ?? undefined,
       };
       return getUnmappedPointRate(filter);
     }),
 
   /** List __UNMAPPED__ point defs with result counts + a remap suggestion. */
   listUnmapped: protectedProcedure
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const unmappedModelId = await getUnmappedProductModelId();
       if (!unmappedModelId) return { unmappedModelId: null, points: [] };
-      const points = await db.listUnmappedPointDefsWithStats(unmappedModelId);
+      const points = await db.listUnmappedPointDefsWithStats(unmappedModelId, phamViCua(ctx));
       return { unmappedModelId, points };
     }),
 
@@ -1806,20 +1824,20 @@ export const productMachineMappingRouter = router({
       machineId: z.number().optional(),
       productModelId: z.number().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getProductMachineMappings(input?.machineId, input?.productModelId);
+    .query(async ({ input, ctx }) => {
+      return db.getProductMachineMappings(input?.machineId, input?.productModelId, phamViCua(ctx));
     }),
 
   byMachine: protectedProcedure
     .input(z.object({ machineId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMappingsByMachine(input.machineId);
+    .query(async ({ input, ctx }) => {
+      return db.getMappingsByMachine(input.machineId, phamViCua(ctx));
     }),
 
   byProduct: protectedProcedure
     .input(z.object({ productModelId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMappingsByProduct(input.productModelId);
+    .query(async ({ input, ctx }) => {
+      return db.getMappingsByProduct(input.productModelId, phamViCua(ctx));
     }),
 
   create: writeProcedure
@@ -2482,11 +2500,11 @@ export const defectCatalogRouter = router({
       onlyUnresolved: z.boolean().optional().default(true),
       limit: z.number().int().positive().max(1000).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return db.listUnmatchedDefectCodes({
         onlyUnresolved: input?.onlyUnresolved ?? true,
         limit: input?.limit,
-      });
+      }, phamViCua(ctx));
     }),
 
   // ── Doc 31 Đợt B (OP4) — per-component defect tendency (Pareto-by-package) ──
@@ -2499,13 +2517,13 @@ export const defectCatalogRouter = router({
       toTs: z.coerce.date().optional(),
       limit: z.number().int().positive().max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return db.getDefectTendencyByComponent({
         productModelId: input?.productModelId,
         fromTs: input?.fromTs,
         toTs: input?.toTs,
         limit: input?.limit,
-      });
+      }, phamViCua(ctx));
     }),
 });
 
@@ -2718,7 +2736,12 @@ export const defectCatalogRouter = router({
         endDate: z.string().datetime().optional(),
         machineId: z.number().int().positive().optional(),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        // ⚠ Phán quyết chấp nhận LÔ (AQL) là một số đo chất lượng của tenant. `productModelId` là
+        // lời TỰ KHAI ⇒ ngoài phạm vi thì KHÔNG đánh giá.
+        if (!(await db.sanPhamTrongPhamVi(input.productModelId, phamViCua(ctx)))) {
+          tuChoiNgoaiPhamVi("productModel", `productModelId=${input.productModelId}`);
+        }
         return evaluateLotAcceptance({
           productModelId: input.productModelId,
           samplingPlanId: input.samplingPlanId,
@@ -2739,7 +2762,10 @@ export const defectCatalogRouter = router({
         machineId: z.number().int().positive().optional(),
         limit: z.number().int().min(1).max(200).optional(),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        if (!(await db.sanPhamTrongPhamVi(input.productModelId, phamViCua(ctx)))) {
+          tuChoiNgoaiPhamVi("productModel", `productModelId=${input.productModelId}`);
+        }
         return listLotDispositions({
           productModelId: input.productModelId,
           samplingPlanId: input.samplingPlanId,
@@ -3338,8 +3364,8 @@ export const instrumentMsaRecordRouter = router({
 export const mpLightingProfileRouter = router({
   listByPoint: protectedProcedure
     .input(z.object({ pointDefId: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      return db.listMpLightingProfiles(input.pointDefId);
+    .query(async ({ input, ctx }) => {
+      return db.listMpLightingProfiles(input.pointDefId, phamViCua(ctx));
     }),
 
   create: adminProcedure
@@ -3490,8 +3516,8 @@ export const measurementSamplesRouter = router({
       fromTs: z.coerce.date().optional(),
       toTs: z.coerce.date().optional(),
     }))
-    .query(async ({ input }) => {
-      return db.listMeasurementSamples(input);
+    .query(async ({ input, ctx }) => {
+      return db.listMeasurementSamples(input, phamViCua(ctx));
     }),
 
   /**
@@ -3596,8 +3622,8 @@ export const spcAlertsRouter = router({
       unackedOnly: z.boolean().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.listSpcAlerts(input ?? {});
+    .query(async ({ input, ctx }) => {
+      return db.listSpcAlerts(input ?? {}, phamViCua(ctx));
     }),
 
   ack: protectedProcedure
@@ -3625,7 +3651,7 @@ export const mpDefectStatsRouter = router({
       // Convenience: lastNDays overrides fromTs/toTs.
       lastNDays: z.number().int().min(1).max(365).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       let fromTs = input.fromTs;
       let toTs = input.toTs;
       if (input.lastNDays) {
@@ -3639,7 +3665,7 @@ export const mpDefectStatsRouter = router({
         machineId: input.machineId,
         fromTs,
         toTs,
-      });
+      }, phamViCua(ctx));
     }),
 });
 

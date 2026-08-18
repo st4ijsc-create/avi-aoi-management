@@ -5,6 +5,7 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { pgTable, serial, integer, boolean, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 import * as db from "../db";
+import { phamViCua } from "./_phamViNguoiXem";
 import { withDbErrors } from "../_core/dbErrors";
 import { requirePermission } from "../_core/accessControl";
 import * as cachedStats from "../functions/cachedStatistics";
@@ -70,14 +71,14 @@ export const workstationRouter = router({
       factoryId: z.number().optional(),
       isActive: z.boolean().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getWorkstations(input);
+    .query(async ({ input, ctx }) => {
+      return db.getWorkstations(input, phamViCua(ctx));
     }),
 
   getById: protectedProcedure
     .input(z.number())
-    .query(async ({ input }) => {
-      return db.getWorkstationById(input);
+    .query(async ({ input, ctx }) => {
+      return db.getWorkstationById(input, phamViCua(ctx));
     }),
 
   create: wsCanCreate
@@ -122,8 +123,8 @@ export const workstationRouter = router({
       return { success: true };
     }),
 
-  listDeleted: wsCanView.query(async () => {
-    return db.getDeletedWorkstations();
+  listDeleted: wsCanView.query(async ({ ctx }) => {
+    return db.getDeletedWorkstations(phamViCua(ctx));
   }),
 
   restore: wsCanEdit
@@ -137,9 +138,12 @@ export const workstationRouter = router({
   // Máy đang gán vào MỘT trạm (join machines để hiện code/name/type thay vì raw id).
   machinesForWorkstation: protectedProcedure
     .input(z.object({ workstationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await db.getDb();
       if (!database) return [];
+      // ⚠ `workstationId` là lời TỰ KHAI — không kiểm thì một id gõ tay liệt kê được máy của trạm
+      // thuộc nhà máy khác (mã · tên · loại máy).
+      if (!(await db.trongPhamVi("workstation", input.workstationId, phamViCua(ctx)))) return [];
       const { machines } = await import("../../drizzle/schema/hierarchy");
       const { eq, and, asc } = await import("drizzle-orm");
       return database
@@ -219,8 +223,8 @@ export const workstationRouter = router({
       productModelId: z.number().optional(),
       machineId: z.number().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getDefectsByWorkstation(input);
+    .query(async ({ input, ctx }) => {
+      return db.getDefectsByWorkstation({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 
   summary: protectedProcedure
@@ -228,8 +232,8 @@ export const workstationRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getWorkstationSummary(input);
+    .query(async ({ input, ctx }) => {
+      return db.getWorkstationSummary({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 
   topNGMeasurementPoints: protectedProcedure
@@ -238,8 +242,8 @@ export const workstationRouter = router({
       endDate: z.date().optional(),
       limit: z.number().default(10),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getTopNGMeasurementPointsByWorkstation(input);
+    .query(async ({ input, ctx }) => {
+      return db.getTopNGMeasurementPointsByWorkstation({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 
   measurementPointsByWorkstation: protectedProcedure
@@ -248,8 +252,8 @@ export const workstationRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
-      return db.getMeasurementPointsByWorkstation(input);
+    .query(async ({ input, ctx }) => {
+      return db.getMeasurementPointsByWorkstation({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 
   // NG Trend by day
@@ -260,8 +264,8 @@ export const workstationRouter = router({
       workstationId: z.number().optional(),
       measurementPointDefId: z.number().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getNGTrendByDay(input);
+    .query(async ({ input, ctx }) => {
+      return db.getNGTrendByDay({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 
   // NG Comparison between two periods
@@ -272,8 +276,8 @@ export const workstationRouter = router({
       previousStartDate: z.date(),
       previousEndDate: z.date(),
     }))
-    .query(async ({ input }) => {
-      return db.getNGComparison(input);
+    .query(async ({ input, ctx }) => {
+      return db.getNGComparison({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 
   // Fallback: NG summary by machine (from product_inspections)
@@ -282,8 +286,8 @@ export const workstationRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getNGSummaryByMachine(input);
+    .query(async ({ input, ctx }) => {
+      return db.getNGSummaryByMachine({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 
   // Fallback: NG trend by day from product_inspections
@@ -293,8 +297,8 @@ export const workstationRouter = router({
       endDate: z.date().optional(),
       machineId: z.number().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getNGTrendByDayDirect(input);
+    .query(async ({ input, ctx }) => {
+      return db.getNGTrendByDayDirect({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 
   // Fallback: NG comparison from product_inspections
@@ -305,8 +309,8 @@ export const workstationRouter = router({
       previousStartDate: z.date(),
       previousEndDate: z.date(),
     }))
-    .query(async ({ input }) => {
-      return db.getNGComparisonDirect(input);
+    .query(async ({ input, ctx }) => {
+      return db.getNGComparisonDirect({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 });
 
@@ -339,14 +343,14 @@ export const scheduledReportRouter = router({
       reportType: z.string().optional(),
       schedule: z.string().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getScheduledReports(input);
+    .query(async ({ input, ctx }) => {
+      return db.getScheduledReports(input, phamViCua(ctx));
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getScheduledReportById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getScheduledReportById(input.id, phamViCua(ctx));
     }),
 
   create: adminProcedure
@@ -562,8 +566,8 @@ export const scheduledReportRouter = router({
   // Preview email with real data
   previewEmail: adminProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const report = await db.getScheduledReportById(input.id);
+    .query(async ({ input, ctx }) => {
+      const report = await db.getScheduledReportById(input.id, phamViCua(ctx));
       if (!report) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'scheduledReport' }, 'Report not found');
       }
@@ -724,9 +728,19 @@ export const scheduledReportRouter = router({
       corporateCode: z.string().optional(),
       factoryCode: z.string().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // ⚠⚠ `const nguoiGoi = ctx.user` KHÔNG phải trang trí: bộ suy `phamViDocScan` §C hỏi "danh
+      // tính có RỜI TAY handler không" bằng cách nhìn ĐỐI SỐ của lời gọi và VẾ PHẢI của khai báo
+      // biến. Ô `actor: { id: ctx.user.id, … }` nằm LỒNG một tầng trong object literal nên vị từ
+      // ấy KHÔNG thấy — thủ tục này vì thế bị xếp nhóm (A) dù danh tính THẬT SỰ có rời tay. Đây
+      // là một LỖ HỔNG CỦA THƯỚC ĐO, đã báo cho chủ dự án; dòng dưới làm cho điều vốn ĐANG đúng
+      // trở nên nhìn thấy được, chứ không thay đổi hành vi.
+      const nguoiGoi = ctx.user;
       const { scheduledReportService } = await import('../services/scheduledReportService');
-      return scheduledReportService.previewReport(input);
+      // ⚠ Danh tính từ `ctx.user`, KHÔNG từ `input` (2026-08-17). Đây là `adminProcedure` nên
+      // trên thực tế `actor` luôn là admin ⇒ vẫn xem trước được toàn hệ thống; ô này tồn tại
+      // để không có ĐƯỜNG NÀO gọi `previewReport` mà thiếu danh tính.
+      return scheduledReportService.previewReport({ ...input, actor: { id: nguoiGoi.id, role: nguoiGoi.role } });
     }),
 
   // Send one-time statistics report
@@ -738,7 +752,7 @@ export const scheduledReportRouter = router({
       corporateCode: z.string().optional(),
       factoryCode: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { scheduledReportService } = await import('../services/scheduledReportService');
       const content = await scheduledReportService.generateAndSendReport({
         name: input.name,
@@ -747,6 +761,8 @@ export const scheduledReportRouter = router({
         recipients: input.recipients,
         corporateCode: input.corporateCode,
         factoryCode: input.factoryCode,
+        // ⚠ Danh tính từ `ctx.user`, KHÔNG từ `input`.
+        actor: { id: ctx.user.id, role: ctx.user.role },
       });
       return { 
         success: true, 
@@ -1026,8 +1042,8 @@ export const corporateFactoryStatsRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
-      return cachedStats.getCachedMachineStats(input);
+    .query(async ({ input, ctx }) => {
+      return cachedStats.getCachedMachineStats({ ...input, phamVi: phamViCua(ctx) });
     }),
 
   // Cache statistics for monitoring
@@ -1092,11 +1108,13 @@ export const corporateFactoryStatsRouter = router({
     }),
 
   capacityByFactory: protectedProcedure
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const database = await db.getDb();
       if (!database) return [];
       const { factories, workshops, productionLines, stations, machines } = await import("../../drizzle/schema/hierarchy");
-      const { sql, eq } = await import("drizzle-orm");
+      const { sql, eq, inArray } = await import("drizzle-orm");
+      // ⚠ Bảng này đếm SỐ MÁY theo từng nhà máy — nó phơi quy mô sản xuất của mọi tenant.
+      const idsNhaMay = await db.idsTrongPhamVi("factory", phamViCua(ctx));
       const results = await database
         .select({
           factoryId: factories.id,
@@ -1109,16 +1127,32 @@ export const corporateFactoryStatsRouter = router({
         .leftJoin(productionLines, eq(productionLines.workshopId, workshops.id))
         .leftJoin(stations, eq(stations.lineId, productionLines.id))
         .leftJoin(machines, eq(machines.stationId, stations.id))
+        .where(idsNhaMay === null ? undefined : inArray(factories.id, idsNhaMay.length ? idsNhaMay : [-1]))
         .groupBy(factories.id, factories.code);
       return results;
     }),
 
   alertSummaryByFactory: protectedProcedure
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const database = await db.getDb();
       if (!database) return [];
       const { alertHistory, alertSettings } = await import("../../drizzle/schema/alerts");
-      const { eq, desc, isNull, sql } = await import("drizzle-orm");
+      const { eq, and, desc, isNull, or, inArray, sql } = await import("drizzle-orm");
+      // ⚠⚠ Đây là bề mặt CẢNH BÁO — 100 cảnh báo chưa xác nhận gần nhất, kèm giá trị kích hoạt.
+      // `alert_settings` mang `factoryId` + `machineId` (đều nullable). Ưu tiên LIÊN KẾT MÁY (luật
+      // đã ghi ở `commandCenterScope`); hàng không gắn máy mới lùi về `factoryId`; hàng không có
+      // cả hai là cảnh báo TOÀN CỤC ⇒ fail-CLOSED cho người bị thu hẹp (nó nói về xưởng của người
+      // khác). Câu "0 cảnh báo" trên màn này KHÔNG được đọc thành "xưởng đang yên ổn" — giao diện
+      // lấy lý do rỗng từ truy vấn có mang nhãn cùng màn (xem `commandCenterScope`).
+      const phamVi = phamViCua(ctx);
+      const [idsMay, idsNhaMay] = await Promise.all([
+        db.machineIdsTrongPhamVi(phamVi),
+        db.idsTrongPhamVi("factory", phamVi),
+      ]);
+      const congCanhBao = idsMay === null || idsNhaMay === null ? undefined : or(
+        inArray(alertSettings.machineId, idsMay.length ? idsMay : [-1]),
+        and(isNull(alertSettings.machineId), inArray(alertSettings.factoryId, idsNhaMay.length ? idsNhaMay : [-1])),
+      );
 
       // Get recent unacknowledged alerts with factory info
       const results = await database
@@ -1134,7 +1168,7 @@ export const corporateFactoryStatsRouter = router({
         })
         .from(alertHistory)
         .innerJoin(alertSettings, eq(alertHistory.alertSettingId, alertSettings.id))
-        .where(isNull(alertHistory.acknowledgedAt))
+        .where(and(isNull(alertHistory.acknowledgedAt), ...(congCanhBao ? [congCanhBao] : [])))
         .orderBy(desc(alertHistory.createdAt))
         .limit(100);
 
@@ -1153,16 +1187,22 @@ export const corporateFactoryStatsRouter = router({
       weeks: z.number().min(4).max(52).default(12),
       factoryId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await db.getDb();
       if (!database) return [];
       const { productInspections } = await import("../../drizzle/schema/inspection");
-      const { sql, gte, eq, and } = await import("drizzle-orm");
+      const { sql, gte, eq, and, inArray } = await import("drizzle-orm");
 
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - input.weeks * 7);
 
       const conditions = [gte(productInspections.inspectionTime, startDate)];
+      // ⚠ COPQ theo tuần dựng thẳng từ `product_inspections`. Cổng AND vào SAU `input.factoryId`
+      // (lời TỰ KHAI) nên một mã nhà máy gõ tay chỉ thu hẹp thêm.
+      {
+        const idsMay = await db.machineIdsTrongPhamVi(phamViCua(ctx));
+        if (idsMay !== null) conditions.push(inArray(productInspections.machineId, idsMay.length ? idsMay : [-1]));
+      }
       if (input.factoryId) {
         conditions.push(eq(productInspections.factoryCode, sql`(SELECT code FROM factories WHERE id = ${input.factoryId})`));
       }

@@ -1,5 +1,6 @@
 import { publicProcedure, protectedProcedure, router, roleProcedure } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
+import { phamViCua } from "./_phamViNguoiXem";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -150,14 +151,17 @@ function commissionGovernanceWarning(machineType: string): string | undefined {
 
 // ============ FACTORY ROUTER ============
 export const factoryRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.getFactories();
+  // ★ NHÓM A #1 — trước bản vá: `async () => db.getFactories()`, KHÔNG nhận `ctx`, không lọc ⇒ ai
+  // đăng nhập cũng liệt kê được MỌI nhà máy (tên, mã, địa chỉ) của mọi tenant. `ctx.user` là
+  // nguồn danh tính DUY NHẤT được phép ở đây — xem `PhamViNguoiXem` ở `server/db/hierarchy.ts`.
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.getFactories({ userId: ctx.user?.id, userRole: ctx.user?.role });
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getFactoryById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getFactoryById(input.id, phamViCua(ctx));
     }),
 
   create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
@@ -274,12 +278,12 @@ export const factoryRouter = router({
 
   cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getFactoryCascadeInfo(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getFactoryCascadeInfo(input.id, phamViCua(ctx));
     }),
 
-  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
-    return db.getDeletedFactories();
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async ({ ctx }) => {
+    return db.getDeletedFactories(phamViCua(ctx));
   }),
 
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
@@ -301,8 +305,8 @@ const zonePointsSchema = z.array(z.object({
 export const factoryZoneRouter = router({
   listByFactory: protectedProcedure
     .input(z.object({ factoryId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getFactoryZones(input.factoryId);
+    .query(async ({ input, ctx }) => {
+      return db.getFactoryZones(input.factoryId, phamViCua(ctx));
     }),
 
   create: protectedProcedure
@@ -357,14 +361,14 @@ export const factoryZoneRouter = router({
 
 // ============ WORKSHOP ROUTER ============
 export const workshopRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.getWorkshops();
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.getWorkshops(phamViCua(ctx));
   }),
 
   listByFactory: protectedProcedure
     .input(z.object({ factoryId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getWorkshopsByFactory(input.factoryId);
+    .query(async ({ input, ctx }) => {
+      return db.getWorkshopsByFactory(input.factoryId, phamViCua(ctx));
     }),
 
   create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
@@ -411,12 +415,12 @@ export const workshopRouter = router({
 
   cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getWorkshopCascadeInfo(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getWorkshopCascadeInfo(input.id, phamViCua(ctx));
     }),
 
-  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
-    return db.getDeletedWorkshops();
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async ({ ctx }) => {
+    return db.getDeletedWorkshops(phamViCua(ctx));
   }),
 
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
@@ -430,14 +434,14 @@ export const workshopRouter = router({
 
 // ============ PRODUCTION LINE ROUTER ============
 export const lineRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.getProductionLines();
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.getProductionLines(phamViCua(ctx));
   }),
 
   listByWorkshop: protectedProcedure
     .input(z.object({ workshopId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getProductionLinesByWorkshop(input.workshopId);
+    .query(async ({ input, ctx }) => {
+      return db.getProductionLinesByWorkshop(input.workshopId, phamViCua(ctx));
     }),
 
   create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
@@ -484,12 +488,12 @@ export const lineRouter = router({
 
   cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getLineCascadeInfo(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getLineCascadeInfo(input.id, phamViCua(ctx));
     }),
 
-  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
-    return db.getDeletedLines();
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async ({ ctx }) => {
+    return db.getDeletedLines(phamViCua(ctx));
   }),
 
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
@@ -503,14 +507,14 @@ export const lineRouter = router({
 
 // ============ STATION ROUTER ============
 export const stationRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.getStations();
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.getStations(phamViCua(ctx));
   }),
 
   listByLine: protectedProcedure
     .input(z.object({ lineId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getStationsByLine(input.lineId);
+    .query(async ({ input, ctx }) => {
+      return db.getStationsByLine(input.lineId, phamViCua(ctx));
     }),
 
   create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
@@ -559,12 +563,12 @@ export const stationRouter = router({
 
   cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getStationCascadeInfo(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getStationCascadeInfo(input.id, phamViCua(ctx));
     }),
 
-  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
-    return db.getDeletedStations();
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async ({ ctx }) => {
+    return db.getDeletedStations(phamViCua(ctx));
   }),
 
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
@@ -917,8 +921,8 @@ export const machineRouter = router({
   // MACHINE_APPROVE_RBAC_OPEN_ENABLED=true (gate is byte-identical to adminProcedure OFF).
   listPending: protectedProcedure
     .use(machineRegistrationGate("canView"))
-    .query(async () => {
-      return db.getPendingMachines();
+    .query(async ({ ctx }) => {
+      return db.getPendingMachines(phamViCua(ctx));
     }),
 
   // Admin duyệt máy + mapping
@@ -1302,10 +1306,15 @@ export const machineRouter = router({
       return { success: true, message: "Machine registration rejected" };
     }),
 
-  list: protectedProcedure.query(async () => {
+  // ★ NHÓM A #4 — `machine.list` là bề mặt ĐỌC được tiêu thụ nhiều nhất của cây phân cấp (30+ nơi
+  // gọi ở client). Trước bản vá nó trả TOÀN ĐỘI máy của mọi nhà máy cho mọi tài khoản, cùng đúng
+  // một hình dạng với ba ca chuẩn: `.query(async () => …)`, không nhận `ctx`.
+  // ⚠ Kết quả là MẢNG TRẦN ⇒ không chở được nhãn phạm vi (cố ý, xem `withScopeLabels`). Màn nào
+  // cần lý do rỗng thì đọc `mqttClient.getScopeLabels` trên cùng màn.
+  list: protectedProcedure.query(async ({ ctx }) => {
     // Doc 42 (theme 10) — KHÔNG trả apiKey trong list (kể cả admin); màn hình
     // cần key dùng endpoint theo-máy (getById/approve/regenerateApiKey).
-    const rows = await db.getMachines();
+    const rows = await db.getMachines({ userId: ctx.user?.id, userRole: ctx.user?.role });
     return rows.map(({ apiKey: _apiKey, ...rest }) => rest);
   }),
 
@@ -1333,12 +1342,12 @@ export const machineRouter = router({
       limit: z.number().int().min(1).max(200).default(50),
       offset: z.number().int().min(0).default(0),
     }).default({ limit: 50, offset: 0 }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       // Doc 56 Đ0-A (MGMTUI-3/REG-1) — db.getMachinesPaged already strips the
       // plaintext apiKey (and derives hasApiKey); this belt-and-braces strip
       // keeps the ROUTE sealed even if the db layer ever regresses to full rows
       // (doc 54 P0-1 precedent: the sibling list/getById strip at the router).
-      const { items, total } = await db.getMachinesPaged(input);
+      const { items, total } = await db.getMachinesPaged(input, phamViCua(ctx));
       return {
         items: items.map((m) => {
           const { apiKey: _omitApiKey, ...safe } = m as typeof m & { apiKey?: string | null };
@@ -1350,8 +1359,8 @@ export const machineRouter = router({
 
   // F9 — registration-status counts for the summary cards (replaces counting a
   // full client-side list).
-  registrationSummary: protectedProcedure.query(async () => {
-    return db.getMachineRegistrationSummary();
+  registrationSummary: protectedProcedure.query(async ({ ctx }) => {
+    return db.getMachineRegistrationSummary(phamViCua(ctx));
   }),
 
   // ── Doc 27 Đợt 5 / W5-E — gap F3: onboarding duplicate-code pre-check ────
@@ -1365,8 +1374,8 @@ export const machineRouter = router({
       /** When editing an existing machine, its own code is not a conflict. */
       excludeId: z.number().int().optional(),
     }))
-    .query(async ({ input }) => {
-      const holder = await db.getMachineByCode(input.code);
+    .query(async ({ input, ctx }) => {
+      const holder = await db.getMachineByCode(input.code, phamViCua(ctx));
       if (!holder || (input.excludeId !== undefined && holder.id === input.excludeId)) {
         return { available: true as const, holder: null };
       }
@@ -1378,14 +1387,14 @@ export const machineRouter = router({
 
   listByStation: protectedProcedure
     .input(z.object({ stationId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMachinesByStation(input.stationId);
+    .query(async ({ input, ctx }) => {
+      return db.getMachinesByStation(input.stationId, phamViCua(ctx));
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const m = await db.getMachineById(input.id);
+    .query(async ({ input, ctx }) => {
+      const m = await db.getMachineById(input.id, phamViCua(ctx));
       if (!m) return m;
       // doc 54 P0-1 — NEVER expose the plaintext ingest apiKey on a read path. The
       // sibling `list` already strips it; `getById` did not, leaking the machine
@@ -1402,8 +1411,11 @@ export const machineRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
-      return db.getMachineStats(input.id, input.startDate, input.endDate);
+    .query(async ({ input, ctx }) => {
+      return db.getMachineStats(input.id, input.startDate, input.endDate, {
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
+      });
     }),
 
   // Doc 40 W1 (Minh-P1) — role-floor: engineer/supervisor may ONBOARD (create) a
@@ -1557,8 +1569,8 @@ export const machineRouter = router({
   /** Stored stamp + a FRESH re-check of a machine's capabilities vs its device type. */
   checkCapabilities: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const machine = await db.getMachineById(input.id);
+    .query(async ({ input, ctx }) => {
+      const machine = await db.getMachineById(input.id, phamViCua(ctx));
       if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       const nodes = await loadDeviceTypeNodes();
       const fresh = validateCapabilities(machine.machineType, (machine as { capabilities?: unknown }).capabilities ?? null, nodes);
@@ -1639,8 +1651,8 @@ export const machineRouter = router({
       return { success: true };
     }),
 
-  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
-    return db.getDeletedMachines();
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async ({ ctx }) => {
+    return db.getDeletedMachines(phamViCua(ctx));
   }),
 
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
@@ -1742,8 +1754,8 @@ export const machineRouter = router({
   // Legal next lifecycle states for a machine (single source of truth for the UI).
   lifecycleTransitions: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const machine = await db.getMachineById(input.id);
+    .query(async ({ input, ctx }) => {
+      const machine = await db.getMachineById(input.id, phamViCua(ctx));
       if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       const current = ((machine as { lifecycleStatus?: string }).lifecycleStatus ?? "active") as keyof typeof MACHINE_LIFECYCLE_TRANSITIONS;
       return {
