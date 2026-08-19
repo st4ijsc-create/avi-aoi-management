@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import {
   tryExecuteToolLoop,
   tryExecuteCodingTool,
+  executeDecision,
   type ToolResult,
   type ToolExecContext,
   type PendingActionDTO,
@@ -11,6 +12,32 @@ import {
   type ToolLoopProgress,
   type ToolLoopResult,
 } from "./aiLocalTools";
+/**
+ * ★★★ doc 79 · TRỤC 1 (C) — bộ chọn tool LẬP TRÌNH TẤT ĐỊNH, dùng LẠI NGUYÊN VẸN để hỏi
+ * *"câu này có nêu một đường dẫn tệp không?"* trước khi quyết định ĐỌC hay SỬA. Nhập từ module con
+ * để KHÔNG mở thêm một bộ trích đường dẫn thứ hai (hai bộ trích = hai sự thật về cùng một câu).
+ */
+import { classifyCodingToolIntent } from "./aiLocalTools/intentClassifier";
+/**
+ * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
+ * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
+ */
+import {
+  bocKhoiMa,
+  codingEditEnabled,
+  codingGenEnabled,
+  codingModelSanSang,
+  dongBoXuongDong,
+  personaSinhMa,
+  personaSuaTep,
+  promptSinhMa,
+  promptSuaTep,
+  rutChuCoCanh,
+  streamCodingModel,
+  tranTokenChoTep,
+  TRAN_KY_TU_TEP_SUA,
+  type KetQuaChu,
+} from "./aiCodingAgent";
 import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
 // ★ G4-B — trọng số hạng nguồn (module LÁ, dùng CHUNG với bộ eval `--parity`).
 import { sourceTypeWeight, sourceLanguageWeight, devJournalWeight } from "./aiKbSourceWeights";
@@ -2561,18 +2588,34 @@ export type StreamEvent =
     };
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
-// ★★★ doc 79 · TRỤC 1 (B) — TÁC NHÂN LẬP TRÌNH (nhánh `codingMode`)
+// ★★★ doc 79 · TRỤC 1 (B + C) — TÁC NHÂN LẬP TRÌNH (nhánh `codingMode`)
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 /**
  * Persona + tập tool + cách nói của nhánh này ĐỘC LẬP hoàn toàn với đường vận hành:
- *   • persona = "tác nhân lập trình đọc/sửa mã repo qua tool" (KHÔNG `getSystemPromptForRole`);
+ *   • persona = "tác nhân lập trình đọc/sửa/sinh mã" (KHÔNG `getSystemPromptForRole`);
  *   • tập tool = CHỈ 5 tool lập trình (`tryExecuteCodingTool` → `classifyCodingToolIntent`);
- *   • KHÔNG tool nào khớp ⇒ nói thẳng "nêu tệp/lệnh cụ thể", KHÔNG rơi vào RAG tri thức vận hành.
+ *   • KHÔNG rơi vào RAG tri thức vận hành ở BẤT KỲ đường ra nào.
  *
- * ⚠ Cơ chế trả kết quả = HIỆN NỘI DUNG THẬT của tool (`provider: "tool"`), không diễn giải qua LLM:
- * cổng ra của TRỤC 1 là "read_file hiện NỘI DUNG THẬT (không phải chunk RAG)", và nội dung thật nằm
- * ở `toolResult.textSummary`. Diễn giải-qua-LLM là vòng lặp tác nhân (đọc→sửa→chạy), một lớp trên —
- * cố ý để ngoài lần này để nhánh TẤT ĐỊNH và không dính lớp lỗi "vòng suy luận thoái hoá" của 30B.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐÍNH CHÍNH BẢN THÂN KHỐI NÀY (2026-08-19) — TRƯỚC ĐÂY NÓ MÔ TẢ MỘT NGÕ CỤT VÀ GỌI ĐÓ LÀ THIẾT KẾ
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trục 1 (B) viết ở đây: *"KHÔNG tool nào khớp ⇒ nói thẳng 'nêu tệp/lệnh cụ thể'"* và
+ * *"diễn giải-qua-LLM … cố ý để ngoài lần này"*. Hệ quả THẬT, chủ dự án báo cùng ngày: câu
+ * *"viết code C# cho chương trình chat LAN sử dụng socket"* — không đường dẫn, không lệnh — nhận
+ * lại một lời từ chối. Tức **mọi yêu cầu SINH MÃ đều bị từ chối theo cấu tạo**, và người dùng kết
+ * luận (đúng) rằng "AI local không hoạt động". Một nhánh TẤT ĐỊNH không phải là một nhánh ĐẦY ĐỦ.
+ *
+ * TRỤC 1 (C) bổ sung HAI đường ra gọi model, và giữ nguyên mọi đường cũ:
+ *   • **SỬA TỆP** (`streamCodingEdit`) — đứng TRƯỚC bộ chọn tool: đường dẫn + động từ sửa ⇒ đọc tệp
+ *     THẬT → model dựng TOÀN BỘ tệp mới → `apply_diff` qua **HITL** (người duyệt mới ghi).
+ *   • **SINH MÃ** (`streamCodingGenerate`) — thay cho ngõ cụt ở cuối.
+ * Cả hai đi qua `aiCodingAgent.ts`: bộ cắt suy luận + bộ che bí mật + canh vòng lặp thoái hoá của
+ * 30B (lớp lỗi CÓ THẬT ở repo này), và cả hai TẮT được bằng cờ — khi tắt thì rơi về đúng hành vi
+ * trục 1 và **nói ra cờ nào đang tắt**, chứ không im lặng.
+ *
+ * ⚠ Đường ra của TOOL vẫn HIỆN NỘI DUNG THẬT (`provider: "tool"`), không diễn giải qua LLM: cổng ra
+ * của TRỤC 1 là *"read_file hiện NỘI DUNG THẬT (không phải chunk RAG)"*, và nội dung thật nằm ở
+ * `toolResult.textSummary`. Trục 1 (C) KHÔNG chạm đường ấy.
  */
 async function* streamCodingAnswer(
   question: string,
@@ -2584,9 +2627,9 @@ async function* streamCodingAnswer(
   // meta — KHÔNG citations (không RAG vận hành). intent "general" là mặc định trung tính.
   yield { type: "meta", intent: "general", language, confidence: 1, citations: [] };
 
-  const done = (answer: string): StreamEvent => ({
+  const done = (answer: string, provider: "ollama" | "tool" = "tool"): StreamEvent => ({
     type: "done",
-    provider: "tool",
+    provider,
     cached: false,
     followUpSuggestions: [],
     answer,
@@ -2609,6 +2652,25 @@ async function* streamCodingAnswer(
   const execCtx2: ToolExecContext | undefined =
     execCtx && goc.goc ? { ...execCtx, projectRoot: goc.goc } : execCtx;
 
+  /**
+   * ★★★ doc 79 · TRỤC 1 (C) — NHÁNH **SỬA TỆP**, đứng TRƯỚC bộ chọn tool tất định.
+   *
+   * Vì sao trước: một câu *"sửa src/Calculator.cs để Divide ném ArgumentException khi chia 0"* CÓ
+   * đường dẫn, nên `classifyCodingToolIntent` chọn `read_file` và ta dừng ở việc ĐỌC — đúng thứ chủ
+   * dự án gọi là "không nhận được hành động chính xác". Ta dùng LẠI NGUYÊN quyết định của bộ chọn ấy
+   * (không viết bộ trích đường dẫn thứ hai) rồi hỏi thêm một câu: *"câu này là ĐỌC hay SỬA?"*
+   * ⚠ Bộ chọn tất định KHÔNG bị sửa một byte ⇒ lưới A/B (`codingToolIntent.test.ts` §5) không đổi.
+   */
+  const quyetDinh = classifyCodingToolIntent(question);
+  if (
+    quyetDinh.tool === "read_file" &&
+    typeof quyetDinh.args.path === "string" &&
+    laYDinhSuaTep(question)
+  ) {
+    const daXuLy = yield* streamCodingEdit(question, quyetDinh.args.path, language, context, execCtx2);
+    if (daXuLy) return;
+  }
+
   const outcome = await tryExecuteCodingTool(question, context, execCtx2);
   const toolName = outcome.decision.tool ?? null;
 
@@ -2629,9 +2691,27 @@ async function* streamCodingAnswer(
     return;
   }
 
+  /**
+   * ★★★ CỨU MỘT LƯỢT ĐOÁN TRƯỢT CỦA BỘ CHỌN LLM — hẹp có chủ ý.
+   *
+   * `tryExecuteCodingTool` chạy heuristic TRƯỚC, rồi mới tới bộ chọn LLM giới hạn 5 tool. Với đúng
+   * câu chủ dự án hỏi (*"viết code C# cho chương trình chat LAN sử dụng socket"*) heuristic trả
+   * `null` — và nếu bộ chọn LLM khi ấy ĐOÁN một `read_file`/`grep_repo` với một đường/mẫu nó tự bịa,
+   * người dùng sẽ nhận *"Không có tệp X trong hộp cát"* thay vì mã. Tức lỗi cũ quay lại dưới một cái
+   * tên khác.
+   *
+   * Điều kiện hẹp: heuristic TẤT ĐỊNH nói "không tool nào" **VÀ** tool (do LLM đoán) trả về "không
+   * tìm thấy gì". Khi ấy đi tiếp xuống nhánh SINH MÃ. Mọi lượt heuristic có khớp (`CODING_*_SHORTCUT`)
+   * KHÔNG đi qua đây ⇒ cổng ra tất định của trục 1 không đổi một byte.
+   */
+  const doanTruot =
+    quyetDinh.tool === null &&
+    !!outcome.result &&
+    (outcome.result.note === "NOT_FOUND" || outcome.result.note === "NO_MATCH");
+
   // Read tool chạy (read_file / list_files / grep_repo) → HIỆN NỘI DUNG THẬT. Kể cả lượt từ chối hộp
   // cát cũng trả về `result` kèm `note` giải thích — nên nhánh này bao luôn cả câu từ chối có mã.
-  if (outcome.result) {
+  if (outcome.result && !doanTruot) {
     yield { type: "tool", toolName, toolResult: outcome.result };
     const answer = outcome.result.textSummary ?? "";
     yield { type: "token", token: answer };
@@ -2647,20 +2727,395 @@ async function* streamCodingAnswer(
     return;
   }
 
-  // KHÔNG tool nào khớp → KHÔNG rơi vào RAG vận hành. Nói thẳng, đề nghị nêu tệp/lệnh cụ thể.
-  const msg = codingNoToolMessage(language);
+  /**
+   * ★★★ doc 79 · TRỤC 1 (C) — NHÁNH **SINH MÃ**, thay cho NGÕ CỤT.
+   *
+   * Đây chính là lỗi chủ dự án báo: *"viết code C# cho chương trình chat LAN sử dụng socket"* không
+   * có đường dẫn, không có lệnh, không có mẫu grep ⇒ 5 tool đều không khớp ⇒ trước bản vá này hàm
+   * trả thẳng `codingNoToolMessage()` mà **KHÔNG BAO GIỜ gọi model**. Nay nó gọi model với persona
+   * KỸ SƯ LẬP TRÌNH (không RAG vận hành, không [1][2]) và stream mã thật ra.
+   */
+  const ketCuc = yield* streamCodingGenerate(question, language, context, execCtx2);
+  if (ketCuc === "xong") return;
+
+  // KHÔNG tool nào khớp VÀ nhánh sinh mã không chạy (cờ tắt / model chưa sẵn sàng) → nói thẳng.
+  const msg = codingNoToolMessage(language, ketCuc);
   yield { type: "token", token: msg };
   yield done(msg);
 }
 
-function codingNoToolMessage(language: KbLanguage): string {
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 79 · TRỤC 1 (C) — Ý ĐỊNH SỬA · NGỮ CẢNH DỰ ÁN · HAI NHÁNH GỌI MODEL
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Bỏ dấu tiếng Việt (kể cả `đ`) — bản cục bộ, thuần, để phân biệt ĐỌC với SỬA. */
+function boDauVi(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase();
+}
+
+/**
+ * ★★★ *"Câu này là ĐỌC tệp hay SỬA tệp?"*
+ *
+ * ⚠ CỐ Ý HẸP (ưu tiên độ CHÍNH XÁC hơn độ phủ). Một lượt nhận nhầm ĐỌC thành SỬA đốt ~30 s của model
+ * 30B rồi đẻ ra một thẻ duyệt mà người dùng không hề xin. Vì thế:
+ *   • KHÔNG nhận `thay` (đụng `thấy` → `thay`), KHÔNG nhận `doi` trần (đụng `đợi`/`đối`);
+ *   • động từ ĐỌC (`doc`/`xem`/`mo`/`read`/`show`) KHÔNG nằm ở đây, nên
+ *     *"đọc server/routers.ts và cho biết export gì"* vẫn đi đúng đường ĐỌC tất định của trục 1.
+ * Điều kiện này chỉ được HỎI khi bộ chọn tất định đã cho ra `read_file` (tức câu CÓ đường dẫn tệp).
+ */
+export function laYDinhSuaTep(question: string): boolean {
+  const q = boDauVi(question);
+  const vi = /(^|[^a-z])(sua|va loi|khac phuc|chinh lai|chinh sua|them|bo sung|cai dat|viet lai|cap nhat|doi ten|xoa bo|nem loi|toi uu)([^a-z]|$)/;
+  const en = /(^|[^a-z])(fix|edit|modify|change|update|refactor|implement|rewrite|patch|remove|throw)([^a-z]|$)/;
+  const zh = /(修改|修复|修正|实现|重构|更新|添加|删除|优化)/;
+  return vi.test(q) || en.test(q) || zh.test(question);
+}
+
+/**
+ * Ngữ cảnh DỰ ÁN ĐANG CHỌN đưa vào persona: tên dự án + vài mục ở gốc. Không có nó, model trả lời
+ * "chung chung ngoài không khí" dù người dùng vừa chọn một dự án cụ thể ở bộ chọn.
+ *
+ * ⚠ Lấy danh sách mục qua ĐÚNG `executeDecision` + `list_files` (hộp cát + RBAC + gốc dự án đã phân
+ * giải), KHÔNG đọc thư mục bằng `fs` — mở một cửa đọc thứ hai là đúng lớp lỗi mà
+ * `programmingFileIo.census.test.ts` được dựng ra để chặn.
+ * ⚠ Fail-safe: mọi lỗi ⇒ chuỗi RỖNG (persona vẫn chạy, chỉ mất phần ngữ cảnh).
+ */
+async function nguCanhDuAnChoPrompt(
+  context: KbQueryContext,
+  execCtx?: ToolExecContext,
+): Promise<string> {
+  try {
+    const { danhSachDuAn, duAnMacDinh } = await import("./aiLocalTools/repoProjects");
+    const ds = danhSachDuAn();
+    const duAn = (context.projectId ? ds.find((d) => d.id === context.projectId) : undefined) ?? duAnMacDinh();
+    const dong: string[] = [`=== Dự án đang mở ===`, `Tên: ${duAn.ten}`];
+    if (execCtx) {
+      const lf = await executeDecision({ tool: "list_files", args: { depth: 1 } }, execCtx);
+      const entries =
+        (lf.result?.data as { entries?: Array<{ path: string; kind: string }> } | undefined)?.entries ?? [];
+      const ten = entries.slice(0, 24).map((e) => (e.kind === "dir" ? `${e.path}/` : e.path));
+      if (ten.length > 0) dong.push(`Mục ở thư mục gốc: ${ten.join(", ")}`);
+    }
+    dong.push("Bám dự án này khi trả lời; nếu yêu cầu không liên quan tới nó thì cứ trả lời độc lập.");
+    return dong.join("\n");
+  } catch (e) {
+    console.warn("[aiLocalKnowledge] không dựng được ngữ cảnh dự án cho persona lập trình:", (e as Error)?.message);
+    return "";
+  }
+}
+
+/** Sự kiện `done` dùng chung cho hai nhánh gọi model (tách ra để không chép ba bản). */
+function doneSinhMa(answer: string, provider: "ollama" | "tool", degraded?: { reason: string }): StreamEvent {
+  return {
+    type: "done",
+    provider,
+    cached: false,
+    followUpSuggestions: [],
+    answer,
+    structured: extractStructuredResponse(answer),
+    dataCitations: [],
+    numberCheck: null,
+    ...(degraded ? { degraded: true, degradedReason: degraded.reason } : {}),
+  };
+}
+
+/**
+ * ★★★ VÒNG LẶP TÁC NHÂN — bước SỬA: đọc tệp THẬT → model dựng TOÀN BỘ tệp mới → `apply_diff` qua
+ * **HITL** (`proposeAction`) → người bấm duyệt → `confirmAction` mới ghi một byte.
+ *
+ * ⚠⚠ KHÔNG có đường tắt nào ở đây: lượt ghi đi qua `executeDecision`, và `executeDecision` gửi MỌI
+ * `kind:"write"` vào `proposeAction`. Bốn hàng rào của pha C (tệp bẩn · băm chống TOCTOU · hộp cát ·
+ * RBAC `ai_repo_read/canEdit`) chạy ở CẢ propose LẪN confirm, không phải ở đây.
+ *
+ * Trả `true` ⇔ đã trả lời xong (kể cả bằng một câu từ chối trung thực). `false` ⇒ người gọi đi tiếp
+ * xuống đường tool tất định (đọc tệp) như trước — KHÔNG im lặng, KHÔNG mất lượt.
+ */
+async function* streamCodingEdit(
+  question: string,
+  duong: string,
+  language: KbLanguage,
+  context: KbQueryContext,
+  execCtx?: ToolExecContext,
+): AsyncGenerator<StreamEvent, boolean> {
+  if (!codingEditEnabled()) return false;
+  if (!execCtx) return false;
+  if (!(await codingModelSanSang())) return false;
+
+  const rf = await executeDecision({ tool: "read_file", args: { path: duong } }, execCtx);
+  if (!rf.result) return false; // lỗi/không chạy được ⇒ để đường tool tất định nói thật
+  yield { type: "tool", toolName: "read_file", toolResult: rf.result };
+
+  // Hộp cát / RBAC từ chối ⇒ NÓI THẲNG mã từ chối, KHÔNG gọi model (và không đọc lại lần hai).
+  if (rf.result.note) {
+    const m = rf.result.textSummary ?? "";
+    yield { type: "token", token: m };
+    yield doneSinhMa(m, "tool");
+    return true;
+  }
+
+  const d = rf.result.data as
+    | { path?: string | null; content?: string | null; truncated?: boolean; redacted?: boolean }
+    | undefined;
+  const goc = typeof d?.content === "string" ? d.content : null;
+  const relPath = typeof d?.path === "string" && d.path ? d.path : duong;
+
+  /**
+   * ⚠ FAIL-CLOSED, ba lý do RIÊNG BIỆT — mỗi lý do một hành động khác của người dùng:
+   *   • `truncated` — ta chỉ thấy MỘT PHẦN tệp ⇒ `original` sẽ không khớp băm đĩa ⇒ `BASE_MISMATCH`.
+   *     Đề xuất một diff chắc chắn bị từ chối là làm phiền người duyệt.
+   *   • `redacted`  — `read_file` đã CHE một chuỗi trông như bí mật ⇒ nếu model chép lại chỗ che ấy,
+   *     ta vừa ghi `[REDACTED_SECRET]` ĐÈ LÊN mã thật. Đây là hỏng CÂM đúng nghĩa.
+   *   • quá dài     — prompt không chở nổi cả tệp; sửa một tệp mà chỉ nhìn nửa đầu là đoán mò.
+   */
+  if (goc === null || d?.truncated === true || d?.redacted === true || goc.length > TRAN_KY_TU_TEP_SUA) {
+    const ly =
+      goc === null
+        ? "NO_CONTENT"
+        : d?.truncated === true
+          ? "TRUNCATED"
+          : d?.redacted === true
+            ? "REDACTED"
+            : "TOO_LARGE";
+    const m = codingKhongTuSuaMessage(language, relPath, ly);
+    yield { type: "token", token: m };
+    yield doneSinhMa(m, "tool");
+    return true;
+  }
+
+  const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
+  const it = rutChuCoCanh(
+    streamCodingModel({
+      systemPrompt: personaSuaTep(language, nguCanh),
+      prompt: promptSuaTep(relPath, goc, question, language),
+      maxTokens: tranTokenChoTep(goc.length),
+      temperature: 0.15,
+      // Phạt lặp làm hỏng việc chép lại NGUYÊN VĂN một tệp (thụt đầu dòng, `}` liên tiếp…).
+      repeatPenalty: 1.0,
+      userId: execCtx.user?.id,
+      // Chữ này SẼ được ghi ra đĩa ⇒ prompt phải tới model nguyên văn (xem `YeuCauSinhChu`).
+      nguyenVanPrompt: true,
+    }),
+  );
+
+  let kq: KetQuaChu;
+  let daPhat = "";
+  for (;;) {
+    let n: IteratorResult<string, KetQuaChu>;
+    try {
+      n = await it.next();
+    } catch (e) {
+      const m = codingModelErrorMessage(language, e);
+      yield { type: "token", token: (daPhat ? "\n\n" : "") + m };
+      yield doneSinhMa(daPhat ? `${daPhat}\n\n${m}` : m, "tool");
+      return true;
+    }
+    if (n.done) {
+      kq = n.value;
+      break;
+    }
+    daPhat += n.value;
+    yield { type: "token", token: n.value };
+  }
+
+  if (kq.degraded || !kq.text.trim()) {
+    const m = codingThoaiHoaMessage(language, kq.reason);
+    // Đã phát chữ rác ra rồi ⇒ `degraded:true` để client THAY chữ đã tích luỹ bằng câu sạch này.
+    yield doneSinhMa(m, "tool", { reason: kq.reason || "empty" });
+    return true;
+  }
+
+  const boc = bocKhoiMa(kq.text);
+  if (boc === null) {
+    const m = codingKhongCoKhoiMaMessage(language);
+    yield { type: "token", token: `\n\n${m}` };
+    yield doneSinhMa(`${kq.text}\n\n${m}`, "ollama");
+    return true;
+  }
+
+  const moi = dongBoXuongDong(goc, boc);
+  if (moi === goc) {
+    const m = codingKhongDoiMessage(language, relPath);
+    yield { type: "token", token: `\n\n${m}` };
+    yield doneSinhMa(`${kq.text}\n\n${m}`, "ollama");
+    return true;
+  }
+
+  const ad = await executeDecision(
+    { tool: "apply_diff", args: { path: relPath, original: goc, modified: moi } },
+    execCtx,
+  );
+  if (ad.pendingAction) {
+    yield { type: "pending_action", toolName: "apply_diff", pendingAction: ad.pendingAction };
+    const m = ad.pendingAction.summary;
+    yield { type: "token", token: `\n\n${m}` };
+    yield doneSinhMa(`${kq.text}\n\n${m}`, "ollama");
+    return true;
+  }
+  if (ad.denied) {
+    const m = ad.denied.message;
+    yield { type: "token", token: `\n\n${m}` };
+    yield doneSinhMa(`${kq.text}\n\n${m}`, "tool");
+    return true;
+  }
+  const m = codingErrorMessage(language, "apply_diff", ad.error ?? "PROPOSE_FAILED");
+  yield { type: "token", token: `\n\n${m}` };
+  yield doneSinhMa(`${kq.text}\n\n${m}`, "tool");
+  return true;
+}
+
+/** Vì sao nhánh sinh mã KHÔNG chạy — mỗi lý do là một câu khác nhau với người dùng. */
+type LyDoKhongSinhMa = "xong" | "tat_co" | "model_offline";
+
+/**
+ * ★★★ NHÁNH SINH MÃ ĐA MỤC ĐÍCH — C#, TypeScript, React, PostgreSQL… KHÔNG dùng `ProgrammingKind`
+ * của `aiProgrammingCopilot` (tập ấy CHỈ có PLC/robot/CNC: `iec61131-st`, `gcode`, `robot-tm`… —
+ * nhét C# vào đó là khai sai loại rồi nhận lại prompt của một miền khác).
+ */
+async function* streamCodingGenerate(
+  question: string,
+  language: KbLanguage,
+  context: KbQueryContext,
+  execCtx?: ToolExecContext,
+): AsyncGenerator<StreamEvent, LyDoKhongSinhMa> {
+  if (!codingGenEnabled()) return "tat_co";
+  if (!(await codingModelSanSang())) return "model_offline";
+
+  const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
+  const it = rutChuCoCanh(
+    streamCodingModel({
+      systemPrompt: personaSinhMa(language, nguCanh),
+      prompt: promptSinhMa(question, language),
+      maxTokens: 3_000,
+      temperature: 0.25,
+      userId: execCtx?.user?.id,
+    }),
+  );
+
+  let kq: KetQuaChu;
+  let daPhat = "";
+  for (;;) {
+    let n: IteratorResult<string, KetQuaChu>;
+    try {
+      n = await it.next();
+    } catch (e) {
+      const m = codingModelErrorMessage(language, e);
+      yield { type: "token", token: (daPhat ? "\n\n" : "") + m };
+      yield doneSinhMa(daPhat ? `${daPhat}\n\n${m}` : m, "tool");
+      return "xong";
+    }
+    if (n.done) {
+      kq = n.value;
+      break;
+    }
+    daPhat += n.value;
+    yield { type: "token", token: n.value };
+  }
+
+  if (kq.degraded || !kq.text.trim()) {
+    const m = codingThoaiHoaMessage(language, kq.reason);
+    yield doneSinhMa(m, "tool", { reason: kq.reason || "empty" });
+    return "xong";
+  }
+
+  yield doneSinhMa(kq.text, "ollama");
+  return "xong";
+}
+
+/**
+ * ★ ĐƯỜNG NÓI THẬT KHI KHÔNG CÓ MODEL — cố ý GIỮ LẠI (doc 79 (A)).
+ *
+ * `lyDo` mở rộng câu chứ không thay nó: *"chưa rõ yêu cầu"* là SAI SỰ THẬT khi nguyên nhân là engine
+ * chưa nạp được model. Người dùng cần biết mình phải làm gì khác nhau trong hai ca ấy.
+ */
+function codingNoToolMessage(language: KbLanguage, lyDo?: LyDoKhongSinhMa): string {
+  const them =
+    lyDo === "model_offline"
+      ? {
+          vi: "\n\n⚠ Ngoài ra: **model sinh mã cục bộ chưa sẵn sàng** (engine GGUF chưa nạp được). Đây là lý do tôi không tự viết mã cho bạn lượt này — không phải vì câu hỏi sai.",
+          en: "\n\n⚠ Also: the **local code model is not ready** (GGUF engine unavailable). That is why I did not write code for you this turn — not because your question was wrong.",
+          zh: "\n\n⚠ 另外：**本地代码模型尚未就绪**（GGUF 引擎不可用）。这才是本轮我没有为你写代码的原因，而不是你的问题有误。",
+        }
+      : lyDo === "tat_co"
+        ? {
+            vi: "\n\n⚠ Ngoài ra: nhánh **sinh mã** đang TẮT bằng cờ `AI_CODING_GEN=0`.",
+            en: "\n\n⚠ Also: the **code-generation** branch is disabled via `AI_CODING_GEN=0`.",
+            zh: "\n\n⚠ 另外：**代码生成**分支已通过 `AI_CODING_GEN=0` 关闭。",
+          }
+        : { vi: "", en: "", zh: "" };
   if (language === "zh") {
-    return "我不清楚你的编程请求。请指明**具体文件路径**（如 `server/routers.ts`）、**要搜索的符号**，或**要运行的命令**（如 `npm run check`、`dotnet test <路径>`、`node --test <路径>`）。";
+    return "我不清楚你的编程请求。请指明**具体文件路径**（如 `server/routers.ts`）、**要搜索的符号**，或**要运行的命令**（如 `npm run check`、`dotnet test <路径>`、`node --test <路径>`）。" + them.zh;
   }
   if (language === "en") {
-    return "I'm not sure what you want me to do in the repo. Name a **specific file path** (e.g. `server/routers.ts`), a **symbol to search for**, or a **command to run** (e.g. `npm run check`, `dotnet test <path>`, `node --test <path>`).";
+    return "I'm not sure what you want me to do in the repo. Name a **specific file path** (e.g. `server/routers.ts`), a **symbol to search for**, or a **command to run** (e.g. `npm run check`, `dotnet test <path>`, `node --test <path>`)." + them.en;
   }
-  return "Chưa rõ yêu cầu lập trình. Hãy nêu một **đường dẫn tệp cụ thể** (vd `server/routers.ts`), một **ký hiệu cần tìm**, hoặc một **lệnh cần chạy** (vd `npm run check`, `dotnet test <đường>`, `node --test <đường>`).";
+  return "Chưa rõ yêu cầu lập trình. Hãy nêu một **đường dẫn tệp cụ thể** (vd `server/routers.ts`), một **ký hiệu cần tìm**, hoặc một **lệnh cần chạy** (vd `npm run check`, `dotnet test <đường>`, `node --test <đường>`)." + them.vi;
+}
+
+/** Model chạy nhưng đầu ra thoái hoá (vòng lặp) — với MÃ thì không cứu phần đầu, xem `rutChuCoCanh`. */
+function codingThoaiHoaMessage(language: KbLanguage, reason: string): string {
+  const r = reason || "empty";
+  if (language === "zh") return `本地模型的输出退化（${r}），已丢弃。这是真实故障，不是“没有想法”。请换一种说法或缩小请求范围后重试。`;
+  if (language === "en") return `The local model's output degenerated (${r}) and was discarded. This is a real failure, not "no ideas". Rephrase or narrow the request and try again.`;
+  return `Đầu ra của model cục bộ bị **thoái hoá** (${r}) nên đã bị BỎ. Đây là hỏng THẬT, không phải "AI không nghĩ ra gì" — với mã nguồn thì một phần đầu cứu được vẫn là mã hỏng, nên tôi không đưa nó cho bạn. Hãy diễn đạt lại hoặc thu hẹp yêu cầu.`;
+}
+
+/** Lượt gọi model NÉM — nói thẳng, không nuốt (bài học `runCodeModel` của G5-D). */
+function codingModelErrorMessage(language: KbLanguage, e: unknown): string {
+  const chiTiet = e instanceof Error ? e.message : String(e);
+  if (chiTiet.includes("CODING_PROMPT_REDACTED")) {
+    if (language === "zh") return "拒绝提出修改：输入安全过滤器改写了文件内容，若继续，模型会把被遮蔽的字符串写回文件（静默损坏）。请检查 `AI_SAFETY_ENABLED`。";
+    if (language === "en") return "Refusing to propose an edit: the input safety filter rewrote the file content. Continuing would write the redacted placeholder back into the file (silent corruption). Check `AI_SAFETY_ENABLED`.";
+    return "TỪ CHỐI đề xuất sửa: bộ che an toàn đầu vào đã thay đổi nội dung tệp trước khi model nhìn thấy. Đi tiếp nghĩa là ghi chính chỗ CHE ấy đè lên mã thật — hỏng CÂM. Hãy xem cờ `AI_SAFETY_ENABLED`.";
+  }
+  if (language === "zh") return `本地模型调用失败：${chiTiet}。这是真实故障，不是“不清楚需求”。请查看服务器日志（以及 llama-server）。`;
+  if (language === "en") return `The local model call FAILED: ${chiTiet}. This is a real failure, not "unclear request". Check the server log (and llama-server).`;
+  return `Lượt gọi model cục bộ **HỎNG**: ${chiTiet}. Đây là hỏng THẬT, không phải "chưa rõ yêu cầu" — thử lại y nguyên sẽ hỏng y nguyên. Xem nhật ký máy chủ (và llama-server nếu đang bật).`;
+}
+
+/** Model trả lời nhưng KHÔNG có khối mã ⇒ không dựng được `modified` ⇒ không đề xuất ghi. */
+function codingKhongCoKhoiMaMessage(language: KbLanguage): string {
+  if (language === "zh") return "⚠ 未提出写入：模型的回答中没有代码块，因此无法构造完整的新文件内容。宁可不改，也不猜。";
+  if (language === "en") return "⚠ No write proposed: the model's answer contains no code block, so the full new file content could not be built. Refusing to guess.";
+  return "⚠ KHÔNG đề xuất ghi: câu trả lời của model không có khối mã nào nên tôi không dựng được nội dung tệp mới đầy đủ. Thà không sửa còn hơn đoán.";
+}
+
+/** Model trả lại đúng tệp cũ — không phải sự cố, chỉ là không có gì để áp. */
+function codingKhongDoiMessage(language: KbLanguage, relPath: string): string {
+  if (language === "zh") return `⚠ 未提出写入：模型返回的内容与 "${relPath}" 当前内容完全一致。`;
+  if (language === "en") return `⚠ No write proposed: the model returned content identical to the current "${relPath}".`;
+  return `⚠ KHÔNG đề xuất ghi: nội dung model trả về GIỐNG HỆT tệp "${relPath}" hiện tại.`;
+}
+
+/** Ba lý do fail-closed của nhánh sửa — mỗi lý do một việc khác nhau người dùng phải làm. */
+function codingKhongTuSuaMessage(
+  language: KbLanguage,
+  relPath: string,
+  ly: "NO_CONTENT" | "TRUNCATED" | "REDACTED" | "TOO_LARGE",
+): string {
+  const vi: Record<typeof ly, string> = {
+    NO_CONTENT: `Đọc được "${relPath}" nhưng không có nội dung để sửa.`,
+    TRUNCATED: `Tôi chỉ đọc được MỘT PHẦN "${relPath}" (chạm trần byte). Sửa một tệp mà chỉ nhìn nửa đầu là đoán mò, và diff dựng từ đó chắc chắn bị từ chối vì lệch băm. Hãy thu hẹp phạm vi hoặc tăng trần byte.`,
+    REDACTED: `Nội dung "${relPath}" có chuỗi trông như BÍ MẬT nên đã bị che khi đọc. Nếu tôi sửa từ bản đã che thì chỗ che sẽ được ghi ĐÈ lên mã thật — hỏng CÂM. TỪ CHỐI sửa tệp này; hãy sửa tay.`,
+    TOO_LARGE: `Tệp "${relPath}" quá lớn (> ${TRAN_KY_TU_TEP_SUA} ký tự) để đưa trọn vào một lượt sửa. Hãy tách tệp hoặc nêu rõ hàm cần sửa để tôi đọc/giải thích thay vì ghi đè cả tệp.`,
+  };
+  const en: Record<typeof ly, string> = {
+    NO_CONTENT: `Read "${relPath}" but there is no content to edit.`,
+    TRUNCATED: `I could only read PART of "${relPath}" (byte cap). Editing from a partial view is guessing, and the resulting diff would be rejected on a hash mismatch.`,
+    REDACTED: `"${relPath}" contains a secret-looking string that was redacted on read. Editing from the redacted copy would write the placeholder over real code (silent corruption). Refusing.`,
+    TOO_LARGE: `"${relPath}" is too large (> ${TRAN_KY_TU_TEP_SUA} chars) for a whole-file edit. Split it, or name the function so I can read/explain instead of overwriting.`,
+  };
+  const zh: Record<typeof ly, string> = {
+    NO_CONTENT: `已读取 "${relPath}"，但没有可编辑的内容。`,
+    TRUNCATED: `只读到 "${relPath}" 的一部分（字节上限）。基于片段修改等于猜测，生成的 diff 也会因哈希不匹配被拒绝。`,
+    REDACTED: `"${relPath}" 含有疑似密钥的字符串，读取时已被遮蔽。基于遮蔽副本修改会把占位符写回真实代码（静默损坏），故拒绝。`,
+    TOO_LARGE: `"${relPath}" 太大（> ${TRAN_KY_TU_TEP_SUA} 字符），无法整文件修改。请拆分文件，或指明要改的函数。`,
+  };
+  return language === "en" ? en[ly] : language === "zh" ? zh[ly] : vi[ly];
 }
 
 /** ★ doc 79 TRỤC 2 — id dự án không nằm trong danh sách trắng (id lạ / client gửi đường dẫn). */

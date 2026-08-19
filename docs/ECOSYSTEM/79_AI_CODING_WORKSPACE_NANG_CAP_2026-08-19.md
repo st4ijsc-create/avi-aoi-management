@@ -77,6 +77,53 @@ CẢNH** riêng, KHÔNG đụng đường vận hành đang chạy tốt:
 > đọc lỗi → sửa tiếp* (làm 2 ca đỏ của demo thành xanh) là bước ĐÁNH GIÁ TIẾP, không thuộc cổng ra
 > trục 1.
 
+### TRỤC 1 (C) — TÁC NHÂN LẬP TRÌNH **GỌI MODEL**: sinh mã + đề xuất sửa tệp
+
+> ⚠⚠ **CHỦ DỰ ÁN BÁO LỖI THẬT (2026-08-19), VÀ HỌ ĐÚNG.** Họ mở `/ai-coding-workspace`, chọn
+> "Demo Csharp", gõ *"viết code C# cho chương trình chat LAN sử dụng socket"* và nhận
+> *"Chưa rõ yêu cầu lập trình. Hãy nêu một **đường dẫn tệp cụ thể**…"*.
+> Kết luận của họ — *"tôi chưa thấy AI local hoạt động"* — là mô tả CHÍNH XÁC hành vi.
+
+**Gốc rễ (đã truy mã, không đoán):** `streamCodingAnswer` có **5 đường ra** — pendingAction · denied ·
+result · error · **không-tool-nào-khớp**. Đường thứ năm gọi `codingNoToolMessage()` và **KHÔNG BAO GIỜ
+gọi model**. Trục 1 (A/B) cố ý làm chế độ lập trình TẤT ĐỊNH (heuristic → 5 tool), nên MỌI câu **sinh
+mã mới** (không đường dẫn, không lệnh, không mẫu grep) đều bị từ chối theo cấu tạo. Đây là phần CÒN LẠI.
+
+**Đã làm:**
+
+1. **Cửa gọi model riêng** — `server/services/aiCodingAgent.ts` (module MỚI): persona · bộ cắt chuỗi
+   suy luận · bộ che bí mật · canh thoái hoá · bóc khối mã · đồng bộ CRLF. **Một** điểm gọi
+   `generateTextStream` cho cả hai việc, đã khai vào sổ lượng từ
+   (`thinkingSurfaces.quantifier.test.ts`, `noi:"tai_cho"`).
+2. **Nhánh SINH MÃ** thay cho ngõ cụt — persona *KỸ SƯ LẬP TRÌNH*: mã hoàn chỉnh trong khối
+   ```` ```<ngôn ngữ> ````, giải thích ngắn, **CẤM ĐÍCH DANH** ba hình dạng câu trả lời vận hành đã
+   gặp (`[1][2]`, *"liên hệ kỹ sư kỹ thuật"*, giọng trợ lý nhà máy). Kèm **ngữ cảnh dự án đang chọn**
+   (tên + mục ở gốc, lấy qua `list_files` trong hộp cát — không mở cửa đọc thứ hai).
+3. **Vòng lặp tác nhân — bước SỬA** (mảnh cuối của doc 79): câu có đường dẫn **+ động từ sửa** ⇒
+   `read_file` (nội dung THẬT) → model dựng **TOÀN BỘ tệp mới** → `apply_diff` qua **HITL**
+   `proposeAction`/`confirmAction` → người bấm duyệt mới ghi. `original` gửi đi là **byte trên đĩa**,
+   không phải model tự nhớ — đó là điểm neo của băm chống TOCTOU.
+4. **Cứu lượt đoán trượt của bộ chọn LLM**: heuristic trả `null` **và** tool (do LLM đoán) trả
+   `NOT_FOUND`/`NO_MATCH` ⇒ đi tiếp xuống nhánh sinh mã, thay vì trả *"Không có tệp X trong hộp cát"*
+   cho một câu xin sinh mã (đây là đúng lỗi cũ quay lại dưới tên khác).
+
+**Cờ:** `AI_CODING_GEN` · `AI_CODING_EDIT` (cả hai **mặc định BẬT**; `"0"` ⇒ quay lại hành vi trục 1 và
+câu trả lời **khai rõ cờ nào đang tắt**) · `AI_CODING_MODEL_TASK` (mặc định `chat`, xem VRAM dưới).
+`AI_TOOL_LLM_FALLBACK` **không đổi** (vẫn 0) — đường vận hành không bị chạm một byte.
+
+> ⚠⚠ **PHÁT HIỆN VRAM, ĐO ĐƯỢC TRÊN `.env` ĐANG CHẠY:** `LLAMA_SERVER_MODEL=Qwen3-30B-A3B-Instruct`
+> nhưng `GGUF_CODE_MODEL=Qwen3-Coder-30B-A3B-Instruct` — **HAI model KHÁC NHAU**.
+> `generateTextStream` chỉ đi qua llama-server khi `modelId` TRÙNG model server đang giữ; một
+> `modelId` khác **rơi xuống đường in-process** ⇒ nạp bản thứ hai ~19 GB trong khi card còn ~5,6 GB.
+> ⇒ Tác nhân lập trình mặc định đi tier **`chat`** (model đang thường trú, còn được prefix-cache).
+> Muốn dùng model Coder thì phải đặt `GGUF_CODE_MODEL == LLAMA_SERVER_MODEL` **rồi** mới bật
+> `AI_CODING_MODEL_TASK=code`.
+
+**Trạng thái vòng khép kín:** *đọc → SỬA → (người duyệt) → chạy test → đọc lỗi → sửa tiếp* đã đủ mặt
+tiếp xúc và chạy được **có người bấm** (client đã nối sẵn: `HunkDiffView` + `ConfirmActionCard`, và
+đầu ra `run_command` được đưa lại vào lịch sử hội thoại). **CHƯA có** vòng lặp TỰ ĐỘNG (AI tự chạy
+test rồi tự sửa tiếp mà không hỏi) — cố ý: mỗi lượt ghi/chạy vẫn phải qua người duyệt.
+
 ### TRỤC 2 — QUẢN LÝ DỰ ÁN / FOLDER (như Claude Code)
 
 Hiện `gocHopCat()` = **MỘT gốc cố định** (`AI_REPO_SANDBOX_ROOT`, mặc định `process.cwd()`). "Quản

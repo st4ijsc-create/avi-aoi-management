@@ -362,6 +362,18 @@ const SO_KHAI: readonly BeMat[] = [
     hienThi: true, noi: "tai_cho",
     ghiChu: "Copilot lập trình — bề mặt DUY NHẤT đã cắt TRƯỚC G5-C (di sản G5-B).",
   },
+
+  // ═══ doc 79 TRỤC 1 (C) — TÁC NHÂN LẬP TRÌNH gọi model (1) ═══
+  {
+    tep: "server/services/aiCodingAgent.ts", ham: "streamCodingModel", goi: "generateTextStream",
+    hienThi: true, noi: "tai_cho",
+    ghiChu:
+      "Chat của `/ai-coding-workspace` ở chế độ lập trình: SINH MÃ và SỬA TỆP. Chữ ra thẳng bong " +
+      "bóng chat, và ở đường SỬA nó còn đi tiếp vào `apply_diff` ⇒ có thể được GHI RA ĐĨA — nội tâm " +
+      "model lọt vào một tệp mã nguồn là hỏng câm. `StreamingThinkingStripper` + " +
+      "`StreamingSecretRedactor` dựng NGOÀI mọi nhánh, ngay dòng đầu của hàm (hàm này có nhiều " +
+      "đường ném: planInference, import engine, đứt giữa luồng).",
+  },
   {
     tep: "server/services/programming/aiProgrammingCopilot.ts", ham: "completeInline", goi: "generateFim",
     hienThi: true, noi: "tai_cho",
