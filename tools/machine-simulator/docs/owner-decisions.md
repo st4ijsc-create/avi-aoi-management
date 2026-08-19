@@ -898,6 +898,22 @@ trên nói, vì `## 5–7.` là **một** tiêu đề chứa **ba** mục.
 > lần đầu tiên kể từ khi file tồn tại. Câu ấy là một phát biểu về **hôm nay**, không phải một tính
 > chất của file: bất kỳ vòng phản biện nào cũng mở được một mục mới, và trong hai ngày qua nó đã làm
 > đúng thế **ba lần**.
+>
+> 📎 **Cụm *"kể từ khi file tồn tại"* giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1, sau vòng phản biện) — nó
+> NÓI QUÁ, và nói quá về phía có lợi cho người viết nó.** Đo bằng máy trên **45 bản sửa** của chính file
+> (`git log --follow`, nhánh hiện tại): **Phần I chỉ tồn tại từ `b50d8fae`** — **18 bản sửa đầu tiên
+> file KHÔNG có Phần nào cả**. Câu đúng là **"lần đầu kể từ khi PHẦN I tồn tại"**. Tinh thần đứng vững
+> (trước khi có Phần, mọi mục trong file đều là mục đang chờ), nhưng một câu *"kể từ khi file tồn tại"*
+> là **một phủ định phổ quát trên một tập người viết chưa mở hết** — đúng luật của chính file này.
+> 🔴 **Và một nửa nữa phải nói cùng lúc: "RỖNG" ở đây là rỗng MỤC, không rỗng NỘI DUNG.** Phần I vẫn
+> giữ **88 dòng** prose bảo tồn — con trỏ mới, khối 📎 giữ nguyên văn câu cũ, ba khối lịch sử của
+> I-2/AA-1/AJ-1, đoạn năm-mục-cũ, khối hoãn của mục 9, và đoạn luật *"bằng chứng ở dòng cuối của chính
+> mục"*. **Không một dòng nào bị mất.** Đọc *"RỖNG"* trần trụi rất dễ hiểu thành *"đã bị dọn sạch"*, và
+> đó là cách đọc sai.
+>
+> **Biên của phép đo trên, nêu chứ không lấp:** `git log --follow` chạy trên **nhánh hiện tại**; bản sửa
+> của file trên nhánh khác, hoặc việc chưa commit, **nằm ngoài** — nên câu *"chưa từng rỗng"* chỉ phát
+> biểu trên **45 bản sửa ấy**.
 
 > 🔴 **ĐÍNH CHÍNH 2026-08-18, cùng ngày, cùng nhiệm vụ (phản biện I-3).** Chỗ này Z-1 vừa
 > viết *"Phần này nay có SÁU mục, không phải bốn"*. Cả hai số đều sai: **sáu** đếm **tiêu
@@ -3709,6 +3725,28 @@ quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` —
 > đã rời khỏi máy). Sau hôm nay, sửa chỗ lệch ấy là **đổi các con số đã xuất bản**, không còn là đổi
 > một tài liệu. **Đó là một cánh cửa hẹp đi, và nó thuộc về bản sửa này chứ không thuộc khuyết tật cũ.**
 >
+> 📎 **CÂU *"nó đã ở trên dây từ trước, ngầm"* GIỮ NGUYÊN VĂN, RÚT MỘT PHẦN 2026-08-19 (AK-1, sau vòng
+> phản biện): nó ĐÚNG cho MỘT bề mặt và được viết ĐỒNG NHẤT cho cả ba.** Kết luận (*"chi phí là MỚI và
+> thuộc bản sửa này"*) **không đổi** — nhưng lý lẽ đỡ nó không đứng ở bề mặt quan trọng nhất, và khi
+> tách ra thì **chi phí LỚN HƠN chứ không nhỏ hơn**. Viết lại **theo từng bề mặt**:
+> * **Gương MQTT retained `syn/…` (và `BridgeSpool` nằm sau nó): CÂU ẤY ĐÚNG.** Envelope **đã** đi ra
+>   với hàng một phần tử, không có bộ cưỡng chế nào chặn, nên một bên đăng ký dựng lại `t` theo tài liệu
+>   đã đặt mẫu cuối lệch đúng 4,17 %. Ở đây chi phí đúng là **"ngầm → viết ra"**.
+> * 🔴 **Ingest HTTP (và hàng đợi SDK nằm sau nó): CÂU ẤY SAI.** Hình dạng cũ **bị `processWaveformSchema`
+>   TỪ CHỐI** (`z.tuple` hai số) — AB-1 **đo HTTP 400 thật** ở bước lược đồ. Nên ở bề mặt này **chưa
+>   từng có bên tiêu thụ nào dựng lại `t` từ hàng một phần tử**: việc mà một bên *tuân hợp đồng* làm với
+>   payload cũ là **TỪ CHỐI nó**. Bên được câu cũ mô tả là bên **tuân TÀI LIỆU trong khi vi phạm LƯỢC ĐỒ
+>   ĐƯỢC CƯỠNG CHẾ** — hai thứ không thể là cùng một bên.
+>
+> 🔴 **Và đây là chi phí mà cách viết đồng nhất đã che mất:** sau AK-1, hàng cặp **lần đầu tiên hợp lược
+> đồ** trên đường ingest. Nên một `t` lệch 4,17 % không chỉ *được viết ra* mà **lần đầu tiên trở nên KHẢ
+> THI để được NHẬN và LƯU** vào cột `process_results.waveforms` — cột mà `drizzle/schema/process.ts`
+> khai là `Array<[number, number]>`. Trước hôm nay đường ấy **không lưu gì**. **Nói cho đúng cả hai
+> chiều, vì đây đúng là chỗ dễ nói quá tay:** *"khả thi"*, **không** phải *"đang xảy ra"* — cờ
+> `PROCESS_RESULT_INGEST_ENABLED` **vẫn mặc định TẮT** và AK-1 **không** bật nó, nên hôm nay **vẫn
+> không bản triển khai nào nạp**. Cái đổi là **ngày ai đó bật cờ, thứ được lưu sẽ là một trục thời gian
+> lệch một chu kỳ lấy mẫu** — trước AK-1, ngày ấy chỉ cho ra **một lỗi 400**.
+>
 > **Ở đâu:** `src/St4i.EdgeCore/Mapping/Normalizer.cs` — **đúng một** chỗ gọi đổi
 > (`["samples"] = ToWireSampleRows(w)`) và **một** phương thức **private** mới. Không có thành viên
 > công khai nào được thêm, nên `EXPECT_WARNINGS` **631** và sổ mười sáu hàng **không dịch một đơn vị**.
@@ -3759,6 +3797,78 @@ quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` —
 > vào một báo cáo dưới `.superpowers/sdd/` **bị gitignore**, vì một lời cải chính ngoài tầm với người
 > đọc là đúng khuyết tật file này lập ra để chấm dứt. **Việc còn nợ, một nhiệm vụ riêng, 0 dòng hành
 > vi.**
+>
+> 📎 **KHỐI NGAY TRÊN GIỮ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1, sau vòng phản biện) — và lý do là nó ĐẾM
+> THIẾU BẢY, phân loại sai một câu, và gộp mất một phân biệt về SỞ HỮU.** Cái nó nói (hai câu ấy có
+> thật, và ghi-chứ-không-sửa là đúng) **vẫn đúng**; cái nó làm sai là **một con số vô hướng tóm tắt một
+> tập người viết chưa mở hết** — đúng loài file này lập ra để chấm dứt, lần này ở trong chính khối viết
+> ra để tuân nó. **LIỆT KÊ TRƯỚC, CON SỐ VIẾT SAU:**
+>
+> **LỚP 1 — nợ của PHÁN QUYẾT** (chủ sở hữu quyết ⇒ câu thành cũ). Bảy câu:
+> * `DeviceReading.cs` **:47–49** — *"Whether it ALSO determines how many elements a `Samples` row holds
+>   is **an open owner decision**"*;
+> * `DeviceReading.cs` **:55–56** — *"AN OPEN OWNER DECISION … **item 14, opened 2026-08-18 and NOT
+>   decided**"* (câu khối cũ đã nêu);
+> * 🔴 `DeviceReading.cs` **:98–99** — *"whether it also determines a row's length is **precisely what
+>   item 14 must settle**"*. **Sai theo kiểu TINH VI NHẤT trong chín câu:** mục 14 đã đóng và **CỐ Ý
+>   KHÔNG** quyết điều đó (chỉ quyết hình dạng **trên dây** — xem khối phán quyết ở trên và ô mục 4).
+>   Người đọc câu ấy sẽ tới đây tìm một câu trả lời **không có ở đây**;
+> * `DeviceReading.cs` **:102** — *"and **item 14 reopens them**"*, thì hiện tại;
+> * `WaveformSeriesRowShapeContractTests.cs` **:13** — *"item 14, opened 2026-08-18 and not decided"*
+>   (câu khối cũ đã nêu);
+> * `WaveformSeriesRowShapeContractTests.cs` **:137** — *"item 14 **has not been decided**"*;
+> * 🔴 `WaveformSeriesRowShapeContractTests.cs` **:120** — *"item 14, **still open**. If this moved
+>   deliberately, say so there:"*. **HẠNG KHÁC BẢY câu kia, và khối cũ phân loại SAI nó:** đây **KHÔNG
+>   phải `///`** mà là **thông điệp của một `Assert.True`**, tức nó **được IN RA cho lập trình viên**
+>   đúng lúc bài đỏ, và nó **chỉ dẫn một hành động cụ thể** tới một mục *"still open"* mà thực tế đã
+>   đóng và đã thi hành. Một chuỗi nằm im trong nguồn và một chuỗi được in ra lúc chạy **không cùng
+>   hạng**.
+>
+> 🔴 **LỚP 2 — nợ của MÃ AK-1, KHÔNG phải của phán quyết. Hai câu, và khối cũ bỏ sót CẢ HAI:**
+> * `DeviceReading.cs` **:52** — *"The sample rows, **passed to the wire unchanged**."*, câu **MỞ ĐẦU**
+>   của `<param name="Samples">`;
+> * `DeviceReading.cs` **:95** — *"…this type accepts any `double[]`, **the normalizer copies rows to the
+>   wire unchanged**…"*, nằm trong đoạn nhan đề *"What a consumer may rely on **TODAY**"*.
+>
+> **Không phán quyết nào làm hai câu ấy sai — `ToWireSampleRows` làm.** Với một chuỗi **được chuyển**,
+> hàng **không** còn đi ra nguyên vẹn và normalizer **không** còn chép. **Đây là phân biệt chịu lực, và
+> nó là lý do khối cũ phải bị rút chứ không chỉ được mở rộng:** *"phán quyết của chủ sở hữu làm tài liệu
+> của tôi cũ đi"* và *"mã của tôi làm một câu đã công bố thành sai"* là **hai loại nợ khác chủ**, và
+> người đọc sau sẽ hỏi đúng câu *"ai nợ câu này"*. Gộp chúng làm một là **ghi sai chủ nợ**.
+>
+> **LỚP 3 — nợ của PROSE AK-1**, tức các chuỗi **chính nhiệm vụ này vừa công bố** mà vòng phản biện đo
+> là nói quá. Hai câu, cả hai trong `tests/St4i.EdgeCore.Tests/WaveformPairAtTheWireBoundaryTests.cs`:
+> * **:229** — *"the one **all three** reference SDK samples reproduce"*. Liệt kê lại
+>   `examples/device-client/`: **python** `example_screwdriver.py` và **csharp** `ExampleScrewdriver.cs`
+>   là **hai** chương trình chạy được có phát waveform; **README.md** mang một payload **tài liệu**;
+>   **nodejs** `st4i_device_client.mjs` là **thư viện client, KHÔNG có ví dụ waveform**; **arduino** chỉ
+>   telemetry. **Đếm sau khi liệt kê: HAI bộ phát chạy được + một payload tài liệu**, không phải ba bộ
+>   phát. 🔴 Cộng một sự kiện mạnh hơn cả con số: **không cái nào trong chúng đi qua `Normalizer`** —
+>   chúng gọi `St4iDeviceClient` thẳng. **Vị từ gác bằng cặp vẫn đúng; DÂN SỐ minh hoạ bị phóng đại.**
+> * **:37** — *"a transform that returned `List<double>` **or a tuple**"* rồi kết luận chung rằng gương
+>   MQTT vẫn mang cặp đúng. **Chỉ đúng cho các kiểu vẫn tuần tự hoá thành MẢNG JSON.** Với một
+>   `ValueTuple`, gương ra `{"Item1":…}` chứ không ra mảng ⇒ **CẢ HAI** bề mặt hỏng, không phải một. Sự
+>   kiện *"hai bề mặt hỏng khác nhau"* **đứng vững cho `List<double>`** (biến thể thật sự đã chạy) và
+>   **không** khái quát được cho tuple.
+>
+> **LỚP 4 — nợ CÓ TRƯỚC, không của phán quyết và không của AK-1.** Một câu:
+> `DeviceReading.cs` **:62** — *"row `i` is the sample at `i / RateHz` seconds"*, nằm trong đoạn **(A)**
+> tự nhan đề *"measured, and **not in dispute**"* và **mô tả riêng `WelderSim`**. AI-1 đã đo rằng nó
+> **sai về đúng `WelderSim` ấy, lệch đúng 4,17 %** — **trước** AK-1. Nêu nó ở đây vì khối phán quyết
+> bên trên **dựa vào nó** như một chỗ đứng (*"đã là phép dựng lại mà chính repo này công bố"*), và trích
+> một câu đã biết sai mà không nói nó đã biết sai là **viết một sự thật chỉ theo chiều thuận**. **Chiều
+> nghịch, viết ra ở đây:** câu ấy đúng ở chỗ nó chứng minh `i/rateHz` **không phải một quy ước mới do
+> AK-1 nghĩ ra**; nó sai ở chỗ con số nó hứa **không khớp `WelderSim`**. Cả hai nửa phải đọc cùng nhau.
+>
+> **ĐẾM SAU KHI LIỆT KÊ: CHÍN câu, trong BA file. TÁM là `///`, MỘT là thông điệp `Assert` lúc chạy.
+> Bảy do phán quyết, HAI do mã của AK-1, HAI do prose của AK-1, MỘT có trước cả hai** — tổng các lớp là
+> **mười hai lần xuất hiện trên chín câu cộng ba câu của lớp 3 và 4**, nên **con số duy nhất đọc được ở
+> đây là con số đếm lại được từ chính phép liệt kê trên**, không phải một số vô hướng đặt riêng.
+>
+> 🔴 **KHÔNG câu nào trong số ấy được AK-1 sửa, và ràng buộc là RÕ:** lớp 1 và 2 nằm trong hai file
+> **brief cấm chạm**; lớp 3 nằm trong **nhân chứng mới**, mà vòng phản biện **cấm đụng**. Nên tất cả
+> được **GHI**, tại đây, chỗ chủ sở hữu mở được. **Việc còn nợ, một nhiệm vụ riêng, 0 dòng hành vi** —
+> và nhiệm vụ ấy nay có **một phép liệt kê đóng để làm việc theo**, thay vì một con số đếm thiếu.
 >
 > 🔴 **HAI KHO ĐỆM TRÊN ĐĨA PHÁT LẠI HÌNH DẠNG CŨ, KHÔNG PHẢI MỘT — và cái thứ hai là cái DUY NHẤT có
 > chặn trên ĐỌC ĐƯỢC từ trong cây này.** Hồ sơ tới hôm nay chỉ nêu hàng đợi SDK. Đo lại khi thi hành,
