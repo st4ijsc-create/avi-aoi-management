@@ -1602,6 +1602,18 @@ EXPECT_CONFORMANCE=24
 #   lines, blank lines, one 3-line `//` banner and those seven re-layouts, ZERO lines changed — and all
 #   seven member sequences are identical name-for-name and order-for-order, which is the part that would
 #   have mattered had it not held. Stages 6..8 documenting enums will meet exactly the same thing.
+#   🔴 AND ONE SENTENCE AH-1 SHIPPED HAD TO BE WITHDRAWN ONE COMMIT LATER, BY ITSELF. It is the failure
+#   mode the whole of stages 5..8 should expect, so it is recorded here rather than only in the report.
+#   `ProductModel.ImageWidth`'s doc said it was "also the denominator for
+#   MeasurementPoint.NormalizedRadius". The arithmetic is real — the seed's 10-unit radius on a
+#   1600-wide board is 0.00625, and the board canvas multiplies back by container WIDTH — but NO CODE
+#   ANYWHERE PERFORMS THAT DIVISION: normalizedRadius is authored by hand and only range-checked to
+#   [0,1] by the web form. The sentence attributed an OPERATION to code that does not do it, while
+#   every number in it was correct. THAT is the shape to watch for when the deliverable is prose: not
+#   a wrong fact, a right fact given a false mechanism, and it reads perfectly. The only defence is
+#   walking the code path before asserting — which is also how the same round caught itself claiming
+#   that JSON key order reaches the drift key (ConfigChecksum.StableStringify sorts keys ordinally, so
+#   it does not, and that sentence never reached a commit because the code was read first).
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 EXPECT_EDGECORE=1152
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE

@@ -108,9 +108,12 @@ public sealed class ProductModel
     /// <c>product_models.imageWidth</c>. Its real job is to be the DENOMINATOR that turns an absolute
     /// <see cref="MeasurementPoint.PositionX"/> into a normalized 0..1 one; consumers that do that
     /// treat a null or non-positive value as "unknown" and fall back to centring the point
-    /// (<c>AoiInspectorSim.ResolveRealPoints</c> tests <c>is &gt; 0</c> before dividing). Note this is
-    /// also the denominator for <see cref="MeasurementPoint.NormalizedRadius"/> — a radius is
-    /// normalized against WIDTH on both axes, never against height.</summary>
+    /// (<c>AoiInspectorSim.ResolveRealPoints</c> tests <c>is &gt; 0</c> before dividing). 🔴 It is NOT
+    /// the divisor for <see cref="MeasurementPoint.NormalizedRadius"/> in any code path — no code in
+    /// this solution derives that value at all; it is authored by hand and only range-checked to
+    /// [0,1] by the web's point form. Width is nonetheless the frame the AUTHOR is expected to use
+    /// (see that member's own doc for the arithmetic the seed makes checkable), which is a convention
+    /// nothing enforces.</summary>
     public int? ImageWidth { get; set; }
 
     /// <summary>Pixel height of the same image, and the denominator for the Y axis only. Same

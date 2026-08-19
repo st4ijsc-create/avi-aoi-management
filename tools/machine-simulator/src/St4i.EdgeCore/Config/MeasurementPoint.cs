@@ -241,7 +241,10 @@ public sealed class MeasurementPoint
     /// while the rest of the point still syncs, and the response marks the point
     /// <c>limitBlocked</c> — a partial success that a caller has to read per point to notice. Null
     /// means the band is open below, which is what <see cref="Config.ToleranceMode.MaxOnly"/>
-    /// expects.</summary>
+    /// expects. 🔴 The ordering <c>LowerLimit ≤ NominalValue ≤ UpperLimit</c> is checked in exactly
+    /// ONE place, the web's point form, and nothing rejects a violation on the way into
+    /// <see cref="ProductConfigStore"/> — a point with the band inverted persists, hashes and
+    /// syncs.</summary>
     public double? LowerLimit { get; set; }
 
     /// <summary>Upper bound of the acceptance band, in <see cref="Unit"/>. Governed exactly as
