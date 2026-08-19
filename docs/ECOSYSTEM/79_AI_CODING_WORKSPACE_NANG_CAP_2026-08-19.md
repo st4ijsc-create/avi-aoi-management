@@ -112,6 +112,20 @@ Bố cục đích cho lần nâng UI (làm cùng trục 2 hoặc sau):
 1 + 2) chạy thật; UI theo mẫu này khi hai trục đã vững. Danh sách phiên là hạng mục MỚI (cần lưu
 trữ) — đánh giá riêng, không gộp vào trục 1.
 
+> ✅ **TRỤC 2 ĐÃ THỰC THI + NGHIỆM THU LIVE (2026-08-19)** — tôi tự chụp + tự đọc ảnh Playwright:
+> - Bộ chọn "Dự án" (mẫu *"Select folder"* + nhãn *"Cục bộ"*) hiện **3 dự án**: Repo chính · Demo
+>   Csharp · Demo React + Postgres.
+> - Đổi sang **Demo Csharp** ⇒ cây tệp CHỈ hiện `src` / `tests` / `CalculatorDemo.sln` (nội dung
+>   của `sandbox-projects/csharp-demo`), KHÔNG còn repo chính. **Cô lập theo gốc chạy thật.**
+> - Bất biến an toàn số một (đọc mã xác nhận): `gocTheoId(id lạ)` → `null` (không rơi về gốc mặc
+>   định); client gửi ĐƯỜNG DẪN thay vì id → `PROJECT_NOT_FOUND`.
+>
+> ⚠ **BẪY ĐO ĐƯỢC khi nghiệm thu**: format `.env` không nháy để giữ `\` của đường Windows, NHƯNG
+> dotenv coi `#` là comment ⇒ tên "Demo C#" làm chuỗi bị CẮT LẶNG (200+ ký tự → 59), 2/3 dự án
+> biến mất, UI chỉ hiện 1 mà không báo lỗi. Lưới đơn vị KHÔNG bắt (nó test hàm parse với chuỗi ĐÃ
+> nạp, `#` bị cắt ở tầng dotenv TRƯỚC đó). Sửa: tên không được chứa `#`/`;`/`=`/`|`; đã cảnh báo ở
+> `.env.example`. → **Dùng "Demo Csharp".**
+
 ---
 
 ## 2. Rủi ro, nói thẳng
