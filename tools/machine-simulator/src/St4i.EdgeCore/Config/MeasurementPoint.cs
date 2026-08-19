@@ -31,24 +31,32 @@ public enum MeasurementType
     /// all.</summary>
     Visual,
 
-    /// <summary>Wire value <c>"ELECTRICAL"</c>. An in-circuit electrical reading — the seed's resistor
-    /// point carries <c>Ω</c> as its unit, the non-ASCII character that forced
-    /// <see cref="ConfigChecksum"/> to relax STJ's HTML-safe encoder so both ends hash the same
+    /// <summary>Wire value <c>"ELECTRICAL"</c>. An in-circuit electrical reading — and the type that
+    /// makes <see cref="MeasurementPoint.Unit"/>'s free-text nature load-bearing: the seed's two
+    /// electrical points carry <c>Ω</c> and <c>µF</c>, both non-ASCII, which is exactly the input that
+    /// forced <see cref="ConfigChecksum"/> to relax STJ's HTML-safe encoder so both ends hash the same
     /// bytes.</summary>
     Electrical,
 
     /// <summary>Wire value <c>"POSITION"</c>. Placement offset rather than size: the measured quantity
-    /// is a displacement from nominal, which is why the seed pairs it with
-    /// <see cref="ToleranceMode.MaxOnly"/> and a nominal of zero.</summary>
+    /// is a displacement from nominal, so <see cref="ToleranceMode.MaxOnly"/> is its natural pairing.
+    /// The seed's two POSITION points show the nominal is NOT implied by that pairing — one states
+    /// <c>0.0</c> explicitly, the other leaves <see cref="MeasurementPoint.NominalValue"/> null and
+    /// carries only the ceiling.</summary>
     Position,
 
-    /// <summary>Wire value <c>"COLOR"</c>. Colour/chromaticity judgement — no member of this type
-    /// carries the reference colour itself; that lives in
-    /// <see cref="MeasurementPoint.Criteria"/>.</summary>
+    /// <summary>Wire value <c>"COLOR"</c>. Colour/chromaticity judgement. 🔴 Nothing on this type
+    /// carries the reference colour, and nothing in THIS repository supplies one either — the seed's
+    /// colour point states its intent through <see cref="MeasurementPoint.MeasurementTypeCode"/>
+    /// (<c>COLOR_DELTA_E</c>) and a <c>ΔE</c> unit on the ordinary limit band, and leaves
+    /// <see cref="MeasurementPoint.Criteria"/> null. Where a reference colour would live is therefore
+    /// an open question here, not a documented slot.</summary>
     Color,
 
-    /// <summary>Wire value <c>"SURFACE"</c>. Finish/texture defects (scratch, contamination). Unused by
-    /// anything this repository seeds.</summary>
+    /// <summary>Wire value <c>"SURFACE"</c>. Finish/texture defects — the seed's two SURFACE points are
+    /// a scratch-length check and a coating-gap check, both of which measure a LENGTH against the
+    /// ordinary limit band rather than anything surface-specific. Nothing on this type distinguishes
+    /// them from a <see cref="Dimension"/> point except this word.</summary>
     Surface,
 
     /// <summary>Wire value <c>"OTHER"</c>. The escape hatch that keeps this a closed C# enum against an
@@ -116,18 +124,28 @@ public enum PointShape
     /// completely, so it needs no <see cref="MeasurementPoint.Geometry"/> payload at all.</summary>
     Circle,
 
-    /// <summary>Wire value <c>"rect"</c>. The seed's payload shape is
-    /// <c>{"width":…,"height":…,"rotationDeg":…}</c>, in the product's own
-    /// <see cref="ProductModel.CoordinateMode"/> units.</summary>
+    /// <summary>Wire value <c>"rect"</c>. 🔴 The seed's four rectangles are the clearest evidence that
+    /// a shape does NOT fix a payload schema: two spell <c>{"width":…,"height":…,"rotationDeg":…}</c>
+    /// and two spell <c>{"width":…,"height":…}</c> with no rotation key at all — and two further
+    /// <c>rect</c> points carry no <see cref="MeasurementPoint.Geometry"/> whatsoever. All six persist
+    /// and hash identically well. Dimensions are in the product's own
+    /// <see cref="ProductModel.CoordinateMode"/> units; a missing <c>rotationDeg</c> is not defined
+    /// anywhere to mean zero.</summary>
     Rect,
 
-    /// <summary>Wire value <c>"polygon"</c> — an arbitrary vertex list in
-    /// <see cref="MeasurementPoint.Geometry"/>. Unused by anything this repository seeds, so the
-    /// payload's exact key names are the server's to define.</summary>
+    /// <summary>Wire value <c>"polygon"</c> — an arbitrary vertex list. The seed's two polygons agree
+    /// on a payload of <c>{"points":[[x,y],…]}</c> in absolute
+    /// <see cref="ProductModel.CoordinateMode"/> units, and both close the ring implicitly (four
+    /// vertices for a rectangle, no repeated first point), which is a convention nothing here
+    /// enforces or even reads.</summary>
     Polygon,
 
-    /// <summary>Wire value <c>"line"</c> — a one-dimensional profile rather than an area. Unused by the
-    /// seed.</summary>
+    /// <summary>Wire value <c>"line"</c> — a one-dimensional profile rather than an area, and the
+    /// natural shape for a width or gap measured ACROSS something. The seed's trace-width point spells
+    /// its payload <c>{"x1":…,"y1":…,"x2":…,"y2":…}</c>: note that this is the only shape family whose
+    /// geometry carries absolute endpoints rather than an extent around
+    /// <see cref="MeasurementPoint.PositionX"/>, so the two coordinate statements can disagree and
+    /// nothing reconciles them.</summary>
     Line,
 
     /// <summary>Wire value <c>"ring"</c> — an annulus, the natural ROI for a solder fillet. The seed's
@@ -136,8 +154,11 @@ public enum PointShape
     /// equal.</summary>
     Ring,
 
-    /// <summary>Wire value <c>"mask"</c> — an arbitrary bitmap/region of interest. Unused by the
-    /// seed.</summary>
+    /// <summary>Wire value <c>"mask"</c> — an arbitrary bitmap/region of interest, and the ONE member
+    /// of this enum that no seeded point uses (the other six all appear). So it is also the one shape
+    /// for which this repository shows no example payload at all, and its
+    /// <see cref="MeasurementPoint.Geometry"/> encoding — a path? an image reference? — is the
+    /// server's to define.</summary>
     Mask,
 
     /// <summary>Wire value <c>"array"</c> — a repeated grid such as a BGA ball field, and the ONLY
@@ -217,19 +238,24 @@ public sealed class MeasurementPoint
     public MeasurementType MeasurementType { get; set; } = MeasurementType.Dimension;
 
     /// <summary>The OPEN half, beside the closed enum above: the ecosystem's own sub-type identifier,
-    /// which the seed spells in SCREAMING_SNAKE (<c>HEIGHT_2D</c>, <c>SOLDER_3D</c>,
-    /// <c>PLACEMENT_OFFSET</c>, <c>LABEL_OCR</c>, <c>RESISTANCE</c>). This is where a check that
-    /// <see cref="Config.MeasurementType"/> can only call <c>Other</c> keeps its real name. 🔴 Never
-    /// pushed — see this type's remarks.</summary>
+    /// which the seed spells in SCREAMING_SNAKE across all fourteen of its points, one distinct value
+    /// each (<c>HEIGHT_2D</c>, <c>SOLDER_3D</c>, <c>BGA_XRAY</c>, <c>COLOR_DELTA_E</c>,
+    /// <c>ROTATION_OFFSET</c>, …). This is where a check that <see cref="Config.MeasurementType"/> can
+    /// only call <c>Other</c> keeps its real name — and note that the seed never needs
+    /// <c>Other</c>: fourteen sub-types map onto six of the seven closed members, so the open field is
+    /// doing the discriminating work while the closed one stays coarse. 🔴 Never pushed — see this
+    /// type's remarks.</summary>
     public string? MeasurementTypeCode { get; set; }
 
     /// <summary>Unit for the 2D block ONLY — <see cref="LowerLimit"/>, <see cref="UpperLimit"/>,
     /// <see cref="NominalValue"/>, <see cref="TolPlus"/>, <see cref="TolMinus"/>. The 3D block carries
     /// its own <see cref="HeightUnit"/>/<see cref="AreaUnit"/>/<see cref="VolumeUnit"/> and does not
     /// read this one, so a single point can legitimately state several units at once (the seed's solder
-    /// point is <c>mm3</c> here and <c>mm</c> for height). Free text with no vocabulary: the seed uses
-    /// <c>mm</c>, <c>mm3</c> and <c>Ω</c>, and null is the honest value for a check with no measured
-    /// quantity, as the label-OCR point shows.</summary>
+    /// point is <c>mm3</c> here and <c>mm</c> for height). Free text with no vocabulary, and the seed's
+    /// six values show how wide that is: <c>mm</c>, <c>mm3</c>, <c>deg</c>, <c>Ω</c>, <c>µF</c> and
+    /// <c>ΔE</c> — three of them non-ASCII, one of them (<c>ΔE</c>) not a physical unit at all but a
+    /// colour-difference metric. Null is the honest value for a check with no measured quantity, as the
+    /// label-OCR and presence points show.</summary>
     public string? Unit { get; set; }
 
     // ── 2D limits + tolerance ───────────────────────────────────────────
@@ -317,9 +343,10 @@ public sealed class MeasurementPoint
     // ── Crop / ordering / enable ────────────────────────────────────────
 
     /// <summary>Width of the image patch the ecosystem should cut around this point, in the product's
-    /// absolute units (the seed's values are pixels, 40–100). It is a capture instruction, not a
-    /// judgement bound, and is independent of <see cref="Radius"/>: the seed's points routinely crop a
-    /// larger box than the ROI they measure.</summary>
+    /// absolute units (the seed's fourteen points are all pixel-mode, and span 24 to 140). It is a
+    /// capture instruction, not a judgement bound, and is independent of <see cref="Radius"/>: every
+    /// seeded point crops a box wider than twice the ROI radius it measures, and the widest crop
+    /// belongs to a point with no radius at all.</summary>
     public int? CropWidth { get; set; }
 
     /// <summary>Height of the same patch, and independently settable — the seed's rectangular label and
@@ -364,15 +391,19 @@ public sealed class MeasurementPoint
     public JsonElement? Cells { get; set; }
 
     // ── 3D / solder / x-ray ─────────────────────────────────────────────
-    // Every member in this block is pull-only (see this type's remarks) and carries its own unit
-    // convention rather than reading Unit. The seed's P02 solder point is the one worked example in
-    // this repository of the block being populated at all.
 
     /// <summary>Height of the feature above the board datum, in the product's absolute
     /// <see cref="ProductModel.CoordinateMode"/> units — the third coordinate the 2D
     /// <see cref="PositionX"/>/<see cref="PositionY"/> pair cannot carry, so a 3D sensor knows where to
     /// focus. It is a POSITION, not a limit: the acceptance band for height is
-    /// <see cref="HeightMin"/>/<see cref="HeightMax"/> below.</summary>
+    /// <see cref="HeightMin"/>/<see cref="HeightMax"/> below.
+    /// <para>This member opens the 3D/solder/x-ray block, and two properties hold for ALL of it:
+    /// every field in the block is pull-only (see this type's remarks), and each sub-group carries its
+    /// own unit convention instead of reading <see cref="Unit"/>. Exactly two of the seed's fourteen
+    /// points populate any of it — a solder-volume point and a BGA X-ray point — and they populate
+    /// DIFFERENT subsets, so neither is a complete worked example on its own: the X-ray point is the
+    /// only one with <c>Area*</c>, <see cref="WarpageMax"/> or <c>Thickness*</c>, and it is also the
+    /// only point in the repository that fills the block end to end.</para></summary>
     public double? PositionZ { get; set; }
 
     /// <summary>Minimum acceptable feature height, in <see cref="HeightUnit"/> — a starved solder joint
@@ -394,31 +425,49 @@ public sealed class MeasurementPoint
     public string? HeightUnit { get; set; }
 
     /// <summary>Minimum acceptable wetted/covered AREA, in <see cref="AreaUnit"/> — insufficient solder
-    /// spread. Unpopulated by every point this repository seeds, so the shape of a real value here
-    /// comes from the ecosystem, not from any example in this tree.</summary>
+    /// spread. Exactly ONE seeded point populates the <c>Area*</c> group (the BGA X-ray point), and it
+    /// is worth reading beside its <c>Volume*</c> values: area <c>0.15..0.35</c> against volume
+    /// <c>0.05..0.18</c> in the same point, i.e. the two groups are independent criteria on one joint,
+    /// not two views of one number.</summary>
     public double? AreaMin { get; set; }
 
-    /// <summary>Maximum acceptable area, in <see cref="AreaUnit"/> — bridging or excess spread.</summary>
+    /// <summary>Maximum acceptable area, in <see cref="AreaUnit"/> — bridging or excess spread. 🔴 The
+    /// pairing with <see cref="AreaMin"/> is a CONVENTION, not a constraint: nothing here checks that
+    /// this exceeds it, nothing requires both to be present, and a point stating only this one is a
+    /// perfectly ordinary one-sided ceiling.</summary>
     public double? AreaMax { get; set; }
 
-    /// <summary>Target area, in <see cref="AreaUnit"/>.</summary>
+    /// <summary>Target area, in <see cref="AreaUnit"/> — and, like every <c>*Nominal</c> in this block,
+    /// it is decoration for the operator rather than an input to any judgement: it is not pushed
+    /// (see this type's remarks), no code here reads it, and it is not required to lie between
+    /// <see cref="AreaMin"/> and <see cref="AreaMax"/>.</summary>
     public double? AreaNominal { get; set; }
 
-    /// <summary>Unit for the three <c>Area*</c> values only. No seed point sets it, so unlike
-    /// <see cref="HeightUnit"/> (<c>mm</c>) and <see cref="VolumeUnit"/> (<c>mm3</c>) there is no
-    /// observed convention here — <c>mm2</c> is the expectation the sibling fields imply, not something
-    /// this repository has ever written.</summary>
+    /// <summary>Unit for the three <c>Area*</c> values only. The seed writes <c>mm2</c> — ASCII digit,
+    /// no superscript, matching <see cref="VolumeUnit"/>'s <c>mm3</c> — so all three unit fields on
+    /// this type follow the same spelling rule, and anything comparing these strings should expect it.
+    /// It is still free text: nothing rejects <c>mm²</c>, and the two would not compare
+    /// equal.</summary>
     public string? AreaUnit { get; set; }
 
     /// <summary>Minimum acceptable solder VOLUME, in <see cref="VolumeUnit"/> — the primary
-    /// insufficient-solder criterion for a 3D joint inspection, and the reason the seed's P02 exists at
-    /// all.</summary>
+    /// insufficient-solder criterion for a 3D joint inspection, and the field both of the seed's 3D
+    /// points set even though they disagree about everything else in this block. Note the trap in the
+    /// pairing with <see cref="Unit"/>: a volume point's <see cref="Unit"/> may itself read
+    /// <c>mm3</c>, which makes the two look interchangeable — they are not, and only this one governs
+    /// the three <c>Volume*</c> numbers.</summary>
     public double? VolumeMin { get; set; }
 
-    /// <summary>Maximum acceptable volume, in <see cref="VolumeUnit"/>.</summary>
+    /// <summary>Maximum acceptable volume, in <see cref="VolumeUnit"/> — excess solder, which is a real
+    /// defect rather than a harmless surplus because it is what bridges neighbouring pads. Both seeded
+    /// 3D points set it, and both state a CLOSED band — unlike the 2D limits, where the seed's
+    /// commonest shape is a lone ceiling with nothing below it.</summary>
     public double? VolumeMax { get; set; }
 
-    /// <summary>Target volume, in <see cref="VolumeUnit"/>.</summary>
+    /// <summary>Target volume, in <see cref="VolumeUnit"/>. Same standing as
+    /// <see cref="AreaNominal"/>: never pushed, never read here, and not checked against the
+    /// surrounding band — both seeded points place it inside theirs, and nothing would have stopped
+    /// them putting it outside.</summary>
     public double? VolumeNominal { get; set; }
 
     /// <summary>Unit for the three <c>Volume*</c> values only — the seed writes <c>mm3</c>, in ASCII
@@ -433,13 +482,17 @@ public sealed class MeasurementPoint
 
     /// <summary>Maximum permitted board WARPAGE over this point's region, in the same length frame.
     /// Distinct from <see cref="CoplanarityMax"/>: warpage is the substrate bending, coplanarity is the
-    /// terminations disagreeing about where the plane is.</summary>
+    /// terminations disagreeing about where the plane is — a distinction from the SMT domain rather
+    /// than one this repository encodes. Only the BGA X-ray point sets it, and it sets it TIGHTER than
+    /// that point's own coplanarity ceiling, which is the ordering the two names would not have
+    /// predicted.</summary>
     public double? WarpageMax { get; set; }
 
-    /// <summary>Maximum void fraction inside a joint, as a PERCENTAGE 0–100 — the seed writes
-    /// <c>25.0</c>, meaning a quarter. The <c>Pct</c> in the name is the only place that unit is
-    /// stated; it does not follow <see cref="Unit"/> or any of the three unit fields above. This is the
-    /// classic x-ray criterion for a BGA ball.</summary>
+    /// <summary>Maximum void fraction inside a joint, as a PERCENTAGE 0–100 — the seed's two values are
+    /// <c>25.0</c> and <c>15.0</c>, and the tighter one belongs to the X-ray point, i.e. to the
+    /// inspection that can actually see inside the ball. The <c>Pct</c> in the name is the only place
+    /// that unit is stated; it does not follow <see cref="Unit"/> or any of the three unit fields
+    /// above.</summary>
     public double? VoidPctMax { get; set; }
 
     /// <summary>Maximum permitted placement offset along X from nominal, in the product's absolute
@@ -455,16 +508,28 @@ public sealed class MeasurementPoint
     public double? OffsetYMax { get; set; }
 
     /// <summary>Maximum permitted TILT, in DEGREES — the rotation out of the board plane that makes a
-    /// tombstoned or lifted component. Degrees is what the seed's <c>5.0</c> means; no other member of
-    /// this block is angular, so there is no shared unit field for it.</summary>
+    /// tombstoned or lifted component. No other member of this block is angular, so there is no shared
+    /// unit field for it. 🔴 The degree reading is CONFIRMED by the seed rather than assumed, and by a
+    /// point that states the same angle twice: the rotation-offset point sets
+    /// <see cref="UpperLimit"/> <c>5.0</c> with <see cref="Unit"/> <c>"deg"</c> AND
+    /// <see cref="TiltMax"/> <c>5.0</c> — one number, two fields, one of which names its unit and one
+    /// of which cannot. Nothing keeps the pair in step, so that duplication is the strongest evidence
+    /// available here and a live inconsistency waiting to happen.</summary>
     public double? TiltMax { get; set; }
 
-    /// <summary>Minimum acceptable material thickness (paste deposit, plating, conformal coating), in
-    /// <see cref="HeightUnit"/>'s frame. Unpopulated by the seed.</summary>
+    /// <summary>Minimum acceptable material thickness (paste deposit, plating, conformal coating).
+    /// 🔴 It has NO unit field of its own: <see cref="HeightUnit"/>, <see cref="AreaUnit"/> and
+    /// <see cref="VolumeUnit"/> each govern their own trio, and this pair governs nothing — so a reader
+    /// has to infer the frame from the point's other 3D values. The one seeded example makes that
+    /// inference concrete rather than safe: it states <c>0.02</c> beside heights in <c>mm</c>, so
+    /// millimetres is the reading, and it is a reading rather than a declaration.</summary>
     public double? ThicknessMin { get; set; }
 
-    /// <summary>Maximum acceptable thickness, same frame as <see cref="ThicknessMin"/>. Unpopulated by
-    /// the seed.</summary>
+    /// <summary>Maximum acceptable thickness, with the same unit-less standing as
+    /// <see cref="ThicknessMin"/>. Together they form a CLOSED band in the one seeded example
+    /// (<c>0.02</c>–<c>0.10</c>), which is what separates them from the single-sided ceilings
+    /// (<see cref="CoplanarityMax"/>, <see cref="WarpageMax"/>, <see cref="TiltMax"/>) that make up
+    /// most of this block.</summary>
     public double? ThicknessMax { get; set; }
 
     /// <summary>Free-form pass/fail criteria beyond the typed limit fields above (jsonb on the

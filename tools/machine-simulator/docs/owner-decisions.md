@@ -1363,14 +1363,40 @@ bảy dãy thành viên enum giống hệt nhau, đúng tên, đúng thứ tự*
 là giá trị nền**. **Không một câu lệnh thực thi nào bị đụng.** Đợt 6–8 nào lập tài liệu cho enum sẽ
 gặp đúng chuyện này.
 
+🔴 **VÒNG PHẢN BIỆN BÁC 17 TRONG 120 CÂU, VÀ ĐÓ MỚI LÀ KẾT QUẢ THẬT CỦA ĐỢT 5.** Phản biện lấy mẫu
+**48** câu và tìm **17 câu SAI** (~35%) — **không dụng cụ nào trong cây này thấy một cái nào**: cổng
+xanh, W-1 xanh, mọi hàng sổ tái lập chính xác, `EXPECT_WARNINGS` không nhúc nhích. **Mười hai cái có
+CHUNG một nguyên nhân:** file seed được đọc tới điểm thứ năm rồi dừng, và các **phủ định tồn tại**
+(*"không seed nào đặt"*, *"unused"*) được viết phủ lên **chín điểm chưa bao giờ mở**. Hai cái nữa là
+một cuộc kiểm đếm caller viết mà **không chạy grep**, rồi **chép sang file thứ hai** — một lệnh không
+chạy đẻ ra hai khẳng định sai. **Một phép LẤY MẪU mặc áo một phép KIỂM ĐẾM**, đúng hình dạng bài học
+lần thứ chín của đợt 4, ở một lớp cao hơn.
+
+**Vòng sửa THUẦN VĂN XUÔI đã sửa 39 trong 120 câu** dưới **hai luật máy móc** — mọi khẳng định về một
+**quần thể** phải được **liệt kê bằng dụng cụ** trước khi bị phủ định bằng tay; mọi **tập/khoảng quan
+sát được** phải **trích tự động** thay vì nhớ lại. Phân loại: **17 sai hẳn · 8 mạo từ xác định trên
+tập không đầy đủ · 4 chỉ diễn đạt lại cái tên · 2 vượt bằng chứng · 1 nêu cơ chế cây này chưa từng
+chạy · 7 quá mỏng**. 🔴 Câu *"0 ca chỉ có cái tên"* của bản đầu **là SAI** — đúng **bốn** ca.
+**Không một dòng cơ khí nào bị đụng lại:** enum, sổ, `EXPECT_WARNINGS` 631, tổng 2763 đều y nguyên.
+Hai luật ấy và phát hiện *"một khối `//` mới là văn xuôi không dụng cụ nào canh"* được ghi vào
+`scripts/verify-suites.sh` cạnh khối đợt 5, nơi đợt 6–8 đọc.
+
 **Việc còn nợ sau đợt 5, nêu tên chứ không làm:**
 * **412 chỗ trống bao phủ của ta** (328 CS1591 + 84 CS1573) — đợt 6–8. **Mỗi đợt đo lại.**
 * **103 cái vendored** — không đổi, phải ở nguyên đó.
 * **Mười hai artefact phụ trong bản cài**, **không dụng cụ nào canh PAYLOAD**, **nửa A mù trước một
   lệnh đè nhắm ba mã đã về 0** — cả ba y như sau đợt 4, không cái nào được đợt này đụng tới.
-* 🔴 **Ba quan sát về MÃ mà đợt này DỪNG LẠI để báo thay vì tự sửa** — xem
+* 🔴 **Bốn quan sát về MÃ mà đợt này DỪNG LẠI để báo thay vì tự sửa** — xem
   `.superpowers/sdd/item12-stage5/task-1-report.md` §7. Không cái nào được sửa, không cái nào được mở
-  thành mục.
+  thành mục. **Nửa UX của quan sát (3) là HÌNH DẠNG CHỦ SỞ HỮU** (27 trường người vận hành sửa được mà
+  kênh đẩy không mang; huy hiệu drift chuyển vàng; cách chữa tự động duy nhất là một lần kéo **xoá**
+  luôn sửa đổi) — brief nói *"dừng và báo"*, **không nói "mở mục"**, nên nó **được báo và KHÔNG được
+  mở**. Nhãn cũ gọi nó là *"không phải việc của đợt này"* và **đã bị rút**: phân loại sai làm người
+  đọc xếp nó chung với ba quan sát kỹ thuật kia.
+* 🔴 **`HistorianResultRecord` — 23 tham số, một `<param>`, 22 CS1573 ĐANG SỐNG.** Nhân chứng do phản
+  biện tìm ra cho cái bẫy §5: cờ **im lặng tuyệt đối** khi một `record` positional có `<summary>` và
+  **0** `<param>`, nhưng **nổ hết một lượt** khi có **một** thẻ thiếu. Đợt 6–8 nên dùng nó làm ca
+  kiểm chứng.
 
 ---
 

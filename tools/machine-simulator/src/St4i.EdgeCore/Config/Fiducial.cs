@@ -11,10 +11,11 @@ namespace St4i.EdgeCore.Config;
 /// 🔴 A FIDUCIAL IS OUTSIDE BOTH DRIFT SIGNALS, and every member below inherits that. The
 /// checksum-based drift key hashes POINTS only
 /// (<see cref="ConfigChecksum.ComputePointsChecksum(IEnumerable{MeasurementPoint})"/> takes
-/// <see cref="ProductModel.Points"/>), and <see cref="ProductModel.BumpVersion"/> is reached only from
-/// <see cref="ProductConfigStore.UpsertPoint"/>/<see cref="ProductConfigStore.SoftDeletePoint"/> — a
-/// fiducial edit arrives through the whole-product upsert, which bumps nothing. So changing anything
-/// here leaves the product reading <c>in_sync</c> at an unchanged <c>pointsConfigVersion</c>. That is
+/// <see cref="ProductModel.Points"/>), and no edge-side path from a fiducial edit reaches
+/// <see cref="ProductModel.BumpVersion"/> — that method's own doc lists every caller, and the
+/// fiducial edit arrives through the whole-product upsert, which is not one of them. So changing
+/// anything here leaves the product reading <c>in_sync</c> at an unchanged
+/// <c>pointsConfigVersion</c>. That is
 /// consistent rather than broken: <c>sync-points</c>'s request body has no fiducial-authoring slot
 /// either (its one fiducial field, <c>observedFiducials</c>, is runtime alignment FEEDBACK, and this
 /// repository never sends it), so there is no channel a fiducial edit could have travelled on.
@@ -33,8 +34,11 @@ public sealed class Fiducial
     public string? Name { get; set; }
 
     /// <summary>Marker shape as free text — the contract enumerates no vocabulary (see this type's
-    /// summary), and <c>ProductFiducialsPanel.tsx</c> pre-fills <c>"cross"</c> for a newly added mark.
-    /// Nothing branches on it: every fiducial draws with the same marker glyph regardless.</summary>
+    /// summary). Every mark this repository seeds says <c>"cross"</c>, and
+    /// <c>ProductFiducialsPanel.tsx</c> pre-fills the same word for a newly added one, so <c>"cross"</c>
+    /// is the de-facto default without ever being declared as one. Nothing branches on it: every
+    /// fiducial draws with the same marker glyph regardless, which is why the value can drift from
+    /// reality without any visible consequence.</summary>
     public string? Type { get; set; }
 
     /// <summary>Absolute position in the OWNING PRODUCT's <see cref="ProductModel.CoordinateMode"/> —
@@ -63,15 +67,20 @@ public sealed class Fiducial
     /// places the mark, so setting only one is equivalent to setting neither.</summary>
     public double? NormalizedY { get; set; }
 
-    /// <summary>Half-window the ecosystem's aligner should search for this mark, expressed in the same
+    /// <summary>Window the ecosystem's aligner should search for this mark, expressed in the same
     /// <see cref="ProductModel.CoordinateMode"/> units as <see cref="PositionX"/> — the tolerance for
-    /// how far the board may have shifted in the fixture. Carried only: no code in this solution reads
-    /// it, and the HMI does not expose it, so a Live-pulled value survives a local round trip
-    /// unchanged.</summary>
+    /// how far the board may have shifted in the fixture. Whether it is a half-width or a full extent
+    /// is NOT settled anywhere: the contract gives no definition, nothing here consumes it, and the
+    /// seed's four marks all use small square windows (20 and 24) that read equally well either way.
+    /// Carry-only in the strong sense — no code in this solution reads it and the HMI's fiducial dialog
+    /// does not offer it — so whatever a seed or a pull puts here survives a local round trip
+    /// untouched.</summary>
     public double? SearchWindowW { get; set; }
 
     /// <summary>Search-window extent on the other axis, same units and same carry-only status as
-    /// <see cref="SearchWindowW"/>.</summary>
+    /// <see cref="SearchWindowW"/>. Every seeded mark sets it equal to <see cref="SearchWindowW"/>, so
+    /// this repository offers no example of an anisotropic search window and nothing requires
+    /// one.</summary>
     public double? SearchWindowH { get; set; }
 
     /// <summary>URL of the template patch the aligner correlates against. 🔴 Null in every product

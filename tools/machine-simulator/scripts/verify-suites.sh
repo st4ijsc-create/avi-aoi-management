@@ -1614,6 +1614,38 @@ EXPECT_CONFORMANCE=24
 #   walking the code path before asserting — which is also how the same round caught itself claiming
 #   that JSON key order reaches the drift key (ConfigChecksum.StableStringify sorts keys ordinally, so
 #   it does not, and that sentence never reached a commit because the code was read first).
+#
+# 🔴 AND THE BRANCH REVIEW THEN FOUND SEVENTEEN MORE, WHICH IS THE REAL RESULT OF STAGE 5 AND THE ONE
+# STAGES 6..8 MUST BUDGET FOR. It sampled 48 of the 120 sentences and refuted 17 -- about 35% -- and
+# NOT ONE of them was visible to anything in this repository: the gate was green, DocCommentProseTests
+# was green, every ledger row reproduced exactly, and EXPECT_WARNINGS did not move. A documentation
+# stage's output is assertions, and this file's instruments count assertions without reading them.
+#
+# 🔴 THE CAUSE WAS NOT CARELESS PROSE, IT WAS A SAMPLE WEARING A CENSUS'S CLOTHES. Twelve of the 17
+# had one origin: the author read ProductConfigStore's seed as far as point P05, stopped, and then
+# wrote EXISTENCE NEGATIONS ("no seed sets this", "unused by anything this repository seeds") over
+# nine points never opened -- P06..P08 and all of SeedModelB. Two more were a `BumpVersion` caller
+# census written without a grep, and then COPIED INTO A SECOND FILE, so one unrun command produced two
+# wrong claims. That is the ninth-instance lesson from stage 4 (retire one occurrence, declare "all")
+# reappearing one layer up, in the stage that quoted it.
+#
+# 🔴 TWO MECHANICAL RULES, AND STAGES 6..8 SHOULD TREAT THEM AS PRECONDITIONS RATHER THAN ADVICE:
+#   (i)  Any sentence containing `unused` / `no seed` / `unpopulated` / `never` / `only` / `every` /
+#        `exactly N` / `spans A-B` is a claim about a POPULATION. Enumerate that population WITH A
+#        TOOL before negating it by hand, and keep the command.
+#   (ii) Any observable SET or RANGE must be EXTRACTED automatically from the source it describes,
+#        never typed from memory of having read it. Stage 5's round-two fix extracted every seed value
+#        with a script and corrected 39 of its own 120 sentences: 17 outright false, 8 stating a
+#        definite article over an incomplete set, 4 that merely restated the member name, 2 reaching
+#        past their evidence, 1 describing a mechanism this tree never exercises, and 7 too thin.
+#
+# 🔴 AND A THIRD THING, SMALLER AND EASY TO MISS: A NEW `//` COMMENT IS PROSE NOTHING GUARDS.
+# DocCommentProseTests reads `///` only, and the compiler reads neither. Stage 5's first round put a
+# three-line `//` banner carrying a factual claim above a property block, and the claim was WRONG --
+# an assertion planted at the one spot both instruments are blind to, and its own diff filter listed
+# "`//` lines" as an excluded class, so its "zero non-`///` lines" check absorbed it. The fix was not
+# to count those lines separately but to REMOVE them: the corrected statement moved into a `<summary>`
+# where W-1 can see it, and the new-`//`-line count for the whole stage is now zero.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 EXPECT_EDGECORE=1152
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE

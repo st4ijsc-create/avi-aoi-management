@@ -90,10 +90,13 @@ public sealed class ProductModel
     /// <summary>Where the product sits in its life cycle — the input to the server's threshold
     /// governance, spelled out on each <see cref="ProductLifecycleStatus"/> member. 🔴 A Live pull can
     /// never populate it truthfully: <c>get-points</c>' response shape carries no
-    /// <c>lifecycleStatus</c> at all, so <c>LiveConfigSyncBackend.ToProductModel</c> leaves every
-    /// pulled product at the <see cref="ProductLifecycleStatus.Development"/> default whatever the
-    /// server actually holds. Reading this as "so limit edits will be accepted" is therefore unsafe —
-    /// the real verdict arrives only as <c>limitBlocked</c> on the sync-points response.</summary>
+    /// <c>lifecycleStatus</c> at all, and the wire record it deserializes into has no member for one
+    /// either, so <c>LiveConfigSyncBackend.ToProductModel</c> leaves every pulled product at the
+    /// <see cref="ProductLifecycleStatus.Development"/> default. That is not a mapping that forgot a
+    /// field — there is nothing arriving to map. Reading this as "so limit edits will be accepted" is
+    /// therefore unsafe: locally it reads <c>Development</c> for products the ecosystem may hold as
+    /// released, and the real verdict arrives only as <c>limitBlocked</c> on the sync-points
+    /// response.</summary>
     public ProductLifecycleStatus LifecycleStatus { get; set; } = ProductLifecycleStatus.Development;
 
     /// <summary>The board image points are authored against. Three different kinds of string land here
@@ -164,11 +167,15 @@ public sealed class ProductModel
         Points.Where(p => !p.IsDeleted).OrderBy(p => p.OrderIndex);
 
     /// <summary>Increments <see cref="PointsConfigVersion"/> by one — the single sanctioned way to move
-    /// it, which is why the field's own doc points here. 🔴 What it does NOT do is decide WHEN: inside
-    /// this repository it is reached from exactly two places, <see cref="ProductConfigStore.UpsertPoint"/>
-    /// and <see cref="ProductConfigStore.SoftDeletePoint"/>. Saving a product through
-    /// <see cref="ProductConfigStore.UpsertProduct"/> — the path every fiducial, variant, image and
-    /// name edit takes — does not call it, so those edits leave the version and the points checksum
-    /// both unmoved. Callers that bump by hand are taking that decision away from the store.</summary>
+    /// it, which is why the field's own doc points here. 🔴 What it does NOT do is decide WHEN, and the
+    /// callers are in TWO different assemblies: <see cref="ProductConfigStore.UpsertPoint"/> and
+    /// <see cref="ProductConfigStore.SoftDeletePoint"/> here, plus the Demo ecosystem's own
+    /// <c>St4i.EngineApi.Config.SimulatedEcosystem.SyncPointsAsync</c>, which bumps the ECOSYSTEM-side
+    /// copy of a product when a push actually changed content. Two stores, two independently moving
+    /// versions of the same product code — which is precisely the pair the drift comparison exists to
+    /// compare, so a reader must not take this counter for a single global sequence.
+    /// Saving a product through <see cref="ProductConfigStore.UpsertProduct"/> — the path every
+    /// fiducial, variant, image and name edit takes — does not call it at all, so those edits leave the
+    /// version and the points checksum both unmoved.</summary>
     public void BumpVersion() => PointsConfigVersion++;
 }

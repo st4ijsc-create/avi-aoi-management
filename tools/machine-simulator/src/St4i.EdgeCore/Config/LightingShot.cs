@@ -44,47 +44,61 @@ public sealed class LightingShot
     public string? Name { get; set; }
 
     /// <summary>Which illuminator the ecosystem's optics should energise. The contract enumerates no
-    /// vocabulary; the values this repository's own seed uses are <c>LED_RING</c>, <c>LED_BAR</c> and
-    /// <c>DOME</c>, so a reader should expect SCREAMING_SNAKE hardware identifiers here rather than the
-    /// lowercase words the point-level enums use.</summary>
+    /// vocabulary; the seed's fifteen shots use exactly four values — <c>LED_RING</c>, <c>LED_BAR</c>,
+    /// <c>DOME</c> and <c>XRAY</c> — so a reader should expect SCREAMING_SNAKE hardware identifiers
+    /// here rather than the lowercase words the point-level enums use. <c>XRAY</c> is worth noticing
+    /// separately: it is not a lamp, and the shot that carries it sets no <see cref="Color"/> or
+    /// <see cref="ColorHex"/> at all, so those two being null is a legitimate state rather than a gap
+    /// to fill.</summary>
     public string? LightSource { get; set; }
 
-    /// <summary>Human-readable colour name (<c>"white"</c>, <c>"amber"</c>), the loose partner of the
-    /// machine-readable <see cref="ColorHex"/>. The two are independent fields with nothing keeping
-    /// them in agreement — a shot can carry <c>"amber"</c> beside <c>#FFFFFF</c> and no code path
-    /// notices.</summary>
+    /// <summary>Human-readable colour name (the seed uses only <c>"white"</c> and <c>"amber"</c>), the
+    /// loose partner of the machine-readable <see cref="ColorHex"/>. The two are independent fields
+    /// with nothing keeping them in agreement — a shot can carry <c>"amber"</c> beside <c>#FFFFFF</c>
+    /// and no code path notices. Null is a real state, not an oversight: the X-ray shot sets neither
+    /// this nor <see cref="ColorHex"/>, because it has no visible-light colour to state.</summary>
     public string? Color { get; set; }
 
-    /// <summary>The colour a renderer should actually use, as the <c>#RRGGBB</c> string the seed
-    /// writes. Nothing parses or validates it here, so any string round-trips; a consumer that intends
-    /// to paint with it must handle malformed input itself.</summary>
+    /// <summary>The colour a renderer should actually use, as an uppercase <c>#RRGGBB</c> string —
+    /// which is a convention of the seed's two values, not a rule: nothing parses or validates this,
+    /// so any string round-trips, and a consumer that intends to paint with it must handle malformed
+    /// input itself.</summary>
     public string? ColorHex { get; set; }
 
-    /// <summary>Illuminator brightness as a PERCENTAGE, 0–100 (the seed spans 60–90) — not the 0..1
-    /// fraction the normalized geometry fields on <see cref="MeasurementPoint"/> use. Nothing clamps
-    /// it; a value of 150 persists.</summary>
+    /// <summary>Illuminator brightness as a PERCENTAGE, 0–100 — not the 0..1 fraction the normalized
+    /// geometry fields on <see cref="MeasurementPoint"/> use. The seed's fifteen shots run from 55 to
+    /// 100 and every one of them sets it, so this is the one lighting field for which no shot in this
+    /// repository demonstrates the null case. Nothing clamps it; a value of 150 persists.</summary>
     public double? IntensityPct { get; set; }
 
-    /// <summary>Angle of incidence in DEGREES, measured from the board plane, not from the optical
-    /// axis: the seed's coaxial bright-field shots are <c>90</c> (straight down), its dark-field void
-    /// shot is <c>25</c> (grazing), and its diffuse dome shot is <c>0</c>. That convention is readable
-    /// only from those values — the contract states none.</summary>
+    /// <summary>Angle of incidence in DEGREES, measured from the board plane rather than from the
+    /// optical axis. That convention is stated nowhere in the contract and is readable only from the
+    /// seed's own six values — <c>90</c> for coaxial bright-field (straight down), <c>0</c> for a
+    /// diffuse dome, and <c>15</c>/<c>25</c>/<c>30</c>/<c>45</c> for the grazing and oblique shots.
+    /// A reader who assumed the other convention would read the dome shot as vertical and the coaxial
+    /// shot as horizontal, i.e. exactly inverted.</summary>
     public double? AngleDeg { get; set; }
 
-    /// <summary>Camera exposure in MICROSECONDS (seed range 900–3200, i.e. roughly 1–3 ms). The unit is
-    /// carried in the name because the wire field is likewise <c>exposureUs</c>; nothing here converts
-    /// to or from milliseconds.</summary>
+    /// <summary>Camera exposure in MICROSECONDS. The unit is carried in the name because the wire field
+    /// is likewise <c>exposureUs</c>, and nothing here converts to or from milliseconds — so the seed's
+    /// span, 900 up to 8000, is just under 1 ms to 8 ms, and the top of it belongs to the X-ray shot
+    /// rather than to any lamp.</summary>
     public double? ExposureUs { get; set; }
 
-    /// <summary>Sensor gain as a DIMENSIONLESS MULTIPLIER, where <c>1.0</c> is unity — the seed raises
-    /// it to <c>1.4</c> only for the dim dark-field shot. It is NOT decibels, and the contract gives no
-    /// unit at all, so this reading comes from the seed's own values and should be re-checked against a
-    /// real camera before anyone drives hardware from it.</summary>
+    /// <summary>Sensor gain as a DIMENSIONLESS MULTIPLIER, where <c>1.0</c> is unity. It is NOT
+    /// decibels — on a dB reading the seed's span of 1.0 to 2.0 would be a 100× spread rather than a
+    /// 2× one — and the contract gives no unit at all, so this reading comes from the seed's own values
+    /// and should be re-checked against a real camera before anyone drives hardware from it. The values
+    /// track darkness rather than shot type: unity for the well-lit shots, and the six above it climb
+    /// with the dark-field, grazing and X-ray captures.</summary>
     public double? Gain { get; set; }
 
-    /// <summary>Focus offset from the product's nominal focal plane, in MICROMETRES, signed
-    /// (<c>0</c> = at nominal, which is what every seed shot uses). A per-shot refocus is how a 3D
-    /// solder inspection reaches a paste height a flat board's focus would miss.</summary>
+    /// <summary>Focus offset from the product's nominal focal plane, in MICROMETRES, signed. 🔴 One
+    /// shot of the seed's fifteen sets it, and sets it to <c>0</c>; the other fourteen leave it NULL,
+    /// which for a <see cref="double"/>? is not the same statement — "no offset requested" versus
+    /// "offset requested, and it is zero" are distinguishable here and nothing collapses them. A
+    /// per-shot refocus is how a 3D solder inspection reaches a paste height a flat board's focus would
+    /// miss.</summary>
     public double? FocusOffsetUm { get; set; }
 
     /// <summary>Optical filter in the path for this shot (polariser, bandpass, …). The contract
@@ -93,9 +107,11 @@ public sealed class LightingShot
     /// from its absence.</summary>
     public string? OpticalFilter { get; set; }
 
-    /// <summary>Why this shot exists, as a free-form tag the seed writes in lowercase
-    /// (<c>height</c>, <c>shape</c>, <c>void</c>, <c>placement</c>, <c>ocr</c>). It is documentation
-    /// for whoever tunes the recipe, not a selector: no code branches on it, so two shots may claim the
-    /// same purpose.</summary>
+    /// <summary>Why this shot exists, as a free-form tag. The load-bearing observation is the CASING,
+    /// not the vocabulary: all twelve distinct values the seed's fifteen shots use are lowercase, and
+    /// two of them (<c>void_detection</c>, <c>orientation</c>) show the tag is not drawn from any
+    /// closed list — it tracks the inspection's intent, so it grows with the catalogue. It is
+    /// documentation for whoever tunes the recipe, not a selector: no code branches on it, so two shots
+    /// may claim the same purpose.</summary>
     public string? Purpose { get; set; }
 }

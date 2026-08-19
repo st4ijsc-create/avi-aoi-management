@@ -519,6 +519,21 @@
        name-for-name and order-for-order, which is the part that would have mattered had it not held,
        since enum order is the underlying value. No executable statement was touched.
 
+       🔴 THE BRANCH REVIEW REFUTED 17 OF THE 120 SENTENCES, AND THAT IS STAGE 5's REAL RESULT.
+       It sampled 48 and found 17 false — about 35% — with NOTHING in this repository able to see one
+       of them: gate green, DocCommentProseTests green, every ledger row exact, EXPECT_WARNINGS
+       unmoved. Twelve had a single origin: the seed file was read as far as its fifth point and then
+       EXISTENCE NEGATIONS were written over nine points never opened. Two more were a caller census
+       written without running a grep, copied into a second file, so one unrun command produced two
+       wrong claims. A prose deliverable is assertions, and the instruments here count assertions
+       without reading them.
+       A round-two fix corrected 39 of the 120 sentences under two mechanical rules — every population
+       claim must be enumerated by a tool before being negated by hand, and every observable set or
+       range must be extracted automatically rather than recalled. Both rules, and the separate
+       finding that a new `//` comment is prose no instrument guards, are recorded beside the stage-5
+       block in scripts/verify-suites.sh. No mechanical line was touched in that round: the enums, the
+       ledger, EXPECT_WARNINGS 631 and the 2763 suite total all stood.
+
        🔴 ITEM 12 STAYS IN PART II. 412 coverage warnings on our own source remain unpaid, plus the 103
        nobody may pay. Stages 6..8 pay the 412; each re-measures its own constant. -->
 
