@@ -61,6 +61,22 @@ CẢNH** riêng, KHÔNG đụng đường vận hành đang chạy tốt:
 → AI **gọi `read_file`**, trình xem/hội thoại hiện **nội dung THẬT của tệp** (không phải chunk RAG).
 Đây chính là phép đo đã thất bại hôm nay — nó phải chuyển từ ĐỎ sang XANH.
 
+> ✅ **ĐÃ THỰC THI + NGHIỆM THU LIVE (2026-08-19)** — tôi tự chụp + tự đọc ảnh Playwright, tài
+> khoản `engineer` thật, cổng 3000 bản mới:
+> - *"đọc server/routers.ts và cho biết export gì"* → hiện **nội dung THẬT**: danh sách router
+>   export (`aiActiveLearning: aiActiveLearningRouter`, … `repoWorkspace: repoWorkspaceRouter`, …
+>   `export type AppRouter = typeof appRouter;`). So với hôm trước cùng câu này trả *"liên hệ kỹ
+>   sư kỹ thuật"* (RAG vận hành). **Phép đo đã ĐỎ → nay XANH.**
+> - *"đọc sandbox-projects/csharp-demo/src/Calculator.cs"* → thẻ "Đọc tệp trong repo" hiện nguyên
+>   nội dung **C#** (1105 byte, `namespace CalculatorDemo`, class Calculator + comment lỗi cố ý).
+>   ⇒ AI đọc được **cả TypeScript lẫn C#** — hai stack, cùng nội dung thật.
+>
+> ⚠ Cái CÒN LẠI (chưa verify, đúng phạm vi trục 1): AI mới **đọc/tìm/chạy** được (read/list/grep/
+> run_command tất định). **`apply_diff` (SỬA tệp) cần vòng-lặp-tác-nhân qua LLM** — heuristic không
+> dựng được `{path, original, modified}` từ câu trần. Vòng khép kín ĐẦY ĐỦ *đọc → SỬA → chạy test →
+> đọc lỗi → sửa tiếp* (làm 2 ca đỏ của demo thành xanh) là bước ĐÁNH GIÁ TIẾP, không thuộc cổng ra
+> trục 1.
+
 ### TRỤC 2 — QUẢN LÝ DỰ ÁN / FOLDER (như Claude Code)
 
 Hiện `gocHopCat()` = **MỘT gốc cố định** (`AI_REPO_SANDBOX_ROOT`, mặc định `process.cwd()`). "Quản
