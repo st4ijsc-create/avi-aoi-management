@@ -10,7 +10,7 @@ namespace St4i.EdgeCore.Drivers.Mqtt;
 /// <summary>
 /// The second REAL proof driver (Task 12, after Task 11's <see cref="Drivers.HotFolder.HotFolderAoiDriver"/>):
 /// connects to a live MQTT broker (MQTTnet v5 client) — the <see cref="InProcessBroker"/> in tests/demo,
-/// any real broker (Mosquitto/EMQX/...) in the field — subscribes to <paramref name="topics"/> filters,
+/// any real broker (Mosquitto/EMQX/...) in the field — subscribes to <c>topics</c> filters,
 /// and hands each received (topic, payload) pair to a caller-supplied <c>map</c> function. Whatever the
 /// mapper returns (or <c>null</c> to drop the message) is bridged onto the same <see cref="IDeviceDriver"/>
 /// <see cref="ReadAsync"/> seam every other driver uses — the pipeline downstream never knows or cares

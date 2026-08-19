@@ -9,7 +9,7 @@ namespace St4i.EdgeCore.Drivers.HotFolder;
 /// The other half of the doc-28 closed loop (Task 11): serializes a <see cref="DeviceReading"/>
 /// (Kind == Inspection) into a doc-28 JSON document and writes it into a hot-folder using the
 /// mandatory atomic-write protocol (docs/ECOSYSTEM/28_ST4I_STANDARD_INSPECTION_FEED_SPEC.md §6.3):
-/// write the full content to a sibling "*.tmp" file, flush + close, then <see cref="File.Move"/> it
+/// write the full content to a sibling "*.tmp" file, flush + close, then <see cref="File.Move(string, string, bool)"/> it
 /// to the final name — rename is atomic on the same volume, so the hot-folder watcher (see
 /// <see cref="HotFolderAoiDriver"/>) never observes a partially-written result file.
 ///

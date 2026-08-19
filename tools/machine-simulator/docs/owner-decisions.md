@@ -40,7 +40,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 9 | sàn môi trường trên nhánh *không đọc được* | 🔴 **CHỜ ANH** — chủ sở hữu **HOÃN** 2026-08-18 (*"để lại sau cùng"*); một lần hoãn không phải một phán quyết |
 | 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔨 **GIỮ BLOB CŨ DƯỚI TÊN KHÁC** (2026-08-18) — DI CHUYỂN dữ liệu, **miễn trừ CHỈ cho mục này**; đã thi hành, Z-1 |
 | 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); đã thi hành, Z-1 |
-| 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại |
+| 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 4 ĐÃ TRẢ 2026-08-19 (AG-1, đợt 4/8): 101 khẳng định ĐÃ SAI được TRỎ LẠI (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, 0 dòng mã đụng tới), `EXPECT_WARNINGS` 852 → 751 ĐO, sổ 19 → 16 hàng, 185 vendored / 566 ours, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **532 chỗ trống của ta chưa trả** (+ 103 vendored không ai trả được). Đợt 5–8 trả, mỗi đợt đo lại |
 | 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔴 **CHỜ ANH** — phần dư của mục 11, mở 2026-08-18 (Z-1, vòng sửa 1); **ca THÔNG THƯỜNG hơn** trong hai ca cùng hình dạng |
 | 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT** |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
@@ -1206,6 +1206,73 @@ phần của câu hỏi**. Nêu tên chứ không quyết — nhưng nêu tên *
   và dựng nó đòi một `publish-desktop/` sạch cùng một lần dựng MSI, tức một brief khác.
 * **`EXPECT_WARNINGS = 852` là một vô hướng YẾU HƠN HẲN 116**, vì hợp mà nó tóm tắt nay lớn gấp bảy.
   Thứ giữ cho nó có nghĩa là **đẳng thức theo (quần thể × mã)**, không phải bản thân nó.
+
+---
+
+#### 9. 🔨 ĐỢT 4 — PHÁN QUYẾT VẪN ĐANG THI HÀNH **TỪNG PHẦN** (AG-1, 2026-08-19, base `3e001642`)
+
+🔴 **Đây vẫn là một ghi chép THI HÀNH TỪNG PHẦN. Mục 12 Ở LẠI PHẦN II.** 101 trong 736 đã trả;
+**635 còn nợ** (532 chỗ trống của ta + 103 cái vendored không ai trả được).
+
+**Việc đã làm, và chỉ đúng chừng đó:** **101 khẳng định ĐÃ SAI được TRỎ LẠI CHO ĐÚNG** — 75 CS1574
++ 23 CS1734 + 3 CS0419, trên **29 file**, tất cả trong `src/St4i.EdgeCore`. **Không một dòng mã nào
+bị đụng:** cả **96** dòng thay đổi trong `src/` đều bắt đầu bằng `///`, kiểm được bằng
+`git diff | grep -v '^[+-]\s*///'`. Không một `cref` nào bị **xoá** để cảnh báo biến mất; không một
+lệnh đè nào; không tắt cờ ở đâu. Nhiệm vụ thứ **mười sáu** liên tiếp không có lệnh đè, và
+`SuppressionCensusTests` **không dịch một hàng** (5/5 xanh, vẫn 5 file / 8 chỉ thị / CS0618 + CS0162).
+
+**Con số thật — ĐO, không trừ.** `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild` toàn bộ
+solution, SDK 10.0.302, 15/15 compilation, `Build succeeded.`, `0 Error(s)`:
+
+| | |
+|---|---:|
+| `EXPECT_WARNINGS` trước | 852 |
+| **`EXPECT_WARNINGS` sau, ĐO** | **751** |
+
+`852 − 101 = 751` là **số học** và nó **khớp** phép đo — sự khớp ấy được **báo cáo như một kết quả**,
+không được dùng **thay** phép đo. Kênh làm phép trừ mất an toàn (trả một CS1591 bằng `<summary>` +
+**một phần** `<param>` sinh ra một CS1573) **rỗng ở đợt này theo cấu tạo**: đợt này **không viết** một
+`<summary>` hay `<param>` nào, chỉ **trỏ lại** các tham chiếu trong những khối đã có sẵn.
+
+**Sổ tách-gốc, sau khi dịch — 19 hàng → 16 hàng:**
+
+| bucket | hàng | tổng |
+|---|---|---:|
+| **VENDORED** (`examples/device-client/csharp/St4iDeviceClient.cs`) | CS1573 8 · CS1591 95 · CS8600 5 · CS8601 2 · CS8603 2 · CS8604 1 · CS8618 35 · CS8625 37 | **185** |
+| **OURS** | CS1573 84 · CS1591 448 · CS8601 7 · CS8604 14 · CS8767 2 · NU1701 9 · xUnit1013 1 · xUnit2029 1 | **566** |
+
+🔴 **Ba hàng `OURS CS1574 75` / `OURS CS1734 23` / `OURS CS0419 3` bị XOÁ KHỎI SỔ, không đặt về 0** —
+bộ phân loại của cổng chỉ phát ra hàng cho cặp `(bucket, mã)` nó **quan sát được**, nên một mã về 0
+**không sinh hàng nào**. Một dòng `OURS CS1574 0` để lại sẽ làm cổng ĐỎ. **Giá của phép xoá ấy được
+NÊU TÊN chứ không giấu**, và nó đúng là cái giá mà chính đợt 2 đã dự báo: từ hôm nay, một lệnh đè
+nhắm CS1574 **vô hình** với nửa A. Nửa B (`SuppressionCensusTests`) là thứ còn thấy nó — đó là lý do
+có hai nửa.
+
+🔴 **Tám hàng VENDORED KHÔNG dịch một đơn vị**, và `OURS CS1591 448` / `OURS CS1573 84` cũng không —
+hai phép kiểm ấy là điều đợt này **phải vượt qua**, không phải một quan sát dễ chịu.
+
+🔴 **MỘT DỰ BÁO CỦA BRIEF BỊ PHÉP ĐO BÁC, và đó mới là phát hiện.** Brief chờ đợi 23 CS1734 là những
+**chữ ký đã trôi khỏi chú thích của chính chúng** (một tham số bị đổi tên hoặc bị bỏ). **Đo: KHÔNG
+MỘT CÁI NÀO trong 23.** Cả 23 gọi tên một tham số **có thật, viết đúng chính tả**, trên một
+constructor hoặc method của **chính kiểu ấy**; cả 23 nằm trong khối `///` **mức KIỂU**, nơi C# không
+có phạm vi tham số nên `<paramref>` **không thể** phân giải dù nó gọi tên gì. Đây là lỗi **PHẠM VI**,
+đồng nhất, **không phải lỗi TRÔI**. **Không một chữ ký nào trong project này đã trôi khỏi tài liệu
+của chính nó.**
+
+🔴 **Và 38 trong 75 CS1574 có CHUNG một nguyên nhân, đáng giá hơn con số.** `cref="Models.X"` **đúng**
+bên trong `St4i.Connector.Abstractions` (ở đó `Models` gắn vào namespace con của chính assembly ấy) và
+đã được chép **nguyên văn** sang năm file dưới `St4i.EdgeCore.Drivers`, nơi `Models` gắn vào
+`St4i.EdgeCore.Models` — một namespace **có thật** và **không chứa một kiểu nào trong số đó**. Cách
+viết ấy **phân giải được ở một bên ranh giới project và hỏng lặng lẽ ở bên kia**. Đúng loài mục 12 nói
+là vô hình với mọi dụng cụ đo VĂN BẢN, và là thứ cờ được bật để nhìn thấy.
+
+**Việc còn nợ sau đợt này, nêu tên chứ không làm:**
+* **532 chỗ trống bao phủ trên 90 file** (448 CS1591 + 84 CS1573) — đợt 5–8. **Mỗi đợt đo lại.**
+* **103 cái vendored** — không ai trả được, ghim làm đẳng thức hai chiều, **phải ở nguyên đó**.
+* **Mười hai artefact phụ trong bản cài** — chưa ai quyết, y như sau đợt 3.
+* **Không dụng cụ nào canh PAYLOAD** — y như sau đợt 3.
+* 🔴 **Ba mã nay đứng ở 0 nên nửa A mù trước một lệnh đè nhắm chúng** — chỉ nửa B thấy. Đây là một
+  chỗ hở **mới xuất hiện cùng đợt này**, được nêu tên tại chỗ trong cả hai file cơ chế.
 
 ---
 

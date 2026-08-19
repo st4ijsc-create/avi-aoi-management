@@ -6,7 +6,7 @@ using St4i.Connector.Abstractions.Models;
 namespace St4i.EdgeCore.Drivers.HotFolder;
 
 /// <summary>
-/// The first REAL proof driver (Task 11): watches <paramref name="watchDir"/>-style hot folders for
+/// The first REAL proof driver (Task 11): watches <c>watchDir</c>-style hot folders for
 /// doc-28 (docs/ECOSYSTEM/28_ST4I_STANDARD_INSPECTION_FEED_SPEC.md) result files dropped by a
 /// simulated (or real) AOI machine — typically via <see cref="Doc28Writer"/> on the producer side —
 /// parses each with <see cref="Doc28Parser.Parse"/>, and yields the resulting

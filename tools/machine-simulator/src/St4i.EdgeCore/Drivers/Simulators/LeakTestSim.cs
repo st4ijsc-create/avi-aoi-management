@@ -5,7 +5,7 @@ namespace St4i.EdgeCore.Drivers.Simulators;
 
 /// <summary>
 /// Leak (LEAK_TEST) — doc-62 §6: áp suất rò Pa/s (leak/pressure-decay rate), "ngưỡng cấu hình"
-/// (configurable threshold — <paramref name="maxLeakRatePa"/> below). Lower is better: leak rate
+/// (configurable threshold — <c>maxLeakRatePa</c> below). Lower is better: leak rate
 /// is judged against [0, maxLeakRatePa].
 /// </summary>
 public sealed class LeakTestSim : SimulatorBase

@@ -160,7 +160,7 @@ public static class ConfigChecksum
 
     /// <summary>Re-shapes one already-serialized point <see cref="JsonElement"/> into a plain
     /// string-keyed dictionary with <paramref name="excludeFields"/> removed, so <see cref="Compute(object?)"/>
-    /// can hash the result like any other input (a fresh <see cref="JsonSerializer.SerializeToDocument"/>
+    /// can hash the result like any other input (a fresh <see cref="JsonSerializer.SerializeToDocument{TValue}(TValue, JsonSerializerOptions)"/>
     /// round-trip on a filtered/re-typed clone would be needlessly expensive — this just walks the
     /// object's own properties once). Each kept value is <see cref="JsonElement.Clone"/>d: the source
     /// <paramref name="point"/> comes from a <c>using var doc = JsonSerializer.SerializeToDocument(...)</c>

@@ -15,8 +15,8 @@ namespace St4i.EdgeCore.Drivers.Simulators;
 /// recognize rather than throwing — keeps a stray/typo'd fleet.json-style entry from taking the whole
 /// fleet down.
 ///
-/// Task 3 (docs/plans/2026-07-21-machine-config.md): the optional <paramref name="configStore"/>/
-/// <paramref name="currentProductCode"/> parameters are threaded into whichever simulators Task 3 wired
+/// Task 3 (docs/plans/2026-07-21-machine-config.md): the optional <c>configStore</c>/
+/// <c>currentProductCode</c> parameters are threaded into whichever simulators Task 3 wired
 /// for live config (Screwdrive/Iot/Aoi today) so their generated values/cadence track
 /// <see cref="MachineConfigStore"/> — omitted (both default null), every simulator behaves exactly as it
 /// did before this task, which is what keeps every pre-existing call site/test unaffected.

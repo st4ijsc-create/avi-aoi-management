@@ -47,9 +47,9 @@ public enum OpcUaSecurityMode { None }
 /// <see cref="CommandArgumentType"/>, <see cref="Min"/>/<see cref="Max"/> remain MANDATORY, unchanged.</para>
 ///
 /// <para><b>Fix round 1 — "consider" item, resolved: <see cref="TryNarrowForWrite"/> stays
-/// <see langword="bool"/> + <see langword="string"/>?, not <see cref="Models.SetpointRejectionReason"/>.</b>
-/// Every failure it can produce corresponds to EXACTLY ONE <see cref="Models.SetpointRejectionReason"/> member
-/// — <see cref="Models.SetpointRejectionReason.OutOfRange"/> — for the identical reasoning
+/// <see langword="bool"/> + <see langword="string"/>?, not <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason"/>.</b>
+/// Every failure it can produce corresponds to EXACTLY ONE <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason"/> member
+/// — <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason.OutOfRange"/> — for the identical reasoning
 /// <see cref="Modbus.ModbusRegister.TryComputeRawWordForWrite"/>'s own doc comment gives (which name/writability
 /// question this method is never asked to answer). See <see cref="CommandArgumentDeclaration"/>'s own doc
 /// comment for the same call on the command-argument side.</para>
@@ -163,15 +163,15 @@ public sealed record OpcUaWritableSetpoint(CommandArgumentType? ValueType, doubl
 }
 
 /// <summary>
-/// Task B-3 — an OPC-UA method this map declares by name, so <see cref="Models.IWritableDeviceDriver.Commands"/>
-/// can list it and <see cref="Models.IWritableDeviceDriver.InvokeCommandAsync"/> (B-4/B-5) can call it without
+/// Task B-3 — an OPC-UA method this map declares by name, so <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.Commands"/>
+/// can list it and <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.InvokeCommandAsync"/> (B-4/B-5) can call it without
 /// re-deriving which nodes a name refers to. The OPC-UA <c>Call</c> service needs BOTH the parent object's own
 /// NodeId and the method's own NodeId (a method is never called "bare" — it is always called ON an object) —
 /// declaring both here is exactly the "in a shape B-4/B-5 can execute without re-deriving intent" the task
 /// brief asks for, rather than leaving a future driver to browse the address space back to the owning object
 /// at write time.
 /// </summary>
-/// <param name="Name">The command's name — see <see cref="Models.IWritableDeviceDriver.Commands"/>.</param>
+/// <param name="Name">The command's name — see <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.Commands"/>.</param>
 /// <param name="ObjectNodeId">The OPC-UA NodeId of the object this method is called ON.</param>
 /// <param name="MethodNodeId">The OPC-UA NodeId of the method itself.</param>
 /// <param name="Arguments">Optional named input arguments — <see langword="null"/>/empty for a method that
@@ -185,7 +185,7 @@ public sealed record OpcUaCommand(
 /// <summary>One OPC-UA node → canonical-tag mapping: which node to read (the OPC-UA string form, e.g.
 /// <c>"ns=2;s=Temperature"</c> — parsed straight into an <see cref="Opc.Ua.NodeId"/> via its own
 /// string-constructor) and the metric name/unit it becomes on the resulting
-/// <see cref="Models.TelemetrySample"/>. Mirrors <see cref="Modbus.ModbusRegister"/>'s role for the Modbus
+/// <see cref="St4i.Connector.Abstractions.Models.TelemetrySample"/>. Mirrors <see cref="Modbus.ModbusRegister"/>'s role for the Modbus
 /// driver — no scale/offset here (unlike Modbus, an OPC-UA server already reports engineering-unit values,
 /// so no raw-register decode step is needed).
 ///
@@ -240,7 +240,7 @@ public sealed class OpcUaNodeMap
     public IReadOnlyList<OpcUaCommand> Commands { get; init; } = Array.Empty<OpcUaCommand>();
 
     /// <summary>Task B-3 — the exact vocabulary a driver hands back through
-    /// <see cref="Models.IWritableDeviceDriver.WritablePoints"/>: every <see cref="Nodes"/> entry whose
+    /// <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.WritablePoints"/>: every <see cref="Nodes"/> entry whose
     /// <see cref="OpcUaNode.Writable"/> is non-null, by <see cref="OpcUaNode.Metric"/>. Empty for a map that
     /// declares no writable points — the additive default this task guarantees for every existing map.</summary>
     public IReadOnlyList<string> WritablePointNames
@@ -261,7 +261,7 @@ public sealed class OpcUaNodeMap
     }
 
     /// <summary>Task B-3 — the exact vocabulary a driver hands back through
-    /// <see cref="Models.IWritableDeviceDriver.Commands"/>: every <see cref="Commands"/> entry's own
+    /// <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.Commands"/>: every <see cref="Commands"/> entry's own
     /// <see cref="OpcUaCommand.Name"/>.</summary>
     public IReadOnlyList<string> CommandNames
     {

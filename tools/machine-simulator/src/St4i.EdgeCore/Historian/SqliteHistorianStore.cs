@@ -5,7 +5,7 @@ namespace St4i.EdgeCore.Historian;
 
 /// <summary>
 /// WS-A-T2 — <see cref="IHistorianStore"/> on raw <c>Microsoft.Data.Sqlite</c> (no ORM). One SQLite file
-/// (<c>historian.db</c>) under <paramref name="directory"/> (or <see cref="DefaultRoot"/>), 3 tables
+/// (<c>historian.db</c>) under the constructor's <c>directory</c> (or <see cref="DefaultRoot"/>), 3 tables
 /// (results / telemetry / run-events) created by an ordered migration ladder tracked via
 /// <c>PRAGMA user_version</c>. Every public method opens a short-lived <see cref="SqliteConnection"/> (the
 /// provider pools physical connections per connection-string, so this is cheap) with WAL + a busy timeout
@@ -375,7 +375,7 @@ public sealed class SqliteHistorianStore : IHistorianStore
     /// machine which simply cycles less often than the demo fleet (a slow assembly station, say) produce a
     /// narrow historian/report window containing ZERO of its own rows but many demo rows — the gate would
     /// then hand back the demo fleet's rows COMPLETELY UNFILTERED for that window, while
-    /// <see cref="FleetHost.Snapshot"/> was, at the very same moment, reporting <c>HasMixedProvenance:
+    /// <c>St4i.EngineApi.Fleet.FleetHost.Snapshot</c> was, at the very same moment, reporting <c>HasMixedProvenance:
     /// true</c> and real-only live totals for the same fleet — two customer-facing screens disagreeing
     /// about the same moment. <c>is_fabricated = 1</c> is unambiguous (this codebase wrote it itself, at
     /// commit time — see <see cref="HistorianResultRecord.IsFabricated"/>) — there is never a legitimate

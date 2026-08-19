@@ -79,7 +79,7 @@ public enum MachineDriverAvailability
     /// neither <see cref="St4i.Connector.Abstractions.Models.SetpointWriteRequest"/> nor
     /// <see cref="St4i.Connector.Abstractions.Models.CommandRequest"/> carries a machine code the driver could
     /// cross-check its own binding against — so two roster members sharing a <c>DriverKind</c> (a hand-edited
-    /// <c>fleet.json</c> with two same-kind entries, or two <see cref="RegisterMachine"/> calls for the same
+    /// <c>fleet.json</c> with two same-kind entries, or two <see cref="FleetCore.RegisterMachine"/> calls for the same
     /// kind) are, from this method's point of view, INDISTINGUISHABLE: it has no way to know which of them the
     /// single live driver instance is actually talking to. Reported instead of <see cref="Writable"/> — a
     /// write reaching the wrong physical machine is the worst possible failure mode for this capability, worse
@@ -1671,11 +1671,11 @@ internal sealed class FleetCore
     }
 
     /// <summary>GĐ3 sub-4 LC-2 — per-slot driver health, read-only: the FIRST production reader of
-    /// <see cref="IDeviceDriver.Health"/> (added for <see cref="Alarms.AlarmEvaluator"/>'s DriverHealth
+    /// <see cref="IDeviceDriver.Health"/> (added for <c>St4i.EngineApi.Alarms.AlarmEvaluator</c>'s DriverHealth
     /// alarm source). Pure read under <see cref="_gate"/> — same lock every other read of <see cref="_slots"/>
     /// in this class already takes, mirroring <see cref="GetSafetyStatus"/>'s own "pure read, never mutates"
     /// contract. Returns one entry per CURRENTLY live slot — nothing here reaches into a slot that has been
-    /// removed; <see cref="Alarms.AlarmEvaluator"/> is what
+    /// removed; <c>St4i.EngineApi.Alarms.AlarmEvaluator</c> is what
     /// notices a slot's disappearance (by diffing this list against its own last pass) and clears that
     /// slot's alarms on its behalf.
     ///
@@ -1684,7 +1684,7 @@ internal sealed class FleetCore
     /// that throws part-way through installing slots leaves <see cref="_slots"/> populated with
     /// <c>_running == false</c>, so this method reports live drivers for a fleet that reports itself stopped
     /// — and it is the FIRST place that divergence surfaces to a reader, since
-    /// <see cref="Alarms.AlarmEvaluator"/> diffs this list. J-2 makes that state CLEANABLE (a
+    /// <c>St4i.EngineApi.Alarms.AlarmEvaluator</c> diffs this list. J-2 makes that state CLEANABLE (a
     /// <see cref="Stop"/>/<see cref="Estop"/> now tears those slots down) but not unreachable, so the
     /// parenthesis is removed rather than reworded: this list tracks SLOTS, and
     /// <see cref="IsRunning"/> tracks an operator's request, and they are not the same
@@ -1896,7 +1896,8 @@ internal sealed class FleetCore
     /// UNBOUNDED <c>await driver.DisposeAsync().ConfigureAwait(false)</c>, running on the SLOT'S OWN background
     /// task — not on any caller's thread at all. Both shapes independently guarantee NONE of them wait for an
     /// in-flight write: the first two dispose the driver unconditionally, on their own bounded schedule, never
-    /// checking whether a <see cref="WriteSetpointAsync"/>/<see cref="InvokeCommandAsync"/> call is still in
+    /// checking whether a <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.WriteSetpointAsync"/>/
+    /// <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.InvokeCommandAsync"/> call is still in
     /// flight; the third has no caller to delay in the first place, since it runs on its own background task
     /// with nothing blocked waiting for it. A lease/reference-count that made disposal WAIT for a write was
     /// considered and rejected for the first two paths: waiting, even boundedly, would couple HALT's latency to
@@ -2007,7 +2008,7 @@ internal sealed class FleetCore
             fleet.Any(d => !DriverKinds.IsFabricated(d.DriverKind)));
     }
 
-    /// <summary>GĐ3 sub-4 LC-2 — the fleet-wide KPI counters <see cref="Alarms.AlarmEvaluator"/>'s windowed
+    /// <summary>GĐ3 sub-4 LC-2 — the fleet-wide KPI counters <c>St4i.EngineApi.Alarms.AlarmEvaluator</c>'s windowed
     /// NG-rate source polls (diffing successive calls to compute a DELTA rather than a fleet-lifetime
     /// rate), which feeds a genuinely customer-facing alarm ("Fleet NG-rate X% ... exceeds the Y% limit").
     ///
@@ -2987,7 +2988,7 @@ internal sealed class FleetCore
     /// was NOT collision-free: <see cref="DriverKinds"/>' own casing rule deliberately keeps a THIRD-PARTY
     /// id case-SENSITIVE (so <c>"Vendor.Acme.Weld"</c> and <c>"vendor.acme.weld"</c> are two distinct,
     /// simultaneously-registrable connectors), and lowercasing both would have produced the SAME slot label
-    /// for two genuinely different connectors — <see cref="Alarms.AlarmEvaluator"/> keys its degraded/down
+    /// for two genuinely different connectors — <c>St4i.EngineApi.Alarms.AlarmEvaluator</c> keys its degraded/down
     /// alarms on exactly this label (<c>DegradedKey</c>/<c>DownKey</c>, <c>TargetId: slot.SlotLabel</c>), so
     /// one connector's alarms would silently clobber the other's. Same hazard for a connector registered
     /// with <c>Kind="Simulated"</c>: lowercased, that collided with the always-present sim group's own
@@ -3531,7 +3532,7 @@ internal sealed class FleetCore
     /// <summary>Review fix round 2 — <see cref="StartLocked"/> USED to dispose an orphaned connector
     /// driver (see the connector loop below) inline, synchronously, while <see cref="_gate"/> was held by
     /// every one of its callers. That is a hazard this class's own review has already named twice: a
-    /// slow/hung third-party <see cref="IDeviceDriver.DisposeAsync"/> would delay <see cref="Estop"/> — the
+    /// slow/hung third-party <see cref="System.IAsyncDisposable.DisposeAsync"/> would delay <see cref="Estop"/> — the
     /// exact "blocks the halt call" class of bug <see cref="IConnectorFactory.TryCreate"/>'s own doc comment
     /// warns against for <c>TryCreate</c> itself. <see cref="StartLocked"/> now only COLLECTS orphaned drivers
     /// — every caller disposes them via <see cref="DisposeOrphanedConnectorDrivers"/>
@@ -4005,7 +4006,7 @@ internal sealed class FleetCore
     /// collection: every <see cref="StartLocked"/> caller invokes this AFTER releasing <see cref="_gate"/>,
     /// mirroring <see cref="WaitAndDisposeOldPipeline"/>'s own "wait/dispose must happen OUTSIDE _gate"
     /// discipline exactly (same reasoning: <see cref="Estop"/> takes <see cref="_gate"/> too, and a
-    /// slow/hung third-party <see cref="IDeviceDriver.DisposeAsync"/> must never delay a caller's
+    /// slow/hung third-party <see cref="System.IAsyncDisposable.DisposeAsync"/> must never delay a caller's
     /// <see cref="Estop"/> call from returning). Best-effort and per-driver BOUNDED
     /// (<see cref="RestartTeardownTimeout"/>, same budget
     /// <see cref="WaitAndDisposeOldPipeline"/> uses) — a driver whose <c>DisposeAsync</c> throws or hangs
@@ -4178,7 +4179,7 @@ internal sealed class FleetCore
     /// an old task from inside this same lock would deadlock whenever that catch actually needs to
     /// run). Assumes the caller already holds <see cref="_gate"/>.
     ///
-    /// <para><b>Batch review (WS-G-plugin whole-batch, fix 1) — <see cref="CancellationTokenSource.Cancel"/>
+    /// <para><b>Batch review (WS-G-plugin whole-batch, fix 1) — <see cref="CancellationTokenSource.Cancel()"/>
     /// itself is wrapped per-slot in its own try/catch.</b> <c>Cancel()</c> runs every callback registered via
     /// <see cref="CancellationToken.Register(Action)"/> SYNCHRONOUSLY on THIS thread and rethrows any exception
     /// one of them throws. <c>ModbusTcpDriver.PollOnceAsync</c>'s <c>ct.Register(DisposeConnection)</c> (the

@@ -32,7 +32,7 @@ namespace St4i.EdgeCore.Site;
 ///
 /// <para><b>Trust boundary:</b> the remote client's TLS options wire in <see cref="SiteTrustPin.IsTrusted"/>
 /// as the certificate validation handler — see that class's own doc comment for the fail-closed contract.
-/// The remote client ALSO presents <paramref name="deviceCert"/> (mutual TLS): the Site is expected to
+/// The remote client ALSO presents <c>deviceCert</c> (mutual TLS): the Site is expected to
 /// pin/verify THIS device's certificate on its own end (out of scope here — this bridge only handles ITS
 /// OWN trust decision about the Site).</para>
 ///
@@ -41,7 +41,7 @@ namespace St4i.EdgeCore.Site;
 /// canonical-envelope mirror should stay "last known value" retained at the Site too; Sparkplug DDATA/NDATA/
 /// birth-death traffic is never retained, per spec).</para>
 ///
-/// <para><b>GĐ3 closeout WI-3 — durable backlog, not a silent drop:</b> when <paramref name="spool"/> is
+/// <para><b>GĐ3 closeout WI-3 — durable backlog, not a silent drop:</b> when <c>spool</c> is
 /// non-<see langword="null"/> (the composition root passes a real <see cref="BridgeSpool"/> whenever
 /// <c>ST4I_BRIDGE_SPOOL_ENABLED</c> is not explicitly disabled — see <see cref="BridgeSpoolOptions"/>), the
 /// bounded <see cref="Channel{T}"/> above is no longer forwarded directly: a background WRITER loop
@@ -50,7 +50,7 @@ namespace St4i.EdgeCore.Site;
 /// and a SEPARATE forward loop (<see cref="RunSpoolForwardLoopAsync"/>) peeks/publishes/acks the durable
 /// spool whenever (and ONLY while) the remote client is connected — a Site outage now backs data up on disk
 /// (bounded by <see cref="BridgeSpoolOptions.MaxBytes"/>/<see cref="BridgeSpoolOptions.MaxAgeHours"/>) instead
-/// of dropping it. <paramref name="spool"/> being <see langword="null"/> (the env var disabled, or a caller —
+/// of dropping it. <c>spool</c> being <see langword="null"/> (the env var disabled, or a caller —
 /// e.g. every pre-WI-3 test in <c>UnsBridgeTests</c> — simply doesn't pass one) reproduces PRE-WI-3 behavior
 /// byte-for-byte: <see cref="RunForwardLoopAsync"/> drains the channel directly and drops whatever arrives
 /// while the remote client isn't connected. See <see cref="IBridgeSpool"/>'s own doc comment for why every

@@ -6,7 +6,8 @@ namespace St4i.EdgeCore.Infrastructure;
 /// live updates, and <see cref="Recent"/> gives any late subscriber (a newly opened trace pane) the
 /// last N events without having to have been listening from the start.
 ///
-/// Bounded ring buffer (cap <see cref="Capacity"/>, default 500) so a long-running edge service
+/// Bounded ring buffer — the cap is the <see cref="EventBus(int)"/> constructor's <c>capacity</c>
+/// argument, defaulting to <see cref="DefaultCapacity"/> (500) — so a long-running edge service
 /// doesn't grow this without bound; thread-safe since publishers (transport callbacks) and readers
 /// (UI data-binding) run on different threads.
 /// </summary>

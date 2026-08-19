@@ -4,7 +4,7 @@ using St4i.Connector.Abstractions.Models;
 namespace St4i.EdgeCore.Fleet;
 
 /// <summary>
-/// Thread-safe, per-machine live state accumulated from every <see cref="EdgePipeline.Committed"/>
+/// Thread-safe, per-machine live state accumulated from every <see cref="St4i.EdgeCore.Engine.EdgePipeline.Committed"/>
 /// reading — the headless-host analogue of the WPF app's <c>MachineViewModel</c> (Task 16), just
 /// without any WPF/ObservableCollection/dispatcher dependency: every mutation happens under
 /// <see cref="_gate"/>, and every read-out method (<see cref="SnapshotTile"/>/<see cref="SnapshotDetail"/>)
@@ -25,7 +25,7 @@ namespace St4i.EdgeCore.Fleet;
 public sealed class MachineState
 {
     /// <summary>E1: the status value a tile/detail reports before its first cycle — and, since E1,
-    /// also the value <see cref="ToTile(bool)"/> reports whenever the fleet pipeline isn't running,
+    /// also the value <see cref="SnapshotTile(bool)"/> reports whenever the fleet pipeline isn't running,
     /// regardless of the last real verdict. Already understood by the web UI's <c>MachineCard</c>
     /// <c>STATUS_META</c> map (neutral badge, "status.idle" label) — no new status vocabulary needed.</summary>
     private const string IdleStatusText = "Idle";
@@ -53,7 +53,7 @@ public sealed class MachineState
     /// no new endpoint, no socket-shape change. Replaced wholesale on every <see cref="ApplyReading"/>
     /// call (never accumulated), mirroring <see cref="_boardPoints"/>'s own "always exactly the LATEST
     /// cycle's worth" contract. Gated to null on the exposed DTO whenever the fleet isn't running (see
-    /// <see cref="ToDetail(bool)"/>) — "idle machine = no active plan".</summary>
+    /// <see cref="SnapshotDetail(bool)"/>) — "idle machine = no active plan".</summary>
     private CyclePlan? _currentPlan;
 
     private long _passCount;

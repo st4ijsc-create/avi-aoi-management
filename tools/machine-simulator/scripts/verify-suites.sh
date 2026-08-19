@@ -1564,6 +1564,17 @@ EXPECT_CONFORMANCE=24
 # passed, TheDocumentationSwitchIsSetOnExactlyTheseProjects, naming St4i.EdgeCore.csproj at "on" against an
 # expectation of "off". AE-1 built that assertion for precisely this edit and it caught precisely this
 # edit. Transcripts: .superpowers/sdd/item12-stage3/task-1-report.md.
+#
+# 🔴 TASK AG-1 (.superpowers/sdd/item12-stage4/task-1-brief.md) — ITEM 12 STAGE 4, THE 101 ALREADY-FALSE
+# CLAIMS ARE PAID — ALSO MOVES NO SUITE TOTAL. EXPECT_ABSTRACTIONS 161, EXPECT_CONFORMANCE 24,
+# EXPECT_EDGECORE 1152, EXPECT_EDGESERVICE 52, EXPECT_ENGINEAPI 1374, grand total 2763: unchanged, and
+# again as a MEASUREMENT rather than a convenience. AG-1 adds no test and deletes none. It edits 29 files
+# under src/St4i.EdgeCore and every changed line in them is a `///` line — 96 of them — so a suite total
+# moving would mean it had edited code while claiming to edit prose. It moves EXPECT_WARNINGS 852 -> 751
+# and EXPECT_WARNING_LEDGER nineteen rows -> sixteen (three rows DELETED, not zeroed — see the block at
+# the ledger for why a zeroed row would fail). SuppressionCensusTests is untouched and its three tables
+# are unmoved, which is the check that no override arrived: 5 file / 8 instruction / CS0618 + CS0162,
+# 8 on / 7 off, analyzer-config files EMPTY. EXPECT_BUILD_NODES stays 0.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 EXPECT_EDGECORE=1152
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
@@ -5012,7 +5023,37 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # OPTIONAL. A scalar over 852 hides a cancellation just as it hid one over 116, and stages 4..8 are a long
 # run of deliberate reductions in one bucket standing beside a bucket that can rise. Read the block below
 # before treating a green 852 as a statement about anything.
-EXPECT_WARNINGS=852
+#
+# ══ 852 -> 751 — task AG-1, owner item 12, STAGE 4: THE 101 ALREADY-FALSE CLAIMS ARE PAID ═════════════
+#
+# 🔴 THE FIRST DECREASE, AND IT IS A DECREASE BY WRITING, NOT BY SILENCING. Stage 3's sentence directly
+# above ("stages 4..8 may only lower this number") is now exercised for the first time. What moved: 101
+# doc-comment claims that were FALSE — 75 CS1574 (`cref` naming a symbol that does not resolve), 23 CS1734
+# (`paramref` naming a parameter not in scope), 3 CS0419 (`cref` matching several overloads) — across 29
+# files, every one of them in src/St4i.EdgeCore. Not one code line was touched: all 96 changed lines in
+# that commit begin with `///`, which is checkable with `git diff | grep -v '^[+-]\s*///'` returning
+# nothing for the source hunks.
+#
+# 🔴 751 IS MEASURED, NOT SUBTRACTED. `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo` over
+# the whole solution, SDK 10.0.302, 15/15 compilations, `Build succeeded.`, `0 Error(s)`,
+# `751 Warning(s)`. 852 - 101 = 751 is arithmetic and it AGREES with the measurement; the agreement is
+# reported as a result, not used as a substitute for measuring. Stage 1 measured the channel that makes
+# subtraction unsafe here (writing `<summary>` plus SOME of a member's `<param>` tags turns one CS1591
+# into one CS1573) and that channel is EMPTY for this stage BY CONSTRUCTION rather than by luck: this
+# stage wrote no `<summary>` and no `<param>`, it only re-pointed references inside blocks that already
+# existed. `OURS CS1591 448` and `OURS CS1573 84` are unmoved, unit for unit, which is the check.
+#
+# 🔴 AND THE THREE PAID ROWS ARE DELETED FROM THE LEDGER, NOT SET TO ZERO — this is a property of the
+# mechanism and the next stage will meet it too. `warning_ledger()` below emits a row only for a
+# (bucket,code) pair it actually OBSERVES in the log, so a code that reaches zero produces NO row at all.
+# A `OURS CS1574 0` line left in EXPECT_WARNING_LEDGER would fail the equality against an observed list
+# that simply omits it. Nineteen rows -> sixteen.
+#   The cost of that deletion is named rather than hidden, and it is exactly the cost the block further
+#   down already predicted: "the day a stage finishes paying CS1574, an override naming CS1574 becomes
+#   invisible to this half again". That day is today, for three codes. The half that still sees it is
+#   tests/St4i.EdgeCore.Tests/SuppressionCensusTests.cs, which enumerates suppression INSTRUCTIONS and so
+#   does not need the code to be emitted anywhere. That is why both halves exist.
+EXPECT_WARNINGS=751
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
@@ -5231,11 +5272,17 @@ warning_ledger() {
 #   OURS     = every other compilation unit in this solution. A row moving here is ours to explain.
 #
 # ══ THE ROWS MOVED ONCE, BY TASK AF-1 (item 12 stage 3, 2026-08-19), AND HERE IS EVERY ONE ═════════════
+# [🔴 "ONCE" WITHDRAWN 2026-08-19 by task AG-1 (item 12 stage 4), which moved them a second time — see the
+#  second banner below. This banner and everything under it is kept verbatim as the record of what stage 3
+#  did; only the word "once" was ever a claim about the future, and it is the one that expired.]
 #
 # 🔴 THE ENUMERATION FIRST, THE COUNTS AFTER, because the count is what goes wrong when it is written
 # first — this file has now watched that rule prove itself six times, and the draft of THIS block said
 # "six new rows" over a list of seven. AE-1 pinned twelve rows (6 OURS + 6 VENDORED) at 82/34. This table
 # holds nineteen (11 OURS + 8 VENDORED) at 185/667. What changed, listed:
+# [🔴 "This table holds nineteen ... at 185/667" WITHDRAWN 2026-08-19 by task AG-1: it holds SIXTEEN
+#  (8 OURS + 8 VENDORED) at 185/566. True of AF-1's tree, and its enumeration below is still the correct
+#  record of what stage 3 added. Read it as history; the live shape is the second banner below.]
 #     NEW, OURS      CS1591 448 · CS1573 84 · CS1574 75 · CS1734 23 · CS0419 3   — five rows,  +633
 #     NEW, VENDORED  CS1591 95 · CS1573 8                                        — two rows,   +103
 #     MOVED          none. Not one of AE-1's twelve rows changed value, in either bucket.
@@ -5279,11 +5326,30 @@ warning_ledger() {
 # table; none may subtract. Watch CS1573 in particular: paying a CS1591 by writing `<summary>` plus SOME
 # of a member's `<param>` tags CREATES a CS1573, so `OURS CS1573 84` is expected to RISE mid-payment while
 # `OURS CS1591 448` falls. A stage that reports both falling in lockstep has not measured, it has guessed.
-EXPECT_WARNING_LEDGER="OURS CS0419 3
-OURS CS1573 84
-OURS CS1574 75
+# [🔴 "THE 633" WITHDRAWN 2026-08-19 by task AG-1: 101 of it is PAID and 532 remain, on 90 files, in the
+#  two rows named in the sentence. The sentence is otherwise unchanged and its warning is UNSPENT — it is
+#  addressed to stages 5..8, which are the stages that WRITE, and this stage wrote nothing. The
+#  CS1591 -> CS1573 channel it describes has not been exercised yet by anybody.]
+#
+# ══ THE ROWS MOVED A SECOND TIME, BY TASK AG-1 (item 12 stage 4, 2026-08-19) ═══════════════════════════
+#
+# 🔴 THE ENUMERATION FIRST, THE COUNTS AFTER — eighth time this file has watched that rule earn its
+# keep. What changed, listed:
+#     GONE, OURS   CS1574 75 · CS1734 23 · CS0419 3    — three rows, -101, PAID by re-pointing the claims
+#     MOVED        none. Not one of the other sixteen rows changed value, in either bucket.
+# Three rows removed; 19 - 3 = 16. VENDORED 185 / OURS 566 = 751.
+#
+# 🔴 THE EIGHT VENDORED ROWS DID NOT MOVE ONE UNIT, AND THAT IS AN ASSERTION THIS STAGE HAD TO PASS, not
+# a pleasant observation. Stage 4 edited 29 files and none of them is the vendored SDK file; if a VENDORED
+# row had moved, this task would have edited a file it may not edit. CS1573 8 · CS1591 95 · CS8600 5 ·
+# CS8601 2 · CS8603 2 · CS8604 1 · CS8618 35 · CS8625 37 = 185, identical to stage 3.
+#
+# 🔴 `OURS CS1591 448` AND `OURS CS1573 84` DID NOT MOVE EITHER, AND THAT IS THE SECOND CHECK. Those two
+# rows are stages 5..8's bill, not this stage's. The block above explains why they COULD have moved (the
+# CS1591 -> CS1573 channel) and why they did not here (nothing was written, only re-pointed). A stage-4
+# report showing either of them moving would have been a stage that reached past its own scope.
+EXPECT_WARNING_LEDGER="OURS CS1573 84
 OURS CS1591 448
-OURS CS1734 23
 OURS CS8601 7
 OURS CS8604 14
 OURS CS8767 2

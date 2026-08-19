@@ -4,7 +4,7 @@ namespace St4i.EdgeCore.Uns.Sparkplug;
 /// G2-2 — per-equipment Sparkplug B metric name&lt;-&gt;alias table. Per spec, a device's (D)BIRTH
 /// declares each metric's <c>name</c> together with a numeric <c>alias</c>; every subsequent (D)DATA for
 /// that device is then allowed to carry ONLY the alias (cheaper on the wire) instead of repeating the
-/// name. G2-2 does not yet emit NBIRTH/DBIRTH (see <see cref="UnsTopicBuilder.SparkplugMsgType"/>'s doc
+/// name. G2-2 does not yet emit NBIRTH/DBIRTH (see <see cref="St4i.EdgeCore.Uns.SparkplugMsgType"/>'s doc
 /// comment — that sequencing is G2-3), so today every metric this table hands out an alias for is a
 /// first-seen name assigned lazily on first (D)DATA rather than at a real BIRTH; <see cref="Reset"/> is
 /// what a genuine (D)BIRTH (G2-3) will call to start a device's aliasing over from scratch, matching the

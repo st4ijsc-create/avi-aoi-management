@@ -42,10 +42,10 @@ public interface IBridgeSpool
 
 /// <summary>
 /// GĐ3 closeout WI-2 — <see cref="IBridgeSpool"/> on raw <c>Microsoft.Data.Sqlite</c> (no ORM), its OWN
-/// SQLite file (<c>bridge-spool.db</c>) under <paramref name="directory"/> (else
+/// SQLite file (<c>bridge-spool.db</c>) under the constructor's <c>directory</c> (else
 /// <c>ST4I_BRIDGE_SPOOL_DIR</c>, else <see cref="DefaultRoot"/>) with a <c>PRAGMA user_version</c>-tracked
 /// migration ladder and short-lived, WAL-mode connections — the SAME shape as
-/// <see cref="St4i.EngineApi.Alarms.AlarmStore"/>/<see cref="St4i.EngineApi.AssetRegistry.AssetRegistryStore"/>
+/// <c>St4i.EngineApi.Alarms.AlarmStore</c>/<c>St4i.EngineApi.AssetRegistry.AssetRegistryStore</c>
 /// (see their doc comments for the rationale this class does not repeat). This is the STORE ONLY — it is
 /// deliberately not wired into <c>UnsBridge</c> yet (that is WI-3); this task proves it in isolation.
 ///
@@ -70,7 +70,7 @@ public interface IBridgeSpool
 /// <c>sqlite_sequence</c>'s on-disk state). See <c>BridgeSpoolTests.Seq_NeverReused_EvenAfterTheTableIsFullyDrained</c>
 /// for the proof.
 ///
-/// <b>Byte-size measure for the <see cref="MaxBytes"/> cap:</b> <c>SUM(LENGTH(payload))</c> across every
+/// <b>Byte-size measure for the constructor's <c>maxBytes</c> cap:</b> <c>SUM(LENGTH(payload))</c> across every
 /// row currently in <c>spool</c> — the sum of PAYLOAD bytes only (topic text and per-row overhead are not
 /// counted). Deliberately NOT <c>page_count * page_size</c>: that measure includes WAL/freelist/index pages
 /// and would drift with each connection's <c>PRAGMA</c>s and vacuum state, none of which is under this
@@ -79,7 +79,7 @@ public interface IBridgeSpool
 ///
 /// <b>Drop-oldest trim policy</b> (<see cref="TrimAsync"/>), same policy as
 /// <see cref="St4i.EdgeCore.Transport.WalMaintenance.TrimDirectory"/>: age-based trim runs first (deletes
-/// every row older than <see cref="MaxAgeHours"/>), then byte-based trim runs against whatever remains
+/// every row older than the constructor's <c>maxAgeHours</c>), then byte-based trim runs against whatever remains
 /// (walks from the NEWEST row backward, keeping rows while they still fit the budget, so the OLDEST rows
 /// are the ones dropped) — mirroring <see cref="St4i.EdgeCore.Transport.WalMaintenance.TrimFileToMaxBytes"/>'s
 /// own backward-scan algorithm, including its "always keep at least the single newest row, even alone over
@@ -100,11 +100,11 @@ public interface IBridgeSpool
 ///
 /// <b>Never throws:</b> every public method (<see cref="EnqueueAsync"/>/<see cref="PeekBatchAsync"/>/
 /// <see cref="AckThroughAsync"/>/<see cref="StatsAsync"/>/<see cref="TrimAsync"/>) is wrapped in a
-/// try/catch that reports the failure via <paramref name="logError"/> (usable, e.g., a full disk, a locked
+/// try/catch that reports the failure via <c>logError</c> (usable, e.g., a full disk, a locked
 /// file, or the DB directory vanishing out from under an already-open store) and returns its documented
 /// safe value — never lets the exception escape to the caller (<c>UnsBridge</c>'s forward loop, in WI-3,
 /// must never fail just because the spool hiccuped). Only the constructor is unguarded — same precedent as
-/// <see cref="St4i.EngineApi.Alarms.AlarmStore"/>: a root that genuinely cannot be created at startup is a
+/// <c>St4i.EngineApi.Alarms.AlarmStore</c>: a root that genuinely cannot be created at startup is a
 /// fatal misconfiguration that should surface immediately, not be silently downgraded.
 /// </summary>
 public sealed class BridgeSpool : IBridgeSpool
