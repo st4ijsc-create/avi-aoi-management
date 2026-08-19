@@ -1912,6 +1912,55 @@ export async function classifyCodingToolIntentLLM(question: string): Promise<Too
   if (d.tool && !CODING_TOOL_SET.has(d.tool)) {
     return { tool: null, args: {}, reason: `CODING_LLM_NON_CODING_TOOL:${d.tool}` };
   }
+
+  /**
+   * ★★★ doc 81 — **BỘ CHỌN LLM KHÔNG ĐƯỢC KHỞI XƯỚNG `apply_diff`.** Vá sau một phép đo LIVE.
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * BẰNG CHỨNG (nghiệm thu live 2026-08-19, tôi tự chạy trên trình duyệt)
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * Lượt 1: *"viết một hàm C# tính giai thừa"* ⇒ sinh mã đúng, đẹp.
+   * Lượt 2: *"giờ đổi nó sang dùng đệ quy"* — câu tiếp nối, **KHÔNG nêu tệp nào**.
+   *   ⇒ bộ chọn TẤT ĐỊNH trả `null` (đúng — không có đường dẫn để trích).
+   *   ⇒ rơi xuống bộ chọn LLM, và nó **BỊA RA CẢ HAI**: đường dẫn
+   *      `server/services/aiLocalTools/toolRegistry.ts` (một tệp lõi THẬT, 24.902 byte) và một
+   *      `original` bịa (`function processToolCall(...) { return result; }` — không hề có trong
+   *      tệp đó) ⇒ đẻ ra một thẻ *"Đề xuất SỬA tệp"* trông rất tự tin cho một tệp KHÔNG LIÊN QUAN.
+   *
+   * ⚠ Hàng rào băm ĐÃ giữ được: bấm "Duyệt & ghi" ⇒ tệp nguyên vẹn từng byte (sha256 không đổi,
+   *   `git status` sạch). Phòng vệ nhiều lớp hoạt động đúng. Nhưng "không hỏng" ≠ "đúng".
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * LÝ LẼ — vì sao đây là ràng buộc CẤU TẠO chứ không phải một bộ lọc theo khẩu vị
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * `applyDiff` neo chống TOCTOU bằng `sha256(original) === sha256(nội dung trên đĩa)`. Bộ chọn
+   * LLM **KHÔNG BAO GIỜ ĐỌC TỆP** — nó chỉ thấy câu hỏi. Nên `original` nó sinh ra **luôn luôn là
+   * phỏng đoán**, và một phỏng đoán **về cấu tạo không thể** khớp băm trừ khi trùng hợp.
+   *
+   * ⇒ Đường này **không có khả năng tạo ra một lượt ghi HỢP LỆ**. Nó chỉ đẻ được: một thẻ duyệt
+   *   sai, một cú bấm phí của người dùng, và một lượt từ chối. Bỏ nó đi **không mất năng lực nào**.
+   *
+   * Đường GHI HỢP LỆ vẫn nguyên vẹn và là đường DUY NHẤT: `streamCodingEdit` — nó `read_file`
+   * TRƯỚC, lấy `original` từ **byte trên đĩa**, rồi mới nhờ model dựng bản mới.
+   *
+   * ⚠ `run_command` thì GIỮ LẠI ở vòng 1: nó không có neo băm để hỏng, đi qua danh sách trắng 9
+   *   mục + khớp cấu trúc argv, và vẫn qua HITL. Đây là hai lớp lỗi khác nhau — đừng gộp.
+   */
+  return locQuyetDinhLLMLapTrinh(d);
+}
+
+/**
+ * Phép lọc ở trên, tách thành hàm **THUẦN** để lưới kiểm thẳng được.
+ *
+ * ⚠ Vì sao tách: bản lưới đầu của tôi giả lập `aiGateway`/`aiGgufEngine` bằng `vi.doMock`. Nó XANH
+ * khi chạy riêng và **ĐỎ trong suite** — `doMock` chỉ chi phối đồ thị module của lượt nhập sau nó,
+ * mà chạy cả thư mục thì module đã bị tệp khác nạp trước. Đúng lớp "xanh vì lý do sai / đỏ vì thứ
+ * tự chạy". Một hàm thuần không có mặt tiếp xúc ấy: cùng đầu vào, cùng đầu ra, mọi thứ tự.
+ */
+export function locQuyetDinhLLMLapTrinh(d: ToolDecision): ToolDecision {
+  if (d.tool === "apply_diff") {
+    return { tool: null, args: {}, reason: "CODING_LLM_KHONG_KHOI_XUONG_GHI" };
+  }
   return d;
 }
 
