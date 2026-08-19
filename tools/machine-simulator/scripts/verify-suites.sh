@@ -1569,12 +1569,24 @@ EXPECT_CONFORMANCE=24
 # CLAIMS ARE PAID — ALSO MOVES NO SUITE TOTAL. EXPECT_ABSTRACTIONS 161, EXPECT_CONFORMANCE 24,
 # EXPECT_EDGECORE 1152, EXPECT_EDGESERVICE 52, EXPECT_ENGINEAPI 1374, grand total 2763: unchanged, and
 # again as a MEASUREMENT rather than a convenience. AG-1 adds no test and deletes none. It edits 29 files
-# under src/St4i.EdgeCore and every changed line in them is a `///` line — 96 of them — so a suite total
-# moving would mean it had edited code while claiming to edit prose. It moves EXPECT_WARNINGS 852 -> 751
+# under src/St4i.EdgeCore and NOT ONE changed line in them is anything but a `///` line — that is a ZERO,
+# in both directions, and it is the claim; the raw diff is 106 `///` lines added and 99 removed. A suite
+# total moving would mean it had edited code while claiming to edit prose. It moves EXPECT_WARNINGS 852 -> 751
 # and EXPECT_WARNING_LEDGER nineteen rows -> sixteen (three rows DELETED, not zeroed — see the block at
 # the ledger for why a zeroed row would fail). SuppressionCensusTests is untouched and its three tables
 # are unmoved, which is the check that no override arrived: 5 file / 8 instruction / CS0618 + CS0162,
 # 8 on / 7 off, analyzer-config files EMPTY. EXPECT_BUILD_NODES stays 0.
+#
+# 🔴 THE THREE LINES ABOVE SAID "— 96 of them —" UNTIL BRANCH REVIEW, AND THAT IS THE NINTH TIME. AG-1
+# measured 96, made four more edits, wrote 96 into three files without re-measuring, then withdrew it in
+# commit c3df4f6d and reported "withdrawn in all three places". True BY FILE. False BY OCCURRENCE: the
+# number appears TWICE in THIS file and only ONE of them was retired. The withdrawal block sits at the
+# EXPECT_WARNING_LEDGER, about 3,460 lines BELOW this line, in the same file.
+#   Read the distance, because it is the whole lesson and it is getting worse, not better: AF-1's seventh
+#   instance wrote over a correct number 140 lines away. This one is 3,460 lines away, IN THE FIX FOR
+#   ITSELF. A `grep` for the retired literal is four seconds and neither of us ran it. The correction to a
+#   correction is where this rule keeps landing, so: WHEN YOU WITHDRAW A NUMBER, GREP THE REPOSITORY FOR
+#   IT — retiring one occurrence and saying "all of them" is the same defect wearing the fix's clothes.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 EXPECT_EDGECORE=1152
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
@@ -5032,7 +5044,7 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # (`paramref` naming a parameter not in scope), 3 CS0419 (`cref` matching several overloads) — across 29
 # files, every one of them in src/St4i.EdgeCore. Not one code line was touched, and the checkable form of
 # that is a ZERO rather than a total: `git diff 3e001642 HEAD -- .../src | grep '^[+-]' | grep -v '///'`
-# returns NOTHING, in both directions. The raw diff is 104 `///` lines added and 99 removed.
+# returns NOTHING, in both directions. The raw diff is 106 `///` lines added and 99 removed.
 #   🔴 "all 96 changed lines" IS WITHDRAWN, 2026-08-19, by the task that wrote it, before it left the
 #   branch. 96 was measured, and then FOUR more edits were made (two over-long lines re-wrapped, one
 #   sentence given the member that owns its arguments, one re-flowed) and the number was not re-measured

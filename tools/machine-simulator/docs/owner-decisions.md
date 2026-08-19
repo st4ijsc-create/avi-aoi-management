@@ -1218,7 +1218,7 @@ phần của câu hỏi**. Nêu tên chứ không quyết — nhưng nêu tên *
 + 23 CS1734 + 3 CS0419, trên **29 file**, tất cả trong `src/St4i.EdgeCore`. **Không một dòng mã nào
 bị đụng**, và dạng kiểm được của câu ấy là một số **KHÔNG**, không phải một tổng: trên
 `3e001642..HEAD`, `git diff -- .../src | grep '^[+-]' | grep -v '///'` trả về **RỖNG**, cả hai chiều.
-Diff thô là **104** dòng `///` thêm và **99** dòng `///` bớt. Không một `cref` nào bị **xoá** để cảnh
+Diff thô là **106** dòng `///` thêm và **99** dòng `///` bớt. Không một `cref` nào bị **xoá** để cảnh
 báo biến mất; không một lệnh đè nào; không tắt cờ ở đâu. Nhiệm vụ thứ **mười sáu** liên tiếp không có
 lệnh đè, và `SuppressionCensusTests` **không dịch một hàng** (5/5 xanh, vẫn 5 file / 8 chỉ thị /
 CS0618 + CS0162).
@@ -1276,6 +1276,14 @@ bên trong `St4i.Connector.Abstractions` (ở đó `Models` gắn vào namespace
 `St4i.EdgeCore.Models` — một namespace **có thật** và **không chứa một kiểu nào trong số đó**. Cách
 viết ấy **phân giải được ở một bên ranh giới project và hỏng lặng lẽ ở bên kia**. Đúng loài mục 12 nói
 là vô hình với mọi dụng cụ đo VĂN BẢN, và là thứ cờ được bật để nhìn thấy.
+
+> 🔴 **VÒNG PHẢN BIỆN (2026-08-19) ĐỔI MỘT Ô TRONG PHÂN LOẠI KẾT CỤC, và phản biện ĐÚNG.** Bản đầu xếp
+> `BridgeSpool.cs:73`/`:82` vào *"đích **chưa bao giờ tồn tại**"* và viết *"không có `MaxBytes`"*.
+> **`BridgeSpoolOptions.MaxBytes`/`.MaxAgeHours` CÓ THẬT**, công khai, và **chính là cái cap ấy** —
+> `St4i.EngineApi/Program.cs` truyền đúng hai giá trị đó vào ctor. Câu của tôi chỉ đúng khi **thu hẹp vào
+> lớp `BridgeSpool`** và **không nói ra sự thu hẹp ấy**. Đã trỏ lại bằng cref đủ tên, **được trình biên
+> dịch kiểm**. Phân loại: **63 trỏ lại / 15 bỏ trỏ / 23 lỗi phạm vi**, thay cho 61 / 17 / 23.
+> Con số cảnh báo **không dịch**: đo lại sau phép sửa, vẫn **751**, sổ vẫn **185 / 566**.
 
 **Việc còn nợ sau đợt này, nêu tên chứ không làm:**
 * **532 chỗ trống bao phủ trên 90 file** (448 CS1591 + 84 CS1573) — đợt 5–8. **Mỗi đợt đo lại.**

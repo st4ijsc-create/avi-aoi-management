@@ -70,7 +70,8 @@ public interface IBridgeSpool
 /// <c>sqlite_sequence</c>'s on-disk state). See <c>BridgeSpoolTests.Seq_NeverReused_EvenAfterTheTableIsFullyDrained</c>
 /// for the proof.
 ///
-/// <b>Byte-size measure for the constructor's <c>maxBytes</c> cap:</b> <c>SUM(LENGTH(payload))</c> across every
+/// <b>Byte-size measure for the <see cref="BridgeSpoolOptions.MaxBytes"/> cap</b> (it reaches this class as
+/// the constructor's <c>maxBytes</c> argument)<b>:</b> <c>SUM(LENGTH(payload))</c> across every
 /// row currently in <c>spool</c> — the sum of PAYLOAD bytes only (topic text and per-row overhead are not
 /// counted). Deliberately NOT <c>page_count * page_size</c>: that measure includes WAL/freelist/index pages
 /// and would drift with each connection's <c>PRAGMA</c>s and vacuum state, none of which is under this
@@ -79,7 +80,8 @@ public interface IBridgeSpool
 ///
 /// <b>Drop-oldest trim policy</b> (<see cref="TrimAsync"/>), same policy as
 /// <see cref="St4i.EdgeCore.Transport.WalMaintenance.TrimDirectory"/>: age-based trim runs first (deletes
-/// every row older than the constructor's <c>maxAgeHours</c>), then byte-based trim runs against whatever remains
+/// every row older than <see cref="BridgeSpoolOptions.MaxAgeHours"/>, which reaches this class as the
+/// constructor's <c>maxAgeHours</c> argument), then byte-based trim runs against whatever remains
 /// (walks from the NEWEST row backward, keeping rows while they still fit the budget, so the OLDEST rows
 /// are the ones dropped) — mirroring <see cref="St4i.EdgeCore.Transport.WalMaintenance.TrimFileToMaxBytes"/>'s
 /// own backward-scan algorithm, including its "always keep at least the single newest row, even alone over
