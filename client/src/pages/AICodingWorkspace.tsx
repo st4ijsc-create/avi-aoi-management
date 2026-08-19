@@ -69,6 +69,7 @@ import { mapAppRoleToAiRole } from "@/lib/aiRole";
 import {
   useKbChatStream,
   type KbPendingAction,
+  type KbToolLoopProgress,
 } from "@/hooks/useKbChatStream";
 import { AIToolResultCard, type ToolResultPayload } from "@/components/AIToolResultCard";
 import {
@@ -80,9 +81,10 @@ import {
 import { HunkDiffView } from "@/components/diff/HunkDiffView";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+// ★ doc 81 · VIỆC 3 (1) — `Input` ĐÃ GỠ: ô nhập nay là `<textarea>` (xem `phanQuyetPhimNhap`).
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { phanQuyetPhimNhap, tuGianChieuCao, TRAN_CAO_O_NHAP_PX } from "@/lib/aiCodingInput";
 import {
   bamChuoi, catLoiChoPrompt, chuanHoaDauRa, deXuatLapLai, quyetDinhTiep,
   type LyDoDungVong,
@@ -96,13 +98,28 @@ import {
   Repeat, CheckCircle2, OctagonX, MessagesSquare, Plus, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import Markdown from "react-markdown";
+/**
+ * ★★★ doc 81 · VIỆC 3 (2) — `Streamdown` THAY `react-markdown` trần.
+ *
+ * `react-markdown` trần không tô cú pháp và không có nút chép, nên một khối mã 60 dòng model vừa sinh
+ * ra là một khối chữ xám phải bôi đen bằng tay. `Streamdown` **đã là dependency TRỰC TIẾP**
+ * (`package.json`), **đã dùng ở `AIChatBox.tsx`**, và mặc định `controls: true` ⇒ tô cú pháp bằng
+ * Shiki + nút CHÉP trên mỗi khối mã.
+ *
+ * ⚠ KHÔNG cài gói mới, và cố ý KHÔNG dùng `rehype-highlight`: gói ấy **không có** trong repo.
+ * (`shiki`/`rehype-raw`/`remark-gfm` CÓ trong `node_modules` nhưng chỉ là dependency BẮC CẦU của
+ * `streamdown` — nhập thẳng chúng là dựng một "phantom dependency" sẽ vỡ ở lượt nâng cấp sau.)
+ */
+import { Streamdown } from "streamdown";
 
 // ── Basename tương đối (repo dùng "/" cho relPath, kể cả trên Windows) ──
 function baseName(p: string): string {
   const parts = p.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? p;
 }
+
+// ★★★ doc 81 · VIỆC 3 (1) — chính sách ô nhập ở module LÁ `@/lib/aiCodingInput` (thuần, đo thẳng
+// bằng lưới đơn vị). Xem docblock ở đó để biết vì sao nó KHÔNG nằm inline trong JSX.
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // CÂY TỆP — mỗi thư mục tự nạp con (list_files depth 1) khi mở
@@ -543,6 +560,13 @@ export default function AICodingWorkspace() {
   const [pending, setPending] = useState<KbPendingAction | null>(null);
   const [actionState, setActionState] = useState<ActionState>("pending");
   const endRef = useRef<HTMLDivElement>(null);
+  const oNhapRef = useRef<HTMLTextAreaElement>(null);
+  /**
+   * ★★★ doc 81 · VIỆC 2 — vòng lặp tool ĐANG chạy tới vòng mấy. `null` ⇔ không có vòng nào.
+   * ⚠ Bắt buộc phải hiện: trần là 180 s, và một màn hình đứng im 180 s là chỉ dấu "treo", không
+   * phải "đang làm việc". Đây là điều kiện brief nêu đích danh cho việc 2.
+   */
+  const [vongTool, setVongTool] = useState<KbToolLoopProgress | null>(null);
 
   const {
     streamingText, isStreaming, error: streamError, abortedRef, startKbStream, stopKbStream,
@@ -601,6 +625,9 @@ export default function AICodingWorkspace() {
     setStreamTool(null);
     setPending(null);
     setActionState("pending");
+    setVongTool(null);
+    // Ô nhập vừa bị xoá ⇒ trả chiều cao về một dòng (nếu không nó giữ nguyên chiều cao cũ).
+    requestAnimationFrame(() => tuGianChieuCao(oNhapRef.current));
 
     const res = await startKbStream(
       {
@@ -618,6 +645,8 @@ export default function AICodingWorkspace() {
       },
       {
         onToolResult: (tr) => setStreamTool(tr),
+        // ★★★ doc 81 · VIỆC 2 — "đang ở vòng mấy". `phase:"dung"` mang theo lý do dừng.
+        onToolLoop: (p) => setVongTool(p),
         onPendingAction: (pa) => {
           setPending(pa);
           setActionState("pending");
@@ -1076,7 +1105,7 @@ export default function AICodingWorkspace() {
                       {m.role === "user" ? (
                         <p className="whitespace-pre-wrap">{m.content}</p>
                       ) : (
-                        <div className="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed"><Markdown>{m.content}</Markdown></div>
+                        <div className="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed"><Streamdown mode="static">{m.content}</Streamdown></div>
                       )}
                     </div>
                     {m.role === "user" && <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary"><User className="h-3.5 w-3.5" /></div>}
@@ -1089,8 +1118,23 @@ export default function AICodingWorkspace() {
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10"><Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /></div>
                     <div className="max-w-[85%] space-y-2 rounded-lg bg-muted px-3 py-2 text-[13px]">
                       {streamTool && <AIToolResultCard toolResult={streamTool} />}
-                      {streamingText && <div className="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed"><Markdown>{streamingText}</Markdown></div>}
+                      {/* `mode="streaming"` — Streamdown vá markdown DỞ DANG (``` chưa đóng) nên khối
+                          mã đang stream vẫn hiện đúng thay vì nhảy layout ở mỗi token. */}
+                      {streamingText && <div className="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed"><Streamdown mode="streaming">{streamingText}</Streamdown></div>}
                     </div>
+                  </div>
+                )}
+                {/* ★★★ doc 81 · VIỆC 2 — VÒNG LẶP TOOL: đang ở vòng mấy / trần bao nhiêu / vì sao dừng. */}
+                {vongTool && isStreaming && vongTool.phase !== "dung" && (
+                  <div className="flex items-center gap-2 rounded-md border border-dashed px-2 py-1.5 text-[11px] text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                    <span>
+                      {t("repoWs.toolLoop.running", "Vòng đọc mã — lượt {{round}}/{{tran}}", {
+                        round: vongTool.round,
+                        tran: cauHinhVongQ.data?.tranTool ?? vongTool.round,
+                      })}
+                      {vongTool.toolName ? ` · ${vongTool.toolName}` : ""}
+                    </span>
                   </div>
                 )}
                 {isStreaming && !streamingText && !streamTool && (
@@ -1134,22 +1178,42 @@ export default function AICodingWorkspace() {
               </div>
             </ScrollArea>
 
-            {/* Ô nhập */}
+            {/* ★★★ doc 81 · VIỆC 3 (1) — Ô nhập NHIỀU DÒNG: dán được stack trace, Shift+Enter xuống dòng. */}
             <div className="border-t p-2">
-              <div className="flex gap-2">
-                <Input
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={oNhapRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => { setInput(e.target.value); tuGianChieuCao(e.currentTarget); }}
                   placeholder={t("repoWs.chat.placeholder", "Hỏi tác nhân: đọc/tìm mã, đề xuất sửa, chạy test…")}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  onKeyDown={(e) => {
+                    const pq = phanQuyetPhimNhap({
+                      key: e.key, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey,
+                      isComposing: (e.nativeEvent as unknown as { isComposing?: boolean }).isComposing,
+                    });
+                    // "xuong_dong" và "bo_qua" ⇒ KHÔNG `preventDefault` ⇒ trình duyệt tự chèn "\n".
+                    if (pq === "gui") { e.preventDefault(); void handleSend(); }
+                  }}
                   disabled={isStreaming}
+                  rows={1}
+                  className={cn(
+                    "flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-[13px] leading-relaxed",
+                    "ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none",
+                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    "disabled:cursor-not-allowed disabled:opacity-50",
+                  )}
+                  style={{ maxHeight: TRAN_CAO_O_NHAP_PX }}
+                  aria-label={t("repoWs.chat.placeholder", "Hỏi tác nhân: đọc/tìm mã, đề xuất sửa, chạy test…")}
                 />
                 {isStreaming ? (
-                  <Button variant="destructive" size="icon" onClick={stopKbStream}><StopCircle className="h-4 w-4" /></Button>
+                  <Button variant="destructive" size="icon" className="shrink-0" onClick={stopKbStream}><StopCircle className="h-4 w-4" /></Button>
                 ) : (
-                  <Button size="icon" onClick={() => handleSend()} disabled={!input.trim()}><Send className="h-4 w-4" /></Button>
+                  <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={!input.trim()}><Send className="h-4 w-4" /></Button>
                 )}
               </div>
+              <p className="mt-1 px-1 text-[10px] text-muted-foreground">
+                {t("repoWs.chat.keyHint", "Enter để gửi · Shift+Enter để xuống dòng (dán được stack trace nhiều dòng)")}
+              </p>
             </div>
           </div>
         </div>

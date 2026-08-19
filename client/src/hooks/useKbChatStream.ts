@@ -229,6 +229,21 @@ export interface KbStreamCallbacks {
   onClientAction?: (action: KbClientAction) => void;
   /** P3/D8 (doc 34) — fired once with the vision step (VL reading or degrade note). */
   onVision?: (vision: KbVisionNote) => void;
+  /**
+   * ★★★ doc 81 · VIỆC 2 — mỗi nhịp của vòng lặp tool (bắt đầu vòng · vòng xong · vòng dừng).
+   * Thuần HIỂN THỊ: một consumer ném ở đây KHÔNG được làm hỏng lượt stream (xem `bao()` trong
+   * `toolLoop.ts` — cùng lập trường: đây là kênh hiển thị, không phải kênh quyết định).
+   */
+  onToolLoop?: (p: KbToolLoopProgress) => void;
+}
+
+/** ★★★ doc 81 · VIỆC 2 — một nhịp tiến độ của vòng lặp tool (hình dạng khớp `ToolLoopProgress`). */
+export interface KbToolLoopProgress {
+  round: number;
+  phase: "dang_goi" | "xong" | "dung";
+  toolName: string | null;
+  elapsedMs: number;
+  stop?: string;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -353,9 +368,33 @@ export function useKbChatStream() {
                 ok?: boolean;
                 visionText?: string | null;
                 reason?: string | null;
+                // ★★★ doc 81 · VIỆC 2 — tiến độ vòng lặp tool. Server phát sự kiện này TỪ TRƯỚC
+                // (`aiLocalKnowledgeService` :3228, đường vận hành) nhưng client CHƯA BAO GIỜ đọc
+                // nó — grep `tool_loop` trong `client/` = 0. Nay chế độ lập trình cần nó để người
+                // dùng THẤY đang ở vòng mấy trên một trần 180 s.
+                round?: number;
+                phase?: "dang_goi" | "xong" | "dung";
+                elapsedMs?: number;
+                stop?: string;
               };
 
-              if (payload.type === "vision") {
+              if (payload.type === "tool_loop" && typeof payload.round === "number") {
+                // ⚠ NUỐT CÓ CHỦ Ý: một consumer hiển thị hỏng KHÔNG được giết lượt stream đang
+                // chạy. Không nuốt ở đây thì lỗi rơi vào `catch (parseErr)` bên dưới và — vì nó
+                // KHÔNG chứa chữ "JSON" — sẽ được NÉM LẠI, tức một cái nhãn "vòng 2/3" vẽ hỏng
+                // sẽ huỷ nguyên câu trả lời. Cùng lập trường với `bao()` ở `toolLoop.ts`.
+                try {
+                  callbacks?.onToolLoop?.({
+                    round: payload.round,
+                    phase: payload.phase ?? "dang_goi",
+                    toolName: payload.toolName ?? null,
+                    elapsedMs: payload.elapsedMs ?? 0,
+                    stop: payload.stop,
+                  });
+                } catch {
+                  /* kênh hiển thị, không phải kênh quyết định */
+                }
+              } else if (payload.type === "vision") {
                 // P3/D8 (doc 34) — the VL reading step (or its degrade note).
                 vision = {
                   ok: !!payload.ok,

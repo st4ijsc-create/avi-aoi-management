@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import {
   tryExecuteToolLoop,
-  tryExecuteCodingTool,
+  tryExecuteCodingToolLoop,
   executeDecision,
   type ToolResult,
   type ToolExecContext,
@@ -36,7 +36,9 @@ import {
   streamCodingModel,
   tranTokenChoTep,
   TRAN_KY_TU_TEP_SUA,
+  dungKhoiLichSu,
   type KetQuaChu,
+  type LuotHoiThoai,
 } from "./aiCodingAgent";
 import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
 // ★ G4-B — trọng số hạng nguồn (module LÁ, dùng CHUNG với bộ eval `--parity`).
@@ -2639,6 +2641,13 @@ async function* streamCodingAnswer(
   question: string,
   context: KbQueryContext,
   execCtx?: ToolExecContext,
+  /**
+   * ★★★ doc 81 · VIỆC 1 — LỊCH SỬ HỘI THOẠI. Trước lượt này tham số **không tồn tại**: `streamAnswer`
+   * nhận `history` rồi gọi hàm này mà không truyền, nên ở chế độ lập trình lịch sử bị vứt 100%.
+   * Chính sách cắt theo ngân sách nằm ở `aiCodingAgent.dungKhoiLichSu` (lịch sử nhường chỗ cho nội
+   * dung tệp, không bao giờ được đẩy prompt vượt trần slot).
+   */
+  history: readonly LuotHoiThoai[] = [],
 ): AsyncGenerator<StreamEvent> {
   const language = resolveLanguage(question, context);
 
@@ -2685,7 +2694,7 @@ async function* streamCodingAnswer(
    * ⚠ Cờ `AI_CODING_EDIT=0` ⇒ `streamCodingEdit` trả `false` ngay ⇒ rơi xuống đường cũ, không im lặng.
    */
   if (typeof context?.codingEditPath === "string" && context.codingEditPath.trim() !== "") {
-    const daXuLyGhim = yield* streamCodingEdit(question, context.codingEditPath.trim(), language, context, execCtx2);
+    const daXuLyGhim = yield* streamCodingEdit(question, context.codingEditPath.trim(), language, context, execCtx2, history);
     if (daXuLyGhim) return;
   }
 
@@ -2704,11 +2713,45 @@ async function* streamCodingAnswer(
     typeof quyetDinh.args.path === "string" &&
     laYDinhSuaTep(question)
   ) {
-    const daXuLy = yield* streamCodingEdit(question, quyetDinh.args.path, language, context, execCtx2);
+    const daXuLy = yield* streamCodingEdit(question, quyetDinh.args.path, language, context, execCtx2, history);
     if (daXuLy) return;
   }
 
-  const outcome = await tryExecuteCodingTool(question, context, execCtx2);
+  /**
+   * ★★★ doc 81 · VIỆC 2 — VÒNG LẶP TOOL ĐA BƯỚC (dùng lại `runToolLoop`, xem `aiLocalTools/index.ts`).
+   *
+   * ⚠ Cùng khuôn "hàng chờ + lời hứa đánh thức" mà đường vận hành đã dùng (:3209): một generator
+   * KHÔNG `yield` được từ trong callback, nên tiến độ phải đi qua hàng chờ rồi được rút ở vòng
+   * `while` dưới đây. Không có nó, người dùng ngồi nhìn màn hình đứng im tới `CODING_LOOP_DEFAULT_MS`
+   * — mà ở đây trần là **180 s**, tức đúng thứ phải tránh nhất.
+   */
+  const hangChoVong: ToolLoopProgress[] = [];
+  let danhThucVong: (() => void) | null = null;
+  let vongXong = false;
+  const loiHuaVong = tryExecuteCodingToolLoop(question, context, execCtx2, (ev) => {
+    hangChoVong.push(ev);
+    danhThucVong?.();
+  });
+  // `then(ok, err)` KHÔNG được để lại nhánh reject chưa ai bắt (unhandled rejection giết tiến trình
+  // dưới Node ≥15). `await loiHuaVong` phía dưới mới là nơi lỗi thật sự được xử lý.
+  void loiHuaVong.then(() => {}, () => {}).then(() => {
+    vongXong = true;
+    danhThucVong?.();
+  });
+  while (true) {
+    while (hangChoVong.length > 0) {
+      const ev = hangChoVong.shift()!;
+      yield { type: "tool_loop", round: ev.round, phase: ev.phase, toolName: ev.tool, elapsedMs: ev.elapsedMs, stop: ev.stop };
+    }
+    if (vongXong) break;
+    await new Promise<void>((r) => {
+      danhThucVong = () => {
+        danhThucVong = null;
+        r();
+      };
+    });
+  }
+  const outcome = await loiHuaVong;
   const toolName = outcome.decision.tool ?? null;
 
   // Write tool (run_command / apply_diff) → HITL: thẻ xác nhận + tóm tắt (chưa chạm đĩa/tiến trình).
@@ -2746,11 +2789,25 @@ async function* streamCodingAnswer(
     !!outcome.result &&
     (outcome.result.note === "NOT_FOUND" || outcome.result.note === "NO_MATCH");
 
-  // Read tool chạy (read_file / list_files / grep_repo) → HIỆN NỘI DUNG THẬT. Kể cả lượt từ chối hộp
-  // cát cũng trả về `result` kèm `note` giải thích — nên nhánh này bao luôn cả câu từ chối có mã.
+  /**
+   * Read tool chạy (read_file / list_files / grep_repo) → HIỆN NỘI DUNG THẬT. Kể cả lượt từ chối hộp
+   * cát cũng trả về `result` kèm `note` giải thích — nên nhánh này bao luôn cả câu từ chối có mã.
+   *
+   * ★ doc 81 · VIỆC 2 — nay có thể có NHIỀU vòng. Phát MỘT sự kiện `tool` cho MỖI vòng có dữ liệu và
+   * nối các `textSummary` lại: nếu chỉ lấy vòng cuối thì kết quả `grep` của vòng 1 biến mất và người
+   * dùng không thấy vì sao tác nhân lại đọc đúng tệp ấy — tức mất chính thứ vòng lặp làm ra.
+   */
   if (outcome.result && !doanTruot) {
-    yield { type: "tool", toolName, toolResult: outcome.result };
-    const answer = outcome.result.textSummary ?? "";
+    const cacVong = outcome.ketQuaTungVong.length > 0
+      ? outcome.ketQuaTungVong
+      : [{ round: 1, toolName: toolName ?? "", result: outcome.result }];
+    for (const v of cacVong) {
+      yield { type: "tool", toolName: v.toolName || null, toolResult: v.result };
+    }
+    const answer = cacVong
+      .map((v) => v.result.textSummary ?? "")
+      .filter((s) => s.trim() !== "")
+      .join("\n\n");
     yield { type: "token", token: answer };
     yield done(answer);
     return;
@@ -2772,7 +2829,7 @@ async function* streamCodingAnswer(
    * trả thẳng `codingNoToolMessage()` mà **KHÔNG BAO GIỜ gọi model**. Nay nó gọi model với persona
    * KỸ SƯ LẬP TRÌNH (không RAG vận hành, không [1][2]) và stream mã thật ra.
    */
-  const ketCuc = yield* streamCodingGenerate(question, language, context, execCtx2);
+  const ketCuc = yield* streamCodingGenerate(question, language, context, execCtx2, history);
   if (ketCuc === "xong") return;
 
   // KHÔNG tool nào khớp VÀ nhánh sinh mã không chạy (cờ tắt / model chưa sẵn sàng) → nói thẳng.
@@ -2878,6 +2935,7 @@ async function* streamCodingEdit(
   language: KbLanguage,
   context: KbQueryContext,
   execCtx?: ToolExecContext,
+  history: readonly LuotHoiThoai[] = [],
 ): AsyncGenerator<StreamEvent, boolean> {
   if (!codingEditEnabled()) return false;
   if (!execCtx) return false;
@@ -2925,11 +2983,38 @@ async function* streamCodingEdit(
   }
 
   const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
+  const heThong = personaSuaTep(language, nguCanh);
+  const tranToken = tranTokenChoTep(goc.length);
+  /**
+   * ★★★ doc 81 · VIỆC 1 — Ở ĐƯỜNG SỬA TỆP, LỊCH SỬ NHƯỜNG CHỖ CHO NỘI DUNG TỆP, theo CẤU TẠO.
+   *
+   * `ghepPrompt` dựng ĐÚNG chuỗi sẽ gửi lên model, nên phép cân là trên vật thật. Prompt gốc (đã
+   * chở cả tệp) vượt trần ⇒ `soLuotGiu = 0` **và** `vuotTruocKhiCoLichSu = true`.
+   *
+   * ⚠⚠ NỢ CÓ SẴN ĐƯỢC ĐÓNG Ở ĐÂY: `TRAN_KY_TU_TEP_SUA = 60.000` ký tự ⇒ ~21.429 token vào; cộng
+   * `tranTokenChoTep(60.000) = 12.000` token ra = ~33.900 > **32.768** trần mỗi slot. Tức một tệp
+   * đúng bằng trần **đã** làm `congNganSachNguCanh` NÉM từ trước lượt này, và người dùng nhận một
+   * bức tường chữ kỹ thuật thay vì một câu nói rõ phải làm gì. Nay nó thành `NGAN_SACH` — một lời
+   * từ chối trung thực, và nó bắt cả những tệp nhỏ hơn 60k mà persona/ngữ cảnh dự án đẩy quá trần.
+   */
+  const lich = dungKhoiLichSu({
+    lichSu: history,
+    systemPrompt: heThong,
+    maxTokens: tranToken,
+    lang: language,
+    ghepPrompt: (khoi) => promptSuaTep(relPath, goc, question, language, khoi),
+  });
+  if (lich.vuotTruocKhiCoLichSu) {
+    const m = codingKhongTuSuaMessage(language, relPath, "NGAN_SACH");
+    yield { type: "token", token: m };
+    yield doneSinhMa(m, "tool");
+    return true;
+  }
   const it = rutChuCoCanh(
     streamCodingModel({
-      systemPrompt: personaSuaTep(language, nguCanh),
-      prompt: promptSuaTep(relPath, goc, question, language),
-      maxTokens: tranTokenChoTep(goc.length),
+      systemPrompt: heThong,
+      prompt: promptSuaTep(relPath, goc, question, language, lich.khoi),
+      maxTokens: tranToken,
       temperature: 0.15,
       // Phạt lặp làm hỏng việc chép lại NGUYÊN VĂN một tệp (thụt đầu dòng, `}` liên tiếp…).
       repeatPenalty: 1.0,
@@ -3018,16 +3103,29 @@ async function* streamCodingGenerate(
   language: KbLanguage,
   context: KbQueryContext,
   execCtx?: ToolExecContext,
+  history: readonly LuotHoiThoai[] = [],
 ): AsyncGenerator<StreamEvent, LyDoKhongSinhMa> {
   if (!codingGenEnabled()) return "tat_co";
   if (!(await codingModelSanSang())) return "model_offline";
 
   const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
+  const heThong = personaSinhMa(language, nguCanh);
+  const MAX_TOKENS_SINH = 3_000;
+  // ★★★ doc 81 · VIỆC 1 — nhánh SINH MÃ: đây là nơi *"giờ làm tiếp phần B"* sống hay chết. Ngân
+  // sách rộng hơn hẳn đường sửa (prompt gốc chỉ là câu hỏi), nhưng vẫn đi qua ĐÚNG cổng ấy — một
+  // lượt `assistant` chở nguyên một tệp vừa đọc cũng đủ làm tràn.
+  const lich = dungKhoiLichSu({
+    lichSu: history,
+    systemPrompt: heThong,
+    maxTokens: MAX_TOKENS_SINH,
+    lang: language,
+    ghepPrompt: (khoi) => promptSinhMa(question, language, khoi),
+  });
   const it = rutChuCoCanh(
     streamCodingModel({
-      systemPrompt: personaSinhMa(language, nguCanh),
-      prompt: promptSinhMa(question, language),
-      maxTokens: 3_000,
+      systemPrompt: heThong,
+      prompt: promptSinhMa(question, language, lich.khoi),
+      maxTokens: MAX_TOKENS_SINH,
       temperature: 0.25,
       userId: execCtx?.user?.id,
     }),
@@ -3132,25 +3230,28 @@ function codingKhongDoiMessage(language: KbLanguage, relPath: string): string {
 function codingKhongTuSuaMessage(
   language: KbLanguage,
   relPath: string,
-  ly: "NO_CONTENT" | "TRUNCATED" | "REDACTED" | "TOO_LARGE",
+  ly: "NO_CONTENT" | "TRUNCATED" | "REDACTED" | "TOO_LARGE" | "NGAN_SACH",
 ): string {
   const vi: Record<typeof ly, string> = {
     NO_CONTENT: `Đọc được "${relPath}" nhưng không có nội dung để sửa.`,
     TRUNCATED: `Tôi chỉ đọc được MỘT PHẦN "${relPath}" (chạm trần byte). Sửa một tệp mà chỉ nhìn nửa đầu là đoán mò, và diff dựng từ đó chắc chắn bị từ chối vì lệch băm. Hãy thu hẹp phạm vi hoặc tăng trần byte.`,
     REDACTED: `Nội dung "${relPath}" có chuỗi trông như BÍ MẬT nên đã bị che khi đọc. Nếu tôi sửa từ bản đã che thì chỗ che sẽ được ghi ĐÈ lên mã thật — hỏng CÂM. TỪ CHỐI sửa tệp này; hãy sửa tay.`,
     TOO_LARGE: `Tệp "${relPath}" quá lớn (> ${TRAN_KY_TU_TEP_SUA} ký tự) để đưa trọn vào một lượt sửa. Hãy tách tệp hoặc nêu rõ hàm cần sửa để tôi đọc/giải thích thay vì ghi đè cả tệp.`,
+    NGAN_SACH: `Tệp "${relPath}" lọt trần ký tự nhưng KHÔNG lọt **ngân sách ngữ cảnh** của model: nội dung tệp cộng phần dành cho câu trả lời đã vượt trần token mỗi slot. Đây KHÔNG phải do lịch sử hội thoại — lịch sử đã bị bỏ hết mà vẫn không đủ chỗ. Hãy tách tệp, hoặc nêu rõ hàm cần sửa để tôi đọc/giải thích thay vì ghi đè cả tệp.`,
   };
   const en: Record<typeof ly, string> = {
     NO_CONTENT: `Read "${relPath}" but there is no content to edit.`,
     TRUNCATED: `I could only read PART of "${relPath}" (byte cap). Editing from a partial view is guessing, and the resulting diff would be rejected on a hash mismatch.`,
     REDACTED: `"${relPath}" contains a secret-looking string that was redacted on read. Editing from the redacted copy would write the placeholder over real code (silent corruption). Refusing.`,
     TOO_LARGE: `"${relPath}" is too large (> ${TRAN_KY_TU_TEP_SUA} chars) for a whole-file edit. Split it, or name the function so I can read/explain instead of overwriting.`,
+    NGAN_SACH: `"${relPath}" is under the character cap but does NOT fit the model's CONTEXT BUDGET: the file plus the reserved answer tokens exceed the per-slot limit. This is not caused by conversation history — history was dropped entirely and it still does not fit. Split the file, or name the function so I can read/explain instead of overwriting.`,
   };
   const zh: Record<typeof ly, string> = {
     NO_CONTENT: `已读取 "${relPath}"，但没有可编辑的内容。`,
     TRUNCATED: `只读到 "${relPath}" 的一部分（字节上限）。基于片段修改等于猜测，生成的 diff 也会因哈希不匹配被拒绝。`,
     REDACTED: `"${relPath}" 含有疑似密钥的字符串，读取时已被遮蔽。基于遮蔽副本修改会把占位符写回真实代码（静默损坏），故拒绝。`,
     TOO_LARGE: `"${relPath}" 太大（> ${TRAN_KY_TU_TEP_SUA} 字符），无法整文件修改。请拆分文件，或指明要改的函数。`,
+    NGAN_SACH: `"${relPath}" 未超字符上限，但超出模型的**上下文预算**：文件内容加上预留的回答 token 已超过每个 slot 的上限。这与对话历史无关——历史已被全部丢弃仍不够。请拆分文件，或指明要改的函数。`,
   };
   return language === "en" ? en[ly] : language === "zh" ? zh[ly] : vi[ly];
 }
@@ -3187,7 +3288,8 @@ export async function* streamAnswer(
   // này KHÔNG chạm `tryExecuteToolLoop`/`retrieveKnowledge`/persona vận hành/cache — nó là một đường
   // đi hoàn toàn khác, nên bật/tắt cờ là một phép đo A/B sạch.
   if (context?.codingMode === true) {
-    yield* streamCodingAnswer(question, context, execCtx);
+    // ★★★ doc 81 · VIỆC 1 — `history` ĐÃ có sẵn ở đây từ trước; thứ thiếu là một tham số để nhận nó.
+    yield* streamCodingAnswer(question, context, execCtx, history);
     return;
   }
   const userLevel = rolToUserLevel(userRole);

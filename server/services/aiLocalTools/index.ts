@@ -45,6 +45,7 @@ import {
   classifyCodingToolIntent,
   classifyCodingToolIntentLLM,
   decideNextToolLLM,
+  decideNextCodingToolLLM,
   type ToolContext,
 } from "./intentClassifier";
 import { runToolLoop, laLoiBoChonTool, type ToolLoopProgress, type ToolLoopResult } from "./toolLoop";
@@ -316,6 +317,164 @@ export async function tryExecuteToolLoop(
     // `loop.errors` giữ đủ mọi lỗi cho người gọi nào muốn nói thật (xem `aiLocalKnowledgeService`).
     error: loop.errors[0]?.code,
     loop,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 81 · VIỆC 2 — VÒNG LẶP TOOL ĐA BƯỚC CHO **CHẾ ĐỘ LẬP TRÌNH**
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ─── VẤN ĐỀ ĐO ĐƯỢC ───────────────────────────────────────────────────────────────────────────
+ * Đường VẬN HÀNH có `runToolLoop` (model đọc kết quả vòng trước rồi tự chọn bước tiếp). Đường LẬP
+ * TRÌNH gọi `tryExecuteCodingTool` **ĐÚNG MỘT LẦN**. Nhưng mọi việc thật là *tìm → đọc vài tệp →
+ * hiểu*, nên người phải làm bộ điều phối bằng tay: gõ "tìm X", đọc danh sách, gõ "đọc tệp Y".
+ *
+ * ─── DÙNG LẠI, KHÔNG VIẾT CÁI THỨ HAI ────────────────────────────────────────────────────────
+ * `runToolLoop` là một hàm THUẦN với mọi tác dụng phụ được TIÊM (deciders · execute · killSwitch ·
+ * đồng hồ). Bốn trần, guard lặp, cắt-khi-có-chỉ-thị-trong-dữ-liệu, bất biến ngân sách token — tất
+ * cả đã có lưới. Ở đây chỉ tiêm bốn thứ khác vào. **Không một dòng nào của `toolLoop.ts` bị sửa**,
+ * nên đường vận hành không đổi một byte và mọi lưới của nó vẫn phát biểu về đúng vật cũ.
+ *
+ * ─── HITL CÒN NGUYÊN Ở ĐÂU (hai lớp độc lập) ─────────────────────────────────────────────────
+ *  • **Lớp 1 — theo TÊN, đứng TRƯỚC:** `decideNextCodingToolLLM` chỉ nhận 3 tool ĐỌC. `apply_diff`
+ *    và `run_command` **không tới được** vòng ≥2 (xem docblock `CODING_LOOP_TOOL_NAMES`).
+ *  • **Lớp 2 — theo CẤU TẠO, bên dưới:** executor là `executeDecision` NGUYÊN BẢN; mọi
+ *    `kind:"write"` rơi vào `proposeAction` ⇒ `runToolLoop` trả `stop: "cho_phe_duyet"` và DỪNG.
+ *    Kể cả khi lớp 1 bị gỡ, không byte nào rời ra đĩa mà không có người bấm.
+ * Vòng 1 giữ NGUYÊN `chonToolLapTrinh` (đủ 5 tool) — một câu người gõ thẳng *"chạy dotnet test"*
+ * vẫn ra thẻ duyệt y như trước.
+ */
+export const CODING_LOOP_DEFAULT_ROUNDS = 3;
+/** Trần CỨNG. Cấu hình không nới quá được — mỗi vòng là một lượt model 30B (~30–75 s). */
+export const CODING_LOOP_HARD_MAX_ROUNDS = 5;
+/**
+ * Trần thời gian. Rộng hơn hẳn đường vận hành (20 s): ở đó bộ chọn là model nhỏ, ở đây mỗi vòng đi
+ * qua chính model 30B. 20 s sẽ cắt vòng 2 trước cả khi nó kịp trả lời ⇒ một cái trần TRANG TRÍ,
+ * đúng thứ `toolLoop.ts` đã cảnh báo.
+ */
+export const CODING_LOOP_DEFAULT_MS = 180_000;
+
+/**
+ * ★ Cờ. **Mặc định BẬT** — khác `AI_TOOL_LOOP_ENABLED` (mặc định TẮT), và có lý do đo được: ở
+ * đường vận hành, bật vòng đổi chi phí của MỌI lượt chat có tool. Ở đây KHÔNG: xem `MO_DUONG_VONG_SAU`
+ * — lượt "đọc tệp X" tốn đúng 0 lượt model thêm.
+ */
+export function codingToolLoopEnabled(): boolean {
+  return (process.env.AI_CODING_TOOL_LOOP ?? "1") !== "0";
+}
+
+/** Trần vòng đang có hiệu lực, đã KẸP bằng trần cứng (cấu hình không tự nới được). */
+export function tranVongLapTrinh(): number {
+  const v = Number(process.env.AI_CODING_TOOL_LOOP_MAX_ROUNDS);
+  const n = Number.isFinite(v) && v > 0 ? Math.floor(v) : CODING_LOOP_DEFAULT_ROUNDS;
+  return Math.min(CODING_LOOP_HARD_MAX_ROUNDS, Math.max(1, n));
+}
+
+/**
+ * ★★★ TOOL "MỞ ĐƯỜNG" — điều kiện để vòng lặp được đi tiếp qua vòng 1.
+ *
+ * ⚠⚠ ĐÂY LÀ CÁI CHẶN MỘT HỒI QUY TRẢI NGHIỆM ĐO ĐƯỢC, không phải một tối ưu. Không có nó, câu
+ * *"đọc server/routers.ts"* — hôm nay tất định, KHÔNG một lượt model nào, trả lời gần như tức thì —
+ * sẽ tốn thêm một lượt bộ chọn 30B (~30–75 s) chỉ để nghe model nói "đủ rồi". Người dùng sẽ tắt
+ * tính năng, và họ đúng.
+ *
+ * Vì sao ĐÚNG hai tool này: `read_file` trả về **chính câu trả lời** (nội dung tệp). `grep_repo` và
+ * `list_files` trả về **con trỏ** (đường dẫn, dòng khớp) — người hỏi "hàm này gọi ở đâu" muốn thấy
+ * MÃ, không phải một danh sách đường dẫn. Đó đúng là mắt xích *tìm → đọc* mà việc này tồn tại để nối.
+ * Vòng 2 trở đi thì bộ chọn quyết định bình thường (nên `grep → read → read` chạy được).
+ */
+const MO_DUONG_VONG_SAU: ReadonlySet<string> = new Set(["grep_repo", "list_files"]);
+
+/** Kết quả một vòng có dữ liệu — giữ lại để người gọi hiện ĐỦ, không chỉ vòng cuối. */
+export interface VongCoKetQua {
+  round: number;
+  toolName: string;
+  result: ToolResult;
+}
+
+export interface TryExecuteCodingToolLoopResult extends ToolExecOutcome {
+  decision: ReturnType<typeof classifyToolIntent>;
+  /** null ⇔ cờ TẮT (đường một-lượt cũ, không đổi một byte). */
+  loop: ToolLoopResult | null;
+  /** Kết quả TỪNG vòng theo thứ tự. Rỗng khi không vòng nào sinh dữ liệu. */
+  ketQuaTungVong: VongCoKetQua[];
+}
+
+/**
+ * Điểm vào của chế độ lập trình cho việc chạy tool — thay `tryExecuteCodingTool` ở `streamAnswer`.
+ *
+ * ⚠ CỜ TẮT ⇒ **uỷ quyền nguyên vẹn** cho `tryExecuteCodingTool`: 0 nhánh mới, 0 lượt suy luận thêm,
+ * `loop: null`. Bật/tắt cờ là một phép đo A/B sạch.
+ */
+export async function tryExecuteCodingToolLoop(
+  question: string,
+  context?: ToolContext,
+  execCtx?: ToolExecContext,
+  onProgress?: (p: ToolLoopProgress) => void,
+): Promise<TryExecuteCodingToolLoopResult> {
+  if (!codingToolLoopEnabled()) {
+    const mot = await tryExecuteCodingTool(question, context, execCtx);
+    return {
+      ...mot,
+      loop: null,
+      ketQuaTungVong: mot.result && mot.decision.tool ? [{ round: 1, toolName: mot.decision.tool, result: mot.result }] : [],
+    };
+  }
+
+  const ketQuaTungVong: VongCoKetQua[] = [];
+  const loop = await runToolLoop({
+    deciders: {
+      // Vòng 1 — Y HỆT đường một-lượt (heuristic tất định trước, LLM 5-tool sau).
+      first: () => chonToolLapTrinh(question, context),
+      next: async (quanSat) => {
+        // ★ Cổng MỞ ĐƯỜNG: vòng 1 không phải tool TÌM ⇒ dừng SẠCH, KHÔNG gọi model lần nào nữa.
+        if (quanSat.length > 0 && !MO_DUONG_VONG_SAU.has(quanSat[0].tool)) {
+          return { tool: null, args: {}, reason: "CODING_LOOP_KHONG_MO_DUONG" };
+        }
+        /**
+         * ★★★ MỘT LƯỢT TÌM KHÔNG RA GÌ **KHÔNG** MỞ ĐƯỜNG.
+         *
+         * `note` khác null ⇔ một PHÁN QUYẾT: `NO_MATCH`/`NOT_FOUND` (không thấy gì) hoặc
+         * `PERMISSION_DENIED`/`PATH_REJECTED` (bị chặn). Cả hai họ đều KHÔNG cho vòng sau thêm dữ
+         * kiện nào để đi tiếp — nó chỉ đoán, và mỗi lượt đoán là ~30–75 s của model 30B.
+         *
+         * ⚠ Đây còn là điều kiện để **đường CỨU LƯỢT ĐOÁN TRƯỢT** ở `streamCodingAnswer` không bị
+         * đội thêm một vòng: câu *"viết code C# …"* có thể bị bộ chọn LLM đoán thành một `grep_repo`
+         * vô nghĩa; nó phải rơi xuống nhánh SINH MÃ NGAY, không phải sau hai lượt model.
+         */
+        if (ketQuaTungVong.length > 0 && ketQuaTungVong[0].result.note) {
+          return { tool: null, args: {}, reason: "CODING_LOOP_VONG1_KHONG_RA_GI" };
+        }
+        return decideNextCodingToolLLM(question, quanSat);
+      },
+    },
+    // Executor NGUYÊN BẢN — đây là điều kiện để HITL/RBAC/`argsWithAuthCtx`/hộp cát đúng ở vòng
+    // thứ N y như vòng 1, theo CẤU TẠO chứ không nhờ ai nhớ chép lại.
+    execute: async (decision, round) => {
+      const outcome = await executeDecision(decision, execCtx);
+      if (outcome.result && decision.tool) {
+        ketQuaTungVong.push({ round, toolName: decision.tool, result: outcome.result });
+      }
+      return outcome;
+    },
+    // Nhập ĐỘNG (xem `tryExecuteToolLoop`): `autonomyPolicy` kéo theo `db/connection`.
+    killSwitch: async () => {
+      const { isKillSwitchTripped } = await import("../ai/autonomyPolicy");
+      return isKillSwitchTripped();
+    },
+    limits: { maxRounds: tranVongLapTrinh(), maxMs: CODING_LOOP_DEFAULT_MS },
+    onProgress,
+  });
+
+  return {
+    decision: loop.firstDecision,
+    result: loop.lastResult,
+    pendingAction: loop.pendingAction,
+    clientAction: loop.clientAction,
+    denied: loop.denied ?? undefined,
+    error: loop.errors[0]?.code,
+    loop,
+    ketQuaTungVong,
   };
 }
 

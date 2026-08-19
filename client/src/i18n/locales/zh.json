@@ -6604,6 +6604,8 @@
     "aiGgufModelsDesc": "管理本地 LLM（.gguf）模型，用于对话与分析",
     "aiChat": "AI 对话",
     "aiChatDesc": "AI 驱动的数据查询助手",
+    "aiCodingWorkspace": "AI 编程工作区",
+    "aiCodingWorkspaceDesc": "代理读取真实代码、提出修改（由你审批）、运行测试并读取错误",
     "technicianCopilot": "技术副驾",
     "technicianCopilotDesc": "AI 诊断缺陷根因 — 一键批准修复",
     "aiQualityGate": "质量门",
@@ -19030,9 +19032,13 @@
       "noAnswer": "（无回答内容）",
       "streamFailed": "流式失败——请重试。",
       "placeholder": "向智能体提问：读取/搜索代码、提出修改、运行测试…",
+      "keyHint": "Enter 发送 · Shift+Enter 换行（可粘贴多行堆栈信息）",
       "cmdOutput": "命令输出（已加入上下文以便继续修复）",
       "applied": "已应用 diff——已重新读取文件。",
       "confirmFailed": "无法执行。"
+    },
+    "toolLoop": {
+      "running": "读码循环 — 第 {{round}}/{{tran}} 轮"
     },
     "diff": {
       "cardTitle": "建议编辑文件——需要你审核",

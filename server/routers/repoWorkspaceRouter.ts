@@ -273,7 +273,20 @@ export const repoWorkspaceRouter = router({
    */
   cauHinhVong: protectedProcedure.query(async () => {
     const { vongTuDongBat, tranVongLap } = await import("../services/aiCodingVerify");
-    return { bat: vongTuDongBat(), tran: tranVongLap() };
+    /**
+     * ★ doc 81 · VIỆC 2 — thêm HAI ô cho **vòng lặp TOOL** (khác hẳn vòng TỰ ĐỘNG ở trên: vòng
+     * tool CHỈ ĐỌC và chạy TRONG một lượt hỏi; vòng tự động chạy lệnh SAU một lượt người duyệt).
+     * Client hiện "lượt n/N" bằng con số của SERVER, không tự đoán — nếu không, đổi
+     * `AI_CODING_TOOL_LOOP_MAX_ROUNDS` sẽ làm nhãn nói dối mà không ai biết.
+     * ⚠ Thuần BỔ SUNG vào một thủ tục ĐÃ CÓ (không thêm thủ tục mới ⇒ `phamViDocCensus` không đổi).
+     */
+    const { codingToolLoopEnabled, tranVongLapTrinh } = await import("../services/aiLocalTools");
+    return {
+      bat: vongTuDongBat(),
+      tran: tranVongLap(),
+      batTool: codingToolLoopEnabled(),
+      tranTool: tranVongLapTrinh(),
+    };
   }),
 
   /**

@@ -6825,6 +6825,8 @@
     "aiGgufModelsDesc": "Manage local LLM (.gguf) models for chat & analytics",
     "aiChat": "AI Chat",
     "aiChatDesc": "AI-powered chat assistant for data queries",
+    "aiCodingWorkspace": "AI Coding Workspace",
+    "aiCodingWorkspaceDesc": "Agent reads real code, proposes edits (you approve), runs tests and reads errors",
     "technicianCopilot": "Technician Copilot",
     "technicianCopilotDesc": "AI diagnoses defect root cause — approve the fix in one tap",
     "aiQualityGate": "Quality Gate",
@@ -19022,9 +19024,13 @@
       "noAnswer": "(no answer content)",
       "streamFailed": "Stream failed — try again.",
       "placeholder": "Ask the agent: read/search code, propose a fix, run tests…",
+      "keyHint": "Enter to send · Shift+Enter for a new line (multi-line stack traces paste fine)",
       "cmdOutput": "Command output (added to context so you can keep fixing)",
       "applied": "Diff applied — file re-read.",
       "confirmFailed": "Could not execute."
+    },
+    "toolLoop": {
+      "running": "Code-reading loop — round {{round}}/{{tran}}"
     },
     "diff": {
       "cardTitle": "Proposed file EDIT — needs your review",

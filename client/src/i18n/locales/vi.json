@@ -6805,6 +6805,8 @@
     "aiGgufModelsDesc": "Quản lý model LLM cục bộ (.gguf) cho chat & phân tích",
     "aiChat": "Trò chuyện AI",
     "aiChatDesc": "Trợ lý chat AI cho truy vấn dữ liệu",
+    "aiCodingWorkspace": "Không gian lập trình AI",
+    "aiCodingWorkspaceDesc": "Tác nhân đọc mã thật, đề xuất sửa (bạn duyệt), chạy test và đọc lỗi",
     "technicianCopilot": "Trợ lý Kỹ thuật",
     "technicianCopilotDesc": "AI chẩn đoán nguyên nhân lỗi — duyệt cách sửa một chạm",
     "aiQualityGate": "Cổng Chất Lượng",
@@ -19002,9 +19004,13 @@
       "noAnswer": "(không có nội dung trả lời)",
       "streamFailed": "Luồng bị lỗi — thử lại.",
       "placeholder": "Hỏi tác nhân: đọc/tìm mã, đề xuất sửa, chạy test…",
+      "keyHint": "Enter để gửi · Shift+Enter để xuống dòng (dán được stack trace nhiều dòng)",
       "cmdOutput": "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)",
       "applied": "Đã áp diff — đã đọc lại tệp.",
       "confirmFailed": "Không thực thi được."
+    },
+    "toolLoop": {
+      "running": "Vòng đọc mã — lượt {{round}}/{{tran}}"
     },
     "diff": {
       "cardTitle": "Đề xuất SỬA tệp — cần bạn duyệt",

@@ -1347,6 +1347,33 @@ export const navGroups: NavGroup[] = [
         tier: "simple",
       },
       {
+        /**
+         * ★★★ doc 81 · VIỆC 3 (3) — KHÔNG GIAN LẬP TRÌNH AI. Trước lượt này grep
+         * `ai-coding-workspace` trong file này = **0**: trang tồn tại, có route, có RBAC, có cổng
+         * giấy phép — nhưng **không có đường nào tới nó ngoài gõ URL bằng tay**.
+         *
+         * ⚠⚠ HAI CỔNG, VÀ CẢ HAI ĐỀU ĐÃ ĐƯỢC CƯỠNG CHẾ Ở ĐÂY:
+         *  1. **RBAC** — `requiredPermission: "ai_repo_read"` là ô mà `isItemAccessible` ĐỌC
+         *     (`permissionCategory` chỉ có tác dụng ở CẤP GROUP; xem ghi chú m-2 ở `/ai-brain`).
+         *     Khớp đúng bit mà `App.tsx` ghim cho tuyến này (mig 0330).
+         *  2. **GIẤY PHÉP `MOD_AI`** — cưỡng chế theo CẤU TẠO, không phải bằng một ô khai thêm:
+         *     `DashboardLayout` lọc `items.filter(item => isLicenseRouteAllowed(item.href))`, và
+         *     `/ai-coding-workspace` **đã** nằm trong danh sách route của `MOD_AI`
+         *     (`shared/module-registry.ts`, doc 80). ⇒ khách KHÔNG mua AI không thấy mục này, cùng
+         *     một nguồn sự thật với `RouteGuard requireModule="MOD_AI"`. Khai module lần thứ hai ở
+         *     đây sẽ là bản sao thứ hai của một sự thật — đúng lớp lỗi repo này đã trả giá nhiều lần.
+         *
+         * ⚠ KHÔNG gắn `tier:"simple"`: nhóm `ai` là `tier:"advanced"`, và đây là công cụ kỹ sư, không
+         * phải cửa trước. `engineer`/`admin` mặc định ở chế độ advanced nên vẫn thấy.
+         */
+        href: "/ai-coding-workspace",
+        label: "nav.aiCodingWorkspace",
+        icon: <Code2 className="h-4 w-4" />,
+        description: "nav.aiCodingWorkspaceDesc",
+        requiredPermission: "ai_repo_read",
+        section: "assistant",
+      },
+      {
         // doc 69 T6 — fix orphan: promoted into the AI taxonomy's Assistant
         // section. Was already reachable via the header AIActionInboxLauncher
         // and the "Me" group's personal shortcut row (nav.inbox); both of
