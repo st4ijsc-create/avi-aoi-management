@@ -13542,7 +13542,9 @@
     "deniedMessage": "Bạn không có quyền truy cập trang này. Vui lòng liên hệ quản trị viên nếu bạn cho rằng đây là nhầm lẫn.",
     "backToHome": "Về trang chính",
     "licenseTitle": "Tính năng chưa được kích hoạt",
-    "licenseMessage": "Ứng dụng này chưa có trong gói bản quyền của bạn. Liên hệ để nâng cấp hoặc dùng thử."
+    "licenseMessage": "Ứng dụng này chưa có trong gói bản quyền của bạn. Liên hệ để nâng cấp hoặc dùng thử.",
+    "moduleTitle": "Module chưa được cấp phép",
+    "moduleMessage": "Hệ thống của bạn chưa mua module này. Liên hệ để nâng cấp gói bản quyền."
   },
   "advancedSection": {
     "title": "Nâng cao",

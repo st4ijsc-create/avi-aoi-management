@@ -9,7 +9,17 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import {
+  router,
+  protectedProcedure as thuTucVanHanh,
+  moduleProcedure,
+  moduleGate,
+  adminProcedure as adminProcedureBase,
+} from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import { appError } from "../_core/appError";
 import {
   scoreImage,
@@ -223,7 +233,12 @@ export const aiAnomalyRouter = router({
     }),
 
   // ── latestForMachine (protected) — trạng thái anomaly realtime / 1 máy ────────
-  latestForMachine: protectedProcedure
+  // ⚠⚠ CỐ Ý **KHÔNG** khoá sau MOD_AI. Dữ liệu là AI thật, nhưng nơi hiển thị KHÔNG phải màn AI:
+  //    `components/MachineAISummary.tsx` được gắn ở `/production-dashboard` (MOD_PRODUCTION),
+  //    `/quality-cockpit`, `/repair-station`, `MachineWorkspace`. Khoá ở đây ⇒ khách mua
+  //    MOD_PRODUCTION/MOD_QUALITY nhưng không mua AI nhận FORBIDDEN trên màn của HỌ. Muốn khoá thì
+  //    phải ẩn `MachineAISummary` theo module ở client TRƯỚC — xem báo cáo mục (b).
+  latestForMachine: thuTucVanHanh
     .input(z.object({
       machineId: z.number().int().positive(),
       productModelId: z.number().int().positive().nullish(),

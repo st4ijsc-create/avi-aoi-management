@@ -8,8 +8,12 @@
  * Offline-first (internal Postgres only). Writing a report NEVER changes inference
  * behaviour; temperature stays opt-in via the model's postprocessConfig.temperatureScale.
  */
-import { protectedProcedure, router } from "../_core/trpc";
-import { adminProcedure } from "./_shared";
+import { moduleProcedure, moduleGate, router } from "../_core/trpc";
+import { adminProcedure as adminProcedureBase } from "./_shared";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import { z } from "zod";
 import {
   computeECE,

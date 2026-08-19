@@ -219,3 +219,12 @@ sandbox-projects/**/node_modules/
 # Dựng lại bằng `npm run kb:embed` (đọc `chunks.jsonl` — giữ tệp đó trong repo mới ĐÚNG,
 # vì embeddings phải KHỚP chunks; ship embeddings cũ cạnh chunks mới là RAG SAI).
 knowledge/embeddings.jsonl
+
+# ★ 2026-08-19 — TỆP SINH RA LÚC CHẠY, KHÔNG PHẢI CẤU HÌNH NGUỒN.
+# `license-service.ts:314` GHI tệp này khi kích hoạt giấy phép; dòng 326 xử lý đúng
+# trường hợp tệp VẮNG (trả null ⇒ cơ chế "không-brick" cho qua hết).
+# ⚠ VÌ SAO PHẢI GỠ KHỎI GIT: bảng `licenses` RỖNG, nên tệp này là NGUỒN SKU DUY NHẤT.
+# Nó khai 10 module và VẮNG MOD_AI, MOD_QUALITY, MOD_OT_CONTROL, MOD_ENGINEERING,
+# MOD_FEDERATION ⇒ MỌI bản sao repo thừa hưởng một SKU thiếu 5 module. Hệ đang chạy
+# được CHỈ NHỜ `LICENSE_BYPASS=true`; tắt cờ đó là 5 module tắt theo, KHÔNG chỉ AI.
+server/license/license-state-cache.json

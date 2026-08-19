@@ -4,7 +4,10 @@
  * Endpoints for VLM-powered inspection image analysis:
  * describe defects, compare images, and generate QA reports.
  */
-import { protectedProcedure, router } from "../_core/trpc";
+import { moduleProcedure, router } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";

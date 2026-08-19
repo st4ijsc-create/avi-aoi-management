@@ -15,6 +15,19 @@
  * flip the durable flag, not just a mocked call count.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// ★ doc 80 — router này nay đứng sau `moduleProcedure("MOD_AI")` / `moduleGate("MOD_AI")`.
+//   Cổng license mặc định BẬT (`ENV.licenseModuleGate = LICENSE_MODULE_GATE_ENABLED !== 'false'`)
+//   và SKU của môi trường test — suy từ `server/license/license-state-cache.json` (bảng `licenses`
+//   RỖNG ở cả hai CSDL) — liệt kê 10 module KHÔNG gồm MOD_AI ⇒ mọi lượt gọi bị FEATURE_DISABLED
+//   TRƯỚC khi tới đoạn mã file này cần đo. Tắt cổng Ở ĐÂY, đúng khuôn đã dùng cho MOD_QUALITY tại
+//   `defectHeatmapScope.test.ts` / `defectHeatmapSavedScope.test.ts`: `vi.hoisted` chạy TRƯỚC khi
+//   `_core/env` được nạp, nên gán ở thân file (sau các `import` đã bị kéo lên) là QUÁ MUỘN.
+//   ⚠ Cổng giấy phép được đo ở nơi khác, bằng thiết bị đo riêng: cấu trúc ở
+//   `server/routers/congGiayPhepAiCensus.test.ts`, hành vi lúc chạy ở
+//   `server/_core/moduleGate.congGiayPhep.test.ts`. File này đo MỘT trục khác — đừng nhập hai trục.
+vi.hoisted(() => {
+  process.env.LICENSE_MODULE_GATE_ENABLED = "false";
+});
 
 type Row = Record<string, any>;
 const configStore = new Map<string, Row>();

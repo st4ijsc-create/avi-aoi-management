@@ -98,9 +98,12 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
     //    không một phép xác thực nào — món nợ CÓ THẬT, chỉ là món nợ cổng này không đo được"*.
     //    Món nợ ấy nay **đã được vá**: một middleware cổng ảnh (`server/routes/_congAnh.ts`) đứng
     //    TRƯỚC cả handler resize lẫn `express.static`, sau cờ `ANH_CONG_MO`.
-    // ⚠ Con số ghim đổi **609 → 642 → 652** vì hai lượt vá chèn middleware lên phía trên, KHÔNG
-    //   phải vì một thư mục mới được gắn ra web: danh sách vẫn đúng HAI mục như cũ. Đây là con số
-    //   ĐO ĐƯỢC từ bộ quét, không phải một con số nới ra cho lưới xanh.
+    // ⚠ Con số ghim đổi **609 → 642 → 652 → 653** vì các lượt vá chèn thêm dòng lên phía trên,
+    //   KHÔNG phải vì một thư mục mới được gắn ra web: danh sách vẫn đúng HAI mục như cũ. Đây là
+    //   con số ĐO ĐƯỢC từ bộ quét, không phải một con số nới ra cho lưới xanh.
+    // ⚠ 2026-08-19 (cổng giấy phép MOD_AI): **+1 dòng** — một `import` cho middleware
+    //   `chanTuyenAiTheoGiayPhep` ở đầu `server/_core/index.ts`. Không một `express.static` nào
+    //   được thêm/bớt; hai mục dưới đây **y nguyên**, chỉ trôi số dòng.
     // ⚠⚠ Bộ suy vẫn **mù** với bề mặt tĩnh (nó phục vụ byte tệp, không đọc bảng nào) — cổng này vì
     //   thế KHÔNG chứng minh được `/uploads` đã có phòng vệ, **kể cả sau lượt uỷ quyền theo đường
     //   dẫn ngày 2026-08-18**. Phép chứng minh nằm ở ba chỗ KHÁC, và đây là chỗ trỏ tới chúng:
@@ -109,7 +112,7 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
     //   THẬT bằng socket thô (ghi trong báo cáo). Ghim danh sách để một lượt gắn thư mục MỚI ra
     //   web vẫn phải được ký tên.
     expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
-      "server/_core/index.ts:652",
+      "server/_core/index.ts:653",
       "server/_core/vite.ts:58",
     ]);
   });

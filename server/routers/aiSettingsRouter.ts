@@ -8,8 +8,12 @@ import { appError } from "../_core/appError";
 import path from "path";
 import fs from "fs";
 import sharp from "sharp";
-import { router, protectedProcedure } from "../_core/trpc";
-import { adminProcedure } from "./_shared";
+import { router, moduleProcedure, moduleGate } from "../_core/trpc";
+import { adminProcedure as adminProcedureBase } from "./_shared";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import { getDb } from "../db/connection";
 import { aiApiKeys, aiSystemConfig, aiImageEmbeddings } from "../../drizzle/schema/ai";
 import { eq, desc, sql } from "drizzle-orm";

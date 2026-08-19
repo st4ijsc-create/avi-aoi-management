@@ -4,8 +4,12 @@
  * Endpoints for managing quality gate configs, processing inspections,
  * and reviewing AI decisions.
  */
-import { protectedProcedure, router } from "../_core/trpc";
-import { adminProcedure } from "./_shared";
+import { moduleProcedure, moduleGate, router } from "../_core/trpc";
+import { adminProcedure as adminProcedureBase } from "./_shared";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";

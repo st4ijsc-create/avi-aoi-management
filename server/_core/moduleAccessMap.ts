@@ -92,8 +92,49 @@ export const MODULE_ACCESS_MAP: Record<string, ModuleCode> = {
   orchestration: MOD.ENGINEERING,
 
   // ── AI (MOD_AI) ────────────────────────────────────────────────────────────
-  anomalyBank: MOD.AI,
+  //
+  // ★★★ 2026-08-19 — bảng này TỪNG chỉ có hai dòng dưới đây, và cả hai chỉ là **ý định**:
+  //     `causalGraph` chưa bao giờ được nối dây (nay đã), còn `anomalyBank` **KHÔNG TỒN TẠI** —
+  //     không có `anomalyBankRouter.ts` nào; màn `/anomaly-banks` dùng `aiAnomaly.*`. Giữ lại dòng
+  //     chết ấy là để bảng nói dối, nên nó bị xoá.
+  // ⚠⚠ Bảng này KHÔNG có người tiêu thụ lúc chạy (đã grep toàn `server/`): nó là **TÀI LIỆU**.
+  //     Nguồn sự thật ĐO ĐƯỢC về "thủ tục nào đứng sau cổng nào" là bộ suy AST
+  //     `server/routers/congGiayPhepScan.ts` + cổng `congGiayPhepAiCensus.test.ts`. Nếu bảng này
+  //     và bộ suy ấy lệch nhau, tin bộ suy.
   causalGraph: MOD.AI,
+  aiActiveLearning: MOD.AI,
+  aiAdvanced: MOD.AI,
+  aiAdvancedVision: MOD.AI,
+  aiAgent: MOD.AI,
+  aiAgentCenter: MOD.AI,
+  aiAnalysisHub: MOD.AI,
+  aiAnomaly: MOD.AI,
+  aiCalibration: MOD.AI,
+  aiChat: MOD.AI,
+  aiCopilot: MOD.AI,
+  aiEval: MOD.AI,
+  aiGguf: MOD.AI,
+  aiImageSearch: MOD.AI,
+  aiLocalKb: MOD.AI,
+  aiLocalTraining: MOD.AI,
+  aiModel: MOD.AI,
+  aiQualityGate: MOD.AI,
+  aiReport: MOD.AI,
+  aiRobotAnomaly: MOD.AI,
+  aiSegmentation: MOD.AI,
+  aiSettings: MOD.AI,
+  aiSpecialistAgent: MOD.AI,
+  aiTimeSeries: MOD.AI,
+  aiVision: MOD.AI,
+  aiVisionLanguage: MOD.AI,
+  repoWorkspace: MOD.AI,
+  // ⚠⚠⚠ **KHÔNG** có mặt ở đây, CỐ Ý — mười router mang tên `ai…` nhưng phục vụ dữ liệu VẬN HÀNH
+  //     mà khách KHÔNG mua AI vẫn phải dùng: `aiInbox` · `aiInsight` · `aiInspectionAnalytics` ·
+  //     `aiOrchestration` · `aiProgrammingKb` · `aiRcaCopilot` · `aiSetupAdvisor` ·
+  //     `aiSmartAlertRouting` · `aiThresholdAdvisor` · `aiToday`, cộng `rootCause` +
+  //     `predictiveAlert` (`aiRouters.ts`). Lý do TỪNG THỦ TỤC được ký tên trong
+  //     `MIEN_TRU_VAN_HANH` ở `server/routers/congGiayPhepAiCensus.test.ts` — đọc ở đó trước khi
+  //     thêm bất kỳ tên nào trong số đó vào bảng này.
 
   // ── Federation (MOD_FEDERATION) ────────────────────────────────────────────
   sites: MOD.FEDERATION,

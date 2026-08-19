@@ -13345,7 +13345,9 @@
     "deniedMessage": "您没有访问此页面的权限。如果您认为这是误判，请联系管理员。",
     "backToHome": "返回主页",
     "licenseTitle": "功能未激活",
-    "licenseMessage": "此应用不在您的许可套餐内。请联系我们升级或申请试用。"
+    "licenseMessage": "此应用不在您的许可套餐内。请联系我们升级或申请试用。",
+    "moduleTitle": "模块未获授权",
+    "moduleMessage": "您的系统尚未购买此模块。请联系我们升级许可套餐。"
   },
   "advancedSection": {
     "title": "高级",

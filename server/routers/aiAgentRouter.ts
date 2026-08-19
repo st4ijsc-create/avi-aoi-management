@@ -9,7 +9,19 @@
  */
 
 import { z } from "zod";
-import { router, protectedProcedure, roleProcedure, require2FA } from "../_core/trpc";
+import {
+  router,
+  protectedProcedure as thuTucVanHanh,
+  moduleProcedure,
+  moduleGate,
+  roleProcedure,
+  require2FA,
+} from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+// ⚠ BA thủ tục CÔNG TẮC NGẮT (`getKillSwitchStatus`/`tripKillSwitch`/`untripKillSwitch`) CỐ Ý
+//   ĐỨNG NGOÀI cổng — xem khối lý lẽ tại chỗ khai chúng.
+const protectedProcedure = moduleProcedure("MOD_AI");
 import {
   startSession,
   approvePlan,
@@ -30,7 +42,7 @@ const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
 
 /** D4 — ops-scoped (cross-user) agent session visibility: admin/engineer only,
  *  mirrors aiModelRouter's modelCardProcedure convention (roleProcedure combo). */
-const opsAgentProcedure = roleProcedure("admin", "engineer");
+const opsAgentProcedure = roleProcedure("admin", "engineer").use(moduleGate("MOD_AI"));
 
 /** D4 — kill-switch trip/untrip: admin + 2FA, the SAME guard D3 chained for
  *  model-card writes (`roleProcedure(...).use(require2FA)`). */
@@ -178,8 +190,15 @@ export const aiAgentRouter = router({
 
   // ─── Autonomy kill-switch (doc69 Giai đoạn 4/Wave 3, D4 — D2 rollout prereq) ──
   //
+  // ⚠⚠⚠ BA thủ tục dưới đây CỐ Ý **ĐỨNG NGOÀI** cổng giấy phép MOD_AI (`thuTucVanHanh` /
+  //     `killSwitchProcedure` KHÔNG chain `moduleGate`). Đây là **CÔNG TẮC DỪNG KHẨN** của quyền
+  //     tự trị AI. Giấy phép có thể HẾT HẠN trong lúc phiên agent đang chạy — và đúng lúc ấy
+  //     `moduleGate` sẽ trả FORBIDDEN cho chính cái nút dùng để DỪNG chúng lại. Khoá một phanh
+  //     tay sau một hợp đồng thương mại là ngược chiều an toàn. Không đổi dòng này mà không có
+  //     một lý lẽ AN TOÀN, không phải một lý lẽ phủ sóng.
+  //
   // Read: any authenticated user (situational awareness — no 2FA needed to VIEW).
-  getKillSwitchStatus: protectedProcedure.query(async () => {
+  getKillSwitchStatus: thuTucVanHanh.query(async () => {
     const tripped = await isKillSwitchTripped();
     return { tripped };
   }),

@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useLicenseModules } from "@/hooks/useLicenseModules";
 import Markdown from "react-markdown";
 import { AIToolResultCard, type ToolResultPayload } from "./AIToolResultCard";
 import {
@@ -307,6 +308,9 @@ export function AILocalChatBubble() {
   // C5 — real role from auth context, mapped to an AI UserRole.
   const { user } = useAuth();
   const userRole = mapAppRoleToAiRole(user?.role);
+  // doc 80 — cổng GIẤY PHÉP MOD_AI (xem khối lý lẽ ở nhánh `return null` phía dưới).
+  const { isModuleBlocked } = useLicenseModules();
+  const moduleAiBiChan = isModuleBlocked("MOD_AI");
 
   // C3a — current route + UI language + page-published selection.
   const [location, setLocation] = useLocation();
@@ -1076,6 +1080,13 @@ export function AILocalChatBubble() {
   // C3a — mounted globally at App root; hide entirely when not logged in
   // (e.g. /login) so the bubble only appears for authenticated users.
   if (!user) return null;
+  // ★★★ doc 80 — khách KHÔNG mua MOD_AI thì KHÔNG được thấy cửa vào AI. Bong bóng này là bề mặt
+  //     AI **TOÀN CỤC** duy nhất (gắn ở gốc `App.tsx`, hiện trên MỌI tuyến), nên nó không nằm sau
+  //     bất kỳ `RouteGuard` nào — nếu không ẩn ở đây thì cổng theo tuyến bịt được 30 trang mà vẫn
+  //     để một nút AI nổi trên cả 200 trang còn lại. `isModuleBlocked` là vị từ MỘT CHỦ
+  //     (`useLicenseModules`), đã trừ mọi tình huống không-brick: chưa khai SKU / đang tải /
+  //     guard `no_license` ⇒ VẪN HIỆN, đúng như máy chủ vẫn cho qua.
+  if (moduleAiBiChan) return null;
   // UX group A — the global FAB is redundant on the full-page chat (/ai-chat),
   // so hide it there to avoid two AI entry points stacking on the same screen.
   if (location.startsWith("/ai-chat")) return null;

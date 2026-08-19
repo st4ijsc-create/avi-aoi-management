@@ -361,6 +361,16 @@ const SEED_MODULES: SystemModule[] = [
       "/ai-gguf-models", "/ai-local-kb", "/mask-annotation",
       // doc 22 P3 — AI cockpits that previously escaped the registry (license bypass).
       "/anomaly-banks", "/causal-graph",
+      // ★★★ doc 80 — BẢY tuyến AI có trong `client/src/App.tsx` + nhóm điều hướng "ai" nhưng
+      // CHƯA BAO GIỜ được khai ở đây, nên `getModuleByRoute` trả `undefined` ⇒ `isRouteAllowed`
+      // trả **true** cho mọi khách, kể cả khách không mua AI. Nhóm menu "ai" che chúng đi nhờ
+      // `isNavGroupAllowed`, nhưng **đường dẫn sâu vẫn vào được** — đúng khe hở mà cổng này
+      // sinh ra để bịt.
+      // ⚠ `/inbox` CỐ Ý **KHÔNG** có mặt: nó cũng nằm trong nhóm "ai" nhưng chủ thật của nó là
+      //   `CORE_AUTH` (hộp thư cá nhân, còn xuất hiện ở nhóm "Tôi"). Khai nó ở đây sẽ khoá hộp
+      //   thư của khách không mua AI — đúng kiểu hồi quy mà lượt này phải tránh.
+      "/ai-home", "/ai-command-center", "/ai-specialist-studio", "/ai-experiments",
+      "/ai-datasets", "/ai-training-studio", "/ai-coding-workspace",
     ],
     permissionCategories: ["analytics"],
     features: [

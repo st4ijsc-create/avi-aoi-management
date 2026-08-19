@@ -22,7 +22,13 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — `moduleAccessMap.ts` đã khai `causalGraph: MOD.AI` từ doc 38 nhưng
+//   CHƯA BAO GIỜ nối dây; tuyến `/causal-graph` cũng đã nằm trong `MOD_AI.routes`. Nối ở đây để
+//   client và máy chủ nói cùng một câu. Người gọi duy nhất là `pages/CausalGraphEditorPage.tsx`
+//   (tuyến MOD_AI); dịch vụ `aiCausalGraph` được `aiRcaCopilot` gọi THẲNG, không qua tRPC, nên
+//   không lượt gọi máy-chủ-tới-máy-chủ nào bị chạm.
+const protectedProcedure = moduleProcedure("MOD_AI");
 import { requirePermission } from "../_core/accessControl";
 import {
   getEditableGraph,

@@ -1075,6 +1075,24 @@ export function registerOpenAiGateway(app: Express): boolean {
   }
 
   const basePath = envStr("OPENAI_GATEWAY_PATH") || "/v1";
+  // ⚠⚠⚠ 2026-08-19 — **CỐ Ý KHÔNG gắn `chanTuyenAiTheoGiayPhep()` ở đây**, và lý do là một PHÉP
+  //     ĐO, không phải khẩu vị. Lượt nối cổng `MOD_AI` đã thử gắn nó vào đúng dòng này và làm ĐỎ
+  //     **5 ca** ở `openaiGatewayEnforcement.test.ts` + 2 file lưới khác của cổng này. Đọc kỹ vì
+  //     sao trước khi ai đó "sửa lại cho đủ":
+  //       1. Bề mặt này **ĐÃ CÓ** đường cưỡng chế giấy phép RIÊNG, và nó **cố ý opt-in**:
+  //          `aiGateway.planInference` gọi `isModuleLicensed("MOD_AI")` khi
+  //          `AI_GATEWAY_LICENSE_GATE_ENABLED=true` (doc69 G2-4, mặc định TẮT để KHÔNG làm hỏng
+  //          các deployment có license ra đời TRƯỚC khi `MOD_AI` được khai tường minh). Gắn thêm
+  //          một middleware chặn ở tầng tuyến là **ghi đè một quyết định đã cân nhắc** bằng một
+  //          dòng `.use()`.
+  //       2. **Hình dạng thân lỗi khác nhau.** Client của `/v1` là công cụ tương thích OpenAI
+  //          (VS Code + Continue); chúng đọc `{ error: { type: "permission_error", … } }`.
+  //          Middleware chung trả `{ success, error, code }` — đúng cho `/api/ai/**`, **sai** cho
+  //          đây, và các lưới trên khẳng định đúng điều đó.
+  //       3. Bề mặt này mặc định **KHÔNG được gắn** (`OPENAI_GATEWAY_ENABLED` mặc định TẮT) và
+  //          fail-closed khi thiếu `OPENAI_GATEWAY_API_KEY`.
+  //     ⇒ Muốn khoá `/v1` theo giấy phép: bật `AI_GATEWAY_LICENSE_GATE_ENABLED=true` — đó là công
+  //       tắc đã có chủ, có lưới, và trả đúng hình dạng lỗi.
   app.use(basePath, createOpenAiGatewayRouter({ apiKey }));
   console.log(
     `[openaiGateway] OpenAI-compatible gateway mounted at ${basePath} ` +

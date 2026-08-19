@@ -4,7 +4,10 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure as thuTucVanHanh, moduleProcedure, router } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
 import { getDb } from "../db";
 import { 
   aiSuggestions, 
@@ -61,7 +64,11 @@ export const aiFeedbackRouter = router({
     }),
 
   // Get suggestions by inspection
-  getSuggestionsByInspection: protectedProcedure
+  // ⚠⚠ CỐ Ý **KHÔNG** khoá sau MOD_AI. `AISuggestionsPanel` được `pages/InspectionDetail.tsx`
+  //    gắn **VÔ ĐIỀU KIỆN** (không cờ, không kiểm giấy phép) — mà /inspection/:id là màn CỐT LÕI
+  //    của mọi khách. Khoá ở đây ⇒ khách KHÔNG mua AI thấy một khối lỗi giữa trang xem chi tiết
+  //    kiểm tra. Muốn khoá thì phải ẩn panel ở client TRƯỚC — xem báo cáo mục (b).
+  getSuggestionsByInspection: thuTucVanHanh
     .input(z.object({ inspectionId: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -118,7 +125,8 @@ export const aiFeedbackRouter = router({
   // ============= Feedback =============
 
   // Submit feedback
-  submitFeedback: protectedProcedure
+  // ⚠⚠ CỐ Ý **KHÔNG** khoá — cùng lý do với `getSuggestionsByInspection` ở trên (cùng một panel).
+  submitFeedback: thuTucVanHanh
     .input(z.object({
       suggestionId: z.number(),
       feedbackType: z.enum(["CORRECT", "INCORRECT", "PARTIAL", "UNSURE"]),

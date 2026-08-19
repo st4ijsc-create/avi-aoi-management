@@ -1,5 +1,17 @@
-import { protectedProcedure, router, roleProcedure, require2FA } from "../_core/trpc";
-import { adminProcedure } from "./_shared";
+import {
+  protectedProcedure as thuTucVanHanh,
+  moduleProcedure,
+  moduleGate,
+  router,
+  roleProcedure,
+  require2FA,
+} from "../_core/trpc";
+import { adminProcedure as adminProcedureBase } from "./_shared";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+// ⚠ `list` CỐ Ý đứng ngoài cổng — xem khối lý lẽ tại chỗ khai nó.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -46,7 +58,7 @@ import {
 // roleProcedure, then 2FA) as those pre-built procedures, not a new implementation.
 // The read path (getCard, below) intentionally stays on plain `protectedProcedure`
 // — the editor must be able to LOAD a card before 2FA has been stepped up.
-const modelCardProcedure = roleProcedure("admin", "engineer").use(require2FA);
+const modelCardProcedure = roleProcedure("admin", "engineer").use(require2FA).use(moduleGate("MOD_AI"));
 
 /** Card create/update/approve share this exact message so a raced double-create
  *  (see FIX below) surfaces identically whether caught by the check-then-insert
@@ -90,7 +102,12 @@ export const aiModelRouter = router({
   classifierHealth: protectedProcedure.query(() => checkActiveClassifierHealth()),
 
   // ─── Model CRUD ──────────────────────────────────────────
-  list: protectedProcedure
+  // ⚠⚠ `list` CỐ Ý **KHÔNG** khoá sau MOD_AI. `components/onboarding/Step4DeployModel.tsx` gọi nó,
+  //    và bước ấy nằm trong `pages/MachineOnboardingWizard.tsx` — luồng LẮP ĐẶT MÁY, việc VẬN HÀNH
+  //    của khách không mua AI. Khoá ở đây ⇒ bước 4 của trình hướng dẫn hỏng. Đây là một lượt ĐỌC
+  //    sổ đăng ký model (không suy luận, không tiêu VRAM); mọi thủ tục CÓ hành vi AI quanh nó đều
+  //    đã bị khoá. Muốn khoá thì phải bỏ/ẩn bước 4 cho khách không-AI TRƯỚC — báo cáo mục (b).
+  list: thuTucVanHanh
     .input(z.object({
       modelType: z.string().optional(),
       format: z.enum(["ONNX", "TENSORRT", "OPENVINO", "CUSTOM", "GGUF"]).optional(),

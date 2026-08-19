@@ -27,7 +27,10 @@
  */
 
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure as thuTucVanHanh, moduleProcedure, router } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
 import { proposeAction, type CopilotUser } from "../services/aiCopilotActions";
 import { getTool, isWriteTool } from "../services/aiLocalTools/toolRegistry";
 import type { ToolLang } from "../services/aiLocalTools";
@@ -55,7 +58,9 @@ const sourceSchema = z
 
 export const aiVisionRouter = router({
   // ── Best-effort map a finding's free text → IPC defect codes ────────────────
-  suggestDefectCodes: protectedProcedure
+  // ⚠ CỐ Ý **KHÔNG** khoá: đây là phép khớp CHUỖI thuần trên `defect_catalog` — dữ liệu chủ VẬN
+  //   HÀNH, không một lượt suy luận nào. Khoá một lượt đọc danh mục là khoá dữ liệu của khách.
+  suggestDefectCodes: thuTucVanHanh
     .input(
       z.object({
         findingText: z.string().min(1).max(500),
@@ -72,7 +77,8 @@ export const aiVisionRouter = router({
     }),
 
   // ── Catalog passthrough for the override picker ─────────────────────────────
-  defectCodes: protectedProcedure
+  // ⚠ CỐ Ý **KHÔNG** khoá: `listDefectCatalog()` — danh mục mã lỗi, dữ liệu chủ VẬN HÀNH.
+  defectCodes: thuTucVanHanh
     .input(
       z
         .object({

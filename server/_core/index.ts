@@ -35,6 +35,7 @@ import { initializeLicenseSystem, licenseEnforcementMiddleware } from "../licens
 import { initializeRuntimeSecurity, shutdownRuntimeSecurity } from "../license/runtime-security";
 import { registerExternalInspectionRoutes } from "../routes/externalInspectionApi";
 import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
+import { chanTuyenAiTheoGiayPhep } from "../routes/congGiayPhepAiExpress";
 import { registerOpenAiGateway } from "../routes/openaiGateway";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
@@ -5326,6 +5327,11 @@ async function startServer() {
     }
   });
 
+  // ★★★ Cổng giấy phép MOD_AI cho nhánh Express `/api/ai/**` — PHẢI đứng TRƯỚC mọi lượt
+  //     `registerAi*` bên dưới, nếu không nó chỉ canh những tuyến đăng ký SAU nó.
+  //     `moduleGate` là middleware tRPC, không dùng lại được ở đây; middleware này gọi ĐÚNG cùng
+  //     một động cơ quyết định (`isModuleLicensed`) — xem server/routes/congGiayPhepAiExpress.ts.
+  app.use("/api/ai", chanTuyenAiTheoGiayPhep());
   // Register AI SSE streaming routes (before tRPC mount)
   registerAiStreamingRoutes(app);
   // Doc 34 §IV-P0 — OpenAI-compatible gateway (/v1/*). Gated by OPENAI_GATEWAY_ENABLED

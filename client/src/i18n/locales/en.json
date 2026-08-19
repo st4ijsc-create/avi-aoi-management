@@ -13562,7 +13562,9 @@
     "deniedMessage": "You don't have permission to access this page. Please contact an administrator if you think this is a mistake.",
     "backToHome": "Back to home",
     "licenseTitle": "Feature not activated",
-    "licenseMessage": "This application is not part of your licence package. Contact us to upgrade or start a trial."
+    "licenseMessage": "This application is not part of your licence package. Contact us to upgrade or start a trial.",
+    "moduleTitle": "Module not licensed",
+    "moduleMessage": "Your deployment has not purchased this module. Contact us to upgrade your licence package."
   },
   "advancedSection": {
     "title": "Advanced",

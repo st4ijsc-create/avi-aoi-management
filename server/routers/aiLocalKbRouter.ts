@@ -3,7 +3,18 @@
  * Integrates codebase knowledge retrieval with chat system
  */
 
-import { router, publicProcedure, protectedProcedure, adminProcedure } from "../_core/trpc";
+import {
+  router,
+  publicProcedure,
+  moduleProcedure,
+  moduleGate,
+  adminProcedure as adminProcedureBase,
+} from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+// ⚠ `health` CỐ Ý ở lại `publicProcedure` KHÔNG cổng — xem khối lý lẽ tại chỗ khai nó.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import { z } from "zod";
 import { appError } from "../_core/appError";
 import { logger } from "../logger";
@@ -128,6 +139,10 @@ export const aiLocalKbRouter = router({
   /**
    * Check knowledge base health and readiness
    */
+  // ⚠⚠ CỐ Ý **KHÔNG** khoá sau MOD_AI. Đây là một phép dò TRẠNG THÁI (trả `ready:false` khi hỏng),
+  //    và `components/AILocalChatBubble.tsx` — gắn ở GỐC `App.tsx`, tức trên MỌI tuyến — là người
+  //    gọi. Nó `enabled: open` nên không tự bắn mỗi trang, nhưng một `publicProcedure` chỉ nói
+  //    "KB sẵn sàng chưa" thì khoá lại không giấu được gì mà lại thêm một đường hỏng.
   health: publicProcedure.query(async (): Promise<KbHealthResponse> => {
     try {
       const result = await fetchKbApi<KbHealthResponse>("/api/ai/local-kb/health", "GET");

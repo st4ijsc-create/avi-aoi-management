@@ -43,6 +43,23 @@ export interface RouteGuardProps {
    * Prefer this for routes that exist in navigation.tsx.
    */
   navHref?: string;
+  /**
+   * ★★★ doc 80 — mã SKU (`MOD_AI`, …) mà tuyến này THUỘC VỀ.
+   *
+   * ⚠⚠ Đây **KHÔNG** phải bản sao của cổng license theo tuyến ở §1b bên dưới. Hai thứ khác nhau ở
+   *    ĐÚNG hai điểm, và cả hai đều load-bearing:
+   *    1. §1b chạy sau cờ `LICENSE_ROUTE_GUARD` (mặc định **TẮT**) và suy module từ **bảng tuyến**
+   *       của registry; ô này khai **TƯỜNG MINH** tại chỗ và **không** phụ thuộc cờ ấy — nên bật
+   *       cổng cho MOD_AI không kéo theo việc bật cưỡng chế license cho MỌI module (đúng lý do cờ
+   *       kia đang tắt: hệ đang chạy có SKU liệt kê ÍT module hơn số tuyến đang dùng).
+   *    2. §1b không-brick theo cách khác: nó chỉ hỏi `isRouteAllowed`, mà `allowedModules` rơi về
+   *       core ở cả những tình huống "chưa khai SKU". Ô này dùng `isModuleBlocked` — vị từ MỘT CHỦ
+   *       ở `useLicenseModules`, khớp từng nhánh với `server/_core/moduleGate.ts`.
+   *
+   * ⇒ Chưa khai SKU · đang tải · guard `no_license` ⇒ **CHO VÀO**. Chỉ chặn khi SKU **đã khai** và
+   *   thật sự không gồm module này.
+   */
+  requireModule?: string;
 }
 
 export function RouteGuard({
@@ -50,6 +67,7 @@ export function RouteGuard({
   requireRole,
   requirePermission,
   navHref,
+  requireModule,
 }: RouteGuardProps) {
   const { t } = useTranslation();
   const [location, navigate] = useLocation();
@@ -57,9 +75,15 @@ export function RouteGuard({
   const { hasPermission, loading: permsLoading, isAdmin } = usePermissions();
   // doc 36 W3 — tenant-level license gate (independent of role). Flag-gated + only once
   // the license query has settled, so we never flash an upsell during load.
-  const { isRouteAllowed: isLicenseRouteAllowed, isLoading: licenseLoading } = useLicenseModules();
+  const {
+    isRouteAllowed: isLicenseRouteAllowed,
+    isLoading: licenseLoading,
+    isModuleBlocked,
+  } = useLicenseModules();
   const licenseBlocked =
     isLicenseEnforcementEnabled() && !licenseLoading && !isLicenseRouteAllowed(location);
+  // doc 80 — cổng theo MODULE khai tường minh; KHÔNG phụ thuộc cờ LICENSE_ROUTE_GUARD.
+  const moduleBlocked = requireModule !== undefined && isModuleBlocked(requireModule);
 
   const role = user?.role ?? undefined;
 
@@ -68,6 +92,33 @@ export function RouteGuard({
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // 1a-bis. doc 80 — cổng MODULE khai tường minh. Đặt TRƯỚC §1b và trước phép bỏ qua của admin:
+  //         giấy phép là thứ CÔNG TY đã mua, không phải thứ VAI được cấp — một admin cũng không
+  //         mở khoá được một module chưa mua. Trang này nói RÕ "chưa được cấp phép" (không phải
+  //         "không có quyền"), không màn trắng, không chuyển hướng vòng: URL giữ nguyên, và hai
+  //         lối ra là chợ module (`/modules`, tuyến CORE) và trang chính theo vai.
+  if (moduleBlocked) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+          <Lock className="h-9 w-9" />
+        </div>
+        <h1 className="text-2xl font-bold text-foreground" data-testid="module-not-licensed-title">
+          {t("routeGuard.moduleTitle", "Module chưa được cấp phép")}
+        </h1>
+        <p className="max-w-md text-muted-foreground">
+          {t("routeGuard.moduleMessage", "Hệ thống của bạn chưa mua module này. Liên hệ để nâng cấp gói bản quyền.")}
+        </p>
+        <div className="flex gap-2">
+          <Button onClick={() => navigate("/modules")}>{t("nav.app.upgrade", "Nâng cấp")}</Button>
+          <Button variant="outline" onClick={() => navigate(landingPathForRole(role))}>
+            {t("routeGuard.backToHome", "Về trang chính")}
+          </Button>
+        </div>
       </div>
     );
   }

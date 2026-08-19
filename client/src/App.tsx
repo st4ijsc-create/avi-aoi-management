@@ -414,7 +414,7 @@ function Router() {
       <Route path="/fleet-orchestration"><RouteGuard requirePermission="machine_control"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
       <Route path="/control-plane"><RouteGuard requirePermission="machine_control"><AIPageWrapper><ControlPlane /></AIPageWrapper></RouteGuard></Route>
       <Route path="/safety-workforce"><RouteGuard requirePermission="machine_status"><AIPageWrapper><SafetyWorkforce /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/robot-model-health"><RouteGuard requirePermission="machine_status"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/robot-model-health"><RouteGuard requirePermission="machine_status" requireModule="MOD_AI"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>
       <Route path="/equipment-standards"><RouteGuard requirePermission="machine_status"><AIPageWrapper><EquipmentStandards /></AIPageWrapper></RouteGuard></Route>
       <Route path="/equipment-integration"><RouteGuard requirePermission="machine_status"><AIPageWrapper><EquipmentIntegration /></AIPageWrapper></RouteGuard></Route>
       <Route path="/engineering-home"><RouteGuard navHref="/engineering-home"><EngineeringHub /></RouteGuard></Route>
@@ -491,48 +491,53 @@ function Router() {
           + AIStudioHub (/ai-studio) tile walls into one landing; both old URLs
           keep working via redirect. Workspace (read-open to all roles): chat /
           AI Home / management-insight / inbox. */}
-      <Route path="/ai-chat"><AIPageWrapper><AIChatPage /></AIPageWrapper></Route>
+      {/* ★★★ doc 80 — `requireModule="MOD_AI"` trên MỌI tuyến thuộc SKU AI. Nó KHÔNG thay RBAC
+          (`navHref`/`requirePermission`/`requireRole` giữ nguyên từng ký tự) — nó THÊM chiều
+          GIẤY PHÉP, và chỉ chặn khi SKU **đã khai** mà không gồm MOD_AI (xem RouteGuard §1a-bis).
+          Ba tuyến "read-open" dưới đây trước nay KHÔNG có RouteGuard nào; chúng được bọc mới
+          CHỈ để mang cổng module — không thêm một điều kiện vai/quyền nào. */}
+      <Route path="/ai-chat"><RouteGuard requireModule="MOD_AI"><AIPageWrapper><AIChatPage /></AIPageWrapper></RouteGuard></Route>
       {/* doc 78 PHA D — Không gian lập trình AI: ghim RBAC ai_repo_read (engineer/admin), KHÔNG mở cho mọi tài khoản. */}
-      <Route path="/ai-coding-workspace"><RouteGuard requirePermission="ai_repo_read"><AIPageWrapper><AICodingWorkspace /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-home"><AIPageWrapper><AIHome /></AIPageWrapper></Route>
+      <Route path="/ai-coding-workspace"><RouteGuard requirePermission="ai_repo_read" requireModule="MOD_AI"><AIPageWrapper><AICodingWorkspace /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-home"><RouteGuard requireModule="MOD_AI"><AIPageWrapper><AIHome /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-hub"><Redirect to="/ai-home" /></Route>
-      <Route path="/management-insight"><AIPageWrapper><ManagementInsight /></AIPageWrapper></Route>
+      <Route path="/management-insight"><RouteGuard requireModule="MOD_AI"><AIPageWrapper><ManagementInsight /></AIPageWrapper></RouteGuard></Route>
       {/* /ai-local-kb was a mislabeled chatbot (not a real knowledge base) — the
           real RAG knowledge base is a later task (doc 69 Wave E3). */}
       <Route path="/ai-local-kb"><Redirect to="/ai-chat" /></Route>
       {/* AI Control Plane / Ops / Vision — admin-gated. */}
-      <Route path="/ai-brain"><RouteGuard navHref="/ai-brain"><AIPageWrapper><AIBrainDashboard /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-command-center"><RouteGuard navHref="/ai-command-center"><AIPageWrapper><AIAgentCommandCenter /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-specialist-studio"><RouteGuard navHref="/ai-specialist-studio"><AIPageWrapper><AISpecialistStudio /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-monitoring"><RouteGuard navHref="/ai-monitoring"><AIPageWrapper><ModelMonitoringPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-performance"><RouteGuard navHref="/ai-performance"><AIPageWrapper><AIPerformanceDashboard /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-brain"><RouteGuard navHref="/ai-brain" requireModule="MOD_AI"><AIPageWrapper><AIBrainDashboard /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-command-center"><RouteGuard navHref="/ai-command-center" requireModule="MOD_AI"><AIPageWrapper><AIAgentCommandCenter /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-specialist-studio"><RouteGuard navHref="/ai-specialist-studio" requireModule="MOD_AI"><AIPageWrapper><AISpecialistStudio /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-monitoring"><RouteGuard navHref="/ai-monitoring" requireModule="MOD_AI"><AIPageWrapper><ModelMonitoringPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-performance"><RouteGuard navHref="/ai-performance" requireModule="MOD_AI"><AIPageWrapper><AIPerformanceDashboard /></AIPageWrapper></RouteGuard></Route>
       {/* doc 69 Wave E1 (T7) — split from AIPerformanceDashboard (evaluation before/after
           + A/B canary); same RBAC guard as /ai-performance. */}
-      <Route path="/ai-experiments"><RouteGuard navHref="/ai-experiments"><AIPageWrapper><AIExperimentsPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-models"><RouteGuard navHref="/ai-models"><AIPageWrapper><AIModelManagementPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/model-versions"><RouteGuard navHref="/model-versions"><AIPageWrapper><ModelVersionsPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-settings"><RouteGuard navHref="/ai-settings"><AIPageWrapper><AISettingsPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-active-learning"><RouteGuard navHref="/ai-active-learning"><AIPageWrapper><AIActiveLearningPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-batch-jobs"><RouteGuard navHref="/ai-batch-jobs"><AIPageWrapper><BatchInferencePage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-data-processing"><RouteGuard navHref="/ai-data-processing"><AIPageWrapper><AIDataProcessingPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-experiments"><RouteGuard navHref="/ai-experiments" requireModule="MOD_AI"><AIPageWrapper><AIExperimentsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-models"><RouteGuard navHref="/ai-models" requireModule="MOD_AI"><AIPageWrapper><AIModelManagementPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/model-versions"><RouteGuard navHref="/model-versions" requireModule="MOD_AI"><AIPageWrapper><ModelVersionsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-settings"><RouteGuard navHref="/ai-settings" requireModule="MOD_AI"><AIPageWrapper><AISettingsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-active-learning"><RouteGuard navHref="/ai-active-learning" requireModule="MOD_AI"><AIPageWrapper><AIActiveLearningPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-batch-jobs"><RouteGuard navHref="/ai-batch-jobs" requireModule="MOD_AI"><AIPageWrapper><BatchInferencePage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-data-processing"><RouteGuard navHref="/ai-data-processing" requireModule="MOD_AI"><AIPageWrapper><AIDataProcessingPage /></AIPageWrapper></RouteGuard></Route>
       {/* doc 69 Wave E1 (T7) — split from AIDataProcessingPage (dataset-split tab, a
           durable Knowledge & Training asset); same RBAC guard as /ai-data-processing. */}
-      <Route path="/ai-datasets"><RouteGuard navHref="/ai-datasets"><AIPageWrapper><AIDatasetsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-datasets"><RouteGuard navHref="/ai-datasets" requireModule="MOD_AI"><AIPageWrapper><AIDatasetsPage /></AIPageWrapper></RouteGuard></Route>
       {/* doc69 GĐ5/Wave E3 (E3-2) — Training Studio: the nav comment at /ai-datasets's
           registration (doc 69 Wave E1/T7) said Training Studio was "a later E3 task — NOT
           added here"; this is that task. Same admin-gated RouteGuard shape as /ai-datasets
           (kbStudioRouter.ts itself allows admin+engineer — see navigation.tsx's comment). */}
-      <Route path="/ai-training-studio"><RouteGuard navHref="/ai-training-studio"><AIPageWrapper><KbStudioPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-time-series"><RouteGuard navHref="/ai-time-series"><AIPageWrapper><AITimeSeriesPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-reports"><RouteGuard navHref="/ai-reports"><AIPageWrapper><AIReportsPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-quality-gate"><RouteGuard navHref="/ai-quality-gate"><AIPageWrapper><AIQualityGatePage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-image-search"><RouteGuard navHref="/ai-image-search"><AIPageWrapper><AIImageSearchPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-advanced-vision-lab"><RouteGuard navHref="/ai-advanced-vision-lab"><AIPageWrapper><AdvancedVisionLabPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/anomaly-banks"><RouteGuard navHref="/anomaly-banks"><AnomalyBankPage /></RouteGuard></Route>
-      <Route path="/mask-annotation"><RouteGuard navHref="/mask-annotation"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/causal-graph"><RouteGuard navHref="/causal-graph"><AIPageWrapper><CausalGraphEditorPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-inspection-analytics"><RouteGuard requirePermission="analytics_ai_performance"><AIPageWrapper><AIInspectionAnalyticsPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-gguf-models"><RouteGuard requireRole={["admin"]}><AIPageWrapper><AIGgufModelsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-training-studio"><RouteGuard navHref="/ai-training-studio" requireModule="MOD_AI"><AIPageWrapper><KbStudioPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-time-series"><RouteGuard navHref="/ai-time-series" requireModule="MOD_AI"><AIPageWrapper><AITimeSeriesPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-reports"><RouteGuard navHref="/ai-reports" requireModule="MOD_AI"><AIPageWrapper><AIReportsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-quality-gate"><RouteGuard navHref="/ai-quality-gate" requireModule="MOD_AI"><AIPageWrapper><AIQualityGatePage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-image-search"><RouteGuard navHref="/ai-image-search" requireModule="MOD_AI"><AIPageWrapper><AIImageSearchPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-advanced-vision-lab"><RouteGuard navHref="/ai-advanced-vision-lab" requireModule="MOD_AI"><AIPageWrapper><AdvancedVisionLabPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/anomaly-banks"><RouteGuard navHref="/anomaly-banks" requireModule="MOD_AI"><AnomalyBankPage /></RouteGuard></Route>
+      <Route path="/mask-annotation"><RouteGuard navHref="/mask-annotation" requireModule="MOD_AI"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/causal-graph"><RouteGuard navHref="/causal-graph" requireModule="MOD_AI"><AIPageWrapper><CausalGraphEditorPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-inspection-analytics"><RouteGuard requirePermission="analytics_ai_performance" requireModule="MOD_AI"><AIPageWrapper><AIInspectionAnalyticsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-gguf-models"><RouteGuard requireRole={["admin"]} requireModule="MOD_AI"><AIPageWrapper><AIGgufModelsPage /></AIPageWrapper></RouteGuard></Route>
       {/* X3: /ai-ab-testing was a deprecated stub → redirect to the B6 canary tab. */}
       <Route path="/ai-ab-testing"><Redirect to="/ai-performance" /></Route>
 
