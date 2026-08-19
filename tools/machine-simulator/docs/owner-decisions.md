@@ -40,7 +40,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 9 | sàn môi trường trên nhánh *không đọc được* | 🔴 **CHỜ ANH** — chủ sở hữu **HOÃN** 2026-08-18 (*"để lại sau cùng"*); một lần hoãn không phải một phán quyết |
 | 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔨 **GIỮ BLOB CŨ DƯỚI TÊN KHÁC** (2026-08-18) — DI CHUYỂN dữ liệu, **miễn trừ CHỈ cho mục này**; đã thi hành, Z-1 |
 | 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); đã thi hành, Z-1 |
-| 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 4 ĐÃ TRẢ 2026-08-19 (AG-1, đợt 4/8): 101 khẳng định ĐÃ SAI được TRỎ LẠI (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, 0 dòng mã đụng tới), `EXPECT_WARNINGS` 852 → 751 ĐO, sổ 19 → 16 hàng, 185 vendored / 566 ours, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **532 chỗ trống của ta chưa trả** (+ 103 vendored không ai trả được). Đợt 5–8 trả, mỗi đợt đo lại |
+| 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 4 ĐÃ TRẢ 2026-08-19 (AG-1, đợt 4/8): 101 khẳng định ĐÃ SAI được TRỎ LẠI (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, 0 dòng mã đụng tới), `EXPECT_WARNINGS` 852 → 751 ĐO, sổ 19 → 16 hàng, 185 vendored / 566 ours, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **532 chỗ trống của ta chưa trả** (+ 103 vendored không ai trả được). Đợt 5–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 5 ĐÃ TRẢ 2026-08-19 (AH-1, đợt 5/8): 120 chỗ THIẾU được VIẾT — một cụm mạch lạc, mô hình dữ liệu config-sync (7 file `Config/`, cả 120 là CS1591), `EXPECT_WARNINGS` 751 → 631 ĐO, sổ vẫn 16 hàng, 185 vendored / 446 ours, `OURS CS1591 448 → 328`, `OURS CS1573 84` KHÔNG dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **412 chỗ trống của ta chưa trả**. Đợt 6–8 trả, mỗi đợt đo lại |
 | 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔴 **CHỜ ANH** — phần dư của mục 11, mở 2026-08-18 (Z-1, vòng sửa 1); **ca THÔNG THƯỜNG hơn** trong hai ca cùng hình dạng |
 | 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT** |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
@@ -1292,6 +1292,111 @@ là vô hình với mọi dụng cụ đo VĂN BẢN, và là thứ cờ đượ
 * **Không dụng cụ nào canh PAYLOAD** — y như sau đợt 3.
 * 🔴 **Ba mã nay đứng ở 0 nên nửa A mù trước một lệnh đè nhắm chúng** — chỉ nửa B thấy. Đây là một
   chỗ hở **mới xuất hiện cùng đợt này**, được nêu tên tại chỗ trong cả hai file cơ chế.
+
+#### 10. 🔨 ĐỢT 5 — PHÁN QUYẾT VẪN ĐANG THI HÀNH **TỪNG PHẦN** (AH-1, 2026-08-19, base `f28744eb`)
+
+🔴 **Vẫn là một ghi chép THI HÀNH TỪNG PHẦN. Mục 12 Ở LẠI PHẦN II.** 221 trong 736 đã trả;
+**515 còn nợ** (412 chỗ trống của ta + 103 cái vendored không ai trả được).
+
+🔴 **Đây là đợt ĐẦU TIÊN trả bằng cách VIẾT, nên sản phẩm giao ra CHÍNH LÀ hàng trăm khẳng định mới.**
+Luật đợt này làm việc dưới nó: *một `<summary>` chỉ diễn đạt lại cái TÊN thì không phải một lần trả*;
+chỗ nào thật sự không có gì để nói ngoài cái tên thì đó là **một phát hiện phải nêu**, không phải một
+ô trống để lấp.
+
+**CỤM ĐÃ CHỌN, và lý do là một phép ĐO chứ không phải một sở thích:** **mô hình dữ liệu config-sync** —
+**bảy kiểu mà CÁCH VIẾT TÊN THÀNH VIÊN của chúng là một chuỗi đã công bố ra ngoài repo này.**
+`src/St4i.EngineApi/Config/LiveConfigSyncWireDtos.cs` khai báo `MeasurementPoint` và `Fiducial`
+**CHÍNH LÀ hình dạng wire** của `get-points` / `delta-sync-points` từ máy chủ SYNAPSE thật (chính sách
+camelCase, **không có DTO trung gian**); `LightingShot` đi bên trong một điểm; còn `ProductModel`,
+`ProductVariant`, `VariantPointOverride`, `Recipe` là hình dạng của `products.json` / `recipes.json`
+— đúng hai file mà `scripts/verify-suites.sh` **đã miễn trừ theo TÊN** khỏi phép canh thư mục đầu ra
+vì người vận hành sửa tay chúng. Mỗi **thành viên enum** được trả đều nêu **đúng token nó tuần tự hoá
+thành**, và `ConfigJsonConverters` dựng các converter ấy với `allowIntegerValues:false` — nghĩa là
+**cách viết CHÍNH LÀ toàn bộ hợp đồng**, một giá trị số là một lỗi đọc cứng. Đó là **luật P-2 áp vào
+chỗ người đọc là máy chủ của một công ty khác**. Các **store và converter** quanh cụm này **vốn đã
+được lập tài liệu đầy đủ** và không phát một cảnh báo nào; **chỉ có DỮ LIỆU đi qua ranh giới là chưa
+ai tả**.
+
+| file | số |
+|---|---:|
+| `Config/MeasurementPoint.cs` | 64 |
+| `Config/ProductModel.cs` | 17 |
+| `Config/LightingShot.cs` | 12 |
+| `Config/Fiducial.cs` | 11 |
+| `Config/Recipe.cs` | 8 |
+| `Config/ProductVariant.cs` | 4 |
+| `Config/VariantPointOverride.cs` | 4 |
+| **tổng** | **120** |
+
+**Con số thật — ĐO, không trừ.** `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild` toàn bộ solution,
+SDK 10.0.302, 15/15 compilation, `Build succeeded.`, `0 Error(s)`:
+
+| | |
+|---|---:|
+| `EXPECT_WARNINGS` trước | 751 |
+| **`EXPECT_WARNINGS` sau, ĐO** | **631** |
+
+`751 − 120 = 631` là **số học** và nó **khớp** phép đo — khớp ấy được báo cáo **như một kết quả**.
+🔴 **Bản `-t:Rebuild` ĐẦU TIÊN của cây này phải BỎ ĐI và chạy lại:** nó báo **7 lỗi / 14 compilation**,
+và **cả 7 đều là CS2001 bên trong một project `*_wpftmp`** — đúng cái điều kiện chạy lại mà chính hồ
+sơ của repo này đã nêu tên. Lần chạy lại: 15/15, `0 Error(s)`, **631**.
+
+**Sổ tách-gốc — MỘT hàng dịch, và chỉ một: `OURS CS1591 448 → 328`.** Vẫn **16 hàng** (không mã nào
+về 0 nên không hàng nào bị xoá). **VENDORED 185 / OURS 446 = 631.**
+
+🔴 **`OURS CS1573 84` KHÔNG dịch, và LÝ DO quan trọng hơn sự kiện.** Đợt 1 đo được rằng trả một
+CS1591 bằng `<summary>` + **một phần** `<param>` **sinh ra** một CS1573, và cảnh báo rằng đợt 5–8 là
+các đợt **viết**. Nó không nổ ở đây vì **không một thành viên nào trong 120 cái có tham số**: 118
+property và thành viên enum, cộng hai method `BumpVersion()` **không tham số**. Nên **đợt này KHÔNG
+làm giảm rủi ro ấy cho đợt 6–8 — nó chưa từng mở kênh ấy ra.** Đợt đầu tiên lập tài liệu cho một
+thành viên **CÓ tham số** vẫn là đợt đầu tiên có thể làm CS1573 **TĂNG**.
+
+🔴 **Tám hàng VENDORED không dịch một đơn vị** — phép kiểm rằng không file vendored nào bị đụng.
+
+🔴 **DẠNG KHẲNG ĐỊNH VỀ DIFF ĐỔI HÌNH Ở ĐÂY, và đó là chuyện CẤU TRÚC chứ không phải cẩu thả.**
+Đợt 4 nói được *"KHÔNG dòng thay đổi nào không phải `///`"*. Một đợt lập tài liệu cho **THÀNH VIÊN
+ENUM** thì **không thể**: một khối `///` không gắn được vào thành viên nằm trong khai báo một dòng
+`public enum X { A, B }`, nên trả những cảnh báo ấy **buộc phải** dàn lại khai báo. **Bảy** khai báo
+đã bị dàn lại. Câu còn đứng được là một **số KHÔNG hẹp hơn**: ngoài các dòng `///`, dòng trống, **một**
+khối `//` ba dòng và **bảy** lần dàn lại dấu ngoặc/dấu phẩy ấy, **KHÔNG dòng nào thay đổi** — và **cả
+bảy dãy thành viên enum giống hệt nhau, đúng tên, đúng thứ tự**, điều đáng kể vì **thứ tự enum chính
+là giá trị nền**. **Không một câu lệnh thực thi nào bị đụng.** Đợt 6–8 nào lập tài liệu cho enum sẽ
+gặp đúng chuyện này.
+
+🔴 **VÒNG PHẢN BIỆN BÁC 17 TRONG 120 CÂU, VÀ ĐÓ MỚI LÀ KẾT QUẢ THẬT CỦA ĐỢT 5.** Phản biện lấy mẫu
+**48** câu và tìm **17 câu SAI** (~35%) — **không dụng cụ nào trong cây này thấy một cái nào**: cổng
+xanh, W-1 xanh, mọi hàng sổ tái lập chính xác, `EXPECT_WARNINGS` không nhúc nhích. **Mười hai cái có
+CHUNG một nguyên nhân:** file seed được đọc tới điểm thứ năm rồi dừng, và các **phủ định tồn tại**
+(*"không seed nào đặt"*, *"unused"*) được viết phủ lên **chín điểm chưa bao giờ mở**. Hai cái nữa là
+một cuộc kiểm đếm caller viết mà **không chạy grep**, rồi **chép sang file thứ hai** — một lệnh không
+chạy đẻ ra hai khẳng định sai. **Một phép LẤY MẪU mặc áo một phép KIỂM ĐẾM**, đúng hình dạng bài học
+lần thứ chín của đợt 4, ở một lớp cao hơn.
+
+**Vòng sửa THUẦN VĂN XUÔI đã sửa 39 trong 120 câu** dưới **hai luật máy móc** — mọi khẳng định về một
+**quần thể** phải được **liệt kê bằng dụng cụ** trước khi bị phủ định bằng tay; mọi **tập/khoảng quan
+sát được** phải **trích tự động** thay vì nhớ lại. Phân loại: **17 sai hẳn · 8 mạo từ xác định trên
+tập không đầy đủ · 4 chỉ diễn đạt lại cái tên · 2 vượt bằng chứng · 1 nêu cơ chế cây này chưa từng
+chạy · 7 quá mỏng**. 🔴 Câu *"0 ca chỉ có cái tên"* của bản đầu **là SAI** — đúng **bốn** ca.
+**Không một dòng cơ khí nào bị đụng lại:** enum, sổ, `EXPECT_WARNINGS` 631, tổng 2763 đều y nguyên.
+Hai luật ấy và phát hiện *"một khối `//` mới là văn xuôi không dụng cụ nào canh"* được ghi vào
+`scripts/verify-suites.sh` cạnh khối đợt 5, nơi đợt 6–8 đọc.
+
+**Việc còn nợ sau đợt 5, nêu tên chứ không làm:**
+* **412 chỗ trống bao phủ của ta** (328 CS1591 + 84 CS1573) — đợt 6–8. **Mỗi đợt đo lại.**
+* **103 cái vendored** — không đổi, phải ở nguyên đó.
+* **Mười hai artefact phụ trong bản cài**, **không dụng cụ nào canh PAYLOAD**, **nửa A mù trước một
+  lệnh đè nhắm ba mã đã về 0** — cả ba y như sau đợt 4, không cái nào được đợt này đụng tới.
+* 🔴 **Bốn quan sát về MÃ mà đợt này DỪNG LẠI để báo thay vì tự sửa** — xem
+  `.superpowers/sdd/item12-stage5/task-1-report.md` §7. Không cái nào được sửa, không cái nào được mở
+  thành mục. **Nửa UX của quan sát (3) là HÌNH DẠNG CHỦ SỞ HỮU** (27 trường người vận hành sửa được mà
+  kênh đẩy không mang; huy hiệu drift chuyển vàng; cách chữa tự động duy nhất là một lần kéo **xoá**
+  luôn sửa đổi) — brief nói *"dừng và báo"*, **không nói "mở mục"**, nên nó **được báo và KHÔNG được
+  mở**. Nhãn cũ gọi nó là *"không phải việc của đợt này"* và **đã bị rút**: phân loại sai làm người
+  đọc xếp nó chung với ba quan sát kỹ thuật kia.
+* 🔴 **`HistorianResultRecord` — 23 tham số, một `<param>`, 22 CS1573 ĐANG SỐNG.** Nhân chứng do phản
+  biện tìm ra cho cái bẫy §5: cờ **im lặng tuyệt đối** khi một `record` positional có `<summary>` và
+  **0** `<param>`, nhưng **nổ hết một lượt** khi có **một** thẻ thiếu. Đợt 6–8 nên dùng nó làm ca
+  kiểm chứng.
 
 ---
 

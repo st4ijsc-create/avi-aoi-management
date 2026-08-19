@@ -1587,6 +1587,65 @@ EXPECT_CONFORMANCE=24
 #   ITSELF. A `grep` for the retired literal is four seconds and neither of us ran it. The correction to a
 #   correction is where this rule keeps landing, so: WHEN YOU WITHDRAW A NUMBER, GREP THE REPOSITORY FOR
 #   IT — retiring one occurrence and saying "all of them" is the same defect wearing the fix's clothes.
+#
+# 🔴 TASK AH-1 (.superpowers/sdd/item12-stage5/task-1-brief.md) — ITEM 12 STAGE 5, THE FIRST 120 COVERAGE
+# GAPS ARE PAID BY WRITING — ALSO MOVES NO SUITE TOTAL. EXPECT_ABSTRACTIONS 161, EXPECT_CONFORMANCE 24,
+# EXPECT_EDGECORE 1152, EXPECT_EDGESERVICE 52, EXPECT_ENGINEAPI 1374, grand total 2763: unchanged, and
+# again as a MEASUREMENT. AH-1 adds no test and deletes none. It edits SEVEN files under
+# src/St4i.EdgeCore/Config and moves EXPECT_WARNINGS 751 -> 631 and one ledger row
+# (OURS CS1591 448 -> 328); the table still holds sixteen rows because nothing reached zero.
+# SuppressionCensusTests is untouched and its three tables are unmoved: 5 file / 8 instruction /
+# CS0618 + CS0162, 8 on / 7 off, analyzer-config files EMPTY. EXPECT_BUILD_NODES stays 0.
+#   🔴 THE DIFF CLAIM IS NARROWER THAN STAGE 4's AND THAT IS STRUCTURAL, NOT SLOPPINESS. Documenting an
+#   enum MEMBER forces the one-line `public enum X { A, B }` declaration to be re-laid out, because a
+#   `///` block cannot attach to a member inside it. Seven declarations were re-laid out. Outside `///`
+#   lines, blank lines, one 3-line `//` banner and those seven re-layouts, ZERO lines changed — and all
+#   seven member sequences are identical name-for-name and order-for-order, which is the part that would
+#   have mattered had it not held. Stages 6..8 documenting enums will meet exactly the same thing.
+#   🔴 AND ONE SENTENCE AH-1 SHIPPED HAD TO BE WITHDRAWN ONE COMMIT LATER, BY ITSELF. It is the failure
+#   mode the whole of stages 5..8 should expect, so it is recorded here rather than only in the report.
+#   `ProductModel.ImageWidth`'s doc said it was "also the denominator for
+#   MeasurementPoint.NormalizedRadius". The arithmetic is real — the seed's 10-unit radius on a
+#   1600-wide board is 0.00625, and the board canvas multiplies back by container WIDTH — but NO CODE
+#   ANYWHERE PERFORMS THAT DIVISION: normalizedRadius is authored by hand and only range-checked to
+#   [0,1] by the web form. The sentence attributed an OPERATION to code that does not do it, while
+#   every number in it was correct. THAT is the shape to watch for when the deliverable is prose: not
+#   a wrong fact, a right fact given a false mechanism, and it reads perfectly. The only defence is
+#   walking the code path before asserting — which is also how the same round caught itself claiming
+#   that JSON key order reaches the drift key (ConfigChecksum.StableStringify sorts keys ordinally, so
+#   it does not, and that sentence never reached a commit because the code was read first).
+#
+# 🔴 AND THE BRANCH REVIEW THEN FOUND SEVENTEEN MORE, WHICH IS THE REAL RESULT OF STAGE 5 AND THE ONE
+# STAGES 6..8 MUST BUDGET FOR. It sampled 48 of the 120 sentences and refuted 17 -- about 35% -- and
+# NOT ONE of them was visible to anything in this repository: the gate was green, DocCommentProseTests
+# was green, every ledger row reproduced exactly, and EXPECT_WARNINGS did not move. A documentation
+# stage's output is assertions, and this file's instruments count assertions without reading them.
+#
+# 🔴 THE CAUSE WAS NOT CARELESS PROSE, IT WAS A SAMPLE WEARING A CENSUS'S CLOTHES. Twelve of the 17
+# had one origin: the author read ProductConfigStore's seed as far as point P05, stopped, and then
+# wrote EXISTENCE NEGATIONS ("no seed sets this", "unused by anything this repository seeds") over
+# nine points never opened -- P06..P08 and all of SeedModelB. Two more were a `BumpVersion` caller
+# census written without a grep, and then COPIED INTO A SECOND FILE, so one unrun command produced two
+# wrong claims. That is the ninth-instance lesson from stage 4 (retire one occurrence, declare "all")
+# reappearing one layer up, in the stage that quoted it.
+#
+# 🔴 TWO MECHANICAL RULES, AND STAGES 6..8 SHOULD TREAT THEM AS PRECONDITIONS RATHER THAN ADVICE:
+#   (i)  Any sentence containing `unused` / `no seed` / `unpopulated` / `never` / `only` / `every` /
+#        `exactly N` / `spans A-B` is a claim about a POPULATION. Enumerate that population WITH A
+#        TOOL before negating it by hand, and keep the command.
+#   (ii) Any observable SET or RANGE must be EXTRACTED automatically from the source it describes,
+#        never typed from memory of having read it. Stage 5's round-two fix extracted every seed value
+#        with a script and corrected 39 of its own 120 sentences: 17 outright false, 8 stating a
+#        definite article over an incomplete set, 4 that merely restated the member name, 2 reaching
+#        past their evidence, 1 describing a mechanism this tree never exercises, and 7 too thin.
+#
+# 🔴 AND A THIRD THING, SMALLER AND EASY TO MISS: A NEW `//` COMMENT IS PROSE NOTHING GUARDS.
+# DocCommentProseTests reads `///` only, and the compiler reads neither. Stage 5's first round put a
+# three-line `//` banner carrying a factual claim above a property block, and the claim was WRONG --
+# an assertion planted at the one spot both instruments are blind to, and its own diff filter listed
+# "`//` lines" as an excluded class, so its "zero non-`///` lines" check absorbed it. The fix was not
+# to count those lines separately but to REMOVE them: the corrected statement moved into a `<summary>`
+# where W-1 can see it, and the new-`//`-line count for the whole stage is now zero.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 EXPECT_EDGECORE=1152
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
@@ -5074,7 +5133,45 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 #   invisible to this half again". That day is today, for three codes. The half that still sees it is
 #   tests/St4i.EdgeCore.Tests/SuppressionCensusTests.cs, which enumerates suppression INSTRUCTIONS and so
 #   does not need the code to be emitted anywhere. That is why both halves exist.
-EXPECT_WARNINGS=751
+#
+# ══ TASK AH-1 (.superpowers/sdd/item12-stage5/task-1-brief.md) — ITEM 12 STAGE 5 ══════════════════════
+# 751 -> 631. THE FIRST STAGE THAT PAYS BY WRITING, and the first whose deliverable is itself a pile of
+# new published claims. One coherent surface was paid, chosen for a reason and not for a count: the
+# config-sync DOMAIN MODEL, the seven types whose member SPELLING is a string published outside this
+# repository. MeasurementPoint and Fiducial are deserialized DIRECTLY off the real ecosystem's
+# get-points/delta-sync responses (St4i.EngineApi/Config/LiveConfigSyncWireDtos.cs declares them as the
+# wire shape, camelCase policy), LightingShot rides inside a point, and ProductModel/ProductVariant/
+# VariantPointOverride/Recipe are the shape of products.json / recipes.json, the two operator-editable
+# files this very script exempts by name from its outdir watch. Every enum member paid states the exact
+# token it serializes to; `allowIntegerValues:false` in ConfigJsonConverters makes that spelling the
+# WHOLE contract, since a numeric value is a hard read failure. That is P-2's law -- a member's spelling
+# is a published string -- applied where the reader is a different company's server.
+#
+# 🔴 631 IS MEASURED, NOT SUBTRACTED, AND IT WAS MEASURED TWICE. `MSBUILDDISABLENODEREUSE=1 dotnet build
+# -t:Rebuild --nologo` over the whole solution, SDK 10.0.302. The FIRST run reported 7 errors and 14
+# compilations, every error CS2001 inside St4iMachineSimulator_nwqh2aku_wpftmp.csproj -- the exact shape
+# this file already warns must be re-run before it is believed. Re-run: 15/15 compilations,
+# `Build succeeded.`, `0 Error(s)`, `631 Warning(s)`. 751 - 120 = 631 is arithmetic that AGREES; it is
+# reported as a result and was not used in place of the measurement.
+#
+# 🔴 ONE ROW MOVED AND ONLY ONE: `OURS CS1591 448 -> 328`. Sixteen rows before, sixteen after -- nothing
+# reached zero, so nothing was deleted this time. `OURS CS1573 84` DID NOT MOVE, and for this stage that
+# is a measured result rather than a construction: stage 1 proved that paying a CS1591 with a partial set
+# of `<param>` tags CREATES a CS1573, and stages 5..8 are the stages that write. It did not fire here
+# because NOT ONE of the 120 members paid takes a parameter -- 118 properties and enum members, plus
+# ProductModel.BumpVersion() and Recipe.BumpVersion(), both nullary. So this stage does NOT de-risk that
+# channel for stages 6..8; it never opened it. The eight VENDORED rows did not move one unit.
+#
+# 🔴 AND THE CHECKABLE CLAIM ABOUT THE DIFF CHANGES SHAPE HERE, WHICH THE NEXT STAGES INHERIT. Stage 4
+# could say "ZERO changed lines that are not `///`". A stage that documents ENUM MEMBERS cannot: you
+# cannot attach a doc comment to a member of a one-line `public enum X { A, B }` declaration, so paying
+# those warnings REQUIRES re-laying the declaration out. Seven declarations were re-laid out here
+# (MeasurementType, ToleranceMode, PointShape, ProductLifecycleStatus, CoordinateMode, RecipeStatus,
+# VariantOverrideAction). The claim that survives is narrower and still a zero: outside `///` lines,
+# blank lines, one 3-line `//` banner and those seven brace/comma re-layouts, ZERO lines changed -- and
+# the member SEQUENCE of all seven is identical name-for-name and order-for-order, which matters because
+# enum order is the underlying value. No executable statement was touched anywhere.
+EXPECT_WARNINGS=631
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
@@ -5351,6 +5448,15 @@ warning_ledger() {
 #  two rows named in the sentence. The sentence is otherwise unchanged and its warning is UNSPENT — it is
 #  addressed to stages 5..8, which are the stages that WRITE, and this stage wrote nothing. The
 #  CS1591 -> CS1573 channel it describes has not been exercised yet by anybody.]
+# [🔴 "532 remain" AND "`OURS CS1591 448` falls" BOTH WITHDRAWN 2026-08-19 by task AH-1 (item 12 stage 5),
+#  which grepped the whole repository for the literals it was moving because the last stage learned that
+#  lesson the expensive way. 412 remain, in those same two rows: 328 CS1591 + 84 CS1573.
+#  🔴 THE WARNING IN THE SENTENCE IS STILL UNSPENT, AND AH-1 IS THE STAGE THAT HAD TO SAY SO ABOUT
+#  ITSELF. Stage 5 DID write, and CS1573 still did not rise — not because the channel is safe but
+#  because none of the 120 members it documented takes a parameter (118 properties and enum members,
+#  plus two nullary methods). "Both rows fell in lockstep" would have been the guess this sentence
+#  warns about; what happened is that ONE row fell and the other was measured and found unmoved. Stages
+#  6..8 inherit the warning at full strength.]
 #
 # ══ THE ROWS MOVED A SECOND TIME, BY TASK AG-1 (item 12 stage 4, 2026-08-19) ═══════════════════════════
 #
@@ -5369,8 +5475,37 @@ warning_ledger() {
 # rows are stages 5..8's bill, not this stage's. The block above explains why they COULD have moved (the
 # CS1591 -> CS1573 channel) and why they did not here (nothing was written, only re-pointed). A stage-4
 # report showing either of them moving would have been a stage that reached past its own scope.
+#
+# ══ THE ROWS MOVED A THIRD TIME, BY TASK AH-1 (item 12 stage 5, 2026-08-19) ════════════════════════════
+#
+# 🔴 THE ENUMERATION FIRST, THE COUNTS AFTER — ninth time this file has watched that rule earn its keep.
+# What changed, listed:
+#     MOVED, OURS  CS1591 448 -> 328    — one row, -120, PAID by WRITING documentation
+#     MOVED        none other. Not one of the other fifteen rows changed value, in either bucket.
+# No row was added and no row reached zero, so the table still holds SIXTEEN rows.
+# VENDORED 185 / OURS 446 = 631.
+#
+# 🔴 THE 120 ARE ONE SURFACE, NOT A QUOTA, AND HERE IS THE WHOLE OF IT, per file:
+#     Config/MeasurementPoint.cs 64 · Config/ProductModel.cs 17 · Config/LightingShot.cs 12 ·
+#     Config/Fiducial.cs 11 · Config/Recipe.cs 8 · Config/ProductVariant.cs 4 ·
+#     Config/VariantPointOverride.cs 4
+# Seven files, 120 members, all CS1591, zero CS1573 -- they are the edge-local mirror of the ecosystem's
+# config-sync data model (docs/CONFIG_SYNC_SERVER_CONTRACT.md). The STORES and CONVERTERS around them
+# (ProductConfigStore, MachineConfigStore, ConfigChecksum, ConfigJsonConverters) already carried full
+# documentation and contributed no warning at all; it was only the DATA that crossed the boundary
+# undescribed.
+#
+# 🔴 THE EIGHT VENDORED ROWS DID NOT MOVE ONE UNIT — the same assertion stage 4 had to pass, and this
+# stage edited seven files, none of them the vendored SDK file. CS1573 8 · CS1591 95 · CS8600 5 ·
+# CS8601 2 · CS8603 2 · CS8604 1 · CS8618 35 · CS8625 37 = 185, identical to stages 3 and 4.
+#
+# 🔴 WHAT STAGES 6..8 STILL OWE, and it is no longer 532: 412 coverage warnings remain on our own source,
+# 328 CS1591 + 84 CS1573. The CS1591 -> CS1573 channel is STILL UNEXERCISED by anybody -- see the block
+# at EXPECT_WARNINGS for why this stage could not exercise it -- so the first stage that documents a
+# member WITH PARAMETERS is still the first stage that can make CS1573 rise. It must expect that and
+# re-measure rather than subtract.
 EXPECT_WARNING_LEDGER="OURS CS1573 84
-OURS CS1591 448
+OURS CS1591 328
 OURS CS8601 7
 OURS CS8604 14
 OURS CS8767 2
