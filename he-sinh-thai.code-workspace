@@ -1,0 +1,61 @@
+{
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  // CỬA SỔ "HỆ SINH THÁI" — mọi module TRỪ AI lập trình.
+  //
+  // Mở tệp này ở cửa sổ VS Code thứ hai để làm sản xuất / chất lượng / thiết bị / báo cáo… mà
+  // không bị mã AI xen vào kết quả tìm kiếm. Cặp đôi: `ai-coding.code-workspace`.
+  //
+  // ⚠ Đây là bộ lọc TRÌNH SOẠN THẢO, không phải ranh giới chạy. Ranh giới sản phẩm thật là cổng
+  //   giấy phép `MOD_AI` (đã nghiệm thu: khách không mua AI vẫn chạy đủ mọi module khác).
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  "folders": [
+    { "name": "Repo", "path": "." }
+  ],
+
+  "settings": {
+    // Ẩn vùng AI khỏi TÌM KIẾM. Không ẩn khỏi Explorer — thỉnh thoảng vẫn cần mở để đọc tham chiếu.
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/dist": true,
+      "**/dist-secure": true,
+      "uploads": true,
+      "knowledge": true,
+      "models": true,
+      "logs": true,
+      "**/*.png": true,
+      "**/*.gguf": true,
+      "**/*.jsonl": true,
+
+      // ── Vùng AI lập trình ────────────────────────────────────────────────────────────────────
+      "server/services/aiLocalTools": true,
+      "server/services/vram": true,
+      "server/services/programming": true,
+      "server/services/aiCoding*": true,
+      "server/services/aiGguf*": true,
+      "server/services/aiLlama*": true,
+      "server/services/aiModelRouter.ts": true,
+      "server/services/aiLocalKnowledgeService.ts": true,
+      "server/routers/repoWorkspaceRouter.ts": true,
+      "client/src/pages/AICodingWorkspace.tsx": true,
+      "shared/aiCoding*": true,
+      "sandbox-projects": true
+    },
+    "files.watcherExclude": {
+      "**/node_modules/**": true,
+      "**/dist/**": true,
+      "uploads/**": true,
+      "knowledge/**": true,
+      "models/**": true
+    },
+
+    "window.title": "HỆ SINH THÁI — ${activeEditorShort}${separator}${rootName}",
+    "typescript.tsdk": "node_modules/typescript/lib",
+    "typescript.tsserver.maxTsServerMemory": 8192,
+    "search.followSymlinks": false,
+    "files.trimTrailingWhitespace": true
+  },
+
+  "extensions": {
+    "recommendations": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]
+  }
+}
