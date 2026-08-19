@@ -206,3 +206,64 @@ trữ) — đánh giá riêng, không gộp vào trục 1.
    hoạt hơn nhưng là một bề mặt mới phải canh.
 3. **Có làm cả hai trục trong đợt này**, hay chỉ trục 1 (nối tác nhân) rồi đánh giá trước khi mở đa
    dự án?
+
+---
+
+# ✅ PHẦN CUỐI — VÒNG KHÉP KÍN ĐÃ CHẠY THẬT (nghiệm thu live 2026-08-19)
+
+Chủ dự án báo: hỏi *"viết code C# cho chương trình chat LAN sử dụng socket"* → AI trả *"Chưa rõ yêu
+cầu lập trình…"*. **"Tôi chưa thấy AI local hoạt động."** Họ ĐÚNG.
+
+**GỐC RỄ**: `streamCodingAnswer` có SÁU đường ra; đường cuối — *"không tool nào khớp"* — là **NGÕ
+CỤT: nó KHÔNG BAO GIỜ gọi model**. Trục 1 cố ý tất định (heuristic đọc/tìm/chạy), nên mọi câu **SINH
+MÃ MỚI** (không đường dẫn, không lệnh) đều bị từ chối.
+
+## Nghiệm thu live — tôi tự chạy Playwright, tự chụp, tự đọc ảnh
+
+| Phép đo | Trước | Sau |
+|---|---|---|
+| **"viết code C# … chat LAN … socket"** | *"Chưa rõ yêu cầu lập trình"* | **mã C# THẬT** — `using System.Net.Sockets`, `UdpClient`, `async Task Main`, tô cú pháp + giải thích tiếng Việt |
+| **"sửa src/Calculator.cs để Divide ném ArgumentException khi chia 0"** | không có đường | **xem trước diff** + thẻ **"Đề xuất SỬA tệp — cần bạn duyệt"** (`1 khối +2 −0`) |
+| bấm **"Duyệt & ghi"** | — | tệp **ghi thật xuống đĩa** (`git diff` = 2 dòng thêm) |
+| `dotnet test CalculatorDemo.sln` | 4 xanh / **2 ĐỎ** | **6/6 XANH, 0 đỏ** |
+
+⇒ **Vòng khép kín ĐẦY ĐỦ đã chạy**: *đọc tệp thật → AI sửa → NGƯỜI DUYỆT → ghi đĩa → chạy test →
+XANH*. Hai ca `Divide_ByZero_*` chuyển đỏ→xanh **do chính AI sửa**, không phải tôi gõ tay.
+
+> ♻ **Đề thi đã NẠP LẠI**: tôi hoàn nguyên `Calculator.cs` về bản có lỗi cố ý để chủ dự án tự thử
+> lại đúng kịch bản này. `react-pg-demo` chưa dùng, vẫn còn 2 ca đỏ nguyên vẹn.
+
+## ⚠⚠ CHẶN ĐƯỜNG ĐÃ GẶP KHI NGHIỆM THU — LỖ HỔNG THẬT, CHƯA VÁ
+
+Lượt đo ĐẦU tiên **ĐỎ**, nhưng KHÔNG phải vì mã tác nhân: nó đã đi TỚI lượt gọi model rồi bị **sổ
+VRAM** chặn — *"Không đủ VRAM: xin 0 MiB, còn **−19054 MiB**"*.
+
+**Đo được**: bảng `vram_leases` có **107 hàng, trong đó 104 hàng thuộc 77 pid ĐÃ CHẾT** = **54.755
+MiB hộ ma** trên card 32 GB ⇒ dư địa tính ra ÂM ⇒ **mọi lượt gọi model đều bị từ chối**. Hàng ma cũ
+nhất từ **2026-08-17** (2 ngày).
+
+**Vì sao tồn tại**: `chayLuotNhanNuoi()` chỉ thu hồi hộ **nhận nuôi trong bộ nhớ của TIẾN TRÌNH HIỆN
+TẠI**. Hàng của **tiến trình anh em đã chết** trong sổ chung KHÔNG có bộ quét tự động — chỉ có lệnh
+ops thủ công `vramRouter.releaseStale({leaseKey})`, **từng hàng một**.
+
+> ⚠ **Hệ quả sản xuất, không chỉ là chuyện của tôi**: mỗi lần app chết cứng (crash, kill -9, mất
+> điện) để lại hộ ma vĩnh viễn. Đủ vài lần ⇒ **AI ngừng trả lời hoàn toàn** cho tới khi có người
+> chạy lệnh ops. Đây là **chế độ hỏng câm** — người dùng chỉ thấy "không đủ VRAM" với con số vô lý.
+
+**Đã làm để thông đường** (KHÔNG phải bản vá): sao lưu cả bảng ra scratchpad, rồi xoá đúng các hàng
+có `pid` **vắng mặt khỏi bảng tiến trình** — chính tiêu chí mà cổng an toàn `process-not-proven-dead`
+dùng. Giữ nguyên 4 hàng của pid còn sống (1.231 MiB, khớp thực tế). ⚠ Xoá xong CHƯA đủ: tiến trình
+app giữ **bản sao sổ trong bộ nhớ** và không đọc lại — phải **restart** mới nhận sổ sạch.
+
+**NỢ ĐỀ XUẤT (chưa làm, chờ chủ dự án)**: một bộ quét khi khởi động + định kỳ, thu hồi hàng của pid
+đã chết trong sổ chung, dùng đúng bằng chứng `process-not-proven-dead` (vắng mặt khỏi bảng tiến
+trình HOẶC `ctime` đổi ⇒ PID bị cấp lại). Không có nó, mọi crash đều gặm dần dư địa VRAM.
+
+## Cái CHƯA có (nói thẳng)
+
+- **Vòng TỰ ĐỘNG** — AI tự chạy test rồi tự đọc lỗi rồi tự sửa tiếp mà không cần người. Hiện mỗi lượt
+  ghi đều phải **người bấm duyệt** (HITL là thật, không phải nhãn). Cố ý.
+- **Danh sách phiên** (phần còn lại của giao diện Claude Code) — hạng mục riêng, chưa làm.
+- Model dùng là **`chat` tier** (Qwen3-30B-A3B-Instruct đang thường trú), KHÔNG phải Qwen3-**Coder**.
+  Muốn đổi phải đặt `GGUF_CODE_MODEL == LLAMA_SERVER_MODEL` trước, nếu không sẽ nạp bản thứ hai
+  ~19 GB khi card còn ~5,6 GB ⇒ OOM (xem khối ⚠ VRAM đầu `aiCodingAgent.ts`).
