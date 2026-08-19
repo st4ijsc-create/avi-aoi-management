@@ -4972,6 +4972,20 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # src/St4i.EdgeCore/St4i.EdgeCore.csproj — `<GenerateDocumentationFile>true</GenerateDocumentationFile>`,
 # with NO exemption of any kind — enforcing the owner's ruling on item 12 option (b).
 #
+# 🔴 "option (b)" IN THE LINE ABOVE IS WITHDRAWN, 2026-08-19, by task AF-1 — quoted and retired in place
+# rather than overwritten, the style AA-1 established for this repository. THE RULING IS NOT ANY OF THE
+# FOUR LABELLED OPTIONS, and item 12 opens by saying so: (c) is not turning the switch on at all, while
+# (a), (b1) and (b2) are ALL overrides in the decision's own words. It is a FIFTH thing — turn the switch
+# on AND accept no override — recorded BY DESCRIPTION, never by label.
+#   Read this as the failure it is, because the mistake is instructive and the line it sits on is the
+#   worst possible place for it: THIS FILE is where stages 4..8 come to learn what the ruling was, since
+#   it is the file that holds EXPECT_WARNINGS. A reader who took "(b)" at face value would learn that the
+#   ruling authorises an .editorconfig severity section — after fifteen consecutive tasks with not one
+#   override — which is the exact failure mode item 12 warns about by name.
+#   AF-1 wrote this line and, in the SAME commit, wrote a correct analysis of this very error beside the
+#   property in St4i.EdgeCore.csproj. It then "fixed" the error in that one file without grepping for the
+#   copy it had just created here. §8.1(b): the least-scanned artefact is your own justification.
+#
 # 🔴 852 IS MEASURED, NOT COMPUTED. `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo` over the
 # whole solution, SDK 10.0.302, 15/15 compilations, `Build succeeded.`, `0 Error(s)`, `852 Warning(s)`, on
 # the tree this commit produces. It is NOT 116 + a difference: stage 1 measured that the population is NOT
@@ -5237,6 +5251,24 @@ warning_ledger() {
 # they carried at 116, including the 14 OURS CS8604 whose message text names the vendored type (see the
 # source-location note above) -- a whole-line matcher would have moved them into VENDORED the moment the
 # populations grew, and it did not, because the classifier reads the source location.
+#
+# 🔴 "THE 14 OURS CS8604 WHOSE MESSAGE TEXT NAMES THE VENDORED TYPE" IS WITHDRAWN, 2026-08-19, by the task
+# that wrote it, one branch-review round later. IT IS 13, AND THEY ARE NOT ALL CS8604. Measured on this
+# commit's own log with this file's own classifier: OURS-bucket warnings whose MESSAGE contains
+# `St4iDeviceClient` are 12 CS8604 + 1 CS1591 = 13, all thirteen in
+# src/St4i.EdgeCore/Transport/LiveTransport.cs. "14" was not measured at all -- it was copied from the
+# value of the row sitting next to the sentence (`OURS CS8604 14`), which counts something else entirely:
+# every CS8604 we own, whether or not its message names that type.
+#   🔴 AND THE CORRECT NUMBER WAS ALREADY IN THIS FILE, ABOUT 140 LINES ABOVE: AE-1's source-location note
+#   says "Twelve of the current 116 have that shape (thirteen with the documentation switch on)". Twelve
+#   with the switch off, thirteen with it on. The switch is on. A number was written over a correct
+#   number, in the same file, by someone who had read that file closely enough to edit around it.
+#   This is the "ENUMERATE FIRST, COUNT AFTER" rule failing for the SEVENTH time in this batch, and the
+#   first time it reached a commit without anyone catching it in the writing.
+# THE PROPERTY THE SENTENCE IS ABOUT IS UNCHANGED AND MEASURED: a matcher testing the WHOLE LINE instead
+# of the source-location prefix reports VENDORED 198 / OURS 654 on this same log, against the true
+# 185 / 667 -- filing 13 of OUR OWN warnings under the population this repository is forbidden to edit.
+# The classifier's correctness is worth exactly those 13, and the count of them is now measured.
 #
 # 🔴 95 + 8 = 103 IS THE NAMED DEBT AND IT IS PINNED AS AN EQUALITY IN BOTH DIRECTIONS. Nobody in this
 # repository may write those comments and nobody may silence them. The two VENDORED documentation rows

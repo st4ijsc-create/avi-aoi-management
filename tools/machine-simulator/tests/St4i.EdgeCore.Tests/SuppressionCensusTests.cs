@@ -29,9 +29,21 @@ namespace St4i.EdgeCore.Tests;
 /// inverse hole is also still open and still only visible here — turning the switch OFF on any of the eight
 /// projects that now have it on removes an assertion and moves NO warning count, because those projects
 /// stand at zero doc warnings. The eighth, St4i.EdgeCore, is the exception in DEGREE and not in kind: it
-/// stands at 736, so turning it off would drop all 736 at once and — to the warning ledger alone, which
-/// sees only that rows fell — be indistinguishable from a stage that PAID them. This table is the only
-/// thing in the repository that tells those two apart.</para>
+/// stands at 736, so turning it off drops all 736 at once.
+/// <para>🔴 <b>THE FIRST VERSION OF THIS PARAGRAPH SAID THAT WAS "INDISTINGUISHABLE FROM A STAGE THAT
+/// PAID THEM", AND MEASURING IT PROVED THAT FALSE</b> (withdrawn 2026-08-19 by the task that wrote it,
+/// after running the arm instead of arguing it). RUN: remove the property, rebuild — the tree lands at
+/// 116 warnings with the origin-split ledger back at AE-1's exact twelve rows, 82 vendored / 34 ours. A
+/// completed payment CANNOT land there, because the 103 vendored documentation warnings are payable by
+/// nobody and survive it; a paid-out tree lands at 219 with those two rows intact. So the vendored
+/// documentation rows are a discriminator inside the warning ledger itself, and half A does tell the two
+/// apart. The claim was too strong and the correction is the interesting part.
+/// <para>🔴 <b>WHAT IS ACTUALLY EXCLUSIVE TO THIS TABLE IS ONE STEP FURTHER ON, AND IT IS WORSE.</b>
+/// Whoever turns the switch off can also restore EXPECT_WARNINGS to 116 and that ledger to its twelve
+/// pre-stage-3 rows — the values just measured, byte for byte — and the ENTIRE build gate goes green,
+/// with nothing anywhere recording that an owner's ruling was reversed. Reverting a ledger is a normal-
+/// looking edit; reverting a ledger is exactly what a stage which pays warnings down does. In that tree
+/// this table is the only assertion left saying "on", and that is the row it exists for.</para></para>
 ///
 /// <para><b>SO THE PROPERTY ASSERTED HERE IS ABOUT INSTRUCTIONS, NOT ABOUT DIAGNOSTICS:</b> the set of
 /// places in this repository that can make a compiler diagnostic stop being reported is EXACTLY the
@@ -472,9 +484,16 @@ public sealed class SuppressionCensusTests
     /// now EIGHT on / SEVEN off plus the vendored sample's own project. It went red on the flip before the
     /// row was edited — 1 failed / 4 passed, this assertion, naming the path and the direction — which is
     /// the measurement that this table watches the DECLARATION and not the diagnostics. The sentence in the
-    /// paragraph above is unchanged for the other seven `on` rows and now has one exception in degree: with
-    /// 736 warnings behind it, turning St4i.EdgeCore's switch back off would drop all 736 and look, to the
-    /// warning ledger alone, like a stage that paid them.</para>
+    /// paragraph above is unchanged for the other seven `on` rows and has one exception in degree: with 736
+    /// warnings behind it, turning St4i.EdgeCore's switch back off drops all 736 at once.
+    /// <para>🔴 THE OFF DIRECTION HAS NOW BEEN RUN, not just argued (2026-08-19, the same task, after
+    /// branch review pointed out it was the one arm nobody had executed). Remove the property, run this
+    /// suite: <b>1 failed / 4 passed</b>, this assertion, rendering the row at <c>"off"</c> against an
+    /// expectation of <c>"on"</c> and printing the direction paragraph above it. Rebuild the same tree:
+    /// 116 warnings, ledger back at 82/34 on AE-1's twelve rows. That second half also RETIRED a sentence
+    /// this file used to carry — see the class summary: the drop is NOT indistinguishable from a payment,
+    /// because a payment cannot remove the 103 nobody may pay. What IS invisible to every other instrument
+    /// is turning the switch off AND reverting the two pinned tables with it.</para>
     /// <para>🔴 EVERY <c>.csproj</c> ROW PLUS ANY <c>.props</c>/<c>.targets</c> THAT DECLARES IT, and the
     /// second half was missing on this file's first revision (found by branch review). Reading only
     /// <c>.csproj</c> pinned one spelling of the switch out of two: MSBuild imports
@@ -704,9 +723,12 @@ public sealed class SuppressionCensusTests
             "  on -> off  REMOVES an assertion. For the seven projects N-1 and N-2 documented it moves NO " +
             "warning count at all, because those seven stand at zero doc warnings — 107 comments were " +
             "written to get them there. For St4i.EdgeCore, whose switch stage 3 turned on over an UNPAID " +
-            "debt, it drops all 736 at once and looks — to the warning ledger, which sees only that rows " +
-            "fell — exactly like a stage that paid them. Nothing else in this repository can tell those " +
-            "apart.\n" +
+            "debt, it drops all 736 at once: MEASURED, the tree lands at 116 warnings with the origin-" +
+            "split ledger back at its twelve pre-stage-3 rows, 82 vendored / 34 ours. A completed payment " +
+            "cannot land there (the 103 vendored ones are payable by nobody and survive it, so a paid tree " +
+            "is 219) — but a reverted TABLE can, and reverting a table looks like ordinary work. If you " +
+            "are reading this because the row went to off, check whether EXPECT_WARNINGS and the ledger " +
+            "went back with it: if they did, this assertion is the only thing left that noticed.\n" +
             "  off -> on  is item 12 being enforced. For St4i.EdgeCore that WAS stage 3, done 2026-08-19, " +
             "and it is measured: the tree went 116 -> 852 warnings, of which 103 sit in the vendored SDK " +
             "file nobody may edit and 633 are ours and unpaid. It arrived with the origin-split ledger in " +

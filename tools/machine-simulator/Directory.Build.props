@@ -349,13 +349,30 @@
        SUPPRESSION INSTRUCTIONS instead of warnings, over the product tree AND every directory on the
        vendored file's ancestor chain up to the repository root — which is where the measurement three
        paragraphs up says option (b) has to be planted, and which no other scan in this repository reaches.
+       🔴 THE LABEL "option (b)" IN THE LINE ABOVE IS WITHDRAWN, 2026-08-19, by task AF-1 — not because
+       AE-1 misused it (it is describing WHERE a path-scoped severity would have to sit, which is exactly
+       what (b) means and is correct), but because the label became load-bearing in the wrong direction
+       the moment the ruling was enforced. The RULING is not (a), (b1), (b2) or (c); it is a fifth thing,
+       recorded by description. Read every "(b)" in this block as "a path-scoped severity section", never
+       as "what the owner decided". AF-1 stood in this block twice and copied the label into
+       scripts/verify-suites.sh before noticing; both copies are retired, both in place.
        It also pins THIS block's own table: which of the fifteen projects set the property. Turning it OFF
        on one of the seven removes an assertion and moves no warning count at all, and until that row
        existed nothing here could have seen it.
        🔴 "ONE OF THE SEVEN" IS EIGHT FROM 2026-08-19 (task AF-1), and the eighth is the exception that
-       makes the row worth having: turning St4i.EdgeCore's switch back off would drop 736 warnings, which
-       to the warning ledger alone is indistinguishable from a stage that PAID them. The census table is
-       the only thing in the repository that tells those two apart.
+       makes the row worth having: turning St4i.EdgeCore's switch back off drops 736 warnings at once.
+       🔴 AND THE FIRST VERSION OF THIS SENTENCE SAID THAT IS "INDISTINGUISHABLE FROM A STAGE THAT PAID
+       THEM". THAT IS FALSE, AND IT WAS MEASURED FALSE — withdrawn 2026-08-19 by the task that wrote it,
+       after actually running the arm instead of arguing it. Removing the property and rebuilding puts the
+       tree at 116 warnings with the ledger back at AE-1's exact twelve rows, 82 vendored / 34 ours. A
+       COMPLETED payment cannot land there: the 103 vendored documentation warnings can never be paid by
+       anybody, so they survive every payment and land at 219. The two vendored documentation rows are
+       therefore a DISCRIMINATOR inside the warning ledger itself, and the ledger can tell the two apart.
+       WHERE THE CENSUS IS GENUINELY THE ONLY WITNESS is one step further on, and it is worse: whoever
+       turns the switch off can also restore EXPECT_WARNINGS to 116 and this ledger to its twelve pre-
+       stage-3 rows — the values measured above, byte for byte — and the whole build gate goes GREEN with
+       no record anywhere that the ruling was reversed. In that tree the census table is the only thing
+       still saying "on". Measured, both halves, 2026-08-19.
 
        ══════════════════════════════════════════════════════════════════════════════════════════════════
        🔴 AF-1 (.superpowers/sdd/item12-stage3/task-1-brief.md) — owner item 12, STAGE 3. THE SWITCH IS ON

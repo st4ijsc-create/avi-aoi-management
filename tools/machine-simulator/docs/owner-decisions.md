@@ -1158,21 +1158,52 @@ bao giờ** là một phép sửa; hạ cái ghim cho khớp **chính là cách 
 2. `dotnet publish` của `St4i.EngineApi` (đúng lệnh `build-installer.ps1` chạy, chỉ đổi `-o` sang
    một thư mục nháp ngoài repo) để `St4i.EdgeCore.xml` **nằm rời cạnh exe single-file**;
 3. `St4i.Installer.wixproj` harvest **cả thư mục** `publish-desktop/**`, và
-   `exclude-shell-and-engine-exe.xslt` loại **đúng hai tên `.exe`** — không lọc theo đuôi. Bản
-   harvest đã commit chứa **ba** file `.xml` (WebView2) và cả `engine\St4i.EdgeCore.pdb`.
+   `exclude-shell-and-engine-exe.xslt` loại **đúng hai tên `.exe`** — không lọc theo đuôi.
+   🔴 **Hai mắt xích chịu lực này ĐƯỢC GIT THEO DÕI và tra lại được.** Mắt xích thứ ba thì
+   **không**, và bản đầu của mục này gọi sai tên nó: bản harvest
+   `packaging/installer/obj/x64/Release/_HarvestedFiles_dir.wxs` **KHÔNG được commit** — nó bị
+   `tools/machine-simulator/.gitignore:2` (`obj/`) loại, `git ls-files --error-unmatch` thất bại,
+   và mtime của nó là **2026-07-28**. 🔴 *Câu **"bản harvest đã commit"** được RÚT 2026-08-19 bởi
+   chính AF-1 sau vòng phản biện 1.* Đọc đúng là: **đo trên bản harvest còn sót trong `obj/` từ lần
+   dựng MSI ngày 2026-07-28, không được git theo dõi, một `git clean -xdf` sẽ xoá nó.** Nội dung
+   thì đã đếm: **63** phần tử `<File`, **ba** `.xml` (đều của WebView2), có
+   `engine\St4i.EdgeCore.pdb`, **không** `.exe` nào (transform đã áp). Nó là **mẫu minh hoạ**, không
+   phải mắt xích chịu lực — kết luận đứng trên `.wixproj` + `.xslt`, cả hai đều tra lại được.
 
 ⇒ **`St4i.EdgeCore.xml` sẽ được cài vào `INSTALLFOLDER\engine\`. Đó là một artefact mới giao cho
-khách hàng.** 🔴 **Và nó không phải cái đầu tiên:** `St4i.DesktopShell.xml`,
-`St4i.Connector.Abstractions.xml`, `St4i.EdgeCore.Serial.xml` **đã** nằm trong `publish-desktop/`
-hôm nay, từ N-1/N-2, và **không hồ sơ nào của repo này từng ghi điều đó**. Nêu tên chứ không quyết:
-nếu chủ sở hữu không muốn giao tài liệu XML cho khách hàng thì đó là **một quyết định mới**, và nó
-chạm **bốn** file chứ không một.
+khách hàng.**
+
+🔴 **VÀ CÂU HỎI GIAO CHO ANH RỘNG HƠN "BỐN FILE `.xml`" — bản đầu của mục này nêu HẸP HƠN phép đo
+của chính nó, đã sửa 2026-08-19.** Harvest lấy **cả thư mục**, nên nó cài **mọi** artefact phụ, chứ
+không riêng loại tôi đang nói tới. **Liệt kê trước, đếm sau** — mọi thứ như thế đang nằm trong
+`publish-desktop/` hôm nay:
+
+| file | loại | ai sinh |
+|---|---|---|
+| `Microsoft.Web.WebView2.Core.xml` · `…WinForms.xml` · `…Wpf.xml` | tài liệu | vendor; **đã** trong bản harvest 63-file |
+| `St4i.DesktopShell.xml` | tài liệu | của ta, N-1/N-2 |
+| `engine/St4i.Connector.Abstractions.xml` | tài liệu | của ta, N-2 |
+| `engine/St4i.EdgeCore.Serial.xml` | tài liệu | của ta, N-1 |
+| `St4i.DesktopShell.pdb` · `engine/St4i.Connector.Abstractions.pdb` · `engine/St4i.EdgeCore.Serial.pdb` · `engine/St4i.EdgeCore.pdb` · `engine/St4i.EngineApi.pdb` | **ký hiệu gỡ lỗi** | của ta |
+
+**Đếm sau: 6 `.xml` + 5 `.pdb` = 11 artefact phụ đang được cài hôm nay. Sau đợt 3 là 7 + 5 = 12.**
+
+Nên câu đúng để hỏi anh **không** phải *"bốn file `.xml`"* mà là: **ta có giao artefact build —
+tài liệu `.xml` và ký hiệu `.pdb` — cho khách hàng không, trên mười hai file?** 🔴 **Năm file
+`.pdb` là CÙNG một câu hỏi và nhạy hơn `.xml` về dịch ngược**, và bản đầu của mục này bỏ hẳn chúng
+— có nêu tên `St4i.EdgeCore.pdb` nhưng **chỉ làm bằng chứng cho cơ chế**, không bao giờ làm **một
+phần của câu hỏi**. Nêu tên chứ không quyết — nhưng nêu tên **hết**, vì một câu hỏi hẹp hơn phép đo
+đứng sau nó cũng là một cách để món nợ không được nêu tên đầy đủ.
 
 **Việc còn nợ, nêu tên chứ không làm:**
 * **633 chưa trả** (101 khẳng định `cref`/`paramref` đã SAI + 532 chỗ trống bao phủ trên 90 file).
   Đợt 4 trả nhóm 101; đợt 5–8 trả phần còn lại. **Mỗi đợt ĐO LẠI hằng số của mình** — 633 không bảo
   toàn dưới phép trả, nên `OURS CS1573 84` được chờ đợi là **TĂNG** giữa chừng.
-* **Bốn file `.xml` đang đi vào bản cài** — chưa ai quyết.
+* **Mười hai artefact phụ đang đi vào bản cài** (7 `.xml` + 5 `.pdb` sau đợt này; 6 + 5 hôm nay) —
+  chưa ai quyết, và mười một trong mười hai đã đi từ trước đợt này.
+* **Không dụng cụ nào canh PAYLOAD.** Nửa A đọc **log build**, nửa B đọc **khai báo trong cây
+  nguồn** — cả hai là dụng cụ về **cây nguồn**. Câu hỏi về cái được cài đòi một dụng cụ **thứ ba**,
+  và dựng nó đòi một `publish-desktop/` sạch cùng một lần dựng MSI, tức một brief khác.
 * **`EXPECT_WARNINGS = 852` là một vô hướng YẾU HƠN HẲN 116**, vì hợp mà nó tóm tắt nay lớn gấp bảy.
   Thứ giữ cho nó có nghĩa là **đẳng thức theo (quần thể × mã)**, không phải bản thân nó.
 
