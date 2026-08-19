@@ -43,7 +43,7 @@ namespace St4i.EdgeCore.Tests;
 /// pre-stage-3 rows — the values just measured, byte for byte — and the ENTIRE build gate goes green,
 /// with nothing anywhere recording that an owner's ruling was reversed. Reverting a ledger is a normal-
 /// looking edit; reverting a ledger is exactly what a stage which pays warnings down does. In that tree
-/// this table is the only assertion left saying "on", and that is the row it exists for.</para></para>
+/// this table is the only assertion left saying "on", and that is the row it exists for.</para></para></para>
 ///
 /// <para><b>SO THE PROPERTY ASSERTED HERE IS ABOUT INSTRUCTIONS, NOT ABOUT DIAGNOSTICS:</b> the set of
 /// places in this repository that can make a compiler diagnostic stop being reported is EXACTLY the
@@ -493,7 +493,7 @@ public sealed class SuppressionCensusTests
     /// 116 warnings, ledger back at 82/34 on AE-1's twelve rows. That second half also RETIRED a sentence
     /// this file used to carry — see the class summary: the drop is NOT indistinguishable from a payment,
     /// because a payment cannot remove the 103 nobody may pay. What IS invisible to every other instrument
-    /// is turning the switch off AND reverting the two pinned tables with it.</para>
+    /// is turning the switch off AND reverting the two pinned tables with it.</para></para>
     /// <para>🔴 EVERY <c>.csproj</c> ROW PLUS ANY <c>.props</c>/<c>.targets</c> THAT DECLARES IT, and the
     /// second half was missing on this file's first revision (found by branch review). Reading only
     /// <c>.csproj</c> pinned one spelling of the switch out of two: MSBuild imports
