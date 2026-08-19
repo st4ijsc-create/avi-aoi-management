@@ -454,14 +454,83 @@ function scanDisabled(): boolean {
   return !PROBE_ON_VALUES.has(raw.trim().toLowerCase());
 }
 
+/**
+ * ★★★ Pha 10 Task 3 — **LÝ DO LƯỢT CHẠY NGOÀI HỎNG, GIỮ LẠI THAY VÌ VỨT ĐI.**
+ *
+ * ⚠⚠ VÌ SAO Ô NÀY PHẢI TỒN TẠI — ĐÂY LÀ CHỖ HAI NGÀY CHẨN ĐOÁN BỊ ĐỐT: `run()` nuốt `err` thành
+ * `null`, nên khi `readProcTable()` hỏng **100% số nhịp trong tiến trình sản xuất** (đo trên
+ * `app13.log` ngày 2026-08-19: 20+ nhịp liên tiếp), tất cả những gì còn lại là một dòng
+ * *"powershell lỗi/timeout"* — một câu **gộp hai nguyên nhân khác hẳn nhau vào một chữ**, và
+ * không có `code`, không có `stderr`, không có mã thoát. Hậu quả đo được: cùng lệnh y nguyên chạy
+ * từ một tiến trình Node khác trên cùng máy cho **413–467 ms, 0 lỗi** — tức bằng chứng để phân
+ * biệt "lệnh sai" với "môi trường của TIẾN TRÌNH ĐÓ sai" **đã bị vứt đi ngay tại nguồn**.
+ *
+ * `null` từ `run()` là câu trả lời ĐÚNG cho người gọi (không có bằng chứng ⇒ không kết luận). Ô
+ * này KHÔNG đổi điều đó — nó chỉ thôi ném đi **lý do**, thứ mà người trực cần và mã quyết định
+ * không được đọc.
+ */
+export interface LoiChayNgoai {
+  readonly cmd: string;
+  /** `err.code` (`ENOENT`/`ETIMEDOUT`/`EACCES`…), hoặc `exit:<mã>` khi tiến trình chạy mà trả khác 0. */
+  readonly ma: string;
+  /** `true` ⇔ Node tự giết vì QUÁ HẠN — phân biệt hẳn với "lệnh không chạy được". */
+  readonly quaHan: boolean;
+  readonly message: string;
+  /** Cắt ngắn: đây là chẩn đoán, không phải nhật ký đầy đủ. */
+  readonly stderr: string;
+  readonly atMs: number;
+}
+
+let loiChayCuoi: LoiChayNgoai | null = null;
+
+/** Lý do lượt chạy ngoài HỎNG gần nhất. `null` ⇔ chưa lượt nào hỏng trong tiến trình này. */
+export function lanChayNgoaiHongCuoi(): LoiChayNgoai | null {
+  return loiChayCuoi;
+}
+
+/** Chỉ dùng trong test. */
+export function __resetLoiChayNgoaiForTests(): void {
+  loiChayCuoi = null;
+}
+
+/** Một dòng người đọc được, cho log. `null` ⇒ chuỗi rỗng (không bịa ra một lý do). */
+export function moTaLoiChayNgoai(l: LoiChayNgoai | null): string {
+  if (l === null) return "";
+  const duoi = l.stderr.length > 0 ? ` · stderr: ${l.stderr}` : "";
+  return `${l.cmd} → ${l.ma}${l.quaHan ? " (QUÁ HẠN, Node tự giết)" : ""}: ${l.message}${duoi}`;
+}
+
+function ghiLoiChay(cmd: string, err: unknown, stderr: unknown): void {
+  const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: unknown };
+  // ⚠ `code` của `execFile` mang HAI kiểu: chuỗi (`"ENOENT"`) khi KHÔNG chạy được, và SỐ (mã
+  // thoát) khi chạy được mà trả khác 0. Gộp hai thứ đó vào một chuỗi là xoá đúng ranh giới mà
+  // người chẩn đoán cần — nên chúng được gắn nhãn khác nhau.
+  const raw = e?.code;
+  const ma = typeof raw === "number" ? `exit:${raw}` : typeof raw === "string" && raw.length > 0 ? raw : "khong-ro";
+  loiChayCuoi = {
+    cmd,
+    ma,
+    quaHan: e?.killed === true,
+    message: String(e?.message ?? err).slice(0, 300).replace(/\s+/g, " ").trim(),
+    stderr: String(stderr ?? "").slice(0, 300).replace(/\s+/g, " ").trim(),
+    atMs: Date.now(),
+  };
+}
+
 function run(cmd: string, args: string[], timeout: number): Promise<string | null> {
   return new Promise((resolve) => {
     try {
-      execFile(cmd, args, { timeout, maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
-        resolve(err ? null : String(stdout ?? ""));
+      execFile(cmd, args, { timeout, maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+        if (err) {
+          ghiLoiChay(cmd, err, stderr);
+          resolve(null);
+          return;
+        }
+        resolve(String(stdout ?? ""));
       });
-    } catch {
-      resolve(null); // `execFile` ném ĐỒNG BỘ (EACCES…) — telemetry không được làm ngã người gọi
+    } catch (err) {
+      ghiLoiChay(cmd, err, ""); // `execFile` ném ĐỒNG BỘ (EACCES…) — telemetry không được làm ngã người gọi
+      resolve(null);
     }
   });
 }
@@ -602,7 +671,12 @@ export async function readGpuHolders(roots: readonly number[]): Promise<GpuHolde
     // trực đi tắt một tiến trình đang phục vụ sản xuất.
     console.warn(
       `[vram] KHÔNG đọc được bảng tiến trình (${procs === null ? "powershell lỗi/timeout" : "bảng RỖNG — bất thường"}) ` +
-        "⇒ không phân loại được hộ đang giữ GPU. Ghi nhận CHƯA XÁC MINH, không kết luận.",
+        "⇒ không phân loại được hộ đang giữ GPU. Ghi nhận CHƯA XÁC MINH, không kết luận." +
+        // ★ Pha 10 Task 3 — LÝ DO THẬT, không còn bị nuốt ở `run()`. Không có nó thì dòng này chỉ
+        // nói "hỏng" mà không nói hỏng VÌ SAO, và một sự cố 2 ngày không để lại manh mối nào.
+        (procs === null && lanChayNgoaiHongCuoi() !== null
+          ? ` LÝ DO: ${moTaLoiChayNgoai(lanChayNgoaiHongCuoi())}`
+          : ""),
     );
     return null;
   }

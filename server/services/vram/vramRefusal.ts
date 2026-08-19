@@ -580,6 +580,39 @@ export function formatVramRefusal(facts: VramRefusalFacts): string {
       : "";
 
   /**
+   * ★★★ Pha 10 Task 2 — **DƯ ĐỊA ÂM LÀ MỘT LỜI TỰ THÚ, KHÔNG PHẢI MỘT PHÉP ĐO.**
+   *
+   * ⚠⚠ VÌ SAO NHÁNH NÀY BẮT BUỘC PHẢI CÓ, và nó đến từ một sự cố ĐO ĐƯỢC chứ không phải lo xa
+   * (2026-08-19): bảng `vram_leases` tích **107 hàng, 104 thuộc 77 pid ĐÃ CHẾT = 54.755 MiB hộ
+   * ma** trên một card 32 GB ⇒ dư địa tính ra **−19.054 MiB** ⇒ **MỌI** lượt gọi model bị từ chối.
+   * Câu từ chối lúc ấy nói đúng nguyên văn: *"Không đủ VRAM: xin 0 MiB, còn −19054 MiB"* — nó
+   * **liệt kê** hộ, nhưng **không một chữ nào** nói rằng con số ấy tự nó là bằng chứng sổ đã hỏng.
+   * Người đọc thấy một con số vô lý và không có đường nào biết phải làm gì. Đó là **chế độ hỏng
+   * CÂM**, và im lặng ở đây tốn của chủ dự án hai ngày AI không trả lời.
+   *
+   * ⚠ VÌ SAO "ÂM" LÀ BẰNG CHỨNG CHẮC CHẮN chứ không phải một suy đoán: dư địa = trần thiết bị −
+   * nền − sổ. Cả ba vế đều là số **không âm**, và tổng byte thật đang nằm trên card **không thể**
+   * vượt trần thiết bị. ⇒ Một kết quả ÂM nghĩa là **vế SỔ đang khai nhiều hơn cái card vật lý chứa
+   * nổi** — tức trong sổ có byte KHÔNG TỒN TẠI. Không có cách đọc nào khác.
+   *
+   * ⚠ NÓI RA RỒI MỚI SỬA: câu này **không** tự dọn hàng ma (đó là việc của
+   * `vramReconciler.chayLuotNhanNuoi()` + `vramProcessPresence`, chạy mỗi 60 s). Nó chỉ thôi giấu.
+   * Một lượt "tự sửa im lặng" ở đây sẽ che mất đúng cái triệu chứng cần thấy.
+   */
+  const soHong =
+    facts.availableBytes !== null && facts.availableBytes < 0
+      ? ` ⚠⚠ DƯ ĐỊA ÂM (${mibText(facts.availableBytes)} MiB) — con số này KHÔNG THỂ là một phép đo ` +
+        `đúng: sổ đang khai nhiều byte hơn dung lượng card. Gần như chắc chắn sổ chung ` +
+        `\`vram_leases\` còn HÀNG MA của những tiến trình đã chết (crash / kill -9 / mất điện để ` +
+        `lại hàng, và mỗi lần như thế gặm thêm dư địa). Bộ quét tự động chạy mỗi nhịp đối chiếu và ` +
+        `sẽ dọn khi nó CHỨNG MINH được tiến trình đã chết; nếu con số này không tự hết sau vài ` +
+        `nhịp thì bằng chứng đang thiếu (bảng tiến trình không đọc được) — kiểm nhật ký ` +
+        `"[vram] KHÔNG đọc được bảng tiến trình", rồi dọn tay bằng lệnh ops ` +
+        `\`vram.releaseStale({leaseKey})\` cho từng hàng (nó TỪ CHỐI nếu tiến trình chưa chứng minh ` +
+        `được là đã chết, nên không xoá nhầm hàng của ai đang sống).`
+      : "";
+
+  /**
    * ★ Pha 3 Task 5 (C) — câu rào đón nay khai **CẢ HAI** giới hạn còn lại: bản liệt kê là cận
    * dưới (điểm cấp phát chưa nối), và hộ của anh em đến từ một **bản sao đọc có thể cũ tới 60 s**.
    * Trước Task 5 danh sách này chỉ có sổ CỤC BỘ, nên nó không cần nói câu thứ hai.
@@ -632,7 +665,7 @@ export function formatVramRefusal(facts: VramRefusalFacts): string {
       : ` Nêu tên nhưng CHƯA có cơ chế thu hồi (đừng ngồi chờ chúng tự nhường): ` +
         `${holderListText(chiGoiTen)}.`);
 
-  return `${head}${degraded}${holding}${anhEm}${yielding} Phần KHÔNG quy trách nhiệm được: ${caveatText(facts)}`;
+  return `${head}${degraded}${soHong}${holding}${anhEm}${yielding} Phần KHÔNG quy trách nhiệm được: ${caveatText(facts)}`;
 }
 
 /**

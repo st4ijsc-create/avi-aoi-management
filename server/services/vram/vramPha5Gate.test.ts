@@ -403,7 +403,18 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //     dạng factory. Bản vá làm nó tự khai `Pha 9` ⇒ bộ nhận diện **THỨ BA** (`DAU_KHAI_PHA`)
     //     kéo nó vào tập bị canh ⇒ nó phải có đường riêng ở §Cổng kiểm chung. Đây là **cơ chế đang
     //     làm việc**: lượt sửa một file test biến nó thành một lưới được canh.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(56); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-5: +1 (neoTenXacThuc)
+    /**
+     * ⚠ Pha 10 (bộ quét hàng ma): 56 → **58**. HAI đường mới, và cả hai là **NỢ CÓ SẴN được đóng**,
+     * KHÔNG phải lưới của Pha 10:
+     *   • `server/services/aiGgufEngine.serverCtxOverflow.test.ts`
+     *   • `server/services/aiLlamaServerClient.stream.test.ts`
+     * Cả hai vào repo ở commit `702cf1dd` (G0-G5), **tự khai một pha**, nhưng **chưa bao giờ** có
+     * đường ở §Cổng kiểm chung ⇒ ca "MỌI lưới TỰ KHAI phải nằm TRONG cổng" ĐỎ **từ trước Pha 10**
+     * (đo được: gỡ hẳn file mới của Pha 10 ra khỏi đĩa thì ca ấy **vẫn đỏ**). Theo đúng câu mà ca
+     * đó phát biểu — *một đột biến trong đúng file ấy ship được với cổng xanh 100%* — hai file này
+     * đã nằm ngoài mọi phép canh suốt từ `702cf1dd`.
+     */
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(58); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-5: +1 (neoTenXacThuc) · Pha 10: +2 (nợ có sẵn từ `702cf1dd`)
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -590,7 +601,18 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   CẢ BA lối đóng; bản A4 chỉ chặn một). Vì `client/src/lib/` **đã** là một đường của §Cổng
     //   kiểm chung nên `CONG.length` giữ nguyên **55**; chỉ con số này đổi.
     //   ⚠ Đuôi `.unit.test.ts` là bắt buộc — `vitest.config.ts` gom client bằng `*.unit.test.ts`.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(120); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-4: +1 · Pha 9 I-5: +1 (neoTenXacThuc)
+    // ⚠ Pha 10 (bộ quét hàng ma): 120 → **125**, và con số này gộp **HAI nguyên nhân khác hẳn nhau**
+    //   — tách ra ở đây để lượt sau không ai phải đoán:
+    //   • **+2 NỢ CÓ SẴN** — `aiGgufEngine.serverCtxOverflow.test.ts` và
+    //     `aiLlamaServerClient.stream.test.ts` (commit `702cf1dd`). Chúng tự khai pha nhưng nằm
+    //     NGOÀI cổng từ lúc vào repo; Pha 10 thêm đường cho chúng ⇒ chúng vào tập bị canh qua bộ
+    //     nhận diện THỨ BA. Xem khối lý do ở ô `CONG.length` (56 → 58).
+    //   • **+2 lưới VRAM đã có** mà bộ nhận diện VỊ TRÍ vốn đã thấy nhưng chưa được ghim số ở lượt
+    //     trước, cộng **+1 lưới MỚI của Pha 10** — `server/services/vram/ghostSweep.test.ts` (ca âm
+    //     "chỉ xoá pid chết, giữ pid sống" + hàng rào tuổi + câu từ chối khi dư địa ÂM). Nó nằm dưới
+    //     `server/services/vram/` — **đã** là một đường của §Cổng kiểm chung — nên nó KHÔNG làm
+    //     `CONG.length` đổi; chỉ con số này đổi.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(125); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-4: +1 · Pha 9 I-5: +1 (neoTenXacThuc) · Pha 10: +5
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

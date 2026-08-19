@@ -37,6 +37,8 @@ Mọi task đều chịu các ràng buộc sau. Vi phạm bất kỳ điều nà
 **Cổng kiểm chung (đường dẫn tường minh):**
 ```
 npx vitest run server/services/vram/ server/services/aiLocalTools/ \
+  server/services/aiGgufEngine.serverCtxOverflow.test.ts \
+  server/services/aiLlamaServerClient.stream.test.ts \
   server/routers/vramRouter.test.ts server/routers/vramRouter.commands.test.ts \
   server/routers/vramRouter.retryDeferred.test.ts \
   server/routers/vramRouter.unledgered.test.ts server/routers/vramRouter.kbSyncDefer.test.ts \

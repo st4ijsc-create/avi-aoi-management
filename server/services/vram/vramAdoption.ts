@@ -77,30 +77,67 @@ export function ctimeSangUnixMs(ctime: number): number | null {
 }
 
 /**
+ * ★ Pha 10 Task 1 — **BẢN TÁCH `processKey` DUY NHẤT.** Trước đây phép tách nằm CHÌM trong
+ * `trangThaiTienTrinh()`; nay kênh phụ (`vramProcessPresence`) cũng cần đúng con số `pid` ấy, và
+ * hai bản tách viết tay ở hai chỗ là đúng thứ ràng buộc 12 cấm.
+ *
+ * ⚠ ĐÒI ĐỦ BA PHẦN `${role}:${pid}:${bootMs}` — một `processKey` thiếu `bootMs` (dạng cũ, hoặc
+ * test tự đặt) KHÔNG được rơi xuống phép so bằng pid: đó đúng là đột biến đã sống sót 590/590 ở
+ * Pha 3 Task 2.
+ */
+export function tachProcessKey(processKey: string): { readonly pid: number; readonly bootMs: number } | null {
+  const phan = String(processKey).split(":");
+  if (phan.length < 3) return null;
+  const pid = Number(phan[1]);
+  const bootMs = Number(phan[2]);
+  if (!Number.isFinite(pid) || !Number.isFinite(bootMs)) return null;
+  return { pid, bootMs };
+}
+
+/**
  * ★★★ VỊ TỪ DÙNG CHUNG của cả ba dân số. Thuần, đồng bộ.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 10 Task 1 — **HAI NGUỒN BẰNG CHỨNG, XẾP HẠNG, KHÔNG PHẢI HAI VỊ TỪ.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `procs` (bảng tiến trình) là nguồn **ĐẦY ĐỦ**: nó trả lời được cả *"vắng mặt"* lẫn *"PID đã cấp
+ * lại"* (nhờ `CreationDate`). Khi có nó, **không gì khác được hỏi** — hàm chạy y như trước Pha 10.
+ *
+ * `pidVangMat` là nguồn **MỘT NỬA**, chỉ dùng khi nguồn đầy đủ **CÂM** (`procs === null`). Nó chỉ
+ * khẳng định được *"PID này không tồn tại"* ⇒ chỉ đẻ ra được `"chet"` hoặc `"khong-biet"`, **không
+ * bao giờ** `"song"`. Vì sao điều đó là an toàn theo CẤU TRÚC: một PID còn sống luôn vắng mặt khỏi
+ * tập ấy (xem `vramProcessPresence.quetPidVangMat` — tập chỉ chứa `ESRCH`), nên không có đường nào
+ * để một hàng còn sống bị tuyên bố là ma.
+ *
+ * ⚠⚠ CHIỀU CHẶT KHÔNG ĐỔI: `procs === null` **và** không có kênh phụ ⇒ vẫn `"khong-biet"`. Bản vá
+ * này KHÔNG nới lỏng vị từ — nó chỉ cho vị từ một cái tai thứ hai khi cái tai thứ nhất điếc.
+ * ⚠⚠ NGƯỜI GỌI CÒN MỘT NGHĨA VỤ NỮA khi kết luận đến từ kênh phụ: **hàng rào TUỔI**
+ * (`tuoiToiThieuKenhPhuMs`) — xem docstring `lapKeHoachNhanNuoi`. Hàm này cố ý KHÔNG tự lo việc
+ * đó: nó không nhìn thấy `updatedAtMs` của hàng, và đọc đồng hồ trong một hàm thuần là thứ bị cấm.
  *
  * @param processKey `${role}:${pid}:${bootMs}` — đúng dạng `vramSharedLedger.sharedLedgerSelfKey()`.
  * @param procs bảng tiến trình; `null` = **KHÔNG ĐỌC ĐƯỢC** (khác hẳn "bảng rỗng").
+ * @param pidVangMat PID **chứng minh được là VẮNG MẶT** qua kênh phụ; `null` = không có kênh phụ.
  */
 export function trangThaiTienTrinh(
   processKey: string,
   procs: readonly ProcTableRow[] | null,
+  pidVangMat: ReadonlySet<number> | null = null,
 ): TrangThaiTienTrinh {
-  if (procs === null) return "khong-biet";
-  const phan = String(processKey).split(":");
-  // ⚠ ĐÒI ĐỦ BA PHẦN: một `processKey` thiếu `bootMs` (dạng cũ, hoặc test tự đặt) KHÔNG được
-  // rơi xuống phép so bằng pid — đó đúng là đột biến đã sống sót 590/590 ở Task 2.
-  if (phan.length < 3) return "khong-biet";
-  const pid = Number(phan[1]);
-  const bootMs = Number(phan[2]);
-  if (!Number.isFinite(pid) || !Number.isFinite(bootMs)) return "khong-biet";
-  const row = procs.find((p) => p.pid === pid);
+  const khoa = tachProcessKey(processKey);
+  if (khoa === null) return "khong-biet";
+  if (procs === null) {
+    // Nguồn đầy đủ CÂM ⇒ hỏi kênh phụ. Nó chỉ nói được "vắng mặt"; im lặng KHÔNG phải "còn sống".
+    if (pidVangMat === null) return "khong-biet";
+    return pidVangMat.has(khoa.pid) ? "chet" : "khong-biet";
+  }
+  const row = procs.find((p) => p.pid === khoa.pid);
   if (row === undefined) return "chet";
   const sinhLuc = ctimeSangUnixMs(row.ctime);
   // Không đọc được mốc tạo ⇒ không có bằng chứng ⇒ KHÔNG kết luận (chiều an toàn).
   if (sinhLuc === null) return "khong-biet";
   // Sinh SAU khi hàng được đóng dấu ⇒ PID đã được CẤP LẠI ⇒ người viết hàng đã chết.
-  return sinhLuc > bootMs ? "chet" : "song";
+  return sinhLuc > khoa.bootMs ? "chet" : "song";
 }
 
 /**
@@ -194,7 +231,37 @@ export interface DauVaoNhanNuoi {
   /** PID mà CHÍNH TA đã nhận nuôi (giấy phép còn sống trong sổ cục bộ). */
   readonly pidDaNhanNuoi: readonly number[];
   readonly sidecar: MoTaSidecarNhanNuoi | null;
+  /**
+   * ★ Pha 10 Task 1 — KÊNH BẰNG CHỨNG PHỤ. `null`/vắng ⇒ **không có kênh phụ** ⇒ hành vi y hệt
+   * trước Pha 10. Chỉ được đọc khi `procs === null`.
+   */
+  readonly pidVangMat?: ReadonlySet<number> | null;
+  /** Đồng hồ của người gọi — hàm này THUẦN nên không tự đọc. Bắt buộc khi có `pidVangMat`. */
+  readonly nowMs?: number;
+  /**
+   * ★★ HÀNG RÀO TUỔI cho kết luận đến từ **kênh phụ** (ms). Xem docstring `lapKeHoachNhanNuoi`.
+   * Vắng ⇒ dùng `TUOI_TOI_THIEU_KENH_PHU_MS`.
+   */
+  readonly tuoiToiThieuKenhPhuMs?: number;
 }
+
+/**
+ * ★★★ Pha 10 Task 1 — **HÀNG RÀO TUỔI CHO KÊNH PHỤ. 300.000 ms = 5 PHÚT, VÀ CON SỐ CÓ NGUỒN.**
+ *
+ * Cửa sổ nguy hiểm của `kill(pid,0)` đã được ĐO ở Pha 3 Task 1: `ESRCH` về ở **10,9–16,6 ms**
+ * trong khi byte của một tiến trình CUDA 7,8 GB chỉ thật sự rời card sau **~500 ms**. Xoá một hàng
+ * trong cửa sổ ấy là **NỚI** dư địa đúng bằng byte của hàng — chiều bị cấm (ràng buộc 8).
+ *
+ * 5 phút = **≈600 lần** cửa sổ đó, và **5 lần** chu kỳ đối chiếu 60 s. Vì sao mốc ấy KHÔNG bỏ sót
+ * hàng ma nào đáng kể: mọi tiến trình CÒN SỐNG **ghi lại toàn bộ giấy phép của mình ở MỌI lượt
+ * đồng bộ 60 s** (`vramSharedLedgerStore.dungLaiTuSoCucBo`), nên một hàng đứng im 5 phút là hàng
+ * mà chủ của nó đã **lỡ 5 nhịp liên tiếp**. Hàng ma thật thì đứng im **vĩnh viễn** (đo được:
+ * 2 NGÀY), nên chúng vượt mốc này ngay lượt quét đầu tiên.
+ *
+ * ⚠ Hàng rào này CHỈ áp cho kết luận của **kênh phụ**. Bảng tiến trình đọc được thì `CreationDate`
+ * là bằng chứng đầy đủ và tức thời — bắt nó chờ 5 phút là làm chậm một cơ chế vốn đã đúng.
+ */
+export const TUOI_TOI_THIEU_KENH_PHU_MS = 300_000;
 
 /** So khớp đường dẫn Windows — cùng phép chuẩn hoá với `vramGpuHolders.norm()`. */
 function chuan(p: string): string {
@@ -208,15 +275,33 @@ function chuan(p: string): string {
  */
 export function lapKeHoachNhanNuoi(input: DauVaoNhanNuoi): KeHoachNhanNuoi {
   const { selfKey, rows, procs, orphans, pidDaNhanNuoi, sidecar } = input;
+  const pidVangMat = input.pidVangMat ?? null;
+  const tuoiToiThieu = input.tuoiToiThieuKenhPhuMs ?? TUOI_TOI_THIEU_KENH_PHU_MS;
 
   const trangThai = new Map<string, TrangThaiTienTrinh>();
   const traTrangThai = (key: string): TrangThaiTienTrinh => {
     let t = trangThai.get(key);
     if (t === undefined) {
-      t = trangThaiTienTrinh(key, procs);
+      t = trangThaiTienTrinh(key, procs, pidVangMat);
       trangThai.set(key, t);
     }
     return t;
+  };
+
+  /**
+   * ★★★ Pha 10 Task 1 — HÀNG RÀO TUỔI, và nó CHỈ chắn kết luận của **kênh phụ**.
+   *
+   * ⚠⚠ `nowMs` không hữu hạn (người gọi quên truyền) ⇒ **KHÔNG XOÁ**. Đây là chỗ dễ đẻ ra một
+   * `?? Date.now()` "cho tiện", và cái `??` đó sẽ biến một hàm THUẦN thành một hàm đọc đồng hồ —
+   * đúng thứ docstring của hàm này cấm, và cũng đúng lớp lỗi *"`?? mặc_định` nuốt một câu trả lời
+   * đã có"*. Thà không dọn còn hơn dọn theo một cái đồng hồ không ai kiểm được.
+   */
+  const duCuChoKenhPhu = (r: SharedLeaseRow): boolean => {
+    if (procs !== null) return true; // bằng chứng ĐẦY ĐỦ ⇒ không phải chờ ai
+    const now = input.nowMs;
+    if (typeof now !== "number" || !Number.isFinite(now)) return false;
+    if (!Number.isFinite(r.updatedAtMs)) return false;
+    return now - r.updatedAtMs >= tuoiToiThieu;
   };
 
   const xoaHangMa: HangMaCanXoa[] = [];
@@ -227,11 +312,12 @@ export function lapKeHoachNhanNuoi(input: DauVaoNhanNuoi): KeHoachNhanNuoi {
     // trình là dựng người đọc thứ hai của chính vị từ mà `release()` đã trả lời dứt khoát.
     if (r.processKey === selfKey) continue;
     const t = traTrangThai(r.processKey);
-    if (t === "chet") {
+    if (t === "chet" && duCuChoKenhPhu(r)) {
       xoaHangMa.push({ leaseKey: r.leaseKey, processKey: r.processKey, bytes: r.bytes });
       continue;
     }
-    // Chủ CÒN SỐNG (hoặc chưa chứng minh được là đã chết) ⇒ hộ mà hàng này đứng tên ĐÃ CÓ CHỦ.
+    // Chủ CÒN SỐNG (hoặc chưa chứng minh được là đã chết, hoặc CHƯA ĐỦ CŨ để tin kênh phụ) ⇒ hộ mà
+    // hàng này đứng tên ĐÃ CÓ CHỦ.
     // ⚠ Hàng nền (`vram:baseline`) không bao giờ mang dấu nhận nuôi ⇒ `null` ⇒ rơi ra ngoài.
     const pid = pidTuOwnerNhanNuoi(r.owner);
     if (pid !== null) pidTanDuDaCoChu.add(pid);

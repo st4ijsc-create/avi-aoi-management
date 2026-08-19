@@ -23,10 +23,15 @@ import type { SharedBaselineRecord, SharedLeaseRow } from "./vramSharedLedger";
  * (chỉ `import type` + một hằng chuỗi từ `vramSharedLedger`, không I/O, thuần).
  */
 import {
-  hangNenChoKeHoach, lapKeHoachNhanNuoi, moTaSidecarNhanNuoi, ownerNhanNuoi,
+  hangNenChoKeHoach, lapKeHoachNhanNuoi, moTaSidecarNhanNuoi, ownerNhanNuoi, tachProcessKey,
 } from "./vramAdoption";
 import type { HangMaCanXoa } from "./vramAdoption";
 import type { ProcTableRow } from "./vramGpuHolders";
+/**
+ * ★★★ Pha 10 Task 1 — KÊNH BẰNG CHỨNG PHỤ. Nhập TĨNH được vì `vramProcessPresence` là **module LÁ
+ * tuyệt đối**: không `import` gì, không I/O, không sinh tiến trình — chỉ `process.kill(pid, 0)`.
+ */
+import { quetPidVangMat } from "./vramProcessPresence";
 
 /**
  * Pha 2B Task 1 — quét danh tính hộ đang giữ GPU, KHÔNG BAO GIỜ ném, KHÔNG BAO GIỜ chặn đường boot.
@@ -293,6 +298,46 @@ export interface VramReconcileResult {
 export type { BaselineOrigin, VramBaselineDistrustReason } from "./types";
 
 let timer: NodeJS.Timeout | null = null;
+/**
+ * ★★★ Pha 10 Task 1 — **NHỊP QUÉT SỚM SAU BOOT.** KHÔNG phải một bộ hẹn giờ định kỳ thứ hai (brief
+ * cấm đúng điều đó): nó bắn **một lần** rồi tự tắt.
+ *
+ * Vì sao cần: nhịp NGAY của `startVramReconciler()` chạy khi bản sao sổ chung còn `null` (chưa có
+ * lượt đi DB nào), nên `chayLuotNhanNuoi()` thấy `rows = []` và **không thể dọn gì**. Bản sao chỉ
+ * được xuất bản ở `finally` của chính nhịp ấy, **bất đồng bộ**. ⇒ Không có nhịp này, lượt dọn hàng
+ * ma ĐẦU TIÊN của một tiến trình vừa khởi động rơi vào **T+60 s**. Mà T+0…T+60 s đúng là lúc
+ * `warmUpOllamaModels()` và model 30B lên card — tức lượt cấp phát lớn nhất vòng đời tiến trình
+ * diễn ra trên một sổ **còn nguyên hàng ma của lượt chạy trước**, và đó chính là chế độ hỏng mà
+ * chủ dự án gặp: *"Không đủ VRAM: xin 0 MiB, còn −19054 MiB"* ngay khi vừa khởi động lại.
+ */
+let henQuetSom: NodeJS.Timeout | null = null;
+/**
+ * Trễ của nhịp quét sớm. Phải LỚN HƠN một vòng `syncSharedLedger()` (mở kết nối + `selectAll`) và
+ * NHỎ HƠN hẳn chu kỳ 60 s. ⚠ Đọc `.env` mỗi lượt — cùng khuôn `syncTimeoutMs()`.
+ */
+function quetSomDelayMs(): number {
+  const n = Number(process.env.VRAM_GHOST_SWEEP_BOOT_DELAY_MS);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 5_000;
+}
+
+/**
+ * ★★★ Pha 10 — **DƯỚI VITEST, KHÔNG TỰ ĐẶT NHỊP QUÉT SỚM** (trừ khi ai đó khai `.env` tường minh).
+ *
+ * ⚠⚠ ĐÂY LÀ MỘT HÀNG RÀO CHỐNG **NHIỄU LƯỚI**, và lý do nó có mặt là một phép đo: 7 file test VRAM
+ * gọi `startVramReconciler()`, và một `setTimeout(5 s)` đặt ở đó sẽ **tự bắn một nhịp đối chiếu**
+ * vào giữa bất kỳ file test nào chạy lâu hơn 5 giây — mà dưới `--sequence.shuffle.tests` với 49
+ * file chạy song song, thời lượng file **vượt 5 s là chuyện thường** (đo được: một file 1,3 s khi
+ * chạy riêng bị đẩy lên **5.016 ms** trong lượt shuffle). Một nhịp không ai gọi, chạy giữa một ca
+ * đang dựng trạng thái, là đúng khuôn GOTCHA `aiGateway` đã trả giá: *"`setInterval` unref'd RÒ vào
+ * bộ test, tự bắn, tự kết nối và TỰ GHI VÀO DB TEST."*
+ *
+ * ⚠ Nó KHÔNG làm cơ chế thành mã chết: đặt `VRAM_GHOST_SWEEP_BOOT_DELAY_MS` là bật lại, nên một ca
+ * muốn canh chính nhịp này vẫn canh được — và đường sản xuất (không có `VITEST`) không đổi một byte.
+ */
+function quetSomBat(): boolean {
+  if (process.env.VRAM_GHOST_SWEEP_BOOT_DELAY_MS) return true;
+  return !process.env.VITEST;
+}
 
 /**
  * NỀN THIẾT BỊ — VRAM đã bị chiếm bởi thứ KHÔNG PHẢI tiến trình này, đo MỘT LẦN lúc khởi động.
@@ -1450,6 +1495,8 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
     orphans: census?.orphans ?? [],
     pidDaNhanNuoi: [...leaseNhanNuoi.keys()],
     sidecar: moTaSidecarNhanNuoi(),
+    pidVangMat: quetVangMatKhiCanhChinhCam(procs, rows),
+    nowMs: Date.now(),
   });
   pidTanDuDaCoChu = ke.pidTanDuDaCoChu;
 
@@ -1460,6 +1507,7 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
    * và vẫn nhận nuôi nền của một tiến trình đã chết.
    */
   donHangMa(ke.xoaHangMa);
+  keuKhiKhongQuetDuoc(procs, rows, ke.xoaHangMa.length);
 
   for (const ho of ke.nhanNuoi) {
     const row = procs === null ? undefined : procs.find((p) => p.pid === ho.pid);
@@ -1508,6 +1556,83 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
       /* sổ hỏng KHÔNG được đánh hỏng nhịp đối chiếu */
     }
   }
+}
+
+/**
+ * ★★★ Pha 10 Task 4 — **CHUÔNG CHO CHÍNH BỘ QUÉT, VÌ NÓ TỪNG HỎNG CÂM 2 NGÀY.**
+ *
+ * ⚠⚠ ĐÂY LÀ BÀI HỌC CHÍNH CỦA CẢ PHA, và nó không phải về VRAM: bộ quét hàng ma **đã đúng từ Pha 3
+ * Task 4**. Thứ hỏng là **nguồn bằng chứng của nó**, và khi nguồn ấy câm thì bộ quét làm đúng việc
+ * an toàn — **không làm gì** — nhưng nó làm việc đó **trong im lặng**. Kết quả đo được: 107 hàng /
+ * 54.755 MiB hộ ma tích trong 2 ngày, dư địa **−19.054 MiB**, AI ngừng trả lời hoàn toàn, và dấu
+ * vết duy nhất là một dòng cảnh báo nói về MỘT TRIỆU CHỨNG KHÁC (*"không phân loại được hộ đang
+ * giữ GPU"* — nói về lượt chụp nền, không về sổ đang mục).
+ *
+ * ⇒ *"Một cơ chế phòng vệ không hành động được PHẢI kêu — nếu không, 'an toàn' và 'đã chết' trông
+ * giống hệt nhau từ bên ngoài."*
+ *
+ * ⚠ KÊU THEO NHỊP THƯA DẦN, không mỗi lượt: 60 s × mãi mãi = một dòng bị lọc bỏ (đúng lý lẽ
+ * `keuMotLan()` ở `vramSharedLedgerStore`). Lần đầu kêu ngay, sau đó mỗi `CHU_KY_KEU` nhịp — đủ
+ * hiếm để đọc được, đủ dày để không ai lỡ một sự cố 2 ngày.
+ */
+const CHU_KY_KEU_KHONG_QUET = 10;
+let soNhipKhongQuetDuoc = 0;
+
+function keuKhiKhongQuetDuoc(
+  procs: readonly ProcTableRow[] | null,
+  rows: readonly SharedLeaseRow[],
+  soHangDaDon: number,
+): void {
+  // Có bằng chứng đầy đủ, hoặc sổ không có hàng của ai khác ⇒ không có gì để lo.
+  if (procs !== null || rows.length === 0) {
+    soNhipKhongQuetDuoc = 0;
+    return;
+  }
+  // Kênh phụ vẫn dọn được hàng ⇒ cơ chế ĐANG chạy, dù kênh chính câm. Không kêu.
+  if (soHangDaDon > 0) {
+    soNhipKhongQuetDuoc = 0;
+    return;
+  }
+  soNhipKhongQuetDuoc += 1;
+  if (soNhipKhongQuetDuoc !== 1 && soNhipKhongQuetDuoc % CHU_KY_KEU_KHONG_QUET !== 0) return;
+  let byte = 0;
+  for (const r of rows) if (Number.isFinite(r.bytes) && r.bytes > 0) byte += r.bytes;
+  console.warn(
+    `[vram] ⚠⚠ BỘ QUÉT HÀNG MA KHÔNG CÓ BẰNG CHỨNG suốt ${soNhipKhongQuetDuoc} nhịp liên tiếp: ` +
+      `bảng tiến trình KHÔNG đọc được VÀ kênh phụ (\`process.kill(pid,0)\`) không chứng minh được ` +
+      `pid nào vắng mặt. Sổ chung đang giữ ${rows.length} hàng của tiến trình khác ` +
+      `(${Math.round(byte / 1024 / 1024)} MiB) mà KHÔNG AI kiểm chứng được là còn sống hay đã chết. ` +
+      `⚠ Đây KHÔNG phải trạng thái an toàn — nó là trạng thái MÙ: mỗi lần app chết cứng lại thêm ` +
+      `hàng ma, và dư địa sẽ tụt dần tới ÂM rồi MỌI lượt gọi model bị từ chối. ` +
+      `Kiểm dòng "[vram] KHÔNG đọc được bảng tiến trình" ngay trên để biết lý do thật.`,
+  );
+}
+
+/**
+ * ★★★ Pha 10 Task 1 — **CHỈ QUÉT KÊNH PHỤ KHI KÊNH CHÍNH CÂM**, và chỉ trên đúng những PID có tên
+ * trong sổ. **MỘT bản cài đặt, HAI người gọi** (nhịp đối chiếu + lệnh `releaseStale` của ops) —
+ * hai bản chép tay là hai tiêu chuẩn bằng chứng sẽ trôi khỏi nhau, đúng thứ ràng buộc 12 cấm.
+ *
+ * ⚠ `procs !== null` ⇒ trả `null` **ngay**: bảng tiến trình là bằng chứng ĐẦY ĐỦ (có `CreationDate`
+ * nên bắt được cả PID cấp lại), và hỏi thêm một cửa yếu hơn chỉ tạo cơ hội cho hai câu trả lời
+ * lệch nhau. Kênh phụ tồn tại để cứu lúc CÂM, không phải để bỏ phiếu.
+ *
+ * ⚠ Dân số quét là **PID trong sổ chung**, hữu hạn và nhỏ (đo được: 8–107 hàng). `process.kill(p,0)`
+ * là một lượt `OpenProcess` ~micro-giây, nên đây KHÔNG phải một lượt quét đắt như `readProcTable()`
+ * (316–341 ms, và trong sản xuất là **hỏng 100%**).
+ */
+function quetVangMatKhiCanhChinhCam(
+  procs: readonly ProcTableRow[] | null,
+  rows: readonly SharedLeaseRow[],
+): ReadonlySet<number> | null {
+  if (procs !== null) return null;
+  const pids: number[] = [];
+  for (const r of rows) {
+    const khoa = tachProcessKey(r.processKey);
+    if (khoa !== null) pids.push(khoa.pid);
+  }
+  if (pids.length === 0) return null;
+  return quetPidVangMat(pids);
 }
 
 /**
@@ -1647,6 +1772,11 @@ export async function releaseStaleSharedRow(leaseKey: string): Promise<VramRelea
     orphans: [],
     pidDaNhanNuoi: [...leaseNhanNuoi.keys()],
     sidecar: null,
+    // ★ Pha 10 Task 1 — lệnh ops dùng **ĐÚNG** tiêu chuẩn bằng chứng của nhịp đối chiếu, kể cả
+    // kênh phụ: hai tiêu chuẩn khác nhau ở hai đường là cách chắc chắn nhất để `releaseStale()`
+    // từ chối một hàng mà nhịp tự động vừa xoá (hoặc ngược lại).
+    pidVangMat: quetVangMatKhiCanhChinhCam(procs, rows),
+    nowMs: Date.now(),
   });
 
   const ma = ke.xoaHangMa.find((m) => m.leaseKey === leaseKey) ?? null;
@@ -2781,6 +2911,18 @@ export function startVramReconciler(opts: { ring?: boolean } = {}): void {
   void __runReconcileTick().catch(() => {
     /* đã đếm + đã cảnh báo trong `__runReconcileTick()`; nhịp sau thử lại */
   });
+  /**
+   * ★★★ Pha 10 Task 1 — nhịp quét sớm (xem docstring `henQuetSom`). MỘT LẦN, `unref()`, và bị
+   * `stopVramReconciler()` dọn: một bộ đếm giờ sống sót sau khi đối chiếu đã dừng là đúng thứ
+   * `__setVramLogTimerEnabled()` đã phải sửa một lần rồi.
+   */
+  if (henQuetSom === null && quetSomBat()) {
+    henQuetSom = setTimeout(() => {
+      henQuetSom = null;
+      void __runReconcileTick().catch(() => {});
+    }, quetSomDelayMs());
+    henQuetSom.unref?.();
+  }
   timer = setInterval(() => {
     void __runReconcileTick().catch(() => {});
   }, INTERVAL_MS);
@@ -2788,6 +2930,12 @@ export function startVramReconciler(opts: { ring?: boolean } = {}): void {
 }
 
 export function stopVramReconciler(): void {
+  // ★ Pha 10 Task 1 — dọn nhịp quét sớm TRƯỚC cửa `if (!timer)`: nó được đặt cùng lúc với `timer`
+  // nhưng tự xoá mình khi bắn, nên hai vòng đời KHÔNG trùng nhau.
+  if (henQuetSom) {
+    clearTimeout(henQuetSom);
+    henQuetSom = null;
+  }
   if (!timer) return;
   clearInterval(timer);
   timer = null;
