@@ -507,3 +507,67 @@ này) = 2219`. ⚠ **Nhóm A (rò rỉ) KHÔNG đổi: 363.**
 - Migration **0333** đã áp **cả hai** CSDL. Phiên thử của tôi đã xoá (bảng về 0 hàng).
 - Đề thi C# + React đều **nạp lại**, `sandbox-projects/` 0 thay đổi.
 - `AI_CODING_AUTOLOOP=1` đang bật ở `.env` máy này để nghiệm thu; **mã mặc định TẮT**.
+
+---
+
+# ✅ CỔNG GIẤY PHÉP `MOD_AI` — nghiệm thu live 2026-08-19
+
+Chủ dự án muốn bán cho **hai loại khách**: doanh nghiệp **KHÔNG mua AI** (hệ vẫn chạy đủ) và doanh
+nghiệp **CÓ mua** (AI sáng lên). Ràng buộc số một họ nêu: *"đảm bảo các hệ thống khác không dùng AI
+sẽ KHÔNG bị ảnh hưởng"*.
+
+**Không tách repo** — đo được 47 tệp ngoài vùng AI phụ thuộc engine (thị giác, OCR, RCA, cố vấn
+ngưỡng, chat vận hành), và `aiLocalTools` chứa **69 tool trong đó chỉ 5 là lập trình**. Cắt ra là
+làm hỏng bốn module khác. Thứ cần là **cổng giấy phép**, và `MOD_AI` đã đăng ký sẵn từ trước.
+
+## Ba kịch bản — nghiệm thu LIVE (tôi tự chạy, tự chụp, tự đọc ảnh)
+
+| Kịch bản | Cách dựng | Kết quả |
+|---|---|---|
+| **Chưa khai SKU** | `licenses` rỗng, cache rỗng | ✅ **mọi thứ chạy** — đúng thiết kế không-brick |
+| **Có giấy phép, KHÔNG mua AI** | chèn 1 hàng `licenses` thật, 10 module, vắng `MOD_AI` | ✅ tuyến AI → **"Module chưa được cấp phép"**; **Bảng điều khiển sản xuất chạy ĐẦY ĐỦ** (36 trạm, KPI, toolbar, bảng dữ liệu) |
+| **Có mua AI** | `LICENSE_BYPASS=true` (khuôn hiện tại) | ✅ **không một byte hành vi nào đổi** |
+
+Hàng `licenses` thử đã **xoá**, bảng về đúng **0 hàng** như trước.
+
+## Số đo
+
+- **28 → 291** thủ tục sau `MOD_AI` (4 → 28 file). Thủ tục **ngoài AI bị khoá nhầm: 0**.
+- Dân số cổng 5 SKU khác **giữ nguyên từng con số**: PRODUCTION 62 · QUALITY 67 · ENGINEERING 68 ·
+  FEDERATION 8 · OT_CONTROL 105.
+- **52 ca lưới** trên sổ thật **2.219 thủ tục** — trùng đúng `phamViDocCensus#GHIM.tong`, hai bộ suy
+  độc lập ra cùng dân số. `moduleGate.ts` trước lượt này **không có lưới nào**.
+- Đột biến **6/6 ăn**, gồm ca phá không-brick và ca client bỏ chặn.
+
+## ⚠ 62 thủ tục CỐ Ý KHÔNG khoá — chủ dự án ĐÃ DUYỆT
+
+Ký tên đầy đủ trong `MIEN_TRU_VAN_HANH`. Đáng chú ý nhất:
+
+- **Công tắc dừng khẩn của agent (3)** — giấy phép có thể hết hạn **trong lúc** agent đang chạy;
+  khoá nút dừng sau một hợp đồng thương mại là **ngược chiều an toàn**.
+- **Sổ cảnh báo trung tâm (14)** — `predictive_alerts` được SPC/SLO/leo-thang ghi vào, OpsConsole
+  đọc. Khoá = tắt bảng cảnh báo của khách không-AI.
+- **Phân tích kiểm tra thuần SQL/SPC (11)** — `/drill-down` thuộc **CORE_DASHBOARD**.
+- **Bề mặt gắn trên chrome toàn cục (6)**, **người gọi nằm trên màn của SKU khác (10)**.
+
+> **Hệ quả nhìn thấy được**: panel *"Tín hiệu AI theo máy"* **vẫn hiện** trên bảng sản xuất của khách
+> không-AI (rỗng, ghi "Chưa thiết lập giám sát"). Bấm *"Hỏi AI"* → dẫn tới `/ai-chat` và **gặp đúng
+> tường cấp phép**. Không hỏng, nhưng là ngõ cụt dẫn tới lời mời nâng cấp. Muốn ẩn hẳn thì phải sửa
+> client trước, rồi mới khoá thủ tục (lưới §5 sẽ đỏ nếu quên gỡ dòng khỏi sổ miễn trừ).
+
+## ★★ Tệp cache giấy phép — đã gỡ khỏi git
+
+`server/license/license-state-cache.json` **bị git theo dõi** và khai một SKU **10 module vắng
+`MOD_AI`, `MOD_QUALITY`, `MOD_OT_CONTROL`, `MOD_ENGINEERING`, `MOD_FEDERATION`**, trong khi bảng
+`licenses` **rỗng** ⇒ nó là **nguồn SKU duy nhất** của mọi bản sao repo.
+
+⚠ **Đính chính mức nguy hiểm** (tôi đo thêm sau khi agent cảnh báo): app **ghi đè tệp đó về rỗng ở
+mỗi lần khởi động**, nên nó **tự lành lúc chạy**. Vẫn đúng khi gỡ khỏi git — nó là **sản phẩm sinh
+ra** (`license-service.ts:314` ghi nó; dòng 326 xử lý đúng khi vắng) — nhưng không phải quả bom như
+thoạt nghe. Cùng lớp với `embeddings.jsonl`: artifact bị commit rồi hoá thành cấu hình ngoài ý muốn.
+
+## Việc CÒN LẠI trước khi bán được hai gói
+
+Vì cache tự reset, **không có đường nào để một khách hàng thật có SKU thiếu AI chỉ bằng tệp này**.
+Cổng đã sẵn sàng đón, nhưng **nguồn SKU thì chưa**: cần một hàng `licenses` thật hoặc một license
+server. Đây là hạng mục thương mại, không phải kỹ thuật.
