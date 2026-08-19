@@ -213,3 +213,9 @@ scripts/audit/.s6-results.json
 sandbox-projects/**/bin/
 sandbox-projects/**/obj/
 sandbox-projects/**/node_modules/
+
+# ★ 2026-08-19 — `embeddings.jsonl` là SẢN PHẨM SINH RA, không phải mã nguồn.
+# GitHub chặn cứng ở 100 MB; tệp này đã phình 46 MB → 156 MB và làm hỏng lượt push.
+# Dựng lại bằng `npm run kb:embed` (đọc `chunks.jsonl` — giữ tệp đó trong repo mới ĐÚNG,
+# vì embeddings phải KHỚP chunks; ship embeddings cũ cạnh chunks mới là RAG SAI).
+knowledge/embeddings.jsonl
