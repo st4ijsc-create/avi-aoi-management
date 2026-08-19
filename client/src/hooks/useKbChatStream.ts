@@ -201,6 +201,10 @@ export interface KbStreamContext {
   // ★★★ doc 79 · TRỤC 2 — id DỰ ÁN đang chọn. Là một ID, KHÔNG phải đường dẫn — server tra danh sách
   // TRẮNG để ra gốc. Chỉ có nghĩa khi codingMode=true.
   projectId?: string;
+  // ★★★ doc 79 · VÒNG TỰ ĐỘNG — đường dẫn tệp ĐANG SỬA, do bộ điều khiển vòng ghim (là tệp người
+  // vừa duyệt ghi). Chỉ gửi ở LƯỢT SỬA KẾ TIẾP của vòng. Server đọc LẠI tệp từ đĩa trong lượt ấy —
+  // client KHÔNG BAO GIỜ gửi nội dung tệp (đó là điểm neo của băm chống TOCTOU).
+  codingEditPath?: string;
 }
 
 export interface KbStreamRequest {
@@ -268,6 +272,11 @@ export function useKbChatStream() {
       // ★★★ doc 79 · TRỤC 2 — gửi id DỰ ÁN (KHÔNG phải đường dẫn) để server tra danh sách trắng.
       if (req.context.projectId) {
         context.projectId = req.context.projectId;
+      }
+      // ★★★ doc 79 · VÒNG TỰ ĐỘNG — chỉ gửi khi vòng đang ghim một tệp (payload các lượt khác
+      // KHÔNG đổi một byte).
+      if (req.context.codingEditPath) {
+        context.codingEditPath = req.context.codingEditPath;
       }
 
       let confidence = 0;

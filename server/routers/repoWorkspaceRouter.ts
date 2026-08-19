@@ -10,10 +10,25 @@
  * nên cần một cổng tRPC gọi thẳng ba tool ấy. Đây đúng là ngoại lệ mà brief pha D cho phép: *"một
  * tRPC procedure mỏng để client gọi 5 tool ... đi qua đúng đường HITL đã có, KHÔNG mở đường tắt"*.
  *
- * ⚠ BA TOOL Ở ĐÂY ĐỀU LÀ **READ** ⇒ KHÔNG có HITL (đọc không cần người duyệt). Hai tool GHI/CHẠY
- *   (`apply_diff`/`run_command`) KHÔNG được lộ ở đây — chúng vẫn đi qua đường chat →
- *   `proposeAction`/`confirmAction` (aiCopilotRouter) như pha B/C đã dựng. File này KHÔNG import
- *   một cửa ghi nào.
+ * ⚠ BA TOOL ĐIỀU HƯỚNG Ở ĐÂY ĐỀU LÀ **READ** ⇒ KHÔNG có HITL (đọc không cần người duyệt).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐÍNH CHÍNH KHỐI NÀY (doc 79 · VÒNG TỰ ĐỘNG) — TRƯỚC ĐÂY NÓ VIẾT *"File này KHÔNG import một
+ * cửa ghi nào"*. NAY KHÔNG CÒN ĐÚNG, và lời khai phải theo mã chứ không ngược lại.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `chayKiemChung` (dưới cùng) chạy **một lệnh KIỂM CHỨNG** không cần người bấm — đó là bước "CHẠY
+ * test" của vòng tự động. Bốn điều KHÔNG đổi, và cả bốn đo được ở `aiCodingVerify.test.ts`:
+ *   • **`apply_diff` vẫn phải qua NGƯỜI.** Tuyến này không nhận tên tool; nó viết thẳng
+ *     `run_command`. Không có đường nào từ đây tới một lượt ghi mã nguồn.
+ *   • **Tập lệnh HẸP HƠN danh sách trắng** (`NHAN_KIEM_CHUNG`): `dotnet format` — mục DUY NHẤT
+ *     trong danh sách trắng có ghi đè tệp — **bị loại**.
+ *   • **Cùng đường HITL**: `executeDecision` → `proposeAction` → `confirmAction`, cùng RBAC hai
+ *     lần, cùng audit. Chỉ khác ở chỗ không có ngón tay người — và audit ghi rõ điều đó
+ *     (`confirmedBy: "autonomy"`).
+ *   • **Trần lượt kiểm ở SERVER**, không chỉ ở client.
+ *
+ * `apply_diff` vẫn KHÔNG được lộ ở đây — nó đi qua đường chat → `proposeAction` → thẻ duyệt →
+ * `confirmAction` (aiCopilotRouter) như pha C đã dựng.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠ RBAC KHÔNG NẰM Ở ĐÂY — NÓ NẰM TRONG CHÍNH TOOL
@@ -219,4 +234,47 @@ export const repoWorkspaceRouter = router({
       defaultId: duAnMacDinh().id,
     };
   }),
+
+  /**
+   * ★★★ doc 79 · VÒNG TỰ ĐỘNG — cấu hình cho bộ điều khiển vòng ở client.
+   *
+   * Client PHẢI hỏi server chứ không đoán: cờ và trần nằm ở `.env` của máy chủ, và một client tự
+   * giả định "vòng đang bật" sẽ hiện "lượt 1/3" cho một hệ đã tắt vòng — tức nói dối người dùng.
+   */
+  cauHinhVong: protectedProcedure.query(async () => {
+    const { vongTuDongBat, tranVongLap } = await import("../services/aiCodingVerify");
+    return { bat: vongTuDongBat(), tran: tranVongLap() };
+  }),
+
+  /**
+   * ★★★ doc 79 · VÒNG TỰ ĐỘNG — **CHẠY MỘT LƯỢT KIỂM CHỨNG** (bước "chạy test", không cần người bấm).
+   *
+   * ⚠⚠ Đây là mặt tiếp xúc DUY NHẤT cho phép vòng tự động sinh một tiến trình. Mọi phán quyết ở
+   * `services/aiCodingVerify.ts` — tuyến này chỉ dựng danh tính phiên (server tự đọc, KHÔNG tin
+   * client) rồi chuyển tiếp. Xem khối ⚠⚠⚠ ở đầu file cho bốn ràng buộc.
+   */
+  chayKiemChung: protectedProcedure
+    .input(
+      z.object({
+        projectId: projectIdSchema,
+        /** Lệnh đề nghị. Server phán quyết LẠI qua ba lớp — client không tự chọn được lệnh nào. */
+        command: z.string().min(1).max(300).optional(),
+        /** Lượt thứ mấy (1-based). Server kẹp theo trần của nó, không theo con số client gửi. */
+        luot: z.number().int().min(1).max(50),
+        /** Câu hỏi gốc — chỉ dùng để nhận ra lệnh người dùng NÊU ĐÍCH DANH. */
+        cauHoi: z.string().max(2000).optional(),
+        lang: langSchema.optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { chayKiemChung } = await import("../services/aiCodingVerify");
+      const lang = input.lang ?? "vi";
+      const execCtx = execCtxFrom(ctx, lang);
+      return chayKiemChung(
+        { projectId: input.projectId, command: input.command, luot: input.luot, cauHoi: input.cauHoi },
+        execCtx,
+        { id: execCtx.user.id, role: execCtx.user.role, name: execCtx.user.name ?? null },
+        lang,
+      );
+    }),
 });

@@ -19006,6 +19006,7 @@
       "thinking": "Thinking…",
       "noAnswer": "(no answer content)",
       "streamFailed": "Stream failed — try again.",
+      "placeholder": "Ask the agent: read/search code, propose a fix, run tests…",
       "cmdOutput": "Command output (added to context so you can keep fixing)",
       "applied": "Diff applied — file re-read.",
       "confirmFailed": "Could not execute."
@@ -19028,6 +19029,30 @@
     },
     "exec": {
       "noPerm": "Your account has no RUN-COMMAND permission (ai_repo_exec) — the run-tests suggestion is hidden. If called directly, the server still blocks it."
+    },
+    "loop": {
+      "title": "Auto loop — turn {{luot}}/{{tran}}",
+      "stopBtn": "Stop loop",
+      "hitl": "Every WRITE still needs your approval — the loop only RUNS tests, READS the errors and PROPOSES the next fix.",
+      "waitCmd": "Waiting for the verification command to finish (this can take minutes)…",
+      "ranTurn": "Auto loop — turn {{luot}}/{{tran}} ran `{{lenh}}`",
+      "counts": "{{do}} failing / {{xanh}} passing",
+      "fixPrompt": "fix {{tep}} to resolve the failure from `{{lenh}}`. This is the REAL output:",
+      "phase": {
+        "run": "RUNNING the verification command",
+        "propose": "READING the real errors and proposing the next fix",
+        "idle": "waiting for you to approve the fix"
+      },
+      "stop": {
+        "green": "DONE — the verification command is fully green.",
+        "cap": "STOPPED: turn cap reached. Failures remain — read the errors and ask for the next fix yourself.",
+        "stuck": "STOPPED: NO PROGRESS — the failure count did not drop, or the output/patch repeated the previous turn exactly.",
+        "user": "STOPPED: you cancelled the proposal or stopped the loop.",
+        "noCmd": "Loop did not run: no verification command could be inferred for this project (needs a .sln/.csproj, or a package.json plus a test directory). Name the command explicitly in your request.",
+        "perm": "Loop did not run: your account lacks RUN-COMMAND permission (ai_repo_exec). The server is the real gate — get the permission and retry.",
+        "off": "The auto loop is OFF (the default) — the fix WAS written, but you must run the tests yourself. Enable it with AI_CODING_AUTOLOOP=1 and restart the server.",
+        "error": "STOPPED by a REAL failure while running the verification command."
+      }
     }
   }
 }

@@ -191,6 +191,13 @@ const FILE_DANG_KY_WRITE_TOOL_DA_NAP = [
   "services/aiLocalTools/writeHandlers/qualityAdvisory.ts",
   // doc 78 PHA B — `run_command` (nạp qua `import "./writeHandlers/repoCommand"` ở aiLocalTools/index.ts).
   "services/aiLocalTools/writeHandlers/repoCommand.ts",
+  /**
+   * ★ doc 78 PHA C — `apply_diff`. **File này ĐÃ được nạp từ 2026-08-19 mà DANH SÁCH NÀY KHÔNG
+   * BIẾT**, nên §A khai `apply_diff` "chưa phân loại" và §C lệch 14/13 — cả hai ĐỎ từ trước đợt
+   * doc 79. Đúng lớp lỗi "N+1" mà chính file này được dựng ra để chặn: lưới bắt được, nhưng không
+   * ai đọc con đỏ. Nay `apply_diff` đã được xếp vào `AUTONOMY_INELIGIBLE` (xem lý do ở đó).
+   */
+  "services/aiLocalTools/writeHandlers/applyDiff.ts",
   "services/aiLocalTools/writeHandlers/visionControl.ts",
   "services/aiLocalTools/writeHandlers/yield.ts",
   "services/visionDefectProposal.ts",

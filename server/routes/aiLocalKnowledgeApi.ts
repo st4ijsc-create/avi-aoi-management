@@ -87,6 +87,19 @@ function parseContext(raw: unknown): KbQueryContext | undefined {
   if (typeof r.projectId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(r.projectId)) {
     ctx.projectId = r.projectId;
   }
+  // ★★★ doc 79 · VÒNG TỰ ĐỘNG — tệp đang sửa, GHIM bởi bộ điều khiển vòng ở client.
+  // ⚠ Ở đây chỉ chặn hình dạng THÔ (chuỗi, có nội dung, ≤ 1024, không NUL/xuống dòng). Hàng rào
+  //   THẬT là hộp cát: đường này đi thẳng vào `read_file` → `phanQuyetDuongDan` (chặn đường tuyệt
+  //   đối, `..`, `C:`, thư mục loại trừ, tệp bí mật) dưới gốc dự án đã phân giải. KHÔNG lặp lại
+  //   phép phán quyết ở đây — hai bản sao của một vị từ an toàn là cách chúng lệch nhau.
+  if (
+    typeof r.codingEditPath === "string" &&
+    r.codingEditPath.trim() !== "" &&
+    r.codingEditPath.length <= 1024 &&
+    !/[\0\r\n]/.test(r.codingEditPath)
+  ) {
+    ctx.codingEditPath = r.codingEditPath.trim();
+  }
 
   return Object.keys(ctx).length > 0 ? ctx : undefined;
 }

@@ -796,13 +796,37 @@ describe("§J — BẢN KIỂM ĐẾM ĐIỂM GỌI: ai được sinh tiến tr�
     }
   });
 
-  it("★★ `phanQuyetLenh` được gọi ở CẢ `preview` LẪN `execute` (args lúc execute đến từ hàng DB, không tin được)", () => {
+  /**
+   * ★ 2026-08-19 (doc 79 · VÒNG TỰ ĐỘNG) — NGƯỜI PHÁN QUYẾT THỨ BA: `aiCodingVerify.ts
+   * [laLenhKiemChung]`.
+   *
+   * ⚠⚠ ĐỌC KỸ TRƯỚC KHI COI ĐÂY LÀ "NỚI LƯỚI". Hai điều PHÂN BIỆT nó với một đường vòng:
+   *   1. Nó **SIẾT**, không nới: sau khi `tachArgv` + `phanQuyetLenh` nói ĐƯỢC, nó còn hỏi thêm
+   *      *"lệnh này có thuộc TẬP CON kiểm chứng không"* và từ chối `dotnet format` (mục DUY NHẤT
+   *      trong danh sách trắng có GHI ĐÈ tệp) cùng `git status`/`git diff`. Một lệnh qua được ba
+   *      lớp ở đây vẫn phải đi qua ĐÚNG `execute` (lớp 4+5) để chạy.
+   *   2. Nó **KHÔNG sinh tiến trình**: ca đầu của §J (danh sách điểm gọi `chayLenhTrongHopCat`)
+   *      vẫn CHỈ có hai mục, và `aiCodingVerify.ts` không nằm trong đó. Đó mới là bất biến thật —
+   *      hai ca dưới đây chỉ đếm ai được PHÁN QUYẾT.
+   * ⇒ Một điểm gọi thứ TƯ vẫn phải làm ca này ĐỎ và phải tự chứng minh như trên.
+   */
+  it("★★ `phanQuyetLenh` được gọi ở `preview`, `execute`, và cổng SIẾT của vòng tự động", () => {
     const trongHam = diemGoi("phanQuyetLenh").map((d) => d.trongHam).sort();
-    expect(trongHam).toEqual(["execute", "xemTruoc"]);
+    expect(trongHam).toEqual(["execute", "laLenhKiemChung", "xemTruoc"]);
   });
 
   it("★★ `tachArgv` cũng vậy — lớp 1 không được bỏ qua ở đường execute", () => {
     const trongHam = diemGoi("tachArgv").map((d) => d.trongHam).sort();
-    expect(trongHam).toEqual(["execute", "xemTruoc"]);
+    expect(trongHam).toEqual(["execute", "laLenhKiemChung", "xemTruoc"]);
+  });
+
+  /**
+   * ★★★ VẾ THỨ HAI của lời khai trên, phát biểu thành phép đo RIÊNG: cổng siết của vòng tự động
+   * **KHÔNG** được là một cửa sinh tiến trình thứ ba. Nếu ai đó cho `aiCodingVerify.ts` gọi thẳng
+   * bộ chạy, ca đầu của §J đỏ — ca này nói rõ VÌ SAO nó phải đỏ, ngay tại chỗ.
+   */
+  it("★★★ cổng siết của vòng tự động KHÔNG sinh tiến trình (nó chỉ TỪ CHỐI hoặc chuyển tiếp)", () => {
+    const files = diemGoi("chayLenhTrongHopCat").map((d) => d.file);
+    expect(files).not.toContain("services/aiCodingVerify.ts");
   });
 });

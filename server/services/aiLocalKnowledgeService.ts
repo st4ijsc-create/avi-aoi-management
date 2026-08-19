@@ -216,6 +216,24 @@ export interface KbQueryContext {
    * tự do ⇒ TỪ CHỐI (fail-closed). Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ dự án mặc định.
    */
   projectId?: string;
+  /**
+   * ★★★ doc 79 · VÒNG TỰ ĐỘNG — **TỆP ĐANG SỬA, GHIM BỞI BỘ ĐIỀU KHIỂN VÒNG.**
+   *
+   * Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ hành vi Y HỆT hôm nay (bộ chọn tất định tự
+   * trích đường dẫn từ câu hỏi).
+   *
+   * ⚠⚠ VÌ SAO CẦN GHIM — một lỗi ĐO ĐƯỢC nếu không có nó: câu hỏi của lượt sửa kế tiếp **chứa đầu
+   * ra test thật**, mà đầu ra ấy có cả tên lệnh (`dotnet test …`) lẫn đường dẫn tệp KHÁC
+   * (`…/CalculatorTests.cs:line 42`). `classifyCodingToolIntent` chạy `run_command` TRƯỚC tiên ⇒ nó
+   * sẽ chọn "chạy lại test" thay vì "sửa tệp", và nếu không thì nó chọn nhầm **tệp test** thay vì
+   * tệp nguồn. Ghim đường dẫn là cách duy nhất để vòng sửa ĐÚNG tệp mà người vừa duyệt.
+   *
+   * ⚠ KHÔNG mở thêm quyền: đường này vẫn đi qua `read_file` (hộp cát + RBAC + gốc dự án đã phân
+   * giải) như mọi lượt đọc khác; một đường ngoài hộp cát bị TỪ CHỐI y hệt, và câu từ chối được nói
+   * ra nguyên văn. Người dùng vốn đã có thể yêu cầu đọc một tệp bất kỳ bằng lời — ghim không thêm
+   * bề mặt nào, chỉ bỏ một bước đoán.
+   */
+  codingEditPath?: string;
 }
 
 export interface KbStructuredResponse {
@@ -2651,6 +2669,25 @@ async function* streamCodingAnswer(
   }
   const execCtx2: ToolExecContext | undefined =
     execCtx && goc.goc ? { ...execCtx, projectRoot: goc.goc } : execCtx;
+
+  /**
+   * ★★★ doc 79 · VÒNG TỰ ĐỘNG — LƯỢT SỬA KẾ TIẾP, TỆP ĐƯỢC **GHIM** BỞI BỘ ĐIỀU KHIỂN VÒNG.
+   *
+   * Đứng TRƯỚC cả bộ chọn tất định vì lý do đo được ở `KbQueryContext.codingEditPath`: câu hỏi của
+   * lượt này chở theo ĐẦU RA TEST THẬT, và trong đầu ra ấy có tên lệnh + đường dẫn tệp test — bộ
+   * chọn sẽ đi lạc sang `run_command` hoặc sang đúng tệp test.
+   *
+   * ⚠⚠ **BẤT BIẾN TOCTOU**: `streamCodingEdit` đọc lại tệp bằng `read_file` NGAY TRONG lượt này —
+   * `original` gửi cho `apply_diff` là byte TRÊN ĐĨA lúc này, KHÔNG phải thứ model hay client nhớ
+   * từ lượt trước. Sau lượt ghi thứ nhất tệp đã đổi, nên lượt hai **bắt buộc** phải đọc lại; đó là
+   * lý do bộ điều khiển vòng chỉ gửi ĐƯỜNG DẪN, không bao giờ gửi nội dung.
+   *
+   * ⚠ Cờ `AI_CODING_EDIT=0` ⇒ `streamCodingEdit` trả `false` ngay ⇒ rơi xuống đường cũ, không im lặng.
+   */
+  if (typeof context?.codingEditPath === "string" && context.codingEditPath.trim() !== "") {
+    const daXuLyGhim = yield* streamCodingEdit(question, context.codingEditPath.trim(), language, context, execCtx2);
+    if (daXuLyGhim) return;
+  }
 
   /**
    * ★★★ doc 79 · TRỤC 1 (C) — NHÁNH **SỬA TỆP**, đứng TRƯỚC bộ chọn tool tất định.

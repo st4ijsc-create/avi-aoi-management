@@ -129,6 +129,21 @@ export const AUTONOMY_INELIGIBLE: ReadonlySet<string> = new Set<string>([
   // PLC/robot program files — control logic, not data — server/services/aiLocalTools/writeHandlers/programmingFile.ts
   "write_project_file",
   /**
+   * ★★★ doc 78 PHA C — `apply_diff` (server/services/aiLocalTools/writeHandlers/applyDiff.ts).
+   *
+   * ⚠ NỢ CÓ TRƯỚC, phát hiện khi làm doc 79: tool này đăng ký từ 2026-08-19 nhưng **chưa bao giờ
+   * được phân loại**, nên `autonomyWriteToolCensus.test.ts` §A/§C ĐỎ mà không ai đọc con đỏ.
+   *
+   * Nó GHI ĐÈ TỆP MÃ NGUỒN trong repo, với nội dung do một model 30B sinh ra. Bốn hàng rào của pha
+   * C (tệp bẩn · băm chống TOCTOU · hộp cát · RBAC) trả lời *"ghi được vào ĐÂU và trên phiên bản
+   * NÀO"*; không hàng rào nào trả lời *"nội dung ghi vào có ĐÚNG không"* — chỉ người đọc diff mới
+   * trả lời được. Đây đúng nghĩa "không đảo lại được một cách rẻ tiền": một lượt ghi sai đè lên mã
+   * đang chạy, và nếu tệp chưa commit thì không có bản gốc nào để quay về.
+   * ⇒ TUYỆT ĐỐI không auto-execute. Người đọc diff rồi bấm duyệt — đó là toàn bộ điểm của pha C,
+   *   và là bất biến mà doc 79 (vòng tự động) cũng KHÔNG được phép chạm.
+   */
+  "apply_diff",
+  /**
    * ★★★ doc 78 PHA B — `run_command` (server/services/aiLocalTools/writeHandlers/repoCommand.ts).
    *
    * Nó SINH TIẾN TRÌNH trên máy chủ: tiêu CPU/RAM thật, chạy tới 4 phút, và `npx vitest run <đường>`
@@ -137,6 +152,18 @@ export const AUTONOMY_INELIGIBLE: ReadonlySet<string> = new Set<string>([
    * đúng là thứ tự trị quyết định. Một vòng lặp tác nhân tự trị gọi `npm run check` mỗi bước là một
    * cách làm nghẽn máy chủ mà không lệnh nào trong đó "sai".
    * ⇒ Con người bấm duyệt từng lượt. Không có cấu hình nào mở được điều này (denylist thắng allowlist).
+   *
+   * ⚠⚠⚠ ĐÍNH CHÍNH (doc 79 · VÒNG TỰ ĐỘNG, 2026-08-19) — CÂU CUỐI Ở TRÊN **KHÔNG CÒN ĐÚNG TUYỆT ĐỐI**,
+   * và để nguyên nó là để lại một lời khai sai cho người đọc sau.
+   * `server/services/aiCodingVerify.ts` chạy `run_command` KHÔNG cần người bấm, sau cờ
+   * `AI_CODING_AUTOLOOP` (**mặc định TẮT**). Nó **KHÔNG đi qua `evaluateAutonomy`**, nên denylist
+   * này không hề được hỏi ở đường đó — tức đây là một cửa THỨ HAI, không phải một lỗ hổng của
+   * denylist. Nó tự bó bằng đúng hai chiều mà lý lẽ trên nêu tên (BAO NHIÊU LƯỢT: trần 3, cứng 5,
+   * kiểm hai phía + ba tín hiệu dừng-khi-không-tiến-bộ · LÚC NÀO: chỉ ngay sau một lượt NGƯỜI vừa
+   * duyệt ghi), cộng một danh sách trắng HẸP HƠN (`NHAN_KIEM_CHUNG`: `dotnet format` bị loại) và
+   * một phép suy không bao giờ tự chọn `npm run check` — đúng kịch bản bị nêu tên ở trên.
+   * ⇒ Tool này VẪN đứng ngoài tầng tự trị chung. Đừng xoá nó khỏi danh sách này để "cho vòng chạy";
+   *   vòng đã có cửa riêng, hẹp hơn, và có lưới riêng (`aiCodingVerify.test.ts`).
    */
   "run_command",
   // Safety interlock rules — server/services/aiLocalTools/writeHandlers/interlock.ts

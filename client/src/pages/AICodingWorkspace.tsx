@@ -21,6 +21,26 @@
  *
  * ⚠ RBAC ở client CHỈ để ẩn/hiện cho lịch sự — server (`ai_repo_read`/`ai_repo_exec`) mới là hàng
  *   rào. Route được RouteGuard ghim `ai_repo_read`; nút chạy lệnh ẩn khi thiếu `ai_repo_exec`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ doc 79 · VÒNG TỰ ĐỘNG SAU KHI NGƯỜI DUYỆT — BỘ ĐIỀU KHIỂN Ở ĐÂY, VÀ VÌ SAO Ở ĐÂY
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Vòng *ghi → chạy test → đọc lỗi → sửa tiếp* **phải** có một cú bấm của người ở giữa mỗi lượt
+ * (HITL cho mọi lượt GHI là bất biến). Một luồng SSE trên server không thể chờ qua một cú bấm, nên
+ * bộ điều khiển vòng buộc phải sống ở client. Ba hệ quả, đã xử lý:
+ *
+ *   1. **Quyết định DỪNG không được nằm rải trong component.** Toàn bộ cầu chì (trần · không tiến
+ *      bộ · đọc kết quả test) nằm ở `@shared/aiCodingLoop` và có lưới đơn vị chạy thẳng trên nó.
+ *      Ở đây chỉ có *nối dây*, và `aiCodingWorkspaceVong.unit.test.ts` kiểm chính lời nối dây ấy.
+ *   2. **HITL không được lách bằng một lời gọi confirm thứ hai.** Trong file này có **ĐÚNG MỘT**
+ *      điểm gọi `confirmM.mutateAsync(`, và nó nằm trong `handleConfirm` — thứ chỉ được gọi từ
+ *      `onConfirm` của hai thẻ duyệt. Lưới đếm điểm gọi ấy; thêm một điểm nữa ⇒ ĐỎ.
+ *   3. **Im lặng là nói dối.** Mọi lượt của vòng hiện: *lượt i/trần*, *đang làm gì*, và khi dừng
+ *      thì **vì sao dừng** — kể cả khi lý do là "cờ đang tắt".
+ *
+ * ⚠ Bước "chạy test" KHÔNG đi qua thẻ duyệt (đó chính là thứ được tự động hoá), nhưng nó chỉ chạy
+ *   được **tập con KIỂM CHỨNG** của danh sách trắng — `dotnet format` (mục duy nhất ghi đè tệp) bị
+ *   loại ở server. Xem `server/services/aiCodingVerify.ts`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -48,8 +68,13 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import {
+  bamChuoi, catLoiChoPrompt, chuanHoaDauRa, deXuatLapLai, quyetDinhTiep,
+  type LyDoDungVong,
+} from "@shared/aiCodingLoop";
+import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
+  Repeat, CheckCircle2, OctagonX,
 } from "lucide-react";
 import { toast } from "sonner";
 import Markdown from "react-markdown";
@@ -218,6 +243,89 @@ function DiffConfirmCard({
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 79 · VÒNG TỰ ĐỘNG — BẢNG TRẠNG THÁI NGƯỜI DÙNG NHÌN THẤY
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/** Vòng đang làm GÌ. Ba pha, và người dùng phải đọc được pha nào đang chạy. */
+type PhaVong = "nghi" | "chay_test" | "de_xuat";
+
+/**
+ * Trạng thái vòng. **Nguồn sự thật là `vongRef`** (đọc/ghi đồng bộ trong một lượt bất đồng bộ);
+ * đối tượng này chỉ là bản sao để render. Giữ hai bản vì một vòng bất đồng bộ đọc `useState` sẽ
+ * thấy giá trị của lần render TRƯỚC — đúng lớp lỗi làm một cái trần đếm sai rồi không chặn được gì.
+ */
+interface TrangThaiVong {
+  dangChay: boolean;
+  /** Số lượt TEST đã chạy (0 = chưa chạy lượt nào). */
+  luot: number;
+  tran: number;
+  pha: PhaVong;
+  lenh: string | null;
+  tep: string | null;
+  lyDoDung: LyDoDungVong | null;
+  /** Chi tiết đi kèm lý do dừng (thông điệp lỗi thật của server, số ca đỏ…). */
+  chiTietDung: string | null;
+  // ── Bộ nhớ giữa hai lượt: đầu vào của `quyetDinhTiep`/`deXuatLapLai` ──
+  soDoTruoc: number | null;
+  bamDauRaTruoc: string | null;
+  bamDeXuatTruoc: string | null;
+  /** Câu hỏi GỐC của người dùng — dùng để nhận ra lệnh họ nêu đích danh. */
+  cauHoiGoc: string | null;
+}
+
+const VONG_RONG: TrangThaiVong = {
+  dangChay: false, luot: 0, tran: 0, pha: "nghi", lenh: null, tep: null,
+  lyDoDung: null, chiTietDung: null,
+  soDoTruoc: null, bamDauRaTruoc: null, bamDeXuatTruoc: null, cauHoiGoc: null,
+};
+
+/**
+ * Thẻ trạng thái vòng. **Im lặng là nói dối** — thẻ này luôn nói ba điều: lượt thứ mấy / trần bao
+ * nhiêu · đang làm gì · (khi dừng) VÌ SAO dừng. Nó cũng là chỗ người dùng bấm DỪNG giữa chừng.
+ */
+function VongTuDongCard({ vong, onDung }: { vong: TrangThaiVong; onDung: () => void }) {
+  const { t } = useTranslation();
+  if (!vong.dangChay && vong.lyDoDung === null) return null;
+
+  const nhanPha =
+    vong.pha === "chay_test"
+      ? t("repoWs.loop.phase.run", "đang CHẠY lệnh kiểm chứng")
+      : vong.pha === "de_xuat"
+        ? t("repoWs.loop.phase.propose", "đang ĐỌC lỗi thật và đề xuất bản sửa kế tiếp")
+        : t("repoWs.loop.phase.idle", "đang chờ bạn duyệt bản sửa");
+
+  const nhanLyDo: Record<LyDoDungVong, string> = {
+    xanh: t("repoWs.loop.stop.green", "XONG — lệnh kiểm chứng đã xanh hết."),
+    het_tran: t("repoWs.loop.stop.cap", "DỪNG vì hết trần lượt. Vẫn còn ca đỏ — hãy xem lỗi rồi tự yêu cầu sửa tiếp."),
+    khong_tien_bo: t("repoWs.loop.stop.stuck", "DỪNG vì KHÔNG TIẾN BỘ: số ca đỏ không giảm, hoặc kết quả/bản sửa lặp lại y hệt lượt trước."),
+    nguoi_tu_choi: t("repoWs.loop.stop.user", "DỪNG vì bạn đã hủy đề xuất hoặc bấm dừng vòng."),
+    khong_co_lenh: t("repoWs.loop.stop.noCmd", "KHÔNG chạy được vòng: không suy ra được lệnh kiểm chứng cho dự án này (cần .sln/.csproj, hoặc package.json kèm thư mục test). Hãy nêu đích danh lệnh trong câu hỏi."),
+    khong_quyen: t("repoWs.loop.stop.perm", "KHÔNG chạy được vòng: tài khoản thiếu quyền CHẠY LỆNH (ai_repo_exec). Server mới là hàng rào — xin quyền rồi thử lại."),
+    co_tat: t("repoWs.loop.stop.off", "Vòng tự động đang TẮT (mặc định) — bản sửa ĐÃ ghi, nhưng bạn phải tự chạy test. Bật bằng AI_CODING_AUTOLOOP=1 rồi khởi động lại máy chủ."),
+    loi: t("repoWs.loop.stop.error", "DỪNG vì một hỏng THẬT ở lượt chạy kiểm chứng."),
+  };
+
+  const xong = vong.lyDoDung === "xanh";
+  return (
+    <div className={cn("space-y-1.5 rounded-lg border p-2.5 text-[12px]", xong ? "border-green-400 bg-green-50 dark:border-green-800 dark:bg-green-950/30" : vong.dangChay ? "border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30" : "border-muted-foreground/30 bg-muted/40")}>
+      <div className="flex items-center gap-1.5 font-semibold">
+        {xong ? <CheckCircle2 className="size-4 shrink-0 text-green-600" /> : vong.dangChay ? <Repeat className="size-4 shrink-0 animate-pulse text-sky-600" /> : <OctagonX className="size-4 shrink-0 text-muted-foreground" />}
+        <span>{t("repoWs.loop.title", "Vòng tự động — lượt {{luot}}/{{tran}}", { luot: vong.luot, tran: vong.tran })}</span>
+        {vong.dangChay && (
+          <Button variant="outline" size="sm" className="ml-auto h-6 px-2 text-[11px]" onClick={onDung}>
+            {t("repoWs.loop.stopBtn", "Dừng vòng")}
+          </Button>
+        )}
+      </div>
+      {vong.dangChay && <div className="text-muted-foreground">{nhanPha}</div>}
+      {vong.lenh && <div className="font-mono text-[11px] text-muted-foreground">$ {vong.lenh}</div>}
+      {vong.lyDoDung && <div className={cn("font-medium", xong ? "text-green-700 dark:text-green-400" : "text-foreground")}>{nhanLyDo[vong.lyDoDung]}</div>}
+      {vong.chiTietDung && <div className="whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground">{vong.chiTietDung}</div>}
+      <div className="text-[11px] text-muted-foreground">{t("repoWs.loop.hitl", "Mỗi lượt GHI vẫn cần bạn bấm duyệt — vòng chỉ tự CHẠY test, ĐỌC lỗi và ĐỀ XUẤT bản sửa.")}</div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
 // TRANG
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 type ChatTurn = { role: "user" | "assistant"; content: string };
@@ -279,6 +387,22 @@ export default function AICodingWorkspace() {
   const confirmM = trpc.aiCopilot.confirmAction.useMutation();
   const cancelM = trpc.aiCopilot.cancelAction.useMutation();
 
+  // ── ★★★ doc 79 · VÒNG TỰ ĐỘNG — cấu hình từ SERVER (không đoán) + bộ chạy kiểm chứng ──
+  const cauHinhVongQ = trpc.repoWorkspace.cauHinhVong.useQuery(undefined, { staleTime: 5 * 60_000 });
+  const kiemChungM = trpc.repoWorkspace.chayKiemChung.useMutation();
+  const vongRef = useRef<TrangThaiVong>({ ...VONG_RONG });
+  const [vong, setVong] = useState<TrangThaiVong>({ ...VONG_RONG });
+  /** Ghi vào NGUỒN SỰ THẬT rồi mới đồng bộ bản render — thứ tự này là điều kiện để trần đếm đúng. */
+  const datVong = useCallback((patch: Partial<TrangThaiVong>) => {
+    vongRef.current = { ...vongRef.current, ...patch };
+    setVong({ ...vongRef.current });
+  }, []);
+  const dungVong = useCallback((lyDo: LyDoDungVong, chiTiet: string | null = null) => {
+    datVong({ dangChay: false, pha: "nghi", lyDoDung: lyDo, chiTietDung: chiTiet });
+  }, [datVong]);
+  /** `handleSend` qua ref: vòng bất đồng bộ không được bắt một bản đóng gói CŨ của nó. */
+  const handleSendRef = useRef<((override?: string, tuVong?: { tep: string }) => Promise<void>) | null>(null);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [transcript, streamingText]);
@@ -293,10 +417,21 @@ export default function AICodingWorkspace() {
 
   const lang = (i18n.language as "vi" | "en" | "zh") ?? "vi";
 
-  const handleSend = useCallback(async (override?: string) => {
+  /**
+   * `tuVong` có mặt ⇔ lượt này do VÒNG TỰ ĐỘNG phát, không phải người gõ. Hai khác biệt:
+   *   • **KHÔNG** đặt lại trạng thái vòng (một lượt người gõ thì có — câu hỏi mới = ý định mới);
+   *   • gửi kèm `codingEditPath` GHIM tệp đang sửa. ⚠ Chỉ gửi ĐƯỜNG DẪN; nội dung tệp do server đọc
+   *     LẠI từ đĩa trong lượt ấy (điểm neo của băm chống TOCTOU — sau lượt ghi trước, đĩa đã đổi).
+   */
+  const handleSend = useCallback(async (override?: string, tuVong?: { tep: string }) => {
     const text = (override ?? input).trim();
     if (!text || isStreaming) return;
     setInput("");
+    if (!tuVong) {
+      // Người gõ một câu mới ⇒ vòng cũ kết thúc; câu này thành "câu hỏi gốc" của vòng kế tiếp.
+      vongRef.current = { ...VONG_RONG, cauHoiGoc: text };
+      setVong({ ...vongRef.current });
+    }
     const history = transcript.slice(-10);
     setTranscript((prev) => [...prev, { role: "user", content: text }]);
     setStreamTool(null);
@@ -312,7 +447,10 @@ export default function AICodingWorkspace() {
         // ★★★ doc 79 · TRỤC 1 (A) — cờ phiên LẬP TRÌNH: server định tuyến tới tác nhân lập trình
         // (persona lập trình + 5 tool đọc/sửa/chạy repo), KHÔNG tới trợ lý vận hành + RAG tri thức.
         // ★★★ doc 79 · TRỤC 2 — projectId (ID, KHÔNG phải đường dẫn): tác nhân bám gốc dự án đang chọn.
-        context: { route: "/ai-coding-workspace", uiLanguage: i18n.language, codingMode: true, projectId },
+        context: {
+          route: "/ai-coding-workspace", uiLanguage: i18n.language, codingMode: true, projectId,
+          ...(tuVong ? { codingEditPath: tuVong.tep } : {}),
+        },
       },
       {
         onToolResult: (tr) => setStreamTool(tr),
@@ -324,6 +462,13 @@ export default function AICodingWorkspace() {
             const a = pa.args as unknown as DiffArgs;
             setPendingDiff({ action: pa, args: { path: a.path, original: a.original ?? "", modified: a.modified ?? "" } });
             setSelectedPath(a.path);
+            // ★★★ CẦU CHÌ THỨ BA của vòng: model 30B thoái hoá hay trả lại ĐÚNG bản diff vừa bị
+            // chứng minh là sai. Bắt ở đây tiết kiệm nguyên một lượt chạy test (tới 240 s).
+            const bam = bamChuoi(a.modified ?? "");
+            if (deXuatLapLai(bam, vongRef.current.bamDeXuatTruoc)) {
+              dungVong("khong_tien_bo");
+            }
+            vongRef.current = { ...vongRef.current, bamDeXuatTruoc: bam };
           }
         },
         onClientAction: () => { /* không auto-điều hướng trong không gian làm việc */ },
@@ -336,7 +481,85 @@ export default function AICodingWorkspace() {
     } else if (!abortedRef.current) {
       setTranscript((prev) => [...prev, { role: "assistant", content: t("repoWs.chat.streamFailed", "Luồng bị lỗi — thử lại.") }]);
     }
-  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId]);
+  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong]);
+  handleSendRef.current = handleSend;
+
+  /**
+   * ★★★ MỘT LƯỢT CỦA VÒNG: **CHẠY** lệnh kiểm chứng → **ĐỌC** đầu ra thật → **ĐỀ XUẤT** bản sửa
+   * kế tiếp (hoặc DỪNG, nói rõ lý do).
+   *
+   * ⚠⚠ Không có một dòng nào ở đây ghi tệp. Bước ĐỀ XUẤT kết thúc bằng một thẻ duyệt; byte chỉ rời
+   * ra đĩa khi người bấm "Duyệt & ghi" (→ `handleConfirm` → `confirmM.mutateAsync`, điểm gọi DUY
+   * NHẤT của file này).
+   */
+  const chayLuotVong = useCallback(async (tep: string) => {
+    const cfg = cauHinhVongQ.data;
+    // Trần hiện ngay cả ở các đường dừng SỚM — "lượt 0/3" đọc được, "lượt 0/0" thì không.
+    datVong({ tran: cfg?.tran ?? 0 });
+    if (!cfg || !cfg.bat) { dungVong("co_tat"); return; }
+    if (!canExec) { dungVong("khong_quyen"); return; }
+
+    const truoc = vongRef.current;
+    /**
+     * ⚠ VÒNG ĐÃ TUYÊN BỐ DỪNG THÌ Ở YÊN. Nếu người dùng vẫn bấm duyệt bản sửa cuối (quyền của họ),
+     * ta KHÔNG được lặng lẽ khởi động lại vòng — ta vừa nói với họ là nó dừng, và một cầu chì tự
+     * gỡ mình sau khi nổ thì không phải cầu chì. Muốn vòng chạy lại: gõ một yêu cầu mới (lượt ấy
+     * đặt lại trạng thái ở `handleSend`).
+     */
+    if (truoc.lyDoDung !== null) return;
+    const luot = truoc.luot + 1;
+    // TRẦN — cầu chì thứ nhất. Server kiểm LẠI con số này (client không tự nới được).
+    if (luot > cfg.tran) { dungVong("het_tran"); return; }
+    datVong({ dangChay: true, luot, tran: cfg.tran, pha: "chay_test", tep, lyDoDung: null, chiTietDung: null });
+
+    let r: Awaited<ReturnType<typeof kiemChungM.mutateAsync>>;
+    try {
+      r = await kiemChungM.mutateAsync({
+        projectId, luot, lang,
+        ...(truoc.lenh ? { command: truoc.lenh } : {}),
+        ...(truoc.cauHoiGoc ? { cauHoi: truoc.cauHoiGoc } : {}),
+      });
+    } catch (e) {
+      dungVong("loi", e instanceof Error ? e.message : String(e));
+      return;
+    }
+
+    if (!r.ok) {
+      const map: Record<string, LyDoDungVong> = {
+        AUTOLOOP_OFF: "co_tat", LOOP_CAP: "het_tran", NO_VERIFY_CMD: "khong_co_lenh",
+        DENIED: "khong_quyen", PROJECT_NOT_FOUND: "loi", CMD_NOT_VERIFY: "loi",
+        NO_EXEC_CONTEXT: "loi", RUN_FAILED: "loi",
+      };
+      dungVong(map[r.ma ?? ""] ?? "loi", r.message ?? r.ma ?? null);
+      return;
+    }
+
+    // ĐỌC ĐẦU RA THẬT — đưa nguyên văn vào hội thoại để người dùng thấy đúng thứ tác nhân thấy.
+    const dauRa = r.output ?? "";
+    setTranscript((prev) => [
+      ...prev,
+      { role: "assistant", content: `${t("repoWs.loop.ranTurn", "Vòng tự động — lượt {{luot}}/{{tran}} đã chạy `{{lenh}}`", { luot, tran: cfg.tran, lenh: r.command ?? "" })}\n\n\`\`\`\n${dauRa}\n\`\`\`` },
+    ]);
+
+    const bamDauRa = bamChuoi(chuanHoaDauRa(dauRa));
+    const pq = quyetDinhTiep({
+      luot, tran: cfg.tran, xanh: r.xanh, soDo: r.soDo,
+      soDoTruoc: truoc.soDoTruoc, bamDauRa, bamDauRaTruoc: truoc.bamDauRaTruoc,
+    });
+    // Nhớ cho lượt sau TRƯỚC khi rẽ nhánh — nếu không, một đường thoát sớm làm mất phép so.
+    datVong({ soDoTruoc: r.soDo, bamDauRaTruoc: bamDauRa, lenh: r.command });
+
+    if (!pq.tiep) {
+      const soCa = r.soDo === null ? null : t("repoWs.loop.counts", "{{do}} ca đỏ / {{xanh}} ca xanh", { do: r.soDo, xanh: r.soXanh ?? 0 });
+      dungVong(pq.lyDo ?? "loi", soCa);
+      return;
+    }
+
+    // ĐỀ XUẤT bản sửa kế tiếp — dựa trên LỖI THẬT vừa đọc, trên ĐÚNG tệp vừa được duyệt ghi.
+    datVong({ pha: "de_xuat" });
+    const cau = t("repoWs.loop.fixPrompt", "sửa {{tep}} để khắc phục lỗi sau khi chạy `{{lenh}}`. Đây là đầu ra THẬT:", { tep, lenh: r.command ?? "" });
+    await handleSendRef.current?.(`${cau}\n\n${catLoiChoPrompt(dauRa)}`, { tep });
+  }, [cauHinhVongQ.data, canExec, datVong, dungVong, kiemChungM, projectId, lang, t]);
 
   // ── Đổi dự án ⇒ cây tệp + trình xem + hội thoại bám gốc mới (doc 79 · TRỤC 2) ──
   const changeProject = useCallback((id: string) => {
@@ -348,6 +571,10 @@ export default function AICodingWorkspace() {
     setPending(null);
     setDiffPreview("");
     setTranscript([]);
+    // Vòng bám một dự án cụ thể (lệnh kiểm chứng + tệp đang sửa đều thuộc gốc cũ) ⇒ đổi dự án là
+    // kết thúc vòng, không phải mang nó sang.
+    vongRef.current = { ...VONG_RONG };
+    setVong({ ...VONG_RONG });
   }, [projectId]);
 
   // ── Duyệt / hủy một đề xuất ghi/chạy ──
@@ -368,9 +595,13 @@ export default function AICodingWorkspace() {
             { role: "assistant", content: `${t("repoWs.chat.cmdOutput", "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)")}:\n\n\`\`\`\n${out.textSummary}\n\`\`\`` },
           ]);
         } else if (pending.tool === "apply_diff") {
+          const tepDaGhi = (pending.args as unknown as DiffArgs | undefined)?.path ?? pendingDiff?.args.path ?? null;
           setPendingDiff(null);
           if (selectedPath) fileQ.refetch();
           setTranscript((prev) => [...prev, { role: "assistant", content: t("repoWs.chat.applied", "Đã áp diff — đã đọc lại tệp.") }]);
+          // ★★★ doc 79 · VÒNG TỰ ĐỘNG BẮT ĐẦU ĐÚNG Ở ĐÂY — sau khi NGƯỜI đã duyệt và byte đã rời
+          //   ra đĩa. Trước cú bấm này không có một lượt tự động nào chạy.
+          if (tepDaGhi) void chayLuotVong(tepDaGhi);
         }
       } else {
         toast.error(res.message ?? t("repoWs.diff.denied", "Bị từ chối."));
@@ -378,7 +609,7 @@ export default function AICodingWorkspace() {
     } catch {
       toast.error(t("repoWs.chat.confirmFailed", "Không thực thi được."));
     }
-  }, [pending, actionState, confirmM, lang, t, selectedPath, fileQ]);
+  }, [pending, actionState, confirmM, lang, t, selectedPath, fileQ, pendingDiff, chayLuotVong]);
 
   const handleCancel = useCallback(async () => {
     if (!pending || actionState !== "pending") return;
@@ -386,11 +617,13 @@ export default function AICodingWorkspace() {
       await cancelM.mutateAsync({ actionId: pending.actionId });
       setActionState("cancelled");
       if (pending.tool === "apply_diff") setPendingDiff(null);
+      // Người từ chối bản sửa ⇒ vòng KẾT THÚC, và nói ra lý do (không im lặng biến mất).
+      if (vongRef.current.dangChay || vongRef.current.luot > 0) dungVong("nguoi_tu_choi");
       toast.success(t("repoWs.diff.cancelled", "Đã hủy."));
     } catch {
       toast.error(t("repoWs.chat.confirmFailed", "Không thực thi được."));
     }
-  }, [pending, actionState, cancelM, t]);
+  }, [pending, actionState, cancelM, t, dungVong]);
 
   // ── Đường âm: chưa đủ quyền ĐỌC ⇒ báo rõ (route đã chặn, đây là lớp phòng thêm) ──
   if (!canView) {
@@ -582,6 +815,12 @@ export default function AICodingWorkspace() {
 
                 {/* Kết quả tool đã xong (không stream nữa) */}
                 {!isStreaming && streamTool && <AIToolResultCard toolResult={streamTool} />}
+
+                {/* ★★★ doc 79 · VÒNG TỰ ĐỘNG — lượt/trần · đang làm gì · vì sao dừng. */}
+                <VongTuDongCard vong={vong} onDung={() => dungVong("nguoi_tu_choi")} />
+                {vong.dangChay && vong.pha === "chay_test" && (
+                  <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t("repoWs.loop.waitCmd", "Đang chờ lệnh kiểm chứng chạy xong (có thể tới vài phút)…")}</div>
+                )}
 
                 {/* Thẻ xác nhận write-tool */}
                 {pending && pending.tool === "apply_diff" && pendingDiff && pendingDiff.action.actionId === pending.actionId ? (

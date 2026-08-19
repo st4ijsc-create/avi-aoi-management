@@ -23,6 +23,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const h = vi.hoisted(() => ({
@@ -114,10 +115,15 @@ function admin() {
   return { user: { id: ++idPhien, role: "admin", name: "T" }, lang: "vi" as const };
 }
 
-async function chay(question: string, execCtx?: any): Promise<{ events: StreamEvent[]; chu: string; done?: StreamEvent }> {
+async function chay(
+  question: string,
+  execCtx?: any,
+  themCtx?: Record<string, unknown>,
+): Promise<{ events: StreamEvent[]; chu: string; done?: StreamEvent }> {
   const events: StreamEvent[] = [];
   const tokens: string[] = [];
-  for await (const e of streamAnswer(question, 5, [], "engineer", { codingMode: true, uiLanguage: "vi" }, execCtx)) {
+  const ctx = { codingMode: true, uiLanguage: "vi" as const, ...themCtx };
+  for await (const e of streamAnswer(question, 5, [], "engineer", ctx, execCtx)) {
     events.push(e);
     if (e.type === "token") tokens.push(e.token);
   }
@@ -133,7 +139,10 @@ const MA_CSHARP = [
   "- Dùng `TcpListener` cho máy chủ và `TcpClient` cho máy trạm.",
 ].join("\n");
 
-const ENV = ["AI_CODING_GEN", "AI_CODING_EDIT", "AI_CODING_MODEL_TASK", "AI_SAFETY_ENABLED"] as const;
+const ENV = [
+  "AI_CODING_GEN", "AI_CODING_EDIT", "AI_CODING_MODEL_TASK", "AI_SAFETY_ENABLED",
+  "AI_REPO_SANDBOX_ROOTS",
+] as const;
 
 beforeEach(() => {
   for (const k of ENV) delete process.env[k];
@@ -347,5 +356,123 @@ describe("§4 — phân biệt ĐỌC với SỬA (bộ chọn tất định KH�
   it("★★★ ĐỐI CHỨNG A/B — câu VẬN HÀNH không hề là ý định sửa", () => {
     expect(laYDinhSuaTep("OEE hôm nay của line 2 bao nhiêu")).toBe(false);
     expect(laYDinhSuaTep("máy nào đang offline")).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// §5 — VÒNG TỰ ĐỘNG: LƯỢT SỬA KẾ TIẾP (tệp GHIM) — TOCTOU + HITL
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ Lượt "đề xuất bản sửa kế tiếp" của vòng tự động. Nó KHÁC một lượt người gõ ở đúng một chỗ:
+ * câu hỏi chở theo **ĐẦU RA TEST THẬT**, và bộ điều khiển vòng GHIM `codingEditPath`.
+ *
+ * ĐỘT BIẾN PHẢI BẮT ĐƯỢC:
+ *   • bỏ nhánh ghim ⇒ §5.1 ĐỎ (bộ chọn tất định sẽ đi lạc sang `run_command`/tệp test);
+ *   • dùng lại `original` của lượt TRƯỚC thay vì đọc lại đĩa ⇒ §5.2 ĐỎ (đây là điểm neo TOCTOU);
+ *   • vòng tự ghi (bỏ HITL) ⇒ §5.3 ĐỎ (tệp trên đĩa phải KHÔNG đổi trong lượt đề xuất);
+ *   • `AI_CODING_EDIT=0` mà vẫn gọi model ⇒ §5.4 ĐỎ.
+ *
+ * ⚠ Dùng một GỐC DỰ ÁN TẠM (không phải `sandbox-projects/**`, vốn là ĐỀ THI) vì §5.2 phải SỬA tệp
+ *   trên đĩa giữa hai lượt để chứng minh lượt sau đọc lại.
+ */
+describe("§5 — VÒNG TỰ ĐỘNG: lượt sửa kế tiếp đọc LẠI đĩa, và vẫn dừng ở thẻ duyệt", () => {
+  let gocTam = "";
+  const REL = "Calc.cs";
+  const V1 = "namespace D;\npublic class Calc { public int Div(int a, int b) { return a / b; } }\n";
+  const V2 = "namespace D;\npublic class Calc { public int Div(int a, int b) { /* v2 */ return a / b; } }\n";
+
+  /** Câu hỏi ĐÚNG HÌNH DẠNG bộ điều khiển vòng phát: có lệnh + có đường dẫn tệp TEST trong đầu ra. */
+  const CAU_VONG = [
+    "sửa Calc.cs để khắc phục lỗi sau khi chạy `dotnet test CalculatorDemo.sln`. Đây là đầu ra THẬT:",
+    "",
+    "Failed! - Failed: 2, Passed: 4",
+    "  Assert.Throws() Failure",
+    "  at CalculatorDemo.Tests.CalculatorTests.Divide_ByZero_Throws() in D:\\x\\tests\\CalculatorTests.cs:line 42",
+  ].join("\n");
+
+  beforeEach(() => {
+    gocTam = fs.mkdtempSync(path.join(os.tmpdir(), "vong-tu-dong-"));
+    fs.writeFileSync(path.join(gocTam, REL), V1, "utf8");
+    process.env.AI_REPO_SANDBOX_ROOTS = `tam=Du an tam|${gocTam}`;
+  });
+  afterEach(() => {
+    try { fs.rmSync(gocTam, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  const ghim = { projectId: "tam", codingEditPath: REL };
+  const maMoi = (goc: string) => goc.replace("return a / b;", 'if (b == 0) throw new System.ArgumentException("0"); return a / b;');
+
+  it("★★★ 5.1 — tệp GHIM thắng bộ chọn: đề xuất sửa `Calc.cs`, KHÔNG chạy lại lệnh, KHÔNG đụng tệp test", async () => {
+    h.manh = ["```csharp\n", maMoi(V1), "\n```"];
+    const r = await chay(CAU_VONG, admin(), ghim);
+
+    const ghiRa = h.quyetDinh.find((q) => q.tool === "apply_diff");
+    expect(ghiRa, `phải đề xuất sửa: ${JSON.stringify(h.quyetDinh.map((q) => q.tool))}`).toBeTruthy();
+    expect(ghiRa!.args.path).toBe(REL);
+    expect(
+      h.quyetDinh.some((q) => q.tool === "run_command"),
+      "đầu ra test có chuỗi `dotnet test …` — không ghim thì bộ chọn sẽ chạy lại lệnh thay vì sửa",
+    ).toBe(false);
+    expect(String(ghiRa!.args.path)).not.toContain("CalculatorTests");
+    expect(r.events.some((e) => e.type === "pending_action" && e.toolName === "apply_diff")).toBe(true);
+  });
+
+  /**
+   * ⚠⚠⚠ ĐIỂM NEO CHỐNG TOCTOU. Sau lượt ghi thứ nhất, tệp TRÊN ĐĨA đã đổi. Nếu lượt hai gửi
+   * `original` mà model/client "nhớ" từ lượt trước, `apply_diff` sẽ hoặc bị `BASE_MISMATCH` (tốt
+   * nhất) hoặc — nếu ai đó nới hàng rào băm — GHI ĐÈ mất thay đổi vừa duyệt.
+   */
+  it("★★★ 5.2 — LƯỢT HAI đọc LẠI đĩa: `original` là byte MỚI, không phải byte lượt trước", async () => {
+    h.manh = ["```csharp\n", maMoi(V1), "\n```"];
+    await chay(CAU_VONG, admin(), ghim);
+    const luot1 = h.quyetDinh.find((q) => q.tool === "apply_diff");
+    expect(luot1!.args.original).toBe(V1);
+
+    // "Người bấm duyệt" → tệp trên đĩa đổi. Lượt hai của vòng chạy trên hiện trường MỚI.
+    fs.writeFileSync(path.join(gocTam, REL), V2, "utf8");
+    h.quyetDinh = [];
+    h.manh = ["```csharp\n", maMoi(V2), "\n```"];
+    await chay(CAU_VONG, admin(), ghim);
+
+    const luot2 = h.quyetDinh.find((q) => q.tool === "apply_diff");
+    expect(luot2, "lượt hai phải đề xuất tiếp").toBeTruthy();
+    expect(luot2!.args.original, "original PHẢI là byte trên đĩa LÚC NÀY").toBe(V2);
+    expect(luot2!.args.original).not.toBe(V1);
+    // Và nội dung tệp phải được ĐỌC LẠI thật (không phải suy ra) — có sự kiện read_file ở lượt hai.
+    expect(h.quyetDinh.some((q) => q.tool === "read_file" && q.args.path === REL)).toBe(true);
+  });
+
+  it("★★★ 5.3 — HITL LÀ THẬT: lượt đề xuất của vòng KHÔNG ghi một byte nào xuống đĩa", async () => {
+    const truoc = fs.readFileSync(path.join(gocTam, REL));
+    h.manh = ["```csharp\n", maMoi(V1), "\n```"];
+    const r = await chay(CAU_VONG, admin(), ghim);
+    expect(fs.readFileSync(path.join(gocTam, REL)).equals(truoc), "tệp phải còn NGUYÊN").toBe(true);
+    // Người dùng thấy một THẺ DUYỆT, không thấy một lượt ghi đã xong.
+    expect(r.events.some((e) => e.type === "pending_action")).toBe(true);
+  });
+
+  it("★★★ 5.4 — `AI_CODING_EDIT=0` ⇒ nhánh ghim KHÔNG gọi model, KHÔNG đề xuất ghi", async () => {
+    process.env.AI_CODING_EDIT = "0";
+    h.manh = ["```csharp\nkhông bao giờ dùng\n```"];
+    const r = await chay(CAU_VONG, admin(), ghim);
+    expect(h.quyetDinh.some((q) => q.tool === "apply_diff")).toBe(false);
+    expect(r.chu).not.toContain("không bao giờ dùng");
+  });
+
+  it("★★★ 5.5 — VẮNG `codingEditPath` ⇒ hành vi cũ KHÔNG đổi một byte (A/B sạch)", async () => {
+    h.manh = ["```csharp\n", maMoi(V1), "\n```"];
+    const r = await chay(CAU_VONG, admin(), { projectId: "tam" });
+    // Không ghim: câu này chứa `dotnet test …` nên bộ chọn tất định chọn `run_command` — đúng hành
+    // vi TRƯỚC đợt này. Ca này tồn tại để chứng minh nhánh ghim KHÔNG rò sang đường cũ.
+    expect(h.quyetDinh.some((q) => q.tool === "apply_diff")).toBe(false);
+    expect(r.events.some((e) => e.type === "pending_action" && e.toolName === "run_command")).toBe(true);
+  });
+
+  it("★★ 5.6 — đường GHIM ngoài hộp cát ⇒ TỪ CHỐI nói rõ, KHÔNG gọi model, KHÔNG đề xuất ghi", async () => {
+    h.manh = ["```csharp\nkhông bao giờ dùng\n```"];
+    const r = await chay(CAU_VONG, admin(), { projectId: "tam", codingEditPath: "../../../etc/passwd" });
+    expect(h.quyetDinh.some((q) => q.tool === "apply_diff")).toBe(false);
+    expect(r.chu).not.toContain("không bao giờ dùng");
+    expect(r.chu.length, "phải NÓI ra lý do, không im lặng").toBeGreaterThan(0);
   });
 });
