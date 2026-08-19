@@ -195,6 +195,9 @@ export interface KbStreamContext {
   route: string;
   uiLanguage: string;
   selectedMachineCode?: string;
+  // ★★★ doc 79 · TRỤC 1 (A) — true khi phiên chat là phiên LẬP TRÌNH (/ai-coding-workspace). Server
+  // (streamAnswer) định tuyến tới tác nhân lập trình + 5 tool lập trình, KHÔNG tới trợ lý vận hành.
+  codingMode?: boolean;
 }
 
 export interface KbStreamRequest {
@@ -254,6 +257,10 @@ export function useKbChatStream() {
       };
       if (req.context.selectedMachineCode) {
         context.selectedMachineCode = req.context.selectedMachineCode;
+      }
+      // ★★★ doc 79 · TRỤC 1 (A) — chỉ gửi khi TRUE (giữ payload vận hành không đổi một byte).
+      if (req.context.codingMode) {
+        context.codingMode = true;
       }
 
       let confidence = 0;

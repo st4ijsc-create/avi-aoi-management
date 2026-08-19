@@ -1727,3 +1727,190 @@ export async function decideNextToolLLM(
   }
   return chayVaXacThuc(buildLoopPrompt(question, quanSat));
 }
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 79 · TRỤC 1 (B) — BỘ CHỌN TOOL CHO **CHẾ ĐỘ LẬP TRÌNH** (`context.codingMode === true`)
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠⚠ TÁCH HOÀN TOÀN khỏi `classifyToolIntent` (đường VẬN HÀNH). Đây là một bộ chọn RIÊNG, chỉ được
+ * gọi từ nhánh `codingMode` của `streamAnswer`. Nó KHÔNG bao giờ chọn một tool vận hành, và đường
+ * vận hành KHÔNG bao giờ gọi nó — nên bật/tắt cờ là một phép đo A/B sạch (đường vận hành không đổi
+ * một byte). Xem doc 79 §0/§1 và §2 (rủi ro hồi quy).
+ *
+ * ─── VÌ SAO HEURISTIC LÀ CHÍNH, KHÔNG PHẢI LLM — LÝ DO ĐO ĐƯỢC ─────────────────────────────────
+ * Cổng ra của TRỤC 1 là TẤT ĐỊNH: "đọc server/routers.ts" PHẢI gọi `read_file`. Bộ nhớ của repo này
+ * ghi 9+ lượt bộ chọn LLM chết/không ổn (false-positive 92,3% cho tool vận hành; `RateLimitError`;
+ * engine offline; `<think>` nuốt token). Một heuristic đọc `REPO_PATH_REGEX` + động từ thì:
+ *   • tất định — không phụ thuộc một model 30B đang bận/chết;
+ *   • đo được — lưới đơn vị khẳng định thẳng cặp (câu ⇒ tool);
+ *   • không dính lớp lỗi 92%: lớp đó là của tool VẬN HÀNH; ở đây tập chỉ có 5 tool lập trình + persona
+ *     rõ, nên không có tool vận hành nào để bắt nhầm.
+ * ⇒ Heuristic GÁNH cổng ra. LLM (giới hạn 5 tool) chỉ là lớp NỚI TẦM cho `apply_diff` và các cách
+ *   hỏi lạ — nó fail-safe về `null` khi engine vắng, nên nó không bao giờ là điểm hỏng của cổng.
+ */
+export const CODING_TOOL_NAMES = ["read_file", "list_files", "grep_repo", "run_command", "apply_diff"] as const;
+const CODING_TOOL_SET: ReadonlySet<string> = new Set(CODING_TOOL_NAMES);
+
+/** Ý định LIỆT KÊ thư mục. */
+const CODING_LIST_VERB = /(liet ke|cay thu muc|co nhung file|thu muc|list|directory|ls|列出|目录|文件夹)/i;
+/** Ý định TÌM/GREP. */
+const CODING_GREP_VERB = /(grep|tim|search|find|goi o dau|dung o dau|o dau|khai bao|dinh nghia|where|查找|搜索|在哪)/i;
+
+/** Từ dừng — KHÔNG được coi là một mẫu grep khi rơi vào nhánh "định danh dài nhất". */
+const CODING_STOPWORDS: ReadonlySet<string> = new Set([
+  "the", "này", "nay", "nao", "nào", "gi", "gì", "dau", "đâu", "trong", "repo", "code", "file", "server",
+  "client", "shared", "function", "ham", "hàm", "class", "const", "let", "var", "import", "export", "from",
+  "return", "async", "await", "true", "false", "null", "undefined", "string", "number", "boolean", "test",
+  "run", "build", "check", "diff", "status", "read", "open", "show", "view", "grep", "find", "search",
+]);
+
+/**
+ * ★ Trích một chuỗi lệnh KHỚP DANH SÁCH TRẮNG từ câu hỏi tự nhiên. **KHÔNG làm sạch** — chuỗi trả về
+ * còn đi qua `tachArgv` + `phanQuyetLenh` (hai lớp phòng vệ) ở `run_command.preview`/`execute`, nên
+ * đây chỉ là bước NHẬN DẠNG "người dùng định chạy lệnh nào". Trả `undefined` khi không nhận ra.
+ */
+function extractRunCommand(question: string): string | undefined {
+  const q = question;
+  // dotnet build/test/format <đường> — một đường không có khoảng trắng.
+  let m = q.match(/\bdotnet\s+(build|test|format)\s+([^\s"'`,;]+)/i);
+  if (m) return `dotnet ${m[1]!.toLowerCase()} ${m[2]}`;
+  // node --test <đường>
+  m = q.match(/\bnode\s+--test\s+([^\s"'`,;]+)/i);
+  if (m) return `node --test ${m[1]}`;
+  // npx vitest run <đường>
+  m = q.match(/\bnpx\s+vitest\s+run\s+([^\s"'`,;]+)/i);
+  if (m) return `npx vitest run ${m[1]}`;
+  if (/\bnpm\s+run\s+check:tests\b/i.test(q)) return "npm run check:tests";
+  if (/\bnpm\s+run\s+check\b/i.test(q)) return "npm run check";
+  if (/\bgit\s+status\b/i.test(q)) return "git status";
+  if (/\bgit\s+diff\b/i.test(q)) return "git diff";
+  return undefined;
+}
+
+/**
+ * ★ Mẫu grep cho chế độ lập trình. Ưu tiên: nháy > "X gọi ở đâu" > ĐỊNH DANH DÀI NHẤT trông giống mã.
+ * Nhánh cuối cứu đúng hình dạng câu hỏi kỹ sư ("tìm nơi gọi executeDecision"): `extractGrepPattern`
+ * gốc trả "nơi" cho câu đó (một từ văn xuôi); ở đây ta bỏ văn xuôi và chọn `executeDecision`.
+ */
+function extractCodingGrepPattern(question: string): string | undefined {
+  const quoted = question.match(GREP_QUOTED_REGEX)?.[1];
+  if (quoted) return quoted;
+  const where = question.match(GREP_WHERE_REGEX)?.[1];
+  if (where) return where;
+  const idents = question.match(/[A-Za-z_$][A-Za-z0-9_$]{2,}/g) ?? [];
+  const codeLike = idents.filter(
+    (t) => (/[A-Z]/.test(t) || t.includes("_") || t.includes("$") || t.length >= 6) && !CODING_STOPWORDS.has(t.toLowerCase()),
+  );
+  if (codeLike.length) return codeLike.sort((a, b) => b.length - a.length)[0];
+  return undefined;
+}
+
+/** An toàn hoá args qua ĐÚNG zod schema của tool (như `classifyToolIntent` làm). `null` ⇒ không đạt. */
+function codingDecision(toolName: string, args: Record<string, unknown>, reason: string): ToolDecision | null {
+  const tool = getTool(toolName);
+  if (!tool) return null;
+  const parsed = tool.parameters.safeParse(args);
+  if (!parsed.success) return null;
+  return { tool: toolName, args: parsed.data as Record<string, unknown>, reason };
+}
+
+/**
+ * ★★★ Bộ chọn tool LẬP TRÌNH — HEURISTIC. Trả `{ tool: null }` khi không nhận ra (người gọi có thể
+ * thử LLM giới hạn tool, rồi cuối cùng nói thẳng "nêu tệp/lệnh cụ thể" — KHÔNG rơi vào RAG vận hành).
+ *
+ * Thứ tự có tải trọng (cụ thể → chung): run_command → grep_repo → read_file → list_files.
+ */
+export function classifyCodingToolIntent(question: string, context?: ToolContext): ToolDecision {
+  if (!question || question.trim().length < 2) return { tool: null, args: {}, reason: "EMPTY" };
+  const khongDau = boDauTiengViet(normalizeText(question));
+
+  // 1) run_command — một lệnh danh sách trắng xuất hiện nguyên văn, hoặc động từ "chạy".
+  const cmd = extractRunCommand(question);
+  if (cmd) {
+    const d = codingDecision("run_command", { command: cmd }, "CODING_RUN_SHORTCUT");
+    if (d) return d;
+  }
+
+  // 2) grep_repo — có ý định TÌM và trích được một mẫu.
+  if (CODING_GREP_VERB.test(khongDau)) {
+    const mau = extractCodingGrepPattern(question);
+    if (mau) {
+      const dir = extractRepoDir(question);
+      const args: Record<string, unknown> = { pattern: mau };
+      if (dir && dir !== mau) args.path = dir;
+      const d = codingDecision("grep_repo", args, "CODING_GREP_SHORTCUT");
+      if (d) return d;
+    }
+  }
+
+  // 3) read_file — một ĐƯỜNG DẪN TỆP repo xuất hiện (đây là cái GÁNH cổng ra của TRỤC 1).
+  //    Không đòi động từ đọc: nêu thẳng `server/routers.ts` đã là ý định đọc rõ ràng trong chế độ lập trình.
+  const filePath = extractRepoPath(question);
+  if (filePath) {
+    const d = codingDecision("read_file", { path: filePath }, "CODING_READ_SHORTCUT");
+    if (d) return d;
+  }
+
+  // 4) list_files — một THƯ MỤC repo, hoặc ý định liệt kê (khi ấy gốc repo).
+  //    ⚠ `extractRepoPath` ở bước 3 đã khớp cả TÊN TỆP TRẦN (`toolRegistry.ts`), nên tới đây là đã
+  //    chắc KHÔNG có đuôi tệp — một token có "/" mà không đuôi là một thư mục thật.
+  const dir = extractRepoDir(question);
+  if (dir || CODING_LIST_VERB.test(khongDau)) {
+    const args: Record<string, unknown> = {};
+    if (dir) args.path = dir;
+    const d = codingDecision("list_files", args, "CODING_LIST_SHORTCUT");
+    if (d) return d;
+  }
+
+  // Không trích được tệp/thư mục/lệnh/mẫu ⇒ KHÔNG đoán bừa; người gọi thử LLM giới hạn tool rồi nói thẳng.
+  return { tool: null, args: {}, reason: "CODING_NO_MATCH" };
+}
+
+// ─── LLM giới hạn 5 tool lập trình (lớp NỚI TẦM, fail-safe) ─────────────────────────────────────
+/**
+ * ⚠ Cố ý KHÔNG đọc `AI_TOOL_LLM_FALLBACK`: cờ đó tắt LLM chọn tool VẬN HÀNH (false-positive 92%). Ở
+ * chế độ lập trình, tập chỉ có 5 tool + persona rõ, nên nó chạy độc lập, gác sau bởi `AI_CODING_TOOL_LLM`
+ * (mặc định BẬT; đặt "0" để tắt). Prompt CHỈ liệt kê 5 tool; và một hậu-lọc `CODING_TOOL_SET` chặn
+ * mọi tool lạ dù model có bịa tên vận hành.
+ */
+const codingLlmEnabled = () => (process.env.AI_CODING_TOOL_LLM ?? "1") !== "0";
+
+function buildCodingClassifierPrompt(question: string): string {
+  const toolDescriptions = listTools()
+    .filter((t) => CODING_TOOL_SET.has(t.name))
+    .map((t) => {
+      const tag = t.kind === "write" ? " [WRITE]" : "";
+      return `  - ${t.name}${tag}: ${t.description}`;
+    })
+    .join("\n");
+  return [
+    "Bạn là TÁC NHÂN LẬP TRÌNH đọc/sửa mã repo qua tool. Chọn DUY NHẤT một tool phù hợp với yêu cầu",
+    "(hoặc \"none\" nếu không tool nào phù hợp). KHÔNG phải trợ lý vận hành nhà máy.",
+    "Tool [WRITE] là hành động cần người dùng xác nhận (chạy lệnh / ghi tệp).",
+    "",
+    "Danh sách tool:",
+    toolDescriptions,
+    "",
+    "Quy tắc trích args:",
+    "  - read_file: { \"path\": \"<đường dẫn tương đối>\" }",
+    "  - list_files: { \"path\"?: \"<thư mục>\", \"depth\"?: 1..3 }",
+    "  - grep_repo: { \"pattern\": \"<regex>\", \"path\"?: \"<thư mục>\" }",
+    "  - run_command: { \"command\": \"<một lệnh danh sách trắng: npm run check | npx vitest run <đường> | git status | git diff | dotnet build <đường> | dotnet test <đường> | node --test <đường>>\" }",
+    "  - apply_diff: { \"path\": \"<đường>\", \"original\": \"<nội dung hiện tại>\", \"modified\": \"<nội dung mới>\" }",
+    "",
+    `Yêu cầu: ${question}`,
+    "",
+    "Chỉ trả về JSON một dòng: {\"tool\": \"<tên tool hoặc none>\", \"args\": { ... }}",
+  ].join("\n");
+}
+
+export async function classifyCodingToolIntentLLM(question: string): Promise<ToolDecision> {
+  if (!codingLlmEnabled()) return { tool: null, args: {}, reason: "CODING_LLM_DISABLED" };
+  if (!question || question.trim().length < 2) return { tool: null, args: {}, reason: "EMPTY" };
+  const d = await chayVaXacThuc(buildCodingClassifierPrompt(question));
+  // Hậu-lọc: chỉ chấp nhận 5 tool lập trình — model không được lôi tool vận hành vào chế độ này.
+  if (d.tool && !CODING_TOOL_SET.has(d.tool)) {
+    return { tool: null, args: {}, reason: `CODING_LLM_NON_CODING_TOOL:${d.tool}` };
+  }
+  return d;
+}

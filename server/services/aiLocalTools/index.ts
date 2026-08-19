@@ -39,7 +39,14 @@ import "./writeHandlers/applyDiff";
 // cho AI Agent: Agent repo này đi qua toolRegistry, KHÔNG qua tRPC. Ba lệnh phá huỷ CỐ Ý không
 // đăng ký ở đây — xem khối đầu `vramTools.ts`.
 import "./vramTools";
-import { classifyToolIntent, classifyToolIntentLLM, decideNextToolLLM, type ToolContext } from "./intentClassifier";
+import {
+  classifyToolIntent,
+  classifyToolIntentLLM,
+  classifyCodingToolIntent,
+  classifyCodingToolIntentLLM,
+  decideNextToolLLM,
+  type ToolContext,
+} from "./intentClassifier";
 import { runToolLoop, laLoiBoChonTool, type ToolLoopProgress, type ToolLoopResult } from "./toolLoop";
 import { getTool, isWriteTool, isClientTool, listTools, type ClientActionDirective, type Tool, type ToolExecContext } from "./toolRegistry";
 import type { ToolResult } from "./toolRegistry";
@@ -114,6 +121,36 @@ async function chonToolVong1(question: string, context?: ToolContext) {
     }
   }
   return decision;
+}
+
+/**
+ * ★★★ doc 79 · TRỤC 1 (B) — CHỌN TOOL cho **CHẾ ĐỘ LẬP TRÌNH**. Heuristic trước (TẤT ĐỊNH, gánh cổng
+ * ra "đọc server/routers.ts"), rồi LLM giới hạn 5 tool lập trình (lớp nới tầm, fail-safe). Tách hẳn
+ * khỏi `chonToolVong1` (đường vận hành) — hai đường không dùng chung một dòng nào ⇒ A/B sạch.
+ */
+async function chonToolLapTrinh(question: string, context?: ToolContext) {
+  let decision = classifyCodingToolIntent(question, context);
+  if (!decision.tool) {
+    const llm = await classifyCodingToolIntentLLM(question);
+    if (llm.tool) decision = llm;
+  }
+  return decision;
+}
+
+/**
+ * ★ Điểm vào của chế độ lập trình (`context.codingMode === true` ở `streamAnswer`). Dùng LẠI NGUYÊN
+ * `executeDecision` — điểm gọi `Tool.handler(` DUY NHẤT của file này (qua `argsWithAuthCtx`), nên
+ * `authCtxInjection.test.ts` (đúng HAI điểm `.handler(`) vẫn xanh: KHÔNG mở cửa chạy tool thứ hai.
+ * Write tool (`run_command`/`apply_diff`) vẫn rơi vào HITL `proposeAction` theo cấu tạo.
+ */
+export async function tryExecuteCodingTool(
+  question: string,
+  context?: ToolContext,
+  execCtx?: ToolExecContext,
+): Promise<ToolExecOutcome & { decision: ReturnType<typeof classifyToolIntent> }> {
+  const decision = await chonToolLapTrinh(question, context);
+  const outcome = await executeDecision(decision, execCtx);
+  return { decision, ...outcome };
 }
 
 export async function tryExecuteTool(

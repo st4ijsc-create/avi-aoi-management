@@ -287,7 +287,9 @@ export default function AICodingWorkspace() {
         topK: 5,
         history,
         userRole: mapAppRoleToAiRole(user?.role),
-        context: { route: "/ai-coding-workspace", uiLanguage: i18n.language },
+        // ★★★ doc 79 · TRỤC 1 (A) — cờ phiên LẬP TRÌNH: server định tuyến tới tác nhân lập trình
+        // (persona lập trình + 5 tool đọc/sửa/chạy repo), KHÔNG tới trợ lý vận hành + RAG tri thức.
+        context: { route: "/ai-coding-workspace", uiLanguage: i18n.language, codingMode: true },
       },
       {
         onToolResult: (tr) => setStreamTool(tr),

@@ -363,6 +363,80 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     moTa: "Khác biệt chưa staged của cây làm việc. CHỈ HỎI — không hoàn nguyên gì (xem khối `git checkout` ở đầu file).",
     phanGiai: () => ({ file: "git", args: ["--no-pager", "diff"] }),
   },
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ doc 79 · TRỤC 1 (D) — VÒNG KHÉP KÍN CHO DỰ ÁN THỬ C# (`dotnet`) VÀ REACT/NODE (`node --test`)
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  /**
+   * ⚠⚠ MỖI MỤC = **MỘT SUBCOMMAND CỐ ĐỊNH + MỘT ĐƯỜNG TRONG HỘP CÁT**, không gì khác. Đây là chỗ dễ
+   * hỏng nhất khi mở rộng bảng, nên ghi ra hai bất biến đã cân nhắc:
+   *
+   *  1. **KHÔNG `--` rồi lệnh tuỳ ý.** Khuôn có ĐÚNG BA phần tử; `dotnet build -- rm -rf /` tách ra
+   *     6 phần tử argv ⇒ `khopKhuon` lệch arity ⇒ `CMD_NOT_ALLOWED`. `dotnet -- rm` (4 phần tử, index
+   *     1 = `--` ≠ `build`/`test`/`format`) cũng `CMD_NOT_ALLOWED`. Không có đường nào cho một token
+   *     thứ hai do model viết đi vào argv của tiến trình con.
+   *  2. **`node --test <đường>` KHÔNG PHẢI `node <script>`.** Index 1 ghim CỨNG `--test`, nên
+   *     `node evil.mjs` (index 1 = `evil.mjs`) lệch khuôn ⇒ từ chối. Chỉ chế độ TRÌNH CHẠY TEST được
+   *     mở — cùng hồ sơ rủi ro với `npx vitest run <đường>` (cả hai đều THI HÀNH mã của tệp test trong
+   *     hộp cát), và cùng phòng vệ: môi trường ĐÃ LỌC (không bí mật), đường qua `phanQuyetDuongDan`.
+   *
+   * ⚠ **KHÔNG MẠNG — GIỮ BẰNG `--no-restore`.** `dotnet build`/`dotnet test` mặc định chạy một lượt
+   *   `restore` NGẦM chạm NuGet feed (mạng) — đúng thứ phá "không mạng bằng cấu tạo" của pha B. Nên
+   *   argv PHÂN GIẢI thêm `--no-restore` (hằng của mã, không phải đầu vào model). Hệ quả KHAI THẲNG,
+   *   cùng triết lý với "ca CSDL phải gõ tay ở terminal": lần ĐẦU, một người phải chạy
+   *   `dotnet restore <dự-án>` ở terminal (có mạng); sau đó vòng lặp của tác nhân chạy offline trên
+   *   gói đã nằm trong cache toàn cục. `dotnet format` không nhận `--no-restore` ổn định giữa các bản
+   *   SDK nên để trần. Telemetry của dotnet (một đường ra mạng khác) bị tắt qua `DOTNET_*` ở
+   *   `BIEN_MOI_TRUONG_DAT_THEM`.
+   *
+   * ⚠ `dotnet` phân giải qua PATH (như `git`), không `existsSync`: vắng SDK ⇒ `spawn` ném ENOENT ⇒
+   *   `CMD_SPAWN_ERROR` (một lỗi môi trường TRUNG THỰC, không phải "lệnh sai").
+   * ⚠ `node --test` dùng CHÍNH `process.execPath` (như `npx vitest`), không tra PATH — cùng node đang
+   *   phục vụ, không mơ hồ phiên bản.
+   */
+  {
+    nhan: "dotnet build <đường-dẫn>",
+    khuon: ["dotnet", "build", null],
+    hanGioMs: 240_000,
+    moTa: "Biên dịch một dự án/solution C# (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore) — cần restore trước ở terminal.",
+    phanQuyetOTuDo: (v) => {
+      const ma = phanQuyetDuongDan(v);
+      return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
+    },
+    phanGiai: (oTuDo) => (oTuDo === null ? null : { file: "dotnet", args: ["build", oTuDo, "--no-restore"] }),
+  },
+  {
+    nhan: "dotnet test <đường-dẫn>",
+    khuon: ["dotnet", "test", null],
+    hanGioMs: 240_000,
+    moTa: "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore).",
+    phanQuyetOTuDo: (v) => {
+      const ma = phanQuyetDuongDan(v);
+      return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
+    },
+    phanGiai: (oTuDo) => (oTuDo === null ? null : { file: "dotnet", args: ["test", oTuDo, "--no-restore"] }),
+  },
+  {
+    nhan: "dotnet format <đường-dẫn>",
+    khuon: ["dotnet", "format", null],
+    hanGioMs: 180_000,
+    moTa: "Định dạng lại mã C# theo .editorconfig cho một dự án/solution. KHÔNG đổi ngữ nghĩa mã.",
+    phanQuyetOTuDo: (v) => {
+      const ma = phanQuyetDuongDan(v);
+      return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
+    },
+    phanGiai: (oTuDo) => (oTuDo === null ? null : { file: "dotnet", args: ["format", oTuDo] }),
+  },
+  {
+    nhan: "node --test <đường-dẫn>",
+    khuon: ["node", "--test", null],
+    hanGioMs: 180_000,
+    moTa: "Chạy trình chạy test tích hợp của Node cho MỘT đường (tệp .test.mjs hoặc thư mục). CHỈ chế độ --test, KHÔNG chạy script tuỳ ý.",
+    phanQuyetOTuDo: (v) => {
+      const ma = phanQuyetDuongDan(v);
+      return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
+    },
+    phanGiai: (oTuDo) => (oTuDo === null ? null : { file: process.execPath, args: ["--test", oTuDo] }),
+  },
 ];
 
 export type KetQuaPhanQuyetLenh =
@@ -477,6 +551,12 @@ export const BIEN_MOI_TRUONG_DAT_THEM: Readonly<Record<string, string>> = {
   NO_COLOR: "1",
   FORCE_COLOR: "0",
   CI: "1",
+  // ★ doc 79 (D) — dotnet: tắt telemetry (một đường ra mạng) + logo + trải nghiệm lần đầu (tải gói).
+  //   Cùng vai với `npm_config_offline`: chặn đường ra mạng NGẦM của chuỗi công cụ, không phải một
+  //   hộp cát mạng. `--no-restore` ở argv lo phần restore; ba biến này lo phần còn lại.
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1",
+  DOTNET_NOLOGO: "1",
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1",
 };
 
 export function moiTruongDaLoc(nguon: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {

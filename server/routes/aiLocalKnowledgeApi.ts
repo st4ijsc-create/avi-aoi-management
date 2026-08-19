@@ -78,6 +78,9 @@ function parseContext(raw: unknown): KbQueryContext | undefined {
   if (str(r.selectedProductCode)) ctx.selectedProductCode = str(r.selectedProductCode);
   if (num(r.selectedProductModelId) != null) ctx.selectedProductModelId = num(r.selectedProductModelId);
   if (str(r.selectedLot)) ctx.selectedLot = str(r.selectedLot);
+  // ★★★ doc 79 · TRỤC 1 (A) — cờ phiên lập trình. CHỈ chấp nhận literal `true` (một client vận hành
+  // không bao giờ vô tình bật nó); mọi giá trị khác ⇒ vắng ⇒ đường vận hành mặc định.
+  if (r.codingMode === true) ctx.codingMode = true;
 
   return Object.keys(ctx).length > 0 ? ctx : undefined;
 }

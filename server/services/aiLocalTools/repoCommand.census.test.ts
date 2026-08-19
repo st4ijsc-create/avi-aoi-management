@@ -118,13 +118,20 @@ describe("§0 — CẦU CHÌ: lưới đang quét vật thật", () => {
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chính bảng, không phải trên hành vi)", () => {
-  it("★ đúng năm mục, và mỗi mục có hạn giờ dương ≤ trần hệ", () => {
+  it("★ đúng CHÍN mục, và mỗi mục có hạn giờ dương ≤ trần hệ", () => {
+    // ★ 2026-08-19 (doc 79 TRỤC 1 (D)) — BỐN mục MỚI cho vòng khép kín dự án thử: ba `dotnet` (build/
+    //   test/format) cho C# và một `node --test` cho react/node. Mỗi mục vẫn là "subcommand cố định +
+    //   một đường trong hộp cát"; xem khối lý lẽ ở `repoCommandSandbox.DANH_SACH_TRANG`.
     expect(DANH_SACH_TRANG.map((m) => m.nhan)).toEqual([
       "npm run check",
       "npm run check:tests",
       "npx vitest run <đường-dẫn>",
       "git status",
       "git diff",
+      "dotnet build <đường-dẫn>",
+      "dotnet test <đường-dẫn>",
+      "dotnet format <đường-dẫn>",
+      "node --test <đường-dẫn>",
     ]);
     for (const m of DANH_SACH_TRANG) {
       expect(m.hanGioMs, m.nhan).toBeGreaterThan(0);
@@ -146,13 +153,75 @@ describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chín
     }
   });
 
-  it("★★ KHÔNG mục nào là lệnh GHI/HOÀN NGUYÊN/XOÁ — đọc bảng bằng chính bảng", () => {
-    const cam = ["checkout", "reset", "restore", "clean", "rm", "revert", "push", "commit", "publish", "build"];
+  it("★★ KHÔNG mục nào HOÀN NGUYÊN/XOÁ mã HAY DỰNG LẠI SERVER ĐANG CHẠY — đọc bảng bằng chính bảng", () => {
+    /**
+     * ⚠ 2026-08-19 — bất biến ĐÚNG không phải "không có chữ build/test", mà là **"không lệnh nào hoàn
+     * nguyên/xoá mã nguồn, cũng không lệnh nào dựng lại `dist/` của SERVER ĐANG PHỤC VỤ"**. `dotnet
+     * build`/`dotnet test` dựng một app C# **RIÊNG** ở `sandbox-projects/` (không phá đồng hồ chẩn đoán
+     * cổng 3000, không đụng `dist/index.js`) nên chúng ĐƯỢC PHÉP — đó chính là lý do (D) tồn tại. Cái
+     * bị cấm tuyệt đối vẫn là: git hoàn nguyên/xoá, `rm`, và `npm run build` (dựng lại đúng server đang
+     * chạy — xem khối "npm run build CỐ Ý KHÔNG CÓ" ở `repoCommandSandbox.ts`).
+     */
+    const camTuyetDoi = ["checkout", "reset", "restore", "clean", "rm", "revert", "push", "commit", "publish"];
     for (const m of DANH_SACH_TRANG) {
       for (const k of m.khuon) {
         if (k === null) continue;
-        expect(cam, `"${k}" trong khuôn của ${m.nhan}`).not.toContain(k);
+        expect(camTuyetDoi, `"${k}" trong khuôn của ${m.nhan}`).not.toContain(k);
       }
+    }
+    // `npm run build` (dựng lại SERVER đang chạy) vẫn KHÔNG được có mặt dù `dotnet build` đã mở.
+    expect(
+      DANH_SACH_TRANG.some((m) => m.khuon.join(" ") === "npm run build"),
+      "npm run build dựng lại chính server cổng 3000 ⇒ KHÔNG BAO GIỜ vào danh sách trắng",
+    ).toBe(false);
+  });
+
+  it("★★ CHỐNG VÁ QUÁ TAY — bốn mục MỚI phân giải ra argv THẬT với ĐÚNG subcommand cố định", () => {
+    const check = (lenh: string[], fileMatch: RegExp | string, argsDau: string[]) => {
+      const r = phanQuyetLenh(lenh);
+      expect(r.ok, `${lenh.join(" ")} PHẢI chạy được`).toBe(true);
+      if (!r.ok) return;
+      if (typeof fileMatch === "string") expect(r.spec.file).toBe(fileMatch);
+      else expect(r.spec.file).toMatch(fileMatch);
+      expect(r.spec.args.slice(0, argsDau.length)).toEqual(argsDau);
+    };
+    // dotnet phân giải qua PATH ("dotnet"); node --test qua process.execPath.
+    check(["dotnet", "build", "sandbox-projects/csharp-demo/CalculatorDemo.sln"], "dotnet", ["build", "sandbox-projects/csharp-demo/CalculatorDemo.sln", "--no-restore"]);
+    check(["dotnet", "test", "sandbox-projects/csharp-demo"], "dotnet", ["test", "sandbox-projects/csharp-demo", "--no-restore"]);
+    check(["dotnet", "format", "sandbox-projects/csharp-demo/src"], "dotnet", ["format", "sandbox-projects/csharp-demo/src"]);
+    check(["node", "--test", "sandbox-projects/react-pg-demo/test/validate.test.mjs"], process.execPath, ["--test", "sandbox-projects/react-pg-demo/test/validate.test.mjs"]);
+  });
+
+  it("★★★ `--` rồi lệnh tuỳ ý, và `node <script>` (KHÔNG --test) ⇒ CMD_NOT_ALLOWED", () => {
+    for (const argv of [
+      ["dotnet", "build", "--", "rm", "-rf", "/"],
+      ["dotnet", "--", "rm", "-rf"],
+      ["dotnet", "run", "sandbox-projects/csharp-demo"],
+      ["dotnet", "nuget", "push", "x.nupkg"],
+      ["node", "evil.mjs"],
+      ["node", "sandbox-projects/react-pg-demo/src/server.mjs"],
+      ["node", "-e", "process.exit(0)"],
+      ["node", "--experimental-vm-modules", "x.mjs"],
+    ]) {
+      const r = phanQuyetLenh(argv);
+      expect(r.ok, `${JSON.stringify(argv)} phải bị từ chối`).toBe(false);
+      if (!r.ok) expect(r.ma).toBe(MA_TU_CHOI_LENH.CMD_NOT_ALLOWED);
+    }
+  });
+
+  it("★★★ đường NGOÀI hộp cát cho dotnet/node ⇒ CMD_ARG_PATH_REJECTED (không tiến trình nào)", () => {
+    for (const argv of [
+      ["dotnet", "build", "../../etc/passwd"],
+      ["dotnet", "test", "/etc/passwd"],
+      ["dotnet", "format", "C:/Windows/System32"],
+      ["dotnet", "build", ".env"],
+      ["node", "--test", "../../../secret.mjs"],
+      ["node", "--test", "node_modules/x.test.mjs"],
+      ["node", "--test", ".git/config"],
+    ]) {
+      const r = phanQuyetLenh(argv);
+      expect(r.ok, `${JSON.stringify(argv)} phải bị từ chối`).toBe(false);
+      if (!r.ok) expect(r.ma).toBe(MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED);
     }
   });
 });

@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import {
   tryExecuteToolLoop,
+  tryExecuteCodingTool,
   type ToolResult,
   type ToolExecContext,
   type PendingActionDTO,
@@ -175,6 +176,13 @@ export interface KbQueryContext {
    * `POST .../ask`'s `context` param). Absent/unrecognized ⇒ fail-closed (no Studio content).
    */
   callerRole?: string;
+  /**
+   * ★★★ doc 79 · TRỤC 1 — CỜ PHIÊN LẬP TRÌNH. `true` ⇔ câu hỏi tới từ `/ai-coding-workspace` và phải
+   * được định tuyến tới TÁC NHÂN LẬP TRÌNH (persona lập trình + CHỈ 5 tool lập trình), KHÔNG tới trợ
+   * lý VẬN HÀNH + RAG tri thức. Vắng/`false` ⇒ hành vi Y HỆT hôm nay (ràng buộc cứng nhất — xem
+   * `streamAnswer`). Được `parseContext` (aiLocalKnowledgeApi.ts) đọc từ body, chỉ chấp nhận `true`.
+   */
+  codingMode?: boolean;
 }
 
 export interface KbStructuredResponse {
@@ -2546,6 +2554,102 @@ export type StreamEvent =
       numberCheck?: NumberReconciliation | null;
     };
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 79 · TRỤC 1 (B) — TÁC NHÂN LẬP TRÌNH (nhánh `codingMode`)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * Persona + tập tool + cách nói của nhánh này ĐỘC LẬP hoàn toàn với đường vận hành:
+ *   • persona = "tác nhân lập trình đọc/sửa mã repo qua tool" (KHÔNG `getSystemPromptForRole`);
+ *   • tập tool = CHỈ 5 tool lập trình (`tryExecuteCodingTool` → `classifyCodingToolIntent`);
+ *   • KHÔNG tool nào khớp ⇒ nói thẳng "nêu tệp/lệnh cụ thể", KHÔNG rơi vào RAG tri thức vận hành.
+ *
+ * ⚠ Cơ chế trả kết quả = HIỆN NỘI DUNG THẬT của tool (`provider: "tool"`), không diễn giải qua LLM:
+ * cổng ra của TRỤC 1 là "read_file hiện NỘI DUNG THẬT (không phải chunk RAG)", và nội dung thật nằm
+ * ở `toolResult.textSummary`. Diễn giải-qua-LLM là vòng lặp tác nhân (đọc→sửa→chạy), một lớp trên —
+ * cố ý để ngoài lần này để nhánh TẤT ĐỊNH và không dính lớp lỗi "vòng suy luận thoái hoá" của 30B.
+ */
+async function* streamCodingAnswer(
+  question: string,
+  context: KbQueryContext,
+  execCtx?: ToolExecContext,
+): AsyncGenerator<StreamEvent> {
+  const language = resolveLanguage(question, context);
+
+  // meta — KHÔNG citations (không RAG vận hành). intent "general" là mặc định trung tính.
+  yield { type: "meta", intent: "general", language, confidence: 1, citations: [] };
+
+  const outcome = await tryExecuteCodingTool(question, context, execCtx);
+  const toolName = outcome.decision.tool ?? null;
+
+  const done = (answer: string): StreamEvent => ({
+    type: "done",
+    provider: "tool",
+    cached: false,
+    followUpSuggestions: [],
+    answer,
+    structured: extractStructuredResponse(answer),
+    dataCitations: [],
+    numberCheck: null,
+  });
+
+  // Write tool (run_command / apply_diff) → HITL: thẻ xác nhận + tóm tắt (chưa chạm đĩa/tiến trình).
+  if (outcome.pendingAction) {
+    const msg = outcome.pendingAction.summary;
+    yield { type: "pending_action", toolName, pendingAction: outcome.pendingAction };
+    yield { type: "token", token: msg };
+    yield done(msg);
+    return;
+  }
+
+  // Từ chối RBAC / route không cho phép → nói thẳng lý do (có mã bên trong message).
+  if (outcome.denied) {
+    const msg = outcome.denied.message;
+    yield { type: "token", token: msg };
+    yield done(msg);
+    return;
+  }
+
+  // Read tool chạy (read_file / list_files / grep_repo) → HIỆN NỘI DUNG THẬT. Kể cả lượt từ chối hộp
+  // cát cũng trả về `result` kèm `note` giải thích — nên nhánh này bao luôn cả câu từ chối có mã.
+  if (outcome.result) {
+    yield { type: "tool", toolName, toolResult: outcome.result };
+    const answer = outcome.result.textSummary ?? "";
+    yield { type: "token", token: answer };
+    yield done(answer);
+    return;
+  }
+
+  // Handler ném lỗi thật (hiếm) → khai lỗi, KHÔNG giả vờ "không rõ yêu cầu".
+  if (outcome.error) {
+    const msg = codingErrorMessage(language, toolName, outcome.error);
+    yield { type: "token", token: msg };
+    yield done(msg);
+    return;
+  }
+
+  // KHÔNG tool nào khớp → KHÔNG rơi vào RAG vận hành. Nói thẳng, đề nghị nêu tệp/lệnh cụ thể.
+  const msg = codingNoToolMessage(language);
+  yield { type: "token", token: msg };
+  yield done(msg);
+}
+
+function codingNoToolMessage(language: KbLanguage): string {
+  if (language === "zh") {
+    return "我不清楚你的编程请求。请指明**具体文件路径**（如 `server/routers.ts`）、**要搜索的符号**，或**要运行的命令**（如 `npm run check`、`dotnet test <路径>`、`node --test <路径>`）。";
+  }
+  if (language === "en") {
+    return "I'm not sure what you want me to do in the repo. Name a **specific file path** (e.g. `server/routers.ts`), a **symbol to search for**, or a **command to run** (e.g. `npm run check`, `dotnet test <path>`, `node --test <path>`).";
+  }
+  return "Chưa rõ yêu cầu lập trình. Hãy nêu một **đường dẫn tệp cụ thể** (vd `server/routers.ts`), một **ký hiệu cần tìm**, hoặc một **lệnh cần chạy** (vd `npm run check`, `dotnet test <đường>`, `node --test <đường>`).";
+}
+
+function codingErrorMessage(language: KbLanguage, toolName: string | null, error: string): string {
+  const t = toolName ?? "?";
+  if (language === "zh") return `工具 \`${t}\` 执行出错：${error}。这是真实的执行错误，不是政策拒绝。`;
+  if (language === "en") return `Tool \`${t}\` failed: ${error}. This is a real execution error, not a policy refusal.`;
+  return `Tool \`${t}\` gặp lỗi khi chạy: ${error}. Đây là lỗi thực thi THẬT, không phải một lượt từ chối vì chính sách.`;
+}
+
 export async function* streamAnswer(
   question: string,
   topK = 5,
@@ -2554,6 +2658,14 @@ export async function* streamAnswer(
   context?: KbQueryContext,
   execCtx?: ToolExecContext,
 ): AsyncGenerator<StreamEvent> {
+  // ★★★ doc 79 · TRỤC 1 (B) — NHÁNH LẬP TRÌNH RIÊNG, đứng TRƯỚC MỌI logic vận hành.
+  // Ràng buộc cứng nhất (doc 79 (C)): `codingMode` vắng/false ⇒ KHÔNG một byte nào dưới đây đổi. Nhánh
+  // này KHÔNG chạm `tryExecuteToolLoop`/`retrieveKnowledge`/persona vận hành/cache — nó là một đường
+  // đi hoàn toàn khác, nên bật/tắt cờ là một phép đo A/B sạch.
+  if (context?.codingMode === true) {
+    yield* streamCodingAnswer(question, context, execCtx);
+    return;
+  }
   const userLevel = rolToUserLevel(userRole);
   // Final-fix round, Task 6 (SECURITY) — same reasoning as answerQuestion() above: `kbContext`
   // carries the REAL RBAC role into retrieveKnowledge()'s Studio gate; `context` (unchanged)

@@ -256,8 +256,9 @@ const RONG: DuLieuChay = {
 export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
   name: "run_command",
   description:
-    "Chạy MỘT lệnh trong DANH SÁCH TRẮNG ở thư mục repo nền tảng để lấy kết quả THẬT (kiểm kiểu, chạy lưới, trạng thái git). " +
-    "Được phép: `npm run check` · `npm run check:tests` · `npx vitest run <đường-dẫn>` · `git status` · `git diff`. " +
+    "Chạy MỘT lệnh trong DANH SÁCH TRẮNG ở thư mục repo nền tảng để lấy kết quả THẬT (kiểm kiểu, chạy lưới, trạng thái git, build/test dự án thử). " +
+    "Được phép: `npm run check` · `npm run check:tests` · `npx vitest run <đường-dẫn>` · `git status` · `git diff` · " +
+    "`dotnet build <đường>` · `dotnet test <đường>` · `dotnet format <đường>` · `node --test <đường>` (đường qua hộp cát). " +
     "Mọi lệnh khác bị TỪ CHỐI (danh sách TRẮNG, không phải danh sách đen); git checkout/git reset/rm KHÔNG BAO GIỜ được phép. " +
     "WRITE-ACTION (HITL): chỉ ĐỀ XUẤT, người dùng phải XÁC NHẬN mới chạy; quyền ai_repo_exec/canCreate. " +
     "Không shell, không nối lệnh, có hạn giờ giết CẢ CÂY tiến trình, đầu ra bị cắt, môi trường ĐÃ LỌC nên " +
@@ -272,6 +273,7 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
   triggers: [
     "chạy lệnh", "chạy test", "chạy kiểm tra kiểu", "chạy lưới", "npm run", "npx vitest",
     "kiểm kiểu", "git status", "git diff", "run command", "run tests", "type check",
+    "dotnet build", "dotnet test", "dotnet format", "node --test", "chạy build", "chạy dotnet",
     "运行命令", "运行测试", "类型检查",
   ],
   kind: "write",
