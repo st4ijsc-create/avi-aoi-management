@@ -3676,6 +3676,12 @@ quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` —
 > ghi **nguyên payload xuống đĩa** (JSONL) và **phát lại sau**, nên một hàng đợi ghi trước lúc đổi sẽ
 > **phát lại hình dạng CŨ sau khi mã đã đổi**. **Cửa sổ ấy dài bao lâu và tồn đọng bao nhiêu dòng —
 > KHÔNG ĐO ĐƯỢC từ cây này**, và nó áp cho **cả ba** lựa chọn chứ không riêng lựa chọn 3.
+>
+> 📎 **MỞ RỘNG 2026-08-19 (AK-1) — đoạn ngay trên giữ NGUYÊN VĂN vì nó KHÔNG sai, nó THIẾU MỘT ĐƯỜNG,
+> và đường thiếu ấy là đường có cái trần đo được.** Xem phép đo ở khối `✅ ĐÃ THI HÀNH` ngay dưới:
+> **có HAI kho đệm trên đĩa phát lại hình dạng cũ, không phải một** — hàng đợi SDK (sau bề mặt HTTP)
+> **và** `BridgeSpool` (sau **gương MQTT**). **Một phép liệt kê thiếu một hàng vẫn là một phép liệt kê
+> thiếu**, và ở đây hàng thiếu là hàng **duy nhất** có chặn trên đọc được từ trong cây này.
 
 > ### ✅ ĐÃ THI HÀNH — nhiệm vụ AK-1 (2026-08-19), `.superpowers/sdd/item14-option3/`
 >
@@ -3753,6 +3759,25 @@ quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` —
 > vào một báo cáo dưới `.superpowers/sdd/` **bị gitignore**, vì một lời cải chính ngoài tầm với người
 > đọc là đúng khuyết tật file này lập ra để chấm dứt. **Việc còn nợ, một nhiệm vụ riêng, 0 dòng hành
 > vi.**
+>
+> 🔴 **HAI KHO ĐỆM TRÊN ĐĨA PHÁT LẠI HÌNH DẠNG CŨ, KHÔNG PHẢI MỘT — và cái thứ hai là cái DUY NHẤT có
+> chặn trên ĐỌC ĐƯỢC từ trong cây này.** Hồ sơ tới hôm nay chỉ nêu hàng đợi SDK. Đo lại khi thi hành,
+> **liệt kê trước, đếm sau**:
+> * **sau bề mặt HTTP** — hàng đợi store-and-forward của SDK: `St4iDeviceClient._queuePath`/`Enqueue`,
+>   một file **JSONL** ghi bằng `File.AppendAllText`. **Trần: KHÔNG ĐO ĐƯỢC** — không có giới hạn kích
+>   thước hay tuổi nào trong cây này.
+> * 🔴 **sau gương MQTT** — `UnsBridge.RunSpoolWriterLoopAsync` → `IBridgeSpool.EnqueueAsync(item.Topic,
+>   item.Payload, item.Retain, …)`, và `item.Payload` **chính là envelope đã tuần tự hoá**.
+>   `BridgeSpool` ghi vào **SQLite** (`bridge-spool.db`) và `TryPublishToRemoteAsync` **phát lại lên
+>   broker Site sau**, **giữ nguyên cờ Retain**. 🔴 **Trần ĐO ĐƯỢC, và đây là điều khối phán quyết ở
+>   trên KHÔNG nói được:** mặc định `DefaultMaxBytes = 64 MiB` và `DefaultMaxAgeHours = 48`, cưỡng chế
+>   bởi `TrimAsync`. Nên với **đường MQTT**, câu *"hình dạng cũ còn đi ra được bao lâu"* **không phải
+>   là không đo được** — mặc định nó là **48 giờ hoặc 64 MiB, tuỳ cái nào tới trước**.
+>
+> **Đếm sau khi liệt kê: HAI kho đệm, MỘT có trần đo được, MỘT không.** Nêu ra vì **một cái trần nêu
+> quá nhỏ còn tệ hơn không nêu trần**, và hồ sơ tới hôm nay nêu **một** đường trong khi có **hai**.
+> Cả hai trần đều là **mặc định** — cả hai nhận tham số ghi đè, nên con số 48/64 là **trần của cấu hình
+> mặc định**, không phải của mọi bản triển khai. **AK-1 không đổi một dòng nào của cả hai đường.**
 >
 > **Cái nhiệm vụ này KHÔNG làm và không được đọc là đã làm:** nó **không** chạm nền tảng, **không** POST
 > gì, **không** bật cờ `PROCESS_RESULT_INGEST_ENABLED`. Nên **cặp đối chứng A/B của AB-1 vẫn là bằng
