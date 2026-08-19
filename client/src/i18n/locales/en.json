@@ -18968,6 +18968,13 @@
     }
   },
   "repoWs": {
+    "project": {
+      "label": "Project",
+      "local": "Local",
+      "select": "Select project",
+      "loading": "Loading projects…",
+      "none": "No project to show yet."
+    },
     "title": "AI Coding Workspace",
     "subtitle": "Read code → propose diff → human review → run tests → read real errors, then keep fixing",
     "noPermission": "You do not have permission to READ source code (ai_repo_read). Contact an administrator.",

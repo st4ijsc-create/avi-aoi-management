@@ -183,6 +183,12 @@ export interface KbQueryContext {
    * `streamAnswer`). Được `parseContext` (aiLocalKnowledgeApi.ts) đọc từ body, chỉ chấp nhận `true`.
    */
   codingMode?: boolean;
+  /**
+   * ★★★ doc 79 · TRỤC 2 — id DỰ ÁN đang chọn (bộ chọn dự án ở đầu cây tệp). **Là một ID, KHÔNG phải
+   * đường dẫn** — server tra danh sách TRẮNG (`repoProjects.gocTheoId`) để ra gốc; id lạ / đường dẫn
+   * tự do ⇒ TỪ CHỐI (fail-closed). Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ dự án mặc định.
+   */
+  projectId?: string;
 }
 
 export interface KbStructuredResponse {
@@ -2578,9 +2584,6 @@ async function* streamCodingAnswer(
   // meta — KHÔNG citations (không RAG vận hành). intent "general" là mặc định trung tính.
   yield { type: "meta", intent: "general", language, confidence: 1, citations: [] };
 
-  const outcome = await tryExecuteCodingTool(question, context, execCtx);
-  const toolName = outcome.decision.tool ?? null;
-
   const done = (answer: string): StreamEvent => ({
     type: "done",
     provider: "tool",
@@ -2591,6 +2594,23 @@ async function* streamCodingAnswer(
     dataCitations: [],
     numberCheck: null,
   });
+
+  // ★★★ doc 79 · TRỤC 2 — phân giải projectId → gốc SERVER-SIDE (danh sách trắng). id lạ / client gửi
+  //   ĐƯỜNG DẪN thay vì id ⇒ TỪ CHỐI, KHÔNG âm thầm chạy trên gốc mặc định. Gốc đã phân giải đi vào
+  //   `execCtx.projectRoot` → `argsWithAuthCtx` tiêm cho read tool, và write tool đọc thẳng ở HITL.
+  const { phanGiaiGoc } = await import("./aiLocalTools/repoProjects");
+  const goc = phanGiaiGoc(context.projectId);
+  if (!goc.ok) {
+    const msg = codingProjectDeniedMessage(language, context.projectId);
+    yield { type: "token", token: msg };
+    yield done(msg);
+    return;
+  }
+  const execCtx2: ToolExecContext | undefined =
+    execCtx && goc.goc ? { ...execCtx, projectRoot: goc.goc } : execCtx;
+
+  const outcome = await tryExecuteCodingTool(question, context, execCtx2);
+  const toolName = outcome.decision.tool ?? null;
 
   // Write tool (run_command / apply_diff) → HITL: thẻ xác nhận + tóm tắt (chưa chạm đĩa/tiến trình).
   if (outcome.pendingAction) {
@@ -2641,6 +2661,18 @@ function codingNoToolMessage(language: KbLanguage): string {
     return "I'm not sure what you want me to do in the repo. Name a **specific file path** (e.g. `server/routers.ts`), a **symbol to search for**, or a **command to run** (e.g. `npm run check`, `dotnet test <path>`, `node --test <path>`).";
   }
   return "Chưa rõ yêu cầu lập trình. Hãy nêu một **đường dẫn tệp cụ thể** (vd `server/routers.ts`), một **ký hiệu cần tìm**, hoặc một **lệnh cần chạy** (vd `npm run check`, `dotnet test <đường>`, `node --test <đường>`).";
+}
+
+/** ★ doc 79 TRỤC 2 — id dự án không nằm trong danh sách trắng (id lạ / client gửi đường dẫn). */
+function codingProjectDeniedMessage(language: KbLanguage, projectId: unknown): string {
+  const id = typeof projectId === "string" ? projectId : String(projectId ?? "");
+  if (language === "zh") {
+    return `所选项目（\`${id}\`）不在允许列表中。请从项目选择器中选择一个有效项目——客户端只发送项目 **ID**，服务器在 \`AI_REPO_SANDBOX_ROOTS\` 白名单中解析路径；不接受任意路径。`;
+  }
+  if (language === "en") {
+    return `The selected project (\`${id}\`) is not in the allowlist. Pick a valid project from the selector — the client sends only a project **ID**, and the server resolves the path from the \`AI_REPO_SANDBOX_ROOTS\` whitelist; arbitrary paths are never accepted.`;
+  }
+  return `Dự án đang chọn (\`${id}\`) KHÔNG nằm trong danh sách cho phép. Hãy chọn một dự án hợp lệ ở bộ chọn — client chỉ gửi **id** dự án, server tra đường dẫn trong danh sách TRẮNG \`AI_REPO_SANDBOX_ROOTS\`; đường dẫn tự do KHÔNG bao giờ được chấp nhận.`;
 }
 
 function codingErrorMessage(language: KbLanguage, toolName: string | null, error: string): string {

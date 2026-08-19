@@ -68,13 +68,15 @@ interface TreeProps {
   selectedPath: string | null;
   onOpenFile: (path: string) => void;
   depth: number;
+  // ★★★ doc 79 · TRỤC 2 — id DỰ ÁN đang chọn; cây tệp bám gốc này. Là ID, KHÔNG phải đường dẫn.
+  projectId: string;
 }
 
-function FolderChildren({ path, selectedPath, onOpenFile, depth }: TreeProps) {
+function FolderChildren({ path, selectedPath, onOpenFile, depth, projectId }: TreeProps) {
   const { t } = useTranslation();
   const q = trpc.repoWorkspace.listFiles.useQuery(
-    { path: path || undefined, depth: 1 },
-    { staleTime: 30_000 },
+    { path: path || undefined, depth: 1, projectId },
+    { staleTime: 30_000, enabled: !!projectId },
   );
 
   if (q.isLoading) {
@@ -97,7 +99,7 @@ function FolderChildren({ path, selectedPath, onOpenFile, depth }: TreeProps) {
   return (
     <div>
       {dirs.map((e) => (
-        <FolderRow key={e.path} path={e.path} selectedPath={selectedPath} onOpenFile={onOpenFile} depth={depth} />
+        <FolderRow key={e.path} path={e.path} selectedPath={selectedPath} onOpenFile={onOpenFile} depth={depth} projectId={projectId} />
       ))}
       {files.map((e) => (
         <button
@@ -118,7 +120,7 @@ function FolderChildren({ path, selectedPath, onOpenFile, depth }: TreeProps) {
   );
 }
 
-function FolderRow({ path, selectedPath, onOpenFile, depth }: TreeProps) {
+function FolderRow({ path, selectedPath, onOpenFile, depth, projectId }: TreeProps) {
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -133,7 +135,7 @@ function FolderRow({ path, selectedPath, onOpenFile, depth }: TreeProps) {
         <span className="truncate">{baseName(path)}</span>
       </button>
       {open && (
-        <FolderChildren path={path} selectedPath={selectedPath} onOpenFile={onOpenFile} depth={depth + 1} />
+        <FolderChildren path={path} selectedPath={selectedPath} onOpenFile={onOpenFile} depth={depth + 1} projectId={projectId} />
       )}
     </div>
   );
@@ -227,11 +229,31 @@ export default function AICodingWorkspace() {
   const canView = hasPermission("ai_repo_read", "canView");
   const canExec = hasPermission("ai_repo_exec", "canCreate");
 
+  // ── Bộ chọn DỰ ÁN (doc 79 · TRỤC 2) — danh sách từ server (danh sách TRẮNG .env). Client giữ và
+  //    gửi lên MỘT id, KHÔNG BAO GIỜ đường dẫn. Phiên nhớ id đang chọn qua sessionStorage. ──
+  const PROJECT_KEY = "aiCodingWorkspace.projectId";
+  const projectsQ = trpc.repoWorkspace.listProjects.useQuery(undefined, { staleTime: 5 * 60_000 });
+  const [projectId, setProjectId] = useState<string>(() => {
+    try { return sessionStorage.getItem(PROJECT_KEY) ?? ""; } catch { return ""; }
+  });
+  // Khi danh sách nạp xong: đảm bảo id đang chọn CÒN hợp lệ; nếu không, về defaultId (hoặc mục đầu).
+  useEffect(() => {
+    const data = projectsQ.data;
+    if (!data) return;
+    const ids = data.projects.map((p) => p.id);
+    if (projectId && ids.includes(projectId)) return;
+    const next = data.defaultId && ids.includes(data.defaultId) ? data.defaultId : (ids[0] ?? "");
+    if (next) setProjectId(next);
+  }, [projectsQ.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    try { if (projectId) sessionStorage.setItem(PROJECT_KEY, projectId); } catch { /* ignore */ }
+  }, [projectId]);
+
   // ── Trình xem tệp ──
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const fileQ = trpc.repoWorkspace.readFile.useQuery(
-    { path: selectedPath ?? "" },
-    { enabled: !!selectedPath, staleTime: 5_000 },
+    { path: selectedPath ?? "", projectId },
+    { enabled: !!selectedPath && !!projectId, staleTime: 5_000 },
   );
   const fileReply = fileQ.data;
 
@@ -289,7 +311,8 @@ export default function AICodingWorkspace() {
         userRole: mapAppRoleToAiRole(user?.role),
         // ★★★ doc 79 · TRỤC 1 (A) — cờ phiên LẬP TRÌNH: server định tuyến tới tác nhân lập trình
         // (persona lập trình + 5 tool đọc/sửa/chạy repo), KHÔNG tới trợ lý vận hành + RAG tri thức.
-        context: { route: "/ai-coding-workspace", uiLanguage: i18n.language, codingMode: true },
+        // ★★★ doc 79 · TRỤC 2 — projectId (ID, KHÔNG phải đường dẫn): tác nhân bám gốc dự án đang chọn.
+        context: { route: "/ai-coding-workspace", uiLanguage: i18n.language, codingMode: true, projectId },
       },
       {
         onToolResult: (tr) => setStreamTool(tr),
@@ -313,7 +336,19 @@ export default function AICodingWorkspace() {
     } else if (!abortedRef.current) {
       setTranscript((prev) => [...prev, { role: "assistant", content: t("repoWs.chat.streamFailed", "Luồng bị lỗi — thử lại.") }]);
     }
-  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t]);
+  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId]);
+
+  // ── Đổi dự án ⇒ cây tệp + trình xem + hội thoại bám gốc mới (doc 79 · TRỤC 2) ──
+  const changeProject = useCallback((id: string) => {
+    if (!id || id === projectId) return;
+    setProjectId(id);
+    setSelectedPath(null);
+    setPendingDiff(null);
+    setStreamTool(null);
+    setPending(null);
+    setDiffPreview("");
+    setTranscript([]);
+  }, [projectId]);
 
   // ── Duyệt / hủy một đề xuất ghi/chạy ──
   const handleConfirm = useCallback(async () => {
@@ -394,6 +429,29 @@ export default function AICodingWorkspace() {
         <div className="grid h-[calc(100vh-8.5rem)] grid-cols-1 lg:grid-cols-[260px_1fr_420px]">
           {/* ── 1. CÂY TỆP ── */}
           <div className="flex flex-col overflow-hidden border-r">
+            {/* Bộ chọn DỰ ÁN (doc 79 · TRỤC 2) — tham khảo "Select folder" của Claude Code. Client
+                giữ + gửi MỘT id; server tra danh sách TRẮNG .env để ra gốc (không nhận đường dẫn). */}
+            <div className="flex flex-col gap-1 border-b px-2 py-1.5">
+              <label htmlFor="repows-project" className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                <FolderTree className="h-3.5 w-3.5" /> {t("repoWs.project.label", "Dự án")}
+                <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide">
+                  {t("repoWs.project.local", "Cục bộ")}
+                </span>
+              </label>
+              <select
+                id="repows-project"
+                value={projectId}
+                onChange={(e) => changeProject(e.target.value)}
+                disabled={projectsQ.isLoading || (projectsQ.data?.projects.length ?? 0) <= 1}
+                className="h-8 w-full rounded-md border bg-background px-2 text-xs disabled:opacity-70"
+                aria-label={t("repoWs.project.select", "Chọn dự án")}
+              >
+                {projectsQ.isLoading && <option value="">{t("repoWs.project.loading", "Đang tải dự án…")}</option>}
+                {(projectsQ.data?.projects ?? []).map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
             <div className="flex items-center justify-between border-b px-2 py-1.5">
               <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                 <FolderTree className="h-3.5 w-3.5" /> {t("repoWs.tree.title", "Cây tệp")}
@@ -401,7 +459,11 @@ export default function AICodingWorkspace() {
             </div>
             <ScrollArea className="flex-1">
               <div className="py-1">
-                <FolderChildren path="" selectedPath={selectedPath} onOpenFile={openFile} depth={0} />
+                {projectId ? (
+                  <FolderChildren key={projectId} path="" selectedPath={selectedPath} onOpenFile={openFile} depth={0} projectId={projectId} />
+                ) : (
+                  <div className="px-2 py-1 text-xs text-muted-foreground">{t("repoWs.project.none", "Chưa có dự án nào để hiển thị.")}</div>
+                )}
               </div>
             </ScrollArea>
           </div>

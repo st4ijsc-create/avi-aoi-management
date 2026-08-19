@@ -81,6 +81,12 @@ function parseContext(raw: unknown): KbQueryContext | undefined {
   // ★★★ doc 79 · TRỤC 1 (A) — cờ phiên lập trình. CHỈ chấp nhận literal `true` (một client vận hành
   // không bao giờ vô tình bật nó); mọi giá trị khác ⇒ vắng ⇒ đường vận hành mặc định.
   if (r.codingMode === true) ctx.codingMode = true;
+  // ★★★ doc 79 · TRỤC 2 — id DỰ ÁN. Chỉ nhận chuỗi HÌNH DẠNG id (`[A-Za-z0-9_-]`, 1..64). Một client
+  // gửi ĐƯỜNG DẪN (`../../etc`, `C:\…`, `/a/b`) trượt regex ⇒ bị BỎ ở đây (lớp 1); và kể cả lọt thì
+  // `gocTheoId` không tìm thấy id ⇒ TỪ CHỐI (lớp 2). Server KHÔNG BAO GIỜ nhận đường dẫn từ client.
+  if (typeof r.projectId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(r.projectId)) {
+    ctx.projectId = r.projectId;
+  }
 
   return Object.keys(ctx).length > 0 ? ctx : undefined;
 }

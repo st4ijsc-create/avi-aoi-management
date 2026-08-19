@@ -18976,6 +18976,13 @@
     }
   },
   "repoWs": {
+    "project": {
+      "label": "项目",
+      "local": "本地",
+      "select": "选择项目",
+      "loading": "正在加载项目…",
+      "none": "暂无可显示的项目。"
+    },
     "title": "AI 编程工作区",
     "subtitle": "读代码 → 提出 diff → 人工审核 → 运行测试 → 读真实错误再继续修复",
     "noPermission": "您没有读取源码的权限（ai_repo_read）。请联系管理员。",

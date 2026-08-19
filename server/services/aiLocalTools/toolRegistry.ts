@@ -102,6 +102,14 @@ export interface ToolExecContext {
    * confirmed + owned). Additive/optional — read tools and propose() ignore it.
    */
   actionId?: string;
+  /**
+   * ★★★ doc 79 · TRỤC 2 — GỐC hộp cát của DỰ ÁN đang chọn, đã phân giải **SERVER-SIDE** từ một
+   * `projectId` trong danh sách TRẮNG (`repoProjects.gocTheoId`). Đường TUYỆT ĐỐI, KHÔNG BAO GIỜ đến
+   * từ client (client chỉ gửi id). VẮNG ⇒ hộp cát dùng `gocHopCat()` (dự án mặc định — đường cũ).
+   * Dùng bởi: read tool repo (qua `argsWithAuthCtx` → `__projectRoot`) và write tool repo (đọc thẳng
+   * `ctx.projectRoot` trong preview/execute). KHÔNG mở quyền mới — RBAC không đổi.
+   */
+  projectRoot?: string;
 }
 
 /** Result of a tool's execute() — reuses ToolResult shape for rendering. */
@@ -331,8 +339,11 @@ export function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: T
    * là mảng/chuỗi/`null`; đánh rơi một đầu vào méo an toàn hơn hẳn chở theo một danh tính bịa.
    */
   if (args === null || typeof args !== "object" || Array.isArray(args)) return {};
-  // (1) XOÁ TRƯỚC — vô điều kiện. Đầu vào KHÔNG BAO GIỜ được là nguồn của danh tính.
-  const { __authCtx: _tuDauVao, ...sach } = args as Record<string, unknown>;
+  // (1) XOÁ TRƯỚC — vô điều kiện. Đầu vào KHÔNG BAO GIỜ được là nguồn của danh tính HAY của gốc dự án.
+  // ⚠ doc 79 TRỤC 2: `__projectRoot` là biên AN NINH y như `__authCtx` — nó là một ĐƯỜNG DẪN mà nếu
+  //   client đặt được thì hộp cát đa-gốc vô nghĩa. Nên nó bị XOÁ ở đây rồi CHỈ được gán lại từ
+  //   `execCtx.projectRoot` (server tự phân giải từ id trong danh sách trắng).
+  const { __authCtx: _tuDauVao, __projectRoot: _gocTuDauVao, ...sach } = args as Record<string, unknown>;
   if (!execCtx) return sach;
   const shape = (tool.parameters as unknown as { shape?: Record<string, unknown> })?.shape;
   if (!shape) return sach;
@@ -360,6 +371,18 @@ export function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: T
    */
   if (Object.hasOwn(shape, "lang") && laOEnumNgonNguHienThi(shape.lang)) {
     if (ra.lang !== "vi" && ra.lang !== "en" && ra.lang !== "zh") ra = { ...ra, lang: execCtx.lang };
+  }
+  /**
+   * ★★★ doc 79 · TRỤC 2 — GỐC DỰ ÁN, gán lại từ phiên THẬT (giống `__authCtx`, cùng kỷ luật server-
+   * authoritative). CHỈ khi schema tool CÓ KHAI `__projectRoot` (mọi schema `.strict()` ⇒ nhét khoá
+   * lạ sẽ vỡ mọi `safeParse` sau này) và execCtx CÓ gốc. Vắng ⇒ handler tự rơi về `gocHopCat()`.
+   */
+  if (
+    Object.hasOwn(shape, "__projectRoot") &&
+    typeof execCtx.projectRoot === "string" &&
+    execCtx.projectRoot !== ""
+  ) {
+    ra = { ...ra, __projectRoot: execCtx.projectRoot };
   }
   if (!Object.hasOwn(shape, "__authCtx")) return ra;
   // (2) GÁN LẠI từ phiên THẬT — nguồn duy nhất.

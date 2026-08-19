@@ -62,12 +62,18 @@ export type TrangThaiGit =
  * ⚠ Phân biệt "tệp MỚI hợp lệ" với "tệp đã track & bẩn" nằm ở NGƯỜI GỌI, không ở đây: một tệp sắp
  * TẠO còn chưa tồn tại lúc gọi hàm này ⇒ porcelain RỖNG ⇒ `sach: true`. `??` chỉ xuất hiện cho một
  * tệp **đã tồn tại nhưng chưa track**, và đó ĐÚNG là "chưa commit" nên bị coi là bẩn.
+ *
+ * ⚠⚠ doc 79 · TRỤC 2 — `goc` là gốc DỰ ÁN đang chọn (mặc định `gocHopCat()`). Nó là `cwd` của lượt
+ * `git status`. Khi gốc là thư mục CON của repo (2 dự án thử), git tự đi ngược tìm `.git` của repo
+ * CHA ⇒ vẫn đúng. Khi gốc KHÔNG có `.git` nào ở trên (dự án ngoài chưa `git init`), `git status`
+ * THOÁT KHÁC 0 ("not a git repository") ⇒ `GIT_STATUS_FAILED` ⇒ `apply_diff` fail-closed (TỪ CHỐI
+ * ghi). Đó là chiều hỏng ĐÚNG: không chứng minh được tệp sạch thì không ghi (xem đầu file).
  */
-export async function trangThaiGitCuaTep(relPath: string): Promise<TrangThaiGit> {
+export async function trangThaiGitCuaTep(relPath: string, goc: string = gocHopCat()): Promise<TrangThaiGit> {
   const p = String(relPath).replace(/\\/g, "/");
   const kq = await chayLenhTrongHopCat(
     { file: "git", args: ["--no-pager", "status", "--porcelain", "--", p] },
-    { hanGioMs: HAN_GIO_GIT_MS, goc: gocHopCat() },
+    { hanGioMs: HAN_GIO_GIT_MS, goc },
   );
   // Fail-closed: bất kỳ thứ gì khác "đã sinh tiến trình, thoát 0" đều là KHÔNG chứng minh được.
   if (kq.ma !== null || kq.maThoat !== 0) {

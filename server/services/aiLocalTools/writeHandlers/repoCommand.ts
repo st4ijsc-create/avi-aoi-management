@@ -188,12 +188,13 @@ async function xemTruoc(p: ThamSo, ctx: ToolExecContext): Promise<ActionPreview>
     return { entityType: "repo_command", entityName: String(p.command ?? ""), changes: [], warnings, humanSummary: tomTat(p, ctx.lang) };
   };
 
+  // doc 79 TRỤC 2 — gốc dự án đang chọn (server-authoritative), mặc định repo.
+  const goc = ctx.projectRoot ?? gocHopCat();
   const tach = tachArgv(p.command);
   if (!tach.ok) return chan(cauTuChoiLenh(tach.ma, tach.chiTiet, ctx.lang));
-  const pq = phanQuyetLenh(tach.argv);
+  const pq = phanQuyetLenh(tach.argv, goc);
   if (!pq.ok) return chan(cauTuChoiLenh(pq.ma, pq.chiTiet, ctx.lang));
 
-  const goc = gocHopCat();
   const hanGio = hanGioThucTe(pq.hanGioMs, p.timeoutMs);
 
   warnings.push(w(ctx.lang, `Thư mục chạy: ${goc}`, `Working directory: ${goc}`, `工作目录：${goc}`));
@@ -306,9 +307,11 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
       }
     };
 
+    // doc 79 TRỤC 2 — cùng gốc dự án với preview (ctx.projectRoot dựng lại ở confirmAction).
+    const goc = ctx.projectRoot ?? gocHopCat();
     const tach = tachArgv(p.command);
     if (!tach.ok) return napLoi(tach.ma, tach.chiTiet, RONG);
-    const pq = phanQuyetLenh(tach.argv);
+    const pq = phanQuyetLenh(tach.argv, goc);
     if (!pq.ok) return napLoi(pq.ma, pq.chiTiet, { ...RONG, command: tach.argv.join(" ") });
 
     // ── NGÂN SÁCH: hỏi TRƯỚC khi sinh tiến trình. Hết ngân sách thì đầu ra không có đường ra, nên
@@ -331,7 +334,7 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
     }
 
     const hanGio = hanGioThucTe(pq.hanGioMs, p.timeoutMs);
-    const kq = await chayLenhTrongHopCat(pq.spec, { hanGioMs: hanGio });
+    const kq = await chayLenhTrongHopCat(pq.spec, { hanGioMs: hanGio, goc });
 
     const data: DuLieuChay = {
       command: pq.nhan,

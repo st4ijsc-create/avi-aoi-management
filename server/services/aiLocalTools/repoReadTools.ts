@@ -79,6 +79,20 @@ function khoaNganSach(raw: unknown): string | undefined {
 }
 
 /**
+ * ★★★ doc 79 · TRỤC 2 — GỐC dự án đang chọn, đọc từ `__projectRoot` (server tự tiêm qua
+ * `argsWithAuthCtx` từ `execCtx.projectRoot`; client KHÔNG BAO GIỜ đặt được — nó bị XOÁ ở đó rồi gán
+ * lại từ phiên). VẮNG ⇒ `gocHopCat()` (dự án mặc định — đường cũ, tương thích ngược). Đây là chỗ
+ * DUY NHẤT ba read tool biến id-đã-phân-giải thành gốc; mọi lời gọi hộp cát dưới truyền `goc` này.
+ */
+function gocTuArgs(raw: Record<string, unknown>): string {
+  const g = raw.__projectRoot;
+  return typeof g === "string" && g !== "" ? g : gocHopCat();
+}
+
+/** Ô dành riêng do server tiêm (`argsWithAuthCtx`). `.strict()` ⇒ phải KHAI để phép tiêm chạy. */
+const projectRootParam = z.string().optional();
+
+/**
  * ★ Mã `note` cho một phán quyết của hộp cát — **mỗi mã viết THẲNG bằng hằng chữ**, có chủ ý.
  *
  * ⚠ `toolNoteCensus.test.ts` §1 quét mã nguồn tìm `note:` + hằng chữ VIẾT HOA và bắt mọi mã chưa
@@ -129,6 +143,7 @@ const thamSoDocTep = z
     path: z.string().min(1).max(1024),
     maxBytes: z.number().int().min(256).max(TRAN_BYTE_MOI_TEP).optional(),
     __authCtx: authCtxParam,
+    __projectRoot: projectRootParam,
   })
   .strict();
 
@@ -171,7 +186,7 @@ const readFileTool: Tool<z.infer<typeof thamSoDocTep>, DuLieuDocTep> = {
     }
 
     const tranByte = typeof raw.maxBytes === "number" ? raw.maxBytes : undefined;
-    const kq = moTepTrongHopCat(duongDan, { tranByte, khoaNganSach: khoaNganSach(raw.__authCtx) });
+    const kq = moTepTrongHopCat(duongDan, { tranByte, khoaNganSach: khoaNganSach(raw.__authCtx), goc: gocTuArgs(raw) });
     if (!kq.ok) return ketQuaTuChoiHopCat(title, RONG_DOC, kq.ma, kq.chiTiet);
 
     const data: DuLieuDocTep = {
@@ -213,6 +228,7 @@ const thamSoLietKe = z
     path: z.string().max(1024).optional(),
     depth: z.number().int().min(1).max(3).optional(),
     __authCtx: authCtxParam,
+    __projectRoot: projectRootParam,
   })
   .strict();
 
@@ -240,7 +256,7 @@ const listFilesTool: Tool<z.infer<typeof thamSoLietKe>, DuLieuLietKe> = {
     const batDau = typeof raw.path === "string" ? raw.path : "";
     const doSau = Math.min(typeof raw.depth === "number" ? raw.depth : 1, TRAN_DO_SAU);
 
-    const goc = gocHopCat();
+    const goc = gocTuArgs(raw);
     const dau = lietKeTrongHopCat(batDau, goc, TRAN_MUC_LIET_KE);
     if (!dau.ok) return ketQuaTuChoiHopCat(title, RONG_LIET_KE, dau.ma, dau.chiTiet);
 
@@ -311,6 +327,7 @@ const thamSoGrep = z
     ignoreCase: z.boolean().optional(),
     maxResults: z.number().int().min(1).max(TRAN_KET_QUA_GREP).optional(),
     __authCtx: authCtxParam,
+    __projectRoot: projectRootParam,
   })
   .strict();
 
@@ -355,7 +372,7 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
       return { type: KIEU, title, data: { ...RONG_GREP, pattern: mau }, note: "INVALID_PATTERN", textSummary: `Biểu thức chính quy không hợp lệ: ${e instanceof Error ? e.message : String(e)}` };
     }
 
-    const goc = gocHopCat();
+    const goc = gocTuArgs(raw);
     const batDau = typeof raw.path === "string" ? raw.path : "";
     const tranKetQua = Math.min(typeof raw.maxResults === "number" ? raw.maxResults : TRAN_KET_QUA_GREP, TRAN_KET_QUA_GREP);
     const hanChot = Date.now() + HAN_GIO_GREP_MS;
@@ -388,7 +405,9 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
         hetGio = true;
         break;
       }
-      const kq = moTepTrongHopCat(rel);
+      // ⚠ doc 79 TRỤC 2 — lượt QUÉT phải bám ĐÚNG gốc dự án; bỏ `goc` ở đây thì grep quét gốc mặc
+      //   định trong khi cây tệp/kết quả nói về gốc đang chọn (im lặng sai gốc).
+      const kq = moTepTrongHopCat(rel, { goc });
       if (!kq.ok) continue;
       quet++;
       const dong = kq.noiDung.split(/\r?\n/);

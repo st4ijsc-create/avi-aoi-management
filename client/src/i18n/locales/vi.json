@@ -18948,6 +18948,13 @@
     }
   },
   "repoWs": {
+    "project": {
+      "label": "Dự án",
+      "local": "Cục bộ",
+      "select": "Chọn dự án",
+      "loading": "Đang tải dự án…",
+      "none": "Chưa có dự án nào để hiển thị."
+    },
     "title": "Không gian lập trình AI",
     "subtitle": "Đọc mã → đề xuất diff → người duyệt → chạy test → đọc lỗi thật rồi sửa tiếp",
     "noPermission": "Bạn không có quyền ĐỌC mã nguồn (ai_repo_read). Liên hệ quản trị viên.",

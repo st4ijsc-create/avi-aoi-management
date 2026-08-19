@@ -32,14 +32,26 @@ import {
   type ToolExecContext,
   type ToolLang,
 } from "../services/aiLocalTools";
+// ★★★ doc 79 · TRỤC 2 — phân giải projectId (client gửi) → gốc, tra DANH SÁCH TRẮNG server-side.
+import { phanGiaiGoc } from "../services/aiLocalTools/repoProjects";
 
 // Cùng cổng giấy phép với aiCopilotRouter (MOD_AI, mặc định pass-through). Xác thực do middleware lo.
 const protectedProcedure = moduleProcedure("MOD_AI");
 
 const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
 
-/** Dựng `ToolExecContext` từ ctx tRPC — danh tính là ctx.user (server tự đọc, KHÔNG tin client). */
-function execCtxFrom(ctx: any, lang: ToolLang): ToolExecContext {
+/**
+ * ★★★ doc 79 · TRỤC 2 — id dự án. **Client CHỈ gửi id**, KHÔNG BAO GIỜ đường dẫn; server tra danh
+ * sách trắng. Ràng buộc hình dạng `[A-Za-z0-9_-]` ở đây là lớp mặt tiếp xúc; `gocTheoId` mới là cửa
+ * phán quyết thật (id lạ ⇒ null ⇒ router TỪ CHỐI). VẮNG ⇒ dự án mặc định (đường cũ).
+ */
+const projectIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional();
+
+/**
+ * Dựng `ToolExecContext` từ ctx tRPC — danh tính là ctx.user (server tự đọc, KHÔNG tin client).
+ * `projectRoot` (nếu có) đã được phân giải server-side từ một projectId trong danh sách trắng.
+ */
+function execCtxFrom(ctx: any, lang: ToolLang, projectRoot?: string): ToolExecContext {
   return {
     user: {
       id: Number(ctx.user?.id),
@@ -52,6 +64,7 @@ function execCtxFrom(ctx: any, lang: ToolLang): ToolExecContext {
       headers: (ctx.req as any)?.headers,
       socket: (ctx.req as any)?.socket,
     },
+    ...(projectRoot ? { projectRoot } : {}),
   };
 }
 
@@ -71,8 +84,16 @@ async function runReadTool<T>(
   args: Record<string, unknown>,
   ctx: any,
   lang: ToolLang,
+  projectId?: string,
 ): Promise<RepoToolReply<T>> {
-  const outcome = await executeDecision({ tool, args }, execCtxFrom(ctx, lang));
+  // ★★★ doc 79 · TRỤC 2 — phân giải id → gốc TRƯỚC khi chạy tool. id lạ ⇒ TỪ CHỐI (fail-closed),
+  //   KHÔNG âm thầm đọc gốc mặc định. Client gửi ĐƯỜNG DẪN thay vì id ⇒ cũng rơi vào đây (id không
+  //   có trong danh sách trắng ⇒ PROJECT_NOT_FOUND) — không mở được gốc tuỳ ý.
+  const goc = phanGiaiGoc(projectId);
+  if (!goc.ok) {
+    return { ok: false, note: "PROJECT_NOT_FOUND", summary: null, data: null };
+  }
+  const outcome = await executeDecision({ tool, args }, execCtxFrom(ctx, lang, goc.goc ?? undefined));
   if (outcome.error) return { ok: false, note: outcome.error, summary: null, data: null };
   const r = outcome.result;
   if (!r) return { ok: false, note: "NO_RESULT", summary: null, data: null };
@@ -126,6 +147,7 @@ export const repoWorkspaceRouter = router({
         path: z.string().max(1024).optional(),
         depth: z.number().int().min(1).max(3).optional(),
         lang: langSchema.optional(),
+        projectId: projectIdSchema,
       }),
     )
     .query(async ({ input, ctx }) => {
@@ -134,6 +156,7 @@ export const repoWorkspaceRouter = router({
         { path: input.path, depth: input.depth },
         ctx,
         input.lang ?? "vi",
+        input.projectId,
       );
     }),
 
@@ -144,6 +167,7 @@ export const repoWorkspaceRouter = router({
         path: z.string().min(1).max(1024),
         maxBytes: z.number().int().min(256).max(2_000_000).optional(),
         lang: langSchema.optional(),
+        projectId: projectIdSchema,
       }),
     )
     .query(async ({ input, ctx }) => {
@@ -152,6 +176,7 @@ export const repoWorkspaceRouter = router({
         { path: input.path, maxBytes: input.maxBytes },
         ctx,
         input.lang ?? "vi",
+        input.projectId,
       );
     }),
 
@@ -164,6 +189,7 @@ export const repoWorkspaceRouter = router({
         ignoreCase: z.boolean().optional(),
         maxResults: z.number().int().min(1).max(200).optional(),
         lang: langSchema.optional(),
+        projectId: projectIdSchema,
       }),
     )
     .query(async ({ input, ctx }) => {
@@ -177,6 +203,20 @@ export const repoWorkspaceRouter = router({
         },
         ctx,
         input.lang ?? "vi",
+        input.projectId,
       );
     }),
+
+  /**
+   * ★★★ doc 79 · TRỤC 2 — DANH SÁCH DỰ ÁN cho bộ chọn ở đầu cây tệp. Trả **id + tên** (KHÔNG trả
+   * đường dẫn gốc tuyệt đối ra client — client chỉ cần id để chọn; đường là bí mật server). Tra danh
+   * sách TRẮNG `AI_REPO_SANDBOX_ROOTS`; vắng ⇒ một dự án mặc định.
+   */
+  listProjects: protectedProcedure.query(async () => {
+    const { danhSachDuAn, duAnMacDinh } = await import("../services/aiLocalTools/repoProjects");
+    return {
+      projects: danhSachDuAn().map((d) => ({ id: d.id, name: d.ten })),
+      defaultId: duAnMacDinh().id,
+    };
+  }),
 });

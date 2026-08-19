@@ -269,9 +269,17 @@ export async function proposeAction(
   // migration). The contract is server-owned so confirm-time enforcement reads it
   // from the row, never from the client. No contract ⇒ previewJson is unchanged
   // (byte-for-byte the legacy blob).
-  const previewForStore: Record<string, unknown> = contract
-    ? { ...(preview as unknown as Record<string, unknown>), contract }
-    : (preview as unknown as Record<string, unknown>);
+  //
+  // ★★★ doc 79 · TRỤC 2 — cùng khuôn "server-owned trong previewJson": lưu GỐC DỰ ÁN
+  // (`ctx.projectRoot`) đã phân giải từ id (danh sách trắng) để `confirmAction` chạy `execute()`
+  // trên ĐÚNG gốc mà `propose`/`preview` đã kiểm — request confirm (một lượt HTTP khác) KHÔNG mang
+  // projectId. Chỉ ghi khi có gốc; write tool không-repo (set_spec…) không set ⇒ previewJson KHÔNG
+  // đổi một byte. Đây là ĐƯỜNG DẪN server (đã hiện trong warnings của run_command), không phải bí mật.
+  let previewForStore: Record<string, unknown> = preview as unknown as Record<string, unknown>;
+  if (contract) previewForStore = { ...previewForStore, contract };
+  if (typeof ctx.projectRoot === "string" && ctx.projectRoot !== "") {
+    previewForStore = { ...previewForStore, __projectRoot: ctx.projectRoot };
+  }
 
   await db.insert(aiPendingActions).values({
     id: actionId,
@@ -552,7 +560,11 @@ export async function confirmAction(
   // Execute with args FROM THE DB ROW (never the client). Thread the confirmed
   // action id so write-tools (e.g. machine control) can pass it to the
   // commandDispatcher for defense-in-depth re-verification.
-  const execCtx: ToolExecContext = { user, lang, req, actionId };
+  // ★★★ doc 79 · TRỤC 2 — dựng lại `projectRoot` từ hàng (server-owned trong previewJson) để
+  // `execute()` chạy trên ĐÚNG gốc dự án mà propose đã kiểm. Vắng ⇒ gốc mặc định (write tool tự
+  // rơi về `gocHopCat()`), tương thích ngược cho mọi write tool không-repo.
+  const projectRoot = readProjectRoot(row.previewJson as Record<string, unknown> | null);
+  const execCtx: ToolExecContext = { user, lang, req, actionId, ...(projectRoot ? { projectRoot } : {}) };
   const previewBefore = (row.previewJson as unknown as ActionPreview | null) ?? null;
   const result = await tool.execute!(row.argsJson as Record<string, unknown>, execCtx);
 
@@ -706,6 +718,16 @@ function readContract(previewJson: Record<string, unknown> | null | undefined): 
   if (!previewJson || typeof previewJson !== "object") return null;
   const c = (previewJson as Record<string, unknown>).contract;
   return c && typeof c === "object" ? (c as AdviceContract) : null;
+}
+
+/**
+ * ★★★ doc 79 · TRỤC 2 — đọc GỐC DỰ ÁN (server-owned) đã lưu trong previewJson lúc propose. `null`
+ * cho hàng cũ / write tool không-repo (⇒ `execute` rơi về `gocHopCat()`, tương thích ngược).
+ */
+function readProjectRoot(previewJson: Record<string, unknown> | null | undefined): string | null {
+  if (!previewJson || typeof previewJson !== "object") return null;
+  const r = (previewJson as Record<string, unknown>).__projectRoot;
+  return typeof r === "string" && r !== "" ? r : null;
 }
 
 /**

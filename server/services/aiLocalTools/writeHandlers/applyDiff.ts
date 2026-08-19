@@ -345,8 +345,8 @@ async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQuyet> {
     };
   }
 
-  // 4. TỆP BẨN — hỏi git về ĐÚNG tệp này.
-  const git = await trangThaiGitCuaTep(confined.target.relPath);
+  // 4. TỆP BẨN — hỏi git về ĐÚNG tệp này, với cwd = gốc DỰ ÁN đang chọn (doc 79 TRỤC 2).
+  const git = await trangThaiGitCuaTep(confined.target.relPath, goc);
   if (!git.ok) return { ok: false, ma: "GIT_STATUS_FAILED", chiTiet: confined.target.relPath };
   if (!git.sach) return { ok: false, ma: "FILE_DIRTY", chiTiet: `${confined.target.relPath} [git: ${git.trangThai}]` };
 
@@ -375,7 +375,8 @@ function tomTat(p: Partial<ThamSo>, lang: ToolLang): string {
 
 async function xemTruoc(p: ThamSo, ctx: ToolExecContext): Promise<ActionPreview> {
   const warnings: string[] = [];
-  const goc = gocHopCat();
+  // doc 79 TRỤC 2 — gốc dự án đang chọn (server-authoritative qua `ctx.projectRoot`), mặc định repo.
+  const goc = ctx.projectRoot ?? gocHopCat();
   const chan = (ma: MaApplyDiff): ActionPreview => {
     // Preview không REJECT được (nó luôn trả một ActionPreview) — nó KHAI ra, và `execute` cưỡng
     // chế. Đây là ĐÚNG khuôn `writeHandlers/repoCommand.xemTruoc`.
@@ -498,7 +499,9 @@ export const applyDiffTool: Tool<ThamSo, DuLieuApDung> = {
       }
     };
 
-    const goc = gocHopCat();
+    // doc 79 TRỤC 2 — cùng gốc dự án với preview (ctx.projectRoot được dựng lại ở confirmAction từ
+    // previewJson.__projectRoot, nên confirm chạy ĐÚNG gốc mà propose đã kiểm).
+    const goc = ctx.projectRoot ?? gocHopCat();
     const pq = await phanQuyet(p, goc);
     if (!pq.ok) return napLoi(pq.ma, pq.chiTiet);
 

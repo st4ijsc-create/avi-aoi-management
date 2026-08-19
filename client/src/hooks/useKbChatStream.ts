@@ -198,6 +198,9 @@ export interface KbStreamContext {
   // ★★★ doc 79 · TRỤC 1 (A) — true khi phiên chat là phiên LẬP TRÌNH (/ai-coding-workspace). Server
   // (streamAnswer) định tuyến tới tác nhân lập trình + 5 tool lập trình, KHÔNG tới trợ lý vận hành.
   codingMode?: boolean;
+  // ★★★ doc 79 · TRỤC 2 — id DỰ ÁN đang chọn. Là một ID, KHÔNG phải đường dẫn — server tra danh sách
+  // TRẮNG để ra gốc. Chỉ có nghĩa khi codingMode=true.
+  projectId?: string;
 }
 
 export interface KbStreamRequest {
@@ -261,6 +264,10 @@ export function useKbChatStream() {
       // ★★★ doc 79 · TRỤC 1 (A) — chỉ gửi khi TRUE (giữ payload vận hành không đổi một byte).
       if (req.context.codingMode) {
         context.codingMode = true;
+      }
+      // ★★★ doc 79 · TRỤC 2 — gửi id DỰ ÁN (KHÔNG phải đường dẫn) để server tra danh sách trắng.
+      if (req.context.projectId) {
+        context.projectId = req.context.projectId;
       }
 
       let confidence = 0;
