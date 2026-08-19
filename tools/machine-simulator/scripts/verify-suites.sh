@@ -1689,7 +1689,49 @@ EXPECT_CONFORMANCE=24
 # GenerateDocumentationFile is ON. No suppression of any kind was added — no NoWarn, no #pragma, no
 # .editorconfig severity — and SuppressionCensusTests' three tables are untouched.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1153
+#
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 TASK AK-1 (.superpowers/sdd/item14-option3/task-1-brief.md) — OWNER DECISION 14 EXECUTED, OPTION 3.
+# RAISES EXPECT_EDGECORE 1153 -> 1160 (+7). Nothing else moves; grand total 2764 -> 2771.
+#
+# WHAT WAS ADDED — ONE NEW FILE, SEVEN [Fact], AND THE +7 IS THE POINT RATHER THAN AN OVERHEAD.
+#   +7  tests/St4i.EdgeCore.Tests/WaveformPairAtTheWireBoundaryTests.cs (NEW FILE). Item 14 was decided by
+#       building the published [t, v] pair at the Normalizer boundary. The measurement that preceded the
+#       ruling established that doing so reddens NOTHING in the suite as it stood: the only two files that
+#       touch a waveform (ConnectorRoundTripTests, WaveformSeriesRowShapeContractTests) both sit UPSTREAM
+#       of that boundary on DeviceReading, and no test anywhere asserted the shape of
+#       payload["waveforms"][*]["samples"]. A green suite there was the absence of an instrument, not
+#       evidence of safety, so the witness is the FIRST work item of this decision and not a trailing one.
+#
+# 🔴 THE SPLIT INSIDE THE +7, STATED BECAUSE "SEVEN NEW TESTS" WOULD OTHERWISE READ AS SEVEN WITNESSES.
+# Measured by removing the transform and re-running: FOUR go red, THREE stay green.
+#   * Red on removal (these measure the CHANGE): WelderSimsOneElementRows_LeaveTheHttpBoundaryAsPairs_...,
+#     TheTimeAxisPublished_IsTheOneRateHzIMPLIES_..., TheBoundaryPairsExactlyTheRowsItCan_...,
+#     TheRetainedSemanticMirror_CarriesTheSamePairs_....
+#   * Green on removal BY CONSTRUCTION (these measure the NON-change, and a test that is red on both sides
+#     measures nothing): ScrewdriveSimsAlreadyPairedRows_CrossTheBoundaryUntouched_...,
+#     ARatedSeriesThatALREADYCarriesPairs_IsNotPairedASecondTime,
+#     EveryRowLeavingTheBoundaryIsADoubleArray_....
+#   A second control was run for the failure mode that a green payload cannot show: making the boundary
+#   emit List<double> rows instead of double[] — the shape LiveTransport.ReadSampleSeries drops with no
+#   exception and no log — reddens SIX of the seven. The one that survives it is the retained-mirror fact,
+#   because the MQTT mirror serializes the envelope directly and never passes through that reader. The two
+#   published surfaces therefore fail DIFFERENTLY under the same defect, and that is recorded here rather
+#   than left for the next person to rediscover.
+#
+# 🔴 WHAT WAS *NOT* TOUCHED, AND THE ZEROES ARE THE CONTENT OF THE RULING. WaveformSeries, WelderSim and
+# ScrewdriveSim: ZERO lines. WaveformSeriesRowShapeContractTests (the round-4 witness): ZERO lines, and it
+# stays GREEN — it looks upstream of the boundary, so its silence here is silence and not consent, which is
+# exactly why a new file had to exist. No validator, no server/, no client/, no examples/, no SDK sample.
+#
+# EXPECT_WARNINGS stays 631, EXPECT_WARNING_LEDGER stays at its sixteen rows unmoved unit for unit, and
+# EXPECT_BUILD_NODES stays 0 — measured on a full `dotnet build -t:Rebuild`, not assumed. The one member
+# added to St4i.EdgeCore (Normalizer.ToWireSampleRows) is PRIVATE and carries a `///` block anyway, so
+# neither `OURS CS1591 328` nor `OURS CS1573 84` moves in the project where GenerateDocumentationFile is
+# ON. No suppression of any kind was added — no NoWarn, no #pragma, no .editorconfig severity — and
+# SuppressionCensusTests' three tables are untouched.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1160
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:

@@ -32,7 +32,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 1 | ghi đè im lặng | 🔨 **SỬA** — ~~gộp với 5–7~~ **(nhóm ấy SAI, xem §5–7)**; đã thi hành, Q-1 |
 | 2 | `Warn` tốt cho OEE | ✅ **GIỮ HÀNH VI, XUẤT BẢN NÓ** — đổi là viết lại lịch sử; đã thi hành, AA-1 (2026-08-18) |
 | 3 | bất đối xứng Sparkplug | ✅ **GIỮ DÂY, ĐÃ GHI RÕ** — đổi payload là việc của bên đăng ký; đã thi hành, N-2 |
-| 4 | hình dạng hàng `Samples` | ✅ **`RateHz` LÀ BỘ PHÂN BIỆT** (2026-08-16); văn xuôi đã thi hành, AA-1 — 🔴 **tiền đề của phán quyết nay bị BÁC: xem mục 14.** Hai câu trước của ô này giữ nguyên văn, không xoá: (i) tới 2026-08-18 ô ghi *"⚖️ ĐO TRƯỚC, RỒI CHỌN — SDK đã xuất bản là ứng viên chuẩn; **việc còn nợ** (2026-08-18)"*; (ii) AA-1 **rút** câu ấy với lý do *"dòng phán quyết của §4 nói NGƯỢC LẠI — nhận `[[t,v]]` làm chuẩn sẽ phá cả hai bộ sinh"*. 🔴 **Phép rút (ii) nay BỊ RÚT LẠI** (AA-1 vòng phản biện 1): đo tiếp cho thấy câu (i) **đúng** — đặc tả đã xuất bản là ứng viên chuẩn, và là ứng viên **duy nhất có bộ cưỡng chế lúc chạy**. **Không câu nào được coi là thắng** cho tới khi mục 14 được quyết |
+| 4 | hình dạng hàng `Samples` | ✅ **`RateHz` LÀ BỘ PHÂN BIỆT** (2026-08-16); văn xuôi đã thi hành, AA-1 — 🔴 **tiền đề của phán quyết nay bị BÁC: xem mục 14.** Hai câu trước của ô này giữ nguyên văn, không xoá: (i) tới 2026-08-18 ô ghi *"⚖️ ĐO TRƯỚC, RỒI CHỌN — SDK đã xuất bản là ứng viên chuẩn; **việc còn nợ** (2026-08-18)"*; (ii) AA-1 **rút** câu ấy với lý do *"dòng phán quyết của §4 nói NGƯỢC LẠI — nhận `[[t,v]]` làm chuẩn sẽ phá cả hai bộ sinh"*. 🔴 **Phép rút (ii) nay BỊ RÚT LẠI** (AA-1 vòng phản biện 1): đo tiếp cho thấy câu (i) **đúng** — đặc tả đã xuất bản là ứng viên chuẩn, và là ứng viên **duy nhất có bộ cưỡng chế lúc chạy**. **Không câu nào được coi là thắng** cho tới khi mục 14 được quyết. 🔴 **MỞ RỘNG 2026-08-19 (AK-1) — điều kiện của câu ngay trên NAY ĐÃ XẢY RA: mục 14 được quyết (lựa chọn 3, chủ sở hữu, 2026-08-19) và đã thi hành.** Câu ấy **giữ nguyên văn, KHÔNG rút**, và ô này **không tuyên bố câu nào thắng** — vì lựa chọn 3 quyết **hình dạng hàng TRÊN DÂY** (cặp `[t, v]`, dựng ở `Normalizer`) và **cố ý không quyết** hình dạng hàng **trong tiến trình**: `WaveformSeries` giữ nguyên, `RateHz` vẫn là thứ hai bộ sinh của sản phẩm này tách trên. Nên câu (i) và câu (ii) vẫn ở đúng chỗ chúng đứng; cái mới là **hai lớp ấy nay được nối bằng một phép chuyển có nhân chứng**, xem mục 14 ở **Phần III**. **AK-1 không sửa một chữ nào khác trong mục 4** — phán quyết 2026-08-16 là của chủ sở hữu |
 | 5 | ~~ba hình dạng xoá file~~ → **`oee-settings.json`** | 🔨 **GOM VỀ MỘT LUẬT** (2026-08-17) — đã thi hành, V-1 |
 | 6 | log hoãn của một lần cài đặt hỏng | 🔨 **PHÁT RA TRÊN ĐƯỜNG NÉM LỖI** (2026-08-17) — đã thi hành, T-1 |
 | 7 | nửa sau của S4 | 🔨 **DỪNG + GIỮ COMMIT + BÁO TRÊN `/v1/health`** (2026-08-17) — đã thi hành, U-1 |
@@ -42,7 +42,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); đã thi hành, Z-1 |
 | 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 4 ĐÃ TRẢ 2026-08-19 (AG-1, đợt 4/8): 101 khẳng định ĐÃ SAI được TRỎ LẠI (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, 0 dòng mã đụng tới), `EXPECT_WARNINGS` 852 → 751 ĐO, sổ 19 → 16 hàng, 185 vendored / 566 ours, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **532 chỗ trống của ta chưa trả** (+ 103 vendored không ai trả được). Đợt 5–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 5 ĐÃ TRẢ 2026-08-19 (AH-1, đợt 5/8): 120 chỗ THIẾU được VIẾT — một cụm mạch lạc, mô hình dữ liệu config-sync (7 file `Config/`, cả 120 là CS1591), `EXPECT_WARNINGS` 751 → 631 ĐO, sổ vẫn 16 hàng, 185 vendored / 446 ours, `OURS CS1591 448 → 328`, `OURS CS1573 84` KHÔNG dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **412 chỗ trống của ta chưa trả**. Đợt 6–8 trả, mỗi đợt đo lại |
 | 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔨 **ĐÓNG — STORE GHI LẠI DANH TÍNH CỦA CÁC BYTE** (2026-08-19, chủ sở hữu). 🔴 **Giá đã chấp nhận và ghi vào mục: `PUT /v1/historian/oee/settings` trả 409 ở những lúc hôm nay trả 200, KỂ CẢ khi thứ đổi file là một biên tập tay HỢP LỆ hay chỉ là một lần ĐỊNH DẠNG LẠI.** Câu *"bao nhiêu PUT hợp lệ thành 409"* vẫn **KHÔNG đo được** và phán quyết ra **mà không có nó**. **Đã thi hành, AJ-1 (2026-08-19)** — cơ chế **SUY ra chứ không chọn một trong ba**: cả ba ứng viên (băm / `mtime` / kích thước) là **vân tay**, mà vân tay chỉ cần khi không cầm được cả hai vế; `ReadLocked` **đã cầm toàn văn** ở cả hai đầu trong cùng một khoá, nên store **giữ lại toa hạng gốc** và so trực tiếp — **0 lần đọc đĩa thêm**, và **mạnh hơn** mọi hàm hao hụt của nó. Kiểu thứ ba `OeeSettingsFileChangedException`; vị từ gác bằng **CẶP `Loaded/Loaded`**, nên cặp `Loaded/Absent` **không** bị đóng kèm. Nhân chứng `Set_AfterARestoreOntoAHostThatCameUpWithAFile_…` **đảo chiều và đổi tên**; giá được **ghim** bằng một bài kiểm riêng |
-| 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT**. 🔴 **KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: KHẢ THI — `Normalizer` có đủ thông tin, `WaveformSeries` và `WelderSim` KHÔNG phải đổi. Nhưng nó KHÔNG nằm trọn ở một đường dây: cùng một envelope đi ra BA bề mặt, và một trong ba là gương ngữ nghĩa MQTT RETAINED — một **bề mặt đã xuất bản thứ hai; NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này** (hợp đồng TỰ KHAI rằng họ ở ngoài repo — đó là lời của tài liệu, không phải một phép đếm). 🔴 **Giá gương ấy KHÔNG phải của riêng lựa chọn 3: lựa chọn 1 trả CÙNG giá đó CỘNG THÊM, lựa chọn 2 không trả giá nào trong cây này nhưng trả TOÀN BỘ ở ngoài (hợp đồng ingest đã xuất bản + ba SDK).** Và KHÔNG một bài kiểm nào trong 2763 bài đỏ lên, tức lối này KHÔNG CÓ NHÂN CHỨNG. **Ràng buộc thi hành cứng: `LiveTransport.ReadSampleSeries` chỉ nhận hàng `double[]` và bỏ im lặng mọi kiểu khác.** Ba lựa chọn VẪN CHƯA QUYẾT** |
+| 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT**. 🔴 **KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: KHẢ THI — `Normalizer` có đủ thông tin, `WaveformSeries` và `WelderSim` KHÔNG phải đổi. Nhưng nó KHÔNG nằm trọn ở một đường dây: cùng một envelope đi ra BA bề mặt, và một trong ba là gương ngữ nghĩa MQTT RETAINED — một **bề mặt đã xuất bản thứ hai; NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này** (hợp đồng TỰ KHAI rằng họ ở ngoài repo — đó là lời của tài liệu, không phải một phép đếm). 🔴 **Giá gương ấy KHÔNG phải của riêng lựa chọn 3: lựa chọn 1 trả CÙNG giá đó CỘNG THÊM, lựa chọn 2 không trả giá nào trong cây này nhưng trả TOÀN BỘ ở ngoài (hợp đồng ingest đã xuất bản + ba SDK).** Và KHÔNG một bài kiểm nào trong 2763 bài đỏ lên, tức lối này KHÔNG CÓ NHÂN CHỨNG. **Ràng buộc thi hành cứng: `LiveTransport.ReadSampleSeries` chỉ nhận hàng `double[]` và bỏ im lặng mọi kiểu khác.** Ba lựa chọn VẪN CHƯA QUYẾT** — 📎 **câu ngay trước giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1), và lý do là chủ sở hữu ĐÃ PHÁN, không phải câu ấy từng sai; AK-1 dùng đúng MỘT kiểu bảo tồn — kiểu AB-1 lập và AI-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG dấu gạch ngang ở bất kỳ đâu, không xoá một dòng nào.** → 🔨 **QUYẾT: LỰA CHỌN 3 — DỰNG CẶP `[t, v]` Ở RANH GIỚI `Normalizer`** (2026-08-19, chủ sở hữu). `WaveformSeries`, `WelderSim`, `ScrewdriveSim` **không đổi một dòng**; thứ đổi là **payload đi ra**. 🔴 **Giá đã chấp nhận và ghi vào mục: HAI bề mặt đã xuất bản đổi CÙNG LÚC, không một** — payload ingest HTTP **và** gương ngữ nghĩa MQTT retained `syn/…`; **NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này**. Cộng một bề mặt thứ ba, riêng tư: hàng đợi store-and-forward của SDK ghi nguyên payload **xuống đĩa** và **phát lại hình dạng CŨ sau khi mã đã đổi** — **cửa sổ ấy CHƯA ĐO**. **Đã thi hành, AK-1 (2026-08-19)** — cơ chế của `t` **SUY ra chứ không chọn**: `t(i) = i / rateHz`, tức **thời điểm mà `rateHz` HÀM Ý**, **không** phải thời điểm `WelderSim` vẽ đường cong; lý do là ở ranh giới chỉ có **bốn trường** của `WaveformSeries`, còn dựng lại thời điểm THẬT đòi **tham số hoá riêng của từng bộ sinh** — không có trên hồ sơ, khác nhau theo driver, và **vắng hẳn** với driver bên thứ ba mà ranh giới này cũng phục vụ. 🔴 **`rateHz` KHÔNG đổi nghĩa và KHÔNG đổi giá trị** — đó là điều kiện DỪNG của nhiệm vụ và nó không bị chạm. 🔴 **Nửa bất lợi, viết ngay cạnh:** chỗ lệch **4,17 %** của `WelderSim` **không được tạo ra và cũng không được sửa** ở đây (phép chuyển tính đúng cái `t` mà một bên tiêu thụ tuân hợp đồng đã tính hôm nay) — **nhưng nó chuyển `t` từ NGẦM sang ĐÃ VIẾT RA**, nên sửa chỗ lệch ấy về sau là **đổi những con số đã xuất bản**, không còn là đổi một tài liệu. Nhân chứng **MỚI** `WaveformPairAtTheWireBoundaryTests` (bảy `[Fact]`): gỡ phép chuyển ⇒ **BỐN đỏ**; trả kiểu hàng khác `double[]` ⇒ **SÁU đỏ**; 🔴 `WaveformSeriesRowShapeContractTests` **VẪN XANH, và đó là im lặng, không phải chấp thuận** — nó nhìn thượng nguồn |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -56,8 +56,22 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 
 # 🔴 PHẦN I — ĐANG CHỜ ANH
 
-**Mục ở đây, LIỆT KÊ chứ không đếm: mục 14.** Nó mang `🔴 CHỜ ANH` ở bảng phán quyết trên,
-và **bảng ấy là nguồn sự thật** — câu này chỉ là một con trỏ vào nó.
+**Phép liệt kê các mục ở đây, và nó KHÔNG liệt kê được cái gì: không mục nào.** Không hàng
+nào của bảng phán quyết trên còn mang `🔴 CHỜ ANH`, và **bảng ấy là nguồn sự thật** — câu này
+chỉ là một con trỏ vào nó. 🔴 **"Rỗng" ở đây là một trạng thái của HÔM NAY, không phải một
+tính chất của file**: vòng phản biện nào cũng có thể mở một mục mới, và ba lần trong hai ngày
+nó đã làm đúng thế (xem khối ngay dưới). Phần này **không bị xoá** khi rỗng, vì cái nó giữ là
+**chỗ**, không phải **nội dung**.
+
+> 📎 **Câu ngay trên đọc, NGUYÊN VĂN, cho tới 2026-08-19 — RÚT cùng ngày (AK-1), giữ nguyên
+> văn, cùng kiểu bảo tồn AB-1 lập và AI-1 dùng:** *"**Mục ở đây, LIỆT KÊ chứ không đếm: mục
+> 14.** Nó mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn sự thật** — câu này
+> chỉ là một con trỏ vào nó."* Lý do rút là **chủ sở hữu đã phán mục 14** ngày **2026-08-19**
+> (lựa chọn 3), mục ấy **đã thi hành** và **đã chuyển sang Phần III** với một ghi chép thi hành
+> ghi kèm ngày — **không phải câu ấy từng sai**: nó mô tả đúng trạng thái hồ sơ cho tới đúng
+> lúc ấy. 🔴 **Cách viết của nó — liệt kê, không đếm — được giữ nguyên và chính nó là cái làm
+> phép rút này rẻ:** một phép liệt kê rỗng đọc được là rỗng; một con số `0` viết ở đây sẽ là
+> đúng thứ ba khối dưới đã bắt ba lần.
 
 > 🔴 **Câu này đọc *"Một mục ở đây, và chỉ một: mục 9"* cho tới 2026-08-18, và nó thành sai
 > ĐÚNG LÚC mục 13 được thêm — cùng nhiệm vụ, cùng ngày (phản biện I-2).** Giữ lại ở đây vì
@@ -105,6 +119,12 @@ ra, ai chịu, nếu không quyết thì sao, cái gì đã chặn nó khỏi đ
 **bằng chứng** đi ngay sau nó **trong cùng một mục** — vì một khẳng định tách khỏi nhân
 chứng của nó là một khẳng định **không kiểm được**, đúng thứ file này lập ra để chấm dứt.
 
+> 📎 **MỞ RỘNG 2026-08-19 (AK-1), KHÔNG phải RÚT — câu ngay trên giữ nguyên văn vì nó KHÔNG
+> sai, nó chỉ **không còn trỏ vào cái gì**.** *"Mục dưới đây"* là **rỗng** kể từ khi mục 14
+> rời sang Phần III, nên câu ấy đọc lúc này như **luật viết cho mục KẾ TIẾP đặt vào đây**, và
+> đó đúng là vai trò còn lại của nó. Ba thao tác vẫn phân biệt như file này quy định: **RÚT**
+> (câu sai hoặc đã hết đúng), **MỞ RỘNG** (câu thiếu), **SỬA TẠI CHỖ** — đây là cái thứ hai.
+
 🔴 **Cái mục 9 CHƯA có, nêu tên chứ không lấp:** nó không bày ra **các lựa chọn kèm giá
 ĐÃ ĐO** của từng lựa chọn. Giá ấy phải được **đo**; một lần ghi chép không đo được nó, và
 một con số ước lượng đặt ở đây sẽ **đọc như một phép đo**. (Y-1, 2026-08-18.)
@@ -119,668 +139,6 @@ một con số ước lượng đặt ở đây sẽ **đọc như một phép �
 > 🔴 **Và mục 13 mang CÙNG đoạn ấy, bằng cùng chữ, ở thân của chính nó** — nó cũng được rút, cùng ngày,
 > cùng người, cùng lý do. Nêu ở cả hai chỗ vì một lời cải chính chỉ đặt ở một trong hai là đúng khuyết
 > tật file này lập ra để chấm dứt.
-
----
-
-## 14. Hai hợp đồng đã xuất bản nói ngược nhau về hình dạng một hàng `Samples`; cái được CƯỠNG CHẾ lúc chạy hẹp hơn cái nền tảng tự XUẤT BẢN; và bộ phát của sản phẩm này phát một hình dạng cổng ingest TỪ CHỐI
-
-> 📎 **Tiêu đề này, NGUYÊN VĂN, cho tới 2026-08-18 — RÚT cùng ngày (AA-1, vòng phản biện của vòng
-> sửa):** *"14. Hai hợp đồng đã xuất bản nói ngược nhau về hình dạng một hàng `Samples`, MỘT trong hai
-> được cưỡng chế lúc chạy, và bộ phát của chính sản phẩm này vi phạm nó"*. *"Vi phạm"* chỉ đúng **nếu**
-> quy ước B đã là luật — mà đó chính là câu mục này tồn tại để hỏi. Câu thay thế là câu trung tính
-> vốn đã có sẵn trong ô bảng phán quyết. Cùng lý do, hai cụm chữ nữa trong mục này được rút, ở §"hai
-> quy ước" và ở cuối §"hợp nhất" bên dưới.
-
-**Mục này sinh ra từ bản thi hành của mục 4, đúng như mục 8 sinh ra từ mục 1, mục 10 từ mục 5, và
-mục 13 từ mục 11.** Nó được mở bởi **vòng phản biện 1 của AA-1 (2026-08-18)**, và nó là **điều kiện
-"dừng và báo" mà brief của mục 4 đã đặt ra, xảy ra thật** — chỉ không trên trục brief dự đoán:
-không phải **bộ sinh chống bộ sinh**, mà là **bộ sinh chống bộ TIÊU THỤ**.
-
-🔴 **KHÔNG AI ĐƯỢC QUYẾT ĐIỀU NÀY NGOÀI CHỦ SỞ HỮU, và lý do giống hệt mục 3 và mục 4:** nó đổi
-**hình dạng dữ liệu trên dây** mà **người ngoài tổ chức này đang dựa vào**. Uỷ quyền phủ được *"làm
-hay không làm"*, **không phủ được sự đồng ý của bên thứ ba**.
-
-### Đo được: hai quy ước, và chỉ một cái có bộ cưỡng chế
-
-**Quy ước A — của sản phẩm này** (`tools/machine-simulator`), suy từ hai bộ sinh:
-`RateHz` được đặt ⇒ hàng **một** phần tử, trục thời gian ngầm định; `RateHz` null ⇒ hàng **hai**
-phần tử `[x, y]`. `WelderSim.BuildCurrentWaveform` và `ScrewdriveSim.BuildTorqueAngleWaveform` là
-toàn bộ dân số, và cả hai theo nó. **Không gì cưỡng chế nó.**
-
-**Quy ước B — của nền tảng**, và nó **được cưỡng chế lúc chạy**:
-
-| chỗ | nó nói gì |
-|---|---|
-| `server/routers/machineApiRouters.ts` → `processWaveformSchema` — **bộ validate RUNTIME của route ingest** | `samples: z.array(z.tuple([z.number(), z.number()])).max(100_000)` — **mỗi hàng đúng HAI số**; `rateHz: z.number().positive().optional()` là một trường **độc lập**. Chú thích ngay trên: *"[t, value] pairs."* |
-| `server/contracts/machineDataContract.ts` → `processWaveformV1` | cùng `z.tuple` hai số; *"Chuỗi mẫu [ [t, v], … ] — cặp (thời điểm, giá trị). Cap khớp runtime."* |
-| `docs/ECOSYSTEM/57_ST4I_STANDARD_PROCESS_FEED_SPEC.md` §3.3 — **đặc tả dây đã xuất bản** | `samples` **bắt buộc**: *"Mảng cặp `[t, v]` — `t` = trục hoành (**thời gian giây / góc °**…), `v` = giá trị."* `rateHz`: *"Tần số lấy mẫu (Hz) **nếu đều nhau**"* — một **mô tả**, không phải bộ phân biệt. `unit`: *"Đơn vị của trục giá trị (`v`)"* |
-| cùng file §8.1 — **ví dụ chuẩn tắc** | `torque_vs_angle`, `rateHz: 500`, `samples: [[0,0.02],[90,0.15],…,[412,0.82]]` — và `412` là chính metric `angle` của payload ấy, tức **trục hoành là GÓC trong khi `rateHz` được đặt** |
-| `server/api/v1/openapi.ts` | `samples: array of array of number` — **không ràng buộc độ dài hàng** — 🔴 **hàng này nêu SAI artifact; xem §"chỗ lệch THỨ TƯ" bên dưới, RÚT 2026-08-18 (AB-1)** |
-| `client/src/components/apiDocs/AutomationProcessFeedSection.tsx` | trang API-docs công khai: `{ name, unit?, rateHz?, samples:[[t,v]] }` |
-| `server/contracts/machineDataContract.test.ts` | fixture: `rateHz: 1000` **kèm** hàng cặp |
-| `scripts/sim/screwdriver-emitter.mjs` | bộ phát chạy được: `rateHz: WAVE_RATE_HZ` **kèm** hàng cặp |
-| `docs/ECOSYSTEM/62_…_DESIGN_2026-07-18.md` §6 | `waveforms[]{name,unit,rateHz,samples[[t,v]]}` — 🔴 **chính tài liệu mà `WelderSim` tự trích trong doc comment lớp của nó** |
-
-**Chúng bất đồng ở đúng một chỗ, và chỗ ấy là nơi hai quy ước cho KẾT QUẢ KHÁC NHAU:** dưới quy ước
-B, `ScrewdriveSim` **hợp lệ** (nhờ `rateHz` là optional), còn `WelderSim` **không**.
-
-> 📎 **Câu này đọc *"và chỗ ấy là **nơi sản phẩm này đứng sai**"* cho tới 2026-08-18, RÚT cùng ngày
-> (AA-1, vòng phản biện của vòng sửa), giữ nguyên văn.** *"Đứng sai"* giả định B đã thắng.
-
-🔴 **VÀ QUY ƯỚC B KHÔNG ĐỒNG NHẤT VỚI CHÍNH NÓ — đọc lại bảng ngay trên trước khi quyết.** Hàng
-`server/api/v1/openapi.ts` ghi **không ràng buộc độ dài hàng**. Đó là **hợp đồng máy-đọc-được đã xuất
-bản**, thứ một bên thứ ba sinh client từ đó. Nên:
-
-- thứ **CƯỠNG CHẾ** (`z.tuple` hai số) **HẸP HƠN** thứ nền tảng **XUẤT BẢN** (OpenAPI cho phép hàng
-  một phần tử);
-- một payload hàng-một-phần-tử **hợp lệ với OpenAPI đã công bố** và **bị runtime từ chối**;
-- và `server/contracts/machineDataContract.ts` **tự đặt cho mình đúng cái luật bị vi phạm ở đây**:
-  *"Contract này PHẢI khớp runtime để APIdocs không mời gọi payload bị từ chối (doc 61 §4.8)."*
-
-**Nên phép đo không nói "một bên sai".** Nó nói: **một sản phẩm và một nền tảng bất đồng, và nền
-tảng bất đồng với chính nó ở BA mức** — runtime chặt, OpenAPI lỏng, đặc tả chặt. Cái phải quyết vì
-thế **rộng hơn** *"đổi `WelderSim` hay đổi validator"*.
-
-### Ở đâu: mắt xích đầy đủ, nêu tên từng cái
-
-`WelderSim.BuildCurrentWaveform` (hàng một phần tử) → `Normalizer` (`payload["samples"] = w.Samples`,
-chép nguyên) → `LiveTransport.SendProcessResultAsync` → `St4iDeviceClient.SubmitProcessResultAsync`
-→ `POST /api/v1/ingest/process-result` → `processWaveformSchema`. Một `z.tuple` hai phần tử **từ
-chối** một mảng một phần tử.
-
-**Và `WELD-01` (`machineType: "WELDER"`) NẰM TRONG roster được ship** (`fleet.json`), nên đường này
-**tồn tại trong bản cài mặc định**, không phải một nhánh giả định.
-
-### ✅ ĐÃ ĐO 2026-08-18 (AB-1) — chỗ-thiếu bên dưới nay có một phép đo, và phép đo có HAI nửa
-
-> 📎 **Mục con này mang tiêu đề *"🔴 Cái CHƯA ĐO, nêu tên chứ không lấp — và nó quyết định hậu quả
-> là SỐNG hay chỉ là LÝ THUYẾT"* cho tới 2026-08-18, và thân của nó hỏi, NGUYÊN VĂN:** *"**Đã có sóng
-> `weld_current` nào thực sự được POST lên một máy chủ sống bao giờ chưa?** Không ai đo điều đó —
-> không phản biện, không AA-1. Không có bằng chứng runtime trong cây. Hôm nay đây là mâu thuẫn giữa
-> **hai hợp đồng đã xuất bản trong một repository**, và nó **tiềm ẩn cho tới lần `LiveTransport`
-> chạy thật đầu tiên với một máy WELDER**. Đo nó cần một log ingest thật hoặc một lần chạy thật;
-> **cả hai đều nằm ngoài vòng này**, và một phỏng đoán đặt ở đây sẽ **đọc như một phép đo**."* Cùng
-> với nó, đoạn *"Cái **đã** đo được, để không ai đọc câu trên rộng hơn nó: máy WELDER **có** trong
-> roster ship; đường mã **có** thật và không có nhánh nào chặn; và transport thật (`LiveTransport`)
-> là một trong ba chế độ (`Live`/`Demo`/`Auto`) mà `TransportCoordinator` chọn được."* — **RÚT
-> 2026-08-18 (AB-1)**, và lý do là **phép đo đã chạy**, không phải câu ấy từng sai: nó mô tả đúng
-> trạng thái hồ sơ cho tới đúng lúc ấy. Cụm *"trong một repository"* là chỗ **duy nhất** trong đoạn
-> bị rút vì **sai**, không vì cũ — xem §"Nguồn của luật" bên dưới.
->
-> 📎 **KIỂU BẢO TỒN CỦA AB-1, nêu một lần cho toàn bộ phần AB-1 viết:** đúng **MỘT** kiểu, và là
-> kiểu mục này đang dùng — **TRÍCH NGUYÊN VĂN RỒI RÚT** trong khối 📎, kèm ngày và người rút, lý do
-> đứng ngay cạnh. **AB-1 không dùng dấu gạch ngang ở bất kỳ chỗ nào.** Các `~~…~~` sẵn có trong file
-> là của T-1, U-1, V-1 và Y-1; AB-1 **không đụng** tới chúng.
-
-**Ngày đo:** **2026-08-18**, trên SYNAPSE **đang chạy** tại `http://localhost:3000` — **không** trên
-một cây mã, mà trên **cổng ingest thật**.
-
-🔴 **AI đo cái gì — ba hạng nguồn, phân biệt ngay ở đây chứ không ở một ledger bên ngoài.** Lý do
-phân biệt nằm ở **đoạn mở đầu của chính file này**: các ledger dưới `.superpowers/sdd/` **bị
-gitignore**, nên một lời cải chính cất ở đó **không bao giờ vào repo và chủ sở hữu không có đường dẫn
-nào để mở**. Một khẳng định mà lời cải chính của nó nằm ngoài tầm với của người đọc là **đúng khuyết
-tật file này lập ra để chấm dứt**, nên nó được viết vào đây:
-
-| hạng | gồm những gì | ai đo |
-|---|---|---|
-| **AB-1 tự đo** | tài liệu OpenAPI **đang phục vụ** (một `GET` thuần đọc); `processWaveformSchema`; `processWaveformV1`; ba nguồn của cờ mặc định tắt; số dòng ở các cây; `git sparse-checkout list` | **AB-1**, 2026-08-18 |
-| **NHẬN LẠI, không tự chạy** | **cặp đối chứng A/B** (payload, mã trạng thái, chuỗi lỗi, đường dẫn trường), **máy id 250**, khoá đã cấp, tiền tố **`mach_`** | **điều phối viên** đo; AB-1 **ghi lại, không chạy lại** |
-| **chưa ai kiểm** | client sinh từ tài liệu đang phục vụ sẽ xử lý `items` dạng mảng ra sao; CSDL có thật sự trống bản ghi process-result hay không | **không ai** |
-
-**Vì sao AB-1 không chạy lại cặp A/B, nêu ra để người sau khỏi đọc đó là cẩu thả:** chạy lại là
-**ghi thêm vào SYNAPSE của chủ sở hữu** — thêm máy, thêm khoá, và có thể thêm bản ghi — trong một
-nhiệm vụ được giao là **ghi hồ sơ**. Cái giá ấy cao hơn cái được. Nên hai dòng bảng dưới đây là
-**bằng chứng động duy nhất của cả mục, và là hạng NHẬN LẠI**; mọi mảnh tĩnh quanh chúng thì AB-1 tự
-đọc, và chúng **nhất quán** với hai kết quả ấy.
-
-> 📎 **BA CÂU ĐÃ CÔNG BỐ Ở LẦN GHI ĐẦU CỦA MỤC NÀY (commit `f4b810b0`, 2026-08-18) NAY BỊ RÚT — giữ
-> nguyên văn, cùng một kiểu bảo tồn, RÚT cùng ngày (AB-1, vòng sửa sau phản biện).** Cả ba là **một**
-> khuyết tật: **một số liệu NHẬN LẠI được ghi như một số liệu TỰ ĐO**, và lời cải chính bị đặt ở một
-> file `.superpowers/sdd/` **bị gitignore** — tức ngoài tầm với của chủ sở hữu. Liệt kê:
->
-> 1. *"**Người đo, ngày đo, đo trên cái gì:** nhiệm vụ **AB-1**, **2026-08-18**, trên SYNAPSE **đang
->    chạy** tại `http://localhost:3000`…"* — gán **AB-1** làm người đo cho **cả** cặp A/B, thứ AB-1
->    **không chạy**. Thay bằng bảng ba hạng nguồn ngay trên.
-> 2. Ô `kết quả` của **hàng B** trong bảng đối chứng: *"✅ **qua sạch lược đồ**, không một lỗi waveform
->    nào"*, dưới một cột chỉ tên là *"kết quả"*. Tách rời khỏi ngữ cảnh, nó đọc như *"B chạy được"*,
->    trong khi **B cũng bị từ chối**. Cột nay nói rõ nó chỉ ghi **bước lược đồ**, và hàng B mang thêm
->    chỗ nó thật sự dừng.
-> 3. *"Hai POST thử đều BỊ TỪ CHỐI, nên **KHÔNG một bản ghi process-result nào được tạo**."* cùng vế
->    lặp lại của nó ở §"Bằng chứng động" — một **phủ định phổ quát về CSDL đang sống của chủ sở hữu**,
->    viết như một phép đo trong khi **không ai truy vấn CSDL**. Nay nêu đúng hạng: một **suy luận**,
->    kèm cơ sở và kèm cách kiểm dứt điểm.
-
-**Chuẩn bị, ghi lại để chủ sở hữu GỠ ĐƯỢC và để phép đo LẶP LẠI ĐƯỢC:** một máy thử được đăng ký và
-**chủ sở hữu duyệt** trên nền tảng đang chạy — id **250**, `serialNumber` `ST4I-TRIAL-WELD-20260818`,
-code `SN-ST4I-TRIAL-WELD-20260818`, type `WELDER`, gắn station `SIM-L1-SPI-ST` / line `SIM-L1`; khoá
-máy cấp qua `claim`. 🔴 **Hai POST thử đều BỊ TỪ CHỐI, và cả hai bị chặn TRƯỚC bước nạp** — nhánh A
-ở bước lược đồ, nhánh B ở bước cờ.
-
-🔴 **Từ đó suy ra "không bản ghi process-result nào được tạo" — và đây là một SUY LUẬN, không phải
-một phép đo, nên nó được nêu đúng hạng của nó.** **Không ai truy vấn CSDL**: không đếm, không
-`SELECT`, không đọc log ingest. Cơ sở của suy luận là thứ tự thi hành đo được ở dưới (cả hai nhánh
-dừng trước **nạp**) cộng ba nguồn tài liệu nói nhánh cờ trả `PRECONDITION_FAILED`. **Cái duy nhất
-kiểm được nó dứt điểm là một truy vấn trên CSDL của chủ sở hữu, và nhiệm vụ này không có quyền ấy.**
-Nên khi gỡ, **hãy kiểm bằng một truy vấn** thay vì tin dòng này.
-
-**Dấu vết còn lại trên SYNAPSE, liệt kê hết ở đây:** bản ghi **máy id 250** (đã duyệt), và **khoá
-máy** cấp cho nó. Phép liệt kê ấy là nguồn — và nó cũng thuộc hạng **NHẬN LẠI**, không phải thứ AB-1
-tự đọc trên nền tảng.
-
-**Cặp đối chứng — khác nhau ĐÚNG MỘT BIẾN, và biến ấy là hình dạng hàng:**
-
-🔴 **CẢ HAI NHÁNH TRẢ HTTP 400 — QUAN SÁT ĐƯỢC TRÊN CẢ HAI, không suy ra ở nhánh nào.** Mã trạng
-thái **không** phải thứ phân biệt hai nhánh; **không POST nào tạo ra thứ gì**. Thứ phân biệt chúng là
-**CHỖ CHÚNG DỪNG** — và chính chỗ chênh ấy là bằng chứng về **thứ tự thi hành**, chứ không phải con
-số 400.
-
-| nhánh | payload | mã trạng thái | **chỗ dừng** — cái thật sự phân biệt |
-|---|---|---|---|
-| **A** — `weld_current`, `rateHz: 1000`, hàng **một** phần tử `[176.5]` — **đúng cái `WelderSim` phát** | `POST /api/v1/ingest/process-result` | 🔴 **HTTP 400** | **chết ở KIỂM LƯỢC ĐỒ** — **ba** lỗi tại `waveforms.0.samples.0.1`, `.1.1`, `.2.1`, *"Invalid input: expected number, received undefined"*; **chưa bao giờ chạm tới cờ** |
-| **B** — `torque_vs_angle`, **không** `rateHz`, hàng **hai** phần tử `[angle, torque]` — **đúng cái `ScrewdriveSim` phát** | cùng endpoint, cùng khoá | 🔴 **HTTP 400** | **QUA lược đồ** (không một lỗi waveform nào) rồi **chết ở CỜ TÍNH NĂNG** — `{"ok":false,"error":{"code":"ingest_failed","message":"Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED)."}}` |
-
-**Vì sao bảng này mạnh hơn khi hai mã bằng nhau:** hai payload khác nhau **đúng một biến**, nhận
-**cùng một mã**, mà **chết ở hai chỗ khác nhau**. Một mã trạng thái chung không phân biệt được gì; hai
-chỗ dừng khác nhau thì phân biệt được **thứ tự các bước**. Nếu hàng B đọc như *"B chạy được"* thì bảng
-mất đúng cái nó tồn tại để nói.
-
-> 📎 **Khối này đọc, cho tới 2026-08-18 (đã công bố ở commit `e9a0e3f5`), NGUYÊN VĂN:** *"📎 **Một
-> biên trên hàng B, nêu vì nó là chỗ dễ bịa ra một con số:** cái được đo và trao lại cho nhánh B là
-> **thân phản hồi** (`ingest_failed`), **không phải dòng trạng thái**. Ba nguồn mà mục này trích cho
-> cờ mặc định tắt đều ánh xạ trạng thái ấy sang **HTTP 400** (*"PRECONDITION_FAILED ⇒ REST trả 400
-> `ingest_failed`"*), nên **400 là ánh xạ đã ghi trong tài liệu, không phải một quan sát riêng của
-> phép đo này**. Điều **đã đo** ở hàng B là: **bị từ chối**, và **bị từ chối ở bước cờ chứ không ở
-> bước lược đồ**."* — **RÚT 2026-08-18 (AB-1, vòng sửa thứ hai), giữ nguyên văn.**
->
-> **Vì sao rút:** khối ấy đúng **về những gì AB-1 được trao**, và sai **về những gì đã được đo**. Một
-> **dòng trạng thái quan sát được vẫn tồn tại suốt thời gian đó** — trong file đã lưu của lần chạy
-> sạch, `item14-armA2.json` và `item14-armB2.json`, **cả hai kết thúc bằng `[HTTP 400]`**. Nên **400 ở
-> hàng B là một QUAN SÁT, không phải một ánh xạ**, và khối cũ hạ nó xuống sai hạng.
->
-> 🔴 **VÀ ĐÂY LÀ MỘT HÌNH DẠNG THẤT BẠI CHUỖI-GIÁM-HỘ KHÁC VỚI HÌNH DẠNG ĐÃ GHI Ở §"biên ba tầng" —
-> nó đứng cạnh, không thay thế.** Hình dạng kia là *"một số liệu nhận lại được ghi như số liệu tự
-> đo"*. Hình dạng này là: **phép đo CÓ TỒN TẠI, ở phía điều phối viên, suốt thời gian ấy, và KHÔNG
-> ĐƯỢC CHUYỂN GIAO** — brief chỉ trao *"qua sạch lược đồ"* cho nhánh B, rồi vòng sửa lại trình bày
-> `400` như một **suy luận** (*"nhánh cờ trả `PRECONDITION_FAILED` ⇒ B cũng là 400"*) trong khi bản
-> gốc đang nằm trong tay người viết câu ấy. **Người ghi hồ sơ không thể phát hiện loại thiếu này từ
-> bên trong** — không dấu vết nào của nó xuất hiện trong thứ họ được trao. Cái chặn được nó là **luật
-> câu chữ**: từ chối viết một con số mình không có nguồn, khiến chỗ thiếu **phải lộ ra** ở phía giữ
-> nguồn. Ghi lại vì lần sau chỗ thiếu có thể không lộ ra.
-
-**Hạng nguồn của hai dòng này KHÔNG đổi: vẫn là NHẬN LẠI, AB-1 không tự chạy.** Cái đổi là chúng nay
-mang **dòng trạng thái thật** thay cho một ánh xạ, và **nêu tên artefact** giữ nó: `item14-armA2.json`,
-`item14-armB2.json`.
-
-**Thứ tự thi hành, suy ra từ chính chỗ chênh ấy:** **xác thực → kiểm lược đồ → cờ tính năng → nạp.**
-Nhánh A **chết ở bước lược đồ và chưa bao giờ chạm tới cờ**; nhánh B qua lược đồ rồi mới gặp cờ. Hai
-nhánh **dừng ở hai chỗ khác nhau**, và chính chỗ chúng dừng là cái làm thứ tự này **đo được** thay vì
-suy đoán được.
-
-### 🔴 Hậu quả nay ĐANG SỐNG — và cái làm nó DỊU ĐI đứng ngay cạnh; nêu một nửa là nói sai
-
-**Nửa làm nó nặng lên:** hậu quả **không còn là lý thuyết**. Một cổng ingest **đang chạy** từ chối
-**đúng hình dạng `WelderSim` phát**, và từ chối ở **bước lược đồ** — trước cả cờ tính năng. Không cần
-một lần `LiveTransport` chạy thật nữa để biết điều gì sẽ xảy ra: nó **vừa xảy ra**, có mã lỗi và có
-đường dẫn trường.
-
-**Nửa làm nó dịu đi, và nửa này cũng là một phép đo, không phải một lời an ủi:** cờ
-**`PROCESS_RESULT_INGEST_ENABLED` mặc định TẮT**, nên **không một bản triển khai nào nạp
-process-result trừ khi có người bật nó**. Nhánh B — nhánh **qua** được lược đồ — dừng đúng ở đó:
-`{"code":"ingest_failed","message":"Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED)."}`
-Đây là **quyết định thiết kế của nền tảng** (endpoint ship ở trạng thái tắt), **không** phải cấu hình
-sai của một bản triển khai. **Phép liệt kê là nguồn, và con số đứng SAU nó, không đứng trước** — nó
-được nêu ở những chỗ sau, mỗi chỗ ghim bằng một sha bất biến:
-
-- `scripts/sim/screwdriver-emitter.mjs`, **dòng 18** tại `avi-aoi-sim@84836ad6` và tại
-  `avi-aoi-management@f98f6146`/`@e9e1ea4c` — *"cờ master (mặc định OFF ⇒ endpoint ship dark…"*, vắt
-  sang dòng 19;
-- `examples/device-client/README.md`, **dòng 244** tại `avi-aoi-sim@84836ad6` — *"cổng
-  `process-result` mặc định **OFF** (ships dark…)"*;
-- `.env.example` — *"false (mặc định) = endpoint trả PRECONDITION_FAILED (ship-dark…)"*; **cố ý
-  không gắn số dòng**, vì số ấy khác nhau giữa hai cây và **đã dịch một lần** trong ngày (xem
-  §"Nguồn của luật").
-
-**Đếm sau khi liệt kê: ba chỗ.**
-
-🔴 **Hai nửa phải đọc CÙNG NHAU, và chúng không triệt tiêu nhau.** Nửa sau nói **hôm nay chưa ai mất
-dữ liệu**; nó **không** nói hình dạng đã hợp lệ. Ngày ai đó bật cờ — và cờ tồn tại để được bật — nửa
-trước là cái còn lại. Ngược lại, một hồ sơ chỉ nêu nửa trước sẽ **định giá quá cao mức khẩn cấp** của
-một quyết định mà chủ sở hữu đang cân **cùng với** giá của việc đổi một bề mặt đã xuất bản.
-
-### Ba chỗ lệch tài liệu ↔ thực tế — HAI chỗ đo được không cần khoá, chỗ thứ ba đòi một khoá (2026-08-18)
-
-> 📎 **Tiêu đề này đọc *"Ba chỗ lệch tài liệu ↔ thực tế, đo được mà không cần khoá nào (AB-1,
-> 2026-08-18)"* cho tới 2026-08-18, RÚT cùng ngày (AB-1, vòng sửa), giữ nguyên văn.** Nó **tự phủ
-> định mục 3 nằm dưới nó**: nửa sau của chỗ lệch 3 — *"khoá thật sự được cấp mang `mach_`"* — **chỉ
-> biết được bằng cách CẤP một khoá**, tức bước `claim`. Và nó gắn tên **AB-1** cho một tập gồm cả số
-> liệu hạng **NHẬN LẠI** (xem bảng ba hạng nguồn ở §"ĐÃ ĐO").
-
-Chúng là **đầu vào của quyết định**, không phải phần phụ lục: chúng cho thấy **nền tảng không tự đồng
-ý với chính nó**, nên câu phải quyết **rộng hơn** *"sửa `WelderSim` hay sửa validator"*.
-
-1. **Độ dài hàng — thứ được XUẤT BẢN lỏng hơn thứ được CƯỠNG CHẾ.** OpenAPI **đang phục vụ**
-   (`GET /api/v1/openapi.json`, đọc 2026-08-18) khai
-   `components.schemas.ProcessResultIngest.properties.waveforms.items.properties.samples` là một mảng
-   có `items` **theo vị trí** — `[{number},{number}]` — **nhưng không `minItems`, không `maxItems`**.
-   Không ràng buộc độ dài ⇒ một hàng **một** phần tử **thoả** hợp đồng máy-đọc-được đã xuất bản, trong
-   khi `z.tuple` lúc chạy **từ chối** nó. Cùng tài liệu ấy tự khai `openapi: "3.0.3"`, và dạng mảng của
-   `items` là dạng **OpenAPI 3.0.x không định nghĩa** (3.0 đòi `items` là **một** Schema Object).
-   **Một client sinh từ tài liệu này sẽ làm gì với chỗ đó — CHƯA ĐO**, và nó không được đoán ở đây.
-2. **Khoá đi ở đâu.** OpenAPI đang phục vụ khai `apiKey` là **một thuộc tính trong body** của
-   `ProcessResultIngest` (`{"type":"string"}`); **server trả lời** rằng khoá phải đi ở header:
-   *"Provide Authorization: Bearer &lt;key&gt; or X-API-Key."*
-3. **Tiền tố khoá — và hai nửa của nó KHÔNG cùng một hạng nguồn.** *Nửa đầu, **AB-1 tự đo, không cần
-   khoá*:* tài liệu và OpenAPI gọi khoá máy là **`mk_`**; quét toàn văn tài liệu đang phục vụ (đã
-   tải về từ `GET /api/v1/openapi.json`, đếm chuỗi con trên chính file ấy) cho **`mk_` 5 lần** và
-   **`mach_` 0 lần**. Phạm vi của phép quét ấy là **đúng một tài liệu**, và nó không phát biểu gì về
-   phần còn lại của nền tảng. *Nửa sau, **hạng NHẬN LẠI, và đòi một khoá*:* khoá **thật sự được cấp**
-   cho máy 250 mang tiền tố **`mach_`** — biết được **chỉ qua bước `claim`**, tức qua việc cấp thêm
-   một khoá, nên **AB-1 không kiểm lại nửa này** và không ai khác kiểm nó mà không cấp thêm.
-
-🔴 **Và một chỗ lệch THỨ TƯ, tìm thấy khi đối chiếu lại nguồn của bảng §"hai quy ước" — nó sửa một
-hàng của chính bảng ấy.** Hàng `server/api/v1/openapi.ts` ghi *"`samples: array of array of number` —
-**không ràng buộc độ dài hàng**"*. Đo lại: file ấy **không** xuất bản literal đó. Nó khai
-`processResultIngestSchema` là bản **SINH RA từ hợp đồng Zod** `machineProcessResultContractV1`
-(dòng **182–183**, qua `machineProcessContractJsonSchema(...)`), còn literal
-`items: { type: "array", items: { type: "number" } }` ở **dòng 147** chỉ là bản **DỰ PHÒNG**
-(`processResultIngestFallback`), dùng khi bản sinh trả null. Thứ nền tảng **thật sự phục vụ** là bản
-sinh — cặp theo vị trí, không ràng buộc độ dài (mục **1** ngay trên).
-
-**Chỗ điều này KHÔNG lật kết luận là chỗ đáng ghi nhất:** dưới **cả hai** cách đọc, một hàng **một**
-phần tử **thoả** thứ được xuất bản — bản dự phòng vì hàng là mảng số **độ dài bất kỳ**, bản sinh vì
-**không có `minItems`**. Nên *"xuất bản lỏng hơn cưỡng chế"* **đứng vững**; cái sai là **hàng bảng nêu
-sai artifact**, và nó được **sửa tại chỗ, không xoá**.
-
-> 📎 **Hàng bảng ấy giữ nguyên văn tại chỗ của nó** — *"`samples: array of array of number` — **không
-> ràng buộc độ dài hàng**"* — **RÚT 2026-08-18 (AB-1)** với tư cách **mô tả thứ nền tảng xuất bản**.
-> Nó **vẫn đúng** với tư cách mô tả **bản dự phòng** trong file ấy, nên phép rút chỉ chạm vào **vai
-> trò** của câu, không chạm vào nội dung nó.
-
-### Nguồn của luật: nêu ĐÚNG cây mã, và nêu cái mà dụng cụ trong repo này KHÔNG thấy
-
-🔴 **Các đường `server/…`, `client/src/…`, `docs/ECOSYSTEM/…` và `scripts/sim/…` trong bảng trên
-không được đọc như đường trong repo này.** Cây mã của **nền tảng đang chạy** nằm ở một repo khác:
-**`D:\SOURCES\avi-aoi-management`** (nhánh `feat/hmi-dep`, đối chiếu tại `f98f6146` rồi kiểm lại tại
-`e9e1ea4c`). Hai chỗ mang luật được đối chiếu lại ở đó 2026-08-18 và **khớp từng ký tự** với cái bảng
-trên ghi, **trỏ bằng tên**: `server/routers/machineApiRouters.ts` → `processWaveformSchema`; và
-`server/contracts/machineDataContract.ts` → `processWaveformV1` (bắt đầu ở **dòng 193** tại **cả ba**
-sha `f98f6146`, `e9e1ea4c` và `avi-aoi-sim@84836ad6` — con số này **chưa** dịch, khác với khối kia).
-
-🔴 **Trỏ bằng TÊN chứ không bằng số dòng — và lý do là một phép đo, đo được HAI lần, lần thứ hai bác
-chính cách lần thứ nhất được viết ra.** Khối `processWaveformSchema` **giống hệt nhau từng ký tự** ở
-các cây, nhưng **số dòng của nó thì không**, và **nó dịch trong chưa đầy một ngày**:
-
-| cây, ghim bằng SHA BẤT BIẾN | dòng của `processWaveformSchema` |
-|---|---|
-| `avi-aoi-sim` @ `84836ad6` | **2610** |
-| `avi-aoi-management` @ `f98f6146` | **2624** |
-| `avi-aoi-management` @ `54c4cf46` và @ `e9e1ea4c` | **2650** |
-
-Cùng loài, cùng ngày: cờ ingest nằm ở `.env.example` dòng **956** trong `avi-aoi-sim` @ `84836ad6`,
-và ở `avi-aoi-management` nó **dịch từ 1100 sang 1121** trong cùng khoảng ấy. Cái đẩy khối đi được
-nêu tên: commit **`2b732b99`** chạm vào `server/routers/machineApiRouters.ts`.
-
-> 📎 **Đoạn này đọc, cho tới 2026-08-18:** *"**2610** trong cây `avi-aoi-sim` tại `HEAD`, **2624** tại
-> `HEAD` của `avi-aoi-management`, **2650** trong **cây làm việc đang bẩn** của `avi-aoi-management`.
-> Một trích dẫn theo số dòng chỉ có nghĩa khi **nêu kèm cây**, và số **2650 không lấy lại được từ một
-> commit nào**."* — **RÚT cùng ngày (AB-1, vòng sửa), giữ nguyên văn.** Ba chỗ sai, và cả ba là **một**
-> lỗi: **`HEAD` là một con trỏ DI ĐỘNG**, và ba con số được neo vào nó trong một repo **đang được
-> commit**. (i) *"2650 không lấy lại được từ một commit nào"* là một **phủ định phổ quát ở thì hiện
-> tại** — nó chết khi nội dung cây bẩn **được commit**, và **2650 nay là số dòng tại một cây SẠCH**.
-> (ii) *"2624 tại `HEAD`"* — `HEAD` đã đi tiếp **hai lần** trong cùng ngày. (iii) *"nêu kèm cây"* là
-> **chưa đủ**: phải nêu kèm **COMMIT**. 🔴 **Và chỗ đau là chỗ nó xảy ra: đây là đoạn DẠY rằng đừng
-> trỏ bằng số dòng.** Nó vấp đúng luật nó phát biểu, nên nó ở lại đây làm nhân chứng.
-
-🔴 **Hệ quả, và nó áp cho cả BẰNG CHỨNG chứ không chỉ cho LUẬT:** mọi số dòng trong mục này chỉ đọc
-được **kèm một SHA bất biến**. Chỗ nào một cái tên tra được thì **cái tên là con trỏ**, không phải con
-số: `processWaveformSchema`, `processWaveformV1`, `processResultIngestFallback`,
-`machineProcessResultContractV1`, `machineProcessContractJsonSchema`. **Không ghim vào `HEAD` ở bất kỳ
-đâu** — một lần nữa là một phép đo về thứ **còn đang chuyển động, đưa ra như thể nó đã dừng**.
-
-🔴 **BIÊN IM LẶNG của mọi dụng cụ chạy trong repo này, và nó là lý do câu trên phải nói ra cách quét:**
-cây làm việc của `avi-aoi-sim` là **SPARSE CHECKOUT**. `git sparse-checkout list` trả về **đúng hai**
-đường — `tools/machine-simulator` và `examples/device-client`. **Mọi thứ ngoài hai đường ấy không nằm
-trên đĩa**, nên **mọi `grep -r`, `ls`, hay phép quét theo file trong repo này bỏ sót chúng mà không
-báo một lỗi nào**. Một **phủ định phổ quát** đo bằng những dụng cụ ấy chỉ phủ định **bên trong hai
-đường trên**; ngoài hai đường ấy nó **không phát biểu gì**.
-
-> 📎 **Câu này nêu ví dụ *"**`server/` và `web/` không nằm trên đĩa**"* cho tới 2026-08-18, RÚT cùng
-> ngày (AB-1, vòng sửa), giữ nguyên văn.** **`web/` không tồn tại trong repo này** — `git ls-tree -r`
-> cho **0** đường bắt đầu bằng `web/`. Thư mục anh em thật là **`client/`** (**711** file trong cây,
-> vắng trên đĩa), và `client/` **chính là nơi chứa một artifact bảng §"hai quy ước" đang trích**:
-> `client/src/components/apiDocs/AutomationProcessFeedSection.tsx`. Cùng loài và cũng vắng trên đĩa:
-> `docs/`, `scripts/`, `contracts/`, `apidocs/` — **tất cả đều mang artifact mục này trích**. 🔴 **Một
-> cái trần nêu quá nhỏ còn tệ hơn không nêu trần**, và ví dụ cũ nêu hai thư mục trong khi tập bị giấu
-> là *"mọi thứ trừ hai đường sparse"*.
-
-**Nhưng chúng KHÔNG vắng mặt khỏi repo này, và đây là chỗ dễ nói quá tay:**
-`server/routers/machineApiRouters.ts`, `server/contracts/machineDataContract.ts`,
-`docs/ECOSYSTEM/57_ST4I_STANDARD_PROCESS_FEED_SPEC.md` và `scripts/sim/screwdriver-emitter.mjs`
-**đều có trong cây Git của `avi-aoi-sim`** — đọc được bằng `git show 84836ad6:` — chỉ **không được
-materialise ra đĩa**. Nên hồ sơ trước **không đọc một file không tồn tại**; nó đọc **một bản sao nằm
-trong repo khác với repo build ra máy chủ đang chạy**. Hai bản của `machineApiRouters.ts` **khác nhau
-xét toàn file** và **trùng khít ở đúng khối mang luật** — đó là lý do kết luận cũ **đứng vững** *và*
-nguồn **vẫn phải sửa**.
-
-### 🔴 Biên của chuỗi giám hộ trong chính vòng này — MỘT LOÀI, BA TẦNG, để lại cho người sau
-
-Mục này được viết qua ba tay, và **cả ba đều nhận lại ít nhất một con số thay vì tự đo nó**. Liệt kê
-trước, không đếm trước:
-
-- **AB-1** (người ghi mục này) nhận **cặp đối chứng A/B**, máy 250 và tiền tố `mach_` từ **điều phối
-  viên**, và **không chạy lại** — lý do và cái giá nêu ở §"ĐÃ ĐO".
-- **Vòng phản biện** của chính nhiệm vụ này **không chạy cổng** `verify-suites`; nó **nhận** các con
-  số 2755 / 116 / 0-build-node từ điều phối viên, và **tự khai điều đó**, tự áp cùng một luật mà nó
-  dùng để bắt lỗi AB-1.
-- **Điều phối viên** là nguồn của cả hai, và **không phần nào của nó được đọc lại độc lập bên trong
-  vòng này**.
-
-**Đếm sau khi liệt kê: ba tầng, một loài.** Cái đáng để lại **không** phải "ai lười", mà là hình
-dạng: **miền của một dụng cụ hẹp hơn miền của câu nói dùng nó**, và khi ba người nối tiếp nhau, các
-biên ấy **chồng lên nhau chứ không triệt tiêu nhau**. Nên luật rút ra, viết ở đây vì đây là chỗ chủ
-sở hữu mở được: **một hồ sơ phải nêu hạng nguồn của từng khẳng định NGAY TẠI CHỖ**, vì mọi chỗ cất
-lời cải chính khác — báo cáo nhiệm vụ, ledger `.superpowers/sdd/` — **đều bị gitignore và không tới
-được người đọc**.
-
-🔴 **VÀ CÓ MỘT HÌNH DẠNG THỨ HAI, khác hẳn, phát hiện muộn hơn cả ba tầng trên — nó ĐỨNG CẠNH, không
-thay thế.** Hình dạng trên là *"một số liệu **nhận lại** được ghi như số liệu **tự đo**"*: chỗ thiếu
-nằm ở **nhãn**. Hình dạng thứ hai là *"một phép đo **CÓ TỒN TẠI** ở phía người giao việc, **suốt thời
-gian ấy**, và **không được chuyển giao**"*: chỗ thiếu nằm ở **dữ liệu**, và nó **không để lại dấu vết
-nào trong thứ người ghi hồ sơ được trao**. Ca cụ thể được ghi đầy đủ tại khối 📎 dưới bảng đối chứng
-A/B — dòng trạng thái `[HTTP 400]` của **cả hai** nhánh nằm trong `item14-armA2.json` và
-`item14-armB2.json` trong khi hồ sơ đang gọi con số ấy là một **ánh xạ suy ra**.
-
-**Hai hình dạng đòi hai lớp phòng vệ khác nhau, và đó là lý do chúng phải đứng cạnh nhau:** hình dạng
-thứ nhất **người ghi hồ sơ tự bắt được** — chỉ cần hỏi *"tôi có tự đọc thứ này không?"*. Hình dạng
-thứ hai **không tự bắt được từ bên trong**: không câu hỏi nào về thứ mình đang cầm phát hiện được thứ
-mình không được đưa. Cái chặn nó là **luật câu chữ**: **từ chối viết một con số mình không có nguồn**,
-kể cả khi con số ấy gần như chắc chắn đúng — vì chính lời từ chối làm chỗ thiếu **lộ ra ở phía giữ
-nguồn**. Ở vòng này nó lộ ra; **lần sau nó có thể không lộ ra**, và khi ấy hồ sơ sẽ mang một con số
-suy luận đội lốt một phép đo.
-
-### Câu *"cái sai là chú thích SDK"*: phép đo nói ngược **đối với bộ cưỡng chế lúc chạy** — và chỗ nó còn đứng được NÊU TÊN
-
-Phép đo phát biểu về **bộ validate lúc chạy**: chú thích SDK `[[t, v], …]` mô tả **đúng hình dạng
-nhánh B**, tức đúng hình dạng cổng ingest **nhận**; hình dạng `WelderSim` phát là hình dạng **bị từ
-chối**. Nên câu cũ — *"cái sai không phải hai producer, là chú thích trong SDK"* — **bị phép đo bác**,
-đọc theo bộ cưỡng chế lúc chạy.
-
-🔴 **Và phát biểu dừng ở đó, vì đi xa hơn một bước là dựng lại đúng câu vòng trước đã rút.** Cùng phép
-đo ấy, đối với **hợp đồng OpenAPI mà nền tảng tự xuất bản**, hàng một phần tử **không** nằm ngoài hợp
-đồng (§"ba chỗ lệch", mục 1). Vậy phát biểu đúng là: *"chú thích SDK khớp **bộ cưỡng chế lúc chạy**,
-và hình dạng `WelderSim` phát không khớp **bộ ấy**"* — và nó **thôi đúng** ngay khi bỏ chữ *"lúc
-chạy"* đi. Blockquote đã rút ở §"hợp nhất" bên dưới bị rút **đúng vì** lý do này, nên nó không được
-viết lại ở đây dưới vật liệu mới.
-
-**Câu cũ còn đứng ở đâu — nêu tên chứ không lấp:** trong **mục 4**, ba chỗ. *"Nên cái sai không phải
-hai producer — là chú thích trong SDK."* và *"nêu tên chú thích SDK là **đã biết sai**"* nằm trong
-khối **PHÁN QUYẾT 2026-08-16 của chính chủ sở hữu**; *"**CHÚ THÍCH SDK ĐƯỢC NÊU TÊN LÀ ĐÃ BIẾT SAI**"*
-nằm trong ghi chép thi hành của **AA-1**. 🔴 **AB-1 không sửa một chữ nào trong mục 4.** Hai chỗ đầu
-nằm trong phán quyết của chủ sở hữu, và rút một câu ở đó là **quyết thay họ** — đúng thứ nhiệm vụ này
-bị cấm. Chúng được **nêu tên tại đây** để người đọc mục 4 tìm được phép đo bác chúng; ô mục 4 của bảng
-phán quyết đầu file đã trỏ sang mục 14 từ trước.
-
-### Hợp nhất vào đây: phát hiện §8.1 của chính AA-1, nay đọc NGƯỢC hẳn
-
-AA-1 tìm ra và gọi là *"nặng hơn nhiều"* — và nó **vẫn nặng**, nhưng theo chiều ngược lại:
-
-- `[[t, v], ...]` cũng nằm trong **SDK Python** (`examples/device-client/python/st4i_device_client.py`,
-  **hai chỗ**), không chỉ trong client C#;
-- **ba ví dụ CHẠY ĐƯỢC** — `examples/device-client/csharp/ExampleScrewdriver.cs`,
-  `examples/device-client/python/example_screwdriver.py`, `examples/device-client/README.md` — đều
-  gửi `rateHz` **kèm** hàng hai phần tử, phần tử 0 là **góc**.
-
-AA-1 kết luận chúng là **bản sao lỗi**. **Sai.** Chúng **khớp đặc tả 57 §8.1 từng con số** (kể cả
-`rateHz: 500` và `412`). Nên câu hỏi AA-1 đặt — *"ai sửa họ SDK, và bao giờ?"* — có một câu chị em,
-và mục này **ghi nó xuống chứ không trả lời**: **họ SDK không phải một bản sao lỗi cần chữa; chúng
-là ba bản cài đặt của đặc tả, và bất kỳ lối ra nào đổi đặc tả cũng phải đổi cả ba cùng nhau.**
-
-> 📎 **Chỗ này là một blockquote in đậm đứng riêng, đọc: *"Họ SDK khớp đặc tả. Cái lệch là bộ phát
-> của chúng ta."* — RÚT 2026-08-18 (AA-1, vòng phản biện của vòng sửa), giữ nguyên văn.** Nó là câu
-> **nghiêng nhất** trong cả mục: một khuyến nghị chọn B, đặt ở chỗ mắt người đọc dừng lại, trong một
-> mục mà chủ sở hữu mở ra để **quyết**. Và **chính bảng phía trên bác nó**: OpenAPI đã xuất bản của
-> nền tảng **cho phép** hàng một phần tử, nên *"cái lệch là bộ phát của chúng ta"* đúng với **bộ
-> validate lúc chạy** và **sai với hợp đồng nền tảng tự công bố**. Phát biểu đúng là phát biểu hai
-> chiều ở §"quy ước B không đồng nhất" bên trên.
-
-### Hậu quả vận hành, hai chiều, phải nói cả hai
-
-- **Nếu quy ước B là chuẩn:** `WelderSim` phải đổi sang hàng `[t, current]`. Đó là **đổi một payload
-  đã xuất bản** của sản phẩm này — cùng hạng thay đổi mà mục 3 và mục 4 dành riêng cho chủ sở hữu.
-- **Nếu quy ước A là chuẩn:** `processWaveformSchema`, `processWaveformV1`, đặc tả 57, OpenAPI, trang
-  API-docs, doc 62 §6, và **cả ba ví dụ SDK** phải đổi. Đó là **đổi một hợp đồng ingest đã xuất bản**
-  mà **mọi driver bên thứ ba đang viết theo**, và nó **nới** một validator (nới thì payload cũ vẫn
-  chạy, nhưng ba bản dịch SDK phải đi cùng nhau).
-- **Một khả năng thứ ba, nêu ra vì bảng lựa chọn của mục 12 đã bị bắt vì nêu thiếu:** cả hai cùng
-  đúng ở **hai lớp khác nhau** — kiểu trong-tiến-trình cho phép cả hai, và **chỉ đường dây** ép cặp.
-  Nếu vậy thì cái phải đổi là `Normalizer`, không phải `WelderSim`. **Chưa đo, và không quyết ở đây.**
-
-### ✅ KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1) — nó KHẢ THI, và nó KHÔNG nằm trọn ở MỘT đường dây
-
-> 📎 **Cụm *"Chưa đo, và không quyết ở đây."* ở gạch đầu dòng ngay trên giữ NGUYÊN VĂN tại chỗ của
-> nó, và nửa đầu — *"Chưa đo"* — được **RÚT 2026-08-19 (AI-1)**.** Lý do là **phép đo đã chạy**,
-> không phải câu ấy từng sai: nó mô tả đúng trạng thái hồ sơ cho tới đúng lúc ấy. Nửa sau —
-> *"và không quyết ở đây"* — **KHÔNG rút và vẫn đúng**: mục này vẫn `🔴 CHỜ ANH`, ba lựa chọn vẫn
-> chưa quyết, và phần dưới đây **không khuyến nghị lựa chọn nào**.
->
-> 📎 **KIỂU BẢO TỒN CỦA AI-1, nêu một lần cho toàn bộ phần AI-1 viết trong file này (mục 9, 13, 14):**
-> đúng **MỘT** kiểu, và là kiểu AB-1 đã lập — **TRÍCH NGUYÊN VĂN RỒI RÚT** trong khối 📎, kèm ngày và
-> người rút, lý do đứng ngay cạnh. **AI-1 không dùng dấu gạch ngang ở bất kỳ chỗ nào**, không xoá một
-> dòng nào, và không đụng tới các `~~…~~` sẵn có (của T-1, U-1, V-1, Y-1).
-
-**Người đo, ngày, cây, SHA:** **AI-1**, **2026-08-19**, cây `avi-aoi-sim` ghim tại **`f08cb379`**
-(commit bất biến, không phải `HEAD`). **Tất cả bốn phép đo dưới đây là AB-1-hạng "tự đo"** — đọc trên
-mã, không nhận lại từ ai, không chạy cổng nào, không chạm nền tảng.
-
-🔴 **MIỀN CỦA PHÉP QUÉT, nêu TRƯỚC mọi con số, vì đợt 5 vừa trả giá cho một phép LẤY MẪU mặc áo một
-phép KIỂM ĐẾM.** Cây làm việc là **sparse checkout** và `git grep` thường **chỉ thấy đĩa**. Nên mọi
-phép kiểm đếm dưới đây chạy bằng **`git grep <mẫu> f08cb379 -- .`** — quét **toàn bộ cây Git tại
-commit ấy**, kể cả `server/`, `client/`, `docs/ECOSYSTEM/`, `scripts/`, `drizzle/`, `web/` là những
-đường **không nằm trên đĩa**. **Cái phép quét ấy KHÔNG phủ:** việc chưa commit, nhánh khác, cây nền
-tảng `D:\SOURCES\avi-aoi-management`, và bất kỳ người tiêu thụ nào **ngoài repo này**.
-
-**(1) `Normalizer` CÓ đủ thông tin để dựng cặp — nêu tên chỗ, không nêu số dòng.**
-`Normalizer.NormalizeProcessResult` dựng entry waveform trong **một** phép chiếu `Select` trên
-`r.Waveforms`, ở đó `w.RateHz` và `w.Samples` **cùng trong tầm**, và câu gán là
-`["samples"] = w.Samples` — **chép nguyên tham chiếu, không sao chép**. Dựng `[i / RateHz, v]` chỉ
-cần **thêm một phép chiếu có chỉ số bên trong**, trên dữ liệu đã có trong tay. **Khả thi: CÓ.**
-
-🔴 **(1b) VÀ `t = i / RateHz` KHÔNG BẰNG cái `t` mà `WelderSim` VẼ ĐƯỜNG CONG LÊN — đây là kết quả
-bất tiện, nên nó được nêu chứ không lấp.** `WelderSim.BuildCurrentWaveform` đặt mẫu `i` tại
-`i / (WaveformPoints - 1)` của thời lượng hàn (biến `t` nội bộ của nó, chuẩn hoá 0…1 **bao gồm cả
-hai đầu**), trong khi `rateHz` nó phát ra là `WaveformPoints / thời_lượng`, tức `i / RateHz` đặt mẫu
-`i` tại `i / WaveformPoints` của thời lượng. **Hai cái chỉ trùng ở `i = 0`.** Với
-`WaveformPoints = 24`, trục thời gian dựng lại **co lại 23/24 ≈ 4,17 %**; ở mẫu cuối chênh **đúng một
-chu kỳ lấy mẫu** (≈ 5 ms trên một mối hàn 120 ms). **Không cái nào trong hai cái này là "sai" cho tới
-khi có người quyết `rateHz` NGHĨA LÀ GÌ** — và assertion đang giữ quan hệ ấy được **nêu tên**:
-`WaveformSeriesRowShapeContractTests.TheTwoBuiltInProducers_SitOnOppositeSidesOfTheRateHzSplit_AndElementZeroIsAnAngleNotATime`
-khẳng định `Samples.Count / RateHz` **bằng** `weld_time` giây, tức quy ước *"N mẫu chiếm N chu kỳ"* —
-tự nhất quán, và **khác** với quy ước bộ sinh dùng để vẽ. **AI-1 không sửa một dòng nào của cả hai.**
-
-**BÁN KÍNH của chỗ lệch ấy, nêu vì thiếu nó thì câu trên đọc rộng hơn cái nó nói — HAI điều kiện, và
-lần ghi đầu chỉ nêu một:** (i) **chưa ai quyết `rateHz` NGHĨA LÀ GÌ**, nên chưa quy ước nào là "sai" —
-đã nêu ở trên; (ii) 🔴 **`WelderSim` là một BỘ MÔ PHỎNG.** Bán kính của 4,17 % là **dữ liệu demo/trưng
-bày do sản phẩm này tự sinh**, **không** phải dữ liệu quy trình của một khách hàng. Nó vẫn là **một sự
-thật về PAYLOAD** — một người tiêu thụ dựng lại `t = i/rateHz` sẽ đặt mẫu cuối lệch một chu kỳ lấy mẫu
-— nhưng payload ấy chở số liệu mô phỏng. **Cả hai điều kiện phải đọc cùng nhau.**
-
-**(2) Phép chuyển KHÔNG nằm trọn ở MỘT ranh giới — nó nằm ở MỘT CHỖ TRONG MÃ nhưng chạm BA bề mặt
-đi ra. Liệt kê trước, đếm sau.** `EdgePipeline.RunAsync` gọi `Normalizer.Normalize` **một lần**, rồi
-trao **cùng một `CanonicalEnvelope`** cho:
-
-1. `IUnsPublisher.PublishReading(reading, env)` — `UnsPublisher.PublishReadingCoreAsync` **tuần tự hoá
-   NGUYÊN VẸN envelope ấy thành JSON** và publish làm **gương ngữ nghĩa RETAINED** trên topic `syn/…`.
-   Đây là **một bề mặt MQTT đã xuất bản**, cùng hạng bề mặt mà **mục 3** dành riêng cho chủ sở hữu.
-   Nó cũng đi tiếp vào `UnsBridge`/`BridgeSpool`, tức **xuống đĩa**.
-   🔴 **CÓ AI ĐANG ĐĂNG KÝ HAY KHÔNG — CHƯA ĐO, và không đo được từ repo này.** Cái **đo được** là
-   **hợp đồng nói gì**: doc comment của `DeviceReading.Kind` viết rằng giá trị ấy đi tiếp *"as an
-   aspect segment of the retained MQTT topic, whose subscribers are outside this repository
-   altogether"* — tức **hợp đồng TỰ KHAI rằng người đăng ký nằm ngoài repo này**. Đó là một phát biểu
-   **của tài liệu**, không phải một phép **đếm người đăng ký**;
-2. `ITransport.SendAsync(env)` → `LiveTransport.SendProcessResultAsync` → `ReadWaveforms(d)` →
-   `ReadSampleSeries(d)` → DTO `Waveform` của SDK → `POST /api/v1/ingest/process-result`. Đây là bề
-   mặt mà cả mục này nói tới;
-3. hàng đợi **store-and-forward của chính SDK**, nằm sau (2) — `St4iDeviceClient._queuePath` +
-   `Enqueue`, một file **JSONL** mà mỗi dòng là `{kind, path, payload, queuedAt}` ghi bằng
-   `File.AppendAllText`. Tức **nguyên payload, gồm cả `samples`, được ghi XUỐNG ĐĨA** khi mạng hỏng và
-   **phát lại sau**. **Riêng tư, không phải hợp đồng đã xuất bản** — nhưng một hàng đợi ghi lúc quy ước
-   cũ còn hiệu lực sẽ **phát lại hình dạng cũ** sau khi mã đã đổi, và **không ai đo cửa sổ ấy**.
-
-**Đếm sau khi liệt kê: BA bề mặt đi ra, MỘT chỗ trong mã.** `DemoTransport` **không** đọc `waveforms`
-(nó chỉ đọc `Payload["samples"]` của nhánh **telemetry**), nên nó không phải bề mặt thứ tư.
-
-**Và tập chỗ gọi `Normalizer.Normalize` phải nêu ĐỦ trước khi con số trên có nghĩa.** Quét
-`git grep -n "Normalizer\.Normalize" f08cb379 -- tools/machine-simulator/src` cho **BỐN** chỗ:
-`EdgePipeline.RunAsync` (**đường sản phẩm**, chỗ ba bề mặt trên treo vào) và **ba** chỗ trong
-`St4iMachineSimulator/App.xaml.cs` — bộ **smoke test live** của ứng dụng desktop, mỗi chỗ một bộ sinh:
-`RunResultSmoke` dùng **`ScrewdriveSim`**, nhánh telemetry dùng **`IotSensorSim`**, nhánh giám định
-dùng **`AoiInspectorSim`**; cả ba đi qua **cùng** `Normalizer` rồi `LiveTransport`. **Đếm: BỐN chỗ
-gọi, MỘT là đường sản phẩm, BA là dụng cụ chẩn đoán.** Ba chỗ sau **cũng** đổi theo nếu phép chuyển
-được đặt ở `Normalizer`, nhưng chúng **không** đi qua `UnsPublisher` nên chỉ chạm **một** bề mặt.
-🔴 **Và không chỗ nào trong ba dùng `WelderSim`**, nên **không một đường smoke nào mang hình dạng hàng
-đang tranh chấp** — tức bộ smoke live của desktop **không phải** một nhân chứng cho mục này, và không
-được đọc như một.
-
-🔴 **Câu quyết định, trả lời đúng như nó được hỏi:** `WaveformSeries` **KHÔNG phải đổi**, `WelderSim`
-**KHÔNG phải đổi** — cả hai đứng **thượng nguồn** của `Normalizer`. Nhưng *"chỉ payload đi ra đổi"*
-**là SAI nếu đọc là một payload**: gương ngữ nghĩa retained đổi **cùng lúc**, và nó là **bề mặt đã
-xuất bản thứ hai**. Một phép chuyển đặt ở `Normalizer` **không tách được hai cái ấy** ở chỗ ấy.
-
-🔴 **VÀ CÂU TRÊN MỘT MÌNH THÌ VẪN LỆCH, VÌ NÓ KHÔNG XẾP HẠNG LẠI — đây là chỗ dễ đọc sai nhất của cả
-mục, nên nó được viết ra thay vì để tự suy.** `Normalizer` **chép tham chiếu** `w.Samples`, và **cùng
-một envelope** đi vào **cả** gương retained **lẫn** đường HTTP. Nên giá "bề mặt xuất bản thứ hai"
-**KHÔNG phải giá riêng của lựa chọn 3**:
-
-| lựa chọn | gương MQTT retained `syn/…` | payload ingest HTTP | trong cây này | **ngoài cây này** |
-|---|---|---|---|---|
-| **1 — đổi `WelderSim`** | **ĐỔI** | ĐỔI | `WelderSim` đổi; `WaveformSeriesRowShapeContractTests` **ĐỎ** | payload đã xuất bản của sản phẩm này |
-| **2 — đổi bộ cưỡng chế nền tảng** | **không đổi** | không đổi | **không một dòng nào** | 🔴 `processWaveformSchema`, `processWaveformV1`, đặc tả 57, OpenAPI, trang API-docs, doc 62 §6, **và cả BA ví dụ SDK** — một **hợp đồng ingest đã xuất bản** mà **mọi driver bên thứ ba đang viết theo** |
-| **3 — đổi `Normalizer`** | **ĐỔI** | ĐỔI | **`WaveformSeries` và `WelderSim` không đổi**; **KHÔNG bài nào đỏ** | payload đã xuất bản của sản phẩm này |
-
-**Đọc bảng này theo hàng, không theo ô:** lựa chọn **1 trả ĐÚNG cái giá gương MQTT ấy, CỘNG THÊM**
-phần của nó; lựa chọn **3 trả cùng giá gương nhưng không đụng hai kiểu**; lựa chọn **2 không trả giá
-nào TRONG cây này**. 🔴 **Và đúng vì thế, cột cuối phải đọc cùng lúc, nếu không bảng vừa sửa xong một
-thiên lệch đã dựng lên một cái ngược lại:** *"lựa chọn 2 không đổi gì"* chỉ đúng **cục bộ**; giá của
-nó nằm **toàn bộ ở bên ngoài**, trên hợp đồng ingest đã xuất bản cộng ba bản dịch SDK phải đi cùng
-nhau. **Một bảng chỉ có ba cột đầu sẽ đọc như một lời khuyên chọn (2).** Ở đây không có lời khuyên nào.
-
-🔴 **Và một cổng KIỂU im lặng đứng ngay trên đường (2), nêu vì nó ăn mất dữ liệu mà không báo:**
-`LiveTransport.ReadSampleSeries` nhận **một hàng khi và chỉ khi nó là `double[]`** (`if (point is
-double[] arr)`), rồi **bỏ qua** mọi thứ khác **không lỗi, không log**. Phép chuyển giữ kiểu `double[]`
-thì qua; một phép chuyển trả `List<double>`, `object[]` hay tuple thì **mọi mẫu biến mất im lặng** và
-payload đi ra mang `samples: []`. **Đây là một ràng buộc thi hành đã đo, không phải một lời khuyên.**
-
-🔴 **VÀ NÓ TIỀM ẨN, KHÔNG ĐANG SỐNG — nêu ra để câu trên không bị đọc thành một lỗi đang chảy hôm
-nay.** `WaveformSeries.Samples` có kiểu **`IReadOnlyList<double[]>`** và `Normalizer` **chép tham
-chiếu**, nên **theo hệ kiểu, mọi phần tử HÔM NAY là `double[]`**. **`samples: []` KHÔNG đang đi ra.**
-Cổng kiểu ấy chỉ ăn mất dữ liệu **đúng vào lúc** ai đó viết một phép chuyển trả kiểu khác — tức
-**đúng hình dạng mà một bản thi hành ngây thơ của lựa chọn 3 sẽ tạo ra**, và đó là lý do nó thuộc mục
-này chứ không thuộc một mục riêng.
-
-**(3) CÒN AI TIÊU THỤ `Waveforms` TRONG TIẾN TRÌNH — liệt kê trước, đếm sau.** Quét
-`git grep -n "\.Waveforms" f08cb379 -- .` (toàn cây Git tại SHA). Trong `src/`, ngoài hai **bộ sinh**
-(`WelderSim`, `ScrewdriveSim` — cả hai chỉ `Add`), có đúng bốn chỗ **ĐỌC**:
-
-| # | chỗ đọc, trỏ bằng TÊN | nó đọc gì | thấy gì nếu phép chuyển đặt ở `Normalizer` |
-|---|---|---|---|
-| 1 | `Normalizer.NormalizeProcessResult` | `.Count`, rồi chép `w.Samples` | **chính nó là chỗ đổi** |
-| 2 | `DeviceDriverConformanceSuite.HasAnyValueBearingContent` | **chỉ** `.Count > 0` | **không thấy gì** — thượng nguồn, và nó không đọc hàng |
-| 3 | `DeviceReadingClone` (nhánh `Waveforms`) | sao chép sâu **từng hàng** | **không thấy gì** — thượng nguồn |
-| 4 | `DeviceReadingEquality.CompareWaveform` | `Name`/`Unit`/`RateHz` + **từng phần tử** | **không thấy gì** — thượng nguồn |
-
-**Đếm sau khi liệt kê: BỐN chỗ đọc trong `src/`, ba trong số đó ngoài `Normalizer`, và cả ba nằm
-trong `St4i.Connector.Conformance`.** Cả ba làm việc trên `DeviceReading` — tức **trước** `Normalizer`
-— nên **không cái nào quan sát được** phép chuyển. Phần còn lại của phép quét là **doc comment**
-(`DeviceReading.cs`, `Enums.cs`, `DeviceDriverConformanceSuite.cs`) và **README** ×2, không phải chỗ đọc.
-
-**(4) CÁI GÌ SẼ ĐỎ — đo bằng cách ĐỌC test, và câu trả lời là KHÔNG CÁI NÀO.** Quét
-`git grep -iln "aveform" f08cb379 -- tools/machine-simulator/tests` trả về **đúng hai** file, và đó
-là **toàn bộ** dân số test chạm tới waveform trong cây:
-
-1. `tests/St4i.Connector.Abstractions.Tests/ConnectorRoundTripTests.cs` — round-trip của
-   **`DeviceReading` qua `ConnectorJson`**;
-2. `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` — bốn `[Fact]`, tất cả gọi
-   `sim.NextCycle(...)` và soi **`DeviceReading.Waveforms`**.
-
-**Đếm sau khi liệt kê: HAI file, và cả HAI đứng thượng nguồn `Normalizer`.** Cộng thêm phép quét
-`git grep -n '"waveforms"' f08cb379 -- tools/machine-simulator` và `'"samples"'`: **không một test
-nào** khẳng định hình dạng `payload["waveforms"]` hay `payload["samples"]` của nhánh process-result —
-`NormalizerTests.cs`, `LiveTransportTests.cs` và cả hai file test UNS **không chứa chữ "waveform"**.
-
-🔴 **Nên phép đo cho ra một câu BẤT TIỆN, và nó là kết quả chứ không phải một chỗ trống:** đặt phép
-chuyển ở ranh giới `Normalizer` khiến **không một bài kiểm nào trong 2763 bài đỏ lên** — kể cả nhân
-chứng đợt 4 `WaveformSeriesRowShapeContractTests`, **vẫn xanh**, vì nó không nhìn xuống hạ nguồn.
-**"Không gì đỏ" ở đây KHÔNG phải bằng chứng an toàn; nó là bằng chứng KHÔNG CÓ NHÂN CHỨNG.** Hai lối
-ra đầu (đổi `WelderSim`, hay đổi validator) đều **có** nhân chứng đỏ lên; lối thứ ba **không có**, và
-nếu nó được chọn thì nhân chứng cho nó là thứ **phải viết mới**.
-
-**Cái phép đo này KHÔNG trả lời được, nêu tên chứ không lấp:**
-- nó **không** nói quy ước nào **nên** thắng, và không nói lối ra nào rẻ hơn về mặt xã hội;
-- nó **không** đo bên đăng ký MQTT: **ai đang đọc gương ngữ nghĩa retained `syn/…`, và họ sẽ thấy gì
-  nếu hàng đổi hình dạng — CHƯA ĐO**, và không đo được từ trong repo này. Đó là cùng hạng người-ngoài
-  mà mục 3 nói tới;
-- nó **không** đo client sinh từ OpenAPI đang phục vụ (vẫn là ô *"chưa ai kiểm"* của bảng ba hạng nguồn);
-- nó **không** chạy cổng ingest lần nào: **AI-1 không chạm nền tảng, không POST gì**, nên cặp đối
-  chứng A/B của AB-1 vẫn là **bằng chứng động duy nhất** của mục này và hạng nguồn của nó **không đổi**.
-
-### Nếu không quyết định
-
-Giữ nguyên. `WelderSim` tiếp tục phát một hình dạng cổng ingest từ chối; không gì đỏ lên trong
-`tools/machine-simulator` vì không phép kiểm nào của nó nhìn sang phía tiêu thụ.
-
-> 📎 **Câu này kết bằng *"và lần chạy `Live` đầu tiên với một máy WELDER sẽ là lần đầu tiên ai đó
-> biết — **nếu** nó xảy ra."* cho tới 2026-08-18, RÚT cùng ngày (AB-1), giữ nguyên văn.** Nó đã sai
-> **đúng lúc phép đo chạy**: không cần một lần `Live` nào nữa, và *"ai đó"* đã biết — bằng HTTP 400
-> với ba đường dẫn trường, ghi ở §"ĐÃ ĐO" bên trên.
-
-**Cái thay vào chỗ ấy, và nó là hai vế:** hôm nay **không bản triển khai nào nạp process-result**,
-vì cờ `PROCESS_RESULT_INGEST_ENABLED` **mặc định tắt**; nên "không quyết định" **không** để lại một
-đường mất dữ liệu đang chảy. Cái nó để lại là **một hình dạng đã xuất bản mà cổng đã xuất bản từ
-chối**, nằm im cho tới **ngày ai đó bật cờ** — và cờ tồn tại để được bật.
-
-### Vì sao là quyết định của chủ sở hữu
-
-Cả hai lối ra **đổi một bề mặt đã xuất bản mà người ngoài đang dựa vào** — hoặc payload của sản phẩm
-này, hoặc hợp đồng ingest cộng ba SDK anh em. Đúng lý do mục 3 và mục 4 là của chủ sở hữu.
-
-### Bằng chứng — nay có HAI loại: loại đọc được, và loại chỉ có khi CHẠY
-
-> 📎 **Tiêu đề mục con này đọc *"Bằng chứng — đọc được, không cần chạy"* cho tới 2026-08-18, RÚT
-> cùng ngày (AB-1), giữ nguyên văn.** Nó đúng khi cả mục chỉ có bằng chứng tĩnh; phép đo 2026-08-18
-> thêm một loại **không** đọc được từ cây mã — cặp đối chứng A/B trên cổng ingest đang chạy — nên
-> tiêu đề cũ nay **hứa hẹn ít hơn** cái mục này mang.
-
-> 📎 **Câu mở đầu đọc *"Các file nêu tên trong bảng trên, tại commit `84836ad6`."* cho tới 2026-08-18,
-> RÚT cùng ngày (AB-1), giữ nguyên văn.** `84836ad6` là một commit của **repo này**, nhưng các hàng
-> `server/…`, `client/src/…`, `docs/ECOSYSTEM/…` và `scripts/sim/…` của bảng ấy được đối chiếu ở
-> **`D:\SOURCES\avi-aoi-management`** — **một cây khác** — nên một commit-id của `avi-aoi-sim` không
-> định vị được chúng, và một số dòng đọc ở cây kia không tra lại được bằng nó.
-
-**Bằng chứng tĩnh, nêu kèm cây:** các file nêu tên trong bảng trên. Phía nền tảng, đối chiếu tại
-`D:\SOURCES\avi-aoi-management` nhánh `feat/hmi-dep` (2026-08-18), **trỏ bằng tên phần tử**:
-`processWaveformSchema` và `processWaveformV1`. Cùng các file ấy **cũng có trong cây Git của repo
-này** tại `84836ad6`, **không nằm trên đĩa** (sparse checkout) — xem §"Nguồn của luật".
-
-**Bằng chứng động, chỉ có khi chạy — và nó là hạng NHẬN LẠI:** cặp đối chứng A/B ở §"ĐÃ ĐO", trên
-SYNAPSE tại `http://localhost:3000`, 2026-08-18, máy thử id **250**. **Do điều phối viên đo; AB-1 ghi
-lại chứ không chạy lại** (lý do nêu tại §"ĐÃ ĐO"). **Không có transcript của hai POST ấy trong repo
-này**, nên chỗ này là điểm yếu nhất của chuỗi giám hộ trong cả mục, và nó được nói ra thay vì để người
-đọc tự phát hiện. *"Không bản ghi process-result nào được tạo"* là **suy luận từ chỗ hai POST dừng**,
-không phải một truy vấn CSDL.
-
-📎 **MỞ RỘNG câu ngay trên, 2026-08-18 (AB-1, vòng sửa thứ hai) — câu ấy giữ nguyên văn vì nó KHÔNG
-sai, chỉ thiếu.** *"Không có transcript … **trong repo này**"* vẫn đúng từng chữ. Cái nay biết thêm:
-**transcript CÓ TỒN TẠI**, ở phía điều phối viên, và **được nêu tên** — `item14-armA2.json` và
-`item14-armB2.json`, mỗi file kết thúc bằng dòng `[HTTP 400]`. Nên chuỗi giám hộ **chặt hơn** cái câu
-trên mô tả: chủ sở hữu **hỏi được hai file ấy**, thay vì chỉ có lời khai. Đây là thao tác **MỞ RỘNG**
-(phép liệt kê thiếu), **không** phải RÚT — ba thao tác vẫn phân biệt như file này quy định.
-
-Phía sản phẩm:
-`src/St4i.EdgeCore/Drivers/Simulators/WelderSim.cs`, `…/ScrewdriveSim.cs`,
-`src/St4i.EdgeCore/Mapping/Normalizer.cs`, `src/St4i.EdgeCore/Transport/LiveTransport.cs`,
-`tools/machine-simulator/fleet.json`. Nhân chứng đang giữ hành vi hiện tại (**không** giữ một phán
-quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` — nếu anh quyết theo quy
-ước B, **nó đỏ lên, và chỗ đỏ chính là diff**, đúng hình dạng mà S-1 dùng cho mục 5 và V-1 cho mục 10.
 
 ---
 
@@ -1527,6 +885,35 @@ trên nói, vì `## 5–7.` là **một** tiêu đề chứa **ba** mục.
 > đếm lại được từ danh sách ngay trên — và nó vẫn **không** được ghi làm một khẳng định riêng.
 > **Mục 12 vẫn ở Phần II** (đang trả nợ) và **mục 14 vẫn ở Phần I** (`🔴 CHỜ ANH`); AJ-1 không
 > đụng vào cái nào trong hai.
+
+> 📎 **AK-1 (2026-08-19) — MỞ RỘNG LẦN BA, cùng cơ chế, và câu cuối của khối AJ-1 ngay trên vì thế
+> đã CŨ.** Chủ sở hữu phán **mục 14** cùng ngày (**lựa chọn 3**); AK-1 thi hành và mang nó từ **Phần
+> I** sang đây, với một khối `🔨 PHÁN QUYẾT` và một khối `✅ ĐÃ THI HÀNH` ghi kèm ngày. **Phép liệt
+> kê đang sống, đọc từ chính các tiêu đề `##` của phần này:** mục **1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+> 11, 13, 14**, nằm dưới các tiêu đề `## 1.`, `## 2.`, `## 3.`, `## 4.`, `## 5–7.`, `## 8.`,
+> `## 9.`, `## 10.`, `## 11.`, `## 13.`, `## 14.`. 🔴 **Câu *"mục 14 vẫn ở Phần I"* KHÔNG được sửa
+> tại chỗ và KHÔNG bị xoá** — nó đúng vào ngày nó được viết, và nó **đúng về AJ-1**: AJ-1 thật sự
+> không đụng vào mục 14. **Mục 12 vẫn ở Phần II** (còn 412 chỗ trống chưa trả); AK-1 **không đụng**
+> vào nó. 🔴 **Và một sự kiện về CHÍNH PHẦN NÀY, không phải về một mục: Phần I nay RỖNG** — đây là
+> lần đầu tiên kể từ khi file tồn tại. Câu ấy là một phát biểu về **hôm nay**, không phải một tính
+> chất của file: bất kỳ vòng phản biện nào cũng mở được một mục mới, và trong hai ngày qua nó đã làm
+> đúng thế **ba lần**.
+>
+> 📎 **Cụm *"kể từ khi file tồn tại"* giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1, sau vòng phản biện) — nó
+> NÓI QUÁ, và nói quá về phía có lợi cho người viết nó.** Đo bằng máy trên **45 bản sửa** của chính file
+> (`git log --follow`, nhánh hiện tại): **Phần I chỉ tồn tại từ `b50d8fae`** — **18 bản sửa đầu tiên
+> file KHÔNG có Phần nào cả**. Câu đúng là **"lần đầu kể từ khi PHẦN I tồn tại"**. Tinh thần đứng vững
+> (trước khi có Phần, mọi mục trong file đều là mục đang chờ), nhưng một câu *"kể từ khi file tồn tại"*
+> là **một phủ định phổ quát trên một tập người viết chưa mở hết** — đúng luật của chính file này.
+> 🔴 **Và một nửa nữa phải nói cùng lúc: "RỖNG" ở đây là rỗng MỤC, không rỗng NỘI DUNG.** Phần I vẫn
+> giữ **88 dòng** prose bảo tồn — con trỏ mới, khối 📎 giữ nguyên văn câu cũ, ba khối lịch sử của
+> I-2/AA-1/AJ-1, đoạn năm-mục-cũ, khối hoãn của mục 9, và đoạn luật *"bằng chứng ở dòng cuối của chính
+> mục"*. **Không một dòng nào bị mất.** Đọc *"RỖNG"* trần trụi rất dễ hiểu thành *"đã bị dọn sạch"*, và
+> đó là cách đọc sai.
+>
+> **Biên của phép đo trên, nêu chứ không lấp:** `git log --follow` chạy trên **nhánh hiện tại**; bản sửa
+> của file trên nhánh khác, hoặc việc chưa commit, **nằm ngoài** — nên câu *"chưa từng rỗng"* chỉ phát
+> biểu trên **45 bản sửa ấy**.
 
 > 🔴 **ĐÍNH CHÍNH 2026-08-18, cùng ngày, cùng nhiệm vụ (phản biện I-3).** Chỗ này Z-1 vừa
 > viết *"Phần này nay có SÁU mục, không phải bốn"*. Cả hai số đều sai: **sáu** đếm **tiêu
@@ -3615,6 +3002,926 @@ bài nào PUT thành công **hai lần** trên một store: bài hai-PUT duy nh�
 
 ---
 
+## 14. Hai hợp đồng đã xuất bản nói ngược nhau về hình dạng một hàng `Samples`; cái được CƯỠNG CHẾ lúc chạy hẹp hơn cái nền tảng tự XUẤT BẢN; và bộ phát của sản phẩm này phát một hình dạng cổng ingest TỪ CHỐI
+
+> 📎 **Tiêu đề này, NGUYÊN VĂN, cho tới 2026-08-18 — RÚT cùng ngày (AA-1, vòng phản biện của vòng
+> sửa):** *"14. Hai hợp đồng đã xuất bản nói ngược nhau về hình dạng một hàng `Samples`, MỘT trong hai
+> được cưỡng chế lúc chạy, và bộ phát của chính sản phẩm này vi phạm nó"*. *"Vi phạm"* chỉ đúng **nếu**
+> quy ước B đã là luật — mà đó chính là câu mục này tồn tại để hỏi. Câu thay thế là câu trung tính
+> vốn đã có sẵn trong ô bảng phán quyết. Cùng lý do, hai cụm chữ nữa trong mục này được rút, ở §"hai
+> quy ước" và ở cuối §"hợp nhất" bên dưới.
+
+**Mục này sinh ra từ bản thi hành của mục 4, đúng như mục 8 sinh ra từ mục 1, mục 10 từ mục 5, và
+mục 13 từ mục 11.** Nó được mở bởi **vòng phản biện 1 của AA-1 (2026-08-18)**, và nó là **điều kiện
+"dừng và báo" mà brief của mục 4 đã đặt ra, xảy ra thật** — chỉ không trên trục brief dự đoán:
+không phải **bộ sinh chống bộ sinh**, mà là **bộ sinh chống bộ TIÊU THỤ**.
+
+🔴 **KHÔNG AI ĐƯỢC QUYẾT ĐIỀU NÀY NGOÀI CHỦ SỞ HỮU, và lý do giống hệt mục 3 và mục 4:** nó đổi
+**hình dạng dữ liệu trên dây** mà **người ngoài tổ chức này đang dựa vào**. Uỷ quyền phủ được *"làm
+hay không làm"*, **không phủ được sự đồng ý của bên thứ ba**.
+
+### Đo được: hai quy ước, và chỉ một cái có bộ cưỡng chế
+
+**Quy ước A — của sản phẩm này** (`tools/machine-simulator`), suy từ hai bộ sinh:
+`RateHz` được đặt ⇒ hàng **một** phần tử, trục thời gian ngầm định; `RateHz` null ⇒ hàng **hai**
+phần tử `[x, y]`. `WelderSim.BuildCurrentWaveform` và `ScrewdriveSim.BuildTorqueAngleWaveform` là
+toàn bộ dân số, và cả hai theo nó. **Không gì cưỡng chế nó.**
+
+**Quy ước B — của nền tảng**, và nó **được cưỡng chế lúc chạy**:
+
+| chỗ | nó nói gì |
+|---|---|
+| `server/routers/machineApiRouters.ts` → `processWaveformSchema` — **bộ validate RUNTIME của route ingest** | `samples: z.array(z.tuple([z.number(), z.number()])).max(100_000)` — **mỗi hàng đúng HAI số**; `rateHz: z.number().positive().optional()` là một trường **độc lập**. Chú thích ngay trên: *"[t, value] pairs."* |
+| `server/contracts/machineDataContract.ts` → `processWaveformV1` | cùng `z.tuple` hai số; *"Chuỗi mẫu [ [t, v], … ] — cặp (thời điểm, giá trị). Cap khớp runtime."* |
+| `docs/ECOSYSTEM/57_ST4I_STANDARD_PROCESS_FEED_SPEC.md` §3.3 — **đặc tả dây đã xuất bản** | `samples` **bắt buộc**: *"Mảng cặp `[t, v]` — `t` = trục hoành (**thời gian giây / góc °**…), `v` = giá trị."* `rateHz`: *"Tần số lấy mẫu (Hz) **nếu đều nhau**"* — một **mô tả**, không phải bộ phân biệt. `unit`: *"Đơn vị của trục giá trị (`v`)"* |
+| cùng file §8.1 — **ví dụ chuẩn tắc** | `torque_vs_angle`, `rateHz: 500`, `samples: [[0,0.02],[90,0.15],…,[412,0.82]]` — và `412` là chính metric `angle` của payload ấy, tức **trục hoành là GÓC trong khi `rateHz` được đặt** |
+| `server/api/v1/openapi.ts` | `samples: array of array of number` — **không ràng buộc độ dài hàng** — 🔴 **hàng này nêu SAI artifact; xem §"chỗ lệch THỨ TƯ" bên dưới, RÚT 2026-08-18 (AB-1)** |
+| `client/src/components/apiDocs/AutomationProcessFeedSection.tsx` | trang API-docs công khai: `{ name, unit?, rateHz?, samples:[[t,v]] }` |
+| `server/contracts/machineDataContract.test.ts` | fixture: `rateHz: 1000` **kèm** hàng cặp |
+| `scripts/sim/screwdriver-emitter.mjs` | bộ phát chạy được: `rateHz: WAVE_RATE_HZ` **kèm** hàng cặp |
+| `docs/ECOSYSTEM/62_…_DESIGN_2026-07-18.md` §6 | `waveforms[]{name,unit,rateHz,samples[[t,v]]}` — 🔴 **chính tài liệu mà `WelderSim` tự trích trong doc comment lớp của nó** |
+
+**Chúng bất đồng ở đúng một chỗ, và chỗ ấy là nơi hai quy ước cho KẾT QUẢ KHÁC NHAU:** dưới quy ước
+B, `ScrewdriveSim` **hợp lệ** (nhờ `rateHz` là optional), còn `WelderSim` **không**.
+
+> 📎 **Câu này đọc *"và chỗ ấy là **nơi sản phẩm này đứng sai**"* cho tới 2026-08-18, RÚT cùng ngày
+> (AA-1, vòng phản biện của vòng sửa), giữ nguyên văn.** *"Đứng sai"* giả định B đã thắng.
+
+🔴 **VÀ QUY ƯỚC B KHÔNG ĐỒNG NHẤT VỚI CHÍNH NÓ — đọc lại bảng ngay trên trước khi quyết.** Hàng
+`server/api/v1/openapi.ts` ghi **không ràng buộc độ dài hàng**. Đó là **hợp đồng máy-đọc-được đã xuất
+bản**, thứ một bên thứ ba sinh client từ đó. Nên:
+
+- thứ **CƯỠNG CHẾ** (`z.tuple` hai số) **HẸP HƠN** thứ nền tảng **XUẤT BẢN** (OpenAPI cho phép hàng
+  một phần tử);
+- một payload hàng-một-phần-tử **hợp lệ với OpenAPI đã công bố** và **bị runtime từ chối**;
+- và `server/contracts/machineDataContract.ts` **tự đặt cho mình đúng cái luật bị vi phạm ở đây**:
+  *"Contract này PHẢI khớp runtime để APIdocs không mời gọi payload bị từ chối (doc 61 §4.8)."*
+
+**Nên phép đo không nói "một bên sai".** Nó nói: **một sản phẩm và một nền tảng bất đồng, và nền
+tảng bất đồng với chính nó ở BA mức** — runtime chặt, OpenAPI lỏng, đặc tả chặt. Cái phải quyết vì
+thế **rộng hơn** *"đổi `WelderSim` hay đổi validator"*.
+
+### Ở đâu: mắt xích đầy đủ, nêu tên từng cái
+
+`WelderSim.BuildCurrentWaveform` (hàng một phần tử) → `Normalizer` (`payload["samples"] = w.Samples`,
+chép nguyên) → `LiveTransport.SendProcessResultAsync` → `St4iDeviceClient.SubmitProcessResultAsync`
+→ `POST /api/v1/ingest/process-result` → `processWaveformSchema`. Một `z.tuple` hai phần tử **từ
+chối** một mảng một phần tử.
+
+**Và `WELD-01` (`machineType: "WELDER"`) NẰM TRONG roster được ship** (`fleet.json`), nên đường này
+**tồn tại trong bản cài mặc định**, không phải một nhánh giả định.
+
+### ✅ ĐÃ ĐO 2026-08-18 (AB-1) — chỗ-thiếu bên dưới nay có một phép đo, và phép đo có HAI nửa
+
+> 📎 **Mục con này mang tiêu đề *"🔴 Cái CHƯA ĐO, nêu tên chứ không lấp — và nó quyết định hậu quả
+> là SỐNG hay chỉ là LÝ THUYẾT"* cho tới 2026-08-18, và thân của nó hỏi, NGUYÊN VĂN:** *"**Đã có sóng
+> `weld_current` nào thực sự được POST lên một máy chủ sống bao giờ chưa?** Không ai đo điều đó —
+> không phản biện, không AA-1. Không có bằng chứng runtime trong cây. Hôm nay đây là mâu thuẫn giữa
+> **hai hợp đồng đã xuất bản trong một repository**, và nó **tiềm ẩn cho tới lần `LiveTransport`
+> chạy thật đầu tiên với một máy WELDER**. Đo nó cần một log ingest thật hoặc một lần chạy thật;
+> **cả hai đều nằm ngoài vòng này**, và một phỏng đoán đặt ở đây sẽ **đọc như một phép đo**."* Cùng
+> với nó, đoạn *"Cái **đã** đo được, để không ai đọc câu trên rộng hơn nó: máy WELDER **có** trong
+> roster ship; đường mã **có** thật và không có nhánh nào chặn; và transport thật (`LiveTransport`)
+> là một trong ba chế độ (`Live`/`Demo`/`Auto`) mà `TransportCoordinator` chọn được."* — **RÚT
+> 2026-08-18 (AB-1)**, và lý do là **phép đo đã chạy**, không phải câu ấy từng sai: nó mô tả đúng
+> trạng thái hồ sơ cho tới đúng lúc ấy. Cụm *"trong một repository"* là chỗ **duy nhất** trong đoạn
+> bị rút vì **sai**, không vì cũ — xem §"Nguồn của luật" bên dưới.
+>
+> 📎 **KIỂU BẢO TỒN CỦA AB-1, nêu một lần cho toàn bộ phần AB-1 viết:** đúng **MỘT** kiểu, và là
+> kiểu mục này đang dùng — **TRÍCH NGUYÊN VĂN RỒI RÚT** trong khối 📎, kèm ngày và người rút, lý do
+> đứng ngay cạnh. **AB-1 không dùng dấu gạch ngang ở bất kỳ chỗ nào.** Các `~~…~~` sẵn có trong file
+> là của T-1, U-1, V-1 và Y-1; AB-1 **không đụng** tới chúng.
+
+**Ngày đo:** **2026-08-18**, trên SYNAPSE **đang chạy** tại `http://localhost:3000` — **không** trên
+một cây mã, mà trên **cổng ingest thật**.
+
+🔴 **AI đo cái gì — ba hạng nguồn, phân biệt ngay ở đây chứ không ở một ledger bên ngoài.** Lý do
+phân biệt nằm ở **đoạn mở đầu của chính file này**: các ledger dưới `.superpowers/sdd/` **bị
+gitignore**, nên một lời cải chính cất ở đó **không bao giờ vào repo và chủ sở hữu không có đường dẫn
+nào để mở**. Một khẳng định mà lời cải chính của nó nằm ngoài tầm với của người đọc là **đúng khuyết
+tật file này lập ra để chấm dứt**, nên nó được viết vào đây:
+
+| hạng | gồm những gì | ai đo |
+|---|---|---|
+| **AB-1 tự đo** | tài liệu OpenAPI **đang phục vụ** (một `GET` thuần đọc); `processWaveformSchema`; `processWaveformV1`; ba nguồn của cờ mặc định tắt; số dòng ở các cây; `git sparse-checkout list` | **AB-1**, 2026-08-18 |
+| **NHẬN LẠI, không tự chạy** | **cặp đối chứng A/B** (payload, mã trạng thái, chuỗi lỗi, đường dẫn trường), **máy id 250**, khoá đã cấp, tiền tố **`mach_`** | **điều phối viên** đo; AB-1 **ghi lại, không chạy lại** |
+| **chưa ai kiểm** | client sinh từ tài liệu đang phục vụ sẽ xử lý `items` dạng mảng ra sao; CSDL có thật sự trống bản ghi process-result hay không | **không ai** |
+
+**Vì sao AB-1 không chạy lại cặp A/B, nêu ra để người sau khỏi đọc đó là cẩu thả:** chạy lại là
+**ghi thêm vào SYNAPSE của chủ sở hữu** — thêm máy, thêm khoá, và có thể thêm bản ghi — trong một
+nhiệm vụ được giao là **ghi hồ sơ**. Cái giá ấy cao hơn cái được. Nên hai dòng bảng dưới đây là
+**bằng chứng động duy nhất của cả mục, và là hạng NHẬN LẠI**; mọi mảnh tĩnh quanh chúng thì AB-1 tự
+đọc, và chúng **nhất quán** với hai kết quả ấy.
+
+> 📎 **BA CÂU ĐÃ CÔNG BỐ Ở LẦN GHI ĐẦU CỦA MỤC NÀY (commit `f4b810b0`, 2026-08-18) NAY BỊ RÚT — giữ
+> nguyên văn, cùng một kiểu bảo tồn, RÚT cùng ngày (AB-1, vòng sửa sau phản biện).** Cả ba là **một**
+> khuyết tật: **một số liệu NHẬN LẠI được ghi như một số liệu TỰ ĐO**, và lời cải chính bị đặt ở một
+> file `.superpowers/sdd/` **bị gitignore** — tức ngoài tầm với của chủ sở hữu. Liệt kê:
+>
+> 1. *"**Người đo, ngày đo, đo trên cái gì:** nhiệm vụ **AB-1**, **2026-08-18**, trên SYNAPSE **đang
+>    chạy** tại `http://localhost:3000`…"* — gán **AB-1** làm người đo cho **cả** cặp A/B, thứ AB-1
+>    **không chạy**. Thay bằng bảng ba hạng nguồn ngay trên.
+> 2. Ô `kết quả` của **hàng B** trong bảng đối chứng: *"✅ **qua sạch lược đồ**, không một lỗi waveform
+>    nào"*, dưới một cột chỉ tên là *"kết quả"*. Tách rời khỏi ngữ cảnh, nó đọc như *"B chạy được"*,
+>    trong khi **B cũng bị từ chối**. Cột nay nói rõ nó chỉ ghi **bước lược đồ**, và hàng B mang thêm
+>    chỗ nó thật sự dừng.
+> 3. *"Hai POST thử đều BỊ TỪ CHỐI, nên **KHÔNG một bản ghi process-result nào được tạo**."* cùng vế
+>    lặp lại của nó ở §"Bằng chứng động" — một **phủ định phổ quát về CSDL đang sống của chủ sở hữu**,
+>    viết như một phép đo trong khi **không ai truy vấn CSDL**. Nay nêu đúng hạng: một **suy luận**,
+>    kèm cơ sở và kèm cách kiểm dứt điểm.
+
+**Chuẩn bị, ghi lại để chủ sở hữu GỠ ĐƯỢC và để phép đo LẶP LẠI ĐƯỢC:** một máy thử được đăng ký và
+**chủ sở hữu duyệt** trên nền tảng đang chạy — id **250**, `serialNumber` `ST4I-TRIAL-WELD-20260818`,
+code `SN-ST4I-TRIAL-WELD-20260818`, type `WELDER`, gắn station `SIM-L1-SPI-ST` / line `SIM-L1`; khoá
+máy cấp qua `claim`. 🔴 **Hai POST thử đều BỊ TỪ CHỐI, và cả hai bị chặn TRƯỚC bước nạp** — nhánh A
+ở bước lược đồ, nhánh B ở bước cờ.
+
+🔴 **Từ đó suy ra "không bản ghi process-result nào được tạo" — và đây là một SUY LUẬN, không phải
+một phép đo, nên nó được nêu đúng hạng của nó.** **Không ai truy vấn CSDL**: không đếm, không
+`SELECT`, không đọc log ingest. Cơ sở của suy luận là thứ tự thi hành đo được ở dưới (cả hai nhánh
+dừng trước **nạp**) cộng ba nguồn tài liệu nói nhánh cờ trả `PRECONDITION_FAILED`. **Cái duy nhất
+kiểm được nó dứt điểm là một truy vấn trên CSDL của chủ sở hữu, và nhiệm vụ này không có quyền ấy.**
+Nên khi gỡ, **hãy kiểm bằng một truy vấn** thay vì tin dòng này.
+
+**Dấu vết còn lại trên SYNAPSE, liệt kê hết ở đây:** bản ghi **máy id 250** (đã duyệt), và **khoá
+máy** cấp cho nó. Phép liệt kê ấy là nguồn — và nó cũng thuộc hạng **NHẬN LẠI**, không phải thứ AB-1
+tự đọc trên nền tảng.
+
+**Cặp đối chứng — khác nhau ĐÚNG MỘT BIẾN, và biến ấy là hình dạng hàng:**
+
+🔴 **CẢ HAI NHÁNH TRẢ HTTP 400 — QUAN SÁT ĐƯỢC TRÊN CẢ HAI, không suy ra ở nhánh nào.** Mã trạng
+thái **không** phải thứ phân biệt hai nhánh; **không POST nào tạo ra thứ gì**. Thứ phân biệt chúng là
+**CHỖ CHÚNG DỪNG** — và chính chỗ chênh ấy là bằng chứng về **thứ tự thi hành**, chứ không phải con
+số 400.
+
+| nhánh | payload | mã trạng thái | **chỗ dừng** — cái thật sự phân biệt |
+|---|---|---|---|
+| **A** — `weld_current`, `rateHz: 1000`, hàng **một** phần tử `[176.5]` — **đúng cái `WelderSim` phát** | `POST /api/v1/ingest/process-result` | 🔴 **HTTP 400** | **chết ở KIỂM LƯỢC ĐỒ** — **ba** lỗi tại `waveforms.0.samples.0.1`, `.1.1`, `.2.1`, *"Invalid input: expected number, received undefined"*; **chưa bao giờ chạm tới cờ** |
+| **B** — `torque_vs_angle`, **không** `rateHz`, hàng **hai** phần tử `[angle, torque]` — **đúng cái `ScrewdriveSim` phát** | cùng endpoint, cùng khoá | 🔴 **HTTP 400** | **QUA lược đồ** (không một lỗi waveform nào) rồi **chết ở CỜ TÍNH NĂNG** — `{"ok":false,"error":{"code":"ingest_failed","message":"Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED)."}}` |
+
+**Vì sao bảng này mạnh hơn khi hai mã bằng nhau:** hai payload khác nhau **đúng một biến**, nhận
+**cùng một mã**, mà **chết ở hai chỗ khác nhau**. Một mã trạng thái chung không phân biệt được gì; hai
+chỗ dừng khác nhau thì phân biệt được **thứ tự các bước**. Nếu hàng B đọc như *"B chạy được"* thì bảng
+mất đúng cái nó tồn tại để nói.
+
+> 📎 **Khối này đọc, cho tới 2026-08-18 (đã công bố ở commit `e9a0e3f5`), NGUYÊN VĂN:** *"📎 **Một
+> biên trên hàng B, nêu vì nó là chỗ dễ bịa ra một con số:** cái được đo và trao lại cho nhánh B là
+> **thân phản hồi** (`ingest_failed`), **không phải dòng trạng thái**. Ba nguồn mà mục này trích cho
+> cờ mặc định tắt đều ánh xạ trạng thái ấy sang **HTTP 400** (*"PRECONDITION_FAILED ⇒ REST trả 400
+> `ingest_failed`"*), nên **400 là ánh xạ đã ghi trong tài liệu, không phải một quan sát riêng của
+> phép đo này**. Điều **đã đo** ở hàng B là: **bị từ chối**, và **bị từ chối ở bước cờ chứ không ở
+> bước lược đồ**."* — **RÚT 2026-08-18 (AB-1, vòng sửa thứ hai), giữ nguyên văn.**
+>
+> **Vì sao rút:** khối ấy đúng **về những gì AB-1 được trao**, và sai **về những gì đã được đo**. Một
+> **dòng trạng thái quan sát được vẫn tồn tại suốt thời gian đó** — trong file đã lưu của lần chạy
+> sạch, `item14-armA2.json` và `item14-armB2.json`, **cả hai kết thúc bằng `[HTTP 400]`**. Nên **400 ở
+> hàng B là một QUAN SÁT, không phải một ánh xạ**, và khối cũ hạ nó xuống sai hạng.
+>
+> 🔴 **VÀ ĐÂY LÀ MỘT HÌNH DẠNG THẤT BẠI CHUỖI-GIÁM-HỘ KHÁC VỚI HÌNH DẠNG ĐÃ GHI Ở §"biên ba tầng" —
+> nó đứng cạnh, không thay thế.** Hình dạng kia là *"một số liệu nhận lại được ghi như số liệu tự
+> đo"*. Hình dạng này là: **phép đo CÓ TỒN TẠI, ở phía điều phối viên, suốt thời gian ấy, và KHÔNG
+> ĐƯỢC CHUYỂN GIAO** — brief chỉ trao *"qua sạch lược đồ"* cho nhánh B, rồi vòng sửa lại trình bày
+> `400` như một **suy luận** (*"nhánh cờ trả `PRECONDITION_FAILED` ⇒ B cũng là 400"*) trong khi bản
+> gốc đang nằm trong tay người viết câu ấy. **Người ghi hồ sơ không thể phát hiện loại thiếu này từ
+> bên trong** — không dấu vết nào của nó xuất hiện trong thứ họ được trao. Cái chặn được nó là **luật
+> câu chữ**: từ chối viết một con số mình không có nguồn, khiến chỗ thiếu **phải lộ ra** ở phía giữ
+> nguồn. Ghi lại vì lần sau chỗ thiếu có thể không lộ ra.
+
+**Hạng nguồn của hai dòng này KHÔNG đổi: vẫn là NHẬN LẠI, AB-1 không tự chạy.** Cái đổi là chúng nay
+mang **dòng trạng thái thật** thay cho một ánh xạ, và **nêu tên artefact** giữ nó: `item14-armA2.json`,
+`item14-armB2.json`.
+
+**Thứ tự thi hành, suy ra từ chính chỗ chênh ấy:** **xác thực → kiểm lược đồ → cờ tính năng → nạp.**
+Nhánh A **chết ở bước lược đồ và chưa bao giờ chạm tới cờ**; nhánh B qua lược đồ rồi mới gặp cờ. Hai
+nhánh **dừng ở hai chỗ khác nhau**, và chính chỗ chúng dừng là cái làm thứ tự này **đo được** thay vì
+suy đoán được.
+
+### 🔴 Hậu quả nay ĐANG SỐNG — và cái làm nó DỊU ĐI đứng ngay cạnh; nêu một nửa là nói sai
+
+**Nửa làm nó nặng lên:** hậu quả **không còn là lý thuyết**. Một cổng ingest **đang chạy** từ chối
+**đúng hình dạng `WelderSim` phát**, và từ chối ở **bước lược đồ** — trước cả cờ tính năng. Không cần
+một lần `LiveTransport` chạy thật nữa để biết điều gì sẽ xảy ra: nó **vừa xảy ra**, có mã lỗi và có
+đường dẫn trường.
+
+**Nửa làm nó dịu đi, và nửa này cũng là một phép đo, không phải một lời an ủi:** cờ
+**`PROCESS_RESULT_INGEST_ENABLED` mặc định TẮT**, nên **không một bản triển khai nào nạp
+process-result trừ khi có người bật nó**. Nhánh B — nhánh **qua** được lược đồ — dừng đúng ở đó:
+`{"code":"ingest_failed","message":"Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED)."}`
+Đây là **quyết định thiết kế của nền tảng** (endpoint ship ở trạng thái tắt), **không** phải cấu hình
+sai của một bản triển khai. **Phép liệt kê là nguồn, và con số đứng SAU nó, không đứng trước** — nó
+được nêu ở những chỗ sau, mỗi chỗ ghim bằng một sha bất biến:
+
+- `scripts/sim/screwdriver-emitter.mjs`, **dòng 18** tại `avi-aoi-sim@84836ad6` và tại
+  `avi-aoi-management@f98f6146`/`@e9e1ea4c` — *"cờ master (mặc định OFF ⇒ endpoint ship dark…"*, vắt
+  sang dòng 19;
+- `examples/device-client/README.md`, **dòng 244** tại `avi-aoi-sim@84836ad6` — *"cổng
+  `process-result` mặc định **OFF** (ships dark…)"*;
+- `.env.example` — *"false (mặc định) = endpoint trả PRECONDITION_FAILED (ship-dark…)"*; **cố ý
+  không gắn số dòng**, vì số ấy khác nhau giữa hai cây và **đã dịch một lần** trong ngày (xem
+  §"Nguồn của luật").
+
+**Đếm sau khi liệt kê: ba chỗ.**
+
+🔴 **Hai nửa phải đọc CÙNG NHAU, và chúng không triệt tiêu nhau.** Nửa sau nói **hôm nay chưa ai mất
+dữ liệu**; nó **không** nói hình dạng đã hợp lệ. Ngày ai đó bật cờ — và cờ tồn tại để được bật — nửa
+trước là cái còn lại. Ngược lại, một hồ sơ chỉ nêu nửa trước sẽ **định giá quá cao mức khẩn cấp** của
+một quyết định mà chủ sở hữu đang cân **cùng với** giá của việc đổi một bề mặt đã xuất bản.
+
+### Ba chỗ lệch tài liệu ↔ thực tế — HAI chỗ đo được không cần khoá, chỗ thứ ba đòi một khoá (2026-08-18)
+
+> 📎 **Tiêu đề này đọc *"Ba chỗ lệch tài liệu ↔ thực tế, đo được mà không cần khoá nào (AB-1,
+> 2026-08-18)"* cho tới 2026-08-18, RÚT cùng ngày (AB-1, vòng sửa), giữ nguyên văn.** Nó **tự phủ
+> định mục 3 nằm dưới nó**: nửa sau của chỗ lệch 3 — *"khoá thật sự được cấp mang `mach_`"* — **chỉ
+> biết được bằng cách CẤP một khoá**, tức bước `claim`. Và nó gắn tên **AB-1** cho một tập gồm cả số
+> liệu hạng **NHẬN LẠI** (xem bảng ba hạng nguồn ở §"ĐÃ ĐO").
+
+Chúng là **đầu vào của quyết định**, không phải phần phụ lục: chúng cho thấy **nền tảng không tự đồng
+ý với chính nó**, nên câu phải quyết **rộng hơn** *"sửa `WelderSim` hay sửa validator"*.
+
+1. **Độ dài hàng — thứ được XUẤT BẢN lỏng hơn thứ được CƯỠNG CHẾ.** OpenAPI **đang phục vụ**
+   (`GET /api/v1/openapi.json`, đọc 2026-08-18) khai
+   `components.schemas.ProcessResultIngest.properties.waveforms.items.properties.samples` là một mảng
+   có `items` **theo vị trí** — `[{number},{number}]` — **nhưng không `minItems`, không `maxItems`**.
+   Không ràng buộc độ dài ⇒ một hàng **một** phần tử **thoả** hợp đồng máy-đọc-được đã xuất bản, trong
+   khi `z.tuple` lúc chạy **từ chối** nó. Cùng tài liệu ấy tự khai `openapi: "3.0.3"`, và dạng mảng của
+   `items` là dạng **OpenAPI 3.0.x không định nghĩa** (3.0 đòi `items` là **một** Schema Object).
+   **Một client sinh từ tài liệu này sẽ làm gì với chỗ đó — CHƯA ĐO**, và nó không được đoán ở đây.
+2. **Khoá đi ở đâu.** OpenAPI đang phục vụ khai `apiKey` là **một thuộc tính trong body** của
+   `ProcessResultIngest` (`{"type":"string"}`); **server trả lời** rằng khoá phải đi ở header:
+   *"Provide Authorization: Bearer &lt;key&gt; or X-API-Key."*
+3. **Tiền tố khoá — và hai nửa của nó KHÔNG cùng một hạng nguồn.** *Nửa đầu, **AB-1 tự đo, không cần
+   khoá*:* tài liệu và OpenAPI gọi khoá máy là **`mk_`**; quét toàn văn tài liệu đang phục vụ (đã
+   tải về từ `GET /api/v1/openapi.json`, đếm chuỗi con trên chính file ấy) cho **`mk_` 5 lần** và
+   **`mach_` 0 lần**. Phạm vi của phép quét ấy là **đúng một tài liệu**, và nó không phát biểu gì về
+   phần còn lại của nền tảng. *Nửa sau, **hạng NHẬN LẠI, và đòi một khoá*:* khoá **thật sự được cấp**
+   cho máy 250 mang tiền tố **`mach_`** — biết được **chỉ qua bước `claim`**, tức qua việc cấp thêm
+   một khoá, nên **AB-1 không kiểm lại nửa này** và không ai khác kiểm nó mà không cấp thêm.
+
+🔴 **Và một chỗ lệch THỨ TƯ, tìm thấy khi đối chiếu lại nguồn của bảng §"hai quy ước" — nó sửa một
+hàng của chính bảng ấy.** Hàng `server/api/v1/openapi.ts` ghi *"`samples: array of array of number` —
+**không ràng buộc độ dài hàng**"*. Đo lại: file ấy **không** xuất bản literal đó. Nó khai
+`processResultIngestSchema` là bản **SINH RA từ hợp đồng Zod** `machineProcessResultContractV1`
+(dòng **182–183**, qua `machineProcessContractJsonSchema(...)`), còn literal
+`items: { type: "array", items: { type: "number" } }` ở **dòng 147** chỉ là bản **DỰ PHÒNG**
+(`processResultIngestFallback`), dùng khi bản sinh trả null. Thứ nền tảng **thật sự phục vụ** là bản
+sinh — cặp theo vị trí, không ràng buộc độ dài (mục **1** ngay trên).
+
+**Chỗ điều này KHÔNG lật kết luận là chỗ đáng ghi nhất:** dưới **cả hai** cách đọc, một hàng **một**
+phần tử **thoả** thứ được xuất bản — bản dự phòng vì hàng là mảng số **độ dài bất kỳ**, bản sinh vì
+**không có `minItems`**. Nên *"xuất bản lỏng hơn cưỡng chế"* **đứng vững**; cái sai là **hàng bảng nêu
+sai artifact**, và nó được **sửa tại chỗ, không xoá**.
+
+> 📎 **Hàng bảng ấy giữ nguyên văn tại chỗ của nó** — *"`samples: array of array of number` — **không
+> ràng buộc độ dài hàng**"* — **RÚT 2026-08-18 (AB-1)** với tư cách **mô tả thứ nền tảng xuất bản**.
+> Nó **vẫn đúng** với tư cách mô tả **bản dự phòng** trong file ấy, nên phép rút chỉ chạm vào **vai
+> trò** của câu, không chạm vào nội dung nó.
+
+### Nguồn của luật: nêu ĐÚNG cây mã, và nêu cái mà dụng cụ trong repo này KHÔNG thấy
+
+🔴 **Các đường `server/…`, `client/src/…`, `docs/ECOSYSTEM/…` và `scripts/sim/…` trong bảng trên
+không được đọc như đường trong repo này.** Cây mã của **nền tảng đang chạy** nằm ở một repo khác:
+**`D:\SOURCES\avi-aoi-management`** (nhánh `feat/hmi-dep`, đối chiếu tại `f98f6146` rồi kiểm lại tại
+`e9e1ea4c`). Hai chỗ mang luật được đối chiếu lại ở đó 2026-08-18 và **khớp từng ký tự** với cái bảng
+trên ghi, **trỏ bằng tên**: `server/routers/machineApiRouters.ts` → `processWaveformSchema`; và
+`server/contracts/machineDataContract.ts` → `processWaveformV1` (bắt đầu ở **dòng 193** tại **cả ba**
+sha `f98f6146`, `e9e1ea4c` và `avi-aoi-sim@84836ad6` — con số này **chưa** dịch, khác với khối kia).
+
+🔴 **Trỏ bằng TÊN chứ không bằng số dòng — và lý do là một phép đo, đo được HAI lần, lần thứ hai bác
+chính cách lần thứ nhất được viết ra.** Khối `processWaveformSchema` **giống hệt nhau từng ký tự** ở
+các cây, nhưng **số dòng của nó thì không**, và **nó dịch trong chưa đầy một ngày**:
+
+| cây, ghim bằng SHA BẤT BIẾN | dòng của `processWaveformSchema` |
+|---|---|
+| `avi-aoi-sim` @ `84836ad6` | **2610** |
+| `avi-aoi-management` @ `f98f6146` | **2624** |
+| `avi-aoi-management` @ `54c4cf46` và @ `e9e1ea4c` | **2650** |
+
+Cùng loài, cùng ngày: cờ ingest nằm ở `.env.example` dòng **956** trong `avi-aoi-sim` @ `84836ad6`,
+và ở `avi-aoi-management` nó **dịch từ 1100 sang 1121** trong cùng khoảng ấy. Cái đẩy khối đi được
+nêu tên: commit **`2b732b99`** chạm vào `server/routers/machineApiRouters.ts`.
+
+> 📎 **Đoạn này đọc, cho tới 2026-08-18:** *"**2610** trong cây `avi-aoi-sim` tại `HEAD`, **2624** tại
+> `HEAD` của `avi-aoi-management`, **2650** trong **cây làm việc đang bẩn** của `avi-aoi-management`.
+> Một trích dẫn theo số dòng chỉ có nghĩa khi **nêu kèm cây**, và số **2650 không lấy lại được từ một
+> commit nào**."* — **RÚT cùng ngày (AB-1, vòng sửa), giữ nguyên văn.** Ba chỗ sai, và cả ba là **một**
+> lỗi: **`HEAD` là một con trỏ DI ĐỘNG**, và ba con số được neo vào nó trong một repo **đang được
+> commit**. (i) *"2650 không lấy lại được từ một commit nào"* là một **phủ định phổ quát ở thì hiện
+> tại** — nó chết khi nội dung cây bẩn **được commit**, và **2650 nay là số dòng tại một cây SẠCH**.
+> (ii) *"2624 tại `HEAD`"* — `HEAD` đã đi tiếp **hai lần** trong cùng ngày. (iii) *"nêu kèm cây"* là
+> **chưa đủ**: phải nêu kèm **COMMIT**. 🔴 **Và chỗ đau là chỗ nó xảy ra: đây là đoạn DẠY rằng đừng
+> trỏ bằng số dòng.** Nó vấp đúng luật nó phát biểu, nên nó ở lại đây làm nhân chứng.
+
+🔴 **Hệ quả, và nó áp cho cả BẰNG CHỨNG chứ không chỉ cho LUẬT:** mọi số dòng trong mục này chỉ đọc
+được **kèm một SHA bất biến**. Chỗ nào một cái tên tra được thì **cái tên là con trỏ**, không phải con
+số: `processWaveformSchema`, `processWaveformV1`, `processResultIngestFallback`,
+`machineProcessResultContractV1`, `machineProcessContractJsonSchema`. **Không ghim vào `HEAD` ở bất kỳ
+đâu** — một lần nữa là một phép đo về thứ **còn đang chuyển động, đưa ra như thể nó đã dừng**.
+
+🔴 **BIÊN IM LẶNG của mọi dụng cụ chạy trong repo này, và nó là lý do câu trên phải nói ra cách quét:**
+cây làm việc của `avi-aoi-sim` là **SPARSE CHECKOUT**. `git sparse-checkout list` trả về **đúng hai**
+đường — `tools/machine-simulator` và `examples/device-client`. **Mọi thứ ngoài hai đường ấy không nằm
+trên đĩa**, nên **mọi `grep -r`, `ls`, hay phép quét theo file trong repo này bỏ sót chúng mà không
+báo một lỗi nào**. Một **phủ định phổ quát** đo bằng những dụng cụ ấy chỉ phủ định **bên trong hai
+đường trên**; ngoài hai đường ấy nó **không phát biểu gì**.
+
+> 📎 **Câu này nêu ví dụ *"**`server/` và `web/` không nằm trên đĩa**"* cho tới 2026-08-18, RÚT cùng
+> ngày (AB-1, vòng sửa), giữ nguyên văn.** **`web/` không tồn tại trong repo này** — `git ls-tree -r`
+> cho **0** đường bắt đầu bằng `web/`. Thư mục anh em thật là **`client/`** (**711** file trong cây,
+> vắng trên đĩa), và `client/` **chính là nơi chứa một artifact bảng §"hai quy ước" đang trích**:
+> `client/src/components/apiDocs/AutomationProcessFeedSection.tsx`. Cùng loài và cũng vắng trên đĩa:
+> `docs/`, `scripts/`, `contracts/`, `apidocs/` — **tất cả đều mang artifact mục này trích**. 🔴 **Một
+> cái trần nêu quá nhỏ còn tệ hơn không nêu trần**, và ví dụ cũ nêu hai thư mục trong khi tập bị giấu
+> là *"mọi thứ trừ hai đường sparse"*.
+
+**Nhưng chúng KHÔNG vắng mặt khỏi repo này, và đây là chỗ dễ nói quá tay:**
+`server/routers/machineApiRouters.ts`, `server/contracts/machineDataContract.ts`,
+`docs/ECOSYSTEM/57_ST4I_STANDARD_PROCESS_FEED_SPEC.md` và `scripts/sim/screwdriver-emitter.mjs`
+**đều có trong cây Git của `avi-aoi-sim`** — đọc được bằng `git show 84836ad6:` — chỉ **không được
+materialise ra đĩa**. Nên hồ sơ trước **không đọc một file không tồn tại**; nó đọc **một bản sao nằm
+trong repo khác với repo build ra máy chủ đang chạy**. Hai bản của `machineApiRouters.ts` **khác nhau
+xét toàn file** và **trùng khít ở đúng khối mang luật** — đó là lý do kết luận cũ **đứng vững** *và*
+nguồn **vẫn phải sửa**.
+
+### 🔴 Biên của chuỗi giám hộ trong chính vòng này — MỘT LOÀI, BA TẦNG, để lại cho người sau
+
+Mục này được viết qua ba tay, và **cả ba đều nhận lại ít nhất một con số thay vì tự đo nó**. Liệt kê
+trước, không đếm trước:
+
+- **AB-1** (người ghi mục này) nhận **cặp đối chứng A/B**, máy 250 và tiền tố `mach_` từ **điều phối
+  viên**, và **không chạy lại** — lý do và cái giá nêu ở §"ĐÃ ĐO".
+- **Vòng phản biện** của chính nhiệm vụ này **không chạy cổng** `verify-suites`; nó **nhận** các con
+  số 2755 / 116 / 0-build-node từ điều phối viên, và **tự khai điều đó**, tự áp cùng một luật mà nó
+  dùng để bắt lỗi AB-1.
+- **Điều phối viên** là nguồn của cả hai, và **không phần nào của nó được đọc lại độc lập bên trong
+  vòng này**.
+
+**Đếm sau khi liệt kê: ba tầng, một loài.** Cái đáng để lại **không** phải "ai lười", mà là hình
+dạng: **miền của một dụng cụ hẹp hơn miền của câu nói dùng nó**, và khi ba người nối tiếp nhau, các
+biên ấy **chồng lên nhau chứ không triệt tiêu nhau**. Nên luật rút ra, viết ở đây vì đây là chỗ chủ
+sở hữu mở được: **một hồ sơ phải nêu hạng nguồn của từng khẳng định NGAY TẠI CHỖ**, vì mọi chỗ cất
+lời cải chính khác — báo cáo nhiệm vụ, ledger `.superpowers/sdd/` — **đều bị gitignore và không tới
+được người đọc**.
+
+🔴 **VÀ CÓ MỘT HÌNH DẠNG THỨ HAI, khác hẳn, phát hiện muộn hơn cả ba tầng trên — nó ĐỨNG CẠNH, không
+thay thế.** Hình dạng trên là *"một số liệu **nhận lại** được ghi như số liệu **tự đo**"*: chỗ thiếu
+nằm ở **nhãn**. Hình dạng thứ hai là *"một phép đo **CÓ TỒN TẠI** ở phía người giao việc, **suốt thời
+gian ấy**, và **không được chuyển giao**"*: chỗ thiếu nằm ở **dữ liệu**, và nó **không để lại dấu vết
+nào trong thứ người ghi hồ sơ được trao**. Ca cụ thể được ghi đầy đủ tại khối 📎 dưới bảng đối chứng
+A/B — dòng trạng thái `[HTTP 400]` của **cả hai** nhánh nằm trong `item14-armA2.json` và
+`item14-armB2.json` trong khi hồ sơ đang gọi con số ấy là một **ánh xạ suy ra**.
+
+**Hai hình dạng đòi hai lớp phòng vệ khác nhau, và đó là lý do chúng phải đứng cạnh nhau:** hình dạng
+thứ nhất **người ghi hồ sơ tự bắt được** — chỉ cần hỏi *"tôi có tự đọc thứ này không?"*. Hình dạng
+thứ hai **không tự bắt được từ bên trong**: không câu hỏi nào về thứ mình đang cầm phát hiện được thứ
+mình không được đưa. Cái chặn nó là **luật câu chữ**: **từ chối viết một con số mình không có nguồn**,
+kể cả khi con số ấy gần như chắc chắn đúng — vì chính lời từ chối làm chỗ thiếu **lộ ra ở phía giữ
+nguồn**. Ở vòng này nó lộ ra; **lần sau nó có thể không lộ ra**, và khi ấy hồ sơ sẽ mang một con số
+suy luận đội lốt một phép đo.
+
+### Câu *"cái sai là chú thích SDK"*: phép đo nói ngược **đối với bộ cưỡng chế lúc chạy** — và chỗ nó còn đứng được NÊU TÊN
+
+Phép đo phát biểu về **bộ validate lúc chạy**: chú thích SDK `[[t, v], …]` mô tả **đúng hình dạng
+nhánh B**, tức đúng hình dạng cổng ingest **nhận**; hình dạng `WelderSim` phát là hình dạng **bị từ
+chối**. Nên câu cũ — *"cái sai không phải hai producer, là chú thích trong SDK"* — **bị phép đo bác**,
+đọc theo bộ cưỡng chế lúc chạy.
+
+🔴 **Và phát biểu dừng ở đó, vì đi xa hơn một bước là dựng lại đúng câu vòng trước đã rút.** Cùng phép
+đo ấy, đối với **hợp đồng OpenAPI mà nền tảng tự xuất bản**, hàng một phần tử **không** nằm ngoài hợp
+đồng (§"ba chỗ lệch", mục 1). Vậy phát biểu đúng là: *"chú thích SDK khớp **bộ cưỡng chế lúc chạy**,
+và hình dạng `WelderSim` phát không khớp **bộ ấy**"* — và nó **thôi đúng** ngay khi bỏ chữ *"lúc
+chạy"* đi. Blockquote đã rút ở §"hợp nhất" bên dưới bị rút **đúng vì** lý do này, nên nó không được
+viết lại ở đây dưới vật liệu mới.
+
+**Câu cũ còn đứng ở đâu — nêu tên chứ không lấp:** trong **mục 4**, ba chỗ. *"Nên cái sai không phải
+hai producer — là chú thích trong SDK."* và *"nêu tên chú thích SDK là **đã biết sai**"* nằm trong
+khối **PHÁN QUYẾT 2026-08-16 của chính chủ sở hữu**; *"**CHÚ THÍCH SDK ĐƯỢC NÊU TÊN LÀ ĐÃ BIẾT SAI**"*
+nằm trong ghi chép thi hành của **AA-1**. 🔴 **AB-1 không sửa một chữ nào trong mục 4.** Hai chỗ đầu
+nằm trong phán quyết của chủ sở hữu, và rút một câu ở đó là **quyết thay họ** — đúng thứ nhiệm vụ này
+bị cấm. Chúng được **nêu tên tại đây** để người đọc mục 4 tìm được phép đo bác chúng; ô mục 4 của bảng
+phán quyết đầu file đã trỏ sang mục 14 từ trước.
+
+### Hợp nhất vào đây: phát hiện §8.1 của chính AA-1, nay đọc NGƯỢC hẳn
+
+AA-1 tìm ra và gọi là *"nặng hơn nhiều"* — và nó **vẫn nặng**, nhưng theo chiều ngược lại:
+
+- `[[t, v], ...]` cũng nằm trong **SDK Python** (`examples/device-client/python/st4i_device_client.py`,
+  **hai chỗ**), không chỉ trong client C#;
+- **ba ví dụ CHẠY ĐƯỢC** — `examples/device-client/csharp/ExampleScrewdriver.cs`,
+  `examples/device-client/python/example_screwdriver.py`, `examples/device-client/README.md` — đều
+  gửi `rateHz` **kèm** hàng hai phần tử, phần tử 0 là **góc**.
+
+AA-1 kết luận chúng là **bản sao lỗi**. **Sai.** Chúng **khớp đặc tả 57 §8.1 từng con số** (kể cả
+`rateHz: 500` và `412`). Nên câu hỏi AA-1 đặt — *"ai sửa họ SDK, và bao giờ?"* — có một câu chị em,
+và mục này **ghi nó xuống chứ không trả lời**: **họ SDK không phải một bản sao lỗi cần chữa; chúng
+là ba bản cài đặt của đặc tả, và bất kỳ lối ra nào đổi đặc tả cũng phải đổi cả ba cùng nhau.**
+
+> 📎 **Chỗ này là một blockquote in đậm đứng riêng, đọc: *"Họ SDK khớp đặc tả. Cái lệch là bộ phát
+> của chúng ta."* — RÚT 2026-08-18 (AA-1, vòng phản biện của vòng sửa), giữ nguyên văn.** Nó là câu
+> **nghiêng nhất** trong cả mục: một khuyến nghị chọn B, đặt ở chỗ mắt người đọc dừng lại, trong một
+> mục mà chủ sở hữu mở ra để **quyết**. Và **chính bảng phía trên bác nó**: OpenAPI đã xuất bản của
+> nền tảng **cho phép** hàng một phần tử, nên *"cái lệch là bộ phát của chúng ta"* đúng với **bộ
+> validate lúc chạy** và **sai với hợp đồng nền tảng tự công bố**. Phát biểu đúng là phát biểu hai
+> chiều ở §"quy ước B không đồng nhất" bên trên.
+
+### Hậu quả vận hành, hai chiều, phải nói cả hai
+
+- **Nếu quy ước B là chuẩn:** `WelderSim` phải đổi sang hàng `[t, current]`. Đó là **đổi một payload
+  đã xuất bản** của sản phẩm này — cùng hạng thay đổi mà mục 3 và mục 4 dành riêng cho chủ sở hữu.
+- **Nếu quy ước A là chuẩn:** `processWaveformSchema`, `processWaveformV1`, đặc tả 57, OpenAPI, trang
+  API-docs, doc 62 §6, và **cả ba ví dụ SDK** phải đổi. Đó là **đổi một hợp đồng ingest đã xuất bản**
+  mà **mọi driver bên thứ ba đang viết theo**, và nó **nới** một validator (nới thì payload cũ vẫn
+  chạy, nhưng ba bản dịch SDK phải đi cùng nhau).
+- **Một khả năng thứ ba, nêu ra vì bảng lựa chọn của mục 12 đã bị bắt vì nêu thiếu:** cả hai cùng
+  đúng ở **hai lớp khác nhau** — kiểu trong-tiến-trình cho phép cả hai, và **chỉ đường dây** ép cặp.
+  Nếu vậy thì cái phải đổi là `Normalizer`, không phải `WelderSim`. **Chưa đo, và không quyết ở đây.**
+
+### ✅ KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1) — nó KHẢ THI, và nó KHÔNG nằm trọn ở MỘT đường dây
+
+> 📎 **Cụm *"Chưa đo, và không quyết ở đây."* ở gạch đầu dòng ngay trên giữ NGUYÊN VĂN tại chỗ của
+> nó, và nửa đầu — *"Chưa đo"* — được **RÚT 2026-08-19 (AI-1)**.** Lý do là **phép đo đã chạy**,
+> không phải câu ấy từng sai: nó mô tả đúng trạng thái hồ sơ cho tới đúng lúc ấy. Nửa sau —
+> *"và không quyết ở đây"* — **KHÔNG rút và vẫn đúng**: mục này vẫn `🔴 CHỜ ANH`, ba lựa chọn vẫn
+> chưa quyết, và phần dưới đây **không khuyến nghị lựa chọn nào**.
+>
+> 📎 **KIỂU BẢO TỒN CỦA AI-1, nêu một lần cho toàn bộ phần AI-1 viết trong file này (mục 9, 13, 14):**
+> đúng **MỘT** kiểu, và là kiểu AB-1 đã lập — **TRÍCH NGUYÊN VĂN RỒI RÚT** trong khối 📎, kèm ngày và
+> người rút, lý do đứng ngay cạnh. **AI-1 không dùng dấu gạch ngang ở bất kỳ chỗ nào**, không xoá một
+> dòng nào, và không đụng tới các `~~…~~` sẵn có (của T-1, U-1, V-1, Y-1).
+
+**Người đo, ngày, cây, SHA:** **AI-1**, **2026-08-19**, cây `avi-aoi-sim` ghim tại **`f08cb379`**
+(commit bất biến, không phải `HEAD`). **Tất cả bốn phép đo dưới đây là AB-1-hạng "tự đo"** — đọc trên
+mã, không nhận lại từ ai, không chạy cổng nào, không chạm nền tảng.
+
+🔴 **MIỀN CỦA PHÉP QUÉT, nêu TRƯỚC mọi con số, vì đợt 5 vừa trả giá cho một phép LẤY MẪU mặc áo một
+phép KIỂM ĐẾM.** Cây làm việc là **sparse checkout** và `git grep` thường **chỉ thấy đĩa**. Nên mọi
+phép kiểm đếm dưới đây chạy bằng **`git grep <mẫu> f08cb379 -- .`** — quét **toàn bộ cây Git tại
+commit ấy**, kể cả `server/`, `client/`, `docs/ECOSYSTEM/`, `scripts/`, `drizzle/`, `web/` là những
+đường **không nằm trên đĩa**. **Cái phép quét ấy KHÔNG phủ:** việc chưa commit, nhánh khác, cây nền
+tảng `D:\SOURCES\avi-aoi-management`, và bất kỳ người tiêu thụ nào **ngoài repo này**.
+
+**(1) `Normalizer` CÓ đủ thông tin để dựng cặp — nêu tên chỗ, không nêu số dòng.**
+`Normalizer.NormalizeProcessResult` dựng entry waveform trong **một** phép chiếu `Select` trên
+`r.Waveforms`, ở đó `w.RateHz` và `w.Samples` **cùng trong tầm**, và câu gán là
+`["samples"] = w.Samples` — **chép nguyên tham chiếu, không sao chép**. Dựng `[i / RateHz, v]` chỉ
+cần **thêm một phép chiếu có chỉ số bên trong**, trên dữ liệu đã có trong tay. **Khả thi: CÓ.**
+
+🔴 **(1b) VÀ `t = i / RateHz` KHÔNG BẰNG cái `t` mà `WelderSim` VẼ ĐƯỜNG CONG LÊN — đây là kết quả
+bất tiện, nên nó được nêu chứ không lấp.** `WelderSim.BuildCurrentWaveform` đặt mẫu `i` tại
+`i / (WaveformPoints - 1)` của thời lượng hàn (biến `t` nội bộ của nó, chuẩn hoá 0…1 **bao gồm cả
+hai đầu**), trong khi `rateHz` nó phát ra là `WaveformPoints / thời_lượng`, tức `i / RateHz` đặt mẫu
+`i` tại `i / WaveformPoints` của thời lượng. **Hai cái chỉ trùng ở `i = 0`.** Với
+`WaveformPoints = 24`, trục thời gian dựng lại **co lại 23/24 ≈ 4,17 %**; ở mẫu cuối chênh **đúng một
+chu kỳ lấy mẫu** (≈ 5 ms trên một mối hàn 120 ms). **Không cái nào trong hai cái này là "sai" cho tới
+khi có người quyết `rateHz` NGHĨA LÀ GÌ** — và assertion đang giữ quan hệ ấy được **nêu tên**:
+`WaveformSeriesRowShapeContractTests.TheTwoBuiltInProducers_SitOnOppositeSidesOfTheRateHzSplit_AndElementZeroIsAnAngleNotATime`
+khẳng định `Samples.Count / RateHz` **bằng** `weld_time` giây, tức quy ước *"N mẫu chiếm N chu kỳ"* —
+tự nhất quán, và **khác** với quy ước bộ sinh dùng để vẽ. **AI-1 không sửa một dòng nào của cả hai.**
+
+**BÁN KÍNH của chỗ lệch ấy, nêu vì thiếu nó thì câu trên đọc rộng hơn cái nó nói — HAI điều kiện, và
+lần ghi đầu chỉ nêu một:** (i) **chưa ai quyết `rateHz` NGHĨA LÀ GÌ**, nên chưa quy ước nào là "sai" —
+đã nêu ở trên; (ii) 🔴 **`WelderSim` là một BỘ MÔ PHỎNG.** Bán kính của 4,17 % là **dữ liệu demo/trưng
+bày do sản phẩm này tự sinh**, **không** phải dữ liệu quy trình của một khách hàng. Nó vẫn là **một sự
+thật về PAYLOAD** — một người tiêu thụ dựng lại `t = i/rateHz` sẽ đặt mẫu cuối lệch một chu kỳ lấy mẫu
+— nhưng payload ấy chở số liệu mô phỏng. **Cả hai điều kiện phải đọc cùng nhau.**
+
+**(2) Phép chuyển KHÔNG nằm trọn ở MỘT ranh giới — nó nằm ở MỘT CHỖ TRONG MÃ nhưng chạm BA bề mặt
+đi ra. Liệt kê trước, đếm sau.** `EdgePipeline.RunAsync` gọi `Normalizer.Normalize` **một lần**, rồi
+trao **cùng một `CanonicalEnvelope`** cho:
+
+1. `IUnsPublisher.PublishReading(reading, env)` — `UnsPublisher.PublishReadingCoreAsync` **tuần tự hoá
+   NGUYÊN VẸN envelope ấy thành JSON** và publish làm **gương ngữ nghĩa RETAINED** trên topic `syn/…`.
+   Đây là **một bề mặt MQTT đã xuất bản**, cùng hạng bề mặt mà **mục 3** dành riêng cho chủ sở hữu.
+   Nó cũng đi tiếp vào `UnsBridge`/`BridgeSpool`, tức **xuống đĩa**.
+   🔴 **CÓ AI ĐANG ĐĂNG KÝ HAY KHÔNG — CHƯA ĐO, và không đo được từ repo này.** Cái **đo được** là
+   **hợp đồng nói gì**: doc comment của `DeviceReading.Kind` viết rằng giá trị ấy đi tiếp *"as an
+   aspect segment of the retained MQTT topic, whose subscribers are outside this repository
+   altogether"* — tức **hợp đồng TỰ KHAI rằng người đăng ký nằm ngoài repo này**. Đó là một phát biểu
+   **của tài liệu**, không phải một phép **đếm người đăng ký**;
+2. `ITransport.SendAsync(env)` → `LiveTransport.SendProcessResultAsync` → `ReadWaveforms(d)` →
+   `ReadSampleSeries(d)` → DTO `Waveform` của SDK → `POST /api/v1/ingest/process-result`. Đây là bề
+   mặt mà cả mục này nói tới;
+3. hàng đợi **store-and-forward của chính SDK**, nằm sau (2) — `St4iDeviceClient._queuePath` +
+   `Enqueue`, một file **JSONL** mà mỗi dòng là `{kind, path, payload, queuedAt}` ghi bằng
+   `File.AppendAllText`. Tức **nguyên payload, gồm cả `samples`, được ghi XUỐNG ĐĨA** khi mạng hỏng và
+   **phát lại sau**. **Riêng tư, không phải hợp đồng đã xuất bản** — nhưng một hàng đợi ghi lúc quy ước
+   cũ còn hiệu lực sẽ **phát lại hình dạng cũ** sau khi mã đã đổi, và **không ai đo cửa sổ ấy**.
+
+**Đếm sau khi liệt kê: BA bề mặt đi ra, MỘT chỗ trong mã.** `DemoTransport` **không** đọc `waveforms`
+(nó chỉ đọc `Payload["samples"]` của nhánh **telemetry**), nên nó không phải bề mặt thứ tư.
+
+**Và tập chỗ gọi `Normalizer.Normalize` phải nêu ĐỦ trước khi con số trên có nghĩa.** Quét
+`git grep -n "Normalizer\.Normalize" f08cb379 -- tools/machine-simulator/src` cho **BỐN** chỗ:
+`EdgePipeline.RunAsync` (**đường sản phẩm**, chỗ ba bề mặt trên treo vào) và **ba** chỗ trong
+`St4iMachineSimulator/App.xaml.cs` — bộ **smoke test live** của ứng dụng desktop, mỗi chỗ một bộ sinh:
+`RunResultSmoke` dùng **`ScrewdriveSim`**, nhánh telemetry dùng **`IotSensorSim`**, nhánh giám định
+dùng **`AoiInspectorSim`**; cả ba đi qua **cùng** `Normalizer` rồi `LiveTransport`. **Đếm: BỐN chỗ
+gọi, MỘT là đường sản phẩm, BA là dụng cụ chẩn đoán.** Ba chỗ sau **cũng** đổi theo nếu phép chuyển
+được đặt ở `Normalizer`, nhưng chúng **không** đi qua `UnsPublisher` nên chỉ chạm **một** bề mặt.
+🔴 **Và không chỗ nào trong ba dùng `WelderSim`**, nên **không một đường smoke nào mang hình dạng hàng
+đang tranh chấp** — tức bộ smoke live của desktop **không phải** một nhân chứng cho mục này, và không
+được đọc như một.
+
+🔴 **Câu quyết định, trả lời đúng như nó được hỏi:** `WaveformSeries` **KHÔNG phải đổi**, `WelderSim`
+**KHÔNG phải đổi** — cả hai đứng **thượng nguồn** của `Normalizer`. Nhưng *"chỉ payload đi ra đổi"*
+**là SAI nếu đọc là một payload**: gương ngữ nghĩa retained đổi **cùng lúc**, và nó là **bề mặt đã
+xuất bản thứ hai**. Một phép chuyển đặt ở `Normalizer` **không tách được hai cái ấy** ở chỗ ấy.
+
+🔴 **VÀ CÂU TRÊN MỘT MÌNH THÌ VẪN LỆCH, VÌ NÓ KHÔNG XẾP HẠNG LẠI — đây là chỗ dễ đọc sai nhất của cả
+mục, nên nó được viết ra thay vì để tự suy.** `Normalizer` **chép tham chiếu** `w.Samples`, và **cùng
+một envelope** đi vào **cả** gương retained **lẫn** đường HTTP. Nên giá "bề mặt xuất bản thứ hai"
+**KHÔNG phải giá riêng của lựa chọn 3**:
+
+| lựa chọn | gương MQTT retained `syn/…` | payload ingest HTTP | trong cây này | **ngoài cây này** |
+|---|---|---|---|---|
+| **1 — đổi `WelderSim`** | **ĐỔI** | ĐỔI | `WelderSim` đổi; `WaveformSeriesRowShapeContractTests` **ĐỎ** | payload đã xuất bản của sản phẩm này |
+| **2 — đổi bộ cưỡng chế nền tảng** | **không đổi** | không đổi | **không một dòng nào** | 🔴 `processWaveformSchema`, `processWaveformV1`, đặc tả 57, OpenAPI, trang API-docs, doc 62 §6, **và cả BA ví dụ SDK** — một **hợp đồng ingest đã xuất bản** mà **mọi driver bên thứ ba đang viết theo** |
+| **3 — đổi `Normalizer`** | **ĐỔI** | ĐỔI | **`WaveformSeries` và `WelderSim` không đổi**; **KHÔNG bài nào đỏ** | payload đã xuất bản của sản phẩm này |
+
+**Đọc bảng này theo hàng, không theo ô:** lựa chọn **1 trả ĐÚNG cái giá gương MQTT ấy, CỘNG THÊM**
+phần của nó; lựa chọn **3 trả cùng giá gương nhưng không đụng hai kiểu**; lựa chọn **2 không trả giá
+nào TRONG cây này**. 🔴 **Và đúng vì thế, cột cuối phải đọc cùng lúc, nếu không bảng vừa sửa xong một
+thiên lệch đã dựng lên một cái ngược lại:** *"lựa chọn 2 không đổi gì"* chỉ đúng **cục bộ**; giá của
+nó nằm **toàn bộ ở bên ngoài**, trên hợp đồng ingest đã xuất bản cộng ba bản dịch SDK phải đi cùng
+nhau. **Một bảng chỉ có ba cột đầu sẽ đọc như một lời khuyên chọn (2).** Ở đây không có lời khuyên nào.
+
+🔴 **Và một cổng KIỂU im lặng đứng ngay trên đường (2), nêu vì nó ăn mất dữ liệu mà không báo:**
+`LiveTransport.ReadSampleSeries` nhận **một hàng khi và chỉ khi nó là `double[]`** (`if (point is
+double[] arr)`), rồi **bỏ qua** mọi thứ khác **không lỗi, không log**. Phép chuyển giữ kiểu `double[]`
+thì qua; một phép chuyển trả `List<double>`, `object[]` hay tuple thì **mọi mẫu biến mất im lặng** và
+payload đi ra mang `samples: []`. **Đây là một ràng buộc thi hành đã đo, không phải một lời khuyên.**
+
+🔴 **VÀ NÓ TIỀM ẨN, KHÔNG ĐANG SỐNG — nêu ra để câu trên không bị đọc thành một lỗi đang chảy hôm
+nay.** `WaveformSeries.Samples` có kiểu **`IReadOnlyList<double[]>`** và `Normalizer` **chép tham
+chiếu**, nên **theo hệ kiểu, mọi phần tử HÔM NAY là `double[]`**. **`samples: []` KHÔNG đang đi ra.**
+Cổng kiểu ấy chỉ ăn mất dữ liệu **đúng vào lúc** ai đó viết một phép chuyển trả kiểu khác — tức
+**đúng hình dạng mà một bản thi hành ngây thơ của lựa chọn 3 sẽ tạo ra**, và đó là lý do nó thuộc mục
+này chứ không thuộc một mục riêng.
+
+**(3) CÒN AI TIÊU THỤ `Waveforms` TRONG TIẾN TRÌNH — liệt kê trước, đếm sau.** Quét
+`git grep -n "\.Waveforms" f08cb379 -- .` (toàn cây Git tại SHA). Trong `src/`, ngoài hai **bộ sinh**
+(`WelderSim`, `ScrewdriveSim` — cả hai chỉ `Add`), có đúng bốn chỗ **ĐỌC**:
+
+| # | chỗ đọc, trỏ bằng TÊN | nó đọc gì | thấy gì nếu phép chuyển đặt ở `Normalizer` |
+|---|---|---|---|
+| 1 | `Normalizer.NormalizeProcessResult` | `.Count`, rồi chép `w.Samples` | **chính nó là chỗ đổi** |
+| 2 | `DeviceDriverConformanceSuite.HasAnyValueBearingContent` | **chỉ** `.Count > 0` | **không thấy gì** — thượng nguồn, và nó không đọc hàng |
+| 3 | `DeviceReadingClone` (nhánh `Waveforms`) | sao chép sâu **từng hàng** | **không thấy gì** — thượng nguồn |
+| 4 | `DeviceReadingEquality.CompareWaveform` | `Name`/`Unit`/`RateHz` + **từng phần tử** | **không thấy gì** — thượng nguồn |
+
+**Đếm sau khi liệt kê: BỐN chỗ đọc trong `src/`, ba trong số đó ngoài `Normalizer`, và cả ba nằm
+trong `St4i.Connector.Conformance`.** Cả ba làm việc trên `DeviceReading` — tức **trước** `Normalizer`
+— nên **không cái nào quan sát được** phép chuyển. Phần còn lại của phép quét là **doc comment**
+(`DeviceReading.cs`, `Enums.cs`, `DeviceDriverConformanceSuite.cs`) và **README** ×2, không phải chỗ đọc.
+
+**(4) CÁI GÌ SẼ ĐỎ — đo bằng cách ĐỌC test, và câu trả lời là KHÔNG CÁI NÀO.** Quét
+`git grep -iln "aveform" f08cb379 -- tools/machine-simulator/tests` trả về **đúng hai** file, và đó
+là **toàn bộ** dân số test chạm tới waveform trong cây:
+
+1. `tests/St4i.Connector.Abstractions.Tests/ConnectorRoundTripTests.cs` — round-trip của
+   **`DeviceReading` qua `ConnectorJson`**;
+2. `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` — bốn `[Fact]`, tất cả gọi
+   `sim.NextCycle(...)` và soi **`DeviceReading.Waveforms`**.
+
+**Đếm sau khi liệt kê: HAI file, và cả HAI đứng thượng nguồn `Normalizer`.** Cộng thêm phép quét
+`git grep -n '"waveforms"' f08cb379 -- tools/machine-simulator` và `'"samples"'`: **không một test
+nào** khẳng định hình dạng `payload["waveforms"]` hay `payload["samples"]` của nhánh process-result —
+`NormalizerTests.cs`, `LiveTransportTests.cs` và cả hai file test UNS **không chứa chữ "waveform"**.
+
+🔴 **Nên phép đo cho ra một câu BẤT TIỆN, và nó là kết quả chứ không phải một chỗ trống:** đặt phép
+chuyển ở ranh giới `Normalizer` khiến **không một bài kiểm nào trong 2763 bài đỏ lên** — kể cả nhân
+chứng đợt 4 `WaveformSeriesRowShapeContractTests`, **vẫn xanh**, vì nó không nhìn xuống hạ nguồn.
+**"Không gì đỏ" ở đây KHÔNG phải bằng chứng an toàn; nó là bằng chứng KHÔNG CÓ NHÂN CHỨNG.** Hai lối
+ra đầu (đổi `WelderSim`, hay đổi validator) đều **có** nhân chứng đỏ lên; lối thứ ba **không có**, và
+nếu nó được chọn thì nhân chứng cho nó là thứ **phải viết mới**.
+
+**Cái phép đo này KHÔNG trả lời được, nêu tên chứ không lấp:**
+- nó **không** nói quy ước nào **nên** thắng, và không nói lối ra nào rẻ hơn về mặt xã hội;
+- nó **không** đo bên đăng ký MQTT: **ai đang đọc gương ngữ nghĩa retained `syn/…`, và họ sẽ thấy gì
+  nếu hàng đổi hình dạng — CHƯA ĐO**, và không đo được từ trong repo này. Đó là cùng hạng người-ngoài
+  mà mục 3 nói tới;
+- nó **không** đo client sinh từ OpenAPI đang phục vụ (vẫn là ô *"chưa ai kiểm"* của bảng ba hạng nguồn);
+- nó **không** chạy cổng ingest lần nào: **AI-1 không chạm nền tảng, không POST gì**, nên cặp đối
+  chứng A/B của AB-1 vẫn là **bằng chứng động duy nhất** của mục này và hạng nguồn của nó **không đổi**.
+
+### Nếu không quyết định
+
+Giữ nguyên. `WelderSim` tiếp tục phát một hình dạng cổng ingest từ chối; không gì đỏ lên trong
+`tools/machine-simulator` vì không phép kiểm nào của nó nhìn sang phía tiêu thụ.
+
+> 📎 **Câu này kết bằng *"và lần chạy `Live` đầu tiên với một máy WELDER sẽ là lần đầu tiên ai đó
+> biết — **nếu** nó xảy ra."* cho tới 2026-08-18, RÚT cùng ngày (AB-1), giữ nguyên văn.** Nó đã sai
+> **đúng lúc phép đo chạy**: không cần một lần `Live` nào nữa, và *"ai đó"* đã biết — bằng HTTP 400
+> với ba đường dẫn trường, ghi ở §"ĐÃ ĐO" bên trên.
+
+**Cái thay vào chỗ ấy, và nó là hai vế:** hôm nay **không bản triển khai nào nạp process-result**,
+vì cờ `PROCESS_RESULT_INGEST_ENABLED` **mặc định tắt**; nên "không quyết định" **không** để lại một
+đường mất dữ liệu đang chảy. Cái nó để lại là **một hình dạng đã xuất bản mà cổng đã xuất bản từ
+chối**, nằm im cho tới **ngày ai đó bật cờ** — và cờ tồn tại để được bật.
+
+### Vì sao là quyết định của chủ sở hữu
+
+Cả hai lối ra **đổi một bề mặt đã xuất bản mà người ngoài đang dựa vào** — hoặc payload của sản phẩm
+này, hoặc hợp đồng ingest cộng ba SDK anh em. Đúng lý do mục 3 và mục 4 là của chủ sở hữu.
+
+### Bằng chứng — nay có HAI loại: loại đọc được, và loại chỉ có khi CHẠY
+
+> 📎 **Tiêu đề mục con này đọc *"Bằng chứng — đọc được, không cần chạy"* cho tới 2026-08-18, RÚT
+> cùng ngày (AB-1), giữ nguyên văn.** Nó đúng khi cả mục chỉ có bằng chứng tĩnh; phép đo 2026-08-18
+> thêm một loại **không** đọc được từ cây mã — cặp đối chứng A/B trên cổng ingest đang chạy — nên
+> tiêu đề cũ nay **hứa hẹn ít hơn** cái mục này mang.
+
+> 📎 **Câu mở đầu đọc *"Các file nêu tên trong bảng trên, tại commit `84836ad6`."* cho tới 2026-08-18,
+> RÚT cùng ngày (AB-1), giữ nguyên văn.** `84836ad6` là một commit của **repo này**, nhưng các hàng
+> `server/…`, `client/src/…`, `docs/ECOSYSTEM/…` và `scripts/sim/…` của bảng ấy được đối chiếu ở
+> **`D:\SOURCES\avi-aoi-management`** — **một cây khác** — nên một commit-id của `avi-aoi-sim` không
+> định vị được chúng, và một số dòng đọc ở cây kia không tra lại được bằng nó.
+
+**Bằng chứng tĩnh, nêu kèm cây:** các file nêu tên trong bảng trên. Phía nền tảng, đối chiếu tại
+`D:\SOURCES\avi-aoi-management` nhánh `feat/hmi-dep` (2026-08-18), **trỏ bằng tên phần tử**:
+`processWaveformSchema` và `processWaveformV1`. Cùng các file ấy **cũng có trong cây Git của repo
+này** tại `84836ad6`, **không nằm trên đĩa** (sparse checkout) — xem §"Nguồn của luật".
+
+**Bằng chứng động, chỉ có khi chạy — và nó là hạng NHẬN LẠI:** cặp đối chứng A/B ở §"ĐÃ ĐO", trên
+SYNAPSE tại `http://localhost:3000`, 2026-08-18, máy thử id **250**. **Do điều phối viên đo; AB-1 ghi
+lại chứ không chạy lại** (lý do nêu tại §"ĐÃ ĐO"). **Không có transcript của hai POST ấy trong repo
+này**, nên chỗ này là điểm yếu nhất của chuỗi giám hộ trong cả mục, và nó được nói ra thay vì để người
+đọc tự phát hiện. *"Không bản ghi process-result nào được tạo"* là **suy luận từ chỗ hai POST dừng**,
+không phải một truy vấn CSDL.
+
+📎 **MỞ RỘNG câu ngay trên, 2026-08-18 (AB-1, vòng sửa thứ hai) — câu ấy giữ nguyên văn vì nó KHÔNG
+sai, chỉ thiếu.** *"Không có transcript … **trong repo này**"* vẫn đúng từng chữ. Cái nay biết thêm:
+**transcript CÓ TỒN TẠI**, ở phía điều phối viên, và **được nêu tên** — `item14-armA2.json` và
+`item14-armB2.json`, mỗi file kết thúc bằng dòng `[HTTP 400]`. Nên chuỗi giám hộ **chặt hơn** cái câu
+trên mô tả: chủ sở hữu **hỏi được hai file ấy**, thay vì chỉ có lời khai. Đây là thao tác **MỞ RỘNG**
+(phép liệt kê thiếu), **không** phải RÚT — ba thao tác vẫn phân biệt như file này quy định.
+
+Phía sản phẩm:
+`src/St4i.EdgeCore/Drivers/Simulators/WelderSim.cs`, `…/ScrewdriveSim.cs`,
+`src/St4i.EdgeCore/Mapping/Normalizer.cs`, `src/St4i.EdgeCore/Transport/LiveTransport.cs`,
+`tools/machine-simulator/fleet.json`. Nhân chứng đang giữ hành vi hiện tại (**không** giữ một phán
+quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` — nếu anh quyết theo quy
+ước B, **nó đỏ lên, và chỗ đỏ chính là diff**, đúng hình dạng mà S-1 dùng cho mục 5 và V-1 cho mục 10.
+
+> 📎 **Câu ngay trên giữ NGUYÊN VĂN và KHÔNG bị rút — nhưng nó dự đoán một lối ra KHÔNG được chọn, và
+> điều đó phải đọc được ở đây chứ không chỉ ở khối phán quyết bên dưới (AK-1, 2026-08-19).** Chủ sở hữu
+> chọn **lựa chọn 3**, không phải quy ước B: `WelderSim` **không đổi**, nên
+> `WaveformSeriesRowShapeContractTests` **KHÔNG đỏ lên** và **vẫn xanh sau khi mục này đã thi hành**.
+> 🔴 **Đó là im lặng, không phải chấp thuận** — bài ấy soi `DeviceReading.Waveforms`, tức **thượng
+> nguồn** chỗ đổi, nên nó **không thể** quan sát phép chuyển dù phép chuyển có hay không. Chính vì thế
+> lựa chọn 3 **phải mang theo một nhân chứng MỚI**, và nó có: `WaveformPairAtTheWireBoundaryTests`.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-19 — **LỰA CHỌN 3: DỰNG CẶP `[t, v]` Ở RANH GIỚI `Normalizer`**
+>
+> **Chủ sở hữu quyết, 2026-08-19, sau khi đọc phép đo của AI-1 và bảng so sánh đã cân lại hai lần.**
+> Cả hai quy ước **cùng đúng ở hai lớp khác nhau**: kiểu trong tiến trình cho phép cả hai, và **chỉ
+> đường dây** ép cặp. Nên thứ phải đổi là **`Normalizer`**, không phải `WelderSim` và không phải bộ
+> cưỡng chế của nền tảng.
+>
+> 🔴 **CÁI PHÁN QUYẾT NÀY CỐ Ý KHÔNG QUYẾT, ghi ra để không ai đọc rộng hơn nó:** nó **không** tuyên
+> quy ước nào là chuẩn cho **hàng trong tiến trình**. `WaveformSeries` giữ nguyên hợp đồng của nó,
+> `RateHz` vẫn là thứ hai bộ sinh của sản phẩm này tách trên, và mục 4 **không** bị quyết lại ở đây.
+>
+> 🔴 **GIÁ CHỦ SỞ HỮU ĐÃ CHẤP NHẬN, GHI VÀO MỤC, KHÔNG LÀM NHẸ ĐI — và nó là HAI bề mặt đã xuất bản,
+> không một.** Cùng một envelope đi ra cả **payload ingest HTTP** lẫn **gương ngữ nghĩa MQTT retained
+> `syn/…`**, nên gương ấy **đổi cùng lúc**, cùng hạng bề mặt mà **mục 3** dành riêng cho chủ sở hữu.
+> **AI ĐANG ĐĂNG KÝ GƯƠNG ẤY — CHƯA ĐO, và không đo được từ trong repo này**; cái đo được là **hợp
+> đồng TỰ KHAI** rằng người đăng ký nằm ngoài repo, và đó là lời của tài liệu, không phải một phép đếm
+> người đăng ký. Phán quyết được ra **mà không có phép đếm ấy**.
+>
+> **Và một bề mặt thứ ba, riêng tư, cũng được chấp nhận cùng lúc:** hàng đợi store-and-forward của SDK
+> ghi **nguyên payload xuống đĩa** (JSONL) và **phát lại sau**, nên một hàng đợi ghi trước lúc đổi sẽ
+> **phát lại hình dạng CŨ sau khi mã đã đổi**. **Cửa sổ ấy dài bao lâu và tồn đọng bao nhiêu dòng —
+> KHÔNG ĐO ĐƯỢC từ cây này**, và nó áp cho **cả ba** lựa chọn chứ không riêng lựa chọn 3.
+>
+> 📎 **MỞ RỘNG 2026-08-19 (AK-1) — đoạn ngay trên giữ NGUYÊN VĂN vì nó KHÔNG sai, nó THIẾU MỘT ĐƯỜNG,
+> và đường thiếu ấy là đường có cái trần đo được.** Xem phép đo ở khối `✅ ĐÃ THI HÀNH` ngay dưới:
+> **có HAI kho đệm trên đĩa phát lại hình dạng cũ, không phải một** — hàng đợi SDK (sau bề mặt HTTP)
+> **và** `BridgeSpool` (sau **gương MQTT**). **Một phép liệt kê thiếu một hàng vẫn là một phép liệt kê
+> thiếu**, và ở đây hàng thiếu là hàng **duy nhất** có chặn trên đọc được từ trong cây này.
+
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ AK-1 (2026-08-19), `.superpowers/sdd/item14-option3/`
+>
+> 🔴 **CƠ CHẾ CỦA `t` ĐƯỢC **SUY**, KHÔNG PHẢI CHỌN — và hai ứng viên đều bảo vệ được, nên phải nói RÕ
+> cái nào đã đi ra.** Cái đã đi ra là **thời điểm mà `rateHz` HÀM Ý**: `t(i) = i / rateHz`. Cái **không**
+> đi ra là **thời điểm THẬT mà `WelderSim` vẽ đường cong lên**.
+> * **Vì sao cái thứ nhất.** Ở ranh giới này, mọi thứ trong tầm là **bốn trường** của một
+>   `WaveformSeries`. Dựng lại thời điểm thật đòi một thứ **thứ năm** — cách tham số hoá của chính bộ
+>   sinh — thứ **không có trên hồ sơ**, **khác nhau theo từng driver**, và **vắng hẳn** với các driver
+>   bên thứ ba mà `Normalizer` cũng phục vụ. `t = i / rateHz` là cách đọc **duy nhất** mà **nghĩa đã
+>   xuất bản** của `rateHz` cho phép (đặc tả 57 §3.3: *"Tần số lấy mẫu (Hz) nếu đều nhau"*), và nó
+>   **đã là** phép dựng lại mà repo này công bố cho bên tiêu thụ trên chính `WaveformSeries`.
+> * 🔴 **Vì sao cái thứ hai bị bác, và đây là chỗ nó chạm điều kiện DỪNG.** Lấy thời điểm thật nghĩa là
+>   đọc `rateHz` **không** như tần số lấy mẫu mà như *"N chia cho một khoảng bao gồm cả hai đầu"* — tức
+>   **ĐỔI NGHĨA của `rateHz`**. Đó là **đổi payload**, thứ phán quyết này **không** phủ. Nhiệm vụ được
+>   lệnh dừng-và-báo nếu bản sửa cần điều ấy; **nó không cần**, và lý do hai thứ **tách được** là:
+>   `t = i / rateHz` dùng `rateHz` **đúng nghĩa đã xuất bản**, và `payload["rateHz"]` đi ra **không đổi
+>   một chữ số**.
+>
+> 🔴 **NỬA BẤT LỢI, VIẾT NGAY CẠNH, VÌ MỘT SỰ THẬT VIẾT CHỈ THEO CHIỀU THUẬN LÀ MỘT NỬA SỰ THẬT.** Chỗ
+> lệch **4,17 %** của `WelderSim` (§1b bên trên) **không được tạo ra** bởi phép chuyển này — nó đã ở
+> trên dây từ trước, ngầm, vì một bên tiêu thụ tuân hợp đồng vẫn tính đúng cái `t` ấy từ cùng `rateHz`.
+> **Nhưng phép chuyển KHÔNG trung tính:** nó đưa `t` từ **NGẦM ĐỊNH** (bên tiêu thụ tự tính, nên còn
+> sửa được bằng cách công bố một cách đọc khác của `rateHz`) sang **ĐÃ VIẾT RA** (những con số cụ thể
+> đã rời khỏi máy). Sau hôm nay, sửa chỗ lệch ấy là **đổi các con số đã xuất bản**, không còn là đổi
+> một tài liệu. **Đó là một cánh cửa hẹp đi, và nó thuộc về bản sửa này chứ không thuộc khuyết tật cũ.**
+>
+> 📎 **CÂU *"nó đã ở trên dây từ trước, ngầm"* GIỮ NGUYÊN VĂN, RÚT MỘT PHẦN 2026-08-19 (AK-1, sau vòng
+> phản biện): nó ĐÚNG cho MỘT bề mặt và được viết ĐỒNG NHẤT cho cả ba.** Kết luận (*"chi phí là MỚI và
+> thuộc bản sửa này"*) **không đổi** — nhưng lý lẽ đỡ nó không đứng ở bề mặt quan trọng nhất, và khi
+> tách ra thì **chi phí LỚN HƠN chứ không nhỏ hơn**. Viết lại **theo từng bề mặt**:
+> * **Gương MQTT retained `syn/…` (và `BridgeSpool` nằm sau nó): CÂU ẤY ĐÚNG.** Envelope **đã** đi ra
+>   với hàng một phần tử, không có bộ cưỡng chế nào chặn, nên một bên đăng ký dựng lại `t` theo tài liệu
+>   đã đặt mẫu cuối lệch đúng 4,17 %. Ở đây chi phí đúng là **"ngầm → viết ra"**.
+> * 🔴 **Ingest HTTP (và hàng đợi SDK nằm sau nó): CÂU ẤY SAI.** Hình dạng cũ **bị `processWaveformSchema`
+>   TỪ CHỐI** (`z.tuple` hai số) — AB-1 **đo HTTP 400 thật** ở bước lược đồ. Nên ở bề mặt này **chưa
+>   từng có bên tiêu thụ nào dựng lại `t` từ hàng một phần tử**: việc mà một bên *tuân hợp đồng* làm với
+>   payload cũ là **TỪ CHỐI nó**. Bên được câu cũ mô tả là bên **tuân TÀI LIỆU trong khi vi phạm LƯỢC ĐỒ
+>   ĐƯỢC CƯỠNG CHẾ** — hai thứ không thể là cùng một bên.
+>
+> 🔴 **Và đây là chi phí mà cách viết đồng nhất đã che mất:** sau AK-1, hàng cặp **lần đầu tiên hợp lược
+> đồ** trên đường ingest. Nên một `t` lệch 4,17 % không chỉ *được viết ra* mà **lần đầu tiên trở nên KHẢ
+> THI để được NHẬN và LƯU** vào cột `process_results.waveforms` — cột mà `drizzle/schema/process.ts`
+> khai là `Array<[number, number]>`. Trước hôm nay đường ấy **không lưu gì**. **Nói cho đúng cả hai
+> chiều, vì đây đúng là chỗ dễ nói quá tay:** *"khả thi"*, **không** phải *"đang xảy ra"* — cờ
+> `PROCESS_RESULT_INGEST_ENABLED` **vẫn mặc định TẮT** và AK-1 **không** bật nó, nên hôm nay **vẫn
+> không bản triển khai nào nạp**. Cái đổi là **ngày ai đó bật cờ, thứ được lưu sẽ là một trục thời gian
+> lệch một chu kỳ lấy mẫu** — trước AK-1, ngày ấy chỉ cho ra **một lỗi 400**.
+>
+> **Ở đâu:** `src/St4i.EdgeCore/Mapping/Normalizer.cs` — **đúng một** chỗ gọi đổi
+> (`["samples"] = ToWireSampleRows(w)`) và **một** phương thức **private** mới. Không có thành viên
+> công khai nào được thêm, nên `EXPECT_WARNINGS` **631** và sổ mười sáu hàng **không dịch một đơn vị**.
+>
+> 🔴 **VỊ TỪ CHUYỂN GÁC BẰNG **CẶP (có rate, hàng MỘT phần tử)**, không phải bằng *"có rate"* — và đó là
+> chỗ chịu lực.** Một hàng **hai** phần tử **đã là** một cặp `[t, v]`: đặc tả 57 **§8.1**, ví dụ chuẩn
+> tắc của chính nền tảng, mang `rateHz: 500` **bên cạnh** các hàng cặp mà phần tử 0 là **GÓC**. Gác bằng
+> *"có rate"* sẽ **ghi đè trục hoành ấy bằng một thời gian suy từ chỉ số** — tức **phá dữ liệu thật**,
+> đúng ở ca mà cả ba ví dụ SDK đang phát. Một hàng một phần tử **không có rate dùng được** cũng đi qua
+> **nguyên vẹn**: không có gốc thời gian nào để suy, và bịa ra *"chỉ số làm thời gian"* là **xuất bản
+> một con số không có đơn vị**.
+>
+> **Ràng buộc thi hành AI-1 đo, đã tuân:** `LiveTransport.ReadSampleSeries` giữ một hàng **khi và chỉ
+> khi** nó là `double[]` và bỏ mọi thứ khác **không lỗi, không log**, nên phép chuyển trả `double[]`.
+> **Nó được ĐO, không phải được tin:** một biến thể trả `List<double>` được dựng và chạy — payload trong
+> bộ nhớ **trông đúng** trong khi thân request đi ra mang **`samples: []`**.
+>
+> 🔴 **VÀ ĐÂY LÀ MỘT SỰ KIỆN VỀ HAI BỀ MẶT MÀ CHƯA AI GHI: chúng HỎNG KHÁC NHAU dưới cùng một khuyết
+> tật.** Dưới biến thể `List<double>` ấy, **sáu** trong bảy `[Fact]` mới đỏ — nhưng bài về **gương MQTT
+> vẫn XANH**, vì gương tuần tự hoá envelope **thẳng** và **không đi qua** `ReadSampleSeries`. Nghĩa là
+> một bản thi hành sai kiểu sẽ làm **HTTP mất sạch mẫu trong khi MQTT vẫn mang cặp đúng**. Ghi ở đây vì
+> nó không suy ra được từ bất kỳ nửa nào một mình.
+>
+> **Nhân chứng — MỚI, và nó là hạng mục công việc ĐẦU TIÊN của phán quyết này, không phải cuối:**
+> `tests/St4i.EdgeCore.Tests/WaveformPairAtTheWireBoundaryTests.cs`, **bảy `[Fact]`**,
+> `EXPECT_EDGECORE` **1153 → 1160** (biện minh nằm **ngay cạnh hằng số**). Lý do nó phải tồn tại là phép
+> đo của AI-1: đặt phép chuyển ở đây làm **KHÔNG một bài nào** trong 2764 đỏ lên, và **"không gì đỏ"
+> KHÔNG phải bằng chứng an toàn — nó là bằng chứng KHÔNG CÓ NHÂN CHỨNG.**
+>
+> 🔴 **BẢY KHÔNG PHẢI BẢY NHÂN CHỨNG — phân đôi, đo bằng cách GỠ phép chuyển rồi chạy lại:** **BỐN đỏ**
+> (chúng đo **chỗ ĐỔI**) và **BA vẫn xanh THEO CẤU TẠO** (chúng đo **chỗ KHÔNG ĐƯỢC ĐỔI** —
+> `ScrewdriveSim` đi qua nguyên vẹn, chuỗi đã-là-cặp không bị chuyển lần hai, mọi hàng vẫn là
+> `double[]`). **Một dụng cụ đỏ ở cả hai phía không đo được gì**, nên phép phân đôi ấy được nêu ra chứ
+> không để người sau tự phát hiện.
+>
+> **Cái ĐÃ ĐO của gương MQTT, và cái vẫn CHƯA:** bài thứ bảy publish qua **một broker thật**, rồi một
+> người đăng ký **đến SAU** nhận lại thông điệp **`Retain = 1`** và đọc thấy các cặp. Nên *"gương đổi"*
+> là một **phép đo**, không phải một suy luận. **Ai đăng ký nó ngoài đời thì vẫn CHƯA ĐO** — bài kiểm
+> chứng minh **cái gì rời đi**, không bao giờ **ai đọc**.
+>
+> 🔴 **HAI CHUỖI ĐÃ CÔNG BỐ NAY THÀNH SAI, VÀ AK-1 KHÔNG ĐƯỢC SỬA CHÚNG — nêu tên chứ không im lặng.**
+> Cả hai nói mục 14 *"opened 2026-08-18 and NOT decided"*: (1) chú thích `///` của
+> `WaveformSeries.Samples`/`RateHz` trong `src/St4i.Connector.Abstractions/Models/DeviceReading.cs`;
+> (2) chú thích lớp của `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs`. Phán quyết
+> hôm nay làm cả hai **sai**. Chúng nằm trong **đúng hai file mà brief của AK-1 cấm chạm** —
+> `WaveformSeries` là bề mặt hợp đồng N-2, và bài kia là nhân chứng đợt 4. **Đây là đúng loài P-2 (một
+> chuỗi đã công bố khẳng định điều sai), và nó được ghi VÀO ĐÂY** — chỗ chủ sở hữu mở được — thay vì
+> vào một báo cáo dưới `.superpowers/sdd/` **bị gitignore**, vì một lời cải chính ngoài tầm với người
+> đọc là đúng khuyết tật file này lập ra để chấm dứt. **Việc còn nợ, một nhiệm vụ riêng, 0 dòng hành
+> vi.**
+>
+> 📎 **KHỐI NGAY TRÊN GIỮ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1, sau vòng phản biện) — và lý do là nó ĐẾM
+> THIẾU BẢY, phân loại sai một câu, và gộp mất một phân biệt về SỞ HỮU.** Cái nó nói (hai câu ấy có
+> thật, và ghi-chứ-không-sửa là đúng) **vẫn đúng**; cái nó làm sai là **một con số vô hướng tóm tắt một
+> tập người viết chưa mở hết** — đúng loài file này lập ra để chấm dứt, lần này ở trong chính khối viết
+> ra để tuân nó. **LIỆT KÊ TRƯỚC, CON SỐ VIẾT SAU:**
+>
+> **LỚP 1 — nợ của PHÁN QUYẾT** (chủ sở hữu quyết ⇒ câu thành cũ). Bảy câu:
+> * `DeviceReading.cs` **:47–49** — *"Whether it ALSO determines how many elements a `Samples` row holds
+>   is **an open owner decision**"*;
+> * `DeviceReading.cs` **:55–56** — *"AN OPEN OWNER DECISION … **item 14, opened 2026-08-18 and NOT
+>   decided**"* (câu khối cũ đã nêu);
+> * 🔴 `DeviceReading.cs` **:98–99** — *"whether it also determines a row's length is **precisely what
+>   item 14 must settle**"*. **Sai theo kiểu TINH VI NHẤT trong chín câu:** mục 14 đã đóng và **CỐ Ý
+>   KHÔNG** quyết điều đó (chỉ quyết hình dạng **trên dây** — xem khối phán quyết ở trên và ô mục 4).
+>   Người đọc câu ấy sẽ tới đây tìm một câu trả lời **không có ở đây**;
+> * `DeviceReading.cs` **:102** — *"and **item 14 reopens them**"*, thì hiện tại;
+> * `WaveformSeriesRowShapeContractTests.cs` **:13** — *"item 14, opened 2026-08-18 and not decided"*
+>   (câu khối cũ đã nêu);
+> * `WaveformSeriesRowShapeContractTests.cs` **:137** — *"item 14 **has not been decided**"*;
+> * 🔴 `WaveformSeriesRowShapeContractTests.cs` **:120** — *"item 14, **still open**. If this moved
+>   deliberately, say so there:"*. **HẠNG KHÁC BẢY câu kia, và khối cũ phân loại SAI nó:** đây **KHÔNG
+>   phải `///`** mà là **thông điệp của một `Assert.True`**, tức nó **được IN RA cho lập trình viên**
+>   đúng lúc bài đỏ, và nó **chỉ dẫn một hành động cụ thể** tới một mục *"still open"* mà thực tế đã
+>   đóng và đã thi hành. Một chuỗi nằm im trong nguồn và một chuỗi được in ra lúc chạy **không cùng
+>   hạng**.
+>
+> 🔴 **LỚP 2 — nợ của MÃ AK-1, KHÔNG phải của phán quyết. Hai câu, và khối cũ bỏ sót CẢ HAI:**
+> * `DeviceReading.cs` **:52** — *"The sample rows, **passed to the wire unchanged**."*, câu **MỞ ĐẦU**
+>   của `<param name="Samples">`;
+> * `DeviceReading.cs` **:95** — *"…this type accepts any `double[]`, **the normalizer copies rows to the
+>   wire unchanged**…"*, nằm trong đoạn nhan đề *"What a consumer may rely on **TODAY**"*.
+>
+> **Không phán quyết nào làm hai câu ấy sai — `ToWireSampleRows` làm.** Với một chuỗi **được chuyển**,
+> hàng **không** còn đi ra nguyên vẹn và normalizer **không** còn chép. **Đây là phân biệt chịu lực, và
+> nó là lý do khối cũ phải bị rút chứ không chỉ được mở rộng:** *"phán quyết của chủ sở hữu làm tài liệu
+> của tôi cũ đi"* và *"mã của tôi làm một câu đã công bố thành sai"* là **hai loại nợ khác chủ**, và
+> người đọc sau sẽ hỏi đúng câu *"ai nợ câu này"*. Gộp chúng làm một là **ghi sai chủ nợ**.
+>
+> ✅ **LỚP 3 — ĐÃ ĐÓNG 2026-08-19, cùng ngày, cùng nhiệm vụ. KHÔNG CÒN LÀ NỢ.** Đây là các chuỗi **chính
+> nhiệm vụ này vừa công bố** mà vòng phản biện đo là nói quá. Chúng được **SỬA** chứ không được ghi —
+> một lần biên tập `///` trong `tests/St4i.EdgeCore.Tests/WaveformPairAtTheWireBoundaryTests.cs`, **0
+> dòng hành vi, 0 con số dịch, bảy `[Fact]` không đổi**. 🔴 **Lý do chúng KHÔNG được xử như lớp 1 và 2:**
+> một khối P-2 kể tên chín câu **người khác** nợ, trong khi hai câu **của chính nó** nằm im cách đó vài
+> dòng, là **một hồ sơ tự phản bội**. Ràng buộc *"không đụng nhân chứng"* nhắm **nhân chứng đợt 4** —
+> thứ đang ghim một hợp đồng đã có — **không** nhắm nhân chứng do chính nhiệm vụ này viết ra; chỗ mơ hồ
+> ấy được **hỏi lên và được trả lời**, không được tự quyết trong im lặng.
+>
+> 📎 **Tiêu đề của lớp này đọc, NGUYÊN VĂN, cho tới `6ada4fe9` — RÚT 2026-08-19 (AK-1) vì lớp đã ĐÓNG,
+> không vì nó từng sai:** *"**LỚP 3 — nợ của PROSE AK-1**, tức các chuỗi **chính nhiệm vụ này vừa công
+> bố** mà vòng phản biện đo là nói quá. Hai câu, cả hai trong
+> `tests/St4i.EdgeCore.Tests/WaveformPairAtTheWireBoundaryTests.cs`:"* Nó mô tả đúng trạng thái hồ sơ
+> cho tới đúng lúc ấy.
+>
+> Giữ nguyên văn hai câu cũ và ghi chúng đã thành gì:
+> * **:229** — *"the one **all three** reference SDK samples reproduce"*. Liệt kê lại
+>   `examples/device-client/`: **python** `example_screwdriver.py` và **csharp** `ExampleScrewdriver.cs`
+>   là **hai** chương trình chạy được có phát waveform; **README.md** mang một payload **tài liệu**;
+>   **nodejs** `st4i_device_client.mjs` là **thư viện client, KHÔNG có ví dụ waveform**; **arduino** chỉ
+>   telemetry. **Đếm sau khi liệt kê: HAI bộ phát chạy được + một payload tài liệu**, không phải ba bộ
+>   phát. 🔴 Cộng một sự kiện mạnh hơn cả con số: **không cái nào trong chúng đi qua `Normalizer`** —
+>   chúng gọi `St4iDeviceClient` thẳng. **Vị từ gác bằng cặp vẫn đúng; DÂN SỐ minh hoạ bị phóng đại.**
+>   ✅ **NAY ĐỌC:** phép liệt kê ấy, nguyên văn, trong chính chú thích — hai bộ phát chạy được, một
+>   payload tài liệu, nodejs không có ví dụ waveform, arduino telemetry-only — cộng câu **không cái nào
+>   đi qua normalizer**, và câu nêu **dân số vị từ THẬT SỰ bảo vệ**: một driver bên thứ ba viết theo đặc
+>   tả 57 §3.3 cắm vào normalizer, **có thật và chưa có trong cây**.
+> * **:37** — *"a transform that returned `List<double>` **or a tuple**"* rồi kết luận chung rằng gương
+>   MQTT vẫn mang cặp đúng. **Chỉ đúng cho các kiểu vẫn tuần tự hoá thành MẢNG JSON.** Với một
+>   `ValueTuple`, gương ra `{"Item1":…}` chứ không ra mảng ⇒ **CẢ HAI** bề mặt hỏng, không phải một. Sự
+>   kiện *"hai bề mặt hỏng khác nhau"* **đứng vững cho `List<double>`** (biến thể thật sự đã chạy) và
+>   **không** khái quát được cho tuple.
+>   ✅ **NAY ĐỌC:** phép bất đối xứng được nêu kèm **điều kiện chịu lực** — nó đúng cho **mọi kiểu sai
+>   VẪN TUẦN TỰ HOÁ THÀNH MẢNG JSON**, `List<double>` là biến thể **thật sự đã chạy** (6/7 đỏ, gương
+>   xanh), và **một `ValueTuple` tuần tự hoá thành OBJECT nên phá CẢ HAI bề mặt**. Chú thích tự khai
+>   rằng bản trước **gộp "or a tuple" vào phép bất đối xứng và sai đúng ở ca ấy**.
+>
+> **LỚP 4 — nợ CÓ TRƯỚC, không của phán quyết và không của AK-1.** Một câu:
+> `DeviceReading.cs` **:62** — *"row `i` is the sample at `i / RateHz` seconds"*, nằm trong đoạn **(A)**
+> tự nhan đề *"measured, and **not in dispute**"* và **mô tả riêng `WelderSim`**. AI-1 đã đo rằng nó
+> **sai về đúng `WelderSim` ấy, lệch đúng 4,17 %** — **trước** AK-1. Nêu nó ở đây vì khối phán quyết
+> bên trên **dựa vào nó** như một chỗ đứng (*"đã là phép dựng lại mà chính repo này công bố"*), và trích
+> một câu đã biết sai mà không nói nó đã biết sai là **viết một sự thật chỉ theo chiều thuận**. **Chiều
+> nghịch, viết ra ở đây:** câu ấy đúng ở chỗ nó chứng minh `i/rateHz` **không phải một quy ước mới do
+> AK-1 nghĩ ra**; nó sai ở chỗ con số nó hứa **không khớp `WelderSim`**. Cả hai nửa phải đọc cùng nhau.
+>
+> 🔴 **VÀ VÌ LỚP 3 ĐÃ ĐÓNG, TẬP CÒN NỢ CO LẠI — ghi ra chứ không để người sau tự trừ:** còn **BẢY** câu
+> lớp 1 + **HAI** câu lớp 2 = **CHÍN câu còn nợ, trong HAI file**, cộng **MỘT** câu lớp 4 có trước.
+> **Hai câu lớp 3 KHÔNG còn trong tập ấy.**
+>
+> **ĐẾM SAU KHI LIỆT KÊ: CHÍN câu, trong BA file. TÁM là `///`, MỘT là thông điệp `Assert` lúc chạy.
+> Bảy do phán quyết, HAI do mã của AK-1, HAI do prose của AK-1, MỘT có trước cả hai** — tổng các lớp là
+> **mười hai lần xuất hiện trên chín câu cộng ba câu của lớp 3 và 4**, nên **con số duy nhất đọc được ở
+> đây là con số đếm lại được từ chính phép liệt kê trên**, không phải một số vô hướng đặt riêng.
+>
+> 🔴 **KHÔNG câu nào trong số ấy được AK-1 sửa, và ràng buộc là RÕ:** lớp 1 và 2 nằm trong hai file
+> **brief cấm chạm**; lớp 3 nằm trong **nhân chứng mới**, mà vòng phản biện **cấm đụng**. Nên tất cả
+> được **GHI**, tại đây, chỗ chủ sở hữu mở được. **Việc còn nợ, một nhiệm vụ riêng, 0 dòng hành vi** —
+> và nhiệm vụ ấy nay có **một phép liệt kê đóng để làm việc theo**, thay vì một con số đếm thiếu.
+>
+> 🔴 **HAI KHO ĐỆM TRÊN ĐĨA PHÁT LẠI HÌNH DẠNG CŨ, KHÔNG PHẢI MỘT — và cái thứ hai là cái DUY NHẤT có
+> chặn trên ĐỌC ĐƯỢC từ trong cây này.** Hồ sơ tới hôm nay chỉ nêu hàng đợi SDK. Đo lại khi thi hành,
+> **liệt kê trước, đếm sau**:
+> * **sau bề mặt HTTP** — hàng đợi store-and-forward của SDK: `St4iDeviceClient._queuePath`/`Enqueue`,
+>   một file **JSONL** ghi bằng `File.AppendAllText`. **Trần: KHÔNG ĐO ĐƯỢC** — không có giới hạn kích
+>   thước hay tuổi nào trong cây này.
+> * 🔴 **sau gương MQTT** — `UnsBridge.RunSpoolWriterLoopAsync` → `IBridgeSpool.EnqueueAsync(item.Topic,
+>   item.Payload, item.Retain, …)`, và `item.Payload` **chính là envelope đã tuần tự hoá**.
+>   `BridgeSpool` ghi vào **SQLite** (`bridge-spool.db`) và `TryPublishToRemoteAsync` **phát lại lên
+>   broker Site sau**, **giữ nguyên cờ Retain**. 🔴 **Trần ĐO ĐƯỢC, và đây là điều khối phán quyết ở
+>   trên KHÔNG nói được:** mặc định `DefaultMaxBytes = 64 MiB` và `DefaultMaxAgeHours = 48`, cưỡng chế
+>   bởi `TrimAsync`. Nên với **đường MQTT**, câu *"hình dạng cũ còn đi ra được bao lâu"* **không phải
+>   là không đo được** — mặc định nó là **48 giờ hoặc 64 MiB, tuỳ cái nào tới trước**.
+>
+> **Đếm sau khi liệt kê: HAI kho đệm, MỘT có trần đo được, MỘT không.** Nêu ra vì **một cái trần nêu
+> quá nhỏ còn tệ hơn không nêu trần**, và hồ sơ tới hôm nay nêu **một** đường trong khi có **hai**.
+> Cả hai trần đều là **mặc định** — cả hai nhận tham số ghi đè, nên con số 48/64 là **trần của cấu hình
+> mặc định**, không phải của mọi bản triển khai. **AK-1 không đổi một dòng nào của cả hai đường.**
+>
+> **Cái nhiệm vụ này KHÔNG làm và không được đọc là đã làm:** nó **không** chạm nền tảng, **không** POST
+> gì, **không** bật cờ `PROCESS_RESULT_INGEST_ENABLED`. Nên **cặp đối chứng A/B của AB-1 vẫn là bằng
+> chứng động duy nhất** rằng cổng nhận hình dạng cặp, và **hạng nguồn của nó không đổi**: NHẬN LẠI.
+> Câu *"payload nay hợp lệ với cổng"* **chưa được đo trên một cổng đang chạy sau bản sửa này**.
+
+---
+
 # PHẦN IV — PHỤ LỤC: KHÔNG PHẢI QUYẾT ĐỊNH CỦA ANH, VÀ LỊCH SỬ CỦA CHÍNH FILE NÀY
 
 Không gì trong phần này đang chờ anh quyết. Nó ở đây vì **xoá thì không được** — và nó
@@ -3714,6 +4021,79 @@ trước AJ-1** — sửa chúng trong một nhiệm vụ thi hành hai phán qu
     ghi bảng đã mutate. Kết cục ấy **đúng như mong muốn** (thử ghi lại), nên đây là ghi chú tài liệu
     chứ không phải khuyết tật. Cùng cửa sổ: một file `.tmp-<guid>` mồ côi có thể ở lại — **có sẵn từ
     trước AJ-1**.
+
+---
+
+## Tồn dư của AK-1 (2026-08-19, thi hành mục 14 + vòng phản biện) — GHI, KHÔNG SỬA
+
+**Vì sao nó nằm ở ĐÂY chứ ở báo cáo nhiệm vụ:** nội dung dưới đây là một bài học về **PHƯƠNG PHÁP ĐO**,
+không phải về mục 14. Nó được viết vào file này vì `.superpowers/sdd/` **bị gitignore** — `git ls-tree`
+không thấy nó — nên **một bài học chỉ sống trong đó là một bài học không ai đọc**. Đó đúng là luật mà
+§"Biên của chuỗi giám hộ" của mục 14 mua được, áp cho chính nhiệm vụ vừa viết ra nó.
+
+### 13. 🔴 Một dụng cụ đếm bị bắt lỗi ở MỘT đầu ra, sửa MỘT nửa, và nửa kia đi tiếp vào hồ sơ
+
+**Cơ chế, nói trước vì nó tầm thường:** AK-1 chứng minh *"`owner-decisions.md` không mất một dòng prose
+nào"* bằng một phép so đa tập dòng — tách hai phía của diff rồi `comm`. Phép tách dùng `grep '^-'` và
+`grep '^+'`. Một unified diff mở đầu bằng **hai dòng tiêu đề** `--- a/…` và `+++ b/…`, nên `grep '^-'`
+nuốt dòng thứ nhất và `grep '^+'` nuốt dòng thứ hai ⇒ **cộng dư ĐÚNG 1 vào CẢ HAI phía**.
+
+🔴 **Cách nó sống sót, và đây là vế phải viết to nhất vì nó KHÔNG tự lộ ra.** Người viết **ĐÃ BẮT ĐƯỢC**
+khuyết tật ấy — ở phía *"dòng biến mất"*. Con số ra **5**, không khớp phép đếm tay **4**, họ đi điều
+tra, tìm ra dòng tiêu đề, và **nói đúng rằng thật ra là 4**. Rồi họ **im lặng mang nguyên +1 ấy sang
+phía kia**: phía *"dòng thật sự mới"* ra **151**, và **151 được viết vào hồ sơ** mà không ai hỏi lại.
+Con số đúng là **150**.
+
+**Cùng MỘT khuyết tật. Bắt được MỘT nửa. Nửa không bắt được thì ĐI TIẾP.**
+
+**Vì sao nó tinh vi hơn một con số sai:** một phép đo sai hoàn toàn lộ ra khi đối chiếu. Một phép đo mà
+người dùng **đã tìm ra lỗi của nó ở một chỗ** lại **được tin hơn** ở mọi chỗ khác — **chính hành động
+sửa một nửa đã tạo ra sự tin cậy che nửa còn lại**. Đây là loài *"miền của dụng cụ hẹp hơn miền của câu
+nói dùng nó"* ở dạng khó thấy nhất: **miền đã được thu hẹp một lần, và người thu hẹp tưởng mình đã thu
+hẹp xong.**
+
+**Luật rút ra, viết cho người sau:** khi một dụng cụ bị bắt lỗi ở **MỘT** đầu ra, phải **đo lại MỌI đầu
+ra của nó** — không phải chỉ đầu ra vừa bị bắt. Và cách chữa là **sửa DỤNG CỤ, không sửa CON SỐ**: ở
+đây là bỏ `grep` và dùng `awk 'NR>4'` để cắt tiêu đề. 🔴 **Khẳng định chịu lực KHÔNG đổi** qua cả bốn
+commit của AK-1 — xoá 3065, **thật sự đổi ĐÚNG 4**, thuần dịch chỗ 3061 — nên đây là khuyết tật của
+**dụng cụ và của cách đọc nó**, không phải của kết luận.
+
+**Nêu ra vì nó KHÔNG được ai bắt hộ:** vòng phản biện dùng `awk 'NR>4'` ngay từ đầu nên **không bao giờ
+gặp** khuyết tật này (họ tự nêu một bẫy khác: `grep -v '^---'` sẽ nuốt mọi dòng nội dung là `---`, tức
+mọi thanh ngang markdown). Người thực thi tìm ra nó **sau khi phản biện đã xong**, lúc đo lại theo I-1.
+**Lần sau nó có thể không lộ ra.**
+
+### 14. Cùng họ, cùng phiên: hai lần tuyên bố một thứ CÒN ĐANG CHUYỂN ĐỘNG là đã dừng
+
+Trong lúc chờ cổng, AK-1 **hai lần** viết ra rằng một lần chạy đã xong trong khi nó **đang chạy** —
+lần đầu *"Gate 3 has completed"*, lần sau *"the waiter has fired"* — cả hai lần **suy từ việc một thông
+báo nền vừa tới**, không từ một phép đo.
+
+🔴 **Và cả hai lần tự bác được, bằng phép đo, ngay tại chỗ:** `pid` của cổng **còn sống**
+(`Get-CimInstance Win32_Process`), CPU của `testhost` **còn tăng** giữa hai mẫu, và file log **chưa có
+dòng verdict**. **Chi tiết "tự bác" được giữ lại có chủ ý**: nó là phần chứng minh rằng luật *"một phát
+biểu về thứ CÒN ĐANG CHUYỂN ĐỘNG chưa phải một phép đo"* **dùng được**, không chỉ **nói được** — và
+rằng cái chặn được nó là **đo pid + CPU**, một thao tác rẻ, chứ không phải sự cẩn thận.
+
+**Chỗ đau:** điều ấy xảy ra **trong chính nhiệm vụ chép câu luật ấy ra**, và chép nó ra **nhiều lần**.
+
+### 15. 🔴 Và một tồn dư KHÔNG phải của người thực thi — một chỉ thị TỰ MÂU THUẪN do ĐIỀU PHỐI VIÊN ra
+
+**Ghi vào đây vì một tồn dư chỉ kể lỗi của người thực thi thì lại là một vế thuận, đúng loài mục này
+tồn tại để chấm dứt.**
+
+Ngày **2026-08-19**, điều phối viên chỉ thị AK-1 ghi bài học ở §13 *"vào **báo cáo**, ở **chỗ người sau
+đọc được**"*. **Hai vế ấy loại trừ nhau trong repo này:** `.superpowers/sdd/` **không nằm trong cây
+Git**, nên báo cáo nhiệm vụ **chính là chỗ người sau KHÔNG đọc được**. Và đó **đúng là tiền đề** mà
+cùng nhiệm vụ ấy dùng để đặt khối P-2 của mục 14 vào file này **thay vì** vào báo cáo.
+
+**Người thực thi bắt được, nêu lên thay vì im lặng tuân, và KHÔNG tự thêm mục** — họ hỏi rồi chờ trả
+lời. **Điều phối viên nhận**, và mục này là kết quả. **Hình dạng đáng để lại:** chỉ thị ấy không sai về
+nội dung, nó sai vì **hai nửa của nó được viết ở hai mức trừu tượng khác nhau** (*"báo cáo"* là một
+chỗ, *"chỗ người sau đọc được"* là một tính chất) và **không ai kiểm tính chất ấy trên chỗ ấy**. Đúng
+loài mà đoạn mở đầu file này mô tả: *"một lời cải chính cất ở đó không bao giờ vào repo và chủ sở hữu
+không có đường dẫn nào để mở"* — lần này nó suýt xảy ra với **bài học về cách đo**, tức với **dụng cụ**,
+chứ không với một khẳng định.
 
 ---
 

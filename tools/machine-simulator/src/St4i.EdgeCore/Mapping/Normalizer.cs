@@ -99,7 +99,7 @@ public static class Normalizer
                     ["name"] = w.Name,
                     ["unit"] = MapUnit(p, w.Unit),
                     ["rateHz"] = w.RateHz,
-                    ["samples"] = w.Samples,
+                    ["samples"] = ToWireSampleRows(w),
                 })
                 .ToList();
         }
@@ -227,6 +227,65 @@ public static class Normalizer
     {
         if (unit == null) return null;
         return p.UnitMap.TryGetValue(unit, out var mapped) ? mapped : unit;
+    }
+
+    /// <summary>
+    /// 🔴 <b>Owner decision of 2026-08-19 on <c>docs/owner-decisions.md</c> item 14, option 3: the
+    /// <c>[t, v]</c> pair the published ingest contract requires is built HERE, at the boundary, and in no
+    /// producer.</b> <see cref="St4i.Connector.Abstractions.Models.WaveformSeries"/>,
+    /// <c>WelderSim</c> and <c>ScrewdriveSim</c> are untouched by that decision and stay upstream of this
+    /// method; what changes is what LEAVES the process.
+    ///
+    /// <para><b>WHERE <c>t</c> COMES FROM, AND WHICH OF THE TWO CANDIDATE <c>t</c>s THIS IS.</b> It is the
+    /// instant <c>RateHz</c> IMPLIES — <c>t(i) = i / RateHz</c> — and NOT the instant at which any
+    /// particular producer drew its curve. Those are not the same number and the difference is measured, so
+    /// the choice is stated rather than left to be inferred:
+    /// <list type="bullet">
+    ///   <item><description><b>Why the implied instant.</b> Everything in scope at this boundary is the four
+    ///   fields of a <see cref="St4i.Connector.Abstractions.Models.WaveformSeries"/>. Reconstructing a
+    ///   producer's real sample instants needs a fifth thing — the producer's own parameterisation — which
+    ///   is not on the record, differs per driver, and is absent entirely for the third-party drivers this
+    ///   boundary also serves. <c>t(i) = i / RateHz</c> is the only <c>t</c> the PUBLISHED meaning of
+    ///   <c>rateHz</c> licenses (spec 57 §3.3: "sampling frequency (Hz) if uniform"), and it is already the
+    ///   reconstruction this repository publishes to consumers on
+    ///   <see cref="St4i.Connector.Abstractions.Models.WaveformSeries"/> itself.</description></item>
+    ///   <item><description><b>What that costs, stated in the unfavourable direction too.</b>
+    ///   <c>WelderSim</c>'s <c>rateHz</c> does not describe its own sample spacing: it emits
+    ///   <c>N / duration</c> while drawing sample <c>i</c> at <c>i / (N - 1)</c> of the duration, so a
+    ///   reconstructed axis is short by <c>1/N</c> (4.17% at its 24 points, one sampling period at the last
+    ///   sample). This method neither creates that skew nor repairs it — it computes exactly the <c>t</c> a
+    ///   contract-following consumer computes today from the same <c>rateHz</c>. It does, however, move that
+    ///   <c>t</c> from IMPLICIT to WRITTEN DOWN, which is a real change in what is published and is recorded
+    ///   as one in item 14. Fixing the skew means deciding what <c>rateHz</c> MEANS, which is a payload
+    ///   change no ruling covers.</description></item>
+    /// </list></para>
+    ///
+    /// <para><b>WHAT IS AND IS NOT CONVERTED, and the row-length condition is load-bearing rather than
+    /// defensive.</b> A row is paired only when it holds EXACTLY ONE element and the series carries a
+    /// finite, positive <c>RateHz</c>. A two-element row is ALREADY a <c>[t, v]</c> pair — spec 57 §8.1's
+    /// own canonical example carries <c>rateHz: 500</c> beside pair rows — so converting on <c>RateHz</c>
+    /// alone would destroy that data by pairing an abscissa that is already there. A one-element row with no
+    /// usable rate is passed through untouched: there is no time base to derive one from, and inventing an
+    /// index-as-time would publish a number with no unit. Rows are returned as
+    /// <see langword="double"/><c>[]</c> because <c>LiveTransport.ReadSampleSeries</c> accepts a row if and
+    /// only if it is one and drops anything else with no exception and no log.</para>
+    /// </summary>
+    private static IReadOnlyList<double[]> ToWireSampleRows(WaveformSeries w)
+    {
+        if (w.RateHz is not { } rate || !double.IsFinite(rate) || rate <= 0) return w.Samples;
+
+        var anyScalarRow = false;
+        for (var i = 0; i < w.Samples.Count && !anyScalarRow; i++) anyScalarRow = w.Samples[i].Length == 1;
+        if (!anyScalarRow) return w.Samples;
+
+        var rows = new List<double[]>(w.Samples.Count);
+        for (var i = 0; i < w.Samples.Count; i++)
+        {
+            var row = w.Samples[i];
+            rows.Add(row.Length == 1 ? new[] { i / rate, row[0] } : row);
+        }
+
+        return rows;
     }
 
     /// <summary>Coerces a genealogy value (often text from CSV/hot-folder drivers) into a numeric type.</summary>
