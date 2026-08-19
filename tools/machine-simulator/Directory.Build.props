@@ -420,12 +420,18 @@
        THAT WERE ALREADY FALSE ARE PAID. This is the FIRST stage that lowers the number, and it lowers it
        by RE-POINTING references, never by deleting them to make a warning go away and never by silencing
        a code. Not one line of executable code was touched, and the checkable form of that is a ZERO, not
-       a total: over 3e001642..HEAD, `git diff -- .../src` has ZERO changed lines in either direction that
-       are not `///` lines. The raw diff is 104 `///` lines added and 99 removed.
+       a total: over 3e001642..HEAD, a `git diff` restricted to `src/` has ZERO changed lines in either
+       direction that are not `///` lines. The raw diff is 104 `///` lines added and 99 removed.
        [🔴 "all 96 changed lines in src/ begin with `///`" WITHDRAWN 2026-08-19 by the task that wrote it,
         one commit later. 96 was measured and then four more edits were made without re-measuring it. The
         claim that carries weight is the ZERO, which was measured last and held; the total was decoration
         that outranked its own evidence. Retired in place, the style AA-1 established for this file.]
+       🔴 AND THE FIRST DRAFT OF THE TWO LINES ABOVE BROKE EVERY BUILD IN THE SOLUTION. It spelled the
+       command out, and a `git diff` pathspec separator is a DOUBLE HYPHEN, which is illegal inside an XML
+       comment: MSB4024, 30 errors, every csproj, before a single file compiled. THIS FILE IS EXECUTABLE
+       XML, not a notebook, and a correction block written into it is subject to that. The gate caught it
+       at the build gate on the very next run — the correction to a number, breaking the build, in the
+       commit whose whole subject is measuring before writing.
 
        MEASURED, on the tree this commit produces — `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
        over the whole solution, SDK 10.0.302, 15/15 compilations, `Build succeeded.`, `0 Error(s)`:
