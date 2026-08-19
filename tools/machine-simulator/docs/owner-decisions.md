@@ -1216,10 +1216,21 @@ phần của câu hỏi**. Nêu tên chứ không quyết — nhưng nêu tên *
 
 **Việc đã làm, và chỉ đúng chừng đó:** **101 khẳng định ĐÃ SAI được TRỎ LẠI CHO ĐÚNG** — 75 CS1574
 + 23 CS1734 + 3 CS0419, trên **29 file**, tất cả trong `src/St4i.EdgeCore`. **Không một dòng mã nào
-bị đụng:** cả **96** dòng thay đổi trong `src/` đều bắt đầu bằng `///`, kiểm được bằng
-`git diff | grep -v '^[+-]\s*///'`. Không một `cref` nào bị **xoá** để cảnh báo biến mất; không một
-lệnh đè nào; không tắt cờ ở đâu. Nhiệm vụ thứ **mười sáu** liên tiếp không có lệnh đè, và
-`SuppressionCensusTests` **không dịch một hàng** (5/5 xanh, vẫn 5 file / 8 chỉ thị / CS0618 + CS0162).
+bị đụng**, và dạng kiểm được của câu ấy là một số **KHÔNG**, không phải một tổng: trên
+`3e001642..HEAD`, `git diff -- .../src | grep '^[+-]' | grep -v '///'` trả về **RỖNG**, cả hai chiều.
+Diff thô là **104** dòng `///` thêm và **99** dòng `///` bớt. Không một `cref` nào bị **xoá** để cảnh
+báo biến mất; không một lệnh đè nào; không tắt cờ ở đâu. Nhiệm vụ thứ **mười sáu** liên tiếp không có
+lệnh đè, và `SuppressionCensusTests` **không dịch một hàng** (5/5 xanh, vẫn 5 file / 8 chỉ thị /
+CS0618 + CS0162).
+
+> 🔴 **RÚT 2026-08-19, bởi chính AG-1, một commit sau.** Câu đầu của đoạn này viết *"cả **96** dòng
+> thay đổi trong `src/` đều bắt đầu bằng `///`"*. **96 đã được ĐO** — rồi **bốn** lần sửa nữa được
+> thực hiện (hai dòng quá dài được xuống hàng, một câu được thêm thành viên sở hữu tham số của nó, một
+> đoạn được dàn lại) và con số **không được đo lại** trước khi nó được viết vào **ba** file. Đây là luật
+> *"LIỆT KÊ trước, con số viết SAU"* hỏng **lần thứ tám** trong loạt này. Điều đáng học nằm ở **con số
+> nào sai**: khẳng định chịu lực là **"KHÔNG có dòng nào không phải `///`"**, và chính nó được đo
+> **sau cùng** và **đúng**. Một tổng số dòng chưa bao giờ là khẳng định — nó là đồ trang trí đã vượt
+> quyền bằng chứng của chính nó. **Ưu tiên con số không.**
 
 **Con số thật — ĐO, không trừ.** `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild` toàn bộ
 solution, SDK 10.0.302, 15/15 compilation, `Build succeeded.`, `0 Error(s)`:

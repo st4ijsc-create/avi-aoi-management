@@ -5030,9 +5030,18 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # above ("stages 4..8 may only lower this number") is now exercised for the first time. What moved: 101
 # doc-comment claims that were FALSE — 75 CS1574 (`cref` naming a symbol that does not resolve), 23 CS1734
 # (`paramref` naming a parameter not in scope), 3 CS0419 (`cref` matching several overloads) — across 29
-# files, every one of them in src/St4i.EdgeCore. Not one code line was touched: all 96 changed lines in
-# that commit begin with `///`, which is checkable with `git diff | grep -v '^[+-]\s*///'` returning
-# nothing for the source hunks.
+# files, every one of them in src/St4i.EdgeCore. Not one code line was touched, and the checkable form of
+# that is a ZERO rather than a total: `git diff 3e001642 HEAD -- .../src | grep '^[+-]' | grep -v '///'`
+# returns NOTHING, in both directions. The raw diff is 104 `///` lines added and 99 removed.
+#   🔴 "all 96 changed lines" IS WITHDRAWN, 2026-08-19, by the task that wrote it, before it left the
+#   branch. 96 was measured, and then FOUR more edits were made (two over-long lines re-wrapped, one
+#   sentence given the member that owns its arguments, one re-flowed) and the number was not re-measured
+#   before it was written into three files. This is "ENUMERATE FIRST, COUNT AFTER" failing for the EIGHTH
+#   time in this batch, and the second time it reached a commit -- caught here on a re-read, one commit
+#   later, by re-running the measurement instead of re-reading the sentence.
+#   The lesson is in WHICH number was wrong: the load-bearing claim is "ZERO non-`///` lines changed", and
+#   that one was measured last and held. A total of changed lines was never the assertion; it was a
+#   decoration that outranked its own evidence. Prefer the zero.
 #
 # 🔴 751 IS MEASURED, NOT SUBTRACTED. `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo` over
 # the whole solution, SDK 10.0.302, 15/15 compilations, `Build succeeded.`, `0 Error(s)`,
