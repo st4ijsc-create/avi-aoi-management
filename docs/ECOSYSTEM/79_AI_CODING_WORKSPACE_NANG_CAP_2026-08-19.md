@@ -267,3 +267,71 @@ trình HOẶC `ctime` đổi ⇒ PID bị cấp lại). Không có nó, mọi cr
 - Model dùng là **`chat` tier** (Qwen3-30B-A3B-Instruct đang thường trú), KHÔNG phải Qwen3-**Coder**.
   Muốn đổi phải đặt `GGUF_CODE_MODEL == LLAMA_SERVER_MODEL` trước, nếu không sẽ nạp bản thứ hai
   ~19 GB khi card còn ~5,6 GB ⇒ OOM (xem khối ⚠ VRAM đầu `aiCodingAgent.ts`).
+
+---
+
+# ✅ VÒNG TỰ ĐỘNG + NỢ VRAM — nghiệm thu live 2026-08-19
+
+## Vòng tự động — CHẠY THẬT
+
+Trước: mỗi bước phải gõ tay (gõ câu sửa → bấm duyệt → **tự mở terminal** chạy test → **tự đọc** lỗi
+→ **tự gõ** câu sửa tiếp). Nay tự động hoá **đúng ba việc**: CHẠY test · ĐỌC lỗi thật · ĐỀ XUẤT bản kế.
+
+**Nghiệm thu live** (tôi tự chạy Playwright, tự chụp, tự đọc ảnh): bấm *"Duyệt & ghi"* một lần ⇒ thẻ
+xanh **"Vòng tự động — lượt 1/3"** tự hiện, tự chạy `$ dotnet test CalculatorDemo.sln`, đọc kết quả
+**"0 ca đỏ / 6 ca xanh"**, dừng với lý do **"XONG — lệnh kiểm chứng đã xanh hết."** Tôi chạy lại
+`dotnet test` trong terminal của mình: **Failed: 0, Passed: 6** — khớp chính xác con số AI báo.
+
+⚠ **RANH GIỚI GIỮ NGUYÊN**: thẻ tự nói *"Mỗi lượt GHI vẫn cần bạn bấm duyệt — vòng chỉ tự CHẠY test,
+ĐỌC lỗi và ĐỀ XUẤT"*. Tự động hoá **không** đụng quyền ghi đĩa.
+
+- Chọn lệnh test **tất định, không gọi model** (`.sln` ⇒ `dotnet test`; `package.json`+`test/` ⇒
+  `node --test`; người nêu đích danh ⇒ dùng; không suy được ⇒ nói thẳng, vòng KHÔNG chạy).
+  **KHÔNG BAO GIỜ tự chọn `npm run check`** — tsc toàn repo 4 phút là cách nhanh nhất để người dùng
+  tắt hẳn tính năng.
+- Trần mặc định 3 / cứng 5, kiểm ở **cả client lẫn server**. Dừng-khi-không-tiến-bộ **ba tín hiệu nối
+  bằng HOẶC** (ca đỏ không giảm · đầu ra test lặp · diff lặp) — nối bằng VÀ là vị từ **tự thoả**.
+- ★ Agent phát hiện lỗ brief tôi không nêu: **`dotnet format` GHI ĐÈ tệp mã nguồn** — mục duy nhất
+  trong 9 mục danh sách trắng làm vậy. Để lọt ⇒ vòng ghi được đĩa **không cần duyệt**. Đã loại.
+- ★ Và nó **va vào một bất biến đã viết ra**: `autonomyPolicy.ts` xếp `run_command` vào
+  `AUTONOMY_INELIGIBLE` kèm câu *"Không có cấu hình nào mở được điều này"*. Cờ này LÀ cấu hình đó, qua
+  cửa khác ⇒ **`AI_CODING_AUTOLOOP` mặc định TẮT**, người bật phải là chủ dự án.
+
+## Nợ VRAM — GỐC RỄ THẬT, không phải cái tôi tưởng
+
+| Phép đo | Trước | Sau |
+|---|---|---|
+| `vram_leases` | **107 hàng, 104 là ma** (77 pid chết) | **3 hàng, 0 ma** |
+| Byte sổ khai | 61.000+ MiB trên card 32 GB ⇒ dư địa **ÂM** | **2.096 MiB** (thật) |
+| `"KHÔNG đọc được bảng tiến trình"` | **66 dòng**, 0 lượt quét thành công | **0 dòng** |
+
+**Ba tiền đề của TÔI bị bác bỏ, cả ba đều đo được:**
+
+1. *"Không có bộ quét tự động nào"* — **SAI.** Bộ quét có từ Pha 3 Task 4 và nó ĐÚNG. Nó **mù**.
+2. *"Bản sao sổ trong bộ nhớ bị cũ"* — **SAI.** Bản sao làm mới ≤60 s. Thứ tôi quan sát là
+   `dungLaiTuSoCucBo()` dựng lại upsert cho mọi lease còn sống ⇒ xoá hàng **của chính app** bằng SQL
+   thì nó quay lại. Thiết kế, không phải cache cũ.
+3. *"Giữ nguyên 4 hàng của pid CÒN SỐNG"* — **SAI, và tôi đã nói câu này với chủ dự án.** Cả 4 đều là
+   ma: pid 10992 vắng hẳn; 18208→`NisSrv.exe`, 20788→`claude.exe`, 33488→`ShellHost.exe` — Windows đã
+   **cấp lại PID cho chương trình khác**. Tiêu chí thủ công của tôi ("pid có trong bảng tiến trình")
+   **yếu hơn** tiêu chí của mã vốn đòi cả `ctime`. May là sai theo chiều AN TOÀN (giữ thừa).
+
+**Và gốc rễ thật, tôi truy ra sau khi bản vá đầu vẫn chưa hết mù**: dòng cảnh báo không in `LÝ DO:` ⇒
+`run()` **không hề hỏng** ⇒ đường câm duy nhất còn lại là `JSON.parse`. Dò thẳng: powershell **chạy
+xong**, trả **122.285 ký tự**, `JSON.parse` ném *"Bad control character in string literal at position
+83902"*. Thủ phạm **U+001A** trong `CommandLine` của một tiến trình đang chạy — `ConvertTo-Json`
+(PowerShell 5.1) **không thoát ký tự điều khiển thô**. Một tiến trình có ký tự lạ là đủ giết cả bảng.
+
+> ★★★ **VÌ SAO CẢ HAI LƯỢT CHẨN ĐOÁN TRƯỚC ĐỀU TRƯỢT**: phép đo đối chứng *"cùng lệnh chạy từ tiến
+> trình Node khác cho 413–467 ms, 0 lỗi"* đo `run()` — thứ **quả thật chạy xong**. Nó **không** đo
+> `JSON.parse`. **Cái được đo không phải cái đang hỏng.** Cùng lớp với "lưới xanh vì lý do sai".
+> Và hỏng **phụ thuộc DỮ LIỆU đang chạy trên máy**, không phụ thuộc mã ⇒ không tái hiện trên máy sạch.
+
+⚠ Đã thử và **đo là KHÔNG ăn**: lọc phía PowerShell `-replace '[\x00-\x1F]'` (U+001A vẫn lọt, vị trí
+ném 83902 → 83897). Việc lọc nằm phía Node, nơi có lưới đơn vị tất định canh (14 ca, đột biến vô hiệu
+bộ lọc ⇒ 7 đỏ).
+
+## Còn lại
+
+- **Danh sách phiên** — phần cuối của giao diện Claude Code. Chưa làm.
+- **Vòng hoàn toàn tự trị** (AI tự bấm duyệt) — **cố ý KHÔNG làm**; HITL mỗi lượt ghi là bất biến.
