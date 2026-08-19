@@ -34,8 +34,16 @@ namespace St4i.EdgeCore.Tests;
 ///   — asserted through a real <see cref="LiveTransport"/> and the SDK's own serializer, because the
 ///   in-between reader (<c>LiveTransport.ReadSampleSeries</c>) accepts a row if and only if it is a
 ///   <see langword="double"/><c>[]</c> and drops anything else with no exception and no log. A transform
-///   that returned <c>List&lt;double&gt;</c> or a tuple would leave a dictionary that looks right and a
-///   wire body carrying <c>samples: []</c>.</description></item>
+///   that returned <c>List&lt;double&gt;</c>, <c>object[]</c> or a tuple would leave a dictionary that
+///   looks right and a wire body carrying <c>samples: []</c>.
+///   🔴 <b>The two published surfaces do NOT fail the same way under that defect, and the qualifier is
+///   load-bearing.</b> The retained MQTT mirror serializes the envelope directly and never passes through
+///   that reader, so it survives every wrong row type that STILL SERIALIZES AS A JSON ARRAY —
+///   <c>List&lt;double&gt;</c> is the variant actually run, and it reddens six of the seven facts here
+///   while the mirror fact stays green. That asymmetry does NOT generalize: a
+///   <see cref="System.ValueTuple"/> serializes as an OBJECT, not an array, so it breaks BOTH surfaces.
+///   An earlier revision of this sentence lumped "or a tuple" into the asymmetry and was wrong about
+///   exactly that case.</description></item>
 ///   <item><description>The <c>t</c> published is the instant <c>RateHz</c> IMPLIES, pinned to the number
 ///   rather than to a description, so that a later round which "corrects" it to where <c>WelderSim</c>
 ///   actually drew its curve has to redden here and say so — that correction would be a decision about what
@@ -226,11 +234,22 @@ public sealed class WaveformPairAtTheWireBoundaryTests
     }
 
     /// <summary>🔴 <b>The case that makes the row-length condition load-bearing rather than defensive.</b>
-    /// Spec 57 §8.1's own canonical example — the one all three reference SDK samples reproduce — carries
-    /// <c>rateHz: 500</c> BESIDE two-element rows whose element 0 is an ANGLE. A boundary that paired on
-    /// "RateHz is set" would rewrite that abscissa into an index-derived time and destroy the data. The
-    /// numbers below are that example's, used as INPUT to prove a pass-through, never as an assertion about
-    /// which convention is canonical.</summary>
+    /// Spec 57 §8.1's own canonical example carries <c>rateHz: 500</c> BESIDE two-element rows whose
+    /// element 0 is an ANGLE. A boundary that paired on "RateHz is set" would rewrite that abscissa into an
+    /// index-derived time and destroy the data. The numbers below are that example's, used as INPUT to
+    /// prove a pass-through, never as an assertion about which convention is canonical.
+    ///
+    /// <para>🔴 <b>WHO ACTUALLY REPRODUCES THAT EXAMPLE — listed, then counted, because an earlier
+    /// revision of this sentence said "all three reference SDK samples" and that number does not survive
+    /// the scan.</b> Under <c>examples/device-client/</c>: <c>python/example_screwdriver.py</c> and
+    /// <c>csharp/ExampleScrewdriver.cs</c> are <b>two</b> runnable programs that emit a waveform;
+    /// <c>README.md</c> carries a documentation payload; <c>nodejs/st4i_device_client.mjs</c> is a client
+    /// library with <b>no</b> waveform example; the Arduino sketch is telemetry-only. <b>Two runnable
+    /// emitters plus one documented payload</b>, not three emitters. And the fact that matters more than
+    /// the count: <b>none of them passes through the normalizer at all</b> — they call the device client
+    /// directly, so none is what this predicate protects. The population it does protect is a third-party
+    /// driver written to spec 57 §3.3 and plugged into the normalizer: real, and not present in this tree.
+    /// The predicate is unchanged and still right; only the illustration was inflated.</para></summary>
     [Fact]
     public void ARatedSeriesThatALREADYCarriesPairs_IsNotPairedASecondTime()
     {

@@ -3836,8 +3836,22 @@ quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` —
 > của tôi cũ đi"* và *"mã của tôi làm một câu đã công bố thành sai"* là **hai loại nợ khác chủ**, và
 > người đọc sau sẽ hỏi đúng câu *"ai nợ câu này"*. Gộp chúng làm một là **ghi sai chủ nợ**.
 >
-> **LỚP 3 — nợ của PROSE AK-1**, tức các chuỗi **chính nhiệm vụ này vừa công bố** mà vòng phản biện đo
-> là nói quá. Hai câu, cả hai trong `tests/St4i.EdgeCore.Tests/WaveformPairAtTheWireBoundaryTests.cs`:
+> ✅ **LỚP 3 — ĐÃ ĐÓNG 2026-08-19, cùng ngày, cùng nhiệm vụ. KHÔNG CÒN LÀ NỢ.** Đây là các chuỗi **chính
+> nhiệm vụ này vừa công bố** mà vòng phản biện đo là nói quá. Chúng được **SỬA** chứ không được ghi —
+> một lần biên tập `///` trong `tests/St4i.EdgeCore.Tests/WaveformPairAtTheWireBoundaryTests.cs`, **0
+> dòng hành vi, 0 con số dịch, bảy `[Fact]` không đổi**. 🔴 **Lý do chúng KHÔNG được xử như lớp 1 và 2:**
+> một khối P-2 kể tên chín câu **người khác** nợ, trong khi hai câu **của chính nó** nằm im cách đó vài
+> dòng, là **một hồ sơ tự phản bội**. Ràng buộc *"không đụng nhân chứng"* nhắm **nhân chứng đợt 4** —
+> thứ đang ghim một hợp đồng đã có — **không** nhắm nhân chứng do chính nhiệm vụ này viết ra; chỗ mơ hồ
+> ấy được **hỏi lên và được trả lời**, không được tự quyết trong im lặng.
+>
+> 📎 **Tiêu đề của lớp này đọc, NGUYÊN VĂN, cho tới `6ada4fe9` — RÚT 2026-08-19 (AK-1) vì lớp đã ĐÓNG,
+> không vì nó từng sai:** *"**LỚP 3 — nợ của PROSE AK-1**, tức các chuỗi **chính nhiệm vụ này vừa công
+> bố** mà vòng phản biện đo là nói quá. Hai câu, cả hai trong
+> `tests/St4i.EdgeCore.Tests/WaveformPairAtTheWireBoundaryTests.cs`:"* Nó mô tả đúng trạng thái hồ sơ
+> cho tới đúng lúc ấy.
+>
+> Giữ nguyên văn hai câu cũ và ghi chúng đã thành gì:
 > * **:229** — *"the one **all three** reference SDK samples reproduce"*. Liệt kê lại
 >   `examples/device-client/`: **python** `example_screwdriver.py` và **csharp** `ExampleScrewdriver.cs`
 >   là **hai** chương trình chạy được có phát waveform; **README.md** mang một payload **tài liệu**;
@@ -3845,11 +3859,19 @@ quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` —
 >   telemetry. **Đếm sau khi liệt kê: HAI bộ phát chạy được + một payload tài liệu**, không phải ba bộ
 >   phát. 🔴 Cộng một sự kiện mạnh hơn cả con số: **không cái nào trong chúng đi qua `Normalizer`** —
 >   chúng gọi `St4iDeviceClient` thẳng. **Vị từ gác bằng cặp vẫn đúng; DÂN SỐ minh hoạ bị phóng đại.**
+>   ✅ **NAY ĐỌC:** phép liệt kê ấy, nguyên văn, trong chính chú thích — hai bộ phát chạy được, một
+>   payload tài liệu, nodejs không có ví dụ waveform, arduino telemetry-only — cộng câu **không cái nào
+>   đi qua normalizer**, và câu nêu **dân số vị từ THẬT SỰ bảo vệ**: một driver bên thứ ba viết theo đặc
+>   tả 57 §3.3 cắm vào normalizer, **có thật và chưa có trong cây**.
 > * **:37** — *"a transform that returned `List<double>` **or a tuple**"* rồi kết luận chung rằng gương
 >   MQTT vẫn mang cặp đúng. **Chỉ đúng cho các kiểu vẫn tuần tự hoá thành MẢNG JSON.** Với một
 >   `ValueTuple`, gương ra `{"Item1":…}` chứ không ra mảng ⇒ **CẢ HAI** bề mặt hỏng, không phải một. Sự
 >   kiện *"hai bề mặt hỏng khác nhau"* **đứng vững cho `List<double>`** (biến thể thật sự đã chạy) và
 >   **không** khái quát được cho tuple.
+>   ✅ **NAY ĐỌC:** phép bất đối xứng được nêu kèm **điều kiện chịu lực** — nó đúng cho **mọi kiểu sai
+>   VẪN TUẦN TỰ HOÁ THÀNH MẢNG JSON**, `List<double>` là biến thể **thật sự đã chạy** (6/7 đỏ, gương
+>   xanh), và **một `ValueTuple` tuần tự hoá thành OBJECT nên phá CẢ HAI bề mặt**. Chú thích tự khai
+>   rằng bản trước **gộp "or a tuple" vào phép bất đối xứng và sai đúng ở ca ấy**.
 >
 > **LỚP 4 — nợ CÓ TRƯỚC, không của phán quyết và không của AK-1.** Một câu:
 > `DeviceReading.cs` **:62** — *"row `i` is the sample at `i / RateHz` seconds"*, nằm trong đoạn **(A)**
@@ -3859,6 +3881,10 @@ quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` —
 > một câu đã biết sai mà không nói nó đã biết sai là **viết một sự thật chỉ theo chiều thuận**. **Chiều
 > nghịch, viết ra ở đây:** câu ấy đúng ở chỗ nó chứng minh `i/rateHz` **không phải một quy ước mới do
 > AK-1 nghĩ ra**; nó sai ở chỗ con số nó hứa **không khớp `WelderSim`**. Cả hai nửa phải đọc cùng nhau.
+>
+> 🔴 **VÀ VÌ LỚP 3 ĐÃ ĐÓNG, TẬP CÒN NỢ CO LẠI — ghi ra chứ không để người sau tự trừ:** còn **BẢY** câu
+> lớp 1 + **HAI** câu lớp 2 = **CHÍN câu còn nợ, trong HAI file**, cộng **MỘT** câu lớp 4 có trước.
+> **Hai câu lớp 3 KHÔNG còn trong tập ấy.**
 >
 > **ĐẾM SAU KHI LIỆT KÊ: CHÍN câu, trong BA file. TÁM là `///`, MỘT là thông điệp `Assert` lúc chạy.
 > Bảy do phán quyết, HAI do mã của AK-1, HAI do prose của AK-1, MỘT có trước cả hai** — tổng các lớp là
