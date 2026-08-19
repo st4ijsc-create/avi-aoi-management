@@ -4024,6 +4024,79 @@ trước AJ-1** — sửa chúng trong một nhiệm vụ thi hành hai phán qu
 
 ---
 
+## Tồn dư của AK-1 (2026-08-19, thi hành mục 14 + vòng phản biện) — GHI, KHÔNG SỬA
+
+**Vì sao nó nằm ở ĐÂY chứ ở báo cáo nhiệm vụ:** nội dung dưới đây là một bài học về **PHƯƠNG PHÁP ĐO**,
+không phải về mục 14. Nó được viết vào file này vì `.superpowers/sdd/` **bị gitignore** — `git ls-tree`
+không thấy nó — nên **một bài học chỉ sống trong đó là một bài học không ai đọc**. Đó đúng là luật mà
+§"Biên của chuỗi giám hộ" của mục 14 mua được, áp cho chính nhiệm vụ vừa viết ra nó.
+
+### 13. 🔴 Một dụng cụ đếm bị bắt lỗi ở MỘT đầu ra, sửa MỘT nửa, và nửa kia đi tiếp vào hồ sơ
+
+**Cơ chế, nói trước vì nó tầm thường:** AK-1 chứng minh *"`owner-decisions.md` không mất một dòng prose
+nào"* bằng một phép so đa tập dòng — tách hai phía của diff rồi `comm`. Phép tách dùng `grep '^-'` và
+`grep '^+'`. Một unified diff mở đầu bằng **hai dòng tiêu đề** `--- a/…` và `+++ b/…`, nên `grep '^-'`
+nuốt dòng thứ nhất và `grep '^+'` nuốt dòng thứ hai ⇒ **cộng dư ĐÚNG 1 vào CẢ HAI phía**.
+
+🔴 **Cách nó sống sót, và đây là vế phải viết to nhất vì nó KHÔNG tự lộ ra.** Người viết **ĐÃ BẮT ĐƯỢC**
+khuyết tật ấy — ở phía *"dòng biến mất"*. Con số ra **5**, không khớp phép đếm tay **4**, họ đi điều
+tra, tìm ra dòng tiêu đề, và **nói đúng rằng thật ra là 4**. Rồi họ **im lặng mang nguyên +1 ấy sang
+phía kia**: phía *"dòng thật sự mới"* ra **151**, và **151 được viết vào hồ sơ** mà không ai hỏi lại.
+Con số đúng là **150**.
+
+**Cùng MỘT khuyết tật. Bắt được MỘT nửa. Nửa không bắt được thì ĐI TIẾP.**
+
+**Vì sao nó tinh vi hơn một con số sai:** một phép đo sai hoàn toàn lộ ra khi đối chiếu. Một phép đo mà
+người dùng **đã tìm ra lỗi của nó ở một chỗ** lại **được tin hơn** ở mọi chỗ khác — **chính hành động
+sửa một nửa đã tạo ra sự tin cậy che nửa còn lại**. Đây là loài *"miền của dụng cụ hẹp hơn miền của câu
+nói dùng nó"* ở dạng khó thấy nhất: **miền đã được thu hẹp một lần, và người thu hẹp tưởng mình đã thu
+hẹp xong.**
+
+**Luật rút ra, viết cho người sau:** khi một dụng cụ bị bắt lỗi ở **MỘT** đầu ra, phải **đo lại MỌI đầu
+ra của nó** — không phải chỉ đầu ra vừa bị bắt. Và cách chữa là **sửa DỤNG CỤ, không sửa CON SỐ**: ở
+đây là bỏ `grep` và dùng `awk 'NR>4'` để cắt tiêu đề. 🔴 **Khẳng định chịu lực KHÔNG đổi** qua cả bốn
+commit của AK-1 — xoá 3065, **thật sự đổi ĐÚNG 4**, thuần dịch chỗ 3061 — nên đây là khuyết tật của
+**dụng cụ và của cách đọc nó**, không phải của kết luận.
+
+**Nêu ra vì nó KHÔNG được ai bắt hộ:** vòng phản biện dùng `awk 'NR>4'` ngay từ đầu nên **không bao giờ
+gặp** khuyết tật này (họ tự nêu một bẫy khác: `grep -v '^---'` sẽ nuốt mọi dòng nội dung là `---`, tức
+mọi thanh ngang markdown). Người thực thi tìm ra nó **sau khi phản biện đã xong**, lúc đo lại theo I-1.
+**Lần sau nó có thể không lộ ra.**
+
+### 14. Cùng họ, cùng phiên: hai lần tuyên bố một thứ CÒN ĐANG CHUYỂN ĐỘNG là đã dừng
+
+Trong lúc chờ cổng, AK-1 **hai lần** viết ra rằng một lần chạy đã xong trong khi nó **đang chạy** —
+lần đầu *"Gate 3 has completed"*, lần sau *"the waiter has fired"* — cả hai lần **suy từ việc một thông
+báo nền vừa tới**, không từ một phép đo.
+
+🔴 **Và cả hai lần tự bác được, bằng phép đo, ngay tại chỗ:** `pid` của cổng **còn sống**
+(`Get-CimInstance Win32_Process`), CPU của `testhost` **còn tăng** giữa hai mẫu, và file log **chưa có
+dòng verdict**. **Chi tiết "tự bác" được giữ lại có chủ ý**: nó là phần chứng minh rằng luật *"một phát
+biểu về thứ CÒN ĐANG CHUYỂN ĐỘNG chưa phải một phép đo"* **dùng được**, không chỉ **nói được** — và
+rằng cái chặn được nó là **đo pid + CPU**, một thao tác rẻ, chứ không phải sự cẩn thận.
+
+**Chỗ đau:** điều ấy xảy ra **trong chính nhiệm vụ chép câu luật ấy ra**, và chép nó ra **nhiều lần**.
+
+### 15. 🔴 Và một tồn dư KHÔNG phải của người thực thi — một chỉ thị TỰ MÂU THUẪN do ĐIỀU PHỐI VIÊN ra
+
+**Ghi vào đây vì một tồn dư chỉ kể lỗi của người thực thi thì lại là một vế thuận, đúng loài mục này
+tồn tại để chấm dứt.**
+
+Ngày **2026-08-19**, điều phối viên chỉ thị AK-1 ghi bài học ở §13 *"vào **báo cáo**, ở **chỗ người sau
+đọc được**"*. **Hai vế ấy loại trừ nhau trong repo này:** `.superpowers/sdd/` **không nằm trong cây
+Git**, nên báo cáo nhiệm vụ **chính là chỗ người sau KHÔNG đọc được**. Và đó **đúng là tiền đề** mà
+cùng nhiệm vụ ấy dùng để đặt khối P-2 của mục 14 vào file này **thay vì** vào báo cáo.
+
+**Người thực thi bắt được, nêu lên thay vì im lặng tuân, và KHÔNG tự thêm mục** — họ hỏi rồi chờ trả
+lời. **Điều phối viên nhận**, và mục này là kết quả. **Hình dạng đáng để lại:** chỉ thị ấy không sai về
+nội dung, nó sai vì **hai nửa của nó được viết ở hai mức trừu tượng khác nhau** (*"báo cáo"* là một
+chỗ, *"chỗ người sau đọc được"* là một tính chất) và **không ai kiểm tính chất ấy trên chỗ ấy**. Đúng
+loài mà đoạn mở đầu file này mô tả: *"một lời cải chính cất ở đó không bao giờ vào repo và chủ sở hữu
+không có đường dẫn nào để mở"* — lần này nó suýt xảy ra với **bài học về cách đo**, tức với **dụng cụ**,
+chứ không với một khẳng định.
+
+---
+
 ## Không phải quyết định của chủ sở hữu, nhưng đang chặn công cụ đo
 
 Ghi ở đây vì nó làm hỏng **chính dụng cụ đo mọi thứ khác**, nên nó cạnh tranh thời
