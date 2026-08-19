@@ -1647,7 +1647,49 @@ EXPECT_CONFORMANCE=24
 # to count those lines separately but to REMOVE them: the corrected statement moved into a `<summary>`
 # where W-1 can see it, and the new-`//`-line count for the whole stage is now zero.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1152
+#
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 TASK AJ-1 (.superpowers/sdd/items-9-13-executed/task-1-brief.md) — OWNER DECISIONS 9 AND 13 EXECUTED.
+# RAISES EXPECT_EDGECORE 1152 -> 1153 (+1). Nothing else moves; grand total 2763 -> 2764.
+#
+# WHAT WAS ADDED — ONE [Fact], and it is the PRICE rather than the fix:
+#   + 1  tests/St4i.EdgeCore.Tests/Historian/OeeSettingsStoreTests.cs —
+#        Set_AfterTheFileIsMerelyReformatted_IsAlsoRefused_AndThatIsTheAcceptedPrice. Item 13's identity
+#        comparison is over the file's BYTES, so a file that was only re-indented or had its keys reordered
+#        is refused with the same 409 as a restore. The owner decided item 13 with that written down
+#        ("kể cả khi thứ đổi file là một biên tập tay hợp lệ"), so it is pinned: a later round that
+#        "improves" the comparison into a semantic one reddens here and has to say so, rather than
+#        reopening item 13's hole quietly (a parsed-table comparison has a false NEGATIVE at exactly the
+#        case item 13 closes — Load skips empty machine codes and collapses duplicates).
+#
+# 🔴 WHAT WAS *NOT* ADDED, AND THE ZERO IS THE POINT. Both decisions are executed by INVERTING existing
+# witnesses, not by adding new ones, which is why +1 and not +3:
+#   * OeeSettingsStoreTests.Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling
+#     -> ..._IsRefused_AndTheRestoredBytesSurvive. It pinned a LIVE defect as a baseline (S-1's idiom for
+#     item 5, V-1's for item 10) precisely so the closure would appear as an inversion in a diff. Renamed
+#     with the body: a name saying "the known ceiling" over a body asserting a refusal is a published
+#     string asserting something false (P-2).
+#   * StartupSettingsReplayHardeningTests.AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo
+#     -> ..._IsOverwrittenByTheEnvironmentFloor_AndTheHostSaysSo. Same shape, opposite direction: item 9(b)
+#     decides that the ST4I_* floor IS applied and IS persisted over an unreadable file.
+#   Neither rename moves a count, and neither test was split or deleted.
+#
+# 🔴 AND THE ONE THAT DID NOT MOVE THOUGH IT LOOKS LIKE IT SHOULD HAVE:
+# StartupSettingsReplayHardeningTests.TheStartupReplayHasExactlyOneArm_AndTheSettingsFileOneWriterAndOneDeleter
+# STAYS GREEN through item 9(b) and is untouched. (b) is executed by DELETING one guard expression — on the
+# Unreadable arm `initialSettingsRequest` is already the env floor — so `TryReplayStartupSettings(` is still
+# named exactly twice, `Save` still has one call site and `Delete` still has one. A source census counting
+# text was never the instrument for this change; the behaviour witness above is. Stated here because a green
+# census beside a behavioural change reads as evidence when it is only silence.
+#
+# EXPECT_WARNINGS stays 631, EXPECT_WARNING_LEDGER stays at its sixteen rows unmoved unit for unit, and
+# EXPECT_BUILD_NODES stays 0 — measured on a full `dotnet build -t:Rebuild`, not assumed. The new public
+# type (OeeSettingsFileChangedException) and the new internal member (OeeSettingsRead.Text) both carry `///`
+# blocks, which is what keeps `OURS CS1591 328` from moving in St4i.EdgeCore, where
+# GenerateDocumentationFile is ON. No suppression of any kind was added — no NoWarn, no #pragma, no
+# .editorconfig severity — and SuppressionCensusTests' three tables are untouched.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1153
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:

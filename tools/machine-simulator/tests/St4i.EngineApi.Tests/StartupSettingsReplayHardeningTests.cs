@@ -323,98 +323,117 @@ public sealed class StartupSettingsReplayHardeningTests
     }
 
     /// <summary>
-    /// 🔴 <b>Task Q-1 — AN ORDINARY, SUCCESSFUL START MUST NOT DESTROY A SETTINGS FILE IT COULD NOT READ.
-    /// This is the control-pair witness: it FAILS at the commit before the fix and passes after it, and
-    /// what it reads is the bytes on disk.</b>
+    /// 🔴 <b>Task AJ-1 — THE OWNER DECIDED THE OPPOSITE OF WHAT THIS TEST USED TO ASSERT (item 9 of
+    /// <c>docs/owner-decisions.md</c>, option (b), 2026-08-19), AND THE INVERSION IS THIS DIFF.</b> The test
+    /// was <c>AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo</c> and it asserted
+    /// that the operator's unreadable bytes were byte-for-byte intact after the start and that the
+    /// <c>ST4I_*</c> floor had NOT won in memory. Both are now false by decision: on the unreadable arm the
+    /// floor is applied AND persisted over the file. The name moved with the body — a test called
+    /// <i>Survives…</i> whose body asserts the file was overwritten is a published string asserting
+    /// something false (P-2).
     ///
-    /// <para><b>The defect, because the test only means something with it in view.</b> The composition
-    /// root's read answered a triple or null, and null covered two situations — no file, and a file it
-    /// could not turn into a triple. Reading null as the first one selected the env-var SEED arm with the
-    /// operator's file sitting right there; the seed goes through <c>FleetHost.UpdateSettings</c>, which
-    /// persists in a <c>finally</c> inside <c>if (rebuildNeeded)</c>, reached whether the activation throws
-    /// <b>or returns</b>. So on a start where <i>nothing failed</i>, <c>fleet-settings.json</c> was
-    /// rewritten with the environment floor merged with <c>FleetHost</c>'s built-in defaults. No guard, no
-    /// callback, no log line: the <c>Error</c> line belongs to a failed replay and the <c>Warning</c> line
-    /// to the discard block, and on this path neither runs.</para>
+    /// <para><b>Why this is the witness for (b) and the source census is not.</b> On the unreadable arm
+    /// <c>FleetSettingsRead.ForUnreadable</c> carries no <c>Settings</c>, so <c>initialSettingsRequest</c>
+    /// is ALREADY the environment floor — which means (b) is executed by deleting one guard expression, with
+    /// no new call site, and
+    /// <see cref="TheStartupReplayHasExactlyOneArm_AndTheSettingsFileOneWriterAndOneDeleter"/> stays GREEN
+    /// through it. That census counts source text and was built for a different property. This test asserts
+    /// properties of the FILE and of the RESPONSE, so no way of writing the change can satisfy it
+    /// accidentally.</para>
     ///
     /// <para><b>Why a MALFORMED file rather than an ACL or a lock.</b> All three reach the same outcome,
     /// and the other two are asserted at the store in <c>FleetSettingsStoreTests</c>. This one is chosen
     /// here because it is the vector that needs nothing withheld at all — a typo in a hand-editable file
-    /// with no schema — so the whole path from a plausible operator mistake to a destroyed configuration is
+    /// with no schema — so the whole path from a plausible operator mistake to the decided overwrite is
     /// exercised end to end through the real composition root.</para>
     ///
-    /// <para>🔴 <b>The precondition is set deliberately and it is the one the defect is gated on.</b>
+    /// <para>🔴 <b>The precondition is set deliberately and it is the one the behaviour is gated on.</b>
     /// <c>rebuildNeeded</c> is true only when at least one of serverUrl/verifyTls/machineCode arrives
-    /// non-null, and on the seed arm all three come from the environment. With NONE of the three
-    /// <c>ST4I_*</c> variables set, nothing is written and the file survives even with the defect present —
-    /// so a test that set none of them would pass at both commits and witness nothing. Both are set here,
-    /// to values DIFFERENT from anything in the file, which is also what makes the second assertion
-    /// (the floor did not win) unable to pass by coincidence.</para>
+    /// non-null. With NONE of the three <c>ST4I_*</c> variables set there is no floor to apply, nothing is
+    /// written, and the file survives — which is a real arm of the decided behaviour and is why the
+    /// composition root now emits two different sentences. Both variables are set here, to values DIFFERENT
+    /// from anything in the file, so neither the file assertion nor the response assertion can pass by
+    /// coincidence.</para>
     ///
-    /// <para><b>The first assertion reads the FILE, byte for byte, not <c>Load()</c>.</b> <c>Load()</c>
-    /// answers null for a malformed file, so a witness written through it would pass whether the file was
-    /// intact, rewritten with the floor, or deleted — which is the same "passes for the wrong reason" trap
-    /// the seed test above avoids by checking <c>File.Exists</c> rather than <c>Load()</c>.</para>
+    /// <para><b>The file assertion reads the FILE, not <c>Load()</c>.</b> <c>Load()</c> answered null for a
+    /// malformed file, so a witness written through it would pass whether the file was intact, rewritten
+    /// with the floor, or deleted — the same "passes for the wrong reason" trap the seed test above avoids
+    /// by checking <c>File.Exists</c>.</para>
+    ///
+    /// <para>🔴 <b>And it asserts the BOUNDARY the decision did NOT cross</b>: the overwrite is in place. The
+    /// old bytes are not moved aside under another name and the file is not deleted — the exemption the
+    /// owner granted for that shape at item 10 applies to item 10 only. The directory listing at the end is
+    /// what measures it.</para>
     /// </summary>
     [Fact]
-    public async Task AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo()
+    public async Task AMalformedSettingsFile_IsOverwrittenByTheEnvironmentFloor_AndTheHostSaysSo()
     {
-        var settingsDir = Directory.CreateTempSubdirectory("st4i-q1-settings-unreadable-").FullName;
+        var settingsDir = Directory.CreateTempSubdirectory("st4i-aj1-settings-unreadable-").FullName;
         var settingsFile = Path.Combine(settingsDir, "fleet-settings.json");
 
         // A hand-edit with one typo in it: a trailing comma and a missing brace. Every field an operator
-        // would have set is still legible in the bytes, which is the whole reason destroying them is a
-        // loss — this is the only remaining record of the triple.
+        // would have set is still legible in the bytes — which is what made destroying them a loss, and is
+        // exactly the loss the owner weighed against a headless host running on built-in defaults.
         const string OperatorsOwnBytes =
             "{\n  \"ServerUrl\": \"https://q1-operators-own.example.test:8443\",\n" +
             "  \"MachineCode\": \"Q1-OPERATORS-OWN-01\",\n  \"VerifyTls\": false,\n";
         File.WriteAllText(settingsFile, OperatorsOwnBytes);
 
-        var floorServerUrl = "https://q1-floor-must-not-win.example.test";
-        var floorMachineCode = "Q1-FLOOR-" + Guid.NewGuid().ToString("N")[..8];
+        var floorServerUrl = "https://aj1-floor-now-wins.example.test";
+        var floorMachineCode = "AJ1-FLOOR-" + Guid.NewGuid().ToString("N")[..8];
         var log = new List<(LogLevel Level, string Message)>();
 
         await using var factory = await CreateFactoryAsync(
             new EnvOverrides(floorServerUrl, floorMachineCode, settingsDir), log);
 
-        // The host is UP — this arm reports, it does not stop. (docs/startup-failure-posture.md §1: the
-        // loss is nameable and nothing left running claims the persisted triple was applied.)
+        // The host is UP — this arm reports, it does not stop. (docs/startup-failure-posture.md §1.)
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
         using var response = await client.GetAsync("/v1/settings");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        // (1) THE DATA-LOSS ASSERTION. The bytes are the operator's, unchanged, still there.
-        Assert.True(File.Exists(settingsFile), "fleet-settings.json is GONE after a start in which nothing failed.");
-        Assert.Equal(OperatorsOwnBytes, File.ReadAllText(settingsFile));
+        // (1) THE DECIDED OVERWRITE, read off disk. The operator's bytes are gone and the floor is what is
+        // in the file now — asserted as BOTH halves, because "not the operator's bytes" alone would also
+        // pass if the file had been emptied or deleted.
+        Assert.True(File.Exists(settingsFile), "fleet-settings.json is GONE — the decision was an in-place overwrite.");
+        var onDisk = File.ReadAllText(settingsFile);
+        Assert.NotEqual(OperatorsOwnBytes, onDisk);
+        Assert.DoesNotContain("Q1-OPERATORS-OWN-01", onDisk, StringComparison.Ordinal);
+        Assert.Contains(floorMachineCode, onDisk, StringComparison.Ordinal);
+        Assert.Contains(floorServerUrl, onDisk, StringComparison.Ordinal);
 
-        // (2) The floor was not applied in memory either. FF-1's precedence says the file wins whenever
-        // there is one, and there is one — this process simply cannot read it. Reporting the floor would
-        // put a triple in front of the operator that they never set, on a machine that has a configuration.
-        // 🔴 Both halves, and the second was missing in fix round 1 (review M4). `NotEqual(floor…)` alone
-        // says only "not the floor" — it would pass on any third value, including a torn mix. README and
-        // docs/startup-failure-posture.md both state the stronger thing: the process comes up on FleetHost's
-        // BUILT-IN defaults, because nothing was applied at all. That is the claim, so that is what is
-        // asserted.
+        // (2) And it won in memory too, which is the half item 9 was actually about: a headless install
+        // whose settings file has gone unreadable now runs on the triple its service definition supplies
+        // rather than on FleetHost's built-in defaults.
         var settings = await response.Content.ReadFromJsonAsync<SettingsDto>(JsonOptions);
         Assert.NotNull(settings);
-        Assert.NotEqual(floorServerUrl, settings!.ServerUrl);
-        Assert.NotEqual(floorMachineCode, settings.MachineCode);
-        Assert.Equal(FleetHost.DefaultServerUrl, settings.ServerUrl);
-        Assert.Equal(FleetHost.DefaultMachineCode, settings.MachineCode);
+        Assert.Equal(floorServerUrl, settings!.ServerUrl);
+        Assert.Equal(floorMachineCode, settings.MachineCode);
 
-        // (3) It was said, at a level the framework's default filter emits (§10.4 — this product ships no
-        // appsettings.json, so a demotion would leave (1) and (2) green while the operator learned nothing),
-        // and it names the file rather than only the directory.
+        // (3) THE BOUNDARY. In place: nothing was renamed aside, nothing extra was left behind. The
+        // data-MOVE exemption the owner granted at item 10 is item 10's alone.
+        Assert.Equal(new[] { "fleet-settings.json" },
+            Directory.GetFiles(settingsDir).Select(Path.GetFileName).OrderBy(f => f, StringComparer.Ordinal).ToArray());
+
+        // (4) It was said, at a level the framework's default filter emits (§10.4 — this product ships no
+        // appsettings.json, so a demotion would leave everything above green while the operator learned
+        // nothing), it names the file, and it says the thing that is now true.
         List<(LogLevel Level, string Message)> notices;
         lock (log) notices = log.Where(e => e.Message.Contains(UnreadableMarker, StringComparison.Ordinal)).ToList();
 
         Assert.True(notices.Count > 0,
-            "The host booted, refused to apply a settings file it could not read, and said NOTHING. " +
-            "Silence is the whole defect: the operator sees a service that started and a configuration " +
-            "that is not in effect. Captured lines: " +
-            string.Join(" | ", log.Select(e => $"[{e.Level}] {e.Message}")));
+            "The host booted, overwrote a settings file it could not read, and said NOTHING. Silence is " +
+            "the whole defect, and it is worse under this decision than before it: the bytes are gone. " +
+            "Captured lines: " + string.Join(" | ", log.Select(e => $"[{e.Level}] {e.Message}")));
         Assert.All(notices, entry => Assert.Equal(LogLevel.Error, entry.Level));
         Assert.Contains(notices, e => e.Message.Contains("fleet-settings.json", StringComparison.Ordinal));
+        Assert.Contains(notices, e => e.Message.Contains("OVERWRITTEN", StringComparison.Ordinal));
+
+        // 🔴 (5) THE SECOND PUBLISHED STRING (b) FALSIFIED, asserted as an ABSENCE because that is the shape
+        // the defect has. The seed arm's remedy sentence says "NO settings file existed before this start"
+        // and it was selected by "there is no persisted triple", which is true on Unreadable as well as on
+        // Absent. A file DID exist here. Nothing in this boot may say otherwise.
+        Assert.DoesNotContain(log, e =>
+            e.Message.Contains("NO settings file existed before this start", StringComparison.Ordinal));
     }
 
     private const string UnreadableMarker = "STARTUP SETTINGS FILE COULD NOT BE READ";
