@@ -402,7 +402,7 @@ function extractProjectPath(question: string): string | undefined {
  * chối, đúng nguyên tắc đã dùng cho `extractProjectPath`.
  */
 const REPO_PATH_REGEX =
-  /(?:^|[\s"'`:：(\[])((?:[\w.@~$-]+[/\\])*[\w.@~$-]+\.(?:tsx?|jsx?|mjs|cjs|mts|cts|json|sql|md|css|scss|html?|ya?ml|toml|txt|sh|png|jpe?g|jsonl|log|pem|key|env))(?=$|[\s"'`,;)\]。，、])/i;
+  /(?:^|[\s"'`:：(\[])((?:[\w.@~$-]+[/\\])*[\w.@~$-]+\.(?:tsx?|jsx?|mjs|cjs|mts|cts|json|sql|md|css|scss|html?|ya?ml|toml|txt|sh|png|jpe?g|jsonl|log|pem|key|env|cs|csproj|sln))(?=$|[\s"'`,;)\]。，、])/i;
 
 /** Thư mục trong repo: một token có `/` mà KHÔNG có đuôi tệp (vd `server/services/aiLocalTools`). */
 const REPO_DIR_REGEX = /(?:^|[\s"'`:：(\[])((?:[\w.@~$-]+\/){1,}[\w.@~$-]*)(?=$|[\s"'`,;)\]。，、])/;

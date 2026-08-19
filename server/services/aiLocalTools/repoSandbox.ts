@@ -191,6 +191,12 @@ export const DUOI_CHO_PHEP: ReadonlySet<string> = new Set([
   ".sh",
   ".mts",
   ".cts",
+  // doc 79 — C# (dự án thử `sandbox-projects/csharp-demo`): mã nguồn + tệp dự án đều là VĂN BẢN.
+  // Thiếu ba đuôi này thì `dotnet test` CHẠY được nhưng AI KHÔNG đọc/sửa được `.cs` ⇒ vòng khép
+  // kín (đọc → sửa → chạy → đọc lỗi) đứt ở nhịp đầu cho C#.
+  ".cs",
+  ".csproj",
+  ".sln",
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════

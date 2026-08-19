@@ -40,6 +40,21 @@ describe("§1 — CỔNG RA: đường dẫn repo ⇒ read_file (phép đo đã 
     expect(d.tool).toBe("read_file");
     expect(d.args.path).toBe("client/src/pages/AICodingWorkspace.tsx");
   });
+
+  // doc 79 — C# (dự án thử): `.cs`/`.csproj`/`.sln` phải được NHẬN là đường dẫn, nếu không câu
+  // "đọc Calculator.cs" không chọn được read_file và AI không code được C#. `REPO_PATH_REGEX` +
+  // `DUOI_CHO_PHEP` cùng mở cho ba đuôi này.
+  it("★★★ '.cs' ⇒ read_file (AI code được C#, không chỉ TypeScript)", () => {
+    const d = classifyCodingToolIntent("đọc sandbox-projects/csharp-demo/src/Calculator.cs");
+    expect(d.tool).toBe("read_file");
+    expect(d.args.path).toBe("sandbox-projects/csharp-demo/src/Calculator.cs");
+  });
+
+  it("★★ '.csproj' cũng ⇒ read_file", () => {
+    const d = classifyCodingToolIntent("mở CalculatorDemo.csproj");
+    expect(d.tool).toBe("read_file");
+    expect(d.args.path).toBe("CalculatorDemo.csproj");
+  });
 });
 
 describe("§2 — grep_repo: ý định TÌM + trích được mẫu", () => {
