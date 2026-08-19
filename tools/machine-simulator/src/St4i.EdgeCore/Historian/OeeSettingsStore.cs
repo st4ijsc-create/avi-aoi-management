@@ -73,8 +73,19 @@ public enum OeeSettingsReadStatus
 /// where the read succeeded, which is the defect class P-2 measured at an enum member: a member's spelling
 /// is a published string and nothing in this tree reads it as one. So the shared condition gets the shared
 /// name, each arm keeps a name that is true of it, and the endpoint catches the base — which is still
-/// exactly the condition its response asserts, because these two are the only types that derive from
-/// it.</para>
+/// exactly the condition its response asserts, because the derived types are the only types that derive
+/// from it.</para>
+///
+/// <para>🔴 <b>Task AJ-1 adds a THIRD derived type, <see cref="OeeSettingsFileChangedException"/> (owner
+/// decision item 13, 2026-08-19), and the property the <c>409</c> response rests on is stated as a property
+/// rather than as a count.</b> The endpoint's claim is <i>"nothing was written"</i>. What makes it true is
+/// not that there are two arms or three: it is that <b>every</b> type deriving from this base is raised by
+/// <see cref="OeeSettingsStore.Set"/> and by nothing else, and every one of them is raised <b>before</b> the
+/// mutation and the <c>Save</c> — the same ordering the range guardrails already have. A fourth arm added
+/// later keeps the response honest exactly as long as it keeps that ordering; a scalar written here would
+/// have to be re-counted every time and would say nothing about the ordering, which is the half that
+/// carries the claim. Same reason each arm still gets its own name: this one's file <b>reads perfectly and
+/// is not the file the table came from</b>, and neither existing name is true of that.</para>
 /// </summary>
 public abstract class OeeSettingsWriteRefusedException : InvalidOperationException
 {
@@ -121,19 +132,74 @@ public sealed class OeeSettingsFileAppearedException : OeeSettingsWriteRefusedEx
     }
 }
 
+/// <summary>
+/// 🔴 Task AJ-1 (owner decision, item 13 of <c>docs/owner-decisions.md</c>, 2026-08-19) — thrown by
+/// <see cref="OeeSettingsStore.Set"/> when this store came up on a file it read successfully and the file on
+/// disk is <b>no longer the same bytes</b>. Both reads succeeded; the file is not the file the in-memory
+/// table was built from.
+///
+/// <para>The distinguishing fact from <see cref="OeeSettingsFileAppearedException"/> is which half moved.
+/// There the store had <b>no file</b> and one appeared, so the table represents nothing. Here the store had
+/// a file, the table is a faithful copy of <i>that</i> one, and something outside this store has replaced it
+/// since — a restore onto a running host being the ordinary trigger, a hand-edit and a second host on the
+/// same historian directory being the others. Writing the table now would publish a pre-restore table over
+/// a post-restore file.</para>
+///
+/// <para>🔴 <b>The known ceiling of this arm, named here because a price the owner accepted must be
+/// findable from the type that charges it.</b> The comparison is over the <b>bytes</b>, so a file that was
+/// merely REFORMATTED — re-indented, CRLF↔LF, a BOM added, keys reordered — is a different file to this
+/// store and is refused, although it means the same thing. That is deliberate and is the accepted price:
+/// the only comparison that would let a reformat through is one that compares the <i>parsed</i> table, and
+/// that comparison has a false NEGATIVE at the case this arm exists to close (<see cref="OeeSettingsStore"/>
+/// drops entries with an empty machine code and collapses duplicate ones, so a restored file carrying either
+/// would compare EQUAL to the table and be overwritten). Refusing a reformat is recoverable by
+/// <see cref="OeeSettingsStore.Reload"/>; overwriting a restore is not recoverable at all.</para>
+/// </summary>
+public sealed class OeeSettingsFileChangedException : OeeSettingsWriteRefusedException
+{
+    internal OeeSettingsFileChangedException(string filePath, string message)
+        : base(filePath, message, null)
+    {
+    }
+}
+
 /// <summary>🔴 Task V-1 — the outcome of one <see cref="OeeSettingsStore.Read"/> call.</summary>
 public sealed class OeeSettingsRead
 {
     private OeeSettingsRead(
         OeeSettingsReadStatus status, IReadOnlyList<OeeMachineSettings>? entries, string filePath,
-        string? reason, Exception? failure)
+        string? reason, Exception? failure, string? text)
     {
         Status = status;
         Entries = entries;
         FilePath = filePath;
         Reason = reason;
         Failure = failure;
+        Text = text;
     }
+
+    /// <summary>🔴 Task AJ-1 — the file's own text, exactly as this read obtained it, non-null exactly when
+    /// <see cref="Status"/> is <see cref="OeeSettingsReadStatus.Loaded"/>.
+    ///
+    /// <para><b>It is retained rather than digested, and that is the whole of the identity mechanism item 13
+    /// asked for.</b> The read has already called <c>File.ReadAllText</c> to reach
+    /// <see cref="Entries"/> — before AJ-1 this string was built and then dropped on the floor. A hash, an
+    /// mtime or a length exists to answer <i>"are these two the same"</i> for a caller that cannot hold both
+    /// operands; <see cref="OeeSettingsStore"/> holds both, in one lock, at zero extra I/O, so every one of
+    /// those is a lossy function of something it already has and can only ADD failure modes.</para>
+    ///
+    /// <para>🔴 <b>And the direction in which it is WORSE, said here because the sentence this replaces
+    /// ("cheaper AND strictly stronger than any digest") was written without a condition, in the paragraph
+    /// whose job is to justify the choice.</b> Cheaper is true of <b>I/O</b> (0 against 0) and of <b>CPU</b>
+    /// (an ordinal compare exits at the first difference, or at the length check; a digest must traverse
+    /// every byte of both sides). It is <b>false of RETAINED MEMORY</b>, and that is not a rounding error: a
+    /// SHA-256 is 32 bytes whatever the file is, and this is the size of the file for as long as the store
+    /// lives. See <see cref="OeeSettingsStore"/>'s own field for what bounds that and what does not.</para>
+    ///
+    /// <para><b>INTERNAL on purpose.</b> <see cref="OeeSettingsStore.Read"/> is public and this type is its
+    /// return value, so a public member here would be new published surface — and nothing outside this store
+    /// needs the raw bytes to decide anything. The store is the only comparer.</para></summary>
+    internal string? Text { get; }
 
     /// <summary>Which of the three outcomes this read reached.</summary>
     public OeeSettingsReadStatus Status { get; }
@@ -156,14 +222,15 @@ public sealed class OeeSettingsRead
     /// <see cref="Config.FleetSettingsRead.Failure"/>.</summary>
     public Exception? Failure { get; }
 
-    internal static OeeSettingsRead ForLoaded(string filePath, IReadOnlyList<OeeMachineSettings> entries) =>
-        new(OeeSettingsReadStatus.Loaded, entries, filePath, null, null);
+    internal static OeeSettingsRead ForLoaded(
+        string filePath, IReadOnlyList<OeeMachineSettings> entries, string text) =>
+        new(OeeSettingsReadStatus.Loaded, entries, filePath, null, null, text);
 
     internal static OeeSettingsRead ForAbsent(string filePath) =>
-        new(OeeSettingsReadStatus.Absent, null, filePath, null, null);
+        new(OeeSettingsReadStatus.Absent, null, filePath, null, null, null);
 
     internal static OeeSettingsRead ForUnreadable(string filePath, string reason, Exception? failure = null) =>
-        new(OeeSettingsReadStatus.Unreadable, null, filePath, reason, failure);
+        new(OeeSettingsReadStatus.Unreadable, null, filePath, reason, failure, null);
 }
 
 /// <summary>
@@ -240,24 +307,46 @@ public sealed class OeeSettingsRead
 /// documents as the state an operator who cleared the table leaves, and publishing an invented table over a
 /// deliberate one is the same act as publishing it over a populated one.</para>
 ///
-/// <para>🔴 <b>WHAT IS STILL NOT REACHED, AND IT IS THE SAME OPERATOR WORKFLOW WITH A FILE ALREADY ON
-/// DISK.</b> Naming this small would repeat exactly what V-1 was corrected for, so it is stated at its full
-/// size. Two pairs still write:
+/// <para>🔴 <b>THE FOURTH DISAGREEMENT IS NOW REFUSED TOO — TASK AJ-1, ON THE OWNER'S DECISION OF
+/// 2026-08-19 (item 13), AND IT IS THE PAIR BOTH V-1 AND Z-1 NAMED AS THEIR CEILING:</b>
+///
+/// <code>
+///   _tableBuiltFrom == Loaded   AND   fresh.Status == Loaded,   WITH DIFFERENT BYTES
+/// </code>
+///
+/// A host comes up on a good file, an operator restores a backup over it, and both facts still read
+/// <c>Loaded</c> — so neither arm above sees it, and before AJ-1 the next <see cref="Set"/> wrote the
+/// pre-restore table over the post-restore file with no throw, no <c>409</c> and no log line. That is item
+/// 11's own harm on the arm where the operator HAD a file, which is the more ordinary shape of a restore
+/// rather than the rarer one. <see cref="Set"/> now raises
+/// <see cref="OeeSettingsFileChangedException"/> on that pair.</para>
+///
+/// <para><b>The store now records the IDENTITY of the bytes, which is the fact V-1 and Z-1 both said it did
+/// not keep — and keeping it cost NO extra read.</b> <see cref="ReadLocked"/> had always loaded the whole
+/// file into a string to reach the entries and then discarded that string; <see cref="_tableBuiltFromText"/>
+/// keeps it. Both sides of the comparison were therefore already in memory, under one lock. See that field
+/// for why a retained operand rather than a hash, an mtime or a length.</para>
+///
+/// <para>🔴 <b>The price, which the owner accepted when he decided it and which is therefore recorded and
+/// not softened:</b> <c>PUT /v1/historian/oee/settings</c> answers <c>409</c> at moments it answers
+/// <c>200</c> today, INCLUDING when the thing that changed the file was a legitimate hand-edit or a mere
+/// reformat of the same settings. <see cref="Reload"/> (in production, a restart) is the way out, as it is
+/// for every other refusal here.</para>
+///
+/// <para>🔴 <b>WHAT IS STILL NOT REACHED, AT ITS FULL SIZE, BECAUSE THIS PARAGRAPH HAS BEEN CORRECTED TWICE
+/// FOR NAMING A CEILING TOO SMALL.</b> One pair still writes:
 /// <list type="bullet">
-/// <item><description><c>_tableBuiltFrom == Loaded</c> AND <c>fresh.Status == Loaded</c> — <b>and the two
-/// readings can be of DIFFERENT CONTENT.</b> A host comes up on a good file, an operator restores a backup
-/// over it, and both facts still read <c>Loaded</c>, so nothing here can tell that the file just read is not
-/// the file the table was built from. The next <see cref="Set"/> writes the pre-restore table over the
-/// restored file. That is item 11's own harm, on the arm where the operator had a file to begin with — which
-/// is the more ordinary shape of a restore, not the rarer one.</description></item>
 /// <item><description><c>_tableBuiltFrom == Loaded</c> AND <c>fresh.Status == Absent</c> — the file has been
 /// removed since the load, and <see cref="Set"/> re-creates it from the table. Nothing this process read is
-/// discarded; what is discarded is the removal itself, if that removal was deliberate.</description></item>
+/// discarded; what is discarded is the removal itself, if that removal was deliberate. AJ-1's arm is gated on
+/// the PAIR and not on "the bytes differ", specifically so that closing item 13 does not close this one
+/// as a side effect: that would be widening a predicate the owner did not decide.</description></item>
 /// </list>
-/// Closing either one needs a fact this store does not keep — the IDENTITY of the bytes the table was built
-/// from, not merely the outcome of that read — and deciding to keep it changes <i>when a write is
-/// licensed</i> a second time. Z-1 executes the predicate the owner decided and does not widen it; the
-/// residue is written here rather than left to be discovered.</para>
+/// And one thing no predicate here can reach at all: <b>this store has no FILE lock</b>, only
+/// <see cref="_gate"/>, which is in-process. Two hosts on one <c>ST4I_HISTORIAN_DIR</c> both write, and
+/// <see cref="WriteAllTextAtomic"/> prevents a TORN file, not a LOST one. AJ-1's arm makes that collision
+/// audible on the second host's next <see cref="Set"/> instead of silent, which is a report and not a fix;
+/// README §15.9 states the shape and what would close it.</para>
 /// </summary>
 public sealed class OeeSettingsStore
 {
@@ -289,6 +378,49 @@ public sealed class OeeSettingsStore
     /// "refuses" into "overwrites the repair".</para></summary>
     private OeeSettingsReadStatus _tableBuiltFrom = OeeSettingsReadStatus.Absent;
 
+    /// <summary>🔴 Task AJ-1 (owner decision item 13, 2026-08-19) — the BYTES <see cref="_settings"/> was
+    /// built from, non-null exactly when <see cref="_tableBuiltFrom"/> is
+    /// <see cref="OeeSettingsReadStatus.Loaded"/>. Written by <see cref="Load"/>, and by a write this store
+    /// completed itself; never by <see cref="ClassifyLocked"/>, for the same reason
+    /// <see cref="_tableBuiltFrom"/> is never written there.
+    ///
+    /// <para><b>Why a retained string and not a hash, an mtime or a length.</b> The three were weighed and
+    /// none of them is what this store needs, because the question they answer is not the question here. A
+    /// fingerprint compresses an operand you cannot keep; <see cref="ReadLocked"/> has ALREADY read the whole
+    /// file into memory on both sides of the comparison, inside <see cref="_gate"/>, so the operands are both
+    /// in hand and the extra I/O cost of comparing them is zero. A hash is then a lossy function of a string
+    /// this store is holding — it can collide, so it can answer "same" about two different files, which is
+    /// the answer that overwrites. A length is the same fault, enormously more often. An mtime is worse in
+    /// kind: it is a SECOND SURFACE asked a question the read itself answers, which is exactly the mistake
+    /// <see cref="Read"/> discarded <c>File.Exists</c> for, and restore tools preserve timestamps — so it is
+    /// blind at the one case this arm exists to close.</para>
+    ///
+    /// <para>🔴 <b>WHAT IT COSTS, WHICH IS THE HALF THE FIRST WRITING OF THIS BLOCK LEFT OUT.</b> This field
+    /// holds a whole file, and <see cref="OeeSettingsStore"/> is registered as a <b>singleton</b>, so it
+    /// holds it <b>for the life of the process</b>. There is <b>NO CEILING</b> anywhere on the path: no size
+    /// check in <see cref="ReadLocked"/>, no limit on the number of entries, no limit on the length of a
+    /// machine code. A digest would have been 32 bytes regardless; this is O(file), retained, unbounded —
+    /// and past roughly 85 000 bytes a .NET string is allocated on the large-object heap, where a singleton
+    /// keeps it for good. No byte figure is given here on purpose: nobody has measured one, and a number
+    /// written in this position would read as a measurement.</para>
+    ///
+    /// <para>🔴 <b>And the text retained is the DISK'S, not the TABLE'S — which is the same fact that makes
+    /// the byte comparison correct, read in the other direction.</b> <see cref="Load"/> SKIPS an entry whose
+    /// machine code is empty and COLLAPSES duplicate ones, while this field keeps the file whole. That
+    /// asymmetry is exactly why a comparison over the parsed table would have a false negative at the case
+    /// item 13 closes — and it is also why a file that produces a table of ZERO entries can still be held
+    /// here in full. Both readings come from one fact and only one of them was written down first.</para>
+    ///
+    /// <para><b>What bounds it, and when.</b> Only until the first successful <see cref="Set"/>: from there
+    /// this field is the text of the TABLE (<see cref="Save"/>'s own output), and the table is bounded by
+    /// the fleet roster, because <c>PutOeeSettingsAsync</c> only ever passes a machine code it resolved from
+    /// that roster rather than a caller-supplied string. The unbounded window is the one between
+    /// construction (or <see cref="Reload"/>) and that first write. A file large enough to defeat
+    /// <c>File.ReadAllText</c> outright becomes <see cref="OeeSettingsReadStatus.Unreadable"/> through the
+    /// catch-all rather than taking the process down — behaviour inherited from V-1, not introduced
+    /// here, and named because it is the only natural ceiling in sight.</para></summary>
+    private string? _tableBuiltFromText;
+
     /// <summary>Directory holding <c>oee-settings.json</c>.</summary>
     public string RootDirectory { get; }
 
@@ -308,8 +440,9 @@ public sealed class OeeSettingsStore
     ///
     /// <para><b>This is NOT the whole condition <see cref="Set"/> refuses on</b>, and a caller must not treat
     /// it as one: <see cref="Set"/> also refuses when the in-memory table was built from an unreadable read
-    /// that has since been repaired, and (task Z-1) when the store came up with no file and one has appeared
-    /// since — this property reads <c>Loaded</c> in BOTH of those states. Catch
+    /// that has since been repaired, when (task Z-1) the store came up with no file and one has appeared
+    /// since, and when (task AJ-1) the file reads fine and its bytes are not the bytes the table was built
+    /// from — this property reads <c>Loaded</c> in ALL THREE of those states. Catch
     /// <see cref="OeeSettingsWriteRefusedException"/> rather than pre-testing this.</para></summary>
     public OeeSettingsReadStatus Status
     {
@@ -407,7 +540,15 @@ public sealed class OeeSettingsStore
     /// on that arm the file reads perfectly.</b> The store came up with no file and one has appeared since,
     /// so the table is not a copy of it. Same ordering, same "nothing was written" guarantee, same way out
     /// (<see cref="Reload"/>, or a restart). Catch <see cref="OeeSettingsWriteRefusedException"/> to mean
-    /// "the store declined and the file is untouched" without caring which arm fired.</para></summary>
+    /// "the store declined and the file is untouched" without caring which arm fired.</para>
+    ///
+    /// <para>🔴 <b>Task AJ-1 — REFUSES a THIRD way, with <see cref="OeeSettingsFileChangedException"/>, and
+    /// on that arm BOTH reads succeeded.</b> The store came up on a file, and the file on disk is no longer
+    /// the bytes it loaded — a restore over a running host, a hand-edit, or a second host on the same
+    /// historian directory. Same ordering and the same "nothing was written" guarantee. 🔴 <b>It fires on a
+    /// pure REFORMAT of the same settings too</b>, which is the price the owner accepted with the decision:
+    /// see <see cref="OeeSettingsFileChangedException"/> for why the comparison that would let a reformat
+    /// through is the one that cannot see a restore.</para></summary>
     public OeeMachineSettings Set(string machineCode, double? idealCycleSecondsOverride, double? plannedProductionRatio)
     {
         ArgumentException.ThrowIfNullOrEmpty(machineCode);
@@ -508,6 +649,43 @@ public sealed class OeeSettingsStore
                     "this process starts from what is actually on disk, then set the value again.");
             }
 
+            // 🔴 TASK AJ-1 — THE PAIR V-1 AND Z-1 BOTH NAMED AS THE CEILING, REFUSED ON THE OWNER'S
+            // DECISION OF 2026-08-19 (item 13). It sits HERE, after the other two, because those two say
+            // different things and every word of their three messages is held by a test.
+            //
+            // Both facts read `Loaded` and BOTH READS SUCCEEDED — so neither of the arms above can see this
+            // one. What differs is the BYTES: the table is a faithful copy of the file this store loaded,
+            // and the file on disk is no longer that file. A host comes up on a good file, an operator
+            // restores a backup over it, and before this arm the next Set wrote the pre-restore table over
+            // the post-restore file — no throw, no 409, no log line. That is item 11's harm on the arm where
+            // the operator HAD a file, which is the more ordinary shape of a restore rather than the rarer.
+            //
+            // WHY THIS COMPARISON AND NOT A FINGERPRINT: see `_tableBuiltFromText`. Both operands are
+            // already in memory under this lock, so a digest of either can only lose information the store
+            // is holding. The extra disk cost of this arm is ZERO — `ClassifyLocked` above is the same read
+            // `Set` has taken since V-1's fix round, not a new one.
+            //
+            // THE GATE IS THE PAIR, NOT "THE TEXT DIFFERS", and that is load-bearing: the OTHER open pair —
+            // `_tableBuiltFrom == Loaded` with `fresh.Status == Absent`, the file removed since the load —
+            // would also have differing text, and the owner decided item 13, not that one. It still writes,
+            // deliberately, and §3.6 of docs/startup-failure-posture.md still names it as the ceiling.
+            if (_tableBuiltFrom == OeeSettingsReadStatus.Loaded &&
+                fresh.Status == OeeSettingsReadStatus.Loaded &&
+                !string.Equals(fresh.Text, _tableBuiltFromText, StringComparison.Ordinal))
+            {
+                throw new OeeSettingsFileChangedException(
+                    SettingsFilePath,
+                    $"\"{SettingsFilePath}\" READS CORRECTLY but it is NOT THE FILE this process loaded — " +
+                    "its content has been replaced since, by a restore, a hand-edit, or another process " +
+                    "writing the same historian directory. The in-memory OEE settings are a copy of the " +
+                    "EARLIER file, so writing them would replace every machine's ideal-cycle override and " +
+                    "planned-production ratio in the file that is there now. NOTHING WAS WRITTEN. Restart " +
+                    "the host (or call Reload) so this process starts from what is actually on disk, then " +
+                    "set the value again. This is refused even when the change was only a REFORMAT of the " +
+                    "same settings: the comparison is over the file's bytes, deliberately, because the one " +
+                    "that would let a reformat through cannot tell a restore from a rewrite.");
+            }
+
             if (!_settings.TryGetValue(machineCode, out var existing))
             {
                 existing = new OeeMachineSettings
@@ -526,15 +704,24 @@ public sealed class OeeSettingsStore
             };
 
             _settings[machineCode] = updated;
-            Save();
+            var written = Save();
 
             // 🔴 A write establishes the same fact a read would, and leaving these stale would reintroduce
             // review M-2 one statement later: after a successful Set over a directory that had NO file, the
             // freshest classification was `Absent` — describing a moment that no longer exists, on the
             // public member the refusal hangs on. The file now exists and holds exactly this table, so both
             // are `Loaded` by construction rather than by a read nobody took.
+            //
+            // 🔴 TASK AJ-1 — AND THE IDENTITY IS REFRESHED IN THE SAME PLACE, FOR THE SAME REASON, AND
+            // OMITTING IT WOULD BE WORSE THAN NOT SHIPPING THE ARM. `Save` has just written these exact
+            // bytes, so they ARE the file; leaving the field at what the load read would make the very next
+            // Set on this instance compare the new file against the OLD one and refuse — a 409 on every
+            // consecutive pair of PUTs, with nothing wrong. `Set_PartialUpdate_LeavesUnspecifiedFieldUnchanged`
+            // and `Set_TheFirstTimeAfterACleanStart_StillEstablishesTheFile` are the two that redden if this
+            // line is removed; they are named here because that is what makes this a checkable claim.
             _status = OeeSettingsReadStatus.Loaded;
             _tableBuiltFrom = OeeSettingsReadStatus.Loaded;
+            _tableBuiltFromText = written;
             _unreadableReason = null;
             _unreadableFailure = null;
 
@@ -624,7 +811,7 @@ public sealed class OeeSettingsStore
         }
 
         return entries is not null
-            ? OeeSettingsRead.ForLoaded(path, entries)
+            ? OeeSettingsRead.ForLoaded(path, entries, text)
             : OeeSettingsRead.ForUnreadable(path, "the file parsed as JSON but produced no settings list");
     }
 
@@ -634,6 +821,7 @@ public sealed class OeeSettingsStore
     {
         var read = ClassifyLocked();
         _tableBuiltFrom = read.Status;
+        _tableBuiltFromText = read.Text;
 
         if (read.Entries is null) return;
 
@@ -644,13 +832,18 @@ public sealed class OeeSettingsStore
         }
     }
 
-    /// <summary>Always called with <see cref="_gate"/> already held.</summary>
-    private void Save()
+    /// <summary>Always called with <see cref="_gate"/> already held. 🔴 Task AJ-1 — RETURNS the text it
+    /// wrote, so the caller can record the identity of the file it has just established without re-reading
+    /// it. Returning is what keeps the serialisation a single expression: a second
+    /// <c>JsonSerializer.Serialize</c> at the call site would be a second chance to drift.</summary>
+    /// <returns>The exact content written to <c>oee-settings.json</c>.</returns>
+    private string Save()
     {
         var path = Path.Combine(RootDirectory, FileName);
         var json = JsonSerializer.Serialize(
             _settings.Values.OrderBy(s => s.MachineCode, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions);
         WriteAllTextAtomic(path, json);
+        return json;
     }
 
     /// <summary>Same crash-safety rationale as <see cref="Config.MachineConfigStore"/>/

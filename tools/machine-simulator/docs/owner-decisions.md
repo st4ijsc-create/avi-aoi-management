@@ -37,11 +37,11 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 6 | log hoãn của một lần cài đặt hỏng | 🔨 **PHÁT RA TRÊN ĐƯỜNG NÉM LỖI** (2026-08-17) — đã thi hành, T-1 |
 | 7 | nửa sau của S4 | 🔨 **DỪNG + GIỮ COMMIT + BÁO TRÊN `/v1/health`** (2026-08-17) — đã thi hành, U-1 |
 | 8 | `ReapplyCurrentAsync` ghi đè `site-link.json` | 🔨 **CHẶN — cùng luật, tại chỗ gọi THỨ BA của `ApplyAsync`** (2026-08-18, điều phối viên quyết theo uỷ quyền); đã thi hành, Z-1 |
-| 9 | sàn môi trường trên nhánh *không đọc được* | 🔴 **CHỜ ANH** — chủ sở hữu **HOÃN** 2026-08-18 (*"để lại sau cùng"*); một lần hoãn không phải một phán quyết. 🔴 **ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: (a) giá 0 trong mã. (b) làm ĐỎ `AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo` — một bài kiểm HÀNH VI, đỏ dưới MỌI bản thi hành vì nó khẳng định BYTE của file và nội dung phản hồi — và làm SAI HAI chuỗi đã xuất bản; hai phép kiểm đếm NGUỒN có thể VẪN XANH. (c) KHÔNG làm nhúc nhích một phép kiểm đếm nguồn nào — 🔴 **và sự im lặng ấy là một KHUYẾT, không phải một cái RẺ: (c) đi lọt qua cả hai dụng cụ nhánh này dựng để canh chính nó, nên nhân chứng cho nó là thứ PHẢI VIẾT MỚI.** Phép đo KHÔNG quyết; mục vẫn CHỜ ANH** |
+| 9 | sàn môi trường trên nhánh *không đọc được* | 🔨 **(b) ÁP SÀN `ST4I_*` VÀ LƯU NÓ** (2026-08-19, chủ sở hữu, **sau khi được cảnh báo rằng nó đi ngược mục 1/5/8/10/11**) — ghi đè **tại chỗ**, **không** di chuyển và **không** xoá byte cũ; miễn trừ di-chuyển của mục 10 **không** áp ở đây. (c) *áp-mà-không-lưu* **KHÔNG** được chọn, nên hợp đồng `FleetCore.UpdateSettings` **không đổi**. Cách đọc hoà giải, ghi kèm ngày ở thân mục: ở năm mục kia thứ bị đè là **dữ liệu vận hành viên** và thứ ghi xuống là giá trị tiến trình **tự nghĩ ra**; ở đây thứ ghi xuống là **cấu hình bản triển khai đã KHAI qua `ST4I_*`** — **khôi phục một giá trị đã khai**, không **bịa** một giá trị. Giá đã chấp nhận: một file hỏng vì gõ nhầm **không còn là bản ghi cuối cùng**. **Đã thi hành, AJ-1 (2026-08-19)** — guard bị xoá, **HAI** chuỗi đã xuất bản sửa, nhân chứng `AMalformedSettingsFile_…` **đảo chiều và đổi tên**; 🔴 phép kiểm đếm NGUỒN `TheStartupReplayHasExactlyOneArm_…` **VẪN XANH và đó là im lặng, không phải chấp thuận** |
 | 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔨 **GIỮ BLOB CŨ DƯỚI TÊN KHÁC** (2026-08-18) — DI CHUYỂN dữ liệu, **miễn trừ CHỈ cho mục này**; đã thi hành, Z-1 |
 | 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); đã thi hành, Z-1 |
 | 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 4 ĐÃ TRẢ 2026-08-19 (AG-1, đợt 4/8): 101 khẳng định ĐÃ SAI được TRỎ LẠI (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, 0 dòng mã đụng tới), `EXPECT_WARNINGS` 852 → 751 ĐO, sổ 19 → 16 hàng, 185 vendored / 566 ours, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **532 chỗ trống của ta chưa trả** (+ 103 vendored không ai trả được). Đợt 5–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 5 ĐÃ TRẢ 2026-08-19 (AH-1, đợt 5/8): 120 chỗ THIẾU được VIẾT — một cụm mạch lạc, mô hình dữ liệu config-sync (7 file `Config/`, cả 120 là CS1591), `EXPECT_WARNINGS` 751 → 631 ĐO, sổ vẫn 16 hàng, 185 vendored / 446 ours, `OURS CS1591 448 → 328`, `OURS CS1573 84` KHÔNG dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **412 chỗ trống của ta chưa trả**. Đợt 6–8 trả, mỗi đợt đo lại |
-| 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔴 **CHỜ ANH** — phần dư của mục 11, mở 2026-08-18 (Z-1, vòng sửa 1); **ca THÔNG THƯỜNG hơn** trong hai ca cùng hình dạng. 🔴 **ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: phép so danh tính theo NỘI DUNG tốn 0 lần đọc đĩa thêm — `Set` đã đọc toàn văn file trong cùng một khoá rồi VỨT nó đi. 🔴 Nhưng nội dung là ứng viên khả dĩ DUY NHẤT và giá lớn nhất của nó là DƯƠNG TÍNH GIẢ: một lần định dạng lại / CRLF↔LF / BOM cũng thành 409, tức phạt vận hành viên đúng lúc họ làm đúng. Số bài kiểm đỏ là MỘT **CÓ ĐIỀU KIỆN** (làm mới danh tính sau `Save`); thi hành không làm mới ⇒ **BA**. Ít nhất SÁU đường ghi ngoài store, BA làm cặp `Loaded/Loaded` — nhưng tập vận hành ấy KHÔNG đóng được từ trong một repo. 🔴 Câu "bao nhiêu PUT hợp lệ thành 409" KHÔNG đo được từ cây này và KHÔNG được bịa. Mục vẫn CHỜ ANH** |
+| 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔨 **ĐÓNG — STORE GHI LẠI DANH TÍNH CỦA CÁC BYTE** (2026-08-19, chủ sở hữu). 🔴 **Giá đã chấp nhận và ghi vào mục: `PUT /v1/historian/oee/settings` trả 409 ở những lúc hôm nay trả 200, KỂ CẢ khi thứ đổi file là một biên tập tay HỢP LỆ hay chỉ là một lần ĐỊNH DẠNG LẠI.** Câu *"bao nhiêu PUT hợp lệ thành 409"* vẫn **KHÔNG đo được** và phán quyết ra **mà không có nó**. **Đã thi hành, AJ-1 (2026-08-19)** — cơ chế **SUY ra chứ không chọn một trong ba**: cả ba ứng viên (băm / `mtime` / kích thước) là **vân tay**, mà vân tay chỉ cần khi không cầm được cả hai vế; `ReadLocked` **đã cầm toàn văn** ở cả hai đầu trong cùng một khoá, nên store **giữ lại toa hạng gốc** và so trực tiếp — **0 lần đọc đĩa thêm**, và **mạnh hơn** mọi hàm hao hụt của nó. Kiểu thứ ba `OeeSettingsFileChangedException`; vị từ gác bằng **CẶP `Loaded/Loaded`**, nên cặp `Loaded/Absent` **không** bị đóng kèm. Nhân chứng `Set_AfterARestoreOntoAHostThatCameUpWithAFile_…` **đảo chiều và đổi tên**; giá được **ghim** bằng một bài kiểm riêng |
 | 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT**. 🔴 **KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: KHẢ THI — `Normalizer` có đủ thông tin, `WaveformSeries` và `WelderSim` KHÔNG phải đổi. Nhưng nó KHÔNG nằm trọn ở một đường dây: cùng một envelope đi ra BA bề mặt, và một trong ba là gương ngữ nghĩa MQTT RETAINED — một **bề mặt đã xuất bản thứ hai; NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này** (hợp đồng TỰ KHAI rằng họ ở ngoài repo — đó là lời của tài liệu, không phải một phép đếm). 🔴 **Giá gương ấy KHÔNG phải của riêng lựa chọn 3: lựa chọn 1 trả CÙNG giá đó CỘNG THÊM, lựa chọn 2 không trả giá nào trong cây này nhưng trả TOÀN BỘ ở ngoài (hợp đồng ingest đã xuất bản + ba SDK).** Và KHÔNG một bài kiểm nào trong 2763 bài đỏ lên, tức lối này KHÔNG CÓ NHÂN CHỨNG. **Ràng buộc thi hành cứng: `LiveTransport.ReadSampleSeries` chỉ nhận hàng `double[]` và bỏ im lặng mọi kiểu khác.** Ba lựa chọn VẪN CHƯA QUYẾT** |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
@@ -56,7 +56,8 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 
 # 🔴 PHẦN I — ĐANG CHỜ ANH
 
-**Ba mục ở đây: mục 9, mục 13 và mục 14.** Cả ba mang `🔴 CHỜ ANH` ở bảng phán quyết trên.
+**Mục ở đây, LIỆT KÊ chứ không đếm: mục 14.** Nó mang `🔴 CHỜ ANH` ở bảng phán quyết trên,
+và **bảng ấy là nguồn sự thật** — câu này chỉ là một con trỏ vào nó.
 
 > 🔴 **Câu này đọc *"Một mục ở đây, và chỉ một: mục 9"* cho tới 2026-08-18, và nó thành sai
 > ĐÚNG LÚC mục 13 được thêm — cùng nhiệm vụ, cùng ngày (phản biện I-2).** Giữ lại ở đây vì
@@ -67,6 +68,14 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 > 14.** Câu *"Hai mục ở đây: mục 9 và mục 13"* giữ nguyên văn ở đây, **RÚT 2026-08-18**. Hai
 > lần trong một ngày là đủ để nói ra cái chung: **con số này đếm một tập mà bất kỳ vòng phản
 > biện nào cũng có thể nới**, nên nó phải được đọc cùng bảng phán quyết, không thay bảng.
+>
+> 🔴 **LẦN THỨ BA — 2026-08-19, AJ-1, và lần này tập CO LẠI chứ không nới.** Câu *"Ba mục ở
+> đây: mục 9, mục 13 và mục 14. Cả ba mang `🔴 CHỜ ANH` ở bảng phán quyết trên."* giữ nguyên
+> văn ở đây, **RÚT 2026-08-19**: chủ sở hữu phán mục 9 và mục 13 cùng ngày, cả hai đã thi
+> hành, và cả hai đã chuyển sang **Phần III**. Ba lần trong hai ngày, ba cơ chế khác nhau
+> (thêm mục, thêm mục, **quyết mục**) — nên câu thay thế **không mang một con số nào**: nó
+> **liệt kê**, và trỏ vào bảng. Một phép liệt kê sai thì sai **nhìn thấy được**; một con số
+> sai thì không.
 
 **Cho tới 2026-08-18 phần này có năm mục — 8, 9, 10, 11, 12.** Bốn trong số đó nay **đã
 được quyết**, và **ai quyết cái nào là một phần của hồ sơ, không được gộp lại**: mục
@@ -79,9 +88,16 @@ nhiệm vụ **Z-1** (2026-08-18) và nay nằm ở **Phần III**, mỗi mục 
 hành ghi kèm ngày** — đúng điều kiện mà banner Phần II đặt ra. Mục **12** ở lại Phần II
 (nhiều vòng, chưa làm). Mục **9** ở lại đây.
 
-⏸️ **Một lần hoãn không phải một phán quyết, và mục 9 ở lại đây vì thế.** Luật của file
+⏸️ **~~Một lần hoãn không phải một phán quyết, và mục 9 ở lại đây vì thế.~~** Luật của file
 này đòi một **quyết định** ghi kèm ngày và người quyết; *"để lại sau cùng"* ghi **thứ
 tự**, không ghi **kết quả**.
+
+> 🔴 **NỬA ĐẦU RÚT 2026-08-19 (AJ-1), giữ nguyên văn, và rút TẠI CHỖ NÓ ĐƯỢC VIẾT.** Lần
+> hoãn ấy **đã kết thúc**: chủ sở hữu phán mục 9 ngày **2026-08-19** — **(b) áp sàn `ST4I_*`
+> VÀ lưu** — nên mục 9 **không còn ở đây** mà ở **Phần III**, với một ghi chép thi hành ghi
+> kèm ngày. **Nửa sau KHÔNG được rút**: *"một lần hoãn ghi thứ tự, không ghi kết quả"* vẫn
+> là luật của file này, và nó vừa được chứng minh đúng theo chiều thuận — cái kết thúc lần
+> hoãn là một **phán quyết**, không phải thời gian trôi qua.
 
 Mục dưới đây mang **bằng chứng của nó ở dòng cuối của chính nó**, không phải ở một phụ
 lục. Đó là chỗ ranh giới được vạch: **đầu vào của quyết định** (hôm nay chuyện gì xảy
@@ -103,434 +119,6 @@ một con số ước lượng đặt ở đây sẽ **đọc như một phép �
 > 🔴 **Và mục 13 mang CÙNG đoạn ấy, bằng cùng chữ, ở thân của chính nó** — nó cũng được rút, cùng ngày,
 > cùng người, cùng lý do. Nêu ở cả hai chỗ vì một lời cải chính chỉ đặt ở một trong hai là đúng khuyết
 > tật file này lập ra để chấm dứt.
-
----
-
-## 9. Một nhánh *không đọc được* nên áp **sàn môi trường** vào bộ nhớ hay không
-
-**Đo được:** sau Q-1, khi `fleet-settings.json` không đọc được, tiến trình lên bằng
-**mặc định dựng sẵn** của `FleetHost` (`DefaultServerUrl = ""`,
-`DefaultMachineCode = "ENGINE-API-01"`) chứ **không** áp bộ ba `ST4I_*` mà bản triển
-khai đã đặt.
-
-**Hai chiều, và phải nói cả hai:** với **FILE**, từ chối sàn là **an toàn hơn hẳn**
-— áp sàn nghĩa là `FleetCore.UpdateSettings` **lưu** nó, và chính việc lưu là mất
-dữ liệu. Với **CỖ MÁY ĐANG CHẠY**, nó có thể **tệ hơn**: một bản cài headless không
-những mất liên kết mà còn không dùng các giá trị dịch vụ của nó đã cấu hình.
-
-**Vì sao hai chiều ấy tách nhau được:** chỉ vì `UpdateSettings` **lưu vô điều
-kiện**. Một đường "áp mà không lưu" sẽ cho nhánh này tôn trọng sàn trong bộ nhớ mà
-vẫn để yên file.
-
-**Ở đâu:** `src/St4i.EdgeCore/Fleet/FleetCore.cs` (`UpdateSettings`, khối `finally`
-trong `if (rebuildNeeded)`), tiêu thụ bởi `src/St4i.EngineApi/Program.cs`.
-
-**Nếu không quyết định:** giữ nguyên — an toàn cho file, và một cỗ máy headless có
-file hỏng sẽ chạy trên giá trị mặc định cho tới khi có người sửa file.
-
-**Vì sao là quyết định của chủ sở hữu:** đổi *khi nào* `UpdateSettings` lưu là đổi
-hợp đồng mà `PUT /v1/settings` cũng dùng chung.
-
-**Bằng chứng:** `docs/startup-failure-posture.md` §3.1a-now.
-
-> ### ⏸️ HOÃN 2026-08-18 — CHỦ SỞ HỮU ĐỂ MỤC NÀY LẠI SAU CÙNG
-> **Đây KHÔNG phải một phán quyết, và mục này KHÔNG rời khỏi phần đang chờ.** Chủ sở hữu
-> trả lời *"để lại sau cùng"*. Luật của file này nói một mục chỉ rời khỏi đây khi có một
-> **quyết định** ghi kèm ngày và người quyết; một lần hoãn ghi **thứ tự**, không ghi
-> **kết quả**. Nên mục 9 vẫn ở `🔴 CHỜ ANH`, và cái được ghi thêm là **đã có người đọc
-> nó và chọn chưa quyết** — thứ trước hôm nay không phân biệt được với **chưa ai đọc**.
->
-> **Nếu không quyết định** vẫn đúng nguyên như đoạn trên: giữ nguyên, an toàn cho file,
-> và một cỗ máy headless có file hỏng chạy trên giá trị mặc định cho tới khi có người sửa
-> file.
-
-### ✅ ĐÃ ĐO 2026-08-19 (AI-1) — ba lựa chọn, giá từng cái, và chỗ nào KHÔNG đo được
-
-> 📎 **Đoạn ở đầu PHẦN I đọc *"🔴 Cái mục 9 CHƯA có, nêu tên chứ không lấp: nó không bày ra các lựa
-> chọn kèm giá ĐÃ ĐO của từng lựa chọn…"* (Y-1, 2026-08-18) — RÚT 2026-08-19 (AI-1), giữ nguyên văn
-> tại chỗ của nó.** Lý do là **phép đo đã chạy**, không phải câu ấy từng sai. **Mục 9 KHÔNG rời Phần I
-> và vẫn `🔴 CHỜ ANH`:** phần dưới đây thêm **số liệu**, không thêm **kết luận**, và **không khuyến
-> nghị lựa chọn nào**. Kiểu bảo tồn: **một** kiểu, nêu tại mục 14 §"khả năng thứ ba đã đo".
-
-**Người đo, ngày, cây, SHA:** **AI-1**, **2026-08-19**, `avi-aoi-sim` ghim tại **`f08cb379`**. **Toàn
-bộ hạng "tự đo"** — đọc trên mã, không nhận lại con số nào. Miền quét như nêu ở mục 14: **`git grep
-<mẫu> f08cb379 -- .`**, toàn cây Git tại commit, kể cả các đường **không nằm trên đĩa**.
-
-**(1) `UpdateSettings` hôm nay làm gì, THEO THỨ TỰ — và nó là BA việc, không phải hai.**
-
-1. **CAM KẾT VÀO BỘ NHỚ** — dưới `_gate`: gán `_serverUrl`/`_verifyTls`/`_machineCode`/`_language` cho
-   những tham số khác null, đặt `rebuildNeeded` (🔴 **`_language` KHÔNG đặt `rebuildNeeded`**), rồi
-   **chụp lại** bộ ba sẽ lưu, vẫn dưới khoá.
-2. **ÁP** — **ngoài** khoá, chỉ khi `rebuildNeeded`, trong một `try`: `CredentialStore.Load` →
-   `TransportCoordinator.RebuildLive` → `_onLiveSettingsRebuilt`.
-3. **LƯU** — trong `finally` của chính `try` ấy: `_settingsStore?.Save(new PersistedFleetSettings{…})`,
-   **một câu lệnh duy nhất và có chủ ý là một** (doc của chính nó nêu: thêm gì dưới `Save` phải **lồng
-   vào**, không **nối sau**).
-
-🔴 **TÁCH ĐƯỢC VỀ MẶT CƠ HỌC KHÔNG — CÓ. Nhưng số arm chứng minh nó là MỘT, không phải hai.**
-
-> 📎 **Câu này đọc *"và cơ chế ấy ĐÃ TỒN TẠI, được HAI assertion giữ"* ở lần ghi đầu (`840abd57`) —
-> RÚT 2026-08-19 (AI-1, vòng sửa sau phản biện), giữ nguyên văn.** Nó **đếm thừa một**, và là **một
-> con số vô hướng tóm tắt một tập người viết chưa đếm lại** — đúng luật câu chữ, trong đúng khối viết
-> ra để tuân nó, lần thứ hai trong cùng bản ghi.
-
-- **Arm ÁP-MÀ-KHÔNG-LƯU, đúng thứ (c) cần — MỘT, nêu tên:**
-  `FleetHostSettingsPersistenceTests.NoSettingsStore_UpdateSettings_StillWorks_JustNothingSurvivesRestart`.
-  `_settingsStore` là **null-conditional** (`?.`), nên một `FleetCore` dựng **không có store** chạy
-  **trọn** `CredentialStore.Load` → `RebuildLive` → `_onLiveSettingsRebuilt` rồi **bỏ qua `Save`**.
-  Phép **áp thật sự chạy**. Ở mức **thực thể**.
-- 🔴 **Arm KHÔNG phải áp-mà-không-lưu, và tôi đã xếp nhầm nó:**
-  `FleetHostSettingsPersistenceTests.LanguageOnlyChange_NeverWritesToTheSettingsStore`. `rebuildNeeded`
-  ở `false` ⇒ **cả khối `if` bị bỏ qua** ⇒ `RebuildLive` **KHÔNG chạy lần nào**. Đó là
-  **CAM-KẾT-mà-KHÔNG-ÁP-và-không-lưu** — nó chứng minh *phép lưu bỏ được theo từng lời gọi*, và
-  **không chứng minh gì** về việc *phép áp vẫn chạy*. Mà **phép áp chạy chính là thứ (c) đòi**: một
-  nhánh không đọc được tôn trọng sàn **trong bộ nhớ** phải làm transport thật sự chạy trên sàn ấy.
-
-Nên phép tách mục 9 hỏi **không phải một cơ chế mới**; nó là **một arm thứ hai của cơ chế đã có**.
-Cái chưa có là **một đường vào**: `FleetCore` **không có** phương thức công khai nào áp mà không lưu
-(`ApplyMode` chỉ chạm chế độ transport, không chạm bộ ba).
-
-**(2) BAO NHIÊU CHỖ GỌI — liệt kê trước, đếm sau.** Quét `git grep -n "UpdateSettings(" f08cb379 --
-tools/machine-simulator/src`. Trong `src/`, ngoài chính khai báo:
-
-| # | chỗ gọi, trỏ bằng TÊN | nó **CẦN** phép lưu hay chỉ **ĐANG NHẬN** nó |
-|---|---|---|
-| 1 | `FleetHost.UpdateSettings(SettingsUpdateRequest)` | **không phải chỗ gọi thật** — vỏ bọc một dòng, chuyển thẳng sang `_core` |
-| 2 | `SettingsEndpoints` → `PUT /v1/settings` | **CẦN.** Đây là toàn bộ lý do FF-1 tồn tại: bộ ba vận hành viên PUT phải sống qua lần khởi động sau |
-| 3 | `Program.cs` → `TryReplayStartupSettings` (phát lại lúc khởi động) | **HAI ARM, hai câu trả lời.** Arm **KHÔI PHỤC**: giá trị **đến TỪ file**, nên `Save` ghi lại đúng cái nó vừa đọc — **chỉ ĐANG NHẬN**. Arm **GIEO** (không có file, sàn env): `Save` là thứ **TẠO RA** file — **CẦN**, và khi áp hỏng thì file gieo ấy bị **xoá** ở đúng và chỉ đúng ca ấy, bởi bộ xoá duy nhất trong `Program.cs` |
-
-**Đếm sau khi liệt kê: HAI chỗ gọi thật trong `src/` (một vỏ bọc), và một trong hai mang HAI arm.**
-Trong `tests/`, hai file gọi `UpdateSettings(`: `FleetHostSettingsPersistenceTests.cs` và
-`SettingsWalPreservationTests.cs`.
-
-**(3) CÁI GÌ ĐỌC TRẠNG THÁI ẤY SAU ĐÓ (§8.1(h5.4)) — `GET /v1/settings` trả từ BỘ NHỚ, không từ file.**
-`FleetCore.GetSettings()` dựng `FleetSettingsSnapshot` **từ chính bốn trường** dưới `_gate`, cộng
-`_transportCoordinator.Mode`; `FleetHost.GetSettings()` chiếu nó qua `FleetProjections.ToSettingsDto`;
-`SettingsEndpoints` map `GET /v1/settings` thẳng vào đó. **Không có phép đọc file nào trên đường ấy.**
-
-🔴 **File `fleet-settings.json` được ĐỌC đúng HAI chỗ trong `src/`, và cả hai lúc KHỞI ĐỘNG:**
-`FleetCore` constructor (`_settingsStore.Load()`, đặt ba trường và **không** dựng transport) và
-`Program.cs` (`settingsStore.Read()`, phép đọc ba-kết-cục quyết định phát lại). **Không một bề mặt
-lúc chạy nào đọc file.** Nên một giá trị **áp mà không lưu** khiến **`GET /v1/settings` nói khác
-file** — và **chỉ nó**, cho tới lần khởi động sau.
-
-> 📎 **Câu trên đọc *"trong cả sản phẩm"* ở lần ghi đầu (`840abd57`) — RÚT 2026-08-19 (AI-1), giữ
-> nguyên văn, thay bằng *"trong `src/`"*.** Biên chưa khai:
-> `tools/machine-simulator/tools/settings-acl-probe/Program.cs` mở **đúng đường dẫn ấy**
-> (`Path.Combine(settingsRoot, "fleet-settings.json")`). Nó **ngoài `src/`** và là **dụng cụ chẩn
-> đoán**, nên nó **không lật kết luận** — nhưng *"cả sản phẩm"* là một phủ định phổ quát rộng hơn tập
-> tôi đã mở, và cách sửa là **thu miền về đúng cái đã quét**, không phải nới lời.
-
-🔴 **Và sự lệch ấy KHÔNG mới:** `Program.cs` đã tự khai, nguyên văn trong chú thích của chính nó, rằng
-sau một lần phát lại áp **hỏng**, các trường giữ bộ ba đã hỏng nên *"`GET /v1/settings` reports it —
-truthfully, as the configuration this process is holding — while the transport stays on whatever it
-had."* Nên lựa chọn (c) **không tạo ra một loài lệch mới**; nó biến một **cặn của thất bại** thành một
-**trạng thái ổn định bình thường**. Đó là chỗ chênh cần chủ sở hữu cân, và AI-1 **không cân hộ**.
-
-**(4) BA LỰA CHỌN, GIÁ TỪNG CÁI — đo được chừng nào thì đo, chỗ nào không đo được thì NÊU TÊN.**
-
-**(a) Giữ nguyên.** Giá trong mã: **0**. Hành vi đã đo, trỏ bằng tên: `Program.cs` tính
-`replaySucceeded` bằng `settingsRead.Status != FleetSettingsReadStatus.Unreadable && TryReplayStartupSettings(…)`
-— trên nhánh **Unreadable** phép phát lại **không chạy lần nào**, nên `FleetHost.UpdateSettings`
-không được gọi, nên `finally` không tới, nên **không gì bị ghi và không gì bị xoá**. Giá **ngoài** mã:
-đúng như mục này đã viết — máy headless chạy trên mặc định dựng sẵn cho tới khi có người sửa file.
-**Ba assertion đang giữ nhánh ấy** nằm trong `StartupSettingsReplayHardeningTests` (xem (b)).
-
-**(b) Áp sàn VÀ lưu.** 🔴 **Giá ĐO ĐƯỢC: ít nhất MỘT bài kiểm ĐỎ KHÔNG NÉ ĐƯỢC, và HAI chuỗi đã
-xuất bản thành sai.**
-
-> 📎 **Khối này, ở lần ghi đầu của AI-1 (commit `840abd57`), nêu SAI nhân chứng — RÚT 2026-08-19
-> (AI-1, vòng sửa sau phản biện), giữ NGUYÊN VĂN:** *"🔴 **Giá ĐO ĐƯỢC và nó là một bài kiểm ĐỎ, nêu
-> tên:** `StartupSettingsReplayHardeningTests.TheStartupReplayHasExactlyOneArm_AndTheSettingsFileOneWriterAndOneDeleter`
-> khẳng định `Program.cs` nhắc `TryReplayStartupSettings` **đúng 2 lần** (khai báo + **một** lời gọi).
-> Một arm phát lại thứ hai đưa con số lên **3** ⇒ **ĐỎ** … **Đây đúng là nhánh C1 mà `Program.cs` mô
-> tả dài dòng là đã bị rút vì nó huỷ file của vận hành viên."*
->
-> **Vì sao sai — một phép đo, không phải một ý kiến.** Trên arm `Unreadable`,
-> `FleetSettingsRead.ForUnreadable` truyền **`settings: null`**, nên `persistedSettings` là **null**,
-> nên `initialSettingsRequest` **ĐÃ LÀ sàn `ST4I_*`** rồi. ⇒ **(b) thi hành được bằng cách XOÁ một
-> biểu thức guard** (`settingsRead.Status != FleetSettingsReadStatus.Unreadable &&`), **không thêm một
-> chỗ gọi nào** ⇒ `Regex.Matches(program, @"TryReplayStartupSettings\s*\(")` **vẫn là 2** ⇒ bài kiểm
-> được nêu tên **VẪN XANH**. Và đây không phải một bản thi hành kỳ quặc: chú thích ngay trên guard ấy
-> nói nó được viết thế *"rather than as a second call site"*. 🔴 **Tôi đã định giá (b) bằng một cái
-> tên sẽ không nổ** — và **cùng lúc** nêu điều kiện thi hành cho (c) và cho mục 13 mà **không** nêu
-> cho (b). Cùng một loài, ba chỗ, hai chỗ tuân, một chỗ không. Câu *"đúng là nhánh C1"* cũng **rút**:
-> C1 nổ trên một bộ ba **ĐỌC ĐƯỢC** không áp được, còn (b) nổ trên arm **không đọc được lần nào** —
-> **cùng loài hậu quả, khác kích hoạt** — và nhân chứng riêng của C1
-> (`AFailedReplay_LeavesThePersistedTripleIntact_AndDoesNotLetTheEnvFloorWin`) **vẫn xanh** dưới (b).
-
-**Nhân chứng ĐỎ dưới MỌI bản thi hành, nêu tên:**
-`StartupSettingsReplayHardeningTests.AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo`.
-Nó khẳng định **hai** thứ mà (b) phá **cả hai**, và cả hai là **tính chất của FILE và của PHẢN HỒI**,
-không phải của văn bản nguồn — nên **không né được bằng cách chọn cách viết khác**:
-- `Assert.Equal(OperatorsOwnBytes, File.ReadAllText(settingsFile))` — **byte của vận hành viên,
-  nguyên vẹn, vẫn còn đó**;
-- `Assert.Equal(FleetHost.DefaultServerUrl, settings.ServerUrl)` cùng `…DefaultMachineCode…` — **sàn
-  KHÔNG thắng trong bộ nhớ**; tiến trình lên bằng mặc định dựng sẵn vì **không gì được áp cả**.
-
-**Và HAI chuỗi đã xuất bản thành sai, không một:** (i) dòng log
-`STARTUP SETTINGS FILE COULD NOT BE READ` — *"it was NOT applied, and it was NOT overwritten or deleted
-by this start … unreadable content is the only remaining record of what was configured here"*; (ii)
-câu khuyến nghị của arm **GIEO** — *"These came from the ST4I_\* environment variables and **NO
-settings file existed before this start**"* — được chọn đúng khi `persistedSettings` là null, tức
-**đúng trên arm Unreadable**, và nó **sai hiển nhiên** khi file **có** mà chỉ là không đọc được.
-Cả hai phải viết lại **cùng commit**.
-
-🔴 **Điều kiện thi hành, nêu cho (b) đúng như đã nêu cho (c):** hai **phép kiểm đếm NGUỒN** trong
-`StartupSettingsReplayHardeningTests` **có thể VẪN XANH** dưới (b) — chúng đếm văn bản, và bản thi hành
-rẻ nhất không thêm văn bản nào. **Cái bắt được (b) là một bài kiểm HÀNH VI, không phải một phép kiểm
-đếm.**
-
-**(c) Áp mà không lưu.** 🔴 **Giá ĐO ĐƯỢC, và cái đo được là một SỰ IM LẶNG:** **không một trong hai
-phép kiểm đếm nguồn hiện có nào nhúc nhích.** Phép đếm chỗ ghi bắt
-`[Ss]ettings[Ss]tore\s*\??\.Save\s*\(` **hoặc** dòng chứa `new PersistedFleetSettings` — một đường áp
-mà không lưu **không thêm cái nào** ⇒ vẫn **1** ⇒ **xanh**. Phép đếm arm phát lại bắt
-`TryReplayStartupSettings\s*\(` — một helper mang tên khác **không thêm cái nào** ⇒ vẫn **2** ⇒
-**xanh**. Nên **(c) đi lọt qua cả hai dụng cụ mà nhánh này đã dựng lên để canh chính nó**, và nhân
-chứng cho nó là thứ **phải viết mới**. Giá thứ hai, đã đo ở (1): `FleetCore` **chưa có** đường vào
-công khai nào cho việc này, nên (c) là **một bề mặt công khai mới trên `FleetCore`** cộng **một lối
-vào thứ hai** vào đường áp — và doc của chính `finally` đặt sẵn ràng buộc hình dạng cho bất cứ thứ gì
-thêm vào đó (**lồng vào, không nối sau**). Giá thứ ba, nêu chứ không đo được: `GET /v1/settings` sẽ
-báo một bộ ba mà file **không có**, **thường xuyên** chứ không chỉ sau một thất bại.
-
-**CHỖ AI-1 KHÔNG ĐO ĐƯỢC, nêu tên chứ không lấp:**
-- **Bao nhiêu bản triển khai headless thật đang đặt `ST4I_*` mà lại có `fleet-settings.json` không đọc
-  được** — đây là con số quyết định mục này **đáng bao nhiêu**, và nó **không có trong cây mã**. Không
-  telemetry, không log sản xuất trong repo. **Đừng bịa một tỉ lệ.**
-- **`fleet-settings.json` hỏng theo cách nào ngoài đời** (ACL, đĩa đầy, cắt điện giữa `File.Move`,
-  sửa tay) — phân bố ấy **chưa ai đo**, và nó quyết định (a) tốn bao nhiêu.
-- **Giá của (b)/(c) tính bằng công** — AI-1 **không dựng đường nào**, đúng theo yêu cầu, nên mọi con
-  số về công là **ước lượng** và **cố ý không viết ra**: một ước lượng đặt ở đây sẽ **đọc như một phép đo**.
-
----
-
-## 13. Một bản KHÔI PHỤC đè lên một `oee-settings.json` ĐÃ CÓ vẫn bị ghi đè — cùng hình dạng mục 11, và là ca THÔNG THƯỜNG hơn trong hai ca
-
-**Mục này sinh ra từ bản thi hành của mục 11, và nó ở đây vì tiền lệ của chính file này:**
-mục **8** sinh ra đúng như thế (phần dư của mục 1) và mục **10** sinh ra đúng như thế
-(phần dư 1 của mục 5). Cả hai đã được nêu tên, leo lên, và được phán. Chôn phần dư này
-trong một báo cáo là đảo ngược đúng cơ chế đã tạo ra hai mục ấy — và luật của file này nói
-thẳng: *một điều "đã được nêu trong một báo cáo" là điều chủ sở hữu **không có đường nào
-mở ra đọc**.*
-
-> ⚠️ **Z-1 đã suýt chôn nó, và điều đó được ghi lại chứ không im.** Khối thi hành của mục
-> 11 và `docs/startup-failure-posture.md` §3.6 lúc đầu viết *"Nó KHÔNG được thêm vào danh
-> sách chờ chủ sở hữu"*, trong khi báo cáo của chính Z-1 viết *"đó là câu đáng đưa lại cho
-> chủ sở hữu"*. **Hai artefact của cùng một nhiệm vụ nói ngược nhau, và cái được xuất bản
-> nói cái yếu hơn.** Phản biện (I-2) bắt được, điều phối viên phán **mở mục**. Cả hai câu
-> sai đã được sửa tại chỗ chúng được viết, không chỉ ở đây.
-
-**Đo được:** `OeeSettingsStore.Set` so **hai sự thật** — `_tableBuiltFrom` (bảng trong bộ
-nhớ được dựng từ phép đọc nào) và `fresh.Status` (file lúc này). Mục 11 đóng cặp
-`Absent`/`Loaded`. Cặp còn lại vẫn ghi:
-
-```
-_tableBuiltFrom == Loaded   VÀ   fresh.Status == Loaded,   mà HAI PHÉP ĐỌC KHÁC NỘI DUNG
-```
-
-Host lên trên một file tốt → vận hành viên khôi phục một bản sao lưu **đè lên nó** → cả hai
-sự thật vẫn là `Loaded` → `Set` kế tiếp ghi bảng **trước khi khôi phục** đè lên file **sau
-khi khôi phục**. Store chỉ ghi lại **kết cục** của phép đọc, **không ghi DANH TÍNH** của
-các byte mà bảng được dựng từ đó, nên nó không phân biệt được hai file. **Không ném, không
-409, không một dòng log** — y hệt mục 11 trước khi mục 11 được đóng.
-
-🔴 **Và đây là ca THÔNG THƯỜNG hơn trong hai ca.** Mục 11 đóng ca mà host lên khi **không
-có file**. Bất kỳ máy nào **từng đặt cấu hình OEE** thì **có** file — nên hình dạng còn mở
-là hình dạng mà một lần khôi phục thật hay gặp hơn, không phải hình dạng hiếm.
-
-**Ở đâu:** `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` (`Set`, vị từ hai điều kiện;
-`Save` → `WriteAllTextAtomic`), tới được từ
-`src/St4i.EngineApi/Endpoints/HistorianEndpoints.cs` (`PutOeeSettingsAsync`).
-
-**Hậu quả vận hành:** giống hệt mục 5 và mục 11 — ideal-cycle override và
-planned-production ratio của **mọi máy** trong bản khôi phục biến mất, con số OEE đổi thầm
-lặng, **ngay sau khi vận hành viên tưởng mình vừa khôi phục xong**. Cách né duy nhất hôm
-nay vẫn là **khởi động lại host sau khi khôi phục** (hoặc gọi `Reload`).
-
-**Cái gì đã chặn nó khỏi được sửa luôn trong Z-1:** phán quyết mục 11 ghi **một vị từ đã
-đo**, và vị từ ấy không bao trùm cặp này. Nới nó ra là **quyết lại** một phán quyết của chủ
-sở hữu, thứ nhiệm vụ thi hành không được làm. Về mặt cơ chế thì cũng không phải một cái
-chốt: đóng nó đòi store **ghi lại danh tính các byte** mà bảng được dựng từ đó — nội dung,
-hoặc một dấu hiệu nhận dạng của file — chứ không chỉ kết cục phép đọc, tức **thêm một sự
-thật mới vào store**.
-
-**Vì sao là quyết định của chủ sở hữu:** nó đổi **khi nào `PUT /v1/historian/oee/settings`
-thất bại với người vận hành**. Một store phân biệt được "file tôi vừa đọc không phải file
-tôi dựng bảng từ đó" sẽ trả **409** ở những lúc hôm nay nó trả **200** — kể cả khi thứ đổi
-file là một biên tập bằng tay hợp lệ, không phải một bản khôi phục. Đó là cái giá vận hành
-viên trả, nên là quyết định của họ, đúng cùng lý do mục 11 đã là quyết định của họ.
-
-**Nếu không quyết định:** giữ nguyên. Một bản khôi phục thực hiện trên host đang chạy **có
-file** sẽ bị lần đặt OEE kế tiếp xoá, và **không ai biết** cho tới khi có người đối chiếu
-lại — đúng câu mà mục 11 đã viết, cho ca còn lại.
-
-🔴 **Cái mục này CHƯA có, nêu tên chứ không lấp:** nó **không** bày ra các lựa chọn kèm
-**giá ĐÃ ĐO** của từng lựa chọn — bao nhiêu `PUT` hợp lệ hôm nay sẽ thành 409, và một phép
-so danh tính (nội dung? thời gian sửa? kích thước?) tốn gì trên một file mà `Set` đã đọc
-sẵn trong cùng một khoá. **Giá ấy phải được đo**; lần ghi này không đo được nó, và một con
-số ước lượng đặt ở đây sẽ **đọc như một phép đo**. Đây đúng là chỗ thiếu mà mục 9 cũng
-đang mang, và nó được nêu tên vì lý do y hệt.
-
-> 📎 **Đoạn ngay trên — RÚT MỘT PHẦN 2026-08-19 (AI-1), giữ nguyên văn, rút tại chỗ nó được viết.**
-> Nửa *"một phép so danh tính … tốn gì"* nay **có một phép đo** (§"✅ ĐÃ ĐO 2026-08-19" bên dưới).
-> 🔴 **Nửa *"bao nhiêu `PUT` hợp lệ hôm nay sẽ thành 409"* KHÔNG được rút và vẫn đứng nguyên** — phép
-> đo kết luận nó **không đo được** từ cây này, và nêu tên cách kiểm nó dứt điểm. Câu cuối
-> (*"một con số ước lượng đặt ở đây sẽ đọc như một phép đo"*) **KHÔNG được rút**: nó là luật, và phép
-> đo mới tuân nó. **Câu *"chỗ thiếu mà mục 9 cũng đang mang"* nay đúng theo một nghĩa hẹp hơn:** cả
-> hai mục đã được đo cùng ngày, và **chỉ mục 13 còn lại một nửa không đo được**.
-
-**Bằng chứng — chạy lại được, và nó ghim khuyết tật ĐANG SỐNG:**
-`tests/St4i.EdgeCore.Tests/Historian/OeeSettingsStoreTests.cs`,
-`Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling`
-— nó dựng host lên **có** file, khôi phục đè lên, gọi `Set`, và khẳng định entry vừa khôi
-phục **biến mất**. Nó **ghim một khuyết tật đang sống làm đường cơ sở và KHÔNG sửa**, đúng
-như S-1 đã làm cho mục 5 và V-1 đã làm cho mục 10. Nếu anh quyết SỬA, khẳng định ấy đảo
-chiều và chỗ đảo chính là diff. Cùng chỗ: chú thích lớp của `OeeSettingsStore` và
-`docs/startup-failure-posture.md` §3.6.
-
-### ✅ ĐÃ ĐO 2026-08-19 (AI-1) — BỐN câu hỏi thành số; câu THỨ NĂM, và nó là câu ở TIÊU ĐỀ, KHÔNG ĐO ĐƯỢC
-
-> 📎 **Tiêu đề này đọc *"ba trong bốn câu hỏi thành số; câu thứ tư KHÔNG ĐO ĐƯỢC và đây là vì sao"*
-> trong bản nháp của chính AI-1 — RÚT 2026-08-19 (AI-1), trước khi commit, giữ nguyên văn.** Nó **đếm
-> sai tập của chính nó**: bốn câu hỏi con đều **thành số** (đường ghi ngoài store; store đã cầm sẵn gì;
-> ba ứng viên danh tính; bao nhiêu test đỏ), và cái **không** đo được là câu **thứ năm** — câu đứng ở
-> **tiêu đề** của cả phép đo, *"bao nhiêu `PUT` hợp lệ thành 409"*. 🔴 **Một con số vô hướng tóm tắt
-> một tập mà người viết nó chưa đếm lại — trong một khối viết ra để chấm dứt đúng loài ấy.** Nó ở lại
-> đây làm nhân chứng, đúng như đoạn *"chỗ đau là chỗ nó xảy ra"* ở mục 14 đã để lại một cái.
-
-> 📎 **Đoạn *"🔴 Cái mục này CHƯA có, nêu tên chứ không lấp: nó không bày ra các lựa chọn kèm giá ĐÃ
-> ĐO của từng lựa chọn — bao nhiêu `PUT` hợp lệ hôm nay sẽ thành 409, và một phép so danh tính (nội
-> dung? thời gian sửa? kích thước?) tốn gì…"* — RÚT 2026-08-19 (AI-1), giữ nguyên văn tại chỗ của nó,
-> và rút **MỘT PHẦN**.** Nửa nói *"phép so danh tính tốn gì"* nay **có một phép đo**. Nửa nói
-> *"bao nhiêu `PUT` hợp lệ hôm nay sẽ thành 409"* 🔴 **KHÔNG được rút và vẫn đứng nguyên: nó vẫn CHƯA
-> ĐO, và phép đo dưới đây kết luận nó KHÔNG ĐO ĐƯỢC từ trong cây này.** **Mục 13 KHÔNG rời Phần I và
-> vẫn `🔴 CHỜ ANH`.** Kiểu bảo tồn: **một** kiểu, nêu tại mục 14 §"khả năng thứ ba đã đo".
-
-**Người đo, ngày, cây, SHA:** **AI-1**, **2026-08-19**, `avi-aoi-sim` ghim tại **`f08cb379`**. **Toàn
-bộ hạng "tự đo"**, đọc trên mã và trên test; **không chạy một `PUT` nào**, không chạm CSDL nào. Miền
-quét: **`git grep <mẫu> f08cb379 -- .`**, toàn cây Git tại commit.
-
-🔴 **(0) CÂU KHÔNG ĐO ĐƯỢC, nói TRƯỚC để không câu nào bên dưới bị đọc rộng hơn nó.** *"Bao nhiêu
-`PUT` hợp lệ hôm nay sẽ thành 409"* là một tỉ lệ trên **lưu lượng sản xuất**. Trong cây này **không có
-telemetry sản xuất, không có log ingest, không có bản ghi PUT nào**. Cái duy nhất đo được là **cái gì
-làm cặp `Loaded/Loaded-khác-nội-dung` xuất hiện**, và **bao nhiêu bài kiểm hiện có** đứng trên nó.
-**AI-1 KHÔNG viết ra một tỉ lệ, và cố ý:** một con số ước lượng đặt ở đây sẽ **đọc như một phép đo**.
-Cái kiểm được nó dứt điểm là **đếm PUT trên một bản triển khai thật**, và nhiệm vụ này không có nó.
-
-**Nhưng một CHẶN TRÊN thì đo được, và nó đáng viết ra vì nó không đòi bịa gì:** cặp
-`Loaded/Loaded-khác-nội-dung` **chỉ** phát sinh khi có người hoặc cái gì đó **ghi file từ bên ngoài
-store**. Nên trên một máy **một host, không khôi phục, không biên tập tay, không tác nhân ghi ngoài**,
-số `PUT` hợp lệ thành 409 là **0** — không phải "ít", mà **không có ca nào để nổ**. Toàn bộ tỉ lệ nằm
-trong **tần suất các vector vận hành**, và **đó** mới là cái không đo được. Nói cách khác: **cái chưa
-biết là tần suất, không phải cơ chế.**
-
-**(1) MỌI ĐƯỜNG GHI `oee-settings.json` NGOÀI STORE — liệt kê trước, đếm sau.** Phép quét
-`git grep -n "oee-settings.json" f08cb379 -- .` cho **toàn bộ** chỗ nhắc tên file trong cây; phép quét
-thứ hai, trên chính bộ đếm của sản phẩm (`OperatorDataRemovalCensusTests`, bảng chỗ ghi theo file),
-cho biết `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` mang đúng
-`File.Move(overwrite:true), File.WriteAllText` — tức `WriteAllTextAtomic`. **Trong `src/` không có
-file nào khác ghi tên ấy.** Nên câu *"`Set` là chỗ ghi duy nhất trong sản phẩm"* **đứng vững**, và mọi
-đường còn lại là **đường VẬN HÀNH, ngoài mã**:
-
-| # | đường ghi ngoài store | có làm cặp `Loaded/Loaded-khác-nội-dung` xuất hiện không |
-|---|---|---|
-| 1 | **khôi phục từ bản sao lưu** lên host đang chạy | **CÓ** — đây chính là ca mục này mở ra |
-| 2 | **biên tập tay** file thành JSON **HỢP LỆ** | **CÓ** — và mục này đã nêu: giá vận hành viên trả kể cả khi họ đúng |
-| 3 | **biên tập tay** thành JSON **KHÔNG hợp lệ** | **KHÔNG** — rơi vào arm `Unreadable` mà V-1 đã đóng, đã có bài kiểm giữ |
-| 4 | **gỡ dữ liệu / xoá file** khi host đang chạy | **KHÔNG** — thành `Loaded/Absent`, arm V-1 đã đóng, đã có bài kiểm giữ |
-| 5 | **cài đặt / cài lại** đặt file trước khi tiến trình lên | **KHÔNG** — đọc lúc dựng store, nên bảng **là** file |
-| 6 | 🔴 **MỘT HOST THỨ HAI trên cùng `ST4I_HISTORIAN_DIR`** (§15.9) | **CÓ**, và nó là đường **duy nhất phát sinh từ chính sản phẩm** |
-
-🔴 **"SÁU" LÀ MỘT PHÂN LOẠI, KHÔNG PHẢI MỘT PHÉP KIỂM ĐẾM — và đây là biên phải đọc trước con số.**
-**Nửa MÃ đóng kín được và tôi đóng nó:** trong `src/` có **đúng MỘT** chỗ dựng
-`OeeSettingsStore` — `Program.cs`, `new St4i.EdgeCore.Historian.OeeSettingsStore(…)`, một singleton DI
-— nên **không có thực thể store thứ hai trong tiến trình**, và *"`Set` là chỗ ghi duy nhất trong sản
-phẩm"* **đóng được**. 🔴 **Nửa VẬN HÀNH thì KHÔNG đóng được từ trong một repo, và lần ghi đầu viết nó
-như thể đóng được.** Sáu hàng dưới đây là **hành động của con người và của hệ điều hành**, không phải
-một tập đọc được từ cây mã. **Ít nhất ba vector cùng hình dạng vắng mặt** khỏi nó — tác nhân **đồng
-bộ/sao lưu file** (OneDrive, DFS-R, backup có khôi phục ngược); **cách ly rồi phục hồi của phần mềm
-diệt virus**; **đẩy cấu hình bằng công cụ quản trị** (GPO/Intune/Ansible) — **và cả ba CÓ làm cặp
-`Loaded/Loaded` xuất hiện**. Nên con số đúng không phải một con số: **"ít nhất sáu, và tập này không
-đóng được từ trong một repo."**
-
-> 📎 **Câu *"Đếm sau khi liệt kê: SÁU đường, BA làm cặp ấy xuất hiện."* ở lần ghi đầu (`840abd57`) —
-> RÚT 2026-08-19 (AI-1, vòng sửa sau phản biện), giữ nguyên văn.** Nó là **một phép LẤY MẪU mặc áo một
-> phép KIỂM ĐẾM** — đúng loài mà tiêu đề của chính mục con này đặt tên, tái phạm **ngay dưới** chỗ nó
-> tự chẩn đoán. Bảng dưới **giữ nguyên** làm một **phân loại**; cái bị rút là **con số phẳng**.
-
-**Đường 6 đáng đọc kỹ nhất và mục này chưa nêu nó:** `OeeSettingsStore` chỉ có **một khoá TRONG TIẾN TRÌNH** (`_gate`) và **không có khoá
-file nào**; `WriteAllTextAtomic` chỉ bảo đảm **không rách**, không bảo đảm **không mất**. Hai tiến
-trình trỏ vào cùng một thư mục historian **đều ghi**, và cặp `Loaded/Loaded` xuất hiện **mỗi lần host
-kia lưu**. README §15.9 nói thẳng rằng gốc dữ liệu riêng **không** giải quyết chuyện dùng chung, và
-rằng cái cần là *"một named mutex, một lockfile, hoặc một kênh đăng ký"*. **AI-1 KHÔNG mở mục mới cho
-việc này** và ghi lại đây vì nó là **đầu vào của quyết định mục 13**, không phải một mục riêng.
-
-**(2) STORE ĐÃ CẦM SẴN CÁI GÌ — ĐO, KHÔNG SUY. Câu trả lời: KHÔNG cần thêm một lần đọc đĩa nào.**
-`Set` lấy `_gate`, rồi gọi `ClassifyLocked()` → `ReadLocked()`, và `ReadLocked` mở đầu bằng
-**`File.ReadAllText(path)`** — **toàn văn file đã nằm trong bộ nhớ, trong cùng một khoá**. Rồi nó
-**VỨT BIẾN `text` ĐI**: `OeeSettingsRead.ForLoaded(path, entries)` mang **`Entries` đã giải tuần tự**,
-**không mang byte gốc**. Đầu kia cũng vậy: `Load()` gọi **cùng** `ClassifyLocked()`. Nên **cả hai đầu
-của phép so đều đã đọc file rồi**; cái thiếu là **một trường để giữ lại**, không phải một cú I/O.
-**Giá I/O thêm của phép so danh tính theo NỘI DUNG: 0.**
-
-**(3) BA ỨNG VIÊN DANH TÍNH — cái nào phân biệt được ca này, và CÁCH HỎNG của từng cái, nêu tên.**
-
-| ứng viên | phân biệt được ca này? | giá | 🔴 **CÁCH NÓ HỎNG** |
-|---|---|---|---|
-| **nội dung** (băm trên `text` đã đọc) | **CÓ** | **0 lần đọc đĩa thêm**; một lần băm trên chuỗi đã có; một trường `string?` trên store | **DƯƠNG TÍNH GIẢ — và đây là giá LỚN NHẤT của ứng viên khả dĩ DUY NHẤT.** Dương tính giả là tính chất **của phép băm NỘI DUNG** (byte đổi ⇒ băm đổi, dù nghĩa không đổi); `WriteIndented = true` **không gây ra** nó, chỉ **nâng xác suất** có người định dạng lại. Một lần **định dạng lại**, đổi **CRLF↔LF**, thêm/bớt **BOM**, hay đổi **thứ tự khoá** ⇒ **409 cho một biên tập HỢP LỆ** — tức **phạt vận hành viên đúng lúc họ làm đúng** |
-| **thời gian sửa** (`mtime`) | **KHÔNG ĐÁNG TIN cho ca này** | một cú **syscall metadata thứ hai** | **ÂM TÍNH GIẢ, và nó bỏ sót đúng ca mục này mở ra:** phần lớn công cụ sao lưu/khôi phục **giữ nguyên timestamp** (`robocopy /COPY:T`, `tar -p`, `xcopy /K`), nên một bản khôi phục có thể mang `mtime` **cũ hơn**. Cộng: **FAT/exFAT có hạt 2 giây**, lệch đồng hồ, và filesystem mạng. 🔴 **Và nó dựng lên đúng loài lỗi mà `Read` của chính lớp này đã bỏ đi**: hỏi **hai bề mặt** một câu hỏi — lớp này đã vứt `File.Exists` vì lý do ấy, đo tại `docs/startup-failure-posture.md` §3.1a |
-| **kích thước** | **KHÔNG** | rẻ nhất | **ÂM TÍNH GIẢ, tầm thường.** Đổi `0.9` thành `0.1`, hoán hai giá trị giữa hai máy, hay đổi một mã máy cùng độ dài đều **giữ nguyên kích thước** ⇒ ghi đè im lặng y như hôm nay |
-
-🔴 **RÀNG BUỘC THI HÀNH ĐÃ ĐO, và bỏ nó ra thì mọi con số ở (4) sai:** danh tính phải được **làm mới
-sau `Save()`**, đúng chỗ và đúng cách mà Z-1 đã làm mới `_status`/`_tableBuiltFrom` ngay sau khi ghi
-(*"A write establishes the same fact a read would"*). Nếu không, `Set` **thứ hai liên tiếp** trên cùng
-một store sẽ so danh tính-lúc-`Load` với file mà **chính `Set` trước đã ghi** ⇒ **409 giả trên mọi cặp
-PUT liên tiếp**. Và arm mới phải đứng **SAU** hai arm sẵn có (`Unreadable`, rồi `Absent`+`Loaded`), vì
-cả hai nói những chuyện khác và thông điệp của chúng đã được bài kiểm giữ từng chữ.
-
-**(4) BAO NHIÊU TEST HIỆN CÓ SẼ ĐỎ — đo bằng cách ĐỌC test. Con số là MỘT, và nó phụ thuộc một lựa
-chọn thiết kế, nên cả hai nhánh được nêu.** Dân số quét: **năm** file **chạm** `OeeSettingsStore` theo
-cách có thể đóng góp — `OeeSettingsStoreTests.cs`, `HistorianEndpointsOeeTests.cs`,
-`OperatorDataRemovalCensusTests.cs` **gọi** `Set`/`PutOeeSettingsAsync`; `HistorianEndpointsPdfTests.cs`
-và `HistorianEndpointsProvenanceTests.cs` **chỉ dựng** store trên thư mục tạm và **không gọi `Set`,
-không ghi đè file**, nên chúng **đóng góp 0**. (Lần ghi đầu viết cả năm là *"file gọi `Set`"* rồi hai
-dòng sau nói hai file cuối không gọi — **nội dung đúng, câu chữ tự mâu thuẫn**; sửa ở đây.)
-
-**Biến thể R — danh tính LÀM MỚI sau `Save`** (ràng buộc ở (3)). Mọi lời gọi `Set` mong **thành công**
-đều rơi vào một trong ba: (i) thư mục sạch, `Absent/Absent`; (ii) ngay sau `Reload()`, nên danh tính
-khớp; (iii) `Set` liên tiếp trên file do chính store vừa ghi, nên danh tính khớp. **Đúng MỘT bài đứng
-ngoài cả ba**, và nó được nêu tên:
-`OeeSettingsStoreTests.Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling`
-— nó ghi file **trước** khi dựng store, ghi **đè bằng nội dung khác** sau đó, rồi gọi `Set` và khẳng
-định entry vừa khôi phục **biến mất**. **⇒ ĐỎ: MỘT.** Và đó **đúng là bài mà mục này đã nêu tên làm
-nhân chứng**: khẳng định của nó **đảo chiều**, và chỗ đảo **chính là diff**.
-
-**Biến thể N — danh tính KHÔNG làm mới sau `Save`.** Thêm mọi bài có **hai `Set` thành công liên tiếp**
-trên **một** thực thể store; đọc hết năm file cho **đúng hai** bài:
-`OeeSettingsStoreTests.Set_PartialUpdate_LeavesUnspecifiedFieldUnchanged` và
-`OeeSettingsStoreTests.Set_TheFirstTimeAfterACleanStart_StillEstablishesTheFile`. **⇒ ĐỎ: BA.**
-🔴 **Biến thể N là một bản thi hành SAI**, và nó được nêu chỉ để con số **1** ở trên có nghĩa: nó là
-**1 với một điều kiện**, không phải 1 vô điều kiện.
-
-**Cái KHÔNG đỏ, và đó là chỗ đáng ghi nhất:** không một bài nào trong bốn arm đã đóng bị chạm —
-`Set_WhenTheFileIsCorruptedAfterConstruction_Refuses_AndLeavesTheOperatorsBytes`,
-`Set_WhenAnUnreadableFileIsRepairedAfterConstruction_StillRefuses_UntilReload`,
-`Set_WhenTheUnreadableFileWasMovedAside_RefusesWithoutClaimingItReadsCorrectly`,
-`Set_AfterReloadingTheFileThatAppeared_LandsOnTopOfIt`,
-`Set_WhenAnEmptyTableFileAppearsAfterTheStoreCameUpWithNone_AlsoRefuses` — tất cả ném **trước** khi
-arm mới có thể chạy, hoặc đi qua `Reload()`. Bên endpoint, `HistorianEndpointsOeeTests` **không có**
-bài nào PUT thành công **hai lần** trên một store: bài hai-PUT duy nhất kết thúc ở arm `Unreadable`.
-
-**CHỖ AI-1 KHÔNG ĐO ĐƯỢC, nêu tên chứ không lấp:**
-- **tỉ lệ `PUT` hợp lệ sẽ thành 409** — nêu ở (0). Không đo được từ cây này; đo được bằng đếm PUT trên
-  một bản triển khai thật, và **không ai đã làm việc ấy**;
-- **tần suất thật của biên tập tay HỢP LỆ so với khôi phục** — hai thứ này trả **cùng một** 409 nhưng
-  **khác nhau về việc vận hành viên có bị bất ngờ không**, và phân bố ấy **chưa ai đo**;
-- **bao nhiêu bản triển khai đang chạy HAI host trên một `ST4I_HISTORIAN_DIR`** (đường 6) — không có
-  trong cây; nếu con số ấy khác 0 thì cặp `Loaded/Loaded` là **thường xuyên**, không phải hiếm, và
-  điều đó đổi hẳn giá của lựa chọn "chặn";
-- **giá tính bằng công của phép so danh tính** — AI-1 **không dựng nó**, nên mọi con số về công là
-  ước lượng và **cố ý không viết ra**.
 
 ---
 
@@ -1927,6 +1515,19 @@ trên nói, vì `## 5–7.` là **một** tiêu đề chứa **ba** mục.
 > được từ danh sách ngay trên chứ không được ghi làm một khẳng định riêng — đúng luật mà khối
 > đính chính ngay dưới đây mua được.
 
+> 📎 **AJ-1 (2026-08-19) — MỞ RỘNG LẦN HAI, cùng cơ chế, và hai con số của AA-1 vì thế đã CŨ.**
+> Chủ sở hữu phán **mục 9** và **mục 13** ngày 2026-08-19; AJ-1 thi hành cả hai và mang cả hai
+> từ **Phần I** sang đây, mỗi mục với một khối `🔨 PHÁN QUYẾT` và một khối `✅ ĐÃ THI HÀNH`
+> ghi kèm ngày — đúng điều kiện file này đặt ra cho việc chuyển phần. **Phép liệt kê đang
+> sống, đọc từ chính các tiêu đề `##` của phần này:** mục **1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+> 13**, nằm dưới các tiêu đề `## 1.`, `## 2.`, `## 3.`, `## 4.`, `## 5–7.`, `## 8.`, `## 9.`,
+> `## 10.`, `## 11.`, `## 13.`. 🔴 **Hai con số của AA-1 (*"mười"* / *"tám"*) KHÔNG được sửa
+> tại chỗ và KHÔNG bị xoá**: chúng đúng vào ngày chúng được viết, và cách chữa mà chính khối
+> ấy tự khai là **thêm vào phép liệt kê**. Con số duy nhất đọc được ở đây là con số ai cũng
+> đếm lại được từ danh sách ngay trên — và nó vẫn **không** được ghi làm một khẳng định riêng.
+> **Mục 12 vẫn ở Phần II** (đang trả nợ) và **mục 14 vẫn ở Phần I** (`🔴 CHỜ ANH`); AJ-1 không
+> đụng vào cái nào trong hai.
+
 > 🔴 **ĐÍNH CHÍNH 2026-08-18, cùng ngày, cùng nhiệm vụ (phản biện I-3).** Chỗ này Z-1 vừa
 > viết *"Phần này nay có SÁU mục, không phải bốn"*. Cả hai số đều sai: **sáu** đếm **tiêu
 > đề** chứ không đếm mục (mục là **tám**), và **bốn** không mô tả cây nào — trước Z-1 phần
@@ -3072,6 +2673,316 @@ thì không, và không có gì báo cho ai biết ngoài các dòng đã ghi t�
 
 ---
 
+## 9. Một nhánh *không đọc được* nên áp **sàn môi trường** vào bộ nhớ hay không
+
+**Đo được:** sau Q-1, khi `fleet-settings.json` không đọc được, tiến trình lên bằng
+**mặc định dựng sẵn** của `FleetHost` (`DefaultServerUrl = ""`,
+`DefaultMachineCode = "ENGINE-API-01"`) chứ **không** áp bộ ba `ST4I_*` mà bản triển
+khai đã đặt.
+
+**Hai chiều, và phải nói cả hai:** với **FILE**, từ chối sàn là **an toàn hơn hẳn**
+— áp sàn nghĩa là `FleetCore.UpdateSettings` **lưu** nó, và chính việc lưu là mất
+dữ liệu. Với **CỖ MÁY ĐANG CHẠY**, nó có thể **tệ hơn**: một bản cài headless không
+những mất liên kết mà còn không dùng các giá trị dịch vụ của nó đã cấu hình.
+
+**Vì sao hai chiều ấy tách nhau được:** chỉ vì `UpdateSettings` **lưu vô điều
+kiện**. Một đường "áp mà không lưu" sẽ cho nhánh này tôn trọng sàn trong bộ nhớ mà
+vẫn để yên file.
+
+**Ở đâu:** `src/St4i.EdgeCore/Fleet/FleetCore.cs` (`UpdateSettings`, khối `finally`
+trong `if (rebuildNeeded)`), tiêu thụ bởi `src/St4i.EngineApi/Program.cs`.
+
+**Nếu không quyết định:** giữ nguyên — an toàn cho file, và một cỗ máy headless có
+file hỏng sẽ chạy trên giá trị mặc định cho tới khi có người sửa file.
+
+**Vì sao là quyết định của chủ sở hữu:** đổi *khi nào* `UpdateSettings` lưu là đổi
+hợp đồng mà `PUT /v1/settings` cũng dùng chung.
+
+**Bằng chứng:** `docs/startup-failure-posture.md` §3.1a-now.
+
+> ### ⏸️ HOÃN 2026-08-18 — CHỦ SỞ HỮU ĐỂ MỤC NÀY LẠI SAU CÙNG
+> **Đây KHÔNG phải một phán quyết, và mục này KHÔNG rời khỏi phần đang chờ.** Chủ sở hữu
+> trả lời *"để lại sau cùng"*. Luật của file này nói một mục chỉ rời khỏi đây khi có một
+> **quyết định** ghi kèm ngày và người quyết; một lần hoãn ghi **thứ tự**, không ghi
+> **kết quả**. Nên mục 9 vẫn ở `🔴 CHỜ ANH`, và cái được ghi thêm là **đã có người đọc
+> nó và chọn chưa quyết** — thứ trước hôm nay không phân biệt được với **chưa ai đọc**.
+>
+> **Nếu không quyết định** vẫn đúng nguyên như đoạn trên: giữ nguyên, an toàn cho file,
+> và một cỗ máy headless có file hỏng chạy trên giá trị mặc định cho tới khi có người sửa
+> file.
+>
+> 🔴 **KHỐI HOÃN NÀY ĐÃ HẾT HIỆU LỰC 2026-08-19 — giữ NGUYÊN VĂN, không xoá, vì nó là hồ
+> sơ về một trạng thái file này trước đây không phân biệt được (*"đã có người đọc và chọn
+> chưa quyết"* so với *"chưa ai đọc"*).** Lần hoãn kết thúc bằng đúng thứ luật đòi: một
+> **phán quyết** ghi kèm ngày và người quyết — xem khối `🔨 PHÁN QUYẾT 2026-08-19` cuối
+> mục này. Câu *"Nếu không quyết định"* ở trên **cũng hết hiệu lực**: đã có quyết định, và
+> nó **không** phải *giữ nguyên*.
+
+### ✅ ĐÃ ĐO 2026-08-19 (AI-1) — ba lựa chọn, giá từng cái, và chỗ nào KHÔNG đo được
+
+> 📎 **Đoạn ở đầu PHẦN I đọc *"🔴 Cái mục 9 CHƯA có, nêu tên chứ không lấp: nó không bày ra các lựa
+> chọn kèm giá ĐÃ ĐO của từng lựa chọn…"* (Y-1, 2026-08-18) — RÚT 2026-08-19 (AI-1), giữ nguyên văn
+> tại chỗ của nó.** Lý do là **phép đo đã chạy**, không phải câu ấy từng sai. **Mục 9 KHÔNG rời Phần I
+> và vẫn `🔴 CHỜ ANH`:** phần dưới đây thêm **số liệu**, không thêm **kết luận**, và **không khuyến
+> nghị lựa chọn nào**. Kiểu bảo tồn: **một** kiểu, nêu tại mục 14 §"khả năng thứ ba đã đo".
+>
+> 🔴 **Câu *"Mục 9 KHÔNG rời Phần I và vẫn `🔴 CHỜ ANH`"* mô tả đúng ngày nó được viết
+> (2026-08-19, AI-1) và thành SAI CÙNG NGÀY, khi chủ sở hữu đọc chính phép đo dưới đây và
+> phán.** Giữ nguyên văn: nó là hồ sơ về **ranh giới AI-1 đã giữ** — đo mà không quyết — và xoá nó
+> làm mất bằng chứng rằng phán quyết đến từ chủ sở hữu chứ không từ người đo. Mục 9 nay ở **Phần
+> III**. (AJ-1, 2026-08-19.)
+
+**Người đo, ngày, cây, SHA:** **AI-1**, **2026-08-19**, `avi-aoi-sim` ghim tại **`f08cb379`**. **Toàn
+bộ hạng "tự đo"** — đọc trên mã, không nhận lại con số nào. Miền quét như nêu ở mục 14: **`git grep
+<mẫu> f08cb379 -- .`**, toàn cây Git tại commit, kể cả các đường **không nằm trên đĩa**.
+
+**(1) `UpdateSettings` hôm nay làm gì, THEO THỨ TỰ — và nó là BA việc, không phải hai.**
+
+1. **CAM KẾT VÀO BỘ NHỚ** — dưới `_gate`: gán `_serverUrl`/`_verifyTls`/`_machineCode`/`_language` cho
+   những tham số khác null, đặt `rebuildNeeded` (🔴 **`_language` KHÔNG đặt `rebuildNeeded`**), rồi
+   **chụp lại** bộ ba sẽ lưu, vẫn dưới khoá.
+2. **ÁP** — **ngoài** khoá, chỉ khi `rebuildNeeded`, trong một `try`: `CredentialStore.Load` →
+   `TransportCoordinator.RebuildLive` → `_onLiveSettingsRebuilt`.
+3. **LƯU** — trong `finally` của chính `try` ấy: `_settingsStore?.Save(new PersistedFleetSettings{…})`,
+   **một câu lệnh duy nhất và có chủ ý là một** (doc của chính nó nêu: thêm gì dưới `Save` phải **lồng
+   vào**, không **nối sau**).
+
+🔴 **TÁCH ĐƯỢC VỀ MẶT CƠ HỌC KHÔNG — CÓ. Nhưng số arm chứng minh nó là MỘT, không phải hai.**
+
+> 📎 **Câu này đọc *"và cơ chế ấy ĐÃ TỒN TẠI, được HAI assertion giữ"* ở lần ghi đầu (`840abd57`) —
+> RÚT 2026-08-19 (AI-1, vòng sửa sau phản biện), giữ nguyên văn.** Nó **đếm thừa một**, và là **một
+> con số vô hướng tóm tắt một tập người viết chưa đếm lại** — đúng luật câu chữ, trong đúng khối viết
+> ra để tuân nó, lần thứ hai trong cùng bản ghi.
+
+- **Arm ÁP-MÀ-KHÔNG-LƯU, đúng thứ (c) cần — MỘT, nêu tên:**
+  `FleetHostSettingsPersistenceTests.NoSettingsStore_UpdateSettings_StillWorks_JustNothingSurvivesRestart`.
+  `_settingsStore` là **null-conditional** (`?.`), nên một `FleetCore` dựng **không có store** chạy
+  **trọn** `CredentialStore.Load` → `RebuildLive` → `_onLiveSettingsRebuilt` rồi **bỏ qua `Save`**.
+  Phép **áp thật sự chạy**. Ở mức **thực thể**.
+- 🔴 **Arm KHÔNG phải áp-mà-không-lưu, và tôi đã xếp nhầm nó:**
+  `FleetHostSettingsPersistenceTests.LanguageOnlyChange_NeverWritesToTheSettingsStore`. `rebuildNeeded`
+  ở `false` ⇒ **cả khối `if` bị bỏ qua** ⇒ `RebuildLive` **KHÔNG chạy lần nào**. Đó là
+  **CAM-KẾT-mà-KHÔNG-ÁP-và-không-lưu** — nó chứng minh *phép lưu bỏ được theo từng lời gọi*, và
+  **không chứng minh gì** về việc *phép áp vẫn chạy*. Mà **phép áp chạy chính là thứ (c) đòi**: một
+  nhánh không đọc được tôn trọng sàn **trong bộ nhớ** phải làm transport thật sự chạy trên sàn ấy.
+
+Nên phép tách mục 9 hỏi **không phải một cơ chế mới**; nó là **một arm thứ hai của cơ chế đã có**.
+Cái chưa có là **một đường vào**: `FleetCore` **không có** phương thức công khai nào áp mà không lưu
+(`ApplyMode` chỉ chạm chế độ transport, không chạm bộ ba).
+
+**(2) BAO NHIÊU CHỖ GỌI — liệt kê trước, đếm sau.** Quét `git grep -n "UpdateSettings(" f08cb379 --
+tools/machine-simulator/src`. Trong `src/`, ngoài chính khai báo:
+
+| # | chỗ gọi, trỏ bằng TÊN | nó **CẦN** phép lưu hay chỉ **ĐANG NHẬN** nó |
+|---|---|---|
+| 1 | `FleetHost.UpdateSettings(SettingsUpdateRequest)` | **không phải chỗ gọi thật** — vỏ bọc một dòng, chuyển thẳng sang `_core` |
+| 2 | `SettingsEndpoints` → `PUT /v1/settings` | **CẦN.** Đây là toàn bộ lý do FF-1 tồn tại: bộ ba vận hành viên PUT phải sống qua lần khởi động sau |
+| 3 | `Program.cs` → `TryReplayStartupSettings` (phát lại lúc khởi động) | **HAI ARM, hai câu trả lời.** Arm **KHÔI PHỤC**: giá trị **đến TỪ file**, nên `Save` ghi lại đúng cái nó vừa đọc — **chỉ ĐANG NHẬN**. Arm **GIEO** (không có file, sàn env): `Save` là thứ **TẠO RA** file — **CẦN**, và khi áp hỏng thì file gieo ấy bị **xoá** ở đúng và chỉ đúng ca ấy, bởi bộ xoá duy nhất trong `Program.cs` |
+
+**Đếm sau khi liệt kê: HAI chỗ gọi thật trong `src/` (một vỏ bọc), và một trong hai mang HAI arm.**
+Trong `tests/`, hai file gọi `UpdateSettings(`: `FleetHostSettingsPersistenceTests.cs` và
+`SettingsWalPreservationTests.cs`.
+
+**(3) CÁI GÌ ĐỌC TRẠNG THÁI ẤY SAU ĐÓ (§8.1(h5.4)) — `GET /v1/settings` trả từ BỘ NHỚ, không từ file.**
+`FleetCore.GetSettings()` dựng `FleetSettingsSnapshot` **từ chính bốn trường** dưới `_gate`, cộng
+`_transportCoordinator.Mode`; `FleetHost.GetSettings()` chiếu nó qua `FleetProjections.ToSettingsDto`;
+`SettingsEndpoints` map `GET /v1/settings` thẳng vào đó. **Không có phép đọc file nào trên đường ấy.**
+
+🔴 **File `fleet-settings.json` được ĐỌC đúng HAI chỗ trong `src/`, và cả hai lúc KHỞI ĐỘNG:**
+`FleetCore` constructor (`_settingsStore.Load()`, đặt ba trường và **không** dựng transport) và
+`Program.cs` (`settingsStore.Read()`, phép đọc ba-kết-cục quyết định phát lại). **Không một bề mặt
+lúc chạy nào đọc file.** Nên một giá trị **áp mà không lưu** khiến **`GET /v1/settings` nói khác
+file** — và **chỉ nó**, cho tới lần khởi động sau.
+
+> 📎 **Câu trên đọc *"trong cả sản phẩm"* ở lần ghi đầu (`840abd57`) — RÚT 2026-08-19 (AI-1), giữ
+> nguyên văn, thay bằng *"trong `src/`"*.** Biên chưa khai:
+> `tools/machine-simulator/tools/settings-acl-probe/Program.cs` mở **đúng đường dẫn ấy**
+> (`Path.Combine(settingsRoot, "fleet-settings.json")`). Nó **ngoài `src/`** và là **dụng cụ chẩn
+> đoán**, nên nó **không lật kết luận** — nhưng *"cả sản phẩm"* là một phủ định phổ quát rộng hơn tập
+> tôi đã mở, và cách sửa là **thu miền về đúng cái đã quét**, không phải nới lời.
+
+🔴 **Và sự lệch ấy KHÔNG mới:** `Program.cs` đã tự khai, nguyên văn trong chú thích của chính nó, rằng
+sau một lần phát lại áp **hỏng**, các trường giữ bộ ba đã hỏng nên *"`GET /v1/settings` reports it —
+truthfully, as the configuration this process is holding — while the transport stays on whatever it
+had."* Nên lựa chọn (c) **không tạo ra một loài lệch mới**; nó biến một **cặn của thất bại** thành một
+**trạng thái ổn định bình thường**. Đó là chỗ chênh cần chủ sở hữu cân, và AI-1 **không cân hộ**.
+
+**(4) BA LỰA CHỌN, GIÁ TỪNG CÁI — đo được chừng nào thì đo, chỗ nào không đo được thì NÊU TÊN.**
+
+**(a) Giữ nguyên.** Giá trong mã: **0**. Hành vi đã đo, trỏ bằng tên: `Program.cs` tính
+`replaySucceeded` bằng `settingsRead.Status != FleetSettingsReadStatus.Unreadable && TryReplayStartupSettings(…)`
+— trên nhánh **Unreadable** phép phát lại **không chạy lần nào**, nên `FleetHost.UpdateSettings`
+không được gọi, nên `finally` không tới, nên **không gì bị ghi và không gì bị xoá**. Giá **ngoài** mã:
+đúng như mục này đã viết — máy headless chạy trên mặc định dựng sẵn cho tới khi có người sửa file.
+**Ba assertion đang giữ nhánh ấy** nằm trong `StartupSettingsReplayHardeningTests` (xem (b)).
+
+**(b) Áp sàn VÀ lưu.** 🔴 **Giá ĐO ĐƯỢC: ít nhất MỘT bài kiểm ĐỎ KHÔNG NÉ ĐƯỢC, và HAI chuỗi đã
+xuất bản thành sai.**
+
+> 📎 **Khối này, ở lần ghi đầu của AI-1 (commit `840abd57`), nêu SAI nhân chứng — RÚT 2026-08-19
+> (AI-1, vòng sửa sau phản biện), giữ NGUYÊN VĂN:** *"🔴 **Giá ĐO ĐƯỢC và nó là một bài kiểm ĐỎ, nêu
+> tên:** `StartupSettingsReplayHardeningTests.TheStartupReplayHasExactlyOneArm_AndTheSettingsFileOneWriterAndOneDeleter`
+> khẳng định `Program.cs` nhắc `TryReplayStartupSettings` **đúng 2 lần** (khai báo + **một** lời gọi).
+> Một arm phát lại thứ hai đưa con số lên **3** ⇒ **ĐỎ** … **Đây đúng là nhánh C1 mà `Program.cs` mô
+> tả dài dòng là đã bị rút vì nó huỷ file của vận hành viên."*
+>
+> **Vì sao sai — một phép đo, không phải một ý kiến.** Trên arm `Unreadable`,
+> `FleetSettingsRead.ForUnreadable` truyền **`settings: null`**, nên `persistedSettings` là **null**,
+> nên `initialSettingsRequest` **ĐÃ LÀ sàn `ST4I_*`** rồi. ⇒ **(b) thi hành được bằng cách XOÁ một
+> biểu thức guard** (`settingsRead.Status != FleetSettingsReadStatus.Unreadable &&`), **không thêm một
+> chỗ gọi nào** ⇒ `Regex.Matches(program, @"TryReplayStartupSettings\s*\(")` **vẫn là 2** ⇒ bài kiểm
+> được nêu tên **VẪN XANH**. Và đây không phải một bản thi hành kỳ quặc: chú thích ngay trên guard ấy
+> nói nó được viết thế *"rather than as a second call site"*. 🔴 **Tôi đã định giá (b) bằng một cái
+> tên sẽ không nổ** — và **cùng lúc** nêu điều kiện thi hành cho (c) và cho mục 13 mà **không** nêu
+> cho (b). Cùng một loài, ba chỗ, hai chỗ tuân, một chỗ không. Câu *"đúng là nhánh C1"* cũng **rút**:
+> C1 nổ trên một bộ ba **ĐỌC ĐƯỢC** không áp được, còn (b) nổ trên arm **không đọc được lần nào** —
+> **cùng loài hậu quả, khác kích hoạt** — và nhân chứng riêng của C1
+> (`AFailedReplay_LeavesThePersistedTripleIntact_AndDoesNotLetTheEnvFloorWin`) **vẫn xanh** dưới (b).
+
+**Nhân chứng ĐỎ dưới MỌI bản thi hành, nêu tên:**
+`StartupSettingsReplayHardeningTests.AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo`.
+Nó khẳng định **hai** thứ mà (b) phá **cả hai**, và cả hai là **tính chất của FILE và của PHẢN HỒI**,
+không phải của văn bản nguồn — nên **không né được bằng cách chọn cách viết khác**:
+- `Assert.Equal(OperatorsOwnBytes, File.ReadAllText(settingsFile))` — **byte của vận hành viên,
+  nguyên vẹn, vẫn còn đó**;
+- `Assert.Equal(FleetHost.DefaultServerUrl, settings.ServerUrl)` cùng `…DefaultMachineCode…` — **sàn
+  KHÔNG thắng trong bộ nhớ**; tiến trình lên bằng mặc định dựng sẵn vì **không gì được áp cả**.
+
+**Và HAI chuỗi đã xuất bản thành sai, không một:** (i) dòng log
+`STARTUP SETTINGS FILE COULD NOT BE READ` — *"it was NOT applied, and it was NOT overwritten or deleted
+by this start … unreadable content is the only remaining record of what was configured here"*; (ii)
+câu khuyến nghị của arm **GIEO** — *"These came from the ST4I_\* environment variables and **NO
+settings file existed before this start**"* — được chọn đúng khi `persistedSettings` là null, tức
+**đúng trên arm Unreadable**, và nó **sai hiển nhiên** khi file **có** mà chỉ là không đọc được.
+Cả hai phải viết lại **cùng commit**.
+
+🔴 **Điều kiện thi hành, nêu cho (b) đúng như đã nêu cho (c):** hai **phép kiểm đếm NGUỒN** trong
+`StartupSettingsReplayHardeningTests` **có thể VẪN XANH** dưới (b) — chúng đếm văn bản, và bản thi hành
+rẻ nhất không thêm văn bản nào. **Cái bắt được (b) là một bài kiểm HÀNH VI, không phải một phép kiểm
+đếm.**
+
+**(c) Áp mà không lưu.** 🔴 **Giá ĐO ĐƯỢC, và cái đo được là một SỰ IM LẶNG:** **không một trong hai
+phép kiểm đếm nguồn hiện có nào nhúc nhích.** Phép đếm chỗ ghi bắt
+`[Ss]ettings[Ss]tore\s*\??\.Save\s*\(` **hoặc** dòng chứa `new PersistedFleetSettings` — một đường áp
+mà không lưu **không thêm cái nào** ⇒ vẫn **1** ⇒ **xanh**. Phép đếm arm phát lại bắt
+`TryReplayStartupSettings\s*\(` — một helper mang tên khác **không thêm cái nào** ⇒ vẫn **2** ⇒
+**xanh**. Nên **(c) đi lọt qua cả hai dụng cụ mà nhánh này đã dựng lên để canh chính nó**, và nhân
+chứng cho nó là thứ **phải viết mới**. Giá thứ hai, đã đo ở (1): `FleetCore` **chưa có** đường vào
+công khai nào cho việc này, nên (c) là **một bề mặt công khai mới trên `FleetCore`** cộng **một lối
+vào thứ hai** vào đường áp — và doc của chính `finally` đặt sẵn ràng buộc hình dạng cho bất cứ thứ gì
+thêm vào đó (**lồng vào, không nối sau**). Giá thứ ba, nêu chứ không đo được: `GET /v1/settings` sẽ
+báo một bộ ba mà file **không có**, **thường xuyên** chứ không chỉ sau một thất bại.
+
+**CHỖ AI-1 KHÔNG ĐO ĐƯỢC, nêu tên chứ không lấp:**
+- **Bao nhiêu bản triển khai headless thật đang đặt `ST4I_*` mà lại có `fleet-settings.json` không đọc
+  được** — đây là con số quyết định mục này **đáng bao nhiêu**, và nó **không có trong cây mã**. Không
+  telemetry, không log sản xuất trong repo. **Đừng bịa một tỉ lệ.**
+- **`fleet-settings.json` hỏng theo cách nào ngoài đời** (ACL, đĩa đầy, cắt điện giữa `File.Move`,
+  sửa tay) — phân bố ấy **chưa ai đo**, và nó quyết định (a) tốn bao nhiêu.
+- **Giá của (b)/(c) tính bằng công** — AI-1 **không dựng đường nào**, đúng theo yêu cầu, nên mọi con
+  số về công là **ước lượng** và **cố ý không viết ra**: một ước lượng đặt ở đây sẽ **đọc như một phép đo**.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-19 — **(b) ÁP SÀN `ST4I_*` VÀ LƯU NÓ**, TRÊN NHÁNH *KHÔNG ĐỌC ĐƯỢC*
+>
+> **Chủ sở hữu quyết, 2026-08-19, sau khi đọc phép đo của AI-1 và sau khi được cảnh báo rằng phán quyết
+> này đi NGƯỢC năm phán quyết trước của chính anh.** Không phải (a) *giữ nguyên*, không phải (c) *áp mà
+> không lưu*. Trên nhánh mà `fleet-settings.json` không đọc được, sàn `ST4I_SERVER_URL` /
+> `ST4I_MACHINE_CODE` / `ST4I_VERIFY_TLS` **được áp vào bộ nhớ VÀ được ghi xuống file**, đè lên các byte
+> không đọc được, **tại chỗ**.
+>
+> 🔴 **CĂNG THẲNG VỚI MỤC 1, 5, 8, 10 VÀ 11 — GHI TRƯỚC, VÌ NÓ CÓ THẬT VÀ VÌ HỒ SƠ PHẢI MANG CẢ HAI
+> VẾ.** Năm mục ấy phán **ngược lại** ở cùng một hình dạng: *đừng ghi đè các byte tiến trình này không
+> đọc được*. Luật viết ra từ chúng — `docs/startup-failure-posture.md` §3.6 — nói *"một phép đọc phải
+> phân biệt **không có gì ở đây** với **có thứ gì đó tôi không dùng được**, và **chỉ cái đầu** cho phép
+> người gọi tự lập một giá trị rồi ghi xuống"*. **Mục 9 (b) cho phép ghi trên vế thứ hai.** Đó là một
+> mâu thuẫn bề mặt với năm phán quyết, và nó **không được làm nhẹ đi ở đây**.
+>
+> 🔴 **CÁCH ĐỌC LÀM CHÚNG HOÀ NHAU, và nó là cách đọc của CHỦ SỞ HỮU, không phải của người thi hành.**
+> Ở mục 1/5/8/10/11 thứ bị ghi đè là **dữ liệu của vận hành viên** và thứ được ghi xuống là một giá trị
+> **tiến trình tự nghĩ ra** — một bảng OEE rỗng, một bản ghi site mặc định, một khoá vừa đúc lại. Ở mục
+> 9 thứ được ghi xuống là **chính cấu hình mà bản triển khai đã KHAI qua `ST4I_*`**: tiến trình **khôi
+> phục một giá trị đã được khai**, nó **không bịa ra** một giá trị. Luật §3.6 **không bị nới**; cái đổi
+> là **giá trị nào được coi là đã có sẵn ở đây**.
+>
+> 🔴 **Và mục 13 — quyết CÙNG NGÀY, cùng luật — đi NGƯỢC CHIỀU: nó SIẾT.** Hai kết cục ngược nhau
+> không phải một mâu thuẫn: ở mục 13 thứ trên đĩa là **dữ liệu của vận hành viên** và thứ định ghi đè là
+> một bảng tiến trình đang cầm, nên luật siết; ở mục 9 thứ trên đĩa **không đọc được** và thứ ghi xuống
+> là **lời khai của bản triển khai**, nên luật nới. **Cùng một luật, hai dữ kiện khác nhau.**
+>
+> **Giá chủ sở hữu chấp nhận, viết ra chứ không giấu:** một `fleet-settings.json` hỏng vì gõ nhầm tay
+> **không còn là bản ghi cuối cùng** của bộ ba vận hành viên đã đặt — lần khởi động kế tiếp ghi đè nó,
+> và **sản phẩm không giữ một bản sao**. Đổi lại, một bản cài headless có file hỏng **chạy đúng bộ ba mà
+> service definition của nó cấp**, thay vì chạy trên `DefaultServerUrl = ""`.
+>
+> **Điều KHÔNG được quyết, nêu để không ai đọc rộng hơn:** (c) *áp mà không lưu* **không** được chọn,
+> nên hợp đồng của `FleetCore.UpdateSettings` — dùng chung với `PUT /v1/settings` — **không đổi**. Và
+> **không có miễn trừ DI CHUYỂN dữ liệu nào** được cấp ở đây: miễn trừ của mục 10 là của **riêng mục
+> 10**.
+
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ AJ-1 (2026-08-19), `.superpowers/sdd/items-9-13-executed/`
+>
+> **Bản sửa, nêu bằng TÊN:** guard `settingsRead.Status != FleetSettingsReadStatus.Unreadable &&` ở
+> `src/St4i.EngineApi/Program.cs` **bị xoá**. Trên nhánh `Unreadable`, `FleetSettingsRead.ForUnreadable`
+> **không mang `Settings`**, nên `persistedSettings` là null, nên `initialSettingsRequest` **ĐÃ LÀ** sàn
+> `ST4I_*` — (b) vì thế thi hành bằng **xoá một biểu thức**, **không thêm một chỗ gọi nào**.
+>
+> 🔴 **HAI CHUỖI ĐÃ XUẤT BẢN THÀNH SAI, VÀ CẢ HAI ĐƯỢC SỬA TRONG CÙNG COMMIT — nêu rõ chuỗi nào ở
+> đâu:**
+> 1. **Dòng log `STARTUP SETTINGS FILE COULD NOT BE READ`** (`Program.cs`, khối `if (settingsRead.Status
+>    == Unreadable)`): *"it was NOT applied, and it was NOT overwritten or deleted by this start"*. Sai
+>    ngay ở nhánh nó được viết cho. Nay là **HAI câu, chọn theo `envFloorHasAValue`** — vì một câu không
+>    thể đúng cho cả hai ca: **có sàn** ⇒ *"ITS CONTENT IS BEING OVERWRITTEN BY THIS START, on the
+>    owner's decision of 2026-08-19 (item 9…)"*; **không có `ST4I_*` nào được đặt** ⇒ không có gì để áp,
+>    `rebuildNeeded` là false, nên **không gì được ghi**, và câu ấy nói rõ rằng đó là vì **không có
+>    sàn**, chứ không phải vì file được bảo vệ.
+> 2. **Câu khuyến nghị của arm GIEO** (đối số `remedy` truyền vào `TryReplayStartupSettings`):
+>    *"These came from the ST4I_\* environment variables and **NO settings file existed before this
+>    start**"*. Nó được chọn bằng `replayRestoredAFile` — tức *"không có bộ ba đã lưu"* — **đúng trên
+>    `Absent` VÀ trên `Unreadable`**. Nay chọn bằng **kết cục phép đọc** (`settingsRead.Status switch`,
+>    ba arm), và arm `Unreadable` có câu của riêng nó nói rằng file **CÓ** tồn tại và đang bị ghi đè.
+>
+> **Một chuỗi thứ ba GIỐNG HỆT không bị đụng, và nói ra vì nó dễ bị gom nhầm:** dòng
+> `STARTUP SETTINGS SEED DISCARDED` cũng chứa *"no settings file existed before this start"*, nhưng khối
+> ấy gác bằng `settingsRead.Status == Absent`, nên câu ấy **vẫn đúng** và **không được sửa**.
+>
+> **Nhân chứng — ĐẢO CHIỀU và ĐỔI TÊN:**
+> `StartupSettingsReplayHardeningTests.AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo`
+> → **`…_IsOverwrittenByTheEnvironmentFloor_AndTheHostSaysSo`**. Nó khẳng định **byte của FILE** và
+> **nội dung phản hồi**, nên không né được bằng cách viết khác; nay nó khẳng định **ngược lại** (sàn
+> thắng trên đĩa và trong bộ nhớ), cộng **ranh giới** (thư mục còn **đúng một** file — không có bản đổi
+> tên nào bên cạnh) và **sự VẮNG MẶT** của chuỗi *"NO settings file existed before this start"* trong
+> toàn bộ log của lần boot ấy.
+>
+> 🔴 **PHÉP KIỂM ĐẾM NGUỒN VẪN XANH VÀ ĐÓ KHÔNG PHẢI BẰNG CHỨNG.**
+> `TheStartupReplayHasExactlyOneArm_AndTheSettingsFileOneWriterAndOneDeleter` **không nhúc nhích** —
+> `TryReplayStartupSettings(` vẫn **2**, `Save` vẫn **1**, `Delete` vẫn **1**. Brief của AI-1 nêu bài ấy
+> làm nhân chứng cho (b); **phản biện bác, và bác đúng**. Một dụng cụ đếm văn bản im lặng trước một thay
+> đổi hành vi là **im lặng**, không phải chấp thuận.
+>
+> 🔴 **RANH GIỚI KHÔNG BỊ VƯỢT, và nó được ĐO chứ không được hứa:** phép ghi là
+> `FleetSettingsStore.Save` → `WriteAllTextAtomic` → temp + `File.Move(overwrite:true)` **trên cùng một
+> đường dẫn**. Byte cũ **không bị đổi tên sang chỗ khác** và **không bị xoá** — khối `Delete` duy nhất
+> trong `Program.cs` vẫn gác bằng `Status == Absent`. Nhân chứng đo nó bằng cách liệt kê thư mục sau lần
+> boot: **đúng một file**.
+>
+> 🔴 **TRẦN CỦA BẢN SỬA NÀY, nêu tên chứ không lấp:** nếu sàn được **ghi** rồi **áp hỏng**, nhánh này
+> **không có** thứ tương đương khối discard của arm GIEO, nên file vừa ghi **ở lại** và từ lần boot sau
+> nó **thắng** các biến `ST4I_*` theo precedence FF-1. Đóng chỗ ấy đòi **một bộ xoá thứ hai** trong
+> `src/` — thứ mà census trên ghim ở đúng **một**, và thứ phán quyết này **không** cho phép. Nêu ở đây,
+> ở `docs/startup-failure-posture.md` §3.1a-now, và trong chú thích của chính `Program.cs`.
+>
+> **Cùng chỗ đã cập nhật:** `docs/startup-failure-posture.md` §3.1a-now (cả bốn đoạn: *"what the
+> composition root does"*, *"what it costs"* hai nửa, *"what witnesses it"*) và census §3.1 **hàng 36 và
+> hàng 37** — 🔴 **cả hai nửa của `U` được kiểm lại chứ không giả định**, vì `U` là một **liên từ** và
+> hàng 18 là hồ sơ của chính file ấy về một hàng chỉ thoả nửa đầu mà vẫn được ghi là hợp lệ. Cả hai hàng
+> **vẫn `U ✓`**: host lên, và lỗi được báo ở `Error` — nửa sau được đo bằng tên bài kiểm, không bằng một
+> câu.
+>
+> **CẶP ĐỐI CHỨNG ĐÃ CHẠY HAI PHÍA** — `src/` của base `abc6f0ca` cộng `tests/` của HEAD, rồi ngược
+> lại. Kết quả nguyên văn trong báo cáo AJ-1.
+
+---
+
 ## 10. `CredentialStore.Load` biến một lỗi môi trường KHÔI PHỤC ĐƯỢC thành mất mát không hoàn nguyên
 
 **Mục này sinh ra từ phần dư 1 của mục 5, và nó ở đây vì nó là một QUYẾT ĐỊNH.**
@@ -3362,6 +3273,348 @@ và **dừng ngay trước `Set`**.
 
 ---
 
+## 13. Một bản KHÔI PHỤC đè lên một `oee-settings.json` ĐÃ CÓ vẫn bị ghi đè — cùng hình dạng mục 11, và là ca THÔNG THƯỜNG hơn trong hai ca
+
+**Mục này sinh ra từ bản thi hành của mục 11, và nó ở đây vì tiền lệ của chính file này:**
+mục **8** sinh ra đúng như thế (phần dư của mục 1) và mục **10** sinh ra đúng như thế
+(phần dư 1 của mục 5). Cả hai đã được nêu tên, leo lên, và được phán. Chôn phần dư này
+trong một báo cáo là đảo ngược đúng cơ chế đã tạo ra hai mục ấy — và luật của file này nói
+thẳng: *một điều "đã được nêu trong một báo cáo" là điều chủ sở hữu **không có đường nào
+mở ra đọc**.*
+
+> ⚠️ **Z-1 đã suýt chôn nó, và điều đó được ghi lại chứ không im.** Khối thi hành của mục
+> 11 và `docs/startup-failure-posture.md` §3.6 lúc đầu viết *"Nó KHÔNG được thêm vào danh
+> sách chờ chủ sở hữu"*, trong khi báo cáo của chính Z-1 viết *"đó là câu đáng đưa lại cho
+> chủ sở hữu"*. **Hai artefact của cùng một nhiệm vụ nói ngược nhau, và cái được xuất bản
+> nói cái yếu hơn.** Phản biện (I-2) bắt được, điều phối viên phán **mở mục**. Cả hai câu
+> sai đã được sửa tại chỗ chúng được viết, không chỉ ở đây.
+
+**Đo được:** `OeeSettingsStore.Set` so **hai sự thật** — `_tableBuiltFrom` (bảng trong bộ
+nhớ được dựng từ phép đọc nào) và `fresh.Status` (file lúc này). Mục 11 đóng cặp
+`Absent`/`Loaded`. Cặp còn lại vẫn ghi:
+
+```
+_tableBuiltFrom == Loaded   VÀ   fresh.Status == Loaded,   mà HAI PHÉP ĐỌC KHÁC NỘI DUNG
+```
+
+Host lên trên một file tốt → vận hành viên khôi phục một bản sao lưu **đè lên nó** → cả hai
+sự thật vẫn là `Loaded` → `Set` kế tiếp ghi bảng **trước khi khôi phục** đè lên file **sau
+khi khôi phục**. Store chỉ ghi lại **kết cục** của phép đọc, **không ghi DANH TÍNH** của
+các byte mà bảng được dựng từ đó, nên nó không phân biệt được hai file. **Không ném, không
+409, không một dòng log** — y hệt mục 11 trước khi mục 11 được đóng.
+
+🔴 **Và đây là ca THÔNG THƯỜNG hơn trong hai ca.** Mục 11 đóng ca mà host lên khi **không
+có file**. Bất kỳ máy nào **từng đặt cấu hình OEE** thì **có** file — nên hình dạng còn mở
+là hình dạng mà một lần khôi phục thật hay gặp hơn, không phải hình dạng hiếm.
+
+**Ở đâu:** `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` (`Set`, vị từ hai điều kiện;
+`Save` → `WriteAllTextAtomic`), tới được từ
+`src/St4i.EngineApi/Endpoints/HistorianEndpoints.cs` (`PutOeeSettingsAsync`).
+
+**Hậu quả vận hành:** giống hệt mục 5 và mục 11 — ideal-cycle override và
+planned-production ratio của **mọi máy** trong bản khôi phục biến mất, con số OEE đổi thầm
+lặng, **ngay sau khi vận hành viên tưởng mình vừa khôi phục xong**. Cách né duy nhất hôm
+nay vẫn là **khởi động lại host sau khi khôi phục** (hoặc gọi `Reload`).
+
+**Cái gì đã chặn nó khỏi được sửa luôn trong Z-1:** phán quyết mục 11 ghi **một vị từ đã
+đo**, và vị từ ấy không bao trùm cặp này. Nới nó ra là **quyết lại** một phán quyết của chủ
+sở hữu, thứ nhiệm vụ thi hành không được làm. Về mặt cơ chế thì cũng không phải một cái
+chốt: đóng nó đòi store **ghi lại danh tính các byte** mà bảng được dựng từ đó — nội dung,
+hoặc một dấu hiệu nhận dạng của file — chứ không chỉ kết cục phép đọc, tức **thêm một sự
+thật mới vào store**.
+
+**Vì sao là quyết định của chủ sở hữu:** nó đổi **khi nào `PUT /v1/historian/oee/settings`
+thất bại với người vận hành**. Một store phân biệt được "file tôi vừa đọc không phải file
+tôi dựng bảng từ đó" sẽ trả **409** ở những lúc hôm nay nó trả **200** — kể cả khi thứ đổi
+file là một biên tập bằng tay hợp lệ, không phải một bản khôi phục. Đó là cái giá vận hành
+viên trả, nên là quyết định của họ, đúng cùng lý do mục 11 đã là quyết định của họ.
+
+**Nếu không quyết định:** giữ nguyên. Một bản khôi phục thực hiện trên host đang chạy **có
+file** sẽ bị lần đặt OEE kế tiếp xoá, và **không ai biết** cho tới khi có người đối chiếu
+lại — đúng câu mà mục 11 đã viết, cho ca còn lại.
+
+> 🔴 **Nhánh ấy KHÔNG được đi: chủ sở hữu quyết ngày 2026-08-19 (xem khối `🔨 PHÁN QUYẾT` cuối mục).**
+> Đoạn trên giữ nguyên văn vì nó là **cái giá của việc không quyết**, và nó là một nửa của phép cân
+> mà phán quyết đã thực hiện — nửa kia là cái giá **409** ghi ở khối phán quyết.
+
+🔴 **Cái mục này CHƯA có, nêu tên chứ không lấp:** nó **không** bày ra các lựa chọn kèm
+**giá ĐÃ ĐO** của từng lựa chọn — bao nhiêu `PUT` hợp lệ hôm nay sẽ thành 409, và một phép
+so danh tính (nội dung? thời gian sửa? kích thước?) tốn gì trên một file mà `Set` đã đọc
+sẵn trong cùng một khoá. **Giá ấy phải được đo**; lần ghi này không đo được nó, và một con
+số ước lượng đặt ở đây sẽ **đọc như một phép đo**. Đây đúng là chỗ thiếu mà mục 9 cũng
+đang mang, và nó được nêu tên vì lý do y hệt.
+
+> 📎 **Đoạn ngay trên — RÚT MỘT PHẦN 2026-08-19 (AI-1), giữ nguyên văn, rút tại chỗ nó được viết.**
+> Nửa *"một phép so danh tính … tốn gì"* nay **có một phép đo** (§"✅ ĐÃ ĐO 2026-08-19" bên dưới).
+> 🔴 **Nửa *"bao nhiêu `PUT` hợp lệ hôm nay sẽ thành 409"* KHÔNG được rút và vẫn đứng nguyên** — phép
+> đo kết luận nó **không đo được** từ cây này, và nêu tên cách kiểm nó dứt điểm. Câu cuối
+> (*"một con số ước lượng đặt ở đây sẽ đọc như một phép đo"*) **KHÔNG được rút**: nó là luật, và phép
+> đo mới tuân nó. **Câu *"chỗ thiếu mà mục 9 cũng đang mang"* nay đúng theo một nghĩa hẹp hơn:** cả
+> hai mục đã được đo cùng ngày, và **chỉ mục 13 còn lại một nửa không đo được**.
+
+**Bằng chứng — chạy lại được, và nó ghim khuyết tật ĐANG SỐNG:**
+`tests/St4i.EdgeCore.Tests/Historian/OeeSettingsStoreTests.cs`,
+`Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling`
+— nó dựng host lên **có** file, khôi phục đè lên, gọi `Set`, và khẳng định entry vừa khôi
+phục **biến mất**. Nó **ghim một khuyết tật đang sống làm đường cơ sở và KHÔNG sửa**, đúng
+như S-1 đã làm cho mục 5 và V-1 đã làm cho mục 10. Nếu anh quyết SỬA, khẳng định ấy đảo
+chiều và chỗ đảo chính là diff. Cùng chỗ: chú thích lớp của `OeeSettingsStore` và
+`docs/startup-failure-posture.md` §3.6.
+
+> 🔴 **ĐIỀU ẤY ĐÃ XẢY RA — 2026-08-19.** Chủ sở hữu quyết SỬA, và khẳng định **đã đảo chiều**: bài
+> kiểm nay là **`…_IsRefused_AndTheRestoredBytesSurvive`** và khẳng định entry vừa khôi phục **CÒN
+> NGUYÊN**. Đoạn trên giữ nguyên văn vì nó là **lời tiên đoán về cơ chế đã tự nghiệm đúng**: một
+> khuyết tật được ghim sống thì ngày đóng nó, chỗ đảo là diff — không cần ai đi tìm. Tên đổi cùng
+> thân, vì một cái tên nói *"cái trần đã biết"* trên một thân khẳng định phép từ chối là một khẳng
+> định sai (P-2).
+
+### ✅ ĐÃ ĐO 2026-08-19 (AI-1) — BỐN câu hỏi thành số; câu THỨ NĂM, và nó là câu ở TIÊU ĐỀ, KHÔNG ĐO ĐƯỢC
+
+> 📎 **Tiêu đề này đọc *"ba trong bốn câu hỏi thành số; câu thứ tư KHÔNG ĐO ĐƯỢC và đây là vì sao"*
+> trong bản nháp của chính AI-1 — RÚT 2026-08-19 (AI-1), trước khi commit, giữ nguyên văn.** Nó **đếm
+> sai tập của chính nó**: bốn câu hỏi con đều **thành số** (đường ghi ngoài store; store đã cầm sẵn gì;
+> ba ứng viên danh tính; bao nhiêu test đỏ), và cái **không** đo được là câu **thứ năm** — câu đứng ở
+> **tiêu đề** của cả phép đo, *"bao nhiêu `PUT` hợp lệ thành 409"*. 🔴 **Một con số vô hướng tóm tắt
+> một tập mà người viết nó chưa đếm lại — trong một khối viết ra để chấm dứt đúng loài ấy.** Nó ở lại
+> đây làm nhân chứng, đúng như đoạn *"chỗ đau là chỗ nó xảy ra"* ở mục 14 đã để lại một cái.
+
+> 📎 **Đoạn *"🔴 Cái mục này CHƯA có, nêu tên chứ không lấp: nó không bày ra các lựa chọn kèm giá ĐÃ
+> ĐO của từng lựa chọn — bao nhiêu `PUT` hợp lệ hôm nay sẽ thành 409, và một phép so danh tính (nội
+> dung? thời gian sửa? kích thước?) tốn gì…"* — RÚT 2026-08-19 (AI-1), giữ nguyên văn tại chỗ của nó,
+> và rút **MỘT PHẦN**.** Nửa nói *"phép so danh tính tốn gì"* nay **có một phép đo**. Nửa nói
+> *"bao nhiêu `PUT` hợp lệ hôm nay sẽ thành 409"* 🔴 **KHÔNG được rút và vẫn đứng nguyên: nó vẫn CHƯA
+> ĐO, và phép đo dưới đây kết luận nó KHÔNG ĐO ĐƯỢC từ trong cây này.** **Mục 13 KHÔNG rời Phần I và
+> vẫn `🔴 CHỜ ANH`.** Kiểu bảo tồn: **một** kiểu, nêu tại mục 14 §"khả năng thứ ba đã đo".
+>
+> 🔴 **Câu *"Mục 13 KHÔNG rời Phần I và vẫn `🔴 CHỜ ANH`"* mô tả đúng ngày nó được viết (2026-08-19,
+> AI-1) và thành SAI CÙNG NGÀY, khi chủ sở hữu đọc chính phép đo dưới đây và phán ĐÓNG.** Giữ nguyên
+> văn, cùng lý do như ở mục 9: nó là hồ sơ về **ranh giới AI-1 đã giữ**. 🔴 **Và nửa còn lại của khối
+> này KHÔNG hết hiệu lực:** *"bao nhiêu `PUT` hợp lệ thành 409"* **vẫn CHƯA ĐO** — phán quyết được ra
+> **mà không có con số ấy**, và điều đó là một sự thật về quyết định, không phải một thiếu sót của nó.
+> (AJ-1, 2026-08-19.)
+
+**Người đo, ngày, cây, SHA:** **AI-1**, **2026-08-19**, `avi-aoi-sim` ghim tại **`f08cb379`**. **Toàn
+bộ hạng "tự đo"**, đọc trên mã và trên test; **không chạy một `PUT` nào**, không chạm CSDL nào. Miền
+quét: **`git grep <mẫu> f08cb379 -- .`**, toàn cây Git tại commit.
+
+🔴 **(0) CÂU KHÔNG ĐO ĐƯỢC, nói TRƯỚC để không câu nào bên dưới bị đọc rộng hơn nó.** *"Bao nhiêu
+`PUT` hợp lệ hôm nay sẽ thành 409"* là một tỉ lệ trên **lưu lượng sản xuất**. Trong cây này **không có
+telemetry sản xuất, không có log ingest, không có bản ghi PUT nào**. Cái duy nhất đo được là **cái gì
+làm cặp `Loaded/Loaded-khác-nội-dung` xuất hiện**, và **bao nhiêu bài kiểm hiện có** đứng trên nó.
+**AI-1 KHÔNG viết ra một tỉ lệ, và cố ý:** một con số ước lượng đặt ở đây sẽ **đọc như một phép đo**.
+Cái kiểm được nó dứt điểm là **đếm PUT trên một bản triển khai thật**, và nhiệm vụ này không có nó.
+
+**Nhưng một CHẶN TRÊN thì đo được, và nó đáng viết ra vì nó không đòi bịa gì:** cặp
+`Loaded/Loaded-khác-nội-dung` **chỉ** phát sinh khi có người hoặc cái gì đó **ghi file từ bên ngoài
+store**. Nên trên một máy **một host, không khôi phục, không biên tập tay, không tác nhân ghi ngoài**,
+số `PUT` hợp lệ thành 409 là **0** — không phải "ít", mà **không có ca nào để nổ**. Toàn bộ tỉ lệ nằm
+trong **tần suất các vector vận hành**, và **đó** mới là cái không đo được. Nói cách khác: **cái chưa
+biết là tần suất, không phải cơ chế.**
+
+**(1) MỌI ĐƯỜNG GHI `oee-settings.json` NGOÀI STORE — liệt kê trước, đếm sau.** Phép quét
+`git grep -n "oee-settings.json" f08cb379 -- .` cho **toàn bộ** chỗ nhắc tên file trong cây; phép quét
+thứ hai, trên chính bộ đếm của sản phẩm (`OperatorDataRemovalCensusTests`, bảng chỗ ghi theo file),
+cho biết `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` mang đúng
+`File.Move(overwrite:true), File.WriteAllText` — tức `WriteAllTextAtomic`. **Trong `src/` không có
+file nào khác ghi tên ấy.** Nên câu *"`Set` là chỗ ghi duy nhất trong sản phẩm"* **đứng vững**, và mọi
+đường còn lại là **đường VẬN HÀNH, ngoài mã**:
+
+| # | đường ghi ngoài store | có làm cặp `Loaded/Loaded-khác-nội-dung` xuất hiện không |
+|---|---|---|
+| 1 | **khôi phục từ bản sao lưu** lên host đang chạy | **CÓ** — đây chính là ca mục này mở ra |
+| 2 | **biên tập tay** file thành JSON **HỢP LỆ** | **CÓ** — và mục này đã nêu: giá vận hành viên trả kể cả khi họ đúng |
+| 3 | **biên tập tay** thành JSON **KHÔNG hợp lệ** | **KHÔNG** — rơi vào arm `Unreadable` mà V-1 đã đóng, đã có bài kiểm giữ |
+| 4 | **gỡ dữ liệu / xoá file** khi host đang chạy | **KHÔNG** — thành `Loaded/Absent`, arm V-1 đã đóng, đã có bài kiểm giữ |
+| 5 | **cài đặt / cài lại** đặt file trước khi tiến trình lên | **KHÔNG** — đọc lúc dựng store, nên bảng **là** file |
+| 6 | 🔴 **MỘT HOST THỨ HAI trên cùng `ST4I_HISTORIAN_DIR`** (§15.9) | **CÓ**, và nó là đường **duy nhất phát sinh từ chính sản phẩm** |
+
+🔴 **"SÁU" LÀ MỘT PHÂN LOẠI, KHÔNG PHẢI MỘT PHÉP KIỂM ĐẾM — và đây là biên phải đọc trước con số.**
+**Nửa MÃ đóng kín được và tôi đóng nó:** trong `src/` có **đúng MỘT** chỗ dựng
+`OeeSettingsStore` — `Program.cs`, `new St4i.EdgeCore.Historian.OeeSettingsStore(…)`, một singleton DI
+— nên **không có thực thể store thứ hai trong tiến trình**, và *"`Set` là chỗ ghi duy nhất trong sản
+phẩm"* **đóng được**. 🔴 **Nửa VẬN HÀNH thì KHÔNG đóng được từ trong một repo, và lần ghi đầu viết nó
+như thể đóng được.** Sáu hàng dưới đây là **hành động của con người và của hệ điều hành**, không phải
+một tập đọc được từ cây mã. **Ít nhất ba vector cùng hình dạng vắng mặt** khỏi nó — tác nhân **đồng
+bộ/sao lưu file** (OneDrive, DFS-R, backup có khôi phục ngược); **cách ly rồi phục hồi của phần mềm
+diệt virus**; **đẩy cấu hình bằng công cụ quản trị** (GPO/Intune/Ansible) — **và cả ba CÓ làm cặp
+`Loaded/Loaded` xuất hiện**. Nên con số đúng không phải một con số: **"ít nhất sáu, và tập này không
+đóng được từ trong một repo."**
+
+> 📎 **Câu *"Đếm sau khi liệt kê: SÁU đường, BA làm cặp ấy xuất hiện."* ở lần ghi đầu (`840abd57`) —
+> RÚT 2026-08-19 (AI-1, vòng sửa sau phản biện), giữ nguyên văn.** Nó là **một phép LẤY MẪU mặc áo một
+> phép KIỂM ĐẾM** — đúng loài mà tiêu đề của chính mục con này đặt tên, tái phạm **ngay dưới** chỗ nó
+> tự chẩn đoán. Bảng dưới **giữ nguyên** làm một **phân loại**; cái bị rút là **con số phẳng**.
+
+**Đường 6 đáng đọc kỹ nhất và mục này chưa nêu nó:** `OeeSettingsStore` chỉ có **một khoá TRONG TIẾN TRÌNH** (`_gate`) và **không có khoá
+file nào**; `WriteAllTextAtomic` chỉ bảo đảm **không rách**, không bảo đảm **không mất**. Hai tiến
+trình trỏ vào cùng một thư mục historian **đều ghi**, và cặp `Loaded/Loaded` xuất hiện **mỗi lần host
+kia lưu**. README §15.9 nói thẳng rằng gốc dữ liệu riêng **không** giải quyết chuyện dùng chung, và
+rằng cái cần là *"một named mutex, một lockfile, hoặc một kênh đăng ký"*. **AI-1 KHÔNG mở mục mới cho
+việc này** và ghi lại đây vì nó là **đầu vào của quyết định mục 13**, không phải một mục riêng.
+
+**(2) STORE ĐÃ CẦM SẴN CÁI GÌ — ĐO, KHÔNG SUY. Câu trả lời: KHÔNG cần thêm một lần đọc đĩa nào.**
+`Set` lấy `_gate`, rồi gọi `ClassifyLocked()` → `ReadLocked()`, và `ReadLocked` mở đầu bằng
+**`File.ReadAllText(path)`** — **toàn văn file đã nằm trong bộ nhớ, trong cùng một khoá**. Rồi nó
+**VỨT BIẾN `text` ĐI**: `OeeSettingsRead.ForLoaded(path, entries)` mang **`Entries` đã giải tuần tự**,
+**không mang byte gốc**. Đầu kia cũng vậy: `Load()` gọi **cùng** `ClassifyLocked()`. Nên **cả hai đầu
+của phép so đều đã đọc file rồi**; cái thiếu là **một trường để giữ lại**, không phải một cú I/O.
+**Giá I/O thêm của phép so danh tính theo NỘI DUNG: 0.**
+
+**(3) BA ỨNG VIÊN DANH TÍNH — cái nào phân biệt được ca này, và CÁCH HỎNG của từng cái, nêu tên.**
+
+| ứng viên | phân biệt được ca này? | giá | 🔴 **CÁCH NÓ HỎNG** |
+|---|---|---|---|
+| **nội dung** (băm trên `text` đã đọc) | **CÓ** | **0 lần đọc đĩa thêm**; một lần băm trên chuỗi đã có; một trường `string?` trên store | **DƯƠNG TÍNH GIẢ — và đây là giá LỚN NHẤT của ứng viên khả dĩ DUY NHẤT.** Dương tính giả là tính chất **của phép băm NỘI DUNG** (byte đổi ⇒ băm đổi, dù nghĩa không đổi); `WriteIndented = true` **không gây ra** nó, chỉ **nâng xác suất** có người định dạng lại. Một lần **định dạng lại**, đổi **CRLF↔LF**, thêm/bớt **BOM**, hay đổi **thứ tự khoá** ⇒ **409 cho một biên tập HỢP LỆ** — tức **phạt vận hành viên đúng lúc họ làm đúng** |
+| **thời gian sửa** (`mtime`) | **KHÔNG ĐÁNG TIN cho ca này** | một cú **syscall metadata thứ hai** | **ÂM TÍNH GIẢ, và nó bỏ sót đúng ca mục này mở ra:** phần lớn công cụ sao lưu/khôi phục **giữ nguyên timestamp** (`robocopy /COPY:T`, `tar -p`, `xcopy /K`), nên một bản khôi phục có thể mang `mtime` **cũ hơn**. Cộng: **FAT/exFAT có hạt 2 giây**, lệch đồng hồ, và filesystem mạng. 🔴 **Và nó dựng lên đúng loài lỗi mà `Read` của chính lớp này đã bỏ đi**: hỏi **hai bề mặt** một câu hỏi — lớp này đã vứt `File.Exists` vì lý do ấy, đo tại `docs/startup-failure-posture.md` §3.1a |
+| **kích thước** | **KHÔNG** | rẻ nhất | **ÂM TÍNH GIẢ, tầm thường.** Đổi `0.9` thành `0.1`, hoán hai giá trị giữa hai máy, hay đổi một mã máy cùng độ dài đều **giữ nguyên kích thước** ⇒ ghi đè im lặng y như hôm nay |
+
+🔴 **RÀNG BUỘC THI HÀNH ĐÃ ĐO, và bỏ nó ra thì mọi con số ở (4) sai:** danh tính phải được **làm mới
+sau `Save()`**, đúng chỗ và đúng cách mà Z-1 đã làm mới `_status`/`_tableBuiltFrom` ngay sau khi ghi
+(*"A write establishes the same fact a read would"*). Nếu không, `Set` **thứ hai liên tiếp** trên cùng
+một store sẽ so danh tính-lúc-`Load` với file mà **chính `Set` trước đã ghi** ⇒ **409 giả trên mọi cặp
+PUT liên tiếp**. Và arm mới phải đứng **SAU** hai arm sẵn có (`Unreadable`, rồi `Absent`+`Loaded`), vì
+cả hai nói những chuyện khác và thông điệp của chúng đã được bài kiểm giữ từng chữ.
+
+**(4) BAO NHIÊU TEST HIỆN CÓ SẼ ĐỎ — đo bằng cách ĐỌC test. Con số là MỘT, và nó phụ thuộc một lựa
+chọn thiết kế, nên cả hai nhánh được nêu.** Dân số quét: **năm** file **chạm** `OeeSettingsStore` theo
+cách có thể đóng góp — `OeeSettingsStoreTests.cs`, `HistorianEndpointsOeeTests.cs`,
+`OperatorDataRemovalCensusTests.cs` **gọi** `Set`/`PutOeeSettingsAsync`; `HistorianEndpointsPdfTests.cs`
+và `HistorianEndpointsProvenanceTests.cs` **chỉ dựng** store trên thư mục tạm và **không gọi `Set`,
+không ghi đè file**, nên chúng **đóng góp 0**. (Lần ghi đầu viết cả năm là *"file gọi `Set`"* rồi hai
+dòng sau nói hai file cuối không gọi — **nội dung đúng, câu chữ tự mâu thuẫn**; sửa ở đây.)
+
+**Biến thể R — danh tính LÀM MỚI sau `Save`** (ràng buộc ở (3)). Mọi lời gọi `Set` mong **thành công**
+đều rơi vào một trong ba: (i) thư mục sạch, `Absent/Absent`; (ii) ngay sau `Reload()`, nên danh tính
+khớp; (iii) `Set` liên tiếp trên file do chính store vừa ghi, nên danh tính khớp. **Đúng MỘT bài đứng
+ngoài cả ba**, và nó được nêu tên:
+`OeeSettingsStoreTests.Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling`
+— nó ghi file **trước** khi dựng store, ghi **đè bằng nội dung khác** sau đó, rồi gọi `Set` và khẳng
+định entry vừa khôi phục **biến mất**. **⇒ ĐỎ: MỘT.** Và đó **đúng là bài mà mục này đã nêu tên làm
+nhân chứng**: khẳng định của nó **đảo chiều**, và chỗ đảo **chính là diff**.
+
+**Biến thể N — danh tính KHÔNG làm mới sau `Save`.** Thêm mọi bài có **hai `Set` thành công liên tiếp**
+trên **một** thực thể store; đọc hết năm file cho **đúng hai** bài:
+`OeeSettingsStoreTests.Set_PartialUpdate_LeavesUnspecifiedFieldUnchanged` và
+`OeeSettingsStoreTests.Set_TheFirstTimeAfterACleanStart_StillEstablishesTheFile`. **⇒ ĐỎ: BA.**
+🔴 **Biến thể N là một bản thi hành SAI**, và nó được nêu chỉ để con số **1** ở trên có nghĩa: nó là
+**1 với một điều kiện**, không phải 1 vô điều kiện.
+
+**Cái KHÔNG đỏ, và đó là chỗ đáng ghi nhất:** không một bài nào trong bốn arm đã đóng bị chạm —
+`Set_WhenTheFileIsCorruptedAfterConstruction_Refuses_AndLeavesTheOperatorsBytes`,
+`Set_WhenAnUnreadableFileIsRepairedAfterConstruction_StillRefuses_UntilReload`,
+`Set_WhenTheUnreadableFileWasMovedAside_RefusesWithoutClaimingItReadsCorrectly`,
+`Set_AfterReloadingTheFileThatAppeared_LandsOnTopOfIt`,
+`Set_WhenAnEmptyTableFileAppearsAfterTheStoreCameUpWithNone_AlsoRefuses` — tất cả ném **trước** khi
+arm mới có thể chạy, hoặc đi qua `Reload()`. Bên endpoint, `HistorianEndpointsOeeTests` **không có**
+bài nào PUT thành công **hai lần** trên một store: bài hai-PUT duy nhất kết thúc ở arm `Unreadable`.
+
+**CHỖ AI-1 KHÔNG ĐO ĐƯỢC, nêu tên chứ không lấp:**
+- **tỉ lệ `PUT` hợp lệ sẽ thành 409** — nêu ở (0). Không đo được từ cây này; đo được bằng đếm PUT trên
+  một bản triển khai thật, và **không ai đã làm việc ấy**;
+- **tần suất thật của biên tập tay HỢP LỆ so với khôi phục** — hai thứ này trả **cùng một** 409 nhưng
+  **khác nhau về việc vận hành viên có bị bất ngờ không**, và phân bố ấy **chưa ai đo**;
+- **bao nhiêu bản triển khai đang chạy HAI host trên một `ST4I_HISTORIAN_DIR`** (đường 6) — không có
+  trong cây; nếu con số ấy khác 0 thì cặp `Loaded/Loaded` là **thường xuyên**, không phải hiếm, và
+  điều đó đổi hẳn giá của lựa chọn "chặn";
+- **giá tính bằng công của phép so danh tính** — AI-1 **không dựng nó**, nên mọi con số về công là
+  ước lượng và **cố ý không viết ra**.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-19 — **ĐÓNG: STORE PHẢI GHI LẠI DANH TÍNH CỦA CÁC BYTE**
+>
+> **Chủ sở hữu quyết, 2026-08-19, sau khi đọc phép đo của AI-1.** `OeeSettingsStore` phải phân biệt được
+> **"file tôi vừa đọc không phải file tôi dựng bảng từ đó"**, và phải **từ chối** cú ghi trong ca ấy.
+>
+> 🔴 **GIÁ CHỦ SỞ HỮU ĐÃ CHẤP NHẬN, GHI VÀO MỤC, KHÔNG LÀM NHẸ ĐI:** `PUT /v1/historian/oee/settings`
+> sẽ trả **409** ở những lúc hôm nay nó trả **200** — **kể cả khi thứ làm file đổi là một biên tập tay
+> HỢP LỆ**, và kể cả khi nó chỉ là một lần **định dạng lại** cùng nội dung. Vận hành viên trả giá ấy;
+> đó là lý do nó là quyết định của họ, đúng cùng lý do mục 11 đã là quyết định của họ.
+>
+> **Câu KHÔNG đo được vẫn KHÔNG đo được, và không bị lấp:** *"bao nhiêu `PUT` hợp lệ hôm nay sẽ thành
+> 409"* là một tỉ lệ trên lưu lượng sản xuất; nó **không có trong cây này** và phán quyết được ra
+> **mà không có nó**. Cái đo được — cơ chế, và chặn trên **0** trên một máy một host không khôi phục
+> không biên tập tay — đứng nguyên ở §"ĐÃ ĐO" phía trên.
+>
+> 🔴 **Và mục 9 — quyết CÙNG NGÀY, cùng luật §3.6 — đi NGƯỢC CHIỀU: nó NỚI.** Xem khối phán quyết của
+> mục 9 để biết vì sao hai kết cục ấy cùng đứng được: ở đây thứ trên đĩa là **dữ liệu của vận hành
+> viên**; ở mục 9 nó là các byte **không đọc được** và thứ ghi xuống là **lời khai của bản triển khai**.
+
+> ### ✅ ĐÃ THI HÀNH — nhiệm vụ AJ-1 (2026-08-19), `.superpowers/sdd/items-9-13-executed/`
+>
+> 🔴 **CƠ CHẾ DANH TÍNH ĐƯỢC **SUY**, KHÔNG PHẢI CHỌN MỘT TRONG BA — và câu trả lời là KHÔNG DÙNG DẤU
+> HIỆU NÀO CẢ.** Ba ứng viên AI-1 đo (băm nội dung, `mtime`, kích thước) đều là **vân tay**, và một vân
+> tay tồn tại để trả lời *"hai thứ này có giống nhau không"* cho **người không cầm được cả hai vế**.
+> Store này **cầm cả hai**: `ReadLocked` **vẫn luôn** gọi `File.ReadAllText` để lấy `Entries` rồi **vứt
+> chuỗi ấy đi**; nay `Load` **giữ nó lại** (`_tableBuiltFromText`), và phép đọc tươi của chính `Set`
+> sinh ra vế kia — **trong cùng một khoá `_gate`**. Nên phép so là **so hai toa hạng gốc**, và mọi ứng
+> viên là một **hàm hao hụt** của thứ đã nằm trong tay:
+> * **băm** có thể **đụng độ** ⇒ trả lời *"giống nhau"* về hai file khác nhau — đúng câu trả lời gây ghi
+>   đè;
+> * **kích thước** cũng thế, với xác suất lớn hơn nhiều;
+> * **`mtime`** thậm chí **không phải hàm của nội dung**: nó là **một bề mặt THỨ HAI** bị hỏi câu mà
+>   phép đọc đã trả lời — đúng sai lầm mà `Read` của chính lớp này đã vứt `File.Exists` để tránh
+>   (`docs/startup-failure-posture.md` §3.1a) — **và công cụ khôi phục giữ nguyên timestamp**, nên nó
+>   **mù đúng ở ca đang đóng**.
+>
+> **Giá đã đo của cơ chế được chọn: 0 lần đọc đĩa thêm** (đúng như AI-1 đo), **một trường `string?`**,
+> **một phép so ordinal** thoát ở khác biệt đầu tiên — rẻ hơn băm, vốn phải duyệt hết byte.
+>
+> **Ở đâu:** `src/St4i.EdgeCore/Historian/OeeSettingsStore.cs` — `OeeSettingsRead.Text` (internal, nên
+> **bề mặt công khai không rộng ra**), trường `_tableBuiltFromText`, arm thứ ba trong `Set`, và `Save`
+> nay **trả về** văn bản nó vừa ghi.
+>
+> 🔴 **VỊ TỪ GÁC BẰNG **CẶP**, KHÔNG PHẢI BẰNG *"byte khác nhau"* — và đó là chỗ chịu lực.** Arm mới
+> chạy khi `_tableBuiltFrom == Loaded` **VÀ** `fresh.Status == Loaded` **VÀ** byte khác. Cặp còn lại —
+> `Loaded`/`Absent`, file bị bỏ đi sau khi nạp — **cũng** có byte khác, và **chủ sở hữu KHÔNG quyết
+> nó**; gác bằng *"byte khác nhau"* sẽ đóng nó như một tác dụng phụ, tức **nới một vị từ chưa được
+> phán**. Nó **vẫn ghi**, và vẫn là trần, nêu ở §3.6.
+>
+> **Ràng buộc thi hành AI-1 đo, đã tuân:** danh tính được **làm mới ngay sau `Save()`**, cùng chỗ Z-1
+> làm mới `_status`/`_tableBuiltFrom`. Bỏ dòng ấy ⇒ **409 giả trên mọi cặp PUT liên tiếp**; hai bài
+> reddens là `Set_PartialUpdate_LeavesUnspecifiedFieldUnchanged` và
+> `Set_TheFirstTimeAfterACleanStart_StillEstablishesTheFile`, **nêu tên trong chính chú thích ấy**. Arm
+> mới đứng **SAU** hai arm sẵn có, vì thông điệp của chúng bị bài kiểm giữ từng chữ.
+>
+> **Kiểu ngoại lệ:** `OeeSettingsFileChangedException`, dẫn xuất thứ **ba** của
+> `OeeSettingsWriteRefusedException`. Tên phải **đúng với thứ nó khẳng định** (P-2): ở arm này **file
+> đọc hoàn hảo** và nó **không phải** file bảng được dựng từ đó — cả `Unreadable` lẫn `FileAppeared` đều
+> không đúng. 🔴 **Tính chất mà 409 dựa vào được viết lại thành một TÍNH CHẤT, không phải một con
+> số:** chú thích ở `HistorianEndpoints` viết *"đúng HAI kiểu dẫn xuất"* — một số vô hướng phải đếm lại
+> mỗi lần thêm arm. Thứ phản hồi thật sự dựa vào là: **mọi** kiểu dẫn xuất đều do `Set` ném, và ném
+> **TRƯỚC** phần mutate và `Save`. Chỗ `catch` **không đổi** — nó vốn bắt lớp cơ sở.
+>
+> **Nhân chứng — ĐẢO CHIỀU và ĐỔI TÊN:**
+> `OeeSettingsStoreTests.Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling`
+> → **`…_IsRefused_AndTheRestoredBytesSurvive`**. Nó ghim một khuyết tật **đang sống** làm đường cơ sở,
+> đúng cách S-1 làm cho mục 5 và V-1 cho mục 10, **chính là để** ngày đóng nó thì chỗ đảo là diff. Đây
+> là diff ấy. Tên đổi cùng thân: một tên nói *"cái trần đã biết"* trên một thân khẳng định một phép từ
+> chối là **một chuỗi đã công bố đang khẳng định điều sai**.
+>
+> **Và GIÁ được GHIM, chứ không chỉ được viết:** `Set_AfterTheFileIsMerelyReformatted_IsAlsoRefused_AndThatIsTheAcceptedPrice`
+> (bài **[Fact] duy nhất được THÊM** trong nhiệm vụ này, `EXPECT_EDGECORE` 1152 → 1153, biện minh nằm
+> ngay cạnh hằng số). Nó khẳng định rằng cùng một bộ cài đặt được **định dạng lại** cũng bị từ chối —
+> tức **409 cho một vận hành viên không làm gì sai**. 🔴 **Vì sao đó là GIÁ chứ không phải KHUYẾT
+> TẬT:** phép so duy nhất cho một lần định dạng lại đi lọt là phép so trên **bảng đã giải tuần tự**, và
+> phép so ấy có **ÂM TÍNH GIẢ đúng ở ca mục 13 đóng** — `Load` **bỏ qua** entry có machine code rỗng và
+> **gộp** khoá trùng, nên một file khôi phục mang một trong hai sẽ so **BẰNG** với bảng và bị ghi đè,
+> im lặng, y như trước. Một lần định dạng lại bị từ chối tốn một `Reload`; một bản khôi phục bị ghi đè
+> tốn cả bảng cài đặt.
+>
+> **Cùng chỗ đã cập nhật:** chú thích lớp của `OeeSettingsStore`, `HistorianEndpoints.PutOeeSettingsAsync`,
+> và `docs/startup-failure-posture.md` §3.6 (trần thứ nhất **đóng**, trần thứ hai **giữ nguyên**, cộng
+> phép suy cơ chế và giá).
+>
+> **CẶP ĐỐI CHỨNG ĐÃ CHẠY HAI PHÍA, VÀ THEO HAI CÁCH** (kết quả nguyên văn trong báo cáo AJ-1): (i)
+> **`src/` của base `abc6f0ca` + `tests/` của HEAD** — hai bài **ĐỎ** ở base với *"No exception was
+> thrown"*, tức `Set` **thành công và ghi đè**, đúng khuyết tật đang sống; **XANH** ở HEAD; (ii) vô hiệu
+> hoá **đúng biểu thức** của arm mới trên cây HEAD ⇒ cùng hai bài đỏ, bật lại ⇒ 31/31.
+> 🔴 **Vòng đầu của AJ-1 chỉ chạy (ii) và viết rằng (i) *"không dùng được"*; phản biện bác, và bác
+> đúng** — `OeeSettingsWriteRefusedException` **đã có ở base**, nên cặp base/HEAD **có sẵn** và cái chặn
+> nó chỉ là một chi tiết trong **cách viết bài kiểm**, không phải một tính chất của cây base. (i) trả
+> lời *"bài này có bắt được khuyết tật ĐANG SỐNG không"*; (ii) chỉ trả lời *"bài này có phụ thuộc biểu
+> thức này không"*. **Câu thứ nhất mới là câu được đòi.**
+
+---
+
 # PHẦN IV — PHỤ LỤC: KHÔNG PHẢI QUYẾT ĐỊNH CỦA ANH, VÀ LỊCH SỬ CỦA CHÍNH FILE NÀY
 
 Không gì trong phần này đang chờ anh quyết. Nó ở đây vì **xoá thì không được** — và nó
@@ -3425,6 +3678,42 @@ hay nhân chứng:
 8. **Tên `TheRowShapeCheck_GoesRedOnARealProducersOwnSeries_WhenOnlyTheRateHzFieldMoves` lệch nhẹ
    với thân của nó** — ca cuối **nối dài một hàng**, tức không phải *"chỉ trường `RateHz` dịch"*.
    Lệch **thừa hưởng** từ tên cũ (`…WhenOnlyTheDiscriminatorMoves`), không do vòng nào của AA-1 tạo.
+
+---
+
+## Tồn dư của AJ-1 (2026-08-19, vòng phản biện) — GHI, KHÔNG SỬA
+
+Vòng phản biện của AJ-1 phán 🔨 **NHẬN — merge được, KHÔNG có Critical**, và nêu **bốn Minor**. Cả bốn
+được **ghi ở đây và cố ý KHÔNG sửa**: vòng ấy bị giới hạn ở văn xuôi, và ba trong bốn cái **có sẵn từ
+trước AJ-1** — sửa chúng trong một nhiệm vụ thi hành hai phán quyết là nới phạm vi mà không ai phán.
+
+9. 🔴 **`web/src/lib/api.ts` liệt kê CHỈ `400` cho `PUT /v1/historian/oee/settings`, và đây là một bề
+   mặt ĐỌC mà AJ-1 nói đã quét trong khi KHÔNG quét.** Chỗ thiếu: doc comment của
+   `OeeSettingsUpdateInput` (*"a 400 with `{ error }`, surfaced via `OeeSettingsApiError`"*) và của
+   `useSetOeeSettings` (*"A rejected (400) call throws `OeeSettingsApiError`"*) — **không nhắc `409`**.
+   🔴 **Hành vi thì ĐÚNG và tôi kiểm chứ không nhận:** `putOeeSettings` bắt **mọi** `!res.ok`, đọc
+   `body.error`, ném `OeeSettingsApiError(res.status, serverMessage)` — nên thông điệp của store **tới
+   UI nguyên văn**, kể cả 409. Cái sai là **phép liệt kê trong tài liệu**, có sẵn từ Z-1 (mục 11 đã
+   tạo ra 409 đầu tiên), **không do AJ-1 tạo ra** — nhưng AJ-1 làm 409 **thường xuyên hơn hẳn**, nên
+   nó **cũ đi vì AJ-1**. 🔴 **Và điều đáng ghi nhất không phải cái thiếu mà là CÁCH NÓ THOÁT:** brief
+   liệt kê ba bề mặt đọc (`HistorianEndpoints`, census gỡ-bỏ, `startup-failure-posture.md`), báo cáo
+   **chép lại đúng ba cái ấy**, và `web/` **không nằm trên đĩa** (sparse checkout) nên không một phép
+   quét cục bộ nào chạm tới nó. **Một danh sách bề mặt thừa hưởng từ brief đã được dùng như một phép
+   quét đã thực hiện.**
+10. **Không có nhân chứng ĐẦU–CUỐI cho `409` của kiểu mới.** `HistorianEndpointsOeeTests` có ba bài
+    409 nhưng không bài nào cho `OeeSettingsFileChangedException`. Nó **theo sau bằng KIỂU**:
+    `catch (OeeSettingsWriteRefusedException)` bắt lớp cơ sở, và cả **ba** chỗ `throw new OeeSettings…`
+    nằm trong `Set`, **trước** `_settings[machineCode] = updated`. Nên *"không gì được ghi"* là một
+    **tính chất**, không phải một trùng hợp — nhưng nó là **suy ra**, không phải **quan sát**.
+11. **Thông điệp của arm mới nói *"another process writing the same historian directory"*, còn ca các
+    bài kiểm chạy nhiều nhất là hai THỰC THỂ store trong CÙNG tiến trình.** Hành vi đúng cho cả hai;
+    câu chữ hẹp hơn tập. Rất nhỏ.
+12. **Bất biến *"bảng là bản sao trung thành của file"* có một cửa sổ nó sai, và cửa sổ ấy CÓ SẴN từ
+    trước.** Nếu `Save()` ném (đĩa đầy, ACL ở `File.Move`), `_settings` **đã bị mutate** còn file thì
+    chưa đổi và `_tableBuiltFromText` giữ văn bản **cũ** ⇒ lần `Set` sau so **cũ với cũ** ⇒ **bằng** ⇒
+    ghi bảng đã mutate. Kết cục ấy **đúng như mong muốn** (thử ghi lại), nên đây là ghi chú tài liệu
+    chứ không phải khuyết tật. Cùng cửa sổ: một file `.tmp-<guid>` mồ côi có thể ở lại — **có sẵn từ
+    trước AJ-1**.
 
 ---
 

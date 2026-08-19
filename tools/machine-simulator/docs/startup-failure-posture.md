@@ -145,9 +145,13 @@ said otherwise would be making the exact substitution this file exists to stop.
 
 🔴 **Instrument 3 — the five test suites, and what Q-1 pointed at this set with them.** Q-1's own witnesses
 are indexed on **row 36** (`FleetSettingsStoreTests` at the store, and
-`StartupSettingsReplayHardeningTests.AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo`
-through the real composition root) and on **row 18** (`SiteLinkStoreTests`, and
-`SiteEndpointsTests.AMalformedSiteLinkFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo`). The two
+`StartupSettingsReplayHardeningTests.AMalformedSettingsFile_IsOverwrittenByTheEnvironmentFloor_AndTheHostSaysSo`
+through the real composition root — *named `…_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo` until
+owner item 9(b), 2026-08-19, inverted what it asserts; the pointer is re-fitted rather than left dangling,
+because a pointer that resolves to nothing sends a maintainer to an empty place*) and on **row 18**
+(`SiteLinkStoreTests`, and
+`SiteEndpointsTests.AMalformedSiteLinkFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo` — the
+site-link twin, **untouched** by item 9, which is about `fleet-settings.json` only). The two
 composition-root witnesses **observe** rather than derive: each boots `St4i.EngineApi` and issues a request,
 which is precisely the thing instrument 2 states it never does.
 
@@ -249,6 +253,18 @@ end it** is a task authorised to rewrite the posture column, which would mark ro
 change to what an operator observes is the point of it rather than a side effect. The legend still holds of
 every remaining **✗**: none of those is fixed. See §3.1a-now.
 
+🔴 **AND ROWS 36 AND 37 WERE TOUCHED AGAIN ON 2026-08-19 (owner item 9(b), task AJ-1) — THE POSTURE DID NOT
+MOVE AND THE BEHAVIOUR DID, WHICH IS EXACTLY THE PAIR THIS COLUMN CANNOT SHOW ON ITS OWN.** Both are still
+**U ✓**: the host comes up, and the failure is reported at `Error`. What changed is what the arm DOES
+between those two facts — the `ST4I_*` floor is now applied and persisted over the unreadable file instead
+of being withheld. **Both halves of `U` were re-checked for both rows rather than assumed**, because `U` is
+a conjunction and row 18 is this file's own record of a row that satisfied only the first half and was
+recorded compliant for two rounds: row 36's reporting half is measured by
+`StartupSettingsReplayHardeningTests.AMalformedSettingsFile_IsOverwrittenByTheEnvironmentFloor_AndTheHostSaysSo`
+(level asserted, not only text), row 37's by
+`…AnUnactivatablePersistedTriple_StillBootsTheHost_AndReportsItAtErrorLevel`. This says nothing about any
+other `U` row; the residual above is unchanged.
+
 ### 3.1 `St4i.EngineApi` — `Program.cs`, in execution order
 
 | # | Statement | External value | Hides the loss? | Posture | |
@@ -288,8 +304,8 @@ every remaining **✗**: none of those is fixed. See §3.1a-now.
 | 33 | → **`SimulatedEcosystem` ctor + `Load()`** | `ecosystem\*.json` beside the binary | **no** | **S** | **✗ §3.5** |
 | 34 | → `ConnectorRegistry` factory | rows, `connectors.json` | no | **U** per entry (every arm is a `Try*`) | ✓ |
 | 35 | → `FleetCore.ResolveFleet` | `fleet.json`, `--fleet` | no | **U** | ✓ |
-| 36 | `settingsStore.Read()` | `fleet-settings.json` | no | **U** — *fixed by Q-1, see §3.1a-now* | ✓ |
-| 37 | the startup settings replay | that triple | no | **U** — *posture B* | ✓ |
+| 36 | `settingsStore.Read()` | `fleet-settings.json` | no | **U** — *Q-1; what the arm DOES changed by owner item 9(b), 2026-08-19* | ✓ — **both halves checked**, see §3.1a-now |
+| 37 | the startup settings replay | that triple, **or the `ST4I_*` floor on the unreadable arm since 2026-08-19** | no | **U** — *posture B* | ✓ — **both halves checked**, see §3.1a-now |
 | 38 | the seed-arm discard | same file | no | **U** (own try/catch) | ✓ |
 | 39 | `AlarmThresholds.FromEnvironment()` | four `ST4I_ALARM_*` knobs | **yes** | **silent** ×4 | **✗ §3.4** |
 | 40 | `ApplicationStarted` callback — binding notice + `system.startup` audit | bind addresses, `security.db` | no | **U** — *measured*, M-1; see §2 ceiling 3 | ✓ |
@@ -494,11 +510,45 @@ question the read itself could answer, and two surfaces can disagree. The catch 
 than of an enumerated list, deliberately: an enumeration is a closed claim about a set nobody controls, and
 the cost of it being wrong is falling through to the one outcome that licenses an overwrite.
 
-**What the composition root does on `Unreadable`:** it does not replay, so `FleetHost.UpdateSettings` is
-never called, so the `finally` that persists is never reached; it does not enter the discard block, whose
-condition is now `Status == Absent && !replaySucceeded` rather than `!replayRestoredAFile && …`; and it logs
-at **`Error`**, naming the file, saying the file was not applied and was **not overwritten or deleted by
-this start**, and saying the host is up.
+**What the composition root did on `Unreadable` up to 2026-08-19:** it did not replay, so
+`FleetHost.UpdateSettings` was never called, so the `finally` that persists was never reached; it did not
+enter the discard block, whose condition is `Status == Absent && !replaySucceeded` rather than
+`!replayRestoredAFile && …`; and it logged at **`Error`**, naming the file, saying the file was not applied
+and was **not overwritten or deleted by this start**, and saying the host is up.
+
+🔨 **THE FIRST HALF OF THAT IS NO LONGER TRUE — owner decision item 9, option (b), 2026-08-19, executed by
+task AJ-1.** The sentence is kept rather than rewritten in place because it describes what the product did
+for the whole life of Q-1's fix, and because the paragraph below it — the COST — is what the owner decided
+on. What changed, exactly:
+
+- **the replay now runs on this arm.** The guard `settingsRead.Status != Unreadable &&` is gone. On this arm
+  `FleetSettingsRead.ForUnreadable` carries no `Settings`, so `initialSettingsRequest` was already the
+  `ST4I_*` floor — which is why (b) is one deleted expression and **not** a second call site, and why
+  `StartupSettingsReplayHardeningTests.TheStartupReplayHasExactlyOneArm_…` stays green through it. That
+  census counts source text; it was never the instrument for this change, and reading its silence as
+  approval would be reading an instrument outside its domain.
+- **so the `finally` that persists IS reached**, whenever at least one `ST4I_*` variable is set — that is
+  `rebuildNeeded`, and with none of the three set nothing is applied and nothing is written, which is a real
+  second arm rather than a corner case.
+- **the file is overwritten IN PLACE.** `FleetSettingsStore.Save` is temp-file-then-rename over the same
+  path. 🔴 **The old bytes are NOT moved aside and NOT deleted**, and that is a boundary rather than an
+  omission: the data-MOVE exemption the owner granted at **item 10** applies to item 10 alone. An in-place
+  overwrite was decided; moving was not asked for and was not taken.
+- **the discard block is untouched** and still cannot be entered from this arm — its condition is `Absent`.
+  🔴 **What that leaves open, named rather than discovered later:** if the floor is written and then fails to
+  activate, this arm has no equivalent of the seed arm's discard, so the file it just wrote survives and wins
+  over the env vars from the next boot. Closing that would need a **second deleter** in `src/`, which the
+  census above pins at exactly one and which the decision did not authorise. It is the ceiling of item 9's
+  execution.
+- **the `Error` line says the opposite thing, and there are now two of them** — one for "a floor exists and
+  is being written over this file", one for "no floor is set, so nothing is applied and nothing is written".
+  A single sentence cannot be true of both, which is the same reason `OeeSettingsStore` carries three
+  refusal messages rather than one.
+- **the seed arm's remedy sentence was also falsified and is also fixed.** It read *"NO settings file
+  existed before this start"* and was selected by *"there is no persisted triple"* — true on `Absent` **and**
+  on `Unreadable`. It is now selected by the read outcome, and the `Unreadable` arm has its own sentence.
+  Two published strings, one commit; finding only the first would have left the second wrong in the same
+  boot.
 
 **All four measured harms are answered by that one change, and the argument is checkable rather than
 asserted.** The overwrite is answered directly: no replay, no `Save`. The three deletions are answered
@@ -507,11 +557,15 @@ because every one of them is gated on reaching the **seed arm**, and the seed ar
 strictly one-directional (`Absent` implies the old `!replayRestoredAFile`, never the reverse), so no arm
 that used to be excluded is now included.
 
-**What it costs, stated rather than glossed.** A host with an unreadable settings file comes up on
-`FleetHost`'s built-in defaults and does **not** apply the `ST4I_*` floor either — FF-1's precedence says
-the file wins whenever there is one, and there is one; applying the floor would report a triple to the
-operator that they never set. `GET /v1/settings` therefore reports the defaults, truthfully, as what this
-process holds. That is the same honest divergence the failed-restore arm already carries.
+**What it cost up to 2026-08-19, stated rather than glossed.** A host with an unreadable settings file came
+up on `FleetHost`'s built-in defaults and did **not** apply the `ST4I_*` floor either — FF-1's precedence
+says the file wins whenever there is one, and there is one; applying the floor would report a triple to the
+operator that they never set. `GET /v1/settings` therefore reported the defaults, truthfully, as what that
+process held. That is the same honest divergence the failed-restore arm still carries.
+
+🔨 **The owner weighed that cost against the other one and chose the other way (item 9(b), 2026-08-19).**
+`GET /v1/settings` on this arm now reports the floor, because the floor is what the process is running on.
+The divergence above is gone from this arm and the loss below has replaced it.
 
 🔴 **Where it is visible, and where it deliberately is not.** The boot line at `Error` reaches the console
 and, under `AddWindowsService`, the Windows Event Log — the channel that matters for the headless install,
@@ -524,14 +578,22 @@ implementation detail — recorded here rather than taken.
 **What witnesses it.** `FleetSettingsStoreTests` asserts the three outcomes at the store, with the
 unreadable population asserted **member by member** (malformed, empty, legal-JSON-yielding-nothing, and a
 `FileShare.None` handle) rather than through one example — the same "written from one member, stated about
-the population" failure this entry records twice against its own earlier rounds. The end-to-end witness is
+the population" failure this entry records twice against its own earlier rounds. The end-to-end witness was
 `StartupSettingsReplayHardeningTests.AMalformedSettingsFile_SurvivesAnOrdinarySuccessfulStart_AndTheHostSaysSo`,
 which boots the real composition root over a hand-malformed file with the env floor set and reads the bytes
 back off disk. **It was run at `dd4a3e68` as well as after the fix**: at the base commit the file on disk
-is the environment floor and the operator's bytes are gone; after it, the bytes are byte-for-byte intact.
+was the environment floor and the operator's bytes were gone; after it, the bytes were byte-for-byte intact.
+
+🔨 **That witness is now `…_IsOverwrittenByTheEnvironmentFloor_AndTheHostSaysSo` and asserts the opposite,
+by decision (AJ-1, 2026-08-19).** The rename is not cosmetic: a test called *Survives…* whose body asserts
+the file was overwritten is a published string asserting something false, in the place a reader goes to
+find out what the product does. It still reads the FILE rather than `Load()` — `Load()` answers null for a
+malformed file and would pass whether the file were intact, rewritten or deleted — and it now also asserts
+the boundary (the directory holds exactly one file afterwards: nothing was renamed aside) and the ABSENCE
+of the falsified seed sentence anywhere in the boot's log.
 
 **What it costs, second half, because the first statement of it was one-sided.** The `ST4I_*` floor is
-**operator-supplied configuration too**, not a value the process invented, and this arm now declines to
+**operator-supplied configuration too**, not a value the process invented, and this arm used to decline to
 apply it in memory as well as on disk. Both directions have to be said: for the FILE, refusing the floor is
 strictly safer — applying it means `UpdateSettings` persists it, and persistence is the loss. For the
 RUNNING MACHINE it can be worse — a headless install whose settings file has gone unreadable comes up on
@@ -543,6 +605,38 @@ That is a change to `FleetCore.UpdateSettings`' contract, shared by `PUT /v1/set
 as **item 9 on `docs/owner-decisions.md`** rather than taken here. *(Fix round 2, review N5: this sentence
 previously said "recorded as an owner decision" while that file recorded no such item — a cross-reference
 that did not resolve. It was made true rather than deleted.)*
+
+🔨 **DECIDED 2026-08-19: option (b), APPLY AND PERSIST — and the apply-without-persisting path (option (c))
+was NOT taken, so `FleetCore.UpdateSettings`' contract is UNCHANGED.** That is the part of the paragraph
+above worth reading twice, because it is where a reader would expect the change to be and it is not there.
+(c) would have needed a new public surface on `FleetCore` and a second entrance into the apply path; (b)
+needed neither, because the persistence it produces is the persistence `UpdateSettings` already performs
+for `PUT /v1/settings`. What the decision changes is **which arm of the composition root calls it**.
+
+🔴 **AND THE TENSION WITH FIVE EARLIER DECISIONS, RECORDED HERE AS WELL AS AT ITEM 9, BECAUSE A READER WHO
+ARRIVES THROUGH THIS FILE MUST NOT HAVE TO TAKE IT ON TRUST.** Items **1, 5, 8, 10 and 11** all ruled the
+other way at the same shape — *do not write over bytes this process could not read* — and §3.6's law says a
+read must distinguish *nothing here* from *something here I cannot use*, with only the first licensing a
+write. Item 9(b) licenses a write on the second. The reading under which both stand: in those five, the
+bytes overwritten are the **operator's own data** and the value written is one the **process invented**
+(an empty OEE table, a default site record, a re-minted key). Here the value written is the deployment's
+own declared configuration arriving through `ST4I_*` — the process **restores a declared value** rather
+than inventing one. **That is the owner's reading and it was taken with the conflict in front of him**;
+this file records both halves so a later reader can check it rather than guess.
+
+🔴 **TWO THINGS THAT READING DOES NOT DO, SAID HERE BECAUSE THE PARAGRAPH WOULD OTHERWISE BE READABLE AS AN
+ALL-CLEAR.** First: it does not make item 9(b) **comply** with the sentence above. The law's second clause
+speaks about *persisting*, in as many words, and (b) persists on the arm that clause excludes. The conflict
+is **decided, not dissolved**. Second: a weaker escape was checked and it **does not hold**. One could argue
+that §3.6's law governs only *whether a read may CONFLATE the two cases* — which (b) does not do; the read
+still answers three outcomes and the composition root branches on all three, with its own `Error` line for
+the third — and that what a caller then does with a correctly-distinguished outcome is §1's business, which
+§3.6 itself says where it states where the law is not enough on its own. **That reading fails on the law's
+own second sentence**, which is about the caller's entitlement to establish a value *and persist it*, not
+only about the read. So the owner's reading is the only one on offer, and the whole weight of it sits on
+what *"a value of its own"* means. **What this task does NOT change is the law's TEXT** — a task executing a
+decision does not amend the rule the decision runs against — and item 13, decided the same day, **tightens**
+that same law at `OeeSettingsStore` (see §3.6).
 
 ### 3.1b — the same defect at `site-link.json`, and it was WORSE (fixed by Q-1's fix round)
 
@@ -884,12 +978,14 @@ reason this section exists.
 
 🔨 **REFUSED SINCE TASK Z-1 (owner decision item 11, 2026-08-18).** `Set` raises
 `OeeSettingsFileAppearedException` on exactly that pair, `PUT /v1/historian/oee/settings` answers **409**,
-and `Reload` (in production, a restart) is the way out. The store now has **two** refusal types over a shared
+and `Reload` (in production, a restart) is the way out. The store gained a second refusal type over a shared
 base, `OeeSettingsWriteRefusedException`, which the endpoint catches; a second arm was needed rather than a
 wider message because on this one **the file reads perfectly**, and a published type named *Unreadable*
 saying otherwise is a name asserting something false. **First boot is kept by the second fact rather than by
 an exemption**: a clean start leaves the fresh read `Absent` too, so the pair does not match and the write
-proceeds.
+proceeds. *(A third derived type arrived with item 13 on 2026-08-19 — see below. This sentence said "the
+store now has **two**", a count of a set a later decision could move, and it is stated as history rather
+than re-fitted.)*
 
 🔴 **AND THE CEILING NOW, STATED AT ITS FULL SIZE BECAUSE THIS SECTION HAS BEEN CORRECTED TWICE FOR STATING
 ONE TOO SMALL.** The decided predicate closes the restore that lands on a host which came up with **no
@@ -921,6 +1017,53 @@ Z-1's own report said the opposite of what Z-1 published here. Items 8 and 10 �
 than filled: nobody has measured how many legitimate `PUT`s today would become `409` under a store that
 compares byte IDENTITY rather than read OUTCOME, and an estimate placed there would read as a measurement.
 The words are kept and the error is marked.
+
+🔨 **THE FIRST OF THE TWO IS NOW CLOSED — OWNER DECISION ITEM 13, 2026-08-19, EXECUTED BY TASK AJ-1.** The
+prediction one paragraph up is what happened: the assertion inverted, and the inversion is that task's diff.
+The test is now
+`OeeSettingsStoreTests.Set_AfterARestoreOntoAHostThatCameUpWithAFile_IsRefused_AndTheRestoredBytesSurvive`
+— renamed with its body, because a name saying *"the known ceiling"* over a body asserting a refusal is a
+published string asserting something false. `Set` raises a third refusal type,
+`OeeSettingsFileChangedException`, over the same base, and `PUT /v1/historian/oee/settings` answers **409**.
+
+**The identity mechanism, and it was DERIVED rather than chosen from the three candidates AI-1 measured.**
+Those three — a content hash, an `mtime`, a length — are all **fingerprints**, and a fingerprint exists to
+answer *"are these the same"* for someone who cannot hold both operands. This store holds both. `ReadLocked`
+has always called `File.ReadAllText` to reach the entries and then **dropped that string on the floor**;
+`Load` now keeps it, and `Set`'s own fresh read produces the other one, inside the same lock. So the
+comparison is over the operands themselves and every candidate is a lossy function of something already in
+hand: a hash can collide and answer *"same"* about two different files, which is the answer that overwrites;
+a length does the same far more often; an `mtime` is not a function of the content at all but a **second
+surface asked a question the read answers** — the exact mistake this store's `Read` discarded `File.Exists`
+for (§3.1a) — and restore tools preserve timestamps, so it is blind at the one case being closed. Cost:
+**zero extra disk reads**, one `string?` field, one ordinal compare that exits at the first difference.
+
+🔴 **The price, which the owner accepted with the decision and which is therefore recorded and not
+softened.** The comparison is over BYTES, so a file that was merely **reformatted** — re-indented, CRLF↔LF,
+a BOM added, keys reordered — is refused too: a **409 where a 200 stood, charged to an operator who did
+nothing wrong**. It is a price and not a defect because the only comparison that lets a reformat through is
+one over the PARSED table, and that one has a false NEGATIVE at exactly the case item 13 closes — `Load`
+skips entries with an empty machine code and collapses duplicates, so a restored file carrying either would
+compare EQUAL and be overwritten silently. A refused reformat costs a `Reload`; an overwritten restore costs
+the settings. Pinned by
+`OeeSettingsStoreTests.Set_AfterTheFileIsMerelyReformatted_IsAlsoRefused_AndThatIsTheAcceptedPrice`, so a
+later round that "improves" the comparison reddens and has to say so.
+
+🔴 **AND THE CEILING NOW, WHICH IS THE SECOND PAIR AND IS UNCHANGED.** `_tableBuiltFrom == Loaded` **and**
+`fresh.Status == Absent` still writes. AJ-1's arm is gated on the PAIR `Loaded/Loaded` and **not** on *"the
+bytes differ"*, deliberately: gating on the difference alone would have closed this second pair as a side
+effect, and that is widening a predicate the owner did not decide. Beyond both pairs there is a thing no
+predicate here reaches at all — **this store has no FILE lock**, only an in-process `_gate`, so two hosts on
+one `ST4I_HISTORIAN_DIR` both write and `WriteAllTextAtomic` prevents a torn file rather than a lost one.
+AJ-1's arm makes that collision **audible** on the second host's next `Set` instead of silent, which is a
+report and not a fix; README §15.9 states the shape and what would close it.
+
+🔴 **The `409`-response property was restated as a PROPERTY rather than as a count, and that is a change to
+`HistorianEndpoints` prose worth naming.** It read *"exactly two types derive from that base"* — a scalar
+that has to be re-counted every time an arm is added and that says nothing about the thing the response
+actually depends on. What the response asserts is *"nothing was written"*, and what makes that true is that
+**every** type deriving from `OeeSettingsWriteRefusedException` is raised by `Set`, and raised **before** the
+mutation and the `Save`. The catch did not move — it already caught the base.
 
 #### The two exceptions, and what each one costs
 

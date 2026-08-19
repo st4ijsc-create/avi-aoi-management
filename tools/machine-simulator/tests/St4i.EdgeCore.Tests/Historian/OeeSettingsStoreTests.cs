@@ -579,18 +579,23 @@ public sealed class OeeSettingsStoreTests : IDisposable
         Assert.Equal("[]", File.ReadAllText(path));
     }
 
-    /// <summary>🔴 <b>The ceiling, measured rather than described.</b> The predicate the owner decided
-    /// closes the restore that lands on a host which came up with NO file. The same restore onto a host
-    /// that came up with a file still writes: both readings are <c>Loaded</c>, and nothing in this store
-    /// records the IDENTITY of the bytes the table was built from, so it cannot tell that the file it
-    /// just read is not the file it built from.
+    /// <summary>🔴 <b>Task AJ-1 — THE CEILING V-1 AND Z-1 BOTH NAMED IS CLOSED, on the owner's decision of
+    /// 2026-08-19 (item 13), and THIS ASSERTION IS WHERE THE CLOSURE IS VISIBLE.</b> Until that decision
+    /// this test was named <c>…_StillOverwritesIt_AndThatIsTheKnownCeiling</c> and asserted the opposite of
+    /// what it asserts now: that the restored entry <b>disappeared</b>. It pinned a LIVE defect as a
+    /// baseline, the way S-1 pinned item 5's, precisely so that closing it would show up as an inversion in
+    /// somebody's diff rather than as a new file nobody can compare against. This is that diff.
     ///
-    /// <para>This asserts the LIVE residue on purpose, the way S-1 pinned item 5's defect as a baseline:
-    /// if a later task closes it, this assertion inverts and the inversion is that task's diff. It is
-    /// named in <c>OeeSettingsStore</c>'s own class comment and in
-    /// <c>docs/startup-failure-posture.md</c> §3.6.</para></summary>
+    /// <para>🔴 <b>The name moved with the body, and that is not cosmetic (P-2).</b> A test whose name says
+    /// <i>"the known ceiling"</i> while its body asserts a refusal is a published string asserting something
+    /// false, in the one place a reader looks to find out what is still open. The old name is recorded here
+    /// rather than only in a commit message.</para>
+    ///
+    /// <para>Both reads succeed — this is not the unreadable arm and not the file-appeared arm. What the
+    /// store can now tell is that the BYTES on disk are not the bytes its table was built from, because
+    /// <c>ReadLocked</c> keeps the text it had always read and thrown away.</para></summary>
     [Fact]
-    public void Set_AfterARestoreOntoAHostThatCameUpWithAFile_StillOverwritesIt_AndThatIsTheKnownCeiling()
+    public void Set_AfterARestoreOntoAHostThatCameUpWithAFile_IsRefused_AndTheRestoredBytesSurvive()
     {
         var dir = NewTempDir();
         var path = Path.Combine(dir, "oee-settings.json");
@@ -601,13 +606,77 @@ public sealed class OeeSettingsStoreTests : IDisposable
 
         // The very same operator action as the test above — a backup restored on a running host — only
         // this host had a file when it started.
-        File.WriteAllText(path, "[ { \"machineCode\": \"RESTORED-ONLY\", \"plannedProductionRatio\": 0.25 } ]");
+        const string Restored = "[ { \"machineCode\": \"RESTORED-ONLY\", \"plannedProductionRatio\": 0.25 } ]";
+        File.WriteAllText(path, Restored);
 
-        store.Set("AT-BOOT", null, 0.1);
+        // The read is fine, which is why neither earlier arm sees this and why closing it needed a decision.
+        Assert.Equal(OeeSettingsReadStatus.Loaded, store.Read().Status);
 
-        // The restored entry is gone: the table written back is the one built at construction.
-        Assert.DoesNotContain("RESTORED-ONLY", File.ReadAllText(path), StringComparison.Ordinal);
-        Assert.Contains("AT-BOOT", File.ReadAllText(path), StringComparison.Ordinal);
+        var refusal = Assert.Throws<OeeSettingsFileChangedException>(() => store.Set("AT-BOOT", null, 0.1));
+        Assert.Equal(path, refusal.FilePath);
+        Assert.IsAssignableFrom<OeeSettingsWriteRefusedException>(refusal);
+        Assert.Contains("oee-settings.json", refusal.Message, StringComparison.Ordinal);
+
+        // 🔴 Byte for byte, and this is the assertion that inverted: it used to say the restored entry was
+        // GONE and the pre-restore table was on disk.
+        Assert.Equal(Restored, File.ReadAllText(path));
+        Assert.DoesNotContain("AT-BOOT", File.ReadAllText(path), StringComparison.Ordinal);
+
+        // Nothing beside it either — the atomic write's temp file is created by Save, which was never
+        // reached.
+        Assert.Equal(new[] { "oee-settings.json" },
+            Directory.GetFiles(dir).Select(Path.GetFileName).OrderBy(f => f, StringComparer.Ordinal).ToArray());
+
+        // The documented way out is the same one every other refusal here has, and it must still work —
+        // otherwise "refuses" would be indistinguishable from "is now permanently unwritable".
+        store.Reload();
+        Assert.Equal(0.1, store.Set("AT-BOOT", null, 0.1).PlannedProductionRatio);
+        Assert.Equal(0.25, store.Resolve("RESTORED-ONLY", 1.0).PlannedProductionRatio);
+    }
+
+    /// <summary>🔴 <b>THE PRICE THE OWNER ACCEPTED WHEN HE DECIDED ITEM 13, PINNED SO IT CANNOT CHANGE
+    /// SILENTLY IN EITHER DIRECTION.</b> The comparison is over the file's BYTES, so a file that was merely
+    /// REFORMATTED — same settings, re-indented, keys reordered — is refused too. That is a <c>409</c> at a
+    /// moment that answered <c>200</c> before, charged to an operator who did nothing wrong, and the
+    /// decision was taken with that written down.
+    ///
+    /// <para><b>Why the alternative is worse, which is what makes this a price rather than a defect.</b> The
+    /// only comparison that lets a reformat through is one over the PARSED table, and that one has a false
+    /// NEGATIVE at the case item 13 exists to close: <c>Load</c> skips entries whose machine code is empty
+    /// and collapses duplicates, so a restored file carrying either would compare EQUAL to the in-memory
+    /// table and be overwritten — silently, exactly as before. A refused reformat costs a <c>Reload</c>; an
+    /// overwritten restore costs the settings.</para></summary>
+    [Fact]
+    public void Set_AfterTheFileIsMerelyReformatted_IsAlsoRefused_AndThatIsTheAcceptedPrice()
+    {
+        var dir = NewTempDir();
+        var path = Path.Combine(dir, "oee-settings.json");
+        File.WriteAllText(path, "[{\"machineCode\":\"M1\",\"plannedProductionRatio\":0.9}]");
+
+        var store = new OeeSettingsStore(dir);
+        Assert.Equal(0.9, store.Resolve("M1", 1.0).PlannedProductionRatio);
+
+        // The SAME settings, spelled differently: whitespace, indentation, and the two properties in the
+        // other order. Nothing an operator would call a change.
+        const string Reformatted =
+            "[\n  {\n    \"plannedProductionRatio\": 0.9,\n    \"machineCode\": \"M1\"\n  }\n]";
+        File.WriteAllText(path, Reformatted);
+
+        // The store agrees it is the same settings — the entries parse to the same table…
+        var read = store.Read();
+        Assert.Equal(OeeSettingsReadStatus.Loaded, read.Status);
+        var entry = Assert.Single(read.Entries!);
+        Assert.Equal("M1", entry.MachineCode);
+        Assert.Equal(0.9, entry.PlannedProductionRatio);
+
+        // …and refuses anyway, because it compares the bytes and cannot be given the ability to tell this
+        // apart from a restore without losing the ability to see a restore at all.
+        Assert.Throws<OeeSettingsFileChangedException>(() => store.Set("M1", null, 0.4));
+        Assert.Equal(Reformatted, File.ReadAllText(path));
+
+        // And the way out is the documented one, which is what keeps the price bounded.
+        store.Reload();
+        Assert.Equal(0.4, store.Set("M1", null, 0.4).PlannedProductionRatio);
     }
 
     /// <summary>A repaired file is readable again by the same instance — the status is a property of the

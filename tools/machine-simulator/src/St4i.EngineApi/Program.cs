@@ -1958,8 +1958,21 @@ var initialSettingsRequest = persistedSettings is not null
         Language: null,
         MachineCode: string.IsNullOrWhiteSpace(initialLiveMachineCode) ? null : initialLiveMachineCode);
 
-// 🔴 TASK Q-1 — THE THIRD ARM. Nothing is applied, nothing is written, nothing is deleted, and the fact is
-// put where somebody reads it.
+// 🔴 TASK AJ-1 — WHETHER THERE IS AN ENVIRONMENT FLOOR AT ALL, AND IT SELECTS BETWEEN THE TWO SENTENCES
+// BELOW. It is `FleetCore.UpdateSettings`' own `rebuildNeeded` evaluated one statement early: that method
+// commits — and therefore persists — only when at least one of the three fields is non-null. On the
+// Unreadable arm `persistedSettings` is null, so this triple IS the `ST4I_*` floor, and this predicate is
+// exactly "is there a floor to apply". `Language` is excluded for the same reason `UpdateSettings` excludes
+// it: it does not set `rebuildNeeded`, so it neither applies nor persists anything. It is DERIVED from the
+// request rather than re-read from the environment, so it cannot drift from what is actually replayed.
+var envFloorHasAValue = initialSettingsRequest.ServerUrl is not null
+                     || initialSettingsRequest.MachineCode is not null
+                     || initialSettingsRequest.VerifyTls is not null;
+
+// 🔴 TASK Q-1 — THE THIRD ARM, AND 🔴 TASK AJ-1 CHANGED WHAT IT DOES ON THE OWNER'S DECISION OF 2026-08-19
+// (item 9 of docs/owner-decisions.md, option (b): APPLY THE FLOOR AND PERSIST IT). Q-1 applied nothing,
+// wrote nothing and deleted nothing here; the owner weighed that against a headless install coming up on
+// `DefaultServerUrl = ""` while its service definition supplied a triple, and decided the floor wins.
 //
 // WHO HAS TO SEE THIS, answered rather than assumed. The deployment this defect destroys data on is the
 // headless Windows-Service install — the one with no UI. `LogError` is the channel that reaches it: this
@@ -1973,22 +1986,47 @@ var initialSettingsRequest = persistedSettings is not null
 // applied. A field naming this condition on the operating surface is worth having and is somebody's
 // decision, not this task's.
 //
-// THE MESSAGE'S SCOPE, because a data-preservation claim has to carry one: it says the file was not
-// overwritten and not deleted BY THIS START, which is exactly what the code above guarantees — the replay is
-// skipped, so FleetHost.UpdateSettings is never called, so the `finally` that persists is never reached, and
-// the discard block below cannot select this arm. It says nothing about later: a PUT /v1/settings will
-// overwrite the file, and that is the remedy rather than a loss.
-if (settingsRead.Status == FleetSettingsReadStatus.Unreadable)
+// 🔴 THE MESSAGE'S SCOPE, BECAUSE A DATA-PRESERVATION CLAIM HAS TO CARRY ONE — AND IT NOW HAS TO CARRY THE
+// OPPOSITE CLAIM, WHICH IS WHY THERE ARE TWO SENTENCES AND NOT ONE. Until AJ-1 this said the file "was NOT
+// overwritten or deleted by this start", which was exactly what the skipped replay guaranteed. Under (b)
+// that sentence is FALSE on the arm it was written for, and a preservation promise that has gone false is
+// the worst shape a log line can take. It cannot be repaired by softening: the two cases genuinely differ.
+//   * NO floor set — `rebuildNeeded` is false, so `UpdateSettings` skips the whole `if`, so the `finally`
+//     that persists is never reached: nothing is applied and nothing is written, exactly as before.
+//   * A floor IS set — it is applied and the `finally` writes it OVER these bytes. The message says so in
+//     the future tense on purpose: this line is emitted before the replay runs, and the one thing that can
+//     still stop the write is the write itself failing, which emits its own STARTUP SETTINGS REPLAY FAILED
+//     line carrying the exception. Claiming a completed outcome here would be claiming a thing still in
+//     motion.
+// Neither sentence says anything about later: a PUT /v1/settings will overwrite the file, and that is the
+// remedy rather than a loss.
+if (settingsRead.Status == FleetSettingsReadStatus.Unreadable && envFloorHasAValue)
+{
+    app.Logger.LogError(
+        settingsRead.Failure,
+        "STARTUP SETTINGS FILE COULD NOT BE READ — \"{SettingsFile}\" is present and this start could not " +
+        "turn it into settings ({Reason}). ITS CONTENT IS BEING OVERWRITTEN BY THIS START, on the owner's " +
+        "decision of 2026-08-19 (item 9 of docs/owner-decisions.md): the ST4I_SERVER_URL/" +
+        "ST4I_MACHINE_CODE/ST4I_VERIFY_TLS environment floor is applied instead and then persisted over " +
+        "this file, so the unreadable bytes stop being the record of what was configured here. If those " +
+        "bytes matter they must come from a backup — this start does not keep a copy of them. The host is " +
+        "UP and every endpoint works, the Live transport is rebuilt from the floor, and GET /v1/settings " +
+        "reports the values this process is actually running on.",
+        settingsRead.FilePath,
+        settingsRead.Reason);
+}
+else if (settingsRead.Status == FleetSettingsReadStatus.Unreadable)
 {
     app.Logger.LogError(
         settingsRead.Failure,
         "STARTUP SETTINGS FILE COULD NOT BE READ — \"{SettingsFile}\" is present and this start could not " +
         "turn it into settings ({Reason}). It was NOT applied, and it was NOT overwritten or deleted by " +
-        "this start: unreadable content is the only remaining record of what was configured here, so the " +
-        "environment floor was deliberately NOT written over it. The host is UP and every endpoint works; " +
-        "the Live transport was NOT rebuilt, and GET /v1/settings reports the values this process is " +
-        "actually running on. Repair or move the file aside and restart, or set the values with " +
-        "PUT /v1/settings.",
+        "this start — NOT because the file is protected, but because no ST4I_SERVER_URL/" +
+        "ST4I_MACHINE_CODE/ST4I_VERIFY_TLS is set, so there is no environment floor to apply and nothing " +
+        "to write. Set any one of them and the next start WILL overwrite this file (owner decision item 9, " +
+        "2026-08-19). The host is UP and every endpoint works; the Live transport was NOT rebuilt, and " +
+        "GET /v1/settings reports the values this process is actually running on. Repair or move the file " +
+        "aside and restart, or set the values with PUT /v1/settings.",
         settingsRead.FilePath,
         settingsRead.Reason);
 }
@@ -2141,16 +2179,48 @@ static bool TryReplayStartupSettings(
 
 var replayRestoredAFile = persistedSettings is not null;
 
-// 🔴 TASK Q-1 — the short-circuit IS the fix, and it is written this way rather than as a second call site
-// because the replay helper below must keep exactly ONE call in this file: a second replay arm goes through
+// 🔴 TASK Q-1 — the helper below must keep exactly ONE call in this file: a second replay arm goes through
 // UpdateSettings, which persists in a `finally`, which is how branch review C1 destroyed the operator's file
 // the first time. StartupSettingsReplayHardeningTests counts that from src/ — and it counted THIS PARAGRAPH
 // when the sentence above spelled the helper's name followed by an open parenthesis, which is worth leaving
 // on the record: the census reads TEXT and cannot tell a comment from a call, that ceiling is stated in its
 // own doc, and the answer is to write the prose differently rather than to teach it to skip comments.
-// On the Unreadable arm this leaves replaySucceeded false with no replay having run — which is correct in
-// itself and is ALSO why the discard block below can no longer be entered from here; see its condition.
-var replaySucceeded = settingsRead.Status != FleetSettingsReadStatus.Unreadable && TryReplayStartupSettings(
+//
+// 🔴 TASK AJ-1 — Q-1's SHORT-CIRCUIT IS GONE, ON THE OWNER'S DECISION OF 2026-08-19 (item 9, option (b)),
+// AND THE SHAPE OF THAT REMOVAL IS THE POINT. The guard read `settingsRead.Status != Unreadable &&`. On the
+// Unreadable arm `FleetSettingsRead.ForUnreadable` carries no Settings, so `persistedSettings` is null, so
+// `initialSettingsRequest` above is ALREADY the ST4I_* floor — which means (b) is executed by DELETING one
+// expression, with no new call site, and the one-call census above therefore does NOT move. That is worth
+// saying out loud rather than leaving to be rediscovered: the census still holds the property it was built
+// for (no second arm that persists a triple behind the operator's back), and it was never going to be the
+// instrument that saw this change. The instrument that sees it is a BEHAVIOUR test —
+// StartupSettingsReplayHardeningTests.AMalformedSettingsFile_IsOverwrittenByTheEnvironmentFloor_AndTheHostSaysSo
+// — which asserts the FILE's bytes and the response, and therefore cannot be satisfied by writing this
+// differently.
+//
+// WHAT THIS COSTS, STATED RATHER THAN GLOSSED, BECAUSE IT RUNS AGAINST FIVE EARLIER DECISIONS (1, 5, 8, 10,
+// 11) THAT ALL FORBADE WRITING OVER BYTES THIS PROCESS COULD NOT READ. The reconciling reading, recorded at
+// item 9 with its date: in those five the bytes overwritten were the OPERATOR'S OWN DATA and the value
+// written was one this process INVENTED. Here the value written is the deployment's own declared
+// configuration, arriving through ST4I_* — the process restores a declared value rather than inventing one.
+// That is the owner's reading and not this task's; the tension is recorded next to it so a later reader can
+// check it instead of guessing.
+//
+// The discard block further down is UNCHANGED and still cannot be entered from this arm: its condition is
+// `Status == Absent`, and Absent is not Unreadable. That is deliberate and is the boundary this task was
+// forbidden to cross — an in-place overwrite was decided; MOVING or DELETING the old bytes was not.
+//
+// 🔴 AND ONE CONSEQUENCE OF DELETING THE GUARD THAT IS NOT ABOUT THE FILE AT ALL, WRITTEN DOWN BECAUSE
+// "nothing else changed on that arm" IS A CLAIM ABOUT A SET AND WHAT WAS MEASURED IS A POINT.
+// On the Unreadable arm with NO ST4I_* set, the observable effect is the same as before this task — nothing
+// is applied and nothing is written, because `rebuildNeeded` stays false. But the CONTROL FLOW is not the
+// same: the guard used to short-circuit the call away entirely, and now `TryReplayStartupSettings` really
+// runs, `UpdateSettings(null, null, null, null)` does not throw, and `replaySucceeded` therefore moves from
+// `false` to TRUE on that arm. That is harmless TODAY, and only for one checkable reason: `replaySucceeded`
+// has exactly one reader — the discard block below — and that reader is gated on `Status == Absent`, which
+// this arm is not. Widen that condition and this arm changes silently. The next person to touch it is being
+// told here rather than left to find out, which is the same rule Q-1 applied to the sentence it falsified.
+var replaySucceeded = TryReplayStartupSettings(
     fleetHost,
     app.Logger,
     initialSettingsRequest,
@@ -2163,13 +2233,34 @@ var replaySucceeded = settingsRead.Status != FleetSettingsReadStatus.Unreadable 
     // delete that file — an operator who read the Error line alone would be sent to a path that no
     // longer exists. Passed in rather than branched inside the helper so the two sentences sit next to
     // the condition that chooses between them.
-    replayRestoredAFile
-        ? $"Correct them with PUT /v1/settings, or edit/delete fleet-settings.json in " +
-          $"\"{settingsStore.RootDirectory}\" and restart."
-        : "These came from the ST4I_* environment variables and NO settings file existed before this " +
-          "start. Correct those variables and restart, or set the values with PUT /v1/settings. Do not " +
-          "go looking for a settings file — see the next line for what happened to the one this start " +
-          "would otherwise have left behind.");
+    //
+    // 🔴 TASK AJ-1 — THERE ARE NOW THREE ARMS AND THE SELECTOR HAD TO CHANGE WITH THEM, BECAUSE THE SEED
+    // SENTENCE WAS A PUBLISHED STRING THAT (b) MADE FALSE. It was chosen by `replayRestoredAFile`, i.e. by
+    // "there is no persisted triple" — which is true on Absent AND on Unreadable, and it says "NO settings
+    // file existed before this start". On the Unreadable arm a file exists; this start simply cannot read
+    // it. Selecting on the READ OUTCOME rather than on the presence of a triple is what makes each of the
+    // three sentences true of the arm it is used on. Same defect class as the log line above, one branch
+    // apart, and both are fixed in this commit rather than one of them.
+    settingsRead.Status switch
+    {
+        FleetSettingsReadStatus.Loaded =>
+            $"Correct them with PUT /v1/settings, or edit/delete fleet-settings.json in " +
+            $"\"{settingsStore.RootDirectory}\" and restart.",
+
+        FleetSettingsReadStatus.Absent =>
+            "These came from the ST4I_* environment variables and NO settings file existed before this " +
+            "start. Correct those variables and restart, or set the values with PUT /v1/settings. Do not " +
+            "go looking for a settings file — see the next line for what happened to the one this start " +
+            "would otherwise have left behind.",
+
+        _ =>
+            "These came from the ST4I_* environment variables. A fleet-settings.json DID exist before " +
+            "this start and this start could not read it — see the STARTUP SETTINGS FILE COULD NOT BE " +
+            "READ line above — so the floor was applied in its place, and it is being written over that " +
+            "file rather than kept beside it (owner decision item 9, 2026-08-19). Correct those variables " +
+            $"and restart, or set the values with PUT /v1/settings; the file in \"{settingsStore.RootDirectory}\" " +
+            "no longer holds what an operator put there.",
+    });
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
 // 🔴 WHOLE-BRANCH REVIEW I-3 — A FAILED **SEED** MUST NOT BECOME THE SOURCE OF TRUTH.

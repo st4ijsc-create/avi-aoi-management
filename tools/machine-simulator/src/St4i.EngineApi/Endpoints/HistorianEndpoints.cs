@@ -364,9 +364,23 @@ public static class HistorianEndpoints
             // `OeeSettingsWriteRefusedException`, BECAUSE THE STORE GAINED A SECOND REFUSAL. Item 11 of
             // docs/owner-decisions.md: the store came up with no file, one has APPEARED since, and the write
             // is refused although the file reads perfectly. Widening the CATCH is not widening the CLAIM —
-            // exactly two types derive from that base, both are raised by `Set` and only by `Set`, and both
-            // mean "nothing was written". Reusing the `Unreadable` type for the new arm would have been the
+            // every type deriving from that base is raised by `Set` and only by `Set`, and every one of them
+            // means "nothing was written". Reusing the `Unreadable` type for the new arm would have been the
             // cheaper diff and a false one: its name asserts something about a file that read correctly.
+            //
+            // 🔴 TASK AJ-1 — A THIRD DERIVED TYPE, `OeeSettingsFileChangedException` (owner decision item 13,
+            // 2026-08-19): both reads succeeded and the file is not the bytes the table was built from. THE
+            // CATCH DID NOT MOVE, and that is the point of catching the base. The sentence above was
+            // "exactly two types derive from that base" — a SCALAR standing in for the property the response
+            // actually rests on, which is not how many arms exist but that every one of them is raised by
+            // `Set`, before the mutation and before the `Save`. It is now written as that property, so a
+            // fourth arm cannot make this comment false merely by existing.
+            //
+            // 🔴 WHAT THIS COSTS THE OPERATOR, RECORDED AT THE SURFACE THAT CHARGES IT: this endpoint now
+            // answers 409 at moments it answered 200 before AJ-1 — including when the file was changed by a
+            // legitimate hand-edit, or merely REFORMATTED. That is the price the owner accepted on
+            // 2026-08-19 rather than a defect, and the remedy is the same as every other arm's: reload the
+            // host and set the value again. The store's own message says so in the body returned below.
             //
             // This is the surface the loss is named on. Deliberately NOT added to the GET's response shape:
             // `OeeSettingsDto` is published and widening it is the class of change the owner reserved in
