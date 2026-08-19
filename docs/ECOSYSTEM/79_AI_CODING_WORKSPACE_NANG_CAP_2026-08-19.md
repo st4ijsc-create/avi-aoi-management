@@ -333,5 +333,122 @@ bộ lọc ⇒ 7 đỏ).
 
 ## Còn lại
 
-- **Danh sách phiên** — phần cuối của giao diện Claude Code. Chưa làm.
+- ~~**Danh sách phiên**~~ — **ĐÃ LÀM**, xem mục cuối tài liệu này.
 - **Vòng hoàn toàn tự trị** (AI tự bấm duyệt) — **cố ý KHÔNG làm**; HITL mỗi lượt ghi là bất biến.
+
+---
+
+# ✅ DANH SÁCH PHIÊN — hạng mục CUỐI của giao diện Claude Code (2026-08-19)
+
+Ba thứ trong ảnh chủ dự án gửi nay đủ cả: *Select folder* (trục 2) · ô *Describe a task* (trục 1) ·
+**danh sách phiên**.
+
+## Nơi lưu: **CSDL** (`ai_coding_sessions`, migration `0333`) — và vì sao KHÔNG phải `localStorage`
+
+`localStorage` nghe như *"0 bề mặt server ⇒ 0 rủi ro"*. Đo lại thì **ngược**:
+
+| | `localStorage` | CSDL + phạm vi chủ sở hữu |
+|---|---|---|
+| Gắn với | **ORIGIN** | **NGƯỜI DÙNG** |
+| Máy trạm xưởng dùng chung | A đăng xuất, **B đọc hết phiên của A** — không tầng nào chặn được | B không thấy gì |
+| Bit `ai_repo_read` | **bị vô hiệu sau lượt đầu**: tài khoản không có quyền vẫn đọc được mã nguồn người trước kéo về | vẫn cưỡng chế mỗi lượt đọc |
+| Đổi máy / trình duyệt | mất | còn |
+
+Nội dung một phiên **là mã nguồn repo + diff đề xuất** — đúng thứ `ai_repo_read` sinh ra để canh.
+`sessionStorage` thì mất khi đóng tab, tức không phải "danh sách phiên".
+
+### "Ai đọc được phiên của ai": **CHỈ CHỦ PHIÊN — kể cả `admin` cũng không.**
+
+- Phạm vi là **QUYỀN SỞ HỮU** (`userId`), **không** phải tenant. Hai lý do đo được:
+  1. RLS tầng CSDL của repo **nằm im** (`runWithTenantScope` 0 nơi gọi trong mã sản xuất, đo
+     2026-08-18) ⇒ một bảng dựa vào nó là bảng **không có hàng rào** kèm giấy chứng nhận vô can;
+  2. tenant là **SAI TRỤC**: A và B cùng nhà máy ⇒ cùng tenant ⇒ RLS cho qua, trong khi câu hỏi
+     phải trả lời là *"A đọc được phiên của B không"*.
+- Hàng rào nằm trong **mệnh đề WHERE** của **mọi** truy vấn (`server/db/aiCodingSessions.ts`), với
+  `userId` **luôn** từ `ctx.user.id`; **không `input` nào có ô danh tính**.
+- **KHÔNG mở quyền mới**: dùng lại đúng bit `ai_repo_read/canView` (mig 0330). Migration 0333
+  không chèn một hàng `permissions` nào.
+
+## Phiên gắn dự án · nhãn tự sinh
+
+- Phiên mang **`projectId`** (id trong danh sách trắng), **không bao giờ đường dẫn** — ba lớp:
+  zod ở tuyến · `phanGiaiGoc()` fail-closed · **`CHECK ("projectId" ~ '^[A-Za-z0-9_-]{1,64}$')`**
+  ở tầng CSDL (`D:\…` có `:` và `\`; `/etc/passwd` có `/` ⇒ cả hai bị CSDL từ chối kể cả khi vòng
+  qua tRPC). Đổi dự án ⇒ **rời** phiên, không mang sang.
+- **Nhãn do SERVER suy** từ câu hỏi ĐẦU TIÊN của người (`nhanTuLuot`), gộp về một dòng, cắt 80 ký
+  tự. Không suy được ⇒ trả **chuỗi rỗng**, giao diện hiện nhãn mặc định qua `t()` ba locale —
+  nhét *"Phiên chưa đặt tên"* vào CSDL là ghim một ngôn ngữ vào **dữ liệu**.
+
+## Ba thứ vừa dựng còn nguyên — cưỡng chế **theo cấu tạo**, không bằng lời dặn
+
+> **Bất biến số một: một phiên đã lưu chỉ chứa `{role, content}`.**
+> `locLuot()` là một phép **CHIẾU** (không phải phép kiểm tra) chạy ở **CẢ cửa ghi LẪN cửa đọc**.
+
+1. **HITL** — phiên **không lưu** `actionId`/`token`/`args`/`expiresAt`, nên nạp lại **không có gì**
+   để dựng một thẻ duyệt. Chiếu ở cửa **ĐỌC** là chỗ ca *"nạp lại thẻ duyệt CŨ"* chết: một hàng bị
+   đầu độc bằng SQL thẳng vẫn đọc ra đúng hai ô (đo thật, §4). Băm TOCTOU cũ vì thế không có đường
+   tới `confirmAction`; và server còn chặn **độc lập** (băm đọc lại từ đĩa + TTL + token gắn userId).
+   `chonPhien` còn xoá tường minh `pending`/`pendingDiff`.
+2. **Vòng tự động** — không lưu, không khôi phục. `chonPhien`/`phienMoi` đặt lại `VONG_RONG`; không
+   đường nào của phiên chạm `chayLuotVong`/`kiemChungM`.
+3. **Cô lập theo gốc** — xem trên. Client chỉ giữ và gửi **id**.
+
+## Giao diện
+
+Cột phiên **ngoài cùng bên trái** (mẫu *"Sessions you start will show up here"*): nhãn tự sinh ·
+`n lượt · thời gian` · phiên đang mở được đánh dấu (`aria-current` + đậm/màu) · nút **Phiên mới** ·
+nút xoá từng phiên. **Ba khung cũ giữ nguyên** thứ tự và vai trò — lưới thành
+`[190px_240px_1fr_400px]` (phiên · cây tệp + bộ chọn dự án · trình xem · hội thoại). 11 nhãn mới,
+`t()` một-dòng, đủ **vi/en/zh**.
+
+## Đột biến ĐÃ CHẠY — và **đã chứng minh ĂN** (đọc lại trạng thái thật sau mỗi lượt)
+
+| # | Đột biến | Kết quả |
+|---|---|---|
+| M1 | bỏ `eq(userId)` khỏi `moPhien` | **ĐỎ 2 ca** — *"B mở phiên của A"* + *"ADMIN đọc phiên của A"* |
+| M2 | `locLuot` chiếu → `{...o}` | **ĐỎ 4 ca / 2 file** — gồm ca CSDL: `actionId`/`args` rò tới client |
+| M3 | `chonPhien` bỏ `setPending(null)`/`setPendingDiff(null)` | **ĐỎ** §1 census client |
+| M4 | `chonPhien` bỏ đặt lại `VONG_RONG` | **ĐỎ** §2 census client |
+| M5 | **DROP CHECK** `chk_…_project_id` trên CSDL test | **ĐỎ** — `D:\SOURCES\…` INSERT lọt ⇒ CHECK là hàng rào THẬT, không phải trang trí |
+
+M5 là lượt quan trọng nhất về mặt phương pháp: nó chứng minh ca *"CSDL từ chối đường dẫn"* **không**
+xanh vì một lý do khác (FK, kiểu cột…). Cả năm đã hoàn nguyên và đo lại xanh.
+
+## Suite ĐẦY ĐỦ — và phép so có ĐỐI CHỨNG
+
+`1006` tệp: **937 xanh · 67 đỏ**. Không đọc con số ấy là "tôi làm hỏng 67 tệp": đã đo **hai chiều**.
+
+| | tập đỏ |
+|---|---|
+| chạy riêng 67 tệp ấy **ở HEAD** (`git stash` hết lượt này) | **64** |
+| chạy riêng 67 tệp ấy **với lượt này** | **64** |
+| `diff` hai tập | **KHÔNG CÓ KHÁC BIỆT — y hệt từng dòng** |
+
+⇒ **0 hồi quy.** 64 tệp là **nợ CÓ SẴN** (sản phẩm/máy/IR transpiler/CAD — không tệp nào nằm trong
+diff của lượt này). Ba tệp còn lại (`neoTenXacThuc` · `processResultAnalytics` ·
+`vramReadModel.guard`) **xanh khi chạy riêng ở CẢ HAI phía** ⇒ chúng đỏ vì **nhiễu CSDL dùng chung
+lúc chạy song song**, đúng hiện tượng đã ghi trong sổ trước đây — không phải vì lượt này.
+
+## Hai lỗi của CHÍNH TÔI, bắt được trong lúc làm (ghi lại vì cả hai đều là lớp đã trả giá)
+
+1. **Bao đóng bất đồng bộ đọc state cũ.** Bản đầu của `luuTranscript` đọc `sessionId` từ bao đóng.
+   Lượt lưu thứ nhất (câu người hỏi) TẠO phiên và gọi `setSessionId`; lượt thứ hai (câu AI trả lời)
+   có thể được dựng bao đóng TRƯỚC khi state kịp cập nhật ⇒ **đẻ ra phiên thứ hai cho cùng một
+   mạch**. Đây **đúng lớp lỗi mà chính file này đã viết ra cho `vongRef`** ("một vòng bất đồng bộ
+   đọc `useState` sẽ thấy giá trị của lần render TRƯỚC") — và tôi vẫn dẫm vào. Sửa: `sessionIdRef`
+   là nguồn sự thật, `datSessionId()` ghi ref TRƯỚC rồi state SAU; có lưới đếm cưỡng chế
+   (`setSessionId(` xuất hiện **đúng 1 lần**, trong `datSessionId`).
+2. **CRLF.** Một ca của lưới client so chuỗi nhiều dòng bằng `\n` ⇒ **ĐỎ trong khi mã hoàn toàn
+   đúng** (tệp lưu `\r\n`). Sửa ở **thiết bị đo**, không ở vật được đo: chuẩn hoá `\r\n → \n` ngay
+   lúc đọc tệp nguồn.
+
+## ⚠ TIỀN ĐỀ SAI ĐÃ PHÁT HIỆN — `phamViDocCensus` **ĐÃ ĐỎ SẴN Ở HEAD**
+
+Brief nói *"census sẽ cắn"*, hàm ý cổng đang xanh và tôi là người có thể làm nó đỏ. **Không đúng.**
+`git stash` toàn bộ lượt này rồi chạy lại: HEAD đo được `tong 2215` so với `GHIM 2209` — **đã lệch 6
+từ trước**. Truy ra: `GHIM` đặt ở `d3b0ed74`, **trước khi** `repoWorkspaceRouter.ts` tồn tại
+(`8f5b32c1`, doc 78 pha D); 6 thủ tục của nó (`listFiles`/`readFile`/`grep` → S · `listProjects`/
+`cauHinhVong` → C · `chayKiemChung` → D) **chưa bao giờ được khai**. Đó là **nợ có sẵn của chính
+dòng việc doc 78/79**, không phải của lượt này. Đã trả cùng lượt (để lại thì con số mới cũng vô
+nghĩa), kèm phép quy trách nhiệm đầy đủ trong `phamViDocCensus.test.ts`:
+`2209 + 6 (nợ cũ) = 2215 (đo) + 4 (lượt này) = 2219`. **Nhóm (A) KHÔNG đổi: 363.**

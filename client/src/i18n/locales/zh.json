@@ -18976,6 +18976,19 @@
     }
   },
   "repoWs": {
+    "sessions": {
+      "title": "会话",
+      "new": "新建会话",
+      "loading": "正在加载会话…",
+      "empty": "您开始的会话将显示在这里。",
+      "untitled": "未命名会话",
+      "meta": "{{n}} 轮 · {{luc}}",
+      "delete": "删除会话",
+      "denied": "服务器拒绝读取会话：缺少 ai_repo_read 权限。",
+      "openFailed": "无法打开该会话（已被删除，或不属于您）。",
+      "deleteFailed": "无法删除该会话。",
+      "scopeNote": "会话保存在服务器上，按账号和项目隔离——他人无法读取。"
+    },
     "project": {
       "label": "项目",
       "local": "本地",

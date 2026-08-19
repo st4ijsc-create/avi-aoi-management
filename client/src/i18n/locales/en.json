@@ -18968,6 +18968,19 @@
     }
   },
   "repoWs": {
+    "sessions": {
+      "title": "Sessions",
+      "new": "New session",
+      "loading": "Loading sessions…",
+      "empty": "Sessions you start will show up here.",
+      "untitled": "Untitled session",
+      "meta": "{{n}} turns · {{luc}}",
+      "delete": "Delete session",
+      "denied": "Server refused to read sessions: missing ai_repo_read permission.",
+      "openFailed": "Could not open that session (deleted, or it is not yours).",
+      "deleteFailed": "Could not delete the session.",
+      "scopeNote": "Sessions are stored on the server, private to your account and to this project — nobody else can read them."
+    },
     "project": {
       "label": "Project",
       "local": "Local",

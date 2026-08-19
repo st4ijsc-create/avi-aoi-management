@@ -49,6 +49,15 @@ import {
 } from "../services/aiLocalTools";
 // ★★★ doc 79 · TRỤC 2 — phân giải projectId (client gửi) → gốc, tra DANH SÁCH TRẮNG server-side.
 import { phanGiaiGoc } from "../services/aiLocalTools/repoProjects";
+// ★★★ doc 79 · DANH SÁCH PHIÊN — tầng dữ liệu phạm vi CHỦ SỞ HỮU (xem khối ⚠ PHIÊN dưới cùng).
+import { checkPermission } from "../_core/accessControl";
+import {
+  danhSachPhien as dbDanhSachPhien,
+  moPhien as dbMoPhien,
+  luuPhien as dbLuuPhien,
+  xoaPhien as dbXoaPhien,
+} from "../db/aiCodingSessions";
+import { RE_ID_DU_AN, RE_ID_PHIEN, GIOI_HAN_PHIEN } from "@shared/aiCodingSession";
 
 // Cùng cổng giấy phép với aiCopilotRouter (MOD_AI, mặc định pass-through). Xác thực do middleware lo.
 const protectedProcedure = moduleProcedure("MOD_AI");
@@ -81,6 +90,27 @@ function execCtxFrom(ctx: any, lang: ToolLang, projectRoot?: string): ToolExecCo
     },
     ...(projectRoot ? { projectRoot } : {}),
   };
+}
+
+/**
+ * ★★★ doc 79 · DANH SÁCH PHIÊN — **CỔNG CHUNG cho bốn tuyến phiên.** Hai việc, theo thứ tự:
+ *   1. lấy `userId` từ **phiên đăng nhập** (`ctx.user.id`) — nguồn danh tính DUY NHẤT ở đây;
+ *   2. hỏi `checkPermission` bit `ai_repo_read/canView` — **cùng bit** của ba read tool.
+ *
+ * ⚠ FAIL-CLOSED cả ba đường: danh tính méo ⇒ từ chối · `checkPermission` NÉM ⇒ từ chối · trả
+ *   `false` ⇒ từ chối. RBAC hỏng không được biến thành cửa mở (cùng luật `readToolRbac.rbacGate`).
+ */
+async function congPhien(ctx: any): Promise<{ ok: true; userId: number } | { ok: false }> {
+  const userId = Number(ctx?.user?.id);
+  const role = String(ctx?.user?.role ?? "");
+  if (!Number.isInteger(userId) || userId <= 0) return { ok: false };
+  let cho = false;
+  try {
+    cho = await checkPermission(userId, role, "ai_repo_read", "canView");
+  } catch {
+    cho = false;
+  }
+  return cho ? { ok: true, userId } : { ok: false };
 }
 
 /** Hình dạng trả về CHUNG: `ok=false` kèm `note` khi bị từ chối/hỏng (đủ để client nói thật). */
@@ -276,5 +306,99 @@ export const repoWorkspaceRouter = router({
         { id: execCtx.user.id, role: execCtx.user.role, name: execCtx.user.name ?? null },
         lang,
       );
+    }),
+
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ doc 79 · DANH SÁCH PHIÊN — bốn thủ tục, một hàng rào
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // ⚠⚠⚠ `userId` LUÔN là `ctx.user.id`. **KHÔNG một `input` nào ở đây có ô danh tính**, và đó là
+  //   điều kiện để câu *"chỉ chủ phiên đọc được phiên"* đúng theo cấu tạo chứ không nhờ một lượt
+  //   review nhớ dặn. Xem `server/db/aiCodingSessions.ts` (mọi WHERE mang `eq(userId)`) và
+  //   `aiCodingSessionScope.test.ts` (đo trên CSDL THẬT, hai chiều, kèm đột biến).
+  //
+  // ⚠ RBAC: `moduleProcedure("MOD_AI")` chỉ chặn CHƯA ĐĂNG NHẬP. Bit thật là `ai_repo_read/canView`
+  //   — **cùng bit** đang canh `read_file`/`list_files`/`grep_repo` (mig 0330). Phiên KHÔNG mở một
+  //   quyền nào mới: nội dung nó chứa chính là thứ ba tool kia trả về.
+  //
+  // ⚠ Phiên chỉ mang **`projectId`** (`RE_ID_DU_AN`), và `phanGiaiGoc()` phán quyết id ấy có trong
+  //   danh sách TRẮNG hay không — id lạ / một ĐƯỜNG DẪN ⇒ `PROJECT_NOT_FOUND`, fail-closed, y hệt
+  //   ba tuyến đọc ở trên. Ràng buộc CHECK của mig 0333 là lớp cuối ở tầng CSDL.
+  //
+  // ⚠⚠ KHÔNG có thủ tục nào ở đây phát ra một `pending_action`, một `actionId`, một `token`, hay
+  //   một trạng thái vòng tự động — theo cấu tạo: `moPhien` chiếu mọi lượt xuống `{role, content}`
+  //   (`locLuot`). Nạp lại một phiên **không thể** tái phát một lượt GHI.
+
+  /** Danh sách phiên của CHÍNH MÌNH trên một dự án (mới nhất trước). */
+  danhSachPhien: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(RE_ID_DU_AN) }))
+    .query(async ({ input, ctx }) => {
+      const cong = await congPhien(ctx);
+      if (!cong.ok) return { ok: false, note: "PERMISSION_DENIED", sessions: [] };
+      if (!phanGiaiGoc(input.projectId).ok) {
+        return { ok: false, note: "PROJECT_NOT_FOUND", sessions: [] };
+      }
+      return { ok: true, note: null, sessions: await dbDanhSachPhien(cong.userId, input.projectId) };
+    }),
+
+  /** Mở lại một phiên cũ — trả `{role, content}` và KHÔNG GÌ KHÁC. */
+  moPhien: protectedProcedure
+    .input(z.object({ sessionId: z.string().regex(RE_ID_PHIEN) }))
+    .query(async ({ input, ctx }) => {
+      const cong = await congPhien(ctx);
+      if (!cong.ok) return { ok: false, note: "PERMISSION_DENIED", session: null };
+      const p = await dbMoPhien(cong.userId, input.sessionId);
+      // Không tồn tại và của-người-khác trả CÙNG mã: phân biệt hai ca ấy là một kênh đếm phiên
+      // của người khác. Xem `moPhien` ở tầng dữ liệu.
+      if (!p) return { ok: false, note: "NOT_FOUND", session: null };
+      return { ok: true, note: null, session: p };
+    }),
+
+  /**
+   * Lưu TOÀN BỘ mạch hội thoại (upsert). `sessionId` vắng ⇒ tạo mới; nhãn do **server** suy từ
+   * câu hỏi đầu (`nhanTuLuot`) — client KHÔNG gửi nhãn, người dùng KHÔNG phải đặt tên.
+   *
+   * ⚠ `turns` khai `.strict()` ⇒ một lượt mang `actionId`/`token` bị zod **TỪ CHỐI CẢ LƯỢT GỌI**
+   *   (không phải lọc im lặng): client gửi được hình dạng ấy nghĩa là có một lỗi lập trình cần
+   *   thấy. Và kể cả nếu schema này trôi, `locLuot()` vẫn chiếu ở cả cửa ghi lẫn cửa đọc.
+   */
+  luuPhien: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().regex(RE_ID_DU_AN),
+        sessionId: z.string().regex(RE_ID_PHIEN).nullish(),
+        turns: z
+          .array(
+            z
+              .object({
+                role: z.enum(["user", "assistant"]),
+                content: z.string().max(GIOI_HAN_PHIEN.BYTE_MOI_LUOT),
+              })
+              .strict(),
+          )
+          .max(GIOI_HAN_PHIEN.SO_LUOT),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const cong = await congPhien(ctx);
+      if (!cong.ok) return { ok: false, note: "PERMISSION_DENIED", id: null, title: "", turnCount: 0 };
+      if (!phanGiaiGoc(input.projectId).ok) {
+        return { ok: false, note: "PROJECT_NOT_FOUND", id: null, title: "", turnCount: 0 };
+      }
+      const r = await dbLuuPhien(cong.userId, {
+        projectId: input.projectId,
+        sessionId: input.sessionId ?? null,
+        turns: input.turns,
+      });
+      return { ...r, note: r.ok ? null : "SAVE_FAILED" };
+    }),
+
+  /** Xoá một phiên CỦA CHÍNH MÌNH. */
+  xoaPhien: protectedProcedure
+    .input(z.object({ sessionId: z.string().regex(RE_ID_PHIEN) }))
+    .mutation(async ({ input, ctx }) => {
+      const cong = await congPhien(ctx);
+      if (!cong.ok) return { ok: false, note: "PERMISSION_DENIED" };
+      const r = await dbXoaPhien(cong.userId, input.sessionId);
+      return { ok: r.ok, note: r.ok ? null : "NOT_FOUND" };
     }),
 });

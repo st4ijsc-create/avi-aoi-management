@@ -153,7 +153,43 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   `B/D/S` và `tong` **không đổi một đơn vị nào** ⇒ delta này ĐÚNG là bốn ô chuyển C→A, không
  *   phải một lượt trôi chung chung.
  */
-const GHIM = { A: 363, B: 8, C: 463, D: 1092, S: 283, tong: 2209 } as const;
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-08-19 (doc 79 · DANH SÁCH PHIÊN) — **tong: 2209 → 2219.** Lời khai kèm số liệu, và
+ * phần lớn delta **KHÔNG PHẢI của lượt này**.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ ĐO TRƯỚC KHI SỬA (`git stash` toàn bộ lượt này rồi chạy lại cổng): HEAD **ĐÃ ĐỎ SẴN** ở
+ *   `A 363 · B 8 · C 465 · D 1093 · S 286 · tong 2215`. Con số ghim 2209 được đặt ở `d3b0ed74`,
+ *   TRƯỚC khi `server/routers/repoWorkspaceRouter.ts` tồn tại (`8f5b32c1`, doc 78 pha D). Sáu thủ
+ *   tục của file ấy — `listFiles`/`readFile`/`grep` (S) · `listProjects`/`cauHinhVong` (C) ·
+ *   `chayKiemChung` (D) — chưa bao giờ được khai vào GHIM. **Đó là một món nợ CÓ SẴN của cùng dòng
+ *   việc doc 78/79, không phải thứ lượt này gây ra**; nó được trả ở đây vì để lại thì con số mới
+ *   cũng vô nghĩa.
+ *
+ * Phép quy trách nhiệm ĐẦY ĐỦ, không dư một đơn vị:
+ *
+ *       2209  (ghim cũ, đặt ở d3b0ed74)
+ *     +    6  **NỢ CÓ SẴN** — 6 thủ tục `repoWorkspaceRouter` (C+2 · D+1 · S+3), có từ 8f5b32c1
+ *     ─────
+ *       2215  = số đo ở HEAD khi `git stash` hết lượt này  ← đã đo, không suy
+ *     +    4  **LƯỢT NÀY** — DANH SÁCH PHIÊN, cùng file `repoWorkspaceRouter.ts`:
+ *              · `danhSachPhien` (query) → **C**   ┐ `ai_coding_sessions` KHÔNG thuộc tenant
+ *              · `moPhien`       (query) → **C**   ┘ (không cột mã tenant; FK chỉ tới `users`)
+ *              · `luuPhien`      (mutation) → **D**  (phạm vi ĐỌC không áp dụng cho mutation)
+ *              · `xoaPhien`      (mutation) → **D**
+ *     ─────
+ *       2219
+ *
+ * ⇒ delta từng nhóm: **C 463 → 467** (+2 nợ cũ, +2 lượt này) · **D 1092 → 1095** (+1 nợ cũ, +2
+ *   lượt này) · **S 283 → 286** (+3 nợ cũ, 0 lượt này).
+ *
+ * ★★★ **NHÓM (A) KHÔNG ĐỔI: 363.** Đây là ô chịu tải của cả cổng này — lượt thêm bốn thủ tục
+ * KHÔNG mở thêm một lượt đọc dữ liệu tenant không lọc nào. Hai thủ tục ĐỌC của phiên rơi vào (C)
+ * vì bảng `ai_coding_sessions` không phải bảng tenant; và phạm vi của chúng còn CHẶT HƠN tenant —
+ * `eq(userId, ctx.user.id)` (CHỦ SỞ HỮU) trong mọi câu truy vấn, đo trên CSDL thật ở
+ * `aiCodingSessionScope.test.ts` (kể cả `admin` cũng không đọc được phiên người khác).
+ */
+const GHIM = { A: 363, B: 8, C: 467, D: 1095, S: 286, tong: 2219 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

@@ -41,6 +41,22 @@
  * ⚠ Bước "chạy test" KHÔNG đi qua thẻ duyệt (đó chính là thứ được tự động hoá), nhưng nó chỉ chạy
  *   được **tập con KIỂM CHỨNG** của danh sách trắng — `dotnet format` (mục duy nhất ghi đè tệp) bị
  *   loại ở server. Xem `server/services/aiCodingVerify.ts`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ doc 79 · DANH SÁCH PHIÊN — KHUNG THỨ TƯ (ngoài cùng TRÁI), và ba thứ nó KHÔNG làm
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Khung ba phần trên **giữ nguyên**; doc 79 chỉ THÊM một cột phiên bên trái (mẫu Claude Code
+ * *"Sessions you start will show up here"*). Phiên lưu ở CSDL (`ai_coding_sessions`, mig 0333),
+ * phạm vi **CHỦ SỞ HỮU** — kỹ sư A không đọc được phiên của kỹ sư B, kể cả `admin`.
+ *
+ * Nạp lại một phiên **KHÔNG**:
+ *   1. tái phát một **thẻ duyệt HITL** — phiên chỉ lưu `{role, content}` (phép chiếu `locLuot`
+ *      chạy ở CẢ cửa ghi LẪN cửa đọc), nên không có gì để dựng lại; `chonPhien` còn xoá tường minh
+ *      `pending`/`pendingDiff`. Một băm TOCTOU cũ vì thế không có đường tới `confirmAction` — và
+ *      server vẫn chặn ĐỘC LẬP (đọc lại băm từ đĩa + TTL + token gắn userId).
+ *   2. hồi sinh một **vòng tự động** — `VONG_RONG` được đặt lại; vòng thuộc về MỘT lượt chạy.
+ *   3. mang một **đường dẫn** — phiên chỉ mang `projectId` (id danh sách trắng), như trục 2.
+ * `aiCodingWorkspacePhien.unit.test.ts` đo cả ba trên chính mã nguồn file này.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -71,10 +87,13 @@ import {
   bamChuoi, catLoiChoPrompt, chuanHoaDauRa, deXuatLapLai, quyetDinhTiep,
   type LyDoDungVong,
 } from "@shared/aiCodingLoop";
+// ★★★ doc 79 · DANH SÁCH PHIÊN — `locLuot` là PHÉP CHIẾU dùng chung với server: client cũng chiếu
+// trước khi gửi, nên payload **không thể** mang một ô thẻ duyệt kể cả khi `ChatTurn` mọc thêm ô.
+import { locLuot, type LuotPhien } from "@shared/aiCodingSession";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
-  Repeat, CheckCircle2, OctagonX,
+  Repeat, CheckCircle2, OctagonX, MessagesSquare, Plus, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import Markdown from "react-markdown";
@@ -326,6 +345,110 @@ function VongTuDongCard({ vong, onDung }: { vong: TrangThaiVong; onDung: () => v
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 79 · DANH SÁCH PHIÊN — CỘT TRÁI (mẫu "Sessions you start will show up here")
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠⚠ CỘT NÀY **THUẦN HIỂN THỊ + BA CALLBACK**. Nó không giữ một mảnh trạng thái sống nào của
+ * không gian làm việc: không thẻ duyệt, không vòng tự động, không đường dẫn gốc. Mọi việc dựng lại
+ * trạng thái nằm ở `chonPhien`/`phienMoi` của trang — một chỗ, đọc được, có lưới đếm.
+ */
+interface TomTatPhienUI {
+  id: string;
+  title: string;
+  turnCount: number;
+  updatedAt: string;
+}
+
+function DanhSachPhienCot({
+  phien, dangChon, dangTai, biTuChoi, onChon, onMoi, onXoa,
+}: {
+  phien: TomTatPhienUI[];
+  dangChon: string | null;
+  dangTai: boolean;
+  biTuChoi: boolean;
+  onChon: (id: string) => void;
+  onMoi: () => void;
+  onXoa: (id: string) => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const dinhDangNgay = (iso: string): string => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleString(i18n.language, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  };
+
+  return (
+    <div className="flex flex-col overflow-hidden border-r">
+      <div className="flex items-center gap-1.5 border-b px-2 py-1.5">
+        <MessagesSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
+        <span className="truncate text-xs font-semibold">{t("repoWs.sessions.title", "Phiên")}</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto h-6 gap-1 px-1.5 text-[11px]"
+          onClick={onMoi}
+          title={t("repoWs.sessions.new", "Phiên mới")}
+        >
+          <Plus className="h-3 w-3" />
+          {t("repoWs.sessions.new", "Phiên mới")}
+        </Button>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="space-y-0.5 p-1">
+          {biTuChoi ? (
+            <p className="px-2 py-3 text-[11px] text-destructive">
+              {t("repoWs.sessions.denied", "Server từ chối đọc phiên: thiếu quyền ai_repo_read.")}
+            </p>
+          ) : dangTai ? (
+            <p className="px-2 py-3 text-[11px] text-muted-foreground">{t("repoWs.sessions.loading", "Đang tải phiên…")}</p>
+          ) : phien.length === 0 ? (
+            <p className="px-2 py-3 text-[11px] leading-relaxed text-muted-foreground">
+              {t("repoWs.sessions.empty", "Phiên bạn bắt đầu sẽ hiện ở đây.")}
+            </p>
+          ) : (
+            phien.map((p) => (
+              <div
+                key={p.id}
+                className={cn(
+                  "group flex items-start gap-1 rounded-md px-1.5 py-1 hover:bg-muted",
+                  dangChon === p.id && "bg-muted",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => onChon(p.id)}
+                  aria-current={dangChon === p.id ? "true" : undefined}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className={cn("block truncate text-[11px] leading-snug", dangChon === p.id ? "font-semibold text-primary" : "font-medium")}>
+                    {p.title || t("repoWs.sessions.untitled", "Phiên chưa đặt tên")}
+                  </span>
+                  <span className="block truncate text-[10px] text-muted-foreground">
+                    {t("repoWs.sessions.meta", "{{n}} lượt · {{luc}}", { n: p.turnCount, luc: dinhDangNgay(p.updatedAt) })}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onXoa(p.id)}
+                  title={t("repoWs.sessions.delete", "Xoá phiên")}
+                  aria-label={t("repoWs.sessions.delete", "Xoá phiên")}
+                  className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </ScrollArea>
+      <p className="border-t px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
+        {t("repoWs.sessions.scopeNote", "Phiên lưu trên máy chủ, riêng theo tài khoản và theo dự án — người khác không đọc được.")}
+      </p>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
 // TRANG
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 type ChatTurn = { role: "user" | "assistant"; content: string };
@@ -356,6 +479,46 @@ export default function AICodingWorkspace() {
   useEffect(() => {
     try { if (projectId) sessionStorage.setItem(PROJECT_KEY, projectId); } catch { /* ignore */ }
   }, [projectId]);
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ doc 79 · DANH SÁCH PHIÊN — trạng thái + ba bất biến, đọc trước khi sửa
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // (1) **Phiên KHÔNG lưu thẻ duyệt HITL.** Payload đi qua `locLuot()` (dùng chung với server) nên
+  //     chỉ có `{role, content}`; đường nạp lại vì thế KHÔNG CÓ GÌ để dựng một `pending_action`.
+  //     Và `chonPhien` còn XOÁ tường minh `pending`/`pendingDiff` — nạp một phiên là bắt đầu từ
+  //     một trang sạch, không phải hồi sinh một cú bấm chưa bấm. Băm chống TOCTOU của một thẻ cũ
+  //     đã hết nghĩa; server cũng chặn ĐỘC LẬP (băm đọc lại + TTL + token gắn userId).
+  // (2) **Vòng tự động KHÔNG được khôi phục.** Nó thuộc về MỘT lượt chạy. `chonPhien` đặt lại
+  //     `VONG_RONG` ⇒ không có "lượt 2/3" nào sống dậy mà không có tiến trình phía sau.
+  // (3) **Phiên chỉ mang `projectId`**, không mang đường dẫn gốc — cùng luật trục 2.
+  const utils = trpc.useUtils();
+  /**
+   * ⚠⚠ HAI BẢN, và đây là cùng lý do đã ghi cho `vongRef` ở trên: **`sessionIdRef` là NGUỒN SỰ
+   * THẬT**, `sessionId` chỉ là bản sao để render. Một lượt lưu là bất đồng bộ; nếu nó đọc
+   * `sessionId` từ bao đóng thì nó thấy giá trị của lần render TRƯỚC. Hậu quả đo được: lượt lưu
+   * thứ nhất (câu người hỏi) TẠO phiên và gọi `setSessionId`, nhưng lượt thứ hai (câu AI trả lời)
+   * có thể được dựng bao đóng TRƯỚC khi state kịp cập nhật ⇒ nó cũng thấy `null` ⇒ **đẻ ra phiên
+   * thứ hai cho cùng một mạch**. Ref được ghi ĐỒNG BỘ ngay trong lượt lưu nên không có khe ấy.
+   */
+  const sessionIdRef = useRef<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  /** Ghi NGUỒN SỰ THẬT trước, rồi mới đồng bộ bản render — thứ tự này là điều kiện của bất biến trên. */
+  const datSessionId = useCallback((id: string | null) => {
+    sessionIdRef.current = id;
+    setSessionId(id);
+  }, []);
+  const phienQ = trpc.repoWorkspace.danhSachPhien.useQuery(
+    { projectId },
+    { enabled: !!projectId, staleTime: 10_000 },
+  );
+  const luuPhienM = trpc.repoWorkspace.luuPhien.useMutation();
+  const xoaPhienM = trpc.repoWorkspace.xoaPhien.useMutation();
+  /** Nối tiếp các lượt lưu: lượt sau chờ lượt trước để `sessionId` mới kịp về (chống đẻ 2 hàng). */
+  const luuRef = useRef<Promise<void>>(Promise.resolve());
+  /** Băm mạch vừa lưu — bỏ qua lượt lưu không đổi gì (khỏi bump `updatedAt` làm đảo danh sách). */
+  const bamDaLuuRef = useRef<string>("");
+  /** true trong đúng một nhịp sau khi NẠP một phiên: nạp xong không được lưu ngược lại. */
+  const dangKhoiPhucRef = useRef(false);
 
   // ── Trình xem tệp ──
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -575,7 +738,108 @@ export default function AICodingWorkspace() {
     // kết thúc vòng, không phải mang nó sang.
     vongRef.current = { ...VONG_RONG };
     setVong({ ...VONG_RONG });
-  }, [projectId]);
+    // ★★★ doc 79 · PHIÊN — phiên bám MỘT dự án suốt đời. Đổi dự án ⇒ RỜI phiên (không mang sang,
+    //   không "di chuyển"): danh sách bên trái sẽ nạp lại theo gốc mới.
+    datSessionId(null);
+    bamDaLuuRef.current = "";
+  }, [projectId, datSessionId]);
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ doc 79 · PHIÊN — LƯU / MỞ LẠI / XOÁ
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Lưu mạch hội thoại hiện tại. Chạy từ một `useEffect` theo `transcript` nên nó bắt được **mọi**
+   * nguồn thêm lượt (người gõ · đầu ra lệnh · đầu ra vòng tự động), không chỉ lượt gõ tay.
+   *
+   * ⚠ `locLuot()` là phép CHIẾU dùng chung với server — payload gửi đi **không thể** mang một ô
+   *   thẻ duyệt (`actionId`/`token`/`args`) kể cả khi `ChatTurn` mọc thêm ô trong tương lai.
+   */
+  const luuTranscript = useCallback((turns: ChatTurn[]) => {
+    if (!projectId) return;
+    const sach: LuotPhien[] = locLuot(turns);
+    if (sach.length === 0) return;
+    const bam = bamChuoi(JSON.stringify(sach));
+    if (bam === bamDaLuuRef.current) return;
+    bamDaLuuRef.current = bam;
+    luuRef.current = luuRef.current
+      .then(async () => {
+        // ⚠ ĐỌC REF, KHÔNG đọc `sessionId` của bao đóng — xem khối ⚠⚠ ở `sessionIdRef`. Đọc ở ĐÂY
+        //   (trong thân đã nối tiếp) chứ không ở ngoài, để lượt này thấy id lượt trước vừa tạo.
+        const idHienTai = sessionIdRef.current;
+        const r = await luuPhienM.mutateAsync({ projectId, sessionId: idHienTai, turns: sach });
+        if (r.ok && r.id) {
+          if (!idHienTai) datSessionId(r.id);
+          void utils.repoWorkspace.danhSachPhien.invalidate();
+        }
+      })
+      .catch(() => {
+        // Lưu hỏng ⇒ cho phép thử lại ở lượt sau (nếu giữ băm thì mạch này không bao giờ được lưu).
+        bamDaLuuRef.current = "";
+      });
+  }, [projectId, luuPhienM, utils, datSessionId]);
+
+  useEffect(() => {
+    if (dangKhoiPhucRef.current) { dangKhoiPhucRef.current = false; return; }
+    if (transcript.length === 0) return;
+    luuTranscript(transcript);
+  }, [transcript, luuTranscript]);
+
+  /**
+   * ★★★ MỞ LẠI MỘT PHIÊN CŨ. Ba lệnh xoá dưới đây **KHÔNG phải dọn dẹp cho gọn** — chúng là ba
+   * bất biến của mục (C):
+   *   • `setPending(null)` + `setPendingDiff(null)` — **KHÔNG tái phát một thẻ duyệt.** Phiên
+   *     không lưu thẻ, nên chẳng có gì để dựng lại; hai dòng này chặn nốt thẻ của phiên ĐANG mở
+   *     đi lạc sang phiên vừa nạp (băm TOCTOU của nó thuộc về ngữ cảnh khác).
+   *   • `vongRef = VONG_RONG` — **KHÔNG hồi sinh một vòng tự động ma.**
+   *   • `setStreamTool(null)` — kết quả tool của mạch cũ không được dán vào mạch mới.
+   */
+  const chonPhien = useCallback(async (id: string) => {
+    if (isStreaming || id === sessionId) return;
+    const r = await utils.repoWorkspace.moPhien.fetch({ sessionId: id }).catch(() => null);
+    if (!r || !r.ok || !r.session) {
+      toast.error(t("repoWs.sessions.openFailed", "Không mở được phiên (đã bị xoá hoặc không thuộc về bạn)."));
+      void utils.repoWorkspace.danhSachPhien.invalidate();
+      return;
+    }
+    setPending(null);
+    setPendingDiff(null);
+    setStreamTool(null);
+    setDiffPreview("");
+    setActionState("pending");
+    vongRef.current = { ...VONG_RONG };
+    setVong({ ...VONG_RONG });
+    datSessionId(r.session.id);
+    dangKhoiPhucRef.current = true;
+    bamDaLuuRef.current = bamChuoi(JSON.stringify(r.session.turns));
+    setTranscript(r.session.turns.map((x) => ({ role: x.role, content: x.content })));
+  }, [isStreaming, sessionId, utils, t, datSessionId]);
+
+  /** Phiên mới = trang sạch. Không gọi server: một phiên rỗng không được đẻ ra một hàng. */
+  const phienMoi = useCallback(() => {
+    if (isStreaming) return;
+    datSessionId(null);
+    setPending(null);
+    setPendingDiff(null);
+    setStreamTool(null);
+    setDiffPreview("");
+    setActionState("pending");
+    vongRef.current = { ...VONG_RONG };
+    setVong({ ...VONG_RONG });
+    dangKhoiPhucRef.current = true;
+    bamDaLuuRef.current = "";
+    setTranscript([]);
+  }, [isStreaming, datSessionId]);
+
+  const xoaPhienNay = useCallback(async (id: string) => {
+    const r = await xoaPhienM.mutateAsync({ sessionId: id }).catch(() => null);
+    if (!r?.ok) {
+      toast.error(t("repoWs.sessions.deleteFailed", "Không xoá được phiên."));
+      return;
+    }
+    if (id === sessionId) phienMoi();
+    void utils.repoWorkspace.danhSachPhien.invalidate();
+  }, [xoaPhienM, sessionId, phienMoi, utils, t]);
 
   // ── Duyệt / hủy một đề xuất ghi/chạy ──
   const handleConfirm = useCallback(async () => {
@@ -659,7 +923,20 @@ export default function AICodingWorkspace() {
           </div>
         </div>
 
-        <div className="grid h-[calc(100vh-8.5rem)] grid-cols-1 lg:grid-cols-[260px_1fr_420px]">
+        {/* ⚠ BỐ CỤC: ba khung cũ (cây tệp · trình xem · hội thoại) GIỮ NGUYÊN thứ tự và vai trò;
+            doc 79 chỉ THÊM một cột phiên ở ngoài cùng bên trái, đúng mẫu Claude Code. */}
+        <div className="grid h-[calc(100vh-8.5rem)] grid-cols-1 lg:grid-cols-[190px_240px_1fr_400px]">
+          {/* ── 0. DANH SÁCH PHIÊN (doc 79) ── */}
+          <DanhSachPhienCot
+            phien={phienQ.data?.sessions ?? []}
+            dangChon={sessionId}
+            dangTai={phienQ.isLoading}
+            biTuChoi={phienQ.data?.note === "PERMISSION_DENIED"}
+            onChon={(id) => void chonPhien(id)}
+            onMoi={phienMoi}
+            onXoa={(id) => void xoaPhienNay(id)}
+          />
+
           {/* ── 1. CÂY TỆP ── */}
           <div className="flex flex-col overflow-hidden border-r">
             {/* Bộ chọn DỰ ÁN (doc 79 · TRỤC 2) — tham khảo "Select folder" của Claude Code. Client

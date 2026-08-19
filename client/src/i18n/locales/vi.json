@@ -18948,6 +18948,19 @@
     }
   },
   "repoWs": {
+    "sessions": {
+      "title": "Phiên",
+      "new": "Phiên mới",
+      "loading": "Đang tải phiên…",
+      "empty": "Phiên bạn bắt đầu sẽ hiện ở đây.",
+      "untitled": "Phiên chưa đặt tên",
+      "meta": "{{n}} lượt · {{luc}}",
+      "delete": "Xoá phiên",
+      "denied": "Server từ chối đọc phiên: thiếu quyền ai_repo_read.",
+      "openFailed": "Không mở được phiên (đã bị xoá hoặc không thuộc về bạn).",
+      "deleteFailed": "Không xoá được phiên.",
+      "scopeNote": "Phiên lưu trên máy chủ, riêng theo tài khoản và theo dự án — người khác không đọc được."
+    },
     "project": {
       "label": "Dự án",
       "local": "Cục bộ",
