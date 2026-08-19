@@ -612,7 +612,17 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //     "chỉ xoá pid chết, giữ pid sống" + hàng rào tuổi + câu từ chối khi dư địa ÂM). Nó nằm dưới
     //     `server/services/vram/` — **đã** là một đường của §Cổng kiểm chung — nên nó KHÔNG làm
     //     `CONG.length` đổi; chỉ con số này đổi.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(125); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-4: +1 · Pha 9 I-5: +1 (neoTenXacThuc) · Pha 10: +5
+    // ⚠ Pha 10b (GỐC RỄ THẬT của sự cố hộ ma): 125 → **126**, đúng **+1** và chỉ +1 —
+    //   `server/services/vram/procTableControlChar.test.ts`. Pha 10 vá được cái *triệu chứng* (bộ
+    //   quét mù ⇒ cho nó cái tai thứ hai `process.kill(pid,0)`), nhưng **nguyên nhân** vẫn nguyên:
+    //   `readProcTable()` trả `null` vì `ConvertTo-Json` (PowerShell 5.1) nhả **ký tự điều khiển
+    //   THÔ** (U+001A) trong `CommandLine` ⇒ `JSON.parse` ném ⇒ bảng tiến trình mất sạch. Đo trực
+    //   tiếp trên máy này: powershell chạy XONG, trả 122.285 ký tự, ném ở vị trí 83902.
+    //   ⚠ Chẩn đoán "powershell lỗi/timeout" của cả hai lượt trước đều SAI — phép đo đối chứng
+    //   ("chạy từ Node khác: 413–467 ms, 0 lỗi") đo `run()`, KHÔNG đo `JSON.parse`. Lưới mới ghim
+    //   đúng chuỗi đã đo, nên nó tất định và không đổi màu theo tiến trình đang chạy trên máy.
+    //   Nó nằm dưới `server/services/vram/` ⇒ `CONG.length` KHÔNG đổi (vẫn 58).
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(126); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-4: +1 · Pha 9 I-5: +1 (neoTenXacThuc) · Pha 10: +5 · Pha 10b: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

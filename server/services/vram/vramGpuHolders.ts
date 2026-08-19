@@ -158,12 +158,46 @@ export function parseComputeApps(raw: string): GpuHolder[] {
  * không có gì". (Ở Windows bảng rỗng là bất khả thi, nên người gọi vẫn từ chối kết luận ở cả hai
  * ca — nhưng nó từ chối vì HAI lý do KHÁC NHAU, và nói ra được lý do nào.)
  */
+/**
+ * ★★★ GỐC RỄ THẬT của sự cố hộ ma — đo LIVE 2026-08-19. **KHÔNG phải "powershell lỗi/timeout".**
+ *
+ * `ConvertTo-Json` của Windows PowerShell 5.1 **KHÔNG thoát ký tự điều khiển thô** nằm trong chuỗi.
+ * Chỉ cần MỘT tiến trình trên máy có ký tự điều khiển trong `CommandLine` là cả khối JSON 122 KB
+ * thành không hợp lệ ⇒ `JSON.parse` ném (*"Bad control character in string literal … position
+ * 83902"*, ký tự thủ phạm **U+001A**, đo trực tiếp) ⇒ `parseProcTable` trả `null` ⇒ `readProcTable`
+ * trả `null` ⇒ bộ quét hộ ma **mù 100% số nhịp, IM LẶNG, suốt 2 ngày** (66 dòng cảnh báo trong
+ * `app14.log`, 0 lượt quét thành công).
+ *
+ * ⚠ VÌ SAO CHẨN ĐOÁN TRƯỚC ĐÓ TRƯỢT: hỏng **phụ thuộc DỮ LIỆU đang chạy trên máy**, không phụ
+ * thuộc mã. Phép đo "cùng lệnh chạy từ một tiến trình Node khác cho 413–467 ms, 0 lỗi" KHÔNG bác
+ * bỏ được gì — nó đo `run()` (quả thật chạy xong và trả 122 KB chữ), chứ **không** đo `JSON.parse`.
+ * *Cái được đo không phải cái đang hỏng.* Cùng lớp lỗi với "lưới xanh vì lý do sai".
+ *
+ * ⚠ ĐÃ THỬ VÀ ĐO LÀ KHÔNG ĂN: lọc phía PowerShell bằng `-replace '[\x00-\x1F]'` — U+001A vẫn lọt
+ * (vị trí ném 83902 → 83897). Nên việc lọc nằm Ở ĐÂY, nơi có lưới đơn vị tất định canh.
+ *
+ * VÌ SAO XOÁ THẲNG LÀ AN TOÀN: ký tự điều khiển thô là **BẤT HỢP LỆ** bên trong chuỗi JSON — một
+ * ký tự điều khiển hợp lệ luôn được mã hoá `` (6 ký tự, không đụng tới). Ngoài chuỗi chúng
+ * chỉ có thể là khoảng trắng định dạng. Nên xoá chúng khỏi văn bản thô KHÔNG mất dữ liệu hợp lệ
+ * nào. `cmdline` chỉ dùng để so khớp đường dẫn (`norm()`).
+ */
+export function loBoKyTuDieuKhienTho(rawJson: string): string {
+  // eslint-disable-next-line no-control-regex
+  return rawJson.replace(/[\u0000-\u001F]/g, "");
+}
+
 export function parseProcTable(rawJson: string): ProcTableRow[] | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawJson);
   } catch {
-    return null;
+    // Lượt hai: bỏ ký tự điều khiển thô rồi thử lại. KHÔNG thử-lại-mù — chỉ đúng một lớp hỏng đã
+    // đo được, và nếu vẫn ném thì vẫn trả `null` (người gọi ghi lý do).
+    try {
+      parsed = JSON.parse(loBoKyTuDieuKhienTho(rawJson));
+    } catch {
+      return null;
+    }
   }
   // ⚠ `ConvertTo-Json` trả về MỘT OBJECT (không phải mảng) khi tập hợp chỉ có một phần tử.
   const rows = Array.isArray(parsed) ? parsed : [parsed];
@@ -545,6 +579,9 @@ function run(cmd: string, args: string[], timeout: number): Promise<string | nul
 const PS_PROC_TABLE = [
   "$ErrorActionPreference='Stop';",
   "Get-CimInstance Win32_Process|ForEach-Object{ @{ pid=[int]$_.ProcessId; ppid=[int]$_.ParentProcessId;",
+  // ⚠ ĐỪNG lọc ký tự điều khiển ở ĐÂY — đã thử `-replace '[\x00-\x1F]'` và **ĐO ĐƯỢC LÀ KHÔNG ĂN**
+  // (U+001A vẫn lọt, vị trí ném gần như không đổi: 83902 → 83897). Việc lọc nằm ở `parseProcTable`
+  // phía Node, nơi có lưới đơn vị tất định canh nó. Xem khối ★★★ ở đó.
   "cmd=[string]$_.CommandLine;",
   // ★ (A) — mốc TẠO, thứ duy nhất phân biệt "cha thật" với "PID được cấp lại". `0` khi không đọc
   // được (thiếu quyền) — người đọc phải hiểu là KHÔNG CÓ BẰNG CHỨNG, không phải "rất cũ".
@@ -716,5 +753,35 @@ export async function readProcTable(): Promise<ProcTableRow[] | null> {
   if (scanDisabled()) return null;
   if (process.platform !== "win32") return null;
   const json = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", PS_PROC_TABLE], PS_TIMEOUT_MS);
-  return json === null ? null : parseProcTable(json);
+  if (json === null) return null; // `run()` ĐÃ ghi lý do vào `loiChayCuoi`.
+
+  /**
+   * ★★★ ĐƯỜNG CÂM CUỐI CÙNG — đo được LIVE 2026-08-19 sau khi Task 3 nối lý do vào dòng cảnh báo.
+   *
+   * Task 3 vá `run()` thôi nuốt `err`, và dòng cảnh báo ở `readGpuHolders()` in `LÝ DO:` khi
+   * `lanChayNgoaiHongCuoi() !== null`. Nhưng nhật ký sản xuất **vẫn không có `LÝ DO:` nào** —
+   * nghĩa là `loiChayCuoi` RỖNG, tức `run()` **KHÔNG hề hỏng**: powershell chạy xong, trả chữ, và
+   * thứ hỏng là `JSON.parse` bên trong `parseProcTable` — đường thoát DUY NHẤT còn lại trả `null`
+   * mà không ghi một byte chẩn đoán nào. Đúng lớp lỗi vừa vá, chỉ dịch sang hàm bên cạnh.
+   *
+   * ⚠ Vì sao điều này giải thích được nghịch lý của Task 3 ("cùng lệnh chạy từ Node khác cho
+   * 413–467 ms, 0 lỗi"): lượt chạy ngoài đó đo `run()`, KHÔNG đo `parseProcTable`. Hai phép đo
+   * khác nhau, và cái được đo không phải cái đang hỏng.
+   *
+   * Ghi vào CHÍNH `loiChayCuoi` (không đẻ ô thứ hai): dòng cảnh báo + `moTaLoiChayNgoai()` đã nối
+   * sẵn, nên chẩn đoán ra được ngay mà không thêm một mắt xích nào có thể quên nối lần nữa.
+   */
+  const rows = parseProcTable(json);
+  if (rows === null) {
+    loiChayCuoi = {
+      cmd: "powershell.exe (Win32_Process)",
+      ma: "json-khong-phan-tich-duoc",
+      quaHan: false,
+      message: `powershell CHẠY XONG (${json.length} ký tự) nhưng JSON.parse ném ⇒ bảng tiến trình không dùng được`,
+      // Đầu chuỗi là chỗ lộ nguyên nhân thật (BOM, banner, cảnh báo PS in trước JSON, UTF-16…).
+      stderr: `đầu ra: ${JSON.stringify(json.slice(0, 160))}`,
+      atMs: Date.now(),
+    };
+  }
+  return rows;
 }
