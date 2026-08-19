@@ -1,14 +1,8 @@
 {
-  "generatedAt": "2026-08-18T03:02:47.215Z",
+  "generatedAt": "2026-08-19T06:28:36.289Z",
   "engine": "gguf",
   "model": "Qwen3-Embedding-0.6B-f16",
-  "mode": "incremental",
   "totalEmbedded": 7349,
-  "added": 3,
-  "changed": 8,
-  "unchanged": 7338,
-  "removed": 0,
-  "skipped": 0,
-  "elapsedMs": 7634,
+  "elapsedMs": 212979,
   "outputFile": "knowledge/embeddings.jsonl"
 }
