@@ -1548,6 +1548,22 @@ EXPECT_CONFORMANCE=24
 # the whole solution, never on an incremental one. The new file compiles with no warning of its own. NO
 # SUPPRESSION OF ANY KIND WAS ADDED — which makes this the FOURTEENTH consecutive task with none, and the
 # first one whose successor can no longer take that on trust.
+#
+# 🔴 TASK AF-1 (.superpowers/sdd/item12-stage3/task-1-brief.md) — ITEM 12 STAGE 3, THE SWITCH IS ON — MOVES
+# NO SUITE TOTAL AT ALL. EXPECT_ABSTRACTIONS 161, EXPECT_CONFORMANCE 24, EXPECT_EDGECORE 1152,
+# EXPECT_EDGESERVICE 52, EXPECT_ENGINEAPI 1374, grand total 2763: every one unchanged, and here that is a
+# MEASUREMENT rather than a convenience. AF-1 adds no test and deletes none; it turns one MSBuild property
+# on in src/St4i.EdgeCore/St4i.EdgeCore.csproj and moves the two tables AE-1 built to hold it — the
+# EXPECT_WARNINGS/EXPECT_WARNING_LEDGER pair in this file (116 -> 852, twelve rows -> nineteen) and the
+# GenerateDocumentationFile table in SuppressionCensusTests (seven on / eight off -> eight on / seven off).
+# A suite total moving on this commit would mean the switch changed behaviour somewhere, which is exactly
+# what it must not do. EXPECT_BUILD_NODES stays 0.
+#
+# 🔴 AND THE CENSUS WENT RED BEFORE ITS TABLE WAS MOVED, WHICH IS THE ONLY REASON TO BELIEVE ANY OF THIS.
+# The switch was flipped FIRST and SuppressionCensusTests run against the unedited table: 1 failed / 4
+# passed, TheDocumentationSwitchIsSetOnExactlyTheseProjects, naming St4i.EdgeCore.csproj at "on" against an
+# expectation of "off". AE-1 built that assertion for precisely this edit and it caught precisely this
+# edit. Transcripts: .superpowers/sdd/item12-stage3/task-1-report.md.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 EXPECT_EDGECORE=1152
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
@@ -4944,7 +4960,59 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # block that follows before concluding that 116 is still the whole of what this gate says about warnings: it
 # is not, and the reason is that 116 is a SCALAR OVER A UNION and therefore cannot see one population fall
 # while another rises. It stays 116 because nothing was paid, nothing was silenced and nothing regressed.
-EXPECT_WARNINGS=116
+# [🔴 "It stays 116" WITHDRAWN 2026-08-19 by task AF-1: item 12 stage 3 turned the switch on and this
+#  literal is now 852. AE-1's sentence was true of AE-1's tree and its reasoning is unchanged — the scalar
+#  is a scalar over a union at 852 exactly as it was at 116, and it is WEAKER at 852, because the union it
+#  summarises is now seven times larger. What holds it to a meaning is the (bucket x code) ledger below.]
+#
+# ══ 116 -> 852 — task AF-1, owner item 12, STAGE 3: THE SWITCH IS ON ══════════════════════════════════
+#
+# 🔴 THE ONLY INCREASE ITEM 12 IS EVER ALLOWED. Stages 4..8 may only lower this number; a later stage that
+# raises it is a finding to be explained, never a constant to be updated. The move is ONE property in
+# src/St4i.EdgeCore/St4i.EdgeCore.csproj — `<GenerateDocumentationFile>true</GenerateDocumentationFile>`,
+# with NO exemption of any kind — enforcing the owner's ruling on item 12 option (b).
+#
+# 🔴 "option (b)" IN THE LINE ABOVE IS WITHDRAWN, 2026-08-19, by task AF-1 — quoted and retired in place
+# rather than overwritten, the style AA-1 established for this repository. THE RULING IS NOT ANY OF THE
+# FOUR LABELLED OPTIONS, and item 12 opens by saying so: (c) is not turning the switch on at all, while
+# (a), (b1) and (b2) are ALL overrides in the decision's own words. It is a FIFTH thing — turn the switch
+# on AND accept no override — recorded BY DESCRIPTION, never by label.
+#   Read this as the failure it is, because the mistake is instructive and the line it sits on is the
+#   worst possible place for it: THIS FILE is where stages 4..8 come to learn what the ruling was, since
+#   it is the file that holds EXPECT_WARNINGS. A reader who took "(b)" at face value would learn that the
+#   ruling authorises an .editorconfig severity section — after fifteen consecutive tasks with not one
+#   override — which is the exact failure mode item 12 warns about by name.
+#   AF-1 wrote this line and, in the SAME commit, wrote a correct analysis of this very error beside the
+#   property in St4i.EdgeCore.csproj. It then "fixed" the error in that one file without grepping for the
+#   copy it had just created here. §8.1(b): the least-scanned artefact is your own justification.
+#
+# 🔴 852 IS MEASURED, NOT COMPUTED. `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo` over the
+# whole solution, SDK 10.0.302, 15/15 compilations, `Build succeeded.`, `0 Error(s)`, `852 Warning(s)`, on
+# the tree this commit produces. It is NOT 116 + a difference: stage 1 measured that the population is NOT
+# preserved under payment — writing `<param>` for SOME parameters of a member turns one CS1591 into one
+# CS1573 — so every stage re-measures its own constant instead of subtracting. This one happens to agree
+# with stage 1's arithmetic (837 in-EdgeCore + 15 outside = 852) and with stage 1's own direct measurement
+# at 59bebd21, and THAT AGREEMENT IS THE FINDING: two merges (AC-1, AE-1) landed between them and moved
+# none of it. Nothing here is rounded toward the old number.
+#
+# THE ENUMERATION FIRST, THE TOTAL AFTER — every code in this build, measured in the summary block:
+#   CS1591 543 · CS1573 92 · CS1574 75 · CS8625 37 · CS8618 35 · CS1734 23 · CS8604 15 · CS8601 9
+#   NU1701 9 · CS8600 5 · CS0419 3 · CS8603 2 · CS8767 2 · xUnit2029 1 · xUnit1013 1     = 852
+# The 736 the switch added are CS1591 543 + CS1573 92 + CS1574 75 + CS1734 23 + CS0419 3, all of them in
+# the St4i.EdgeCore compilation, and the other 116 are unchanged code-for-code from the line above.
+#
+# 🔴 NOT ONE OF THE 736 IS PAID BY THIS COMMIT, AND THAT IS THE POINT, NOT AN OMISSION. Item 12 stays in
+# PART II of docs/owner-decisions.md — a PARTIAL-enforcement note, not a completion note — because 633 of
+# them are ours and unpaid. 103 (95 CS1591 + 8 CS1573) are in the vendored SDK file this repository may
+# not edit; they are the NAMED DEBT the ruling created, they must stay VISIBLE, and the ledger below is
+# what stops them from being quietly retired. A stage that lowers 852 by silencing rather than by writing
+# is exactly what the two instruments exist to catch.
+#
+# 🔴 AND THIS NUMBER IS NOW A WEAKER INSTRUMENT THAN IT WAS AT 116, WHICH IS WHY THE LEDGER BELOW IS NOT
+# OPTIONAL. A scalar over 852 hides a cancellation just as it hid one over 116, and stages 4..8 are a long
+# run of deliberate reductions in one bucket standing beside a bucket that can rise. Read the block below
+# before treating a green 852 as a statement about anything.
+EXPECT_WARNINGS=852
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
@@ -4981,6 +5049,9 @@ fi
 # three to theirs and 116 does not move: the gate stays green and BOTH events vanish. A long run of deliberate
 # reductions in one ledger, next to a ledger that can rise, is exactly the interval during which a rise is
 # invisible -- and that interval is the plan.
+# [🔴 "82 today" WITHDRAWN 2026-08-19 by task AF-1: stage 3 turned the switch on, so the vendored bucket now
+#  stands at 185 TODAY — measured, and identical to the figure AE-1 predicted for it. Substitute 852 for 116
+#  in the sentence above and every word of it still holds; the interval AE-1 described has now begun.]
 #
 # 🔴 SO THE FIX IS NOT A BIGGER NUMBER, IT IS A PARTITIONED ONE. This block asserts EQUALITY on an ENUMERATED
 # map from (ORIGIN BUCKET, WARNING CODE) to COUNT. Every row is pinned; a row appearing, disappearing or
@@ -5017,6 +5088,13 @@ fi
 # committed TODAY, moves not one row here -- CS1591's count is 0 in both buckets while the switch is off -- and
 # it would then silence all 543 the moment stage 3 turns the switch on, with no gate anywhere noticing. That is
 # not a corner: it is the exact shape of the failure stage 3 is exposed to. The other half is
+# [🔴 THE EXAMPLE IS SPENT, THE ARGUMENT IS NOT — recorded 2026-08-19 by task AF-1. Stage 3 has turned the
+#  switch on, so THAT particular `<NoWarn>` now moves 543 rows here and this half would catch it. Do not read
+#  that as "the second half was for stage 2 only": the property is about codes standing at ZERO, and after
+#  stage 3 the codes standing at zero are the ones stages 4..8 drive to zero one file at a time. The day a
+#  stage finishes paying CS1574, an override naming CS1574 becomes invisible to this half again, in exactly
+#  the shape described above. The second half is what stays.]
+# The other half is
 # tests/St4i.EdgeCore.Tests/SuppressionCensusTests.cs, which enumerates SUPPRESSION INSTRUCTIONS rather than
 # warnings and therefore does not need the code to exist yet. Neither half is redundant and neither is
 # sufficient: this one catches suppression of what IS emitted plus every drift in the populations; that one
@@ -5055,12 +5133,26 @@ fi
 #      * It says NOTHING about doc-comment coverage today, because with the switch off no such diagnostic is
 #        emitted anywhere. What it does say today is not nothing and not asleep: 82 of the 116 already live in
 #        the vendored file, so the split it asserts is LIVE, NON-EMPTY and unequal from the day it ships.
+#        [🔴 "says NOTHING about doc-comment coverage today" WITHDRAWN 2026-08-19 by task AF-1: the switch is
+#         ON in St4i.EdgeCore since stage 3, so doc-comment coverage is now the LARGER half of what this
+#         ledger says — 736 of its 852, on five codes. The rest of the bullet stands unchanged.]
 #
 # 🔴 ITS STAGE-3 BEHAVIOUR IS MEASURED, NOT PROMISED. The same function below, run unchanged over a
 # `dotnet build -t:Rebuild -p:GenerateDocumentationFile=true` log (a DIAGNOSTIC: no file in the tree was
 # touched, the switch is not set anywhere, `git status --porcelain` was empty either side), splits the whole
 # tree into VENDORED 185 / OURS 3414. The vendored bucket gains exactly the 103 nobody may pay -- 95 CS1591
 # and 8 CS1573 -- and not one row more. Stage 3 therefore installs no mechanism; it moves two tables.
+#
+# 🔴 AND STAGE 3 HAS NOW RUN, SO THE PREDICTION ABOVE IS A CLOSED LOOP RATHER THAN A FORECAST (task AF-1,
+# 2026-08-19). What AE-1 measured was the ceiling with the switch on for ALL FIFTEEN projects, which is why
+# its OURS figure is 3414 against a total of 3599. The owner's ruling names ONE project, so what shipped is
+# VENDORED 185 / OURS 667 = 852. The halves that were the actual prediction both landed EXACTLY:
+#   * the VENDORED bucket is 185, and its documentation half is precisely the 103 nobody may pay
+#     (95 CS1591 + 8 CS1573) with not one row more -- the 82 nullable rows are unmoved, code for code;
+#   * the OURS bucket gained precisely 633 (448 CS1591 + 84 CS1573 + 75 CS1574 + 23 CS1734 + 3 CS0419)
+#     over its 34, which is the population stages 4..8 exist to pay, MEASURED here rather than subtracted.
+# AE-1's closing sentence is therefore confirmed rather than quoted: stage 3 installed NO mechanism. It
+# moved two tables and turned one property on.
 VENDORED_SOURCE_CSPROJ="src/St4i.EdgeCore/St4i.EdgeCore.csproj"
 # 🔴 THE VENDORED FILE'S IDENTITY IS DERIVED, NEVER RE-SPELLED. It is read out of the csproj's own
 # `Compile Include`, exactly as DocCommentProseTests derives it, so the two instruments cannot disagree about
@@ -5137,12 +5229,69 @@ warning_ledger() {
 #              with its Python and Node siblings. THIS REPOSITORY MAY NOT EDIT IT. A row moving here is a
 #              re-vendoring or an override, never a defect to fix in place, and never a number to lower.
 #   OURS     = every other compilation unit in this solution. A row moving here is ours to explain.
-EXPECT_WARNING_LEDGER="OURS CS8601 7
+#
+# ══ THE ROWS MOVED ONCE, BY TASK AF-1 (item 12 stage 3, 2026-08-19), AND HERE IS EVERY ONE ═════════════
+#
+# 🔴 THE ENUMERATION FIRST, THE COUNTS AFTER, because the count is what goes wrong when it is written
+# first — this file has now watched that rule prove itself six times, and the draft of THIS block said
+# "six new rows" over a list of seven. AE-1 pinned twelve rows (6 OURS + 6 VENDORED) at 82/34. This table
+# holds nineteen (11 OURS + 8 VENDORED) at 185/667. What changed, listed:
+#     NEW, OURS      CS1591 448 · CS1573 84 · CS1574 75 · CS1734 23 · CS0419 3   — five rows,  +633
+#     NEW, VENDORED  CS1591 95 · CS1573 8                                        — two rows,   +103
+#     MOVED          none. Not one of AE-1's twelve rows changed value, in either bucket.
+# Seven new rows; 12 + 7 = 19. 633 + 103 = 736, the whole of what the switch added. Every figure was READ
+# OUT of the (bucket x code) partition of this commit's own `-t:Rebuild` log. None was subtracted from a
+# previous one -- stage 1 measured that this population is not preserved under payment, so a difference is
+# not a measurement here and will not be at stages 4..8 either.
+#
+# 🔴 THE TWELVE THAT DID NOT MOVE ARE EVIDENCE, NOT DECORATION. The switch reaches exactly one compilation.
+# If turning it on had changed a nullable count, an NU1701 or an xUnit row anywhere, this task would have
+# reached somewhere it had no business reaching, and the ledger is the only thing in this repository that
+# could have said so. It is also the check on the classifier: the twelve carry the SAME bucket assignment
+# they carried at 116, including the 14 OURS CS8604 whose message text names the vendored type (see the
+# source-location note above) -- a whole-line matcher would have moved them into VENDORED the moment the
+# populations grew, and it did not, because the classifier reads the source location.
+#
+# 🔴 "THE 14 OURS CS8604 WHOSE MESSAGE TEXT NAMES THE VENDORED TYPE" IS WITHDRAWN, 2026-08-19, by the task
+# that wrote it, one branch-review round later. IT IS 13, AND THEY ARE NOT ALL CS8604. Measured on this
+# commit's own log with this file's own classifier: OURS-bucket warnings whose MESSAGE contains
+# `St4iDeviceClient` are 12 CS8604 + 1 CS1591 = 13, all thirteen in
+# src/St4i.EdgeCore/Transport/LiveTransport.cs. "14" was not measured at all -- it was copied from the
+# value of the row sitting next to the sentence (`OURS CS8604 14`), which counts something else entirely:
+# every CS8604 we own, whether or not its message names that type.
+#   🔴 AND THE CORRECT NUMBER WAS ALREADY IN THIS FILE, ABOUT 140 LINES ABOVE: AE-1's source-location note
+#   says "Twelve of the current 116 have that shape (thirteen with the documentation switch on)". Twelve
+#   with the switch off, thirteen with it on. The switch is on. A number was written over a correct
+#   number, in the same file, by someone who had read that file closely enough to edit around it.
+#   This is the "ENUMERATE FIRST, COUNT AFTER" rule failing for the SEVENTH time in this batch, and the
+#   first time it reached a commit without anyone catching it in the writing.
+# THE PROPERTY THE SENTENCE IS ABOUT IS UNCHANGED AND MEASURED: a matcher testing the WHOLE LINE instead
+# of the source-location prefix reports VENDORED 198 / OURS 654 on this same log, against the true
+# 185 / 667 -- filing 13 of OUR OWN warnings under the population this repository is forbidden to edit.
+# The classifier's correctness is worth exactly those 13, and the count of them is now measured.
+#
+# 🔴 95 + 8 = 103 IS THE NAMED DEBT AND IT IS PINNED AS AN EQUALITY IN BOTH DIRECTIONS. Nobody in this
+# repository may write those comments and nobody may silence them. The two VENDORED documentation rows
+# going DOWN is not progress; it is an override or a re-vendoring, and lowering the pin to match is
+# precisely how a named debt stops being named. The two going UP is a re-vendoring too. Either is red.
+#
+# 🔴 AND THE 633 IN `OURS` IS WHAT STAGES 4..8 PAY, ROW BY ROW. Each of those stages re-MEASURES this
+# table; none may subtract. Watch CS1573 in particular: paying a CS1591 by writing `<summary>` plus SOME
+# of a member's `<param>` tags CREATES a CS1573, so `OURS CS1573 84` is expected to RISE mid-payment while
+# `OURS CS1591 448` falls. A stage that reports both falling in lockstep has not measured, it has guessed.
+EXPECT_WARNING_LEDGER="OURS CS0419 3
+OURS CS1573 84
+OURS CS1574 75
+OURS CS1591 448
+OURS CS1734 23
+OURS CS8601 7
 OURS CS8604 14
 OURS CS8767 2
 OURS NU1701 9
 OURS xUnit1013 1
 OURS xUnit2029 1
+VENDORED CS1573 8
+VENDORED CS1591 95
 VENDORED CS8600 5
 VENDORED CS8601 2
 VENDORED CS8603 2
