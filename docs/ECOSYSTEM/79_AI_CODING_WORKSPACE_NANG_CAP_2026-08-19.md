@@ -452,3 +452,58 @@ từ trước**. Truy ra: `GHIM` đặt ở `d3b0ed74`, **trước khi** `repoWo
 dòng việc doc 78/79**, không phải của lượt này. Đã trả cùng lượt (để lại thì con số mới cũng vô
 nghĩa), kèm phép quy trách nhiệm đầy đủ trong `phamViDocCensus.test.ts`:
 `2209 + 6 (nợ cũ) = 2215 (đo) + 4 (lượt này) = 2219`. **Nhóm (A) KHÔNG đổi: 363.**
+
+---
+
+# ✅ DANH SÁCH PHIÊN — mảnh CUỐI, nghiệm thu live 2026-08-19
+
+Ba mảnh của giao diện Claude Code chủ dự án gửi mẫu **nay đủ cả ba**:
+
+| Mảnh mẫu Claude Code | Ở đây | Trạng thái |
+|---|---|---|
+| *"Select folder"* | bộ chọn dự án (trục 2) | ✅ live |
+| ô *"Describe a task…"* | AI sinh mã · sửa tệp qua HITL · vòng tự động | ✅ live |
+| **danh sách phiên** | cột "Phiên" + "Phiên mới" | ✅ **live (mục này)** |
+
+**Nghiệm thu live** (tôi tự chạy Playwright, tự chụp, tự đọc ảnh): tạo hai phiên ⇒ cả hai hiện trong
+cột trái với **nhãn tự sinh từ câu hỏi đầu** + `2 lượt · 12:42 19-08`; bấm lại phiên CŨ ⇒ **khôi phục
+nguyên hội thoại** (câu hỏi + nội dung `Calculator.cs` thật). Chân cột nói rõ: *"Phiên lưu trên máy
+chủ, riêng theo tài khoản và theo dự án — người khác không đọc được."*
+
+## ★★ Trục an ninh: CHỦ SỞ HỮU, không phải tenant — tiền đề của tôi SAI
+
+Tôi dặn *"nếu chọn CSDL thì phải trả lời RLS/tenant"*. **Sai trục.** Tenant không trả lời được câu
+hỏi thật (*"A đọc được phiên của B không?"* — A với B cùng nhà máy thì **cùng tenant**), và RLS tầng
+CSDL của repo này **nằm im** (`runWithTenantScope` 0 nơi gọi). Trục đúng là **quyền sở hữu**, chặt
+hơn tenant một bậc: **chỉ chủ phiên, kể cả `admin` cũng không**. Hàng rào nằm trong **mệnh đề WHERE
+của mọi truy vấn**; `userId` luôn từ `ctx.user.id`, `input` không có ô danh tính nào.
+
+★ Và `localStorage` — thứ nghe như *"0 bề mặt server ⇒ 0 rủi ro"* — thực ra **ngược**: nó gắn với
+**origin**, không gắn với **người dùng**. Trên máy trạm xưởng dùng chung, A đăng xuất, B đăng nhập
+cùng hồ sơ trình duyệt và **đọc hết phiên của A**. Mà nội dung phiên **là mã nguồn + diff đề xuất** —
+đúng thứ bit `ai_repo_read` sinh ra để canh.
+
+## ⚠ MỘT LỖI CHỈ MẮT BẮT ĐƯỢC — mọi lưới đều xanh
+
+Ảnh chụp đầu tiên lộ **khối "Dự án" bị bóp còn 13 px** trong khi `<select>` bên trong cao 20 px ⇒ nó
+**tràn và đè lên** khối "Cây tệp". Nguyên nhân: trong `flex flex-col` có `ScrollArea flex-1`, các khối
+đầu thiếu `shrink-0` nên bị co; cột phiên mới làm lưới chặt hơn nên lỗi cũ mới lộ.
+
+> Đây đúng bài học nhóm C: **cổng tĩnh xanh chỉ chứng minh "không còn thứ TÔI BIẾT CÁCH NHÌN"**.
+> `check` · `check:tests` · `i18n:check` · 73/73 ca phiên — tất cả xanh, và không cái nào thấy được
+> hai khối đè lên nhau.
+
+Sau khi thêm `shrink-0`: khối "Dự án" **67 px**, `<select>` **32 px**, "Cây tệp" xuống y=155 — hết đè.
+
+## Nợ CÓ SẴN đóng kèm
+
+`phamViDocCensus` **đã ĐỎ ở HEAD** (đo 2215 vs ghim 2209). Truy ra ghim đặt ở `d3b0ed74` **trước khi**
+`repoWorkspaceRouter.ts` tồn tại (`8f5b32c1`, doc 78 pha D) ⇒ 6 thủ tục chưa bao giờ được khai — nợ
+của **chính dòng việc doc 78/79**. Trả kèm quy trách nhiệm: `2209 + 6 (nợ cũ) = 2215 (đo) + 4 (lượt
+này) = 2219`. ⚠ **Nhóm A (rò rỉ) KHÔNG đổi: 363.**
+
+## Trạng thái cuối
+
+- Migration **0333** đã áp **cả hai** CSDL. Phiên thử của tôi đã xoá (bảng về 0 hàng).
+- Đề thi C# + React đều **nạp lại**, `sandbox-projects/` 0 thay đổi.
+- `AI_CODING_AUTOLOOP=1` đang bật ở `.env` máy này để nghiệm thu; **mã mặc định TẮT**.

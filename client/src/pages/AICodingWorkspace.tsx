@@ -379,7 +379,8 @@ function DanhSachPhienCot({
 
   return (
     <div className="flex flex-col overflow-hidden border-r">
-      <div className="flex items-center gap-1.5 border-b px-2 py-1.5">
+      {/* `shrink-0`: cùng lý do như khối "Dự án" — xem chú thích ở đó. */}
+      <div className="flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5">
         <MessagesSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
         <span className="truncate text-xs font-semibold">{t("repoWs.sessions.title", "Phiên")}</span>
         <Button
@@ -941,7 +942,13 @@ export default function AICodingWorkspace() {
           <div className="flex flex-col overflow-hidden border-r">
             {/* Bộ chọn DỰ ÁN (doc 79 · TRỤC 2) — tham khảo "Select folder" của Claude Code. Client
                 giữ + gửi MỘT id; server tra danh sách TRẮNG .env để ra gốc (không nhận đường dẫn). */}
-            <div className="flex flex-col gap-1 border-b px-2 py-1.5">
+            {/* ⚠ `shrink-0` KHÔNG phải trang trí — nghiệm thu LIVE 2026-08-19 bắt được: thiếu nó thì
+                trong `flex flex-col` có `ScrollArea flex-1`, khối này bị co xuống **13 px** trong khi
+                `<select>` bên trong cao 20 px ⇒ nó TRÀN và ĐÈ lên khối "Cây tệp". Mọi lưới đều xanh —
+                đây là lớp lỗi chỉ MẮT bắt được (bài học nhóm C: cổng tĩnh xanh chỉ chứng minh
+                "không còn thứ TÔI BIẾT CÁCH NHÌN"). Cột phiên của đợt này làm lưới co chặt hơn nên
+                lỗi mới lộ. */}
+            <div className="flex shrink-0 flex-col gap-1 border-b px-2 py-1.5">
               <label htmlFor="repows-project" className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
                 <FolderTree className="h-3.5 w-3.5" /> {t("repoWs.project.label", "Dự án")}
                 <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide">
@@ -962,7 +969,7 @@ export default function AICodingWorkspace() {
                 ))}
               </select>
             </div>
-            <div className="flex items-center justify-between border-b px-2 py-1.5">
+            <div className="flex shrink-0 items-center justify-between border-b px-2 py-1.5">
               <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                 <FolderTree className="h-3.5 w-3.5" /> {t("repoWs.tree.title", "Cây tệp")}
               </span>
