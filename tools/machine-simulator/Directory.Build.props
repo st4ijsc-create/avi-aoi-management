@@ -68,6 +68,11 @@
         our own source (stages 5..8) plus the 103 nobody here may pay. The THIRD state above is unchanged
         and is still what this row is: property on, over a debt that is named rather than hidden. Only the
         amount moved, and it will move again, which is why it is retired here instead of re-pinned.]
+       [🔴 "the live figure is 635 outstanding: 532 coverage warnings on our own source" WITHDRAWN
+        2026-08-19 by task AH-1 (item 12 STAGE 5), which said it would move again and it has. 120 of the
+        532 are PAID by writing; the live figure is 515 outstanding: 412 coverage warnings on our own
+        source (328 CS1591 + 84 CS1573, stages 6..8) plus the same 103 nobody here may pay. Retired in
+        place rather than re-pinned, for the same reason as the line above it.]
 
            project                            (1) parse/resolve   (2) CS1591   CS1573   set
            St4i.Connector.Conformance                  15               0          0     yes
@@ -460,6 +465,61 @@
        what the switch was turned on to make visible.
 
        🔴 ITEM 12 STILL STAYS IN PART II. 532 coverage warnings on 90 files remain unpaid, plus the 103
-       nobody may pay. Stages 5..8 pay the 532; each re-measures its own constant. -->
+       nobody may pay. Stages 5..8 pay the 532; each re-measures its own constant.
+       [🔴 "532 ... Stages 5..8 pay the 532" WITHDRAWN 2026-08-19 by task AH-1 (item 12 stage 5), which
+        grepped the repository for every occurrence of the literal it was moving rather than retiring the
+        one it happened to be standing next to. True of AG-1's tree; the live figure is in AH-1's block
+        immediately below. The rest of AG-1's record above is untouched and is still the correct account
+        of what stage 4 did.]
+
+       ══════════════════════════════════════════════════════════════════════════════════════════════════
+       🔴 AH-1 (.superpowers/sdd/item12-stage5/task-1-brief.md) — owner item 12, STAGE 5. THE FIRST 120
+       COVERAGE GAPS ARE PAID BY WRITING. This is the first stage whose DELIVERABLE is itself a pile of
+       new published claims, so the rule it worked under was: a `summary` that only restates the member
+       NAME is not a payment, and where there was genuinely nothing to say beyond the name that is a
+       FINDING to report, not a blank to fill.
+
+       THE CLUSTER, chosen for a reason and not for a count: the config-sync DOMAIN MODEL — the seven
+       types whose member SPELLING is a string published outside this repository. That is not an
+       argument from taste, it is measured. St4i.EngineApi/Config/LiveConfigSyncWireDtos.cs declares
+       MeasurementPoint and Fiducial AS the wire shape of the real ecosystem's get-points and
+       delta-sync-points responses (camelCase policy, no intermediate DTO); LightingShot travels inside a
+       point; ProductModel, ProductVariant, VariantPointOverride and Recipe are the shape of
+       products.json and recipes.json, the two operator-editable files scripts/verify-suites.sh already
+       exempts BY NAME from its output-directory watch. Every enum member paid states the exact token it
+       serializes to, and ConfigJsonConverters builds those converters with `allowIntegerValues:false`,
+       which makes the spelling the WHOLE contract: a numeric value is a hard read failure. This is P-2's
+       law — a member's spelling is a published string — applied where the reader is another company's
+       server. The STORES and CONVERTERS around this data were already fully documented and emitted no
+       warning; only the data crossing the boundary was undescribed.
+
+       MEASURED, on the tree this commit produces — `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
+       over the whole solution, SDK 10.0.302, 15/15 compilations, `Build succeeded.`, `0 Error(s)`:
+           631 warnings, down from 751. The 120 paid are all CS1591, all in the St4i.EdgeCore
+           compilation, across seven files under src/St4i.EdgeCore/Config.
+       Split by origin: VENDORED 185 / OURS 446. The vendored bucket did not move ONE UNIT.
+       751 - 120 = 631 is arithmetic that agrees; 631 was READ OUT of the partition, and the first
+       -t:Rebuild of this tree had to be discarded and re-run because all seven of its errors were
+       CS2001 inside a `_wpftmp` project, exactly as this repository's own gate note says they must be.
+
+       🔴 `OURS CS1573 84` DID NOT MOVE, AND THE REASON MATTERS MORE THAN THE FACT. Stage 1 measured that
+       paying a CS1591 with SOME of a member's `param` tags creates a CS1573, and warned stages 5..8 that
+       they are the stages that write. It did not fire here because NOT ONE of the 120 members takes a
+       parameter: 118 properties and enum members, plus two nullary BumpVersion methods. So this stage
+       did not de-risk that channel for stages 6..8 — it never opened it, and the first stage to document
+       a member WITH parameters is still the first that can make CS1573 rise.
+
+       🔴 AND THE CHECKABLE DIFF CLAIM CHANGES SHAPE HERE, STRUCTURALLY. Stage 4 could assert "ZERO
+       changed lines that are not `///`". A stage documenting ENUM MEMBERS cannot: a doc block cannot
+       attach to a member inside a one-line `public enum X` declaration, so paying those warnings forces
+       the declaration to be re-laid out. Seven were (MeasurementType, ToleranceMode, PointShape,
+       ProductLifecycleStatus, CoordinateMode, RecipeStatus, VariantOverrideAction). What survives is a
+       narrower zero: outside `///` lines, blank lines, one 3-line `//` banner and those seven
+       brace/comma re-layouts, ZERO lines changed — and all seven member sequences are identical
+       name-for-name and order-for-order, which is the part that would have mattered had it not held,
+       since enum order is the underlying value. No executable statement was touched.
+
+       🔴 ITEM 12 STAYS IN PART II. 412 coverage warnings on our own source remain unpaid, plus the 103
+       nobody may pay. Stages 6..8 pay the 412; each re-measures its own constant. -->
 
 </Project>
