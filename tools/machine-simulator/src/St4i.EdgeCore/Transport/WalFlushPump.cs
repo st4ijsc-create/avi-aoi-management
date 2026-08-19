@@ -16,7 +16,7 @@ namespace St4i.EdgeCore.Transport;
 /// project is intentionally logging-framework-free; a host wires these to its own <c>ILogger</c> when it
 /// constructs the pump, exactly like <see cref="St4i.EdgeCore.Historian.HistorianWriter"/> already does).
 ///
-/// <paramref name="getLive"/>'s delegate indirection (rather than a captured <see cref="LiveTransport"/>
+/// <c>getLive</c>'s delegate indirection (rather than a captured <see cref="LiveTransport"/>
 /// instance) is deliberate: <c>TransportCoordinator.RebuildLive</c> can swap in a fresh
 /// <see cref="LiveTransport"/> at any time (a Settings edit), and <c>TransportCoordinator.Mode</c> can
 /// flip away from Live at any time too. Re-fetching both fresh on every tick — rather than resolving

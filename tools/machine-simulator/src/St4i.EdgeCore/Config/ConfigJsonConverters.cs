@@ -29,7 +29,7 @@ namespace St4i.EdgeCore.Config;
 /// documented way around that: it gets asked for the concrete <c>TEnum</c> at resolution time and
 /// builds the right closed converter then.
 ///
-/// Note the extra unwrap step in <see cref="CreateConverterFor"/>: <c>JsonStringEnumConverter&lt;TEnum&gt;</c>
+/// Note the extra unwrap step in <see cref="EnumConverterHelper.CreateConverterFor"/>: <c>JsonStringEnumConverter&lt;TEnum&gt;</c>
 /// is ITSELF a <see cref="JsonConverterFactory"/> (not a concrete <c>JsonConverter&lt;TEnum&gt;</c>) —
 /// STJ refuses a factory whose <c>CreateConverter</c> returns another factory ("cannot return an
 /// instance of JsonConverterFactory"), so this factory must call the inner one's own

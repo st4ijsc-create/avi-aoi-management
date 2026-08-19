@@ -35,13 +35,13 @@ public enum ModbusDataType { UInt16, Int16 }
 /// <c>writable</c> declaration in the map is sufficient authorization to write to a real device, with no
 /// deployment-level kill switch. A writable point with no declared range would mean "no limit" — the exact
 /// same defect class as an enum whose default value means success, which this batch already fixed once (see
-/// <see cref="Models.WriteOutcome"/>'s own "Fix round 1" remarks). So a range is not a nicety here; it is the
+/// <see cref="St4i.Connector.Abstractions.Models.WriteOutcome"/>'s own "Fix round 1" remarks). So a range is not a nicety here; it is the
 /// one thing standing between a pasted vendor map and an unbounded write reaching a real machine.</para>
 /// </summary>
 public sealed record ModbusWritableRange(double? Min, double? Max);
 
 /// <summary>One register→canonical-tag mapping: which register to read, how to decode it, and the metric
-/// name/unit it becomes on the resulting <see cref="Models.TelemetrySample"/>. <see cref="Scale"/>
+/// name/unit it becomes on the resulting <see cref="St4i.Connector.Abstractions.Models.TelemetrySample"/>. <see cref="Scale"/>
 /// multiplies the decoded raw integer to produce the telemetry value (e.g. a raw 235 with scale 0.1 →
 /// 23.5) — this is the ENTIRE unit-conversion story for G2-6; anything fancier (per-register offset,
 /// non-linear conversion) is out of scope.
@@ -96,7 +96,7 @@ public sealed record ModbusRegister(
     /// (<c>raw*Scale</c>, with an Int16 register's raw word reinterpreted two's-complement BEFORE scaling):
     /// given an engineering-unit <paramref name="engineeringValue"/> ALREADY known to be within
     /// <see cref="Writable"/>'s declared <see cref="ModbusWritableRange.Min"/>/<see cref="ModbusWritableRange.Max"/>
-    /// (that check is <see cref="Models.SetpointRejectionReason.OutOfRange"/>'s own job, upstream of this
+    /// (that check is <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason.OutOfRange"/>'s own job, upstream of this
     /// method — this method does not repeat it), computes the exact 16-bit word
     /// <c>WriteSingleRegisterAsync</c> would send on the wire: <c>raw = Math.Round(engineeringValue / Scale,
     /// MidpointRounding.AwayFromZero)</c>, then bit-cast into the register's own <see cref="DataType"/>.
@@ -133,7 +133,7 @@ public sealed record ModbusRegister(
     /// own declared-range check exactly — the two sibling "write-side math a future driver calls" helpers no
     /// longer disagree about who enforces the limit the whole task exists to make mandatory. If
     /// <see cref="Writable"/> is <see langword="null"/> (this register was never declared writable in the
-    /// first place — a caller error the driver's own <see cref="Models.SetpointRejectionReason.NotWritable"/>
+    /// first place — a caller error the driver's own <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason.NotWritable"/>
     /// check should have already caught before ever reaching here), there is no declared range to enforce and
     /// only the physical-type check below applies.
     ///
@@ -146,14 +146,15 @@ public sealed record ModbusRegister(
     /// check honestly), so this is specifically the NaN gap.</para>
     ///
     /// <para><b>Fix round 1 — "consider" item, resolved: stays <see langword="bool"/> + <see langword="string"/>?,
-    /// not <see cref="Models.SetpointRejectionReason"/>.</b> Every failure this method can produce corresponds
-    /// to EXACTLY ONE <see cref="Models.SetpointRejectionReason"/> member —
-    /// <see cref="Models.SetpointRejectionReason.OutOfRange"/> — never <see cref="Models.SetpointRejectionReason.UnknownPoint"/>/
-    /// <see cref="Models.SetpointRejectionReason.NotWritable"/> (resolving whether a point NAME is known/writable
+    /// not <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason"/>.</b> Every failure this method can produce corresponds
+    /// to EXACTLY ONE <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason"/> member —
+    /// <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason.OutOfRange"/> — never
+    /// <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason.UnknownPoint"/>/
+    /// <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason.NotWritable"/> (resolving whether a point NAME is known/writable
     /// at all is the caller's/driver's own job, before it ever reaches a specific <see cref="ModbusRegister"/>
     /// instance to call this method on). A future <c>WriteSetpointAsync</c> implementation therefore needs no
     /// translation step beyond "if this returns <see langword="false"/>, reject with
-    /// <see cref="Models.SetpointRejectionReason.OutOfRange"/> and this method's own <paramref name="error"/> as
+    /// <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason.OutOfRange"/> and this method's own <paramref name="error"/> as
     /// <c>Detail</c>" — see <see cref="CommandArgumentDeclaration"/>'s own doc comment for the identical
     /// reasoning on the command-argument side.</para>
     /// </remarks>
@@ -219,8 +220,8 @@ public sealed record ModbusRegister(
 
 /// <summary>
 /// Task B-3 — a Modbus command: a single coil this map declares by name, so
-/// <see cref="Models.IWritableDeviceDriver.Commands"/> can list it and
-/// <see cref="Models.IWritableDeviceDriver.InvokeCommandAsync"/> (B-4) can pulse it without re-deriving which
+/// <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.Commands"/> can list it and
+/// <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.InvokeCommandAsync"/> (B-4) can pulse it without re-deriving which
 /// coil a name refers to. Deliberately minimal, mirroring this file's own "deliberately minimal for G2-6"
 /// idiom (see <see cref="ModbusDataType"/>'s own doc comment): a command is a single coil address, matching
 /// B-1's own illustrative example ("a Modbus coil pulse") exactly. A command that instead writes a VALUE into
@@ -234,7 +235,7 @@ public sealed record ModbusRegister(
 /// for a Modbus command (which register, if any) is left to B-4 to decide when it actually executes one;
 /// this map only declares the argument's name/type/bounds and proves it narrows correctly.</para>
 /// </summary>
-/// <param name="Name">The command's name — see <see cref="Models.IWritableDeviceDriver.Commands"/>.</param>
+/// <param name="Name">The command's name — see <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.Commands"/>.</param>
 /// <param name="CoilAddress">The single coil this command pulses. Nullable — Fix round 1 (Critical #3) — an
 /// omitted <c>"coilAddress"</c> used to bind silently to <see langword="default"/>(<see cref="ushort"/>) = 0,
 /// a REAL, valid coil address, indistinguishable from a map author who genuinely targets coil 0. Since
@@ -262,9 +263,9 @@ public sealed record ModbusCommand(string Name, ushort? CoilAddress, IReadOnlyLi
 /// <see cref="ModbusMultidropMap"/>, which parses every element through THIS method rather than forking a
 /// second map type or a second validation path. The inverse shape (one map declaring N machines, handed to one
 /// factory, producing one driver that emits N machine codes) is refused by blueprint §7.1 because
-/// <see cref="Models.SetpointWriteRequest"/> carries no machine code, so such a driver could not route a write
+/// <see cref="St4i.Connector.Abstractions.Models.SetpointWriteRequest"/> carries no machine code, so such a driver could not route a write
 /// to the right machine — verbatim the hole that produced Đợt B's
-/// <see cref="Models.MachineDriverAvailability.AmbiguousDriver"/> guard.</para>
+/// <see cref="St4i.EdgeCore.Fleet.MachineDriverAvailability.AmbiguousDriver"/> guard.</para>
 ///
 /// <para><b>This method is SHARED with the Modbus TCP driver, and transport-specific rules must not be added
 /// to it.</b> <see cref="UnitId"/> 0 is broadcast — meaningless to read over RTU, but entirely legal and
@@ -310,7 +311,7 @@ public sealed class ModbusRegisterMap
     public IReadOnlyList<ModbusCommand> Commands { get; init; } = Array.Empty<ModbusCommand>();
 
     /// <summary>Task B-3 — the exact vocabulary a driver hands back through
-    /// <see cref="Models.IWritableDeviceDriver.WritablePoints"/>: every <see cref="Registers"/> entry whose
+    /// <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.WritablePoints"/>: every <see cref="Registers"/> entry whose
     /// <see cref="ModbusRegister.Writable"/> is non-null, by <see cref="ModbusRegister.Metric"/>. Empty for a
     /// map that declares no writable points — the additive default this task guarantees for every existing
     /// map.</summary>
@@ -332,7 +333,7 @@ public sealed class ModbusRegisterMap
     }
 
     /// <summary>Task B-3 — the exact vocabulary a driver hands back through
-    /// <see cref="Models.IWritableDeviceDriver.Commands"/>: every <see cref="Commands"/> entry's own
+    /// <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.Commands"/>: every <see cref="Commands"/> entry's own
     /// <see cref="ModbusCommand.Name"/>.</summary>
     public IReadOnlyList<string> CommandNames
     {
@@ -485,7 +486,7 @@ public sealed class ModbusRegisterMap
     ///
     /// P2-3 review fix (Important) — <c>required</c> only enforces the JSON KEY is present, not that its
     /// value is non-blank/non-empty: a map with <c>"machineCode": ""</c> used to sail through this method,
-    /// producing a <see cref="MachineDescriptor"/>-shaped seed with a blank Code that
+    /// producing a <see cref="St4i.EdgeCore.Models.MachineDescriptor"/>-shaped seed with a blank Code that
     /// <c>FleetHost.RegisterMachine</c> (called post-<c>app.Build()</c>, OUTSIDE any try/catch) then
     /// rejected with an uncaught <see cref="ArgumentException"/> — crashing the whole engine at startup.
     /// Validating here, INSIDE the one throwing parse function every malformed-map case already funnels

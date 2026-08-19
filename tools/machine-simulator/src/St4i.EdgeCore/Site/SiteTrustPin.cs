@@ -13,20 +13,22 @@ namespace St4i.EdgeCore.Site;
 /// IRRELEVANT here (<see cref="X509ChainTrustMode.CustomRootTrust"/>): a globally-trusted public CA saying
 /// "yes" means nothing for "is this actually MY operator's Site broker".
 ///
-/// <para><b>FAIL-CLOSED, by construction:</b> every non-happy-path returns <see langword="false"/>, never
-/// throws, and there is no code path that returns <see langword="true"/> without a real
-/// <see cref="X509Chain.Build"/> success against the caller-pinned trust store:
+/// <para><b>FAIL-CLOSED, by construction</b> — every case below names an argument of
+/// <see cref="IsTrusted"/>, this class's only method: every non-happy-path returns
+/// <see langword="false"/>, never throws, and there is no code path that returns
+/// <see langword="true"/> without a real <see cref="X509Chain.Build"/> success against the
+/// caller-pinned trust store:
 /// <list type="bullet">
-/// <item><paramref name="presented"/> is <see langword="null"/> → not trusted (nothing to validate).</item>
-/// <item><paramref name="siteTrustPem"/> is <see langword="null"/>/blank/whitespace-only → not trusted
+/// <item><c>presented</c> is <see langword="null"/> → not trusted (nothing to validate).</item>
+/// <item><c>siteTrustPem</c> is <see langword="null"/>/blank/whitespace-only → not trusted
 /// (an unconfigured or accidentally-cleared pin must never mean "trust anything").</item>
-/// <item><paramref name="siteTrustPem"/> doesn't parse as PEM certificate(s) (garbage, truncated, wrong
+/// <item><c>siteTrustPem</c> doesn't parse as PEM certificate(s) (garbage, truncated, wrong
 /// label) → <see cref="X509Certificate2Collection.ImportFromPem"/> throws <see cref="System.Security.Cryptography.CryptographicException"/>,
 /// caught here → not trusted, never propagated as an exception (a malformed pin must degrade to "nothing
 /// pinned", not crash the bridge's TLS handshake callback).</item>
-/// <item><paramref name="siteTrustPem"/> parses but yields zero certificates → not trusted (empty pin ==
+/// <item><c>siteTrustPem</c> parses but yields zero certificates → not trusted (empty pin ==
 /// no pin).</item>
-/// <item><paramref name="presented"/> doesn't chain to anything in the pinned store (wrong CA, an
+/// <item><c>presented</c> doesn't chain to anything in the pinned store (wrong CA, an
 /// unrelated cert, an expired/not-yet-valid cert, ...) → <see cref="X509Chain.Build"/> returns
 /// <see langword="false"/> → not trusted.</item>
 /// </list>

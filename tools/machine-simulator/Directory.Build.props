@@ -62,6 +62,12 @@
            no           — the other seven. Still an owner decision, still unmeasured as a product question.
        A reader who takes `yes` to mean "documented" will be wrong about exactly one row, which is why the
        row says so itself.
+       [🔴 "bill 736 and OUTSTANDING" WITHDRAWN 2026-08-19 by task AG-1 (item 12 STAGE 4), quoted and
+        retired in place. 101 of the 736 have now been PAID — the 75 CS1574 + 23 CS1734 + 3 CS0419 that
+        were not gaps but FALSE claims — so the live figure is 635 outstanding: 532 coverage warnings on
+        our own source (stages 5..8) plus the 103 nobody here may pay. The THIRD state above is unchanged
+        and is still what this row is: property on, over a debt that is named rather than hidden. Only the
+        amount moved, and it will move again, which is why it is retired here instead of re-pinned.]
 
            project                            (1) parse/resolve   (2) CS1591   CS1573   set
            St4i.Connector.Conformance                  15               0          0     yes
@@ -407,6 +413,53 @@
        nobody had recorded that either. Named in docs/owner-decisions.md item 12; not decided here.
 
        🔴 ITEM 12 STAYS IN PART II. The switch is on, the 633 are not paid, and a flag turned on over an
-       open debt is a PARTIAL enforcement. Stages 4..8 pay it; each re-measures its own constant. -->
+       open debt is a PARTIAL enforcement. Stages 4..8 pay it; each re-measures its own constant.
+
+       ══════════════════════════════════════════════════════════════════════════════════════════════════
+       🔴 AG-1 (.superpowers/sdd/item12-stage4/task-1-brief.md) — owner item 12, STAGE 4. THE 101 CLAIMS
+       THAT WERE ALREADY FALSE ARE PAID. This is the FIRST stage that lowers the number, and it lowers it
+       by RE-POINTING references, never by deleting them to make a warning go away and never by silencing
+       a code. Not one line of executable code was touched, and the checkable form of that is a ZERO, not
+       a total: over 3e001642..HEAD, a `git diff` restricted to `src/` has ZERO changed lines in either
+       direction that are not `///` lines. The raw diff is 106 `///` lines added and 99 removed.
+       [🔴 "all 96 changed lines in src/ begin with `///`" WITHDRAWN 2026-08-19 by the task that wrote it,
+        one commit later. 96 was measured and then four more edits were made without re-measuring it. The
+        claim that carries weight is the ZERO, which was measured last and held; the total was decoration
+        that outranked its own evidence. Retired in place, the style AA-1 established for this file.]
+       🔴 AND THE FIRST DRAFT OF THE TWO LINES ABOVE BROKE EVERY BUILD IN THE SOLUTION. It spelled the
+       command out, and a `git diff` pathspec separator is a DOUBLE HYPHEN, which is illegal inside an XML
+       comment: MSB4024, 30 errors, every csproj, before a single file compiled. THIS FILE IS EXECUTABLE
+       XML, not a notebook, and a correction block written into it is subject to that. The gate caught it
+       at the build gate on the very next run — the correction to a number, breaking the build, in the
+       commit whose whole subject is measuring before writing.
+
+       MEASURED, on the tree this commit produces — `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
+       over the whole solution, SDK 10.0.302, 15/15 compilations, `Build succeeded.`, `0 Error(s)`:
+           751 warnings, down from 852. The 101 paid are 75 CS1574 + 23 CS1734 + 3 CS0419 across 29 files,
+           all of them in the St4i.EdgeCore compilation.
+       Split by origin: VENDORED 185 / OURS 566. The vendored bucket did not move ONE UNIT, which is the
+       assertion this stage had to pass rather than a pleasant observation, and `OURS CS1591 448` /
+       `OURS CS1573 84` did not move either — they are stages 5..8's bill. 751 was READ OUT of the
+       partition; 852 - 101 = 751 is arithmetic that happens to agree, reported as a result and not used
+       in place of the measurement.
+
+       🔴 THE PREDICTION THIS STAGE WAS GIVEN WAS REFUTED, AND THE REFUTATION IS THE FINDING. The brief
+       expected the 23 CS1734 to be signatures that had DRIFTED away from their own documentation — a
+       renamed or removed parameter. Measured: ZERO of 23. Every one of the 23 names a parameter that
+       exists, spelled correctly, on a constructor or method of the very same type; all 23 sit in a
+       TYPE-level `///` block, where C# has no parameter scope and `<paramref>` therefore cannot resolve
+       no matter what it names. It is a SCOPE defect, uniformly, and not a drift defect. No signature in
+       this project has drifted from its own doc comment.
+
+       🔴 AND 38 OF THE 75 CS1574 HAD ONE CAUSE, WHICH IS WORTH MORE THAN THE COUNT. `cref="Models.X"` is
+       correct inside St4i.Connector.Abstractions (where `Models` binds to that assembly's own child
+       namespace) and was copied verbatim into five files under St4i.EdgeCore.Drivers, where `Models`
+       binds to St4i.EdgeCore.Models instead — a namespace that exists and contains none of those types.
+       The spelling resolved on one side of a project boundary and silently failed on the other. That is
+       exactly the class of rot §8.1 records as invisible to every text-measuring instrument, and it is
+       what the switch was turned on to make visible.
+
+       🔴 ITEM 12 STILL STAYS IN PART II. 532 coverage warnings on 90 files remain unpaid, plus the 103
+       nobody may pay. Stages 5..8 pay the 532; each re-measures its own constant. -->
 
 </Project>

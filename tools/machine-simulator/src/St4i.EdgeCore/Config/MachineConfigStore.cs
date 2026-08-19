@@ -566,7 +566,7 @@ public sealed class MachineConfigStore
     // ─────────────────────────────────────────────────────────────────────
 
     /// <summary>Discards all in-memory state and re-reads <c>machine-operating-config.json</c> from
-    /// <see cref="RootDirectory"/> — the mechanism <see cref="MachineConfigStoreTests"/>'s
+    /// <see cref="RootDirectory"/> — the mechanism <c>MachineConfigStoreTests</c>'s
     /// restart-survival test uses (a fresh instance pointed at the same directory is the more realistic
     /// "process restarted" case; this method is the in-process equivalent).</summary>
     public void Reload()

@@ -44,7 +44,7 @@ namespace St4i.EdgeCore.Fleet;
 /// protocol <see cref="Entry.Kind"/> the instance speaks. <see cref="Register"/>'s <c>instanceId</c>
 /// parameter is OPTIONAL and defaults to the factory's own normalized <see cref="IConnectorFactory.Kind"/> —
 /// which is EXACTLY the key this class used before D-1, so every pre-existing call site, every
-/// pre-existing slot label, and every migrated <see cref="ConnectorConfigStore"/> row behaves byte-for-byte
+/// pre-existing slot label, and every migrated <c>St4i.EngineApi.Fleet.ConnectorConfigStore</c> row behaves byte-for-byte
 /// as it did (see that store's migration v4 for the on-disk half of the same decision). "One Modbus
 /// connector" is now a special case of "N Modbus connectors", not a law of the type system.</para>
 ///
@@ -52,7 +52,7 @@ namespace St4i.EdgeCore.Fleet;
 /// <see cref="MachineDriverAvailability.AmbiguousDriver"/> unreachable.</b> An instance MAY declare the
 /// machine code it serves (<see cref="Register"/>'s <c>machineCode</c>). Every production registration path
 /// does (they all start from a parsed register/node map, which carries <c>machineCode</c> as a required
-/// field — see <see cref="ConnectorConfigValidation"/>). A registration whose machine code is ALREADY
+/// field — see <c>St4i.EngineApi.Fleet.ConnectorConfigValidation</c>). A registration whose machine code is ALREADY
 /// claimed by a DIFFERENT instance is REFUSED (<see cref="Register"/> returns <see langword="false"/> and
 /// mutates nothing) — that refusal is the structural uniqueness gate <c>FleetCore.ResolveWritableDriver</c>
 /// relies on: because at most one instance can ever claim a given machine code, a machine that IS claimed

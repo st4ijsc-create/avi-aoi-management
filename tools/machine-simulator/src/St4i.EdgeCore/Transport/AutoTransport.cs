@@ -4,8 +4,8 @@ using St4i.EdgeCore.Models;
 namespace St4i.EdgeCore.Transport;
 
 /// <summary>
-/// Keeps the exhibition app looking good when the real server is unreachable: tries <paramref
-/// name="live"/> first for every call, and transparently re-routes to <paramref name="demo"/> the
+/// Keeps the exhibition app looking good when the real server is unreachable: tries <c>live</c>
+/// first for every call, and transparently re-routes to <c>demo</c> the
 /// moment live signals a network failure — either via <see cref="TransportAck"/>'s own "queued,
 /// couldn't reach the server" shape (the contract <see cref="LiveTransport"/> already uses for
 /// <see cref="St4iNetworkException"/>) or via a thrown <see cref="St4iNetworkException"/> straight out

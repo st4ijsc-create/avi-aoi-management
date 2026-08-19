@@ -13,7 +13,7 @@ namespace St4i.EdgeCore.Engine;
 /// whatever <see cref="IDeviceDriver"/> the fleet is built on (today always a
 /// <see cref="SimulatedDriver"/>, but this decorator works over any driver) and post-processes every
 /// <see cref="DeviceReading"/> it yields, reading the CURRENT <see cref="ScenarioConfig"/> fresh via
-/// <paramref name="scenario"/>-typed delegate on every single reading — so a slider drag (or an
+/// <c>scenario</c>-typed delegate on every single reading — so a slider drag (or an
 /// automatic Burst revert) takes effect on the very next reading, with no pipeline restart.
 ///
 /// Relocated from the WPF app's <c>St4iMachineSimulator.Services.ScenarioAwareDriver</c> (there

@@ -46,7 +46,7 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// <see cref="WriteSetpointAsync"/> calls <c>Session.WriteAsync</c> against a single declared node;
 /// <see cref="InvokeCommandAsync"/> calls <c>Session.CallAsync</c> against a single declared object/method
 /// pair, with every argument re-narrowed from <see cref="OpcUaCommand.Arguments"/>'s own declaration (never
-/// guessed from <see cref="Models.CommandRequest.Arguments"/>'s untyped runtime value — B-1's own documented
+/// guessed from <see cref="St4i.Connector.Abstractions.Models.CommandRequest.Arguments"/>'s untyped runtime value — B-1's own documented
 /// gap). Both accept a <see cref="CancellationToken"/> NATIVELY (no NModbus-style disposal-based workaround
 /// is needed or used — see the cancellation remarks below).</para>
 ///
@@ -55,7 +55,7 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// transport has no per-request framing that would survive two logical calls interleaving on it. OPC-UA's
 /// binary protocol is different: every response is correlated back to its own request by a
 /// <c>RequestHandle</c> over one secure channel, so this driver imposes NO client-side mutual exclusion
-/// around a <see cref="Session.ReadAsync"/>/<see cref="Session.WriteAsync"/>/<see cref="Session.CallAsync"/>
+/// around a <see cref="Opc.Ua.SessionClient.ReadAsync"/>/<see cref="Opc.Ua.SessionClient.WriteAsync"/>/<see cref="Opc.Ua.SessionClient.CallAsync"/>
 /// call itself — <see cref="_sessionLock"/> guards ONLY the narrow "ensure a live session exists,
 /// reconnecting from scratch if needed" step (<see cref="AcquireSessionAsync"/>/<see cref="TeardownSessionIfCurrentAsync"/>).
 /// The mutable <see cref="_session"/> FIELD is the actual hazard this closes (a poll iteration and a
@@ -81,7 +81,7 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// <para><b>Cancellation — honoured natively, no workaround needed.</b> Unlike NModbus's write methods
 /// (which take no <see cref="CancellationToken"/> at all, forcing <see cref="Modbus.ModbusTcpDriver"/> to
 /// force-close the connection via <c>ct.Register(DisposeConnection)</c> to unblock one), <c>Session.WriteAsync</c>/
-/// <c>CallAsync</c> both accept <paramref name="ct"/>-equivalent tokens directly and honour them — measured
+/// <c>CallAsync</c> both accept <c>ct</c>-equivalent tokens directly and honour them — measured
 /// empirically (task-5-report.md): a call cancelled well before the session's own operation timeout unblocks
 /// in ~300ms (matching the cancellation delay, not the full timeout), throwing a <c>ServiceResultException</c>
 /// (NOT an <see cref="OperationCanceledException"/> — a real difference from Modbus/the interface's own doc
@@ -92,7 +92,7 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// <para><b>Failed vs. Indeterminate — asymmetric between a setpoint write and a command, DELIBERATELY.</b>
 /// OPC-UA's Write service is atomic per value: a <c>Bad</c> result status means the server refused the write
 /// BEFORE applying anything — there is no partial-write concept — so ANY <c>Bad</c> <see cref="WriteResponse"/>
-/// status maps to <see cref="Models.WriteOutcome.Failed"/> (a KNOWN "no", mirroring
+/// status maps to <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Failed"/> (a KNOWN "no", mirroring
 /// <see cref="Modbus.ModbusTcpDriver"/>'s own <c>SlaveException</c> branch). A <c>CallAsync</c> is NOT
 /// atomic in the same sense: the Call service validates preconditions (does the object/method exist, is it
 /// executable, do the input arguments match in count/type) BEFORE invoking the method's own logic, but once
@@ -102,10 +102,10 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// a per-argument rejection (<c>CallMethodResult.InputArgumentResults</c> containing a <c>Bad</c> entry) and
 /// the argument-COUNT-level <c>BadArgumentsMissing</c>/<c>BadTooManyArguments</c> codes are PROVEN to occur
 /// only BEFORE the method is invoked (confirmed by an independent invocation counter on the test server) —
-/// these map to <see cref="Models.WriteOutcome.Failed"/>. Every OTHER <c>Bad</c> status (confirmed, in the
+/// these map to <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Failed"/>. Every OTHER <c>Bad</c> status (confirmed, in the
 /// same probe, to include the case where the method WAS invoked and then chose to report failure itself) maps
-/// to <see cref="Models.WriteOutcome.Indeterminate"/>, with a <c>Detail</c> that says the command may have
-/// already been invoked and its physical effect is unconfirmed — never <see cref="Models.WriteOutcome.Failed"/>,
+/// to <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Indeterminate"/>, with a <c>Detail</c> that says the command may have
+/// already been invoked and its physical effect is unconfirmed — never <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Failed"/>,
 /// which would wrongly tell an operator nothing happened.</para>
 ///
 /// <para><b>Session recovery after a write/command failure — the B-4 Critical #1 shape, checked.</b> B-4
@@ -120,7 +120,7 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// call, structurally unlike Modbus's raw byte stream. No forced teardown is therefore needed for
 /// correctness on an ordinary write/command timeout or cancellation — this is a DELIBERATE, proven "does not
 /// transfer the same way" finding, not an oversight. <see cref="BestEffortReconnectIfUnhealthyAsync"/> is a
-/// purely defensive EXTRA on top: if a failure leaves <see cref="Session.Connected"/> reporting unhealthy
+/// purely defensive EXTRA on top: if a failure leaves <see cref="Opc.Ua.SessionClient.Connected"/> reporting unhealthy
 /// (e.g. the server process is genuinely gone), it forces a teardown so a driver instance with no ACTIVE
 /// poll loop still self-heals on its own next write/command attempt, rather than depending solely on the
 /// read loop's resilience model to notice. It is reference-checked (never tears down a session a
@@ -435,7 +435,7 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
     /// "Session recovery after a write/command failure" remarks for the full empirical finding: an ordinary
     /// OPC-UA write/call timeout or cancellation does NOT require forcing a session teardown for
     /// correctness). This is a defensive EXTRA, not a required fix: if <paramref name="session"/>'s own
-    /// <see cref="Session.Connected"/> already reports unhealthy, force a reference-checked teardown so a
+    /// <see cref="Opc.Ua.SessionClient.Connected"/> already reports unhealthy, force a reference-checked teardown so a
     /// driver instance with no ACTIVE poll loop still self-heals on its own next write/command attempt.
     ///
     /// <para><b>Review fix round 1 (Minor) — a NON-BLOCKING lock attempt, deliberately NOT
@@ -459,7 +459,7 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
     /// favour of a generic backstop message. This method is called from exactly the same kind of place (a
     /// write/command's own failure-handling code, right before returning its real result) and touches the
     /// SAME kind of object (a session a concurrent <see cref="DisposeAsync"/> may be disposing right now) —
-    /// so reading <see cref="Session.Connected"/> or tearing the session down here must NEVER be allowed to
+    /// so reading <see cref="Opc.Ua.SessionClient.Connected"/> or tearing the session down here must NEVER be allowed to
     /// throw and replace the real result the caller is about to return. Unlike B-4, this driver has no
     /// analogous `finally`-restores-a-shared-setting construct at all (see the class doc comment: no
     /// per-call session-wide property is mutated and restored), so the EXACT shape does not reproduce here —
@@ -558,7 +558,7 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         return config;
     }
 
-    /// <summary>Reads every configured node in ONE batched <see cref="Session.ReadAsync"/> call (unlike
+    /// <summary>Reads every configured node in ONE batched <see cref="Opc.Ua.SessionClient.ReadAsync"/> call (unlike
     /// Modbus's one-register-per-round-trip — OPC-UA's Read service is natively batched) and boxes each
     /// <see cref="DataValue.Value"/> into a <see cref="TelemetrySample"/>, bundled into a single
     /// <see cref="DeviceReading"/> for this poll. A per-node bad/uncertain <see cref="StatusCode"/> does
@@ -993,7 +993,7 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
     /// argument-shape entries above, missing the node/method-identity ones from the SAME spec table, even
     /// though they satisfy this method's own stated criterion exactly. Consequence, reproduced empirically
     /// (task-5-report.md): a typo'd command/object/method name in the MAP (never touched by a caller at all)
-    /// produced <see cref="Models.WriteOutcome.Indeterminate"/> — "check the machine" — for a command that
+    /// produced <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Indeterminate"/> — "check the machine" — for a command that
     /// provably never ran, the server's own invocation counter staying at 0 throughout. Every entry above is
     /// now empirically confirmed the same way: the counter stays at 0 for each, and increments for anything
     /// NOT on this list — i.e. the method genuinely ran. Deliberately still NOT a larger allowlist of

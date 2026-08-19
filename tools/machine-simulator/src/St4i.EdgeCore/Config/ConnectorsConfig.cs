@@ -218,7 +218,7 @@ public static class ConnectorsConfig
     /// that file was dropped in for an unrelated reason — exactly the kind of silent behavior change this
     /// task's compatibility rule forbids.</para>
     ///
-    /// <para>Also de-duplicates WITHIN <c>connectors.json</c> itself: <see cref="ConnectorRegistry.Register"/>
+    /// <para>Also de-duplicates WITHIN <c>connectors.json</c> itself: <see cref="St4i.EdgeCore.Fleet.ConnectorRegistry.Register"/>
     /// (GP-4) is "last write wins" for the SAME normalized kind, which would otherwise let a second entry
     /// for an already-accepted kind silently supersede the first with no warning at all — a second instance
     /// of the exact same "one bad/duplicate entry must never silently destroy another's config" hazard GP-3

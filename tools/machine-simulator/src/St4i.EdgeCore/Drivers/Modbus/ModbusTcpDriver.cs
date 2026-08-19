@@ -53,7 +53,7 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// and a full write/command attempt (connect + its own I/O) each acquire it as ONE atomic unit. A write that
 /// lands while a poll is mid-flight WAITS for that poll to finish before it starts talking to the device
 /// (never interleaves bytes with it), and vice versa — simple, correct, and easy to reason about, at the
-/// cost of a write occasionally waiting up to one poll's worth of time. The write's OWN <paramref name="ct"/>
+/// cost of a write occasionally waiting up to one poll's worth of time. The write's OWN <c>ct</c>
 /// (via <see cref="WriteSetpointAsync"/>/<see cref="InvokeCommandAsync"/>) is honoured even while queued
 /// for the lock — <c>SemaphoreSlim.WaitAsync(ct)</c> is cancellable, so a caller never has to wait out a
 /// slow/stuck poll if it gives up first.</para>
@@ -148,7 +148,7 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
     /// never a live view" contract without rebuilding a list on every access.</summary>
     private readonly IReadOnlyList<string> _writablePoints;
 
-    /// <summary>Task B-4 — the <see cref="Models.IWritableDeviceDriver.Commands"/> mirror of
+    /// <summary>Task B-4 — the <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.Commands"/> mirror of
     /// <see cref="_writablePoints"/>; see that field's own remarks.</summary>
     private readonly IReadOnlyList<string> _commands;
 

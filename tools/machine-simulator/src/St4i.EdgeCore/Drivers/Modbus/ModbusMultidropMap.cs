@@ -45,7 +45,7 @@ public sealed record ModbusBusDevice(
 /// because <see cref="St4i.Connector.Abstractions.Models.SetpointWriteRequest"/> and
 /// <see cref="St4i.Connector.Abstractions.Models.CommandRequest"/> carry no machine code: a driver serving N
 /// machines has no way to route a write to the right one, which is verbatim the hole that produced Đợt B's
-/// <see cref="St4i.Connector.Abstractions.Models.MachineDriverAvailability.AmbiguousDriver"/> guard after a
+/// <see cref="St4i.EdgeCore.Fleet.MachineDriverAvailability.AmbiguousDriver"/> guard after a
 /// write for machine B reached machine A's device.</para>
 ///
 /// <para><b>The register map is reused, NOT forked.</b> <see cref="ModbusRegisterMap"/> stays exactly 1:1 with

@@ -32,11 +32,11 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// </summary>
 internal static class ModbusWritePreflight
 {
-    /// <summary>Resolves a <see cref="Models.SetpointWriteRequest.Point"/> name to the register that declares it.
+    /// <summary>Resolves a <see cref="St4i.Connector.Abstractions.Models.SetpointWriteRequest.Point"/> name to the register that declares it.
     /// Ordinal comparison, deliberately: a point name is an identifier the map author wrote and the caller repeats
     /// verbatim, not something to be matched loosely.</summary>
     /// <returns>The declaring register, or <see langword="null"/> when this map declares no such metric — which is
-    /// the driver's <see cref="Models.SetpointRejectionReason.UnknownPoint"/> case.</returns>
+    /// the driver's <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason.UnknownPoint"/> case.</returns>
     public static ModbusRegister? FindRegisterByMetric(ModbusRegisterMap map, string metric)
     {
         foreach (var register in map.Registers)
@@ -65,15 +65,15 @@ internal static class ModbusWritePreflight
         return null;
     }
 
-    /// <summary>Narrows <see cref="Models.SetpointWriteRequest.Value"/>'s object? domain (double|bool|string|null,
+    /// <summary>Narrows <see cref="St4i.Connector.Abstractions.Models.SetpointWriteRequest.Value"/>'s object? domain (double|bool|string|null,
     /// widened at deserialization — see that property's own doc comment) down to the <see langword="double"/>
     /// <see cref="ModbusRegister.TryComputeRawWordForWrite"/> needs, mirroring the numeric branch of
     /// <c>OpcUaNodeMap.TryNarrowForWrite</c> exactly (double|long accepted; a JSON integral number arrives as
     /// <see langword="long"/> — see <c>Json.ConnectorObjectConverter</c>'s own doc comment). Every Modbus
     /// register is numeric, so a <see langword="bool"/>/<see langword="string"/>/<see langword="null"/>
     /// value has no legitimate meaning here; per B-3's own precedent (every failure
-    /// <c>TryComputeRawWordForWrite</c> itself can produce maps to EXACTLY ONE <see cref="Models.SetpointRejectionReason"/>
-    /// member — <see cref="Models.SetpointRejectionReason.OutOfRange"/>), a wrong-type value is rejected the same
+    /// <c>TryComputeRawWordForWrite</c> itself can produce maps to EXACTLY ONE <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason"/>
+    /// member — <see cref="St4i.Connector.Abstractions.Models.SetpointRejectionReason.OutOfRange"/>), a wrong-type value is rejected the same
     /// way: there is no separate "wrong type" rejection reason in this contract, and treating "not a number"
     /// as a range failure is the closest honest fit.</summary>
     public static bool TryToEngineeringValue(object? value, out double engineeringValue, out string? error)

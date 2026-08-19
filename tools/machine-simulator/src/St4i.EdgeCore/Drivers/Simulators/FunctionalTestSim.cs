@@ -5,7 +5,7 @@ namespace St4i.EdgeCore.Drivers.Simulators;
 
 /// <summary>
 /// Functional test (FUNCTIONAL_TEST) — doc-62 §6: "pass-rate + vài metric số" ("tỉ lệ" verdict).
-/// Each cycle draws a Bernoulli trial against <paramref name="targetPassRate"/> to decide
+/// Each cycle draws a Bernoulli trial against <c>targetPassRate</c> to decide
 /// pass/fail (the "tỉ lệ"), independent of — but reported alongside — a numeric functional score.
 /// </summary>
 public sealed class FunctionalTestSim : SimulatorBase
