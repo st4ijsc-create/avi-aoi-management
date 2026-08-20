@@ -452,6 +452,18 @@ export interface GatherRepoIndexContextInput {
   timeoutMs?: number;
   /** Seam cho test: thay hàm truy hồi (mặc định `gatherRepoContext`). */
   gather?: typeof gatherRepoContext;
+  /**
+   * ★ doc 79 · TRỤC 1 (D) — người gọi ĐÃ có cổng cờ RIÊNG của mình, bỏ qua `REPO_INDEX_FLAG` ở đây.
+   *
+   * ⚠ Đây KHÔNG phải một cửa sau: nó chỉ bỏ qua **cờ**, không bỏ qua một hàng rào nào — ngưỡng
+   *   điểm, cổng vùng mã nguồn, ngân sách token, hạn giờ và cổng RBAC `callerRole` đều chạy y
+   *   nguyên. Lý do nó tồn tại: đường lập trình (`AI_CODING_REPO_CONTEXT`) và đường PLC
+   *   (`AI_COPILOT_REPO_INDEX_ENABLED`) phải bật/tắt ĐỘC LẬP — phép đo biện minh cho việc tắt cờ
+   *   PLC (chunk repo là nhiễu cho câu hỏi cú pháp HÃNG) **không chuyển sang được** đường hỏi về
+   *   chính repo này. Dùng chung một cờ là buộc hai kết luận trái ngược vào một công tắc.
+   * ⚠ Mặc định `false` ⇒ mọi người gọi cũ KHÔNG đổi một byte hành vi.
+   */
+  boQuaCo?: boolean;
 }
 
 /**
@@ -491,7 +503,7 @@ export function catTheoNganSachToken(
 export async function gatherRepoIndexContext(
   input: GatherRepoIndexContextInput,
 ): Promise<RepoIndexContextResult> {
-  if (!repoIndexContextEnabled()) return ketQuaRong("flag-off");
+  if (!input?.boQuaCo && !repoIndexContextEnabled()) return ketQuaRong("flag-off");
 
   const query = String(input?.query ?? "").trim();
   if (!query) return ketQuaRong("no-query");

@@ -60,6 +60,47 @@ describe("G2-A · cờ bật/tắt", () => {
     expect(r.tokens).toBe(0);
     expect((gather as any).mock.calls.length).toBe(0);
   });
+
+  /**
+   * ★★★ doc 79 · TRỤC 1 (D) — `boQuaCo` là thứ làm HAI ĐƯỜNG bật/tắt ĐỘC LẬP.
+   *
+   * Không có nó, đường lập trình (`AI_CODING_REPO_CONTEXT`) bị cờ của đường PLC
+   * (`AI_COPILOT_REPO_INDEX_ENABLED`, mặc định TẮT) bịt lại trong im lặng — tính năng khai BẬT mà
+   * không bao giờ chạy, đúng lớp "cờ mua được 0" đã trả giá ở `TENANT_RLS_ENABLED`.
+   */
+  it("★★★ `boQuaCo` bỏ qua CỜ nhưng KHÔNG bỏ qua hàng rào nào khác", async () => {
+    process.env[REPO_INDEX_FLAG] = "false";
+    const gather = gatherGia([doan("server/routers/programmingRouter.ts", 200, 0.9)]);
+    const r = await gatherRepoIndexContext({ query: "thêm procedure tRPC", maxTokens: 900, gather, boQuaCo: true });
+    expect(r.reason, "cờ TẮT + boQuaCo ⇒ vẫn phải truy hồi").toBe("ok");
+    expect((gather as any).mock.calls.length).toBe(1);
+
+    // …nhưng NGƯỠNG ĐIỂM vẫn cưỡng chế (không phải một cửa sau).
+    const duoiNguong = gatherGia([doan("server/a.ts", 200, 0.1)]);
+    const r2 = await gatherRepoIndexContext({ query: "x", maxTokens: 900, gather: duoiNguong, boQuaCo: true });
+    expect(r2.reason).toBe("below-threshold");
+
+    // …và CỔNG VÙNG MÃ NGUỒN vẫn cưỡng chế (tài liệu vận hành không lọt).
+    const laTaiLieu = gatherGia([doan("knowledge/operational/robot-control.md", 200, 0.99)]);
+    const r3 = await gatherRepoIndexContext({ query: "x", maxTokens: 900, gather: laTaiLieu, boQuaCo: true });
+    expect(r3.reason).toBe("below-threshold");
+
+    // …và NGÂN SÁCH vẫn là cổng RẺ đứng trước cổng TỐN.
+    const khongDung = gatherGia([doan("server/a.ts", 200, 0.9)]);
+    const r4 = await gatherRepoIndexContext({ query: "x", maxTokens: 0, gather: khongDung, boQuaCo: true });
+    expect(r4.reason).toBe("no-budget");
+    expect((khongDung as any).mock.calls.length).toBe(0);
+  });
+
+  it("★★ VẮNG `boQuaCo` ⇒ hành vi cũ KHÔNG đổi một byte (mọi người gọi cũ an toàn)", async () => {
+    process.env[REPO_INDEX_FLAG] = "false";
+    const gather = gatherGia([doan("server/a.ts", 200, 0.9)]);
+    for (const them of [{}, { boQuaCo: false }, { boQuaCo: undefined }]) {
+      const r = await gatherRepoIndexContext({ query: "x", maxTokens: 900, gather, ...them });
+      expect(r.reason).toBe("flag-off");
+    }
+    expect((gather as any).mock.calls.length).toBe(0);
+  });
 });
 
 describe("G2-A · cổng rẻ trước cổng tốn", () => {

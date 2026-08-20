@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ★★★ doc 79 · TRỤC 1 (C) — CỔNG RA ĐẦU–CUỐI CỦA CHẾ ĐỘ LẬP TRÌNH (không Playwright, không model thật).
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -39,7 +39,36 @@ const h = vi.hoisted(() => ({
    * mà môi trường thật không tạo ra được theo yêu cầu. `null` ⇒ `read_file` chạy THẬT trên đĩa.
    */
   docGia: null as { path: string; content: string; truncated?: boolean; redacted?: boolean } | null,
+  /**
+   * ★★★ doc 79 · TRỤC 1 (D) — MỤC LỤC giả: cặp `[đường dẫn, điểm]` mà tầng truy hồi "trả về".
+   *
+   * ⚠⚠ CHỈ bước XẾP HẠNG bị thay. Bước ĐỌC vẫn là `executeDecision({tool:"read_file"})` THẬT trên
+   *    đĩa thật, qua hộp cát thật — đó là điều kiện để phép so "khớp BYTE với tệp trên đĩa" ở §7 có
+   *    nghĩa. Thay cả hai tầng thì lưới sẽ chỉ chứng minh hai hằng số của chính nó bằng nhau.
+   * ⚠ Vì sao phải thay: bước thật nạp `knowledge/embeddings.jsonl` (162 MB) + model nhúng — 14 s
+   *   lượt lạnh, và kết quả phụ thuộc dữ liệu chỉ mục, tức KHÔNG tất định.
+   */
+  mucLucGia: [] as Array<[string, number]>,
+  /** Số lượt tầng mục lục ĐƯỢC GỌI — ca âm đọc con số này, không chỉ đọc kết quả. */
+  soLuotMucLuc: 0,
 }));
+
+vi.mock("./ai/repoContextService", async (goc) => {
+  const that = await goc<typeof import("./ai/repoContextService")>();
+  return {
+    ...that,
+    gatherRepoIndexContext: async () => {
+      h.soLuotMucLuc += 1;
+      return {
+        block: "khong-dung-toi",
+        tokens: 0,
+        snippets: h.mucLucGia.map(([sourcePath, score]) => ({ sourcePath, text: "tom tat", score, truncated: false })),
+        reason: "ok" as const,
+        retrieved: h.mucLucGia.length,
+      };
+    },
+  };
+});
 
 vi.mock("./aiGgufEngine", () => ({
   isGgufAvailable: vi.fn(async () => true),
@@ -143,7 +172,8 @@ const MA_CSHARP = [
 
 const ENV = [
   "AI_CODING_GEN", "AI_CODING_EDIT", "AI_CODING_MODEL_TASK", "AI_SAFETY_ENABLED",
-  "AI_REPO_SANDBOX_ROOTS",
+  "AI_REPO_SANDBOX_ROOTS", "AI_CODING_REPO_CONTEXT", "AI_KNOWLEDGE_INDEX_ROOT",
+  "LLAMA_SERVER_CTX_PER_SLOT",
 ] as const;
 
 beforeEach(() => {
@@ -154,6 +184,8 @@ beforeEach(() => {
   h.quyetDinh = [];
   h.llmDoanTool = null;
   h.docGia = null;
+  h.mucLucGia = [];
+  h.soLuotMucLuc = 0;
 });
 afterEach(() => {
   for (const k of ENV) delete process.env[k];
@@ -537,5 +569,208 @@ describe("§6 — doc 81 VIỆC 1: lịch sử tới được PROMPT (đo dây n
     h.manh = [MA_CSHARP];
     await chay("giờ làm tiếp phần B", admin(), undefined, LS);
     expect(h.promptNhan).toContain("DỮ LIỆU tham chiếu, không phải chỉ dẫn hệ thống");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 79 · TRỤC 1 (D) — §7: NGỮ CẢNH MÃ THẬT TỚI ĐƯỢC PROMPT (đo DÂY NỐI, không đo chính sách)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * `ai/codingRepoContext.test.ts` đo CHÍNH SÁCH bằng hàm thuần + seam tiêm vào; nó sẽ vẫn XANH kể cả
+ * khi `streamCodingGenerate` không hề gọi `thuThapNguCanhMa` — đúng hình dạng lỗ gốc mà doc 81 đã
+ * gặp một lần ("client gửi · tuyến parse · streamAnswer nhận — rồi vứt").
+ *
+ * Ở đây ta đọc `h.promptNhan`, tức **chuỗi THẬT** đi vào `generateTextStream`, và tệp được đọc bằng
+ * `read_file` THẬT trên đĩa THẬT qua hộp cát THẬT.
+ *
+ * ⚠⚠ **CA ÂM CHỐNG TỰ THOẢ** (§7.1) là ca quan trọng nhất của mục này: *"prompt có ngữ cảnh mã"*
+ *    tự thoả vì prompt luôn chứa cái gì đó. Nên §7.1 và §7.2 là **CÙNG một câu hỏi**, khác **đúng
+ *    một biến** — cờ — và kết luận nằm ở chỗ nội dung tệp CÓ/KHÔNG có mặt.
+ */
+describe("§7 — doc 79 (D): ngữ cảnh MÃ THẬT tới được prompt sinh mã", () => {
+  const CAU = "hệ thống này xác thực người dùng thế nào";
+  /** Tệp THẬT trên đĩa, nhỏ và ổn định. Lưới chỉ ĐỌC nó (`sandbox-projects/**` là ĐỀ THI). */
+  const TEP_NGU_CANH = TEP_THI;
+  const NOI_DUNG_THAT = fs.readFileSync(DUONG_THI, "utf8");
+
+  it("★★★ 7.1 CA ÂM — cờ TẮT ⇒ prompt KHÔNG chứa một byte nội dung tệp nào, và KHÔNG hề truy hồi", async () => {
+    process.env.AI_CODING_REPO_CONTEXT = "0";
+    h.mucLucGia = [[TEP_NGU_CANH, 0.9]];
+    h.manh = [MA_CSHARP];
+    const r = await chay(CAU, admin());
+
+    expect(h.promptNhan, "★★★ tắt cờ mà nội dung tệp vẫn vào prompt ⇒ cờ không phải công tắc").not.toContain(
+      "namespace CalculatorDemo",
+    );
+    expect(h.promptNhan).not.toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
+    expect(h.soLuotMucLuc, "tắt cờ mà vẫn đi embed = đốt GPU cho hư không").toBe(0);
+    expect(r.events.some((e) => e.type === "tool" && e.toolName === "read_file"), "không có ngữ cảnh ⇒ không có thẻ").toBe(false);
+    expect(r.chu, "không có nguồn ⇒ KHÔNG được khoe chân nguồn").not.toContain("ĐỌC TỪ ĐĨA");
+    // Hành vi cũ còn NGUYÊN: vẫn sinh mã bình thường.
+    expect(r.chu).toContain("TcpListener");
+  });
+
+  it("★★★ 7.2 CHIỀU DƯƠNG — cờ BẬT ⇒ prompt chứa nội dung tệp, KHỚP BYTE với đĩa", async () => {
+    h.mucLucGia = [[TEP_NGU_CANH, 0.9]];
+    h.manh = [MA_CSHARP];
+    await chay(CAU, admin());
+
+    expect(h.soLuotMucLuc).toBe(1);
+    expect(h.promptNhan).toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
+    expect(h.promptNhan).toContain("[M1] " + TEP_NGU_CANH);
+    // ★★★ Phép đo mạnh nhất: NGUYÊN VĂN tệp trên đĩa nằm trong prompt. Không phải "có chứa từ khoá",
+    //     không phải "có một khối gì đó" — mà là đúng chuỗi `fs.readFileSync` trả về.
+    expect(
+      h.promptNhan,
+      "★★★ nội dung vào prompt PHẢI là byte trên đĩa, không phải chunk tóm tắt",
+    ).toContain(NOI_DUNG_THAT);
+    expect(h.promptNhan, "chunk TÓM TẮT không được lọt vào prompt sinh mã").not.toContain("khong-dung-toi");
+    // Yêu cầu của người dùng vẫn ở CUỐI prompt (vị trí model chú ý mạnh nhất).
+    expect(h.promptNhan.indexOf("MÃ NGUỒN THẬT")).toBeLessThan(h.promptNhan.indexOf(CAU));
+  });
+
+  it("★★★ 7.3 NGƯỜI DÙNG THẤY — thẻ tool cho từng tệp và chân nguồn nằm trong `answer`", async () => {
+    h.mucLucGia = [[TEP_NGU_CANH, 0.9]];
+    h.manh = [MA_CSHARP];
+    const r = await chay(CAU, admin());
+
+    const the = r.events.filter((e) => e.type === "tool" && e.toolName === "read_file");
+    /**
+     * ⚠ ĐÚNG **MỘT** thẻ, không phải một thẻ mỗi tệp — `AICodingWorkspace` giữ `streamTool` là MỘT
+     *   ô và `setStreamTool` GHI ĐÈ, nên N thẻ ⇒ người dùng chỉ thấy thẻ cuối. Ca này khoá luôn số
+     *   lượng để một lượt "cải tiến" quay lại N thẻ phải nhìn thấy dòng này.
+     */
+    expect(the.length, "im lặng về nguồn là nói dối; nhưng N thẻ thì client chỉ hiện thẻ CUỐI").toBe(1);
+    expect(the[0]!.type === "tool" && the[0]!.toolResult.textSummary).toContain(TEP_NGU_CANH);
+    expect(the[0]!.type === "tool" && the[0]!.toolResult.textSummary).toContain("Đã đọc 1 tệp");
+    // Chân nguồn phải nằm trong CHUỖI `answer` — phiên đã lưu chỉ giữ {role, content}, thẻ thì mất.
+    const done = r.done;
+    expect(done && done.type === "done" && done.answer).toContain(TEP_NGU_CANH);
+    expect(done && done.type === "done" && done.answer).toContain("ĐỌC TỪ ĐĨA");
+    expect(r.chu).toContain(TEP_NGU_CANH);
+  });
+
+  it("★★★ 7.4 TRỤC 2 — dự án đang chọn KHÁC gốc chỉ mục ⇒ KHÔNG đọc mã của repo chính", async () => {
+    const gocTam = fs.mkdtempSync(path.join(os.tmpdir(), "ngu-canh-ma-"));
+    try {
+      fs.writeFileSync(path.join(gocTam, "Rieng.cs"), "namespace RiengBiet { }\n", "utf8");
+      process.env.AI_REPO_SANDBOX_ROOTS = "tam=Du an tam|" + gocTam;
+      h.mucLucGia = [[TEP_NGU_CANH, 0.95]]; // mục lục CHỈ biết repo chính
+      h.manh = [MA_CSHARP];
+      const r = await chay(CAU, admin(), { projectId: "tam" });
+
+      expect(h.soLuotMucLuc, "sai gốc mà vẫn truy hồi ⇒ đường dẫn repo chính sẽ được đem đi đọc").toBe(0);
+      /**
+       * ⚠⚠ ĐÍNH CHÍNH TỰ KIỂM (đo bằng đột biến M2, 2026-08-20): bản đầu của ca này chỉ khẳng định
+       *    *"prompt KHÔNG chứa `namespace CalculatorDemo`"* và tôi coi đó là bằng chứng chống rò rỉ.
+       *    **Nó TỰ THOẢ.** Gỡ cổng gốc ra, mệnh đề ấy VẪN xanh — vì `read_file` chạy với
+       *    `__projectRoot` = gốc tạm nên nó trả `NOT_FOUND`, không phải vì cổng gốc làm việc.
+       *    ⇒ Mệnh đề ĐO ĐƯỢC là *"ta thậm chí KHÔNG THỬ đọc tệp của dự án khác"* — đếm trên bản
+       *      kiểm `h.quyetDinh`, thứ ĐỎ ngay khi cổng biến mất.
+       * ⚠ Nói thẳng ranh giới: byte không rời ra được là nhờ **hàng rào THỨ HAI** (`__projectRoot`
+       *   tiêm bởi `argsWithAuthCtx`), độc lập với cổng ở đây. Ca này đo hàng rào THỨ NHẤT.
+       */
+      expect(
+        h.quyetDinh.some((q) => q.tool === "read_file" && q.args.path === TEP_NGU_CANH),
+        "★★★ RÒ RỈ XUYÊN DỰ ÁN: KHÔNG được ĐỘNG tới đường dẫn của repo chính khi đang mở dự án khác",
+      ).toBe(false);
+      expect(h.promptNhan).not.toContain("namespace CalculatorDemo");
+      expect(r.chu).toContain("TcpListener"); // vẫn sinh mã bình thường
+    } finally {
+      fs.rmSync(gocTam, { recursive: true, force: true });
+    }
+  });
+
+  it("★★★ 7.5 HỘP CÁT KHÔNG ĐƯỢC NỚI — mục lục trỏ .env / .. ⇒ KHÔNG một byte nào vào prompt", async () => {
+    h.mucLucGia = [[".env", 0.99], ["../../../etc/passwd", 0.98], ["node_modules/x/index.js", 0.97]];
+    h.manh = [MA_CSHARP];
+    const r = await chay(CAU, admin());
+
+    expect(h.promptNhan).not.toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
+    expect(h.promptNhan).not.toContain("DATABASE_URL");
+    expect(h.promptNhan).not.toContain("LLAMA_SERVER_MODEL");
+    expect(r.events.some((e) => e.type === "tool" && e.toolName === "read_file")).toBe(false);
+    expect(r.chu).toContain("TcpListener");
+  });
+
+  /**
+   * ★★★ CA NÀY TỰ HIỆU CHỈNH TRẦN, có chủ ý — và bản đầu của nó ĐÃ ĐỎ VÌ LÝ DO SAI.
+   *
+   * Bản đầu dựng một "câu hỏi khổng lồ" 78 KB rồi khai rằng nó làm prompt vượt trần. Đo ra:
+   * **KHÔNG vượt** (≈31.800/32.768) ⇒ khối ngữ cảnh mã vẫn ở lại và ca ĐỎ — nhưng đỏ vì thiết bị
+   * đo sai, không vì mã sai. Ghim một hằng số ở đây là ghim một lời khai chỉ đúng cho MỘT kích
+   * thước persona/tệp; đổi `Calculator.cs` một dòng là nó lại nói dối.
+   *
+   * ⇒ Cách đúng: **ĐO prompt gốc trước** (lượt phỏng, cờ TẮT), rồi đặt trần slot = *(prompt gốc +
+   *   3.000 ra + 10)*. Khi ấy theo CẤU TẠO: prompt gốc VỪA KHÍT, và bất kỳ khối ngữ cảnh mã nào
+   *   (≥ 10 token) đều làm nó vượt. Không có con số nào phải đoán.
+   */
+  it("★★★ 7.6 NGÂN SÁCH — ngữ cảnh mã KHÔNG BAO GIỜ đẩy prompt vượt trần slot", async () => {
+    const { kiemNganSachNguCanh, uocLuongSoToken } = await import("./aiLlamaServerClient");
+
+    // (1) LƯỢT PHỎNG — cờ TẮT ⇒ `h.promptNhan` là prompt GỐC, chưa có ngữ cảnh mã.
+    process.env.AI_CODING_REPO_CONTEXT = "0";
+    h.mucLucGia = [[TEP_NGU_CANH, 0.9]];
+    h.manh = [MA_CSHARP];
+    await chay(CAU, admin());
+    const tokenGoc = uocLuongSoToken(h.systemPromptNhan) + uocLuongSoToken(h.promptNhan);
+    expect(tokenGoc, "lượt phỏng phải thật sự chạy tới model").toBeGreaterThan(0);
+
+    // (2) Trần VỪA KHÍT prompt gốc — thêm bất kỳ khối mã nào cũng vượt.
+    process.env.LLAMA_SERVER_CTX_PER_SLOT = String(tokenGoc + 3_000 + 10);
+    delete process.env.AI_CODING_REPO_CONTEXT;
+    h.promptNhan = "";
+    h.systemPromptNhan = "";
+    h.soLuotMucLuc = 0;
+    const r = await chay(CAU, admin());
+
+    // (3) Thứ THẬT SỰ gửi lên model phải lọt ngân sách — đo bằng CHÍNH cổng sẽ ném ở tầng dưới.
+    const canh = kiemNganSachNguCanh({ systemPrompt: h.systemPromptNhan, prompt: h.promptNhan, maxTokens: 3_000 });
+    expect(
+      canh.vua,
+      "★★★ prompt gửi lên model PHẢI lọt ngân sách slot: " + canh.tokenVao + " + 3000 vs " + canh.tranMoiSlot,
+    ).toBe(true);
+    // Ngữ cảnh mã ĐÃ được thu thập (mục lục chạy) rồi mới bị NHƯỜNG CHỖ — đúng thứ tự chính sách.
+    expect(h.soLuotMucLuc, "phải có thu thập thật thì phép nhường chỗ mới có nghĩa").toBe(1);
+    // Chính sách: ngữ cảnh mã bị BỎ, lượt sinh mã VẪN CHẠY (không từ chối cả câu hỏi).
+    expect(h.promptNhan).not.toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
+    expect(r.chu).toContain("TcpListener");
+    // Và KHÔNG khoe một nguồn mà model không hề nhìn thấy.
+    expect(r.events.some((e) => e.type === "tool" && e.toolName === "read_file")).toBe(false);
+    expect(r.chu).not.toContain("ĐỌC TỪ ĐĨA");
+  });
+
+  it("★★★ 7.7 THỨ TỰ NHƯỜNG CHỖ — LỊCH SỬ nhường TRƯỚC ngữ cảnh mã", async () => {
+    h.mucLucGia = [[TEP_NGU_CANH, 0.9]];
+    h.manh = [MA_CSHARP];
+    // Lịch sử dài (mỗi lượt bị cắt còn 2.400 ký tự × 8 lượt), ngữ cảnh mã vẫn phải sống.
+    const lichSuDai = Array.from({ length: 8 }, (_, i) => ({
+      role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+      content: "MOC_LICH_SU_" + i + " " + "van ban lap cho. ".repeat(400),
+    }));
+    await chay(CAU, admin(), undefined, lichSuDai);
+    expect(h.promptNhan, "ngữ cảnh mã phải sống sót qua một lịch sử dài").toContain(NOI_DUNG_THAT);
+    expect(h.promptNhan).toContain("MOC_LICH_SU_7"); // lượt GẦN NHẤT luôn được giữ
+  });
+
+  it("★★★ 7.8 ĐƯỜNG SỬA TỆP KHÔNG BỊ CHẠM — không có khối ngữ cảnh mã ở prompt sửa", async () => {
+    h.mucLucGia = [["server/routers.ts", 0.99]];
+    h.manh = ["```csharp\n", NOI_DUNG_THAT.replace("return a / b;", "return b == 0 ? 0 : a / b;"), "\n```"];
+    await chay("sửa " + TEP_THI + " để Divide không chia cho 0", admin());
+    expect(
+      h.promptNhan,
+      "đường SỬA đã sát trần vì chở cả tệp — thêm ngữ cảnh mã ở đó là biến chức năng đang chạy thành chức năng luôn ném",
+    ).not.toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
+    expect(h.soLuotMucLuc).toBe(0);
+    expect(h.promptNhan).toContain("namespace CalculatorDemo"); // vẫn chở tệp đích như trước
+  });
+
+  it("★★ 7.9 mục lục RỖNG ⇒ hành vi CŨ y nguyên (không khung rỗng, không thẻ, không chân nguồn)", async () => {
+    h.mucLucGia = [];
+    h.manh = [MA_CSHARP];
+    const r = await chay(CAU, admin());
+    expect(h.promptNhan).not.toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
+    expect(r.events.some((e) => e.type === "tool" && e.toolName === "read_file")).toBe(false);
+    expect(r.chu).toContain("TcpListener");
   });
 });

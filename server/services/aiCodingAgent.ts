@@ -416,7 +416,35 @@ export function nhanNgonNgu(duong: string): string {
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // DỰNG PROMPT
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-/** Trần ký tự nội dung tệp đưa vào prompt sửa. Lớn hơn ⇒ từ chối (xem `LY_DO_TU_CHOI_SUA`). */
+/**
+ * Trần ký tự nội dung tệp đưa vào prompt sửa. Lớn hơn ⇒ từ chối (xem `LY_DO_TU_CHOI_SUA`).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★ ĐỐI CHIẾU HAI TRẦN `60.000` ↔ `tranTokenChoTep` — **ĐO THẬT (2026-08-20), VÀ KẾT LUẬN LÀ: GIỮ NGUYÊN**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Chạy `kiemNganSachNguCanh` trên CHÍNH `personaSuaTep` + `promptSuaTep` (không phải một xấp xỉ),
+ * với ngữ cảnh dự án đầy đủ 24 mục, `serverSlotContextTokens()` = 32.768:
+ *
+ *     n = 55.000 → vào 20.032 + ra 12.000 = 32.032   ✔ vừa
+ *     n = 57.063 → vào 20.768 + ra 12.000 = 32.768   ✔ vừa  ← ĐIỂM HOÀ
+ *     n = 57.064 → vào 20.769 + ra 12.000 = 32.769   ✘ vượt
+ *     n = 60.000 → vào 21.817 + ra 12.000 = 33.817   ✘ vượt   ← đúng con số brief nêu
+ *
+ * Trần THẬT phụ thuộc NGÔN NGỮ và độ dài ngữ cảnh dự án: **57.063 (vi) · 57.069 (en) · 57.441 (zh)**.
+ *
+ * ⇒ `60.000` nằm ~2.900 ký tự **CAO HƠN** trần thật, nên có một dải `[57.064 … 60.000]` lọt bộ lọc
+ *   thô rồi bị `NGAN_SACH` (`dungKhoiLichSu.vuotTruocKhiCoLichSu`) từ chối ở tầng dưới.
+ * ⇒ **KHÔNG hạ 60.000 xuống 57.000.** Ba lý do, theo thứ tự quan trọng:
+ *     1. Hạ xuống sẽ **từ chối SỚM những tệp hôm nay VẪN CHẠY ĐƯỢC** (dải 57.001–57.063) — một hồi
+ *        quy chức năng có thật, đổi lấy một câu từ chối đẹp hơn.
+ *     2. **Không tồn tại một hằng số đúng**: trần thật xê dịch theo locale (57.063↔57.441) và theo
+ *        số mục ở gốc dự án. Ghim một con số là ghim một lời khai chỉ đúng cho MỘT cấu hình.
+ *     3. Hướng sai lệch hiện tại là hướng AN TOÀN: bộ lọc thô **rộng hơn** cổng chính xác, nên nó
+ *        không bao giờ chặn nhầm; cổng chính xác (`kiemNganSachNguCanh` — CÙNG cái thước server
+ *        dùng) mới là bên phán quyết. Đảo lại (thô hẹp hơn chính xác) mới là lỗi.
+ * ⇒ Việc phải làm là **nói ra sự thật ấy**, và đó là khối chú thích này. Cả hai lượt từ chối đều
+ *   trung thực (`TOO_LARGE` vs `NGAN_SACH`) và nói đúng nguyên nhân khác nhau.
+ */
 export const TRAN_KY_TU_TEP_SUA = 60_000;
 
 export function promptSuaTep(
@@ -451,9 +479,19 @@ export function promptSuaTep(
   ].join("\n");
 }
 
-export function promptSinhMa(cauHoi: string, lang: NgonNguMa, khoiLichSu = ""): string {
+/**
+ * ★★★ doc 79 · TRỤC 1 (D) — `khoiNguCanhMa` là **MÃ NGUỒN THẬT** của dự án đang mở, do
+ * `ai/codingRepoContext.thuThapNguCanhMa()` đọc từ đĩa trong CHÍNH lượt này.
+ *
+ * ⚠ **THỨ TỰ CÓ TẢI TRỌNG**: lịch sử → ngữ cảnh mã → yêu cầu. Yêu cầu ở CUỐI (chỗ model chú ý mạnh
+ *   nhất), mã tham chiếu ngay trên nó, lịch sử xa nhất — cùng lý lẽ đã ghi ở `promptSuaTep`.
+ * ⚠ Tham số THỨ TƯ và có mặc định `""` ⇒ mọi lời gọi 3 tham số cũ không đổi một byte, và
+ *   `promptSinhMa(q, lang, "")` vẫn **bằng đúng** `promptSinhMa(q, lang)`.
+ */
+export function promptSinhMa(cauHoi: string, lang: NgonNguMa, khoiLichSu = "", khoiNguCanhMa = ""): string {
   return [
     ...(khoiLichSu ? [khoiLichSu, ""] : []),
+    ...(khoiNguCanhMa ? [khoiNguCanhMa, ""] : []),
     w(lang, "=== YÊU CẦU LẬP TRÌNH ===", "=== CODING REQUEST ===", "=== 编程需求 ==="),
     cauHoi,
   ].join("\n");

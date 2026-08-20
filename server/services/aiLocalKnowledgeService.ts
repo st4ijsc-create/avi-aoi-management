@@ -40,6 +40,11 @@ import {
   type KetQuaChu,
   type LuotHoiThoai,
 } from "./aiCodingAgent";
+/**
+ * ★★★ doc 79 · TRỤC 1 (D) — MỤC LỤC (chunk) → MÃ THẬT (đọc đĩa qua `read_file`). Xem docblock đầu
+ * `ai/codingRepoContext.ts`: module ấy KHÔNG nhập `fs`; cửa đọc do CHÍNH file này tiêm vào.
+ */
+import { thuThapNguCanhMa, chanNguonNguCanhMa } from "./ai/codingRepoContext";
 import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
 // ★ G4-B — trọng số hạng nguồn (module LÁ, dùng CHUNG với bộ eval `--parity`).
 import { sourceTypeWeight, sourceLanguageWeight, devJournalWeight } from "./aiKbSourceWeights";
@@ -3111,20 +3116,105 @@ async function* streamCodingGenerate(
   const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
   const heThong = personaSinhMa(language, nguCanh);
   const MAX_TOKENS_SINH = 3_000;
-  // ★★★ doc 81 · VIỆC 1 — nhánh SINH MÃ: đây là nơi *"giờ làm tiếp phần B"* sống hay chết. Ngân
-  // sách rộng hơn hẳn đường sửa (prompt gốc chỉ là câu hỏi), nhưng vẫn đi qua ĐÚNG cổng ấy — một
-  // lượt `assistant` chở nguyên một tệp vừa đọc cũng đủ làm tràn.
-  const lich = dungKhoiLichSu({
+
+  /**
+   * ★★★ doc 79 · TRỤC 1 (D) — NGỮ CẢNH MÃ THẬT. Đây là nơi *"AI mù kiến trúc khi sinh mã"* được vá.
+   *
+   * ⚠ Cửa đọc tiêm vào là `executeDecision({tool:"read_file"})` — **cửa DUY NHẤT**. Không có
+   *   `fs` nào ở `codingRepoContext.ts`, nên hộp cát/RBAC/gốc-dự-án/che-bí-mật/trần-byte đều được
+   *   thừa hưởng nguyên vẹn thay vì dựng lại bằng trí nhớ.
+   * ⚠ `execCtx` VẮNG ⇒ không tiêm cửa nào ⇒ `khong-cua-doc` ⇒ khối rỗng. Đúng: không có phiên thì
+   *   không có RBAC để đi qua, và đọc mã không RBAC là một đường thoát.
+   */
+  const nguCanhMa = await thuThapNguCanhMa({
+    cauHoi: question,
+    projectRoot: execCtx?.projectRoot,
+    callerRole: execCtx?.user?.role,
+    docTep: execCtx
+      ? async (duong, tranByte) => {
+          const r = await executeDecision({ tool: "read_file", args: { path: duong, maxBytes: tranByte } }, execCtx);
+          return r.result ?? null;
+        }
+      : (undefined as unknown as (d: string, b: number) => Promise<null>),
+  });
+
+  /**
+   * ★★★ CHÍNH SÁCH NGÂN SÁCH — NHƯỜNG CHỖ THEO THỨ TỰ, CƯỠNG CHẾ BẰNG **CHÍNH** `kiemNganSachNguCanh`.
+   *
+   *     prompt gốc (persona + câu hỏi)  >  NGỮ CẢNH MÃ  >  LỊCH SỬ
+   *
+   * Cách cưỡng chế, và vì sao KHÔNG có thước thứ hai (bài học doc 81): khối mã được **nhét vào
+   * `ghepPrompt`**, tức nó nằm trong cái mà `dungKhoiLichSu` đã đo bằng `kiemNganSachNguCanh` trên
+   * CHUỖI THẬT sẽ gửi lên model. Nhờ thế:
+   *   • lịch sử tự động nhường chỗ TRƯỚC (vòng `k` giảm dần bên trong `dungKhoiLichSu`) —
+   *     bất biến của doc 81 còn nguyên, không phải viết lại;
+   *   • chỉ khi prompt + ngữ cảnh mã + **0 lượt lịch sử** vẫn vượt trần (`vuotTruocKhiCoLichSu`)
+   *     thì ngữ cảnh mã mới bị BỎ HẲN và ta cân LẠI — chứ không từ chối cả lượt sinh mã. Từ chối
+   *     một câu hỏi vì ta vừa TỰ THÊM ngữ cảnh vào là biến một cải tiến thành một hồi quy.
+   * ⚠ Đo thật: prompt sinh mã đầy đủ = 385 token vào + 3.000 ra ⇒ còn 29.383 token dư địa trên slot
+   *   32.768, mà trần khối mã là 4.000 ⇒ nhánh nhường chỗ này gần như không bao giờ chạy. Nó vẫn
+   *   phải tồn tại: "gần như không bao giờ" không phải "không bao giờ", và lịch sử có thể rất dài.
+   */
+  let khoiMa = nguCanhMa.khoi;
+  let lich = dungKhoiLichSu({
     lichSu: history,
     systemPrompt: heThong,
     maxTokens: MAX_TOKENS_SINH,
     lang: language,
-    ghepPrompt: (khoi) => promptSinhMa(question, language, khoi),
+    ghepPrompt: (khoi) => promptSinhMa(question, language, khoi, khoiMa),
   });
+  if (lich.vuotTruocKhiCoLichSu && khoiMa !== "") {
+    console.warn(
+      `[aiLocalKnowledge] ngữ cảnh mã (${nguCanhMa.tokens} token, ${nguCanhMa.tep.length} tệp) đẩy prompt vượt ` +
+        `trần slot — BỎ ngữ cảnh mã và cân lại (lượt sinh mã vẫn chạy).`,
+    );
+    khoiMa = "";
+    lich = dungKhoiLichSu({
+      lichSu: history,
+      systemPrompt: heThong,
+      maxTokens: MAX_TOKENS_SINH,
+      lang: language,
+      ghepPrompt: (khoi) => promptSinhMa(question, language, khoi, ""),
+    });
+  }
+  /** Tệp THỰC SỰ vào prompt. Rỗng khi ngữ cảnh mã bị nhường chỗ ⇒ KHÔNG khoe thẻ/chân nguồn dối. */
+  const tepDaDung = khoiMa === "" ? [] : nguCanhMa.tep;
+
+  /**
+   * ★★★ NGƯỜI DÙNG PHẢI THẤY — MỘT thẻ tool liệt kê MỌI tệp đã vào prompt, phát **trước** khi model
+   * nói một chữ. Dùng lại đúng khuôn `action_result` mà `AIToolResultCard` đã render (nó không nằm
+   * trong `KNOWN_CARD_TYPES` nên hiện thẳng `textSummary`) ⇒ **không có nhãn client mới**, không
+   * đụng `viStringCoverage`/`t()`.
+   *
+   * ⚠⚠ **MỘT thẻ, không phải N thẻ** — và đây là một sự thật ĐO ĐƯỢC về client, không phải sở
+   *    thích: `AICodingWorkspace` giữ `const [streamTool, setStreamTool]` là **một ô duy nhất** và
+   *    `onToolResult: (tr) => setStreamTool(tr)` **GHI ĐÈ**. Phát ba thẻ ⇒ người dùng chỉ thấy thẻ
+   *    CUỐI ⇒ hai tệp kia trở thành nguồn ẩn — đúng thứ mục này sinh ra để chống.
+   * ⚠ Con số là **số ký tự ĐÃ VÀO PROMPT**, không phải kích thước tệp: thẻ phải nói sự thật về cái
+   *   model NHÌN THẤY, nếu không nó chỉ dời lời khai lệch sang một chỗ khác.
+   */
+  if (tepDaDung.length > 0) {
+    const dongTep = tepDaDung.map(
+      (t) =>
+        `• ${t.duong} — ${t.byteTrenDia} byte trên đĩa; ${t.kyTuVaoPrompt} ký tự vào ngữ cảnh` +
+        `${t.daCat ? " (ĐÃ CẮT theo ngân sách token)" : ""}`,
+    );
+    yield {
+      type: "tool",
+      toolName: "read_file",
+      toolResult: {
+        type: "action_result",
+        title: "Đọc tệp trong repo",
+        data: { files: tepDaDung.map((t) => ({ path: t.duong, bytes: t.byteTrenDia, truncated: t.daCat })) },
+        textSummary: `Đã đọc ${tepDaDung.length} tệp từ đĩa để trả lời:\n${dongTep.join("\n")}`,
+      },
+    };
+  }
+
   const it = rutChuCoCanh(
     streamCodingModel({
       systemPrompt: heThong,
-      prompt: promptSinhMa(question, language, lich.khoi),
+      prompt: promptSinhMa(question, language, lich.khoi, khoiMa),
       maxTokens: MAX_TOKENS_SINH,
       temperature: 0.25,
       userId: execCtx?.user?.id,
@@ -3157,7 +3247,15 @@ async function* streamCodingGenerate(
     return "xong";
   }
 
-  yield doneSinhMa(kq.text, "ollama");
+  /**
+   * ★★★ CHÂN NGUỒN — nối vào CHUỖI, không chỉ vào một sự kiện SSE. Một phiên đã lưu chỉ giữ
+   * `{role, content}` (bất biến `locLuot()`), nên thẻ tool ở trên BIẾN MẤT khi mở lại phiên cũ;
+   * chân nguồn sống trong `content` nên nó ở lại. Im lặng ở đây là để người dùng không phân biệt
+   * được "AI đọc mã thật" với "AI bịa" — đúng thứ lượt này sinh ra để chữa.
+   */
+  const chan = chanNguonNguCanhMa(tepDaDung, language === "en" ? "en" : language === "zh" ? "zh" : "vi");
+  if (chan) yield { type: "token", token: chan };
+  yield doneSinhMa(kq.text + chan, "ollama");
   return "xong";
 }
 

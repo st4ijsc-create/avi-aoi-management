@@ -1,4 +1,4 @@
-# 79 — Nâng `/ai-coding-workspace` thành công cụ code chuyên (như Claude Code) + verify AI local
+﻿# 79 — Nâng `/ai-coding-workspace` thành công cụ code chuyên (như Claude Code) + verify AI local
 
 > **Trạng thái:** BẢN NHÁP CHỜ DUYỆT · 2026-08-19
 > Chủ dự án yêu cầu: *"nâng cấp ai-coding-workspace thành chức năng chuyên code như Claude Code, có
@@ -571,3 +571,167 @@ thoạt nghe. Cùng lớp với `embeddings.jsonl`: artifact bị commit rồi h
 Vì cache tự reset, **không có đường nào để một khách hàng thật có SKU thiếu AI chỉ bằng tệp này**.
 Cổng đã sẵn sàng đón, nhưng **nguồn SKU thì chưa**: cần một hàng `licenses` thật hoặc một license
 server. Đây là hạng mục thương mại, không phải kỹ thuật.
+
+---
+
+# ✅ TRỤC 1 (D) — HẾT MÙ KIẾN TRÚC KHI SINH MÃ (2026-08-20)
+
+Chủ dự án nêu: hỏi *"hệ thống này xác thực người dùng thế nào"* thì AI **không tra gì cả** — nó viết
+một câu nghe-đúng về một hệ thống nó chưa từng nhìn. Đo lại: **đúng**. Đường `streamCodingGenerate`
+không gọi một lời truy hồi nào; toàn bộ "hiểu biết về repo" của model là `nguCanhDuAnChoPrompt()` =
+**tên dự án + ≤24 mục ở thư mục gốc**.
+
+## ⚠⚠ TIỀN ĐỀ SAI CỦA BRIEF — *"đường ống ĐÃ CÓ, chỉ cần nối dây"*. **KHÔNG ĐÚNG.**
+
+Brief khai: *"`gatherRepoIndexContext` dùng chunk tóm tắt để TÌM tệp, rồi `gatherRepoContext` đọc
+NỘI DUNG THẬT qua `confineTargetUnder`/`readConfined`"*. Kiểm bằng mã — **ba câu sai**:
+
+| Lời khai | Sự thật đo được |
+|---|---|
+| `gatherRepoIndexContext` "dùng chunk để TÌM tệp rồi đọc mã thật" | Nó gọi `gatherRepoContext({objective, includeRag:true})` — **KHÔNG truyền `files`** ⇒ vòng `for (const raw of input.files ?? [])` chạy trên tập **RỖNG** ⇒ **0 byte tệp được đọc**. Thứ nó trả về là **văn bản chunk tóm tắt**. Bước nhảy *mục lục → mã thật* **CHƯA TỪNG TỒN TẠI**. |
+| `gatherRepoContext` đọc qua `confineTargetUnder`/`readConfined` (realpath, `nlink>1`, tầng fd) | Nó gọi **`fs.readFileSync` thẳng** với hàng rào RIÊNG (`classifyRepoPath` + `realpathSync`). **Không có** `nlink`, **không có** tầng fd. Chính docblock đầu file ấy đã viết *"HAI ĐƯỜNG, HAI LUẬT"* và cảnh báo `classifyRepoPath` **không phải** cửa của đường tool. |
+| chunk là "mục lục", mã thật là ngữ cảnh | Đúng về Ý ĐỊNH, sai về HIỆN TRẠNG. Một chunk router nguyên văn: `"Router file: … Router names: … Procedure calls: 44"`. Nhét nó vào prompt sinh mã là nhét **mục lục** vào chỗ cần **mã**. |
+
+⇒ Việc KHÔNG phải "nối dây": bước nhảy phải được **dựng mới**. Đó là
+`server/services/ai/codingRepoContext.ts`.
+
+## (a) Nối vào đường nào — **SINH MÃ**, không phải SỬA TỆP
+
+| | dư địa token | ngữ cảnh sẵn có | quyết |
+|---|---|---|---|
+| `streamCodingGenerate` | **29.383** token trống (đo: 385 vào + 3.000 ra / slot 32.768) | **0** — đây LÀ cái lỗ | ✅ nối |
+| `streamCodingEdit` | **âm** ở trần: tệp 60.000 ký tự ⇒ 21.817 vào + 12.000 ra = 33.817 > 32.768 | đã chở **nguyên tệp đích** + lịch sử | ❌ không nối |
+
+Đường SỬA đã có đúng tệp cần sửa trong prompt; thêm ngữ cảnh ở đó là biến một chức năng đang chạy
+thành một chức năng luôn ném, đổi lấy lợi ích gần bằng 0.
+
+## Cách chạy — HAI TẦNG, và tầng hai đi qua CỬA TOOL
+
+1. **MỤC LỤC** — `gatherRepoIndexContext()` xếp hạng; ta lấy `snippets[].sourcePath` và **vứt
+   `block`** (block là tóm tắt).
+2. **MÃ THẬT** — đọc từng đường dẫn bằng `executeDecision({tool:"read_file", args:{path, maxBytes}})`
+   do NGƯỜI GỌI **tiêm vào**. `codingRepoContext.ts` **không nhập `fs`** — nên thừa hưởng nguyên
+   `confineTargetUnder` + `readConfined` (realpath, `nlink>1`, tầng fd chống TOCTOU) + che bí mật +
+   trần byte tệp/phiên + RBAC `ai_repo_read/canView` + **gốc dự án đang chọn**. Không mở cửa `fs`
+   thứ hai ⇒ `programmingFileIo.census` không đổi một dòng.
+
+## (b) Ngân sách token — cưỡng chế bằng **CHÍNH** `kiemNganSachNguCanh`, không có thước thứ hai
+
+**Thứ tự nhường chỗ: `lịch sử` → `ngữ cảnh mã` → (không bao giờ) `prompt gốc`.**
+
+Khối mã được nhét vào **`ghepPrompt`**, tức nó nằm trong chính chuỗi mà `dungKhoiLichSu` đã cân bằng
+`kiemNganSachNguCanh`. Nhờ thế lịch sử tự nhường trước (vòng `k` giảm dần — bất biến doc 81 còn
+nguyên, không phải viết lại); chỉ khi *prompt gốc + khối mã + **0** lượt lịch sử* vẫn vượt
+(`vuotTruocKhiCoLichSu`) thì khối mã bị **bỏ hẳn** và cân lại — **không từ chối cả lượt sinh mã**.
+Từ chối một câu hỏi vì ta vừa TỰ THÊM ngữ cảnh vào là biến cải tiến thành hồi quy.
+
+### Đối chiếu hai trần `60.000` ↔ `tranTokenChoTep` — **ĐO, rồi quyết GIỮ NGUYÊN**
+
+Chạy `kiemNganSachNguCanh` trên CHÍNH `personaSuaTep` + `promptSuaTep`:
+
+```
+n = 55.000 → 20.032 + 12.000 = 32.032  ✔
+n = 57.063 → 20.768 + 12.000 = 32.768  ✔  ← ĐIỂM HOÀ
+n = 57.064 → 20.769 + 12.000 = 32.769  ✘
+n = 60.000 → 21.817 + 12.000 = 33.817  ✘
+```
+
+Trần THẬT: **57.063 (vi) · 57.069 (en) · 57.441 (zh)** — nó **xê dịch theo locale và theo độ dài
+ngữ cảnh dự án**. `60.000` cao hơn trần thật ~2.900 ký tự.
+
+**KHÔNG hạ xuống 57.000.** (1) Hạ ⇒ từ chối SỚM những tệp hôm nay VẪN chạy được (dải 57.001–57.063)
+= hồi quy thật, đổi lấy một câu từ chối đẹp hơn. (2) **Không tồn tại một hằng số đúng** — ghim một
+con số là ghim một lời khai chỉ đúng cho MỘT cấu hình. (3) Sai lệch hiện tại đi hướng AN TOÀN: bộ
+lọc thô RỘNG hơn cổng chính xác nên không chặn nhầm; `kiemNganSachNguCanh` (cùng thước mà server
+dùng) mới phán quyết. Việc phải làm là **nói ra sự thật ấy** — đã ghi vào docblock
+`TRAN_KY_TU_TEP_SUA`.
+
+## (c) Cờ — RIÊNG, và mặc định **BẬT**
+
+`AI_CODING_REPO_CONTEXT` (mặc định **1**). **Không** dùng chung `AI_COPILOT_REPO_INDEX_ENABLED`:
+
+- Phép đo biện minh cho việc TẮT cờ PLC là về câu hỏi **cú pháp HÃNG**, nơi chunk repo là nhiễu
+  (`tm-pick-place` kéo `drizzle/schema/robot.ts` lên 0,70). Ở đây câu hỏi là **về chính repo này**,
+  và cùng phép đo ấy ghi **0,580–0,782 với đoạn TRÚNG ĐÍCH**. **Kết luận không chuyển sang được.**
+- Khác biệt nặng hơn: đường PLC nhét **văn bản chunk** vào prompt ⇒ một lượt xếp hạng trượt là một
+  lời khai SAI. Ở đây chunk chỉ **CHỌN TỆP**; chọn trượt tốn token chứ **không nói dối**, vì thứ vào
+  prompt luôn là byte thật trên đĩa.
+- Chi phí có trần và fail-safe: 1 lượt truy hồi (ẤM 245–283 ms; LẠNH ~14 s, hạn giờ 20 s rồi bỏ qua)
+  + ≤3 `read_file` ≤12 KB; ≤4.000 token trên 29.383 dư địa. Hỏng ở đâu ⇒ khối rỗng ⇒ **đúng hành vi
+  cũ**. Tắt bằng `AI_CODING_REPO_CONTEXT=0`.
+- ⚠ Chi phí thật cần biết: mỗi lượt tiêu ≤36 KB của **ngân sách byte PHIÊN** (1 MB/15 phút) ⇒ ~29
+  lượt sinh mã trước khi chạm trần — dùng CHUNG với những lượt `read_file` người dùng tự gọi.
+
+## ⚠⚠ TRỤC 2 — chỗ sai LẶNG nguy hiểm nhất, đã bịt
+
+`knowledge/chunks.jsonl` mô tả **DUY NHẤT repo chính** (đếm theo gốc `sourcePath`: docs 4.113 ·
+server 2.298 · knowledge 525 · client 224 · drizzle 202 · apidocs 199 · shared 21 — **0** thuộc
+`sandbox-projects/**`). Mở **Demo Csharp** mà vẫn truy hồi ⇒ mục lục trả đường dẫn của **repo
+chính**. `chiMucKhopGoc()` là cổng **fail-closed đứng TRƯỚC lượt truy hồi**: gốc đang chọn ≠ gốc chỉ
+mục ⇒ `"khac-goc"`, không truy hồi, không đọc.
+
+## (d) Người dùng thấy gì
+
+- **MỘT thẻ tool** "Đọc tệp trong repo" liệt kê mọi tệp + `byte trên đĩa` + `ký tự vào ngữ cảnh` +
+  cờ ĐÃ CẮT. ⚠ **Một** thẻ chứ không phải một thẻ mỗi tệp — đo được: `AICodingWorkspace` giữ
+  `streamTool` là **một ô** và `setStreamTool` **GHI ĐÈ**; N thẻ ⇒ người dùng chỉ thấy thẻ CUỐI.
+- **Chân nguồn nối vào `answer`** (`📄 Câu trả lời dựa trên các tệp sau, ĐỌC TỪ ĐĨA trong lượt này:`)
+  — vì một phiên đã lưu **chỉ giữ `{role, content}`** (bất biến `locLuot()`), nên thẻ BIẾN MẤT khi
+  mở lại phiên cũ; chân nguồn sống trong `content`. Ba locale, chuỗi SERVER ⇒ **0 nhãn client mới**
+  ⇒ `viStringCoverage` vẫn **đúng 500**, `i18n:check` exit 0.
+
+## (e) Đột biến — 9 lượt, và **MỘT lượt SỐNG SÓT đã lộ ra thiết bị đo dối**
+
+| # | Đột biến | Kết quả |
+|---|---|---|
+| M1 | bỏ cổng cờ `nguCanhMaEnabled()` | **ĐỎ 3** (ca âm §1 + §7.1) |
+| M2 | bỏ cổng gốc `chiMucKhopGoc()` | **ĐỎ 3** (§2 ×2 + §7.4) |
+| M3 | bỏ phép kiểm `kq.note` (từ chối hộp cát) | ⚠ **SỐNG SÓT** → sau khi sửa THIẾT BỊ ĐO: **ĐỎ 7** |
+| M4 | bỏ nhánh nhường chỗ ngân sách | **ĐỎ 1** — đúng chỗ: `canh.vua=false`, 903+3000 > 3477 |
+| M5 | dùng `mucLuc.block` (chunk tóm tắt) thay mã thật | **ĐỎ 6** (gồm §7.2 "khớp byte") |
+| M6a | bỏ thẻ tool | **ĐỎ 1** (§7.3) |
+| M6b | bỏ chân nguồn trong `answer` | **ĐỎ 1** (§7.3) |
+| M7 | làm `boQuaCo` vô hiệu | **ĐỎ 1** — cờ PLC sẽ bịt LẶNG cờ lập trình |
+| M8 | bỏ phép cắt theo ngân sách | **ĐỎ 2** (§4) |
+| M9 | bỏ luồng `execCtx.projectRoot` ở người gọi | **ĐỎ 1** (§7.4) |
+
+### ★★★ M3 SỐNG SÓT — bài học đắt nhất của lượt này
+
+Cửa đọc GIẢ của tôi trả `data: {}` khi có `note` (giống `RONG_DOC` mà `read_file` trả HÔM NAY). Bỏ
+hẳn phép kiểm `kq.note` thì **§3 lẫn §7.5 vẫn XANH** — chúng xanh vì `content` rỗng, **KHÔNG** vì
+cổng `note` làm việc. Tức tôi có một hàng rào **không ai đo**, và một lưới **tự nhận là đang đo nó**.
+Sửa ở **thiết bị đo**: cửa giả nay dựng ca độc nhất *"vừa từ chối vừa mang chữ"*. M3 áp lại ⇒ **ĐỎ 7**.
+
+### ★★ §7.4 — một mệnh đề TỰ THOẢ bị bắt tại chỗ
+
+Bản đầu của §7.4 khẳng định *"prompt KHÔNG chứa `namespace CalculatorDemo`"* và tôi coi đó là bằng
+chứng chống rò rỉ xuyên dự án. **Nó tự thoả**: gỡ cổng gốc ra, mệnh đề ấy VẪN xanh — vì `read_file`
+chạy với `__projectRoot` = gốc tạm nên trả `NOT_FOUND`. Mệnh đề ĐO ĐƯỢC là *"ta thậm chí KHÔNG THỬ
+đọc tệp của dự án khác"*, đếm trên bản kiểm `h.quyetDinh`. Ranh giới nói thẳng: **byte không rời ra
+được là nhờ hàng rào THỨ HAI** (`__projectRoot` do `argsWithAuthCtx` tiêm), độc lập; ca này đo hàng
+rào THỨ NHẤT.
+
+### ★ §7.6 — ca đầu ĐỎ VÌ LÝ DO SAI
+
+Bản đầu dựng "câu hỏi khổng lồ" 78 KB rồi khai rằng nó làm prompt vượt trần. Đo ra **không vượt**
+(≈31.800/32.768) ⇒ ca đỏ vì thiết bị đo sai, không vì mã sai. Sửa: ca **tự hiệu chỉnh trần** — chạy
+một lượt PHỎNG (cờ tắt) để đo prompt gốc, rồi đặt `LLAMA_SERVER_CTX_PER_SLOT = gốc + 3.000 + 10`.
+Theo cấu tạo: prompt gốc vừa khít, khối mã nào cũng làm nó vượt. **Không con số nào phải đoán.**
+
+## Cổng — và một ca ĐỎ được QUY TRÁCH NHIỆM đúng chỗ
+
+`npm run check` ✔ · `check:tests` ✔ · `i18n:check` exit 0 ✔ · `viStringCoverage` = **500** ✔ ·
+7 census (`programmingFileIo` · `toolNote` · `toolPermission` · `authCtx` · `repoCommand` ·
+`repoSandbox` · `applyDiff`) + `phamViDocCensus` (nhóm A vẫn **363**) + `phamViTuyenCensus` +
+`congGiayPhepAiCensus` + `thinkingSurfaces.quantifier` ✔ (không thêm điểm gọi sinh chữ nào).
+
+Chạy 60 tệp vùng ảnh hưởng: **1.150 xanh / 1 đỏ**. Ca đỏ
+(`aiSpecialistAgentRouter > model lỗi ⇒ phiên failed`) **XANH khi chạy riêng**, và **ĐỎ Y HỆT ở HEAD**
+sau `git stash` với cùng tải song song ⇒ **nợ CÓ SẴN / nhiễu chạy song song, không phải hồi quy**.
+
+## Chưa làm (nói thẳng)
+
+- Dự án **không phải repo chính** vẫn không có ngữ cảnh mã (`khac-goc`) — muốn có thì phải dựng chỉ
+  mục cho từng gốc; một hạng mục riêng, chưa đánh giá.
+- **Chưa nghiệm thu LIVE** (chủ dự án giữ việc này): chưa build, chưa restart, chưa Playwright, không
+  gọi model thật, không chạm CSDL, `sandbox-projects/` **0 thay đổi**.
