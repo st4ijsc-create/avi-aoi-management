@@ -735,3 +735,136 @@ sau `git stash` với cùng tải song song ⇒ **nợ CÓ SẴN / nhiễu chạ
   mục cho từng gốc; một hạng mục riêng, chưa đánh giá.
 - **Chưa nghiệm thu LIVE** (chủ dự án giữ việc này): chưa build, chưa restart, chưa Playwright, không
   gọi model thật, không chạm CSDL, `sandbox-projects/` **0 thay đổi**.
+
+---
+
+# ⚠⚠⚠ VÁ LIVE 2026-08-20 — TRỤC 1 (D) DỰNG XONG, LƯỚI 101/101 XANH, **VÀ KHÔNG CHẠY ĐƯỢC**
+
+Chủ dự án nghiệm thu live (đăng nhập `engineer1`, `/ai-coding-workspace`, dự án **"Repo chính"**) và
+tính năng **không giao được một byte ngữ cảnh nào, ba lượt liên tiếp**:
+
+| Lượt | Câu hỏi | Cấu hình | Kết quả |
+|---|---|---|---|
+| 1 | *"hệ thống này xác thực người dùng như thế nào?"* | mặc định | `G2-A truy hồi chỉ mục repo QUÁ HẠN 20000 ms` ⇒ đi tiếp không ngữ cảnh. AI **BỊA** lớp C# `UserAuthenticator` băm SHA-256 (repo này là TypeScript, dùng **bcrypt** + bảng `user_secrets`). |
+| 2 | *"phân quyền RBAC trong repo này hoạt động ra sao?"* | mặc định | KHÔNG quá hạn, **KHÔNG một dòng log lỗi**, và **vẫn không có ngữ cảnh**. |
+| 3 | (lặp lượt 2) | `MIN_SCORE=0.25`, `TIMEOUT_MS=45000` | vẫn không có ngữ cảnh. Model nói thẳng: *"không thể xác định … chỉ từ danh sách tệp và tên thư mục"*. |
+
+## BẢNG SỐ ĐO — đường sản phẩm ĐẦY ĐỦ (embed Qwen3-0.6B + keyword + trọng số + rerank gguf, `topK=8`)
+
+Đo bằng chính `gatherRepoContext`/`gatherRepoIndexContext` của sản phẩm, embedder + reranker chạy
+**CPU** (`GGUF_GPU=false`) để không chạm VRAM của llama-server đang giữ 30B.
+
+### Kho toàn bộ (đúng cấu hình đang chạy ở live)
+
+| câu hỏi | top-1 | đoạn thuộc **vùng mã** | sống `minScore`=0,60 | ⇒ số tệp đem đi đọc |
+|---|---|---|---|---|
+| TRÚNG-1 "xác thực người dùng" | 0,5310 | **0 / 8** | 0 / 8 | **0** |
+| TRÚNG-2 "phân quyền RBAC" | 0,5897 | **0 / 8** | 0 / 8 | **0** |
+| TRÚNG-3 "luồng ingest ảnh AOI" | 0,7943 | **0 / 8** | 3 / 8 | **0** |
+| LẠC-1 "hàm C# đọc CSV" | 0,5524 | 5 / 8 | 0 / 8 | 0 |
+| LẠC-2 "cú pháp MOVJ Yaskawa" | 0,6766 | 3 / 8 | 1 / 8 | 1 |
+| LẠC-3 "vòng lặp for Python" | 0,5189 | 0 / 8 | 0 / 8 | 0 |
+
+Top-8 THẬT của TRÚNG-1: `knowledge/operational-approved/users.md` 0,531 · `knowledge/operational/about-system.md`
+0,516 · `knowledge/features/admin/user-management.md` 0,498 · `knowledge/operational-approved/users.md`
+0,496 · `docs/USER_GUIDE.md` 0,486 · `knowledge/operational/users.md` 0,467 · `apidocs/AUTHENTICATION.md`
+0,467 · `knowledge/operational/system-health.md` 0,458. **Không một `.ts` nào.**
+
+### Kho THU HẸP về vùng mã (bản vá — `cheDoVungMa:"corpus"`)
+
+| câu hỏi | top-1 | top-3 | thấp nhất trong 8 | tệp mót thêm từ cầu tài liệu |
+|---|---|---|---|---|
+| TRÚNG-1 | 0,4125 `server/_core/quetDiemXacThuc.ts` | 0,3699 `server/routes/_xacThucRest.ts` | 0,3191 | 5 (`server/routers/userRouters.ts`…) |
+| TRÚNG-2 | 0,4342 `…/repoReadTools.ts` | 0,4011 `…/readToolRbac.ts` | 0,3228 | **0** |
+| TRÚNG-3 | 0,5473 `server/services/aoiCommissioningService.ts` | 0,5099 `…/aoiImageEmbeddingWorker.ts` | 0,4875 | 1 (`server/routers/aoiPackageRouter.ts`) |
+| LẠC-1 | 0,5082 | 0,4857 | 0,4487 | 9 |
+| LẠC-3 | 0,3675 | 0,3444 | 0,3091 | 0 |
+
+## Gốc rễ — **BA**, không phải một
+
+1. **Cổng VÙNG `laDuongDanMaNguon` lọc SAU khi xếp hạng ⇒ 0/8 ở cả ba câu TRÚNG đề.** Giả thuyết của
+   chủ dự án ĐÚNG, và là nguyên nhân **duy nhất còn đứng** ở lượt 3 (khi `minScore` đã hạ xuống 0,25).
+   Nguyên nhân sâu là **hình dạng kho**: `docs/**` + `apidocs/**` = **4.312/7.582 chunk**, dài 1.500–1.800
+   ký tự tiếng Việt do người viết; chunk MÃ là tóm tắt tiếng Anh **114–166 ký tự** máy sinh
+   (*"Router file: … Procedure calls: 44"*). Một câu hỏi kiến trúc tiếng Việt không bao giờ thắng nổi
+   phân bố ấy — **lọc sau xếp hạng luôn cho 0 tệp, với mọi ngưỡng.**
+2. **Ngưỡng `minScore = 0,60` cao hơn trần thật.** 2/3 câu TRÚNG đề có top-1 dưới 0,60. Đây là gốc rễ
+   thứ hai, **độc lập**, và nó giải thích lượt 1–2 ngay cả khi cổng vùng biến mất.
+   ⚠ **Và một tiền đề của chính doc này bị bác bỏ:** *"ngưỡng điểm tách câu VỀ REPO khỏi câu LẠC đề"*.
+   **SAI** — LẠC đề ghi 0,519 · 0,552 · 0,677, **chồng lên** dải TRÚNG đề 0,531–0,794. Không tồn tại
+   con số nào đặt vào `minScore` mà tách được hai phân bố ⇒ *chỉnh ngưỡng là chữa sai bệnh*.
+3. **Persona ĐẨY model tới chỗ bịa.** Nguyên tắc 4 (*"Thiếu thông tin thì NÊU GIẢ ĐỊNH rồi vẫn đưa
+   mã"*) + lệnh cấm nói *"tôi không có thông tin"* là ĐÚNG cho một yêu cầu sinh mã chung, nhưng với
+   câu hỏi **VỀ CHÍNH DỰ ÁN** nó thành lệnh bịa — đúng cái đã xảy ra ở lượt 1.
+
+## Bản vá
+
+### 1. `retrieveKnowledge` — thu hẹp kho TRƯỚC khi xếp hạng (bổ sung, mặc định TẮT)
+
+Tham số **THỨ TƯ** `opts.sourcePathPrefixes` (cố ý **không** nằm trong `KbQueryContext`, thứ
+`parseContext()` dựng từ body của client — chọn kho là quyết định của SERVER). Vắng ⇒ toàn kho ⇒ 0 byte
+đổi hành vi. **Không có nhánh dự phòng "rỗng thì trả cả kho"**: dự phòng ấy là cửa sau mở lại chính lỗ
+này. Khi kho hẹp, nhánh trộn **kho Studio** (tài liệu người dùng nạp, `sourceRef` không phải đường dẫn
+repo) bị **bỏ qua** — trộn nó vào là phá chính điều kiện vừa được cấp, và phá ngầm.
+
+### 2. `gatherRepoIndexContext` — trục `cheDoVungMa`: `"sau"` (mặc định = cũ) · `"corpus"` · `"tat"`
+
+### 3. `thuThapNguCanhMa` — **HAI PHA + XEN KẼ**
+
+- **PHA A — kho MÃ** (`"corpus"`): cách DUY NHẤT lấy được thứ hạng của tệp mã.
+- **PHA B — cầu TÀI LIỆU→MÃ** (`"tat"`): lấy chunk bất kỳ rồi `motDuongDanMaTrongVanBan()` **mót đường
+  dẫn tệp mã được NGƯỜI viết nhắc trong thân chunk**. Tín hiệu KHÁC HẲN pha A. **`block`/`text` của pha
+  B bị VỨT** — không một byte văn bản tài liệu nào vào prompt sinh mã.
+- **XEN KẼ A1,B1,A2,B2…** chứ không nối đuôi: câu RBAC cho pha B **0** đường; câu "xác thực" thì pha B
+  mới là cầu tìm ra `server/routers/userRouters.ts`. Cho một cầu độc chiếm cả 3 ô là cược vào đúng cái
+  nó thiếu.
+- Sự tồn tại của tệp do **`read_file` trả lời** (`NOT_FOUND`), KHÔNG có `existsSync` thứ hai — và đo
+  được rằng nó cần thiết: `client/src/pages/AOIPackages.ts`, `scripts/__tmp-task9-dongbo.mjs` được nhắc
+  trong tài liệu nhưng **không có trên đĩa**.
+- `NGUONG_DIEM_NGU_CANH_MA = 0,25`, `HAN_GIO_MUC_LUC_MS = 20.000` (**TỔNG cho cả hai pha**), truyền
+  **TƯỜNG MINH** ⇒ núm của đường PLC (`AI_COPILOT_REPO_INDEX_MIN_SCORE`/`_TIMEOUT_MS`) không còn điều
+  khiển được đường này. Núm riêng: `AI_CODING_REPO_CONTEXT_MIN_SCORE` / `_TIMEOUT_MS`.
+- **LUÔN ghi một dòng log kết cục** (mỗi cầu trả bao nhiêu · `reason` từng pha · số ứng viên · ms · tệp
+  nào đã đọc). Triệu chứng live tệ nhất không phải "sai" mà là **CÂM**.
+
+### 4. Persona — `khoiTrungThucNguCanhMa(lang, coNguCanhMa)`
+
+Khối RỖNG ⇒ buộc *"CÂU ĐẦU TIÊN phải nói rõ bạn không có mã của dự án để dựa vào trong lượt này"*, và
+khối ấy **ĐÈ nguyên tắc 4** — nhưng **chỉ khi câu hỏi là về chính dự án đang mở**, nên yêu cầu lập
+trình chung không bị hỏng. Khối CÓ mã ⇒ *"khối mã ấy là SỰ THẬT cao hơn trí nhớ của bạn"*. Persona được
+**dựng LẠI** khi ngữ cảnh mã bị nhường chỗ vì ngân sách — dặn model tin vào một khối vừa biến mất là
+dạy nó bịa.
+
+### 5. Cửa sổ 20 s lượt NGUỘI — làm ẤM, **không** nới hạn giờ
+
+`warmUpOllamaModels()` trước đây chỉ nạp **model nhúng**. Nó KHÔNG chạm hai thứ đắt còn lại trên đường
+truy hồi: `ensureDataLoaded()` (parse `embeddings.jsonl` **162 MB**) và **ngữ cảnh rerank gguf**
+(`ctxLoadMs` đo được **11.278–13.743 ms**). Nay chạy thêm **một lượt `retrieveKnowledge("warmup", 1)`
+thật**, SAU `warmModel(deep)` để thứ tự nạp VRAM (model lớn trước) giữ nguyên như doc 48 R1. Nới hạn
+giờ chỉ biến *"mất ngữ cảnh sau 20 s"* thành *"chờ 45 s rồi vẫn mất"*.
+
+## Lưới MỚI — nó phát biểu được điều lưới cũ bỏ lọt
+
+Lưới cũ nuôi mục lục bằng `[["server/a.ts", 0.9]]` — **một hình dạng không tồn tại trong `chunks.jsonl`**.
+Với hình dạng giả tưởng ấy tính năng luôn chạy, nên 101 ca xanh + 9 đột biến vẫn không nói được rằng ở
+live nó giao 0 tệp. Lưới mới đem **số đo THẬT** (top-8 của cả hai câu live, cả hai pha) vào làm dữ liệu ca:
+`§7` hình dạng thật · `§8` hai cây cầu · `§9` hàm mót · stream `§8.1–8.5` (cầu chạy thật trên đĩa thật +
+persona A/B).
+
+**10 đột biến, 10 bị bắt** (2 lượt đầu SỐNG SÓT và cả hai chỉ ra khuyết thật, đã vá cả mã lẫn lưới):
+
+| # | đột biến | kết quả |
+|---|---|---|
+| M1 | pha A quay về `"sau"` (hành vi hôm qua) | ĐỎ — stream §7.2 + §8.1 |
+| M2 | cầu mót bỏ cổng vùng | **SỐNG lượt 1** → regex đã âm thầm làm thay việc cổng ⇒ **tách regex khỏi vùng**, cổng còn MỘT thẩm quyền · ĐỎ |
+| M3 | persona bỏ khối trung thực | ĐỎ — §8.3/8.4/8.5 |
+| M4 | nối đuôi thay vì xen kẽ | ĐỎ |
+| M5 | không truyền `minScore` tường minh | ĐỎ |
+| M6 | hạn giờ MỖI PHA thay vì TỔNG | **SỐNG lượt 1** → ca cũ chỉ đo *"pha B có bị BỎ không"* ⇒ thêm ca *"pha B CHẠY với PHẦN CÒN LẠI"* · ĐỎ |
+| M7 | cầu mót nhận đoạn có `..` | ĐỎ |
+| M8 | bỏ trần số ứng viên | ĐỎ |
+| M9 | pha B nhét thẳng `sourcePath` tài liệu làm ứng viên | ĐỎ — 9 ca / 2 tệp |
+| M10 | persona luôn khai "đã đọc mã" | ĐỎ |
+
+★ Và lưới bắt được **một lỗi THẬT trong lúc viết**: alternation `ts|tsx` khiến `x.tsx` mót ra
+`client/src/lib/x.ts` — một đường dẫn không tồn tại, tức một lượt `read_file` đốt vào hư không.

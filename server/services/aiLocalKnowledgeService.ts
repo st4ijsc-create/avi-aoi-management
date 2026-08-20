@@ -2015,10 +2015,63 @@ function graphRagOpts() {
 // off, so retrieveKnowledge never allocates a Map on the (default) disabled path.
 const EMPTY_FEEDBACK_MAP: ReadonlyMap<string, number> = new Map();
 
+/**
+ * ★★★ doc 79 · TRỤC 1 (D) — VÁ LIVE 2026-08-20. **THU HẸP KHO TRƯỚC KHI XẾP HẠNG.**
+ *
+ * ─── VÌ SAO PHẢI Ở ĐÂY, KHÔNG PHẢI LỌC SAU ────────────────────────────────────────────────────
+ * Phép đo (đường sản phẩm đầy đủ: embed 0.6B + keyword + trọng số + rerank gguf, `topK=8`):
+ *
+ *   câu hỏi                                         │ top-1 │ snippet thuộc vùng MÃ
+ *   ────────────────────────────────────────────────┼───────┼──────────────────────
+ *   "hệ thống này xác thực người dùng như thế nào?" │ 0,531 │ **0 / 8**
+ *   "phân quyền RBAC trong repo này hoạt động ra sao?"│0,590│ **0 / 8**
+ *   "luồng ingest ảnh AOI … đi qua những bước nào?" │ 0,794 │ **0 / 8**
+ *
+ * Kho có 7.582 chunk, trong đó `docs/**` + `apidocs/**` = 4.312 và chúng dài 1.500–1.800 ký tự
+ * TIẾNG VIỆT do người viết, còn chunk MÃ là tóm tắt 114–166 ký tự TIẾNG ANH máy sinh
+ * (*"Router file: … Procedure calls: 44"*). Một câu hỏi kiến trúc bằng tiếng Việt **không bao giờ**
+ * thắng nổi phân bố ấy ⇒ **lọc SAU khi xếp hạng luôn trả về 0 tệp mã**, dù ngưỡng điểm là bao nhiêu.
+ * Muốn có thứ hạng của tệp mã thì phải xếp hạng TRONG kho mã.
+ *
+ * ⚠ **KHÔNG có nhánh dự phòng "rỗng thì trả cả kho"** — một dự phòng như thế sẽ lặng lẽ trả chunk
+ *   tài liệu cho một người gọi vừa xin ĐÚNG mã nguồn, tức mở lại chính cái lỗ này bằng cửa sau.
+ *   Rỗng thì rỗng, và người gọi có `reason` để nói ra.
+ */
+export interface KbRetrieveOptions {
+  /**
+   * Chỉ xét chunk có `sourcePath` bắt đầu bằng MỘT trong các tiền tố này (so khớp không phân biệt
+   * hoa/thường, `\` đã chuẩn hoá về `/`). Vắng/rỗng ⇒ TOÀN KHO, tức hành vi y hệt trước lượt này.
+   *
+   * ⚠ Cố ý **KHÔNG** nằm trong `KbQueryContext`: `KbQueryContext` là thứ `parseContext()` dựng từ
+   *   body của `POST …/ask`. Một trục chọn kho là quyết định của SERVER, không phải của client.
+   */
+  sourcePathPrefixes?: readonly string[];
+}
+
+/**
+ * Thu hẹp kho theo tiền tố đường dẫn. Trả về chính mảng gốc khi không có tiền tố nào.
+ * ⚠ `export` để lưới đo được HÀM THUẦN này mà không phải nạp `embeddings.jsonl` 162 MB — không có
+ *   người gọi nào ngoài `retrieveKnowledge`.
+ */
+export function locKhoTheoTienTo<T extends { sourcePath: string }>(
+  ban: readonly T[],
+  tienTo?: readonly string[],
+): readonly T[] {
+  const pre = (tienTo ?? [])
+    .map((p) => String(p ?? "").replace(/\\/g, "/").trim().toLowerCase())
+    .filter((p) => p !== "");
+  if (pre.length === 0) return ban;
+  return ban.filter((e) => {
+    const p = String(e.sourcePath ?? "").replace(/\\/g, "/").toLowerCase();
+    return p !== "" && pre.some((x) => p.startsWith(x));
+  });
+}
+
 export async function retrieveKnowledge(
   question: string,
   topK = 5,
   context?: KbQueryContext,
+  opts?: KbRetrieveOptions,
 ): Promise<KbRetrieveResult> {
   const data = ensureDataLoaded();
   const tokens = tokenize(question);
@@ -2044,7 +2097,10 @@ export async function retrieveKnowledge(
   const feedbackRerankOn = isFeedbackRerankEnabled();
   const feedbackNetRatings = feedbackRerankOn ? await loadFeedbackNetRatings() : EMPTY_FEEDBACK_MAP;
 
-  const scored = data.embeddings.map((emb) => {
+  // ★ doc 79 · TRỤC 1 (D) — thu hẹp kho TRƯỚC khi chấm điểm (xem `KbRetrieveOptions`).
+  const khoHepLai = (opts?.sourcePathPrefixes ?? []).length > 0;
+  const khoXet = locKhoTheoTienTo(data.embeddings, opts?.sourcePathPrefixes);
+  const scored = khoXet.map((emb) => {
     const chunk = data.chunksById.get(emb.id);
     if (!chunk) {
       return { emb, chunk: null as KbChunk | null, semantic: 0, keyword: 0, score: 0 };
@@ -2239,7 +2295,11 @@ export async function retrieveKnowledge(
   // ⇒ điều kiện `if` dưới đây SAI ⇒ toàn bộ khối trộn bị bỏ qua HỆT như khi kho Studio rỗng —
   // citations/contexts/confidence giữ nguyên kết quả nguồn hệ thống, không có cách nào phân
   // biệt "bị chặn quyền" với "kho rỗng" từ output (KHÔNG rò rỉ sự tồn tại — yêu cầu sản phẩm).
-  if (qVec && canAccessStudioCorpus(context?.callerRole)) {
+  // ★ doc 79 · TRỤC 1 (D) — `khoHepLai` PHẢI chặn cả nhánh này. Kho Studio là tài liệu người dùng
+  // NẠP LÊN (`h.sourceRef` không phải đường dẫn trong repo), nên trộn nó vào một lượt truy hồi đã
+  // xin ĐÚNG vùng mã nguồn là phá chính điều kiện vừa được cấp — và phá NGẦM, vì citation Studio
+  // đứng lẫn trong cùng một mảng. Kho hẹp ⇒ bỏ qua, y như khi kho Studio rỗng.
+  if (qVec && !khoHepLai && canAccessStudioCorpus(context?.callerRole)) {
     try {
       const { gatherStudioHits } = await import("./aiLocalKnowledgeStudio");
       const studioHits = await gatherStudioHits(qVec, topK);
@@ -3114,7 +3174,6 @@ async function* streamCodingGenerate(
   if (!(await codingModelSanSang())) return "model_offline";
 
   const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
-  const heThong = personaSinhMa(language, nguCanh);
   const MAX_TOKENS_SINH = 3_000;
 
   /**
@@ -3156,6 +3215,13 @@ async function* streamCodingGenerate(
    *   phải tồn tại: "gần như không bao giờ" không phải "không bao giờ", và lịch sử có thể rất dài.
    */
   let khoiMa = nguCanhMa.khoi;
+  /**
+   * ★★★ VÁ LIVE 2026-08-20 — persona ĐƯỢC DỰNG SAU khi biết có mã hay không, và **dựng LẠI** khi
+   * ngữ cảnh mã bị nhường chỗ. Đây không phải chuyện sắp xếp cho gọn: nếu persona nói *"mã thật đã
+   * được đọc, hãy dựa vào nó"* trong một lượt mà khối mã vừa bị bỏ vì hết ngân sách, ta vừa dạy
+   * model tin vào một khối KHÔNG TỒN TẠI — đúng lớp lỗi mà cả mục này sinh ra để chống.
+   */
+  let heThong = personaSinhMa(language, nguCanh, khoiMa !== "");
   let lich = dungKhoiLichSu({
     lichSu: history,
     systemPrompt: heThong,
@@ -3169,6 +3235,7 @@ async function* streamCodingGenerate(
         `trần slot — BỎ ngữ cảnh mã và cân lại (lượt sinh mã vẫn chạy).`,
     );
     khoiMa = "";
+    heThong = personaSinhMa(language, nguCanh, false);
     lich = dungKhoiLichSu({
       lichSu: history,
       systemPrompt: heThong,
@@ -3767,6 +3834,31 @@ export function warmUpOllamaModels(): void {
       }
       // Keep the embedder warm too (RAG retrieval needs it resident).
       await embedQuestion("warmup").catch(() => {});
+      /**
+       * ★★★ doc 79 · TRỤC 1 (D) · VÁ LIVE 2026-08-20 — **LÀM ẤM CẢ ĐƯỜNG, KHÔNG CHỈ EMBEDDER.**
+       *
+       * Triệu chứng live: lượt hỏi ĐẦU TIÊN sau khi khởi động chết ở
+       * `G2-A truy hồi chỉ mục repo QUÁ HẠN 20000 ms` ⇒ mất ngữ cảnh, model bịa.
+       * Chẩn đoán: `embedQuestion("warmup")` ở trên **chỉ** nạp model nhúng. Nó KHÔNG chạm hai thứ
+       * đắt còn lại, và cả hai đều nằm trên đường truy hồi:
+       *   • `ensureDataLoaded()` — parse `knowledge/embeddings.jsonl` **162 MB** (7.582 vector);
+       *   • **ngữ cảnh rerank gguf** — đo thật `ctxLoadMs = 11.278–13.743 ms`.
+       * Cộng lại thì lượt NGUỘI vượt 20 s trong khi lượt ẤM chỉ 245–283 ms.
+       *
+       * ⇒ Chạy MỘT lượt `retrieveKnowledge` thật (topK=1) để cả ba thứ cùng ấm. Sau đó hạn giờ
+       *   20 s không còn là thứ người dùng gặp — đó là cách chữa ĐÚNG, khác hẳn nới hạn giờ (nới chỉ
+       *   biến "mất ngữ cảnh sau 20 s" thành "chờ 45 s rồi vẫn mất").
+       * ⚠ Chạy SAU `warmModel(deep)` có chủ ý: thứ tự nạp VRAM (model lớn trước, model nhỏ sau) giữ
+       *   nguyên như doc 48 R1 đã chốt. Best-effort, nuốt mọi lỗi: một máy chưa dựng chỉ mục
+       *   (`Knowledge artifacts missing`) vẫn phải khởi động bình thường.
+       */
+      try {
+        const t0 = Date.now();
+        await retrieveKnowledge("warmup", 1);
+        console.log(`[aiLocalKnowledge] làm ấm đường truy hồi (chỉ mục + embedder + rerank): ${Date.now() - t0} ms`);
+      } catch (e) {
+        console.warn("[aiLocalKnowledge] làm ấm đường truy hồi KHÔNG xong (bỏ qua):", (e as Error)?.message ?? e);
+      }
     })().catch(() => {});
     // Legacy Ollama QA warm — a no-op unless USE_LEGACY_OLLAMA (nothing listens on the GGUF path).
     void fetch(`${OLLAMA_BASE_URL}/api/generate`, {

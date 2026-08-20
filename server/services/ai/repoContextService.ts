@@ -131,6 +131,11 @@ export interface GatherRepoContextInput {
    * kbStudioAccess.ts). Caller-populated only — this module has no auth awareness of its own.
    */
   callerRole?: string;
+  /**
+   * ★ doc 79 · TRỤC 1 (D) — thu hẹp kho RAG theo tiền tố đường dẫn TRƯỚC khi xếp hạng
+   * (`KbRetrieveOptions.sourcePathPrefixes`). Vắng ⇒ toàn kho, tức hành vi cũ nguyên vẹn.
+   */
+  ragSourcePathPrefixes?: readonly string[];
 }
 
 export const DEFAULT_MAX_FILE_BYTES = 65_536;
@@ -238,7 +243,14 @@ export async function gatherRepoContext(input: GatherRepoContextInput): Promise<
       // "admin"/"engineer" in practice — this is defense-in-depth (and keeps the gate from
       // silently starving the Specialist Studio of legitimate Studio citations by defaulting
       // to fail-closed when no role is threaded at all).
-      const kb = await retrieveKnowledge(input.objective, input.ragTopK ?? 5, { callerRole: input.callerRole });
+      const kb = await retrieveKnowledge(
+        input.objective,
+        input.ragTopK ?? 5,
+        { callerRole: input.callerRole },
+        // ★ doc 79 · TRỤC 1 (D) — vắng ⇒ `undefined` ⇒ toàn kho ⇒ 0 byte đổi hành vi cho mọi
+        //   người gọi cũ (aiSpecialistAgentRouter, aiProgrammingCopilot).
+        input.ragSourcePathPrefixes?.length ? { sourcePathPrefixes: input.ragSourcePathPrefixes } : undefined,
+      );
       ragSnippets = (kb.contexts ?? []).map((text, i) => ({
         sourcePath: (kb.citations?.[i] as any)?.sourcePath ?? "(unknown)",
         text,
@@ -338,6 +350,58 @@ export function laDuongDanMaNguon(sourcePath: string, prefixes: readonly string[
   if (!p) return false;
   return prefixes.some((pre) => p.startsWith(pre.toLowerCase()));
 }
+
+/**
+ * ★★★ doc 79 · TRỤC 1 (D) · VÁ LIVE — **CẦU TÀI LIỆU → MÃ.** Mót đường dẫn tệp mã được nhắc
+ * NGUYÊN VĂN trong thân một chunk.
+ *
+ * Vì sao cây cầu này tồn tại bên cạnh lượt truy hồi trong-kho-mã: tài liệu của repo này viết đường
+ * dẫn thật rất nhiều, và một đường dẫn do NGƯỜI viết trong tài liệu mà bộ truy hồi vừa xếp hạng
+ * cao nhất là một tín hiệu khác hẳn — nó nói *"tệp này liên quan tới CHỦ ĐỀ"*, chứ không phải
+ * *"tóm tắt tệp này gần vector câu hỏi"*. Đo được (top-8 đường sản phẩm):
+ *   • "xác thực người dùng"  ⇒ 5 đường dẫn, có `server/routers/userRouters.ts` (2 chunk nhắc);
+ *   • "luồng ingest ảnh AOI" ⇒ `server/routers/aoiPackageRouter.ts`;
+ *   • "phân quyền RBAC"      ⇒ **0** — nên cây cầu này là PHẦN BỔ SUNG, không bao giờ là phần duy nhất.
+ *
+ * ⚠ HÀM THUẦN, KHÔNG CHẠM ĐĨA. Tệp có tồn tại hay không do **`read_file` trả lời** (`NOT_FOUND`),
+ *   không phải do một `existsSync` thứ hai ở đây — hai bản sao của một phép kiểm là cách chúng lệch.
+ * ⚠ Chuỗi vào là NỘI DUNG TÀI LIỆU, tức dữ liệu KHÔNG đáng tin. Loại thẳng mọi đoạn có `..`: hộp cát
+ *   vẫn chặn ở cửa sau, nhưng một ứng viên chắc chắn bị từ chối chỉ tổ đốt một lượt gọi tool.
+ */
+export function motDuongDanMaTrongVanBan(
+  text: string,
+  prefixes: readonly string[] = REPO_INDEX_SOURCE_PREFIXES,
+): string[] {
+  const s = String(text ?? "");
+  if (s === "") return [];
+  const ra: string[] = [];
+  const daThay = new Set<string>();
+  for (const m of s.matchAll(RE_TRONG_GIONG_DUONG_DAN)) {
+    const p = normalizeRepoPath(m[1] ?? "");
+    if (!p || daThay.has(p)) continue;
+    if (p.split("/").includes("..")) continue;
+    // ★ MỘT thẩm quyền DUY NHẤT cho câu hỏi "đây có phải đường dẫn MÃ không" — `laDuongDanMaNguon`.
+    //   Regex ở trên cố ý KHÔNG biết gì về vùng: nó chỉ nhận ra "chuỗi này trông như một đường dẫn
+    //   tệp". Bản đầu nhồi luôn danh sách tiền tố VÀO regex, và đo bằng đột biến M2 (gỡ hẳn phép
+    //   kiểm vùng) thì **lưới vẫn XANH** — vì regex đã âm thầm làm thay việc của phép kiểm. Tức tôi
+    //   có hai bản sao của một vị từ, một bản không ai đo được, đúng lớp lỗi repo này đã trả giá.
+    if (!laDuongDanMaNguon(p, prefixes)) continue;
+    daThay.add(p);
+    ra.push(p);
+  }
+  return ra;
+}
+
+/**
+ * "Chuỗi này trông như một đường dẫn tệp mã nguồn" — KHÔNG phát biểu gì về VÙNG (xem hàm trên).
+ *
+ * ⚠ Đuôi DÀI đứng trước đuôi NGẮN **và** có chốt `(?![A-Za-z0-9])`. Lỗi này đã xảy ra thật và bị ca
+ *   "giữ thứ tự xuất hiện" bắt: với thứ tự `ts|tsx`, chuỗi `x.tsx` khớp `ts` rồi dừng ⇒ mót ra
+ *   `client/src/lib/x.ts` — một đường dẫn KHÔNG TỒN TẠI, tức đốt một lượt `read_file` vào hư không.
+ * ⚠ Bắt buộc có ÍT NHẤT một `/`: `const.ts` trần trong một câu văn không phải một đường dẫn.
+ */
+const RE_TRONG_GIONG_DUONG_DAN =
+  /(?:^|[^A-Za-z0-9_./-])([A-Za-z0-9_-][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9_.-]+)+\.(?:tsx|ts|jsx|js|mjs|cjs|sql|json)(?![A-Za-z0-9]))/g;
 
 /** Trần token mặc định cho TOÀN BỘ khối chỉ mục repo trong một prompt. */
 export const REPO_INDEX_DEFAULT_MAX_TOKENS = 900;
@@ -464,6 +528,29 @@ export interface GatherRepoIndexContextInput {
    * ⚠ Mặc định `false` ⇒ mọi người gọi cũ KHÔNG đổi một byte hành vi.
    */
   boQuaCo?: boolean;
+  /**
+   * ★★★ doc 79 · TRỤC 1 (D) · VÁ LIVE 2026-08-20 — **CÁCH ÁP CỔNG VÙNG MÃ NGUỒN.**
+   *
+   * ─── PHÉP ĐO BUỘC PHẢI CÓ TRỤC NÀY ─────────────────────────────────────────────────────────
+   * Đường lập trình gọi hàm này rồi lấy `snippets[].sourcePath` làm danh sách tệp để đọc. Đo trên
+   * đường sản phẩm đầy đủ, `topK=8`, ba câu hỏi VỀ CHÍNH REPO: **0/8 · 0/8 · 0/8** đoạn thuộc
+   * vùng mã ⇒ danh sách tệp LUÔN rỗng ⇒ tính năng câm hoàn toàn ở live, không log, không lỗi.
+   * Nguyên nhân là hình dạng kho, không phải một con số sai: 4.312/7.582 chunk là tài liệu tiếng
+   * Việt 1.500–1.800 ký tự, còn chunk mã là tóm tắt tiếng Anh 114–166 ký tự.
+   *
+   *   • `"sau"`    — (MẶC ĐỊNH, = hành vi trước lượt này) lọc SAU khi đã xếp hạng toàn kho. Đúng
+   *                  cho đường PLC: ở đó chunk repo là NHIỄU và cổng này là một cái phanh.
+   *   • `"corpus"` — thu hẹp kho NGAY TỪ ĐẦU (`ragSourcePathPrefixes`) **rồi vẫn lọc lại lần nữa**.
+   *                  Đây là cách DUY NHẤT lấy được thứ hạng của tệp mã.
+   *                  ⚠ Phép lọc lần hai KHÔNG thừa, và có một chỗ nó thật sự cần: `KB_GRAPHRAG_ENABLED`
+   *                    (nay TẮT) tiêm hàng xóm 1-hop vào pool **sau** khi kho đã bị thu hẹp — một
+   *                    hàng xóm `docs/**` sẽ lọt vào một lượt vừa xin ĐÚNG vùng mã. Bật cờ ấy lên là
+   *                    mở lại lỗ, nếu không có cổng này.
+   *   • `"tat"`    — KHÔNG lọc vùng. Dùng cho pha "cầu tài liệu → mã": ta cố ý muốn chunk TÀI LIỆU,
+   *                  không phải để nhét văn bản của nó vào prompt mà để **mót đường dẫn tệp mã
+   *                  nhắc trong đó**. `block` của lượt ấy bị người gọi vứt đi.
+   */
+  cheDoVungMa?: "sau" | "corpus" | "tat";
 }
 
 /**
@@ -519,6 +606,12 @@ export async function gatherRepoIndexContext(
 
   const timeoutMs = Math.floor(input?.timeoutMs ?? envNum("AI_COPILOT_REPO_INDEX_TIMEOUT_MS", REPO_INDEX_DEFAULT_TIMEOUT_MS));
 
+  // ★ doc 79 · TRỤC 1 (D) — hai cách dùng của CÙNG một bảng tiền tố, quyết ở đây một lần.
+  const cheDoVung = input?.cheDoVungMa ?? "sau";
+  const prefixes = process.env.AI_COPILOT_REPO_INDEX_PREFIXES
+    ? process.env.AI_COPILOT_REPO_INDEX_PREFIXES.split(",").map((s) => s.trim()).filter(Boolean)
+    : REPO_INDEX_SOURCE_PREFIXES;
+
   let ragSnippets: RepoContextResult["ragSnippets"] = [];
   try {
     const gather = input?.gather ?? gatherRepoContext;
@@ -528,6 +621,7 @@ export async function gatherRepoIndexContext(
       includeDependencies: false,
       ragTopK: topK,
       callerRole: input?.callerRole,
+      ...(cheDoVung === "corpus" ? { ragSourcePathPrefixes: prefixes } : {}),
     });
     // Hạn giờ — xem `REPO_INDEX_DEFAULT_TIMEOUT_MS` về phép đo đứng sau con số này.
     // `unref()` để cái hẹn giờ KHÔNG tự nó giữ tiến trình sống (một script CLI kết thúc sớm hơn
@@ -560,9 +654,8 @@ export async function gatherRepoIndexContext(
   // HAI cổng, không phải một (xem REPO_INDEX_SOURCE_PREFIXES về vì sao ngưỡng điểm chưa đủ):
   //   (1) VÙNG — chỉ mã nguồn, không phải tài liệu vận hành;
   //   (2) ĐIỂM — đủ liên quan tới chính câu hỏi này.
-  const prefixes = process.env.AI_COPILOT_REPO_INDEX_PREFIXES
-    ? process.env.AI_COPILOT_REPO_INDEX_PREFIXES.split(",").map((s) => s.trim()).filter(Boolean)
-    : REPO_INDEX_SOURCE_PREFIXES;
+  // ⚠ `cheDoVungMa === "tat"` BỎ cổng (1) — và chỉ hợp lệ cho người gọi dùng `sourcePath` làm CẦU
+  //   sang tệp mã chứ KHÔNG nhét `text` vào prompt; xem `cheDoVungMa`.
   const lienQuan = ragSnippets
     .filter(
       (s) =>
@@ -570,7 +663,7 @@ export async function gatherRepoIndexContext(
         s.score >= minScore &&
         typeof s?.text === "string" &&
         s.text.trim().length > 0 &&
-        laDuongDanMaNguon(s?.sourcePath ?? "", prefixes),
+        (cheDoVung === "tat" || laDuongDanMaNguon(s?.sourcePath ?? "", prefixes)),
     )
     .sort((a, b) => b.score - a.score);
   if (lienQuan.length === 0) return ketQuaRong("below-threshold", retrieved);

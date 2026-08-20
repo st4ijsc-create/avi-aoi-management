@@ -240,7 +240,91 @@ export async function* rutChuCoCanh(nguon: AsyncGenerator<string>): AsyncGenerat
  * trích dẫn `[1][2]`, và câu vận hành nhà máy). Chúng được nêu ĐÍCH DANH để model không tái tạo lại
  * giọng ấy khi ngữ cảnh dự án mỏng.
  */
-export function personaSinhMa(lang: NgonNguMa, nguCanhDuAn: string): string {
+/**
+ * ★★★ doc 79 · TRỤC 1 (D) · VÁ LIVE 2026-08-20 — **KHỐI "KHÔNG CÓ MÃ THÌ PHẢI NÓI RA".**
+ *
+ * ─── SỰ VIỆC, KHÔNG PHẢI LO XA ────────────────────────────────────────────────────────────────
+ * Lượt live 1 (2026-08-20): hỏi *"hệ thống này xác thực người dùng như thế nào?"* trong khi khối
+ * ngữ cảnh mã RỖNG, model trả về một lớp **C# `UserAuthenticator` băm SHA-256** — cho một repo
+ * **TypeScript** dùng **bcrypt** + bảng `user_secrets`. Nó không hề báo là đang đoán.
+ *
+ * ─── VÀ CHÍNH PERSONA NÀY ĐÃ ĐẨY NÓ TỚI ĐÓ ────────────────────────────────────────────────────
+ * Nguyên tắc 4 nói *"Thiếu thông tin thì NÊU GIẢ ĐỊNH rồi vẫn đưa mã"*, còn khối "TUYỆT ĐỐI KHÔNG"
+ * cấm câu *"tôi không có thông tin…"*. Với một yêu cầu SINH MÃ chung chung ("viết hàm đọc CSV")
+ * cặp luật ấy ĐÚNG và phải giữ. Nhưng với một câu hỏi **VỀ CHÍNH DỰ ÁN ĐANG MỞ**, nó biến thành
+ * lệnh bịa: model không có mã, bị cấm nói ra, và được bảo cứ đưa mã.
+ * ⇒ Cách chữa KHÔNG phải bỏ nguyên tắc 4 (sẽ hỏng mọi lượt sinh mã chung), mà là **thu hẹp phạm vi
+ *   của nó** đúng ở chỗ nó sai, bằng một khối chỉ xuất hiện khi `coNguCanhMa === false`.
+ *
+ * ⚠ Và ở chiều NGƯỢC LẠI: khi CÓ mã thật, model phải bị buộc coi mã ấy là sự thật cao hơn trí nhớ
+ *   của nó — nếu không, ta trả tiền đọc đĩa để rồi nó vẫn viết theo thói quen.
+ */
+export function khoiTrungThucNguCanhMa(lang: NgonNguMa, coNguCanhMa: boolean): string {
+  if (coNguCanhMa) {
+    return w(
+      lang,
+      [
+        "MÃ NGUỒN THẬT ĐÃ ĐƯỢC ĐỌC TỪ ĐĨA TRONG LƯỢT NÀY và đặt ngay dưới đây.",
+        "• Khối mã ấy là SỰ THẬT cao hơn trí nhớ của bạn. Mâu thuẫn thì theo khối mã.",
+        "• Nêu ĐÍCH DANH tệp bạn dựa vào khi nói về dự án này.",
+        "• Khối mã có thể ĐÃ BỊ CẮT và KHÔNG phải toàn bộ repo — thiếu chỗ nào thì nói thẳng là",
+        "  bạn chưa đọc chỗ đó, ĐỪNG suy ra phần chưa thấy rồi kể như đã thấy.",
+      ].join("\n"),
+      [
+        "REAL SOURCE CODE WAS READ FROM DISK THIS TURN and is included below.",
+        "• That code block outranks your memory. If they conflict, follow the code block.",
+        "• Name the exact files you relied on when you talk about this project.",
+        "• The block may be TRUNCATED and is NOT the whole repo — say plainly when something was",
+        "  not in what you read; do not infer unseen code and present it as seen.",
+      ].join("\n"),
+      [
+        "本轮已从磁盘读取真实源代码，见下方代码块。",
+        "• 该代码块的优先级高于你的记忆；冲突时以代码块为准。",
+        "• 谈论本项目时请指名你依据的文件。",
+        "• 该块可能已被截断，并非整个仓库——没读到的部分请直说，不要臆测后当作已见。",
+      ].join("\n"),
+    );
+  }
+  return w(
+    lang,
+    [
+      "⚠ LƯỢT NÀY BẠN **KHÔNG** CÓ MÃ NGUỒN CỦA DỰ ÁN ĐANG MỞ (không đọc được tệp nào).",
+      "• Nếu câu hỏi hỏi VỀ chính dự án này (kiến trúc, cách nó xác thực/phân quyền, tệp nào làm gì,",
+      "  quy ước của repo): CÂU ĐẦU TIÊN phải nói rõ **bạn không có mã của dự án để dựa vào trong",
+      "  lượt này**, rồi mới trả lời ở mức nguyên tắc chung. TUYỆT ĐỐI KHÔNG bịa tên lớp, tên tệp,",
+      "  tên bảng, tên hàm hay ngôn ngữ của dự án này như thể bạn đã nhìn thấy chúng.",
+      "• Nếu câu hỏi chỉ là một yêu cầu lập trình chung (không hỏi về dự án này): làm bình thường",
+      "  theo nguyên tắc 4 — nêu giả định rồi đưa mã.",
+      "  (Ràng buộc này ĐÈ nguyên tắc 4 và mục cấm nói \"không có thông tin\" ở trên, và CHỈ khi câu",
+      "  hỏi là về chính dự án đang mở.)",
+    ].join("\n"),
+    [
+      "⚠ THIS TURN YOU DO **NOT** HAVE THE OPEN PROJECT'S SOURCE CODE (no file could be read).",
+      "• If the question is ABOUT this project (architecture, how it authenticates/authorizes, what",
+      "  a file does, repo conventions): your FIRST sentence must state that **you have no project",
+      "  code to rely on this turn**, and only then answer at the level of general principles. Never",
+      "  invent class, file, table, function names or a language for THIS project as if you saw them.",
+      "• If it is just a generic coding request (not about this project): proceed normally per rule 4",
+      "  — state assumptions and deliver code.",
+      "  (This overrides rule 4 and the \"never say you have no information\" ban above, and ONLY when",
+      "  the question is about the open project.)",
+    ].join("\n"),
+    [
+      "⚠ 本轮你**没有**当前项目的源代码（未能读取任何文件）。",
+      "• 若问题是关于本项目的（架构、如何认证/鉴权、某文件做什么、仓库约定）：第一句必须说明**本轮你没有",
+      "  项目代码可依据**，然后只在通用原则层面作答。绝不要臆造本项目的类名、文件名、表名、函数名或语言。",
+      "• 若只是通用编程需求（与本项目无关）：按规则 4 正常作答——说明假设并给出代码。",
+      "  （此约束覆盖上面的规则 4 和“不要说没有信息”的禁令，且仅当问题是关于当前项目时生效。）",
+    ].join("\n"),
+  );
+}
+
+/**
+ * ⚠ `coNguCanhMa` là tham số THỨ BA và có mặc định `false` ⇒ mọi lời gọi hai tham số cũ giữ nguyên
+ *   hành vi CỘNG THÊM khối trung thực "không có mã" — đó chính là hành vi đúng cho chúng, vì không
+ *   người gọi cũ nào có ngữ cảnh mã.
+ */
+export function personaSinhMa(lang: NgonNguMa, nguCanhDuAn: string, coNguCanhMa = false): string {
   const than = w(
     lang,
     [
@@ -289,7 +373,10 @@ export function personaSinhMa(lang: NgonNguMa, nguCanhDuAn: string): string {
       "• 不要以工厂运维助手的口吻回答（OEE、批次、AOI 设备）——这是编程会话。",
     ].join("\n"),
   );
-  return nguCanhDuAn ? `${than}\n\n${nguCanhDuAn}` : than;
+  // ⚠ Khối trung thực đứng SAU ngữ cảnh dự án, tức GẦN CUỐI system prompt — chỗ model chú ý mạnh
+  //   nhất, và đúng chỗ nó phải thắng nguyên tắc 4 ở phía trên.
+  const trungThuc = khoiTrungThucNguCanhMa(lang, coNguCanhMa);
+  return [than, nguCanhDuAn, trungThuc].filter((s) => s && s.trim() !== "").join("\n\n");
 }
 
 /**

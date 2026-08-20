@@ -25,13 +25,52 @@
  *   này LÀ bước nhảy ấy.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * HAI TẦNG — và vì sao tầng hai bắt buộc phải đi qua CỬA TOOL
+ * ⚠⚠⚠ ĐÍNH CHÍNH 2026-08-20 — BẢN ĐẦU DỰNG XONG, LƯỚI 101/101 XANH, **VÀ KHÔNG CHẠY ĐƯỢC LIVE.**
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- *   1. **MỤC LỤC** — `gatherRepoIndexContext()` xếp hạng và trả `snippets[].sourcePath`. Ta lấy
- *      ĐÚNG danh sách đường dẫn ấy và **vứt `block`** (block là văn bản tóm tắt — thứ ta không muốn
- *      nhét vào một prompt sinh mã).
- *   2. **MÃ THẬT** — đọc từng đường dẫn qua `docTep`, một hàm do NGƯỜI GỌI tiêm vào và bắt buộc
+ * Nghiệm thu live (đăng nhập thật, `/ai-coding-workspace`, dự án "Repo chính"): ba lượt liên tiếp
+ * **không giao được một byte ngữ cảnh nào** — không thẻ "Đọc tệp trong repo", không chân nguồn, và
+ * ở lượt đầu model **bịa** một lớp C# `UserAuthenticator` băm SHA-256 cho một repo TypeScript dùng
+ * bcrypt. Không một dòng log lỗi. Nguyên nhân **KHÔNG** phải một lỗi lập trình: nó là **hình dạng
+ * của kho tri thức**, và lưới cũ mù đúng chỗ ấy vì mọi ca đều dùng chunk giả tưởng "đẹp"
+ * (`[["server/a.ts", 0.9]]`) — một hình dạng dữ liệu **không tồn tại** trong `chunks.jsonl`.
+ *
+ * ─── SỐ ĐO (đường sản phẩm đầy đủ: embed 0.6B + keyword + trọng số + rerank gguf, topK=8) ──────
+ *   câu hỏi                                          │ điểm top-1 │ đoạn thuộc VÙNG MÃ
+ *   ─────────────────────────────────────────────────┼────────────┼────────────────────
+ *   "hệ thống này xác thực người dùng như thế nào?"  │   0,531    │ **0 / 8**
+ *   "phân quyền RBAC trong repo này hoạt động ra sao?"│   0,590    │ **0 / 8**
+ *   "luồng ingest ảnh AOI … đi qua những bước nào?"  │   0,794    │ **0 / 8**
+ *
+ * ⇒ **HAI cổng đóng độc lập**, mỗi cổng một mình đã đủ giết tính năng:
+ *   (1) `laDuongDanMaNguon` — 0/8 sống ở CẢ BA câu hỏi;
+ *   (2) `minScore = 0,60` — 2/3 câu hỏi có top-1 DƯỚI ngưỡng.
+ *   Vì thế lượt 3 (hạ `AI_COPILOT_REPO_INDEX_MIN_SCORE` xuống 0,25) **vẫn** rỗng: nó chỉ mở cổng
+ *   (2), còn (1) vẫn đóng kín.
+ *
+ * ⚠⚠ VÀ MỘT TIỀN ĐỀ NỮA BỊ BÁC BỎ: *"ngưỡng điểm là cổng lọc câu hỏi LẠC ĐỀ"*. **SAI.** Cùng phép
+ *    đo, câu LẠC đề ghi 0,519–0,677 — **chồng lên** dải 0,531–0,794 của câu TRÚNG đề. Điểm không
+ *    phân biệt được hai phân bố ấy, nên **không có con số nào** đặt vào `minScore` cứu được tính
+ *    năng. Hạ ngưỡng là chữa sai bệnh.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * BA TẦNG — và vì sao tầng ba bắt buộc phải đi qua CỬA TOOL
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *   1. **MỤC LỤC · PHA A — TRUY HỒI TRONG KHO MÃ.** `cheDoVungMa:"corpus"` thu hẹp kho xuống
+ *      `server/ client/ shared/ drizzle/ scripts/` **TRƯỚC** khi xếp hạng. Đây là cách DUY NHẤT
+ *      lấy được thứ hạng của tệp mã: lọc SAU khi xếp hạng toàn kho luôn cho 0, vì 4.312/7.582
+ *      chunk là tài liệu tiếng Việt 1.500–1.800 ký tự còn chunk mã là tóm tắt tiếng Anh 114–166
+ *      ký tự — một câu hỏi kiến trúc tiếng Việt không bao giờ thắng nổi phân bố ấy.
+ *   2. **MỤC LỤC · PHA B — CẦU TÀI LIỆU → MÃ.** `cheDoVungMa:"tat"` lấy chunk BẤT KỲ (thường là
+ *      tài liệu), rồi `motDuongDanMaTrongVanBan` mót các đường dẫn tệp mã được NGƯỜI viết nhắc
+ *      trong đó. Một tín hiệu KHÁC HẲN pha A: *"tệp này liên quan tới CHỦ ĐỀ"* chứ không phải
+ *      *"tóm tắt tệp này gần vector câu hỏi"*. **`block` và `text` của pha B bị VỨT** — không một
+ *      byte văn bản tài liệu nào vào prompt sinh mã.
+ *   3. **MÃ THẬT** — đọc từng đường dẫn qua `docTep`, một hàm do NGƯỜI GỌI tiêm vào và bắt buộc
  *      phải là `executeDecision({tool:"read_file"})`.
+ *
+ * ⚠ Hai pha XEN KẼ nhau (A1, B1, A2, B2…) chứ không nối đuôi: pha B trả **0** đường cho câu RBAC
+ *   và pha A trả toàn tệp `aiLocalTools/**` cho cùng câu ấy — mỗi cây cầu hỏng ở một chỗ khác nhau,
+ *   nên cho một cây cầu độc chiếm cả 3 ô là đặt cược vào đúng cái nó không làm được.
  *
  * ⚠⚠ **FILE NÀY KHÔNG NHẬP `fs` VÀ KHÔNG ĐƯỢC PHÉP NHẬP.** Cửa đọc đi qua `read_file` nghĩa là ta
  *    thừa hưởng NGUYÊN vẹn: `confineTargetUnder` (realpath, `nlink > 1`) → `readConfined` (hỏi
@@ -65,6 +104,7 @@ import { gocHopCat } from "../aiLocalTools/repoSandbox";
 import {
   catTheoNganSachToken,
   gatherRepoIndexContext,
+  motDuongDanMaTrongVanBan,
   REPO_INDEX_TRUNCATION_MARK,
   type GatherRepoIndexContextInput,
   type RepoIndexContextResult,
@@ -142,6 +182,80 @@ export const TRAN_BYTE_MOI_TEP_NGU_CANH = 12_288;
 export const TOP_K_MUC_LUC = 8;
 
 /**
+ * ★★★ NGƯỠNG ĐIỂM CỦA RIÊNG ĐƯỜNG NÀY — và một **tiền đề bị phép đo BÁC BỎ** phải ghi ra.
+ *
+ * Tiền đề cũ (`REPO_INDEX_DEFAULT_MIN_SCORE = 0,60`): *"ngưỡng điểm tách câu hỏi VỀ REPO khỏi câu
+ * hỏi LẠC đề"*. Đo lại 2026-08-20 trên đường sản phẩm đầy đủ:
+ *
+ *   pha              │ TRÚNG đề (3 câu)        │ LẠC đề (3 câu)
+ *   ─────────────────┼─────────────────────────┼──────────────────────────
+ *   toàn kho, top-1  │ 0,531 · 0,590 · 0,794   │ 0,519 · 0,552 · 0,677
+ *   kho MÃ,  top-1   │ 0,413 · 0,434 · 0,547   │ 0,368 · 0,508
+ *
+ * **Hai phân bố CHỒNG NHAU ở cả hai pha.** Không tồn tại con số nào đặt vào `minScore` mà tách được
+ * chúng ⇒ ngưỡng điểm **không phải** cổng chủ đề, và mọi lượt "chỉnh ngưỡng" là chữa sai bệnh.
+ *
+ * ⇒ Việc CÒN LẠI của ngưỡng ở đây rất hẹp: bỏ đoạn mà **chính bộ truy hồi** coi là nhiễu. Bộ truy
+ *   hồi tự đặt sàn `MIN_CITATION_SCORE = 0,18` (giữ top-1 dù yếu); 0,25 nằm ngay trên sàn ấy và
+ *   NẰM DƯỚI mọi số đo được (thấp nhất 0,309). Đặt cao hơn là tự bịt lại đúng cái lỗ vừa mở.
+ * ⚠ Chi phí của một lượt chọn TRƯỢT ở đây là **token, không phải một lời khai sai**: thứ vào prompt
+ *   luôn là byte thật trên đĩa, và persona buộc model nói rõ nó đang dựa vào tệp nào.
+ * ⚠ **KHÔNG dùng chung `AI_COPILOT_REPO_INDEX_MIN_SCORE`** — đó là núm của đường PLC. Dùng chung là
+ *   để một kết luận đo trên đường khác lặng lẽ điều khiển đường này (đúng lỗi vừa xảy ra ở live).
+ */
+export const NGUONG_DIEM_NGU_CANH_MA = 0.25;
+
+/** Núm riêng của đường lập trình. `AI_CODING_REPO_CONTEXT_MIN_SCORE`. */
+export const BIEN_NGUONG_DIEM = "AI_CODING_REPO_CONTEXT_MIN_SCORE";
+
+/**
+ * ★★★ HẠN GIỜ **TỔNG** cho CẢ HAI pha mục lục — không phải mỗi pha một hạn.
+ *
+ * Vì sao tổng: người dùng chờ ~75 s cho một lượt sinh mã; ngữ cảnh là thứ PHỤ TRỢ nên nó được một
+ * ngân sách cố định, và hai pha CHIA NHAU ngân sách ấy. Pha A ăn hết ⇒ pha B bị bỏ, không phải
+ * ngân sách nhân đôi. Đo: ẤM 245–283 ms mỗi pha (GPU) ⇒ hai pha ≈ 0,6 s, hạn giờ không bao giờ chạm.
+ *
+ * ⚠ Lượt NGUỘI mới là chỗ hạn giờ này bắn — và ở live nó ĐÃ bắn (`QUÁ HẠN 20000 ms`, lượt 1).
+ *   Nguyên nhân KHÔNG phải truy hồi chậm mà là ba lượt nạp một-lần cộng dồn: `ensureDataLoaded`
+ *   (162 MB `embeddings.jsonl`) + nạp embedder + **dựng ngữ cảnh rerank gguf (11–14 s đo được)**.
+ *   Cách chữa ĐÚNG là làm ấm lúc khởi động (`warmUpOllamaModels` nay chạy một lượt truy hồi thật),
+ *   không phải nới hạn giờ — nới hạn giờ chỉ chuyển "mất ngữ cảnh" thành "chờ 45 s rồi vẫn mất".
+ */
+export const HAN_GIO_MUC_LUC_MS = 20_000;
+
+/** Núm riêng của đường lập trình. `AI_CODING_REPO_CONTEXT_TIMEOUT_MS`. */
+export const BIEN_HAN_GIO = "AI_CODING_REPO_CONTEXT_TIMEOUT_MS";
+
+/**
+ * Dưới mức này thì KHÔNG khởi động pha B: một lượt truy hồi có hạn giờ 300 ms gần như chắc chắn
+ * trả `timeout`, tức trả tiền embed + rerank để nhận một mảng rỗng.
+ */
+export const HAN_GIO_TOI_THIEU_PHA_B_MS = 1_500;
+
+/**
+ * Trần số ỨNG VIÊN đem đi `read_file`. Mỗi ứng viên là một lượt gọi tool thật (RBAC + hộp cát +
+ * sổ ngân sách byte của PHIÊN), và ứng viên MÓT từ tài liệu có thể trỏ vào tệp không tồn tại —
+ * đo được: `client/src/pages/AOIPackages.ts` và `scripts/__tmp-task9-dongbo.mjs` đều KHÔNG có trên
+ * đĩa. 9 = 3 ô × 3 lượt trượt cho phép, đủ rộng mà vẫn có trần.
+ */
+export const SO_UNG_VIEN_TOI_DA = 9;
+
+function soTuEnv(ten: string, macDinh: number): number {
+  const n = Number(process.env[ten]);
+  return Number.isFinite(n) && n >= 0 ? n : macDinh;
+}
+
+/** Ngưỡng điểm ĐANG dùng cho đường lập trình. Vị từ DUY NHẤT — không nơi nào tự đọc env. */
+export function nguongDiemNguCanhMa(): number {
+  return soTuEnv(BIEN_NGUONG_DIEM, NGUONG_DIEM_NGU_CANH_MA);
+}
+
+/** Hạn giờ TỔNG đang dùng cho đường lập trình. */
+export function hanGioMucLucMs(): number {
+  return Math.floor(soTuEnv(BIEN_HAN_GIO, HAN_GIO_MUC_LUC_MS));
+}
+
+/**
  * Ngân sách token cấp cho `gatherRepoIndexContext` — chỉ để **giữ đủ thứ hạng**. Ta vứt `block` của
  * nó đi; con số này tồn tại vì hàm ấy cắt danh sách `snippets` theo ngân sách của khối văn bản.
  */
@@ -191,8 +305,20 @@ export interface KetQuaDocTepTho {
   data?: unknown;
 }
 
+/**
+ * Cây cầu nào đã đưa một tệp vào danh sách ứng viên.
+ *   • `"kho-ma"`      — pha A: truy hồi TRONG kho mã nguồn.
+ *   • `"cau-tai-lieu"`— pha B: đường dẫn được nhắc nguyên văn trong một chunk tài liệu.
+ * ⚠ Có mặt để LOG và LƯỚI phát biểu được "cây cầu nào còn sống", chứ không phải để trang trí: hai
+ *   cây cầu hỏng ở hai chỗ khác nhau, và một lưới chỉ đếm tổng số tệp sẽ vẫn xanh khi một cây cầu
+ *   chết hẳn.
+ */
+export type NguonUngVien = "kho-ma" | "cau-tai-lieu";
+
 /** Một tệp ĐÃ VÀO prompt — đúng thứ người dùng phải được thấy. */
 export interface TepNguCanh {
+  /** Cây cầu đã tìm ra tệp này. */
+  nguon: NguonUngVien;
   /** Đường dẫn TƯƠNG ĐỐI so với gốc dự án đang chọn (do chính `read_file` trả về). */
   duong: string;
   /** Byte THẬT trên đĩa (có thể lớn hơn phần đã đưa vào prompt). */
@@ -260,8 +386,12 @@ export interface DauVaoNguCanhMa {
 // THU THẬP
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 /**
- * ★★★ MỤC LỤC → MÃ THẬT. FAIL-SAFE tuyệt đối: mọi lỗi ⇒ khối RỖNG, **KHÔNG BAO GIỜ ném** — một
- * lượt truy hồi hỏng không được phép giết một lượt sinh mã vốn vẫn chạy được mà không có nó.
+ * ★★★ MỤC LỤC (2 pha) → MÃ THẬT. FAIL-SAFE tuyệt đối: mọi lỗi ⇒ khối RỖNG, **KHÔNG BAO GIỜ ném** —
+ * một lượt truy hồi hỏng không được phép giết một lượt sinh mã vốn vẫn chạy được mà không có nó.
+ *
+ * ⚠⚠ **LUÔN ghi một dòng log kết cục.** Triệu chứng live tệ nhất của bản đầu không phải "sai" mà là
+ *    **CÂM**: không thẻ, không chân nguồn, không lỗi, không log — người trực không có cách nào phân
+ *    biệt "truy hồi trả 0 tệp" với "tính năng chưa từng được gọi". Im lặng là nói dối.
  */
 export async function thuThapNguCanhMa(y: DauVaoNguCanhMa): Promise<KetQuaNguCanhMa> {
   if (!nguCanhMaEnabled()) return rong("co-tat");
@@ -279,31 +409,86 @@ export async function thuThapNguCanhMa(y: DauVaoNguCanhMa): Promise<KetQuaNguCan
   // Cổng RẺ trước cổng TỐN: không đủ chỗ cho (khung + một mẩu mã có nghĩa) thì KHÔNG embed.
   if (tranToken - tokenHeader < 120) return rong("khong-ngan-sach");
 
-  let mucLuc: RepoIndexContextResult;
-  try {
-    const tim = y.timMucLuc ?? gatherRepoIndexContext;
-    mucLuc = await tim({
-      query: cauHoi,
-      maxTokens: TRAN_TOKEN_MUC_LUC,
-      topK: TOP_K_MUC_LUC,
-      callerRole: y.callerRole,
-      // Cờ RIÊNG của đường này đã quyết ở trên; không để cờ của đường PLC bịt đường này.
-      boQuaCo: true,
-    });
-  } catch (e) {
-    console.warn("[codingRepoContext] bước MỤC LỤC hỏng (bỏ qua, sinh mã vẫn chạy):", (e as Error)?.message ?? e);
-    return rong("muc-luc-rong");
+  const tim = y.timMucLuc ?? gatherRepoIndexContext;
+  const nguong = nguongDiemNguCanhMa();
+  const hanGioTong = hanGioMucLucMs();
+  const batDau = Date.now();
+
+  /** Một lượt mục lục, FAIL-SAFE: mọi lỗi ⇒ `null`, người gọi đi tiếp bằng cây cầu còn lại. */
+  const goiMucLuc = async (
+    cheDoVungMa: NonNullable<GatherRepoIndexContextInput["cheDoVungMa"]>,
+    timeoutMs: number,
+  ): Promise<RepoIndexContextResult | null> => {
+    try {
+      return await tim({
+        query: cauHoi,
+        maxTokens: TRAN_TOKEN_MUC_LUC,
+        topK: TOP_K_MUC_LUC,
+        // Ngưỡng + hạn giờ truyền TƯỜNG MINH: núm của đường PLC
+        // (`AI_COPILOT_REPO_INDEX_MIN_SCORE`/`_TIMEOUT_MS`) KHÔNG được điều khiển đường này.
+        minScore: nguong,
+        timeoutMs,
+        callerRole: y.callerRole,
+        // Cờ RIÊNG của đường này đã quyết ở trên; không để cờ của đường PLC bịt đường này.
+        boQuaCo: true,
+        cheDoVungMa,
+      });
+    } catch (e) {
+      console.warn(
+        `[codingRepoContext] MỤC LỤC pha "${cheDoVungMa}" hỏng (bỏ qua, sinh mã vẫn chạy):`,
+        (e as Error)?.message ?? e,
+      );
+      return null;
+    }
+  };
+
+  // ── PHA A — truy hồi TRONG KHO MÃ (xem docblock đầu tệp về vì sao lọc-sau luôn cho 0 tệp) ──
+  const phaA = await goiMucLuc("corpus", hanGioTong);
+
+  // ── PHA B — toàn kho, chỉ để MÓT đường dẫn mã trong thân chunk; `block`/`text` bị vứt ──
+  const conLaiMs = hanGioTong - (Date.now() - batDau);
+  const phaB = conLaiMs >= HAN_GIO_TOI_THIEU_PHA_B_MS ? await goiMucLuc("tat", conLaiMs) : null;
+
+  /**
+   * XEN KẼ hai cây cầu (A1, B1, A2, B2…), khử trùng theo đường dẫn, giữ nguyên thứ hạng bên trong
+   * mỗi cầu. Đo được vì sao KHÔNG nối đuôi: câu "phân quyền RBAC" cho pha B **0** đường dẫn, còn
+   * pha A cho toàn tệp `aiLocalTools/**`; câu "xác thực người dùng" thì pha B mới là cầu tìm ra
+   * `server/routers/userRouters.ts`. Cho một cầu độc chiếm cả 3 ô là cược vào đúng cái nó thiếu.
+   */
+  const tuA: Array<{ duong: string; diem: number; nguon: NguonUngVien }> = [];
+  for (const s of phaA?.snippets ?? []) {
+    const p = String(s?.sourcePath ?? "").trim();
+    if (p !== "") tuA.push({ duong: p, diem: Number(s?.score ?? 0), nguon: "kho-ma" });
+  }
+  const tuB: Array<{ duong: string; diem: number; nguon: NguonUngVien }> = [];
+  for (const s of phaB?.snippets ?? []) {
+    for (const p of motDuongDanMaTrongVanBan(String(s?.text ?? ""))) {
+      tuB.push({ duong: p, diem: Number(s?.score ?? 0), nguon: "cau-tai-lieu" });
+    }
   }
 
-  // Khử trùng theo đường dẫn, GIỮ NGUYÊN thứ hạng (mục lục đã sắp theo điểm giảm dần).
   const daThay = new Set<string>();
-  const ungVien: Array<{ duong: string; diem: number }> = [];
-  for (const s of mucLuc?.snippets ?? []) {
-    const p = String(s?.sourcePath ?? "").trim();
-    if (p === "" || daThay.has(p)) continue;
-    daThay.add(p);
-    ungVien.push({ duong: p, diem: Number(s?.score ?? 0) });
+  const ungVien: Array<{ duong: string; diem: number; nguon: NguonUngVien }> = [];
+  for (let i = 0; i < Math.max(tuA.length, tuB.length); i++) {
+    for (const uv of [tuA[i], tuB[i]]) {
+      if (!uv || daThay.has(uv.duong) || ungVien.length >= SO_UNG_VIEN_TOI_DA) continue;
+      daThay.add(uv.duong);
+      ungVien.push(uv);
+    }
   }
+
+  /**
+   * Dòng log kết cục — MỘT dòng, luôn có, đủ để người trực chẩn đoán mà không cần gắn debugger:
+   * mỗi cây cầu trả về bao nhiêu, hai pha ra `reason` gì, mất bao lâu, và cuối cùng còn mấy tệp.
+   * Chính dòng này là thứ bản đầu KHÔNG có, nên ba lượt live hỏng mà nhật ký hoàn toàn trống.
+   */
+  const khaiPha = (r: RepoIndexContextResult | null, ten: string) =>
+    r === null ? `${ten}=HỎNG` : `${ten}=${r.reason}/${r.snippets.length}(thô ${r.retrieved})`;
+  console.log(
+    `[codingRepoContext] ${khaiPha(phaA, "phaA-khoMa")} ${phaB === null ? "phaB=BỎ-QUA/HỎNG" : khaiPha(phaB, "phaB-cauTaiLieu")} ` +
+      `· ứng viên ${ungVien.length} (kho-mã ${tuA.length}, cầu-tài-liệu ${tuB.length}) · ngưỡng ${nguong} · ${Date.now() - batDau} ms`,
+  );
+
   if (ungVien.length === 0) return rong("muc-luc-rong");
 
   let conLai = tranToken - tokenHeader;
@@ -344,6 +529,7 @@ export async function thuThapNguCanhMa(y: DauVaoNguCanhMa): Promise<KetQuaNguCan
 
     doan.push(`${nhan}\n${rao}\n${text}\n\`\`\``);
     tep.push({
+      nguon: uv.nguon,
       duong: duongThat,
       byteTrenDia,
       kyTuVaoPrompt: text.length,
@@ -353,8 +539,18 @@ export async function thuThapNguCanhMa(y: DauVaoNguCanhMa): Promise<KetQuaNguCan
     conLai -= chiPhiKhung + uocLuongSoToken(text);
   }
 
-  if (tep.length === 0) return rong("khong-doc-duoc", ungVien.length);
+  if (tep.length === 0) {
+    console.warn(
+      `[codingRepoContext] ${ungVien.length} ứng viên nhưng KHÔNG đọc được tệp nào ` +
+        `(hộp cát/RBAC/không tồn tại) ⇒ lượt sinh mã đi tiếp KHÔNG có ngữ cảnh mã.`,
+    );
+    return rong("khong-doc-duoc", ungVien.length);
+  }
 
+  console.log(
+    `[codingRepoContext] ĐÃ ĐỌC ${tep.length} tệp vào prompt: ` +
+      tep.map((t) => `${t.duong}[${t.nguon} ${t.diem.toFixed(3)}]`).join(", "),
+  );
   const khoi = `${KHOI_HEADER_NGU_CANH_MA}\n${doan.join("\n\n")}\n${KHOI_FOOTER_NGU_CANH_MA}`;
   return { khoi, tokens: uocLuongSoToken(khoi), tep, lyDo: "ok", soDuongDanMucLuc: ungVien.length };
 }

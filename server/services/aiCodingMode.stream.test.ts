@@ -49,16 +49,38 @@ const h = vi.hoisted(() => ({
    *   lượt lạnh, và kết quả phụ thuộc dữ liệu chỉ mục, tức KHÔNG tất định.
    */
   mucLucGia: [] as Array<[string, number]>,
+  /**
+   * ★ VÁ LIVE 2026-08-20 — thân chunk của pha TOÀN KHO. Đây là nơi cầu "tài liệu → mã" lấy đường
+   * dẫn; để rỗng ⇒ pha B không mót được gì (đúng như câu "RBAC" đo được ở live).
+   */
+  thanToanKho: "" as string,
   /** Số lượt tầng mục lục ĐƯỢC GỌI — ca âm đọc con số này, không chỉ đọc kết quả. */
   soLuotMucLuc: 0,
+  /** Đếm THEO PHA: một lưới chỉ đếm tổng sẽ vẫn xanh khi một pha chết hẳn. */
+  luotTheoPha: {} as Record<string, number>,
 }));
 
 vi.mock("./ai/repoContextService", async (goc) => {
   const that = await goc<typeof import("./ai/repoContextService")>();
   return {
     ...that,
-    gatherRepoIndexContext: async () => {
+    gatherRepoIndexContext: async (i: import("./ai/repoContextService").GatherRepoIndexContextInput) => {
       h.soLuotMucLuc += 1;
+      const pha = i?.cheDoVungMa ?? "sau";
+      h.luotTheoPha[pha] = (h.luotTheoPha[pha] ?? 0) + 1;
+      // Pha "tat" (toàn kho) trả MỘT chunk tài liệu; giá trị nằm ở THÂN, không ở `sourcePath` —
+      // đúng hình dạng thật của kho. Pha "corpus" trả đường dẫn mã như `mucLucGia` khai.
+      if (pha === "tat") {
+        return {
+          block: "khong-dung-toi",
+          tokens: 0,
+          snippets: h.thanToanKho
+            ? [{ sourcePath: "docs/GIA_LAP.md", text: h.thanToanKho, score: 0.5, truncated: false }]
+            : [],
+          reason: (h.thanToanKho ? "ok" : "empty") as "ok" | "empty",
+          retrieved: h.thanToanKho ? 1 : 0,
+        };
+      }
       return {
         block: "khong-dung-toi",
         tokens: 0,
@@ -185,7 +207,9 @@ beforeEach(() => {
   h.llmDoanTool = null;
   h.docGia = null;
   h.mucLucGia = [];
+  h.thanToanKho = "";
   h.soLuotMucLuc = 0;
+  h.luotTheoPha = {};
 });
 afterEach(() => {
   for (const k of ENV) delete process.env[k];
@@ -615,7 +639,9 @@ describe("§7 — doc 79 (D): ngữ cảnh MÃ THẬT tới được prompt sinh
     h.manh = [MA_CSHARP];
     await chay(CAU, admin());
 
-    expect(h.soLuotMucLuc).toBe(1);
+    // ★ VÁ LIVE: HAI pha, và đếm THEO PHA — một lưới chỉ đếm tổng vẫn xanh khi một pha chết hẳn.
+    expect(h.soLuotMucLuc).toBe(2);
+    expect(h.luotTheoPha).toEqual({ corpus: 1, tat: 1 });
     expect(h.promptNhan).toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
     expect(h.promptNhan).toContain("[M1] " + TEP_NGU_CANH);
     // ★★★ Phép đo mạnh nhất: NGUYÊN VĂN tệp trên đĩa nằm trong prompt. Không phải "có chứa từ khoá",
@@ -722,6 +748,7 @@ describe("§7 — doc 79 (D): ngữ cảnh MÃ THẬT tới được prompt sinh
     h.promptNhan = "";
     h.systemPromptNhan = "";
     h.soLuotMucLuc = 0;
+    h.luotTheoPha = {};
     const r = await chay(CAU, admin());
 
     // (3) Thứ THẬT SỰ gửi lên model phải lọt ngân sách — đo bằng CHÍNH cổng sẽ ném ở tầng dưới.
@@ -731,7 +758,7 @@ describe("§7 — doc 79 (D): ngữ cảnh MÃ THẬT tới được prompt sinh
       "★★★ prompt gửi lên model PHẢI lọt ngân sách slot: " + canh.tokenVao + " + 3000 vs " + canh.tranMoiSlot,
     ).toBe(true);
     // Ngữ cảnh mã ĐÃ được thu thập (mục lục chạy) rồi mới bị NHƯỜNG CHỖ — đúng thứ tự chính sách.
-    expect(h.soLuotMucLuc, "phải có thu thập thật thì phép nhường chỗ mới có nghĩa").toBe(1);
+    expect(h.soLuotMucLuc, "phải có thu thập thật thì phép nhường chỗ mới có nghĩa").toBe(2);
     // Chính sách: ngữ cảnh mã bị BỎ, lượt sinh mã VẪN CHẠY (không từ chối cả câu hỏi).
     expect(h.promptNhan).not.toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
     expect(r.chu).toContain("TcpListener");
@@ -772,5 +799,111 @@ describe("§7 — doc 79 (D): ngữ cảnh MÃ THẬT tới được prompt sinh
     expect(h.promptNhan).not.toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
     expect(r.events.some((e) => e.type === "tool" && e.toolName === "read_file")).toBe(false);
     expect(r.chu).toContain("TcpListener");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ §8 — VÁ LIVE 2026-08-20. Ba mệnh đề mà lưới §7 (xanh 100%) **không phát biểu nổi**, và vì thế
+//          tính năng chạy hỏng ba lượt liên tiếp trên máy thật mà mọi cổng vẫn báo xanh.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("§8 — VÁ LIVE: cầu tài liệu→mã, và persona phải NÓI RA khi không có mã", () => {
+  const CAU_LIVE = "hệ thống này xác thực người dùng như thế nào?";
+  /**
+   * Tệp THẬT của REPO CHÍNH, nhỏ (280 byte) và ổn định. **Phải là tệp trong vùng mã** —
+   * `sandbox-projects/**` (tệp thi của §7) cố ý KHÔNG thuộc `REPO_INDEX_SOURCE_PREFIXES`, nên cầu
+   * tài liệu→mã không mót nó; ca đầu tiên của tôi dùng nhầm nó và ĐỎ, đúng như phải thế.
+   */
+  const TEP_MA_THAT = "shared/const.ts";
+  const NOI_DUNG_MA_THAT = fs.readFileSync(path.resolve(process.cwd(), TEP_MA_THAT), "utf8");
+
+  it("★★★ 8.1 CẦU TÀI LIỆU→MÃ chạy THẬT: kho mã RỖNG, chỉ có chunk tài liệu ⇒ vẫn đọc được tệp", async () => {
+    // Đúng hình dạng live: pha kho-mã không trả gì, pha toàn-kho trả một chunk TÀI LIỆU có nhắc
+    // đường dẫn tệp mã. Tệp đích là tệp THẬT trên đĩa, đọc qua `read_file` THẬT.
+    h.mucLucGia = [];
+    h.thanToanKho = "Hằng số dùng chung nằm ở `" + TEP_MA_THAT + "`, xem phần khai báo.";
+    h.manh = [MA_CSHARP];
+    const r = await chay(CAU_LIVE, admin());
+
+    expect(h.luotTheoPha).toEqual({ corpus: 1, tat: 1 });
+    expect(h.promptNhan, "★★★ cầu tài liệu→mã phải đưa được BYTE THẬT vào prompt").toContain(NOI_DUNG_MA_THAT);
+    expect(h.promptNhan).toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
+    // VĂN BẢN của chunk tài liệu KHÔNG được vào prompt — chỉ đường dẫn mót được mới vào.
+    expect(h.promptNhan, "chunk tài liệu là CẦU, không phải hàng").not.toContain("xem phần khai báo");
+    expect(r.events.some((e) => e.type === "tool" && e.toolName === "read_file")).toBe(true);
+  });
+
+  it("★★★ 8.1b CA ÂM CỦA CẦU — tài liệu nhắc `sandbox-projects/**` (NGOÀI vùng mã) ⇒ KHÔNG mót", async () => {
+    h.mucLucGia = [];
+    h.thanToanKho = "Máy tính mẫu nằm ở `" + TEP_THI + "`.";
+    h.manh = [MA_CSHARP];
+    const r = await chay(CAU_LIVE, admin());
+    expect(
+      h.quyetDinh.some((q) => q.tool === "read_file"),
+      "★ cầu mót phải TÔN TRỌNG vùng mã, không biến mọi chuỗi giống đường dẫn thành lệnh đọc",
+    ).toBe(false);
+    expect(h.promptNhan).not.toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
+    expect(r.chu).toContain("TcpListener");
+  });
+
+  it("★★★ 8.2 CA ÂM — chunk tài liệu KHÔNG nhắc tệp mã nào (câu RBAC ở live) ⇒ KHÔNG có ngữ cảnh", async () => {
+    h.mucLucGia = [];
+    h.thanToanKho = "# Quản lý vai trò\nMàn hình gán vai trò cho người dùng, không nhắc tệp nào.";
+    h.manh = [MA_CSHARP];
+    const r = await chay(CAU_LIVE, admin());
+
+    expect(h.promptNhan, "★ nếu ca này có khối mã ⇒ cầu đang nuốt cả chunk doc làm 'mã'").not.toContain(
+      "MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ",
+    );
+    expect(r.events.some((e) => e.type === "tool" && e.toolName === "read_file")).toBe(false);
+    expect(r.chu).toContain("TcpListener"); // fail-safe: lượt sinh mã vẫn chạy
+  });
+
+  it("★★★ 8.3 PERSONA — ngữ cảnh mã RỖNG ⇒ system prompt BUỘC nói 'không có mã của dự án'", async () => {
+    h.mucLucGia = [];
+    h.thanToanKho = "";
+    h.manh = [MA_CSHARP];
+    await chay(CAU_LIVE, admin());
+    /**
+     * ⚠⚠ ĐÂY là hàng rào chống lượt live 1, nơi model bịa lớp C# `UserAuthenticator` băm SHA-256
+     *    cho một repo TypeScript dùng bcrypt — **mà không hề báo là đang đoán**.
+     */
+    expect(h.systemPromptNhan).toContain("KHÔNG** CÓ MÃ NGUỒN CỦA DỰ ÁN ĐANG MỞ");
+    expect(h.systemPromptNhan).toContain("bạn không có mã của dự án để dựa vào trong");
+    expect(h.systemPromptNhan, "phải ĐÈ được nguyên tắc 4, nếu không nó vẫn bịa").toContain("ĐÈ nguyên tắc 4");
+    // Và KHÔNG được khai ngược lại rằng đã đọc mã.
+    expect(h.systemPromptNhan).not.toContain("MÃ NGUỒN THẬT ĐÃ ĐƯỢC ĐỌC TỪ ĐĨA");
+  });
+
+  it("★★★ 8.4 PERSONA — CÓ ngữ cảnh mã ⇒ đổi sang khối 'mã thật đứng trên trí nhớ' (A/B một biến)", async () => {
+    h.mucLucGia = [[TEP_THI, 0.9]];
+    h.manh = [MA_CSHARP];
+    await chay(CAU_LIVE, admin());
+    expect(h.systemPromptNhan).toContain("MÃ NGUỒN THẬT ĐÃ ĐƯỢC ĐỌC TỪ ĐĨA TRONG LƯỢT NÀY");
+    expect(h.systemPromptNhan, "★★★ có mã mà vẫn dặn 'bạn không có mã' ⇒ persona tự mâu thuẫn").not.toContain(
+      "KHÔNG** CÓ MÃ NGUỒN CỦA DỰ ÁN ĐANG MỞ",
+    );
+  });
+
+  it("★★★ 8.5 NGỮ CẢNH BỊ NHƯỜNG CHỖ ⇒ persona phải DỰNG LẠI, không được dặn tin vào khối đã biến mất", async () => {
+    const { uocLuongSoToken } = await import("./aiLlamaServerClient");
+    // Lượt phỏng (cờ TẮT) để lấy trần vừa khít — cùng thủ pháp §7.6.
+    process.env.AI_CODING_REPO_CONTEXT = "0";
+    h.mucLucGia = [[TEP_THI, 0.9]];
+    h.manh = [MA_CSHARP];
+    await chay(CAU_LIVE, admin());
+    const tokenGoc = uocLuongSoToken(h.systemPromptNhan) + uocLuongSoToken(h.promptNhan);
+
+    process.env.LLAMA_SERVER_CTX_PER_SLOT = String(tokenGoc + 3_000 + 10);
+    delete process.env.AI_CODING_REPO_CONTEXT;
+    h.systemPromptNhan = "";
+    h.promptNhan = "";
+    await chay(CAU_LIVE, admin());
+
+    expect(h.promptNhan).not.toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ"); // khối mã ĐÃ bị bỏ
+    expect(
+      h.systemPromptNhan,
+      "★★★ dặn model tin vào một khối mã KHÔNG TỒN TẠI là dạy nó bịa — đúng lớp lỗi đang chữa",
+    ).not.toContain("MÃ NGUỒN THẬT ĐÃ ĐƯỢC ĐỌC TỪ ĐĨA");
+    expect(h.systemPromptNhan).toContain("KHÔNG** CÓ MÃ NGUỒN CỦA DỰ ÁN ĐANG MỞ");
   });
 });

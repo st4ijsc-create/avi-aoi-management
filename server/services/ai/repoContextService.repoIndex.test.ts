@@ -17,9 +17,11 @@ import {
   REPO_INDEX_BLOCK_HEADER,
   REPO_INDEX_TRUNCATION_MARK,
   REPO_INDEX_DEFAULT_ON,
+  REPO_INDEX_SOURCE_PREFIXES,
   laDuongDanMaNguon,
   type RepoContextResult,
 } from "./repoContextService";
+import { locKhoTheoTienTo } from "../aiLocalKnowledgeService";
 import { uocLuongSoToken } from "../aiLlamaServerClient";
 
 /** Một `gatherRepoContext` giả — trả đúng danh sách đoạn đã cho, ghi lại tham số nhận được. */
@@ -261,5 +263,81 @@ describe("G2-A · catTheoNganSachToken", () => {
   });
   it("trần 0 → rỗng", () => {
     expect(catTheoNganSachToken("abc", 0)).toEqual({ text: "", truncated: true });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ VÁ LIVE 2026-08-20 — `cheDoVungMa`: BA cách áp cổng vùng, và cách thứ nhất đã hỏng ở live.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("VÁ LIVE · cheDoVungMa — thu hẹp kho TRƯỚC khi xếp hạng, hay lọc SAU, hay không lọc", () => {
+  /** Top-8 THẬT đo ngày 2026-08-20 cho câu "phân quyền RBAC trong repo này hoạt động ra sao?". */
+  const THAT_TOAN_KHO = [
+    { sourcePath: "knowledge/features/admin/role-management.md", text: "vai trò", score: 0.5897 },
+    { sourcePath: "docs/ECOSYSTEM/50_RBAC_PROCEDURE_MIGRATION_R4.md", text: "xem `server/_core/trpc.ts`", score: 0.4857 },
+    { sourcePath: "knowledge/operational/process-analytics.md", text: "phân tích", score: 0.474 },
+  ];
+
+  it("★★★ mặc định (`sau`) — HÀNH VI CŨ Y NGUYÊN: lọc sau xếp hạng ⇒ 0 đoạn với chunk THẬT", async () => {
+    const gather = gatherGia(THAT_TOAN_KHO);
+    const r = await gatherRepoIndexContext({ query: "phân quyền RBAC", maxTokens: 900, minScore: 0.25, gather });
+    expect(r.reason, "★★★ ĐÂY chính là triệu chứng live, tái lập tất định").toBe("below-threshold");
+    expect(r.snippets.length).toBe(0);
+    // Và KHÔNG xin thu hẹp kho — đường PLC không được đổi một byte hành vi.
+    expect((gather as any).mock.calls[0][0].ragSourcePathPrefixes).toBeUndefined();
+  });
+
+  it("★★★ `corpus` — XIN thu hẹp kho ngay ở tầng truy hồi (cách DUY NHẤT lấy được thứ hạng tệp mã)", async () => {
+    const gather = gatherGia([{ sourcePath: "server/services/aiLocalTools/readToolRbac.ts", text: "rbac", score: 0.41 }]);
+    const r = await gatherRepoIndexContext({
+      query: "phân quyền RBAC", maxTokens: 900, minScore: 0.25, gather, cheDoVungMa: "corpus",
+    });
+    expect(r.reason).toBe("ok");
+    expect((gather as any).mock.calls[0][0].ragSourcePathPrefixes, "phải truyền bảng tiền tố XUỐNG tầng truy hồi")
+      .toEqual(REPO_INDEX_SOURCE_PREFIXES);
+  });
+
+  it("★★★ `tat` — KHÔNG lọc vùng: chunk tài liệu sống sót (chúng là CẦU, không phải hàng)", async () => {
+    const gather = gatherGia(THAT_TOAN_KHO);
+    const r = await gatherRepoIndexContext({
+      query: "phân quyền RBAC", maxTokens: 900, minScore: 0.25, gather, cheDoVungMa: "tat",
+    });
+    expect(r.reason).toBe("ok");
+    expect(r.snippets.map((s) => s.sourcePath)).toContain("docs/ECOSYSTEM/50_RBAC_PROCEDURE_MIGRATION_R4.md");
+    expect((gather as any).mock.calls[0][0].ragSourcePathPrefixes, "`tat` KHÔNG thu hẹp kho").toBeUndefined();
+  });
+
+  it("★★★ A/B trên ĐÚNG một biến — cùng đoạn, cùng ngưỡng, chỉ đổi `cheDoVungMa`", async () => {
+    const doanDoc = [{ sourcePath: "docs/A.md", text: "abc", score: 0.9 }];
+    const sau = await gatherRepoIndexContext({ query: "q", maxTokens: 900, gather: gatherGia(doanDoc), minScore: 0.25 });
+    const tat = await gatherRepoIndexContext({
+      query: "q", maxTokens: 900, gather: gatherGia(doanDoc), minScore: 0.25, cheDoVungMa: "tat",
+    });
+    expect(sau.reason).toBe("below-threshold");
+    expect(tat.reason).toBe("ok");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("VÁ LIVE · `locKhoTheoTienTo` — hàm THUẦN thu hẹp kho, đo không cần 162 MB chỉ mục", () => {
+  const KHO = [
+    { sourcePath: "server/routers/x.ts" },
+    { sourcePath: "docs/ECOSYSTEM/79.md" },
+    { sourcePath: "knowledge/operational/users.md" },
+    { sourcePath: "Client\\src\\lib\\y.ts" }, // hoa/thường + dấu ngược của Windows
+  ];
+
+  it("★★★ vắng tiền tố ⇒ trả CHÍNH mảng gốc (0 byte đổi hành vi cho mọi người gọi cũ)", () => {
+    expect(locKhoTheoTienTo(KHO, undefined)).toBe(KHO);
+    expect(locKhoTheoTienTo(KHO, [])).toBe(KHO);
+    expect(locKhoTheoTienTo(KHO, ["  ", ""])).toBe(KHO);
+  });
+
+  it("★★★ có tiền tố ⇒ chỉ giữ vùng mã, chuẩn hoá `\\` và hoa/thường", () => {
+    const ra = locKhoTheoTienTo(KHO, ["server/", "client/"]).map((e) => e.sourcePath);
+    expect(ra).toEqual(["server/routers/x.ts", "Client\\src\\lib\\y.ts"]);
+  });
+
+  it("★★★ KHÔNG có nhánh dự phòng 'rỗng thì trả cả kho' — dự phòng ấy là cửa sau mở lại chính lỗ này", () => {
+    expect(locKhoTheoTienTo(KHO, ["khong-ton-tai/"])).toEqual([]);
   });
 });
