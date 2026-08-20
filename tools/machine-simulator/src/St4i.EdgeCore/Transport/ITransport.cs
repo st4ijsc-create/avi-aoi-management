@@ -15,10 +15,11 @@ namespace St4i.EdgeCore.Transport;
 /// MQTT broker off-box. The parenthesis is the part that survives and it is what this interface is:
 /// <b>the ST4I ingest seam</b> — live HTTP to the real ingest endpoints, or the offline
 /// <see cref="DemoTransport"/> fabricator used at exhibitions with no server and no network. It is one of
-/// this product's TWO egress paths, not the only one.
+/// the TWO paths a reading takes out of this process, not the only one.
 ///
-/// <para>Nothing here is a delivery guarantee. All three methods answer with a RESULT record and none of
-/// them throws for a server that is down, so every failure mode arrives as a value — see
+/// <para>Nothing here is a delivery guarantee. All three methods answer with a RESULT record, and in
+/// every implementation that ships here none of them throws for a server that is down, so a failure
+/// arrives as a value rather than as an exception — see
 /// <see cref="TransportAck"/>, <see cref="HeartbeatResult"/> and <see cref="ConfigSyncResult"/>, each of
 /// which spells out which of its members mean what on which path. Four implementations ship:
 /// <see cref="LiveTransport"/>, <see cref="DemoTransport"/>, <see cref="AutoTransport"/> (which composes

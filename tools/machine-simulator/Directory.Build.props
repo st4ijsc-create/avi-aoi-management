@@ -654,7 +654,7 @@
        🔴 STAGE 5's NARROWING RETURNS, BY EXACTLY THE MECHANISM STAGE 6 PREDICTED. AL-1 wrote that its
        strong "zero non-`///` changed lines" claim held only because its cluster contained no enum. This
        cluster contains one, `TransportMode`, and a one-line enum declaration must be re-laid out to carry
-       member documentation. Over `src/`: 460 added, 4 removed. Three of the four removed are `///` lines,
+       member documentation. Over `src/`: 485 added, 4 removed. Three of the four removed are `///` lines,
        all three the old `ITransport` summary, all three reproduced VERBATIM inside its replacement. The
        fourth is the enum's one-line declaration; its member sequence is identical name-for-name and
        order-for-order. Outside that and blank separators, zero changed lines that are not `///`.

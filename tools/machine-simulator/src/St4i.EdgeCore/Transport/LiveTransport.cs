@@ -253,9 +253,10 @@ public sealed class LiveTransport : ITransport, IDisposable
     /// <summary>Pings the server and reads four named fields out of the raw JSON reply. The
     /// <c>machineCode</c> argument is IGNORED here — the wrapped client is bound to one machine and the
     /// SDK's own heartbeat call takes no code — so this method cannot be used to ask about a different
-    /// machine, and passing the wrong one changes nothing. Every failure, of every kind, collapses to the
-    /// same all-null result: a reply whose <c>success</c> field is missing or false is indistinguishable
-    /// here from a server that could not be reached and from a client with no key.</summary>
+    /// machine, and passing the wrong one changes nothing. The three SDK failures it catches — network,
+    /// API rejection, unconfigured — all collapse to the same all-null result, and so does a reply whose
+    /// <c>success</c> field is missing or false, so those four are indistinguishable to a caller. Any
+    /// OTHER exception, cancellation included, is not caught here and reaches the caller as a throw.</summary>
     public async Task<HeartbeatResult> HeartbeatAsync(string machineCode, CancellationToken ct)
     {
         // The wrapped client is already bound to one machine (see class doc) — machineCode is accepted

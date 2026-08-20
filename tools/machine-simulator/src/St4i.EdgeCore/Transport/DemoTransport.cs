@@ -108,9 +108,10 @@ public sealed class DemoTransport : ITransport
 
     /// <summary>Compares <c>cachedVersion</c> against one hard-coded demo version string and reports the
     /// difference. Both <c>machineCode</c> and <c>configKind</c> are ignored, so every config kind on
-    /// every machine reports the same version — which means a caller that has synced once sees
-    /// <c>Changed=false</c> forever, and a demo can never be made to show config drift through this
-    /// path.</summary>
+    /// every machine reports the same version. A caller therefore sees at most ONE change ever — the
+    /// first call, if it arrives holding something other than the demo version — and
+    /// <c>Changed=false</c> on every call after that, for the life of the process and of the next
+    /// one.</summary>
     public async Task<ConfigSyncResult> SyncConfigAsync(string machineCode, string configKind, string? cachedVersion, CancellationToken ct)
     {
         await DelayAsync(ct);

@@ -13,20 +13,27 @@ public static class Normalizer
 {
     /// <summary>🔴 The process-result ingest route as THIS repository spells it — and no request is ever
     /// sent to it from here. It is stamped onto the envelope, and the live transport then dispatches on
-    /// the envelope's kind into a typed SDK call whose URL is a literal inside the vendored SDK; the only
-    /// consumer of this value in the product is the operator's API-trace row. Changing it changes what
-    /// the trace pane displays and nothing about where the data goes.
+    /// the envelope's kind into a typed SDK call whose URL is a literal inside the vendored SDK, so
+    /// changing this text cannot change where an HTTP request goes.
+    ///
+    /// <para>🔴 It does not follow that this text is private. Two consumers read it, and only one of them
+    /// is local: <c>EdgePipeline</c> copies it into the operator's API-trace row, AND the UNS publisher
+    /// SERIALIZES THE WHOLE ENVELOPE as the retained semantic mirror, so this string is published on a
+    /// retained MQTT topic that <c>Site.UnsBridge</c> forwards to a SYNAPSE Site. Changing it changes a
+    /// retained payload outside this box. That second consumer is invisible to a search for the member's
+    /// name — the read is a serializer's — and <c>UnsPublisherIntegrationTests</c> is what pins it, by
+    /// asserting the mirror's <c>path</c> field equals the envelope's.</para>
     ///
     /// <para>These three are also <see langword="const"/>, so any assembly that referenced one would have
     /// BAKED IN the old text at its own compile time. Nothing outside this assembly does today.</para></summary>
     public const string ProcessResultPath = "/api/v1/ingest/process-result";
 
-    /// <summary>The telemetry ingest route, on the same terms as
-    /// <see cref="ProcessResultPath"/>: display-only, never requested from this repository.</summary>
+    /// <summary>The telemetry ingest route, on the same terms as <see cref="ProcessResultPath"/>: never
+    /// requested from this repository, and published anyway on the retained semantic mirror.</summary>
     public const string TelemetryPath = "/api/v1/ingest/telemetry";
 
-    /// <summary>The inspection ingest route, on the same terms as
-    /// <see cref="ProcessResultPath"/>: display-only, never requested from this repository.</summary>
+    /// <summary>The inspection ingest route, on the same terms as <see cref="ProcessResultPath"/>: never
+    /// requested from this repository, and published anyway on the retained semantic mirror.</summary>
     public const string InspectionPath = "/api/v1/ingest/inspection";
 
     private const string ProcessSchemaVersion = "1.0";
@@ -53,7 +60,9 @@ public static class Normalizer
     }
 
     /// <summary>
-    /// The only producer of a <see cref="CanonicalEnvelope"/> in this product. Dispatches on
+    /// The only producer of a <see cref="CanonicalEnvelope"/> anywhere under <c>src/</c> — tests build
+    /// them by calling the constructor directly, which is worth knowing because a hand-built envelope
+    /// carries whatever <see cref="CanonicalEnvelope.Path"/> its author typed. Dispatches on
     /// <see cref="DeviceReading.Kind"/> to one of three private shapers and throws
     /// <see cref="ArgumentOutOfRangeException"/> for anything else — a reading is never silently dropped
     /// here, and never silently reshaped either.

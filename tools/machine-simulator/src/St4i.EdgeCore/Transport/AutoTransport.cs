@@ -43,9 +43,10 @@ public sealed class AutoTransport : ITransport
 
     /// <summary>Always <see cref="TransportMode.Auto"/> — it does not switch to
     /// <see cref="TransportMode.Demo"/> while falling back. So the API-trace row for a call this class
-    /// served from demo is stamped <c>Auto</c>, and the only published signal that the call did not go to
-    /// the server is <see cref="IsFallingBack"/> (and the event that announces it), which the trace row
-    /// does not carry.</summary>
+    /// served from demo is stamped <c>Auto</c>, and the row carries nothing else that distinguishes it
+    /// either — the fabricated ack's status code is the same 201/202 a real one would carry. What says so
+    /// is <see cref="IsFallingBack"/> and the event that announces it, neither of which reaches that
+    /// row.</summary>
     public TransportMode Mode => TransportMode.Auto;
 
     /// <summary>
