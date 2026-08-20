@@ -43,6 +43,23 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 4 ĐÃ TRẢ 2026-08-19 (AG-1, đợt 4/8): 101 khẳng định ĐÃ SAI được TRỎ LẠI (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, 0 dòng mã đụng tới), `EXPECT_WARNINGS` 852 → 751 ĐO, sổ 19 → 16 hàng, 185 vendored / 566 ours, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **532 chỗ trống của ta chưa trả** (+ 103 vendored không ai trả được). Đợt 5–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 5 ĐÃ TRẢ 2026-08-19 (AH-1, đợt 5/8): 120 chỗ THIẾU được VIẾT — một cụm mạch lạc, mô hình dữ liệu config-sync (7 file `Config/`, cả 120 là CS1591), `EXPECT_WARNINGS` 751 → 631 ĐO, sổ vẫn 16 hàng, 185 vendored / 446 ours, `OURS CS1591 448 → 328`, `OURS CS1573 84` KHÔNG dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **412 chỗ trống của ta chưa trả**. Đợt 6–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 6 ĐÃ TRẢ 2026-08-20 (AL-1, đợt 6/8): 129 chỗ THIẾU được VIẾT — một cụm mạch lạc, historian cạnh máy (8 file `Historian/` + `Models/` + `Metrics/`; 85 CS1591 + 44 CS1573), `EXPECT_WARNINGS` 631 → 502 ĐO, sổ vẫn 16 hàng, 185 vendored / 317 ours, `OURS CS1591 328 → 243` VÀ `OURS CS1573 84 → 40` — đợt ĐẦU TIÊN hàng CS1573 dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **283 chỗ trống của ta chưa trả**. Đợt 7–8 trả, mỗi đợt đo lại. 🔴 **Và đợt 6 BÁC ba khẳng định đã công bố trong chính cụm ấy — rút tại chỗ, KHÔNG sửa mã: `OeeCalculator` *"mọi tỉ số kẹp `[0,1]`"* (Quality không kẹp), `HistorianWriter.Enqueue` *"kênh đầy ⇒ có cảnh báo"* (cú rơi vì bão hoà là IM LẶNG), `ApplyRealPresenceGateAsync` *"mọi query hướng khách hàng đều áp"* (`QueryTelemetryAsync` không áp và không thể áp). Xem §11** 🔴 **ĐỢT 7 ĐÃ TRẢ 2026-08-20 (AM-1, đợt 7/8): 62 chỗ THIẾU được VIẾT — một cụm mạch lạc, chiếc phong bì chuẩn hoá và trọn hành trình của nó (12 file: `Transport/` + `Mapping/` + `Models/`, ba thư mục lấy TRỌN, dư lượng mỗi thư mục = 0; 51 CS1591 + 11 CS1573), `EXPECT_WARNINGS` 502 → 440 ĐO, sổ vẫn 16 hàng, 185 vendored / 255 ours, `OURS CS1591 243 → 192` VÀ `OURS CS1573 40 → 29` — cả hai đều GIẢM và KHÔNG một CS1573 mới nào được tạo ra, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **221 chỗ trống của ta chưa trả**, và **đợt 8 là đợt bao phủ CUỐI CÙNG**. 🔴 **Và đợt 7 BÁC một khẳng định đã công bố trong chính cụm ấy — rút tại chỗ, KHÔNG sửa mã: `ITransport` tự nhận là *"seam DUY NHẤT"* mà một reading đi qua để rời khỏi hộp; đo được rằng `EdgePipeline` trao CÙNG chiếc phong bì cho `IUnsPublisher.PublishReading` ở câu lệnh ngay trước, và `Site.UnsBridge` phát nó ra ngoài hộp — có HAI đường ra, không một. Xem §12** 🔴 **ĐỢT 8 ĐÃ TRẢ 2026-08-20 (AN-1, đợt 8/8 — ĐỢT BAO PHỦ CUỐI CÙNG): 112 chỗ THIẾU được VIẾT — phần BÙ của họ driver (20 file, 7 thư mục lấy TRỌN, dư lượng mỗi thư mục = 0: `Config/` 50 · `Uns/` 19 · `Site/` 12 · `Engine/` 11 · `Fleet/` 8 · `Infrastructure/` 6 · `Uns/Sparkplug/` 6; 102 CS1591 + 10 CS1573), `EXPECT_WARNINGS` 440 → 328 ĐO, sổ vẫn 16 hàng, 185 vendored / 143 ours, `OURS CS1591 192 → 90` VÀ `OURS CS1573 29 → 19` — cả hai GIẢM, không một CS1573 mới nào được tạo, tám hàng VENDORED không dịch một đơn vị. Con số 112 là DỰ BÁO của đợt 7 và nay là PHÉP ĐO — nó KHÔNG lệch.** 🔴 **MỤC 12 Ở LẠI PHẦN II, VÀ NÓ SẼ RỜI PHẦN II BẰNG MỘT PHÁN QUYẾT, KHÔNG BẰNG MỘT CON SỐ VỀ 0.** **109 chỗ trống còn lại đều là `Drivers/`** và chúng **KHÔNG thuộc một đợt 9**: bốn đợt bao phủ đã tiêu hết. Chúng rơi lên **97 thành viên**, và **phép đo BÁC tiền đề của đợt 6**: theo năm phép thử, **84 thành viên có một cách hỏng/điều kiện tiên quyết, 13 chỉ có đơn vị/mặc định, và KHÔNG CÁI NÀO không-có-gì-để-nói** (trong bốn ví dụ đợt 6 nêu, `OpcUaConnectorFactory.Create` **đã có** tài liệu và chưa bao giờ được nợ; *"mười một constructor simulator"* là **số FILE đọc thành số CONSTRUCTOR** — có **tám** lớp simulator). **Câu chủ sở hữu phán — *"chúng có nên là `public` không"* — KHÔNG TỒN TẠI với 46/97** (41 cài đặt interface/abstract công khai ⇒ lỗi biên dịch; 5 thành viên enum ⇒ C# cấm), **sai trong IM LẶNG với 9** (`ModbusRegisterMap`/`OpcUaNodeMap` do `System.Text.Json` đọc — hạ xuống `internal` vẫn biên dịch rồi nạp về mặc định, gồm cả `UnitId` và `Password`), **miễn phí với 17**, và **tốn một `InternalsVisibleTo` mới với 25** — mà `AssemblyInfo.cs` của chính `St4i.EdgeCore` lập luận chống lại cả hai loại IVT ấy. **KHÔNG một mức truy cập nào đổi. Xem §13** |
 | 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔨 **ĐÓNG — STORE GHI LẠI DANH TÍNH CỦA CÁC BYTE** (2026-08-19, chủ sở hữu). 🔴 **Giá đã chấp nhận và ghi vào mục: `PUT /v1/historian/oee/settings` trả 409 ở những lúc hôm nay trả 200, KỂ CẢ khi thứ đổi file là một biên tập tay HỢP LỆ hay chỉ là một lần ĐỊNH DẠNG LẠI.** Câu *"bao nhiêu PUT hợp lệ thành 409"* vẫn **KHÔNG đo được** và phán quyết ra **mà không có nó**. **Đã thi hành, AJ-1 (2026-08-19)** — cơ chế **SUY ra chứ không chọn một trong ba**: cả ba ứng viên (băm / `mtime` / kích thước) là **vân tay**, mà vân tay chỉ cần khi không cầm được cả hai vế; `ReadLocked` **đã cầm toàn văn** ở cả hai đầu trong cùng một khoá, nên store **giữ lại toa hạng gốc** và so trực tiếp — **0 lần đọc đĩa thêm**, và **mạnh hơn** mọi hàm hao hụt của nó. Kiểu thứ ba `OeeSettingsFileChangedException`; vị từ gác bằng **CẶP `Loaded/Loaded`**, nên cặp `Loaded/Absent` **không** bị đóng kèm. Nhân chứng `Set_AfterARestoreOntoAHostThatCameUpWithAFile_…` **đảo chiều và đổi tên**; giá được **ghim** bằng một bài kiểm riêng |
 | 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT**. 🔴 **KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: KHẢ THI — `Normalizer` có đủ thông tin, `WaveformSeries` và `WelderSim` KHÔNG phải đổi. Nhưng nó KHÔNG nằm trọn ở một đường dây: cùng một envelope đi ra BA bề mặt, và một trong ba là gương ngữ nghĩa MQTT RETAINED — một **bề mặt đã xuất bản thứ hai; NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này** (hợp đồng TỰ KHAI rằng họ ở ngoài repo — đó là lời của tài liệu, không phải một phép đếm). 🔴 **Giá gương ấy KHÔNG phải của riêng lựa chọn 3: lựa chọn 1 trả CÙNG giá đó CỘNG THÊM, lựa chọn 2 không trả giá nào trong cây này nhưng trả TOÀN BỘ ở ngoài (hợp đồng ingest đã xuất bản + ba SDK).** Và KHÔNG một bài kiểm nào trong 2763 bài đỏ lên, tức lối này KHÔNG CÓ NHÂN CHỨNG. **Ràng buộc thi hành cứng: `LiveTransport.ReadSampleSeries` chỉ nhận hàng `double[]` và bỏ im lặng mọi kiểu khác.** Ba lựa chọn VẪN CHƯA QUYẾT** — 📎 **câu ngay trước giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1), và lý do là chủ sở hữu ĐÃ PHÁN, không phải câu ấy từng sai; AK-1 dùng đúng MỘT kiểu bảo tồn — kiểu AB-1 lập và AI-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG dấu gạch ngang ở bất kỳ đâu, không xoá một dòng nào.** → 🔨 **QUYẾT: LỰA CHỌN 3 — DỰNG CẶP `[t, v]` Ở RANH GIỚI `Normalizer`** (2026-08-19, chủ sở hữu). `WaveformSeries`, `WelderSim`, `ScrewdriveSim` **không đổi một dòng**; thứ đổi là **payload đi ra**. 🔴 **Giá đã chấp nhận và ghi vào mục: HAI bề mặt đã xuất bản đổi CÙNG LÚC, không một** — payload ingest HTTP **và** gương ngữ nghĩa MQTT retained `syn/…`; **NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này**. Cộng một bề mặt thứ ba, riêng tư: hàng đợi store-and-forward của SDK ghi nguyên payload **xuống đĩa** và **phát lại hình dạng CŨ sau khi mã đã đổi** — **cửa sổ ấy CHƯA ĐO**. **Đã thi hành, AK-1 (2026-08-19)** — cơ chế của `t` **SUY ra chứ không chọn**: `t(i) = i / rateHz`, tức **thời điểm mà `rateHz` HÀM Ý**, **không** phải thời điểm `WelderSim` vẽ đường cong; lý do là ở ranh giới chỉ có **bốn trường** của `WaveformSeries`, còn dựng lại thời điểm THẬT đòi **tham số hoá riêng của từng bộ sinh** — không có trên hồ sơ, khác nhau theo driver, và **vắng hẳn** với driver bên thứ ba mà ranh giới này cũng phục vụ. 🔴 **`rateHz` KHÔNG đổi nghĩa và KHÔNG đổi giá trị** — đó là điều kiện DỪNG của nhiệm vụ và nó không bị chạm. 🔴 **Nửa bất lợi, viết ngay cạnh:** chỗ lệch **4,17 %** của `WelderSim` **không được tạo ra và cũng không được sửa** ở đây (phép chuyển tính đúng cái `t` mà một bên tiêu thụ tuân hợp đồng đã tính hôm nay) — **nhưng nó chuyển `t` từ NGẦM sang ĐÃ VIẾT RA**, nên sửa chỗ lệch ấy về sau là **đổi những con số đã xuất bản**, không còn là đổi một tài liệu. Nhân chứng **MỚI** `WaveformPairAtTheWireBoundaryTests` (bảy `[Fact]`): gỡ phép chuyển ⇒ **BỐN đỏ**; trả kiểu hàng khác `double[]` ⇒ **SÁU đỏ**; 🔴 `WaveformSeriesRowShapeContractTests` **VẪN XANH, và đó là im lặng, không phải chấp thuận** — nó nhìn thượng nguồn |
+| 15 | `DropOldest` + một cảnh báo "queue saturated" không với tới được — **BA chỗ**, và chỗ **thứ tư** đã giải xong | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Gộp phát hiện đợt 6 (`HistorianWriter`) và đợt 8 (`UnsPublisher`) làm **MỘT mục**, và phép liệt kê thêm chỗ **thứ ba chưa ai báo**: `UnsBridge`. `AlarmNotifier` cùng chế độ nhưng **đã đúng** |
+| 16 | `OeeCalculator` — Quality **không** kẹp `[0,1]` | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. Biên hôm nay do **hai vị từ SQL ở một file khác** giữ |
+| 17 | `QueryTelemetryAsync` không áp cổng xuất xứ, và **không áp được** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. `historian_telemetry` **không có cột `is_fabricated`**; `GET /v1/historian/telemetry` **không nhận `includeFabricated`** |
+| 18 | Cổng Demo gác **CHẾ ĐỘ**, không gác **BỘ SINH GIẢ** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7. `PUT /v1/mode` từ chối Demo bằng 400; `POST /v1/scenario {"networkOutage":true}` **không bị gác** |
+| 19 | `TransportCoordinator.Auto` và `.Demo` — hai trong bốn bộ truy cập công bố **không ai đọc** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7 (hai khuyết tật của brief, **một** lớp, **một** quyết định) |
+| 20 | `TransportCoordinator` không có đường tắt máy ⇒ `LiveTransport` cuối cùng không bao giờ được dispose | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7. **Không phải một khẳng định rò rỉ trên sản xuất** — xem nửa thứ hai trong mục |
+| 21 | `MappingProfileResolver` ghép một chuỗi của vận hành viên vào một đường dẫn **không giới hạn** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7 |
+| 22 | Hai chuỗi đã xuất bản hứa một ack **thất bại** mà `DemoTransport` không bao giờ trả | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7 |
+| 23 | `IUnsPublisher.PublishBirth`/`PublishDeath` — có cài đặt, **không caller nào dưới `src/`** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 8. **Chưa DBIRTH nào từng được phát** |
+| 24 | `ModbusOptions`/`OpcUaOptions` — hằng số TÊN biến môi trường công khai | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 8 🔴 **và phép đo của đợt 8 SAI ở một nửa: KHÔNG host sản xuất nào viết cứng chuỗi ấy, và HAI hằng số ĐANG được EngineApi gọi tên.** Xem mục |
+| 25 | **Điều kiện rời Phần II của mục 12** — họ driver: tài liệu hay thu hẹp? | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). 109 cảnh báo trên **97 thành viên**; câu hỏi *"có nên `public` không"* **không tồn tại với 46**, **sai trong im lặng với 9**, miễn phí với 17, tốn một IVT mới với 25 — và 🔴 **ít nhất 55 trong 97 sẽ `public` DÙ PHÁN THẾ NÀO** |
+| 26 | **Không gì trong repo này trả cho TÍNH ĐÚNG của một chú thích đã viết** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Mục 12 trả cho **bao phủ**; W-1 kiểm **hình thức**. Năm con số đã đo — **KHÔNG cộng được**, và mục nói vì sao |
+| 27 | API Inspector **không phơi THÂN request** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo lại từ mã 2026-08-20. `ApiTraceEvent` **không có trường thân**; `TraceTable` **không có trình xử lý click hàng nào** |
+| 28 | **BA cái trần** trên lịch sử API-trace, và **không cái nào được UI gọi tên là trần** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). 🔴 **Phát hiện "trần 1.000 và UI CÓ nêu tên trần" KHÔNG đứng vững nguyên trạng: trần là 1.000 / 500 / 200, và UI in GIÁ TRỊ chứ không gọi tên TRẦN** |
+| 29 | Cả fleet liên kết ra ngoài bằng **MỘT danh tính thiết bị** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). `POST /v1/onboarding/paste-key` lưu khoá cho **bất kỳ** mã máy và trả 200; `FleetCore.UpdateSettings` chỉ đọc **một** |
+| 30 | Gốc mặc định của bốn store cạnh-binary là `%ProgramFiles%`, và **lần chạy đầu chính là lần GHI** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Câu hỏi này **bị nhiều brief liên tiếp CẤM mở**; lệnh cấm hết hiệu lực ở nhiệm vụ này |
+| 31 | **Mười hai artefact build** (7 `.xml` + 5 `.pdb`) đi vào MSI | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Đã ĐO ở §8 của mục 12 từ 2026-08-19 (AF-1) nhưng **chưa bao giờ thành một mục phán được**; **ba trong số đó đã ở đó từ N-1/N-2** |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -62,6 +79,32 @@ chỉ là một con trỏ vào nó. 🔴 **"Rỗng" ở đây là một trạng 
 tính chất của file**: vòng phản biện nào cũng có thể mở một mục mới, và ba lần trong hai ngày
 nó đã làm đúng thế (xem khối ngay dưới). Phần này **không bị xoá** khi rỗng, vì cái nó giữ là
 **chỗ**, không phải **nội dung**.
+
+> 📎 **HAI CÂU ĐẦU CỦA ĐOẠN NGAY TRÊN — RÚT 2026-08-20 (AO-1), giữ NGUYÊN VĂN, cùng kiểu bảo tồn
+> AB-1 lập và AI-1/AK-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG gạch ngang, không
+> xoá một dòng nào.** Hai câu ấy đọc: *"**Phép liệt kê các mục ở đây, và nó KHÔNG liệt kê được cái
+> gì: không mục nào.** Không hàng nào của bảng phán quyết trên còn mang `🔴 CHỜ ANH`, và **bảng ấy
+> là nguồn sự thật** — câu này chỉ là một con trỏ vào nó."* Lý do rút **không phải chúng từng
+> sai** — chúng mô tả đúng trạng thái hồ sơ tới hết ngày 2026-08-19 — mà là **nhiệm vụ này làm
+> chúng sai**: mười bảy mục mới, số hiệu **15–31**, vừa được đặt vào Phần I, và cả mười bảy mang
+> `🔴 CHỜ ANH` ở bảng phán quyết trên.
+>
+> 🔴 **Phần còn lại của đoạn ấy KHÔNG được rút, và nó vừa được chứng minh đúng lần thứ tư.** Câu
+> *"'Rỗng' ở đây là một trạng thái của HÔM NAY, không phải một tính chất của file"* đã dự đoán
+> đúng chuyện vừa xảy ra. Ba lần trước, tập nới ra hoặc co lại bằng **một vòng phản biện** hoặc
+> **một phán quyết**; lần này bằng một cơ chế **thứ tư và mới**: mười hai khuyết tật + ba câu hỏi
+> đã được ĐO xong từ trước, nhưng chúng nằm trong `.superpowers/sdd/*/task-1-report.md`, và
+> **`.superpowers/` bị gitignore** — nên chủ sở hữu **không có đường dẫn nào để mở chúng**. Đó
+> đúng là thiếu sót mà đoạn mở đầu của file này nêu tên và tự nhận lập ra để vá. Nhiệm vụ này là
+> lần vá ấy cho lứa mới; nó **không quyết một mục nào và không sửa một dòng mã nào**.
+>
+> 🔴 **Và một cách viết được giữ nguyên vì chính nó làm phép rút này rẻ: LIỆT KÊ, KHÔNG ĐẾM.**
+> Câu bị rút liệt kê (*"không mục nào"*) chứ không viết một con số `0`, nên nó sai **nhìn thấy
+> được** ngay khi mục 15 xuất hiện. Câu thay nó ở ngay dưới cũng liệt kê.
+
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+28, 29, 30 và 31.** Cả mười bảy mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn
+sự thật** — câu này chỉ là một con trỏ vào nó.
 
 > 📎 **Câu ngay trên đọc, NGUYÊN VĂN, cho tới 2026-08-19 — RÚT cùng ngày (AK-1), giữ nguyên
 > văn, cùng kiểu bảo tồn AB-1 lập và AI-1 dùng:** *"**Mục ở đây, LIỆT KÊ chứ không đếm: mục
@@ -139,6 +182,920 @@ một con số ước lượng đặt ở đây sẽ **đọc như một phép �
 > 🔴 **Và mục 13 mang CÙNG đoạn ấy, bằng cùng chữ, ở thân của chính nó** — nó cũng được rút, cùng ngày,
 > cùng người, cùng lý do. Nêu ở cả hai chỗ vì một lời cải chính chỉ đặt ở một trong hai là đúng khuyết
 > tật file này lập ra để chấm dứt.
+
+---
+
+> 🔴 **VỀ CẢ MƯỜI BẢY MỤC DƯỚI ĐÂY — MỘT ĐOẠN, ĐỌC TRƯỚC KHI ĐỌC BẤT KỲ MỤC NÀO.** Không mục nào
+> trong số này được đo lần đầu bởi nhiệm vụ mở chúng. Mười hai cái đầu do các đợt **AL-1, AM-1,
+> AN-1** đo trong lúc trả món nợ tài liệu của mục 12; hai câu hỏi cuối bị **các brief liên tiếp
+> cấm mở** và lệnh cấm ấy hết hiệu lực ở đây; ba cái ở giữa do **điều phối viên** đo trong một
+> lần chạy thử hoàn chỉnh. **Nhiệm vụ mở chúng (AO-1, 2026-08-20) không sửa một dòng mã nào,
+> không quyết một mục nào, không đo lại một cảnh báo nào, và không dịch một hằng số nào.**
+>
+> 🔴 **Nhưng nó cũng KHÔNG chép lại lời của người khác.** Mọi khẳng định dưới đây đã được **mở mã
+> ra và xác nhận lại** ở SHA `3a614f1c`, bằng `git grep <mẫu> <SHA> -- .` chứ không phải `grep -r`
+> trên cây làm việc — cây này là **sparse checkout** và `server/`, `client/` **không nằm trên
+> đĩa**. **Ba chỗ báo cáo nguồn nói sai hoặc nói quá đã được sửa lại tại chỗ, và mỗi chỗ được nêu
+> tên trong chính mục của nó**: mục **15** (tập là **BA** chỗ chứ không phải hai, và có chỗ thứ
+> tư đã giải xong), mục **24** (không host sản xuất nào viết cứng chuỗi ấy), mục **28** (trần là
+> ba con số, và UI không gọi tên cái nào là trần). **Một cái sai trong một báo cáo nguồn là một
+> phát hiện, không phải một lỗi chính tả**, nên nó đứng trong mục chứ không ở một chú thích.
+
+## 15. Bốn kênh chặn dùng `DropOldest`; ba trong bốn treo một cảnh báo *"queue saturated"* KHÔNG với tới được bằng bão hoà; và cái thứ tư đã giải xong đúng bài ấy
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6) và AN-1 (đợt 8); **phép liệt kê toàn tập
+là của nhiệm vụ này**.
+
+📎 **Vì sao MỘT mục cho hai chỗ mà đợt 6 và đợt 8 báo riêng, nói ra chứ không để người đọc đoán.**
+Chúng **cùng một cơ chế, cùng một dòng mã, cùng một quyết định**: một phán quyết chỉ chạm một chỗ
+sẽ để hai chỗ kia y nguyên, và "một luật, nhiều chỗ" đúng là hình dạng file này đã bắt trước đây.
+Nhưng một mục gộp **bắt buộc phải liệt kê hết tập nó gộp** — nên tập đã được mở, và **nó không
+phải hai**.
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC, con số viết SAU.** Mọi `Channel.CreateBounded` dưới `src/`, mở
+trọn: `HistorianWriter`, `UnsPublisher`, `UnsBridge`, `AlarmNotifier`, và
+`AlarmAnnunciationHub.Listener` (trong `AlarmAnnunciation.cs`). **Năm.** Bốn cái đầu đặt
+`FullMode = BoundedChannelFullMode.DropOldest`; cái thứ năm đặt `Wait`, **có chủ ý**, và doc của
+chính nó nói vì sao (`DropWrite` sẽ trả `true` trên hàng đợi đầy).
+
+Dưới `DropOldest`, `TryWrite` trên một kênh **ĐẦY** **trả `true`**: nó đuổi phần tử **cũ nhất** rồi
+nhận phần tử mới. Nên mọi nhánh `if (!TryWrite(...))` chỉ chạy khi Writer **đã đóng** — tức lúc
+dispose, chứ không phải lúc bão hoà.
+
+* **`HistorianWriter.Enqueue`** — **một** nhánh như thế, chuỗi *"Historian queue saturated — dropped
+  oldest"*. `capacity` mặc định **10.000**.
+* **`UnsPublisher`** — **sáu** nhánh như thế, trên `PublishReading`, `PublishBirth`, `PublishDeath`,
+  `PublishNodeBirth`, `PublishNodeDeath`, `PublishLineState`.
+* 🔴 **`UnsBridge.OnLocalMessageReceivedAsync`** — **một** nhánh như thế, chuỗi *"Site bridge forward
+  queue saturated — dropped {topic}"*, `ChannelCapacity` **10.000**. **Chỗ này chưa báo cáo nào
+  nêu.** Đợt 8 viết rằng *"hình dạng này nay đã được đo HAI lần trong repo này, nên nên audit cái
+  thành ngữ `DropOldest`-kèm-cảnh-báo-bão-hoà ở mọi chỗ nó xuất hiện"*. Nhiệm vụ này chạy đúng phép
+  audit ấy. Kết quả: **ba**, không phải hai.
+* **Không cái nào trong ba** truyền tham số `itemDropped` cho `Channel.CreateBounded`. **Không cái
+  nào trong ba có một bộ đếm rơi.**
+
+🔴 **Và `UnsBridge` tệ hơn hai cái kia theo một chiều riêng: nó CÓ một con số tên `DroppedTotal`, và
+con số ấy đếm một mất mát KHÁC.** `BridgeStatusSnapshot.DroppedTotal` đọc từ `_lastSpoolStats`, tức
+`BridgeSpool.TrimAsync` cắt bao nhiêu bản ghi theo tuổi/byte — **không phải** bao nhiêu bản bị KÊNH
+đuổi. **Một bộ đếm đếm sai vật còn tệ hơn không có bộ đếm**, vì nó đọc như một câu trả lời.
+
+🔴 **Cái thứ tư đã giải xong đúng bài này, và đó là nửa quan trọng nhất của mục.** `AlarmNotifier`
+dùng **cùng** `DropOldest`, và doc của chính lớp ấy nêu đích danh cái bẫy: *"Under `DropOldest`,
+`TryWrite` returns `true` and silently evicts the OLDEST queued item, so the saturation case never
+trips that check at all."* Nó truyền `itemDropped` cho `Channel.CreateBounded`, cộng vào
+`AlarmNotifierStats.Dropped`, và **liệt kê NĂM đường một job có thể mất**, phân biệt đường "kênh
+không theo kịp" với các đường "tiến trình đang tắt". Doc ấy còn ghi rằng hình dạng của nó **chép từ
+`HistorianWriter`** — nên **mẫu SAI là mẫu đang được chép, và mẫu ĐÚNG chưa ai chép ngược lại**.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Historian.HistorianWriter` (hàm dựng và `Enqueue`);
+`St4i.EdgeCore.Uns.UnsPublisher` (hàm dựng và sáu phương thức `Publish*`);
+`St4i.EdgeCore.Site.UnsBridge` (hàm dựng, `OnLocalMessageReceivedAsync`, `Snapshot`);
+`St4i.EngineApi.Alarms.AlarmNotifier` (lớp lồng của lane, `AlarmNotifierStats.Dropped`);
+`St4i.EngineApi.Alarms.AlarmAnnunciationHub.Listener` (chỗ dùng `Wait`, để đối chiếu).
+`tests/St4i.EdgeCore.Tests/Historian/HistorianWriterTests.cs` có **10** bài `[Fact]` và **không bài
+nào** nhắc `saturation`, `capacity` hay `DropOldest` — cả hai nhánh đều không có nhân chứng.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* dưới áp lực ngược kéo dài — một store chậm, một broker MQTT không đáp, một Site
+xuống — ba đường này **mất bản ghi CŨ NHẤT trong im lặng**: tới `capacity` hàng lịch sử của
+historian (bản ghi mà sản phẩm này giữ về việc máy đã làm gì), các publish UNS gồm cả device birth
+và line-state, và các bản chuyển tiếp lên Site. **Không log, không bộ đếm, không dòng nào trên
+`/v1/health`.** Ở `UnsBridge` màn hình trạng thái vẫn in một `DroppedTotal` — thường là 0 — nên
+người vận hành đọc được một câu trả lời **sai chiều trấn an**.
+*Chiều ngược, và nó đủ mạnh để "không làm gì" là một lựa chọn có lý:* `DropOldest` được chọn có lý
+do và lý do ấy vẫn đúng — nó bảo đảm đường ghi **không bao giờ chặn** luồng commit của
+`EdgePipeline` và **không bao giờ đẩy áp lực ngược về thiết bị**. Đổi `FullMode` là đổi đúng tính
+chất ấy. Thêm một bộ đếm là **thêm thành viên công khai mới**, mà P-2 chi phối chính tả thành viên
+công khai. Và trên một bản triển lãm chạy vài giờ với kênh 10.000, ba kênh này **không bao giờ
+đầy** — chi phí thật hôm nay là **không**.
+
+**Nếu KHÔNG quyết định.** Tám nhánh cảnh báo ở lại đúng chỗ chúng đang đứng, đọc như một mạng an
+toàn không tồn tại; ba đường mất dữ liệu ở lại im lặng; và vì `AlarmNotifier` **tự ghi rằng nó chép
+`HistorianWriter`**, đường ống tiếp theo được viết trong repo này nhiều khả năng chép tiếp cái sai
+chứ không chép cái đúng. Đây đã là lần thứ **ba** một đợt tìm ra chính hình dạng ấy ở một chỗ mới.
+
+---
+
+## 16. `OeeCalculator` — hai trong ba tỉ số được kẹp `[0,1]`, cái thứ ba thì không, và biên hôm nay do một file KHÁC giữ
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6), xác nhận lại trên mã.
+
+**Đo được cái gì.** Trong `OeeCalculator.Calculate`: Availability và Performance đều bọc
+`Math.Clamp(…, 0.0, 1.0)`. **Quality thì không** — nó là một phép chia trần
+`(double)input.GoodCount / input.TotalCount`. Với bất kỳ đầu vào nào có good count lớn hơn total
+count, Quality vượt 1 và kéo `OeeResult.Oee` vượt theo.
+
+**Vì sao nó chưa hỏng bao giờ, và đây là nửa phải nói cùng lúc:** nhà sản xuất **duy nhất** của
+`OeeInputAggregate` trên đường sản xuất là `SqliteHistorianStore.AggregateForOeeAsync`, và hai con
+số của nó ra từ **hai vị từ SQL LỒNG NHAU** — `verdict IN ('Pass','Warn')` là tập con của
+`verdict <> 'Skip'`. Biên `[0,1]` vì thế được cưỡng chế **trong SQL, ở một file khác**, bằng một
+tính chất của cách dựng truy vấn. Cả `OeeInputAggregate` lẫn `OeeCalculator` đều `public`, nên
+không gì ngăn một người gọi khác dựng một aggregate bằng đường khác.
+
+🔴 **Câu văn đã công bố nói sai điều này ĐÃ ĐƯỢC RÚT TẠI CHỖ, 2026-08-20, bởi chính đợt 6 — nên cái
+còn mở là MÃ, không phải văn.** Doc của lớp hôm nay nói đúng: *"It holds for Availability and
+Performance … It does NOT hold for Quality."* **Không đợt nào được phép sửa mã**, và đây là lý do
+mục này tồn tại.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Metrics.OeeCalculator.Calculate`;
+`St4i.EdgeCore.Historian.OeeInputAggregate`; `St4i.EdgeCore.Historian.SqliteHistorianStore.AggregateForOeeAsync`
+(hai câu `SELECT COUNT(*)` mang hai vị từ ấy); `St4i.EdgeCore.Metrics.OeeResult.Oee`;
+`St4i.EngineApi.Endpoints.HistorianEndpoints.ComputeOeeAsync` là chỗ con số ấy thành DTO.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* một OEE lớn hơn 100 % là một con số **đọc được là sai ngay lập tức** nếu ai đó nhìn,
+và **không đọc được là sai** nếu nó chỉ chảy vào một báo cáo hoặc một biểu đồ. Bề mặt công khai cho
+phép nó: một driver bên thứ ba, một bài test, hoặc một nhà sản xuất aggregate tương lai (một store
+khác, một đường nhập trực tiếp) đều dựng được đầu vào ấy mà không có gì đỏ lên.
+*Chiều ngược:* trên đường đang ship **hôm nay** con số ấy **không thể xảy ra**, và thêm một
+`Math.Clamp` vào Quality **giấu mất** đúng cái nó đang chứng minh — một aggregate có good > total là
+một **lỗi dữ liệu**, và kẹp nó lại biến một lỗi ồn thành một con số 100 % im lặng. Cái đúng có thể
+là kẹp, có thể là ném, có thể là để nguyên và ghi rõ; **ba lựa chọn ấy cho ba hành vi khác nhau**,
+và đó là lý do nó là quyết định của anh chứ không phải một dòng sửa.
+
+**Nếu KHÔNG quyết định.** Hành vi giữ nguyên và biên tiếp tục được giữ **ở một file khác, bằng một
+sự trùng hợp của cách dựng truy vấn**. Ngày ai đó thêm nhà sản xuất `OeeInputAggregate` thứ hai —
+một store thay thế, một endpoint nhập, một bài test dựng thẳng — biên biến mất và **không dụng cụ
+nào trong repo này báo**.
+
+---
+
+## 17. `QueryTelemetryAsync` là truy vấn hướng khách hàng DUY NHẤT không áp cổng xuất xứ, và nó KHÔNG áp được: bảng không có cột để lọc
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6), xác nhận lại trên mã.
+
+**Đo được cái gì — quần thể mở TRỌN, không lấy mẫu.** `IHistorianStore` có **bảy** phương thức đọc
+công khai. Ba cái gọi `ApplyRealPresenceGateAsync`: `QueryResultsAsync`, `QueryBySerialAsync`,
+`AggregateForOeeAsync`. Bốn cái không: `QueryTelemetryAsync`, `QueryRunEventsAsync`,
+`GetStatsAsync`, và `PruneOlderThanAsync` (một phép ghi). Ba trong bốn cái không áp **không có gì để
+áp**: `QueryRunEventsAsync` và `PruneOlderThanAsync` chạy trên bảng không mang khái niệm xuất xứ, và
+`GetStatsAsync` cố ý là một báo cáo **về** store.
+
+**`QueryTelemetryAsync` là phản ví dụ thật, và nó là phản ví dụ CẤU TRÚC.** DDL của
+`historian_telemetry` mang đúng bảy cột: `id`, `result_id`, `machine_code`, `metric`, `value`,
+`unit`, `quality`, `event_time_utc` — **không có `is_fabricated`**. Cột ấy chỉ tồn tại trên
+`historian_results`, được thêm bởi migration 2. Nên cổng không thể áp bằng một cờ; nó cần **một
+phép join mà phương thức này cố ý không làm**, hoặc **một cột mới**.
+
+**Và bề mặt HTTP nói cùng một chuyện:** `HistorianEndpoints.GetTelemetryAsync` nhận
+`machine, metric, from, to, store, ct` — **không `includeFabricated`, không `DemoModeGate`** — trong
+khi mọi route lân cận (`GetResultsAsync`, `GetBySerialAsync`, `GetOeeAsync`, `ExportCsvAsync`,
+danh sách fleet) đều đi qua `ResolveIncludeFabricated(...)`.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Historian.SqliteHistorianStore.ApplyRealPresenceGateAsync`
+(và ba chỗ gọi nó); `SqliteHistorianStore.QueryTelemetryAsync`; DDL `historian_telemetry` trong
+`SqliteHistorianStore`'s migration ladder; `St4i.EngineApi.Endpoints.HistorianEndpoints.GetTelemetryAsync`
+và `HistorianEndpoints.ResolveIncludeFabricated`; route `GET /v1/historian/telemetry`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* trên một fleet trộn — vài máy thật, vài máy mô phỏng — biểu đồ xu hướng trộn dữ liệu
+giả với dữ liệu thật, **không gì trong dữ liệu và không gì trong phản hồi nói cái nào là cái nào**.
+Đó đúng là kiểu hỏng mà vòng sửa số 1 của SM-2 được viết ra để đóng cho bề mặt kết quả và phả hệ;
+nó vẫn mở trên bề mặt telemetry.
+*Chiều ngược, và nó quyết định giá:* trên một bản cài **triển lãm 100 % mô phỏng**, đây là bề mặt
+historian **duy nhất còn CHẠY** theo mặc định. Đóng nó lại đòi đúng cái carve-out Demo mà
+`ResolveIncludeFabricated` đã có cho các route kia — cộng **một cột schema hoặc một phép join**, tức
+một migration trên một cơ sở dữ liệu của khách hàng.
+
+**Nếu KHÔNG quyết định.** Bề mặt này ở lại **không gác được**, và câu đã công bố của cổng — *"the
+one rule every customer-facing historian query/aggregate in this store applies"* — ở lại đúng với
+sáu trong bảy phương thức. Cái tốn kém không phải một dòng sửa: đó là **một migration**, và mỗi ngày
+trôi qua là thêm hàng `historian_telemetry` không mang xuất xứ, nên phép sửa **hồi tố** đắt dần.
+
+---
+
+## 18. Cổng Demo gác CHẾ ĐỘ chứ không gác BỘ SINH GIẢ: một route thứ hai trỏ cả fleet đang chạy vào một transport mất gói, và `GET /v1/mode` vẫn trả lời chế độ đã chọn
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã. **Đây là cái nặng
+nhất trong sáu phát hiện của đợt 7 và nó vẫn là cái tôi đặt trước mặt anh đầu tiên.**
+
+**Đo được cái gì — hai route đọc TRỌN.** `PUT /v1/mode` (`ModeEndpoints`) nhận `DemoModeGate` qua DI
+và từ chối `TransportMode.Demo` bằng **400** *"Demo mode is not enabled on this deployment."* khi
+`demoGate.Enabled` là `false`. `POST /v1/scenario` (`ScenarioEndpoints`) **không nhận `DemoModeGate`
+ở bất kỳ đâu trên đường của nó** — chữ ký của nó là `(ScenarioRequest, FleetHost, HttpContext,
+AuditRecorder, CancellationToken)`. Với `{"networkOutage": true}`, `FleetCore.ApplyNetworkOutageLocked`
+gọi `SwitchableTransport.SetInner` với một `DemoTransport` dựng ở
+`fakeErrorRate: OutageFakeErrorRate` = **0.9**.
+
+**Và bề mặt trạng thái không nói ra:** `GET /v1/mode` trả `FleetHost.Mode` → `FleetCore.Mode` →
+`TransportCoordinator.Mode`, tức chế độ người vận hành **đã chọn**; đường outage **cố ý không chạm**
+nó (`ApplyNetworkOutageLocked(false)` gọi `ApplyMode(_transportCoordinator.Mode)` — đúng chế độ hiện
+hành). Bề mặt duy nhất nói sự thật là pane API-trace, đọc `SwitchableTransport.Mode`.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EngineApi.Endpoints.ModeEndpoints` (nhánh gác);
+`St4i.EngineApi.Endpoints.ScenarioEndpoints` (route `POST /v1/scenario`, `Policies.Engineer`);
+`St4i.EdgeCore.Fleet.FleetCore.ApplyNetworkOutageLocked` và hằng số `OutageFakeErrorRate`;
+`St4i.EdgeCore.Transport.SwitchableTransport.SetInner`; `St4i.EdgeCore.Transport.DemoTransport`;
+`St4i.EdgeCore.Config.DemoModeGate`. **Không nhân chứng:** không file test nào trong cây nhắc cùng
+lúc `/v1/scenario` và `DemoModeGate`; hai file chạm route ấy (`Auth/RbacPolicyTests`,
+`Auth/AuditWiringTests`) kiểm quyền và audit, không kiểm cổng.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* trên một bản triển khai đã **TẮT** Demo — tức đã tuyên bố rằng máy này sẽ không bịa
+dữ liệu — một Engineer vẫn đặt được cả fleet đang chạy sau một bộ bịa. Mọi reading được ack **tại
+chỗ**, **không gì tới máy chủ hệ sinh thái**, và `GET /v1/mode` vẫn trả `Live`. Một bên nói "đang
+Live", bên kia không gửi gì đi.
+*Chiều ngược, và bỏ nó đi là nói sai:* đường ấy **có audit** — `scenario.apply` ghi một hàng audit
+mang trọn scenario đã áp, `networkOutage` trong đó — và nó đòi `Policies.Engineer`, nên nó **không
+ẩn danh và không vô quyền**. Nó cũng **hoàn nguyên được**: `ApplyNetworkOutageLocked(false)` trỏ lại
+transport về chế độ hiện hành. Và outage scenario là một **tính năng kể chuyện** có chủ ý cho phòng
+triển lãm; gác nó bằng cổng Demo sẽ lấy mất tính năng ấy khỏi mọi bản cài đã tắt Demo.
+
+**Nếu KHÔNG quyết định.** Cờ `DemoModeGate` giữ **hai nghĩa cùng lúc** — *"đừng chào chế độ Demo"*
+và *"đừng bao giờ bịa dữ liệu trên máy này"* — và hai nghĩa ấy cho hai câu trả lời khác nhau ở đúng
+route này. Cho tới khi anh chọn một nghĩa, ai đọc tên cờ cũng sẽ đọc ra nghĩa thứ hai và tin rằng
+nó đã được cưỡng chế.
+
+---
+
+## 19. `TransportCoordinator` công bố bốn bộ truy cập như "cái nhìn của điều phối viên", và hai trong bốn KHÔNG ai đọc giá trị
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
+
+📎 **Mục này mang HAI khuyết tật mà brief liệt kê riêng, và lý do gộp là chúng là MỘT quyết định
+trên MỘT lớp.** Báo cáo nguồn (đợt 7 §7(1)) cũng viết chúng thành một phát hiện kèm một "người anh
+em". Một phán quyết chỉ chạm `.Auto` sẽ để `.Demo` đứng nguyên trong cùng bộ tứ, mang cùng câu hỏi.
+
+**Đo được cái gì — quần thể mở TRỌN ở SHA đã ghim.** `git grep` cho `\.Auto\b` trên **mọi** `*.cs`
+của cây (kể cả `server/` và `client/`, không có trên đĩa): **mọi** lần xuất hiện đều là
+`TransportMode.Auto`. **Không một lần nào là `TransportCoordinator.Auto`** — không chỗ gọi sản xuất,
+không bài test, không `<see cref>`. Cùng phép đo cho `\.Demo\b`: đúng **một** lần trỏ vào
+`TransportCoordinator.Demo`, và nó nằm trong doc comment của `St4iMachineSimulator.Services.FleetService`
+— **một tham chiếu tài liệu, không phải một phép đọc**. Miền dụng cụ được kiểm chứ không giả định:
+`git grep` trên `*.xaml` cho một binding tới `Auto`/`Demo` trả về **không gì**.
+
+`Auto` không phải một trường trần: nó là `public AutoTransport Auto { get { lock (_gate) return _auto; } }`
+— **nó lấy một khoá để trả lời một câu hỏi không ai hỏi**. `RebuildLive` duy trì cả hai trường dưới
+khoá ở **mọi** lần biên tập Settings, và doc của chính `TransportCoordinator` mô tả bộ tứ
+`Mode`/`Live`/`Demo`/`Auto` là cái nhìn đã công bố của nó. **Hai trong bốn là hư cấu đã công bố.**
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Transport.TransportCoordinator.Auto`,
+`.Demo`, `.Live`, `.Mode`, `.RebuildLive`; `St4iMachineSimulator.Services.FleetService` (chỗ duy nhất
+nhắc tên `.Demo`, trong văn xuôi).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* đây là **bề mặt công khai đã chết** trên một assembly mà mục 25 đang hỏi đúng câu
+"cái gì nên `public`". Nó cũng có một chi phí đọc thật: người đọc tiếp theo của lớp này sẽ tin rằng
+bộ tứ ấy là hợp đồng và sẽ duy trì nó.
+*Chiều ngược:* **xoá một thành viên công khai là một phép đổi hợp đồng**, và P-2 chi phối chính tả
+thành viên công khai. Phép đo này chỉ đếm người đọc **trong cây này**; nếu `St4i.EdgeCore` được tiêu
+thụ ở nơi khác, phép đếm im lặng về chuyện đó. Và giá của việc **giữ** hai bộ truy cập ấy hôm nay là
+gần bằng không — hai `get` dưới một khoá đã có.
+
+**Nếu KHÔNG quyết định.** Hai thành viên ở lại, tiếp tục được duy trì dưới khoá, tiếp tục đọc như
+hợp đồng — và chúng sẽ xuất hiện lại trong mọi phép đo bề mặt công khai về sau, mỗi lần lại tốn đúng
+phép liệt kê này để chứng minh chúng chết.
+
+---
+
+## 20. `TransportCoordinator` dispose cái nó THAY, và không có đường nào dispose cái CUỐI CÙNG
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
+
+**Đo được cái gì.** `RebuildLive` gọi `oldLive.Dispose()` ở **câu lệnh cuối** của nó — có chủ ý, và
+doc của chính nó giải thích cái `HttpClient` rò rỉ mà nó ngăn. Nhưng `TransportCoordinator` là
+`public sealed class` **không** khai `IDisposable`/`IAsyncDisposable`, **không** có `Stop`, và
+`oldLive.Dispose()` là lần gọi `Dispose` **duy nhất** trên `_live` trong cả lớp. Nên thực thể đang
+được giữ lúc tiến trình kết thúc **không được ai dispose**.
+
+🔴 **Đây KHÔNG phải một khẳng định rò rỉ trên sản xuất, và nói một chiều ở đây là nói sai.** Hai
+composition root của sản phẩm — `St4i.EngineApi/Program.cs` và `St4iMachineSimulator/App.xaml.cs`,
+**hai chỗ `new TransportCoordinator(` duy nhất dưới `src/`** — đều đăng ký nó là **singleton** DI,
+nên đúng **một** cái được dựng cho mỗi tiến trình và hệ điều hành thu hồi socket pool của nó lúc
+thoát. Chỗ nó **không** vô hại là một tiến trình dựng **NHIỀU** cái: các bộ test làm đúng thế, ở
+vài chục file, mỗi file để lại một `LiveTransport` chưa dispose trong suốt đời test host.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Transport.TransportCoordinator` (khai báo lớp,
+`RebuildLive`); `St4i.EdgeCore.Transport.LiveTransport`; hai chỗ đăng ký singleton trong
+`St4i.EngineApi.Program` và `St4iMachineSimulator.App`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* đây là một **bất đối xứng trong quy tắc sở hữu do chính lớp ấy tuyên bố** — nó nhận
+trách nhiệm dispose ở một nửa vòng đời và bỏ nửa kia. Bất đối xứng ấy là thứ người đọc sau sẽ suy ra
+sai theo cả hai hướng.
+*Chiều ngược:* thêm một đường dispose **kéo theo một câu hỏi sở hữu**: điều phối viên **không** sở
+hữu `switchable` hay `demo` (chúng được truyền vào), nên một `Dispose()` ngây thơ sẽ dispose thứ
+không phải của nó. Và trên sản xuất, giá hôm nay là **không** — một tiến trình, một thực thể, thu
+hồi lúc thoát.
+
+**Nếu KHÔNG quyết định.** Hành vi giữ nguyên; chi phí ở lại trong các test host; và quy tắc sở hữu
+của lớp ở lại đúng một nửa, không có gì trong cây nói ra nửa còn lại.
+
+---
+
+## 21. `MappingProfileResolver` ghép một chuỗi do vận hành viên viết vào một đường dẫn mà không giới hạn nó trong thư mục
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
+
+**Đo được cái gì.** Trong `MappingProfileResolver.ResolveOne`:
+`Path.Combine(mappingDir, descriptor.MappingProfile + ".json")`. Vế phải đến từ trường
+`mappingProfile` của từng entry trong `fleet.json` và **không được kiểm ký tự phân tách**, nên nó
+đặt tên một đường dẫn **tương đối với** thư mục ấy chứ không phải một file **bên trong** nó; một giá
+trị **tuyệt đối** sẽ thắng hẳn, theo đúng hành vi đã ghi của `Path.Combine`. `mappingDir` mặc định
+là `Path.Combine(AppContext.BaseDirectory, "mapping")` (`FleetCore.MappingDirectory`).
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Mapping.MappingProfileResolver.ResolveOne` và
+`.Build`; `St4i.EdgeCore.Fleet.FleetCore.MappingDirectory`; trường `mappingProfile` trong `fleet.json`;
+`St4i.EdgeCore.Mapping.MappingProfile.FromJson`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* đây là một sự thật về **cơ chế**, và nó là loại sự thật nên được quyết chứ không nên
+để mặc: một trường cấu hình đọc như một cái tên đang hành xử như một đường dẫn.
+*Chiều ngược, và nó là lý do mục này nhỏ:* `fleet.json` do **vận hành viên viết** và nằm **cục bộ**;
+thứ duy nhất tới được là một file JSON rồi bị deserialize thành `MappingProfile` — **không có thực
+thi và không có phép ghi**. Trên một máy mà kẻ tấn công đã sửa được `fleet.json`, họ đã có nhiều thứ
+tệ hơn. Và **giới hạn nó lại đổi hành vi** cho bất kỳ bản triển khai nào đang hợp lệ dùng một thư
+mục con.
+
+**Nếu KHÔNG quyết định.** Hành vi giữ nguyên. Cái mất là một câu trả lời ghi lại được cho câu hỏi
+*"trường này là một TÊN hay một ĐƯỜNG DẪN"* — câu hỏi sẽ được hỏi lại mỗi lần ai đó đọc lớp này.
+
+---
+
+## 22. Hai chuỗi đã xuất bản hứa những ack *"failed"* mà `DemoTransport` không bao giờ trả
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
+
+**Đo được cái gì — cả hai chuỗi trích nguyên văn, và cả ba nhánh mở trọn.** Doc comment của
+`ScenarioConfig.NetworkOutage` nói: *"acks come back queued/failed while the fleet keeps running"*.
+Dòng trạng thái người vận hành nhìn thấy, `St4i.EngineApi.Fleet.Dtos`, nói: *"network outage (acks
+queued/failing)"*. Đo trên `DemoTransport.SendAsync`: **mọi** nhánh trả `Success: true` — nhánh
+queued trả `TransportAck(Success: true, Queued: true, …)`, `AckProcessResult` và `AckInspection` trả
+`Success: true, HttpStatus: 201`, `AckTelemetry` trả `Success: true, HttpStatus: 202`. **Không nhánh
+nào trả một ack thất bại.** `_fakeErrorRate` chỉ quyết định `ShouldSimulateQueued`, tức tỉ lệ đi vào
+nhánh **queued** — không phải tỉ lệ hỏng.
+
+📎 **Cả hai chuỗi nằm NGOÀI cụm mà đợt 7 trả, nên đợt ấy cố ý KHÔNG rút chúng tại chỗ** — với ra
+ngoài ranh giới của mình để sửa hai file khác là một việc khác. Chúng vẫn đứng nguyên văn hôm nay.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Engine.ScenarioConfig.NetworkOutage` (doc comment);
+`St4i.EngineApi.Fleet.Dtos` (dòng `outageText`); `St4i.EdgeCore.Transport.DemoTransport.SendAsync`,
+`.AckProcessResult`, `.AckInspection`, `.AckTelemetry`, `.ShouldSimulateQueued`;
+`St4i.EdgeCore.Fleet.FleetCore.ApplyNetworkOutageLocked`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* người vận hành đang chạy kịch bản outage được **hứa** rằng họ sẽ thấy ack hỏng, và họ
+sẽ **không bao giờ** thấy. Nếu ai đó dùng kịch bản này để nghiệm thu cách sản phẩm xử lý ack hỏng,
+phép nghiệm thu ấy **luôn xanh** và **không chứng minh gì**.
+*Chiều ngược:* hành vi hiện tại có thể mới là hành vi ĐÚNG. Một outage mạng nhìn từ phía biên
+**là** "xếp hàng", không phải "thất bại" — sản phẩm đệm rồi phát lại. Nếu vậy thì cái sai là **hai
+chuỗi**, và phép sửa là văn chứ không phải mã. Nhưng hai chuỗi ấy là **văn đã xuất bản** ở hai lớp
+khác nhau, một trong hai người vận hành đọc thấy, nên sửa chúng cũng là một quyết định về cái sản
+phẩm này **hứa**.
+
+**Nếu KHÔNG quyết định.** Hai chuỗi ở lại; kịch bản outage tiếp tục được mô tả bằng một hành vi nó
+không có; và câu *"nên `DemoTransport` trả ack hỏng hay không"* — câu duy nhất quyết được — không ai
+hỏi.
+
+---
+
+## 23. `IUnsPublisher.PublishBirth`/`PublishDeath` được khai, được cài đặt đầy đủ, và KHÔNG có caller nào dưới `src/`: chưa DBIRTH nào từng được phát
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AN-1 (đợt 8), xác nhận lại trên mã.
+
+**Đo được cái gì — quần thể mở TRỌN ở SHA đã ghim.** `git grep` cho `PublishBirth|PublishDeath` trên
+mọi `*.cs` của cây: khai báo trong `IUnsPublisher`; cài đặt trong `UnsPublisher` (kèm mã hoá
+DBIRTH/DDEATH đầy đủ và phép reset bảng alias); phép điều phối work-item **bên trong chính
+`UnsPublisher`**; một `<see cref>` trong `UnsTopicBuilder`; và **bốn** chỗ trong `tests/` (hai lớp
+giả rỗng, một bài test thật). **Không route, không service, không đường nào dưới `src/` gọi chúng.**
+Đối chiếu: `PublishNodeBirth`/`PublishNodeDeath` **có** caller thật trong `FleetCore`, từ các chuyển
+trạng thái Start/Stop/E-stop.
+
+🔴 **Cùng họ, cùng lớp, đo cùng lúc và nêu ở đây vì bỏ nó đi là nêu một nửa:** các chuỗi `WithWill`
+và `LastWill` **không xuất hiện trong một file `.cs` nào** của cây. Nên NDEATH chỉ được phát khi
+tiến trình này **tự chọn** phát; một lần bị kill đột ngột không phát gì. Và `SparkplugMsgType.NDATA`
+**không bao giờ được phát** — tham chiếu duy nhất ngoài khai báo là một unit test về hình dạng topic.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Uns.IUnsPublisher.PublishBirth`/`.PublishDeath`;
+`St4i.EdgeCore.Uns.UnsPublisher.PublishBirthCoreAsync`/`.PublishDeathCoreAsync`;
+`St4i.EdgeCore.Uns.UnsPublisher.PublishNodeBirth`/`.PublishNodeDeath` (đối chiếu, có caller);
+`St4i.EdgeCore.Fleet.FleetCore` (chỗ gọi node-level); `St4i.EdgeCore.Uns.UnsTopicBuilder`
+(`SparkplugMsgType`, kể cả `NDATA`).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* một subscriber Sparkplug **không bao giờ thấy DBIRTH** cho bất kỳ thiết bị nào trên
+xương sống này, nên **bảng alias mà DBIRTH sinh ra để thiết lập không bao giờ được phát**, và mọi
+DDATA mang alias mà subscriber không có giấy khai sinh. Đó là một sai lệch so với chính giao thức mà
+lớp này tự nhận cài đặt.
+*Chiều ngược:* đây là một **hoãn có chủ ý đã ghi**: doc của `UnsTopicBuilder` từ G2-2/G2-3 nói rõ
+sequencing birth/death nằm ngoài phạm vi. Nối dây nó **là một phép đổi hành vi giao thức** kèm luật
+sequencing (chỉ NBIRTH được reset bộ đếm chuỗi của edge node) và kèm một câu hỏi về MQTT Will chưa
+ai trả lời. Hoãn tiếp cũng là một lựa chọn hợp lệ — **miễn là nó được ghi là một lựa chọn**.
+
+**Nếu KHÔNG quyết định.** Hai phương thức ở lại trên một interface đã xuất bản, đọc như một khả năng
+đang có. Bất kỳ ai tích hợp theo interface ấy sẽ cho rằng device birth được phát, vì interface nói
+thế và cài đặt có ở đó.
+
+---
+
+## 24. `ModbusOptions`/`OpcUaOptions` công bố hằng số TÊN biến môi trường — và ĐÂY LÀ CHỖ PHÉP ĐO CỦA ĐỢT 8 NÓI SAI
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AN-1 (đợt 8) 🔴 **và đo lại bởi nhiệm vụ này, cho một
+kết quả KHÁC.**
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC.** Bảy hằng số `public const string` mang tên biến môi trường trên
+hai lớp: `ModbusOptions.EnvVarEnabled`, `.EnvVarHost`, `.EnvVarPort`, `.EnvVarMapPath`;
+`OpcUaOptions.EnvVarEnabled`, `.EnvVarEndpoint`, `.EnvVarMapPath`. Đo người đọc, ở SHA đã ghim, trên
+**cả** dạng gọi tên đủ đường dẫn:
+
+* **Hai cái CÓ người đọc bên ngoài file khai báo:** `ModbusOptions.EnvVarMapPath` và
+  `OpcUaOptions.EnvVarMapPath`, cả hai được **`St4i.EngineApi/Program.cs`** gọi tên (dạng đủ đường
+  dẫn `St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarMapPath`), trong hai thông điệp lỗi khởi
+  động.
+* **Năm cái còn lại không có người đọc nào ngoài file khai báo của chính chúng.**
+* 🔴 **KHÔNG file `.cs` nào dưới `src/` ngoài hai file khai báo mang bất kỳ chuỗi nào trong bảy
+  chính tả ấy ở dạng literal.** Cả hai host sản xuất lấy giá trị qua `ModbusOptions.FromEnvironment()`
+  / `OpcUaOptions.FromEnvironment()`, tức **qua chính hằng số**, không qua một bản sao.
+* Bản sao chính tả **có tồn tại**, nhưng ở ba chỗ khác: `README.md` (hai bảng biến môi trường,
+  §16.4 và §16.6) và **hai file test** — `tests/St4i.EngineApi.Tests/ConnectorEndpointsTests.cs` và
+  `…/ConnectorEndpointsEnvSeedingSideEffectsTests.cs` — cả hai gọi
+  `Environment.SetEnvironmentVariable("ST4I_MODBUS_ENABLED", …)` bằng literal.
+
+🔴 **Nên hai câu của báo cáo đợt 8 được SỬA LẠI ở đây, và cái sai ấy là một phát hiện.** Đợt 8 viết:
+*"the env-var name constants are published so a host can NAME the variable, and no host does: both
+production hosts hardcode the literal instead"*, và §8(3) của nó nhắc lại rằng hai chuỗi ấy *"appear
+hardcoded in BOTH `St4i.EngineApi` and `St4i.EdgeService`"*. **Cả hai nửa đều không đứng vững:** một
+host **có** gọi tên hằng số (hai lần), và **không** host nào viết cứng chuỗi. Thứ đợt 8 đọc thấy
+trong hai host là **dòng chú thích `//`**, không phải literal — `EdgeConnectors.cs` thậm chí đang
+nói ngược lại (*"This host has NO environment-variable connector route at all — it has never read
+ST4I_MODBUS_ENABLED/ST4I_OPCUA_ENABLED"*). 🔴 **Và bảng phân nhóm của chính đợt 8 đã mâu thuẫn với
+văn xuôi của nó**: nhóm **C0 = 2** của nó nghĩa là *"chỉ `St4i.EngineApi` với tới, mà nó đã giữ
+IVT"* — đúng hai hằng số `EnvVarMapPath` ấy. **Bảng đúng; đoạn văn cạnh bảng sai.** Cùng loài với
+cái mà chính đợt 8 tự bắt được ở chỗ khác: *một phép grep cho dạng KHÔNG đủ đường dẫn không thấy
+dạng ĐỦ đường dẫn.*
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Drivers.Modbus.ModbusOptions` (bảy hằng số và
+`FromEnvironment`); `St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions` (cùng thế, cộng `EnvVarPkiDir` đã
+được `OpcUaPkiPaths.DefaultRoot` đọc); `St4i.EngineApi.Program` (hai chỗ gọi tên và hai chỗ gọi
+`FromEnvironment`); `St4i.EdgeService.EdgeConnectors` (một chỗ gọi `FromEnvironment`);
+`README.md` §16.4/§16.6; `ConnectorEndpointsTests`, `ConnectorEndpointsEnvSeedingSideEffectsTests`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* **năm** hằng số công khai không ai đọc là bề mặt đã công bố mà không có mục đích còn
+sống — đúng câu hỏi mục 25 đang hỏi trên cùng assembly. Và nguy cơ trôi chính tả **có thật nhưng
+nằm chỗ khác**: giữa hằng số, bảng README, và hai file test; **không gì đỏ lên nếu ba bản ấy lệch
+nhau**. Đó vẫn là hình dạng trùng lặp `DemoModeGate`/`DemoEnabledEnvVar` mà file này đã ghi một
+lần — chỉ khác cặp.
+*Chiều ngược:* hạ năm hằng số ấy xuống `internal` là **miễn phí về biên dịch** (không ai ngoài
+assembly đọc) nhưng **không mua được gì**: bản sao thật là README và test, và chúng vẫn viết literal
+sau đó. Giá trị thật của một hằng số công khai là để một **host bên ngoài** gọi tên biến — mà đúng
+hai cái đã được gọi tên như thế, nên cơ chế ấy **đang hoạt động** chứ không chết hẳn.
+
+**Nếu KHÔNG quyết định.** Năm hằng số ở lại trong 97 thành viên của mục 25 và tiếp tục được đếm ở
+đó. Bản sao chính tả trong README và hai file test ở lại, không nhân chứng, và ngày một biến bị đổi
+tên là ngày cả ba bản phải được nhớ cùng lúc.
+
+---
+
+## 25. ĐIỀU KIỆN RỜI PHẦN II CỦA MỤC 12 — họ driver: viết tài liệu, hay thu hẹp bề mặt? Và với hơn một nửa, câu hỏi ấy KHÔNG TỒN TẠI
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AN-1 (đợt 8, Sản phẩm B), xác nhận lại trên mã.
+
+📎 **Mục này KHÔNG sửa và KHÔNG chạm mục 12.** Mục 12 ở lại **Phần II** với phán quyết
+*"BẬT CỜ, KHÔNG MIỄN TRỪ"* của anh, đã thi hành từng phần qua sáu đợt. Điều mục 12 còn thiếu là
+**một điều kiện rời đi**, và bốn đợt bao phủ đã tiêu hết: **mục 12 sẽ rời Phần II bằng một PHÁN
+QUYẾT, không bằng một con số về 0.** Mục 25 là chỗ đặt phán quyết ấy.
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC, con số viết SAU.** Sau đợt 8, `EXPECT_WARNINGS` là **328**, và sổ
+cảnh báo phân hoạch nó thành **185 vendored / 143 ours**; hai hàng bao phủ còn lại của ta là
+`OURS CS1591 90` và `OURS CS1573 19` — **đọc lại từ `scripts/verify-suites.sh`**, không lấy từ báo
+cáo. Tổng **109**, và **toàn bộ nằm trong `Drivers/`**: `Modbus/` 46 · `Simulators/` 27 · `OpcUa/`
+17 · `HotFolder/` 7 · `Mqtt/` 7 · `Drivers/` 5. 90 cái CS1591 rơi mỗi cái một thành viên; 19 cái
+CS1573 rơi lên **bảy** thành viên có bộ `<param>` khuyết. **97 thành viên riêng biệt** — đợt 8 liệt
+kê từng cái, theo file, trước khi dùng bất kỳ con số nào.
+
+🔴 **TIỀN ĐỀ MÀ HAI BRIEF TRUYỀN TAY NHAU ĐÃ BỊ ĐO LẠI VÀ NÓ KHÔNG SỐNG SÓT.** Đợt 6 mô tả họ driver
+là *"đường ống nội bộ của host mà phần lớn thành viên không nói được gì ngoài cái tên"*; đợt 7 chép
+lại; brief của đợt 8 được viết trên đó. Kiểm từng thành viên: **0 trong 97 thành viên không có gì để
+nói.** Theo năm phép thử (bất biến / đơn vị / miền giá trị / điều kiện tiên quyết / cách hỏng),
+**84** mang một cách hỏng hoặc một điều kiện tiên quyết, **13** chỉ mang đơn vị-mặc định-miền giá
+trị, **0** không có gì. Và trong bốn ví dụ đợt 6 nêu đích danh: hai cái đứng vững;
+`OpcUaConnectorFactory.Create` **đã có tài liệu và chưa bao giờ được nợ**; còn *"mười một constructor
+simulator"* là **một phép đếm FILE đọc thành một phép đếm CONSTRUCTOR** — `Drivers/Simulators/` có
+mười một file và **tám** lớp simulator. **Đó là luật của chính chuỗi file này (*một vô hướng tóm tắt
+một tập chưa ai liệt kê thì không phải một sự thật*) hỏng ở bên trong bản ghi mà chuỗi ấy giữ, và nó
+đi qua hai brief không ai chặn.**
+
+🔴 **VÀ CÂU ANH SẼ PHÁN — *"chúng có nên `public` không?"* — KHÔNG TỒN TẠI VỚI PHẦN LỚN CHÚNG.** Bảng
+dưới là bề mặt **ĐỌC** đã đo (§8.1(h5.4)), ở SHA đã ghim, bằng `git grep` trên commit object chứ
+không phải cây làm việc — vì cây này là sparse checkout.
+
+| nhóm | là cái gì | số | `internal` sẽ làm gì |
+|---|---|---:|---|
+| **A1** | cài đặt/override của một thành viên interface hoặc abstract **công khai** | **41** | **lỗi biên dịch** — câu hỏi không tồn tại |
+| **A2** | **thành viên enum** | **5** | C# **cấm** modifier trên thành viên enum; thu hẹp nghĩa là thu hẹp cả KIỂU |
+| **B** | do **`System.Text.Json`** đọc, không chỗ gọi nào gọi tên | **9** | 🔴 **biên dịch được, rồi ÂM THẦM nạp về mặc định** |
+| **C0** | chỉ `St4i.EngineApi` với tới, mà nó đã giữ IVT | **2** | miễn phí |
+| **C1** | **không gì** ngoài `src/St4i.EdgeCore/` với tới | **15** | miễn phí, và xoá được bề mặt công khai chết |
+| **C2** | chỉ các assembly **test** với tới | **16** | cần một **IVT mới tới một test project** |
+| **C3** | một assembly **sản xuất ngang hàng** với tới, không có IVT | **9** | cần một **IVT tới một assembly sản xuất ngang hàng** |
+
+41 + 5 + 9 + 2 + 15 + 16 + 9 = **97**. Ba nửa của bảng ấy đã được kiểm lại độc lập ở nhiệm vụ này:
+**A2 đúng là năm** (`ModbusRegisterType.Holding`/`.Input`, `ModbusDataType.UInt16`/`.Int16`,
+`OpcUaSecurityMode.None`); **B đúng cơ chế** (`ModbusRegisterMap.FromJson` →
+`RootElement.Deserialize<ModbusRegisterMap>` và `OpcUaNodeMap.FromJson` →
+`JsonSerializer.Deserialize<OpcUaNodeMap>`; `System.Text.Json` mặc định bỏ qua property không công
+khai, nên hạ xuống là **nạp một map với địa chỉ slave mặc định và không mật khẩu**, gồm
+`ModbusRegisterMap.UnitId` và `OpcUaNodeMap.Password`); và **C0 đúng bằng hai** (xem mục 24, nơi
+đúng hai hằng số ấy được `St4i.EngineApi.Program` gọi tên).
+
+**Sự thật cấu trúc quyết định giá của C2 và C3:** `src/St4i.EdgeCore/AssemblyInfo.cs` mang **đúng
+MỘT** `[assembly: InternalsVisibleTo("St4i.EngineApi")]`. Nó mang **không** entry nào tới
+`St4i.EdgeCore.Tests` — GĐ3 closeout WI-1 Part A đã xoá cái duy nhất, có chủ ý — và không entry nào
+tới `St4i.EdgeService`, WPF app, `St4i.EdgeCore.Serial` hay `tools/settings-acl-probe`. **File ấy
+lập luận, bằng văn xuôi của chính nó và khá dài, chống lại CẢ HAI loại IVT mà C2 và C3 đòi.**
+
+**Giá của hai hướng, cả hai đều đo, không hướng nào được đề xuất.**
+* **Hướng 1 — VIẾT TÀI LIỆU.** ~109 phần tử doc (90 `<summary>` + 19 `<param>`) trên 97 thành viên.
+  Ở **tỉ lệ đã đo của đợt 7** (62 cảnh báo thành 199 câu, 13 sai qua hai vòng tự kiểm), đó là khoảng
+  **350 câu**, trong đó chừng **23 sẽ sai ở lần viết đầu**. Và 13 trong 97 thuộc lớp chỉ-có-đơn-vị,
+  nên một lát đáng kể số câu ấy nằm sát cái lằn mà cả chuỗi này cấm vượt: *một `<summary>` chỉ diễn
+  đạt lại cái tên không phải một khoản trả.*
+* **Hướng 2 — THU HẸP.** Không dùng được với **46** (A1 + A2). **Sai trong im lặng với 9** (B) — nó
+  biên dịch, rồi hỏng lúc chạy, trong một lần nạp JSON, không một chẩn đoán nào. **Miễn phí với 17**
+  (C0 + C1), và với 15 cái C1 nó còn xoá được bề mặt công khai chết. **Tốn một `InternalsVisibleTo`
+  mới với 25** (C2 + C3) — và hai loại ấy không ngang nhau: C2 khôi phục một entry mà một nhiệm vụ
+  có tên đã cố ý xoá; C3 mở assembly cho một assembly **sản xuất** ngang hàng.
+
+🔴 **CÁI MÀ MỘT BẢNG DỄ GIẤU, NÊN NÓ ĐƯỢC VIẾT RA NGOÀI BẢNG: ÍT NHẤT 55 TRONG 97 SẼ `public` DÙ ANH
+PHÁN THẾ NÀO.** 46 của A1/A2 vì ngôn ngữ không cho phép khác, cộng 9 của B vì hạ chúng xuống là hỏng
+lúc chạy. **Đó là một món nợ tài liệu mà không phán quyết nào rút được**, và nó không phụ thuộc vào
+hướng anh chọn.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `src/St4i.EdgeCore/Drivers/**` (sáu thư mục kể trên);
+`St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap.FromJson`;
+`St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap.FromJson`; `src/St4i.EdgeCore/AssemblyInfo.cs`;
+`scripts/verify-suites.sh` (`EXPECT_WARNINGS`, `EXPECT_WARNING_LEDGER`);
+`Directory.Build.props` (khối chuỗi rút của mục 12); `St4i.Connector.Conformance.DeviceDriverConformanceSuite`
+(hợp đồng mà 41 cái A1 cài đặt).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* mục 12 đứng ở Phần II **không có điều kiện rời đi**, và mọi đợt tiếp theo sẽ phải tự
+nghĩ ra một cái. `EXPECT_WARNINGS = 328` là một hằng số đang được canh nhưng **không ai biết nó nên
+đi về đâu**, nên nó không còn nói gì về tiến độ. Và 9 thành viên nhóm B là một cái bẫy **đang mở**:
+một người sau đọc "thu hẹp bề mặt công khai" là việc tốt sẽ hạ đúng chúng và mất một địa chỉ slave
+Modbus cùng một mật khẩu OPC-UA, im lặng.
+*Chiều ngược, và nó đủ để "không quyết" là một lựa chọn có lý:* 109 cảnh báo trên một assembly là
+một mức nợ **ổn định và đã đo**, được một cổng canh, không tăng. Không có khách hàng nào đang chờ
+chúng. Mọi lựa chọn ở trên đều tiêu thời gian kỹ sư thật cho một thứ **không đổi một hành vi nào**
+mà sản phẩm này thể hiện ra ngoài.
+
+**Nếu KHÔNG quyết định.** Mục 12 ở lại Phần II vô thời hạn với một món nợ đã đếm và không có định
+nghĩa "xong". 🔴 **Và phép đo này có một hạn mà nó tự nêu tên chứ không giấu: nó KHÔNG thấy được
+người tiêu thụ ngoài repo này.** Mọi con số bề mặt-đọc ở trên là số người đọc **trong cây này**; nếu
+`St4i.EdgeCore` được tiêu thụ ở nơi khác, phép đếm im lặng về chuyện đó và sẽ báo thành viên ấy là
+chết. Thêm nữa, **phép phân lớp 84/13/0 là một PHÁN ĐOÁN, không phải một phép đo** — chính đợt 8 nói
+thế — trong khi các con số bề mặt-đọc trong bảng thì kiểm được tới từng dòng. Hai loại ấy **không
+được đọc với cùng mức tin cậy**.
+
+---
+
+## 26. Không gì trong repo này trả cho TÍNH ĐÚNG của một chú thích đã viết — mục 12 trả cho BAO PHỦ, và W-1 kiểm HÌNH THỨC
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Tổng hợp từ AG-1, AH-1 + phản biện, AL-1, AM-1, AN-1.
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC, và ĐỪNG CỘNG.** Năm phép đo về khẳng định sai trong chú thích của
+chính dự án này, mỗi cái kèm **đơn vị của nó**:
+
+| ai | đo được | mẫu số | khẳng định thuộc loại nào | có phải một phép kiểm đếm không |
+|---|---|---|---|---|
+| đợt 4 (AG-1) | **101** khẳng định `cref`/`paramref` đã sai (75 CS1574 + 23 CS1734 + 3 CS0419), 29 file | quần thể ĐẦY ĐỦ | **có sẵn**, đã đứng trong cây từ trước | **có** — và do TRÌNH BIÊN DỊCH tìm |
+| đợt 5 (AH-1) + phản biện | **17** câu SAI | một **mẫu 48** rút từ **120** câu vừa viết | **vừa viết** | **không** — một mẫu |
+| đợt 6 (AL-1) | **5** câu sửa, **2** sai hẳn | 🔴 **129 CẢNH BÁO**, không phải 129 câu | **vừa viết** | không — một bộ lọc |
+| đợt 7 (AM-1) | **13** câu sửa (7 + 6, hai vòng) | **199 CÂU** | **vừa viết** | không — hai bộ lọc |
+| đợt 8 (AN-1) | **12** câu sửa (6 do hai vòng + 6 bắt lúc viết) | **287 CÂU** | **vừa viết** | không — hai bộ lọc + tự kiểm |
+
+🔴 **Năm con số ấy KHÔNG cộng được, và ba lý do phải nói riêng ra.** *(i)* Hai loại vật khác nhau:
+101 là khẳng định **CÓ SẴN**, bốn cái sau là khẳng định **VỪA VIẾT** — cộng chúng là đo hai quần thể
+như một. *(ii)* **Một mẫu không phải một phép kiểm đếm**: 17/48 là một tỉ lệ ~35 % trên một mẫu, và
+báo cáo đợt 5 tự nói vì sao nó **không ngoại suy được** (12 trong 17 hỏng vì cùng một tiền đề sai về
+seed). *(iii)* 🔴 **Mẫu số của đợt 6 KHÔNG cùng đơn vị với đợt 7 và 8**: 129 là số **cảnh báo** đợt
+6 trả, và đợt 6 **không bao giờ đếm số câu của nó** — chính đợt 8 ghi lại chuỗi ấy là
+`120 → ? → 199 → 287`, với dấu `?` đúng ở chỗ đợt 6. Ở **đợt 5** thì hai đơn vị **trùng nhau**, và
+chỉ ở đó: cả 120 cảnh báo đều là một `<summary>` trên một property, một cảnh báo một câu.
+
+**Cái repo này CÓ dụng cụ, và cái nó KHÔNG có.** Có: trình biên dịch bắt **con trỏ hỏng**
+(CS1574/CS1734/CS0419) và **chỗ trống** (CS1591/CS1573). Có: **W-1**, tức
+`tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs`, **bảy** `[Fact]` — bộ quét có tới được corpus
+của nó không, mọi khối `///` của ta có parse được như XML không, khối trong file SDK vendored có
+parse được không, mọi tên phần tử có nằm trong `RegisteredElementNames` không, không đâu dùng chú
+thích `/** */`, cộng hai bài tự kiểm chính bộ kiểm. **Không có: một dụng cụ nào trả lời "câu này
+đúng hay sai".** W-1 kiểm một khối **có hình thức hợp lệ**; nó không thể và không tự nhận kiểm được
+một câu là **thật**.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs` (bảy `[Fact]`,
+`RegisteredElementNames`); `scripts/verify-suites.sh` (`EXPECT_WARNINGS`, `EXPECT_WARNING_LEDGER` —
+hai hằng số duy nhất canh chú thích, và cả hai đếm **sự vắng mặt**, không đếm **tính đúng**);
+`Directory.Build.props` (khối N-1/N-2 đặt ra phép thử *"can this sentence be recovered"*, tức tiêu
+chí đã có nhưng **không có bộ cưỡng chế**).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* **một chú thích sai còn tệ hơn không có chú thích**, vì nó làm người đọc **thôi
+kiểm**. Bốn phép đo trên đều bắt được câu sai, và loại tệ nhất trong đó không chứa một sự kiện sai
+nào — nó khẳng định một **mục đích** hoặc một **cơ chế** (một caller, một timer, một người dùng) mà
+không có gì để kiểm: đợt 6 tìm ra một `<summary>` nói phương thức tồn tại *"để người gọi cho vận
+hành viên biết vì sao cửa sổ ấy chấm điểm như thế"* cho một phương thức **không có caller sản xuất
+nào**; đợt 7 khẳng định một **heartbeat nền mà repo này không có**, lấy từ một doc comment hàng xóm
+đã hedge đúng. Với `GenerateDocumentationFile` đã bật, những câu ấy **đi vào `St4i.EdgeCore.xml`**
+và ra tới bản cài (xem mục 31).
+*Chiều ngược, và nó không nhẹ:* **không ai biết dụng cụ ấy trông như thế nào.** Đợt 7 và đợt 8 đều
+đo được rằng **một bộ lọc cơ học đơn lẻ báo thiếu**: đợt 7 vòng 1 bắt 7, vòng 2 bắt **6 cái vòng 1
+mù hoàn toàn**; đợt 8 vòng 1 bắt 1, vòng 2 bắt 5. Đợt 8 tự nói rằng **recall của bộ lọc vòng 2 của
+nó là chưa biết**. Nên một "cổng soát tài liệu" sẽ là một dụng cụ **không có định nghĩa xanh** và
+**không biết độ nhạy của chính nó** — đúng loại dụng cụ mà file này lập ra để chấm dứt. Và một nửa
+nữa phải nói: **quá trình viết chú thích ĐANG LÀ dụng cụ** — cả mười khuyết tật mã ở các mục 15–24
+đều được tìm ra **trong lúc viết chú thích**, không phải bằng một cổng.
+
+**Nếu KHÔNG quyết định.** Mục 12 hoàn tất (hoặc rời Phần II bằng mục 25) và để lại một cây có
+**bao phủ** chú thích cao và **không dụng cụ nào** về tính đúng, tức đúng trạng thái mà tỉ lệ ~35 %
+của đợt 5 được đo trên. Con số đáng sợ không phải một trong năm con số trên; nó là cái **không ai
+đo**: **các khẳng định đã có sẵn trong cây và chưa từng bị đọc lại** — đợt 4 đã cho thấy **101** cái
+trong số đó sai đủ nặng để trình biên dịch bắt được, và **không ai từng đo số cái sai theo cách
+trình biên dịch KHÔNG bắt được.**
+
+---
+
+## 27. API Inspector không phơi THÂN request: không dụng cụ UI nào trong sản phẩm này đọc được payload đi ra
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi điều phối viên 2026-08-20, **xác nhận lại trên mã** —
+và nó **đứng vững**.
+
+**Đo được cái gì.** `ApiTraceEvent` là một `record` với **mười** thành phần: `At`, `MachineCode`,
+`Kind`, `Method`, `Path`, `Status`, `LatencyMs`, `Mode`, `Duplicate`, `Error`. **Không thành phần
+nào mang thân request, thân response, hay một tóm tắt payload.** Ở phía UI, `TraceTable` dựng các
+hàng bằng `div` mang `role="table"`/`"row"`/`"cell"` (cố ý, vì layout `<table>` thật không hợp tác
+với hàng định vị tuyệt đối của react-virtual) và **không có một trình xử lý click hàng nào** — không
+`onClick` trên hàng, không panel chi tiết, không route mở rộng. Nút `Export` xuất **đúng những
+trường ấy**.
+
+📎 **Ghi lại một chỗ mà chính điều phối viên đã sai trong phiên đo này, vì nó là bằng chứng cho một
+luật của file này:** một bộ chọn `<table>` kết luận *"không có bảng"* trên một trang có 244 hàng —
+vì bảng ấy là `role="table"`. Doc comment của `TraceTable` nói đúng lý do, và **miền dụng cụ hẹp hơn
+miền câu nói**.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Infrastructure.ApiTraceEvent`;
+`St4i.EdgeCore.Engine.EdgePipeline` (chỗ dựng sự kiện);
+`St4i.EdgeCore.Infrastructure.EventBus`; `St4i.EngineApi.Hubs.InspectorStream`
+(`WS /v1/inspector/stream`); `web/src/lib/inspector.ts`; `web/src/components/TraceTable.tsx`;
+`web/src/routes/ApiInspector.tsx`; `St4iMachineSimulator.ViewModels.InspectorViewModel` và
+`Views/ApiInspectorView.xaml` (bản WPF, cùng hình dạng).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* câu hỏi *"mình đang gửi cái gì"* — câu hỏi mà một pane tên là **API Inspector** hứa
+trả lời — **chỉ trả lời được bằng cách bật LIVE và đọc phản hồi của máy chủ thật**. Với một kỹ sư
+tích hợp đang dò một hợp đồng ingest, đó là bảo họ chạy thật để gỡ lỗi. Và nó chạm thẳng mục 14 vừa
+được thi hành: hình dạng hàng `Samples` trên dây vừa đổi, và **không bề mặt UI nào trong sản phẩm
+này cho xem hình dạng ấy**.
+*Chiều ngược, và nó là một lý do thật để nói không:* thân request mang **dữ liệu đo của khách
+hàng** — số đo, số serial, mã công thức. Cho chúng vào trace nghĩa là cho chúng vào **ring 500 phần
+tử trong bộ nhớ của engine**, vào **luồng WebSocket**, và vào **file mà nút `Export` ghi ra đĩa**.
+Repo này đã có một bộ canh rò rỉ dữ liệu nhạy (bracket `real creds root under watch` trong cổng) vì
+đúng loại lo ấy. Một "phơi thân request" làm bừa là một bề mặt dữ liệu-lúc-nghỉ mới.
+
+**Nếu KHÔNG quyết định.** Pane giữ tên *Inspector* và giữ khả năng của một **sổ truy cập**. Mỗi lần
+một hợp đồng đi dây đổi — mục 4, mục 14, và cái tiếp theo — câu hỏi *"nó thực sự gửi cái gì"* lại
+được trả lời bằng một lần chạy live chứ không bằng một dụng cụ.
+
+---
+
+## 28. Lịch sử API-trace có BA cái trần, không phải một, và UI in GIÁ TRỊ của chúng chứ không gọi tên cái nào là TRẦN
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). 🔴 **Phát hiện gốc của điều phối viên — *"trần hiển thị 1.000
+hàng trên 2.565 gói ghi nhận, và UI CÓ nêu tên trần"* — KHÔNG đứng vững nguyên trạng, và cả hai nửa
+đều lệch.**
+
+📎 **Điều phối viên hỏi mục này có đáng thành một mục không hay chỉ là một sự thật đã ghi. Lựa chọn
+của tôi: nó ĐÁNG, nhưng KHÔNG vì lý do ban đầu.** Một trần đơn nêu tên đúng thì đúng là một sự thật
+đã ghi. **Ba trần mà không cái nào được gọi tên là trần** là một mục, vì luật của chính file này
+nói: *một cái trần nêu quá nhỏ còn tệ hơn không nêu trần* — và ở đây trần **không được nêu**, chỉ có
+giá trị của nó được in ra.
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC.** Ba cái chặn, ở ba lớp:
+1. **`EventBus.DefaultCapacity = 500`** — vòng đệm phía **server**, `Queue<ApiTraceEvent>`, khi đầy
+   thì `Dequeue` cái cũ nhất. Đây là **toàn bộ lịch sử mà engine giữ**.
+2. **`InspectorStream` backfill = `eventBus.Recent(200)`** — số sự kiện một tab **mới mở hoặc vừa
+   kết nối lại** nhận được.
+3. **`RING_CAPACITY = 1000`** trong `web/src/lib/inspector.ts` — vòng đệm phía **client**,
+   mới-nhất-trước, cắt bằng `merged.slice(0, RING_CAPACITY)`.
+
+**Nên "1.000" không phải cái trần đang chặn với ai vừa tải lại trang: 200 mới là, rồi tới 500.**
+Vòng 1.000 của client chỉ đầy được bằng cách **ngồi mở suốt** trong lúc lưu lượng chảy — chính doc
+comment của hằng số ấy nói thế (*"this is how much history the tab itself is willing to hold …, not
+a mirror of the server's bound"*).
+
+**Và nửa thứ hai: UI in giá trị, không gọi tên trần.** Phụ đề nói *"Live, envelope-by-envelope feed
+of **every request the fleet sends** — 2.565 captured this session"*. Thanh trên bảng nói *"N shown
+of 1.000 buffered"*. **Không chuỗi nào trong `web/src/i18n/en.ts` hay `vi.ts` chứa từ nào nghĩa là
+"trần", "giới hạn", "đã rơi", hay "cũ hơn thì mất".** Người đọc thấy hai con số và phải **tự suy ra**
+rằng khoảng cách giữa chúng là mất vĩnh viễn. Chữ *"every request"* trong phụ đề đẩy suy luận ấy đi
+ngược hướng.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Infrastructure.EventBus.DefaultCapacity`;
+`St4i.EngineApi.Hubs.InspectorStream` (chỗ gọi `Recent(200)`); `RING_CAPACITY` trong
+`web/src/lib/inspector.ts`; `inspector.subtitle`, `inspector.shownLabel`, `inspector.ofBuffered`
+trong `web/src/i18n/en.ts` và `vi.ts`; `web/src/routes/ApiInspector.tsx`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* một người vận hành đọc *"every request the fleet sends"* và tin rằng pane là một bản
+ghi đầy đủ. Trên một phiên triển lãm dài, nó là một cửa sổ trượt mà **cái cũ nhất bị bỏ im lặng**, ở
+ba tầng khác nhau, và nút `Export` xuất **cửa sổ**, không xuất phiên. Ai xuất file ấy để làm bằng
+chứng đang xuất một tập con mà không có gì trong file nói ra điều đó.
+*Chiều ngược:* cả ba trần đều **có lý do đúng** — một pane chẩn đoán không được phép là một cái rò
+bộ nhớ trên engine, trên dây, hay trong tab. Nâng chúng lên là mua thêm ký ức bằng RAM ở một tiến
+trình đang chạy một fleet. Và **cách rẻ nhất để đóng mục này không phải nâng trần mà là gọi tên
+chúng** — một chuỗi, không một dòng mã đường ống nào.
+
+**Nếu KHÔNG quyết định.** Ba trần ở lại không được gọi tên, phụ đề ở lại hứa *"every request"*, và
+khoảng cách giữa hai con số hiển thị ở lại là thứ mà chỉ người đọc mã mới giải thích được.
+
+---
+
+## 29. Cả fleet liên kết ra ngoài bằng MỘT danh tính thiết bị, trong khi một route trả 200 cho việc lưu khoá của BẤT KỲ mã máy nào
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi điều phối viên 2026-08-20, **xác nhận lại trên mã** —
+cơ chế **đứng vững**; một chi tiết trong lời kể **không đứng vững** và được sửa dưới đây.
+
+**Đo được cái gì.** `FleetCore.UpdateSettings` — khi một lần biên tập cần dựng lại transport —
+chạy `CredentialStore.Load(_machineCode)` rồi
+`_transportCoordinator.RebuildLive(_serverUrl, _machineCode, mkKey, _verifyTls)`. **Số ít.**
+`_machineCode` là một trường **một giá trị** của `FleetCore`, khởi tạo từ `DefaultMachineCode` và
+ghi đè từ `persisted.MachineCode` (tức `settings.machineCode`). **Không đường nào trong `FleetCore`
+nạp một khoá theo từng máy con.**
+
+Ở đầu kia, `OnboardingService.PasteKey` gọi `CredentialStore.Save(req.MachineCode, req.MkKey)` — lưu
+dưới **bất kỳ** mã máy nào người gọi đưa — và trả `OnboardingStepResult("Claimed", …)` với thông
+điệp `$"Pasted mk_ key stored for {req.MachineCode}"`, mà `OnboardingEndpoints` gói thành
+**`Results.Ok`**, tức **HTTP 200**. Nên: dán một khoá cho mã của một **máy con** thành công theo mọi
+nghĩa mà route ấy đo, và **không có tác dụng gì** lên đường đi ra — `RebuildLive` vẫn chỉ nhận khoá
+của `settings.machineCode`.
+
+🔴 **Và hai chuỗi đã xuất bản trong UI đứng ngay cạnh nhau nói đúng hai chuyện ấy.** Cùng một khối
+`settings.auth`: `machineCodeLabel` = *"Machine code used for authentication"* (số ít) và
+`machineCodeHint` = *"The mk_ key saved for **this code** is used when Live/Auto connects to the real
+server."* — rồi ngay dưới, một biểu mẫu riêng với `pasteCodeLabel` = *"Machine code"* và placeholder
+*"e.g. SIM-0002"*, tức **mời người dùng dán một khoá cho một mã KHÁC**. Một bên nói đã lưu, bên kia
+chỉ dùng một cái.
+
+📎 **Sửa lại lời kể ở hai chỗ, vì phép đo không xác nhận chúng.** *(i)* Điều phối viên trỏ
+`FleetCore.cs:5313`. Số dòng ấy **hôm nay vẫn đúng**, nhưng §8.1(h8) nói trỏ bằng **TÊN**: chỗ ấy
+nằm trong `FleetCore.UpdateSettings`, trong nhánh `if (rebuildNeeded)`. *(ii)* Điều phối viên kể
+rằng LiveTransport báo *"Chưa có khoá mk_"*. 🔴 **Chuỗi ấy KHÔNG tồn tại trong cây** — `git grep`
+trên toàn bộ commit object không tìm thấy nó, và `LiveTransport` không có thành viên `IsConfigured`
+nào. Thứ có thật là `LiveTransport.NoServerConfiguredPlaceholder` (`http://127.0.0.1:0`, một cổng
+không ai trả lời) và chuỗi UI `settings.auth.noneSaved` = *"No keys recorded in this session yet."*
+— mà chú thích ngay cạnh nó tự nói rằng nó **chỉ theo dõi trình duyệt này, không phải danh sách đầy
+đủ trên máy chủ engine**. **Cơ chế bất đối xứng là thật; câu trích dẫn thì không**, và một câu trích
+sai làm mục yếu đi chứ không mạnh lên.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Fleet.FleetCore.UpdateSettings` và trường
+`_machineCode`; `St4i.EdgeCore.Infrastructure.CredentialStore.Load`/`.Save`;
+`St4i.EdgeCore.Transport.TransportCoordinator.RebuildLive`;
+`St4i.EngineApi.Fleet.OnboardingService.PasteKey`; `St4i.EngineApi.Endpoints.OnboardingEndpoints`
+(route `POST /v1/onboarding/paste-key`, `Policies.Engineer`);
+`St4i.EngineApi.Fleet.OnboardingPasteKeyRequest`; `settings.auth.*` trong `web/src/i18n/en.ts` và
+`vi.ts`. Đối chiếu: `St4i.EdgeService.EdgeWorker` đọc `CredentialStore.Load(machineCode)` cũng số ít,
+và doc của nó **nói thẳng** rằng Live mode gắn với **đúng MỘT** cặp máy/khoá.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* một người vận hành làm đúng thứ UI mời họ làm — dán khoá cho từng máy con — nhận
+**200 và một câu xác nhận có tên máy trong đó**, rồi thấy fleet vẫn không liên kết được. Cái đắt
+không phải sự thất bại; cái đắt là **một xác nhận thành công cho một thao tác không có tác dụng**.
+Trên một fleet nhiều máy, mọi máy đi ra dưới **một** danh tính, nên máy chủ hệ sinh thái không phân
+biệt được chúng bằng khoá.
+*Chiều ngược:* **một danh tính cho mỗi tiến trình biên có thể chính là mô hình đúng**, và
+`EdgeWorker` ghi nó như một thiết kế chứ không phải một thiếu sót: tiến trình biên **là** thiết bị;
+các máy con là điểm dữ liệu bên trong nó. Nếu vậy, cái sai không phải `FleetCore` mà là
+**`PasteKey` chấp nhận một mã tuỳ ý** và **UI mời làm thế**. Sửa theo hướng đó là một phép **thu
+hẹp** route (từ chối mã không phải `settings.machineCode`) — rẻ hơn hẳn, nhưng nó **lấy đi** một
+đường mà một số cách dùng có thể đang dựa vào (lưu sẵn khoá trước khi đổi `machineCode`).
+
+**Nếu KHÔNG quyết định.** Route ở lại trả 200 cho một thao tác không có tác dụng; hai chuỗi UI ở lại
+nói hai chuyện; và câu duy nhất quyết được — **sản phẩm này có một danh tính hay nhiều?** — không ai
+hỏi. Mọi công việc "fleet nhiều máy" về sau sẽ va vào đúng chỗ này.
+
+---
+
+## 30. Gốc mặc định của các store cạnh-binary là `%ProgramFiles%`, MSI không mang bốn file ấy, nên lần chạy đầu của một bản cài mặc định CHÍNH LÀ lần phải GHI
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). 🔴 **Câu hỏi này bị các brief liên tiếp CẤM mở — mỗi đợt từ 4
+tới 8 đều mang dòng *"no new question of the two forbidden kinds"*. Lệnh cấm ấy hết hiệu lực ở nhiệm
+vụ này, và đây là chỗ nó được mở.**
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC, và KHÔNG dựng MSI, KHÔNG đụng `publish-desktop/`.** Ba store ghi
+cạnh nhị phân, và bốn file mà cổng của chính repo này miễn trừ đích danh là *"operator-editable"*
+đến từ hai trong ba:
+
+* **`ProductConfigStore`** — `RootDirectory = string.IsNullOrWhiteSpace(directory) ? AppContext.BaseDirectory : directory`,
+  ghi `products.json` và `recipes.json`. 🔴 **Hàm dựng của nó GHI:** `if (!productsExisted) SaveProducts(); if (!recipesExisted) SaveRecipes();` — và chú thích ngay trên nói rõ ý định: *"so a fresh install has real files on disk the moment it boots"*.
+* **`SimulatedEcosystem`** — mặc định `Path.Combine(AppContext.BaseDirectory, "ecosystem")`, ghi
+  `ecosystem-products.json` và `ecosystem-recipes.json`.
+* **`MachineConfigStore`** — `DefaultRoot() => AppContext.BaseDirectory`, ghi
+  `machine-operating-config.json`.
+
+🔴 **Và một bất đối xứng chỉ lộ ra khi liệt kê cả ba: chỉ MỘT trong ba có đường thoát.**
+`MachineConfigStore` có `EnvVarDir = "ST4I_MACHINE_CONFIG_DIR"` và đọc nó. Hai store kia **không có
+biến môi trường nào** và được đăng ký bằng `builder.Services.AddSingleton<ProductConfigStore>()` /
+`AddSingleton<SimulatedEcosystem>()`, tức **hàm dựng không tham số**, tức **luôn** là gốc mặc định.
+Hai store không có đường thoát chính là hai store sinh ra bốn file mà cổng gọi là của vận hành viên.
+
+**Bốn file ấy KHÔNG được git theo dõi** (`git ls-files` không trả về cái nào), nên chúng không nằm
+trong nguồn để `dotnet publish` chép vào `publish-desktop/`, nên bản harvest cả-thư-mục của
+`St4i.Installer.wixproj` **không có gì để mang**. Và `Package.wxs` cài vào
+`StandardDirectory Id="ProgramFiles6432Folder"` → `ST4I` → `Machine Simulator` (`INSTALLFOLDER`), với
+engine ở thư mục con `engine`. **Nên `AppContext.BaseDirectory` của một bản cài mặc định là một thư
+mục dưới `%ProgramFiles%`, và lần khởi động đầu tiên là lần đầu tiên có ai đó GHI vào đó.**
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Config.ProductConfigStore` (hàm dựng,
+`SaveProducts`, `SaveRecipes`, `WriteAllTextAtomic`);
+`St4i.EngineApi.Config.SimulatedEcosystem`; `St4i.EdgeCore.Config.MachineConfigStore.DefaultRoot`
+và `.EnvVarDir`; `St4i.EngineApi.Program` (ba dòng `AddSingleton`);
+`packaging/installer/Package.wxs` (`ProgramFiles6432Folder`, `INSTALLFOLDER`, `EngineDir`);
+`packaging/installer/St4i.Installer.wixproj`; `scripts/verify-suites.sh` (danh sách miễn trừ bốn
+file, trong bracket `suite output directories under watch`).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* `%ProgramFiles%` **thường chỉ đọc với người dùng thường**. Một bản cài mặc định chạy
+dưới một tài khoản không nâng quyền gặp đường ghi ấy **ở hàm dựng của một singleton DI**, tức **trên
+đường khởi động**, trước khi bất kỳ ai yêu cầu một thay đổi nào. Đó là đúng hình dạng mà mục 6 và
+mục 7 của file này đã phải quyết một lần rồi: một lần cài đặt hỏng phát ra ở đâu và tiến trình dừng
+hay đi tiếp. Và nó chạm mục 1/5/11/13 — cả bốn nói về việc một lần khởi động **bình thường** ghi đè
+dữ liệu của vận hành viên.
+*Chiều ngược, và nó là lý do thiết kế này tồn tại:* để bốn file ấy **cạnh nhị phân** khiến chúng
+**tìm thấy được**: một kỹ sư hiện trường mở thư mục cài đặt và thấy đúng cấu hình đang chạy, không
+phải một cây `%ProgramData%` ẩn. Và trên hai cách chạy phổ biến nhất **hôm nay** — chạy từ thư mục
+build, và chạy bản triển lãm — thư mục ấy **ghi được**, nên vấn đề chưa từng nổ. Chuyển gốc sang
+`%ProgramData%` là **đổi chỗ dữ liệu của một bản cài đã có**, tức đúng loại phép **DI CHUYỂN** mà
+file này đã miễn trừ **chỉ cho mục 10**.
+
+**Nếu KHÔNG quyết định.** Ba khả năng ở lại cùng lúc và không cái nào được ghi là đã chọn: bản cài
+mặc định chạy được vì người dùng tình cờ có quyền; hoặc nó hỏng ở khởi động; hoặc nó chạy nhưng
+**bốn file cấu hình không bao giờ bền vững qua một lần khởi động lại**. 🔴 **Và phép đo này tự nêu
+tên chỗ nó không tới được: nó KHÔNG dựng MSI và KHÔNG chạy một bản cài.** Nó đọc `Package.wxs`,
+`.wixproj`, các hàm dựng store và `git ls-files` — bốn thứ đều tra lại được. Câu *"chuyện gì thực sự
+xảy ra khi một người dùng không nâng quyền chạy bản `.msi`"* đòi một dụng cụ thứ ba, và dựng nó là
+một brief khác.
+
+---
+
+## 31. Mười hai artefact build — 7 `.xml` + 5 `.pdb` — đi vào MSI; ba trong số đó đã ở đó từ N-1/N-2
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). 🔴 **Cũng là một trong hai câu hỏi bị các brief liên tiếp CẤM
+mở.** Phép đo đã có từ **2026-08-19 (AF-1)** và nằm ở **§8 của mục 12**, tức **Phần II** — nhưng
+**nó chưa bao giờ là một mục phán được**, nên chưa bao giờ có chỗ để anh phán. Mục này là chỗ ấy.
+
+📎 **Sửa một chữ trong lời giao việc, vì phép đo nói khác.** Câu giao cho nhiệm vụ này nói ba file ấy
+*"không hồ sơ nào ghi"*. **Có hồ sơ**: bảng của AF-1 ở §8 mục 12 liệt kê đủ mười một artefact của
+2026-08-19 và ghi rõ file nào của N-1, file nào của N-2. Cái thiếu **không phải bản ghi** — mà là
+**một mục ở Phần I**, tức một chỗ để quyết định. Đó chính xác là thiếu sót mà file này lập ra để vá,
+và ghi nhầm nó thành "không ai ghi" sẽ làm hỏng chẩn đoán.
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC, con số viết SAU** (bảng của AF-1, giữ nguyên, cộng cái mà đợt 3
+thêm vào):
+
+| file | loại | ai sinh |
+|---|---|---|
+| `Microsoft.Web.WebView2.Core.xml` · `…WinForms.xml` · `…Wpf.xml` | tài liệu | vendor |
+| `St4i.DesktopShell.xml` | tài liệu | **của ta, N-1/N-2** |
+| `engine/St4i.Connector.Abstractions.xml` | tài liệu | **của ta, N-2** |
+| `engine/St4i.EdgeCore.Serial.xml` | tài liệu | **của ta, N-1** |
+| `engine/St4i.EdgeCore.xml` | tài liệu | **của ta, đợt 3 (AF-1, 2026-08-19)** — 1,3 MB, 959 `<member>` lúc đo |
+| `St4i.DesktopShell.pdb` · `engine/St4i.Connector.Abstractions.pdb` · `engine/St4i.EdgeCore.Serial.pdb` · `engine/St4i.EdgeCore.pdb` · `engine/St4i.EngineApi.pdb` | **ký hiệu gỡ lỗi** | của ta |
+
+**Đếm sau: 7 `.xml` + 5 `.pdb` = 12.** Ba trong bảy `.xml` là **của ta và đã ở đó từ N-1/N-2**, tức
+**từ trước cả khi mục 12 được mở**; cái thứ tư của ta là hệ quả trực tiếp của phán quyết
+*"BẬT CỜ, KHÔNG MIỄN TRỪ"*, và `src/St4i.EdgeCore/St4i.EdgeCore.csproj` hôm nay mang
+`<GenerateDocumentationFile>true</GenerateDocumentationFile>`, nên con số hôm nay là **7**, không
+phải 6.
+
+**Cơ chế, hai mắt xích chịu lực và cả hai đều được git theo dõi:** `St4i.Installer.wixproj` harvest
+**cả thư mục** `publish-desktop/**`, và `exclude-shell-and-engine-exe.xslt` loại **đúng hai tên
+`.exe`** — **nó không lọc theo đuôi**. Nên mọi artefact phụ nằm trong thư mục publish đều được cài.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `packaging/installer/St4i.Installer.wixproj`;
+`packaging/installer/exclude-shell-and-engine-exe.xslt`; `packaging/installer/Package.wxs`;
+`src/St4i.EdgeCore/St4i.EdgeCore.csproj` (`GenerateDocumentationFile`);
+`tools/machine-simulator/Directory.Build.props` (khối N-1/N-2 giải thích vì sao cờ ấy bật);
+`docs/owner-decisions.md` §8 của mục 12 (bảng gốc của AF-1).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* mười hai file này đang được **giao cho khách hàng** mà không ai quyết là nên giao.
+🔴 **Năm file `.pdb` là CÙNG một câu hỏi và nhạy hơn `.xml` về dịch ngược** — chúng mang tên phương
+thức, tên biến cục bộ và ánh xạ dòng. Và bảy file `.xml` nay mang **văn xuôi mà bốn đợt vừa viết
+ra**, trong đó có những câu mà chính các đợt ấy đo là **sai** (mục 26) — tức sản phẩm này đang giao
+các khẳng định chưa ai kiểm được tính đúng, dưới dạng tài liệu API.
+*Chiều ngược:* `.xml` **là** lý do cờ được bật: nó là thứ cho một người tích hợp thấy IntelliSense
+trên `St4i.Connector.Abstractions`, và đó là một giá trị thật cho đúng đối tượng mà mục 25 gọi là
+"driver author or integrator". `.pdb` là thứ biến một stack trace của khách hàng thành một số dòng
+đọc được — bỏ chúng đi là **tự làm mù mình lúc hỗ trợ hiện trường**. Và cái giá của việc **giữ
+nguyên** là **không**: không hành vi nào đổi, chỉ có kích thước bản cài.
+
+**Nếu KHÔNG quyết định.** Mười hai file tiếp tục đi vào mọi bản cài, con số tiếp tục lớn dần mỗi lần
+một project bật cờ tài liệu, và **không dụng cụ nào canh nó**. 🔴 **Điều ấy được nêu tên chứ không
+để im:** nửa A của cổng đọc **log build**, nửa B đọc **khai báo trong cây nguồn** — **cả hai là dụng
+cụ về cây nguồn**. Câu hỏi *"cái gì thực sự được cài"* đòi một dụng cụ **thứ ba**, và dựng nó đòi một
+`publish-desktop/` sạch cùng một lần dựng MSI, tức một brief khác. Cho tới lúc đó, con số 12 là
+**đúng tới ngày 2026-08-19 cộng một suy luận về đợt 3**, không phải một phép đo trên một `.msi` vừa
+dựng.
 
 ---
 
