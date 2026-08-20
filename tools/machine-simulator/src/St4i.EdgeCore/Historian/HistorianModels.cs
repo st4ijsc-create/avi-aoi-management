@@ -206,9 +206,10 @@ public sealed record HistorianResultRow(long Id, HistorianResultRecord Record);
 /// <summary>One numeric telemetry sample as it is STORED — the write-side shape, distinct from
 /// <see cref="TelemetrySamplePoint"/>, which is what a chart reads back. The two differ in what they keep,
 /// so the round trip is lossy by design rather than by accident.</summary>
-/// <param name="Metric">The series name, exactly as the driver published it. It is the read-side match key
-/// and nothing normalizes it, so a driver that changes the spelling of a metric starts a new series and
-/// abandons the old one.</param>
+/// <param name="Metric">The series name, exactly as the driver published it. Nothing on the path from the
+/// reading into this store touches it — not trimmed, not case-folded, not mapped — and the read side
+/// compares it for exact equality, so a driver that changes the spelling of a metric starts a new series
+/// and abandons the old one.</param>
 /// <param name="Value">The sample, already narrowed to a double. Samples whose values were not genuinely
 /// numeric never reach this type — they are dropped upstream — so this collection is a filtered view of
 /// what the device published, not a copy of it.</param>
@@ -226,12 +227,15 @@ public sealed record TelemetrySampleRecord(string Metric, double Value, string? 
 /// <param name="EventType">A free string of which exactly three values mean anything to the run-time
 /// computation: <c>Start</c> opens an interval, <c>Stop</c> and <c>Estop</c> close it, all three compared
 /// case-insensitively. Any other value — including <c>EstopReset</c>, which this product does write — is
-/// stored, returned by the run-event query, and IGNORED by the computation. Nothing validates it at any
-/// layer, so a typo becomes a row that silently never closes an interval.</param>
+/// stored, returned by the run-event query, and IGNORED by the computation. Nothing on the write path
+/// validates it: the fleet lifecycle passes four string literals straight through the writer to the store,
+/// and no layer between them compares the value to anything. A typo therefore becomes a row that silently
+/// never opens or closes an interval.</param>
 /// <param name="AtUtc">When the transition happened. It is the sole ordering key for the interval replay, so
 /// two events written out of order are replayed in timestamp order, not in write order.</param>
-/// <param name="Note">Free operator text. Stored, returned, and read by nothing in this codebase — it exists
-/// to be shown to a human later.</param>
+/// <param name="Note">Free operator text, never parsed. It is written, stored and round-tripped, and it
+/// reaches no surface: the only reader of the query that returns it anywhere in this repository is a test.
+/// It is a field written for a screen that does not exist yet.</param>
 public sealed record HistorianRunEvent(string EventType, DateTimeOffset AtUtc, string? Note = null);
 
 /// <summary>The whole vocabulary of the stored-results browse. Every filter here is an EXACT match except

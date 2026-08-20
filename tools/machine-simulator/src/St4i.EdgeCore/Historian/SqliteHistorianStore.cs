@@ -593,12 +593,12 @@ public sealed class SqliteHistorianStore : IHistorianStore
         return results;
     }
 
-    /// <summary>A straight window read over the run-event table, oldest first. It returns the events that
-    /// FALL INSIDE the window, which is a different set from the one the OEE run-time term is computed
-    /// from: that computation deliberately reads every event up to the end of the window so that an
-    /// interval opened before the window began is still known to be open. So this method can return no
-    /// <c>Start</c> for a window the aggregate scores as fully running, and the two are both
-    /// correct.</summary>
+    /// <summary>One statement, one table, no join and no gate — the run-event table has no machine column
+    /// and no provenance column, so there is nothing here to restrict by. The window is a text
+    /// <c>BETWEEN</c> over the same fixed-width ISO-8601 encoding the ordering relies on, inclusive at both
+    /// ends. Contrast this with the query the OEE run-time term issues against the SAME table a few methods
+    /// down: that one has no lower bound at all, deliberately, and the difference is documented on the
+    /// interface.</summary>
     public async Task<IReadOnlyList<HistorianRunEvent>> QueryRunEventsAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);

@@ -21,11 +21,12 @@ namespace St4i.EdgeCore.Models;
 /// </summary>
 /// <param name="Code">The machine's identity everywhere in this product — the value stamped onto every
 /// reading as <c>DeviceReading.MachineCode</c>, sent to the ecosystem server, and stored in the historian's
-/// <c>machine_code</c> column. Every lookup keyed on it in this codebase is
-/// <see cref="StringComparer.OrdinalIgnoreCase"/> (the fleet's live state map, the mapping-profile map
-/// <see cref="St4i.EdgeCore.Mapping.MappingProfileResolver.Build"/> builds, the OEE settings table), so two
-/// roster entries whose codes differ only in case are ONE machine to this product and the second silently
-/// replaces the first in those maps.</param>
+/// <c>machine_code</c> column. Three in-memory maps in this project are keyed on it and all three use
+/// <see cref="StringComparer.OrdinalIgnoreCase"/> — the fleet's live state map, the per-machine map
+/// <see cref="St4i.EdgeCore.Mapping.MappingProfileResolver.Build"/> builds, and the OEE settings table — so
+/// two roster entries whose codes differ only in case are ONE machine to each of them and the second
+/// silently replaces the first. The historian's own columns are compared as stored, which is a different
+/// rule: there, case matters.</param>
 /// <param name="SerialSeed">A serial PREFIX, not a serial number. <c>SimulatorBase.NewReading</c> composes
 /// the reading's serial as <c>"{SerialSeed}-{cycle:D6}"</c>, so the six-digit part distinguishes cycles of
 /// one machine and this value is the only thing that distinguishes the serials of two machines — the cycle

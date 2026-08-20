@@ -67,8 +67,8 @@ public interface IHistorianStore
     /// <param name="machineCode">The machine, matched exactly. Samples are stored with the machine code
     /// copied onto them, so this does not join back to the result row.</param>
     /// <param name="metric">The metric name, matched exactly and case-sensitively as stored. Metric names
-    /// are whatever the driver emitted; nothing normalizes them, so a driver that renames a metric starts a
-    /// new series rather than continuing the old one.</param>
+    /// are whatever the driver emitted and nothing on the path into the store alters them, so a driver that
+    /// renames a metric starts a new series rather than continuing the old one.</param>
     /// <param name="from">Start of the window, inclusive.</param>
     /// <param name="to">End of the window, inclusive. Both ends are compared against the sample's EVENT
     /// time, which is copied from the parent reading — not against when the sample was written.</param>
@@ -97,9 +97,17 @@ public interface IHistorianStore
     Task<OeeInputAggregate> AggregateForOeeAsync(string machineCode, DateTimeOffset from, DateTimeOffset to, CancellationToken ct, bool includeFabricated = false);
 
     /// <summary>The line-state transitions in a window, oldest first — the raw material behind the run-time
-    /// term, exposed so a caller can show the operator WHY a window scored what it did. There is no machine
-    /// filter because the events have no machine, and no provenance filter because they have no provenance
-    /// either: a demo session and a real shift write indistinguishable rows here.</summary>
+    /// term. There is no machine filter because the events have no machine, and no provenance filter because
+    /// they have no provenance either: a demo session and a real shift write indistinguishable rows here.
+    /// <para>🔴 It has NO CALLER outside tests. The events are written (the fleet lifecycle records
+    /// Start/Stop/Estop/EstopReset), they are read by the OEE aggregate through a different code path, and
+    /// this method — the only way to see them AS events — is reachable from no route, no view and no
+    /// service in this repository. So the answer to "why did this window score what it did" is stored,
+    /// queryable, and currently unreachable by anyone but a test.</para>
+    /// <para>The set it returns is also not the set the aggregate uses: this returns events INSIDE the
+    /// window, while the run-time computation reads every event up to the end of it so that an interval
+    /// opened earlier is still known to be open. This method can therefore return no <c>Start</c> for a
+    /// window the aggregate scores as fully running, and both are correct.</para></summary>
     /// <param name="from">Start of the window, inclusive.</param>
     /// <param name="to">End of the window, inclusive.</param>
     /// <param name="ct">Cancels the read.</param>
