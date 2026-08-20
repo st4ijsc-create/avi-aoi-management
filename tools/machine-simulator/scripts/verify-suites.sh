@@ -5439,6 +5439,29 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # `Site.UnsBridge` republishes that spine to a SYNAPSE Site's broker off-box. The sentence was true when
 # written and was falsified by G2-2; it is quoted verbatim and withdrawn inside the file it lives in,
 # with the surviving half (this is the ST4I INGEST seam, one of two egress paths) stated beside it.
+#
+# 🔴 THE SELF-CHECK RAN TWICE AND THE SPLIT IS THE FINDING, NOT THE RATE. 62 warnings became 199
+# sentences. Round 1 filtered on universal/existence NEGATIONS (stage 5's rule (i), turned on this
+# task's own output): 112 flagged, 7 corrected, 2 of them outright false -- and both false ones failed
+# the same way, because a grep for a MEMBER'S NAME cannot see a SERIALIZER, which reads every member and
+# names none. `UnsPublisher` serializes the whole `CanonicalEnvelope` as the retained semantic mirror,
+# so `Path` and `IdempotencyKey` DO leave the box, for every reading kind. Round 2 went after the shape
+# round 1's filter cannot see -- an asserted PURPOSE or MECHANISM -- and corrected 6 more, four sharing
+# one root: `ITransport.HeartbeatAsync` HAS NO PRODUCTION CALLER and there is no heartbeat timer in this
+# repository. That mechanism was not invented from nothing; it was PROMOTED out of `AutoTransport`'s own
+# doc comment, which hedges it honestly as "typically a background timer, per the INTENDED
+# architecture". Taking a neighbouring doc comment as a premise, in a tree where stage 4 measured 101
+# false published claims, is the same error as recalling instead of measuring. 13 of 199 total.
+# FOR STAGE 8: one mechanical filter is not a round. Run the negation filter, then ask of every sentence
+# "what does this assert about a caller, a timer or a user, and can I name it?"
+#
+# 🔴 SIX CODE OBSERVATIONS WERE STOPPED AND REPORTED, NONE FIXED AND NONE OPENED AS AN ITEM. The one
+# with an operational consequence today: the Demo gate guards the MODE and not the fabricator.
+# `PUT /v1/mode` refuses Demo with a 400 when `DemoModeGate.Enabled` is false; `POST /v1/scenario` with
+# `networkOutage` is not gated by it at all and points the running fleet's transport at a lossy
+# `DemoTransport`, while `GET /v1/mode` keeps answering the mode the operator selected. It is audited
+# (`scenario.apply`) and Engineer-only; it is not refused. Both routes are outside this stage's twelve
+# files. See the report's §7 for the ranked list.
 EXPECT_WARNINGS=440
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."

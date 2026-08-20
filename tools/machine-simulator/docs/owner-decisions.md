@@ -1059,6 +1059,22 @@ của một SYNAPSE Site **ngoài hộp**. Câu ấy **đúng lúc được vi�
 trích nguyên văn và rút ngay tại chỗ, kèm nửa còn sống: đây là **seam INGEST của ST4I**, một trong
 **hai** đường ra.
 
+🔴 **VÒNG TỰ KIỂM LÀ MỘT MỤC GIAO NỘP, NÓ ĐÃ CHẠY HAI LẦN, VÀ CHỖ CHIA ĐÔI MỚI LÀ PHÁT HIỆN.** 62 cảnh
+báo trở thành **199 câu**. **Vòng 1** lọc theo **phủ định phổ quát/tồn tại** (luật (i) của đợt 5, quay
+vào sản phẩm của chính mình): 112 câu bị gắn cờ, **7 câu sửa — 2 SAI HẲN**. Cả hai câu sai ấy hỏng vì
+**cùng một lý do**: phép grep theo **TÊN THÀNH VIÊN** không nhìn thấy **một bộ SERIALIZER**, thứ đọc
+*mọi* thành viên và *không nêu tên* cái nào — `UnsPublisher` tuần tự hoá **trọn cả record**
+`CanonicalEnvelope` làm gương ngữ nghĩa **giữ lại**, nên `Path` và `IdempotencyKey` **có** rời khỏi hộp,
+với **mọi loại reading kể cả telemetry**. **Vòng 2** đi tìm đúng thứ bộ lọc vòng 1 **không thể thấy** —
+một **MỤC ĐÍCH** hoặc một **CƠ CHẾ** được khẳng định — và sửa **6 câu nữa**, bốn trong đó **cùng một
+gốc**: `ITransport.HeartbeatAsync` **KHÔNG có một nơi gọi nào trong sản phẩm** và **không có heartbeat
+timer nào trong repo này**; tôi đã **nâng lời rào của chính chú thích `AutoTransport`** (*"typically a
+background timer, per the INTENDED architecture"*) **thành một khẳng định về cái đã dựng**. 🔴 **Lấy một
+chú thích bên cạnh làm tiền đề, trong một cây mã mà đợt 4 đã đo được 101 khẳng định đã công bố là SAI,
+là đúng cái lỗi "nhớ thay vì đo".** Tổng: **13 trong 199**. Chỗ chia **7 rồi 6** nói điều mà tỉ lệ không
+nói: **một bộ lọc máy móc duy nhất luôn báo thiếu** — và đó là cách đọc trung thực cho **mọi** tỉ lệ
+thấp trong chuỗi này, kể cả của đợt này.
+
 **Việc còn nợ sau đợt 7, nêu tên chứ không làm:**
 * **221 chỗ trống bao phủ của ta** (192 CS1591 + 29 CS1573) — **đợt 8, đợt bao phủ CUỐI CÙNG**. **Đo
   lại.** Phân bố theo thư mục, đo trên cây commit này: `Config/` 50 (6 file) · `Drivers/Modbus/` 46
@@ -1075,10 +1091,22 @@ trích nguyên văn và rút ngay tại chỗ, kèm nửa còn sống: đây là
   lệnh đè nhắm ba mã đã về 0** — cả ba y như sau đợt 4, 5 và 6, không cái nào được đợt này đụng tới.
 * 🔴 **Ba khuyết tật MÃ của đợt 6 vẫn chờ chủ sở hữu, không đụng, không mở lại.** Đợt này không
   chạm vào một dòng nào của `OeeCalculator`, `HistorianWriter` hay `SqliteHistorianStore`.
-* 🔴 **Bốn quan sát về MÃ mà đợt này DỪNG LẠI để báo thay vì tự sửa**, và **không cái nào được mở
-  thành mục** — xem `.superpowers/sdd/item12-stage7/task-1-report.md` §7. Cái nặng nhất:
-  `TransportCoordinator.Auto` là một property **công khai mà KHÔNG MỘT nơi nào trong repo đọc** — không
-  mã sản phẩm, không bài kiểm — và `TransportCoordinator.Demo` chỉ được nhắc **trong một chú thích**.
+* 🔴 **SÁU quan sát về MÃ mà đợt này DỪNG LẠI để báo thay vì tự sửa**, và **không cái nào được mở
+  thành mục** — xem `.superpowers/sdd/item12-stage7/task-1-report.md` §7, nơi chúng được **xếp hạng**
+  để người đọc khỏi phải tự cân. **Cái nặng nhất, và nó có hậu quả vận hành ngay hôm nay: cổng Demo
+  canh MỘT cửa, còn route scenario là cửa kia.** `PUT /v1/mode` **từ chối** `Demo` bằng 400 khi
+  `DemoModeGate.Enabled` tắt; `POST /v1/scenario` với `networkOutage` **không bị cổng ấy canh ở đâu
+  cả**, và nó trỏ transport của fleet đang chạy thẳng vào một `DemoTransport` hao hụt — mọi reading
+  được **ack tại chỗ**, **không gì tới máy chủ hệ sinh thái**, trong khi `GET /v1/mode` vẫn trả về
+  đúng chế độ vận hành viên đã chọn (nó đọc `TransportCoordinator.Mode`, và đường outage cố ý không
+  chạm vào đó). **Nửa giảm nhẹ, viết ngay cạnh:** việc ấy **có ghi audit** (`scenario.apply`, mang cả
+  `networkOutage`) và **đòi policy Engineer** — nó không nặc danh và không vô đặc quyền; nó chỉ
+  **không bị từ chối**. Quyết cổng ấy có nên phủ cả route scenario hay không là **quyết định về việc
+  cái cờ ấy NGHĨA LÀ GÌ** — *"đừng chào chế độ Demo"* hay *"đừng bao giờ bịa dữ liệu trên host này"* —
+  và hai cách đọc cho hai câu trả lời khác nhau. **Cả hai route đều nằm NGOÀI mười hai file đợt này
+  trả.** Thứ nhì: `TransportCoordinator.Auto` là một property **công khai mà KHÔNG MỘT nơi nào trong
+  repo đọc** — không mã sản phẩm, không bài kiểm — và `TransportCoordinator.Demo` chỉ được nhắc
+  **trong một chú thích**.
 * 🔴 **Hai ca *"không có gì để nói ngoài cái tên"* ĐƯỢC NÊU TÊN thay vì lấp**: `MappingProfile.Name`
   và `MappingProfile.DeviceClass`. Cả hai được nạp từ file preset rồi **không mã nào trên đường
   chuẩn hoá đọc tới**; thứ duy nhất đọc chúng là một bài kiểm đóng gói. Cái viết được về chúng
