@@ -13,11 +13,37 @@ namespace St4i.EdgeCore.Uns.Sparkplug;
 /// </summary>
 public enum SparkplugDataType : uint
 {
+    /// <summary>Tahu <c>DataType.Int32</c> = 3. Encodes into <c>Metric</c> field 10 as a varint, via
+    /// <see cref="Convert.ToInt32(object)"/> — so the boxed value must be convertible, and a value that is
+    /// not throws out of the encoder rather than being coerced to a default. Decodable but never produced:
+    /// no metric this repository builds declares it — an integral telemetry value is widened to
+    /// <see cref="Int64"/> instead.</summary>
     Int32 = 3,
+
+    /// <summary>Tahu <c>DataType.Int64</c> = 4. Field 11, varint. Produced for three things and only
+    /// three: the <c>bdSeq</c> lifecycle metric, a reading's <c>cycleCounter</c>, and an integral telemetry
+    /// sample.</summary>
     Int64 = 4,
+
+    /// <summary>Tahu <c>DataType.Float</c> = 9. Field 12, fixed-32. Decodable but never produced — a
+    /// single-precision telemetry sample is widened to <see cref="Double"/> before it is added, so no
+    /// metric this repository emits ever declares this type.</summary>
     Float = 9,
+
+    /// <summary>Tahu <c>DataType.Double</c> = 10. Field 13, fixed-64. The type carried by every
+    /// <c>Metrics</c> entry of a reading, and by any telemetry sample that is a <see langword="double"/> or
+    /// a <see langword="float"/>.</summary>
     Double = 10,
+
+    /// <summary>Tahu <c>DataType.Boolean</c> = 11. Field 14, varint. Produced only for a telemetry sample
+    /// whose CLR value is already a <see langword="bool"/>.</summary>
     Boolean = 11,
+
+    /// <summary>Tahu <c>DataType.String</c> = 12. Field 15, length-delimited. The one member whose encoder
+    /// does not throw on an unusable value: a null is written as the EMPTY STRING and anything else as its
+    /// <see cref="object.ToString"/>. It is also the catch-all on the producing side — a verdict, a
+    /// measurement point's result, and any telemetry sample whose CLR type is none of the numeric ones
+    /// above all arrive here as text.</summary>
     String = 12,
 }
 

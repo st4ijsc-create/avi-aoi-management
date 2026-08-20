@@ -25,6 +25,17 @@ public sealed class EdgePipeline
     private readonly Func<string, MappingProfile?>? _profileResolver;
     private readonly IUnsPublisher? _uns;
 
+    /// <param name="driver">The reading source this pipeline drains. Required. Its lifetime is NOT owned
+    /// here — <see cref="EdgePipeline"/> has no disposal path at all, so whoever built the driver disposes
+    /// it.</param>
+    /// <param name="profile">The mapping profile used when <paramref name="profileResolver"/> is absent or
+    /// returns null for a machine code. Required, and it is the FALLBACK rather than the default: with a
+    /// resolver present, most readings never touch it.</param>
+    /// <param name="transport">The seam every normalized envelope is sent through. Required. A failed ack
+    /// from it, or an exception out of it, is recorded per reading and never ends the loop.</param>
+    /// <param name="bus">Where one <see cref="ApiTraceEvent"/> per reading is published, for the trace
+    /// pane. Required — this pipeline has no "no observability" mode; a caller that wants none passes a bus
+    /// nobody subscribes to.</param>
     /// <param name="profileResolver">G2-1 — optional (defaults to <see langword="null"/>, so every
     /// pre-existing call site/test that constructs an <see cref="EdgePipeline"/> without one keeps
     /// compiling and behaving byte-for-byte unchanged — every reading normalizes through the single

@@ -12,8 +12,22 @@ namespace St4i.EdgeCore.Config;
 /// </summary>
 public sealed class PersistedFleetSettings
 {
+    /// <summary>The ecosystem server's base URL as the operator entered it. Stored verbatim: this type
+    /// performs no trailing-slash normalization, no scheme check and no parse at all, so whatever
+    /// normalizing a request path needs is done by whoever builds the request. Empty string, never null,
+    /// for a record that was written before a server was configured.</summary>
     public string ServerUrl { get; set; } = "";
+
+    /// <summary>The machine code this host identifies itself as to the server. Empty string, never null.
+    /// The one writer — <c>FleetCore.UpdateSettings</c> — assigns it under the lock with no reconciliation
+    /// against <c>fleet.json</c>'s roster, so this value is not a promise that a machine with that code
+    /// exists locally.</summary>
     public string MachineCode { get; set; } = "";
+
+    /// <summary>Whether the server's TLS certificate is validated. 🔴 Defaults to <see langword="true"/>
+    /// and that default is load-bearing rather than cosmetic — a settings file that predates this field, or
+    /// one whose JSON omits it, deserializes to CERTIFICATE VALIDATION ON. The insecure state is only ever
+    /// reached by an explicit <c>false</c> somebody wrote.</summary>
     public bool VerifyTls { get; set; } = true;
 }
 

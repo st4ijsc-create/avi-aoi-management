@@ -5462,7 +5462,77 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # `DemoTransport`, while `GET /v1/mode` keeps answering the mode the operator selected. It is audited
 # (`scenario.apply`) and Engineer-only; it is not refused. Both routes are outside this stage's twelve
 # files. See the report's §7 for the ranked list.
-EXPECT_WARNINGS=440
+#
+# ══ TASK AN-1 (.superpowers/sdd/item12-stage8/task-1-brief.md) — ITEM 12 STAGE 8 ══════════════════════
+# 440 -> 328. THE FOURTH AND LAST STAGE THAT PAYS BY WRITING -- and the first that deliberately hands
+# something over UNPAID, with a measurement in place of the sentences.
+#
+# 🔴 THE REMAINDER WAS REGROUPED WHOLE BEFORE ANY NUMBER WAS NAMED, and AM-1's forecast reproduced
+# exactly. One `-t:Rebuild` of the whole solution at the base commit, 221 warnings partitioned by
+# directory: Config 50 (6 files) · Drivers/Modbus 46 (10) · Drivers/Simulators 27 (11) · Uns 19 (4) ·
+# Drivers/OpcUa 17 (5) · Site 12 (2) · Engine 11 (3) · Fleet 8 (1) · Drivers/HotFolder 7 (2) ·
+# Drivers/Mqtt 7 (2) · Infrastructure 6 (3) · Uns/Sparkplug 6 (1) · Drivers 5 (1). All THIRTEEN rows
+# match AM-1's paragraph unit for unit -- the second consecutive stage able to say that of its
+# predecessor. Split by the driver-family boundary: 109 inside `Drivers/`, 112 outside. AM-1's forecast
+# of 112 is therefore CONFIRMED by measurement rather than carried; it was re-derived, not believed.
+#
+# 🔴 WHAT WAS PAID, PER FILE, 112 IN TWENTY FILES -- costed BEFORE writing, re-measured after:
+#     Config/MachineConfigModels.cs 33 · Uns/UnsOptions.cs 10 · Fleet/MachineState.cs 8 ·
+#     Engine/ScenarioAwareDriver.cs 6 · Site/BridgeSpool.cs 6 · Site/BridgeStatus.cs 6 ·
+#     Uns/Sparkplug/SparkplugPayload.cs 6 · Uns/UnsTopicBuilder.cs 6 · Config/MachineParameterSchema.cs 5 ·
+#     Config/ModbusMultidropRegistration.cs 5 · Engine/EdgePipeline.cs 4 · Config/FleetSettingsStore.cs 3 ·
+#     Config/ConnectorsConfig.cs 2 · Config/DemoModeGate.cs 2 · Infrastructure/EventBus.cs 2 ·
+#     Infrastructure/FleetConfig.cs 2 · Infrastructure/ResilienceProbe.cs 2 · Uns/UnsBroker.cs 2 ·
+#     Engine/EdgeAgentPipelines.cs 1 · Uns/UnsPublisher.cs 1
+# The cluster is not a theme, it is a COMPLEMENT: everything in the remainder that is not a driver. The
+# boundary is checkable rather than argued -- SEVEN directories taken WHOLE (Config/, Uns/,
+# Uns/Sparkplug/, Site/, Engine/, Fleet/, Infrastructure/) and every one of the seven is left at a
+# residue of ZERO. After this stage the whole outstanding population is `Drivers/` and nothing else.
+#
+# 🔴 328 IS MEASURED, NOT SUBTRACTED, AND THE FIRST RUN STOOD AGAIN. `MSBUILDDISABLENODEREUSE=1 dotnet
+# build -t:Rebuild --nologo` over the whole solution, SDK 10.0.302: 15/15 compilations,
+# `Build succeeded.`, `0 Error(s)`, `328 Warning(s)`, first attempt. Second stage in a row without the
+# `_wpftmp` CS2001 discard, and it is recorded the same way AM-1 recorded it -- evidence about THIS run,
+# not evidence that the shape has gone. 440 - 112 = 328 is arithmetic that AGREES and is reported as a
+# result. 328 was read out of the partition (VENDORED 185 / OURS 143).
+#   🔴 AND 328 COLLIDES WITH THIS FILE'S OWN HISTORY, which is why the literal was grepped and CLASSIFIED
+#   before it was written here: `OURS CS1591` was 328 after stage 5 and appears as that figure in AH-1's
+#   and AL-1's blocks above and in Directory.Build.props. Those occurrences are records of what a NAMED
+#   task measured and are left exactly as written. This is the third time in this chain a moving figure
+#   has collided with an unrelated one (AF-1's rule; AM-1 found ST4I_MODBUS_PORT = 502).
+#
+# 🔴 TWO ROWS MOVED, THE SAME TWO, AND BOTH FELL: `OURS CS1591 192 -> 90` (-102) and
+# `OURS CS1573 29 -> 19` (-10). Sixteen rows before, sixteen after; nothing reached zero. The eight
+# VENDORED rows did not move one unit. 10 of the 112 were paid by COMPLETING `<param>` sets that were
+# already partial -- 5 on ModbusMultidropRegistration.RegisterAll's second overload, 4 on EdgePipeline's
+# constructor, 1 on EdgeAgentPipelines.RunAsync -- and every one was extended by INSERTING tags beside
+# the existing ones. NO block was rewritten, which is the operation that un-paid a member in stage 6.
+# ZERO new CS1573 were created.
+#
+# 🔴 THE DIFF CLAIM IS STAGE 5's AND STAGE 7's SHAPE, FOR THE PREDICTED REASON. Over `src/`: 611 added,
+# 7 removed. FOUR removed `///` lines, all four the old `SparkplugMsgType` summary, quoted VERBATIM
+# inside the withdrawal block that replaces them. THREE removed non-`///` lines, all three one-line enum
+# declarations re-laid out so their members can carry doc comments (ParameterValueKind, AdjustmentScope,
+# ConfigProvenance), each with its member sequence identical name-for-name and order-for-order -- which
+# matters twice, because enum order is the underlying value and `ConfigProvenance` is also a wire
+# vocabulary. Outside `///` lines, blank separators and those three re-layouts, ZERO changed lines in
+# either direction.
+#
+# 🔴 A PUBLISHED CLAIM INSIDE THE CLUSTER WAS REFUTED BY MEASUREMENT AND RETIRED IN PLACE, NOT FIXED IN
+# CODE. `SparkplugMsgType`'s summary said the four lifecycle members "are landed here only as
+# topic-building targets" and that "G2-2's own wiring only ever produces DDATA". Measured: G2-3 wired
+# NBIRTH/NDEATH to FleetCore's real Start/Stop/E-stop transitions, so two of its three parts are false.
+# The third is TRUE and was re-measured rather than assumed: the strings `WithWill`/`LastWill` occur in
+# no `.cs` file in this repository, so there is still no MQTT Will and an abrupt kill emits no NDEATH.
+#
+# 🔴 STAGE 8 DOES NOT REACH ZERO, AND THAT IS THE DELIVERABLE RATHER THAN A SHORTFALL. The 109 that
+# remain are the driver families. AL-1 named that surface as the place where "nothing to say beyond the
+# name" is the honest answer and said a stage that takes it owes a FINDING; AM-1 showed a stage cannot
+# both pay the remainder and owe a finding on part of it. This stage pays the 112 and measures the 109
+# instead of writing them. THE MEASUREMENT REFUTES THE PREMISE IT WAS ASKED TO CONFIRM -- see the
+# EXPECT_WARNING_LEDGER block below for the classification, the read-surface census and the price of
+# each direction. Item 12 STAYS IN PART II and leaves it on a RULING, not on a count reaching zero.
+EXPECT_WARNINGS=328
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
@@ -5900,8 +5970,85 @@ warning_ledger() {
 # stage and 109 of its 221 are the driver families AL-1 named as the place where "nothing to say beyond
 # the name" is the answer -- it owes a FINDING there, not 109 sentences, and item 12 does not leave PART
 # II on a stage that filled them. No figure here may be subtracted from -- re-measure.
-EXPECT_WARNING_LEDGER="OURS CS1573 29
-OURS CS1591 192
+# [🔴 "WHAT STAGE 8 STILL OWES ... 221 ... 192 CS1591 + 29 CS1573" WITHDRAWN 2026-08-20 by task AN-1 (item
+#  12 stage 8), which re-measured the paragraph before moving it -- and the re-measurement REPRODUCED all
+#  THIRTEEN of its directory figures exactly, the second consecutive stage able to say that of its
+#  predecessor. 109 remain, in those same two rows: 90 CS1591 + 19 CS1573, and they are `Drivers/` and
+#  nothing else. 🔴 They are NOT owed to a stage 9. They are owed to a RULING -- see the AN-1 block below
+#  and docs/owner-decisions.md §13. The directory line above is superseded by the one in that block.]
+#
+# ══ THE ROWS MOVED A SIXTH TIME, BY TASK AN-1 (item 12 stage 8, 2026-08-20) ════════════════════════════
+#
+# 🔴 THE ENUMERATION FIRST, THE COUNTS AFTER — twelfth time this file has watched that rule earn its keep,
+# and this stage owes it TWICE: once for what it paid and once for what it deliberately did not. What
+# changed, listed:
+#     MOVED, OURS  CS1591 192 -> 90    — one row, -102, PAID by WRITING documentation
+#     MOVED, OURS  CS1573  29 -> 19    — one row,  -10, PAID by COMPLETING `<param>` sets
+#     MOVED        none other. Not one of the other fourteen rows changed value, in either bucket.
+# No row was added and no row reached zero, so the table still holds SIXTEEN rows.
+# VENDORED 185 / OURS 143 = 328.
+#
+# 🔴 THE 112 ARE ONE COMPLEMENT, NOT ONE THEME, AND HERE IS THE WHOLE OF IT: twenty files across seven
+# directories, all seven taken WHOLE and all seven left at a residue of ZERO -- Config/ 50 (6 files),
+# Uns/ 19 (4), Site/ 12 (2), Engine/ 11 (3), Fleet/ 8 (1), Infrastructure/ 6 (3), Uns/Sparkplug/ 6 (1).
+# Per file, see the block at EXPECT_WARNINGS. 102 CS1591 + 10 CS1573.
+#
+# 🔴 THE EIGHT VENDORED ROWS DID NOT MOVE ONE UNIT — the assertion every stage since 4 has had to pass.
+# CS1573 8 · CS1591 95 · CS8600 5 · CS8601 2 · CS8603 2 · CS8604 1 · CS8618 35 · CS8625 37 = 185,
+# identical to stages 3, 4, 5, 6 and 7. This stage edited twenty files, none of them the vendored SDK file.
+#
+# ══ WHAT IS LEFT, AND WHY IT IS A QUESTION RATHER THAN A DEBT ════════════════════════════════════════
+#
+# 🔴 109 COVERAGE WARNINGS REMAIN AND THEY ARE ALL `Drivers/`: Modbus 46 (10 files) · Simulators 27 (11) ·
+# OpcUa 17 (5) · HotFolder 7 (2) · Mqtt 7 (2) · Drivers 5 (1). 90 CS1591 + 19 CS1573. They fall on
+# NINETY-SEVEN distinct members: 90 with no doc comment at all, plus 7 whose `<param>` set is partial
+# (those 7 account for the 19 CS1573). The member count is the honest unit here and it is not the warning
+# count -- a scalar over a set nobody has enumerated is not a fact, so the full ninety-seven are listed
+# in .superpowers/sdd/item12-stage8/task-1-report.md §6 before any of these numbers is used.
+#
+# 🔴 AL-1's PREMISE WAS RE-MEASURED AND IT DID NOT SURVIVE. Stage 6 measured this surface as "host-internal
+# plumbing whose members mostly cannot be described beyond their names" and named four exemplars; stage 7
+# carried that forward and this stage's brief was written on it. Checked member by member against the five
+# tests (an invariant, a unit, a value domain, a precondition, a failure mode):
+#     Class 1 — a failure mode or a precondition a caller can get wrong ............ 84
+#     Class 2 — a unit, a default or a value domain, and no failure mode ........... 13
+#     Class 3 — NOTHING beyond the name ............................................. 0
+# Two of AL-1's four exemplars survive (`ModbusOptions.Host`, `ModbusOptions.Port` are real and are both
+# Class 2). One does not exist as an unpaid member at all: `OpcUaConnectorFactory.Create` already carries
+# a doc comment and emits no warning. And "eleven simulator constructors" is a count of FILES read as a
+# count of CONSTRUCTORS -- `Drivers/Simulators/` has 11 files and EIGHT simulator classes, so eight
+# concrete constructors are owed plus one `protected` base constructor. That is this file's own law
+# failing in the other direction, inside the record that this file keeps.
+#
+# 🔴 THE OWNER'S QUESTION IS "SHOULD THEY BE PUBLIC", AND FOR MOST OF THEM THE QUESTION IS NOT AVAILABLE.
+# Measured against the read surface, at a pinned SHA, over the whole tree including the paths this sparse
+# checkout does not have on disk:
+#     A1  implementations/overrides of a PUBLIC interface or abstract member .... 41  `internal` = compile error
+#     A2  enum members ......................................................... 5   C# forbids a modifier
+#     B   read by System.Text.Json and by no named call site .................... 9   `internal` COMPILES,
+#                                                                                    then silently parses
+#                                                                                    to defaults
+#     C0  reached only by St4i.EngineApi, which already holds the one IVT ....... 2   free
+#     C1  reached by NOTHING outside src/St4i.EdgeCore/ ........................ 15   free, and removes
+#                                                                                    dead public surface
+#     C2  reached only from TEST assemblies .................................... 16   needs a new IVT to a
+#                                                                                    test project
+#     C3  reached from a peer PRODUCTION assembly with no IVT ................... 9   needs an IVT to a
+#                                                                                    peer production
+#                                                                                    assembly
+# 41 + 5 + 9 + 2 + 15 + 16 + 9 = 97. St4i.EdgeCore carries exactly ONE InternalsVisibleTo, to
+# St4i.EngineApi (src/St4i.EdgeCore/AssemblyInfo.cs), and that file argues in its own prose both against
+# widening to a peer production assembly and against restoring the St4i.EdgeCore.Tests entry that GĐ3
+# closeout WI-1 Part A deliberately removed. So C2 and C3 are not free: they are paid in the currency that
+# file spends most carefully.
+#
+# 🔴 WHAT THIS MEASUREMENT DOES NOT ANSWER, said plainly: it does not say whether to narrow anything. It
+# prices each direction. Documenting costs ~109 doc elements; at stage 7's own measured rate (62 warnings
+# -> 199 sentences, 13 of them wrong across two self-check rounds) that is roughly 350 sentences of which
+# ~23 would be false on first write. Narrowing is unavailable for 46, silently wrong for 9, free for 17,
+# and costs a new InternalsVisibleTo for 25. NO ACCESS LEVEL AND NO NAME WAS CHANGED BY THIS STAGE.
+EXPECT_WARNING_LEDGER="OURS CS1573 19
+OURS CS1591 90
 OURS CS8601 7
 OURS CS8604 14
 OURS CS8767 2

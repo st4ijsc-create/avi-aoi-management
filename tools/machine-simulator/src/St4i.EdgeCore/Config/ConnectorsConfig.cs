@@ -11,8 +11,18 @@ namespace St4i.EdgeCore.Config;
 /// exception, see <see cref="ConnectorsConfig.Load"/>'s own remarks).</summary>
 public sealed class ConnectorsConfigException : Exception
 {
+    /// <summary>The <c>connectors.json</c> path that failed to parse, kept as a field as well as being
+    /// interpolated into <see cref="Exception.Message"/> — a caller that wants to name the file in its own
+    /// wording (a startup banner, an operator dialog) reads this rather than parsing it back out of the
+    /// message text.</summary>
     public string Path { get; }
 
+    /// <summary>Builds the exception. <see cref="Exception.Message"/> is composed here as
+    /// <c>"{message} (path: {path})"</c>, so a caller must not append the path again.</summary>
+    /// <param name="path">The offending file, stored verbatim on <see cref="Path"/>.</param>
+    /// <param name="message">What was wrong, without the path — it is appended for you.</param>
+    /// <param name="inner">The underlying parser failure, or null when the shape was wrong rather than the
+    /// syntax (the root not being an array).</param>
     public ConnectorsConfigException(string path, string message, Exception? inner = null)
         : base($"{message} (path: {path})", inner)
     {

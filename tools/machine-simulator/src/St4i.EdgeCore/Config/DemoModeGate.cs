@@ -40,8 +40,19 @@ namespace St4i.EdgeCore.Config;
 /// </summary>
 public sealed class DemoModeGate
 {
+    /// <summary>The environment variable this gate reads: <c>ST4I_DEMO_ENABLED</c>. That spelling is
+    /// duplicated, not shared, in <c>St4i.DesktopShell/MainWindow.xaml.cs</c>'s own <c>DemoEnabledEnvVar</c>
+    /// const — see the class doc comment for why that copy cannot collapse into this one. The two must be
+    /// edited together; nothing asserts they agree.</summary>
     public const string EnvVarName = "ST4I_DEMO_ENABLED";
 
+    /// <summary>Whether Demo mode is permitted on this deployment. Fixed at construction — this gate never
+    /// re-reads the environment, so changing the variable after startup has no effect until the process
+    /// restarts. False is the safe default and covers unset, blank and any non-truthy value. 🔴 What it
+    /// gates is narrower than the name suggests: it governs the startup mode and
+    /// <c>PUT /v1/mode</c>'s acceptance of <c>Demo</c>, and does NOT gate
+    /// <c>POST /v1/scenario</c>'s network-outage path, which installs a fabricating transport without
+    /// consulting this flag at all.</summary>
     public bool Enabled { get; }
 
     /// <summary>Normal entry point — reads the real process environment variable.</summary>

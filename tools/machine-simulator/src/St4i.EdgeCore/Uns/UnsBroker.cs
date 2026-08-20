@@ -21,6 +21,10 @@ public sealed class UnsBroker : IAsyncDisposable
     private MqttServer? _server;
     private volatile bool _disposed;
 
+    /// <summary>Records the port; binds nothing. No socket is opened and no validation happens until
+    /// <see cref="StartAsync"/> — so an already-occupied port is discovered there, not here.</summary>
+    /// <param name="port">The loopback TCP port to listen on. Not range-checked and not defaulted: callers
+    /// pass <see cref="UnsOptions.BrokerPort"/>, which is where the "not 1883" reasoning lives.</param>
     public UnsBroker(int port)
     {
         _port = port;
@@ -47,6 +51,11 @@ public sealed class UnsBroker : IAsyncDisposable
         _server = server;
     }
 
+    /// <summary>Stops the listener and disposes it. Idempotent — a second call returns immediately. The
+    /// stop is BEST-EFFORT: an exception from the MQTTnet server's own shutdown is caught and discarded,
+    /// unlogged, because this class holds no log callback; the underlying server is disposed either way.
+    /// After this, <see cref="StartAsync"/> throws <see cref="ObjectDisposedException"/> — an instance is
+    /// not restartable.</summary>
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;

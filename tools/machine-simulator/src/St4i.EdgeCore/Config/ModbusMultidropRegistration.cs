@@ -127,6 +127,24 @@ public static class ModbusMultidropRegistration
     /// 🔴 Task D-7a — the same fan-out, but the factory is built <b>from</b> a bus-wide fact the caller cannot
     /// know until the document has been parsed.
     /// </summary>
+    /// <param name="multidropMapJson">The bus's register-map document — either shape
+    /// <see cref="ModbusMultidropMap"/> accepts. Same argument as the other overload's, and the same
+    /// failure posture: a document that will not parse returns 0 rather than throwing.</param>
+    /// <param name="busInstanceId">The instance id the operator named this BUS under. Each device's own id
+    /// is derived from it by <see cref="ModbusMultidropMap.DeviceInstanceId"/>. This overload derives the
+    /// sweep namespace from it too, so the value decides which existing registrations are removed as well
+    /// as which are added.</param>
+    /// <param name="registry">The registry to populate, and on this overload also the registry SWEPT: one
+    /// binding snapshot is taken before anything mutates, ghosts this bus no longer declares are
+    /// unregistered, and only then is the new set registered. So a map that ends up registering nothing can
+    /// still have removed entries — the return value counts registrations, never removals.</param>
+    /// <param name="logWarning">Every refusal is reported here, naming the incumbent where there is one.
+    /// Optional, and may be null together with <paramref name="logError"/>: a mechanism that only works
+    /// when somebody is watching cannot be tested with nobody watching.</param>
+    /// <param name="logError">The exception-carrying channel, and it has exactly ONE call site on this
+    /// overload — a map that would not parse. The null-factory refusal reports through
+    /// <paramref name="logWarning"/> instead, which is the deliberate level drift the E-5 comment inside
+    /// the method records.</param>
     /// <param name="factoryForBus">Invoked exactly once, after a successful fan-out, with the LARGEST
     /// <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> among the devices on this bus
     /// (<see cref="ModbusMultidropMap.MaxWorstCaseBusHoldMs"/>). That number is blueprint §10 item 2's

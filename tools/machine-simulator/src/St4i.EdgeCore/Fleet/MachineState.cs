@@ -76,29 +76,64 @@ public sealed class MachineState
     /// happened.</summary>
     private long _lastRawCycleCounter;
 
+    /// <summary>Creates the state for one machine, before any reading has arrived: status
+    /// <c>"Idle"</c>, zero cycles, a pass rate of 0 and an em-dash for both the last-cycle summary and the
+    /// drift state. Nothing is read from disk and nothing is registered anywhere — this object accumulates
+    /// only what is later handed to it.</summary>
+    /// <param name="descriptor">The roster entry this state belongs to. Required — null throws
+    /// <see cref="ArgumentNullException"/>. Held by reference and never replaced, so
+    /// <see cref="Descriptor"/> and <see cref="Code"/> are fixed for the life of the object even if
+    /// <c>fleet.json</c> is reloaded.</param>
     public MachineState(MachineDescriptor descriptor)
     {
         Descriptor = descriptor ?? throw new ArgumentNullException(nameof(descriptor));
     }
 
+    /// <summary>The roster entry this state accumulates for — the identity half of the object, fixed at
+    /// construction, as opposed to everything below it, which is the accumulated half. Handed straight
+    /// back rather than projected, so a reader sees the same object <c>fleet.json</c> produced; the
+    /// snapshot methods do their own projecting and do not go through this property.</summary>
     public MachineDescriptor Descriptor { get; }
 
+    /// <summary>Shorthand for <see cref="MachineDescriptor.Code"/> — the key this state is filed under by
+    /// every fleet-level collection. Computed on each read rather than cached, so it can never disagree
+    /// with the descriptor.</summary>
     public string Code => Descriptor.Code;
 
+    /// <summary>The last verdict rendered as a display token: <c>"OK"</c>, <c>"WARN"</c>, <c>"FAIL"</c>, or
+    /// <c>"TELEMETRY"</c> for a reading with no pass/fail meaning; <c>"Idle"</c> until the first reading.
+    /// 🔴 This property is the RAW last-verdict value and is NOT the value a stopped fleet reports — the
+    /// snapshot methods substitute <c>"Idle"</c> when the pipeline is not running, so a reader that takes
+    /// this property directly will show a stopped machine as whatever it last was. Written under the
+    /// instance lock; read without one.</summary>
     public string StatusText { get; private set; } = IdleStatusText;
 
     /// <summary>Running pass rate in [0,1] — Pass and Warn both count as "success" (mirrors
     /// Normalizer.ComputeOverallResult treating Warn as OK); Telemetry readings are excluded entirely.</summary>
     public double PassRate { get; private set; }
 
+    /// <summary>Cycles completed, as a MONOTONIC display counter rather than the driver's own count: it is
+    /// the raw <see cref="DeviceReading.CycleCounter"/> plus a running offset that absorbs every restart
+    /// the driver makes. The restart is detected purely from the raw counter going BACKWARDS, so this
+    /// class needs nobody to tell it a restart happened — and the number an operator is watching only ever
+    /// climbs, even though a scenario change rebuilds the simulator underneath it. The cost of that choice,
+    /// stated: this is not the driver's cycle count and the two will diverge after the first
+    /// restart.</summary>
     public long Cycles { get; private set; }
 
+    /// <summary>One rendered line describing the most recent cycle, replaced on every reading and never
+    /// accumulated. <c>"—"</c> until the first reading. Composed at write time, so it keeps the wording of
+    /// the build that produced it.</summary>
     public string LastCycleSummary { get; private set; } = "—";
 
     /// <summary>Human-readable outcome of the last sync-config call — "—" until one has run this
     /// session, same contract as the WPF app's <c>MachineViewModel.DriftState</c>.</summary>
     public string DriftState { get; private set; } = "—";
 
+    /// <summary>The config version the last successful sync-config call reported, or null until one has
+    /// succeeded this session. Not persisted — a restart returns it to null even though the server's
+    /// version has not changed, so null means "not asked yet", never "no version exists". Read under the
+    /// instance lock, unlike its sibling display properties.</summary>
     public string? CachedConfigVersion { get { lock (_gate) return _cachedConfigVersion; } }
 
     /// <summary>Applies one committed reading — the SAME per-reading logic the WPF app's
@@ -200,6 +235,13 @@ public sealed class MachineState
         }
     }
 
+    /// <summary>Records that a sync-config call FAILED, by setting <see cref="DriftState"/> to
+    /// <c>"ERROR: {message}"</c>. Deliberately asymmetric with its success counterpart: it does NOT clear
+    /// <see cref="CachedConfigVersion"/>, so after a failure this object reports the last version it ever
+    /// managed to learn alongside an error string. That is the intended reading — the cached version is
+    /// "the last thing we knew", not "the current truth".</summary>
+    /// <param name="message">The failure text, interpolated verbatim after the <c>ERROR: </c> prefix. Not
+    /// truncated, not escaped, and surfaced to an operator as-is.</param>
     public void ApplyConfigSyncError(string message)
     {
         lock (_gate)

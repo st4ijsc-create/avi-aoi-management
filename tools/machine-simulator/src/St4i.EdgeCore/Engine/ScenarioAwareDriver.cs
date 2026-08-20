@@ -26,18 +26,41 @@ public sealed class ScenarioAwareDriver : IDeviceDriver
     private readonly IDeviceDriver _inner;
     private readonly Func<ScenarioConfig> _scenario;
 
+    /// <summary>Wraps a driver. Takes ownership for DISPOSAL — <see cref="DisposeAsync"/> forwards to the
+    /// inner driver — but not for lifetime: nothing is started here.</summary>
+    /// <param name="inner">The driver whose readings are post-processed. Required. Every identity and
+    /// health member below is a pass-through to it, so this decorator is invisible to anything that
+    /// inspects the driver rather than its readings.</param>
+    /// <param name="scenario">Invoked ONCE PER READING, never cached — that is the whole reason this is a
+    /// delegate rather than a value. It is what lets a slider drag or an automatic burst revert take effect
+    /// on the very next reading with no pipeline restart. Required.</param>
     public ScenarioAwareDriver(IDeviceDriver inner, Func<ScenarioConfig> scenario)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _scenario = scenario ?? throw new ArgumentNullException(nameof(scenario));
     }
 
+    /// <summary>The inner driver's id, unchanged. The decorator deliberately does not decorate the NAME:
+    /// a pipeline slot, an alarm target and a trace row all key on this, so wrapping must not move
+    /// them.</summary>
     public string Id => _inner.Id;
 
+    /// <summary>The inner driver's kind, unchanged — so a fleet built on simulators still reports
+    /// <c>Simulated</c>, not a wrapper kind.</summary>
     public string Kind => _inner.Kind;
 
+    /// <summary>The inner driver's health, unchanged. Scenario injection can turn a healthy machine's
+    /// readings into failures without ever making the DRIVER unhealthy: a fabricated defect is a bad
+    /// product, not a broken link.</summary>
     public DriverHealthState Health => _inner.Health;
 
+    /// <summary>Streams the inner driver's readings with scenario failures injected. One in, one out —
+    /// nothing is dropped, buffered or reordered, and the yielded object is the SAME instance the inner
+    /// driver produced, mutated in place when a failure is injected.</summary>
+    /// <param name="ct">Forwarded to the inner driver and also applied to the enumeration itself, so
+    /// cancellation ends the stream rather than being swallowed.</param>
+    /// <returns>The inner sequence, each element post-processed against the scenario read at the moment
+    /// that element arrived.</returns>
     public async IAsyncEnumerable<DeviceReading> ReadAsync([EnumeratorCancellation] CancellationToken ct)
     {
         await foreach (var reading in _inner.ReadAsync(ct).WithCancellation(ct).ConfigureAwait(false))
@@ -46,6 +69,9 @@ public sealed class ScenarioAwareDriver : IDeviceDriver
         }
     }
 
+    /// <summary>Disposes the inner driver and nothing else — this decorator holds no resource of its own.
+    /// Not idempotent here: a second call reaches the inner driver a second time, so idempotence is
+    /// whatever the wrapped driver provides.</summary>
     public ValueTask DisposeAsync() => _inner.DisposeAsync();
 
     /// <summary>
