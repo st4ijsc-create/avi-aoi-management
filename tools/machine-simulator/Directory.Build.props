@@ -79,6 +79,17 @@
         outstanding: 283 coverage warnings on our own source (243 CS1591 + 40 CS1573, stages 7..8) plus
         the same 103 nobody here may pay. Retired in place rather than re-pinned, for the same reason as
         the two lines above it.]
+       [🔴 "the live figure is 386 outstanding: 283 coverage warnings on our own source (243 CS1591 + 40
+        CS1573, stages 7..8)" WITHDRAWN 2026-08-20 by task AM-1 (item 12 STAGE 7), which said it would
+        move again and it has. 62 more of the 283 are PAID by writing; the live figure is 324
+        outstanding: 221 coverage warnings on our own source (192 CS1591 + 29 CS1573, stage 8 — the LAST
+        coverage stage) plus the same 103 nobody here may pay. Retired in place rather than re-pinned, for
+        the same reason as the three lines above it.
+        🔴 AND THE PER-PROJECT TABLE BELOW IS STILL NOT RE-MEASURED, by this stage either. Its
+        St4i.EdgeCore row (543 CS1591 / 92 CS1573) is AF-1's reading at the flag flip and is labelled as
+        such; four stages of payment have moved what that compilation actually emits without moving this
+        table, and this bracket chain is the only live figure in this block. Naming that is cheaper than
+        a re-measurement nobody asked for and safer than letting the table read as current.]
 
            project                            (1) parse/resolve   (2) CS1591   CS1573   set
            St4i.Connector.Conformance                  15               0          0     yes
@@ -595,6 +606,67 @@
        them; this cluster contains no enum, so the narrowing was specific to enums and is not permanent.
 
        🔴 ITEM 12 STAYS IN PART II. 283 coverage warnings on our own source remain unpaid, plus the 103
-       nobody may pay. Stages 7..8 pay the 283; each re-measures its own constant. -->
+       nobody may pay. Stages 7..8 pay the 283; each re-measures its own constant.
+       [🔴 "283 coverage warnings ... remain unpaid ... Stages 7..8 pay the 283" WITHDRAWN 2026-08-20 by
+        task AM-1 (item 12 STAGE 7), quoted and retired in place. 221 remain (192 CS1591 + 29 CS1573) and
+        it is now stage 8 alone that owes them. Item 12 STILL STAYS IN PART II, and that half of the
+        sentence is NOT withdrawn.] -->
+
+  <!-- ══ TASK AM-1 (.superpowers/sdd/item12-stage7/task-1-brief.md) — ITEM 12 STAGE 7 ══════════════════
+       502 -> 440. The third stage that pays by writing, and the one that finishes the type it started
+       from: stage 6 documented the three types `ITransport`'s three methods RETURN, and this stage
+       documents the interface, the two types in its signature that were still unpaid, and every
+       implementation of it.
+
+       THE CANDIDATES WERE ENUMERATED BEFORE THE CLUSTER'S SIZE WAS. The 283 outstanding were grouped by
+       directory, whole, from one -t:Rebuild of St4i.EdgeCore — and the grouping reproduced AL-1's
+       forecast row for row, all sixteen. Four clusters were weighed: the built-in driver families
+       (Drivers/* = 109), edge-local configuration (Config + Fleet + Infrastructure = 64), the northbound
+       UNS door (Uns + Uns/Sparkplug + Site = 37), and the one taken. AL-1's selection rule —
+       RECOVERABILITY, the surface whose sentences are fixed by an artefact already in this tree — was
+       re-derived rather than inherited, and it is why the driver families were not taken despite being
+       the largest remaining unit: AL-1 measured that surface as full of members with nothing to say
+       beyond their names, and that is a FINDING somebody owes, not 109 sentences.
+
+       WHAT WAS PAID: the canonical envelope and its whole journey, 62 warnings in TWELVE files.
+       Transport/TransportCoordinator.cs 9, Models/Envelopes.cs 7, Mapping/MappingProfile.cs 7,
+       Transport/AutoTransport.cs 6, Transport/DemoTransport.cs 5, Transport/LiveTransport.cs 5,
+       Transport/SwitchableTransport.cs 5, Transport/ITransport.cs 4, Transport/WalFlushPump.cs 4,
+       Models/Enums.cs 4, Mapping/Normalizer.cs 4, Mapping/MappingProfileResolver.cs 2. One type joins
+       them — `CanonicalEnvelope` — and the boundary is checkable rather than argued: THREE DIRECTORIES
+       TAKEN WHOLE (Transport/, Mapping/, Models/), each left at a residue of zero.
+
+       MEASURED, on the tree this commit produces — `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
+       over the whole solution, SDK 10.0.302, 15/15 compilations, `Build succeeded.`, `0 Error(s)`:
+           440 warnings, down from 502. 51 CS1591 + 11 CS1573, all in the St4i.EdgeCore compilation.
+       Split by origin: VENDORED 185 / OURS 255. The vendored bucket did not move ONE UNIT. Two ledger
+       rows moved and only two: `OURS CS1591 243 -> 192` and `OURS CS1573 40 -> 29`. 502 - 62 = 440 is
+       arithmetic that agrees; 440 was READ OUT of the partition. The first -t:Rebuild STOOD this time —
+       the `_wpftmp` CS2001 shape that forced a discard in stages 5 and 6 did not appear — which is
+       evidence about this run and not evidence that the shape has gone.
+
+       🔴 THE CHANNEL AL-1 NAMED WAS ENTERED WITH ITS TRAP NAMED IN ADVANCE, AND DID NOT FIRE. Eleven of
+       the 62 were CS1573 on blocks that already carried SOME `param` tags. Every one was paid by
+       INSERTING the missing tags beside the existing ones — never by rewriting the block, which is the
+       operation that un-paid a member in stage 6. Zero new CS1573 were created; the row fell
+       monotonically, and that was verified per file rather than inferred from the total.
+
+       🔴 STAGE 5's NARROWING RETURNS, BY EXACTLY THE MECHANISM STAGE 6 PREDICTED. AL-1 wrote that its
+       strong "zero non-`///` changed lines" claim held only because its cluster contained no enum. This
+       cluster contains one, `TransportMode`, and a one-line enum declaration must be re-laid out to carry
+       member documentation. Over `src/`: 460 added, 4 removed. Three of the four removed are `///` lines,
+       all three the old `ITransport` summary, all three reproduced VERBATIM inside its replacement. The
+       fourth is the enum's one-line declaration; its member sequence is identical name-for-name and
+       order-for-order. Outside that and blank separators, zero changed lines that are not `///`.
+
+       🔴 ONE PUBLISHED CLAIM IN THE CLUSTER WAS REFUTED AND RETIRED IN PLACE, NO CODE CHANGED.
+       `ITransport` called itself "the single seam ... how it actually leaves the building". It is not:
+       `EdgePipeline` hands the SAME envelope to `IUnsPublisher.PublishReading` one statement earlier, and
+       `Site.UnsBridge` republishes that spine off-box. True when written, falsified by G2-2, quoted and
+       withdrawn where it stands.
+
+       🔴 ITEM 12 STAYS IN PART II. 221 coverage warnings on our own source remain unpaid, plus the 103
+       nobody may pay. Stage 8 — the last coverage stage — pays the 221 and re-measures its own
+       constant. -->
 
 </Project>

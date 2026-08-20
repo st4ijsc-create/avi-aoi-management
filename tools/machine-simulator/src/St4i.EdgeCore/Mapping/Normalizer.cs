@@ -11,8 +11,22 @@ namespace St4i.EdgeCore.Mapping;
 /// </summary>
 public static class Normalizer
 {
+    /// <summary>🔴 The process-result ingest route as THIS repository spells it — and no request is ever
+    /// sent to it from here. It is stamped onto the envelope, and the live transport then dispatches on
+    /// the envelope's kind into a typed SDK call whose URL is a literal inside the vendored SDK; the only
+    /// consumer of this value in the product is the operator's API-trace row. Changing it changes what
+    /// the trace pane displays and nothing about where the data goes.
+    ///
+    /// <para>These three are also <see langword="const"/>, so any assembly that referenced one would have
+    /// BAKED IN the old text at its own compile time. Nothing outside this assembly does today.</para></summary>
     public const string ProcessResultPath = "/api/v1/ingest/process-result";
+
+    /// <summary>The telemetry ingest route, on the same terms as
+    /// <see cref="ProcessResultPath"/>: display-only, never requested from this repository.</summary>
     public const string TelemetryPath = "/api/v1/ingest/telemetry";
+
+    /// <summary>The inspection ingest route, on the same terms as
+    /// <see cref="ProcessResultPath"/>: display-only, never requested from this repository.</summary>
     public const string InspectionPath = "/api/v1/ingest/inspection";
 
     private const string ProcessSchemaVersion = "1.0";
@@ -38,6 +52,26 @@ public static class Normalizer
         return $"{r.MachineCode}:{bucket}:{r.CycleCounter:D6}";
     }
 
+    /// <summary>
+    /// The only producer of a <see cref="CanonicalEnvelope"/> in this product. Dispatches on
+    /// <see cref="DeviceReading.Kind"/> to one of three private shapers and throws
+    /// <see cref="ArgumentOutOfRangeException"/> for anything else — a reading is never silently dropped
+    /// here, and never silently reshaped either.
+    ///
+    /// <para>It is pure and total for the three known kinds: no I/O, no clock, no randomness, and no
+    /// validation. Given the same reading and the same profile it produces the same payload every time,
+    /// which is what lets the same envelope be handed to both the HTTP transport and the UNS mirror
+    /// without either being able to see a different one. The absence of validation is the deliberate
+    /// half: it will happily build an envelope the ecosystem rejects, and finding that out is
+    /// <see cref="St4i.EdgeCore.Transport.LiveTransport.SendAsync"/>'s job, not this one's.</para>
+    ///
+    /// <para>The three shapes are not symmetric and the differences are contract, not omission. Only the
+    /// process-result shape consults <paramref name="p"/> for defaults — the other two use it for units
+    /// alone. Only the process-result shape forwards genealogy, and it coerces <c>stationId</c> to a
+    /// number because the ingest contract rejects it as text. Only the inspection shape recomputes an
+    /// overall verdict from its own measurement points instead of trusting the reading's. And only
+    /// telemetry carries no idempotency key into its payload, because the endpoint it targets has
+    /// none.</para></summary>
     public static CanonicalEnvelope Normalize(DeviceReading r, MappingProfile p)
     {
         return r.Kind switch

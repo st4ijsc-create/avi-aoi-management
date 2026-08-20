@@ -27,12 +27,25 @@ public sealed class AutoTransport : ITransport
 
     private long _callCount;
 
+    /// <summary>Composes the two transports this one arbitrates between. Both are required and neither is
+    /// owned — this class has no <c>Dispose</c>, and the live instance it is handed is the same one
+    /// <see cref="TransportCoordinator"/> holds and disposes on a rebuild, which is why a rebuild
+    /// constructs a NEW <see cref="AutoTransport"/> rather than mutating this one. The parameters are
+    /// typed as <see cref="ITransport"/>, not as the two concrete classes, so nothing enforces that
+    /// <c>live</c> is live or that <c>demo</c> is offline: the names describe the ROLE each argument
+    /// plays in the fallback, and a caller that swapped them would get a working object with inverted
+    /// behaviour.</summary>
     public AutoTransport(ITransport live, ITransport demo)
     {
         _live = live ?? throw new ArgumentNullException(nameof(live));
         _demo = demo ?? throw new ArgumentNullException(nameof(demo));
     }
 
+    /// <summary>Always <see cref="TransportMode.Auto"/> — it does not switch to
+    /// <see cref="TransportMode.Demo"/> while falling back. So the API-trace row for a call this class
+    /// served from demo is stamped <c>Auto</c>, and the only published signal that the call did not go to
+    /// the server is <see cref="IsFallingBack"/> (and the event that announces it), which the trace row
+    /// does not carry.</summary>
     public TransportMode Mode => TransportMode.Auto;
 
     /// <summary>
@@ -45,8 +58,26 @@ public sealed class AutoTransport : ITransport
     /// </summary>
     public bool IsFallingBack { get; private set; }
 
+    /// <summary>Raised only on a TRANSITION of <see cref="IsFallingBack"/>, never once per degraded call,
+    /// so a subscriber sees one notification per outage and one per recovery rather than a stream. It is
+    /// invoked OUTSIDE this class's lock and therefore on whichever thread caused the transition — a
+    /// pipeline send or a background heartbeat — which is why the WPF subscriber marshals to the UI
+    /// thread itself. Delivery is not guaranteed across a <c>TransportCoordinator.RebuildLive</c>: that
+    /// rebuild unsubscribes from this instance and subscribes to a fresh one, and a call already in
+    /// flight can deliver one stray notification after the unsubscribe or lose one, which that method
+    /// records as an accepted race.</summary>
     public event Action<bool>? FallbackChanged;
 
+    /// <summary>Tries live first and answers from demo when live signals a network failure. "Signals" has
+    /// an exact meaning, and it is narrower than "did not succeed": a thrown network exception, or an ack
+    /// that is unsuccessful AND queued AND carries a message. A permanent 4xx or 5xx from the server is
+    /// therefore NOT a fallback trigger — it is returned to the caller unchanged, because the server was
+    /// reached and it said no.
+    ///
+    /// <para>The fallback is not per-call. Once tripped, live is only re-probed on every fifth call, and
+    /// that counter is shared with the heartbeat and config-sync methods — so a failing background
+    /// heartbeat is what usually decides whether a perfectly healthy send goes to the server at
+    /// all.</para></summary>
     public async Task<TransportAck> SendAsync(CanonicalEnvelope env, CancellationToken ct)
     {
         if (!ShouldTryLiveThisCall())
@@ -65,6 +96,13 @@ public sealed class AutoTransport : ITransport
         return await _demo.SendAsync(env, ct).ConfigureAwait(false);
     }
 
+    /// <summary>Same probe-then-fall-back shape as <see cref="SendAsync"/>, but with a much blunter
+    /// failure test: ANY unsuccessful heartbeat trips the fallback, because
+    /// <see cref="HeartbeatResult.Success"/> already collapses network failure, server rejection and an
+    /// unconfigured key into one value. That makes this the method most likely to trip the shared flag,
+    /// and — since the flag is shared — the one that decides where sends go. A booth whose heartbeat
+    /// timer is failing serves demo data from a live-configured host, and
+    /// <see cref="FallbackChanged"/> is the only thing that says so.</summary>
     public async Task<HeartbeatResult> HeartbeatAsync(string machineCode, CancellationToken ct)
     {
         if (!ShouldTryLiveThisCall())
@@ -103,6 +141,13 @@ public sealed class AutoTransport : ITransport
         return result;
     }
 
+    /// <summary>Same shape again, with a third and different failure test: the live result counts as a
+    /// failure when its drift state is the literal string <c>error</c>. That is a string comparison
+    /// against a value the live implementation produces on its own catch paths — not a status code and
+    /// not an enum — so this fallback is coupled to a spelling rather than to a type, and a live backend
+    /// that reported failure any other way would never trip it. Falling back here also SUBSTITUTES the
+    /// answer: the demo implementation reports one fixed version for every config kind, so a fallback
+    /// makes drift disappear rather than making it unknown.</summary>
     public async Task<ConfigSyncResult> SyncConfigAsync(string machineCode, string configKind, string? cachedVersion, CancellationToken ct)
     {
         if (!ShouldTryLiveThisCall())

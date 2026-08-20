@@ -25,6 +25,31 @@ public sealed class TransportCoordinator
     private LiveTransport _live;
     private AutoTransport _auto;
 
+    /// <param name="switchable">The DI singleton this coordinator steers. It is NOT owned — nothing here
+    /// disposes it — and steering it starts immediately: this constructor calls the same re-pointing path
+    /// <see cref="ApplyMode"/> uses, so merely CONSTRUCTING a coordinator changes where an already-wired
+    /// pipeline's sends go. Anything else may also re-point the same singleton behind this class's back
+    /// (the fleet's network-outage scenario does exactly that), and this class will not notice.</param>
+    /// <param name="demo">The one offline transport instance for this host's whole lifetime. It is
+    /// reused rather than rebuilt: every switch to Demo points at this instance, and every
+    /// <see cref="AutoTransport"/> this class builds falls back to this instance, so a demo ack's
+    /// fabricated ids keep counting up across mode switches instead of restarting. Not owned and not
+    /// disposable.</param>
+    /// <param name="initialLive">The live transport to hold until the first <see cref="RebuildLive"/>.
+    /// This one IS owned, but only partly: <see cref="RebuildLive"/> disposes whichever instance it
+    /// replaces, while the instance held when the process ends is never disposed by this class, which has
+    /// no shutdown path of its own.</param>
+    /// <param name="initialAuto">The auto transport to hold until the first <see cref="RebuildLive"/>.
+    /// Nothing checks that it actually wraps <paramref name="initialLive"/> and <paramref name="demo"/> —
+    /// a caller that composes it from something else gets a coordinator whose Live and Auto modes talk to
+    /// different servers, and the mismatch is repaired only when <see cref="RebuildLive"/> next builds a
+    /// fresh pair. This constructor also subscribes to its fallback event, which is why that subscription
+    /// has to be moved by hand on every rebuild.</param>
+    /// <param name="initialMode">The mode to start in. It is applied here, so the switchable is pointed
+    /// before this constructor returns — but <see cref="ModeChanged"/> is NOT raised for it. Since a
+    /// subscriber can only attach after construction, no subscriber ever learns the starting mode from
+    /// the event; the first notification anyone receives is the first CHANGE, and a consumer that needs
+    /// the current value at startup has to read <see cref="Mode"/>.</param>
     /// <param name="walOptions">WS-C-T2 — governs the disk-durable WAL queue file every
     /// <see cref="RebuildLive"/>-built <see cref="LiveTransport"/> is pointed at (see that method's own
     /// remarks). OPTIONAL and TRAILING deliberately: every pre-existing call site (13 test files
@@ -75,12 +100,31 @@ public sealed class TransportCoordinator
     /// without re-triggering each other back and forth.</summary>
     public event Action<TransportMode>? ModeChanged;
 
+    /// <summary>The mode the operator SELECTED, which is the thing a host reports and audits. It is not
+    /// the same question as "what is serving traffic right now": that is
+    /// <see cref="SwitchableTransport.Mode"/>, and the network-outage scenario moves the second without
+    /// moving this one. Set before the constructor returns and only ever changed by
+    /// <see cref="ApplyMode"/>.</summary>
     public TransportMode Mode { get; private set; }
 
+    /// <summary>🔴 The held demo transport. Published and unread: no code in this repository, production
+    /// or test, reads this property — the one place its name appears outside this file is inside another
+    /// class's doc comment. It survives because it is the natural companion of <see cref="Live"/> and
+    /// <see cref="Auto"/>, not because anything asks for it.</summary>
     public DemoTransport Demo => _demo;
 
+    /// <summary>The live transport currently held, read under the same lock
+    /// <see cref="RebuildLive"/> writes it with. Both composition roots read it for one purpose — to feed
+    /// the WAL flush pump, and only while <see cref="Mode"/> is Live — which is why the pump re-asks on
+    /// every tick rather than capturing it. A reference taken from here is valid only until the next
+    /// rebuild: that rebuild disposes the instance it replaces, so a caller that holds one across a
+    /// Settings edit is holding a disposed client.</summary>
     public LiveTransport Live { get { lock (_gate) return _live; } }
 
+    /// <summary>🔴 The auto transport currently held, and nothing anywhere reads it — not one production
+    /// call site and not one test. It is the only member of this quartet with no consumer at all; even
+    /// <see cref="Demo"/> is at least referred to. Kept because <see cref="RebuildLive"/> has to replace
+    /// the instance regardless of whether anyone can see it.</summary>
     public AutoTransport Auto { get { lock (_gate) return _auto; } }
 
     /// <summary>

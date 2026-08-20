@@ -40,7 +40,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 9 | sàn môi trường trên nhánh *không đọc được* | 🔨 **(b) ÁP SÀN `ST4I_*` VÀ LƯU NÓ** (2026-08-19, chủ sở hữu, **sau khi được cảnh báo rằng nó đi ngược mục 1/5/8/10/11**) — ghi đè **tại chỗ**, **không** di chuyển và **không** xoá byte cũ; miễn trừ di-chuyển của mục 10 **không** áp ở đây. (c) *áp-mà-không-lưu* **KHÔNG** được chọn, nên hợp đồng `FleetCore.UpdateSettings` **không đổi**. Cách đọc hoà giải, ghi kèm ngày ở thân mục: ở năm mục kia thứ bị đè là **dữ liệu vận hành viên** và thứ ghi xuống là giá trị tiến trình **tự nghĩ ra**; ở đây thứ ghi xuống là **cấu hình bản triển khai đã KHAI qua `ST4I_*`** — **khôi phục một giá trị đã khai**, không **bịa** một giá trị. Giá đã chấp nhận: một file hỏng vì gõ nhầm **không còn là bản ghi cuối cùng**. **Đã thi hành, AJ-1 (2026-08-19)** — guard bị xoá, **HAI** chuỗi đã xuất bản sửa, nhân chứng `AMalformedSettingsFile_…` **đảo chiều và đổi tên**; 🔴 phép kiểm đếm NGUỒN `TheStartupReplayHasExactlyOneArm_…` **VẪN XANH và đó là im lặng, không phải chấp thuận** |
 | 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔨 **GIỮ BLOB CŨ DƯỚI TÊN KHÁC** (2026-08-18) — DI CHUYỂN dữ liệu, **miễn trừ CHỈ cho mục này**; đã thi hành, Z-1 |
 | 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); đã thi hành, Z-1 |
-| 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 4 ĐÃ TRẢ 2026-08-19 (AG-1, đợt 4/8): 101 khẳng định ĐÃ SAI được TRỎ LẠI (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, 0 dòng mã đụng tới), `EXPECT_WARNINGS` 852 → 751 ĐO, sổ 19 → 16 hàng, 185 vendored / 566 ours, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **532 chỗ trống của ta chưa trả** (+ 103 vendored không ai trả được). Đợt 5–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 5 ĐÃ TRẢ 2026-08-19 (AH-1, đợt 5/8): 120 chỗ THIẾU được VIẾT — một cụm mạch lạc, mô hình dữ liệu config-sync (7 file `Config/`, cả 120 là CS1591), `EXPECT_WARNINGS` 751 → 631 ĐO, sổ vẫn 16 hàng, 185 vendored / 446 ours, `OURS CS1591 448 → 328`, `OURS CS1573 84` KHÔNG dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **412 chỗ trống của ta chưa trả**. Đợt 6–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 6 ĐÃ TRẢ 2026-08-20 (AL-1, đợt 6/8): 129 chỗ THIẾU được VIẾT — một cụm mạch lạc, historian cạnh máy (8 file `Historian/` + `Models/` + `Metrics/`; 85 CS1591 + 44 CS1573), `EXPECT_WARNINGS` 631 → 502 ĐO, sổ vẫn 16 hàng, 185 vendored / 317 ours, `OURS CS1591 328 → 243` VÀ `OURS CS1573 84 → 40` — đợt ĐẦU TIÊN hàng CS1573 dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **283 chỗ trống của ta chưa trả**. Đợt 7–8 trả, mỗi đợt đo lại. 🔴 **Và đợt 6 BÁC ba khẳng định đã công bố trong chính cụm ấy — rút tại chỗ, KHÔNG sửa mã: `OeeCalculator` *"mọi tỉ số kẹp `[0,1]`"* (Quality không kẹp), `HistorianWriter.Enqueue` *"kênh đầy ⇒ có cảnh báo"* (cú rơi vì bão hoà là IM LẶNG), `ApplyRealPresenceGateAsync` *"mọi query hướng khách hàng đều áp"* (`QueryTelemetryAsync` không áp và không thể áp). Xem §11** |
+| 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 4 ĐÃ TRẢ 2026-08-19 (AG-1, đợt 4/8): 101 khẳng định ĐÃ SAI được TRỎ LẠI (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, 0 dòng mã đụng tới), `EXPECT_WARNINGS` 852 → 751 ĐO, sổ 19 → 16 hàng, 185 vendored / 566 ours, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **532 chỗ trống của ta chưa trả** (+ 103 vendored không ai trả được). Đợt 5–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 5 ĐÃ TRẢ 2026-08-19 (AH-1, đợt 5/8): 120 chỗ THIẾU được VIẾT — một cụm mạch lạc, mô hình dữ liệu config-sync (7 file `Config/`, cả 120 là CS1591), `EXPECT_WARNINGS` 751 → 631 ĐO, sổ vẫn 16 hàng, 185 vendored / 446 ours, `OURS CS1591 448 → 328`, `OURS CS1573 84` KHÔNG dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **412 chỗ trống của ta chưa trả**. Đợt 6–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 6 ĐÃ TRẢ 2026-08-20 (AL-1, đợt 6/8): 129 chỗ THIẾU được VIẾT — một cụm mạch lạc, historian cạnh máy (8 file `Historian/` + `Models/` + `Metrics/`; 85 CS1591 + 44 CS1573), `EXPECT_WARNINGS` 631 → 502 ĐO, sổ vẫn 16 hàng, 185 vendored / 317 ours, `OURS CS1591 328 → 243` VÀ `OURS CS1573 84 → 40` — đợt ĐẦU TIÊN hàng CS1573 dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **283 chỗ trống của ta chưa trả**. Đợt 7–8 trả, mỗi đợt đo lại. 🔴 **Và đợt 6 BÁC ba khẳng định đã công bố trong chính cụm ấy — rút tại chỗ, KHÔNG sửa mã: `OeeCalculator` *"mọi tỉ số kẹp `[0,1]`"* (Quality không kẹp), `HistorianWriter.Enqueue` *"kênh đầy ⇒ có cảnh báo"* (cú rơi vì bão hoà là IM LẶNG), `ApplyRealPresenceGateAsync` *"mọi query hướng khách hàng đều áp"* (`QueryTelemetryAsync` không áp và không thể áp). Xem §11** 🔴 **ĐỢT 7 ĐÃ TRẢ 2026-08-20 (AM-1, đợt 7/8): 62 chỗ THIẾU được VIẾT — một cụm mạch lạc, chiếc phong bì chuẩn hoá và trọn hành trình của nó (12 file: `Transport/` + `Mapping/` + `Models/`, ba thư mục lấy TRỌN, dư lượng mỗi thư mục = 0; 51 CS1591 + 11 CS1573), `EXPECT_WARNINGS` 502 → 440 ĐO, sổ vẫn 16 hàng, 185 vendored / 255 ours, `OURS CS1591 243 → 192` VÀ `OURS CS1573 40 → 29` — cả hai đều GIẢM và KHÔNG một CS1573 mới nào được tạo ra, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **221 chỗ trống của ta chưa trả**, và **đợt 8 là đợt bao phủ CUỐI CÙNG**. 🔴 **Và đợt 7 BÁC một khẳng định đã công bố trong chính cụm ấy — rút tại chỗ, KHÔNG sửa mã: `ITransport` tự nhận là *"seam DUY NHẤT"* mà một reading đi qua để rời khỏi hộp; đo được rằng `EdgePipeline` trao CÙNG chiếc phong bì cho `IUnsPublisher.PublishReading` ở câu lệnh ngay trước, và `Site.UnsBridge` phát nó ra ngoài hộp — có HAI đường ra, không một. Xem §12** |
 | 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔨 **ĐÓNG — STORE GHI LẠI DANH TÍNH CỦA CÁC BYTE** (2026-08-19, chủ sở hữu). 🔴 **Giá đã chấp nhận và ghi vào mục: `PUT /v1/historian/oee/settings` trả 409 ở những lúc hôm nay trả 200, KỂ CẢ khi thứ đổi file là một biên tập tay HỢP LỆ hay chỉ là một lần ĐỊNH DẠNG LẠI.** Câu *"bao nhiêu PUT hợp lệ thành 409"* vẫn **KHÔNG đo được** và phán quyết ra **mà không có nó**. **Đã thi hành, AJ-1 (2026-08-19)** — cơ chế **SUY ra chứ không chọn một trong ba**: cả ba ứng viên (băm / `mtime` / kích thước) là **vân tay**, mà vân tay chỉ cần khi không cầm được cả hai vế; `ReadLocked` **đã cầm toàn văn** ở cả hai đầu trong cùng một khoá, nên store **giữ lại toa hạng gốc** và so trực tiếp — **0 lần đọc đĩa thêm**, và **mạnh hơn** mọi hàm hao hụt của nó. Kiểu thứ ba `OeeSettingsFileChangedException`; vị từ gác bằng **CẶP `Loaded/Loaded`**, nên cặp `Loaded/Absent` **không** bị đóng kèm. Nhân chứng `Set_AfterARestoreOntoAHostThatCameUpWithAFile_…` **đảo chiều và đổi tên**; giá được **ghim** bằng một bài kiểm riêng |
 | 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT**. 🔴 **KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: KHẢ THI — `Normalizer` có đủ thông tin, `WaveformSeries` và `WelderSim` KHÔNG phải đổi. Nhưng nó KHÔNG nằm trọn ở một đường dây: cùng một envelope đi ra BA bề mặt, và một trong ba là gương ngữ nghĩa MQTT RETAINED — một **bề mặt đã xuất bản thứ hai; NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này** (hợp đồng TỰ KHAI rằng họ ở ngoài repo — đó là lời của tài liệu, không phải một phép đếm). 🔴 **Giá gương ấy KHÔNG phải của riêng lựa chọn 3: lựa chọn 1 trả CÙNG giá đó CỘNG THÊM, lựa chọn 2 không trả giá nào trong cây này nhưng trả TOÀN BỘ ở ngoài (hợp đồng ingest đã xuất bản + ba SDK).** Và KHÔNG một bài kiểm nào trong 2763 bài đỏ lên, tức lối này KHÔNG CÓ NHÂN CHỨNG. **Ràng buộc thi hành cứng: `LiveTransport.ReadSampleSeries` chỉ nhận hàng `double[]` và bỏ im lặng mọi kiểu khác.** Ba lựa chọn VẪN CHƯA QUYẾT** — 📎 **câu ngay trước giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1), và lý do là chủ sở hữu ĐÃ PHÁN, không phải câu ấy từng sai; AK-1 dùng đúng MỘT kiểu bảo tồn — kiểu AB-1 lập và AI-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG dấu gạch ngang ở bất kỳ đâu, không xoá một dòng nào.** → 🔨 **QUYẾT: LỰA CHỌN 3 — DỰNG CẶP `[t, v]` Ở RANH GIỚI `Normalizer`** (2026-08-19, chủ sở hữu). `WaveformSeries`, `WelderSim`, `ScrewdriveSim` **không đổi một dòng**; thứ đổi là **payload đi ra**. 🔴 **Giá đã chấp nhận và ghi vào mục: HAI bề mặt đã xuất bản đổi CÙNG LÚC, không một** — payload ingest HTTP **và** gương ngữ nghĩa MQTT retained `syn/…`; **NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này**. Cộng một bề mặt thứ ba, riêng tư: hàng đợi store-and-forward của SDK ghi nguyên payload **xuống đĩa** và **phát lại hình dạng CŨ sau khi mã đã đổi** — **cửa sổ ấy CHƯA ĐO**. **Đã thi hành, AK-1 (2026-08-19)** — cơ chế của `t` **SUY ra chứ không chọn**: `t(i) = i / rateHz`, tức **thời điểm mà `rateHz` HÀM Ý**, **không** phải thời điểm `WelderSim` vẽ đường cong; lý do là ở ranh giới chỉ có **bốn trường** của `WaveformSeries`, còn dựng lại thời điểm THẬT đòi **tham số hoá riêng của từng bộ sinh** — không có trên hồ sơ, khác nhau theo driver, và **vắng hẳn** với driver bên thứ ba mà ranh giới này cũng phục vụ. 🔴 **`rateHz` KHÔNG đổi nghĩa và KHÔNG đổi giá trị** — đó là điều kiện DỪNG của nhiệm vụ và nó không bị chạm. 🔴 **Nửa bất lợi, viết ngay cạnh:** chỗ lệch **4,17 %** của `WelderSim` **không được tạo ra và cũng không được sửa** ở đây (phép chuyển tính đúng cái `t` mà một bên tiêu thụ tuân hợp đồng đã tính hôm nay) — **nhưng nó chuyển `t` từ NGẦM sang ĐÃ VIẾT RA**, nên sửa chỗ lệch ấy về sau là **đổi những con số đã xuất bản**, không còn là đổi một tài liệu. Nhân chứng **MỚI** `WaveformPairAtTheWireBoundaryTests` (bảy `[Fact]`): gỡ phép chuyển ⇒ **BỐN đỏ**; trả kiểu hàng khác `double[]` ⇒ **SÁU đỏ**; 🔴 `WaveformSeriesRowShapeContractTests` **VẪN XANH, và đó là im lặng, không phải chấp thuận** — nó nhìn thượng nguồn |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
@@ -942,6 +942,11 @@ brief cấm sửa mã, và cả ba chỗ hỏng nằm ở **văn xuôi**, đúng
   `Engine/` 11 · `Models/` 11 · `Fleet/` 8 · `Drivers/Mqtt/` 7 · `Drivers/HotFolder/` 7 ·
   `Uns/Sparkplug/` 6 · `Infrastructure/` 6 · `Drivers/` 5. File lớn nhất còn lại:
   `Config/MachineConfigModels.cs` **33**.
+  > 🔴 **RÚT 2026-08-20 (AM-1, đợt 7), giữ nguyên văn.** Đợt 7 **đo lại** phân bố ấy trước khi
+  > chạm vào nó và **tái lập đúng cả mười sáu hàng, không sai một đơn vị** — điều đó được ghi vì nó
+  > là thứ mạnh nhất ai đó nói được về một dự báo trong chuỗi này. Hôm nay còn **221** (192 CS1591 +
+  > 29 CS1573), và chỉ **đợt 8** nợ chúng. Ba thư mục `Transport/`, `Mapping/`, `Models/` **biến mất
+  > khỏi danh sách** — xem §12.
 * **103 cái vendored** — không đổi, phải ở nguyên đó.
 * **Mười hai artefact phụ trong bản cài**, **không dụng cụ nào canh PAYLOAD**, **nửa A mù trước một
   lệnh đè nhắm ba mã đã về 0** — cả ba y như sau đợt 4 và đợt 5, không cái nào được đợt này đụng tới.
@@ -953,6 +958,133 @@ brief cấm sửa mã, và cả ba chỗ hỏng nằm ở **văn xuôi**, đúng
 * 🔴 **Không ca *"không có gì để nói ngoài cái tên"* nào trong 129 cái** — và đó là một **hệ quả của
   tiêu chí chọn cụm**, không phải một thành tích: cụm được chọn *vì* nghĩa của nó khôi phục được.
   Đợt 7–8 chọn theo tiêu chí khác sẽ **không** thừa hưởng con số không này.
+
+#### 12. 🔨 ĐỢT 7 — PHÁN QUYẾT VẪN ĐANG THI HÀNH **TỪNG PHẦN** (AM-1, 2026-08-20, base `47dfc8cf`)
+
+🔴 **Vẫn là một ghi chép THI HÀNH TỪNG PHẦN. Mục 12 Ở LẠI PHẦN II.** 412 trong 736 đã trả;
+**324 còn nợ** (221 chỗ trống của ta + 103 cái vendored không ai trả được).
+
+**CÁC ỨNG VIÊN ĐÃ CÂN, LIỆT KÊ TRƯỚC KHI NÊU CON SỐ CỦA CỤM ĐƯỢC CHỌN.** 283 cái còn nợ được nhóm
+lại theo thư mục, **trọn vẹn**, từ một lần `-t:Rebuild` của `St4i.EdgeCore` — và phép nhóm ấy **tái
+lập đúng từng hàng dự báo của đợt 6**. Bốn cụm được cân:
+
+| cụm | gồm | số |
+|---|---|---:|
+| **A** — họ driver dựng sẵn | `Drivers/` toàn bộ (Modbus 46 · Simulators 27 · OpcUa 17 · HotFolder 7 · Mqtt 7 · `Drivers/` 5) | **109** |
+| **B** — cấu hình cạnh máy | `Config/` 50 · `Fleet/` 8 · `Infrastructure/` 6 | **64** |
+| **C** — cửa UNS hướng bắc | `Uns/` 19 · `Site/` 12 · `Uns/Sparkplug/` 6 | **37** |
+| **D** — **đã chọn**, xem dưới | `Transport/` 38 · `Mapping/` 13 · `Models/` 11 | **62** |
+
+🔴 **TIÊU CHÍ CỦA ĐỢT 6 — KHẢ NĂNG KHÔI PHỤC NGHĨA — ĐƯỢC SUY LẠI, KHÔNG THỪA HƯỞNG, VÀ ĐƯỢC GIỮ.**
+Nó là lý do cụm **A không được lấy dù A là đơn vị lớn nhất còn lại**: chính đợt 6 đã **đo** rằng bề
+mặt ấy đầy những thành viên **không nói được gì ngoài cái tên**, nên thứ nợ ở đó là **một PHÁT
+HIỆN**, không phải 109 câu. Mỗi câu viết ở đợt này bị **ghim bởi một artefact đã có trong cây**: ba
+hằng số route bị ghim bởi URL cứng của chính SDK; `UnitMap` bởi **bảy** file `mapping/*.json` đã
+check-in; cách viết tên của `TransportMode` bởi bộ chuyển enum-thành-chuỗi của EngineApi **và** bởi
+một union TypeScript viết tay trong `web/`; chỗ **hai `Mode` nói ngược nhau** bởi chú thích của
+chính `ScenarioConfig.NetworkOutage` và bởi `ApplyNetworkOutageLocked`.
+
+**CỤM ĐÃ CHỌN: chiếc phong bì chuẩn hoá và trọn hành trình của nó.** Lý do cụm ấy đi cùng nhau là
+**một KIỂU**: `CanonicalEnvelope` — được `Normalizer.Normalize` dựng từ một reading cộng một
+`MappingProfile`, là **đối số duy nhất** của `ITransport.SendAsync`, được **bốn** bản cài đặt của
+giao diện ấy mang đi, được `TransportCoordinator` lái, và được `WalFlushPump` phát lại từ đĩa khi
+người mang nó gãy. **Ranh giới KIỂM ĐƯỢC chứ không phải LẬP LUẬN: ba thư mục lấy TRỌN**
+(`Transport/`, `Mapping/`, `Models/`), và **dư lượng của cả ba sau khi viết là 0**.
+
+> 🔴 **Đây là phần nối thẳng của đợt 6.** Đợt 6 đã trả **ba kiểu mà ba method của `ITransport` TRẢ
+> VỀ** (`TransportAck`, `HeartbeatResult`, `ConfigSyncResult` — cùng nằm trong `Models/TransportAck.cs`).
+> Đợt 7 trả **chính giao diện ấy**, hai kiểu trong chữ ký của nó còn chưa trả (`CanonicalEnvelope`,
+> `TransportMode`), và **mọi thứ cài đặt nó**. Chữ ký của `ITransport` nay có tài liệu **cả hai chiều**.
+
+| file | số | CS1591 | CS1573 |
+|---|---:|---:|---:|
+| `Transport/TransportCoordinator.cs` | 9 | 4 | 5 |
+| `Models/Envelopes.cs` | 7 | 7 | 0 |
+| `Mapping/MappingProfile.cs` | 7 | 7 | 0 |
+| `Transport/AutoTransport.cs` | 6 | 6 | 0 |
+| `Transport/DemoTransport.cs` | 5 | 5 | 0 |
+| `Transport/LiveTransport.cs` | 5 | 5 | 0 |
+| `Transport/SwitchableTransport.cs` | 5 | 5 | 0 |
+| `Transport/ITransport.cs` | 4 | 4 | 0 |
+| `Transport/WalFlushPump.cs` | 4 | 0 | 4 |
+| `Models/Enums.cs` | 4 | 4 | 0 |
+| `Mapping/Normalizer.cs` | 4 | 4 | 0 |
+| `Mapping/MappingProfileResolver.cs` | 2 | 0 | 2 |
+| **tổng** | **62** | **51** | **11** |
+
+**Con số thật — ĐO, không trừ.** `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild` toàn bộ solution,
+SDK 10.0.302, 15/15 compilation, `Build succeeded.`, `0 Error(s)`:
+
+| | |
+|---|---:|
+| `EXPECT_WARNINGS` trước | 502 |
+| **`EXPECT_WARNINGS` sau, ĐO** | **440** |
+
+`502 − 62 = 440` là **số học** và nó **khớp** phép đo — khớp ấy được báo cáo **như một kết quả**.
+🔴 **Bản `-t:Rebuild` ĐẦU TIÊN lần này ĐỨNG VỮNG:** hình dạng CS2001 trong `*_wpftmp` từng buộc đợt 5
+và đợt 6 phải bỏ lần chạy đầu **không xuất hiện**. Đó là bằng chứng **về lần chạy này**, không phải
+bằng chứng rằng hình dạng ấy đã hết — **đợt 8 vẫn phải chờ nó**.
+
+**Sổ tách-gốc — HAI hàng dịch, cùng hai hàng ấy, và cả hai đều GIẢM:** `OURS CS1591 243 → 192` (−51)
+và `OURS CS1573 40 → 29` (−11). Vẫn **16 hàng**. **VENDORED 185 / OURS 255 = 440.** 🔴 **Tám hàng
+VENDORED không dịch một đơn vị.**
+
+🔴 **KÊNH ĐỢT 6 NÊU TÊN ĐÃ ĐƯỢC BƯỚC VÀO CÓ CHỦ Ý, VÀ NÓ KHÔNG NỔ.** 11 trong 62 là CS1573 trên
+những khối **đã mang sẵn MỘT PHẦN `<param>`** (5 ở constructor của `TransportCoordinator`, 4 ở
+`WalFlushPump`, 2 ở `MappingProfileResolver.Build`). Cả 11 được trả bằng cách **CHÈN thẻ còn thiếu
+cạnh thẻ đã có** — **không viết lại khối nào**, vì viết lại chính là thao tác đã làm một thành viên
+"đã trả" thành "chưa trả" ở đợt 6. **Không một CS1573 MỚI nào được tạo ra**, và điều đó được **kiểm
+theo từng file** chứ không suy từ tổng.
+
+🔴 **PHÉP ĐỊNH GIÁ THEO TỪNG FILE ĐÃ CHẠY NHƯ MỘT TIỀN ĐIỀU KIỆN, VÀ NÓ TRẢ GIÁ CỦA NÓ THEO MỘT CÁCH
+KHÁC VỚI DỰ TÍNH.** Nó **không** bắt được một thẻ bị rơi — không thẻ nào rơi. Cái nó bắt được là ở
+giữa chừng: với **7 trong 12 file** đã viết, phép đo cho **36 đã trả** và **dư lượng 26 nằm ĐÚNG trên
+5 file chưa chạm, file đối file**. Một con số 36 ở mức solution sẽ **trông y hệt** nếu một file bị trả
+thừa và một file bị trả thiếu.
+
+🔴 **CHỖ THU HẸP CỦA ĐỢT 5 QUAY LẠI, ĐÚNG BẰNG CƠ CHẾ ĐỢT 6 ĐÃ DỰ BÁO.** Cụm này chứa **đúng một**
+khai báo enum (`TransportMode`), và một enum viết trên một dòng **phải được dàn lại** thì các thành
+viên mới mang được chú thích. Trên nhánh này, `git diff` giới hạn ở `src/`: **460 thêm, 4 bớt**. **Ba
+trong bốn dòng bớt là dòng `///`**, cả ba là **summary cũ của `ITransport`**, và cả ba được **chép
+NGUYÊN VĂN vào chính khối thay thế**. Dòng thứ tư là khai báo enum một dòng; **dãy thành viên giống
+hệt, tên đối tên và thứ tự đối thứ tự** — điều đó quan trọng vì thứ tự enum vừa là giá trị nền vừa
+là **thứ tự vận hành viên nhìn thấy trong combo box**. Ngoài chỗ ấy và các dòng trắng ngăn đoạn,
+**không dòng thay đổi nào không phải `///`**.
+
+🔴 **MỘT KHẲNG ĐỊNH ĐÃ CÔNG BỐ TRONG CHÍNH CỤM BỊ PHÉP ĐO BÁC, ĐƯỢC RÚT TẠI CHỖ, KHÔNG SỬA MÃ.**
+`ITransport` tự nhận là *"the single seam ... how it actually leaves the building"*. **Không phải
+vậy**: `EdgePipeline` trao **CÙNG một `CanonicalEnvelope`** cho `IUnsPublisher.PublishReading` ở
+**câu lệnh ngay trước** câu gọi `SendAsync`, và `Site.UnsBridge` phát lại spine ấy lên broker MQTT
+của một SYNAPSE Site **ngoài hộp**. Câu ấy **đúng lúc được viết** và **bị G2-2 làm sai**; nó được
+trích nguyên văn và rút ngay tại chỗ, kèm nửa còn sống: đây là **seam INGEST của ST4I**, một trong
+**hai** đường ra.
+
+**Việc còn nợ sau đợt 7, nêu tên chứ không làm:**
+* **221 chỗ trống bao phủ của ta** (192 CS1591 + 29 CS1573) — **đợt 8, đợt bao phủ CUỐI CÙNG**. **Đo
+  lại.** Phân bố theo thư mục, đo trên cây commit này: `Config/` 50 (6 file) · `Drivers/Modbus/` 46
+  (10) · `Drivers/Simulators/` 27 (11) · `Uns/` 19 (4) · `Drivers/OpcUa/` 17 (5) · `Site/` 12 (2) ·
+  `Engine/` 11 (3) · `Fleet/` 8 (1) · `Drivers/HotFolder/` 7 (2) · `Drivers/Mqtt/` 7 (2) ·
+  `Infrastructure/` 6 (3) · `Uns/Sparkplug/` 6 (1) · `Drivers/` 5 (1). `Transport/`, `Mapping/` và
+  `Models/` **BIẾN MẤT khỏi danh sách** — đó là dạng kiểm được của *"ba thư mục, lấy trọn"*. File lớn
+  nhất còn lại: `Config/MachineConfigModels.cs` **33**, không đổi.
+* 🔴 **109 trong 221 ấy là họ driver mà đợt 6 nêu đích danh** — nơi *"không có gì để nói ngoài cái
+  tên"* là câu trả lời đúng. **Đợt 8 nợ ở đó một PHÁT HIỆN, không phải 109 câu**, và mục 12 **không
+  rời Phần II** trên một đợt đi lấp chúng.
+* **103 cái vendored** — không đổi, phải ở nguyên đó.
+* **Mười hai artefact phụ trong bản cài**, **không dụng cụ nào canh PAYLOAD**, **nửa A mù trước một
+  lệnh đè nhắm ba mã đã về 0** — cả ba y như sau đợt 4, 5 và 6, không cái nào được đợt này đụng tới.
+* 🔴 **Ba khuyết tật MÃ của đợt 6 vẫn chờ chủ sở hữu, không đụng, không mở lại.** Đợt này không
+  chạm vào một dòng nào của `OeeCalculator`, `HistorianWriter` hay `SqliteHistorianStore`.
+* 🔴 **Bốn quan sát về MÃ mà đợt này DỪNG LẠI để báo thay vì tự sửa**, và **không cái nào được mở
+  thành mục** — xem `.superpowers/sdd/item12-stage7/task-1-report.md` §7. Cái nặng nhất:
+  `TransportCoordinator.Auto` là một property **công khai mà KHÔNG MỘT nơi nào trong repo đọc** — không
+  mã sản phẩm, không bài kiểm — và `TransportCoordinator.Demo` chỉ được nhắc **trong một chú thích**.
+* 🔴 **Hai ca *"không có gì để nói ngoài cái tên"* ĐƯỢC NÊU TÊN thay vì lấp**: `MappingProfile.Name`
+  và `MappingProfile.DeviceClass`. Cả hai được nạp từ file preset rồi **không mã nào trên đường
+  chuẩn hoá đọc tới**; thứ duy nhất đọc chúng là một bài kiểm đóng gói. Cái viết được về chúng
+  **không phải nghĩa của chúng mà là sự VẮNG MẶT của người đọc** — và với `DeviceClass` còn thêm một
+  hệ quả: **không gì đối chiếu nó với lớp thật của máy**, nên một máy `Automation` trỏ vào `aoi.json`
+  chạy với preset khai `AoiAvi`, im lặng.
 
 ---
 

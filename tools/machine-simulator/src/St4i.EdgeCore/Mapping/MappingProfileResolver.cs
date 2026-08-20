@@ -46,6 +46,19 @@ public sealed class MappingProfileResolver
     /// "next to the exe" way <c>FleetCore.ResolveFleetPath</c> already resolves <c>fleet.json</c> itself
     /// (<c>AppContext.BaseDirectory</c>/"mapping"). Safe to call with a non-existent directory — every
     /// entry simply falls back to <see cref="MappingProfile.ForClass"/>.</summary>
+    /// <param name="fleet">The roster to resolve, enumerated exactly once. The resulting map is keyed on
+    /// <see cref="MachineDescriptor.Code"/> and compares codes case-INSENSITIVELY, so two descriptors
+    /// whose codes differ only in case are ONE entry here and the later one silently wins — which is a
+    /// looser identity than the historian's, where the same code is stored and compared as written. An
+    /// empty roster is legal and produces a resolver that answers <see langword="null"/> for everything,
+    /// i.e. one that sends every reading to its pipeline's shared profile; that is the state a host that
+    /// runs this class with no roster in scope ends up in, with no exception and no warning.</param>
+    /// <param name="mappingDir">Where the presets live. The file consulted for a descriptor is this
+    /// directory combined with that descriptor's own <c>mappingProfile</c> value plus <c>.json</c>, and
+    /// the combination is literal: the value comes from an operator-authored <c>fleet.json</c> and is not
+    /// checked for separators, so it names a path relative to this directory rather than a file within
+    /// it. Passing a directory that does not exist is not an error — the per-descriptor
+    /// <c>File.Exists</c> simply fails and every entry falls back.</param>
     /// <param name="logWarning">Optional (defaults to a no-op) — invoked once per descriptor that names a
     /// mapping profile file which does not exist. Deliberately a plain delegate, not
     /// <c>Microsoft.Extensions.Logging.ILogger</c> — St4i.EdgeCore is intentionally logging-framework-free

@@ -38,6 +38,28 @@ public sealed class WalFlushPump : IAsyncDisposable
     private readonly Task _loop;
     private volatile bool _disposed;
 
+    /// <param name="getLive">Asked afresh on every tick for the transport to drain, and required. Its
+    /// <see langword="null"/> answer is not an error but the NORMAL way this pump stands down: both
+    /// composition roots pass a delegate that returns null unless the coordinator's mode is exactly Live,
+    /// so a host in Demo or Auto ticks forever and drains nothing. That has a consequence worth stating
+    /// in the unfavourable direction: a backlog written while Live stops being drained the moment an
+    /// operator switches away, and stays on disk until the mode comes back. A delegate that THROWS is
+    /// tolerated — the tick is logged as failed and the loop survives — which is deliberate, because this
+    /// delegate reads state another thread may be rebuilding.</param>
+    /// <param name="interval">How long the loop waits between ticks; defaults to 15 seconds. The wait
+    /// comes FIRST, so nothing is drained until one interval after construction — a restart with a full
+    /// queue stays full for that long unless something else replays it. It is a delay between ticks and
+    /// not a period: a tick that takes longer than this does not shorten the next wait, so the real
+    /// cadence is this plus however long a flush takes.</param>
+    /// <param name="logInfo">Optional (defaults to no-op) — invoked ONLY on a tick that actually drained
+    /// something, and once more when a size trim actually dropped something. A quiet log is therefore
+    /// evidence of nothing at all: it reads identically for a pump that is draining nothing because there
+    /// is nothing queued, and for a pump that is standing down every tick because the mode is not Live.
+    /// A plain delegate rather than a logging framework, matching this project's convention.</param>
+    /// <param name="logError">Optional (defaults to no-op) — the only channel by which a failing tick is
+    /// reported anywhere. Nothing else observes the loop: the task it runs on is never awaited except at
+    /// disposal, and disposal swallows what it catches, so a caller that passes nothing here gets a pump
+    /// that can fail silently every tick forever.</param>
     /// <param name="walOptions">WS-C-T5 — optional (defaults to <see langword="null"/> so every
     /// pre-existing call site/test that constructs a <see cref="WalFlushPump"/> without one keeps
     /// compiling and behaving byte-for-byte unchanged) size guardrail: when provided AND
