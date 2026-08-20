@@ -42,6 +42,14 @@
 -- DANH SÁCH TRẮNG (hằng của mã nguồn, KHÔNG cấu hình được)
 -- ------------------------------------------------------------------------------------------
 --   npm run check · npm run check:tests · npx vitest run <đường> · git status · git diff
+--
+-- ⚠⚠⚠ ĐÍNH CHÍNH 2026-08-20 (chỉ CHÚ THÍCH — không một câu SQL nào đổi, migration đã áp).
+--   Dòng trên là danh sách ở NGÀY VIẾT (2026-08-18). doc 79 (D) đã thêm **BỐN** mục nữa và không ai
+--   sửa chú thích này, nên nó khai THIẾU: bảng thật có **CHÍN** mục —
+--     … · dotnet build <đường> · dotnet test <đường> · dotnet format <đường> · node --test <đường>
+--   ⚠⚠ Và mục `dotnet format <đường>` **GHI ĐÈ TỆP MÃ NGUỒN** (mọi `.cs` dưới đường được trỏ).
+--   Tức bit cấp ở đây KHÔNG thuần "chạy lệnh chỉ-đọc" như phần trên của tệp này ngụ ý. Nguồn sự
+--   thật là `DANH_SACH_TRANG` (ô `ghiDia`), và `repoCommand.census.test.ts §A` ghim dân số 1/9.
 -- ⚠ `git checkout`, `git reset`, `rm`, `DROP` KHÔNG BAO GIỜ vào danh sách trắng — doc 78 §3 mục 1:
 --   ngày 2026-08-18 một tác nhân chạy `git checkout <file>` để hoàn nguyên một sửa đổi 1 dòng và
 --   xoá mất 123 dòng chưa commit.

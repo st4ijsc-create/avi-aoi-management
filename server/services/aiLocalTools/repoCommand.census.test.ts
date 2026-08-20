@@ -62,6 +62,9 @@ import {
   tachArgv,
 } from "./repoCommandSandbox";
 import { xoaSoNganSach } from "./repoSandbox";
+// ★ 2026-08-20 (D) — chính sách "mục ghi đĩa có đòi bit thứ hai không" là HÀM THUẦN, cố ý tách khỏi
+//   `checkPermission` để đo được cả hai chiều cờ mà không phải mock module / không phải chạm CSDL.
+import { QUYEN_GHI_THEM, canDoiBitGhiThem, congGhiDiaBat } from "./writeHandlers/repoCommand";
 
 const GOC_REPO = path.resolve(process.cwd());
 const BIT = "ai_repo_exec";
@@ -137,6 +140,70 @@ describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chín
       expect(m.hanGioMs, m.nhan).toBeGreaterThan(0);
       expect(m.hanGioMs, m.nhan).toBeLessThanOrEqual(HAN_GIO_TOI_DA_MS);
       expect(m.moTa.length, `${m.nhan} phải có mô tả cho người duyệt đọc`).toBeGreaterThan(20);
+    }
+  });
+
+  /**
+   * ★★★ 2026-08-20 — **BẤT BIẾN CHƯA TỪNG ĐƯỢC PHÁT BIỂU Ở ĐÂU: "MẤY MỤC GHI VÀO CÂY LÀM VIỆC".**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * VÌ SAO BA CA DƯỚI ĐÂY TỒN TẠI
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Trước lượt này, câu *"không mục nào ghi vào cây làm việc"* xuất hiện ở **bảy** docblock (kể cả
+   * migration 0331 và dòng catalog quyền mà quản trị viên đọc lúc cấp bit) và **không lưới nào phát
+   * biểu nó**. Nó SAI từ 2026-08-19 — `dotnet format <đường-dẫn>` ghi đè mọi `.cs` dưới đường được
+   * trỏ — và vì không ai đo, cả bảy chỗ cùng mục trong im lặng suốt một ngày.
+   *
+   * ⇒ Ghim **dân số**, không ghim lời khai: nếu mục thứ hai có `ghiDia` xuất hiện (hoặc mục hiện tại
+   *   biến mất), ca này ĐỎ và người thêm buộc phải đọc khối lý lẽ ở `MucDanhSachTrang.ghiDia` —
+   *   nơi nói rõ mục `ghiDia` đi vòng CẢ BỐN hàng rào của `apply_diff`.
+   *
+   * ⚠ **HAI ô, KHÔNG PHẢI MỘT.** `dotnet build`/`dotnet test` sinh `bin/`+`obj/`; `npm run check`
+   *   ghi `node_modules/typescript/tsbuildinfo` (`"incremental": true`). Đó là SẢN PHẨM DỰNG, không
+   *   phải mã nguồn của người viết — gộp chung một cờ thì hoặc nó kêu oan cho `build` (người ta học
+   *   cách bỏ qua cảnh báo), hoặc nó bào chữa cho `format` (*"lệnh nào chả ghi đĩa"*). Hai hậu quả
+   *   NGƯỢC nhau ⇒ hai ô, hai dân số KHÁC nhau: **1/9** và **5/9**.
+   */
+  it("★★★ MỌI mục khai ĐỦ `ghiDia` + `sinhSanPhamDung` (thiếu một ô ⇒ tsc đỏ; khai sai kiểu ⇒ ca này đỏ)", () => {
+    for (const m of DANH_SACH_TRANG) {
+      expect(typeof m.ghiDia, `${m.nhan}: \`ghiDia\` phải là boolean, không được vắng`).toBe("boolean");
+      expect(typeof m.sinhSanPhamDung, `${m.nhan}: \`sinhSanPhamDung\` phải là boolean`).toBe("boolean");
+    }
+  });
+
+  it("★★★ ĐÚNG **1/9** mục GHI ĐÈ MÃ NGUỒN, và nó là `dotnet format` — dân số này đổi ⇒ ĐỎ", () => {
+    const ghi = DANH_SACH_TRANG.filter((m) => m.ghiDia).map((m) => m.nhan);
+    expect(
+      ghi,
+      "Danh sách các lệnh GHI ĐÈ TỆP MÃ NGUỒN vừa đổi. Một mục `ghiDia` đi vòng CẢ BỐN hàng rào của " +
+        "`apply_diff` (không hỏi tệp bẩn · không băm chống TOCTOU · không diff để xem trước · không " +
+        "hộp cát TỪNG TỆP) và nó đứng sau `ai_repo_exec/canCreate` chứ KHÔNG phải `ai_repo_read/canEdit`. " +
+        "Trước khi sửa con số này: đọc khối `ghiDia` ở `MucDanhSachTrang`, thêm cảnh báo cho mục mới ở " +
+        "`xemTruoc`, cập nhật dòng catalog `ai_repo_exec` (chữ quản trị viên đọc lúc cấp bit), và kiểm " +
+        "lại `NHAN_KIEM_CHUNG` của vòng tự động có loại nó ra không.",
+    ).toEqual(["dotnet format <đường-dẫn>"]);
+    expect(DANH_SACH_TRANG.filter((m) => m.ghiDia).length, "đúng MỘT trên chín").toBe(1);
+  });
+
+  it("★★ `sinhSanPhamDung` là một trục KHÁC — 5/9, và KHÔNG mục nào bị gộp nhầm sang `ghiDia`", () => {
+    const dung = DANH_SACH_TRANG.filter((m) => m.sinhSanPhamDung).map((m) => m.nhan);
+    expect(
+      dung,
+      "SẢN PHẨM DỰNG (bin/ obj/ tsbuildinfo) KHÁC mã nguồn do người viết. `npm run check` có " +
+        '`"incremental": true` ⇒ nó CÓ ghi tsbuildinfo; khai `false` là nói dối một cách tiện lợi.',
+    ).toEqual([
+      "npm run check",
+      "npm run check:tests",
+      "dotnet build <đường-dẫn>",
+      "dotnet test <đường-dẫn>",
+      "dotnet format <đường-dẫn>",
+    ]);
+    // ⚠ Vế NGƯỢC: "sinh sản phẩm dựng" KHÔNG được kéo theo "ghi đè mã nguồn". Nếu ai đó "đơn giản
+    //   hoá" hai ô thành một, ca này đỏ.
+    for (const m of DANH_SACH_TRANG) {
+      if (m.sinhSanPhamDung && m.nhan !== "dotnet format <đường-dẫn>") {
+        expect(m.ghiDia, `${m.nhan}: sinh bin/obj/tsbuildinfo KHÔNG phải là ghi đè mã nguồn`).toBe(false);
+      }
     }
   });
 
@@ -829,4 +896,254 @@ describe("§J — BẢN KIỂM ĐẾM ĐIỂM GỌI: ai được sinh tiến tr�
     const files = diemGoi("chayLenhTrongHopCat").map((d) => d.file);
     expect(files).not.toContain("services/aiCodingVerify.ts");
   });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// §K — THẺ DUYỆT PHẢI **NÓI RA** VIỆC GHI ĐĨA (2026-08-20)
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ LỖ ĐƯỢC VÁ Ở ĐÂY, NÓI THẲNG: trước lượt này thẻ duyệt của `run_command` có **ĐÚNG BỐN** cảnh
+ * báo — thư mục chạy · hạn giờ giết cây · môi trường đã lọc · đầu ra bị cắt — và **không dòng nào**
+ * nói rằng lệnh sắp bấm sẽ **ghi đè tệp mã nguồn**. Người bấm "Duyệt" cho `dotnet format` đang duyệt
+ * một thay đổi họ **chưa từng nhìn thấy**: không diff, không danh sách tệp, không cả một chữ "ghi".
+ *
+ * ⚠⚠ **CA ÂM LÀ PHẦN QUAN TRỌNG HƠN.** Một bản vá "cứ cảnh báo hết cho chắc" cũng làm ca dương
+ * xanh — và nó phá đúng thứ cảnh báo tồn tại để làm: sau vài lần thấy chữ đỏ trên `git status`,
+ * người ta bấm qua mà không đọc. Vòng dưới đây đi **CẢ CHÍN** mục lấy từ bảng SỐNG và đòi cảnh báo
+ * xuất hiện **khi và chỉ khi** `ghiDia` — nên một cảnh báo thừa cũng ĐỎ.
+ *
+ * ⚠ Đo bằng **hàm thuần** (`preview` không chạm CSDL, không mock module nào): bài học 2026-08-19 —
+ *   một lưới mock-module xanh khi chạy riêng, ĐỎ trong suite. Kiểm được bằng hàm thuần thì đừng mock.
+ */
+describe("§K — CẢNH BÁO GHI ĐĨA trên thẻ duyệt: có ĐÚNG ở mục ghiDia, và KHÔNG ở tám mục kia", () => {
+  /** Dựng chuỗi lệnh hợp lệ cho MỘT mục, lấy khuôn từ bảng SỐNG (ô tự do ⇒ một đường trong hộp cát). */
+  const DUONG_MAU = "sandbox-projects/csharp-demo";
+  function lenhCuaMuc(m: (typeof DANH_SACH_TRANG)[number]): string {
+    return m.khuon.map((k) => k ?? DUONG_MAU).join(" ");
+  }
+
+  it("★★★ ∀ 9 mục: cảnh báo GHI ĐÈ là warnings[0] ⇔ `ghiDia` (thừa cũng ĐỎ, thiếu cũng ĐỎ)", async () => {
+    const t = toolChayLenh()[0]!;
+    const xau: string[] = [];
+    for (const m of DANH_SACH_TRANG) {
+      const pv = await t.preview!({ command: lenhCuaMuc(m) }, CTX);
+      const coCanhBao = pv.warnings.some((s) => s.includes("GHI ĐÈ TỆP MÃ NGUỒN"));
+      if (m.ghiDia && !coCanhBao) {
+        xau.push(`${m.nhan}: ghiDia=true nhưng thẻ duyệt KHÔNG nói gì về việc ghi đè — người dùng bấm mù`);
+      }
+      if (!m.ghiDia && coCanhBao) {
+        xau.push(`${m.nhan}: ghiDia=false mà vẫn cảnh báo ghi đè — cảnh báo thừa dạy người ta bấm qua`);
+      }
+      if (m.ghiDia && coCanhBao) {
+        expect(pv.warnings[0], `${m.nhan}: cảnh báo ghi đè phải đứng ĐẦU, không nằm dưới bốn câu thủ tục`).toContain(
+          "GHI ĐÈ TỆP MÃ NGUỒN",
+        );
+      }
+    }
+    expect(xau.join("\n")).toBe("");
+  });
+
+  it("★★★ câu cảnh báo nêu ĐÍCH DANH ba hàng rào KHÔNG áp dụng (tệp bẩn · băm TOCTOU · diff)", async () => {
+    const t = toolChayLenh()[0]!;
+    const pv = await t.preview!({ command: `dotnet format ${DUONG_MAU}` }, CTX);
+    const c = pv.warnings[0] ?? "";
+    expect(c, "phải nói rõ hàng rào TỆP BẨN không áp dụng").toContain("chưa commit");
+    expect(c, "phải nói rõ băm chống TOCTOU không áp dụng").toContain("TOCTOU");
+    expect(c, "phải nói rõ KHÔNG có diff để xem trước").toContain("diff");
+    expect(c, "phải nêu đường bị ảnh hưởng, không nói chung chung").toContain(DUONG_MAU);
+  });
+
+  it("★★ đủ BA locale — một cảnh báo chỉ có tiếng Việt là một cảnh báo vô hình với 2/3 người dùng", async () => {
+    const t = toolChayLenh()[0]!;
+    const bo: Array<[string, string]> = [
+      ["vi", "GHI ĐÈ TỆP MÃ NGUỒN"],
+      ["en", "OVERWRITES SOURCE FILES"],
+      ["zh", "覆盖源代码文件"],
+    ];
+    for (const [lang, moc] of bo) {
+      const pv = await t.preview!({ command: `dotnet format ${DUONG_MAU}` }, { ...CTX, lang: lang as any });
+      expect(pv.warnings[0], `locale ${lang}`).toContain(moc);
+    }
+  });
+
+  it("★★ ô audit `ghiDia` đi vào previewJson + sổ audit bằng MÃ máy đọc được (không ghim ngôn ngữ vào dữ liệu)", async () => {
+    const t = toolChayLenh()[0]!;
+    const co = await t.preview!({ command: `dotnet format ${DUONG_MAU}` }, CTX);
+    const khong = await t.preview!({ command: "git status" }, CTX);
+    expect(co.changes.find((c) => c.field === "ghiDia")?.newValue).toBe("ghi_de_ma_nguon");
+    expect(khong.changes.find((c) => c.field === "ghiDia")?.newValue).toBe("chi_hoi_kiem_tra");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// §L — LỜI KHAI RA NGOÀI: DÒNG CATALOG QUYỀN + CÂU TỪ CHỐI (2026-08-20)
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ VÌ SAO MỘT LƯỚI ĐI ĐO **CHỮ**: dòng catalog `ai_repo_exec` là thứ quản trị viên đọc **đúng
+ * lúc quyết định cấp bit**. Nó từng khai *"…danh sách TRẮNG tại thư mục repo (canCreate): npm run
+ * check · npm run check:tests · npx vitest run <đường> · git status · git diff"* — **5 lệnh, toàn
+ * chỉ-đọc** — trong khi bit thật cấp **9**, gồm một lệnh **ghi đè mã nguồn**. Trong bảy chỗ lệch,
+ * đây là chỗ có hậu quả trực tiếp nhất: một người cấp bit vì tin lời khai ấy đang cấp một thứ khác
+ * hẳn với thứ họ đọc.
+ *
+ * ⇒ Ca dưới suy danh sách từ `DANH_SACH_TRANG` **SỐNG** rồi đòi dòng catalog chứa TỪNG `nhan`. Thêm
+ *   một mục vào bảng mà quên sửa catalog ⇒ ĐỎ ngay, không cần ai nhớ.
+ */
+describe("§L — dòng catalog quyền `ai_repo_exec` khai ĐÚNG bảng SỐNG", () => {
+  /** Rút chuỗi `description` của mục catalog `ai_repo_exec` bằng AST (không so chuỗi cả file). */
+  function moTaCatalog(): string {
+    const file = path.resolve(GOC_SERVER, "routers", "permissionsRouter.ts");
+    const src = fs.readFileSync(file, "utf8");
+    const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    let ra: string | null = null;
+    const doc = (o: ts.ObjectLiteralExpression): string | null => {
+      let ten: string | null = null;
+      let mo: string | null = null;
+      for (const p of o.properties) {
+        if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name)) continue;
+        if (!ts.isStringLiteralLike(p.initializer)) continue;
+        if (p.name.text === "moduleName") ten = p.initializer.text;
+        if (p.name.text === "description") mo = p.initializer.text;
+      }
+      return ten === "ai_repo_exec" ? mo : null;
+    };
+    const di = (n: ts.Node): void => {
+      if (ts.isObjectLiteralExpression(n)) {
+        const m = doc(n);
+        if (m !== null) ra = m;
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+    expect(ra, "không tìm thấy mục catalog `ai_repo_exec` có `description` — phép đo đã hỏng, không phải hệ").not.toBeNull();
+    return ra!;
+  }
+
+  it("★★★ catalog nêu ĐỦ CẢ CHÍN lệnh — suy từ bảng SỐNG, không chép tay", () => {
+    const mo = moTaCatalog();
+    const thieu = DANH_SACH_TRANG.filter((m) => !mo.includes(m.nhan)).map((m) => m.nhan);
+    expect(
+      thieu.join(" · "),
+      "Dòng catalog `ai_repo_exec` khai THIẾU lệnh. Đây là chữ quản trị viên đọc ĐÚNG LÚC quyết định " +
+        "cấp bit — khai thiếu ở đây là để họ cấp một quyền khác với quyền họ tưởng.",
+    ).toBe("");
+    expect(mo, "phải khai đúng SỐ LƯỢNG của bảng sống").toContain(`trong ${DANH_SACH_TRANG.length} lệnh`);
+  });
+
+  it("★★★ catalog NÊU ĐÍCH DANH lệnh ghi đè và nói rõ nó GHI ĐÈ (không chỉ liệt kê tên)", () => {
+    const mo = moTaCatalog();
+    for (const m of DANH_SACH_TRANG.filter((x) => x.ghiDia)) {
+      expect(mo, `catalog phải nêu đích danh "${m.nhan}"`).toContain(m.nhan);
+    }
+    expect(mo, "phải có chữ GHI ĐÈ TỆP MÃ NGUỒN — liệt kê tên lệnh thôi thì không ai đoán ra").toContain(
+      "GHI ĐÈ TỆP MÃ NGUỒN",
+    );
+    expect(
+      mo,
+      "phải nói ra hệ quả RBAC: bit này cho ghi đè mã nguồn kể cả khi ai_repo_read/canEdit đã bị thu",
+    ).toContain("ai_repo_read/canEdit");
+  });
+
+  /**
+   * ★★ Câu TỪ CHỐI hiện ra màn hình từng nói *"Năm lệnh được phép"* / *"The five allowed commands"* /
+   * *"允许的五条命令"* rồi **in ra bảng CHÍN dòng ngay bên dưới** — tự mâu thuẫn trong một câu, ở cả
+   * ba ngôn ngữ. Nay số lượng đọc từ `DANH_SACH_TRANG.length`, nên ca này đo **cả ba locale** rằng
+   * con số khớp bảng sống và không còn chữ "năm" viết cứng.
+   */
+  it("★★★ câu từ chối CMD_NOT_ALLOWED khai đúng SỐ LƯỢNG ở cả ba locale, và không còn 'năm' viết cứng", async () => {
+    const t = toolChayLenh()[0]!;
+    const n = DANH_SACH_TRANG.length;
+    const bo: Array<[string, string, RegExp]> = [
+      ["vi", `${n} lệnh được phép`, /Năm lệnh được phép/],
+      ["en", `The ${n} allowed commands`, /The five allowed commands/],
+      ["zh", `允许的 ${n} 条命令`, /允许的五条命令/],
+    ];
+    for (const [lang, phaiCo, camCo] of bo) {
+      const ra = await t.execute!({ command: "npm run build" }, { ...CTX, lang: lang as any });
+      const s = String(ra.textSummary ?? "");
+      expect(ra.note, `locale ${lang}: phải là một lượt TỪ CHỐI`).toBe("CMD_NOT_ALLOWED");
+      expect(s, `locale ${lang}`).toContain(phaiCo);
+      expect(camCo.test(s), `locale ${lang}: còn chữ "năm" viết cứng trong khi bảng có ${n} mục`).toBe(false);
+      // Và bảng in ra phải có đủ chín dòng — con số và nội dung không được lệch nhau.
+      for (const m of DANH_SACH_TRANG) expect(s, `locale ${lang}: bảng thiếu "${m.nhan}"`).toContain(m.nhan);
+    }
+  });
+});
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  // §M — (D) CỔNG BỔ SUNG CHO MỤC `ghiDia`: CHÍNH SÁCH ĐO ĐƯỢC, MẶC ĐỊNH TẮT
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+describe("§M — (D) CỔNG BỔ SUNG cho mục ghi đĩa: đòi THÊM ai_repo_read/canEdit sau một cờ MẶC ĐỊNH TẮT", () => {
+  /**
+   * ⚠⚠ Ba ca dưới đo **CHÍNH SÁCH** bằng hàm thuần + đo **CHỖ CƯỠNG CHẾ** bằng AST. Cố ý KHÔNG mock
+   * `_core/accessControl`: bài học 2026-08-19 (một lưới mock-module xanh khi chạy riêng, ĐỎ trong
+   * suite) và bài học "đừng kéo CSDL dùng chung vào một lưới vốn không cần nó".
+   *
+   * ⚠ Ca "mặc định TẮT" là ca quan trọng nhất về mặt an toàn hồi quy: nó chứng minh bản vá (D)
+   *   **không đổi một byte hành vi** cho tài khoản đang chạy khi chưa ai bật cờ.
+   */
+  it("★★★ (D) MẶC ĐỊNH TẮT — không mục nào đòi bit thứ hai khi cờ vắng (0 hồi quy)", () => {
+    const cu = process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT;
+    delete process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT;
+    try {
+      for (const m of DANH_SACH_TRANG) {
+        expect(canDoiBitGhiThem(m), `${m.nhan}: cờ TẮT mà vẫn đòi bit thứ hai ⇒ hồi quy cho người đang dùng`).toBe(false);
+      }
+      expect(congGhiDiaBat()).toBe(false);
+      // "0" tường minh cũng phải là TẮT — không được coi mọi giá trị khác rỗng là BẬT.
+      process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT = "0";
+      expect(congGhiDiaBat()).toBe(false);
+    } finally {
+      if (cu === undefined) delete process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT;
+      else process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT = cu;
+    }
+  });
+
+  it("★★★ (D) cờ BẬT ⇒ ĐÚNG mục `ghiDia` đòi thêm bit, tám mục kia KHÔNG đổi", () => {
+    const cu = process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT;
+    process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT = "1";
+    try {
+      const doi = DANH_SACH_TRANG.filter((m) => canDoiBitGhiThem(m)).map((m) => m.nhan);
+      expect(doi, "cờ BẬT chỉ được siết đúng mục ghi đè mã nguồn — siết cả bảng là phá luồng đang chạy").toEqual([
+        "dotnet format <đường-dẫn>",
+      ]);
+      expect(QUYEN_GHI_THEM).toEqual({ module: "ai_repo_read", action: "canEdit" });
+    } finally {
+      if (cu === undefined) delete process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT;
+      else process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT = cu;
+    }
+  });
+
+  it("★★ (D) cờ BẬT ⇒ thẻ duyệt NÓI TRƯỚC rằng lượt chạy còn đòi bit thứ hai (đỡ một lượt bấm hụt)", async () => {
+    const cu = process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT;
+    const t = toolChayLenh()[0]!;
+    try {
+      process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT = "1";
+      const bat = await t.preview!({ command: "dotnet format sandbox-projects/csharp-demo" }, CTX);
+      expect(bat.warnings.some((s) => s.includes("ai_repo_read/canEdit"))).toBe(true);
+      // ⚠ Cảnh báo GHI ĐÈ vẫn phải đứng ĐẦU — cờ (D) không được đẩy nó xuống.
+      expect(bat.warnings[0]).toContain("GHI ĐÈ TỆP MÃ NGUỒN");
+
+      delete process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT;
+      const tat = await t.preview!({ command: "dotnet format sandbox-projects/csharp-demo" }, CTX);
+      expect(
+        tat.warnings.some((s) => s.includes("ai_repo_read/canEdit")),
+        "cờ TẮT mà thẻ duyệt vẫn doạ một quyền không được đòi ⇒ lời khai SAI theo chiều ngược lại",
+      ).toBe(false);
+    } finally {
+      if (cu === undefined) delete process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT;
+      else process.env.AI_REPO_EXEC_GHIDIA_DOI_CANEDIT = cu;
+    }
+  });
+
+  it("★★★ (D) cưỡng chế nằm ở HARD GATE `execute`, KHÔNG ở `preview` (preview chạy trước HITL)", () => {
+    const dg = diemGoi("checkPermission").filter((d) => d.file === "services/aiLocalTools/writeHandlers/repoCommand.ts");
+    expect(
+      dg.map((d) => d.trongHam),
+      "`preview()` chạy TRƯỚC cổng HITL và kết quả của nó đi tới ba đích không cần ai xác nhận. Một " +
+        "cổng quyền đặt ở đó vừa vô dụng (args thật đến từ hàng `ai_pending_actions`) vừa kéo CSDL " +
+        "vào đường xem trước. Cưỡng chế phải ở `execute`.",
+    ).toEqual(["execute"]);
+  });
+
 });

@@ -190,6 +190,17 @@ const CENSUS: Record<string, XepLoai> = {
   CMD_RESOLVE_ERROR: "chan",
   CMD_SPAWN_ERROR: "chan",
   CMD_TIMEOUT: "chan",
+  /**
+   * ★ 2026-08-20 — **`EXEC_WRITE_NEEDS_EDIT_BIT`: `chan`, và vì sao nó KHÔNG được `dien-giai`.**
+   *
+   * Mã này phát ra khi cờ `AI_REPO_EXEC_GHIDIA_DOI_CANEDIT` BẬT và người dùng thiếu bit thứ hai
+   * (`ai_repo_read/canEdit`) cho một lệnh **ghi đè tệp mã nguồn** (hôm nay: `dotnet format`). Nó
+   * cùng họ với `PERMISSION_DENIED`: một lượt TỪ CHỐI VÌ QUYỀN, `data` rỗng, **lệnh chưa chạy**.
+   * Cho LLM văn vẻ hoá nó là mời nó rút gọn thành *"đã định dạng xong"* hoặc *"hệ thống lỗi"* —
+   * hai câu đều SAI, và câu thứ hai đẩy người dùng đi tìm lỗi ở chỗ không có lỗi. `textSummary`
+   * nêu ĐÍCH DANH `module/action` còn thiếu, đúng luật `readToolRbac.cauTuChoi`.
+   */
+  EXEC_WRITE_NEEDS_EDIT_BIT: "chan",
   // ── doc 78 PHA C (2026-08-19) — GHI TỆP (`writeHandlers/applyDiff.ts`) ──────────────────────
   /**
    * ⚠⚠ NĂM MÃ MỚI, TẤT CẢ `chan` — mỗi mã là một lượt **TỪ CHỐI GHI** kèm `data` rỗng

@@ -88,6 +88,9 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     // ★★★ doc 78 PHA B — bit "AI chạy lệnh". MODULE RIÊNG, không phải một `action` khác của
     // `ai_repo_read`: gộp chung là để một ô tick trên dòng "AI đọc mã nguồn" mở quyền SINH TIẾN
     // TRÌNH trong im lặng (xem khối RBAC ở writeHandlers/repoCommand.ts). Chỉ `canCreate`.
+    // ⚠⚠ 2026-08-20: một trong 9 lệnh (`dotnet format <đường>`) GHI ĐÈ TỆP MÃ NGUỒN ⇒ bit này KHÔNG
+    //    thuần "chạy". Cổng bổ sung đòi thêm `ai_repo_read/canEdit` đã có, sau cờ MẶC ĐỊNH TẮT
+    //    `AI_REPO_EXEC_GHIDIA_DOI_CANEDIT` — chờ chủ dự án quyết.
     { category: 'settings', moduleName: 'ai_repo_exec', canView: false, canCreate: true, canEdit: false, canDelete: false, canExport: false },
     // Admin
     { category: 'admin', moduleName: 'admin_users', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
@@ -308,8 +311,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     // trên CÙNG một module (cùng đối tượng: tệp repo) — thu quyền ghi mà giữ quyền đọc chỉ cần bỏ
     // một ô tick. Backfill: mig 0330 (canView) + mig 0332 (canEdit).
     { category: 'settings', moduleName: 'ai_repo_read', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
-    // ★★★ doc 78 PHA B (2026-08-18) — trợ lý AI CHẠY LỆNH trong danh sách TRẮNG (`run_command`:
-    // npm run check · npm run check:tests · npx vitest run <đường> · git status · git diff).
+    // ★★★ doc 78 PHA B (2026-08-18) — trợ lý AI CHẠY LỆNH trong danh sách TRẮNG (`run_command`).
+    // Bảng có **9 mục** (doc 79 D thêm 4): npm run check · npm run check:tests · npx vitest run
+    // <đường> · git status · git diff · dotnet build/test/format <đường> · node --test <đường>.
+    // ⚠⚠ `dotnet format <đường>` **GHI ĐÈ TỆP MÃ NGUỒN** — mục DUY NHẤT làm vậy (`ghiDia: true`).
     // Chỉ `canCreate` ("tạo một lượt chạy"); tool là WRITE nên MỌI lượt vẫn phải qua HITL.
     // Backfill: mig 0331.
     { category: 'settings', moduleName: 'ai_repo_exec', canView: false, canCreate: true, canEdit: false, canDelete: false, canExport: false },
@@ -834,7 +839,11 @@ export const permissionsRouter = router({
         // doc 78 PHA B — bit RIÊNG cho mặt CHẠY LỆNH. Tách khỏi `ai_repo_read` theo đúng tiền lệ
         // `vram_control` (mặt lệnh tách khỏi mặt đọc): cấp quyền ĐỌC mã nguồn không được kéo theo
         // quyền SINH TIẾN TRÌNH trên máy chủ. Đây là DÒNG CATALOG — nó KHÔNG cấp quyền cho ai.
-        { category: 'settings', moduleName: 'ai_repo_exec', displayName: 'AI chạy lệnh (danh sách trắng)', displayNameEn: 'AI run command (allowlist)', displayNameZh: 'AI 运行命令（白名单）', description: 'Cho trợ lý AI ĐỀ XUẤT chạy một lệnh trong danh sách TRẮNG tại thư mục repo (canCreate): npm run check · npm run check:tests · npx vitest run <đường> · git status · git diff. Mọi lượt vẫn phải qua XÁC NHẬN của người dùng (HITL); git checkout/git reset/rm KHÔNG BAO GIỜ được phép. KHÔNG bao gồm quyền ĐỌC mã nguồn — mặt đọc đứng trên ai_repo_read/canView.' },
+        // ⚠⚠⚠ 2026-08-20 — DÒNG NÀY TỪNG KHAI **5 LỆNH, TOÀN CHỈ-ĐỌC** trong khi bit thật cấp **9**,
+        // trong đó có MỘT lệnh GHI ĐÈ MÃ NGUỒN. Đây là chữ quản trị viên đọc ĐÚNG LÚC quyết định cấp
+        // bit, nên chỗ lệch ở đây có hậu quả trực tiếp nhất trong cả bảy chỗ lệch. Nếu bảng
+        // `DANH_SACH_TRANG` đổi lần nữa, `repoCommand.census.test.ts §K` sẽ ĐỎ ở đây.
+        { category: 'settings', moduleName: 'ai_repo_exec', displayName: 'AI chạy lệnh (danh sách trắng)', displayNameEn: 'AI run command (allowlist)', displayNameZh: 'AI 运行命令（白名单）', description: 'Cho trợ lý AI ĐỀ XUẤT chạy MỘT trong 9 lệnh của danh sách TRẮNG tại thư mục dự án (canCreate): npm run check · npm run check:tests · npx vitest run <đường-dẫn> · git status · git diff · dotnet build <đường-dẫn> · dotnet test <đường-dẫn> · dotnet format <đường-dẫn> · node --test <đường-dẫn>. ⚠ TÁM lệnh chỉ HỎI/KIỂM TRA, nhưng "dotnet format <đường-dẫn>" GHI ĐÈ TỆP MÃ NGUỒN (ghi đè mọi tệp .cs dưới đường đó theo .editorconfig) — và nó KHÔNG đi qua các hàng rào của đường ghi tệp: không kiểm tệp có thay đổi chưa commit, không so băm chống TOCTOU, không có diff để xem trước. Nghĩa là cấp bit NÀY cho phép AI đề xuất ghi đè mã nguồn kể cả khi bạn đã thu hồi ai_repo_read/canEdit. Mọi lượt vẫn phải qua XÁC NHẬN của người dùng (HITL); git checkout/git reset/rm KHÔNG BAO GIỜ được phép. KHÔNG bao gồm quyền ĐỌC mã nguồn — mặt đọc đứng trên ai_repo_read/canView.' },
 
         // ======================== ADMIN ========================
         { category: 'admin', moduleName: 'admin_users', displayName: 'QL Người dùng', description: 'Tạo/sửa/xóa tài khoản người dùng' },

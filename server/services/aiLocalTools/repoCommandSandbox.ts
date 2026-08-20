@@ -38,8 +38,16 @@
  * doc 78 §3 mục 1, và nó **đã xảy ra thật** ngày 2026-08-18: một tác nhân chạy `git checkout <file>`
  * để hoàn nguyên một đột biến 1 dòng và **xoá mất 123 dòng chưa commit**. Bằng chứng nằm ngay trong
  * đầu ra của chính nó (`git diff --stat` báo **124 insertions** cho một sửa đổi 1 dòng) và nó đọc
- * lướt qua. ⇒ Danh sách trắng dưới đây **chỉ có lệnh ĐỌC hoặc lệnh KIỂM TRA**. Không lệnh nào trong
- * đó ghi vào cây làm việc; hai lệnh `git` đều là lệnh hỏi.
+ * lướt qua. ⇒ Không lệnh nào **HOÀN NGUYÊN/XOÁ** mã được vào bảng dưới đây; hai lệnh `git` đều là
+ * lệnh hỏi.
+ *
+ * ⚠⚠⚠ **ĐÍNH CHÍNH 2026-08-20 — CÂU CŨ Ở ĐÂY ĐÃ SAI, VÀ NÓ SAI TỪ 2026-08-19.**
+ * Bản trước viết *"danh sách trắng chỉ có lệnh ĐỌC hoặc KIỂM TRA; không lệnh nào ghi vào cây làm
+ * việc"*. Đó là sự thật của **năm** mục đầu. Mục thứ **tám** — `dotnet format <đường>` — **GHI ĐÈ
+ * mọi tệp `.cs`** dưới cây được trỏ, và nó vào bảng cùng lượt doc 79 (D) mà câu trên **không được
+ * sửa theo**. Một bất biến sống trong văn xuôi là một bất biến sẽ mục mà không ai đỏ.
+ * ⇒ Nay nó là **DỮ LIỆU**: ô `ghiDia` dưới, khai cho **cả chín** mục, và `repoCommand.census.test.ts
+ *   §A` ghim dân số **đúng 1/9**. Đổi con số ấy ⇒ ĐỎ.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠ `npm run build` **CỐ Ý KHÔNG** CÓ TRONG DANH SÁCH TRẮNG Ở LƯỢT ĐẦU — BA LÝ DO ĐO ĐƯỢC
@@ -53,6 +61,11 @@
  *   2. Nó là lệnh DUY NHẤT trong danh sách đề xuất có **tác dụng phụ ghi ra đĩa** — mà pha B được
  *      chốt là *"chạy lệnh"*, còn *"ghi tệp"* là pha C và pha C có hàng rào riêng ("tệp bẩn thì từ
  *      chối"). Cho `npm run build` vào pha B là **lách hàng rào của pha C bằng một lệnh**.
+ *      ⚠⚠ **ĐÍNH CHÍNH 2026-08-20**: lý lẽ này ĐÚNG và vẫn ĐÚNG — nhưng **chính nó đã bị vi phạm ở
+ *      lượt sau**. `dotnet format` (doc 79 D) làm **đúng cái việc** mục 2 vừa cấm: nó ghi tệp qua
+ *      cửa pha B, tức lách cả bốn hàng rào của pha C. Nó ở lại danh sách trắng (hữu ích thật cho dự
+ *      án C#), nhưng từ nay phải **khai `ghiDia: true`** và **nói ra trên thẻ duyệt**. Bài học ghi
+ *      lại đúng chỗ nó bị bỏ qua: một lý lẽ viết ra không tự cưỡng chế lượt mở rộng tiếp theo.
  *   3. ~2 phút/lượt: dài hơn mọi hạn giờ hợp lý của một vòng lặp tác nhân, và `dist/` nằm trong
  *      `DOAN_THU_MUC_CAM` của pha A nên tác nhân **không đọc lại được thứ nó vừa tạo** — giá trị
  *      phản hồi bằng không.
@@ -288,6 +301,48 @@ export interface MucDanhSachTrang {
   readonly hanGioMs: number;
   /** Một câu cho người duyệt biết lệnh này LÀM GÌ. */
   readonly moTa: string;
+  /**
+   * ★★★ 2026-08-20 — **LỆNH NÀY CÓ GHI ĐÈ TỆP MÃ NGUỒN KHÔNG.**
+   * `true` ⇔ lệnh sửa THẲNG các tệp mã nguồn **do người viết**, nằm dưới cây làm việc của gốc được
+   * trỏ. Hôm nay đúng **một** mục: `dotnet format <đường>` (ghi đè mọi `.cs` theo `.editorconfig`).
+   *
+   * ⚠⚠⚠ VÌ SAO Ô NÀY PHẢI TỒN TẠI, THAY VÌ MỘT CÂU TRONG DOCBLOCK
+   * Một mục `ghiDia` đi vòng **CẢ BỐN** hàng rào mà `apply_diff` (pha C) dựng cho đường ghi tệp:
+   *   (a) KHÔNG hỏi `git status` ⇒ tệp có thay đổi chưa commit vẫn bị đè;
+   *   (b) KHÔNG so băm ⇒ không có phòng vệ TOCTOU giữa lúc đề xuất và lúc chạy;
+   *   (c) KHÔNG có diff để người duyệt xem trước ⇒ họ bấm duyệt một thay đổi **chưa nhìn thấy**;
+   *   (d) KHÔNG qua hộp cát TỪNG TỆP — ô tự do là một **THƯ MỤC**, và mọi `.cs` bên dưới bị ghi.
+   * Và nó đứng sau bit `ai_repo_exec/canCreate`, **không** phải `ai_repo_read/canEdit` ⇒ thu hồi
+   * quyền GHI của AI mà vẫn để quyền CHẠY thì AI **vẫn ghi đè được mã nguồn**. Sự thật ấy trước
+   * lượt này chỉ sống trong văn xuôi, và **văn xuôi đã sai ở bảy chỗ**.
+   * ⇒ Là dữ liệu thì đo được: census ghim dân số, thẻ duyệt đọc được, cổng (D) tra được.
+   *
+   * ⚠ Ô này **KHÔNG** phát biểu *"lệnh có tạo byte nào trên đĩa không"* — xem `sinhSanPhamDung`.
+   */
+  readonly ghiDia: boolean;
+  /**
+   * **LỆNH NÀY CÓ SINH/CẬP NHẬT SẢN PHẨM DỰNG KHÔNG** (`bin/`, `obj/`, `tsbuildinfo`…).
+   * `true` ⇔ có byte rơi xuống đĩa, nhưng là byte **SINH RA**, không phải mã nguồn do người viết.
+   *
+   * ⚠⚠ VÌ SAO **HAI Ô** CHỨ KHÔNG GỘP LÀM MỘT: gộp lại thì `dotnet build` (sinh `obj/`, không ai
+   * mất gì) và `dotnet format` (viết đè `Program.cs` **của bạn**) mang **cùng một nhãn** — và nhãn
+   * chung ấy chỉ có hai kết cục, cả hai đều sai: hoặc nó kêu oan cho `build` (người ta học cách bỏ
+   * qua cảnh báo), hoặc nó bào chữa cho `format` (*"thì lệnh nào chả ghi đĩa"*) — đúng cái lỗ đang
+   * vá. Hai hậu quả NGƯỢC nhau ⇒ phải là hai ô.
+   * ⚠ Khai theo ĐO, không theo trực giác: `npm run check`/`check:tests` **CÓ** ghi tệp —
+   *   `tsconfig.json` đặt `"incremental": true` + `tsBuildInfoFile:
+   *   ./node_modules/typescript/tsbuildinfo` (đã kiểm: cả `tsbuildinfo` lẫn `tsbuildinfo.tests` tồn
+   *   tại trên máy này). Khai `false` cho chúng là nói dối một cách tiện lợi.
+   * ⇒ `sinhSanPhamDung` đúng **5/9**; `ghiDia` đúng **1/9**. Hai con số KHÁC nhau là điểm.
+   *
+   * ⚠⚠ TRỤC THỨ BA, KHAI THẲNG LÀ **KHÔNG** ĐƯỢC HAI Ô NÀY PHỦ: *"lệnh có THI HÀNH mã của repo
+   * không"*. `npx vitest run` · `node --test` · `dotnet test` · `dotnet build` (MSBuild target,
+   * analyzer) đều chạy mã do repo cung cấp, và mã ấy có thể ghi bất cứ đâu nó muốn. Đó là hồ sơ rủi
+   * ro ĐÃ ĐƯỢC nhận và đã được trả lời bằng thứ khác (hộp cát đường dẫn + môi trường ĐÃ LỌC + hạn
+   * giờ giết cây + HITL), không phải bằng hai ô này. Ghi ra để không ai đọc `ghiDia:false` thành
+   * *"lệnh này không thể chạm tệp nào"*.
+   */
+  readonly sinhSanPhamDung: boolean;
   /** Phán quyết ô TỰ DO. Bắt buộc có khi `khuon` chứa `null`; `null` ⇔ được phép. */
   readonly phanQuyetOTuDo?: (v: string) => { ma: MaTuChoiLenh; chiTiet: string } | null;
   /** Dựng argv THẬT. `null` ⇔ không phân giải được (thiếu `npm-cli.js`/`vitest.mjs`). */
@@ -295,7 +350,11 @@ export interface MucDanhSachTrang {
 }
 
 /**
- * ★★★ DANH SÁCH TRẮNG — **NĂM MỤC, TOÀN LỆNH ĐỌC/KIỂM TRA.**
+ * ★★★ DANH SÁCH TRẮNG — **CHÍN MỤC: TÁM CHỈ HỎI/KIỂM TRA, MỘT GHI ĐÈ MÃ NGUỒN.**
+ *
+ * Mục thứ chín ấy là **`dotnet format <đường>`** (`ghiDia: true`). Đừng đọc bảng này là *"toàn lệnh
+ * đọc"* — đó đúng là câu docblock cũ đã khai, và nó SAI từ 2026-08-19 (xem khối ĐÍNH CHÍNH đầu
+ * file). Mỗi mục **BẮT BUỘC** khai `ghiDia` + `sinhSanPhamDung`; census ghim dân số cả hai.
  *
  * ⚠ Đây là **toàn bộ** tập lệnh tác nhân chạy được, và nó là một hằng của mã nguồn: không cờ môi
  * trường nào nới nó, không tham số nào thêm mục vào nó. Muốn thêm thì phải sửa file này, tức phải
@@ -306,7 +365,10 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     nhan: "npm run check",
     khuon: ["npm", "run", "check"],
     hanGioMs: 240_000,
-    moTa: "Kiểm kiểu toàn bộ mã sản phẩm (tsc --noEmit, heap 8 GB qua cross-env). KHÔNG sinh tệp.",
+    moTa: "Kiểm kiểu toàn bộ mã sản phẩm (tsc --noEmit, heap 8 GB qua cross-env). KHÔNG sinh mã, chỉ cập nhật bộ nhớ đệm tsbuildinfo trong node_modules.",
+    ghiDia: false,
+    // `--noEmit`, nhưng `"incremental": true` ⇒ ghi `node_modules/typescript/tsbuildinfo`.
+    sinhSanPhamDung: true,
     phanGiai: () => {
       const cli = duongDanNpmCli();
       return cli === null ? null : { file: process.execPath, args: [cli, "run", "check"] };
@@ -316,7 +378,9 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     nhan: "npm run check:tests",
     khuon: ["npm", "run", "check:tests"],
     hanGioMs: 240_000,
-    moTa: "Kiểm kiểu bộ lưới (tsconfig.tests.json). KHÔNG sinh tệp.",
+    moTa: "Kiểm kiểu bộ lưới (tsconfig.tests.json). KHÔNG sinh mã, chỉ cập nhật tsbuildinfo.tests trong node_modules.",
+    ghiDia: false,
+    sinhSanPhamDung: true,
     phanGiai: () => {
       const cli = duongDanNpmCli();
       return cli === null ? null : { file: process.execPath, args: [cli, "run", "check:tests"] };
@@ -327,6 +391,8 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["npx", "vitest", "run", null],
     hanGioMs: 180_000,
     moTa: "Chạy lưới cho MỘT đường dẫn (bộ lọc theo tên tệp). Đường dẫn BẮT BUỘC — bỏ trống là chạy cả 12.777 ca.",
+    ghiDia: false,
+    sinhSanPhamDung: false,
     /**
      * ★★★ BẪY SỐ HAI CỦA PHA NÀY: **ô này là đối số TỰ DO DUY NHẤT trong cả danh sách trắng**, nên
      * nó là chỗ duy nhất một byte do model viết đi vào argv của một tiến trình. Nếu nó không qua
@@ -352,6 +418,8 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["git", "status"],
     hanGioMs: 20_000,
     moTa: "Liệt kê tệp đã đổi/chưa theo dõi. CHỈ HỎI — không đổi một byte nào của cây làm việc.",
+    ghiDia: false,
+    sinhSanPhamDung: false,
     // `--no-pager` là phòng vệ chứ không phải thẩm mỹ: git chỉ phân trang khi stdout là TTY, nhưng
     // một cấu hình `core.pager` cứng đầu vẫn có thể treo một tiến trình con đọc stdin đã đóng.
     phanGiai: () => ({ file: "git", args: ["--no-pager", "status"] }),
@@ -361,6 +429,8 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["git", "diff"],
     hanGioMs: 20_000,
     moTa: "Khác biệt chưa staged của cây làm việc. CHỈ HỎI — không hoàn nguyên gì (xem khối `git checkout` ở đầu file).",
+    ghiDia: false,
+    sinhSanPhamDung: false,
     phanGiai: () => ({ file: "git", args: ["--no-pager", "diff"] }),
   },
   // ════════════════════════════════════════════════════════════════════════════════════════════
@@ -397,7 +467,11 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     nhan: "dotnet build <đường-dẫn>",
     khuon: ["dotnet", "build", null],
     hanGioMs: 240_000,
-    moTa: "Biên dịch một dự án/solution C# (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore) — cần restore trước ở terminal.",
+    moTa: "Biên dịch một dự án/solution C# (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore) — cần restore trước ở terminal. KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.",
+    // ⚠ `bin/`+`obj/` là SẢN PHẨM DỰNG, không phải mã nguồn của người viết ⇒ `ghiDia: false`.
+    //   Xem lý lẽ "vì sao HAI ô" ở `MucDanhSachTrang`.
+    ghiDia: false,
+    sinhSanPhamDung: true,
     phanQuyetOTuDo: (v) => {
       const ma = phanQuyetDuongDan(v);
       return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
@@ -408,7 +482,9 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     nhan: "dotnet test <đường-dẫn>",
     khuon: ["dotnet", "test", null],
     hanGioMs: 240_000,
-    moTa: "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore).",
+    moTa: "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore). KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.",
+    ghiDia: false,
+    sinhSanPhamDung: true,
     phanQuyetOTuDo: (v) => {
       const ma = phanQuyetDuongDan(v);
       return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
@@ -419,7 +495,22 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     nhan: "dotnet format <đường-dẫn>",
     khuon: ["dotnet", "format", null],
     hanGioMs: 180_000,
-    moTa: "Định dạng lại mã C# theo .editorconfig cho một dự án/solution. KHÔNG đổi ngữ nghĩa mã.",
+    moTa:
+      "⚠ GHI ĐÈ TỆP MÃ NGUỒN: định dạng lại mọi tệp .cs dưới đường được trỏ theo .editorconfig và " +
+      "LƯU ĐÈ tại chỗ. Không đổi ngữ nghĩa mã, nhưng đổi BYTE trên đĩa — và không có diff để xem trước.",
+    /**
+     * ★★★ **MỤC DUY NHẤT CÓ `ghiDia: true` TRONG CẢ BẢNG.**
+     *
+     * Nó ở lại danh sách trắng có chủ ý (dự án C# cần nó thật, và người bấm duyệt là người biết mình
+     * xin gì). Cái được siết là **LỜI KHAI**, không phải tính năng:
+     *   • `xemTruoc` đẩy một cảnh báo NỔI BẬT lên **đầu** thẻ duyệt (không có nó ⇒ census ĐỎ);
+     *   • `NHAN_KIEM_CHUNG` của vòng tự động **loại** nó (`aiCodingVerify.ts`) ⇒ không lượt ghi nào
+     *     rời đĩa mà không có người bấm;
+     *   • cờ `AI_REPO_EXEC_GHIDIA_DOI_CANEDIT` (mặc định TẮT) đòi **thêm** `ai_repo_read/canEdit`.
+     */
+    ghiDia: true,
+    // MSBuild workspace load ⇒ cũng chạm `obj/`. Hai ô độc lập, và mục này bật cả hai.
+    sinhSanPhamDung: true,
     phanQuyetOTuDo: (v) => {
       const ma = phanQuyetDuongDan(v);
       return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
@@ -431,6 +522,8 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["node", "--test", null],
     hanGioMs: 180_000,
     moTa: "Chạy trình chạy test tích hợp của Node cho MỘT đường (tệp .test.mjs hoặc thư mục). CHỈ chế độ --test, KHÔNG chạy script tuỳ ý.",
+    ghiDia: false,
+    sinhSanPhamDung: false,
     phanQuyetOTuDo: (v) => {
       const ma = phanQuyetDuongDan(v);
       return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
