@@ -1758,6 +1758,38 @@ EXPECT_CONFORMANCE=24
 #   see -- the prose parsed, W-1 was green, and the diff read as pure addition. Count REMOVED `///` lines
 #   in the diff, and re-measure per file until each cluster file's residue is zero.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 TASK AM-1 (.superpowers/sdd/item12-stage7/task-1-brief.md) — ITEM 12 STAGE 7 — MOVES NO SUITE TOTAL.
+# EXPECT_ABSTRACTIONS 161, EXPECT_CONFORMANCE 24, EXPECT_EDGECORE 1160, EXPECT_EDGESERVICE 52,
+# EXPECT_ENGINEAPI 1374, grand total 2771: unchanged, and READ BACK OUT OF THIS FILE line by line rather
+# than carried from a brief or from AL-1's block above -- for the same reason AL-1 gives, and the check is
+# the TERMS and not the sum. AM-1 adds no test and deletes none. It edits TWELVE files, all under
+# src/St4i.EdgeCore, and moves EXPECT_WARNINGS 502 -> 440 plus the SAME TWO ledger rows (OURS CS1591
+# 243 -> 192, OURS CS1573 40 -> 29); the table still holds sixteen rows because nothing reached zero.
+# SuppressionCensusTests is untouched and its three tables are unmoved. EXPECT_BUILD_NODES stays 0.
+#   THE LITERALS 502 AND 283 WERE GREPPED FOR ACROSS THE WHOLE REPOSITORY BEFORE EITHER MOVED, and every
+#   occurrence was classified rather than blanket-retired -- AL-1's own classification, re-run. Records of
+#   what a NAMED task did or did not move (AJ-1's and AK-1's "stays 631" lines, AL-1's own blocks here and
+#   in Directory.Build.props and in owner-decisions.md §11) are left EXACTLY as written; only the
+#   forward-looking figures are retired in place. 🔴 One occurrence of `502` is not this constant at all:
+#   README §"ST4I_MODBUS_PORT" documents the Modbus TCP port, whose value is 502. A blanket substitution
+#   would have edited a protocol constant, which is the whole reason this file requires the grep to be
+#   CLASSIFIED rather than applied.
+#   🔴 THE STRONG DIFF CLAIM IS NARROWED AGAIN, AND BY THE SAME MECHANISM AS STAGE 5 -- the narrowing is
+#   a property of ENUMS, exactly as AL-1's note above predicted, and this cluster contains one. Over
+#   `src/`: 513 lines added, 4 removed. THREE of the four removed are `///` lines and all three are the
+#   OLD ITransport summary, reproduced VERBATIM inside its replacement (see that file). The fourth is the
+#   one-line `public enum TransportMode { Live, Demo, Auto }` declaration, re-laid out over six lines so
+#   its three members can carry doc comments; the member SEQUENCE is identical name-for-name and
+#   order-for-order, which matters because enum order is the underlying value AND, here, the order an
+#   operator sees in a combo box. Outside those, ZERO changed lines in either direction that are not
+#   `///` lines or blank separators. No executable statement, no signature, no member name was touched.
+#   🔴 THE FAILURE MODE AL-1 NAMED WAS TREATED AS A PRECONDITION AND DID NOT FIRE. The cluster was costed
+#   PER FILE before a character was written (twelve files, 62 warnings, 51 CS1591 + 11 CS1573), and the
+#   three doc blocks that already carried SOME `<param>` -- TransportCoordinator's ctor, WalFlushPump's
+#   ctor, MappingProfileResolver.Build -- were extended by INSERTING tags beside the existing ones, never
+#   by rewriting the block. Per-file residue after writing: zero in all twelve, and zero in all three
+#   directories the cluster empties. Removed `///` lines in the diff: three, all accounted for above.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
 EXPECT_EDGECORE=1160
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
@@ -5337,7 +5369,100 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # removed (a `</summary>` moved down a line to admit a `<para>`). No executable statement, no signature,
 # no member name was touched. That is stage 4's shape, not stage 5's, and it holds only because this
 # cluster contains no enum declaration.
-EXPECT_WARNINGS=502
+#
+# ══ TASK AM-1 (.superpowers/sdd/item12-stage7/task-1-brief.md) — ITEM 12 STAGE 7 ══════════════════════
+# 502 -> 440. THE THIRD STAGE THAT PAYS BY WRITING.
+#
+# 🔴 THE CLUSTER, AND THE CANDIDATES WERE ENUMERATED BEFORE ITS SIZE WAS. The 283 outstanding were first
+# grouped by directory, whole, from one `-t:Rebuild` of St4i.EdgeCore, and the grouping REPRODUCED AL-1's
+# forecast row for row: Config 50 · Drivers/Modbus 46 · Transport 38 · Drivers/Simulators 27 · Uns 19 ·
+# Drivers/OpcUa 17 · Mapping 13 · Site 12 · Engine 11 · Models 11 · Fleet 8 · Drivers/Mqtt 7 ·
+# Drivers/HotFolder 7 · Uns/Sparkplug 6 · Infrastructure 6 · Drivers 5. Only then was a cluster named.
+# Four were weighed: A, the built-in driver families (Drivers/* = 109) -- the surface AL-1 named as
+# "full of exactly those cases", left for whoever takes it and owed as a FINDING rather than as 109
+# sentences; B, edge-local configuration (Config + Fleet + Infrastructure = 64); C, the northbound UNS
+# door (Uns + Uns/Sparkplug + Site = 37); D, the chosen one below.
+#
+# 🔴 THE SELECTION RULE IS AL-1's — RECOVERABILITY — RE-DERIVED RATHER THAN INHERITED, and it is the
+# reason A was not taken even though A is the largest remaining unit. Every sentence written here is
+# pinned by an artefact already in this tree: the three route constants by the SDK's own hardcoded URLs,
+# `UnitMap` by seven checked-in `mapping/*.json` presets, `TransportMode`'s spellings by a registered
+# string enum converter and by a hand-written TypeScript union in web/, the outage disagreement between
+# the two `Mode` properties by `ScenarioConfig.NetworkOutage`'s own doc comment and by FleetCore's
+# `ApplyNetworkOutageLocked`. Nothing here was composed.
+#
+# 🔴 WHAT WAS PAID, PER FILE, 62 IN TWELVE FILES -- costed BEFORE writing, re-measured after:
+#     Transport/TransportCoordinator.cs 9 · Models/Envelopes.cs 7 · Mapping/MappingProfile.cs 7 ·
+#     Transport/AutoTransport.cs 6 · Transport/DemoTransport.cs 5 · Transport/LiveTransport.cs 5 ·
+#     Transport/SwitchableTransport.cs 5 · Transport/ITransport.cs 4 · Transport/WalFlushPump.cs 4 ·
+#     Models/Enums.cs 4 · Mapping/Normalizer.cs 4 · Mapping/MappingProfileResolver.cs 2
+# They go together because ONE TYPE joins them: `CanonicalEnvelope`. It is built by `Normalizer.Normalize`
+# from a reading and a `MappingProfile`, it is the single argument of `ITransport.SendAsync`, and it is
+# carried by every implementation of that interface, steered by `TransportCoordinator`, and re-sent from
+# disk by `WalFlushPump` when the carrier was down. The boundary is checkable rather than argued: it is
+# THREE DIRECTORIES TAKEN WHOLE -- Transport/, Mapping/, Models/ -- and after this stage each of the three
+# has a residue of ZERO, so nothing was left behind inside a boundary this cluster crossed.
+#   This continues AL-1 exactly: stage 6 paid the three types `ITransport`'s three methods RETURN
+#   (TransportAck, HeartbeatResult, ConfigSyncResult, all in Models/TransportAck.cs). Stage 7 pays the
+#   interface itself, the two types in its signature that were still unpaid (CanonicalEnvelope,
+#   TransportMode) and everything that implements it. `ITransport`'s whole signature is now documented in
+#   both directions.
+#
+# 🔴 440 IS MEASURED, NOT SUBTRACTED, AND THIS TIME THE FIRST RUN STOOD. `MSBUILDDISABLENODEREUSE=1
+# dotnet build -t:Rebuild --nologo` over the whole solution, SDK 10.0.302: 15/15 compilations,
+# `Build succeeded.`, `0 Error(s)`, `440 Warning(s)`, on the FIRST attempt -- the `_wpftmp` CS2001 shape
+# that forced a discard in stages 5 and 6 did not appear. That is a NON-EVENT and is recorded as one: it
+# is evidence about this run, not evidence that the shape has gone, and stage 8 must still expect it.
+# 502 - 62 = 440 is arithmetic that AGREES and is reported as a result, not used in place of the
+# measurement. 440 was read out of the partition (VENDORED 185 / OURS 255).
+#
+# 🔴 TWO ROWS MOVED, THE SAME TWO, AND BOTH FELL: `OURS CS1591 243 -> 192` (-51) and
+# `OURS CS1573 40 -> 29` (-11). Sixteen rows before, sixteen after; nothing reached zero. The eight
+# VENDORED rows did not move one unit. 11 of the 62 were paid by COMPLETING `<param>` sets that were
+# already partial -- 5 on TransportCoordinator's constructor, 4 on WalFlushPump's, 2 on
+# MappingProfileResolver.Build -- which is AL-1's channel, entered deliberately and with its trap named
+# in advance. ZERO new CS1573 were created: the row fell monotonically, and that was checked per file
+# rather than inferred from the total.
+#
+# 🔴 THE ENUM NARROWING IS BACK, AND IT IS THE SAME ONE STAGE 5 RECORDED. This cluster contains exactly
+# one enum declaration (`TransportMode`), so the strong claim stage 6 could make is unavailable and the
+# honest one is stage 5's: over `src/`, 513 added / 4 removed, of which three removed are `///` lines
+# reproduced verbatim in place and the fourth is the enum's one-line declaration, re-laid out with its
+# member sequence identical name-for-name and order-for-order. Outside that declaration and blank
+# separators, ZERO changed lines that are not `///`. Stage 8 inherits neither claim as a promise: which
+# one it can make is decided by whether ITS cluster contains an enum.
+#
+# 🔴 ONE PUBLISHED CLAIM INSIDE THE CLUSTER WAS REFUTED BY MEASUREMENT AND RETIRED IN PLACE, NOT FIXED IN
+# CODE. `ITransport`'s summary called itself "the single seam between edge-core reading capture/
+# normalization and 'how it actually leaves the building'". Measured: `EdgePipeline` hands the SAME
+# envelope to `IUnsPublisher.PublishReading` one statement before it calls `SendAsync`, and
+# `Site.UnsBridge` republishes that spine to a SYNAPSE Site's broker off-box. The sentence was true when
+# written and was falsified by G2-2; it is quoted verbatim and withdrawn inside the file it lives in,
+# with the surviving half (this is the ST4I INGEST seam, one of two egress paths) stated beside it.
+#
+# 🔴 THE SELF-CHECK RAN TWICE AND THE SPLIT IS THE FINDING, NOT THE RATE. 62 warnings became 199
+# sentences. Round 1 filtered on universal/existence NEGATIONS (stage 5's rule (i), turned on this
+# task's own output): 112 flagged, 7 corrected, 2 of them outright false -- and both false ones failed
+# the same way, because a grep for a MEMBER'S NAME cannot see a SERIALIZER, which reads every member and
+# names none. `UnsPublisher` serializes the whole `CanonicalEnvelope` as the retained semantic mirror,
+# so `Path` and `IdempotencyKey` DO leave the box, for every reading kind. Round 2 went after the shape
+# round 1's filter cannot see -- an asserted PURPOSE or MECHANISM -- and corrected 6 more, four sharing
+# one root: `ITransport.HeartbeatAsync` HAS NO PRODUCTION CALLER and there is no heartbeat timer in this
+# repository. That mechanism was not invented from nothing; it was PROMOTED out of `AutoTransport`'s own
+# doc comment, which hedges it honestly as "typically a background timer, per the INTENDED
+# architecture". Taking a neighbouring doc comment as a premise, in a tree where stage 4 measured 101
+# false published claims, is the same error as recalling instead of measuring. 13 of 199 total.
+# FOR STAGE 8: one mechanical filter is not a round. Run the negation filter, then ask of every sentence
+# "what does this assert about a caller, a timer or a user, and can I name it?"
+#
+# 🔴 SIX CODE OBSERVATIONS WERE STOPPED AND REPORTED, NONE FIXED AND NONE OPENED AS AN ITEM. The one
+# with an operational consequence today: the Demo gate guards the MODE and not the fabricator.
+# `PUT /v1/mode` refuses Demo with a 400 when `DemoModeGate.Enabled` is false; `POST /v1/scenario` with
+# `networkOutage` is not gated by it at all and points the running fleet's transport at a lossy
+# `DemoTransport`, while `GET /v1/mode` keeps answering the mode the operator selected. It is audited
+# (`scenario.apply`) and Engineer-only; it is not refused. Both routes are outside this stage's twelve
+# files. See the report's §7 for the ranked list.
+EXPECT_WARNINGS=440
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
@@ -5723,8 +5848,60 @@ warning_ledger() {
 # Drivers/Mqtt 7 (2) · Drivers/HotFolder 7 (2) · Uns/Sparkplug 6 (1) · Infrastructure 6 (3) · Drivers 5
 # (1) · Models 11 (2). Largest single file: Config/MachineConfigModels.cs at 33. No figure here may be
 # subtracted from by a later stage -- re-measure.
-EXPECT_WARNING_LEDGER="OURS CS1573 40
-OURS CS1591 243
+# [🔴 "WHAT STAGES 7..8 STILL OWE ... 283 ... 243 CS1591 + 40 CS1573" WITHDRAWN 2026-08-20 by task AM-1
+#  (item 12 stage 7), which re-measured the paragraph before moving it -- and the re-measurement
+#  REPRODUCED every one of its sixteen directory figures exactly, which is the strongest thing anybody has
+#  been able to say about a forecast in this chain. 221 remain, in those same two rows: 192 CS1591 + 29
+#  CS1573. Stage 8 owes them. The directory line above is superseded by the one in the AM-1 block below.]
+#
+# ══ THE ROWS MOVED A FIFTH TIME, BY TASK AM-1 (item 12 stage 7, 2026-08-20) ════════════════════════════
+#
+# 🔴 THE ENUMERATION FIRST, THE COUNTS AFTER — eleventh time this file has watched that rule earn its
+# keep, and the first time the enumeration was made TWICE for one stage: once per file BEFORE writing (the
+# precondition AL-1 asked for) and once after, as the check. What changed, listed:
+#     MOVED, OURS  CS1591 243 -> 192    — one row, -51, PAID by WRITING documentation
+#     MOVED, OURS  CS1573  40 ->  29    — one row, -11, PAID by COMPLETING `<param>` sets
+#     MOVED        none other. Not one of the other fourteen rows changed value, in either bucket.
+# No row was added and no row reached zero, so the table still holds SIXTEEN rows.
+# VENDORED 185 / OURS 255 = 440.
+#
+# 🔴 THE 62 ARE ONE SURFACE, NOT A QUOTA, AND HERE IS THE WHOLE OF IT, per file:
+#     Transport/TransportCoordinator.cs 9 · Models/Envelopes.cs 7 · Mapping/MappingProfile.cs 7 ·
+#     Transport/AutoTransport.cs 6 · Transport/DemoTransport.cs 5 · Transport/LiveTransport.cs 5 ·
+#     Transport/SwitchableTransport.cs 5 · Transport/ITransport.cs 4 · Transport/WalFlushPump.cs 4 ·
+#     Models/Enums.cs 4 · Mapping/Normalizer.cs 4 · Mapping/MappingProfileResolver.cs 2
+# Twelve files, 62 members: 51 CS1591 + 11 CS1573. They are the CANONICAL ENVELOPE and its whole journey
+# -- built by `Normalizer` out of a reading and a `MappingProfile`, carried across `ITransport` by four
+# implementations, steered by `TransportCoordinator`, replayed from disk by `WalFlushPump`. The cluster is
+# three directories taken WHOLE (Transport/, Mapping/, Models/) and each is left at a residue of ZERO.
+# See the block at EXPECT_WARNINGS for the candidate list it was chosen against.
+#
+# 🔴 PER-FILE COSTING AS A PRECONDITION, WHICH IS WHAT AL-1 ASKED FOR AND IT PAID FOR ITSELF DIFFERENTLY
+# THAN EXPECTED. It did not catch a dropped tag -- none was dropped, because the three already-partial
+# blocks were extended by INSERTION and never rewritten. It caught something else: an intermediate
+# measurement taken with seven of the twelve files written showed 36 paid and a residue of 26 sitting
+# EXACTLY on the five files not yet touched, file for file. That is how a stage knows the number it is
+# watching is the number it intends rather than a coincidence of totals -- a solution-level count of 36
+# would have looked identical if one file had been over-paid and another under-paid.
+# The cheap pre-check AL-1 named was run too: THREE `///` lines removed in the whole branch diff, all
+# three the old `ITransport` summary, all three reproduced verbatim where they stood.
+#
+# 🔴 THE EIGHT VENDORED ROWS DID NOT MOVE ONE UNIT — the assertion every stage since 4 has had to pass.
+# CS1573 8 · CS1591 95 · CS8600 5 · CS8601 2 · CS8603 2 · CS8604 1 · CS8618 35 · CS8625 37 = 185,
+# identical to stages 3, 4, 5 and 6. This stage edited twelve files, none of them the vendored SDK file.
+#
+# 🔴 WHAT STAGE 8 STILL OWES, and it is no longer 283: 221 coverage warnings remain on our own source,
+# 192 CS1591 + 29 CS1573. Measured on the tree this commit produces, the whole remaining population by
+# directory: Config 50 (6 files) · Drivers/Modbus 46 (10) · Drivers/Simulators 27 (11) · Uns 19 (4) ·
+# Drivers/OpcUa 17 (5) · Site 12 (2) · Engine 11 (3) · Fleet 8 (1) · Drivers/HotFolder 7 (2) ·
+# Drivers/Mqtt 7 (2) · Infrastructure 6 (3) · Uns/Sparkplug 6 (1) · Drivers 5 (1). Transport, Mapping and
+# Models are GONE from this list, which is the checkable form of "three directories, taken whole".
+# Largest single file: Config/MachineConfigModels.cs at 33, unchanged. 🔴 Stage 8 is the LAST coverage
+# stage and 109 of its 221 are the driver families AL-1 named as the place where "nothing to say beyond
+# the name" is the answer -- it owes a FINDING there, not 109 sentences, and item 12 does not leave PART
+# II on a stage that filled them. No figure here may be subtracted from -- re-measure.
+EXPECT_WARNING_LEDGER="OURS CS1573 29
+OURS CS1591 192
 OURS CS8601 7
 OURS CS8604 14
 OURS CS8767 2

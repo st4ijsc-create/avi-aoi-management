@@ -5,4 +5,50 @@ namespace St4i.EdgeCore.Models;
 // St4i.Connector.Abstractions.Models.Enums (the driver contract). TransportMode stays here: it is a host
 // transport concern (Live/Demo/Auto — which transport EdgeCore's own pipeline talks to), not part of what
 // a third-party driver author needs.
-public enum TransportMode { Live, Demo, Auto }
+/// <summary>
+/// Which transport a host's <c>SwitchableTransport</c> is currently pointed at. The SPELLING of the
+/// members below is published three times over, so renaming one is a contract change and not a refactor:
+/// the EngineApi registers a string enum converter, making these words the literal bodies of
+/// <c>GET /v1/mode</c> and <c>PUT /v1/mode</c> and the literal values written into the audit row for a
+/// mode switch; the browser client re-declares them by hand as a TypeScript union; and the WPF shell
+/// binds <c>Enum.GetValues&lt;TransportMode&gt;()</c> straight into its top-bar and Settings combo boxes,
+/// which makes the DECLARATION ORDER here the order that operator sees.
+///
+/// <para>🔴 A value read off a transport is a property of the CLASS, not a report about connectivity:
+/// <c>LiveTransport.Mode</c> answers <see cref="Live"/> whether or not a server was ever configured or is
+/// reachable. And the two published <c>Mode</c> properties can disagree — <c>TransportCoordinator.Mode</c>
+/// is the mode the operator chose, while <c>SwitchableTransport.Mode</c> is whatever the inner transport
+/// says, and the network-outage scenario re-points the inner one without telling the coordinator (see
+/// <c>ScenarioConfig.NetworkOutage</c>).</para>
+/// </summary>
+public enum TransportMode
+{
+    /// <summary>Send over HTTP to the configured ecosystem server, with the SDK's own retry and its
+    /// on-disk store-and-forward queue behind it. This is the only mode in which the WAL flush pump has
+    /// anything to do: both composition roots hand it a <c>getLive</c> that returns null unless the
+    /// coordinator's mode is exactly this one, so a backlog left behind by an outage stops being drained
+    /// the moment the operator switches away.</summary>
+    Live,
+
+    /// <summary>Fabricate the replies locally and touch no network at all — the exhibition posture. It is
+    /// the only member a deployment can refuse: <c>PUT /v1/mode</c> answers 400 for this value when
+    /// <c>DemoModeGate.Enabled</c> is false, which is why a host can be in a state where the operator can
+    /// leave Demo but not re-enter it.
+    ///
+    /// <para>🔴 That refusal guards the MODE, not the fabricator. <c>POST /v1/scenario</c> with
+    /// <c>networkOutage</c> set is not gated by <c>DemoModeGate</c> at all, and it points the running
+    /// fleet's transport straight at a lossy <see cref="Demo"/> instance — so a host that has switched
+    /// Demo off can still be put behind a fabricator, with <c>GET /v1/mode</c> still answering whatever
+    /// the operator selected. It is audited and it requires the Engineer policy; it is not
+    /// refused.</para></summary>
+    Demo,
+
+    /// <summary>Try live for every call and re-route to demo on a network failure, re-probing live
+    /// periodically. 🔴 The two front ends disagree about whether this member exists, deliberately and in
+    /// writing: WS2-T1 dropped it from the browser UI, whose top bar and Settings screen both offer a
+    /// hand-written <c>["Live", "Demo"]</c>, while the WPF exhibition shell still offers whatever
+    /// <c>Enum.GetValues</c> returns and therefore still offers this. <c>PUT /v1/mode</c> accepts it from
+    /// either, so a deployment driven from the browser can still be put into this mode — by the other
+    /// front end, by a script, or by a host that started in it.</summary>
+    Auto,
+}

@@ -50,6 +50,13 @@ public sealed class LiveTransport : ITransport, IDisposable
 
     private readonly St4iDeviceClient _client;
 
+    /// <summary>Wraps an SDK client the caller already built, and TAKES OWNERSHIP of it:
+    /// <see cref="Dispose"/> disposes it, so the caller must not dispose it too and must not share one
+    /// client between two of these. <see cref="ForMachine"/> is the normal entry point and does the
+    /// building; this overload exists for the cases where the client cannot be described by connection
+    /// parameters alone — a pre-loaded machine key, or a fake <see cref="HttpMessageHandler"/> standing in
+    /// for the wire. It performs no validation of its own: everything this class refuses, the SDK's own
+    /// constructor already refused before the client reached here.</summary>
     public LiveTransport(St4iDeviceClient client)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
@@ -78,6 +85,10 @@ public sealed class LiveTransport : ITransport, IDisposable
         return new LiveTransport(client);
     }
 
+    /// <summary>Always <see cref="TransportMode.Live"/>. It says which implementation this is, never
+    /// whether the link works: an instance built with no server configured at all — the
+    /// <see cref="NoServerConfiguredPlaceholder"/> case, a port nothing can answer on — reports the same
+    /// value as a healthy one.</summary>
     public TransportMode Mode => TransportMode.Live;
 
     /// <summary>Disposes the wrapped <see cref="St4iDeviceClient"/> (and, with it, its internal
@@ -102,6 +113,24 @@ public sealed class LiveTransport : ITransport, IDisposable
     // ─────────────────────────────────────────────────────────────────────
     // SendAsync — dispatch by ReadingKind to the matching typed SDK call.
     // ─────────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Dispatches on <see cref="CanonicalEnvelope.Kind"/> into the matching typed SDK call and converts
+    /// whatever comes back — including a thrown SDK exception — into one <see cref="TransportAck"/>. The
+    /// envelope's <see cref="CanonicalEnvelope.Path"/> is not consulted; the URL is the SDK's own.
+    ///
+    /// <para>🔴 A successful return does NOT mean the reading reached the server. The SDK owns the retry
+    /// and the store-and-forward queue, so a network failure has already been written to the local queue
+    /// by the time this method sees it and comes back as <c>Success=false, Queued=true</c> — an outcome
+    /// the pipeline treats as a normal commit. The only way to learn the difference between "delivered"
+    /// and "buffered" is to read the ack's members, which is why every one of them is documented on
+    /// <see cref="TransportAck"/> itself.</para>
+    ///
+    /// <para>The exception mapping is not symmetric and the asymmetry is the point: a network failure and
+    /// a machine with no key configured both produce a QUEUED ack, while a payload the SDK refused before
+    /// sending produces a synthetic HTTP 400 that is deliberately NOT queued — because
+    /// <see cref="AutoTransport"/> reads a queued failure as "fall back to demo", and a malformed payload
+    /// falling back to demo would hide a real bug behind a booth that still looks healthy.</para>
+    /// </summary>
     public async Task<TransportAck> SendAsync(CanonicalEnvelope env, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
@@ -221,6 +250,13 @@ public sealed class LiveTransport : ITransport, IDisposable
     // Heartbeat / config-sync — the brief only strictly specifies SendAsync's behavior; these two are
     // a reasonable mapping onto the SDK's own Heartbeat/CheckConfig calls (noted in task-6-report.md).
     // ─────────────────────────────────────────────────────────────────────
+    /// <summary>Pings the server and reads four named fields out of the raw JSON reply. The
+    /// <c>machineCode</c> argument is IGNORED here — the wrapped client is bound to one machine and the
+    /// SDK's own heartbeat call takes no code — so this method cannot be used to ask about a different
+    /// machine, and passing the wrong one changes nothing. The three SDK failures it catches — network,
+    /// API rejection, unconfigured — all collapse to the same all-null result, and so does a reply whose
+    /// <c>success</c> field is missing or false, so those four are indistinguishable to a caller. Any
+    /// OTHER exception, cancellation included, is not caught here and reaches the caller as a throw.</summary>
     public async Task<HeartbeatResult> HeartbeatAsync(string machineCode, CancellationToken ct)
     {
         // The wrapped client is already bound to one machine (see class doc) — machineCode is accepted
@@ -250,6 +286,13 @@ public sealed class LiveTransport : ITransport, IDisposable
         }
     }
 
+    /// <summary>Asks the server which version it holds for <c>configKind</c> and compares that string
+    /// with <c>cachedVersion</c> using ordinal equality. Like <see cref="HeartbeatAsync"/> it ignores
+    /// <c>machineCode</c> — the client is already bound to one machine. Nothing is downloaded and nothing
+    /// is applied, so the <c>Applied</c> flag it returns means "the check completed", not "new
+    /// configuration is in force". On every caught failure it hands the caller's own
+    /// <c>cachedVersion</c> straight back, which is why a non-null version here is not evidence the
+    /// server answered — the drift state is.</summary>
     public async Task<ConfigSyncResult> SyncConfigAsync(string machineCode, string configKind, string? cachedVersion, CancellationToken ct)
     {
         // ITransport's SyncConfigAsync has no "apply" callback — it is a lightweight version CHECK
