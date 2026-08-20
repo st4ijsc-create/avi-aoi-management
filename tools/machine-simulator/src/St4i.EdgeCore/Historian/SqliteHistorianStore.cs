@@ -14,6 +14,12 @@ namespace St4i.EdgeCore.Historian;
 /// </summary>
 public sealed class SqliteHistorianStore : IHistorianStore
 {
+    /// <summary>The file this instance opened, fixed at construction and never re-pointed —
+    /// <c>historian.db</c> inside whatever directory the constructor resolved. It is exposed because it is
+    /// the ONLY way a caller can find the data afterwards: nothing else publishes the resolved root, and a
+    /// store built with the default root has a path the caller never named. It is also the exact file
+    /// <see cref="GetStatsAsync"/> measures. Two stores handed the same directory open the SAME file and
+    /// coordinate through nothing but SQLite's own locking.</summary>
     public string DbPath { get; }
 
     private static readonly string[] OpenPragmas =
@@ -83,6 +89,20 @@ public sealed class SqliteHistorianStore : IHistorianStore
         genealogy_json, measurements_json, event_time_utc, ingested_at_utc, is_fabricated
         """;
 
+    /// <summary>🔴 Construction does DISK WORK, synchronously, and can throw. It creates the directory,
+    /// opens a connection and runs the migration ladder to completion before returning, so a store that
+    /// exists is a store whose schema is current — there is no separate initialise step and no lazily
+    /// migrated state. The cost of that is that a permissions failure or a full disk surfaces from a
+    /// constructor, in whatever thread happened to build the object graph. A database stamped with a
+    /// version NEWER than this build knows is not a failure and not detected: the ladder simply has nothing
+    /// to apply, and the store proceeds against a schema it was not written for.</summary>
+    /// <param name="directory">Where <c>historian.db</c> lives. It is created if absent, including missing
+    /// parents. <see langword="null"/> selects a fixed machine-wide location under the common
+    /// application-data folder — machine-wide and not per-user, so every account on the box reads one
+    /// history, and NOT beside the executable, so an upgrade that replaces the binaries leaves the data
+    /// where it is. A caller that passes a relative path gets a database resolved against the process's
+    /// current directory, which is why the resolved answer is published as
+    /// <see cref="DbPath"/>.</param>
     public SqliteHistorianStore(string? directory = null)
     {
         var root = directory ?? DefaultRoot();
@@ -183,6 +203,13 @@ public sealed class SqliteHistorianStore : IHistorianStore
     // Append
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>The batch is ONE transaction across BOTH tables, which is where the interface's all-or-none
+    /// promise is actually kept. Each result is inserted, its new row id is read back with
+    /// <c>last_insert_rowid()</c>, and that id keys the sample rows that follow — so the samples are tied to
+    /// their reading by a value read inside the same connection, and this method is not safe to
+    /// parallelise over one connection even though nothing here prevents it. Row ids are assigned in the
+    /// order the caller supplied, which is what makes "newest first" elsewhere mean "last supplied
+    /// first". An empty batch returns before a connection is even opened.</summary>
     public async Task AppendResultsAsync(IReadOnlyList<HistorianResultRecord> records, CancellationToken ct)
     {
         if (records.Count == 0) return;
@@ -273,6 +300,12 @@ public sealed class SqliteHistorianStore : IHistorianStore
         await transaction.CommitAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>One statement, no transaction, and no de-duplication of any kind: the same transition
+    /// written twice becomes two rows. That matters because the run-time computation reading these rows is
+    /// a state machine, not a counter — a second consecutive <c>Start</c> is absorbed and a
+    /// <c>Stop</c> with no open <c>Start</c> is discarded, so a duplicate row is stored but does not
+    /// double-count. Nothing here validates the event type against the set the aggregate
+    /// recognises.</summary>
     public async Task AppendRunEventAsync(HistorianRunEvent runEvent, CancellationToken ct)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
@@ -291,6 +324,14 @@ public sealed class SqliteHistorianStore : IHistorianStore
     // Query — results
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Builds the filter from whichever members of the query are non-null, appends the
+    /// provenance clause, then runs TWO statements: a count for the page total and a select for the page
+    /// itself. They are not wrapped in a transaction, so a commit landing between them can make
+    /// <see cref="HistorianResultsPage.Total"/> describe a slightly different population than
+    /// <see cref="HistorianResultsPage.Items"/> — on a live line, where rows arrive continuously, that is
+    /// the normal case rather than a race to be surprised by. Paging is by row id descending, which is
+    /// insertion order and NOT event time: a batch appended late but timestamped early sorts as new
+    /// here.</summary>
     public async Task<HistorianResultsPage> QueryResultsAsync(HistorianResultQuery query, CancellationToken ct)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
@@ -445,6 +486,12 @@ public sealed class SqliteHistorianStore : IHistorianStore
         return effectiveClauses;
     }
 
+    /// <summary>The same provenance gate as the paged browse, over a filter of exactly one column, with no
+    /// paging and no upper bound on the result — the whole trace comes back in one list. Ordering is by
+    /// event time, and event times are stored as ISO-8601 TEXT, so this is a lexicographic sort that
+    /// happens to be chronological because every value is written in fixed-width round-trip UTC. A row
+    /// written by anything that did not use that format would sort into the wrong place rather than
+    /// fail.</summary>
     public async Task<IReadOnlyList<HistorianResultRow>> QueryBySerialAsync(string serialNumber, CancellationToken ct, bool includeFabricated = false)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
@@ -515,6 +562,13 @@ public sealed class SqliteHistorianStore : IHistorianStore
     // Query — telemetry / run-events
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>🔴 The one read in this class that does NOT call the provenance gate — the three around it
+    /// all do. It is not an omission that a flag would fix: the sample rows carry a machine code and an
+    /// event time but no provenance column, so there is nothing here to filter on without joining back to
+    /// the result row, and this method deliberately does not join. The window is matched with a text
+    /// <c>BETWEEN</c> over the same fixed-width ISO-8601 encoding the ordering relies on, and both metric
+    /// and machine are compared as stored: no trimming, no case folding, no aliasing of metric
+    /// names.</summary>
     public async Task<IReadOnlyList<TelemetrySamplePoint>> QueryTelemetryAsync(
         string machineCode, string metric, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
@@ -539,6 +593,12 @@ public sealed class SqliteHistorianStore : IHistorianStore
         return results;
     }
 
+    /// <summary>One statement, one table, no join and no gate — the run-event table has no machine column
+    /// and no provenance column, so there is nothing here to restrict by. The window is a text
+    /// <c>BETWEEN</c> over the same fixed-width ISO-8601 encoding the ordering relies on, inclusive at both
+    /// ends. Contrast this with the query the OEE run-time term issues against the SAME table a few methods
+    /// down: that one has no lower bound at all, deliberately, and the difference is documented on the
+    /// interface.</summary>
     public async Task<IReadOnlyList<HistorianRunEvent>> QueryRunEventsAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
@@ -567,6 +627,21 @@ public sealed class SqliteHistorianStore : IHistorianStore
     // OEE aggregate
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Where the product's OEE counting rules are actually written down, as three SQL predicates
+    /// rather than as prose anywhere else: only <c>ProcessResult</c> readings are counted at all, the total
+    /// is every verdict except <c>Skip</c>, and the good count is <c>Pass</c> or <c>Warn</c>. Those are
+    /// stored STRINGS compared exactly, so they are pinned to the spelling of the verdict enum's members —
+    /// renaming a member would leave old rows uncountable and is why that spelling is a published contract.
+    /// <para>The provenance gate is probed over the machine, the reading kind and the window but
+    /// deliberately WITHOUT the verdict slicing, so "is there real data here" is decided once for the
+    /// window rather than separately for the numerator and the denominator. The consequence worth having is
+    /// that the two counts are always drawn from the same population: a gate evaluated per count could
+    /// admit a good count taken from a different set of rows than the total it is divided by, and the
+    /// calculator that divides them does not bound that ratio.</para>
+    /// <para>The run-time term is computed from run events with no machine filter and no window filter on
+    /// the lower edge — every event up to the end of the window is replayed as a state machine, and the
+    /// resulting intervals are clipped to the window. An interval still open at the end of the window is
+    /// counted as running to the end of it.</para></summary>
     public async Task<OeeInputAggregate> AggregateForOeeAsync(
         string machineCode, DateTimeOffset from, DateTimeOffset to, CancellationToken ct, bool includeFabricated = false)
     {
@@ -667,6 +742,15 @@ public sealed class SqliteHistorianStore : IHistorianStore
     // Prune / stats
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Two deletes in one transaction: results, then run events. Telemetry is never named — those
+    /// rows go with their result through the foreign key's cascade, which works only because
+    /// <c>foreign_keys</c> is turned ON per connection when it is opened, not because the schema says so. A
+    /// build that ever stopped applying that pragma would silently orphan telemetry instead of deleting it,
+    /// and this method would still report success.
+    /// <para>The count returned is the results delete only, so it under-reports what was destroyed —
+    /// see the interface's own note. The prune is by EVENT time for results and by event time for run
+    /// events too, so a window with no readings can still lose the run events that explain
+    /// it.</para></summary>
     public async Task<int> PruneOlderThanAsync(DateTimeOffset cutoffUtc, CancellationToken ct)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
@@ -697,6 +781,14 @@ public sealed class SqliteHistorianStore : IHistorianStore
         return deletedResults;
     }
 
+    /// <summary>Four independent statements plus one file measurement, none of them in a transaction, so
+    /// the five numbers are five separate observations of a moving store rather than one snapshot.
+    /// <para>🔴 The size is <see cref="FileInfo.Length"/> of the main database file ALONE. This store runs
+    /// in write-ahead-log mode, so recently committed data can still be sitting in the <c>-wal</c> sidecar
+    /// and is not counted here: the figure can be smaller than what the history actually occupies on disk,
+    /// and it does not shrink when rows are pruned either, because SQLite reuses freed pages instead of
+    /// returning them. Read it as "the size of the container", never as "the size of the
+    /// data".</para></summary>
     public async Task<HistorianStats> GetStatsAsync(CancellationToken ct)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);

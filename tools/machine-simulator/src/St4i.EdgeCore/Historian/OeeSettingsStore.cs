@@ -13,6 +13,14 @@ namespace St4i.EdgeCore.Historian;
 /// </summary>
 public sealed class OeeMachineSettings
 {
+    /// <summary>Which machine these two numbers belong to — the same identity as
+    /// <see cref="Models.MachineDescriptor.Code"/>, matched case-insensitively, and the key of the one entry
+    /// per machine this store keeps. It is carried INSIDE the entry rather than only as a map key because
+    /// <c>oee-settings.json</c> persists a flat list, so this member is what survives a round trip through
+    /// the file. Two consequences a caller cannot see from the signature: an entry read back with this
+    /// empty is DISCARDED on load rather than repaired, and a machine with no stored entry still gets an
+    /// object back from <see cref="OeeSettingsStore.Resolve"/> carrying the spelling the CALLER asked with —
+    /// so a non-empty value here is not evidence that anything was ever stored for it.</summary>
     public string MachineCode { get; set; } = "";
 
     /// <summary>Null → fall back to the caller-supplied ideal cycle (typically

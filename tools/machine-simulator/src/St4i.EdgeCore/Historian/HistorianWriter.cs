@@ -27,6 +27,24 @@ public sealed class HistorianWriter : IAsyncDisposable
     private readonly Task _flushLoop;
     private volatile bool _disposed;
 
+    /// <summary>Starts the background flush loop immediately — construction is the point at which this type
+    /// becomes live, and there is no separate Start. The loop runs until
+    /// <see cref="DisposeAsync"/>, so a writer that is constructed and forgotten keeps a task and a
+    /// cancellation source alive for the lifetime of the process.</summary>
+    /// <param name="store">The backing store every drained batch is appended to. This writer takes no
+    /// ownership of it: it is never disposed here, and a store that throws is reported and retried with the
+    /// NEXT batch rather than reconnected — the failed batch is gone.</param>
+    /// <param name="logWarning">Where a DROPPED record is reported. Optional, and a null here makes the two
+    /// drop paths silent rather than fatal. See the correction on <see cref="Enqueue"/> for which drop this
+    /// actually reaches, because it is not the one the message text describes.</param>
+    /// <param name="logError">Where a failed flush is reported, with the exception and the size of the batch
+    /// that was lost. Optional. A cancellation raised by shutdown is deliberately NOT routed here — it is not
+    /// a failure — so a quiet log during shutdown is the expected shape.</param>
+    /// <param name="capacity">How many RECORDS may sit un-flushed at once, not bytes and not batches. The
+    /// channel is bounded at this many, and the batch the loop drains at a time is a separate, fixed
+    /// 256 — so this is the depth of the buffer, not the size of a write. Over-running it costs the OLDEST
+    /// queued record: the newest reading is always accepted, and what is lost is the oldest history not yet
+    /// on disk.</param>
     public HistorianWriter(
         IHistorianStore store,
         Action<string>? logWarning = null,
@@ -50,7 +68,18 @@ public sealed class HistorianWriter : IAsyncDisposable
     /// throw. If the bounded channel is full/completed the record is dropped (oldest queued record, per the
     /// channel's <see cref="BoundedChannelFullMode.DropOldest"/> policy) and <c>logWarning</c> is called. A
     /// call arriving after <see cref="DisposeAsync"/> is likewise dropped (with its own message) rather than
-    /// touching the completed channel/disposed token.</summary>
+    /// touching the completed channel/disposed token.
+    ///
+    /// <para>🔴 <b>"...IS FULL ... AND <c>logWarning</c> IS CALLED" IS WITHDRAWN, 2026-08-20, task AL-1
+    /// (owner item 12, stage 6)</b> — quoted and retired in place. Both halves are true separately and the
+    /// sentence joins them wrongly. Under
+    /// <see cref="BoundedChannelFullMode.DropOldest"/> a write to a FULL channel SUCCEEDS: the oldest queued
+    /// record is evicted and <c>TryWrite</c> returns <see langword="true"/>, so the branch below is not
+    /// taken and nothing is logged. The saturation drop this product actually suffers — the one the message
+    /// text names — is therefore SILENT, and the message is reachable only on a channel that has been
+    /// COMPLETED, i.e. a call that raced past the <c>_disposed</c> check during shutdown. Nothing in this
+    /// repository asserts either path. Retired rather than corrected: making the message match the sentence
+    /// is a code change and this task writes prose only.</para></summary>
     public void Enqueue(HistorianResultRecord record)
     {
         if (_disposed)
