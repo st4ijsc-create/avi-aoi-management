@@ -13,8 +13,17 @@ namespace St4i.EdgeCore.Infrastructure;
 /// see <see cref="FleetConfig.Load"/>'s own remarks.</summary>
 public sealed class FleetConfigException : Exception
 {
+    /// <summary>The <c>fleet.json</c> path that failed to parse, kept as a field as well as being
+    /// interpolated into <see cref="Exception.Message"/> — this is what lets a startup path name the file
+    /// in its own wording instead of parsing it back out of the message text.</summary>
     public string Path { get; }
 
+    /// <summary>Builds the exception. <see cref="Exception.Message"/> is composed here as
+    /// <c>"{message} (path: {path})"</c>, so a caller must not append the path again.</summary>
+    /// <param name="path">The offending file, stored verbatim on <see cref="Path"/>.</param>
+    /// <param name="message">What was wrong, without the path — it is appended for you.</param>
+    /// <param name="inner">The underlying parser failure, or null when the shape was wrong rather than the
+    /// syntax (the root not being an array).</param>
     public FleetConfigException(string path, string message, Exception? inner = null)
         : base($"{message} (path: {path})", inner)
     {

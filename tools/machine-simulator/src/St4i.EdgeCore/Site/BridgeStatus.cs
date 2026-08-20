@@ -27,11 +27,38 @@ namespace St4i.EdgeCore.Site;
 /// </summary>
 public enum BridgeState
 {
+    /// <summary>No enabled <see cref="PersistedSiteLink"/>, so <see cref="SiteBridgeManager"/> never
+    /// constructed a bridge at all. Distinct from every other member in that there is no object whose
+    /// health is being reported — the three spool counters on
+    /// <see cref="BridgeStatusSnapshot"/> are <c>0</c> here because there is no spool, not because it is
+    /// empty. This is the default value of the enum, which is what an uninitialised snapshot reports.</summary>
     Disabled,
+
+    /// <summary>Enabled, the LOCAL client is up, and the REMOTE (Site) client has not yet completed a
+    /// first connection. Nothing has been forwarded northbound yet in this bridge's lifetime.</summary>
     Connecting,
+
+    /// <summary>Both clients are connected and readings are actively forwarding. 🔴 Not a guarantee that
+    /// forwarding is happening — see <see cref="Faulted"/>, which exists precisely because the clients can
+    /// be healthy while the loops that move messages between them are dead.</summary>
     Connected,
+
+    /// <summary>The remote (Site) client connected at least once and is currently disconnected — a
+    /// Site-side outage or a network partition. Strictly a NORTHBOUND state: the local UNS spine and the
+    /// rest of the pipeline are unaffected, and readings keep flowing to every other consumer.</summary>
     Degraded,
+
+    /// <summary>The bridge cannot reach its OWN local UNS spine — the loopback broker its local client
+    /// subscribes to. A local misconfiguration, not a Site-side problem, and the one member that points the
+    /// operator at this box rather than at the far end.</summary>
     Down,
+
+    /// <summary>The spool writer and/or the forward loop terminated on an exception that was NOT this
+    /// bridge's own shutdown cancellation. Takes PRIORITY over
+    /// <see cref="Connected"/>/<see cref="Degraded"/>/<see cref="Connecting"/> — that precedence is the
+    /// whole point of the member, because the MQTT clients can look perfectly healthy while messages are
+    /// silently no longer being persisted or replayed, which is a worse failure than a known outage
+    /// precisely because nothing else would show it.</summary>
     Faulted,
 }
 

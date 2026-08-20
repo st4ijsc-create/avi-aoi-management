@@ -191,6 +191,10 @@ public sealed class EdgeAgentPipelines
     /// rejecting/throwing factory still handed back is disposed rather than leaked (see
     /// <see cref="ConnectorRegistry.TryCreateDriver"/>'s own remarks on why that reference can be non-null on
     /// a <see langword="false"/> return).</param>
+    /// <param name="ct">Ends every pipeline this call started. It is the ONLY stop mechanism — there is no
+    /// separate stop method — so a caller with no cancellation source has started something it cannot end
+    /// short of ending the process. Cancelling is also what triggers the disposal of every driver this
+    /// call built.</param>
     /// <returns>A task that completes when every pipeline has ended. Rethrows the first non-cancellation
     /// fault only if EVERY pipeline faulted — see the class remarks.</returns>
     public async Task RunAsync(

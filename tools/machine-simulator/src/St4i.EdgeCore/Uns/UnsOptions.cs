@@ -21,11 +21,34 @@ namespace St4i.EdgeCore.Uns;
 /// </summary>
 public sealed class UnsOptions
 {
+    /// <summary><c>ST4I_UNS_ENABLED</c> → <see cref="Enabled"/>. The one variable in this group whose
+    /// parse is asymmetric: only <c>"0"</c> and <c>"false"</c> (case-insensitive) turn the spine OFF, so a
+    /// typo — <c>"no"</c>, <c>"off"</c>, <c>"FLASE"</c> — leaves it ON. Defaulting to on is what makes the
+    /// spine additive; it also means a misspelt disable is silent.</summary>
     public const string EnvVarEnabled = "ST4I_UNS_ENABLED";
+
+    /// <summary><c>ST4I_UNS_SITE</c> → <see cref="Site"/>, the first ISA-95 segment. Blank or unset falls
+    /// back to <c>"site"</c>; the value is never validated for MQTT topic-illegal characters, and it is
+    /// substituted directly into both topic families.</summary>
     public const string EnvVarSite = "ST4I_UNS_SITE";
+
+    /// <summary><c>ST4I_UNS_AREA</c> → <see cref="Area"/>. Blank or unset falls back to
+    /// <c>"area"</c>.</summary>
     public const string EnvVarArea = "ST4I_UNS_AREA";
+
+    /// <summary><c>ST4I_UNS_LINE</c> → <see cref="Line"/>. Blank or unset falls back to <c>"line"</c>. With
+    /// <see cref="Site"/> and <see cref="Area"/> it forms the Sparkplug <c>group_id</c>, joined by dots
+    /// rather than slashes — see <see cref="UnsTopicBuilder.GroupId"/>.</summary>
     public const string EnvVarLine = "ST4I_UNS_LINE";
+
+    /// <summary><c>ST4I_UNS_CELL</c> → <see cref="Cell"/>. Blank or unset falls back to <c>"cell"</c>. This
+    /// one is doing double duty: it is both the fourth ISA-95 segment of the semantic mirror AND the
+    /// Sparkplug <c>edge_node_id</c>.</summary>
     public const string EnvVarCell = "ST4I_UNS_CELL";
+
+    /// <summary><c>ST4I_UNS_PORT</c> → <see cref="BrokerPort"/>. An unparseable value is IGNORED and
+    /// <see cref="DefaultBrokerPort"/> stands — a typo here does not fail startup and does not warn, so a
+    /// deployment that meant to move the broker can silently stay on the default port.</summary>
     public const string EnvVarPort = "ST4I_UNS_PORT";
 
     /// <summary>Non-1883 loopback default — see the class doc comment. G2-2 review fix round 1: NOT
@@ -43,12 +66,22 @@ public sealed class UnsOptions
     /// publisher/broker (this flag off) as "byte-identical to today", so turning it off is always safe.</summary>
     public bool Enabled { get; init; } = true;
 
+    /// <summary>ISA-95 site. Appears as the first dot-segment of the Sparkplug <c>group_id</c> and as the
+    /// first path segment after <c>syn/</c> on the semantic mirror. Default <c>"site"</c> — a deployment
+    /// that never sets <see cref="EnvVarSite"/> publishes under the literal word.</summary>
     public string Site { get; init; } = "site";
 
+    /// <summary>ISA-95 area, the second segment of both topic families. Default <c>"area"</c>.</summary>
     public string Area { get; init; } = "area";
 
+    /// <summary>ISA-95 line, the third segment of both topic families. Default <c>"line"</c>.</summary>
     public string Line { get; init; } = "line";
 
+    /// <summary>ISA-95 cell — the fourth segment of the semantic mirror AND the Sparkplug
+    /// <c>edge_node_id</c>, because this process models exactly one Sparkplug edge node. Default
+    /// <c>"cell"</c>. The checkable consequence, stated without guessing what a subscriber does with it:
+    /// two processes that share this value and the other three segments build BYTE-IDENTICAL topics, so
+    /// nothing on the wire distinguishes their node-level births and deaths.</summary>
     public string Cell { get; init; } = "cell";
 
     /// <summary>The embedded loopback broker's TCP port. See <see cref="DefaultBrokerPort"/> for why this

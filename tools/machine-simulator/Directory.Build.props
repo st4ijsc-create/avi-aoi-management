@@ -85,6 +85,14 @@
         outstanding: 221 coverage warnings on our own source (192 CS1591 + 29 CS1573, stage 8 — the LAST
         coverage stage) plus the same 103 nobody here may pay. Retired in place rather than re-pinned, for
         the same reason as the three lines above it.
+        [🔴 "the live figure is 324 outstanding: 221 coverage warnings on our own source (192 CS1591 + 29
+         CS1573, stage 8 — the LAST coverage stage)" WITHDRAWN 2026-08-20 by task AN-1 (item 12 STAGE 8),
+         which said it would move again and it has. 112 more of the 221 are PAID by writing; the live
+         figure is 212 outstanding: 109 coverage warnings on our own source (90 CS1591 + 19 CS1573, all of
+         them Drivers/) plus the same 103 nobody here may pay. 🔴 The 109 are NOT owed to a stage 9 — the
+         four coverage stages are spent. They are owed to an owner RULING about access level, priced but
+         not decided; see the AN-1 block at the foot of this file. Retired in place rather than re-pinned,
+         for the same reason as the four lines above it.]
         🔴 AND THE PER-PROJECT TABLE BELOW IS STILL NOT RE-MEASURED, by this stage either. Its
         St4i.EdgeCore row (543 CS1591 / 92 CS1573) is AF-1's reading at the flag flip and is labelled as
         such; four stages of payment have moved what that compilation actually emits without moving this
@@ -667,6 +675,65 @@
 
        🔴 ITEM 12 STAYS IN PART II. 221 coverage warnings on our own source remain unpaid, plus the 103
        nobody may pay. Stage 8 — the last coverage stage — pays the 221 and re-measures its own
-       constant. -->
+       constant.
+       [🔴 "Stage 8 ... pays the 221" WITHDRAWN 2026-08-20 by task AN-1 (item 12 STAGE 8), quoted and
+        retired in place. Stage 8 pays 112 of the 221 and hands the other 109 over as a MEASUREMENT rather
+        than as sentences — see the AN-1 block below. "ITEM 12 STAYS IN PART II" is NOT withdrawn; what is
+        withdrawn is the assumption that it leaves on a count reaching zero.] -->
+
+  <!-- ══ TASK AN-1 (.superpowers/sdd/item12-stage8/task-1-brief.md) — ITEM 12 STAGE 8 ══════════════════
+       440 -> 328. The fourth and last stage that pays by writing, and the first that deliberately hands
+       part of its remainder over UNPAID with a measurement in place of the sentences.
+
+       THE REMAINDER WAS REGROUPED WHOLE BEFORE ANY NUMBER WAS NAMED, and AM-1's forecast reproduced
+       exactly — all THIRTEEN directory rows, unit for unit, the second consecutive stage able to say that
+       of its predecessor. Split by the driver-family boundary: 109 inside Drivers/, 112 outside. AM-1's
+       forecast of 112 is CONFIRMED by measurement rather than carried.
+
+       WHAT WAS PAID: everything in the remainder that is NOT a driver — 112 warnings in TWENTY files
+       across SEVEN directories, all seven taken WHOLE and every one left at a residue of zero.
+       Config/MachineConfigModels.cs 33, Uns/UnsOptions.cs 10, Fleet/MachineState.cs 8,
+       Engine/ScenarioAwareDriver.cs 6, Site/BridgeSpool.cs 6, Site/BridgeStatus.cs 6,
+       Uns/Sparkplug/SparkplugPayload.cs 6, Uns/UnsTopicBuilder.cs 6, Config/MachineParameterSchema.cs 5,
+       Config/ModbusMultidropRegistration.cs 5, Engine/EdgePipeline.cs 4, Config/FleetSettingsStore.cs 3,
+       Config/ConnectorsConfig.cs 2, Config/DemoModeGate.cs 2, Infrastructure/EventBus.cs 2,
+       Infrastructure/FleetConfig.cs 2, Infrastructure/ResilienceProbe.cs 2, Uns/UnsBroker.cs 2,
+       Engine/EdgeAgentPipelines.cs 1, Uns/UnsPublisher.cs 1. The cluster is a COMPLEMENT, not a theme,
+       and that is what makes its boundary checkable.
+
+       MEASURED, on the tree this commit produces — `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
+       over the whole solution, SDK 10.0.302, 15/15 compilations, `Build succeeded.`, `0 Error(s)`:
+           328 warnings, down from 440. 102 CS1591 + 10 CS1573, all in the St4i.EdgeCore compilation.
+       Split by origin: VENDORED 185 / OURS 143. The vendored bucket did not move ONE UNIT. Two ledger
+       rows moved and only two: `OURS CS1591 192 -> 90` and `OURS CS1573 29 -> 19`. 440 - 112 = 328 is
+       arithmetic that agrees; 328 was READ OUT of the partition. The first -t:Rebuild stood again, which
+       is evidence about this run and not evidence that the `_wpftmp` shape has gone.
+       🔴 328 collides with this file's own history — `OURS CS1591` was 328 after stage 5 and appears as
+       that figure above. The literal was grepped and CLASSIFIED before it was written; every historical
+       occurrence is a record of what a NAMED task measured and is left exactly as written.
+
+       🔴 STAGE 5's ENUM NARROWING APPLIES AGAIN, for the predicted reason. Over `src/`: 611 added, 7
+       removed. FOUR removed `///` lines, all four the old `SparkplugMsgType` summary, quoted VERBATIM
+       inside the withdrawal block that replaces them. THREE removed non-`///` lines, all three one-line
+       enum declarations re-laid out (ParameterValueKind, AdjustmentScope, ConfigProvenance), each with
+       its member sequence identical name-for-name and order-for-order. Outside those and blank
+       separators, zero changed lines that are not `///`.
+
+       🔴 A PUBLISHED CLAIM IN THE CLUSTER WAS REFUTED AND RETIRED IN PLACE, NO CODE CHANGED.
+       `SparkplugMsgType`'s summary said its four lifecycle members were "landed here only as
+       topic-building targets" and that "G2-2's own wiring only ever produces DDATA". G2-3 wired
+       NBIRTH/NDEATH to FleetCore's real Start/Stop/E-stop transitions, so two of its three parts are
+       false; the third — no MQTT Will — was re-measured and holds.
+
+       🔴 THE PER-PROJECT TABLE ABOVE IS STILL NOT RE-MEASURED, by this stage either, for the fifth
+       consecutive stage. Only the bracket chain and this block carry live figures.
+
+       🔴 ITEM 12 STAYS IN PART II, AND IT LEAVES ON A RULING RATHER THAN ON A ZERO. 109 coverage warnings
+       remain and they are all Drivers/. They fall on NINETY-SEVEN members, every one of which was
+       classified: 0 of the 97 have nothing to say beyond their names, which REFUTES the premise stages 6
+       and 7 handed forward. What remains is not a writing debt but an owner question about surface —
+       should host-internal driver plumbing be public at all — and the read-surface census that prices it
+       is in docs/owner-decisions.md §13 and in the EXPECT_WARNING_LEDGER block of scripts/verify-suites.sh.
+       No access level and no name was changed. -->
 
 </Project>

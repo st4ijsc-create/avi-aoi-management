@@ -75,6 +75,27 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     private bool _nodeBorn;
     private volatile bool _disposed;
 
+    /// <summary>Builds the publisher and STARTS IT: the MQTT client is created and its connect task and
+    /// flush loop are launched from inside this constructor, so an instance is live the moment it is
+    /// returned and must be disposed even if nothing is ever published through it.</summary>
+    /// <param name="options">The ISA-95 address and broker port every topic is built from. Required —
+    /// null throws <see cref="ArgumentNullException"/>. The connection is always to loopback; only the
+    /// PORT is taken from here, never a host.</param>
+    /// <param name="logWarning">Optional message-only channel. Null means the corresponding failures are
+    /// simply not reported anywhere — this class has no fallback sink.</param>
+    /// <param name="logError">Optional exception-carrying channel, same "null means silent"
+    /// consequence.</param>
+    /// <param name="capacity">Depth of the bounded work queue between the caller's non-blocking
+    /// <c>Publish*</c> call and the background flush loop.
+    /// <para>🔴 <b>Read the queue's mode before reading the "queue saturated" warnings below it.</b> The
+    /// channel is <see cref="BoundedChannelFullMode.DropOldest"/>. Under that mode a write to a FULL
+    /// channel SUCCEEDS — it evicts the oldest pending item and accepts the new one — so
+    /// <c>TryWrite</c> returns <see langword="true"/> and every <c>"UNS publish queue saturated"</c> branch
+    /// in this class is unreachable by saturation. Those branches can only be reached by a channel that has
+    /// been COMPLETED, which happens once at disposal. <b>The consequence stated plainly: a UNS spine that
+    /// falls behind loses its OLDEST pending publishes, silently, with no warning and no counter.</b> There
+    /// is no drop total on this class — contrast <see cref="St4i.EdgeCore.Site.BridgeSpool"/>, whose own
+    /// drops are counted in durable storage precisely so the loss can be reported.</para></param>
     public UnsPublisher(
         UnsOptions options,
         Action<string>? logWarning = null,

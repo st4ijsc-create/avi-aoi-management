@@ -13,12 +13,21 @@ namespace St4i.EdgeCore.Infrastructure;
 /// </summary>
 public sealed class EventBus
 {
+    /// <summary>The ring's depth when the constructor is called without one: 500 events. This is the
+    /// REPLAY depth for a late subscriber, not a delivery buffer — <see cref="Traced"/> fires synchronously
+    /// regardless, so a subscriber that was already listening never misses an event by overflowing
+    /// this.</summary>
     public const int DefaultCapacity = 500;
 
     private readonly object _gate = new();
     private readonly Queue<ApiTraceEvent> _ring;
     private readonly int _capacity;
 
+    /// <summary>Creates the bus with a fixed ring depth. The depth cannot be changed afterwards.</summary>
+    /// <param name="capacity">How many past events <see cref="Recent"/> can hand a late subscriber.
+    /// Non-positive throws <see cref="ArgumentOutOfRangeException"/> — this is the one argument in this
+    /// class that is validated, deliberately, because a zero-capacity ring would discard every event while
+    /// still looking like it worked.</param>
     public EventBus(int capacity = DefaultCapacity)
     {
         if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));

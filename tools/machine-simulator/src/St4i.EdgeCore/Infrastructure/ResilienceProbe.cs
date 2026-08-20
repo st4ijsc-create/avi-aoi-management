@@ -21,11 +21,35 @@ public sealed class ResilienceProbe
 
     private readonly HttpClient _http;
 
+    /// <summary>Creates the probe. 🔴 Ownership is asymmetric and unmarked: an INJECTED client is borrowed,
+    /// a default one is CONSTRUCTED here — and this class is not <see cref="IDisposable"/>, so the client
+    /// it builds itself is never disposed by anybody. That is not hypothetical: the only construction in
+    /// this repository outside tests is a LOCAL in the WPF app's server-health path, so each probe leaves
+    /// an <see cref="HttpClient"/> behind for the finalizer rather than reusing one.</summary>
+    /// <param name="http">A client to borrow, or null to build one with a five-second timeout. Only the
+    /// TIMEOUT differs between the two paths — no handler, no header and no base address is
+    /// configured either way, so an injected client's own timeout stands.</param>
     public ResilienceProbe(HttpClient? http = null)
     {
         _http = http ?? new HttpClient { Timeout = DefaultTimeout };
     }
 
+    /// <summary>GETs <c>{serverUrl}/api/v1/openapi.json</c> and reports what came back. Never throws for a
+    /// network-level failure — refused, DNS, TLS and the client's own timeout all return
+    /// <c>Reachable:false, Status:0</c>. Two things DO propagate, and the distinction is the useful part:
+    /// a cancellation the CALLER requested, and any exception outside the caught set. A non-success HTTP
+    /// status is not a failure here — it comes back <c>Reachable:true</c> with that status and no paths,
+    /// because a server answering 503 is a server that answered.</summary>
+    /// <param name="serverUrl">The server's base URL. Blank or null throws
+    /// <see cref="ArgumentException"/>; ALL trailing slashes are trimmed before the well-known suffix is
+    /// appended. Not otherwise validated — a malformed URL surfaces as unreachable, not as an
+    /// argument error.</param>
+    /// <param name="ct">Caller cancellation. Distinguished from the client's own timeout by
+    /// <see cref="CancellationToken.IsCancellationRequested"/>: the timeout is converted to an unreachable
+    /// result, the caller's cancellation is allowed to propagate.</param>
+    /// <returns>Reachability, the HTTP status (0 when nothing answered), and the OpenAPI document's
+    /// top-level path keys — empty for any body that did not parse into that shape, which is not
+    /// distinguished from a document that genuinely declares no paths.</returns>
     public async Task<ProbeResult> ProbeAsync(string serverUrl, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrEmpty(serverUrl);

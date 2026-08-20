@@ -5,18 +5,60 @@ namespace St4i.EdgeCore.Uns;
 
 /// <summary>
 /// The Sparkplug B node/device lifecycle + data message kinds this hand-rolled UNS spine addresses.
-/// NBIRTH/NDEATH/DBIRTH/DDEATH are landed here only as topic-building targets for G2-3 (the actual
-/// birth/death SEQUENCING — when to emit them, MQTT Will wiring for a real NDEATH-on-disconnect — is
-/// explicitly out of scope for this task; see <see cref="UnsPublisher.PublishBirth"/>/
-/// <see cref="UnsPublisher.PublishDeath"/>). G2-2's own wiring only ever produces <see cref="DDATA"/>.
+///
+/// <para>🔴 <b>WITHDRAWN, and quoted rather than replaced silently, because it was a published claim about
+/// what this repository does.</b> This summary used to say: <i>"NBIRTH/NDEATH/DBIRTH/DDEATH are landed here
+/// only as topic-building targets for G2-3 (the actual birth/death SEQUENCING — when to emit them, MQTT
+/// Will wiring for a real NDEATH-on-disconnect — is explicitly out of scope for this task; see
+/// <see cref="UnsPublisher.PublishBirth"/>/<see cref="UnsPublisher.PublishDeath"/>). G2-2's own
+/// wiring only ever produces DDATA."</i> Two of its three parts are now false and the third is still true,
+/// which is why it is corrected here rather than deleted.
+/// <list type="bullet">
+/// <item><b>Sequencing arrived.</b> G2-3 wired it: <see cref="NBIRTH"/> and <see cref="NDEATH"/> are
+/// published from <c>FleetCore</c>'s real Start/Stop/E-stop transitions, and NBIRTH is the only message
+/// that resets the edge node's sequence counter.</item>
+/// <item><b>"Only ever produces DDATA" is false</b> for the same reason.</item>
+/// <item><b>The Will wiring is still absent, and that is measured rather than inherited:</b> the strings
+/// <c>WithWill</c> and <c>LastWill</c> do not occur in any <c>.cs</c> file in this repository. So an
+/// NDEATH is published only when this process chooses to publish one — an abrupt kill produces
+/// none.</item>
+/// </list></para>
 /// </summary>
 public enum SparkplugMsgType
 {
+    /// <summary>Edge-node birth certificate. Node-level, so
+    /// <see cref="UnsTopicBuilder.BuildSparkplugTopic(UnsOptions,SparkplugMsgType,string)"/> builds a
+    /// four-segment topic with no device id. The spelling is UPPERCASE on purpose: the member name is
+    /// interpolated directly into the topic string, so the C# identifier IS the wire token and renaming it
+    /// to <c>NBirth</c> would change what a Sparkplug host subscribes to. Published from
+    /// <c>FleetCore</c>'s real Start transition, and it is the ONLY message that resets this edge node's
+    /// sequence counter.</summary>
     NBIRTH,
+
+    /// <summary>Edge-node death certificate. Node-level, published from <c>FleetCore</c>'s Stop and E-stop
+    /// transitions and carrying the same <c>bdSeq</c> its matching <see cref="NBIRTH"/> did. It does NOT
+    /// reset the sequence counter — per spec only NBIRTH does.</summary>
     NDEATH,
+
+    /// <summary>Device birth certificate. Device-level: the equipment code is REQUIRED and a blank one
+    /// throws <see cref="ArgumentException"/> rather than building a topic with an empty last segment.
+    /// 🔴 Implemented and unreached: <c>IUnsPublisher.PublishBirth</c> is declared once, implemented once,
+    /// and called from NOWHERE under <c>src/</c> — so no shipped path emits a DBIRTH, and a Sparkplug host
+    /// sees this spine's devices only through their DDATA.</summary>
     DBIRTH,
+
+    /// <summary>Device death certificate. Device-level, same equipment-code requirement as
+    /// <see cref="DBIRTH"/> — and the same standing: <c>IUnsPublisher.PublishDeath</c> has no caller under
+    /// <c>src/</c> either.</summary>
     DDEATH,
+
+    /// <summary>Edge-node data. Node-level. Declared for vocabulary completeness and never published: no
+    /// publisher in this repository names it, and its only reference outside this declaration is a
+    /// topic-shape unit test.</summary>
     NDATA,
+
+    /// <summary>Device data. Device-level, and the only member G2-2's own wiring ever publishes:
+    /// <see cref="UnsTopicBuilder.BuildSparkplugDataTopic(UnsOptions,string)"/> hard-codes it.</summary>
     DDATA,
 }
 

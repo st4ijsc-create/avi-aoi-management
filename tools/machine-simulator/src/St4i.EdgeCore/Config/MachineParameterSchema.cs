@@ -23,10 +23,32 @@ namespace St4i.EdgeCore.Config;
 /// </summary>
 public static class MachineParameterSchema
 {
+    /// <summary>SCREWDRIVE machines. The literal <c>screw_program</c> is the server's own
+    /// <c>recipeSchemas.ts</c> kind name, matched character for character so the same parameter carries the
+    /// same key on both sides of the wire. Five parameters, product scope supported.</summary>
     public const string ScrewProgram = "screw_program";
+
+    /// <summary>DISPENSING machines. <c>dispense_program</c>, again the server's own spelling. Four
+    /// parameters, product scope supported.</summary>
     public const string DispenseProgram = "dispense_program";
+
+    /// <summary>WELDER machines. <c>weld_profile</c>, the server's own spelling. Four parameters, product
+    /// scope supported.</summary>
     public const string WeldProfile = "weld_profile";
+
+    /// <summary>IOT_SENSOR and IOT_GATEWAY machines — the one kind mapped from TWO machine types, and the
+    /// one kind with NO product dimension: <see cref="SupportsProductScope"/> returns false for this value
+    /// alone, which is what makes a product-scoped write against an IoT machine throw. Two parameters;
+    /// design doc §3 also lists a <c>thresholds{}</c> map for this kind and it is deliberately absent here,
+    /// because every parameter in this schema is one number with a hard band and a free-form map is not
+    /// that shape.</summary>
     public const string IotSettings = "iot_settings";
+
+    /// <summary>AOI and AVI machines, and the only one of the five with NO counterpart on the server —
+    /// <c>recipeSchemas.ts</c> has no typed schema for inspection machine types at all, so nothing on the
+    /// far side will recognize this kind or its six parameter keys. It exists because AOI/AVI is the
+    /// family most affected by ambient conditions, which is the case the whole feature was built
+    /// for.</summary>
     public const string AoiInspection = "aoi_inspection";
 
     /// <summary>

@@ -119,6 +119,12 @@ public sealed class BridgeSpool : IBridgeSpool
     private const long DefaultMaxBytes = 64L * 1024 * 1024;
     private const int DefaultMaxAgeHours = 48;
 
+    /// <summary>The absolute path of this instance's <c>bridge-spool.db</c>, resolved once in the
+    /// constructor from (in order) the explicit directory argument, <see cref="EnvVarDir"/>, then
+    /// <c>DefaultRoot</c>. Published because the FILE is the unit of identity here, not this object: two
+    /// <see cref="BridgeSpool"/> instances over the same path share one sequence high-water mark and one
+    /// <c>dropped_total</c>, and a test that wants a fresh spool must pick a fresh directory rather than a
+    /// fresh instance.</summary>
     public string DbPath { get; }
 
     private readonly long _maxBytes;
@@ -283,6 +289,23 @@ public sealed class BridgeSpool : IBridgeSpool
     // EnqueueAsync — NEVER throws. Returns -1 on failure.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Appends one row to <c>spool</c> and returns the <c>AUTOINCREMENT</c> key SQLite assigned
+    /// it. Returns <c>-1</c> for all three failure shapes without distinguishing them: a blank topic, a
+    /// null payload, or any exception from the database. Only the third is reported through
+    /// <c>logError</c>; the first two are rejected before a connection is opened and are silent, so a
+    /// caller that treats <c>-1</c> as "the store is broken" will be wrong about its own bad
+    /// argument.</summary>
+    /// <param name="topic">The MQTT topic to replay on. Stored as TEXT and never inspected — this class
+    /// does not know the difference between a Sparkplug topic and a semantic-mirror one.</param>
+    /// <param name="payload">The message bytes, stored in a BLOB column and bound as a raw
+    /// <see langword="byte"/> array so <c>0x00</c> and bytes above <c>0x7F</c> survive. An EMPTY array is
+    /// accepted; only <see langword="null"/> is rejected.</param>
+    /// <param name="retain">The MQTT retain flag, stored as 0/1 and handed back unchanged by
+    /// <see cref="PeekBatchAsync"/>.</param>
+    /// <param name="ct">Cancels the database work. A cancellation lands in the same catch as any other
+    /// failure, so a cancelled enqueue returns <c>-1</c> rather than throwing
+    /// <see cref="OperationCanceledException"/>.</param>
+    /// <returns>The assigned <see cref="SpooledItem.Seq"/>, or <c>-1</c>.</returns>
     public async Task<long> EnqueueAsync(string topic, byte[] payload, bool retain, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(topic) || payload is null) return -1;
@@ -325,6 +348,15 @@ public sealed class BridgeSpool : IBridgeSpool
     // PeekBatchAsync — ascending seq (FIFO). NEVER throws. Empty list on failure.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Reads the oldest pending items in ascending <see cref="SpooledItem.Seq"/> order. PEEK, not
+    /// dequeue — nothing is removed, so the same rows come back on the next call until
+    /// <see cref="AckThroughAsync"/> deletes them. An empty list is genuinely ambiguous by design: it means
+    /// an empty spool, a non-positive <paramref name="max"/>, or a read that failed.</summary>
+    /// <param name="max">Row cap, applied as SQL <c>LIMIT</c>. Zero or negative returns empty without
+    /// touching the database.</param>
+    /// <param name="ct">Cancels the read; a cancellation is caught like any other failure and yields an
+    /// empty list.</param>
+    /// <returns>Up to <paramref name="max"/> items, oldest first, or an empty list.</returns>
     public async Task<IReadOnlyList<SpooledItem>> PeekBatchAsync(int max, CancellationToken ct = default)
     {
         if (max <= 0) return Array.Empty<SpooledItem>();
@@ -360,6 +392,16 @@ public sealed class BridgeSpool : IBridgeSpool
     // AckThroughAsync — delete the prefix seq <= mark. NEVER throws.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Deletes every row with <c>seq &lt;= </c><paramref name="seq"/> — a prefix delete, not a
+    /// single-row one, so acknowledging a mark also discards anything older that was never acked. Returns
+    /// no count and reports no outcome: a caller cannot tell a successful delete of zero rows from a
+    /// failure, because both leave this method silently. The rows go, but the sequence does not rewind —
+    /// <c>AUTOINCREMENT</c> keeps the high-water mark even when the table is emptied
+    /// completely.</summary>
+    /// <param name="seq">The inclusive high-water mark that was successfully forwarded. A value below
+    /// every present <c>seq</c>, or above every one, is a legal no-op rather than an error.</param>
+    /// <param name="ct">Cancels the delete; a cancellation is caught like any other failure and reported
+    /// through <c>logError</c>.</param>
     public async Task AckThroughAsync(long seq, CancellationToken ct = default)
     {
         try
@@ -380,6 +422,15 @@ public sealed class BridgeSpool : IBridgeSpool
     // StatsAsync — NEVER throws. All-zero/null snapshot on failure.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>One aggregate query over <c>spool</c> plus a read of the persisted <c>dropped_total</c>.
+    /// 🔴 The failure value is <c>(0, 0, 0, 0, null)</c> — which is INDISTINGUISHABLE from a healthy empty
+    /// spool that has never dropped anything. An observability surface built on this cannot report "the
+    /// spool could not be read"; it can only report zero. The two are told apart, if at all, by the
+    /// <c>logError</c> callback firing.</summary>
+    /// <param name="ct">Cancels the queries; a cancellation is caught like any other failure and produces
+    /// the same all-zero snapshot.</param>
+    /// <returns>Depth, min/max seq, all-time drop count and the oldest pending timestamp — the middle
+    /// three <c>0</c>/<c>null</c> rather than garbage when the table is empty.</returns>
     public async Task<BridgeSpoolStats> StatsAsync(CancellationToken ct = default)
     {
         try
@@ -416,6 +467,20 @@ public sealed class BridgeSpool : IBridgeSpool
     // NEVER throws. Returns 0 on failure or when nothing needed trimming.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Enforces both caps, age first and bytes second, and increments the durable
+    /// <c>dropped_total</c> by however many rows went — all inside ONE transaction, so a crash mid-trim
+    /// can never leave the counter disagreeing with what was actually deleted. Both phases drop the OLDEST
+    /// rows; the byte phase walks backward from the newest and always keeps at least the single newest row
+    /// even if that row alone exceeds the budget. The one production caller is <see cref="UnsBridge"/>'s
+    /// spool forward loop, which runs it on a five-second cadence INDEPENDENT of connectivity — a long
+    /// Site outage is exactly when the caps matter — so the caps are enforced only while that loop is
+    /// alive. A bridge whose FORWARD loop has died has therefore stopped trimming as well as stopped
+    /// forwarding — one of the two ways <see cref="BridgeState.Faulted"/> is reached, and the reason that
+    /// state takes priority over a healthy-looking <see cref="BridgeState.Connected"/>.</summary>
+    /// <param name="ct">Cancels the transaction; a cancellation is caught like any other failure, the
+    /// transaction is not committed, and <c>0</c> is returned.</param>
+    /// <returns>Rows dropped. 🔴 <c>0</c> carries two meanings that cannot be separated here — nothing
+    /// needed trimming, or the trim failed.</returns>
     public async Task<int> TrimAsync(CancellationToken ct = default)
     {
         try
