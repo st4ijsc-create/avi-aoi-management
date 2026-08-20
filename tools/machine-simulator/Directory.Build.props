@@ -73,6 +73,12 @@
         532 are PAID by writing; the live figure is 515 outstanding: 412 coverage warnings on our own
         source (328 CS1591 + 84 CS1573, stages 6..8) plus the same 103 nobody here may pay. Retired in
         place rather than re-pinned, for the same reason as the line above it.]
+       [🔴 "the live figure is 515 outstanding: 412 coverage warnings on our own source (328 CS1591 + 84
+        CS1573, stages 6..8)" WITHDRAWN 2026-08-20 by task AL-1 (item 12 STAGE 6), which said it would
+        move again and it has. 129 more of the 412 are PAID by writing; the live figure is 386
+        outstanding: 283 coverage warnings on our own source (243 CS1591 + 40 CS1573, stages 7..8) plus
+        the same 103 nobody here may pay. Retired in place rather than re-pinned, for the same reason as
+        the two lines above it.]
 
            project                            (1) parse/resolve   (2) CS1591   CS1573   set
            St4i.Connector.Conformance                  15               0          0     yes
@@ -535,6 +541,60 @@
        ledger, EXPECT_WARNINGS 631 and the 2763 suite total all stood.
 
        🔴 ITEM 12 STAYS IN PART II. 412 coverage warnings on our own source remain unpaid, plus the 103
-       nobody may pay. Stages 6..8 pay the 412; each re-measures its own constant. -->
+       nobody may pay. Stages 6..8 pay the 412; each re-measures its own constant.
+       [🔴 "412 ... Stages 6..8 pay the 412" WITHDRAWN 2026-08-20 by task AL-1 (item 12 stage 6), which
+        grepped the repository for the literal rather than retiring the copy it happened to be standing
+        next to. True of AH-1's tree; the live figure is in AL-1's block immediately below. The rest of
+        AH-1's record above is untouched and is still the correct account of what stage 5 did.]
+
+       ══════════════════════════════════════════════════════════════════════════════════════════════════
+       🔴 AL-1 (.superpowers/sdd/item12-stage6/task-1-brief.md) — owner item 12, STAGE 6. THE NEXT 129
+       COVERAGE GAPS ARE PAID BY WRITING, AND THIS IS THE FIRST STAGE IN WHICH `OURS CS1573` MOVES.
+
+       THE CLUSTER, and the candidates were enumerated BEFORE its size was, from one -t:Rebuild of this
+       project grouped by directory: Historian 97, Config 50, Drivers/Modbus 46, Models 42, Transport 38,
+       Drivers/Simulators 27, Uns 19, Drivers/OpcUa 17, Mapping 13, Site 12, Engine 11, Fleet 8,
+       Drivers/Mqtt 7, Drivers/HotFolder 7, Uns/Sparkplug 6, Infrastructure 6, Drivers 5, Metrics 1.
+       Stage 5's selection rule — "the surface a driver author or an integrator touches first" — was
+       considered and NOT reused: on this remainder it points at the built-in driver families (109
+       warnings), whose published contract surface was already paid in full by N-2, leaving host-internal
+       plumbing whose members largely cannot be described beyond their names. The rule used instead is
+       RECOVERABILITY — the surface whose sentences are fixed by an artefact already in this tree.
+
+       WHAT WAS PAID: the edge-local historian, 129 warnings in EIGHT files. Historian/HistorianModels.cs
+       71, Models/TransportAck.cs 23, Historian/IHistorianStore.cs 13, Historian/SqliteHistorianStore.cs
+       11, Models/MachineDescriptor.cs 8, Historian/HistorianWriter.cs 1, Historian/OeeSettingsStore.cs 1,
+       Metrics/OeeCalculator.cs 1. One function joins them: HistorianResultRecord.From(MachineDescriptor,
+       DeviceReading, TransportAck, DateTimeOffset) folds exactly four inputs into the one row this
+       product writes to its own disk, and three of the four are here — the fourth, DeviceReading, is the
+       surface N-2 paid. Around that row sit its contract, its only implementation and physical schema,
+       the write-behind that feeds it, and the one computation ever read back out of it.
+
+       MEASURED, on the tree this commit produces — `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
+       over the whole solution, SDK 10.0.302, 15/15 compilations, `Build succeeded.`, `0 Error(s)`:
+           502 warnings, down from 631. 85 CS1591 + 44 CS1573, all in the St4i.EdgeCore compilation.
+       Split by origin: VENDORED 185 / OURS 317. The vendored bucket did not move ONE UNIT. Two ledger
+       rows moved and only two: `OURS CS1591 328 -> 243` and `OURS CS1573 84 -> 40`. 631 - 129 = 502 is
+       arithmetic that agrees; 502 was READ OUT of the partition, and the first -t:Rebuild had to be
+       discarded and re-run because all three of its errors were CS2001 inside a `_wpftmp` project,
+       exactly as this file's own gate note says they must be.
+
+       🔴 THE CHANNEL STAGE 1 PREDICTED FIRED, AND ITS REAL TRIGGER IS NARROWER THAN THE PREDICTION.
+       Stage 1 warned that paying a CS1591 with SOME of a member's `param` tags creates a CS1573. This is
+       the first stage whose cluster is parameterised members, so it is the first that could exercise the
+       channel — and 44 of the 129 were pre-existing CS1573 paid by COMPLETING partial sets. One new
+       CS1573 was created mid-task and caught only by re-measuring: rewriting the doc block on
+       IHistorianStore.AggregateForOeeAsync dropped a `<param>` the block already had. So the hazard is
+       not a half-written NEW block; it is an edit to a block that was already complete, and nothing in
+       this repository can see it except the count.
+
+       🔴 STAGE 4's STRONG DIFF CLAIM IS AVAILABLE AGAIN AND IS TAKEN, which also bounds what stage 5's
+       narrowing meant. Over this branch, a `git diff` restricted to `src/` has ZERO changed lines in
+       either direction that are not `///` lines: 657 added, 1 removed. Stage 5 had to narrow that claim
+       because it documented ENUM MEMBERS and a one-line enum declaration must be re-laid out to carry
+       them; this cluster contains no enum, so the narrowing was specific to enums and is not permanent.
+
+       🔴 ITEM 12 STAYS IN PART II. 283 coverage warnings on our own source remain unpaid, plus the 103
+       nobody may pay. Stages 7..8 pay the 283; each re-measures its own constant. -->
 
 </Project>

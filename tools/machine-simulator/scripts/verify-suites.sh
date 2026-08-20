@@ -1731,6 +1731,33 @@ EXPECT_CONFORMANCE=24
 # ON. No suppression of any kind was added — no NoWarn, no #pragma, no .editorconfig severity — and
 # SuppressionCensusTests' three tables are untouched.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
+#
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 TASK AL-1 (.superpowers/sdd/item12-stage6/task-1-brief.md) — ITEM 12 STAGE 6 — MOVES NO SUITE TOTAL.
+# EXPECT_ABSTRACTIONS 161, EXPECT_CONFORMANCE 24, EXPECT_EDGECORE 1160, EXPECT_EDGESERVICE 52,
+# EXPECT_ENGINEAPI 1374, grand total 2771: unchanged, and READ BACK OUT OF THIS FILE rather than carried
+# from a brief -- a draft of that brief distributed the same correct total as 1152/52/1382, which is the
+# right sum over the wrong terms, so the sum is not the check. AL-1 adds no test and deletes none. It
+# edits EIGHT files, all under src/St4i.EdgeCore, and moves EXPECT_WARNINGS 631 -> 502 plus TWO ledger
+# rows (OURS CS1591 328 -> 243, OURS CS1573 84 -> 40); the table still holds sixteen rows because nothing
+# reached zero. SuppressionCensusTests is untouched and its three tables are unmoved.
+# EXPECT_BUILD_NODES stays 0.
+#   THE LITERAL 631 WAS GREPPED FOR ACROSS THE WHOLE REPOSITORY BEFORE IT WAS MOVED, as the AF-1 lesson
+#   three blocks up requires, and every occurrence was classified rather than blanket-retired. The two
+#   "EXPECT_WARNINGS stays 631" lines above this one (AJ-1's and AK-1's) are records of what THOSE tasks
+#   did not move, scoped to their own trees; they are left exactly as written and are not pins. The
+#   forward-looking occurrences — the ones that read as the live figure — are retired in place, here and
+#   at the ledger, in Directory.Build.props, and in docs/owner-decisions.md.
+#   🔴 STAGE 4's STRONG DIFF CLAIM IS AVAILABLE AGAIN AND IS TAKEN: over `src/`, ZERO changed lines in
+#   either direction that are not `///` lines (657 added, 1 removed). Stage 5 could not say that because
+#   it documented enum members; this cluster contains no enum, so the narrowing stage 5 recorded was
+#   specific to enums and is not a permanent loss for stages 7..8.
+#   🔴 THE FAILURE MODE THIS STAGE HIT, for stages 7..8 to expect: extending an EXISTING doc block is
+#   where a paid member gets un-paid. Rewriting IHistorianStore.AggregateForOeeAsync's block dropped an
+#   existing `<param>` while adding four, creating a NEW CS1573 that nothing but a re-measurement could
+#   see -- the prose parsed, W-1 was green, and the diff read as pure addition. Count REMOVED `///` lines
+#   in the diff, and re-measure per file until each cluster file's residue is zero.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
 EXPECT_EDGECORE=1160
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
@@ -5255,7 +5282,62 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # blank lines, one 3-line `//` banner and those seven brace/comma re-layouts, ZERO lines changed -- and
 # the member SEQUENCE of all seven is identical name-for-name and order-for-order, which matters because
 # enum order is the underlying value. No executable statement was touched anywhere.
-EXPECT_WARNINGS=631
+#
+# ══ TASK AL-1 (.superpowers/sdd/item12-stage6/task-1-brief.md) — ITEM 12 STAGE 6 ══════════════════════
+# 631 -> 502. THE SECOND STAGE THAT PAYS BY WRITING, and the FIRST that opens the CS1573 channel stage 1
+# predicted and stages 2..5 never reached.
+#
+# 🔴 THE CLUSTER, AND THE CANDIDATES WERE ENUMERATED BEFORE ITS SIZE WAS. The 412 outstanding were first
+# grouped by directory, whole, from one `-t:Rebuild` of St4i.EdgeCore: Historian 97 · Config 50 ·
+# Drivers/Modbus 46 · Models 42 · Transport 38 · Drivers/Simulators 27 · Uns 19 · Drivers/OpcUa 17 ·
+# Mapping 13 · Site 12 · Engine 11 · Fleet 8 · Drivers/Mqtt 7 · Drivers/HotFolder 7 · Uns/Sparkplug 6 ·
+# Infrastructure 6 · Drivers 5 · Metrics 1. Only then was a cluster named. Stage 5's selection rule --
+# "the surface a driver author or an integrator touches first" -- was CONSIDERED AND NOT USED, because on
+# this remainder it points at the built-in driver families (Modbus + OpcUa + Mqtt + HotFolder +
+# Simulators + SimulatedDriver = 109), whose published contract surface St4i.Connector.Abstractions was
+# already paid in full by N-2; what is left there is host-internal plumbing whose members mostly cannot be
+# described beyond their names. The rule used instead is RECOVERABILITY: pick the surface whose sentences
+# are fixed by an artefact already in this tree, so that a claim can be checked rather than composed.
+#
+# 🔴 WHAT WAS PAID, PER FILE, 129 IN EIGHT FILES:
+#     Historian/HistorianModels.cs 71 · Models/TransportAck.cs 23 · Historian/IHistorianStore.cs 13 ·
+#     Historian/SqliteHistorianStore.cs 11 · Models/MachineDescriptor.cs 8 ·
+#     Historian/HistorianWriter.cs 1 · Historian/OeeSettingsStore.cs 1 · Metrics/OeeCalculator.cs 1
+# They go together because ONE function joins them: `HistorianResultRecord.From(MachineDescriptor,
+# DeviceReading, TransportAck, DateTimeOffset)` folds exactly four inputs into the one row this product
+# writes to its own disk, and three of the four are in this cluster -- the fourth, DeviceReading, is the
+# surface N-2 already paid. Around that row sit its contract (IHistorianStore), its only implementation
+# and physical schema (SqliteHistorianStore), the write-behind that feeds it (HistorianWriter), and the
+# one computation ever read back out of it (OeeSettingsStore + OeeCalculator). Every sentence written here
+# is fixed by something checkable in the same tree: a CREATE TABLE, a WHERE clause, a route's clamp.
+#
+# 🔴 502 IS MEASURED, NOT SUBTRACTED, AND THE FIRST RUN WAS DISCARDED AGAIN. `MSBUILDDISABLENODEREUSE=1
+# dotnet build -t:Rebuild --nologo` over the whole solution, SDK 10.0.302. FIRST run: 3 errors, 14
+# compilations, every error CS2001 inside St4iMachineSimulator_ioczjmtn_wpftmp.csproj -- the shape this
+# file says must be re-run before it is believed, and the second stage running to hit it. Re-run: 15/15
+# compilations, `Build succeeded.`, `0 Error(s)`, `502 Warning(s)`. 631 - 129 = 502 is arithmetic that
+# AGREES and is reported as a result, not used in place of the measurement.
+#
+# 🔴 TWO ROWS MOVED, AND THE SECOND IS THE ONE STAGE 5 SAID IT HAD NOT DE-RISKED. `OURS CS1591 328 ->
+# 243` (-85) and `OURS CS1573 84 -> 40` (-44). Sixteen rows before, sixteen after; nothing reached zero.
+# The eight VENDORED rows did not move one unit. 44 of the 129 were paid by ADDING `<param>` tags to
+# members that already carried a doc comment -- 22 on HistorianResultRecord, 8 on HistorianResultQuery, 8
+# on MachineDescriptor, 6 on IHistorianStore -- which is the channel stage 5 reported it never opened.
+#
+# 🔴 AND THE CHANNEL FIRED ONCE, AGAINST THIS TASK, AND ONLY THE MEASUREMENT CAUGHT IT. An intermediate
+# build measured 128 paid, not 129: rewriting the doc block on `IHistorianStore.AggregateForOeeAsync`
+# DROPPED an existing `<param name="includeFabricated">` while adding four new ones, which converted a
+# paid member back into a fresh CS1573. Nothing else saw it -- the prose was well-formed, W-1 was green,
+# the diff looked like pure addition. The general form for stages 7..8: WHEN YOU EXTEND AN EXISTING DOC
+# BLOCK, THE RISK IS NOT THE TAG YOU ADD, IT IS THE ONE ALREADY THERE. Re-measure per file; a per-file
+# residue of zero is the check, and `git diff` counting REMOVED `///` lines is the cheap pre-check.
+#
+# 🔴 THE STRONG DIFF CLAIM IS BACK, because nothing here is an enum. Over this branch, `git diff`
+# restricted to `src/` has ZERO changed lines in either direction that are not `///` lines: 657 added, 1
+# removed (a `</summary>` moved down a line to admit a `<para>`). No executable statement, no signature,
+# no member name was touched. That is stage 4's shape, not stage 5's, and it holds only because this
+# cluster contains no enum declaration.
+EXPECT_WARNINGS=502
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
@@ -5541,6 +5623,16 @@ warning_ledger() {
 #  plus two nullary methods). "Both rows fell in lockstep" would have been the guess this sentence
 #  warns about; what happened is that ONE row fell and the other was measured and found unmoved. Stages
 #  6..8 inherit the warning at full strength.]
+# [🔴 "412 remain" WITHDRAWN 2026-08-20 by task AL-1 (item 12 stage 6), which grepped the repository for
+#  the literal before moving it, as the two brackets above require. 283 remain, in those same two rows:
+#  243 CS1591 + 40 CS1573.
+#  🔴 AND THE WARNING IN THE SENTENCE IS NOW SPENT, WHICH NO STAGE HAS BEEN ABLE TO SAY BEFORE. Stage 6
+#  documented 44 members that DO take parameters, so the CS1591 -> CS1573 channel was finally exercised:
+#  it fired ONCE, against this stage, when an edit that rewrote an existing block dropped a `<param>` it
+#  already had. The row therefore did NOT rise on net -- it fell 84 -> 40 -- but the mechanism is now
+#  observed rather than predicted, and its trigger is narrower and nastier than the sentence says. It is
+#  not "writing some of a member's tags"; it is EDITING A BLOCK THAT WAS ALREADY COMPLETE. Stages 7..8
+#  should read the warning that way, and should count REMOVED `///` lines in their own diff.]
 #
 # ══ THE ROWS MOVED A SECOND TIME, BY TASK AG-1 (item 12 stage 4, 2026-08-19) ═══════════════════════════
 #
@@ -5588,8 +5680,51 @@ warning_ledger() {
 # at EXPECT_WARNINGS for why this stage could not exercise it -- so the first stage that documents a
 # member WITH PARAMETERS is still the first stage that can make CS1573 rise. It must expect that and
 # re-measure rather than subtract.
-EXPECT_WARNING_LEDGER="OURS CS1573 84
-OURS CS1591 328
+# [🔴 THIS WHOLE PARAGRAPH WITHDRAWN 2026-08-20 by task AL-1 (item 12 stage 6), quoted and retired in
+#  place. Its figure is superseded (283 owed, not 412 -- see the AL-1 block below) and its forecast came
+#  true: stage 6 was the stage that documented members with parameters, it did expect the channel, and
+#  the channel fired. What it got right is worth keeping visible; what it could not know is that the
+#  channel's real trigger is an edit to an ALREADY-COMPLETE block, not a half-written new one.]
+# ══ THE ROWS MOVED A FOURTH TIME, BY TASK AL-1 (item 12 stage 6, 2026-08-20) ═══════════════════════════
+#
+# 🔴 THE ENUMERATION FIRST, THE COUNTS AFTER — tenth time this file has watched that rule earn its keep.
+# What changed, listed:
+#     MOVED, OURS  CS1591 328 -> 243    — one row, -85, PAID by WRITING documentation
+#     MOVED, OURS  CS1573  84 ->  40    — one row, -44, PAID by COMPLETING `<param>` sets
+#     MOVED        none other. Not one of the other fourteen rows changed value, in either bucket.
+# No row was added and no row reached zero, so the table still holds SIXTEEN rows.
+# VENDORED 185 / OURS 317 = 502.
+#
+# 🔴 THIS IS THE FIRST STAGE IN WHICH `OURS CS1573` MOVED AT ALL, and it moved DOWN. Stage 1 measured
+# that a partial `<param>` set CREATES a CS1573 and warned that stages 5..8 are the stages that write;
+# stage 5 reported that it had not de-risked that channel because not one of its 120 members took a
+# parameter. This stage's cluster is nothing but parameterised members, so the channel is now exercised
+# in both directions: 44 pre-existing CS1573 were paid by completing sets that were already partial, and
+# one NEW one was created mid-task by an edit that dropped an existing tag while adding others. It was
+# caught by re-measuring per file, not by reading, and it is fixed. Net for the row: -44, measured.
+#
+# 🔴 THE 129 ARE ONE SURFACE, NOT A QUOTA, AND HERE IS THE WHOLE OF IT, per file:
+#     Historian/HistorianModels.cs 71 · Models/TransportAck.cs 23 · Historian/IHistorianStore.cs 13 ·
+#     Historian/SqliteHistorianStore.cs 11 · Models/MachineDescriptor.cs 8 ·
+#     Historian/HistorianWriter.cs 1 · Historian/OeeSettingsStore.cs 1 · Metrics/OeeCalculator.cs 1
+# Eight files, 129 members: 85 CS1591 + 44 CS1573. They are the edge-local historian -- the record this
+# product keeps of what its own machines did -- plus the two shapes `HistorianResultRecord.From` folds
+# into a row and the one computation read back out of it. See the block at EXPECT_WARNINGS for the
+# candidate list this cluster was chosen against, and for why stage 5's selection rule was not reused.
+#
+# 🔴 THE EIGHT VENDORED ROWS DID NOT MOVE ONE UNIT — the assertion every stage since 4 has had to pass.
+# CS1573 8 · CS1591 95 · CS8600 5 · CS8601 2 · CS8603 2 · CS8604 1 · CS8618 35 · CS8625 37 = 185,
+# identical to stages 3, 4 and 5. This stage edited eight files, none of them the vendored SDK file.
+#
+# 🔴 WHAT STAGES 7..8 STILL OWE, and it is no longer 412: 283 coverage warnings remain on our own source,
+# 243 CS1591 + 40 CS1573. Measured on the tree this commit produces, the whole remaining population by
+# directory: Config 50 (6 files) · Drivers/Modbus 46 (10) · Transport 38 (7) · Drivers/Simulators 27 (11) ·
+# Uns 19 (4) · Drivers/OpcUa 17 (5) · Mapping 13 (3) · Site 12 (2) · Engine 11 (3) · Fleet 8 (1) ·
+# Drivers/Mqtt 7 (2) · Drivers/HotFolder 7 (2) · Uns/Sparkplug 6 (1) · Infrastructure 6 (3) · Drivers 5
+# (1) · Models 11 (2). Largest single file: Config/MachineConfigModels.cs at 33. No figure here may be
+# subtracted from by a later stage -- re-measure.
+EXPECT_WARNING_LEDGER="OURS CS1573 40
+OURS CS1591 243
 OURS CS8601 7
 OURS CS8604 14
 OURS CS8767 2
