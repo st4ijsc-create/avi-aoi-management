@@ -33,7 +33,14 @@ public enum TransportMode
     /// <summary>Fabricate the replies locally and touch no network at all — the exhibition posture. It is
     /// the only member a deployment can refuse: <c>PUT /v1/mode</c> answers 400 for this value when
     /// <c>DemoModeGate.Enabled</c> is false, which is why a host can be in a state where the operator can
-    /// leave Demo but not re-enter it.</summary>
+    /// leave Demo but not re-enter it.
+    ///
+    /// <para>🔴 That refusal guards the MODE, not the fabricator. <c>POST /v1/scenario</c> with
+    /// <c>networkOutage</c> set is not gated by <c>DemoModeGate</c> at all, and it points the running
+    /// fleet's transport straight at a lossy <see cref="Demo"/> instance — so a host that has switched
+    /// Demo off can still be put behind a fabricator, with <c>GET /v1/mode</c> still answering whatever
+    /// the operator selected. It is audited and it requires the Engineer policy; it is not
+    /// refused.</para></summary>
     Demo,
 
     /// <summary>Try live for every call and re-route to demo on a network failure, re-probing live

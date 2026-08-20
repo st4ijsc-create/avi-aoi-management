@@ -43,17 +43,29 @@ public interface ITransport
     /// programming error in this process rather than an outcome of a send.</summary>
     Task<TransportAck> SendAsync(CanonicalEnvelope env, CancellationToken ct);
 
-    /// <summary>Pings the ecosystem for this machine's liveness and key status, independently of whether
-    /// any reading is flowing. The <c>machineCode</c> argument is not uniformly load-bearing: the live
-    /// implementation ignores it (its wrapped SDK client is already bound to one machine) while the demo
-    /// implementation derives its fabricated machine id from it, so passing the wrong code changes the
-    /// demo answer and cannot change the live one.</summary>
+    /// <summary>🔴 Pings the ecosystem for this machine's liveness and key status — and NOTHING IN THIS
+    /// PRODUCT CALLS IT. Enumerated whole: it is declared here, implemented four times, and exercised by
+    /// seven test files; the only call site under <c>src/</c> outside the transports themselves is the WPF
+    /// live-smoke diagnostic, which runs under its own switch. There is no heartbeat timer anywhere in
+    /// this repository, so the architecture the neighbouring comments describe — a background liveness
+    /// poll that trips <see cref="AutoTransport"/>'s fallback — is a design that was written down and
+    /// never wired up. Read the four implementations as a seam waiting for a caller.
+    ///
+    /// <para>The <c>machineCode</c> argument is not uniformly load-bearing either: the live implementation
+    /// ignores it (its wrapped SDK client is already bound to one machine) while the demo implementation
+    /// derives its fabricated machine id from it, so passing the wrong code changes the demo answer and
+    /// cannot change the live one.</para></summary>
     Task<HeartbeatResult> HeartbeatAsync(string machineCode, CancellationToken ct);
 
     /// <summary>Compares one config version string with the one the caller says it already holds. It
     /// deliberately does not download or apply anything — there is no apply callback in this signature —
     /// so a <see cref="ConfigSyncResult"/> reporting a change is a statement about two strings and never
-    /// about configuration in force. The full check→get→apply→ack loop lives elsewhere; this exists so a
-    /// host can cheaply notice drift.</summary>
+    /// about configuration in force. The full check→get→apply→ack loop lives elsewhere.
+    ///
+    /// <para>Unlike <see cref="HeartbeatAsync"/> this one HAS production callers, and both are
+    /// OPERATOR-TRIGGERED rather than periodic: <c>POST /v1/machines/{code}/sync-config</c> (Engineer
+    /// policy, audited) and the WPF machine view's sync-config button. So the drift a
+    /// <see cref="ConfigSyncResult"/> reports is drift as of the last time a human asked, never a
+    /// continuously maintained value.</para></summary>
     Task<ConfigSyncResult> SyncConfigAsync(string machineCode, string configKind, string? cachedVersion, CancellationToken ct);
 }

@@ -61,9 +61,10 @@ public sealed class AutoTransport : ITransport
 
     /// <summary>Raised only on a TRANSITION of <see cref="IsFallingBack"/>, never once per degraded call,
     /// so a subscriber sees one notification per outage and one per recovery rather than a stream. It is
-    /// invoked OUTSIDE this class's lock and therefore on whichever thread caused the transition — a
-    /// pipeline send or a background heartbeat — which is why the WPF subscriber marshals to the UI
-    /// thread itself. Delivery is not guaranteed across a <c>TransportCoordinator.RebuildLive</c>: that
+    /// invoked OUTSIDE this class's lock and therefore on whichever thread caused the transition — in
+    /// practice a pipeline send, since that is the only one of the three methods anything calls on a
+    /// timer-free path — which is why the WPF subscriber marshals to the UI thread itself. Delivery is
+    /// not guaranteed across a <c>TransportCoordinator.RebuildLive</c>: that
     /// rebuild unsubscribes from this instance and subscribes to a fresh one, and a call already in
     /// flight can deliver one stray notification after the unsubscribe or lose one, which that method
     /// records as an accepted race.</summary>
@@ -75,10 +76,12 @@ public sealed class AutoTransport : ITransport
     /// therefore NOT a fallback trigger — it is returned to the caller unchanged, because the server was
     /// reached and it said no.
     ///
-    /// <para>The fallback is not per-call. Once tripped, live is only re-probed on every fifth call, and
-    /// that counter is shared with the heartbeat and config-sync methods — so a failing background
-    /// heartbeat is what usually decides whether a perfectly healthy send goes to the server at
-    /// all.</para></summary>
+    /// <para>The fallback is not per-call. Once tripped, live is only re-probed on every fifth call, so
+    /// four sends in five go to demo while the flag is up and the reading they carry never reaches the
+    /// server on that attempt. The counter is shared with the other two methods, which was designed to
+    /// let a background liveness poll move it — 🔴 but nothing calls
+    /// <see cref="HeartbeatAsync"/> in this product and the config-sync path is operator-triggered, so in
+    /// practice THIS method both sets the flag and pays for it.</para></summary>
     public async Task<TransportAck> SendAsync(CanonicalEnvelope env, CancellationToken ct)
     {
         if (!ShouldTryLiveThisCall())
@@ -100,10 +103,13 @@ public sealed class AutoTransport : ITransport
     /// <summary>Same probe-then-fall-back shape as <see cref="SendAsync"/>, but with a much blunter
     /// failure test: ANY unsuccessful heartbeat trips the fallback, because
     /// <see cref="HeartbeatResult.Success"/> already collapses network failure, server rejection and an
-    /// unconfigured key into one value. That makes this the method most likely to trip the shared flag,
-    /// and — since the flag is shared — the one that decides where sends go. A booth whose heartbeat
-    /// timer is failing serves demo data from a live-configured host, and
-    /// <see cref="FallbackChanged"/> is the only thing that says so.</summary>
+    /// unconfigured key into one value. On paper that makes this the most sensitive trip of the three,
+    /// and — since the flag is shared — the one that would decide where sends go.
+    ///
+    /// <para>🔴 That sensitivity is UNEXERCISED. Nothing in this product calls this method: see
+    /// <see cref="ITransport.HeartbeatAsync"/>, where the population is enumerated. The blunt failure
+    /// test is therefore a property waiting for a caller rather than a live behaviour, and a reader
+    /// deciding whether it is too blunt should know it has never fired outside a test.</para></summary>
     public async Task<HeartbeatResult> HeartbeatAsync(string machineCode, CancellationToken ct)
     {
         if (!ShouldTryLiveThisCall())

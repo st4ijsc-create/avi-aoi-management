@@ -4,7 +4,8 @@ namespace St4i.EdgeCore.Models;
 
 /// <summary>
 /// One reading, already shaped for the wire. <see cref="St4i.EdgeCore.Mapping.Normalizer.Normalize"/> is
-/// the only producer, and it is produced once and delivered TWICE from the same instance:
+/// the only producer under <c>src/</c> — tests construct these directly — and one is produced once and
+/// delivered TWICE from the same instance:
 /// <c>EdgePipeline</c> hands it to <see cref="St4i.EdgeCore.Transport.ITransport.SendAsync"/> (the ST4I
 /// HTTP ingest path) and, when a publisher is wired, to
 /// <see cref="St4i.EdgeCore.Uns.IUnsPublisher.PublishReading"/> (the retained semantic mirror on the local

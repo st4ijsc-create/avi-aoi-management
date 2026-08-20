@@ -1776,7 +1776,7 @@ EXPECT_CONFORMANCE=24
 #   CLASSIFIED rather than applied.
 #   🔴 THE STRONG DIFF CLAIM IS NARROWED AGAIN, AND BY THE SAME MECHANISM AS STAGE 5 -- the narrowing is
 #   a property of ENUMS, exactly as AL-1's note above predicted, and this cluster contains one. Over
-#   `src/`: 485 lines added, 4 removed. THREE of the four removed are `///` lines and all three are the
+#   `src/`: 513 lines added, 4 removed. THREE of the four removed are `///` lines and all three are the
 #   OLD ITransport summary, reproduced VERBATIM inside its replacement (see that file). The fourth is the
 #   one-line `public enum TransportMode { Live, Demo, Auto }` declaration, re-laid out over six lines so
 #   its three members can carry doc comments; the member SEQUENCE is identical name-for-name and
@@ -5426,7 +5426,7 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 #
 # 🔴 THE ENUM NARROWING IS BACK, AND IT IS THE SAME ONE STAGE 5 RECORDED. This cluster contains exactly
 # one enum declaration (`TransportMode`), so the strong claim stage 6 could make is unavailable and the
-# honest one is stage 5's: over `src/`, 485 added / 4 removed, of which three removed are `///` lines
+# honest one is stage 5's: over `src/`, 513 added / 4 removed, of which three removed are `///` lines
 # reproduced verbatim in place and the fourth is the enum's one-line declaration, re-laid out with its
 # member sequence identical name-for-name and order-for-order. Outside that declaration and blank
 # separators, ZERO changed lines that are not `///`. Stage 8 inherits neither claim as a promise: which

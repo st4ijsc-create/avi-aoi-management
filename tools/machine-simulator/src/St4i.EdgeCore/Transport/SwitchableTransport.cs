@@ -22,10 +22,12 @@ public sealed class SwitchableTransport : ITransport
 
     /// <summary>Builds the singleton around the transport it should forward to until something calls
     /// <see cref="SetInner"/>. The argument is required — there is no "unset" state and no null inner to
-    /// guard against anywhere else in this class — and it is NOT owned: this class never disposes an
-    /// inner, neither the one handed in here nor one it is later pointed away from, because the instances
-    /// it forwards to outlive and are shared with <see cref="TransportCoordinator"/>, which does the
-    /// disposing.</summary>
+    /// guard against anywhere else in this class — and it is NOT owned: this class is not
+    /// <see cref="IDisposable"/> and never disposes an inner, neither the one handed in here nor one it is
+    /// later pointed away from. The instances it forwards to outlive it and are shared with
+    /// <see cref="TransportCoordinator"/>, and only ONE of them is ever disposed by anybody: the
+    /// coordinator disposes a <see cref="LiveTransport"/> it replaces on a rebuild.
+    /// <see cref="DemoTransport"/> and <see cref="AutoTransport"/> are not disposable at all.</summary>
     public SwitchableTransport(ITransport initial)
     {
         _inner = initial ?? throw new ArgumentNullException(nameof(initial));
