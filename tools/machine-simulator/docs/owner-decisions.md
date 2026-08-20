@@ -57,7 +57,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 26 | **Không gì trong repo này trả cho TÍNH ĐÚNG của một chú thích đã viết** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Mục 12 trả cho **bao phủ**; W-1 kiểm **hình thức**. Năm con số đã đo — **KHÔNG cộng được**, và mục nói vì sao |
 | 27 | API Inspector **không phơi THÂN request** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo lại từ mã 2026-08-20. `ApiTraceEvent` **không có trường thân**; `TraceTable` **không có trình xử lý click hàng nào** |
 | 28 | **BA cái trần** trên lịch sử API-trace, và **không cái nào được UI gọi tên là trần** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). 🔴 **Phát hiện "trần 1.000 và UI CÓ nêu tên trần" KHÔNG đứng vững nguyên trạng: trần là 1.000 / 500 / 200, và UI in GIÁ TRỊ chứ không gọi tên TRẦN** |
-| 29 | Cả fleet liên kết ra ngoài bằng **MỘT danh tính thiết bị** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). `POST /v1/onboarding/paste-key` lưu khoá cho **bất kỳ** mã máy và trả 200; `FleetCore.UpdateSettings` chỉ đọc **một** |
+| 29 | Cả fleet liên kết ra ngoài bằng **MỘT danh tính thiết bị** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). `POST /v1/onboarding/paste-key` lưu khoá cho **bất kỳ** mã máy và trả 200; `FleetCore.UpdateSettings` chỉ đọc **một**. 🔴 **Kèm một TRẦN của phán quyết: câu báo lỗi người vận hành đọc được phát ra từ file SDK vendored KHÔNG SỬA ĐƯỢC**, nên phán quyết phải nêu chỗ thi hành. Mục cũng mang một khối **RÚT** một câu phủ định tồn tại do chính AO-1 viết sai cùng ngày — §8.1(f), ca thứ ba |
 | 30 | Gốc mặc định của bốn store cạnh-binary là `%ProgramFiles%`, và **lần chạy đầu chính là lần GHI** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Câu hỏi này **bị nhiều brief liên tiếp CẤM mở**; lệnh cấm hết hiệu lực ở nhiệm vụ này |
 | 31 | **Mười hai artefact build** (7 `.xml` + 5 `.pdb`) đi vào MSI | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Đã ĐO ở §8 của mục 12 từ 2026-08-19 (AF-1) nhưng **chưa bao giờ thành một mục phán được**; **ba trong số đó đã ở đó từ N-1/N-2** |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
@@ -556,8 +556,13 @@ hỏi.
 **Đo được cái gì — quần thể mở TRỌN ở SHA đã ghim.** `git grep` cho `PublishBirth|PublishDeath` trên
 mọi `*.cs` của cây: khai báo trong `IUnsPublisher`; cài đặt trong `UnsPublisher` (kèm mã hoá
 DBIRTH/DDEATH đầy đủ và phép reset bảng alias); phép điều phối work-item **bên trong chính
-`UnsPublisher`**; một `<see cref>` trong `UnsTopicBuilder`; và **bốn** chỗ trong `tests/` (hai lớp
-giả rỗng, một bài test thật). **Không route, không service, không đường nào dưới `src/` gọi chúng.**
+`UnsPublisher`**; một `<see cref>` trong `UnsTopicBuilder`; và ở `tests/`, **năm** file —
+`EdgePipelineTests`, `Uns/UnsNodeLifecycleTests`, `FleetHostGateCommitCompletionTests`,
+`FleetHostUnsLifecycleTests`, `Line/LineControllerTests`. 📎 **Con số ấy đọc *"bốn"* cho tới
+2026-08-20 và được sửa cùng ngày (AO-1): lần quét đầu bị `head` cắt cụt, và phép đo lại chạy từ
+GỐC REPO — xem khối rút ở mục 29 để biết vì sao chỗ đứng khi gõ lệnh là một phần của miền dụng cụ.**
+**Không route, không service, không đường nào dưới `src/` gọi chúng** — và phép phủ định ấy đã được
+đo lại ở miền rộng hơn, nó đứng vững.
 Đối chiếu: `PublishNodeBirth`/`PublishNodeDeath` **có** caller thật trong `FleetCore`, từ các chuyển
 trạng thái Start/Stop/E-stop.
 
@@ -936,16 +941,85 @@ server."* — rồi ngay dưới, một biểu mẫu riêng với `pasteCodeLabe
 *"e.g. SIM-0002"*, tức **mời người dùng dán một khoá cho một mã KHÁC**. Một bên nói đã lưu, bên kia
 chỉ dùng một cái.
 
-📎 **Sửa lại lời kể ở hai chỗ, vì phép đo không xác nhận chúng.** *(i)* Điều phối viên trỏ
-`FleetCore.cs:5313`. Số dòng ấy **hôm nay vẫn đúng**, nhưng §8.1(h8) nói trỏ bằng **TÊN**: chỗ ấy
-nằm trong `FleetCore.UpdateSettings`, trong nhánh `if (rebuildNeeded)`. *(ii)* Điều phối viên kể
-rằng LiveTransport báo *"Chưa có khoá mk_"*. 🔴 **Chuỗi ấy KHÔNG tồn tại trong cây** — `git grep`
-trên toàn bộ commit object không tìm thấy nó, và `LiveTransport` không có thành viên `IsConfigured`
-nào. Thứ có thật là `LiveTransport.NoServerConfiguredPlaceholder` (`http://127.0.0.1:0`, một cổng
-không ai trả lời) và chuỗi UI `settings.auth.noneSaved` = *"No keys recorded in this session yet."*
-— mà chú thích ngay cạnh nó tự nói rằng nó **chỉ theo dõi trình duyệt này, không phải danh sách đầy
-đủ trên máy chủ engine**. **Cơ chế bất đối xứng là thật; câu trích dẫn thì không**, và một câu trích
-sai làm mục yếu đi chứ không mạnh lên.
+📎 **Một chỗ trong lời kể được trỏ lại chứ không sửa:** điều phối viên trỏ `FleetCore.cs:5313`. Số
+dòng ấy **hôm nay vẫn đúng**, nhưng §8.1(h8) nói trỏ bằng **TÊN**: chỗ ấy nằm trong
+`FleetCore.UpdateSettings`, trong nhánh `if (rebuildNeeded)`.
+
+> 🔴 **MỘT CÂU PHỦ ĐỊNH TỒN TẠI TRONG CHÍNH MỤC NÀY — RÚT 2026-08-20 (AO-1), cùng ngày nó được
+> viết, giữ NGUYÊN VĂN, không xoá dòng nào.** Câu ấy đọc: *"**Chuỗi ấy KHÔNG tồn tại trong cây** —
+> `git grep` trên toàn bộ commit object không tìm thấy nó, và `LiveTransport` không có thành viên
+> `IsConfigured` nào."* **Nửa sau đúng và ở lại** (`LiveTransport` thật sự không có `IsConfigured`).
+> 🔴 **Nửa đầu SAI, và chuỗi ấy CÓ THẬT.**
+>
+> **Nó sai vì BA nguyên nhân chồng lên nhau, và phải nêu cả ba vì mỗi cái một mình đã đủ để hỏng
+> phép đo.**
+> **(1) DẤU.** Brief viết `khoá` (a-sắc); chuỗi thật là `khóa` (o-sắc). Hai cách viết đều hợp lệ
+> trong tiếng Việt cho **cùng một từ**, và **một lần grep theo cách viết này không tìm ra cách viết
+> kia**. Lỗi này do điều phối viên gieo vào brief và người thực thi kế thừa mà không kiểm.
+> **(2) PATHSPEC — và đây là cái nặng nhất, nó là của người thực thi.** Mọi lệnh
+> `git grep <SHA> -- .` và `git grep <SHA> -- '*.cs'` của nhiệm vụ này được chạy từ
+> `tools/machine-simulator`, mà **pathspec của git là TƯƠNG ĐỐI VỚI THƯ MỤC HIỆN HÀNH**. Nên mọi
+> lần quét ấy **âm thầm loại bỏ toàn bộ cây ngoài `tools/machine-simulator/`** — gồm `examples/`,
+> **và gồm cả `server/` với `client/`, đúng hai cây mà lời khai miền dụng cụ tự nhận là đã với
+> tới.** Phép kiểm quyết định: cùng một mẫu, chạy từ gốc repo, trả thêm
+> `examples/device-client/csharp/St4iDeviceClient.cs`; chạy từ `tools/machine-simulator`, không trả.
+> **Câu *"`git grep` trên commit object với tới cả cây"* đúng về LỆNH và sai về LẦN GỌI.**
+> **(3) MIỀN.** Chuỗi không nằm ở `src/` hay `web/`. Nó nằm ở `examples/device-client/` — **file SDK
+> vendored**, thứ **không ai trong repo này được sửa**.
+>
+> 🔴 **Ý nghĩa, viết đúng cái nó là: đây là §8.1(f), ca THỨ BA trong cùng một chuỗi, và ca này do
+> chính người vừa bắt được hai ca trước tự sinh ra.** Hai ca kia nằm ở mục 15 và mục 24, cả hai là
+> lỗi của báo cáo đợt 8. Ca này là lỗi của nhiệm vụ đang sửa chúng, mắc **trong cùng một phiên**, và
+> nó là bằng chứng mạnh nhất cho câu mà chính nhiệm vụ ấy viết ở phần kết: **một phép đo chỉ rộng
+> bằng cái mẫu sinh ra nó** — trong đó "cái mẫu" gồm cả **chính tả** lẫn **thư mục ta đứng khi
+> gõ**.
+>
+> 📎 **Mọi câu phủ định tồn tại khác trong mười bảy mục đã được ĐO LẠI từ gốc repo sau phát hiện
+> này, và tất cả đều đứng vững**: tập `Channel.CreateBounded` (mục 15), hai bộ truy cập `.Auto`/
+> `.Demo` (mục 19), `PublishBirth`/`PublishDeath` và `WithWill`/`LastWill` (mục 23), bảy chính tả
+> biến môi trường (mục 24), nhà sản xuất `OeeInputAggregate` và hai chỗ dựng `TransportCoordinator`
+> (mục 16 và 20, cả hai với mẫu chịu-được-đủ-đường-dẫn), bốn file không được git theo dõi (mục 30),
+> từ vựng "trần" trong hai file i18n (mục 28), trình xử lý click hàng trong `TraceTable` (mục 27),
+> và phép phủ định về nhân chứng của route scenario (mục 18). **Đúng một con số phải sửa ngoài mục
+> này: mục 23 ghi "bốn chỗ trong `tests/`", và tập là NĂM file** — cũng do một lần quét bị cắt bởi
+> `head`.
+
+🔴 **CHUỖI ẤY CÓ THẬT, VÀ CHỖ NÓ PHÁT RA LÀ MỘT CÁI TRẦN CỦA PHÁN QUYẾT — nêu ra chứ không để im,
+vì một cái trần nêu quá nhỏ còn tệ hơn không nêu trần.** Đo lại từ gốc repo, trên **mọi** loại file:
+chuỗi `"Chưa có khóa mk_…"` xuất hiện ở **đúng hai** file, cả hai dưới `examples/device-client/` —
+bản C# (`St4iDeviceClient.cs`, một `throw new St4iConfigException`) và bản Python
+(`st4i_device_client.py`). Bản Node của cùng SDK mang biến thể ngắn hơn, `"Chưa có mk_…"`.
+
+**Đường nó lên tới mắt người vận hành, đo từng mắt xích:** SDK ném `St4iConfigException` →
+`LiveTransport.SendAsync` bắt nó, và khi `_client.MkKey` rỗng — đúng ca "chưa cấu hình" — trả
+`TransportAck(Success: false, Queued: true, Error: e.Message, …)`, **truyền nguyên văn thông điệp
+của SDK** → `EdgePipeline` chép `Error: ack.Error` vào `ApiTraceEvent` → `EventBus` →
+`InspectorStream` → **ô Error của một hàng trong pane API Inspector**. 📎 Tức bề mặt mà người vận
+hành đọc câu ấy **chính là pane của mục 27** — pane chỉ có siêu dữ liệu; thông điệp này *là* siêu dữ
+liệu, nên nó hiện ra, trong khi thứ sẽ giải thích nó thì không.
+
+**Ba khả năng đã bị LOẠI TRỪ, nêu tên chứ không im lặng bỏ qua:**
+1. *"`LiveTransport` bọc SDK và thay bằng lời của chính nó."* **Loại.** Nó truyền `e.Message` đi
+   nguyên vẹn; thứ duy nhất nó tự quyết là **hình dạng ack** nào chở câu ấy (`Queued: true` cho ca
+   chưa cấu hình, hay một 400 tổng hợp cho ca payload sai), phân biệt bằng `_client.MkKey`.
+2. *"Một chỗ nào đó trong `src/`, `web/` hay `tests/` chép lại chuỗi ấy."* **Loại.** Ở gốc repo,
+   trên mọi loại file, chuỗi chỉ có ở hai file vendored kể trên.
+3. *"Người vận hành thực ra thấy một thông điệp khác do dự án này viết."* **Loại.** `EdgePipeline`
+   chép `ack.Error` nguyên văn và không mắt xích nào giữa đường viết lại nó.
+
+🔴 **Nên trần là: nếu anh phán *"làm cho thông điệp ấy nói đúng sự thật"* — chẳng hạn nói rõ nó đang
+nói về mã máy NÀO — phán quyết ấy KHÔNG THI HÀNH ĐƯỢC ở chỗ nó phát ra.** File ấy là bản vendored
+mà luật của dự án cấm sửa: doc của chính `LiveTransport` gọi nó là *"linked into this project
+verbatim and never edited"*, và sổ cảnh báo của cổng ghim 103 cảnh báo vendored trong đúng file ấy
+**chính vì không ai được đụng vào**. Hai chỗ **thi hành được**, cả hai trong `src/`: khối `catch
+(St4iConfigException)` của `LiveTransport` — nó **đã** biết đang ở ca nào và biết mình gắn với mã
+máy nào — hoặc lớp UI khi hiển thị `ApiTraceEvent.Error`. **Một phán quyết không nêu chỗ thi hành sẽ
+rơi vào chỗ không thi hành được.**
+
+📎 **Bản thay thế viết trước đó vẫn đứng nguyên và vẫn là nửa mạnh nhất của mục:** hai chuỗi
+`settings.auth.machineCodeLabel`/`machineCodeHint` hứa một mã xác thực **duy nhất**, trong khi biểu
+mẫu ngay dưới mời dán khoá cho một mã **khác**. Cái vừa thêm không thay nó — nó nói rằng **câu báo
+lỗi ở đầu kia cũng có thật, và nằm ngoài tầm sửa**.
 
 **Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Fleet.FleetCore.UpdateSettings` và trường
 `_machineCode`; `St4i.EdgeCore.Infrastructure.CredentialStore.Load`/`.Save`;
@@ -953,8 +1027,14 @@ sai làm mục yếu đi chứ không mạnh lên.
 `St4i.EngineApi.Fleet.OnboardingService.PasteKey`; `St4i.EngineApi.Endpoints.OnboardingEndpoints`
 (route `POST /v1/onboarding/paste-key`, `Policies.Engineer`);
 `St4i.EngineApi.Fleet.OnboardingPasteKeyRequest`; `settings.auth.*` trong `web/src/i18n/en.ts` và
-`vi.ts`. Đối chiếu: `St4i.EdgeService.EdgeWorker` đọc `CredentialStore.Load(machineCode)` cũng số ít,
-và doc của nó **nói thẳng** rằng Live mode gắn với **đúng MỘT** cặp máy/khoá.
+`vi.ts`. **Mắt xích của thông điệp, theo thứ tự:** `St4iDeviceClient.HttpSendAsync` và
+`St4iConfigException` trong `examples/device-client/csharp/St4iDeviceClient.cs` (**vendored, cấm
+sửa**) → khối `catch (St4iConfigException)` của `St4i.EdgeCore.Transport.LiveTransport.SendAsync` →
+`St4i.EdgeCore.Models.TransportAck.Error` → `St4i.EdgeCore.Engine.EdgePipeline` →
+`St4i.EdgeCore.Infrastructure.ApiTraceEvent.Error` → `St4i.EngineApi.Hubs.InspectorStream` → ô Error
+trong `web/src/components/TraceTable.tsx`. Đối chiếu: `St4i.EdgeService.EdgeWorker` đọc
+`CredentialStore.Load(machineCode)` cũng số ít, và doc của nó **nói thẳng** rằng Live mode gắn với
+**đúng MỘT** cặp máy/khoá.
 
 **Hậu quả vận hành, HAI CHIỀU.**
 *Chiều thuận:* một người vận hành làm đúng thứ UI mời họ làm — dán khoá cho từng máy con — nhận
@@ -971,7 +1051,11 @@ hẹp** route (từ chối mã không phải `settings.machineCode`) — rẻ h�
 
 **Nếu KHÔNG quyết định.** Route ở lại trả 200 cho một thao tác không có tác dụng; hai chuỗi UI ở lại
 nói hai chuyện; và câu duy nhất quyết được — **sản phẩm này có một danh tính hay nhiều?** — không ai
-hỏi. Mọi công việc "fleet nhiều máy" về sau sẽ va vào đúng chỗ này.
+hỏi. Mọi công việc "fleet nhiều máy" về sau sẽ va vào đúng chỗ này. 🔴 **Và một hệ quả riêng của cái
+trần nêu trên: câu báo lỗi mà người vận hành thực sự đọc được phát ra từ một file KHÔNG SỬA ĐƯỢC,
+nên "cứ để đấy" ở đây không có nghĩa là "giữ nguyên trạng có thể sửa sau bằng một dòng" — mọi phép
+sửa thông điệp, sớm hay muộn, đều phải xảy ra ở `LiveTransport` hoặc ở lớp UI, không ở chỗ câu ấy
+được viết ra.**
 
 ---
 
