@@ -17403,7 +17403,39 @@
     "canAsk6": "管理用户和权限",
     "canAskTitle": "您可以询问…",
     "subtitle": "关于工厂管理系统的快速问答 — 越南语或英语均可",
-    "title": "智能支持助手"
+    "title": "智能支持助手",
+    "quick": {
+      "xemBaoCaoLoi": {
+        "label": "📋 查看缺陷报告",
+        "question": "如何查看 AOI 缺陷报告？"
+      },
+      "caiDatMay": {
+        "label": "⚙️ 设备设置",
+        "question": "如何配置检测设备的参数？"
+      },
+      "themSanPham": {
+        "label": "📦 添加产品",
+        "question": "如何新增产品或检测程序？"
+      },
+      "ketQuaKiemTra": {
+        "label": "🔍 检测结果",
+        "question": "如何查看某批次的检测结果？"
+      },
+      "xuatDuLieu": {
+        "label": "📊 导出数据",
+        "question": "如何将检测数据导出为文件？"
+      },
+      "caiBaoDong": {
+        "label": "🔔 设置告警",
+        "question": "如何在不良率过高时设置告警？"
+      }
+    },
+    "confidence": {
+      "ratPhuHop": "高度相关",
+      "khaPhuHop": "较为相关",
+      "coTheHuuIch": "可能有用",
+      "thamKhaoThem": "供进一步参考"
+    }
   },
   "celltwin": {
     "whenToUse": "适用场景 — 选择一个工作流并在数字孪生上回放其预测时间线；切换实时以叠加真实设备状态。不向任何设备发送命令。",

@@ -28,19 +28,19 @@ import Markdown from "react-markdown";
 
 // Gợi ý câu hỏi nhanh theo chủ đề
 const QUICK_QUESTIONS = [
-  { label: "📋 Xem báo cáo lỗi", question: "Làm thế nào để xem báo cáo lỗi AOI?" },
-  { label: "⚙️ Cài đặt máy", question: "Cách cấu hình thông số máy kiểm tra?" },
-  { label: "📦 Thêm sản phẩm", question: "Cách thêm sản phẩm hoặc chương trình kiểm tra mới?" },
-  { label: "🔍 Kết quả kiểm tra", question: "Làm sao xem kết quả kiểm tra của lô hàng?" },
-  { label: "📊 Xuất dữ liệu", question: "Cách xuất dữ liệu kiểm tra ra file?" },
-  { label: "🔔 Cài báo động", question: "Làm sao cài đặt cảnh báo khi tỷ lệ lỗi cao?" },
+  { label: "aiKb.quick.xemBaoCaoLoi.label", question: "aiKb.quick.xemBaoCaoLoi.question" },
+  { label: "aiKb.quick.caiDatMay.label", question: "aiKb.quick.caiDatMay.question" },
+  { label: "aiKb.quick.themSanPham.label", question: "aiKb.quick.themSanPham.question" },
+  { label: "aiKb.quick.ketQuaKiemTra.label", question: "aiKb.quick.ketQuaKiemTra.question" },
+  { label: "aiKb.quick.xuatDuLieu.label", question: "aiKb.quick.xuatDuLieu.question" },
+  { label: "aiKb.quick.caiBaoDong.label", question: "aiKb.quick.caiBaoDong.question" },
 ];
 
 function getConfidenceLabel(score: number) {
-  if (score >= 0.8) return { label: "Rất phù hợp", color: "text-green-600", icon: "✅" };
-  if (score >= 0.6) return { label: "Khá phù hợp", color: "text-blue-600", icon: "👍" };
-  if (score >= 0.4) return { label: "Có thể hữu ích", color: "text-amber-600", icon: "💡" };
-  return { label: "Tham khảo thêm", color: "text-gray-500", icon: "📖" };
+  if (score >= 0.8) return { label: "aiKb.confidence.ratPhuHop", color: "text-green-600", icon: "✅" };
+  if (score >= 0.6) return { label: "aiKb.confidence.khaPhuHop", color: "text-blue-600", icon: "👍" };
+  if (score >= 0.4) return { label: "aiKb.confidence.coTheHuuIch", color: "text-amber-600", icon: "💡" };
+  return { label: "aiKb.confidence.thamKhaoThem", color: "text-gray-500", icon: "📖" };
 }
 
 interface ChatMessage {
@@ -174,10 +174,10 @@ export function AILocalKnowledgeBase() {
                     variant="outline"
                     size="sm"
                     className="text-xs h-8 rounded-full"
-                    onClick={() => handleAsk(q.question)}
+                    onClick={() => handleAsk(t(q.question))}
                     disabled={!isReady}
                   >
-                    {q.label}
+                    {t(q.label)}
                   </Button>
                 ))}
               </div>
@@ -219,7 +219,7 @@ export function AILocalKnowledgeBase() {
                             const conf = getConfidenceLabel(msg.result.confidence ?? 0);
                             return (
                               <span className={cn("text-xs flex items-center gap-1", conf.color)}>
-                                {conf.icon} {conf.label}
+                                {conf.icon} {t(conf.label)}
                               </span>
                             );
                           })()}
@@ -286,10 +286,10 @@ export function AILocalKnowledgeBase() {
                 variant="outline"
                 size="sm"
                 className="text-xs h-7 rounded-full shrink-0"
-                onClick={() => handleAsk(q.question)}
+                onClick={() => handleAsk(t(q.question))}
                 disabled={!isReady}
               >
-                {q.label}
+                {t(q.label)}
               </Button>
             ))}
           </div>

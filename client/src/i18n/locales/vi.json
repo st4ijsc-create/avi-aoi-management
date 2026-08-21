@@ -17067,7 +17067,39 @@
     "canAsk6": "Quản lý người dùng và phân quyền",
     "canAskTitle": "Bạn có thể hỏi về...",
     "subtitle": "Hỏi đáp nhanh về hệ thống quản lý nhà máy — bằng tiếng Việt hoặc tiếng Anh",
-    "title": "Trợ lý Hỗ trợ Thông minh"
+    "title": "Trợ lý Hỗ trợ Thông minh",
+    "quick": {
+      "xemBaoCaoLoi": {
+        "label": "📋 Xem báo cáo lỗi",
+        "question": "Làm thế nào để xem báo cáo lỗi AOI?"
+      },
+      "caiDatMay": {
+        "label": "⚙️ Cài đặt máy",
+        "question": "Cách cấu hình thông số máy kiểm tra?"
+      },
+      "themSanPham": {
+        "label": "📦 Thêm sản phẩm",
+        "question": "Cách thêm sản phẩm hoặc chương trình kiểm tra mới?"
+      },
+      "ketQuaKiemTra": {
+        "label": "🔍 Kết quả kiểm tra",
+        "question": "Làm sao xem kết quả kiểm tra của lô hàng?"
+      },
+      "xuatDuLieu": {
+        "label": "📊 Xuất dữ liệu",
+        "question": "Cách xuất dữ liệu kiểm tra ra file?"
+      },
+      "caiBaoDong": {
+        "label": "🔔 Cài báo động",
+        "question": "Làm sao cài đặt cảnh báo khi tỷ lệ lỗi cao?"
+      }
+    },
+    "confidence": {
+      "ratPhuHop": "Rất phù hợp",
+      "khaPhuHop": "Khá phù hợp",
+      "coTheHuuIch": "Có thể hữu ích",
+      "thamKhaoThem": "Tham khảo thêm"
+    }
   },
   "celltwin": {
     "whenToUse": "Khi nào dùng — chọn một quy trình và phát lại dòng thời gian DỰ ĐOÁN trên bản sao số; bật Trực tiếp để phủ trạng thái thiết bị thật. Không phát lệnh nào xuống thiết bị.",

@@ -72,6 +72,13 @@ export function LA_KHUON_DUNG(ln) {
   // cột file Excel người dùng tải lên (`masterDataIO.mapAndValidate`) và là hàng
   // tiêu đề của file template. Dịch nó = mọi file cũ hết nhập được.
   if (/\bheaderKey\s*:\s*["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]/.test(ln)) return true;
+  // `findCol("code", "mã", "ma", …)` — BÍ DANH CỘT, không phải nhãn.
+  // `BulkImportDialog` dò tiêu đề cột trong file Excel NGƯỜI DÙNG tải lên bằng chính
+  // các chuỗi này (chuẩn hoá bỏ dấu cách/gạch rồi so khớp). Chúng là DỮ LIỆU ĐẦU VÀO
+  // của phép khớp; "dịch" chúng sang tiếng Anh/Trung nghĩa là file tiếng Việt của
+  // người dùng thôi nhận ra được — làm HỎNG chức năng nhập chứ không cải thiện i18n.
+  // Cùng lớp với `MasterDataColumn.header`; xem docblock ở `shared/masterDataIO.ts`.
+  if (/\bfindCol\s*\(/.test(ln)) return true;
   return false;
 }
 
@@ -115,6 +122,20 @@ export function demNgoacNgoaiChuoi(ln) {
 const TRAN_DONG_TRONG_MOT_T = 12;
 
 /**
+ * File có BẢNG DỊCH TỰ VIẾT đủ ba ngôn ngữ — nhánh `vi` của bảng KHÔNG phải nợ.
+ *
+ * `ReportExportButton` giữ `LABELS: Record<lang, Record<key, string>>` với đủ
+ * `en`/`vi`/`zh`, chọn bằng `getLabels(i18n.language)`. Người dùng en/zh KHÔNG hề
+ * thấy tiếng Việt ở đây. Bọc `t()` là làm lại một việc đã xong — và tệ hơn, sẽ phải
+ * bỏ bảng đang chạy đúng để đổi lấy rủi ro.
+ * Cùng lớp với `pick("vi","en","zh")` ở `MachineAISummary`.
+ *
+ * ⚠ Điều kiện để nằm trong danh sách này: file phải có ĐỦ ba nhánh ngôn ngữ VÀ chọn
+ * theo `i18n.language`. Thiếu một nhánh thì nó là nợ thật, không được miễn.
+ */
+const FILE_CO_BANG_DICH_RIENG = [/ReportExportButton\.tsx$/];
+
+/**
  * Đếm chuỗi tiếng Việt "hình dạng thứ ba" — string literal trong BIỂU THỨC, tức
  * không phải `>text<` cũng không phải `attr="text"` (hai hình dạng đó có cổng riêng).
  *
@@ -128,6 +149,7 @@ export function demHinhDangBa(clientSrc = resolve("client/src"), chiTiet = false
   let chamTran = 0;
 
   for (const file of walkTsx(clientSrc)) {
+    if (FILE_CO_BANG_DICH_RIENG.some((re) => re.test(file.split("\\").join("/")))) continue;
     const lines = readFileSync(file, "utf8").split("\n");
     let inBlock = false;
     let n = 0;

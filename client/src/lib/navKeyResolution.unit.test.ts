@@ -46,10 +46,12 @@ const FILES_KHOA_DU_LIEU = [
   // F13 lô 4 — `headerKey` (nhãn cột hiển thị; `header` vẫn là khoá khớp Excel)
   "pages/ProductModels.tsx",
   "pages/ComponentShowcase.tsx",
+  // F13 lô 5 — gợi ý câu hỏi AI (`question` cũng là khoá: nó được GỬI cho trợ lý)
+  "components/AILocalKnowledgeBase.tsx",
 ];
 
 /** Trường được component gọi `t()` lên. `description` KHÔNG nằm đây — xem ghi chú dưới. */
-const TRUONG_QUA_T = ["label", "blurb", "note", "headerKey"];
+const TRUONG_QUA_T = ["label", "blurb", "note", "headerKey", "question"];
 
 /**
  * Không gian tên gốc của các khoá do F13 sinh. Quét theo TIỀN TỐ thay vì theo tên

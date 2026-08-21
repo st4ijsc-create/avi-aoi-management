@@ -17087,7 +17087,39 @@
     "canAsk6": "Managing users and permissions",
     "canAskTitle": "You can ask about...",
     "subtitle": "Quick Q&A about the factory management system — in Vietnamese or English",
-    "title": "Smart Support Assistant"
+    "title": "Smart Support Assistant",
+    "quick": {
+      "xemBaoCaoLoi": {
+        "label": "📋 View defect reports",
+        "question": "How do I view AOI defect reports?"
+      },
+      "caiDatMay": {
+        "label": "⚙️ Machine settings",
+        "question": "How do I configure inspection machine parameters?"
+      },
+      "themSanPham": {
+        "label": "📦 Add a product",
+        "question": "How do I add a new product or inspection program?"
+      },
+      "ketQuaKiemTra": {
+        "label": "🔍 Inspection results",
+        "question": "How do I view the inspection results for a batch?"
+      },
+      "xuatDuLieu": {
+        "label": "📊 Export data",
+        "question": "How do I export inspection data to a file?"
+      },
+      "caiBaoDong": {
+        "label": "🔔 Set up alarms",
+        "question": "How do I set up an alarm for a high defect rate?"
+      }
+    },
+    "confidence": {
+      "ratPhuHop": "Highly relevant",
+      "khaPhuHop": "Fairly relevant",
+      "coTheHuuIch": "Possibly useful",
+      "thamKhaoThem": "For further reference"
+    }
   },
   "celltwin": {
     "whenToUse": "When to use — pick a workflow and replay its PREDICTED timeline on the digital twin; toggle Live to overlay real device state. No commands are sent to any device.",
