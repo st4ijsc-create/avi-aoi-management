@@ -60,6 +60,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 29 | Cả fleet liên kết ra ngoài bằng **MỘT danh tính thiết bị** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). `POST /v1/onboarding/paste-key` lưu khoá cho **bất kỳ** mã máy và trả 200; `FleetCore.UpdateSettings` chỉ đọc **một**. 🔴 **Kèm một TRẦN của phán quyết: câu báo lỗi người vận hành đọc được phát ra từ file SDK vendored KHÔNG SỬA ĐƯỢC**, nên phán quyết phải nêu chỗ thi hành. Mục cũng mang một khối **RÚT** một câu phủ định tồn tại do chính AO-1 viết sai cùng ngày — §8.1(f), ca thứ ba |
 | 30 | Gốc mặc định của bốn store cạnh-binary là `%ProgramFiles%`, và **lần chạy đầu chính là lần GHI** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Câu hỏi này **bị nhiều brief liên tiếp CẤM mở**; lệnh cấm hết hiệu lực ở nhiệm vụ này |
 | 31 | **Mười hai artefact build** (7 `.xml` + 5 `.pdb`) đi vào MSI | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Đã ĐO ở §8 của mục 12 từ 2026-08-19 (AF-1) nhưng **chưa bao giờ thành một mục phán được**; **ba trong số đó đã ở đó từ N-1/N-2** |
+| 32 | **Một lời khai miền dụng cụ không kiểm được nếu không ghi NƠI lệnh được chạy** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Pathspec của git là **tương đối với cwd** và một pathspec bị thu hẹp **trả 0 chứ không báo lỗi**: `-- 'server/*.ts'` **0** đối lại `-- ':(top)server/*.ts'` **197**; và **glob đuôi trần cũng hỏng** — `'*.ts'` **1** đối lại **214**. 🔴 **Giá đã trả: mục 14 được PHÁN kèm một cái trần SAI** (*"không đo được từ repo này"* — bên tiêu thụ nằm trong chính commit này). **Năm khẳng định khác đo lại vẫn ĐỨNG VỮNG**, gồm kết luận "ba chỗ xuất bản `TransportMode`" của AM-1. **Người đăng ký gương MQTT retained: CHƯA ĐO** (37 file nhắc `syn/`) |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -103,8 +104,18 @@ nó đã làm đúng thế (xem khối ngay dưới). Phần này **không bị 
 > được** ngay khi mục 15 xuất hiện. Câu thay nó ở ngay dưới cũng liệt kê.
 
 **Các mục ở đây, LIỆT KÊ chứ không đếm: mục 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-28, 29, 30 và 31.** Cả mười bảy mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn
+28, 29, 30, 31 và 32.** Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn
 sự thật** — câu này chỉ là một con trỏ vào nó.
+
+> 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
+> tới vòng sửa thứ hai của cùng ngày, và nó **không sai, nó THIẾU**.** Ba thao tác của file này vẫn
+> phân biệt: **RÚT** (câu đã công bố nay sai), **MỞ RỘNG** (phép liệt kê thiếu), **SỬA TẠI CHỖ** —
+> đây là cái thứ hai. **Mục 32** được thêm sau khi điều phối viên chạy đúng phép đo mà báo cáo của
+> AO-1 tuyên bố là *"không giải được từ chỗ tôi đứng"*, và phép đo ấy **nổ**. 🔴 **Đây là lần thứ
+> TƯ trong ba ngày tập này đổi, và là cơ chế thứ NĂM: không phải thêm mục qua phản biện, không phải
+> quyết mục, mà là MỘT PHÉP ĐO BÁC LỜI KHAI MIỀN CỦA CHÍNH PHÉP ĐO TRƯỚC ĐÓ.** Cách viết
+> **liệt kê, không đếm** lại là thứ làm phép mở rộng này rẻ: một phép liệt kê thiếu sửa được bằng
+> cách thêm một số hiệu; một con số `17` viết ở đây sẽ phải bị rút.
 
 > 📎 **Câu ngay trên đọc, NGUYÊN VĂN, cho tới 2026-08-19 — RÚT cùng ngày (AK-1), giữ nguyên
 > văn, cùng kiểu bảo tồn AB-1 lập và AI-1 dùng:** *"**Mục ở đây, LIỆT KÊ chứ không đếm: mục
@@ -1180,6 +1191,79 @@ cụ về cây nguồn**. Câu hỏi *"cái gì thực sự được cài"* đò
 `publish-desktop/` sạch cùng một lần dựng MSI, tức một brief khác. Cho tới lúc đó, con số 12 là
 **đúng tới ngày 2026-08-19 cộng một suy luận về đợt 3**, không phải một phép đo trên một `.msi` vừa
 dựng.
+
+---
+
+## 32. Một lời khai miền dụng cụ chỉ KIỂM ĐƯỢC nếu nó ghi lại NƠI lệnh được chạy — và cái giá đã trả là một phán quyết của chủ sở hữu mang một cái trần SAI
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1), sau một phép đo của điều phối viên bác đúng chỗ AO-1 nói
+*"không giải được từ chỗ tôi đứng"*. **Mục này KHÔNG về một lần grep hỏng. Nó về một LỚP.**
+
+**Đo được cái gì — phép kiểm quyết định, cùng mẫu, cùng SHA, chỉ khác chỗ đứng.** Pathspec của git
+**tương đối với thư mục hiện hành**, và một pathspec bị thu hẹp **không báo lỗi — nó trả 0**:
+
+| lệnh (chạy từ `tools/machine-simulator`, SHA `a70ed5d6`) | kết quả |
+|---|---:|
+| `git grep -l 'ingest' <SHA> -- 'server/*.ts'` | **0** |
+| `git grep -l 'ingest' <SHA> -- ':(top)server/*.ts'` | **197** |
+| `git grep -l 'ingest' <SHA> -- '*.ts'` | **1** |
+| `git grep -l 'ingest' <SHA> -- ':(top)*.ts'` | **214** |
+
+🔴 **Và ranh giới KHÔNG hẹp như lần sửa đầu tiên tưởng — đây là một phép đo, không phải một lời
+nhượng bộ.** Một bản sửa trung gian ghi rằng chỉ pathspec **nêu tên thư mục gốc** mới hỏng còn
+**glob đuôi trần** thì không. **Hai hàng cuối bảng trên bác điều đó:** `'*.ts'` trần cũng bị thêm
+tiền tố cwd, `1` đối lại `214`. Hình dạng đúng, viết đủ rộng chứ không hẹp hơn phép đo: **mọi
+pathspec tương đối đều bị thu hẹp theo cwd.** `server/` có **1589** file trong commit và `client/`
+có **711**; cả hai **không nằm trên đĩa** (sparse checkout) nhưng **đều nằm trong commit object**,
+nên chúng luôn với tới được — bằng đúng một tiền tố.
+
+🔴 **Hệ quả trung tâm, và nó là lý do mục này tồn tại: `0` từ một phép quét ĐÚNG và `0` từ một
+pathspec loại trừ cả cây là KHÔNG PHÂN BIỆT ĐƯỢC trong một báo cáo.** Không báo cáo nào trong chuỗi
+này — kể cả bản đầu của AO-1 — ghi lại **thư mục nó đứng khi gõ lệnh**. Nên mọi lời khai miền dụng
+cụ trong chuỗi này là **không kiểm được**, kể cả những lời khai đúng.
+
+**Cái giá đã trả, ĐO chứ không suy đoán.** Bảy khẳng định dựa trên phép quét ấy, chạy lại cả hai
+cách trên `server/` + `client/`:
+
+* ✅ **NĂM SỐNG SÓT — `0` ở CẢ HAI cách:** `TransportMode`, `machine-simulator`, `St4i\.`,
+  `EngineApi`, `Waveforms`. 🔴 **Điều này phải được viết ra, vì một mối nghi không giải để lại một
+  vết bẩn ở chỗ nó không thuộc về:** kết luận của **AM-1** rằng `TransportMode` được xuất bản ở
+  **ba** chỗ và **ba là toàn bộ tập** — **ĐỨNG VỮNG**. Máy chủ hệ sinh thái và client trình duyệt
+  thật sự không tiêu thụ hợp đồng mode của sản phẩm này.
+* 🔴 **HAI KHÔNG:** `rateHz` **0 → 6** file, `waveform` **0 → 8** file.
+
+**Ở đâu — trỏ bằng TÊN.** Ngữ nghĩa pathspec của `git grep` (dụng cụ, không phải mã của ta);
+`server/contracts/machineDataContract.ts`, `server/services/processResultService.ts`,
+`server/api/v1/openapi.ts`, `server/routers/machineApiRouters.ts`,
+`server/contracts/machineDataContract.test.ts`,
+`client/src/components/apiDocs/AutomationProcessFeedSection.tsx` (**bên tiêu thụ, trong commit này**);
+khối lời-khai-miền của **AM-1 §11(f)** và **AN-1 §6.3**; **mục 14** ở Phần III (khối rút kèm ngày);
+**mục 29** (ca §8.1(f) mà chính AO-1 tự sinh ra); `scripts/verify-suites.sh` — **nêu tên vì nó KHÔNG
+chứa phép kiểm nào cho chuyện này.**
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* một **phán quyết của chủ sở hữu đã ra kèm một cái trần sai**. Mục 14 ghi rằng bên
+tiêu thụ *"không đo được từ repo này"*; với hợp đồng ingest HTTP điều đó **luôn luôn sai**, và cái
+làm nó trông đúng là một pathspec. Một phán quyết ra dưới một cái trần sai là **chính xác** thứ file
+này tồn tại để ghi lại. Rộng hơn: **mọi câu phủ định tồn tại** trong chuỗi này đứng trên một lời
+khai không ai kiểm được.
+*Chiều ngược, và nó đủ mạnh để "không làm gì" là một lựa chọn có lý:* **phần lớn phép quét của chuỗi
+này nhắm vào `src/` và `tests/`, tức NẰM TRONG cwd, nên chúng không bị ảnh hưởng** — và phép đo vừa
+rồi cho thấy **năm trên bảy** khẳng định bị nghi ngờ vẫn đứng. Thiệt hại đã đo là **hai** chuỗi, cả
+hai trên **một** mục, và cả hai đọc theo chiều **thuận** cho phán quyết ấy. Bản vá là **một dòng**
+(`:(top)` hoặc `:/` trên mọi pathspec, hoặc **ghi cwd cạnh SHA** trong mỗi lời khai miền) — nhưng
+**chưa dụng cụ nào cưỡng chế nó**, và dựng một dụng cụ để canh cách người ta gõ một lệnh tra cứu là
+một bộ kiểm mới trên thứ **không phải mã sản phẩm**. Một quy ước viết tay rẻ hơn nhiều và **không có
+gì đỏ lên khi ai đó quên**.
+
+**Nếu KHÔNG quyết định.** Lời khai miền tiếp tục được viết ở mỗi báo cáo, tiếp tục **không kiểm
+được**, và lần sau `0` sẽ lại được đọc là *"không có"* thay vì *"tôi đã không nhìn"*. 🔴 **Và một
+chỗ CHƯA ĐO được nêu tên chứ không lấp, vì lấp nó ở đây sẽ lặp lại đúng khuyết tật này:** **người
+đăng ký gương MQTT retained `syn/…`** — bề mặt đã xuất bản thứ hai mà mục 14 đổi — **vẫn chưa ai
+đo**. **37** file dưới `server/` + `client/` nhắc chuỗi `syn/`; **chưa file nào được chứng minh là
+một người ĐĂNG KÝ**; các lần xuất hiện của `retained` đã mở ra đều là chuyện khác (leo thang cảnh
+báo, chú thích UI). Nhiệm vụ này **cố ý dừng ở đó** — đó là một mục cần mở, không phải một chướng
+ngại phải dọn dở dang trên đường.
 
 ---
 
@@ -4975,6 +5059,37 @@ trao **cùng một `CanonicalEnvelope`** cho:
    `File.AppendAllText`. Tức **nguyên payload, gồm cả `samples`, được ghi XUỐNG ĐĨA** khi mạng hỏng và
    **phát lại sau**. **Riêng tư, không phải hợp đồng đã xuất bản** — nhưng một hàng đợi ghi lúc quy ước
    cũ còn hiệu lực sẽ **phát lại hình dạng cũ** sau khi mã đã đổi, và **không ai đo cửa sổ ấy**.
+
+> 📎 **RÚT MỘT NỬA, 2026-08-20 (AO-1) — trích nguyên văn, không xoá dòng nào, không gạch ngang, và
+> KHÔNG một chữ nào khác của mục 14 bị đụng tới.** Mục này ở **Phần III**, đã thi hành; luật của file
+> là **rút được, xoá thì không**. Câu bị đụng tới, nguyên văn, là cụm **"NGƯỜI ĐĂNG KÝ CHƯA ĐO và
+> không đo được từ repo này"** — nó đứng **hai lần trong ô mục 14 của bảng phán quyết** và một lần ở
+> đoạn ngay trên đây. **Khối này chi phối cả ba, và tách chúng ra vì hai nửa có số phận khác nhau.**
+>
+> 🔴 **NỬA BỊ BÁC — chỉ với HỢP ĐỒNG INGEST HTTP (bề mặt (2)).** Lần xuất hiện thứ ba trong ô bảng
+> phán quyết kéo cụm ấy theo sau **CẢ HAI** bề mặt đã xuất bản (*"payload ingest HTTP **và** gương
+> ngữ nghĩa MQTT retained `syn/…`"*). Với nửa HTTP, **"không đo được từ repo này" là SAI, và luôn
+> luôn sai**: mã của chính bên tiêu thụ nằm **trong commit này**. `server/contracts/machineDataContract.ts`
+> khai `rateHz: z.number().positive().optional()` và
+> `samples: z.array(z.tuple([z.number(), z.number()])).max(100_000)`; cùng hình dạng lặp lại ở
+> `server/services/processResultService.ts`, `server/api/v1/openapi.ts`,
+> `server/routers/machineApiRouters.ts`, `server/contracts/machineDataContract.test.ts` và
+> `client/src/components/apiDocs/AutomationProcessFeedSection.tsx`. **Thứ làm nó TRÔNG như không đo
+> được là một `pathspec`**, không phải một tính chất của repo — xem **mục 32**.
+>
+> 🔴 **Và nửa bị bác ấy đọc theo chiều THUẬN cho phán quyết, không phải chiều nghịch:** hợp đồng bên
+> tiêu thụ là **cặp `[[t, v]]` VÀ `rateHz` đứng cạnh, tuỳ chọn** — **đúng** thứ `Normalizer` phát ra
+> sau AK-1. Nên **lựa chọn 3 nay được xác nhận bằng KIỂU TĨNH của bên tiêu thụ**, mạnh hơn hẳn bằng
+> chứng mà mục này từng có (một cú POST trực tiếp vào cổng đang chạy). **Cái sai là cái TRẦN, không
+> phải phán quyết.**
+>
+> ✅ **NỬA CÒN ĐỨNG, và nó không được rút: NGƯỜI ĐĂNG KÝ GƯƠNG MQTT RETAINED (bề mặt (1)) VẪN CHƯA
+> ĐO.** Đoạn ngay trên đây — *"CÓ AI ĐANG ĐĂNG KÝ HAY KHÔNG — CHƯA ĐO"* — nói về **đúng bề mặt ấy**
+> và **giữ nguyên hiệu lực**. Đã mở tới đâu, ghi ra chứ không lấp: **37** file dưới `server/` +
+> `client/` nhắc chuỗi `syn/`, và **chưa file nào được chứng minh là một người ĐĂNG KÝ**; các lần
+> xuất hiện của `retained` đã mở ra đều là chuyện khác (leo thang cảnh báo, chú thích UI).
+> 🔴 **Nhiệm vụ này CỐ Ý KHÔNG đo nốt** — đó là một mục cần mở, không phải một chướng ngại phải dọn
+> trên đường, và đo dở dang rồi ghi thành "đã đo" là đúng khuyết tật file này lập ra để chấm dứt.
 
 **Đếm sau khi liệt kê: BA bề mặt đi ra, MỘT chỗ trong mã.** `DemoTransport` **không** đọc `waveforms`
 (nó chỉ đọc `Payload["samples"]` của nhánh **telemetry**), nên nó không phải bề mặt thứ tư.
