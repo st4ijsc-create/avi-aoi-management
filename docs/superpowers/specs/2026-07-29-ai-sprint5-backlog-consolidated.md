@@ -22,7 +22,7 @@
 
 **Nợ còn lại đáng làm trước, theo thứ tự:**
 1. **F3** — 64 chỗ chưa di trú mã lỗi, nặng nhất là hạ tầng lõi + security (`_core/trpc.ts` 12 chỗ = mọi chối-quyền RBAC + mọi gọi chưa đăng nhập).
-2. **G phần production** — đẩy telemetry weak-auth ra chỗ BỀN thì mới ký được GO-LIVE.
+2. **G phần production** — telemetry BỀN đã có (metric Prometheus, đo live 2026-08-21); còn thiếu MỘT CA có lưu lượng thật + dọn 17 `machines.apiKey` plaintext.
 3. **E2** — cảnh báo không có `machineId` không được cooldown nào chi phối; **cần chủ dự án quyết** vì đổi tải thật lên người vận hành.
 
 ⚠ **Trước khi làm bất kỳ mục nào: ĐO LẠI.** Lần cập nhật đầu của bảng này xếp E1 là "còn" chỉ vì backlog viết thế — thực tế nó đã đóng từ `7d2d42d9`.
@@ -357,8 +357,7 @@ schema** (tức đã qua lớp xác thực).
 **CÒN LẠI — xem checklist GO-LIVE doc 52 §6.1:**
 - Production **chưa** flip; mọi ô ✓ hiện tại chỉ nói về `.env` dev.
 - *"máy đã dùng khoá thật (`lastUsedAt`)"* chưa xác nhận được — đội máy đang đứng.
-- *"`machine_weak_auth_denied` = 0 suốt ≥1 ca"* **không ký được** cho tới khi telemetry
-  weak-auth được đẩy ra chỗ BỀN (metric/DB) thay vì `Map` trong bộ nhớ.
+- *"`machine_weak_auth_denied` = 0 suốt ≥1 ca"* — ⚠ **ĐÍNH CHÍNH:** tôi từng ghi ô này "không ký được vì telemetry chỉ nằm trong Map bộ nhớ" — SAI. Metric `avi_aoi_security_events_total{type="machine_weak_auth_denied"}` là counter Prometheus BỀN, đã đo live thấy nhích đúng. Chỉ còn thiếu phần "suốt ≥1 ca" vì đội máy đang đứng. Bẫy: cầu nối metric nạp LƯỜI ⇒ lượt weak-auth ĐẦU TIÊN sau mỗi restart không được đếm.
 - 17 máy còn `machines.apiKey` plaintext — dọn sau khi flip ổn định ≥1 tuần.
 - ⚠ Bản rõ 23 khoá `mk_` nằm ở scratchpad phiên — **chứa bí mật, nạp xong phải xoá**.
 

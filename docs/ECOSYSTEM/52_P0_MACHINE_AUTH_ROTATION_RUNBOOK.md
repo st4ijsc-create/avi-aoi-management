@@ -348,14 +348,38 @@ MACHINE_CODE_ONLY_ALLOWED=allow
       *`SHARED_KEY=false` vốn đã là `deny` từ trước; `CODE_ONLY` đặt ngày 2026-08-21.*
 - [x] `MACHINE_CONFIG_EXPOSE_APIKEY=false` — mặc định OFF trong mã
       (`hierarchyRouters.ts:658` đòi `=== "true"`), và **không có trong `.env`** ⇒ tắt.
-- [x] Smoke NGƯỢC — chạy live 2026-08-21 trên `:3000`:
-      `machineCode`-only ⇒ **401** *"Missing API key"* · `Authorization: Bearer mk_…`
-      ⇒ **400 lỗi schema**, tức ĐÃ QUA lớp xác thực (chỉ thiếu trường payload).
-- [ ] `machine_weak_auth_denied` = 0 suốt ≥1 ca sau flip.
-      ⚠ **KHÔNG THỂ ĐẠT bằng thiết bị đo hiện tại.** `weakAuthUsage` là một `Map`
-      **trong bộ nhớ** (`machineAuthService.ts:348`), không persist ⇒ **xoá sạch mỗi
-      lần restart**; và hiện không có lưu lượng nào để quan sát. Muốn ký được ô này
-      phải đẩy telemetry ra chỗ bền (metric/DB) trước — xem §3.d.
+- [x] Smoke NGƯỢC — chạy live 2026-08-21 trên `:3000`, qua **tRPC
+      `machineApi.submitInspection`**:
+      · `machineCode` trần ⇒ **401** *"machineCode-only authentication is disabled for
+        `ingest:write` on this server"* — tức CHÍNH SÁCH từ chối.
+      · cùng thủ tục + `apiKey: mk_…` ⇒ **`{"success":true,"inspectionId":…}`**, ghi
+        thật một bản ghi kiểm (đã xoá sau khi đo).
+
+      ⚠ **LƯỢT SMOKE ĐẦU TIÊN CỦA TÔI ĐÚNG KẾT QUẢ NHƯNG SAI LÝ DO — đừng lặp lại.**
+      Tôi gọi `POST /api/v1/ingest/inspection` với `machineCode` trong body và nhận
+      401 *"Missing API key"*. Trông như bằng chứng, thật ra không phải: `/api/v1/**`
+      có middleware ĐÒI header khoá, nên request bị chặn **trước khi** chạm
+      `machineAuthService` — cờ `MACHINE_CODE_ONLY_ALLOWED` không hề được thi hành
+      trong lượt đó. Bằng chứng: metric `machine_weak_auth_*` **không nhích một mẫu
+      nào**. Đường yếu `machineCode`-only sống ở **tRPC `machineApiRouters`**; phải
+      smoke ở đó.
+
+- [~] `machine_weak_auth_denied` = 0 suốt ≥1 ca sau flip.
+      ⚠ **ĐÍNH CHÍNH lời khai trước của tôi trong chính tài liệu này:** tôi từng ghi ô
+      này *"KHÔNG THỂ ĐẠT vì telemetry chỉ nằm trong `Map` bộ nhớ"* — **SAI**. Cái
+      `Map` (`machineAuthService.ts:348`) chỉ là sổ CHI TIẾT theo từng máy (dễ mất, có
+      chủ ý). Bản thân ô checklist gọi đích danh **`machine_weak_auth_denied`**, và đó
+      là một **counter Prometheus BỀN**:
+      `avi_aoi_security_events_total{type="machine_weak_auth_denied", mode="machine-code"}`
+      — đã đo live, nó nhích đúng khi đường yếu bị từ chối. `METRICS_ENABLED=true`,
+      `GET /metrics` trả 200.
+      ⇒ Ô này **ký được**, chỉ còn thiếu phần "suốt ≥1 ca": cần một ca có lưu lượng
+      thật. Đội máy đang đứng (nhịp tim cuối cách 33 ngày) nên chưa quan sát được.
+
+      ⚠ Bẫy khi đọc số: cầu nối metric nạp **lười** (`import()` động, xem
+      `emitWeakAuthMetric`). Lượt weak-auth ĐẦU TIÊN sau mỗi lần restart **không được
+      đếm** — đo live thấy 2 lượt bị từ chối mà counter chỉ lên 1. Sổ `Map` trong bộ
+      nhớ mới là con số CHÍNH XÁC; metric là con số BỀN. Đọc cả hai, đừng đọc một.
 - [ ] `machines.apiKey` đã dọn (§3.f) — **17 máy còn plaintext**, chờ flip ổn định ≥1 tuần.
 
 ### 6.2 Bền dữ liệu — **QĐ#6 BẮT BUỘC** (doc 51 R7)
