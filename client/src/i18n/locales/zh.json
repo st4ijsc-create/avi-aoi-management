@@ -19568,5 +19568,8 @@
   },
   "factoryCommandView": {
     "vuaXong": "刚刚"
+  },
+  "apiDocs": {
+    "daCopyVaoClipboard": "已复制到剪贴板"
   }
 }

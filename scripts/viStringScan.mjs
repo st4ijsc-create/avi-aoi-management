@@ -103,6 +103,27 @@ const LA_DU_LIEU_MAU = [
   /^\s*\["MP-\d+",/,
 ];
 
+/**
+ * Nhóm `ApiDocs`: MẪU MÃ trong tài liệu API — về CẤU TẠO không i18n được.
+ *
+ * Đo ngày 2026-08-21: 55 chuỗi hình-dạng-3 ở đây, **54 là giá trị mẫu bên trong
+ * `<CodeBlock code={\`…\`} />`** (`name: "Phân xưởng SMT"`, `fullName: "Nguyễn Văn A"`,
+ * `reason: "False positive - mối hàn đạt chuẩn"`). Cả khối mẫu là MỘT template
+ * literal được render ra CHỮ NGUYÊN VĂN, nên bọc `t()` quanh một giá trị bên trong
+ * sẽ in ra đúng chuỗi `t("key", "Phân xưởng SMT")` trong khối mã cho người đọc.
+ *
+ * Muốn dịch thì phải biến CẢ KHỐI MÃ thành chuỗi dịch ⇒ ba bản sao của mọi mẫu API,
+ * và bảo đảm chúng không lệch với API thật. Đó là đổi một vấn đề nhỏ lấy một nguồn
+ * sai lệch tài liệu — không đáng.
+ * ⇒ Nhóm này ngoài phạm vi hình-dạng-3. Chuỗi UI THẬT DUY NHẤT trong nhóm
+ *   (`shared.tsx` toast "Đã copy vào clipboard") đã được di trú.
+ *
+ * ⚠ Miễn theo THƯ MỤC chứ không theo nội dung: ai thêm một nhãn giao diện thật vào
+ *   `apiDocs/` sẽ không bị bắt. Đổi lại là không phải nhớ 54 ngoại lệ rời rạc.
+ *   Hình dạng 1 (`>text<` / `attr=`) VẪN canh thư mục này qua `ALLOWED_RAW_VI_APIDOCS`.
+ */
+const LA_THU_MUC_APIDOCS = /[\\/](apiDocs|ApiDocs)[\\/.]/;
+
 /** Dòng KHAI một khoá i18n (`labelKey: "a.b.c"`), bất kể có gì khác trên dòng. */
 const KHAI_KHOA = /\b(labelKey|titleKey|descKey|key)\s*:\s*["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]/;
 
@@ -207,7 +228,9 @@ export function demHinhDangBa(clientSrc = resolve("client/src"), chiTiet = false
   let chamTran = 0;
 
   for (const file of walkTsx(clientSrc)) {
-    if (FILE_CO_BANG_DICH_RIENG.some((re) => re.test(file.split("\\").join("/")))) continue;
+    const duongDan = file.split("\\").join("/");
+    if (FILE_CO_BANG_DICH_RIENG.some((re) => re.test(duongDan))) continue;
+    if (LA_THU_MUC_APIDOCS.test(duongDan)) continue;
     const noiDung = readFileSync(file, "utf8");
     const lines = noiDung.split("\n");
 

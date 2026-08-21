@@ -19560,5 +19560,8 @@
   },
   "factoryCommandView": {
     "vuaXong": "just now"
+  },
+  "apiDocs": {
+    "daCopyVaoClipboard": "Copied to clipboard"
   }
 }

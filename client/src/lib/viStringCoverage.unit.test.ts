@@ -244,7 +244,7 @@ describe("F12 — chuỗi tiếng Việt TRẦN (cổng theo-khoá không thấy
  * dấu. Quy tắc "KHÔNG BAO GIỜ nâng" áp cho việc nâng để CHE NỢ; sửa thiết bị đo rồi
  * ghi lại số thật thì ngược lại — đó chính là điều quy tắc bảo vệ.
  */
-const FROZEN_SHAPE3 = 112;
+const FROZEN_SHAPE3 = 57;
 
 /**
  * ⚠ Bộ đếm hình-3 nay nằm ở `scripts/viStringScan.mjs` — MỘT nguồn sự thật.
