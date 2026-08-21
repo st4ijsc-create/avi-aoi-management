@@ -18354,7 +18354,8 @@
     "loading": "正在检索文档…",
     "kbOff": "制造商文档库尚未启用。",
     "empty": "未找到匹配的文档片段。",
-    "footnote": "摘自制造商手册——操作前请务必核对原文。"
+    "footnote": "摘自制造商手册——操作前请务必核对原文。",
+    "cite": "{{doc}}，第 {{page}} 页"
   },
   "controlReadiness": {
     "loadError": "无法加载就绪矩阵。",

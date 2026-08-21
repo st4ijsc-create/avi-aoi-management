@@ -18326,7 +18326,8 @@
     "loading": "Đang tra tài liệu…",
     "kbOff": "Kho tài liệu nhà sản xuất chưa được bật.",
     "empty": "Không tìm thấy đoạn tài liệu phù hợp.",
-    "footnote": "Trích từ sổ tay nhà sản xuất — luôn đối chiếu bản gốc trước khi thao tác."
+    "footnote": "Trích từ sổ tay nhà sản xuất — luôn đối chiếu bản gốc trước khi thao tác.",
+    "cite": "{{doc}}, tr.{{page}}"
   },
   "controlReadiness": {
     "loadError": "Không tải được ma trận readiness.",

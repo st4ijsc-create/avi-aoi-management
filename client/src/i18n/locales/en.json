@@ -18346,7 +18346,8 @@
     "loading": "Searching the documentation…",
     "kbOff": "The manufacturer document store is not enabled.",
     "empty": "No matching documentation passage found.",
-    "footnote": "Excerpt from the manufacturer manual — always check the original before acting."
+    "footnote": "Excerpt from the manufacturer manual — always check the original before acting.",
+    "cite": "{{doc}}, p.{{page}}"
   },
   "controlReadiness": {
     "loadError": "Failed to load the readiness matrix.",

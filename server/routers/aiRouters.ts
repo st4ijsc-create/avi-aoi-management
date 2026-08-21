@@ -438,10 +438,29 @@ export const predictiveAlertRouter = router({
       if (input?.alertType) conditions.push(eq(predictiveAlerts.alertType, input.alertType));
       if (input?.machineId) conditions.push(eq(predictiveAlerts.machineId, input.machineId));
       
+      // ── C3 (backlog §3) — SẮP THEO TRỤC ĐÚNG VỚI CÂU HỎI ĐANG ĐƯỢC HỎI ─────────
+      // Danh sách "cảnh báo VỪA ĐÓNG" (OpsConsole gọi với `status: "EXPIRED"`) trước đây
+      // vẫn sắp theo `createdAt` rồi mới `.limit(50)`. Hệ quả: một cảnh báo sống 30 ngày
+      // và vừa bị sweeper đóng SÁNG NAY bị 50 dòng mới-tạo-hơn đẩy khỏi kết quả — nó
+      // **không bao giờ xuất hiện** trong mục mang đúng tên "vừa đóng".
+      //
+      // ⚠ Và cảnh báo sống lâu CHÍNH LÀ loại sweeper hay đóng nhất (nó đóng thứ đã THÔI
+      //   tái diễn) — nên lỗi này ăn đúng vào nhóm mà mục ấy sinh ra để phục vụ.
+      //
+      // Client KHÔNG tự sửa được: nó đã biết trục đúng (`updatedAt` = lúc sweeper đóng
+      // dòng — xem OpsConsole.tsx `closedRows`) nhưng phép CẮT xảy ra ở đây, trước khi
+      // dữ liệu rời máy chủ. Sắp sai + cắt = mất dòng, không phải "sắp sai một chút".
+      //
+      // Trạng thái ĐANG MỞ vẫn sắp theo `createdAt` (câu hỏi ở đó là "cái gì mới xảy ra").
+      const DA_DONG = new Set(["RESOLVED", "DISMISSED", "EXPIRED"]);
+      const trucSap = input?.status && DA_DONG.has(input.status)
+        ? predictiveAlerts.updatedAt
+        : predictiveAlerts.createdAt;
+
       const result = await db.select()
         .from(predictiveAlerts)
         .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(desc(predictiveAlerts.createdAt))
+        .orderBy(desc(trucSap))
         .limit(input?.limit || 50);
       
       return (result || []).map((row: any) => ({
