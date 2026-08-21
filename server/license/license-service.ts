@@ -328,6 +328,37 @@ class LicenseService {
       const cache: LicenseStateCache = JSON.parse(raw);
       // Basic validation
       if (!cache.cachedAt || !Array.isArray(cache.allowedModules)) return null;
+
+      // ⚠ TỪ CHỐI cache mang dấu hiệu HIỆN VẬT KIỂM THỬ.
+      //
+      // ⚠ LỖ NÀY DO CHÍNH LƯỢT NGHIỆM THU 2026-08-19 TẠO RA — kể lại đúng như đã xảy ra:
+      // để nghiệm thu cổng `MOD_AI`, tôi chèn MỘT hàng `licenses` thử với
+      // `license_key = "TEST-KHONG-AI-XOA-SAU-KHI-DO"` (SKU 10 module, cố ý KHÔNG có MOD_AI),
+      // chạy đo, rồi XOÁ hàng ấy — bảng về đúng 0 hàng, đã xác minh.
+      // **Nhưng máy chủ đã kịp GHI SKU đó xuống `license-state-cache.json`**, và lượt dọn
+      // của tôi chỉ chạm CSDL. Hàng thử biến mất; bản sao trên đĩa thì không.
+      //
+      // Vì sao nguy hiểm: khi bảng `licenses` rỗng và không với tới máy chủ giấy phép,
+      // tệp cache là NGUỒN SKU DUY NHẤT. Ngày nào có người tắt `LICENSE_BYPASS`, sản phẩm
+      // rớt xuống đúng 10 module của một hàng THỬ — mất AI/OT/Quality/Engineering — và
+      // không ai hiểu vì sao, vì thứ gây ra nó không nằm trong git (đã gitignore hôm 19-08).
+      //
+      // ⚠ XOÁ TỆP CHỈ SỬA ĐƯỢC HÔM NAY: lượt nghiệm thu sau sẽ ghi lại một cái y hệt.
+      // Cổng nằm ở ĐÂY mới bền — một giấy phép THẬT không bao giờ tự gọi mình là TEST.
+      // Từ chối ⇒ trả `null` ⇒ rơi vào nhánh "chưa khai SKU" ⇒ KHÔNG-BRICK cho qua hết,
+      // đúng chiều an toàn: thà mở đủ còn hơn khoá nhầm khách đã trả tiền.
+      const dauHieuKiemThu = /\b(TEST|DEMO|FAKE|DUMMY|SAMPLE|NGHIEM\s*THU|XOA)\b/i;
+      const nghiNgo = [cache.licenseKey, cache.customerName].filter(
+        (v): v is string => typeof v === "string" && dauHieuKiemThu.test(v),
+      );
+      if (nghiNgo.length > 0) {
+        console.error(
+          `[License] TỪ CHỐI state cache — mang dấu hiệu hiện vật kiểm thử: ${JSON.stringify(nghiNgo)}. ` +
+            `Coi như KHÔNG có cache (an toàn hơn tin một SKU giả). ` +
+            `Nếu đây là giấy phép thật, đổi tên khách hàng/khoá cho không chứa TEST|DEMO|FAKE|NGHIEM THU|XOA.`,
+        );
+        return null;
+      }
       console.log(`[License] Loaded state cache from disk (cached at ${new Date(cache.cachedAt).toLocaleString()})`);
       return cache;
     } catch (err: any) {
