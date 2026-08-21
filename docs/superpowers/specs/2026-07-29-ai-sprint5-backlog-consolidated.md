@@ -6,26 +6,48 @@
 
 ---
 
-## ⓘ TIẾN ĐỘ — cập nhật 2026-08-21 (lần 3), HEAD `4b157955` (remote `fresh`)
+## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 4), HEAD `b74a3b33` (remote `fresh`)
+
+> ### ⚠ ĐỌC DÒNG NÀY TRƯỚC KHI ĐỌC BẤT KỲ CON SỐ NÀO Ở DƯỚI
+> Trong hai ngày 21–22/08, **mười một** mục của tài liệu này bị phép đo bác bỏ: E1 · F3 ·
+> F1 · D2 · D3 · E3 · E5 · E6 (đã đóng hoặc sai số) và ba mục nữa sai về *bản chất*
+> (C1↔C2 là một việc chứ không phải hai; F3 chỉ ra sai file; F1 sai theo hướng **bi quan**
+> gấp ba). Tỉ lệ ấy đủ cao để đảo ngược mặc định:
+> **coi mọi con số ở đây là LỜI KHAI CHƯA ĐƯỢC KIỂM, cho tới khi bạn tự đo lại.**
+> Đo trước tốn vài phút; tin nhầm tốn cả một đợt sửa vào chỗ không có gì để sửa.
 
 | Nhóm | Trạng thái | Ghi chú |
 |---|---|---|
 | **A** (làm phiền người thật) | ✅ ĐÓNG | A1-A4, sprint 5 `6ad3e57d..13b58676` |
 | **B1** (hai bản sao logic) | ✅ ĐÓNG | cùng sprint 5 |
-| **B2, B3** | ⏳ CÒN | test rẻ, chưa ai đau |
-| **C** (dữ liệu không tới đích) | ⏳ CÒN | C1 sau cờ mặc định tắt · C2 không màn nào đọc · C3 sắp xếp sai |
-| **D** (vận hành) | ⏳ CÒN | việc vệ sinh |
-| **E** (phát sinh khi thi công A) | ⏳ CÒN (E2-E7) | ⚠ **E1 ĐÃ ĐÓNG từ `7d2d42d9`** — bảng trước xếp nó "ưu tiên cao, còn" là SAI: tôi chép lời khai của mục đó mà không đo. E2 cần chủ dự án quyết. |
+| **B3.3** (sweeper có gọi prune?) | ✅ ĐÓNG `17f78546` | khoảng trống ĐƯỢC ĐO: gỡ lời gọi ⇒ 7/7 vẫn xanh. Nay có lưới đồng-hồ-giả |
+| **B2, B3.1, B3.2** | ⏳ CÒN | ba ca test rẻ, chưa đo lại |
+| **C1, C2** | ✅ ĐÓNG `b74a3b33` | **là MỘT việc, không phải hai** — C2 là điều kiện cần của C1 |
+| **C3** (sắp sai trục) | ✅ ĐÓNG `17f78546` | `ORDER BY` sai + `LIMIT` = MẤT DÒNG |
+| **D1, D2** | ✅ ĐÓNG `17f78546` | ⚠ D2 khai 9 khoá thiếu — đo được **1** |
+| **D3** | ✅ vốn ĐÃ ĐÓNG | đã có `.limit()` + zod `max(500)` từ trước |
+| **D4** (cột chỉ-ghi) | ⛔ CHỜ CHỦ DỰ ÁN | dùng = thêm tính năng KPI · bỏ = migration phá huỷ |
+| **E1** | ✅ vốn ĐÃ ĐÓNG `7d2d42d9` | + lưới `timeframeGuard` bổ sung |
+| **E3, E5, E6** | ✅ vốn ĐÃ ĐÓNG | xác minh bằng ĐỌC MÃ 2026-08-22, không bằng comment |
+| **E4** (env gõ sai im lặng) | ✅ ĐÓNG `a93afd69` | `server/_core/envNumber.ts` |
+| **E2** | ⛔ CHỜ CHỦ DỰ ÁN | đổi tải thật lên người vận hành |
+| **E7** | ⏳ CÒN | ba khoảng trống test nhỏ, chưa đo lại |
+| **F14** (lớp nợ MỚI) | 🆕 ĐÓNG một phần `891e1751` | lỗi đi ra bằng cửa THÀNH CÔNG — bốn cổng i18n đều mù. tRPC 18 chỗ còn lại |
 | **F1** (chỉ 15% màn hưởng lợi) | ✅ ĐÓNG `4b157955` | ⚠ **cả bốn con số của F1 đã lạc hậu theo hướng BI QUAN** — xem ghi chú dưới. Nợ thật `139 → 0`, nay là BẤT BIẾN (`rawErrorMessageCensus`) |
 | **F2-F9** (nợ A4 sau di trú) | ⏳ CÒN | **F3 còn 547 chỗ** (không phải 64 — xem `rawErrorCensus.test.ts`) · F7 chất lượng bản dịch |
 | **F10-F13** (nhãn giao diện en/zh) | ✅ ĐÓNG | xem §4c/§4d — hình-dạng-3 `914 → 0` qua 17 lô |
 | **G** (machine-auth + giấy phép) | ✅ ĐÓNG ở DEV | xem §4e — production **chưa** flip, checklist doc 52 §6.1 |
 
 **Nợ còn lại đáng làm trước, theo thứ tự:**
-1. **F3** — `1035 → 547` chỗ ném thô ngoài `server/routers/**` (4 lô, xem `server/_core/rawErrorCensus.test.ts`). Phần còn lại KHÔNG đồng nhất: ~40 chỗ họ "driver not connected", còn lại rải rác. Không còn security-critical: `_core/trpc.ts` và `machineAuthService.ts` đo lại đều **0 chỗ ném thô**.
-2. **G phần production** — telemetry BỀN đã có và **đã sửa lỗi nuốt lượt đầu sau restart** (`7a93a86b`); còn thiếu MỘT CA có lưu lượng thật + dọn 17 `machines.apiKey` plaintext. **Cần chủ dự án**, không phải việc của agent.
-3. **E2** — cảnh báo không có `machineId` không được cooldown nào chi phối; **cần chủ dự án quyết** vì đổi tải thật lên người vận hành.
-4. **B2/B3, C1-C3, D1-D4, E3-E7** — chưa đo lại. Đọc mục xong PHẢI đo trước khi làm.
+1. **F14 kênh tRPC — 18 chỗ.** Lớp nợ MỚI phát hiện 2026-08-22: lỗi được BẮT rồi TRẢ VỀ như dữ liệu (`return { ok: false, error: err.message }`) ⇒ phản hồi 200 OK ⇒ `onError` không chạy, `appCode` không tồn tại, `mapTrpcError` không bao giờ thấy. Cổng: `server/_core/dataErrorStringCensus.test.ts`. **49 chỗ kênh service** cần truy vết từng chỗ; **95 chỗ kênh REST KHÔNG phải nợ** (khách là máy — dịch đi là phá hợp đồng API).
+2. **F3 — 547 chỗ ném thô ngoài `server/routers/**`.** Phần còn lại KHÔNG đồng nhất, phần lớn là lỗi tầng codec/driver nội bộ. ⚠ Trước khi di trú, hỏi *"chỗ này có TỚI ĐƯỢC người dùng không?"* — chính câu hỏi đó đã dẫn tới phát hiện F14.
+3. **B2, B3.1, B3.2, E7** — vài ca test rẻ. Đo lại trước.
+4. **F2, F4-F9** — chưa đo lại lần nào kể từ 2026-07-30.
+
+**⛔ CHỜ CHỦ DỰ ÁN — agent không tự quyết được:**
+- **G phần production** — telemetry BỀN đã có và đã sửa lỗi nuốt lượt đầu sau restart (`7a93a86b`); còn thiếu MỘT CA có lưu lượng máy thật + dọn 17 `machines.apiKey` plaintext.
+- **E2** — cảnh báo không có `machineId` không được cooldown nào chi phối. Đổi tải thật lên người vận hành.
+- **D4** — `predictive_alert_occurrences.confidenceScore` ghi mà không nơi nào đọc. Dùng nó = thêm tính năng KPI; bỏ nó = migration phá huỷ dữ liệu đang tích luỹ.
 
 ⚠ **Trước khi làm bất kỳ mục nào: ĐO LẠI.** Bảng này đã sai theo cách đó **ba lần**:
   • lần 1 xếp E1 "ưu tiên cao, còn" — nó đã đóng từ `7d2d42d9`;
