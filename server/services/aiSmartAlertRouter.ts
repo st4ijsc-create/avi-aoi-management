@@ -1,4 +1,5 @@
 import { getDb } from "../db/connection";
+import { soDuongTuEnv, soKhongAmTuEnv } from "../_core/envNumber";
 import {
   productInspections,
   users,
@@ -20,32 +21,28 @@ import { decideNotify } from "./alerts/decideNotify";
 /** Wave 3 §4.2 — hạn dùng cảnh báo. Gia hạn mỗi lần tái diễn, nên hết hạn
  *  nghĩa là "tình trạng đã THÔI tái diễn", không phải "đã quá N ngày". */
 function alertTtlMs(): number {
-  const raw = Number(process.env.ALERT_TTL_HOURS);
-  const hours = Number.isFinite(raw) && raw > 0 ? raw : 72;
-  return hours * 3600_000;
+  return soDuongTuEnv("ALERT_TTL_HOURS", 72) * 3600_000;
 }
 
 /** Sprint 5 §2.7 — cooldown im lặng cho cảnh báo ĐANG MỞ tái diễn. Mặc định 4h:
  *  với nhịp đo được 22 lần/ngày ⇒ ≤6 lượt báo/ngày thay vì 22. */
 function renotifyCooldownMs(): number {
-  const raw = Number(process.env.ALERT_RENOTIFY_COOLDOWN_MINUTES);
-  const minutes = Number.isFinite(raw) && raw >= 0 ? raw : 240;
-  return minutes * 60_000;
+  // NGƯỠNG >= 0: 0 nghĩa là "không cooldown", một giá trị CÓ NGHĨA.
+  return soKhongAmTuEnv("ALERT_RENOTIFY_COOLDOWN_MINUTES", 240) * 60_000;
 }
 
 /** 0 (mặc định) = CRITICAL luôn báo ngay, không bao giờ gộp. Van để khách chỉnh
  *  nếu CRITICAL hoá ra mới là nguồn nhiễu thật ở nhà máy của họ. */
 function criticalCooldownMs(): number {
-  const raw = Number(process.env.ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES);
-  const minutes = Number.isFinite(raw) && raw >= 0 ? raw : 0;
+  // NGƯỠNG >= 0: 0 = CRITICAL luôn báo ngay. Ép > 0 ở đây là bốn giờ im lặng.
+  const minutes = soKhongAmTuEnv("ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES", 0);
   return minutes * 60_000;
 }
 
 /** Sprint 5 §2.5 — VAN AN TOÀN, không phải cổng chặn. Chỉ để một vòng lặp hỏng
  *  phía phát (detector chạy mỗi giây) không bơm vô hạn vào bảng nhật ký. */
 function maxPerWindow(): number {
-  const raw = Number(process.env.ROUTE_ALERT_MAX_PER_WINDOW);
-  return Number.isFinite(raw) && raw > 0 ? raw : 200;
+  return soDuongTuEnv("ROUTE_ALERT_MAX_PER_WINDOW", 200);
 }
 
 /**

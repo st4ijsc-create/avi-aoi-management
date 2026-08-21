@@ -2,6 +2,7 @@ import { getDb } from "../db/connection";
 import { predictiveAlerts, predictiveAlertOccurrences } from "../../drizzle/schema";
 import { and, eq, isNull, lt } from "drizzle-orm";
 import { isMissingColumn, isMissingTable } from "../_core/dbErrors";
+import { soDuongTuEnv, inCauHinhHieuLuc } from "../_core/envNumber";
 
 /**
  * Wave 3 §4.2 — cảnh báo được GIA HẠN mỗi lần tái diễn (Task 3). Nên hết hạn
@@ -57,9 +58,7 @@ export async function sweepExpiredAlerts(): Promise<{ expired: number }> {
  * thành rác, nên xoá theo hạn lưu ở đây là đúng, không mâu thuẫn.
  */
 function occurrenceRetentionMs(): number {
-  const raw = Number(process.env.ALERT_OCCURRENCE_RETENTION_DAYS);
-  const days = Number.isFinite(raw) && raw > 0 ? raw : 90;
-  return days * 86_400_000;
+  return soDuongTuEnv("ALERT_OCCURRENCE_RETENTION_DAYS", 90) * 86_400_000;
 }
 
 export async function pruneOldOccurrences(): Promise<{ deleted: number }> {
@@ -93,8 +92,26 @@ let timer: NodeJS.Timeout | null = null;
 export function initAlertExpirySweeper(): void {
   if (process.env.ALERT_EXPIRY_SWEEP_ENABLED === "false") return;
   if (timer) return;
-  const raw = Number(process.env.ALERT_EXPIRY_SWEEP_MINUTES);
-  const minutes = Number.isFinite(raw) && raw > 0 ? raw : 30;
+  const minutes = soDuongTuEnv("ALERT_EXPIRY_SWEEP_MINUTES", 30);
+
+  // E4 — in MỘT LƯỢT các giá trị ĐANG CÓ HIỆU LỰC của cả đường cảnh báo.
+  //
+  // Trước bản này, người vận hành không có cách nào biết mình đang chạy với giá trị nào:
+  // gõ sai một biến ⇒ im lặng rơi về mặc định, không một dòng log. Người định TẮT bằng
+  // cách gõ nhầm nhận đúng hành vi BẬT — với cooldown, "bật" là bốn giờ im lặng về một
+  // cái máy sắp hỏng.
+  //
+  // In ở đây vì đây là điểm khởi động DUY NHẤT của đường này; `soDuongTuEnv` tự cảnh báo
+  // riêng cho từng biến đặt-sai, còn dòng dưới trả lời câu hỏi khác: *"rốt cuộc hệ đang
+  // chạy bằng số nào?"* — thứ mà một dòng cảnh báo lẻ không trả lời được.
+  inCauHinhHieuLuc("vòng đời cảnh báo", [
+    ["ALERT_EXPIRY_SWEEP_MINUTES", 30],
+    ["ALERT_OCCURRENCE_RETENTION_DAYS", 90],
+    ["ALERT_TTL_HOURS", 72],
+    ["ALERT_RENOTIFY_COOLDOWN_MINUTES", 240, "khongAm"],
+    ["ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES", 0, "khongAm"],
+    ["ROUTE_ALERT_MAX_PER_WINDOW", 200],
+  ]);
   timer = setInterval(() => {
     // Task 3 — gọi ĐỘC LẬP: đóng cảnh báo và dọn nhật ký là hai việc khác
     // nhau (cảnh báo "gộp, không xoá" vs. nhật ký là số liệu đo được phép
