@@ -1910,7 +1910,59 @@ EXPECT_CONFORMANCE=24
 # no NoWarn, no #pragma, no .editorconfig severity — and SuppressionCensusTests' three tables are
 # untouched.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1168
+#
+# 🔴 AR-1 (owner-decisions.md items 18/19/20/22/23/24, 2026-08-21) MOVES EXPECT_EDGECORE 1168 -> 1171 (+3)
+# and EXPECT_ENGINEAPI 1374 -> 1378 (+4). Grand total 2779 -> 2786. EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE
+# and EXPECT_EDGESERVICE do not move. EVERY NUMBER HERE WAS READ OFF A RUN BEFORE IT WAS TYPED: EdgeCore
+# `Passed! - Failed: 0, Passed: 1171, Total: 1171`, EngineApi `Passed! - Failed: 0, Passed: 1378,
+# Total: 1378`, both from a --no-build run against a solution that had just built with 0 errors.
+#
+# EDGECORE, +3 NET, WHICH IS +4 AND -1 AND THE -1 IS THE ONE THAT NEEDS THE JUSTIFICATION:
+#   + 4  tests/St4i.EdgeCore.Tests/Transport/TransportCoordinatorDisposalTests.cs (item 20) — the ordered
+#        shutdown TransportCoordinator did not have. It disposed the LiveTransport it REPLACED and had no
+#        path to dispose the one it still HELD. Disposal is observed through the real chain
+#        (Dispose -> LiveTransport.Dispose -> St4iDeviceClient.Dispose -> HttpClient.Dispose -> handler),
+#        not a proxy flag. CONTROL PAIR, RUN TO COMPLETION, NOT ASSUMED: with Dispose()'s BODY emptied and
+#        its signature left in place, `Failed: 3, Passed: 1` — the three new-half tests go red and
+#        RebuildLive_StillDisposesTheReplacedLiveTransport stays GREEN, which is what proves the pair
+#        discriminates instead of just moving together. Restored, re-run, `Passed: 4`.
+#   - 1  tests/St4i.EdgeCore.Tests/Uns/UnsNodeLifecycleTests.cs —
+#        `PublishBirth_DeviceLevelDbirth_DoesNotResetTheNodeSequence` DELETED. It is the only test in the
+#        tree that CALLED IUnsPublisher.PublishBirth rather than implementing it on a fake, and the owner
+#        ruled that method removed (item 23). 🔴 THIS IS A DELETED REGRESSION GUARD, WHICH IS A COST: it
+#        pinned the G2-3 fix for a DBIRTH that wrongly reset the edge node's Sparkplug sequence, with the
+#        exact discriminating value (seq 2, where the pre-fix bug gave 1) rather than a loose non-zero
+#        check. The loss is bounded rather than open only because the code path it guarded no longer
+#        exists — nothing in this repository publishes a DBIRTH now — and the NBIRTH-must-reset guards in
+#        the same file are untouched. A ceiling stated small would be worse than none: if a DBIRTH path is
+#        ever reintroduced, this test must come back with it.
+#
+# ENGINEAPI, +4, all in tests/St4i.EngineApi.Tests/Auth/AuditWiringTests.cs (item 18) — the Demo gate now
+# guards the FABRICATING TRANSPORT and not only the MODE. They live in that class because it owns the only
+# factory in the suite that boots the real composition root with ST4I_DEMO_ENABLED set EITHER WAY, and
+# because "a refused mutation writes no audit row" is that class's own subject.
+#   🔴 THEY ARE TWO PAIRS, DELIBERATELY. Two assert the 400 with the gate DISABLED; two assert that the
+#   outage scenario STILL APPLIES with the gate ENABLED and that a non-outage preset is unaffected with it
+#   disabled. Without the second pair a build that simply deleted an intentional exhibition feature would
+#   be green, which is the "a test green on both sides measures nothing" trap this session has paid for.
+#   CONTROL PAIR, RUN TO COMPLETION: with both gate conditions short-circuited to false,
+#   `Failed: 2, Passed: 3` — exactly the two DemoDisabled tests red, the two over-block guards and the
+#   pre-existing ScenarioApply_AsEngineer_RecordsAppliedParams green. Restored, re-run, `Passed: 5`.
+#   🔴 THE ROUTE SET IS TWO, NOT ONE, AND THE ITEM NAMED ONE. POST /v1/scenario is not the only way into
+#   FleetCore.ApplyNetworkOutageLocked: the shipped "network-outage" PRESET reaches it through
+#   POST /v1/scenario/preset carrying no networkOutage field at all. The gate keys off the RESOLVED
+#   preset's own config rather than a preset name, so a future catalogue entry is covered without an edit.
+#
+# 🔴 EXPECT_WARNINGS STAYS 328, MEASURED ON A FULL `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
+# AFTER ALL SIX ITEMS: `0 Error(s)`, `328 Warning(s)`. That figure was NOT predicted before the run — the
+# brief flagged that removing two DOCUMENTED public members (item 23) could move it, and the measured
+# answer is that it does not: PublishBirth/PublishDeath both carried doc comments, so neither was
+# generating a CS1591 that their removal could take away, and the three <see cref>s that pointed at them
+# were rewritten to <c> in the same change so no CS1574 appeared either. EXPECT_BUILD_NODES stays 0. No
+# suppression of any kind was added — no NoWarn, no #pragma, no .editorconfig severity change — and
+# SuppressionCensusTests' tables are untouched.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1171
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -3432,7 +3484,10 @@ EXPECT_EDGESERVICE=52
 #
 # EXPECT_WARNINGS stays 116 and EXPECT_BUILD_NODES stays 0: measured on a full -t:Rebuild after this task.
 # Nothing was suppressed — no .editorconfig, no <NoWarn>, no #pragma, no SuppressMessage.
-EXPECT_ENGINEAPI=1374
+# 🔴 AR-1 (2026-08-21) raises this 1374 -> 1378 (+4). The four are itemised, with their control pair and
+# with why they are TWO PAIRS rather than four one-sided assertions, in the AR-1 block above
+# EXPECT_EDGECORE. Counted from a run (`Passed: 1378, Total: 1378`), not derived by addition.
+EXPECT_ENGINEAPI=1378
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

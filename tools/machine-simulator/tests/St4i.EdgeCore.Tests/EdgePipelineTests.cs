@@ -203,13 +203,7 @@ public class EdgePipelineTests
 
         public void PublishReading(DeviceReading reading, CanonicalEnvelope envelope) => Published.Add((reading, envelope));
 
-        public void PublishBirth(string equipmentCode)
-        {
-        }
-
-        public void PublishDeath(string equipmentCode)
-        {
-        }
+        // PublishBirth/PublishDeath removed from IUnsPublisher 2026-08-21 (owner's ruling, item 23).
 
         public void PublishNodeBirth()
         {

@@ -46,13 +46,13 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 15 | `DropOldest` + một cảnh báo "queue saturated" không với tới được — **BA chỗ**, và chỗ **thứ tư** đã giải xong | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Gộp phát hiện đợt 6 (`HistorianWriter`) và đợt 8 (`UnsPublisher`) làm **MỘT mục**, và phép liệt kê thêm chỗ **thứ ba chưa ai báo**: `UnsBridge`. `AlarmNotifier` cùng chế độ nhưng **đã đúng** → 🔨 **QUYẾT: ÁP MẪU ĐÃ GIẢI XONG CỦA `AlarmNotifier` VÀO CẢ BA CHỖ** (2026-08-20, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8 — mục này không thuộc ba mục đổi thứ người ngoài đang dựa vào). 🔴 **`FullMode` **KHÔNG** đổi: `DropOldest` ở lại `DropOldest`** — thứ đổi là **kế toán**, không phải chính sách. **Đã thi hành, AP-1 (2026-08-21)**: `itemDropped` được truyền ở cả ba, cú đuổi được **đếm** và được **cảnh báo bằng lời SATURATION**, còn nhánh `if (!TryWrite(...))` — vốn chỉ với tới được khi writer ĐÃ ĐÓNG — được đếm riêng và viết lại thành lời **SHUTDOWN**. 🔴 **Tiền đề của phán quyết được KIỂM LẠI trên mã và nó ĐỨNG VỮNG**: `AlarmNotifier` thật sự đã giải xong (nó truyền `itemDropped`, phân loại năm đường rơi, log sau khi nhả khoá). 🔴 **Nhưng MỘT mảnh của hình dạng ấy KHÔNG mang sang được, và nói ra chứ không lặng lẽ bỏ:** phép *bracket* `Evicted` quanh `TryWrite` trong `EmitLocked` chỉ chính xác vì mọi thứ ở đó chạy dưới `_gate`; ba lớp EdgeCore **cố ý không có khoá nào trên đường enqueue**, nên cảnh báo được phát **từ trong chính callback `itemDropped`** — chính xác vì một lý do khác (callback chạy đồng bộ, một lần cho mỗi phần tử bị đuổi, và nhận đúng phần tử ấy). 🔴 **`UnsBridge.DroppedTotal` KHÔNG bị nới nghĩa**, và bề mặt ĐỌC nó được nêu tên: `GET /v1/site`, trang `/site`, **và bản ghi resync GIỮ LẠI phát lên broker của Site — một hợp đồng dây bên thứ ba tiêu thụ**. Cú đuổi kênh có tên riêng, `UnsBridge.ForwardQueueStats.Evicted`. 🔴 **Dư lượng còn mở, ghi vào mục chứ không để trong báo cáo: bộ đếm mới KHÔNG có trên `/v1/site` lẫn trang `/site`** — thêm một trường ở đó là **đổi payload đã xuất bản**, đúng thứ nằm ngoài uỷ quyền mục này. Trên hình thái cài Windows Service (README §"đường mất dữ liệu", mục 4) log **không có nơi nào để đi**, nên trên hình thái ấy mất mát này **được đếm nhưng operator vẫn chưa nhìn thấy được**. Xem Phần III |
 | 16 | `OeeCalculator` — Quality **không** kẹp `[0,1]` | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. Biên hôm nay do **hai vị từ SQL ở một file khác** giữ. 🔴 **AQ-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG trong brief đã NỔ, không một dòng `OeeCalculator` bị sửa, mục Ở LẠI PHẦN I.** Câu ngay trên **giữ nguyên văn**; cái được rút, tại chỗ và kèm ngày, là **chỉ** mệnh đề *"trên đường đang ship hôm nay con số ấy KHÔNG THỂ XẢY RA"* trong thân mục. **Đo được:** `AggregateForOeeAsync` chạy **bốn câu lệnh rời nhau trên một connection KHÔNG có transaction**; SQLite ở WAL cho mỗi câu lệnh **một ảnh chụp riêng**; nên hai vị từ lồng nhau chỉ giữ **trong một ảnh chụp**, và một `AppendResultsAsync` song song commit giữa câu `total` và câu `good` làm `GoodCount > TotalCount`. **Ba nhánh, đối chứng nằm trong phép đo:** không người ghi → **93 291 lần đọc, 0 vi phạm**; **10 hàng/giây — xấp xỉ nhịp của chính `fleet.json` đang ship** → **87 vi phạm**, Quality tới **1.00333**; người ghi nóng → **1 112 vi phạm**, Quality tới **1.00888**. **Nên một cái kẹp ĐỔI một con số OEE đã báo cáo, và đó là một trong ba mục chủ sở hữu KHÔNG uỷ quyền.** 🔴 **Và phép đo ĐỔI CÂU HỎI: mục mở ra như một câu hỏi phòng thủ chiều sâu, đo được nó là một khuyết tật ĐANG SỐNG — `Math.Clamp` không sửa nó, chỉ che nó. Bản sửa thật nằm ở `AggregateForOeeAsync` (đọc hai `COUNT(*)` trong MỘT transaction), tức một file khác, một rủi ro khác — LỰA CHỌN THỨ TƯ mà ba lựa chọn của mục không có.** 🔴 **Kèm một khẳng định đã công bố THỨ HAI vẫn đang sai và chưa được rút:** `web/src/lib/api.ts` nói `quality`/`oee` *"never … over 1 (`OeeCalculator.Calculate` clamps/guards every division)"* — đúng câu AL-1 đã rút trên doc lớp ngày 2026-08-20, ở **bề mặt khách hàng đọc**; một **bản kiểm kê THIẾU**, AQ-1 **không sửa** vì ngoài uỷ quyền |
 | 17 | `QueryTelemetryAsync` không áp cổng xuất xứ, và **không áp được** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. `historian_telemetry` **không có cột `is_fabricated`**; `GET /v1/historian/telemetry` **không nhận `includeFabricated`** |
-| 18 | Cổng Demo gác **CHẾ ĐỘ**, không gác **BỘ SINH GIẢ** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7. `PUT /v1/mode` từ chối Demo bằng 400; `POST /v1/scenario {"networkOutage":true}` **không bị gác** |
-| 19 | `TransportCoordinator.Auto` và `.Demo` — hai trong bốn bộ truy cập công bố **không ai đọc** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7 (hai khuyết tật của brief, **một** lớp, **một** quyết định) |
-| 20 | `TransportCoordinator` không có đường tắt máy ⇒ `LiveTransport` cuối cùng không bao giờ được dispose | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7. **Không phải một khẳng định rò rỉ trên sản xuất** — xem nửa thứ hai trong mục |
+| 18 | Cổng Demo gác **CHẾ ĐỘ**, không gác **BỘ SINH GIẢ** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — cổng nay gác **CẢ HAI** route dựng transport bịa (`POST /v1/scenario` **và** `POST /v1/scenario/preset`; mục chỉ nêu một). Xem Phần III |
+| 19 | `TransportCoordinator.Auto` và `.Demo` — hai trong bốn bộ truy cập công bố **không ai đọc** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — **KHÔNG gỡ thành viên nào**; hai câu tài liệu SAI đã sửa, và **khoá KHÔNG bỏ được** (đo rồi mới từ chối). Xem Phần III |
+| 20 | `TransportCoordinator` không có đường tắt máy ⇒ `LiveTransport` cuối cùng không bao giờ được dispose | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — `IDisposable` + nhân chứng đỏ được. **Cái trần "không phải rò rỉ sản xuất" giữ nguyên.** Xem Phần III |
 | 21 | `MappingProfileResolver` ghép một chuỗi của vận hành viên vào một đường dẫn **không giới hạn** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7 → 🔨 **QUYẾT: GIAM VÀO THƯ MỤC HỒ SƠ** (2026-08-21, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8 và mục 15 — mục này không đổi payload MQTT, không đổi hình dạng dây, không đổi con số OEE nào). **Đã thi hành, AQ-1 (2026-08-21)**: `ResolveOne` chuẩn hoá **tuyệt đối** cả hai vế (`Path.GetFullPath`) rồi đòi đường dẫn ghép nằm trong gốc **cộng dấu phân tách cuối**; **không chỗ nào lọc `..` bằng chuỗi**. Từ chối rơi về `MappingProfile.ForClass` — **cùng chỗ rơi** ba nguyên nhân cũ — kèm thông điệp trên `logWarning` nêu tên máy, giá trị, thư mục giới hạn và **một giá trị hợp lệ trông thế nào**. 🔴 **Bản giam CỐ Ý không hẹp hơn mức cần: thư mục CON của thư mục mapping vẫn nạp được**, vì chính mục này nêu thư mục con là bản triển khai một bản sửa không được làm hỏng. 🔴 **Hai câu của mục KHÔNG sống sót qua phép đo, và cả hai được ghi ở thân mục:** (i) *"chuỗi ấy đến từ `fleet.json`"* — **đúng, và nay ĐO ĐƯỢC**: cả sáu chỗ dựng `MachineDescriptor` dưới `src/` cộng `BuildDefaultFleet` đều truyền `MappingProfile: null`, nên **không route/connector/biến môi trường nào** đặt được trường này; (ii) *"`fleet.json` … nằm **cục bộ**"* — **thiếu**: `ResolveFleetPath` nhận **`--fleet <path>` TRƯỚC** `AppContext.BaseDirectory`, nên "cục bộ" là mặc định chứ không phải ràng buộc. 🔴 **Biên của bản sửa, ghi chứ không giấu: biên là TỪ VỰNG** — một symlink **nằm trong** thư mục mapping trỏ ra ngoài **vẫn được đi theo**; và câu *"không bản triển khai hợp lệ nào bị làm hỏng"* chỉ đúng trên tập **repo này ở `HEAD`**, không phải đĩa của khách hàng. Xem Phần III |
-| 22 | Hai chuỗi đã xuất bản hứa một ack **thất bại** mà `DemoTransport` không bao giờ trả | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7 |
-| 23 | `IUnsPublisher.PublishBirth`/`PublishDeath` — có cài đặt, **không caller nào dưới `src/`** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 8. **Chưa DBIRTH nào từng được phát** |
-| 24 | `ModbusOptions`/`OpcUaOptions` — hằng số TÊN biến môi trường công khai | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 8 🔴 **và phép đo của đợt 8 SAI ở một nửa: KHÔNG host sản xuất nào viết cứng chuỗi ấy, và HAI hằng số ĐANG được EngineApi gọi tên.** Xem mục |
+| 22 | Hai chuỗi đã xuất bản hứa một ack **thất bại** mà `DemoTransport` không bao giờ trả | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — 🔴 **KHÔNG phải hai chuỗi mà SÁU** (cộng bốn chuỗi i18n web chưa đụng). Sửa lời, không đổi hành vi. Xem Phần III |
+| 23 | `IUnsPublisher.PublishBirth`/`PublishDeath` — có cài đặt, **không caller nào dưới `src/`** | ✅ **ĐÃ GỠ 2026-08-21 (AR-1)** theo **phán quyết chủ sở hữu**; tiền đề "không caller" đã đo lại **toàn cây gồm `server/`/`client/`/`examples/`** và **đứng vững**. Giá P-2 ghi trong mục |
+| 24 | `ModbusOptions`/`OpcUaOptions` — hằng số TÊN biến môi trường công khai | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — phép đo đã sửa **tự kiểm lại và ĐỨNG VỮNG cả hai nửa**; hai file test nay gọi hằng số thay vì gõ lại chuỗi. Xem Phần III |
 | 25 | **Điều kiện rời Phần II của mục 12** — họ driver: tài liệu hay thu hẹp? | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). 109 cảnh báo trên **97 thành viên**; câu hỏi *"có nên `public` không"* **không tồn tại với 46**, **sai trong im lặng với 9**, miễn phí với 17, tốn một IVT mới với 25 — và 🔴 **ít nhất 55 trong 97 sẽ `public` DÙ PHÁN THẾ NÀO** |
 | 26 | **Không gì trong repo này trả cho TÍNH ĐÚNG của một chú thích đã viết** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Mục 12 trả cho **bao phủ**; W-1 kiểm **hình thức**. Năm con số đã đo — **KHÔNG cộng được**, và mục nói vì sao |
 | 27 | API Inspector **không phơi THÂN request** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo lại từ mã 2026-08-20. `ApiTraceEvent` **không có trường thân**; `TraceTable` **không có trình xử lý click hàng nào** |
@@ -428,264 +428,6 @@ trôi qua là thêm hàng `historian_telemetry` không mang xuất xứ, nên ph
 
 ---
 
-## 18. Cổng Demo gác CHẾ ĐỘ chứ không gác BỘ SINH GIẢ: một route thứ hai trỏ cả fleet đang chạy vào một transport mất gói, và `GET /v1/mode` vẫn trả lời chế độ đã chọn
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã. **Đây là cái nặng
-nhất trong sáu phát hiện của đợt 7 và nó vẫn là cái tôi đặt trước mặt anh đầu tiên.**
-
-**Đo được cái gì — hai route đọc TRỌN.** `PUT /v1/mode` (`ModeEndpoints`) nhận `DemoModeGate` qua DI
-và từ chối `TransportMode.Demo` bằng **400** *"Demo mode is not enabled on this deployment."* khi
-`demoGate.Enabled` là `false`. `POST /v1/scenario` (`ScenarioEndpoints`) **không nhận `DemoModeGate`
-ở bất kỳ đâu trên đường của nó** — chữ ký của nó là `(ScenarioRequest, FleetHost, HttpContext,
-AuditRecorder, CancellationToken)`. Với `{"networkOutage": true}`, `FleetCore.ApplyNetworkOutageLocked`
-gọi `SwitchableTransport.SetInner` với một `DemoTransport` dựng ở
-`fakeErrorRate: OutageFakeErrorRate` = **0.9**.
-
-**Và bề mặt trạng thái không nói ra:** `GET /v1/mode` trả `FleetHost.Mode` → `FleetCore.Mode` →
-`TransportCoordinator.Mode`, tức chế độ người vận hành **đã chọn**; đường outage **cố ý không chạm**
-nó (`ApplyNetworkOutageLocked(false)` gọi `ApplyMode(_transportCoordinator.Mode)` — đúng chế độ hiện
-hành). Bề mặt duy nhất nói sự thật là pane API-trace, đọc `SwitchableTransport.Mode`.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EngineApi.Endpoints.ModeEndpoints` (nhánh gác);
-`St4i.EngineApi.Endpoints.ScenarioEndpoints` (route `POST /v1/scenario`, `Policies.Engineer`);
-`St4i.EdgeCore.Fleet.FleetCore.ApplyNetworkOutageLocked` và hằng số `OutageFakeErrorRate`;
-`St4i.EdgeCore.Transport.SwitchableTransport.SetInner`; `St4i.EdgeCore.Transport.DemoTransport`;
-`St4i.EdgeCore.Config.DemoModeGate`. **Không nhân chứng:** không file test nào trong cây nhắc cùng
-lúc `/v1/scenario` và `DemoModeGate`; hai file chạm route ấy (`Auth/RbacPolicyTests`,
-`Auth/AuditWiringTests`) kiểm quyền và audit, không kiểm cổng.
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* trên một bản triển khai đã **TẮT** Demo — tức đã tuyên bố rằng máy này sẽ không bịa
-dữ liệu — một Engineer vẫn đặt được cả fleet đang chạy sau một bộ bịa. Mọi reading được ack **tại
-chỗ**, **không gì tới máy chủ hệ sinh thái**, và `GET /v1/mode` vẫn trả `Live`. Một bên nói "đang
-Live", bên kia không gửi gì đi.
-*Chiều ngược, và bỏ nó đi là nói sai:* đường ấy **có audit** — `scenario.apply` ghi một hàng audit
-mang trọn scenario đã áp, `networkOutage` trong đó — và nó đòi `Policies.Engineer`, nên nó **không
-ẩn danh và không vô quyền**. Nó cũng **hoàn nguyên được**: `ApplyNetworkOutageLocked(false)` trỏ lại
-transport về chế độ hiện hành. Và outage scenario là một **tính năng kể chuyện** có chủ ý cho phòng
-triển lãm; gác nó bằng cổng Demo sẽ lấy mất tính năng ấy khỏi mọi bản cài đã tắt Demo.
-
-**Nếu KHÔNG quyết định.** Cờ `DemoModeGate` giữ **hai nghĩa cùng lúc** — *"đừng chào chế độ Demo"*
-và *"đừng bao giờ bịa dữ liệu trên máy này"* — và hai nghĩa ấy cho hai câu trả lời khác nhau ở đúng
-route này. Cho tới khi anh chọn một nghĩa, ai đọc tên cờ cũng sẽ đọc ra nghĩa thứ hai và tin rằng
-nó đã được cưỡng chế.
-
----
-
-## 19. `TransportCoordinator` công bố bốn bộ truy cập như "cái nhìn của điều phối viên", và hai trong bốn KHÔNG ai đọc giá trị
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
-
-📎 **Mục này mang HAI khuyết tật mà brief liệt kê riêng, và lý do gộp là chúng là MỘT quyết định
-trên MỘT lớp.** Báo cáo nguồn (đợt 7 §7(1)) cũng viết chúng thành một phát hiện kèm một "người anh
-em". Một phán quyết chỉ chạm `.Auto` sẽ để `.Demo` đứng nguyên trong cùng bộ tứ, mang cùng câu hỏi.
-
-**Đo được cái gì — quần thể mở TRỌN ở SHA đã ghim.** `git grep` cho `\.Auto\b` trên **mọi** `*.cs`
-của cây (kể cả `server/` và `client/`, không có trên đĩa): **mọi** lần xuất hiện đều là
-`TransportMode.Auto`. **Không một lần nào là `TransportCoordinator.Auto`** — không chỗ gọi sản xuất,
-không bài test, không `<see cref>`. Cùng phép đo cho `\.Demo\b`: đúng **một** lần trỏ vào
-`TransportCoordinator.Demo`, và nó nằm trong doc comment của `St4iMachineSimulator.Services.FleetService`
-— **một tham chiếu tài liệu, không phải một phép đọc**. Miền dụng cụ được kiểm chứ không giả định:
-`git grep` trên `*.xaml` cho một binding tới `Auto`/`Demo` trả về **không gì**.
-
-`Auto` không phải một trường trần: nó là `public AutoTransport Auto { get { lock (_gate) return _auto; } }`
-— **nó lấy một khoá để trả lời một câu hỏi không ai hỏi**. `RebuildLive` duy trì cả hai trường dưới
-khoá ở **mọi** lần biên tập Settings, và doc của chính `TransportCoordinator` mô tả bộ tứ
-`Mode`/`Live`/`Demo`/`Auto` là cái nhìn đã công bố của nó. **Hai trong bốn là hư cấu đã công bố.**
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Transport.TransportCoordinator.Auto`,
-`.Demo`, `.Live`, `.Mode`, `.RebuildLive`; `St4iMachineSimulator.Services.FleetService` (chỗ duy nhất
-nhắc tên `.Demo`, trong văn xuôi).
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* đây là **bề mặt công khai đã chết** trên một assembly mà mục 25 đang hỏi đúng câu
-"cái gì nên `public`". Nó cũng có một chi phí đọc thật: người đọc tiếp theo của lớp này sẽ tin rằng
-bộ tứ ấy là hợp đồng và sẽ duy trì nó.
-*Chiều ngược:* **xoá một thành viên công khai là một phép đổi hợp đồng**, và P-2 chi phối chính tả
-thành viên công khai. Phép đo này chỉ đếm người đọc **trong cây này**; nếu `St4i.EdgeCore` được tiêu
-thụ ở nơi khác, phép đếm im lặng về chuyện đó. Và giá của việc **giữ** hai bộ truy cập ấy hôm nay là
-gần bằng không — hai `get` dưới một khoá đã có.
-
-**Nếu KHÔNG quyết định.** Hai thành viên ở lại, tiếp tục được duy trì dưới khoá, tiếp tục đọc như
-hợp đồng — và chúng sẽ xuất hiện lại trong mọi phép đo bề mặt công khai về sau, mỗi lần lại tốn đúng
-phép liệt kê này để chứng minh chúng chết.
-
----
-
-## 20. `TransportCoordinator` dispose cái nó THAY, và không có đường nào dispose cái CUỐI CÙNG
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
-
-**Đo được cái gì.** `RebuildLive` gọi `oldLive.Dispose()` ở **câu lệnh cuối** của nó — có chủ ý, và
-doc của chính nó giải thích cái `HttpClient` rò rỉ mà nó ngăn. Nhưng `TransportCoordinator` là
-`public sealed class` **không** khai `IDisposable`/`IAsyncDisposable`, **không** có `Stop`, và
-`oldLive.Dispose()` là lần gọi `Dispose` **duy nhất** trên `_live` trong cả lớp. Nên thực thể đang
-được giữ lúc tiến trình kết thúc **không được ai dispose**.
-
-🔴 **Đây KHÔNG phải một khẳng định rò rỉ trên sản xuất, và nói một chiều ở đây là nói sai.** Hai
-composition root của sản phẩm — `St4i.EngineApi/Program.cs` và `St4iMachineSimulator/App.xaml.cs`,
-**hai chỗ `new TransportCoordinator(` duy nhất dưới `src/`** — đều đăng ký nó là **singleton** DI,
-nên đúng **một** cái được dựng cho mỗi tiến trình và hệ điều hành thu hồi socket pool của nó lúc
-thoát. Chỗ nó **không** vô hại là một tiến trình dựng **NHIỀU** cái: các bộ test làm đúng thế, ở
-vài chục file, mỗi file để lại một `LiveTransport` chưa dispose trong suốt đời test host.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Transport.TransportCoordinator` (khai báo lớp,
-`RebuildLive`); `St4i.EdgeCore.Transport.LiveTransport`; hai chỗ đăng ký singleton trong
-`St4i.EngineApi.Program` và `St4iMachineSimulator.App`.
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* đây là một **bất đối xứng trong quy tắc sở hữu do chính lớp ấy tuyên bố** — nó nhận
-trách nhiệm dispose ở một nửa vòng đời và bỏ nửa kia. Bất đối xứng ấy là thứ người đọc sau sẽ suy ra
-sai theo cả hai hướng.
-*Chiều ngược:* thêm một đường dispose **kéo theo một câu hỏi sở hữu**: điều phối viên **không** sở
-hữu `switchable` hay `demo` (chúng được truyền vào), nên một `Dispose()` ngây thơ sẽ dispose thứ
-không phải của nó. Và trên sản xuất, giá hôm nay là **không** — một tiến trình, một thực thể, thu
-hồi lúc thoát.
-
-**Nếu KHÔNG quyết định.** Hành vi giữ nguyên; chi phí ở lại trong các test host; và quy tắc sở hữu
-của lớp ở lại đúng một nửa, không có gì trong cây nói ra nửa còn lại.
-
----
-
-## 22. Hai chuỗi đã xuất bản hứa những ack *"failed"* mà `DemoTransport` không bao giờ trả
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
-
-**Đo được cái gì — cả hai chuỗi trích nguyên văn, và cả ba nhánh mở trọn.** Doc comment của
-`ScenarioConfig.NetworkOutage` nói: *"acks come back queued/failed while the fleet keeps running"*.
-Dòng trạng thái người vận hành nhìn thấy, `St4i.EngineApi.Fleet.Dtos`, nói: *"network outage (acks
-queued/failing)"*. Đo trên `DemoTransport.SendAsync`: **mọi** nhánh trả `Success: true` — nhánh
-queued trả `TransportAck(Success: true, Queued: true, …)`, `AckProcessResult` và `AckInspection` trả
-`Success: true, HttpStatus: 201`, `AckTelemetry` trả `Success: true, HttpStatus: 202`. **Không nhánh
-nào trả một ack thất bại.** `_fakeErrorRate` chỉ quyết định `ShouldSimulateQueued`, tức tỉ lệ đi vào
-nhánh **queued** — không phải tỉ lệ hỏng.
-
-📎 **Cả hai chuỗi nằm NGOÀI cụm mà đợt 7 trả, nên đợt ấy cố ý KHÔNG rút chúng tại chỗ** — với ra
-ngoài ranh giới của mình để sửa hai file khác là một việc khác. Chúng vẫn đứng nguyên văn hôm nay.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Engine.ScenarioConfig.NetworkOutage` (doc comment);
-`St4i.EngineApi.Fleet.Dtos` (dòng `outageText`); `St4i.EdgeCore.Transport.DemoTransport.SendAsync`,
-`.AckProcessResult`, `.AckInspection`, `.AckTelemetry`, `.ShouldSimulateQueued`;
-`St4i.EdgeCore.Fleet.FleetCore.ApplyNetworkOutageLocked`.
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* người vận hành đang chạy kịch bản outage được **hứa** rằng họ sẽ thấy ack hỏng, và họ
-sẽ **không bao giờ** thấy. Nếu ai đó dùng kịch bản này để nghiệm thu cách sản phẩm xử lý ack hỏng,
-phép nghiệm thu ấy **luôn xanh** và **không chứng minh gì**.
-*Chiều ngược:* hành vi hiện tại có thể mới là hành vi ĐÚNG. Một outage mạng nhìn từ phía biên
-**là** "xếp hàng", không phải "thất bại" — sản phẩm đệm rồi phát lại. Nếu vậy thì cái sai là **hai
-chuỗi**, và phép sửa là văn chứ không phải mã. Nhưng hai chuỗi ấy là **văn đã xuất bản** ở hai lớp
-khác nhau, một trong hai người vận hành đọc thấy, nên sửa chúng cũng là một quyết định về cái sản
-phẩm này **hứa**.
-
-**Nếu KHÔNG quyết định.** Hai chuỗi ở lại; kịch bản outage tiếp tục được mô tả bằng một hành vi nó
-không có; và câu *"nên `DemoTransport` trả ack hỏng hay không"* — câu duy nhất quyết được — không ai
-hỏi.
-
----
-
-## 23. `IUnsPublisher.PublishBirth`/`PublishDeath` được khai, được cài đặt đầy đủ, và KHÔNG có caller nào dưới `src/`: chưa DBIRTH nào từng được phát
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AN-1 (đợt 8), xác nhận lại trên mã.
-
-**Đo được cái gì — quần thể mở TRỌN ở SHA đã ghim.** `git grep` cho `PublishBirth|PublishDeath` trên
-mọi `*.cs` của cây: khai báo trong `IUnsPublisher`; cài đặt trong `UnsPublisher` (kèm mã hoá
-DBIRTH/DDEATH đầy đủ và phép reset bảng alias); phép điều phối work-item **bên trong chính
-`UnsPublisher`**; một `<see cref>` trong `UnsTopicBuilder`; và ở `tests/`, **năm** file —
-`EdgePipelineTests`, `Uns/UnsNodeLifecycleTests`, `FleetHostGateCommitCompletionTests`,
-`FleetHostUnsLifecycleTests`, `Line/LineControllerTests`. 📎 **Con số ấy đọc *"bốn"* cho tới
-2026-08-20 và được sửa cùng ngày (AO-1): lần quét đầu bị `head` cắt cụt, và phép đo lại chạy từ
-GỐC REPO — xem khối rút ở mục 29 để biết vì sao chỗ đứng khi gõ lệnh là một phần của miền dụng cụ.**
-**Không route, không service, không đường nào dưới `src/` gọi chúng** — và phép phủ định ấy đã được
-đo lại ở miền rộng hơn, nó đứng vững.
-Đối chiếu: `PublishNodeBirth`/`PublishNodeDeath` **có** caller thật trong `FleetCore`, từ các chuyển
-trạng thái Start/Stop/E-stop.
-
-🔴 **Cùng họ, cùng lớp, đo cùng lúc và nêu ở đây vì bỏ nó đi là nêu một nửa:** các chuỗi `WithWill`
-và `LastWill` **không xuất hiện trong một file `.cs` nào** của cây. Nên NDEATH chỉ được phát khi
-tiến trình này **tự chọn** phát; một lần bị kill đột ngột không phát gì. Và `SparkplugMsgType.NDATA`
-**không bao giờ được phát** — tham chiếu duy nhất ngoài khai báo là một unit test về hình dạng topic.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Uns.IUnsPublisher.PublishBirth`/`.PublishDeath`;
-`St4i.EdgeCore.Uns.UnsPublisher.PublishBirthCoreAsync`/`.PublishDeathCoreAsync`;
-`St4i.EdgeCore.Uns.UnsPublisher.PublishNodeBirth`/`.PublishNodeDeath` (đối chiếu, có caller);
-`St4i.EdgeCore.Fleet.FleetCore` (chỗ gọi node-level); `St4i.EdgeCore.Uns.UnsTopicBuilder`
-(`SparkplugMsgType`, kể cả `NDATA`).
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* một subscriber Sparkplug **không bao giờ thấy DBIRTH** cho bất kỳ thiết bị nào trên
-xương sống này, nên **bảng alias mà DBIRTH sinh ra để thiết lập không bao giờ được phát**, và mọi
-DDATA mang alias mà subscriber không có giấy khai sinh. Đó là một sai lệch so với chính giao thức mà
-lớp này tự nhận cài đặt.
-*Chiều ngược:* đây là một **hoãn có chủ ý đã ghi**: doc của `UnsTopicBuilder` từ G2-2/G2-3 nói rõ
-sequencing birth/death nằm ngoài phạm vi. Nối dây nó **là một phép đổi hành vi giao thức** kèm luật
-sequencing (chỉ NBIRTH được reset bộ đếm chuỗi của edge node) và kèm một câu hỏi về MQTT Will chưa
-ai trả lời. Hoãn tiếp cũng là một lựa chọn hợp lệ — **miễn là nó được ghi là một lựa chọn**.
-
-**Nếu KHÔNG quyết định.** Hai phương thức ở lại trên một interface đã xuất bản, đọc như một khả năng
-đang có. Bất kỳ ai tích hợp theo interface ấy sẽ cho rằng device birth được phát, vì interface nói
-thế và cài đặt có ở đó.
-
----
-
-## 24. `ModbusOptions`/`OpcUaOptions` công bố hằng số TÊN biến môi trường — và ĐÂY LÀ CHỖ PHÉP ĐO CỦA ĐỢT 8 NÓI SAI
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AN-1 (đợt 8) 🔴 **và đo lại bởi nhiệm vụ này, cho một
-kết quả KHÁC.**
-
-**Đo được cái gì — LIỆT KÊ TRƯỚC.** Bảy hằng số `public const string` mang tên biến môi trường trên
-hai lớp: `ModbusOptions.EnvVarEnabled`, `.EnvVarHost`, `.EnvVarPort`, `.EnvVarMapPath`;
-`OpcUaOptions.EnvVarEnabled`, `.EnvVarEndpoint`, `.EnvVarMapPath`. Đo người đọc, ở SHA đã ghim, trên
-**cả** dạng gọi tên đủ đường dẫn:
-
-* **Hai cái CÓ người đọc bên ngoài file khai báo:** `ModbusOptions.EnvVarMapPath` và
-  `OpcUaOptions.EnvVarMapPath`, cả hai được **`St4i.EngineApi/Program.cs`** gọi tên (dạng đủ đường
-  dẫn `St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarMapPath`), trong hai thông điệp lỗi khởi
-  động.
-* **Năm cái còn lại không có người đọc nào ngoài file khai báo của chính chúng.**
-* 🔴 **KHÔNG file `.cs` nào dưới `src/` ngoài hai file khai báo mang bất kỳ chuỗi nào trong bảy
-  chính tả ấy ở dạng literal.** Cả hai host sản xuất lấy giá trị qua `ModbusOptions.FromEnvironment()`
-  / `OpcUaOptions.FromEnvironment()`, tức **qua chính hằng số**, không qua một bản sao.
-* Bản sao chính tả **có tồn tại**, nhưng ở ba chỗ khác: `README.md` (hai bảng biến môi trường,
-  §16.4 và §16.6) và **hai file test** — `tests/St4i.EngineApi.Tests/ConnectorEndpointsTests.cs` và
-  `…/ConnectorEndpointsEnvSeedingSideEffectsTests.cs` — cả hai gọi
-  `Environment.SetEnvironmentVariable("ST4I_MODBUS_ENABLED", …)` bằng literal.
-
-🔴 **Nên hai câu của báo cáo đợt 8 được SỬA LẠI ở đây, và cái sai ấy là một phát hiện.** Đợt 8 viết:
-*"the env-var name constants are published so a host can NAME the variable, and no host does: both
-production hosts hardcode the literal instead"*, và §8(3) của nó nhắc lại rằng hai chuỗi ấy *"appear
-hardcoded in BOTH `St4i.EngineApi` and `St4i.EdgeService`"*. **Cả hai nửa đều không đứng vững:** một
-host **có** gọi tên hằng số (hai lần), và **không** host nào viết cứng chuỗi. Thứ đợt 8 đọc thấy
-trong hai host là **dòng chú thích `//`**, không phải literal — `EdgeConnectors.cs` thậm chí đang
-nói ngược lại (*"This host has NO environment-variable connector route at all — it has never read
-ST4I_MODBUS_ENABLED/ST4I_OPCUA_ENABLED"*). 🔴 **Và bảng phân nhóm của chính đợt 8 đã mâu thuẫn với
-văn xuôi của nó**: nhóm **C0 = 2** của nó nghĩa là *"chỉ `St4i.EngineApi` với tới, mà nó đã giữ
-IVT"* — đúng hai hằng số `EnvVarMapPath` ấy. **Bảng đúng; đoạn văn cạnh bảng sai.** Cùng loài với
-cái mà chính đợt 8 tự bắt được ở chỗ khác: *một phép grep cho dạng KHÔNG đủ đường dẫn không thấy
-dạng ĐỦ đường dẫn.*
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Drivers.Modbus.ModbusOptions` (bảy hằng số và
-`FromEnvironment`); `St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions` (cùng thế, cộng `EnvVarPkiDir` đã
-được `OpcUaPkiPaths.DefaultRoot` đọc); `St4i.EngineApi.Program` (hai chỗ gọi tên và hai chỗ gọi
-`FromEnvironment`); `St4i.EdgeService.EdgeConnectors` (một chỗ gọi `FromEnvironment`);
-`README.md` §16.4/§16.6; `ConnectorEndpointsTests`, `ConnectorEndpointsEnvSeedingSideEffectsTests`.
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* **năm** hằng số công khai không ai đọc là bề mặt đã công bố mà không có mục đích còn
-sống — đúng câu hỏi mục 25 đang hỏi trên cùng assembly. Và nguy cơ trôi chính tả **có thật nhưng
-nằm chỗ khác**: giữa hằng số, bảng README, và hai file test; **không gì đỏ lên nếu ba bản ấy lệch
-nhau**. Đó vẫn là hình dạng trùng lặp `DemoModeGate`/`DemoEnabledEnvVar` mà file này đã ghi một
-lần — chỉ khác cặp.
-*Chiều ngược:* hạ năm hằng số ấy xuống `internal` là **miễn phí về biên dịch** (không ai ngoài
-assembly đọc) nhưng **không mua được gì**: bản sao thật là README và test, và chúng vẫn viết literal
-sau đó. Giá trị thật của một hằng số công khai là để một **host bên ngoài** gọi tên biến — mà đúng
-hai cái đã được gọi tên như thế, nên cơ chế ấy **đang hoạt động** chứ không chết hẳn.
-
-**Nếu KHÔNG quyết định.** Năm hằng số ở lại trong 97 thành viên của mục 25 và tiếp tục được đếm ở
-đó. Bản sao chính tả trong README và hai file test ở lại, không nhân chứng, và ngày một biến bị đổi
-tên là ngày cả ba bản phải được nhớ cùng lúc.
-
----
 
 ## 25. ĐIỀU KIỆN RỜI PHẦN II CỦA MỤC 12 — họ driver: viết tài liệu, hay thu hẹp bề mặt? Và với hơn một nửa, câu hỏi ấy KHÔNG TỒN TẠI
 
@@ -5887,6 +5629,499 @@ thêm (hai thành viên mới đều `private static`). Không payload nào đ�
 **Bằng chứng:** `scripts/verify-suites.sh` khối `TASK AQ-1` ngay trên `EXPECT_EDGECORE`;
 `.superpowers/sdd/items-16-21/task-1-report.md`.
 
+
+## 18. Cổng Demo gác CHẾ ĐỘ chứ không gác BỘ SINH GIẢ: một route thứ hai trỏ cả fleet đang chạy vào một transport mất gói, và `GET /v1/mode` vẫn trả lời chế độ đã chọn
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã. **Đây là cái nặng
+nhất trong sáu phát hiện của đợt 7 và nó vẫn là cái tôi đặt trước mặt anh đầu tiên.**
+
+**Đo được cái gì — hai route đọc TRỌN.** `PUT /v1/mode` (`ModeEndpoints`) nhận `DemoModeGate` qua DI
+và từ chối `TransportMode.Demo` bằng **400** *"Demo mode is not enabled on this deployment."* khi
+`demoGate.Enabled` là `false`. `POST /v1/scenario` (`ScenarioEndpoints`) **không nhận `DemoModeGate`
+ở bất kỳ đâu trên đường của nó** — chữ ký của nó là `(ScenarioRequest, FleetHost, HttpContext,
+AuditRecorder, CancellationToken)`. Với `{"networkOutage": true}`, `FleetCore.ApplyNetworkOutageLocked`
+gọi `SwitchableTransport.SetInner` với một `DemoTransport` dựng ở
+`fakeErrorRate: OutageFakeErrorRate` = **0.9**.
+
+**Và bề mặt trạng thái không nói ra:** `GET /v1/mode` trả `FleetHost.Mode` → `FleetCore.Mode` →
+`TransportCoordinator.Mode`, tức chế độ người vận hành **đã chọn**; đường outage **cố ý không chạm**
+nó (`ApplyNetworkOutageLocked(false)` gọi `ApplyMode(_transportCoordinator.Mode)` — đúng chế độ hiện
+hành). Bề mặt duy nhất nói sự thật là pane API-trace, đọc `SwitchableTransport.Mode`.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EngineApi.Endpoints.ModeEndpoints` (nhánh gác);
+`St4i.EngineApi.Endpoints.ScenarioEndpoints` (route `POST /v1/scenario`, `Policies.Engineer`);
+`St4i.EdgeCore.Fleet.FleetCore.ApplyNetworkOutageLocked` và hằng số `OutageFakeErrorRate`;
+`St4i.EdgeCore.Transport.SwitchableTransport.SetInner`; `St4i.EdgeCore.Transport.DemoTransport`;
+`St4i.EdgeCore.Config.DemoModeGate`. **Không nhân chứng:** không file test nào trong cây nhắc cùng
+lúc `/v1/scenario` và `DemoModeGate`; hai file chạm route ấy (`Auth/RbacPolicyTests`,
+`Auth/AuditWiringTests`) kiểm quyền và audit, không kiểm cổng.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* trên một bản triển khai đã **TẮT** Demo — tức đã tuyên bố rằng máy này sẽ không bịa
+dữ liệu — một Engineer vẫn đặt được cả fleet đang chạy sau một bộ bịa. Mọi reading được ack **tại
+chỗ**, **không gì tới máy chủ hệ sinh thái**, và `GET /v1/mode` vẫn trả `Live`. Một bên nói "đang
+Live", bên kia không gửi gì đi.
+*Chiều ngược, và bỏ nó đi là nói sai:* đường ấy **có audit** — `scenario.apply` ghi một hàng audit
+mang trọn scenario đã áp, `networkOutage` trong đó — và nó đòi `Policies.Engineer`, nên nó **không
+ẩn danh và không vô quyền**. Nó cũng **hoàn nguyên được**: `ApplyNetworkOutageLocked(false)` trỏ lại
+transport về chế độ hiện hành. Và outage scenario là một **tính năng kể chuyện** có chủ ý cho phòng
+triển lãm; gác nó bằng cổng Demo sẽ lấy mất tính năng ấy khỏi mọi bản cài đã tắt Demo.
+
+**Nếu KHÔNG quyết định.** Cờ `DemoModeGate` giữ **hai nghĩa cùng lúc** — *"đừng chào chế độ Demo"*
+và *"đừng bao giờ bịa dữ liệu trên máy này"* — và hai nghĩa ấy cho hai câu trả lời khác nhau ở đúng
+route này. Cho tới khi anh chọn một nghĩa, ai đọc tên cờ cũng sẽ đọc ra nghĩa thứ hai và tin rằng
+nó đã được cưỡng chế.
+
+### ✅ ĐÃ THI HÀNH 2026-08-21 (AR-1) — cổng nay gác **HAI** route, và **ba câu của mục này không sống sót qua phép đo**
+
+**Đã làm gì.** `St4i.EngineApi.Endpoints.ScenarioEndpoints` nay nhận `DemoModeGate` và từ chối bằng
+**400** — cùng hình dạng "400 thật thà" mà `PUT /v1/mode` đã dùng — trước khi `FleetHost.ApplyScenario`
+chạy, nên một yêu cầu bị từ chối để nguyên scenario **và** transport của fleet đang chạy. Không audit row
+(đúng luật thứ tự WS-D-D4). **Không trường mới nào được thêm vào payload đã xuất bản; không tên công khai
+nào đổi.**
+
+🔴 **Câu SAI thứ nhất — "một route".** Mục nêu `POST /v1/scenario`. Đo được: **HAI** route dẫn tới
+`FleetCore.ApplyNetworkOutageLocked`. Preset xuất xưởng `"network-outage"`
+(`FleetHost.Presets`, `new ScenarioConfig(1.0, 0.0, 0.0, true)`) tới đó qua **`POST /v1/scenario/preset`**,
+mang **không** trường `networkOutage` nào trong thân request. Một bản sửa chỉ soi `ScenarioRequest` sẽ để
+route ấy **mở toang**. Cổng vì thế soi **config của preset đã phân giải**, không soi tên preset — mọi entry
+catalogue về sau được phủ mà không phải sửa dòng nào.
+
+🔴 **Câu SAI thứ hai — "bề mặt duy nhất nói sự thật là pane API-trace".** `GET /v1/scenario`
+(`Policies.Operator`) trả `ScenarioDto`, **có** trường `NetworkOutage` **và** một `StatusLine` gọi tên
+outage. Đó là một bề mặt HTTP đã xuất bản, không phải một pane UI. **Nên câu hỏi thứ hai của brief —
+"`/v1/mode`, `/v1/health`, hay một trường mới?" — có câu trả lời không cần trường nào: bề mặt nói thật ĐÃ
+CÓ SẴN.** Điều kiện DỪNG về "thêm trường vào payload đã xuất bản" **không nổ**, vì không có đường nào phải
+đi qua đó.
+
+**Tập `ScenarioConfig` — LIỆT KÊ TRƯỚC, ĐẾM SAU.** Bốn trường: `CycleRateMultiplier`, `ExtraDefectRate`,
+`FaultRate`, `NetworkOutage`. **Đúng một** trường chạm **transport** — trục mà cờ này cai quản, theo doc
+của chính `DemoModeGate` (*"nobody can switch this machine's transport to a fabricated fleet by mistake"*).
+Ba trường kia đổi thứ **bộ mô phỏng sinh ra**; sản phẩm của chúng **vẫn đi tới máy chủ thật** và **vẫn
+được `GET /v1/scenario` báo đúng giá trị**. Gác chúng sẽ không phải là nới nghĩa của cờ mà là tuyên bố
+rằng một máy **mô phỏng** không được mô phỏng. **Nên `networkOutage` LÀ cái duy nhất — trên trục ấy — còn
+tập ROUTE thì lớn hơn cái mục nêu.**
+
+**Chiều ngược, giữ nguyên vì bỏ đi là nói một nửa.** Bản sửa này **lấy mất** kịch bản outage khỏi mọi bản
+cài đã tắt Demo. Đó là mất mát năng lực thật, đúng như mục cảnh báo, và là **cái giá** của việc bắt cờ mang
+**một** nghĩa thay vì hai. Đường bị đóng chưa bao giờ ẩn danh hay vô quyền — nó đã đòi `Policies.Engineer`
+và đã ghi audit; thứ nó **chưa** có là khả năng bị **từ chối**.
+
+**Nhân chứng ĐỎ ĐƯỢC + cặp đối chứng chạy trọn.** Bốn test trong
+`tests/St4i.EngineApi.Tests/Auth/AuditWiringTests.cs`, cố ý là **HAI CẶP**: hai test đòi 400 khi cổng
+**tắt**, hai test đòi outage **vẫn áp được** khi cổng **bật** và một preset không-outage **không bị ảnh
+hưởng** khi cổng tắt. Không có cặp thứ hai, một bản build **xoá quách** tính năng triển lãm cũng sẽ xanh.
+Cặp đối chứng: hai điều kiện cổng bị ép `false` → **`Failed: 2, Passed: 3`** (đúng hai test DemoDisabled
+đỏ); hoàn nguyên, chạy lại → **`Passed: 5`**.
+
+**Bằng chứng:** `scripts/verify-suites.sh` khối `AR-1` ngay trên `EXPECT_EDGECORE`;
+`.superpowers/sdd/items-18-19-20-22-23-24/task-1-report.md`.
+
+📎 **Hai doc comment đã nói đúng sự thật của mục này TỪ TRƯỚC** (`DemoModeGate.Enabled` và
+`TransportMode.Demo` trong `Enums.cs`, cả hai do các đợt tài liệu của mục 12 viết). Chúng nay **sai theo
+chiều ngược lại** và đã được sửa tại chỗ, giữ nguyên văn câu cũ kèm dấu 🔴 CORRECTED.
+
+---
+
+## 19. `TransportCoordinator` công bố bốn bộ truy cập như "cái nhìn của điều phối viên", và hai trong bốn KHÔNG ai đọc giá trị
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
+
+📎 **Mục này mang HAI khuyết tật mà brief liệt kê riêng, và lý do gộp là chúng là MỘT quyết định
+trên MỘT lớp.** Báo cáo nguồn (đợt 7 §7(1)) cũng viết chúng thành một phát hiện kèm một "người anh
+em". Một phán quyết chỉ chạm `.Auto` sẽ để `.Demo` đứng nguyên trong cùng bộ tứ, mang cùng câu hỏi.
+
+**Đo được cái gì — quần thể mở TRỌN ở SHA đã ghim.** `git grep` cho `\.Auto\b` trên **mọi** `*.cs`
+của cây (kể cả `server/` và `client/`, không có trên đĩa): **mọi** lần xuất hiện đều là
+`TransportMode.Auto`. **Không một lần nào là `TransportCoordinator.Auto`** — không chỗ gọi sản xuất,
+không bài test, không `<see cref>`. Cùng phép đo cho `\.Demo\b`: đúng **một** lần trỏ vào
+`TransportCoordinator.Demo`, và nó nằm trong doc comment của `St4iMachineSimulator.Services.FleetService`
+— **một tham chiếu tài liệu, không phải một phép đọc**. Miền dụng cụ được kiểm chứ không giả định:
+`git grep` trên `*.xaml` cho một binding tới `Auto`/`Demo` trả về **không gì**.
+
+`Auto` không phải một trường trần: nó là `public AutoTransport Auto { get { lock (_gate) return _auto; } }`
+— **nó lấy một khoá để trả lời một câu hỏi không ai hỏi**. `RebuildLive` duy trì cả hai trường dưới
+khoá ở **mọi** lần biên tập Settings, và doc của chính `TransportCoordinator` mô tả bộ tứ
+`Mode`/`Live`/`Demo`/`Auto` là cái nhìn đã công bố của nó. **Hai trong bốn là hư cấu đã công bố.**
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Transport.TransportCoordinator.Auto`,
+`.Demo`, `.Live`, `.Mode`, `.RebuildLive`; `St4iMachineSimulator.Services.FleetService` (chỗ duy nhất
+nhắc tên `.Demo`, trong văn xuôi).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* đây là **bề mặt công khai đã chết** trên một assembly mà mục 25 đang hỏi đúng câu
+"cái gì nên `public`". Nó cũng có một chi phí đọc thật: người đọc tiếp theo của lớp này sẽ tin rằng
+bộ tứ ấy là hợp đồng và sẽ duy trì nó.
+*Chiều ngược:* **xoá một thành viên công khai là một phép đổi hợp đồng**, và P-2 chi phối chính tả
+thành viên công khai. Phép đo này chỉ đếm người đọc **trong cây này**; nếu `St4i.EdgeCore` được tiêu
+thụ ở nơi khác, phép đếm im lặng về chuyện đó. Và giá của việc **giữ** hai bộ truy cập ấy hôm nay là
+gần bằng không — hai `get` dưới một khoá đã có.
+
+**Nếu KHÔNG quyết định.** Hai thành viên ở lại, tiếp tục được duy trì dưới khoá, tiếp tục đọc như
+hợp đồng — và chúng sẽ xuất hiện lại trong mọi phép đo bề mặt công khai về sau, mỗi lần lại tốn đúng
+phép liệt kê này để chứng minh chúng chết.
+
+### ✅ ĐÃ THI HÀNH 2026-08-21 (AR-1) — **KHÔNG gỡ thành viên nào**; hai câu tài liệu SAI đã sửa, và cái khoá **KHÔNG bỏ được**
+
+**Không thành viên công khai nào bị gỡ.** Chủ sở hữu chỉ phán GỠ cho **mục 23**. P-2 chi phối chính tả
+thành viên công khai; `.Auto` và `.Demo` ở nguyên.
+
+**Bề mặt ĐỌC, quét lại toàn cây ở SHA đã ghim.** Lệnh, chạy **từ GỐC REPO `D:\SOURCES\avi-aoi-sim`**:
+`git grep --full-name -n -E '\.Auto\b' 3f6c8f54 -- ':(top)'` và cùng thế cho `\.Demo\b`. Quần thể **có**
+`server/`, `client/`, `examples/` — chúng nằm trong commit dù sparse checkout để `server/` và `client/`
+ngoài đĩa. Kết quả: **mọi** hit của `\.Auto\b` là `TransportMode.Auto` hoặc kiểu `AutoTransport` — **không
+một hit nào** là `TransportCoordinator.Auto`. Với `\.Demo\b`, **đúng một** hit trỏ vào
+`TransportCoordinator.Demo`, và nó là `<see cref>` trong doc comment của
+`St4iMachineSimulator.Services.FleetService` — **một tham chiếu tài liệu, không phải một phép đọc**. Mục
+đo đúng.
+
+📎 **Nửa "nói ra sự thật" của mục này ĐÃ ĐƯỢC TRẢ TỪ TRƯỚC** — doc comment trên `.Demo` và `.Auto` đã ghi
+đúng điều mục yêu cầu ghi, do đợt 7 của mục 12 (`dea8c104`) viết. Cho nên việc còn lại **không phải** viết
+sự thật ấy lần nữa, mà là sửa **hai câu SAI** trong chính đoạn văn ấy:
+
+🔴 **Câu SAI thứ nhất — một phủ định tồn tại KHÔNG có trần.** `.Auto` viết *"nothing **anywhere** reads
+it"*. Không lệnh nào trong repo này lập được một phủ định trên tập **không giới hạn**. Đã bị giới hạn lại
+thành đúng cái đã đo ("in this repository"), kèm câu nêu rõ **cái không đo được**: ai tiêu thụ
+`St4i.EdgeCore` từ **ngoài** repo thì phép đếm này im lặng. (`.Demo` vốn đã tự giới hạn đúng — nay cả hai
+mang cùng cái trần.)
+
+🔴 **Câu SAI thứ hai — một so sánh sai sự thật.** `.Auto` viết *"It is the only member of this quartet with
+no consumer at all; even `Demo` is at least referred to."* Nhưng `.Auto` **CÓ** được trỏ tới: bằng
+`<see cref="Auto"/>` nằm **ba dòng phía trên**, trong chính summary của `.Demo`. Phân biệt thật hẹp hơn
+nhiều — tham chiếu tới `.Demo` **ra khỏi file**, tham chiếu tới `.Auto` **không rời file**. **Cả hai đều
+không có người đọc.** Câu cũ giữ nguyên văn trong đoạn sửa, không xoá.
+
+🔴 **Cái khoá KHÔNG bỏ được — đo rồi mới từ chối.** `_auto` bị `RebuildLive` ghi lại **dưới đúng `_gate`
+ấy**, nên `get` này là **nửa acquire** của một cặp release/acquire. Bỏ khoá đi thì một trường tham chiếu
+được một luồng công bố và một luồng khác đọc **không còn hàng rào nào ở giữa**: gán tham chiếu là nguyên
+tử nên **không có gì rách**, nhưng người đọc có thể quan sát một thực thể **cũ tuỳ ý**. Đó là **đổi ngữ
+nghĩa**, không phải bỏ nghi thức — nên uỷ quyền *"bỏ cái khoá thừa **nếu bỏ được mà không đổi ngữ
+nghĩa**"* **không** cho phép bỏ. Lý do ấy nay nằm trong doc, để phép đo này không phải chạy lại.
+
+**Nhân chứng.** 🔴 **Đây KHÔNG phải một nhân chứng đỏ được** — mục này chỉ đổi **lời**, không đổi hành vi,
+nên không có bài test nào đỏ được ở phía trước. Nhân chứng là **W-1 xanh ở ngọn nhánh** cộng phép quét
+`:(top) --full-name` ở trên, chứng minh lời mới đúng. **Không hằng số nào dịch vì mục này.**
+
+---
+
+## 20. `TransportCoordinator` dispose cái nó THAY, và không có đường nào dispose cái CUỐI CÙNG
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
+
+**Đo được cái gì.** `RebuildLive` gọi `oldLive.Dispose()` ở **câu lệnh cuối** của nó — có chủ ý, và
+doc của chính nó giải thích cái `HttpClient` rò rỉ mà nó ngăn. Nhưng `TransportCoordinator` là
+`public sealed class` **không** khai `IDisposable`/`IAsyncDisposable`, **không** có `Stop`, và
+`oldLive.Dispose()` là lần gọi `Dispose` **duy nhất** trên `_live` trong cả lớp. Nên thực thể đang
+được giữ lúc tiến trình kết thúc **không được ai dispose**.
+
+🔴 **Đây KHÔNG phải một khẳng định rò rỉ trên sản xuất, và nói một chiều ở đây là nói sai.** Hai
+composition root của sản phẩm — `St4i.EngineApi/Program.cs` và `St4iMachineSimulator/App.xaml.cs`,
+**hai chỗ `new TransportCoordinator(` duy nhất dưới `src/`** — đều đăng ký nó là **singleton** DI,
+nên đúng **một** cái được dựng cho mỗi tiến trình và hệ điều hành thu hồi socket pool của nó lúc
+thoát. Chỗ nó **không** vô hại là một tiến trình dựng **NHIỀU** cái: các bộ test làm đúng thế, ở
+vài chục file, mỗi file để lại một `LiveTransport` chưa dispose trong suốt đời test host.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Transport.TransportCoordinator` (khai báo lớp,
+`RebuildLive`); `St4i.EdgeCore.Transport.LiveTransport`; hai chỗ đăng ký singleton trong
+`St4i.EngineApi.Program` và `St4iMachineSimulator.App`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* đây là một **bất đối xứng trong quy tắc sở hữu do chính lớp ấy tuyên bố** — nó nhận
+trách nhiệm dispose ở một nửa vòng đời và bỏ nửa kia. Bất đối xứng ấy là thứ người đọc sau sẽ suy ra
+sai theo cả hai hướng.
+*Chiều ngược:* thêm một đường dispose **kéo theo một câu hỏi sở hữu**: điều phối viên **không** sở
+hữu `switchable` hay `demo` (chúng được truyền vào), nên một `Dispose()` ngây thơ sẽ dispose thứ
+không phải của nó. Và trên sản xuất, giá hôm nay là **không** — một tiến trình, một thực thể, thu
+hồi lúc thoát.
+
+**Nếu KHÔNG quyết định.** Hành vi giữ nguyên; chi phí ở lại trong các test host; và quy tắc sở hữu
+của lớp ở lại đúng một nửa, không có gì trong cây nói ra nửa còn lại.
+
+### ✅ ĐÃ THI HÀNH 2026-08-21 (AR-1) — đường tắt máy có thứ tự, và **câu hỏi sở hữu mà mục nêu KHÔNG tồn tại được**
+
+**Đã làm gì.** `TransportCoordinator` nay khai `IDisposable`. `Dispose()` gỡ đăng ký
+`_auto.FallbackChanged` rồi dispose **đúng `_live`**, dưới `_gate`, **idempotent** (một container DI dispose
+singleton của nó và một test cũng dispose nó thì không đánh nhau). **Thêm** một thành viên công khai —
+không **đổi** hay **gỡ** tên nào.
+
+🔴 **Cái trần của mục GIỮ NGUYÊN, và nói lại ở đây vì nói quá chính là lỗi mục này tồn tại để sửa: ĐÂY
+KHÔNG PHẢI MỘT KHẲNG ĐỊNH RÒ RỈ TRÊN SẢN XUẤT.** Hai composition root đăng ký lớp này là **singleton** DI
+— một thực thể mỗi tiến trình, socket pool được HĐH thu hồi lúc thoát dù có hay không có bản sửa này. Chỗ
+thực sự đang trả giá là tiến trình dựng **NHIỀU** coordinator: chính các bộ test, ở vài chục file.
+
+🔴 **Câu hỏi sở hữu mà mục nêu KHÔNG NỔ ĐƯỢC, và đó là một phép đo chứ không phải một lựa chọn.** Mục lo
+rằng *"một `Dispose()` ngây thơ sẽ dispose thứ không phải của nó"*. Đo được: trong bốn transport lớp này
+chạm, **chỉ `LiveTransport` là `IDisposable`**. `SwitchableTransport`, `DemoTransport` và `AutoTransport`
+**không khai `Dispose` nào cả** — nên không có gì trên chúng để gọi nhầm. Điều đó khớp đúng cái ctor của
+chính lớp đã tuyên bố: `switchable` và `demo` **không** sở hữu, `initialLive` **có** ("owned, but only
+partly"). Nay sở hữu **trọn**. Doc của `initialLive` — vốn tự nói rằng lớp này *"has no shutdown path of
+its own"* — đã được sửa, vì để nguyên là để lại một câu sai.
+
+**Nhân chứng ĐỎ ĐƯỢC + cặp đối chứng chạy trọn.** Bốn test mới,
+`tests/St4i.EdgeCore.Tests/Transport/TransportCoordinatorDisposalTests.cs`. Disposal được quan sát qua
+**chuỗi thật** (`Dispose` → `LiveTransport.Dispose` → `St4iDeviceClient.Dispose` → `HttpClient.Dispose` →
+handler; SDK dựng client bằng `new HttpClient(handler)` và overload ấy mặc định `disposeHandler: true`),
+không qua một cờ đại diện. Cặp đối chứng: **thân** `Dispose()` bị làm rỗng, chữ ký giữ nguyên →
+**`Failed: 3, Passed: 1`** — ba test nửa MỚI đỏ, còn
+`RebuildLive_StillDisposesTheReplacedLiveTransport` **vẫn xanh**, đúng cái chứng minh cặp này **phân biệt
+được** chứ không cùng nhau nhúc nhích. Hoàn nguyên, chạy lại → **`Passed: 4`**.
+`EXPECT_EDGECORE` 1168 → 1171 (+4 ở đây, −1 ở mục 23).
+
+---
+
+## 22. Hai chuỗi đã xuất bản hứa những ack *"failed"* mà `DemoTransport` không bao giờ trả
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
+
+**Đo được cái gì — cả hai chuỗi trích nguyên văn, và cả ba nhánh mở trọn.** Doc comment của
+`ScenarioConfig.NetworkOutage` nói: *"acks come back queued/failed while the fleet keeps running"*.
+Dòng trạng thái người vận hành nhìn thấy, `St4i.EngineApi.Fleet.Dtos`, nói: *"network outage (acks
+queued/failing)"*. Đo trên `DemoTransport.SendAsync`: **mọi** nhánh trả `Success: true` — nhánh
+queued trả `TransportAck(Success: true, Queued: true, …)`, `AckProcessResult` và `AckInspection` trả
+`Success: true, HttpStatus: 201`, `AckTelemetry` trả `Success: true, HttpStatus: 202`. **Không nhánh
+nào trả một ack thất bại.** `_fakeErrorRate` chỉ quyết định `ShouldSimulateQueued`, tức tỉ lệ đi vào
+nhánh **queued** — không phải tỉ lệ hỏng.
+
+📎 **Cả hai chuỗi nằm NGOÀI cụm mà đợt 7 trả, nên đợt ấy cố ý KHÔNG rút chúng tại chỗ** — với ra
+ngoài ranh giới của mình để sửa hai file khác là một việc khác. Chúng vẫn đứng nguyên văn hôm nay.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Engine.ScenarioConfig.NetworkOutage` (doc comment);
+`St4i.EngineApi.Fleet.Dtos` (dòng `outageText`); `St4i.EdgeCore.Transport.DemoTransport.SendAsync`,
+`.AckProcessResult`, `.AckInspection`, `.AckTelemetry`, `.ShouldSimulateQueued`;
+`St4i.EdgeCore.Fleet.FleetCore.ApplyNetworkOutageLocked`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* người vận hành đang chạy kịch bản outage được **hứa** rằng họ sẽ thấy ack hỏng, và họ
+sẽ **không bao giờ** thấy. Nếu ai đó dùng kịch bản này để nghiệm thu cách sản phẩm xử lý ack hỏng,
+phép nghiệm thu ấy **luôn xanh** và **không chứng minh gì**.
+*Chiều ngược:* hành vi hiện tại có thể mới là hành vi ĐÚNG. Một outage mạng nhìn từ phía biên
+**là** "xếp hàng", không phải "thất bại" — sản phẩm đệm rồi phát lại. Nếu vậy thì cái sai là **hai
+chuỗi**, và phép sửa là văn chứ không phải mã. Nhưng hai chuỗi ấy là **văn đã xuất bản** ở hai lớp
+khác nhau, một trong hai người vận hành đọc thấy, nên sửa chúng cũng là một quyết định về cái sản
+phẩm này **hứa**.
+
+**Nếu KHÔNG quyết định.** Hai chuỗi ở lại; kịch bản outage tiếp tục được mô tả bằng một hành vi nó
+không có; và câu *"nên `DemoTransport` trả ack hỏng hay không"* — câu duy nhất quyết được — không ai
+hỏi.
+
+### ✅ ĐÃ THI HÀNH 2026-08-21 (AR-1) — sửa LỜI, không đổi hành vi. 🔴 **Và "hai chuỗi" là một phép ĐẾM THIẾU: đo được SÁU**
+
+**Hành vi KHÔNG đổi.** `DemoTransport` không bị đụng. Mục cho hai đường và bảo đừng tự chọn; phép đo chọn
+đường **sửa lời**, vì hành vi hiện tại là hành vi **đúng** và nguồn sự thật đã tự nói thế: doc của chính
+tham số `fakeErrorRate` ghi *"Despite the name it fabricates no ERRORS … NO path through this class ever
+returns an unsuccessful ack."* Mọi nhánh của `SendAsync` trả `Success: true`; `0.9` là tỉ lệ đi vào nhánh
+**queued**, không phải tỉ lệ hỏng — **tham số bị đặt sai tên, và cái sai ấy là thứ các chuỗi kia chép
+lại.**
+
+🔴 **ĐẾM THIẾU — mục nêu HAI, đo được SÁU chỗ trong mã `.cs`, ở năm file và ba thứ tiếng:**
+
+1. `St4i.EdgeCore.Engine.ScenarioConfig.NetworkOutage` (doc comment) — *"acks come back queued/failed"*. **Mục nêu.**
+2. `St4i.EngineApi.Fleet.Dtos.BuildStatusLine` — *"network outage (acks queued/failing)"*. **Mục nêu.**
+3. 🔴 `St4iMachineSimulator.ViewModels.ScenarioViewModel.RefreshStatusLine` — *"MẤT MẠNG (ack sẽ queued/lỗi)"*. **Mục KHÔNG nêu**, và đây là dòng mà vận hành viên **WPF** thực sự đọc.
+4. 🔴 `St4i.EngineApi.Fleet.FleetHost.Presets` — mô tả preset `"network-outage"`: *"store-and-forward loi cao (~90%)"*. **Mục KHÔNG nêu**, và chuỗi này được **`GET /v1/scenario` phục vụ**.
+5. 🔴 `ScenarioViewModel.BuildPresets` — *"store-and-forward lỗi cao (~90%) — API Inspector sẽ hiện các dòng queued/lỗi"*. **Mục KHÔNG nêu.**
+6. `St4iMachineSimulator/App.xaml.cs` — doc comment của selftest, *"must make acks come back queued/failed"*. **Để nguyên**: nó mô tả ý định của bài selftest, và bài ấy chấp nhận `Queued`, nên nó không hứa sai với người vận hành.
+
+**Năm chỗ đầu đã sửa** cho đúng phép đo (queued, không bao giờ failed; ~90% là tỉ lệ **queued**).
+
+🔴 **BỐN CHUỖI NỮA ĐO ĐƯỢC MÀ CỐ Ý KHÔNG ĐỤNG, vì nêu thiếu còn tệ hơn:** `web/src/i18n/en.ts` và
+`vi.ts` mang *"high-failure store-and-forward"* / *"lỗi cao"* ở hai khoá mỗi file (`networkOutageHint` và
+mô tả preset). Chúng **sai cùng một kiểu**. Không sửa ở đây vì `web/` đi qua cổng xuất bản web của bản
+build — một trục rủi ro khác với sáu chỗ trên — và mục này được giao là một mục **đổi lời trong mã .NET**.
+**Đây là việc còn nợ, ghi lại chứ không im lặng.**
+
+**Về "đổi payload".** Chỗ (2) và (4) là **giá trị** chuỗi trong payload `GET /v1/scenario`. **Hình dạng
+không đổi**: cùng record, cùng số thành viên, cùng trường `StatusLine`. Chỉ câu **bên trong** thôi hứa một
+thứ không bao giờ xảy ra. Mục đã tự nêu đích danh chuỗi `outageText` của `Dtos` là thứ phải sửa, nên việc
+này nằm trong uỷ quyền — **nhưng nó được ghi ra ở đây thay vì làm lặng lẽ.**
+
+**Nhân chứng.** 🔴 **KHÔNG phải một nhân chứng đỏ được** — mục chỉ đổi lời. Nhân chứng là **W-1 xanh ở
+ngọn nhánh** cộng phép đo trên `DemoTransport.SendAsync` (mọi nhánh, mở trọn) chứng minh lời mới đúng.
+**Không hằng số nào dịch vì mục này**, và **không** test nào khẳng định chuỗi cũ theo nguyên văn (đã quét
+trước khi sửa) — nên không bài test nào phải đổi theo, và điều đó cũng là một phép đo chứ không phải may.
+
+---
+
+## 23. `IUnsPublisher.PublishBirth`/`PublishDeath` được khai, được cài đặt đầy đủ, và KHÔNG có caller nào dưới `src/`: chưa DBIRTH nào từng được phát
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AN-1 (đợt 8), xác nhận lại trên mã.
+
+**Đo được cái gì — quần thể mở TRỌN ở SHA đã ghim.** `git grep` cho `PublishBirth|PublishDeath` trên
+mọi `*.cs` của cây: khai báo trong `IUnsPublisher`; cài đặt trong `UnsPublisher` (kèm mã hoá
+DBIRTH/DDEATH đầy đủ và phép reset bảng alias); phép điều phối work-item **bên trong chính
+`UnsPublisher`**; một `<see cref>` trong `UnsTopicBuilder`; và ở `tests/`, **năm** file —
+`EdgePipelineTests`, `Uns/UnsNodeLifecycleTests`, `FleetHostGateCommitCompletionTests`,
+`FleetHostUnsLifecycleTests`, `Line/LineControllerTests`. 📎 **Con số ấy đọc *"bốn"* cho tới
+2026-08-20 và được sửa cùng ngày (AO-1): lần quét đầu bị `head` cắt cụt, và phép đo lại chạy từ
+GỐC REPO — xem khối rút ở mục 29 để biết vì sao chỗ đứng khi gõ lệnh là một phần của miền dụng cụ.**
+**Không route, không service, không đường nào dưới `src/` gọi chúng** — và phép phủ định ấy đã được
+đo lại ở miền rộng hơn, nó đứng vững.
+Đối chiếu: `PublishNodeBirth`/`PublishNodeDeath` **có** caller thật trong `FleetCore`, từ các chuyển
+trạng thái Start/Stop/E-stop.
+
+🔴 **Cùng họ, cùng lớp, đo cùng lúc và nêu ở đây vì bỏ nó đi là nêu một nửa:** các chuỗi `WithWill`
+và `LastWill` **không xuất hiện trong một file `.cs` nào** của cây. Nên NDEATH chỉ được phát khi
+tiến trình này **tự chọn** phát; một lần bị kill đột ngột không phát gì. Và `SparkplugMsgType.NDATA`
+**không bao giờ được phát** — tham chiếu duy nhất ngoài khai báo là một unit test về hình dạng topic.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Uns.IUnsPublisher.PublishBirth`/`.PublishDeath`;
+`St4i.EdgeCore.Uns.UnsPublisher.PublishBirthCoreAsync`/`.PublishDeathCoreAsync`;
+`St4i.EdgeCore.Uns.UnsPublisher.PublishNodeBirth`/`.PublishNodeDeath` (đối chiếu, có caller);
+`St4i.EdgeCore.Fleet.FleetCore` (chỗ gọi node-level); `St4i.EdgeCore.Uns.UnsTopicBuilder`
+(`SparkplugMsgType`, kể cả `NDATA`).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* một subscriber Sparkplug **không bao giờ thấy DBIRTH** cho bất kỳ thiết bị nào trên
+xương sống này, nên **bảng alias mà DBIRTH sinh ra để thiết lập không bao giờ được phát**, và mọi
+DDATA mang alias mà subscriber không có giấy khai sinh. Đó là một sai lệch so với chính giao thức mà
+lớp này tự nhận cài đặt.
+*Chiều ngược:* đây là một **hoãn có chủ ý đã ghi**: doc của `UnsTopicBuilder` từ G2-2/G2-3 nói rõ
+sequencing birth/death nằm ngoài phạm vi. Nối dây nó **là một phép đổi hành vi giao thức** kèm luật
+sequencing (chỉ NBIRTH được reset bộ đếm chuỗi của edge node) và kèm một câu hỏi về MQTT Will chưa
+ai trả lời. Hoãn tiếp cũng là một lựa chọn hợp lệ — **miễn là nó được ghi là một lựa chọn**.
+
+**Nếu KHÔNG quyết định.** Hai phương thức ở lại trên một interface đã xuất bản, đọc như một khả năng
+đang có. Bất kỳ ai tích hợp theo interface ấy sẽ cho rằng device birth được phát, vì interface nói
+thế và cài đặt có ở đó.
+
+### ✅ ĐÃ GỠ 2026-08-21 (AR-1) — **PHÁN QUYẾT CỦA CHỦ SỞ HỮU**. Tiền đề đã đo lại toàn cây và **ĐỨNG VỮNG**; giá P-2 ghi ở đây
+
+🔴 **TIỀN ĐỀ ĐƯỢC KIỂM LẠI TRƯỚC KHI GỠ, VÌ PHÁN QUYẾT DỰA HẲN LÊN NÓ.** Một câu phủ định tồn tại chỉ
+đúng nếu đã mở **hết** tập. Lệnh, chạy **từ GỐC REPO `D:\SOURCES\avi-aoi-sim`** (chỗ đứng là một phần của
+miền dụng cụ — xem mục 32):
+
+`git grep --full-name -n -E 'PublishBirth|PublishDeath' 3f6c8f54 -- ':(top)'`
+
+Quần thể **gồm** `server/` (1589 file), `client/` (711 file) và `examples/` (10 file) — chúng nằm trong
+commit; sparse checkout để `server/` và `client/` ngoài đĩa, **`examples/` thì CÓ trên đĩa** và hai file
+`.cs` của nó là **hai file `.cs` duy nhất của repo nằm ngoài `tools/machine-simulator/`** (một trong hai,
+`St4iDeviceClient.cs`, được `<Compile Include>` thẳng vào `St4i.EdgeCore`). **Kết quả: mọi hit đều nằm
+dưới `tools/machine-simulator/`. KHÔNG caller nào ở `server/`, `client/` hay `examples/`.** Điều kiện DỪNG
+mà điều phối viên đặt ra **không nổ**; phán quyết GỠ được thi hành.
+
+Tập đầy đủ, đúng như mục ghi: khai báo trong `IUnsPublisher`; cài đặt trong `UnsPublisher`; điều phối
+work-item nội bộ; một `<see cref>` trong `UnsTopicBuilder`; và **năm** file test.
+
+🔴 **CÁI GIÁ, GHI VÀO ĐÂY VÀ KHÔNG GIẤU: P-2 nói cách viết tên một thành viên công khai LÀ hợp đồng đã
+xuất bản. Gỡ hai thành viên khỏi một interface công khai làm HỎNG BIÊN DỊCH của bất kỳ ai đang cài đặt
+hoặc gọi nó, và phép đo trên chỉ chứng minh được rằng KHÔNG CÓ CALLER TRONG REPO NÀY. Ai tiêu thụ
+`St4i.EdgeCore` từ bên ngoài thì KHÔNG một lệnh nào ở đây đo được. Chủ sở hữu phán GỠ khi đã biết điều
+đó.**
+
+🔴 **MỘT NHÂN CHỨNG HỒI QUY BỊ XOÁ, và đó là một mất mát chứ không phải một lần dọn dẹp.**
+`UnsNodeLifecycleTests.PublishBirth_DeviceLevelDbirth_DoesNotResetTheNodeSequence` là **bài test duy nhất
+trong cây GỌI** `PublishBirth` (bốn file còn lại chỉ **cài đặt** nó trên fake). Nó ghim bản sửa G2-3 cho
+một DBIRTH từng reset sai bộ đếm chuỗi của edge node, và ghim bằng **giá trị phân biệt được** (seq 2, chỗ
+lỗi cũ cho 1) chứ không bằng một phép kiểm "khác 0" lỏng. Mất mát **bị chặn** — chỉ bị chặn — vì đường mã
+nó canh **không còn tồn tại**: nay không gì trong repo này phát DBIRTH. Các guard "NBIRTH **phải** reset"
+trong cùng file **không đụng tới**. Nếu một ngày đường DBIRTH quay lại, **bài test này phải quay lại cùng
+nó**. `EXPECT_EDGECORE` −1 vì đúng bài này.
+
+🔴 **BỀ MẶT CHẾT NAY RỘNG HƠN, KHÔNG HẸP HƠN — nói ra vì nêu một chiều là nửa sự thật.**
+`SparkplugMsgType.DBIRTH`/`.DDEATH` và khả năng dựng topic của chúng **ở lại** (gỡ thành viên enum là một
+phép đổi hợp đồng **thứ hai** mà phán quyết không phủ), nhưng nay **không gì sản xuất ra hai loại thông
+điệp ấy**. Cùng thế, `SparkplugAliasTable.Reset()` mất caller duy nhất. Cả hai đã ghi vào doc tại chỗ.
+
+**Cảnh báo: `EXPECT_WARNINGS` KHÔNG DỊCH, và con số ấy được ĐO chứ không đoán.** Brief cảnh báo rằng gỡ
+hai thành viên **có tài liệu** có thể làm cảnh báo dịch. Đo trên một `-t:Rebuild` trọn vẹn sau khi gỡ:
+vẫn **328**. Lý do: cả hai đều **đã có** doc comment nên không sinh CS1591 nào để mất đi, và ba `<see
+cref>` trỏ vào chúng đã được đổi sang `<c>` trong cùng lần sửa nên **không** CS1574 nào xuất hiện.
+
+---
+
+## 24. `ModbusOptions`/`OpcUaOptions` công bố hằng số TÊN biến môi trường — và ĐÂY LÀ CHỖ PHÉP ĐO CỦA ĐỢT 8 NÓI SAI
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AN-1 (đợt 8) 🔴 **và đo lại bởi nhiệm vụ này, cho một
+kết quả KHÁC.**
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC.** Bảy hằng số `public const string` mang tên biến môi trường trên
+hai lớp: `ModbusOptions.EnvVarEnabled`, `.EnvVarHost`, `.EnvVarPort`, `.EnvVarMapPath`;
+`OpcUaOptions.EnvVarEnabled`, `.EnvVarEndpoint`, `.EnvVarMapPath`. Đo người đọc, ở SHA đã ghim, trên
+**cả** dạng gọi tên đủ đường dẫn:
+
+* **Hai cái CÓ người đọc bên ngoài file khai báo:** `ModbusOptions.EnvVarMapPath` và
+  `OpcUaOptions.EnvVarMapPath`, cả hai được **`St4i.EngineApi/Program.cs`** gọi tên (dạng đủ đường
+  dẫn `St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarMapPath`), trong hai thông điệp lỗi khởi
+  động.
+* **Năm cái còn lại không có người đọc nào ngoài file khai báo của chính chúng.**
+* 🔴 **KHÔNG file `.cs` nào dưới `src/` ngoài hai file khai báo mang bất kỳ chuỗi nào trong bảy
+  chính tả ấy ở dạng literal.** Cả hai host sản xuất lấy giá trị qua `ModbusOptions.FromEnvironment()`
+  / `OpcUaOptions.FromEnvironment()`, tức **qua chính hằng số**, không qua một bản sao.
+* Bản sao chính tả **có tồn tại**, nhưng ở ba chỗ khác: `README.md` (hai bảng biến môi trường,
+  §16.4 và §16.6) và **hai file test** — `tests/St4i.EngineApi.Tests/ConnectorEndpointsTests.cs` và
+  `…/ConnectorEndpointsEnvSeedingSideEffectsTests.cs` — cả hai gọi
+  `Environment.SetEnvironmentVariable("ST4I_MODBUS_ENABLED", …)` bằng literal.
+
+🔴 **Nên hai câu của báo cáo đợt 8 được SỬA LẠI ở đây, và cái sai ấy là một phát hiện.** Đợt 8 viết:
+*"the env-var name constants are published so a host can NAME the variable, and no host does: both
+production hosts hardcode the literal instead"*, và §8(3) của nó nhắc lại rằng hai chuỗi ấy *"appear
+hardcoded in BOTH `St4i.EngineApi` and `St4i.EdgeService`"*. **Cả hai nửa đều không đứng vững:** một
+host **có** gọi tên hằng số (hai lần), và **không** host nào viết cứng chuỗi. Thứ đợt 8 đọc thấy
+trong hai host là **dòng chú thích `//`**, không phải literal — `EdgeConnectors.cs` thậm chí đang
+nói ngược lại (*"This host has NO environment-variable connector route at all — it has never read
+ST4I_MODBUS_ENABLED/ST4I_OPCUA_ENABLED"*). 🔴 **Và bảng phân nhóm của chính đợt 8 đã mâu thuẫn với
+văn xuôi của nó**: nhóm **C0 = 2** của nó nghĩa là *"chỉ `St4i.EngineApi` với tới, mà nó đã giữ
+IVT"* — đúng hai hằng số `EnvVarMapPath` ấy. **Bảng đúng; đoạn văn cạnh bảng sai.** Cùng loài với
+cái mà chính đợt 8 tự bắt được ở chỗ khác: *một phép grep cho dạng KHÔNG đủ đường dẫn không thấy
+dạng ĐỦ đường dẫn.*
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Drivers.Modbus.ModbusOptions` (bảy hằng số và
+`FromEnvironment`); `St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions` (cùng thế, cộng `EnvVarPkiDir` đã
+được `OpcUaPkiPaths.DefaultRoot` đọc); `St4i.EngineApi.Program` (hai chỗ gọi tên và hai chỗ gọi
+`FromEnvironment`); `St4i.EdgeService.EdgeConnectors` (một chỗ gọi `FromEnvironment`);
+`README.md` §16.4/§16.6; `ConnectorEndpointsTests`, `ConnectorEndpointsEnvSeedingSideEffectsTests`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* **năm** hằng số công khai không ai đọc là bề mặt đã công bố mà không có mục đích còn
+sống — đúng câu hỏi mục 25 đang hỏi trên cùng assembly. Và nguy cơ trôi chính tả **có thật nhưng
+nằm chỗ khác**: giữa hằng số, bảng README, và hai file test; **không gì đỏ lên nếu ba bản ấy lệch
+nhau**. Đó vẫn là hình dạng trùng lặp `DemoModeGate`/`DemoEnabledEnvVar` mà file này đã ghi một
+lần — chỉ khác cặp.
+*Chiều ngược:* hạ năm hằng số ấy xuống `internal` là **miễn phí về biên dịch** (không ai ngoài
+assembly đọc) nhưng **không mua được gì**: bản sao thật là README và test, và chúng vẫn viết literal
+sau đó. Giá trị thật của một hằng số công khai là để một **host bên ngoài** gọi tên biến — mà đúng
+hai cái đã được gọi tên như thế, nên cơ chế ấy **đang hoạt động** chứ không chết hẳn.
+
+**Nếu KHÔNG quyết định.** Năm hằng số ở lại trong 97 thành viên của mục 25 và tiếp tục được đếm ở
+đó. Bản sao chính tả trong README và hai file test ở lại, không nhân chứng, và ngày một biến bị đổi
+tên là ngày cả ba bản phải được nhớ cùng lúc.
+
+### ✅ ĐÃ THI HÀNH 2026-08-21 (AR-1) — phép đo đã sửa **TỰ KIỂM LẠI VÀ ĐỨNG VỮNG CẢ HAI NỬA**; hai bản sao chính tả trong ba đã bị thu hồi
+
+🔴 **Điều phối viên yêu cầu tự kiểm lại chính câu sửa của mục này, vì một mục nói sai là một phát hiện.
+Đã kiểm. Nó ĐÚNG, cả hai nửa.** Lệnh, chạy **từ GỐC REPO `D:\SOURCES\avi-aoi-sim`**, ở SHA `3f6c8f54`,
+`--full-name` kèm `':(top)'`:
+
+* **Nửa một — "không file `.cs` nào dưới `src/` ngoài hai file khai báo mang bảy chính tả ấy ở dạng
+  literal".** Quét dạng **có nháy** (`"ST4I_MODBUS_…"`/`"ST4I_OPCUA_…"`): dưới `src/` chỉ trả về
+  `ModbusOptions.cs` và `OpcUaOptions.cs`. **ĐÚNG.** Quét dạng **trần** thì có thêm `Program.cs`,
+  `EdgeConnectors.cs`, `ConnectorsConfig.cs`, `ConnectorConfigStore.cs`,
+  `ConnectorConfigVisibilitySeeder.cs`, `WalOptions.cs`, `OpcUaNodeMap.cs` — **toàn bộ là dòng chú thích
+  `//`, không dòng nào là literal**, đúng như mục đã sửa lại. Đợt 8 đọc chú thích thành literal.
+* **Nửa hai — "`St4i.EngineApi/Program.cs` CÓ nêu tên hai cái, đầy đủ đường dẫn".** Trả về **đúng hai**
+  chỗ, `Program.cs:1083` và `:1161`, dạng `St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarMapPath` và
+  cặp OPC-UA. **ĐÚNG.**
+* **Một chi tiết mục nêu chưa đủ, ghi lại chứ không sửa ngầm:** ngoài hai chỗ ấy, `OpcUaDriver.cs:30`
+  cũng **nêu tên** `OpcUaOptions.EnvVarPkiDir` trong một `<see cref>`. Không lật kết luận nào (mục vốn đã
+  ghi `EnvVarPkiDir` có người đọc), nhưng phép liệt kê người-nêu-tên đầy đủ là ba chỗ, không phải hai.
+
+**Đã làm gì — thu hồi hai trong ba bản sao chính tả.** `ConnectorEndpointsTests` và
+`ConnectorEndpointsEnvSeedingSideEffectsTests` nay **gọi hằng số theo tên** (dạng đủ đường dẫn, cùng quy
+ước `Program.cs` dùng) thay vì gõ lại chuỗi. Một lần đổi giá trị hằng số nay **tới được hai file test qua
+biên dịch**. **Không** mức truy cập nào bị hạ, **không** tên công khai nào đổi, **không** hành vi nào đổi
+— và đúng như chiều ngược của mục dự đoán, hạ năm hằng số xuống `internal` sẽ **không mua được gì**, nên
+không làm.
+
+🔴 **Bản sao thứ ba Ở LẠI, và cái trần ấy phải nêu:** hai bảng biến môi trường của `README.md` §16.4/§16.6
+vẫn là bản chép tay **không có nhân chứng** — **không gì đỏ lên nếu chúng lệch**. Phép sửa này thu hẹp rủi
+ro trôi chính tả từ ba bản xuống hai, **không** khử nó.
+
+**Nhân chứng.** 🔴 **KHÔNG phải một nhân chứng đỏ được theo nghĩa của mục đổi hành vi** — nhưng nó **mạnh
+hơn một nhân chứng chỉ-đọc**: hai file test giờ **không biên dịch được** nếu một trong bốn hằng số bị đổi
+tên, nên bản thân việc W-1 xanh ở ngọn nhánh **là** phép kiểm rằng chúng khớp. **Không hằng số đếm test
+nào dịch vì mục này** (số test không đổi, chỉ thân test đổi).
+
+---
 
 ---
 

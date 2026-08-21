@@ -10,7 +10,7 @@ namespace St4i.EdgeCore.Uns;
 /// what this repository does.</b> This summary used to say: <i>"NBIRTH/NDEATH/DBIRTH/DDEATH are landed here
 /// only as topic-building targets for G2-3 (the actual birth/death SEQUENCING — when to emit them, MQTT
 /// Will wiring for a real NDEATH-on-disconnect — is explicitly out of scope for this task; see
-/// <see cref="UnsPublisher.PublishBirth"/>/<see cref="UnsPublisher.PublishDeath"/>). G2-2's own
+/// <c>UnsPublisher.PublishBirth</c>/<c>UnsPublisher.PublishDeath</c>). G2-2's own
 /// wiring only ever produces DDATA."</i> Two of its three parts are now false and the third is still true,
 /// which is why it is corrected here rather than deleted.
 /// <list type="bullet">
@@ -42,14 +42,19 @@ public enum SparkplugMsgType
 
     /// <summary>Device birth certificate. Device-level: the equipment code is REQUIRED and a blank one
     /// throws <see cref="ArgumentException"/> rather than building a topic with an empty last segment.
-    /// 🔴 Implemented and unreached: <c>IUnsPublisher.PublishBirth</c> is declared once, implemented once,
-    /// and called from NOWHERE under <c>src/</c> — so no shipped path emits a DBIRTH, and a Sparkplug host
-    /// sees this spine's devices only through their DDATA.</summary>
+    /// 🔴 Declared and UNPRODUCIBLE. This used to read "implemented and unreached": <c>IUnsPublisher.PublishBirth</c>
+    /// was declared once, implemented once, and called from nowhere under <c>src/</c>. On 2026-08-21 the
+    /// owner ruled that method removed (owner-decisions.md item 23), so the position is now stronger and
+    /// worse: nothing in this repository can build or publish a DBIRTH at all. This member and
+    /// <see cref="UnsTopicBuilder.BuildSparkplugTopic(UnsOptions,SparkplugMsgType,string)"/>'s ability to
+    /// render it remain — removing an enum member is a second contract change that ruling did not cover —
+    /// but they are now vocabulary with no producer. A Sparkplug host still sees this spine's devices only
+    /// through their DDATA, and still receives aliases whose birth certificate is never sent.</summary>
     DBIRTH,
 
     /// <summary>Device death certificate. Device-level, same equipment-code requirement as
-    /// <see cref="DBIRTH"/> — and the same standing: <c>IUnsPublisher.PublishDeath</c> has no caller under
-    /// <c>src/</c> either.</summary>
+    /// <see cref="DBIRTH"/> — and the same standing, for the same reason: <c>IUnsPublisher.PublishDeath</c>
+    /// was removed with its twin on 2026-08-21, so no code path produces a DDEATH either.</summary>
     DDEATH,
 
     /// <summary>Edge-node data. Node-level. Declared for vocabulary completeness and never published: no

@@ -59,9 +59,18 @@ public sealed record ScenarioDto(double CycleRate, double DefectRate, double Fau
         activePreset,
         BuildStatusLine(config, activePreset));
 
+    /// <summary>🔴 The outage half of this line used to read "network outage (acks queued/failing)" and
+    /// the second half of that pair was never true: measured on every branch of
+    /// <c>DemoTransport.SendAsync</c>, the queued branch returns <c>Success=true, Queued=true</c> and the
+    /// three acking branches return <c>Success=true</c> — no branch returns a failed ack, and the 0.9
+    /// <c>fakeErrorRate</c> the outage scenario installs selects the QUEUED branch, not a failure. The
+    /// text now says only what the transport does. This is the operator-visible string, so it is a
+    /// published value: the DTO's SHAPE is unchanged (same record, same six members, same
+    /// <see cref="StatusLine"/> field) — only the sentence inside it stopped promising something that
+    /// never happens.</summary>
     private static string BuildStatusLine(ScenarioConfig config, string activePreset)
     {
-        var outageText = config.NetworkOutage ? "network outage (acks queued/failing)" : "network normal";
+        var outageText = config.NetworkOutage ? "network outage (acks queued, never failed)" : "network normal";
         return $"{activePreset} — cycleRate={config.CycleRateMultiplier:0.00}x, defect={config.ExtraDefectRate:P0}, fault={config.FaultRate:P0}, {outageText}.";
     }
 }

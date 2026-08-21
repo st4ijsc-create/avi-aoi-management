@@ -35,12 +35,19 @@ public enum TransportMode
     /// <c>DemoModeGate.Enabled</c> is false, which is why a host can be in a state where the operator can
     /// leave Demo but not re-enter it.
     ///
-    /// <para>🔴 That refusal guards the MODE, not the fabricator. <c>POST /v1/scenario</c> with
-    /// <c>networkOutage</c> set is not gated by <c>DemoModeGate</c> at all, and it points the running
-    /// fleet's transport straight at a lossy <see cref="Demo"/> instance — so a host that has switched
-    /// Demo off can still be put behind a fabricator, with <c>GET /v1/mode</c> still answering whatever
-    /// the operator selected. It is audited and it requires the Engineer policy; it is not
-    /// refused.</para></summary>
+    /// <para>🔴 CORRECTED — this used to record that the refusal guarded the MODE and not the fabricator:
+    /// that <c>POST /v1/scenario</c> with <c>networkOutage</c> set was not gated by <c>DemoModeGate</c> at
+    /// all and pointed the running fleet's transport straight at a lossy <see cref="Demo"/> instance,
+    /// audited and Engineer-only but never refused. <c>ScenarioEndpoints</c> now applies the same gate to
+    /// BOTH scenario routes that can install that transport (<c>POST /v1/scenario</c> and
+    /// <c>POST /v1/scenario/preset</c>), so on a deployment with Demo disabled the fleet can no longer be
+    /// put behind a fabricator while <c>GET /v1/mode</c> answers <see cref="Live"/>.</para>
+    ///
+    /// <para>Still true, and still worth knowing: <c>GET /v1/mode</c> answers the SELECTED mode by design,
+    /// not what is serving traffic. The surface that reports the outage is <c>GET /v1/scenario</c>, which
+    /// carries the <c>NetworkOutage</c> flag and a status line naming it; the surface that reports the
+    /// transport actually installed is <c>SwitchableTransport.Mode</c>, which the API-trace pane
+    /// reads.</para></summary>
     Demo,
 
     /// <summary>Try live for every call and re-route to demo on a network failure, re-probing live

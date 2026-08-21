@@ -48,11 +48,24 @@ public sealed class DemoModeGate
 
     /// <summary>Whether Demo mode is permitted on this deployment. Fixed at construction — this gate never
     /// re-reads the environment, so changing the variable after startup has no effect until the process
-    /// restarts. False is the safe default and covers unset, blank and any non-truthy value. 🔴 What it
-    /// gates is narrower than the name suggests: it governs the startup mode and
-    /// <c>PUT /v1/mode</c>'s acceptance of <c>Demo</c>, and does NOT gate
-    /// <c>POST /v1/scenario</c>'s network-outage path, which installs a fabricating transport without
-    /// consulting this flag at all.</summary>
+    /// restarts. False is the safe default and covers unset, blank and any non-truthy value.
+    ///
+    /// 🔴 CORRECTED — this used to record that what the flag gates "is narrower than the name suggests":
+    /// that it governed the startup mode and <c>PUT /v1/mode</c>'s acceptance of <c>Demo</c> but did NOT
+    /// gate <c>POST /v1/scenario</c>'s network-outage path, which installed a fabricating transport
+    /// without consulting it. That gap is now closed, so the sentence would be false if left standing.
+    /// <c>St4i.EngineApi.Endpoints.ScenarioEndpoints</c> now consults this flag on BOTH routes that can
+    /// install that transport — <c>POST /v1/scenario</c> with <c>networkOutage:true</c> and
+    /// <c>POST /v1/scenario/preset</c> with a preset whose config carries it — and refuses each with the
+    /// same honest 400 <c>PUT /v1/mode</c> uses.
+    ///
+    /// What this flag governs is therefore the TRANSPORT, and only the transport: the startup mode, an
+    /// explicit switch to <c>Demo</c>, and the scenario paths that repoint the running fleet at a
+    /// fabricated one. It does NOT gate the simulators themselves — <c>ScenarioConfig</c>'s
+    /// <c>ExtraDefectRate</c>, <c>FaultRate</c> and <c>CycleRateMultiplier</c> change what the simulated
+    /// machines produce and are deliberately left ungated, because their output still goes to the real
+    /// server and is still reported truthfully by <c>GET /v1/scenario</c>. Turning this flag off buys
+    /// "this machine will not fabricate its TRANSPORT", not "this machine will not simulate".</summary>
     public bool Enabled { get; }
 
     /// <summary>Normal entry point — reads the real process environment variable.</summary>

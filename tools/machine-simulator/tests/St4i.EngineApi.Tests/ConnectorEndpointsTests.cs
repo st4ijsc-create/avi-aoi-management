@@ -81,10 +81,10 @@ public sealed class ConnectorEndpointsTests
         var prevAlarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
         var prevBridgeSpoolDir = Environment.GetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR");
         var prevConnectorConfigDir = Environment.GetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR");
-        var prevModbusEnabled = Environment.GetEnvironmentVariable("ST4I_MODBUS_ENABLED");
-        var prevModbusMap = Environment.GetEnvironmentVariable("ST4I_MODBUS_MAP");
-        var prevOpcUaEnabled = Environment.GetEnvironmentVariable("ST4I_OPCUA_ENABLED");
-        var prevOpcUaMap = Environment.GetEnvironmentVariable("ST4I_OPCUA_MAP");
+        var prevModbusEnabled = Environment.GetEnvironmentVariable(St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarEnabled);
+        var prevModbusMap = Environment.GetEnvironmentVariable(St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarMapPath);
+        var prevOpcUaEnabled = Environment.GetEnvironmentVariable(St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions.EnvVarEnabled);
+        var prevOpcUaMap = Environment.GetEnvironmentVariable(St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions.EnvVarMapPath);
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -99,10 +99,10 @@ public sealed class ConnectorEndpointsTests
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", alarmsDir);
             Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", bridgeSpoolDir);
             Environment.SetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR", connectorConfigDir);
-            Environment.SetEnvironmentVariable("ST4I_MODBUS_ENABLED", modbusEnvMapPath is null ? null : "true");
-            Environment.SetEnvironmentVariable("ST4I_MODBUS_MAP", modbusEnvMapPath);
-            Environment.SetEnvironmentVariable("ST4I_OPCUA_ENABLED", opcUaEnvMapPath is null ? null : "true");
-            Environment.SetEnvironmentVariable("ST4I_OPCUA_MAP", opcUaEnvMapPath);
+            Environment.SetEnvironmentVariable(St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarEnabled, modbusEnvMapPath is null ? null : "true");
+            Environment.SetEnvironmentVariable(St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarMapPath, modbusEnvMapPath);
+            Environment.SetEnvironmentVariable(St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions.EnvVarEnabled, opcUaEnvMapPath is null ? null : "true");
+            Environment.SetEnvironmentVariable(St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions.EnvVarMapPath, opcUaEnvMapPath);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
@@ -122,10 +122,10 @@ public sealed class ConnectorEndpointsTests
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", prevAlarmsDir);
             Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", prevBridgeSpoolDir);
             Environment.SetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR", prevConnectorConfigDir);
-            Environment.SetEnvironmentVariable("ST4I_MODBUS_ENABLED", prevModbusEnabled);
-            Environment.SetEnvironmentVariable("ST4I_MODBUS_MAP", prevModbusMap);
-            Environment.SetEnvironmentVariable("ST4I_OPCUA_ENABLED", prevOpcUaEnabled);
-            Environment.SetEnvironmentVariable("ST4I_OPCUA_MAP", prevOpcUaMap);
+            Environment.SetEnvironmentVariable(St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarEnabled, prevModbusEnabled);
+            Environment.SetEnvironmentVariable(St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarMapPath, prevModbusMap);
+            Environment.SetEnvironmentVariable(St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions.EnvVarEnabled, prevOpcUaEnabled);
+            Environment.SetEnvironmentVariable(St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions.EnvVarMapPath, prevOpcUaMap);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }

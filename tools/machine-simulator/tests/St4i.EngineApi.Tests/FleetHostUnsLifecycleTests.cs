@@ -152,13 +152,7 @@ public sealed class FleetHostUnsLifecycleTests
 
         public void PublishReading(DeviceReading reading, CanonicalEnvelope envelope) => Interlocked.Increment(ref _readings);
 
-        public void PublishBirth(string equipmentCode)
-        {
-        }
-
-        public void PublishDeath(string equipmentCode)
-        {
-        }
+        // PublishBirth/PublishDeath removed from IUnsPublisher 2026-08-21 (owner's ruling, item 23).
 
         public void PublishNodeBirth() => Interlocked.Increment(ref _nodeBirths);
 
