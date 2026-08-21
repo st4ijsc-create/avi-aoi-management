@@ -77,7 +77,11 @@ public sealed class FleetHost
         new ScenarioPresetInfo("normal", "Ca binh thuong - toc do/ty le loi mac dinh cua day chuyen.", ScenarioConfig.Normal),
         new ScenarioPresetInfo("high-defect", "Lo loi cao - tang manh ty le loi tiem them de trinh dien andon/alert.", new ScenarioConfig(1.0, 0.35, 0.05, false)),
         new ScenarioPresetInfo("sensor-drift", "Sensor drift - tang toc chu ky de lo su kien troi hieu chuan dinh ky cua IOT_SENSOR.", new ScenarioConfig(5.0, 0.03, 0.05, false)),
-        new ScenarioPresetInfo("network-outage", "Mat mang demo - chuyen transport sang store-and-forward loi cao (~90%).", new ScenarioConfig(1.0, 0.0, 0.0, true)),
+        // 🔴 This description used to say "store-and-forward loi cao (~90%)" — "high ERROR (~90%)". The
+        // 0.9 is the fraction of sends routed into DemoTransport's QUEUED branch, not an error rate, and
+        // no branch of that class returns an unsuccessful ack. Corrected to "~90% queued"; this string is
+        // served by GET /v1/scenario, so the wording is a published value (the DTO shape is untouched).
+        new ScenarioPresetInfo("network-outage", "Mat mang demo - chuyen transport sang store-and-forward: ~90% ack tra ve queued, khong ack nao that bai.", new ScenarioConfig(1.0, 0.0, 0.0, true)),
         new ScenarioPresetInfo("hotfolder-aoi", "Hot-folder AOI - ghi 1 file doc28 mau roi de HotFolderAoiDriver doc lai that.", ScenarioConfig.Normal, TriggersHotFolderDemo: true),
     };
 

@@ -34,9 +34,9 @@ public sealed record UnsPublisherStats(long Evicted, long DroppedAfterShutdown, 
 ///
 /// Internal shape is COPIED from <see cref="St4i.EdgeCore.Historian.HistorianWriter"/> on purpose (the
 /// task brief's explicit instruction): a bounded <see cref="Channel{T}"/> (drop-oldest when saturated) fed
-/// by <see cref="PublishReading"/>/<see cref="PublishBirth"/>/<see cref="PublishDeath"/>/
-/// <see cref="PublishNodeBirth"/>/<see cref="PublishNodeDeath"/> (G2-3 — the last two are the NODE-level
-/// NBIRTH/NDEATH lifecycle) — all five are synchronous, non-blocking, and never throw — drained by a
+/// by <see cref="PublishReading"/>/<see cref="PublishNodeBirth"/>/<see cref="PublishNodeDeath"/> (G2-3 —
+/// the last two are the NODE-level NBIRTH/NDEATH lifecycle) and <see cref="PublishLineState"/> — all four
+/// are synchronous, non-blocking, and never throw — drained by a
 /// background flush loop that does the actual (async) MQTT publish. A broker hiccup (disconnected client,
 /// slow broker, ...) can therefore NEVER slow or fail
 /// <see cref="St4i.EdgeCore.Engine.EdgePipeline.RunAsync"/>'s hot commit loop — at worst, one reading's UNS
@@ -63,10 +63,6 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     private abstract record WorkItem;
 
     private sealed record ReadingWorkItem(DeviceReading Reading, CanonicalEnvelope Envelope) : WorkItem;
-
-    private sealed record BirthWorkItem(string EquipmentCode) : WorkItem;
-
-    private sealed record DeathWorkItem(string EquipmentCode) : WorkItem;
 
     private sealed record NodeBirthWorkItem(long BdSeq) : WorkItem;
 
@@ -234,29 +230,10 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
         Enqueue(new ReadingWorkItem(reading, envelope), $"reading for {reading.MachineCode}");
     }
 
-    /// <inheritdoc/>
-    public void PublishBirth(string equipmentCode)
-    {
-        if (_disposed)
-        {
-            DropAfterDispose($"birth for {equipmentCode}");
-            return;
-        }
-
-        Enqueue(new BirthWorkItem(equipmentCode), $"birth for {equipmentCode}");
-    }
-
-    /// <inheritdoc/>
-    public void PublishDeath(string equipmentCode)
-    {
-        if (_disposed)
-        {
-            DropAfterDispose($"death for {equipmentCode}");
-            return;
-        }
-
-        Enqueue(new DeathWorkItem(equipmentCode), $"death for {equipmentCode}");
-    }
+    // 🔴 REMOVED 2026-08-21 (owner's ruling, owner-decisions.md item 23) together with their interface
+    // declarations: `PublishBirth`/`PublishDeath`, their BirthWorkItem/DeathWorkItem queue items, their
+    // dispatch arms, and PublishBirthCoreAsync/PublishDeathCoreAsync. Fully implemented, never called from
+    // src/. See IUnsPublisher for the P-2 price this removal was ruled to be worth paying.
 
     /// <inheritdoc/>
     public void PublishNodeBirth()
@@ -369,8 +346,6 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     private static string Describe(WorkItem item) => item switch
     {
         ReadingWorkItem r => $"reading({r.Reading.MachineCode})",
-        BirthWorkItem b => $"birth({b.EquipmentCode})",
-        DeathWorkItem d => $"death({d.EquipmentCode})",
         NodeBirthWorkItem nb => $"nodeBirth(bdSeq={nb.BdSeq})",
         NodeDeathWorkItem nd => $"nodeDeath(bdSeq={nd.BdSeq})",
         LineStateWorkItem l => $"lineState({l.State})",
@@ -380,8 +355,6 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     private Task ProcessAsync(WorkItem item, CancellationToken ct) => item switch
     {
         ReadingWorkItem r => PublishReadingCoreAsync(r.Reading, r.Envelope, ct),
-        BirthWorkItem b => PublishBirthCoreAsync(b.EquipmentCode, ct),
-        DeathWorkItem d => PublishDeathCoreAsync(d.EquipmentCode, ct),
         NodeBirthWorkItem nb => PublishNodeBirthCoreAsync(nb.BdSeq, ct),
         NodeDeathWorkItem nd => PublishNodeDeathCoreAsync(nd.BdSeq, ct),
         LineStateWorkItem l => PublishLineStateCoreAsync(l.State, ct),
@@ -413,35 +386,10 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
         await _client.PublishAsync(sparkplugMessage, ct).ConfigureAwait(false);
     }
 
-    private async Task PublishBirthCoreAsync(string equipmentCode, CancellationToken ct)
-    {
-        // G2-3: NBIRTH now owns the sequence reset (see PublishNodeBirthCoreAsync) — per Sparkplug B spec,
-        // ONLY an NBIRTH resets the edge node's sequence; a DBIRTH must NOT (fixed from G2-2, which
-        // incorrectly reset here too).
-        var aliasTable = _aliasTables.GetOrAdd(equipmentCode, static _ => new SparkplugAliasTable());
-        aliasTable.Reset();
-
-        var topic = UnsTopicBuilder.BuildSparkplugTopic(_options, SparkplugMsgType.DBIRTH, equipmentCode);
-        var payload = new SparkplugPayloadMessage(
-            (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _seq.Next(), Array.Empty<SparkplugMetric>());
-        var message = new MqttApplicationMessageBuilder()
-            .WithTopic(topic)
-            .WithPayload(SparkplugPayload.Encode(payload))
-            .Build();
-        await _client.PublishAsync(message, ct).ConfigureAwait(false);
-    }
-
-    private async Task PublishDeathCoreAsync(string equipmentCode, CancellationToken ct)
-    {
-        var topic = UnsTopicBuilder.BuildSparkplugTopic(_options, SparkplugMsgType.DDEATH, equipmentCode);
-        var payload = new SparkplugPayloadMessage(
-            (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _seq.Next(), Array.Empty<SparkplugMetric>());
-        var message = new MqttApplicationMessageBuilder()
-            .WithTopic(topic)
-            .WithPayload(SparkplugPayload.Encode(payload))
-            .Build();
-        await _client.PublishAsync(message, ct).ConfigureAwait(false);
-    }
+    // 🔴 PublishBirthCoreAsync/PublishDeathCoreAsync stood here until 2026-08-21 (owner's ruling, item 23).
+    // They built a SparkplugMsgType.DBIRTH / .DDEATH topic and published an empty-metric payload, and the
+    // birth path was also the ONLY caller of SparkplugAliasTable.Reset() — which is now reachable from
+    // nothing, a cascade worth naming rather than leaving for the next census to rediscover.
 
     private async Task PublishNodeBirthCoreAsync(long bdSeq, CancellationToken ct)
     {

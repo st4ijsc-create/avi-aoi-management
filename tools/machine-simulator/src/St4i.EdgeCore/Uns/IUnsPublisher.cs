@@ -20,13 +20,24 @@ public interface IUnsPublisher
     /// envelope, not a second, potentially-drifting normalization.</summary>
     void PublishReading(DeviceReading reading, CanonicalEnvelope envelope);
 
-    /// <summary>G2-3 hook: publishes a Sparkplug (D)BIRTH-shaped payload for <paramref name="equipmentCode"/>
-    /// and resets its seq/alias state. Not called anywhere in G2-2's own wiring — NBIRTH/NDEATH
-    /// sequencing itself is out of scope for this task; this only lands the seam G2-3 calls into.</summary>
-    void PublishBirth(string equipmentCode);
-
-    /// <summary>G2-3 hook — the (D)DEATH counterpart to <see cref="PublishBirth"/>.</summary>
-    void PublishDeath(string equipmentCode);
+    // 🔴 REMOVED 2026-08-21 (owner's ruling, owner-decisions.md item 23): `void PublishBirth(string
+    // equipmentCode)` and `void PublishDeath(string equipmentCode)` stood here. They were declared once,
+    // implemented in full in UnsPublisher (DBIRTH/DDEATH encoding plus an alias-table reset), and called
+    // from NOWHERE under src/ — so no shipped path ever emitted a DBIRTH, and every DDATA this spine
+    // publishes carries aliases a subscriber has no birth certificate for.
+    //
+    // 🔴 THE PRICE, RECORDED RATHER THAN HIDDEN: P-2 makes the spelling of a public member a published
+    // contract. Deleting two members of a public interface breaks compilation for anyone implementing or
+    // calling it, and the measurement that justified the ruling — a git grep over EVERY path in the whole
+    // repository at the pinned commit, run from the repository root with --full-name and a top-level
+    // pathspec so the sparse server/ and client/ trees were in the population — can only prove there is no
+    // caller IN THIS REPOSITORY. Who consumes St4i.EdgeCore from outside it is not measurable with any
+    // command available here. The owner ruled REMOVE knowing that.
+    //
+    // Left standing deliberately: SparkplugMsgType.DBIRTH/.DDEATH and UnsTopicBuilder's ability to build
+    // their topics. Removing those would be a second contract change the ruling did not cover — but with
+    // these two methods gone, nothing in this repository produces either message type, which is a wider
+    // dead surface than before, not a narrower one. See UnsTopicBuilder's own doc.
 
     /// <summary>G2-3 — publishes a node-level Sparkplug B <b>NBIRTH</b> for this edge node (the process's single
     /// <see cref="UnsOptions.Cell"/>): resets the node sequence to 0 (per spec, NBIRTH is the ONLY message that

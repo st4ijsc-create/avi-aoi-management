@@ -14,9 +14,10 @@ namespace St4i.EdgeCore.Transport;
 /// Relocated from the WPF app's <c>St4iMachineSimulator.Services.TransportCoordinator</c> into EdgeCore
 /// (Task 3, ASP.NET EngineApi host) — this class only ever depended on EdgeCore types.
 /// </summary>
-public sealed class TransportCoordinator
+public sealed class TransportCoordinator : IDisposable
 {
     private readonly object _gate = new();
+    private bool _disposed;
     private readonly SwitchableTransport _switchable;
     private readonly DemoTransport _demo;
     private readonly WalOptions _walOptions;
@@ -36,9 +37,12 @@ public sealed class TransportCoordinator
     /// fabricated ids keep counting up across mode switches instead of restarting. Not owned and not
     /// disposable.</param>
     /// <param name="initialLive">The live transport to hold until the first <see cref="RebuildLive"/>.
-    /// This one IS owned, but only partly: <see cref="RebuildLive"/> disposes whichever instance it
-    /// replaces, while the instance held when the process ends is never disposed by this class, which has
-    /// no shutdown path of its own.</param>
+    /// This one IS owned, and now owned WHOLE rather than by halves: <see cref="RebuildLive"/> disposes
+    /// whichever instance it replaces, and <see cref="Dispose"/> disposes whichever instance is still held
+    /// at shutdown. Before <see cref="Dispose"/> existed the second half had no owner — the last live
+    /// transport of a process was released by nothing in this tree — and this parameter's own doc said so.
+    /// It is the only one of the four transports here that is disposed by this class, because it is the
+    /// only one that is <see cref="IDisposable"/>.</param>
     /// <param name="initialAuto">The auto transport to hold until the first <see cref="RebuildLive"/>.
     /// Nothing checks that it actually wraps <paramref name="initialLive"/> and <paramref name="demo"/> —
     /// a caller that composes it from something else gets a coordinator whose Live and Auto modes talk to
@@ -107,10 +111,22 @@ public sealed class TransportCoordinator
     /// <see cref="ApplyMode"/>.</summary>
     public TransportMode Mode { get; private set; }
 
-    /// <summary>🔴 The held demo transport. Published and unread: no code in this repository, production
-    /// or test, reads this property — the one place its name appears outside this file is inside another
-    /// class's doc comment. It survives because it is the natural companion of <see cref="Live"/> and
-    /// <see cref="Auto"/>, not because anything asks for it.</summary>
+    /// <summary>🔴 The held demo transport. Published and unread — measured, not assumed, and the
+    /// measurement has a ceiling that is stated here because stating only the forward half would be half
+    /// a truth. WHAT WAS MEASURED: a <c>git grep</c> for <c>\.Demo\b</c> over every path in the whole
+    /// repository at the pinned commit (not just this tool's subtree — the sweep was run from the
+    /// repository root with <c>--full-name</c> and a top-level pathspec, so <c>server/</c>, <c>client/</c>
+    /// and <c>examples/</c> were in the population even though a sparse checkout leaves them off disk),
+    /// plus a sweep of <c>*.xaml</c> for a binding. Every hit resolves to the enum member
+    /// <c>TransportMode.Demo</c> except exactly one, which names THIS property: a
+    /// <c>&lt;see cref&gt;</c> inside <c>St4iMachineSimulator.Services.FleetService</c>'s doc comment.
+    /// So: no code in this repository, production or test, READS this property; its only reference
+    /// anywhere is documentation prose. 🔴 WHAT WAS NOT MEASURED, and cannot be from inside this tree:
+    /// whether anything OUTSIDE this repository consumes <c>St4i.EdgeCore</c> and reads it. The count is
+    /// silent about that, so "unread" means "unread here", never "unread anywhere". It survives because
+    /// it is the natural companion of <see cref="Live"/> and <see cref="Auto"/>, not because anything
+    /// asks for it — and because P-2 governs the spelling of a published member, so deleting it would be
+    /// a contract change and not a cleanup.</summary>
     public DemoTransport Demo => _demo;
 
     /// <summary>The live transport currently held, read under the same lock
@@ -121,10 +137,34 @@ public sealed class TransportCoordinator
     /// Settings edit is holding a disposed client.</summary>
     public LiveTransport Live { get { lock (_gate) return _live; } }
 
-    /// <summary>🔴 The auto transport currently held, and nothing anywhere reads it — not one production
-    /// call site and not one test. It is the only member of this quartet with no consumer at all; even
-    /// <see cref="Demo"/> is at least referred to. Kept because <see cref="RebuildLive"/> has to replace
-    /// the instance regardless of whether anyone can see it.</summary>
+    /// <summary>🔴 The auto transport currently held, and nothing in this repository reads it — not one
+    /// production call site and not one test. Same measurement, same ceiling as <see cref="Demo"/>: a
+    /// <c>git grep</c> for <c>\.Auto\b</c> over every path in the whole repository at the pinned commit,
+    /// run from the repository root with <c>--full-name</c> and a top-level pathspec so the sparse-checked-out
+    /// <c>server/</c>, <c>client/</c> and <c>examples/</c> trees were in the population, returns hits that
+    /// are EVERY ONE of them the enum member <c>TransportMode.Auto</c> or the type name
+    /// <c>AutoTransport</c> — not one of them names this property. The <c>*.xaml</c> sweep for a binding
+    /// returns nothing. 🔴 That is a claim about THIS tree only; a consumer of <c>St4i.EdgeCore</c>
+    /// outside this repository is not visible to any command available here, so this says "unread here",
+    /// never "unread anywhere".
+    ///
+    /// 🔴 Two earlier sentences here were WRONG and are corrected rather than deleted, because the
+    /// correction is the point. (1) This used to read "nothing ANYWHERE reads it" — an existence negation
+    /// over an unbounded set, which no command in this repository can establish; it is bounded above.
+    /// (2) It used to read "the only member of this quartet with no consumer at all; even Demo is at
+    /// least referred to" — but this property IS referred to, by the <c>&lt;see cref="Auto"/&gt;</c> three
+    /// lines above it in <see cref="Demo"/>'s own summary. The real, narrower distinction between the two
+    /// is where the reference lives: <see cref="Demo"/>'s name reaches a DIFFERENT file's doc comment,
+    /// this one's reference never leaves this file. Neither is read.
+    ///
+    /// The lock is NOT redundant and was measured before being left alone: <c>_auto</c> is rewritten by
+    /// <see cref="RebuildLive"/> under this same <c>_gate</c>, so this <c>get</c> is the acquire half of
+    /// that release/acquire pair. Dropping it would leave a reference field published by one thread and
+    /// read by another with no barrier between them — reference assignment is atomic, so nothing would
+    /// tear, but a reader could observe an arbitrarily stale instance. That is a change of semantics, not
+    /// a removal of ceremony, which is why "drop the surplus lock" was measured and then declined.
+    /// Kept because <see cref="RebuildLive"/> has to replace the instance regardless of whether anyone
+    /// can see it.</summary>
     public AutoTransport Auto { get { lock (_gate) return _auto; } }
 
     /// <summary>
@@ -220,6 +260,58 @@ public sealed class TransportCoordinator
         }
 
         _switchable.SetInner(target);
+    }
+
+    /// <summary>
+    /// The ordered shutdown this class did not have. <see cref="RebuildLive"/> disposes whichever
+    /// <see cref="LiveTransport"/> it REPLACES, which left the instance held when the process ends with no
+    /// owner willing to close it: <c>oldLive.Dispose()</c> was the only <c>Dispose</c> call on
+    /// <c>_live</c> anywhere in the class, so the last one was never released by anything in this tree.
+    /// This method closes that half of the ownership rule the class already claimed for the other half.
+    ///
+    /// WHAT IT DISPOSES, AND WHY THE OWNERSHIP QUESTION HAS AN ANSWER RATHER THAN A JUDGEMENT CALL:
+    /// exactly <c>_live</c>, because <see cref="LiveTransport"/> is the only one of the four transports
+    /// this class touches that is <see cref="IDisposable"/> at all — <see cref="SwitchableTransport"/>,
+    /// <see cref="DemoTransport"/> and <see cref="AutoTransport"/> declare no <c>Dispose</c>, so the
+    /// "a naive Dispose would dispose something that is not its own" risk cannot materialize here: there
+    /// is nothing on them to call. That matches the constructor's own stated split — <c>switchable</c> and
+    /// <c>demo</c> are explicitly NOT owned, <c>initialLive</c> explicitly IS ("owned, but only partly").
+    /// This makes it owned whole.
+    ///
+    /// It also unsubscribes from the CURRENT <see cref="AutoTransport"/>'s <c>FallbackChanged</c>, the
+    /// subscription <see cref="RebuildLive"/> moves by hand on every rebuild — otherwise a disposed
+    /// coordinator would keep re-raising <see cref="FallbackChanged"/> at subscribers that believe it is
+    /// shut down.
+    ///
+    /// 🔴 SCOPE, stated because overstating it would repeat the mistake this fix exists to correct: this
+    /// is NOT a fix for a production leak, and the item that asked for it says so first. Both composition
+    /// roots (<c>St4i.EngineApi/Program.cs</c> and <c>St4iMachineSimulator/App.xaml.cs</c>) register this
+    /// class as a DI SINGLETON, so exactly one instance exists per process and the OS reclaims its socket
+    /// pool at exit either way. What changes is (a) a process with a DI container that disposes its
+    /// singletons now releases the pool at container teardown instead of at exit, and (b) a process that
+    /// builds MANY coordinators — which is what the test suites do, in dozens of files — now has a way to
+    /// release each one instead of leaving an undisposed <see cref="LiveTransport"/> per file for the life
+    /// of the host. (b) is the case this was worth writing for.
+    ///
+    /// Idempotent: a second call is a no-op, so a container that disposes it and a test that also disposes
+    /// it do not fight. Terminal by intent — this class deliberately has no "reopen", and calling
+    /// <see cref="RebuildLive"/> after this point would install a fresh live transport that nothing will
+    /// ever dispose again, which is the very shape this method exists to end.
+    /// </summary>
+    public void Dispose()
+    {
+        LiveTransport live;
+        AutoTransport auto;
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            live = _live;
+            auto = _auto;
+        }
+
+        auto.FallbackChanged -= OnFallbackChanged;
+        live.Dispose();
     }
 
     private void OnFallbackChanged(bool isFallingBack) => FallbackChanged?.Invoke(isFallingBack);

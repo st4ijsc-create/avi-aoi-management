@@ -1210,9 +1210,7 @@ public sealed class FleetHostGateCommitCompletionTests
 
         public void PublishReading(DeviceReading reading, CanonicalEnvelope envelope) { }
 
-        public void PublishBirth(string equipmentCode) { }
-
-        public void PublishDeath(string equipmentCode) { }
+        // PublishBirth/PublishDeath removed from IUnsPublisher 2026-08-21 (owner's ruling, item 23).
 
         public virtual void PublishNodeBirth() { }
 

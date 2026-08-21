@@ -28,11 +28,22 @@ namespace St4i.EdgeCore.Engine;
 /// ("intermittent faults" vs. "a bad lot") even though today it drives the same injection path.
 /// </param>
 /// <param name="NetworkOutage">
-/// When true, the fleet orchestrator points its DI <c>SwitchableTransport</c> at a lossy
-/// <see cref="St4i.EdgeCore.Transport.DemoTransport"/> (high <c>fakeErrorRate</c>) instead of whatever
-/// Live/Demo/Auto transport the current Mode normally resolves to — acks come back queued/failed while
-/// the fleet keeps running, and restoring this to false re-points the transport at the CURRENT Mode's
-/// real instance (not necessarily Demo).
+/// When true, the fleet orchestrator points its DI <c>SwitchableTransport</c> at a
+/// <see cref="St4i.EdgeCore.Transport.DemoTransport"/> built with <c>fakeErrorRate: 0.9</c> instead of
+/// whatever Live/Demo/Auto transport the current Mode normally resolves to. The fleet keeps running, and
+/// restoring this to false re-points the transport at the CURRENT Mode's real instance (not necessarily
+/// Demo).
+///
+/// 🔴 CORRECTED: this used to say acks come back "queued/failed". They do not, and no run ever produced
+/// the second half of that pair. Measured on every branch of
+/// <see cref="St4i.EdgeCore.Transport.DemoTransport.SendAsync"/>: the queued branch returns
+/// <c>Success=true, Queued=true</c>, and the three acking branches return <c>Success=true</c> with
+/// HTTP 201/201/202. NO branch of that class returns an unsuccessful ack — the class's own
+/// <c>fakeErrorRate</c> doc says the same thing about itself. What <c>0.9</c> buys is the fraction of
+/// sends routed into the QUEUED branch, not a failure rate; the parameter is misnamed, and the
+/// misnaming is what this sentence used to repeat. So an operator running this scenario sees acks that
+/// are queued, never acks that failed, and a soak or acceptance run that uses this scenario to exercise
+/// failed-ack handling exercises nothing and is green for that reason.
 /// </param>
 public sealed record ScenarioConfig(
     double CycleRateMultiplier = 1.0,

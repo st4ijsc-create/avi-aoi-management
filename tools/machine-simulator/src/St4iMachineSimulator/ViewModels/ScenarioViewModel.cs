@@ -173,7 +173,13 @@ public sealed partial class ScenarioViewModel : ObservableObject
 
     private void RefreshStatusLine()
     {
-        var outageText = NetworkOutage ? "MẤT MẠNG (ack sẽ queued/lỗi)" : "mạng bình thường";
+        // 🔴 Was "MẤT MẠNG (ack sẽ queued/lỗi)". The "/lỗi" half was never true — no branch of
+        // DemoTransport.SendAsync returns an unsuccessful ack, and the 0.9 fakeErrorRate the outage
+        // scenario installs selects the QUEUED branch, not a failing one. This is the THIRD copy of that
+        // same false promise (the other two are ScenarioConfig.NetworkOutage's doc comment and
+        // St4i.EngineApi.Fleet.Dtos.BuildStatusLine); the item that reported it counted two, and this one
+        // is the copy a WPF operator actually reads.
+        var outageText = NetworkOutage ? "MẤT MẠNG (ack chỉ queued, không bao giờ lỗi)" : "mạng bình thường";
         StatusLine = $"{ActivePresetName} — CycleRate={CycleRate:0.00}x, Defect={DefectRate:P0}, Fault={FaultRate:P0}, {outageText}.";
     }
 
@@ -195,8 +201,11 @@ public sealed partial class ScenarioViewModel : ObservableObject
             "Tăng tốc chu kỳ để lộ sự kiện trôi hiệu chuẩn định kỳ có sẵn của IOT_SENSOR (mỗi 200 cycle) trong thời gian demo ngắn — kèm một chút lỗi/fault nhẹ để trông giống dây chuyền đang chịu áp lực nhỏ.",
             new ScenarioConfig(CycleRateMultiplier: 5.0, ExtraDefectRate: 0.03, FaultRate: 0.05, NetworkOutage: false)),
 
+        // 🔴 Was "store-and-forward lỗi cao (~90%) — API Inspector sẽ hiện các dòng queued/lỗi". The 0.9
+        // selects DemoTransport's QUEUED branch; that class returns no unsuccessful ack on any branch, so
+        // the Inspector shows queued rows and never failed ones.
         new("Mất mạng demo",
-            "Chuyển transport đang chạy sang store-and-forward lỗi cao (~90%) — API Inspector sẽ hiện các dòng queued/lỗi trong khi fleet vẫn chạy bình thường.",
+            "Chuyển transport đang chạy sang store-and-forward (~90% ack trả về queued, không ack nào thất bại) — API Inspector sẽ hiện các dòng queued trong khi fleet vẫn chạy bình thường.",
             new ScenarioConfig(CycleRateMultiplier: 1.0, ExtraDefectRate: 0.0, FaultRate: 0.0, NetworkOutage: true)),
 
         new("Hot-folder AOI",

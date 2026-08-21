@@ -10,6 +10,15 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// defaults to <see langword="false"/> — additive: with <c>ST4I_OPCUA_ENABLED</c> unset, a fresh
 /// install/CI run is byte-identical to pre-OU-1 behavior (no extra pipeline slot, no OPC-UA session, no
 /// app-instance cert generated on disk).
+///
+/// <para>🔴 See <see cref="Modbus.ModbusOptions"/>'s class doc for the measured reader census covering the
+/// env-var name constants on BOTH classes, and for the two sentences of an earlier census that it
+/// corrects. The short form for this class: <see cref="EnvVarMapPath"/> is named, fully qualified, by
+/// <c>St4i.EngineApi.Program</c> in a startup error message; <see cref="EnvVarPkiDir"/> is read by
+/// <see cref="OpcUaPkiPaths.DefaultRoot"/> and named by <c>OpcUaDriver</c>'s class doc;
+/// <see cref="EnvVarEnabled"/> and <see cref="EnvVarEndpoint"/> had no reader outside this file until
+/// <c>ConnectorEndpointsTests</c> was changed to call <see cref="EnvVarEnabled"/> and
+/// <see cref="EnvVarMapPath"/> by name rather than retyping their strings.</para>
 /// </summary>
 public sealed class OpcUaOptions
 {

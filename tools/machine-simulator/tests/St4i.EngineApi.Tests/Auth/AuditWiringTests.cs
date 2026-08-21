@@ -333,6 +333,113 @@ public sealed class AuditWiringTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // owner-decisions.md item 18 — the Demo gate guards the FABRICATING TRANSPORT, not only the MODE.
+    //
+    // These four live here because this class already owns the only factory in the suite that can boot the
+    // real composition root with ST4I_DEMO_ENABLED set EITHER WAY (CreateFactoryAsync's demoEnabled), and
+    // because the refusal's contract includes "writes no audit row", which is this class's subject.
+    //
+    // 🔴 They are written as TWO PAIRS on purpose. A test that only asserted 400-when-disabled would go
+    // green against a build that rejected the outage scenario unconditionally — i.e. against a build that
+    // had simply deleted an intentional exhibition feature. The demoEnabled:true halves are what make the
+    // pair discriminating: they fail if the gate over-blocks. Control pair for the demoEnabled:false
+    // halves at BASE 3f6c8f54: both returned 200 OK and applied the outage.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ScenarioApply_NetworkOutage_WithDemoDisabled_IsRefusedAndWritesNoAuditRow()
+    {
+        await using var factory = await CreateFactoryAsync(demoEnabled: false);
+        using var adminClient = await BootstrapAdminAsync(factory, "aw-outage-admin", "AdminPass123!");
+        await CreateUserAsync(factory, "aw-outage-engineer", "EngineerPass123!", Roles.Engineer);
+        using var engineerClient = await LoginAsAsync(factory, "aw-outage-engineer", "EngineerPass123!");
+
+        using var post = await engineerClient.PostAsJsonAsync(
+            "/v1/scenario", new { cycleRate = 1.0, networkOutage = true }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, post.StatusCode);
+
+        // A refused mutation writes no audit row (the WS-D-D4 ordering rule ModeEndpoints' Demo rejection
+        // already follows). Before this gate existed the same call returned 200 AND recorded scenario.apply.
+        Assert.Empty(await GetAuditEntriesAsync(adminClient, "scenario.apply"));
+
+        // And nothing was applied: the live scenario still reports no outage. This is the half that proves
+        // the refusal happened BEFORE FleetHost.ApplyScenario rather than after it.
+        using var get = await engineerClient.GetAsync("/v1/scenario");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        var body = await get.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
+        Assert.False(body.GetProperty("current").GetProperty("networkOutage").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ScenarioApply_NetworkOutage_WithDemoEnabled_StillApplies()
+    {
+        // demoEnabled:true means DemoAutoLoginMiddleware auto-creates and signs in "demo-admin" on the
+        // first request, so bootstrapping a separate admin on top would 409 — this uses the auto-logged-in
+        // client for everything, the same convention MachineSettingsSet_AsDemoAdmin_... above uses.
+        await using var factory = await CreateFactoryAsync(demoEnabled: true);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+
+        using var post = await client.PostAsJsonAsync(
+            "/v1/scenario", new { cycleRate = 1.0, networkOutage = true }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, post.StatusCode);
+        Assert.Single(await GetAuditEntriesAsync(client, "scenario.apply"));
+
+        using var get = await client.GetAsync("/v1/scenario");
+        var body = await get.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
+        Assert.True(body.GetProperty("current").GetProperty("networkOutage").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ScenarioPreset_NetworkOutage_WithDemoDisabled_IsRefused()
+    {
+        // 🔴 The SECOND route into the same transport swap. The item that reported this defect named only
+        // POST /v1/scenario; the shipped "network-outage" preset reaches FleetCore.ApplyNetworkOutageLocked
+        // through POST /v1/scenario/preset with no networkOutage field in the request at all. A gate that
+        // only inspected ScenarioRequest would leave this one wide open, so it is witnessed separately.
+        await using var factory = await CreateFactoryAsync(demoEnabled: false);
+        using var adminClient = await BootstrapAdminAsync(factory, "aw-preset-admin", "AdminPass123!");
+        await CreateUserAsync(factory, "aw-preset-engineer", "EngineerPass123!", Roles.Engineer);
+        using var engineerClient = await LoginAsAsync(factory, "aw-preset-engineer", "EngineerPass123!");
+
+        using var post = await engineerClient.PostAsJsonAsync(
+            "/v1/scenario/preset", new { name = "network-outage" }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, post.StatusCode);
+        Assert.Empty(await GetAuditEntriesAsync(adminClient, "scenario.preset"));
+
+        using var get = await engineerClient.GetAsync("/v1/scenario");
+        var body = await get.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
+        Assert.False(body.GetProperty("current").GetProperty("networkOutage").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ScenarioPreset_NonOutagePreset_WithDemoDisabled_IsUnaffected()
+    {
+        // The over-blocking guard for the preset route: the gate keys off the RESOLVED preset's own
+        // config, so a preset that carries no outage must still apply on a Demo-disabled product host —
+        // otherwise this fix would have taken the whole preset catalogue away from every product install.
+        await using var factory = await CreateFactoryAsync(demoEnabled: false);
+        using var adminClient = await BootstrapAdminAsync(factory, "aw-preset-ok-admin", "AdminPass123!");
+        await CreateUserAsync(factory, "aw-preset-ok-engineer", "EngineerPass123!", Roles.Engineer);
+        using var engineerClient = await LoginAsAsync(factory, "aw-preset-ok-engineer", "EngineerPass123!");
+
+        using var post = await engineerClient.PostAsJsonAsync(
+            "/v1/scenario/preset", new { name = "high-defect" }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, post.StatusCode);
+        Assert.Single(await GetAuditEntriesAsync(adminClient, "scenario.preset"));
+
+        // ExtraDefectRate is deliberately NOT gated — it changes what the simulators produce, not what the
+        // transport is, and its value is reported truthfully. This asserts that decision, not just an OK.
+        using var get = await engineerClient.GetAsync("/v1/scenario");
+        var body = await get.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
+        Assert.Equal(0.35, body.GetProperty("current").GetProperty("defectRate").GetDouble(), 3);
+        Assert.False(body.GetProperty("current").GetProperty("networkOutage").GetBoolean());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // fleet.estop — "who pressed HALT", even though Operator-reachable.
     // ─────────────────────────────────────────────────────────────────────
 

@@ -14,6 +14,30 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// <see langword="false"/> — this task is additive: with no Modbus endpoint configured, a fresh
 /// install/CI run is byte-identical to pre-G2-6 behavior (no extra pipeline slot, no extra TCP traffic,
 /// nothing).
+///
+/// <para>🔴 WHO READS THE FOUR ENV-VAR NAME CONSTANTS BELOW, measured rather than assumed, because an
+/// earlier census got this exactly backwards in both halves. It reported that "both production hosts
+/// hardcode the literal instead" of naming the constant. Neither half survived re-measurement, and the
+/// re-measurement has now been run a second time and still holds:
+/// <list type="bullet">
+///   <item>NO <c>.cs</c> file under <c>src/</c> other than this file and
+///     <see cref="St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions"/> carries any of the seven spellings as a
+///     string LITERAL. What that census read as hardcoded literals in the two hosts were <c>//</c> comment
+///     lines — <c>St4i.EdgeService.EdgeConnectors</c>'s comment says the opposite of what it was quoted
+///     for, recording that that host has never read these variables at all.</item>
+///   <item><c>St4i.EngineApi.Program</c> DOES name two of them, fully qualified
+///     (<c>St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarMapPath</c> and the OPC-UA twin), in two
+///     startup error messages. The mechanism a public name constant exists for is working, not dead.
+///     A grep for the UNQUALIFIED spelling cannot see the qualified form; that is how the miss happened.</item>
+///   <item>Both production hosts obtain VALUES through <see cref="FromEnvironment"/>, i.e. through these
+///     constants, never through a second copy.</item>
+/// </list>
+/// The genuine drift risk was never in the hosts — it is between these constants and the copies that live
+/// elsewhere: <c>README.md</c> §16.4/§16.6's two env-var tables, and, until this was written, two test
+/// files. <c>ConnectorEndpointsTests</c> and <c>ConnectorEndpointsEnvSeedingSideEffectsTests</c> now call
+/// these constants by name instead of retyping the strings, which removes two of the three copies and
+/// makes a rename of any value here reach them by compilation. The README tables remain a hand-kept copy
+/// with no witness: nothing goes red if they drift, and that is still true.</para>
 /// </summary>
 public sealed class ModbusOptions
 {

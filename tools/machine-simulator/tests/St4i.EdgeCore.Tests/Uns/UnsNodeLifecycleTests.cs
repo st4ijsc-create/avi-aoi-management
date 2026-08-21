@@ -223,55 +223,23 @@ public sealed class UnsNodeLifecycleTests
         Assert.Equal(1UL, decoded!.Seq);
     }
 
-    /// <summary>Regression guard for the G2-3 DBIRTH seq-reset fix: per spec, a DBIRTH must NOT reset the
-    /// edge node's sequence (only an NBIRTH does). Before the fix, <c>PublishBirthCoreAsync</c> called
-    /// <c>_seq.ResetOnBirth()</c> — with reading1 at seq 0, that reset would make the DBIRTH's own message
-    /// take seq 0 again, so reading2 would land at seq 1. Fixed (no reset), the DBIRTH instead CONTINUES
-    /// the sequence (taking seq 1 for itself), so reading2 lands at seq 2 — the exact value asserted below
-    /// is what actually distinguishes "fixed" from "still buggy" (both are non-zero, so a looser "not equal
-    /// to 0" check alone would NOT catch a regression back to the old behavior).</summary>
-    [Fact]
-    public async Task PublishBirth_DeviceLevelDbirth_DoesNotResetTheNodeSequence()
-    {
-        const int port = 18847;
-        var options = new UnsOptions { Site = "s1", Area = "a1", Line = "l1", Cell = "c1", BrokerPort = port };
+    // 🔴 DELETED 2026-08-21 — `PublishBirth_DeviceLevelDbirth_DoesNotResetTheNodeSequence`. This is the
+    // ONE test in the tree that CALLED IUnsPublisher.PublishBirth rather than merely implementing it on a
+    // fake, and the owner's ruling on owner-decisions.md item 23 removed that method. This is the single
+    // test EXPECT_EDGECORE moves for (1168 -> 1167).
+    //
+    // WHAT IS LOST, STATED PLAINLY BECAUSE A DELETED REGRESSION GUARD IS A COST AND NOT A TIDY-UP: it was
+    // a real guard for a real fixed defect. G2-2's PublishBirthCoreAsync called _seq.ResetOnBirth(), which
+    // the Sparkplug B spec forbids for a DEVICE birth (only NBIRTH resets an edge node's sequence). G2-3
+    // fixed it, and this test pinned the fix with the exact discriminating value (reading2 at seq 2 —
+    // seq 1 would have meant the reset was back), rather than a looser non-zero check that could not tell
+    // fixed from buggy.
+    //
+    // WHY THE LOSS IS BOUNDED RATHER THAN OPEN: the defect it guarded was a wrong sequence reset inside
+    // the DBIRTH publish path, and that path no longer exists — there is now no code in this repository
+    // that publishes a DBIRTH at all, so the specific regression cannot recur while that stays true. The
+    // sibling rule it does NOT cover is still covered: `NodeBirth_ResetsTheSequence`-style guards for
+    // NBIRTH (the message that MUST reset) remain in this file, untouched. If a DBIRTH path is ever
+    // re-introduced, this test is the one to re-introduce with it.
 
-        await using var broker = new UnsBroker(port);
-        await broker.StartAsync();
-
-        var seenSeqs = new ConcurrentQueue<ulong>();
-        var ddataTopic = UnsTopicBuilder.BuildSparkplugDataTopic(options, "EQ-DBIRTH");
-
-        var factory = new MqttClientFactory();
-        using var subscriber = factory.CreateMqttClient();
-        subscriber.ApplicationMessageReceivedAsync += args =>
-        {
-            if (args.ApplicationMessage.Topic == ddataTopic)
-            {
-                seenSeqs.Enqueue(SparkplugPayload.Decode(PayloadBytes(args.ApplicationMessage)).Seq);
-            }
-
-            return Task.CompletedTask;
-        };
-        await subscriber.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", port).Build());
-        await subscriber.SubscribeAsync(new MqttClientSubscribeOptionsBuilder().WithTopicFilter(ddataTopic).Build());
-
-        await using var publisher = new UnsPublisher(options);
-        var profile = MappingProfile.ForClass(DeviceClass.Automation);
-
-        var reading1 = BuildProcessResultReading("EQ-DBIRTH");
-        publisher.PublishReading(reading1, Normalizer.Normalize(reading1, profile));
-        await WaitUntilAsync(() => seenSeqs.Count == 1, "the first DDATA message (seq 0) to arrive");
-
-        publisher.PublishBirth("EQ-DBIRTH"); // DBIRTH — must NOT reset the node sequence
-
-        var reading2 = BuildProcessResultReading("EQ-DBIRTH");
-        reading2.CycleCounter = 2;
-        publisher.PublishReading(reading2, Normalizer.Normalize(reading2, profile));
-        await WaitUntilAsync(() => seenSeqs.Count == 2, "the second DDATA message to arrive");
-
-        var ordered = seenSeqs.ToArray();
-        Assert.Equal(0UL, ordered[0]);
-        Assert.Equal(2UL, ordered[1]); // NOT reset to 0, and NOT the pre-fix value of 1 either.
-    }
 }
