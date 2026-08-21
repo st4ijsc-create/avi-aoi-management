@@ -4226,6 +4226,21 @@
       "faiNotPassed": "Cần First-Article Inspection (FAI) đạt PASS cho sản phẩm #{{productModelId}} trước khi phát hành/chấp nhận sản xuất.",
       "releasedProgramRequiresApproval": "Sản phẩm đã có chương trình kiểm tra được phát hành — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals).",
       "productLifecycleRequiresApproval": "Sản phẩm đang ở trạng thái vòng đời '{{lifecycleStatus}}' — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals)."
+    },
+    "client": {
+      "generic": "Lỗi hệ thống, vui lòng thử lại",
+      "forbidden": "Bạn không có quyền thực hiện thao tác này",
+      "sessionExpired": "Phiên đăng nhập hết hạn, vui lòng đăng nhập lại",
+      "duplicate": "Mã đã tồn tại",
+      "zodRequired": "bắt buộc nhập",
+      "zodInvalidInput": "giá trị không hợp lệ",
+      "zodInvalidEmail": "email không hợp lệ",
+      "zodInvalidDate": "ngày không hợp lệ",
+      "zodExpectedNumber": "phải là số",
+      "zodExpectedNonEmpty": "không được để trống",
+      "invalidData": "Dữ liệu không hợp lệ",
+      "zodField": "Trường \"{{field}}\": {{message}}",
+      "zodMore": " (và {{count}} lỗi khác)"
     }
   },
   "export": {

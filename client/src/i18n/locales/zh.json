@@ -4226,6 +4226,21 @@
       "faiNotPassed": "产品 #{{productModelId}} 需要通过首件检验（FAI）后才能发布/接受生产。",
       "releasedProgramRequiresApproval": "该产品已有已发布的检验程序——阈值变更须通过审批队列（Threshold Approvals）。",
       "productLifecycleRequiresApproval": "该产品处于生命周期状态 '{{lifecycleStatus}}'——阈值变更须通过审批队列（Threshold Approvals）。"
+    },
+    "client": {
+      "generic": "系统错误，请重试",
+      "forbidden": "您没有权限执行此操作",
+      "sessionExpired": "登录会话已过期，请重新登录",
+      "duplicate": "该编码已存在",
+      "zodRequired": "为必填项",
+      "zodInvalidInput": "取值无效",
+      "zodInvalidEmail": "邮箱格式无效",
+      "zodInvalidDate": "日期无效",
+      "zodExpectedNumber": "必须为数字",
+      "zodExpectedNonEmpty": "不能为空",
+      "invalidData": "数据无效",
+      "zodField": "字段“{{field}}”：{{message}}",
+      "zodMore": "（另有 {{count}} 处错误）"
     }
   },
   "export": {

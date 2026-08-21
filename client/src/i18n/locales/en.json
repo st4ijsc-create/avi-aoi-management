@@ -4234,6 +4234,21 @@
       "faiNotPassed": "A passing First-Article Inspection (FAI) is required for product #{{productModelId}} before releasing/accepting production.",
       "releasedProgramRequiresApproval": "The product already has a released inspection program — threshold changes require approval via the queue (Threshold Approvals).",
       "productLifecycleRequiresApproval": "The product is in lifecycle status '{{lifecycleStatus}}' — threshold changes require approval via the queue (Threshold Approvals)."
+    },
+    "client": {
+      "generic": "System error, please try again",
+      "forbidden": "You do not have permission to perform this action",
+      "sessionExpired": "Your session has expired, please sign in again",
+      "duplicate": "This code already exists",
+      "zodRequired": "is required",
+      "zodInvalidInput": "has an invalid value",
+      "zodInvalidEmail": "is not a valid email",
+      "zodInvalidDate": "is not a valid date",
+      "zodExpectedNumber": "must be a number",
+      "zodExpectedNonEmpty": "must not be empty",
+      "invalidData": "Invalid data",
+      "zodField": "Field \"{{field}}\": {{message}}",
+      "zodMore": " (and {{count}} more)"
     }
   },
   "export": {

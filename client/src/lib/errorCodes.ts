@@ -318,6 +318,44 @@ export function translateAppError(
   return translated;
 }
 
+/**
+ * F1 (2026-08-21) — tra một khoá i18n TUỲ Ý theo ĐÚNG kỷ luật chống-F8 của file này.
+ *
+ * ── VÌ SAO PHẢI Ở ĐÂY, KHÔNG PHẢI `i18n.t()` THẲNG Ở NƠI GỌI ─────────────────────
+ * Dự án cấu hình `fallbackLng: 'vi'` và nạp en/zh bằng `import()` ĐỘNG. Gọi
+ * `i18n.t(key, { defaultValue })` như bình thường thì trong cửa sổ chờ nạp — hoặc khi
+ * chunk hỏng vĩnh viễn (offline, đúng hoàn cảnh của một nhà máy) — i18next rơi về `vi`
+ * TRƯỚC khi chạm `defaultValue`, nên người dùng en/zh nhận CÂU TIẾNG VIỆT. Đó là bug F8,
+ * đã mất hai vòng sửa mới ra đúng cơ chế: ghim `lng` theo `i18n.language` (ngôn ngữ
+ * NGƯỜI DÙNG chọn, không phải `resolvedLanguage` vốn tự "làm tròn" về vi) và tắt hẳn
+ * `fallbackLng` NGAY TẠI LỜI GỌI.
+ *
+ * ⚠ Đừng chép cơ chế này ra chỗ khác. Bài học đắt nhất của chính file này (round 2) là
+ * hai tầng kiểm riêng biệt sẽ LỆCH NHAU — nên chỉ có MỘT chỗ biết cách gọi `i18n.t()`.
+ *
+ * @param fallback câu dùng khi khoá không tồn tại Ở ĐÚNG `activeLng`. Không bao giờ trả
+ *   câu của ngôn ngữ khác — thà giữ nguyên fallback còn hơn đổi ngôn ngữ sau lưng.
+ */
+export function translateClientKey(
+  key: string,
+  fallback: string,
+  params?: Record<string, string | number>,
+): string {
+  const SENTINEL = " __missing__";
+  const activeLng = (i18n.language || "vi").split("-")[0];
+  // Tham số đi vào bộ nội suy của i18next ⇒ phải qua `sanitizeAllParams` y như đường
+  // `translateAppError`. Một `field` mang `$t(...)` hoặc `{{...}}` là bề mặt tiêm đã
+  // được ghi sổ ở C-1; không có lý do gì để đường mới này an toàn hơn đường cũ.
+  const translated = i18n.t(key, {
+    ...(params ? sanitizeAllParams(params) : {}),
+    lng: activeLng,
+    fallbackLng: false,
+    defaultValue: SENTINEL,
+  });
+  if (typeof translated !== "string" || translated === SENTINEL) return fallback;
+  return translated;
+}
+
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // ★★★ Pha 4 Task 3 — CÂU CHỮ CHO MẶT ĐỌC (`vramReadModel.ts`) + MẶT LỆNH (`vramCommands.ts`)
 // ══════════════════════════════════════════════════════════════════════════════════════════════
