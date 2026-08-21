@@ -44,7 +44,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔨 **ĐÓNG — STORE GHI LẠI DANH TÍNH CỦA CÁC BYTE** (2026-08-19, chủ sở hữu). 🔴 **Giá đã chấp nhận và ghi vào mục: `PUT /v1/historian/oee/settings` trả 409 ở những lúc hôm nay trả 200, KỂ CẢ khi thứ đổi file là một biên tập tay HỢP LỆ hay chỉ là một lần ĐỊNH DẠNG LẠI.** Câu *"bao nhiêu PUT hợp lệ thành 409"* vẫn **KHÔNG đo được** và phán quyết ra **mà không có nó**. **Đã thi hành, AJ-1 (2026-08-19)** — cơ chế **SUY ra chứ không chọn một trong ba**: cả ba ứng viên (băm / `mtime` / kích thước) là **vân tay**, mà vân tay chỉ cần khi không cầm được cả hai vế; `ReadLocked` **đã cầm toàn văn** ở cả hai đầu trong cùng một khoá, nên store **giữ lại toa hạng gốc** và so trực tiếp — **0 lần đọc đĩa thêm**, và **mạnh hơn** mọi hàm hao hụt của nó. Kiểu thứ ba `OeeSettingsFileChangedException`; vị từ gác bằng **CẶP `Loaded/Loaded`**, nên cặp `Loaded/Absent` **không** bị đóng kèm. Nhân chứng `Set_AfterARestoreOntoAHostThatCameUpWithAFile_…` **đảo chiều và đổi tên**; giá được **ghim** bằng một bài kiểm riêng |
 | 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT**. 🔴 **KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: KHẢ THI — `Normalizer` có đủ thông tin, `WaveformSeries` và `WelderSim` KHÔNG phải đổi. Nhưng nó KHÔNG nằm trọn ở một đường dây: cùng một envelope đi ra BA bề mặt, và một trong ba là gương ngữ nghĩa MQTT RETAINED — một **bề mặt đã xuất bản thứ hai; NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này** (hợp đồng TỰ KHAI rằng họ ở ngoài repo — đó là lời của tài liệu, không phải một phép đếm). 🔴 **Giá gương ấy KHÔNG phải của riêng lựa chọn 3: lựa chọn 1 trả CÙNG giá đó CỘNG THÊM, lựa chọn 2 không trả giá nào trong cây này nhưng trả TOÀN BỘ ở ngoài (hợp đồng ingest đã xuất bản + ba SDK).** Và KHÔNG một bài kiểm nào trong 2763 bài đỏ lên, tức lối này KHÔNG CÓ NHÂN CHỨNG. **Ràng buộc thi hành cứng: `LiveTransport.ReadSampleSeries` chỉ nhận hàng `double[]` và bỏ im lặng mọi kiểu khác.** Ba lựa chọn VẪN CHƯA QUYẾT** — 📎 **câu ngay trước giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1), và lý do là chủ sở hữu ĐÃ PHÁN, không phải câu ấy từng sai; AK-1 dùng đúng MỘT kiểu bảo tồn — kiểu AB-1 lập và AI-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG dấu gạch ngang ở bất kỳ đâu, không xoá một dòng nào.** → 🔨 **QUYẾT: LỰA CHỌN 3 — DỰNG CẶP `[t, v]` Ở RANH GIỚI `Normalizer`** (2026-08-19, chủ sở hữu). `WaveformSeries`, `WelderSim`, `ScrewdriveSim` **không đổi một dòng**; thứ đổi là **payload đi ra**. 🔴 **Giá đã chấp nhận và ghi vào mục: HAI bề mặt đã xuất bản đổi CÙNG LÚC, không một** — payload ingest HTTP **và** gương ngữ nghĩa MQTT retained `syn/…`; **NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này**. Cộng một bề mặt thứ ba, riêng tư: hàng đợi store-and-forward của SDK ghi nguyên payload **xuống đĩa** và **phát lại hình dạng CŨ sau khi mã đã đổi** — **cửa sổ ấy CHƯA ĐO**. **Đã thi hành, AK-1 (2026-08-19)** — cơ chế của `t` **SUY ra chứ không chọn**: `t(i) = i / rateHz`, tức **thời điểm mà `rateHz` HÀM Ý**, **không** phải thời điểm `WelderSim` vẽ đường cong; lý do là ở ranh giới chỉ có **bốn trường** của `WaveformSeries`, còn dựng lại thời điểm THẬT đòi **tham số hoá riêng của từng bộ sinh** — không có trên hồ sơ, khác nhau theo driver, và **vắng hẳn** với driver bên thứ ba mà ranh giới này cũng phục vụ. 🔴 **`rateHz` KHÔNG đổi nghĩa và KHÔNG đổi giá trị** — đó là điều kiện DỪNG của nhiệm vụ và nó không bị chạm. 🔴 **Nửa bất lợi, viết ngay cạnh:** chỗ lệch **4,17 %** của `WelderSim` **không được tạo ra và cũng không được sửa** ở đây (phép chuyển tính đúng cái `t` mà một bên tiêu thụ tuân hợp đồng đã tính hôm nay) — **nhưng nó chuyển `t` từ NGẦM sang ĐÃ VIẾT RA**, nên sửa chỗ lệch ấy về sau là **đổi những con số đã xuất bản**, không còn là đổi một tài liệu. Nhân chứng **MỚI** `WaveformPairAtTheWireBoundaryTests` (bảy `[Fact]`): gỡ phép chuyển ⇒ **BỐN đỏ**; trả kiểu hàng khác `double[]` ⇒ **SÁU đỏ**; 🔴 `WaveformSeriesRowShapeContractTests` **VẪN XANH, và đó là im lặng, không phải chấp thuận** — nó nhìn thượng nguồn |
 | 15 | `DropOldest` + một cảnh báo "queue saturated" không với tới được — **BA chỗ**, và chỗ **thứ tư** đã giải xong | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Gộp phát hiện đợt 6 (`HistorianWriter`) và đợt 8 (`UnsPublisher`) làm **MỘT mục**, và phép liệt kê thêm chỗ **thứ ba chưa ai báo**: `UnsBridge`. `AlarmNotifier` cùng chế độ nhưng **đã đúng** → 🔨 **QUYẾT: ÁP MẪU ĐÃ GIẢI XONG CỦA `AlarmNotifier` VÀO CẢ BA CHỖ** (2026-08-20, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8 — mục này không thuộc ba mục đổi thứ người ngoài đang dựa vào). 🔴 **`FullMode` **KHÔNG** đổi: `DropOldest` ở lại `DropOldest`** — thứ đổi là **kế toán**, không phải chính sách. **Đã thi hành, AP-1 (2026-08-21)**: `itemDropped` được truyền ở cả ba, cú đuổi được **đếm** và được **cảnh báo bằng lời SATURATION**, còn nhánh `if (!TryWrite(...))` — vốn chỉ với tới được khi writer ĐÃ ĐÓNG — được đếm riêng và viết lại thành lời **SHUTDOWN**. 🔴 **Tiền đề của phán quyết được KIỂM LẠI trên mã và nó ĐỨNG VỮNG**: `AlarmNotifier` thật sự đã giải xong (nó truyền `itemDropped`, phân loại năm đường rơi, log sau khi nhả khoá). 🔴 **Nhưng MỘT mảnh của hình dạng ấy KHÔNG mang sang được, và nói ra chứ không lặng lẽ bỏ:** phép *bracket* `Evicted` quanh `TryWrite` trong `EmitLocked` chỉ chính xác vì mọi thứ ở đó chạy dưới `_gate`; ba lớp EdgeCore **cố ý không có khoá nào trên đường enqueue**, nên cảnh báo được phát **từ trong chính callback `itemDropped`** — chính xác vì một lý do khác (callback chạy đồng bộ, một lần cho mỗi phần tử bị đuổi, và nhận đúng phần tử ấy). 🔴 **`UnsBridge.DroppedTotal` KHÔNG bị nới nghĩa**, và bề mặt ĐỌC nó được nêu tên: `GET /v1/site`, trang `/site`, **và bản ghi resync GIỮ LẠI phát lên broker của Site — một hợp đồng dây bên thứ ba tiêu thụ**. Cú đuổi kênh có tên riêng, `UnsBridge.ForwardQueueStats.Evicted`. 🔴 **Dư lượng còn mở, ghi vào mục chứ không để trong báo cáo: bộ đếm mới KHÔNG có trên `/v1/site` lẫn trang `/site`** — thêm một trường ở đó là **đổi payload đã xuất bản**, đúng thứ nằm ngoài uỷ quyền mục này. Trên hình thái cài Windows Service (README §"đường mất dữ liệu", mục 4) log **không có nơi nào để đi**, nên trên hình thái ấy mất mát này **được đếm nhưng operator vẫn chưa nhìn thấy được**. Xem Phần III |
-| 16 | `OeeCalculator` — Quality **không** kẹp `[0,1]` | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. Biên hôm nay do **hai vị từ SQL ở một file khác** giữ. 🔴 **AQ-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG trong brief đã NỔ, không một dòng `OeeCalculator` bị sửa, mục Ở LẠI PHẦN I.** Câu ngay trên **giữ nguyên văn**; cái được rút, tại chỗ và kèm ngày, là **chỉ** mệnh đề *"trên đường đang ship hôm nay con số ấy KHÔNG THỂ XẢY RA"* trong thân mục. **Đo được:** `AggregateForOeeAsync` chạy **bốn câu lệnh rời nhau trên một connection KHÔNG có transaction**; SQLite ở WAL cho mỗi câu lệnh **một ảnh chụp riêng**; nên hai vị từ lồng nhau chỉ giữ **trong một ảnh chụp**, và một `AppendResultsAsync` song song commit giữa câu `total` và câu `good` làm `GoodCount > TotalCount`. **Ba nhánh, đối chứng nằm trong phép đo:** không người ghi → **93 291 lần đọc, 0 vi phạm**; **10 hàng/giây — xấp xỉ nhịp của chính `fleet.json` đang ship** → **87 vi phạm**, Quality tới **1.00333**; người ghi nóng → **1 112 vi phạm**, Quality tới **1.00888**. **Nên một cái kẹp ĐỔI một con số OEE đã báo cáo, và đó là một trong ba mục chủ sở hữu KHÔNG uỷ quyền.** 🔴 **Và phép đo ĐỔI CÂU HỎI: mục mở ra như một câu hỏi phòng thủ chiều sâu, đo được nó là một khuyết tật ĐANG SỐNG — `Math.Clamp` không sửa nó, chỉ che nó. Bản sửa thật nằm ở `AggregateForOeeAsync` (đọc hai `COUNT(*)` trong MỘT transaction), tức một file khác, một rủi ro khác — LỰA CHỌN THỨ TƯ mà ba lựa chọn của mục không có.** 🔴 **Kèm một khẳng định đã công bố THỨ HAI vẫn đang sai và chưa được rút:** `web/src/lib/api.ts` nói `quality`/`oee` *"never … over 1 (`OeeCalculator.Calculate` clamps/guards every division)"* — đúng câu AL-1 đã rút trên doc lớp ngày 2026-08-20, ở **bề mặt khách hàng đọc**; một **bản kiểm kê THIẾU**, AQ-1 **không sửa** vì ngoài uỷ quyền |
+| 16 | `OeeCalculator` — Quality **không** kẹp `[0,1]` | ✅ **ĐÃ THI HÀNH 2026-08-22 (AT-1)** theo 🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU ngày 2026-08-22: MỘT TRANSACTION** bọc bốn câu lệnh của `AggregateForOeeAsync` — **lựa chọn THỨ TƯ**, không kẹp/không ném/không để nguyên; `OeeCalculator` **không sửa một dòng mã**. 🔴 **Mục này CỐ Ý đổi một con số đã báo cáo, và nửa bất lợi ghi trong mục: OEE từ nay KHÁC OEE trước 2026-08-22 ở đúng những lúc trước đây sai — báo cáo đã in không đổi, nhưng ai so hai kỳ sẽ thấy một bậc nhảy không do sản xuất gây ra.** **Đo:** `deferred: true` (=`BEGIN` trần) giữ ảnh chụp qua một commit song song và **không chặn bên ghi** (0–1 ms); `BeginTransaction()` **không tham số** phát `BEGIN IMMEDIATE`, lấy khoá GHI cho một hàm chỉ đọc và làm bên ghi **hỏng hẳn** sau **33 121 ms** (`database is locked`) — **hai dạng cùng báo `Serializable`, nên TÊN mức cô lập không phân biệt được chúng**. Ba chỗ gọi **đều đồng bộ**: `GET /v1/historian/oee`, `GET /v1/historian/oee/fleet` (vòng lặp — mười máy = mười transaction/request), báo cáo PDF. **Nhân chứng đỏ được 5/5** ở cả hai đối chứng (gỡ transaction; đổi sang không-tham-số), xanh 8/8 sau sửa. 🔴 **Ba con số "Quality lớn nhất" của AQ-1 KHÔNG tái lập được** (đo lại: 1,25 và 1,0168, không phải 1,00333 và 1,00888) — chúng là tạo tác của cách gieo dữ liệu; ba con số "số lần vi phạm" thì tái lập được. 🔴 **Khẳng định đã công bố THỨ HAI mà AQ-1 ghi là "kiểm kê THIẾU" nay ĐÃ RÚT**: `web/src/lib/api.ts`. 🔴 **Và một khác biệt hồ sơ: phán quyết mục 16 KHÔNG có bản ghi tại chỗ ở BASE `ce1ce2be`** — `grep "2026-08-22"` trả đúng hai dòng, cả hai thuộc mục 27; nội dung phán quyết đến qua brief AT-1. Xem Phần III. **Câu trạng thái CŨ giữ nguyên văn ngay dưới:** 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. Biên hôm nay do **hai vị từ SQL ở một file khác** giữ. 🔴 **AQ-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG trong brief đã NỔ, không một dòng `OeeCalculator` bị sửa, mục Ở LẠI PHẦN I.** Câu ngay trên **giữ nguyên văn**; cái được rút, tại chỗ và kèm ngày, là **chỉ** mệnh đề *"trên đường đang ship hôm nay con số ấy KHÔNG THỂ XẢY RA"* trong thân mục. **Đo được:** `AggregateForOeeAsync` chạy **bốn câu lệnh rời nhau trên một connection KHÔNG có transaction**; SQLite ở WAL cho mỗi câu lệnh **một ảnh chụp riêng**; nên hai vị từ lồng nhau chỉ giữ **trong một ảnh chụp**, và một `AppendResultsAsync` song song commit giữa câu `total` và câu `good` làm `GoodCount > TotalCount`. **Ba nhánh, đối chứng nằm trong phép đo:** không người ghi → **93 291 lần đọc, 0 vi phạm**; **10 hàng/giây — xấp xỉ nhịp của chính `fleet.json` đang ship** → **87 vi phạm**, Quality tới **1.00333**; người ghi nóng → **1 112 vi phạm**, Quality tới **1.00888**. **Nên một cái kẹp ĐỔI một con số OEE đã báo cáo, và đó là một trong ba mục chủ sở hữu KHÔNG uỷ quyền.** 🔴 **Và phép đo ĐỔI CÂU HỎI: mục mở ra như một câu hỏi phòng thủ chiều sâu, đo được nó là một khuyết tật ĐANG SỐNG — `Math.Clamp` không sửa nó, chỉ che nó. Bản sửa thật nằm ở `AggregateForOeeAsync` (đọc hai `COUNT(*)` trong MỘT transaction), tức một file khác, một rủi ro khác — LỰA CHỌN THỨ TƯ mà ba lựa chọn của mục không có.** 🔴 **Kèm một khẳng định đã công bố THỨ HAI vẫn đang sai và chưa được rút:** `web/src/lib/api.ts` nói `quality`/`oee` *"never … over 1 (`OeeCalculator.Calculate` clamps/guards every division)"* — đúng câu AL-1 đã rút trên doc lớp ngày 2026-08-20, ở **bề mặt khách hàng đọc**; một **bản kiểm kê THIẾU**, AQ-1 **không sửa** vì ngoài uỷ quyền |
 | 17 | `QueryTelemetryAsync` không áp cổng xuất xứ, và **không áp được** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. `historian_telemetry` **không có cột `is_fabricated`**; `GET /v1/historian/telemetry` **không nhận `includeFabricated`** |
 | 18 | Cổng Demo gác **CHẾ ĐỘ**, không gác **BỘ SINH GIẢ** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — cổng nay gác **CẢ HAI** route dựng transport bịa (`POST /v1/scenario` **và** `POST /v1/scenario/preset`; mục chỉ nêu một). Xem Phần III |
 | 19 | `TransportCoordinator.Auto` và `.Demo` — hai trong bốn bộ truy cập công bố **không ai đọc** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — **KHÔNG gỡ thành viên nào**; hai câu tài liệu SAI đã sửa, và **khoá KHÔNG bỏ được** (đo rồi mới từ chối). Xem Phần III |
@@ -55,7 +55,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 24 | `ModbusOptions`/`OpcUaOptions` — hằng số TÊN biến môi trường công khai | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — phép đo đã sửa **tự kiểm lại và ĐỨNG VỮNG cả hai nửa**; hai file test nay gọi hằng số thay vì gõ lại chuỗi. Xem Phần III |
 | 25 | **Điều kiện rời Phần II của mục 12** — họ driver: tài liệu hay thu hẹp? | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). 109 cảnh báo trên **97 thành viên**; câu hỏi *"có nên `public` không"* **không tồn tại với 46**, **sai trong im lặng với 9**, miễn phí với 17, tốn một IVT mới với 25 — và 🔴 **ít nhất 55 trong 97 sẽ `public` DÙ PHÁN THẾ NÀO** |
 | 26 | **Không gì trong repo này trả cho TÍNH ĐÚNG của một chú thích đã viết** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Mục 12 trả cho **bao phủ**; W-1 kiểm **hình thức**. Năm con số đã đo — **KHÔNG cộng được**, và mục nói vì sao |
-| 27 | API Inspector **không phơi THÂN request** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo lại từ mã 2026-08-20. `ApiTraceEvent` **không có trường thân**; `TraceTable` **không có trình xử lý click hàng nào**. 🔴 **AS-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG của brief đã NỔ: `ApiTraceEvent` rời tiến trình trên BA bề mặt đã xuất bản, nên thêm một trường thân LÀ đổi hình dạng một payload đã xuất bản. Không một dòng nào bị sửa cho mục này; mục Ở LẠI PHẦN I.** Kèm hai phép đo BÁC hai tiền đề của brief: thân request đi ra **KHÔNG mang khoá `mk_`** (khoá đi bằng header), và sóng hàn hôm nay là **24 mẫu**, không phải 100.000. → 🔨 **QUYẾT: BỀ MẶT MỚI** (2026-08-22, **chủ sở hữu**) — một đường RIÊNG cho thân request; khung WS và **hai** file JSON xuất **giữ nguyên hình dạng**. 🔴 **Phép DỪNG của AS-1 là thứ TẠO RA phán quyết này**: nếu cứ thêm trường thì đã đổi ba payload đã xuất bản, hai trong đó **không đo được ai đang đọc**. 🔴 **Ở LẠI PHẦN I** — phán quyết đã có, **ghi chép thi hành CHƯA**; một nhiệm vụ khác thi hành. Ba điều kiện che (trần byte + dấu hiệu đã cắt, che ở chỗ dựng sự kiện, **danh sách CHO PHÉP**) **KHÔNG được miễn**. Xem thân mục |
+| 27 | API Inspector **không phơi THÂN request** | ✅ **ĐÃ THI HÀNH 2026-08-22 (AT-1)** theo 🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU ngày 2026-08-22: BỀ MẶT MỚI** (phán quyết ấy đọc được trong thân mục). Bề mặt mới = record `ApiTraceBody` + route `GET /v1/inspector/bodies` (cùng `Policies.Engineer` với luồng WS). 🔴 **BA bề mặt đã xuất bản KHÔNG dịch một byte, chứng minh bằng diff: `ApiTraceEvent.cs`, `ApiInspector.tsx`, `inspector.ts`, `InspectorViewModel.cs`, `ApiInspectorView.xaml`, `TraceTable.tsx` — 0 dòng đổi ở mỗi file**; `ApiTraceEvent` giữ đúng mười thành phần và `EventBus.Traced` vẫn mang một `ApiTraceEvent`. **Trần kích thước ĐO rồi mới chọn: 16 KiB/thân**, vì thân thật của bộ sinh hôm nay là **1 314 byte** (24 mẫu) / **1 207** (20 mẫu) / **255** (telemetry), còn sóng **100 000 mẫu** = **2 169 909 byte** và **BỊ cắt** kèm cờ `Truncated`; ngân sách thật là **500 × 16 KiB = 8 MiB**. **Danh sách CHO PHÉP có BẢY khoá**; che `serialNumber`, `recipe`, `metrics`, `waveforms`, `measurements`, `samples` **và mọi khoá genealogy (do cấu trúc)**, mỗi cái **nêu tên** trong `WithheldKeys`. 🔴 **Một lỗ rò của chính bản sửa bị bắt bởi chính bài test của nó: `idempotencyKey` từng nằm trên danh sách cho phép, nhưng `BuildIdempotencyKey` dựng nó từ MÃ CÔNG THỨC và (hình dạng inspection) SỐ SERIAL** — nay là `IdempotencyDigest` (SHA-256, 16 hex), và giới hạn được nêu: **phi-định-danh, không phải bí mật**. **Vòng đời thân nằm trong vòng đời trace DO CẤU TRÚC** — một hàng đợi cặp, đuổi cùng một `Dequeue`. 🔴 **Đóng MỘT PHẦN: không dụng cụ UI nào được thêm** — bề mặt mới là một route, và **không chạm `web/` là CỐ Ý**, vì `handleExport` sống trong `ApiInspector.tsx`. Xem Phần III. **Câu trạng thái CŨ giữ nguyên văn ngay dưới:** 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo lại từ mã 2026-08-20. `ApiTraceEvent` **không có trường thân**; `TraceTable` **không có trình xử lý click hàng nào**. 🔴 **AS-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG của brief đã NỔ: `ApiTraceEvent` rời tiến trình trên BA bề mặt đã xuất bản, nên thêm một trường thân LÀ đổi hình dạng một payload đã xuất bản. Không một dòng nào bị sửa cho mục này; mục Ở LẠI PHẦN I.** Kèm hai phép đo BÁC hai tiền đề của brief: thân request đi ra **KHÔNG mang khoá `mk_`** (khoá đi bằng header), và sóng hàn hôm nay là **24 mẫu**, không phải 100.000. → 🔨 **QUYẾT: BỀ MẶT MỚI** (2026-08-22, **chủ sở hữu**) — một đường RIÊNG cho thân request; khung WS và **hai** file JSON xuất **giữ nguyên hình dạng**. 🔴 **Phép DỪNG của AS-1 là thứ TẠO RA phán quyết này**: nếu cứ thêm trường thì đã đổi ba payload đã xuất bản, hai trong đó **không đo được ai đang đọc**. 🔴 **Ở LẠI PHẦN I** — phán quyết đã có, **ghi chép thi hành CHƯA**; một nhiệm vụ khác thi hành. Ba điều kiện che (trần byte + dấu hiệu đã cắt, che ở chỗ dựng sự kiện, **danh sách CHO PHÉP**) **KHÔNG được miễn**. Xem thân mục |
 | 28 | ~~**BA** cái trần~~ **BỐN** cái trần trên lịch sử API-trace, và **không cái nào được UI gọi tên là trần** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **KHÔNG phải ba mà BỐN**: mục bỏ sót vòng đệm của chính vỏ WPF (`InspectorViewModel.MaxEvents`). Cái trần backfill nay **CÓ TÊN** (`InspectorStreamEndpoint.BackfillEventCount`) thay vì một literal `200`; pane web nay **gọi tên** ba cái trần áp vào nó và nói **cái nào chặn khi nào**. Đổi lời, không đổi hành vi. Xem Phần III |
 | 29 | Cả fleet liên kết ra ngoài bằng **MỘT danh tính thiết bị** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **và CƠ CHẾ mà mục mô tả KHÔNG đứng vững: route KHÔNG "trả 200 cho việc nó không làm"** — nó thật sự lưu khoá, câu *"Pasted mk_ key stored for WELD-01"* là **ĐÚNG**; cái sai là suy luận nó mời người đọc rút ra. Nên bản sửa là **sửa câu, không sửa mã trạng thái** — một 4xx sẽ từ chối một cú ghi có thật và lấy đi đúng đường mà chính mục nêu là hợp lệ. 🔴 **Và mục nêu THIẾU một bề mặt: có HAI biểu mẫu web POST route ấy, không một.** Cái trần vendored giữ nguyên. Xem Phần III |
 | 30 | Gốc mặc định của bốn store cạnh-binary là `%ProgramFiles%`, và **lần chạy đầu chính là lần GHI** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Câu hỏi này **bị nhiều brief liên tiếp CẤM mở**; lệnh cấm hết hiệu lực ở nhiệm vụ này |
@@ -162,6 +162,36 @@ câu này chỉ là một con trỏ vào nó.
 > **liệt kê**, và trỏ vào bảng. Một phép liệt kê sai thì sai **nhìn thấy được**; một con số
 > sai thì không.
 
+> 📎 **PHÉP LIỆT KÊ Ở TRÊN — RÚT 2026-08-22 (AT-1), giữ NGUYÊN VĂN, cùng kiểu bảo tồn AB-1 lập và
+> AI-1/AK-1/AO-1/AP-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG gạch ngang, không xoá một
+> dòng nào.** Nó đọc: *"**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 16, 17, 18, 19, 20, 21, 22, 23, 24,
+> 25, 26, 27, 28, 29, 30, 31 và 32.** Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là
+> nguồn sự thật** — câu này chỉ là một con trỏ vào nó."*
+>
+> 🔴 **VÀ LÝ DO RÚT CÓ HAI NỬA, KHÔNG MỘT — nửa thứ hai là một phát hiện, không phải một thao tác dọn
+> dẹp.** *Nửa thứ nhất, do nhiệm vụ này:* **mục 16 và mục 27 đã được CHỦ SỞ HỮU phán ngày 2026-08-22 và
+> đã THI HÀNH ngày 2026-08-22 (AT-1)**; cả hai nay ở **Phần III**, mỗi mục mang một ghi chép thi hành ghi
+> kèm ngày. *Nửa thứ hai, và nó có TRƯỚC nhiệm vụ này:* phép liệt kê ấy **đã sai từ trước khi AT-1 chạm
+> vào file** — **CHÍN** mục đã rời Phần I mà **không** ai sửa nó. Mục **18, 19, 20, 22, 23, 24** rời bằng
+> AR-1 (2026-08-21) và mục **28, 29** rời bằng AS-1 (2026-08-21), cộng mục **21** mà AQ-1 có ghi. **Ba
+> nhiệm vụ liên tiếp chuyển mục sang Phần III và không nhiệm vụ nào cập nhật phép liệt kê ở đây.**
+>
+> 🔴 **Và cùng phát hiện ấy bắt một CON SỐ, ở khối AQ-1 cuối đoạn dưới: *"Số mục còn chờ ở Phần I: **mười
+> sáu** (16–20, 22–32)"*.** Câu ấy **đúng vào ngày nó được viết** (2026-08-21, trước AR-1/AS-1) và **giữ
+> nguyên văn, không xoá**; nó **RÚT ở đây, 2026-08-22**, vì chín mục rời đi sau đó đã làm nó sai.
+> **Đây đúng là loài mà file này lập ra để chấm dứt, và nó xảy ra ở chính chỗ file này dạy cách tránh:**
+> một con số đếm một tập, viết ở một chỗ, trong khi tập ấy đổi ở chỗ khác — bốn khối ngay trên nói đúng
+> câu đó. 📎 **Cách viết LIỆT KÊ vẫn thắng, và lần này đo được là nó thắng:** phép liệt kê sai **nhìn
+> thấy được** khi đọc cạnh Phần I (thiếu số hiệu nào là lộ ra), còn con số `mười sáu` **không tự tố cáo**
+> — không ai đọc ra nó sai cho tới khi có người đếm lại. **Cổng không bắt được cái nào trong hai:** nó
+> không đọc file này.
+
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 17, 25, 26, 30, 31 và 32.** Tất cả mang `🔴 CHỜ ANH` ở bảng
+phán quyết trên, và **bảng ấy là nguồn sự thật** — câu này chỉ là một con trỏ vào nó. 🔴 **Phép liệt kê
+này được ĐO LẠI từ chính Phần I sau khi nhiệm vụ này sửa xong file** — quét đầu mục `^## ` giữa banner
+Phần I và banner Phần II — chứ không chép từ brief: brief của AT-1 khai **tám** mục (16, 17, 25, 26, 27,
+30, 31, 32), và **tám ấy đúng ở BASE `ce1ce2be`**, trước khi mục 16 và 27 rời đi.
+
 **Cho tới 2026-08-18 phần này có năm mục — 8, 9, 10, 11, 12.** Bốn trong số đó nay **đã
 được quyết**, và **ai quyết cái nào là một phần của hồ sơ, không được gộp lại**: mục
 **10, 11 và 12 do CHỦ SỞ HỮU**; mục **8 do ĐIỀU PHỐI VIÊN, theo uỷ quyền**. Mục 9 bị
@@ -243,146 +273,6 @@ một con số ước lượng đặt ở đây sẽ **đọc như một phép �
 > **điều kiện DỪNG trong brief đã nổ**, nên mục **không** được thi hành. Nó nay mang thêm một khối đo
 > ngày 2026-08-21 **bác một tiền đề của chính nó** và **đổi câu hỏi** chủ sở hữu đang được mời quyết —
 > đọc khối ấy trước khi quyết mục 16. Số mục còn chờ ở Phần I: **mười sáu** (16–20, 22–32).
-
-## 16. `OeeCalculator` — hai trong ba tỉ số được kẹp `[0,1]`, cái thứ ba thì không, và biên hôm nay do một file KHÁC giữ
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6), xác nhận lại trên mã.
-
-**Đo được cái gì.** Trong `OeeCalculator.Calculate`: Availability và Performance đều bọc
-`Math.Clamp(…, 0.0, 1.0)`. **Quality thì không** — nó là một phép chia trần
-`(double)input.GoodCount / input.TotalCount`. Với bất kỳ đầu vào nào có good count lớn hơn total
-count, Quality vượt 1 và kéo `OeeResult.Oee` vượt theo.
-
-**Vì sao nó chưa hỏng bao giờ, và đây là nửa phải nói cùng lúc:** nhà sản xuất **duy nhất** của
-`OeeInputAggregate` trên đường sản xuất là `SqliteHistorianStore.AggregateForOeeAsync`, và hai con
-số của nó ra từ **hai vị từ SQL LỒNG NHAU** — `verdict IN ('Pass','Warn')` là tập con của
-`verdict <> 'Skip'`. Biên `[0,1]` vì thế được cưỡng chế **trong SQL, ở một file khác**, bằng một
-tính chất của cách dựng truy vấn. Cả `OeeInputAggregate` lẫn `OeeCalculator` đều `public`, nên
-không gì ngăn một người gọi khác dựng một aggregate bằng đường khác.
-
-🔴 **Câu văn đã công bố nói sai điều này ĐÃ ĐƯỢC RÚT TẠI CHỖ, 2026-08-20, bởi chính đợt 6 — nên cái
-còn mở là MÃ, không phải văn.** Doc của lớp hôm nay nói đúng: *"It holds for Availability and
-Performance … It does NOT hold for Quality."* **Không đợt nào được phép sửa mã**, và đây là lý do
-mục này tồn tại.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Metrics.OeeCalculator.Calculate`;
-`St4i.EdgeCore.Historian.OeeInputAggregate`; `St4i.EdgeCore.Historian.SqliteHistorianStore.AggregateForOeeAsync`
-(hai câu `SELECT COUNT(*)` mang hai vị từ ấy); `St4i.EdgeCore.Metrics.OeeResult.Oee`;
-`St4i.EngineApi.Endpoints.HistorianEndpoints.ComputeOeeAsync` là chỗ con số ấy thành DTO.
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* một OEE lớn hơn 100 % là một con số **đọc được là sai ngay lập tức** nếu ai đó nhìn,
-và **không đọc được là sai** nếu nó chỉ chảy vào một báo cáo hoặc một biểu đồ. Bề mặt công khai cho
-phép nó: một driver bên thứ ba, một bài test, hoặc một nhà sản xuất aggregate tương lai (một store
-khác, một đường nhập trực tiếp) đều dựng được đầu vào ấy mà không có gì đỏ lên.
-*Chiều ngược:* trên đường đang ship **hôm nay** con số ấy **không thể xảy ra**, và thêm một
-`Math.Clamp` vào Quality **giấu mất** đúng cái nó đang chứng minh — một aggregate có good > total là
-một **lỗi dữ liệu**, và kẹp nó lại biến một lỗi ồn thành một con số 100 % im lặng. Cái đúng có thể
-là kẹp, có thể là ném, có thể là để nguyên và ghi rõ; **ba lựa chọn ấy cho ba hành vi khác nhau**,
-và đó là lý do nó là quyết định của anh chứ không phải một dòng sửa.
-
-**Nếu KHÔNG quyết định.** Hành vi giữ nguyên và biên tiếp tục được giữ **ở một file khác, bằng một
-sự trùng hợp của cách dựng truy vấn**. Ngày ai đó thêm nhà sản xuất `OeeInputAggregate` thứ hai —
-một store thay thế, một endpoint nhập, một bài test dựng thẳng — biên biến mất và **không dụng cụ
-nào trong repo này báo**.
-
-### 🔴 ĐÃ ĐO 2026-08-21 (AQ-1) — ĐIỀU KIỆN DỪNG ĐÃ NỔ. MỤC NÀY **KHÔNG ĐƯỢC THI HÀNH**, VÀ TIỀN ĐỀ TRUNG TÂM CỦA CHÍNH NÓ KHÔNG SỐNG SÓT QUA PHÉP ĐO
-
-Nhiệm vụ AQ-1 được giao thi hành mục này, **kèm một điều kiện DỪNG**: *nếu có một đầu vào sinh ra
-được HÔM NAY mà bản kẹp sẽ làm đổi giá trị, thì bản sửa đổi một con số OEE đã báo cáo — thứ chủ sở
-hữu không uỷ quyền — nên phải dừng và báo.* **Phép đo trả lời CÓ.** Không một dòng mã nào của
-`OeeCalculator` bị sửa. Mục **ở lại PHẦN I**.
-
-> 📎 **Ba chữ `🔴 CHỜ ANH` ở đầu mục giữ NGUYÊN VĂN và KHÔNG rút** — chúng vẫn đúng từng chữ: mục này
-> vẫn đang chờ chủ sở hữu, và nay nó chờ với **nhiều thông tin hơn**, không phải ít hơn.
-
-**Quần thể — LIỆT KÊ TRƯỚC, con số viết SAU.** Mọi nơi dựng `OeeInputAggregate`, mở trọn bằng
-`git grep --full-name -n "OeeInputAggregate" HEAD -- ':(top)'` **chạy từ gốc repo
-`D:\SOURCES\avi-aoi-sim`** (ghi lại thư mục, vì `:(top)` một mình không đủ — mục 32):
-
-*Sản xuất:* `SqliteHistorianStore.AggregateForOeeAsync` (`src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs:684`).
-*Test, tất cả trong `tests/St4i.EdgeCore.Tests/Metrics/OeeCalculatorTests.cs`:* dòng 20 `(100,100)`,
-36 `(10,10)`, 48 `(0,0)`, 61 `(100,60)`, 74 `(100,100)`, 87 `(100,100)`, 97 `(100,100)`,
-107 `(90,81)`, 117 `(50,50)`.
-*Không dựng gì:* ba bản cài `IHistorianStore` giả — `FakeHistorianStore`
-(`tests/St4i.EdgeCore.Tests/Historian/HistorianWriterTests.cs:510`),
-`RunEventRecordingHistorianStore` (`tests/St4i.EngineApi.Tests/FleetHostGateCommitCompletionTests.cs:1393`),
-`FakeHistorianStore` (`tests/St4i.EngineApi.Tests/FleetHostHistorianWiringTests.cs:290`) — cả ba
-`throw new NotSupportedException()`, nên chúng nằm trong quần thể **người cài đặt** chứ không nằm
-trong quần thể **người dựng**.
-
-**Rồi mới đếm: MƯỜI chỗ dựng — một sản xuất, chín test.** Chín chỗ test: **không** chỗ nào sinh ra
-`GoodCount > TotalCount`. Chỗ sản xuất: **CÓ**.
-
-**Chỗ sản xuất sinh ra được, và đây là phép đo.** `AggregateForOeeAsync` mở **một** connection rồi
-chạy **bốn câu lệnh rời nhau** — probe của `ApplyRealPresenceGateAsync`, `COUNT(*)` cho total,
-`COUNT(*)` cho good, rồi `ComputeRunTimeAsync` — và **không có transaction nào bọc chúng**. SQLite ở
-WAL: mỗi câu lệnh ngoài transaction là **một ảnh chụp riêng**. Nên hai vị từ lồng nhau chỉ bảo đảm
-`good ⊆ not-Skip` **TRONG MỘT ẢNH CHỤP**; giữa câu total và câu good, một `AppendResultsAsync` đang
-chạy song song commit thêm hàng `Pass`, và good đếm được những hàng total chưa hề thấy.
-
-Đo trên `SqliteHistorianStore` thật, cửa sổ mà **mọi hàng đếm được đều là `Pass`** (nên
-`good = total` lúc đứng yên), ba nhánh, **cặp đối chứng nằm ngay trong phép đo**:
-
-| nhánh | reads | hàng ghi | lần `Good > Total` | thừa lớn nhất | Quality lớn nhất |
-|---|---|---|---|---|---|
-| **A — KHÔNG có người ghi** | 93 291 | 0 | **0** | 0 | — |
-| **B — 10 hàng/giây** | 192 374 | 229 | **87** | 1 | **1.00333…** |
-| **C — người ghi nóng** | 1 681 | 130 403 | **1 112** | 524 | **1.00888…** |
-
-**Nhánh A là đối chứng và nó xanh đúng chỗ phải xanh**: 93 291 lần đọc, **không một vi phạm** — hai
-vị từ lồng nhau *có* giữ, đúng như mục này nói, khi không có gì chuyển động. **Nhánh B là nhánh
-quyết định**: 10 hàng/giây là xấp xỉ nhịp của chính `fleet.json` đang ship — mười máy, mỗi máy quanh
-1 Hz — và ở nhịp ấy `AggregateForOeeAsync` **đã trả về `GoodCount > TotalCount` 87 lần**.
-
-**Nên: một đầu vào sinh ra được hôm nay ĐỔI GIÁ TRỊ dưới bản kẹp.** `Math.Clamp` sẽ biến một
-Quality `1.00333` đã báo cáo thành `1.00000`. Đó là **đổi một con số OEE đã báo cáo**, và đó chính
-là điều kiện dừng. **DỪNG.**
-
-**Điều này BÁC một tiền đề của chính mục này, và nói ra là bắt buộc.** Mục viết ở trên:
-*"biên `[0,1]` vì thế được cưỡng chế trong SQL, ở một file khác"* và *"trên đường đang ship hôm nay
-con số ấy KHÔNG THỂ XẢY RA"*. **Nửa sau là sai, đo được.** Câu đúng hẹp hơn: biên được cưỡng chế bởi
-hai vị từ lồng nhau **cộng với** sự vắng mặt của một commit trong khoảng vài chục micro-giây giữa
-hai câu `SELECT` — và sự vắng mặt ấy **không được cưỡng chế bởi gì cả**. Hai câu trên **giữ nguyên
-văn, không xoá**; cái được rút là **chỉ mệnh đề *"không thể xảy ra"***, rút tại chỗ, 2026-08-21.
-
-🔴 **Và nó đổi CÂU HỎI chủ sở hữu đang được mời quyết.** Mục này mở ra như một câu hỏi về **phòng
-thủ chiều sâu** — *"có nên kẹp một thứ chưa hỏng bao giờ không"*. Phép đo nói nó là một câu hỏi về
-**một khuyết tật đang sống**: con số sai **đang được sinh ra hôm nay**, và `Math.Clamp` **không sửa
-nó** — nó chỉ hạ `1.00333` xuống `1.00000` trong khi con số đúng là `1.00000` vì một lý do khác hẳn.
-**Bản sửa thật nằm ở `AggregateForOeeAsync`**: đọc hai `COUNT(*)` trong **một** transaction, để hai
-con số ra từ **một** ảnh chụp. Đó là một bản sửa ở **file khác**, với **rủi ro khác**, và nó **không
-nằm trong uỷ quyền của nhiệm vụ này**. Ba lựa chọn mục này nêu ở trên (kẹp / ném / để nguyên) vì thế
-**thiếu cái thứ tư, và cái thứ tư có lẽ là cái đúng**.
-
-**Bề mặt ĐỌC — §8.1(h5.4), nêu tên.** Một cái kẹp (hay một bản sửa transaction) đổi thứ **năm** chỗ
-này đọc: `HistorianEndpoints.GetOeeAsync` (`GET /v1/historian/oee`);
-`HistorianEndpoints.GetOeeFleetAsync` (`GET /v1/historian/oee/fleet`); bộ dựng **báo cáo PDF** trong
-cùng file, nơi `oee.Oee.ToString("P1")` in ra một phần trăm; `web/src/routes/Reports.tsx`, nơi
-`(oee.data.quality * 100).toFixed(1)` và `gaugePct={oee.data.oee * 100}` **đẩy kim đồng hồ vượt
-100 %**; và `web/src/lib/api.ts` qua `useOee`/`useOeeFleet`. **Gương UNS KHÔNG nằm trong tập này** —
-quét `src/St4i.EdgeCore/Site` và `src/St4i.EdgeService` không trả về chỗ nào mang OEE, nên nói "gương
-UNS bị ảnh hưởng" sẽ là nói quá.
-
-🔴 **Một khẳng định đã công bố THỨ HAI vẫn đang sai, và AL-1 đã sửa đúng chỗ thứ nhất mà bỏ sót chỗ
-này.** `web/src/lib/api.ts` dòng ~1117 nói về `OeeResultDto`: *"`availability`/`performance`/
-`quality`/`oee` are fractions in `[0, 1]` … never NaN/Infinity/over 1 (`OeeCalculator.Calculate`
-clamps/guards every division)"*. Đó là **đúng câu** mà AL-1 đã rút tại chỗ trên doc lớp
-`OeeCalculator` ngày 2026-08-20 — cùng một khẳng định, ở **bề mặt mà khách hàng đọc**, và nó **chưa
-được rút**. Đây là một **bản kiểm kê THIẾU**, không phải một khuyết tật mới; AQ-1 **không sửa nó**
-vì sửa văn ở bề mặt ấy không nằm trong uỷ quyền của nhiệm vụ này, và ghi ở đây để nó không mất.
-
-📎 **Và một chỗ brief của AQ-1 nói ngược với mã, ghi lại vì file này ghi cả hai chiều.** Brief nói
-*"doc lớp `OeeCalculator` khẳng định mọi tỉ số được kẹp… sau bản sửa nó thành ĐÚNG"*. Đo được: doc
-lớp ấy **hôm nay đã đúng rồi** — AL-1 đã rút khẳng định ấy tại chỗ ngày 2026-08-20, và chính mục này
-nói thế ở đoạn trên. Một bản kẹp sẽ làm **khối rút của AL-1** thành sai, chứ không làm doc thành
-đúng. Ai thi hành mục này về sau **phải rút khối rút ấy kèm ngày**, đừng xoá.
-
-**Bằng chứng:** `.superpowers/sdd/items-16-21/task-1-report.md`. Dụng cụ đo là một `[Fact]` tạm
-trong `tests/St4i.EdgeCore.Tests`, chạy rồi **xoá** — nó không ở trong suite và không được đếm vào
-`EXPECT_EDGECORE`; toàn văn nó nằm trong báo cáo.
-
----
 
 ## 17. `QueryTelemetryAsync` là truy vấn hướng khách hàng DUY NHẤT không áp cổng xuất xứ, và nó KHÔNG áp được: bảng không có cột để lọc
 
@@ -594,132 +484,6 @@ của đợt 5 được đo trên. Con số đáng sợ không phải một tron
 đo**: **các khẳng định đã có sẵn trong cây và chưa từng bị đọc lại** — đợt 4 đã cho thấy **101** cái
 trong số đó sai đủ nặng để trình biên dịch bắt được, và **không ai từng đo số cái sai theo cách
 trình biên dịch KHÔNG bắt được.**
-
----
-
-## 27. API Inspector không phơi THÂN request: không dụng cụ UI nào trong sản phẩm này đọc được payload đi ra
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi điều phối viên 2026-08-20, **xác nhận lại trên mã** —
-và nó **đứng vững**.
-
-**Đo được cái gì.** `ApiTraceEvent` là một `record` với **mười** thành phần: `At`, `MachineCode`,
-`Kind`, `Method`, `Path`, `Status`, `LatencyMs`, `Mode`, `Duplicate`, `Error`. **Không thành phần
-nào mang thân request, thân response, hay một tóm tắt payload.** Ở phía UI, `TraceTable` dựng các
-hàng bằng `div` mang `role="table"`/`"row"`/`"cell"` (cố ý, vì layout `<table>` thật không hợp tác
-với hàng định vị tuyệt đối của react-virtual) và **không có một trình xử lý click hàng nào** — không
-`onClick` trên hàng, không panel chi tiết, không route mở rộng. Nút `Export` xuất **đúng những
-trường ấy**.
-
-📎 **Ghi lại một chỗ mà chính điều phối viên đã sai trong phiên đo này, vì nó là bằng chứng cho một
-luật của file này:** một bộ chọn `<table>` kết luận *"không có bảng"* trên một trang có 244 hàng —
-vì bảng ấy là `role="table"`. Doc comment của `TraceTable` nói đúng lý do, và **miền dụng cụ hẹp hơn
-miền câu nói**.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Infrastructure.ApiTraceEvent`;
-`St4i.EdgeCore.Engine.EdgePipeline` (chỗ dựng sự kiện);
-`St4i.EdgeCore.Infrastructure.EventBus`; `St4i.EngineApi.Hubs.InspectorStream`
-(`WS /v1/inspector/stream`); `web/src/lib/inspector.ts`; `web/src/components/TraceTable.tsx`;
-`web/src/routes/ApiInspector.tsx`; `St4iMachineSimulator.ViewModels.InspectorViewModel` và
-`Views/ApiInspectorView.xaml` (bản WPF, cùng hình dạng).
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* câu hỏi *"mình đang gửi cái gì"* — câu hỏi mà một pane tên là **API Inspector** hứa
-trả lời — **chỉ trả lời được bằng cách bật LIVE và đọc phản hồi của máy chủ thật**. Với một kỹ sư
-tích hợp đang dò một hợp đồng ingest, đó là bảo họ chạy thật để gỡ lỗi. Và nó chạm thẳng mục 14 vừa
-được thi hành: hình dạng hàng `Samples` trên dây vừa đổi, và **không bề mặt UI nào trong sản phẩm
-này cho xem hình dạng ấy**.
-*Chiều ngược, và nó là một lý do thật để nói không:* thân request mang **dữ liệu đo của khách
-hàng** — số đo, số serial, mã công thức. Cho chúng vào trace nghĩa là cho chúng vào **ring 500 phần
-tử trong bộ nhớ của engine**, vào **luồng WebSocket**, và vào **file mà nút `Export` ghi ra đĩa**.
-Repo này đã có một bộ canh rò rỉ dữ liệu nhạy (bracket `real creds root under watch` trong cổng) vì
-đúng loại lo ấy. Một "phơi thân request" làm bừa là một bề mặt dữ liệu-lúc-nghỉ mới.
-
-**Nếu KHÔNG quyết định.** Pane giữ tên *Inspector* và giữ khả năng của một **sổ truy cập**. Mỗi lần
-một hợp đồng đi dây đổi — mục 4, mục 14, và cái tiếp theo — câu hỏi *"nó thực sự gửi cái gì"* lại
-được trả lời bằng một lần chạy live chứ không bằng một dụng cụ.
-
-### 🔴 AS-1 (2026-08-21) — ĐƯỢC GIAO THI HÀNH, ĐÃ DỪNG. Phép đo, và hai tiền đề không sống sót
-
-**Điều kiện DỪNG đã nổ, và đây là phép đo làm nó nổ.** Brief hỏi: *`ApiTraceEvent` đi ra những bề mặt
-nào, và thêm một trường vào đó có phải đổi hình dạng một payload đã xuất bản không?* **Có.** Quần thể
-liệt kê TRƯỚC khi đếm, `git grep --full-name "ApiTraceEvent" <SHA> -- ':(top)'` chạy **từ gốc repo**
-(`D:\SOURCES\avi-aoi-sim`), 21 file. Trong đó **ba** bề mặt mang bản ghi ấy **RA KHỎI tiến trình**:
-
-1. **`WS /v1/inspector/stream`** — `InspectorStreamEndpoint.SendAsync` gọi
-   `JsonSerializer.SerializeToUtf8Bytes(e, ApiJson.Options)`. Mỗi sự kiện là **một khung JSON**. Đây là
-   một hợp đồng dây đã xuất bản: `web/src/lib/inspector.ts` khai lại đúng mười trường ấy và tự ghi
-   *"Wire types — 1:1 with ApiTraceEvent.cs"*.
-2. **Nút `Export` của pane web** — `ApiInspector.handleExport` ghi một **file JSON xuống đĩa người
-   dùng**, và code nói thẳng ý định: bỏ `id` do client gán *"so the export should read as exactly what
-   `ApiTraceEvent` looks like over the wire"*. Tức file ấy **là** hình dạng dây.
-3. **Nút `Export` của pane WPF** — `InspectorViewModel.ExportAsync` serialize `Events.ToArray()` ra
-   một file JSON thứ hai, hình dạng tương đương.
-
-Cộng hai bề mặt **render** trong tiến trình (`TraceTable.tsx`, `ApiInspectorView.xaml`) và một bài
-hợp đồng (`EnumSpellingContractTests`). **Không có route REST nào trả `ApiTraceEvent`** — đo trên cả
-`src/St4i.EngineApi/Endpoints/`, tập rỗng.
-
-🔴 **Nên thêm một trường thân vào `ApiTraceEvent` đổi hình dạng của một khung WebSocket đã xuất bản
-VÀ của hai định dạng file mà người dùng đã có trên đĩa.** Đó đúng là thứ nằm ngoài uỷ quyền. **DỪNG.**
-Không một dòng nào bị sửa cho mục này.
-
-**HAI TIỀN ĐỀ CỦA BRIEF KHÔNG SỐNG SÓT QUA PHÉP ĐO, và ghi lại vì một cái trần nêu SAI còn tệ hơn
-không nêu trần.**
-
-* 🔴 **"Thân request có thể chứa bí mật (khoá `mk_`)" — SAI trên đường ĐƯỢC TRACE.** Thân được trace
-  là `CanonicalEnvelope.Payload`, dựng ở `Normalizer` từ một `DeviceReading`. Đo: **không** file nào
-  dưới `src/St4i.EdgeCore/Mapping/`, `…/Engine/`, `…/Models/` nhắc tới `MkKey`. Khoá đi bằng **HEADER**
-  — `St4iDeviceClient` đặt `Authorization: Bearer <mk_…>` và `X-API-Key`, và header **không** có mặt
-  trong `CanonicalEnvelope` chút nào. Chiều ngược, nêu chứ không giấu: khoá **CÓ** nằm trong thân của
-  **hai** lời gọi SDK khác — `SaveCredentialAsync` (`{"mkKey":…}`) và `HeartbeatAsync`
-  (`{"apiKey":…}`) — nhưng **không lời gọi nào trong hai cái đó sinh ra một `ApiTraceEvent`**:
-  `EdgePipeline` chỉ dựng sự kiện quanh `_transport.SendAsync` của một reading. **Nên lý do thật để
-  nói không KHÔNG phải bí mật; nó là dữ liệu đo của khách hàng — đúng cái thân mục đã viết.**
-* 🔴 **"Sóng hàn 100.000 mẫu" — KHÔNG phải phép đo của repo này.** Đo: `WelderSim.WaveformPoints =
-  **24**`, `ScrewdriveSim.WaveformPoints = **20**`. Con số 100.000 là một giả định về bộ điều khiển
-  hàn thật, không phải thứ sản phẩm này phát hôm nay.
-
-**NHƯNG CÁI TRẦN KÍCH THƯỚC VẪN THẬT, VÀ ĐÂY LÀ HÌNH DẠNG ĐÚNG CỦA NÓ.** `CanonicalEnvelope.Payload`
-là `Dictionary<string, object>` **không định kiểu**, và phép quét `MaxRequestBodySize|MaxLength|
-maxSamples|MaxSamples|TruncateSamples|.Take(N)` trên toàn `tools/machine-simulator/src` trả **tập
-rỗng**: **không nơi nào trong sản phẩm này giới hạn kích thước một thân đi ra.** Hai bộ mô phỏng dựng
-sẵn nhỏ, nhưng chúng không phải trần — trần là **driver bên thứ ba / Modbus / OPC UA / hot-folder AOI
-nạp bao nhiêu cũng được**. Nên bất kỳ bản "phơi thân request" nào **phải mang theo chính sách cắt của
-riêng nó**; không có cái nào để thừa kế.
-
-**CHÍNH SÁCH CHE, NÊU RÕ ĐỂ PHÁN QUYẾT VỀ SAU KHÔNG PHẢI ĐO LẠI.** Nếu anh phán *"phơi thân"*, ba
-điều phải quyết cùng lúc, vì bỏ sót cái nào cũng biến bản sửa thành một bề mặt dữ liệu-lúc-nghỉ mới:
-(a) **trần byte** trên phần được giữ, cộng một dấu hiệu **nói rõ đã cắt** (một thân bị cắt im lặng là
-đúng cái lỗi mục 28 nói); (b) **thân ấy vào cả ba bề mặt trên** — vòng 500 phần tử trong RAM engine,
-luồng WS, **và hai file export** — nên "che" phải áp ở chỗ **dựng sự kiện**, không ở chỗ render;
-(c) danh sách khoá được giữ là **danh sách CHO PHÉP hay danh sách CẤM** — với một `Dictionary` không
-định kiểu mà `Normalizer` chuyển tiếp mọi khoá lạ làm trường phả hệ, một danh sách cấm **không đóng
-được**.
-
-### 🔨 QUYẾT 2026-08-22 (CHỦ SỞ HỮU): BỀ MẶT MỚI — và phép DỪNG ở trên là thứ tạo ra phán quyết này
-
-🔨 **PHÁN QUYẾT, ghi kèm ngày: thêm một ĐƯỜNG RIÊNG cho thân request, và GIỮ NGUYÊN khung
-`WS /v1/inspector/stream` cùng HAI file JSON mà hai nút `Export` ghi ra.** Tức lựa chọn *"thêm một
-trường vào `ApiTraceEvent`"* — lựa chọn mà AS-1 được giao và đã **từ chối tự quyết** — **KHÔNG** được
-chọn. Ba payload đã xuất bản ở §1.1 của phép đo trên **không đổi hình dạng**.
-
-📎 **Vì sao phép DỪNG được ghi là một phần của phán quyết, chứ không phải một lần chậm trễ.** AS-1
-được giao thi hành mục này và dừng vì điều kiện DỪNG của brief đã nổ; phép đo nó để lại — **ba** bề
-mặt ra khỏi tiến trình, trong đó **hai là file trên đĩa người dùng mà KHÔNG ĐO ĐƯỢC ai đang đọc** — là
-thứ chủ sở hữu dùng để phán. Nếu bản sửa cứ thế thêm trường, nó đã đổi hình dạng **ba** payload đã
-xuất bản và **hai** trong ba không có phép đếm người tiêu thụ nào chống lưng.
-
-🔴 **BA ĐIỀU KIỆN CỦA §"CHÍNH SÁCH CHE" NGAY TRÊN KHÔNG ĐƯỢC MIỄN BỞI PHÁN QUYẾT NÀY.** Một bề mặt
-**mới** không phải một bề mặt **miễn phí**: thân request vẫn mang **dữ liệu đo của khách hàng**, và
-**vẫn chưa có trần kích thước nào trong `src/` để thừa kế** (quét trả tập rỗng — xem trên). Nên bản
-thi hành vẫn phải mang theo **(a)** trần byte + dấu hiệu đã cắt, **(b)** phép che áp ở chỗ **dựng sự
-kiện** chứ không ở chỗ render, **(c)** một **danh sách CHO PHÉP** — danh sách cấm không đóng được trên
-một `Dictionary` không định kiểu. 📎 Và cái **KHÔNG** phải lý do, đã đo và ghi ở trên: **không phải
-khoá `mk_`** — trên đường được trace khoá đi bằng header, không bao giờ trong thân.
-
-🔴 **MỤC NÀY Ở LẠI PHẦN I.** Phán quyết đã có, **ghi chép thi hành thì chưa** — **một nhiệm vụ khác sẽ
-thi hành**, và mục chỉ rời Phần I khi ghi chép ấy tồn tại. AS-1 **không thi hành phán quyết này** và
-**không sửa một dòng mã nào cho mục 27**; nó chỉ ghi phán quyết vào đây.
 
 ---
 
@@ -6360,6 +6124,477 @@ CHỨNG ĐỎ ĐƯỢC** — `MismatchedCode_MessageNamesTheCodeTheEngineActuall
 bài ấy (`UnknownActiveCode_SaysNothing` là một `[Theory]` ba ca). `AnnotatedResult_KeepsEveryOtherMember`
 **xanh ở cả hai đối chứng, cố ý** — nó là bài giữ khẳng định *"không payload đã xuất bản nào đổi hình
 dạng"*. **Cả hai đối chứng chạy trọn rồi hoàn nguyên.**
+
+---
+
+## 16. `OeeCalculator` — hai trong ba tỉ số được kẹp `[0,1]`, cái thứ ba thì không, và biên hôm nay do một file KHÁC giữ
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6), xác nhận lại trên mã.
+
+**Đo được cái gì.** Trong `OeeCalculator.Calculate`: Availability và Performance đều bọc
+`Math.Clamp(…, 0.0, 1.0)`. **Quality thì không** — nó là một phép chia trần
+`(double)input.GoodCount / input.TotalCount`. Với bất kỳ đầu vào nào có good count lớn hơn total
+count, Quality vượt 1 và kéo `OeeResult.Oee` vượt theo.
+
+**Vì sao nó chưa hỏng bao giờ, và đây là nửa phải nói cùng lúc:** nhà sản xuất **duy nhất** của
+`OeeInputAggregate` trên đường sản xuất là `SqliteHistorianStore.AggregateForOeeAsync`, và hai con
+số của nó ra từ **hai vị từ SQL LỒNG NHAU** — `verdict IN ('Pass','Warn')` là tập con của
+`verdict <> 'Skip'`. Biên `[0,1]` vì thế được cưỡng chế **trong SQL, ở một file khác**, bằng một
+tính chất của cách dựng truy vấn. Cả `OeeInputAggregate` lẫn `OeeCalculator` đều `public`, nên
+không gì ngăn một người gọi khác dựng một aggregate bằng đường khác.
+
+🔴 **Câu văn đã công bố nói sai điều này ĐÃ ĐƯỢC RÚT TẠI CHỖ, 2026-08-20, bởi chính đợt 6 — nên cái
+còn mở là MÃ, không phải văn.** Doc của lớp hôm nay nói đúng: *"It holds for Availability and
+Performance … It does NOT hold for Quality."* **Không đợt nào được phép sửa mã**, và đây là lý do
+mục này tồn tại.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Metrics.OeeCalculator.Calculate`;
+`St4i.EdgeCore.Historian.OeeInputAggregate`; `St4i.EdgeCore.Historian.SqliteHistorianStore.AggregateForOeeAsync`
+(hai câu `SELECT COUNT(*)` mang hai vị từ ấy); `St4i.EdgeCore.Metrics.OeeResult.Oee`;
+`St4i.EngineApi.Endpoints.HistorianEndpoints.ComputeOeeAsync` là chỗ con số ấy thành DTO.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* một OEE lớn hơn 100 % là một con số **đọc được là sai ngay lập tức** nếu ai đó nhìn,
+và **không đọc được là sai** nếu nó chỉ chảy vào một báo cáo hoặc một biểu đồ. Bề mặt công khai cho
+phép nó: một driver bên thứ ba, một bài test, hoặc một nhà sản xuất aggregate tương lai (một store
+khác, một đường nhập trực tiếp) đều dựng được đầu vào ấy mà không có gì đỏ lên.
+*Chiều ngược:* trên đường đang ship **hôm nay** con số ấy **không thể xảy ra**, và thêm một
+`Math.Clamp` vào Quality **giấu mất** đúng cái nó đang chứng minh — một aggregate có good > total là
+một **lỗi dữ liệu**, và kẹp nó lại biến một lỗi ồn thành một con số 100 % im lặng. Cái đúng có thể
+là kẹp, có thể là ném, có thể là để nguyên và ghi rõ; **ba lựa chọn ấy cho ba hành vi khác nhau**,
+và đó là lý do nó là quyết định của anh chứ không phải một dòng sửa.
+
+**Nếu KHÔNG quyết định.** Hành vi giữ nguyên và biên tiếp tục được giữ **ở một file khác, bằng một
+sự trùng hợp của cách dựng truy vấn**. Ngày ai đó thêm nhà sản xuất `OeeInputAggregate` thứ hai —
+một store thay thế, một endpoint nhập, một bài test dựng thẳng — biên biến mất và **không dụng cụ
+nào trong repo này báo**.
+
+### 🔴 ĐÃ ĐO 2026-08-21 (AQ-1) — ĐIỀU KIỆN DỪNG ĐÃ NỔ. MỤC NÀY **KHÔNG ĐƯỢC THI HÀNH**, VÀ TIỀN ĐỀ TRUNG TÂM CỦA CHÍNH NÓ KHÔNG SỐNG SÓT QUA PHÉP ĐO
+
+Nhiệm vụ AQ-1 được giao thi hành mục này, **kèm một điều kiện DỪNG**: *nếu có một đầu vào sinh ra
+được HÔM NAY mà bản kẹp sẽ làm đổi giá trị, thì bản sửa đổi một con số OEE đã báo cáo — thứ chủ sở
+hữu không uỷ quyền — nên phải dừng và báo.* **Phép đo trả lời CÓ.** Không một dòng mã nào của
+`OeeCalculator` bị sửa. Mục **ở lại PHẦN I**.
+
+> 📎 **Ba chữ `🔴 CHỜ ANH` ở đầu mục giữ NGUYÊN VĂN và KHÔNG rút** — chúng vẫn đúng từng chữ: mục này
+> vẫn đang chờ chủ sở hữu, và nay nó chờ với **nhiều thông tin hơn**, không phải ít hơn.
+
+**Quần thể — LIỆT KÊ TRƯỚC, con số viết SAU.** Mọi nơi dựng `OeeInputAggregate`, mở trọn bằng
+`git grep --full-name -n "OeeInputAggregate" HEAD -- ':(top)'` **chạy từ gốc repo
+`D:\SOURCES\avi-aoi-sim`** (ghi lại thư mục, vì `:(top)` một mình không đủ — mục 32):
+
+*Sản xuất:* `SqliteHistorianStore.AggregateForOeeAsync` (`src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs:684`).
+*Test, tất cả trong `tests/St4i.EdgeCore.Tests/Metrics/OeeCalculatorTests.cs`:* dòng 20 `(100,100)`,
+36 `(10,10)`, 48 `(0,0)`, 61 `(100,60)`, 74 `(100,100)`, 87 `(100,100)`, 97 `(100,100)`,
+107 `(90,81)`, 117 `(50,50)`.
+*Không dựng gì:* ba bản cài `IHistorianStore` giả — `FakeHistorianStore`
+(`tests/St4i.EdgeCore.Tests/Historian/HistorianWriterTests.cs:510`),
+`RunEventRecordingHistorianStore` (`tests/St4i.EngineApi.Tests/FleetHostGateCommitCompletionTests.cs:1393`),
+`FakeHistorianStore` (`tests/St4i.EngineApi.Tests/FleetHostHistorianWiringTests.cs:290`) — cả ba
+`throw new NotSupportedException()`, nên chúng nằm trong quần thể **người cài đặt** chứ không nằm
+trong quần thể **người dựng**.
+
+**Rồi mới đếm: MƯỜI chỗ dựng — một sản xuất, chín test.** Chín chỗ test: **không** chỗ nào sinh ra
+`GoodCount > TotalCount`. Chỗ sản xuất: **CÓ**.
+
+**Chỗ sản xuất sinh ra được, và đây là phép đo.** `AggregateForOeeAsync` mở **một** connection rồi
+chạy **bốn câu lệnh rời nhau** — probe của `ApplyRealPresenceGateAsync`, `COUNT(*)` cho total,
+`COUNT(*)` cho good, rồi `ComputeRunTimeAsync` — và **không có transaction nào bọc chúng**. SQLite ở
+WAL: mỗi câu lệnh ngoài transaction là **một ảnh chụp riêng**. Nên hai vị từ lồng nhau chỉ bảo đảm
+`good ⊆ not-Skip` **TRONG MỘT ẢNH CHỤP**; giữa câu total và câu good, một `AppendResultsAsync` đang
+chạy song song commit thêm hàng `Pass`, và good đếm được những hàng total chưa hề thấy.
+
+Đo trên `SqliteHistorianStore` thật, cửa sổ mà **mọi hàng đếm được đều là `Pass`** (nên
+`good = total` lúc đứng yên), ba nhánh, **cặp đối chứng nằm ngay trong phép đo**:
+
+| nhánh | reads | hàng ghi | lần `Good > Total` | thừa lớn nhất | Quality lớn nhất |
+|---|---|---|---|---|---|
+| **A — KHÔNG có người ghi** | 93 291 | 0 | **0** | 0 | — |
+| **B — 10 hàng/giây** | 192 374 | 229 | **87** | 1 | **1.00333…** |
+| **C — người ghi nóng** | 1 681 | 130 403 | **1 112** | 524 | **1.00888…** |
+
+**Nhánh A là đối chứng và nó xanh đúng chỗ phải xanh**: 93 291 lần đọc, **không một vi phạm** — hai
+vị từ lồng nhau *có* giữ, đúng như mục này nói, khi không có gì chuyển động. **Nhánh B là nhánh
+quyết định**: 10 hàng/giây là xấp xỉ nhịp của chính `fleet.json` đang ship — mười máy, mỗi máy quanh
+1 Hz — và ở nhịp ấy `AggregateForOeeAsync` **đã trả về `GoodCount > TotalCount` 87 lần**.
+
+**Nên: một đầu vào sinh ra được hôm nay ĐỔI GIÁ TRỊ dưới bản kẹp.** `Math.Clamp` sẽ biến một
+Quality `1.00333` đã báo cáo thành `1.00000`. Đó là **đổi một con số OEE đã báo cáo**, và đó chính
+là điều kiện dừng. **DỪNG.**
+
+**Điều này BÁC một tiền đề của chính mục này, và nói ra là bắt buộc.** Mục viết ở trên:
+*"biên `[0,1]` vì thế được cưỡng chế trong SQL, ở một file khác"* và *"trên đường đang ship hôm nay
+con số ấy KHÔNG THỂ XẢY RA"*. **Nửa sau là sai, đo được.** Câu đúng hẹp hơn: biên được cưỡng chế bởi
+hai vị từ lồng nhau **cộng với** sự vắng mặt của một commit trong khoảng vài chục micro-giây giữa
+hai câu `SELECT` — và sự vắng mặt ấy **không được cưỡng chế bởi gì cả**. Hai câu trên **giữ nguyên
+văn, không xoá**; cái được rút là **chỉ mệnh đề *"không thể xảy ra"***, rút tại chỗ, 2026-08-21.
+
+🔴 **Và nó đổi CÂU HỎI chủ sở hữu đang được mời quyết.** Mục này mở ra như một câu hỏi về **phòng
+thủ chiều sâu** — *"có nên kẹp một thứ chưa hỏng bao giờ không"*. Phép đo nói nó là một câu hỏi về
+**một khuyết tật đang sống**: con số sai **đang được sinh ra hôm nay**, và `Math.Clamp` **không sửa
+nó** — nó chỉ hạ `1.00333` xuống `1.00000` trong khi con số đúng là `1.00000` vì một lý do khác hẳn.
+**Bản sửa thật nằm ở `AggregateForOeeAsync`**: đọc hai `COUNT(*)` trong **một** transaction, để hai
+con số ra từ **một** ảnh chụp. Đó là một bản sửa ở **file khác**, với **rủi ro khác**, và nó **không
+nằm trong uỷ quyền của nhiệm vụ này**. Ba lựa chọn mục này nêu ở trên (kẹp / ném / để nguyên) vì thế
+**thiếu cái thứ tư, và cái thứ tư có lẽ là cái đúng**.
+
+**Bề mặt ĐỌC — §8.1(h5.4), nêu tên.** Một cái kẹp (hay một bản sửa transaction) đổi thứ **năm** chỗ
+này đọc: `HistorianEndpoints.GetOeeAsync` (`GET /v1/historian/oee`);
+`HistorianEndpoints.GetOeeFleetAsync` (`GET /v1/historian/oee/fleet`); bộ dựng **báo cáo PDF** trong
+cùng file, nơi `oee.Oee.ToString("P1")` in ra một phần trăm; `web/src/routes/Reports.tsx`, nơi
+`(oee.data.quality * 100).toFixed(1)` và `gaugePct={oee.data.oee * 100}` **đẩy kim đồng hồ vượt
+100 %**; và `web/src/lib/api.ts` qua `useOee`/`useOeeFleet`. **Gương UNS KHÔNG nằm trong tập này** —
+quét `src/St4i.EdgeCore/Site` và `src/St4i.EdgeService` không trả về chỗ nào mang OEE, nên nói "gương
+UNS bị ảnh hưởng" sẽ là nói quá.
+
+🔴 **Một khẳng định đã công bố THỨ HAI vẫn đang sai, và AL-1 đã sửa đúng chỗ thứ nhất mà bỏ sót chỗ
+này.** `web/src/lib/api.ts` dòng ~1117 nói về `OeeResultDto`: *"`availability`/`performance`/
+`quality`/`oee` are fractions in `[0, 1]` … never NaN/Infinity/over 1 (`OeeCalculator.Calculate`
+clamps/guards every division)"*. Đó là **đúng câu** mà AL-1 đã rút tại chỗ trên doc lớp
+`OeeCalculator` ngày 2026-08-20 — cùng một khẳng định, ở **bề mặt mà khách hàng đọc**, và nó **chưa
+được rút**. Đây là một **bản kiểm kê THIẾU**, không phải một khuyết tật mới; AQ-1 **không sửa nó**
+vì sửa văn ở bề mặt ấy không nằm trong uỷ quyền của nhiệm vụ này, và ghi ở đây để nó không mất.
+
+📎 **Và một chỗ brief của AQ-1 nói ngược với mã, ghi lại vì file này ghi cả hai chiều.** Brief nói
+*"doc lớp `OeeCalculator` khẳng định mọi tỉ số được kẹp… sau bản sửa nó thành ĐÚNG"*. Đo được: doc
+lớp ấy **hôm nay đã đúng rồi** — AL-1 đã rút khẳng định ấy tại chỗ ngày 2026-08-20, và chính mục này
+nói thế ở đoạn trên. Một bản kẹp sẽ làm **khối rút của AL-1** thành sai, chứ không làm doc thành
+đúng. Ai thi hành mục này về sau **phải rút khối rút ấy kèm ngày**, đừng xoá.
+
+**Bằng chứng:** `.superpowers/sdd/items-16-21/task-1-report.md`. Dụng cụ đo là một `[Fact]` tạm
+trong `tests/St4i.EdgeCore.Tests`, chạy rồi **xoá** — nó không ở trong suite và không được đếm vào
+`EXPECT_EDGECORE`; toàn văn nó nằm trong báo cáo.
+
+
+### ✅ ĐÃ THI HÀNH 2026-08-22 (AT-1) — **PHÁN QUYẾT CỦA CHỦ SỞ HỮU ngày 2026-08-22**, không phải của điều phối viên. MỘT TRANSACTION; và đây là mục DUY NHẤT của loạt này CỐ Ý đổi một con số đã báo cáo
+
+🔨 **Phán quyết được thi hành:** bọc **bốn câu lệnh** của `AggregateForOeeAsync` trong **MỘT** transaction,
+để hai `COUNT(*)` ra từ **MỘT ảnh chụp**. Đó là **LỰA CHỌN THỨ TƯ** mà chính khối AQ-1 ngay trên đã nêu —
+**không kẹp, không ném, không để nguyên**. `OeeCalculator` **không bị sửa một dòng mã nào** và
+`Math.Clamp` **KHÔNG** được thêm vào Quality.
+
+🔴 **MỘT KHÁC BIỆT HỒ SƠ PHẢI NÓI RA, VÀ NÓ LÀ VỀ CHÍNH PHÁN QUYẾT NÀY.** Mục 27 mang phán quyết của chủ
+sở hữu **trong thân mục**, ghi ngày 2026-08-22, đọc được tại chỗ. **Mục 16 thì KHÔNG.** Tới `ce1ce2be` —
+BASE của nhiệm vụ này — **không** dòng nào trong thân mục 16 và **không** ô nào ở hàng 16 của bảng phán
+quyết mang một phán quyết ngày 2026-08-22. Phép đo, chạy từ gốc repo `D:\SOURCES\avi-aoi-sim`:
+`grep -n "2026-08-22" tools/machine-simulator/docs/owner-decisions.md` trả **đúng HAI** dòng ở `ce1ce2be`
+(dòng 58 và dòng 699) và **cả hai thuộc mục 27**. Nội dung phán quyết mục 16 đến với người thi hành **qua
+brief của nhiệm vụ AT-1**, và brief ấy khai nó là của chủ sở hữu. **Ghi ở đây vì file này ghi cả hai
+chiều:** người thi hành **không kiểm được lời khai ấy từ trong repo**; cái kiểm được là nó **khớp từng
+chữ** với lựa chọn thứ tư mà AQ-1 đã đo và đề xuất ở khối ngay trên. Ai đọc về sau nên biết mục 16 rời
+Phần I bằng một phán quyết **không có bản ghi tại chỗ ở BASE**, khác hẳn mục 27.
+
+**MỨC CÔ LẬP — ĐO, KHÔNG GIẢ ĐỊNH, và phép đo BÁC một cảnh báo của brief.** Brief cảnh báo rằng một
+`BEGIN` trần trong WAL *"không nâng bốn lượt đọc vào một ảnh chụp trên mọi cấu hình"*. **Trên cấu hình
+này nó CÓ**, và đo được: một `BeginTransaction(deferred: true)` (tức `BEGIN` trần) đọc `COUNT(*)`, rồi một
+bên ghi khác commit xong, rồi đọc lại **cùng câu ấy trong cùng transaction** → **con số KHÔNG đổi**
+(*SNAPSHOT HELD*). Đối chứng nằm ngay trong phép đo: **không** transaction → hai lần đọc cho **hai** con số
+(*SNAPSHOT BROKEN*). Pragma của store là `journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout=5000`,
+`foreign_keys=ON`; provider là `Microsoft.Data.Sqlite 10.0.10`.
+
+🔴 **VÀ ĐÂY LÀ CHỖ BRIEF ĐÚNG, CHỈ LÀ ĐÚNG VỀ MỘT THỨ KHÁC: "một transaction ghi SAI KIỂU" là một cái bẫy
+thật, và nó không nằm ở mức cô lập.** Cả hai dạng transaction đều báo `IsolationLevel.Serializable` — **cái
+tên KHÔNG phân biệt được chúng**. Thứ phân biệt là cờ `deferred`. Đo được:
+`connection.BeginTransaction()` **không tham số** — đúng dạng mà `AppendResultsAsync` và
+`PruneOlderThanAsync` trong chính file này dùng — phát ra **`BEGIN IMMEDIATE`**, tức **lấy khoá GHI** cho
+một phương thức chỉ đọc. Với nó đang mở, một `AppendResultsAsync` song song **không chỉ chậm mà HỎNG
+HẲN**: `SQLite Error 5: 'database is locked'` sau **33 121 ms**. Dạng `deferred: true` phát `BEGIN` trần:
+cùng lần ghi ấy **THÀNH CÔNG trong 0–1 ms**. **Bản thi hành dùng `deferred: true`**, và lý do được viết
+vào doc của phương thức chứ không để người sau đoán.
+
+**GIÁ KHOÁ — ĐO ĐƯỢC, VÀ CHỖ GỌI NÊU TÊN.** Với `deferred: true` giá khoá lên bên ghi là **KHÔNG**: trong
+WAL một transaction chỉ-đọc không chặn người ghi, đo được ở trên (0–1 ms). Giá **còn lại**, nêu chứ không
+giấu: một transaction đọc đang mở **giữ chân bộ checkpoint WAL** suốt đời nó, nên transaction được
+**kết thúc ngay khi lượt đọc cuối trả về**, trước khi aggregate được dựng. Độ dài đời ấy đo được:
+**0,03 ms** ở 1 hàng, **1,2 ms** ở 5 001 hàng, **4,0 ms** ở 10 001 hàng, **6,0 ms** ở 15 001 hàng.
+**Chỗ gọi, nêu bằng TÊN:** nhà sản xuất duy nhất là
+`St4i.EngineApi.Endpoints.HistorianEndpoints.ComputeOeeAsync`, và nó được gọi từ **ba** chỗ, **cả ba là
+đường REQUEST ĐỒNG BỘ**, không có chỗ nào chạy nền: `GetOeeAsync` (`GET /v1/historian/oee`),
+`GetOeeFleetAsync` (`GET /v1/historian/oee/fleet` — **một vòng lặp tuần tự trên từng máy**, nên một fleet
+mười máy mở **mười** transaction nối nhau trong một request), và bộ dựng **báo cáo PDF** trong cùng file.
+🔴 **Chính ba chỗ gọi đồng bộ ấy là lý do `deferred` không phải một tuỳ chọn phong cách:** dạng không tham
+số sẽ đặt một khoá ghi lên đường phục vụ request, mười lần một request ở route fleet.
+
+**NHÂN CHỨNG — ĐỎ ĐƯỢC, và tỉ lệ đo được, không ước lượng.** File mới
+`tests/St4i.EdgeCore.Tests/Historian/OeeAggregateSnapshotUnderConcurrentWriterTests.cs`, **hai** `[Fact]`,
+mỗi cái nêu tên đối chứng làm nó đỏ:
+* `AggregateForOee_never_reports_more_good_than_total_while_a_writer_commits_concurrently` — **gỡ
+  transaction ⇒ ĐỎ 5/5**, và thông điệp hỏng mang số thật: `good=212 total=211 quality=1.004739`,
+  `good=229 total=227 quality=1.008811`. **Có transaction ⇒ XANH 8/8.**
+* `AggregateForOee_does_not_take_the_write_lock_a_concurrent_writer_needs` — **đổi `deferred: true` thành
+  `BeginTransaction()` không tham số ⇒ ĐỎ 5/5** (*"a concurrent write waited 14 977 ms behind the
+  aggregate's transaction"*). **Có bản sửa ⇒ XANH 8/8.**
+
+🔴 **Và một khuyết tật của CHÍNH NHÂN CHỨNG, tự bắt được bằng cách đo lại sản phẩm của mình sau khi
+viết.** Ở vòng đầu, bài thứ nhất **đỏ đúng nhưng vì LÝ DO SAI**: vòng đọc `break` sau năm vi phạm, nên
+`reads` không bao giờ tới ngưỡng "đủ mẫu", và **assertion ngưỡng bắn TRƯỚC assertion vi phạm** — thông điệp
+đọc là *"race window never opened: only 5 aggregate reads completed"*, tức đúng ngược với chuyện vừa xảy
+ra. Đã sửa **thứ tự assertion** (vi phạm là KẾT LUẬN, ngưỡng chỉ quyết định một lần chạy SẠCH có nghĩa
+gì) và ghi lý do ngay tại chỗ. **Một bài đỏ với thông điệp sai là một bài sẽ bị đọc sai vào đúng lúc nó
+quan trọng.** Bài thứ hai cũng có một khuyết tật riêng, cùng họ: một ngưỡng *"có aggregate nào chạy xong
+trong lúc ghi không"* đếm **số lần HOÀN TẤT** và vì thế **đỏ giả 2/6 trên bản đã sửa**; ngưỡng ấy bị bỏ vì
+nó thừa — một vòng đọc chỉ thoát khi bị huỷ (sau các lượt ghi) hoặc khi lỗi, nên chồng lấn là **do cấu
+trúc**, không cần đếm.
+
+🔴 **BA CON SỐ CỦA AQ-1 KHÔNG TÁI LẬP ĐƯỢC, và cái sai ấy là một phát hiện phải ghi.** Bảng ba nhánh của
+AQ-1 được đo lại độc lập trên máy này, cùng kịch bản, 20 giây mỗi nhánh. **Hướng và kết luận ĐỨNG VỮNG
+hoàn toàn**: không bên ghi → **596 620 lần đọc, 0 vi phạm**; 10 hàng/giây (nhịp `fleet.json` xuất xưởng) →
+**368 061 lần đọc, 60 vi phạm**; ghi nóng → **1 407 lần đọc, 1 157 vi phạm**. Nhưng **giá trị Quality lớn
+nhất KHÔNG khớp**: nhánh 10 hàng/giây đo được **1,25** (không phải `1,00333`) và nhánh ghi nóng đo được
+**1,0168** (không phải `1,00888`). Lý do đo được: Quality lớn nhất là **hàm của số hàng đã có lúc vi phạm
+xảy ra** (`good=5, total=4` cho 1,25), nên nó là **tạo tác của cách gieo dữ liệu**, **không** phải một
+hằng số của khuyết tật. **Nên: ba con số "Quality lớn nhất" của AQ-1 không được dùng như một phép đo tái
+lập được; ba con số "số lần vi phạm" thì được.**
+
+🔴 **NỬA BẤT LỢI, VIẾT NGAY CẠNH — ĐÂY LÀ CÁI GIÁ CHỦ SỞ HỮU ĐÃ CHẤP NHẬN.** Con số OEE tính **từ nay** sẽ
+**KHÁC** con số tính **trước 2026-08-22**, đúng ở những lúc con số cũ sai. **Báo cáo ĐÃ IN không đổi và
+không được phát hành lại.** Nhưng ai so hai kỳ bắc qua ngày ấy **sẽ thấy một bậc nhảy mà không có gì trên
+sàn sản xuất gây ra** — và bậc ấy đi theo chiều **giảm**, vì thứ bị gỡ là những lần Quality bị thổi lên
+trên 1. Câu này được viết **cả vào mục này lẫn vào doc lớp `OeeCalculator`**, vì chỗ con số được làm ra là
+chỗ người sau sẽ đứng khi họ hỏi tại sao.
+
+**KHỐI RÚT CỦA AL-1 ĐƯỢC LÀM CHO ĐÚNG VỚI THỰC TẾ MỚI — MỞ RỘNG, KHÔNG XOÁ MỘT DÒNG NÀO.** Doc lớp
+`OeeCalculator` nay mang một **khối thứ HAI** ghi ngày 2026-08-22: khối rút của AL-1 **VẪN ĐỨNG** (không
+có cái kẹp nào được thêm, nên mọi chữ AL-1 rút vẫn bị rút), cái đổi là **ý nghĩa** của nó — biên
+`Quality ≤ 1` nay là **CẤU TRÚC** trở lại trên đường đang ship, và nói cho đủ phải nói **CẢ HAI NỬA**: hai
+vị từ SQL lồng nhau **CỘNG** hai con số đọc trong một ảnh chụp. **Nửa nào một mình cũng để nó không có
+biên.** Và đoạn trong doc của `Calculate` — *"stays at or below 1 only because … nested SQL predicates"* —
+được **mở rộng** kèm ngày: câu ấy nêu **một** trong **hai** thứ làm nên biên ấy.
+
+🔴 **KHẲNG ĐỊNH ĐÃ CÔNG BỐ THỨ HAI — cái mà AQ-1 ghi lại là "bản kiểm kê THIẾU" — NAY ĐÃ ĐƯỢC RÚT.**
+`web/src/lib/api.ts`, khối doc của `OeeResultDto`, nói `quality`/`oee` *"never … over 1
+(`OeeCalculator.Calculate` clamps/guards every division)"*. **Giá trị** mà câu ấy hứa là **đúng hôm nay**;
+**lý do** nó đưa ra thì **sai** — `Calculate` không kẹp Quality và chưa bao giờ kẹp. Đã rút **tại chỗ, kèm
+ngày, không xoá dòng nào**, và viết ra biên thật nằm ở đâu. Đây là **bề mặt KHÁCH HÀNG đọc**, và nó là chỗ
+thứ hai — sau doc lớp — mang cùng một khẳng định. 🔴 **Chạm `web/` ⇒ đã chạy build của web**
+(`npm run build` = `tsc -b && vite build`): **thành công**, và một lần chạy nền TRƯỚC khi sửa đã lập đường
+cơ sở để so.
+
+**Bằng chứng:** `.superpowers/sdd/items-16-27-ruled/task-1-report.md`. Dụng cụ đo ba nhánh + mức cô lập +
+giá khoá là một `[Fact]` tạm trong `tests/St4i.EdgeCore.Tests`, chạy rồi **xoá** — nó **không** ở trong
+suite và **không** được đếm vào `EXPECT_EDGECORE`; toàn văn nằm trong báo cáo.
+
+---
+
+## 27. API Inspector không phơi THÂN request: không dụng cụ UI nào trong sản phẩm này đọc được payload đi ra
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi điều phối viên 2026-08-20, **xác nhận lại trên mã** —
+và nó **đứng vững**.
+
+**Đo được cái gì.** `ApiTraceEvent` là một `record` với **mười** thành phần: `At`, `MachineCode`,
+`Kind`, `Method`, `Path`, `Status`, `LatencyMs`, `Mode`, `Duplicate`, `Error`. **Không thành phần
+nào mang thân request, thân response, hay một tóm tắt payload.** Ở phía UI, `TraceTable` dựng các
+hàng bằng `div` mang `role="table"`/`"row"`/`"cell"` (cố ý, vì layout `<table>` thật không hợp tác
+với hàng định vị tuyệt đối của react-virtual) và **không có một trình xử lý click hàng nào** — không
+`onClick` trên hàng, không panel chi tiết, không route mở rộng. Nút `Export` xuất **đúng những
+trường ấy**.
+
+📎 **Ghi lại một chỗ mà chính điều phối viên đã sai trong phiên đo này, vì nó là bằng chứng cho một
+luật của file này:** một bộ chọn `<table>` kết luận *"không có bảng"* trên một trang có 244 hàng —
+vì bảng ấy là `role="table"`. Doc comment của `TraceTable` nói đúng lý do, và **miền dụng cụ hẹp hơn
+miền câu nói**.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Infrastructure.ApiTraceEvent`;
+`St4i.EdgeCore.Engine.EdgePipeline` (chỗ dựng sự kiện);
+`St4i.EdgeCore.Infrastructure.EventBus`; `St4i.EngineApi.Hubs.InspectorStream`
+(`WS /v1/inspector/stream`); `web/src/lib/inspector.ts`; `web/src/components/TraceTable.tsx`;
+`web/src/routes/ApiInspector.tsx`; `St4iMachineSimulator.ViewModels.InspectorViewModel` và
+`Views/ApiInspectorView.xaml` (bản WPF, cùng hình dạng).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* câu hỏi *"mình đang gửi cái gì"* — câu hỏi mà một pane tên là **API Inspector** hứa
+trả lời — **chỉ trả lời được bằng cách bật LIVE và đọc phản hồi của máy chủ thật**. Với một kỹ sư
+tích hợp đang dò một hợp đồng ingest, đó là bảo họ chạy thật để gỡ lỗi. Và nó chạm thẳng mục 14 vừa
+được thi hành: hình dạng hàng `Samples` trên dây vừa đổi, và **không bề mặt UI nào trong sản phẩm
+này cho xem hình dạng ấy**.
+*Chiều ngược, và nó là một lý do thật để nói không:* thân request mang **dữ liệu đo của khách
+hàng** — số đo, số serial, mã công thức. Cho chúng vào trace nghĩa là cho chúng vào **ring 500 phần
+tử trong bộ nhớ của engine**, vào **luồng WebSocket**, và vào **file mà nút `Export` ghi ra đĩa**.
+Repo này đã có một bộ canh rò rỉ dữ liệu nhạy (bracket `real creds root under watch` trong cổng) vì
+đúng loại lo ấy. Một "phơi thân request" làm bừa là một bề mặt dữ liệu-lúc-nghỉ mới.
+
+**Nếu KHÔNG quyết định.** Pane giữ tên *Inspector* và giữ khả năng của một **sổ truy cập**. Mỗi lần
+một hợp đồng đi dây đổi — mục 4, mục 14, và cái tiếp theo — câu hỏi *"nó thực sự gửi cái gì"* lại
+được trả lời bằng một lần chạy live chứ không bằng một dụng cụ.
+
+### 🔴 AS-1 (2026-08-21) — ĐƯỢC GIAO THI HÀNH, ĐÃ DỪNG. Phép đo, và hai tiền đề không sống sót
+
+**Điều kiện DỪNG đã nổ, và đây là phép đo làm nó nổ.** Brief hỏi: *`ApiTraceEvent` đi ra những bề mặt
+nào, và thêm một trường vào đó có phải đổi hình dạng một payload đã xuất bản không?* **Có.** Quần thể
+liệt kê TRƯỚC khi đếm, `git grep --full-name "ApiTraceEvent" <SHA> -- ':(top)'` chạy **từ gốc repo**
+(`D:\SOURCES\avi-aoi-sim`), 21 file. Trong đó **ba** bề mặt mang bản ghi ấy **RA KHỎI tiến trình**:
+
+1. **`WS /v1/inspector/stream`** — `InspectorStreamEndpoint.SendAsync` gọi
+   `JsonSerializer.SerializeToUtf8Bytes(e, ApiJson.Options)`. Mỗi sự kiện là **một khung JSON**. Đây là
+   một hợp đồng dây đã xuất bản: `web/src/lib/inspector.ts` khai lại đúng mười trường ấy và tự ghi
+   *"Wire types — 1:1 with ApiTraceEvent.cs"*.
+2. **Nút `Export` của pane web** — `ApiInspector.handleExport` ghi một **file JSON xuống đĩa người
+   dùng**, và code nói thẳng ý định: bỏ `id` do client gán *"so the export should read as exactly what
+   `ApiTraceEvent` looks like over the wire"*. Tức file ấy **là** hình dạng dây.
+3. **Nút `Export` của pane WPF** — `InspectorViewModel.ExportAsync` serialize `Events.ToArray()` ra
+   một file JSON thứ hai, hình dạng tương đương.
+
+Cộng hai bề mặt **render** trong tiến trình (`TraceTable.tsx`, `ApiInspectorView.xaml`) và một bài
+hợp đồng (`EnumSpellingContractTests`). **Không có route REST nào trả `ApiTraceEvent`** — đo trên cả
+`src/St4i.EngineApi/Endpoints/`, tập rỗng.
+
+🔴 **Nên thêm một trường thân vào `ApiTraceEvent` đổi hình dạng của một khung WebSocket đã xuất bản
+VÀ của hai định dạng file mà người dùng đã có trên đĩa.** Đó đúng là thứ nằm ngoài uỷ quyền. **DỪNG.**
+Không một dòng nào bị sửa cho mục này.
+
+**HAI TIỀN ĐỀ CỦA BRIEF KHÔNG SỐNG SÓT QUA PHÉP ĐO, và ghi lại vì một cái trần nêu SAI còn tệ hơn
+không nêu trần.**
+
+* 🔴 **"Thân request có thể chứa bí mật (khoá `mk_`)" — SAI trên đường ĐƯỢC TRACE.** Thân được trace
+  là `CanonicalEnvelope.Payload`, dựng ở `Normalizer` từ một `DeviceReading`. Đo: **không** file nào
+  dưới `src/St4i.EdgeCore/Mapping/`, `…/Engine/`, `…/Models/` nhắc tới `MkKey`. Khoá đi bằng **HEADER**
+  — `St4iDeviceClient` đặt `Authorization: Bearer <mk_…>` và `X-API-Key`, và header **không** có mặt
+  trong `CanonicalEnvelope` chút nào. Chiều ngược, nêu chứ không giấu: khoá **CÓ** nằm trong thân của
+  **hai** lời gọi SDK khác — `SaveCredentialAsync` (`{"mkKey":…}`) và `HeartbeatAsync`
+  (`{"apiKey":…}`) — nhưng **không lời gọi nào trong hai cái đó sinh ra một `ApiTraceEvent`**:
+  `EdgePipeline` chỉ dựng sự kiện quanh `_transport.SendAsync` của một reading. **Nên lý do thật để
+  nói không KHÔNG phải bí mật; nó là dữ liệu đo của khách hàng — đúng cái thân mục đã viết.**
+* 🔴 **"Sóng hàn 100.000 mẫu" — KHÔNG phải phép đo của repo này.** Đo: `WelderSim.WaveformPoints =
+  **24**`, `ScrewdriveSim.WaveformPoints = **20**`. Con số 100.000 là một giả định về bộ điều khiển
+  hàn thật, không phải thứ sản phẩm này phát hôm nay.
+
+**NHƯNG CÁI TRẦN KÍCH THƯỚC VẪN THẬT, VÀ ĐÂY LÀ HÌNH DẠNG ĐÚNG CỦA NÓ.** `CanonicalEnvelope.Payload`
+là `Dictionary<string, object>` **không định kiểu**, và phép quét `MaxRequestBodySize|MaxLength|
+maxSamples|MaxSamples|TruncateSamples|.Take(N)` trên toàn `tools/machine-simulator/src` trả **tập
+rỗng**: **không nơi nào trong sản phẩm này giới hạn kích thước một thân đi ra.** Hai bộ mô phỏng dựng
+sẵn nhỏ, nhưng chúng không phải trần — trần là **driver bên thứ ba / Modbus / OPC UA / hot-folder AOI
+nạp bao nhiêu cũng được**. Nên bất kỳ bản "phơi thân request" nào **phải mang theo chính sách cắt của
+riêng nó**; không có cái nào để thừa kế.
+
+**CHÍNH SÁCH CHE, NÊU RÕ ĐỂ PHÁN QUYẾT VỀ SAU KHÔNG PHẢI ĐO LẠI.** Nếu anh phán *"phơi thân"*, ba
+điều phải quyết cùng lúc, vì bỏ sót cái nào cũng biến bản sửa thành một bề mặt dữ liệu-lúc-nghỉ mới:
+(a) **trần byte** trên phần được giữ, cộng một dấu hiệu **nói rõ đã cắt** (một thân bị cắt im lặng là
+đúng cái lỗi mục 28 nói); (b) **thân ấy vào cả ba bề mặt trên** — vòng 500 phần tử trong RAM engine,
+luồng WS, **và hai file export** — nên "che" phải áp ở chỗ **dựng sự kiện**, không ở chỗ render;
+(c) danh sách khoá được giữ là **danh sách CHO PHÉP hay danh sách CẤM** — với một `Dictionary` không
+định kiểu mà `Normalizer` chuyển tiếp mọi khoá lạ làm trường phả hệ, một danh sách cấm **không đóng
+được**.
+
+### 🔨 QUYẾT 2026-08-22 (CHỦ SỞ HỮU): BỀ MẶT MỚI — và phép DỪNG ở trên là thứ tạo ra phán quyết này
+
+🔨 **PHÁN QUYẾT, ghi kèm ngày: thêm một ĐƯỜNG RIÊNG cho thân request, và GIỮ NGUYÊN khung
+`WS /v1/inspector/stream` cùng HAI file JSON mà hai nút `Export` ghi ra.** Tức lựa chọn *"thêm một
+trường vào `ApiTraceEvent`"* — lựa chọn mà AS-1 được giao và đã **từ chối tự quyết** — **KHÔNG** được
+chọn. Ba payload đã xuất bản ở §1.1 của phép đo trên **không đổi hình dạng**.
+
+📎 **Vì sao phép DỪNG được ghi là một phần của phán quyết, chứ không phải một lần chậm trễ.** AS-1
+được giao thi hành mục này và dừng vì điều kiện DỪNG của brief đã nổ; phép đo nó để lại — **ba** bề
+mặt ra khỏi tiến trình, trong đó **hai là file trên đĩa người dùng mà KHÔNG ĐO ĐƯỢC ai đang đọc** — là
+thứ chủ sở hữu dùng để phán. Nếu bản sửa cứ thế thêm trường, nó đã đổi hình dạng **ba** payload đã
+xuất bản và **hai** trong ba không có phép đếm người tiêu thụ nào chống lưng.
+
+🔴 **BA ĐIỀU KIỆN CỦA §"CHÍNH SÁCH CHE" NGAY TRÊN KHÔNG ĐƯỢC MIỄN BỞI PHÁN QUYẾT NÀY.** Một bề mặt
+**mới** không phải một bề mặt **miễn phí**: thân request vẫn mang **dữ liệu đo của khách hàng**, và
+**vẫn chưa có trần kích thước nào trong `src/` để thừa kế** (quét trả tập rỗng — xem trên). Nên bản
+thi hành vẫn phải mang theo **(a)** trần byte + dấu hiệu đã cắt, **(b)** phép che áp ở chỗ **dựng sự
+kiện** chứ không ở chỗ render, **(c)** một **danh sách CHO PHÉP** — danh sách cấm không đóng được trên
+một `Dictionary` không định kiểu. 📎 Và cái **KHÔNG** phải lý do, đã đo và ghi ở trên: **không phải
+khoá `mk_`** — trên đường được trace khoá đi bằng header, không bao giờ trong thân.
+
+🔴 **MỤC NÀY Ở LẠI PHẦN I.** Phán quyết đã có, **ghi chép thi hành thì chưa** — **một nhiệm vụ khác sẽ
+thi hành**, và mục chỉ rời Phần I khi ghi chép ấy tồn tại. AS-1 **không thi hành phán quyết này** và
+**không sửa một dòng mã nào cho mục 27**; nó chỉ ghi phán quyết vào đây.
+
+
+### ✅ ĐÃ THI HÀNH 2026-08-22 (AT-1) — **PHÁN QUYẾT CỦA CHỦ SỞ HỮU ngày 2026-08-22** (đọc ở khối ngay trên, trong chính thân mục này). MỘT BỀ MẶT MỚI, và ba bề mặt cũ KHÔNG dịch một byte
+
+🔨 **Phán quyết được thi hành đúng hình dạng nó ra.** Một **đường RIÊNG** cho thân request:
+* `St4i.EdgeCore.Infrastructure.ApiTraceBody` — **file MỚI**, một record mới; và
+* `GET /v1/inspector/bodies` — **route MỚI** (`InspectorStreamEndpoint.MapInspectorBodies`), cùng chính
+  sách `Policies.Engineer` với luồng WS, vì một cái thân **nhạy cảm hơn** siêu dữ liệu nên không bao giờ
+  được với tới bằng một chính sách yếu hơn.
+
+🔴 **BA BỀ MẶT ĐÃ XUẤT BẢN KHÔNG DỊCH MỘT BYTE — CHỨNG MINH BẰNG DIFF, KHÔNG BẰNG LỜI HỨA.** `git diff`
+của nhiệm vụ này **không chạm** một dòng nào trong: `src/St4i.EdgeCore/Infrastructure/ApiTraceEvent.cs`
+(0 dòng), `web/src/routes/ApiInspector.tsx` (0), `web/src/lib/inspector.ts` (0),
+`src/St4iMachineSimulator/ViewModels/InspectorViewModel.cs` (0),
+`src/St4iMachineSimulator/Views/ApiInspectorView.xaml` (0), `web/src/components/TraceTable.tsx` (0).
+`ApiTraceEvent` giữ **đúng mười** thành phần; `EventBus.Traced` vẫn mang **một** `ApiTraceEvent` và không
+gì khác, nên khung `WS /v1/inspector/stream` và **hai** file JSON mà hai nút `Export` ghi ra **giữ nguyên
+hình dạng**. Cái giữ nó khỏi trôi về sau là một **nhân chứng**, không phải một quy ước:
+`ApiTraceEvent_still_has_exactly_the_ten_published_members_and_no_body` — thêm một thành phần **tuỳ chọn**
+`string? RequestBody = null` (dạng biên dịch được, **không làm hỏng một chỗ gọi nào**, tức đúng dạng mà
+một người sau sẽ thêm) ⇒ **ĐỎ**.
+
+**TRẦN KÍCH THƯỚC — ĐO TRƯỚC, CHỌN SAU, VÀ BỀ MẶT TỰ NÓI NÓ ĐÃ CẮT.** `ApiTraceBody.DefaultByteCap =
+16 KiB`, và cả hai nửa của phép đo được viết vào doc chứ không chỉ vào báo cáo. **Thân thật, đo trên
+`Normalizer` với bộ sinh của chính sản phẩm:** process-result sóng **24 mẫu** (WelderSim) = **1 314 byte**;
+**20 mẫu** (ScrewdriveSim) = **1 207 byte**; telemetry = **255 byte**; process-result **không** sóng =
+**285 byte**. **Nên không hình dạng nào sản phẩm này phát hôm nay bị cắt.** Cái trần tồn tại cho ca kia:
+`src/` **không có** giới hạn kích thước nào để thừa kế (AS-1 đã đo, tập rỗng), và một sóng **100 000 mẫu**
+— con số mà mục 14 và `openapi.ts` của hệ sinh thái cùng nêu — đo được **2 169 909 byte ≈ 2,07 MiB** và
+**BỊ cắt**, với `Truncated` bật để nói thế. 🔴 **Ngân sách thật là tích, và nó được nêu tên:** ring giữ
+`EventBus.DefaultCapacity` = 500 phần tử, nên trần trên cái mà tính năng này thêm vào một tiến trình chạy
+dài là **500 × 16 KiB = 8 MiB**. Con số mỗi-thân **suy ra từ ngân sách ấy**, không phải ngược lại. Và cái
+trần **KHÔNG** phủ được, nói rõ: nó chặn cái được **GIỮ LẠI**, **không bao giờ** chặn cái đã **gửi đi**.
+
+**DANH SÁCH TRƯỜNG NHẠY CẢM — LIỆT KÊ TRƯỚC, RỒI MỚI ĐẾM.** Quần thể khoá mở trọn từ cả **ba** hình dạng
+`Normalizer` dựng. *Process result:* `schemaVersion`, `machineCode`, `serialNumber`, `stepType`, `result`,
+`ts`, `idempotencyKey`, `metrics`, `recipe`, `waveforms`, **cộng mọi khoá genealogy** — và tập genealogy
+là **MỞ**, do vận hành viên/driver đặt, `Normalizer` chuyển tiếp nguyên vẹn. *Inspection:* `schemaVersion`,
+`machineCode`, `serialNumber`, `overallResult`, `inspectionTime`, `idempotencyKey`, `measurements`.
+*Telemetry:* `samples`. **Rồi mới đếm — DANH SÁCH CHO PHÉP có BẢY khoá**, và chỉ bảy:
+`schemaVersion`, `machineCode`, `stepType`, `result`, `ts`, `overallResult`, `inspectionTime`. **Bị che, và
+NÊU TÊN từng cái:** `serialNumber` và `recipe` (định danh khách hàng), `metrics`/`waveforms`/
+`measurements`/`samples` (dữ liệu đo của khách hàng), **và mọi khoá genealogy — bị che DO CẤU TRÚC**, vì
+thứ gì không nằm trên danh sách thì bị che dù có ai lường trước nó hay không. Mỗi thân mang
+`WithheldKeys` (tên, kèm **số phần tử** cho khoá là tập hợp — hình dạng, không phải nội dung) và
+`WithheldKeyCount`, **nên không người đọc nào có thể nhầm cái mình xem là toàn văn**. Phép che áp ở
+`ApiTraceBody.From`, được gọi **tại chỗ dựng sự kiện** trong `EdgePipeline` — **không** ở chỗ render, vì
+một bản ghi chỉ được che trên đường ra là một bản ghi đã nằm **không che** trong ring.
+
+🔴 **VÀ MỘT LỖ RÒ CỦA CHÍNH BẢN SỬA NÀY, BỊ BẮT BỞI CHÍNH BÀI TEST CỦA NÓ — ghi vì nó là bài học về giới
+hạn của một danh sách cho phép.** `idempotencyKey` **đã nằm trên danh sách cho phép** ở vòng đầu: nó *đọc
+như* một định danh cấu trúc. Nó không phải. `Normalizer.BuildIdempotencyKey` dựng nó **từ dữ liệu khách
+hàng**: mọi hình dạng nhúng **MÃ CÔNG THỨC**, và hình dạng **inspection** nhúng **cả SỐ SERIAL**
+(`{machineCode}:{recipeCode}:{serialNumber}:{cycleCounter}`). Tức danh sách cho phép **tự mở cửa sau** cho
+đúng hai giá trị mà các mục khác của nó đang che. Một bài test kiểm **tên khoá** sẽ **XANH**; bài test ở
+đây kiểm **GIÁ TRỊ được render** và **đỏ ngay**. Đã sửa: khoá thô **rời danh sách cho phép**, và cái còn
+lại là `ApiTraceBody.IdempotencyDigest` — **SHA-256, 16 ký tự hex** — trả lời đúng câu mà khoá thô được
+muốn cho ("có phải cùng một reading không / có phải một lần thử lại không") mà không mang theo thành phần
+nào. 🔴 **Giới hạn của phép digest, nêu chứ không ngụ ý: đây là PHI-ĐỊNH-DANH, không phải bí mật.** Đầu
+vào ít entropy và có định dạng biết trước, nên ai cầm danh sách máy có thể **xác nhận một phỏng đoán** bằng
+cách băm thử. Nó chặn một lần đổ thân làm lộ mã công thức và số serial một cách tình cờ; nó **không** chống
+được một bên đã biết mình đang tìm gì. **Bài học chung, viết lên chính danh sách:** một danh sách cho phép
+chỉ tốt bằng giả định rằng các thành viên của nó **đúng như tên chúng gợi ra**.
+
+📎 **Và một tiền đề của brief AT-1 KHÔNG sống sót, đúng như AS-1 đã đo trước đó.** Brief nhắc lại cảnh báo
+*"thân và tiêu đề có thể mang khoá `mk_`"*. **Sai trên đường được trace**, và bản thi hành này xác nhận
+lại: `ApiTraceBody` chỉ đọc `CanonicalEnvelope.Payload`, mà `EdgePipeline` chỉ dựng sự kiện quanh
+`_transport.SendAsync` của một reading — **không tiêu đề nào có mặt trong `CanonicalEnvelope`**. Lý do thật
+để che **không phải bí mật**; nó là **dữ liệu đo của khách hàng**, đúng cái thân mục đã viết từ đầu.
+
+**VÒNG ĐỜI CỦA THÂN NẰM TRONG VÒNG ĐỜI CỦA TRACE — DO CẤU TRÚC, KHÔNG DO QUY ƯỚC.** Thân **không** có kho
+riêng. `EventBus` nay giữ **một** hàng đợi các cặp `(ApiTraceEvent, ApiTraceBody?)`, nên một thân bị đuổi
+**trong đúng cú `Dequeue`** đã đuổi sự kiện của nó — hai ring song song với hai phép đuổi độc lập là cách
+một bộ đệm chẩn đoán biến thành một chỗ rò bộ nhớ **và** một kho dữ liệu khách hàng. `RecentBodies(n)` đếm
+theo **SLOT của ring**, không theo số thân, và cái trần của route là
+`InspectorStreamEndpoint.MaxBodySlotWindow = 200` — **ghim bằng `= BackfillEventCount`**, để lane thân
+**không bao giờ** với ngược xa hơn lane sự kiện mà người đọc đang đối chiếu. **Mọi cái trần đều là một
+TRƯỜNG trên response** (`slotWindow`, `maxSlotWindow`, `ringCapacity`, `retainedByteCap`,
+`maxWithheldKeysListed`, `allowedKeys`) — đúng bài học mục 28: một bề mặt in **giá trị** của cái trần mà
+không bao giờ gọi nó là trần thì người đọc không phân biệt được một danh sách **ngắn** với một danh sách
+**bị cắt**.
+
+🔴 **CÁI BỀ MẶT NÀY KHÔNG LÀM, NÊU RA ĐỂ KHÔNG AI SUY RA NGƯỢC.** Nó **không** cho xem **GIÁ TRỊ đo**: câu
+hỏi nó trả lời là *"mình đang gửi cái gì, trường nào có mặt, mỗi thứ bao nhiêu phần tử"*, **không** phải
+*"chi tiết ấy đo được bao nhiêu"*. Và **không dụng cụ UI nào được thêm** trong nhiệm vụ này — bề mặt mới là
+một route, đọc được bằng một client HTTP đã xác thực, **không** phải một panel trong pane Inspector. Nên
+câu ở tiêu đề mục — *"không dụng cụ UI nào trong sản phẩm này đọc được payload đi ra"* — **chỉ được đóng
+MỘT PHẦN**: nay **có** một đường trong sản phẩm để đọc, nhưng nó **chưa** phải một dụng cụ UI. 🔴 **Việc
+KHÔNG chạm `web/` cho mục này là CỐ Ý và nó tự nó là bằng chứng:** file duy nhất chứa `handleExport` là
+`web/src/routes/ApiInspector.tsx`, nên **không mở nó ra** là cách rẻ nhất và chắc nhất để chứng minh file
+xuất thứ nhất không dịch.
+
+**Nhân chứng:** `tests/St4i.EdgeCore.Tests/Infrastructure/ApiTraceBodySeparateLaneTests.cs`, **sáu**
+`[Fact]`, mỗi cái nêu tên đối chứng của nó. **Ba cặp đối chứng chạy TRỌN rồi hoàn nguyên:** thêm thành phần
+tuỳ chọn vào `ApiTraceEvent` ⇒ nhân chứng bề-mặt-đóng-băng **ĐỎ**; trả `idempotencyKey` về danh sách cho
+phép ⇒ **HAI** nhân chứng **ĐỎ**; bỏ phép cắt ⇒ nhân chứng trần **ĐỎ**. Sau khi hoàn nguyên: **6/6 xanh**.
 
 ---
 

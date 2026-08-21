@@ -26,6 +26,27 @@ namespace St4i.EdgeCore.Metrics;
 /// regardless OF are all genuinely guarded, and the unguarded case is a fourth it does not name.
 /// <see cref="Calculate"/>'s own doc comment states where the missing bound actually comes from. Retired
 /// rather than corrected: the guard is a code change and this task writes prose only.</para>
+/// <para>🔴 <b>THE WITHDRAWAL ABOVE STILL STANDS, 2026-08-22, task AT-1 (owner item 16, THE OWNER'S RULING
+/// of 2026-08-22) — read this as a SECOND dated block, not as a correction of the first.</b> No clamp was
+/// added to Quality and none is planned: every word AL-1 retired stays retired, and this class's code is
+/// unchanged by that ruling. What changed is somewhere else, and it changes what the retraction MEANS
+/// rather than whether it is true. AQ-1 measured on 2026-08-21 that the bound AL-1 pointed at was not
+/// merely undocumented here but ABSENT in practice — the aggregate that feeds this method could and did
+/// return a good count larger than its total, because its four reads each took their own SQLite snapshot.
+/// The owner ruled that the fix belongs at the source, and
+/// <see cref="St4i.EdgeCore.Historian.SqliteHistorianStore.AggregateForOeeAsync"/> now wraps those reads in
+/// one deferred transaction. So the bound on Quality is once again STRUCTURAL for the shipped path — and it
+/// now takes BOTH halves to state it: the two SQL predicates are nested, AND the two counts are read from
+/// one snapshot. Either half alone leaves it unbounded. It is still not bounded HERE, which is precisely
+/// why AL-1's withdrawal is not being taken back: hand this method an aggregate built any other way and the
+/// result still carries a Quality above 1.</para>
+/// <para>🔴 <b>The unfavourable half, written next to the favourable one because half of this is not the
+/// truth.</b> OEE figures computed from now on WILL DIFFER from figures computed before 2026-08-22, at
+/// exactly the moments the old ones were wrong. Reports already printed do not change and are not
+/// reissued; but anyone comparing two periods across that date will see a step that no change on the
+/// factory floor produced. That is the price the owner accepted in order to stop reporting a Quality above
+/// 1, and it is recorded here rather than only in the decision log because this is where the number is
+/// made.</para>
 /// </summary>
 public static class OeeCalculator
 {
@@ -55,6 +76,17 @@ public static class OeeCalculator
     /// <c>not Skip</c>. Hand this method an <see cref="St4i.EdgeCore.Historian.OeeInputAggregate"/> built
     /// any other way, which nothing prevents since both types are public, and the result can carry a
     /// Quality and an <see cref="OeeResult.Oee"/> above 1.</para>
+    /// <para>📎 <b>The sentence above named ONE of the two things that bound is made of, 2026-08-21 (AQ-1,
+    /// owner item 16); the missing one was supplied 2026-08-22 (AT-1, the owner's ruling) — quoted and
+    /// extended in place, nothing deleted.</b> "Nested SQL predicates" is necessary and was never
+    /// sufficient. Subset-hood only constrains two counts evaluated against the SAME rows, and until
+    /// 2026-08-22 the aggregate's two <c>COUNT(*)</c> statements ran outside any transaction, so SQLite in
+    /// WAL gave each its own snapshot and a concurrent writer could land between them. Measured at the
+    /// cadence the shipped fleet actually runs, that produced a Quality above 1. The second half of the
+    /// bound is therefore "and both counts are read inside one transaction", which
+    /// <see cref="St4i.EdgeCore.Historian.SqliteHistorianStore.AggregateForOeeAsync"/> now does. The rest of
+    /// the paragraph — that nothing stops a caller building the aggregate some other way and getting a
+    /// Quality above 1 — is unaffected and still exactly true.</para>
     /// <para>The three loss buckets are reported in TIME and they do not sum to the gap between planned time
     /// and run time — they are three independent readings of the same window, computed from different
     /// quantities, and adding them is not meaningful. This method has no state, no I/O and no clock: the

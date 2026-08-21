@@ -273,6 +273,13 @@ public sealed class RbacPolicyTests
         new("/v1/connectors/test", new[] { "POST" }, Policies.Engineer),
         new("/v1/inspector/stream", Array.Empty<string>(), Policies.Engineer),
 
+        // 🔴 Task AT-1 — owner item 27, the owner's ruling of 2026-08-22. The SEPARATE lane for request
+        // bodies. Engineer, and it can never be anything weaker than the stream above: the stream carries
+        // trace METADATA, this carries a (allowlisted, capped) view of the request BODY, which is strictly
+        // more sensitive. A body reachable at Operator tier while its own metadata needs Engineer would be
+        // the inversion this matrix exists to make impossible to introduce quietly.
+        new("/v1/inspector/bodies", new[] { "GET" }, Policies.Engineer),
+
         // 🔴 Task C-7 (.superpowers/sdd/2026-07-30-dotC-alarm-notification-blueprint/task-7-brief.md) — the
         // alarm-notification configuration surface. Engineer for the three channels that reach a person
         // through software; see the Admin block below for the fourth, which drives hardware.

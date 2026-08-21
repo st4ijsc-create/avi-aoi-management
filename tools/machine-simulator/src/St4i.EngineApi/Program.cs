@@ -1784,6 +1784,10 @@ app.MapLineEndpoints();
 // GĐ3 EC-3 — the Site-link status/config + device-identity HTTP surface over EC-2's SiteBridgeManager.
 app.MapSiteEndpoints();
 app.MapInspectorStream();
+// AT-1, owner item 27 — the separate lane for request bodies. Registered next to the stream because it is
+// the same pane's data under the same Engineer policy, and kept a distinct route because the ruling froze
+// the stream's frame shape.
+app.MapInspectorBodies();
 
 // WS-D-D1 — ENDPOINT, so it inherits the FallbackPolicy above like every other mapped route; without
 // AllowAnonymous the SPA shell (index.html) itself would 401 while logged out, and a logged-out user

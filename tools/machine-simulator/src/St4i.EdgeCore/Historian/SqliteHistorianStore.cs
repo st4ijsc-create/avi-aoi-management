@@ -464,9 +464,26 @@ public sealed class SqliteHistorianStore : IHistorianStore
     /// decided what <paramref name="includeFabricated"/> should be — it does not itself know about Demo
     /// mode, and should not.
     /// </summary>
+    /// <param name="connection">The open connection to probe on. It is the CALLER's connection, so the
+    /// probe observes whatever transaction state that caller has established.</param>
+    /// <param name="whereClauses">The scope being gated, as SQL fragments joined with <c>AND</c>. Returned
+    /// unchanged when <paramref name="includeFabricated"/> is set, and otherwise returned with exactly one
+    /// provenance clause appended — never reordered and never rewritten.</param>
+    /// <param name="parameters">The bindings for <paramref name="whereClauses"/>. The probe binds the same
+    /// set the caller will bind, which is what makes "is there real data in this scope" a question about
+    /// the caller's scope rather than a wider one.</param>
+    /// <param name="includeFabricated">When <see langword="true"/> the gate is skipped entirely and the
+    /// clauses come back untouched — the opt-in that lets a demo or exhibition install see its own rows.</param>
+    /// <param name="ct">Cancels the probe query.</param>
+    /// <param name="transaction">The open transaction the probe must run inside, or <see langword="null"/>
+    /// for the callers that read outside one. Supplied only by
+    /// <see cref="AggregateForOeeAsync"/>, whose gate probe has to share the one snapshot its two counts
+    /// share — see that method's doc comment. <c>Microsoft.Data.Sqlite</c> refuses to execute a command on a
+    /// connection with an open transaction unless the command is told about it, so this is required rather
+    /// than optional whenever the caller has one.</param>
     private static async Task<List<string>> ApplyRealPresenceGateAsync(
         SqliteConnection connection, List<string> whereClauses, List<(string Name, object Value)> parameters,
-        bool includeFabricated, CancellationToken ct)
+        bool includeFabricated, CancellationToken ct, SqliteTransaction? transaction = null)
     {
         if (includeFabricated) return whereClauses;
 
@@ -474,6 +491,7 @@ public sealed class SqliteHistorianStore : IHistorianStore
         var probeWhereSql = " WHERE " + string.Join(" AND ", probeClauses);
 
         using var probeCmd = connection.CreateCommand();
+        probeCmd.Transaction = transaction;
         probeCmd.CommandText = $"SELECT EXISTS(SELECT 1 FROM historian_results{probeWhereSql});";
         foreach (var (name, value) in parameters) probeCmd.Parameters.AddWithValue(name, value);
         var hasReal = Convert.ToInt64(
@@ -641,11 +659,35 @@ public sealed class SqliteHistorianStore : IHistorianStore
     /// <para>The run-time term is computed from run events with no machine filter and no window filter on
     /// the lower edge — every event up to the end of the window is replayed as a state machine, and the
     /// resulting intervals are clipped to the window. An interval still open at the end of the window is
-    /// counted as running to the end of it.</para></summary>
+    /// counted as running to the end of it.</para>
+    /// <para>🔴 <b>THE "SAME POPULATION" SENTENCE ABOVE WAS MEASURED INCOMPLETE, 2026-08-21, task AQ-1
+    /// (owner item 16), and is MADE WHOLE HERE, 2026-08-22, task AT-1 — quoted and extended in place, not
+    /// deleted.</b> Sharing one gate across both counts is necessary for the two counts to come from one
+    /// population, and it was never sufficient. All four statements below run on ONE connection, and
+    /// outside a transaction SQLite in WAL gives EACH statement its own snapshot — so a concurrent
+    /// <see cref="AppendResultsAsync"/> committing between the total and the good count made the good count
+    /// see rows the total never had, and the aggregate returned <c>GoodCount &gt; TotalCount</c>. Measured on
+    /// this store at the cadence the shipped <c>fleet.json</c> actually runs, that happened. The four reads
+    /// are therefore now wrapped in ONE DEFERRED transaction, which is what actually delivers the single
+    /// population the sentence above claims.</para>
+    /// <para>The transaction is <c>deferred: true</c> ON PURPOSE and that is not a detail. This method is
+    /// read-only and sits on three synchronous request paths, so it must not take a write lock:
+    /// <c>Microsoft.Data.Sqlite</c>'s parameterless <c>BeginTransaction()</c> issues <c>BEGIN IMMEDIATE</c>
+    /// and would do exactly that — measured, it blocked a concurrent writer until that writer failed with
+    /// <c>SQLite Error 5: database is locked</c>. The deferred form issues a bare <c>BEGIN</c>, takes its
+    /// read snapshot at the first read, blocks no writer at all, and holds the snapshot to the end. Both
+    /// forms report <c>IsolationLevel.Serializable</c>, so the property is NOT what distinguishes them —
+    /// only the deferred flag is. The residual cost is named rather than hidden: an open read transaction
+    /// holds the WAL checkpointer back for its lifetime, which is why the transaction is ended as soon as
+    /// the last read returns instead of at the end of the method.</para></summary>
     public async Task<OeeInputAggregate> AggregateForOeeAsync(
         string machineCode, DateTimeOffset from, DateTimeOffset to, CancellationToken ct, bool includeFabricated = false)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+
+        // AT-1 (owner item 16, owner's ruling 2026-08-22) — ONE snapshot for all four reads below. Deferred,
+        // because this method is read-only and must not take the write lock the parameterless overload takes.
+        using var transaction = connection.BeginTransaction(deferred: true);
 
         var fromIso = ToIso(from);
         var toIso = ToIso(to);
@@ -655,13 +697,14 @@ public sealed class SqliteHistorianStore : IHistorianStore
         // one question, independent of how the two counts below then slice it by verdict.
         var scopeClauses = new List<string> { "machine_code = @machine_code", "reading_kind = 'ProcessResult'", "event_time_utc BETWEEN @from AND @to" };
         var scopeParameters = new List<(string Name, object Value)> { ("@machine_code", machineCode), ("@from", fromIso), ("@to", toIso) };
-        var effectiveClauses = await ApplyRealPresenceGateAsync(connection, scopeClauses, scopeParameters, includeFabricated, ct)
+        var effectiveClauses = await ApplyRealPresenceGateAsync(connection, scopeClauses, scopeParameters, includeFabricated, ct, transaction)
             .ConfigureAwait(false);
         var scopeSql = string.Join(" AND ", effectiveClauses);
 
         long totalCount;
         using (var cmd = connection.CreateCommand())
         {
+            cmd.Transaction = transaction;
             cmd.CommandText = $"SELECT COUNT(*) FROM historian_results WHERE {scopeSql} AND verdict <> 'Skip';";
             cmd.Parameters.AddWithValue("@machine_code", machineCode);
             cmd.Parameters.AddWithValue("@from", fromIso);
@@ -672,6 +715,7 @@ public sealed class SqliteHistorianStore : IHistorianStore
         long goodCount;
         using (var cmd = connection.CreateCommand())
         {
+            cmd.Transaction = transaction;
             cmd.CommandText = $"SELECT COUNT(*) FROM historian_results WHERE {scopeSql} AND verdict IN ('Pass', 'Warn');";
             cmd.Parameters.AddWithValue("@machine_code", machineCode);
             cmd.Parameters.AddWithValue("@from", fromIso);
@@ -679,7 +723,11 @@ public sealed class SqliteHistorianStore : IHistorianStore
             goodCount = (long)(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false))!;
         }
 
-        var runTime = await ComputeRunTimeAsync(connection, from, to, ct).ConfigureAwait(false);
+        var runTime = await ComputeRunTimeAsync(connection, from, to, ct, transaction).ConfigureAwait(false);
+
+        // Read-only: end the snapshot the moment the last read returns, so the WAL checkpointer is held
+        // back for the shortest window this method can manage.
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
 
         return new OeeInputAggregate(machineCode, from, to, totalCount, goodCount, runTime);
     }
@@ -689,9 +737,10 @@ public sealed class SqliteHistorianStore : IHistorianStore
     // has no machine_code column — run state is line/system-wide, not per-machine, matching the DDL.
     // Only the interval-open/close core is implemented here; WS-A-T3 hardens edge cases (overlapping
     // starts, multi-window spans, etc.) with dedicated tests.
-    private static async Task<TimeSpan> ComputeRunTimeAsync(SqliteConnection connection, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    private static async Task<TimeSpan> ComputeRunTimeAsync(SqliteConnection connection, DateTimeOffset from, DateTimeOffset to, CancellationToken ct, SqliteTransaction? transaction = null)
     {
         using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = """
             SELECT event_type, at_utc FROM historian_run_events
             WHERE at_utc <= @to
