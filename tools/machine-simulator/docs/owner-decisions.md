@@ -55,7 +55,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 24 | `ModbusOptions`/`OpcUaOptions` — hằng số TÊN biến môi trường công khai | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — phép đo đã sửa **tự kiểm lại và ĐỨNG VỮNG cả hai nửa**; hai file test nay gọi hằng số thay vì gõ lại chuỗi. Xem Phần III |
 | 25 | **Điều kiện rời Phần II của mục 12** — họ driver: tài liệu hay thu hẹp? | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). 109 cảnh báo trên **97 thành viên**; câu hỏi *"có nên `public` không"* **không tồn tại với 46**, **sai trong im lặng với 9**, miễn phí với 17, tốn một IVT mới với 25 — và 🔴 **ít nhất 55 trong 97 sẽ `public` DÙ PHÁN THẾ NÀO** |
 | 26 | **Không gì trong repo này trả cho TÍNH ĐÚNG của một chú thích đã viết** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Mục 12 trả cho **bao phủ**; W-1 kiểm **hình thức**. Năm con số đã đo — **KHÔNG cộng được**, và mục nói vì sao |
-| 27 | API Inspector **không phơi THÂN request** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo lại từ mã 2026-08-20. `ApiTraceEvent` **không có trường thân**; `TraceTable` **không có trình xử lý click hàng nào**. 🔴 **AS-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG của brief đã NỔ: `ApiTraceEvent` rời tiến trình trên BA bề mặt đã xuất bản, nên thêm một trường thân LÀ đổi hình dạng một payload đã xuất bản. Không một dòng nào bị sửa cho mục này; mục Ở LẠI PHẦN I.** Kèm hai phép đo BÁC hai tiền đề của brief: thân request đi ra **KHÔNG mang khoá `mk_`** (khoá đi bằng header), và sóng hàn hôm nay là **24 mẫu**, không phải 100.000. Xem thân mục |
+| 27 | API Inspector **không phơi THÂN request** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo lại từ mã 2026-08-20. `ApiTraceEvent` **không có trường thân**; `TraceTable` **không có trình xử lý click hàng nào**. 🔴 **AS-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG của brief đã NỔ: `ApiTraceEvent` rời tiến trình trên BA bề mặt đã xuất bản, nên thêm một trường thân LÀ đổi hình dạng một payload đã xuất bản. Không một dòng nào bị sửa cho mục này; mục Ở LẠI PHẦN I.** Kèm hai phép đo BÁC hai tiền đề của brief: thân request đi ra **KHÔNG mang khoá `mk_`** (khoá đi bằng header), và sóng hàn hôm nay là **24 mẫu**, không phải 100.000. → 🔨 **QUYẾT: BỀ MẶT MỚI** (2026-08-22, **chủ sở hữu**) — một đường RIÊNG cho thân request; khung WS và **hai** file JSON xuất **giữ nguyên hình dạng**. 🔴 **Phép DỪNG của AS-1 là thứ TẠO RA phán quyết này**: nếu cứ thêm trường thì đã đổi ba payload đã xuất bản, hai trong đó **không đo được ai đang đọc**. 🔴 **Ở LẠI PHẦN I** — phán quyết đã có, **ghi chép thi hành CHƯA**; một nhiệm vụ khác thi hành. Ba điều kiện che (trần byte + dấu hiệu đã cắt, che ở chỗ dựng sự kiện, **danh sách CHO PHÉP**) **KHÔNG được miễn**. Xem thân mục |
 | 28 | ~~**BA** cái trần~~ **BỐN** cái trần trên lịch sử API-trace, và **không cái nào được UI gọi tên là trần** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **KHÔNG phải ba mà BỐN**: mục bỏ sót vòng đệm của chính vỏ WPF (`InspectorViewModel.MaxEvents`). Cái trần backfill nay **CÓ TÊN** (`InspectorStreamEndpoint.BackfillEventCount`) thay vì một literal `200`; pane web nay **gọi tên** ba cái trần áp vào nó và nói **cái nào chặn khi nào**. Đổi lời, không đổi hành vi. Xem Phần III |
 | 29 | Cả fleet liên kết ra ngoài bằng **MỘT danh tính thiết bị** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **và CƠ CHẾ mà mục mô tả KHÔNG đứng vững: route KHÔNG "trả 200 cho việc nó không làm"** — nó thật sự lưu khoá, câu *"Pasted mk_ key stored for WELD-01"* là **ĐÚNG**; cái sai là suy luận nó mời người đọc rút ra. Nên bản sửa là **sửa câu, không sửa mã trạng thái** — một 4xx sẽ từ chối một cú ghi có thật và lấy đi đúng đường mà chính mục nêu là hợp lệ. 🔴 **Và mục nêu THIẾU một bề mặt: có HAI biểu mẫu web POST route ấy, không một.** Cái trần vendored giữ nguyên. Xem Phần III |
 | 30 | Gốc mặc định của bốn store cạnh-binary là `%ProgramFiles%`, và **lần chạy đầu chính là lần GHI** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Câu hỏi này **bị nhiều brief liên tiếp CẤM mở**; lệnh cấm hết hiệu lực ở nhiệm vụ này |
@@ -695,6 +695,31 @@ luồng WS, **và hai file export** — nên "che" phải áp ở chỗ **dựng
 (c) danh sách khoá được giữ là **danh sách CHO PHÉP hay danh sách CẤM** — với một `Dictionary` không
 định kiểu mà `Normalizer` chuyển tiếp mọi khoá lạ làm trường phả hệ, một danh sách cấm **không đóng
 được**.
+
+### 🔨 QUYẾT 2026-08-22 (CHỦ SỞ HỮU): BỀ MẶT MỚI — và phép DỪNG ở trên là thứ tạo ra phán quyết này
+
+🔨 **PHÁN QUYẾT, ghi kèm ngày: thêm một ĐƯỜNG RIÊNG cho thân request, và GIỮ NGUYÊN khung
+`WS /v1/inspector/stream` cùng HAI file JSON mà hai nút `Export` ghi ra.** Tức lựa chọn *"thêm một
+trường vào `ApiTraceEvent`"* — lựa chọn mà AS-1 được giao và đã **từ chối tự quyết** — **KHÔNG** được
+chọn. Ba payload đã xuất bản ở §1.1 của phép đo trên **không đổi hình dạng**.
+
+📎 **Vì sao phép DỪNG được ghi là một phần của phán quyết, chứ không phải một lần chậm trễ.** AS-1
+được giao thi hành mục này và dừng vì điều kiện DỪNG của brief đã nổ; phép đo nó để lại — **ba** bề
+mặt ra khỏi tiến trình, trong đó **hai là file trên đĩa người dùng mà KHÔNG ĐO ĐƯỢC ai đang đọc** — là
+thứ chủ sở hữu dùng để phán. Nếu bản sửa cứ thế thêm trường, nó đã đổi hình dạng **ba** payload đã
+xuất bản và **hai** trong ba không có phép đếm người tiêu thụ nào chống lưng.
+
+🔴 **BA ĐIỀU KIỆN CỦA §"CHÍNH SÁCH CHE" NGAY TRÊN KHÔNG ĐƯỢC MIỄN BỞI PHÁN QUYẾT NÀY.** Một bề mặt
+**mới** không phải một bề mặt **miễn phí**: thân request vẫn mang **dữ liệu đo của khách hàng**, và
+**vẫn chưa có trần kích thước nào trong `src/` để thừa kế** (quét trả tập rỗng — xem trên). Nên bản
+thi hành vẫn phải mang theo **(a)** trần byte + dấu hiệu đã cắt, **(b)** phép che áp ở chỗ **dựng sự
+kiện** chứ không ở chỗ render, **(c)** một **danh sách CHO PHÉP** — danh sách cấm không đóng được trên
+một `Dictionary` không định kiểu. 📎 Và cái **KHÔNG** phải lý do, đã đo và ghi ở trên: **không phải
+khoá `mk_`** — trên đường được trace khoá đi bằng header, không bao giờ trong thân.
+
+🔴 **MỤC NÀY Ở LẠI PHẦN I.** Phán quyết đã có, **ghi chép thi hành thì chưa** — **một nhiệm vụ khác sẽ
+thi hành**, và mục chỉ rời Phần I khi ghi chép ấy tồn tại. AS-1 **không thi hành phán quyết này** và
+**không sửa một dòng mã nào cho mục 27**; nó chỉ ghi phán quyết vào đây.
 
 ---
 
@@ -6090,7 +6115,7 @@ mẫu sinh ra nó*, và ở đây "cái mẫu" là **phạm vi được viết r
 
 **Cái KHÔNG làm, và vì sao.** Ba cái trần **không được nâng** — mục tự nói cả ba đều có lý do đúng, và
 *"cách rẻ nhất để đóng mục này không phải nâng trần mà là gọi tên chúng"*. **Vỏ WPF không được đụng**:
-nó không có phụ đề nào hứa *"every request"* (đo: `Strings.en.xaml` có chín chuỗi `Str_Inspector_*`,
+nó không có phụ đề nào hứa *"every request"* (đo: `Strings.en.xaml` có **tám** chuỗi `Str_Inspector_*`,
 không cái nào là một câu hứa), nên ở đó **không có lời sai để sửa** — chỉ có cái trần #4 chưa được gọi
 tên, và gọi tên nó là một bề mặt WPF mới chứ không phải một phép sửa lời. **Dư lượng còn mở, ghi vào
 mục chứ không để trong báo cáo.**
@@ -6103,6 +6128,18 @@ chứng minh lời mới đúng. Cộng `InspectorStreamBackfillCapTests` (hai `
 GUARD TRẦN, KHÔNG PHẢI NHÂN CHỨNG.** Nó xanh ở cả hai phía của mọi cặp đối chứng để 200 nguyên chỗ. Nó
 được kiểm **không rỗng** bằng một đột biến riêng (`BackfillEventCount` 200 → 600 ⇒ **cả hai đỏ**), rồi
 hoàn nguyên.
+
+📎 🔴 **MỘT CON SỐ TRONG CHÍNH GHI CHÉP NÀY ĐÃ DỊCH, VÀ MỘT CON SỐ DỊCH LÀ MỘT PHÁT HIỆN (§8.1(h5.1)) —
+GHI CHỨ KHÔNG SỬA IM LẶNG.** Đoạn *"Cái KHÔNG làm"* ngay trên, khi được viết lần đầu (AS-1,
+2026-08-21), nói `Strings.en.xaml` có **chín** chuỗi `Str_Inspector_*`. **Đo được là TÁM**
+(`Str_Inspector_` + `Title`, `Pause`, `Resume`, `Clear`, `Export`, `Paused`, `Machine`, `Kind`).
+**Người bắt được là chính AS-1**, sau khi đã viết, bằng cách đo lại sản phẩm của chính mình trước khi
+hạ commit thứ hai — không phải người phản biện, và không phải cổng: **cổng không đếm chuỗi XAML, nên
+nó đã xanh với con số sai và sẽ mãi xanh với nó.** Ý nghĩa, viết đúng cái nó là: con số ấy được dùng
+làm **bằng chứng cho một phép phủ định** (*"vỏ WPF không có lời sai để sửa"*). Phép phủ định **vẫn
+đứng vững** — tám chuỗi ấy đã được liệt kê ra và không cái nào là một câu hứa — nhưng nó **suýt được
+chống bằng một phép đếm không ai đo**, đúng loài §8.1(b): *artifact ít được quét nhất là lời biện minh
+của chính anh*. **Câu sai không bị xoá; nó được trích lại ở đây kèm ngày và người.**
 
 ---
 
