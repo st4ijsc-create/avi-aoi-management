@@ -41,11 +41,11 @@ const STANDARD_COLORS: Record<string, string> = {
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
-  electronics: "Điện tử",
-  automotive: "Ô tô",
-  aerospace: "Hàng không",
-  medical: "Y tế",
-  general: "Chung",
+  electronics: "qgCategory.dienTu",
+  automotive: "qgCategory.oTo",
+  aerospace: "qgCategory.hangKhong",
+  medical: "qgCategory.yTe",
+  general: "qgCategory.chung",
 };
 
 export function QualityGateTemplatesContent() {
@@ -466,7 +466,7 @@ function TemplateCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center gap-2 text-sm">
-          <Badge variant="outline">{CATEGORY_LABELS[template.category] || template.category}</Badge>
+          <Badge variant="outline">{CATEGORY_LABELS[template.category] ? t(CATEGORY_LABELS[template.category]) : template.category}</Badge>
           <span className="text-muted-foreground">
             {template.rules?.length || 0} {t("qualityGateTemplates.rulesCount", "quy tắc")}
           </span>

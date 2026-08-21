@@ -59,6 +59,10 @@ const FILES_KHOA_DU_LIEU = [
   "pages/DashboardTemplates.tsx",
   "components/WidgetStyleEditor.tsx",
   "pages/AIBrainDashboard.tsx",
+  // F13 lô 10 — bản đồ nhãn cấp module (khoảng thời gian · ngành · PackML)
+  "pages/DrillDownDashboard.tsx",
+  "pages/QualityGateTemplates.tsx",
+  "components/lineView/StationFlow.tsx",
 ];
 
 /** Trường được component gọi `t()` lên. `description` KHÔNG nằm đây — xem ghi chú dưới. */
@@ -69,7 +73,7 @@ const TRUONG_QUA_T = ["label", "blurb", "note", "headerKey", "question", "descri
  * trường, vì bản đồ trạng thái có hình dạng `ok: "cmdCenter.status.ok"` — tên khoá
  * bên trái là mã enum, không phải một trong `TRUONG_QUA_T`.
  */
-const NS_F13 = /^(widgetTheme|aiBrain|ctrlReady|embTpl|cmdCenter|masterDataEnum|userGuide|dashboardAIWidget)\./;
+const NS_F13 = /^(drillRange|qgCategory|packml|widgetTheme|aiBrain|ctrlReady|embTpl|cmdCenter|masterDataEnum|userGuide|dashboardAIWidget)\./;
 
 function flatten(obj: unknown, prefix = "", out: Record<string, unknown> = {}) {
   if (!obj || typeof obj !== "object") return out;

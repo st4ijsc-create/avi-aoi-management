@@ -119,10 +119,10 @@ const DRILLDOWN_EVENT_KINDS: ReadonlySet<EcosystemKind> = new Set<EcosystemKind>
 type DrillRange = "today" | "7d" | "30d" | "all";
 
 const DRILL_RANGE_LABELS: Record<DrillRange, string> = {
-  today: "Hôm nay",
-  "7d": "7 ngày qua",
-  "30d": "30 ngày qua",
-  all: "Toàn thời gian",
+  today: "drillRange.homNay",
+  "7d": "drillRange.7NgayQua",
+  "30d": "drillRange.30NgayQua",
+  all: "drillRange.toanThoiGian",
 };
 
 function parseDrillRange(raw: string | null): DrillRange {
@@ -228,7 +228,7 @@ export default function DrillDownDashboard(): React.JSX.Element {
   const rangeFrom = drillRangeFrom(range);
   // doc 68 §3.6 (việc 5): nhãn kỳ trùng Select đã bỏ; chuỗi kỳ vẫn dùng làm nhãn
   // kỳ cho khối KPI trong ContextDrawer máy (KPI ăn theo kỳ đã chọn).
-  const rangeLabel = DRILL_RANGE_LABELS[range];
+  const rangeLabel = t(DRILL_RANGE_LABELS[range]);
   // Input kỳ truyền xuống cả 4 tầng (máy cũng nhận — thiếu thì tổng các tầng lệch).
   const periodInput = rangeFrom ? { from: rangeFrom } : {};
 

@@ -18913,7 +18913,10 @@
     "sanLuongTheoThangBieu": "月度产量 — 柱状图",
     "phanBoSanLuongTheo": "各集团产量分布 — 饼图",
     "soSanhTyLeDat": "各集团合格率对比 — 横向柱状图",
-    "soSanhTrongKy": "期内对比"
+    "soSanhTrongKy": "期内对比",
+    "sanLuong": "产量",
+    "vsTrungBinhTapDoan": "对比集团平均",
+    "vsMucTieu95": "对比 95% 目标"
   },
   "drillDown": {
     "chonKyDuLieu": "选择数据周期",
@@ -19487,5 +19490,32 @@
     "sanHo": "珊瑚",
     "cucQuang": "极光",
     "thep": "钢灰"
+  },
+  "drillRange": {
+    "homNay": "今天",
+    "7NgayQua": "最近 7 天",
+    "30NgayQua": "最近 30 天",
+    "toanThoiGian": "全部时间"
+  },
+  "qgCategory": {
+    "dienTu": "电子",
+    "oTo": "汽车",
+    "hangKhong": "航空航天",
+    "yTe": "医疗",
+    "chung": "通用"
+  },
+  "packml": {
+    "dung": "已停止",
+    "dangChay": "运行中",
+    "cho": "等待",
+    "sanSang": "就绪",
+    "giu": "保持",
+    "tamNgung": "暂停",
+    "hoanTat": "已完成",
+    "huy": "已中止",
+    "datLai": "复位中",
+    "khoiDong": "启动中",
+    "dangDung": "停止中",
+    "khongRo": "未知"
   }
 }

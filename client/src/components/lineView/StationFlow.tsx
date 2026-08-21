@@ -46,9 +46,9 @@ export interface StationFlowProps {
 
 /** doc65 V5 — PackML token → nhãn Việt ngắn (StatusBadge mặc định in raw "STOPPED"). */
 const PACKML_LABEL_VI: Record<string, string> = {
-  STOPPED: "Dừng", EXECUTE: "Đang chạy", IDLE: "Chờ", READY: "Sẵn sàng",
-  HELD: "Giữ", SUSPENDED: "Tạm ngưng", COMPLETE: "Hoàn tất", ABORTED: "Hủy",
-  RESETTING: "Đặt lại", STARTING: "Khởi động", STOPPING: "Đang dừng", UNKNOWN: "Không rõ",
+  STOPPED: "packml.dung", EXECUTE: "packml.dangChay", IDLE: "packml.cho", READY: "packml.sanSang",
+  HELD: "packml.giu", SUSPENDED: "packml.tamNgung", COMPLETE: "packml.hoanTat", ABORTED: "packml.huy",
+  RESETTING: "packml.datLai", STARTING: "packml.khoiDong", STOPPING: "packml.dangDung", UNKNOWN: "packml.khongRo",
 };
 
 /** doc65 PRO-100 (ISA-101): dừng/chờ là trạng thái KỲ VỌNG lúc idle → trung tính;
@@ -185,7 +185,7 @@ export function StationFlow({
                     </span>
                     <StatusBadge
                       status={m.opState}
-                      label={PACKML_LABEL_VI[m.opState?.toUpperCase?.() ?? ""] ?? m.opState}
+                      label={PACKML_LABEL_VI[m.opState?.toUpperCase?.() ?? ""] ? t(PACKML_LABEL_VI[m.opState?.toUpperCase?.() ?? ""]) : m.opState}
                       tone={PACKML_TONE[m.opState?.toUpperCase?.() ?? ""]}
                       className="px-1.5 py-0 text-[10px]"
                     />

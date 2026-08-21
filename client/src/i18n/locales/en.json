@@ -18905,7 +18905,10 @@
     "sanLuongTheoThangBieu": "Monthly output — bar chart",
     "phanBoSanLuongTheo": "Output distribution by group — pie chart",
     "soSanhTyLeDat": "Pass-rate comparison across groups — horizontal bar chart",
-    "soSanhTrongKy": "Period-over-period comparison"
+    "soSanhTrongKy": "Period-over-period comparison",
+    "sanLuong": "Output",
+    "vsTrungBinhTapDoan": "vs. group average",
+    "vsMucTieu95": "vs. 95% target"
   },
   "drillDown": {
     "chonKyDuLieu": "Select data period",
@@ -19479,5 +19482,32 @@
     "sanHo": "Coral",
     "cucQuang": "Aurora",
     "thep": "Steel"
+  },
+  "drillRange": {
+    "homNay": "Today",
+    "7NgayQua": "Last 7 days",
+    "30NgayQua": "Last 30 days",
+    "toanThoiGian": "All time"
+  },
+  "qgCategory": {
+    "dienTu": "Electronics",
+    "oTo": "Automotive",
+    "hangKhong": "Aerospace",
+    "yTe": "Medical",
+    "chung": "General"
+  },
+  "packml": {
+    "dung": "Stopped",
+    "dangChay": "Running",
+    "cho": "Idle",
+    "sanSang": "Ready",
+    "giu": "Held",
+    "tamNgung": "Suspended",
+    "hoanTat": "Complete",
+    "huy": "Aborted",
+    "datLai": "Resetting",
+    "khoiDong": "Starting",
+    "dangDung": "Stopping",
+    "khongRo": "Unknown"
   }
 }

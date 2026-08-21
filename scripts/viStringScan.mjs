@@ -79,6 +79,11 @@ export function LA_KHUON_DUNG(ln) {
   // người dùng thôi nhận ra được — làm HỎNG chức năng nhập chứ không cải thiện i18n.
   // Cùng lớp với `MasterDataColumn.header`; xem docblock ở `shared/masterDataIO.ts`.
   if (/\bfindCol\s*\(/.test(ln)) return true;
+  // `{ key: "q1", default: "…tiếng Việt…" }` — CÙNG khuôn [khoá, mặc định], chỉ khác
+  // tên trường và khoá không có dấu chấm (`ManagementInsight` ghép tiền tố lúc gọi:
+  // `t(\`mgmtInsight.qa.examples.\${ex.key}\`, ex.default)`). Đã kiểm 2026-08-21: cả ba
+  // khoá `q1/q2/q3` có đủ vi/en/zh ⇒ không phải nợ.
+  if (/\bkey\s*:\s*["'`][\w-]+["'`]/.test(ln) && /\bdefault\s*:\s*["'`]/.test(ln)) return true;
   return false;
 }
 

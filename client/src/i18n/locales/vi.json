@@ -18885,7 +18885,10 @@
     "sanLuongTheoThangBieu": "Sản lượng theo tháng — biểu đồ cột",
     "phanBoSanLuongTheo": "Phân bố sản lượng theo tập đoàn — biểu đồ tròn",
     "soSanhTyLeDat": "So sánh tỷ lệ đạt giữa các tập đoàn — biểu đồ cột ngang",
-    "soSanhTrongKy": "So sánh trong kỳ"
+    "soSanhTrongKy": "So sánh trong kỳ",
+    "sanLuong": "Sản lượng",
+    "vsTrungBinhTapDoan": "vs. Trung bình tập đoàn",
+    "vsMucTieu95": "vs. Mục tiêu 95%"
   },
   "drillDown": {
     "chonKyDuLieu": "Chọn kỳ dữ liệu",
@@ -19459,5 +19462,32 @@
     "sanHo": "San hô",
     "cucQuang": "Cực quang",
     "thep": "Thép"
+  },
+  "drillRange": {
+    "homNay": "Hôm nay",
+    "7NgayQua": "7 ngày qua",
+    "30NgayQua": "30 ngày qua",
+    "toanThoiGian": "Toàn thời gian"
+  },
+  "qgCategory": {
+    "dienTu": "Điện tử",
+    "oTo": "Ô tô",
+    "hangKhong": "Hàng không",
+    "yTe": "Y tế",
+    "chung": "Chung"
+  },
+  "packml": {
+    "dung": "Dừng",
+    "dangChay": "Đang chạy",
+    "cho": "Chờ",
+    "sanSang": "Sẵn sàng",
+    "giu": "Giữ",
+    "tamNgung": "Tạm ngưng",
+    "hoanTat": "Hoàn tất",
+    "huy": "Hủy",
+    "datLai": "Đặt lại",
+    "khoiDong": "Khởi động",
+    "dangDung": "Đang dừng",
+    "khongRo": "Không rõ"
   }
 }

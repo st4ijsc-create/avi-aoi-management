@@ -661,7 +661,7 @@ export default function CorporateDashboard() {
                         </Pie>
                         <RechartsTooltip
                           contentStyle={chartTooltipStyle}
-                          formatter={(value: number) => [value.toLocaleString(), 'Sản lượng']}
+                          formatter={(value: number) => [value.toLocaleString(), t("corpDash.sanLuong", "Sản lượng")]}
                         />
                       </PieChart>
                     </ResponsiveContainer>
@@ -749,8 +749,8 @@ export default function CorporateDashboard() {
                   );
                   return (
                     <>
-                      {row('vs. Trung bình tập đoàn', dVsAvg)}
-                      {row('vs. Mục tiêu 95%', dVsTarget)}
+                      {row(t("corpDash.vsTrungBinhTapDoan", "vs. Trung bình tập đoàn"), dVsAvg)}
+                      {row(t("corpDash.vsMucTieu95", "vs. Mục tiêu 95%"), dVsTarget)}
                     </>
                   );
                 })()}
