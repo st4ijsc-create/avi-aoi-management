@@ -43,10 +43,13 @@ const FILES_KHOA_DU_LIEU = [
   "pages/MasterDataManagement.tsx",
   // F13 lô 3 — UserGuide lưu toàn bộ nội dung hướng dẫn dưới dạng khoá
   "pages/UserGuide.tsx",
+  // F13 lô 4 — `headerKey` (nhãn cột hiển thị; `header` vẫn là khoá khớp Excel)
+  "pages/ProductModels.tsx",
+  "pages/ComponentShowcase.tsx",
 ];
 
 /** Trường được component gọi `t()` lên. `description` KHÔNG nằm đây — xem ghi chú dưới. */
-const TRUONG_QUA_T = ["label", "blurb", "note"];
+const TRUONG_QUA_T = ["label", "blurb", "note", "headerKey"];
 
 /**
  * Không gian tên gốc của các khoá do F13 sinh. Quét theo TIỀN TỐ thay vì theo tên
@@ -66,8 +69,18 @@ function flatten(obj: unknown, prefix = "", out: Record<string, unknown> = {}) {
 }
 const doc = (lg: string) => flatten(JSON.parse(readFileSync(join(LOCALES, `${lg}.json`), "utf8")));
 
-/** Chuỗi trông như khoá i18n: ASCII, có chấm, không khoảng trắng. */
-const LA_KHOA = (s: string) => /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/.test(s);
+/**
+ * Chuỗi trông như khoá i18n: ASCII, có chấm, không khoảng trắng — VÀ đoạn đầu phải
+ * là một không-gian-tên CÓ THẬT trong `vi.json`.
+ *
+ * ⚠ Điều kiện thứ hai không phải cho gọn. Thiếu nó, `label: "Next.js"` trong
+ * `ComponentShowcase` bị nhận nhầm là khoá i18n rồi bị tố "thiếu ở cả ba locale" —
+ * cổng đỏ vì một TÊN SẢN PHẨM. Đúng lớp "thước đo bắt nhầm" của F12: một cổng tố
+ * sai chỗ sẽ bị người ta tắt đi, và khi đó nó không canh gì nữa.
+ */
+const NS_GOC = new Set(Object.keys(JSON.parse(readFileSync(join(LOCALES, "vi.json"), "utf8"))));
+const LA_KHOA = (s: string) =>
+  /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/.test(s) && NS_GOC.has(s.split(".")[0]);
 
 function khoaTrongMa(): Array<{ file: string; khoa: string }> {
   const out: Array<{ file: string; khoa: string }> = [];

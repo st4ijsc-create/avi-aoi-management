@@ -19159,5 +19159,58 @@
         "error": "DỪNG vì một hỏng THẬT ở lượt chạy kiểm chứng."
       }
     }
+  },
+  "masterDataCol": {
+    "code": "Mã nhà cung cấp",
+    "name": "Tên nhà cung cấp",
+    "type": "Loại",
+    "contactName": "Người liên hệ",
+    "contactPhone": "Điện thoại",
+    "address": "Địa chỉ",
+    "country": "Quốc gia",
+    "rating": "Đánh giá",
+    "approvalStatus": "Phê duyệt",
+    "isActive": "Kích hoạt",
+    "notes": "Ghi chú",
+    "code2": "Mã vật tư",
+    "name2": "Tên vật tư",
+    "materialClass": "Nhóm vật tư",
+    "mpn": "Mã NSX (MPN)",
+    "manufacturer": "Nhà sản xuất",
+    "packageType": "Kiểu đóng gói",
+    "unit": "Đơn vị",
+    "isActive2": "Kích hoạt",
+    "notes2": "Ghi chú",
+    "code3": "Mã nhóm",
+    "name3": "Tên nhóm",
+    "parentCode": "Nhóm cha",
+    "description": "Mô tả",
+    "isActive3": "Kích hoạt",
+    "code4": "Mã khách hàng",
+    "name4": "Tên khách hàng",
+    "contactName2": "Người liên hệ",
+    "contactPhone2": "Điện thoại",
+    "address2": "Địa chỉ",
+    "country2": "Quốc gia",
+    "isActive4": "Kích hoạt",
+    "notes3": "Ghi chú"
+  },
+  "productModelsCol": {
+    "code": "Mã sản phẩm",
+    "name": "Tên sản phẩm",
+    "description": "Mô tả",
+    "category": "Nhóm",
+    "productLine": "Dòng sản phẩm",
+    "variant": "Biến thể",
+    "revision": "Phiên bản (Rev)",
+    "lifecycleStatus": "Trạng thái vòng đời",
+    "targetYieldRate": "FPY mục tiêu (%)",
+    "minYieldRate": "FPY tối thiểu (%)"
+  },
+  "showcaseCol": {
+    "code": "Mã",
+    "name": "Tên vật liệu",
+    "qty": "Số lượng",
+    "active": "Kích hoạt"
   }
 }

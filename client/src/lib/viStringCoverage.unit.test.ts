@@ -230,7 +230,7 @@ describe("F12 — chuỗi tiếng Việt TRẦN (cổng theo-khoá không thấy
  * đã trả giá ở Pha 7 — nợ mới lẻn vào tận 119 mục mà cổng vẫn xanh. Nên ca "bám SÁT" dưới
  * đây đòi BẰNG ĐÚNG, cùng kỷ luật với `ALLOWED_RAW_VI_STRINGS` của hình dạng 1.
  */
-const FROZEN_SHAPE3 = 414;
+const FROZEN_SHAPE3 = 367;
 
 /**
  * ⚠ Bộ đếm hình-3 nay nằm ở `scripts/viStringScan.mjs` — MỘT nguồn sự thật.

@@ -219,16 +219,16 @@ function mapCatalogCategoryToLegacyType(category?: string): MeasurementPoint["me
 const PRODUCT_DETAIL_TABS = ["points", "info", "release", "foundation", "variants"] as const;
 
 const PRODUCT_IO_COLUMNS: MasterDataColumn[] = [
-  { field: "code", header: "Mã sản phẩm", required: true, type: "string", example: "SP-001" },
-  { field: "name", header: "Tên sản phẩm", required: true, type: "string", example: "Bảng mạch A" },
-  { field: "description", header: "Mô tả", type: "string" },
-  { field: "category", header: "Nhóm", type: "string", example: "PCBA" },
-  { field: "productLine", header: "Dòng sản phẩm", type: "string" },
-  { field: "variant", header: "Biến thể", type: "string" },
-  { field: "revision", header: "Phiên bản (Rev)", type: "string", example: "A" },
-  { field: "lifecycleStatus", header: "Trạng thái vòng đời", type: "string", example: "active" },
-  { field: "targetYieldRate", header: "FPY mục tiêu (%)", type: "number", example: 98 },
-  { field: "minYieldRate", header: "FPY tối thiểu (%)", type: "number", example: 95 },
+  { field: "code", header: "Mã sản phẩm", headerKey: "productModelsCol.code", required: true, type: "string", example: "SP-001" },
+  { field: "name", header: "Tên sản phẩm", headerKey: "productModelsCol.name", required: true, type: "string", example: "Bảng mạch A" },
+  { field: "description", header: "Mô tả", headerKey: "productModelsCol.description", type: "string" },
+  { field: "category", header: "Nhóm", headerKey: "productModelsCol.category", type: "string", example: "PCBA" },
+  { field: "productLine", header: "Dòng sản phẩm", headerKey: "productModelsCol.productLine", type: "string" },
+  { field: "variant", header: "Biến thể", headerKey: "productModelsCol.variant", type: "string" },
+  { field: "revision", header: "Phiên bản (Rev)", headerKey: "productModelsCol.revision", type: "string", example: "A" },
+  { field: "lifecycleStatus", header: "Trạng thái vòng đời", headerKey: "productModelsCol.lifecycleStatus", type: "string", example: "active" },
+  { field: "targetYieldRate", header: "FPY mục tiêu (%)", headerKey: "productModelsCol.targetYieldRate", type: "number", example: 98 },
+  { field: "minYieldRate", header: "FPY tối thiểu (%)", headerKey: "productModelsCol.minYieldRate", type: "number", example: 95 },
 ];
 
 export default function ProductModels() {

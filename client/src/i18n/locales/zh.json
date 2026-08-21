@@ -19187,5 +19187,58 @@
         "error": "已停止：运行验证命令时发生真实故障。"
       }
     }
+  },
+  "masterDataCol": {
+    "code": "供应商编号",
+    "name": "供应商名称",
+    "type": "类型",
+    "contactName": "联系人",
+    "contactPhone": "电话",
+    "address": "地址",
+    "country": "国家",
+    "rating": "评级",
+    "approvalStatus": "审批",
+    "isActive": "启用",
+    "notes": "备注",
+    "code2": "物料编号",
+    "name2": "物料名称",
+    "materialClass": "物料分类",
+    "mpn": "制造商料号 (MPN)",
+    "manufacturer": "制造商",
+    "packageType": "封装类型",
+    "unit": "单位",
+    "isActive2": "启用",
+    "notes2": "备注",
+    "code3": "分组编号",
+    "name3": "分组名称",
+    "parentCode": "上级分组",
+    "description": "描述",
+    "isActive3": "启用",
+    "code4": "客户编号",
+    "name4": "客户名称",
+    "contactName2": "联系人",
+    "contactPhone2": "电话",
+    "address2": "地址",
+    "country2": "国家",
+    "isActive4": "启用",
+    "notes3": "备注"
+  },
+  "productModelsCol": {
+    "code": "产品编号",
+    "name": "产品名称",
+    "description": "描述",
+    "category": "类别",
+    "productLine": "产品线",
+    "variant": "变体",
+    "revision": "版本 (Rev)",
+    "lifecycleStatus": "生命周期状态",
+    "targetYieldRate": "目标 FPY (%)",
+    "minYieldRate": "最低 FPY (%)"
+  },
+  "showcaseCol": {
+    "code": "编号",
+    "name": "物料名称",
+    "qty": "数量",
+    "active": "启用"
   }
 }

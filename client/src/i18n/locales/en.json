@@ -19179,5 +19179,58 @@
         "error": "STOPPED by a REAL failure while running the verification command."
       }
     }
+  },
+  "masterDataCol": {
+    "code": "Supplier code",
+    "name": "Supplier name",
+    "type": "Type",
+    "contactName": "Contact person",
+    "contactPhone": "Phone",
+    "address": "Address",
+    "country": "Country",
+    "rating": "Rating",
+    "approvalStatus": "Approval",
+    "isActive": "Active",
+    "notes": "Notes",
+    "code2": "Material code",
+    "name2": "Material name",
+    "materialClass": "Material class",
+    "mpn": "Manufacturer part number (MPN)",
+    "manufacturer": "Manufacturer",
+    "packageType": "Package type",
+    "unit": "Unit",
+    "isActive2": "Active",
+    "notes2": "Notes",
+    "code3": "Group code",
+    "name3": "Group name",
+    "parentCode": "Parent group",
+    "description": "Description",
+    "isActive3": "Active",
+    "code4": "Customer code",
+    "name4": "Customer name",
+    "contactName2": "Contact person",
+    "contactPhone2": "Phone",
+    "address2": "Address",
+    "country2": "Country",
+    "isActive4": "Active",
+    "notes3": "Notes"
+  },
+  "productModelsCol": {
+    "code": "Product code",
+    "name": "Product name",
+    "description": "Description",
+    "category": "Category",
+    "productLine": "Product line",
+    "variant": "Variant",
+    "revision": "Revision (Rev)",
+    "lifecycleStatus": "Lifecycle status",
+    "targetYieldRate": "Target FPY (%)",
+    "minYieldRate": "Minimum FPY (%)"
+  },
+  "showcaseCol": {
+    "code": "Code",
+    "name": "Material name",
+    "qty": "Quantity",
+    "active": "Active"
   }
 }

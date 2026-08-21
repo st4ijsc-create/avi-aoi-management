@@ -1672,10 +1672,10 @@ const DEMO_TREND = [
 
 // doc 42 INFRA-4A — cột + dữ liệu mẫu cho ImportExportBar.
 const SHOWCASE_MASTER_COLUMNS: MasterDataColumn[] = [
-  { field: "code", header: "Mã", required: true, type: "string", example: "M-001" },
-  { field: "name", header: "Tên vật liệu", required: true, type: "string", example: "Nhôm 6061" },
-  { field: "qty", header: "Số lượng", type: "number", example: 10 },
-  { field: "active", header: "Kích hoạt", type: "boolean", example: true },
+  { field: "code", header: "Mã", headerKey: "showcaseCol.code", required: true, type: "string", example: "M-001" },
+  { field: "name", header: "Tên vật liệu", headerKey: "showcaseCol.name", required: true, type: "string", example: "Nhôm 6061" },
+  { field: "qty", header: "Số lượng", headerKey: "showcaseCol.qty", type: "number", example: 10 },
+  { field: "active", header: "Kích hoạt", headerKey: "showcaseCol.active", type: "boolean", example: true },
 ];
 
 const SHOWCASE_MASTER_DATA = [

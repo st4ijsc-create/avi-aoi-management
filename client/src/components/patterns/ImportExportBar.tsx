@@ -12,6 +12,7 @@
  * `@shared/masterDataIO` (không lệch). `xlsx` đọc được cả .csv lẫn .xlsx.
  */
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import {
@@ -145,6 +146,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
   disabled = false,
   className,
 }: ImportExportBarProps<T>): React.JSX.Element {
+  const { t } = useTranslation();
   const base = fileBaseName ?? slug(entityLabel);
   const tmplColumns = templateColumns ?? columns;
 
@@ -261,7 +263,9 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
     };
     const specCols: DataTableColumn<MasterDataRowDetail>[] = columns.map((col) => ({
       id: col.field,
-      header: col.header,
+      // Nhãn HIỂN THỊ theo ngôn ngữ; phép KHỚP cột và hàng tiêu đề template vẫn
+      // dùng `col.header` nguyên văn — xem docblock `MasterDataColumn.header`.
+      header: col.headerKey ? t(col.headerKey) : col.header,
       cell: (d) => {
         const hasErr = d.errors.some((e) => e.field === col.field);
         const v = d.values[col.field];

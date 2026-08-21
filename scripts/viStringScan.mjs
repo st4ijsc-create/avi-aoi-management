@@ -67,6 +67,11 @@ export function LA_KHUON_DUNG(ln) {
   if (/\bdefaultValue\s*:/.test(ln)) return true;
   if (/\b(labelKey|titleKey|descKey|key)\s*:\s*["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]/.test(ln)) return true;
   if (/\b(fallback|labelFallback|titleFallback|descFallback)\s*:/.test(ln)) return true;
+  // `header: "Mã vật liệu", headerKey: "masterData.col.code"` — CÙNG khuôn [khoá,
+  // mặc định], chỉ khác tên. `header` BẮT BUỘC ở lại tiếng Việt: nó là khoá khớp
+  // cột file Excel người dùng tải lên (`masterDataIO.mapAndValidate`) và là hàng
+  // tiêu đề của file template. Dịch nó = mọi file cũ hết nhập được.
+  if (/\bheaderKey\s*:\s*["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]/.test(ln)) return true;
   return false;
 }
 
