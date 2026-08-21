@@ -628,4 +628,130 @@ public sealed class UnsBridgeSpoolTests : IAsyncLifetime
         Assert.True(attempts <= 10,
             $"expected backoff, not a spin, once the ack repeatedly fails to stick — saw {attempts} publish attempts in ~1s");
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Owner decision 15, task AP-1 (2026-08-21) — the gate UPSTREAM of the spool. Everything above this
+    // line measures the spool; nothing above it could see this loss, because it happens before
+    // IBridgeSpool.EnqueueAsync is ever called. The same pair of witnesses exists for the other two channels
+    // the ruling covers: HistorianWriterTests.Enqueue_OnAFullChannel_... and
+    // UnsPublisherDropAccountingTests (Uns/).
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 <b>The loss <c>droppedTotal</c> cannot see.</b> Every locally-received message goes into a
+    /// bounded, drop-oldest <see cref="System.Threading.Channels.Channel{T}"/> BEFORE the spool. When the
+    /// spool writer falls behind, that channel evicts its OLDEST entry and <c>TryWrite</c> still returns
+    /// <see langword="true"/> — so the message never reaches <see cref="IBridgeSpool.EnqueueAsync"/>, never
+    /// increments the spool's durable <c>dropped_total</c>, never changes <c>spoolDepth</c>, and never flips
+    /// <see cref="BridgeState"/>. An operator reading <c>Connected · Depth 0 · Dropped 0</c> on <c>/site</c>
+    /// was reading a true statement about the spool and a false one about the bridge. This pins the eviction
+    /// count exactly, and pins that the spool's own number does NOT move with it.
+    ///
+    /// <para>Deterministic: the writer loop is parked INSIDE the fake spool's gated <c>EnqueueAsync</c>
+    /// (<c>EnqueueAttempts</c> increments before the gate is awaited) so it consumes nothing while the
+    /// channel is filled and overfilled; the subscription is proven live BEFORE the gate is installed, so no
+    /// publish is repeated for delivery and no count is inflated. <c>Queued == Capacity</c> is asserted for
+    /// the same reason its two siblings assert it — a reader that drained anything must fail this test
+    /// instead of silently changing what it measures.</para></summary>
+    [Fact]
+    public async Task ForwardQueueSaturated_EvictsTheOldest_IsCountedAndWarned_AndTheSpoolsDroppedTotalDoesNotMove()
+    {
+        const int Capacity = 4;
+        const int Extra = 3;
+
+        using var deviceCert = TestCertificates.Persist(TestCertificates.CreateSelfSignedLeaf("ap1-forward-saturation"));
+
+        var localPort = GetFreePort();
+        var localUns = new UnsOptions { BrokerPort = localPort };
+        await using var localBroker = Track(new UnsBroker(localPort));
+        await localBroker.StartAsync();
+
+        // Nothing listens on the Site port — the remote client retries in the background and forwards
+        // nothing, which is irrelevant here: this test is entirely about the queue in FRONT of the spool.
+        var siteLink = BuildEnabledLink(GetFreePort(), "-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----");
+
+        var warnings = new List<string>();
+        var spool = new FakeBridgeSpool();
+        await using var bridge = Track(new UnsBridge(
+            localUns, siteLink, deviceCert, "FP-AP1-SATURATION",
+            logWarning: msg => { lock (warnings) warnings.Add(msg); },
+            spool: spool,
+            channelCapacity: Capacity));
+
+        using var localPublisher = await ConnectLocalPublisherAsync(localPort);
+
+        // 1. Prove the local subscription is LIVE before anything is measured. This is the only publish that
+        //    is repeated, and it is repeated while the queue still drains freely, so it inflates nothing.
+        const string probeTopic = "syn/ap1/probe";
+        await BridgeTestNet.PublishUntilObservedAsync(
+            localPublisher, probeTopic, new byte[] { 0 },
+            () => spool.Snapshot().Any(i => i.Topic == probeTopic),
+            "the bridge's local subscription to be live and forwarding into the spool");
+
+        // 2. Park the writer loop: gate the spool, then send one wedge message for it to park ON.
+        spool.EnqueueGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attemptsBeforeWedge = Volatile.Read(ref spool.EnqueueAttempts);
+        await PublishOnceAsync(localPublisher, "syn/ap1/wedge");
+        await WaitUntilAsync(
+            () => Volatile.Read(ref spool.EnqueueAttempts) > attemptsBeforeWedge,
+            "the spool writer loop to have picked the wedge message up and parked inside the gated enqueue");
+
+        try
+        {
+            // 3. Fill the channel and then overfill it by exactly Extra.
+            for (var i = 0; i < Capacity + Extra; i++)
+            {
+                await PublishOnceAsync(localPublisher, $"syn/ap1/fill-{i}");
+            }
+
+            await WaitUntilAsync(
+                () => bridge.ForwardQueueStats.Queued + bridge.ForwardQueueStats.Evicted == Capacity + Extra,
+                "all seven fill messages to have reached the forward channel");
+
+            var stats = bridge.ForwardQueueStats;
+            Assert.Equal(Capacity, stats.Queued);           // the writer loop really did consume nothing
+            Assert.Equal(Extra, stats.Evicted);             // every eviction counted...
+            Assert.Equal(0, stats.DroppedAfterShutdown);    // ...and NOT confused with a shutdown drop
+
+            // 🔴 The number an operator actually reads did NOT move, and that is the finding, not a defect
+            // in this test: droppedTotal counts spool trims, and nothing was trimmed.
+            Assert.Equal(0, bridge.Snapshot().DroppedTotal);
+            Assert.Equal(0, (await spool.StatsAsync()).DroppedTotal);
+
+            List<string> seen;
+            lock (warnings) seen = warnings.ToList();
+            var saturation = seen.Where(m => m.Contains("saturated", StringComparison.Ordinal)).ToList();
+            Assert.Equal(Extra, saturation.Count);
+            Assert.All(saturation, msg =>
+            {
+                Assert.DoesNotContain("shutting down", msg, StringComparison.Ordinal);
+                // The warning must say the number an operator is looking at will NOT show this.
+                Assert.Contains("droppedTotal", msg, StringComparison.Ordinal);
+            });
+
+            // Oldest-first, named: the evicted messages are fill-0..fill-(Extra-1), never the newest.
+            for (var i = 0; i < Extra; i++)
+            {
+                Assert.Contains(saturation, msg => msg.Contains($"syn/ap1/fill-{i}", StringComparison.Ordinal));
+            }
+        }
+        finally
+        {
+            spool.EnqueueGate.TrySetResult();
+            await localPublisher.DisconnectAsync();
+        }
+    }
+
+    /// <summary>Publishes exactly ONCE, at QoS <c>AtLeastOnce</c>, and awaits the broker's PUBACK — the
+    /// counting counterpart to <see cref="BridgeTestNet.PublishUntilObservedAsync"/>, which republishes and
+    /// would therefore inflate any count taken downstream of it.</summary>
+    private static async Task PublishOnceAsync(IMqttClient publisher, string topic)
+    {
+        var message = new MqttApplicationMessageBuilder()
+            .WithTopic(topic)
+            .WithPayload(Encoding.UTF8.GetBytes(topic))
+            .WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build();
+        var result = await publisher.PublishAsync(message);
+        Assert.True(result.IsSuccess, $"the local broker rejected {topic}: {result.ReasonCode}");
+    }
 }

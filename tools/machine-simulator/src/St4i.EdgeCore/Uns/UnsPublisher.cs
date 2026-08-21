@@ -10,6 +10,23 @@ using St4i.EdgeCore.Uns.Sparkplug;
 namespace St4i.EdgeCore.Uns;
 
 /// <summary>
+/// 🔴 Task AP-1 (owner decision 15, 2026-08-21) — this publisher's own classified drop accounting. Same
+/// record shape, same split and the same reason as
+/// <see cref="St4i.EdgeCore.Historian.HistorianWriterStats"/>: the two ways a publish is lost here mean
+/// opposite things to an operator, and until this task existed neither of them was counted at all.
+/// </summary>
+/// <param name="Evicted">Work items the CHANNEL threw away because it was FULL — the
+/// <see cref="BoundedChannelFullMode.DropOldest"/> eviction <c>TryWrite</c> performs while still returning
+/// <see langword="true"/>. Counted from the channel's own <c>itemDropped</c> callback, the only place this
+/// loss is observable. Non-zero means the UNS spine has permanently lost publishes: readings, device
+/// birth/death, node birth/death or line state.</param>
+/// <param name="DroppedAfterShutdown">Work items refused because this publisher was already disposed, or its
+/// channel writer completed by <see cref="UnsPublisher.DisposeAsync"/>. Expected during a clean shutdown and
+/// NOT a sign that the broker is falling behind.</param>
+/// <param name="Queued">How deep the work queue is RIGHT NOW — a gauge, not a cumulative counter.</param>
+public sealed record UnsPublisherStats(long Evicted, long DroppedAfterShutdown, int Queued);
+
+/// <summary>
 /// G2-2 — the dual-topic publisher for the local Unified Namespace spine: for every committed reading,
 /// publishes (1) the Sparkplug B DDATA payload (hand-rolled <see cref="SparkplugPayload"/> encoding) and
 /// (2) the retained semantic-mirror JSON (<c>syn/...</c>, the reading's own <see cref="CanonicalEnvelope"/>)
@@ -75,6 +92,16 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     private bool _nodeBorn;
     private volatile bool _disposed;
 
+    /// <summary>🔴 Task AP-1 — see <see cref="UnsPublisherStats.Evicted"/>. Incremented ONLY from the
+    /// channel's <c>itemDropped</c> callback, which fires synchronously inside <c>TryWrite</c> on the calling
+    /// thread. The six <c>Publish*</c> methods take no lock covering the write (the commit path must never
+    /// wait on this class), so the warning is raised from inside the callback where it is exact rather than
+    /// by bracketing this counter around each write.</summary>
+    private long _evicted;
+
+    /// <summary>🔴 Task AP-1 — see <see cref="UnsPublisherStats.DroppedAfterShutdown"/>.</summary>
+    private long _droppedAfterShutdown;
+
     /// <summary>Builds the publisher and STARTS IT: the MQTT client is created and its connect task and
     /// flush loop are launched from inside this constructor, so an instance is live the moment it is
     /// returned and must be disposed even if nothing is ever published through it.</summary>
@@ -95,7 +122,21 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     /// been COMPLETED, which happens once at disposal. <b>The consequence stated plainly: a UNS spine that
     /// falls behind loses its OLDEST pending publishes, silently, with no warning and no counter.</b> There
     /// is no drop total on this class — contrast <see cref="St4i.EdgeCore.Site.BridgeSpool"/>, whose own
-    /// drops are counted in durable storage precisely so the loss can be reported.</para></param>
+    /// drops are counted in durable storage precisely so the loss can be reported.</para>
+    /// <para>🔴 <b>THE LAST TWO SENTENCES ABOVE ARE WITHDRAWN, 2026-08-21, task AP-1 (owner decision 15)</b>
+    /// — quoted and retired in place, not deleted, because they were true when written and the finding they
+    /// name is what produced the ruling. They read: <i>"The consequence stated plainly: a UNS spine that
+    /// falls behind loses its OLDEST pending publishes, silently, with no warning and no counter. There is no
+    /// drop total on this class — contrast BridgeSpool, whose own drops are counted in durable storage
+    /// precisely so the loss can be reported."</i> Both halves are now false: eviction is counted
+    /// (<see cref="UnsPublisherStats.Evicted"/>) and warned, from the channel's own <c>itemDropped</c>
+    /// callback. The FIRST sentence of this block is NOT withdrawn and is still exactly right: under
+    /// <see cref="BoundedChannelFullMode.DropOldest"/>, <c>TryWrite</c> still returns <see langword="true"/>
+    /// on a full channel and the <c>if (!TryWrite(...))</c> branches are still unreachable by saturation.
+    /// That is why the fix could not be to make those branches better — they were never on the path.
+    /// <b>One asymmetry survives and is stated rather than left to be found:</b> the counter is in memory and
+    /// dies with the process, whereas <see cref="St4i.EdgeCore.Site.BridgeSpool"/>'s <c>dropped_total</c>
+    /// is durable. The contrast the withdrawn sentence drew is narrowed, not erased.</para></param>
     public UnsPublisher(
         UnsOptions options,
         Action<string>? logWarning = null,
@@ -113,11 +154,24 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
             .WithClientId($"st4i-uns-publisher-{Guid.NewGuid():N}")
             .Build();
 
-        _channel = Channel.CreateBounded<WorkItem>(new BoundedChannelOptions(capacity)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleReader = true,
-        });
+        _channel = Channel.CreateBounded<WorkItem>(
+            new BoundedChannelOptions(capacity)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+            },
+            // 🔴 Task AP-1 (owner decision 15) — the only place the saturation loss is observable. Fires
+            // synchronously from inside TryWrite; the item handed in is the one being THROWN AWAY, which is
+            // why Describe (this class' own existing formatter, reused rather than duplicated) can name it —
+            // the old per-method warnings named the ARRIVING item and still called it "oldest".
+            itemDropped: dropped =>
+            {
+                Interlocked.Increment(ref _evicted);
+                SafeLogWarning(
+                    $"UNS publish queue saturated — evicted the OLDEST pending publish ({Describe(dropped)}) " +
+                    "to make room. That publish is gone; the UNS spine is not keeping up. See " +
+                    "UnsPublisher.Stats.Evicted.");
+            });
 
         // Non-blocking ctor: connect kicks off in the background (MqttDriver's own idiom), the flush loop
         // (below) is what actually waits for it before publishing anything.
@@ -125,19 +179,59 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
         _flushLoop = Task.Run(() => RunFlushLoopAsync(_cts.Token));
     }
 
+    /// <summary>🔴 Task AP-1 (owner decision 15) — classified drop accounting: how many publishes this class
+    /// has thrown away, split by WHY. See <see cref="UnsPublisherStats"/>. Cheap: three reads, no lock.</summary>
+    public UnsPublisherStats Stats => new(
+        Interlocked.Read(ref _evicted),
+        Interlocked.Read(ref _droppedAfterShutdown),
+        _channel.Reader.Count);
+
+    /// <summary>🔴 Task AP-1 — a caller-supplied logging delegate that throws must never escape a
+    /// <c>Publish*</c> method (all documented never-throws) nor the channel's <c>itemDropped</c> callback,
+    /// which runs inside <c>TryWrite</c>.</summary>
+    private void SafeLogWarning(string message)
+    {
+        try { _logWarning?.Invoke(message); } catch { /* logging must never take the commit path down */ }
+    }
+
+    /// <summary>🔴 Task AP-1 — the shared tail of all six <c>Publish*</c> methods. Saturation does NOT come
+    /// here (see the constructor's <c>itemDropped</c> callback); a <see langword="false"/> return means the
+    /// writer has been COMPLETED, i.e. a call raced past the <c>_disposed</c> check during
+    /// <see cref="DisposeAsync"/>. Counted, and worded as shutdown rather than as saturation.</summary>
+    /// <param name="item">The work item that was offered to the queue.</param>
+    /// <param name="what">Operator-facing description of <paramref name="item"/>, used only in the log.</param>
+    private void Enqueue(WorkItem item, string what)
+    {
+        if (!_channel.Writer.TryWrite(item))
+        {
+            Interlocked.Increment(ref _droppedAfterShutdown);
+            SafeLogWarning(
+                $"UNS publisher is shutting down (queue closed) — dropped {what}. Expected during shutdown; " +
+                "this does NOT mean the UNS spine is falling behind.");
+        }
+    }
+
+    /// <summary>🔴 Task AP-1 — the shared shape of all six <c>_disposed</c> early-returns: counted, and
+    /// worded as shutdown.</summary>
+    /// <param name="what">Operator-facing description of the publish that was refused.</param>
+    private void DropAfterDispose(string what)
+    {
+        Interlocked.Increment(ref _droppedAfterShutdown);
+        SafeLogWarning(
+            $"UNS publisher already disposed — dropped {what}. Expected during shutdown; this does NOT mean " +
+            "the UNS spine is falling behind.");
+    }
+
     /// <inheritdoc/>
     public void PublishReading(DeviceReading reading, CanonicalEnvelope envelope)
     {
         if (_disposed)
         {
-            _logWarning?.Invoke($"UNS publisher already disposed — dropped reading for {reading.MachineCode}");
+            DropAfterDispose($"reading for {reading.MachineCode}");
             return;
         }
 
-        if (!_channel.Writer.TryWrite(new ReadingWorkItem(reading, envelope)))
-        {
-            _logWarning?.Invoke($"UNS publish queue saturated — dropped reading for {reading.MachineCode}");
-        }
+        Enqueue(new ReadingWorkItem(reading, envelope), $"reading for {reading.MachineCode}");
     }
 
     /// <inheritdoc/>
@@ -145,14 +239,11 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     {
         if (_disposed)
         {
-            _logWarning?.Invoke($"UNS publisher already disposed — dropped birth for {equipmentCode}");
+            DropAfterDispose($"birth for {equipmentCode}");
             return;
         }
 
-        if (!_channel.Writer.TryWrite(new BirthWorkItem(equipmentCode)))
-        {
-            _logWarning?.Invoke($"UNS publish queue saturated — dropped birth for {equipmentCode}");
-        }
+        Enqueue(new BirthWorkItem(equipmentCode), $"birth for {equipmentCode}");
     }
 
     /// <inheritdoc/>
@@ -160,14 +251,11 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     {
         if (_disposed)
         {
-            _logWarning?.Invoke($"UNS publisher already disposed — dropped death for {equipmentCode}");
+            DropAfterDispose($"death for {equipmentCode}");
             return;
         }
 
-        if (!_channel.Writer.TryWrite(new DeathWorkItem(equipmentCode)))
-        {
-            _logWarning?.Invoke($"UNS publish queue saturated — dropped death for {equipmentCode}");
-        }
+        Enqueue(new DeathWorkItem(equipmentCode), $"death for {equipmentCode}");
     }
 
     /// <inheritdoc/>
@@ -175,7 +263,7 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     {
         if (_disposed)
         {
-            _logWarning?.Invoke("UNS publisher already disposed — dropped node birth");
+            DropAfterDispose("node birth");
             return;
         }
 
@@ -186,10 +274,7 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
             _nodeBorn = true;
         }
 
-        if (!_channel.Writer.TryWrite(new NodeBirthWorkItem(bd)))
-        {
-            _logWarning?.Invoke("UNS publish queue saturated — dropped node birth");
-        }
+        Enqueue(new NodeBirthWorkItem(bd), $"node birth bdSeq {bd}");
     }
 
     /// <inheritdoc/>
@@ -197,7 +282,7 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     {
         if (_disposed)
         {
-            _logWarning?.Invoke("UNS publisher already disposed — dropped node death");
+            DropAfterDispose("node death");
             return;
         }
 
@@ -209,10 +294,7 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
             bd = _bdSeq;
         }
 
-        if (!_channel.Writer.TryWrite(new NodeDeathWorkItem(bd)))
-        {
-            _logWarning?.Invoke("UNS publish queue saturated — dropped node death");
-        }
+        Enqueue(new NodeDeathWorkItem(bd), $"node death bdSeq {bd}");
     }
 
     /// <inheritdoc/>
@@ -220,14 +302,11 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     {
         if (_disposed)
         {
-            _logWarning?.Invoke($"UNS publisher already disposed — dropped line state '{state}'");
+            DropAfterDispose($"line state '{state}'");
             return;
         }
 
-        if (!_channel.Writer.TryWrite(new LineStateWorkItem(state)))
-        {
-            _logWarning?.Invoke($"UNS publish queue saturated — dropped line state '{state}'");
-        }
+        Enqueue(new LineStateWorkItem(state), $"line state '{state}'");
     }
 
     private async Task ConnectAsync(MqttClientOptions options, CancellationToken ct)

@@ -329,7 +329,18 @@ public static class SiteEndpoints
 /// northbound messages are currently backed up on disk, the highest spooled seq ever successfully forwarded
 /// and acked, and how many spooled messages have ever been dropped by the spool's own age/byte caps. All
 /// three are <c>0</c> — never garbage — whenever there's no durable spool at all (UNS disabled, no bridge,
-/// or <c>ST4I_BRIDGE_SPOOL_ENABLED=0</c>).</para></summary>
+/// or <c>ST4I_BRIDGE_SPOOL_ENABLED=0</c>).</para>
+///
+/// <para>🔴 <b><see cref="DroppedTotal"/> IS THE SPOOL'S DROPS ONLY, AND THE NAME OVERSELLS IT — task AP-1,
+/// 2026-08-21, owner decision 15.</b> The sentence above already says "by the spool's own age/byte caps" and
+/// stays exactly as written; what it did not say is what it EXCLUDES. The bridge's forward channel evicts
+/// messages UPSTREAM of the spool, before <c>EnqueueAsync</c> is ever reached, and this number never sees
+/// them — an operator reading <c>Dropped 0</c> on the <c>/site</c> page is not reading "nothing was lost".
+/// Those evictions are counted, from this release, on <c>UnsBridge.ForwardQueueStats.Evicted</c>
+/// (<see cref="St4i.EdgeCore.Site.BridgeForwardQueueStats"/>). 🔴 <b>They are NOT on this DTO, and that is a
+/// gap and not a design:</b> adding a field here changes a published payload, which item 15 was explicitly
+/// not delegated to do — the meaning of this field was documented rather than widened. The residue is named
+/// in <c>docs/owner-decisions.md</c> Part III item 15.</para></summary>
 public sealed record SiteStatusDto(
     bool Enabled, string Host, int Port, string BridgeState, string? LastError,
     string? SiteFingerprint, string DeviceFingerprint, bool UnsEnabled,

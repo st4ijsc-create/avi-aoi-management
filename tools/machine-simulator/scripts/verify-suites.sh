@@ -1790,7 +1790,64 @@ EXPECT_CONFORMANCE=24
 #   by rewriting the block. Per-file residue after writing: zero in all twelve, and zero in all three
 #   directories the cluster empties. Removed `///` lines in the diff: three, all accounted for above.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1160
+#
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 TASK AP-1 (.superpowers/sdd/item15-dropoldest/task-1-brief.md) — OWNER DECISION 15 EXECUTED.
+# RAISES EXPECT_EDGECORE 1160 -> 1165 (+5). Nothing else moves; grand total 2771 -> 2776.
+#   THE FOUR OTHER TERMS WERE READ BACK OUT OF THIS FILE LINE BY LINE, not carried from the brief, for
+#   the reason AL-1 and AM-1 both give: EXPECT_ABSTRACTIONS 161 (line ~331), EXPECT_CONFORMANCE 24
+#   (~332), EXPECT_EDGESERVICE 52 (~1859), EXPECT_ENGINEAPI 1374 (~3315). The sum is not the check; the
+#   TERMS are. 1165 is MEASURED (`dotnet test tests/St4i.EdgeCore.Tests` alone: 1165/1165), not 1160+5.
+#
+# WHAT WAS ADDED — FIVE [Fact] ACROSS THREE FILES, ONE PAIR PER CHANNEL THE RULING COVERS.
+#   +2  tests/St4i.EdgeCore.Tests/Historian/HistorianWriterTests.cs (EXISTING FILE) —
+#       Enqueue_OnAFullChannel_EvictsTheOldest_AndEveryEvictionIsCountedAndWarned and
+#       Enqueue_AfterDispose_IsCountedSeparately_AndReportedAsShutdownNotSaturation. Item 15 measured
+#       that this file held ten [Fact] and NOT ONE of them mentioned saturation, capacity or DropOldest:
+#       the drop this writer actually suffers had no instrument, and a green file was the absence of one
+#       rather than evidence of safety.
+#   +2  tests/St4i.EdgeCore.Tests/Uns/UnsPublisherDropAccountingTests.cs (NEW FILE) — the same pair for
+#       UnsPublisher, whose six "queue saturated" branches were all unreachable by saturation.
+#   +1  tests/St4i.EdgeCore.Tests/Site/UnsBridgeSpoolTests.cs (EXISTING FILE) —
+#       ForwardQueueSaturated_EvictsTheOldest_IsCountedAndWarned_AndTheSpoolsDroppedTotalDoesNotMove.
+#       Only ONE here, and the asymmetry is stated rather than padded: this bridge's completed-writer
+#       branch is reachable only by a call racing DisposeAsync through an MQTT client's receive callback,
+#       which this harness cannot schedule deterministically. A fifth test that could not be made to fail
+#       on demand would be the exact species this file exists to refuse.
+#
+# 🔴 THE +5 ARE WITNESSES, AND THAT WAS MEASURED IN BOTH DIRECTIONS RATHER THAN ASSERTED. Two control
+# rounds, each built and run whole:
+#   * CONTROL A — the three `itemDropped:` callbacks neutered (early return, counter and warning both
+#     dead). RED: all three saturation tests. GREEN: the two shutdown tests, correctly — they measure a
+#     different path, and a test that reddens under every mutation localises nothing.
+#   * CONTROL B — the two shutdown branches reverted to their pre-AP-1 wording ("queue saturated —
+#     dropped oldest for X", the string that shipped on the one path that could never be saturation).
+#     RED: both shutdown tests. GREEN: the three saturation tests.
+#   Every mutation was reverted and `grep -rn MUTATION-AP1 src/ tests/` returns nothing.
+#
+# 🔴 WHAT WAS *NOT* TOUCHED. FullMode stays DropOldest on all four channels — the ruling is "apply the
+# shape AlarmNotifier already solved", not "change the policy", and the non-blocking guarantee that
+# policy buys is the whole reason those pipelines exist. AlarmNotifier itself: doc only, ZERO executable
+# lines. IUnsPublisher: ZERO lines (owner item 23 is ruled REMOVE and belongs to another task). No
+# payload changed: not GET /v1/site, not the retained resync record the Site consumes. No MSI, no
+# publish-desktop/, no server/, no client/.
+#
+# 🔴 EXPECT_WARNINGS STAYS 328, MEASURED ON A FULL `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
+# AFTER THE CHANGE — not assumed, and not assumed for a specific reason this task had to pay attention
+# to. St4i.EdgeCore is the project where item 12 turned GenerateDocumentationFile ON, so every new PUBLIC
+# member there is a CS1591 unless it carries a `///` block, and every new PARAMETER on an
+# already-documented member is a CS1573. This task adds SEVEN public members to that project — three
+# records (HistorianWriterStats, UnsPublisherStats, BridgeForwardQueueStats) with their eleven
+# parameters, three properties (HistorianWriter.Stats, UnsPublisher.Stats, UnsBridge.ForwardQueueStats)
+# and one constructor parameter (UnsBridge's channelCapacity) — and the count did not move by one unit,
+# because all of them are documented. AL-1's stage-6 failure mode (extending an existing doc block and
+# dropping a `<param>` while adding others) was treated as a precondition: the UnsBridge constructor's
+# block was extended by INSERTING one `<param>` beside the existing ones, never by rewriting it.
+# EXPECT_WARNING_LEDGER stays at its sixteen rows unmoved unit for unit (OURS CS1591 90, OURS CS1573 19,
+# eight VENDORED rows untouched). EXPECT_BUILD_NODES stays 0. No suppression of any kind was added — no
+# NoWarn, no #pragma, no .editorconfig severity — and SuppressionCensusTests' three tables are untouched.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1165
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:

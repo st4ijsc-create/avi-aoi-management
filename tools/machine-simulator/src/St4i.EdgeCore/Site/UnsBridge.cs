@@ -64,7 +64,15 @@ public sealed class UnsBridge : IAsyncDisposable
     private const string SemanticTopicFilter = "syn/#";
     private const string SemanticNamespacePrefix = "syn/";
     private const string LoopbackHost = "127.0.0.1";
+    /// <summary>Default depth of the forward channel — the bounded queue between the local subscriber
+    /// callback and whichever background loop drains it. 🔴 Task AP-1 made this the DEFAULT of a constructor
+    /// parameter rather than the only possible value: a witness for the drop-oldest eviction has to make the
+    /// channel genuinely FULL, and a test that must push 10,001 real MQTT messages through a real broker to
+    /// do it is not a witness anybody will keep running. Its two siblings
+    /// (<see cref="St4i.EdgeCore.Historian.HistorianWriter"/>, <see cref="UnsPublisher"/>) already took their
+    /// capacity as a defaulted parameter for the same reason; this class was the outlier.</summary>
     private const int ChannelCapacity = 10_000;
+
     private const int SpoolPeekBatchSize = 200;
 
     private static readonly TimeSpan MonitorInterval = TimeSpan.FromMilliseconds(200);
@@ -159,6 +167,14 @@ public sealed class UnsBridge : IAsyncDisposable
     /// <see cref="BridgeState.Degraded"/> — see <see cref="BridgeState.Faulted"/>'s own doc comment.</summary>
     private volatile bool _spoolWriterFaulted;
 
+    /// <summary>🔴 Task AP-1 — see <see cref="BridgeForwardQueueStats.Evicted"/>. Incremented ONLY from the
+    /// forward channel's <c>itemDropped</c> callback, which fires synchronously inside <c>TryWrite</c> on the
+    /// MQTT client's own receive thread.</summary>
+    private long _forwardEvicted;
+
+    /// <summary>🔴 Task AP-1 — see <see cref="BridgeForwardQueueStats.DroppedAfterShutdown"/>.</summary>
+    private long _forwardDroppedAfterShutdown;
+
     /// <summary>Same as <see cref="_spoolWriterFaulted"/>, but for whichever FORWARD loop variant this bridge
     /// is actually running — <see cref="RunSpoolForwardLoopAsync"/> when <see cref="_spool"/> is non-null, or
     /// the legacy <see cref="RunForwardLoopAsync"/> otherwise (see round 2 review: the disabled-spool path is
@@ -194,6 +210,10 @@ public sealed class UnsBridge : IAsyncDisposable
     /// "resolve options once at the composition root, take the resolved collaborator as a plain constructor
     /// parameter" idiom <see cref="St4i.EdgeCore.Historian.HistorianWriter"/> already uses for
     /// <see cref="St4i.EdgeCore.Historian.IHistorianStore"/>.</param>
+    /// <param name="channelCapacity">🔴 Task AP-1 (owner decision 15) — depth of the forward channel; see
+    /// <see cref="ChannelCapacity"/>, which is the default and the only value production uses. Exposed so a
+    /// witness can make that channel genuinely full without pushing ten thousand messages through a real
+    /// broker. Not read from the environment and not surfaced anywhere an operator can reach.</param>
     public UnsBridge(
         UnsOptions localUns,
         PersistedSiteLink siteLink,
@@ -201,7 +221,8 @@ public sealed class UnsBridge : IAsyncDisposable
         string deviceFingerprint,
         Action<string>? logWarning = null,
         Action<Exception, string>? logError = null,
-        IBridgeSpool? spool = null)
+        IBridgeSpool? spool = null,
+        int channelCapacity = ChannelCapacity)
     {
         ArgumentNullException.ThrowIfNull(localUns);
         ArgumentNullException.ThrowIfNull(siteLink);
@@ -247,11 +268,25 @@ public sealed class UnsBridge : IAsyncDisposable
             })
             .Build();
 
-        _channel = Channel.CreateBounded<ForwardItem>(new BoundedChannelOptions(ChannelCapacity)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleReader = true,
-        });
+        _channel = Channel.CreateBounded<ForwardItem>(
+            new BoundedChannelOptions(channelCapacity)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+            },
+            // 🔴 Task AP-1 (owner decision 15) — the only place THIS loss is observable. It is upstream of
+            // the spool, so BridgeSpool's own durable dropped_total never sees it: the message is thrown
+            // away before it ever reaches EnqueueAsync. See BridgeForwardQueueStats for why that had to be
+            // a SEPARATE number and not folded into the DroppedTotal an operator already reads.
+            itemDropped: dropped =>
+            {
+                Interlocked.Increment(ref _forwardEvicted);
+                SafeLogWarning(
+                    $"Site bridge forward queue saturated — evicted the OLDEST queued message ({dropped.Topic}) " +
+                    "to make room. That message never reached the spool and is gone; the spool writer is not " +
+                    "keeping up. This is NOT counted by the spool's droppedTotal — see " +
+                    "UnsBridge.ForwardQueueStats.Evicted.");
+            });
 
         // Non-blocking ctor (UnsPublisher's own idiom): both clients connect in the background; the
         // monitor loops own reconnect-with-backoff for as long as this bridge lives.
@@ -271,6 +306,15 @@ public sealed class UnsBridge : IAsyncDisposable
             _forwardLoop = Task.Run(() => RunForwardLoopAsync(_cts.Token));
         }
     }
+
+    /// <summary>🔴 Task AP-1 (owner decision 15) — what the forward CHANNEL has thrown away, which is a
+    /// different loss from the one <see cref="BridgeStatusSnapshot.DroppedTotal"/> reports and is invisible
+    /// to it. See <see cref="BridgeForwardQueueStats"/>. Reads zero on a disabled bridge, which has no
+    /// channel at all.</summary>
+    public BridgeForwardQueueStats ForwardQueueStats => new(
+        Interlocked.Read(ref _forwardEvicted),
+        Interlocked.Read(ref _forwardDroppedAfterShutdown),
+        _channel?.Reader.Count ?? 0);
 
     /// <summary>A point-in-time read of this bridge's health — see <see cref="BridgeState"/> for the
     /// exact state semantics.</summary>
@@ -374,7 +418,14 @@ public sealed class UnsBridge : IAsyncDisposable
 
         if (!_channel!.Writer.TryWrite(new ForwardItem(topic, payload, retain)))
         {
-            _logWarning?.Invoke($"Site bridge forward queue saturated — dropped {topic}");
+            // 🔴 Task AP-1 (owner decision 15) — this branch is NOT the saturation branch and never was: a
+            // DropOldest TryWrite returns true on a full channel. It is reached only on a COMPLETED writer,
+            // i.e. during DisposeAsync. The saturation case is handled by the constructor's itemDropped
+            // callback; this one is counted and worded as what it actually is.
+            Interlocked.Increment(ref _forwardDroppedAfterShutdown);
+            SafeLogWarning(
+                $"Site bridge is shutting down (forward queue closed) — dropped {topic}. Expected during " +
+                "shutdown; this does NOT mean the forward queue is saturated.");
         }
 
         return Task.CompletedTask;
