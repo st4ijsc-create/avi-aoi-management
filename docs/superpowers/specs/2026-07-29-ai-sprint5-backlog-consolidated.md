@@ -6,7 +6,7 @@
 
 ---
 
-## ⓘ TIẾN ĐỘ — cập nhật 2026-08-21 (lần 2), HEAD `f466278c`+ (remote `fresh`)
+## ⓘ TIẾN ĐỘ — cập nhật 2026-08-21 (lần 3), HEAD `4b157955` (remote `fresh`)
 
 | Nhóm | Trạng thái | Ghi chú |
 |---|---|---|
@@ -16,16 +16,22 @@
 | **C** (dữ liệu không tới đích) | ⏳ CÒN | C1 sau cờ mặc định tắt · C2 không màn nào đọc · C3 sắp xếp sai |
 | **D** (vận hành) | ⏳ CÒN | việc vệ sinh |
 | **E** (phát sinh khi thi công A) | ⏳ CÒN (E2-E7) | ⚠ **E1 ĐÃ ĐÓNG từ `7d2d42d9`** — bảng trước xếp nó "ưu tiên cao, còn" là SAI: tôi chép lời khai của mục đó mà không đo. E2 cần chủ dự án quyết. |
-| **F1-F9** (nợ A4 sau di trú) | ⏳ CÒN | **F3 security-critical** (`_core/trpc.ts` mọi chối-quyền RBAC) · F7 chất lượng bản dịch |
+| **F1** (chỉ 15% màn hưởng lợi) | ✅ ĐÓNG `4b157955` | ⚠ **cả bốn con số của F1 đã lạc hậu theo hướng BI QUAN** — xem ghi chú dưới. Nợ thật `139 → 0`, nay là BẤT BIẾN (`rawErrorMessageCensus`) |
+| **F2-F9** (nợ A4 sau di trú) | ⏳ CÒN | **F3 còn 547 chỗ** (không phải 64 — xem `rawErrorCensus.test.ts`) · F7 chất lượng bản dịch |
 | **F10-F13** (nhãn giao diện en/zh) | ✅ ĐÓNG | xem §4c/§4d — hình-dạng-3 `914 → 0` qua 17 lô |
 | **G** (machine-auth + giấy phép) | ✅ ĐÓNG ở DEV | xem §4e — production **chưa** flip, checklist doc 52 §6.1 |
 
 **Nợ còn lại đáng làm trước, theo thứ tự:**
-1. **F3** — 64 chỗ chưa di trú mã lỗi, nặng nhất là hạ tầng lõi + security (`_core/trpc.ts` 12 chỗ = mọi chối-quyền RBAC + mọi gọi chưa đăng nhập).
-2. **G phần production** — telemetry BỀN đã có (metric Prometheus, đo live 2026-08-21); còn thiếu MỘT CA có lưu lượng thật + dọn 17 `machines.apiKey` plaintext.
+1. **F3** — `1035 → 547` chỗ ném thô ngoài `server/routers/**` (4 lô, xem `server/_core/rawErrorCensus.test.ts`). Phần còn lại KHÔNG đồng nhất: ~40 chỗ họ "driver not connected", còn lại rải rác. Không còn security-critical: `_core/trpc.ts` và `machineAuthService.ts` đo lại đều **0 chỗ ném thô**.
+2. **G phần production** — telemetry BỀN đã có và **đã sửa lỗi nuốt lượt đầu sau restart** (`7a93a86b`); còn thiếu MỘT CA có lưu lượng thật + dọn 17 `machines.apiKey` plaintext. **Cần chủ dự án**, không phải việc của agent.
 3. **E2** — cảnh báo không có `machineId` không được cooldown nào chi phối; **cần chủ dự án quyết** vì đổi tải thật lên người vận hành.
+4. **B2/B3, C1-C3, D1-D4, E3-E7** — chưa đo lại. Đọc mục xong PHẢI đo trước khi làm.
 
-⚠ **Trước khi làm bất kỳ mục nào: ĐO LẠI.** Lần cập nhật đầu của bảng này xếp E1 là "còn" chỉ vì backlog viết thế — thực tế nó đã đóng từ `7d2d42d9`.
+⚠ **Trước khi làm bất kỳ mục nào: ĐO LẠI.** Bảng này đã sai theo cách đó **ba lần**:
+  • lần 1 xếp E1 "ưu tiên cao, còn" — nó đã đóng từ `7d2d42d9`;
+  • F3 khai *"64 chỗ, nặng nhất `_core/trpc.ts` 12 chỗ = mọi chối-quyền RBAC"* — đo lại: hai file đó **0 chỗ**, nợ thật nằm ở `server/db/**` + `server/services/**` và **lớn gấp 16 lần**;
+  • F1 khai *"535 `onError`, 82 qua `mapTrpcError`, 446 hiện thẳng `.message` ở 159 file, 19/748 file import `lib/trpcErrors`, `main.tsx` không có handler toàn cục"* — đo lại 2026-08-21: **189** file import, **163** lời gọi, `main.tsx` **CÓ** lưới cuối cho cả query lẫn mutation (dựng ở F11, `2026-08-14`), nợ thật **139/76**. Làm theo backlog thì sẽ đi sửa 446 chỗ trong đó ~307 chỗ không tồn tại.
+  ⇒ **Con số trong tài liệu là LỜI KHAI, không phải phép đo.**
 
 ---
 
@@ -178,7 +184,24 @@ Do review tìm ra trong lúc làm nhóm A + B1, **không** thuộc phạm vi đ�
 
 Cổng đếm `server/routers/**` đã về **0** (1056 → 0, 43 commit). Nhưng review toàn cục chỉ ra mức phủ thật hẹp hơn con số đó gợi ra. Ghi lại trung thực để sprint sau không tưởng nhầm là đã xong.
 
-- **F1. Chỉ ~15% màn hình thật sự hưởng lợi. ⚠ ƯU TIÊN CAO NHẤT.**
+- **F1. ~~Chỉ ~15% màn hình thật sự hưởng lợi.~~ ✅ ĐÃ ĐÓNG `4b157955` (2026-08-21) — MÔ TẢ GỐC DƯỚI ĐÂY SAI SỐ, giữ lại để không lặp lại cách làm.**
+
+  **Đo lại 2026-08-21, cả bốn con số đều lạc hậu theo hướng BI QUAN:** 189 file import
+  `lib/trpcErrors` (không phải 19) · 163 lời gọi `mapTrpcError` (không phải 82) ·
+  `main.tsx` **CÓ** lưới cuối cho cả query lẫn mutation, cả hai gọi `mapTrpcError`
+  (dựng ở F11 ngày 2026-08-14) · nợ thật **139 chỗ / 76 file**, không phải 446/159.
+
+  **Việc đã làm, khác hẳn mô tả gốc:**
+  1. **Gốc rễ trước ngọn** (`8dc59ef9`) — chính `trpcErrors.ts` nói tiếng Việt gán cứng ở
+     MỌI nhánh dự phòng (hết phiên · chối quyền generic · **lỗi zod**, lớp lỗi thường gặp
+     nhất của biểu mẫu · message rỗng/leak SQL). Mọi điểm gọi sau khi di trú đều đổ về
+     đúng đó. Thêm 13 khoá `errors.client.*` × 3 locale + `translateClientKey()`.
+     ⚠ 12 cổng cũ VẪN XANH sau bản vá — trong test bundle chưa nạp nên fallback trùng
+     khít hành vi cũ. Phải thêm `trpcErrors.locale.unit.test.ts` mới đo được.
+  2. **Di trú 125 chỗ** (`4b157955`), 8 chỗ giữ thô có lý do viết tại chỗ (`i18n-raw-ok:`).
+     `139 → 0`, nay là BẤT BIẾN.
+
+  *(Mô tả gốc, số liệu 2026-07-30 — đã lạc hậu:)*
   `translateAppError` chỉ chạy khi lỗi đi qua `mapTrpcError`. Đo trên `client/src` (748 file): **535** handler `onError`, chỉ **82 (15%)** qua `mapTrpcError`; **446 (83%) hiện thẳng `.message`** ở 159 file. Chỉ 19/748 file import `lib/trpcErrors`. `client/src/main.tsx` không có handler lỗi toàn cục.
   ⇒ 1061 chỗ máy chủ đã có mã, nhưng phần lớn màn hình vẫn hiện y nguyên chuỗi cũ. **Tuyên bố "người dùng Việt thôi đọc tiếng Anh thô" chỉ đúng cho 15% bề mặt.** Việc còn lại là di trú handler client — đó mới là chỗ người dùng thật sự nhận được giá trị.
 
