@@ -23,6 +23,7 @@
  */
 
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { appError } from "../../_core/appError";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import { createAuditLog, getProductModelById, bumpPointsConfigVersion } from "../../db";
@@ -422,7 +423,7 @@ export async function applyCentroidImport(input: CentroidApplyInput): Promise<Ce
 
   const [job] = await db.select().from(cadImportJobs)
     .where(eq(cadImportJobs.id, input.jobId)).limit(1);
-  if (!job) throw new Error("Centroid import job not found");
+  if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "centroidImportJob" }, "Centroid import job not found");
   if (job.format !== "centroid") {
     throw new Error(`Job #${input.jobId} is not a centroid import (format=${job.format})`);
   }

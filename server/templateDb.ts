@@ -1,4 +1,5 @@
 import { getDb } from "./db";
+import { appError } from "./_core/appError";
 import { DbUnavailableError } from "./_core/dbErrors";
 import { measurementPointTemplates } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
@@ -116,7 +117,7 @@ export async function deleteTemplate(id: number) {
  */
 export async function cloneTemplate(id: number, newCode: string, createdBy: number) {
   const template = await getTemplateById(id);
-  if (!template) throw new Error("Template not found");
+  if (!template) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "marketplaceTemplate" }, "Template not found");
 
   return createTemplate({
     code: newCode,

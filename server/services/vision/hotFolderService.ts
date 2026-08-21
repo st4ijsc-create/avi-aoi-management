@@ -39,6 +39,7 @@
  * crashes the process; per-config error counters surface in the status endpoint.
  */
 import fs from "node:fs";
+import { appError } from "../../_core/appError";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import path from "node:path";
 import { watch, type FSWatcher } from "chokidar";
@@ -367,7 +368,7 @@ export async function processHotFolderFile(
       .where(eq(machines.id, cfg.machineId))
       .limit(1);
     const machine = machineRows[0];
-    if (!machine) throw new Error(`Machine id=${cfg.machineId} not found`);
+    if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine id=${cfg.machineId} not found`);
 
     const canonical = adapter.normalize(payload, { machineCode: machine.code });
     if (!canonical.machineCode && !canonical.apiKey) canonical.machineCode = machine.code;
@@ -742,7 +743,7 @@ export async function scanConfigNow(configId: number, deps?: ProcessDeps): Promi
     .where(eq(hotFolderConfigs.id, configId))
     .limit(1);
   const cfg = rows[0];
-  if (!cfg) throw new Error(`Hot-folder config #${configId} not found`);
+  if (!cfg) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "hotFolderConfig" }, `Hot-folder config #${configId} not found`);
 
   let entries: fs.Dirent[] = [];
   try {
@@ -850,7 +851,7 @@ function validateConfigInput(input: Partial<HotFolderConfigInput>): void {
 
 async function assertMachineExists(machineId: number): Promise<void> {
   const rows = await (await db()).select().from(machines).where(eq(machines.id, machineId)).limit(1);
-  if (!rows[0]) throw new Error(`Machine id=${machineId} not found`);
+  if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine id=${machineId} not found`);
 }
 
 export async function listHotFolderConfigs(): Promise<HotFolderConfig[]> {
@@ -903,7 +904,7 @@ export async function updateHotFolderConfig(
     .set(set)
     .where(eq(hotFolderConfigs.id, id))
     .returning();
-  if (!updated[0]) throw new Error(`Hot-folder config #${id} not found`);
+  if (!updated[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "hotFolderConfig" }, `Hot-folder config #${id} not found`);
   await refreshConfigWatcher(id);
   return updated[0];
 }
@@ -914,7 +915,7 @@ export async function deleteHotFolderConfig(id: number): Promise<HotFolderConfig
     .delete(hotFolderConfigs)
     .where(eq(hotFolderConfigs.id, id))
     .returning();
-  if (!removed[0]) throw new Error(`Hot-folder config #${id} not found`);
+  if (!removed[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "hotFolderConfig" }, `Hot-folder config #${id} not found`);
   runtimes.delete(id);
   return removed[0];
 }

@@ -59,7 +59,7 @@ interface CreateTrainingJobOptions {
  */
 export async function createTrainingJob(options: CreateTrainingJobOptions) {
   const model = await getAiModelById(options.modelId);
-  if (!model) throw new Error(`Model ${options.modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${options.modelId} not found`);
 
   const job = await db.createTrainingJob({
     name: options.name,
@@ -486,7 +486,7 @@ export const DRIFT_RETRAIN_PROPOSAL_KIND = "drift_retrain";
 
 export async function proposeRetrainJob(options: ProposeRetrainJobOptions) {
   const model = await getAiModelById(options.modelId);
-  if (!model) throw new Error(`Model ${options.modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${options.modelId} not found`);
 
   // Review remediation (F2) — de-dup: skip creating a new proposal when an
   // un-actioned one already exists for this model (mirrors

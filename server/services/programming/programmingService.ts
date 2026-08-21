@@ -16,6 +16,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash, randomUUID } from "node:crypto";
+import { appError } from "../../_core/appError";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { desc, eq, and } from "drizzle-orm";
 import { getDb } from "../../db/connection";
@@ -157,7 +158,7 @@ export async function verifyAfterDownload(
 export async function validateArtifact(artifactId: number) {
   const d = await db();
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
-  if (!art) throw new Error(`Artifact ${artifactId} not found`);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${artifactId} not found`);
 
   const adapter = programmingRegistry.getAdapter(art.kind as ProgrammingKind);
   const src: ProgramSource = { kind: art.kind as ProgrammingKind, language: art.language, content: art.content ?? "" };
@@ -191,7 +192,7 @@ export async function reviewArtifact(
 ) {
   const d = await db();
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
-  if (!art) throw new Error(`Artifact ${artifactId} not found`);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${artifactId} not found`);
 
   // SoD — a version may NOT be self-approved: the reviewer must differ from the author.
   // (createdBy may be null on legacy rows; only enforce when we know the author.)
@@ -218,7 +219,7 @@ export async function reviewArtifact(
 export async function buildArtifact(artifactId: number, user: DpcUser) {
   const d = await db();
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
-  if (!art) throw new Error(`Artifact ${artifactId} not found`);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${artifactId} not found`);
 
   if (dpcVersionReviewEnabled() && art.reviewStatus !== "approved") {
     throw new Error(
@@ -255,7 +256,7 @@ export async function buildArtifact(artifactId: number, user: DpcUser) {
 export async function simulateBuild(buildId: number, scenario: ProgSimScenario, user: DpcUser) {
   const d = await db();
   const [b] = await d.select().from(programBuilds).where(eq(programBuilds.id, buildId)).limit(1);
-  if (!b) throw new Error(`Build ${buildId} not found`);
+  if (!b) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programBuild" }, `Build ${buildId} not found`);
 
   const adapter = programmingRegistry.getAdapter(b.adapterKind as ProgrammingKind);
   if (!adapter.simulate) {
@@ -267,7 +268,7 @@ export async function simulateBuild(buildId: number, scenario: ProgSimScenario, 
   // carries its meta — deterministic, no schema change, and stays in lock-step with the
   // built artifact.
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, b.artifactId)).limit(1);
-  if (!art) throw new Error(`Artifact ${b.artifactId} not found`);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${b.artifactId} not found`);
   const fresh = await adapter.compile({ kind: art.kind as ProgrammingKind, language: art.language, content: art.content ?? "" });
 
   const t0 = Date.now();
@@ -311,9 +312,9 @@ interface DeployComputed {
 async function loadDeployCtx(buildId: number) {
   const d = await db();
   const [b] = await d.select().from(programBuilds).where(eq(programBuilds.id, buildId)).limit(1);
-  if (!b) throw new Error(`Build ${buildId} not found`);
+  if (!b) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programBuild" }, `Build ${buildId} not found`);
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, b.artifactId)).limit(1);
-  if (!art) throw new Error(`Artifact ${b.artifactId} not found`);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${b.artifactId} not found`);
   const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, art.projectId)).limit(1);
   return { b, art, proj: proj ?? null, projectDeviceId: proj?.deviceId ?? null };
 }
@@ -622,7 +623,7 @@ export async function approveDeployment(
 ) {
   const d = await db();
   const [dep] = await d.select().from(programDeployments).where(eq(programDeployments.id, deploymentId)).limit(1);
-  if (!dep) throw new Error(`Deployment ${deploymentId} not found`);
+  if (!dep) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programDeployment" }, `Deployment ${deploymentId} not found`);
   if (dep.status !== "awaiting_approval") {
     throw new Error(`Deployment ${deploymentId} không ở trạng thái chờ duyệt (status=${dep.status}).`);
   }
@@ -722,7 +723,7 @@ export async function rejectDeployment(
 ) {
   const d = await db();
   const [dep] = await d.select().from(programDeployments).where(eq(programDeployments.id, deploymentId)).limit(1);
-  if (!dep) throw new Error(`Deployment ${deploymentId} not found`);
+  if (!dep) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programDeployment" }, `Deployment ${deploymentId} not found`);
   if (dep.status !== "awaiting_approval") {
     throw new Error(`Deployment ${deploymentId} không ở trạng thái chờ duyệt (status=${dep.status}).`);
   }
@@ -800,7 +801,7 @@ export async function rollbackDeployment(
 ) {
   const d = await db();
   const [target] = await d.select().from(programDeployments).where(eq(programDeployments.id, deploymentId)).limit(1);
-  if (!target) throw new Error(`Deployment ${deploymentId} not found`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programDeployment" }, `Deployment ${deploymentId} not found`);
 
   // Find the most recent successful deployment BEFORE the target, to revert to.
   // QA W5 (high): phải lọc theo ĐÚNG deviceId của target — trong fleet mọi máy chung

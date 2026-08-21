@@ -10,6 +10,7 @@
  * người). Mọi hàm đọc DB fail-safe: DB null → ném rõ ràng (router bọc).
  */
 import { and, asc, desc, eq, ne, gte, inArray, sql } from "drizzle-orm";
+import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "../db/connection";
 import {
@@ -283,7 +284,7 @@ export interface StartExecutionInput {
 export async function startExecution(input: StartExecutionInput): Promise<SopExecutionRow> {
   const d = await db();
   const [sop] = await d.select().from(sops).where(eq(sops.id, input.sopId)).limit(1);
-  if (!sop) throw new Error("SOP not found");
+  if (!sop) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "sop" }, "SOP not found");
   const [row] = await d
     .insert(sopExecutions)
     .values({

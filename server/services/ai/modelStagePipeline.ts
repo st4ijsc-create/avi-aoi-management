@@ -25,6 +25,7 @@
  */
 
 import { and, eq, isNull } from "drizzle-orm";
+import { appError } from "../../_core/appError";
 import { getDb } from "../../db/connection";
 import { modelDriftAlerts } from "../../../drizzle/schema";
 import type { ModelStage, ModelVersion, ModelStageHistoryEntry } from "../../../drizzle/schema";
@@ -193,7 +194,7 @@ export async function promoteStage(
   opts: { actor: number; approver?: number | null; reason?: string; now?: Date },
 ): Promise<PromoteResult> {
   const version = await getModelVersionById(versionId);
-  if (!version) throw new Error(`Model version ${versionId} not found`);
+  if (!version) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model version ${versionId} not found`);
   const model = await getAiModelById(version.modelId);
 
   const now = opts.now ?? new Date();

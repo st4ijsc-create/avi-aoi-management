@@ -1444,7 +1444,7 @@ export async function revokeMachineEnrollmentToken(id: number): Promise<PublicEn
     .set({ revokedAt: new Date() })
     .where(eq(machineEnrollmentTokens.id, id))
     .returning();
-  if (!row) throw new Error(`Enrollment token ${id} not found`);
+  if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "enrollmentToken" }, `Enrollment token ${id} not found`);
   return publicEnrollmentTokenRow(row);
 }
 

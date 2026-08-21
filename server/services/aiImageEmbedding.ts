@@ -1,4 +1,5 @@
 import * as ort from "onnxruntime-node";
+import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import sharp from "sharp";
 // ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không". Import TĨNH của một module
@@ -655,7 +656,7 @@ export async function extractEmbedding(
 ): Promise<EmbeddingResult> {
   const startTime = Date.now();
   const model = await getAiModelById(modelId);
-  if (!model) throw new Error(`Embedding model ${modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "embeddingModel" }, `Embedding model ${modelId} not found`);
   if (model.status !== "ACTIVE") throw new Error(`Model ${model.code} is not active`);
 
   const session = await getEmbeddingSession(model);
@@ -1017,7 +1018,7 @@ export async function findSimilarByIdWithMode(
     .where(eq(aiImageEmbeddings.id, imageEmbeddingId))
     .limit(1);
 
-  if (!source[0]) throw new Error(`Embedding ${imageEmbeddingId} not found`);
+  if (!source[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "imageEmbedding" }, `Embedding ${imageEmbeddingId} not found`);
 
   return findSimilarByVectorWithMode(
     parseVectorLiteral(source[0].embedding),

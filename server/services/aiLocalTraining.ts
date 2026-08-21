@@ -9,6 +9,7 @@
  */
 
 import * as ort from "onnxruntime-node";
+import { appError } from "../_core/appError";
 import sharp from "sharp";
 import path from "path";
 import fs from "fs";
@@ -124,7 +125,7 @@ export async function runTransferLearning(request: LocalTrainingRequest): Promis
 
     // 1. Load base model and extract feature extractor
     const model = await getAiModelById(request.modelId);
-    if (!model) throw new Error(`Model ${request.modelId} not found`);
+    if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${request.modelId} not found`);
     if (!model.filePath) throw new Error(`Model ${model.code} has no file path`);
 
     const session = await ort.InferenceSession.create(
@@ -382,7 +383,7 @@ export async function runFewShotLearning(request: LocalTrainingRequest): Promise
     await dbAdvanced.updateTrainingJob(job.id, { status: "PREPARING_DATA", startedAt: new Date(), progress: 10 });
 
     const model = await getAiModelById(request.modelId);
-    if (!model?.filePath) throw new Error(`Model ${request.modelId} not found or has no file path`);
+    if (!model?.filePath) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${request.modelId} not found or has no file path`);
 
     const session = await ort.InferenceSession.create(
       resolveModelPath(model.filePath),
@@ -556,7 +557,7 @@ export async function runIncrementalLearning(request: LocalTrainingRequest): Pro
     await dbAdvanced.updateTrainingJob(job.id, { status: "PREPARING_DATA", startedAt: new Date(), progress: 5 });
 
     const model = await getAiModelById(request.modelId);
-    if (!model?.filePath) throw new Error(`Model ${request.modelId} not found or has no file path`);
+    if (!model?.filePath) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${request.modelId} not found or has no file path`);
 
     // Try to load existing classifier
     const existingClassifier = await loadExistingClassifier(request.modelId);

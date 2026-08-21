@@ -3842,7 +3842,19 @@
       "yieldAlertThreshold": "yield alert threshold",
       "orderTemplate": "order template",
       "deviceCertificate": "device certificate",
-      "serviceIdentity": "service identity"
+      "serviceIdentity": "service identity",
+      "aiModelVersion": "AI model version",
+      "programDeployment": "program deployment",
+      "programBuild": "program build",
+      "marketplaceTemplate": "marketplace template",
+      "enrollmentToken": "enrolment token",
+      "imageEmbedding": "image embedding",
+      "embeddingModel": "embedding model",
+      "centroidImportJob": "centroid import job",
+      "msdExposure": "MSD exposure",
+      "sop": "standard operating procedure (SOP)",
+      "hotFolderConfig": "hot-folder configuration",
+      "sourceProduct": "source product"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",

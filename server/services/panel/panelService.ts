@@ -10,6 +10,7 @@
  * soft delete via deletedAt + isActive.
  */
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { appError } from "../../_core/appError";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import {
@@ -218,7 +219,7 @@ export async function replaceBoards(
     .from(productPanelDefs)
     .where(and(eq(productPanelDefs.id, panelDefId), isNull(productPanelDefs.deletedAt)))
     .limit(1);
-  if (!def) throw new Error(`Panel def ${panelDefId} not found`);
+  if (!def) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "panelDefinition" }, `Panel def ${panelDefId} not found`);
   await replaceBoardsInternal(panelDefId, boards);
   // Keep nUp in sync with the actual board count (doc 29: nUp thường = rows*cols).
   await db

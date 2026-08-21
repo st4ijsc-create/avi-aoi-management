@@ -43,10 +43,12 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   `errors.entity.*` (137 khoá, đủ vi/en/zh) → `appError("NOT_FOUND", "ENTITY_NOT_FOUND",
  *   { entity })`. 64 chỗ "not found" còn lại cần ĐẶT TÊN thực thể mới — làm riêng,
  *   để không vừa di trú vừa bịa từ vựng.
+ * 601 →  547 (lô 4): 54 chỗ "not found" còn lại, ánh xạ theo (FILE, CÂU) đích danh +
+ *   12 khoá thực thể MỚI (đủ vi/en/zh). 10 chỗ giữ nguyên vì là lỗi HỆ THỐNG TỆP.
  * Cả hai lô đổi sang `DbUnavailableError` — lớp tự mang `appCode: "DB_UNAVAILABLE"`
  * (mã đã có sẵn, đã đủ ba bản dịch), nên client dịch được mà formatter không đổi dòng nào.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 601;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 547;
 
 /**
  * Họ "DB không sẵn sàng": `407 → 83 → 1 → **0**` — nay là BẤT BIẾN, không phải ngân sách.

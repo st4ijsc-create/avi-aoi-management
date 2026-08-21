@@ -12,6 +12,7 @@
  */
 
 import { getDb } from "../db/connection";
+import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { sql, eq, and } from "drizzle-orm";
 import { edgeInferenceSync, type InsertEdgeDeployment } from "../../drizzle/schema/ai";
@@ -107,7 +108,7 @@ export interface PackageModelResult {
  */
 export async function packageModelForDeployment(deploymentId: number): Promise<PackageModelResult> {
   const deployment = await db.getEdgeDeployment(deploymentId);
-  if (!deployment) throw new Error(`Deployment ${deploymentId} not found`);
+  if (!deployment) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, `Deployment ${deploymentId} not found`);
 
   // Resolve the model version file. modelVersion is the canonical pointer;
   // if absent, fall back to the model's currentVersion is the caller's job —
@@ -194,7 +195,7 @@ export async function confirmDeployment(
   localHash: string,
 ): Promise<{ deploymentId: number; status: "DEPLOYED" | "FAILED"; matched: boolean }> {
   const deployment = await db.getEdgeDeployment(deploymentId);
-  if (!deployment) throw new Error(`Deployment ${deploymentId} not found`);
+  if (!deployment) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, `Deployment ${deploymentId} not found`);
 
   const expected = (deployment.packageHash ?? "").toLowerCase();
   const got = (localHash ?? "").toLowerCase();
@@ -237,7 +238,7 @@ export async function recordEdgeHeartbeat(
   deploymentId: number,
 ): Promise<{ deploymentId: number; status: string }> {
   const deployment = await db.getEdgeDeployment(deploymentId);
-  if (!deployment) throw new Error(`Deployment ${deploymentId} not found`);
+  if (!deployment) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, `Deployment ${deploymentId} not found`);
 
   const now = new Date();
   const patch: Record<string, unknown> = { lastHeartbeatAt: now };
@@ -286,7 +287,7 @@ export async function syncEdgeResults(
   if (!database) throw new DbUnavailableError();
 
   const deployment = await db.getEdgeDeployment(deploymentId);
-  if (!deployment) throw new Error(`Deployment ${deploymentId} not found`);
+  if (!deployment) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, `Deployment ${deploymentId} not found`);
 
   let synced = 0;
   let duplicates = 0;
@@ -363,7 +364,7 @@ export async function markStaleDeployments(thresholdMinutes = 15): Promise<numbe
  */
 export async function rollbackDevice(deploymentId: number): Promise<{ rolledBack: boolean; previousVersion?: string }> {
   const deployment = await db.getEdgeDeployment(deploymentId);
-  if (!deployment) throw new Error(`Deployment ${deploymentId} not found`);
+  if (!deployment) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, `Deployment ${deploymentId} not found`);
 
   const config = deployment.deployConfig as Record<string, unknown> ?? {};
   const previousDeploymentId = config.previousDeploymentId as number | undefined;
@@ -375,7 +376,7 @@ export async function rollbackDevice(deploymentId: number): Promise<{ rolledBack
   // Restore previous deployment
   const previousDeployment = await db.getEdgeDeployment(previousDeploymentId);
   if (!previousDeployment) {
-    throw new Error("Previous deployment record not found");
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, "Previous deployment record not found");
   }
 
   // Mark current as rolled back

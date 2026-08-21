@@ -3834,7 +3834,19 @@
       "yieldAlertThreshold": "良率告警阈值",
       "orderTemplate": "工单模板",
       "deviceCertificate": "设备证书",
-      "serviceIdentity": "服务身份"
+      "serviceIdentity": "服务身份",
+      "aiModelVersion": "AI 模型版本",
+      "programDeployment": "程序部署",
+      "programBuild": "程序构建",
+      "marketplaceTemplate": "应用市场模板",
+      "enrollmentToken": "设备注册令牌",
+      "imageEmbedding": "图像嵌入向量",
+      "embeddingModel": "嵌入模型",
+      "centroidImportJob": "质心导入任务",
+      "msdExposure": "MSD 暴露记录",
+      "sop": "标准作业程序 (SOP)",
+      "hotFolderConfig": "热文件夹配置",
+      "sourceProduct": "源产品"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",

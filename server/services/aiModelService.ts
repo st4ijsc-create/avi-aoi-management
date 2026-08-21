@@ -1,4 +1,5 @@
 import { storagePut, storageGet } from "../storage";
+import { appError } from "../_core/appError";
 import {
   createAiModel, getAiModelById, getAiModelByCode, updateAiModel,
   createModelVersion, getModelVersions, getModelVersionById, updateModelVersion,
@@ -46,7 +47,7 @@ export async function uploadModelFile(
   contentType = "application/octet-stream",
 ) {
   const model = await getAiModelById(modelId);
-  if (!model) throw new Error(`Model ${modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${modelId} not found`);
 
   const ext = filename.split(".").pop() ?? "onnx";
   const storageKey = `${MODEL_STORAGE_PREFIX}/${model.code}/v${model.currentVersion ?? "1.0.0"}/model.${ext}`;
@@ -74,7 +75,7 @@ export async function uploadModelVersion(
   createdBy?: number,
 ) {
   const model = await getAiModelById(modelId);
-  if (!model) throw new Error(`Model ${modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${modelId} not found`);
 
   const ext = filename.split(".").pop() ?? "onnx";
   const storageKey = `${MODEL_STORAGE_PREFIX}/${model.code}/v${version}/model.${ext}`;
@@ -111,7 +112,7 @@ export async function activateModelVersion(
 ) {
   const versions = await getModelVersions(modelId);
   const target = versions.find(v => v.id === versionId);
-  if (!target) throw new Error(`Version ${versionId} not found for model ${modelId}`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModelVersion" }, `Version ${versionId} not found for model ${modelId}`);
 
   // Project the stage when the global flag is on OR when the deliberate stage-aware
   // pipeline is the caller (via="promote") — so a canary→production promotion is
@@ -296,7 +297,7 @@ export async function activateModelVersionManual(
 ): Promise<ModelVersion> {
   const target = await getModelVersionById(versionId);
   if (!target || target.modelId !== modelId) {
-    throw new Error(`Version ${versionId} not found for model ${modelId}`);
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModelVersion" }, `Version ${versionId} not found for model ${modelId}`);
   }
 
   const gatePassed = evalGatePassed(target.evalReport);

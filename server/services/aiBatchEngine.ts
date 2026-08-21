@@ -20,7 +20,7 @@ interface BatchOptions {
  */
 export async function createBatchJob(options: BatchOptions) {
   const model = await getAiModelById(options.modelId);
-  if (!model) throw new Error(`Model ${options.modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${options.modelId} not found`);
   if (model.status !== "ACTIVE") throw new Error(`Model ${model.code} is not active`);
 
   const job = await db.createBatchInferenceJob({

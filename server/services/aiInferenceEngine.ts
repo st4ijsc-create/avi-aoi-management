@@ -1,4 +1,5 @@
 import * as ort from "onnxruntime-node";
+import { appError } from "../_core/appError";
 import sharp from "sharp";
 // ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không". Import TĨNH của một module
 // LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
@@ -493,7 +494,7 @@ export async function runInference(
 ) {
   const startTime = Date.now();
   const model = await getAiModelById(modelId);
-  if (!model) throw new Error(`Model ${modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${modelId} not found`);
   if (model.status !== "ACTIVE") throw new Error(`Model ${model.code} is not active (status: ${model.status})`);
 
   // ── AOI-C — flag-gated embedding-head dispatch (doc 24 Wave-3) ──────────────
@@ -659,7 +660,7 @@ export async function runInferenceWithFeatureMap(
   imageBuffer: Buffer,
 ): Promise<InferenceWithFeatureMap> {
   const model = await getAiModelById(modelId);
-  if (!model) throw new Error(`Model ${modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${modelId} not found`);
   if (model.status !== "ACTIVE") throw new Error(`Model ${model.code} is not active (status: ${model.status})`);
 
   const session = await getSession(model);

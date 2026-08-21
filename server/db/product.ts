@@ -492,7 +492,7 @@ export async function cloneProductModel(opts: {
     const [source] = await tx.select().from(productModels)
       .where(and(eq(productModels.id, opts.sourceId), isNull(productModels.deletedAt)))
       .limit(1);
-    if (!source) throw new Error(`Source product ${opts.sourceId} not found`);
+    if (!source) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "sourceProduct" }, `Source product ${opts.sourceId} not found`);
 
     // 2) New product row — copy every column, override identity + lifecycle + provenance.
     const productRest = omitCols(source, ["id", "createdAt", "updatedAt", "deletedAt"]);

@@ -3842,7 +3842,19 @@
       "yieldAlertThreshold": "ngưỡng cảnh báo hiệu suất",
       "orderTemplate": "mẫu lệnh sản xuất",
       "deviceCertificate": "chứng chỉ thiết bị",
-      "serviceIdentity": "định danh dịch vụ"
+      "serviceIdentity": "định danh dịch vụ",
+      "aiModelVersion": "phiên bản mô hình AI",
+      "programDeployment": "bản triển khai chương trình",
+      "programBuild": "bản dựng chương trình",
+      "marketplaceTemplate": "mẫu trên chợ ứng dụng",
+      "enrollmentToken": "mã đăng ký thiết bị",
+      "imageEmbedding": "vector nhúng ảnh",
+      "embeddingModel": "mô hình nhúng",
+      "centroidImportJob": "tác vụ nhập tâm cụm",
+      "msdExposure": "phiên phơi ẩm MSD",
+      "sop": "quy trình chuẩn (SOP)",
+      "hotFolderConfig": "cấu hình thư mục nóng",
+      "sourceProduct": "sản phẩm nguồn"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",

@@ -11,6 +11,7 @@
  * (DEFAULT OFF). Opening/closing/baking + status queries work regardless of the flag.
  */
 import { getDb } from "../db";
+import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, desc, isNull } from "drizzle-orm";
 import { msdExposureLogs, type InsertMsdExposureLog } from "../../drizzle/schema";
@@ -162,7 +163,7 @@ export async function closeExposure(id: number, closedAt?: Date) {
   const when = closedAt ?? new Date();
 
   const [existing] = await db.select().from(msdExposureLogs).where(eq(msdExposureLogs.id, id)).limit(1);
-  if (!existing) throw new Error("MSD exposure not found");
+  if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msdExposure" }, "MSD exposure not found");
 
   const comp = computeMsdStatus({
     removedFromDryAt: existing.removedFromDryAt,
