@@ -3367,7 +3367,8 @@
     "tplMachineHealthDesc": "Theo dõi sức khỏe máy với uptime, alerts, và maintenance schedule",
     "tplExecutiveSummaryDesc": "Báo cáo tổng hợp cho quản lý với KPIs, trends, và comparisons",
     "tplRealtimeMonitoringDesc": "Giám sát thời gian thực với live data, alerts, và status updates",
-    "tplAlertManagementDesc": "Quản lý cảnh báo với alert history, rules, và notifications"
+    "tplAlertManagementDesc": "Quản lý cảnh báo với alert history, rules, và notifications",
+    "cuaSoInBiChan": "Cửa sổ in bị trình duyệt chặn"
   },
   "defects": {
     "heatmap": {
@@ -11083,7 +11084,8 @@
     "openWorkstationManagement": "Mở quản lý trạm làm việc",
     "openWorkstationManagementDesc": "Đi đến trang quản lý trạm làm việc chuyên dụng",
     "goToWorkstationManagement": "Đi đến quản lý trạm làm việc",
-    "congCu": "Công cụ"
+    "congCu": "Công cụ",
+    "khoaAnBamTaoLai": "•••••••• (ẩn — bấm tạo lại để lộ 1 lần)"
   },
   "language": {
     "title": "Ngôn ngữ",
@@ -13965,7 +13967,8 @@
     "xacNhanXuLyXong": "Xác nhận xử lý xong?",
     "huy": "Hủy",
     "thaoTacThatBai": "Thao tác thất bại",
-    "cacCanhBaoDaChon": "các cảnh báo đã chọn"
+    "cacCanhBaoDaChon": "các cảnh báo đã chọn",
+    "xacNhanHangLoat": "Xác nhận hàng loạt"
   },
   "cmd": {
     "title": "Trung tâm điều hành hệ sinh thái",
@@ -16935,7 +16938,8 @@
       "question": "Câu hỏi",
       "run": "Hỏi LLaVA"
     },
-    "tiengViet": "Tiếng Việt"
+    "tiengViet": "Tiếng Việt",
+    "moTaNganGonKhuyetTat": "Mô tả ngắn gọn các khuyết tật bạn nhìn thấy trên ảnh này."
   },
   "wipDashboard": {
     "blocked": "Bị chặn",
@@ -18762,7 +18766,8 @@
     "quetNhapMaReel": "Quét/nhập mã reel",
     "capMsl": "Cấp MSL",
     "ghiChuTuyChon": "Ghi chú (tuỳ chọn)",
-    "ghiChu": "Ghi chú"
+    "ghiChu": "Ghi chú",
+    "khongGioiHan": "không giới hạn"
   },
   "stencil": {
     "chonKhuonInTheoId": "Chọn khuôn in theo ID (tool id trong master khuôn/thiết bị)",
@@ -18850,7 +18855,9 @@
     "overallEquipmentEffectivenessHieuSuat": "Overall Equipment Effectiveness — Hiệu suất thiết bị tổng thể (A × P × Q)",
     "availabilityKhaDung2": "Availability — Khả dụng",
     "performanceHieuSuat2": "Performance — Hiệu suất",
-    "qualityChatLuong2": "Quality — Chất lượng"
+    "qualityChatLuong2": "Quality — Chất lượng",
+    "chuaGanTapDoan": "Chưa gán tập đoàn",
+    "haiPhamViDemKhacNhau": "hai phạm vi đếm khác nhau."
   },
   "seedData": {
     "duLieuCoSo": "Dữ liệu cơ sở",
@@ -18861,7 +18868,10 @@
     "dangTao2": "Đang tạo...",
     "phanTichTramLamViec": "Phân tích trạm làm việc",
     "tao500BanGhiPhan": "Tạo 500 bản ghi phân tích 7 ngày gần đây",
-    "dangTao3": "Đang tạo..."
+    "dangTao3": "Đang tạo...",
+    "taoDuLieuCoSo": "Tạo dữ liệu cơ sở",
+    "taoDuLieuPhanTich": "Tạo dữ liệu phân tích",
+    "tao100BanGhiKiemTra": "Tạo 100 bản ghi kiểm tra"
   },
   "showcase": {
     "canhBaoLienKetCode": "Cảnh báo liên kết code rác + xác nhận xoá/lưu-trữ thống nhất (doc 42 Đợt 1).",
@@ -19106,7 +19116,8 @@
       "escalation": "Leo thang",
       "andon": "Andon"
     },
-    "moChiTiet": "mở chi tiết"
+    "moChiTiet": "mở chi tiết",
+    "filterAll": "Tất cả"
   },
   "masterDataEnum": {
     "supplier_type": {
@@ -19297,7 +19308,8 @@
   "aIToolResultCard": {
     "giam": "Giảm",
     "onDinh": "Ổn định",
-    "tang": "Tăng"
+    "tang": "Tăng",
+    "khongCoHeartbeat": "không có heartbeat"
   },
   "panels": {
     "soCanhBaoPhatSinh": "Số cảnh báo phát sinh trong cửa sổ 24h (andon + AI dự báo), kể cả đã xử lý — khác số 'đang mở' trên dải KPI."
@@ -19489,5 +19501,14 @@
     "khoiDong": "Khởi động",
     "dangDung": "Đang dừng",
     "khongRo": "Không rõ"
+  },
+  "permissionGate": {
+    "khongCoQuyenThucHien": "Bạn không có quyền thực hiện"
+  },
+  "widgetPreset": {
+    "kieuThe": "Kiểu thẻ"
+  },
+  "factoryCommandView": {
+    "vuaXong": "vừa xong"
   }
 }

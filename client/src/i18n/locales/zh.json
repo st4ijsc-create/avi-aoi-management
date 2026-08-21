@@ -3367,7 +3367,8 @@
     "tplMachineHealthDesc": "设备健康跟踪：运行时间、告警与维护计划",
     "tplExecutiveSummaryDesc": "面向管理层的汇总报告：KPI、趋势与对比",
     "tplRealtimeMonitoringDesc": "实时监控：实时数据、告警与状态更新",
-    "tplAlertManagementDesc": "告警管理：告警历史、规则与通知"
+    "tplAlertManagementDesc": "告警管理：告警历史、规则与通知",
+    "cuaSoInBiChan": "浏览器阻止了打印窗口"
   },
   "defects": {
     "trend": {
@@ -10886,7 +10887,8 @@
     "openWorkstationManagement": "打开工作站管理",
     "openWorkstationManagementDesc": "前往专用工作站管理页面",
     "goToWorkstationManagement": "前往工作站管理",
-    "congCu": "工具"
+    "congCu": "工具",
+    "khoaAnBamTaoLai": "••••••••（已隐藏 — 重新生成可显示一次）"
   },
   "language": {
     "title": "语言设置",
@@ -13768,7 +13770,8 @@
     "xacNhanXuLyXong": "确认已处理完成？",
     "huy": "取消",
     "thaoTacThatBai": "操作失败",
-    "cacCanhBaoDaChon": "已选中的告警"
+    "cacCanhBaoDaChon": "已选中的告警",
+    "xacNhanHangLoat": "批量确认"
   },
   "cmd": {
     "title": "生态系统指挥中心",
@@ -17299,7 +17302,8 @@
       "question": "问题",
       "run": "询问 LLaVA"
     },
-    "tiengViet": "Tiếng Việt"
+    "tiengViet": "Tiếng Việt",
+    "moTaNganGonKhuyetTat": "简要描述您在这张图片中看到的缺陷。"
   },
   "workforce": {
     "abort": "中止",
@@ -18790,7 +18794,8 @@
     "quetNhapMaReel": "扫描/输入料盘编号",
     "capMsl": "MSL 等级",
     "ghiChuTuyChon": "备注（可选）",
-    "ghiChu": "备注"
+    "ghiChu": "备注",
+    "khongGioiHan": "无限制"
   },
   "stencil": {
     "chonKhuonInTheoId": "按 ID 选择钢网（工装/设备主数据中的 tool id）",
@@ -18878,7 +18883,9 @@
     "overallEquipmentEffectivenessHieuSuat": "设备综合效率 Overall Equipment Effectiveness（A × P × Q）",
     "availabilityKhaDung2": "可用率 (Availability)",
     "performanceHieuSuat2": "性能 (Performance)",
-    "qualityChatLuong2": "质量 (Quality)"
+    "qualityChatLuong2": "质量 (Quality)",
+    "chuaGanTapDoan": "未分配集团",
+    "haiPhamViDemKhacNhau": "这是两种不同的统计口径。"
   },
   "seedData": {
     "duLieuCoSo": "基础数据",
@@ -18889,7 +18896,10 @@
     "dangTao2": "创建中...",
     "phanTichTramLamViec": "工位分析",
     "tao500BanGhiPhan": "创建最近 7 天的 500 条分析记录",
-    "dangTao3": "创建中..."
+    "dangTao3": "创建中...",
+    "taoDuLieuCoSo": "创建基础数据",
+    "taoDuLieuPhanTich": "创建分析数据",
+    "tao100BanGhiKiemTra": "创建 100 条检测记录"
   },
   "showcase": {
     "canhBaoLienKetCode": "无效编码链接警告 + 统一的删除/归档确认（doc 42 第 1 批）。",
@@ -19134,7 +19144,8 @@
       "escalation": "升级",
       "andon": "安灯"
     },
-    "moChiTiet": "查看详情"
+    "moChiTiet": "查看详情",
+    "filterAll": "全部"
   },
   "masterDataEnum": {
     "supplier_type": {
@@ -19325,7 +19336,8 @@
   "aIToolResultCard": {
     "giam": "下降",
     "onDinh": "稳定",
-    "tang": "上升"
+    "tang": "上升",
+    "khongCoHeartbeat": "无心跳"
   },
   "panels": {
     "soCanhBaoPhatSinh": "24 小时窗口内新增的告警数（安灯 + AI 预测），含已处理的 — 与 KPI 条上的「未关闭」数不同。"
@@ -19517,5 +19529,14 @@
     "khoiDong": "启动中",
     "dangDung": "停止中",
     "khongRo": "未知"
+  },
+  "permissionGate": {
+    "khongCoQuyenThucHien": "您没有执行此操作的权限"
+  },
+  "widgetPreset": {
+    "kieuThe": "卡片样式"
+  },
+  "factoryCommandView": {
+    "vuaXong": "刚刚"
   }
 }

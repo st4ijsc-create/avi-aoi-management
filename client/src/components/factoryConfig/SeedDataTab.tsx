@@ -54,7 +54,7 @@ export function SeedDataTab() {
                 className="w-full"
                 variant="outline"
               >
-                {seedDataMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t("seedData.dangTao", "Đang tạo...")}</> : 'Tạo dữ liệu cơ sở'}
+                {seedDataMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t("seedData.dangTao", "Đang tạo...")}</> : t("seedData.taoDuLieuCoSo", "Tạo dữ liệu cơ sở")}
               </Button>
             </CardContent>
           </Card>
@@ -70,7 +70,7 @@ export function SeedDataTab() {
                 className="w-full"
                 variant="outline"
               >
-                {seedInspectionsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t("seedData.dangTao2", "Đang tạo...")}</> : 'Tạo 100 bản ghi kiểm tra'}
+                {seedInspectionsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t("seedData.dangTao2", "Đang tạo...")}</> : t("seedData.tao100BanGhiKiemTra", "Tạo 100 bản ghi kiểm tra")}
               </Button>
             </CardContent>
           </Card>
@@ -86,7 +86,7 @@ export function SeedDataTab() {
                 className="w-full"
                 variant="outline"
               >
-                {seedWorkstationAnalyticsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t("seedData.dangTao3", "Đang tạo...")}</> : 'Tạo dữ liệu phân tích'}
+                {seedWorkstationAnalyticsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t("seedData.dangTao3", "Đang tạo...")}</> : t("seedData.taoDuLieuPhanTich", "Tạo dữ liệu phân tích")}
               </Button>
             </CardContent>
           </Card>

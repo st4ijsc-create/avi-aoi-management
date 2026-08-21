@@ -1315,7 +1315,7 @@ export default function OpsConsole() {
                       <Button
                         className="h-11"
                         disabled={selAckable.some((a) => pendingKeys.has(a.key))}
-                        onClick={() => void runBulk(selAckable, "ack", "Xác nhận hàng loạt")}
+                        onClick={() => void runBulk(selAckable, "ack", t("opsConsole.xacNhanHangLoat", "Xác nhận hàng loạt"))}
                       >
                         Xác nhận ({selAckable.length})
                       </Button>

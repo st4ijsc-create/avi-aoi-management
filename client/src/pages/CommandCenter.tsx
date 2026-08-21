@@ -1437,7 +1437,7 @@ export default function CommandCenter() {
               {/* doc67 W8 [P2] — hàng chip lọc mức độ (luôn hiện để bỏ lọc được
                   cả khi danh sách lọc ra rỗng). */}
               <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1" role="group" aria-label={t("commandCenter.locMucDoCanhBao", "Lọc mức độ cảnh báo")}>
-                {([["all", "Tất cả"], ["critical", "Nghiêm trọng"], ["high", "Cao"]] as const).map(([v, label]) => (
+                {([["all", "cmdCenter.filterAll"], ["critical", "cmdCenter.severity.critical"], ["high", "cmdCenter.severity.high"]] as const).map(([v, label]) => (
                   <button
                     key={v}
                     type="button"

@@ -247,7 +247,7 @@ export default function MsdPanel() {
                 {mslEntries.map((e) => (
                   <div key={e.level} className="rounded border px-3 py-1.5 text-sm">
                     <span className="font-medium">MSL {e.level}</span>
-                    <span className="ml-2 text-muted-foreground">{e.hours == null ? "không giới hạn" : fmtHours(e.hours)}</span>
+                    <span className="ml-2 text-muted-foreground">{e.hours == null ? t("msd.khongGioiHan", "không giới hạn") : fmtHours(e.hours)}</span>
                   </div>
                 ))}
               </div>

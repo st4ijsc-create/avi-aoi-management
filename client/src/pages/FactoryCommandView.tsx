@@ -189,8 +189,8 @@ function StatChip({
 }
 
 /** Tuổi vấn đề dạng ngắn (VN): "vừa xong" · "12ph" · "2g30ph". */
-function formatAge(min: number): string {
-  if (min < 1) return "vừa xong";
+function formatAge(min: number, t: ReturnType<typeof useTranslation>["t"]): string {
+  if (min < 1) return t("factoryCommandView.vuaXong", "vừa xong");
   if (min < 60) return `${Math.round(min)}ph`;
   const h = Math.floor(min / 60);
   const m = Math.round(min % 60);
@@ -585,7 +585,7 @@ export default function FactoryCommandView() {
                                 </span>
                               )}
                               <span className="text-[10px] text-muted-foreground tabular-nums">
-                                {formatAge(iss.ageMinutes)}
+                                {formatAge(iss.ageMinutes, t)}
                               </span>
                             </span>
                           </div>
@@ -740,7 +740,7 @@ export default function FactoryCommandView() {
                           <div className="min-w-0">
                             <div className="text-sm">{iss.label}</div>
                             <div className="text-[11px] text-muted-foreground">
-                              {iss.severity} · {formatAge(iss.ageMinutes)}
+                              {iss.severity} · {formatAge(iss.ageMinutes, t)}
                             </div>
                           </div>
                         </div>

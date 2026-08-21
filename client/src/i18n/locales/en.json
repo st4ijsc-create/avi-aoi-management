@@ -3375,7 +3375,8 @@
     "tplExecutiveSummaryDesc": "Management summary report with KPIs, trends and comparisons",
     "tplRealtimeMonitoringDesc": "Realtime monitoring with live data, alerts and status updates",
     "tplAlertManagementDesc": "Alarm management with alert history, rules and notifications",
-    "tplProductionOverviewDesc": "Production overview with output charts, yield rate and machine status"
+    "tplProductionOverviewDesc": "Production overview with output charts, yield rate and machine status",
+    "cuaSoInBiChan": "The browser blocked the print window"
   },
   "defects": {
     "trend": {
@@ -11103,7 +11104,8 @@
     "openWorkstationManagement": "Open Workstation Management",
     "openWorkstationManagementDesc": "Go to the dedicated workstation management page",
     "goToWorkstationManagement": "Go to Workstation Management",
-    "congCu": "Tools"
+    "congCu": "Tools",
+    "khoaAnBamTaoLai": "•••••••• (hidden — regenerate to reveal once)"
   },
   "language": {
     "title": "Language",
@@ -13985,7 +13987,8 @@
     "xacNhanXuLyXong": "Confirm resolved?",
     "huy": "Cancel",
     "thaoTacThatBai": "Operation failed",
-    "cacCanhBaoDaChon": "the selected alarms"
+    "cacCanhBaoDaChon": "the selected alarms",
+    "xacNhanHangLoat": "Bulk acknowledge"
   },
   "cmd": {
     "title": "Ecosystem Command Center",
@@ -16955,7 +16958,8 @@
       "question": "Question",
       "run": "Ask LLaVA"
     },
-    "tiengViet": "Tiếng Việt"
+    "tiengViet": "Tiếng Việt",
+    "moTaNganGonKhuyetTat": "Briefly describe the defects you can see in this image."
   },
   "wipDashboard": {
     "blocked": "Blocked",
@@ -18782,7 +18786,8 @@
     "quetNhapMaReel": "Scan/enter reel code",
     "capMsl": "MSL level",
     "ghiChuTuyChon": "Note (optional)",
-    "ghiChu": "Note"
+    "ghiChu": "Note",
+    "khongGioiHan": "unlimited"
   },
   "stencil": {
     "chonKhuonInTheoId": "Select a stencil by ID (tool id in the tooling/equipment master)",
@@ -18870,7 +18875,9 @@
     "overallEquipmentEffectivenessHieuSuat": "Overall Equipment Effectiveness (A × P × Q)",
     "availabilityKhaDung2": "Availability",
     "performanceHieuSuat2": "Performance",
-    "qualityChatLuong2": "Quality"
+    "qualityChatLuong2": "Quality",
+    "chuaGanTapDoan": "No group assigned",
+    "haiPhamViDemKhacNhau": "these are two different counting scopes."
   },
   "seedData": {
     "duLieuCoSo": "Base data",
@@ -18881,7 +18888,10 @@
     "dangTao2": "Creating...",
     "phanTichTramLamViec": "Workstation analytics",
     "tao500BanGhiPhan": "Create 500 analytics records for the last 7 days",
-    "dangTao3": "Creating..."
+    "dangTao3": "Creating...",
+    "taoDuLieuCoSo": "Create base data",
+    "taoDuLieuPhanTich": "Create analytics data",
+    "tao100BanGhiKiemTra": "Create 100 inspection records"
   },
   "showcase": {
     "canhBaoLienKetCode": "Dangling-code link warning + unified delete/archive confirmation (doc 42 Batch 1).",
@@ -19126,7 +19136,8 @@
       "escalation": "Escalation",
       "andon": "Andon"
     },
-    "moChiTiet": "open details"
+    "moChiTiet": "open details",
+    "filterAll": "All"
   },
   "masterDataEnum": {
     "supplier_type": {
@@ -19317,7 +19328,8 @@
   "aIToolResultCard": {
     "giam": "Falling",
     "onDinh": "Stable",
-    "tang": "Rising"
+    "tang": "Rising",
+    "khongCoHeartbeat": "no heartbeat"
   },
   "panels": {
     "soCanhBaoPhatSinh": "Number of alarms raised in the 24h window (andon + AI forecast), including those already handled — different from the 'open' count on the KPI strip."
@@ -19509,5 +19521,14 @@
     "khoiDong": "Starting",
     "dangDung": "Stopping",
     "khongRo": "Unknown"
+  },
+  "permissionGate": {
+    "khongCoQuyenThucHien": "You do not have permission to do this"
+  },
+  "widgetPreset": {
+    "kieuThe": "Card style"
+  },
+  "factoryCommandView": {
+    "vuaXong": "just now"
   }
 }

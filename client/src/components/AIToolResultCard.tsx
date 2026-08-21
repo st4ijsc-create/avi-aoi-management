@@ -678,7 +678,7 @@ function PalletizerStatusBody({
           {data.operationStatus ?? "?"}
         </Badge>
         <span className="text-muted-foreground ml-auto">
-          {data.lastHeartbeat ? data.lastHeartbeat.slice(0, 16) : "không có heartbeat"}
+          {data.lastHeartbeat ? data.lastHeartbeat.slice(0, 16) : t("aIToolResultCard.khongCoHeartbeat", "không có heartbeat")}
         </span>
       </div>
       {data.latestResult && (

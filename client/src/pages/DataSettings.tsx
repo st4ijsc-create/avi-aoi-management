@@ -1809,7 +1809,7 @@ export default function DataSettings() {
                 <label className="text-sm font-medium">{t("settings.apiKey")}</label>
                 <div className="flex gap-2">
                   {/* doc 54 P0-1 — stored key is never read back; show masked + rotate-to-reveal. */}
-                  <Input value={"•••••••• (ẩn — bấm tạo lại để lộ 1 lần)"} disabled className="bg-muted font-mono text-xs" />
+                  <Input value={t("dataSettings.khoaAnBamTaoLai", "•••••••• (ẩn — bấm tạo lại để lộ 1 lần)")} disabled className="bg-muted font-mono text-xs" />
                   <Button
                     variant="outline"
                     size="icon"

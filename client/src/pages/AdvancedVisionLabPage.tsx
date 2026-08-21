@@ -406,7 +406,7 @@ function TabAugment() {
 function TabVqa() {
   const { t } = useTranslation();
   const [img, setImg] = useState<PickerProps["value"]>(null);
-  const [q, setQ] = useState("Mô tả ngắn gọn các khuyết tật bạn nhìn thấy trên ảnh này.");
+  const [q, setQ] = useState(t("visionLab.moTaNganGonKhuyetTat", "Mô tả ngắn gọn các khuyết tật bạn nhìn thấy trên ảnh này."));
   const m = trpc.aiAdvancedVision.visualQA.useMutation();
   const run = () => {
     if (!img) return toast.error(t("visionLab.pickImage", "Pick an image"));

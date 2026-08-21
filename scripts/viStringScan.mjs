@@ -84,8 +84,24 @@ export function LA_KHUON_DUNG(ln) {
   // `t(\`mgmtInsight.qa.examples.\${ex.key}\`, ex.default)`). Đã kiểm 2026-08-21: cả ba
   // khoá `q1/q2/q3` có đủ vi/en/zh ⇒ không phải nợ.
   if (/\bkey\s*:\s*["'`][\w-]+["'`]/.test(ln) && /\bdefault\s*:\s*["'`]/.test(ln)) return true;
+  // `lower.includes("thiếu")` — TỪ KHOÁ KHỚP văn bản lỗi để phân loại
+  // (`ProductionDashboard.tsx` xếp defect vào ASSY/NTF/Damage… bằng chính các chuỗi
+  // này). Dịch chúng = mọi lỗi mô tả bằng tiếng Việt thôi được phân loại đúng.
+  // Cùng lớp với `findCol` và `MasterDataColumn.header`.
+  if (/\.includes\s*\(\s*["'`]/.test(ln)) return true;
   return false;
 }
+
+/**
+ * Chuỗi là DỮ LIỆU, không phải nhãn — nêu đích danh vì không có dấu hiệu cú pháp nào
+ * phân biệt được. Mỗi mục đã kiểm tận nơi, kèm lý do:
+ *  · mác vật liệu quốc tế ("Nhôm 6061", "Thép SUS304", "Đồng C1100") — ComponentShowcase
+ *  · hàng VÍ DỤ trong file template người dùng tải về — BulkImportDialog
+ */
+const LA_DU_LIEU_MAU = [
+  /Nhôm 6061|Thép SUS304|Đồng C1100/,
+  /^\s*\["MP-\d+",/,
+];
 
 /** Dòng KHAI một khoá i18n (`labelKey: "a.b.c"`), bất kể có gì khác trên dòng. */
 const KHAI_KHOA = /\b(labelKey|titleKey|descKey|key)\s*:\s*["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]/;
@@ -237,6 +253,7 @@ export function demHinhDangBa(clientSrc = resolve("client/src"), chiTiet = false
       if (/>[^<>{}]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ][^<>{}]*</i.test(ln)) return;
       if (/\b(placeholder|title|label|aria-label|description|alt|tooltip)\s*=\s*["'`][^"'`]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(ln)) return;
       if (LA_KHUON_DUNG(ln)) return;
+      if (LA_DU_LIEU_MAU.some((re) => re.test(ln))) return;
       if (coCapNgonNgu && /\b[a-zA-Z]+Vi\s*:/.test(ln)) return;
       // Gỡ thân `t(...)` thay vì bỏ qua cả dòng — xem docblock `goBoTCalls`.
       const sach = boCommentCuoiDong(goBoTCalls(ln));

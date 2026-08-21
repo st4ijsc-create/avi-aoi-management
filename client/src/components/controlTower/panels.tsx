@@ -196,7 +196,7 @@ function CorporatePanel(): React.JSX.Element {
               {topCorps.map((c) => (
                 <div key={c.code} className={cn("flex items-center gap-2 text-sm", c.unassigned && "opacity-70")}>
                   <span className={cn("w-28 truncate", c.unassigned ? "italic text-muted-foreground" : "font-medium")}>
-                    {c.unassigned ? "Chưa gán tập đoàn" : c.name}
+                    {c.unassigned ? t("ctPanels.chuaGanTapDoan", "Chưa gán tập đoàn") : c.name}
                   </span>
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                     <div
@@ -466,7 +466,7 @@ function AlarmHealthPanel(): React.JSX.Element {
         <div className="mt-2 border-t border-border/60 pt-1.5 text-[11px] text-muted-foreground">
           Phát sinh 24h: {int(d.totalAlarms)}
           {openAlarms != null && <> · Đang mở (mọi thời điểm, andon + an toàn): {int(openAlarms)}</>}
-          {" — hai phạm vi đếm khác nhau."}
+          {" — "}{t("ctPanels.haiPhamViDemKhacNhau", "hai phạm vi đếm khác nhau.")}
         </div>
       )}
     </PanelShell>
