@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Search,
   Upload,
@@ -100,7 +101,7 @@ export default function AIImageSearchPage() {
       setUploadSearchMode((result.searchMode ?? null) as SearchMode | null);
       setUploadEmbeddingSource(((result as any).embeddingSource ?? null) as EmbeddingSource | null);
     } catch (err: any) {
-      toast.error(err?.message ?? t("common.error", "Lỗi"));
+      toast.error(mapTrpcError(err));
     } finally {
       setIsUploadSearching(false);
     }

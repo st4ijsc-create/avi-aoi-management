@@ -375,7 +375,7 @@ export function ProductCategoryManagement() {
       setImportPreview(null);
       refetch();
     } catch (error: any) {
-      toast.error(error.message || t('products.importError'));
+      toast.error(mapTrpcError(error));
     } finally {
       setIsImporting(false);
     }

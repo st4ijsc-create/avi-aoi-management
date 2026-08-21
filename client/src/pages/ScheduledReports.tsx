@@ -389,7 +389,7 @@ export function ScheduledReportsContent() {
         setIsPreviewDialogOpen(true);
       }
     } catch (error: any) {
-      toast.error(t('scheduledReports.previewError'), { description: error.message });
+      toast.error(t('scheduledReports.previewError'), { description: mapTrpcError(error) });
     }
   };
 

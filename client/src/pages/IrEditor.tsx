@@ -56,7 +56,7 @@ import {
   Boxes, ArrowLeft, Pencil, Undo2, Redo2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import {
   // Shared IR model + pure helpers (ONE source of truth for tree AND graph views).
   BLOCK_ICON, BLOCK_LABEL, PALETTE_GROUPS, COMPARE_OPS, TARGET_DEVICE_TYPES,
@@ -1152,7 +1152,7 @@ export default function IrEditor() {
         toast.error(t("ir.loadFail", "Artifact could not be parsed as an IR flow."));
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(mapTrpcError(err));
     }
   };
 

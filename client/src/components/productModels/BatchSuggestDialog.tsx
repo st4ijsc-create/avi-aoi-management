@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Dialog,
   DialogContent,
@@ -137,7 +138,7 @@ export function BatchSuggestDialog({ open, pointDefIds, onClose }: BatchSuggestD
           const rec = await utils.aiThresholdAdvisor.recommendForPoint.fetch({ measurementPointId: id });
           recs.set(id, rec);
         } catch (err: any) {
-          errs.set(id, err?.message || t("productModels.batchFetchError", "Không tính được đề xuất cho điểm này."));
+          errs.set(id, mapTrpcError(err));
         }
         if (cancelled) return;
         setFetchProgress({ done: i + 1, total: pointDefIds.length });
@@ -213,6 +214,7 @@ export function BatchSuggestDialog({ open, pointDefIds, onClose }: BatchSuggestD
       isCancelled: () => cancelSubmitRef.current,
       onProgress: (done, total) => setSubmitProgress({ done, total }),
       fallbackErrorMessage: t("productModels.batchSendItemError", "Gửi thất bại"),
+      mapError: mapTrpcError,
       send: async (item) => {
         const rec = recByPoint.get(item.pointDefId);
         await requestMutation.mutateAsync({

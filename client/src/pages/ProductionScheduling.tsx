@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   StatusBadge as PatternStatusBadge,
   type BadgeVariant,
@@ -884,7 +885,7 @@ function ThroughputWhatIfPanel({ lines }: { lines: LineRow[] }) {
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>{t("scheduling.sim.errorTitle", "Simulation unavailable")}</AlertTitle>
           <AlertDescription>
-            {sceneQ.error?.message ||
+            {(sceneQ.error ? mapTrpcError(sceneQ.error) : null) ||
               t("scheduling.sim.errorBody", "This line is not in factory #1's scene graph, or the twin is unreachable.")}
           </AlertDescription>
         </Alert>

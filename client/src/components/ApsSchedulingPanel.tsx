@@ -9,7 +9,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { getActiveLocale } from "@/lib/format";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -94,7 +94,7 @@ export default function ApsSchedulingPanel({ factoryId = 1 }: { factoryId?: numb
       const res = await utils.productionOrder.compareScheduleKpi.fetch({ factoryId });
       setCompareData(res);
     } catch (e: any) {
-      toast.error(e?.message ?? "Compare failed");
+      toast.error(mapTrpcError(e));
     } finally {
       setComparing(false);
     }

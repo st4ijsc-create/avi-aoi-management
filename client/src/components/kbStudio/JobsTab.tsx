@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Select,
   SelectContent,
@@ -76,7 +77,7 @@ export function JobsTab() {
             variant="error"
             compact
             title={t("kbStudio.jobs.loadError")}
-            description={jobsQuery.error instanceof Error ? jobsQuery.error.message : undefined}
+            description={jobsQuery.error instanceof Error ? mapTrpcError(jobsQuery.error) : undefined}
             actionLabel={t("common.retry", "Retry")}
             onAction={() => jobsQuery.refetch()}
           />

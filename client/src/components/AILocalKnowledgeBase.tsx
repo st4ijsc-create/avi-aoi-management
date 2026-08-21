@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Send,
   Loader2,
@@ -101,7 +102,7 @@ export function AILocalKnowledgeBase() {
         toast.error(result.error || t("aILocalKnowledgeBase.khongLayDuocCauTra", "Không lấy được câu trả lời."));
       }
     } catch (error: any) {
-      toast.error(error.message || t("aILocalKnowledgeBase.coLoiXayRaVui", "Có lỗi xảy ra, vui lòng thử lại."));
+      toast.error(mapTrpcError(error));
     }
   };
 
@@ -114,7 +115,7 @@ export function AILocalKnowledgeBase() {
         toast.error(result.error || t("aILocalKnowledgeBase.capNhatThatBai", "Cập nhật thất bại."));
       }
     } catch (error: any) {
-      toast.error(error.message || t("aILocalKnowledgeBase.coLoiXayRa", "Có lỗi xảy ra."));
+      toast.error(mapTrpcError(error));
     }
   };
 

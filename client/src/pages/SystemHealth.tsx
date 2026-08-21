@@ -54,7 +54,7 @@ import {
   AlertTriangle, Info, ClipboardCheck, Plug, FileDown, Boxes, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 
 // ── typed router outputs (avoid ReturnType<useQuery> overload collapse to {}) ──
 type SysOut = inferRouterOutputs<AppRouter>["systemHealth"];
@@ -191,7 +191,7 @@ function StoreForwardSection({ query }: { query: QueryLike<StoreForwardStatus> }
         </div>
       ) : query.isError ? (
         <div className="flex items-center gap-2 text-sm text-destructive py-6">
-          <AlertTriangle className="h-4 w-4" /> {query.error?.message}
+          <AlertTriangle className="h-4 w-4" /> {mapTrpcError(query.error)}
         </div>
       ) : !s ? null : (
         <div className="space-y-4">
@@ -299,7 +299,7 @@ function DbIngestHealthSection() {
         </div>
       ) : query.isError ? (
         <div className="flex items-center gap-2 text-sm text-destructive py-6">
-          <AlertTriangle className="h-4 w-4" /> {query.error?.message}
+          <AlertTriangle className="h-4 w-4" /> {mapTrpcError(query.error)}
         </div>
       ) : !d || !qm ? null : (
         <div className="space-y-4">
@@ -449,7 +449,7 @@ function ConnectionSupervisorsSection({ query }: { query: QueryLike<ConnSupervis
         </div>
       ) : query.isError ? (
         <div className="flex items-center gap-2 text-sm text-destructive p-6">
-          <AlertTriangle className="h-4 w-4" /> {query.error?.message}
+          <AlertTriangle className="h-4 w-4" /> {mapTrpcError(query.error)}
         </div>
       ) : supervisors.length === 0 ? (
         <div className="flex items-start gap-2 p-6 text-sm text-muted-foreground">
@@ -538,7 +538,7 @@ function AiModelHealthSection({ query }: { query: QueryLike<AiModelHealthOut> })
         </div>
       ) : query.isError ? (
         <div className="flex items-center gap-2 text-sm text-destructive py-6">
-          <AlertTriangle className="h-4 w-4" /> {query.error?.message}
+          <AlertTriangle className="h-4 w-4" /> {mapTrpcError(query.error)}
         </div>
       ) : !h ? null : (
         <div className="space-y-4">
@@ -697,7 +697,7 @@ function CommissioningPanel() {
         </div>
       ) : adaptersQuery.isError ? (
         <div className="flex items-center gap-2 text-sm text-destructive p-6">
-          <AlertTriangle className="h-4 w-4" /> {adaptersQuery.error?.message}
+          <AlertTriangle className="h-4 w-4" /> {mapTrpcError(adaptersQuery.error)}
         </div>
       ) : adapters.length === 0 ? (
         <div className="flex items-start gap-2 p-6 text-sm text-muted-foreground">

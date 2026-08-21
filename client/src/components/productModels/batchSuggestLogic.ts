@@ -156,6 +156,15 @@ export interface RunCancellableBatchSubmitOptions<T> {
    *  NHẤT hàm này "chạm" ra ngoài (component dùng nó để setState tiến độ). */
   onProgress?: (done: number, total: number) => void;
   fallbackErrorMessage?: string;
+  /**
+   * F1 — dịch lỗi thành câu cho người dùng. Người GỌI truyền vào (thường là
+   * `mapTrpcError`), vì file này CỐ Ý không import React/trpc/i18n để test được không
+   * cần DOM — xem docblock đầu file. Kéo `mapTrpcError` vào đây sẽ lôi theo `sonner`,
+   * `i18next` và `@trpc/client`, phá đúng tính chất khiến nó tách ra được.
+   *
+   * Không truyền ⇒ giữ hành vi cũ (`err.message` thô). Chỗ gọi trong repo đều truyền.
+   */
+  mapError?: (err: unknown) => string;
 }
 
 /**
@@ -184,7 +193,7 @@ export interface RunCancellableBatchSubmitOptions<T> {
 export async function runCancellableBatchSubmit<T>(
   opts: RunCancellableBatchSubmitOptions<T>,
 ): Promise<{ cancelled: boolean; results: SubmitOutcome[] }> {
-  const { items, getId, send, isCancelled, onProgress, fallbackErrorMessage } = opts;
+  const { items, getId, send, isCancelled, onProgress, fallbackErrorMessage, mapError } = opts;
   const results: SubmitOutcome[] = [];
   for (let i = 0; i < items.length; i++) {
     if (isCancelled()) return { cancelled: true, results };
@@ -193,7 +202,10 @@ export async function runCancellableBatchSubmit<T>(
       await send(item);
       results.push({ pointDefId: getId(item), ok: true });
     } catch (err: any) {
-      results.push({ pointDefId: getId(item), ok: false, error: err?.message || fallbackErrorMessage || "Gửi thất bại" });
+      // i18n-raw-ok: nhánh `err?.message` chỉ chạy khi người gọi KHÔNG truyền `mapError`
+      // — giữ tương thích ngược cho các ca test thuần của file này. Mọi chỗ gọi trong
+      // repo đều truyền `mapTrpcError`.
+      results.push({ pointDefId: getId(item), ok: false, error: (mapError ? mapError(err) : err?.message) || fallbackErrorMessage || "Gửi thất bại" });
     }
     if (isCancelled()) return { cancelled: true, results };
     onProgress?.(i + 1, items.length);

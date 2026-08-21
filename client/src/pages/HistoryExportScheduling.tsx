@@ -430,7 +430,7 @@ export function HistoryExportContent() {
               <Card className="p-12 text-center">
                 <AlertTriangle className="h-12 w-12 mx-auto text-destructive mb-4" />
                 <h3 className="text-lg font-medium mb-2">{t('reports.loadError')}</h3>
-                <p className="text-muted-foreground mb-4">{schedulesQuery.error?.message}</p>
+                <p className="text-muted-foreground mb-4">{mapTrpcError(schedulesQuery.error)}</p>
                 <Button onClick={() => schedulesQuery.refetch()} variant="outline">
                   <RefreshCw className="h-4 w-4 mr-2" />
                   {t('reports.retry')}

@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Info } from "lucide-react";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Select,
   SelectContent,
@@ -61,7 +62,7 @@ export function EvalTab() {
               variant="error"
               compact
               title={t("kbStudio.eval.loadError")}
-              description={previewQuery.error instanceof Error ? previewQuery.error.message : undefined}
+              description={previewQuery.error instanceof Error ? mapTrpcError(previewQuery.error) : undefined}
               actionLabel={t("common.retry", "Retry")}
               onAction={() => previewQuery.refetch()}
             />

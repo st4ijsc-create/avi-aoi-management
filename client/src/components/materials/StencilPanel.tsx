@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { AlertTriangle, Gauge, Layers, RefreshCw, Search } from "lucide-react";
 
 export default function StencilPanel() {
@@ -138,7 +138,7 @@ export default function StencilPanel() {
               {status.isLoading ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">{t("stencil.dangTai", "Đang tải…")}</p>
               ) : status.isError ? (
-                <p className="py-6 text-center text-sm text-destructive">Lỗi: {status.error?.message}</p>
+                <p className="py-6 text-center text-sm text-destructive">Lỗi: {mapTrpcError(status.error)}</p>
               ) : s ? (
                 <>
                   <div className="flex items-center justify-between">

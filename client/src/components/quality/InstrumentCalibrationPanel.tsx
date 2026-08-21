@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -271,7 +271,7 @@ function InstrumentDetail({ inst, isAdmin }: { inst: any; isAdmin: boolean }) {
           {calQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
           ) : calQuery.isError ? (
-            <p className="text-sm text-destructive">{calQuery.error.message}</p>
+            <p className="text-sm text-destructive">{mapTrpcError(calQuery.error)}</p>
           ) : (calQuery.data?.length ?? 0) === 0 ? (
             <p className="text-sm text-muted-foreground">{t("instrumentCal.noCerts")}</p>
           ) : (
@@ -308,7 +308,7 @@ function InstrumentDetail({ inst, isAdmin }: { inst: any; isAdmin: boolean }) {
           {msaQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
           ) : msaQuery.isError ? (
-            <p className="text-sm text-destructive">{msaQuery.error.message}</p>
+            <p className="text-sm text-destructive">{mapTrpcError(msaQuery.error)}</p>
           ) : (msaQuery.data?.length ?? 0) === 0 ? (
             <p className="text-sm text-muted-foreground">{t("instrumentCal.noMsa")}</p>
           ) : (
@@ -418,7 +418,7 @@ export function InstrumentCalibrationPanel() {
           {instrumentsQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
           ) : instrumentsQuery.isError ? (
-            <p className="text-sm text-destructive">{instrumentsQuery.error.message}</p>
+            <p className="text-sm text-destructive">{mapTrpcError(instrumentsQuery.error)}</p>
           ) : instruments.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("instrumentCal.noInstruments")}</p>
           ) : (

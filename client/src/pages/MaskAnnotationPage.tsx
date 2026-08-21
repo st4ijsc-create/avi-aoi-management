@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Brush, Trash2, Undo2, Save, Play, Ruler } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 interface Point { x: number; y: number; }
 interface MaskItem {
@@ -142,7 +143,7 @@ export default function MaskAnnotationPage() {
       });
       setMeasured((mm) => ({ ...mm, [m.id]: res }));
     } catch (err: any) {
-      toast.error(err?.message ?? String(err));
+      toast.error(mapTrpcError(err));
     }
   };
 
@@ -159,7 +160,7 @@ export default function MaskAnnotationPage() {
       if (res.metrology) setMeasured((mm) => ({ ...mm, [m.id]: res.metrology }));
       toast.success(t("maskAnno.saved"));
     } catch (err: any) {
-      toast.error(err?.message ?? String(err));
+      toast.error(mapTrpcError(err));
     }
   };
 
@@ -194,9 +195,10 @@ export default function MaskAnnotationPage() {
       }
     } catch (err: any) {
       // degrade trung thực: MODEL_NOT_AVAILABLE
+      // i18n-raw-ok: `msg` dùng để SO KHỚP mã máy-đọc-được, không phải để hiện.
       const msg = err?.message ?? String(err);
       if (msg.includes("MODEL_NOT_AVAILABLE")) toast.error(t("maskAnno.modelUnavailable"));
-      else toast.error(msg);
+      else toast.error(mapTrpcError(err));
     }
   };
 

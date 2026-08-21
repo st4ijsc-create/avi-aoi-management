@@ -18,6 +18,7 @@
  * KbStudioPage.tsx) renders honest UI for each instead of quietly falling back to a guess.
  */
 import type { SourceTabProps } from "./SourceTab";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 export interface KbIngestStatusQuery {
   isError: boolean;
@@ -50,7 +51,7 @@ export function resolveSourceTabState(status: KbIngestStatusQuery): SourceTabRen
   if (status.isError) {
     return {
       kind: "error",
-      message: status.error instanceof Error ? status.error.message : undefined,
+      message: status.error instanceof Error ? mapTrpcError(status.error) : undefined,
     };
   }
   if (!status.data) {

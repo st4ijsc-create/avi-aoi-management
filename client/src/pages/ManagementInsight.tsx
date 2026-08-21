@@ -24,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import ReportAggregatorsPanel from "@/components/analytics/ReportAggregatorsPanel";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Lightbulb,
   Send,
@@ -139,7 +140,7 @@ export default function ManagementInsight() {
       setAnswer(result?.reply ?? "");
       setToolsUsed(result?.toolsUsed ?? []);
     } catch (err: unknown) {
-      setAskError(err instanceof Error ? err.message : String(err));
+      setAskError(mapTrpcError(err));
     }
   };
 
@@ -301,7 +302,7 @@ export default function ManagementInsight() {
             )}
             {generateReport.isError && !genForbidden && (
               <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2.5 text-xs text-destructive">
-                {generateReport.error?.message ?? t("mgmtInsight.exec.unavailable", "Chưa thể tạo báo cáo điều hành lúc này.")}
+                {generateReport.error ? mapTrpcError(generateReport.error) : t("mgmtInsight.exec.unavailable", "Chưa thể tạo báo cáo điều hành lúc này.")}
               </div>
             )}
 

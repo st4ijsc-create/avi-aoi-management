@@ -24,6 +24,7 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -133,7 +134,7 @@ export default function ProposeDefectButton({ finding, size = "sm", variant = "o
         toast.error(res.message ?? t("visionDefect.confirmFailed", "Xác nhận thất bại"));
       }
     } catch (e: any) {
-      toast.error(e?.message ?? t("common.error", "Lỗi"));
+      toast.error(mapTrpcError(e));
     } finally {
       setSubmitting(false);
     }

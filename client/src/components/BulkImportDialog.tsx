@@ -285,7 +285,7 @@ export function BulkImportDialog({
       setParseErrors(errors);
       setParsedPoints(points);
     } catch (error: any) {
-      setParseErrors([t('products.bulkImport.readError', { message: error.message })]);
+      setParseErrors([t('products.bulkImport.readError', { message: mapTrpcError(error) })]);
       setParsedPoints([]);
     }
   };

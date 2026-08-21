@@ -7,6 +7,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { thongDiepLoiRest } from "@/lib/restAuthError";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 interface StreamMessage {
   role: "system" | "user" | "assistant";
@@ -114,7 +115,7 @@ export function useAIStream() {
         return result ?? { fullText };
       } catch (err: any) {
         if (err.name !== "AbortError") {
-          setError(err.message);
+          setError(mapTrpcError(err));
         }
         setIsStreaming(false);
         return null;

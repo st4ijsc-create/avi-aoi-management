@@ -200,6 +200,7 @@ export function MqttDashboardContent() {
       // `lastTestResult` là dump JSON kỹ thuật cho engineer debug test-alert (nút Copy +
       // hiển thị `JSON.stringify` thô ở dưới) — CỐ Ý giữ error.message nguyên văn ở đây,
       // khác với toast (câu cho người dùng cuối) đã đổi sang mapTrpcError bên dưới.
+      // i18n-raw-ok: nhật ký kỹ thuật MQTT — người vận hành cần chuỗi NGUYÊN VĂN của broker.
       setLastTestResult({ type: 'error', timestamp: new Date().toISOString(), message: error.message, code: error.data?.code });
       toast.error(t('mqtt.dashboard.errorMsg', { message: mapTrpcError(error) }));
     },

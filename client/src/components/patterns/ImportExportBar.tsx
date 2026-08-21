@@ -284,6 +284,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
         ) : (
           <span className="inline-flex items-start gap-1 text-destructive">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            // i18n-raw-ok: chẩn đoán từng DÒNG của file nhập, từ một lời gọi THÀNH CÔNG — dịch đi là mất chỗ cần sửa.
             <span>{d.errors.map((e) => e.message).join("; ")}</span>
           </span>
         ),
@@ -383,6 +384,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
                   {result.errors.slice(0, 50).map((e, i) => (
                     <div key={i}>
                       {e.row != null ? t("importExportBar.dongSo", { row: e.row }) : ""}
+                      {/* i18n-raw-ok: chẩn đoán theo TỪNG DÒNG của file nhập, từ lời gọi thành công. */}
                       {e.message}
                     </div>
                   ))}

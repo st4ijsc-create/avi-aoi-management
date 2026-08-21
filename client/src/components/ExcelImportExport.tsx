@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Upload, Download, FileSpreadsheet, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import * as XLSX from "xlsx";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 interface ExcelImportExportProps {
   entityType: string;
@@ -73,7 +74,7 @@ export function ExcelImportExport({
       if (fileInputRef.current) fileInputRef.current.value = "";
       onImportComplete?.();
     } catch (error: any) {
-      toast.error(t("excelIo.importErr", { msg: error.message }));
+      toast.error(t("excelIo.importErr", { msg: mapTrpcError(error) }));
     } finally {
       setImporting(false);
     }
@@ -86,7 +87,7 @@ export function ExcelImportExport({
       window.open(result.url, "_blank");
       toast.success(t("excelIo.exportOk", { count: result.count, entity: entityType }));
     } catch (error: any) {
-      toast.error(t("excelIo.exportErr", { msg: error.message }));
+      toast.error(t("excelIo.exportErr", { msg: mapTrpcError(error) }));
     } finally {
       setExporting(false);
     }

@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
   Key,
@@ -971,7 +971,7 @@ function ModulesTab() {
       URL.revokeObjectURL(url);
       toast.success(t('license.exportSuccess'));
     } catch (err: any) {
-      toast.error(t('license.exportError', { message: err.message || "Unknown" }));
+      toast.error(t('license.exportError', { message: mapTrpcError(err) }));
     }
   };
 

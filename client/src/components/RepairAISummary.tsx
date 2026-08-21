@@ -24,6 +24,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import MachineAISummary from "@/components/MachineAISummary";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import SimilarImageGrid, {
   type SearchMode,
   type EmbeddingSource,
@@ -78,7 +79,7 @@ export default function RepairAISummary({
       setSearchMode((result.searchMode ?? null) as SearchMode | null);
       setEmbeddingSource(((result as { embeddingSource?: EmbeddingSource }).embeddingSource ?? null));
     } catch (err) {
-      setSearchError(err instanceof Error ? err.message : t("common.error", "Lỗi"));
+      setSearchError(mapTrpcError(err));
     }
   };
 

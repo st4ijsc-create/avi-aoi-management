@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import SimilarImageGrid, { type SearchMode, type EmbeddingSource } from "@/components/ai/SimilarImageGrid";
 import ProposeDefectButton, { type ProposeDefectFinding } from "@/components/ai/ProposeDefectButton";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -191,7 +192,7 @@ function TabCompare() {
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         {t("visionLab.compare.run", "Compare")}
       </Button>
-      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.error && <p className="text-sm text-destructive">{mapTrpcError(m.error)}</p>}
       {m.data && (() => { const d = m.data as any; return (
         <div className="space-y-2">
           <div className="flex gap-2 items-center">
@@ -236,7 +237,7 @@ function TabQuality() {
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         {t("visionLab.quality.run", "Analyze quality")}
       </Button>
-      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.error && <p className="text-sm text-destructive">{mapTrpcError(m.error)}</p>}
       {m.data && <ResultJson data={m.data} />}
     </div>
   );
@@ -263,7 +264,7 @@ function TabHeatmap() {
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         {t("visionLab.heatmap.run", "Generate heatmap")}
       </Button>
-      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.error && <p className="text-sm text-destructive">{mapTrpcError(m.error)}</p>}
       {m.data && (
         <div className="space-y-3">
           <div className="text-sm flex flex-wrap items-center gap-2">
@@ -310,7 +311,7 @@ function TabOcr() {
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         {t("visionLab.ocr.run", "Extract text")}
       </Button>
-      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.error && <p className="text-sm text-destructive">{mapTrpcError(m.error)}</p>}
       {m.data && <ResultJson data={m.data} />}
     </div>
   );
@@ -340,7 +341,7 @@ function TabRoi() {
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         {t("visionLab.roi.run", "Detect ROI")}
       </Button>
-      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.error && <p className="text-sm text-destructive">{mapTrpcError(m.error)}</p>}
       {m.data && img && (
         <div className="space-y-2">
           <div className="relative inline-block border rounded">
@@ -386,7 +387,7 @@ function TabAugment() {
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         {t("visionLab.augment.run", "Generate augmented images")}
       </Button>
-      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.error && <p className="text-sm text-destructive">{mapTrpcError(m.error)}</p>}
       {m.data && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {m.data.map((a) => (
@@ -424,7 +425,7 @@ function TabVqa() {
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         {t("visionLab.vqa.run", "Ask LLaVA")}
       </Button>
-      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.error && <p className="text-sm text-destructive">{mapTrpcError(m.error)}</p>}
       {m.data && <ResultJson data={m.data} />}
     </div>
   );
@@ -480,7 +481,7 @@ function TabBatch() {
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         {t("visionLab.batch.run", "Triage {{count}} images").replace("{{count}}", String(imgs.length))}
       </Button>
-      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.error && <p className="text-sm text-destructive">{mapTrpcError(m.error)}</p>}
       {m.data && (() => { const d = m.data as any; return (
         <div className="space-y-2">
           <div className="text-sm text-muted-foreground">
@@ -540,7 +541,7 @@ function TabSimilar() {
       setSearchMode((res.searchMode ?? null) as SearchMode | null);
       setEmbeddingSource(((res as any).embeddingSource ?? null) as EmbeddingSource | null);
     } catch (e: any) {
-      toast.error(e?.message ?? t("visionLab.similar.searchFailed", "Search failed"));
+      toast.error(mapTrpcError(e));
     } finally {
       setBusy(false);
     }
@@ -624,7 +625,7 @@ function TabExplain() {
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         {t("xai.run", "Sinh heatmap giải thích")}
       </Button>
-      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.error && <p className="text-sm text-destructive">{mapTrpcError(m.error)}</p>}
       {m.data && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -689,7 +690,7 @@ function TabAnomaly() {
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         {t("anomaly.run")}
       </Button>
-      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.error && <p className="text-sm text-destructive">{mapTrpcError(m.error)}</p>}
       {m.data && (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2 items-center">

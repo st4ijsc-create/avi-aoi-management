@@ -50,6 +50,7 @@ import { RelatedViews } from "@/components/RelatedViews";
 import PollFreshness from "@/components/PollFreshness";
 import AgeLabel from "@/components/opsconsole/AgeLabel";
 import AlertGroupCard from "@/components/opsconsole/AlertGroupCard";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   type AlertGroup, type AlertSource, type ClosedAlertRow, type DecoratedAlert, type NormalAlert, type Severity,
   SEVERITY_DOT, SEVERITY_RANK, SEVERITY_TILE_SOLID, SOURCE_ICON,
@@ -332,6 +333,7 @@ export default function OpsConsole() {
         source: "andon",
         id: e.id,
         title: e.title,
+        // i18n-raw-ok: `e` là SỰ KIỆN andon, không phải Error — `message` là nội dung nghiệp vụ.
         message: e.message ?? e.reason ?? "",
         severity: andonStateToSeverity(e.state),
         acknowledged: e.status === "acknowledged",
@@ -559,7 +561,7 @@ export default function OpsConsole() {
     try {
       await (action === "ack" ? ackOneAsync(a) : resolveOneAsync(a));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message: t("opsConsole.thaoTacThatBai", "Thao tác thất bại"));
+      toast.error(mapTrpcError(e));
     } finally {
       markPending([a.key], false);
     }

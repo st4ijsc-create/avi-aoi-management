@@ -73,12 +73,68 @@ function cauChua(src, idx) {
   return src.slice(a, b);
 }
 
-/** Dòng chứa hit + dòng ngay trên nó — nơi hợp lệ để đặt dấu miễn trừ. */
+/**
+ * Thay mọi COMMENT bằng khoảng trắng cùng độ dài (giữ nguyên offset/số dòng).
+ *
+ * ⚠ HIỆU CHỈNH NHIỆT KẾ, KHÔNG PHẢI TRẢ NỢ. Mốc 139 đầu tiên đếm cả những comment
+ * NÓI VỀ `err.message` — trong đó có đúng các comment cảnh báo *"KHÔNG toast
+ * error.message ở đây"* (`Login.tsx`), tức thước đang tố chính lời cảnh báo chống lại
+ * món nợ nó đi tìm. Đây là bản sao của bài học `viStringCoverage` (623 vs 619): thước
+ * dôi ra vì cách đếm, không vì có nợ. Số giảm nhờ sửa thước phải được nói ra như vậy,
+ * nếu không lần sau sẽ có người đọc nó thành "đã sửa được ngần ấy chỗ".
+ */
+function boComment(src) {
+  let out = "";
+  let i = 0;
+  const n = src.length;
+  let trangThai = "ma"; // ma | chuoi | mau | dong | khoi
+  let dauChuoi = "";
+  while (i < n) {
+    const c = src[i];
+    const d = src[i + 1];
+    if (trangThai === "ma") {
+      if (c === "/" && d === "/") { trangThai = "dong"; out += "  "; i += 2; continue; }
+      if (c === "/" && d === "*") { trangThai = "khoi"; out += "  "; i += 2; continue; }
+      if (c === '"' || c === "'") { trangThai = "chuoi"; dauChuoi = c; out += c; i++; continue; }
+      if (c === "`") { trangThai = "mau"; out += c; i++; continue; }
+      out += c; i++; continue;
+    }
+    if (trangThai === "chuoi" || trangThai === "mau") {
+      if (c === "\\") { out += src.slice(i, i + 2); i += 2; continue; }
+      if ((trangThai === "chuoi" && c === dauChuoi) || (trangThai === "mau" && c === "`")) trangThai = "ma";
+      out += c; i++; continue;
+    }
+    if (trangThai === "dong") {
+      if (c === "\n") { trangThai = "ma"; out += c; i++; continue; }
+      out += " "; i++; continue;
+    }
+    // khoi
+    if (c === "*" && d === "/") { trangThai = "ma"; out += "  "; i += 2; continue; }
+    out += c === "\n" ? c : " ";
+    i++;
+  }
+  return out;
+}
+
+/**
+ * Dòng chứa hit + TOÀN BỘ khối comment liền kề phía trên — nơi hợp lệ đặt dấu miễn trừ.
+ *
+ * ⚠ Bản đầu chỉ nhìn ĐÚNG MỘT dòng trên. Một miễn trừ viết bằng chú thích ba dòng (lý do
+ * dài thì đương nhiên phải xuống dòng — mà cổng lại BẮT BUỘC có lý do) sẽ không được nhận,
+ * vì dòng sát hit là dòng CUỐI của khối chứ không phải dòng mang dấu. Thước phải khớp cách
+ * người ta thật sự viết comment, nếu không nó ép người dùng viết lý do một dòng cho vừa
+ * thước — tức thước làm hỏng đúng thứ nó đòi hỏi.
+ */
 function dongVaTren(src, idx) {
-  const truoc = src.slice(0, idx).split("\n");
-  const dong = truoc.length;
   const tatCa = src.split("\n");
-  return { dong, van: [tatCa[dong - 2] ?? "", tatCa[dong - 1] ?? ""].join("\n") };
+  const dong = src.slice(0, idx).split("\n").length;
+  const van = [tatCa[dong - 1] ?? ""];
+  for (let i = dong - 2; i >= 0; i--) {
+    const ln = (tatCa[i] ?? "").trim();
+    if (!ln.startsWith("//") && !ln.startsWith("*") && !ln.startsWith("/*") && !ln.startsWith("{/*")) break;
+    van.push(tatCa[i]);
+  }
+  return { dong, van: van.join("\n") };
 }
 
 /** @returns {{file:string,dong:number,cau:string}[]} mọi chỗ còn là NỢ. */
@@ -87,11 +143,14 @@ export function demRawMessage(goc = "client/src") {
   for (const file of duyetFile(goc)) {
     const rel = file.split("\\").join("/");
     if (MIEN_TRU_FILE.some((re) => re.test(rel))) continue;
-    const src = readFileSync(file, "utf8");
+    const goc = readFileSync(file, "utf8");
+    // Quét trên bản ĐÃ BỎ COMMENT (giữ nguyên offset) — nhưng dấu miễn trừ thì tra trên
+    // bản GỐC, vì bản thân dấu miễn trừ LÀ một comment.
+    const src = boComment(goc);
     for (const m of src.matchAll(CHAM_MESSAGE)) {
       const cau = cauChua(src, m.index);
       if (KHONG_PHAI_NO.some((re) => re.test(cau))) continue;
-      const { dong, van } = dongVaTren(src, m.index);
+      const { dong, van } = dongVaTren(goc, m.index);
       if (DAU_MIEN_TRU.test(van)) continue;
       no.push({ file: rel, dong, cau: cau.replace(/\s+/g, " ").trim().slice(0, 160) });
     }

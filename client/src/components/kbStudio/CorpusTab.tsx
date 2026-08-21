@@ -156,7 +156,7 @@ export function CorpusTab() {
             variant="error"
             compact
             title={t("kbStudio.corpus.loadError")}
-            description={corporaQuery.error instanceof Error ? corporaQuery.error.message : undefined}
+            description={corporaQuery.error instanceof Error ? mapTrpcError(corporaQuery.error) : undefined}
             actionLabel={t("common.retry", "Retry")}
             onAction={() => corporaQuery.refetch()}
           />

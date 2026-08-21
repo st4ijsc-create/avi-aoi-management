@@ -2,6 +2,7 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Sigma,
   FunctionSquare,
@@ -105,7 +106,7 @@ function FactoryComputePreview({ metric }: { metric: string }): React.JSX.Elemen
       ) : q.isError ? (
         <p className="text-sm text-destructive">
           {t("metricCatalog.preview.error", "Could not compute a live value")}
-          {q.error?.message ? ` — ${q.error.message}` : ""}
+          {q.error ? ` — ${mapTrpcError(q.error)}` : ""}
         </p>
       ) : q.data ? (
         <div className="space-y-1.5">

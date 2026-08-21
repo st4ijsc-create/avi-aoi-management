@@ -18,6 +18,7 @@ import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   PageHeader,
   PageContainer,
@@ -160,7 +161,7 @@ export default function ControlReadiness() {
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              {query.error?.message ??
+              {(query.error ? mapTrpcError(query.error) : null) ??
                 t("controlReadiness.loadError", "Không tải được ma trận readiness.")}
             </AlertDescription>
           </Alert>

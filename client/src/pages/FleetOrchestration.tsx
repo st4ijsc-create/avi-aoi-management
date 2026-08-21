@@ -675,7 +675,7 @@ export default function FleetOrchestration() {
             <FleetMap
               grid={occupancyGridQ.data}
               gridLoading={occupancyGridQ.isLoading}
-              gridError={occupancyGridQ.error?.message ?? null}
+              gridError={occupancyGridQ.error ? mapTrpcError(occupancyGridQ.error) : null}
               robots={(robotPositionsQ.data ?? []) as FleetRobotPos[]}
               robotsLoading={robotPositionsQ.isLoading}
               zones={zones}
@@ -896,7 +896,7 @@ export default function FleetOrchestration() {
               setResolveCode={setResolveCode}
               resolved={resolved}
               resolveLoading={resolveQ.isFetching}
-              resolveError={resolveQ.error?.message ?? null}
+              resolveError={resolveQ.error ? mapTrpcError(resolveQ.error) : null}
               onCreate={() => setCreateOpOpen(true)}
               onMap={(op) => setMapProgramFor(op)}
             />

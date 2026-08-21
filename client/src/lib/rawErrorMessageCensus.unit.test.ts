@@ -33,9 +33,27 @@ import { describe, it, expect } from "vitest";
 import { demRawMessage, duyetFile, DAU_MIEN_TRU } from "../../../scripts/rawErrorMessageScan.mjs";
 
 /**
- * Ngân sách CHỈ ĐƯỢC GIẢM. Mốc đầu đo ngày 2026-08-21: **139 chỗ / 76 file**.
+ * `139 → 107 → 76 → 70 → 30 → 28 → 22 → 4 → **0**` — nay là BẤT BIẾN, không phải ngân sách.
+ *
+ * ── HAI LẦN TRONG DÃY TRÊN LÀ HIỆU CHỈNH NHIỆT KẾ, KHÔNG PHẢI TRẢ NỢ ─────────────
+ * Phải nói rõ, nếu không người đọc sau sẽ cộng nhầm thành "đã sửa 139 chỗ":
+ *  • `76 → 70`: bộ đếm đang tính cả COMMENT nói về `err.message` — trong đó có đúng
+ *    lời cảnh báo *"⚠ KHÔNG toast `error.message` ở đây"* ở `Login.tsx`. Thước tố chính
+ *    lời cảnh báo chống lại món nợ nó đi tìm. Đã bỏ comment trước khi quét.
+ *  • `4 → 0` một phần do sửa phạm vi đọc dấu miễn trừ: bản đầu chỉ nhìn MỘT dòng trên,
+ *    nên một lý do viết ba dòng không được nhận — trong khi chính cổng này BẮT BUỘC
+ *    có lý do. Thước ép người ta viết lý do một dòng cho vừa nó là thước làm hỏng đúng
+ *    thứ nó đòi hỏi.
+ * Đây là bản sao của bài học `viStringCoverage` (623 vs 619): số giảm vì cách đếm ≠ số
+ * giảm vì hết nợ.
+ *
+ * ── SỐ THẬT ĐÃ DI TRÚ ────────────────────────────────────────────────────────────
+ * **125 chỗ** đổi sang `mapTrpcError`, **8 chỗ** giữ chuỗi thô CÓ LÝ DO viết ra tại chỗ
+ * (lỗi validate của react-hook-form · chẩn đoán từng dòng của file nhập · bảng chi tiết
+ * kỹ thuật sau `showDetails` · nhật ký MQTT · sự kiện andon vốn không phải Error ·
+ * điều kiện điều khiển luồng · nhánh tương thích ngược của một module logic thuần).
  */
-const ALLOWED_RAW_MESSAGE = 139;
+const ALLOWED_RAW_MESSAGE = 0;
 
 describe("F1 — `err.message` thô tới mắt người dùng (client)", () => {
   it("cầu chì: phép quét phải THẤY file, không thì nó đang canh tập rỗng", () => {
@@ -58,6 +76,23 @@ describe("F1 — `err.message` thô tới mắt người dùng (client)", () => 
   it("ngân sách phải bám SÁT số thật — số dư che mất nợ mới", () => {
     // `≤` một mình cho phép trả 20 chỗ rồi lặng lẽ thêm 20 chỗ mới mà cổng vẫn xanh.
     expect(ALLOWED_RAW_MESSAGE).toBe(demRawMessage().length);
+  });
+
+  it("★★★ cầu chì thứ hai: thước phải còn NHÌN THẤY nợ khi nợ xuất hiện", () => {
+    // Bất biến 0 có một điểm mù riêng: một bộ đếm HỎNG cũng trả 0, và trông y hệt
+    // "đã sạch". Ca này bơm vào một chuỗi có đúng hình dạng nợ rồi hỏi thước xem nó có
+    // thấy không — không có bước này, mọi ca trên đúng một cách vô nghĩa kể từ ngày
+    // bộ đếm hỏng. Cùng lớp lỗi với glob rỗng ở Pha 4 và với `reltuples < 0` ở lưới 0326.
+    const gia = "toast.error(err.message);";
+    const { readFileSync, writeFileSync } = require("node:fs") as typeof import("node:fs");
+    const P = "client/src/lib/__rawMessageProbe.tmp.tsx";
+    try {
+      writeFileSync(P, `export function Probe() {\n  try {} catch (err) { ${gia} }\n}\n`);
+      expect(demRawMessage().length, "thước KHÔNG thấy nợ vừa bơm vào ⇒ nó đang hỏng").toBe(1);
+    } finally {
+      try { require("node:fs").unlinkSync(P); } catch { /* đã xoá */ }
+    }
+    expect(demRawMessage().length).toBe(0);
   });
 
   it("★★★ dấu miễn trừ phải KÈM LÝ DO — không cho phép tắt cổng bằng một từ", () => {

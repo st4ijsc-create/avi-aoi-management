@@ -976,7 +976,7 @@ function GateEvaluationCard({ gate }: { gate: any }) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-destructive">{t('qualityGates.failedToEvaluate', { error: evalQuery.error.message })}</p>
+          <p className="text-sm text-destructive">{t('qualityGates.failedToEvaluate', { error: mapTrpcError(evalQuery.error) })}</p>
         </CardContent>
       </Card>
     );

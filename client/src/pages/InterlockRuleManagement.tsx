@@ -19,7 +19,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -672,7 +672,7 @@ export default function InterlockRuleManagement() {
             </Button>
 
             {testEnabled && testQuery.isLoading && <p className="text-sm text-muted-foreground">{t("interlockRules.testRunning")}</p>}
-            {testEnabled && testQuery.error && <p className="text-sm text-destructive">{testQuery.error.message}</p>}
+            {testEnabled && testQuery.error && <p className="text-sm text-destructive">{mapTrpcError(testQuery.error)}</p>}
             {testEnabled && testQuery.data && (
               <div className="rounded-md border p-3 text-sm space-y-1">
                 <div className="flex items-center gap-2">

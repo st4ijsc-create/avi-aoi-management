@@ -24,6 +24,7 @@
 import { useState, useRef, useCallback } from "react";
 import type { ToolResultPayload } from "@/components/AIToolResultCard";
 import { thongDiepLoiRest } from "@/lib/restAuthError";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 // ─── P3/D8 (doc 34) — shared image-attach helpers (reused by the chat bubble) ──
 // Kept here (AIChatPage already imports this hook) so BOTH chat surfaces share one
@@ -476,7 +477,7 @@ export function useKbChatStream() {
         if (err?.name === "AbortError") {
           abortedRef.current = true;
         } else {
-          setError(err?.message ?? "Stream error");
+          setError(mapTrpcError(err));
         }
         setIsStreaming(false);
         return null;

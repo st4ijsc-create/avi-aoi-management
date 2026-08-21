@@ -138,6 +138,7 @@ function FormDescription({ className, ...props }: React.ComponentProps<"p">) {
 
 function FormMessage({ className, ...props }: React.ComponentProps<"p">) {
   const { error, formMessageId } = useFormField();
+  // i18n-raw-ok: lỗi VALIDATE của react-hook-form, câu đã do schema quyết định.
   const body = error ? String(error?.message ?? "") : props.children;
 
   if (!body) {

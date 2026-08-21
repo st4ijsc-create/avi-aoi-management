@@ -15,7 +15,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -245,7 +245,7 @@ export default function RecipeManagement() {
       }
       parsed = value as Record<string, unknown>;
     } catch (err) {
-      setJsonError(err instanceof Error ? err.message : String(err));
+      setJsonError(mapTrpcError(err));
       return;
     }
     setJsonError(null);

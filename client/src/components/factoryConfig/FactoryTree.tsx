@@ -11,6 +11,7 @@
  */
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Building2,
   Warehouse,
@@ -110,7 +111,7 @@ export function FactoryTree({ onNavigate, className }: FactoryTreeProps): React.
         <Alert variant="destructive" className="border-destructive/30">
           <AlertTitle>{t("dataSettings.overview.loadError", "Không tải được mô hình nhà máy")}</AlertTitle>
           <AlertDescription>
-            {error instanceof Error ? error.message : null}
+            {error ? mapTrpcError(error) : null}
             <Button variant="outline" size="sm" className="mt-2" onClick={refetch}>
               {t("common.retry", "Thử lại")}
             </Button>

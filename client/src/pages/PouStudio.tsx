@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -184,7 +185,9 @@ export default function PouStudio() {
 
   const transpile = transpileQ.data as TranspileOut | undefined;
   const lint = lintQ.data as LintOut | undefined;
-  const shapeError = (transpileQ.error?.message ?? lintQ.error?.message) || null;
+  const shapeError =
+    (transpileQ.error ? mapTrpcError(transpileQ.error) : null) ??
+    (lintQ.error ? mapTrpcError(lintQ.error) : null);
 
   const errorCount = (lint?.diagnostics ?? []).filter((d) => d.severity === "error").length;
   const warnCount = (lint?.diagnostics ?? []).filter((d) => d.severity === "warn").length;
@@ -236,6 +239,7 @@ export default function PouStudio() {
     try {
       const res = await utils.programming.plcopenImport.fetch({ xml: xmlText });
       if (!res.ok) {
+        // i18n-raw-ok: chẩn đoán PLCopen từ lời gọi THÀNH CÔNG, không phải lỗi tRPC.
         toast.error(t("pou.importFail", "Import failed: {{msg}}", { msg: res.errors.map((e) => e.message).join("; ") }));
         return;
       }

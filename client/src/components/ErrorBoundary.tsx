@@ -172,6 +172,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             {showDetails && error && (
               <div className="p-3 rounded-lg bg-muted/50 overflow-auto max-h-40">
                 <p className="text-xs font-mono text-red-600 mb-2">
+                  {/* i18n-raw-ok: bảng CHI TIẾT KỸ THUẬT (font-mono, sau showDetails) — lỗi render JS, không phải lỗi tRPC. */}
                   {error.name}: {error.message}
                 </p>
                 {errorInfo && (

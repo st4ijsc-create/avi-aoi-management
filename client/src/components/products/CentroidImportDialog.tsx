@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Upload, CircuitBoard, AlertTriangle, Loader2, CheckCircle, FlipVertical, Wand2, MapPin, PlusCircle } from "lucide-react";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 interface CentroidImportDialogProps {
   open: boolean;
@@ -121,7 +122,7 @@ export function CentroidImportDialog({
         setPreview(res);
       }
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(mapTrpcError(e));
     }
   }, [text, mode, productModelId, buildColumnMapPayload, parseOptions, transformOptions, previewM, parsePreviewM]);
 
@@ -144,7 +145,7 @@ export function CentroidImportDialog({
       }
       setColumnMap(guessed);
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(mapTrpcError(err));
     }
   };
 
@@ -178,7 +179,7 @@ export function CentroidImportDialog({
         toast.info(tf("products.centroidImport.nothingApplied", "No new points (all {{s}} already existed)", { s: applied.skipped }));
       }
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(mapTrpcError(e));
     }
   };
 
@@ -213,7 +214,7 @@ export function CentroidImportDialog({
         ));
       }
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(mapTrpcError(e));
     }
   };
 

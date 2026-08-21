@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Send,
   Loader2,
@@ -1072,7 +1073,7 @@ export function AILocalChatBubble() {
       if (result.success) toast.success(t("aiChat.reloadSuccess", "Cập nhật dữ liệu thành công!"));
       else toast.error(result.error || t("aiChat.reloadFailed", "Cập nhật thất bại."));
     } catch (error: any) {
-      toast.error(error.message || t("aiChat.genericErrorFallback", "Có lỗi xảy ra."));
+      toast.error(mapTrpcError(error));
     }
   };
 

@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import {
   Upload, Trash2, Star, Download, Send, Package, RefreshCw, Smartphone, Power, PowerOff,
 } from "lucide-react";
@@ -140,7 +140,7 @@ export function SoftwareVersionsTab() {
         toast.error(data.error || "Upload failed");
       }
     } catch (err: any) {
-      toast.error(err.message || "Upload failed");
+      toast.error(mapTrpcError(err));
     } finally {
       setFactoryAlertUploading(false);
     }
@@ -157,7 +157,7 @@ export function SoftwareVersionsTab() {
         toast.error(data.error || "Push update failed");
       }
     } catch (err: any) {
-      toast.error(err.message || "Push update failed");
+      toast.error(mapTrpcError(err));
     } finally {
       setFactoryAlertPushing(false);
     }
@@ -174,7 +174,7 @@ export function SoftwareVersionsTab() {
         toast.error(data.error);
       }
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(mapTrpcError(err));
     }
   };
 
@@ -189,7 +189,7 @@ export function SoftwareVersionsTab() {
         toast.error(data.error);
       }
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(mapTrpcError(err));
     }
   };
 
@@ -205,7 +205,7 @@ export function SoftwareVersionsTab() {
         toast.error(data.error);
       }
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(mapTrpcError(err));
     }
   };
 

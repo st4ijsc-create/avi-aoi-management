@@ -20,6 +20,7 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { StatChip, StatChipRow } from "@/components/patterns";
 import { cn } from "@/lib/utils";
 import { useFactoryModel, type Finding, type Navigate } from "./factoryModel";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 export interface ConfigHealthPanelProps {
   onNavigate: Navigate;
@@ -38,7 +39,7 @@ export function ConfigHealthPanel({ onNavigate, className }: ConfigHealthPanelPr
         <Alert variant="destructive" className="border-destructive/30">
           <AlertTitle>{t("dataSettings.overview.health.loadError", "Không tải được kiểm tra cấu hình")}</AlertTitle>
           <AlertDescription>
-            {error instanceof Error ? error.message : null}
+            {error ? mapTrpcError(error) : null}
             <Button variant="outline" size="sm" className="mt-2" onClick={refetch}>
               {t("common.retry", "Thử lại")}
             </Button>

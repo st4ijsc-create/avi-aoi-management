@@ -88,7 +88,7 @@ export function ProductPackageButtons({
       if (!newCode && typeof m.code === "string") setNewCode(`${m.code}_COPY`);
       if (!newName && typeof m.name === "string") setNewName(m.name);
     } catch (err: any) {
-      toast.error(t("products.package.invalidFile", { message: err?.message ?? "" }));
+      toast.error(t("products.package.invalidFile", { message: mapTrpcError(err) }));
       setPkg(null);
       setPkgSummary("");
     }

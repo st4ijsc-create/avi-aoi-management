@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Sparkles,
   FileText,
@@ -127,7 +128,7 @@ export default function AnalysisHubSection() {
       else if (selected.id === "executive_summary") res = await execM.mutateAsync(base);
       setResult(res);
     } catch (err: unknown) {
-      setRunError(err instanceof Error ? err.message : String(err));
+      setRunError(mapTrpcError(err));
     }
   };
 
@@ -154,7 +155,7 @@ export default function AnalysisHubSection() {
             </div>
           ) : capsQ.error ? (
             <div className="text-sm text-destructive flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4" /> {capsQ.error.message}
+              <AlertTriangle className="h-4 w-4" /> {mapTrpcError(capsQ.error)}
             </div>
           ) : allCaps.length === 0 ? (
             <div className="text-sm text-muted-foreground py-4 text-center">

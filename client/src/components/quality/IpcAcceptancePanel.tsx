@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -98,7 +99,7 @@ export function IpcAcceptancePanel() {
           {profileQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
           ) : profileQuery.isError ? (
-            <p className="text-sm text-destructive">{profileQuery.error.message}</p>
+            <p className="text-sm text-destructive">{mapTrpcError(profileQuery.error)}</p>
           ) : items.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("ipcAcceptance.none")}</p>
           ) : (

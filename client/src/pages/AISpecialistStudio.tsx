@@ -40,6 +40,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Card,
   CardContent,
@@ -190,7 +191,7 @@ export default function AISpecialistStudio() {
       });
       setSessionId(res.sessionId);
     } catch (err: any) {
-      toast.error(err?.message || t("specialistStudio.dispatch.dispatchError", "Không giao được việc — thử lại."));
+      toast.error(mapTrpcError(err));
     }
   }
 
@@ -781,7 +782,7 @@ export function FeedbackBar({ sessionId }: { sessionId: number }) {
       });
       setSaved(true);
     } catch (err: any) {
-      toast.error(err?.message || t("specialistStudio.feedback.saveError", "Không ghi được đánh giá — thử lại."));
+      toast.error(mapTrpcError(err));
     }
   }
 
@@ -920,7 +921,7 @@ function SpecialistAuditTab({ onSessionStarted }: { onSessionStarted: (sessionId
       const res = await runAudit.mutateAsync({ presetId });
       onSessionStarted(res.sessionId);
     } catch (err: any) {
-      toast.error(err?.message || t("specialistStudio.audit.runError", "Không chạy được audit — thử lại."));
+      toast.error(mapTrpcError(err));
     }
   }
 

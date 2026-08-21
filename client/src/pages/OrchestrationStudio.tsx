@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { toast } from "sonner";
@@ -1262,7 +1262,7 @@ export default function OrchestrationStudio() {
       if (res?.ok) setSimPass({ hash: submittedHash, token: (res as { simToken?: string }).simToken });
       else setSimPass(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(mapTrpcError(err));
     } finally {
       setSimulating(false);
     }
@@ -1304,7 +1304,7 @@ export default function OrchestrationStudio() {
         toast.error(res.message ?? t("studio.aiInvalid", "AI could not produce a valid workflow"));
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(mapTrpcError(err));
     } finally {
       setAiBusy(false);
     }
@@ -1334,7 +1334,7 @@ export default function OrchestrationStudio() {
         toast.error(res.message ?? t("studio.aiInvalid", "AI could not produce a valid workflow"));
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(mapTrpcError(err));
     } finally {
       setAiBusy(false);
     }

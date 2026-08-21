@@ -44,6 +44,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Box, Factory, Cpu, Bot, Activity, AlertTriangle, ListChecks, RefreshCw, Info,
   Radio, History, Play, Pause, RotateCcw, Wifi, WifiOff, Eye, Tag, Boxes, Layers,
@@ -617,7 +618,7 @@ export function DigitalTwinCenterContent() {
       link.remove();
       URL.revokeObjectURL(url);
     } catch (err: unknown) {
-      setExportError(err instanceof Error ? err.message : String(err));
+      setExportError(mapTrpcError(err));
     } finally {
       setExporting(false);
     }

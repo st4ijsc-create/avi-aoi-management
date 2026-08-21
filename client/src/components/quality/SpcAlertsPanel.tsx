@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -95,7 +95,7 @@ export function SpcAlertsPanel({ scope }: { scope: SpcScope }) {
           {alertsQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
           ) : alertsQuery.isError ? (
-            <p className="text-sm text-destructive">{alertsQuery.error.message}</p>
+            <p className="text-sm text-destructive">{mapTrpcError(alertsQuery.error)}</p>
           ) : alerts.length === 0 ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
@@ -168,7 +168,7 @@ export function SpcAlertsPanel({ scope }: { scope: SpcScope }) {
           ) : defectStatsQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
           ) : defectStatsQuery.isError ? (
-            <p className="text-sm text-destructive">{defectStatsQuery.error.message}</p>
+            <p className="text-sm text-destructive">{mapTrpcError(defectStatsQuery.error)}</p>
           ) : topDefects.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("mpDefectStats.none")}</p>
           ) : (

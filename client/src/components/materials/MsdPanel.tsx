@@ -14,7 +14,7 @@ import { useMemo, useState } from "react";
 import i18n from "@/i18n";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -175,7 +175,7 @@ export default function MsdPanel() {
             {active.isLoading ? (
               <p className="py-6 text-center text-sm text-muted-foreground">{t("msd.dangTai", "Đang tải…")}</p>
             ) : active.isError ? (
-              <p className="py-6 text-center text-sm text-destructive">Lỗi tải dữ liệu: {active.error?.message}</p>
+              <p className="py-6 text-center text-sm text-destructive">Lỗi tải dữ liệu: {mapTrpcError(active.error)}</p>
             ) : rows.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">{t("msd.chuaCoExposureNaoDang", "Chưa có exposure nào đang mở.")}</p>
             ) : (

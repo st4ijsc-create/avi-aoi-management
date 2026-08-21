@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { navItems } from '@/lib/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import * as XLSX from 'xlsx';
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 export function ImportExportContent() {
   const { t } = useTranslation();
@@ -74,8 +75,8 @@ export function ImportExportContent() {
         toast.warning(t('importExport.importPartial', { success: result.success, failed: result.failed }));
       }
     } catch (error: any) {
-      toast.error(t('importExport.importFailed', { message: error.message }));
-      setImportResult({ success: 0, failed: 0, errors: [error.message] });
+      toast.error(t('importExport.importFailed', { message: mapTrpcError(error) }));
+      setImportResult({ success: 0, failed: 0, errors: [mapTrpcError(error)] });
     } finally {
       setImporting(false);
     }
@@ -167,7 +168,7 @@ export function ImportExportContent() {
       window.open(result.url, '_blank');
       toast.success(t('importExport.exportSuccess', { count: result.count, type: 'inspection records' }));
     } catch (error: any) {
-      toast.error(t('importExport.exportFailed', { message: error.message }));
+      toast.error(t('importExport.exportFailed', { message: mapTrpcError(error) }));
     } finally {
       setExporting(false);
     }
@@ -189,7 +190,7 @@ export function ImportExportContent() {
       window.open(result.url, '_blank');
       toast.success(t('importExport.statisticsExported'));
     } catch (error: any) {
-      toast.error(t('importExport.exportFailed', { message: error.message }));
+      toast.error(t('importExport.exportFailed', { message: mapTrpcError(error) }));
     } finally {
       setExporting(false);
     }
@@ -214,7 +215,7 @@ export function ImportExportContent() {
       window.open(result.url, '_blank');
       toast.success(t('importExport.exportSuccess', { count: result.count, type }));
     } catch (error: any) {
-      toast.error(t('importExport.exportFailed', { message: error.message }));
+      toast.error(t('importExport.exportFailed', { message: mapTrpcError(error) }));
     } finally {
       setExporting(false);
     }

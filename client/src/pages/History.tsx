@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { 
   Search, 
   Filter, 
@@ -715,7 +716,7 @@ export default function History() {
       await utils.inspection.search.invalidate();
     } catch (error) {
       console.error("Bulk acknowledge error:", error);
-      toast.error(error instanceof Error && error.message ? error.message : t("history.acknowledgeError"));
+      toast.error(mapTrpcError(error));
     } finally {
       setIsBulkAcknowledging(false);
     }

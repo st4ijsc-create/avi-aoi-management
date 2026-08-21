@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   LineChart,
   Line,
@@ -375,7 +376,7 @@ export default function AIInspectionAnalyticsPage() {
                   icon={TrendingUp}
                   isLoading={batch.trend.isLoading}
                   isError={batch.trend.isError}
-                  errorMessage={batch.trend.error?.message}
+                  errorMessage={mapTrpcError(batch.trend.error)}
                   onRefresh={() => batch.trend.refetch()}
                   onExport={handleExportChartData}
                 >
@@ -419,7 +420,7 @@ export default function AIInspectionAnalyticsPage() {
                   icon={BarChart3}
                   isLoading={batch.pareto.isLoading}
                   isError={batch.pareto.isError}
-                  errorMessage={batch.pareto.error?.message}
+                  errorMessage={mapTrpcError(batch.pareto.error)}
                   onRefresh={() => batch.pareto.refetch()}
                 >
                   {batch.pareto.data?.length ? (

@@ -850,7 +850,7 @@ function EmailPreviewDialog({
             <div className="flex flex-col items-center justify-center h-96 text-center">
               <Mail className="h-12 w-12 text-destructive mb-4" />
               <h3 className="text-lg font-semibold text-destructive mb-2">{t('reports.errorLoadPreview')}</h3>
-              <p className="text-sm text-muted-foreground">{error.message}</p>
+              <p className="text-sm text-muted-foreground">{mapTrpcError(error)}</p>
             </div>
           ) : data ? (
             <div className="h-[60vh] overflow-auto border rounded-lg bg-white">

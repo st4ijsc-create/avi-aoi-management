@@ -66,6 +66,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { mapAppRoleToAiRole } from "@/lib/aiRole";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   useKbChatStream,
   type KbPendingAction,
@@ -713,7 +714,7 @@ export default function AICodingWorkspace() {
         ...(truoc.cauHoiGoc ? { cauHoi: truoc.cauHoiGoc } : {}),
       });
     } catch (e) {
-      dungVong("loi", e instanceof Error ? e.message : String(e));
+      dungVong("loi", mapTrpcError(e));
       return;
     }
 
