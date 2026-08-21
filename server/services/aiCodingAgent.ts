@@ -430,6 +430,60 @@ export function personaSuaTep(lang: NgonNguMa, nguCanhDuAn: string): string {
   return nguCanhDuAn ? `${than}\n\n${nguCanhDuAn}` : than;
 }
 
+/**
+ * ★★★ doc 79 (2026-08-20) — Persona **TẠO TỆP MỚI**.
+ *
+ * ⚠ Vì sao KHÔNG dùng lại `personaSuaTep`: nguyên tắc 2 của nó (*"GIỮ NGUYÊN từng ký tự mọi phần
+ * không liên quan"*) nói về một tệp gốc **không tồn tại** trong lượt này. Một persona dặn model giữ
+ * nguyên thứ không có là một lệnh vô nghĩa, và model 30B trả lời lệnh vô nghĩa bằng cách bịa ra một
+ * "nội dung hiện tại" để mà giữ — đúng lớp lỗi đã đo ở VÁ LIVE 2026-08-20 (persona đẩy tới chỗ bịa).
+ * ⇒ Ràng buộc ở đây ngược lại: tệp phải **ĐỘC LẬP, biên dịch được, không tham chiếu thứ chưa có**.
+ */
+export function personaTaoTep(lang: NgonNguMa, nguCanhDuAn: string): string {
+  const than = w(
+    lang,
+    [
+      "Bạn là KỸ SƯ LẬP TRÌNH đang TẠO MỘT TỆP MỚI trong repo thật. Tệp này CHƯA TỒN TẠI.",
+      "",
+      "ĐẦU RA BẮT BUỘC:",
+      "1. ĐÚNG MỘT khối ```<ngôn ngữ> chứa TOÀN BỘ nội dung tệp mới, từ dòng đầu tới dòng cuối.",
+      "2. Tệp phải ĐỘC LẬP: đủ import/namespace/khai báo để nó tự biên dịch được.",
+      "3. KHÔNG bịa ra 'nội dung hiện tại' — không có nội dung hiện tại nào. KHÔNG viết patch/diff.",
+      "4. Bám đúng quy ước của đuôi tệp và của dự án đang mở (nếu ngữ cảnh dưới đây có nói).",
+      "5. SAU khối mã, viết tối đa 3 gạch đầu dòng nói tệp này làm gì.",
+      "",
+      "Không đủ thông tin để viết một tệp hoàn chỉnh thì NÊU GIẢ ĐỊNH rồi vẫn viết tệp hoàn chỉnh;",
+      "ĐỪNG trả về một tệp cắt cụt hoặc một khung rỗng.",
+    ].join("\n"),
+    [
+      "You are a SOFTWARE ENGINEER CREATING A NEW FILE in a real repository. The file does NOT exist yet.",
+      "",
+      "REQUIRED OUTPUT:",
+      "1. EXACTLY ONE ```<language> block containing the ENTIRE new file, first line to last.",
+      "2. The file must be SELF-CONTAINED: all imports/namespace/declarations needed to compile.",
+      "3. Do NOT invent 'current content' — there is none. Do NOT write a patch/diff.",
+      "4. Follow the conventions of the file extension and of the open project (if described below).",
+      "5. AFTER the block, at most 3 bullets on what the file does.",
+      "",
+      "If information is missing, STATE YOUR ASSUMPTIONS and still write a complete file;",
+      "never return a truncated file or an empty skeleton.",
+    ].join("\n"),
+    [
+      "你是正在真实仓库中新建一个文件的软件工程师。该文件尚不存在。",
+      "",
+      "输出要求：",
+      "1. 恰好一个 ```<语言> 代码块，包含新文件的完整内容（首行到末行）。",
+      "2. 文件必须自包含：包含可编译所需的全部 import/命名空间/声明。",
+      "3. 不要臆造“当前内容”——并不存在。不要写补丁/diff。",
+      "4. 遵循该扩展名以及所打开项目（若下文有说明）的约定。",
+      "5. 代码块之后，最多 3 条要点说明该文件的作用。",
+      "",
+      "信息不足时，先说明你的假设，然后仍然写出完整文件；绝不要返回截断文件或空骨架。",
+    ].join("\n"),
+  );
+  return nguCanhDuAn ? `${than}\n\n${nguCanhDuAn}` : than;
+}
+
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // BÓC KHỐI MÃ + ĐỒNG BỘ KẾT THÚC DÒNG
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -471,6 +525,22 @@ export function dongBoXuongDong(goc: string, moi: string): string {
   if (gocKetBangDong && !moiKetBangDong) ra += gocCrlf ? "\r\n" : "\n";
   else if (!gocKetBangDong && moiKetBangDong) ra = ra.replace(/\r?\n$/, "");
   return ra;
+}
+
+/**
+ * ★★★ doc 79 (2026-08-20) — chuẩn hoá nội dung một tệp **MỚI TINH**.
+ *
+ * ⚠⚠ VÌ SAO KHÔNG DÙNG `dongBoXuongDong("", moi)`: hàm ấy suy kiểu xuống dòng và việc-có-dòng-cuối
+ * **TỪ TỆP GỐC**. Với `goc === ""` thì `/\r?\n$/.test("")` là `false`, nên nó sẽ **CẮT** dòng trống
+ * cuối của tệp mới — đẻ ra một tệp không kết thúc bằng newline ở mọi lượt tạo. Một hàm suy-từ-gốc
+ * áp lên một lượt KHÔNG CÓ GỐC là dùng sai công cụ, và cái sai ấy im lặng.
+ *
+ * Luật ở đây tự nó phát biểu được: LF, đúng **một** dòng trống cuối (quy ước POSIX/git/mọi linter
+ * trong repo này). Tệp mới không có "kiểu cũ" để bám, nên phải có một quy ước, và nó phải viết ra.
+ */
+export function chuanHoaTepMoi(noiDung: string): string {
+  const lf = noiDung.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+  return lf === "" ? "" : `${lf}\n`;
 }
 
 /** Nhãn ngôn ngữ cho khối ``` theo đuôi tệp — chỉ để prompt đọc tự nhiên, không phải cổng an toàn. */
@@ -562,6 +632,38 @@ export function promptSuaTep(
       "Trả về TOÀN BỘ tệp sau khi sửa trong một khối mã duy nhất.",
       "Return the ENTIRE file after the edit in a single code block.",
       "在唯一一个代码块中返回修改后的整个文件。",
+    ),
+  ].join("\n");
+}
+
+/**
+ * ★★★ doc 79 (2026-08-20) — prompt **TẠO TỆP MỚI**. Khác `promptSuaTep` ở đúng một chỗ có tải
+ * trọng: **KHÔNG có khối "NỘI DUNG HIỆN TẠI"**, vì không có nội dung hiện tại. Nhét một khối rỗng
+ * vào đó là mời model điền cho đầy.
+ *
+ * ⚠ Vẫn nêu ĐƯỜNG DẪN: đuôi tệp quyết định ngôn ngữ, và thư mục cha là ngữ cảnh kiến trúc rẻ nhất
+ *   ta có (`server/routers/x.ts` ≠ `client/src/lib/x.ts` dù cùng đuôi).
+ */
+export function promptTaoTep(duong: string, yeuCau: string, lang: NgonNguMa, khoiLichSu = ""): string {
+  const nhan = nhanNgonNgu(duong);
+  return [
+    ...(khoiLichSu ? [khoiLichSu, ""] : []),
+    w(lang, `Tệp MỚI cần tạo: ${duong}`, `NEW file to create: ${duong}`, `要创建的新文件：${duong}`),
+    w(
+      lang,
+      "(Tệp này CHƯA tồn tại trên đĩa — đã kiểm bằng read_file trong chính lượt này.)",
+      "(This file does NOT exist on disk — verified with read_file in this very turn.)",
+      "（该文件在磁盘上不存在——本轮已用 read_file 验证。）",
+    ),
+    "",
+    w(lang, "=== YÊU CẦU ===", "=== REQUEST ===", "=== 需求 ==="),
+    yeuCau,
+    "",
+    w(
+      lang,
+      `Trả về TOÀN BỘ nội dung tệp mới trong một khối mã duy nhất (\`\`\`${nhan}).`,
+      `Return the ENTIRE new file content in a single code block (\`\`\`${nhan}).`,
+      `在唯一一个代码块中返回新文件的完整内容（\`\`\`${nhan}）。`,
     ),
   ].join("\n");
 }

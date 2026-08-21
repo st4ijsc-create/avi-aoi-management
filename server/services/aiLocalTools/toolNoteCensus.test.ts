@@ -219,6 +219,26 @@ const CENSUS: Record<string, XepLoai> = {
   GIT_STATUS_FAILED: "chan",
   NO_CHANGE: "chan",
   FILE_TOO_LARGE: "chan",
+  // ── doc 79 (2026-08-20) — GHI LÔ (`writeHandlers/applyDiffBatch.ts`) ────────────────────────
+  /**
+   * ⚠⚠ BA MÃ MỚI, TẤT CẢ `chan` — và mã thứ hai là mã QUAN TRỌNG NHẤT trong cả bảng này.
+   *
+   *   • `BATCH_REJECTED`       — ít nhất một tệp trong lô đỏ ở pha phán quyết ⇒ **0 byte được ghi**.
+   *     Cùng họ với `BASE_MISMATCH`/`FILE_DIRTY`, chỉ khác là nó gộp N lời từ chối. `textSummary`
+   *     nêu ĐÍCH DANH từng mục (`#3 src/x.ts → FILE_DIRTY: …`); để LLM văn vẻ hoá là mời nó rút gọn
+   *     N dòng ấy thành *"có lỗi"* — người dùng mất đúng thứ giúp họ sửa.
+   *   • `BATCH_PARTIAL`        — **cây làm việc đang NỬA VỜI**: một phần tệp ĐÃ trên đĩa, phần còn
+   *     lại thì chưa. Đây là ca `chan` không thương lượng: `textSummary` liệt kê chính xác tệp nào
+   *     đã ghi và tệp nào chưa, và một model diễn giải lại rất dễ cho ra *"đã áp xong"* hoặc
+   *     *"không áp được"* — **cả hai đều SAI**, và cả hai đều dẫn người dùng đi sai hướng khi họ
+   *     đang đứng trước một repo hỏng một nửa. Chiều mặc định CHẶN cứu đúng ca này.
+   *   • `BATCH_DUPLICATE_PATH` — cùng một tệp hai lần trong lô ⇒ mục sau neo băm vào nội dung
+   *     TRƯỚC khi mục trước ghi ⇒ đã cũ ngay lúc sinh ra. Lượt từ chối, `data` rỗng.
+   * (BUDGET_EXCEEDED · MISSING_REQUIRED_ARG đã có ở trên — lô DÙNG LẠI, không đẻ mã trùng nghĩa.)
+   */
+  BATCH_REJECTED: "chan",
+  BATCH_PARTIAL: "chan",
+  BATCH_DUPLICATE_PATH: "chan",
 };
 
 describe("§1 — mọi mã `note` trong mã nguồn đều đã được PHÁN QUYẾT", () => {

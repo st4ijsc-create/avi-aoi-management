@@ -62,6 +62,7 @@ import {
   readConfined,
   writeConfined,
   type ConfinedTarget,
+  type ConfinedWriteOutcome,
 } from "../readToolsProgramming";
 import {
   MA_TU_CHOI_HOP_CAT,
@@ -106,7 +107,7 @@ function bam(s: string): string {
   return createHash("sha256").update(s, "utf8").digest("hex");
 }
 
-function trich(text: string): string {
+export function trich(text: string): string {
   const che = redactSecretsOnly(text).text;
   return che.length > TRICH ? `${che.slice(0, TRICH)}\n…(${che.length} ký tự)` : che;
 }
@@ -134,7 +135,7 @@ function demDong(text: string): number {
  *   • `BUDGET_EXCEEDED`   — hết ngân sách byte của phiên ⇒ chờ, không phải hệ hỏng.
  *   • `WRITE_ERROR`       — cửa ghi (`writeConfined`) hỏng ⇒ lỗi hệ tệp thật.
  */
-type MaApplyDiff =
+export type MaApplyDiff =
   | "PATH_REJECTED"
   | "DENIED_SECRET"
   | "DENIED_DIR"
@@ -149,7 +150,7 @@ type MaApplyDiff =
   | "BUDGET_EXCEEDED"
   | "WRITE_ERROR";
 
-function cauTuChoi(ma: MaApplyDiff, chiTiet: string, lang: ToolLang): string {
+export function cauTuChoi(ma: MaApplyDiff, chiTiet: string, lang: ToolLang): string {
   switch (ma) {
     case "PATH_REJECTED":
       return w(
@@ -249,13 +250,14 @@ function cauTuChoi(ma: MaApplyDiff, chiTiet: string, lang: ToolLang): string {
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // PHÁN QUYẾT — bốn hàng rào, dùng CHUNG cho `preview` VÀ `execute`
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-interface ThamSo {
+export interface ThamSo {
   path: string;
   original: string;
   modified: string;
 }
 
-const thamSo = z
+/** ★ Hình dạng MỘT mục — dùng chung với `apply_diff_batch` để KHÔNG có hai lược đồ trôi khỏi nhau. */
+export const thamSoMotTep = z
   .object({
     path: z.string().min(1).max(1024),
     original: z.string().max(TRAN_TEP),
@@ -263,7 +265,9 @@ const thamSo = z
   })
   .strict();
 
-type PhanQuyet =
+const thamSo = thamSoMotTep;
+
+export type PhanQuyet =
   | {
       ok: true;
       target: ConfinedTarget;
@@ -275,6 +279,9 @@ type PhanQuyet =
     }
   | { ok: false; ma: MaApplyDiff; chiTiet: string };
 
+/** Nhánh XANH của `phanQuyet` — thứ DUY NHẤT mở được cửa ghi. */
+export type PhanQuyetXanh = Extract<PhanQuyet, { ok: true }>;
+
 /**
  * ★ Bốn hàng rào, theo đúng thứ tự (rẻ và không-I/O trước, sinh-tiến-trình sau):
  *   1. CHÍNH SÁCH đường dẫn (`phanQuyetDuongDan` + đuôi) — thuần, trước mọi I/O.
@@ -285,7 +292,7 @@ type PhanQuyet =
  * ⚠ Cùng một hàm cho preview và execute ⇒ **không có đường nào tại confirm bỏ qua một hàng rào mà
  *   propose đã kiểm** — đó chính là điểm của hàng rào TOCTOU (kiểm LẠI tại confirm).
  */
-async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQuyet> {
+export async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQuyet> {
   // 1. CHÍNH SÁCH đường dẫn (dùng lại nguyên mã pha A).
   const maPath = phanQuyetDuongDan(p.path);
   if (maPath !== null) {
@@ -360,6 +367,23 @@ async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQuyet> {
     bamSau: bam(p.modified),
   };
 }
+
+/**
+ * ★★★ 2026-08-20 · LÔ NHIỀU TỆP — **CỬA GHI CỦA NHÓM TOOL REPO, VÀ CHỈ MỘT.**
+ *
+ * `apply_diff` (một tệp) và `apply_diff_batch` (một lô) đều đi qua ĐÚNG hàm này, nên:
+ *   • `programmingFileIo.census.test.ts` vẫn thấy **một** điểm gọi `writeConfined` trong cây tool —
+ *     một tool ghi thứ hai KHÔNG đẻ ra một điểm chạm đĩa thứ hai;
+ *   • bất biến *"chỉ một `PhanQuyetXanh` mới ghi được"* nằm trên KIỂU: không có `PhanQuyetXanh` thì
+ *     không gọi được hàm này, mà `PhanQuyetXanh` chỉ `phanQuyet()` sinh ra được — tức **mọi** lượt
+ *     ghi đều đã đi qua bốn hàng rào, kể cả lượt ghi thứ ba trong một lô.
+ */
+export function ghiTheoPhanQuyet(pq: PhanQuyetXanh, modified: string): ConfinedWriteOutcome {
+  return writeConfined(pq.target, modified);
+}
+
+/** Khoá sổ ngân sách — export để lô dùng CÙNG sổ, không mở sổ riêng. */
+export { khoaNganSach as khoaNganSachApDung };
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // PREVIEW — PHÁN QUYẾT + MÔ TẢ. **KHÔNG GHI GÌ.**
@@ -514,7 +538,7 @@ export const applyDiffTool: Tool<ThamSo, DuLieuApDung> = {
 
     // ── GHI qua cửa DUY NHẤT. `writeConfined` kiểm LẠI nlink/isFile trên chính fd (chống TOCTOU ở
     //    tầng đĩa) trước khi cắt một byte nào.
-    const res = writeConfined(pq.target, p.modified);
+    const res = ghiTheoPhanQuyet(pq, p.modified);
     if (!res.ok) {
       if (res.kind === "NOT_A_FILE") return napLoi("NOT_A_FILE", pq.relPath);
       if (res.kind === "PATH_REJECTED") return napLoi("PATH_REJECTED", res.reason);

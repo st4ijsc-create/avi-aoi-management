@@ -35,6 +35,10 @@ import "./writeHandlers/repoCommand";
 // bẩn (git status của đúng tệp) · băm chống TOCTOU (so ở propose + confirm) · hộp cát (writeConfined,
 // cùng cửa đã tôi qua đột biến) · RBAC ai_repo_read/canEdit. KHÔNG viết cửa ghi thứ hai.
 import "./writeHandlers/applyDiff";
+// doc 79 (2026-08-20) — `apply_diff_batch`: MỘT thẻ duyệt cho N tệp. Là VỎ CHỨA thuần trên chính
+// `phanQuyet()`/`ghiTheoPhanQuyet()` của `applyDiff.ts` ⇒ **mỗi tệp giữ băm neo RIÊNG**, không có
+// "một băm cho cả lô", và KHÔNG có cửa ghi thứ hai ra đĩa.
+import "./writeHandlers/applyDiffBatch";
 // Pha 4 Task 4 — VRAM broker state (READ-ONLY). Đây là NGƯỜI ĐỌC THẬT của `buildVramAgentState()`
 // cho AI Agent: Agent repo này đi qua toolRegistry, KHÔNG qua tRPC. Ba lệnh phá huỷ CỐ Ý không
 // đăng ký ở đây — xem khối đầu `vramTools.ts`.

@@ -17,21 +17,24 @@ import {
  * *"câu này có nêu một đường dẫn tệp không?"* trước khi quyết định ĐỌC hay SỬA. Nhập từ module con
  * để KHÔNG mở thêm một bộ trích đường dẫn thứ hai (hai bộ trích = hai sự thật về cùng một câu).
  */
-import { classifyCodingToolIntent } from "./aiLocalTools/intentClassifier";
+import { classifyCodingToolIntent, trichMoiDuongDanRepo } from "./aiLocalTools/intentClassifier";
 /**
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
  * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
  */
 import {
   bocKhoiMa,
+  chuanHoaTepMoi,
   codingEditEnabled,
   codingGenEnabled,
   codingModelSanSang,
   dongBoXuongDong,
   personaSinhMa,
   personaSuaTep,
+  personaTaoTep,
   promptSinhMa,
   promptSuaTep,
+  promptTaoTep,
   rutChuCoCanh,
   streamCodingModel,
   tranTokenChoTep,
@@ -2773,12 +2776,28 @@ async function* streamCodingAnswer(
    * ⚠ Bộ chọn tất định KHÔNG bị sửa một byte ⇒ lưới A/B (`codingToolIntent.test.ts` §5) không đổi.
    */
   const quyetDinh = classifyCodingToolIntent(question);
-  if (
-    quyetDinh.tool === "read_file" &&
-    typeof quyetDinh.args.path === "string" &&
-    laYDinhSuaTep(question)
-  ) {
-    const daXuLy = yield* streamCodingEdit(question, quyetDinh.args.path, language, context, execCtx2, history);
+  /**
+   * ★★★ doc 79 (2026-08-20) — GHI: **MỘT tệp hay NHIỀU tệp**, và ý định TẠO.
+   *
+   * `yDinhGhi` gộp SỬA và TẠO vì cả hai đều dẫn tới cùng một nhánh; nhánh ấy tự phân xử bằng ĐĨA
+   * (xem ngã ba trong `streamCodingEdit`). Trước lượt này chỉ có `laYDinhSuaTep`, và danh sách động
+   * từ của nó **không có `tao`** — đó là toàn bộ lý do câu *"tạo file mới src/utils/date.ts"* rơi
+   * xuống đường ĐỌC rồi trả *"không tìm thấy tệp"* cho một tệp mà người dùng biết thừa là chưa có.
+   *
+   * ⚠⚠ Đường NHIỀU TỆP đứng TRƯỚC và điều kiện của nó là **≥2 đường dẫn NGƯỜI DÙNG TỰ GÕ**
+   * (`trichMoiDuongDanRepo`, tất định). KHÔNG có đường nào để model tự chọn danh sách tệp: phép đo
+   * live 2026-08-19 cho thấy bộ chọn LLM bịa ra một đường dẫn tệp lõi cho một câu không nêu tệp
+   * nào — nhân chuyện đó lên 6 tệp là điều tệ nhất có thể làm ở một tool ghi.
+   */
+  const yDinhTao = laYDinhTaoTep(question);
+  const yDinhGhi = laYDinhSuaTep(question) || yDinhTao;
+  if (quyetDinh.tool === "read_file" && typeof quyetDinh.args.path === "string" && yDinhGhi) {
+    const nhieuDuong = trichMoiDuongDanRepo(question);
+    if (nhieuDuong.length >= 2) {
+      const daXuLyLo = yield* streamCodingSuaNhieuTep(question, nhieuDuong, language, context, execCtx2, history, yDinhTao);
+      if (daXuLyLo) return;
+    }
+    const daXuLy = yield* streamCodingEdit(question, quyetDinh.args.path, language, context, execCtx2, history, yDinhTao);
     if (daXuLy) return;
   }
 
@@ -2907,6 +2926,23 @@ async function* streamCodingAnswer(
 // ★★★ doc 79 · TRỤC 1 (C) — Ý ĐỊNH SỬA · NGỮ CẢNH DỰ ÁN · HAI NHÁNH GỌI MODEL
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
+/**
+ * ★ Trần token ĐẦU RA cho một lượt **TẠO** tệp. Không suy được từ `goc.length` (gốc rỗng), nên nó
+ * là một hằng riêng: ~4.000 token ≈ 10 KB mã — đủ cho gần hết tệp nguồn viết mới, và vẫn để lại
+ * ~28.700 token dư địa trên slot 32.768 cho persona + lịch sử.
+ */
+const TRAN_TOKEN_TAO_TEP = 4_000;
+
+/**
+ * ★★ Trần số tệp mà đường **SỬA NHIỀU TỆP** chịu xử lý trong một lượt.
+ *
+ * ⚠ Đây là trần của LƯỢT NGƯỜI DÙNG, và nó **thấp hơn** trần của thẻ duyệt
+ * (`applyDiffBatch.TRAN_TEP_MOI_LO = 8`) một cách có chủ ý: mỗi tệp tốn MỘT lượt gọi model 30B
+ * (~30 s). Sáu tệp đã là ~3 phút người dùng ngồi nhìn màn hình. Trần thấp hơn ⇒ hai trần KHÔNG BAO
+ * GIỜ mâu thuẫn, và cái chặn trước luôn là cái nói được lý do dễ hiểu hơn.
+ */
+const TRAN_TEP_MOT_LUOT_SUA = 6;
+
 /** Bỏ dấu tiếng Việt (kể cả `đ`) — bản cục bộ, thuần, để phân biệt ĐỌC với SỬA. */
 function boDauVi(s: string): string {
   return s
@@ -2933,6 +2969,49 @@ export function laYDinhSuaTep(question: string): boolean {
   const en = /(^|[^a-z])(fix|edit|modify|change|update|refactor|implement|rewrite|patch|remove|throw)([^a-z]|$)/;
   const zh = /(修改|修复|修正|实现|重构|更新|添加|删除|优化)/;
   return vi.test(q) || en.test(q) || zh.test(question);
+}
+
+/**
+ * ★★★ doc 79 (2026-08-20) — *"Câu này là TẠO tệp MỚI?"*
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * LỖ ĐÃ ĐO — VÀ NÓ **KHÔNG** NẰM Ở TOOL
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `apply_diff` đã hỗ trợ TẠO từ ngày đầu: `{path, original:"", modified}` là một hợp đồng hợp lệ,
+ * có băm neo (`writeHandlers/applyDiff.ts` — nhánh `daCo === false`, và câu *"tệp chưa tồn tại nên
+ * original phải RỖNG cho một lượt TẠO"*). Cái chặn là **ĐỊNH TUYẾN**: câu *"tạo file mới
+ * src/utils/date.ts"* cho `classifyCodingToolIntent` ⇒ `read_file` (có đường dẫn), rồi
+ * `laYDinhSuaTep` trả `false` (danh sách động từ của nó KHÔNG có `tao`) ⇒ đi thẳng xuống đường đọc
+ * ⇒ tệp chưa tồn tại ⇒ người dùng nhận *"Không có tệp … trong hộp cát"*. Tool đúng, đường sai.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ VÀ ĐÂY LÀ ĐIỂM MẤU CHỐT: **HÀM NÀY KHÔNG QUYẾT ĐỊNH TẠO HAY SỬA — CÁI ĐĨA QUYẾT ĐỊNH.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * *"thêm hàm formatNgay vào src/utils/date.ts"* khớp CẢ `laYDinhSuaTep` (`them`) lẫn hàm này
+ * (`them … file`? không — xem dưới). Mọi phép tách bằng ĐỘNG TỪ đều có vùng chồng lấn, và đoán sai
+ * ở đây có một chiều RẤT đắt: coi một lượt SỬA thành TẠO nghĩa là gửi `original:""` cho một tệp
+ * đang có nội dung — tức **đề xuất xoá sạch tệp rồi ghi đè**.
+ *
+ * ⇒ Nên hàm này chỉ dùng cho MỘT câu hỏi hẹp: *"tệp KHÔNG tồn tại — đó là lỗi, hay là ý người
+ *   dùng?"*. Sự tồn tại do `read_file` trả lời (`NOT_FOUND`), và tệp **đã tồn tại** thì đường đi là
+ *   SỬA bất kể hàm này nói gì (xem `streamCodingEdit`). Chiều hỏng còn lại — người xin TẠO mà tệp
+ *   đã có — bị chặn tường minh, KHÔNG âm thầm chuyển thành ghi đè; và `apply_diff` còn chặn độc lập
+ *   một lần nữa bằng `BASE_MISMATCH` (băm("") ≠ băm(nội dung thật)).
+ *
+ * ⚠ CỐ Ý HẸP: `tao` trần đụng `tao nhã`, `tao lao`… nên vi đòi **động từ + danh từ tệp** hoặc dạng
+ *   `tao moi`. `viet` trần đụng `viet lai` (đã thuộc `laYDinhSuaTep`) nên cũng đòi danh từ tệp.
+ */
+export function laYDinhTaoTep(question: string): boolean {
+  const q = boDauVi(question);
+  const vi =
+    /(^|[^a-z])(tao|khoi tao|sinh|them|bo sung|viet|lam)\s+(mot\s+|1\s+)?(file|tep|tap tin)([^a-z]|$)/.test(q) ||
+    /(^|[^a-z])(tao|khoi tao|sinh)\s+(moi|ra)([^a-z]|$)/.test(q) ||
+    /(^|[^a-z])(file|tep|tap tin)\s+moi([^a-z]|$)/.test(q);
+  const en =
+    /(^|[^a-z])(create|add|make|generate|scaffold|write)\s+(a\s+|an\s+|the\s+)?(new\s+)?(file|module|component)([^a-z]|$)/i.test(q) ||
+    /(^|[^a-z])new\s+file([^a-z]|$)/i.test(q);
+  const zh = /(创建|新建|新增|生成)\s*(一个)?\s*(文件|文件夹|模块|组件)/.test(question) || /新文件/.test(question);
+  return vi || en || zh;
 }
 
 /**
@@ -3001,28 +3080,149 @@ async function* streamCodingEdit(
   context: KbQueryContext,
   execCtx?: ToolExecContext,
   history: readonly LuotHoiThoai[] = [],
+  /**
+   * ★★★ doc 79 (2026-08-20) — người dùng có nói *"tạo tệp mới"* không (`laYDinhTaoTep`). Nó KHÔNG
+   * quyết định tạo hay sửa — cái đĩa quyết định (xem ngã ba dưới đây). Nó chỉ trả lời một câu hẹp:
+   * *"tệp KHÔNG tồn tại: đó là LỖI của người dùng, hay là Ý của họ?"*
+   */
+  yDinhTao = false,
 ): AsyncGenerator<StreamEvent, boolean> {
-  if (!codingEditEnabled()) return false;
-  if (!execCtx) return false;
-  if (!(await codingModelSanSang())) return false;
+  const bs = yield* chuanBiBanSuaMotTep({
+    question,
+    duong,
+    language,
+    context,
+    execCtx,
+    history,
+    yDinhTao,
+    phatTheTool: true,
+  });
+  if (bs.kq === "bo_qua") return false;
+  if (bs.kq !== "ok") {
+    yield doneSinhMa(bs.traLoi, bs.provider, bs.degraded);
+    return true;
+  }
+
+  const ad = await executeDecision(
+    { tool: "apply_diff", args: { path: bs.relPath, original: bs.original, modified: bs.modified } },
+    execCtx!,
+  );
+  if (ad.pendingAction) {
+    yield { type: "pending_action", toolName: "apply_diff", pendingAction: ad.pendingAction };
+    const m = ad.pendingAction.summary;
+    yield { type: "token", token: `\n\n${m}` };
+    yield doneSinhMa(`${bs.vanBanModel}\n\n${m}`, "ollama");
+    return true;
+  }
+  if (ad.denied) {
+    const m = ad.denied.message;
+    yield { type: "token", token: `\n\n${m}` };
+    yield doneSinhMa(`${bs.vanBanModel}\n\n${m}`, "tool");
+    return true;
+  }
+  const m = codingErrorMessage(language, "apply_diff", ad.error ?? "PROPOSE_FAILED");
+  yield { type: "token", token: `\n\n${m}` };
+  yield doneSinhMa(`${bs.vanBanModel}\n\n${m}`, "tool");
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 79 (2026-08-20) — CHUẨN BỊ **MỘT** BẢN SỬA/TẠO: đọc đĩa → gọi model → dựng `modified`.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠⚠ VÌ SAO HÀM NÀY TỒN TẠI, VÀ VÌ SAO NÓ **KHÔNG** ĐỀ XUẤT GHI.
+ *
+ * Đường sửa MỘT tệp và đường sửa NHIỀU tệp cần **cùng một chính sách** cho mỗi tệp: đọc thật →
+ * ngã ba tạo/sửa theo ĐĨA → bốn lý do fail-closed → ngân sách ngữ cảnh → gọi model → bóc khối mã →
+ * đồng bộ xuống dòng. Chép chính sách ấy thành hai bản là đúng lớp lỗi mà cả repo này đã trả giá
+ * nhiều lần (hai bản sao trôi khỏi nhau, bản cũ hơn lặng lẽ bỏ sót một hàng rào).
+ *
+ * ⇒ Hàm này gánh TOÀN BỘ chính sách một tệp và **dừng ngay trước lượt đề xuất**. Ai gọi nó cũng chỉ
+ *   nhận được `{path, original, modified}` — tức nguyên liệu của một băm neo — chứ không nhận được
+ *   một đường tắt nào tới đĩa. Việc đề xuất (một `apply_diff` hay một `apply_diff_batch`) là quyết
+ *   định của NGƯỜI GỌI, và cả hai đều đi qua `executeDecision` ⇒ `proposeAction` ⇒ người bấm.
+ *
+ * ⚠ Nó **không phát `done`**: một lượt nhiều tệp có N lần chạy hàm này và chỉ được có MỘT `done`.
+ *   Người gọi quyết định lúc nào kết thúc — đó cũng là lý do các câu từ chối được trả về (`traLoi`)
+ *   thay vì tự phát ra ngoài.
+ */
+type BanSuaMotTep =
+  /** Không đủ điều kiện chạy (cờ tắt · không có phiên · model chưa sẵn sàng) ⇒ người gọi đi đường khác. */
+  | { kq: "bo_qua" }
+  /** Đã có `{original, modified}` — nguyên liệu cho MỘT băm neo. */
+  | { kq: "ok"; relPath: string; original: string; modified: string; taoMoi: boolean; vanBanModel: string }
+  /** Model trả lại đúng nội dung cũ (hoặc rỗng khi TẠO) — không phải sự cố, chỉ là không có gì để áp. */
+  | { kq: "khong_doi"; relPath: string; traLoi: string; provider: "ollama" | "tool"; degraded?: { reason: string } }
+  /** Dừng có lý do trung thực (hộp cát · fail-closed · ngân sách · model hỏng). */
+  | { kq: "dung"; relPath: string; traLoi: string; provider: "ollama" | "tool"; degraded?: { reason: string } };
+
+async function* chuanBiBanSuaMotTep(y: {
+  question: string;
+  duong: string;
+  language: KbLanguage;
+  context: KbQueryContext;
+  execCtx?: ToolExecContext;
+  history: readonly LuotHoiThoai[];
+  yDinhTao: boolean;
+  /**
+   * Phát thẻ `tool` cho lượt `read_file` này hay không.
+   * ⚠ Đường NHIỀU TỆP đặt `false` vì một sự thật ĐO ĐƯỢC về client: `AICodingWorkspace` giữ
+   *   `streamTool` là **một ô** và `setStreamTool` **GHI ĐÈ** ⇒ phát N thẻ thì người dùng chỉ thấy
+   *   thẻ CUỐI, tức N−1 tệp trở thành nguồn ẩn. Đường ấy tự dựng MỘT thẻ tổng ở cuối.
+   */
+  phatTheTool: boolean;
+}): AsyncGenerator<StreamEvent, BanSuaMotTep> {
+  const { question, duong, language, context, execCtx, history, yDinhTao } = y;
+  if (!codingEditEnabled()) return { kq: "bo_qua" };
+  if (!execCtx) return { kq: "bo_qua" };
+  if (!(await codingModelSanSang())) return { kq: "bo_qua" };
 
   const rf = await executeDecision({ tool: "read_file", args: { path: duong } }, execCtx);
-  if (!rf.result) return false; // lỗi/không chạy được ⇒ để đường tool tất định nói thật
-  yield { type: "tool", toolName: "read_file", toolResult: rf.result };
+  if (!rf.result) return { kq: "bo_qua" }; // lỗi/không chạy được ⇒ để đường tool tất định nói thật
+  if (y.phatTheTool) yield { type: "tool", toolName: "read_file", toolResult: rf.result };
 
-  // Hộp cát / RBAC từ chối ⇒ NÓI THẲNG mã từ chối, KHÔNG gọi model (và không đọc lại lần hai).
-  if (rf.result.note) {
-    const m = rf.result.textSummary ?? "";
+  /**
+   * ★★★ doc 79 (2026-08-20) — **NGÃ BA TẠO / SỬA / TỪ CHỐI, VÀ ĐĨA LÀ NGƯỜI PHÁN QUYẾT.**
+   *
+   * `read_file` vừa chạy ở trên đã trả lời câu hỏi *"tệp có tồn tại không?"* bằng `NOT_FOUND` —
+   * **không có `existsSync` thứ hai** ở đây, cùng nguyên tắc mà `ai/codingRepoContext.ts` đã dùng.
+   * Bốn nhánh, và mỗi nhánh là một hành động khác của người dùng:
+   *
+   *   • chưa có + XIN TẠO   ⇒ TẠO: `original = ""`, băm neo là băm(""), `apply_diff` tự chứng minh
+   *                            tệp thật sự chưa tồn tại (băm đĩa phải bằng băm("")).
+   *   • chưa có + KHÔNG xin ⇒ nói thẳng NOT_FOUND **kèm cách xin TẠO** (hành vi cũ + một câu gợi ý).
+   *   • ĐÃ CÓ + xin TẠO     ⇒ **TỪ CHỐI TƯỜNG MINH**, không âm thầm biến thành ghi đè. Đây là chỗ
+   *                            "ghi đè im lặng" có thể sinh ra, và nó bị đóng ở ĐÂY chứ không phải
+   *                            ở tool — tool chỉ đóng được bằng `BASE_MISMATCH`, một câu nói đúng
+   *                            nhưng khó hiểu ("băm lệch") cho một người vừa gõ "tạo file".
+   *   • ĐÃ CÓ + xin SỬA     ⇒ đường SỬA cũ, không đổi một byte.
+   *
+   * ⚠ Ngoại lệ có chủ ý ở nhánh ba: câu vừa mang động từ TẠO vừa mang động từ SỬA (*"thêm file
+   *   helper vào src/x.ts"* — `them` khớp cả hai) thì tệp ĐÃ CÓ nghĩa là ý người dùng là SỬA. Chỉ
+   *   khi câu **chỉ** nói TẠO mới từ chối.
+   */
+  const chuaCo = rf.result.note === "NOT_FOUND";
+  const xinTao = chuaCo && yDinhTao;
+  if (rf.result.note && !xinTao) {
+    const m =
+      chuaCo && !yDinhTao
+        ? `${rf.result.textSummary ?? ""}\n\n${codingGoiYTaoTepMessage(language, duong)}`
+        : (rf.result.textSummary ?? "");
     yield { type: "token", token: m };
-    yield doneSinhMa(m, "tool");
-    return true;
+    return { kq: "dung", relPath: duong, traLoi: m, provider: "tool" };
   }
 
   const d = rf.result.data as
     | { path?: string | null; content?: string | null; truncated?: boolean; redacted?: boolean }
     | undefined;
-  const goc = typeof d?.content === "string" ? d.content : null;
-  const relPath = typeof d?.path === "string" && d.path ? d.path : duong;
+  const goc = xinTao ? "" : typeof d?.content === "string" ? d.content : null;
+  const relPath = xinTao ? duong : typeof d?.path === "string" && d.path ? d.path : duong;
+
+  if (!chuaCo && yDinhTao && !laYDinhSuaTep(question)) {
+    const m = codingTepDaTonTaiMessage(language, relPath);
+    yield { type: "token", token: m };
+    return { kq: "dung", relPath, traLoi: m, provider: "tool" };
+  }
 
   /**
    * ⚠ FAIL-CLOSED, ba lý do RIÊNG BIỆT — mỗi lý do một hành động khác của người dùng:
@@ -3043,13 +3243,19 @@ async function* streamCodingEdit(
             : "TOO_LARGE";
     const m = codingKhongTuSuaMessage(language, relPath, ly);
     yield { type: "token", token: m };
-    yield doneSinhMa(m, "tool");
-    return true;
+    return { kq: "dung", relPath, traLoi: m, provider: "tool" };
   }
 
   const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
-  const heThong = personaSuaTep(language, nguCanh);
-  const tranToken = tranTokenChoTep(goc.length);
+  const heThong = xinTao ? personaTaoTep(language, nguCanh) : personaSuaTep(language, nguCanh);
+  /**
+   * ⚠ Lượt TẠO KHÔNG suy trần token từ `goc.length` được — `goc` RỖNG, và `tranTokenChoTep(0)` cho
+   * đúng cái sàn 1.400 token, tức một tệp mới sẽ bị cắt cụt ở khoảng 3,6 KB. Trần của lượt TẠO là
+   * một hằng RIÊNG: nó không đo cái đang có, nó cấp chỗ cho cái sắp có.
+   */
+  const tranToken = xinTao ? TRAN_TOKEN_TAO_TEP : tranTokenChoTep(goc.length);
+  const ghepPromptTep = (khoi: string): string =>
+    xinTao ? promptTaoTep(relPath, question, language, khoi) : promptSuaTep(relPath, goc, question, language, khoi);
   /**
    * ★★★ doc 81 · VIỆC 1 — Ở ĐƯỜNG SỬA TỆP, LỊCH SỬ NHƯỜNG CHỖ CHO NỘI DUNG TỆP, theo CẤU TẠO.
    *
@@ -3061,24 +3267,27 @@ async function* streamCodingEdit(
    * đúng bằng trần **đã** làm `congNganSachNguCanh` NÉM từ trước lượt này, và người dùng nhận một
    * bức tường chữ kỹ thuật thay vì một câu nói rõ phải làm gì. Nay nó thành `NGAN_SACH` — một lời
    * từ chối trung thực, và nó bắt cả những tệp nhỏ hơn 60k mà persona/ngữ cảnh dự án đẩy quá trần.
+   *
+   * ⚠⚠ ĐƯỜNG NHIỀU TỆP KHÔNG NỚI TRẦN NÀY MỘT BYTE: mỗi tệp cân RIÊNG bằng chính hàm này, nên trần
+   *    slot 32.768 gặp phải **N lần một tệp**, không bao giờ là "N tệp trong một prompt". Đó là lý
+   *    do đường nhiều tệp gọi model N lượt thay vì gộp — gộp là cách nhanh nhất để mọi lượt đều ném.
    */
   const lich = dungKhoiLichSu({
     lichSu: history,
     systemPrompt: heThong,
     maxTokens: tranToken,
     lang: language,
-    ghepPrompt: (khoi) => promptSuaTep(relPath, goc, question, language, khoi),
+    ghepPrompt: ghepPromptTep,
   });
   if (lich.vuotTruocKhiCoLichSu) {
     const m = codingKhongTuSuaMessage(language, relPath, "NGAN_SACH");
     yield { type: "token", token: m };
-    yield doneSinhMa(m, "tool");
-    return true;
+    return { kq: "dung", relPath, traLoi: m, provider: "tool" };
   }
   const it = rutChuCoCanh(
     streamCodingModel({
       systemPrompt: heThong,
-      prompt: promptSuaTep(relPath, goc, question, language, lich.khoi),
+      prompt: ghepPromptTep(lich.khoi),
       maxTokens: tranToken,
       temperature: 0.15,
       // Phạt lặp làm hỏng việc chép lại NGUYÊN VĂN một tệp (thụt đầu dòng, `}` liên tiếp…).
@@ -3098,8 +3307,7 @@ async function* streamCodingEdit(
     } catch (e) {
       const m = codingModelErrorMessage(language, e);
       yield { type: "token", token: (daPhat ? "\n\n" : "") + m };
-      yield doneSinhMa(daPhat ? `${daPhat}\n\n${m}` : m, "tool");
-      return true;
+      return { kq: "dung", relPath, traLoi: daPhat ? `${daPhat}\n\n${m}` : m, provider: "tool" };
     }
     if (n.done) {
       kq = n.value;
@@ -3112,46 +3320,168 @@ async function* streamCodingEdit(
   if (kq.degraded || !kq.text.trim()) {
     const m = codingThoaiHoaMessage(language, kq.reason);
     // Đã phát chữ rác ra rồi ⇒ `degraded:true` để client THAY chữ đã tích luỹ bằng câu sạch này.
-    yield doneSinhMa(m, "tool", { reason: kq.reason || "empty" });
-    return true;
+    return { kq: "dung", relPath, traLoi: m, provider: "tool", degraded: { reason: kq.reason || "empty" } };
   }
 
   const boc = bocKhoiMa(kq.text);
   if (boc === null) {
     const m = codingKhongCoKhoiMaMessage(language);
     yield { type: "token", token: `\n\n${m}` };
-    yield doneSinhMa(`${kq.text}\n\n${m}`, "ollama");
-    return true;
+    return { kq: "dung", relPath, traLoi: `${kq.text}\n\n${m}`, provider: "ollama" };
   }
 
-  const moi = dongBoXuongDong(goc, boc);
+  /**
+   * ⚠ Lượt TẠO KHÔNG dùng `dongBoXuongDong(goc, …)` được: hàm ấy suy kiểu xuống dòng TỪ TỆP GỐC, mà
+   * ở đây gốc là chuỗi RỖNG ⇒ nó sẽ CẮT dòng trống cuối của mọi tệp mới. Xem `chuanHoaTepMoi`.
+   */
+  const moi = xinTao ? chuanHoaTepMoi(boc) : dongBoXuongDong(goc, boc);
   if (moi === goc) {
-    const m = codingKhongDoiMessage(language, relPath);
+    const m = xinTao ? codingTaoRongMessage(language, relPath) : codingKhongDoiMessage(language, relPath);
     yield { type: "token", token: `\n\n${m}` };
-    yield doneSinhMa(`${kq.text}\n\n${m}`, "ollama");
+    return { kq: "khong_doi", relPath, traLoi: `${kq.text}\n\n${m}`, provider: "ollama" };
+  }
+
+  return { kq: "ok", relPath, original: goc, modified: moi, taoMoi: xinTao, vanBanModel: kq.text };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 79 (2026-08-20) — SỬA/TẠO **NHIỀU TỆP**: N lượt model, MỘT thẻ duyệt, N băm neo RIÊNG
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠⚠⚠ BA RÀNG BUỘC ĐỊNH HÌNH TOÀN BỘ HÀM NÀY — đọc trước khi sửa một dòng nào.
+ *
+ * 1. **DANH SÁCH TỆP LÀ TẤT ĐỊNH, DO NGƯỜI DÙNG GÕ.** `trichMoiDuongDanRepo` đọc đúng những đường
+ *    dẫn có trong câu hỏi. Không có đường nào cho model tự chọn tệp — phép đo LIVE 2026-08-19 cho
+ *    thấy bộ chọn LLM bịa ra `…/toolRegistry.ts` cho một câu KHÔNG nêu tệp nào; nhân chuyện đó lên
+ *    6 tệp là điều tệ nhất có thể làm ở một tool ghi.
+ * 2. **MODEL ĐƯỢC GỌI MỘT TỆP MỘT LƯỢT.** Nhồi N tệp vào một prompt là cách chắc chắn nhất để vượt
+ *    trần slot 32.768 (một tệp 57.000 ký tự đã sát trần — xem `TRAN_KY_TU_TEP_SUA`). Mỗi lượt cân
+ *    riêng bằng chính `dungKhoiLichSu`/`kiemNganSachNguCanh`, nên trần token gặp phải **N lần một
+ *    tệp**, không bao giờ là "N tệp cùng lúc". Cái đắt là THỜI GIAN (~30 s/tệp), và cái đó được bó
+ *    bằng `TRAN_TEP_MOT_LUOT_SUA`, không bằng token.
+ * 3. **DỪNG Ở TỆP ĐỎ ĐẦU TIÊN.** Một lô chỉ có nghĩa khi CẢ N tệp cùng đổi (đổi tên một hàm ở 5/8
+ *    nơi là một cây mã hỏng). Đọc trượt tệp 2 mà vẫn chạy tiếp là đốt 4 phút model để đẻ ra một đề
+ *    xuất chắc chắn sai — nên ta dừng, nói rõ tệp nào và vì sao, và KHÔNG đề xuất gì.
+ *
+ * Trả `true` ⇔ đã trả lời xong. `false` ⇒ người gọi đi tiếp đường một-tệp (KHÔNG mất lượt).
+ */
+async function* streamCodingSuaNhieuTep(
+  question: string,
+  duongDs: readonly string[],
+  language: KbLanguage,
+  context: KbQueryContext,
+  execCtx?: ToolExecContext,
+  history: readonly LuotHoiThoai[] = [],
+  yDinhTao = false,
+): AsyncGenerator<StreamEvent, boolean> {
+  if (!codingEditEnabled()) return false;
+  if (!execCtx) return false;
+  if (!(await codingModelSanSang())) return false;
+
+  if (duongDs.length > TRAN_TEP_MOT_LUOT_SUA) {
+    const m = codingQuaNhieuTepMessage(language, duongDs.length);
+    yield { type: "token", token: m };
+    yield doneSinhMa(m, "tool");
     return true;
   }
 
-  const ad = await executeDecision(
-    { tool: "apply_diff", args: { path: relPath, original: goc, modified: moi } },
-    execCtx,
-  );
+  const banSua: Array<{ path: string; original: string; modified: string; taoMoi: boolean }> = [];
+  const khongDoi: string[] = [];
+  const vanBan: string[] = [];
+
+  for (let i = 0; i < duongDs.length; i++) {
+    const duong = duongDs[i]!;
+    const dau = codingTieuDeTepMessage(language, i + 1, duongDs.length, duong);
+    yield { type: "token", token: (i === 0 ? "" : "\n\n") + dau + "\n\n" };
+    vanBan.push(dau);
+
+    const bs = yield* chuanBiBanSuaMotTep({
+      question,
+      duong,
+      language,
+      context,
+      execCtx,
+      history,
+      yDinhTao,
+      // MỘT thẻ tool tổng ở cuối, không N thẻ — `streamTool` của client là một ô GHI ĐÈ.
+      phatTheTool: false,
+    });
+
+    if (bs.kq === "bo_qua") return false; // cờ/model đổi trạng thái giữa chừng ⇒ nhường đường cũ
+    if (bs.kq === "dung") {
+      // Ràng buộc 3: dừng ngay, và nói rõ ta dừng ở tệp nào trong lô.
+      const m = `${bs.traLoi}\n\n${codingLoDungMessage(language, bs.relPath, banSua.length)}`;
+      yield { type: "token", token: `\n\n${codingLoDungMessage(language, bs.relPath, banSua.length)}` };
+      yield doneSinhMa([...vanBan, m].join("\n\n"), bs.provider, bs.degraded);
+      return true;
+    }
+    if (bs.kq === "khong_doi") {
+      khongDoi.push(bs.relPath);
+      vanBan.push(bs.traLoi);
+      continue;
+    }
+    banSua.push({ path: bs.relPath, original: bs.original, modified: bs.modified, taoMoi: bs.taoMoi });
+    vanBan.push(bs.vanBanModel);
+  }
+
+  if (banSua.length === 0) {
+    const m = codingLoKhongDoiMessage(language, khongDoi);
+    yield { type: "token", token: `\n\n${m}` };
+    yield doneSinhMa([...vanBan, m].join("\n\n"), "ollama");
+    return true;
+  }
+
+  /**
+   * ★ MỘT thẻ tool tổng: mọi tệp đã ĐỌC TỪ ĐĨA trong lượt này, kèm số byte gốc/mới. Nó phát biểu
+   * đúng thứ người duyệt cần biết trước khi nhìn thẻ duyệt — và nó là thẻ DUY NHẤT, nên không bị
+   * ghi đè mất.
+   */
+  yield {
+    type: "tool",
+    toolName: "read_file",
+    toolResult: {
+      type: "action_result",
+      title: "Đọc tệp trong repo",
+      data: { files: banSua.map((b) => ({ path: b.path, bytes: b.original.length, created: b.taoMoi })) },
+      textSummary:
+        `Đã đọc ${duongDs.length} tệp từ đĩa trong lượt này; ${banSua.length} tệp có thay đổi:\n` +
+        banSua
+          .map((b) => `• ${b.path} — ${b.taoMoi ? "TẠO MỚI" : `${b.original.length} → ${b.modified.length} ký tự`}`)
+          .join("\n") +
+        (khongDoi.length > 0 ? `\nKHÔNG đổi: ${khongDoi.join(", ")}` : ""),
+    },
+  };
+
+  /**
+   * ★★★ MỘT tệp ⇒ `apply_diff` (client có sẵn `HunkDiffView` — thẻ duyệt giàu hơn hẳn).
+   *     ≥2 tệp ⇒ `apply_diff_batch` — MỘT thẻ, N hành động, **N băm neo RIÊNG**.
+   *
+   * ⚠ Cả hai đều đi qua `executeDecision`, và `executeDecision` gửi MỌI `kind:"write"` vào
+   *   `proposeAction` ⇒ HITL nguyên vẹn ở cả hai nhánh. Không có nhánh nào chạm đĩa ở đây.
+   */
+  const motTep = banSua.length === 1;
+  const ten = motTep ? "apply_diff" : "apply_diff_batch";
+  const args = motTep
+    ? { path: banSua[0]!.path, original: banSua[0]!.original, modified: banSua[0]!.modified }
+    : { files: banSua.map((b) => ({ path: b.path, original: b.original, modified: b.modified })) };
+
+  const ad = await executeDecision({ tool: ten, args }, execCtx);
   if (ad.pendingAction) {
-    yield { type: "pending_action", toolName: "apply_diff", pendingAction: ad.pendingAction };
+    yield { type: "pending_action", toolName: ten, pendingAction: ad.pendingAction };
     const m = ad.pendingAction.summary;
     yield { type: "token", token: `\n\n${m}` };
-    yield doneSinhMa(`${kq.text}\n\n${m}`, "ollama");
+    yield doneSinhMa([...vanBan, m].join("\n\n"), "ollama");
     return true;
   }
   if (ad.denied) {
     const m = ad.denied.message;
     yield { type: "token", token: `\n\n${m}` };
-    yield doneSinhMa(`${kq.text}\n\n${m}`, "tool");
+    yield doneSinhMa([...vanBan, m].join("\n\n"), "tool");
     return true;
   }
-  const m = codingErrorMessage(language, "apply_diff", ad.error ?? "PROPOSE_FAILED");
+  const m = codingErrorMessage(language, ten, ad.error ?? "PROPOSE_FAILED");
   yield { type: "token", token: `\n\n${m}` };
-  yield doneSinhMa(`${kq.text}\n\n${m}`, "tool");
+  yield doneSinhMa([...vanBan, m].join("\n\n"), "tool");
   return true;
 }
 
@@ -3389,6 +3719,65 @@ function codingKhongDoiMessage(language: KbLanguage, relPath: string): string {
   if (language === "zh") return `⚠ 未提出写入：模型返回的内容与 "${relPath}" 当前内容完全一致。`;
   if (language === "en") return `⚠ No write proposed: the model returned content identical to the current "${relPath}".`;
   return `⚠ KHÔNG đề xuất ghi: nội dung model trả về GIỐNG HỆT tệp "${relPath}" hiện tại.`;
+}
+
+/**
+ * ★ doc 79 (2026-08-20) — tệp KHÔNG tồn tại và người dùng KHÔNG xin tạo. Hành vi cũ (nói NOT_FOUND)
+ * giữ nguyên; thêm đúng một câu chỉ ra rằng TẠO là một việc làm được — vì trước lượt này nó KHÔNG
+ * làm được, nên người dùng không có lý do gì để đoán rằng nay nó làm được.
+ */
+function codingGoiYTaoTepMessage(language: KbLanguage, duong: string): string {
+  if (language === "zh") return `如果你本来就想**新建**该文件，请直接说：「创建新文件 ${duong} …（需求）」。我会先确认它确实不存在，再提出一份完整内容供你审批。`;
+  if (language === "en") return `If you meant to **create** it, say: "create a new file ${duong} … (what it should do)". I will verify it really does not exist, then propose the full content for your approval.`;
+  return `Nếu bạn muốn **TẠO** tệp này, hãy nói thẳng: *"tạo file mới ${duong} … (làm gì)"*. Tôi sẽ kiểm chắc chắn tệp chưa tồn tại rồi đề xuất toàn bộ nội dung để bạn duyệt.`;
+}
+
+/**
+ * ★★ doc 79 (2026-08-20) — xin TẠO nhưng tệp **ĐÃ CÓ**. Từ chối TƯỜNG MINH, không âm thầm biến
+ * thành ghi đè: một lượt "tạo" trên tệp có sẵn mà cứ thế chạy tiếp nghĩa là gửi `original:""` cho
+ * một tệp có nội dung, tức đề xuất **xoá sạch rồi ghi lại**. `apply_diff` sẽ chặn bằng
+ * `BASE_MISMATCH`, nhưng đó là một câu đúng mà khó hiểu — người dùng cần biết chuyện gì đã xảy ra.
+ */
+function codingTepDaTonTaiMessage(language: KbLanguage, relPath: string): string {
+  if (language === "zh") return `⚠ 未提出写入：文件 "${relPath}" **已存在**，因此这不是一次“新建”。我不会把新建悄悄变成覆盖（那等于先清空再重写）。如果你确实要改它，请说「修改 ${relPath} …」；如果要另建一个文件，请换一个路径。`;
+  if (language === "en") return `⚠ No write proposed: "${relPath}" **already exists**, so this is not a CREATE. I will not silently turn a create into an overwrite (that would mean wiping the file and rewriting it). To change it, say "edit ${relPath} …"; to create a different file, pick another path.`;
+  return `⚠ KHÔNG đề xuất ghi: tệp "${relPath}" **ĐÃ TỒN TẠI**, nên đây không phải một lượt TẠO. Tôi KHÔNG âm thầm biến một lượt tạo thành ghi đè — làm vậy nghĩa là xoá sạch tệp rồi viết lại. Muốn đổi nội dung thì nói *"sửa ${relPath} …"*; muốn tạo tệp khác thì chọn đường dẫn khác.`;
+}
+
+/** ★ Lô vượt trần số tệp một lượt — nói THẲNG con số, không âm thầm cắt bớt danh sách người dùng gõ. */
+function codingQuaNhieuTepMessage(language: KbLanguage, soTep: number): string {
+  if (language === "zh") return `⚠ 一次最多处理 ${TRAN_TEP_MOT_LUOT_SUA} 个文件，你列出了 ${soTep} 个。每个文件都要单独调用一次本地模型（约 30 秒），因此这是**时间**上限而非 token 上限。请分批提出。我不会悄悄截断你的列表。`;
+  if (language === "en") return `⚠ At most ${TRAN_TEP_MOT_LUOT_SUA} files per turn; you listed ${soTep}. Each file costs one local-model call (~30 s), so this is a TIME cap, not a token cap. Split the request. I will not silently truncate your list.`;
+  return `⚠ Một lượt chỉ xử lý tối đa **${TRAN_TEP_MOT_LUOT_SUA} tệp**, bạn nêu ${soTep}. Mỗi tệp tốn MỘT lượt gọi model cục bộ (~30 giây) nên đây là trần **THỜI GIAN**, không phải trần token. Hãy chia thành nhiều lượt — tôi KHÔNG âm thầm cắt bớt danh sách bạn đã gõ.`;
+}
+
+/** ★ Tiêu đề mỗi tệp trong một lô — đi vào `content` của phiên, nên nó sống sót khi mở lại phiên. */
+function codingTieuDeTepMessage(language: KbLanguage, i: number, n: number, duong: string): string {
+  if (language === "zh") return `### 文件 ${i}/${n} — \`${duong}\``;
+  if (language === "en") return `### File ${i}/${n} — \`${duong}\``;
+  return `### Tệp ${i}/${n} — \`${duong}\``;
+}
+
+/** ★ Lô dừng giữa chừng: nói rõ tệp nào chặn và **không có đề xuất nào được đưa ra**. */
+function codingLoDungMessage(language: KbLanguage, relPath: string, daXong: number): string {
+  if (language === "zh") return `⛔ 整批已停止在 "${relPath}"，**未提出任何写入**（此前已准备好 ${daXong} 个文件的改动，一并丢弃）。只改一部分会留下无法编译的代码树，所以要么全改，要么不改。`;
+  if (language === "en") return `⛔ The whole batch stopped at "${relPath}" and **no write was proposed** (${daXong} already-prepared edits were discarded with it). A partial rename leaves a tree that does not compile — all or nothing.`;
+  return `⛔ CẢ LÔ dừng ở "${relPath}" và **KHÔNG có đề xuất ghi nào** (${daXong} bản sửa đã chuẩn bị trước đó cũng bị bỏ theo). Sửa một phần sẽ để lại cây mã không biên dịch được — nên hoặc đổi hết, hoặc không đổi gì.`;
+}
+
+/** ★ Lô chạy hết nhưng không tệp nào đổi — không phải sự cố. */
+function codingLoKhongDoiMessage(language: KbLanguage, khongDoi: readonly string[]): string {
+  const ds = khongDoi.join(", ");
+  if (language === "zh") return `⚠ 未提出写入：模型对所有文件返回的内容都与当前一致（${ds}）。`;
+  if (language === "en") return `⚠ No write proposed: the model returned content identical to the current one for every file (${ds}).`;
+  return `⚠ KHÔNG đề xuất ghi: model trả về nội dung GIỐNG HỆT bản hiện tại cho mọi tệp (${ds}).`;
+}
+
+/** ★ Lượt TẠO mà model không cho ra nội dung nào — khác hẳn "giống hệt tệp cũ" (không có tệp cũ). */
+function codingTaoRongMessage(language: KbLanguage, relPath: string): string {
+  if (language === "zh") return `⚠ 未提出写入：模型为新文件 "${relPath}" 返回的内容为空。创建一个空文件没有意义，故拒绝。`;
+  if (language === "en") return `⚠ No write proposed: the model returned EMPTY content for the new file "${relPath}". Creating an empty file is not useful — refusing.`;
+  return `⚠ KHÔNG đề xuất ghi: model trả về nội dung RỖNG cho tệp mới "${relPath}". Tạo một tệp rỗng thì vô nghĩa nên tôi từ chối.`;
 }
 
 /** Ba lý do fail-closed của nhánh sửa — mỗi lý do một việc khác nhau người dùng phải làm. */

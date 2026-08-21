@@ -144,6 +144,21 @@ export const AUTONOMY_INELIGIBLE: ReadonlySet<string> = new Set<string>([
    */
   "apply_diff",
   /**
+   * ★★★ doc 79 (2026-08-20) — `apply_diff_batch`
+   * (server/services/aiLocalTools/writeHandlers/applyDiffBatch.ts).
+   *
+   * Cùng lý lẽ với `apply_diff` ở trên, **NHÂN LÊN N**: nó ghi đè tới `TRAN_TEP_MOI_LO` tệp mã
+   * nguồn trong một lượt, nội dung do model sinh. Bốn hàng rào chạy cho TỪNG tệp và trả lời
+   * *"ghi được vào ĐÂU, trên phiên bản NÀO"*; không hàng rào nào trả lời *"nội dung có ĐÚNG
+   * không"* — chỉ người đọc N cái diff mới trả lời được.
+   * ⚠ Và nó có một chiều nguy hiểm mà `apply_diff` không có: một lượt sai ở đây để lại cây làm
+   *   việc **nửa vời** (xem `BATCH_PARTIAL`). Tự trị hoá nó là tự động hoá đúng trạng thái khó
+   *   dò nhất.
+   * ⇒ TUYỆT ĐỐI không auto-execute. Thêm nó vào đây là điều kiện để `autonomyWriteToolCensus`
+   *   xanh — nhưng lý do thật nằm ở hai câu trên, không ở con đỏ.
+   */
+  "apply_diff_batch",
+  /**
    * ★★★ doc 78 PHA B — `run_command` (server/services/aiLocalTools/writeHandlers/repoCommand.ts).
    *
    * Nó SINH TIẾN TRÌNH trên máy chủ: tiêu CPU/RAM thật, chạy tới 4 phút, và `npx vitest run <đường>`

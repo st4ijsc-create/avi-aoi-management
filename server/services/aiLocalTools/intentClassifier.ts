@@ -411,6 +411,33 @@ function extractRepoPath(question: string): string | undefined {
   return question.match(REPO_PATH_REGEX)?.[1];
 }
 
+/**
+ * ★★★ doc 79 (2026-08-20) — **MỌI** đường dẫn tệp repo trong một câu, theo THỨ TỰ XUẤT HIỆN, đã
+ * khử trùng lặp. Đây là bộ nhận diện cho đường **SỬA NHIỀU TỆP**.
+ *
+ * ⚠⚠ VÌ SAO NÓ PHẢI TẤT ĐỊNH, KHÔNG PHẢI DO MODEL CHỌN: một lô ghi tới 8 tệp mà danh sách tệp do
+ * model đoán là đúng lớp lỗi đã đo LIVE ngày 2026-08-19 — bộ chọn LLM bịa ra
+ * `server/services/aiLocalTools/toolRegistry.ts` cho một câu **không nêu tệp nào**. Nhân cái đó
+ * lên 8 là điều tệ nhất có thể làm ở đây. ⇒ Người dùng phải **gõ tên các tệp**; hệ chỉ đọc lại.
+ *
+ * ⚠ Dùng LẠI `REPO_PATH_REGEX` (một bản `g` của CHÍNH nó, dựng tại chỗ) chứ không viết bảng đuôi
+ *   thứ hai: hai bảng đuôi sẽ trôi khỏi nhau, và bảng nào cũ hơn sẽ lặng lẽ bỏ sót một loại tệp.
+ * ⚠ Trả **NGUYÊN VĂN**, không lọc — `..`, đường tuyệt đối, `.env` đều đi qua để **hộp cát** là cái
+ *   từ chối, đúng nguyên tắc đã ghi ở `REPO_PATH_REGEX`.
+ */
+export function trichMoiDuongDanRepo(question: string): string[] {
+  const re = new RegExp(REPO_PATH_REGEX.source, "gi");
+  const ra: string[] = [];
+  const daCo = new Set<string>();
+  for (const m of String(question ?? "").matchAll(re)) {
+    const d = m[1];
+    if (!d || daCo.has(d)) continue;
+    daCo.add(d);
+    ra.push(d);
+  }
+  return ra;
+}
+
 function extractRepoDir(question: string): string | undefined {
   const tep = extractRepoPath(question);
   if (tep !== undefined) return undefined; // có đuôi tệp ⇒ không phải một thư mục
@@ -1957,8 +1984,19 @@ export async function classifyCodingToolIntentLLM(question: string): Promise<Too
  * mà chạy cả thư mục thì module đã bị tệp khác nạp trước. Đúng lớp "xanh vì lý do sai / đỏ vì thứ
  * tự chạy". Một hàm thuần không có mặt tiếp xúc ấy: cùng đầu vào, cùng đầu ra, mọi thứ tự.
  */
+export const TOOL_GHI_LLM_KHONG_KHOI_XUONG: ReadonlySet<string> = new Set([
+  "apply_diff",
+  /**
+   * ★ doc 79 (2026-08-20) — `apply_diff_batch` vào đây với **CÙNG lý lẽ, mạnh hơn N lần**: bộ chọn
+   * LLM không đọc tệp nào, nên `original` của MỖI mục trong lô đều là phỏng đoán, và một lô phỏng
+   * đoán chỉ nhân cái sai lên N. Nó KHÔNG có trong `CODING_TOOL_NAMES` nên hậu-lọc `CODING_TOOL_SET`
+   * đã chặn một lần rồi — dòng này là lớp THỨ HAI, độc lập, và là lớp phát biểu được **VÌ SAO**.
+   */
+  "apply_diff_batch",
+]);
+
 export function locQuyetDinhLLMLapTrinh(d: ToolDecision): ToolDecision {
-  if (d.tool === "apply_diff") {
+  if (d.tool !== null && TOOL_GHI_LLM_KHONG_KHOI_XUONG.has(d.tool)) {
     return { tool: null, args: {}, reason: "CODING_LLM_KHONG_KHOI_XUONG_GHI" };
   }
   return d;

@@ -198,6 +198,14 @@ const FILE_DANG_KY_WRITE_TOOL_DA_NAP = [
    * ai đọc con đỏ. Nay `apply_diff` đã được xếp vào `AUTONOMY_INELIGIBLE` (xem lý do ở đó).
    */
   "services/aiLocalTools/writeHandlers/applyDiff.ts",
+  /**
+   * ★ doc 79 (2026-08-20) — `apply_diff_batch`. Nạp qua `import "./writeHandlers/applyDiffBatch"`
+   * ở `aiLocalTools/index.ts` (đồ thị nhập của `import "../aiLocalTools"` dòng 43). §C đã ĐỎ đúng
+   * lượt tool này ra đời — tức lưới N+1 chạy đúng chức năng của nó. Tool đã được xếp vào
+   * `AUTONOMY_INELIGIBLE` (xem lý do tại đó: nó ghi N tệp và hỏng giữa chừng thì để lại cây mã
+   * NỬA VỜI — trạng thái khó dò nhất để tự động hoá).
+   */
+  "services/aiLocalTools/writeHandlers/applyDiffBatch.ts",
   "services/aiLocalTools/writeHandlers/visionControl.ts",
   "services/aiLocalTools/writeHandlers/yield.ts",
   "services/visionDefectProposal.ts",
