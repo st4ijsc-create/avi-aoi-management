@@ -3,13 +3,14 @@
  *
  * Mọi hàm getDb() null-guard:
  *   • read  → trả rỗng/null an toàn (best-effort, không throw trên hot path).
- *   • write → throw "Database not available" (admin action, cần biết thất bại).
+ *   • write → ném `DbUnavailableError` (admin action, cần biết thất bại).
  *
  * pgvector OPTIONAL: ghi cột embedding_vec là best-effort (try/catch). Cột
  * embedding TEXT luôn là nguồn raw → load brute-force JS hoạt động kể cả khi
  * thiếu pgvector.
  */
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, eq, desc, sql, SQL } from "drizzle-orm";
 import {
   aiAnomalyMemoryBank,
@@ -58,7 +59,7 @@ function parseVectorLiteral(raw: string | null | undefined): number[] {
 
 export async function clearBank(scope: AnomalyScope): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(aiAnomalyMemoryBank).where(and(...scopeConditions(scope)));
 }
 
@@ -71,7 +72,7 @@ export interface BankRowInput {
 
 export async function insertBankRows(scope: AnomalyScope, rows: BankRowInput[]): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   if (rows.length === 0) return 0;
 
   // Insert qua raw SQL CHỈ các cột chắc chắn tồn tại (KHÔNG đụng embedding_vec — cột
@@ -337,7 +338,7 @@ function profileScopeConds(scope: AnomalyScope): SQL[] {
 
 export async function upsertProfile(scope: AnomalyScope, input: ProfileInput): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [existing] = await db
     .select({ id: aiAnomalyProfiles.id })
@@ -433,7 +434,7 @@ export async function setCalibratedThreshold(
   },
 ): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db
     .update(aiAnomalyProfiles)
     .set({ calibratedThreshold: calibratedThreshold.toFixed(8), calibrationTarget })
@@ -442,7 +443,7 @@ export async function setCalibratedThreshold(
 
 export async function deleteScope(scope: AnomalyScope): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(aiAnomalyMemoryBank).where(and(...scopeConditions(scope)));
   await db.delete(aiAnomalyProfiles).where(and(...profileScopeConds(scope)));
 }

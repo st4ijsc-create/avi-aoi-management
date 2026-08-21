@@ -7,7 +7,7 @@
  * row to energy_readings — it is NOT a control command.
  *
  * Mirrors the getDb()-guarded style of bom.ts: read helpers degrade to []/null
- * when the DB is not connected; writers throw "Database not available".
+ * when the DB is not connected; writers ném `DbUnavailableError`.
  *
  * CROSS-DB: business joins (recipe deployments, process results) live in the
  * main PG. Time-series rollups may also be served from TimescaleDB via the
@@ -15,6 +15,7 @@
  * picks the path; this module only owns the main-PG SQL.
  */
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, sql } from "drizzle-orm";
 import { energyReadings, enpiMetrics, type InsertEnergyReading } from "../../drizzle/schema/g3";
 
@@ -212,7 +213,7 @@ export async function getPowerFactorStats(range: EnergyRange, threshold: number)
 // ============================================================
 export async function recordEnergyReading(data: InsertEnergyReading): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(energyReadings).values(data).returning({ id: energyReadings.id });
   return row.id;
 }
@@ -264,7 +265,7 @@ export interface EnpiSnapshotInput {
  */
 export async function upsertEnpiSnapshot(input: EnpiSnapshotInput): Promise<{ id: number; updated: boolean }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const existing = await db.execute(sql`
     SELECT id FROM enpi_metrics

@@ -1,4 +1,5 @@
 import { eq, and, desc, gte, lte, sql, inArray, or, isNull } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "./connection";
 import { idsTrongPhamVi, trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 import { executeRows } from "../utils/kpi";
@@ -581,20 +582,20 @@ export async function getManualConnectionByMachineId(machineId: number, scope?: 
 
 export async function createManualConnection(data: InsertManualMachineConnection) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(manualMachineConnections).values(data).returning({ id: manualMachineConnections.id });
   return { id: Number(result.id) };
 }
 
 export async function updateManualConnection(id: number, data: Partial<InsertManualMachineConnection>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(manualMachineConnections).set(data).where(eq(manualMachineConnections.id, id));
 }
 
 export async function deleteManualConnection(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(manualMachineConnections).where(eq(manualMachineConnections.id, id));
 }
 
@@ -604,7 +605,7 @@ export async function updateManualConnectionStatus(
   errorMessage?: string
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const updateData: any = {
     connectionStatus: status,
@@ -624,7 +625,7 @@ export async function updateManualConnectionStatus(
 
 export async function incrementManualConnectionRetry(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(manualMachineConnections)
     .set({ 

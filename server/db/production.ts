@@ -1,4 +1,5 @@
 import { eq, and, desc, asc, or, isNull, ilike, inArray, SQL } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "./connection";
 import { idsTrongPhamVi, trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 import {
@@ -31,20 +32,20 @@ export async function getShiftConfigs(factoryId?: number) {
 
 export async function createShiftConfig(data: InsertShiftConfig) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(shiftConfigs).values(data).returning({ id: shiftConfigs.id });
   return { id: result.id };
 }
 
 export async function updateShiftConfig(id: number, data: Partial<InsertShiftConfig>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(shiftConfigs).set(data).where(eq(shiftConfigs.id, id));
 }
 
 export async function deleteShiftConfig(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(shiftConfigs).where(eq(shiftConfigs.id, id));
 }
 
@@ -130,26 +131,26 @@ export async function getProductionOrderByCode(orderCode: string, scope?: PhamVi
 
 export async function createProductionOrder(data: InsertProductionOrder) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(productionOrders).values(data).returning({ id: productionOrders.id });
   return result;
 }
 
 export async function updateProductionOrder(id: number, data: Partial<InsertProductionOrder>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.update(productionOrders).set(data).where(eq(productionOrders.id, id));
 }
 
 export async function deleteProductionOrder(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.delete(productionOrders).where(eq(productionOrders.id, id));
 }
 
 export async function updateProductionOrderQuantities(id: number, result: 'OK' | 'NG' | 'NTF') {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const order = await getProductionOrderById(id);
   if (!order) throw new Error("Production order not found");
@@ -200,26 +201,26 @@ export async function getLineStageById(id: number, scope?: PhamViNguoiXem) {
 
 export async function createLineStage(data: InsertLineStage) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(lineStages).values(data).returning({ id: lineStages.id });
   return result;
 }
 
 export async function updateLineStage(id: number, data: Partial<InsertLineStage>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.update(lineStages).set(data).where(eq(lineStages.id, id));
 }
 
 export async function deleteLineStage(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.delete(lineStages).where(eq(lineStages.id, id));
 }
 
 export async function reorderLineStages(lineId: number, stageIds: number[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   // Update orderIndex for each stage based on position in array
   for (let i = 0; i < stageIds.length; i++) {
@@ -256,20 +257,20 @@ export async function getLineProductAssignments(filters?: {
 
 export async function createLineProductAssignment(data: InsertLineProductAssignment) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(lineProductAssignments).values(data).returning({ id: lineProductAssignments.id });
   return result;
 }
 
 export async function updateLineProductAssignment(id: number, data: Partial<InsertLineProductAssignment>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.update(lineProductAssignments).set(data).where(eq(lineProductAssignments.id, id));
 }
 
 export async function deleteLineProductAssignment(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.delete(lineProductAssignments).where(eq(lineProductAssignments.id, id));
 }
 
@@ -325,7 +326,7 @@ export async function getProcessByCode(code: string) {
 
 export async function createProcess(data: InsertProcess) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(processes).values(data).returning({ id: processes.id });
   return { id: Number(result.id) };
@@ -333,7 +334,7 @@ export async function createProcess(data: InsertProcess) {
 
 export async function updateProcess(id: number, data: Partial<InsertProcess>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(processes)
     .set(data)
@@ -342,7 +343,7 @@ export async function updateProcess(id: number, data: Partial<InsertProcess>) {
 
 export async function deleteProcess(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   // First delete all line process assignments
   await db.delete(lineProcessAssignments)
@@ -355,7 +356,7 @@ export async function deleteProcess(id: number) {
 
 export async function reorderProcesses(orderedIds: number[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   for (let i = 0; i < orderedIds.length; i++) {
     await db.update(processes)
@@ -394,7 +395,7 @@ export async function getLineProcessAssignmentById(id: number) {
 
 export async function createLineProcessAssignment(data: InsertLineProcessAssignment) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(lineProcessAssignments).values(data).returning({ id: lineProcessAssignments.id });
   return { id: Number(result.id) };
@@ -402,7 +403,7 @@ export async function createLineProcessAssignment(data: InsertLineProcessAssignm
 
 export async function updateLineProcessAssignment(id: number, data: Partial<InsertLineProcessAssignment>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(lineProcessAssignments)
     .set(data)
@@ -411,7 +412,7 @@ export async function updateLineProcessAssignment(id: number, data: Partial<Inse
 
 export async function deleteLineProcessAssignment(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.delete(lineProcessAssignments)
     .where(eq(lineProcessAssignments.id, id));
@@ -419,7 +420,7 @@ export async function deleteLineProcessAssignment(id: number) {
 
 export async function reorderLineProcessAssignments(lineId: number, orderedIds: number[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   for (let i = 0; i < orderedIds.length; i++) {
     await db.update(lineProcessAssignments)
@@ -433,7 +434,7 @@ export async function reorderLineProcessAssignments(lineId: number, orderedIds: 
 
 export async function deleteLineProcessAssignmentsByLine(lineId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.delete(lineProcessAssignments)
     .where(eq(lineProcessAssignments.lineId, lineId));
@@ -480,7 +481,7 @@ export async function getOrderTemplate(id: number, scope?: PhamViNguoiXem) {
 
 export async function createOrderTemplate(data: InsertProductionOrderTemplate) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(productionOrderTemplates).values(data).returning({ id: productionOrderTemplates.id });
   return { id: result.id };
@@ -488,14 +489,14 @@ export async function createOrderTemplate(data: InsertProductionOrderTemplate) {
 
 export async function updateOrderTemplate(id: number, data: Partial<InsertProductionOrderTemplate>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(productionOrderTemplates).set(data).where(eq(productionOrderTemplates.id, id));
 }
 
 export async function deleteOrderTemplate(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(productionOrderTemplates).set({ isActive: false }).where(eq(productionOrderTemplates.id, id));
 }
@@ -703,7 +704,7 @@ export async function optimizeSchedule(factoryId: number): Promise<ScheduleOptim
 
 export async function applyScheduleSuggestion(suggestion: ScheduleOptimizationResult) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   await db.update(productionOrders)
     .set({
@@ -739,7 +740,7 @@ export async function createScheduleRun(
   items: Omit<InsertScheduleRunItem, "runId">[],
 ): Promise<{ id: number }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [created] = await db.insert(scheduleRuns).values(run).returning({ id: scheduleRuns.id });
   const runId = created.id;
   if (items.length > 0) {
@@ -804,7 +805,7 @@ export async function getScheduleRunById(id: number, scope?: PhamViNguoiXem) {
  */
 export async function applyScheduleRun(id: number): Promise<{ applied: number }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const items = await db.select().from(scheduleRunItems).where(eq(scheduleRunItems.runId, id));
   let applied = 0;
   for (const item of items) {
@@ -826,6 +827,6 @@ export async function applyScheduleRun(id: number): Promise<{ applied: number }>
 
 export async function dismissScheduleRun(id: number): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(scheduleRuns).set({ status: "DISMISSED" }).where(eq(scheduleRuns.id, id));
 }

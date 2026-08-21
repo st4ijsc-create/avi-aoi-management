@@ -5,6 +5,7 @@
  * Additive: không đụng accessor cũ.
  */
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, eq, desc, sql, SQL } from "drizzle-orm";
 import {
   defectSegmentations,
@@ -16,7 +17,7 @@ export async function insertDefectSegmentation(
   data: InsertDefectSegmentation,
 ): Promise<DefectSegmentation> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(defectSegmentations).values(data).returning();
   return row;
 }
@@ -57,6 +58,6 @@ export async function getDefectSegmentationById(id: number): Promise<DefectSegme
 
 export async function deleteDefectSegmentation(id: number): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(defectSegmentations).where(eq(defectSegmentations.id, id));
 }

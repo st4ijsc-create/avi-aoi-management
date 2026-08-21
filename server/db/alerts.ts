@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, desc, and, gte, isNull, type SQL } from "drizzle-orm";
 import {
   alertSettings,
@@ -36,20 +37,20 @@ export async function getAlertSettingById(id: number) {
 
 export async function createAlertSetting(data: InsertAlertSetting) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(alertSettings).values(data).returning({ id: alertSettings.id });
   return { id: result.id };
 }
 
 export async function updateAlertSetting(id: number, data: Partial<InsertAlertSetting>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(alertSettings).set(data).where(eq(alertSettings.id, id));
 }
 
 export async function deleteAlertSetting(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(alertSettings).where(eq(alertSettings.id, id));
 }
 
@@ -74,7 +75,7 @@ export async function getAlertHistory(alertSettingId?: number, limit: number = 5
 
 export async function createAlertHistory(data: InsertAlertHistory) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(alertHistory).values(data).returning({ id: alertHistory.id });
   return { id: result.id };
 }
@@ -90,7 +91,7 @@ export async function getAlertHistoryById(id: number) {
 
 export async function acknowledgeAlert(id: number, userId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(alertHistory).set({
     acknowledgedAt: new Date(),
     acknowledgedBy: userId,
@@ -121,20 +122,20 @@ export async function getYieldAlertThresholdByType(metricType: 'FPY' | 'FY' | 'N
 
 export async function createYieldAlertThreshold(data: InsertYieldAlertThreshold) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(yieldAlertThresholds).values(data).returning({ id: yieldAlertThresholds.id });
   return result.id;
 }
 
 export async function updateYieldAlertThreshold(id: number, data: Partial<InsertYieldAlertThreshold>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(yieldAlertThresholds).set(data).where(eq(yieldAlertThresholds.id, id));
 }
 
 export async function deleteYieldAlertThreshold(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(yieldAlertThresholds).where(eq(yieldAlertThresholds.id, id));
 }
 
@@ -149,7 +150,7 @@ export async function getEnabledYieldAlertThresholds() {
 
 export async function createYieldThresholdHistory(data: InsertYieldThresholdHistory) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(yieldThresholdHistory).values(data).returning({ id: yieldThresholdHistory.id });
   return { id: Number(result.id), ...data };
 }

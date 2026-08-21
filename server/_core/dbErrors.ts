@@ -17,6 +17,39 @@
 import { TRPCError } from "@trpc/server";
 import { appError } from "./appError";
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * F3 (đo lại 2026-08-21) — "Database not available" là chuỗi TIẾNG ANH đi thẳng
+ * xuống người dùng ở CẢ BA ngôn ngữ.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Tầng `server/db/**` chặn handle DB rỗng bằng `throw new Error("Database not
+ * available")` — **~400 chỗ**, cùng một khái niệm. tRPC v11 đặt
+ * `message = opts.message ?? cause?.message ?? code`, và `errorFormatter` chỉ gắn
+ * `appCode` cho lỗi dựng bằng `appError()`. Lỗi thô vì thế rơi tới nhánh cuối của
+ * `mapTrpcError` phía client, nơi nó **trả nguyên `message`** — người dùng en/zh/vi
+ * đều đọc đúng chuỗi tiếng Anh đó.
+ *
+ * ⇒ Không sửa 400 chỗ bằng cách gọi `appError()` ở tầng db (làm thế là kéo tRPC
+ *   xuống tầng dữ liệu). Thay vào đó: một lớp lỗi TỰ MANG `appCode`.
+ *
+ * Vì sao đủ: khi một procedure ném lỗi KHÔNG phải `TRPCError`, tRPC bọc nó thành
+ * `TRPCError({ code: "INTERNAL_SERVER_ERROR", cause: <lỗi gốc> })`. `readAppErrorMeta`
+ * đọc đúng `err.cause.appCode` — nên `appCode` trên lớp này tới được `errorFormatter`
+ * mà **không phải sửa formatter một dòng nào**.
+ *
+ * ⚠ `name` giữ nguyên `"DbUnavailableError"`: đường ingest WAL nhận diện lỗi tạm thời
+ * bằng `err?.name === "DbUnavailableError"` (`_core/index.ts:437`) để ĐỆM bản ghi kiểm
+ * tra xuống đĩa thay vì mất. Đổi `name` là làm mất dữ liệu kiểm, không phải đổi nhãn.
+ */
+export class DbUnavailableError extends Error {
+  /** Đọc bởi `readAppErrorMeta(err.cause)` → `errorFormatter` → client dịch được. */
+  readonly appCode = "DB_UNAVAILABLE" as const;
+  constructor(message = "Database not available") {
+    super(message);
+    this.name = "DbUnavailableError";
+  }
+}
+
 const UNIQUE_VIOLATION = "23505";
 const UNDEFINED_TABLE = "42P01";
 const UNDEFINED_COLUMN = "42703";

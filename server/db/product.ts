@@ -1,5 +1,5 @@
 import { getDb } from "./connection";
-import { rethrowDbError } from "../_core/dbErrors";
+import { rethrowDbError, DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, asc, like, or, sql, isNull, isNotNull, gt, gte, inArray, SQL, type AnyColumn } from "drizzle-orm";
 import type { PhamViNguoiXem } from "./hierarchy";
 import {
@@ -42,7 +42,7 @@ import { GENESIS_HASH } from "../utils/genealogyChain";
 // ============ PRODUCT MODEL FUNCTIONS ============
 export async function createProductModel(data: InsertProductModel) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(productModels).values(data).returning({ id: productModels.id });
   return result.id;
 }
@@ -59,7 +59,7 @@ export async function createProductModel(data: InsertProductModel) {
  */
 export async function ensureSystemProductModel(data: InsertProductModel): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db
     .insert(productModels)
     .values(data)
@@ -250,7 +250,7 @@ export async function congDiemDoTheoPhamVi(
 
 export async function updateProductModel(id: number, data: Partial<InsertProductModel>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productModels).set(data).where(eq(productModels.id, id));
 }
 
@@ -299,7 +299,7 @@ export async function bumpPointsConfigVersion(
   executor?: PointsBumpExecutor,
 ): Promise<PointsConfigBump | null> {
   const exec = executor ?? (await getDb());
-  if (!exec) throw new Error("Database not available");
+  if (!exec) throw new DbUnavailableError();
 
   const [row] = await exec
     .update(productModels)
@@ -392,7 +392,7 @@ export async function bumpVariantPointsConfigVersion(
   executor?: PointsBumpExecutor,
 ): Promise<VariantPointsConfigBump | null> {
   const exec = executor ?? (await getDb());
-  if (!exec) throw new Error("Database not available");
+  if (!exec) throw new DbUnavailableError();
 
   const [row] = await exec
     .update(productVariants)
@@ -413,7 +413,7 @@ export async function bumpVariantPointsConfigVersion(
 
 export async function deleteProductModel(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   // P0 soft-delete: mark product and all child measurement points as deleted.
   // No cascade hard-delete — history is preserved for audit, foreign data, and undelete.
   const now = new Date();
@@ -484,7 +484,7 @@ export async function cloneProductModel(opts: {
   copyMappings?: boolean;
 }): Promise<{ newProductId: number; summary: CloneProductModelSummary }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   return db.transaction(async (tx) => {
     // 1) Source product (live only).
@@ -697,7 +697,7 @@ export async function createMeasurementPointDef(
   outcome?: CreateMeasurementPointOutcome,
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const inserted = await db
     .insert(measurementPointDefs)
@@ -894,20 +894,20 @@ export async function listMeasurementTypeCatalog(filters?: { category?: string; 
 
 export async function createMeasurementTypeCatalog(data: InsertMeasurementTypeCatalog) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(measurementTypeCatalog).values(data).returning({ id: measurementTypeCatalog.id });
   return row.id;
 }
 
 export async function updateMeasurementTypeCatalog(id: number, data: Partial<InsertMeasurementTypeCatalog>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(measurementTypeCatalog).set({ ...data, updatedAt: new Date() }).where(eq(measurementTypeCatalog.id, id));
 }
 
 export async function softDeleteMeasurementTypeCatalog(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(measurementTypeCatalog)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(measurementTypeCatalog.id, id));
@@ -976,20 +976,20 @@ export async function listDefectCatalog(filters?: { category?: string; severity?
 
 export async function createDefectCatalog(data: InsertDefectCatalog) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(defectCatalog).values(data).returning({ id: defectCatalog.id });
   return row.id;
 }
 
 export async function updateDefectCatalog(id: number, data: Partial<InsertDefectCatalog>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(defectCatalog).set({ ...data, updatedAt: new Date() }).where(eq(defectCatalog.id, id));
 }
 
 export async function softDeleteDefectCatalog(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(defectCatalog)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(defectCatalog.id, id));
@@ -1325,7 +1325,7 @@ export async function remapMeasurementPoints(opts: {
   targetMachineId?: number | null;
 }): Promise<{ moved: number; merged: number; resultsReassigned: number; skipped: number }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const { pointDefIds, targetProductModelId, unmappedModelId } = opts;
   if (!pointDefIds.length) return { moved: 0, merged: 0, resultsReassigned: 0, skipped: 0 };
 
@@ -1417,20 +1417,20 @@ export async function getMeasurementInstrumentById(id: number) {
 
 export async function createMeasurementInstrument(data: InsertMeasurementInstrument) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(measurementInstruments).values(data).returning({ id: measurementInstruments.id });
   return row.id;
 }
 
 export async function updateMeasurementInstrument(id: number, data: Partial<InsertMeasurementInstrument>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(measurementInstruments).set({ ...data, updatedAt: new Date() }).where(eq(measurementInstruments.id, id));
 }
 
 export async function softDeleteMeasurementInstrument(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(measurementInstruments)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(measurementInstruments.id, id));
@@ -1462,20 +1462,20 @@ export async function getSamplingPlanById(id: number) {
 
 export async function createSamplingPlan(data: InsertSamplingPlan) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(samplingPlans).values(data).returning({ id: samplingPlans.id });
   return row.id;
 }
 
 export async function updateSamplingPlan(id: number, data: Partial<InsertSamplingPlan>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(samplingPlans).set({ ...data, updatedAt: new Date() }).where(eq(samplingPlans.id, id));
 }
 
 export async function softDeleteSamplingPlan(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(samplingPlans)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(samplingPlans.id, id));
@@ -1507,20 +1507,20 @@ export async function getProductViewById(id: number) {
 
 export async function createProductView(data: InsertProductView) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(productViews).values(data).returning({ id: productViews.id });
   return row.id;
 }
 
 export async function updateProductView(id: number, data: Partial<InsertProductView>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productViews).set({ ...data, updatedAt: new Date() }).where(eq(productViews.id, id));
 }
 
 export async function softDeleteProductView(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productViews)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(productViews.id, id));
@@ -1552,20 +1552,20 @@ export async function getMsaStudyById(id: number) {
 
 export async function createMsaStudy(data: InsertMsaStudy) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(msaStudies).values(data).returning({ id: msaStudies.id });
   return row.id;
 }
 
 export async function updateMsaStudy(id: number, data: Partial<InsertMsaStudy>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(msaStudies).set({ ...data, updatedAt: new Date() }).where(eq(msaStudies.id, id));
 }
 
 export async function softDeleteMsaStudy(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(msaStudies)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(msaStudies.id, id));
@@ -1573,7 +1573,7 @@ export async function softDeleteMsaStudy(id: number) {
 
 export async function addMsaObservation(data: InsertMsaObservation) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(msaObservations).values(data).returning({ id: msaObservations.id });
   return row.id;
 }
@@ -1598,7 +1598,7 @@ export async function generateMsaObservationMatrix(studyId: number, options?: {
   noisePct?: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const study = await getMsaStudyById(studyId);
   if (!study) throw new Error("MSA study not found");
@@ -1699,7 +1699,7 @@ export async function getMsaCsvMappingPresetByScope(productModelId: number, sour
 
 export async function upsertMsaCsvMappingPreset(data: InsertMsaCsvMappingPreset) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const existing = await getMsaCsvMappingPresetByScope(data.productModelId!, data.sourceMachine!, data.presetName!);
   if (existing) {
@@ -1723,7 +1723,7 @@ export async function upsertMsaCsvMappingPreset(data: InsertMsaCsvMappingPreset)
 
 export async function softDeleteMsaCsvMappingPreset(id: number, updatedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(msaCsvMappingPresets)
     .set({
       isActive: false,
@@ -1915,7 +1915,7 @@ export async function updateMeasurementPointDef(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   // Doc 51 P2 batch-2 — is the 0282 provenance column present? Probed once (cached)
   // OUTSIDE the tx so a missing column never aborts the transaction; only when true
@@ -2006,7 +2006,7 @@ export async function updateMeasurementPointDef(
  */
 export async function deleteMeasurementPointDef(id: number): Promise<PointsConfigBump | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   return db.transaction(async (tx) => {
     const [point] = await tx
@@ -2107,7 +2107,7 @@ export async function revertPointsConfigToVersion(
   options?: { changedBy?: number | null; changeReason?: string | null },
 ): Promise<RevertPointsSummary | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   if (!Number.isInteger(targetVersion) || targetVersion < 1) {
     throw new RevertVersionError(`targetVersion must be a positive integer (got ${targetVersion}).`);
   }
@@ -2263,7 +2263,7 @@ export async function bulkCreateMeasurementPoints(points: InsertMeasurementPoint
 // ============ FIDUCIAL MARK FUNCTIONS (P1) ============
 export async function createFiducialMark(data: InsertFiducialMark) {
   const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
+  if (!db) throw new DbUnavailableError();
   const result = await db.insert(fiducialMarks).values(data).returning({ id: fiducialMarks.id });
   return result[0]?.id;
 }
@@ -2333,7 +2333,7 @@ export async function getProductMachineMappings(machineId?: number, productModel
 
 export async function createProductMachineMapping(data: InsertProductMachineMapping) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   try {
     const [result] = await db.insert(productMachineMappings).values(data).returning({ id: productMachineMappings.id });
     return { id: result.id };
@@ -2349,13 +2349,13 @@ export async function createProductMachineMapping(data: InsertProductMachineMapp
 
 export async function updateProductMachineMapping(id: number, data: Partial<InsertProductMachineMapping>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productMachineMappings).set(data).where(eq(productMachineMappings.id, id));
 }
 
 export async function deleteProductMachineMapping(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(productMachineMappings).where(eq(productMachineMappings.id, id));
 }
 
@@ -2472,7 +2472,7 @@ export async function getProductCategoryByCode(code: string) {
 
 export async function createProductCategory(data: InsertProductCategory) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(productCategories).values(data).returning({ id: productCategories.id });
   return { id: result.id };
@@ -2480,14 +2480,14 @@ export async function createProductCategory(data: InsertProductCategory) {
 
 export async function updateProductCategory(id: number, data: Partial<InsertProductCategory>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(productCategories).set(data).where(eq(productCategories.id, id));
 }
 
 export async function deleteProductCategory(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   // Check if category has children
   const children = await db.select().from(productCategories).where(eq(productCategories.parentId, id)).limit(1);
@@ -2552,7 +2552,7 @@ export async function updateProductCategoryCount(categoryId: number) {
 
 export async function reorderProductCategories(categoryIds: number[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   for (let i = 0; i < categoryIds.length; i++) {
     await db.update(productCategories)
@@ -2565,7 +2565,7 @@ export async function reorderProductCategories(categoryIds: number[]) {
 
 export async function createProductSyncLog(data: InsertSyncLog) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(syncLogs).values(data).returning();
   return result;
 }
@@ -2816,7 +2816,7 @@ export async function getLatestValidCalibration(instrumentId: number) {
 
 export async function createInstrumentCalibration(data: InsertInstrumentCalibration) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(instrumentCalibrations).values(data)
     .returning({ id: instrumentCalibrations.id });
   return row.id;
@@ -2824,7 +2824,7 @@ export async function createInstrumentCalibration(data: InsertInstrumentCalibrat
 
 export async function softDeleteInstrumentCalibration(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(instrumentCalibrations)
     .set({ deletedAt: new Date() })
     .where(eq(instrumentCalibrations.id, id));
@@ -2860,7 +2860,7 @@ export async function getLatestValidMsaRecord(instrumentId: number) {
 
 export async function createInstrumentMsaRecord(data: InsertInstrumentMsaRecord) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(instrumentMsaRecords).values(data)
     .returning({ id: instrumentMsaRecords.id });
   return row.id;
@@ -2868,7 +2868,7 @@ export async function createInstrumentMsaRecord(data: InsertInstrumentMsaRecord)
 
 export async function softDeleteInstrumentMsaRecord(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(instrumentMsaRecords)
     .set({ deletedAt: new Date() })
     .where(eq(instrumentMsaRecords.id, id));
@@ -2946,7 +2946,7 @@ export async function listMpLightingProfilesByPointDefIds(
 
 export async function createMpLightingProfile(data: InsertMpLightingProfile) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(mpLightingProfiles).values(data)
     .returning({ id: mpLightingProfiles.id });
   return row.id;
@@ -2954,7 +2954,7 @@ export async function createMpLightingProfile(data: InsertMpLightingProfile) {
 
 export async function updateMpLightingProfile(id: number, data: Partial<InsertMpLightingProfile>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(mpLightingProfiles)
     .set({ ...data, updatedAt: new Date() })
     .where(eq(mpLightingProfiles.id, id));
@@ -2962,7 +2962,7 @@ export async function updateMpLightingProfile(id: number, data: Partial<InsertMp
 
 export async function softDeleteMpLightingProfile(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(mpLightingProfiles)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(mpLightingProfiles.id, id));
@@ -2984,7 +2984,7 @@ export async function ensureMeasurementSamplesPartition(date: Date) {
 export async function insertMeasurementSamples(rows: InsertMeasurementSample[]) {
   if (rows.length === 0) return 0;
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   // Make sure all relevant partitions exist
   const months = new Set<string>();
   for (const r of rows) {
@@ -3032,7 +3032,7 @@ export async function listMeasurementSamples(opts: {
 // ============================================================
 export async function createSpcAlert(data: InsertMpSpcAlert) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(mpSpcAlerts).values(data)
     .returning({ id: mpSpcAlerts.id });
   return row.id;
@@ -3060,7 +3060,7 @@ export async function listSpcAlerts(opts: {
 
 export async function ackSpcAlert(id: number, ackBy: number, ackNote?: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(mpSpcAlerts)
     .set({ ackAt: new Date(), ackBy, ackNote: ackNote ?? null })
     .where(eq(mpSpcAlerts.id, id));
@@ -3082,7 +3082,7 @@ export async function getRollingSpc(pointDefId: number, windowSize = 30) {
 
 export async function upsertRollingSpc(data: InsertMpSpcRolling) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const existing = await getRollingSpc(data.pointDefId, data.windowSize ?? 30);
   if (existing) {
     await db.update(mpSpcRolling)
@@ -3223,7 +3223,7 @@ export async function getMpDefectStatsForProduct(opts: {
 // ============================================================
 export async function createCadImportJob(data: InsertCadImportJob) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(cadImportJobs).values(data)
     .returning({ id: cadImportJobs.id });
   return row.id;
@@ -3231,7 +3231,7 @@ export async function createCadImportJob(data: InsertCadImportJob) {
 
 export async function updateCadImportJob(id: number, data: Partial<InsertCadImportJob>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(cadImportJobs)
     .set({ ...data, updatedAt: new Date() })
     .where(eq(cadImportJobs.id, id));
@@ -3257,7 +3257,7 @@ export async function listCadImportJobsByProduct(productModelId: number) {
 export async function bulkInsertCadImportCandidates(rows: InsertCadImportCandidate[]) {
   if (rows.length === 0) return 0;
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const inserted = await db.insert(cadImportCandidates).values(rows)
     .returning({ id: cadImportCandidates.id });
   return inserted.length;
@@ -3273,7 +3273,7 @@ export async function listCadImportCandidates(jobId: number) {
 
 export async function setCadCandidateSelection(jobId: number, candidateIds: number[], selected: boolean) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   if (candidateIds.length === 0) return;
   await db.update(cadImportCandidates)
     .set({ selected })
@@ -3298,7 +3298,7 @@ export async function applyCadImportJob(jobId: number, appliedBy: number) {
     return 0;
   }
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   // Find next free orderIndex for this product
   const [{ maxIdx }] = await db
@@ -3413,7 +3413,7 @@ export async function listSamplesForLot(lotCode: string, limit = 5000) {
 // ════════════════════════════════════════════════════════════════════════════
 export async function upsertStationTrace(row: InsertStationTrace): Promise<number | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   // CASE #8 — a blank/whitespace serial has no identity to scope on. Skip it
   // rather than merge every unlabelled board into a single serial='' aggregate.
   const serial = typeof row.serialNumber === "string" ? row.serialNumber.trim() : "";
@@ -3513,7 +3513,7 @@ export async function getLastGenealogyHash(): Promise<string | null> {
 
 export async function insertGenealogyChainRow(row: InsertGenealogyChain) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [inserted] = await db
     .insert(genealogyChain)
     .values(row)
@@ -3548,7 +3548,7 @@ export async function appendGenealogyChainRow(
   build: (prevHash: string) => InsertGenealogyChain,
 ): Promise<{ id: number; prevHash: string; currHash: string }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${GENEALOGY_CHAIN_LOCK})`);
     const [tail] = await tx
@@ -3606,7 +3606,7 @@ export async function listGenealogyChainByLot(lotCode: string, limit = 5000) {
 
 export async function createVariant(data: InsertProductVariant): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(productVariants).values(data).returning({ id: productVariants.id });
   return row.id;
 }
@@ -3663,7 +3663,7 @@ export async function getVariantByCode(productModelId: number, code: string): Pr
 
 export async function updateVariant(id: number, data: Partial<InsertProductVariant>): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productVariants).set({ ...data, updatedAt: new Date() }).where(eq(productVariants.id, id));
 }
 
@@ -3673,7 +3673,7 @@ export async function updateVariant(id: number, data: Partial<InsertProductVaria
  */
 export async function softDeleteVariant(id: number): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productVariants)
     .set({ deletedAt: new Date(), lifecycleStatus: "archived", updatedAt: new Date() })
     .where(and(eq(productVariants.id, id), eq(productVariants.isBase, false)));
@@ -3687,7 +3687,7 @@ export async function softDeleteVariant(id: number): Promise<void> {
  */
 export async function ensureBaseVariant(productModelId: number, pointsConfigVersion?: number): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const existing = await getBaseVariant(productModelId);
   if (existing) return existing.id;
   const inserted = await db.insert(productVariants).values({
@@ -3715,7 +3715,7 @@ export async function ensureBaseVariant(productModelId: number, pointsConfigVers
  */
 export async function setVariantPointOverride(data: InsertVariantPointOverride): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(variantPointOverrides)
     .values({ ...data, updatedAt: new Date() })
     .onConflictDoUpdate({
@@ -3736,7 +3736,7 @@ export async function getVariantOverrides(variantId: number): Promise<VariantPoi
 
 export async function removeVariantOverride(variantId: number, basePointDefId: number): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(variantPointOverrides)
     .where(and(
       eq(variantPointOverrides.variantId, variantId),

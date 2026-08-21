@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, gte, lte, or, isNull, inArray, sql, SQL } from "drizzle-orm";
 import type { PhamViNguoiXem } from "./hierarchy";
 import {
@@ -86,7 +87,7 @@ export async function createAuditLog(data: {
   status?: 'success' | 'failure';
 }): Promise<{ id: number }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const values = catTheoTranCot(auditLogs, {
     userId: data.userId ?? null,
@@ -158,7 +159,7 @@ export async function getAuditLogs(params: {
   total: number;
 }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
   
   const conditions: SQL[] = [];
   
@@ -234,7 +235,7 @@ export async function getAuditLogStats(days: number = 7): Promise<{
   actionsByDay: Array<{ date: string; count: number }>;
 }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
   
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
@@ -421,7 +422,7 @@ async function congBaoCaoHenGio(scope?: PhamViNguoiXem) {
 
 export async function createScheduledReport(data: InsertScheduledReport) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(scheduledReports).values(data).returning({ id: scheduledReports.id });
   return result.id;
@@ -429,7 +430,7 @@ export async function createScheduledReport(data: InsertScheduledReport) {
 
 export async function updateScheduledReport(id: number, data: Partial<InsertScheduledReport>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(scheduledReports)
     .set({ ...data, updatedAt: new Date() })
@@ -438,7 +439,7 @@ export async function updateScheduledReport(id: number, data: Partial<InsertSche
 
 export async function deleteScheduledReport(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   // Delete logs first
   await db.delete(scheduledReportLogs).where(eq(scheduledReportLogs.reportId, id));
@@ -458,7 +459,7 @@ export async function getScheduledReportLogs(reportId: number, limit: number = 5
 
 export async function createScheduledReportLog(data: InsertScheduledReportLog) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(scheduledReportLogs).values(data).returning({ id: scheduledReportLogs.id });
   return result.id;
@@ -483,7 +484,7 @@ export async function getReportsDueForSending() {
 
 export async function updateReportNextSchedule(id: number, nextScheduledAt: Date) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(scheduledReports)
     .set({ 
@@ -506,7 +507,7 @@ export async function getSmtpConfig() {
 
 export async function createOrUpdateSmtpConfig(data: Omit<InsertSmtpConfig, 'id' | 'createdAt' | 'updatedAt'>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const existing = await getSmtpConfig();
   
@@ -833,7 +834,7 @@ export async function createReportTemplate(data: {
   isDefault?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const code = generateTemplateCode(data.name);
 
@@ -874,7 +875,7 @@ export async function updateReportTemplate(id: number, data: {
   isDefault?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const updateData: Record<string, any> = { updatedAt: new Date() };
 
@@ -908,7 +909,7 @@ export async function updateReportTemplate(id: number, data: {
  */
 export async function deleteReportTemplate(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   await db.update(reportTemplates)
     .set({ isActive: false, updatedAt: new Date() })

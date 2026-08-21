@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, asc, gte, lte, sql, or, inArray, isNotNull, isNull, SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { idsTrongPhamVi, type PhamViNguoiXem } from "./hierarchy";
@@ -107,7 +108,7 @@ export async function listSpcConfigurations(filters: {
 
 export async function getSpcConfiguration(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const cong = await congSpc({ machineId: spcConfigurations.machineId, workstationId: spcConfigurations.workstationId, giuMacDinh: true }, scope);
   const result = await db.select().from(spcConfigurations)
@@ -119,7 +120,7 @@ export async function getSpcConfiguration(id: number, scope?: PhamViNguoiXem) {
 
 export async function createSpcConfiguration(data: InsertSpcConfiguration) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(spcConfigurations).values(data).returning();
   return result[0];
@@ -127,7 +128,7 @@ export async function createSpcConfiguration(data: InsertSpcConfiguration) {
 
 export async function updateSpcConfiguration(id: number, data: Partial<InsertSpcConfiguration>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(spcConfigurations)
     .set({ ...data, updatedAt: new Date() })
@@ -139,7 +140,7 @@ export async function updateSpcConfiguration(id: number, data: Partial<InsertSpc
 
 export async function deleteSpcConfiguration(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   await db.delete(spcConfigurations).where(eq(spcConfigurations.id, id));
 }
@@ -319,7 +320,7 @@ export async function getMeasurementPairsForCorrelation(filters: {
 
 export async function saveCorrelationAnalysis(data: InsertCorrelationAnalysis) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(correlationAnalyses).values(data).returning();
   return result[0];
@@ -359,7 +360,7 @@ export async function listCorrelationAnalyses(filters: {
 
 export async function createSpcRuleViolation(data: InsertSpcRuleViolation) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(spcRuleViolations).values(data).returning();
   return result[0];
@@ -408,7 +409,7 @@ export async function listSpcRuleViolations(filters: {
 
 export async function acknowledgeSpcViolation(id: number, userId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(spcRuleViolations)
     .set({
@@ -423,7 +424,7 @@ export async function acknowledgeSpcViolation(id: number, userId: number) {
 
 export async function resolveSpcViolation(id: number, userId: number, notes?: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(spcRuleViolations)
     .set({
@@ -500,7 +501,7 @@ export async function listPointDefsWithSpecLimits(): Promise<Array<{
 
 export async function saveCpkHistory(data: InsertCpkHistory) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(cpkHistory).values(data).returning();
   return result[0];
@@ -624,7 +625,7 @@ export async function listQualityGates(filters: {
 
 export async function getQualityGate(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const cong = await congCongChatLuong(qualityGates.lineId, scope);
   const result = await db.select().from(qualityGates)
@@ -655,7 +656,7 @@ async function congCongChatLuong(lineCol: AnyPgColumn, scope?: PhamViNguoiXem): 
 
 export async function createQualityGate(data: InsertQualityGate) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(qualityGates).values(data).returning();
   return result[0];
@@ -663,7 +664,7 @@ export async function createQualityGate(data: InsertQualityGate) {
 
 export async function updateQualityGate(id: number, data: Partial<InsertQualityGate>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(qualityGates)
     .set({ ...data, updatedAt: new Date() })
@@ -675,7 +676,7 @@ export async function updateQualityGate(id: number, data: Partial<InsertQualityG
 
 export async function deleteQualityGate(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   await db.delete(qualityGates).where(eq(qualityGates.id, id));
 }
@@ -696,7 +697,7 @@ export async function getActiveQualityGatesForLine(lineId: number) {
 
 export async function createQualityGateEvent(data: InsertQualityGateEvent) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(qualityGateEvents).values(data).returning();
   return result[0];
@@ -739,7 +740,7 @@ export async function listQualityGateEvents(filters: {
 
 export async function acknowledgeQualityGateEvent(id: number, userId: number, notes?: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(qualityGateEvents)
     .set({
@@ -754,7 +755,7 @@ export async function acknowledgeQualityGateEvent(id: number, userId: number, no
 
 export async function resolveQualityGateEvent(id: number, userId: number, notes?: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(qualityGateEvents)
     .set({

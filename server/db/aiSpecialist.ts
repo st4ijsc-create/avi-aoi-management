@@ -1,6 +1,6 @@
 import { and, desc, eq, lt, SQL } from "drizzle-orm";
 import { getDb } from "./connection";
-import { isMissingTable } from "../_core/dbErrors";
+import { isMissingTable, DbUnavailableError } from "../_core/dbErrors";
 import {
   aiSpecialistSessions,
   aiSpecialistSessionSteps,
@@ -11,14 +11,14 @@ import {
 
 export async function createAiSpecialistSession(data: InsertAiSpecialistSession) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(aiSpecialistSessions).values(data).returning();
   return result;
 }
 
 export async function appendAiSpecialistSessionStep(data: InsertAiSpecialistSessionStep) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(aiSpecialistSessionSteps).values(data).returning();
   return result;
 }
@@ -42,7 +42,7 @@ export async function completeAiSpecialistSession(
   payload: { status: "completed" | "failed"; summary?: string; aggregateOutput?: unknown },
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db
     .update(aiSpecialistSessions)

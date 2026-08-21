@@ -1,4 +1,5 @@
 import { eq, and, desc, like, sql, or, not, lte } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "./connection";
 import {
   InsertUser, users,
@@ -73,7 +74,7 @@ export async function ghiBiMatNguoiDung(
   tx?: any,
 ): Promise<void> {
   const db = tx ?? (await getDb());
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new DbUnavailableError();
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if ('passwordHash' in vaCham) set.passwordHash = vaCham.passwordHash ?? null;
   if ('twoFactorSecret' in vaCham) set.twoFactorSecret = vaCham.twoFactorSecret ?? null;
@@ -207,14 +208,14 @@ export async function getAllUsers() {
 
 export async function updateUserRole(userId: number, role: UserRole) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new DbUnavailableError();
   await db.update(users).set({ role }).where(eq(users.id, userId));
   await invalidateAuthUser(userId); // role change must bite within this request
 }
 
 export async function deleteUser(userId: number) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new DbUnavailableError();
   await db.delete(users).where(eq(users.id, userId));
   await invalidateAuthUser(userId);
 }
@@ -244,7 +245,7 @@ export async function createLocalUser(data: {
   role?: UserRole;
 }) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new DbUnavailableError();
 
   // Generate a unique openId for local users
   const openId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
@@ -285,7 +286,7 @@ export async function updateUser(userId: number, data: {
   isActive?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new DbUnavailableError();
   await db.update(users).set(data).where(eq(users.id, userId));
   /**
    * ⚠ Lượt dọn cache buộc lượt kế tiếp đi **đường DB** — điều đó làm một lượt đổi **VAI** ăn ngay.
@@ -332,7 +333,7 @@ export async function updateUser(userId: number, data: {
  */
 export async function updateUserPassword(userId: number, passwordHash: string) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new DbUnavailableError();
   await db.transaction(async (tx) => {
     await ghiBiMatNguoiDung(userId, { passwordHash }, tx);
     await tx.update(users).set({ passwordChangedAt: new Date() }).where(eq(users.id, userId));
@@ -369,7 +370,7 @@ export async function createUser(data: {
   position?: string;
 }) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new DbUnavailableError();
   
   // Hash password using bcrypt
   const bcrypt = await import('bcryptjs');
@@ -422,7 +423,7 @@ export async function setup2FA(userId: number, secret: string) {
 
 export async function enable2FA(userId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(users)
     .set({ twoFactorEnabled: true })
     .where(eq(users.id, userId));
@@ -431,7 +432,7 @@ export async function enable2FA(userId: number) {
 
 export async function disable2FA(userId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.transaction(async (tx) => {
     await ghiBiMatNguoiDung(userId, { twoFactorSecret: null }, tx);
     await tx.update(users).set({ twoFactorEnabled: false }).where(eq(users.id, userId));
@@ -490,7 +491,7 @@ export async function get2FAStatus(userId: number) {
  */
 export async function xoaMoiMaDuPhong(userId: number, tx?: any) {
   const db = tx ?? (await getDb());
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(backupCodes).where(eq(backupCodes.userId, userId));
 }
 
@@ -524,7 +525,7 @@ export const SO_MA_DU_PHONG = 10;
  */
 export async function quayVongMaDuPhong(userId: number, soLuong = SO_MA_DU_PHONG): Promise<string[]> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const maTho: string[] = [];
   for (let i = 0; i < soLuong; i++) maTho.push(sinhMaDuPhong());

@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, gte, lte, like, sql, or, inArray, SQL } from "drizzle-orm";
 import {
   factories,
@@ -55,7 +56,7 @@ import {
 
 export async function upsertDailyStatistics(data: InsertDailyStatistics) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.insert(dailyStatistics).values(data).onConflictDoUpdate({
     target: [dailyStatistics.machineId, dailyStatistics.date],
@@ -1577,7 +1578,7 @@ export async function getTopNGMeasurementPoints(params: {
 // ============ SEED DATA FUNCTIONS ============
 export async function seedSampleData() {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   // Check if data already exists
   const existingFactories = await db.select().from(factories).limit(1);
@@ -1707,7 +1708,7 @@ export async function seedSampleData() {
 // ============ SEED INSPECTION DATA ============
 export async function seedInspectionData(count: number = 100) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   // Get all machines
   const allMachines = await db.select().from(machines).where(eq(machines.isActive, true));
@@ -2073,7 +2074,7 @@ export async function seedWorkstationAnalyticsData(options?: {
   daysBack?: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const inspectionCount = options?.inspectionCount || 500;
   const daysBack = options?.daysBack || 7;

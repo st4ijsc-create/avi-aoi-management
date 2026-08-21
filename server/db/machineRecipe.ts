@@ -14,6 +14,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, desc, eq, getTableColumns } from "drizzle-orm";
 import { getDb } from "./connection";
 import {
@@ -26,7 +27,7 @@ import {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not available");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

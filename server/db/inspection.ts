@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, asc, gte, lte, gt, lt, like, sql, or, isNull, isNotNull, inArray, SQL } from "drizzle-orm";
 import {
   productInspections, InsertProductInspection,
@@ -144,7 +145,7 @@ export async function createProductInspection(
   outcome?: CreateInspectionOutcome,
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const idempotencyKey = data.idempotencyKey?.trim() || undefined;
 
@@ -258,7 +259,7 @@ export async function createProductInspection(
  */
 export async function reserveInspectionId(): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const res = await db.execute(sql`SELECT nextval('product_inspections_id_seq') AS id`);
   const rows = ((res as { rows?: unknown[] })?.rows ?? (res as unknown[])) as Array<{ id?: unknown }>;
   const raw = rows?.[0]?.id;
@@ -299,7 +300,7 @@ export async function persistInspectionAtomic(
   opts?: { promoteOverallToNg?: boolean; outcome?: CreateInspectionOutcome },
 ): Promise<{ id: number; duplicate: boolean }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const idempotencyKey = data.idempotencyKey?.trim() || undefined;
 
@@ -436,7 +437,7 @@ export async function deleteInspectionForCompensation(params: {
   idempotencyKey?: string | null;
 }): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const key = params.idempotencyKey?.trim() || undefined;
   await db.transaction(async (tx) => {
     // measurement_results has an ON DELETE CASCADE FK to product_inspections (when
@@ -573,7 +574,7 @@ export async function getInspectionById(id: number) {
 
 export async function updateProductInspectionNTF(id: number, userId: number, reason: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productInspections).set({
     overallResult: "NTF",
     ntfConfirmedBy: userId,
@@ -614,7 +615,7 @@ export async function bulkAcknowledgeInspections(params: {
   userId: number;
 }): Promise<{ updatedIds: number[]; alreadyAcknowledgedIds: number[] }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   if (params.ids.length === 0) return { updatedIds: [], alreadyAcknowledgedIds: [] };
 
   const now = new Date();
@@ -653,14 +654,14 @@ export async function bulkAcknowledgeInspections(params: {
 // ============ MEASUREMENT RESULT FUNCTIONS ============
 export async function createMeasurementResult(data: InsertMeasurementResult) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(measurementResults).values(data).returning({ id: measurementResults.id });
   return result.id;
 }
 
 export async function createMeasurementResults(dataList: InsertMeasurementResult[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   if (dataList.length === 0) return;
   await db.insert(measurementResults).values(dataList);
 }
@@ -717,7 +718,7 @@ export async function getMeasurementResultById(id: number) {
 
 export async function updateMeasurementResultRemark(id: number, remark: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(measurementResults).set({ remark }).where(eq(measurementResults.id, id));
 }
 

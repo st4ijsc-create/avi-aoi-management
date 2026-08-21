@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, sql, or, SQL } from "drizzle-orm";
 import {
   userSettings,
@@ -399,7 +400,7 @@ export async function getWidgetStylePresetById(id: number) {
 
 export async function createWidgetStylePreset(data: Omit<InsertWidgetStylePreset, 'id' | 'createdAt' | 'updatedAt'>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(widgetStylePresets).values(data).returning({ id: widgetStylePresets.id });
   return { id: Number(result.id) };
@@ -407,7 +408,7 @@ export async function createWidgetStylePreset(data: Omit<InsertWidgetStylePreset
 
 export async function updateWidgetStylePreset(id: number, data: Partial<InsertWidgetStylePreset>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(widgetStylePresets)
     .set(data)
@@ -416,7 +417,7 @@ export async function updateWidgetStylePreset(id: number, data: Partial<InsertWi
 
 export async function deleteWidgetStylePreset(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.delete(widgetStylePresets)
     .where(eq(widgetStylePresets.id, id));

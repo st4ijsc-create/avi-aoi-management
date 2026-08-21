@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, or, desc, gte, lte, sql, isNotNull, like, inArray, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { idsTrongPhamVi, type PhamViNguoiXem } from "./hierarchy";
@@ -111,7 +112,7 @@ export async function approveMqttClient(
   mappingType?: 'AUTO' | 'MANUAL'
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(mqttClients)
     .set({
@@ -126,7 +127,7 @@ export async function approveMqttClient(
 
 export async function rejectMqttClient(id: number, reason?: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(mqttClients)
     .set({
@@ -143,7 +144,7 @@ export async function updateMqttClientMapping(id: number, data: {
   autoReconnect?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(mqttClients)
     .set(data)
@@ -158,7 +159,7 @@ export async function updateMqttClientSettings(id: number, data: {
   isActive?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(mqttClients)
     .set(data)
@@ -167,7 +168,7 @@ export async function updateMqttClientSettings(id: number, data: {
 
 export async function deleteMqttClient(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   // Soft delete
   await db.update(mqttClients)
@@ -177,7 +178,7 @@ export async function deleteMqttClient(id: number) {
 
 export async function disconnectAndResetMqttClient(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(mqttClients)
     .set({
@@ -723,7 +724,7 @@ export async function createMqttClient(data: {
   isActive?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   // Generate a unique clientId from deviceId
   const clientId = `client_${data.deviceId}_${Date.now()}`;

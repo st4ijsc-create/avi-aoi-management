@@ -70,6 +70,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash, randomBytes } from "node:crypto";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, desc, eq, isNotNull, isNull, lte } from "drizzle-orm";
 import { appError } from "../_core/appError";
 import * as db from "../db";
@@ -281,12 +282,18 @@ export const MACHINE_KEY_DEFAULT_SCOPES: ApiScope[] = [
 // ── errors ────────────────────────────────────────────────────────────────────
 
 /** The DB is positively unreachable — callers with a WAL should buffer, not 401. */
-export class DbUnavailableError extends Error {
-  constructor(message = "Database unavailable") {
-    super(message);
-    this.name = "DbUnavailableError";
-  }
-}
+// ⚠ MỘT lớp DUY NHẤT cho cả hệ. Trước đây file này khai một lớp RIÊNG cùng tên —
+// hai lớp trùng tên là bẫy:  sai nhánh tuỳ đường import, mà đường ingest WAL
+// lại nhận diện bằng  nên lỗi sẽ im lặng đúng ở chỗ nguy nhất (mất bản ghi kiểm).
+// Nhà chung:  — nơi lớp này MANG THEO .
+// ⚠ MỘT lớp DUY NHẤT cho cả hệ. Trước đây file này khai một lớp RIÊNG cùng tên — hai
+// lớp trùng tên là bẫy: `instanceof` rẽ sai nhánh tuỳ đường import, mà đường ingest WAL
+// lại nhận diện bằng `name` nên sai sót sẽ IM LẶNG đúng ở chỗ nguy nhất (đệm-hay-mất
+// bản ghi kiểm khi DB sập). Nhà chung là `_core/dbErrors`, nơi lớp này mang theo
+// `appCode: "DB_UNAVAILABLE"` để client dịch được.
+// `import` + `export` chứ không chỉ `export … from`: file này còn `new DbUnavailableError()`
+// tại chỗ, mà `export … from` KHÔNG đưa tên vào phạm vi cục bộ.
+export { DbUnavailableError };
 
 // ── auth ──────────────────────────────────────────────────────────────────────
 

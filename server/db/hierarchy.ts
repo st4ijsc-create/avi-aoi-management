@@ -1,4 +1,5 @@
 import { eq, and, desc, like, or, sql, inArray, ne, lt, isNull, isNotNull, type SQL } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { createHash, randomBytes } from "node:crypto";
 import { pgTable, serial, integer, varchar, timestamp, jsonb, index, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { getDb } from "./connection";
@@ -121,7 +122,7 @@ const MQTT_REVOKED_PASSWORD_SENTINEL = "!revoked-by-machine-lifecycle!";
 // ============ FACTORY FUNCTIONS ============
 export async function createFactory(data: InsertFactory) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(factories).values(data).returning({ id: factories.id });
   return result.id;
 }
@@ -327,13 +328,13 @@ export async function getFactoryById(id: number, scope?: PhamViNguoiXem) {
 
 export async function updateFactory(id: number, data: Partial<InsertFactory>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(factories).set(data).where(eq(factories.id, id));
 }
 
 export async function deleteFactory(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(factories).set({ isActive: false }).where(eq(factories.id, id));
 }
 
@@ -350,27 +351,27 @@ export async function getFactoryZones(factoryId: number, scope?: PhamViNguoiXem)
 
 export async function createFactoryZone(data: InsertFactoryZone) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(factoryZones).values(data).returning({ id: factoryZones.id });
   return result.id;
 }
 
 export async function updateFactoryZone(id: number, data: Partial<InsertFactoryZone>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(factoryZones).set({ ...data, updatedAt: new Date() }).where(eq(factoryZones.id, id));
 }
 
 export async function deleteFactoryZone(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(factoryZones).where(eq(factoryZones.id, id));
 }
 
 // ============ WORKSHOP FUNCTIONS ============
 export async function createWorkshop(data: InsertWorkshop) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(workshops).values(data).returning({ id: workshops.id });
   return result.id;
 }
@@ -402,20 +403,20 @@ export async function getWorkshopById(id: number) {
 
 export async function updateWorkshop(id: number, data: Partial<InsertWorkshop>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(workshops).set(data).where(eq(workshops.id, id));
 }
 
 export async function deleteWorkshop(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(workshops).set({ isActive: false }).where(eq(workshops.id, id));
 }
 
 // ============ PRODUCTION LINE FUNCTIONS ============
 export async function createProductionLine(data: InsertProductionLine) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(productionLines).values(data).returning({ id: productionLines.id });
   return result.id;
 }
@@ -447,7 +448,7 @@ export async function getLineById(id: number) {
 
 export async function updateProductionLine(id: number, data: Partial<InsertProductionLine>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productionLines).set(data).where(eq(productionLines.id, id));
   // G1.10: line renamed or moved to another workshop → machine URNs under it change.
   if (data.code !== undefined || data.workshopId !== undefined) queueUrnSyncForLine(id);
@@ -455,14 +456,14 @@ export async function updateProductionLine(id: number, data: Partial<InsertProdu
 
 export async function deleteProductionLine(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productionLines).set({ isActive: false }).where(eq(productionLines.id, id));
 }
 
 // ============ STATION FUNCTIONS ============
 export async function createStation(data: InsertStation) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(stations).values(data).returning({ id: stations.id });
   return result.id;
 }
@@ -502,7 +503,7 @@ export async function getStationById(id: number) {
 
 export async function updateStation(id: number, data: Partial<InsertStation>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(stations).set(data).where(eq(stations.id, id));
   // G1.10: station renamed or reassigned to another line → machine URNs change.
   if (data.code !== undefined || data.lineId !== undefined) queueUrnSyncForStation(id);
@@ -510,7 +511,7 @@ export async function updateStation(id: number, data: Partial<InsertStation>) {
 
 export async function deleteStation(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(stations).set({ isActive: false }).where(eq(stations.id, id));
 }
 
@@ -532,7 +533,7 @@ export async function deleteStation(id: number) {
  */
 export async function ensureIotVirtualStation(workshopCode: string): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   let workshop = workshopCode ? await getWorkshopByCode(workshopCode) : null;
   if (!workshop) {
@@ -577,7 +578,7 @@ export async function ensureIotVirtualStation(workshopCode: string): Promise<num
 // ============ MACHINE FUNCTIONS ============
 export async function createMachine(data: InsertMachine) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   try {
     const [result] = await db.insert(machines).values(data).returning({ id: machines.id });
     queueUrnSync(result.id); // G1.10 — stamp urn/isa95_path (fire-and-forget)
@@ -783,13 +784,13 @@ export async function getMachineByCode(code: string, scope?: PhamViNguoiXem) {
 
 export async function updateMachineHeartbeat(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(machines).set({ lastHeartbeat: new Date() }).where(eq(machines.id, id));
 }
 
 export async function updateMachine(id: number, data: Partial<InsertMachine>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(machines).set(data).where(eq(machines.id, id));
   // G1.10: only code/station changes alter the URN — skip the (frequent) status writes.
   if (data.code !== undefined || data.stationId !== undefined) queueUrnSync(id);
@@ -871,7 +872,7 @@ export async function issueMachineClaimToken(opts: {
   ttlMinutes?: number;
 }): Promise<{ token: string; tokenPrefix: string; expiresAt: Date }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const ttl = opts.ttlMinutes && opts.ttlMinutes > 0 ? opts.ttlMinutes : machineClaimTokenTtlMinutes();
   const expiresAt = new Date(Date.now() + ttl * 60_000);
@@ -914,7 +915,7 @@ export async function redeemMachineClaimToken(opts: {
   fromIp?: string | null;
 }): Promise<{ machineId: number; machineCode: string; apiKey: string }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   // Uniform error: never reveal whether the SERIAL or the TOKEN was the problem.
   const invalid = () => new ClaimTokenError("Invalid or expired claim token", "invalid");
@@ -1082,7 +1083,7 @@ async function revokeMachineCredentialsTx(
 /** Standalone credential revocation (own transaction) — for admin tooling/rotation. */
 export async function revokeMachineCredentials(machineId: number): Promise<MachineCredentialRevocation> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.transaction(async (tx) => revokeMachineCredentialsTx(tx, machineId));
 }
 
@@ -1204,7 +1205,7 @@ export async function issueMachineEnrollmentToken(opts: {
   maxUses: number;
 }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const ttl = opts.ttlMinutes && opts.ttlMinutes > 0 ? opts.ttlMinutes : machineEnrollmentTokenTtlMinutes();
   const expiresAt = new Date(Date.now() + ttl * 60_000);
@@ -1265,7 +1266,7 @@ export async function redeemMachineEnrollmentToken(opts: {
   fromIp?: string | null;
 }): Promise<{ machineId: number; machineCode: string; scopes: string[]; created: boolean }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const serialNumber = opts.serialNumber.trim();
 
@@ -1436,7 +1437,7 @@ export async function listMachineEnrollmentTokens(): Promise<PublicEnrollmentTok
 /** Revoke an enrollment token: stamp revokedAt (redemption then denies it). */
 export async function revokeMachineEnrollmentToken(id: number): Promise<PublicEnrollmentTokenRow> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db
     .update(machineEnrollmentTokens)
     .set({ revokedAt: new Date() })
@@ -1464,7 +1465,7 @@ export const MACHINE_LIFECYCLE_REVOKES_CREDENTIALS: readonly MachineLifecycleSta
  */
 export async function deleteMachine(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(machines)
     .set({ isActive: false, lifecycleStatus: "retired", updatedAt: new Date() })
     .where(eq(machines.id, id));
@@ -1513,7 +1514,7 @@ export async function approveMachine(id: number, data: {
   apiKey?: string;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(machines).set({
     ...data,
     registrationStatus: "approved",
@@ -1551,7 +1552,7 @@ export async function transitionMachineLifecycle(
   revoked?: MachineCredentialRevocation;
 }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [machine] = await db.select().from(machines).where(eq(machines.id, id)).limit(1);
   if (!machine) throw new Error("Machine not found");
@@ -1592,7 +1593,7 @@ export async function transitionMachineLifecycle(
 // Từ chối máy
 export async function rejectMachine(id: number, reason?: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   // Doc 56 Đ2a Việc 4 — when the IoT device class is on, rejecting a machine ALSO
   // revokes its linked MQTT device (same non-loginable state as retire), atomically
   // with the status flip. Flag OFF (default) keeps the original single UPDATE
@@ -1666,7 +1667,7 @@ export async function getWorkstationByCode(code: string) {
 
 export async function createWorkstation(data: Omit<InsertWorkstation, 'id' | 'createdAt' | 'updatedAt'>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(workstations).values(data).returning({ id: workstations.id });
   return result.id;
@@ -1674,14 +1675,14 @@ export async function createWorkstation(data: Omit<InsertWorkstation, 'id' | 'cr
 
 export async function updateWorkstation(id: number, data: Partial<Omit<InsertWorkstation, 'id' | 'createdAt' | 'updatedAt'>>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(workstations).set(data).where(eq(workstations.id, id));
 }
 
 export async function deleteWorkstation(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.delete(workstations).where(eq(workstations.id, id));
 }
@@ -1894,7 +1895,7 @@ export async function getStationCascadeInfo(stationId: number, scope?: PhamViNgu
 // Cascade soft-delete factory and all children
 export async function cascadeDeleteFactory(factoryId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   // W2.8: atomic cascade — a crash mid-cascade must not leave a half-deleted hierarchy.
   await db.transaction(async (tx) => {
     const ws = await tx.select({ id: workshops.id }).from(workshops)
@@ -1923,7 +1924,7 @@ export async function cascadeDeleteFactory(factoryId: number) {
 // Cascade soft-delete workshop and all children
 export async function cascadeDeleteWorkshop(workshopId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.transaction(async (tx) => {
     const ln = await tx.select({ id: productionLines.id }).from(productionLines)
       .where(and(eq(productionLines.workshopId, workshopId), eq(productionLines.isActive, true)));
@@ -1945,7 +1946,7 @@ export async function cascadeDeleteWorkshop(workshopId: number) {
 // Cascade soft-delete line and all children
 export async function cascadeDeleteLine(lineId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.transaction(async (tx) => {
     const st = await tx.select({ id: stations.id }).from(stations)
       .where(and(eq(stations.lineId, lineId), eq(stations.isActive, true)));
@@ -1961,7 +1962,7 @@ export async function cascadeDeleteLine(lineId: number) {
 // Cascade soft-delete station and all children
 export async function cascadeDeleteStation(stationId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.transaction(async (tx) => {
     await tx.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)));
     await tx.update(stations).set({ isActive: false }).where(eq(stations.id, stationId));
@@ -2031,25 +2032,25 @@ export async function getDeletedWorkstations(scope?: PhamViNguoiXem) {
 
 export async function restoreFactory(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(factories).set({ isActive: true }).where(eq(factories.id, id));
 }
 
 export async function restoreWorkshop(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(workshops).set({ isActive: true }).where(eq(workshops.id, id));
 }
 
 export async function restoreLine(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productionLines).set({ isActive: true }).where(eq(productionLines.id, id));
 }
 
 export async function restoreStation(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(stations).set({ isActive: true }).where(eq(stations.id, id));
 }
 
@@ -2065,7 +2066,7 @@ export async function restoreStation(id: number) {
  */
 export async function restoreMachine(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [machine] = await db.select().from(machines).where(eq(machines.id, id)).limit(1);
   if (!machine) throw new Error("Machine not found");
@@ -2097,6 +2098,6 @@ export async function restoreMachine(id: number) {
 
 export async function restoreWorkstation(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(workstations).set({ isActive: true }).where(eq(workstations.id, id));
 }
