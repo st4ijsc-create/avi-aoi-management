@@ -12003,6 +12003,20 @@
       "cooldown": "Cooldown (minutes)",
       "targetFpy": "Target FPY (%)",
       "minFpy": "Min FPY (%)"
+    },
+    "part": {
+      "warning": "warning threshold {{value}}%",
+      "critical": "critical threshold {{value}}%",
+      "minSample": "minimum sample size {{value}}",
+      "cooldown": "cooldown {{value}} minutes",
+      "targetFpy": "target FPY {{value}}%",
+      "minFpy": "minimum FPY {{value}}%"
+    },
+    "req": {
+      "adjustNg": "Adjust NG threshold #{{id}}: set {{parts}}.",
+      "configInspect": "Configure inspection parameters for NG threshold #{{id}}: set {{parts}}.",
+      "createNg": "Create a new NG threshold named \"{{name}}\" for station #{{stationId}}: warning threshold {{warning}}%, critical threshold {{critical}}%{{tail}}.",
+      "updateTarget": "Update the quality target for product model #{{id}}: set {{parts}}."
     }
   },
   "machineAI": {

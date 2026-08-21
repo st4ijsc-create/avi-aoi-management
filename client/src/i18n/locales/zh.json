@@ -11786,6 +11786,20 @@
       "cooldown": "冷却时间（分钟）",
       "targetFpy": "目标 FPY (%)",
       "minFpy": "最低 FPY (%)"
+    },
+    "part": {
+      "warning": "警告阈值 {{value}}%",
+      "critical": "严重阈值 {{value}}%",
+      "minSample": "最小样本量 {{value}}",
+      "cooldown": "冷却 {{value}} 分钟",
+      "targetFpy": "目标 FPY {{value}}%",
+      "minFpy": "最低 FPY {{value}}%"
+    },
+    "req": {
+      "adjustNg": "调整 NG 阈值 #{{id}}：设置 {{parts}}。",
+      "configInspect": "配置 NG 阈值 #{{id}} 的检测参数：设置 {{parts}}。",
+      "createNg": "为工位 #{{stationId}} 新建名为「{{name}}」的 NG 阈值：警告阈值 {{warning}}%，严重阈值 {{critical}}%{{tail}}。",
+      "updateTarget": "更新产品型号 #{{id}} 的质量目标：设置 {{parts}}。"
     }
   },
   "machineAI": {

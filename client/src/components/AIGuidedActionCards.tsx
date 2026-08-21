@@ -95,7 +95,8 @@ interface ActionDef {
   descFallback: string;
   fields: Field[];
   /** Build the natural-language (vi) request that routes to the write-tool. */
-  buildRequest: (v: Record<string, string>) => string;
+  /** ⚠ Nhận `t` vì mảng ACTIONS ở CẤP MODULE — gọi `t()` ở đó sẽ đóng băng ngôn ngữ lúc import. */
+  buildRequest: (v: Record<string, string>, t: TFn) => string;
 }
 
 // ── Field bounds mirror the zod schemas in engineering.ts (defense in depth) ──
@@ -112,11 +113,11 @@ const ACTIONS: ActionDef[] = [
       { type: "number", name: "warningThreshold", labelKey: "aiGuided.field.warning", labelFallback: "Ngưỡng cảnh báo (%)", min: 0, max: 100 },
       { type: "number", name: "criticalThreshold", labelKey: "aiGuided.field.critical", labelFallback: "Ngưỡng nghiêm trọng (%)", min: 0, max: 100 },
     ],
-    buildRequest: (v) => {
+    buildRequest: (v, t) => {
       const parts: string[] = [];
-      if (v.warningThreshold) parts.push(`ngưỡng cảnh báo ${v.warningThreshold}%`);
-      if (v.criticalThreshold) parts.push(`ngưỡng nghiêm trọng ${v.criticalThreshold}%`);
-      return `Điều chỉnh ngưỡng NG #${v.thresholdId}: đặt ${parts.join(", ")}.`;
+      if (v.warningThreshold) parts.push(t("aiGuided.part.warning", { value: v.warningThreshold }));
+      if (v.criticalThreshold) parts.push(t("aiGuided.part.critical", { value: v.criticalThreshold }));
+      return t("aiGuided.req.adjustNg", { id: v.thresholdId, parts: parts.join(", ") });
     },
   },
   {
@@ -131,11 +132,11 @@ const ACTIONS: ActionDef[] = [
       { type: "number", name: "minSampleSize", labelKey: "aiGuided.field.minSample", labelFallback: "Số mẫu tối thiểu", min: 1, max: 100000, integer: true },
       { type: "number", name: "cooldownMinutes", labelKey: "aiGuided.field.cooldown", labelFallback: "Cooldown (phút)", min: 1, max: 1440, integer: true },
     ],
-    buildRequest: (v) => {
+    buildRequest: (v, t) => {
       const parts: string[] = [];
-      if (v.minSampleSize) parts.push(`số mẫu tối thiểu ${v.minSampleSize}`);
-      if (v.cooldownMinutes) parts.push(`cooldown ${v.cooldownMinutes} phút`);
-      return `Cấu hình tham số kiểm tra ngưỡng NG #${v.thresholdId}: đặt ${parts.join(", ")}.`;
+      if (v.minSampleSize) parts.push(t("aiGuided.part.minSample", { value: v.minSampleSize }));
+      if (v.cooldownMinutes) parts.push(t("aiGuided.part.cooldown", { value: v.cooldownMinutes }));
+      return t("aiGuided.req.configInspect", { id: v.thresholdId, parts: parts.join(", ") });
     },
   },
   {
@@ -153,12 +154,12 @@ const ACTIONS: ActionDef[] = [
       { type: "number", name: "minSampleSize", labelKey: "aiGuided.field.minSample", labelFallback: "Số mẫu tối thiểu", min: 1, max: 100000, integer: true },
       { type: "number", name: "cooldownMinutes", labelKey: "aiGuided.field.cooldown", labelFallback: "Cooldown (phút)", min: 1, max: 1440, integer: true },
     ],
-    buildRequest: (v) => {
+    buildRequest: (v, t) => {
       const extra: string[] = [];
-      if (v.minSampleSize) extra.push(`số mẫu tối thiểu ${v.minSampleSize}`);
-      if (v.cooldownMinutes) extra.push(`cooldown ${v.cooldownMinutes} phút`);
+      if (v.minSampleSize) extra.push(t("aiGuided.part.minSample", { value: v.minSampleSize }));
+      if (v.cooldownMinutes) extra.push(t("aiGuided.part.cooldown", { value: v.cooldownMinutes }));
       const tail = extra.length ? `, ${extra.join(", ")}` : "";
-      return `Tạo ngưỡng NG mới tên "${v.name}" cho trạm #${v.stationId}: ngưỡng cảnh báo ${v.warningThreshold}%, ngưỡng nghiêm trọng ${v.criticalThreshold}%${tail}.`;
+      return t("aiGuided.req.createNg", { name: v.name, stationId: v.stationId, warning: v.warningThreshold, critical: v.criticalThreshold, tail });
     },
   },
   {
@@ -173,11 +174,11 @@ const ACTIONS: ActionDef[] = [
       { type: "number", name: "targetYieldRate", labelKey: "aiGuided.field.targetFpy", labelFallback: "Mục tiêu FPY (%)", min: 0, max: 100 },
       { type: "number", name: "minYieldRate", labelKey: "aiGuided.field.minFpy", labelFallback: "FPY tối thiểu (%)", min: 0, max: 100 },
     ],
-    buildRequest: (v) => {
+    buildRequest: (v, t) => {
       const parts: string[] = [];
-      if (v.targetYieldRate) parts.push(`mục tiêu FPY ${v.targetYieldRate}%`);
-      if (v.minYieldRate) parts.push(`FPY tối thiểu ${v.minYieldRate}%`);
-      return `Cập nhật mục tiêu chất lượng cho mẫu sản phẩm #${v.productModelId}: đặt ${parts.join(", ")}.`;
+      if (v.targetYieldRate) parts.push(t("aiGuided.part.targetFpy", { value: v.targetYieldRate }));
+      if (v.minYieldRate) parts.push(t("aiGuided.part.minFpy", { value: v.minYieldRate }));
+      return t("aiGuided.req.updateTarget", { id: v.productModelId, parts: parts.join(", ") });
     },
   },
 ];
@@ -191,6 +192,8 @@ const REQUIRE_ONE_OF: Partial<Record<ActionId, string[]>> = {
 
 // ── doc69 Wave2 A3 — pre-computed suggested actions (server/services/ai/
 // rcaActionSuggester.ts) surfaced on an RCA insight / report response ─────────
+type TFn = ReturnType<typeof useTranslation>["t"];
+
 export interface RcaSuggestedActionCard {
   tool: string;
   args: Record<string, unknown>;
@@ -518,7 +521,7 @@ function GuidedActionDialog({
       setError(err);
       return;
     }
-    onSubmit(action.buildRequest(values));
+    onSubmit(action.buildRequest(values, t));
   };
 
   return (

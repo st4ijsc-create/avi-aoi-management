@@ -11983,6 +11983,20 @@
       "cooldown": "Cooldown (phút)",
       "targetFpy": "Mục tiêu FPY (%)",
       "minFpy": "FPY tối thiểu (%)"
+    },
+    "part": {
+      "warning": "ngưỡng cảnh báo {{value}}%",
+      "critical": "ngưỡng nghiêm trọng {{value}}%",
+      "minSample": "số mẫu tối thiểu {{value}}",
+      "cooldown": "cooldown {{value}} phút",
+      "targetFpy": "mục tiêu FPY {{value}}%",
+      "minFpy": "FPY tối thiểu {{value}}%"
+    },
+    "req": {
+      "adjustNg": "Điều chỉnh ngưỡng NG #{{id}}: đặt {{parts}}.",
+      "configInspect": "Cấu hình tham số kiểm tra ngưỡng NG #{{id}}: đặt {{parts}}.",
+      "createNg": "Tạo ngưỡng NG mới tên \"{{name}}\" cho trạm #{{stationId}}: ngưỡng cảnh báo {{warning}}%, ngưỡng nghiêm trọng {{critical}}%{{tail}}.",
+      "updateTarget": "Cập nhật mục tiêu chất lượng cho mẫu sản phẩm #{{id}}: đặt {{parts}}."
     }
   },
   "machineAI": {
