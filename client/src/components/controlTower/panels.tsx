@@ -406,7 +406,7 @@ function AlarmHealthPanel(): React.JSX.Element {
         <Stat
           label={t("ctPanels.phatSinhTrong24h", "Phát sinh trong 24h")}
           value={int(d?.totalAlarms ?? null)}
-          hint="Số cảnh báo phát sinh trong cửa sổ 24h (andon + AI dự báo), kể cả đã xử lý — khác số 'đang mở' trên dải KPI."
+          hint={t("panels.soCanhBaoPhatSinh", "Số cảnh báo phát sinh trong cửa sổ 24h (andon + AI dự báo), kể cả đã xử lý — khác số 'đang mở' trên dải KPI.")}
         />
         <Stat
           label={t("controlTower.alarmHealth.ratePerOp", "Alarm/h/op")}

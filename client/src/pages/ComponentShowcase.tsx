@@ -1744,9 +1744,9 @@ function Wave2KitShowcase() {
                     <Trash2 /> Xoá vĩnh viễn
                   </Button>
                 }
-                itemLabel="vật liệu M-001"
+                itemLabel={t("componentShowcase.vatLieuM001", "vật liệu M-001")}
                 referenceCount={3}
-                referenceLabel="phiếu nhập kho"
+                referenceLabel={t("componentShowcase.phieuNhapKho", "phiếu nhập kho")}
                 onConfirm={() => new Promise((r) => setTimeout(r, 800))}
               />
               <ConfirmDeleteDialog
@@ -1775,7 +1775,7 @@ function Wave2KitShowcase() {
         </CardHeader>
         <CardContent className="space-y-3">
           <ImportExportBar
-            entityLabel="vật liệu"
+            entityLabel={t("componentShowcase.vatLieu", "vật liệu")}
             columns={SHOWCASE_MASTER_COLUMNS}
             data={SHOWCASE_MASTER_DATA}
             onImport={async (rows) => {

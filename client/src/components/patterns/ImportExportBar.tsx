@@ -176,7 +176,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
       }
       const rows = (data ?? []).map((r) => toHeaderRecord(r, columns));
       if (rows.length === 0) {
-        toast.warning("Không có dữ liệu để xuất");
+        toast.warning(t("importExportBar.khongCoDuLieuDe", "Không có dữ liệu để xuất"));
         return;
       }
       exportViaXlsx(rows, columns, format, base);
@@ -189,7 +189,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
     (format: MasterDataFormat) => {
       const example = buildExampleRecord(tmplColumns);
       exportViaXlsx([example], tmplColumns, format, `${base}_mau`);
-      toast.success("Đã tải file mẫu");
+      toast.success(t("importExportBar.daTaiFileMau", "Đã tải file mẫu"));
     },
     [tmplColumns, base],
   );

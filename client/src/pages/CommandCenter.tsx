@@ -369,7 +369,7 @@ function TreeNode({
             tabIndex={-1}
             className="-my-1 -ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
             onClick={(e) => { e.stopPropagation(); onToggle(node.id); }}
-            aria-label={isOpen ? "Thu gọn" : "Mở rộng"}
+            aria-label={isOpen ? t("commandCenter.thuGon", "Thu gọn") : t("commandCenter.moRong", "Mở rộng")}
           >
             {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
@@ -1314,7 +1314,7 @@ export default function CommandCenter() {
               delta={
                 kpi?.oee.sourceLabel && kpi?.oee.available
                   ? `OEE ${kpi.oee.sourceLabel} (snapshot) · năng lượng chưa tổng hợp`
-                  : "Chưa tổng hợp toàn hệ"
+                  : t("commandCenter.chuaTongHopToanHe", "Chưa tổng hợp toàn hệ")
               }
               tone={kpi?.oee.value?.oee != null && kpi.oee.value.oee < 60 ? "warning" : "default"}
             />

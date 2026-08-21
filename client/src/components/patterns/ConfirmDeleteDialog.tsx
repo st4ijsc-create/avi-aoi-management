@@ -17,6 +17,7 @@
  * Soft-delete (lưu trữ, khôi phục được sau) → truyền `isSoftDelete`.
  */
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { AlertTriangle, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -71,6 +72,7 @@ export function ConfirmDeleteDialog({
   cancelLabel = "Huỷ",
   disabled = false,
 }: ConfirmDeleteDialogProps): React.JSX.Element {
+  const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
 
@@ -82,10 +84,10 @@ export function ConfirmDeleteDialog({
   const resolvedDescription =
     description ??
     (isSoftDelete
-      ? "Bạn có thể khôi phục lại sau."
+      ? t("confirmDeleteDialog.banCoTheKhoiPhuc", "Bạn có thể khôi phục lại sau.")
       : "Hành động không thể hoàn tác.");
   const resolvedConfirmLabel =
-    confirmLabel ?? (isSoftDelete ? "Lưu trữ" : "Xoá vĩnh viễn");
+    confirmLabel ?? (isSoftDelete ? t("confirmDeleteDialog.luuTru", "Lưu trữ") : t("confirmDeleteDialog.xoaVinhVien", "Xoá vĩnh viễn"));
 
   const handleConfirm = React.useCallback(async () => {
     setLoading(true);

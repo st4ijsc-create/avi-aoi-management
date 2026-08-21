@@ -48,6 +48,9 @@ const FILES_KHOA_DU_LIEU = [
   "pages/ComponentShowcase.tsx",
   // F13 lô 5 — gợi ý câu hỏi AI (`question` cũng là khoá: nó được GỬI cho trợ lý)
   "components/AILocalKnowledgeBase.tsx",
+  // F13 lô 6 — QUICK_PROMPTS là hằng số cấp module: gọi t() ở đó sẽ ĐÓNG BĂNG ngôn
+  // ngữ lúc import, nên mảng giữ KHOÁ và dịch lúc render ⇒ khoá BẮT BUỘC phải tồn tại.
+  "components/DashboardAIWidget.tsx",
 ];
 
 /** Trường được component gọi `t()` lên. `description` KHÔNG nằm đây — xem ghi chú dưới. */
@@ -58,7 +61,7 @@ const TRUONG_QUA_T = ["label", "blurb", "note", "headerKey", "question"];
  * trường, vì bản đồ trạng thái có hình dạng `ok: "cmdCenter.status.ok"` — tên khoá
  * bên trái là mã enum, không phải một trong `TRUONG_QUA_T`.
  */
-const NS_F13 = /^(cmdCenter|masterDataEnum|userGuide)\./;
+const NS_F13 = /^(cmdCenter|masterDataEnum|userGuide|dashboardAIWidget)\./;
 
 function flatten(obj: unknown, prefix = "", out: Record<string, unknown> = {}) {
   if (!obj || typeof obj !== "object") return out;

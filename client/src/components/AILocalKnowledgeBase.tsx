@@ -73,7 +73,7 @@ export function AILocalKnowledgeBase() {
     const query = (q ?? question).trim();
     if (!query) return;
     if (!isReady) {
-      toast.error("Hệ thống chưa sẵn sàng. Vui lòng thử lại sau.");
+      toast.error(t("aILocalKnowledgeBase.heThongChuaSanSang", "Hệ thống chưa sẵn sàng. Vui lòng thử lại sau."));
       return;
     }
 
@@ -92,16 +92,16 @@ export function AILocalKnowledgeBase() {
           {
             id: (Date.now() + 1).toString(),
             type: "assistant",
-            content: data.answer || "Tôi không tìm thấy thông tin phù hợp. Vui lòng thử diễn đạt câu hỏi theo cách khác.",
+            content: data.answer || t("aILocalKnowledgeBase.toiKhongTimThayThong", "Tôi không tìm thấy thông tin phù hợp. Vui lòng thử diễn đạt câu hỏi theo cách khác."),
             timestamp: new Date(),
             result: data,
           },
         ]);
       } else {
-        toast.error(result.error || "Không lấy được câu trả lời.");
+        toast.error(result.error || t("aILocalKnowledgeBase.khongLayDuocCauTra", "Không lấy được câu trả lời."));
       }
     } catch (error: any) {
-      toast.error(error.message || "Có lỗi xảy ra, vui lòng thử lại.");
+      toast.error(error.message || t("aILocalKnowledgeBase.coLoiXayRaVui", "Có lỗi xảy ra, vui lòng thử lại."));
     }
   };
 
@@ -109,12 +109,12 @@ export function AILocalKnowledgeBase() {
     try {
       const result = await reloadMutation.mutateAsync();
       if (result.success) {
-        toast.success("Cập nhật dữ liệu thành công!");
+        toast.success(t("aILocalKnowledgeBase.capNhatDuLieuThanh", "Cập nhật dữ liệu thành công!"));
       } else {
-        toast.error(result.error || "Cập nhật thất bại.");
+        toast.error(result.error || t("aILocalKnowledgeBase.capNhatThatBai", "Cập nhật thất bại."));
       }
     } catch (error: any) {
-      toast.error(error.message || "Có lỗi xảy ra.");
+      toast.error(error.message || t("aILocalKnowledgeBase.coLoiXayRa", "Có lỗi xảy ra."));
     }
   };
 
@@ -303,8 +303,8 @@ export function AILocalKnowledgeBase() {
             <Textarea
               placeholder={
                 isReady
-                  ? "Nhập câu hỏi của bạn... (Enter để gửi)"
-                  : "Hệ thống đang khởi động, vui lòng chờ..."
+                  ? t("aILocalKnowledgeBase.nhapCauHoiCuaBan", "Nhập câu hỏi của bạn... (Enter để gửi)")
+                  : t("aILocalKnowledgeBase.heThongDangKhoiDong", "Hệ thống đang khởi động, vui lòng chờ...")
               }
               value={question}
               onChange={(e) => setQuestion(e.target.value)}

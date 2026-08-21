@@ -95,6 +95,43 @@ const LA_THUOC_TINH_OBJECT = /^\s*(?:[A-Za-z_$][\w$]*|["'][^"']+["'])\s*:/;
 const MO_T_CO_KHOA =
   /\bt\s*\(\s*(?:["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]|`[^`]*\$\{|$)/;
 
+/**
+ * Xoá THÂN mọi lời gọi `t(...)` trên dòng (đếm ngoặc, tôn trọng chuỗi), giữ phần
+ * còn lại.
+ *
+ * ⚠ VÌ SAO PHẢI CÓ — lỗ này do chính đợt di trú F13 phơi ra. Luật cũ là *"dòng nào
+ * có `t(` thì bỏ qua CẢ DÒNG"*, đúng cho khuôn `t("khoá", "mặc định tiếng Việt")`.
+ * Nhưng một dòng được di trú MỘT PHẦN thì tàng hình vĩnh viễn:
+ *
+ *     cond ? "Tăng" : cond2 ? t("k.giam", "Giảm") : t("k.onDinh", "Ổn định")
+ *              ↑ còn nguyên tiếng Việt, mà cả dòng đã được miễn đếm
+ *
+ * Đúng ba chỗ như vậy do bộ di trú của tôi tạo ra (ternary LỒNG, và nhánh nằm cạnh
+ * một `t()` sẵn có). Bản vá tự đào lỗ cho chính nó — và cổng khai xanh.
+ * ⇒ Nay gỡ `t(...)` rồi mới hỏi "còn chữ Việt không", thay vì bỏ qua cả dòng.
+ */
+export function goBoTCalls(ln) {
+  let out = "", i = 0;
+  while (i < ln.length) {
+    const m = ln.slice(i).match(/\bt\s*\(/);
+    if (!m) { out += ln.slice(i); break; }
+    const start = i + m.index;
+    out += ln.slice(i, start);
+    let j = start + m[0].length, d = 1, q = null;
+    while (j < ln.length && d > 0) {
+      const c = ln[j];
+      if (q) { if (c === "\\") j++; else if (c === q) q = null; }
+      else if (c === '"' || c === "'" || c === "`") q = c;
+      else if (c === "(") d++;
+      else if (c === ")") d--;
+      j++;
+    }
+    if (d > 0) return out; // `t(` chưa đóng trên dòng này → phần sau thuộc về nó
+    i = j;
+  }
+  return out;
+}
+
 /** Đếm ngoặc tròn NẰM NGOÀI chuỗi — để biết một lời gọi `t(` đã đóng chưa. */
 export function demNgoacNgoaiChuoi(ln) {
   let trongChuoi = null;
@@ -150,7 +187,21 @@ export function demHinhDangBa(clientSrc = resolve("client/src"), chiTiet = false
 
   for (const file of walkTsx(clientSrc)) {
     if (FILE_CO_BANG_DICH_RIENG.some((re) => re.test(file.split("\\").join("/")))) continue;
-    const lines = readFileSync(file, "utf8").split("\n");
+    const noiDung = readFileSync(file, "utf8");
+    const lines = noiDung.split("\n");
+
+    /**
+     * Khuôn TRƯỜNG HẬU-TỐ-NGÔN-NGỮ: `name` / `nameVi` / `nameZh` chọn theo `language`.
+     * Nhánh `Vi` của một bộ ĐỦ BA không phải nợ — người dùng zh vẫn có chữ để đọc.
+     *
+     * ⚠ Chỉ miễn khi file THẬT SỰ có nhánh `Zh`. Đo ngày 2026-08-21: 2 file đủ cặp
+     * (`DashboardWidgetManager`, `ResizableDashboard`) nhưng `DefectCatalogPage` có 11
+     * trường `*Vi:` mà **0** trường `*Zh:`, `FactoryCommandView` 6/0 — đó là nợ THẬT,
+     * và một luật miễn trừ theo mặt chữ "cứ thấy `nameVi` là bỏ qua" sẽ giấu đúng
+     * chúng đi. Điều kiện phải là CÓ CẶP, không phải CÓ TÊN.
+     */
+    const coCapNgonNgu =
+      /\b[a-zA-Z]+Vi\s*:/.test(noiDung) && /\b[a-zA-Z]+Zh\s*:/.test(noiDung);
     let inBlock = false;
     let n = 0;
     /** >0 nghĩa là đang ở TRONG thân một lời gọi `t(` mở từ dòng trước. */
@@ -180,9 +231,10 @@ export function demHinhDangBa(clientSrc = resolve("client/src"), chiTiet = false
       if (khoaODongTruoc && CHI_LA_CAP_THUOC_TINH.test(ln)) return;
       if (/>[^<>{}]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ][^<>{}]*</i.test(ln)) return;
       if (/\b(placeholder|title|label|aria-label|description|alt|tooltip)\s*=\s*["'`][^"'`]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(ln)) return;
-      if (/\bt\s*\(/.test(ln)) return;
       if (LA_KHUON_DUNG(ln)) return;
-      const sach = boCommentCuoiDong(ln);
+      if (coCapNgonNgu && /\b[a-zA-Z]+Vi\s*:/.test(ln)) return;
+      // Gỡ thân `t(...)` thay vì bỏ qua cả dòng — xem docblock `goBoTCalls`.
+      const sach = boCommentCuoiDong(goBoTCalls(ln));
       if (!CHU_VIET.test(sach)) return;
       const chuoi = sach.match(/(["'`])((?:(?!\1)[^\\]|\\.)*)\1/g);
       if (chuoi?.some((s) => CHU_VIET.test(s))) {

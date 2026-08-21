@@ -335,7 +335,7 @@ export default function DrillDownDashboard(): React.JSX.Element {
       corp == null
         ? undefined
         : corp === UNASSIGNED_CORPORATE_CODE
-          ? "Chưa gán tập đoàn"
+          ? t("drillDownDashboard.chuaGanTapDoan", "Chưa gán tập đoàn")
           : nameHintRef.current.get(`c:${corp}`) ?? corp;
     const factoryName =
       factoryId != null
@@ -530,13 +530,13 @@ export default function DrillDownDashboard(): React.JSX.Element {
               ...row,
               name: "Chưa gán tập đoàn",
               unassignedNote:
-                "Thiếu mapping tập đoàn — gán trong Quản lý dữ liệu. Bấm để xem các nhà máy của nhóm này.",
+                t("drillDownDashboard.thieuMappingTapDoanGan", "Thiếu mapping tập đoàn — gán trong Quản lý dữ liệu. Bấm để xem các nhà máy của nhóm này."),
             };
           }
           return {
             ...row,
             unassignedNote:
-              "Kết quả kiểm tra có mã nhà máy không khớp danh mục (hoặc thiếu) — gán trong Quản lý dữ liệu.",
+              t("drillDownDashboard.ketQuaKiemTraCo", "Kết quả kiểm tra có mã nhà máy không khớp danh mục (hoặc thiếu) — gán trong Quản lý dữ liệu."),
           };
         })
         // doc 68 §3.6 (việc 1) — RANK THEO MỨC XẤU: job của trang là "yield tụt ở
@@ -843,7 +843,7 @@ export default function DrillDownDashboard(): React.JSX.Element {
                 >
                   <Crosshair className="h-4 w-4" />
                   <span className="hidden sm:inline">
-                    {walkingToWorst ? "Đang tìm điểm xấu nhất…" : "Đi tới điểm xấu nhất"}
+                    {walkingToWorst ? t("drillDownDashboard.dangTimDiemXauNhat", "Đang tìm điểm xấu nhất…") : t("drillDownDashboard.diToiDiemXauNhat", "Đi tới điểm xấu nhất")}
                   </span>
                 </Button>
               }

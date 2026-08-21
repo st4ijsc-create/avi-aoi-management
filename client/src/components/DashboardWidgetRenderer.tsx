@@ -996,7 +996,7 @@ function TargetProgressWidget({ config }: { config: Record<string, any> }) {
       </div>
 
       <div className="text-lg font-bold">{pct.toFixed(1)}%</div>
-      <div className="text-xs text-muted-foreground">{config.label || "Tiến độ mục tiêu"}</div>
+      <div className="text-xs text-muted-foreground">{config.label || t("dashboardWidgetRenderer.tienDoMucTieu", "Tiến độ mục tiêu")}</div>
     </div>
   );
 }

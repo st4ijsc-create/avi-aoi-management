@@ -106,7 +106,7 @@ export function MachinesTab({
                   </div>
                   <div className="flex items-center gap-2">
                   <ExcelImportExport
-                    entityType="máy"
+                    entityType={t("machinesTab.may", "máy")}
                     templateData={[{ stationCode: "S001", code: "M001", name: "Machine 1", machineType: "AVI", model: "", manufacturer: "", isActive: true }]}
                     templateFilename="machines_template.xlsx"
                     onImport={async (data, replaceIfExists) => importMachinesMutation.mutateAsync({ data, replaceIfExists })}

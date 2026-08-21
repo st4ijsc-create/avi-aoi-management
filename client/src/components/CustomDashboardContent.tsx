@@ -435,8 +435,8 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
             error={myDashboardsQuery.error}
             onRetry={() => myDashboardsQuery.refetch()}
             preset="cards"
-            errorTitle="Không tải được danh sách bảng điều khiển"
-            retryLabel="Thử lại"
+            errorTitle={t("customDashboardContent.khongTaiDuocDanhSach", "Không tải được danh sách bảng điều khiển")}
+            retryLabel={t("customDashboardContent.thuLai", "Thử lại")}
           >
             <LayoutGridView layouts={myLayouts} mode="mine" />
           </AsyncBoundary>
@@ -449,8 +449,8 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
             error={publicDashboardsQuery.error}
             onRetry={() => publicDashboardsQuery.refetch()}
             preset="cards"
-            errorTitle="Không tải được danh sách bảng điều khiển chia sẻ"
-            retryLabel="Thử lại"
+            errorTitle={t("customDashboardContent.khongTaiDuocDanhSach2", "Không tải được danh sách bảng điều khiển chia sẻ")}
+            retryLabel={t("customDashboardContent.thuLai2", "Thử lại")}
           >
             <LayoutGridView layouts={sharedLayouts} mode="shared" />
           </AsyncBoundary>
@@ -463,8 +463,8 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
             error={myDashboardsQuery.error}
             onRetry={() => myDashboardsQuery.refetch()}
             preset="cards"
-            errorTitle="Không tải được danh sách bảng điều khiển"
-            retryLabel="Thử lại"
+            errorTitle={t("customDashboardContent.khongTaiDuocDanhSach3", "Không tải được danh sách bảng điều khiển")}
+            retryLabel={t("customDashboardContent.thuLai3", "Thử lại")}
           >
             <LayoutGridView layouts={favoriteLayouts} mode="favorites" />
           </AsyncBoundary>
@@ -685,7 +685,7 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
                     disabled={createMutation.isPending}
                   >
                     <Copy className="w-4 h-4 mr-2" />
-                    {applyingTemplateId === template.id ? "Đang tạo…" : "Dùng mẫu này"}
+                    {applyingTemplateId === template.id ? t("customDashboardContent.dangTao", "Đang tạo…") : t("customDashboardContent.dungMauNay", "Dùng mẫu này")}
                   </Button>
                 </CardContent>
               </Card>
@@ -755,7 +755,7 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
                       variant="ghost"
                       size="icon"
                       className="shrink-0 min-h-11 min-w-11"
-                      aria-label={favoriteIds.has(layout.id) ? "Bỏ yêu thích" : "Yêu thích"}
+                      aria-label={favoriteIds.has(layout.id) ? t("customDashboardContent.boYeuThich", "Bỏ yêu thích") : t("customDashboardContent.yeuThich", "Yêu thích")}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleToggleFavorite(layout.id);

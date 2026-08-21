@@ -230,7 +230,21 @@ describe("F12 — chuỗi tiếng Việt TRẦN (cổng theo-khoá không thấy
  * đã trả giá ở Pha 7 — nợ mới lẻn vào tận 119 mục mà cổng vẫn xanh. Nên ca "bám SÁT" dưới
  * đây đòi BẰNG ĐÚNG, cùng kỷ luật với `ALLOWED_RAW_VI_STRINGS` của hình dạng 1.
  */
-const FROZEN_SHAPE3 = 319;
+/**
+ * ⚠ 2026-08-21: số này TĂNG 234 → 240 mà KHÔNG có nợ mới. Thước đo vừa chính xác hơn.
+ *
+ * Luật cũ: *"dòng nào có `t(` thì bỏ qua CẢ DÒNG"* — đúng cho `t("khoá", "mặc định")`,
+ * nhưng làm một dòng di trú MỘT PHẦN tàng hình vĩnh viễn:
+ *     cond ? "Tăng" : cond2 ? t("k.giam", "Giảm") : t("k.onDinh", "Ổn định")
+ * Chuỗi "Tăng" còn nguyên tiếng Việt mà cả dòng đã được miễn đếm. Bộ di trú tự đào
+ * lỗ cho chính nó, và cổng khai xanh. Nay `goBoTCalls` gỡ thân `t(...)` rồi mới hỏi
+ * "còn chữ Việt không" ⇒ 6 chuỗi trước đây vô hình hiện ra.
+ *
+ * Đây là cùng loại sự kiện với lượt 2026-08-18 (thước đếm DÔI 123 mục), chỉ ngược
+ * dấu. Quy tắc "KHÔNG BAO GIỜ nâng" áp cho việc nâng để CHE NỢ; sửa thiết bị đo rồi
+ * ghi lại số thật thì ngược lại — đó chính là điều quy tắc bảo vệ.
+ */
+const FROZEN_SHAPE3 = 240;
 
 /**
  * ⚠ Bộ đếm hình-3 nay nằm ở `scripts/viStringScan.mjs` — MỘT nguồn sự thật.

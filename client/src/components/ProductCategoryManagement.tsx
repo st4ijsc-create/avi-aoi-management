@@ -722,7 +722,7 @@ export function ProductCategoryManagement() {
                   setImportJsonText(e.target.value);
                   setImportPreview(null);
                 }}
-                placeholder='[{"code": "ELEC", "name": "Linh kiện điện tử", ...}]'
+                placeholder={t("productCategoryManagement.codeElecNameLinhKien", '[{"code": "ELEC", "name": "Linh kiện điện tử", ...}]')}
                 rows={6}
                 className="font-mono text-sm"
               />

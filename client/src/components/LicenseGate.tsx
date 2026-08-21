@@ -54,7 +54,7 @@ export function LicenseGate({ children, route }: LicenseGateProps) {
                   trong license hiện tại.
                 </>
               ) : (
-                "Trang này thuộc module chưa được cấp phép trong license hiện tại."
+                t("licenseGate.trangNayThuocModuleChua", "Trang này thuộc module chưa được cấp phép trong license hiện tại.")
               )}
             </p>
           </div>

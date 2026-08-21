@@ -546,7 +546,7 @@ function MetricTrendBody({ data }: { data: Extract<ToolResultPayload, { type: "p
     ) : (
       <Activity className="size-3 text-muted-foreground" />
     );
-  const trendVi = data.trend === "increasing" ? "Tăng" : data.trend === "decreasing" ? "Giảm" : "Ổn định";
+  const trendVi = data.trend === "increasing" ? t("aIToolResultCard.tang", "Tăng") : data.trend === "decreasing" ? t("aIToolResultCard.giam", "Giảm") : t("aIToolResultCard.onDinh", "Ổn định");
   const chartData = data.series.map((p) => ({ ts: p.ts, value: p.value }));
   return (
     <div className="space-y-2">

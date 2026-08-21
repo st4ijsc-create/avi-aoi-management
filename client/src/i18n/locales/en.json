@@ -7473,7 +7473,8 @@
     "thresholdAppliedNoInputs": "The new threshold ({{lsl}}–{{usl}}) was written to the point. This point type doesn't show threshold fields on the form.",
     "thresholdReloaded": "Loaded the latest threshold into the form ({{lsl}}–{{usl}}) after approval.",
     "thresholdReloadedOverDirty": "The threshold was just approved and written to the point — your unsaved edit was replaced with the new value ({{lsl}}–{{usl}}). Review before saving.",
-    "unknownUserBlocked": "Your account could not be identified — please sign in again to decide."
+    "unknownUserBlocked": "Your account could not be identified — please sign in again to decide.",
+    "cellDaCoDuLieu": "That cell already has data. Change the operator/part/trial, or enable overwrite to rebuild the matrix."
   },
   "products": {
     "advGroupBatch": "Batch",
@@ -18731,7 +18732,10 @@
     "oeeMay": "Machine OEE",
     "nhiemVu2": "Tasks",
     "khongCoCanhBaoNghiem": "No critical/high alarms",
-    "cayPhanCapTooltip": "Site → factory → line → station → machine / robot"
+    "cayPhanCapTooltip": "Site → factory → line → station → machine / robot",
+    "thuGon": "Collapse",
+    "moRong": "Expand",
+    "chuaTongHopToanHe": "No system-wide rollup yet"
   },
   "msd": {
     "advisoryMsdTrackingEnabledTat": "Advisory (MSD_TRACKING_ENABLED off)",
@@ -18790,7 +18794,11 @@
     "lichSuKiemTraGan": "Recent verification history",
     "chuaCoDuLieu": "No data yet.",
     "vatTuTaiLine": "Line-side materials",
-    "kiemTraNapFeederDong": "Feeder load verification · MSD floor-life timer (J-STD-020) · stencil print-cycle counter (doc 35 W4-C)"
+    "kiemTraNapFeederDong": "Feeder load verification · MSD floor-life timer (J-STD-020) · stencil print-cycle counter (doc 35 W4-C)",
+    "chonMayTruoc": "Select a machine first",
+    "quetNhapMaReel": "Scan/enter reel code",
+    "cheDoChanChayKhi": "BLOCKING mode on mismatch (FEEDER_VERIFY_ENFORCED is on)",
+    "cheDoCanhBaoKhong": "Warning mode (non-blocking)"
   },
   "aiToolResult": {
     "khongCoKetNoiCsdl": "No database connection.",
@@ -19264,5 +19272,132 @@
     "name": "Material name",
     "qty": "Quantity",
     "active": "Active"
+  },
+  "aILocalKnowledgeBase": {
+    "heThongChuaSanSang": "The system is not ready yet. Please try again shortly.",
+    "toiKhongTimThayThong": "I could not find relevant information. Please try rephrasing your question.",
+    "khongLayDuocCauTra": "Could not retrieve an answer.",
+    "coLoiXayRaVui": "Something went wrong, please try again.",
+    "capNhatDuLieuThanh": "Data updated successfully!",
+    "capNhatThatBai": "Update failed.",
+    "coLoiXayRa": "Something went wrong.",
+    "nhapCauHoiCuaBan": "Type your question... (Enter to send)",
+    "heThongDangKhoiDong": "The system is starting up, please wait..."
+  },
+  "aIToolResultCard": {
+    "giam": "Falling",
+    "onDinh": "Stable",
+    "tang": "Rising"
+  },
+  "panels": {
+    "soCanhBaoPhatSinh": "Number of alarms raised in the 24h window (andon + AI forecast), including those already handled — different from the 'open' count on the KPI strip."
+  },
+  "customDashboardContent": {
+    "khongTaiDuocDanhSach": "Could not load the dashboard list",
+    "thuLai": "Retry",
+    "khongTaiDuocDanhSach2": "Could not load the shared dashboard list",
+    "thuLai2": "Retry",
+    "khongTaiDuocDanhSach3": "Could not load the dashboard list",
+    "thuLai3": "Retry",
+    "dangTao": "Creating…",
+    "dungMauNay": "Use this template",
+    "boYeuThich": "Remove from favourites",
+    "yeuThich": "Add to favourites"
+  },
+  "dashboardAIWidget": {
+    "tongQuanChatLuongHom": "Quality overview for today?",
+    "mayNaoCanChuY": "Which machines need attention?",
+    "phanTichXuHuongNg": "Analyse the NG trend?"
+  },
+  "dashboardWidgetRenderer": {
+    "tienDoMucTieu": "Target progress"
+  },
+  "excelImportExport": {
+    "fileKhongCoDuLieu": "The file contains no data",
+    "daTaiTemplateMau": "Template downloaded",
+    "duLieuTrungMaSe": "Rows with a duplicate code will be UPDATED with the data from the file",
+    "duLieuTrungMaSe2": "Rows with a duplicate code will be SKIPPED (existing data kept)"
+  },
+  "factoriesTab": {
+    "nhaMay": "factory"
+  },
+  "linesTab": {
+    "dayChuyen": "line"
+  },
+  "machinesTab": {
+    "may": "machine"
+  },
+  "seedDataTab": {
+    "daTaoDuLieuCo": "Sample base data created successfully!",
+    "daTao100BanGhi": "100 sample inspection records created successfully!",
+    "daTaoDuLieuPhan": "Sample workstation analytics data created successfully!"
+  },
+  "stationsTab": {
+    "tram": "station"
+  },
+  "workshopsTab": {
+    "phanXuong": "workshop"
+  },
+  "licenseEnforcementBanner": {
+    "kichHoatLicense": "Activate licence",
+    "giaHanLicense": "Renew licence"
+  },
+  "licenseGate": {
+    "trangNayThuocModuleChua": "This page belongs to a module that is not covered by the current licence."
+  },
+  "msdPanel": {
+    "daBatDauSayBake": "Bake started",
+    "daTraVeKhoKho": "Returned to the dry cabinet (exposure closed)",
+    "nhapMaLinhKien": "Enter the component code"
+  },
+  "stencilPanel": {
+    "nhapIdKhuonInStencil": "Enter a valid stencil tool ID",
+    "chonKhuonInTruoc": "Select a stencil first",
+    "soLuotInKhongHop": "Invalid number of print runs",
+    "veSinh": " · cleaned "
+  },
+  "alertGroupCard": {
+    "tuoi": "Age: ",
+    "moiNhat": "Latest: "
+  },
+  "confirmDeleteDialog": {
+    "banCoTheKhoiPhuc": "You can restore it later.",
+    "luuTru": "Archive",
+    "xoaVinhVien": "Delete permanently"
+  },
+  "importExportBar": {
+    "khongCoDuLieuDe": "No data to export",
+    "daTaiFileMau": "Template file downloaded"
+  },
+  "productCategoryManagement": {
+    "codeElecNameLinhKien": "[{\"code\": \"ELEC\", \"name\": \"Electronic components\", ...}]"
+  },
+  "quickIssueReport": {
+    "daBaoMacDinhAn": "Reported (safe default): {{reason}} · level {{state}}"
+  },
+  "componentShowcase": {
+    "vatLieuM001": "material M-001",
+    "phieuNhapKho": "goods-receipt note",
+    "vatLieu": "material"
+  },
+  "corporateDashboard": {
+    "trucTiepKhongTheoKy": "Live — not period-based"
+  },
+  "drillDownDashboard": {
+    "chuaGanTapDoan": "No group assigned",
+    "thieuMappingTapDoanGan": "Group mapping missing — assign it under Data management. Click to see this group's factories.",
+    "ketQuaKiemTraCo": "Inspection results carry a factory code that does not match the catalog (or is missing) — assign it under Data management.",
+    "dangTimDiemXauNhat": "Finding the worst point…",
+    "diToiDiemXauNhat": "Go to the worst point"
+  },
+  "mqttDashboard": {
+    "vuiLongChonFactoryWorkshop": "Please select a factory, workshop and station",
+    "daCopyJson": "JSON copied",
+    "dangGui": "Sending...",
+    "guiTest": "Send test"
+  },
+  "emptyState": {
+    "khongCoGiBatThuong": "Nothing unusual",
+    "heThongOnDinh": "System is stable"
   }
 }

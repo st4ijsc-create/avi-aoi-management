@@ -7256,7 +7256,8 @@
     "thresholdAppliedNoInputs": "新阈值（{{lsl}}–{{usl}}）已写入该测量点。此点位类型的表单不显示阈值输入框。",
     "thresholdReloaded": "批准后已将最新阈值加载到表单（{{lsl}}–{{usl}}）。",
     "thresholdReloadedOverDirty": "该阈值刚被批准并写入测量点——已用新值（{{lsl}}–{{usl}}）替换您尚未保存的手动修改。保存前请再次确认。",
-    "unknownUserBlocked": "无法确认您的账户身份——请重新登录后再进行审批。"
+    "unknownUserBlocked": "无法确认您的账户身份——请重新登录后再进行审批。",
+    "cellDaCoDuLieu": "该单元格已有数据。请更换操作员/零件/试验，或启用覆盖以重建矩阵。"
   },
   "products": {
     "advGroupBatch": "批量",
@@ -18739,7 +18740,10 @@
     "oeeMay": "设备 OEE",
     "nhiemVu2": "任务",
     "khongCoCanhBaoNghiem": "无严重/高级告警",
-    "cayPhanCapTooltip": "站点 → 工厂 → 产线 → 工位 → 设备 / 机器人"
+    "cayPhanCapTooltip": "站点 → 工厂 → 产线 → 工位 → 设备 / 机器人",
+    "thuGon": "收起",
+    "moRong": "展开",
+    "chuaTongHopToanHe": "尚无全系统汇总"
   },
   "msd": {
     "advisoryMsdTrackingEnabledTat": "仅提示（MSD_TRACKING_ENABLED 已关闭）",
@@ -18798,7 +18802,11 @@
     "lichSuKiemTraGan": "近期校验记录",
     "chuaCoDuLieu": "暂无数据。",
     "vatTuTaiLine": "产线物料",
-    "kiemTraNapFeederDong": "供料器上料校验 · MSD 车间寿命计时（J-STD-020）· 钢网印刷周期计数（doc 35 W4-C）"
+    "kiemTraNapFeederDong": "供料器上料校验 · MSD 车间寿命计时（J-STD-020）· 钢网印刷周期计数（doc 35 W4-C）",
+    "chonMayTruoc": "请先选择设备",
+    "quetNhapMaReel": "扫描/输入料盘编号",
+    "cheDoChanChayKhi": "偏差时阻断模式（FEEDER_VERIFY_ENFORCED 已开启）",
+    "cheDoCanhBaoKhong": "警告模式（不阻断）"
   },
   "aiToolResult": {
     "khongCoKetNoiCsdl": "无数据库连接。",
@@ -19272,5 +19280,132 @@
     "name": "物料名称",
     "qty": "数量",
     "active": "启用"
+  },
+  "aILocalKnowledgeBase": {
+    "heThongChuaSanSang": "系统尚未就绪，请稍后重试。",
+    "toiKhongTimThayThong": "未找到相关信息。请尝试换一种方式提问。",
+    "khongLayDuocCauTra": "未能获取回答。",
+    "coLoiXayRaVui": "发生错误，请重试。",
+    "capNhatDuLieuThanh": "数据更新成功！",
+    "capNhatThatBai": "更新失败。",
+    "coLoiXayRa": "发生错误。",
+    "nhapCauHoiCuaBan": "输入您的问题…（回车发送）",
+    "heThongDangKhoiDong": "系统正在启动，请稍候…"
+  },
+  "aIToolResultCard": {
+    "giam": "下降",
+    "onDinh": "稳定",
+    "tang": "上升"
+  },
+  "panels": {
+    "soCanhBaoPhatSinh": "24 小时窗口内新增的告警数（安灯 + AI 预测），含已处理的 — 与 KPI 条上的「未关闭」数不同。"
+  },
+  "customDashboardContent": {
+    "khongTaiDuocDanhSach": "无法加载仪表板列表",
+    "thuLai": "重试",
+    "khongTaiDuocDanhSach2": "无法加载共享仪表板列表",
+    "thuLai2": "重试",
+    "khongTaiDuocDanhSach3": "无法加载仪表板列表",
+    "thuLai3": "重试",
+    "dangTao": "创建中…",
+    "dungMauNay": "使用此模板",
+    "boYeuThich": "取消收藏",
+    "yeuThich": "收藏"
+  },
+  "dashboardAIWidget": {
+    "tongQuanChatLuongHom": "今天的质量总览？",
+    "mayNaoCanChuY": "哪些设备需要关注？",
+    "phanTichXuHuongNg": "分析 NG 趋势？"
+  },
+  "dashboardWidgetRenderer": {
+    "tienDoMucTieu": "目标进度"
+  },
+  "excelImportExport": {
+    "fileKhongCoDuLieu": "文件中没有数据",
+    "daTaiTemplateMau": "模板已下载",
+    "duLieuTrungMaSe": "编号重复的行将按文件数据进行更新",
+    "duLieuTrungMaSe2": "编号重复的行将被跳过（保留原有数据）"
+  },
+  "factoriesTab": {
+    "nhaMay": "工厂"
+  },
+  "linesTab": {
+    "dayChuyen": "产线"
+  },
+  "machinesTab": {
+    "may": "设备"
+  },
+  "seedDataTab": {
+    "daTaoDuLieuCo": "示例基础数据创建成功！",
+    "daTao100BanGhi": "已成功创建 100 条示例检测记录！",
+    "daTaoDuLieuPhan": "示例工位分析数据创建成功！"
+  },
+  "stationsTab": {
+    "tram": "工位"
+  },
+  "workshopsTab": {
+    "phanXuong": "车间"
+  },
+  "licenseEnforcementBanner": {
+    "kichHoatLicense": "激活许可证",
+    "giaHanLicense": "续期许可证"
+  },
+  "licenseGate": {
+    "trangNayThuocModuleChua": "此页面所属模块未包含在当前许可证中。"
+  },
+  "msdPanel": {
+    "daBatDauSayBake": "已开始烘烤 (bake)",
+    "daTraVeKhoKho": "已放回干燥柜（暴露记录已关闭）",
+    "nhapMaLinhKien": "请输入元件编号"
+  },
+  "stencilPanel": {
+    "nhapIdKhuonInStencil": "请输入有效的钢网 (stencil) 工装 ID",
+    "chonKhuonInTruoc": "请先选择钢网",
+    "soLuotInKhongHop": "印刷次数无效",
+    "veSinh": " · 已清洗 "
+  },
+  "alertGroupCard": {
+    "tuoi": "持续时间：",
+    "moiNhat": "最新："
+  },
+  "confirmDeleteDialog": {
+    "banCoTheKhoiPhuc": "之后可以恢复。",
+    "luuTru": "归档",
+    "xoaVinhVien": "永久删除"
+  },
+  "importExportBar": {
+    "khongCoDuLieuDe": "没有可导出的数据",
+    "daTaiFileMau": "模板文件已下载"
+  },
+  "productCategoryManagement": {
+    "codeElecNameLinhKien": "[{\"code\": \"ELEC\", \"name\": \"电子元件\", ...}]"
+  },
+  "quickIssueReport": {
+    "daBaoMacDinhAn": "已上报（安全默认）：{{reason}} · 级别 {{state}}"
+  },
+  "componentShowcase": {
+    "vatLieuM001": "物料 M-001",
+    "phieuNhapKho": "入库单",
+    "vatLieu": "物料"
+  },
+  "corporateDashboard": {
+    "trucTiepKhongTheoKy": "实时 — 非按周期"
+  },
+  "drillDownDashboard": {
+    "chuaGanTapDoan": "未分配集团",
+    "thieuMappingTapDoanGan": "缺少集团映射 — 请在「数据管理」中分配。点击查看该分组的工厂。",
+    "ketQuaKiemTraCo": "检测结果的工厂编号与目录不匹配（或缺失）— 请在「数据管理」中分配。",
+    "dangTimDiemXauNhat": "正在查找最差点…",
+    "diToiDiemXauNhat": "跳转到最差点"
+  },
+  "mqttDashboard": {
+    "vuiLongChonFactoryWorkshop": "请选择工厂、车间和工位",
+    "daCopyJson": "已复制 JSON",
+    "dangGui": "发送中...",
+    "guiTest": "发送测试"
+  },
+  "emptyState": {
+    "khongCoGiBatThuong": "一切正常",
+    "heThongOnDinh": "系统稳定"
   }
 }

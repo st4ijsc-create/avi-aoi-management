@@ -22,9 +22,9 @@ interface QuickMessage {
 }
 
 const QUICK_PROMPTS = [
-  "Tổng quan chất lượng hôm nay?",
-  "Máy nào cần chú ý?",
-  "Phân tích xu hướng NG?",
+  "dashboardAIWidget.tongQuanChatLuongHom",
+  "dashboardAIWidget.mayNaoCanChuY",
+  "dashboardAIWidget.phanTichXuHuongNg",
 ];
 
 export function DashboardAIWidget() {
@@ -89,10 +89,10 @@ export function DashboardAIWidget() {
                 variant="outline"
                 size="sm"
                 className="text-xs"
-                onClick={() => handleSend(prompt)}
+                onClick={() => handleSend(t(prompt))}
                 disabled={isStreaming}
               >
-                {prompt}
+                {t(prompt)}
               </Button>
             ))}
           </div>

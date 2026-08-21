@@ -152,7 +152,7 @@ export default function QuickIssueReport({
       const stateLabel = t(`quickIssue.state.${res.state as AndonStateT}`, res.state);
       const key = res.degraded ? "quickIssue.routedDegraded" : "quickIssue.routedToast";
       const fallback = res.degraded
-        ? "Đã báo (mặc định an toàn): {{reason}} · mức {{state}}"
+        ? t("quickIssueReport.daBaoMacDinhAn", "Đã báo (mặc định an toàn): {{reason}} · mức {{state}}")
         : "Đã báo: {{reason}} · mức {{state}} — đang định tuyến";
       toast.success(t(key, fallback, { reason: reasonLabel, state: stateLabel }));
       setDescription("");

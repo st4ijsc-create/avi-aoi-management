@@ -76,7 +76,7 @@ export function WorkshopsTab({
                   </div>
                   <div className="flex items-center gap-2">
                   <ExcelImportExport
-                    entityType="phân xưởng"
+                    entityType={t("workshopsTab.phanXuong", "phân xưởng")}
                     templateData={[{ factoryCode: "F001", code: "W001", name: "Workshop 1", description: "", isActive: true }]}
                     templateFilename="workshops_template.xlsx"
                     onImport={async (data, replaceIfExists) => importWorkshopsMutation.mutateAsync({ data, replaceIfExists })}

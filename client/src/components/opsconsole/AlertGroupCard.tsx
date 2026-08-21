@@ -147,7 +147,7 @@ export const AlertGroupCard = memo(function AlertGroupCard({
           </div>
           <p className="mt-1 line-clamp-2 text-xs opacity-90">{g.latest.message}</p>
           <div className="mt-1 text-xs opacity-80">
-            {single ? "Tuổi: " : "Mới nhất: "}
+            {single ? t("alertGroupCard.tuoi", "Tuổi: ") : t("alertGroupCard.moiNhat", "Mới nhất: ")}
             <AgeLabel raisedAt={g.latest.raisedAt} /> trước
             {g.unackedCount === 0 && " · ACK"}
             {!single && g.unackedCount > 0 && g.unackedCount < g.count && ` · còn ${g.unackedCount} chưa ACK`}

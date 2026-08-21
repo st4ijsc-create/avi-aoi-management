@@ -207,7 +207,7 @@ export function MqttDashboardContent() {
 
   const handleTestNGAlert = () => {
     if (!testFactoryId || !testWorkshopId || !testStationId) {
-      toast.error('Vui lòng chọn Factory, Workshop và Station');
+      toast.error(t("mqttDashboard.vuiLongChonFactoryWorkshop", "Vui lòng chọn Factory, Workshop và Station"));
       return;
     }
     testNGAlertMutation.mutate({
@@ -938,7 +938,7 @@ export function MqttDashboardContent() {
                       onClick={(e) => {
                         e.stopPropagation();
                         navigator.clipboard.writeText(JSON.stringify(lastTestResult, null, 2));
-                        toast.info('Đã copy JSON');
+                        toast.info(t("mqttDashboard.daCopyJson", "Đã copy JSON"));
                       }}
                     >
                       <Copy aria-hidden="true" className="w-3 h-3" />
@@ -962,7 +962,7 @@ export function MqttDashboardContent() {
               disabled={!testFactoryId || !testWorkshopId || !testStationId || testNGAlertMutation.isPending}
             >
               <Send className="w-4 h-4 mr-2" />
-              {testNGAlertMutation.isPending ? 'Đang gửi...' : 'Gửi Test'}
+              {testNGAlertMutation.isPending ? t("mqttDashboard.dangGui", "Đang gửi...") : t("mqttDashboard.guiTest", "Gửi Test")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -111,10 +111,10 @@ export function EmptyState({
   const Icon = scopeEmpty ? config.icon : CustomIcon || config.icon;
   const title = scopeEmpty
     ? t(config.titleKey)
-    : customTitle || (allClear ? 'Không có gì bất thường' : t(config.titleKey));
+    : customTitle || (allClear ? t("emptyState.khongCoGiBatThuong", "Không có gì bất thường") : t(config.titleKey));
   const description = scopeEmpty
     ? t(config.descriptionKey)
-    : customDescription || (allClear ? 'Hệ thống ổn định' : t(config.descriptionKey));
+    : customDescription || (allClear ? t("emptyState.heThongOnDinh", "Hệ thống ổn định") : t(config.descriptionKey));
 
   if (compact) {
     return (

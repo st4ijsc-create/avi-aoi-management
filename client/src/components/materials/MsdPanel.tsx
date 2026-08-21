@@ -97,21 +97,21 @@ export default function MsdPanel() {
   });
   const startBake = trpc.msd.startBake.useMutation({
     onSuccess: () => {
-      toast.success("Đã bắt đầu sấy (bake)");
+      toast.success(t("msdPanel.daBatDauSayBake", "Đã bắt đầu sấy (bake)"));
       refetchAll();
     },
     onError: (e) => toastTrpcError(e),
   });
   const closeExposure = trpc.msd.closeExposure.useMutation({
     onSuccess: () => {
-      toast.success("Đã trả về kho khô (đóng exposure)");
+      toast.success(t("msdPanel.daTraVeKhoKho", "Đã trả về kho khô (đóng exposure)"));
       refetchAll();
     },
     onError: (e) => toastTrpcError(e),
   });
 
   const onOpen = () => {
-    if (!componentCode.trim()) return toast.error("Nhập mã linh kiện");
+    if (!componentCode.trim()) return toast.error(t("msdPanel.nhapMaLinhKien", "Nhập mã linh kiện"));
     openExposure.mutate({
       componentCode: componentCode.trim(),
       reelId: reelId.trim() || undefined,

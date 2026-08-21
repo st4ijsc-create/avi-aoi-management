@@ -61,14 +61,14 @@ export default function StencilPanel() {
 
   const onSelect = () => {
     const id = Number(toolIdInput.trim());
-    if (!Number.isInteger(id) || id <= 0) return toast.error("Nhập ID khuôn in (stencil tool) hợp lệ");
+    if (!Number.isInteger(id) || id <= 0) return toast.error(t("stencilPanel.nhapIdKhuonInStencil", "Nhập ID khuôn in (stencil tool) hợp lệ"));
     setSelectedToolId(id);
   };
 
   const onRecord = () => {
-    if (selectedToolId == null) return toast.error("Chọn khuôn in trước");
+    if (selectedToolId == null) return toast.error(t("stencilPanel.chonKhuonInTruoc", "Chọn khuôn in trước"));
     const n = Number(printCount);
-    if (!Number.isFinite(n) || n < 0) return toast.error("Số lượt in không hợp lệ");
+    if (!Number.isFinite(n) || n < 0) return toast.error(t("stencilPanel.soLuotInKhongHop", "Số lượt in không hợp lệ"));
     record.mutate({
       stencilToolId: selectedToolId,
       printCount: Math.trunc(n),
@@ -208,7 +208,7 @@ export default function StencilPanel() {
                     <div key={r.id} className="flex items-center justify-between py-2 text-sm">
                       <span className="font-medium">+{Number(r.printCount).toLocaleString()} lượt</span>
                       <span className="text-muted-foreground">
-                        {r.cleanedAt ? "· vệ sinh " : ""}
+                        {r.cleanedAt ? t("stencilPanel.veSinh", "· vệ sinh ") : ""}
                         {r.tensionValue != null ? `· lực căng ${r.tensionValue}` : ""}
                       </span>
                       <span className="text-xs text-muted-foreground">

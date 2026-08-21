@@ -7453,7 +7453,8 @@
     "thresholdAppliedNoInputs": "Ngưỡng mới ({{lsl}}–{{usl}}) đã được ghi vào điểm đo. Loại điểm này không hiển thị ô ngưỡng trên form.",
     "thresholdReloaded": "Đã nạp ngưỡng mới nhất vào form ({{lsl}}–{{usl}}) sau khi duyệt.",
     "thresholdReloadedOverDirty": "Ngưỡng vừa được duyệt và ghi vào điểm đo — đã thay bản bạn đang gõ tay bằng giá trị mới ({{lsl}}–{{usl}}). Kiểm tra lại trước khi Lưu.",
-    "unknownUserBlocked": "Chưa xác định được tài khoản của bạn — hãy đăng nhập lại để duyệt."
+    "unknownUserBlocked": "Chưa xác định được tài khoản của bạn — hãy đăng nhập lại để duyệt.",
+    "cellDaCoDuLieu": "Cell đã có dữ liệu. Hãy đổi operator/part/trial hoặc bật overwrite để tạo lại matrix."
   },
   "products": {
     "advGroupBatch": "Hàng loạt",
@@ -18711,7 +18712,10 @@
     "oeeMay": "OEE máy",
     "nhiemVu2": "Nhiệm vụ",
     "khongCoCanhBaoNghiem": "Không có cảnh báo nghiêm trọng/cao",
-    "cayPhanCapTooltip": "Site → nhà máy → chuyền → trạm → máy / robot"
+    "cayPhanCapTooltip": "Site → nhà máy → chuyền → trạm → máy / robot",
+    "thuGon": "Thu gọn",
+    "moRong": "Mở rộng",
+    "chuaTongHopToanHe": "Chưa tổng hợp toàn hệ"
   },
   "msd": {
     "advisoryMsdTrackingEnabledTat": "Advisory (MSD_TRACKING_ENABLED tắt)",
@@ -18770,7 +18774,11 @@
     "lichSuKiemTraGan": "Lịch sử kiểm tra gần đây",
     "chuaCoDuLieu": "Chưa có dữ liệu.",
     "vatTuTaiLine": "Vật tư tại line",
-    "kiemTraNapFeederDong": "Kiểm tra nạp Feeder · đồng hồ floor-life MSD (J-STD-020) · đếm chu kỳ khuôn in Stencil (doc 35 W4-C)"
+    "kiemTraNapFeederDong": "Kiểm tra nạp Feeder · đồng hồ floor-life MSD (J-STD-020) · đếm chu kỳ khuôn in Stencil (doc 35 W4-C)",
+    "chonMayTruoc": "Chọn máy trước",
+    "quetNhapMaReel": "Quét/nhập mã reel",
+    "cheDoChanChayKhi": "Chế độ CHẶN chạy khi có lệch (FEEDER_VERIFY_ENFORCED bật)",
+    "cheDoCanhBaoKhong": "Chế độ cảnh báo (không chặn)"
   },
   "aiToolResult": {
     "khongCoKetNoiCsdl": "Không có kết nối CSDL.",
@@ -19244,5 +19252,132 @@
     "name": "Tên vật liệu",
     "qty": "Số lượng",
     "active": "Kích hoạt"
+  },
+  "aILocalKnowledgeBase": {
+    "heThongChuaSanSang": "Hệ thống chưa sẵn sàng. Vui lòng thử lại sau.",
+    "toiKhongTimThayThong": "Tôi không tìm thấy thông tin phù hợp. Vui lòng thử diễn đạt câu hỏi theo cách khác.",
+    "khongLayDuocCauTra": "Không lấy được câu trả lời.",
+    "coLoiXayRaVui": "Có lỗi xảy ra, vui lòng thử lại.",
+    "capNhatDuLieuThanh": "Cập nhật dữ liệu thành công!",
+    "capNhatThatBai": "Cập nhật thất bại.",
+    "coLoiXayRa": "Có lỗi xảy ra.",
+    "nhapCauHoiCuaBan": "Nhập câu hỏi của bạn... (Enter để gửi)",
+    "heThongDangKhoiDong": "Hệ thống đang khởi động, vui lòng chờ..."
+  },
+  "aIToolResultCard": {
+    "giam": "Giảm",
+    "onDinh": "Ổn định",
+    "tang": "Tăng"
+  },
+  "panels": {
+    "soCanhBaoPhatSinh": "Số cảnh báo phát sinh trong cửa sổ 24h (andon + AI dự báo), kể cả đã xử lý — khác số 'đang mở' trên dải KPI."
+  },
+  "customDashboardContent": {
+    "khongTaiDuocDanhSach": "Không tải được danh sách bảng điều khiển",
+    "thuLai": "Thử lại",
+    "khongTaiDuocDanhSach2": "Không tải được danh sách bảng điều khiển chia sẻ",
+    "thuLai2": "Thử lại",
+    "khongTaiDuocDanhSach3": "Không tải được danh sách bảng điều khiển",
+    "thuLai3": "Thử lại",
+    "dangTao": "Đang tạo…",
+    "dungMauNay": "Dùng mẫu này",
+    "boYeuThich": "Bỏ yêu thích",
+    "yeuThich": "Yêu thích"
+  },
+  "dashboardAIWidget": {
+    "tongQuanChatLuongHom": "Tổng quan chất lượng hôm nay?",
+    "mayNaoCanChuY": "Máy nào cần chú ý?",
+    "phanTichXuHuongNg": "Phân tích xu hướng NG?"
+  },
+  "dashboardWidgetRenderer": {
+    "tienDoMucTieu": "Tiến độ mục tiêu"
+  },
+  "excelImportExport": {
+    "fileKhongCoDuLieu": "File không có dữ liệu",
+    "daTaiTemplateMau": "Đã tải template mẫu",
+    "duLieuTrungMaSe": "Dữ liệu trùng mã sẽ được CẬP NHẬT với thông tin từ file",
+    "duLieuTrungMaSe2": "Dữ liệu trùng mã sẽ được BỎ QUA (giữ nguyên dữ liệu cũ)"
+  },
+  "factoriesTab": {
+    "nhaMay": "nhà máy"
+  },
+  "linesTab": {
+    "dayChuyen": "dây chuyền"
+  },
+  "machinesTab": {
+    "may": "máy"
+  },
+  "seedDataTab": {
+    "daTaoDuLieuCo": "Đã tạo dữ liệu cơ sở mẫu thành công!",
+    "daTao100BanGhi": "Đã tạo 100 bản ghi kiểm tra mẫu thành công!",
+    "daTaoDuLieuPhan": "Đã tạo dữ liệu phân tích trạm làm việc mẫu thành công!"
+  },
+  "stationsTab": {
+    "tram": "trạm"
+  },
+  "workshopsTab": {
+    "phanXuong": "phân xưởng"
+  },
+  "licenseEnforcementBanner": {
+    "kichHoatLicense": "Kích hoạt License",
+    "giaHanLicense": "Gia hạn License"
+  },
+  "licenseGate": {
+    "trangNayThuocModuleChua": "Trang này thuộc module chưa được cấp phép trong license hiện tại."
+  },
+  "msdPanel": {
+    "daBatDauSayBake": "Đã bắt đầu sấy (bake)",
+    "daTraVeKhoKho": "Đã trả về kho khô (đóng exposure)",
+    "nhapMaLinhKien": "Nhập mã linh kiện"
+  },
+  "stencilPanel": {
+    "nhapIdKhuonInStencil": "Nhập ID khuôn in (stencil tool) hợp lệ",
+    "chonKhuonInTruoc": "Chọn khuôn in trước",
+    "soLuotInKhongHop": "Số lượt in không hợp lệ",
+    "veSinh": "· vệ sinh "
+  },
+  "alertGroupCard": {
+    "tuoi": "Tuổi: ",
+    "moiNhat": "Mới nhất: "
+  },
+  "confirmDeleteDialog": {
+    "banCoTheKhoiPhuc": "Bạn có thể khôi phục lại sau.",
+    "luuTru": "Lưu trữ",
+    "xoaVinhVien": "Xoá vĩnh viễn"
+  },
+  "importExportBar": {
+    "khongCoDuLieuDe": "Không có dữ liệu để xuất",
+    "daTaiFileMau": "Đã tải file mẫu"
+  },
+  "productCategoryManagement": {
+    "codeElecNameLinhKien": "[{\"code\": \"ELEC\", \"name\": \"Linh kiện điện tử\", ...}]"
+  },
+  "quickIssueReport": {
+    "daBaoMacDinhAn": "Đã báo (mặc định an toàn): {{reason}} · mức {{state}}"
+  },
+  "componentShowcase": {
+    "vatLieuM001": "vật liệu M-001",
+    "phieuNhapKho": "phiếu nhập kho",
+    "vatLieu": "vật liệu"
+  },
+  "corporateDashboard": {
+    "trucTiepKhongTheoKy": "Trực tiếp — không theo kỳ"
+  },
+  "drillDownDashboard": {
+    "chuaGanTapDoan": "Chưa gán tập đoàn",
+    "thieuMappingTapDoanGan": "Thiếu mapping tập đoàn — gán trong Quản lý dữ liệu. Bấm để xem các nhà máy của nhóm này.",
+    "ketQuaKiemTraCo": "Kết quả kiểm tra có mã nhà máy không khớp danh mục (hoặc thiếu) — gán trong Quản lý dữ liệu.",
+    "dangTimDiemXauNhat": "Đang tìm điểm xấu nhất…",
+    "diToiDiemXauNhat": "Đi tới điểm xấu nhất"
+  },
+  "mqttDashboard": {
+    "vuiLongChonFactoryWorkshop": "Vui lòng chọn Factory, Workshop và Station",
+    "daCopyJson": "Đã copy JSON",
+    "dangGui": "Đang gửi...",
+    "guiTest": "Gửi Test"
+  },
+  "emptyState": {
+    "khongCoGiBatThuong": "Không có gì bất thường",
+    "heThongOnDinh": "Hệ thống ổn định"
   }
 }

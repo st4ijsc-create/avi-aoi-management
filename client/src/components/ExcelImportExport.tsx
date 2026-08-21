@@ -52,7 +52,7 @@ export function ExcelImportExport({
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
       if (jsonData.length === 0) {
-        toast.error("File không có dữ liệu");
+        toast.error(t("excelImportExport.fileKhongCoDuLieu", "File không có dữ liệu"));
         return;
       }
 
@@ -97,7 +97,7 @@ export function ExcelImportExport({
     const ws = XLSX.utils.json_to_sheet(templateData);
     XLSX.utils.book_append_sheet(wb, ws, "Template");
     XLSX.writeFile(wb, templateFilename);
-    toast.success("Đã tải template mẫu");
+    toast.success(t("excelImportExport.daTaiTemplateMau", "Đã tải template mẫu"));
   };
 
   return (
@@ -166,8 +166,8 @@ export function ExcelImportExport({
                 </Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {replaceIfExists
-                    ? "Dữ liệu trùng mã sẽ được CẬP NHẬT với thông tin từ file"
-                    : "Dữ liệu trùng mã sẽ được BỎ QUA (giữ nguyên dữ liệu cũ)"}
+                    ? t("excelImportExport.duLieuTrungMaSe", "Dữ liệu trùng mã sẽ được CẬP NHẬT với thông tin từ file")
+                    : t("excelImportExport.duLieuTrungMaSe2", "Dữ liệu trùng mã sẽ được BỎ QUA (giữ nguyên dữ liệu cũ)")}
                 </p>
               </div>
             </div>

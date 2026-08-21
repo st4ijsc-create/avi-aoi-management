@@ -122,8 +122,8 @@ export function LicenseEnforcementBanner() {
             }`}
         >
           {enforcement.isLocked || enforcement.noLicense
-            ? 'Kích hoạt License'
-            : 'Gia hạn License'}
+            ? t("licenseEnforcementBanner.kichHoatLicense", "Kích hoạt License")
+            : t("licenseEnforcementBanner.giaHanLicense", "Gia hạn License")}
         </Link>
       )}
 

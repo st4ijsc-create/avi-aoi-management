@@ -15,17 +15,17 @@ export function SeedDataTab() {
   const { t } = useTranslation();
   // Seed Data Mutations
   const seedDataMutation = trpc.seedData.seed.useMutation({
-    onSuccess: () => toast.success('Đã tạo dữ liệu cơ sở mẫu thành công!'),
+    onSuccess: () => toast.success(t("seedDataTab.daTaoDuLieuCo", "Đã tạo dữ liệu cơ sở mẫu thành công!")),
     onError: (error) => toastTrpcError(error),
   });
 
   const seedInspectionsMutation = trpc.seedData.seedInspections.useMutation({
-    onSuccess: () => toast.success('Đã tạo 100 bản ghi kiểm tra mẫu thành công!'),
+    onSuccess: () => toast.success(t("seedDataTab.daTao100BanGhi", "Đã tạo 100 bản ghi kiểm tra mẫu thành công!")),
     onError: (error) => toastTrpcError(error),
   });
 
   const seedWorkstationAnalyticsMutation = trpc.seedData.seedWorkstationAnalytics.useMutation({
-    onSuccess: () => toast.success('Đã tạo dữ liệu phân tích trạm làm việc mẫu thành công!'),
+    onSuccess: () => toast.success(t("seedDataTab.daTaoDuLieuPhan", "Đã tạo dữ liệu phân tích trạm làm việc mẫu thành công!")),
     onError: (error) => toastTrpcError(error),
   });
 

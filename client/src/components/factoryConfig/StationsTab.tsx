@@ -80,7 +80,7 @@ export function StationsTab({
                   </div>
                   <div className="flex items-center gap-2">
                   <ExcelImportExport
-                    entityType="trạm"
+                    entityType={t("stationsTab.tram", "trạm")}
                     templateData={[{ lineCode: "L001", code: "S001", name: "Station 1", description: "", orderIndex: 1, isActive: true }]}
                     templateFilename="stations_template.xlsx"
                     onImport={async (data, replaceIfExists) => importStationsMutation.mutateAsync({ data, replaceIfExists })}

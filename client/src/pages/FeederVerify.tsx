@@ -67,8 +67,8 @@ function FeederVerifyTab() {
   });
 
   const onVerify = () => {
-    if (machineId == null) return toast.error("Chọn máy trước");
-    if (!scannedReel.trim()) return toast.error("Quét/nhập mã reel");
+    if (machineId == null) return toast.error(t("feederVerify.chonMayTruoc", "Chọn máy trước"));
+    if (!scannedReel.trim()) return toast.error(t("feederVerify.quetNhapMaReel", "Quét/nhập mã reel"));
     verify.mutate({ machineId, slotCode: slotCode.trim() || undefined, scannedReel: scannedReel.trim() });
   };
 
@@ -132,7 +132,7 @@ function FeederVerifyTab() {
                 </Button>
               </CardTitle>
               <CardDescription>
-                {status?.enforced ? "Chế độ CHẶN chạy khi có lệch (FEEDER_VERIFY_ENFORCED bật)" : "Chế độ cảnh báo (không chặn)"}
+                {status?.enforced ? t("feederVerify.cheDoChanChayKhi", "Chế độ CHẶN chạy khi có lệch (FEEDER_VERIFY_ENFORCED bật)") : t("feederVerify.cheDoCanhBaoKhong", "Chế độ cảnh báo (không chặn)")}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">

@@ -433,7 +433,7 @@ export default function CorporateDashboard() {
               label={t('corporate.avgOEE')}
               value={`${corporateOverview.avgOEE}%`}
               tone="info"
-              delta="Trực tiếp — không theo kỳ"
+              delta={t("corporateDashboard.trucTiepKhongTheoKy", "Trực tiếp — không theo kỳ")}
             />
           ) : (
             /* doc 68 §3.7 P1 — ô no-OEE dùng MetricCard chuẩn (value="—") thay Card

@@ -964,7 +964,7 @@ export default function ProductModels() {
     onError: (error) => {
       const code = (error as any)?.data?.code;
       if (code === "CONFLICT") {
-        toast.error("Cell đã có dữ liệu. Hãy đổi operator/part/trial hoặc bật overwrite để tạo lại matrix.");
+        toast.error(t("productModels.cellDaCoDuLieu", "Cell đã có dữ liệu. Hãy đổi operator/part/trial hoặc bật overwrite để tạo lại matrix."));
         return;
       }
       toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
