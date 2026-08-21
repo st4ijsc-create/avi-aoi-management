@@ -54,17 +54,22 @@ const FILES_KHOA_DU_LIEU = [
   // F13 lô 8 — hằng số CẤP MODULE giữ KHOÁ, bọc t() ở nơi tiêu thụ đích danh
   "pages/ControlReadiness.tsx",
   "components/EmbeddedDashboardTemplates.tsx",
+  // F13 lô 9 — ★ DashboardTemplates render t(descriptionKey) mà CẢ SÁU khoá không
+  // tồn tại ở locale nào: người dùng thấy nguyên chuỗi khoá, ở MỌI ngôn ngữ.
+  "pages/DashboardTemplates.tsx",
+  "components/WidgetStyleEditor.tsx",
+  "pages/AIBrainDashboard.tsx",
 ];
 
 /** Trường được component gọi `t()` lên. `description` KHÔNG nằm đây — xem ghi chú dưới. */
-const TRUONG_QUA_T = ["label", "blurb", "note", "headerKey", "question"];
+const TRUONG_QUA_T = ["label", "blurb", "note", "headerKey", "question", "descriptionKey", "desc"];
 
 /**
  * Không gian tên gốc của các khoá do F13 sinh. Quét theo TIỀN TỐ thay vì theo tên
  * trường, vì bản đồ trạng thái có hình dạng `ok: "cmdCenter.status.ok"` — tên khoá
  * bên trái là mã enum, không phải một trong `TRUONG_QUA_T`.
  */
-const NS_F13 = /^(ctrlReady|embTpl|cmdCenter|masterDataEnum|userGuide|dashboardAIWidget)\./;
+const NS_F13 = /^(widgetTheme|aiBrain|ctrlReady|embTpl|cmdCenter|masterDataEnum|userGuide|dashboardAIWidget)\./;
 
 function flatten(obj: unknown, prefix = "", out: Record<string, unknown> = {}) {
   if (!obj || typeof obj !== "object") return out;

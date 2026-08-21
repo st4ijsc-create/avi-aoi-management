@@ -3361,7 +3361,13 @@
     "ngHistoryAria": "NG 历史，{{n}} 天",
     "topDefectPoints": "缺陷最多的测量点",
     "noDefectPoints": "本周期内没有缺陷测量点。",
-    "hayChoPhepPopupCua": "请允许本页面弹出窗口后重试，或使用「导出 HTML」。"
+    "hayChoPhepPopupCua": "请允许本页面弹出窗口后重试，或使用「导出 HTML」。",
+    "tplProductionOverviewDesc": "生产总览：产量图表、良率与设备状态",
+    "tplQualityControlDesc": "质量监控：NG 分析、SPC 图表与缺陷追踪",
+    "tplMachineHealthDesc": "设备健康跟踪：运行时间、告警与维护计划",
+    "tplExecutiveSummaryDesc": "面向管理层的汇总报告：KPI、趋势与对比",
+    "tplRealtimeMonitoringDesc": "实时监控：实时数据、告警与状态更新",
+    "tplAlertManagementDesc": "告警管理：告警历史、规则与通知"
   },
   "defects": {
     "trend": {
@@ -15056,7 +15062,14 @@
       "untripError": "解除开关失败。",
       "adminOnlyNote": "只有已启用双重验证（2FA）的管理员才能更改此开关。"
     },
-    "vramBrokerSource": "以调度器为准（实际强制执行的数值）"
+    "vramBrokerSource": "以调度器为准（实际强制执行的数值）",
+    "tier": {
+      "ruleSqlHeuristicKhongLlm": "规则 / SQL / 启发式 — 不使用 LLM",
+      "modelNho3bIntentChat": "小模型 (3B)：意图识别、短对话、抽取",
+      "modelLon7bRagRca": "大模型 (7B) + RAG：根因分析、报告、推理",
+      "visionQwen25VlMo": "视觉 (Qwen2.5-VL)：缺陷描述、视觉问答",
+      "hanhDongGhiDoTin": "写操作与低置信度情形 → 人工审批"
+    }
   },
   "agentCenter": {
     "title": "Agent 指挥中心",
@@ -19464,5 +19477,15 @@
     "baoCaoTongHopCho": "面向管理层的汇总报告：KPI、趋势与对比",
     "giamSatThoiGianThuc": "实时监控：实时数据、告警与状态更新",
     "quanLyCanhBaoVoi": "告警管理：告警历史、规则与通知"
+  },
+  "widgetTheme": {
+    "macDinh": "默认",
+    "daiDuong": "海洋",
+    "hoangHon": "日落",
+    "rungXanh": "森林",
+    "nuaDem": "午夜",
+    "sanHo": "珊瑚",
+    "cucQuang": "极光",
+    "thep": "钢灰"
   }
 }

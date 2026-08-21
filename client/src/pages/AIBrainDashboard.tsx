@@ -86,11 +86,11 @@ function fmtAgo(d?: Date | string | null): string {
 
 // Cognitive Escalation Ladder — tier metadata (mirrors aiModelRouter.ts Tier 0–4).
 const TIERS = [
-  { n: 0, icon: ListChecks, label: "Tier 0 · Reflex", desc: "Rule / SQL / heuristic — không LLM", bar: "bg-slate-400", text: "text-slate-500", bg: "bg-slate-500/10" },
-  { n: 1, icon: Zap, label: "Tier 1 · Fast", desc: "Model nhỏ (3B): intent, chat ngắn, extract", bar: "bg-emerald-500", text: "text-emerald-500", bg: "bg-emerald-500/10" },
-  { n: 2, icon: Layers, label: "Tier 2 · Deep", desc: "Model lớn (7B) + RAG: RCA, report, reasoning", bar: "bg-blue-500", text: "text-blue-500", bg: "bg-blue-500/10" },
-  { n: 3, icon: Eye, label: "Tier 3 · Perception", desc: "Vision (Qwen2.5-VL): mô tả lỗi, visual QA", bar: "bg-fuchsia-500", text: "text-fuchsia-500", bg: "bg-fuchsia-500/10" },
-  { n: 4, icon: UserCheck, label: "Tier 4 · Human / HITL", desc: "Hành động ghi, độ tin cậy thấp → người duyệt", bar: "bg-amber-500", text: "text-amber-500", bg: "bg-amber-500/10" },
+  { n: 0, icon: ListChecks, label: "Tier 0 · Reflex", desc: "aiBrain.tier.ruleSqlHeuristicKhongLlm", bar: "bg-slate-400", text: "text-slate-500", bg: "bg-slate-500/10" },
+  { n: 1, icon: Zap, label: "Tier 1 · Fast", desc: "aiBrain.tier.modelNho3bIntentChat", bar: "bg-emerald-500", text: "text-emerald-500", bg: "bg-emerald-500/10" },
+  { n: 2, icon: Layers, label: "Tier 2 · Deep", desc: "aiBrain.tier.modelLon7bRagRca", bar: "bg-blue-500", text: "text-blue-500", bg: "bg-blue-500/10" },
+  { n: 3, icon: Eye, label: "Tier 3 · Perception", desc: "aiBrain.tier.visionQwen25VlMo", bar: "bg-fuchsia-500", text: "text-fuchsia-500", bg: "bg-fuchsia-500/10" },
+  { n: 4, icon: UserCheck, label: "Tier 4 · Human / HITL", desc: "aiBrain.tier.hanhDongGhiDoTin", bar: "bg-amber-500", text: "text-amber-500", bg: "bg-amber-500/10" },
 ] as const;
 
 function fmtGB(bytes?: number | null): string {
@@ -380,7 +380,7 @@ export default function AIBrainDashboard() {
                       <div className="mt-1 h-2 w-full rounded-full bg-muted overflow-hidden">
                         <div className={`h-full rounded-full ${tier.bar} transition-all`} style={{ width: `${pct}%` }} />
                       </div>
-                      <div className="text-xs text-muted-foreground mt-0.5 truncate">{tier.desc}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">{t(tier.desc)}</div>
                     </div>
                   </div>
                 );

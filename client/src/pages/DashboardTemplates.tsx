@@ -230,7 +230,8 @@ export default function DashboardTemplates() {
     applyTemplate({
       key: `system-${template.id}`,
       name: template.name,
-      description: template.description,
+      // Lưu MÔ TẢ ĐÃ DỊCH: bảng người dùng tạo ra phải mang ngôn ngữ họ đang dùng.
+      description: t(template.descriptionKey),
       widgets: template.widgets,
       layout: template.layout,
     });

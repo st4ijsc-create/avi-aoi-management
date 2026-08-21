@@ -3369,7 +3369,13 @@
     "ngHistoryAria": "NG history, {{n}} days",
     "topDefectPoints": "Top defective measurement points",
     "noDefectPoints": "No defective measurement points in this period.",
-    "hayChoPhepPopupCua": "Allow pop-ups for this page and try again, or use \"Export HTML\"."
+    "hayChoPhepPopupCua": "Allow pop-ups for this page and try again, or use \"Export HTML\".",
+    "tplQualityControlDesc": "Quality monitoring with NG analysis, SPC charts and defect tracking",
+    "tplMachineHealthDesc": "Machine health tracking with uptime, alerts and maintenance schedule",
+    "tplExecutiveSummaryDesc": "Management summary report with KPIs, trends and comparisons",
+    "tplRealtimeMonitoringDesc": "Realtime monitoring with live data, alerts and status updates",
+    "tplAlertManagementDesc": "Alarm management with alert history, rules and notifications",
+    "tplProductionOverviewDesc": "Production overview with output charts, yield rate and machine status"
   },
   "defects": {
     "trend": {
@@ -14498,7 +14504,14 @@
       "untripError": "Failed to untrip the kill-switch.",
       "adminOnlyNote": "Only an admin with 2FA enabled can change this switch."
     },
-    "vramBrokerSource": "per broker (the enforced figure)"
+    "vramBrokerSource": "per broker (the enforced figure)",
+    "tier": {
+      "ruleSqlHeuristicKhongLlm": "Rule / SQL / heuristic — no LLM",
+      "modelNho3bIntentChat": "Small model (3B): intent, short chat, extract",
+      "modelLon7bRagRca": "Large model (7B) + RAG: RCA, reports, reasoning",
+      "visionQwen25VlMo": "Vision (Qwen2.5-VL): defect description, visual QA",
+      "hanhDongGhiDoTin": "Write actions and low-confidence cases → human approval"
+    }
   },
   "agentCenter": {
     "title": "Agent Command Center",
@@ -19456,5 +19469,15 @@
     "baoCaoTongHopCho": "Management summary report with KPIs, trends and comparisons",
     "giamSatThoiGianThuc": "Realtime monitoring with live data, alerts and status updates",
     "quanLyCanhBaoVoi": "Alarm management with alert history, rules and notifications"
+  },
+  "widgetTheme": {
+    "macDinh": "Default",
+    "daiDuong": "Ocean",
+    "hoangHon": "Sunset",
+    "rungXanh": "Forest",
+    "nuaDem": "Midnight",
+    "sanHo": "Coral",
+    "cucQuang": "Aurora",
+    "thep": "Steel"
   }
 }

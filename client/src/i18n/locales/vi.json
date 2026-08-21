@@ -3361,7 +3361,13 @@
     "ngHistoryAria": "Lịch sử NG {{n}} ngày",
     "topDefectPoints": "Top điểm-đo lỗi",
     "noDefectPoints": "Không có điểm-đo lỗi trong kỳ.",
-    "hayChoPhepPopupCua": "Hãy cho phép popup (cửa sổ bật lên) cho trang này rồi thử lại, hoặc dùng \"Xuất HTML\"."
+    "hayChoPhepPopupCua": "Hãy cho phép popup (cửa sổ bật lên) cho trang này rồi thử lại, hoặc dùng \"Xuất HTML\".",
+    "tplProductionOverviewDesc": "Tổng quan sản xuất với biểu đồ sản lượng, yield rate, và trạng thái máy",
+    "tplQualityControlDesc": "Giám sát chất lượng với NG analysis, SPC charts, và defect tracking",
+    "tplMachineHealthDesc": "Theo dõi sức khỏe máy với uptime, alerts, và maintenance schedule",
+    "tplExecutiveSummaryDesc": "Báo cáo tổng hợp cho quản lý với KPIs, trends, và comparisons",
+    "tplRealtimeMonitoringDesc": "Giám sát thời gian thực với live data, alerts, và status updates",
+    "tplAlertManagementDesc": "Quản lý cảnh báo với alert history, rules, và notifications"
   },
   "defects": {
     "heatmap": {
@@ -14478,7 +14484,14 @@
       "untripError": "Không thể untrip công tắc.",
       "adminOnlyNote": "Chỉ admin đã bật 2FA mới có thể đổi trạng thái công tắc này."
     },
-    "vramBrokerSource": "theo broker (số đang cưỡng chế)"
+    "vramBrokerSource": "theo broker (số đang cưỡng chế)",
+    "tier": {
+      "ruleSqlHeuristicKhongLlm": "Rule / SQL / heuristic — không LLM",
+      "modelNho3bIntentChat": "Model nhỏ (3B): intent, chat ngắn, extract",
+      "modelLon7bRagRca": "Model lớn (7B) + RAG: RCA, report, reasoning",
+      "visionQwen25VlMo": "Vision (Qwen2.5-VL): mô tả lỗi, visual QA",
+      "hanhDongGhiDoTin": "Hành động ghi, độ tin cậy thấp → người duyệt"
+    }
   },
   "agentCenter": {
     "title": "Agent Command Center",
@@ -19436,5 +19449,15 @@
     "baoCaoTongHopCho": "Báo cáo tổng hợp cho quản lý với KPIs, trends, và comparisons",
     "giamSatThoiGianThuc": "Giám sát thời gian thực với live data, alerts, và status updates",
     "quanLyCanhBaoVoi": "Quản lý cảnh báo với alert history, rules, và notifications"
+  },
+  "widgetTheme": {
+    "macDinh": "Mặc định",
+    "daiDuong": "Đại dương",
+    "hoangHon": "Hoàng hôn",
+    "rungXanh": "Rừng xanh",
+    "nuaDem": "Nửa đêm",
+    "sanHo": "San hô",
+    "cucQuang": "Cực quang",
+    "thep": "Thép"
   }
 }
