@@ -1847,7 +1847,70 @@ EXPECT_CONFORMANCE=24
 # eight VENDORED rows untouched). EXPECT_BUILD_NODES stays 0. No suppression of any kind was added — no
 # NoWarn, no #pragma, no .editorconfig severity — and SuppressionCensusTests' three tables are untouched.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1165
+#
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 TASK AQ-1 (.superpowers/sdd/items-16-21/task-1-brief.md) — OWNER DECISION 21 EXECUTED. OWNER
+# DECISION 16 WAS **NOT** EXECUTED: its brief carried a STOP condition, the measurement fired it, and the
+# stop is recorded in owner-decisions.md item 16 rather than paid in code. So this block moves ONE term.
+# RAISES EXPECT_EDGECORE 1165 -> 1168 (+3). Nothing else moves; grand total 2776 -> 2779.
+#   THE FOUR OTHER TERMS WERE READ BACK OUT OF THIS FILE LINE BY LINE, not carried from the brief, for
+#   the reason AL-1, AM-1 and AP-1 all give: EXPECT_ABSTRACTIONS 161 (line ~331), EXPECT_CONFORMANCE 24
+#   (~332), EXPECT_EDGESERVICE 52 (~1916), EXPECT_ENGINEAPI 1374 (~3372). The sum is not the check; the
+#   TERMS are. 1168 is MEASURED (`dotnet test tests/St4i.EdgeCore.Tests` alone: 1168/1168), not 1165+3.
+#
+# 🔴 THE ORDER OF OPERATIONS, BECAUSE AP-1 GOT IT WRONG IN THIS EXACT BLOCK AND CAUGHT ITSELF. AP-1 wrote
+# "EXPECT_WARNINGS 328 -> 331" into its justification BEFORE measuring, then the rebuild returned 328 and
+# the predicted number was corrected before it shipped. Both numbers in this block were measured FIRST
+# and written SECOND: the EdgeCore suite was run alone and returned 1168/1168, and the full rebuild was
+# run and returned 328, and only then was either digit typed into this file.
+#
+# WHAT WAS ADDED — THREE [Fact], ALL IN ONE EXISTING FILE.
+#   +3  tests/St4i.EdgeCore.Tests/MappingProfileResolverTests.cs (EXISTING FILE) —
+#       An_ABSOLUTE_mappingProfile_pointing_outside_the_mapping_directory_is_refused_and_warns_what_to_fix,
+#       A_dotdot_mappingProfile_that_climbs_out_of_the_mapping_directory_is_refused_and_warns, and
+#       A_SUBDIRECTORY_of_the_mapping_directory_still_resolves_so_the_confinement_rejects_only_what_LEAVES.
+#
+# 🔴 TWO OF THE THREE ARE WITNESSES; THE THIRD IS NOT, AND SAYING SO IS THE POINT. The control arm was
+# the confinement call replaced by `var path = combined;` — the exact pre-AQ-1 expression — built and run
+# whole:
+#   * CONTROL (fix removed): RED on the ABSOLUTE test and RED on the dotdot test. GREEN on the other
+#     eight, including the subdirectory test.
+#   * FIX RESTORED: 10/10 GREEN. The file was restored from a byte copy taken before the mutation, and
+#     `git diff` afterwards showed the fix and the tests and nothing else.
+#   The subdirectory test is GREEN IN BOTH ARMS **BY CONSTRUCTION** and is therefore NOT a witness for
+#   the fix — it is the guard against the opposite error, a confinement drawn so tight that it also
+#   rejects `mapping/vendor-a/preset`, which owner item 21 names as the deployment a fix must not break.
+#   A ceiling stated too small is worse than no ceiling, so the guard is carried; it is just not counted
+#   as evidence that the confinement works.
+#
+# 🔴 WHAT THE FIX IS, AND WHAT IT DELIBERATELY IS NOT. MappingProfileResolver.ResolveOne now normalizes
+# both the mapping directory and the combined candidate to ABSOLUTE paths (Path.GetFullPath) and requires
+# the candidate to start with the root plus a trailing separator. It does NOT filter `..` or a separator
+# out of the operator's string — that is the classic wrong answer, and the dotdot test exercises both
+# separator spellings precisely so a string rule could not pass it. The boundary is LEXICAL: a symlink
+# INSIDE the mapping directory pointing out of it is still followed, and the resolver's doc comment says
+# so rather than implying a stronger promise than the code keeps. Refusal routes to `logWarning`, not to
+# `logError`, because `logError` carries an Exception and a refusal has none.
+#
+# 🔴 WHAT WAS *NOT* TOUCHED. OeeCalculator: ZERO lines — item 16 is STOPPED, not deferred, and the reason
+# is in owner-decisions.md item 16 under its 2026-08-21 measurement. IUnsPublisher: ZERO lines (item 23
+# is ruled REMOVE and belongs to another task). No public member was renamed or added. No payload
+# changed. No MSI, no publish-desktop/, no server/, no client/.
+#
+# 🔴 EXPECT_WARNINGS STAYS 328, MEASURED ON A FULL `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
+# AFTER THE CHANGE — `Build succeeded.`, `0 Error(s)`, `328 Warning(s)`, 15/15 compilations. THE FIRST
+# ATTEMPT WAS DISCARDED AND THE REASON IS THE ONE THIS FILE ALREADY DOCUMENTS: it returned 14 errors, all
+# CS2001 for missing `*.g.cs`, all attributed to `St4iMachineSimulator_2whtdmpd_wpftmp.csproj` — the WPF
+# markup race the build-phase note above names, with the VS Code C# Dev Kit build host resident on this
+# workspace throughout (eight dotnet.exe, all parented to Microsoft.VisualStudio.Code.ServiceHost, a
+# population sampled TWICE ~25 s apart and identical both times). The second attempt was clean. The
+# change adds no public member to St4i.EdgeCore — the two new members are `private static` — so no CS1591
+# was available to move, and Mapping/'s residue of zero is unchanged. EXPECT_WARNING_LEDGER stays at its
+# sixteen rows unmoved unit for unit. EXPECT_BUILD_NODES stays 0. No suppression of any kind was added —
+# no NoWarn, no #pragma, no .editorconfig severity — and SuppressionCensusTests' three tables are
+# untouched.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1168
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:

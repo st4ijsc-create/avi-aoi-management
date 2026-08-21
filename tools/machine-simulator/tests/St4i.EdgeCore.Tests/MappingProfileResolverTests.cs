@@ -130,6 +130,111 @@ public sealed class MappingProfileResolverTests
         Assert.Null(resolver.Resolve("SOME-OTHER-CODE"));
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 Owner item 21, task AQ-1 (2026-08-21) — the operator-authored `mappingProfile` string is confined
+    // to the mapping directory's own subtree. THREE tests, and the third is the one that keeps the ceiling
+    // from being set too small: a confinement that also rejected legitimate subdirectories would be a
+    // narrower promise than the item asked for, and the item names that exact deployment as the thing a
+    // fix must not break.
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private const string CustomProfileJson = """
+        {
+          "name": "outside-profile",
+          "deviceClass": "Automation",
+          "defaultStepType": "outside_step",
+          "defaultRecipeCode": "RC-OUTSIDE",
+          "unitMap": { "C": "°C" }
+        }
+        """;
+
+    [Fact]
+    public void An_ABSOLUTE_mappingProfile_pointing_outside_the_mapping_directory_is_refused_and_warns_what_to_fix()
+    {
+        var mappingDir = NewTempMappingDir();
+        var elsewhere = NewTempMappingDir();
+        File.WriteAllText(Path.Combine(elsewhere, "outside-profile.json"), CustomProfileJson);
+
+        // Path.Combine's documented behaviour: an absolute right-hand side wins outright, so before the
+        // confinement this loaded the file from `elsewhere` and DefaultStepType came back "outside_step".
+        var absoluteName = Path.Combine(elsewhere, "outside-profile");
+        var descriptor = NewDescriptor("SCRW-01", DeviceClass.Automation, absoluteName);
+
+        string? warning = null;
+        var resolver = MappingProfileResolver.Build(
+            new[] { descriptor }, mappingDir, logWarning: msg => warning = msg);
+
+        var resolved = resolver.Resolve("SCRW-01");
+        var expected = MappingProfile.ForClass(DeviceClass.Automation);
+
+        Assert.NotNull(resolved);
+        Assert.Equal(expected.Name, resolved!.Name);
+        Assert.Equal(expected.DefaultStepType, resolved.DefaultStepType);
+        Assert.NotEqual("outside_step", resolved.DefaultStepType);
+        Assert.False(resolved.UnitMap.ContainsKey("C"));
+
+        // The refusal has to be legible to the operator who wrote the string, so it names the machine, the
+        // value, the directory that bounds it, and what a legal value looks like.
+        Assert.NotNull(warning);
+        Assert.Contains("SCRW-01", warning);
+        Assert.Contains("REFUSED", warning);
+        Assert.Contains(Path.GetFullPath(mappingDir), warning);
+        Assert.Contains("profile NAME, not a path", warning);
+    }
+
+    [Fact]
+    public void A_dotdot_mappingProfile_that_climbs_out_of_the_mapping_directory_is_refused_and_warns()
+    {
+        var root = NewTempMappingDir();
+        var mappingDir = Path.Combine(root, "mapping");
+        Directory.CreateDirectory(mappingDir);
+        File.WriteAllText(Path.Combine(root, "outside-profile.json"), CustomProfileJson);
+
+        // Before the confinement, File.Exists resolved "<mappingDir>/../outside-profile.json" for itself and
+        // this loaded the file one level up. Both separator spellings are exercised because the refusal is
+        // decided by normalizing the path, not by scanning the string for a token.
+        foreach (var name in new[] { "../outside-profile", @"..\outside-profile" })
+        {
+            var descriptor = NewDescriptor("WELD-01", DeviceClass.Automation, name);
+
+            string? warning = null;
+            var resolver = MappingProfileResolver.Build(
+                new[] { descriptor }, mappingDir, logWarning: msg => warning = msg);
+
+            var resolved = resolver.Resolve("WELD-01");
+            Assert.NotNull(resolved);
+            Assert.Equal(MappingProfile.ForClass(DeviceClass.Automation).Name, resolved!.Name);
+            Assert.NotEqual("outside_step", resolved.DefaultStepType);
+            Assert.NotNull(warning);
+            Assert.Contains("REFUSED", warning);
+        }
+    }
+
+    [Fact]
+    public void A_SUBDIRECTORY_of_the_mapping_directory_still_resolves_so_the_confinement_rejects_only_what_LEAVES()
+    {
+        var mappingDir = NewTempMappingDir();
+        var nested = Path.Combine(mappingDir, "vendor-a");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "outside-profile.json"), CustomProfileJson);
+
+        var descriptor = NewDescriptor("DISP-01", DeviceClass.Automation, "vendor-a/outside-profile");
+
+        string? warning = null;
+        var resolver = MappingProfileResolver.Build(
+            new[] { descriptor }, mappingDir, logWarning: msg => warning = msg);
+
+        var resolved = resolver.Resolve("DISP-01");
+
+        // Loads the nested file, and does NOT fall back — proving the confinement did not simply refuse
+        // every value containing a separator.
+        Assert.NotNull(resolved);
+        Assert.Equal("outside-profile", resolved!.Name);
+        Assert.Equal("outside_step", resolved.DefaultStepType);
+        Assert.Equal("°C", resolved.UnitMap["C"]);
+        Assert.Null(warning);
+    }
+
     [Fact]
     public void Missing_mapping_directory_entirely_falls_back_gracefully_for_every_machine()
     {
