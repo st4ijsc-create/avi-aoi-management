@@ -212,7 +212,13 @@ Toàn bộ 12 task của plan trả nợ E+F **đã hoàn tất và đã push**.
 
   ⇒ **Bài học mang sang:** cổng tĩnh xanh chỉ chứng minh *"không còn thứ TÔI BIẾT CÁCH NHÌN"*.
 
-- **F13. Chuỗi "hình dạng thứ ba" — ĐANG LÀM.** `914 → 770 → 652 → 619` (`bd737e1d`, `4cfb1ce7`)
+- **F13. Chuỗi "hình dạng thứ ba" — ✅ ĐÓNG 2026-08-21.** `914 → 770 → 500 → … → **0**` qua 17 lô (`bd737e1d` → `15b53fe3`). `FROZEN_SHAPE3 = 0` nay là BẤT BIẾN, không còn là ngân sách.
+
+  ⚠ **0 KHÔNG nghĩa là hết chữ Việt trong `client/src`.** Nó nghĩa mọi chuỗi còn lại thuộc một nhóm ĐÃ KIỂM TẬN NƠI, lý do ghi trong `scripts/viStringScan.mjs`: khuôn vốn đã đúng · DỮ LIỆU chứ không phải nhãn (bí danh cột Excel, khoá khớp `header`, từ khoá phân loại lỗi, mác vật liệu) · MẪU MÃ trong `apiDocs/` (về cấu tạo không i18n được).
+
+  **Ba lỗi ĐANG HIỂN THỊ tìm ra trong lúc làm:** (1) `DashboardTemplates` render `t(descriptionKey)` với 6 khoá không tồn tại ở locale nào ⇒ hiện chuỗi khoá ở MỌI ngôn ngữ; (2) `Dashboard` nút in hiện nguyên văn `{t("dashboardRaw.inLuuPdf", …)}` — do chính đợt F12 chèn JSX vào giữa một chuỗi HTML; (3) `ConfigHealthPanel`/`QuickIssueReport` còn nhánh mặc định thô cạnh nhánh đã dịch.
+
+  **(mô tả tiến độ cũ)** `914 → 770 → 652 → 619`
 
   **Đính chính con số của chính tôi: 914 NÓI QUÁ.** Lọc bốn khuôn vốn đã đúng —
   `pick(vi,en,zh)` (bộ chọn ba ngôn ngữ tự viết ở `MachineAISummary`) · tuple
