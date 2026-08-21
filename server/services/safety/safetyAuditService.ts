@@ -21,6 +21,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, eq, gte, desc, sql } from "drizzle-orm";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import { safetyEvents, type SafetyEvent } from "../../../drizzle/schema";
 import { emitSafetyEvent } from "../../_core/socket";
@@ -32,7 +33,7 @@ export function safetyAuditEnabled(): boolean {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

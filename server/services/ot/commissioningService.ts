@@ -23,6 +23,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, desc, eq } from "drizzle-orm";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import { commissioningRecords, type CommissioningRecord } from "../../../drizzle/schema";
 
@@ -86,7 +87,7 @@ export interface CreateCommissioningInput {
  */
 export async function createRecord(input: CreateCommissioningInput): Promise<CommissioningRecord> {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [row] = await db
     .insert(commissioningRecords)
@@ -114,7 +115,7 @@ export async function revokeRecord(
   reason?: string | null,
 ): Promise<CommissioningRecord | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [row] = await db
     .update(commissioningRecords)

@@ -33,6 +33,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, eq } from "drizzle-orm";
+import { DbUnavailableError } from "../../../_core/dbErrors";
 import { getDb } from "../../../db/connection";
 import { safetyPlcConfigs, type SafetyPlcConfig, type SafetyPlcStatusSnapshot, type SafetyPlcStatusMap } from "../../../../drizzle/schema";
 import { record } from "../safetyAuditService";
@@ -49,7 +50,7 @@ export function safetyPlcAdapterEnabled(): boolean {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

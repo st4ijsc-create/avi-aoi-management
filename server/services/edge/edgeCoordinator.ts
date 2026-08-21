@@ -21,6 +21,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, desc, eq, lt, inArray } from "drizzle-orm";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import {
   edgeNodes,
@@ -89,7 +90,7 @@ export interface SyncRunPayload {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

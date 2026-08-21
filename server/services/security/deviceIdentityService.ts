@@ -12,6 +12,7 @@
  * pre-provision certs before flipping enforcement on).
  */
 import { X509Certificate } from "node:crypto";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { eq, and, desc, lte, inArray } from "drizzle-orm";
 import { getDb } from "../../db";
 import {
@@ -96,7 +97,7 @@ export async function issueDeviceCert(
   opts: IssueDeviceCertOptions = {},
 ): Promise<IssueDeviceCertResult> {
   const db = await getDb();
-  if (!db) throw new Error("database unavailable");
+  if (!db) throw new DbUnavailableError();
 
   const ca = await getInternalCa();
   const caId = await ensureCaPersisted();
@@ -235,7 +236,7 @@ export async function rotateDeviceCert(
   opts: IssueDeviceCertOptions = {},
 ): Promise<IssueDeviceCertResult> {
   const db = await getDb();
-  if (!db) throw new Error("database unavailable");
+  if (!db) throw new DbUnavailableError();
 
   const currentActive = await db
     .select()
@@ -270,7 +271,7 @@ export async function rotateDeviceCert(
 /** Revoke a device certificate by id. Idempotent. */
 export async function revokeDeviceCert(certId: number, reason: string): Promise<DeviceCertificate | null> {
   const db = await getDb();
-  if (!db) throw new Error("database unavailable");
+  if (!db) throw new DbUnavailableError();
   const updated = await db
     .update(deviceCertificates)
     .set({ status: "revoked", revokedAt: new Date(), revokedReason: reason, updatedAt: new Date() })

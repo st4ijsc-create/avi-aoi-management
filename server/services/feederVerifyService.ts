@@ -15,6 +15,7 @@
  *   - There is NO machine-control write path here; this is a setup ledger only.
  */
 import { getDb } from "../db";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, isNotNull } from "drizzle-orm";
 import {
   feederSetupVerifications,
@@ -99,7 +100,7 @@ export interface VerifyScanResult {
  */
 export async function verifyScan(input: VerifyScanInput): Promise<VerifyScanResult> {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throw new DbUnavailableError();
 
   const scanned = normalizeComponentCode(input.scannedComponentCode ?? input.scannedReel);
 
@@ -168,7 +169,7 @@ export interface SetupStatus {
  */
 export async function getSetupStatus(machineId: number, productModelId?: number | null): Promise<SetupStatus> {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throw new DbUnavailableError();
 
   const conds = [eq(feederSetupVerifications.machineId, machineId), isNotNull(feederSetupVerifications.slotCode)];
   if (productModelId != null) conds.push(eq(feederSetupVerifications.productModelId, productModelId));
@@ -290,7 +291,7 @@ export async function assertLineSetupOkForRun(
   productModelId?: number | null,
 ): Promise<LineRunGateResult> {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throw new DbUnavailableError();
   const enforced = isFeederVerifyEnforced();
 
   const rows = await db
@@ -325,7 +326,7 @@ export async function listForSetup(
   opts?: { productModelId?: number | null; limit?: number },
 ): Promise<(typeof feederSetupVerifications.$inferSelect)[]> {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throw new DbUnavailableError();
   const conds = [eq(feederSetupVerifications.machineId, machineId)];
   if (opts?.productModelId != null) conds.push(eq(feederSetupVerifications.productModelId, opts.productModelId));
   return db

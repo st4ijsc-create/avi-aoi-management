@@ -37,15 +37,24 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
  * Ngân sách CHỈ ĐƯỢC GIẢM.
- * 1035 → 711 (2026-08-21): di trú 324 chỗ họ "DB không sẵn sàng" trong `server/db/**`
- * sang `DbUnavailableError` (lớp tự mang `appCode: "DB_UNAVAILABLE"`, đã có đủ 3 bản dịch).
+ * 1035 → 711 (lô 1): 324 chỗ họ "DB không sẵn sàng" trong `server/db/**`.
+ * 711 →  629 (lô 2): 82 chỗ còn lại ở `server/services/**` + `server/_core/**` + `templateDb`.
+ * Cả hai lô đổi sang `DbUnavailableError` — lớp tự mang `appCode: "DB_UNAVAILABLE"`
+ * (mã đã có sẵn, đã đủ ba bản dịch), nên client dịch được mà formatter không đổi dòng nào.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 711;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 629;
 
-/** Trần riêng cho họ "DB không sẵn sàng" — để hai con số KHÔNG bù trừ cho nhau. */
-const ALLOWED_DB_UNAVAILABLE_RAW = 83;
+/**
+ * Trần riêng cho họ "DB không sẵn sàng" — để hai con số KHÔNG bù trừ cho nhau.
+ *
+ * 407 → 83 → **1**. Chỗ duy nhất còn lại là CỐ Ý:
+ *   `configDriftService.ts:297` — `Adapter ${adapterId} not found (or database unavailable)`
+ * Đó là lỗi *"không tìm thấy adapter"*, chỉ NHẮC tới khả năng DB sập như một lý do phụ;
+ * đổi nó thành `DbUnavailableError` là khai sai nguyên nhân cho người đọc.
+ */
+const ALLOWED_DB_UNAVAILABLE_RAW = 1;
 
-const HO_DB = /Database not (available|connected|initialized)|DB not available|database unavailable|DB unavailable/i;
+const HO_DB = /Database not (available|connected|initialized)|DB not available|database unavailable|DB unavailable|db unavailable/i;
 
 function walkTs(dir: string): string[] {
   const out: string[] = [];
@@ -114,5 +123,18 @@ describe("F3 — `throw new Error(...)` ngoài server/routers (cổng cũ mù v�
       }
     }
     expect(con).toEqual([]);
+  });
+
+  it("★★★ chỗ họ-DB DUY NHẤT còn lại phải đúng là chỗ đã nêu lý do", () => {
+    // Trần `= 1` mà không nói RÕ là chỗ nào thì nó là một ô trống cho nợ mới lẻn vào.
+    // Ca này khoá đích danh: đúng một chỗ, và đúng chỗ đó.
+    const con: string[] = [];
+    for (const file of walkTs(SERVER)) {
+      const src = readFileSync(file, "utf8");
+      for (const m of src.matchAll(/throw new Error\((["'`])([^"'`]*)\1\)/g)) {
+        if (HO_DB.test(m[2])) con.push(`${file.replace(SERVER, "").split("\\").join("/")}`);
+      }
+    }
+    expect(con).toEqual(["/services/assetRegistry/configDriftService.ts"]);
   });
 });

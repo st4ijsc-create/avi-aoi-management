@@ -11,6 +11,7 @@
  */
 
 import path from "path";
+import { DbUnavailableError } from "../_core/dbErrors";
 import fs from "fs";
 import crypto from "crypto";
 import { getDb } from "../db/connection";
@@ -321,7 +322,7 @@ export async function buildDataset(
   opts?: { seed?: number },
 ): Promise<BuildDatasetResult> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const dataset = await dbAdvanced.getTrainingDataset(datasetId);
   if (!dataset) throw new Error(`Training dataset ${datasetId} not found`);
@@ -587,7 +588,7 @@ export async function buildSegmentationDataset(
   opts?: { seed?: number },
 ): Promise<BuildSegmentationResult> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const dataset = await dbAdvanced.getTrainingDataset(datasetId);
   if (!dataset) throw new Error(`Training dataset ${datasetId} not found`);

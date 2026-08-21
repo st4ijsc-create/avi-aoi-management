@@ -12,6 +12,7 @@
  */
 
 import { getDb } from "../db/connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { sql, eq, and } from "drizzle-orm";
 import { edgeInferenceSync, type InsertEdgeDeployment } from "../../drizzle/schema/ai";
 import * as db from "../db/aiAdvanced";
@@ -282,7 +283,7 @@ export async function syncEdgeResults(
   }>,
 ): Promise<{ synced: number; duplicates: number }> {
   const database = await getDb();
-  if (!database) throw new Error("Database not available");
+  if (!database) throw new DbUnavailableError();
 
   const deployment = await db.getEdgeDeployment(deploymentId);
   if (!deployment) throw new Error(`Deployment ${deploymentId} not found`);
@@ -403,7 +404,7 @@ export async function rollbackDevice(deploymentId: number): Promise<{ rolledBack
  */
 export async function getFleetOverview(): Promise<FleetOverview> {
   const database = await getDb();
-  if (!database) throw new Error("Database not available");
+  if (!database) throw new DbUnavailableError();
 
   const onlineThreshold = new Date(Date.now() - 5 * 60 * 1000); // 5 min threshold
   const todayStart = new Date();

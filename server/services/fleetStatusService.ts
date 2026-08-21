@@ -18,6 +18,7 @@
  * edit needed.
  */
 import { getDb } from "../db";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { edgeNodes, deviceAdapters } from "../../drizzle/schema";
 import { getFleetOverview, type FleetOverview } from "./aiEdgeEnhanced";
 
@@ -142,7 +143,7 @@ async function loadDeviceAdaptersPlane(): Promise<DeviceAdaptersPlane> {
 export async function getUnifiedFleetStatus(): Promise<UnifiedFleetStatus> {
   // Fail loudly only if there is no DB at all (mirrors getFleetOverview).
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [deployments, edgeNodesPlane, deviceAdaptersPlane] = await Promise.all([
     getFleetOverview(),

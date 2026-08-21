@@ -22,6 +22,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import {
   programDeployments,
@@ -38,7 +39,7 @@ import {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

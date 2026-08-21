@@ -1,4 +1,5 @@
 import { Server as HttpServer } from "http";
+import { DbUnavailableError } from "./dbErrors";
 import { Server, Socket } from "socket.io";
 import { nanoid } from "nanoid";
 import * as db from "../db";
@@ -1905,7 +1906,7 @@ export async function startDowntime(
 ): Promise<DowntimeEvent> {
   const { getDb } = await import('../db');
   const dbConnection = await getDb();
-  if (!dbConnection) throw new Error('[Downtime] Database not available');
+  if (!dbConnection) throw new DbUnavailableError();
   const { downtimeEvents } = await import('../../drizzle/schema');
 
   const [row] = await dbConnection
@@ -1937,7 +1938,7 @@ export async function startDowntime(
 export async function endDowntime(machineId: number, notes?: string): Promise<DowntimeEvent | null> {
   const { getDb } = await import('../db');
   const dbConnection = await getDb();
-  if (!dbConnection) throw new Error('[Downtime] Database not available');
+  if (!dbConnection) throw new DbUnavailableError();
   const { downtimeEvents } = await import('../../drizzle/schema');
   const { and, eq, isNull, desc } = await import('drizzle-orm');
 

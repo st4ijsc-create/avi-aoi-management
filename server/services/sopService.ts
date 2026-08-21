@@ -10,6 +10,7 @@
  * người). Mọi hàm đọc DB fail-safe: DB null → ném rõ ràng (router bọc).
  */
 import { and, asc, desc, eq, ne, gte, inArray, sql } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "../db/connection";
 import {
   sops,
@@ -32,7 +33,7 @@ import {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not available");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

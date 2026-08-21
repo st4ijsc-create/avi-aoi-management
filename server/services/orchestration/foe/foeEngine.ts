@@ -24,6 +24,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { DbUnavailableError } from "../../../_core/dbErrors";
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
@@ -261,7 +262,7 @@ type StepOutcome =
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

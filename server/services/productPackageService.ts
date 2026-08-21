@@ -21,6 +21,7 @@
  * product between databases / sites. They are intentionally independent.
  */
 import { z } from "zod";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import {
@@ -109,7 +110,7 @@ export type ProductPackage = z.infer<typeof productPackageSchema>;
  */
 export async function exportProductPackage(productModelId: number): Promise<ProductPackage> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [model] = await db
     .select()
@@ -199,7 +200,7 @@ export async function importProductPackage(
   opts: { newCode: string; newName?: string; createdBy?: number },
 ): Promise<ImportPackageResult> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const pkg = productPackageSchema.parse(raw);
   const warnings: string[] = [];

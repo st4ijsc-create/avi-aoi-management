@@ -1,4 +1,5 @@
 import * as ort from "onnxruntime-node";
+import { DbUnavailableError } from "../_core/dbErrors";
 import sharp from "sharp";
 // ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không". Import TĨNH của một module
 // LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
@@ -718,7 +719,7 @@ async function ensurePgvector() {
 
   const db = await getDb();
   if (!db) {
-    throw new Error("Database not available");
+    throw new DbUnavailableError();
   }
 
   try {
@@ -752,7 +753,7 @@ export async function storeEmbedding(params: {
   metadata?: Record<string, unknown>;
 }): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const embeddingStr = formatVectorLiteral(params.embedding);
   const metaStr = params.metadata != null ? JSON.stringify(params.metadata) : null;

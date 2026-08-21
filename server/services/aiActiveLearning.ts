@@ -1,4 +1,5 @@
 import { getDb } from "../db/connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { aiLabelQueue, aiImageEmbeddings } from "../../drizzle/schema";
 import { eq, and, desc, asc, sql, SQL, inArray, lte, gte } from "drizzle-orm";
 import { runInference } from "./aiInferenceEngine";
@@ -48,7 +49,7 @@ export async function autoLabelImages(
   results: Array<{ imageUrl: string; status: string; label: string | null; confidence: number }>;
 }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const cfg = { ...DEFAULT_CONFIG, ...config };
   const batch = images.slice(0, cfg.maxBatchSize);
@@ -183,7 +184,7 @@ export async function submitHumanLabel(
   reviewNotes?: string,
 ): Promise<typeof aiLabelQueue.$inferSelect | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [updated] = await db
     .update(aiLabelQueue)
@@ -209,7 +210,7 @@ export async function skipQueueItem(
   reason?: string,
 ): Promise<typeof aiLabelQueue.$inferSelect | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [updated] = await db
     .update(aiLabelQueue)
@@ -233,7 +234,7 @@ export async function assignToReviewer(
   assignedTo: number,
 ): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db
     .update(aiLabelQueue)

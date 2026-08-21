@@ -1,4 +1,5 @@
 import { getDb } from "./db";
+import { DbUnavailableError } from "./_core/dbErrors";
 import { measurementPointTemplates } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 
@@ -7,7 +8,7 @@ import { eq, and } from "drizzle-orm";
  */
 export async function listTemplates() {
   const db = await getDb();
-  if (!db) throw new Error("Database not initialized");
+  if (!db) throw new DbUnavailableError();
   return db.select().from(measurementPointTemplates)
     .where(eq(measurementPointTemplates.isActive, true))
     .orderBy(measurementPointTemplates.createdAt);
@@ -18,7 +19,7 @@ export async function listTemplates() {
  */
 export async function getTemplateById(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not initialized");
+  if (!db) throw new DbUnavailableError();
   const result = await db.select().from(measurementPointTemplates)
     .where(eq(measurementPointTemplates.id, id));
   return result[0] || null;
@@ -29,7 +30,7 @@ export async function getTemplateById(id: number) {
  */
 export async function getTemplateByCode(code: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not initialized");
+  if (!db) throw new DbUnavailableError();
   const result = await db.select().from(measurementPointTemplates)
     .where(eq(measurementPointTemplates.code, code));
   return result[0] || null;
@@ -40,7 +41,7 @@ export async function getTemplateByCode(code: string) {
  */
 export async function getTemplatesByCategory(category: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not initialized");
+  if (!db) throw new DbUnavailableError();
   return db.select().from(measurementPointTemplates)
     .where(and(
       eq(measurementPointTemplates.category, category),
@@ -61,7 +62,7 @@ export async function createTemplate(data: {
   createdBy: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not initialized");
+  if (!db) throw new DbUnavailableError();
   const result = await db.insert(measurementPointTemplates).values({
     code: data.code,
     name: data.name,
@@ -84,7 +85,7 @@ export async function updateTemplate(id: number, data: {
   points?: any[];
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not initialized");
+  if (!db) throw new DbUnavailableError();
   const updates: any = {};
   if (data.name) updates.name = data.name;
   if (data.description) updates.description = data.description;
@@ -104,7 +105,7 @@ export async function updateTemplate(id: number, data: {
  */
 export async function deleteTemplate(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not initialized");
+  if (!db) throw new DbUnavailableError();
   return db.update(measurementPointTemplates)
     .set({ isActive: false })
     .where(eq(measurementPointTemplates.id, id));

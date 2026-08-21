@@ -7,6 +7,7 @@
  * file-based KB path is untouched; switch over with KB_PGVECTOR_ENABLED.
  */
 import fs from "fs";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import path from "path";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
@@ -44,7 +45,7 @@ function cosine(a: number[], b: number[]): number {
 /** Ingest knowledge/chunks.jsonl → kb_chunks (with embeddings). Idempotent upsert. */
 export async function ingestKbChunks(opts?: { limit?: number }): Promise<{ ingested: number; skipped: number }> {
   const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
+  if (!db) throw new DbUnavailableError();
   if (!fs.existsSync(CHUNKS_FILE)) throw new Error(`chunks file not found: ${CHUNKS_FILE}`);
 
   const { generateEmbedding } = await import("../aiGgufEngine");

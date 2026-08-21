@@ -29,6 +29,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash } from "node:crypto";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { and, eq, asc } from "drizzle-orm";
 import type { ConfigSnapshotStatus } from "../../../drizzle/schema/assetRegistry";
 
@@ -298,7 +299,7 @@ export async function approveCurrentConfig(
   const { getDb } = await import("../../db/connection");
   const { configSnapshots } = await import("../../../drizzle/schema");
   const d = await getDb();
-  if (!d) throw new Error("Database not available");
+  if (!d) throw new DbUnavailableError();
 
   const now = new Date();
   const summary = { ...current.summary, ...(principalName ? { approvedByPrincipal: principalName } : {}) };

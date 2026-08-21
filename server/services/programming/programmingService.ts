@@ -16,6 +16,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash, randomUUID } from "node:crypto";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { desc, eq, and } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
@@ -77,7 +78,7 @@ const DEPLOY_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

@@ -10,6 +10,7 @@
  * soft delete via deletedAt + isActive.
  */
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import {
   productPanelDefs,
@@ -123,7 +124,7 @@ export async function createPanelDef(
   boards?: PanelBoardInput[],
 ): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const rows = input.rows ?? 1;
   const cols = input.cols ?? 1;
   const boardList: PanelBoardInput[] =
@@ -167,7 +168,7 @@ export async function updatePanelDef(
   patch: Partial<Omit<PanelDefInput, "productModelId">>,
 ): Promise<ProductPanelDef | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.code !== undefined) set.code = patch.code;
   if (patch.name !== undefined) set.name = patch.name;
@@ -193,7 +194,7 @@ export async function updatePanelDef(
 /** Soft delete (deletedAt + isActive=false). Boards are kept for history. */
 export async function softDeletePanelDef(id: number): Promise<{ success: boolean }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db
     .update(productPanelDefs)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
@@ -210,7 +211,7 @@ export async function replaceBoards(
   boards: PanelBoardInput[],
 ): Promise<ProductPanelBoard[]> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   assertBoardIndexes(boards);
   const [def] = await db
     .select({ id: productPanelDefs.id })
@@ -229,7 +230,7 @@ export async function replaceBoards(
 
 async function replaceBoardsInternal(panelDefId: number, boards: PanelBoardInput[]): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.transaction(async (tx) => {
     await tx.delete(productPanelBoards).where(eq(productPanelBoards.panelDefId, panelDefId));
     if (boards.length > 0) {

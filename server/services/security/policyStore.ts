@@ -24,6 +24,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import fs from "node:fs";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import path from "node:path";
 import { parseAllDocuments } from "yaml";
 import { desc, eq, and, gte, lte } from "drizzle-orm";
@@ -336,7 +337,7 @@ export function rowsToRules(rows: readonly PolicyDefinition[]): PolicyRule[] {
 /** Read the active rule set from the DB (throws on DB errors — callers decide). */
 export async function loadPoliciesFromDb(): Promise<PolicyRule[]> {
   const db = await getDb();
-  if (!db) throw new Error("db unavailable");
+  if (!db) throw new DbUnavailableError();
   const rows = (await db.select().from(policyDefinitions)) as PolicyDefinition[];
   return rowsToRules(rows);
 }
@@ -559,7 +560,7 @@ export interface DecisionLogFilters {
 /** Query the immutable decision log (newest first) for GET /v1/policy/audit. */
 export async function queryDecisionLog(filters: DecisionLogFilters): Promise<Array<Record<string, unknown>>> {
   const db = await getDb();
-  if (!db) throw new Error("db unavailable");
+  if (!db) throw new DbUnavailableError();
   const conds = [];
   if (filters.subject) conds.push(eq(policyDecisionLog.subject, filters.subject));
   if (filters.action) conds.push(eq(policyDecisionLog.action, filters.action));

@@ -39,6 +39,7 @@
  * crashes the process; per-config error counters surface in the status endpoint.
  */
 import fs from "node:fs";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import path from "node:path";
 import { watch, type FSWatcher } from "chokidar";
 import { and, asc, desc, eq } from "drizzle-orm";
@@ -67,7 +68,7 @@ export function hotFolderIngestEnabled(): boolean {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

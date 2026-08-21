@@ -23,6 +23,7 @@
  */
 
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import { createAuditLog, getProductModelById, bumpPointsConfigVersion } from "../../db";
 import {
@@ -225,7 +226,7 @@ export function centroidCandidateToInsertRow(jobId: number, c: CentroidCandidate
 
 async function requireDb() {
   const d = await getDb();
-  if (!d) throw new Error("Database not available");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

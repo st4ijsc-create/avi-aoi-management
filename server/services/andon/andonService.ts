@@ -10,6 +10,7 @@
  * ~30s is UPDATED (refresh message/raisedAt) rather than duplicated.
  */
 import { and, eq, gte, isNull, desc } from "drizzle-orm";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import { andonEvents, type AndonEvent } from "../../../drizzle/schema";
 import { emitAndonEvent } from "../../_core/socket";
@@ -46,7 +47,7 @@ const IDEMPOTENCY_WINDOW_MS = 30_000;
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

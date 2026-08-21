@@ -12,6 +12,7 @@
  * (DEFAULT OFF). Nothing here writes the tools master or controls a machine.
  */
 import { getDb } from "../db";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { chayTheoPhamViTenantHienTai } from "../db/tenantContext";
 import { eq, desc, sql } from "drizzle-orm";
 import { stencilUsageLogs, tools, type InsertStencilUsageLog } from "../../drizzle/schema";
@@ -37,7 +38,7 @@ export interface RecordPrintsInput {
  */
 export async function recordPrints(input: RecordPrintsInput) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throw new DbUnavailableError();
   if (input.printCount < 0) throw new Error("printCount must be >= 0");
 
   const values: InsertStencilUsageLog = {
@@ -78,7 +79,7 @@ export interface StencilStatus {
  */
 export async function getStatus(stencilToolId: number): Promise<StencilStatus> {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throw new DbUnavailableError();
 
   // `tools` BẬT RLS (mig 0122, vị từ theo factoryCode/corporateCode). Đọc bản ghi
   // khuôn in dưới phạm vi tenant của người gọi ⇒ người thuộc nhà máy khác không
@@ -128,7 +129,7 @@ export async function getStatus(stencilToolId: number): Promise<StencilStatus> {
 /** Recent usage log entries for a stencil (newest first). */
 export async function listUsage(stencilToolId: number, limit = 100) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throw new DbUnavailableError();
   return db
     .select()
     .from(stencilUsageLogs)

@@ -29,6 +29,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, desc, eq, ne } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "../db";
 import {
   aoiCommissioningRecords,
@@ -45,7 +46,7 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 async function requireDb(): Promise<Db> {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

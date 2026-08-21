@@ -15,6 +15,7 @@
  * an unmapped tag always keeps the default behaviour).
  */
 import { and, eq, desc } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "../db/connection";
 import { unsTagMappings, type UnsTagMapping, type UnsTagTransform } from "../../drizzle/schema/ot";
 import type { OtDataType } from "./ot/otDriver";
@@ -404,7 +405,7 @@ export async function getMappingForTag(adapterId: number, tag: string): Promise<
 
 async function requireDb() {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
   return db;
 }
 

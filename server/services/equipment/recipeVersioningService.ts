@@ -20,6 +20,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, desc, eq } from "drizzle-orm";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import {
   createRecipe,
@@ -53,7 +54,7 @@ export type RecipeAction = "create" | "release" | "archive" | "rollback" | "load
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not available");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

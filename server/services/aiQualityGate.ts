@@ -7,6 +7,7 @@
  * Flow: Image → Inference (single or ensemble) → Threshold → Decision → Alert
  */
 import { getDb } from "../db/connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, sql } from "drizzle-orm";
 import {
   aiQualityGateConfigs,
@@ -263,7 +264,7 @@ export async function processQualityGate(
 ): Promise<QualityGateDecision> {
   const startTime = Date.now();
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const autoOk = Number(config.autoOkThreshold);
   const autoNg = Number(config.autoNgThreshold);
@@ -913,7 +914,7 @@ export async function promoteConfigToModel(
   expectedExperimentId?: number,
 ): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const updates: Record<string, unknown> = {
     modelId,

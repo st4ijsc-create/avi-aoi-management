@@ -13,6 +13,7 @@
  * that want it later. FAIL-SAFE: enforcement gated by SERVICE_MTLS_ENABLED (default OFF).
  */
 import { sign, verify } from "node:crypto";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { eq, desc } from "drizzle-orm";
 import { getDb } from "../../db";
 import { serviceIdentities, type ServiceIdentity } from "../../../drizzle/schema/security";
@@ -138,7 +139,7 @@ export async function issueServiceIdentity(
   opts: { withCert?: boolean; days?: number } = {},
 ): Promise<ServiceIdentity> {
   const db = await getDb();
-  if (!db) throw new Error("database unavailable");
+  if (!db) throw new DbUnavailableError();
   const caId = await ensureCaPersisted();
   const sid = spiffeId("service", serviceName);
 
@@ -218,7 +219,7 @@ export async function listServiceIdentities(): Promise<ServiceIdentity[]> {
 
 export async function revokeServiceIdentity(id: number): Promise<ServiceIdentity | null> {
   const db = await getDb();
-  if (!db) throw new Error("database unavailable");
+  if (!db) throw new DbUnavailableError();
   const updated = await db
     .update(serviceIdentities)
     .set({ status: "revoked", updatedAt: new Date() })

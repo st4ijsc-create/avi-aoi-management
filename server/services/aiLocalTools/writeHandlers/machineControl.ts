@@ -18,6 +18,7 @@
  */
 
 import { z } from "zod";
+import { DbUnavailableError } from "../../../_core/dbErrors";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { deviceAdapters, deviceTags } from "../../../../drizzle/schema";
@@ -113,7 +114,7 @@ async function runDispatch(
 /** Resolve the adapter at execute time (defensive — preview already warned). */
 async function adapterIdForMachine(machineId: number): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.machineId, machineId)).limit(1);
   if (!adapter) throw new Error(`No OT adapter for machine #${machineId}`);
   return adapter.id;
