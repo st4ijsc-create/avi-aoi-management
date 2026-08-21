@@ -17080,7 +17080,111 @@
     "tableOfContents": "目录",
     "title": "MES SYNAPSE 系统用户指南",
     "updated": "更新时间：2026/01/26",
-    "version": "版本 1.0.0"
+    "version": "版本 1.0.0",
+    "overview": {
+      "1GioiThieu": "1. 简介",
+      "tongQuanHeThongMes": "SYNAPSE MES 系统总览与主菜单结构",
+      "mucTieuHeThong": "系统目标",
+      "heThongMesSynapseDung": "SYNAPSE MES 用于实时监控和管理质量检测流程，覆盖从集团层级到单台设备。",
+      "nguoiDungCoTheTheo": "用户可以跟踪生产 KPI、检测历史、设备状态、质量告警以及相关数据的完整生命周期。",
+      "tinhNangChinh": "主要功能",
+      "dashboardRealtimeHienThiTotal": "实时仪表板显示 Total Output、FPY、良率、OK/NG/NTF 以及基于阈值的告警。",
+      "theoDoiTrangThaiOnline": "跟踪设备的在线/离线/故障状态；查看带图像和测量数据的检测历史。",
+      "hoTroCanhBaoTu": "支持自动告警、定期报告、SPC 分析、根因分析以及用户权限管理。",
+      "nhomChucNang": "功能分组",
+      "heThongDuocToChuc": "系统按以下主菜单分组组织：",
+      "dashboardTongQuanDrillDown": "仪表板：总览、下钻分析、仪表板中心",
+      "giamSatMonitoringSettingsMqtt": "监控：监控设置、MQTT、设备管理",
+      "canhBaoAlertRulesLich": "告警：告警规则、告警历史、预测性告警",
+      "sanXuatProductionOrdersLich": "生产：生产工单、生产历史、工序管理",
+      "phanTichDefectHeatmapSpc": "分析：缺陷热力图、SPC、根因分析、缺陷预测",
+      "duLieuCauTrucDu": "数据：基础数据结构、布局、导入/导出、备份",
+      "caiDatCauHinhHe": "设置：系统配置、告警阈值、OEE 目标",
+      "quanTriUsersRolesPermissions": "管理：用户、角色/权限、审计日志、会话"
+    },
+    "security": {
+      "2DangNhapVaBao": "2. 登录与安全",
+      "dangNhap2faDoiMat": "登录、双因素认证、修改密码以及账户安全准则",
+      "dangNhapHeThong": "登录系统",
+      "nguoiDungDangNhapBang": "使用为您分配的账户登录。若该账户已启用双因素认证，系统会要求输入 OTP 验证码。",
+      "bat2fa": "启用双因素认证",
+      "thucHienTheoLuongProfile": "操作路径：个人资料 → 安全 → 启用 2FA → 用身份验证器扫描二维码 → 输入 OTP 确认。",
+      "doiMatKhau": "修改密码",
+      "thucHienTaiProfileDoi": "在 个人资料 → 修改密码 中操作。",
+      "matKhauNenCoToi": "密码应至少 8 位，并包含大写字母、小写字母、数字和特殊字符。"
+    },
+    "dashboard": {
+      "3DashboardChinh": "3. 主仪表板",
+      "theoDoiKpiCanhBao": "跟踪 KPI、良率告警、连接状态以及快速分析标签页",
+      "dashboardHienThiCacKpi": "仪表板显示产线与质量的核心 KPI。",
+      "totalOutputTongSoSan": "Total Output：已检测产品总数",
+      "okCountNgCountNtf": "OK 数 / NG 数 / NTF 数：分类结果",
+      "canhBaoYieldVaTrang": "良率告警与设备状态",
+      "phanCanhBaoHienThi": "告警面板列出良率低于 警告/严重 阈值的设备。",
+      "trangThaiKetNoiThe": "连接状态显示在线、离线或故障，便于快速处理问题。",
+      "cacTabBoSung": "其他标签页",
+      "tabTongQuanNgVisual": "总览、NG 可视化和产线布局标签页支持从多个角度快速分析。"
+    },
+    "corporate": {
+      "4QuanLyTapDoan": "4. 集团管理",
+      "theoDoiHieuSuatNhieu": "按集团结构跟踪多个工厂的绩效",
+      "danhChoQuanLyCap": "面向高层管理：在集团、公司和工厂层级提供全局视图。",
+      "soSanhHieuSuat": "绩效对比",
+      "hoTroSoSanhOutput": "跨工厂/产线对比产量、良率、OEE 和停机时间。",
+      "drillDownChiTiet": "详细下钻",
+      "coTheDiTuCap": "可从集团逐级下钻至公司、工厂、产线和设备，在问题发生处分析原因。"
+    },
+    "monitoring": {
+      "5GiamSatMay": "5. 设备监控",
+      "giamSatMqttTrangThai": "MQTT 监控、设备状态、2D/3D 布局与连接管理",
+      "liveStreamTheoDoiMessage": "Live Stream 实时跟踪消息；History 按时间/主题回看数据；Auto-Discovery 发现新设备。",
+      "quanLyAnhXaVa": "在 监控设置 → 设备管理 中管理设备映射与注册。",
+      "baoGomCaManualRegistration": "同时包含手动注册和传统自动注册机制，以兼容旧有基础设施。",
+      "machineStatusVaLayout": "设备状态与布局",
+      "xemTinhTrangHeartbeatThong": "查看心跳状态、设备参数（如有）以及设备在布局图上的位置，便于现场排障。"
+    },
+    "history": {
+      "6LichSuKiemTra": "6. 检测历史",
+      "traCuuBanGhiKiem": "查询检测记录、查看详情并执行批量操作",
+      "boLocTimKiem": "搜索筛选",
+      "locTheoSerialModelMachine": "按序列号、型号、设备、结果（OK/NG/NTF）、时间及其他业务属性筛选。",
+      "chiTietBanGhi": "记录详情",
+      "hienThiAnhKetQua": "显示图像、测量结果和标注，实现检测记录的完整追溯。",
+      "bulkOperationsVaNtf": "批量操作与 NTF",
+      "hoTroExportAcknowledgeHang": "支持批量导出/确认，以及对误报的 NTF 确认（需填写原因以供审计）。"
+    },
+    "quality": {
+      "7PhanTichChatLuong": "7. 质量分析",
+      "phanTichLoiBangHeatmap": "通过热力图、SPC、根因分析和预测来分析缺陷",
+      "hienThiVungLoiTap": "显示缺陷集中的区域，便于快速识别需要干预的热点。",
+      "ketHopPhanTichPareto": "结合帕累托/AI 分析，提示原因与未来缺陷趋势。",
+      "cungCapControlChartsCapability": "提供控制图、过程能力和过程绩效，以保持过程稳定。"
+    },
+    "reports": {
+      "8BaoCao": "8. 报告",
+      "baoCaoTucThiBao": "即时报告、自动报告与导出计划",
+      "baoCaoTucThi": "即时报告",
+      "taoNhanhBaoCaoProduction": "快速生成生产汇总、质量分析、设备绩效和 OEE 报告。",
+      "lenLichGuiBaoCao": "设置定期报告（每日/每周/每月），并配置邮件收件人和数据范围。",
+      "lenLichXuatLichSu": "将历史数据按计划导出为 CSV/Excel/JSON 并自动发送。"
+    },
+    "system": {
+      "9CaiDatHeThong": "9. 系统设置",
+      "cauHinhHeThongNguong": "系统配置、告警阈值、班次与 OEE 目标",
+      "quanTriThamSoToan": "管理全系统参数，例如系统名称、时区、语言和技术配置。",
+      "thietLapMucWarningCritical": "按工厂/产线为 FPY、良率、UPH 及其他指标设置 警告/严重 级别。",
+      "khaiBaoCaLamViec": "按适用范围定义班次，并设置 OEE 目标（可用率、性能、质量、综合）。",
+      "lamSaoDeThemMay": "如何向系统添加新设备？",
+      "vaoMonitoringSettingsHoacData": "根据您的权限进入 监控设置 或 数据设置，创建设备并在 AVI/AOI 设备上配置对应的 API 密钥。",
+      "taiSaoYieldRateKhac": "为什么良率与 FPY 不同？",
+      "fpyChiTinhOkOk": "FPY 仅按 OK/(OK+NG) 计算，而良率按 (OK+NTF)/总数 计算，因此包含已确认的误报。",
+      "lamSaoDeXuatDu": "如何导出 Excel 数据？",
+      "vaoHistoryHoacReportsLoc": "进入 History 或 Reports，筛选所需数据，然后选择导出并指定 Excel 格式。",
+      "nenDungWebsocketHayPolling": "应该使用 WebSocket 还是轮询？",
+      "websocketPhuHopGiamSat": "WebSocket 适合实时监控；若只需周期性总览，轮询更省资源。",
+      "backupDuLieuODau": "数据在哪里备份？",
+      "suDungBackupRestoreDe": "使用 备份与恢复 创建手动备份或配置自动备份计划。"
+    }
   },
   "visionLab": {
     "augment": {

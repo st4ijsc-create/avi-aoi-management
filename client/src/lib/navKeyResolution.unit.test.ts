@@ -41,6 +41,8 @@ const FILES_KHOA_DU_LIEU = [
   // F13 lô 2 — bản đồ mã→khoá (`STATUS_KEY`, `SEVERITY_KEY`, `KIND_KEY`, `*_LABELS`)
   "pages/CommandCenter.tsx",
   "pages/MasterDataManagement.tsx",
+  // F13 lô 3 — UserGuide lưu toàn bộ nội dung hướng dẫn dưới dạng khoá
+  "pages/UserGuide.tsx",
 ];
 
 /** Trường được component gọi `t()` lên. `description` KHÔNG nằm đây — xem ghi chú dưới. */
@@ -51,7 +53,7 @@ const TRUONG_QUA_T = ["label", "blurb", "note"];
  * trường, vì bản đồ trạng thái có hình dạng `ok: "cmdCenter.status.ok"` — tên khoá
  * bên trái là mã enum, không phải một trong `TRUONG_QUA_T`.
  */
-const NS_F13 = /^(cmdCenter|masterDataEnum)\./;
+const NS_F13 = /^(cmdCenter|masterDataEnum|userGuide)\./;
 
 function flatten(obj: unknown, prefix = "", out: Record<string, unknown> = {}) {
   if (!obj || typeof obj !== "object") return out;

@@ -16736,7 +16736,111 @@
     "tableOfContents": "Contents",
     "title": "MES SYNAPSE system user guide",
     "updated": "Updated: 26/01/2026",
-    "version": "Version 1.0.0"
+    "version": "Version 1.0.0",
+    "overview": {
+      "1GioiThieu": "1. Introduction",
+      "tongQuanHeThongMes": "Overview of the SYNAPSE MES and its main menu structure",
+      "heThongMesSynapseDung": "SYNAPSE MES monitors and manages the quality-inspection process in real time, from group level down to the individual machine.",
+      "nguoiDungCoTheTheo": "Users can track production KPIs, inspection history, equipment status, quality alarms and the full lifecycle of the related data.",
+      "tinhNangChinh": "Key features",
+      "dashboardRealtimeHienThiTotal": "The realtime dashboard shows Total Output, FPY, Yield Rate, OK/NG/NTF and threshold-based alarms.",
+      "theoDoiTrangThaiOnline": "Track machine online/offline/error status; review inspection history with images and measurement data.",
+      "hoTroCanhBaoTu": "Supports automatic alarms, scheduled reports, SPC analysis, root cause and user permission administration.",
+      "nhomChucNang": "Function groups",
+      "heThongDuocToChuc": "The system is organised into the main menu groups below:",
+      "dashboardTongQuanDrillDown": "Dashboard: Overview, Drill-down, Dashboard Center",
+      "giamSatMonitoringSettingsMqtt": "Monitoring: Monitoring Settings, MQTT, Device Management",
+      "canhBaoAlertRulesLich": "Alarms: alert rules, alarm history, predictive alerts",
+      "sanXuatProductionOrdersLich": "Production: production orders, production history, process-step management",
+      "phanTichDefectHeatmapSpc": "Analytics: defect heatmap, SPC, root cause, defect prediction",
+      "duLieuCauTrucDu": "Data: base data structure, layout, import/export, backup",
+      "caiDatCauHinhHe": "Settings: system configuration, alarm thresholds, OEE targets",
+      "quanTriUsersRolesPermissions": "Administration: users, roles/permissions, audit logs, sessions",
+      "mucTieuHeThong": "What the system is for"
+    },
+    "security": {
+      "2DangNhapVaBao": "2. Sign-in and security",
+      "dangNhap2faDoiMat": "Sign-in, 2FA, changing your password, and account security rules",
+      "dangNhapHeThong": "Signing in",
+      "nguoiDungDangNhapBang": "Sign in with the account issued to you. If two-factor authentication is enabled on the account, the system asks for an OTP code.",
+      "bat2fa": "Enabling 2FA",
+      "thucHienTheoLuongProfile": "Follow this flow: Profile → Security → Enable 2FA → scan the QR code with an authenticator app → enter the OTP to confirm.",
+      "doiMatKhau": "Changing your password",
+      "thucHienTaiProfileDoi": "Do this under Profile → Change password.",
+      "matKhauNenCoToi": "A password should be at least 8 characters and include upper-case letters, lower-case letters, digits and special characters."
+    },
+    "dashboard": {
+      "3DashboardChinh": "3. Main dashboard",
+      "theoDoiKpiCanhBao": "Track KPIs, yield alarms, connection status and the quick-analysis tabs",
+      "dashboardHienThiCacKpi": "The dashboard shows the core line and quality KPIs.",
+      "totalOutputTongSoSan": "Total Output: total number of products inspected",
+      "okCountNgCountNtf": "OK Count / NG Count / NTF Count: classification results",
+      "canhBaoYieldVaTrang": "Yield alarms and machine status",
+      "phanCanhBaoHienThi": "The alarm panel lists machines whose yield has fallen below the Warning/Critical threshold.",
+      "trangThaiKetNoiThe": "Connection status shows online, offline or error so issues can be handled quickly.",
+      "cacTabBoSung": "Additional tabs",
+      "tabTongQuanNgVisual": "The overview, NG-visual and line-layout tabs support quick analysis from several angles."
+    },
+    "corporate": {
+      "4QuanLyTapDoan": "4. Group management",
+      "theoDoiHieuSuatNhieu": "Track performance across multiple factories following the group structure",
+      "danhChoQuanLyCap": "Aimed at senior management: a whole-picture view at group, company and factory level.",
+      "soSanhHieuSuat": "Performance comparison",
+      "hoTroSoSanhOutput": "Compare output, yield, OEE and downtime across factories/lines.",
+      "drillDownChiTiet": "Detailed drill-down",
+      "coTheDiTuCap": "Drill from group down to company, factory, line and machine to analyse the cause where it arises."
+    },
+    "monitoring": {
+      "5GiamSatMay": "5. Machine monitoring",
+      "giamSatMqttTrangThai": "MQTT monitoring, device status, 2D/3D layout and connection management",
+      "liveStreamTheoDoiMessage": "Live Stream follows messages in real time; History replays data by time/topic; Auto-Discovery detects new machines.",
+      "quanLyAnhXaVa": "Manage device mapping and enrolment under Monitoring Settings → Device Management.",
+      "baoGomCaManualRegistration": "Includes both manual registration and the legacy auto-registration mechanism, for compatibility with older infrastructure.",
+      "machineStatusVaLayout": "Machine Status and Layout",
+      "xemTinhTrangHeartbeatThong": "View heartbeat status, machine parameters (where available) and the machine's position on the layout to troubleshoot on the floor."
+    },
+    "history": {
+      "6LichSuKiemTra": "6. Inspection history",
+      "traCuuBanGhiKiem": "Look up inspection records, view details and run bulk operations",
+      "boLocTimKiem": "Search filters",
+      "locTheoSerialModelMachine": "Filter by serial, model, machine, result (OK/NG/NTF), time and other business attributes.",
+      "chiTietBanGhi": "Record detail",
+      "hienThiAnhKetQua": "Shows images, measurement results and annotations for full traceability of an inspection record.",
+      "bulkOperationsVaNtf": "Bulk operations and NTF",
+      "hoTroExportAcknowledgeHang": "Supports bulk export/acknowledge and NTF confirmation for false positives, with a reason recorded for audit."
+    },
+    "quality": {
+      "7PhanTichChatLuong": "7. Quality analysis",
+      "phanTichLoiBangHeatmap": "Analyse defects with heatmaps, SPC, root cause and prediction",
+      "hienThiVungLoiTap": "Shows where defects concentrate, so hot spots needing intervention are spotted quickly.",
+      "ketHopPhanTichPareto": "Combines Pareto/AI analysis to suggest causes and future defect trends.",
+      "cungCapControlChartsCapability": "Provides control charts, capability and process performance to keep the process stable."
+    },
+    "reports": {
+      "8BaoCao": "8. Reports",
+      "baoCaoTucThiBao": "Ad-hoc reports, automated reports and export schedules",
+      "baoCaoTucThi": "Ad-hoc reports",
+      "taoNhanhBaoCaoProduction": "Quickly generate Production Summary, Quality Analysis, Machine Performance and OEE reports.",
+      "lenLichGuiBaoCao": "Schedule recurring reports (daily/weekly/monthly), and configure email recipients and the data scope.",
+      "lenLichXuatLichSu": "Schedule history exports as CSV/Excel/JSON and have them sent automatically."
+    },
+    "system": {
+      "9CaiDatHeThong": "9. System settings",
+      "cauHinhHeThongNguong": "System configuration, alarm thresholds, shifts and OEE targets",
+      "quanTriThamSoToan": "Manage system-wide parameters such as system name, timezone, language and technical settings.",
+      "thietLapMucWarningCritical": "Set Warning/Critical levels for FPY, Yield Rate, UPH and other metrics, per factory/line.",
+      "khaiBaoCaLamViec": "Define shifts by scope of application and set OEE targets (Availability, Performance, Quality, Overall).",
+      "lamSaoDeThemMay": "How do I add a new machine?",
+      "vaoMonitoringSettingsHoacData": "Go to Monitoring Settings or Data Settings (depending on your permissions), create the machine and configure the matching API key on the AVI/AOI machine.",
+      "taiSaoYieldRateKhac": "Why does Yield Rate differ from FPY?",
+      "fpyChiTinhOkOk": "FPY counts only OK/(OK+NG), while Yield Rate is (OK+NTF)/Total and therefore includes confirmed false positives.",
+      "lamSaoDeXuatDu": "How do I export data to Excel?",
+      "vaoHistoryHoacReportsLoc": "Go to History or Reports, filter the data you need, then choose Export and the Excel format.",
+      "nenDungWebsocketHayPolling": "Should I use WebSocket or polling?",
+      "websocketPhuHopGiamSat": "WebSocket suits realtime monitoring; polling uses fewer resources when you only need a periodic overview.",
+      "backupDuLieuODau": "Where is data backed up?",
+      "suDungBackupRestoreDe": "Use Backup & Restore to create a manual backup or configure an automatic backup schedule."
+    }
   },
   "visionLab": {
     "augment": {
