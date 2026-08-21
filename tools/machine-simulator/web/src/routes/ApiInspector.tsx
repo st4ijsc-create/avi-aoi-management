@@ -212,6 +212,11 @@ export default function ApiInspector() {
           <p className="mt-1 max-w-3xl text-sm text-text-muted">
             {t("inspector.subtitle", { count: stream.totalCount.toLocaleString() })}
           </p>
+          {/* 🔴 Owner item 28 — the three caps that apply to this pane, NAMED. Its own paragraph rather
+              than a tooltip or an appendix to the subtitle: the subtitle is what a reader trusts when
+              they decide whether an exported file is evidence, and it is also the sentence
+              `03-inspector.spec.ts` parses for `totalCount`, so this must not be folded into it. */}
+          <p className="max-w-3xl text-xs text-text-muted">{t("inspector.capsNote")}</p>
         </div>
         <StreamStatusIndicator
           connectionState={stream.connectionState}

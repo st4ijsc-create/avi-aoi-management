@@ -9,8 +9,9 @@ using St4i.EngineApi.Auth;
 namespace St4i.EngineApi.Hubs;
 
 /// <summary>
-/// <c>WS /v1/inspector/stream</c> — on connect, backfills <see cref="EventBus.Recent"/>(200) as
-/// individual JSON messages (oldest-first, matching <see cref="EventBus.Recent"/>'s own ordering), then
+/// <c>WS /v1/inspector/stream</c> — on connect, backfills <see cref="EventBus.Recent"/>
+/// (<see cref="BackfillEventCount"/>) as individual JSON messages (oldest-first, matching
+/// <see cref="EventBus.Recent"/>'s own ordering), then
 /// keeps pushing every subsequent <see cref="EventBus.Traced"/> event as its own JSON message for as
 /// long as the socket stays open. Server-push-only (no client→server message contract) — the headless
 /// host analogue of the WPF app's <c>ApiInspectorView</c>/<c>InspectorViewModel</c>, just over a raw
@@ -18,11 +19,23 @@ namespace St4i.EngineApi.Hubs;
 ///
 /// Final-review M-1: the backfill is skipped when the client passes <c>?skipBackfill=1</c> on the
 /// upgrade request — <c>web/src/lib/inspector.ts</c> sets that on every RECONNECT (not the initial
-/// connection), because otherwise a WS blip/engine hiccup mid-exhibition re-injects up to 200 already-
-/// seen historical rows into the client's ring as duplicates every time it reconnects.
+/// connection), because otherwise a WS blip/engine hiccup mid-exhibition re-injects up to
+/// <see cref="BackfillEventCount"/> already-seen historical rows into the client's ring as duplicates
+/// every time it reconnects.
 /// </summary>
 public static class InspectorStreamEndpoint
 {
+    /// <summary>How many buffered <see cref="ApiTraceEvent"/>s a freshly-connected socket is replayed:
+    /// 200. Owner item 28 — this used to be a bare <c>200</c> literal inside <see cref="RunAsync"/>, which
+    /// made it the ONE cap on API-trace history with no name to point at, even though it is the cap that
+    /// BINDS FIRST for anyone who just opened or reloaded the pane (the engine's own
+    /// <see cref="EventBus.DefaultCapacity"/> ring holds 500, and the web tab's <c>RING_CAPACITY</c> holds
+    /// 1000 — neither of those can hand a new tab more than this). Naming it is the whole point: a cap a
+    /// reader cannot name is a cap a reader cannot check. It must never exceed
+    /// <see cref="EventBus.DefaultCapacity"/> — a backfill larger than the ring it reads from would be a
+    /// promise the ring cannot keep — and <c>InspectorStreamBackfillCapTests</c> holds that relation.</summary>
+    internal const int BackfillEventCount = 200;
+
     public static void MapInspectorStream(this IEndpointRouteBuilder app)
     {
         app.Map("/v1/inspector/stream", async (HttpContext context) =>
@@ -62,7 +75,7 @@ public static class InspectorStreamEndpoint
         {
             if (!skipBackfill)
             {
-                foreach (var e in eventBus.Recent(200))
+                foreach (var e in eventBus.Recent(BackfillEventCount))
                 {
                     await SendAsync(socket, e, linkedCts.Token).ConfigureAwait(false);
                 }

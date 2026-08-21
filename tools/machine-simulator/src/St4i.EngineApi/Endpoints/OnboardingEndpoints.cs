@@ -92,12 +92,65 @@ public static class OnboardingEndpoints
         }).RequireAuthorization(Policies.Engineer);
 
         app.MapPost("/v1/onboarding/paste-key", async (
-            OnboardingPasteKeyRequest request, OnboardingService svc, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
+            OnboardingPasteKeyRequest request, OnboardingService svc, FleetHost fleetHost,
+            HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
-            var result = svc.PasteKey(request);
+            var result = AnnotatePasteKeyReachability(svc.PasteKey(request), fleetHost.GetSettings().MachineCode);
             await RecordOnboardingAsync(recorder, context, "onboarding.paste_key", result, ct).ConfigureAwait(false);
             return Results.Ok(result);
         }).RequireAuthorization(Policies.Engineer);
+    }
+
+    /// <summary>
+    /// Owner item 29 — makes the paste-key response say which machine code the key it just stored will
+    /// actually be USED for, when that is not the code the caller pasted under.
+    ///
+    /// 🔴 THE MECHANISM, RE-MEASURED, BECAUSE THE ITEM DESCRIBES IT WRONG. Item 29's headline is "a route
+    /// that returns 200 for something it does not do". <see cref="OnboardingService.PasteKey"/> DOES do
+    /// what it says: <c>CredentialStore.Save(machineCode, mkKey)</c> really writes a DPAPI blob under that
+    /// code, and <c>"Pasted mk_ key stored for WELD-01"</c> is a TRUE sentence. What is false is the
+    /// inference a reader draws from it. The engine links outbound under exactly ONE identity —
+    /// <c>FleetCore.UpdateSettings</c> reads <c>CredentialStore.Load(_machineCode)</c> with the SINGULAR
+    /// <c>_machineCode</c> field (= <c>settings.machineCode</c>) — so a key stored under any OTHER code is
+    /// durable, listable and completely unreachable by the transport. The honest fix is therefore not a
+    /// 4xx (that would reject a write that genuinely succeeds, and would break the one legitimate use the
+    /// owner item itself names: staging a key BEFORE switching <c>machineCode</c> over to it). It is to
+    /// stop letting a true sentence imply a false one.
+    ///
+    /// 🔴 AND THE CEILING ON THIS FIX, STATED RATHER THAN LEFT IMPLIED. This reaches the TWO web forms that
+    /// POST this route (<c>web/src/routes/Settings.tsx</c> and <c>Onboarding.tsx</c>'s <c>PasteKeyCard</c>).
+    /// It does NOT reach the WPF shell's two paste paths —
+    /// <c>St4iMachineSimulator.ViewModels.OnboardingViewModel.PasteKey</c> and
+    /// <c>SettingsViewModel</c>'s "Paste mk_" fast path — because both call
+    /// <c>CredentialStore.Save</c> DIRECTLY and never touch this route. Four paste surfaces exist; a
+    /// route-level fix covers two.
+    ///
+    /// Shape is deliberately untouched: same <see cref="OnboardingStepResult"/> record, same five members,
+    /// same <c>Step</c> value (<c>"Claimed"</c>, which <c>Onboarding.tsx</c> and <c>Settings.tsx</c> both
+    /// branch on as <c>step != "Idle"</c>), same HTTP 200. Only the human-readable
+    /// <see cref="OnboardingStepResult.Message"/> VALUE grows a clause, and only on the mismatch branch.
+    /// </summary>
+    /// <param name="result">What <see cref="OnboardingService.PasteKey"/> returned.</param>
+    /// <param name="activeMachineCode">The code the engine authenticates as right now —
+    /// <c>FleetHost.GetSettings().MachineCode</c>, i.e. the exact value <c>FleetCore</c> will pass to
+    /// <c>CredentialStore.Load</c> on its next Live rebuild.</param>
+    internal static OnboardingStepResult AnnotatePasteKeyReachability(OnboardingStepResult result, string? activeMachineCode)
+    {
+        // A validation failure ("Idle") stored nothing, so there is no reachability to report; an unknown
+        // active code means this layer cannot honestly say WHICH code wins, and a ceiling it cannot measure
+        // is one it must not assert.
+        if (string.IsNullOrWhiteSpace(result.MachineCode) || string.IsNullOrWhiteSpace(activeMachineCode))
+            return result;
+
+        if (string.Equals(result.MachineCode, activeMachineCode, StringComparison.OrdinalIgnoreCase))
+            return result;
+
+        return result with
+        {
+            Message = result.Message +
+                $" — but this engine authenticates as {activeMachineCode}, so this key is NOT the one Live/Auto will use; " +
+                $"it only takes effect once the machine code in Settings is changed to {result.MachineCode}.",
+        };
     }
 
     /// <summary>WS-D-D4 — one audit row per onboarding step, target = the resulting <c>machineCode</c>

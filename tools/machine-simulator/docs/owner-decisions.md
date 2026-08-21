@@ -55,9 +55,9 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 24 | `ModbusOptions`/`OpcUaOptions` — hằng số TÊN biến môi trường công khai | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — phép đo đã sửa **tự kiểm lại và ĐỨNG VỮNG cả hai nửa**; hai file test nay gọi hằng số thay vì gõ lại chuỗi. Xem Phần III |
 | 25 | **Điều kiện rời Phần II của mục 12** — họ driver: tài liệu hay thu hẹp? | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). 109 cảnh báo trên **97 thành viên**; câu hỏi *"có nên `public` không"* **không tồn tại với 46**, **sai trong im lặng với 9**, miễn phí với 17, tốn một IVT mới với 25 — và 🔴 **ít nhất 55 trong 97 sẽ `public` DÙ PHÁN THẾ NÀO** |
 | 26 | **Không gì trong repo này trả cho TÍNH ĐÚNG của một chú thích đã viết** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Mục 12 trả cho **bao phủ**; W-1 kiểm **hình thức**. Năm con số đã đo — **KHÔNG cộng được**, và mục nói vì sao |
-| 27 | API Inspector **không phơi THÂN request** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo lại từ mã 2026-08-20. `ApiTraceEvent` **không có trường thân**; `TraceTable` **không có trình xử lý click hàng nào** |
-| 28 | **BA cái trần** trên lịch sử API-trace, và **không cái nào được UI gọi tên là trần** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). 🔴 **Phát hiện "trần 1.000 và UI CÓ nêu tên trần" KHÔNG đứng vững nguyên trạng: trần là 1.000 / 500 / 200, và UI in GIÁ TRỊ chứ không gọi tên TRẦN** |
-| 29 | Cả fleet liên kết ra ngoài bằng **MỘT danh tính thiết bị** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). `POST /v1/onboarding/paste-key` lưu khoá cho **bất kỳ** mã máy và trả 200; `FleetCore.UpdateSettings` chỉ đọc **một**. 🔴 **Kèm một TRẦN của phán quyết: câu báo lỗi người vận hành đọc được phát ra từ file SDK vendored KHÔNG SỬA ĐƯỢC**, nên phán quyết phải nêu chỗ thi hành. Mục cũng mang một khối **RÚT** một câu phủ định tồn tại do chính AO-1 viết sai cùng ngày — §8.1(f), ca thứ ba |
+| 27 | API Inspector **không phơi THÂN request** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo lại từ mã 2026-08-20. `ApiTraceEvent` **không có trường thân**; `TraceTable` **không có trình xử lý click hàng nào**. 🔴 **AS-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG của brief đã NỔ: `ApiTraceEvent` rời tiến trình trên BA bề mặt đã xuất bản, nên thêm một trường thân LÀ đổi hình dạng một payload đã xuất bản. Không một dòng nào bị sửa cho mục này; mục Ở LẠI PHẦN I.** Kèm hai phép đo BÁC hai tiền đề của brief: thân request đi ra **KHÔNG mang khoá `mk_`** (khoá đi bằng header), và sóng hàn hôm nay là **24 mẫu**, không phải 100.000. Xem thân mục |
+| 28 | ~~**BA** cái trần~~ **BỐN** cái trần trên lịch sử API-trace, và **không cái nào được UI gọi tên là trần** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **KHÔNG phải ba mà BỐN**: mục bỏ sót vòng đệm của chính vỏ WPF (`InspectorViewModel.MaxEvents`). Cái trần backfill nay **CÓ TÊN** (`InspectorStreamEndpoint.BackfillEventCount`) thay vì một literal `200`; pane web nay **gọi tên** ba cái trần áp vào nó và nói **cái nào chặn khi nào**. Đổi lời, không đổi hành vi. Xem Phần III |
+| 29 | Cả fleet liên kết ra ngoài bằng **MỘT danh tính thiết bị** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **và CƠ CHẾ mà mục mô tả KHÔNG đứng vững: route KHÔNG "trả 200 cho việc nó không làm"** — nó thật sự lưu khoá, câu *"Pasted mk_ key stored for WELD-01"* là **ĐÚNG**; cái sai là suy luận nó mời người đọc rút ra. Nên bản sửa là **sửa câu, không sửa mã trạng thái** — một 4xx sẽ từ chối một cú ghi có thật và lấy đi đúng đường mà chính mục nêu là hợp lệ. 🔴 **Và mục nêu THIẾU một bề mặt: có HAI biểu mẫu web POST route ấy, không một.** Cái trần vendored giữ nguyên. Xem Phần III |
 | 30 | Gốc mặc định của bốn store cạnh-binary là `%ProgramFiles%`, và **lần chạy đầu chính là lần GHI** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Câu hỏi này **bị nhiều brief liên tiếp CẤM mở**; lệnh cấm hết hiệu lực ở nhiệm vụ này |
 | 31 | **Mười hai artefact build** (7 `.xml` + 5 `.pdb`) đi vào MSI | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Đã ĐO ở §8 của mục 12 từ 2026-08-19 (AF-1) nhưng **chưa bao giờ thành một mục phán được**; **ba trong số đó đã ở đó từ N-1/N-2** |
 | 32 | **Một lời khai miền dụng cụ không kiểm được nếu không ghi NƠI lệnh được chạy** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Pathspec của git là **tương đối với cwd** và một pathspec bị thu hẹp **trả 0 chứ không báo lỗi**: `-- 'server/*.ts'` **0** đối lại `-- ':(top)server/*.ts'` **197**; và **glob đuôi trần cũng hỏng** — `'*.ts'` **1** đối lại **214**. 🔴 **Giá đã trả: mục 14 được PHÁN kèm một cái trần SAI** (*"không đo được từ repo này"* — bên tiêu thụ nằm trong chính commit này). **Năm khẳng định khác đo lại vẫn ĐỨNG VỮNG**, gồm kết luận "ba chỗ xuất bản `TransportMode`" của AM-1. **Người đăng ký gương MQTT retained: CHƯA ĐO** (37 file nhắc `syn/`) |
@@ -638,201 +638,63 @@ Repo này đã có một bộ canh rò rỉ dữ liệu nhạy (bracket `real cr
 một hợp đồng đi dây đổi — mục 4, mục 14, và cái tiếp theo — câu hỏi *"nó thực sự gửi cái gì"* lại
 được trả lời bằng một lần chạy live chứ không bằng một dụng cụ.
 
----
+### 🔴 AS-1 (2026-08-21) — ĐƯỢC GIAO THI HÀNH, ĐÃ DỪNG. Phép đo, và hai tiền đề không sống sót
 
-## 28. Lịch sử API-trace có BA cái trần, không phải một, và UI in GIÁ TRỊ của chúng chứ không gọi tên cái nào là TRẦN
+**Điều kiện DỪNG đã nổ, và đây là phép đo làm nó nổ.** Brief hỏi: *`ApiTraceEvent` đi ra những bề mặt
+nào, và thêm một trường vào đó có phải đổi hình dạng một payload đã xuất bản không?* **Có.** Quần thể
+liệt kê TRƯỚC khi đếm, `git grep --full-name "ApiTraceEvent" <SHA> -- ':(top)'` chạy **từ gốc repo**
+(`D:\SOURCES\avi-aoi-sim`), 21 file. Trong đó **ba** bề mặt mang bản ghi ấy **RA KHỎI tiến trình**:
 
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). 🔴 **Phát hiện gốc của điều phối viên — *"trần hiển thị 1.000
-hàng trên 2.565 gói ghi nhận, và UI CÓ nêu tên trần"* — KHÔNG đứng vững nguyên trạng, và cả hai nửa
-đều lệch.**
+1. **`WS /v1/inspector/stream`** — `InspectorStreamEndpoint.SendAsync` gọi
+   `JsonSerializer.SerializeToUtf8Bytes(e, ApiJson.Options)`. Mỗi sự kiện là **một khung JSON**. Đây là
+   một hợp đồng dây đã xuất bản: `web/src/lib/inspector.ts` khai lại đúng mười trường ấy và tự ghi
+   *"Wire types — 1:1 with ApiTraceEvent.cs"*.
+2. **Nút `Export` của pane web** — `ApiInspector.handleExport` ghi một **file JSON xuống đĩa người
+   dùng**, và code nói thẳng ý định: bỏ `id` do client gán *"so the export should read as exactly what
+   `ApiTraceEvent` looks like over the wire"*. Tức file ấy **là** hình dạng dây.
+3. **Nút `Export` của pane WPF** — `InspectorViewModel.ExportAsync` serialize `Events.ToArray()` ra
+   một file JSON thứ hai, hình dạng tương đương.
 
-📎 **Điều phối viên hỏi mục này có đáng thành một mục không hay chỉ là một sự thật đã ghi. Lựa chọn
-của tôi: nó ĐÁNG, nhưng KHÔNG vì lý do ban đầu.** Một trần đơn nêu tên đúng thì đúng là một sự thật
-đã ghi. **Ba trần mà không cái nào được gọi tên là trần** là một mục, vì luật của chính file này
-nói: *một cái trần nêu quá nhỏ còn tệ hơn không nêu trần* — và ở đây trần **không được nêu**, chỉ có
-giá trị của nó được in ra.
+Cộng hai bề mặt **render** trong tiến trình (`TraceTable.tsx`, `ApiInspectorView.xaml`) và một bài
+hợp đồng (`EnumSpellingContractTests`). **Không có route REST nào trả `ApiTraceEvent`** — đo trên cả
+`src/St4i.EngineApi/Endpoints/`, tập rỗng.
 
-**Đo được cái gì — LIỆT KÊ TRƯỚC.** Ba cái chặn, ở ba lớp:
-1. **`EventBus.DefaultCapacity = 500`** — vòng đệm phía **server**, `Queue<ApiTraceEvent>`, khi đầy
-   thì `Dequeue` cái cũ nhất. Đây là **toàn bộ lịch sử mà engine giữ**.
-2. **`InspectorStream` backfill = `eventBus.Recent(200)`** — số sự kiện một tab **mới mở hoặc vừa
-   kết nối lại** nhận được.
-3. **`RING_CAPACITY = 1000`** trong `web/src/lib/inspector.ts` — vòng đệm phía **client**,
-   mới-nhất-trước, cắt bằng `merged.slice(0, RING_CAPACITY)`.
+🔴 **Nên thêm một trường thân vào `ApiTraceEvent` đổi hình dạng của một khung WebSocket đã xuất bản
+VÀ của hai định dạng file mà người dùng đã có trên đĩa.** Đó đúng là thứ nằm ngoài uỷ quyền. **DỪNG.**
+Không một dòng nào bị sửa cho mục này.
 
-**Nên "1.000" không phải cái trần đang chặn với ai vừa tải lại trang: 200 mới là, rồi tới 500.**
-Vòng 1.000 của client chỉ đầy được bằng cách **ngồi mở suốt** trong lúc lưu lượng chảy — chính doc
-comment của hằng số ấy nói thế (*"this is how much history the tab itself is willing to hold …, not
-a mirror of the server's bound"*).
+**HAI TIỀN ĐỀ CỦA BRIEF KHÔNG SỐNG SÓT QUA PHÉP ĐO, và ghi lại vì một cái trần nêu SAI còn tệ hơn
+không nêu trần.**
 
-**Và nửa thứ hai: UI in giá trị, không gọi tên trần.** Phụ đề nói *"Live, envelope-by-envelope feed
-of **every request the fleet sends** — 2.565 captured this session"*. Thanh trên bảng nói *"N shown
-of 1.000 buffered"*. **Không chuỗi nào trong `web/src/i18n/en.ts` hay `vi.ts` chứa từ nào nghĩa là
-"trần", "giới hạn", "đã rơi", hay "cũ hơn thì mất".** Người đọc thấy hai con số và phải **tự suy ra**
-rằng khoảng cách giữa chúng là mất vĩnh viễn. Chữ *"every request"* trong phụ đề đẩy suy luận ấy đi
-ngược hướng.
+* 🔴 **"Thân request có thể chứa bí mật (khoá `mk_`)" — SAI trên đường ĐƯỢC TRACE.** Thân được trace
+  là `CanonicalEnvelope.Payload`, dựng ở `Normalizer` từ một `DeviceReading`. Đo: **không** file nào
+  dưới `src/St4i.EdgeCore/Mapping/`, `…/Engine/`, `…/Models/` nhắc tới `MkKey`. Khoá đi bằng **HEADER**
+  — `St4iDeviceClient` đặt `Authorization: Bearer <mk_…>` và `X-API-Key`, và header **không** có mặt
+  trong `CanonicalEnvelope` chút nào. Chiều ngược, nêu chứ không giấu: khoá **CÓ** nằm trong thân của
+  **hai** lời gọi SDK khác — `SaveCredentialAsync` (`{"mkKey":…}`) và `HeartbeatAsync`
+  (`{"apiKey":…}`) — nhưng **không lời gọi nào trong hai cái đó sinh ra một `ApiTraceEvent`**:
+  `EdgePipeline` chỉ dựng sự kiện quanh `_transport.SendAsync` của một reading. **Nên lý do thật để
+  nói không KHÔNG phải bí mật; nó là dữ liệu đo của khách hàng — đúng cái thân mục đã viết.**
+* 🔴 **"Sóng hàn 100.000 mẫu" — KHÔNG phải phép đo của repo này.** Đo: `WelderSim.WaveformPoints =
+  **24**`, `ScrewdriveSim.WaveformPoints = **20**`. Con số 100.000 là một giả định về bộ điều khiển
+  hàn thật, không phải thứ sản phẩm này phát hôm nay.
 
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Infrastructure.EventBus.DefaultCapacity`;
-`St4i.EngineApi.Hubs.InspectorStream` (chỗ gọi `Recent(200)`); `RING_CAPACITY` trong
-`web/src/lib/inspector.ts`; `inspector.subtitle`, `inspector.shownLabel`, `inspector.ofBuffered`
-trong `web/src/i18n/en.ts` và `vi.ts`; `web/src/routes/ApiInspector.tsx`.
+**NHƯNG CÁI TRẦN KÍCH THƯỚC VẪN THẬT, VÀ ĐÂY LÀ HÌNH DẠNG ĐÚNG CỦA NÓ.** `CanonicalEnvelope.Payload`
+là `Dictionary<string, object>` **không định kiểu**, và phép quét `MaxRequestBodySize|MaxLength|
+maxSamples|MaxSamples|TruncateSamples|.Take(N)` trên toàn `tools/machine-simulator/src` trả **tập
+rỗng**: **không nơi nào trong sản phẩm này giới hạn kích thước một thân đi ra.** Hai bộ mô phỏng dựng
+sẵn nhỏ, nhưng chúng không phải trần — trần là **driver bên thứ ba / Modbus / OPC UA / hot-folder AOI
+nạp bao nhiêu cũng được**. Nên bất kỳ bản "phơi thân request" nào **phải mang theo chính sách cắt của
+riêng nó**; không có cái nào để thừa kế.
 
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* một người vận hành đọc *"every request the fleet sends"* và tin rằng pane là một bản
-ghi đầy đủ. Trên một phiên triển lãm dài, nó là một cửa sổ trượt mà **cái cũ nhất bị bỏ im lặng**, ở
-ba tầng khác nhau, và nút `Export` xuất **cửa sổ**, không xuất phiên. Ai xuất file ấy để làm bằng
-chứng đang xuất một tập con mà không có gì trong file nói ra điều đó.
-*Chiều ngược:* cả ba trần đều **có lý do đúng** — một pane chẩn đoán không được phép là một cái rò
-bộ nhớ trên engine, trên dây, hay trong tab. Nâng chúng lên là mua thêm ký ức bằng RAM ở một tiến
-trình đang chạy một fleet. Và **cách rẻ nhất để đóng mục này không phải nâng trần mà là gọi tên
-chúng** — một chuỗi, không một dòng mã đường ống nào.
-
-**Nếu KHÔNG quyết định.** Ba trần ở lại không được gọi tên, phụ đề ở lại hứa *"every request"*, và
-khoảng cách giữa hai con số hiển thị ở lại là thứ mà chỉ người đọc mã mới giải thích được.
-
----
-
-## 29. Cả fleet liên kết ra ngoài bằng MỘT danh tính thiết bị, trong khi một route trả 200 cho việc lưu khoá của BẤT KỲ mã máy nào
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi điều phối viên 2026-08-20, **xác nhận lại trên mã** —
-cơ chế **đứng vững**; một chi tiết trong lời kể **không đứng vững** và được sửa dưới đây.
-
-**Đo được cái gì.** `FleetCore.UpdateSettings` — khi một lần biên tập cần dựng lại transport —
-chạy `CredentialStore.Load(_machineCode)` rồi
-`_transportCoordinator.RebuildLive(_serverUrl, _machineCode, mkKey, _verifyTls)`. **Số ít.**
-`_machineCode` là một trường **một giá trị** của `FleetCore`, khởi tạo từ `DefaultMachineCode` và
-ghi đè từ `persisted.MachineCode` (tức `settings.machineCode`). **Không đường nào trong `FleetCore`
-nạp một khoá theo từng máy con.**
-
-Ở đầu kia, `OnboardingService.PasteKey` gọi `CredentialStore.Save(req.MachineCode, req.MkKey)` — lưu
-dưới **bất kỳ** mã máy nào người gọi đưa — và trả `OnboardingStepResult("Claimed", …)` với thông
-điệp `$"Pasted mk_ key stored for {req.MachineCode}"`, mà `OnboardingEndpoints` gói thành
-**`Results.Ok`**, tức **HTTP 200**. Nên: dán một khoá cho mã của một **máy con** thành công theo mọi
-nghĩa mà route ấy đo, và **không có tác dụng gì** lên đường đi ra — `RebuildLive` vẫn chỉ nhận khoá
-của `settings.machineCode`.
-
-🔴 **Và hai chuỗi đã xuất bản trong UI đứng ngay cạnh nhau nói đúng hai chuyện ấy.** Cùng một khối
-`settings.auth`: `machineCodeLabel` = *"Machine code used for authentication"* (số ít) và
-`machineCodeHint` = *"The mk_ key saved for **this code** is used when Live/Auto connects to the real
-server."* — rồi ngay dưới, một biểu mẫu riêng với `pasteCodeLabel` = *"Machine code"* và placeholder
-*"e.g. SIM-0002"*, tức **mời người dùng dán một khoá cho một mã KHÁC**. Một bên nói đã lưu, bên kia
-chỉ dùng một cái.
-
-📎 **Một chỗ trong lời kể được trỏ lại chứ không sửa:** điều phối viên trỏ `FleetCore.cs:5313`. Số
-dòng ấy **hôm nay vẫn đúng**, nhưng §8.1(h8) nói trỏ bằng **TÊN**: chỗ ấy nằm trong
-`FleetCore.UpdateSettings`, trong nhánh `if (rebuildNeeded)`.
-
-> 🔴 **MỘT CÂU PHỦ ĐỊNH TỒN TẠI TRONG CHÍNH MỤC NÀY — RÚT 2026-08-20 (AO-1), cùng ngày nó được
-> viết, giữ NGUYÊN VĂN, không xoá dòng nào.** Câu ấy đọc: *"**Chuỗi ấy KHÔNG tồn tại trong cây** —
-> `git grep` trên toàn bộ commit object không tìm thấy nó, và `LiveTransport` không có thành viên
-> `IsConfigured` nào."* **Nửa sau đúng và ở lại** (`LiveTransport` thật sự không có `IsConfigured`).
-> 🔴 **Nửa đầu SAI, và chuỗi ấy CÓ THẬT.**
->
-> **Nó sai vì BA nguyên nhân chồng lên nhau, và phải nêu cả ba vì mỗi cái một mình đã đủ để hỏng
-> phép đo.**
-> **(1) DẤU.** Brief viết `khoá` (a-sắc); chuỗi thật là `khóa` (o-sắc). Hai cách viết đều hợp lệ
-> trong tiếng Việt cho **cùng một từ**, và **một lần grep theo cách viết này không tìm ra cách viết
-> kia**. Lỗi này do điều phối viên gieo vào brief và người thực thi kế thừa mà không kiểm.
-> **(2) PATHSPEC — và đây là cái nặng nhất, nó là của người thực thi.** Mọi lệnh
-> `git grep <SHA> -- .` và `git grep <SHA> -- '*.cs'` của nhiệm vụ này được chạy từ
-> `tools/machine-simulator`, mà **pathspec của git là TƯƠNG ĐỐI VỚI THƯ MỤC HIỆN HÀNH**. Nên mọi
-> lần quét ấy **âm thầm loại bỏ toàn bộ cây ngoài `tools/machine-simulator/`** — gồm `examples/`,
-> **và gồm cả `server/` với `client/`, đúng hai cây mà lời khai miền dụng cụ tự nhận là đã với
-> tới.** Phép kiểm quyết định: cùng một mẫu, chạy từ gốc repo, trả thêm
-> `examples/device-client/csharp/St4iDeviceClient.cs`; chạy từ `tools/machine-simulator`, không trả.
-> **Câu *"`git grep` trên commit object với tới cả cây"* đúng về LỆNH và sai về LẦN GỌI.**
-> **(3) MIỀN.** Chuỗi không nằm ở `src/` hay `web/`. Nó nằm ở `examples/device-client/` — **file SDK
-> vendored**, thứ **không ai trong repo này được sửa**.
->
-> 🔴 **Ý nghĩa, viết đúng cái nó là: đây là §8.1(f), ca THỨ BA trong cùng một chuỗi, và ca này do
-> chính người vừa bắt được hai ca trước tự sinh ra.** Hai ca kia nằm ở mục 15 và mục 24, cả hai là
-> lỗi của báo cáo đợt 8. Ca này là lỗi của nhiệm vụ đang sửa chúng, mắc **trong cùng một phiên**, và
-> nó là bằng chứng mạnh nhất cho câu mà chính nhiệm vụ ấy viết ở phần kết: **một phép đo chỉ rộng
-> bằng cái mẫu sinh ra nó** — trong đó "cái mẫu" gồm cả **chính tả** lẫn **thư mục ta đứng khi
-> gõ**.
->
-> 📎 **Mọi câu phủ định tồn tại khác trong mười bảy mục đã được ĐO LẠI từ gốc repo sau phát hiện
-> này, và tất cả đều đứng vững**: tập `Channel.CreateBounded` (mục 15), hai bộ truy cập `.Auto`/
-> `.Demo` (mục 19), `PublishBirth`/`PublishDeath` và `WithWill`/`LastWill` (mục 23), bảy chính tả
-> biến môi trường (mục 24), nhà sản xuất `OeeInputAggregate` và hai chỗ dựng `TransportCoordinator`
-> (mục 16 và 20, cả hai với mẫu chịu-được-đủ-đường-dẫn), bốn file không được git theo dõi (mục 30),
-> từ vựng "trần" trong hai file i18n (mục 28), trình xử lý click hàng trong `TraceTable` (mục 27),
-> và phép phủ định về nhân chứng của route scenario (mục 18). **Đúng một con số phải sửa ngoài mục
-> này: mục 23 ghi "bốn chỗ trong `tests/`", và tập là NĂM file** — cũng do một lần quét bị cắt bởi
-> `head`.
-
-🔴 **CHUỖI ẤY CÓ THẬT, VÀ CHỖ NÓ PHÁT RA LÀ MỘT CÁI TRẦN CỦA PHÁN QUYẾT — nêu ra chứ không để im,
-vì một cái trần nêu quá nhỏ còn tệ hơn không nêu trần.** Đo lại từ gốc repo, trên **mọi** loại file:
-chuỗi `"Chưa có khóa mk_…"` xuất hiện ở **đúng hai** file, cả hai dưới `examples/device-client/` —
-bản C# (`St4iDeviceClient.cs`, một `throw new St4iConfigException`) và bản Python
-(`st4i_device_client.py`). Bản Node của cùng SDK mang biến thể ngắn hơn, `"Chưa có mk_…"`.
-
-**Đường nó lên tới mắt người vận hành, đo từng mắt xích:** SDK ném `St4iConfigException` →
-`LiveTransport.SendAsync` bắt nó, và khi `_client.MkKey` rỗng — đúng ca "chưa cấu hình" — trả
-`TransportAck(Success: false, Queued: true, Error: e.Message, …)`, **truyền nguyên văn thông điệp
-của SDK** → `EdgePipeline` chép `Error: ack.Error` vào `ApiTraceEvent` → `EventBus` →
-`InspectorStream` → **ô Error của một hàng trong pane API Inspector**. 📎 Tức bề mặt mà người vận
-hành đọc câu ấy **chính là pane của mục 27** — pane chỉ có siêu dữ liệu; thông điệp này *là* siêu dữ
-liệu, nên nó hiện ra, trong khi thứ sẽ giải thích nó thì không.
-
-**Ba khả năng đã bị LOẠI TRỪ, nêu tên chứ không im lặng bỏ qua:**
-1. *"`LiveTransport` bọc SDK và thay bằng lời của chính nó."* **Loại.** Nó truyền `e.Message` đi
-   nguyên vẹn; thứ duy nhất nó tự quyết là **hình dạng ack** nào chở câu ấy (`Queued: true` cho ca
-   chưa cấu hình, hay một 400 tổng hợp cho ca payload sai), phân biệt bằng `_client.MkKey`.
-2. *"Một chỗ nào đó trong `src/`, `web/` hay `tests/` chép lại chuỗi ấy."* **Loại.** Ở gốc repo,
-   trên mọi loại file, chuỗi chỉ có ở hai file vendored kể trên.
-3. *"Người vận hành thực ra thấy một thông điệp khác do dự án này viết."* **Loại.** `EdgePipeline`
-   chép `ack.Error` nguyên văn và không mắt xích nào giữa đường viết lại nó.
-
-🔴 **Nên trần là: nếu anh phán *"làm cho thông điệp ấy nói đúng sự thật"* — chẳng hạn nói rõ nó đang
-nói về mã máy NÀO — phán quyết ấy KHÔNG THI HÀNH ĐƯỢC ở chỗ nó phát ra.** File ấy là bản vendored
-mà luật của dự án cấm sửa: doc của chính `LiveTransport` gọi nó là *"linked into this project
-verbatim and never edited"*, và sổ cảnh báo của cổng ghim 103 cảnh báo vendored trong đúng file ấy
-**chính vì không ai được đụng vào**. Hai chỗ **thi hành được**, cả hai trong `src/`: khối `catch
-(St4iConfigException)` của `LiveTransport` — nó **đã** biết đang ở ca nào và biết mình gắn với mã
-máy nào — hoặc lớp UI khi hiển thị `ApiTraceEvent.Error`. **Một phán quyết không nêu chỗ thi hành sẽ
-rơi vào chỗ không thi hành được.**
-
-📎 **Bản thay thế viết trước đó vẫn đứng nguyên và vẫn là nửa mạnh nhất của mục:** hai chuỗi
-`settings.auth.machineCodeLabel`/`machineCodeHint` hứa một mã xác thực **duy nhất**, trong khi biểu
-mẫu ngay dưới mời dán khoá cho một mã **khác**. Cái vừa thêm không thay nó — nó nói rằng **câu báo
-lỗi ở đầu kia cũng có thật, và nằm ngoài tầm sửa**.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Fleet.FleetCore.UpdateSettings` và trường
-`_machineCode`; `St4i.EdgeCore.Infrastructure.CredentialStore.Load`/`.Save`;
-`St4i.EdgeCore.Transport.TransportCoordinator.RebuildLive`;
-`St4i.EngineApi.Fleet.OnboardingService.PasteKey`; `St4i.EngineApi.Endpoints.OnboardingEndpoints`
-(route `POST /v1/onboarding/paste-key`, `Policies.Engineer`);
-`St4i.EngineApi.Fleet.OnboardingPasteKeyRequest`; `settings.auth.*` trong `web/src/i18n/en.ts` và
-`vi.ts`. **Mắt xích của thông điệp, theo thứ tự:** `St4iDeviceClient.HttpSendAsync` và
-`St4iConfigException` trong `examples/device-client/csharp/St4iDeviceClient.cs` (**vendored, cấm
-sửa**) → khối `catch (St4iConfigException)` của `St4i.EdgeCore.Transport.LiveTransport.SendAsync` →
-`St4i.EdgeCore.Models.TransportAck.Error` → `St4i.EdgeCore.Engine.EdgePipeline` →
-`St4i.EdgeCore.Infrastructure.ApiTraceEvent.Error` → `St4i.EngineApi.Hubs.InspectorStream` → ô Error
-trong `web/src/components/TraceTable.tsx`. Đối chiếu: `St4i.EdgeService.EdgeWorker` đọc
-`CredentialStore.Load(machineCode)` cũng số ít, và doc của nó **nói thẳng** rằng Live mode gắn với
-**đúng MỘT** cặp máy/khoá.
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* một người vận hành làm đúng thứ UI mời họ làm — dán khoá cho từng máy con — nhận
-**200 và một câu xác nhận có tên máy trong đó**, rồi thấy fleet vẫn không liên kết được. Cái đắt
-không phải sự thất bại; cái đắt là **một xác nhận thành công cho một thao tác không có tác dụng**.
-Trên một fleet nhiều máy, mọi máy đi ra dưới **một** danh tính, nên máy chủ hệ sinh thái không phân
-biệt được chúng bằng khoá.
-*Chiều ngược:* **một danh tính cho mỗi tiến trình biên có thể chính là mô hình đúng**, và
-`EdgeWorker` ghi nó như một thiết kế chứ không phải một thiếu sót: tiến trình biên **là** thiết bị;
-các máy con là điểm dữ liệu bên trong nó. Nếu vậy, cái sai không phải `FleetCore` mà là
-**`PasteKey` chấp nhận một mã tuỳ ý** và **UI mời làm thế**. Sửa theo hướng đó là một phép **thu
-hẹp** route (từ chối mã không phải `settings.machineCode`) — rẻ hơn hẳn, nhưng nó **lấy đi** một
-đường mà một số cách dùng có thể đang dựa vào (lưu sẵn khoá trước khi đổi `machineCode`).
-
-**Nếu KHÔNG quyết định.** Route ở lại trả 200 cho một thao tác không có tác dụng; hai chuỗi UI ở lại
-nói hai chuyện; và câu duy nhất quyết được — **sản phẩm này có một danh tính hay nhiều?** — không ai
-hỏi. Mọi công việc "fleet nhiều máy" về sau sẽ va vào đúng chỗ này. 🔴 **Và một hệ quả riêng của cái
-trần nêu trên: câu báo lỗi mà người vận hành thực sự đọc được phát ra từ một file KHÔNG SỬA ĐƯỢC,
-nên "cứ để đấy" ở đây không có nghĩa là "giữ nguyên trạng có thể sửa sau bằng một dòng" — mọi phép
-sửa thông điệp, sớm hay muộn, đều phải xảy ra ở `LiveTransport` hoặc ở lớp UI, không ở chỗ câu ấy
-được viết ra.**
+**CHÍNH SÁCH CHE, NÊU RÕ ĐỂ PHÁN QUYẾT VỀ SAU KHÔNG PHẢI ĐO LẠI.** Nếu anh phán *"phơi thân"*, ba
+điều phải quyết cùng lúc, vì bỏ sót cái nào cũng biến bản sửa thành một bề mặt dữ liệu-lúc-nghỉ mới:
+(a) **trần byte** trên phần được giữ, cộng một dấu hiệu **nói rõ đã cắt** (một thân bị cắt im lặng là
+đúng cái lỗi mục 28 nói); (b) **thân ấy vào cả ba bề mặt trên** — vòng 500 phần tử trong RAM engine,
+luồng WS, **và hai file export** — nên "che" phải áp ở chỗ **dựng sự kiện**, không ở chỗ render;
+(c) danh sách khoá được giữ là **danh sách CHO PHÉP hay danh sách CẤM** — với một `Dictionary` không
+định kiểu mà `Normalizer` chuyển tiếp mọi khoá lạ làm trường phả hệ, một danh sách cấm **không đóng
+được**.
 
 ---
 
@@ -6120,6 +5982,347 @@ ro trôi chính tả từ ba bản xuống hai, **không** khử nó.
 hơn một nhân chứng chỉ-đọc**: hai file test giờ **không biên dịch được** nếu một trong bốn hằng số bị đổi
 tên, nên bản thân việc W-1 xanh ở ngọn nhánh **là** phép kiểm rằng chúng khớp. **Không hằng số đếm test
 nào dịch vì mục này** (số test không đổi, chỉ thân test đổi).
+
+---
+
+## 28. Lịch sử API-trace có BA cái trần, không phải một, và UI in GIÁ TRỊ của chúng chứ không gọi tên cái nào là TRẦN
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). 🔴 **Phát hiện gốc của điều phối viên — *"trần hiển thị 1.000
+hàng trên 2.565 gói ghi nhận, và UI CÓ nêu tên trần"* — KHÔNG đứng vững nguyên trạng, và cả hai nửa
+đều lệch.**
+
+📎 **Điều phối viên hỏi mục này có đáng thành một mục không hay chỉ là một sự thật đã ghi. Lựa chọn
+của tôi: nó ĐÁNG, nhưng KHÔNG vì lý do ban đầu.** Một trần đơn nêu tên đúng thì đúng là một sự thật
+đã ghi. **Ba trần mà không cái nào được gọi tên là trần** là một mục, vì luật của chính file này
+nói: *một cái trần nêu quá nhỏ còn tệ hơn không nêu trần* — và ở đây trần **không được nêu**, chỉ có
+giá trị của nó được in ra.
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC.** Ba cái chặn, ở ba lớp:
+1. **`EventBus.DefaultCapacity = 500`** — vòng đệm phía **server**, `Queue<ApiTraceEvent>`, khi đầy
+   thì `Dequeue` cái cũ nhất. Đây là **toàn bộ lịch sử mà engine giữ**.
+2. **`InspectorStream` backfill = `eventBus.Recent(200)`** — số sự kiện một tab **mới mở hoặc vừa
+   kết nối lại** nhận được.
+3. **`RING_CAPACITY = 1000`** trong `web/src/lib/inspector.ts` — vòng đệm phía **client**,
+   mới-nhất-trước, cắt bằng `merged.slice(0, RING_CAPACITY)`.
+
+**Nên "1.000" không phải cái trần đang chặn với ai vừa tải lại trang: 200 mới là, rồi tới 500.**
+Vòng 1.000 của client chỉ đầy được bằng cách **ngồi mở suốt** trong lúc lưu lượng chảy — chính doc
+comment của hằng số ấy nói thế (*"this is how much history the tab itself is willing to hold …, not
+a mirror of the server's bound"*).
+
+**Và nửa thứ hai: UI in giá trị, không gọi tên trần.** Phụ đề nói *"Live, envelope-by-envelope feed
+of **every request the fleet sends** — 2.565 captured this session"*. Thanh trên bảng nói *"N shown
+of 1.000 buffered"*. **Không chuỗi nào trong `web/src/i18n/en.ts` hay `vi.ts` chứa từ nào nghĩa là
+"trần", "giới hạn", "đã rơi", hay "cũ hơn thì mất".** Người đọc thấy hai con số và phải **tự suy ra**
+rằng khoảng cách giữa chúng là mất vĩnh viễn. Chữ *"every request"* trong phụ đề đẩy suy luận ấy đi
+ngược hướng.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Infrastructure.EventBus.DefaultCapacity`;
+`St4i.EngineApi.Hubs.InspectorStream` (chỗ gọi `Recent(200)`); `RING_CAPACITY` trong
+`web/src/lib/inspector.ts`; `inspector.subtitle`, `inspector.shownLabel`, `inspector.ofBuffered`
+trong `web/src/i18n/en.ts` và `vi.ts`; `web/src/routes/ApiInspector.tsx`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* một người vận hành đọc *"every request the fleet sends"* và tin rằng pane là một bản
+ghi đầy đủ. Trên một phiên triển lãm dài, nó là một cửa sổ trượt mà **cái cũ nhất bị bỏ im lặng**, ở
+ba tầng khác nhau, và nút `Export` xuất **cửa sổ**, không xuất phiên. Ai xuất file ấy để làm bằng
+chứng đang xuất một tập con mà không có gì trong file nói ra điều đó.
+*Chiều ngược:* cả ba trần đều **có lý do đúng** — một pane chẩn đoán không được phép là một cái rò
+bộ nhớ trên engine, trên dây, hay trong tab. Nâng chúng lên là mua thêm ký ức bằng RAM ở một tiến
+trình đang chạy một fleet. Và **cách rẻ nhất để đóng mục này không phải nâng trần mà là gọi tên
+chúng** — một chuỗi, không một dòng mã đường ống nào.
+
+**Nếu KHÔNG quyết định.** Ba trần ở lại không được gọi tên, phụ đề ở lại hứa *"every request"*, và
+khoảng cách giữa hai con số hiển thị ở lại là thứ mà chỉ người đọc mã mới giải thích được.
+
+---
+
+
+### 🔴 AS-1 (2026-08-21) — THI HÀNH. Cái trần thứ TƯ, và cái trần thứ HAI nay có TÊN
+
+**Phán quyết:** 2026-08-21, **điều phối viên quyết theo uỷ quyền** (cùng khuôn mục 8, 15, 21) — mục này
+không đổi payload MQTT, không đổi hình dạng dây, không đổi con số OEE nào.
+
+🔴 **LIỆT KÊ TRƯỚC, ĐẾM SAU — VÀ PHÉP ĐẾM CỦA CHÍNH MỤC NÀY SAI. Có BỐN cái trần, không ba.** Quần thể
+đo bằng `git grep --full-name <mẫu> <SHA> -- ':(top)'` **chạy từ gốc repo** trên `new EventBus(`,
+`.Recent(`, `DefaultCapacity`:
+
+| # | tên | giá trị | nguồn, trỏ bằng TÊN | tầng | cách nó bỏ |
+|---|---|---|---|---|---|
+| 1 | `EventBus.DefaultCapacity` | 500 | `src/St4i.EdgeCore/Infrastructure/EventBus.cs` — `public const` | vòng của engine | `Dequeue` cái cũ nhất |
+| 2 | `InspectorStreamEndpoint.BackfillEventCount` | 200 | `src/St4i.EngineApi/Hubs/InspectorStream.cs` — 🔴 **TRƯỚC nhiệm vụ này là một literal `200` trần, không có tên nào để trỏ** | phát lại lúc kết nối WS | không phát cái cũ hơn |
+| 3 | `RING_CAPACITY` | 1000 | `web/src/lib/inspector.ts` — `const` mức module | vòng của tab trình duyệt | `merged.slice(0, RING_CAPACITY)` |
+| 4 | `InspectorViewModel.MaxEvents` (= `EventBus.DefaultCapacity`) | 500 | `src/St4iMachineSimulator/ViewModels/InspectorViewModel.cs` — `private const` | vòng của pane WPF | `Events.RemoveAt(Count-1)` |
+
+🔴 **Cái thứ tư là phát hiện, và nó không phải một bản sao của cái thứ nhất.** Nó **lấy giá trị** từ
+`EventBus.DefaultCapacity`, nhưng nó là một cái trần riêng ở một tầng riêng: dựng `EventBus` với một
+capacity khác mặc định thì vòng WPF **vẫn** 500. Và nó đổi câu trả lời cho *"cái nào ràng buộc"*: mục
+viết *"200 mới là cái ràng buộc, rồi tới 500"* — **đúng cho web, sai cho WPF.** Vỏ WPF backfill bằng
+`Recent(MaxEvents)` = `Recent(500)`, không phải 200; với một người mở pane WPF, **500 là cái ràng buộc,
+và 200 không tồn tại.** Mục 27 tự liệt kê `InspectorViewModel` là một bề mặt của cùng bản ghi, nên phép
+bỏ sót này nằm trong tập mà chính mục đã mở.
+
+📎 **Một câu phủ định tồn tại của mục được TRỎ LẠI, không sửa, vì nó đúng ở phạm vi nó ngụ ý và sai ở
+phạm vi nó viết ra.** Mục viết: *"Không chuỗi nào trong `web/src/i18n/en.ts` hay `vi.ts` chứa từ nào
+nghĩa là 'trần', 'giới hạn', 'đã rơi'…"*. Ở phạm vi **file**, câu ấy **SAI** — hai file ấy chứa
+`limits.title` = *"Honest limitations"*, `droppedLabel` = *"Permanently dropped"*, `droppedWarning`, và
+hàng chục chuỗi *"Giới hạn"*. Ở phạm vi **khối `inspector.*`** — cái mục thực sự nói tới — câu ấy
+**ĐÚNG**, đo lại và xác nhận. Cùng loài §8.1(f) mà mục 29 đã trả giá: *một phép đo chỉ rộng bằng cái
+mẫu sinh ra nó*, và ở đây "cái mẫu" là **phạm vi được viết ra so với phạm vi được nghĩ trong đầu**.
+
+**Đã làm gì — hai chỗ, và cả hai là LỜI trừ một.**
+
+1. **Cái trần #2 nay có TÊN.** Literal `200` trong `InspectorStreamEndpoint.RunAsync` thành
+   `internal const int BackfillEventCount = 200`, kèm doc nói nó là cái chặn TRƯỚC TIÊN với ai vừa mở
+   pane và nó **không được vượt** `EventBus.DefaultCapacity`. **Giá trị không đổi; hành vi không đổi.**
+2. **Pane web GỌI TÊN các cái trần.** Chuỗi mới `inspector.capsNote` (en + vi), render thành một `<p>`
+   riêng dưới phụ đề, nêu **cả ba** cái trần áp vào web **và cái nào chặn khi nào** — *"ngay sau khi tải
+   lại trang thì 200 là cái chặn; qua một phiên dài thì 1000 mới là"* — cộng câu *"Xuất ghi ra CỬA SỔ
+   này, không phải cả phiên"*. 🔴 **Nêu mỗi 1.000 sẽ tái tạo đúng lỗi cũ ở một tầng khác**, nên nó không
+   được nêu một mình.
+3. **Phụ đề thôi hứa *"every request"* / *"mọi request"*.** 🔴 **PHƠI BÀY, GHI CHỨ KHÔNG GIẤU:** đây là
+   đổi **GIÁ TRỊ** một chuỗi người-đọc-được, không đổi hình dạng — theo tiền lệ điều phối viên chấp
+   thuận 2026-08-21. Ai đang so khớp chuỗi ấy sẽ hỏng, và **người tiêu thụ ngoài repo không đo được**.
+   Trong repo có **đúng một** người so khớp: `web/tests/03-inspector.spec.ts` bóc `stream.totalCount` ra
+   khỏi chính câu ấy bằng `/([\d.,]+)\s*đã ghi nhận/` trên một `<p>`. **Mệnh đề đuôi
+   `— {count} đã ghi nhận trong phiên này.` được giữ NGUYÊN VĂN vì lý do đó**, và `capsNote` cố ý là
+   một `<p>` KHÁC nên bộ định vị ấy không nhặt nhầm.
+
+**Cái KHÔNG làm, và vì sao.** Ba cái trần **không được nâng** — mục tự nói cả ba đều có lý do đúng, và
+*"cách rẻ nhất để đóng mục này không phải nâng trần mà là gọi tên chúng"*. **Vỏ WPF không được đụng**:
+nó không có phụ đề nào hứa *"every request"* (đo: `Strings.en.xaml` có chín chuỗi `Str_Inspector_*`,
+không cái nào là một câu hứa), nên ở đó **không có lời sai để sửa** — chỉ có cái trần #4 chưa được gọi
+tên, và gọi tên nó là một bề mặt WPF mới chứ không phải một phép sửa lời. **Dư lượng còn mở, ghi vào
+mục chứ không để trong báo cáo.**
+
+**Nhân chứng.** 🔴 **KHÔNG CÓ NHÂN CHỨNG ĐỎ ĐƯỢC CHO MỤC NÀY, và nói thẳng thay vì giả vờ có.** Phần
+thi hành là **lời** (chuỗi i18n + một hằng số đổi tên, giá trị không đổi), và cổng không biên dịch
+TypeScript — không suite nào trong năm suite đỏ lên được vì một chuỗi. Thứ có là: **W-1 xanh ở ngọn
+nhánh**, **`npm run build` (`tsc -b && vite build`) xanh**, và **bảng bốn cái trần ở trên** làm phép đo
+chứng minh lời mới đúng. Cộng `InspectorStreamBackfillCapTests` (hai `[Fact]`) — 🔴 **tự dán nhãn: đó là
+GUARD TRẦN, KHÔNG PHẢI NHÂN CHỨNG.** Nó xanh ở cả hai phía của mọi cặp đối chứng để 200 nguyên chỗ. Nó
+được kiểm **không rỗng** bằng một đột biến riêng (`BackfillEventCount` 200 → 600 ⇒ **cả hai đỏ**), rồi
+hoàn nguyên.
+
+---
+
+## 29. Cả fleet liên kết ra ngoài bằng MỘT danh tính thiết bị, trong khi một route trả 200 cho việc lưu khoá của BẤT KỲ mã máy nào
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi điều phối viên 2026-08-20, **xác nhận lại trên mã** —
+cơ chế **đứng vững**; một chi tiết trong lời kể **không đứng vững** và được sửa dưới đây.
+
+**Đo được cái gì.** `FleetCore.UpdateSettings` — khi một lần biên tập cần dựng lại transport —
+chạy `CredentialStore.Load(_machineCode)` rồi
+`_transportCoordinator.RebuildLive(_serverUrl, _machineCode, mkKey, _verifyTls)`. **Số ít.**
+`_machineCode` là một trường **một giá trị** của `FleetCore`, khởi tạo từ `DefaultMachineCode` và
+ghi đè từ `persisted.MachineCode` (tức `settings.machineCode`). **Không đường nào trong `FleetCore`
+nạp một khoá theo từng máy con.**
+
+Ở đầu kia, `OnboardingService.PasteKey` gọi `CredentialStore.Save(req.MachineCode, req.MkKey)` — lưu
+dưới **bất kỳ** mã máy nào người gọi đưa — và trả `OnboardingStepResult("Claimed", …)` với thông
+điệp `$"Pasted mk_ key stored for {req.MachineCode}"`, mà `OnboardingEndpoints` gói thành
+**`Results.Ok`**, tức **HTTP 200**. Nên: dán một khoá cho mã của một **máy con** thành công theo mọi
+nghĩa mà route ấy đo, và **không có tác dụng gì** lên đường đi ra — `RebuildLive` vẫn chỉ nhận khoá
+của `settings.machineCode`.
+
+🔴 **Và hai chuỗi đã xuất bản trong UI đứng ngay cạnh nhau nói đúng hai chuyện ấy.** Cùng một khối
+`settings.auth`: `machineCodeLabel` = *"Machine code used for authentication"* (số ít) và
+`machineCodeHint` = *"The mk_ key saved for **this code** is used when Live/Auto connects to the real
+server."* — rồi ngay dưới, một biểu mẫu riêng với `pasteCodeLabel` = *"Machine code"* và placeholder
+*"e.g. SIM-0002"*, tức **mời người dùng dán một khoá cho một mã KHÁC**. Một bên nói đã lưu, bên kia
+chỉ dùng một cái.
+
+📎 **Một chỗ trong lời kể được trỏ lại chứ không sửa:** điều phối viên trỏ `FleetCore.cs:5313`. Số
+dòng ấy **hôm nay vẫn đúng**, nhưng §8.1(h8) nói trỏ bằng **TÊN**: chỗ ấy nằm trong
+`FleetCore.UpdateSettings`, trong nhánh `if (rebuildNeeded)`.
+
+> 🔴 **MỘT CÂU PHỦ ĐỊNH TỒN TẠI TRONG CHÍNH MỤC NÀY — RÚT 2026-08-20 (AO-1), cùng ngày nó được
+> viết, giữ NGUYÊN VĂN, không xoá dòng nào.** Câu ấy đọc: *"**Chuỗi ấy KHÔNG tồn tại trong cây** —
+> `git grep` trên toàn bộ commit object không tìm thấy nó, và `LiveTransport` không có thành viên
+> `IsConfigured` nào."* **Nửa sau đúng và ở lại** (`LiveTransport` thật sự không có `IsConfigured`).
+> 🔴 **Nửa đầu SAI, và chuỗi ấy CÓ THẬT.**
+>
+> **Nó sai vì BA nguyên nhân chồng lên nhau, và phải nêu cả ba vì mỗi cái một mình đã đủ để hỏng
+> phép đo.**
+> **(1) DẤU.** Brief viết `khoá` (a-sắc); chuỗi thật là `khóa` (o-sắc). Hai cách viết đều hợp lệ
+> trong tiếng Việt cho **cùng một từ**, và **một lần grep theo cách viết này không tìm ra cách viết
+> kia**. Lỗi này do điều phối viên gieo vào brief và người thực thi kế thừa mà không kiểm.
+> **(2) PATHSPEC — và đây là cái nặng nhất, nó là của người thực thi.** Mọi lệnh
+> `git grep <SHA> -- .` và `git grep <SHA> -- '*.cs'` của nhiệm vụ này được chạy từ
+> `tools/machine-simulator`, mà **pathspec của git là TƯƠNG ĐỐI VỚI THƯ MỤC HIỆN HÀNH**. Nên mọi
+> lần quét ấy **âm thầm loại bỏ toàn bộ cây ngoài `tools/machine-simulator/`** — gồm `examples/`,
+> **và gồm cả `server/` với `client/`, đúng hai cây mà lời khai miền dụng cụ tự nhận là đã với
+> tới.** Phép kiểm quyết định: cùng một mẫu, chạy từ gốc repo, trả thêm
+> `examples/device-client/csharp/St4iDeviceClient.cs`; chạy từ `tools/machine-simulator`, không trả.
+> **Câu *"`git grep` trên commit object với tới cả cây"* đúng về LỆNH và sai về LẦN GỌI.**
+> **(3) MIỀN.** Chuỗi không nằm ở `src/` hay `web/`. Nó nằm ở `examples/device-client/` — **file SDK
+> vendored**, thứ **không ai trong repo này được sửa**.
+>
+> 🔴 **Ý nghĩa, viết đúng cái nó là: đây là §8.1(f), ca THỨ BA trong cùng một chuỗi, và ca này do
+> chính người vừa bắt được hai ca trước tự sinh ra.** Hai ca kia nằm ở mục 15 và mục 24, cả hai là
+> lỗi của báo cáo đợt 8. Ca này là lỗi của nhiệm vụ đang sửa chúng, mắc **trong cùng một phiên**, và
+> nó là bằng chứng mạnh nhất cho câu mà chính nhiệm vụ ấy viết ở phần kết: **một phép đo chỉ rộng
+> bằng cái mẫu sinh ra nó** — trong đó "cái mẫu" gồm cả **chính tả** lẫn **thư mục ta đứng khi
+> gõ**.
+>
+> 📎 **Mọi câu phủ định tồn tại khác trong mười bảy mục đã được ĐO LẠI từ gốc repo sau phát hiện
+> này, và tất cả đều đứng vững**: tập `Channel.CreateBounded` (mục 15), hai bộ truy cập `.Auto`/
+> `.Demo` (mục 19), `PublishBirth`/`PublishDeath` và `WithWill`/`LastWill` (mục 23), bảy chính tả
+> biến môi trường (mục 24), nhà sản xuất `OeeInputAggregate` và hai chỗ dựng `TransportCoordinator`
+> (mục 16 và 20, cả hai với mẫu chịu-được-đủ-đường-dẫn), bốn file không được git theo dõi (mục 30),
+> từ vựng "trần" trong hai file i18n (mục 28), trình xử lý click hàng trong `TraceTable` (mục 27),
+> và phép phủ định về nhân chứng của route scenario (mục 18). **Đúng một con số phải sửa ngoài mục
+> này: mục 23 ghi "bốn chỗ trong `tests/`", và tập là NĂM file** — cũng do một lần quét bị cắt bởi
+> `head`.
+
+🔴 **CHUỖI ẤY CÓ THẬT, VÀ CHỖ NÓ PHÁT RA LÀ MỘT CÁI TRẦN CỦA PHÁN QUYẾT — nêu ra chứ không để im,
+vì một cái trần nêu quá nhỏ còn tệ hơn không nêu trần.** Đo lại từ gốc repo, trên **mọi** loại file:
+chuỗi `"Chưa có khóa mk_…"` xuất hiện ở **đúng hai** file, cả hai dưới `examples/device-client/` —
+bản C# (`St4iDeviceClient.cs`, một `throw new St4iConfigException`) và bản Python
+(`st4i_device_client.py`). Bản Node của cùng SDK mang biến thể ngắn hơn, `"Chưa có mk_…"`.
+
+**Đường nó lên tới mắt người vận hành, đo từng mắt xích:** SDK ném `St4iConfigException` →
+`LiveTransport.SendAsync` bắt nó, và khi `_client.MkKey` rỗng — đúng ca "chưa cấu hình" — trả
+`TransportAck(Success: false, Queued: true, Error: e.Message, …)`, **truyền nguyên văn thông điệp
+của SDK** → `EdgePipeline` chép `Error: ack.Error` vào `ApiTraceEvent` → `EventBus` →
+`InspectorStream` → **ô Error của một hàng trong pane API Inspector**. 📎 Tức bề mặt mà người vận
+hành đọc câu ấy **chính là pane của mục 27** — pane chỉ có siêu dữ liệu; thông điệp này *là* siêu dữ
+liệu, nên nó hiện ra, trong khi thứ sẽ giải thích nó thì không.
+
+**Ba khả năng đã bị LOẠI TRỪ, nêu tên chứ không im lặng bỏ qua:**
+1. *"`LiveTransport` bọc SDK và thay bằng lời của chính nó."* **Loại.** Nó truyền `e.Message` đi
+   nguyên vẹn; thứ duy nhất nó tự quyết là **hình dạng ack** nào chở câu ấy (`Queued: true` cho ca
+   chưa cấu hình, hay một 400 tổng hợp cho ca payload sai), phân biệt bằng `_client.MkKey`.
+2. *"Một chỗ nào đó trong `src/`, `web/` hay `tests/` chép lại chuỗi ấy."* **Loại.** Ở gốc repo,
+   trên mọi loại file, chuỗi chỉ có ở hai file vendored kể trên.
+3. *"Người vận hành thực ra thấy một thông điệp khác do dự án này viết."* **Loại.** `EdgePipeline`
+   chép `ack.Error` nguyên văn và không mắt xích nào giữa đường viết lại nó.
+
+🔴 **Nên trần là: nếu anh phán *"làm cho thông điệp ấy nói đúng sự thật"* — chẳng hạn nói rõ nó đang
+nói về mã máy NÀO — phán quyết ấy KHÔNG THI HÀNH ĐƯỢC ở chỗ nó phát ra.** File ấy là bản vendored
+mà luật của dự án cấm sửa: doc của chính `LiveTransport` gọi nó là *"linked into this project
+verbatim and never edited"*, và sổ cảnh báo của cổng ghim 103 cảnh báo vendored trong đúng file ấy
+**chính vì không ai được đụng vào**. Hai chỗ **thi hành được**, cả hai trong `src/`: khối `catch
+(St4iConfigException)` của `LiveTransport` — nó **đã** biết đang ở ca nào và biết mình gắn với mã
+máy nào — hoặc lớp UI khi hiển thị `ApiTraceEvent.Error`. **Một phán quyết không nêu chỗ thi hành sẽ
+rơi vào chỗ không thi hành được.**
+
+📎 **Bản thay thế viết trước đó vẫn đứng nguyên và vẫn là nửa mạnh nhất của mục:** hai chuỗi
+`settings.auth.machineCodeLabel`/`machineCodeHint` hứa một mã xác thực **duy nhất**, trong khi biểu
+mẫu ngay dưới mời dán khoá cho một mã **khác**. Cái vừa thêm không thay nó — nó nói rằng **câu báo
+lỗi ở đầu kia cũng có thật, và nằm ngoài tầm sửa**.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Fleet.FleetCore.UpdateSettings` và trường
+`_machineCode`; `St4i.EdgeCore.Infrastructure.CredentialStore.Load`/`.Save`;
+`St4i.EdgeCore.Transport.TransportCoordinator.RebuildLive`;
+`St4i.EngineApi.Fleet.OnboardingService.PasteKey`; `St4i.EngineApi.Endpoints.OnboardingEndpoints`
+(route `POST /v1/onboarding/paste-key`, `Policies.Engineer`);
+`St4i.EngineApi.Fleet.OnboardingPasteKeyRequest`; `settings.auth.*` trong `web/src/i18n/en.ts` và
+`vi.ts`. **Mắt xích của thông điệp, theo thứ tự:** `St4iDeviceClient.HttpSendAsync` và
+`St4iConfigException` trong `examples/device-client/csharp/St4iDeviceClient.cs` (**vendored, cấm
+sửa**) → khối `catch (St4iConfigException)` của `St4i.EdgeCore.Transport.LiveTransport.SendAsync` →
+`St4i.EdgeCore.Models.TransportAck.Error` → `St4i.EdgeCore.Engine.EdgePipeline` →
+`St4i.EdgeCore.Infrastructure.ApiTraceEvent.Error` → `St4i.EngineApi.Hubs.InspectorStream` → ô Error
+trong `web/src/components/TraceTable.tsx`. Đối chiếu: `St4i.EdgeService.EdgeWorker` đọc
+`CredentialStore.Load(machineCode)` cũng số ít, và doc của nó **nói thẳng** rằng Live mode gắn với
+**đúng MỘT** cặp máy/khoá.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* một người vận hành làm đúng thứ UI mời họ làm — dán khoá cho từng máy con — nhận
+**200 và một câu xác nhận có tên máy trong đó**, rồi thấy fleet vẫn không liên kết được. Cái đắt
+không phải sự thất bại; cái đắt là **một xác nhận thành công cho một thao tác không có tác dụng**.
+Trên một fleet nhiều máy, mọi máy đi ra dưới **một** danh tính, nên máy chủ hệ sinh thái không phân
+biệt được chúng bằng khoá.
+*Chiều ngược:* **một danh tính cho mỗi tiến trình biên có thể chính là mô hình đúng**, và
+`EdgeWorker` ghi nó như một thiết kế chứ không phải một thiếu sót: tiến trình biên **là** thiết bị;
+các máy con là điểm dữ liệu bên trong nó. Nếu vậy, cái sai không phải `FleetCore` mà là
+**`PasteKey` chấp nhận một mã tuỳ ý** và **UI mời làm thế**. Sửa theo hướng đó là một phép **thu
+hẹp** route (từ chối mã không phải `settings.machineCode`) — rẻ hơn hẳn, nhưng nó **lấy đi** một
+đường mà một số cách dùng có thể đang dựa vào (lưu sẵn khoá trước khi đổi `machineCode`).
+
+**Nếu KHÔNG quyết định.** Route ở lại trả 200 cho một thao tác không có tác dụng; hai chuỗi UI ở lại
+nói hai chuyện; và câu duy nhất quyết được — **sản phẩm này có một danh tính hay nhiều?** — không ai
+hỏi. Mọi công việc "fleet nhiều máy" về sau sẽ va vào đúng chỗ này. 🔴 **Và một hệ quả riêng của cái
+trần nêu trên: câu báo lỗi mà người vận hành thực sự đọc được phát ra từ một file KHÔNG SỬA ĐƯỢC,
+nên "cứ để đấy" ở đây không có nghĩa là "giữ nguyên trạng có thể sửa sau bằng một dòng" — mọi phép
+sửa thông điệp, sớm hay muộn, đều phải xảy ra ở `LiveTransport` hoặc ở lớp UI, không ở chỗ câu ấy
+được viết ra.**
+
+---
+
+
+### 🔴 AS-1 (2026-08-21) — THI HÀNH. Cơ chế mục mô tả KHÔNG đứng vững, và mục thiếu một bề mặt
+
+**Phán quyết:** 2026-08-21, **điều phối viên quyết theo uỷ quyền** (cùng khuôn mục 8, 15, 21).
+
+🔴 **MẮT XÍCH `paste-key`, ĐO VÀ TRỎ BẰNG TÊN.** `web/src/routes/Settings.tsx` **hoặc**
+`web/src/routes/Onboarding.tsx` (`PasteKeyCard`) → `endpoints.onboardingPasteKey` trong
+`web/src/lib/api.ts` → `POST /v1/onboarding/paste-key` (`Policies.Engineer`) →
+`St4i.EngineApi.Endpoints.OnboardingEndpoints` → `St4i.EngineApi.Fleet.OnboardingService.PasteKey` →
+`St4i.EdgeCore.Infrastructure.CredentialStore.Save(req.MachineCode, req.MkKey)` → **một blob DPAPI
+`%ProgramData%\ST4I\sim\creds\<code>.bin`**. Đường **ĐỌC** lại, và đây là chỗ mắt xích đứt:
+`FleetCore.UpdateSettings` (nhánh `if (rebuildNeeded)`) gọi `CredentialStore.Load(_machineCode)` — **số
+ít** — rồi `TransportCoordinator.RebuildLive`. `St4i.EdgeService.EdgeWorker` cũng số ít
+(`CredentialStore.Load(machineCode)` từ `ST4I_MACHINE_CODE`).
+
+🔴 **KẾT CỤC QUAN SÁT ĐƯỢC VỚI MỘT `machineCode` LẠ, VIẾT CẢ HAI CHIỀU — VÀ NÓ KHÔNG PHẢI "KHÔNG CÓ TÁC
+DỤNG GÌ".** *Chiều thuận:* transport **không đổi**; `RebuildLive` vẫn chỉ nhận khoá của
+`settings.machineCode`. *Chiều ngược, mà mục không viết:* **cú ghi CÓ THẬT và CÓ MẶT ở ba chỗ đọc
+được** — (a) file blob nằm trên đĩa vĩnh viễn; (b) vỏ WPF **liệt kê nó**:
+`SettingsViewModel` gọi `CredentialStore.ListMachineCodes()` và có cả một ô *"check machineCode"* gọi
+`CredentialStore.Load(CheckMachineCode)`; (c) pane web ghi mã ấy vào `localStorage` qua
+`web/src/lib/credentials.ts`. **Không có route `GET` nào liệt kê thư mục ấy** (đo: `credentials.ts` tự
+khai điều đó, và tập route trả credential là rỗng). Nên câu đúng là: **khoá được lưu bền, liệt kê được,
+và không với tới được bởi đường đi ra** — không phải "không có tác dụng gì".
+
+🔴 **CƠ CHẾ MÀ MỤC MÔ TẢ KHÔNG ĐỨNG VỮNG, VÀ ĐÓ LÀ MỘT PHÁT HIỆN PHẢI GHI.** Đầu đề mục nói *"một route
+trả 200 cho việc nó không làm"*. **Route LÀM đúng việc nó nói.** `CredentialStore.Save` thật sự ghi;
+`$"Pasted mk_ key stored for {req.MachineCode}"` là một câu **ĐÚNG**. Cái sai là **suy luận** câu ấy mời
+người đọc rút ra. **Hệ quả trực tiếp lên bản sửa:** một 4xx sẽ **từ chối một cú ghi thành công**, và sẽ
+**lấy đi đúng đường mà chính mục nêu là hợp lệ** (*"lưu sẵn khoá trước khi đổi `machineCode`"*). Nên thứ
+được sửa là **CÂU**, không phải **MÃ TRẠNG THÁI**. 📎 Điều phối viên đã đo mục này và **sai hai lần
+trong cùng phiên**; đây là chỗ thứ ba, và nó nằm ở **đầu đề**.
+
+🔴 **MỤC NÊU THIẾU MỘT BỀ MẶT — CÓ HAI BIỂU MẪU WEB POST ROUTE ẤY, KHÔNG MỘT.** Mục chỉ nêu cặp
+`settings.auth.pasteCodeLabel`/`pasteCodePlaceholder`. Đo bằng `git grep --full-name` từ gốc repo trên
+`paste-key|PasteKey|pasteKey`: `web/src/routes/Onboarding.tsx` mang một `PasteKeyCard` thứ hai với
+`onboarding.pasteCard.codeLabel`/`codePlaceholder` — **cùng placeholder `SIM-0002`, cùng lời mời**. Một
+bản sửa chỉ chạm Settings sẽ **đúng ở một màn hình và sai ở màn hình kia**.
+
+🔴 **VÀ CÁI TRẦN CỦA BẢN SỬA, NÊU CHỨ KHÔNG ĐỂ IM. CÓ BỐN BỀ MẶT DÁN KHOÁ; ROUTE CHỈ VỚI TỚI HAI.** Hai
+cái kia là `St4iMachineSimulator.ViewModels.OnboardingViewModel.PasteKey` và đường tắt *"Paste mk_"* của
+`SettingsViewModel` — **cả hai gọi `CredentialStore.Save` TRỰC TIẾP và không bao giờ chạm route.** Nên vỏ
+WPF vẫn ghi `Log($"Pasted mk_ key stored for {PasteMachineCode}")` bằng lời cũ. **Dư lượng còn mở, ghi
+vào mục chứ không để trong báo cáo.**
+
+**Đã làm gì.**
+
+1. **Route thôi để một câu đúng ngụ ý một câu sai.** `OnboardingEndpoints.AnnotatePasteKeyReachability`
+   (mới, `internal`) nhận `FleetHost.GetSettings().MachineCode` và, **chỉ trên nhánh lệch**, nối thêm một
+   mệnh đề nêu tên **mã mà engine thật sự xác thực bằng** và nói khoá vừa dán **KHÔNG** phải cái Live/Auto
+   sẽ dùng. 🔴 **Hình dạng payload KHÔNG đổi**: cùng `OnboardingStepResult`, cùng năm thành phần, cùng
+   `Step` = `"Claimed"` (thứ cả `Onboarding.tsx` lẫn `Settings.tsx` rẽ nhánh trên nó), cùng **HTTP 200**.
+   Chỉ **GIÁ TRỊ** của `Message` dài ra — tiền lệ điều phối viên chấp thuận 2026-08-21. **Phơi bày:** ai
+   so khớp chuỗi ấy sẽ hỏng; đo trong repo, **không bài kiểm nào và không file web nào** so khớp
+   `"Pasted mk_ key stored"` — chỗ khớp duy nhất còn lại là bản WPF, và nó là một chuỗi **riêng** của nó.
+2. **CẢ HAI biểu mẫu web thôi mời làm một việc vô nghĩa.** `settings.auth.pasteCodeHint` và
+   `onboarding.pasteCard.reachabilityNote` (en + vi) nói thẳng: chỉ khoá dưới **mã máy xác thực** mới được
+   dùng; khoá dưới mã khác **được lưu và giữ**, nhưng không gì dùng tới nó tới khi mã ấy trở thành mã của
+   engine. Và **hai placeholder `e.g. SIM-0002` / `vd: SIM-0002`** — đúng chỗ lời mời được phát ra — nay
+   lặp lại `ENGINE-API-01`, cùng quy ước với ô ngay trên.
+3. **Cái trần vendored giữ nguyên và được nhắc lại ở đây.** Câu *"Chưa có khóa mk_…"* mà vận hành viên
+   đọc **vẫn** phát ra từ `examples/device-client/csharp/St4iDeviceClient.cs` — **file SDK vendored mà luật
+   dự án CẤM SỬA** — và nhiệm vụ này **không chạm nó**. Bản sửa ở trên **không** đụng tới câu ấy; nó đụng
+   một câu khác, ở một đầu khác của cùng vấn đề.
+
+**Nhân chứng, và cặp đối chứng.** `OnboardingPasteKeyReachabilityTests`. 🔴 **ĐÚNG MỘT `[Fact]` LÀ NHÂN
+CHỨNG ĐỎ ĐƯỢC** — `MismatchedCode_MessageNamesTheCodeTheEngineActuallyAuthenticatesAs`. **Đối chứng 1**
+(hoàn nguyên thân helper về `return result;`, tức hành vi BASE): **1 đỏ / 9 xanh** — bốn bài "để yên" kia
+**xanh ở cả hai phía và KHÔNG đo được gì**, nên chúng **không** được tính là nhân chứng. Chúng kiếm chỗ
+đứng bằng **đối chứng 2** (chú thích **vô điều kiện**, xoá cả hai phép gác): **6 đỏ / 4 xanh**, đúng bốn
+bài ấy (`UnknownActiveCode_SaysNothing` là một `[Theory]` ba ca). `AnnotatedResult_KeepsEveryOtherMember`
+**xanh ở cả hai đối chứng, cố ý** — nó là bài giữ khẳng định *"không payload đã xuất bản nào đổi hình
+dạng"*. **Cả hai đối chứng chạy trọn rồi hoàn nguyên.**
 
 ---
 
