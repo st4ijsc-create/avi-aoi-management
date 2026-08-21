@@ -365,6 +365,11 @@ const WEAK_AUTH_LOG_MIN_MS = 10 * 60 * 1000;
 let incSecurityEventFn: ((type: string, mode: string) => void) | null = null;
 let metricsBridgeRequested = false;
 
+/** Lượt weak-auth xảy ra TRƯỚC khi cầu nối metric nạp xong — xả ngay khi nạp được. */
+const metricChoNap: Array<{ method: string; outcome: string }> = [];
+/** Trần hàng đợi: cầu nối không bao giờ nạp được cũng không được phình bộ nhớ. */
+const METRIC_CHO_TRAN = 256;
+
 function emitWeakAuthMetric(method: string, outcome: string): void {
   if (incSecurityEventFn) {
     try {
@@ -377,17 +382,39 @@ function emitWeakAuthMetric(method: string, outcome: string): void {
     }
     return;
   }
+  // ⚠ ĐỆM lượt đang chờ cầu nối nạp xong, KHÔNG vứt nó đi.
+  //
+  // Bản trước ghi *"the first weak hit may miss the metric; the in-memory registry is
+  // exact regardless, so nothing is lost"*. Đo live 2026-08-21: **2 lượt bị từ chối,
+  // counter chỉ lên 1**. "Nothing is lost" đúng với sổ `Map`, nhưng SAI với thứ người
+  // ta thật sự dùng để quyết: checklist GO-LIVE (doc 52 §6.1) ký bằng
+  // `machine_weak_auth_denied` — một METRIC, không phải cái Map. Và cái Map thì xoá
+  // sạch mỗi lần restart, nên đúng lúc cần đối chiếu nhất thì nó không còn.
+  //
+  // Hệ quả thật: mỗi lần restart nuốt MỘT lượt weak-auth. Ai đang chờ counter về 0 để
+  // flip cờ sẽ thấy 0 sớm hơn sự thật — đúng kiểu số liệu nói dối theo hướng NGUY HIỂM.
+  // Hàng đợi có TRẦN để một cầu nối không bao giờ nạp được cũng không phình bộ nhớ.
+  if (metricChoNap.length < METRIC_CHO_TRAN) metricChoNap.push({ method, outcome });
   if (metricsBridgeRequested) return;
   metricsBridgeRequested = true;
   // Dynamic: keeps _core/metrics (and its prom-client / SLO chain) off the auth
-  // module graph. Fire-and-forget — the first weak hit may miss the metric; the
-  // in-memory registry is exact regardless, so nothing is lost.
+  // module graph.
   void import("../_core/metrics")
     .then((m) => {
       incSecurityEventFn = m.incSecurityEvent;
+      const cho = metricChoNap.splice(0, metricChoNap.length);
+      for (const e of cho) {
+        try {
+          incSecurityEventFn(`machine_weak_auth_${e.outcome}`, e.method);
+        } catch {
+          /* metrics must never break auth */
+        }
+      }
     })
     .catch(() => {
-      /* metrics unavailable → registry + log remain authoritative */
+      // Cầu nối hỏng vĩnh viễn (thiếu prom-client…) → xả hàng đợi để không giữ rác;
+      // sổ `Map` + log vẫn là nguồn có thẩm quyền.
+      metricChoNap.length = 0;
     });
 }
 
