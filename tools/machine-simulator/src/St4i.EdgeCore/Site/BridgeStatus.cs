@@ -78,7 +78,19 @@ public enum BridgeState
 /// <c>ST4I_BRIDGE_SPOOL_ENABLED=0</c> (see <see cref="UnsBridge"/>'s own doc comment) — never garbage.
 /// <see cref="LastAckedSeq"/> is the bridge's OWN bookkeeping (not derivable from <see cref="BridgeSpoolStats"/>
 /// alone, since an acked item is deleted from the spool, not merely marked) — the highest
-/// <see cref="SpooledItem.Seq"/> this bridge has ever successfully forwarded and acked.</para></summary>
+/// <see cref="SpooledItem.Seq"/> this bridge has ever successfully forwarded and acked.</para>
+///
+/// <para>🔴 <b><see cref="DroppedTotal"/> IS NOT A TOTAL OF DROPS. Task AP-1, 2026-08-21, owner decision
+/// 15.</b> It is, and has only ever been, the SPOOL's own <c>dropped_total</c> — rows
+/// <see cref="BridgeSpool.TrimAsync"/> deleted to honour the age/byte caps. It does NOT count, and by
+/// construction cannot count, the messages the bridge's forward CHANNEL evicts UPSTREAM of the spool: those
+/// are thrown away before <see cref="IBridgeSpool.EnqueueAsync"/> is ever called. Those live in
+/// <see cref="BridgeForwardQueueStats.Evicted"/>, on <see cref="UnsBridge.ForwardQueueStats"/>. The name was
+/// left alone deliberately: this field is READ by <c>GET /v1/site</c>, by the <c>/site</c> page in the web
+/// UI, and — the one that decides it — by the RETAINED resync record this bridge publishes to the Site
+/// broker, which is a wire contract a third party consumes. Quietly widening what a running number means is
+/// the failure this project keeps paying for; the number was documented instead, and the other loss got its
+/// own name.</para></summary>
 public sealed record BridgeStatusSnapshot(
     BridgeState State,
     string? LastError,
@@ -87,3 +99,24 @@ public sealed record BridgeStatusSnapshot(
     long SpoolDepth = 0,
     long LastAckedSeq = 0,
     long DroppedTotal = 0);
+
+/// <summary>
+/// 🔴 Task AP-1 (owner decision 15, 2026-08-21) — the loss that happens BEFORE the spool, which
+/// <see cref="BridgeStatusSnapshot.DroppedTotal"/> does not and cannot see. Same record shape and same split
+/// as <see cref="St4i.EdgeCore.Historian.HistorianWriterStats"/> and
+/// <see cref="St4i.EdgeCore.Uns.UnsPublisherStats"/>, ported from
+/// <c>St4i.EngineApi.Alarms.AlarmNotifierStats</c>, which had already solved this.
+/// <para>Deliberately a SEPARATE record rather than three more fields on
+/// <see cref="BridgeStatusSnapshot"/>: that record is mapped straight onto <c>GET /v1/site</c>, and adding a
+/// field there changes a published payload. That was outside what this item was delegated to do, so it is
+/// named as a gap rather than taken — see this class' entry in <c>docs/owner-decisions.md</c> Part III.</para>
+/// </summary>
+/// <param name="Evicted">Messages the forward CHANNEL threw away because it was FULL when a locally-received
+/// message arrived — the <see cref="System.Threading.Channels.BoundedChannelFullMode.DropOldest"/> eviction
+/// that <c>TryWrite</c> performs while still returning <see langword="true"/>. Non-zero means northbound
+/// production data was lost UPSTREAM of the spool and no durable record of it exists anywhere else.</param>
+/// <param name="DroppedAfterShutdown">Messages refused because the forward channel's writer had already been
+/// completed by <see cref="UnsBridge.DisposeAsync"/>. Expected during a clean shutdown.</param>
+/// <param name="Queued">How deep the forward channel is RIGHT NOW — a gauge, not a cumulative counter. This
+/// is NOT <see cref="BridgeStatusSnapshot.SpoolDepth"/>: it counts what has not reached the spool yet.</param>
+public sealed record BridgeForwardQueueStats(long Evicted, long DroppedAfterShutdown, int Queued);

@@ -3185,6 +3185,24 @@ omit:**
    fires when `Channel.Writer.TryWrite` returns `false`, and a `DropOldest` channel's `TryWrite` is
    documented to always return `true` (it makes room by evicting, it never rejects) — so that warning
    can never actually print.
+   > 🔴 **PARTIALLY WITHDRAWN 2026-08-21, task AP-1 (owner decision 15) — quoted and retired in place, not
+   > deleted.** Two claims above are now false and one is still exactly true.
+   > * *"with **no counter anywhere**"* — **WITHDRAWN.** The eviction is counted, from this release, on
+   >   `UnsBridge.ForwardQueueStats.Evicted` (`BridgeForwardQueueStats`), and it is warned, from the
+   >   channel's own `itemDropped` callback.
+   > * *"so that warning can never actually print"* — **WITHDRAWN as written**, and the reason matters: the
+   >   `if (!TryWrite(...))` branch is still unreachable by saturation, exactly as the sentence says. It was
+   >   not made reachable; the warning was **moved** to where the eviction is observable, and the branch was
+   >   reworded to the shutdown case it *can* reach. Fixing the branch would have been the wrong repair.
+   > * *"`droppedTotal` never sees these drops"* — **NOT withdrawn, and deliberately still true.** That
+   >   number is READ by `GET /v1/site`, by the `/site` page, and by the **retained resync record this
+   >   bridge publishes to the Site broker** — a wire contract a third party consumes. Widening what it
+   >   counts would have silently changed a running number's meaning, so it was documented instead.
+   > * 🔴 **What is therefore STILL open, stated rather than left to be found:** the new counter is
+   >   in-process and is **not** on `GET /v1/site` or the `/site` page. Adding a field there changes a
+   >   published payload, which item 15 was not delegated to do. On the Windows Service install shape
+   >   described in point 4 below, the log has nowhere to go — so on that shape this loss is **counted but
+   >   still not visible to an operator**. See `docs/owner-decisions.md` Part III item 15.
 2. **The spool writer got materially slower exactly when this feature needs it to be fast.** Because
    `IBridgeSpool` has no batch-insert method, `RunSpoolWriterLoopAsync` pays one full
    open-connection + four `PRAGMA`s + `INSERT` + `last_insert_rowid()` round trip **per message** — a
@@ -3274,6 +3292,24 @@ dead-letter hay đường bỏ-qua-và-tiếp-tục nào.
    `Channel.Writer.TryWrite` trả về `false`, mà `TryWrite` của một kênh `DropOldest` theo tài liệu LUÔN
    trả về `true` (nó nhường chỗ bằng cách đuổi phần tử cũ, không bao giờ từ chối) — nên cảnh báo đó
    không bao giờ thực sự in ra được.
+   > 🔴 **RÚT MỘT PHẦN 2026-08-21, nhiệm vụ AP-1 (phán quyết mục 15) — trích nguyên văn rồi rút tại chỗ,
+   > không xoá.** Hai khẳng định ở trên nay SAI, một khẳng định vẫn ĐÚNG nguyên.
+   > * *"**không có bộ đếm nào ghi lại việc này**"* — **RÚT.** Cú đuổi nay được đếm ở
+   >   `UnsBridge.ForwardQueueStats.Evicted` (`BridgeForwardQueueStats`) và được cảnh báo từ chính callback
+   >   `itemDropped` của kênh.
+   > * *"nên cảnh báo đó không bao giờ thực sự in ra được"* — **RÚT theo đúng chữ**, và lý do là phần quan
+   >   trọng: nhánh `if (!TryWrite(...))` VẪN không với tới được bằng bão hoà, đúng như câu ấy nói. Nó
+   >   không được làm cho với tới được; cảnh báo đã được **DỜI** sang chỗ cú đuổi thật sự quan sát được, còn
+   >   nhánh kia được viết lại theo đúng ca nó chạm tới (lúc tắt). Sửa nhánh ấy sẽ là bản sửa sai chỗ.
+   > * *"`droppedTotal` không bao giờ thấy các lượt bỏ này"* — **KHÔNG rút, và cố ý vẫn đúng.** Con số ấy
+   >   được ĐỌC bởi `GET /v1/site`, bởi trang `/site`, và bởi **bản ghi resync giữ lại mà bridge này phát
+   >   lên broker của Site** — một hợp đồng dây mà bên thứ ba tiêu thụ. Nới nghĩa nó là lặng lẽ đổi nghĩa
+   >   một con số đang chạy, nên nó được ghi tài liệu thay vì bị nới.
+   > * 🔴 **Vì thế cái CÒN MỞ, nêu ra chứ không để người sau tự tìm:** bộ đếm mới nằm trong tiến trình và
+   >   **không** có trên `GET /v1/site` lẫn trang `/site`. Thêm một trường ở đó là đổi payload đã xuất bản,
+   >   việc mục 15 không được uỷ quyền làm. Trên hình thái cài Windows Service ở mục 4 dưới đây, log không
+   >   có nơi nào để đi — nên trên hình thái ấy mất mát này **được đếm nhưng operator vẫn chưa nhìn thấy
+   >   được**. Xem `docs/owner-decisions.md` Phần III mục 15.
 2. **Vòng lặp writer của spool trở nên chậm hơn rõ rệt đúng vào lúc tính năng này cần nó nhanh.** Vì
    `IBridgeSpool` không có phương thức insert theo lô, `RunSpoolWriterLoopAsync` phải trả giá một vòng
    mở-kết-nối + bốn `PRAGMA` + `INSERT` + `last_insert_rowid()` đầy đủ **cho MỖI message** — một chi phí

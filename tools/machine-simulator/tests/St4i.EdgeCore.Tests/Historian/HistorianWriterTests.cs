@@ -311,6 +311,108 @@ public sealed class HistorianWriterTests
         Assert.True(task.IsCompletedSuccessfully);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Owner decision 15, task AP-1 (2026-08-21) — SATURATION. Until this pair existed, not one [Fact] in
+    // this file mentioned saturation, capacity or DropOldest: the drop this writer actually suffers had no
+    // witness at all, and the branch that CLAIMED to report it was unreachable by that path. The same pair
+    // exists for the other two channels the ruling covers — UnsPublisherDropAccountingTests (Uns/) and
+    // UnsBridgeSpoolTests' ForwardQueueSaturated_... (Site/).
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 The silent loss, made loud. Under
+    /// <see cref="System.Threading.Channels.BoundedChannelFullMode.DropOldest"/> a write to a FULL channel
+    /// SUCCEEDS — the oldest record is evicted and <c>TryWrite</c> returns <see langword="true"/> — so this
+    /// cannot be witnessed by watching <see cref="HistorianWriter.Enqueue"/>'s return (it has none) or its
+    /// warning branch (never reached by this path). It is witnessed by the counter and the warning the
+    /// channel's own <c>itemDropped</c> callback drives.
+    ///
+    /// <para>Deterministic, not timing-based: the flush loop is first parked INSIDE the gated store append
+    /// (<c>AppendAttempts</c> is incremented before the gate is awaited), so it is guaranteed to consume
+    /// nothing while the channel is filled and overfilled. <c>Queued == Capacity</c> is asserted for exactly
+    /// that reason — if the loop had drained anything the arithmetic below would be measuring a different
+    /// experiment, and this assertion makes that visible instead of silently shifting the expected
+    /// count.</para></summary>
+    [Fact]
+    public async Task Enqueue_OnAFullChannel_EvictsTheOldest_AndEveryEvictionIsCountedAndWarned()
+    {
+        const int Capacity = 4;
+        const int Extra = 3;
+
+        var warnings = new List<string>();
+        var store = new FakeHistorianStore
+        {
+            Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var writer = new HistorianWriter(
+            store,
+            logWarning: msg => { lock (warnings) warnings.Add(msg); },
+            capacity: Capacity);
+
+        try
+        {
+            // Park the reader inside the store call so the channel below is genuinely untouched.
+            writer.Enqueue(NewRecord("PRIME"));
+            await WaitUntilAsync(() => store.AppendAttempts >= 1, "the flush loop to be parked in the gated append");
+
+            for (var i = 0; i < Capacity + Extra; i++)
+            {
+                writer.Enqueue(NewRecord("SATURATE", cycleCounter: i));
+            }
+
+            var stats = writer.Stats;
+            Assert.Equal(Capacity, stats.Queued);              // the reader really did consume nothing
+            Assert.Equal(Extra, stats.Evicted);                // every eviction counted...
+            Assert.Equal(0, stats.DroppedAfterShutdown);       // ...and NOT confused with a shutdown drop
+
+            // Reported as SATURATION — the opposite operational meaning from a shutdown drop.
+            List<string> seen;
+            lock (warnings) seen = warnings.ToList();
+            Assert.Equal(Extra, seen.Count);
+            Assert.All(seen, msg =>
+            {
+                Assert.Contains("saturated", msg, StringComparison.Ordinal);
+                Assert.DoesNotContain("shutting down", msg, StringComparison.Ordinal);
+            });
+        }
+        finally
+        {
+            store.Gate.TrySetResult();
+            await writer.DisposeAsync();
+        }
+    }
+
+    /// <summary>🔴 The other half, and it is the half that makes the first half mean something: a record
+    /// refused because the writer is shutting down must be counted SEPARATELY and worded differently.
+    /// Telling an operator "the historian store is not keeping up" while the process is simply exiting sends
+    /// them after a problem that does not exist — which is exactly what the pre-AP-1 code did, because its
+    /// one reachable branch carried the saturation wording.</summary>
+    [Fact]
+    public async Task Enqueue_AfterDispose_IsCountedSeparately_AndReportedAsShutdownNotSaturation()
+    {
+        var warnings = new List<string>();
+        var store = new FakeHistorianStore();
+        var writer = new HistorianWriter(store, logWarning: msg => { lock (warnings) warnings.Add(msg); });
+
+        await writer.DisposeAsync();
+
+        writer.Enqueue(NewRecord("AFTER-1"));
+        writer.Enqueue(NewRecord("AFTER-2"));
+
+        var stats = writer.Stats;
+        Assert.Equal(2, stats.DroppedAfterShutdown);
+        Assert.Equal(0, stats.Evicted);
+
+        List<string> seen;
+        lock (warnings) seen = warnings.ToList();
+        Assert.Equal(2, seen.Count);
+        Assert.All(seen, msg =>
+        {
+            Assert.Contains("shutdown", msg, StringComparison.Ordinal);
+            Assert.DoesNotContain("saturated", msg, StringComparison.Ordinal);
+            Assert.DoesNotContain("not keeping up", msg, StringComparison.Ordinal);
+        });
+    }
+
     /// <summary>
     /// Minimal fake of the frozen <see cref="IHistorianStore"/> contract. Only the two members
     /// <see cref="HistorianWriter"/> actually calls (<see cref="AppendResultsAsync"/>,

@@ -2109,7 +2109,16 @@ export type BridgeState = "Disabled" | "Connecting" | "Connected" | "Degraded" |
  * messages have ever been permanently dropped by the spool's own age/byte caps. All three are `0` —
  * never garbage — whenever there's no durable spool at all (UNS disabled, no bridge, or
  * `ST4I_BRIDGE_SPOOL_ENABLED=0`). `droppedTotal > 0` means production data that will NEVER reach the
- * Site — `Site.tsx` treats it as a warning, not a neutral counter. */
+ * Site — `Site.tsx` treats it as a warning, not a neutral counter.
+ *
+ * <para>🔴 **`droppedTotal === 0` IS NOT "NOTHING WAS LOST" — task AP-1, 2026-08-21, owner decision 15.**
+ * Everything above stays exactly as written and is still true; what it never said is what this number
+ * EXCLUDES. The bridge's forward channel evicts messages UPSTREAM of the spool, before they are ever
+ * persisted, and this number cannot see them by construction. Those evictions are counted server-side on
+ * `UnsBridge.ForwardQueueStats.Evicted` and are **not** on this DTO — adding a field here changes a
+ * published payload, which item 15 was not delegated to do. So an operator reading `Dropped 0` on the
+ * `/site` page is reading a true statement about the SPOOL and not about the bridge. Named as an open
+ * residue in `docs/owner-decisions.md` Part III item 15 rather than quietly widened. */
 export interface SiteStatus {
   enabled: boolean
   host: string

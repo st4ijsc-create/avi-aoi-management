@@ -246,15 +246,38 @@ internal sealed class FakeBridgeSpool : IBridgeSpool
         }
     }
 
-    public Task<long> EnqueueAsync(string topic, byte[] payload, bool retain, CancellationToken ct = default)
+    /// <summary>🔴 Task AP-1 (owner decision 15) — when set, <see cref="EnqueueAsync"/> awaits this before
+    /// persisting anything, which parks <c>UnsBridge.RunSpoolWriterLoopAsync</c> INSIDE one item and stops it
+    /// consuming the forward channel. That is the only way to make a drop-oldest channel genuinely FULL on
+    /// purpose, and a drop-oldest channel that is never full cannot witness an eviction. Same idiom as
+    /// <c>HistorianWriterTests.FakeHistorianStore.Gate</c>.</summary>
+    public TaskCompletionSource? EnqueueGate { get; set; }
+
+    /// <summary>🔴 Task AP-1 — incremented synchronously at the START of every <see cref="EnqueueAsync"/>
+    /// call, BEFORE <see cref="EnqueueGate"/> is awaited, so a test can wait deterministically for "the
+    /// writer loop has picked an item up and is now parked" rather than sleeping. Same idiom and same reason
+    /// as <c>FakeHistorianStore.AppendAttempts</c>.</summary>
+    public int EnqueueAttempts;
+
+    public async Task<long> EnqueueAsync(string topic, byte[] payload, bool retain, CancellationToken ct = default)
     {
+        Interlocked.Increment(ref EnqueueAttempts);
+
         if (ThrowOnEnqueue) throw new InvalidOperationException("FakeBridgeSpool: induced enqueue failure.");
+
+        if (EnqueueGate is { } gate)
+        {
+            // WaitAsync(ct), not a bare await — same reasoning FakeHistorianStore.AppendResultsAsync gives:
+            // a real spool forwards the token to its SQLite call, so the bridge's own shutdown must be able
+            // to unblock a parked writer instead of hanging on it.
+            await gate.Task.WaitAsync(ct).ConfigureAwait(false);
+        }
 
         lock (_lock)
         {
             var seq = ++_nextSeq;
             _items.Add(new SpooledItem(seq, topic, payload, retain, DateTimeOffset.UtcNow));
-            return Task.FromResult(seq);
+            return seq;
         }
     }
 

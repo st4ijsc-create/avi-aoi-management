@@ -198,6 +198,30 @@ public sealed record AlarmNotificationChannel(
 /// bounded 5s hard-stop. Unlike the historian this loop does not batch: a notification is a discrete event
 /// with its own delivery outcome, and C-3..C-6 each decide their own batching/coalescing.</para>
 ///
+/// <para>🔴 <b>THE SENTENCE ABOVE IS RE-CHECKED AND STANDS — task AP-1, 2026-08-21, owner decision 15 — but
+/// it is now only HALF the traffic, and a fact written in one direction only is half a fact.</b> Every item
+/// it lists (capacity 10,000, <see cref="BoundedChannelFullMode.DropOldest"/>, <c>SingleReader</c>, the
+/// catch-everything drain loop, the drain-first/5s-hard-stop <see cref="DisposeAsync"/>) is still true of
+/// <see cref="St4i.EdgeCore.Historian.HistorianWriter"/> and still describes where this class got its shape.
+/// What it never claimed, and what owner decision 15 was opened on, is the DROP ACCOUNTING: the historian had
+/// none, this class invented it, and the "Shape. Copied from…" line read to later authors as licence to copy
+/// the whole thing — three pipelines in this repository were written that way and all three lost data
+/// silently. That accounting has now travelled the other way, into
+/// <see cref="St4i.EdgeCore.Historian.HistorianWriterStats"/>,
+/// <see cref="St4i.EdgeCore.Uns.UnsPublisherStats"/> and
+/// <see cref="St4i.EdgeCore.Site.BridgeForwardQueueStats"/>. Nothing here is withdrawn; the direction is
+/// recorded, because "copied from X" with no note of what X lacked is how the wrong half kept
+/// propagating.</para>
+///
+/// <para>🔴 <b>One thing did NOT travel, and it is not an oversight.</b> The bracket in
+/// <see cref="EmitLocked"/> — reading <c>Evicted</c> before and after each <c>TryWrite</c> to learn whether
+/// THIS write evicted — is exact only because everything here runs under <c>_gate</c>. The three EdgeCore
+/// pipelines take no lock on their enqueue path (that is the property they exist for), so bracketing there
+/// would be a race. They raise the saturation warning from inside the <c>itemDropped</c> callback instead,
+/// which is exact for a different reason: that callback fires synchronously, once per evicted item, and
+/// receives the item being discarded. This class cannot do that, because its callback runs under the gate
+/// and a caller-supplied log delegate must never run there.</para>
+///
 /// <para>🔴 <b>Task C-6 — ONE QUEUE PER CHANNEL, and this is the prerequisite that made C-6 possible at
 /// all.</b> C-1 shipped exactly one queue and one drain loop, so every channel's dispatch ran on the same
 /// thread and a slow one delayed the rest. <c>Program.cs</c> composed the channels with

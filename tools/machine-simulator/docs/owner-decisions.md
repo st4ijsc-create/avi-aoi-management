@@ -43,7 +43,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 4 ĐÃ TRẢ 2026-08-19 (AG-1, đợt 4/8): 101 khẳng định ĐÃ SAI được TRỎ LẠI (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, 0 dòng mã đụng tới), `EXPECT_WARNINGS` 852 → 751 ĐO, sổ 19 → 16 hàng, 185 vendored / 566 ours, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **532 chỗ trống của ta chưa trả** (+ 103 vendored không ai trả được). Đợt 5–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 5 ĐÃ TRẢ 2026-08-19 (AH-1, đợt 5/8): 120 chỗ THIẾU được VIẾT — một cụm mạch lạc, mô hình dữ liệu config-sync (7 file `Config/`, cả 120 là CS1591), `EXPECT_WARNINGS` 751 → 631 ĐO, sổ vẫn 16 hàng, 185 vendored / 446 ours, `OURS CS1591 448 → 328`, `OURS CS1573 84` KHÔNG dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **412 chỗ trống của ta chưa trả**. Đợt 6–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 6 ĐÃ TRẢ 2026-08-20 (AL-1, đợt 6/8): 129 chỗ THIẾU được VIẾT — một cụm mạch lạc, historian cạnh máy (8 file `Historian/` + `Models/` + `Metrics/`; 85 CS1591 + 44 CS1573), `EXPECT_WARNINGS` 631 → 502 ĐO, sổ vẫn 16 hàng, 185 vendored / 317 ours, `OURS CS1591 328 → 243` VÀ `OURS CS1573 84 → 40` — đợt ĐẦU TIÊN hàng CS1573 dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **283 chỗ trống của ta chưa trả**. Đợt 7–8 trả, mỗi đợt đo lại. 🔴 **Và đợt 6 BÁC ba khẳng định đã công bố trong chính cụm ấy — rút tại chỗ, KHÔNG sửa mã: `OeeCalculator` *"mọi tỉ số kẹp `[0,1]`"* (Quality không kẹp), `HistorianWriter.Enqueue` *"kênh đầy ⇒ có cảnh báo"* (cú rơi vì bão hoà là IM LẶNG), `ApplyRealPresenceGateAsync` *"mọi query hướng khách hàng đều áp"* (`QueryTelemetryAsync` không áp và không thể áp). Xem §11** 🔴 **ĐỢT 7 ĐÃ TRẢ 2026-08-20 (AM-1, đợt 7/8): 62 chỗ THIẾU được VIẾT — một cụm mạch lạc, chiếc phong bì chuẩn hoá và trọn hành trình của nó (12 file: `Transport/` + `Mapping/` + `Models/`, ba thư mục lấy TRỌN, dư lượng mỗi thư mục = 0; 51 CS1591 + 11 CS1573), `EXPECT_WARNINGS` 502 → 440 ĐO, sổ vẫn 16 hàng, 185 vendored / 255 ours, `OURS CS1591 243 → 192` VÀ `OURS CS1573 40 → 29` — cả hai đều GIẢM và KHÔNG một CS1573 mới nào được tạo ra, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **221 chỗ trống của ta chưa trả**, và **đợt 8 là đợt bao phủ CUỐI CÙNG**. 🔴 **Và đợt 7 BÁC một khẳng định đã công bố trong chính cụm ấy — rút tại chỗ, KHÔNG sửa mã: `ITransport` tự nhận là *"seam DUY NHẤT"* mà một reading đi qua để rời khỏi hộp; đo được rằng `EdgePipeline` trao CÙNG chiếc phong bì cho `IUnsPublisher.PublishReading` ở câu lệnh ngay trước, và `Site.UnsBridge` phát nó ra ngoài hộp — có HAI đường ra, không một. Xem §12** 🔴 **ĐỢT 8 ĐÃ TRẢ 2026-08-20 (AN-1, đợt 8/8 — ĐỢT BAO PHỦ CUỐI CÙNG): 112 chỗ THIẾU được VIẾT — phần BÙ của họ driver (20 file, 7 thư mục lấy TRỌN, dư lượng mỗi thư mục = 0: `Config/` 50 · `Uns/` 19 · `Site/` 12 · `Engine/` 11 · `Fleet/` 8 · `Infrastructure/` 6 · `Uns/Sparkplug/` 6; 102 CS1591 + 10 CS1573), `EXPECT_WARNINGS` 440 → 328 ĐO, sổ vẫn 16 hàng, 185 vendored / 143 ours, `OURS CS1591 192 → 90` VÀ `OURS CS1573 29 → 19` — cả hai GIẢM, không một CS1573 mới nào được tạo, tám hàng VENDORED không dịch một đơn vị. Con số 112 là DỰ BÁO của đợt 7 và nay là PHÉP ĐO — nó KHÔNG lệch.** 🔴 **MỤC 12 Ở LẠI PHẦN II, VÀ NÓ SẼ RỜI PHẦN II BẰNG MỘT PHÁN QUYẾT, KHÔNG BẰNG MỘT CON SỐ VỀ 0.** **109 chỗ trống còn lại đều là `Drivers/`** và chúng **KHÔNG thuộc một đợt 9**: bốn đợt bao phủ đã tiêu hết. Chúng rơi lên **97 thành viên**, và **phép đo BÁC tiền đề của đợt 6**: theo năm phép thử, **84 thành viên có một cách hỏng/điều kiện tiên quyết, 13 chỉ có đơn vị/mặc định, và KHÔNG CÁI NÀO không-có-gì-để-nói** (trong bốn ví dụ đợt 6 nêu, `OpcUaConnectorFactory.Create` **đã có** tài liệu và chưa bao giờ được nợ; *"mười một constructor simulator"* là **số FILE đọc thành số CONSTRUCTOR** — có **tám** lớp simulator). **Câu chủ sở hữu phán — *"chúng có nên là `public` không"* — KHÔNG TỒN TẠI với 46/97** (41 cài đặt interface/abstract công khai ⇒ lỗi biên dịch; 5 thành viên enum ⇒ C# cấm), **sai trong IM LẶNG với 9** (`ModbusRegisterMap`/`OpcUaNodeMap` do `System.Text.Json` đọc — hạ xuống `internal` vẫn biên dịch rồi nạp về mặc định, gồm cả `UnitId` và `Password`), **miễn phí với 17**, và **tốn một `InternalsVisibleTo` mới với 25** — mà `AssemblyInfo.cs` của chính `St4i.EdgeCore` lập luận chống lại cả hai loại IVT ấy. **KHÔNG một mức truy cập nào đổi. Xem §13** |
 | 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔨 **ĐÓNG — STORE GHI LẠI DANH TÍNH CỦA CÁC BYTE** (2026-08-19, chủ sở hữu). 🔴 **Giá đã chấp nhận và ghi vào mục: `PUT /v1/historian/oee/settings` trả 409 ở những lúc hôm nay trả 200, KỂ CẢ khi thứ đổi file là một biên tập tay HỢP LỆ hay chỉ là một lần ĐỊNH DẠNG LẠI.** Câu *"bao nhiêu PUT hợp lệ thành 409"* vẫn **KHÔNG đo được** và phán quyết ra **mà không có nó**. **Đã thi hành, AJ-1 (2026-08-19)** — cơ chế **SUY ra chứ không chọn một trong ba**: cả ba ứng viên (băm / `mtime` / kích thước) là **vân tay**, mà vân tay chỉ cần khi không cầm được cả hai vế; `ReadLocked` **đã cầm toàn văn** ở cả hai đầu trong cùng một khoá, nên store **giữ lại toa hạng gốc** và so trực tiếp — **0 lần đọc đĩa thêm**, và **mạnh hơn** mọi hàm hao hụt của nó. Kiểu thứ ba `OeeSettingsFileChangedException`; vị từ gác bằng **CẶP `Loaded/Loaded`**, nên cặp `Loaded/Absent` **không** bị đóng kèm. Nhân chứng `Set_AfterARestoreOntoAHostThatCameUpWithAFile_…` **đảo chiều và đổi tên**; giá được **ghim** bằng một bài kiểm riêng |
 | 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT**. 🔴 **KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: KHẢ THI — `Normalizer` có đủ thông tin, `WaveformSeries` và `WelderSim` KHÔNG phải đổi. Nhưng nó KHÔNG nằm trọn ở một đường dây: cùng một envelope đi ra BA bề mặt, và một trong ba là gương ngữ nghĩa MQTT RETAINED — một **bề mặt đã xuất bản thứ hai; NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này** (hợp đồng TỰ KHAI rằng họ ở ngoài repo — đó là lời của tài liệu, không phải một phép đếm). 🔴 **Giá gương ấy KHÔNG phải của riêng lựa chọn 3: lựa chọn 1 trả CÙNG giá đó CỘNG THÊM, lựa chọn 2 không trả giá nào trong cây này nhưng trả TOÀN BỘ ở ngoài (hợp đồng ingest đã xuất bản + ba SDK).** Và KHÔNG một bài kiểm nào trong 2763 bài đỏ lên, tức lối này KHÔNG CÓ NHÂN CHỨNG. **Ràng buộc thi hành cứng: `LiveTransport.ReadSampleSeries` chỉ nhận hàng `double[]` và bỏ im lặng mọi kiểu khác.** Ba lựa chọn VẪN CHƯA QUYẾT** — 📎 **câu ngay trước giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1), và lý do là chủ sở hữu ĐÃ PHÁN, không phải câu ấy từng sai; AK-1 dùng đúng MỘT kiểu bảo tồn — kiểu AB-1 lập và AI-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG dấu gạch ngang ở bất kỳ đâu, không xoá một dòng nào.** → 🔨 **QUYẾT: LỰA CHỌN 3 — DỰNG CẶP `[t, v]` Ở RANH GIỚI `Normalizer`** (2026-08-19, chủ sở hữu). `WaveformSeries`, `WelderSim`, `ScrewdriveSim` **không đổi một dòng**; thứ đổi là **payload đi ra**. 🔴 **Giá đã chấp nhận và ghi vào mục: HAI bề mặt đã xuất bản đổi CÙNG LÚC, không một** — payload ingest HTTP **và** gương ngữ nghĩa MQTT retained `syn/…`; **NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này**. Cộng một bề mặt thứ ba, riêng tư: hàng đợi store-and-forward của SDK ghi nguyên payload **xuống đĩa** và **phát lại hình dạng CŨ sau khi mã đã đổi** — **cửa sổ ấy CHƯA ĐO**. **Đã thi hành, AK-1 (2026-08-19)** — cơ chế của `t` **SUY ra chứ không chọn**: `t(i) = i / rateHz`, tức **thời điểm mà `rateHz` HÀM Ý**, **không** phải thời điểm `WelderSim` vẽ đường cong; lý do là ở ranh giới chỉ có **bốn trường** của `WaveformSeries`, còn dựng lại thời điểm THẬT đòi **tham số hoá riêng của từng bộ sinh** — không có trên hồ sơ, khác nhau theo driver, và **vắng hẳn** với driver bên thứ ba mà ranh giới này cũng phục vụ. 🔴 **`rateHz` KHÔNG đổi nghĩa và KHÔNG đổi giá trị** — đó là điều kiện DỪNG của nhiệm vụ và nó không bị chạm. 🔴 **Nửa bất lợi, viết ngay cạnh:** chỗ lệch **4,17 %** của `WelderSim` **không được tạo ra và cũng không được sửa** ở đây (phép chuyển tính đúng cái `t` mà một bên tiêu thụ tuân hợp đồng đã tính hôm nay) — **nhưng nó chuyển `t` từ NGẦM sang ĐÃ VIẾT RA**, nên sửa chỗ lệch ấy về sau là **đổi những con số đã xuất bản**, không còn là đổi một tài liệu. Nhân chứng **MỚI** `WaveformPairAtTheWireBoundaryTests` (bảy `[Fact]`): gỡ phép chuyển ⇒ **BỐN đỏ**; trả kiểu hàng khác `double[]` ⇒ **SÁU đỏ**; 🔴 `WaveformSeriesRowShapeContractTests` **VẪN XANH, và đó là im lặng, không phải chấp thuận** — nó nhìn thượng nguồn |
-| 15 | `DropOldest` + một cảnh báo "queue saturated" không với tới được — **BA chỗ**, và chỗ **thứ tư** đã giải xong | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Gộp phát hiện đợt 6 (`HistorianWriter`) và đợt 8 (`UnsPublisher`) làm **MỘT mục**, và phép liệt kê thêm chỗ **thứ ba chưa ai báo**: `UnsBridge`. `AlarmNotifier` cùng chế độ nhưng **đã đúng** |
+| 15 | `DropOldest` + một cảnh báo "queue saturated" không với tới được — **BA chỗ**, và chỗ **thứ tư** đã giải xong | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Gộp phát hiện đợt 6 (`HistorianWriter`) và đợt 8 (`UnsPublisher`) làm **MỘT mục**, và phép liệt kê thêm chỗ **thứ ba chưa ai báo**: `UnsBridge`. `AlarmNotifier` cùng chế độ nhưng **đã đúng** → 🔨 **QUYẾT: ÁP MẪU ĐÃ GIẢI XONG CỦA `AlarmNotifier` VÀO CẢ BA CHỖ** (2026-08-20, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8 — mục này không thuộc ba mục đổi thứ người ngoài đang dựa vào). 🔴 **`FullMode` **KHÔNG** đổi: `DropOldest` ở lại `DropOldest`** — thứ đổi là **kế toán**, không phải chính sách. **Đã thi hành, AP-1 (2026-08-21)**: `itemDropped` được truyền ở cả ba, cú đuổi được **đếm** và được **cảnh báo bằng lời SATURATION**, còn nhánh `if (!TryWrite(...))` — vốn chỉ với tới được khi writer ĐÃ ĐÓNG — được đếm riêng và viết lại thành lời **SHUTDOWN**. 🔴 **Tiền đề của phán quyết được KIỂM LẠI trên mã và nó ĐỨNG VỮNG**: `AlarmNotifier` thật sự đã giải xong (nó truyền `itemDropped`, phân loại năm đường rơi, log sau khi nhả khoá). 🔴 **Nhưng MỘT mảnh của hình dạng ấy KHÔNG mang sang được, và nói ra chứ không lặng lẽ bỏ:** phép *bracket* `Evicted` quanh `TryWrite` trong `EmitLocked` chỉ chính xác vì mọi thứ ở đó chạy dưới `_gate`; ba lớp EdgeCore **cố ý không có khoá nào trên đường enqueue**, nên cảnh báo được phát **từ trong chính callback `itemDropped`** — chính xác vì một lý do khác (callback chạy đồng bộ, một lần cho mỗi phần tử bị đuổi, và nhận đúng phần tử ấy). 🔴 **`UnsBridge.DroppedTotal` KHÔNG bị nới nghĩa**, và bề mặt ĐỌC nó được nêu tên: `GET /v1/site`, trang `/site`, **và bản ghi resync GIỮ LẠI phát lên broker của Site — một hợp đồng dây bên thứ ba tiêu thụ**. Cú đuổi kênh có tên riêng, `UnsBridge.ForwardQueueStats.Evicted`. 🔴 **Dư lượng còn mở, ghi vào mục chứ không để trong báo cáo: bộ đếm mới KHÔNG có trên `/v1/site` lẫn trang `/site`** — thêm một trường ở đó là **đổi payload đã xuất bản**, đúng thứ nằm ngoài uỷ quyền mục này. Trên hình thái cài Windows Service (README §"đường mất dữ liệu", mục 4) log **không có nơi nào để đi**, nên trên hình thái ấy mất mát này **được đếm nhưng operator vẫn chưa nhìn thấy được**. Xem Phần III |
 | 16 | `OeeCalculator` — Quality **không** kẹp `[0,1]` | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. Biên hôm nay do **hai vị từ SQL ở một file khác** giữ |
 | 17 | `QueryTelemetryAsync` không áp cổng xuất xứ, và **không áp được** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. `historian_telemetry` **không có cột `is_fabricated`**; `GET /v1/historian/telemetry` **không nhận `includeFabricated`** |
 | 18 | Cổng Demo gác **CHẾ ĐỘ**, không gác **BỘ SINH GIẢ** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7. `PUT /v1/mode` từ chối Demo bằng 400; `POST /v1/scenario {"networkOutage":true}` **không bị gác** |
@@ -106,6 +106,23 @@ nó đã làm đúng thế (xem khối ngay dưới). Phần này **không bị 
 **Các mục ở đây, LIỆT KÊ chứ không đếm: mục 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
 28, 29, 30, 31 và 32.** Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn
 sự thật** — câu này chỉ là một con trỏ vào nó.
+
+> 📎 **CÂU NGAY TRÊN — RÚT 2026-08-21 (AP-1), giữ NGUYÊN VĂN, cùng kiểu bảo tồn AB-1 lập và
+> AI-1/AK-1/AO-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG gạch ngang, không xoá một
+> dòng nào.** Nó đọc: *"**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 15, 16, 17, 18, 19, 20, 21, 22, 23,
+> 24, 25, 26, 27, 28, 29, 30, 31 và 32.** Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy
+> là nguồn sự thật** — câu này chỉ là một con trỏ vào nó."* Lý do rút **không phải nó từng sai** — nó mô
+> tả đúng trạng thái hồ sơ tới hết ngày 2026-08-20 — mà là **mục 15 đã được QUYẾT và đã THI HÀNH**:
+> điều phối viên quyết theo uỷ quyền ngày **2026-08-20** (cùng khuôn mục 8), AP-1 thi hành ngày
+> **2026-08-21**, và mục ấy **không còn ở đây** mà ở **Phần III**, với một ghi chép thi hành ghi kèm
+> ngày. 🔴 **Đây là cơ chế THỨ HAI trong sáu, không phải một cơ chế mới** — *quyết một mục* — và nó đã
+> từng làm tập này co lại ở AJ-1 và AK-1. **Cách viết được giữ nguyên và chính nó làm phép rút này rẻ:**
+> một phép liệt kê thiếu một số hiệu sai **nhìn thấy được**; một con số `18` viết ở đây sẽ phải bị rút
+> mà không ai đọc ra tại sao.
+
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+30, 31 và 32.** Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn sự thật** —
+câu này chỉ là một con trỏ vào nó.
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
 > tới vòng sửa thứ hai của cùng ngày, và nó **không sai, nó THIẾU**.** Ba thao tác của file này vẫn
@@ -211,81 +228,14 @@ một con số ước lượng đặt ở đây sẽ **đọc như một phép �
 > tư đã giải xong), mục **24** (không host sản xuất nào viết cứng chuỗi ấy), mục **28** (trần là
 > ba con số, và UI không gọi tên cái nào là trần). **Một cái sai trong một báo cáo nguồn là một
 > phát hiện, không phải một lỗi chính tả**, nên nó đứng trong mục chứ không ở một chú thích.
-
-## 15. Bốn kênh chặn dùng `DropOldest`; ba trong bốn treo một cảnh báo *"queue saturated"* KHÔNG với tới được bằng bão hoà; và cái thứ tư đã giải xong đúng bài ấy
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6) và AN-1 (đợt 8); **phép liệt kê toàn tập
-là của nhiệm vụ này**.
-
-📎 **Vì sao MỘT mục cho hai chỗ mà đợt 6 và đợt 8 báo riêng, nói ra chứ không để người đọc đoán.**
-Chúng **cùng một cơ chế, cùng một dòng mã, cùng một quyết định**: một phán quyết chỉ chạm một chỗ
-sẽ để hai chỗ kia y nguyên, và "một luật, nhiều chỗ" đúng là hình dạng file này đã bắt trước đây.
-Nhưng một mục gộp **bắt buộc phải liệt kê hết tập nó gộp** — nên tập đã được mở, và **nó không
-phải hai**.
-
-**Đo được cái gì — LIỆT KÊ TRƯỚC, con số viết SAU.** Mọi `Channel.CreateBounded` dưới `src/`, mở
-trọn: `HistorianWriter`, `UnsPublisher`, `UnsBridge`, `AlarmNotifier`, và
-`AlarmAnnunciationHub.Listener` (trong `AlarmAnnunciation.cs`). **Năm.** Bốn cái đầu đặt
-`FullMode = BoundedChannelFullMode.DropOldest`; cái thứ năm đặt `Wait`, **có chủ ý**, và doc của
-chính nó nói vì sao (`DropWrite` sẽ trả `true` trên hàng đợi đầy).
-
-Dưới `DropOldest`, `TryWrite` trên một kênh **ĐẦY** **trả `true`**: nó đuổi phần tử **cũ nhất** rồi
-nhận phần tử mới. Nên mọi nhánh `if (!TryWrite(...))` chỉ chạy khi Writer **đã đóng** — tức lúc
-dispose, chứ không phải lúc bão hoà.
-
-* **`HistorianWriter.Enqueue`** — **một** nhánh như thế, chuỗi *"Historian queue saturated — dropped
-  oldest"*. `capacity` mặc định **10.000**.
-* **`UnsPublisher`** — **sáu** nhánh như thế, trên `PublishReading`, `PublishBirth`, `PublishDeath`,
-  `PublishNodeBirth`, `PublishNodeDeath`, `PublishLineState`.
-* 🔴 **`UnsBridge.OnLocalMessageReceivedAsync`** — **một** nhánh như thế, chuỗi *"Site bridge forward
-  queue saturated — dropped {topic}"*, `ChannelCapacity` **10.000**. **Chỗ này chưa báo cáo nào
-  nêu.** Đợt 8 viết rằng *"hình dạng này nay đã được đo HAI lần trong repo này, nên nên audit cái
-  thành ngữ `DropOldest`-kèm-cảnh-báo-bão-hoà ở mọi chỗ nó xuất hiện"*. Nhiệm vụ này chạy đúng phép
-  audit ấy. Kết quả: **ba**, không phải hai.
-* **Không cái nào trong ba** truyền tham số `itemDropped` cho `Channel.CreateBounded`. **Không cái
-  nào trong ba có một bộ đếm rơi.**
-
-🔴 **Và `UnsBridge` tệ hơn hai cái kia theo một chiều riêng: nó CÓ một con số tên `DroppedTotal`, và
-con số ấy đếm một mất mát KHÁC.** `BridgeStatusSnapshot.DroppedTotal` đọc từ `_lastSpoolStats`, tức
-`BridgeSpool.TrimAsync` cắt bao nhiêu bản ghi theo tuổi/byte — **không phải** bao nhiêu bản bị KÊNH
-đuổi. **Một bộ đếm đếm sai vật còn tệ hơn không có bộ đếm**, vì nó đọc như một câu trả lời.
-
-🔴 **Cái thứ tư đã giải xong đúng bài này, và đó là nửa quan trọng nhất của mục.** `AlarmNotifier`
-dùng **cùng** `DropOldest`, và doc của chính lớp ấy nêu đích danh cái bẫy: *"Under `DropOldest`,
-`TryWrite` returns `true` and silently evicts the OLDEST queued item, so the saturation case never
-trips that check at all."* Nó truyền `itemDropped` cho `Channel.CreateBounded`, cộng vào
-`AlarmNotifierStats.Dropped`, và **liệt kê NĂM đường một job có thể mất**, phân biệt đường "kênh
-không theo kịp" với các đường "tiến trình đang tắt". Doc ấy còn ghi rằng hình dạng của nó **chép từ
-`HistorianWriter`** — nên **mẫu SAI là mẫu đang được chép, và mẫu ĐÚNG chưa ai chép ngược lại**.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Historian.HistorianWriter` (hàm dựng và `Enqueue`);
-`St4i.EdgeCore.Uns.UnsPublisher` (hàm dựng và sáu phương thức `Publish*`);
-`St4i.EdgeCore.Site.UnsBridge` (hàm dựng, `OnLocalMessageReceivedAsync`, `Snapshot`);
-`St4i.EngineApi.Alarms.AlarmNotifier` (lớp lồng của lane, `AlarmNotifierStats.Dropped`);
-`St4i.EngineApi.Alarms.AlarmAnnunciationHub.Listener` (chỗ dùng `Wait`, để đối chiếu).
-`tests/St4i.EdgeCore.Tests/Historian/HistorianWriterTests.cs` có **10** bài `[Fact]` và **không bài
-nào** nhắc `saturation`, `capacity` hay `DropOldest` — cả hai nhánh đều không có nhân chứng.
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* dưới áp lực ngược kéo dài — một store chậm, một broker MQTT không đáp, một Site
-xuống — ba đường này **mất bản ghi CŨ NHẤT trong im lặng**: tới `capacity` hàng lịch sử của
-historian (bản ghi mà sản phẩm này giữ về việc máy đã làm gì), các publish UNS gồm cả device birth
-và line-state, và các bản chuyển tiếp lên Site. **Không log, không bộ đếm, không dòng nào trên
-`/v1/health`.** Ở `UnsBridge` màn hình trạng thái vẫn in một `DroppedTotal` — thường là 0 — nên
-người vận hành đọc được một câu trả lời **sai chiều trấn an**.
-*Chiều ngược, và nó đủ mạnh để "không làm gì" là một lựa chọn có lý:* `DropOldest` được chọn có lý
-do và lý do ấy vẫn đúng — nó bảo đảm đường ghi **không bao giờ chặn** luồng commit của
-`EdgePipeline` và **không bao giờ đẩy áp lực ngược về thiết bị**. Đổi `FullMode` là đổi đúng tính
-chất ấy. Thêm một bộ đếm là **thêm thành viên công khai mới**, mà P-2 chi phối chính tả thành viên
-công khai. Và trên một bản triển lãm chạy vài giờ với kênh 10.000, ba kênh này **không bao giờ
-đầy** — chi phí thật hôm nay là **không**.
-
-**Nếu KHÔNG quyết định.** Tám nhánh cảnh báo ở lại đúng chỗ chúng đang đứng, đọc như một mạng an
-toàn không tồn tại; ba đường mất dữ liệu ở lại im lặng; và vì `AlarmNotifier` **tự ghi rằng nó chép
-`HistorianWriter`**, đường ống tiếp theo được viết trong repo này nhiều khả năng chép tiếp cái sai
-chứ không chép cái đúng. Đây đã là lần thứ **ba** một đợt tìm ra chính hình dạng ấy ở một chỗ mới.
-
----
+>
+> 📎 **MỞ RỘNG 2026-08-21 (AP-1), KHÔNG phải RÚT — khối trên giữ NGUYÊN VĂN vì nó KHÔNG sai, nó chỉ
+> **trỏ hụt một mục**.** *"Mười bảy mục dưới đây"* đọc đúng vào ngày nó được viết (mười bảy dưới đây +
+> mục 32 thêm ở vòng sửa cùng ngày). Kể từ 2026-08-21, **mục 15 không còn ở dưới đây**: nó đã được quyết
+> và đã thi hành, và nằm ở **Phần III**. Mọi câu khối này nói **về** mục 15 — rằng tập là **BA** chỗ chứ
+> không phải hai, rằng có chỗ **thứ tư** đã giải xong, rằng khẳng định ấy đã được mở mã ra xác nhận lại
+> ở SHA `3a614f1c` — **vẫn đúng từng chữ**, và AP-1 đã đo lại chúng lần nữa trên mã trước khi sửa. Chỗ
+> đọc chúng nay là Phần III.
 
 ## 16. `OeeCalculator` — hai trong ba tỉ số được kẹp `[0,1]`, cái thứ ba thì không, và biên hôm nay do một file KHÁC giữ
 
@@ -2452,6 +2402,19 @@ trên nói, vì `## 5–7.` là **một** tiêu đề chứa **ba** mục.
 > lần đầu tiên kể từ khi file tồn tại. Câu ấy là một phát biểu về **hôm nay**, không phải một tính
 > chất của file: bất kỳ vòng phản biện nào cũng mở được một mục mới, và trong hai ngày qua nó đã làm
 > đúng thế **ba lần**.
+>
+> 📎 **AP-1 (2026-08-21) — MỞ RỘNG LẦN BỐN, cùng cơ chế, và câu *"Phần I nay RỖNG"* ngay trên vì thế đã
+> CŨ ở CẢ HAI CHIỀU.** Chiều thứ nhất: AO-1 mở **mười tám** mục mới (15–32) vào Phần I ngày 2026-08-20,
+> nên Phần I đã thôi rỗng trước khi AP-1 chạy. Chiều thứ hai: **mục 15** được **điều phối viên quyết
+> theo uỷ quyền** ngày 2026-08-20 (cùng khuôn mục 8) và AP-1 thi hành ngày 2026-08-21, nên nó rời **Phần
+> I** sang đây với một khối `🔨 PHÁN QUYẾT` và một khối `✅ ĐÃ THI HÀNH` ghi kèm ngày. 🔴 **Câu *"Phần I
+> nay RỖNG"* KHÔNG được sửa tại chỗ và KHÔNG bị xoá** — nó đúng vào ngày nó được viết, và chính nó đã tự
+> dự báo đúng chuyện này (*"'RỖNG' là một trạng thái của HÔM NAY, không phải một tính chất của file"*).
+> **Phép liệt kê đang sống, đọc từ chính các tiêu đề `##` của phần này:** mục **1, 2, 3, 4, 5, 6, 7, 8,
+> 9, 10, 11, 13, 14, 15**, nằm dưới các tiêu đề `## 1.`, `## 2.`, `## 3.`, `## 4.`, `## 5–7.`, `## 8.`,
+> `## 9.`, `## 10.`, `## 11.`, `## 13.`, `## 14.`, `## 15.`. **Mục 12 vẫn ở Phần II** và AP-1 **không
+> đụng** vào nó; **mười bảy mục còn lại của lứa AO-1 vẫn ở Phần I** và AP-1 **không đụng** vào mục nào
+> trong số đó.
 >
 > 📎 **Cụm *"kể từ khi file tồn tại"* giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1, sau vòng phản biện) — nó
 > NÓI QUÁ, và nói quá về phía có lợi cho người viết nó.** Đo bằng máy trên **45 bản sửa** của chính file
@@ -5506,6 +5469,199 @@ quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` —
 > gì, **không** bật cờ `PROCESS_RESULT_INGEST_ENABLED`. Nên **cặp đối chứng A/B của AB-1 vẫn là bằng
 > chứng động duy nhất** rằng cổng nhận hình dạng cặp, và **hạng nguồn của nó không đổi**: NHẬN LẠI.
 > Câu *"payload nay hợp lệ với cổng"* **chưa được đo trên một cổng đang chạy sau bản sửa này**.
+---
+
+## 15. Bốn kênh chặn dùng `DropOldest`; ba trong bốn treo một cảnh báo *"queue saturated"* KHÔNG với tới được bằng bão hoà; và cái thứ tư đã giải xong đúng bài ấy
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6) và AN-1 (đợt 8); **phép liệt kê toàn tập
+
+> 📎 **Ba chữ `🔴 CHỠ ANH` ngay trên giữ NGUYÊN VăN, RÚT 2026-08-21 (AP-1)** — không phải vì chúng từng
+> sai, mà vì chúng đã hết đúng: mục này được **điều phối viên quyết theo uỷ quyền** ngày 2026-08-20 và đã
+> **thi hành** ngày 2026-08-21. Câu mô tả đúng trạng thái hồ sơ cho tới đúng lúc ấy. Phần còn lại của
+> dòng — *"Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6) và AN-1 (đợt 8); phép liệt kê toàn tập là của nhiệm
+> vụ này"* — **KHÔNG rút**: nó là hồ sơ xuất xứ và vẫn đúng từng chữ.
+là của nhiệm vụ này**.
+
+📎 **Vì sao MỘT mục cho hai chỗ mà đợt 6 và đợt 8 báo riêng, nói ra chứ không để người đọc đoán.**
+Chúng **cùng một cơ chế, cùng một dòng mã, cùng một quyết định**: một phán quyết chỉ chạm một chỗ
+sẽ để hai chỗ kia y nguyên, và "một luật, nhiều chỗ" đúng là hình dạng file này đã bắt trước đây.
+Nhưng một mục gộp **bắt buộc phải liệt kê hết tập nó gộp** — nên tập đã được mở, và **nó không
+phải hai**.
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC, con số viết SAU.** Mọi `Channel.CreateBounded` dưới `src/`, mở
+trọn: `HistorianWriter`, `UnsPublisher`, `UnsBridge`, `AlarmNotifier`, và
+`AlarmAnnunciationHub.Listener` (trong `AlarmAnnunciation.cs`). **Năm.** Bốn cái đầu đặt
+`FullMode = BoundedChannelFullMode.DropOldest`; cái thứ năm đặt `Wait`, **có chủ ý**, và doc của
+chính nó nói vì sao (`DropWrite` sẽ trả `true` trên hàng đợi đầy).
+
+Dưới `DropOldest`, `TryWrite` trên một kênh **ĐẦY** **trả `true`**: nó đuổi phần tử **cũ nhất** rồi
+nhận phần tử mới. Nên mọi nhánh `if (!TryWrite(...))` chỉ chạy khi Writer **đã đóng** — tức lúc
+dispose, chứ không phải lúc bão hoà.
+
+* **`HistorianWriter.Enqueue`** — **một** nhánh như thế, chuỗi *"Historian queue saturated — dropped
+  oldest"*. `capacity` mặc định **10.000**.
+* **`UnsPublisher`** — **sáu** nhánh như thế, trên `PublishReading`, `PublishBirth`, `PublishDeath`,
+  `PublishNodeBirth`, `PublishNodeDeath`, `PublishLineState`.
+* 🔴 **`UnsBridge.OnLocalMessageReceivedAsync`** — **một** nhánh như thế, chuỗi *"Site bridge forward
+  queue saturated — dropped {topic}"*, `ChannelCapacity` **10.000**. **Chỗ này chưa báo cáo nào
+  nêu.** Đợt 8 viết rằng *"hình dạng này nay đã được đo HAI lần trong repo này, nên nên audit cái
+  thành ngữ `DropOldest`-kèm-cảnh-báo-bão-hoà ở mọi chỗ nó xuất hiện"*. Nhiệm vụ này chạy đúng phép
+  audit ấy. Kết quả: **ba**, không phải hai.
+* **Không cái nào trong ba** truyền tham số `itemDropped` cho `Channel.CreateBounded`. **Không cái
+  nào trong ba có một bộ đếm rơi.**
+
+🔴 **Và `UnsBridge` tệ hơn hai cái kia theo một chiều riêng: nó CÓ một con số tên `DroppedTotal`, và
+con số ấy đếm một mất mát KHÁC.** `BridgeStatusSnapshot.DroppedTotal` đọc từ `_lastSpoolStats`, tức
+`BridgeSpool.TrimAsync` cắt bao nhiêu bản ghi theo tuổi/byte — **không phải** bao nhiêu bản bị KÊNH
+đuổi. **Một bộ đếm đếm sai vật còn tệ hơn không có bộ đếm**, vì nó đọc như một câu trả lời.
+
+🔴 **Cái thứ tư đã giải xong đúng bài này, và đó là nửa quan trọng nhất của mục.** `AlarmNotifier`
+dùng **cùng** `DropOldest`, và doc của chính lớp ấy nêu đích danh cái bẫy: *"Under `DropOldest`,
+`TryWrite` returns `true` and silently evicts the OLDEST queued item, so the saturation case never
+trips that check at all."* Nó truyền `itemDropped` cho `Channel.CreateBounded`, cộng vào
+`AlarmNotifierStats.Dropped`, và **liệt kê NĂM đường một job có thể mất**, phân biệt đường "kênh
+không theo kịp" với các đường "tiến trình đang tắt". Doc ấy còn ghi rằng hình dạng của nó **chép từ
+`HistorianWriter`** — nên **mẫu SAI là mẫu đang được chép, và mẫu ĐÚNG chưa ai chép ngược lại**.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Historian.HistorianWriter` (hàm dựng và `Enqueue`);
+`St4i.EdgeCore.Uns.UnsPublisher` (hàm dựng và sáu phương thức `Publish*`);
+`St4i.EdgeCore.Site.UnsBridge` (hàm dựng, `OnLocalMessageReceivedAsync`, `Snapshot`);
+`St4i.EngineApi.Alarms.AlarmNotifier` (lớp lồng của lane, `AlarmNotifierStats.Dropped`);
+`St4i.EngineApi.Alarms.AlarmAnnunciationHub.Listener` (chỗ dùng `Wait`, để đối chiếu).
+`tests/St4i.EdgeCore.Tests/Historian/HistorianWriterTests.cs` có **10** bài `[Fact]` và **không bài
+nào** nhắc `saturation`, `capacity` hay `DropOldest` — cả hai nhánh đều không có nhân chứng.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* dưới áp lực ngược kéo dài — một store chậm, một broker MQTT không đáp, một Site
+xuống — ba đường này **mất bản ghi CŨ NHẤT trong im lặng**: tới `capacity` hàng lịch sử của
+historian (bản ghi mà sản phẩm này giữ về việc máy đã làm gì), các publish UNS gồm cả device birth
+và line-state, và các bản chuyển tiếp lên Site. **Không log, không bộ đếm, không dòng nào trên
+`/v1/health`.** Ở `UnsBridge` màn hình trạng thái vẫn in một `DroppedTotal` — thường là 0 — nên
+người vận hành đọc được một câu trả lời **sai chiều trấn an**.
+*Chiều ngược, và nó đủ mạnh để "không làm gì" là một lựa chọn có lý:* `DropOldest` được chọn có lý
+do và lý do ấy vẫn đúng — nó bảo đảm đường ghi **không bao giờ chặn** luồng commit của
+`EdgePipeline` và **không bao giờ đẩy áp lực ngược về thiết bị**. Đổi `FullMode` là đổi đúng tính
+chất ấy. Thêm một bộ đếm là **thêm thành viên công khai mới**, mà P-2 chi phối chính tả thành viên
+công khai. Và trên một bản triển lãm chạy vài giờ với kênh 10.000, ba kênh này **không bao giờ
+đầy** — chi phí thật hôm nay là **không**.
+
+**Nếu KHÔNG quyết định.** Tám nhánh cảnh báo ở lại đúng chỗ chúng đang đứng, đọc như một mạng an
+toàn không tồn tại; ba đường mất dữ liệu ở lại im lặng; và vì `AlarmNotifier` **tự ghi rằng nó chép
+`HistorianWriter`**, đường ống tiếp theo được viết trong repo này nhiều khả năng chép tiếp cái sai
+chứ không chép cái đúng. Đây đã là lần thứ **ba** một đợt tìm ra chính hình dạng ấy ở một chỗ mới.
+
+> ### 🔨 PHÁN QUYẾT 2026-08-20 — ÁP MẪU ĐÃ GIẢI XONG CỦA `AlarmNotifier` VÀO CẢ BA CHỖ
+> **Quyết bởi điều phối viên theo uỷ quyền, không phải bởi chủ sở hữu** — và uỷ quyền ấy với tới được
+> mục này, đúng cùng khuôn mục 8: ba mục mà uỷ quyền KHÔNG phủ là ba mục đổi thứ **người ngoài tổ chức
+> này** đang dựa vào, và mục 15 không đổi payload, không đổi hình dạng dây, không đổi con số OEE đã báo.
+>
+> **Phán quyết:** hình dạng mà `AlarmNotifier` **đã giải xong** được **chép ngược** vào cả ba chỗ. Đây
+> **không** phải nghĩ ra một chính sách mới; mẫu đúng đã nằm sẵn trong cây và chỉ chưa ai mang về.
+>
+> 🔴 **Điều KHÔNG được đổi, và nó là một nửa của phán quyết:** `FullMode` **ở lại `DropOldest`**. Lý do
+> mà chính mục này ghi ở §"Hậu quả vận hành, HAI CHIỀU" vẫn đúng nguyên — chế độ ấy bảo đảm đường ghi
+> **không bao giờ chặn** luồng commit của `EdgePipeline` và **không bao giờ đẩy áp lực ngược về thiết
+> bị**. Thứ được sửa là **KẾ TOÁN**, không phải **CHÍNH SÁCH**.
+>
+> 🔴 **Không cơ chế, không mã ở đây.** Mục này ghi **điều đã quyết**; chọn *cách* chép — và trả cái giá
+> mà chính mục này đã nêu tên, rằng thêm một bộ đếm là **thêm thành viên công khai mới** dưới luật P-2 —
+> là việc của nhiệm vụ thi hành.
+
+> ### ✅ ĐÃ THI HÀNH 2026-08-21 — AP-1
+>
+> **Quần thể được LIỆT KÊ lại trước khi được đếm, và nó KHÔNG dịch.** Quét bằng
+> `git grep --full-name -n <mẫu> HEAD -- ':(top)'` cho ba mẫu `Channel.CreateBounded`,
+> `BoundedChannelFullMode`, `BoundedChannelOptions`, **chạy từ `D:\SOURCES\avi-aoi-sim\tools\machine-simulator`**
+> — thư mục được ghi lại vì mục **32**, mở cùng ngày với mục này, đo được rằng một pathspec git tương đối
+> thu về thư mục hiện hành và **trả 0 chứ không báo lỗi**. `:(top)` là cái làm phép quét chạm tới
+> `server/`, `client/`, `examples/`, vốn **có trong commit nhưng không trên đĩa** (sparse checkout);
+> `--full-name` là cái làm đường dẫn in ra **không mơ hồ** giữa `docs/` gốc repo và `tools/machine-simulator/docs/`.
+> Kết quả, liệt kê: `HistorianWriter`, `UnsPublisher`, `UnsBridge`, `AlarmNotifier`,
+> `AlarmAnnunciationHub.Listener`. **Năm**, bốn `DropOldest` + một `Wait`, **đúng như mục này đã ghi**.
+> 🔴 **Và một phép quét thứ tư mà mục này KHÔNG chạy đã được chạy: `TryWrite` trên toàn repo.** Nó tìm ra
+> **hai** kênh nữa — `MqttDriver` và `InspectorStream` — nhưng cả hai là `Channel.CreateUnbounded`: chúng
+> **không đuổi được cái gì**, nên chúng không thuộc quần thể mục này. Nêu ra vì một phép đếm bằng `TryWrite`
+> sẽ ra **bảy** và người sau sẽ phải đo lại để biết vì sao con số ấy sai.
+>
+> **Tiền đề của phán quyết được KIỂM LẠI trên mã, và nó ĐỨNG VỮNG.** `AlarmNotifier` thật sự đã giải
+> xong: nó truyền `itemDropped` cho `Channel.CreateBounded`, nó phân loại **năm** đường một job có thể
+> mất và tách đường "kênh không theo kịp" khỏi các đường "tiến trình đang tắt", và nó gọi log **sau khi
+> nhả khoá**. Không có điều kiện "dừng và báo" nào xảy ra ở trục ấy.
+>
+> 🔴 **NHƯNG MỘT MẢNH CỦA HÌNH DẠNG ẤY KHÔNG MANG SANG ĐƯỢC, và nó được nói ra chứ không lặng lẽ bỏ.**
+> `AlarmNotifier.EmitLocked` học được "cú ghi CỦA TÔI có đuổi gì không" bằng cách **kẹp** `Evicted` hai
+> đầu quanh `TryWrite`. Phép kẹp ấy **chính xác chỉ vì mọi thứ ở đó chạy dưới `_gate`**. Ba lớp EdgeCore
+> **cố ý không có khoá nào trên đường enqueue** — đó đúng là tính chất chúng tồn tại để giữ — nên kẹp ở
+> đó sẽ là một cuộc đua. Bản chép dùng một đường khác và nó chính xác vì **một lý do khác**: cảnh báo
+> được phát **từ trong chính callback `itemDropped`**, chạy đồng bộ, **một lần cho mỗi phần tử bị đuổi**,
+> và **nhận đúng phần tử bị vứt**. Chiều ngược lại cũng đúng và cũng được ghi: `AlarmNotifier` **không**
+> làm được thế, vì callback của nó chạy dưới khoá và một delegate log của người gọi không bao giờ được
+> chạy ở đó. Hai lớp giải cùng một bài bằng hai cách, và **không cách nào là bản sao của cách kia**.
+>
+> **Cái mỗi chỗ nhận được, LIỆT KÊ:**
+> * `HistorianWriter` — `HistorianWriterStats(Evicted, DroppedAfterShutdown, Queued)` + `Stats`.
+> * `UnsPublisher` — `UnsPublisherStats(...)` + `Stats`; sáu `Publish*` gom về một `Enqueue` chung nên
+>   sáu nhánh cùng một lời, không phải sáu lời hơi khác nhau.
+> * `UnsBridge` — `BridgeForwardQueueStats(...)` + `ForwardQueueStats`, cộng một tham số
+>   `channelCapacity` có mặc định (hai lớp anh em đã có sẵn tham số ấy; lớp này là ngoại lệ, và không có
+>   nó thì **không nhân chứng nào làm kênh đầy thật được** mà không đẩy 10.001 message qua một broker
+>   thật).
+> * Ở cả ba: nhánh `if (!TryWrite(...))` **KHÔNG bị xoá và KHÔNG được làm cho với tới được** — nó vẫn chỉ
+>   chạy khi writer ĐÃ ĐÓNG, đúng như mục này đo. Nó được **đếm riêng** và **viết lại** thành đúng ca nó
+>   chạm tới. Sửa nhánh ấy sẽ là bản sửa **sai chỗ**, và ghi ở đây để lần sau không ai thử.
+>
+> 🔴 **`UnsBridge.DroppedTotal` THÔI NÓI SAI VỀ CHÍNH NÓ — BẰNG CÁCH KHÔNG BỊ NỚI NGHĨA.** Bề mặt **ĐỌC**
+> nó được đo trước khi chạm vào nó, và liệt kê: (1) `GET /v1/site` → `SiteStatusDto.DroppedTotal`;
+> (2) trang `/site` của web (`Site.tsx` in nó ở tông nguy hiểm và bật `site.spool.droppedWarning` khi
+> `> 0`); (3) 🔴 **bản ghi resync GIỮ LẠI mà bridge phát lên broker của Site** (`ResyncRecord.droppedTotal`,
+> `UnsBridge.PublishResyncRecordAsync`) — **một hợp đồng dây mà bên thứ ba tiêu thụ**, và chính nó là cái
+> quyết định. Nới nghĩa một con số đang chạy trên một bề mặt như thế là đúng thứ file này lập ra để chấm
+> dứt. Nên con số **giữ nguyên nghĩa**, được **ghi tài liệu** ở cả bốn chỗ nó được khai
+> (`BridgeStatusSnapshot`, `SiteStatusDto`, `web/src/lib/api.ts`, README), và cú đuổi kênh có **tên
+> riêng**: `UnsBridge.ForwardQueueStats.Evicted`.
+>
+> 🔴 **DƯ LƯỢNG CÒN MỞ, ghi vào mục chứ không để trong một báo cáo bị gitignore — đó đúng là cơ chế đã
+> làm mười hai phát hiện nằm ngoài tầm với của chủ sở hữu suốt ba ngày.** Bộ đếm mới **không** có trên
+> `GET /v1/site` lẫn trang `/site`: thêm một trường ở đó là **đổi payload đã xuất bản**, và chính "không
+> đổi payload" là tiền đề đưa mục này vào trong uỷ quyền. Cộng với điều README đã ghi ở §"Ba đường mất
+> dữ liệu khác" điểm 4 — trên hình thái cài **Windows Service** đã tài liệu hoá, `logWarning` đi vào
+> `Console.Error` và `Console.Error` đi vào `Stream.Null` — nên **trên hình thái ấy mất mát này được ĐẾM
+> nhưng operator vẫn CHƯA NHÌN THẤY ĐƯỢC**. Nửa việc ấy cần một phán quyết riêng, không phải một nhiệm vụ
+> tiếp theo lặng lẽ làm.
+>
+> **NHÂN CHỨNG, và cặp đối chứng chứng minh từng cái ĐỎ ĐƯỢC.** Năm `[Fact]` mới, `EXPECT_EDGECORE`
+> 1160 → **1165** (đo, không cộng), tổng suite 2771 → **2776**:
+> `HistorianWriterTests` +2 — mục này đo được rằng file ấy có 10 `[Fact]` và **không bài nào** nhắc
+> saturation/capacity/`DropOldest`; `UnsPublisherDropAccountingTests` +2 (file mới);
+> `UnsBridgeSpoolTests` +1.
+> * **ĐỐI CHỨNG A** — vô hiệu hoá ba callback `itemDropped`: **ba bài saturation ĐỎ**, hai bài shutdown
+>   **XANH** (đúng — chúng đo đường khác; một bài đỏ dưới mọi đột biến thì không định vị được gì).
+> * **ĐỐI CHỨNG B** — trả hai nhánh shutdown về đúng lời cũ trước AP-1 (*"queue saturated — dropped
+>   oldest for X"*): **hai bài shutdown ĐỎ**, ba bài saturation **XANH**.
+> * Mọi đột biến đã hoàn nguyên; `grep -rn MUTATION-AP1 src/ tests/` **không trả về gì**.
+> 🔴 **`UnsBridge` chỉ có MỘT nhân chứng chứ không phải một cặp, và sự bất đối xứng ấy được nêu chứ không
+> độn cho đủ:** nhánh writer-đã-đóng của lớp này chỉ với tới được bằng một cú gọi đua với `DisposeAsync`
+> **từ bên trong callback nhận của một MQTT client**, thứ harness này không lập lịch tất định được. Một
+> bài thứ năm không thể bắt đỏ theo ý muốn đúng là loài mà cổng của repo này tồn tại để từ chối.
+>
+> **Doc của `AlarmNotifier` được kiểm lại và nó KHÔNG thành sai — nên nó được MỞ RỘNG, không bị RÚT.**
+> Câu *"Shape. Copied from `HistorianWriter`"* liệt kê capacity 10.000, `DropOldest`, `SingleReader`,
+> vòng drain bắt mọi thứ, `DisposeAsync` drain-trước-rồi-mới-cắt: **từng thứ một vẫn đúng**. Thứ câu ấy
+> chưa bao giờ khẳng định là **KẾ TOÁN RƠI** — historian không có, lớp này phát minh ra. Cái được ghi
+> thêm tại chỗ là **CHIỀU**: một sự thật viết chỉ theo chiều thuận là một nửa sự thật, và đúng nửa thiếu
+> ấy là thứ khiến ba đường ống được viết theo cái sai.
+>
+> **Bốn khẳng định đã công bố ở nơi khác thành sai vì bản sửa này, và cả bốn được rút TẠI CHỖ kèm ngày:**
+> `HistorianWriter.Enqueue` (khối rút của AL-1 tự khai *"sửa lời cho khớp là một thay đổi mã và nhiệm vụ
+> này chỉ viết văn xuôi"* — thay đổi mã ấy nay đã làm); `UnsPublisher` hàm dựng (*"không có drop total
+> trên lớp này"* — nay có, nhưng **một bất đối xứng còn lại được nêu: bộ đếm nằm trong bộ nhớ và chết
+> theo tiến trình, còn `dropped_total` của `BridgeSpool` là bền**); README §"Ba đường mất dữ liệu khác"
+> điểm 1, **cả bản EN và bản VI** (*"không có bộ đếm nào"* và *"cảnh báo đó không bao giờ in ra được"*);
+> `web/src/lib/api.ts` (`droppedTotal === 0` không có nghĩa là không mất gì).
+>
+> **Bằng chứng:** `scripts/verify-suites.sh` khối `TASK AP-1` ngay trên `EXPECT_EDGECORE`;
+> `.superpowers/sdd/item15-dropoldest/task-1-report.md`.
+
 
 ---
 
