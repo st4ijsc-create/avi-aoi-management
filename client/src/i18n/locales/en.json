@@ -3368,7 +3368,8 @@
     "noNgInPeriod": "No NG in this period.",
     "ngHistoryAria": "NG history, {{n}} days",
     "topDefectPoints": "Top defective measurement points",
-    "noDefectPoints": "No defective measurement points in this period."
+    "noDefectPoints": "No defective measurement points in this period.",
+    "hayChoPhepPopupCua": "Allow pop-ups for this page and try again, or use \"Export HTML\"."
   },
   "defects": {
     "trend": {
@@ -4935,7 +4936,18 @@
     "exportWorkshops": "Export workshops",
     "exportMachines": "Export machines",
     "exportProducts": "Export products",
-    "exportMeasurementPoints": "Export measurement points"
+    "exportMeasurementPoints": "Export measurement points",
+    "nhaMay1": "Factory 1",
+    "moTaNhaMay": "Factory description",
+    "123DuongAbc": "123 ABC Street",
+    "mienNam": "Southern region",
+    "vietNam": "Vietnam",
+    "xuong1": "Workshop 1",
+    "moTaXuong": "Workshop description",
+    "may1": "Machine 1",
+    "sanPham1": "Product 1",
+    "moTaSanPham": "Product description",
+    "diemDo1": "Measurement point 1"
   },
   "inspection": {
     "viewMeasurementImage": "View measurement image",
@@ -13965,7 +13977,9 @@
     "chonTatCaDangLoc": "Select all filtered",
     "hetHanDuBao": "FORECAST EXPIRED",
     "xacNhanXuLyXong": "Confirm resolved?",
-    "huy": "Cancel"
+    "huy": "Cancel",
+    "thaoTacThatBai": "Operation failed",
+    "cacCanhBaoDaChon": "the selected alarms"
   },
   "cmd": {
     "title": "Ecosystem Command Center",
@@ -19367,7 +19381,9 @@
   },
   "importExportBar": {
     "khongCoDuLieuDe": "No data to export",
-    "daTaiFileMau": "Template file downloaded"
+    "daTaiFileMau": "Template file downloaded",
+    "dong": "Row",
+    "trangThai": "Status"
   },
   "productCategoryManagement": {
     "codeElecNameLinhKien": "[{\"code\": \"ELEC\", \"name\": \"Electronic components\", ...}]"
@@ -19381,7 +19397,9 @@
     "vatLieu": "material"
   },
   "corporateDashboard": {
-    "trucTiepKhongTheoKy": "Live — not period-based"
+    "trucTiepKhongTheoKy": "Live — not period-based",
+    "nhaMayCoDuLieu": "Factories with data",
+    "nhaMayCoDuLieu2": "Factories with data"
   },
   "drillDownDashboard": {
     "chuaGanTapDoan": "No group assigned",
@@ -19399,5 +19417,29 @@
   "emptyState": {
     "khongCoGiBatThuong": "Nothing unusual",
     "heThongOnDinh": "System is stable"
+  },
+  "configHealthPanel": {
+    "nhaMayChuaCoPhan": "Factory has no workshop",
+    "phanXuongChuaCoDay": "Workshop has no line",
+    "dayChuyenChuaCoTram": "Line has no station",
+    "tramChuaCoMay": "Station has no machine",
+    "mayChuaKhaiBaoModel": "Machine has no model declared"
+  },
+  "lineCommandBar": {
+    "chayStart": "Run (Start)",
+    "giuHold": "Hold",
+    "tiepTucResume": "Resume",
+    "doiSanPhamChangeover": "Changeover",
+    "hoanTatComplete": "Complete",
+    "xacNhanKhacPhucLoi": "Confirm fault cleared"
+  },
+  "wipLineBalance": {
+    "dangXuLy": "In progress",
+    "tamGiu": "On hold",
+    "choXuLy": "Waiting",
+    "hoanTat": "Completed",
+    "huy": "Cancelled",
+    "biChan": "Blocked",
+    "doiViec": "Starved"
   }
 }

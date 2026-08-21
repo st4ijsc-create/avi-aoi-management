@@ -252,7 +252,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
   const previewColumns: DataTableColumn<MasterDataRowDetail>[] = React.useMemo(() => {
     const rowCol: DataTableColumn<MasterDataRowDetail> = {
       id: "__row",
-      header: "Dòng",
+      header: t("importExportBar.dong", "Dòng"),
       align: "right",
       width: "60px",
       cell: (d) => (
@@ -275,7 +275,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
     }));
     const statusCol: DataTableColumn<MasterDataRowDetail> = {
       id: "__status",
-      header: "Trạng thái",
+      header: t("importExportBar.trangThai", "Trạng thái"),
       cell: (d) =>
         d.errors.length === 0 ? (
           <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">

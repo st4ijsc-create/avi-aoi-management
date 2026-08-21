@@ -93,8 +93,8 @@ export default function WipLineBalance() {
 
   // doc65 V5: enum WIP thô (in_process/hold…) không được lộ ra legend — map nhãn Việt.
   const WIP_STATUS_LABEL: Record<string, string> = {
-    in_process: "Đang xử lý", hold: "Tạm giữ", queued: "Chờ xử lý",
-    completed: "Hoàn tất", scrapped: "Hủy", blocked: "Bị chặn", starved: "Đói việc",
+    in_process: t("wipLineBalance.dangXuLy", "Đang xử lý"), hold: t("wipLineBalance.tamGiu", "Tạm giữ"), queued: t("wipLineBalance.choXuLy", "Chờ xử lý"),
+    completed: t("wipLineBalance.hoanTat", "Hoàn tất"), scrapped: t("wipLineBalance.huy", "Hủy"), blocked: t("wipLineBalance.biChan", "Bị chặn"), starved: t("wipLineBalance.doiViec", "Đói việc"),
   };
   const pieData = useMemo(
     () => (summary.data?.byStatus ?? []).map((s) => ({ name: WIP_STATUS_LABEL[s.status] ?? s.status, value: s.count })),

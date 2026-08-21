@@ -559,7 +559,7 @@ export default function OpsConsole() {
     try {
       await (action === "ack" ? ackOneAsync(a) : resolveOneAsync(a));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Thao tác thất bại");
+      toast.error(e instanceof Error ? e.message: t("opsConsole.thaoTacThatBai", "Thao tác thất bại"));
     } finally {
       markPending([a.key], false);
     }
@@ -1325,7 +1325,7 @@ export default function OpsConsole() {
                         variant="outline"
                         className="h-11"
                         disabled={selResolvable.some((a) => pendingKeys.has(a.key))}
-                        onClick={() => setConfirmTarget({ items: selResolvable, label: "các cảnh báo đã chọn" })}
+                        onClick={() => setConfirmTarget({ items: selResolvable, label: t("opsConsole.cacCanhBaoDaChon", "các cảnh báo đã chọn") })}
                       >
                         Xử lý ({selResolvable.length})
                       </Button>

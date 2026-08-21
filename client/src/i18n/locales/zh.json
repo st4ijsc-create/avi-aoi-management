@@ -3360,7 +3360,8 @@
     "noNgInPeriod": "本周期内没有 NG。",
     "ngHistoryAria": "NG 历史，{{n}} 天",
     "topDefectPoints": "缺陷最多的测量点",
-    "noDefectPoints": "本周期内没有缺陷测量点。"
+    "noDefectPoints": "本周期内没有缺陷测量点。",
+    "hayChoPhepPopupCua": "请允许本页面弹出窗口后重试，或使用「导出 HTML」。"
   },
   "defects": {
     "trend": {
@@ -4901,7 +4902,18 @@
     "exportWorkshops": "导出车间",
     "exportMachines": "导出机器",
     "exportProducts": "导出产品",
-    "exportMeasurementPoints": "导出测量点"
+    "exportMeasurementPoints": "导出测量点",
+    "nhaMay1": "工厂 1",
+    "moTaNhaMay": "工厂说明",
+    "123DuongAbc": "ABC 路 123 号",
+    "mienNam": "南部地区",
+    "vietNam": "越南",
+    "xuong1": "车间 1",
+    "moTaXuong": "车间说明",
+    "may1": "设备 1",
+    "sanPham1": "产品 1",
+    "moTaSanPham": "产品说明",
+    "diemDo1": "测点 1"
   },
   "inspection": {
     "viewMeasurementImage": "查看测量图像",
@@ -13748,7 +13760,9 @@
     "chonTatCaDangLoc": "选择当前筛选的全部",
     "hetHanDuBao": "预测已过期",
     "xacNhanXuLyXong": "确认已处理完成？",
-    "huy": "取消"
+    "huy": "取消",
+    "thaoTacThatBai": "操作失败",
+    "cacCanhBaoDaChon": "已选中的告警"
   },
   "cmd": {
     "title": "生态系统指挥中心",
@@ -19375,7 +19389,9 @@
   },
   "importExportBar": {
     "khongCoDuLieuDe": "没有可导出的数据",
-    "daTaiFileMau": "模板文件已下载"
+    "daTaiFileMau": "模板文件已下载",
+    "dong": "行",
+    "trangThai": "状态"
   },
   "productCategoryManagement": {
     "codeElecNameLinhKien": "[{\"code\": \"ELEC\", \"name\": \"电子元件\", ...}]"
@@ -19389,7 +19405,9 @@
     "vatLieu": "物料"
   },
   "corporateDashboard": {
-    "trucTiepKhongTheoKy": "实时 — 非按周期"
+    "trucTiepKhongTheoKy": "实时 — 非按周期",
+    "nhaMayCoDuLieu": "有数据的工厂",
+    "nhaMayCoDuLieu2": "有数据的工厂"
   },
   "drillDownDashboard": {
     "chuaGanTapDoan": "未分配集团",
@@ -19407,5 +19425,29 @@
   "emptyState": {
     "khongCoGiBatThuong": "一切正常",
     "heThongOnDinh": "系统稳定"
+  },
+  "configHealthPanel": {
+    "nhaMayChuaCoPhan": "工厂下没有车间",
+    "phanXuongChuaCoDay": "车间下没有产线",
+    "dayChuyenChuaCoTram": "产线下没有工位",
+    "tramChuaCoMay": "工位下没有设备",
+    "mayChuaKhaiBaoModel": "设备未声明型号"
+  },
+  "lineCommandBar": {
+    "chayStart": "运行 (Start)",
+    "giuHold": "保持 (Hold)",
+    "tiepTucResume": "继续 (Resume)",
+    "doiSanPhamChangeover": "换型 (Changeover)",
+    "hoanTatComplete": "完成 (Complete)",
+    "xacNhanKhacPhucLoi": "确认故障已排除"
+  },
+  "wipLineBalance": {
+    "dangXuLy": "处理中",
+    "tamGiu": "暂扣",
+    "choXuLy": "待处理",
+    "hoanTat": "已完成",
+    "huy": "已取消",
+    "biChan": "阻塞",
+    "doiViec": "缺料待工"
   }
 }

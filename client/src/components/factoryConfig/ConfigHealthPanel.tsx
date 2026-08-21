@@ -97,13 +97,13 @@ function FindingRow({ finding, onNavigate }: { finding: Finding; onNavigate: Nav
   const isError = finding.sev === "error";
 
   const defaults: Record<Finding["kind"], string> = {
-    emptyFactory: "Nhà máy chưa có phân xưởng",
-    emptyWorkshop: "Phân xưởng chưa có dây chuyền",
-    emptyLine: "Dây chuyền chưa có trạm",
-    emptyStation: "Trạm chưa có máy",
+    emptyFactory: t("configHealthPanel.nhaMayChuaCoPhan", "Nhà máy chưa có phân xưởng"),
+    emptyWorkshop: t("configHealthPanel.phanXuongChuaCoDay", "Phân xưởng chưa có dây chuyền"),
+    emptyLine: t("configHealthPanel.dayChuyenChuaCoTram", "Dây chuyền chưa có trạm"),
+    emptyStation: t("configHealthPanel.tramChuaCoMay", "Trạm chưa có máy"),
     dupCode: 'Trùng mã "{{code}}"',
     machineUnapproved: "Máy chưa được duyệt (trạng thái: {{status}})",
-    machineNoModel: "Máy chưa khai báo model",
+    machineNoModel: t("configHealthPanel.mayChuaKhaiBaoModel", "Máy chưa khai báo model"),
   };
 
   let message = t(`dataSettings.overview.health.${finding.kind}`, defaults[finding.kind]);

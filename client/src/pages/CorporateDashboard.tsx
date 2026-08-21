@@ -296,7 +296,7 @@ export default function CorporateDashboard() {
       type: 'stats',
       stats: [
         { label: t('corporate.corporation'), value: corporateOverview.totalCorporations },
-        { label: 'Nhà máy có dữ liệu', value: corporateOverview.factoriesWithData },
+        { label: t("corporateDashboard.nhaMayCoDuLieu", "Nhà máy có dữ liệu"), value: corporateOverview.factoriesWithData },
         { label: t('corporate.factory', 'Factories'), value: corporateOverview.totalFactories },
         { label: t('corporate.line', 'Lines'), value: corporateOverview.totalLines },
         { label: t('corporate.machine', 'Machines'), value: corporateOverview.totalMachines },
@@ -462,7 +462,7 @@ export default function CorporateDashboard() {
           <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 p-3">
             {[
               { label: t('corporate.corporation'), value: corporateOverview.totalCorporations },
-              { label: 'Nhà máy có dữ liệu', value: corporateOverview.factoriesWithData },
+              { label: t("corporateDashboard.nhaMayCoDuLieu2", "Nhà máy có dữ liệu"), value: corporateOverview.factoriesWithData },
               { label: t('corporate.factory'), value: corporateOverview.totalFactories },
               { label: t('corporate.productionLine'), value: corporateOverview.totalLines },
               { label: t('corporate.machines'), value: corporateOverview.totalMachines },

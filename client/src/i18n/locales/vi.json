@@ -3360,7 +3360,8 @@
     "noNgInPeriod": "Không có NG trong kỳ.",
     "ngHistoryAria": "Lịch sử NG {{n}} ngày",
     "topDefectPoints": "Top điểm-đo lỗi",
-    "noDefectPoints": "Không có điểm-đo lỗi trong kỳ."
+    "noDefectPoints": "Không có điểm-đo lỗi trong kỳ.",
+    "hayChoPhepPopupCua": "Hãy cho phép popup (cửa sổ bật lên) cho trang này rồi thử lại, hoặc dùng \"Xuất HTML\"."
   },
   "defects": {
     "heatmap": {
@@ -4927,7 +4928,18 @@
     "exportWorkshops": "Xuất xưởng",
     "exportMachines": "Xuất máy",
     "exportProducts": "Xuất sản phẩm",
-    "exportMeasurementPoints": "Xuất điểm đo"
+    "exportMeasurementPoints": "Xuất điểm đo",
+    "nhaMay1": "Nhà máy 1",
+    "moTaNhaMay": "Mô tả nhà máy",
+    "123DuongAbc": "123 Đường ABC",
+    "mienNam": "Miền Nam",
+    "vietNam": "Việt Nam",
+    "xuong1": "Xưởng 1",
+    "moTaXuong": "Mô tả xưởng",
+    "may1": "Máy 1",
+    "sanPham1": "Sản phẩm 1",
+    "moTaSanPham": "Mô tả sản phẩm",
+    "diemDo1": "Điểm đo 1"
   },
   "inspection": {
     "correctionReasonPlaceholder": "Correction reason Chỗ nhập...",
@@ -13945,7 +13957,9 @@
     "chonTatCaDangLoc": "Chọn tất cả đang lọc",
     "hetHanDuBao": "HẾT HẠN DỰ BÁO",
     "xacNhanXuLyXong": "Xác nhận xử lý xong?",
-    "huy": "Hủy"
+    "huy": "Hủy",
+    "thaoTacThatBai": "Thao tác thất bại",
+    "cacCanhBaoDaChon": "các cảnh báo đã chọn"
   },
   "cmd": {
     "title": "Trung tâm điều hành hệ sinh thái",
@@ -19347,7 +19361,9 @@
   },
   "importExportBar": {
     "khongCoDuLieuDe": "Không có dữ liệu để xuất",
-    "daTaiFileMau": "Đã tải file mẫu"
+    "daTaiFileMau": "Đã tải file mẫu",
+    "dong": "Dòng",
+    "trangThai": "Trạng thái"
   },
   "productCategoryManagement": {
     "codeElecNameLinhKien": "[{\"code\": \"ELEC\", \"name\": \"Linh kiện điện tử\", ...}]"
@@ -19361,7 +19377,9 @@
     "vatLieu": "vật liệu"
   },
   "corporateDashboard": {
-    "trucTiepKhongTheoKy": "Trực tiếp — không theo kỳ"
+    "trucTiepKhongTheoKy": "Trực tiếp — không theo kỳ",
+    "nhaMayCoDuLieu": "Nhà máy có dữ liệu",
+    "nhaMayCoDuLieu2": "Nhà máy có dữ liệu"
   },
   "drillDownDashboard": {
     "chuaGanTapDoan": "Chưa gán tập đoàn",
@@ -19379,5 +19397,29 @@
   "emptyState": {
     "khongCoGiBatThuong": "Không có gì bất thường",
     "heThongOnDinh": "Hệ thống ổn định"
+  },
+  "configHealthPanel": {
+    "nhaMayChuaCoPhan": "Nhà máy chưa có phân xưởng",
+    "phanXuongChuaCoDay": "Phân xưởng chưa có dây chuyền",
+    "dayChuyenChuaCoTram": "Dây chuyền chưa có trạm",
+    "tramChuaCoMay": "Trạm chưa có máy",
+    "mayChuaKhaiBaoModel": "Máy chưa khai báo model"
+  },
+  "lineCommandBar": {
+    "chayStart": "Chạy (Start)",
+    "giuHold": "Giữ (Hold)",
+    "tiepTucResume": "Tiếp tục (Resume)",
+    "doiSanPhamChangeover": "Đổi sản phẩm (Changeover)",
+    "hoanTatComplete": "Hoàn tất (Complete)",
+    "xacNhanKhacPhucLoi": "Xác nhận khắc phục lỗi"
+  },
+  "wipLineBalance": {
+    "dangXuLy": "Đang xử lý",
+    "tamGiu": "Tạm giữ",
+    "choXuLy": "Chờ xử lý",
+    "hoanTat": "Hoàn tất",
+    "huy": "Hủy",
+    "biChan": "Bị chặn",
+    "doiViec": "Đói việc"
   }
 }

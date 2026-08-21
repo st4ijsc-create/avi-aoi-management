@@ -89,12 +89,12 @@ export function LineCommandBar({ lineId, lineCode, state, canControl, onSettled 
 
   const cmdLabel = (c: LineViewCommand): string =>
     t(`lineView.cmd.${c}`, {
-      start: "Chạy (Start)",
-      hold: "Giữ (Hold)",
-      resume: "Tiếp tục (Resume)",
-      changeover: "Đổi sản phẩm (Changeover)",
-      complete: "Hoàn tất (Complete)",
-      reset_fault: "Xác nhận khắc phục lỗi",
+      start: t("lineCommandBar.chayStart", "Chạy (Start)"),
+      hold: t("lineCommandBar.giuHold", "Giữ (Hold)"),
+      resume: t("lineCommandBar.tiepTucResume", "Tiếp tục (Resume)"),
+      changeover: t("lineCommandBar.doiSanPhamChangeover", "Đổi sản phẩm (Changeover)"),
+      complete: t("lineCommandBar.hoanTatComplete", "Hoàn tất (Complete)"),
+      reset_fault: t("lineCommandBar.xacNhanKhacPhucLoi", "Xác nhận khắc phục lỗi"),
     }[c]);
 
   const runCommand = async (command: LineViewCommand, reason: string) => {

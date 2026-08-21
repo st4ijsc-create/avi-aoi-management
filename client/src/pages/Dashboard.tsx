@@ -1061,7 +1061,7 @@ export default function Dashboard() {
       const win = window.open('', '_blank');
       if (!win) {
         toast.error('Cửa sổ in bị trình duyệt chặn', {
-          description: 'Hãy cho phép popup (cửa sổ bật lên) cho trang này rồi thử lại, hoặc dùng "Xuất HTML".',
+          description: t("dashboard.hayChoPhepPopupCua", 'Hãy cho phép popup (cửa sổ bật lên) cho trang này rồi thử lại, hoặc dùng "Xuất HTML".'),
         });
         return;
       }

@@ -87,11 +87,11 @@ export function ImportExportContent() {
       template = [
         { 
           code: 'FAC001', 
-          name: 'Nhà máy 1', 
-          description: 'Mô tả nhà máy', 
-          address: '123 Đường ABC', 
-          region: 'Miền Nam', 
-          country: 'Việt Nam', 
+          name: t("importExport.nhaMay1", "Nhà máy 1"), 
+          description: t("importExport.moTaNhaMay", "Mô tả nhà máy"), 
+          address: t("importExport.123DuongAbc", "123 Đường ABC"), 
+          region: t("importExport.mienNam", "Miền Nam"), 
+          country: t("importExport.vietNam", "Việt Nam"), 
           isActive: true 
         }
       ];
@@ -100,8 +100,8 @@ export function ImportExportContent() {
         { 
           factoryCode: 'FAC001', 
           code: 'WS001', 
-          name: 'Xưởng 1', 
-          description: 'Mô tả xưởng', 
+          name: t("importExport.xuong1", "Xưởng 1"), 
+          description: t("importExport.moTaXuong", "Mô tả xưởng"), 
           isActive: true 
         }
       ];
@@ -110,7 +110,7 @@ export function ImportExportContent() {
         { 
           stationCode: 'ST001', 
           code: 'MCH001', 
-          name: 'Máy 1', 
+          name: t("importExport.may1", "Máy 1"), 
           machineType: 'AVI', 
           model: 'Model ABC', 
           manufacturer: 'Manufacturer XYZ', 
@@ -121,8 +121,8 @@ export function ImportExportContent() {
       template = [
         { 
           code: 'PRD001', 
-          name: 'Sản phẩm 1', 
-          description: 'Mô tả sản phẩm', 
+          name: t("importExport.sanPham1", "Sản phẩm 1"), 
+          description: t("importExport.moTaSanPham", "Mô tả sản phẩm"), 
           category: 'Category A', 
           isActive: true 
         }
@@ -132,7 +132,7 @@ export function ImportExportContent() {
         { 
           productModelCode: 'PRD001', 
           code: 'MP001', 
-          name: 'Điểm đo 1', 
+          name: t("importExport.diemDo1", "Điểm đo 1"), 
           measurementType: 'DIMENSION', 
           unit: 'mm', 
           nominalValue: 10.5, 
