@@ -31,6 +31,16 @@ namespace St4i.EdgeCore.Mapping;
 /// — this class NEVER throws, so one bad/missing preset can never take the fleet pipeline down (same
 /// "graceful fallback, not a startup crash" contract <c>FleetConfig.Load</c> already keeps for a
 /// malformed <c>fleet.json</c> itself).</para>
+///
+/// <para>🔴 <b>Task AQ-1 (owner item 21, 2026-08-21) adds a FOURTH cause to that fallback list, and the
+/// list above was an inventory that is now short by one rather than a sentence that was wrong:</b> a
+/// descriptor whose <c>mappingProfile</c> resolves OUTSIDE the mapping directory's subtree is REFUSED
+/// before the filesystem is touched at all, and falls back to exactly the same
+/// <see cref="MappingProfile.ForClass"/> the other three causes reach. Until this task the field was a
+/// path — <c>Path.Combine</c> lets an absolute right-hand side win outright — while every published
+/// description of it, in <c>README</c> and on <see cref="MachineDescriptor.MappingProfile"/> alike, called
+/// it a NAME. See <see cref="Build"/>'s <c>mappingDir</c> parameter for how the boundary is decided and for
+/// the one thing it deliberately does not do.</para>
 /// </summary>
 public sealed class MappingProfileResolver
 {
@@ -53,12 +63,26 @@ public sealed class MappingProfileResolver
     /// empty roster is legal and produces a resolver that answers <see langword="null"/> for everything,
     /// i.e. one that sends every reading to its pipeline's shared profile; that is the state a host that
     /// runs this class with no roster in scope ends up in, with no exception and no warning.</param>
-    /// <param name="mappingDir">Where the presets live. The file consulted for a descriptor is this
-    /// directory combined with that descriptor's own <c>mappingProfile</c> value plus <c>.json</c>, and
-    /// the combination is literal: the value comes from an operator-authored <c>fleet.json</c> and is not
-    /// checked for separators, so it names a path relative to this directory rather than a file within
-    /// it. Passing a directory that does not exist is not an error — the per-descriptor
-    /// <c>File.Exists</c> simply fails and every entry falls back.</param>
+    /// <param name="mappingDir">Where the presets live, and — since owner item 21, task AQ-1, 2026-08-21 —
+    /// the BOUNDARY the resolved file must fall inside. The file consulted for a descriptor is this
+    /// directory combined with that descriptor's own <c>mappingProfile</c> value plus <c>.json</c>, and the
+    /// result is then required to lie within this directory's own subtree, decided by comparing ABSOLUTE
+    /// NORMALIZED paths (<see cref="Path.GetFullPath(string)"/>) and never by filtering <c>..</c> or a
+    /// separator out of the string. A descriptor whose value escapes — an absolute path, a drive-relative
+    /// path, a UNC share, or enough <c>..</c> segments to climb out — is REFUSED and falls back to
+    /// <see cref="MappingProfile.ForClass"/> with a message on <paramref name="logWarning"/> naming what to
+    /// fix. A subdirectory OF this directory is still legal and still resolves, so the confinement rejects
+    /// only what leaves.
+    /// <para>🔴 <b>The old wording here described the pre-AQ-1 behaviour and is retained as history, not as
+    /// a claim: "the combination is literal: the value comes from an operator-authored <c>fleet.json</c> and
+    /// is not checked for separators, so it names a path relative to this directory rather than a file
+    /// within it."</b> That was true and is what owner item 21 was opened about; as of AQ-1 the value names
+    /// a file within this directory's subtree, and nothing else.</para>
+    /// <para>The boundary is LEXICAL. A symlink or junction that sits inside this directory and points out
+    /// of it is followed by <see cref="File.ReadAllText(string)"/> exactly as before — link targets are not
+    /// resolved here, and naming that is cheaper than pretending otherwise. Passing a directory that does
+    /// not exist is still not an error — the per-descriptor <c>File.Exists</c> simply fails and every entry
+    /// falls back.</para></param>
     /// <param name="logWarning">Optional (defaults to a no-op) — invoked once per descriptor that names a
     /// mapping profile file which does not exist. Deliberately a plain delegate, not
     /// <c>Microsoft.Extensions.Logging.ILogger</c> — St4i.EdgeCore is intentionally logging-framework-free
@@ -66,7 +90,11 @@ public sealed class MappingProfileResolver
     /// <see cref="St4i.EdgeCore.Transport.WalFlushPump"/> already use); a host wires this to its own
     /// ILogger when it calls <see cref="Build"/>.</param>
     /// <param name="logError">Optional (defaults to a no-op) — invoked once per descriptor whose named
-    /// mapping profile file exists but fails to read or parse (malformed JSON, I/O error, ACL denial).</param>
+    /// mapping profile file exists but fails to read or parse (malformed JSON, I/O error, ACL denial).
+    /// A descriptor REFUSED by the confinement described on <paramref name="mappingDir"/> is deliberately
+    /// NOT routed here: this delegate's contract carries an <see cref="Exception"/>, a refusal has none, and
+    /// fabricating one to fit the shape would be a worse lie than using the warning channel the other
+    /// operator-typo case already uses.</param>
     public static MappingProfileResolver Build(
         IEnumerable<MachineDescriptor> fleet,
         string mappingDir,
@@ -93,7 +121,25 @@ public sealed class MappingProfileResolver
             return MappingProfile.ForClass(descriptor.DeviceClass);
         }
 
-        var path = Path.Combine(mappingDir, descriptor.MappingProfile + ".json");
+        var combined = Path.Combine(mappingDir, descriptor.MappingProfile + ".json");
+
+        // 🔴 Owner item 21, task AQ-1 (2026-08-21) — the operator-authored string above is confined to the
+        // mapping directory's own subtree here, BEFORE it reaches the filesystem. Path.Combine's documented
+        // behaviour is that an absolute right-hand side wins outright, so without this the field named a
+        // path rather than a file; MachineDescriptor.MappingProfile's own doc has always said "a profile
+        // NAME, not a path", and this is the line that makes that true.
+        if (!TryConfineToMappingDirectory(combined, mappingDir, out var path, out var describedTarget))
+        {
+            logWarning?.Invoke(
+                $"Machine {descriptor.Code}: mappingProfile \"{descriptor.MappingProfile}\" resolves to " +
+                $"{describedTarget}, which is OUTSIDE the mapping profile directory " +
+                $"{DescribeDirectory(mappingDir)} — REFUSED, falling back to " +
+                $"MappingProfile.ForClass({descriptor.DeviceClass}). mappingProfile is a profile NAME, not a " +
+                "path: in fleet.json give it the file's name without the \".json\" extension, and put that " +
+                "file inside the mapping directory (a subdirectory of it is fine). A drive letter, a leading " +
+                "separator, a UNC prefix or a \"..\" segment that climbs out of the directory is refused.");
+            return MappingProfile.ForClass(descriptor.DeviceClass);
+        }
 
         try
         {
@@ -115,6 +161,62 @@ public sealed class MappingProfileResolver
                 $"Machine {descriptor.Code}: mappingProfile \"{descriptor.MappingProfile}\" at {path} failed to " +
                 $"load — falling back to MappingProfile.ForClass({descriptor.DeviceClass})");
             return MappingProfile.ForClass(descriptor.DeviceClass);
+        }
+    }
+
+    /// <summary>🔴 Owner item 21, task AQ-1 (2026-08-21) — decides whether <paramref name="candidatePath"/>
+    /// lies inside <paramref name="mappingDir"/>'s subtree, and hands back the ABSOLUTE path to use if it
+    /// does. The comparison is made on normalized absolute paths, which is the whole point: filtering
+    /// <c>..</c> or a separator out of the operator's string is the classic wrong answer, because it decides
+    /// a path question with a string rule and gets beaten by the encodings it did not think of. Normalizing
+    /// first and comparing after asks the filesystem's own question instead.
+    /// <para>The root is compared WITH a trailing separator so a sibling directory whose name merely starts
+    /// with the root's — <c>mapping-archive</c> next to <c>mapping</c> — is not mistaken for a child. The
+    /// comparison is <see cref="StringComparison.OrdinalIgnoreCase"/> because every project in this solution
+    /// targets <c>net10.0-windows</c> and Windows paths are case-insensitive; on a case-sensitive filesystem
+    /// this rule would be too PERMISSIVE, never too strict, and this is the file to change if that day
+    /// comes.</para>
+    /// <para>Normalization itself can throw, and that is the reason the call sits here rather than inline:
+    /// this class's published contract is that it NEVER throws, so a path the runtime cannot normalize at
+    /// all is treated as a refusal like any other escape. The out-parameter carries a description fit to put
+    /// in front of an operator in either case.</para></summary>
+    private static bool TryConfineToMappingDirectory(
+        string candidatePath, string mappingDir, out string fullPath, out string describedTarget)
+    {
+        try
+        {
+            var rootFull = Path.GetFullPath(mappingDir);
+            var rootWithSeparator = rootFull.EndsWith(Path.DirectorySeparatorChar)
+                ? rootFull
+                : rootFull + Path.DirectorySeparatorChar;
+
+            fullPath = Path.GetFullPath(candidatePath);
+            describedTarget = fullPath;
+
+            return fullPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (
+            ex is ArgumentException or PathTooLongException or NotSupportedException or IOException
+                or System.Security.SecurityException)
+        {
+            fullPath = string.Empty;
+            describedTarget = $"a path the runtime could not normalize ({ex.GetType().Name}: {ex.Message})";
+            return false;
+        }
+    }
+
+    /// <summary>The mapping directory as it should appear in a refusal message: its absolute form when that
+    /// can be computed, and the caller's own spelling when it cannot. A message that names a RELATIVE
+    /// directory tells an operator nothing about where the resolver actually looked, and the one case where
+    /// the absolute form is unavailable is exactly the case where the message matters most.</summary>
+    private static string DescribeDirectory(string mappingDir)
+    {
+        try { return Path.GetFullPath(mappingDir); }
+        catch (Exception ex) when (
+            ex is ArgumentException or PathTooLongException or NotSupportedException or IOException
+                or System.Security.SecurityException)
+        {
+            return mappingDir;
         }
     }
 

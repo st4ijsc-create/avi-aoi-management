@@ -44,12 +44,12 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔨 **ĐÓNG — STORE GHI LẠI DANH TÍNH CỦA CÁC BYTE** (2026-08-19, chủ sở hữu). 🔴 **Giá đã chấp nhận và ghi vào mục: `PUT /v1/historian/oee/settings` trả 409 ở những lúc hôm nay trả 200, KỂ CẢ khi thứ đổi file là một biên tập tay HỢP LỆ hay chỉ là một lần ĐỊNH DẠNG LẠI.** Câu *"bao nhiêu PUT hợp lệ thành 409"* vẫn **KHÔNG đo được** và phán quyết ra **mà không có nó**. **Đã thi hành, AJ-1 (2026-08-19)** — cơ chế **SUY ra chứ không chọn một trong ba**: cả ba ứng viên (băm / `mtime` / kích thước) là **vân tay**, mà vân tay chỉ cần khi không cầm được cả hai vế; `ReadLocked` **đã cầm toàn văn** ở cả hai đầu trong cùng một khoá, nên store **giữ lại toa hạng gốc** và so trực tiếp — **0 lần đọc đĩa thêm**, và **mạnh hơn** mọi hàm hao hụt của nó. Kiểu thứ ba `OeeSettingsFileChangedException`; vị từ gác bằng **CẶP `Loaded/Loaded`**, nên cặp `Loaded/Absent` **không** bị đóng kèm. Nhân chứng `Set_AfterARestoreOntoAHostThatCameUpWithAFile_…` **đảo chiều và đổi tên**; giá được **ghim** bằng một bài kiểm riêng |
 | 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT**. 🔴 **KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: KHẢ THI — `Normalizer` có đủ thông tin, `WaveformSeries` và `WelderSim` KHÔNG phải đổi. Nhưng nó KHÔNG nằm trọn ở một đường dây: cùng một envelope đi ra BA bề mặt, và một trong ba là gương ngữ nghĩa MQTT RETAINED — một **bề mặt đã xuất bản thứ hai; NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này** (hợp đồng TỰ KHAI rằng họ ở ngoài repo — đó là lời của tài liệu, không phải một phép đếm). 🔴 **Giá gương ấy KHÔNG phải của riêng lựa chọn 3: lựa chọn 1 trả CÙNG giá đó CỘNG THÊM, lựa chọn 2 không trả giá nào trong cây này nhưng trả TOÀN BỘ ở ngoài (hợp đồng ingest đã xuất bản + ba SDK).** Và KHÔNG một bài kiểm nào trong 2763 bài đỏ lên, tức lối này KHÔNG CÓ NHÂN CHỨNG. **Ràng buộc thi hành cứng: `LiveTransport.ReadSampleSeries` chỉ nhận hàng `double[]` và bỏ im lặng mọi kiểu khác.** Ba lựa chọn VẪN CHƯA QUYẾT** — 📎 **câu ngay trước giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1), và lý do là chủ sở hữu ĐÃ PHÁN, không phải câu ấy từng sai; AK-1 dùng đúng MỘT kiểu bảo tồn — kiểu AB-1 lập và AI-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG dấu gạch ngang ở bất kỳ đâu, không xoá một dòng nào.** → 🔨 **QUYẾT: LỰA CHỌN 3 — DỰNG CẶP `[t, v]` Ở RANH GIỚI `Normalizer`** (2026-08-19, chủ sở hữu). `WaveformSeries`, `WelderSim`, `ScrewdriveSim` **không đổi một dòng**; thứ đổi là **payload đi ra**. 🔴 **Giá đã chấp nhận và ghi vào mục: HAI bề mặt đã xuất bản đổi CÙNG LÚC, không một** — payload ingest HTTP **và** gương ngữ nghĩa MQTT retained `syn/…`; **NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này**. Cộng một bề mặt thứ ba, riêng tư: hàng đợi store-and-forward của SDK ghi nguyên payload **xuống đĩa** và **phát lại hình dạng CŨ sau khi mã đã đổi** — **cửa sổ ấy CHƯA ĐO**. **Đã thi hành, AK-1 (2026-08-19)** — cơ chế của `t` **SUY ra chứ không chọn**: `t(i) = i / rateHz`, tức **thời điểm mà `rateHz` HÀM Ý**, **không** phải thời điểm `WelderSim` vẽ đường cong; lý do là ở ranh giới chỉ có **bốn trường** của `WaveformSeries`, còn dựng lại thời điểm THẬT đòi **tham số hoá riêng của từng bộ sinh** — không có trên hồ sơ, khác nhau theo driver, và **vắng hẳn** với driver bên thứ ba mà ranh giới này cũng phục vụ. 🔴 **`rateHz` KHÔNG đổi nghĩa và KHÔNG đổi giá trị** — đó là điều kiện DỪNG của nhiệm vụ và nó không bị chạm. 🔴 **Nửa bất lợi, viết ngay cạnh:** chỗ lệch **4,17 %** của `WelderSim` **không được tạo ra và cũng không được sửa** ở đây (phép chuyển tính đúng cái `t` mà một bên tiêu thụ tuân hợp đồng đã tính hôm nay) — **nhưng nó chuyển `t` từ NGẦM sang ĐÃ VIẾT RA**, nên sửa chỗ lệch ấy về sau là **đổi những con số đã xuất bản**, không còn là đổi một tài liệu. Nhân chứng **MỚI** `WaveformPairAtTheWireBoundaryTests` (bảy `[Fact]`): gỡ phép chuyển ⇒ **BỐN đỏ**; trả kiểu hàng khác `double[]` ⇒ **SÁU đỏ**; 🔴 `WaveformSeriesRowShapeContractTests` **VẪN XANH, và đó là im lặng, không phải chấp thuận** — nó nhìn thượng nguồn |
 | 15 | `DropOldest` + một cảnh báo "queue saturated" không với tới được — **BA chỗ**, và chỗ **thứ tư** đã giải xong | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Gộp phát hiện đợt 6 (`HistorianWriter`) và đợt 8 (`UnsPublisher`) làm **MỘT mục**, và phép liệt kê thêm chỗ **thứ ba chưa ai báo**: `UnsBridge`. `AlarmNotifier` cùng chế độ nhưng **đã đúng** → 🔨 **QUYẾT: ÁP MẪU ĐÃ GIẢI XONG CỦA `AlarmNotifier` VÀO CẢ BA CHỖ** (2026-08-20, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8 — mục này không thuộc ba mục đổi thứ người ngoài đang dựa vào). 🔴 **`FullMode` **KHÔNG** đổi: `DropOldest` ở lại `DropOldest`** — thứ đổi là **kế toán**, không phải chính sách. **Đã thi hành, AP-1 (2026-08-21)**: `itemDropped` được truyền ở cả ba, cú đuổi được **đếm** và được **cảnh báo bằng lời SATURATION**, còn nhánh `if (!TryWrite(...))` — vốn chỉ với tới được khi writer ĐÃ ĐÓNG — được đếm riêng và viết lại thành lời **SHUTDOWN**. 🔴 **Tiền đề của phán quyết được KIỂM LẠI trên mã và nó ĐỨNG VỮNG**: `AlarmNotifier` thật sự đã giải xong (nó truyền `itemDropped`, phân loại năm đường rơi, log sau khi nhả khoá). 🔴 **Nhưng MỘT mảnh của hình dạng ấy KHÔNG mang sang được, và nói ra chứ không lặng lẽ bỏ:** phép *bracket* `Evicted` quanh `TryWrite` trong `EmitLocked` chỉ chính xác vì mọi thứ ở đó chạy dưới `_gate`; ba lớp EdgeCore **cố ý không có khoá nào trên đường enqueue**, nên cảnh báo được phát **từ trong chính callback `itemDropped`** — chính xác vì một lý do khác (callback chạy đồng bộ, một lần cho mỗi phần tử bị đuổi, và nhận đúng phần tử ấy). 🔴 **`UnsBridge.DroppedTotal` KHÔNG bị nới nghĩa**, và bề mặt ĐỌC nó được nêu tên: `GET /v1/site`, trang `/site`, **và bản ghi resync GIỮ LẠI phát lên broker của Site — một hợp đồng dây bên thứ ba tiêu thụ**. Cú đuổi kênh có tên riêng, `UnsBridge.ForwardQueueStats.Evicted`. 🔴 **Dư lượng còn mở, ghi vào mục chứ không để trong báo cáo: bộ đếm mới KHÔNG có trên `/v1/site` lẫn trang `/site`** — thêm một trường ở đó là **đổi payload đã xuất bản**, đúng thứ nằm ngoài uỷ quyền mục này. Trên hình thái cài Windows Service (README §"đường mất dữ liệu", mục 4) log **không có nơi nào để đi**, nên trên hình thái ấy mất mát này **được đếm nhưng operator vẫn chưa nhìn thấy được**. Xem Phần III |
-| 16 | `OeeCalculator` — Quality **không** kẹp `[0,1]` | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. Biên hôm nay do **hai vị từ SQL ở một file khác** giữ |
+| 16 | `OeeCalculator` — Quality **không** kẹp `[0,1]` | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. Biên hôm nay do **hai vị từ SQL ở một file khác** giữ. 🔴 **AQ-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG trong brief đã NỔ, không một dòng `OeeCalculator` bị sửa, mục Ở LẠI PHẦN I.** Câu ngay trên **giữ nguyên văn**; cái được rút, tại chỗ và kèm ngày, là **chỉ** mệnh đề *"trên đường đang ship hôm nay con số ấy KHÔNG THỂ XẢY RA"* trong thân mục. **Đo được:** `AggregateForOeeAsync` chạy **bốn câu lệnh rời nhau trên một connection KHÔNG có transaction**; SQLite ở WAL cho mỗi câu lệnh **một ảnh chụp riêng**; nên hai vị từ lồng nhau chỉ giữ **trong một ảnh chụp**, và một `AppendResultsAsync` song song commit giữa câu `total` và câu `good` làm `GoodCount > TotalCount`. **Ba nhánh, đối chứng nằm trong phép đo:** không người ghi → **93 291 lần đọc, 0 vi phạm**; **10 hàng/giây — xấp xỉ nhịp của chính `fleet.json` đang ship** → **87 vi phạm**, Quality tới **1.00333**; người ghi nóng → **1 112 vi phạm**, Quality tới **1.00888**. **Nên một cái kẹp ĐỔI một con số OEE đã báo cáo, và đó là một trong ba mục chủ sở hữu KHÔNG uỷ quyền.** 🔴 **Và phép đo ĐỔI CÂU HỎI: mục mở ra như một câu hỏi phòng thủ chiều sâu, đo được nó là một khuyết tật ĐANG SỐNG — `Math.Clamp` không sửa nó, chỉ che nó. Bản sửa thật nằm ở `AggregateForOeeAsync` (đọc hai `COUNT(*)` trong MỘT transaction), tức một file khác, một rủi ro khác — LỰA CHỌN THỨ TƯ mà ba lựa chọn của mục không có.** 🔴 **Kèm một khẳng định đã công bố THỨ HAI vẫn đang sai và chưa được rút:** `web/src/lib/api.ts` nói `quality`/`oee` *"never … over 1 (`OeeCalculator.Calculate` clamps/guards every division)"* — đúng câu AL-1 đã rút trên doc lớp ngày 2026-08-20, ở **bề mặt khách hàng đọc**; một **bản kiểm kê THIẾU**, AQ-1 **không sửa** vì ngoài uỷ quyền |
 | 17 | `QueryTelemetryAsync` không áp cổng xuất xứ, và **không áp được** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. `historian_telemetry` **không có cột `is_fabricated`**; `GET /v1/historian/telemetry` **không nhận `includeFabricated`** |
 | 18 | Cổng Demo gác **CHẾ ĐỘ**, không gác **BỘ SINH GIẢ** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7. `PUT /v1/mode` từ chối Demo bằng 400; `POST /v1/scenario {"networkOutage":true}` **không bị gác** |
 | 19 | `TransportCoordinator.Auto` và `.Demo` — hai trong bốn bộ truy cập công bố **không ai đọc** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7 (hai khuyết tật của brief, **một** lớp, **một** quyết định) |
 | 20 | `TransportCoordinator` không có đường tắt máy ⇒ `LiveTransport` cuối cùng không bao giờ được dispose | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7. **Không phải một khẳng định rò rỉ trên sản xuất** — xem nửa thứ hai trong mục |
-| 21 | `MappingProfileResolver` ghép một chuỗi của vận hành viên vào một đường dẫn **không giới hạn** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7 |
+| 21 | `MappingProfileResolver` ghép một chuỗi của vận hành viên vào một đường dẫn **không giới hạn** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7 → 🔨 **QUYẾT: GIAM VÀO THƯ MỤC HỒ SƠ** (2026-08-21, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8 và mục 15 — mục này không đổi payload MQTT, không đổi hình dạng dây, không đổi con số OEE nào). **Đã thi hành, AQ-1 (2026-08-21)**: `ResolveOne` chuẩn hoá **tuyệt đối** cả hai vế (`Path.GetFullPath`) rồi đòi đường dẫn ghép nằm trong gốc **cộng dấu phân tách cuối**; **không chỗ nào lọc `..` bằng chuỗi**. Từ chối rơi về `MappingProfile.ForClass` — **cùng chỗ rơi** ba nguyên nhân cũ — kèm thông điệp trên `logWarning` nêu tên máy, giá trị, thư mục giới hạn và **một giá trị hợp lệ trông thế nào**. 🔴 **Bản giam CỐ Ý không hẹp hơn mức cần: thư mục CON của thư mục mapping vẫn nạp được**, vì chính mục này nêu thư mục con là bản triển khai một bản sửa không được làm hỏng. 🔴 **Hai câu của mục KHÔNG sống sót qua phép đo, và cả hai được ghi ở thân mục:** (i) *"chuỗi ấy đến từ `fleet.json`"* — **đúng, và nay ĐO ĐƯỢC**: cả sáu chỗ dựng `MachineDescriptor` dưới `src/` cộng `BuildDefaultFleet` đều truyền `MappingProfile: null`, nên **không route/connector/biến môi trường nào** đặt được trường này; (ii) *"`fleet.json` … nằm **cục bộ**"* — **thiếu**: `ResolveFleetPath` nhận **`--fleet <path>` TRƯỚC** `AppContext.BaseDirectory`, nên "cục bộ" là mặc định chứ không phải ràng buộc. 🔴 **Biên của bản sửa, ghi chứ không giấu: biên là TỪ VỰNG** — một symlink **nằm trong** thư mục mapping trỏ ra ngoài **vẫn được đi theo**; và câu *"không bản triển khai hợp lệ nào bị làm hỏng"* chỉ đúng trên tập **repo này ở `HEAD`**, không phải đĩa của khách hàng. Xem Phần III |
 | 22 | Hai chuỗi đã xuất bản hứa một ack **thất bại** mà `DemoTransport` không bao giờ trả | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 7 |
 | 23 | `IUnsPublisher.PublishBirth`/`PublishDeath` — có cài đặt, **không caller nào dưới `src/`** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 8. **Chưa DBIRTH nào từng được phát** |
 | 24 | `ModbusOptions`/`OpcUaOptions` — hằng số TÊN biến môi trường công khai | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 8 🔴 **và phép đo của đợt 8 SAI ở một nửa: KHÔNG host sản xuất nào viết cứng chuỗi ấy, và HAI hằng số ĐANG được EngineApi gọi tên.** Xem mục |
@@ -236,6 +236,13 @@ một con số ước lượng đặt ở đây sẽ **đọc như một phép �
 > không phải hai, rằng có chỗ **thứ tư** đã giải xong, rằng khẳng định ấy đã được mở mã ra xác nhận lại
 > ở SHA `3a614f1c` — **vẫn đúng từng chữ**, và AP-1 đã đo lại chúng lần nữa trên mã trước khi sửa. Chỗ
 > đọc chúng nay là Phần III.
+>
+> 📎 **MỞ RỘNG LẦN HAI 2026-08-21 (AQ-1), cùng lý do và cùng kiểu.** Kể từ nhiệm vụ này, **mục 21
+> cũng không còn ở dưới đây** — đã quyết theo uỷ quyền và đã thi hành, đọc ở **Phần III**. **Mục 16
+> thì VẪN Ở ĐÂY**, và đó là một sự thật cần nói rõ chứ không để suy ra: AQ-1 được giao thi hành nó,
+> **điều kiện DỪNG trong brief đã nổ**, nên mục **không** được thi hành. Nó nay mang thêm một khối đo
+> ngày 2026-08-21 **bác một tiền đề của chính nó** và **đổi câu hỏi** chủ sở hữu đang được mời quyết —
+> đọc khối ấy trước khi quyết mục 16. Số mục còn chờ ở Phần I: **mười sáu** (16–20, 22–32).
 
 ## 16. `OeeCalculator` — hai trong ba tỉ số được kẹp `[0,1]`, cái thứ ba thì không, và biên hôm nay do một file KHÁC giữ
 
@@ -278,6 +285,102 @@ và đó là lý do nó là quyết định của anh chứ không phải một 
 sự trùng hợp của cách dựng truy vấn**. Ngày ai đó thêm nhà sản xuất `OeeInputAggregate` thứ hai —
 một store thay thế, một endpoint nhập, một bài test dựng thẳng — biên biến mất và **không dụng cụ
 nào trong repo này báo**.
+
+### 🔴 ĐÃ ĐO 2026-08-21 (AQ-1) — ĐIỀU KIỆN DỪNG ĐÃ NỔ. MỤC NÀY **KHÔNG ĐƯỢC THI HÀNH**, VÀ TIỀN ĐỀ TRUNG TÂM CỦA CHÍNH NÓ KHÔNG SỐNG SÓT QUA PHÉP ĐO
+
+Nhiệm vụ AQ-1 được giao thi hành mục này, **kèm một điều kiện DỪNG**: *nếu có một đầu vào sinh ra
+được HÔM NAY mà bản kẹp sẽ làm đổi giá trị, thì bản sửa đổi một con số OEE đã báo cáo — thứ chủ sở
+hữu không uỷ quyền — nên phải dừng và báo.* **Phép đo trả lời CÓ.** Không một dòng mã nào của
+`OeeCalculator` bị sửa. Mục **ở lại PHẦN I**.
+
+> 📎 **Ba chữ `🔴 CHỜ ANH` ở đầu mục giữ NGUYÊN VĂN và KHÔNG rút** — chúng vẫn đúng từng chữ: mục này
+> vẫn đang chờ chủ sở hữu, và nay nó chờ với **nhiều thông tin hơn**, không phải ít hơn.
+
+**Quần thể — LIỆT KÊ TRƯỚC, con số viết SAU.** Mọi nơi dựng `OeeInputAggregate`, mở trọn bằng
+`git grep --full-name -n "OeeInputAggregate" HEAD -- ':(top)'` **chạy từ gốc repo
+`D:\SOURCES\avi-aoi-sim`** (ghi lại thư mục, vì `:(top)` một mình không đủ — mục 32):
+
+*Sản xuất:* `SqliteHistorianStore.AggregateForOeeAsync` (`src/St4i.EdgeCore/Historian/SqliteHistorianStore.cs:684`).
+*Test, tất cả trong `tests/St4i.EdgeCore.Tests/Metrics/OeeCalculatorTests.cs`:* dòng 20 `(100,100)`,
+36 `(10,10)`, 48 `(0,0)`, 61 `(100,60)`, 74 `(100,100)`, 87 `(100,100)`, 97 `(100,100)`,
+107 `(90,81)`, 117 `(50,50)`.
+*Không dựng gì:* ba bản cài `IHistorianStore` giả — `FakeHistorianStore`
+(`tests/St4i.EdgeCore.Tests/Historian/HistorianWriterTests.cs:510`),
+`RunEventRecordingHistorianStore` (`tests/St4i.EngineApi.Tests/FleetHostGateCommitCompletionTests.cs:1393`),
+`FakeHistorianStore` (`tests/St4i.EngineApi.Tests/FleetHostHistorianWiringTests.cs:290`) — cả ba
+`throw new NotSupportedException()`, nên chúng nằm trong quần thể **người cài đặt** chứ không nằm
+trong quần thể **người dựng**.
+
+**Rồi mới đếm: MƯỜI chỗ dựng — một sản xuất, chín test.** Chín chỗ test: **không** chỗ nào sinh ra
+`GoodCount > TotalCount`. Chỗ sản xuất: **CÓ**.
+
+**Chỗ sản xuất sinh ra được, và đây là phép đo.** `AggregateForOeeAsync` mở **một** connection rồi
+chạy **bốn câu lệnh rời nhau** — probe của `ApplyRealPresenceGateAsync`, `COUNT(*)` cho total,
+`COUNT(*)` cho good, rồi `ComputeRunTimeAsync` — và **không có transaction nào bọc chúng**. SQLite ở
+WAL: mỗi câu lệnh ngoài transaction là **một ảnh chụp riêng**. Nên hai vị từ lồng nhau chỉ bảo đảm
+`good ⊆ not-Skip` **TRONG MỘT ẢNH CHỤP**; giữa câu total và câu good, một `AppendResultsAsync` đang
+chạy song song commit thêm hàng `Pass`, và good đếm được những hàng total chưa hề thấy.
+
+Đo trên `SqliteHistorianStore` thật, cửa sổ mà **mọi hàng đếm được đều là `Pass`** (nên
+`good = total` lúc đứng yên), ba nhánh, **cặp đối chứng nằm ngay trong phép đo**:
+
+| nhánh | reads | hàng ghi | lần `Good > Total` | thừa lớn nhất | Quality lớn nhất |
+|---|---|---|---|---|---|
+| **A — KHÔNG có người ghi** | 93 291 | 0 | **0** | 0 | — |
+| **B — 10 hàng/giây** | 192 374 | 229 | **87** | 1 | **1.00333…** |
+| **C — người ghi nóng** | 1 681 | 130 403 | **1 112** | 524 | **1.00888…** |
+
+**Nhánh A là đối chứng và nó xanh đúng chỗ phải xanh**: 93 291 lần đọc, **không một vi phạm** — hai
+vị từ lồng nhau *có* giữ, đúng như mục này nói, khi không có gì chuyển động. **Nhánh B là nhánh
+quyết định**: 10 hàng/giây là xấp xỉ nhịp của chính `fleet.json` đang ship — mười máy, mỗi máy quanh
+1 Hz — và ở nhịp ấy `AggregateForOeeAsync` **đã trả về `GoodCount > TotalCount` 87 lần**.
+
+**Nên: một đầu vào sinh ra được hôm nay ĐỔI GIÁ TRỊ dưới bản kẹp.** `Math.Clamp` sẽ biến một
+Quality `1.00333` đã báo cáo thành `1.00000`. Đó là **đổi một con số OEE đã báo cáo**, và đó chính
+là điều kiện dừng. **DỪNG.**
+
+**Điều này BÁC một tiền đề của chính mục này, và nói ra là bắt buộc.** Mục viết ở trên:
+*"biên `[0,1]` vì thế được cưỡng chế trong SQL, ở một file khác"* và *"trên đường đang ship hôm nay
+con số ấy KHÔNG THỂ XẢY RA"*. **Nửa sau là sai, đo được.** Câu đúng hẹp hơn: biên được cưỡng chế bởi
+hai vị từ lồng nhau **cộng với** sự vắng mặt của một commit trong khoảng vài chục micro-giây giữa
+hai câu `SELECT` — và sự vắng mặt ấy **không được cưỡng chế bởi gì cả**. Hai câu trên **giữ nguyên
+văn, không xoá**; cái được rút là **chỉ mệnh đề *"không thể xảy ra"***, rút tại chỗ, 2026-08-21.
+
+🔴 **Và nó đổi CÂU HỎI chủ sở hữu đang được mời quyết.** Mục này mở ra như một câu hỏi về **phòng
+thủ chiều sâu** — *"có nên kẹp một thứ chưa hỏng bao giờ không"*. Phép đo nói nó là một câu hỏi về
+**một khuyết tật đang sống**: con số sai **đang được sinh ra hôm nay**, và `Math.Clamp` **không sửa
+nó** — nó chỉ hạ `1.00333` xuống `1.00000` trong khi con số đúng là `1.00000` vì một lý do khác hẳn.
+**Bản sửa thật nằm ở `AggregateForOeeAsync`**: đọc hai `COUNT(*)` trong **một** transaction, để hai
+con số ra từ **một** ảnh chụp. Đó là một bản sửa ở **file khác**, với **rủi ro khác**, và nó **không
+nằm trong uỷ quyền của nhiệm vụ này**. Ba lựa chọn mục này nêu ở trên (kẹp / ném / để nguyên) vì thế
+**thiếu cái thứ tư, và cái thứ tư có lẽ là cái đúng**.
+
+**Bề mặt ĐỌC — §8.1(h5.4), nêu tên.** Một cái kẹp (hay một bản sửa transaction) đổi thứ **năm** chỗ
+này đọc: `HistorianEndpoints.GetOeeAsync` (`GET /v1/historian/oee`);
+`HistorianEndpoints.GetOeeFleetAsync` (`GET /v1/historian/oee/fleet`); bộ dựng **báo cáo PDF** trong
+cùng file, nơi `oee.Oee.ToString("P1")` in ra một phần trăm; `web/src/routes/Reports.tsx`, nơi
+`(oee.data.quality * 100).toFixed(1)` và `gaugePct={oee.data.oee * 100}` **đẩy kim đồng hồ vượt
+100 %**; và `web/src/lib/api.ts` qua `useOee`/`useOeeFleet`. **Gương UNS KHÔNG nằm trong tập này** —
+quét `src/St4i.EdgeCore/Site` và `src/St4i.EdgeService` không trả về chỗ nào mang OEE, nên nói "gương
+UNS bị ảnh hưởng" sẽ là nói quá.
+
+🔴 **Một khẳng định đã công bố THỨ HAI vẫn đang sai, và AL-1 đã sửa đúng chỗ thứ nhất mà bỏ sót chỗ
+này.** `web/src/lib/api.ts` dòng ~1117 nói về `OeeResultDto`: *"`availability`/`performance`/
+`quality`/`oee` are fractions in `[0, 1]` … never NaN/Infinity/over 1 (`OeeCalculator.Calculate`
+clamps/guards every division)"*. Đó là **đúng câu** mà AL-1 đã rút tại chỗ trên doc lớp
+`OeeCalculator` ngày 2026-08-20 — cùng một khẳng định, ở **bề mặt mà khách hàng đọc**, và nó **chưa
+được rút**. Đây là một **bản kiểm kê THIẾU**, không phải một khuyết tật mới; AQ-1 **không sửa nó**
+vì sửa văn ở bề mặt ấy không nằm trong uỷ quyền của nhiệm vụ này, và ghi ở đây để nó không mất.
+
+📎 **Và một chỗ brief của AQ-1 nói ngược với mã, ghi lại vì file này ghi cả hai chiều.** Brief nói
+*"doc lớp `OeeCalculator` khẳng định mọi tỉ số được kẹp… sau bản sửa nó thành ĐÚNG"*. Đo được: doc
+lớp ấy **hôm nay đã đúng rồi** — AL-1 đã rút khẳng định ấy tại chỗ ngày 2026-08-20, và chính mục này
+nói thế ở đoạn trên. Một bản kẹp sẽ làm **khối rút của AL-1** thành sai, chứ không làm doc thành
+đúng. Ai thi hành mục này về sau **phải rút khối rút ấy kèm ngày**, đừng xoá.
+
+**Bằng chứng:** `.superpowers/sdd/items-16-21/task-1-report.md`. Dụng cụ đo là một `[Fact]` tạm
+trong `tests/St4i.EdgeCore.Tests`, chạy rồi **xoá** — nó không ở trong suite và không được đếm vào
+`EXPECT_EDGECORE`; toàn văn nó nằm trong báo cáo.
 
 ---
 
@@ -441,35 +544,6 @@ hồi lúc thoát.
 
 **Nếu KHÔNG quyết định.** Hành vi giữ nguyên; chi phí ở lại trong các test host; và quy tắc sở hữu
 của lớp ở lại đúng một nửa, không có gì trong cây nói ra nửa còn lại.
-
----
-
-## 21. `MappingProfileResolver` ghép một chuỗi do vận hành viên viết vào một đường dẫn mà không giới hạn nó trong thư mục
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
-
-**Đo được cái gì.** Trong `MappingProfileResolver.ResolveOne`:
-`Path.Combine(mappingDir, descriptor.MappingProfile + ".json")`. Vế phải đến từ trường
-`mappingProfile` của từng entry trong `fleet.json` và **không được kiểm ký tự phân tách**, nên nó
-đặt tên một đường dẫn **tương đối với** thư mục ấy chứ không phải một file **bên trong** nó; một giá
-trị **tuyệt đối** sẽ thắng hẳn, theo đúng hành vi đã ghi của `Path.Combine`. `mappingDir` mặc định
-là `Path.Combine(AppContext.BaseDirectory, "mapping")` (`FleetCore.MappingDirectory`).
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Mapping.MappingProfileResolver.ResolveOne` và
-`.Build`; `St4i.EdgeCore.Fleet.FleetCore.MappingDirectory`; trường `mappingProfile` trong `fleet.json`;
-`St4i.EdgeCore.Mapping.MappingProfile.FromJson`.
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* đây là một sự thật về **cơ chế**, và nó là loại sự thật nên được quyết chứ không nên
-để mặc: một trường cấu hình đọc như một cái tên đang hành xử như một đường dẫn.
-*Chiều ngược, và nó là lý do mục này nhỏ:* `fleet.json` do **vận hành viên viết** và nằm **cục bộ**;
-thứ duy nhất tới được là một file JSON rồi bị deserialize thành `MappingProfile` — **không có thực
-thi và không có phép ghi**. Trên một máy mà kẻ tấn công đã sửa được `fleet.json`, họ đã có nhiều thứ
-tệ hơn. Và **giới hạn nó lại đổi hành vi** cho bất kỳ bản triển khai nào đang hợp lệ dùng một thư
-mục con.
-
-**Nếu KHÔNG quyết định.** Hành vi giữ nguyên. Cái mất là một câu trả lời ghi lại được cho câu hỏi
-*"trường này là một TÊN hay một ĐƯỜNG DẪN"* — câu hỏi sẽ được hỏi lại mỗi lần ai đó đọc lớp này.
 
 ---
 
@@ -5661,6 +5735,157 @@ chứ không chép cái đúng. Đây đã là lần thứ **ba** một đợt t
 >
 > **Bằng chứng:** `scripts/verify-suites.sh` khối `TASK AP-1` ngay trên `EXPECT_EDGECORE`;
 > `.superpowers/sdd/item15-dropoldest/task-1-report.md`.
+
+---
+
+## 21. `MappingProfileResolver` ghép một chuỗi do vận hành viên viết vào một đường dẫn mà không giới hạn nó trong thư mục
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AM-1 (đợt 7), xác nhận lại trên mã.
+
+> 📎 **Ba chữ `🔴 CHỜ ANH` ngay trên giữ NGUYÊN VĂN, RÚT 2026-08-21 (AQ-1)** — không phải vì
+> chúng từng sai, mà vì chúng đã hết đúng: mục này được **điều phối viên quyết theo uỷ quyền** ngày
+> 2026-08-21 và đã **thi hành** cùng ngày. Phần còn lại của dòng — *"Mở 2026-08-20 (AO-1). Đo bởi AM-1
+> (đợt 7), xác nhận lại trên mã"* — **KHÔNG rút**: nó là hồ sơ xuất xứ và vẫn đúng từng chữ.
+
+**Đo được cái gì.** Trong `MappingProfileResolver.ResolveOne`:
+`Path.Combine(mappingDir, descriptor.MappingProfile + ".json")`. Vế phải đến từ trường
+`mappingProfile` của từng entry trong `fleet.json` và **không được kiểm ký tự phân tách**, nên nó
+đặt tên một đường dẫn **tương đối với** thư mục ấy chứ không phải một file **bên trong** nó; một giá
+trị **tuyệt đối** sẽ thắng hẳn, theo đúng hành vi đã ghi của `Path.Combine`. `mappingDir` mặc định
+là `Path.Combine(AppContext.BaseDirectory, "mapping")` (`FleetCore.MappingDirectory`).
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Mapping.MappingProfileResolver.ResolveOne` và
+`.Build`; `St4i.EdgeCore.Fleet.FleetCore.MappingDirectory`; trường `mappingProfile` trong `fleet.json`;
+`St4i.EdgeCore.Mapping.MappingProfile.FromJson`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* đây là một sự thật về **cơ chế**, và nó là loại sự thật nên được quyết chứ không nên
+để mặc: một trường cấu hình đọc như một cái tên đang hành xử như một đường dẫn.
+*Chiều ngược, và nó là lý do mục này nhỏ:* `fleet.json` do **vận hành viên viết** và nằm **cục bộ**;
+thứ duy nhất tới được là một file JSON rồi bị deserialize thành `MappingProfile` — **không có thực
+thi và không có phép ghi**. Trên một máy mà kẻ tấn công đã sửa được `fleet.json`, họ đã có nhiều thứ
+tệ hơn. Và **giới hạn nó lại đổi hành vi** cho bất kỳ bản triển khai nào đang hợp lệ dùng một thư
+mục con.
+
+**Nếu KHÔNG quyết định.** Hành vi giữ nguyên. Cái mất là một câu trả lời ghi lại được cho câu hỏi
+*"trường này là một TÊN hay một ĐƯỜNG DẪN"* — câu hỏi sẽ được hỏi lại mỗi lần ai đó đọc lớp này.
+
+### ✅ ĐÃ THI HÀNH 2026-08-21 (AQ-1) — đường dẫn đã bị giam, và **hai câu của mục này không sống sót qua phép đo**
+
+**Bản sửa.** `MappingProfileResolver.ResolveOne` chuẩn hoá **tuyệt đối** cả thư mục hồ sơ lẫn đường
+dẫn ghép (`Path.GetFullPath`) rồi đòi đường dẫn ghép phải bắt đầu bằng gốc **cộng một dấu phân tách
+đứng cuối** — dấu phân tách ấy là để một thư mục anh em tên `mapping-archive` không bị nhận nhầm là
+con của `mapping`. **Không có chỗ nào lọc `..` hay dấu phân tách ra khỏi chuỗi** — đó là cách sai
+kinh điển, và bài test `..` cố ý chạy **cả hai cách viết** (`../` và `..\`) đúng để một luật chuỗi
+không thể vượt qua nó. Một giá trị đi ra ngoài bị **TỪ CHỐI** trước khi chạm tới hệ thống file, rơi
+về `MappingProfile.ForClass` — **cùng chỗ rơi** ba nguyên nhân cũ đã rơi — kèm một thông điệp trên
+`logWarning` nêu tên máy, giá trị đã viết, thư mục giới hạn, và **một giá trị hợp lệ trông thế nào**.
+
+**Vì sao `logWarning` chứ không `logError`:** `logError` mang một `Exception`, một lần từ chối
+**không có** exception nào, và bịa ra một cái cho vừa khuôn là một lời nói dối tệ hơn.
+
+**Mắt xích — nêu bằng TÊN, từ chuỗi của vận hành viên tới `Path.Combine`.**
+`fleet.json` (trường `mappingProfile` của từng entry) → `FleetCore.ResolveFleetPath` (đối số dòng
+lệnh `--fleet <path>`, **nếu không có** thì `Path.Combine(AppContext.BaseDirectory, "fleet.json")`) →
+`FleetConfig.Load` → `MachineDescriptor.MappingProfile` → `FleetCore.BuildStartPlan` →
+`MappingProfileResolver.Build` (với `FleetCore.MappingDirectory` =
+`Path.Combine(AppContext.BaseDirectory, "mapping")`) → `MappingProfileResolver.ResolveOne` →
+`Path.Combine(mappingDir, descriptor.MappingProfile + ".json")` → `File.Exists` / `File.ReadAllText`
+→ `MappingProfile.FromJson`. `FleetCore.StartLocked` gọi `Build` **lần thứ hai** cho những descriptor
+đến muộn (J-1), qua đúng mắt xích ấy.
+
+📎 **Mục này nói `FleetCore.MappingDirectory` như thể nó là một mặc định; đo được nó là một
+`private static readonly` và `Build` **không có** tham số mặc định nào** — mọi người gọi phải truyền
+thư mục vào. Sai lệch nhỏ, ghi để người sau không đi tìm một mặc định không tồn tại.
+
+🔴 **CÂU THỨ NHẤT KHÔNG SỐNG SÓT — nhưng nó sai theo chiều LÀM MỤC NÀY MẠNH HƠN, không yếu đi.**
+Mục nói chuỗi ấy *"đến từ `fleet.json`"*. Đã mở **trọn tập** những chỗ dựng `MachineDescriptor` dưới
+`src/`: `ConnectorConfigValidation` (hai chỗ), `OnboardingFleetJoin`, `RtuBusConfiguration`,
+`Program.cs` (hai chỗ) — **cả sáu truyền `MappingProfile: null`**, và `FleetCore.BuildDefaultFleet`
+truyền `null` cho cả mười máy. Nên **`fleet.json` đúng là nguồn DUY NHẤT** của một giá trị khác
+`null`: **không** route HTTP nào, **không** connector nào, **không** biến môi trường nào đặt được
+trường này. Câu của mục **đúng**, và bây giờ nó **đo được** thay vì được nhận.
+
+🔴 **CÂU THỨ HAI KHÔNG SỐNG SÓT, và đây là chỗ mục này nói thiếu.** Mục viết: *"`fleet.json` do vận
+hành viên viết và nằm **cục bộ**"*. Đo được `ResolveFleetPath` nhận **`--fleet <path>` trước tiên**,
+trước cả `AppContext.BaseDirectory`. Nên "cục bộ" là **hành vi mặc định**, không phải một ràng buộc:
+ai khởi chạy tiến trình chọn được file roster ở **bất kỳ đâu**, kể cả một thư mục ghi được bởi người
+dùng thường trong khi thư mục `mapping` vẫn nằm dưới `%ProgramFiles%`. Đó là cấu hình duy nhất mà
+mục này **thật sự** đáng lo, và mục không nêu nó.
+
+**Ai ghi được `fleet.json` trên một bản cài thật — hai chiều, vì viết một chiều là nửa sự thật.**
+Đọc mục 30 trước, đúng như brief yêu cầu, và nó đổi mức nghiêm trọng **theo cả hai chiều**:
+*Chiều làm nhẹ:* mục 30 đo được `INSTALLFOLDER` nằm dưới `ProgramFiles6432Folder`, và **khác** bốn
+file store mà mục 30 nói *không* được git theo dõi, `fleet.json` **CÓ** được theo dõi và **CÓ** đi
+vào bản publish (`St4i.EngineApi.csproj`:
+`<None Include="..\..\fleet.json" CopyToOutputDirectory="PreserveNewest" Link="fleet.json" />`), nên
+trên một bản cài mặc định nó nằm **cạnh nhị phân dưới `%ProgramFiles%`**. Ghi vào đó **đòi nâng
+quyền**. Và ai nâng được quyền để ghi `fleet.json` thì **cũng ghi được các DLL nằm ngay cạnh** —
+nên với kẻ tấn công ấy, bản giam này **không mua được gì**. Đây là lý do mục này nhỏ, và mục nói
+đúng.
+*Chiều làm nặng, và mục 30 cũng nói ra:* trên **hai cách chạy phổ biến nhất hôm nay** — chạy từ thư
+mục build và chạy bản triển lãm — thư mục ấy **ghi được bởi người dùng thường**. Cộng với `--fleet`
+ở trên, tập "ai ghi được" **không** đóng lại ở "quản trị viên".
+
+**Nhưng cái mục này thực sự mua được KHÔNG phải là an ninh, và nói thẳng thì đúng hơn.** Thứ duy
+nhất tới được qua đường này là một file JSON bị deserialize thành `MappingProfile` — **không thực
+thi, không ghi**. Cái bản giam mua được là: (1) một câu trả lời **ghi lại được** cho câu hỏi ở tiêu
+đề mục — *trường này là TÊN*, đúng như `README` §291/§305 và doc của
+`MachineDescriptor.MappingProfile` **đã công bố từ đầu** (*"A profile NAME, not a path"*), nên bản
+sửa làm **mã khớp với văn đã xuất bản** chứ không đổi hợp đồng; và (2) một **thông điệp từ chối** ở
+chỗ trước đây im lặng nạp một file lạ.
+
+**Cái gì hỏng nếu giam nó — mở trọn tập TRONG REPO, và nêu rõ biên của tập ấy.** Mọi giá trị
+`mappingProfile` ở `HEAD`, liệt kê bằng `git grep --full-name -n -i 'mappingProfile"\s*:' HEAD --
+':(top)'` **chạy từ gốc repo `D:\SOURCES\avi-aoi-sim`**: mười một entry trong `fleet.json` (bảy tên
+trần, bốn `null`), hai trong `App.xaml.cs` (`null`), mười lăm trong các file test (`null`, và một
+`"default"`), một trong `FleetHostProductModeRosterTests.cs` (`null`). **Không một giá trị nào chứa
+dấu phân tách, đường dẫn tuyệt đối, hay `..`.** Và bảy file trong `mapping/` đều nằm **phẳng** trong
+thư mục ấy. Nên **không có bản triển khai hợp lệ nào trong repo bị bản giam làm hỏng.**
+🔴 **Biên của câu phủ định ấy, vì một câu phủ định tồn tại chỉ đúng nếu đã mở HẾT tập:** tập đã mở
+là **repo này ở `HEAD`**, không phải đĩa của khách hàng. Một `fleet.json` do khách hàng viết, không
+nằm trong repo, dùng đường dẫn tuyệt đối hay UNC — **AQ-1 không thấy được và không tuyên bố gì về
+nó**. Đó là rủi ro thật của bản sửa này và nó được ghi ở đây chứ không giấu.
+📎 **Và bản giam cố ý KHÔNG hẹp hơn mức cần:** một **thư mục con** của thư mục mapping
+(`mapping/vendor-a/preset`) **vẫn nạp được**, vì nó vẫn ở trong. Chính mục này nêu thư mục con là
+bản triển khai mà một bản sửa không được làm hỏng, nên nó có một bài test riêng.
+
+🔴 **Cái bản giam KHÔNG làm, nêu tên thay vì để người đọc suy ra.** Biên là **TỪ VỰNG**: một symlink
+hay junction **nằm trong** thư mục mapping mà trỏ ra ngoài thì `File.ReadAllText` vẫn đi theo, y như
+trước. `Path.GetFullPath` không phân giải link, và AQ-1 **không** thêm `File.ResolveLinkTarget` —
+phân giải link sẽ làm hỏng đúng những bản triển khai dùng symlink một cách hợp lệ, tức đúng thứ mục
+này bảo không được làm hỏng. So sánh dùng `OrdinalIgnoreCase` vì mọi project trong solution nhắm
+`net10.0-windows`; trên một hệ file phân biệt hoa thường luật này sẽ **quá lỏng**, không bao giờ quá
+chặt, và doc của chính hàm nói ra điều đó.
+
+**Nhân chứng ĐỎ ĐƯỢC + cặp đối chứng chạy TRỌN rồi hoàn nguyên.** Ba `[Fact]` thêm vào
+`tests/St4i.EdgeCore.Tests/MappingProfileResolverTests.cs`. Nhánh đối chứng: thay lời gọi giam bằng
+`var path = combined;` — **đúng biểu thức trước AQ-1** — dựng và chạy trọn bộ mười bài:
+* **Gỡ bản sửa:** **ĐỎ** `An_ABSOLUTE_mappingProfile_pointing_outside_the_mapping_directory_is_refused_and_warns_what_to_fix`
+  và **ĐỎ** `A_dotdot_mappingProfile_that_climbs_out_of_the_mapping_directory_is_refused_and_warns`; tám bài kia xanh.
+* **Đặt lại:** **10/10 xanh.** File được hoàn nguyên từ một bản chép byte lấy trước khi đột biến, và
+  `git diff` sau đó chỉ còn bản sửa cùng các bài test.
+🔴 **Bài thứ ba KHÔNG phải nhân chứng, và nói ra là bắt buộc.**
+`A_SUBDIRECTORY_of_the_mapping_directory_still_resolves_so_the_confinement_rejects_only_what_LEAVES`
+**xanh ở CẢ HAI nhánh, theo cấu tạo**. Nó không đo bản sửa; nó là cái trần — canh cho bản giam không
+bị vẽ chặt tới mức cũng chặn thư mục con. Một bài xanh hai phía không đo được gì **về bản sửa**, nên
+nó được mang theo nhưng **không được đếm là bằng chứng**.
+
+**Hằng số dịch: `EXPECT_EDGECORE` 1165 → 1168 (+3), tổng 2776 → 2779.** `EXPECT_WARNINGS` **ở lại
+328**, đo trên một `-t:Rebuild` trọn sau bản sửa (`Build succeeded.`, `0 Error(s)`,
+`328 Warning(s)`, 15/15). Cả hai con số **được ĐO trước, VIẾT sau**. Lần rebuild thứ nhất bị **loại
+bỏ**: nó trả 14 lỗi `CS2001`, **toàn bộ** trong `St4iMachineSimulator_2whtdmpd_wpftmp.csproj` — đúng
+cuộc đua WPF mà `verify-suites.sh` đã ghi — với quần thể C# Dev Kit của VS Code thường trú suốt (tám
+`dotnet.exe`, cha là `Microsoft.VisualStudio.Code.ServiceHost`, lấy **hai mẫu** cách ~25 s và giống
+hệt nhau cả hai lần).
+
+**Cái KHÔNG bị đụng.** `OeeCalculator`: **không một dòng** — mục 16 **DỪNG**, xem khối đo
+2026-08-21 của nó. `IUnsPublisher`: không một dòng. Không tên thành viên công khai nào bị đổi hay
+thêm (hai thành viên mới đều `private static`). Không payload nào đổi. Không MSI, không
+`publish-desktop/`.
+
+**Bằng chứng:** `scripts/verify-suites.sh` khối `TASK AQ-1` ngay trên `EXPECT_EDGECORE`;
+`.superpowers/sdd/items-16-21/task-1-report.md`.
 
 
 ---
