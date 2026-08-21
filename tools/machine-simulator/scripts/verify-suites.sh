@@ -3487,7 +3487,46 @@ EXPECT_EDGESERVICE=52
 # 🔴 AR-1 (2026-08-21) raises this 1374 -> 1378 (+4). The four are itemised, with their control pair and
 # with why they are TWO PAIRS rather than four one-sided assertions, in the AR-1 block above
 # EXPECT_EDGECORE. Counted from a run (`Passed: 1378, Total: 1378`), not derived by addition.
-EXPECT_ENGINEAPI=1378
+#
+# 🔴 TASK AS-1 (.superpowers/sdd/items-27-28-29/task-1-brief.md — owner items 27/28/29) raises this
+# 1378 -> 1388 (+10) and MOVES NO OTHER TOTAL. Grand total 2786 -> 2796. ONE new file,
+# tests/St4i.EngineApi.Tests/OnboardingPasteKeyReachabilityTests.cs; nothing is rewritten, split or
+# deleted. 🔴 COUNTED FROM A RUN, NOT FROM `--list-tests` AND NOT BY ADDITION: `dotnet test` on this suite
+# printed `Passed: 1388, Total: 1388` with the new file in place. The other four suites are untouched —
+# AS-1 changes two files under src/St4i.EngineApi and none under src/St4i.EdgeCore,
+# src/St4i.EdgeService, src/St4i.Connector.* or src/St4iMachineSimulator, so EXPECT_ABSTRACTIONS,
+# EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE staying put is the check that this task did
+# not reach somewhere it had no business reaching, rather than a coincidence.
+#
+# THE TEN, AND WHAT EACH ONE IS WORTH — stated this way because six of them are green on both sides of the
+# first control pair, and a file that counted all six as witnesses would be five-sixths self-congratulation.
+#   + 1  OnboardingPasteKeyReachabilityTests.MismatchedCode_MessageNamesTheCodeTheEngineActuallyAuthenticatesAs
+#        🔴 THE ONLY RED-ABLE WITNESS IN THE SET (owner item 29). CONTROL PAIR 1, run whole and reverted:
+#        with OnboardingEndpoints.AnnotatePasteKeyReachability's body reverted to `return result;` — the
+#        BASE-commit behaviour — the filtered run was 1 failed / 9 passed, and the failure quotes the old
+#        message verbatim ("Pasted mk_ key stored for WELD-01", `Not found: "ENGINE-API-01"`). With the
+#        fix: 10 passed / 0 failed.
+#   + 6  MatchingCode_MessageIsLeftExactlyAsPasteKeyWroteIt, CaseDifferenceAloneIsNotAMismatch,
+#        ValidationFailure_IsLeftAlone, UnknownActiveCode_SaysNothing (a [Theory], 3 cases). These are
+#        GREEN ON BOTH SIDES of control pair 1 and therefore measure NOTHING about the change. They earn
+#        their place under CONTROL PAIR 2 instead — annotating unconditionally, i.e. deleting both guards —
+#        which took the filtered run to 6 failed / 4 passed, exactly these six. Also run whole and reverted.
+#   + 1  AnnotatedResult_KeepsEveryOtherMember — 🔴 green on BOTH control pairs, deliberately. It is the
+#        assertion that holds "no published payload changed shape": same record, same Step ("Claimed",
+#        which Onboarding.tsx and Settings.tsx both branch on), same MachineCode/MkKey/IsApproved. Only the
+#        human-readable Message VALUE grew a clause, and only on the mismatch branch.
+#   + 2  InspectorStreamBackfillCapTests (owner item 28) — 🔴 A CEILING GUARD, NOT A WITNESS, and labelled
+#        that way in the file itself: both are green on both sides of every control pair that leaves
+#        InspectorStreamEndpoint.BackfillEventCount at 200. Non-vacuity was RUN, not argued: a third
+#        mutation setting that constant to 600 turned both red (2 failed / 8 passed), then was reverted.
+#
+# EXPECT_WARNINGS and EXPECT_BUILD_NODES: re-measured on a full -t:Rebuild after this task, not assumed —
+# the numbers are stated at their own constants below. Nothing was suppressed for AS-1: no .editorconfig
+# change, no <NoWarn>, no #pragma left in the tree, no SuppressMessage. (Two #pragma warning disable CS0162
+# lines existed transiently INSIDE control mutation 1 and were removed with it; `git diff` at the branch
+# tip contains neither.) AS-1 also touches web/ (five files) — `npm run build` (`tsc -b && vite build`)
+# was run green, because this gate does not compile TypeScript.
+EXPECT_ENGINEAPI=1388
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

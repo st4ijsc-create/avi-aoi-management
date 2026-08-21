@@ -964,8 +964,15 @@ export const vi = {
     pasteCard: {
       title: "Dán khóa mk_ có sẵn",
       description: "Đã có khóa mk_ từ nơi khác (SDK, đồng nghiệp)? Lưu trực tiếp tại đây.",
+      // 🔴 Mục 29 — đây là biểu mẫu THỨ HAI trong ứng dụng này POST `/v1/onboarding/paste-key`. Mục chỉ
+      // nêu bản ở Settings; bản này mang đúng lời mời ấy nên cần đúng phép sửa ấy, nếu không bản sửa sẽ
+      // đúng ở một màn hình và sai ở màn hình kia.
+      reachabilityNote:
+        "Engine liên kết ra ngoài bằng một mã máy duy nhất — mã ở Cài đặt → Xác thực máy. Khóa lưu ở " +
+        "đây dưới một mã khác vẫn được lưu và giữ lại, nhưng Live/Auto sẽ không dùng tới nó cho tới khi " +
+        "mã ấy trở thành mã máy của engine.",
       codeLabel: "Mã máy",
-      codePlaceholder: "vd: SIM-0002",
+      codePlaceholder: "vd: ENGINE-API-01",
       keyLabel: "Khóa mk_",
       save: "Lưu khóa",
       saving: "Đang lưu…",
@@ -993,8 +1000,21 @@ export const vi = {
 
   inspector: {
     title: "Theo dõi API",
+    // 🔴 Mục 28 của chủ sở hữu — câu này từng hứa "MỌI request đội máy gửi đi", đúng cái mà pane này
+    // không làm được: ba cái trần âm thầm bỏ các hàng cũ nhất (xem `capsNote`). Mệnh đề đuôi
+    // "— {count} đã ghi nhận trong phiên này." được giữ NGUYÊN VĂN: đó là chỗ duy nhất trên trang in
+    // ra `stream.totalCount`, và `web/tests/03-inspector.spec.ts` bóc số ấy từ chính câu này.
     subtitle: (vars: Vars) =>
-      `Luồng trực tiếp, từng gói tin của mọi request đội máy gửi đi — ${vars.count} đã ghi nhận trong phiên này.`,
+      `Luồng trực tiếp, từng gói tin request đội máy gửi đi — ${vars.count} đã ghi nhận trong phiên này.`,
+    // 🔴 Mục 28 — GỌI TÊN các cái trần, không chỉ in giá trị của chúng. Toàn repo có BỐN; ba cái áp vào
+    // pane web này và là ba cái liệt kê ở đây. Cái thứ tư là vòng đệm riêng của vỏ WPF
+    // (`InspectorViewModel.MaxEvents`, 500) và không chặn thứ gì một trình duyệt nhìn thấy. Nêu mỗi
+    // 1000 sẽ tái tạo đúng lỗi cũ ở một tầng khác: đó là cái trần chặn SAU CÙNG.
+    capsNote:
+      "Có trần, không phải đầy đủ: một tab vừa mở hoặc vừa kết nối lại chỉ được phát lại tối đa 200 " +
+      "sự kiện, bản thân engine chỉ giữ 500 sự kiện gần nhất, và tab này giữ tối đa 1000 rồi bỏ cái cũ " +
+      "nhất của chính nó. Ngay sau khi tải lại trang thì 200 là cái chặn; qua một phiên dài thì 1000 " +
+      "mới là. Nút Xuất ghi ra CỬA SỔ này, không phải cả phiên.",
     status: {
       live: "Trực tiếp",
       paused: "Tạm dừng",
@@ -1088,7 +1108,15 @@ export const vi = {
       machineCodeHint: "Khóa mk_ đã lưu cho mã này sẽ được dùng khi Live/Auto kết nối server thật.",
       machineCodePlaceholder: "vd: ENGINE-API-01",
       pasteCodeLabel: "Mã máy",
-      pasteCodePlaceholder: "vd: SIM-0002",
+      // 🔴 Mục 28/29 — placeholder trước đây là "vd: SIM-0002", cố ý KHÁC với `machineCodePlaceholder`
+      // ngay bên trên, tức mời vận hành viên dán khóa cho một máy con. Engine liên kết ra ngoài bằng
+      // đúng MỘT danh tính (`FleetCore.UpdateSettings` → `CredentialStore.Load(_machineCode)`), nên
+      // chính lời mời ấy là khuyết tật. Placeholder giờ lặp lại ô bên trên, và `pasteCodeHint` nói tại sao.
+      pasteCodePlaceholder: "vd: ENGINE-API-01",
+      pasteCodeHint:
+        "Chỉ khóa lưu dưới mã máy ở trên — mã mà engine này dùng để xác thực — mới được dùng khi " +
+        "Live/Auto kết nối. Khóa lưu dưới một mã khác vẫn được lưu và giữ lại, nhưng không có gì dùng " +
+        "tới nó cho tới khi mã ấy trở thành mã máy của engine này.",
       pasteKeyLabel: "Khóa mk_",
       saveKey: "Lưu khóa",
       savingKey: "Đang lưu…",

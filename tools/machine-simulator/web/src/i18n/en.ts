@@ -977,8 +977,15 @@ export const en: Dictionary = {
     pasteCard: {
       title: "Paste an existing mk_ key",
       description: "Already have an mk_ key from elsewhere (SDK, a teammate)? Save it directly here.",
+      // 🔴 Owner item 29 — the SECOND form in this app that POSTs `/v1/onboarding/paste-key`. The item
+      // named only Settings' copy; this one carries the identical invitation and needed the identical
+      // correction, or the fix would have been true on one screen and false on the other.
+      reachabilityNote:
+        "The engine links outbound under a single machine code — the one in Settings → Machine " +
+        "authentication. A key saved here under any other code is stored and kept, but Live/Auto will " +
+        "not use it until that code becomes the engine's machine code.",
       codeLabel: "Machine code",
-      codePlaceholder: "e.g. SIM-0002",
+      codePlaceholder: "e.g. ENGINE-API-01",
       keyLabel: "mk_ key",
       save: "Save key",
       saving: "Saving…",
@@ -1006,8 +1013,22 @@ export const en: Dictionary = {
 
   inspector: {
     title: "API Inspector",
+    // 🔴 Owner item 28 — this used to promise "every request the fleet sends", which is the one thing
+    // this pane cannot deliver: three separate caps drop the oldest rows silently (see `capsNote`).
+    // The trailing "— {count} captured this session." clause is kept VERBATIM on purpose: it is the
+    // only readout of `stream.totalCount` on the page and `web/tests/03-inspector.spec.ts` parses this
+    // very sentence to get it.
     subtitle: (vars: Vars) =>
-      `Live, envelope-by-envelope feed of every request the fleet sends — ${vars.count} captured this session.`,
+      `Live, envelope-by-envelope feed of the requests the fleet sends — ${vars.count} captured this session.`,
+    // 🔴 Owner item 28 — the caps NAMED, not just their values printed. Repo-wide there are FOUR; three
+    // of them apply to this web pane and are the three listed here. The fourth is the WPF shell's own
+    // ring (`InspectorViewModel.MaxEvents`, 500) and does not bind anything a browser sees. Stating the
+    // 1000 alone would reproduce the original defect one layer down: it is the cap that binds LAST.
+    capsNote:
+      "Capped, not complete: a freshly opened or reconnected tab is replayed at most 200 events, " +
+      "the engine itself only ever keeps the last 500, and this tab holds at most 1000 before dropping " +
+      "its own oldest. Right after a reload the 200 binds; over a long session the 1000 does. Export " +
+      "writes this window, not the session.",
     status: {
       live: "Live",
       paused: "Paused",
@@ -1105,7 +1126,16 @@ export const en: Dictionary = {
       machineCodeHint: "The mk_ key saved for this code is used when Live/Auto connects to the real server.",
       machineCodePlaceholder: "e.g. ENGINE-API-01",
       pasteCodeLabel: "Machine code",
-      pasteCodePlaceholder: "e.g. SIM-0002",
+      // 🔴 Owner item 28/29 rule — placeholder used to read "e.g. SIM-0002", a code deliberately
+      // DIFFERENT from `machineCodePlaceholder` right above it, which invited the operator to stage a
+      // key for a sub-machine. The engine links outbound under exactly one identity
+      // (`FleetCore.UpdateSettings` → `CredentialStore.Load(_machineCode)`), so that invitation is the
+      // defect. The placeholder now echoes the field above and `pasteCodeHint` says why.
+      pasteCodePlaceholder: "e.g. ENGINE-API-01",
+      pasteCodeHint:
+        "Only the key stored under the machine code above — the one this engine authenticates as — is " +
+        "used when Live/Auto connects. A key saved under any other code is stored and kept, but nothing " +
+        "will use it until that code becomes this engine's machine code.",
       pasteKeyLabel: "mk_ key",
       saveKey: "Save key",
       savingKey: "Saving…",

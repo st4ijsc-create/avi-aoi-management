@@ -622,6 +622,9 @@ function PasteKeyCard({ onSaved }: { onSaved: (message: string, tone: LogTone) =
       bodyClassName="flex flex-col gap-3"
     >
       <p className="text-sm text-text-muted">{t("onboarding.pasteCard.description")}</p>
+      {/* 🔴 Owner item 29 — the second of the app's two paste-key forms. Item 29 named only Settings'
+          copy; both post the same route and both carried the same invitation, so both say it. */}
+      <p className="text-xs text-text-muted">{t("onboarding.pasteCard.reachabilityNote")}</p>
       <FormField label={t("onboarding.pasteCard.codeLabel")} labelEn={gloss("onboarding.pasteCard.codeLabel")} htmlFor="onb-paste-code">
         <Input
           id="onb-paste-code"

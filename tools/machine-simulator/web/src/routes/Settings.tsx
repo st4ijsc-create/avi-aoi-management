@@ -326,6 +326,11 @@ export default function Settings() {
           <Separator />
 
           <div className="flex flex-col gap-2">
+            {/* 🔴 Owner item 29 — this form and the `machineCodeLabel`/`machineCodeHint` pair above it
+                used to say two different things: the pair promises a SINGLE authenticating code, and
+                this form invited a key for a different one. The hint below closes that, on the screen
+                where the invitation is issued. */}
+            <p className="text-xs text-text-muted">{t("settings.auth.pasteCodeHint")}</p>
             <FormField label={t("settings.auth.pasteCodeLabel")} labelEn={gloss("settings.auth.pasteCodeLabel")} htmlFor="settings-paste-code">
               <Input
                 id="settings-paste-code"
