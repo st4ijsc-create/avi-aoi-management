@@ -1,4 +1,5 @@
 import { eq, and, desc, asc, or, isNull, ilike, inArray, SQL } from "drizzle-orm";
+import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "./connection";
 import { idsTrongPhamVi, trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
@@ -153,7 +154,7 @@ export async function updateProductionOrderQuantities(id: number, result: 'OK' |
   if (!db) throw new DbUnavailableError();
   
   const order = await getProductionOrderById(id);
-  if (!order) throw new Error("Production order not found");
+  if (!order) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, "Production order not found");
   
   const updates: Partial<InsertProductionOrder> = {
     completedQuantity: order.completedQuantity + 1,

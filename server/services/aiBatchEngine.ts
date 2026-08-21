@@ -1,4 +1,5 @@
 import { runInference } from "./aiInferenceEngine";
+import { appError } from "../_core/appError";
 import * as db from "../db/aiAdvanced";
 import { getAiModelById } from "../db/ai";
 import fs from "fs";
@@ -149,7 +150,7 @@ async function processBatchJob(jobId: number, modelId: number, concurrency: numb
  */
 export async function cancelBatchJob(jobId: number) {
   const job = await db.getBatchInferenceJob(jobId);
-  if (!job) throw new Error(`Batch job ${jobId} not found`);
+  if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "batchJob" }, `Batch job ${jobId} not found`);
   if (job.status !== "PENDING" && job.status !== "PROCESSING") {
     throw new Error(`Cannot cancel job in status ${job.status}`);
   }
@@ -172,7 +173,7 @@ export async function cancelBatchJob(jobId: number) {
  */
 export async function getBatchJobProgress(jobId: number) {
   const job = await db.getBatchInferenceJob(jobId);
-  if (!job) throw new Error(`Batch job ${jobId} not found`);
+  if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "batchJob" }, `Batch job ${jobId} not found`);
 
   const progress = job.totalItems > 0
     ? Math.round(((job.completedItems + job.failedItems) / job.totalItems) * 100)

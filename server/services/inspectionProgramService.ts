@@ -46,6 +46,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../db/connection";
@@ -141,7 +142,7 @@ export async function createRelease(input: CreateReleaseInput): Promise<Inspecti
     .from(productModels)
     .where(eq(productModels.id, input.productModelId))
     .limit(1);
-  if (!product) throw new Error(`Product model #${input.productModelId} not found`);
+  if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model #${input.productModelId} not found`);
 
   const allPoints = await d
     .select()
@@ -237,7 +238,7 @@ export async function getReleaseById(id: number): Promise<InspectionProgramRelea
 export async function submitForApproval(input: { releaseId: number; userId: number }): Promise<InspectionProgramRelease> {
   const d = await db();
   const target = await getReleaseById(input.releaseId);
-  if (!target) throw new Error(`Program release #${input.releaseId} not found`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, `Program release #${input.releaseId} not found`);
   if (target.status !== "draft") {
     throw new Error(`Chỉ bản nháp mới được gửi duyệt (trạng thái hiện tại: ${target.status}).`);
   }
@@ -261,7 +262,7 @@ export async function approveRelease(input: {
 }): Promise<InspectionProgramRelease> {
   const d = await db();
   const target = await getReleaseById(input.releaseId);
-  if (!target) throw new Error(`Program release #${input.releaseId} not found`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, `Program release #${input.releaseId} not found`);
   if (target.status !== "pending_approval") {
     throw new Error(`Chỉ bản đang chờ duyệt mới được duyệt (trạng thái hiện tại: ${target.status}).`);
   }
@@ -294,7 +295,7 @@ export async function rejectRelease(input: {
   }
   const d = await db();
   const target = await getReleaseById(input.releaseId);
-  if (!target) throw new Error(`Program release #${input.releaseId} not found`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, `Program release #${input.releaseId} not found`);
   if (target.status !== "pending_approval") {
     throw new Error(`Chỉ bản đang chờ duyệt mới bị từ chối (trạng thái hiện tại: ${target.status}).`);
   }
@@ -330,7 +331,7 @@ export async function releaseProgram(input: { releaseId: number; releasedBy: num
       .from(inspectionProgramReleases)
       .where(eq(inspectionProgramReleases.id, input.releaseId))
       .limit(1);
-    if (!target) throw new Error(`Program release #${input.releaseId} not found`);
+    if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, `Program release #${input.releaseId} not found`);
     if (target.status !== "approved") {
       throw new Error(`Chỉ bản đã duyệt mới được phát hành (trạng thái hiện tại: ${target.status}).`);
     }
@@ -552,8 +553,8 @@ export interface CompareResult {
 /** Diff two releases of the SAME product by id (a = base/older, b = compare/newer). */
 export async function compareReleases(aId: number, bId: number): Promise<CompareResult> {
   const [a, b] = await Promise.all([getReleaseById(aId), getReleaseById(bId)]);
-  if (!a) throw new Error(`Program release #${aId} not found`);
-  if (!b) throw new Error(`Program release #${bId} not found`);
+  if (!a) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, `Program release #${aId} not found`);
+  if (!b) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, `Program release #${bId} not found`);
   if (a.productModelId !== b.productModelId) {
     throw new Error("Chỉ so sánh được hai bản phát hành của cùng một sản phẩm.");
   }

@@ -20,6 +20,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, desc, eq } from "drizzle-orm";
+import { appError } from "../../_core/appError";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import {
@@ -170,7 +171,7 @@ export async function releaseVersion(
   // back cleanly (never leaves the code with two released or zero released versions).
   return d.transaction(async (tx) => {
     const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, recipeId)).limit(1);
-    if (!target) throw new Error(`Recipe #${recipeId} not found`);
+    if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${recipeId} not found`);
 
     // Row-lock ALL versions sharing this code → serialize concurrent promoters.
     await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");
@@ -210,7 +211,7 @@ export async function archiveVersion(
 ): Promise<{ recipe: MachineRecipe; event: RecipeLoadLog }> {
   requireFlag();
   const target = await getRecipeById(recipeId);
-  if (!target) throw new Error(`Recipe #${recipeId} not found`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${recipeId} not found`);
   await dbArchiveRecipe(recipeId);
   const recipe = { ...target, status: "archived" as const };
   const event = await recordEvent("archive", recipe, { performedBy, ...tenant });
@@ -235,7 +236,7 @@ export async function rollbackToVersion(
   // rollback. Serialized + crash-safe.
   return d.transaction(async (tx) => {
     const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, toRecipeId)).limit(1);
-    if (!target) throw new Error(`Recipe #${toRecipeId} not found`);
+    if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${toRecipeId} not found`);
 
     // Row-lock ALL versions sharing this code → serialize concurrent promoters.
     await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");
@@ -282,7 +283,7 @@ export async function recordLoad(
 ): Promise<{ recipe: MachineRecipe; event: RecipeLoadLog; deploymentId: number | null }> {
   requireFlag();
   const target = await getRecipeById(input.recipeId);
-  if (!target) throw new Error(`Recipe #${input.recipeId} not found`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${input.recipeId} not found`);
 
   let deploymentId: number | null = null;
   if (input.deploy) {

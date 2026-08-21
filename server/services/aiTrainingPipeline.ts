@@ -17,6 +17,7 @@
  */
 
 import * as db from "../db/aiAdvanced";
+import { appError } from "../_core/appError";
 import { getAiModelById, createModelVersion, updateModelVersion, getModelVersions, updateAiModel } from "../db/ai";
 import { getDb } from "../db/connection";
 import { modelVersions } from "../../drizzle/schema";
@@ -134,7 +135,7 @@ export async function runTrainingPipeline(jobId: number, options: PipelineOption
     await db.updateTrainingJob(jobId, { status: "PREPARING_DATA", startedAt: new Date(), progress: 5 });
 
     const job = await db.getTrainingJob(jobId);
-    if (!job) throw new Error("Training job not found");
+    if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingJob" }, "Training job not found");
 
     const dsCfg = (job.datasetConfig as any) ?? {};
     const classLabels: string[] = options.classLabels ?? dsCfg.classLabels ?? [];
@@ -389,7 +390,7 @@ export async function createDataset(options: {
  */
 export async function cancelTrainingJob(jobId: number) {
   const job = await db.getTrainingJob(jobId);
-  if (!job) throw new Error(`Training job ${jobId} not found`);
+  if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingJob" }, `Training job ${jobId} not found`);
   if (job.status === "COMPLETED" || job.status === "FAILED" || job.status === "CANCELLED") {
     throw new Error(`Cannot cancel job in status ${job.status}`);
   }

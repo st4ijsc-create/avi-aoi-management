@@ -39,20 +39,26 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * Ngân sách CHỈ ĐƯỢC GIẢM.
  * 1035 → 711 (lô 1): 324 chỗ họ "DB không sẵn sàng" trong `server/db/**`.
  * 711 →  629 (lô 2): 82 chỗ còn lại ở `server/services/**` + `server/_core/**` + `templateDb`.
+ * 629 →  601 (lô 3): 28 chỗ họ "X not found" mà thực thể ĐÃ CÓ trong từ điển
+ *   `errors.entity.*` (137 khoá, đủ vi/en/zh) → `appError("NOT_FOUND", "ENTITY_NOT_FOUND",
+ *   { entity })`. 64 chỗ "not found" còn lại cần ĐẶT TÊN thực thể mới — làm riêng,
+ *   để không vừa di trú vừa bịa từ vựng.
  * Cả hai lô đổi sang `DbUnavailableError` — lớp tự mang `appCode: "DB_UNAVAILABLE"`
  * (mã đã có sẵn, đã đủ ba bản dịch), nên client dịch được mà formatter không đổi dòng nào.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 629;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 601;
 
 /**
- * Trần riêng cho họ "DB không sẵn sàng" — để hai con số KHÔNG bù trừ cho nhau.
+ * Họ "DB không sẵn sàng": `407 → 83 → 1 → **0**` — nay là BẤT BIẾN, không phải ngân sách.
  *
- * 407 → 83 → **1**. Chỗ duy nhất còn lại là CỐ Ý:
- *   `configDriftService.ts:297` — `Adapter ${adapterId} not found (or database unavailable)`
- * Đó là lỗi *"không tìm thấy adapter"*, chỉ NHẮC tới khả năng DB sập như một lý do phụ;
- * đổi nó thành `DbUnavailableError` là khai sai nguyên nhân cho người đọc.
+ * Chỗ cuối cùng (`configDriftService.ts:297`,
+ * `Adapter ${adapterId} not found (or database unavailable)`) từng được ghi là ngoại lệ
+ * cố ý. Lô 3 xử nó theo hướng ĐÚNG HƠN: nó vốn là lỗi *"không tìm thấy adapter"* — chỉ
+ * NHẮC khả năng DB sập như lý do phụ — nên nay là
+ * `appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" })`.
+ * ⇒ Ngoại lệ biến mất vì nguyên nhân được gọi đúng tên, không phải vì ai đó nới trần.
  */
-const ALLOWED_DB_UNAVAILABLE_RAW = 1;
+const ALLOWED_DB_UNAVAILABLE_RAW = 0;
 
 const HO_DB = /Database not (available|connected|initialized)|DB not available|database unavailable|DB unavailable|db unavailable/i;
 
@@ -125,16 +131,16 @@ describe("F3 — `throw new Error(...)` ngoài server/routers (cổng cũ mù v�
     expect(con).toEqual([]);
   });
 
-  it("★★★ chỗ họ-DB DUY NHẤT còn lại phải đúng là chỗ đã nêu lý do", () => {
-    // Trần `= 1` mà không nói RÕ là chỗ nào thì nó là một ô trống cho nợ mới lẻn vào.
-    // Ca này khoá đích danh: đúng một chỗ, và đúng chỗ đó.
+  it("★★★ TOÀN BỘ server ngoài routers: 0 chỗ ném thô họ 'DB không sẵn sàng'", () => {
+    // Bất biến, không phải ngân sách. Ca này in ĐÍCH DANH file+câu khi đỏ — một con số
+    // trần không nói chỗ nào thì người sửa phải đi mò, và cổng khó chịu là cổng bị tắt.
     const con: string[] = [];
     for (const file of walkTs(SERVER)) {
       const src = readFileSync(file, "utf8");
       for (const m of src.matchAll(/throw new Error\((["'`])([^"'`]*)\1\)/g)) {
-        if (HO_DB.test(m[2])) con.push(`${file.replace(SERVER, "").split("\\").join("/")}`);
+        if (HO_DB.test(m[2])) con.push(`${file.replace(SERVER, "").split("\\").join("/")}: ${m[2]}`);
       }
     }
-    expect(con).toEqual(["/services/assetRegistry/configDriftService.ts"]);
+    expect(con).toEqual([]);
   });
 });

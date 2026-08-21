@@ -11,6 +11,7 @@
  */
 
 import path from "path";
+import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import fs from "fs";
 import crypto from "crypto";
@@ -325,7 +326,7 @@ export async function buildDataset(
   if (!db) throw new DbUnavailableError();
 
   const dataset = await dbAdvanced.getTrainingDataset(datasetId);
-  if (!dataset) throw new Error(`Training dataset ${datasetId} not found`);
+  if (!dataset) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingDataset" }, `Training dataset ${datasetId} not found`);
   if (dataset.modelId == null) throw new Error(`Dataset ${datasetId} has no modelId; cannot collect labeled data`);
 
   await db.update(trainingDatasets).set({ status: "PROCESSING", updatedAt: new Date() }).where(eq(trainingDatasets.id, datasetId));
@@ -591,7 +592,7 @@ export async function buildSegmentationDataset(
   if (!db) throw new DbUnavailableError();
 
   const dataset = await dbAdvanced.getTrainingDataset(datasetId);
-  if (!dataset) throw new Error(`Training dataset ${datasetId} not found`);
+  if (!dataset) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingDataset" }, `Training dataset ${datasetId} not found`);
 
   await db.update(trainingDatasets).set({ status: "PROCESSING", updatedAt: new Date() }).where(eq(trainingDatasets.id, datasetId));
 

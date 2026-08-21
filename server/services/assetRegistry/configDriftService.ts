@@ -29,6 +29,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash } from "node:crypto";
+import { appError } from "../../_core/appError";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { and, eq, asc } from "drizzle-orm";
 import type { ConfigSnapshotStatus } from "../../../drizzle/schema/assetRegistry";
@@ -294,7 +295,7 @@ export async function approveCurrentConfig(
   principalName?: string,
 ): Promise<AdapterDriftView> {
   const current = await loadAdapterCurrent(adapterId);
-  if (!current) throw new Error(`Adapter ${adapterId} not found (or database unavailable)`);
+  if (!current) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, `Adapter ${adapterId} not found (or database unavailable)`);
 
   const { getDb } = await import("../../db/connection");
   const { configSnapshots } = await import("../../../drizzle/schema");

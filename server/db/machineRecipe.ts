@@ -14,6 +14,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { and, desc, eq, getTableColumns } from "drizzle-orm";
 import { getDb } from "./connection";
@@ -153,7 +154,7 @@ export interface ApproveRecipeInput {
 export async function approveRecipe(input: ApproveRecipeInput): Promise<MachineRecipe> {
   const d = await db();
   const [target] = await d.select().from(machineRecipes).where(eq(machineRecipes.id, input.recipeId)).limit(1);
-  if (!target) throw new Error(`Recipe #${input.recipeId} not found`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${input.recipeId} not found`);
   // Phân tách nhiệm vụ: người tạo không được tự duyệt recipe của mình.
   if (target.createdBy != null && target.createdBy === input.approvedBy) {
     throw new Error("Segregation of duties — người tạo recipe không được tự duyệt; cần một người khác trình duyệt.");
@@ -213,7 +214,7 @@ export interface DeployRecipeInput {
  */
 async function deployWithinTx(tx: DbOrTx, input: DeployRecipeInput): Promise<RecipeDeployment> {
   const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, input.recipeId)).limit(1);
-  if (!target) throw new Error(`Recipe #${input.recipeId} not found`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${input.recipeId} not found`);
 
   // Row-lock ALL versions sharing this code → serialize concurrent promoters.
   await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");
@@ -272,7 +273,7 @@ export async function deployRecipe(input: DeployRecipeInput): Promise<RecipeDepl
     // a self-authored, un-reviewed recipe. Rollback re-deploys a PREVIOUSLY-active recipe
     // (already approved) and goes through deployWithinTx directly, so it is unaffected.
     const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, input.recipeId)).limit(1);
-    if (!target) throw new Error(`Recipe #${input.recipeId} not found`);
+    if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${input.recipeId} not found`);
     if (target.approvedBy == null) {
       throw new Error("Recipe chưa được trình duyệt (second-approver) — cần một người khác duyệt trước khi deploy.");
     }

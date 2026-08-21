@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { appError } from "../_core/appError";
 import { rethrowDbError, DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, asc, like, or, sql, isNull, isNotNull, gt, gte, inArray, SQL, type AnyColumn } from "drizzle-orm";
 import type { PhamViNguoiXem } from "./hierarchy";
@@ -1601,7 +1602,7 @@ export async function generateMsaObservationMatrix(studyId: number, options?: {
   if (!db) throw new DbUnavailableError();
 
   const study = await getMsaStudyById(studyId);
-  if (!study) throw new Error("MSA study not found");
+  if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
 
   const operatorCount = Number(study.operatorCount ?? 3);
   const partCount = Number(study.partCount ?? 10);
@@ -3289,7 +3290,7 @@ export async function setCadCandidateSelection(jobId: number, candidateIds: numb
  */
 export async function applyCadImportJob(jobId: number, appliedBy: number) {
   const job = await getCadImportJobById(jobId);
-  if (!job) throw new Error("CAD import job not found");
+  if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "cadImportJob" }, "CAD import job not found");
   if (job.status === "applied") return job.appliedPointCount ?? 0;
   const cands = await listCadImportCandidates(jobId);
   const selected = cands.filter((c) => c.selected);

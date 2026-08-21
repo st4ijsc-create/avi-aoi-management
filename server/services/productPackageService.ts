@@ -21,6 +21,7 @@
  * product between databases / sites. They are intentionally independent.
  */
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../db/connection";
@@ -117,7 +118,7 @@ export async function exportProductPackage(productModelId: number): Promise<Prod
     .from(productModels)
     .where(and(eq(productModels.id, productModelId), isNull(productModels.deletedAt)))
     .limit(1);
-  if (!model) throw new Error(`Product model ${productModelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model ${productModelId} not found`);
 
   const points = await db
     .select()

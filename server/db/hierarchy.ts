@@ -1,4 +1,5 @@
 import { eq, and, desc, like, or, sql, inArray, ne, lt, isNull, isNotNull, type SQL } from "drizzle-orm";
+import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { createHash, randomBytes } from "node:crypto";
 import { pgTable, serial, integer, varchar, timestamp, jsonb, index, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
@@ -1555,7 +1556,7 @@ export async function transitionMachineLifecycle(
   if (!db) throw new DbUnavailableError();
 
   const [machine] = await db.select().from(machines).where(eq(machines.id, id)).limit(1);
-  if (!machine) throw new Error("Machine not found");
+  if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
 
   const from = (machine.lifecycleStatus ?? "active") as MachineLifecycleStatus;
   if (from === to) {
@@ -2069,7 +2070,7 @@ export async function restoreMachine(id: number) {
   if (!db) throw new DbUnavailableError();
 
   const [machine] = await db.select().from(machines).where(eq(machines.id, id)).limit(1);
-  if (!machine) throw new Error("Machine not found");
+  if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
   if (machine.isActive) return; // already restored — idempotent
 
   const [holder] = await db.select({ id: machines.id, name: machines.name }).from(machines)

@@ -4,6 +4,7 @@
 // annotationRouters) need no change. Vision is delegated to
 // aiProviderRouter.describeImage (real output once the G2 vision sidecar is
 // wired; fallback text until then).
+import { appError } from "./appError";
 import {
   generateNarrative,
   generateInsightJson,
@@ -246,7 +247,7 @@ async function resolveImageUrlToBuffer(url: string): Promise<Buffer | null> {
   const key = url.replace(/^\/?uploads\//i, "").replace(/^\/+/, "");
   const resolved = resolveSafeImagePath(key);
   if (!fs.existsSync(resolved)) {
-    throw new Error(`Image not found for image_url: ${url}`);
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, `Image not found for image_url: ${url}`);
   }
   return fs.readFileSync(resolved);
 }
