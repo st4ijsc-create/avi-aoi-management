@@ -13982,7 +13982,15 @@
     "huy": "Hủy",
     "thaoTacThatBai": "Thao tác thất bại",
     "cacCanhBaoDaChon": "các cảnh báo đã chọn",
-    "xacNhanHangLoat": "Xác nhận hàng loạt"
+    "xacNhanHangLoat": "Xác nhận hàng loạt",
+    "nguonKhongCoAck": "Nguồn {{source}} không có thao tác xác nhận",
+    "nguonKhongCoResolve": "Nguồn {{source}} không có thao tác xử lý",
+    "bulkOk": "{{label}}: {{ok}}/{{total}} thành công",
+    "bulkPartial": "{{label}}: {{ok}}/{{total}} thành công — {{failed}} thất bại",
+    "ackGroup": "Xác nhận nhóm \"{{title}}\"",
+    "hienThem": "Hiện thêm ({{count}})",
+    "chonCanhBao": "Chọn {{title}}",
+    "xuLyNhom": "Xử lý \"{{label}}\""
   },
   "cmd": {
     "title": "Trung tâm điều hành hệ sinh thái",
@@ -18760,7 +18768,15 @@
     "cayPhanCapTooltip": "Site → nhà máy → chuyền → trạm → máy / robot",
     "thuGon": "Thu gọn",
     "moRong": "Mở rộng",
-    "chuaTongHopToanHe": "Chưa tổng hợp toàn hệ"
+    "chuaTongHopToanHe": "Chưa tổng hợp toàn hệ",
+    "xemChiTietNode": "Xem chi tiết {{name}}",
+    "nhaMayThietBi": "{{name}} — {{count}} thiết bị",
+    "nutCoChai": "Nút cổ chai: {{name}}",
+    "siteTreMat": "{{stale}} trễ dữ liệu · {{down}} mất kết nối",
+    "oeeSnapshot": "OEE {{source}} (snapshot) · năng lượng chưa tổng hợp",
+    "thietBiMa": "{{kind}} · {{code}}",
+    "robot": "Robot",
+    "may": "Máy"
   },
   "msd": {
     "advisoryMsdTrackingEnabledTat": "Advisory (MSD_TRACKING_ENABLED tắt)",

@@ -14002,7 +14002,15 @@
     "huy": "Cancel",
     "thaoTacThatBai": "Operation failed",
     "cacCanhBaoDaChon": "the selected alarms",
-    "xacNhanHangLoat": "Bulk acknowledge"
+    "xacNhanHangLoat": "Bulk acknowledge",
+    "nguonKhongCoAck": "Source {{source}} has no acknowledge action",
+    "nguonKhongCoResolve": "Source {{source}} has no resolve action",
+    "bulkOk": "{{label}}: {{ok}}/{{total}} succeeded",
+    "bulkPartial": "{{label}}: {{ok}}/{{total}} succeeded — {{failed}} failed",
+    "ackGroup": "Acknowledge group \"{{title}}\"",
+    "hienThem": "Show more ({{count}})",
+    "chonCanhBao": "Select {{title}}",
+    "xuLyNhom": "Resolve \"{{label}}\""
   },
   "cmd": {
     "title": "Ecosystem Command Center",
@@ -18780,7 +18788,15 @@
     "cayPhanCapTooltip": "Site → factory → line → station → machine / robot",
     "thuGon": "Collapse",
     "moRong": "Expand",
-    "chuaTongHopToanHe": "No system-wide rollup yet"
+    "chuaTongHopToanHe": "No system-wide rollup yet",
+    "xemChiTietNode": "View details for {{name}}",
+    "nhaMayThietBi": "{{name}} — {{count}} devices",
+    "nutCoChai": "Bottleneck: {{name}}",
+    "siteTreMat": "{{stale}} stale · {{down}} disconnected",
+    "oeeSnapshot": "OEE {{source}} (snapshot) · energy not rolled up",
+    "thietBiMa": "{{kind}} · {{code}}",
+    "robot": "Robot",
+    "may": "Machine"
   },
   "msd": {
     "advisoryMsdTrackingEnabledTat": "Advisory (MSD_TRACKING_ENABLED off)",

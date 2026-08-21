@@ -537,7 +537,7 @@ export default function OpsConsole() {
       case "andon": return ackAndonAsync({ id: a.id });
       case "predictive": return ackPredictiveAsync({ id: a.id });
       case "threshold": return ackThresholdAsync({ id: a.id });
-      default: return Promise.reject(new Error(`Nguồn ${a.source} không có thao tác xác nhận`));
+      default: return Promise.reject(new Error(t("opsConsole.nguonKhongCoAck", { source: a.source })));
     }
   }, [ackAndonAsync, ackPredictiveAsync, ackThresholdAsync]);
 
@@ -548,7 +548,7 @@ export default function OpsConsole() {
       case "andon": return resolveAndonAsync({ id: a.id });
       case "interlock": return resolveInterlockAsync({ id: a.id });
       case "mqtt": return resolveMqttAsync({ id: a.id });
-      default: return Promise.reject(new Error(`Nguồn ${a.source} không có thao tác xử lý`));
+      default: return Promise.reject(new Error(t("opsConsole.nguonKhongCoResolve", { source: a.source })));
     }
   }, [resolveAndonAsync, resolveInterlockAsync, resolveMqttAsync]);
 
@@ -575,8 +575,8 @@ export default function OpsConsole() {
     );
     markPending(keys, false);
     const ok = results.filter((r) => r.status === "fulfilled").length;
-    if (ok === items.length) toast.success(`${label}: ${ok}/${items.length} thành công`);
-    else toast.error(`${label}: ${ok}/${items.length} thành công — ${items.length - ok} thất bại`);
+    if (ok === items.length) toast.success(t("opsConsole.bulkOk", { label, ok, total: items.length }));
+    else toast.error(t("opsConsole.bulkPartial", { label, ok, total: items.length, failed: items.length - ok }));
     // Bỏ chọn những dòng đã xử lý THÀNH CÔNG; dòng lỗi giữ lại cho lần thử sau.
     const doneKeys = new Set(keys.filter((_, idx) => results[idx].status === "fulfilled"));
     setSelected((prev) => new Set([...prev].filter((k) => !doneKeys.has(k))));
@@ -592,7 +592,7 @@ export default function OpsConsole() {
     else void actSingle(a, "resolve");
   }, [actSingle]);
   const handleBulkAck = useCallback((g: AlertGroup) => {
-    void runBulk(g.items.filter((i) => !i.acknowledged), "ack", `Xác nhận nhóm "${g.title}"`);
+    void runBulk(g.items.filter((i) => !i.acknowledged), "ack", t("opsConsole.ackGroup", { title: g.title }));
   }, [runBulk]);
   const handleBulkResolveRequest = useCallback((g: AlertGroup) => {
     setConfirmTarget({ items: g.items, label: g.title });
@@ -1039,7 +1039,7 @@ export default function OpsConsole() {
                                   return next;
                                 })}
                               >
-                                {expanded ? "Thu gọn" : `Hiện thêm (${hidden})`}
+                                {expanded ? "Thu gọn" : t("opsConsole.hienThem", { count: hidden })}
                               </Button>
                             )}
                           </CardContent>
@@ -1154,7 +1154,7 @@ export default function OpsConsole() {
                                 className="size-5"
                                 checked={selected.has(a.key)}
                                 onCheckedChange={() => toggleSelect(a.key)}
-                                aria-label={`Chọn ${a.title}`}
+                                aria-label={t("opsConsole.chonCanhBao", { title: a.title })}
                               />
                             </TableCell>
                             <TableCell>
@@ -1437,7 +1437,7 @@ export default function OpsConsole() {
                   if (confirmTarget) {
                     const { items, label } = confirmTarget;
                     if (items.length === 1) void actSingle(items[0], "resolve");
-                    else void runBulk(items, "resolve", `Xử lý "${label}"`);
+                    else void runBulk(items, "resolve", t("opsConsole.xuLyNhom", { label }));
                   }
                   setConfirmTarget(null);
                 }}

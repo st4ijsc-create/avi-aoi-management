@@ -416,7 +416,7 @@ function TreeNode({
               type="button"
               className="-my-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title={t("commandCenter.xemChiTietThietBi", "Xem chi tiết thiết bị")}
-              aria-label={`Xem chi tiết ${node.name}`}
+              aria-label={t("commandCenter.xemChiTietNode", { name: node.name })}
               onClick={(e) => { e.stopPropagation(); onSelect(node.id); onOpenDevice(node); }}
             >
               <Info className="h-4 w-4" />
@@ -783,7 +783,7 @@ function CenterOverview({
       icon={<Factory className="h-4 w-4" />}
       title={
         factoryNode
-          ? `${factoryNode.name} — ${devices.length} thiết bị`
+          ? t("commandCenter.nhaMayThietBi", { name: factoryNode.name, count: devices.length })
           : t("cmd.selectFactory", "Select a factory")
       }
       action={
@@ -1262,7 +1262,7 @@ export default function CommandCenter() {
               label="WIP"
               value={wipVal}
               size="compact"
-              delta={kpi?.wip.value?.bottleneck ? `Nút cổ chai: ${kpi.wip.value.bottleneck}` : undefined}
+              delta={kpi?.wip.value?.bottleneck ? t("commandCenter.nutCoChai", { name: kpi.wip.value.bottleneck }) : undefined}
             />
           </div>
           <div title={t("commandCenter.canhBaoNghiemTrongCao", "Cảnh báo nghiêm trọng / cao đang hoạt động")}>
@@ -1288,7 +1288,7 @@ export default function CommandCenter() {
               label="Site"
               value={sitesReporting == null ? "—" : `${sitesReporting} / ${sitesTotal}`}
               size="compact"
-              delta={sitesStale + sitesDown > 0 ? `${sitesStale} trễ dữ liệu · ${sitesDown} mất kết nối` : undefined}
+              delta={sitesStale + sitesDown > 0 ? t("commandCenter.siteTreMat", { stale: sitesStale, down: sitesDown }) : undefined}
               tone={sitesDown > 0 ? "error" : sitesStale > 0 ? "warning" : "default"}
             />
           </div>
@@ -1313,7 +1313,7 @@ export default function CommandCenter() {
               size="compact"
               delta={
                 kpi?.oee.sourceLabel && kpi?.oee.available
-                  ? `OEE ${kpi.oee.sourceLabel} (snapshot) · năng lượng chưa tổng hợp`
+                  ? t("commandCenter.oeeSnapshot", { source: kpi.oee.sourceLabel })
                   : t("commandCenter.chuaTongHopToanHe", "Chưa tổng hợp toàn hệ")
               }
               tone={kpi?.oee.value?.oee != null && kpi.oee.value.oee < 60 ? "warning" : "default"}
@@ -1515,7 +1515,7 @@ export default function CommandCenter() {
           title={drawerDevice?.name ?? ""}
           description={
             drawerDevice
-              ? `${drawerDevice.kind === "robot" ? "Robot" : "Máy"} · ${drawerDevice.code}`
+              ? t("commandCenter.thietBiMa", { kind: drawerDevice.kind === "robot" ? t("commandCenter.robot", "Robot") : t("commandCenter.may", "Máy"), code: drawerDevice.code })
               : undefined
           }
         >

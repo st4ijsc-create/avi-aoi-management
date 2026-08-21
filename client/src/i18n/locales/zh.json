@@ -13785,7 +13785,15 @@
     "huy": "取消",
     "thaoTacThatBai": "操作失败",
     "cacCanhBaoDaChon": "已选中的告警",
-    "xacNhanHangLoat": "批量确认"
+    "xacNhanHangLoat": "批量确认",
+    "nguonKhongCoAck": "来源 {{source}} 没有确认操作",
+    "nguonKhongCoResolve": "来源 {{source}} 没有处理操作",
+    "bulkOk": "{{label}}：{{ok}}/{{total}} 成功",
+    "bulkPartial": "{{label}}：{{ok}}/{{total}} 成功 — {{failed}} 失败",
+    "ackGroup": "确认分组「{{title}}」",
+    "hienThem": "显示更多（{{count}}）",
+    "chonCanhBao": "选择 {{title}}",
+    "xuLyNhom": "处理「{{label}}」"
   },
   "cmd": {
     "title": "生态系统指挥中心",
@@ -18788,7 +18796,15 @@
     "cayPhanCapTooltip": "站点 → 工厂 → 产线 → 工位 → 设备 / 机器人",
     "thuGon": "收起",
     "moRong": "展开",
-    "chuaTongHopToanHe": "尚无全系统汇总"
+    "chuaTongHopToanHe": "尚无全系统汇总",
+    "xemChiTietNode": "查看 {{name}} 的详情",
+    "nhaMayThietBi": "{{name}} — {{count}} 台设备",
+    "nutCoChai": "瓶颈：{{name}}",
+    "siteTreMat": "{{stale}} 数据滞后 · {{down}} 失联",
+    "oeeSnapshot": "OEE {{source}}（快照）· 能耗未汇总",
+    "thietBiMa": "{{kind}} · {{code}}",
+    "robot": "机器人",
+    "may": "设备"
   },
   "msd": {
     "advisoryMsdTrackingEnabledTat": "仅提示（MSD_TRACKING_ENABLED 已关闭）",
