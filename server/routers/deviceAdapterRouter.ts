@@ -237,10 +237,30 @@ export const deviceAdapterRouter = router({
 
       const startedAt = Date.now();
       let driver;
+      // ── F14 (2026-08-22) — LỖI ĐI RA BẰNG CỬA "THÀNH CÔNG" ──────────────────────
+      // Thủ tục này KHÔNG ném khi dò thất bại: nó trả 200 OK kèm `{ ok: false, error }`.
+      // Hệ quả trước bản này: `onError` phía client không chạy, `appCode` không tồn tại,
+      // nên `mapTrpcError` không bao giờ thấy chuỗi ấy. Người vận hành đọc nguyên văn
+      // *"ModbusDriver: not connected"* trong khi CÙNG Ô ĐÓ, đường `onError` lại hiện câu
+      // đã dịch — hai câu khác ngôn ngữ cho cùng một sự việc, tuỳ nó hỏng kiểu nào.
+      //
+      // Trả CẢ HAI, không đánh đổi: `errorCode` cho người vận hành (client dịch qua
+      // `translateAppError`), `error` giữ NGUYÊN VĂN cho kỹ sư — chuỗi
+      // "ECONNREFUSED 10.0.0.5:502" là thứ duy nhất nói được hỏng ở đâu.
       try {
         driver = createDriver(protocol);
       } catch (err) {
-        return { ok: false, latencyMs: 0, error: err instanceof Error ? err.message : String(err) };
+        // Không dựng được driver ⇒ bản dựng này không có giao thức đó. Cách gỡ NGƯỢC với
+        // "không tới được": phải đổi cấu hình/nâng cấp, không phải đi kiểm dây.
+        return {
+          ok: false,
+          latencyMs: 0,
+          errorCode: "DEVICE_PROTOCOL_UNSUPPORTED" as const,
+          errorParams: { entity: protocol },
+          // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư, ĐI KÈM errorCode để client dịch
+          // câu cho người vận hành. Dịch dòng này là đổi thông tin hữu ích lấy câu chung chung.
+          error: err instanceof Error ? err.message : String(err),
+        };
       }
 
       try {
@@ -251,7 +271,15 @@ export const deviceAdapterRouter = router({
         );
         return { ok: true, latencyMs: Date.now() - startedAt };
       } catch (err) {
-        return { ok: false, latencyMs: Date.now() - startedAt, error: err instanceof Error ? err.message : String(err) };
+        return {
+          ok: false,
+          latencyMs: Date.now() - startedAt,
+          errorCode: "DEVICE_UNREACHABLE" as const,
+          errorParams: { entity: protocol },
+          // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư, ĐI KÈM errorCode để client dịch
+          // câu cho người vận hành. Dịch dòng này là đổi thông tin hữu ích lấy câu chung chung.
+          error: err instanceof Error ? err.message : String(err),
+        };
       } finally {
         try {
           await withTimeout(driver.disconnect(), DEFAULT_TEST_TIMEOUT_MS, `${protocol} disconnect`);

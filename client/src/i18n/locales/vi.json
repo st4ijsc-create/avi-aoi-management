@@ -3854,7 +3854,14 @@
       "msdExposure": "phiên phơi ẩm MSD",
       "sop": "quy trình chuẩn (SOP)",
       "hotFolderConfig": "cấu hình thư mục nóng",
-      "sourceProduct": "sản phẩm nguồn"
+      "sourceProduct": "sản phẩm nguồn",
+      "modbus": "Modbus",
+      "opcua": "OPC UA",
+      "s7": "S7",
+      "slmp": "SLMP",
+      "mitsubishi-mc": "Mitsubishi MELSEC MC",
+      "ethernet-ip": "EtherNet/IP",
+      "stub": "giả lập (stub)"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -4178,7 +4185,8 @@
       "selfApproveThreshold": "tự duyệt yêu cầu ngưỡng của chính mình",
       "viewAiAnalytics": "xem phân tích AI",
       "generateAiReport": "tạo báo cáo AI",
-      "viewGlobalAiReport": "xem báo cáo AI toàn hệ thống"
+      "viewGlobalAiReport": "xem báo cáo AI toàn hệ thống",
+      "viewAiTimeSeries": "xem chuỗi thời gian AI"
     },
     "reason": {
       "owner-not-in-local-ledger": "Hộ này không có trong SỔ CỤC BỘ của tiến trình đang trả lời; nó có thể do một tiến trình khác giữ (xem state.ledger.foreign.holders) — hãy ra lệnh vram.preempt ở ĐÚNG tiến trình đang giữ hộ đó.",
@@ -4241,7 +4249,9 @@
       "invalidData": "Dữ liệu không hợp lệ",
       "zodField": "Trường \"{{field}}\": {{message}}",
       "zodMore": " (và {{count}} lỗi khác)"
-    }
+    },
+    "DEVICE_UNREACHABLE": "Không kết nối được tới thiết bị {{entity}}. Hãy kiểm tra nguồn, dây mạng và địa chỉ IP.",
+    "DEVICE_PROTOCOL_UNSUPPORTED": "Bản dựng này chưa hỗ trợ giao thức {{entity}}."
   },
   "export": {
     "reportMenu": {

@@ -119,6 +119,21 @@ export const APP_ERROR_CODES = [
                           // đổ cho độ tin cậy của một con số hoàn toàn đúng ⇒ người trực đi tìm
                           // lỗi ở chỗ không có lỗi. Cách gỡ cũng khác hẳn: **nhả một model**, không
                           // phải tìm thêm byte (review TOÀN NHÁNH, I-3).
+  // ── F14 (2026-08-22) — LỖI ĐI RA BẰNG CỬA "THÀNH CÔNG" ────────────────────
+  // Hai mã dưới đây KHÔNG dùng với `appError()` (không có gì được ném): chúng là
+  // `errorCode` trong PHẢN HỒI 200 OK của các thủ tục dò kết nối. Lý do phải có mã
+  // riêng thay vì dịch chuỗi driver: chuỗi ấy (`"ModbusDriver: not connected"`,
+  // `"ECONNREFUSED 10.0.0.5:502"`) là thứ KỸ SƯ cần, còn NGƯỜI VẬN HÀNH cần biết
+  // "không tới được thiết bị" bằng tiếng của họ. Trả CẢ HAI, không đánh đổi.
+  "DEVICE_UNREACHABLE",   // params: { entity: protocol } — nối tới thiết bị không được
+                          // (từ chối, quá hạn, driver báo chưa kết nối). Người vận hành
+                          // xử được: kiểm dây/nguồn/IP. KHÁC ENTITY_NOT_FOUND (adapter CÓ
+                          // trong CSDL — chỉ là không nói chuyện được với nó).
+  "DEVICE_PROTOCOL_UNSUPPORTED", // params: { entity: protocol } — bản dựng này không có
+                          // driver cho giao thức đó. TÁCH khỏi DEVICE_UNREACHABLE vì cách
+                          // gỡ NGƯỢC nhau: một cái đi kiểm dây, cái kia phải đổi cấu hình
+                          // hoặc nâng cấp — bảo người vận hành đi ngắt cầu dao vì lý do
+                          // thứ hai là làm mất thời gian của họ.
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

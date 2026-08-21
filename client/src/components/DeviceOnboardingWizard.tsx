@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+import { translateAppError } from "@/lib/errorCodes";
 import { getSharedSocket } from "@/lib/socketManager";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -96,7 +97,14 @@ export default function DeviceOnboardingWizard({ open, onOpenChange, onChanged }
   const [tagCreated, setTagCreated] = useState(false);
 
   // Step 4 — test
-  const [testResult, setTestResult] = useState<{ ok: boolean; latencyMs: number; error?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    latencyMs: number;
+    error?: string;
+    /** F14 — mã máy-đọc-được để client dịch; trường `error` giữ chi tiết kỹ thuật. */
+    errorCode?: string;
+    errorParams?: Record<string, string | number>;
+  } | null>(null);
 
   // Step 6 — live confirm
   const [liveSample, setLiveSample] = useState<TelemetrySample | null>(null);
@@ -366,6 +374,16 @@ export default function DeviceOnboardingWizard({ open, onOpenChange, onChanged }
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                     <div>
                       <div className="font-medium">{t("wizard.testFail", "Kết nối thất bại")}</div>
+                      {/* F14 — câu cho NGƯỜI VẬN HÀNH: dịch từ mã máy-đọc-được máy chủ trả kèm.
+                          Trước bản này ô này hiện thẳng `testResult.error`, tức chuỗi driver
+                          tiếng Anh ("ModbusDriver: not connected") — trong khi đường `onError`
+                          ngay bên trên lại đã dịch. Cùng một ô, hai ngôn ngữ, tuỳ nó hỏng kiểu nào. */}
+                      {testResult.errorCode && (
+                        <div>{translateAppError(testResult.errorCode, testResult.errorParams, "")}</div>
+                      )}
+                      {/* data-raw-ok: dòng CHI TIẾT KỸ THUẬT cho kỹ sư — "ECONNREFUSED
+                          10.0.0.5:502" là thứ duy nhất nói được hỏng ở đâu. Dịch nó đi là
+                          đổi một câu hữu ích lấy một câu chung chung. */}
                       <div className="text-xs text-muted-foreground">{testResult.error ?? t("wizard.unknownError", "Lỗi không xác định")}</div>
                       <div className="mt-1 text-xs">{t("wizard.testFailNext", "Cần thiết bị/endpoint hợp lệ. Bạn vẫn có thể bật adapter để poll thử lại sau.")}</div>
                     </div>

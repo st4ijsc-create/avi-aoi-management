@@ -3854,7 +3854,14 @@
       "msdExposure": "MSD exposure",
       "sop": "standard operating procedure (SOP)",
       "hotFolderConfig": "hot-folder configuration",
-      "sourceProduct": "source product"
+      "sourceProduct": "source product",
+      "modbus": "Modbus",
+      "opcua": "OPC UA",
+      "s7": "S7",
+      "slmp": "SLMP",
+      "mitsubishi-mc": "Mitsubishi MELSEC MC",
+      "ethernet-ip": "EtherNet/IP",
+      "stub": "stub (simulated)"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -4178,7 +4185,8 @@
       "selfApproveThreshold": "self-approve your own threshold request",
       "viewAiAnalytics": "view AI analytics",
       "generateAiReport": "generate AI report",
-      "viewGlobalAiReport": "view system-wide AI report"
+      "viewGlobalAiReport": "view system-wide AI report",
+      "viewAiTimeSeries": "view AI time-series"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4249,7 +4257,9 @@
       "invalidData": "Invalid data",
       "zodField": "Field \"{{field}}\": {{message}}",
       "zodMore": " (and {{count}} more)"
-    }
+    },
+    "DEVICE_UNREACHABLE": "Could not reach the {{entity}} device. Check power, cabling and IP address.",
+    "DEVICE_PROTOCOL_UNSUPPORTED": "This build does not support the {{entity}} protocol."
   },
   "export": {
     "reportMenu": {

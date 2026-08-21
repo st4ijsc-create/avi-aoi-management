@@ -3846,7 +3846,14 @@
       "msdExposure": "MSD 暴露记录",
       "sop": "标准作业程序 (SOP)",
       "hotFolderConfig": "热文件夹配置",
-      "sourceProduct": "源产品"
+      "sourceProduct": "源产品",
+      "modbus": "Modbus",
+      "opcua": "OPC UA",
+      "s7": "S7",
+      "slmp": "SLMP",
+      "mitsubishi-mc": "三菱 MELSEC MC",
+      "ethernet-ip": "EtherNet/IP",
+      "stub": "桩（模拟）"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -4170,7 +4177,8 @@
       "selfApproveThreshold": "自行审批自己提交的阈值请求",
       "viewAiAnalytics": "查看AI分析",
       "generateAiReport": "生成AI报告",
-      "viewGlobalAiReport": "查看全系统AI报告"
+      "viewGlobalAiReport": "查看全系统AI报告",
+      "viewAiTimeSeries": "查看 AI 时间序列"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
@@ -4241,7 +4249,9 @@
       "invalidData": "数据无效",
       "zodField": "字段“{{field}}”：{{message}}",
       "zodMore": "（另有 {{count}} 处错误）"
-    }
+    },
+    "DEVICE_UNREACHABLE": "无法连接到 {{entity}} 设备。请检查电源、网线和 IP 地址。",
+    "DEVICE_PROTOCOL_UNSUPPORTED": "此版本不支持 {{entity}} 协议。"
   },
   "export": {
     "reportMenu": {
