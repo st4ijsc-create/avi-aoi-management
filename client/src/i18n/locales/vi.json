@@ -19421,5 +19421,20 @@
     "huy": "Hủy",
     "biChan": "Bị chặn",
     "doiViec": "Đói việc"
+  },
+  "ctrlReady": {
+    "ketNoi": "Kết nối",
+    "dieuKhien": "Điều khiển",
+    "xacMinh": "Xác minh",
+    "anToan": "An toàn",
+    "baoMat": "Bảo mật"
+  },
+  "embTpl": {
+    "tongQuanSanXuatVoi": "Tổng quan sản xuất với biểu đồ sản lượng, yield rate, và trạng thái máy",
+    "giamSatChatLuongVoi": "Giám sát chất lượng với NG analysis, SPC charts, và defect tracking",
+    "theoDoiSucKhoeMay": "Theo dõi sức khỏe máy với uptime, alerts, và maintenance schedule",
+    "baoCaoTongHopCho": "Báo cáo tổng hợp cho quản lý với KPIs, trends, và comparisons",
+    "giamSatThoiGianThuc": "Giám sát thời gian thực với live data, alerts, và status updates",
+    "quanLyCanhBaoVoi": "Quản lý cảnh báo với alert history, rules, và notifications"
   }
 }

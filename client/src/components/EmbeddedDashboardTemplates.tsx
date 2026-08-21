@@ -38,7 +38,7 @@ export const SYSTEM_TEMPLATES = [
   {
     id: "production-overview",
     name: "Production Overview",
-    description: "Tổng quan sản xuất với biểu đồ sản lượng, yield rate, và trạng thái máy",
+    description: "embTpl.tongQuanSanXuatVoi",
     templateType: "system" as const,
     icon: BarChart3,
     widgets: ["production-stats", "yield-chart", "machine-status", "hourly-trend"],
@@ -53,7 +53,7 @@ export const SYSTEM_TEMPLATES = [
   {
     id: "quality-control",
     name: "Quality Control",
-    description: "Giám sát chất lượng với NG analysis, SPC charts, và defect tracking",
+    description: "embTpl.giamSatChatLuongVoi",
     templateType: "system" as const,
     icon: PieChart,
     widgets: ["ng-analysis", "spc-chart", "defect-pareto", "quality-trend"],
@@ -68,7 +68,7 @@ export const SYSTEM_TEMPLATES = [
   {
     id: "machine-health",
     name: "Machine Health",
-    description: "Theo dõi sức khỏe máy với uptime, alerts, và maintenance schedule",
+    description: "embTpl.theoDoiSucKhoeMay",
     templateType: "system" as const,
     icon: Activity,
     widgets: ["machine-uptime", "alert-summary", "maintenance-calendar", "oee-gauge"],
@@ -83,7 +83,7 @@ export const SYSTEM_TEMPLATES = [
   {
     id: "executive-summary",
     name: "Executive Summary",
-    description: "Báo cáo tổng hợp cho quản lý với KPIs, trends, và comparisons",
+    description: "embTpl.baoCaoTongHopCho",
     templateType: "system" as const,
     icon: Gauge,
     widgets: ["kpi-cards", "factory-comparison", "monthly-trend", "top-issues"],
@@ -98,7 +98,7 @@ export const SYSTEM_TEMPLATES = [
   {
     id: "realtime-monitoring",
     name: "Realtime Monitoring",
-    description: "Giám sát thời gian thực với live data, alerts, và status updates",
+    description: "embTpl.giamSatThoiGianThuc",
     templateType: "system" as const,
     icon: TrendingUp,
     widgets: ["live-production", "active-alerts", "machine-map", "recent-inspections"],
@@ -113,7 +113,7 @@ export const SYSTEM_TEMPLATES = [
   {
     id: "alert-management",
     name: "Alert Management",
-    description: "Quản lý cảnh báo với alert history, rules, và notifications",
+    description: "embTpl.quanLyCanhBaoVoi",
     templateType: "system" as const,
     icon: AlertTriangle,
     widgets: ["alert-timeline", "alert-rules", "notification-stats", "escalation-matrix"],
@@ -319,8 +319,8 @@ export default function EmbeddedDashboardTemplates({ embedded = false }: { embed
                     </div>
                     <Badge variant="secondary" className="text-xs">System</Badge>
                   </div>
-                  <CardTitle className="text-base mt-2">{template.name}</CardTitle>
-                  <CardDescription className="text-xs">{template.description}</CardDescription>
+                  <CardTitle className="text-base mt-2">{t(template.name)}</CardTitle>
+                  <CardDescription className="text-xs">{t(template.description)}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between mb-3">
@@ -381,8 +381,8 @@ export default function EmbeddedDashboardTemplates({ embedded = false }: { embed
                     </div>
                     <Badge variant="default" className="text-xs">Custom</Badge>
                   </div>
-                  <CardTitle className="text-base mt-2">{template.name}</CardTitle>
-                  <CardDescription className="text-xs">{template.description}</CardDescription>
+                  <CardTitle className="text-base mt-2">{t(template.name)}</CardTitle>
+                  <CardDescription className="text-xs">{t(template.description)}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between mb-3">

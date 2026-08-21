@@ -19441,5 +19441,20 @@
     "huy": "Cancelled",
     "biChan": "Blocked",
     "doiViec": "Starved"
+  },
+  "ctrlReady": {
+    "ketNoi": "Connectivity",
+    "dieuKhien": "Control",
+    "xacMinh": "Verification",
+    "anToan": "Safety",
+    "baoMat": "Security"
+  },
+  "embTpl": {
+    "tongQuanSanXuatVoi": "Production overview with output charts, yield rate and machine status",
+    "giamSatChatLuongVoi": "Quality monitoring with NG analysis, SPC charts and defect tracking",
+    "theoDoiSucKhoeMay": "Machine health tracking with uptime, alerts and maintenance schedule",
+    "baoCaoTongHopCho": "Management summary report with KPIs, trends and comparisons",
+    "giamSatThoiGianThuc": "Realtime monitoring with live data, alerts and status updates",
+    "quanLyCanhBaoVoi": "Alarm management with alert history, rules and notifications"
   }
 }

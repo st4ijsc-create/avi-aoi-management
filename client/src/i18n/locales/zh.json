@@ -19449,5 +19449,20 @@
     "huy": "已取消",
     "biChan": "阻塞",
     "doiViec": "缺料待工"
+  },
+  "ctrlReady": {
+    "ketNoi": "连接",
+    "dieuKhien": "控制",
+    "xacMinh": "验证",
+    "anToan": "安全",
+    "baoMat": "信息安全"
+  },
+  "embTpl": {
+    "tongQuanSanXuatVoi": "生产总览：产量图表、良率与设备状态",
+    "giamSatChatLuongVoi": "质量监控：NG 分析、SPC 图表与缺陷追踪",
+    "theoDoiSucKhoeMay": "设备健康跟踪：运行时间、告警与维护计划",
+    "baoCaoTongHopCho": "面向管理层的汇总报告：KPI、趋势与对比",
+    "giamSatThoiGianThuc": "实时监控：实时数据、告警与状态更新",
+    "quanLyCanhBaoVoi": "告警管理：告警历史、规则与通知"
   }
 }
