@@ -35,6 +35,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { demHinhDangBa } from "../../../scripts/viStringScan.mjs";
 
 /**
  * Hạ số này mỗi khi di trú xong một đợt. KHÔNG BAO GIỜ nâng lên.
@@ -232,149 +233,14 @@ describe("F12 — chuỗi tiếng Việt TRẦN (cổng theo-khoá không thấy
 const FROZEN_SHAPE3 = 500;
 
 /**
- * Bỏ comment `//` ở CUỐI dòng. Phép bỏ comment ở trên chỉ xét ĐẦU dòng, nên
- * `const X = ...; // ghi chú tiếng Việt` bị đếm thành nợ — nó không phải nợ.
- * ⚠ Không cắt ở `://` (URL) và không cắt phần `//` nằm TRONG chuỗi.
+ * ⚠ Bộ đếm hình-3 nay nằm ở `scripts/viStringScan.mjs` — MỘT nguồn sự thật.
+ *
+ * Trước đây logic này có bản sao trong scratchpad và hai bên ĐÃ lệch thật: bản sao
+ * khai **623**, cổng khai **500** — chênh đúng 123 mục, vì bản sao thiếu phép miễn
+ * trừ `t(` trải nhiều dòng thêm ở lượt 2026-08-18. Ai tin bản sao sẽ đi "sửa" 123
+ * mục vốn đã đúng. Kế hoạch F12 đã cảnh báo trước điều này; giờ nó được cưỡng chế
+ * bằng CẤU TRÚC chứ không bằng lời dặn.
  */
-function boCommentCuoiDong(ln: string): string {
-  let trongChuoi: string | null = null;
-  for (let i = 0; i < ln.length - 1; i++) {
-    const c = ln[i];
-    if (trongChuoi) {
-      if (c === "\\") i++;
-      else if (c === trongChuoi) trongChuoi = null;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") { trongChuoi = c; continue; }
-    if (c === "/" && ln[i + 1] === "/") return ln.slice(0, i);
-  }
-  return ln;
-}
-
-/**
- * Bốn khuôn ĐÃ ĐÚNG, không được tính là nợ — mỗi khuôn kèm lý do đo được:
- *  · `pick("vi", "en", "zh")` — bộ chọn ba ngôn ngữ tự viết (`MachineAISummary`),
- *    đã trả đúng chữ theo `i18n.language`; bọc `t()` là làm THỪA.
- *  · `["khoa.i18n", "tiếng Việt"]` — tuple [khoá, mặc định], phần tử đầu LÀ khoá.
- *  · `defaultValue: "…"` — đúng là defaultValue của i18n, nhánh (a) lo.
- *  · `{ labelKey/key: "…", label/fallback: "…" }` — khoá đi kèm trên cùng dòng.
- */
-function LA_KHUON_DUNG(ln: string): boolean {
-  if (/\bpick\s*\(\s*[`"']/.test(ln)) return true;
-  if (/\[\s*["'`][a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+["'`]\s*,\s*["'`]/.test(ln)) return true;
-  if (/\bdefaultValue\s*:/.test(ln)) return true;
-  if (/\b(labelKey|titleKey|descKey|key)\s*:\s*["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]/.test(ln)) return true;
-  if (/\b(fallback|labelFallback|titleFallback|descFallback)\s*:/.test(ln)) return true;
-  return false;
-}
-
-/** Dòng KHAI một khoá i18n (`labelKey: "a.b.c"`), bất kể có gì khác trên dòng. */
-const KHAI_KHOA = /\b(labelKey|titleKey|descKey|key)\s*:\s*["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]/;
-
-/** Dòng CHỈ gồm `tên: "một chuỗi"` — không lời gọi, không toán tử, không gì khác. */
-const CHI_LA_CAP_THUOC_TINH = /^\s*[A-Za-z_$][\w$]*\s*:\s*(["'`])(?:(?!\1)[^\\]|\\.)*\1\s*,?\s*$/;
-
-/** Dòng MỞ ĐẦU bằng một thuộc tính object (`tên:` hoặc `"tên":`). */
-const LA_THUOC_TINH_OBJECT = /^\s*(?:[A-Za-z_$][\w$]*|["'][^"']+["'])\s*:/;
-
-/** Mở một lời gọi `t(` mà đối số ĐẦU là khoá i18n — kể cả khi khoá nằm ở dòng sau. */
-const MO_T_CO_KHOA =
-  /\bt\s*\(\s*(?:["'`][a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+["'`]|`[^`]*\$\{|$)/;
-
-/**
- * Đếm ngoặc tròn NẰM NGOÀI chuỗi — dùng để biết một lời gọi `t(` đã đóng chưa.
- * Dùng lại đúng phép quét trạng thái chuỗi của `boCommentCuoiDong` để hai chỗ
- * không thể lệch nhau.
- */
-function demNgoacNgoaiChuoi(ln: string): number {
-  let trongChuoi: string | null = null;
-  let d = 0;
-  for (let i = 0; i < ln.length; i++) {
-    const c = ln[i];
-    if (trongChuoi) {
-      if (c === "\\") i++;
-      else if (c === trongChuoi) trongChuoi = null;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") { trongChuoi = c; continue; }
-    if (c === "(") d++;
-    else if (c === ")") d--;
-  }
-  return d;
-}
-
-/**
- * ★ Trần an toàn cho phép theo dõi `t(` nhiều dòng. Nếu phép đếm ngoặc lạc (template
- * literal lồng `${…}` có thể nuốt một dấu đóng), độ sâu sẽ KHÔNG BAO GIỜ về 0 và phần
- * còn lại của file được miễn trừ trong im lặng — đúng lớp lỗi "thước rỗng" đã trả giá
- * ở Pha 4. Quá trần thì BỎ theo dõi (quay lại đếm), và số lần chạm trần được IN RA
- * thay vì nuốt: một con số > 0 nghĩa là phép đo đang lạc, phải xem lại.
- */
-const TRAN_DONG_TRONG_MOT_T = 12;
-
-function demHinhDangBa(): {
-  total: number;
-  byFile: Array<[string, number]>;
-  chamTran: number;
-} {
-  const byFile: Array<[string, number]> = [];
-  let total = 0;
-  let chamTran = 0;
-
-  for (const file of walkTsx(CLIENT_SRC)) {
-    const lines = readFileSync(file, "utf8").split("\n");
-    let inBlock = false;
-    let n = 0;
-    /** >0 nghĩa là đang ở TRONG thân một lời gọi `t(` mở từ dòng trước. */
-    let sauT = 0;
-    let dongTrongT = 0;
-    let dongMaTruoc = "";
-    for (const ln of lines) {
-      const tr = ln.trim();
-      if (inBlock) { if (tr.includes("*/")) inBlock = false; continue; }
-      if (tr.startsWith("/*") || tr.startsWith("{/*")) { inBlock = !tr.includes("*/"); continue; }
-      if (tr.startsWith("//") || tr.startsWith("*")) continue;
-
-      // ── theo dõi `t(` trải nhiều dòng ────────────────────────────────────────
-      const dangTrongThanT = sauT > 0;
-      if (sauT > 0) {
-        sauT += demNgoacNgoaiChuoi(ln);
-        if (++dongTrongT > TRAN_DONG_TRONG_MOT_T) { chamTran++; sauT = 0; }
-        else if (sauT <= 0) sauT = 0;
-      } else if (MO_T_CO_KHOA.test(ln)) {
-        const d = demNgoacNgoaiChuoi(ln);
-        if (d > 0) { sauT = d; dongTrongT = 0; }
-      }
-      const khoaODongTruoc = KHAI_KHOA.test(dongMaTruoc);
-      dongMaTruoc = ln;
-
-      if (!CHU_VIET.test(ln)) continue;
-      // (c) thân của một `t("khoá.i18n", …)` mở từ dòng TRƯỚC — cùng lý do như
-      //     nhánh cùng-dòng bên dưới, chỉ khác chỗ xuống dòng. Xem ghi chú F12b.
-      //     ⚠ TRỪ dòng mang hình dạng thuộc tính `tên: "…"`: `t()` còn nhận đối số
-      //     NỘI SUY, nên `t("khoá", { ten: "Nhà máy" })` phải VẪN bị đếm. Bỏ ngoại lệ
-      //     này thì đột biến M2 lọt — đã đo, xem docblock của `FROZEN_SHAPE3`.
-      if (dangTrongThanT && !LA_THUOC_TINH_OBJECT.test(ln)) continue;
-      // (d) cặp `labelKey:` / `labelDefault:` bị tách hai dòng. Khuôn này đã được
-      //     `LA_KHUON_DUNG` khai là ĐÚNG; điều kiện thứ hai (`CHI_LA_CAP_THUOC_TINH`)
-      //     giữ cho miễn trừ không lan sang dòng bất kỳ đứng sau một khoá.
-      if (khoaODongTruoc && CHI_LA_CAP_THUOC_TINH.test(ln)) continue;
-      // hai hình dạng cũ đã có cổng riêng ở trên — không đếm hai lần
-      if (/>[^<>{}]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ][^<>{}]*</i.test(ln)) continue;
-      if (/\b(placeholder|title|label|aria-label|description|alt|tooltip)\s*=\s*["'`][^"'`]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(ln)) continue;
-      // đang là defaultValue của `t(...)` cùng dòng → nhánh (a) lo, đúng khuôn
-      if (/\bt\s*\(/.test(ln)) continue;
-      if (LA_KHUON_DUNG(ln)) continue;
-      const sach = boCommentCuoiDong(ln);
-      if (!CHU_VIET.test(sach)) continue;
-      const chuoi = sach.match(/(["'`])((?:(?!\1)[^\\]|\\.)*)\1/g);
-      if (chuoi?.some((s) => CHU_VIET.test(s))) n++;
-    }
-    if (n) { byFile.push([file.replace(CLIENT_SRC, ""), n]); total += n; }
-  }
-  byFile.sort((a, b) => b[1] - a[1]);
-  return { total, byFile, chamTran };
-}
 
 describe("F12 — hình dạng THỨ BA (bắt được nhờ nghiệm thu bằng mắt, không phải nhờ cổng)", () => {
   it(`không được phình quá ${FROZEN_SHAPE3} — đóng băng, KHÔNG phải mục tiêu`, () => {
