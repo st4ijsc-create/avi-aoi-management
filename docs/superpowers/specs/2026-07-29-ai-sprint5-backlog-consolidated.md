@@ -6,7 +6,7 @@
 
 ---
 
-## ⓘ TIẾN ĐỘ — cập nhật 2026-08-21, HEAD `8285e0d8` (remote `fresh`)
+## ⓘ TIẾN ĐỘ — cập nhật 2026-08-21 (lần 2), HEAD `f466278c`+ (remote `fresh`)
 
 | Nhóm | Trạng thái | Ghi chú |
 |---|---|---|
@@ -15,16 +15,17 @@
 | **B2, B3** | ⏳ CÒN | test rẻ, chưa ai đau |
 | **C** (dữ liệu không tới đích) | ⏳ CÒN | C1 sau cờ mặc định tắt · C2 không màn nào đọc · C3 sắp xếp sai |
 | **D** (vận hành) | ⏳ CÒN | việc vệ sinh |
-| **E** (phát sinh khi thi công A) | ⏳ CÒN | **E1 ƯU TIÊN CAO** — `-Infinity` chặn ở cổng, chưa chặn ở NGUỒN |
+| **E** (phát sinh khi thi công A) | ⏳ CÒN (E2-E7) | ⚠ **E1 ĐÃ ĐÓNG từ `7d2d42d9`** — bảng trước xếp nó "ưu tiên cao, còn" là SAI: tôi chép lời khai của mục đó mà không đo. E2 cần chủ dự án quyết. |
 | **F1-F9** (nợ A4 sau di trú) | ⏳ CÒN | **F3 security-critical** (`_core/trpc.ts` mọi chối-quyền RBAC) · F7 chất lượng bản dịch |
 | **F10-F13** (nhãn giao diện en/zh) | ✅ ĐÓNG | xem §4c/§4d — hình-dạng-3 `914 → 0` qua 17 lô |
 | **G** (machine-auth + giấy phép) | ✅ ĐÓNG ở DEV | xem §4e — production **chưa** flip, checklist doc 52 §6.1 |
 
 **Nợ còn lại đáng làm trước, theo thứ tự:**
-1. **E1** — `-Infinity` vẫn được SINH RA ở `predictiveMaintenanceService.ts:505-523`;
-   `new Date(-Infinity)` là *Invalid Date* vẫn đi vào `recordMachineHealthSnapshot`.
-2. **F3** — 64 chỗ chưa di trú mã lỗi, nặng nhất là hạ tầng lõi + security.
-3. **G còn lại** — đẩy telemetry weak-auth ra chỗ BỀN thì mới ký được GO-LIVE production.
+1. **F3** — 64 chỗ chưa di trú mã lỗi, nặng nhất là hạ tầng lõi + security (`_core/trpc.ts` 12 chỗ = mọi chối-quyền RBAC + mọi gọi chưa đăng nhập).
+2. **G phần production** — đẩy telemetry weak-auth ra chỗ BỀN thì mới ký được GO-LIVE.
+3. **E2** — cảnh báo không có `machineId` không được cooldown nào chi phối; **cần chủ dự án quyết** vì đổi tải thật lên người vận hành.
+
+⚠ **Trước khi làm bất kỳ mục nào: ĐO LẠI.** Lần cập nhật đầu của bảng này xếp E1 là "còn" chỉ vì backlog viết thế — thực tế nó đã đóng từ `7d2d42d9`.
 
 ---
 
@@ -126,9 +127,35 @@ Ba trường mà đường INSERT cũ có ghi. Không màn nào đọc chúng hi
 
 Do review tìm ra trong lúc làm nhóm A + B1, **không** thuộc phạm vi đã chốt nên cố ý để lại.
 
-- **E1. `-Infinity` bị chặn ở CỔNG, chưa chặn ở NGUỒN. ⚠ ƯU TIÊN CAO.**
-  B1 đã khiến `classifySuppression` chặn `predictedTimeframeHours = -Infinity`, nhưng giá trị đó vẫn được **sinh ra** ở `predictiveMaintenanceService.ts:505-523`: `Math.round(-Infinity)` giữ nguyên `-Infinity`, và `recommendedMaintenanceDate = new Date(-Infinity)` là **Invalid Date** vẫn đi vào `recordMachineHealthSnapshot`.
-  Reviewer cuối đánh giá nặng hơn dự tính ban đầu: Invalid Date đưa xuống drizzle/postgres-js có thể **ném `RangeError`**, tức đây có thể là đường sập chứ không chỉ dữ liệu bẩn. Cần task riêng chặn tại nguồn (`Number.isFinite` quanh phép chia ước lượng RUL).
+- **E1. ~~`-Infinity` bị chặn ở CỔNG, chưa chặn ở NGUỒN.~~ ✅ ĐÃ ĐÓNG từ `7d2d42d9` — mục này ĐÃ CŨ.**
+  *(Mô tả gốc: `Math.round(-Infinity)` giữ nguyên `-Infinity`, `new Date(-Infinity)` là Invalid
+  Date đi vào `recordMachineHealthSnapshot`, drizzle/postgres-js có thể ném `RangeError`.)*
+
+  **Đo lại 2026-08-21 — nợ này KHÔNG CÒN, và đã đóng từ trước khi tôi đọc mục này.**
+  Commit `7d2d42d9` đã chặn tại nguồn: cả **bốn** nơi gán `timeframeHours` đều tự canh
+  `Number.isFinite` (`:415` · `:431-432` · `:502-505` · `:519-520`), cộng guard **hội tụ**
+  ở `:541` (null-hoá + hạ `rulMethod` về `insufficient_data` cho trung thực), cộng hai
+  điểm ra cuối tự canh độc lập. `predictiveMaintenanceService.rul.test.ts` 3/3 xanh.
+
+  ⚠ **Bảng tiến độ tôi viết ngày 2026-08-21 xếp E1 là "ƯU TIÊN CAO — còn" — SAI.** Tôi
+  chép lại lời khai của chính mục này mà không đo. Đúng lớp lỗi "tin vào chữ thay vì
+  đo" đã trả giá nhiều lần trong dự án.
+
+  ### Việc THẬT còn lại ở E1 — và nó khác hẳn mô tả gốc
+  Đột biến 2026-08-21: **vô hiệu CẢ BA lớp guard mà `rul.test.ts` vẫn XANH 3/3.** Không
+  phải lỗi của bộ test đó — nó khoá *hành vi quan sát được* cho ba đầu vào thù địch, và
+  với những đầu vào ấy mã đi nhánh khác nên giá trị không hữu hạn **không bao giờ chạm
+  tới guard**. Guard hội tụ hiện **không thể chạm tới**; nó là phòng vệ cho *đường mới
+  sau này*, đúng như docstring của nó tự nói.
+
+  Nhưng phòng vệ cho tương lai mà không ai canh thì tương lai đó không được bảo vệ: thêm
+  **đường gán thứ NĂM** không guard sẽ không làm đỏ bất cứ thứ gì.
+  ⇒ Đã thêm `predictiveMaintenanceService.timeframeGuard.test.ts` — lưới đọc **mã nguồn**
+  (bất biến cấu trúc "không đường gán nào thiếu canh"), không chạy hàm.
+  ⚠ Bản đầu của lưới lấy cứng 8 dòng ngữ cảnh và **đột biến M1 SỐNG SÓT**: đường gán mới
+  chèn ngay sau khối guard được coi là "đã canh" vì cửa sổ nhìn thấy `Number.isFinite`
+  CỦA GUARD ĐÓ. Thước rộng quá thì nó chứng nhận cho thứ nó không hề kiểm. Đã siết về
+  đúng phạm vi câu lệnh; 5/5 đột biến nay đỏ.
 
 - **E2. Cảnh báo KHÔNG có `machineId` không được cooldown nào chi phối. CẦN CHỦ DỰ ÁN QUYẾT.**
   `routeAlert` chỉ tra cảnh báo đang mở khi `machineId != null`, nên `decideAlertWrite` luôn trả `insert/no-machine` ⇒ `decideNotify` luôn trả `first` ⇒ **luôn báo**. Cooldown 4 giờ không áp dụng cho nhóm này (`YIELD_DROP` cấp nhà máy; `modelAutoRollback.ts:244` không có cả `machineId` lẫn `factoryId`).
