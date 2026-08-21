@@ -329,14 +329,34 @@ MACHINE_CODE_ONLY_ALLOWED=allow
 > Ký từng dòng. Dòng nào chưa ✓ = **chưa go-live**.
 
 ### 6.1 Danh tính máy (doc 51 R1 / QĐ#1)
-- [ ] `node scripts/machine-key-rotation-report.mjs` → exit **0**, BLOCKING = 0.
-- [ ] Mọi máy đang chạy có khoá `mk_` **và đã dùng thật** (`lastUsedAt` mới).
-- [ ] Máy retired/decommissioned **không còn** credential (verdict `WARN`/`RETIRED_WITH_CREDS` = rỗng).
-- [ ] `MACHINE_SHARED_KEY_ALLOWED=deny` + `MACHINE_CODE_ONLY_ALLOWED=deny` ở production.
-- [ ] `MACHINE_CONFIG_EXPOSE_APIKEY=false` (endpoint public **không** trả apiKey — R1).
-- [ ] Smoke NGƯỢC: `machineCode`-only → **401**; `mk_` qua header → **200**.
+
+> **Trạng thái ở MÔI TRƯỜNG DEV, đo ngày 2026-08-21.** Production vẫn phải ký lại
+> từ đầu — mọi ô ✓ dưới đây chỉ nói về `.env` dev và CSDL dev.
+
+- [x] `node scripts/machine-key-rotation-report.mjs` → exit **0**, BLOCKING = 0.
+      *Đo 2026-08-21: "✓ AN TOÀN ĐỂ FLIP — không máy nào đang chạy còn bám đường yếu."*
+- [~] Mọi máy đang chạy có khoá `mk_` **và đã dùng thật** (`lastUsedAt` mới).
+      *41/41 máy đang dùng ĐÃ CÓ khoá (cấp 23 khoá còn thiếu ngày 2026-08-21).*
+      ⚠ **Nửa sau CHƯA đạt:** không máy nào từng dùng khoá — nhịp tim cuối của cả đội
+      là **2026-07-19, cách 33 ngày**, 0 bản ghi kiểm tra trong 7 ngày. Đội máy đang
+      đứng, nên "đã dùng thật" không thể xác nhận cho tới khi chúng chạy lại.
+- [x] Máy retired/decommissioned **không còn** credential.
+      ⚠ *Ô này TỪNG ĐỎ vì chính đợt cấp khoá 2026-08-21: script không kiểm vòng đời nên
+      cấp cả cho `SN-ST4I-TRIAL-WELD-20260818` (`retired`/`rejected`). Báo cáo trên tố
+      ra, khoá đã bị revoke, và script nay BỎ QUA máy retired/decommissioned/rejected.*
+- [x] `MACHINE_SHARED_KEY_ALLOWED=deny` + `MACHINE_CODE_ONLY_ALLOWED=deny` — **ở dev**.
+      *`SHARED_KEY=false` vốn đã là `deny` từ trước; `CODE_ONLY` đặt ngày 2026-08-21.*
+- [x] `MACHINE_CONFIG_EXPOSE_APIKEY=false` — mặc định OFF trong mã
+      (`hierarchyRouters.ts:658` đòi `=== "true"`), và **không có trong `.env`** ⇒ tắt.
+- [x] Smoke NGƯỢC — chạy live 2026-08-21 trên `:3000`:
+      `machineCode`-only ⇒ **401** *"Missing API key"* · `Authorization: Bearer mk_…`
+      ⇒ **400 lỗi schema**, tức ĐÃ QUA lớp xác thực (chỉ thiếu trường payload).
 - [ ] `machine_weak_auth_denied` = 0 suốt ≥1 ca sau flip.
-- [ ] `machines.apiKey` đã dọn (§3.f) — hoặc có lịch hẹn dọn.
+      ⚠ **KHÔNG THỂ ĐẠT bằng thiết bị đo hiện tại.** `weakAuthUsage` là một `Map`
+      **trong bộ nhớ** (`machineAuthService.ts:348`), không persist ⇒ **xoá sạch mỗi
+      lần restart**; và hiện không có lưu lượng nào để quan sát. Muốn ký được ô này
+      phải đẩy telemetry ra chỗ bền (metric/DB) trước — xem §3.d.
+- [ ] `machines.apiKey` đã dọn (§3.f) — **17 máy còn plaintext**, chờ flip ổn định ≥1 tuần.
 
 ### 6.2 Bền dữ liệu — **QĐ#6 BẮT BUỘC** (doc 51 R7)
 - [ ] **`INSPECTION_STORE_FORWARD_ENABLED=true` trong `.env` production.**

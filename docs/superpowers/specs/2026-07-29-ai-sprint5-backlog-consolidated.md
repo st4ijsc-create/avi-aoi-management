@@ -6,6 +6,28 @@
 
 ---
 
+## ⓘ TIẾN ĐỘ — cập nhật 2026-08-21, HEAD `8285e0d8` (remote `fresh`)
+
+| Nhóm | Trạng thái | Ghi chú |
+|---|---|---|
+| **A** (làm phiền người thật) | ✅ ĐÓNG | A1-A4, sprint 5 `6ad3e57d..13b58676` |
+| **B1** (hai bản sao logic) | ✅ ĐÓNG | cùng sprint 5 |
+| **B2, B3** | ⏳ CÒN | test rẻ, chưa ai đau |
+| **C** (dữ liệu không tới đích) | ⏳ CÒN | C1 sau cờ mặc định tắt · C2 không màn nào đọc · C3 sắp xếp sai |
+| **D** (vận hành) | ⏳ CÒN | việc vệ sinh |
+| **E** (phát sinh khi thi công A) | ⏳ CÒN | **E1 ƯU TIÊN CAO** — `-Infinity` chặn ở cổng, chưa chặn ở NGUỒN |
+| **F1-F9** (nợ A4 sau di trú) | ⏳ CÒN | **F3 security-critical** (`_core/trpc.ts` mọi chối-quyền RBAC) · F7 chất lượng bản dịch |
+| **F10-F13** (nhãn giao diện en/zh) | ✅ ĐÓNG | xem §4c/§4d — hình-dạng-3 `914 → 0` qua 17 lô |
+| **G** (machine-auth + giấy phép) | ✅ ĐÓNG ở DEV | xem §4e — production **chưa** flip, checklist doc 52 §6.1 |
+
+**Nợ còn lại đáng làm trước, theo thứ tự:**
+1. **E1** — `-Infinity` vẫn được SINH RA ở `predictiveMaintenanceService.ts:505-523`;
+   `new Date(-Infinity)` là *Invalid Date* vẫn đi vào `recordMachineHealthSnapshot`.
+2. **F3** — 64 chỗ chưa di trú mã lỗi, nặng nhất là hạ tầng lõi + security.
+3. **G còn lại** — đẩy telemetry weak-auth ra chỗ BỀN thì mới ký được GO-LIVE production.
+
+---
+
 ## 0. Đọc trước — bối cảnh tối thiểu cho session mới
 
 | Wave | Đã làm | Commit |
@@ -271,6 +293,47 @@ Toàn bộ 12 task của plan trả nợ E+F **đã hoàn tất và đã push**.
   · `FirstRunTour`/`FactoryConfigAudit`: `{ key: "…", fallback: "…" }` — đã có khoá i18n đi kèm,
     chuỗi Việt chỉ là lưới an toàn, **đúng khuôn**.
   Việc cần làm là *phân loại rồi mới di trú*, và ước lượng phần thật sự là nợ trước khi cam kết.
+
+---
+
+## 4e. NHÓM G — machine-auth + giấy phép (runbook doc 52) · ✅ ĐÓNG 2026-08-21
+
+> ⚠ Đừng nhầm với **§3 "NHÓM C — Dữ liệu không tới đích"** ở trên. Hai nhóm khác hẳn
+> nhau nhưng cùng bị gọi là "nhóm C" trong các phiên trước; đổi tên thành **G** ở đây.
+
+Ba mục treo nhiều phiên. **Cả ba lời khai trước đó về chúng đều bị phép đo bác bỏ** —
+phần đáng đọc nằm ở chỗ đó, không ở kết quả.
+
+| Từng khai | Đo được 2026-08-21 |
+|---|---|
+| *"chờ quan sát telemetry weak-auth ≥1 ca rồi mới flip"* | **BẤT KHẢ THI với thiết bị đo hiện tại.** `weakAuthUsage` là `Map` **trong bộ nhớ** (`machineAuthService.ts:348`), xoá sạch mỗi lần restart — mà máy chủ đã restart hàng chục lần. Thêm nữa: nhịp tim cuối của cả đội máy là **2026-07-19, cách 33 ngày**, 0 bản ghi kiểm tra trong 7 ngày ⇒ **không có lưu lượng nào để quan sát**. Điều kiện này lặp đi lặp lại qua nhiều phiên mà không bao giờ thoả được. |
+| *"0/42 máy có khoá `mk_`"* | **19/42 đã có.** Tôi đọc cột `machines.apiKey` (khoá **DÙNG CHUNG** cũ) rồi khai về khoá **RIÊNG** — khoá riêng nằm ở bảng `api_keys`. 4 tên `mk_*` + 15 tên `sim-sim-l*`; tiền tố `mk_` chỉ là siêu dữ liệu, xác thực tra theo `hashMachineKey` nên khoá `sim-*` vẫn hợp lệ. |
+| *"cấp khoá `mk_` là việc phụ"* | **Là ĐIỀU KIỆN TRƯỚC.** Siết mà chưa cấp là khoá sạch cả đội máy lúc chúng quay lại. Thứ tự phụ thuộc ngược với cách tôi từng trình bày. |
+
+**Đã làm:**
+- `scripts/issue-machine-keys.ts` (mới) — cấp khoá riêng, idempotent, in bản rõ MỘT lần,
+  `--dry-run` mặc định. Cấp 23 khoá còn thiếu ⇒ **41/41 máy đang dùng có khoá**.
+  ⚠ *Lượt đầu KHÔNG kiểm vòng đời nên cấp cả cho máy `retired`/`rejected`. Chính báo cáo
+  của runbook (`machine-key-rotation-report.mjs`) tố ra; khoá đã revoke, script đã vá.*
+- `MACHINE_CODE_ONLY_ALLOWED=deny` (đường yếu NHẤT: chỉ mã máy in trên nhãn thiết bị,
+  không bí mật nào). `MACHINE_SHARED_KEY_ALLOWED=false` vốn ĐÃ là `deny` từ trước.
+- Gỡ `license-state-cache.json`: **hiện vật kiểm thử** tự ghi
+  `licenseKey: "TEST-KHONG-AI-XOA-SAU-KHI-DO"`, nằm lại 5 tháng, và là **nguồn SKU DUY
+  NHẤT** khi máy chủ giấy phép chết (curl timeout, 143 ngày). Nó chỉ cho **10/145**
+  module ⇒ ai tắt `LICENSE_BYPASS` là mất `ADMIN_USERS` + toàn bộ AI/OT/Quality/Engineering.
+  ⚠ Xoá file **chỉ sửa được hôm nay** ⇒ vá gốc: `loadLicenseStateCache` nay TỪ CHỐI cache
+  mà `licenseKey`/`customerName` chứa `TEST|DEMO|FAKE|NGHIEM THU|XOA`.
+
+**Nghiệm thu sống** (redeploy `:3000`): mã-máy-trần ⇒ **401**; `Bearer mk_…` ⇒ **400 lỗi
+schema** (tức đã qua lớp xác thực).
+
+**CÒN LẠI — xem checklist GO-LIVE doc 52 §6.1:**
+- Production **chưa** flip; mọi ô ✓ hiện tại chỉ nói về `.env` dev.
+- *"máy đã dùng khoá thật (`lastUsedAt`)"* chưa xác nhận được — đội máy đang đứng.
+- *"`machine_weak_auth_denied` = 0 suốt ≥1 ca"* **không ký được** cho tới khi telemetry
+  weak-auth được đẩy ra chỗ BỀN (metric/DB) thay vì `Map` trong bộ nhớ.
+- 17 máy còn `machines.apiKey` plaintext — dọn sau khi flip ổn định ≥1 tuần.
+- ⚠ Bản rõ 23 khoá `mk_` nằm ở scratchpad phiên — **chứa bí mật, nạp xong phải xoá**.
 
 ---
 

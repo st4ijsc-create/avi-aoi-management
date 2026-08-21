@@ -38,7 +38,14 @@ async function main() {
   const d = await getDb();
 
   const dsMay = await d
-    .select({ id: machines.id, code: machines.code, name: machines.name, type: machines.machineType })
+    .select({
+      id: machines.id,
+      code: machines.code,
+      name: machines.name,
+      type: machines.machineType,
+      lifecycle: machines.lifecycleStatus,
+      registration: machines.registrationStatus,
+    })
     .from(machines);
 
   // Máy đã có khoá mk_ ACTIVE, chưa thu hồi, chưa hết hạn → BỎ QUA.
@@ -53,7 +60,27 @@ async function main() {
     );
   const daCo = new Set(khoaDangSong.map((k) => k.machineId).filter((x): x is number => x != null));
 
-  const canCap = dsMay.filter((m) => !daCo.has(m.id));
+  /**
+   * ⚠ BỎ máy đã ngừng dùng — lượt chạy đầu (2026-08-21) KHÔNG kiểm điều này và đã cấp
+   * khoá cho `SN-ST4I-TRIAL-WELD-20260818` (`lifecycleStatus=retired`,
+   * `registrationStatus=rejected`). Chính báo cáo của runbook doc 52 tố ra:
+   * *"Máy đã retired nhưng CÒN credential"*. Khoá đó đã bị thu hồi.
+   *
+   * Cấp khoá cho máy đã retired là tạo một credential sống cho thiết bị KHÔNG CÒN
+   * được giám sát — đúng thứ đợt siết này sinh ra để loại bỏ.
+   */
+  const NGUNG_DUNG = new Set(["retired", "decommissioned", "disposed"]);
+  const boQuaVongDoi = dsMay.filter(
+    (m) => NGUNG_DUNG.has(String(m.lifecycle ?? "")) || String(m.registration ?? "") === "rejected",
+  );
+  if (boQuaVongDoi.length) {
+    console.log(`Bỏ qua ${boQuaVongDoi.length} máy đã ngừng dùng / bị từ chối:`);
+    for (const m of boQuaVongDoi) console.log(`   - ${m.code} (${m.lifecycle}/${m.registration})`);
+    console.log("");
+  }
+  const boQuaIds = new Set(boQuaVongDoi.map((m) => m.id));
+
+  const canCap = dsMay.filter((m) => !daCo.has(m.id) && !boQuaIds.has(m.id));
 
   console.log(`Tổng máy: ${dsMay.length} · đã có khoá mk_ còn hiệu lực: ${daCo.size} · CẦN CẤP: ${canCap.length}\n`);
   if (canCap.length === 0) { console.log("Không có gì để làm."); return; }
