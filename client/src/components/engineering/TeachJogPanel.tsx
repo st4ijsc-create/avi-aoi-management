@@ -84,7 +84,7 @@ export function TeachJogPanel({ value, onChange }: { value: string; onChange: (n
         <Button size="sm" variant="outline" onClick={() => append("WAIT t=500")}><Timer className="mr-1 h-3 w-3" /> WAIT</Button>
       </div>
       <div className="text-[11px] text-muted-foreground">
-        {points.length === 0 ? "Chưa có point — Capture để thêm." : `${points.length} point: ${points.join(", ")}`}
+        {points.length === 0 ? t("teachJog.chuaCoPoint", "Chưa có point — Capture để thêm.") : t("teachJog.danhSachPoint", { count: points.length, list: points.join(", ") })}
       </div>
     </div>
   );

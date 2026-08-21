@@ -32,9 +32,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 const CURRENT_PATH = "/sop-management";
 
 const STATUS_MAP = {
-  draft: { tone: "default" as const, label: "Nháp" },
-  active: { tone: "success" as const, label: "Hiệu lực" },
-  retired: { tone: "warning" as const, label: "Ngừng" },
+  draft: { tone: "default" as const },
+  active: { tone: "success" as const },
+  retired: { tone: "warning" as const },
 };
 
 interface StepDraft {
@@ -226,7 +226,7 @@ export default function SopManagement() {
                       <TableCell className="text-center tabular-nums">v{r.version}</TableCell>
                       <TableCell className="text-center tabular-nums">{r.stepCount}</TableCell>
                       <TableCell>
-                        <StatusBadge status={r.status} tone={STATUS_MAP[r.status as keyof typeof STATUS_MAP]?.tone} label={t(`sop.status.${r.status}`, STATUS_MAP[r.status as keyof typeof STATUS_MAP]?.label ?? r.status)} />
+                        <StatusBadge status={r.status} tone={STATUS_MAP[r.status as keyof typeof STATUS_MAP]?.tone} label={t(`sop.status.${r.status}`, r.status)} />
                       </TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">

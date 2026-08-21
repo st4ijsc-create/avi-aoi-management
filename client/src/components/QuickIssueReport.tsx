@@ -153,7 +153,7 @@ export default function QuickIssueReport({
       const key = res.degraded ? "quickIssue.routedDegraded" : "quickIssue.routedToast";
       const fallback = res.degraded
         ? t("quickIssueReport.daBaoMacDinhAn", "Đã báo (mặc định an toàn): {{reason}} · mức {{state}}")
-        : "Đã báo: {{reason}} · mức {{state}} — đang định tuyến";
+        : t("quickIssueReport.daBaoDinhTuyen", "Đã báo: {{reason}} · mức {{state}} — đang định tuyến");
       toast.success(t(key, fallback, { reason: reasonLabel, state: stateLabel }));
       setDescription("");
       setOpen(false);

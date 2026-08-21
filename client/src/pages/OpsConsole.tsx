@@ -1039,7 +1039,7 @@ export default function OpsConsole() {
                                   return next;
                                 })}
                               >
-                                {expanded ? "Thu gọn" : t("opsConsole.hienThem", { count: hidden })}
+                                {expanded ? t("opsConsole.thuGon", "Thu gọn") : t("opsConsole.hienThem", { count: hidden })}
                               </Button>
                             )}
                           </CardContent>
@@ -1424,8 +1424,8 @@ export default function OpsConsole() {
               <AlertDialogDescription>
                 {confirmTarget
                   ? confirmTarget.items.length === 1
-                    ? `Cảnh báo "${confirmTarget.items[0].title}" (nguồn ${confirmSources}) sẽ bị đóng vĩnh viễn — không thể hoàn tác từ màn hình này.`
-                    : `${confirmTarget.items.length} cảnh báo (nguồn ${confirmSources}) — ${confirmTarget.label} — sẽ bị đóng VĨNH VIỄN, không thể hoàn tác từ màn hình này.`
+                    ? t("opsConsole.confirmMot", { title: confirmTarget.items[0].title, sources: confirmSources })
+                    : t("opsConsole.confirmNhieu", { count: confirmTarget.items.length, sources: confirmSources, label: confirmTarget.label })
                   : ""}
               </AlertDialogDescription>
             </AlertDialogHeader>

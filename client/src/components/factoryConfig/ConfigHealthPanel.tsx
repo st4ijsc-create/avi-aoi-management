@@ -101,8 +101,8 @@ function FindingRow({ finding, onNavigate }: { finding: Finding; onNavigate: Nav
     emptyWorkshop: t("configHealthPanel.phanXuongChuaCoDay", "Phân xưởng chưa có dây chuyền"),
     emptyLine: t("configHealthPanel.dayChuyenChuaCoTram", "Dây chuyền chưa có trạm"),
     emptyStation: t("configHealthPanel.tramChuaCoMay", "Trạm chưa có máy"),
-    dupCode: 'Trùng mã "{{code}}"',
-    machineUnapproved: "Máy chưa được duyệt (trạng thái: {{status}})",
+    dupCode: t("configHealthPanel.dupCode", 'Trùng mã "{{code}}"'),
+    machineUnapproved: t("configHealthPanel.machineUnapproved", "Máy chưa được duyệt (trạng thái: {{status}})"),
     machineNoModel: t("configHealthPanel.mayChuaKhaiBaoModel", "Máy chưa khai báo model"),
   };
 

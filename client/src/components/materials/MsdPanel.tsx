@@ -11,6 +11,7 @@
  * the Feeder-Verify page. Write actions are gated by usePermissions("masterdata").
  */
 import { useMemo, useState } from "react";
+import i18n from "@/i18n";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toastTrpcError } from "@/lib/trpcErrors";
@@ -61,9 +62,9 @@ function StatusBadge({ status }: { status: MsdStatus | string }) {
 
 function fmtHours(h: number | null | undefined): string {
   if (h == null) return "∞";
-  if (h < 1) return `${Math.round(h * 60)} phút`;
-  if (h < 48) return `${h.toFixed(1)} giờ`;
-  return `${(h / 24).toFixed(1)} ngày`;
+  if (h < 1) return `${Math.round(h * 60)} ${i18n.t("unit.phut", "phút")}`;
+  if (h < 48) return `${h.toFixed(1)} ${i18n.t("unit.gio", "giờ")}`;
+  return `${(h / 24).toFixed(1)} ${i18n.t("unit.ngay", "ngày")}`;
 }
 
 export default function MsdPanel() {
@@ -87,7 +88,7 @@ export default function MsdPanel() {
 
   const openExposure = trpc.msd.openExposure.useMutation({
     onSuccess: () => {
-      toast.success(`Đã mở đồng hồ floor-life cho ${componentCode || "linh kiện"}`);
+      toast.success(t("msd.daMoDongHo", { code: componentCode || t("msd.linhKienChung", "linh kiện") }));
       setComponentCode("");
       setReelId("");
       setNotes("");

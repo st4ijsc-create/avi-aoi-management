@@ -776,7 +776,7 @@ function CenterOverview({
     }
     return [...byCat.entries()].map(([cat, n]) => `${n} ${cat.toLowerCase()}`).join(", ");
   }, [devices]);
-  const sceneAriaLabel = `Bản sao số nhà máy${factoryNode ? ` ${factoryNode.name}` : ""} — ${devices.length} thiết bị, ${activeAlarmCount} cảnh báo đang hoạt động`;
+  const sceneAriaLabel = t("commandCenter.sceneAria", { name: factoryNode ? ` ${factoryNode.name}` : "", devices: devices.length, alarms: activeAlarmCount });
 
   return (
     <SectionCard
@@ -867,7 +867,7 @@ function CenterOverview({
             </Canvas>
           </div>
           <p className="sr-only">
-            {`Tóm tắt bản sao số: ${devices.length} thiết bị${stateSummary ? ` — ${stateSummary}` : ""}. ${activeAlarmCount} cảnh báo đang hoạt động trong phạm vi nhà máy này.`}
+            {t("commandCenter.tomTatTwin", { devices: devices.length, state: stateSummary ? ` — ${stateSummary}` : "", alarms: activeAlarmCount })}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
             {/* W4 (doc 67): nhãn chữ tiếng Việt cạnh chấm màu (không chỉ dựa màu). */}
@@ -881,7 +881,7 @@ function CenterOverview({
             {selectedDevice && (
               <span className="ml-auto text-foreground">
                 {selectedDevice.name} · {selectedDevice.state}
-                {selectedDevice.activeTaskId != null ? ` · lệnh #${selectedDevice.activeTaskId}` : ""}
+                {selectedDevice.activeTaskId != null ? t("commandCenter.lenhSo", { id: selectedDevice.activeTaskId }) : ""}
               </span>
             )}
           </div>

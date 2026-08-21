@@ -180,7 +180,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
         return;
       }
       exportViaXlsx(rows, columns, format, base);
-      toast.success(`Đã xuất ${rows.length} ${entityLabel} (${format.toUpperCase()})`);
+      toast.success(t("importExportBar.daXuat", { count: rows.length, entity: entityLabel, format: format.toUpperCase() }));
     },
     [onExport, data, columns, base, entityLabel],
   );
@@ -221,7 +221,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
         });
         setDetails(validateRecordsDetailed(records, columns));
       } catch (err) {
-        toast.error(`Không đọc được file: ${(err as Error).message}`);
+        toast.error(t("importExportBar.khongDocDuocFile", { msg: (err as Error).message }));
         setDetails(null);
       } finally {
         setParsing(false);
@@ -237,12 +237,12 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
       const res = await onImport(validRows);
       setResult(res);
       if (res.failed === 0) {
-        toast.success(`Đã nhập ${res.inserted} ${entityLabel}`);
+        toast.success(t("importExportBar.daNhap", { count: res.inserted, entity: entityLabel }));
       } else {
-        toast.warning(`Nhập: ${res.inserted} thành công, ${res.failed} lỗi`);
+        toast.warning(t("importExportBar.nhapPartial", { ok: res.inserted, failed: res.failed }));
       }
     } catch (err) {
-      toast.error(`Nhập lỗi: ${(err as Error).message}`);
+      toast.error(t("importExportBar.nhapErr", { msg: (err as Error).message }));
     } finally {
       setImporting(false);
     }
@@ -382,7 +382,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
                 <div className="max-h-40 overflow-auto rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
                   {result.errors.slice(0, 50).map((e, i) => (
                     <div key={i}>
-                      {e.row != null ? `Dòng ${e.row}: ` : ""}
+                      {e.row != null ? t("importExportBar.dongSo", { row: e.row }) : ""}
                       {e.message}
                     </div>
                   ))}

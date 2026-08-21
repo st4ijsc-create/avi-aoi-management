@@ -1299,7 +1299,8 @@
     "filtered": "đang lọc",
     "tapToEnableSound": "Chạm để bật chuông",
     "overdue": "QUÁ HẠN",
-    "lookupCode": "Tra mã"
+    "lookupCode": "Tra mã",
+    "xuongSo": "Xưởng #{{id}}"
   },
   "aiInbox": {
     "title": "Việc cần xử lý",
@@ -3368,7 +3369,9 @@
     "tplExecutiveSummaryDesc": "Báo cáo tổng hợp cho quản lý với KPIs, trends, và comparisons",
     "tplRealtimeMonitoringDesc": "Giám sát thời gian thực với live data, alerts, và status updates",
     "tplAlertManagementDesc": "Quản lý cảnh báo với alert history, rules, và notifications",
-    "cuaSoInBiChan": "Cửa sổ in bị trình duyệt chặn"
+    "cuaSoInBiChan": "Cửa sổ in bị trình duyệt chặn",
+    "boCanhBao": "Bỏ cảnh báo: {{title}}",
+    "exportPdfHint": "{{label}}: chọn \"Save as PDF / Lưu thành PDF\" trong hộp thoại in."
   },
   "defects": {
     "heatmap": {
@@ -8889,7 +8892,8 @@
     "tabQualityCost": "Chi phí chất lượng",
     "totalProductsShort": "Tổng SP",
     "yieldTrendDesc": "Biểu đồ Yield Rate theo thời gian",
-    "yieldTrendTitle": "Xu hướng Yield Rate"
+    "yieldTrendTitle": "Xu hướng Yield Rate",
+    "tienDong": "{{value}} đ"
   },
   "roles": {
     "supervisor": "Giám sát",
@@ -13990,7 +13994,10 @@
     "ackGroup": "Xác nhận nhóm \"{{title}}\"",
     "hienThem": "Hiện thêm ({{count}})",
     "chonCanhBao": "Chọn {{title}}",
-    "xuLyNhom": "Xử lý \"{{label}}\""
+    "xuLyNhom": "Xử lý \"{{label}}\"",
+    "thuGon": "Thu gọn",
+    "confirmMot": "Cảnh báo \"{{title}}\" (nguồn {{sources}}) sẽ bị đóng vĩnh viễn — không thể hoàn tác từ màn hình này.",
+    "confirmNhieu": "{{count}} cảnh báo (nguồn {{sources}}) — {{label}} — sẽ bị đóng VĨNH VIỄN, không thể hoàn tác từ màn hình này."
   },
   "cmd": {
     "title": "Trung tâm điều hành hệ sinh thái",
@@ -18776,7 +18783,10 @@
     "oeeSnapshot": "OEE {{source}} (snapshot) · năng lượng chưa tổng hợp",
     "thietBiMa": "{{kind}} · {{code}}",
     "robot": "Robot",
-    "may": "Máy"
+    "may": "Máy",
+    "lenhSo": " · lệnh #{{id}}",
+    "sceneAria": "Bản sao số nhà máy{{name}} — {{devices}} thiết bị, {{alarms}} cảnh báo đang hoạt động",
+    "tomTatTwin": "Tóm tắt bản sao số: {{devices}} thiết bị{{state}}. {{alarms}} cảnh báo đang hoạt động trong phạm vi nhà máy này."
   },
   "msd": {
     "advisoryMsdTrackingEnabledTat": "Advisory (MSD_TRACKING_ENABLED tắt)",
@@ -18797,7 +18807,9 @@
     "capMsl": "Cấp MSL",
     "ghiChuTuyChon": "Ghi chú (tuỳ chọn)",
     "ghiChu": "Ghi chú",
-    "khongGioiHan": "không giới hạn"
+    "khongGioiHan": "không giới hạn",
+    "daMoDongHo": "Đã mở đồng hồ floor-life cho {{code}}",
+    "linhKienChung": "linh kiện"
   },
   "stencil": {
     "chonKhuonInTheoId": "Chọn khuôn in theo ID (tool id trong master khuôn/thiết bị)",
@@ -18817,7 +18829,9 @@
     "soLuotInThem": "Số lượt in thêm",
     "giaTriLucCangTuy": "Giá trị lực căng (tuỳ chọn)",
     "ghiChuTuyChon": "Ghi chú (tuỳ chọn)",
-    "ghiChu": "Ghi chú"
+    "ghiChu": "Ghi chú",
+    "daGhiLuotIn": "Đã ghi {{count}} lượt in. Tổng: {{total}}",
+    "lucCangGiaTri": "· lực căng {{value}}"
   },
   "feederVerify": {
     "quetKiemTra": "Quét kiểm tra",
@@ -18840,7 +18854,9 @@
     "chonMayTruoc": "Chọn máy trước",
     "quetNhapMaReel": "Quét/nhập mã reel",
     "cheDoChanChayKhi": "Chế độ CHẶN chạy khi có lệch (FEEDER_VERIFY_ENFORCED bật)",
-    "cheDoCanhBaoKhong": "Chế độ cảnh báo (không chặn)"
+    "cheDoCanhBaoKhong": "Chế độ cảnh báo (không chặn)",
+    "khopSlot": "Khớp: slot {{slot}} → {{code}}",
+    "lechSlot": "LỆCH: slot {{slot}} kỳ vọng {{expected}}, quét {{scanned}}"
   },
   "aiToolResult": {
     "khongCoKetNoiCsdl": "Không có kết nối CSDL.",
@@ -18928,7 +18944,9 @@
     "soSanhTrongKy": "So sánh trong kỳ",
     "sanLuong": "Sản lượng",
     "vsTrungBinhTapDoan": "vs. Trung bình tập đoàn",
-    "vsMucTieu95": "vs. Mục tiêu 95%"
+    "vsMucTieu95": "vs. Mục tiêu 95%",
+    "chuaGanTapDoan": "Chưa gán tập đoàn",
+    "mucTieu": "Mục tiêu"
   },
   "drillDown": {
     "chonKyDuLieu": "Chọn kỳ dữ liệu",
@@ -18961,7 +18979,9 @@
   },
   "teachJog": {
     "jogPreviewCucBoCapture": "Jog (preview cục bộ) → Capture point → thêm job step.",
-    "buoc": "Bước"
+    "buoc": "Bước",
+    "chuaCoPoint": "Chưa có point — Capture để thêm.",
+    "danhSachPoint": "{{count}} point: {{list}}"
   },
   "entityCombo": {
     "chon": "Chọn...",
@@ -18970,7 +18990,12 @@
   },
   "excelIo": {
     "chonFileExcelXlsxDe": "Chọn file Excel (.xlsx) để import dữ liệu. Tải template mẫu nếu cần.",
-    "chonFileExcel": "Chọn file Excel"
+    "chonFileExcel": "Chọn file Excel",
+    "importOk": "Import thành công {{count}} {{entity}}",
+    "importPartial": "Import: {{ok}} thành công, {{failed}} lỗi",
+    "importErr": "Import lỗi: {{msg}}",
+    "exportOk": "Xuất Excel thành công: {{count}} {{entity}}",
+    "exportErr": "Xuất lỗi: {{msg}}"
   },
   "prodCategory": {
     "vdLinhKienDienTu": "VD: Linh kiện điện tử",
@@ -19410,7 +19435,8 @@
   },
   "alertGroupCard": {
     "tuoi": "Tuổi: ",
-    "moiNhat": "Mới nhất: "
+    "moiNhat": "Mới nhất: ",
+    "conChuaAck": " · còn {{count}} chưa ACK"
   },
   "confirmDeleteDialog": {
     "banCoTheKhoiPhuc": "Bạn có thể khôi phục lại sau.",
@@ -19421,13 +19447,20 @@
     "khongCoDuLieuDe": "Không có dữ liệu để xuất",
     "daTaiFileMau": "Đã tải file mẫu",
     "dong": "Dòng",
-    "trangThai": "Trạng thái"
+    "trangThai": "Trạng thái",
+    "daXuat": "Đã xuất {{count}} {{entity}} ({{format}})",
+    "khongDocDuocFile": "Không đọc được file: {{msg}}",
+    "daNhap": "Đã nhập {{count}} {{entity}}",
+    "nhapPartial": "Nhập: {{ok}} thành công, {{failed}} lỗi",
+    "nhapErr": "Nhập lỗi: {{msg}}",
+    "dongSo": "Dòng {{row}}: "
   },
   "productCategoryManagement": {
     "codeElecNameLinhKien": "[{\"code\": \"ELEC\", \"name\": \"Linh kiện điện tử\", ...}]"
   },
   "quickIssueReport": {
-    "daBaoMacDinhAn": "Đã báo (mặc định an toàn): {{reason}} · mức {{state}}"
+    "daBaoMacDinhAn": "Đã báo (mặc định an toàn): {{reason}} · mức {{state}}",
+    "daBaoDinhTuyen": "Đã báo: {{reason}} · mức {{state}} — đang định tuyến"
   },
   "componentShowcase": {
     "vatLieuM001": "vật liệu M-001",
@@ -19444,7 +19477,8 @@
     "thieuMappingTapDoanGan": "Thiếu mapping tập đoàn — gán trong Quản lý dữ liệu. Bấm để xem các nhà máy của nhóm này.",
     "ketQuaKiemTraCo": "Kết quả kiểm tra có mã nhà máy không khớp danh mục (hoặc thiếu) — gán trong Quản lý dữ liệu.",
     "dangTimDiemXauNhat": "Đang tìm điểm xấu nhất…",
-    "diToiDiemXauNhat": "Đi tới điểm xấu nhất"
+    "diToiDiemXauNhat": "Đi tới điểm xấu nhất",
+    "bamDeDiToiNode": "{{name}} — bấm để đi tới node này"
   },
   "mqttDashboard": {
     "vuiLongChonFactoryWorkshop": "Vui lòng chọn Factory, Workshop và Station",
@@ -19461,7 +19495,9 @@
     "phanXuongChuaCoDay": "Phân xưởng chưa có dây chuyền",
     "dayChuyenChuaCoTram": "Dây chuyền chưa có trạm",
     "tramChuaCoMay": "Trạm chưa có máy",
-    "mayChuaKhaiBaoModel": "Máy chưa khai báo model"
+    "mayChuaKhaiBaoModel": "Máy chưa khai báo model",
+    "dupCode": "Trùng mã \"{{code}}\"",
+    "machineUnapproved": "Máy chưa được duyệt (trạng thái: {{status}})"
   },
   "lineCommandBar": {
     "chayStart": "Chạy (Start)",
@@ -19485,7 +19521,9 @@
     "dieuKhien": "Điều khiển",
     "xacMinh": "Xác minh",
     "anToan": "An toàn",
-    "baoMat": "Bảo mật"
+    "baoMat": "Bảo mật",
+    "stateArmed": "Đang thật",
+    "stateWarn": "Cảnh báo"
   },
   "embTpl": {
     "tongQuanSanXuatVoi": "Tổng quan sản xuất với biểu đồ sản lượng, yield rate, và trạng thái máy",
@@ -19543,5 +19581,35 @@
   },
   "apiDocs": {
     "daCopyVaoClipboard": "Đã copy vào clipboard"
+  },
+  "bulkAnnotation": {
+    "loi": "Lỗi: {{msg}}"
+  },
+  "unit": {
+    "phut": "phút",
+    "gio": "giờ",
+    "ngay": "ngày",
+    "ph": "ph"
+  },
+  "confirmDelete": {
+    "luuTruHoi": "Lưu trữ {{item}}?",
+    "xoaHoi": "Xoá {{item}}?",
+    "khongHoanTac": "Hành động không thể hoàn tác.",
+    "banGhiKhac": "bản ghi khác",
+    "huy": "Huỷ"
+  },
+  "requestRole": {
+    "nguoiYeuCau": "Người yêu cầu / Requester: {{who}}",
+    "vaiTroHienTai": "Vai trò hiện tại / Current role: {{role}}",
+    "vaiTroMongMuon": "Vai trò mong muốn / Requested role: {{role}}",
+    "chuaChon": "(chưa chọn)",
+    "lyDo": "Lý do / Reason: {{reason}}",
+    "trong": "(trống)"
+  },
+  "softwareVersions": {
+    "uploadOk": "Upload thành công: v{{version}} ({{size}} MB)"
+  },
+  "cellTwin": {
+    "maySo": "Máy #{{id}}"
   }
 }

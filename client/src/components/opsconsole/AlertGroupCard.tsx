@@ -150,7 +150,7 @@ export const AlertGroupCard = memo(function AlertGroupCard({
             {single ? t("alertGroupCard.tuoi", "Tuổi: ") : t("alertGroupCard.moiNhat", "Mới nhất: ")}
             <AgeLabel raisedAt={g.latest.raisedAt} /> trước
             {g.unackedCount === 0 && " · ACK"}
-            {!single && g.unackedCount > 0 && g.unackedCount < g.count && ` · còn ${g.unackedCount} chưa ACK`}
+            {!single && g.unackedCount > 0 && g.unackedCount < g.count && t("alertGroupCard.conChuaAck", { count: g.unackedCount })}
           </div>
         </button>
 

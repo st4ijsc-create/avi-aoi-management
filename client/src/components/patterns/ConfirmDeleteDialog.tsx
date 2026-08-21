@@ -63,16 +63,19 @@ export function ConfirmDeleteDialog({
   itemLabel,
   onConfirm,
   referenceCount,
-  referenceLabel = "bản ghi khác",
+  referenceLabel: referenceLabelProp,
   isSoftDelete = false,
   destructive,
   title,
   description,
   confirmLabel,
-  cancelLabel = "Huỷ",
+  cancelLabel: cancelLabelProp,
   disabled = false,
 }: ConfirmDeleteDialogProps): React.JSX.Element {
   const { t } = useTranslation();
+  // Mặc định giải ở THÂN hàm — `t` chưa có trong phạm vi danh sách tham số.
+  const referenceLabel = referenceLabelProp ?? t("confirmDelete.banGhiKhac", "bản ghi khác");
+  const cancelLabel = cancelLabelProp ?? t("confirmDelete.huy", "Huỷ");
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
 
@@ -80,12 +83,12 @@ export function ConfirmDeleteDialog({
   const isDestructive = destructive ?? !isSoftDelete;
 
   const resolvedTitle =
-    title ?? (isSoftDelete ? `Lưu trữ ${itemLabel}?` : `Xoá ${itemLabel}?`);
+    title ?? (isSoftDelete ? t("confirmDelete.luuTruHoi", { item: itemLabel }) : t("confirmDelete.xoaHoi", { item: itemLabel }));
   const resolvedDescription =
     description ??
     (isSoftDelete
       ? t("confirmDeleteDialog.banCoTheKhoiPhuc", "Bạn có thể khôi phục lại sau.")
-      : "Hành động không thể hoàn tác.");
+      : t("confirmDelete.khongHoanTac", "Hành động không thể hoàn tác."));
   const resolvedConfirmLabel =
     confirmLabel ?? (isSoftDelete ? t("confirmDeleteDialog.luuTru", "Lưu trữ") : t("confirmDeleteDialog.xoaVinhVien", "Xoá vĩnh viễn"));
 

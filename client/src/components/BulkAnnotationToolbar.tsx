@@ -63,7 +63,7 @@ export function BulkAnnotationToolbar({
       onRefresh?.();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${mapTrpcError(error)}`);
+      toast.error(t("bulkAnnotation.loi", { msg: mapTrpcError(error) }));
     },
   });
 

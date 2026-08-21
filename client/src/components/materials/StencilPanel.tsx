@@ -48,7 +48,7 @@ export default function StencilPanel() {
 
   const record = trpc.stencil.recordPrints.useMutation({
     onSuccess: (res: any) => {
-      toast.success(`Đã ghi ${printCount || 0} lượt in. Tổng: ${res?.totalPrints ?? "?"}`);
+      toast.success(t("stencil.daGhiLuotIn", { count: printCount || 0, total: res?.totalPrints ?? "?" }));
       setPrintCount("");
       setTensionValue("");
       setCleaned(false);
@@ -209,7 +209,7 @@ export default function StencilPanel() {
                       <span className="font-medium">+{Number(r.printCount).toLocaleString()} lượt</span>
                       <span className="text-muted-foreground">
                         {r.cleanedAt ? t("stencilPanel.veSinh", "· vệ sinh ") : ""}
-                        {r.tensionValue != null ? `· lực căng ${r.tensionValue}` : ""}
+                        {r.tensionValue != null ? t("stencil.lucCangGiaTri", { value: r.tensionValue }) : ""}
                       </span>
                       <span className="text-xs text-muted-foreground">
                         {r.createdAt ? new Date(r.createdAt).toLocaleString() : ""}

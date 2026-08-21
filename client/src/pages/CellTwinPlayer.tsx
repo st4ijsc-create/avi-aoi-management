@@ -225,7 +225,7 @@ export function CellTwinPlayerContent() {
   const machineMeta = useMemo(() => {
     const m = new Map<number, { name: string; machineType: string }>();
     for (const e of equipmentQ.data ?? []) {
-      m.set(e.machineId, { name: e.name ?? e.code ?? `Máy #${e.machineId}`, machineType: e.machineType });
+      m.set(e.machineId, { name: e.name ?? e.code ?? t("cellTwin.maySo", { id: e.machineId }), machineType: e.machineType });
     }
     return m;
   }, [equipmentQ.data]);

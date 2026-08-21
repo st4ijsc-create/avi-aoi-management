@@ -244,7 +244,26 @@ describe("F12 — chuỗi tiếng Việt TRẦN (cổng theo-khoá không thấy
  * dấu. Quy tắc "KHÔNG BAO GIỜ nâng" áp cho việc nâng để CHE NỢ; sửa thiết bị đo rồi
  * ghi lại số thật thì ngược lại — đó chính là điều quy tắc bảo vệ.
  */
-const FROZEN_SHAPE3 = 57;
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ĐÃ VỀ 0 (2026-08-21). Đường đi: 914 → 770 → 500 → … → **0** qua 17 lô.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Từ đây con số này KHÔNG còn là "ngân sách" mà là một BẤT BIẾN: thêm bất kỳ chuỗi
+ * tiếng Việt nào ở hình dạng thứ ba là cổng ĐỎ ngay, không có chỗ để lách.
+ *
+ * ⚠ 0 KHÔNG có nghĩa "mọi chữ Việt đã biến mất khỏi `client/src`". Nó nghĩa là mọi
+ *   chuỗi CÒN LẠI đều thuộc một trong các nhóm đã kiểm tận nơi và ghi lý do trong
+ *   `scripts/viStringScan.mjs`:
+ *     · khuôn ĐÃ ĐÚNG — `t(khoá, "mặc định")`, `{key, fallback}`, `pick(vi,en,zh)`,
+ *       bảng dịch tự viết đủ ba nhánh
+ *     · DỮ LIỆU chứ không phải nhãn — bí danh cột Excel (`findCol`), khoá khớp
+ *       (`MasterDataColumn.header`), từ khoá phân loại lỗi (`.includes("thiếu")`),
+ *       mác vật liệu, hàng ví dụ trong template
+ *     · MẪU MÃ trong `apiDocs/` — về cấu tạo không i18n được (xem docblock ở đó)
+ *   Mỗi miễn trừ đều có lý do đo được. Gỡ một miễn trừ mà không đọc lý do là cách
+ *   nhanh nhất để đi "sửa" những thứ vốn đã đúng.
+ */
+const FROZEN_SHAPE3 = 0;
 
 /**
  * ⚠ Bộ đếm hình-3 nay nằm ở `scripts/viStringScan.mjs` — MỘT nguồn sự thật.

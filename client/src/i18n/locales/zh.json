@@ -1299,7 +1299,8 @@
     "filtered": "已筛选",
     "tapToEnableSound": "点击启用提示音",
     "overdue": "超时",
-    "lookupCode": "查询代码"
+    "lookupCode": "查询代码",
+    "xuongSo": "车间 #{{id}}"
   },
   "aiInbox": {
     "title": "待办收件箱",
@@ -3368,7 +3369,9 @@
     "tplExecutiveSummaryDesc": "面向管理层的汇总报告：KPI、趋势与对比",
     "tplRealtimeMonitoringDesc": "实时监控：实时数据、告警与状态更新",
     "tplAlertManagementDesc": "告警管理：告警历史、规则与通知",
-    "cuaSoInBiChan": "浏览器阻止了打印窗口"
+    "cuaSoInBiChan": "浏览器阻止了打印窗口",
+    "boCanhBao": "忽略告警：{{title}}",
+    "exportPdfHint": "{{label}}：在打印对话框中选择「另存为 PDF」。"
   },
   "defects": {
     "trend": {
@@ -8692,7 +8695,8 @@
     "line": "产线",
     "station": "工站",
     "product": "产品",
-    "shift": "班次"
+    "shift": "班次",
+    "tienDong": "{{value}} 越南盾"
   },
   "roles": {
     "supervisor": "主管",
@@ -13793,7 +13797,10 @@
     "ackGroup": "确认分组「{{title}}」",
     "hienThem": "显示更多（{{count}}）",
     "chonCanhBao": "选择 {{title}}",
-    "xuLyNhom": "处理「{{label}}」"
+    "xuLyNhom": "处理「{{label}}」",
+    "thuGon": "收起",
+    "confirmMot": "告警「{{title}}」（来源 {{sources}}）将被永久关闭 — 无法从本界面撤销。",
+    "confirmNhieu": "{{count}} 条告警（来源 {{sources}}）— {{label}} — 将被永久关闭，无法从本界面撤销。"
   },
   "cmd": {
     "title": "生态系统指挥中心",
@@ -18804,7 +18811,10 @@
     "oeeSnapshot": "OEE {{source}}（快照）· 能耗未汇总",
     "thietBiMa": "{{kind}} · {{code}}",
     "robot": "机器人",
-    "may": "设备"
+    "may": "设备",
+    "lenhSo": " · 指令 #{{id}}",
+    "sceneAria": "工厂数字孪生{{name}} — {{devices}} 台设备，{{alarms}} 条活动告警",
+    "tomTatTwin": "数字孪生摘要：{{devices}} 台设备{{state}}。本工厂范围内有 {{alarms}} 条活动告警。"
   },
   "msd": {
     "advisoryMsdTrackingEnabledTat": "仅提示（MSD_TRACKING_ENABLED 已关闭）",
@@ -18825,7 +18835,9 @@
     "capMsl": "MSL 等级",
     "ghiChuTuyChon": "备注（可选）",
     "ghiChu": "备注",
-    "khongGioiHan": "无限制"
+    "khongGioiHan": "无限制",
+    "daMoDongHo": "已为 {{code}} 启动车间寿命计时",
+    "linhKienChung": "该元件"
   },
   "stencil": {
     "chonKhuonInTheoId": "按 ID 选择钢网（工装/设备主数据中的 tool id）",
@@ -18845,7 +18857,9 @@
     "soLuotInThem": "新增印刷次数",
     "giaTriLucCangTuy": "张力值（可选）",
     "ghiChuTuyChon": "备注（可选）",
-    "ghiChu": "备注"
+    "ghiChu": "备注",
+    "daGhiLuotIn": "已记录 {{count}} 次印刷。累计：{{total}}",
+    "lucCangGiaTri": "· 张力 {{value}}"
   },
   "feederVerify": {
     "quetKiemTra": "校验扫描",
@@ -18868,7 +18882,9 @@
     "chonMayTruoc": "请先选择设备",
     "quetNhapMaReel": "扫描/输入料盘编号",
     "cheDoChanChayKhi": "偏差时阻断模式（FEEDER_VERIFY_ENFORCED 已开启）",
-    "cheDoCanhBaoKhong": "警告模式（不阻断）"
+    "cheDoCanhBaoKhong": "警告模式（不阻断）",
+    "khopSlot": "匹配：槽位 {{slot}} → {{code}}",
+    "lechSlot": "偏差：槽位 {{slot}} 期望 {{expected}}，扫描到 {{scanned}}"
   },
   "aiToolResult": {
     "khongCoKetNoiCsdl": "无数据库连接。",
@@ -18956,7 +18972,9 @@
     "soSanhTrongKy": "期内对比",
     "sanLuong": "产量",
     "vsTrungBinhTapDoan": "对比集团平均",
-    "vsMucTieu95": "对比 95% 目标"
+    "vsMucTieu95": "对比 95% 目标",
+    "chuaGanTapDoan": "未分配集团",
+    "mucTieu": "目标"
   },
   "drillDown": {
     "chonKyDuLieu": "选择数据周期",
@@ -18989,7 +19007,9 @@
   },
   "teachJog": {
     "jogPreviewCucBoCapture": "点动（本地预览）→ 捕获点位 → 添加作业步骤。",
-    "buoc": "步骤"
+    "buoc": "步骤",
+    "chuaCoPoint": "尚无点位 — 使用 Capture 添加。",
+    "danhSachPoint": "{{count}} 个点位：{{list}}"
   },
   "entityCombo": {
     "chon": "选择...",
@@ -18998,7 +19018,12 @@
   },
   "excelIo": {
     "chonFileExcelXlsxDe": "选择 Excel 文件（.xlsx）导入数据。如需要可先下载模板。",
-    "chonFileExcel": "选择 Excel 文件"
+    "chonFileExcel": "选择 Excel 文件",
+    "importOk": "成功导入 {{count}} 个{{entity}}",
+    "importPartial": "导入：{{ok}} 成功，{{failed}} 失败",
+    "importErr": "导入失败：{{msg}}",
+    "exportOk": "Excel 导出成功：{{count}} 个{{entity}}",
+    "exportErr": "导出失败：{{msg}}"
   },
   "prodCategory": {
     "vdLinhKienDienTu": "例：电子元件",
@@ -19438,7 +19463,8 @@
   },
   "alertGroupCard": {
     "tuoi": "持续时间：",
-    "moiNhat": "最新："
+    "moiNhat": "最新：",
+    "conChuaAck": " · 还有 {{count}} 条未确认"
   },
   "confirmDeleteDialog": {
     "banCoTheKhoiPhuc": "之后可以恢复。",
@@ -19449,13 +19475,20 @@
     "khongCoDuLieuDe": "没有可导出的数据",
     "daTaiFileMau": "模板文件已下载",
     "dong": "行",
-    "trangThai": "状态"
+    "trangThai": "状态",
+    "daXuat": "已导出 {{count}} 个{{entity}}（{{format}}）",
+    "khongDocDuocFile": "无法读取文件：{{msg}}",
+    "daNhap": "已导入 {{count}} 个{{entity}}",
+    "nhapPartial": "导入：{{ok}} 成功，{{failed}} 失败",
+    "nhapErr": "导入失败：{{msg}}",
+    "dongSo": "第 {{row}} 行："
   },
   "productCategoryManagement": {
     "codeElecNameLinhKien": "[{\"code\": \"ELEC\", \"name\": \"电子元件\", ...}]"
   },
   "quickIssueReport": {
-    "daBaoMacDinhAn": "已上报（安全默认）：{{reason}} · 级别 {{state}}"
+    "daBaoMacDinhAn": "已上报（安全默认）：{{reason}} · 级别 {{state}}",
+    "daBaoDinhTuyen": "已上报：{{reason}} · 级别 {{state}} — 正在派单"
   },
   "componentShowcase": {
     "vatLieuM001": "物料 M-001",
@@ -19472,7 +19505,8 @@
     "thieuMappingTapDoanGan": "缺少集团映射 — 请在「数据管理」中分配。点击查看该分组的工厂。",
     "ketQuaKiemTraCo": "检测结果的工厂编号与目录不匹配（或缺失）— 请在「数据管理」中分配。",
     "dangTimDiemXauNhat": "正在查找最差点…",
-    "diToiDiemXauNhat": "跳转到最差点"
+    "diToiDiemXauNhat": "跳转到最差点",
+    "bamDeDiToiNode": "{{name}} — 点击跳转到该节点"
   },
   "mqttDashboard": {
     "vuiLongChonFactoryWorkshop": "请选择工厂、车间和工位",
@@ -19489,7 +19523,9 @@
     "phanXuongChuaCoDay": "车间下没有产线",
     "dayChuyenChuaCoTram": "产线下没有工位",
     "tramChuaCoMay": "工位下没有设备",
-    "mayChuaKhaiBaoModel": "设备未声明型号"
+    "mayChuaKhaiBaoModel": "设备未声明型号",
+    "dupCode": "编号重复「{{code}}」",
+    "machineUnapproved": "设备未审批（状态：{{status}}）"
   },
   "lineCommandBar": {
     "chayStart": "运行 (Start)",
@@ -19513,7 +19549,9 @@
     "dieuKhien": "控制",
     "xacMinh": "验证",
     "anToan": "安全",
-    "baoMat": "信息安全"
+    "baoMat": "信息安全",
+    "stateArmed": "已启用",
+    "stateWarn": "警告"
   },
   "embTpl": {
     "tongQuanSanXuatVoi": "生产总览：产量图表、良率与设备状态",
@@ -19571,5 +19609,35 @@
   },
   "apiDocs": {
     "daCopyVaoClipboard": "已复制到剪贴板"
+  },
+  "bulkAnnotation": {
+    "loi": "错误：{{msg}}"
+  },
+  "unit": {
+    "phut": "分钟",
+    "gio": "小时",
+    "ngay": "天",
+    "ph": "分"
+  },
+  "confirmDelete": {
+    "luuTruHoi": "归档{{item}}？",
+    "xoaHoi": "删除{{item}}？",
+    "khongHoanTac": "此操作无法撤销。",
+    "banGhiKhac": "其他记录",
+    "huy": "取消"
+  },
+  "requestRole": {
+    "nguoiYeuCau": "申请人：{{who}}",
+    "vaiTroHienTai": "当前角色：{{role}}",
+    "vaiTroMongMuon": "申请角色：{{role}}",
+    "chuaChon": "（未选择）",
+    "lyDo": "原因：{{reason}}",
+    "trong": "（空）"
+  },
+  "softwareVersions": {
+    "uploadOk": "上传成功：v{{version}}（{{size}} MB）"
+  },
+  "cellTwin": {
+    "maySo": "设备 #{{id}}"
   }
 }

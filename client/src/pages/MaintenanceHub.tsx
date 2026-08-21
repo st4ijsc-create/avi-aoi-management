@@ -647,8 +647,8 @@ function ReliabilityTab() {
     };
   }, [listQ.data]);
 
-  const fmtMins = (m: number | null) => (m == null ? "—" : m < 60 ? `${Math.round(m)} ph` : `${(m / 60).toFixed(1)} giờ`);
-  const fmtHours = (h: number | null) => (h == null ? "—" : h < 48 ? `${h.toFixed(1)} giờ` : `${(h / 24).toFixed(1)} ngày`);
+  const fmtMins = (m: number | null) => (m == null ? "—" : m < 60 ? `${Math.round(m)} ${t("unit.ph", "ph")}` : `${(m / 60).toFixed(1)} ${t("unit.gio", "giờ")}`);
+  const fmtHours = (h: number | null) => (h == null ? "—" : h < 48 ? `${h.toFixed(1)} ${t("unit.gio", "giờ")}` : `${(h / 24).toFixed(1)} ${t("unit.ngay", "ngày")}`);
 
   return (
     <div className="space-y-3">

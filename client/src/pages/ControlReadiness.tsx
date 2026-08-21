@@ -52,10 +52,10 @@ type ReadinessGroup = ReadinessItem["group"];
 // ── state → đèn (tone + nhãn) ─────────────────────────────────────────────────
 
 const STATE_MAP: Record<ReadinessState, StatusMapEntry> = {
-  armed: { tone: "success", label: "Đang thật" },
+  armed: { tone: "success", label: "ctrlReady.stateArmed" },
   dormant: { tone: "default", label: "Dormant" },
   bypass: { tone: "warning", label: "Bypass" },
-  warn: { tone: "error", label: "Cảnh báo" },
+  warn: { tone: "error", label: "ctrlReady.stateWarn" },
 };
 
 // ── nhóm hiển thị (thứ tự + nhãn + icon) ──────────────────────────────────────

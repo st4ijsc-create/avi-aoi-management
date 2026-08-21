@@ -1299,7 +1299,8 @@
     "filtered": "filtered",
     "tapToEnableSound": "Tap to enable sound",
     "overdue": "OVERDUE",
-    "lookupCode": "Look up code"
+    "lookupCode": "Look up code",
+    "xuongSo": "Workshop #{{id}}"
   },
   "aiInbox": {
     "title": "Action Inbox",
@@ -3376,7 +3377,9 @@
     "tplRealtimeMonitoringDesc": "Realtime monitoring with live data, alerts and status updates",
     "tplAlertManagementDesc": "Alarm management with alert history, rules and notifications",
     "tplProductionOverviewDesc": "Production overview with output charts, yield rate and machine status",
-    "cuaSoInBiChan": "The browser blocked the print window"
+    "cuaSoInBiChan": "The browser blocked the print window",
+    "boCanhBao": "Dismiss alarm: {{title}}",
+    "exportPdfHint": "{{label}}: choose \"Save as PDF\" in the print dialog."
   },
   "defects": {
     "trend": {
@@ -8909,7 +8912,8 @@
     "tabQualityCost": "Cost of quality",
     "totalProductsShort": "Total products",
     "yieldTrendDesc": "Yield rate chart over time",
-    "yieldTrendTitle": "Yield Rate trend"
+    "yieldTrendTitle": "Yield Rate trend",
+    "tienDong": "{{value}} VND"
   },
   "roles": {
     "supervisor": "Supervisor",
@@ -14010,7 +14014,10 @@
     "ackGroup": "Acknowledge group \"{{title}}\"",
     "hienThem": "Show more ({{count}})",
     "chonCanhBao": "Select {{title}}",
-    "xuLyNhom": "Resolve \"{{label}}\""
+    "xuLyNhom": "Resolve \"{{label}}\"",
+    "thuGon": "Collapse",
+    "confirmMot": "Alarm \"{{title}}\" (source {{sources}}) will be closed permanently — this cannot be undone from this screen.",
+    "confirmNhieu": "{{count}} alarms (source {{sources}}) — {{label}} — will be closed PERMANENTLY; this cannot be undone from this screen."
   },
   "cmd": {
     "title": "Ecosystem Command Center",
@@ -18796,7 +18803,10 @@
     "oeeSnapshot": "OEE {{source}} (snapshot) · energy not rolled up",
     "thietBiMa": "{{kind}} · {{code}}",
     "robot": "Robot",
-    "may": "Machine"
+    "may": "Machine",
+    "lenhSo": " · command #{{id}}",
+    "sceneAria": "Factory digital twin{{name}} — {{devices}} devices, {{alarms}} active alarms",
+    "tomTatTwin": "Digital twin summary: {{devices}} devices{{state}}. {{alarms}} active alarms in this factory scope."
   },
   "msd": {
     "advisoryMsdTrackingEnabledTat": "Advisory (MSD_TRACKING_ENABLED off)",
@@ -18817,7 +18827,9 @@
     "capMsl": "MSL level",
     "ghiChuTuyChon": "Note (optional)",
     "ghiChu": "Note",
-    "khongGioiHan": "unlimited"
+    "khongGioiHan": "unlimited",
+    "daMoDongHo": "Floor-life timer started for {{code}}",
+    "linhKienChung": "the component"
   },
   "stencil": {
     "chonKhuonInTheoId": "Select a stencil by ID (tool id in the tooling/equipment master)",
@@ -18837,7 +18849,9 @@
     "soLuotInThem": "Additional print runs",
     "giaTriLucCangTuy": "Tension value (optional)",
     "ghiChuTuyChon": "Note (optional)",
-    "ghiChu": "Note"
+    "ghiChu": "Note",
+    "daGhiLuotIn": "Recorded {{count}} print runs. Total: {{total}}",
+    "lucCangGiaTri": "· tension {{value}}"
   },
   "feederVerify": {
     "quetKiemTra": "Verification scan",
@@ -18860,7 +18874,9 @@
     "chonMayTruoc": "Select a machine first",
     "quetNhapMaReel": "Scan/enter reel code",
     "cheDoChanChayKhi": "BLOCKING mode on mismatch (FEEDER_VERIFY_ENFORCED is on)",
-    "cheDoCanhBaoKhong": "Warning mode (non-blocking)"
+    "cheDoCanhBaoKhong": "Warning mode (non-blocking)",
+    "khopSlot": "Match: slot {{slot}} → {{code}}",
+    "lechSlot": "MISMATCH: slot {{slot}} expected {{expected}}, scanned {{scanned}}"
   },
   "aiToolResult": {
     "khongCoKetNoiCsdl": "No database connection.",
@@ -18948,7 +18964,9 @@
     "soSanhTrongKy": "Period-over-period comparison",
     "sanLuong": "Output",
     "vsTrungBinhTapDoan": "vs. group average",
-    "vsMucTieu95": "vs. 95% target"
+    "vsMucTieu95": "vs. 95% target",
+    "chuaGanTapDoan": "No group assigned",
+    "mucTieu": "Target"
   },
   "drillDown": {
     "chonKyDuLieu": "Select data period",
@@ -18981,7 +18999,9 @@
   },
   "teachJog": {
     "jogPreviewCucBoCapture": "Jog (local preview) → Capture point → add job step.",
-    "buoc": "Step"
+    "buoc": "Step",
+    "chuaCoPoint": "No points yet — use Capture to add one.",
+    "danhSachPoint": "{{count}} points: {{list}}"
   },
   "entityCombo": {
     "chon": "Select...",
@@ -18990,7 +19010,12 @@
   },
   "excelIo": {
     "chonFileExcelXlsxDe": "Choose an Excel file (.xlsx) to import. Download the template first if needed.",
-    "chonFileExcel": "Choose Excel file"
+    "chonFileExcel": "Choose Excel file",
+    "importOk": "Imported {{count}} {{entity}} successfully",
+    "importPartial": "Import: {{ok}} succeeded, {{failed}} failed",
+    "importErr": "Import failed: {{msg}}",
+    "exportOk": "Excel export succeeded: {{count}} {{entity}}",
+    "exportErr": "Export failed: {{msg}}"
   },
   "prodCategory": {
     "vdLinhKienDienTu": "e.g. Electronic components",
@@ -19430,7 +19455,8 @@
   },
   "alertGroupCard": {
     "tuoi": "Age: ",
-    "moiNhat": "Latest: "
+    "moiNhat": "Latest: ",
+    "conChuaAck": " · {{count}} still unacknowledged"
   },
   "confirmDeleteDialog": {
     "banCoTheKhoiPhuc": "You can restore it later.",
@@ -19441,13 +19467,20 @@
     "khongCoDuLieuDe": "No data to export",
     "daTaiFileMau": "Template file downloaded",
     "dong": "Row",
-    "trangThai": "Status"
+    "trangThai": "Status",
+    "daXuat": "Exported {{count}} {{entity}} ({{format}})",
+    "khongDocDuocFile": "Could not read the file: {{msg}}",
+    "daNhap": "Imported {{count}} {{entity}}",
+    "nhapPartial": "Import: {{ok}} succeeded, {{failed}} failed",
+    "nhapErr": "Import failed: {{msg}}",
+    "dongSo": "Row {{row}}: "
   },
   "productCategoryManagement": {
     "codeElecNameLinhKien": "[{\"code\": \"ELEC\", \"name\": \"Electronic components\", ...}]"
   },
   "quickIssueReport": {
-    "daBaoMacDinhAn": "Reported (safe default): {{reason}} · level {{state}}"
+    "daBaoMacDinhAn": "Reported (safe default): {{reason}} · level {{state}}",
+    "daBaoDinhTuyen": "Reported: {{reason}} · level {{state}} — routing"
   },
   "componentShowcase": {
     "vatLieuM001": "material M-001",
@@ -19464,7 +19497,8 @@
     "thieuMappingTapDoanGan": "Group mapping missing — assign it under Data management. Click to see this group's factories.",
     "ketQuaKiemTraCo": "Inspection results carry a factory code that does not match the catalog (or is missing) — assign it under Data management.",
     "dangTimDiemXauNhat": "Finding the worst point…",
-    "diToiDiemXauNhat": "Go to the worst point"
+    "diToiDiemXauNhat": "Go to the worst point",
+    "bamDeDiToiNode": "{{name}} — click to jump to this node"
   },
   "mqttDashboard": {
     "vuiLongChonFactoryWorkshop": "Please select a factory, workshop and station",
@@ -19481,7 +19515,9 @@
     "phanXuongChuaCoDay": "Workshop has no line",
     "dayChuyenChuaCoTram": "Line has no station",
     "tramChuaCoMay": "Station has no machine",
-    "mayChuaKhaiBaoModel": "Machine has no model declared"
+    "mayChuaKhaiBaoModel": "Machine has no model declared",
+    "dupCode": "Duplicate code \"{{code}}\"",
+    "machineUnapproved": "Machine not approved (status: {{status}})"
   },
   "lineCommandBar": {
     "chayStart": "Run (Start)",
@@ -19505,7 +19541,9 @@
     "dieuKhien": "Control",
     "xacMinh": "Verification",
     "anToan": "Safety",
-    "baoMat": "Security"
+    "baoMat": "Security",
+    "stateArmed": "Armed",
+    "stateWarn": "Warning"
   },
   "embTpl": {
     "tongQuanSanXuatVoi": "Production overview with output charts, yield rate and machine status",
@@ -19563,5 +19601,35 @@
   },
   "apiDocs": {
     "daCopyVaoClipboard": "Copied to clipboard"
+  },
+  "bulkAnnotation": {
+    "loi": "Error: {{msg}}"
+  },
+  "unit": {
+    "phut": "min",
+    "gio": "h",
+    "ngay": "days",
+    "ph": "min"
+  },
+  "confirmDelete": {
+    "luuTruHoi": "Archive {{item}}?",
+    "xoaHoi": "Delete {{item}}?",
+    "khongHoanTac": "This action cannot be undone.",
+    "banGhiKhac": "other records",
+    "huy": "Cancel"
+  },
+  "requestRole": {
+    "nguoiYeuCau": "Requester: {{who}}",
+    "vaiTroHienTai": "Current role: {{role}}",
+    "vaiTroMongMuon": "Requested role: {{role}}",
+    "chuaChon": "(not selected)",
+    "lyDo": "Reason: {{reason}}",
+    "trong": "(empty)"
+  },
+  "softwareVersions": {
+    "uploadOk": "Upload succeeded: v{{version}} ({{size}} MB)"
+  },
+  "cellTwin": {
+    "maySo": "Machine #{{id}}"
   }
 }

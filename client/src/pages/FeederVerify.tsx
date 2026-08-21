@@ -54,10 +54,10 @@ function FeederVerifyTab() {
 
   const verify = trpc.feederVerify.verifyScan.useMutation({
     onSuccess: (res) => {
-      if (res.verdict === "match") toast.success(`Khớp: slot ${slotCode || "?"} → ${res.expectedComponentCode ?? "?"}`);
+      if (res.verdict === "match") toast.success(t("feederVerify.khopSlot", { slot: slotCode || "?", code: res.expectedComponentCode ?? "?" }));
       else
         toast.error(
-          `LỆCH: slot ${slotCode || "?"} kỳ vọng ${res.expectedComponentCode ?? "?"}, quét ${res.scannedComponentCode || "?"}`,
+          t("feederVerify.lechSlot", { slot: slotCode || "?", expected: res.expectedComponentCode ?? "?", scanned: res.scannedComponentCode || "?" }),
         );
       setScannedReel("");
       setupStatus.refetch();

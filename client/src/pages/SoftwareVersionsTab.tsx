@@ -132,7 +132,7 @@ export function SoftwareVersionsTab() {
       });
       const data = await res.json();
       if (data.success) {
-        toast.success(`Upload thành công: v${data.version} (${data.fileSize} MB)`);
+        toast.success(t("softwareVersions.uploadOk", { version: data.version, size: data.fileSize }));
         queryClient.invalidateQueries({ queryKey: ["factoryAlertVersions"] });
         setFaUploadForm({ version: "", versionCode: "", changelog: "", mandatory: false });
         setFaCreateDialog(false);

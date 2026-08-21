@@ -59,9 +59,9 @@ export function ExcelImportExport({
       const result = await onImport(jsonData, replaceIfExists);
 
       if (result.failed === 0) {
-        toast.success(`Import thành công ${result.success} ${entityType}`);
+        toast.success(t("excelIo.importOk", { count: result.success, entity: entityType }));
       } else {
-        toast.warning(`Import: ${result.success} thành công, ${result.failed} lỗi`);
+        toast.warning(t("excelIo.importPartial", { ok: result.success, failed: result.failed }));
         if (result.errors.length > 0) {
           console.warn("Import errors:", result.errors);
         }
@@ -73,7 +73,7 @@ export function ExcelImportExport({
       if (fileInputRef.current) fileInputRef.current.value = "";
       onImportComplete?.();
     } catch (error: any) {
-      toast.error(`Import lỗi: ${error.message}`);
+      toast.error(t("excelIo.importErr", { msg: error.message }));
     } finally {
       setImporting(false);
     }
@@ -84,9 +84,9 @@ export function ExcelImportExport({
     try {
       const result = await onExport();
       window.open(result.url, "_blank");
-      toast.success(`Xuất Excel thành công: ${result.count} ${entityType}`);
+      toast.success(t("excelIo.exportOk", { count: result.count, entity: entityType }));
     } catch (error: any) {
-      toast.error(`Xuất lỗi: ${error.message}`);
+      toast.error(t("excelIo.exportErr", { msg: error.message }));
     } finally {
       setExporting(false);
     }

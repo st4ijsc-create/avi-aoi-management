@@ -207,7 +207,7 @@ export default function CorporateDashboard() {
   // W1-P2: nhãn hiển thị cho nhóm inspection chưa gán tập đoàn (corporateCode
   // null/'N/A' phía server) — gộp một dòng, style muted, xếp CUỐI danh sách và
   // LOẠI khỏi pie/bar so sánh (chỉ hiện trong danh sách chi tiết).
-  const UNASSIGNED_CORP_LABEL = "Chưa gán tập đoàn";
+  const UNASSIGNED_CORP_LABEL_KEY = "corpDash.chuaGanTapDoan";
 
   // Derive corporationData from yieldRateByCorporate
   const corporationData = useMemo(() => {
@@ -217,7 +217,7 @@ export default function CorporateDashboard() {
     const factoriesPerCorp: Record<string, number> = {};
     if (yieldByFactory) {
       for (const f of yieldByFactory) {
-        const key = isUnassignedCode(f.corporateCode) ? UNASSIGNED_CORP_LABEL : f.corporateCode;
+        const key = isUnassignedCode(f.corporateCode) ? UNASSIGNED_CORP_LABEL_KEY : f.corporateCode;
         factoriesPerCorp[key] = (factoriesPerCorp[key] || 0) + 1;
       }
     }
@@ -226,7 +226,7 @@ export default function CorporateDashboard() {
     const merged: Record<string, { name: string; isUnassigned: boolean; factories: number; ok: number; ntf: number; total: number }> = {};
     for (const c of yieldByCorp) {
       const isUnassigned = isUnassignedCode(c.corporateCode);
-      const name = isUnassigned ? UNASSIGNED_CORP_LABEL : c.corporateCode;
+      const name = isUnassigned ? UNASSIGNED_CORP_LABEL_KEY : c.corporateCode;
       if (!merged[name]) {
         merged[name] = { name, isUnassigned, factories: factoriesPerCorp[name] || 0, ok: 0, ntf: 0, total: 0 };
       }
@@ -529,7 +529,7 @@ export default function CorporateDashboard() {
                             />
                           </div>
                           <div>
-                            <p className={corp.isUnassigned ? 'font-medium text-muted-foreground' : 'font-medium'}>{corp.name}</p>
+                            <p className={corp.isUnassigned ? 'font-medium text-muted-foreground' : 'font-medium'}>{corp.isUnassigned ? t(UNASSIGNED_CORP_LABEL_KEY) : corp.name}</p>
                             <p className="text-xs text-muted-foreground">
                               {corp.factories} {t('corporate.factories')}
                             </p>
@@ -583,7 +583,7 @@ export default function CorporateDashboard() {
                           y={95}
                           stroke="var(--warning)"
                           strokeDasharray="4 4"
-                          label={{ value: 'Mục tiêu', position: 'insideTopRight', fill: 'var(--muted-foreground)', fontSize: 11 }}
+                          label={{ value: t("corpDash.mucTieu", "Mục tiêu"), position: 'insideTopRight', fill: 'var(--muted-foreground)', fontSize: 11 }}
                         />
                         <Line type="monotone" dataKey="yield" name={t('corporate.yieldPercent')} stroke="var(--success)" strokeWidth={2} dot={{ fill: 'var(--success)' }} />
                       </LineChart>

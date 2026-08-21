@@ -980,7 +980,7 @@ export default function Dashboard() {
         </head>
         <body>
           ${opts.autoPrint ? `<div class="no-print" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#1e40af;">
-            ${t("dashboard.exportReport")}: chọn "Save as PDF / Lưu thành PDF" trong hộp thoại in. <button onclick="window.print()" style="margin-left:8px;padding:4px 10px;border:1px solid #1e40af;border-radius:6px;background:#fff;color:#1e40af;cursor:pointer;">{t("dashboardRaw.inLuuPdf", "In / Lưu PDF")}</button>
+            ${t("dashboard.exportPdfHint", { label: t("dashboard.exportReport") })} <button onclick="window.print()" style="margin-left:8px;padding:4px 10px;border:1px solid #1e40af;border-radius:6px;background:#fff;color:#1e40af;cursor:pointer;">${t("dashboardRaw.inLuuPdf", "In / Lưu PDF")}</button>
           </div>` : ''}
           <div class="header">
             <h1>${t("dashboard.ngReportTitle")}</h1>
@@ -1548,7 +1548,7 @@ export default function Dashboard() {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                    aria-label={`Bỏ cảnh báo: ${a.title}`}
+                    aria-label={t("dashboard.boCanhBao", { title: a.title })}
                     onClick={() => setUrgentAlerts((prev) => prev.filter((x) => x.id !== a.id))}
                   >
                     <XCircle aria-hidden="true" className="h-3.5 w-3.5" />

@@ -528,7 +528,7 @@ export default function DrillDownDashboard(): React.JSX.Element {
           if (level === "corporate") {
             return {
               ...row,
-              name: "Chưa gán tập đoàn",
+              name: t("drillDownDashboard.chuaGanTapDoan", "Chưa gán tập đoàn"),
               unassignedNote:
                 t("drillDownDashboard.thieuMappingTapDoanGan", "Thiếu mapping tập đoàn — gán trong Quản lý dữ liệu. Bấm để xem các nhà máy của nhóm này."),
             };
@@ -961,7 +961,7 @@ export default function DrillDownDashboard(): React.JSX.Element {
                     <button
                       type="button"
                       onClick={focusWorstRow}
-                      title={`${worstRow.name} — bấm để đi tới node này`}
+                      title={t("drillDownDashboard.bamDeDiToiNode", { name: worstRow.name })}
                       className="flex min-h-11 min-w-0 items-center justify-end gap-2 rounded-md px-1.5 text-right transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="min-w-0 truncate text-sm font-medium">{worstRow.name}</span>

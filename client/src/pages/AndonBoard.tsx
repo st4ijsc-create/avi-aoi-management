@@ -442,7 +442,7 @@ export default function AndonBoard() {
     if (effFactoryId != null) {
       const factoryName = lines.find((l) => l.factoryName)?.factoryName;
       if (factoryName) parts.push(factoryName);
-      else if (parts.length === 0) parts.push(`Xưởng #${effFactoryId}`);
+      else if (parts.length === 0) parts.push(t("andonBoard.xuongSo", { id: effFactoryId }));
     }
     return parts.join(" · ");
   }, [isFiltered, effLineCount, effFactoryId, lines]);

@@ -1264,8 +1264,8 @@ export function ReportsContent() {
                           contentStyle={chartTooltipStyle}
                           labelStyle={chartTooltipLabelStyle}
                           formatter={(value: any, name: string) => {
-                            if (name === 'copqNG') return [`${Number(value).toLocaleString()} đ`, 'COPQ (NG)'];
-                            if (name === 'copqNTF') return [`${Number(value).toLocaleString()} đ`, 'COPQ (NTF)'];
+                            if (name === 'copqNG') return [t("reports.tienDong", { value: Number(value).toLocaleString() }), "COPQ (NG)"];
+                            if (name === 'copqNTF') return [t("reports.tienDong", { value: Number(value).toLocaleString() }), "COPQ (NTF)"];
                             if (name === 'defectRate') return [`${Number(value).toFixed(2)}%`, t('reports.ngRateShort', 'Tỷ lệ NG')];
                             return [value, name];
                           }}
