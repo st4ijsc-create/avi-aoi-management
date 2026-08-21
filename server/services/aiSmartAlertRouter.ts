@@ -436,11 +436,21 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
   const eventDataPoints = typeof event.data.dataPoints === "number" ? event.data.dataPoints : 0;
 
   // Build AI analysis payload
+  // C2 — `modelUsed` TỪNG bị gán cứng "smart-alert-router" ở đây, che mất tên thuật toán
+  // THẬT đã sinh ra cảnh báo. Với một nguồn như PatchCore (`anomaly:<source>`) thì dòng
+  // KPI sẽ khai rằng chính bộ định tuyến đã phát hiện bất thường — sai chủ thể, và người
+  // đi truy nguồn sẽ tìm nhầm chỗ. Người gọi biết tên thật thì truyền vào; không truyền
+  // thì giữ nguyên hành vi cũ.
+  const eventModelUsed =
+    typeof event.data.modelUsed === "string" && event.data.modelUsed.trim()
+      ? event.data.modelUsed.trim()
+      : "smart-alert-router";
+
   const aiAnalysisPayload: Record<string, unknown> = {
     factors: eventFactors,
     recommendations: suggestedAction ? [suggestedAction] : [],
     dataPoints: eventDataPoints,
-    modelUsed: "smart-alert-router",
+    modelUsed: eventModelUsed,
   };
 
   if (aiReasoning) {
@@ -451,7 +461,10 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
       ...(suggestedAction ? [suggestedAction] : []),
       ...aiReasoning.recommendations,
     ];
-    aiAnalysisPayload.modelUsed = "smart-alert-router+gguf";
+    // Giữ tên nguồn THẬT rồi mới nối "+gguf": bước làm giàu bằng LLM là thứ CHẠY THÊM
+    // lên trên, không phải thứ đã phát hiện ra vấn đề. Ghi đè hẳn ở đây (hành vi cũ) sẽ
+    // xoá mất chủ thể thật đúng vào lúc dòng dữ liệu trở nên thú vị nhất.
+    aiAnalysisPayload.modelUsed = `${eventModelUsed}+gguf`;
   }
 
   const expiresAt = new Date(Date.now() + alertTtlMs());
@@ -521,6 +534,18 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
           productModelId: event.productModelId ?? null,
           currentValue: event.data.currentValue ? String(event.data.currentValue) : null,
           threshold: event.data.threshold ? String(event.data.threshold) : null,
+          // ── C2 (backlog §3) — BA TRƯỜNG mà đường INSERT thẳng cũ có ghi ────────────
+          // Thiếu chúng, mọi nguồn muốn đi qua cửa chung đều phải BỎ dữ liệu lại — nên
+          // C2 không phải "việc dọn dẹp nhỏ", nó là ĐIỀU KIỆN CẦN của C1 (đưa đường ghi
+          // cuối cùng qua `routeAlert`). Hai mục này là một vấn đề, không phải hai.
+          //
+          // `?? null` chứ không phải `? … : null`: `predictedValue` là một SỐ ĐO, và số 0
+          // là giá trị hợp lệ. Dùng khuôn truthy như hai dòng trên sẽ nuốt mất số 0 —
+          // đúng lớp lỗi vừa gặp ở `ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES=0`.
+          predictedValue: event.data.predictedValue != null ? String(event.data.predictedValue) : null,
+          ...(event.data.productModelCode != null
+            ? { productModelCode: String(event.data.productModelCode) }
+            : {}),
           confidenceScore: confidence,
           predictedTimeframe: timeframe,
           aiAnalysis: aiAnalysisPayload,

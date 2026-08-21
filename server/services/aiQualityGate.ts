@@ -1016,24 +1016,36 @@ async function runAnomalyHook(
     await db.update(inferenceResults).set({ metadata: merged }).where(eq(inferenceResults.id, latest.id));
   }
 
-  // Tùy chọn: tạo predictiveAlert PATTERN_ANOMALY.
+  // ── C1 (backlog §3) — NGUỒN GHI CUỐI CÙNG NAY ĐI QUA CỬA CHUNG ────────────────────
+  //
+  // Trước bản này chỗ đây `db.insert(predictiveAlerts)` THẲNG. Hệ quả khi ai đó bật
+  // `ANOMALY_CREATE_ALERTS=true`:
+  //   • không gộp trùng ⇒ mỗi ảnh bất thường một dòng, đúng thứ Wave 3 đã dọn xong;
+  //   • không `expiresAt` ⇒ sweeper không bao giờ đóng được, dòng nằm lại vĩnh viễn;
+  //   • **không ghi nhật ký lần-tái-diễn** ⇒ cả nhóm `PATTERN_ANOMALY` VÔ HÌNH với KPI.
+  // Và không một dấu hiệu nào: bảng vẫn có dòng, giao diện vẫn hiện, chỉ số đếm là sai.
+  // Bật một lá cờ không nên làm hỏng phép đo — nhất là lá cờ mặc định TẮT, vì khi có
+  // người bật thì đã không còn ai nhớ chỗ này tồn tại.
+  //
+  // ⚠ Đi qua `routeAlert` được là nhờ C2 vừa mở đường cho ba trường `predictedValue` /
+  //   `productModelCode` / `modelUsed`. Nếu không, chuyển đổi này sẽ ÂM THẦM làm mất dữ
+  //   liệu mà đường cũ vẫn ghi — "dọn dẹp" kiểu đó tệ hơn để nguyên.
   if ((process.env.ANOMALY_CREATE_ALERTS ?? "false").toLowerCase() === "true") {
-    await db.insert(predictiveAlerts).values({
-      alertType: "PATTERN_ANOMALY",
+    const { routeAlert } = await import("./aiSmartAlertRouter");
+    await routeAlert({
+      type: "PATTERN_ANOMALY",
       severity: "MEDIUM",
-      title: "Unsupervised anomaly detected",
-      description:
+      machineId: insp?.machineId ?? config.machineId ?? undefined,
+      productModelId: insp?.productModelId ?? config.productModelId ?? undefined,
+      message:
         `Image for inspection ${inspectionId} exceeded the anomaly threshold ` +
         `(score ${result.score.toFixed(4)} > ${(result.threshold ?? 0).toFixed(4)}, ` +
         `source=${result.source}, bank=${result.bankSize}).`,
-      predictedValue: result.score.toFixed(4),
-      threshold: (result.threshold ?? 0).toFixed(4),
-      machineId: insp?.machineId ?? config.machineId ?? null,
-      productModelId: insp?.productModelId ?? config.productModelId ?? null,
-      aiAnalysis: {
-        factors: [],
-        recommendations: ["Review the inspection image; the AI anomaly model flagged it as out-of-distribution vs the OK memory bank."],
+      data: {
+        predictedValue: result.score.toFixed(4),
+        threshold: (result.threshold ?? 0).toFixed(4),
         dataPoints: result.bankSize,
+        // Tên thuật toán THẬT, không phải tên bộ định tuyến — xem C2.
         modelUsed: `anomaly:${result.source}`,
       },
     });
