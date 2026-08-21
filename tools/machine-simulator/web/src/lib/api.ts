@@ -1117,7 +1117,26 @@ export function buildHistorianExportCsvUrl(filter: HistorianResultsFilter): stri
 /** `OeeResultDto` — `availability`/`performance`/`quality`/`oee` are fractions in `[0, 1]` (multiply
  * by 100 for a percentage display, same convention `dashboard.kpi.fpy` already uses), never NaN/
  * Infinity/over 1 (`OeeCalculator.Calculate` clamps/guards every division). The three loss fields are
- * plain seconds (the underlying C# `TimeSpan`s flattened via `.TotalSeconds`), never negative. */
+ * plain seconds (the underlying C# `TimeSpan`s flattened via `.TotalSeconds`), never negative.
+ *
+ * 🔴 THE PARENTHESISED REASON ABOVE IS WITHDRAWN, 2026-08-22, task AT-1 (owner item 16, the owner's
+ * ruling of 2026-08-22) — quoted and retired in place, the style this repository uses for a published
+ * claim that is narrower than it reads. Nothing is deleted and the VALUES the sentence promises are
+ * correct today; what is wrong is why.
+ *
+ * `OeeCalculator.Calculate` does NOT clamp every division. Availability and Performance are wrapped in
+ * `Math.Clamp`; `quality` is a bare `GoodCount / TotalCount` with no clamp at all, and `oee` carries it.
+ * That same sentence was retired on the C# class's own doc comment on 2026-08-20 by task AL-1; this
+ * copy — the one CUSTOMERS read — was missed then, recorded as an outstanding inventory gap by task
+ * AQ-1 on 2026-08-21, and is retired here.
+ *
+ * What actually bounds `quality` at or below 1 is two things at the SOURCE, neither of them in the
+ * calculator: `SqliteHistorianStore.AggregateForOeeAsync` counts good and total with nested SQL
+ * predicates (`Pass, Warn` is a subset of `not Skip`), AND, since 2026-08-22, reads both counts inside
+ * one deferred transaction so they come from a single snapshot. Before that transaction existed the
+ * bound did NOT hold: a concurrent writer landing between the two counts produced `quality` above 1,
+ * measured on the shipped fleet's own cadence. So "never over 1" is true for what this endpoint returns
+ * today, and it is true structurally rather than because anything here clamps. */
 export interface OeeResult {
   machineCode: string
   from: string

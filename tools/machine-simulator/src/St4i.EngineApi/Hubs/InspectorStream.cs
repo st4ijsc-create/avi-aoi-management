@@ -36,6 +36,51 @@ public static class InspectorStreamEndpoint
     /// promise the ring cannot keep — and <c>InspectorStreamBackfillCapTests</c> holds that relation.</summary>
     internal const int BackfillEventCount = 200;
 
+    /// <summary>🔴 The largest slot window <c>GET /v1/inspector/bodies</c> will look back over: 200 ring
+    /// slots, the same depth a freshly-connected socket is backfilled to. Task AT-1, owner item 27.
+    /// <para>It is pinned to <see cref="BackfillEventCount"/> deliberately. The body lane must never reach
+    /// further back than the event lane a reader is correlating it against — a caller who can see 200
+    /// events but 500 bodies would be handed bodies for events it has no way to display, which is a
+    /// correlation trap rather than a feature. Like every other cap on this pane it is NAMED on the
+    /// response itself (<c>slotWindow</c>), because owner item 28's finding was a UI that printed cap
+    /// VALUES without ever saying they were caps.</para></summary>
+    internal const int MaxBodySlotWindow = BackfillEventCount;
+
+    /// <summary>🔴 <c>GET /v1/inspector/bodies</c> — the SEPARATE lane for request bodies, task AT-1, owner
+    /// item 27 (the owner's ruling of 2026-08-22).
+    /// <para>It is a distinct route rather than a member on <see cref="ApiTraceEvent"/> because that record
+    /// leaves this process on three already-published surfaces — the WS frame this same class serializes,
+    /// and the two JSON files the web and WPF Export buttons write — and the ruling froze all three. Adding
+    /// a route adds a surface without moving any of them, which is the entire point of doing it this
+    /// way.</para>
+    /// <para>Same <see cref="Policies.Engineer"/> authorisation as the stream: a body is strictly more
+    /// sensitive than the metadata, so it can never be reachable by a weaker policy than the events
+    /// are.</para></summary>
+    public static void MapInspectorBodies(this IEndpointRouteBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+
+        app.MapGet("/v1/inspector/bodies", (HttpContext context, EventBus eventBus) =>
+        {
+            var slots = MaxBodySlotWindow;
+            if (context.Request.Query.TryGetValue("slots", out var raw) &&
+                int.TryParse(raw, out var requested) && requested > 0)
+            {
+                slots = Math.Min(requested, MaxBodySlotWindow);
+            }
+
+            return Results.Json(new InspectorBodiesResponse(
+                Bodies: eventBus.RecentBodies(slots),
+                SlotWindow: slots,
+                MaxSlotWindow: MaxBodySlotWindow,
+                RingCapacity: EventBus.DefaultCapacity,
+                RetainedByteCap: ApiTraceBody.DefaultByteCap,
+                MaxWithheldKeysListed: ApiTraceBody.MaxWithheldKeysListed,
+                AllowedKeys: ApiTraceBody.AllowedKeys.OrderBy(k => k, StringComparer.Ordinal).ToArray()),
+                ApiJson.Options);
+        }).RequireAuthorization(Policies.Engineer);
+    }
+
     public static void MapInspectorStream(this IEndpointRouteBuilder app)
     {
         app.Map("/v1/inspector/stream", async (HttpContext context) =>
@@ -163,3 +208,36 @@ public static class InspectorStreamEndpoint
         }
     }
 }
+
+/// <summary>🔴 The response shape of <c>GET /v1/inspector/bodies</c> — task AT-1, owner item 27.
+/// <para>Every ceiling that shaped this payload is a FIELD on it rather than a number a reader has to know
+/// already. That is the direct lesson of owner item 28, which found four caps on API-trace history and a UI
+/// that printed their values without ever naming one as a cap: a reader who cannot see the ceiling cannot
+/// tell a short list from a truncated one.</para>
+/// <para>🔴 This shape is NEW, and nothing about it is shared with the trace event's wire contract. It is
+/// deliberately not a superset, not a wrapper around, and not a version of the
+/// <c>WS /v1/inspector/stream</c> frame — those stay byte-identical, which is what the ruling
+/// required.</para></summary>
+/// <param name="Bodies">The retained bodies found in the inspected slots, oldest-first. Normally SHORTER
+/// than <paramref name="SlotWindow"/>: a slot whose publisher retained no body contributes nothing, so this
+/// length is not an event count and must not be read as one.</param>
+/// <param name="SlotWindow">How many ring slots were actually inspected — the effective window after the
+/// <c>?slots=</c> query value was clamped.</param>
+/// <param name="MaxSlotWindow">The ceiling <paramref name="SlotWindow"/> was clamped to.</param>
+/// <param name="RingCapacity">The engine ring's depth. Bodies older than this are gone regardless of what
+/// was asked for, because a body is evicted in the same slot as the event it belongs to.</param>
+/// <param name="RetainedByteCap">The per-body byte ceiling. A body whose <c>truncated</c> flag is set was
+/// cut to this, and its <c>json</c> is a byte prefix rather than parseable JSON.</param>
+/// <param name="MaxWithheldKeysListed">The ceiling on how many withheld key NAMES are listed per body;
+/// each body's own <c>withheldKeyCount</c> reports the true total.</param>
+/// <param name="AllowedKeys">The complete allowlist — the only payload keys that can ever appear rendered
+/// with a value. Published here so a reader can tell "this key was absent from the payload" from "this key
+/// is never shown", which are very different facts and are otherwise indistinguishable.</param>
+public sealed record InspectorBodiesResponse(
+    IReadOnlyList<ApiTraceBody> Bodies,
+    int SlotWindow,
+    int MaxSlotWindow,
+    int RingCapacity,
+    int RetainedByteCap,
+    int MaxWithheldKeysListed,
+    IReadOnlyList<string> AllowedKeys);

@@ -1962,7 +1962,54 @@ EXPECT_CONFORMANCE=24
 # suppression of any kind was added — no NoWarn, no #pragma, no .editorconfig severity change — and
 # SuppressionCensusTests' tables are untouched.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1171
+#
+# 🔴 TASK AT-1 (.superpowers/sdd/items-16-27-ruled/task-1-brief.md) — OWNER ITEMS 16 AND 27, BOTH
+# EXECUTED UNDER THE OWNER'S RULINGS OF 2026-08-22. Raises EXPECT_EDGECORE 1171 -> 1179 (+8). It is the
+# ONLY suite total that moves; grand total 2796 -> 2804. Every figure below was MEASURED after the code
+# was written, not predicted before it.
+#
+# +2 — tests/St4i.EdgeCore.Tests/Historian/OeeAggregateSnapshotUnderConcurrentWriterTests.cs (item 16).
+#   One deferred transaction now wraps the four reads of SqliteHistorianStore.AggregateForOeeAsync, so its
+#   two COUNT(*)s come from ONE snapshot. Both tests are WITNESSES with named counterfactuals, and both
+#   counterfactuals were RUN TO COMPLETION AND REVERTED:
+#     · ..._never_reports_more_good_than_total_while_a_writer_commits_concurrently — transaction removed
+#       ⇒ RED 5/5, reporting real values (good=212 total=211 quality=1.004739). Restored ⇒ GREEN 8/8.
+#     · ..._does_not_take_the_write_lock_a_concurrent_writer_needs — `deferred: true` swapped for the
+#       parameterless BeginTransaction() ⇒ RED 5/5 ("a concurrent write waited 14977 ms behind"). The
+#       parameterless overload issues BEGIN IMMEDIATE, i.e. a WRITE lock for a read-only method that sits
+#       on three synchronous request paths. Restored ⇒ GREEN 8/8.
+#   🔴 The fault is a RACE, so neither test is red by construction; the rates above are measured, not
+#   assumed, and both tests assert a floor on the work they did so a starved run fails as inconclusive
+#   rather than passing vacuously.
+#
+# +6 — tests/St4i.EdgeCore.Tests/Infrastructure/ApiTraceBodySeparateLaneTests.cs (item 27). The owner
+#   ruled a SEPARATE lane for the request body: new record ApiTraceBody, new route GET /v1/inspector/bodies.
+#   THREE CONTROL PAIRS, RUN TO COMPLETION AND REVERTED: adding an OPTIONAL `string? RequestBody = null`
+#   member to ApiTraceEvent (compiles, breaks no caller) ⇒ the frozen-surface witness RED; restoring
+#   `idempotencyKey` to the allowlist ⇒ TWO witnesses RED; removing the byte cap ⇒ the cap witness RED.
+#   Restored ⇒ 6/6 green.
+#   🔴 ApiTraceEvent, the WS /v1/inspector/stream frame and the two Export JSON files DO NOT MOVE A BYTE,
+#   and the diff is the proof: ApiTraceEvent.cs, ApiInspector.tsx, inspector.ts, InspectorViewModel.cs,
+#   ApiInspectorView.xaml and TraceTable.tsx have ZERO changed lines in this task.
+#
+# 🔴 EXPECT_ENGINEAPI DOES NOT MOVE, AND THAT IS A MEASUREMENT RATHER THAN AN OMISSION. The new route is
+# registered in RbacPolicyTests.ExpectedRoutes, which is a DATA ARRAY and not a [Fact] — the suite still
+# holds 1388 tests. That array is exactly the guard that caught the new endpoint: adding the route without
+# it turned EveryV1Route_CarriesExactlyTheExpectedPolicyOrAnonymous red with "Expected: 106, Actual: 107",
+# which is the matrix working as designed. /v1/inspector/bodies is Engineer — it can never be weaker than
+# /v1/inspector/stream, because that route carries trace METADATA and this one carries a view of the BODY.
+#
+# 🔴 EXPECT_WARNINGS STAYS 328, MEASURED ON A FULL `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
+# AFTER BOTH ITEMS: `0 Error(s)`, `328 Warning(s)`, no MSB3061. It was NOT written before it was measured.
+# The first draft of this change DID move it, to 335: adding one <param> tag to the previously
+# param-tag-free ApplyRealPresenceGateAsync raised five CS1573s (documenting one parameter obliges you to
+# document them all), and the new EventBus.Publish overload made two existing <see cref="Publish"/> tags
+# ambiguous (CS0419). Both were FIXED AT SOURCE — the five missing <param> tags were written, the two
+# crefs disambiguated to Publish(ApiTraceEvent) — and NOT re-baselined. EXPECT_BUILD_NODES stays 0. No
+# suppression of any kind was added: no NoWarn, no #pragma, no .editorconfig severity change, and
+# SuppressionCensusTests' tables are untouched.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1179
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:

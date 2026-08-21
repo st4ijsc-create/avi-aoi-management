@@ -112,8 +112,13 @@ public sealed class EdgePipeline
                 ack = new TransportAck(Success: false, LatencyMs: latency, Error: ex.Message);
             }
 
+            // 🔴 AT-1, owner item 27 (owner's ruling 2026-08-22) — ONE clock read feeds both records, so the
+            // body's At is byte-identical to the event's and the two can be lined up without an id member
+            // that this ruling did not permit adding to ApiTraceEvent.
+            var tracedAt = DateTimeOffset.Now;
+
             var trace = new ApiTraceEvent(
-                At: DateTimeOffset.Now,
+                At: tracedAt,
                 MachineCode: reading.MachineCode,
                 Kind: reading.Kind,
                 Method: "POST",
@@ -123,7 +128,11 @@ public sealed class EdgePipeline
                 Mode: _transport.Mode,
                 Duplicate: ack.Duplicate,
                 Error: ack.Error);
-            _bus.Publish(trace);
+
+            // The allowlist and the byte cap are applied HERE, at the point of construction, and not at any
+            // render site — the ruling is explicit that masking belongs where the record is made, because a
+            // record masked only on the way out is a record that sat unmasked in the ring.
+            _bus.Publish(trace, ApiTraceBody.From(env, tracedAt));
 
             Committed?.Invoke(reading, ack);
         }
