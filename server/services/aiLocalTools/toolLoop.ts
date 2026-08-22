@@ -354,6 +354,9 @@ export async function runToolLoop(deps: RunToolLoopDeps): Promise<ToolLoopResult
     try {
       outcome = await deps.execute(decision, round);
     } catch (err) {
+      // data-raw-ok: ⚠ NGƯỜI TIÊU THỤ Ở ĐÂY LÀ CHÍNH MÔ HÌNH LLM — outcome này được đưa
+      // ngược vào prompt vòng sau để mô hình tự sửa lời gọi công cụ. Dịch sang tiếng Việt là
+      // làm mô hình khó hiểu hơn, không phải làm người dùng dễ hiểu hơn.
       outcome = { result: null, error: err instanceof Error ? err.message : String(err) };
     }
     const ms = now() - t0;

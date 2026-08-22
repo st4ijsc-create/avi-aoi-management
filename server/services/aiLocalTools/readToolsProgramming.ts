@@ -388,6 +388,8 @@ export function readConfined(target: ConfinedTarget, maxBytes: number): Confined
     const read = fs.readSync(fd, buf, 0, buf.length, 0);
     return { ok: true, content: buf.toString("utf8", 0, read), size: st.size, truncated: st.size > maxBytes };
   } catch (err) {
+    // data-raw-ok: `kind: "READ_ERROR"` ĐÃ là mã máy-đọc-được; chuỗi kèm theo nói rõ tệp
+    // nào/vì sao (EACCES, EISDIR…). Người đọc là kỹ sư đang dùng tác nhân lập trình.
     return { ok: false, kind: "READ_ERROR", message: err instanceof Error ? err.message : String(err) };
   } finally {
     fs.closeSync(fd);
@@ -420,6 +422,7 @@ export function writeConfined(target: ConfinedTarget, content: string): Confined
   } catch (err) {
     const code = (err as NodeJS.ErrnoException)?.code;
     if (code === "EISDIR") return { ok: false, kind: "NOT_A_FILE" };
+    // data-raw-ok: như trên — lỗi hệ thống tệp của công cụ đọc mã.
     return { ok: false, kind: "WRITE_ERROR", message: err instanceof Error ? err.message : String(err) };
   }
   try {
@@ -431,6 +434,7 @@ export function writeConfined(target: ConfinedTarget, content: string): Confined
     fs.writeSync(fd, buf, 0, buf.length, 0);
     return { ok: true, bytes: buf.length };
   } catch (err) {
+    // data-raw-ok: như trên — lỗi hệ thống tệp của công cụ đọc mã.
     return { ok: false, kind: "WRITE_ERROR", message: err instanceof Error ? err.message : String(err) };
   } finally {
     fs.closeSync(fd);

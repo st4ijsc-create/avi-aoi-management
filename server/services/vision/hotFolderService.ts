@@ -816,6 +816,7 @@ export function dryRunSample(input: DryRunInput): DryRunResult {
       },
     };
   } catch (err) {
+    // data-raw-ok: lỗi tầng GHI kết quả hot-folder — kỹ sư tích hợp AOI cần chuỗi gốc.
     return { ok: false, stage: "normalize", error: err instanceof Error ? err.message : String(err) };
   }
 }

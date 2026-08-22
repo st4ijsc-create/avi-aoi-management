@@ -307,6 +307,8 @@ export async function syncPoliciesFromFiles(opts: { dir?: string } = {}): Promis
         policyId: def.policyId,
         version: def.version,
         action: "error",
+        // data-raw-ok: kết quả nạp MỘT tệp chính sách; quản trị đang biên tập chính tệp đó cần
+        // biết dòng nào sai.
         detail: err instanceof Error ? err.message : String(err),
       });
     }

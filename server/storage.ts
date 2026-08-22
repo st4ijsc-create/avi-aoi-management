@@ -191,6 +191,7 @@ export async function storageDelete(relKey: string): Promise<{ deleted: boolean;
     }
     return { deleted: true };
   } catch (err: any) {
+    // data-raw-ok: lỗi hệ thống tệp ở tầng lưu trữ — xem ghi chú ở nhánh xoá phía trên.
     return { deleted: false, error: err?.message ?? String(err) };
   }
 }

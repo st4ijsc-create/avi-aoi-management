@@ -539,6 +539,8 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       if (!closed) {
         send({
           type: "error",
+          // data-raw-ok: khung lỗi của luồng SSE hỏi-đáp tri thức — client stream (trình duyệt
+          // hoặc script) đọc `type:"error"` làm mã, chuỗi kèm theo là chi tiết cho kỹ sư.
           error: error?.message ?? "Stream failed",
           language: /[\u4e00-\u9fff]/.test(question)
             ? "zh"

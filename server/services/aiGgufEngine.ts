@@ -2995,6 +2995,9 @@ export async function* generateTextStream(
         modelId: resolvedId,
       };
     } catch (err: any) {
+      // data-raw-ok: sự kiện `{ type: "error" }` của luồng SINH VĂN BẢN. `type` đã là mã;
+      // chuỗi là lỗi của engine GGUF (hết VRAM, model chưa nạp, prompt quá dài) — thứ kỹ sư
+      // vận hành AI cần đọc nguyên văn để gỡ.
       yield { type: "error", error: err.message || "Streaming generation failed" };
     } finally {
       sequence.dispose();
@@ -3148,6 +3151,7 @@ export async function* chatCompletionStream(
         modelId: resolvedId,
       };
     } catch (err: any) {
+      // data-raw-ok: như trên, cho luồng chat-completion.
       yield { type: "error", error: err.message || "Streaming chat completion failed" };
     } finally {
       sequence.dispose();

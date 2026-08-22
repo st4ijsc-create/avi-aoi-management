@@ -353,6 +353,8 @@ export async function runTransferLearning(request: LocalTrainingRequest): Promis
       trainingSamples: 0,
       validationSamples: 0,
       durationMs: Date.now() - startTime,
+      // data-raw-ok: kết quả một lượt HUẤN LUYỆN cục bộ. Người đọc là kỹ sư AI đang chỉnh
+      // bộ dữ liệu/siêu tham số — chuỗi gốc của bộ huấn luyện là thứ chỉ ra sai ở bước nào.
       error: err instanceof Error ? err.message : String(err),
     };
   }
@@ -521,6 +523,7 @@ export async function runFewShotLearning(request: LocalTrainingRequest): Promise
     });
     return {
       jobId: job.id, success: false, trainingSamples: 0, validationSamples: 0,
+      // data-raw-ok: như trên — kết quả lượt huấn luyện.
       durationMs: Date.now() - startTime, error: err instanceof Error ? err.message : String(err),
     };
   }
@@ -782,6 +785,7 @@ export async function runIncrementalLearning(request: LocalTrainingRequest): Pro
     });
     return {
       jobId: job.id, success: false, trainingSamples: 0, validationSamples: 0,
+      // data-raw-ok: như trên — kết quả lượt huấn luyện.
       durationMs: Date.now() - startTime, error: err instanceof Error ? err.message : String(err),
     };
   }

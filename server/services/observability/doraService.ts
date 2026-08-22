@@ -82,6 +82,8 @@ export async function recordDeployment(input: RecordDeploymentInput): Promise<Re
     return { recorded: true, id };
   } catch (err: any) {
     // Table absent / DB error → honest no-op (do not fail a deploy hook).
+    // data-raw-ok: DORA ghi nhận KHÔNG THÀNH (`recorded: false`) — không được làm hỏng một
+    // lượt deploy vì chuyện đo đạc. `reason` đi vào bảng số liệu kỹ thuật, không lên màn hình.
     return { recorded: false, reason: err?.message ? String(err.message).slice(0, 200) : "DB_ERROR" };
   }
 }

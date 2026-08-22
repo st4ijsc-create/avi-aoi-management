@@ -62,7 +62,7 @@ const ALLOWED_TRPC_DATA_ERROR = 0;
 
 /**
  * Kênh service — cần TRUY VẾT từng chỗ mới biết nó nổi lên đâu. CHỈ ĐƯỢC GIẢM.
- * `49 → 41 → 33 → 24` (2026-08-22) — và **8 chỗ giảm đi là HIỆU CHỈNH NHIỆT KẾ, không phải trả nợ**.
+ * `49 → 41 → 33 → 24 → **0**` (2026-08-22), nay là BẤT BIẾN — và **8 chỗ giảm đi là HIỆU CHỈNH NHIỆT KẾ, không phải trả nợ**.
  *
  * Khuôn phổ biến nhất ở `server/services/**` là hai dòng LIỀN NHAU, một là nhật ký một là
  * phản hồi:
@@ -81,7 +81,7 @@ const ALLOWED_TRPC_DATA_ERROR = 0;
  *   tiếng Anh, chỉ khác cách viết. Ai làm vậy thì cổng xanh mà người dùng không đỡ hơn
  *   một chữ nào.
  */
-const ALLOWED_SERVICE_DATA_ERROR = 24;
+const ALLOWED_SERVICE_DATA_ERROR = 0;
 
 describe("F14 — chuỗi lỗi thô trả về như DỮ LIỆU (cửa THÀNH CÔNG)", () => {
   it("cầu chì: phép quét phải THẤY file, không thì nó đang canh tập rỗng", () => {

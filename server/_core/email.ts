@@ -92,6 +92,8 @@ export async function sendEmail(options: {
     console.error("[Email] Failed to send:", error);
     return {
       success: false,
+      // data-raw-ok: lỗi gửi thư (SMTP). Người đọc là quản trị đang cấu hình máy chủ thư;
+      // "535 Authentication failed" hay "ECONNREFUSED" là thứ duy nhất gỡ được sự cố.
       error: error.message || "Unknown error",
     };
   }

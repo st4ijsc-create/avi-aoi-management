@@ -662,6 +662,8 @@ async function runStepBody(rc: RunContext, step: WorkflowStep, attempt: number):
     }
   } catch (err) {
     // FAIL-SAFE — a step throwing never crashes the executor.
+    // data-raw-ok: `kind: "failed"` ĐÃ là mã; chuỗi là lỗi của MỘT BƯỚC trong quy trình.
+    // Người đọc là kỹ sư đang dựng quy trình và cần biết bước nào hỏng vì sao.
     return { kind: "failed", error: err instanceof Error ? err.message : String(err) };
   }
 }
@@ -986,6 +988,7 @@ export async function deployWorkflow(
 
     return { ok: true, enabled: true, workflowId, ref: def.ref, version: nextVersion };
   } catch (err) {
+    // data-raw-ok: như trên — lỗi một bước trong bộ thực thi quy trình.
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
   }
 }
@@ -1385,6 +1388,7 @@ export async function abortRun(runId: number, user: FoeUser, reason?: string): P
     });
     return { ok: true, enabled: foeEnabled(), runId, status: "aborted" };
   } catch (err) {
+    // data-raw-ok: như trên — lỗi một bước trong bộ thực thi quy trình.
     return { ok: false, enabled: foeEnabled(), runId, message: err instanceof Error ? err.message : String(err) };
   }
 }
