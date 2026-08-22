@@ -14,13 +14,54 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// job (built since B-4), not this class's. <see cref="Input"/> can never be declared writable — <see cref="ModbusRegisterMap.FromJson"/> rejects
 /// that at parse time, because FC04 has no write function code at all on the wire; declaring it writable
 /// would be a map that can never actually be honoured.</summary>
-public enum ModbusRegisterType { Holding, Input }
+public enum ModbusRegisterType
+{
+    /// <summary>FC03 — a holding register (4xxxx in the classic address notation), read/write on the
+    /// device. 🔴 <b>Ordinal 0, so this is also what an OMITTED <c>"type"</c> key binds to</b> — measured
+    /// 2026-08-22 against the built assembly: a register declared with address/scale/metric alone reads
+    /// back as <c>Holding</c>/<c>UInt16</c>, indistinguishable from one that spelled both out. For a
+    /// register the device really does expose as holding, that omission is invisible; for one the device
+    /// exposes as <see cref="ModbusRegisterType.Input"/> it silently selects FC03, which addresses a
+    /// DIFFERENT register space on the device — so the answer is either an illegal-address exception
+    /// response or a genuine holding register that happens to share the number, and the second of those
+    /// looks exactly like a working point; and for a point the map
+    /// also declares writable, <see cref="ModbusRegisterMap.FromJson"/> refuses the whole map rather than
+    /// let the omission masquerade as a deliberate choice. The token a map file spells is this C# member name, matched
+    /// case-insensitively; a numeric <c>0</c> also binds here (measured), so the spelling is a convention
+    /// and not the whole contract.</summary>
+    Holding,
+
+    /// <summary>FC04 — an input register (3xxxx in the classic address notation), read-only on the wire.
+    /// A map that declares an <see cref="ModbusRegisterType.Input"/> register writable is rejected at parse time by
+    /// <see cref="ModbusRegisterMap.FromJson"/>: FC04 has no write function code, so the declaration could
+    /// not be honoured at write time and would advertise a capability the device cannot perform. The token
+    /// a map file spells is this C# member name, matched case-insensitively; a numeric <c>1</c> also
+    /// binds here.</summary>
+    Input,
+}
 
 /// <summary>How to decode the raw 16-bit register value <see cref="ModbusTcpDriver"/> reads. Deliberately
 /// minimal for G2-6: a single 16-bit word, unsigned or two's-complement signed. 32-bit/float values (a
 /// register PAIR combined per some word-order convention) are a documented follow-up — see
 /// <see cref="ModbusTcpDriver"/>'s class doc comment — not built here.</summary>
-public enum ModbusDataType { UInt16, Int16 }
+public enum ModbusDataType
+{
+    /// <summary>The raw 16-bit word is taken as an unsigned value in 0..65535 before
+    /// <see cref="ModbusRegister.Scale"/> is applied. 🔴 <b>Ordinal 0, so an omitted <c>"dataType"</c> key
+    /// binds here</b> (measured 2026-08-22). Choosing this for a register the device publishes as signed is
+    /// a silent wrong ANSWER rather than a failure: raw <c>0xFFFF</c> decodes to 65535 where
+    /// <see cref="ModbusDataType.Int16"/> decodes it to -1 (both measured), and a scaled 65535 is as plausible-looking as
+    /// a scaled -1 on a chart.</summary>
+    UInt16,
+
+    /// <summary>The same 16 bits are reinterpreted as a two's-complement signed value in -32768..32767
+    /// BEFORE <see cref="ModbusRegister.Scale"/> is applied — see
+    /// <see cref="ModbusRegister.DecodeRawWord"/>, the decode both the TCP and the RTU driver call, and
+    /// <see cref="ModbusRegister.TryComputeRawWordForWrite"/>, which inverts exactly this bit-cast on the
+    /// write side. The token a map file spells is this C# member name, matched case-insensitively; a
+    /// numeric <c>1</c> also binds here (measured 2026-08-22).</summary>
+    Int16,
+}
 
 /// <summary>
 /// Task B-3 — the mandatory physical bounds a writable Modbus register must declare, in ENGINEERING units
@@ -297,12 +338,72 @@ public sealed class ModbusRegisterMap
         Converters = { new JsonStringEnumConverter() },
     };
 
+    /// <summary>The equipment code this map's readings are attributed to — the identity handed to
+    /// <c>St4i.EngineApi.Fleet.FleetHost.RegisterMachine</c>, which forwards it to
+    /// <c>FleetCore.RegisterMachine</c> and the live roster. Unrelated to
+    /// <see cref="UnitId"/>: this is the ST4I-side name, that is the address on the wire.
+    ///
+    /// <para><b>Mandatory in two separate senses with two different failure shapes, both measured
+    /// 2026-08-22 against the built assembly.</b> An ABSENT <c>"machineCode"</c> key fails inside the JSON
+    /// binder with <c>JsonException: … was missing required properties including: 'MachineCode'</c>; a
+    /// PRESENT-but-blank value passes the binder and fails afterwards, in <see cref="FromJson"/>'s own
+    /// check, with a message naming the field. <c>required</c> alone buys the first and not the second,
+    /// which is why the second check exists — see <see cref="FromJson"/>'s remarks for the startup crash
+    /// that produced it. Either way <c>St4i.EngineApi.Program</c>'s try/catch writes a startup warning to
+    /// standard error and leaves the Modbus slot unfilled for the run.</para></summary>
     public required string MachineCode { get; init; }
 
+    /// <summary>The Modbus slave/unit id this map's requests carry on the wire. 🔴 <b>An absent key
+    /// resolves to 1, and 1 is a REAL slave address rather than a sentinel</b> — measured 2026-08-22 on a
+    /// map that declares machineCode and registers alone. A map that forgets this field therefore addresses
+    /// slave 1 instead of failing. 0 is accepted here and means broadcast, which is legal over TCP; the RTU
+    /// side narrows the same field to <c>[1,247]</c> at its construction boundary instead — measured
+    /// 2026-08-22 against <c>ModbusRtuDriver.ValidateRtuUnitId</c>, which threw
+    /// <c>ArgumentOutOfRangeException</c> for 0 and for 248 and accepted 1. A value outside 0..255 does not wrap: it
+    /// fails the parse with <c>JsonException: The JSON value could not be converted to System.Byte</c>
+    /// (measured for 300 and for -1).
+    ///
+    /// <para>🔴 <b>The ACCESSIBILITY of this member is load-bearing, and that is a measurement rather than
+    /// a style preference.</b> The JSON binder skips members that are not public, so narrowing this one
+    /// compiles and then binds maps at unit id 1 while REPORTING A SUCCESSFUL PARSE — the wrong device
+    /// answering, and the mistake shows up in the DATA rather than as a parse error. Measured 2026-08-22 on an isolated
+    /// control (a public class whose properties were made <c>internal</c>: the declared JSON values were
+    /// discarded, the CLR defaults survived, and no exception was raised).
+    /// <c>docs/owner-decisions.md</c> item 25 names this member and <c>OpcUaNodeMap.Password</c> as the two
+    /// worked examples of that class.</para></summary>
     public byte UnitId { get; init; } = 1;
 
+    /// <summary>Milliseconds the poll loop waits BETWEEN polls — the delay is applied after a poll
+    /// completes, so it is a gap and not a fixed period. An absent key resolves to 1000 (measured
+    /// 2026-08-22). It also feeds <see cref="EffectiveReadTimeoutMs"/> and, through that,
+    /// <see cref="WorstCaseBusHoldMs"/>, so on a shared bus this single number sizes both the cadence and
+    /// the per-attempt timeout unless <see cref="ReadTimeoutMs"/> is declared.
+    ///
+    /// <para>🔴 <b>Unlike <see cref="ReadTimeoutMs"/> and <see cref="Retries"/> immediately below, this
+    /// field is NOT range checked, and the out-of-range values fail in three different ways.</b> Measured
+    /// 2026-08-22: <see cref="FromJson"/> accepts <c>0</c> and negative values and stores them as given
+    /// (<see cref="EffectiveReadTimeoutMs"/> still floors at 1000, so the damage does not show up there).
+    /// Both drivers then hand the value to <c>Task.Delay</c>, which was measured to complete immediately at
+    /// <c>0</c> — an unthrottled poll loop against the device — to wait indefinitely at <c>-1</c>, leaving
+    /// the device polled once and thereafter quiet with Health as the first poll left it, and to throw
+    /// <c>ArgumentOutOfRangeException</c> at <c>-2</c> and below, out of a <c>catch</c> that handles
+    /// cancellation and does not handle this. Recorded here as measured behaviour: the task that wrote this
+    /// sentence documents the driver family under <c>docs/owner-decisions.md</c> item 25 and is not
+    /// permitted to change code, so this is a report at the point of use and not a fix.</para></summary>
     public int PollIntervalMs { get; init; } = 1000;
 
+    /// <summary>The registers this map declares, in the order the poll loop reads them — one request per
+    /// entry per poll, which is why <see cref="WorstCaseBusHoldMs"/> multiplies by <c>Registers.Count</c>
+    /// and why the list's LENGTH is a bus-arbitration cost and not just a payload size.
+    ///
+    /// <para><b>Three ways to get this wrong, three different outcomes, all measured 2026-08-22.</b> An
+    /// ABSENT <c>"registers"</c> key fails the bind with <c>JsonException: … was missing required
+    /// properties including: 'Registers'</c>. A present-but-EMPTY array passes the binder and is refused by
+    /// <see cref="FromJson"/>'s own check, with a message naming the field. 🔴 An explicit
+    /// <c>"registers": null</c> satisfies the required-property check, binds a genuine null, and raises a
+    /// bare <c>NullReferenceException</c> out of <see cref="FromJson"/> — a parse failure that does not say
+    /// what was wrong. See the 2026-08-22 retraction inside <see cref="FromJson"/>: this file already
+    /// records that shape as fixed for <c>commands</c>, and it is live on this member.</para></summary>
     public required IReadOnlyList<ModbusRegister> Registers { get; init; }
 
     /// <summary>Task B-3 — the coil-pulse commands this map declares, by name. Defaults to empty (every map
@@ -537,6 +638,17 @@ public sealed class ModbusRegisterMap
         // the one parse failure in this method that didn't name what was wrong. Treated identically to
         // omitted, same precedent as ReadTimeoutMs/Retries's own "omitted and explicit null are the same"
         // rule elsewhere in this class.
+        //
+        // 🔴 THE CLAUSE "the one parse failure in this method that didn't name what was wrong" IS RETRACTED
+        //    2026-08-22 (docs/owner-decisions.md item 25, stage 9). The sentence above is kept VERBATIM,
+        //    which is this repository's convention for a withdrawn claim, and the fix it describes is real
+        //    and still in force for `commands`. What does not survive measurement is the COUNT. Measured
+        //    against the built assembly on 2026-08-22: `{"machineCode":"X","registers":null}` also raises a
+        //    bare NullReferenceException out of this method, from `map.Registers.Count` below, because
+        //    `required` is satisfied by the KEY BEING PRESENT and an explicit null binds through it. The
+        //    twin defect is live on OpcUaNodeMap.Nodes by the same route. Both are reported rather than
+        //    fixed: the task that measured this documents the driver family and is not permitted to change
+        //    code. So there were at least TWO such failures in this method's family, not one.
         var commands = map.Commands ?? Array.Empty<ModbusCommand>();
 
         // Fix round 1 (Critical #3) — a writable register's own address/type/dataType must actually be

@@ -4147,11 +4147,18 @@ note "exclusive-run lock held: pid ${GATE_SELF_WINPID} (lock $GATE_LOCK_DIR)"
 # output-directory brackets keep.
 #
 # 🔴 WHAT IS DELIBERATELY *NOT* HERE, because item 26 measured the cost of putting it here. There is NO
-# whole-tree assertion on the universal-negation census. That census flags 5780 of 15965 doc-comment
-# sentences — more than a third of the tree — so a gate on it would redden for any documentation edit
+# whole-tree assertion on the universal-negation census. That census flags more than a THIRD of every
+# doc-comment sentence in the tree — so a gate on it would redden for any documentation edit
 # whatsoever. Item 26's own text names that shape: "a tool with no green definition". The census is a
 # CEILING, reported by `scan-doc-negations.sh --census` on demand; what is gated is the far narrower
 # and green-definable question of what this branch ADDED since its recorded baseline.
+#   🔴 THE LITERAL THAT USED TO SIT IN THIS PARAGRAPH ("5780 of 15965") IS REMOVED RATHER THAN UPDATED,
+#   2026-08-22 (task AY-1). It was already stale before AY-1 edited anything — measured 5794 of 16041 at
+#   AY-1's base and 5796 of 16131 after its work — so copying a fresh literal here would just re-arm the
+#   same trap for the next stage. The census is a command, not a constant; run it. The same correction is
+#   recorded at the source, in scan-doc-negations.sh's boundary (c). docs/owner-decisions.md item 26 still
+#   carries the 5780/15965 pair in its body and its verdict row: that item is in PART III and this task is
+#   not permitted to reopen it, so the divergence is REPORTED here and left for whoever may.
 #
 # 🔴 AND WHAT NONE OF THE THREE CAN DO: none of them can see a ruling that was never written down.
 # That is the first half of item 37 and it stays unenforceable — see the boundaries at the head of
@@ -4212,8 +4219,44 @@ note "exclusive-run lock held: pid ${GATE_SELF_WINPID} (lock $GATE_LOCK_DIR)"
 # The count was re-measured after each correction; 24 -> 19 is the review's arithmetic, not a rewrite
 # to dodge the filter. The remaining 19 are true, and the four surfaces boundary (c) names are still
 # outside the corpus, so 19 is a statement about `*.cs` under tools/machine-simulator and nothing else.
+#
+# ══ TASK AY-1 (item 12 stage 9) MOVES THE NUMBER 19 -> 21 AND LEAVES THE BASELINE WHERE IT IS ═══════════
+#
+# 🔴 THE BASELINE IS NOT TOUCHED, AND THAT IS THE POINT AX-1 PAID FOR. AX-1 measured that moving
+# DOC_ABSOLUTES_BASELINE forward buys no green unless it is moved to the author's own tip, which would make
+# the field mean "measured against myself". This stage adds several hundred doc sentences, so it is exactly
+# the task that would be tempted, and it declines: cfcfae42 stays.
+#
+# 🔴 WHAT MOVED THE NUMBER IS THE REVIEW, RUN THE WAY THE SCRIPT'S FAIL MESSAGE DEMANDS, AND THE REVIEW IS
+# THE DELIVERABLE. Measured against this branch's own base (fb7635cf) so that AX-1's 19 are not re-audited
+# as if they were new, the filter flagged FOUR sentences written by this stage. All four were read against
+# the code. THREE DID NOT SURVIVE READING and were corrected AT THE SOURCE:
+#   * ModbusRegisterType.Holding said an omitted `"type"` key is "harmless" for a read-only point. False:
+#     it is harmless for a register that IS Holding, and for one the device exposes as Input it silently
+#     selects FC03 against a different register space. Rewritten to say both outcomes.
+#   * OpcUaNodeMap.MachineCode said the code reaches "every surface downstream of" FleetHost.RegisterMachine.
+#     That set was never enumerated. Narrowed to the two call sites that were: FleetHost.RegisterMachine ->
+#     FleetCore.RegisterMachine and the live roster.
+#   * OpcUaPkiPaths.DefaultRoot was headed "the pki root that applies when nothing overrides it", which
+#     describes ResolveRoot and contradicts the very paragraph below it. Rewritten as "the built-in pki
+#     root".
+# ONE survived and is true: FC04 input registers are read-only on the wire (the "only" the filter sees is
+# inside the compound "read-only"), which this file's own type-level summary already published.
+#
+# A SECOND ROUND then targeted what the filter cannot see -- a sentence with no absolute word that asserts
+# a PURPOSE or a MECHANISM -- and caught NINE more, none of which the filter would ever have shown. Two of
+# those rewrites reintroduced an absolute word, and re-running the filter after each correction (the habit
+# the script mechanises) reduced the flagged set to the two that are true. Round-1 and round-2 rates are
+# reported separately in the task report; they are NOT summed into a single flattering ratio.
+#
+# 🔴 THE TWO THAT REMAIN, both read and both true. One is the FC04 sentence above. The other is a
+# VERBATIM QUOTATION inside a retraction: ModbusOptions' reader census claimed St4i.EdgeService.EdgeConnectors
+# "has never read these variables at all", and re-measurement shows that host calls ModbusOptions.FromEnvironment
+# and uses Host/Port -- so the words "at all" are retracted in place, the quoted sentence is preserved, and
+# the "never" the filter sees belongs to the sentence being withdrawn. 19 + 2 = 21, and the 19 are AX-1's,
+# unchanged and re-listed identically by the tool.
 DOC_ABSOLUTES_BASELINE="cfcfae42"
-EXPECT_NEW_DOC_ABSOLUTES=19
+EXPECT_NEW_DOC_ABSOLUTES=21
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
@@ -5980,7 +6023,41 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # instead of writing them. THE MEASUREMENT REFUTES THE PREMISE IT WAS ASKED TO CONFIRM -- see the
 # EXPECT_WARNING_LEDGER block below for the classification, the read-surface census and the price of
 # each direction. Item 12 STAYS IN PART II and leaves it on a RULING, not on a count reaching zero.
-EXPECT_WARNINGS=328
+#
+# ══ TASK AY-1 (.superpowers/sdd/item25-stage9/task-1-brief.md) — ITEM 12 STAGE 9, THE FIRST STAGE OF THE
+#    OWNER'S 2026-08-22 RULING: DOCUMENT ALL 97 DRIVER-FAMILY MEMBERS, CHANGE NO ACCESS LEVEL ═══════════
+# 328 -> 303. Stage 8 measured the 109 and declined to write them; the owner then ruled that they are to
+# be WRITTEN and that no member is to be narrowed. This is the first stage executing that ruling, and it
+# does not try to pay all 109 -- it pays ONE COHERENT CLUSTER and says which.
+#
+# THE CLUSTER: THE DEPLOYMENT-DECLARED CONFIGURATION SURFACE OF THE TWO REAL-FIELDBUS DRIVERS. Four files,
+# 25 CS1591, per-file residue 0: Drivers/Modbus/ModbusOptions.cs (8), Drivers/Modbus/ModbusRegisterMap.cs
+# (8), Drivers/OpcUa/OpcUaNodeMap.cs (6), Drivers/OpcUa/OpcUaOptions.cs (3). Nothing in it is a driver, a
+# factory, a bus or a transport; every member is a DECLARATION a deployment makes -- two environment-
+# variable blocks and the two hand-authored JSON documents they point at -- so every member answers the
+# same question, WHAT HAPPENS WHEN THIS DECLARATION IS ABSENT. That question is what the owner's ruling
+# turns on, and it is what makes item 25's group B dangerous.
+#
+# 🔴 AND THE CLUSTER IS EXACTLY item 25's A2 + B: all 5 enum members and all 9 System.Text.Json-read
+# members live in these four files and nowhere else among the 97. So the first stage of the ruling pays
+# precisely the part of the debt that NO ruling could have retired -- see the EXPECT_WARNING_LEDGER block
+# for the two findings that came out of re-measuring that table.
+#
+# 🔴 303 IS MEASURED, NOT SUBTRACTED. `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo` over the
+# whole solution, SDK 10.0.302: 15/15 compilations, `Build succeeded.`, `0 Error(s)`, `303 Warning(s)`, on
+# a run with no *_wpftmp errors to re-run. 328 - 25 = 303 is arithmetic that AGREES; it was reported after
+# the measurement and not in place of it. EXPECT_BUILD_NODES stays 0. No suppression of any kind was added
+# -- no #pragma, no NoWarn, no analyzer-config entry, no <see cref> deleted to dodge a CS1574.
+#
+# THE FIVE SUITE TOTALS AND THE GRAND TOTAL 2824 DO NOT MOVE, and that is the check rather than a note:
+# this stage adds no test and edits no test file, so a total that moved would mean it had edited code
+# while claiming to edit prose. Three non-`///` lines were removed, all three one-line enum declarations
+# re-laid out so their members can carry doc comments (ModbusRegisterType, ModbusDataType,
+# OpcUaSecurityMode) -- the same operation stage 8 performed on three other enums. Member sequence is
+# identical name-for-name and order-for-order, which matters because enum order IS the underlying value
+# and these three are also JSON tokens; RE-MEASURED after the change on the built assembly rather than
+# eyeballed: Holding=0, Input=1, UInt16=0, Int16=1, None=0. ZERO `///` lines were removed.
+EXPECT_WARNINGS=303
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
@@ -6495,8 +6572,54 @@ warning_ledger() {
 # -> 199 sentences, 13 of them wrong across two self-check rounds) that is roughly 350 sentences of which
 # ~23 would be false on first write. Narrowing is unavailable for 46, silently wrong for 9, free for 17,
 # and costs a new InternalsVisibleTo for 25. NO ACCESS LEVEL AND NO NAME WAS CHANGED BY THIS STAGE.
+#
+# ══ TASK AY-1 — ITEM 12 STAGE 9 ═════════════════════════════════════════════════════════════════════════
+# 🔴 EXACTLY ONE ROW MOVES: `OURS CS1591 90 -> 65` (-25). `OURS CS1573 19` DOES NOT MOVE, and that is the
+# assertion that says ZERO new CS1573 were created -- the cluster contains no positional record and no
+# partially-documented parameter list, so the stage-6 record trap had no site to bite, and nothing was
+# half-paid into existence. Sixteen rows before, sixteen after; nothing reached zero; the eight VENDORED
+# rows did not move ONE UNIT (CS1573 8, CS1591 95, CS8600 5, CS8601 2, CS8603 2, CS8604 1, CS8618 35,
+# CS8625 37 -- read back out of the observed ledger, not carried from the previous stage).
+#
+# 🔴 TWO HALVES OF THE TABLE ABOVE WERE RE-MEASURED ON THIS STAGE'S CLUSTER AND ONE DID NOT SURVIVE.
+#   * A2 = 5 STANDS, exactly. The five enum members among the 97 are ModbusRegisterType.Holding/.Input,
+#     ModbusDataType.UInt16/.Int16 and OpcUaSecurityMode.None, and the full enumeration of the 109 confirms
+#     there is no sixth enum member anywhere in the family.
+#   * B = 9 STANDS AS A COUNT OF MEMBERS AND FAILS AS A COUNT OF THAT MECHANISM. The row says `internal`
+#     COMPILES and then silently parses to defaults. Measured on an isolated two-class control built with
+#     this SDK: for a NON-required property that is exactly right -- the values declared in the JSON were
+#     discarded, the CLR defaults survived, and no exception was raised. But FOUR of the nine are declared
+#     `required` (ModbusRegisterMap.MachineCode, .Registers; OpcUaNodeMap.MachineCode, .Nodes), and
+#     narrowing a `required` member below its containing type is **error CS9032**, measured on the same
+#     control: "Required member 'X' cannot be less visible ... than the containing type". So those four
+#     belong with A1/A2 -- the question does not exist -- and the number of members for which narrowing is
+#     SILENTLY WRONG is 5, not 9: ModbusRegisterMap.UnitId, ModbusRegisterMap.PollIntervalMs,
+#     OpcUaNodeMap.SecurityMode, OpcUaNodeMap.Password, OpcUaNodeMap.PollIntervalMs.
+#     🔴 THE HEADLINE IS UNCHANGED AND ITS COMPOSITION IS NOT: "at least 55 of 97 stay public whatever is
+#     ruled" still holds (46 + 9 = 50 + 5 = 55), but 50 of them are refused by the LANGUAGE and 5 by
+#     consequence. Item 25 named UnitId and Password as its two worked examples and BOTH are in the 5, so
+#     the hazard it describes is intact; what moves is the count of members that carry it.
+#
+# 🔴 THE 84/13/0 CLASSIFICATION, RE-CHECKED ON THIS STAGE'S 25 AGAINST THE SAME FIVE TESTS: 23 Class 1,
+# 2 Class 2 (ModbusOptions.DefaultHost and .DefaultPort -- the same two members stage 8 named as its
+# surviving Class 2 exemplars), 0 Class 3. The zero reproduces on a cluster chosen for the owner's ruling
+# rather than for recoverability of meaning, which is the condition stage 6's own zero was said to depend
+# on. It is 23/2/0 and not 22/3/0 or 21/4/0 because both DefaultHost and DefaultPort were argued in both
+# directions before being placed: each has a downstream failure mode, but that failure mode belongs to
+# Host/Port, and the constants themselves state a value. That reading is stated so the next stage can
+# disagree with it on the record.
+#
+# 🔴 TWO DEFECTS WERE FOUND WHILE WRITING AND NEITHER WAS FIXED -- reported at the point of use instead,
+# because this stage may not change code. (1) PollIntervalMs is range-checked on NEITHER map, while its two
+# neighbours readTimeoutMs/retries are; measured, 0 and negatives are stored as given and Task.Delay then
+# completes immediately at 0 (an unthrottled poll loop), waits forever at -1, and throws
+# ArgumentOutOfRangeException at -2 and below out of a catch that handles only cancellation. (2) An
+# explicit `"registers": null` / `"nodes": null` satisfies the `required` check, binds a genuine null and
+# raises a BARE NullReferenceException -- the exact shape ModbusRegisterMap.FromJson's own comment records
+# as fixed for `commands` while calling itself "the one parse failure in this method that didn't name what
+# was wrong". That clause is RETRACTED IN PLACE, verbatim-preserved, in that file.
 EXPECT_WARNING_LEDGER="OURS CS1573 19
-OURS CS1591 90
+OURS CS1591 65
 OURS CS8601 7
 OURS CS8604 14
 OURS CS8767 2

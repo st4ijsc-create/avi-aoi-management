@@ -22,6 +22,16 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// </summary>
 public sealed class OpcUaOptions
 {
+    /// <summary>Name of the environment variable that decides whether the OPC-UA client driver runs at
+    /// all. Opt-IN polarity and the same two-token vocabulary as <c>ModbusOptions.EnvVarEnabled</c>:
+    /// <see cref="FromEnvironment"/> resolves <c>"1"</c> and <c>"true"</c> (case-insensitive) to on and any
+    /// other value to off, so an unset variable and a misspelled one are indistinguishable at this
+    /// boundary. 🔴 <b>Switching this on is the precondition for a disk side effect the OFF state cannot
+    /// reach:</b> with it off, <c>St4i.EngineApi.Program</c> skips the whole OPC-UA block and no driver is
+    /// constructed; with it on AND a node map that loads, the driver auto-generates an app-instance
+    /// certificate under <see cref="OpcUaPkiPaths.ResolveRoot"/>, because the OPC-UA stack requires one
+    /// even at <see cref="OpcUaSecurityMode.None"/> — see <see cref="OpcUaDriver"/>'s class doc
+    /// comment.</summary>
     public const string EnvVarEnabled = "ST4I_OPCUA_ENABLED";
 
     /// <summary>See <see cref="EndpointUrl"/>'s doc comment / <see cref="OpcUaNodeMap"/>'s class doc
@@ -30,6 +40,20 @@ public sealed class OpcUaOptions
     /// uses the node map's own (required) <c>EndpointUrl</c> instead.</summary>
     public const string EnvVarEndpoint = "ST4I_OPCUA_ENDPOINT";
 
+    /// <summary>Name of the environment variable carrying the filesystem path of the
+    /// <see cref="OpcUaNodeMap"/> JSON document. This is the prerequisite <see cref="EnvVarEnabled"/>
+    /// cannot substitute for: with the driver enabled and this unset or blank, <see cref="MapPath"/> is
+    /// <see langword="null"/> and <c>St4i.EngineApi.Program</c> throws an
+    /// <c>InvalidOperationException</c> naming this constant, catches it in the same block that catches a
+    /// malformed map, writes a startup warning to standard error and leaves the OPC-UA slot unfilled for
+    /// the run rather than crashing startup. 🔴 Because the node map is also where the endpoint comes from
+    /// — see the "EndpointUrl precedence" note on <see cref="OpcUaNodeMap"/>, and note that
+    /// <see cref="EndpointUrl"/>, the property <see cref="EnvVarEndpoint"/> feeds, has no reader under
+    /// <c>src/</c> outside this class: measured 2026-08-22 by enumerating each <c>EndpointUrl</c>
+    /// occurrence in the <c>*.cs</c> this repository owns, and the ones under <c>src/</c> outside this file
+    /// all name <c>OpcUaNodeMap.EndpointUrl</c> instead — an OPC-UA deployment therefore cannot be
+    /// expressed with environment variables alone: this variable points at a FILE that has to
+    /// exist.</summary>
     public const string EnvVarMapPath = "ST4I_OPCUA_MAP";
 
     /// <summary>Overrides the app-instance-certificate pki root directory (default:
@@ -105,6 +129,21 @@ public sealed class OpcUaOptions
 /// </summary>
 public static class OpcUaPkiPaths
 {
+    /// <summary>The built-in pki root, <c>%ProgramData%\ST4I\sim\opcua-pki</c>, which resolved to
+    /// <c>C:\ProgramData\ST4I\sim\opcua-pki</c> when measured 2026-08-22 on this platform.
+    ///
+    /// <para>🔴 <b>This method does NOT consult <see cref="OpcUaOptions.EnvVarPkiDir"/>, and that is the
+    /// whole distinction between it and <see cref="ResolveRoot"/>.</b> Measured 2026-08-22 with
+    /// <c>ST4I_OPCUA_PKI_DIR</c> pointed at a different directory: <see cref="ResolveRoot"/> returned the
+    /// override, this method returned the ProgramData path unchanged. A caller that reaches for this one
+    /// directly therefore bypasses an operator's relocation — prefer <see cref="ResolveRoot"/> unless the
+    /// ProgramData path itself is what is wanted (which is the case for a message that has to name the
+    /// built-in default).</para>
+    ///
+    /// <para>Pure path arithmetic on a well-known folder: it does not touch the file system, so the
+    /// directory it names need not exist when this returns. The reason it is
+    /// kept SHORT is recorded on this class: a deep root pushed the certificate file path far enough to
+    /// trip a legacy path-length limit in the native crypto load.</para></summary>
     public static string DefaultRoot() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ST4I", "sim", "opcua-pki");
 
