@@ -1402,6 +1402,15 @@ Con số **đúng lúc đo và sai trong chính commit xuất bản nó**: hai d
 phép quét toàn cây tìm một CHUỖI, mà kết quả được viết ngược lại vào chính cái cây vừa quét, tự vô hiệu
 hoá con số của nó trong cùng một commit.** Đã **rút tại chỗ kèm ngày**, không xoá dòng nào.
 
+🔴 **Và loài ấy cắn ngay chính dụng cụ vừa dựng để bắt nó — đo được, không phải một ví dụ nghĩ ra.**
+Khẳng định `(f)` mới ("không-khớp-thật vẫn phải báo exit 1") dùng một pattern chắc chắn vắng, và bản
+đầu viết nó thành **một literal**: `zzq-no-such-pattern-zzq`. Nó **xanh khi chạy tay** — lúc ấy phép
+quét đọc `HEAD = 89018893`, chưa có dòng đó — rồi **ĐỎ ở lần chạy cổng đầu tiên sau khi commit**, vì
+literal ấy nay **nằm trong chính cái cây mà phép thăm dò quét**, nên phép quét *"không-khớp"* **tìm
+thấy chính mình** và trả exit 0. Chữa bằng một **nonce sinh lúc chạy**: một chuỗi vừa tạo ra thì không
+thể nằm trong một commit. **Ba lần trong nhiệm vụ này, bộ khẳng định mới bắt lỗi của chính người viết
+nó** — `ls-tree` sai ngữ nghĩa pathspec, `length()` định kiểu scalar trong `awk`, và cái này.
+
 ### 2. Ở đâu trong mã — trỏ bằng TÊN
 
 * `scripts/repo-scan.sh:161` ở `89018893` — `SPECS=(".")`. Nay là `default_pathspec()`, trả `:(top)`.

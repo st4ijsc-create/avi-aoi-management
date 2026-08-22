@@ -247,9 +247,16 @@ self_test() {
   # that refused EVERY zero would be useless, and a tool that reported every zero is what item 32
   # is about. So both are pinned — an empty domain must be REFUSED (2), and a genuine no-match over
   # a non-empty domain must still be REPORTED (1).
-  (cd "$sub" && bash "$SELF_ABS" --sha "$probe_sha" -l 'zzq-no-such-pattern-zzq' \
+  # 🔴 THE ABSENT PATTERN IS GENERATED AT RUN TIME, AND THE FIRST VERSION OF THIS WAS A LITERAL.
+  # It read 'zzq-no-such-pattern-zzq', and the assertion below went RED in the gate the moment this
+  # file was committed: the literal now lived in the very tree the probe scans, so the "true
+  # no-match" scan found ITSELF and exited 0. That is the self-reference species this task retracted
+  # two published numbers for (docs/owner-decisions.md item 40 §1(d)) — a scan for a string, run over
+  # a tree that contains the scan, measures its own source. A nonce cannot be in a committed tree.
+  local absent="zzq-absent-probe-$$-$(date +%s)-${RANDOM}"
+  (cd "$sub" && bash "$SELF_ABS" --sha "$probe_sha" -l -F "$absent" \
        -- 'no/such/directory/anywhere/*.zzz') >/dev/null 2>&1; empty_rc=$?
-  (cd "$sub" && bash "$SELF_ABS" --sha "$probe_sha" -l 'zzq-no-such-pattern-zzq' \
+  (cd "$sub" && bash "$SELF_ABS" --sha "$probe_sha" -l -F "$absent" \
        -- 'tools/machine-simulator/scripts/*.sh') >/dev/null 2>&1; nomatch_rc=$?
   echo "  empty domain -> exit                       : $empty_rc   (must be 2, REFUSED)"
   echo "  true no-match over a real domain -> exit   : $nomatch_rc   (must be 1, MEASURED)"
