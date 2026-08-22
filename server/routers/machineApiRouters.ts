@@ -2,6 +2,10 @@ import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
+// F2 — `DbUnavailableError` tự mang `appCode: "DB_UNAVAILABLE"` (đã đủ ba bản dịch), nên
+// client dịch được mà `errorFormatter` không phải đổi dòng nào. ⚠ `name` của lớp này phải
+// giữ nguyên: đường ingest WAL (`_core/index.ts`) khoá theo nó để đệm khi CSDL sập.
+import { DbUnavailableError } from "../_core/dbErrors";
 import { nanoid } from "nanoid";
 import { and as drizzleAnd, eq as drizzleEq, ne as drizzleNe, gte as drizzleGte, asc as drizzleAsc, sql } from "drizzle-orm";
 import * as db from "../db";
@@ -910,15 +914,20 @@ export async function inspectionAlreadyPersisted(input: SubmitInspectionInput): 
     throw err; // DbUnavailableError etc. → transient
   }
   const dbi = await db.getDb();
-  // Task 9 (F2, doc71) — CỐ Ý KHÔNG di trú sang appError() ở đây. Hàm này chỉ
-  // được gọi qua walSetDedupFn (dòng ~890) → inspectionStoreForward.ts
-  // backfillInspections(): `try { exists = await dedupFn(...) } catch { break; }`
-  // — catch KHÔNG đọc err.message hay err.code, chỉ dùng exception như tín
-  // hiệu nhị phân "còn lỗi ⇒ dừng, DB vẫn down". Không caller nào — kể cả
-  // worker nền này — từng hiển thị chuỗi lỗi cho một con người. Migrate sang
-  // appError() ở một chỗ KHÔNG BAO GIỜ có người đọc là sai tinh thần của
-  // task (mục 6 trong brief) — để nguyên, báo cáo riêng.
-  if (!dbi) throw new Error("Database not available");
+  // F2 (2026-08-22) — dùng `DbUnavailableError` thay `new Error("Database not available")`.
+  //
+  // Ghi chú Task 9 (doc71) trước đây để nguyên chỗ này với lý do ĐÚNG: hàm chỉ được gọi
+  // qua `walSetDedupFn` → `inspectionStoreForward.backfillInspections()`, nơi catch là
+  // `catch { break; }` — không đọc `message` hay `code`, chỉ dùng exception làm tín hiệu
+  // nhị phân "còn lỗi ⇒ DB vẫn down, dừng". Không người dùng nào đọc chuỗi này, nên
+  // migrate sang `appError()` quả thật chỉ là cosmetic.
+  //
+  // Nhưng `DbUnavailableError` KHÁC `appError()`: nó không đổi hình dạng phản hồi, chỉ
+  // đặt đúng TÊN cho tình trạng. Với người gọi hiện tại (catch-all) đây là thay đổi TRUNG
+  // TÍNH về hành vi — đã kiểm tận nơi (`inspectionStoreForward.ts:456-459`), không suy đoán.
+  // Cái được: câu "Database not available" không còn là một chuỗi tự do trôi nổi, và cổng
+  // `rawErrorCensus` giữ được bất biến "0 chỗ ném thô họ DB" trên TOÀN server.
+  if (!dbi) throw new DbUnavailableError();
   // Same "fake UTC" shift the insert path applies (see processInspectionSubmission).
   const raw = new Date(input.inspectionTime);
   const local = new Date(raw.getTime() - raw.getTimezoneOffset() * 60000);
@@ -2903,12 +2912,11 @@ export async function processResultAlreadyPersisted(input: SubmitProcessResultIn
     throw err; // DbUnavailableError etc. → transient
   }
   const dbi = await getDb();
-  // Task 9 (F2, doc71) — CỐ Ý KHÔNG di trú, cùng lý do với
-  // inspectionAlreadyPersisted() ở trên: chỉ gọi qua processWalSetDedupFn →
-  // processStoreForward.ts backfill loop, catch ở đó bỏ qua nội dung lỗi
-  // hoàn toàn, dùng như tín hiệu nhị phân. Không người dùng nào đọc chuỗi
-  // này. Để nguyên, báo cáo riêng.
-  if (!dbi) throw new Error("Database not available");
+  // F2 (2026-08-22) — cùng lý do và cùng kết luận với `inspectionAlreadyPersisted()` ở
+  // trên: chỉ gọi qua `processWalSetDedupFn` → `processStoreForward` backfill loop, catch
+  // ở đó bỏ qua nội dung lỗi hoàn toàn. Đổi sang `DbUnavailableError` là trung tính về
+  // hành vi và đặt đúng tên cho tình trạng.
+  if (!dbi) throw new DbUnavailableError();
   const rows = await dbi
     .select({ resultId: processIdempotencyKeys.resultId })
     .from(processIdempotencyKeys)

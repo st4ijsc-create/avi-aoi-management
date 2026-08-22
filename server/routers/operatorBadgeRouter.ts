@@ -29,7 +29,7 @@ const MODULE = "masterdata";
 const dateInput = z
   .union([z.string(), z.date()])
   .nullish()
-  .transform((v) => {
+  .transform((v, ctx) => {
     // Key VẮNG MẶT phải ra undefined (không phải null) — nếu gộp về null thì
     // update sẽ ghi NULL đè validFrom/validTo cũ khi client chỉ gửi userId.
     if (v === undefined) return undefined;
@@ -48,7 +48,24 @@ const dateInput = z
     // ngày ra khỏi transform (chuyển vào thân handler), một thay đổi lớn hơn
     // phạm vi "một mã, một chuỗi, cơ học" của task này — để nguyên, báo cáo
     // riêng cho người giao việc quyết.
-    if (Number.isNaN(d.getTime())) throw new Error("Invalid date");
+    // ── F2 (2026-08-22) — ĐƯỜNG THỨ BA mà ghi chú bên trên chưa xét ────────────────
+    // Ghi chú đó ĐÚNG về mặt kỹ thuật: `appError()` vô ích ở đây, vì tRPC bọc lại mọi
+    // throw trong `createInputMiddleware` và đẩy `appCode` xuống `error.cause.cause` —
+    // sâu hơn một cấp so với tầm đọc của `readAppErrorMeta()`.
+    //
+    // Nhưng kết luận rút ra lúc đó ("phải tách validate ra khỏi transform, ngoài phạm
+    // vi") bỏ sót một lối thoát ngắn hơn nhiều: `ctx.addIssue()` là cách của CHÍNH ZOD
+    // để báo lỗi từ trong transform. Nó không ném gì cả — nó ghi một zod issue thật vào
+    // kết quả parse, nên đi thẳng ra đường `parseZodIssues → formatZodIssue` của
+    // `mapTrpcError`. Và từ bản vá F1 (2026-08-21), `ZOD_MESSAGE_KEY` dịch được ĐÚNG
+    // chuỗi "Invalid date" sang vi/en/zh.
+    //
+    // ⇒ Bài học: một ghi chú "đã cân nhắc, không làm được" chỉ đóng những cửa nó ĐÃ THỬ.
+    //   Đọc kỹ để khỏi lặp lại việc cũ, nhưng đừng coi nó là danh sách đầy đủ.
+    if (Number.isNaN(d.getTime())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid date" });
+      return z.NEVER;
+    }
     return d;
   });
 
