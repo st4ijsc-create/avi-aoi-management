@@ -56,16 +56,33 @@ public interface IHistorianStore
     Task<IReadOnlyList<HistorianResultRow>> QueryBySerialAsync(string serialNumber, CancellationToken ct, bool includeFabricated = false);
 
     /// <summary>One metric's stored samples for one machine over a window — the series behind a trend chart.
-    /// It reads the stored samples directly and never joins back to the reading that produced them; a sample
-    /// nevertheless lives and dies with that reading, because pruning a result takes its samples with it.
-    /// <para>🔴 This is the ONE read on this interface with no provenance parameter, and that is not an
-    /// oversight to be read past: it returns a fabricated machine's samples unfiltered, while the two reads
-    /// above it and the aggregate below it all default to hiding them. The reason is structural rather than
-    /// a policy choice — the stored sample carries no provenance of its own, only a link to the result that
-    /// produced it — so the asymmetry cannot be closed by passing a flag here. A caller charting a mixed
-    /// fleet is charting demo data alongside real data and nothing in the signature says so.</para></summary>
+    /// A sample lives and dies with the reading that produced it, because pruning a result takes its samples
+    /// with it.
+    /// <para>📎 <b>THE PARAGRAPH THAT STOOD HERE IS RETRACTED — 2026-08-22 (AU-1), quoted verbatim, nothing
+    /// struck through and nothing deleted</b> (the same preservation form AB-1 established and
+    /// AI-1/AK-1/AO-1/AP-1 used). It read: <i>"🔴 This is the ONE read on this interface with no provenance
+    /// parameter, and that is not an oversight to be read past: it returns a fabricated machine's samples
+    /// unfiltered, while the two reads above it and the aggregate below it all default to hiding them. The
+    /// reason is structural rather than a policy choice — the stored sample carries no provenance of its own,
+    /// only a link to the result that produced it — so the asymmetry cannot be closed by passing a flag here.
+    /// A caller charting a mixed fleet is charting demo data alongside real data and nothing in the signature
+    /// says so."</i> The reason for the retraction is NOT that its harm was overstated — the last sentence was
+    /// true and is why item 17 exists. It is that the middle clause, <i>"the asymmetry cannot be closed by
+    /// passing a flag here,"</i> is FALSE, and the same sentence names the thing that refutes it: <i>"only a
+    /// link to the result that produced it."</i> That link is <c>historian_telemetry.result_id</c>, declared
+    /// <c>NOT NULL REFERENCES historian_results(id)</c>, so the join to provenance is TOTAL — every stored
+    /// sample has exactly one parent reading and that parent already carries the answer. A flag is therefore
+    /// exactly what closes it, and this parameter is that flag.</para>
+    /// <para>🔴 <b>What has NOT changed, and it is the half a reader is most likely to skip:</b> this
+    /// parameter's DEFAULT here is <see langword="false"/> for parity with the reads around it, but
+    /// <c>St4i.EngineApi.Endpoints.HistorianEndpoints.GetTelemetryAsync</c> deliberately does NOT resolve it
+    /// the way its sibling routes do — it passes <see langword="true"/> unless a caller says otherwise, so
+    /// <c>GET /v1/historian/telemetry</c> still returns a fabricated machine's samples by default, exactly as
+    /// it did before this parameter existed. Turning that default around removes rows an operator can see
+    /// today, which is an owner's call and not this method's; see item 17 in
+    /// <c>tools/machine-simulator/docs/owner-decisions.md</c> and that endpoint's own doc comment.</para></summary>
     /// <param name="machineCode">The machine, matched exactly. Samples are stored with the machine code
-    /// copied onto them, so this does not join back to the result row.</param>
+    /// copied onto them, so the sample filter itself does not join back to the result row.</param>
     /// <param name="metric">The metric name, matched exactly and case-sensitively as stored. Metric names
     /// are whatever the driver emitted and nothing on the path into the store alters them, so a driver that
     /// renames a metric starts a new series rather than continuing the old one.</param>
@@ -73,7 +90,13 @@ public interface IHistorianStore
     /// <param name="to">End of the window, inclusive. Both ends are compared against the sample's EVENT
     /// time, which is copied from the parent reading — not against when the sample was written.</param>
     /// <param name="ct">Cancels the read.</param>
-    Task<IReadOnlyList<TelemetrySamplePoint>> QueryTelemetryAsync(string machineCode, string metric, DateTimeOffset from, DateTimeOffset to, CancellationToken ct);
+    /// <param name="includeFabricated">When <see langword="true"/> the provenance gate is skipped entirely and
+    /// the query issued is byte-for-byte the one this method issued before the parameter existed — that
+    /// identity is the guarantee that opting out costs nothing. When <see langword="false"/> the samples are
+    /// restricted to the parent readings the SAME real-presence rule admits for
+    /// <see cref="QueryResultsAsync"/>/<see cref="QueryBySerialAsync"/>/<see cref="AggregateForOeeAsync"/>,
+    /// reached through <c>result_id</c>. The rule is not re-implemented here and cannot drift from theirs.</param>
+    Task<IReadOnlyList<TelemetrySamplePoint>> QueryTelemetryAsync(string machineCode, string metric, DateTimeOffset from, DateTimeOffset to, CancellationToken ct, bool includeFabricated = false);
 
     /// <summary>Reduces one machine's stored history over a window to the three quantities OEE needs. It is
     /// the boundary between this store and <see cref="Metrics.OeeCalculator"/>: everything domain-specific

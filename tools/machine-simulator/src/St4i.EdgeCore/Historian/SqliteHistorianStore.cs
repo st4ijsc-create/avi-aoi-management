@@ -406,9 +406,28 @@ public sealed class SqliteHistorianStore : IHistorianStore
     }
 
     /// <summary>
-    /// SM-2 fix round 1 (review IMPORTANT 1a) — the "real-presence gate": the one rule every
-    /// customer-facing historian query/aggregate in this store applies so fabricated data is never
-    /// silently blended with real data.
+    /// SM-2 fix round 1 (review IMPORTANT 1a) — the "real-presence gate": the one rule this store applies so
+    /// fabricated data is never silently blended with real data. It is defined ONCE, here, and every read
+    /// that gates reaches it rather than restating it.
+    ///
+    /// <para>📎 <b>THE OPENING SENTENCE THAT STOOD HERE IS RETRACTED — 2026-08-22 (AU-1), quoted verbatim,
+    /// nothing struck through and nothing deleted.</b> It read: <i>"the one rule every customer-facing
+    /// historian query/aggregate in this store applies so fabricated data is never silently blended with real
+    /// data."</i> The word that fails is <b>every</b>. AL-1 measured this on 2026-08-20 and retracted the
+    /// claim in <c>tools/machine-simulator/docs/owner-decisions.md</c>; the retraction never reached this
+    /// file, so the false sentence went on being the one a reader of the CODE saw for two more days. That gap
+    /// — a claim retracted in the record but left standing at its source — is the same shape as the defect
+    /// the record exists to end, and it is why this correction is written here and not only there.</para>
+    ///
+    /// <para><b>What is true instead, listed rather than counted.</b> Reads that reach this gate:
+    /// <see cref="QueryResultsAsync"/>, <see cref="QueryBySerialAsync"/>, <see cref="AggregateForOeeAsync"/>,
+    /// and — since 2026-08-22 — <see cref="QueryTelemetryAsync"/>. Reads that do not:
+    /// <see cref="QueryRunEventsAsync"/>, whose table carries neither a machine nor a provenance column, and
+    /// <see cref="GetStatsAsync"/>, which is deliberately a report ABOUT the store rather than a customer view
+    /// of its contents. 🔴 And the half that keeps <b>every</b> from being repaired by simply adding the fourth
+    /// name: <see cref="QueryTelemetryAsync"/> CAN now reach this gate but its shipped caller does not ask it
+    /// to — <c>GET /v1/historian/telemetry</c> still returns fabricated samples by default. So this gate is
+    /// reachable from four reads and DEFAULT-ON for three. See item 17 in the owner-decisions record.</para>
     ///
     /// <b>Round 1 correction:</b> the original version treated "explicitly fabricated" and "unknown
     /// provenance" identically — both were excluded ONLY when at least one explicitly-real row was also
@@ -580,27 +599,90 @@ public sealed class SqliteHistorianStore : IHistorianStore
     // Query — telemetry / run-events
     // ─────────────────────────────────────────────────────────────────────
 
-    /// <summary>🔴 The one read in this class that does NOT call the provenance gate — the three around it
-    /// all do. It is not an omission that a flag would fix: the sample rows carry a machine code and an
-    /// event time but no provenance column, so there is nothing here to filter on without joining back to
-    /// the result row, and this method deliberately does not join. The window is matched with a text
-    /// <c>BETWEEN</c> over the same fixed-width ISO-8601 encoding the ordering relies on, and both metric
-    /// and machine are compared as stored: no trimming, no case folding, no aliasing of metric
-    /// names.</summary>
+    /// <summary>The window is matched with a text <c>BETWEEN</c> over the same fixed-width ISO-8601 encoding
+    /// the ordering relies on, and both metric and machine are compared as stored: no trimming, no case
+    /// folding, no aliasing of metric names.
+    ///
+    /// <para>📎 <b>THE SUMMARY THAT STOOD HERE IS RETRACTED — 2026-08-22 (AU-1), quoted verbatim, nothing
+    /// struck through and nothing deleted.</b> It read: <i>"🔴 The one read in this class that does NOT call
+    /// the provenance gate — the three around it all do. It is not an omission that a flag would fix: the
+    /// sample rows carry a machine code and an event time but no provenance column, so there is nothing here
+    /// to filter on without joining back to the result row, and this method deliberately does not join."</i>
+    /// Two of its three clauses survive re-measurement and one does not. TRUE: the sample rows carry no
+    /// provenance column of their own, and before 2026-08-22 this method did not join. FALSE: <i>"not an
+    /// omission that a flag would fix."</i> A flag fixes it, because the join it calls impossible is TOTAL —
+    /// <c>historian_telemetry.result_id</c> is <c>NOT NULL REFERENCES historian_results(id)</c>, so every
+    /// sample row has exactly one parent reading, and that parent carries <c>is_fabricated</c>. The provenance
+    /// of a sample was never missing; it was one hop away and unjoined.</para>
+    ///
+    /// <para><b>How the gate is reached, and why it is not re-implemented here.</b> When
+    /// <paramref name="includeFabricated"/> is <see langword="false"/> this delegates to the SAME
+    /// <see cref="ApplyRealPresenceGateAsync"/> the three reads around it call, over a scope expressed on
+    /// <c>historian_results</c>, and applies the clause it returns through
+    /// <c>result_id IN (SELECT id FROM historian_results WHERE …)</c>. There is no second copy of the rule, so
+    /// a future change to the rule cannot leave this read behind — which is precisely how this read fell
+    /// behind in the first place.</para>
+    ///
+    /// <para>🔴 <b>One deliberate imprecision, stated rather than smoothed over.</b> The gate probe's scope is
+    /// machine + window, NOT machine + metric + window, because <c>historian_results</c> has no metric column
+    /// — a reading is not per-metric. So the probe asks "is any reading from this machine in this window
+    /// explicitly real?" rather than "…that produced this metric". That is WIDER than the caller's filter, and
+    /// wider in the STRICTER direction: a real reading elsewhere in the window makes <c>hasReal</c> true, which
+    /// turns the admitted set from <c>(is_fabricated IS NULL OR is_fabricated = 0)</c> into
+    /// <c>is_fabricated = 0</c> and so drops Unknown-provenance samples that a metric-scoped probe might have
+    /// kept. It cannot go the other way and admit a fabricated sample: <c>is_fabricated = 1</c> is excluded
+    /// under both branches.</para>
+    ///
+    /// <para>🔴 <b>What the default does NOT do.</b> <paramref name="includeFabricated"/> defaults to
+    /// <see langword="false"/> here for parity with the reads around it, but the only shipped caller —
+    /// <c>St4i.EngineApi.Endpoints.HistorianEndpoints.GetTelemetryAsync</c> — passes <see langword="true"/>
+    /// unless a caller explicitly says otherwise, so <c>GET /v1/historian/telemetry</c> returns exactly the
+    /// rows today that it returned before this parameter existed. That is not an oversight either; it is item
+    /// 17's open half. See that endpoint's doc comment and item 17 in
+    /// <c>tools/machine-simulator/docs/owner-decisions.md</c>.</para></summary>
     public async Task<IReadOnlyList<TelemetrySamplePoint>> QueryTelemetryAsync(
-        string machineCode, string metric, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+        string machineCode, string metric, DateTimeOffset from, DateTimeOffset to, CancellationToken ct,
+        bool includeFabricated = false)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+
+        var fromIso = ToIso(from);
+        var toIso = ToIso(to);
+
+        // Empty unless the gate is engaged. When it is empty the CommandText below is character-for-character
+        // the statement this method issued before the gate existed — that identity is what makes
+        // includeFabricated:true a guaranteed no-op rather than a hopefully-equivalent rewrite.
+        var provenanceClause = string.Empty;
+        if (!includeFabricated)
+        {
+            // The caller's scope, restated on historian_results. The window translates EXACTLY rather than
+            // approximately: AppendResultsAsync writes one `eventTimeIso` and stamps it on the reading AND on
+            // every sample of that reading, so a sample is inside this window if and only if its parent is.
+            var scopeClauses = new List<string> { "machine_code = @machine_code", "event_time_utc BETWEEN @from AND @to" };
+            var scopeParameters = new List<(string Name, object Value)>
+            {
+                ("@machine_code", machineCode), ("@from", fromIso), ("@to", toIso),
+            };
+
+            var effectiveClauses = await ApplyRealPresenceGateAsync(
+                connection, scopeClauses, scopeParameters, includeFabricated, ct).ConfigureAwait(false);
+
+            // Only code-defined fragments are interpolated — scopeClauses above are literals written here and
+            // ApplyRealPresenceGateAsync appends one of its own two literals. Every VALUE is still bound.
+            provenanceClause =
+                $" AND result_id IN (SELECT id FROM historian_results WHERE {string.Join(" AND ", effectiveClauses)})";
+        }
+
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
+        cmd.CommandText = $"""
             SELECT event_time_utc, value FROM historian_telemetry
-            WHERE machine_code = @machine_code AND metric = @metric AND event_time_utc BETWEEN @from AND @to
+            WHERE machine_code = @machine_code AND metric = @metric AND event_time_utc BETWEEN @from AND @to{provenanceClause}
             ORDER BY event_time_utc;
             """;
         cmd.Parameters.AddWithValue("@machine_code", machineCode);
         cmd.Parameters.AddWithValue("@metric", metric);
-        cmd.Parameters.AddWithValue("@from", ToIso(from));
-        cmd.Parameters.AddWithValue("@to", ToIso(to));
+        cmd.Parameters.AddWithValue("@from", fromIso);
+        cmd.Parameters.AddWithValue("@to", toIso);
 
         var results = new List<TelemetrySamplePoint>();
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
