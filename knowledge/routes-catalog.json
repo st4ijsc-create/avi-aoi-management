@@ -1312,9 +1312,19 @@
   {
     "path": "/ai-chat",
     "component": "AIChatPage",
-    "guarded": false,
+    "guarded": true,
     "requiredRole": [],
     "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "doc 78 PHA D — Không gian lập trình AI (cây tệp · trình xem+diff · hội thoại tác nhân). RBAC ai_repo_read."
+  },
+  {
+    "path": "/ai-coding-workspace",
+    "component": "AICodingWorkspace",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": "ai_repo_read",
     "navHref": null,
     "redirectTo": null,
     "purpose": null
@@ -1322,7 +1332,7 @@
   {
     "path": "/ai-home",
     "component": "AIHome",
-    "guarded": false,
+    "guarded": true,
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
@@ -1342,7 +1352,7 @@
   {
     "path": "/management-insight",
     "component": "ManagementInsight",
-    "guarded": false,
+    "guarded": true,
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,

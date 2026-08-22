@@ -20,9 +20,23 @@
     "interfaces": [
       "ExportPrincipal",
       "ParsedWindow",
+      "ExportAuditContext",
+      "ExportAuditDetail",
       "AggregateDataset"
     ],
-    "aliases": [],
+    "aliases": [
+      "ExportOutcome"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/api/v1/apiKeyScope.ts",
+    "interfaces": [
+      "ApiKeyTenantScope"
+    ],
+    "aliases": [
+      "ApiKeyScopeMode"
+    ],
     "zodSchemas": []
   },
   {
@@ -170,6 +184,16 @@
     "zodSchemas": []
   },
   {
+    "file": "server/db/aiCodingSessions.ts",
+    "interfaces": [
+      "TomTatPhien",
+      "PhienDayDu",
+      "KetQuaLuu"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/db/aiSegmentation.ts",
     "interfaces": [
       "ListMasksFilter"
@@ -261,8 +285,11 @@
   },
   {
     "file": "server/db/hierarchy.ts",
-    "interfaces": [],
+    "interfaces": [
+      "PhamViNguoiXem"
+    ],
     "aliases": [
+      "CapPhanCap",
       "MachineClaimToken",
       "MachineEnrollmentToken",
       "PublicEnrollmentTokenRow"
@@ -350,15 +377,24 @@
   {
     "file": "server/db/reportAggregators.ts",
     "interfaces": [
-      "ReportRollupFilters",
+      "ReportRollupSelectors",
+      "ReportUserScopeAxis",
+      "ReportTenantScopeAxis",
+      "TenantScopeWindow",
+      "TenantFactoryScope",
+      "TenantCodeFactoryIds",
       "DimensionCountRow",
       "DimensionParetoItem",
       "DimensionParetoResult",
       "ProductYieldRow",
       "WeeklyYieldRow",
+      "DailyYieldRow",
       "WorkstationHeatmapRow"
     ],
     "aliases": [
+      "ReportRollupFilters",
+      "TenantFactoryScopeArgs",
+      "TenantCodeFactoryOutcome",
       "DefectDimension"
     ],
     "zodSchemas": []
@@ -378,11 +414,28 @@
   {
     "file": "server/db/statistics.ts",
     "interfaces": [
+      "StatsScopeArgs",
       "PanelYieldStats",
+      "ShiftStatsRow",
       "ShiftReportRow",
+      "TopNGMeasurementPoint",
+      "DefectsByWorkstationRow",
+      "TopNGByWorkstationRow",
+      "WorkstationSummaryRow",
+      "MeasurementPointByWorkstationRow",
+      "NGTrendRow",
+      "NGSummaryByMachineRow",
+      "TopNGEnhancedRow",
+      "YieldTrendRow",
+      "RecentYieldRow",
+      "NGByWorkstationRow",
+      "NGByPointForWorkstationRow",
+      "MeasurementPointStatsRow",
       "DrillAggRow"
     ],
-    "aliases": [],
+    "aliases": [
+      "ShiftReportFilters"
+    ],
     "zodSchemas": []
   },
   {
@@ -397,9 +450,12 @@
   {
     "file": "server/db/tenantContext.ts",
     "interfaces": [
-      "TenantScope"
+      "TenantScope",
+      "QuyetDinhCuongChe"
     ],
-    "aliases": [],
+    "aliases": [
+      "LyDoKhongCuongChe"
+    ],
     "zodSchemas": []
   },
   {
@@ -770,6 +826,17 @@
     ]
   },
   {
+    "file": "server/routers/congGiayPhepScan.ts",
+    "interfaces": [
+      "ThuTucCong",
+      "KetQuaQuetCong",
+      "TuyenAiExpress",
+      "KetQuaQuetExpress"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/routers/defectHeatmapRouter.ts",
     "interfaces": [],
     "aliases": [
@@ -948,6 +1015,30 @@
     "zodSchemas": []
   },
   {
+    "file": "server/routers/phamViDocScan.ts",
+    "interfaces": [
+      "KetQuaBangTenant",
+      "ThuTuc",
+      "KetQuaQuetPhamVi",
+      "TuyenExpress"
+    ],
+    "aliases": [
+      "NhomTuyen",
+      "NhomPhamVi"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routers/phamViGhiMay.ts",
+    "interfaces": [
+      "MaTenantCuaMay",
+      "MaTenantKhai",
+      "MacTenantGhi"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/routers/productPanelRouter.ts",
     "interfaces": [],
     "aliases": [
@@ -976,6 +1067,17 @@
     ]
   },
   {
+    "file": "server/routers/publicProductScope.ts",
+    "interfaces": [
+      "ChuoiPhanCapCuaTram"
+    ],
+    "aliases": [
+      "PhamViMayGoi",
+      "ThucTheNgoaiPhamVi"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/routers/readinessRouter.ts",
     "interfaces": [
       "ReadinessItem"
@@ -1002,6 +1104,18 @@
     "zodSchemas": [
       "windowInput"
     ]
+  },
+  {
+    "file": "server/routers/repoWorkspaceRouter.ts",
+    "interfaces": [
+      "ListEntry",
+      "ListFilesData",
+      "ReadFileData",
+      "GrepMatch",
+      "GrepData"
+    ],
+    "aliases": [],
+    "zodSchemas": []
   },
   {
     "file": "server/routers/routingRouter.ts",
@@ -1083,6 +1197,14 @@
     ]
   },
   {
+    "file": "server/routers/_phamViNguoiXem.ts",
+    "interfaces": [
+      "CoDanhTinh"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/routers/_shared.ts",
     "interfaces": [],
     "aliases": [
@@ -1125,11 +1247,38 @@
     "zodSchemas": []
   },
   {
+    "file": "server/routes/_congAnh.ts",
+    "interfaces": [],
+    "aliases": [
+      "LoiVaoAnh",
+      "KetQuaCongAnh"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/routes/_congLoopback.ts",
     "interfaces": [
       "KetQuaXacThuc"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routes/_phamViNgoai.ts",
+    "interfaces": [],
+    "aliases": [
+      "PhamViGoiNgoai"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routes/_uyQuyenAnh.ts",
+    "interfaces": [],
+    "aliases": [
+      "KetQuaChuanHoa",
+      "HinhDangDuongDan",
+      "KetQuaUyQuyenAnh"
+    ],
     "zodSchemas": []
   },
   {
@@ -1157,7 +1306,8 @@
       "RedactionResult",
       "OutputCheckResult",
       "SafetyFlagsSummary",
-      "SafetyResult"
+      "SafetyResult",
+      "UntrustedSanitizeResult"
     ],
     "aliases": [
       "InjectionRisk"
@@ -1171,7 +1321,23 @@
       "AutonomyContext",
       "AutonomyDecision"
     ],
-    "aliases": [],
+    "aliases": [
+      "PhanLoaiTuTri"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/codingRepoContext.ts",
+    "interfaces": [
+      "KetQuaDocTepTho",
+      "TepNguCanh",
+      "KetQuaNguCanhMa",
+      "DauVaoNguCanhMa"
+    ],
+    "aliases": [
+      "NguonUngVien",
+      "LyDoNguCanhMa"
+    ],
     "zodSchemas": []
   },
   {
@@ -1190,6 +1356,16 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/ai/dataCitation.ts",
+    "interfaces": [
+      "ToolResultLike",
+      "KbDataCitation",
+      "NumberReconciliation"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/ai/defectCorrelationService.ts",
     "interfaces": [
       "LogisticFit",
@@ -1198,6 +1374,7 @@
       "CorrelateResult"
     ],
     "aliases": [
+      "PCorrectionMethod",
       "CorrelationDirection"
     ],
     "zodSchemas": []
@@ -1343,6 +1520,29 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/ai/modelTierFlagAudit.ts",
+    "interfaces": [
+      "TierModelRequirement",
+      "TierFlagSpec",
+      "TierFlagFinding",
+      "TierFlagProbes"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/nativeToolCalls.ts",
+    "interfaces": [
+      "WireToolCall",
+      "WireTool",
+      "WireToolCallDelta"
+    ],
+    "aliases": [
+      "WireToolChoice"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/ai/ntfClassifierService.ts",
     "interfaces": [
       "NtfVocab",
@@ -1413,10 +1613,14 @@
     "interfaces": [
       "RepoFileRead",
       "RepoContextResult",
-      "GatherRepoContextInput"
+      "GatherRepoContextInput",
+      "RepoIndexSnippet",
+      "RepoIndexContextResult",
+      "GatherRepoIndexContextInput"
     ],
     "aliases": [
-      "RepoReadRejectReason"
+      "RepoReadRejectReason",
+      "RepoIndexReason"
     ],
     "zodSchemas": []
   },
@@ -1551,7 +1755,9 @@
       "ReplanInput",
       "ReplanResult"
     ],
-    "aliases": [],
+    "aliases": [
+      "GatewayDenial"
+    ],
     "zodSchemas": []
   },
   {
@@ -1673,6 +1879,33 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiCodingAgent.ts",
+    "interfaces": [
+      "YeuCauSinhChu",
+      "KetQuaChu",
+      "LuotHoiThoai",
+      "KetQuaLichSu"
+    ],
+    "aliases": [
+      "NgonNguMa"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiCodingVerify.ts",
+    "interfaces": [
+      "MucGoc",
+      "YeuCauKiemChung",
+      "KetQuaKiemChung"
+    ],
+    "aliases": [
+      "MaTuChoiKiemChung",
+      "PhanQuyetLenhKiemChung",
+      "KetQuaSuyLenh"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiCopilotActions.ts",
     "interfaces": [
       "CopilotUser",
@@ -1780,7 +2013,8 @@
       "GatewayStats"
     ],
     "aliases": [
-      "Outcome"
+      "Outcome",
+      "TaskAuditPolicy"
     ],
     "zodSchemas": []
   },
@@ -1909,6 +2143,25 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiKbSourceWeights.ts",
+    "interfaces": [
+      "KbWeightOverrides"
+    ],
+    "aliases": [
+      "KbWeightLanguage"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiLlamaServerClient.ts",
+    "interfaces": [
+      "HaiNuaCauTraLoi",
+      "NganSachNguCanh"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiLlmFinetuneSidecar.ts",
     "interfaces": [
       "LoraHyperparams",
@@ -1931,6 +2184,7 @@
       "KbAnswerResult",
       "ConversationMessage",
       "KbHealth",
+      "KbRetrieveOptions",
       "IngestRecord"
     ],
     "aliases": [
@@ -1967,25 +2221,113 @@
     ]
   },
   {
-    "file": "server/services/aiLocalTools/intentClassifier.ts",
+    "file": "server/services/aiLocalTools/index.ts",
     "interfaces": [
-      "ToolContext",
-      "ToolDecision"
+      "ToolExecOutcome",
+      "TryExecuteToolLoopResult",
+      "VongCoKetQua",
+      "TryExecuteCodingToolLoopResult"
     ],
     "aliases": [],
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiLocalTools/intentClassifier.ts",
+    "interfaces": [
+      "ToolContext",
+      "ToolDecision",
+      "QuanSatVongTruoc"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiLocalTools/readToolRbac.ts",
+    "interfaces": [],
+    "aliases": [
+      "AuthCtx",
+      "PhamViNhaMay"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiLocalTools/readToolsProgramming.ts",
     "interfaces": [
-      "ConfinedTarget"
+      "ConfinedTarget",
+      "ConfinedDir",
+      "ConfinedEntry"
     ],
     "aliases": [
       "WorkspaceRejectReason",
       "ConfinementRejectReason",
       "ConfineOutcome",
       "ConfinedReadOutcome",
-      "ConfinedWriteOutcome"
+      "ConfinedWriteOutcome",
+      "ConfineDirOutcome"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiLocalTools/repoCommandSandbox.ts",
+    "interfaces": [
+      "LenhDaPhanGiai",
+      "MucDanhSachTrang",
+      "KetQuaChayLenh",
+      "TuyChonChay"
+    ],
+    "aliases": [
+      "MaTuChoiLenh",
+      "KetQuaTachArgv",
+      "KetQuaPhanQuyetLenh",
+      "KetQuaGiet"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiLocalTools/repoGitStatus.ts",
+    "interfaces": [],
+    "aliases": [
+      "TrangThaiGit"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiLocalTools/repoProjects.ts",
+    "interfaces": [
+      "DuAnHopCat"
+    ],
+    "aliases": [
+      "KetQuaPhanGiaiGoc"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiLocalTools/repoSandbox.ts",
+    "interfaces": [
+      "ThuChiByte",
+      "TuyChonDocTep"
+    ],
+    "aliases": [
+      "MaTuChoiHopCat",
+      "KetQuaDocTep",
+      "KetQuaLietKe"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiLocalTools/toolLoop.ts",
+    "interfaces": [
+      "ToolLoopExecOutcome",
+      "ToolLoopQuanSat",
+      "ToolLoopRound",
+      "ToolLoopProgress",
+      "ToolLoopLimits",
+      "ToolLoopResult",
+      "ToolLoopDeciders",
+      "RunToolLoopDeps"
+    ],
+    "aliases": [
+      "ToolLoopStop"
     ],
     "zodSchemas": []
   },
@@ -2016,6 +2358,18 @@
       "KhongTham",
       "Dong",
       "VramPhraseKey"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/applyDiff.ts",
+    "interfaces": [
+      "ThamSo"
+    ],
+    "aliases": [
+      "MaApplyDiff",
+      "PhanQuyet",
+      "PhanQuyetXanh"
     ],
     "zodSchemas": []
   },
@@ -2098,11 +2452,14 @@
     "interfaces": [
       "RouteInput",
       "RouteDecision",
-      "ThinkingTierStatus"
+      "ThinkingTierStatus",
+      "RouterModelProfile",
+      "ActiveRouterProfile"
     ],
     "aliases": [
       "TaskKind",
-      "Difficulty"
+      "Difficulty",
+      "ProfileProvenance"
     ],
     "zodSchemas": []
   },
@@ -2256,10 +2613,24 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiReportPhrases.ts",
+    "interfaces": [
+      "Cum"
+    ],
+    "aliases": [
+      "ReportLang",
+      "Tham",
+      "KhongTham",
+      "KhoaCauBaoCao"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiReranker.ts",
     "interfaces": [
       "RerankCandidate",
-      "RerankResult"
+      "RerankResult",
+      "RerankTimings"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -2856,7 +3227,10 @@
       "HeatmapHotspot",
       "SpatialHeatmapResult",
       "BucketOptions",
-      "SpatialHeatmapQuery"
+      "SpatialHeatmapQuery",
+      "HeatmapCallerScope",
+      "ResolvedHeatmapScope",
+      "ContributingScopeCodes"
     ],
     "aliases": [
       "HeatmapCoordinateSpace"
@@ -2938,6 +3312,14 @@
       "RobotIdentity",
       "RobotLiveTelemetry",
       "RobotDetail"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ecosystem/commandCenterScope.ts",
+    "interfaces": [
+      "AlertScope"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -4076,6 +4458,7 @@
       "LineTaktResult"
     ],
     "aliases": [
+      "OeeViewerScope",
       "AvailabilityBasis"
     ],
     "zodSchemas": []
@@ -6775,7 +7158,8 @@
     "interfaces": [
       "GpuHolder",
       "GpuHolderCensus",
-      "ProcTableRow"
+      "ProcTableRow",
+      "LoiChayNgoai"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -6837,6 +7221,14 @@
     "interfaces": [],
     "aliases": [
       "VramSource"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/vram/vramProcessPresence.ts",
+    "interfaces": [],
+    "aliases": [
+      "SuHienDien"
     ],
     "zodSchemas": []
   },
@@ -7200,6 +7592,24 @@
     "zodSchemas": []
   },
   {
+    "file": "server/_core/accessControl.ts",
+    "interfaces": [
+      "ResolvedDataScope"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/accessControlLabels.ts",
+    "interfaces": [
+      "ScopeLabels"
+    ],
+    "aliases": [
+      "ScopeEmptyReason"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/_core/aiAnalyticsScope.ts",
     "interfaces": [
       "FactoryScope",
@@ -7208,6 +7618,32 @@
       "ReportScopeCtx"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/aiReadiness.ts",
+    "interfaces": [
+      "SubsystemReport",
+      "AiReadinessResult",
+      "LlamaServerProbeResult",
+      "RerankerStatusShape",
+      "TierFlagFindingShape",
+      "AiReadinessDeps"
+    ],
+    "aliases": [
+      "SubsystemState",
+      "CheckName"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/anhKyUrl.ts",
+    "interfaces": [],
+    "aliases": [
+      "MucKyAnh",
+      "LyDoTruotChuKy",
+      "KetQuaKiemChuKy"
+    ],
     "zodSchemas": []
   },
   {
@@ -7477,6 +7913,14 @@
     "zodSchemas": []
   },
   {
+    "file": "server/_core/reportExportScope.ts",
+    "interfaces": [
+      "ExportActor"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/_core/samlProvider.ts",
     "interfaces": [
       "SamlConfig",
@@ -7540,6 +7984,14 @@
       "SocketMachineAuthMode",
       "SocketMachineAuthMethod"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/tenantCodeScope.ts",
+    "interfaces": [
+      "TenantCodeScope"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -7828,6 +8280,14 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/diff/HunkDiffView.tsx",
+    "interfaces": [
+      "HunkDiffViewProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/diff/LineDiff.tsx",
     "interfaces": [],
     "aliases": [
@@ -7907,6 +8367,7 @@
   {
     "file": "client/src/components/engineering/inlineCopilotExtension.ts",
     "interfaces": [
+      "GhostSuggestion",
       "InlineCopilotExtensionOptions"
     ],
     "aliases": [],
@@ -9004,7 +9465,8 @@
       "KbStreamResult",
       "KbStreamContext",
       "KbStreamRequest",
-      "KbStreamCallbacks"
+      "KbStreamCallbacks",
+      "KbToolLoopProgress"
     ],
     "aliases": [
       "ChatImageError"
@@ -9107,6 +9569,16 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/lib/aiCodingInput.ts",
+    "interfaces": [
+      "PhimNhap"
+    ],
+    "aliases": [
+      "PhanQuyetPhimNhap"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/lib/aiReportExport.ts",
     "interfaces": [],
     "aliases": [
@@ -9188,6 +9660,21 @@
       "TemplateLayoutItem"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/diffHunks.ts",
+    "interfaces": [
+      "DiffHunk",
+      "HunkPlan",
+      "ComputeHunkOptions",
+      "ApplyHunkSelectionArgs"
+    ],
+    "aliases": [
+      "Eol",
+      "ProjectResult",
+      "HunkApplyResult"
+    ],
     "zodSchemas": []
   },
   {
@@ -9306,6 +9793,14 @@
     "file": "client/src/lib/restAuthError.ts",
     "interfaces": [
       "ThanLoiRest"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/scopeEmpty.ts",
+    "interfaces": [
+      "ScopeLabelled"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -9446,6 +9941,28 @@
     ],
     "aliases": [
       "PermissionAction"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "shared/aiCodingLoop.ts",
+    "interfaces": [
+      "KetQuaTest",
+      "TrangThaiSauTest",
+      "PhanQuyetVong"
+    ],
+    "aliases": [
+      "LyDoDungVong"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "shared/aiCodingSession.ts",
+    "interfaces": [
+      "LuotPhien"
+    ],
+    "aliases": [
+      "VaiLuot"
     ],
     "zodSchemas": []
   },
@@ -9627,6 +10144,15 @@
       "InsertAiLlmAudit",
       "KbAnswerFeedback",
       "InsertKbAnswerFeedback"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/aiCodingSession.ts",
+    "interfaces": [],
+    "aliases": [
+      "AiCodingSession",
+      "InsertAiCodingSession"
     ],
     "zodSchemas": []
   },

@@ -136,6 +136,20 @@
     "license": "OPTIONAL"
   },
   {
+    "slug": "ai-coding-workspace",
+    "sourcePath": "knowledge/operational/ai-coding-workspace.md",
+    "route": "/ai-coding-workspace",
+    "permission": "ai_repo_read",
+    "role": [],
+    "screenVi": "Không gian lập trình AI",
+    "screenEn": "AI Coding Workspace",
+    "inSidebar": true,
+    "navGroupVi": "AI",
+    "navGroupEn": "AI",
+    "module": "MOD_AI",
+    "license": "OPTIONAL"
+  },
+  {
     "slug": "ai-command-center",
     "sourcePath": "knowledge/operational/ai-command-center.md",
     "route": "/ai-command-center",
@@ -146,8 +160,8 @@
     "inSidebar": true,
     "navGroupVi": "AI",
     "navGroupEn": "AI",
-    "module": null,
-    "license": null
+    "module": "MOD_AI",
+    "license": "OPTIONAL"
   },
   {
     "slug": "ai-data-processing",
@@ -178,8 +192,8 @@
     "inSidebar": true,
     "navGroupVi": "AI",
     "navGroupEn": "AI",
-    "module": null,
-    "license": null
+    "module": "MOD_AI",
+    "license": "OPTIONAL"
   },
   {
     "slug": "ai-experiments",
@@ -194,8 +208,8 @@
     "inSidebar": true,
     "navGroupVi": "AI",
     "navGroupEn": "AI",
-    "module": null,
-    "license": null
+    "module": "MOD_AI",
+    "license": "OPTIONAL"
   },
   {
     "slug": "ai-gguf-models",
@@ -224,8 +238,8 @@
     "inSidebar": true,
     "navGroupVi": "AI",
     "navGroupEn": "AI",
-    "module": null,
-    "license": null
+    "module": "MOD_AI",
+    "license": "OPTIONAL"
   },
   {
     "slug": "ai-image-search",
@@ -364,8 +378,8 @@
     "inSidebar": true,
     "navGroupVi": "AI",
     "navGroupEn": "AI",
-    "module": null,
-    "license": null
+    "module": "MOD_AI",
+    "license": "OPTIONAL"
   },
   {
     "slug": "ai-time-series",
@@ -394,8 +408,8 @@
     "inSidebar": true,
     "navGroupVi": "AI",
     "navGroupEn": "AI",
-    "module": null,
-    "license": null
+    "module": "MOD_AI",
+    "license": "OPTIONAL"
   },
   {
     "slug": "alarm-kpi",
@@ -589,8 +603,8 @@
     "route": "/cmms",
     "permission": "machine_control",
     "role": [],
-    "screenVi": "Maintenance Hub",
-    "screenEn": "Maintenance Hub",
+    "screenVi": "Bảo trì (CMMS)",
+    "screenEn": "Maintenance (CMMS)",
     "inSidebar": true,
     "navGroupVi": "Thiết bị & Giám sát",
     "navGroupEn": "Devices & Monitoring",
@@ -817,8 +831,8 @@
     "route": "/data-management",
     "permission": "masterdata",
     "role": [],
-    "screenVi": "Data Management Hub",
-    "screenEn": "Data Management Hub",
+    "screenVi": "Trung tâm dữ liệu",
+    "screenEn": "Data hub",
     "inSidebar": true,
     "navGroupVi": "Quản lý dữ liệu",
     "navGroupEn": "Data Management",
@@ -1013,8 +1027,8 @@
     "route": "/engineering-changes",
     "permission": "machine_control",
     "role": [],
-    "screenVi": "Engineering Changes",
-    "screenEn": "Engineering Changes",
+    "screenVi": "Thay đổi kỹ thuật (ECN)",
+    "screenEn": "Engineering change (ECN)",
     "inSidebar": true,
     "navGroupVi": "Kỹ thuật & Điều khiển (Nâng cao)",
     "navGroupEn": "Engineering & Control (Advanced)",
@@ -1041,8 +1055,8 @@
     "route": "/engineering-studio",
     "permission": "machine_control",
     "role": [],
-    "screenVi": "Engineering Studio Hub",
-    "screenEn": "Engineering Studio Hub",
+    "screenVi": "Xưởng kỹ thuật",
+    "screenEn": "Engineering studio",
     "inSidebar": true,
     "navGroupVi": "Kỹ thuật & Điều khiển (Nâng cao)",
     "navGroupEn": "Engineering & Control (Advanced)",
@@ -1097,8 +1111,8 @@
     "route": "/factory-command",
     "permission": "machine_status",
     "role": [],
-    "screenVi": "Factory Command View",
-    "screenEn": "Factory Command View",
+    "screenVi": "Chỉ huy nhà máy",
+    "screenEn": "Factory command",
     "inSidebar": true,
     "navGroupVi": "Thiết bị & Giám sát",
     "navGroupEn": "Devices & Monitoring",
@@ -1313,8 +1327,8 @@
     "route": "/maintenance-hub",
     "permission": "machine_status",
     "role": [],
-    "screenVi": "Maintenance Workspace Hub",
-    "screenEn": "Maintenance Workspace Hub",
+    "screenVi": "Trung tâm bảo trì",
+    "screenEn": "Maintenance hub",
     "inSidebar": true,
     "navGroupVi": "Thiết bị & Giám sát",
     "navGroupEn": "Devices & Monitoring",
@@ -1411,8 +1425,8 @@
     "route": "/metric-catalog",
     "permission": "machine_status",
     "role": [],
-    "screenVi": "Metric Catalog",
-    "screenEn": "Metric Catalog",
+    "screenVi": "Danh mục chỉ số (Metric Catalog)",
+    "screenEn": "Metric catalog",
     "inSidebar": true,
     "navGroupVi": "Quản lý dữ liệu",
     "navGroupEn": "Data Management",
@@ -1471,8 +1485,8 @@
     "route": "/nonconformance",
     "permission": "analytics_spc",
     "role": [],
-    "screenVi": "Nonconformance Reports",
-    "screenEn": "Nonconformance Reports",
+    "screenVi": "Báo cáo không phù hợp (NCR/MRB)",
+    "screenEn": "Nonconformance report (NCR/MRB)",
     "inSidebar": true,
     "navGroupVi": "Phân tích",
     "navGroupEn": "Analytics",
@@ -1639,8 +1653,8 @@
     "route": "/product-changeover",
     "permission": "machine_status",
     "role": [],
-    "screenVi": "Product Changeover Wizard",
-    "screenEn": "Product Changeover Wizard",
+    "screenVi": "Đổi sản phẩm",
+    "screenEn": "Product changeover",
     "inSidebar": true,
     "navGroupVi": "Sản xuất",
     "navGroupEn": "Production",
@@ -1695,8 +1709,8 @@
     "route": "/product-workspace",
     "permission": "history_view",
     "role": [],
-    "screenVi": "Product Workspace Hub",
-    "screenEn": "Product Workspace Hub",
+    "screenVi": "Xưởng sản phẩm",
+    "screenEn": "Product workspace",
     "inSidebar": true,
     "navGroupVi": "Quản lý dữ liệu",
     "navGroupEn": "Data Management",
@@ -1905,8 +1919,8 @@
     "route": "/reporting-studio",
     "permission": "reports_view",
     "role": [],
-    "screenVi": "Reporting Studio",
-    "screenEn": "Reporting Studio",
+    "screenVi": "Xưởng báo cáo",
+    "screenEn": "Reporting studio",
     "inSidebar": true,
     "navGroupVi": "Phân tích",
     "navGroupEn": "Analytics",
@@ -2079,8 +2093,8 @@
     "role": [
       "admin"
     ],
-    "screenVi": "Settings Hub",
-    "screenEn": "Settings Hub",
+    "screenVi": "Trung tâm cài đặt",
+    "screenEn": "Settings hub",
     "inSidebar": true,
     "navGroupVi": "Quản trị",
     "navGroupEn": "Administration",

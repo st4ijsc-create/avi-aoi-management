@@ -8,8 +8,8 @@ screenEn: Datasets
 inSidebar: true
 navGroupVi: AI
 navGroupEn: AI
-module: null
-license: null
+module: MOD_AI
+license: OPTIONAL
 ---
 
 # Bộ dữ liệu — Cách vận hành
@@ -24,4 +24,5 @@ Màn hình `/ai-datasets` (Datasets).
 
 ## Quyền yêu cầu
 - Vai trò bắt buộc: admin
+- Module: `MOD_AI` (OPTIONAL — cần license).
 

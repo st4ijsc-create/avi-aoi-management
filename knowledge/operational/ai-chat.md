@@ -14,7 +14,7 @@ license: OPTIONAL
 # Trò chuyện AI — Cách vận hành
 
 ## Mục đích
-Màn hình `/ai-chat` (AI Chat).
+doc 78 PHA D — Không gian lập trình AI (cây tệp · trình xem+diff · hội thoại tác nhân). RBAC ai_repo_read.
 
 ## Vị trí truy cập
 - Menu: AI › Trò chuyện AI

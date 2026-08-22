@@ -7,8 +7,8 @@ screenEn: Training Studio
 inSidebar: true
 navGroupVi: AI
 navGroupEn: AI
-module: null
-license: null
+module: MOD_AI
+license: OPTIONAL
 ---
 
 # Training Studio — Cách vận hành
@@ -23,4 +23,5 @@ doc69 GĐ5/Wave E3 (E3-2): Training Studio — corpus registry + job-tracked ing
 
 ## Quyền yêu cầu
 - Không giới hạn quyền cụ thể (mọi người dùng đã đăng nhập).
+- Module: `MOD_AI` (OPTIONAL — cần license).
 

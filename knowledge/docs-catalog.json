@@ -356,7 +356,7 @@
   {
     "file": "docs/ECOSYSTEM/30_BI_EXPORT_API.md",
     "title": "30 — Raw Export & BI Dataset API (doc 27 §6 A10 · W5-D · 2026-07-04)",
-    "length": 6740,
+    "length": 8225,
     "headings": 3
   },
   {
@@ -476,7 +476,7 @@
   {
     "file": "docs/ECOSYSTEM/52_P0_MACHINE_AUTH_ROTATION_RUNBOOK.md",
     "title": "Doc 52 — P0 Runbook: Siết danh tính máy (rotation khoá `mk_`) + Checklist go-live",
-    "length": 20893,
+    "length": 23864,
     "headings": 8
   },
   {
@@ -560,13 +560,13 @@
   {
     "file": "docs/ECOSYSTEM/65_SIMULATOR_UI_WEB_UPGRADE_PLAN_2026-07-19.md",
     "title": "Doc 65 — Kế hoạch Audit + Nâng cấp UI Simulator lên Web chuyên nghiệp (trắng/navy)",
-    "length": 10659,
+    "length": 10854,
     "headings": 10
   },
   {
     "file": "docs/ECOSYSTEM/66_ECOSYSTEM_MIDDLEWARE_COMMERCIALIZATION_PLAN_2026-07-19.md",
     "title": "Doc 66 — Kế hoạch Middleware Trung gian cho Hệ sinh thái: bán 1 máy & bán nhiều máy",
-    "length": 13588,
+    "length": 13797,
     "headings": 11
   },
   {
@@ -622,6 +622,30 @@
     "title": "75 — AI LoRA/QLoRA Fine-Tune Runbook (doc69 Giai đoạn 5 / Wave E3, task E3-6)",
     "length": 18818,
     "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/76_AI_LOCAL_STATE_GAP_VS_FRONTIER_AND_COMPLETION_PLAN_2026-08-16.md",
+    "title": "Doc 76 — Hiện trạng AI local, GAP với mô hình tiên tiến, và kế hoạch hoàn thiện",
+    "length": 34175,
+    "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/77_QWEN38_MIGRATION_PREFLIGHT_2026-08-16.md",
+    "title": "77 — Tiền kiểm G5: di trú sang Qwen3.8-27B (một model sinh chữ chính)",
+    "length": 29772,
+    "headings": 9
+  },
+  {
+    "file": "docs/ECOSYSTEM/78_AI_LOCAL_CODING_AGENT_KE_HOACH_2026-08-18.md",
+    "title": "78 — Nâng AI local thành TÁC NHÂN LẬP TRÌNH cho kỹ sư làm code cả hệ thống",
+    "length": 13115,
+    "headings": 7
+  },
+  {
+    "file": "docs/ECOSYSTEM/79_AI_CODING_WORKSPACE_NANG_CAP_2026-08-19.md",
+    "title": "✅ PHẦN CUỐI — VÒNG KHÉP KÍN ĐÃ CHẠY THẬT (nghiệm thu live 2026-08-19)",
+    "length": 54583,
+    "headings": 42
   },
   {
     "file": "docs/ECOSYSTEM/ADAPTER_SDK.md",
@@ -950,7 +974,7 @@
   {
     "file": "docs/superpowers/plans/2026-08-06-vram-pha5-tra-no.md",
     "title": "Pha 5 — Trả nợ Pha 4 (N8–N14) Implementation Plan",
-    "length": 33767,
+    "length": 33883,
     "headings": 4
   },
   {
@@ -1106,7 +1130,7 @@
   {
     "file": "docs/superpowers/reports/2026-08-06-vram-pha5-review-toan-nhanh.md",
     "title": "Review TOÀN NHÁNH — Pha 5 (trả nợ N8–N14) · module điều phối VRAM",
-    "length": 32065,
+    "length": 32527,
     "headings": 13
   },
   {
@@ -1256,8 +1280,8 @@
   {
     "file": "docs/superpowers/specs/2026-07-29-ai-sprint5-backlog-consolidated.md",
     "title": "Sprint 5 — Backlog hợp nhất sau Wave 0→4",
-    "length": 19990,
-    "headings": 11
+    "length": 36503,
+    "headings": 13
   },
   {
     "file": "docs/superpowers/specs/2026-07-29-ai-sprint5-design.md",

@@ -350,7 +350,16 @@
       "/ai-local-kb",
       "/mask-annotation",
       "/anomaly-banks",
-      "/causal-graph"
+      "/causal-graph",
+      "ai",
+      "Tôi",
+      "/ai-home",
+      "/ai-command-center",
+      "/ai-specialist-studio",
+      "/ai-experiments",
+      "/ai-datasets",
+      "/ai-training-studio",
+      "/ai-coding-workspace"
     ],
     "permissionCategories": [
       "analytics"

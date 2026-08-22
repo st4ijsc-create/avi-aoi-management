@@ -61,7 +61,15 @@
   },
   {
     "from": "server/aiReportGenerator.test.ts",
-    "to": "../server/services/aiReportGenerator"
+    "to": "./services/aiReportGenerator"
+  },
+  {
+    "from": "server/aiReportGenerator.test.ts",
+    "to": "../drizzle/schema"
+  },
+  {
+    "from": "server/aiReportGenerator.test.ts",
+    "to": "../drizzle/schema/ai"
   },
   {
     "from": "server/alert.test.ts",
@@ -84,6 +92,34 @@
     "to": "../drizzle/schema"
   },
   {
+    "from": "server/api/export/apiKeyTenantScope.test.ts",
+    "to": "../../db"
+  },
+  {
+    "from": "server/api/export/apiKeyTenantScope.test.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/api/export/apiKeyTenantScope.test.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/api/export/apiKeyTenantScope.test.ts",
+    "to": "../v1/auth"
+  },
+  {
+    "from": "server/api/export/apiKeyTenantScope.test.ts",
+    "to": "../v1/apiKeyScope"
+  },
+  {
+    "from": "server/api/export/apiKeyTenantScope.test.ts",
+    "to": "./biRouter"
+  },
+  {
+    "from": "server/api/export/apiKeyTenantScope.test.ts",
+    "to": "./exportRouter"
+  },
+  {
     "from": "server/api/export/biRouter.test.ts",
     "to": "./biRouter"
   },
@@ -94,6 +130,22 @@
   {
     "from": "server/api/export/biRouter.ts",
     "to": "../v1/auth"
+  },
+  {
+    "from": "server/api/export/biRouter.ts",
+    "to": "../v1/apiKeyScope"
+  },
+  {
+    "from": "server/api/export/biRouter.ts",
+    "to": "../../_core/tenantCodeScope"
+  },
+  {
+    "from": "server/api/export/exportAuditOnFailure.test.ts",
+    "to": "./exportRouter"
+  },
+  {
+    "from": "server/api/export/exportRealStream.test.ts",
+    "to": "./exportRouter"
   },
   {
     "from": "server/api/export/exportRouter.ts",
@@ -113,6 +165,14 @@
   },
   {
     "from": "server/api/export/exportRouter.ts",
+    "to": "../v1/apiKeyScope"
+  },
+  {
+    "from": "server/api/export/exportRouter.ts",
+    "to": "../../_core/tenantCodeScope"
+  },
+  {
+    "from": "server/api/export/exportRouter.ts",
     "to": "../../services/universalExportService"
   },
   {
@@ -122,6 +182,10 @@
   {
     "from": "server/api/export/exportRoutes.test.ts",
     "to": "../../services/universalExportService"
+  },
+  {
+    "from": "server/api/export/exportTruncation.test.ts",
+    "to": "./exportRouter"
   },
   {
     "from": "server/api/v1/advice.test.ts",
@@ -138,6 +202,18 @@
   {
     "from": "server/api/v1/advice.ts",
     "to": "./envelope"
+  },
+  {
+    "from": "server/api/v1/apiKeyScope.ts",
+    "to": "./envelope"
+  },
+  {
+    "from": "server/api/v1/apiKeyScope.ts",
+    "to": "../../_core/accessControlLabels"
+  },
+  {
+    "from": "server/api/v1/apiKeyScope.ts",
+    "to": "../../_core/tenantCodeScope"
   },
   {
     "from": "server/api/v1/apiV1.test.ts",
@@ -190,6 +266,10 @@
   {
     "from": "server/api/v1/auth.ts",
     "to": "./scopes"
+  },
+  {
+    "from": "server/api/v1/auth.ts",
+    "to": "./apiKeyScope"
   },
   {
     "from": "server/api/v1/dataApi.test.ts",
@@ -250,6 +330,10 @@
   {
     "from": "server/api/v1/erpOauth.ts",
     "to": "./auth"
+  },
+  {
+    "from": "server/api/v1/erpOauth.ts",
+    "to": "./apiKeyScope"
   },
   {
     "from": "server/api/v1/events.ts",
@@ -366,6 +450,10 @@
   {
     "from": "server/api/v1/moduleReads.ts",
     "to": "../../services/standards/alarmTaxonomy"
+  },
+  {
+    "from": "server/api/v1/moduleReads.ts",
+    "to": "../../_core/tenantCodeScope"
   },
   {
     "from": "server/api/v1/openapi.ts",
@@ -701,11 +789,19 @@
   },
   {
     "from": "server/db/ai.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/ai.ts",
     "to": "../../drizzle/schema"
   },
   {
     "from": "server/db/aiAdvanced.ts",
     "to": "./connection"
+  },
+  {
+    "from": "server/db/aiAdvanced.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/db/aiAdvanced.ts",
@@ -717,11 +813,35 @@
   },
   {
     "from": "server/db/aiAnomaly.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/aiAnomaly.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/aiCodingSessions.test.ts",
+    "to": "./aiCodingSessions"
+  },
+  {
+    "from": "server/db/aiCodingSessions.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/aiCodingSessions.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/aiCodingSessions.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/db/aiSegmentation.ts",
     "to": "./connection"
+  },
+  {
+    "from": "server/db/aiSegmentation.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/db/aiSegmentation.ts",
@@ -761,6 +881,10 @@
   },
   {
     "from": "server/db/alerts.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/alerts.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -790,6 +914,30 @@
   {
     "from": "server/db/andonBoard.ts",
     "to": "./statistics"
+  },
+  {
+    "from": "server/db/andonBoard.ts",
+    "to": "../_core/accessControlLabels"
+  },
+  {
+    "from": "server/db/andonBoardDayWindow.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/db/andonBoardDayWindow.test.ts",
+    "to": "./andonBoard"
+  },
+  {
+    "from": "server/db/andonBoardDayWindow.test.ts",
+    "to": "../utils/factoryTime"
+  },
+  {
+    "from": "server/db/auditLogWriter.test.ts",
+    "to": "./system"
+  },
+  {
+    "from": "server/db/auth.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/db/auth.ts",
@@ -841,6 +989,10 @@
   },
   {
     "from": "server/db/bom.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/bom.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -861,6 +1013,10 @@
   },
   {
     "from": "server/db/dashboard.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/dashboard.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -878,6 +1034,10 @@
   {
     "from": "server/db/energy.ts",
     "to": "./connection"
+  },
+  {
+    "from": "server/db/energy.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/db/energy.ts",
@@ -913,7 +1073,19 @@
   },
   {
     "from": "server/db/goldenSample.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/goldenSample.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/hierarchy.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/db/hierarchy.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/db/hierarchy.ts",
@@ -1033,11 +1205,19 @@
   },
   {
     "from": "server/db/inspection.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/inspection.ts",
     "to": "../../drizzle/schema"
   },
   {
     "from": "server/db/inspection.ts",
     "to": "./auth"
+  },
+  {
+    "from": "server/db/inspection.ts",
+    "to": "../_core/accessControlLabels"
   },
   {
     "from": "server/db/inspectionIdempotency.test.ts",
@@ -1061,7 +1241,15 @@
   },
   {
     "from": "server/db/integration.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/integration.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/layout.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/db/layout.ts",
@@ -1074,6 +1262,10 @@
   {
     "from": "server/db/license.ts",
     "to": "./connection"
+  },
+  {
+    "from": "server/db/license.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/db/license.ts",
@@ -1089,7 +1281,15 @@
   },
   {
     "from": "server/db/machine.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/machine.ts",
     "to": "./connection"
+  },
+  {
+    "from": "server/db/machine.ts",
+    "to": "./hierarchy"
   },
   {
     "from": "server/db/machine.ts",
@@ -1125,6 +1325,14 @@
   },
   {
     "from": "server/db/machineRecipe.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/db/machineRecipe.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/machineRecipe.ts",
     "to": "./connection"
   },
   {
@@ -1157,6 +1365,14 @@
   },
   {
     "from": "server/db/mqtt.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/mqtt.ts",
+    "to": "./hierarchy"
+  },
+  {
+    "from": "server/db/mqtt.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -1185,6 +1401,10 @@
   },
   {
     "from": "server/db/processResult.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/processResult.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -1193,7 +1413,15 @@
   },
   {
     "from": "server/db/product.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/db/product.ts",
     "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/product.ts",
+    "to": "./hierarchy"
   },
   {
     "from": "server/db/product.ts",
@@ -1213,7 +1441,19 @@
   },
   {
     "from": "server/db/production.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/db/production.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/production.ts",
     "to": "./connection"
+  },
+  {
+    "from": "server/db/production.ts",
+    "to": "./hierarchy"
   },
   {
     "from": "server/db/production.ts",
@@ -1252,6 +1492,14 @@
     "to": "../utils/kpi"
   },
   {
+    "from": "server/db/reportAggregators.ts",
+    "to": "../_core/accessControlLabels"
+  },
+  {
+    "from": "server/db/reportAggregators.ts",
+    "to": "../_core/tenantCodeScope"
+  },
+  {
     "from": "server/db/revertPointsConfig.test.ts",
     "to": "./product"
   },
@@ -1273,6 +1521,14 @@
   },
   {
     "from": "server/db/spc.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/spc.ts",
+    "to": "./hierarchy"
+  },
+  {
+    "from": "server/db/spc.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -1282,6 +1538,10 @@
   {
     "from": "server/db/statistics.ts",
     "to": "./connection"
+  },
+  {
+    "from": "server/db/statistics.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/db/statistics.ts",
@@ -1297,6 +1557,14 @@
   },
   {
     "from": "server/db/statistics.ts",
+    "to": "../_core/accessControlLabels"
+  },
+  {
+    "from": "server/db/statistics.ts",
+    "to": "../_core/tenantCodeScope"
+  },
+  {
+    "from": "server/db/statistics.ts",
     "to": "../utils/kpi"
   },
   {
@@ -1304,11 +1572,71 @@
     "to": "./shiftResolution"
   },
   {
+    "from": "server/db/statisticsDailyScope.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/db/statisticsDailyScope.test.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/statisticsDailyScope.test.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/db/statisticsDailyScope.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/statisticsScope.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/db/statisticsScope.test.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/statisticsScope.test.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/db/statisticsScope.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
     "from": "server/db/system.ts",
     "to": "./connection"
   },
   {
     "from": "server/db/system.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/system.ts",
+    "to": "./hierarchy"
+  },
+  {
+    "from": "server/db/system.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/system.ts",
+    "to": "./catTheoTranCot"
+  },
+  {
+    "from": "server/db/tenantContextNoi.unit.test.ts",
+    "to": "./tenantContext"
+  },
+  {
+    "from": "server/db/tenantFactoryScope.test.ts",
+    "to": "./reportAggregators"
+  },
+  {
+    "from": "server/db/tenantFactoryScope.test.ts",
+    "to": "../_core/accessControlLabels"
+  },
+  {
+    "from": "server/db/tenantRlsCuongChe.db.test.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -1601,6 +1929,10 @@
   },
   {
     "from": "server/mqttAlertScheduler.ts",
+    "to": "./_core/dbErrors"
+  },
+  {
+    "from": "server/mqttAlertScheduler.ts",
     "to": "../drizzle/schema"
   },
   {
@@ -1868,6 +2200,18 @@
     "to": "../../drizzle/schema/ai"
   },
   {
+    "from": "server/routers/aiCodingSessionScope.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/aiCodingSessionScope.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aiCodingSessionScope.test.ts",
+    "to": "./repoWorkspaceRouter"
+  },
+  {
     "from": "server/routers/aiCopilotRouter.ts",
     "to": "../_core/trpc"
   },
@@ -1940,6 +2284,10 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/routers/aiGgufRouter.thinkingLeak.test.ts",
+    "to": "./aiGgufRouter"
+  },
+  {
     "from": "server/routers/aiGgufRouter.ts",
     "to": "../_core/trpc"
   },
@@ -1958,6 +2306,10 @@
   {
     "from": "server/routers/aiGgufRouter.ts",
     "to": "../services/aiProviderManager"
+  },
+  {
+    "from": "server/routers/aiGgufRouter.ts",
+    "to": "../services/ai/thinkingStrip"
   },
   {
     "from": "server/routers/aiImageSearchRouter.ts",
@@ -2212,6 +2564,10 @@
     "to": "../services/aiCopilotActions"
   },
   {
+    "from": "server/routers/aiReportRouter.langGate.test.ts",
+    "to": "./aiReportRouter"
+  },
+  {
     "from": "server/routers/aiReportRouter.ts",
     "to": "../_core/trpc"
   },
@@ -2417,6 +2773,14 @@
   },
   {
     "from": "server/routers/aiTimeSeriesRouter.ts",
+    "to": "../_core/aiAnalyticsScope"
+  },
+  {
+    "from": "server/routers/aiTimeSeriesRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/aiTimeSeriesRouter.ts",
     "to": "../services/aiTimeSeriesEngine"
   },
   {
@@ -2430,6 +2794,10 @@
   {
     "from": "server/routers/aiTimeSeriesRouter.ts",
     "to": "../constants/machineTypes"
+  },
+  {
+    "from": "server/routers/aiTimeSeriesScope.db.test.ts",
+    "to": "../_core/accessControl"
   },
   {
     "from": "server/routers/aiTodayRouter.ts",
@@ -2542,6 +2910,10 @@
   {
     "from": "server/routers/alarmKpiRouter.ts",
     "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/routers/alarmKpiRouter.ts",
+    "to": "../services/ecosystem/commandCenterScope"
   },
   {
     "from": "server/routers/alarmKpiRouter.ts",
@@ -2824,6 +3196,10 @@
     "to": "../services/pointResultEvaluator"
   },
   {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "./phamViGhiMay"
+  },
+  {
     "from": "server/routers/apiKeyRouter.test.ts",
     "to": "./__otFakeDb"
   },
@@ -2925,6 +3301,10 @@
   },
   {
     "from": "server/routers/bomRouter.ts",
+    "to": "../db/tenantContext"
+  },
+  {
+    "from": "server/routers/bomRouter.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -2976,6 +3356,10 @@
     "to": "../services/aiCausalGraph"
   },
   {
+    "from": "server/routers/commandCenterKpiScope.db.test.ts",
+    "to": "../services/ecosystem/commandCenterService"
+  },
+  {
     "from": "server/routers/commandCenterRouter.ts",
     "to": "../_core/trpc"
   },
@@ -2986,6 +3370,10 @@
   {
     "from": "server/routers/commandCenterRouter.ts",
     "to": "../services/ecosystem/commandCenterService"
+  },
+  {
+    "from": "server/routers/commandCenterRouter.ts",
+    "to": "../services/ecosystem/commandCenterScope"
   },
   {
     "from": "server/routers/commandLogRouter.test.ts",
@@ -3080,6 +3468,26 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/routers/congGiayPhepAiCensus.test.ts",
+    "to": "./congGiayPhepScan"
+  },
+  {
+    "from": "server/routers/congGiayPhepAiCensus.test.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/congGiayPhepAiCensus.test.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/congGiayPhepAiCensus.test.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/congGiayPhepScan.ts",
+    "to": "./deployProcedureScan"
+  },
+  {
     "from": "server/routers/contractsRouter.quarantine.test.ts",
     "to": "./contractsRouter"
   },
@@ -3161,6 +3569,10 @@
   },
   {
     "from": "server/routers/dataComparisonRouter.ts",
+    "to": "../_core/reportExportScope"
+  },
+  {
+    "from": "server/routers/dataComparisonRouter.ts",
     "to": "../services/dataComparisonService"
   },
   {
@@ -3234,6 +3646,30 @@
   {
     "from": "server/routers/defectHeatmapRouter.ts",
     "to": "../services/defectSpatialHeatmap"
+  },
+  {
+    "from": "server/routers/defectHeatmapSavedScope.test.ts",
+    "to": "./defectHeatmapRouter"
+  },
+  {
+    "from": "server/routers/defectHeatmapSavedScope.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/defectHeatmapSavedScope.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/defectHeatmapSavedScope.test.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/defectHeatmapSavedScope.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/defectHeatmapScope.test.ts",
+    "to": "./defectHeatmapRouter"
   },
   {
     "from": "server/routers/deployStepUpFreshness.test.ts",
@@ -3833,6 +4269,18 @@
   },
   {
     "from": "server/routers/fleetRouter.ts",
+    "to": "./_phamViNguoiXem"
+  },
+  {
+    "from": "server/routers/fleetRouter.ts",
+    "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/routers/fleetRouter.ts",
+    "to": "../services/ecosystem/commandCenterScope"
+  },
+  {
+    "from": "server/routers/fleetRouter.ts",
     "to": "../services/ecosystem/ecosystemEvents"
   },
   {
@@ -3934,6 +4382,10 @@
   {
     "from": "server/routers/hierarchyRouters.ts",
     "to": "./_shared"
+  },
+  {
+    "from": "server/routers/hierarchyRouters.ts",
+    "to": "./_phamViNguoiXem"
   },
   {
     "from": "server/routers/hierarchyRouters.ts",
@@ -4836,6 +5288,10 @@
     "to": "../services/measurementPointResolver"
   },
   {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "./phamViGhiMay"
+  },
+  {
     "from": "server/routers/machineApiSingleTx.test.ts",
     "to": "./machineApiRouters"
   },
@@ -5137,6 +5593,14 @@
   },
   {
     "from": "server/routers/masterDataRouter.ts",
+    "to": "./_phamViNguoiXem"
+  },
+  {
+    "from": "server/routers/masterDataRouter.ts",
+    "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/routers/masterDataRouter.ts",
     "to": "../_core/accessControl"
   },
   {
@@ -5149,7 +5613,15 @@
   },
   {
     "from": "server/routers/masterDataRouter.ts",
+    "to": "../db/tenantContext"
+  },
+  {
+    "from": "server/routers/masterDataRouter.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/masterDataTenantNoi.unit.test.ts",
+    "to": "./masterDataRouter"
   },
   {
     "from": "server/routers/measurementCorrectionsRouter.ts",
@@ -5190,6 +5662,14 @@
   {
     "from": "server/routers/mesControlTowerRouter.ts",
     "to": "../services/ncrService"
+  },
+  {
+    "from": "server/routers/mesControlTowerRouter.ts",
+    "to": "./_phamViNguoiXem"
+  },
+  {
+    "from": "server/routers/mesControlTowerRouter.ts",
+    "to": "../db/hierarchy"
   },
   {
     "from": "server/routers/mesControlTowerRouter.ts",
@@ -5310,6 +5790,10 @@
   {
     "from": "server/routers/mqttOeeRouters.ts",
     "to": "./_shared"
+  },
+  {
+    "from": "server/routers/mqttOeeRouters.ts",
+    "to": "./_phamViNguoiXem"
   },
   {
     "from": "server/routers/mqttOeeRouters.ts",
@@ -5458,6 +5942,10 @@
   {
     "from": "server/routers/observabilityRouter.ts",
     "to": "../services/observability/decisionTracePersistence"
+  },
+  {
+    "from": "server/routers/oeeScopeLabels.db.test.ts",
+    "to": "../services/oeeService"
   },
   {
     "from": "server/routers/operatorBadgeRouter.ts",
@@ -5621,6 +6109,10 @@
   },
   {
     "from": "server/routers/pdfReportRouter.ts",
+    "to": "../_core/reportExportScope"
+  },
+  {
+    "from": "server/routers/pdfReportRouter.ts",
     "to": "../db"
   },
   {
@@ -5630,6 +6122,14 @@
   {
     "from": "server/routers/pdfReportRouter.ts",
     "to": "../services/pdfTemplateService"
+  },
+  {
+    "from": "server/routers/permissions.analyticsCategory.test.ts",
+    "to": "./permissionsRouter"
+  },
+  {
+    "from": "server/routers/permissions.defectHeatmap.test.ts",
+    "to": "./permissionsRouter"
   },
   {
     "from": "server/routers/permissions.energy.test.ts",
@@ -5664,6 +6164,66 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/routers/phamViDocBaseline.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/phamViDocCensus.test.ts",
+    "to": "./phamViDocScan"
+  },
+  {
+    "from": "server/routers/phamViDocCensus.test.ts",
+    "to": "./phamViDocBaseline"
+  },
+  {
+    "from": "server/routers/phamViDocCensus.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/phamViDocCensus.test.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/phamViDocCensus.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/phamViDocScan.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/phamViDocScan.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/phamViDocScan.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/phamViGhiMay.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/routers/phamViGhiMay.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/phamViGhiMay.ts",
+    "to": "./publicProductScope"
+  },
+  {
+    "from": "server/routers/phamViTuyenCensus.test.ts",
+    "to": "./phamViDocScan"
+  },
+  {
+    "from": "server/routers/phamViTuyenCensus.test.ts",
+    "to": "./phamViTuyenBaseline"
+  },
+  {
+    "from": "server/routers/phamViTuyenCensus.test.ts",
+    "to": "../db"
+  },
+  {
     "from": "server/routers/pluginRouter.ts",
     "to": "../_core/trpc"
   },
@@ -5678,6 +6238,10 @@
   {
     "from": "server/routers/powerpointRouter.ts",
     "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/powerpointRouter.ts",
+    "to": "../_core/reportExportScope"
   },
   {
     "from": "server/routers/powerpointRouter.ts",
@@ -5814,6 +6378,10 @@
   {
     "from": "server/routers/productionRouters.ts",
     "to": "./_shared"
+  },
+  {
+    "from": "server/routers/productionRouters.ts",
+    "to": "./_phamViNguoiXem"
   },
   {
     "from": "server/routers/productionRouters.ts",
@@ -6009,6 +6577,14 @@
   },
   {
     "from": "server/routers/productRouters.ts",
+    "to": "./_phamViNguoiXem"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
+    "to": "./publicProductScope"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
     "to": "../services/productReadinessService"
   },
   {
@@ -6140,6 +6716,30 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/routers/publicProductApiRouter.ts",
+    "to": "./publicProductScope"
+  },
+  {
+    "from": "server/routers/publicProductScope.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/publicProductScope.ts",
+    "to": "../services/ecosystem/commandCenterScope"
+  },
+  {
+    "from": "server/routers/publicProductScope.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/routers/publicProductScope.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/publicProductScope.ts",
+    "to": "../db"
+  },
+  {
     "from": "server/routers/qualityGateTemplateRouter.ts",
     "to": "../_core/appError"
   },
@@ -6225,6 +6825,10 @@
   },
   {
     "from": "server/routers/reportAggregatorsRouter.ts",
+    "to": "../_core/reportExportScope"
+  },
+  {
+    "from": "server/routers/reportAggregatorsRouter.ts",
     "to": "../db/reportAggregators"
   },
   {
@@ -6234,6 +6838,10 @@
   {
     "from": "server/routers/reportArtifactRouter.ts",
     "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/reportArtifactRouter.ts",
+    "to": "../_core/reportExportScope"
   },
   {
     "from": "server/routers/reportArtifactRouter.ts",
@@ -6249,11 +6857,43 @@
   },
   {
     "from": "server/routers/reportBuilderRouter.ts",
+    "to": "../_core/reportExportScope"
+  },
+  {
+    "from": "server/routers/reportBuilderRouter.ts",
     "to": "../db"
   },
   {
     "from": "server/routers/reportBuilderRouter.ts",
     "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/reportExportScope.test.ts",
+    "to": "../routers"
+  },
+  {
+    "from": "server/routers/reportExportScope.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/routers/reportExportScope.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/reportExportScope.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/reportExportScope.test.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/reportExportScope.test.ts",
+    "to": "../_core/reportExportScope"
+  },
+  {
+    "from": "server/routers/reportExportScope.test.ts",
+    "to": "../../drizzle/schema"
   },
   {
     "from": "server/routers/reportingMartRouter.ts",
@@ -6270,6 +6910,58 @@
   {
     "from": "server/routers/reportingMartRouter.ts",
     "to": "../utils/kpi"
+  },
+  {
+    "from": "server/routers/reportServiceScope.test.ts",
+    "to": "../routers"
+  },
+  {
+    "from": "server/routers/reportServiceScope.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/routers/reportServiceScope.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/reportServiceScope.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/reportServiceScope.test.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/reportServiceScope.test.ts",
+    "to": "../_core/reportExportScope"
+  },
+  {
+    "from": "server/routers/reportServiceScope.test.ts",
+    "to": "../services/scheduledReportService"
+  },
+  {
+    "from": "server/routers/reportServiceScope.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/repoWorkspaceRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/repoWorkspaceRouter.ts",
+    "to": "../services/aiLocalTools"
+  },
+  {
+    "from": "server/routers/repoWorkspaceRouter.ts",
+    "to": "../services/aiLocalTools/repoProjects"
+  },
+  {
+    "from": "server/routers/repoWorkspaceRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/repoWorkspaceRouter.ts",
+    "to": "../db/aiCodingSessions"
   },
   {
     "from": "server/routers/revertPointsConfigRouter.test.ts",
@@ -6585,6 +7277,10 @@
   },
   {
     "from": "server/routers/spcAdvancedRouter.ts",
+    "to": "./_phamViNguoiXem"
+  },
+  {
+    "from": "server/routers/spcAdvancedRouter.ts",
     "to": "../_core/appError"
   },
   {
@@ -6614,6 +7310,14 @@
   {
     "from": "server/routers/stationAnalysisRouter.ts",
     "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/stationAnalysisRouter.ts",
+    "to": "./_phamViNguoiXem"
+  },
+  {
+    "from": "server/routers/stationAnalysisRouter.ts",
+    "to": "../db/hierarchy"
   },
   {
     "from": "server/routers/stationAnalysisRouter.ts",
@@ -6662,6 +7366,10 @@
   {
     "from": "server/routers/statusTemplateRouters.ts",
     "to": "../db"
+  },
+  {
+    "from": "server/routers/statusTemplateRouters.ts",
+    "to": "./_phamViNguoiXem"
   },
   {
     "from": "server/routers/statusTemplateRouters.ts",
@@ -6730,6 +7438,10 @@
   {
     "from": "server/routers/systemRouters.ts",
     "to": "../db"
+  },
+  {
+    "from": "server/routers/systemRouters.ts",
+    "to": "./_phamViNguoiXem"
   },
   {
     "from": "server/routers/systemRouters.ts",
@@ -7472,6 +8184,10 @@
     "to": "../services/wipHoldPolicy"
   },
   {
+    "from": "server/routers/_phamViNguoiXem.ts",
+    "to": "../db/hierarchy"
+  },
+  {
     "from": "server/routers/_shared.ts",
     "to": "../db"
   },
@@ -7961,6 +8677,10 @@
   },
   {
     "from": "server/routers.ts",
+    "to": "./routers/repoWorkspaceRouter"
+  },
+  {
+    "from": "server/routers.ts",
     "to": "./routers/aiRcaCopilotRouter"
   },
   {
@@ -8328,6 +9048,14 @@
     "to": "../services/llamaVisionSidecar"
   },
   {
+    "from": "server/routes/aiStreamingApi.secretLeak.test.ts",
+    "to": "./aiStreamingApi"
+  },
+  {
+    "from": "server/routes/aiStreamingApi.thinkingLeak.test.ts",
+    "to": "./aiStreamingApi"
+  },
+  {
     "from": "server/routes/aiStreamingApi.ts",
     "to": "./_xacThucRest"
   },
@@ -8338,6 +9066,22 @@
   {
     "from": "server/routes/aiStreamingApi.ts",
     "to": "../services/aiProviderRouter"
+  },
+  {
+    "from": "server/routes/aiStreamingApi.ts",
+    "to": "../services/ai/aiSafety"
+  },
+  {
+    "from": "server/routes/aiStreamingApi.ts",
+    "to": "../services/ai/thinkingStrip"
+  },
+  {
+    "from": "server/routes/congAnhPhamVi.db.test.ts",
+    "to": "./_congAnh"
+  },
+  {
+    "from": "server/routes/externalInspectionApi.ts",
+    "to": "../_core/anhKyUrl"
   },
   {
     "from": "server/routes/externalInspectionApi.ts",
@@ -8352,7 +9096,15 @@
     "to": "./openaiGateway"
   },
   {
+    "from": "server/routes/openaiGateway.nativeTools.test.ts",
+    "to": "./openaiGateway"
+  },
+  {
     "from": "server/routes/openaiGateway.test.ts",
+    "to": "./openaiGateway"
+  },
+  {
+    "from": "server/routes/openaiGateway.thinkingLeak.test.ts",
     "to": "./openaiGateway"
   },
   {
@@ -8373,7 +9125,15 @@
   },
   {
     "from": "server/routes/openaiGateway.ts",
+    "to": "../services/ai/thinkingStrip"
+  },
+  {
+    "from": "server/routes/openaiGateway.ts",
     "to": "../services/ai/modelResolver"
+  },
+  {
+    "from": "server/routes/openaiGateway.ts",
+    "to": "../services/ai/nativeToolCalls"
   },
   {
     "from": "server/routes/openaiGatewayEnforcement.test.ts",
@@ -8396,6 +9156,18 @@
     "to": "../services/reportArtifactService"
   },
   {
+    "from": "server/routes/uyQuyenAnhHinhDang.test.ts",
+    "to": "./_uyQuyenAnh"
+  },
+  {
+    "from": "server/routes/uyQuyenAnhPhamVi.db.test.ts",
+    "to": "./_congAnh"
+  },
+  {
+    "from": "server/routes/uyQuyenAnhPhamVi.db.test.ts",
+    "to": "./_uyQuyenAnh"
+  },
+  {
     "from": "server/routes/xacThucBeMatRest.test.ts",
     "to": "../db"
   },
@@ -8414,6 +9186,34 @@
   {
     "from": "server/routes/xacThucBeMatRest.test.ts",
     "to": "../services/authSessionCache"
+  },
+  {
+    "from": "server/routes/_congAnh.ts",
+    "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/routes/_congAnh.ts",
+    "to": "../_core/masterKey"
+  },
+  {
+    "from": "server/routes/_congAnh.ts",
+    "to": "../_core/anhKyUrl"
+  },
+  {
+    "from": "server/routes/_congAnh.ts",
+    "to": "./_xacThucRest"
+  },
+  {
+    "from": "server/routes/_phamViNgoai.ts",
+    "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/routes/_uyQuyenAnh.ts",
+    "to": "./_congAnh"
+  },
+  {
+    "from": "server/routes/_uyQuyenAnh.ts",
+    "to": "./_congAnh"
   },
   {
     "from": "server/routes/_xacThucRest.ts",
@@ -8472,6 +9272,10 @@
     "to": "./aiSafety"
   },
   {
+    "from": "server/services/ai/aiSafetyUntrusted.test.ts",
+    "to": "./aiSafety"
+  },
+  {
     "from": "server/services/ai/autonomyPolicy.test.ts",
     "to": "./autonomyPolicy"
   },
@@ -8488,6 +9292,46 @@
     "to": "../aiLocalTools/toolRegistry"
   },
   {
+    "from": "server/services/ai/autonomyPolicy.ts",
+    "to": "../aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/ai/autonomyWriteToolCensus.test.ts",
+    "to": "../aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/ai/autonomyWriteToolCensus.test.ts",
+    "to": "./autonomyPolicy"
+  },
+  {
+    "from": "server/services/ai/codingRepoContext.test.ts",
+    "to": "./codingRepoContext"
+  },
+  {
+    "from": "server/services/ai/codingRepoContext.test.ts",
+    "to": "./repoContextService"
+  },
+  {
+    "from": "server/services/ai/codingRepoContext.test.ts",
+    "to": "../aiLlamaServerClient"
+  },
+  {
+    "from": "server/services/ai/codingRepoContext.ts",
+    "to": "../aiLlamaServerClient"
+  },
+  {
+    "from": "server/services/ai/codingRepoContext.ts",
+    "to": "../aiCodingAgent"
+  },
+  {
+    "from": "server/services/ai/codingRepoContext.ts",
+    "to": "../aiLocalTools/repoSandbox"
+  },
+  {
+    "from": "server/services/ai/codingRepoContext.ts",
+    "to": "./repoContextService"
+  },
+  {
     "from": "server/services/ai/costSensitiveThreshold.test.ts",
     "to": "../aiMetrics"
   },
@@ -8498,6 +9342,14 @@
   {
     "from": "server/services/ai/costSensitiveThreshold.ts",
     "to": "../aiMetrics"
+  },
+  {
+    "from": "server/services/ai/dataCitation.test.ts",
+    "to": "./dataCitation"
+  },
+  {
+    "from": "server/services/ai/dataCitationAccuracy.test.ts",
+    "to": "./dataCitation"
   },
   {
     "from": "server/services/ai/defectCorrelationService.test.ts",
@@ -8628,6 +9480,10 @@
     "to": "./generationGuard"
   },
   {
+    "from": "server/services/ai/ggufCtxCap.test.ts",
+    "to": "./ggufCtxCap"
+  },
+  {
     "from": "server/services/ai/kbStudioAccess.test.ts",
     "to": "./kbStudioAccess"
   },
@@ -8733,6 +9589,10 @@
   },
   {
     "from": "server/services/ai/modelStagePipeline.ts",
+    "to": "../../_core/appError"
+  },
+  {
+    "from": "server/services/ai/modelStagePipeline.ts",
     "to": "../../db/connection"
   },
   {
@@ -8754,6 +9614,18 @@
   {
     "from": "server/services/ai/modelStagePipeline.ts",
     "to": "./featureStore"
+  },
+  {
+    "from": "server/services/ai/modelTierFlagAudit.test.ts",
+    "to": "./modelTierFlagAudit"
+  },
+  {
+    "from": "server/services/ai/modelTierFlagAudit.ts",
+    "to": "./modelResolver"
+  },
+  {
+    "from": "server/services/ai/nativeToolCalls.test.ts",
+    "to": "./nativeToolCalls"
   },
   {
     "from": "server/services/ai/ntfClassifier.test.ts",
@@ -8892,6 +9764,18 @@
     "to": "../aiLocalTools/toolRegistry"
   },
   {
+    "from": "server/services/ai/repoContextService.repoIndex.test.ts",
+    "to": "./repoContextService"
+  },
+  {
+    "from": "server/services/ai/repoContextService.repoIndex.test.ts",
+    "to": "../aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/ai/repoContextService.repoIndex.test.ts",
+    "to": "../aiLlamaServerClient"
+  },
+  {
     "from": "server/services/ai/repoContextService.test.ts",
     "to": "./repoContextService"
   },
@@ -8906,6 +9790,10 @@
   {
     "from": "server/services/ai/repoContextService.ts",
     "to": "./aiSafety"
+  },
+  {
+    "from": "server/services/ai/repoContextService.ts",
+    "to": "../aiLlamaServerClient"
   },
   {
     "from": "server/services/ai/robotBehaviorAnomaly.test.ts",
@@ -8948,12 +9836,76 @@
     "to": "../../../drizzle/schema"
   },
   {
+    "from": "server/services/ai/thinkingSurfaces.quantifier.test.ts",
+    "to": "../ai/thinkingStrip"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.quantifier.test.ts",
+    "to": "../services/aiGgufEngine"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.quantifier.test.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.quantifier.test.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.quantifier.test.ts",
+    "to": "./ai/thinkingStrip"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.quantifier.test.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.quantifier.test.ts",
+    "to": "../services/ai/thinkingStrip"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.quantifier.test.ts",
+    "to": "../services/aiGgufEngine"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.wiring.test.ts",
+    "to": "../aiInspectionAnalytics"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.wiring.test.ts",
+    "to": "../aiProviderRouter"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.wiring.test.ts",
+    "to": "../dataComparisonService"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.wiring.test.ts",
+    "to": "../notificationService"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.wiring.test.ts",
+    "to": "../productionSchedulingService"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.wiring.test.ts",
+    "to": "../orchestration/aiWatcher"
+  },
+  {
+    "from": "server/services/ai/thinkingSurfaces.wiring.test.ts",
+    "to": "../../_core/eventBus"
+  },
+  {
     "from": "server/services/ai/visionInferenceSlo.test.ts",
     "to": "./visionInferenceSlo"
   },
   {
     "from": "server/services/ai/visionInferenceSlo.test.ts",
     "to": "../observability/sloAlerting"
+  },
+  {
+    "from": "server/services/aiABTesting.ts",
+    "to": "../_core/appError"
   },
   {
     "from": "server/services/aiABTesting.ts",
@@ -9010,6 +9962,10 @@
   {
     "from": "server/services/aiActiveLearning.ts",
     "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiActiveLearning.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/services/aiActiveLearning.ts",
@@ -9192,6 +10148,42 @@
     "to": "./aiAgentRealtime"
   },
   {
+    "from": "server/services/aiAgentPlanner.audit.test.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.audit.test.ts",
+    "to": "./aiAgentPlanner"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.audit.test.ts",
+    "to": "./ai/aiLlmAudit"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.audit.test.ts",
+    "to": "./aiGateway"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.audit.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.gateway.test.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.gateway.test.ts",
+    "to": "./ai/aiSafety"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.gateway.test.ts",
+    "to": "./aiAgentPlanner"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.gateway.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
     "from": "server/services/aiAgentPlanner.test.ts",
     "to": "./aiLocalTools/toolRegistry"
   },
@@ -9210,6 +10202,14 @@
   {
     "from": "server/services/aiAgentPlanner.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.ts",
+    "to": "./ai/aiSafety"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.ts",
+    "to": "./aiGateway"
   },
   {
     "from": "server/services/aiAgentRealtime.test.ts",
@@ -9306,6 +10306,10 @@
   {
     "from": "server/services/aiBatchEngine.ts",
     "to": "./aiInferenceEngine"
+  },
+  {
+    "from": "server/services/aiBatchEngine.ts",
+    "to": "../_core/appError"
   },
   {
     "from": "server/services/aiBatchEngine.ts",
@@ -9416,6 +10420,78 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/services/aiCodingAgent.test.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiCodingAgent.ts",
+    "to": "./ai/aiSafety"
+  },
+  {
+    "from": "server/services/aiCodingAgent.ts",
+    "to": "./aiLlamaServerClient"
+  },
+  {
+    "from": "server/services/aiCodingAgent.ts",
+    "to": "./ai/thinkingStrip"
+  },
+  {
+    "from": "server/services/aiCodingAgent.ts",
+    "to": "./ai/generationGuard"
+  },
+  {
+    "from": "server/services/aiCodingAgent.ts",
+    "to": "./aiGateway"
+  },
+  {
+    "from": "server/services/aiCodingHistory.test.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiCodingHistory.test.ts",
+    "to": "./aiLlamaServerClient"
+  },
+  {
+    "from": "server/services/aiCodingMode.stream.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiCodingTaoTep.stream.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiCodingTaoTep.stream.test.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiCodingTaoTep.stream.test.ts",
+    "to": "./aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/aiCodingVerify.test.ts",
+    "to": "./aiCodingVerify"
+  },
+  {
+    "from": "server/services/aiCodingVerify.test.ts",
+    "to": "./aiLocalTools/repoCommandSandbox"
+  },
+  {
+    "from": "server/services/aiCodingVerify.ts",
+    "to": "./aiLocalTools/repoCommandSandbox"
+  },
+  {
+    "from": "server/services/aiCodingVerify.ts",
+    "to": "./aiLocalTools/repoProjects"
+  },
+  {
+    "from": "server/services/aiCodingVerify.ts",
+    "to": "./aiLocalTools"
+  },
+  {
+    "from": "server/services/aiCodingVerify.ts",
+    "to": "./aiCopilotActions"
+  },
+  {
     "from": "server/services/aiCopilotActions.autonomy.test.ts",
     "to": "./aiLocalTools/toolRegistry"
   },
@@ -9493,6 +10569,14 @@
   },
   {
     "from": "server/services/aiDatasetBuilder.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/services/aiDatasetBuilder.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/services/aiDatasetBuilder.ts",
     "to": "../db/connection"
   },
   {
@@ -9537,6 +10621,10 @@
   },
   {
     "from": "server/services/aiEdgeDeployment.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/services/aiEdgeDeployment.ts",
     "to": "../db/ai"
   },
   {
@@ -9546,6 +10634,14 @@
   {
     "from": "server/services/aiEdgeEnhanced.ts",
     "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiEdgeEnhanced.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/services/aiEdgeEnhanced.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/services/aiEdgeEnhanced.ts",
@@ -9656,6 +10752,14 @@
     "to": "./aiGgufEngine"
   },
   {
+    "from": "server/services/aiGgufEngine.streamServer.test.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
+    "from": "server/services/aiGgufEngine.stripThinking.test.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
     "from": "server/services/aiGgufEngine.ts",
     "to": "./vram/vramRefusalSignal"
   },
@@ -9677,7 +10781,19 @@
   },
   {
     "from": "server/services/aiGgufEngine.ts",
+    "to": "./ai/nativeToolCalls"
+  },
+  {
+    "from": "server/services/aiGgufEngine.ts",
     "to": "./vram/vramCaps"
+  },
+  {
+    "from": "server/services/aiGgufEngine.ts",
+    "to": "./ai/ggufCtxCap"
+  },
+  {
+    "from": "server/services/aiGgufEngine.ts",
+    "to": "./ai/thinkingStrip"
   },
   {
     "from": "server/services/aiImageEmbedding.aoiA.test.ts",
@@ -9698,6 +10814,14 @@
   {
     "from": "server/services/aiImageEmbedding.test.ts",
     "to": "./aiImageEmbedding"
+  },
+  {
+    "from": "server/services/aiImageEmbedding.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/services/aiImageEmbedding.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/services/aiImageEmbedding.ts",
@@ -9726,6 +10850,10 @@
   {
     "from": "server/services/aiImageEmbedding.ts",
     "to": "./aiInferenceEngine"
+  },
+  {
+    "from": "server/services/aiInferenceEngine.ts",
+    "to": "../_core/appError"
   },
   {
     "from": "server/services/aiInferenceEngine.ts",
@@ -9789,6 +10917,10 @@
   },
   {
     "from": "server/services/aiInspectionAnalytics.ts",
+    "to": "./ai/thinkingStrip"
+  },
+  {
+    "from": "server/services/aiInspectionAnalytics.ts",
     "to": "../utils/kpi"
   },
   {
@@ -9816,12 +10948,36 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/services/aiKbSourceWeights.test.ts",
+    "to": "./aiKbSourceWeights"
+  },
+  {
+    "from": "server/services/aiLlamaServerClient.napTrung.test.ts",
+    "to": "./aiLlamaServerClient"
+  },
+  {
+    "from": "server/services/aiLlamaServerClient.stream.test.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
+    "from": "server/services/aiLlamaServerClient.suyLuan.test.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
+    "from": "server/services/aiLlamaServerClient.toolcalls.test.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
     "from": "server/services/aiLlamaServerClient.ts",
     "to": "./aiGgufEngine"
   },
   {
     "from": "server/services/aiLlamaServerClient.ts",
     "to": "./ai/modelResolver"
+  },
+  {
+    "from": "server/services/aiLlamaServerClient.ts",
+    "to": "./ai/nativeToolCalls"
   },
   {
     "from": "server/services/aiLlmFinetuneSidecar.test.ts",
@@ -9864,6 +11020,14 @@
     "to": "./aiLocalKnowledgeService"
   },
   {
+    "from": "server/services/aiLocalKnowledge.dataCitationWiring.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledge.emptyToolGate.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
     "from": "server/services/aiLocalKnowledge.gd1.test.ts",
     "to": "./aiLocalKnowledgeService"
   },
@@ -9884,6 +11048,18 @@
     "to": "./aiLocalKnowledgeService"
   },
   {
+    "from": "server/services/aiLocalKnowledge.thinkingLeak.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledge.toolLoopHonesty.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledge.toolLoopHonesty.test.ts",
+    "to": "./ai/aiSafety"
+  },
+  {
     "from": "server/services/aiLocalKnowledgeSafety.test.ts",
     "to": "./aiLocalKnowledgeService"
   },
@@ -9897,7 +11073,23 @@
   },
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./ai/codingRepoContext"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
     "to": "./aiReranker"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiKbSourceWeights"
   },
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
@@ -9910,6 +11102,10 @@
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
     "to": "./ai/aiSafety"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./ai/thinkingStrip"
   },
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
@@ -9934,6 +11130,10 @@
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
     "to": "./ai/kbStudioAccess"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./ai/dataCitation"
   },
   {
     "from": "server/services/aiLocalTools/analyticsTools.test.ts",
@@ -9980,12 +11180,84 @@
     "to": "./toolRegistry"
   },
   {
+    "from": "server/services/aiLocalTools/applyDiff.census.test.ts",
+    "to": "./index"
+  },
+  {
+    "from": "server/services/aiLocalTools/applyDiff.census.test.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/applyDiff.census.test.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/applyDiff.census.test.ts",
+    "to": "./repoGitStatus"
+  },
+  {
+    "from": "server/services/aiLocalTools/applyDiffBatch.census.test.ts",
+    "to": "./index"
+  },
+  {
+    "from": "server/services/aiLocalTools/applyDiffBatch.census.test.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/applyDiffBatch.census.test.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/applyDiffBatch.census.test.ts",
+    "to": "./repoGitStatus"
+  },
+  {
+    "from": "server/services/aiLocalTools/applyDiffBatch.census.test.ts",
+    "to": "./writeHandlers/applyDiffBatch"
+  },
+  {
     "from": "server/services/aiLocalTools/authCtxInjection.test.ts",
     "to": "./index"
   },
   {
     "from": "server/services/aiLocalTools/authCtxInjection.test.ts",
     "to": "./../vram/vramBroker"
+  },
+  {
+    "from": "server/services/aiLocalTools/codingLoopToolFilter.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/codingModeExecute.test.ts",
+    "to": "./index"
+  },
+  {
+    "from": "server/services/aiLocalTools/codingToolIntent.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/codingToolLoop.test.ts",
+    "to": "./index"
+  },
+  {
+    "from": "server/services/aiLocalTools/codingToolLoop.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlers.scopeDb.test.ts",
+    "to": "../../_core/accessControl"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlers.scopeDb.test.ts",
+    "to": "./handlers"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlers.scopePaths.test.ts",
+    "to": "./index"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlers.scopePaths.test.ts",
+    "to": "../aiLocalKnowledgeService"
   },
   {
     "from": "server/services/aiLocalTools/handlers.ts",
@@ -9998,6 +11270,10 @@
   {
     "from": "server/services/aiLocalTools/handlers.ts",
     "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlers.ts",
+    "to": "./readToolRbac"
   },
   {
     "from": "server/services/aiLocalTools/handlersF6.test.ts",
@@ -10032,6 +11308,10 @@
     "to": "./toolRegistry"
   },
   {
+    "from": "server/services/aiLocalTools/handlersF6.ts",
+    "to": "./readToolRbac"
+  },
+  {
     "from": "server/services/aiLocalTools/handlersF7.test.ts",
     "to": "./handlersF7"
   },
@@ -10064,8 +11344,16 @@
     "to": "./toolRegistry"
   },
   {
+    "from": "server/services/aiLocalTools/handlersF7.ts",
+    "to": "./readToolRbac"
+  },
+  {
     "from": "server/services/aiLocalTools/index.ts",
     "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
+    "to": "./toolLoop"
   },
   {
     "from": "server/services/aiLocalTools/index.ts",
@@ -10098,6 +11386,14 @@
   {
     "from": "server/services/aiLocalTools/index.ts",
     "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
+    "to": "./toolLoop"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
+    "to": "./toolLoop"
   },
   {
     "from": "server/services/aiLocalTools/insightHandlersF6.test.ts",
@@ -10128,6 +11424,18 @@
     "to": "./toolRegistry"
   },
   {
+    "from": "server/services/aiLocalTools/insightHandlersF6.ts",
+    "to": "./readToolRbac"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.cauHoiQuyTac.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.diacritics.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
     "from": "server/services/aiLocalTools/intentClassifier.f6.test.ts",
     "to": "./intentClassifier"
   },
@@ -10144,6 +11452,18 @@
     "to": "./intentClassifier"
   },
   {
+    "from": "server/services/aiLocalTools/intentClassifier.khongDau.test.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.khongDau.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.nganSachToken.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
     "from": "server/services/aiLocalTools/intentClassifier.setspec.test.ts",
     "to": "./intentClassifier"
   },
@@ -10154,6 +11474,10 @@
   {
     "from": "server/services/aiLocalTools/intentClassifier.ts",
     "to": "../programming/programmingAdapter"
+  },
+  {
+    "from": "server/services/aiLocalTools/llmKhongKhoiXuongGhi.test.ts",
+    "to": "./intentClassifier"
   },
   {
     "from": "server/services/aiLocalTools/machineControl.tools.test.ts",
@@ -10182,6 +11506,14 @@
   {
     "from": "server/services/aiLocalTools/readProjectFile.hardlink.test.ts",
     "to": "./index"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolRbac.ts",
+    "to": "../../_core/accessControl"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolRbac.ts",
+    "to": "./toolRegistry"
   },
   {
     "from": "server/services/aiLocalTools/readToolsP2.test.ts",
@@ -10260,6 +11592,86 @@
     "to": "./toolRegistry"
   },
   {
+    "from": "server/services/aiLocalTools/repoCommand.census.test.ts",
+    "to": "./index"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoCommand.census.test.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoCommand.census.test.ts",
+    "to": "./repoCommandSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoCommand.census.test.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoCommand.census.test.ts",
+    "to": "./writeHandlers/repoCommand"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoCommandSandbox.ts",
+    "to": "../ai/aiSafety"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoCommandSandbox.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoGitStatus.ts",
+    "to": "./repoCommandSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoGitStatus.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoProjects.test.ts",
+    "to": "./repoProjects"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoProjects.test.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoProjects.test.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoProjects.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoReadTools.ts",
+    "to": "./readToolRbac"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoReadTools.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoReadTools.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoSandbox.census.test.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoSandbox.census.test.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoSandbox.ts",
+    "to": "../ai/aiSafety"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoSandbox.ts",
+    "to": "./readToolsProgramming"
+  },
+  {
     "from": "server/services/aiLocalTools/toolArgCoverage.test.ts",
     "to": "./readToolsProgramming"
   },
@@ -10270,6 +11682,58 @@
   {
     "from": "server/services/aiLocalTools/toolArgCoverage.test.ts",
     "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoop.test.ts",
+    "to": "./toolLoop"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoop.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoop.test.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoop.test.ts",
+    "to": "../ai/aiSafety"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoop.ts",
+    "to": "../ai/aiSafety"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoop.ts",
+    "to": "../aiLlamaServerClient"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoop.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoop.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoop.ts",
+    "to": "../aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoopWiring.test.ts",
+    "to": "./index"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoopWiring.test.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolNoteCensus.test.ts",
+    "to": "../aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolPermissionQuantifier.test.ts",
+    "to": "./toolRegistry"
   },
   {
     "from": "server/services/aiLocalTools/toolRegistry.ts",
@@ -10412,6 +11876,46 @@
     "to": "../toolRegistry"
   },
   {
+    "from": "server/services/aiLocalTools/writeHandlers/applyDiff.ts",
+    "to": "../../ai/aiSafety"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/applyDiff.ts",
+    "to": "../readToolsProgramming"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/applyDiff.ts",
+    "to": "../repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/applyDiff.ts",
+    "to": "../repoGitStatus"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/applyDiff.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/applyDiff.ts",
+    "to": "../../auditTrailService"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/applyDiffBatch.ts",
+    "to": "./applyDiff"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/applyDiffBatch.ts",
+    "to": "../repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/applyDiffBatch.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/applyDiffBatch.ts",
+    "to": "../../auditTrailService"
+  },
+  {
     "from": "server/services/aiLocalTools/writeHandlers/client.ts",
     "to": "../toolRegistry"
   },
@@ -10445,6 +11949,10 @@
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers/interlock.ts",
+    "to": "../../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/interlock.ts",
     "to": "../../../db/connection"
   },
   {
@@ -10458,6 +11966,10 @@
   {
     "from": "server/services/aiLocalTools/writeHandlers/machineControl.guardrail.test.ts",
     "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
+    "to": "../../../_core/dbErrors"
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
@@ -10536,6 +12048,30 @@
     "to": "../toolRegistry"
   },
   {
+    "from": "server/services/aiLocalTools/writeHandlers/repoCommand.ts",
+    "to": "../../../_core/accessControl"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/repoCommand.ts",
+    "to": "../repoCommandSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/repoCommand.ts",
+    "to": "../repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/repoCommand.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/repoCommand.ts",
+    "to": "../../auditTrailService"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/visionControl.ts",
+    "to": "../../../_core/dbErrors"
+  },
+  {
     "from": "server/services/aiLocalTools/writeHandlers/visionControl.ts",
     "to": "../../../db/connection"
   },
@@ -10594,6 +12130,10 @@
   {
     "from": "server/services/aiLocalTools/writeHandlers.ts",
     "to": "../auditTrailService"
+  },
+  {
+    "from": "server/services/aiLocalTraining.ts",
+    "to": "../_core/appError"
   },
   {
     "from": "server/services/aiLocalTraining.ts",
@@ -10692,8 +12232,16 @@
     "to": "./ai/modelResolver"
   },
   {
+    "from": "server/services/aiModelRouter.ts",
+    "to": "./ai/ggufCtxCap"
+  },
+  {
     "from": "server/services/aiModelService.ts",
     "to": "../storage"
+  },
+  {
+    "from": "server/services/aiModelService.ts",
+    "to": "../_core/appError"
   },
   {
     "from": "server/services/aiModelService.ts",
@@ -10865,6 +12413,10 @@
   },
   {
     "from": "server/services/aiProviderRouter.ts",
+    "to": "./ai/thinkingStrip"
+  },
+  {
+    "from": "server/services/aiProviderRouter.ts",
     "to": "./aiModelRouter"
   },
   {
@@ -10890,6 +12442,10 @@
   {
     "from": "server/services/aiQualityGate.ts",
     "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiQualityGate.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/services/aiQualityGate.ts",
@@ -10920,6 +12476,18 @@
     "to": "./aiRcaCopilot"
   },
   {
+    "from": "server/services/aiRcaCopilot.multipleTesting.test.ts",
+    "to": "./aiRcaCopilot"
+  },
+  {
+    "from": "server/services/aiRcaCopilot.multipleTesting.test.ts",
+    "to": "./ai/defectCorrelationService"
+  },
+  {
+    "from": "server/services/aiRcaCopilot.ngonNgu.test.ts",
+    "to": "./aiRcaCopilot"
+  },
+  {
     "from": "server/services/aiRcaCopilot.test.ts",
     "to": "./aiRcaCopilot"
   },
@@ -10938,6 +12506,10 @@
   {
     "from": "server/services/aiRcaCopilot.ts",
     "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiRcaCopilot.ts",
+    "to": "./aiReportPhrases"
   },
   {
     "from": "server/services/aiRcaCopilot.ts",
@@ -10969,6 +12541,10 @@
   },
   {
     "from": "server/services/aiReportGenerator.ts",
+    "to": "./aiReportPhrases"
+  },
+  {
+    "from": "server/services/aiReportGenerator.ts",
     "to": "../db/connection"
   },
   {
@@ -10984,7 +12560,31 @@
     "to": "./aiDriftMonitor"
   },
   {
+    "from": "server/services/aiReportPhrases.exhaustive.test.ts",
+    "to": "./aiReportPhrases"
+  },
+  {
+    "from": "server/services/aiReportPhrases.exhaustive.test.ts",
+    "to": "./aiReportGenerator"
+  },
+  {
+    "from": "server/services/aiReportPhrases.exhaustive.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiReportPhrases.exhaustive.test.ts",
+    "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/services/aiReportPhrases.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
     "from": "server/services/aiReranker.test.ts",
+    "to": "./aiReranker"
+  },
+  {
+    "from": "server/services/aiReranker.timing.test.ts",
     "to": "./aiReranker"
   },
   {
@@ -11058,6 +12658,10 @@
   {
     "from": "server/services/aiSmartAlertRouter.ts",
     "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiSmartAlertRouter.ts",
+    "to": "../_core/envNumber"
   },
   {
     "from": "server/services/aiSmartAlertRouter.ts",
@@ -11233,6 +12837,10 @@
   },
   {
     "from": "server/services/aiTrainingPipeline.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
     "to": "../db/ai"
   },
   {
@@ -11344,6 +12952,10 @@
     "to": "../_core/dbErrors"
   },
   {
+    "from": "server/services/alertExpirySweeper.ts",
+    "to": "../_core/envNumber"
+  },
+  {
     "from": "server/services/alertHaLogic.test.ts",
     "to": "./mqttService"
   },
@@ -11397,6 +13009,10 @@
   },
   {
     "from": "server/services/andon/andonService.ts",
+    "to": "../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/andon/andonService.ts",
     "to": "../../db/connection"
   },
   {
@@ -11422,6 +13038,10 @@
   {
     "from": "server/services/andon/index.ts",
     "to": "./andonService"
+  },
+  {
+    "from": "server/services/aoiCommissioningService.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/services/aoiCommissioningService.ts",
@@ -11494,6 +13114,14 @@
   {
     "from": "server/services/assetRegistry/configDriftService.test.ts",
     "to": "./configDriftService"
+  },
+  {
+    "from": "server/services/assetRegistry/configDriftService.ts",
+    "to": "../../_core/appError"
+  },
+  {
+    "from": "server/services/assetRegistry/configDriftService.ts",
+    "to": "../../_core/dbErrors"
   },
   {
     "from": "server/services/assetRegistry/configDriftService.ts",
@@ -11626,6 +13254,14 @@
   {
     "from": "server/services/cad/centroidImportService.test.ts",
     "to": "./centroidParser"
+  },
+  {
+    "from": "server/services/cad/centroidImportService.ts",
+    "to": "../../_core/appError"
+  },
+  {
+    "from": "server/services/cad/centroidImportService.ts",
+    "to": "../../_core/dbErrors"
   },
   {
     "from": "server/services/cad/centroidImportService.ts",
@@ -11865,7 +13501,19 @@
   },
   {
     "from": "server/services/dataComparisonService.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/services/dataComparisonService.ts",
+    "to": "../_core/accessControlLabels"
+  },
+  {
+    "from": "server/services/dataComparisonService.ts",
     "to": "./ai/modelResolver"
+  },
+  {
+    "from": "server/services/dataComparisonService.ts",
+    "to": "./ai/thinkingStrip"
   },
   {
     "from": "server/services/dataRetentionService.test.ts",
@@ -11941,6 +13589,26 @@
   },
   {
     "from": "server/services/defectSpatialHeatmap.panel.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/defectSpatialHeatmap.scope.test.ts",
+    "to": "./defectSpatialHeatmap"
+  },
+  {
+    "from": "server/services/defectSpatialHeatmap.scope.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/defectSpatialHeatmap.scope.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/defectSpatialHeatmap.scope.test.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/services/defectSpatialHeatmap.scope.test.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -12068,6 +13736,26 @@
     "to": "../standards/alarmMasterService"
   },
   {
+    "from": "server/services/ecosystem/commandCenterScope.test.ts",
+    "to": "./commandCenterScope"
+  },
+  {
+    "from": "server/services/ecosystem/commandCenterScope.test.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/ecosystem/commandCenterScope.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/ecosystem/commandCenterScope.ts",
+    "to": "../../db/reportAggregators"
+  },
+  {
+    "from": "server/services/ecosystem/commandCenterScope.ts",
+    "to": "../../_core/accessControlLabels"
+  },
+  {
     "from": "server/services/ecosystem/commandCenterService.test.ts",
     "to": "../twin/sceneGraph"
   },
@@ -12082,6 +13770,10 @@
   {
     "from": "server/services/ecosystem/commandCenterService.ts",
     "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/ecosystem/commandCenterService.ts",
+    "to": "./commandCenterScope"
   },
   {
     "from": "server/services/ecosystem/commandCenterService.ts",
@@ -12110,6 +13802,10 @@
   {
     "from": "server/services/ecosystem/commandCenterService.ts",
     "to": "../aiActionInbox"
+  },
+  {
+    "from": "server/services/ecosystem/commandCenterService.ts",
+    "to": "../../_core/tenantCodeScope"
   },
   {
     "from": "server/services/ecosystem/ecosystemEvents.test.ts",
@@ -12158,6 +13854,10 @@
   {
     "from": "server/services/edge/edge.test.ts",
     "to": "./edgeRuntime"
+  },
+  {
+    "from": "server/services/edge/edgeCoordinator.ts",
+    "to": "../../_core/dbErrors"
   },
   {
     "from": "server/services/edge/edgeCoordinator.ts",
@@ -12373,6 +14073,14 @@
   },
   {
     "from": "server/services/equipment/recipeVersioningService.ts",
+    "to": "../../_core/appError"
+  },
+  {
+    "from": "server/services/equipment/recipeVersioningService.ts",
+    "to": "../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/equipment/recipeVersioningService.ts",
     "to": "../../db/connection"
   },
   {
@@ -12450,6 +14158,10 @@
   {
     "from": "server/services/externalReportService.ts",
     "to": "../utils/kpi"
+  },
+  {
+    "from": "server/services/externalReportService.ts",
+    "to": "../_core/reportExportScope"
   },
   {
     "from": "server/services/factoryCommandPriority.test.ts",
@@ -12622,6 +14334,10 @@
   {
     "from": "server/services/feederVerifyService.ts",
     "to": "../db"
+  },
+  {
+    "from": "server/services/feederVerifyService.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/services/feederVerifyService.ts",
@@ -12857,6 +14573,10 @@
   },
   {
     "from": "server/services/fleetStatusService.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/services/fleetStatusService.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -12972,6 +14692,10 @@
     "to": "./imageLifecycleService"
   },
   {
+    "from": "server/services/imageLifecycleService.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
     "from": "server/services/imageRegistration.test.ts",
     "to": "./imageRegistration"
   },
@@ -12982,6 +14706,14 @@
   {
     "from": "server/services/inspectionProgramService.test.ts",
     "to": "./inspectionProgramService"
+  },
+  {
+    "from": "server/services/inspectionProgramService.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/services/inspectionProgramService.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/services/inspectionProgramService.ts",
@@ -13238,6 +14970,10 @@
   {
     "from": "server/services/iolink/ioLinkProfile.ts",
     "to": "../ot/drivers/opcuaAddress"
+  },
+  {
+    "from": "server/services/kb/kbVectorStore.ts",
+    "to": "../../_core/dbErrors"
   },
   {
     "from": "server/services/kb/kbVectorStore.ts",
@@ -13569,6 +15305,10 @@
   },
   {
     "from": "server/services/machineAuthService.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/services/machineAuthService.ts",
     "to": "../_core/appError"
   },
   {
@@ -13693,6 +15433,14 @@
   },
   {
     "from": "server/services/msdService.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/services/msdService.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/services/msdService.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -13766,6 +15514,10 @@
   {
     "from": "server/services/notificationService.ts",
     "to": "./ai/modelResolver"
+  },
+  {
+    "from": "server/services/notificationService.ts",
+    "to": "./ai/thinkingStrip"
   },
   {
     "from": "server/services/observability/decisionTrace.ts",
@@ -13892,6 +15644,18 @@
     "to": "../db/machine"
   },
   {
+    "from": "server/services/oeeService.ts",
+    "to": "../db/reportAggregators"
+  },
+  {
+    "from": "server/services/oeeService.ts",
+    "to": "../_core/accessControlLabels"
+  },
+  {
+    "from": "server/services/oeeService.ts",
+    "to": "../_core/tenantCodeScope"
+  },
+  {
     "from": "server/services/oeeSnapshotScheduler.test.ts",
     "to": "./oeeSnapshotScheduler"
   },
@@ -13908,6 +15672,14 @@
     "to": "./oeeService"
   },
   {
+    "from": "server/services/oeeWarRoomScope.db.test.ts",
+    "to": "./oeeService"
+  },
+  {
+    "from": "server/services/oeeWarRoomScope.db.test.ts",
+    "to": "./warRoomService"
+  },
+  {
     "from": "server/services/operatorBadgeService.test.ts",
     "to": "../db/connection"
   },
@@ -13918,6 +15690,10 @@
   {
     "from": "server/services/operatorBadgeService.test.ts",
     "to": "./operatorBadgeService"
+  },
+  {
+    "from": "server/services/operatorBadgeService.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/services/operatorBadgeService.ts",
@@ -13954,6 +15730,10 @@
   {
     "from": "server/services/orchestration/aiWatcher.ts",
     "to": "../../_core/eventBus"
+  },
+  {
+    "from": "server/services/orchestration/aiWatcher.ts",
+    "to": "../ai/thinkingStrip"
   },
   {
     "from": "server/services/orchestration/durableOrchestration.test.ts",
@@ -13994,6 +15774,10 @@
   {
     "from": "server/services/orchestration/foe/foeDurable.test.ts",
     "to": "./foeEngine"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeEngine.ts",
+    "to": "../../../_core/dbErrors"
   },
   {
     "from": "server/services/orchestration/foe/foeEngine.ts",
@@ -14286,6 +16070,10 @@
   {
     "from": "server/services/ot/commandDispatcher.ts",
     "to": "../observability/correlation"
+  },
+  {
+    "from": "server/services/ot/commissioningService.ts",
+    "to": "../../_core/dbErrors"
   },
   {
     "from": "server/services/ot/commissioningService.ts",
@@ -14721,6 +16509,14 @@
   },
   {
     "from": "server/services/panel/panelService.ts",
+    "to": "../../_core/appError"
+  },
+  {
+    "from": "server/services/panel/panelService.ts",
+    "to": "../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/panel/panelService.ts",
     "to": "../../db/connection"
   },
   {
@@ -15021,6 +16817,10 @@
   },
   {
     "from": "server/services/processResultService.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/services/processResultService.ts",
     "to": "../db"
   },
   {
@@ -15064,12 +16864,24 @@
     "to": "./ai/modelResolver"
   },
   {
+    "from": "server/services/productionSchedulingService.ts",
+    "to": "./ai/thinkingStrip"
+  },
+  {
     "from": "server/services/productPackageService.db.test.ts",
     "to": "./productPackageService"
   },
   {
     "from": "server/services/productPackageService.db.test.ts",
     "to": "../db/product"
+  },
+  {
+    "from": "server/services/productPackageService.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/services/productPackageService.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/services/productPackageService.ts",
@@ -15112,6 +16924,22 @@
     "to": "../ai/modelResolver"
   },
   {
+    "from": "server/services/programming/aiProgrammingCopilot.repoContext.test.ts",
+    "to": "./aiProgrammingCopilot"
+  },
+  {
+    "from": "server/services/programming/aiProgrammingCopilot.repoContext.test.ts",
+    "to": "../aiGgufEngine"
+  },
+  {
+    "from": "server/services/programming/aiProgrammingCopilot.repoContext.test.ts",
+    "to": "../ai/repoContextService"
+  },
+  {
+    "from": "server/services/programming/aiProgrammingCopilot.repoContext.test.ts",
+    "to": "../aiLlamaServerClient"
+  },
+  {
     "from": "server/services/programming/aiProgrammingCopilot.test.ts",
     "to": "./aiProgrammingCopilot"
   },
@@ -15136,6 +16964,14 @@
     "to": "./codegenSchemas"
   },
   {
+    "from": "server/services/programming/aiProgrammingCopilot.ts",
+    "to": "../ai/repoContextService"
+  },
+  {
+    "from": "server/services/programming/aiProgrammingCopilot.ts",
+    "to": "../aiLlamaServerClient"
+  },
+  {
     "from": "server/services/programming/engineeringStream.test.ts",
     "to": "./engineeringStream"
   },
@@ -15146,6 +16982,10 @@
   {
     "from": "server/services/programming/fleetRollout.test.ts",
     "to": "./programmingService"
+  },
+  {
+    "from": "server/services/programming/fleetRollout.ts",
+    "to": "../../_core/dbErrors"
   },
   {
     "from": "server/services/programming/fleetRollout.ts",
@@ -15529,6 +17369,14 @@
   },
   {
     "from": "server/services/programming/programmingService.ts",
+    "to": "../../_core/appError"
+  },
+  {
+    "from": "server/services/programming/programmingService.ts",
+    "to": "../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/programming/programmingService.ts",
     "to": "../../db/connection"
   },
   {
@@ -15761,6 +17609,10 @@
   },
   {
     "from": "server/services/reportArtifactService.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/services/reportArtifactService.ts",
     "to": "../db/connection"
   },
   {
@@ -15790,6 +17642,10 @@
   {
     "from": "server/services/reportGenerator.ts",
     "to": "../db"
+  },
+  {
+    "from": "server/services/reportGenerator.ts",
+    "to": "../_core/reportExportScope"
   },
   {
     "from": "server/services/reportingMartService.ts",
@@ -16165,6 +18021,10 @@
   },
   {
     "from": "server/services/safety/plc/safetyPlcAdapter.ts",
+    "to": "../../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/safety/plc/safetyPlcAdapter.ts",
     "to": "../../../db/connection"
   },
   {
@@ -16237,6 +18097,10 @@
   },
   {
     "from": "server/services/safety/safetyAuditService.ts",
+    "to": "../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/safety/safetyAuditService.ts",
     "to": "../../db/connection"
   },
   {
@@ -16246,6 +18110,10 @@
   {
     "from": "server/services/safety/safetyAuditService.ts",
     "to": "../../_core/socket"
+  },
+  {
+    "from": "server/services/safety/safetyZoneService.ts",
+    "to": "../../_core/dbErrors"
   },
   {
     "from": "server/services/safety/safetyZoneService.ts",
@@ -16277,6 +18145,10 @@
   },
   {
     "from": "server/services/safety/vision/humanDetectionProducer.ts",
+    "to": "../../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/safety/vision/humanDetectionProducer.ts",
     "to": "../../../db/connection"
   },
   {
@@ -16296,6 +18168,26 @@
     "to": "../zoneIntrusionEvaluator"
   },
   {
+    "from": "server/services/scheduledReportScope.db.test.ts",
+    "to": "./scheduledReportService"
+  },
+  {
+    "from": "server/services/scheduledReportScope.db.test.ts",
+    "to": "./reportGenerator"
+  },
+  {
+    "from": "server/services/scheduledReportScope.test.ts",
+    "to": "./scheduledReportService"
+  },
+  {
+    "from": "server/services/scheduledReportScope.test.ts",
+    "to": "./reportGenerator"
+  },
+  {
+    "from": "server/services/scheduledReportScope.test.ts",
+    "to": "../_core/accessControlLabels"
+  },
+  {
     "from": "server/services/scheduledReportService.ts",
     "to": "../db"
   },
@@ -16305,7 +18197,23 @@
   },
   {
     "from": "server/services/scheduledReportService.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/services/scheduledReportService.ts",
     "to": "../utils/factoryTime"
+  },
+  {
+    "from": "server/services/scheduledReportService.ts",
+    "to": "../_core/reportExportScope"
+  },
+  {
+    "from": "server/services/scheduledReportService.ts",
+    "to": "../_core/accessControlLabels"
+  },
+  {
+    "from": "server/services/scheduledReportService.ts",
+    "to": "../db/reportAggregators"
   },
   {
     "from": "server/services/secsgem/gem300.test.ts",
@@ -16517,6 +18425,10 @@
   },
   {
     "from": "server/services/security/deviceIdentityService.ts",
+    "to": "../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/security/deviceIdentityService.ts",
     "to": "../../db"
   },
   {
@@ -16597,6 +18509,10 @@
   },
   {
     "from": "server/services/security/policyStore.ts",
+    "to": "../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/security/policyStore.ts",
     "to": "../../db/connection"
   },
   {
@@ -16641,6 +18557,10 @@
   },
   {
     "from": "server/services/security/serviceIdentityService.ts",
+    "to": "../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/security/serviceIdentityService.ts",
     "to": "../../db"
   },
   {
@@ -16678,6 +18598,10 @@
   {
     "from": "server/services/semantics/metricRegistry.test.ts",
     "to": "../../db/statistics"
+  },
+  {
+    "from": "server/services/semantics/metricRegistry.test.ts",
+    "to": "../../_core/accessControlLabels"
   },
   {
     "from": "server/services/semantics/metricRegistry.test.ts",
@@ -16758,6 +18682,14 @@
   {
     "from": "server/services/sopService.test.ts",
     "to": "./sopService"
+  },
+  {
+    "from": "server/services/sopService.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/services/sopService.ts",
+    "to": "../_core/dbErrors"
   },
   {
     "from": "server/services/sopService.ts",
@@ -16946,6 +18878,14 @@
   {
     "from": "server/services/stencilService.ts",
     "to": "../db"
+  },
+  {
+    "from": "server/services/stencilService.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/services/stencilService.ts",
+    "to": "../db/tenantContext"
   },
   {
     "from": "server/services/stencilService.ts",
@@ -17541,6 +19481,10 @@
   },
   {
     "from": "server/services/unsMappingService.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/services/unsMappingService.ts",
     "to": "../db/connection"
   },
   {
@@ -17937,6 +19881,14 @@
   },
   {
     "from": "server/services/vision/hotFolderService.ts",
+    "to": "../../_core/appError"
+  },
+  {
+    "from": "server/services/vision/hotFolderService.ts",
+    "to": "../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/vision/hotFolderService.ts",
     "to": "../../db/connection"
   },
   {
@@ -18188,8 +20140,36 @@
     "to": "./types"
   },
   {
+    "from": "server/services/vram/ghostSweep.test.ts",
+    "to": "./vramAdoption"
+  },
+  {
+    "from": "server/services/vram/ghostSweep.test.ts",
+    "to": "./vramSharedLedger"
+  },
+  {
+    "from": "server/services/vram/ghostSweep.test.ts",
+    "to": "./vramProcessPresence"
+  },
+  {
+    "from": "server/services/vram/ghostSweep.test.ts",
+    "to": "./vramProcessPresence"
+  },
+  {
+    "from": "server/services/vram/ghostSweep.test.ts",
+    "to": "./vramRefusal"
+  },
+  {
+    "from": "server/services/vram/ghostSweep.test.ts",
+    "to": "./vramRefusal"
+  },
+  {
     "from": "server/services/vram/measureLock.priority.test.ts",
     "to": "./vramMeasureLock"
+  },
+  {
+    "from": "server/services/vram/procTableControlChar.test.ts",
+    "to": "./vramGpuHolders"
   },
   {
     "from": "server/services/vram/refusal.test.ts",
@@ -18837,6 +20817,10 @@
   },
   {
     "from": "server/services/vram/vramReconciler.ts",
+    "to": "./vramProcessPresence"
+  },
+  {
+    "from": "server/services/vram/vramReconciler.ts",
     "to": "./types"
   },
   {
@@ -18928,6 +20912,14 @@
     "to": "./oeeService"
   },
   {
+    "from": "server/services/warRoomService.ts",
+    "to": "../db/reportAggregators"
+  },
+  {
+    "from": "server/services/warRoomService.ts",
+    "to": "../_core/accessControlLabels"
+  },
+  {
     "from": "server/services/wipIngestService.ts",
     "to": "../db/connection"
   },
@@ -18957,6 +20949,10 @@
   },
   {
     "from": "server/services/workforce/collaborationService.ts",
+    "to": "../../_core/dbErrors"
+  },
+  {
+    "from": "server/services/workforce/collaborationService.ts",
     "to": "../../db/connection"
   },
   {
@@ -18978,6 +20974,10 @@
   {
     "from": "server/services/workforce/workforce.s1.test.ts",
     "to": "./collaborationService"
+  },
+  {
+    "from": "server/services/workforce/workforceService.ts",
+    "to": "../../_core/dbErrors"
   },
   {
     "from": "server/services/workforce/workforceService.ts",
@@ -19034,6 +21034,14 @@
   {
     "from": "server/templateDb.ts",
     "to": "./db"
+  },
+  {
+    "from": "server/templateDb.ts",
+    "to": "./_core/appError"
+  },
+  {
+    "from": "server/templateDb.ts",
+    "to": "./_core/dbErrors"
   },
   {
     "from": "server/templateDb.ts",
@@ -19196,6 +21204,34 @@
     "to": "./context"
   },
   {
+    "from": "server/_core/accessControl.ts",
+    "to": "./accessControlLabels"
+  },
+  {
+    "from": "server/_core/accessControl.ts",
+    "to": "./accessControlLabels"
+  },
+  {
+    "from": "server/_core/accessControl.ts",
+    "to": "./accessControlLabels"
+  },
+  {
+    "from": "server/_core/accessControlScope.test.ts",
+    "to": "./accessControl"
+  },
+  {
+    "from": "server/_core/accessControlScope.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/_core/accessControlScope.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/_core/accessControlScope.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
     "from": "server/_core/aiAnalyticsScope.ts",
     "to": "./appError"
   },
@@ -19218,6 +21254,18 @@
   {
     "from": "server/_core/aiAnalyticsScope.ts",
     "to": "../services/aiGateway"
+  },
+  {
+    "from": "server/_core/aiReadiness.test.ts",
+    "to": "./aiReadiness"
+  },
+  {
+    "from": "server/_core/aiReadinessRoute.test.ts",
+    "to": "./aiReadiness"
+  },
+  {
+    "from": "server/_core/anhKyUrl.test.ts",
+    "to": "./anhKyUrl"
   },
   {
     "from": "server/_core/appError.test.ts",
@@ -19372,6 +21420,10 @@
     "to": "./env"
   },
   {
+    "from": "server/_core/dataErrorStringCensus.test.ts",
+    "to": "../../scripts/dataErrorStringScan.mjs"
+  },
+  {
     "from": "server/_core/dbErrors.test.ts",
     "to": "./dbErrors"
   },
@@ -19380,8 +21432,20 @@
     "to": "./appError"
   },
   {
+    "from": "server/_core/dbUnavailableAppCode.test.ts",
+    "to": "./dbErrors"
+  },
+  {
+    "from": "server/_core/dbUnavailableAppCode.test.ts",
+    "to": "./appError"
+  },
+  {
     "from": "server/_core/deploymentProfile.test.ts",
     "to": "./deploymentProfile"
+  },
+  {
+    "from": "server/_core/envNumber.test.ts",
+    "to": "./envNumber"
   },
   {
     "from": "server/_core/eventBus.ts",
@@ -19529,6 +21593,10 @@
   },
   {
     "from": "server/_core/index.ts",
+    "to": "../routes/congGiayPhepAiExpress"
+  },
+  {
+    "from": "server/_core/index.ts",
     "to": "../routes/openaiGateway"
   },
   {
@@ -19538,6 +21606,18 @@
   {
     "from": "server/_core/index.ts",
     "to": "../routes/edgeDownload"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "./anhKyUrl"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../routes/_congAnh"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../routes/_uyQuyenAnh"
   },
   {
     "from": "server/_core/index.ts",
@@ -19562,6 +21642,10 @@
   {
     "from": "server/_core/index.ts",
     "to": "../services/vram/vramBroker"
+  },
+  {
+    "from": "server/_core/llm.ts",
+    "to": "./appError"
   },
   {
     "from": "server/_core/llm.ts",
@@ -19760,6 +21844,18 @@
     "to": "./rateLimitConfig"
   },
   {
+    "from": "server/_core/reportExportScope.ts",
+    "to": "./appError"
+  },
+  {
+    "from": "server/_core/reportExportScope.ts",
+    "to": "./accessControl"
+  },
+  {
+    "from": "server/_core/reportExportScope.ts",
+    "to": "./accessControlLabels"
+  },
+  {
     "from": "server/_core/samlProvider.test.ts",
     "to": "./samlProvider"
   },
@@ -19806,6 +21902,10 @@
   {
     "from": "server/_core/securityHeaders.ts",
     "to": "./metrics"
+  },
+  {
+    "from": "server/_core/socket.ts",
+    "to": "./dbErrors"
   },
   {
     "from": "server/_core/socket.ts",
@@ -19885,6 +21985,10 @@
   },
   {
     "from": "server/_core/systemRouter.ts",
+    "to": "./appError"
+  },
+  {
+    "from": "server/_core/systemRouter.ts",
     "to": "./notification"
   },
   {
@@ -19922,6 +22026,38 @@
   {
     "from": "server/_core/taiKhoanBiTatMoiBeMat.test.ts",
     "to": "../services/authSessionCache"
+  },
+  {
+    "from": "server/_core/tenantCodeScope.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/_core/tenantCodeScope.unit.test.ts",
+    "to": "./tenantCodeScope"
+  },
+  {
+    "from": "server/_core/tenantCodeScope.unit.test.ts",
+    "to": "../db/reportAggregators"
+  },
+  {
+    "from": "server/_core/tenantCodeScope.unit.test.ts",
+    "to": "../db/statistics"
+  },
+  {
+    "from": "server/_core/tenantCodeScope.unit.test.ts",
+    "to": "../services/oeeService"
+  },
+  {
+    "from": "server/_core/tenantScopeMiddlewareNoi.unit.test.ts",
+    "to": "./trpc"
+  },
+  {
+    "from": "server/_core/tenantScopeMiddlewareNoi.unit.test.ts",
+    "to": "./accessControl"
+  },
+  {
+    "from": "server/_core/tenantScopeMiddlewareNoi.unit.test.ts",
+    "to": "../db/tenantContext"
   },
   {
     "from": "server/_core/thuHoiPhienMoiBeMat.test.ts",
@@ -20366,6 +22502,10 @@
   {
     "from": "client/src/components/engineering/inlineCopilotExtension.ts",
     "to": "./inlineCopilotController"
+  },
+  {
+    "from": "client/src/components/engineering/inlineCopilotGhost.unit.test.ts",
+    "to": "./inlineCopilotExtension"
   },
   {
     "from": "client/src/components/EscalationRulesSection.tsx",
@@ -20976,6 +23116,10 @@
     "to": "./locales/vi.json?url"
   },
   {
+    "from": "client/src/lib/aiCodingWorkspaceUx.unit.test.ts",
+    "to": "./aiCodingInput"
+  },
+  {
     "from": "client/src/lib/aiReportExport.unit.test.ts",
     "to": "./aiReportExport"
   },
@@ -21014,6 +23158,10 @@
   {
     "from": "client/src/lib/congDoiMatKhau.unit.test.ts",
     "to": "./components/CongDoiMatKhau"
+  },
+  {
+    "from": "client/src/lib/diffHunks.unit.test.ts",
+    "to": "./diffHunks"
   },
   {
     "from": "client/src/lib/engineeringBuffer.unit.test.ts",
@@ -21092,6 +23240,10 @@
     "to": "./queryErrorToast"
   },
   {
+    "from": "client/src/lib/rawErrorMessageCensus.unit.test.ts",
+    "to": "../../../scripts/rawErrorMessageScan.mjs"
+  },
+  {
     "from": "client/src/lib/reportsData.unit.test.ts",
     "to": "./reportsData"
   },
@@ -21116,12 +23268,20 @@
     "to": "../../../server/routers"
   },
   {
+    "from": "client/src/lib/scopeEmpty.unit.test.ts",
+    "to": "./scopeEmpty"
+  },
+  {
     "from": "client/src/lib/severityCanonical.unit.test.ts",
     "to": "./severityCanonical"
   },
   {
     "from": "client/src/lib/trpc.ts",
     "to": "../../../server/routers"
+  },
+  {
+    "from": "client/src/lib/trpcErrors.locale.unit.test.ts",
+    "to": "./trpcErrors"
   },
   {
     "from": "client/src/lib/trpcErrors.ts",
@@ -21138,6 +23298,10 @@
   {
     "from": "client/src/lib/unsStreamClient.unit.test.ts",
     "to": "./unsStreamClient"
+  },
+  {
+    "from": "client/src/lib/viStringCoverage.unit.test.ts",
+    "to": "../../../scripts/viStringScan.mjs"
   },
   {
     "from": "client/src/lib/vramCommandReach.role.unit.test.ts",
@@ -21428,6 +23592,14 @@
     "to": "./useAuth"
   },
   {
+    "from": "shared/aiCodingLoop.test.ts",
+    "to": "./aiCodingLoop"
+  },
+  {
+    "from": "shared/aiCodingSession.test.ts",
+    "to": "./aiCodingSession"
+  },
+  {
     "from": "shared/editions.ts",
     "to": "./module-registry"
   },
@@ -21450,6 +23622,10 @@
   {
     "from": "drizzle/schema/ai.ts",
     "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/aiCodingSession.ts",
+    "to": "./auth"
   },
   {
     "from": "drizzle/schema/alerts.ts",
@@ -21806,6 +23982,10 @@
   {
     "from": "drizzle/schema/index.ts",
     "to": "./vram"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./aiCodingSession"
   },
   {
     "from": "drizzle/schema/inspection.ts",

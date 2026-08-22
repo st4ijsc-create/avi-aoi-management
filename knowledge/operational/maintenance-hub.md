@@ -2,8 +2,8 @@
 route: /maintenance-hub
 permission: machine_status
 role: []
-screenVi: Maintenance Workspace Hub
-screenEn: Maintenance Workspace Hub
+screenVi: Trung tâm bảo trì
+screenEn: Maintenance hub
 inSidebar: true
 navGroupVi: Thiết bị & Giám sát
 navGroupEn: Devices & Monitoring
@@ -11,15 +11,15 @@ module: null
 license: null
 ---
 
-# Maintenance Workspace Hub — Cách vận hành
+# Trung tâm bảo trì — Cách vận hành
 
 ## Mục đích
 doc 59 Cụm I
 
 ## Vị trí truy cập
-- Menu: Thiết bị & Giám sát › Maintenance Workspace Hub
+- Menu: Thiết bị & Giám sát › Trung tâm bảo trì
 - URL: `/maintenance-hub`
-- English: Devices & Monitoring › Maintenance Workspace Hub
+- English: Devices & Monitoring › Maintenance hub
 
 ## Quyền yêu cầu
 - Permission: `machine_status`

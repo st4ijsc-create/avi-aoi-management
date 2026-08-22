@@ -109,6 +109,13 @@
     "publicUses": 0
   },
   {
+    "file": "server/routers/aiCodingSessionScope.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
     "file": "server/routers/aiCopilotRouter.ts",
     "routerNames": [
       "aiCopilotRouter"
@@ -139,7 +146,14 @@
       "aiFeedbackRouter"
     ],
     "procedureCalls": 11,
-    "protectedUses": 12,
+    "protectedUses": 11,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiGgufRouter.thinkingLeak.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
     "publicUses": 0
   },
   {
@@ -201,7 +215,7 @@
     ],
     "procedureCalls": 5,
     "protectedUses": 4,
-    "publicUses": 2
+    "publicUses": 4
   },
   {
     "file": "server/routers/aiLocalTrainingRouter.ts",
@@ -262,6 +276,13 @@
     ],
     "procedureCalls": 3,
     "protectedUses": 5,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiReportRouter.langGate.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
     "publicUses": 0
   },
   {
@@ -373,7 +394,14 @@
       "aiTimeSeriesRouter"
     ],
     "procedureCalls": 6,
-    "protectedUses": 7,
+    "protectedUses": 8,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiTimeSeriesScope.db.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 1,
     "publicUses": 0
   },
   {
@@ -400,7 +428,7 @@
       "aiVisionRouter"
     ],
     "procedureCalls": 3,
-    "protectedUses": 4,
+    "protectedUses": 3,
     "publicUses": 0
   },
   {
@@ -625,6 +653,20 @@
     "publicUses": 0
   },
   {
+    "file": "server/routers/commandCenterAlertScope.db.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/commandCenterKpiScope.db.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
     "file": "server/routers/commandCenterRouter.ts",
     "routerNames": [
       "commandCenterRouter"
@@ -672,6 +714,23 @@
     ],
     "procedureCalls": 13,
     "protectedUses": 14,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/congGiayPhepAiCensus.test.ts",
+    "routerNames": [
+      "aiDotBienRouter",
+      "dotBienNgoaiAiRouter"
+    ],
+    "procedureCalls": 3,
+    "protectedUses": 4,
+    "publicUses": 1
+  },
+  {
+    "file": "server/routers/congGiayPhepScan.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 1,
     "publicUses": 0
   },
   {
@@ -754,6 +813,20 @@
     "publicUses": 0
   },
   {
+    "file": "server/routers/defectHeatmapSavedScope.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/defectHeatmapScope.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
     "file": "server/routers/deployProcedureScan.ts",
     "routerNames": [],
     "procedureCalls": 4,
@@ -781,6 +854,13 @@
     ],
     "procedureCalls": 10,
     "protectedUses": 11,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/deviceTestConnectionCode.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
     "publicUses": 0
   },
   {
@@ -1077,7 +1157,7 @@
       "stationRouter",
       "machineRouter"
     ],
-    "procedureCalls": 72,
+    "procedureCalls": 73,
     "protectedUses": 59,
     "publicUses": 6
   },
@@ -1547,6 +1627,13 @@
     "publicUses": 0
   },
   {
+    "file": "server/routers/masterDataTenantNoi.unit.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 1,
+    "publicUses": 0
+  },
+  {
     "file": "server/routers/measurementCorrectionsRouter.ts",
     "routerNames": [
       "measurementCorrectionsRouter"
@@ -1651,8 +1738,8 @@
       "oeeRouter",
       "mqttAlertRouter"
     ],
-    "procedureCalls": 59,
-    "protectedUses": 42,
+    "procedureCalls": 62,
+    "protectedUses": 43,
     "publicUses": 0
   },
   {
@@ -1742,6 +1829,13 @@
     "publicUses": 0
   },
   {
+    "file": "server/routers/oeeScopeLabels.db.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
     "file": "server/routers/operatorBadgeRouter.ts",
     "routerNames": [
       "operatorBadgeRouter"
@@ -1821,6 +1915,20 @@
     "publicUses": 0
   },
   {
+    "file": "server/routers/permissions.analyticsCategory.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/permissions.defectHeatmap.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
     "file": "server/routers/permissions.energy.test.ts",
     "routerNames": [],
     "procedureCalls": 0,
@@ -1858,6 +1966,71 @@
     "publicUses": 0
   },
   {
+    "file": "server/routers/phamViDoc11File.db.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/phamViDocBaseline.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/phamViDocCensus.test.ts",
+    "routerNames": [
+      "dotBienRoRiRouter"
+    ],
+    "procedureCalls": 2,
+    "protectedUses": 3,
+    "publicUses": 3
+  },
+  {
+    "file": "server/routers/phamViDocPatch.db.test.ts",
+    "routerNames": [],
+    "procedureCalls": 3,
+    "protectedUses": 2,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/phamViDocScan.ts",
+    "routerNames": [],
+    "procedureCalls": 1,
+    "protectedUses": 2,
+    "publicUses": 2
+  },
+  {
+    "file": "server/routers/phamViGhiMay.db.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/phamViGhiMay.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/phamViTuyenBaseline.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/phamViTuyenCensus.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
     "file": "server/routers/pluginRouter.ts",
     "routerNames": [
       "pluginRouter"
@@ -1873,6 +2046,13 @@
     ],
     "procedureCalls": 3,
     "protectedUses": 4,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/predictiveAlertClosedOrder.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
     "publicUses": 0
   },
   {
@@ -2084,6 +2264,20 @@
     "publicUses": 9
   },
   {
+    "file": "server/routers/publicProductScope.db.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/publicProductScope.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 1
+  },
+  {
     "file": "server/routers/qualityGateTemplateRouter.ts",
     "routerNames": [
       "qualityGateTemplateRouter"
@@ -2145,12 +2339,35 @@
     "publicUses": 0
   },
   {
+    "file": "server/routers/reportExportScope.test.ts",
+    "routerNames": [],
+    "procedureCalls": 1,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
     "file": "server/routers/reportingMartRouter.ts",
     "routerNames": [
       "reportingMartRouter"
     ],
     "procedureCalls": 3,
     "protectedUses": 5,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/reportServiceScope.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 2,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/repoWorkspaceRouter.ts",
+    "routerNames": [
+      "repoWorkspaceRouter"
+    ],
+    "procedureCalls": 10,
+    "protectedUses": 11,
     "publicUses": 0
   },
   {
@@ -2715,6 +2932,13 @@
     ],
     "procedureCalls": 5,
     "protectedUses": 7,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/_phamViNguoiXem.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
     "publicUses": 0
   },
   {

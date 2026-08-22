@@ -7,8 +7,8 @@ screenEn: Agent Command Center
 inSidebar: true
 navGroupVi: AI
 navGroupEn: AI
-module: null
-license: null
+module: MOD_AI
+license: OPTIONAL
 ---
 
 # Agent Command Center — Cách vận hành
@@ -23,4 +23,5 @@ doc69 GĐ4/E2-3: Agent Command Center (roster + savings + task feed + HITL drill
 
 ## Quyền yêu cầu
 - Không giới hạn quyền cụ thể (mọi người dùng đã đăng nhập).
+- Module: `MOD_AI` (OPTIONAL — cần license).
 

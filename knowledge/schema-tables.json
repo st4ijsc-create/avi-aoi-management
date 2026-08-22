@@ -475,6 +475,14 @@
         "type": "integer"
       },
       {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryCode",
+        "type": "varchar"
+      },
+      {
         "field": "periodType",
         "type": "periodTypeEnum_1"
       },
@@ -3313,6 +3321,47 @@
       }
     ],
     "fks": []
+  },
+  {
+    "table": "ai_coding_sessions",
+    "file": "drizzle/schema/aiCodingSession.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "uuid"
+      },
+      {
+        "field": "userId",
+        "type": "integer"
+      },
+      {
+        "field": "projectId",
+        "type": "varchar"
+      },
+      {
+        "field": "title",
+        "type": "varchar"
+      },
+      {
+        "field": "turns",
+        "type": "jsonb"
+      },
+      {
+        "field": "turnCount",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "users.id"
+    ]
   },
   {
     "table": "ai_embedding_datasets",
@@ -8977,6 +9026,18 @@
       {
         "field": "revokedAt",
         "type": "timestamp"
+      },
+      {
+        "field": "dataScopeMode",
+        "type": "varchar"
+      },
+      {
+        "field": "corporateCode",
+        "type": "varchar"
+      },
+      {
+        "field": "factoryCode",
+        "type": "varchar"
       }
     ],
     "fks": []

@@ -2,8 +2,8 @@
 route: /nonconformance
 permission: analytics_spc
 role: []
-screenVi: Nonconformance Reports
-screenEn: Nonconformance Reports
+screenVi: Báo cáo không phù hợp (NCR/MRB)
+screenEn: Nonconformance report (NCR/MRB)
 inSidebar: true
 navGroupVi: Phân tích
 navGroupEn: Analytics
@@ -11,15 +11,15 @@ module: null
 license: null
 ---
 
-# Nonconformance Reports — Cách vận hành
+# Báo cáo không phù hợp (NCR/MRB) — Cách vận hành
 
 ## Mục đích
 doc 35 W4-B: NCR/MRB management (raise→review→disposition→close, SoD)
 
 ## Vị trí truy cập
-- Menu: Phân tích › Nonconformance Reports
+- Menu: Phân tích › Báo cáo không phù hợp (NCR/MRB)
 - URL: `/nonconformance`
-- English: Analytics › Nonconformance Reports
+- English: Analytics › Nonconformance report (NCR/MRB)
 
 ## Quyền yêu cầu
 - Permission: `analytics_spc`

@@ -92,7 +92,7 @@
       },
       {
         "href": "/product-changeover",
-        "label": "Đổi sản phẩm",
+        "label": "nav.productChangeover",
         "requiredRole": null,
         "requiredPermission": "machine_status",
         "permissionCategory": "machine_monitoring"
@@ -269,7 +269,7 @@
     "items": [
       {
         "href": "/factory-command",
-        "label": "Chỉ huy nhà máy",
+        "label": "nav.factoryCommand",
         "requiredRole": null,
         "requiredPermission": "machine_status",
         "permissionCategory": "machine_monitoring"
@@ -374,7 +374,7 @@
       },
       {
         "href": "/maintenance-hub",
-        "label": "Trung tâm bảo trì",
+        "label": "nav.maintenanceHub",
         "requiredRole": null,
         "requiredPermission": "machine_status",
         "permissionCategory": "machine_monitoring"
@@ -395,7 +395,7 @@
       },
       {
         "href": "/cmms",
-        "label": "Bảo trì (CMMS)",
+        "label": "nav.cmms",
         "requiredRole": null,
         "requiredPermission": "machine_control",
         "permissionCategory": "machine_control"
@@ -424,7 +424,7 @@
       },
       {
         "href": "/engineering-studio",
-        "label": "Xưởng kỹ thuật",
+        "label": "nav.engineeringStudio",
         "requiredRole": null,
         "requiredPermission": "machine_control",
         "permissionCategory": "machine_control"
@@ -438,7 +438,7 @@
       },
       {
         "href": "/engineering-changes",
-        "label": "Thay đổi kỹ thuật (ECN)",
+        "label": "nav.engineeringChanges",
         "requiredRole": null,
         "requiredPermission": "machine_control",
         "permissionCategory": "machine_control"
@@ -523,7 +523,7 @@
     "items": [
       {
         "href": "/reporting-studio",
-        "label": "Xưởng báo cáo",
+        "label": "nav.reportingStudio",
         "requiredRole": null,
         "requiredPermission": "reports_view",
         "permissionCategory": "reports"
@@ -635,7 +635,7 @@
       },
       {
         "href": "/nonconformance",
-        "label": "Báo cáo không phù hợp (NCR/MRB)",
+        "label": "nav.nonconformance",
         "requiredRole": null,
         "requiredPermission": "analytics_spc",
         "permissionCategory": "analytics"
@@ -667,6 +667,13 @@
         "label": "nav.aiChat",
         "requiredRole": null,
         "requiredPermission": null,
+        "permissionCategory": null
+      },
+      {
+        "href": "/ai-coding-workspace",
+        "label": "nav.aiCodingWorkspace",
+        "requiredRole": null,
+        "requiredPermission": "ai_repo_read",
         "permissionCategory": null
       },
       {
@@ -861,7 +868,7 @@
     "items": [
       {
         "href": "/settings-hub",
-        "label": "Trung tâm cài đặt",
+        "label": "nav.settingsHub",
         "requiredRole": "admin",
         "requiredPermission": null,
         "permissionCategory": "admin"
@@ -988,14 +995,14 @@
     "items": [
       {
         "href": "/data-management",
-        "label": "Trung tâm dữ liệu",
+        "label": "nav.dataManagement",
         "requiredRole": null,
         "requiredPermission": "masterdata",
         "permissionCategory": "settings"
       },
       {
         "href": "/product-workspace",
-        "label": "Xưởng sản phẩm",
+        "label": "nav.productWorkspace",
         "requiredRole": null,
         "requiredPermission": "history_view",
         "permissionCategory": "history"
@@ -1037,7 +1044,7 @@
       },
       {
         "href": "/metric-catalog",
-        "label": "Danh mục chỉ số (Metric Catalog)",
+        "label": "nav.metricCatalog",
         "requiredRole": null,
         "requiredPermission": "machine_status",
         "permissionCategory": "machine_monitoring"
