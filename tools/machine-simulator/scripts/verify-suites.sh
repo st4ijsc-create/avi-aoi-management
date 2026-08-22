@@ -4306,8 +4306,56 @@ note "exclusive-run lock held: pid ${GATE_SELF_WINPID} (lock $GATE_LOCK_DIR)"
 # Re-running the filter after each correction (the habit the script mechanises) is what took the flagged set
 # from 34 to 37 to 38: two corrections REINTRODUCED absolute words and one split a sentence in two. All 38
 # were read; all 38 are true.
+#
+# ══ TASK BB-1 (item 25 stage 11) — 59 -> 106 (+47), AND THE PREDICTION RULE FAILS A THIRD TIME ═════════
+# Measured against this task's own base (927c0246) so the 59 already recorded are not re-audited: 47 new
+# absolute claims. 59 + 47 = 106 is arithmetic that AGREES with the run against the pinned baseline; the
+# run was made first and returned 106 directly.
+#
+# 🔴 THE "DON'T PREDICT BY SENTENCE COUNT" WARNING NOW HAS THREE DATA POINTS AND THEY DO NOT LINE UP:
+# +2 on ~90 sentences (stage 9), +38 on fewer (stage 10), +47 on 25 members (stage 11). What actually
+# drives it is SUBJECT MATTER. This cluster is the five remaining IDeviceDriver implementations, and the
+# contract they implement is written almost entirely in the filter's own vocabulary — "must NEVER report
+# Connected", "EVERY yielded reading", "NOTHING downstream knows". Documenting how an implementation
+# stands against a contract phrased in universals produces sentences phrased in universals. The rule to
+# carry forward is not a number, it is: a cluster whose subject is a CONTRACT will flag high.
+#
+# 🔴 AND BOUNDARY (f) OF THE SCRIPT BIT AGAIN, IN THE DIRECTION THAT INFLATES. Identity under --since is
+# (path, sentence) and the splitter is textual, so several of the 47 are one new sentence welded to
+# pre-existing prose rather than 47 independently authored claims. It is still the right number to gate
+# on — a reviewer must read each one either way — and still the wrong number to reason about volume with.
+#
+# TWO ROUNDS, RATES REPORTED SEPARATELY, NEVER SUMMED INTO ONE FLATTERING RATIO:
+#   ROUND 1 — the filter flagged 49. Read one at a time against the code. TEN WERE OUTRIGHT FALSE and
+#   five more were incomplete; all fifteen were corrected AT THE SOURCE. The three worth naming, because
+#   each was a measurement rather than a wording preference: MqttDriver.DisposeAsync said "it is bounded
+#   only because every wait it performs is cancellable" and "a broker that ... never answers cannot wedge
+#   teardown here" — BOTH FALSE, because the graceful DisconnectAsync underneath it is issued with
+#   CancellationToken.None and nothing in that class bounds it; ModbusTcpDriver.DisposeAsync said "nothing
+#   else in this class owns a disposable" while the socket and master it disposes one line above are
+#   disposables; and HotFolderAoiDriver.ReadAsync said "only cancellation leaves this method", which the
+#   uncaught UnauthorizedAccessException and the archive/error move both refute.
+#   ROUND 2 — a manual pass at asserted PURPOSE and MECHANISM, which the filter structurally cannot see.
+#   It caught SEVEN more, and FIVE of those were one claim repeated across five files: every Kind doc said
+#   the value is "the label the driver-health alarm rule carries". Measured in AlarmEvaluator: Kind is
+#   interpolated into the alarm's human TEXT, twice, while the alarm's key and TargetId are the SLOT
+#   LABEL. A claim copied across five files is wrong five times, and the mechanical filter flagged none of
+#   them because none contains an absolute word. The other two: "the subscription is already running by
+#   the time anyone enumerates" (false in the race the class's own design creates), and an OPC-UA Health
+#   sentence that presented a judgement — "correctly, since the read link is what this member is about" —
+#   as a measurement.
+#   ROUND 2 CAUGHT FEWER THAN ROUND 1 THIS TIME (7 vs 15), which BREAKS a four-stage streak and is
+#   reported rather than smoothed over. The reading is not that round 2 got weaker: round 1's yield rose
+#   because the cluster's subject matter is a contract full of absolutes, so more of what round 2 would
+#   otherwise have had to find alone was already in front of a reader. The rates are 15/49 and 7, and they
+#   are NOT summed.
+#   CAUGHT WHILE WRITING, before either round: ONE — a <returns> on SimulatedDriver.ReadAsync claiming
+#   readings are "never a replay of an earlier instance", deleted because verifying it means reading all
+#   eight simulators and this stage did not.
+# Re-running the filter after the corrections took the flagged set from 49 to 47: no correction
+# reintroduced an absolute word this time, and two removed one. All 47 were read.
 DOC_ABSOLUTES_BASELINE="cfcfae42"
-EXPECT_NEW_DOC_ABSOLUTES=59
+EXPECT_NEW_DOC_ABSOLUTES=106
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
@@ -6145,7 +6193,54 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # docs/owner-decisions.md (the Part I prose enumeration and the machine-readable field, both of which had to
 # name items 38 and 39) and one `///` line whose PROSE is preserved byte-for-byte and whose trailing
 # `</summary>` moved to the end of an appended retraction paragraph.
-EXPECT_WARNINGS=282
+# ══ TASK BB-1 (.superpowers/sdd/item25-stage11/task-1-brief.md) — ITEM 12 STAGE 11, THE THIRD STAGE OF THE
+#    OWNER'S 2026-08-22 RULING: DOCUMENT ALL 97 DRIVER-FAMILY MEMBERS, CHANGE NO ACCESS LEVEL ═════════════
+# 282 -> 257. Stage 9 paid 25, stage 10 paid 21, leaving 63 warnings on 57 members. This stage pays ONE
+# COHERENT CLUSTER of 25 and says which.
+#
+# THE CLUSTER: THE FIVE REMAINING CONCRETE `IDeviceDriver` IMPLEMENTATIONS, TAKEN WHOLE. Five files,
+# per-file residue 0: Drivers/Mqtt/MqttDriver.cs (6), Drivers/SimulatedDriver.cs (5),
+# Drivers/HotFolder/HotFolderAoiDriver.cs (5), Drivers/Modbus/ModbusTcpDriver.cs (5),
+# Drivers/OpcUa/OpcUaDriver.cs (4). Every member in it answers ONE question — WHAT DOES THE ONE DRIVER SEAM
+# ACTUALLY PROMISE HERE, AND WHERE DOES THIS IMPLEMENTATION FAIL TO KEEP IT. That question is available
+# because `IDeviceDriver`'s own doc comment IS the conformance contract (enforced by
+# St4i.Connector.Conformance.DeviceDriverConformanceSuite): 20 of the 25 members are the contract's own
+# members (Id/Kind/Health/ReadAsync/DisposeAsync) and the other 5 are the constructors the contract's
+# type-level rules govern. Candidates were listed BEFORE any number of the chosen cluster was quoted —
+# whole Drivers/Simulators/ (11 files), the four remaining factories, the whole remaining Drivers/OpcUa/
+# and the whole remaining Drivers/Modbus/ (each of which would take a driver directory to ZERO for the
+# first time), SimulatorBase+SimulatorFactory (which is where the last 8 CS1573 live), and the 8 CS1573
+# alone — that last one refused on the same RULE stage 10 used, because it takes no file whole.
+#
+# 🔴 257 IS MEASURED, NOT SUBTRACTED. `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo` over the
+# whole solution, SDK 10.0.302: 15/15 compilations, `Build succeeded.`, `0 Error(s)`, `257 Warning(s)`.
+# 282 - 25 = 257 is arithmetic that AGREES; it was reported after the measurement, not in place of it.
+# EXPECT_BUILD_NODES stays 0. No suppression of any kind was added — no #pragma, no NoWarn, no
+# analyzer-config entry, and no <see cref> deleted to dodge a CS1574.
+#
+# 🔴 AND THE FIRST -t:Rebuild OF THIS STAGE DID NOT STAND EITHER, which makes it two stages in a row and
+# confirms that "the first run holds" is not the default. It returned 258: exactly one MSB3101 ("could not
+# write state file … because it is being used by another process") on St4i.EdgeService — one of the
+# FOREIGN_OBJ_RACE_CODES this file already names, and MSB3101 is a WARNING, so it walked into the total
+# rather than into the error gate. Four foreign dotnet.exe nodes were resident throughout (VS Code's C#
+# Dev Kit, measured twice ~20 s apart, 9 -> 4 after `dotnet build-server shutdown`), and they were WAITED
+# OUT, not killed. A re-run after the shutdown returned 257 with zero MSB3101.
+#
+# THE FIVE SUITE TOTALS AND THE GRAND TOTAL 2824 DO NOT MOVE, and that is the check rather than a note:
+# this stage adds no test and edits no test file, so a total that moved would mean it had edited code while
+# claiming to edit prose. 🔴 ZERO `///` LINES WERE REMOVED, AND ZERO LINES OF ANY KIND WERE REMOVED FROM
+# ANY C# FILE: `git diff --numstat` against the base reports a deletion column of exactly 0 for all five
+# source files. The diff deletes FIVE lines in total, all outside src/, all single-line replacements, and
+# each is named rather than summarised: three are the constants this stage moves by measurement
+# (EXPECT_WARNINGS, EXPECT_NEW_DOC_ABSOLUTES, and the OURS CS1591 ledger row), and two are the
+# owner-decisions.md verdict-table rows for items 12 and 25 — a markdown table row is ONE line, so
+# appending a stage record to it necessarily rewrites that line; the prior text of both is preserved
+# verbatim inside the replacement, with the new record appended after it.
+# 🔴 THE SENTENCE ABOVE READ "ZERO LINES WERE REMOVED FROM ANY FILE" WHEN FIRST WRITTEN, AND THAT WAS
+# FALSE — it was true of the five source files and was generalised to the whole change before the whole
+# change existed. Caught by re-running `git diff --numstat` after the documents were edited, which is the
+# same "re-measure your own product after writing it" step that caught the last three stages.
+EXPECT_WARNINGS=257
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
@@ -6735,8 +6830,38 @@ warning_ledger() {
 #       surface is made of. The 0 for "nothing to say" REPRODUCES for the fourth stage running, and this
 #       time on a cluster picked for a MECHANISM rather than for a ruling or for recoverability of meaning.
 #       No case had to be named-instead-of-filled.
+#
+# ── TASK BB-1 (item 12 stage 11) MOVES EXACTLY ONE ROW, AND THE ROW IT DOES NOT MOVE IS THE ASSERTION ──
+# `OURS CS1591 55 -> 30` (-25). 🔴 `OURS CS1573 8` DOES NOT MOVE, and that is the check rather than a
+# note: this stage documents FIVE constructors carrying 18 parameters between them plus two ReadAsync
+# overloads, which is precisely the shape that manufactures CS1573 when a <param> set is left half-filled.
+# Every parameter of every member written here carries its own <param>; the row standing still is the
+# evidence that none was half-paid into existence. Sixteen rows before, sixteen after; nothing reached
+# zero. 🔴 EIGHT VENDORED ROWS UNMOVED, UNIT FOR UNIT (CS1573 8, CS1591 95, CS8600 5, CS8601 2, CS8603 2,
+# CS8604 1, CS8618 35, CS8625 37 = 185) — read back out of the observed build, not carried forward.
+#
+# 🔴 THREE MEASUREMENTS ABOUT ITEM 25's OWN TABLES, TAKEN ON THIS CLUSTER, RECORDED SO THE NEXT STAGE CAN
+# DISAGREE WITH THEM ON THE RECORD:
+#   (a) A1 = 41 ("implementations/overrides of a PUBLIC interface member; `internal` = compile error")
+#       HOLDS on this cluster and this cluster is 20 of it: Id/Kind/Health on all five drivers, plus
+#       ReadAsync on three and DisposeAsync on three. The other 5 members here are CONSTRUCTORS, which
+#       that table has no row for at all — a public constructor is neither an interface member nor an enum
+#       member nor JSON-bound, and narrowing one is a live question the read-surface table never asked.
+#       Five of the 97 sit in that gap on this cluster alone.
+#   (b) THE 84/13/0 CLASSIFICATION, re-checked on this stage's 25 against the same five tests:
+#       25 / 0 / 0. Every member carries a failure mode or a precondition a caller can get wrong, and this
+#       is the first stage to return ZERO Class 2 as well as zero Class 3 — a contract-implementation
+#       surface has no members that merely state a value. 🔴 THE 0 FOR "NOTHING TO SAY" REPRODUCES FOR THE
+#       FIFTH STAGE RUNNING, and this time on the surface stage 6 named as the likeliest place for it.
+#   (c) The read surface of `IDeviceDriver.Id` was measured over every *.cs this repository owns at
+#       927c0246 and NOTHING CONSUMES ITS VALUE: four decorators forward it, the conformance suite asserts
+#       only that it does not change, and the slot label an alarm targets comes from
+#       FleetCore.ResolveSlotLabelFor/ResolveConnectorSlotLabel instead. That REFUTES a published sentence
+#       in IDeviceDriver.Id's own doc comment ("it keys slot labels and, through those, alarms") and a
+#       second in ScenarioAwareDriver.Id's. Both are OUTSIDE this cluster and BOTH WERE LEFT ALONE — see
+#       the task report; the measurement is written at the five points of use instead.
 EXPECT_WARNING_LEDGER="OURS CS1573 8
-OURS CS1591 55
+OURS CS1591 30
 OURS CS8601 7
 OURS CS8604 14
 OURS CS8767 2

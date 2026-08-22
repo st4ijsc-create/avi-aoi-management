@@ -152,6 +152,33 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
     /// <see cref="_writablePoints"/>; see that field's own remarks.</summary>
     private readonly IReadOnlyList<string> _commands;
 
+    /// <summary>Builds the poller without touching the network: no socket is opened, no
+    /// <see cref="IModbusMaster"/> is created and <see cref="Health"/> is left
+    /// <see cref="DriverHealthState.Down"/>, so this satisfies <see cref="IDeviceDriver"/>'s type-level
+    /// "construction is non-blocking and performs no I/O" rule in the strict sense. The only real work here
+    /// is snapshotting the map's writable-point and command name lists into genuine read-only collections —
+    /// once, because an immutable map cannot change them, and as copies because
+    /// <see cref="IWritableDeviceDriver.WritablePoints"/> forbids handing out a live view.
+    ///
+    /// <para><b>Only two of the five arguments are validated, and the unvalidated ones fail later in
+    /// different places.</b> <paramref name="host"/> and <paramref name="map"/> raise
+    /// <see cref="ArgumentNullException"/> here. <paramref name="port"/> is taken as given and surfaces, if
+    /// wrong, as a connect failure inside the poll loop that degrades health instead of throwing. The two log
+    /// callbacks are optional and unchecked: leaving them null is supported and silences the only report a
+    /// poll failure makes.</para></summary>
+    /// <param name="host">Hostname or address of the Modbus TCP slave. Non-null; not resolved or reached
+    /// here.</param>
+    /// <param name="port">TCP port of the slave. Unvalidated — see the summary.</param>
+    /// <param name="map">The register map: which registers to read, how to decode them, the poll cadence, and
+    /// the per-read timeout and retry budget. Non-null, and treated as immutable for the lifetime of this
+    /// driver — the writable-point and command lists are read out of it exactly once, right here.</param>
+    /// <param name="logWarning">Optional sink for non-fatal notices. <see langword="null"/> discards
+    /// them.</param>
+    /// <param name="logError">Optional sink for a poll, write or command failure, called with the exception and a
+    /// message naming the machine code. <see langword="null"/> discards them — and since a poll failure is
+    /// otherwise absorbed into <see cref="DriverHealthState.Degraded"/> without throwing, a null here leaves
+    /// <see cref="Health"/> as the only remaining signal that a reconnect loop is running against a dead
+    /// device, with nothing anywhere naming the exception.</param>
     public ModbusTcpDriver(
         string host, int port, ModbusRegisterMap map,
         Action<string>? logWarning = null, Action<Exception, string>? logError = null)
@@ -175,10 +202,41 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
         _commands = new List<string>(_map.CommandNames).AsReadOnly();
     }
 
+    /// <summary>Composed once by the constructor as <c>"modbus:{host}:{port}:{machineCode}"</c> — endpoint
+    /// plus the ONE machine code this driver speaks for — and fixed thereafter, as
+    /// <see cref="IDeviceDriver.Id"/> requires. The machine code is what makes it distinguish two TCP drivers
+    /// pointed at one gateway address, which the endpoint alone would not.</summary>
     public string Id { get; }
 
+    /// <summary>Always <c>DriverKinds.Modbus</c>. 🔴 <b>The RTU driver reports the SAME id</b> — one id for
+    /// the protocol, not one per transport — so this value distinguishes Modbus from OPC-UA or MQTT and says
+    /// nothing about whether the device is on a socket or on a serial line. The one production reader is
+    /// <c>FleetCore.GetDriverHealth()</c>, which copies it into <c>DriverHealthSnapshot.Kind</c>, from where
+    /// <c>St4i.EngineApi.Alarms.AlarmEvaluator</c> interpolates it twice into the TEXT of a degraded/down
+    /// alarm — so the sentence an operator reads says "check the Modbus connection" for a serial multidrop
+    /// and for a TCP endpoint alike. The alarm's key and target are the slot label, not this.</summary>
     public string Kind => DriverKinds.Modbus;
 
+    /// <summary>The connection state of the polled link, and the value the driver-health alarm rule is
+    /// evaluated on. <see cref="DriverHealthState.Down"/> from construction until a poll succeeds;
+    /// <see cref="DriverHealthState.Connected"/> only after a whole poll iteration — connect plus every
+    /// declared register — has completed;
+    /// <see cref="DriverHealthState.Degraded"/> on any connect or read failure, which also force-closes the
+    /// socket so the next iteration redials; <see cref="DriverHealthState.Down"/> again once
+    /// <see cref="DisposeAsync"/> has run.
+    ///
+    /// <para><b>Connected here is a statement about the LAST completed poll, not about this instant.</b>
+    /// Apart from the constructor and <see cref="DisposeAsync"/>, this only moves when a poll iteration
+    /// finishes, so between two polls it repeats the previous outcome; the cadence in the register map is
+    /// therefore also the resolution of this signal. A device that accepts the
+    /// TCP handshake and then goes silent used to freeze it at Connected indefinitely — that is what the
+    /// bounded transport read/write timeouts set on every connection exist to prevent, and it is why an
+    /// unbounded timeout here is a health-reporting defect and not only a latency one.</para>
+    ///
+    /// <para>Written from the poll loop and read from another thread with no lock, so a reader observes a
+    /// value that was true at some recent moment rather than a synchronised one.
+    /// <c>FleetCore.GetDriverHealth()</c>, the production reader, takes the fleet lock for its own
+    /// consistency and does not make this getter atomic.</para></summary>
     public DriverHealthState Health { get; private set; }
 
     /// <inheritdoc/>
@@ -795,6 +853,29 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
         _tcpClient = null;
     }
 
+    /// <summary>Latches the disposed flag, sets <see cref="Health"/> to
+    /// <see cref="DriverHealthState.Down"/> and force-closes the current socket and master through the same
+    /// best-effort teardown a failed poll uses. Idempotent through the flag it sets first, and synchronous —
+    /// it returns an already-completed task and awaits nothing, which is what makes it safe for the bounded
+    /// disposal budget the fleet host gives it.
+    ///
+    /// <para>🔴 <b>It does NOT wait for an in-flight poll, write or command, and does not take
+    /// <see cref="_ioLock"/>.</b> That is the deliberate design, and it is the reason the lock is never
+    /// disposed here — the remarks <see cref="_ioLock"/>'s own comment refers to, written down at last.
+    /// Disposing a <see cref="SemaphoreSlim"/> out from under a parked
+    /// <see cref="SemaphoreSlim.WaitAsync(CancellationToken)"/> strands that waiter permanently instead of
+    /// cancelling it — the mechanism measured in full on
+    /// <c>HotFolderAoiDriver.DisposeAsync</c> — so disposing it would trade a bounded teardown for an
+    /// unbounded one. The socket and master this class does own are torn down above; the lock is the ONLY
+    /// other disposable it holds, and a <see cref="SemaphoreSlim"/> that is only ever waited on and released
+    /// has no handle to free.</para>
+    ///
+    /// <para><b>What that leaves for a caller to expect.</b> An operation already talking to the device sees
+    /// its socket disposed underneath it and fails; the poll loop's own guard ends the enumeration at its
+    /// next pass rather than rebuilding a connection on a disposed driver. Disposing while a write is
+    /// unconfirmed does not make its outcome known — that stays the operator's call, per this class's own
+    /// indeterminate-write model.</para></summary>
+    /// <returns>An already-completed <see cref="ValueTask"/>.</returns>
     public ValueTask DisposeAsync()
     {
         if (_disposed) return ValueTask.CompletedTask;
