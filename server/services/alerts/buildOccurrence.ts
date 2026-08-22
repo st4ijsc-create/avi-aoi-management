@@ -10,14 +10,25 @@
  */
 export interface OccurrenceInput {
   severity: string;
-  confidence: number | string | null | undefined;
+  /**
+   * D4 — GIỮ trong hợp đồng đầu vào, KHÔNG còn ghi xuống CSDL (mig 0335).
+   *
+   * Người gọi (`routeAlert`) vẫn truyền độ tin cậy của lần này; bỏ tham số đi sẽ buộc
+   * sửa cả chỗ gọi cho một thứ không liên quan tới lý do sửa. Nhưng cột
+   * `predictive_alert_occurrences.confidenceScore` đã bị bỏ vì **không nơi nào đọc** —
+   * xem lý do đầy đủ trong mig 0335.
+   *
+   * ⚠ Nếu sau này cần "xu hướng độ tin cậy qua các lần tái diễn": thêm lại cột VÀ chỗ
+   *   đọc TRONG CÙNG một lượt. Thêm cột trước rồi tính đọc sau là đúng cách nó đã thành
+   *   cột chết lần đầu.
+   */
+  confidence?: number | string | null;
 }
 
 export interface OccurrenceRow {
   alertId: number;
   occurredAt: Date;
   severity: string;
-  confidenceScore: string | null;
 }
 
 export function buildOccurrence(
@@ -26,12 +37,9 @@ export function buildOccurrence(
   now: Date,
 ): OccurrenceRow | null {
   if (alertId == null) return null;
-  const raw = incoming.confidence;
-  const n = raw == null ? NaN : typeof raw === "number" ? raw : Number(raw);
   return {
     alertId,
     occurredAt: now,
     severity: incoming.severity,
-    confidenceScore: Number.isFinite(n) ? n.toFixed(2) : null,
   };
 }

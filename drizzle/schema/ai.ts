@@ -166,7 +166,8 @@ export const predictiveAlertOccurrences = pgTable("predictive_alert_occurrences"
   alertId: integer("alertId").notNull().references(() => predictiveAlerts.id, { onDelete: "cascade" }),
   occurredAt: timestamp("occurredAt", { withTimezone: true }).notNull().defaultNow(),
   severity: varchar("severity", { length: 20 }),
-  confidenceScore: decimal("confidenceScore", { precision: 5, scale: 2 }),
+  // D4 (mig 0335) — `confidenceScore` ĐÃ BỎ: được ghi mỗi lần tái diễn mà không nơi nào
+  // đọc. Thêm lại thì phải thêm CẢ chỗ đọc trong cùng một lượt.
 }, (table) => [
   index("idx_alert_occurrences_time").on(table.occurredAt),
   index("idx_alert_occurrences_alert").on(table.alertId),
