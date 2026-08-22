@@ -4255,8 +4255,59 @@ note "exclusive-run lock held: pid ${GATE_SELF_WINPID} (lock $GATE_LOCK_DIR)"
 # and uses Host/Port -- so the words "at all" are retracted in place, the quoted sentence is preserved, and
 # the "never" the filter sees belongs to the sentence being withdrawn. 19 + 2 = 21, and the 19 are AX-1's,
 # unchanged and re-listed identically by the tool.
+#
+# ══ TASK AZ-1 (item 12 stage 10) MOVES THE NUMBER 21 -> 59 AND LEAVES THE BASELINE WHERE IT IS ═══════════
+#
+# 🔴 THE BASELINE IS NOT TOUCHED. cfcfae42 stays, for the reason AX-1 paid for and AY-1 restated: moving it
+# forward buys nothing unless it is moved to this branch's own tip, and that would make the field mean
+# "measured against myself". 21 + 38 = 59, and the 21 are AX-1's and AY-1's, re-listed identically.
+#
+# 🔴 THIS IS THE BIG JUMP THE BRIEF SAID NOT TO EXPECT, AND THE BRIEF WAS RIGHT ABOUT THE MECHANISM AND
+# WRONG ABOUT THIS STAGE. AY-1 wrote ~90 doc sentences and moved this by 2; that reading was correct and it
+# is what this stage was told to plan against. Measured here: 21 doc-comment members, fewer sentences than
+# AY-1 wrote, and the number moves 38. The variable is not sentence COUNT, it is what the sentences are
+# ABOUT. AY-1's cluster was declared configuration — "this field defaults to 1000" — and prose like that
+# carries few absolute words. This cluster is arbitration machinery, so its honest sentences are precisely
+# the ones the five words select: what NOTHING re-checks, what EVERY device on the line pays, the ONLY
+# discriminator between two failures, the fact that NO code branches on a constant. The filter is doing what
+# it was built to do; the prediction rule "sentences written" was the wrong denominator.
+#
+# 🔴 AND PART OF THE 38 IS THE TOOL'S OWN BOUNDARY (e), WHICH IS WHY THE NUMBER IS AN OVER-COUNT OF WHAT WAS
+# WRITTEN. Identity under --since is the pair (path, sentence) and the splitter is TEXTUAL, so inserting a
+# <param> into an EXISTING doc block re-cuts the sentences either side of it and they re-enter as new. At
+# least two of the 38 contain no word this stage wrote — ModbusBus's "Probed: NModbus's RTU transport
+# defaults to Retries = 3 …" (D-2's) and ModbusRtuDriver's "So the release lives where ownership does …"
+# (D-7a's), both verified present verbatim at 3f564039 — and several more are a new sentence welded to a
+# pre-existing one. A number that counts those is still the RIGHT number to gate on, because the reviewer
+# has to read them either way; it is the wrong number to reason about productivity with.
+#
+# 🔴 WHAT MOVED THE NUMBER IS THE REVIEW, RUN THE WAY THE SCRIPT'S FAIL MESSAGE DEMANDS, IN TWO ROUNDS WITH
+# THE RATES REPORTED SEPARATELY. Measured against this branch's base (3f564039) so AX-1's and AY-1's 21 are
+# not re-audited as if they were new:
+#   ROUND 1 — the filter flagged 34. Read one at a time against the code; NINE DID NOT SURVIVE and were
+#   corrected AT THE SOURCE. The three worth naming here because each was a measurement, not a wording
+#   preference: "No code in this repository reads it" on GatewayTcpBusLink.InfiniteTimeout was FALSE (three
+#   test decorator links answer `inner.InfiniteTimeout`; what is true is that nothing BRANCHES on it);
+#   "the two log lines" on ExecuteRegisterWriteAsync was FALSE by count (there are FOUR); and
+#   ModbusBusLease.DisposeAsync said a caller "is allowed to depend on" synchronous completion in the
+#   sentence before one saying the caller guards it instead — a block that contradicted itself.
+#   ROUND 2 — a manual pass aimed at what the filter structurally cannot see: an asserted PURPOSE or
+#   MECHANISM. It caught ELEVEN more. Two of them sat inside sentences round 1 had also flagged, for a
+#   different reason, and round 1 had passed them: a list of three log-channel uses presented as complete
+#   when there are thirteen call sites, and "the only thing standing between the two" asserting an absence
+#   of enforcement nobody had opened the set for. The other nine were invisible to round 1 entirely, and
+#   three were FABRICATED CAUSATION — "because both links have to agree with the one transport" (nothing
+#   requires that), "It is public because Acquire is what calls it" (Acquire is in the same assembly, so
+#   that reason is not a reason), and "which is why the constructor builds it eagerly" (the file records
+#   what Id keys, not why it is eager). One was a NUMBER: a retraction paragraph said the
+#   GenerateDocumentationFile flag is on "seven" projects; SuppressionCensusTests pins EIGHT on / seven off.
+#   ROUND 2 CAUGHT MORE THAN ROUND 1 AGAIN, the fourth stage running. The rates are 9/34 and 11, and they
+#   are NOT summed into one flattering ratio.
+# Re-running the filter after each correction (the habit the script mechanises) is what took the flagged set
+# from 34 to 37 to 38: two corrections REINTRODUCED absolute words and one split a sentence in two. All 38
+# were read; all 38 are true.
 DOC_ABSOLUTES_BASELINE="cfcfae42"
-EXPECT_NEW_DOC_ABSOLUTES=21
+EXPECT_NEW_DOC_ABSOLUTES=59
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
@@ -6057,7 +6108,44 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # identical name-for-name and order-for-order, which matters because enum order IS the underlying value
 # and these three are also JSON tokens; RE-MEASURED after the change on the built assembly rather than
 # eyeballed: Holding=0, Input=1, UInt16=0, Int16=1, None=0. ZERO `///` lines were removed.
-EXPECT_WARNINGS=303
+# ══ TASK AZ-1 (.superpowers/sdd/item25-stage10/task-1-brief.md) — ITEM 12 STAGE 10, THE SECOND STAGE OF
+#    THE OWNER'S 2026-08-22 RULING: DOCUMENT ALL 97 DRIVER-FAMILY MEMBERS, CHANGE NO ACCESS LEVEL ═════════
+# 303 -> 282. Stage 9 paid 25 of the 109 and left 84 gaps on 72 members. This stage pays ONE COHERENT
+# CLUSTER of 21 and says which, and it is the first stage of the ruling to move BOTH coverage rows.
+#
+# THE CLUSTER: THE SHARED RS-485 LINE — ARBITRATION, LEASING, AND THE PER-DEVICE HOLDER. Five files taken
+# WHOLE, per-file residue 0: Drivers/Modbus/ModbusRtuDriver.cs (9), Drivers/Modbus/GatewayTcpBusLink.cs (4),
+# Drivers/Modbus/ModbusBus.cs (4), Drivers/Modbus/ModbusRtuConnectorFactory.cs (3),
+# Drivers/Modbus/ModbusBusRegistry.cs (1). Every member in it answers ONE question — WHO HOLDS THE ONE
+# PHYSICAL SERIAL LINE RIGHT NOW, AND WHAT DOES ONE HOLDER'S FAILURE COST THE OTHERS. ModbusTcpDriver and
+# the TCP factories are deliberately OUT: a TCP endpoint is one device with its own private _ioLock, so
+# nothing about it is answered by that question. Candidates were weighed and written down BEFORE any number
+# was quoted (whole Drivers/Simulators/, whole Drivers/Modbus/, the whole remaining Drivers/OpcUa/, the two
+# non-fieldbus drivers, and the 19 CS1573 alone — that last one refused because it is not file-complete and
+# per-file residue 0 is a standing rule).
+#
+# 🔴 282 IS MEASURED, NOT SUBTRACTED. `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo` over the
+# whole solution, SDK 10.0.302: 15/15 compilations, `Build succeeded.`, `0 Error(s)`, `282 Warning(s)`, on a
+# run with no *_wpftmp errors and no foreign-object-race code present. 303 - 21 = 282 is arithmetic that
+# AGREES; it was reported after the measurement, not in place of it. EXPECT_BUILD_NODES stays 0. No
+# suppression of any kind was added — no #pragma, no NoWarn, no analyzer-config entry, and no <see cref>
+# deleted to dodge a CS1574.
+#
+# 🔴 AND THE FIRST -t:Rebuild OF THIS STAGE DID NOT STAND, which breaks a three-stage streak and is reported
+# rather than quietly re-run. At BASE it returned 304, not 303: one MSB3101 ("could not write state file …
+# because it is being used by another process") on St4i.Connector.Conformance.Tests, i.e. exactly one of the
+# FOREIGN_OBJ_RACE_CODES this file already names. `dotnet build-server shutdown` and a re-run returned 303.
+# The pinned number was right and the first reading was not; a stage that had trusted it would have opened
+# with a phantom +1.
+#
+# THE FIVE SUITE TOTALS AND THE GRAND TOTAL 2824 DO NOT MOVE, and that is the check rather than a note: this
+# stage adds no test and edits no test file, so a total that moved would mean it had edited code while
+# claiming to edit prose. ZERO `///` LINES WERE REMOVED and zero non-`///` lines were removed from any C#
+# file: measured on the diff against the base commit, which deletes THREE lines in total — two in
+# docs/owner-decisions.md (the Part I prose enumeration and the machine-readable field, both of which had to
+# name items 38 and 39) and one `///` line whose PROSE is preserved byte-for-byte and whose trailing
+# `</summary>` moved to the end of an appended retraction paragraph.
+EXPECT_WARNINGS=282
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
@@ -6618,8 +6706,37 @@ warning_ledger() {
 # raises a BARE NullReferenceException -- the exact shape ModbusRegisterMap.FromJson's own comment records
 # as fixed for `commands` while calling itself "the one parse failure in this method that didn't name what
 # was wrong". That clause is RETRACTED IN PLACE, verbatim-preserved, in that file.
-EXPECT_WARNING_LEDGER="OURS CS1573 19
-OURS CS1591 65
+#
+# ── TASK AZ-1 (item 12 stage 10) MOVES BOTH COVERAGE ROWS, AND THAT IS THE FIRST TIME UNDER THE RULING ──
+# `OURS CS1591 65 -> 55` (-10) and `OURS CS1573 19 -> 8` (-11). Stage 9 moved only the CS1591 row and
+# asserted, correctly, that it had created no new CS1573. This stage moves both because its cluster is where
+# the remaining CS1573 population mostly lives: 11 of the 19 fall on five members inside these five files,
+# and a CS1573 is an ALREADY-PUBLISHED doc block with an incomplete <param> set — the half-done shape batch 6
+# named as the only losing move. The eight that remain are on SimulatorBase's constructor (4) and
+# SimulatorFactory.Create (4). Still SIXTEEN rows. 🔴 EIGHT VENDORED ROWS UNMOVED, UNIT FOR UNIT.
+#
+# 🔴 TWO MEASUREMENTS ABOUT ITEM 25's OWN READ-SURFACE TABLE, taken on this cluster and recorded so the next
+# stage can disagree with them on the record:
+#   (a) THE TABLE ASSIGNS ALL 97 MEMBERS A CELL IN "what would `internal` do", AND TWO OF THE 97 ARE ALREADY
+#       `private`. ModbusRtuDriver.ExecuteRegisterWriteAsync and .ExecuteCoilPulseAsync carry 5 of the 19
+#       CS1573 between them, and for a private member `internal` WIDENS rather than narrows — so the
+#       question the owner was asked to rule on does not exist for them in the most literal way available,
+#       and no row of that table says so. A third, SimulatorBase's constructor (4 more CS1573), is
+#       `protected`. The reason the table could miss them is mechanical and worth naming: CS1591 fires only
+#       for publicly visible members, so every member reached through THAT code is public or protected,
+#       while CS1573 fires on any documented member with an incomplete <param> set, private ones included.
+#       The headline "at least 55 of 97 will be public whatever you rule" is UNAFFECTED — a private member
+#       was never in the 55 — but the DENOMINATOR of an access-level ruling is at most 95, not 97.
+#   (b) The 84/13/0 classification, re-checked on this stage's 15 members against the same five tests:
+#       14 / 1 / 0. The single Class 2 is GatewayTcpBusLink.InfiniteTimeout, which states a value (-1) and
+#       nothing else — the same shape stage 9 placed ModbusOptions.DefaultHost/.DefaultPort in, and it is
+#       recorded as Class 2 rather than argued up to Class 1 on the strength of the design finding written
+#       beside it. Every other member carries a failure mode or a precondition, which is what an arbitration
+#       surface is made of. The 0 for "nothing to say" REPRODUCES for the fourth stage running, and this
+#       time on a cluster picked for a MECHANISM rather than for a ruling or for recoverability of meaning.
+#       No case had to be named-instead-of-filled.
+EXPECT_WARNING_LEDGER="OURS CS1573 8
+OURS CS1591 55
 OURS CS8601 7
 OURS CS8604 14
 OURS CS8767 2

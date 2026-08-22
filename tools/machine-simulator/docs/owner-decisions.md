@@ -40,7 +40,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 9 | sàn môi trường trên nhánh *không đọc được* | 🔨 **(b) ÁP SÀN `ST4I_*` VÀ LƯU NÓ** (2026-08-19, chủ sở hữu, **sau khi được cảnh báo rằng nó đi ngược mục 1/5/8/10/11**) — ghi đè **tại chỗ**, **không** di chuyển và **không** xoá byte cũ; miễn trừ di-chuyển của mục 10 **không** áp ở đây. (c) *áp-mà-không-lưu* **KHÔNG** được chọn, nên hợp đồng `FleetCore.UpdateSettings` **không đổi**. Cách đọc hoà giải, ghi kèm ngày ở thân mục: ở năm mục kia thứ bị đè là **dữ liệu vận hành viên** và thứ ghi xuống là giá trị tiến trình **tự nghĩ ra**; ở đây thứ ghi xuống là **cấu hình bản triển khai đã KHAI qua `ST4I_*`** — **khôi phục một giá trị đã khai**, không **bịa** một giá trị. Giá đã chấp nhận: một file hỏng vì gõ nhầm **không còn là bản ghi cuối cùng**. **Đã thi hành, AJ-1 (2026-08-19)** — guard bị xoá, **HAI** chuỗi đã xuất bản sửa, nhân chứng `AMalformedSettingsFile_…` **đảo chiều và đổi tên**; 🔴 phép kiểm đếm NGUỒN `TheStartupReplayHasExactlyOneArm_…` **VẪN XANH và đó là im lặng, không phải chấp thuận** |
 | 10 | `CredentialStore` biến lỗi môi trường phục hồi được thành mất mát | 🔨 **GIỮ BLOB CŨ DƯỚI TÊN KHÁC** (2026-08-18) — DI CHUYỂN dữ liệu, **miễn trừ CHỈ cho mục này**; đã thi hành, Z-1 |
 | 11 | khôi phục `oee-settings.json` lúc đang chạy bị ghi đè | 🔨 **CHẶN CÚ GHI** khi bảng dựng từ `Absent` mà đĩa nay `Loaded` (2026-08-18); đã thi hành, Z-1 |
-| 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 4 ĐÃ TRẢ 2026-08-19 (AG-1, đợt 4/8): 101 khẳng định ĐÃ SAI được TRỎ LẠI (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, 0 dòng mã đụng tới), `EXPECT_WARNINGS` 852 → 751 ĐO, sổ 19 → 16 hàng, 185 vendored / 566 ours, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **532 chỗ trống của ta chưa trả** (+ 103 vendored không ai trả được). Đợt 5–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 5 ĐÃ TRẢ 2026-08-19 (AH-1, đợt 5/8): 120 chỗ THIẾU được VIẾT — một cụm mạch lạc, mô hình dữ liệu config-sync (7 file `Config/`, cả 120 là CS1591), `EXPECT_WARNINGS` 751 → 631 ĐO, sổ vẫn 16 hàng, 185 vendored / 446 ours, `OURS CS1591 448 → 328`, `OURS CS1573 84` KHÔNG dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **412 chỗ trống của ta chưa trả**. Đợt 6–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 6 ĐÃ TRẢ 2026-08-20 (AL-1, đợt 6/8): 129 chỗ THIẾU được VIẾT — một cụm mạch lạc, historian cạnh máy (8 file `Historian/` + `Models/` + `Metrics/`; 85 CS1591 + 44 CS1573), `EXPECT_WARNINGS` 631 → 502 ĐO, sổ vẫn 16 hàng, 185 vendored / 317 ours, `OURS CS1591 328 → 243` VÀ `OURS CS1573 84 → 40` — đợt ĐẦU TIÊN hàng CS1573 dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **283 chỗ trống của ta chưa trả**. Đợt 7–8 trả, mỗi đợt đo lại. 🔴 **Và đợt 6 BÁC ba khẳng định đã công bố trong chính cụm ấy — rút tại chỗ, KHÔNG sửa mã: `OeeCalculator` *"mọi tỉ số kẹp `[0,1]`"* (Quality không kẹp), `HistorianWriter.Enqueue` *"kênh đầy ⇒ có cảnh báo"* (cú rơi vì bão hoà là IM LẶNG), `ApplyRealPresenceGateAsync` *"mọi query hướng khách hàng đều áp"* (`QueryTelemetryAsync` không áp và không thể áp). Xem §11** 🔴 **ĐỢT 7 ĐÃ TRẢ 2026-08-20 (AM-1, đợt 7/8): 62 chỗ THIẾU được VIẾT — một cụm mạch lạc, chiếc phong bì chuẩn hoá và trọn hành trình của nó (12 file: `Transport/` + `Mapping/` + `Models/`, ba thư mục lấy TRỌN, dư lượng mỗi thư mục = 0; 51 CS1591 + 11 CS1573), `EXPECT_WARNINGS` 502 → 440 ĐO, sổ vẫn 16 hàng, 185 vendored / 255 ours, `OURS CS1591 243 → 192` VÀ `OURS CS1573 40 → 29` — cả hai đều GIẢM và KHÔNG một CS1573 mới nào được tạo ra, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **221 chỗ trống của ta chưa trả**, và **đợt 8 là đợt bao phủ CUỐI CÙNG**. 🔴 **Và đợt 7 BÁC một khẳng định đã công bố trong chính cụm ấy — rút tại chỗ, KHÔNG sửa mã: `ITransport` tự nhận là *"seam DUY NHẤT"* mà một reading đi qua để rời khỏi hộp; đo được rằng `EdgePipeline` trao CÙNG chiếc phong bì cho `IUnsPublisher.PublishReading` ở câu lệnh ngay trước, và `Site.UnsBridge` phát nó ra ngoài hộp — có HAI đường ra, không một. Xem §12** 🔴 **ĐỢT 8 ĐÃ TRẢ 2026-08-20 (AN-1, đợt 8/8 — ĐỢT BAO PHỦ CUỐI CÙNG): 112 chỗ THIẾU được VIẾT — phần BÙ của họ driver (20 file, 7 thư mục lấy TRỌN, dư lượng mỗi thư mục = 0: `Config/` 50 · `Uns/` 19 · `Site/` 12 · `Engine/` 11 · `Fleet/` 8 · `Infrastructure/` 6 · `Uns/Sparkplug/` 6; 102 CS1591 + 10 CS1573), `EXPECT_WARNINGS` 440 → 328 ĐO, sổ vẫn 16 hàng, 185 vendored / 143 ours, `OURS CS1591 192 → 90` VÀ `OURS CS1573 29 → 19` — cả hai GIẢM, không một CS1573 mới nào được tạo, tám hàng VENDORED không dịch một đơn vị. Con số 112 là DỰ BÁO của đợt 7 và nay là PHÉP ĐO — nó KHÔNG lệch.** 🔴 **MỤC 12 Ở LẠI PHẦN II, VÀ NÓ SẼ RỜI PHẦN II BẰNG MỘT PHÁN QUYẾT, KHÔNG BẰNG MỘT CON SỐ VỀ 0.** **109 chỗ trống còn lại đều là `Drivers/`** và chúng **KHÔNG thuộc một đợt 9**: bốn đợt bao phủ đã tiêu hết. Chúng rơi lên **97 thành viên**, và **phép đo BÁC tiền đề của đợt 6**: theo năm phép thử, **84 thành viên có một cách hỏng/điều kiện tiên quyết, 13 chỉ có đơn vị/mặc định, và KHÔNG CÁI NÀO không-có-gì-để-nói** (trong bốn ví dụ đợt 6 nêu, `OpcUaConnectorFactory.Create` **đã có** tài liệu và chưa bao giờ được nợ; *"mười một constructor simulator"* là **số FILE đọc thành số CONSTRUCTOR** — có **tám** lớp simulator). **Câu chủ sở hữu phán — *"chúng có nên là `public` không"* — KHÔNG TỒN TẠI với 46/97** (41 cài đặt interface/abstract công khai ⇒ lỗi biên dịch; 5 thành viên enum ⇒ C# cấm), **sai trong IM LẶNG với 9** (`ModbusRegisterMap`/`OpcUaNodeMap` do `System.Text.Json` đọc — hạ xuống `internal` vẫn biên dịch rồi nạp về mặc định, gồm cả `UnitId` và `Password`), **miễn phí với 17**, và **tốn một `InternalsVisibleTo` mới với 25** — mà `AssemblyInfo.cs` của chính `St4i.EdgeCore` lập luận chống lại cả hai loại IVT ấy. **KHÔNG một mức truy cập nào đổi. Xem §13** 🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-22: VIẾT TÀI LIỆU CHO CẢ 97, KHÔNG ĐỔI MỘT MỨC TRUY CẬP NÀO** — nên 109 kia trở lại là một món nợ **VIỆC**, và mục **Ở LẠI PHẦN II**. 🔴 **ĐỢT 9 ĐÃ TRẢ 2026-08-22 (AY-1, đợt đầu thi hành phán quyết ấy, base `fb7635cf`): 25 chỗ THIẾU được VIẾT — một cụm mạch lạc, bề mặt cấu hình mà một bản triển khai KHAI cho hai driver fieldbus thật (4 file lấy TRỌN, dư lượng mỗi file = 0: `ModbusOptions.cs` 8 · `ModbusRegisterMap.cs` 8 · `OpcUaNodeMap.cs` 6 · `OpcUaOptions.cs` 3; 25 CS1591 + 0 CS1573), `EXPECT_WARNINGS` 328 → 303 ĐO, sổ vẫn 16 hàng, 185 vendored / 118 ours, `OURS CS1591 90 → 65` và `OURS CS1573 19` KHÔNG dịch — tức KHÔNG một CS1573 mới nào được tạo, tám hàng VENDORED không dịch một đơn vị, 0 dòng `///` bị xoá.** Cụm ấy **đúng bằng A2 + B của mục 25**, và phép kiểm lại **BÁC một nửa hàng B**: bốn trong chín là `required`, nên thu hẹp chúng là **lỗi biên dịch CS9032** chứ không phải nạp mặc định im lặng — số thành viên sai-trong-im-lặng là **5**, không phải 9; câu *"ít nhất 55 sẽ public"* **không đổi**, thành phần của nó thì đổi. **Phân loại 84/13/0 kiểm lại trên cụm này: 23/2/0 — con số 0 TÁI LẬP.** 🔴 **Và đợt 9 BÁC ba khẳng định đã công bố, rút TẠI NGUỒN, KHÔNG sửa mã:** `ModbusRegisterMap.FromJson`'s *"the one parse failure … that didn't name what was wrong"* (đo được ít nhất HAI), phép kiểm kê người đọc của `ModbusOptions` nói `St4i.EdgeService.EdgeConnectors` *"has never read these variables at all"* (host ấy GỌI `FromEnvironment` và dùng `Host`/`Port`), và trần census **5780/15965** (không tái lập; đã lệch từ TRƯỚC đợt này). 🔴 **HAI khuyết tật MÃ thấy lúc viết — DỪNG và BÁO, không sửa:** `PollIntervalMs` không kiểm miền trên cả hai map (0 ⇒ vòng poll không tiết chế, −1 ⇒ chờ vô hạn, ≤ −2 ⇒ `ArgumentOutOfRangeException` thoát ra), và `"registers"/"nodes": null` ⇒ `NullReferenceException` trần. Mục **VẪN Ở LẠI PHẦN II**: **84 chỗ trống trên 72 thành viên chưa trả**. Xem §14 |
+| 12 | `GenerateDocumentationFile` cho `St4i.EdgeCore` | 🔨 **BẬT CỜ, KHÔNG MIỄN TRỪ** (2026-08-18) — **không phải (a), (b1), (b2) hay (c)**; **việc còn nợ**, nhiều vòng. 🔴 **CỜ ĐÃ BẬT 2026-08-19 (AF-1, đợt 3/8): `EXPECT_WARNINGS` 116 → 852 ĐO, 185 vendored / 667 ours, 103 cái vendored HIỆN RA và ĐƯỢC GHIM, không một lệnh đè.** Mục **Ở LẠI PHẦN II**: **633 của ta chưa trả**, và một cờ bật trên món nợ còn mở là thi hành **một phần**. Đợt 4–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 4 ĐÃ TRẢ 2026-08-19 (AG-1, đợt 4/8): 101 khẳng định ĐÃ SAI được TRỎ LẠI (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, 0 dòng mã đụng tới), `EXPECT_WARNINGS` 852 → 751 ĐO, sổ 19 → 16 hàng, 185 vendored / 566 ours, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **532 chỗ trống của ta chưa trả** (+ 103 vendored không ai trả được). Đợt 5–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 5 ĐÃ TRẢ 2026-08-19 (AH-1, đợt 5/8): 120 chỗ THIẾU được VIẾT — một cụm mạch lạc, mô hình dữ liệu config-sync (7 file `Config/`, cả 120 là CS1591), `EXPECT_WARNINGS` 751 → 631 ĐO, sổ vẫn 16 hàng, 185 vendored / 446 ours, `OURS CS1591 448 → 328`, `OURS CS1573 84` KHÔNG dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **412 chỗ trống của ta chưa trả**. Đợt 6–8 trả, mỗi đợt đo lại. 🔴 **ĐỢT 6 ĐÃ TRẢ 2026-08-20 (AL-1, đợt 6/8): 129 chỗ THIẾU được VIẾT — một cụm mạch lạc, historian cạnh máy (8 file `Historian/` + `Models/` + `Metrics/`; 85 CS1591 + 44 CS1573), `EXPECT_WARNINGS` 631 → 502 ĐO, sổ vẫn 16 hàng, 185 vendored / 317 ours, `OURS CS1591 328 → 243` VÀ `OURS CS1573 84 → 40` — đợt ĐẦU TIÊN hàng CS1573 dịch, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **283 chỗ trống của ta chưa trả**. Đợt 7–8 trả, mỗi đợt đo lại. 🔴 **Và đợt 6 BÁC ba khẳng định đã công bố trong chính cụm ấy — rút tại chỗ, KHÔNG sửa mã: `OeeCalculator` *"mọi tỉ số kẹp `[0,1]`"* (Quality không kẹp), `HistorianWriter.Enqueue` *"kênh đầy ⇒ có cảnh báo"* (cú rơi vì bão hoà là IM LẶNG), `ApplyRealPresenceGateAsync` *"mọi query hướng khách hàng đều áp"* (`QueryTelemetryAsync` không áp và không thể áp). Xem §11** 🔴 **ĐỢT 7 ĐÃ TRẢ 2026-08-20 (AM-1, đợt 7/8): 62 chỗ THIẾU được VIẾT — một cụm mạch lạc, chiếc phong bì chuẩn hoá và trọn hành trình của nó (12 file: `Transport/` + `Mapping/` + `Models/`, ba thư mục lấy TRỌN, dư lượng mỗi thư mục = 0; 51 CS1591 + 11 CS1573), `EXPECT_WARNINGS` 502 → 440 ĐO, sổ vẫn 16 hàng, 185 vendored / 255 ours, `OURS CS1591 243 → 192` VÀ `OURS CS1573 40 → 29` — cả hai đều GIẢM và KHÔNG một CS1573 mới nào được tạo ra, tám hàng VENDORED không dịch một đơn vị.** Mục **VẪN Ở LẠI PHẦN II**: **221 chỗ trống của ta chưa trả**, và **đợt 8 là đợt bao phủ CUỐI CÙNG**. 🔴 **Và đợt 7 BÁC một khẳng định đã công bố trong chính cụm ấy — rút tại chỗ, KHÔNG sửa mã: `ITransport` tự nhận là *"seam DUY NHẤT"* mà một reading đi qua để rời khỏi hộp; đo được rằng `EdgePipeline` trao CÙNG chiếc phong bì cho `IUnsPublisher.PublishReading` ở câu lệnh ngay trước, và `Site.UnsBridge` phát nó ra ngoài hộp — có HAI đường ra, không một. Xem §12** 🔴 **ĐỢT 8 ĐÃ TRẢ 2026-08-20 (AN-1, đợt 8/8 — ĐỢT BAO PHỦ CUỐI CÙNG): 112 chỗ THIẾU được VIẾT — phần BÙ của họ driver (20 file, 7 thư mục lấy TRỌN, dư lượng mỗi thư mục = 0: `Config/` 50 · `Uns/` 19 · `Site/` 12 · `Engine/` 11 · `Fleet/` 8 · `Infrastructure/` 6 · `Uns/Sparkplug/` 6; 102 CS1591 + 10 CS1573), `EXPECT_WARNINGS` 440 → 328 ĐO, sổ vẫn 16 hàng, 185 vendored / 143 ours, `OURS CS1591 192 → 90` VÀ `OURS CS1573 29 → 19` — cả hai GIẢM, không một CS1573 mới nào được tạo, tám hàng VENDORED không dịch một đơn vị. Con số 112 là DỰ BÁO của đợt 7 và nay là PHÉP ĐO — nó KHÔNG lệch.** 🔴 **MỤC 12 Ở LẠI PHẦN II, VÀ NÓ SẼ RỜI PHẦN II BẰNG MỘT PHÁN QUYẾT, KHÔNG BẰNG MỘT CON SỐ VỀ 0.** **109 chỗ trống còn lại đều là `Drivers/`** và chúng **KHÔNG thuộc một đợt 9**: bốn đợt bao phủ đã tiêu hết. Chúng rơi lên **97 thành viên**, và **phép đo BÁC tiền đề của đợt 6**: theo năm phép thử, **84 thành viên có một cách hỏng/điều kiện tiên quyết, 13 chỉ có đơn vị/mặc định, và KHÔNG CÁI NÀO không-có-gì-để-nói** (trong bốn ví dụ đợt 6 nêu, `OpcUaConnectorFactory.Create` **đã có** tài liệu và chưa bao giờ được nợ; *"mười một constructor simulator"* là **số FILE đọc thành số CONSTRUCTOR** — có **tám** lớp simulator). **Câu chủ sở hữu phán — *"chúng có nên là `public` không"* — KHÔNG TỒN TẠI với 46/97** (41 cài đặt interface/abstract công khai ⇒ lỗi biên dịch; 5 thành viên enum ⇒ C# cấm), **sai trong IM LẶNG với 9** (`ModbusRegisterMap`/`OpcUaNodeMap` do `System.Text.Json` đọc — hạ xuống `internal` vẫn biên dịch rồi nạp về mặc định, gồm cả `UnitId` và `Password`), **miễn phí với 17**, và **tốn một `InternalsVisibleTo` mới với 25** — mà `AssemblyInfo.cs` của chính `St4i.EdgeCore` lập luận chống lại cả hai loại IVT ấy. **KHÔNG một mức truy cập nào đổi. Xem §13** 🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-22: VIẾT TÀI LIỆU CHO CẢ 97, KHÔNG ĐỔI MỘT MỨC TRUY CẬP NÀO** — nên 109 kia trở lại là một món nợ **VIỆC**, và mục **Ở LẠI PHẦN II**. 🔴 **ĐỢT 9 ĐÃ TRẢ 2026-08-22 (AY-1, đợt đầu thi hành phán quyết ấy, base `fb7635cf`): 25 chỗ THIẾU được VIẾT — một cụm mạch lạc, bề mặt cấu hình mà một bản triển khai KHAI cho hai driver fieldbus thật (4 file lấy TRỌN, dư lượng mỗi file = 0: `ModbusOptions.cs` 8 · `ModbusRegisterMap.cs` 8 · `OpcUaNodeMap.cs` 6 · `OpcUaOptions.cs` 3; 25 CS1591 + 0 CS1573), `EXPECT_WARNINGS` 328 → 303 ĐO, sổ vẫn 16 hàng, 185 vendored / 118 ours, `OURS CS1591 90 → 65` và `OURS CS1573 19` KHÔNG dịch — tức KHÔNG một CS1573 mới nào được tạo, tám hàng VENDORED không dịch một đơn vị, 0 dòng `///` bị xoá.** Cụm ấy **đúng bằng A2 + B của mục 25**, và phép kiểm lại **BÁC một nửa hàng B**: bốn trong chín là `required`, nên thu hẹp chúng là **lỗi biên dịch CS9032** chứ không phải nạp mặc định im lặng — số thành viên sai-trong-im-lặng là **5**, không phải 9; câu *"ít nhất 55 sẽ public"* **không đổi**, thành phần của nó thì đổi. **Phân loại 84/13/0 kiểm lại trên cụm này: 23/2/0 — con số 0 TÁI LẬP.** 🔴 **Và đợt 9 BÁC ba khẳng định đã công bố, rút TẠI NGUỒN, KHÔNG sửa mã:** `ModbusRegisterMap.FromJson`'s *"the one parse failure … that didn't name what was wrong"* (đo được ít nhất HAI), phép kiểm kê người đọc của `ModbusOptions` nói `St4i.EdgeService.EdgeConnectors` *"has never read these variables at all"* (host ấy GỌI `FromEnvironment` và dùng `Host`/`Port`), và trần census **5780/15965** (không tái lập; đã lệch từ TRƯỚC đợt này). 🔴 **HAI khuyết tật MÃ thấy lúc viết — DỪNG và BÁO, không sửa:** `PollIntervalMs` không kiểm miền trên cả hai map (0 ⇒ vòng poll không tiết chế, −1 ⇒ chờ vô hạn, ≤ −2 ⇒ `ArgumentOutOfRangeException` thoát ra), và `"registers"/"nodes": null` ⇒ `NullReferenceException` trần. Mục **VẪN Ở LẠI PHẦN II**: **84 chỗ trống trên 72 thành viên chưa trả**. Xem §14 🔴 **ĐỢT 10 ĐÃ TRẢ 2026-08-22 (AZ-1, base `3f564039`): 21 chỗ THIẾU được VIẾT — một cụm mạch lạc, bề mặt đường RS-485 DÙNG CHUNG: phân xử, cho thuê và cái giữ chỗ của từng thiết bị (5 file lấy TRỌN, dư lượng mỗi file = 0: `ModbusRtuDriver.cs` 9 · `GatewayTcpBusLink.cs` 4 · `ModbusBus.cs` 4 · `ModbusRtuConnectorFactory.cs` 3 · `ModbusBusRegistry.cs` 1; 10 CS1591 + 11 CS1573, trên 15 thành viên), `EXPECT_WARNINGS` 303 → 282 ĐO, sổ vẫn 16 hàng, 185 vendored / 97 ours, `OURS CS1591 65 → 55` VÀ `OURS CS1573 19 → 8` — **đợt ĐẦU dưới phán quyết này dịch CẢ HAI hàng**, vì 11 trong 19 cái CS1573 nằm gọn trong năm file ấy; tám hàng VENDORED không dịch một đơn vị, 0 dòng `///` bị xoá.** `ModbusTcpDriver` và hai factory TCP **cố ý ở NGOÀI** cụm: một endpoint TCP là một thiết bị với khoá riêng, nên câu hỏi của cụm không nói gì về nó. 🔴 **Và đợt 10 BÁC một khẳng định đã công bố, rút TẠI NGUỒN ở HAI chỗ, KHÔNG sửa mã:** *"`GenerateDocumentationFile` is not set anywhere in this repository"* (`ModbusRtuDriver.BusDisposedDetail` và `ModbusRegister.DecodeRawWord`) — đợt 3 của chính mục này bật cờ ngày 2026-08-19, `SuppressionCensusTests` ghim **TÁM bật / bảy tắt**; **kết luận sống, tiền đề chết**. 🔴 **Và nó BÁC hai phép đếm nữa: hai trong 97 thành viên đã là `private`** (mẫu số của một phán quyết truy cập là **≤ 95**, xem mục 25), **và *"cả hai driver"* của đợt 9 thực ra là BA**. 🔴 **HAI khuyết tật mã của đợt 9 nay là MỤC 38 và 39 ở Phần I** — xác nhận lại trên assembly đã dựng, **không thi hành**. 🔴 **Một khuyết tật DỤNG CỤ, dừng và báo:** `scripts/repo-scan.sh` chạy **không pathspec** mặc định `:(top).`, mà git **không khớp gì** — nên nó in `result lines : 0 … a measurement, not an error` **cho mọi pattern**; `--self-test` không thể thấy vì nó luôn truyền pathspec. Mục **VẪN Ở LẠI PHẦN II**: **63 chỗ trống trên 57 thành viên chưa trả**. Xem §15 |
 | 13 | khôi phục `oee-settings.json` đè lên một file ĐÃ CÓ | 🔨 **ĐÓNG — STORE GHI LẠI DANH TÍNH CỦA CÁC BYTE** (2026-08-19, chủ sở hữu). 🔴 **Giá đã chấp nhận và ghi vào mục: `PUT /v1/historian/oee/settings` trả 409 ở những lúc hôm nay trả 200, KỂ CẢ khi thứ đổi file là một biên tập tay HỢP LỆ hay chỉ là một lần ĐỊNH DẠNG LẠI.** Câu *"bao nhiêu PUT hợp lệ thành 409"* vẫn **KHÔNG đo được** và phán quyết ra **mà không có nó**. **Đã thi hành, AJ-1 (2026-08-19)** — cơ chế **SUY ra chứ không chọn một trong ba**: cả ba ứng viên (băm / `mtime` / kích thước) là **vân tay**, mà vân tay chỉ cần khi không cầm được cả hai vế; `ReadLocked` **đã cầm toàn văn** ở cả hai đầu trong cùng một khoá, nên store **giữ lại toa hạng gốc** và so trực tiếp — **0 lần đọc đĩa thêm**, và **mạnh hơn** mọi hàm hao hụt của nó. Kiểu thứ ba `OeeSettingsFileChangedException`; vị từ gác bằng **CẶP `Loaded/Loaded`**, nên cặp `Loaded/Absent` **không** bị đóng kèm. Nhân chứng `Set_AfterARestoreOntoAHostThatCameUpWithAFile_…` **đảo chiều và đổi tên**; giá được **ghim** bằng một bài kiểm riêng |
 | 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT**. 🔴 **KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: KHẢ THI — `Normalizer` có đủ thông tin, `WaveformSeries` và `WelderSim` KHÔNG phải đổi. Nhưng nó KHÔNG nằm trọn ở một đường dây: cùng một envelope đi ra BA bề mặt, và một trong ba là gương ngữ nghĩa MQTT RETAINED — một **bề mặt đã xuất bản thứ hai; NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này** (hợp đồng TỰ KHAI rằng họ ở ngoài repo — đó là lời của tài liệu, không phải một phép đếm). 🔴 **Giá gương ấy KHÔNG phải của riêng lựa chọn 3: lựa chọn 1 trả CÙNG giá đó CỘNG THÊM, lựa chọn 2 không trả giá nào trong cây này nhưng trả TOÀN BỘ ở ngoài (hợp đồng ingest đã xuất bản + ba SDK).** Và KHÔNG một bài kiểm nào trong 2763 bài đỏ lên, tức lối này KHÔNG CÓ NHÂN CHỨNG. **Ràng buộc thi hành cứng: `LiveTransport.ReadSampleSeries` chỉ nhận hàng `double[]` và bỏ im lặng mọi kiểu khác.** Ba lựa chọn VẪN CHƯA QUYẾT** — 📎 **câu ngay trước giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1), và lý do là chủ sở hữu ĐÃ PHÁN, không phải câu ấy từng sai; AK-1 dùng đúng MỘT kiểu bảo tồn — kiểu AB-1 lập và AI-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG dấu gạch ngang ở bất kỳ đâu, không xoá một dòng nào.** → 🔨 **QUYẾT: LỰA CHỌN 3 — DỰNG CẶP `[t, v]` Ở RANH GIỚI `Normalizer`** (2026-08-19, chủ sở hữu). `WaveformSeries`, `WelderSim`, `ScrewdriveSim` **không đổi một dòng**; thứ đổi là **payload đi ra**. 🔴 **Giá đã chấp nhận và ghi vào mục: HAI bề mặt đã xuất bản đổi CÙNG LÚC, không một** — payload ingest HTTP **và** gương ngữ nghĩa MQTT retained `syn/…`; **NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này**. Cộng một bề mặt thứ ba, riêng tư: hàng đợi store-and-forward của SDK ghi nguyên payload **xuống đĩa** và **phát lại hình dạng CŨ sau khi mã đã đổi** — **cửa sổ ấy CHƯA ĐO**. **Đã thi hành, AK-1 (2026-08-19)** — cơ chế của `t` **SUY ra chứ không chọn**: `t(i) = i / rateHz`, tức **thời điểm mà `rateHz` HÀM Ý**, **không** phải thời điểm `WelderSim` vẽ đường cong; lý do là ở ranh giới chỉ có **bốn trường** của `WaveformSeries`, còn dựng lại thời điểm THẬT đòi **tham số hoá riêng của từng bộ sinh** — không có trên hồ sơ, khác nhau theo driver, và **vắng hẳn** với driver bên thứ ba mà ranh giới này cũng phục vụ. 🔴 **`rateHz` KHÔNG đổi nghĩa và KHÔNG đổi giá trị** — đó là điều kiện DỪNG của nhiệm vụ và nó không bị chạm. 🔴 **Nửa bất lợi, viết ngay cạnh:** chỗ lệch **4,17 %** của `WelderSim` **không được tạo ra và cũng không được sửa** ở đây (phép chuyển tính đúng cái `t` mà một bên tiêu thụ tuân hợp đồng đã tính hôm nay) — **nhưng nó chuyển `t` từ NGẦM sang ĐÃ VIẾT RA**, nên sửa chỗ lệch ấy về sau là **đổi những con số đã xuất bản**, không còn là đổi một tài liệu. Nhân chứng **MỚI** `WaveformPairAtTheWireBoundaryTests` (bảy `[Fact]`): gỡ phép chuyển ⇒ **BỐN đỏ**; trả kiểu hàng khác `double[]` ⇒ **SÁU đỏ**; 🔴 `WaveformSeriesRowShapeContractTests` **VẪN XANH, và đó là im lặng, không phải chấp thuận** — nó nhìn thượng nguồn |
 | 15 | `DropOldest` + một cảnh báo "queue saturated" không với tới được — **BA chỗ**, và chỗ **thứ tư** đã giải xong | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Gộp phát hiện đợt 6 (`HistorianWriter`) và đợt 8 (`UnsPublisher`) làm **MỘT mục**, và phép liệt kê thêm chỗ **thứ ba chưa ai báo**: `UnsBridge`. `AlarmNotifier` cùng chế độ nhưng **đã đúng** → 🔨 **QUYẾT: ÁP MẪU ĐÃ GIẢI XONG CỦA `AlarmNotifier` VÀO CẢ BA CHỖ** (2026-08-20, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8 — mục này không thuộc ba mục đổi thứ người ngoài đang dựa vào). 🔴 **`FullMode` **KHÔNG** đổi: `DropOldest` ở lại `DropOldest`** — thứ đổi là **kế toán**, không phải chính sách. **Đã thi hành, AP-1 (2026-08-21)**: `itemDropped` được truyền ở cả ba, cú đuổi được **đếm** và được **cảnh báo bằng lời SATURATION**, còn nhánh `if (!TryWrite(...))` — vốn chỉ với tới được khi writer ĐÃ ĐÓNG — được đếm riêng và viết lại thành lời **SHUTDOWN**. 🔴 **Tiền đề của phán quyết được KIỂM LẠI trên mã và nó ĐỨNG VỮNG**: `AlarmNotifier` thật sự đã giải xong (nó truyền `itemDropped`, phân loại năm đường rơi, log sau khi nhả khoá). 🔴 **Nhưng MỘT mảnh của hình dạng ấy KHÔNG mang sang được, và nói ra chứ không lặng lẽ bỏ:** phép *bracket* `Evicted` quanh `TryWrite` trong `EmitLocked` chỉ chính xác vì mọi thứ ở đó chạy dưới `_gate`; ba lớp EdgeCore **cố ý không có khoá nào trên đường enqueue**, nên cảnh báo được phát **từ trong chính callback `itemDropped`** — chính xác vì một lý do khác (callback chạy đồng bộ, một lần cho mỗi phần tử bị đuổi, và nhận đúng phần tử ấy). 🔴 **`UnsBridge.DroppedTotal` KHÔNG bị nới nghĩa**, và bề mặt ĐỌC nó được nêu tên: `GET /v1/site`, trang `/site`, **và bản ghi resync GIỮ LẠI phát lên broker của Site — một hợp đồng dây bên thứ ba tiêu thụ**. Cú đuổi kênh có tên riêng, `UnsBridge.ForwardQueueStats.Evicted`. 🔴 **Dư lượng còn mở, ghi vào mục chứ không để trong báo cáo: bộ đếm mới KHÔNG có trên `/v1/site` lẫn trang `/site`** — thêm một trường ở đó là **đổi payload đã xuất bản**, đúng thứ nằm ngoài uỷ quyền mục này. Trên hình thái cài Windows Service (README §"đường mất dữ liệu", mục 4) log **không có nơi nào để đi**, nên trên hình thái ấy mất mát này **được đếm nhưng operator vẫn chưa nhìn thấy được**. Xem Phần III |
@@ -66,6 +66,8 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 35 | `DBIRTH`/`DDEATH` không sinh ra được, và `SparkplugAliasTable.Reset()` cùng thế — hệ quả ĐÃ ĐO của mục 23 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1). 🔴 **Nhưng chữ *"HOÀN TOÀN"* của brief KHÔNG đứng vững ở phạm vi repo:** `server/` có một bộ phát DBIRTH/DDEATH **đang sống** bằng TypeScript. Đúng ở phạm vi `tools/machine-simulator`. `Reset()`: **một** caller, và nó là một unit test — **không caller sản xuất nào**, trong khi `GetOrAssign` chạy trên **mọi** reading: bảng alias **nửa sống** → 🔴 **DỪNG 2026-08-22 (AX-1), Ở LẠI PHẦN I.** **Điều kiện DỪNG đã nổ:** làm spine này tuân đặc tả đòi **phát một thông điệp MQTT MỚI** (DBIRTH mức device) lên dây — tức **đổi payload MQTT**, một trong **ba mục chủ sở hữu KHÔNG uỷ quyền**. Điều phối viên **không tự quyết**; chờ anh. Phần nằm TRONG uỷ quyền đã trả và ghi trong thân mục: vòng đời hôm nay **liệt kê rồi đếm — BA loại Sparkplug rời spine này (NBIRTH, NDEATH, DDATA) trên sáu thành viên enum**; bề mặt gọi `Reset()` đo lại bằng `scripts/repo-scan.sh` ở miền có **cả `server/` và `client/`** (2300 file nằm trong commit, ngoài đĩa) — **vẫn đúng MỘT, vẫn là unit test ấy**, nên đây là **MỞ RỘNG miền chứ không RÚT**; **bốn** câu tài liệu nói sản phẩm phát/sẽ phát DBIRTH **rút tại chỗ kèm ngày** (hai trong bốn sai theo hai chiều NGƯỢC nhau, cùng một file). 🔴 **Chỗ trống "người đăng ký gương retained CHƯA ĐO" GIỮ NGUYÊN là chỗ trống** — không phép đo mới, và **không suy đoán nào được viết vào thay cho một phép đo** |
 | 36 | README §16.4/§16.6 là một bản sao **không có nhân chứng** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã. Không test/script/CI nào giữ chúng đúng, và **`ModbusOptions.cs` TỰ KHAI điều đó**. 🔴 **Và phép kiểm tra chéo tìm thấy một câu ĐÃ TRÔI rồi** — §16.6 nói `OperationTimeout` *"hardcoded"* trong khi nó là tham số constructor từ Task B-5 → ✅ **ĐÃ THI HÀNH 2026-08-22 (AX-1)** theo 🔨 **QUYẾT: DỰNG NHÂN CHỨNG, KHÔNG PHẢI SỬA LỜI** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8). `tests/St4i.EngineApi.Tests/DriverDocumentationTests.cs`, **ba `[Fact]` ĐỎ ĐƯỢC**, đặt cạnh hai tiền lệ mục này nêu tên; **cặp đối chứng chạy trọn, MỘT đột biến cho MỖI fact** (đổi tên `EnvVarPort`; `operationTimeoutMs` 15000→20000; thêm thành viên thứ bảy vào `CommandArgumentType`), cả ba ĐỎ đúng bài của nó rồi **hoàn nguyên**. **22 khẳng định liệt kê rồi kiểm; HAI sai, và mục này chỉ thấy MỘT:** ngoài *"hardcoded"*, 🔴 **§16.4 công bố kiểu tham số lệnh là tập ĐÓNG SÁU trong khi `CommandArgumentType` có BẢY** (`String` được `ValidateSelf` chấp nhận — phép kiểm lược đồ **duy nhất** cả hai map chạy). Cả hai **rút/bổ sung tại chỗ kèm ngày**, và câu **tự khai** của `ModbusOptions.cs` (*"remain a hand-kept copy with no witness … still true"*) **hết đúng hôm nay** nên bị rút ngay trong file ấy. 🔴 **Nhân chứng ghim GIÁ TRỊ và TẬP TÊN, không ghim văn xuôi** — bốn chỗ cụm-từ được kể tên trong chính doc của nó; đoạn lý lẽ, hai danh sách *"honest deferral"* và khối RTU **vẫn không có nhân chứng**. `EXPECT_ENGINEAPI` 1405 → **1408**, tổng 2821 → **2824**, **0 lệnh đè**. Xem **Phần III** |
 | 37 | 🔴 **HỒ SƠ — LỖI CỦA ĐIỀU PHỐI VIÊN:** một phán quyết của chủ sở hữu sống trọn một vòng nhiệm vụ **KHÔNG có bản ghi tại chỗ** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), và **mục này là của điều phối viên, không phải của mã**. Phán quyết mục 16 ngày 2026-08-22 tới người thi hành **chỉ qua một task brief**; `grep "2026-08-22"` trên file tại `ce1ce2be` trả **đúng hai dòng, cả hai thuộc mục 27**. **"Đừng thi hành" đã bị đọc thành "đừng ghi"** — một phán quyết và một lần thi hành là **hai hiện vật khác nhau**. Cộng: danh sách Phần I **lỗi thời qua ba nhiệm vụ liên tiếp** và **không dụng cụ nào bắt được, vì không cổng nào đọc file này** — cùng lớp với mục 26 và 32. 🔴 **Và con số ấy được ĐO LẠI: brief mở mục này nói "chín mục"; đo trên `659bcfb2` là MƯỜI MỘT** (16, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29 — Phần I thật chỉ chứa 17, 25, 26, 30, 31, 32). **Chính lời khai về khuyết tật kiểm đếm cũng đếm sai**, theo đúng cơ chế mục này mô tả → ✅ **ĐÃ THI HÀNH 2026-08-22 (AW-1)** theo 🔨 **QUYẾT: BẮT CỔNG ĐỌC FILE NÀY** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). `scripts/check-owner-decisions.sh`, chạy trong `scripts/verify-suites.sh`: **cổng nay ĐỌC `docs/owner-decisions.md`** — câu *"không cổng nào đọc file này"* trong thân mục **hết đúng kể từ hôm nay**, và nó được rút tại chỗ chứ không lặng lẽ. Phép kiểm ghim **CẤU TRÚC, không ghim VĂN XUÔI**, đúng lối rẻ nhất mà chính mục này nêu ra: mỗi số hiệu trong bảng có **đúng một** thân mục và ngược lại; **trạng thái ghi trong hàng khớp PHẦN mà thân mục đứng dưới**; **phép liệt kê Phần I nêu đúng tập số hiệu thật sự nằm ở Phần I**, cả ở trường máy đọc lẫn ở câu văn người đọc. 🔴 **Đo được hôm nay, trước khi sửa: NĂM chỗ lệch** — (1) mục 17 ở Phần III với hàng tự khai *"MỘT PHẦN"*; (2)(3)(4) **BA** đoạn liệt kê Phần I trần nằm cạnh nhau ở dòng 111, 168, 237 mà **chỉ một là hiện hành**, không gì phân biệt được; (5) không có trường máy đọc nào nói cái nào hiện hành. **Cả năm sửa ở HỒ SƠ, không sửa dụng cụ cho vừa hồ sơ.** 🔴 **Và cái phép kiểm này KHÔNG bắt được, nói thẳng vì một nửa sự thật ở đây đúng là loại lỗi mục này nói về: NỬA THỨ NHẤT CỦA MỤC 37 — một phán quyết KHÔNG BAO GIỜ ĐƯỢC GHI — vẫn KHÔNG có bộ dò nào.** Không phép kiểm nào trên file này thấy được một sự kiện không nằm trong file. Nó cũng không đọc văn xuôi, không phán được một mục "MỘT PHẦN" thuộc Phần I hay Phần II (nó chỉ nói **KHÔNG PHẢI Phần III**), và **chỉ** ghim phép liệt kê Phần I — Phần II và Phần III không có trường máy đọc. Xem Phần III |
+| 38 | `pollIntervalMs` là trường cadence DUY NHẤT không được kiểm miền, trên **cả hai** bản đồ | 🔴 **CHỜ ANH** — mở 2026-08-22 (AZ-1), đo bởi AY-1 (mục 12 đợt 9), **xác nhận lại trên mã VÀ trên assembly đã dựng**. `ModbusRegisterMap.FromJson` và `OpcUaNodeMap.FromJson` lưu `pollIntervalMs` **y như khai** — đo: `0`, `-1`, `-2`, `-2147483648` đều lưu nguyên — trong khi hai trường kề nó, `readTimeoutMs` và `retries`, đi qua `ParseOptionalPositiveInt`, bị chặn, **có cảnh báo** và rơi về mặc định. Hậu quả đo trên chính runtime này: `Task.Delay(0)` xong trong **0 ms** ⇒ vòng poll **không tiết chế**; `Task.Delay(-1)` **chưa xong sau 750 ms** (`Timeout.Infinite`) ⇒ thiết bị được poll **đúng một lần rồi im**; `Task.Delay(≤ -2)` ném `ArgumentOutOfRangeException`, và cả ba driver bọc lời gọi ấy trong một `try` **chỉ bắt `OperationCanceledException`**, nên nó **thoát ra khỏi iterator**. 🔴 **Và "cả hai driver" của đợt 9 là một phép ĐẾM THIẾU: có BA** — `ModbusTcpDriver` và `OpcUaDriver` gọi `Task.Delay(_map.PollIntervalMs, ct)` trực tiếp, `ModbusRtuDriver` qua `NextPollDelayMs()`. **Chiều ngược:** `EffectiveReadTimeoutMs` sàn ở 1000 nên read timeout **không** hỏng theo, và backoff RTU sản xuất **che** giá trị âm **sau lần hỏng đầu** (`Math.Max`) — nên trên RTU cái bẫy chỉ cắn khi thiết bị **khoẻ**. **Không sửa mã.** Xem mục 38 |
+| 39 | `"registers": null` / `"nodes": null` thoả `required` rồi ném `NullReferenceException` **trần** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AZ-1), đo bởi AY-1 (mục 12 đợt 9), **xác nhận lại trên assembly đã dựng**. `required` được thoả bằng việc **KHOÁ CÓ MẶT**, nên một `null` tường minh bind qua nó và `map.Registers.Count` / `map.Nodes.Count` ném `NullReferenceException` với thông điệp `"Object reference not set to an instance of an object."` — **không nêu file, không nêu trường, không nêu máy**. Đối chứng đo cùng lần: khoá **VẮNG** cho `JsonException: … was missing required properties including: 'Registers'` / `'Nodes'`, tức đường tốt đã có sẵn và chỉ ca `null` tường minh rơi ra ngoài. **Đúng hình dạng mà `ModbusRegisterMap.FromJson` tự ghi là ĐÃ SỬA cho `commands`.** **Chiều ngược:** cả hai `FromJson` là *"parse ném thẳng"* theo thiết kế và `ModbusRtuConnectorFactory.TryCreate` **bọc mọi throw** thành một `error` chuỗi, nên hậu quả là **một thông điệp vô dụng cho vận hành viên**, không phải một tiến trình chết. **Không sửa mã.** Xem mục 39 |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -205,8 +207,12 @@ sự thật** — câu này chỉ là một con trỏ vào nó.
 > `<!-- gate:phần-i-rút -->` hoặc `<!-- gate:phần-i = … -->`, và cổng đòi **đúng một** cái sống. **Không
 > một chữ nào của ba đoạn bị sửa và không dòng nào bị xoá.**
 
-**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 17, 25, 30 và 35.** Tất cả mang `🔴 CHỜ ANH` ở bảng
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 17, 25, 30, 35, 38 và 39.** Tất cả mang `🔴 CHỜ ANH` ở bảng
 phán quyết trên, và **bảng ấy là nguồn sự thật** — câu này chỉ là một con trỏ vào nó.
+🔴 **MỞ RỘNG 2026-08-22 (AZ-1), không phải RÚT: mục 38 và 39 là hai khuyết tật MÃ mà đợt 9 của mục 12
+DỪNG LẠI và BÁO** — chúng đã nằm trong báo cáo và trong thân mục 12 §14 suốt một vòng nhiệm vụ mà
+**không có một mục nào để anh phán**, tức đúng cơ chế mục 37 mô tả. Đợt 10 **mở** chúng và **không thi
+hành** chúng; cả hai được **xác nhận lại trên mã và trên assembly đã dựng** trước khi viết.
 🔴 **Cập nhật 2026-08-22 (AX-1): mục 34 và 36 rời sang Phần III; mục 35 Ở LẠI vì điều kiện DỪNG của nó
 đã nổ** — đóng nó đòi phát một thông điệp MQTT MỚI lên dây, tức **đổi payload MQTT**, một trong ba mục
 chủ sở hữu **không** uỷ quyền. Phép đo đi kèm nằm ngay trong thân mục 35, ở phần này, không ở Phần III.
@@ -219,7 +225,7 @@ phần) cho tới hôm nay; cái còn treo là **một QUYẾT ĐỊNH của anh
 🔴 **Câu này KHÔNG còn tự bảo trì bằng việc có ai đó nhìn, và đó là cái đổi kể từ hôm nay:** dòng ngay
 dưới là trường máy đọc mà `scripts/check-owner-decisions.sh` so với tập đầu mục `^## ` thật sự nằm giữa
 banner Phần I và banner Phần II, **và** với chính câu văn này. Lệch một số hiệu ⇒ **cổng đỏ**.
-<!-- gate:phần-i = 17 25 30 35 -->
+<!-- gate:phần-i = 17 25 30 35 38 39 -->
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
 > tới vòng sửa thứ hai của cùng ngày, và nó **không sai, nó THIẾU**.** Ba thao tác của file này vẫn
@@ -816,6 +822,38 @@ thi hành ở **mục 12 §14**. Mục 25 **Ở LẠI PHẦN I**: phán quyết 
 
 ---
 
+### 📐 Đính chính 2026-08-22 (AZ-1, base `3f564039`) — bảng bề mặt ĐỌC ở trên **vẫn KHÔNG bị xoá một chữ**; lần này cái dịch là **MẪU SỐ**, không phải một hàng
+
+Đợt 10 trả **21 trong 84 còn lại** — bề mặt đường RS-485 **dùng chung**: phân xử, cho thuê, và cái giữ
+chỗ của từng thiết bị; năm file lấy TRỌN, dư lượng mỗi file **0**; **cả hai** hàng bao phủ dịch lần đầu
+dưới phán quyết này. Chi tiết thi hành ở **mục 12 §15**. Mục 25 **Ở LẠI PHẦN I**: phán quyết đã có,
+việc chưa xong — còn **63 chỗ trống trên 57 thành viên**.
+
+* 🔴 **BẢNG TRÊN GÁN CHO CẢ 97 THÀNH VIÊN MỘT Ô TRONG CỘT *"`internal` sẽ làm gì"*, VÀ **HAI** TRONG 97
+  ĐÃ LÀ `private`.** `ModbusRtuDriver.ExecuteRegisterWriteAsync` và `.ExecuteCoilPulseAsync` — chúng
+  mang **5 trong 19** cái CS1573 giữa hai đứa. Với một thành viên `private`, `internal` **MỞ RỘNG** chứ
+  không thu hẹp, nên câu *"chúng có nên `public` không?"* **không tồn tại** với chúng theo nghĩa đen
+  nhất có thể — và **không hàng nào của bảng nói điều đó**; ô của C1 còn hứa *"xoá được bề mặt công
+  khai chết"*, thứ mà một thành viên private không có để xoá. Một cái thứ ba, `SimulatorBase` ctor (4
+  cái CS1573 nữa), là `protected`.
+* **Vì sao bảng có thể bỏ sót — cơ chế, không phải lỗi cẩu thả:** `CS1591` chỉ bắn cho thành viên
+  **hiển thị công khai**, nên mọi thành viên tới bảng **qua đường CS1591** đều là public/protected.
+  `CS1573` thì bắn cho **bất kỳ** thành viên có doc mà bộ `<param>` dở dang, **kể cả private**. Phép
+  liệt kê 97 gộp hai quần thể có điều kiện hiển thị khác nhau và cột của bảng chỉ đúng cho một trong
+  hai.
+* 🔴 **Câu tiêu đề vẫn KHÔNG đổi, và lần này cái dịch là mẫu số.** *"Ít nhất 55 trong 97 sẽ `public` dù
+  anh phán thế nào"* **vẫn đúng** — một thành viên `private` chưa bao giờ nằm trong 55 ấy. Nhưng **tập
+  mà một phán quyết về mức truy cập có thể áp vào là nhiều nhất 95**, không phải 97. Nêu ra vì mục này
+  tự đặt cho mình luật *một vô hướng tóm tắt một tập chưa ai liệt kê thì không phải một sự thật*, và
+  `97` là một vô hướng dùng làm mẫu số cho một câu hỏi mà **hai phần tử của nó không trả lời được**.
+* 📐 **`84/13/0` kiểm lại trên 15 thành viên của cụm: `14 / 1 / 0`.** Cái lớp-2 duy nhất là
+  `GatewayTcpBusLink.InfiniteTimeout`, nêu một **giá trị** (`-1`) và không gì khác — cùng hình dạng với
+  `ModbusOptions.DefaultHost`/`.DefaultPort` của đợt 9, và **ghi là lớp 2 chứ không nâng lên lớp 1**
+  bằng phát hiện thiết kế viết cạnh nó. **Con số 0 tái lập lần thứ tư**, lần này trên một cụm chọn theo
+  **một CƠ CHẾ**, chứ không theo phán quyết (đợt 9) hay khả năng khôi phục nghĩa (đợt 6).
+
+---
+
 ## 30. Gốc mặc định của các store cạnh-binary là `%ProgramFiles%`, MSI không mang bốn file ấy, nên lần chạy đầu của một bản cài mặc định CHÍNH LÀ lần phải GHI
 
 🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). 🔴 **Câu hỏi này bị các brief liên tiếp CẤM mở — mỗi đợt từ 4
@@ -1143,6 +1181,160 @@ nó được phát biểu**: phép đo ấy không nêu là đã mở `server/` 
 **Không hằng số nào của cổng dịch vì mục 35.** Cái duy nhất mục này để lại cho cổng là bốn câu doc mới,
 và chúng nằm trong 19 khẳng định tuyệt đối mà `EXPECT_NEW_DOC_ABSOLUTES` nay ghi — đọc từng câu một, xem
 khối hằng số trong `verify-suites.sh`.
+
+---
+
+## 38. `pollIntervalMs` là trường cadence DUY NHẤT không được kiểm miền, trên CẢ HAI bản đồ — trong khi hai trường kề nó thì có, và ba driver tiêu thụ nó
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AZ-1, mục 12 đợt 10). Đo bởi AY-1 (đợt 9) trong lúc viết chú thích;
+**đợt 10 xác nhận lại trên mã VÀ chạy lại trên assembly đã dựng** trước khi mở mục này. Đợt 10
+**KHÔNG thi hành** — nó viết tài liệu và không được sửa mã.
+
+### 1. Đo được cái gì — LIỆT KÊ TRƯỚC, con số SAU
+
+**Ba trường cadence/timing mà một bản đồ khai**, và cái đối xử với chúng khác nhau:
+
+| trường | đường parse | giá trị ngoài miền |
+|---|---|---|
+| `readTimeoutMs` | `ParseOptionalPositiveInt(…, MaxReadTimeoutMs)` | **chặn**, cảnh báo qua `logWarning`, rơi về mặc định |
+| `retries` | `ParseOptionalPositiveInt(…, MaxRetries)` | **chặn**, cảnh báo, rơi về mặc định |
+| **`pollIntervalMs`** | gán thẳng `PollIntervalMs = map.PollIntervalMs` | 🔴 **lưu y như khai, im lặng** |
+
+**Đo trên assembly đã dựng** (`net10.0-windows`, SDK 10.0.302), gọi thẳng hai `FromJson`:
+
+```
+Modbus  pollIntervalMs=0            -> stored 0,            EffectiveReadTimeoutMs=1000
+Modbus  pollIntervalMs=-1           -> stored -1,           EffectiveReadTimeoutMs=1000
+Modbus  pollIntervalMs=-2           -> stored -2,           EffectiveReadTimeoutMs=1000
+Modbus  pollIntervalMs=-2147483648  -> stored -2147483648,  EffectiveReadTimeoutMs=1000
+OpcUa   pollIntervalMs=0/-1/-2/-2147483648  -> stored y như khai
+Modbus  readTimeoutMs=0/retries=0   -> warn ×2, ReadTimeoutMs=null, Retries=null
+Modbus  readTimeoutMs=-1/retries=-1 -> warn ×2, ReadTimeoutMs=null, Retries=null
+```
+
+**Và cái giá trị ấy làm gì**, đo trên cùng runtime:
+
+```
+Task.Delay(0)            -> hoàn tất trong 0 ms
+Task.Delay(-1)           -> CHƯA hoàn tất sau 750 ms   (Timeout.Infinite)
+Task.Delay(-2)           -> ArgumentOutOfRangeException
+Task.Delay(-3)           -> ArgumentOutOfRangeException
+Task.Delay(int.MinValue) -> ArgumentOutOfRangeException
+```
+
+🔴 **Phép đếm của đợt 9 — *"cả hai driver"* — LÀ MỘT PHÉP ĐẾM THIẾU. Liệt kê người tiêu thụ trước
+khi đếm: có BA.** `ModbusTcpDriver.ReadAsync` và `OpcUaDriver.ReadAsync` gọi
+`Task.Delay(_map.PollIntervalMs, ct)` **trực tiếp**; `ModbusRtuDriver.ReadAsync` gọi
+`Task.Delay(NextPollDelayMs(), ct)`, và `NextPollDelayMs()` là
+`_readBackoff.DelayMsFor(_map.PollIntervalMs, …)`. Hai bản đồ, ba driver.
+
+### 2. Ở đâu trong mã — trỏ bằng TÊN
+
+`St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap.PollIntervalMs` và `.FromJson`;
+`St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap.PollIntervalMs` và `.FromJson`;
+`ModbusRegisterMap.ParseOptionalPositiveInt` (đường mà hai trường kia ĐI QUA và trường này thì không);
+`ModbusTcpDriver.ReadAsync`, `OpcUaDriver.ReadAsync`, `ModbusRtuDriver.ReadAsync` +
+`ModbusRtuDriver.NextPollDelayMs`; `ModbusRtuReadBackoff.DelayMsFor`;
+`ModbusRegisterMap.EffectiveReadTimeoutMs`.
+
+### 3. Hậu quả vận hành, HAI CHIỀU
+
+*Chiều thuận.* **`0`** — vòng poll **không tiết chế**: mỗi lần lặp trả về ngay, nên một thiết bị
+quay hết tốc lực. Trên RTU nó còn là vấn đề của **hàng xóm**, vì mỗi vòng lấy khoá phân xử của cả
+bus. **`-1`** — `Task.Delay` chờ vô hạn, nên thiết bị được poll **đúng một lần rồi im**, và cái
+`IAsyncEnumerable` ấy **không kết thúc** mà cũng **không sinh gì**: `Health` đứng ở giá trị của lần
+poll đầu, và từ ngoài nhìn vào nó **không phân biệt được với một thiết bị khoẻ và chậm**.
+**`≤ -2`** — `ArgumentOutOfRangeException`. Cả ba driver bọc lời gọi delay trong một `try` mà
+`catch` **chỉ bắt `OperationCanceledException`**, nên nó **thoát khỏi iterator** — một hình dạng
+khác hẳn hai cái trên và khác hẳn cái mà vòng poll được thiết kế để chịu.
+
+*Chiều ngược, và nó thu hẹp mục này chứ không xoá nó.* **(a)** `EffectiveReadTimeoutMs` là
+`ReadTimeoutMs ?? Math.Max(1000, PollIntervalMs * 4)` — **sàn 1000 đo được cho cả bốn giá trị xấu**,
+nên một cadence âm **không** kéo theo read timeout hỏng, và `WorstCaseBusHoldMs` dựng trên nó cũng
+lành. **(b)** Trên `ModbusRtuDriver` với backoff **sản xuất**, giá trị âm bị **che sau lần hỏng đầu
+tiên** — đo được:
+
+```
+Default.DelayMsFor(poll=-2, hold=4000, failures=0) = -2      Disabled(...)= -2
+Default.DelayMsFor(poll=-2, hold=4000, failures=1) = 4000    Disabled(...)= -2
+Default.DelayMsFor(poll=-2, hold=4000, failures=5) = 60000   Disabled(...)= -2
+```
+
+nên trên RTU cái bẫy cắn **khi thiết bị KHOẺ**, và tự vá khi nó hỏng — thứ tự ngược với trực giác,
+và là lý do một phép thử "cắm giá trị âm rồi xem nó có hỏng không" **có thể xanh**. **(c)** Không có
+khách hàng nào đang báo lỗi này; nó đòi một bản đồ viết tay có giá trị âm hoặc `0`.
+
+### 4. Nếu KHÔNG quyết định
+
+Ba trường cạnh nhau trong cùng một tài liệu JSON tiếp tục có **hai luật khác nhau**, không ghi ở
+đâu ngoài chú thích mà đợt 9 vừa viết lên chính hai property ấy. Và **cái phép đo này KHÔNG thấy**:
+nó không mở `server/`, `client/` hay bất cứ người tạo bản đồ nào **ngoài repo này** — nếu một công
+cụ sinh cấu hình ở nơi khác phát ra `pollIntervalMs: 0`, chỗ này im lặng về chuyện đó.
+Ba hướng, **giá của cả ba, không đề xuất cái nào**: (i) **cho `pollIntervalMs` đi qua
+`ParseOptionalPositiveInt`** — rẻ nhất, cùng khuôn với hai hàng xóm, nhưng nó **đổi HÀNH VI của một
+bản đồ đang chạy** (một `0` đang chạy sẽ thành `1000`); (ii) **ném lúc parse** — to tiếng nhất và
+đúng với "một cấu hình không chạy được thì bị từ chối ở chỗ vận hành viên được báo", nhưng nó biến
+một fleet đang chạy với một bản đồ xấu thành một fleet **không khởi động**; (iii) **để nguyên và
+chỉ ghi tài liệu** — chính là trạng thái hôm nay, và đợt 9 + đợt 10 đã trả phần tài liệu ấy.
+
+---
+
+## 39. `"registers": null` / `"nodes": null` thoả `required`, bind một null thật, rồi ném `NullReferenceException` TRẦN
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AZ-1, mục 12 đợt 10). Đo bởi AY-1 (đợt 9); **đợt 10 chạy lại trên
+assembly đã dựng** trước khi mở mục này. Đợt 10 **KHÔNG thi hành**.
+
+### 1. Đo được cái gì — LIỆT KÊ TRƯỚC, con số SAU
+
+**Bốn ca, hai bản đồ, một lần chạy** trên assembly đã dựng:
+
+```
+Modbus registers:null    -> NullReferenceException: [Object reference not set to an instance of an object.]
+Modbus registers ABSENT  -> JsonException: [... was missing required properties including: 'Registers'.]
+OpcUa  nodes:null        -> NullReferenceException: [Object reference not set to an instance of an object.]
+OpcUa  nodes ABSENT      -> JsonException: [... was missing required properties including: 'Nodes'.]
+```
+
+**Cơ chế, nêu chứ không suy:** `required` của C# được thoả bằng việc **KHOÁ CÓ MẶT** trong JSON, chứ
+không phải bằng việc giá trị khác `null`. Một `null` tường minh **đi qua** phép kiểm ấy và bind vào
+một property khai là non-nullable; câu lệnh kế tiếp trong `FromJson` đọc `.Count` trên nó.
+**Thông điệp không nêu file, không nêu trường, không nêu mã máy** — nó là chuỗi mặc định của CLR.
+
+🔴 **Và đây là đúng hình dạng mà `ModbusRegisterMap.FromJson` TỰ GHI là đã sửa cho `commands`**, ở
+một chú thích trong chính phương thức ấy tự gọi mình là *"the one parse failure in this method that
+didn't name what was wrong"* — câu đã được **rút tại chỗ** bởi đợt 9 vì đo được **ít nhất hai**.
+
+### 2. Ở đâu trong mã — trỏ bằng TÊN
+
+`ModbusRegisterMap.Registers` (`public required IReadOnlyList<ModbusRegister>`), đọc ở
+`ModbusRegisterMap.FromJson`; `OpcUaNodeMap.Nodes` (`public required IReadOnlyList<OpcUaNode>`), đọc
+ở `OpcUaNodeMap.FromJson` (`if (map.Nodes.Count == 0)`); `ModbusRtuConnectorFactory.TryCreate`,
+`ModbusConnectorFactory.TryCreate` và `OpcUaConnectorFactory.TryCreate` — nơi mọi throw từ hai
+`FromJson` ấy trở thành một chuỗi `error` cho vận hành viên.
+
+### 3. Hậu quả vận hành, HAI CHIỀU
+
+*Chiều thuận.* Một vận hành viên hoặc một công cụ sinh cấu hình viết `"registers": null` thay vì bỏ
+khoá — điều một serializer phát ra một cách hoàn toàn bình thường cho một danh sách rỗng chưa gán —
+nhận lại **`"Object reference not set to an instance of an object."`** và **không có gì để hành
+động**: không tên file, không tên trường, không mã máy. Với `TryCreate` bọc ngoài, chuỗi ấy là
+`ex.Message` **nguyên vẹn**, nên đó chính xác là thứ hiện lên chỗ khởi động connector. Đối chứng
+đứng ngay cạnh và làm cái giá rõ ràng: **cùng lỗi ấy với khoá VẮNG** cho một `JsonException` **nêu
+đích danh trường**.
+
+*Chiều ngược.* **(a)** Không tiến trình nào chết: `IConnectorFactory.TryCreate` có hợp đồng
+**không-bao-giờ-ném** và cả ba cài đặt bọc trọn thân hàm, nên hậu quả là **một thông điệp vô dụng**,
+không phải một fleet đổ. **(b)** Đường **VẮNG khoá** — ca thường gặp hơn — đã đúng và đã có nhân
+chứng; cái hỏng là ca `null` tường minh. **(c)** Sửa nó là **sửa mã trên đường parse mà cả hai
+driver fieldbus đi qua**, tức đúng đường mà mục 12 vừa đi qua để viết tài liệu, và giá của nó phải
+đo bằng test chứ không bằng lập luận.
+
+### 4. Nếu KHÔNG quyết định
+
+Hai `FromJson` giữ **một ca chẩn đoán trần** mỗi cái, và bản ghi duy nhất về nó là chú thích đợt 9
+viết lên chính hai property ấy cộng mục này. **Cái phép đo này KHÔNG thấy:** nó mở đúng hai trường
+(`registers`, `nodes`) trên hai bản đồ ấy; **không** ai đã mở HẾT tập các property `required` khác
+trong cây để xem còn chỗ nào cùng hình dạng — nêu tên chứ không đoán.
 
 ---
 
@@ -2355,6 +2547,104 @@ là **tâng bốc văn xuôi của chính mình**.
 **Việc còn nợ sau đợt 9, nêu tên chứ không làm:** **84 chỗ trống** trên **72 thành viên** vẫn trong
 `Drivers/` (`Modbus/` 30 · `Simulators/` 27 · `OpcUa/` 8 · `HotFolder/` 7 · `Mqtt/` 7 · `Drivers/` 5),
 gồm **cả 19 CS1573**; **103 cái vendored** không đổi; và **hai khuyết tật mã ở trên** chờ chủ sở hữu.
+
+---
+
+#### 15. 🔨 ĐỢT 10 — ĐỢT THỨ HAI THI HÀNH PHÁN QUYẾT 2026-08-22, VÀ ĐỢT ĐẦU DỊCH **CẢ HAI** HÀNG BAO PHỦ (AZ-1, 2026-08-22, base `3f564039`)
+
+**QUẦN THỂ LIỆT KÊ LẠI TRƯỚC KHI ĐẾM, và cả sáu hàng của đợt 9 TÁI LẬP ĐÚNG.** Từ một `-t:Rebuild`
+toàn solution của chính đợt này, trước khi viết một chữ: `Modbus/` **30** · `Simulators/` **27** ·
+`OpcUa/` **8** · `HotFolder/` **7** · `Mqtt/` **7** · `Drivers/` **5** = **84**, và **65 CS1591 + 19
+CS1573**. 19 cái CS1573 rơi lên đúng **bảy** thành viên, tên từng cái:
+`ModbusBus.BeginTransactionAsync` 1 · `ModbusRtuConnectorFactory` ctor 3 · `ModbusRtuDriver` ctor 2 ·
+`.ExecuteRegisterWriteAsync` 3 · `.ExecuteCoilPulseAsync` 2 · `SimulatorBase` ctor 4 ·
+`SimulatorFactory.Create` 4. Nên **72 thành viên riêng biệt** — đợt **thứ tư liên tiếp** tái lập
+được phép nhóm của đợt trước.
+
+🔴 **VÀ MỘT PHÉP ĐO CỦA CHÍNH ĐỢT NÀY KHÔNG ĐỨNG VỮNG Ở LẦN CHẠY ĐẦU — báo, không lặng lẽ chạy lại.**
+Bản `-t:Rebuild` **đầu tiên ở BASE trả 304, không phải 303**: đúng một `MSB3101` (*"could not write
+state file … used by another process"*) trên `St4i.Connector.Conformance.Tests`, tức một trong bảy
+mã đua-tranh-hiện-vật mà chính `verify-suites.sh` đã nêu tên. `dotnet build-server shutdown` rồi chạy
+lại: **303**. Con số ghim đúng, lần đọc đầu sai — và **chuỗi "bản rebuild đầu tiên đứng vững" ba đợt
+liên tiếp KẾT THÚC ở đây.**
+
+**CỤM ĐÃ CHỌN, và ứng viên đã cân TRƯỚC khi nêu bất kỳ con số nào của cụm.** Ứng viên: (i) trọn
+`Drivers/Simulators/` (11 file) · (ii) trọn phần còn lại của `Drivers/Modbus/` (8 file) · (iii) trọn
+phần còn lại của `Drivers/OpcUa/` (3 file — sẽ đưa **một thư mục driver về 0** lần đầu) · (iv) hai
+driver không-fieldbus cùng bộ đỡ của chúng (`SimulatedDriver` + `Mqtt/` + `HotFolder/`, 5 file) ·
+(v) **chỉ 19 cái CS1573** — **BỊ BÁC, và lý do là một luật chứ không phải một sở thích**: nó không
+lấy trọn file nào, nên nó phá *dư lượng mỗi file = 0*. **Chọn: bề mặt đường RS-485 DÙNG CHUNG — phân
+xử, cho thuê, và cái giữ chỗ của từng thiết bị.** Năm file, lấy TRỌN.
+
+**Vì sao cụm ấy đi cùng nhau:** mọi thành viên trong nó trả lời **CÙNG một câu hỏi — ai đang giữ sợi
+dây vật lý DUY NHẤT lúc này, và một người giữ hỏng thì những người còn lại trả giá gì.** `ModbusBus`
+là cái khoá phân xử, `GatewayTcpBusLink` là sợi dây, `ModbusBusRegistry`/`ModbusBusLease` là phép đếm
+tham chiếu giữ cho N thiết bị dùng chung **một** lần mở, `ModbusRtuConnectorFactory` là thứ dựng N
+driver trên một bus, `ModbusRtuDriver` là cái thực sự lấy và trả sợi dây. **`ModbusTcpDriver` và hai
+factory TCP CỐ Ý ở NGOÀI:** một endpoint TCP là **một** thiết bị với `_ioLock` riêng, nên câu hỏi
+trên không nói gì về nó — biên của cụm là một lập luận, không phải một lát cắt thư mục.
+
+**ĐỊNH GIÁ THEO FILE TRƯỚC KHI VIẾT, DƯ LƯỢNG SAU KHI VIẾT — đo lại, không suy ra:**
+
+| file | trước | sau | mã |
+|---|---:|---:|---|
+| `Drivers/Modbus/ModbusRtuDriver.cs` | 9 | **0** | 2 CS1591 + 7 CS1573 |
+| `Drivers/Modbus/GatewayTcpBusLink.cs` | 4 | **0** | 4 CS1591 |
+| `Drivers/Modbus/ModbusBus.cs` | 4 | **0** | 3 CS1591 + 1 CS1573 |
+| `Drivers/Modbus/ModbusRtuConnectorFactory.cs` | 3 | **0** | 3 CS1573 |
+| `Drivers/Modbus/ModbusBusRegistry.cs` | 1 | **0** | 1 CS1591 |
+| | **21** | **0** | **10 CS1591 + 11 CS1573**, trên **15 thành viên** |
+
+**Con số thật — ĐO, không trừ.** `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo` toàn
+solution, SDK 10.0.302, 15/15 compilation, `Build succeeded.`, `0 Error(s)`: `EXPECT_WARNINGS`
+**303 → 282**. `303 − 21 = 282` khớp, và phép khớp ấy **được báo cáo như một kết quả**.
+
+**Sổ tách-gốc — HAI hàng dịch, lần ĐẦU dưới phán quyết này:** `OURS CS1591 65 → 55` (−10) **và**
+`OURS CS1573 19 → 8` (−11). Đợt 9 chỉ dịch một hàng; cụm này dịch cả hai vì **11 trong 19 cái CS1573
+nằm trong đúng năm file ấy** — mà một CS1573 là **một khối doc ĐÃ CÔNG BỐ với bộ `<param>` dở dang**,
+tức đúng cái *nửa vời* mà đợt 6 gọi là nước cờ thua duy nhất. Còn lại **8**, cả 8 trên
+`SimulatorBase` ctor (4) và `SimulatorFactory.Create` (4). Vẫn **16 hàng**. 🔴 **Tám hàng VENDORED
+không dịch một đơn vị.** 🔴 **0 dòng `///` bị XOÁ, và 0 dòng không-`///` bị xoá khỏi bất kỳ file C#
+nào** — đo trên diff với base, vốn xoá **ba** dòng tất cả: hai dòng ở chính file này (câu liệt kê
+Phần I và trường máy đọc, cả hai buộc phải nêu mục 38 và 39) và **một** dòng `///` mà **văn xuôi giữ
+nguyên từng byte**, chỉ thẻ `</summary>` cuối dòng dời xuống cuối một đoạn rút được thêm vào.
+
+🔴 **HAI PHÁT HIỆN VỀ BẢNG BỀ MẶT ĐỌC CỦA MỤC 25 — xem mục 25 §"Đính chính 2026-08-22 (AZ-1)".** Tóm
+tắt: **hai trong 97 thành viên đã là `private`**, nên ô *"`internal` sẽ làm gì"* của bảng **mở rộng**
+chúng chứ không thu hẹp; **mẫu số của một phán quyết truy cập là nhiều nhất 95, không phải 97**; và
+phân loại `84/13/0` kiểm lại trên 15 thành viên của cụm ra **14 / 1 / 0**.
+
+🔴 **HAI KHUYẾT TẬT MÃ CỦA ĐỢT 9 NAY LÀ MỤC 38 VÀ 39 Ở PHẦN I** — cả hai **xác nhận lại trên mã và
+chạy lại trên assembly đã dựng** trước khi mở, và phép chạy lại **bác một phép đếm của đợt 9**:
+*"cả hai driver"* thực ra là **BA** (`ModbusTcpDriver`, `OpcUaDriver` gọi `Task.Delay` trực tiếp;
+`ModbusRtuDriver` qua `NextPollDelayMs`). **Không một dòng mã nào bị đụng.**
+
+🔴 **MỘT KHẲNG ĐỊNH ĐÃ CÔNG BỐ BỊ BÁC, RÚT TẠI NGUỒN Ở HAI CHỖ, KHÔNG SỬA MÃ:** mệnh đề
+*"`GenerateDocumentationFile` is not set anywhere in this repository, so no warning fires for a doc
+comment attached to the wrong member"* — viết ở `ModbusRtuDriver.BusDisposedDetail` **và** ở
+`ModbusRegister.DecodeRawWord`. **Tiền đề chết** (đợt 3 của chính mục 12 bật cờ ngày 2026-08-19;
+`SuppressionCensusTests` ghim **TÁM bật / bảy tắt**), **kết luận sống**: cờ ấy cảnh báo cho một khối
+doc **VẮNG**, còn một khối gắn nhầm thành viên thì **có mặt** với cả hai bên. Hai bản sao rút **cùng
+một lần**, đúng lý do file này lặp đi lặp lại: hai lời khai của một luật thì trôi.
+
+🔴 **VÀ MỘT KHUYẾT TẬT DỤNG CỤ, DỪNG VÀ BÁO, KHÔNG SỬA — xem báo cáo:** `scripts/repo-scan.sh` chạy
+**không có pathspec** (đúng dạng §8.1(f) bảo mọi nhiệm vụ dùng cho phép quét toàn cây) mặc định
+`SPECS=(".")` → `:(top).`, mà `git` **không khớp gì**. Đo được: `git grep -n InfiniteTimeout --
+':(top).'` trả **0** dòng, `':(top)'` trả **23**. Nên `scripts/repo-scan.sh 'pattern'` in
+`result lines : 0 … 1 means NO MATCH, which is a measurement, not an error` **cho mọi pattern**.
+Guard `_has_pattern` của chính script bắt ca *thiếu PATTERN* và **không** bắt ca này, còn
+`--self-test` **không thể** thấy nó vì nó luôn truyền một pathspec tường minh. Mọi phép quét của đợt
+này được chạy lại với pathspec tường minh.
+
+**TỰ KIỂM HAI VÒNG, TỈ LỆ NÊU RIÊNG** — chi tiết ở khối `EXPECT_NEW_DOC_ABSOLUTES` trong
+`verify-suites.sh`. Vòng 1 (cơ giới) gắn cờ **34**, **9 không sống sót**. Vòng 2 (thủ công, nhắm MỤC
+ĐÍCH và CƠ CHẾ) bắt thêm **11**, trong đó **3 là NHÂN QUẢ BỊA** và **1 là một CON SỐ SAI**. **Vòng 2
+bắt nhiều hơn vòng 1, đợt thứ tư liên tiếp.** `EXPECT_NEW_DOC_ABSOLUTES` **21 → 59**, baseline
+`cfcfae42` **không dịch** — và **cú nhảy 38 ấy bác dự đoán của brief**, xem khối hằng số.
+
+**Việc còn nợ sau đợt 10, nêu tên chứ không làm:** **63 chỗ trống** trên **57 thành viên** vẫn trong
+`Drivers/` (`Simulators/` 27 · `HotFolder/` 7 · `Mqtt/` 7 · `Drivers/` 5 · `Modbus/` 9 · `OpcUa/` 8),
+gồm **8 CS1573 còn lại**; **103 cái vendored** không đổi; và **mục 38 + 39** chờ chủ sở hữu.
 
 ---
 
@@ -7668,6 +7958,44 @@ có nghĩa là 5 780 câu sai: bộ lọc **chọn câu để người đọc**,
 là lý do **cố ý không có cổng toàn cây**: một cổng ghim con số đó sẽ đỏ với **mọi** lần sửa tài liệu,
 tức đúng thứ chính mục này đã cảnh báo — *"một dụng cụ không có định nghĩa xanh"*. Cái trần được **nêu
 tên**, không bị thu hẹp cho dễ nhìn.
+
+##### 📐 Đính chính 2026-08-22 (AZ-1, mục 12 đợt 10) — **cặp số `5 780 / 15 965` ở trên được RÚT; không một dòng nào bị xoá, và KHÔNG có literal mới thay vào**
+
+**Ba dòng gạch đầu dòng ngay trên giữ NGUYÊN VĂN**, cùng con số `481 trong 545 file`, cùng câu
+*"HƠN MỘT PHẦN BA"*, và cùng cặp `5 781 / 15 966` ở §4 dưới. Chúng đúng với lần chạy ở base
+`e99019c0` ngày 2026-08-22 và **là ghi chép của lần chạy ấy**. Cái bị rút là tư cách của chúng như
+**một cái trần đang có hiệu lực**.
+
+* 🔴 **Không tái lập.** Đợt 9 (AY-1) chạy lại `--census` và đo **5 794 / 16 041 ở BASE của nó
+  (`fb7635cf`), TRƯỚC khi nó viết một chữ**, rồi **5 796 / 16 131** sau khi viết. Tức phần lớn độ
+  lệch **đã có sẵn**: một nhiệm vụ trước đó thêm câu chú thích và không chạy lại dụng cụ này. Đó
+  đúng là cách hỏng mà **chính mục này** gọi tên là tệ hơn không nêu trần — *một cái trần nêu quá
+  nhỏ* — xảy ra bên trong chính mục nêu nó.
+* **Đợt 9 đã sửa hai trong ba bản sao** (`scripts/scan-doc-negations.sh` biên (c) và
+  `scripts/verify-suites.sh`) và **không sửa được bản thứ ba — bản này** — vì brief của đợt ấy cấm
+  mở lại một mục ở Phần III. Nó **ghi lại chỗ mâu thuẫn thay vì giấu**. Lệnh cấm ấy được **gỡ cho
+  đúng con số này** ngày 2026-08-22, với lý do ghi tại chỗ: **sửa một con số đã ĐO ra sai trong một
+  mục Phần III là một phép RÚT, không phải mở lại một phán quyết** — phán quyết của mục 26 (dựng bộ
+  lọc, cố ý không cổng toàn cây) **không đổi một chữ**.
+* 🔴 **Và một bản sao THỨ TƯ, đợt 9 không thấy:** biên **(d)** của `scan-doc-negations.sh` — *"5780
+  sentences is not a backlog"* — vẫn mang literal cũ **trong chính file mà đợt 9 đang sửa biên (c)**.
+  Đo được ở đây, và rút ở đó cùng ngày.
+* 🔴 **Cách bảo trì ĐÚNG cho con số này KHÔNG phải một literal mới.** Bất kỳ literal nào viết vào đây
+  cũng sẽ cũ trong vài ngày — đó là điều vừa đo được hai lần. **Muốn biết cái trần hôm nay: CHẠY**
+
+  ```
+  bash scripts/scan-doc-negations.sh --census
+  ```
+
+  **rồi trích dẫn lần chạy ấy kèm commit.** Dụng cụ **liệt kê từng câu trước rồi mới in tổng**, nên
+  con số nó in ra là một con số **đã có phép liệt kê đứng sau**, khác hẳn một con số chép lại. Ví dụ
+  của chính lần rút này, nêu **như một lần chạy chứ không như một hằng số**: ở
+  `3f564039` con số đọc **5 796 / 16 131**; sau công việc của đợt 10 nó đọc **5 831 / 16 246**. Cả
+  hai đều là **mẫu của ngày lấy chúng**.
+* **Cái KHÔNG đổi, nói cho đủ hai chiều:** *"HƠN MỘT PHẦN BA"* vẫn đúng ở mọi lần đo trên (5 831 /
+  16 246 ≈ 35,9 %), và lý do **cố ý không dựng cổng toàn cây** vẫn nguyên vẹn — thực ra nó **mạnh
+  lên**: bốn lần đo ở trên là **bốn giá trị khác nhau trên bốn commit**, nên một hằng số ghim vào cái
+  trần này sẽ đỏ ở mỗi commit sau lần ghim.
 
 #### 4. Cặp đối chứng — chạy trọn, rồi **hoàn nguyên**
 

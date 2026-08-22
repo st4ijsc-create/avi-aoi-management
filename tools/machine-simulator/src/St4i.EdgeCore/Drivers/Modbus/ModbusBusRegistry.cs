@@ -189,6 +189,23 @@ public sealed class ModbusBusLease : IAsyncDisposable
     /// LEASE's own state as well as the registry's count.</summary>
     public bool IsReleased => Volatile.Read(ref _released) != 0;
 
+    /// <summary>Hands this claim back. The FIRST call decrements the key's reference count and, if that
+    /// takes it to zero, disposes the <see cref="ModbusBus"/> and with it the physical link; every later call
+    /// returns without touching the count. That is the idempotence this type's own remarks argue for, and
+    /// <see cref="IsReleased"/> is how a test sees which of the two happened.
+    ///
+    /// <para><b>All three paths through it complete synchronously today, and one caller leans on that —
+    /// under a guard.</b> <see cref="ModbusBusRegistry.ReleaseAsync"/> takes a lock, decrements, and awaits
+    /// <see cref="ModbusBus.DisposeAsync"/> only at zero — and that method sets a flag, tears a link down and
+    /// returns a completed <see cref="ValueTask"/>. <see cref="ModbusRtuDriver"/>'s constructor relies on
+    /// exactly this to release a lease it took before a later argument check threw, and guards the
+    /// assumption with a <see cref="ValueTask.IsCompleted"/> test rather than assuming it forever.</para>
+    ///
+    /// <para><b>Releasing a lease whose registry is already gone is a no-op, not an error.</b> Process
+    /// teardown disposes the registry, which disposes every bus regardless of outstanding leases; a driver
+    /// disposed afterwards still calls this, finds no matching entry, and returns. Deciding otherwise would
+    /// mean throwing at a driver that is itself being torn down, over an ordering it did not
+    /// choose.</para></summary>
     public ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _released, 1) != 0)
