@@ -187,6 +187,8 @@ export async function runSpecialistSessionInBackground(args: {
     await completeAiSpecialistSession(sessionId, userId, {
       status: "failed",
       summary: error?.message ?? "Specialist run failed",
+      // data-raw-ok: đi vào BẢN GHI PHIÊN (`completeAiSpecialistSession`) làm bằng chứng
+      // truy nguyên, không trả về cho ai. Chuỗi GỐC mới đúng ở nhật ký kỹ thuật.
       aggregateOutput: { error: error?.message ?? "Unknown error" },
     }).catch(() => { /* phiên đã hỏng — không làm sập tiến trình nền */ });
   }
@@ -267,6 +269,7 @@ export async function runSpecialistWorkflowSessionInBackground(args: {
     await completeAiSpecialistSession(sessionId, userId, {
       status: "failed",
       summary: error?.message ?? "Workflow failed",
+      // data-raw-ok: như trên — bản ghi phiên, không phải phản hồi.
       aggregateOutput: { error: error?.message ?? "Unknown error", mode },
     }).catch(() => { /* phiên đã hỏng — không làm sập tiến trình nền */ });
   }

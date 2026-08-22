@@ -215,7 +215,8 @@ export const thresholdApprovalRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
 
-      const results: Array<{ id: number; status: "approved" | "skipped" | "failed"; reason?: string }> = [];
+      // F14 — như trên: kết quả từng dòng của một lô, trả về bằng cửa THÀNH CÔNG.
+      const results: Array<{ id: number; status: "approved" | "skipped" | "failed"; reason?: string; errorCode?: "OPERATION_FAILED"; errorParams?: Record<string, string | number> }> = [];
       // De-dupe while preserving order.
       const ids = [...new Set(input.ids)];
       for (const id of ids) {
@@ -234,7 +235,14 @@ export const thresholdApprovalRouter = router({
           await decideApproval(db, row, ctx.user.id, input.comment, input.apply);
           results.push({ id, status: "approved" });
         } catch (err: any) {
-          results.push({ id, status: "failed", reason: err?.message ?? "error" });
+          results.push({
+            id,
+            status: "failed",
+            // data-raw-ok: chi tiết KỸ THUẬT cho DÒNG này trong lô.
+            reason: err?.message ?? "error",
+            errorCode: "OPERATION_FAILED",
+            errorParams: { operation: "approveThreshold" },
+          });
         }
       }
       const summary = {

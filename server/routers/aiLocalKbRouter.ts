@@ -77,6 +77,15 @@ interface KbHealthResponse {
   chunks: number;
   embeddings?: number;
   error?: string;
+  /**
+   * F14 — mã máy-đọc-được ĐI KÈM chuỗi kỹ thuật ở trường `error`.
+   *
+   * Thủ tục này KHÔNG ném khi hỏng: nó trả 200 OK kèm `error`. Nghĩa là `onError` phía
+   * client không chạy, `appCode` không tồn tại, và `mapTrpcError` không bao giờ nhìn thấy
+   * chuỗi ấy — người dùng đọc nguyên văn tiếng Anh. Trả CẢ HAI: mã cho người, chuỗi cho kỹ sư.
+   */
+  errorCode?: "OPERATION_FAILED" | "DEVICE_UNREACHABLE";
+  errorParams?: Record<string, string | number>;
   // W0.2/W0.3 (doc 11) — honest health: capability + embed-provenance signals
   // surfaced by getKbHealth and passed through unchanged to the client.
   llmReady?: boolean;
@@ -155,6 +164,9 @@ export const aiLocalKbRouter = router({
         ready: false,
         chunks: 0,
         embeddings: 0,
+        errorCode: "OPERATION_FAILED" as const,
+        errorParams: { operation: "kbHealthCheck" },
+        // data-raw-ok: chi tiết KỸ THUẬT, ĐI KÈM errorCode ở trên.
         error: error.message,
         llmReady: false,
         embedModelMatches: true,
@@ -181,6 +193,10 @@ export const aiLocalKbRouter = router({
     } catch (error: any) {
       return {
         success: false,
+        errorCode: "OPERATION_FAILED" as const,
+        errorParams: { operation: "queryLocalKb" },
+        // data-raw-ok: chi tiết KỸ THUẬT, ĐI KÈM errorCode ở trên để client dịch câu cho
+        // người dùng. Giữ nguyên văn vì đây là thứ duy nhất nói được hỏng ở đâu.
         error: error.message,
         data: null,
       };
@@ -207,6 +223,10 @@ export const aiLocalKbRouter = router({
     } catch (error: any) {
       return {
         success: false,
+        errorCode: "OPERATION_FAILED" as const,
+        errorParams: { operation: "queryLocalKb" },
+        // data-raw-ok: chi tiết KỸ THUẬT, ĐI KÈM errorCode ở trên để client dịch câu cho
+        // người dùng. Giữ nguyên văn vì đây là thứ duy nhất nói được hỏng ở đâu.
         error: error.message,
         data: null,
       };
@@ -227,6 +247,10 @@ export const aiLocalKbRouter = router({
     } catch (error: any) {
       return {
         success: false,
+        errorCode: "OPERATION_FAILED" as const,
+        errorParams: { operation: "queryLocalKb" },
+        // data-raw-ok: chi tiết KỸ THUẬT, ĐI KÈM errorCode ở trên để client dịch câu cho
+        // người dùng. Giữ nguyên văn vì đây là thứ duy nhất nói được hỏng ở đâu.
         error: error.message,
       };
     }
@@ -255,7 +279,15 @@ export const aiLocalKbRouter = router({
       const result = await fetchKbApi("/api/ai/local-kb/feedback", "POST", input);
       return { success: true, data: result, persisted: dbResult.persisted };
     } catch (error: any) {
-      return { success: false, error: error.message, persisted: dbResult.persisted };
+      return {
+        success: false,
+        errorCode: "OPERATION_FAILED" as const,
+        errorParams: { operation: "queryLocalKb" },
+        // data-raw-ok: chi tiết KỸ THUẬT, ĐI KÈM errorCode ở trên để client dịch câu cho
+        // người dùng. Giữ nguyên văn vì đây là thứ duy nhất nói được hỏng ở đâu.
+        error: error.message,
+        persisted: dbResult.persisted,
+      };
     }
   }),
 });

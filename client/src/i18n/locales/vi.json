@@ -3998,7 +3998,8 @@
       "rotateDeviceCert": "xoay vòng chứng chỉ thiết bị",
       "issueServiceIdentity": "cấp định danh dịch vụ",
       "useInstrument": "sử dụng thiết bị đo",
-      "editThresholdDirectly": "sửa ngưỡng trực tiếp"
+      "editThresholdDirectly": "sửa ngưỡng trực tiếp",
+      "kbHealthCheck": "kiểm tra tình trạng kho tri thức"
     },
     "field": {
       "code": "mã",

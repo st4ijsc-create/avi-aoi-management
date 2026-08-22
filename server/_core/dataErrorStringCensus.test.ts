@@ -36,13 +36,29 @@ import { describe, it, expect } from "vitest";
 import { demDataError, duyetTs, DAU_MIEN_TRU } from "../../scripts/dataErrorStringScan.mjs";
 
 /**
- * Kênh tRPC — tới thẳng màn hình người dùng. CHỈ ĐƯỢC GIẢM.
- * `20 → 18`: `deviceAdapter.testConnection` (2 chỗ) nay trả KÈM `errorCode` +
- * `errorParams`, client dịch qua `translateAppError`; chuỗi thô được GIỮ LẠI có chủ đích
- * làm dòng chi tiết kỹ thuật (`data-raw-ok:`) vì "ECONNREFUSED 10.0.0.5:502" là thứ duy
- * nhất nói được hỏng ở đâu. Trả CẢ HAI, không đánh đổi thông tin lấy ngôn ngữ.
+ * Kênh tRPC — tới thẳng màn hình người dùng. `20 → 18 → 14 → 0`, nay là BẤT BIẾN.
+ *
+ * ── PHẦN KHÓ KHÔNG PHẢI SỬA, MÀ LÀ PHÂN LOẠI ────────────────────────────────────
+ * Trong 20 chỗ ban đầu, chỉ **13** thật sự là nợ. Bảy chỗ còn lại có bản chất NGƯỢC:
+ *   • **6 chỗ ghi vào BẢNG NHẬT KÝ / BẢN GHI PHIÊN** (`backup_logs`,
+ *     `webhook_delivery_logs`, nhật ký báo cáo định kỳ, `completeAiSpecialistSession`,
+ *     object `.values()` của một INSERT trong `aoiPackageRouter`). Chuỗi ở đó KHÔNG rời
+ *     máy chủ — nó là bằng chứng truy nguyên. Dịch đi là làm hỏng chính thứ nhật ký
+ *     sinh ra để làm.
+ *   • **3 chỗ trả cho MÁY** (kết quả từng dòng của batch ingest, đồng bộ point-spec).
+ *     Tiếng Anh là quy ước máy-máy, y như tuyến REST.
+ *
+ * ⚠ `tsc` bắt được MỘT chỗ tôi phân loại nhầm: `aoiPackageRouter:1064` trông như một
+ *   object trả về, thật ra là `.values()` của `db.insert` — kiểu drizzle từ chối trường
+ *   `errorCode` và lộ ra ngay. Bộ dò bỏ sót vì `db.insert(` nằm xa hơn cửa sổ 14 dòng.
+ *   ⇒ Trình biên dịch là một thiết bị đo, không chỉ là cổng chặn.
+ *
+ * 13 chỗ nợ thật nay trả KÈM `errorCode` + `errorParams` (client dịch qua
+ * `translateAppError`), và GIỮ chuỗi thô làm dòng chi tiết kỹ thuật (`data-raw-ok:`) —
+ * "ECONNREFUSED 10.0.0.5:502" là thứ duy nhất nói được hỏng ở đâu. Trả CẢ HAI, không
+ * đánh đổi thông tin lấy ngôn ngữ.
  */
-const ALLOWED_TRPC_DATA_ERROR = 18;
+const ALLOWED_TRPC_DATA_ERROR = 0;
 
 /**
  * Kênh service — cần TRUY VẾT từng chỗ mới biết nó nổi lên đâu (có chỗ chỉ vào log,
@@ -96,5 +112,33 @@ describe("F14 — chuỗi lỗi thô trả về như DỮ LIỆU (cửa THÀNH C
   it("★★★ dấu miễn trừ phải KÈM LÝ DO — không cho tắt cổng bằng một từ", () => {
     expect(DAU_MIEN_TRU.test("// data-raw-ok")).toBe(false);
     expect(DAU_MIEN_TRU.test("// data-raw-ok: khách của tuyến này là máy")).toBe(true);
+  });
+
+  it("★★★ cầu chì 3: bất biến 0 phải là 0 THẬT, không phải bộ đếm hỏng", () => {
+    // Bất biến 0 có điểm mù riêng: một bộ đếm hỏng cũng trả 0 và trông y hệt "đã sạch".
+    // Bơm vào một chuỗi có ĐÚNG hình dạng nợ rồi hỏi thước xem nó có thấy không.
+    // Cùng lớp lỗi với glob rỗng ở Pha 4 và với lưới 0326 canh `reltuples < 0`.
+    const { writeFileSync, unlinkSync } = require("node:fs") as typeof import("node:fs");
+    const P = "server/routers/__dataErrorProbe.tmp.ts";
+    try {
+      // ⚠ Mẫu thử phải có ĐÚNG hình dạng nợ thật. Bản đầu viết `(err as Error).message`
+      // và KHÔNG bị bắt — vì bộ dò khớp theo ĐỊNH DANH (`err.message`), còn dấu ngoặc
+      // làm biểu thức không còn là một định danh. Một cầu chì viết sai hình dạng sẽ báo
+      // "thước hỏng" trong khi thước vẫn tốt: cầu chì cũng cần được kiểm.
+      writeFileSync(P, `export const x = (err: any) => ({ ok: false, error: err.message });\n`);
+      const t = demDataError().filter((y) => y.kenh === "trpc");
+      expect(t.length, "thước KHÔNG thấy nợ vừa bơm vào ⇒ nó đang hỏng").toBe(1);
+    } finally {
+      try { unlinkSync(P); } catch { /* đã xoá */ }
+    }
+    expect(demDataError().filter((y) => y.kenh === "trpc").length).toBe(0);
+  });
+
+  it("★★★ kênh NHẬT KÝ phải được nhận diện — nếu không, 6 chỗ ĐÚNG sẽ bị tính là nợ", () => {
+    // Trục này phát hiện MUỘN, khi đã đi sửa được một nửa. Không có nó, người sau sẽ đi
+    // "dịch" những chuỗi nằm trong `backup_logs` / `webhook_delivery_logs` / bản ghi
+    // phiên — tức làm hỏng đúng thứ nhật ký sinh ra để làm.
+    const log = demDataError().filter((x) => x.kenh === "log");
+    expect(log.length).toBeGreaterThanOrEqual(5);
   });
 });

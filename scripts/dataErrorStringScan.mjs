@@ -105,7 +105,24 @@ function nganhCanh(goc, idx) {
  */
 const RE_REST = /\bres\s*(?:\.\s*status\s*\([^)]*\)\s*)?\.\s*json\s*\(/;
 
-/** @returns {{file:string,dong:number,cau:string,kenh:"trpc"|"rest"|"service"}[]} */
+/**
+ * GHI VÀO BẢNG NHẬT KÝ / KIỂM TOÁN — cũng KHÔNG phải nợ.
+ *
+ * ⚠ Trục thứ ba này phát hiện muộn, khi đi sửa 18 chỗ "kênh tRPC" thì thấy vài chỗ chưa
+ * bao giờ rời máy chủ: `backupRouter:104` ghi `errorMessage` vào `backup_logs` rồi mới
+ * ném một `appError` RIÊNG cho người dùng; `webhookRouter:142` ghi vào sổ giao vận;
+ * `systemRouters:554` ghi vào nhật ký báo cáo định kỳ.
+ *
+ * Ở nhật ký kỹ thuật, chuỗi GỐC mới là thứ đúng: nó là bằng chứng để truy nguyên, không
+ * phải câu nói với người dùng. Dịch nó đi là làm hỏng chính thứ nhật ký sinh ra để làm.
+ *
+ * ⇒ Bài học lặp lại (lần thứ hai trong cùng phép đo này, sau trục REST): **phân loại
+ *   khó hơn đếm.** Một con số gộp các thứ có bản chất NGƯỢC nhau thì to hơn mà vô dụng —
+ *   nó chỉ dẫn người ta đi sửa vào chỗ sửa là hỏng.
+ */
+const RE_NHAT_KY = /\b(?:db|tx|trx)\s*\.\s*(?:insert\s*\(|create[A-Za-z]*Log\s*\(|log[A-Za-z]*\s*\()/;
+
+/** @returns {{file:string,dong:number,cau:string,kenh:"trpc"|"rest"|"log"|"service"}[]} */
 export function demDataError(goc = "server") {
   const no = [];
   for (const file of duyetTs(goc)) {
@@ -118,7 +135,17 @@ export function demDataError(goc = "server") {
       if (DAU_MIEN_TRU.test(van)) continue;
       // Lời gọi `res.json` có thể xuống dòng ⇒ nhìn lùi tối đa 3 dòng.
       const quanh = dongSrc.slice(Math.max(0, dong - 4), dong).join("\n");
-      const kenh = RE_REST.test(quanh) ? "rest" : rel.includes("/routers/") ? "trpc" : "service";
+      // Khối `.values({ … })` của một INSERT thường dài hơn ⇒ cửa sổ rộng hơn. Vẫn phải
+      // CÓ GIỚI HẠN: nhìn quá xa sẽ nhận nhầm một `db.insert` ở thủ tục bên cạnh, và khi
+      // ấy thước tự cấp miễn trừ cho thứ nó phải canh (bài học `timeframeGuard`).
+      const quanhRong = dongSrc.slice(Math.max(0, dong - 14), dong).join("\n");
+      const kenh = RE_REST.test(quanh)
+        ? "rest"
+        : RE_NHAT_KY.test(quanhRong)
+          ? "log"
+          : rel.includes("/routers/")
+            ? "trpc"
+            : "service";
       no.push({ file: rel, dong, cau: src.slice(m.index, m.index + 90).split("\n")[0].trim(), kenh });
     }
   }

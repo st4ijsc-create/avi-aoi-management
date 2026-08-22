@@ -3990,7 +3990,8 @@
       "rotateDeviceCert": "轮换设备证书",
       "issueServiceIdentity": "签发服务身份",
       "useInstrument": "使用测量仪器",
-      "editThresholdDirectly": "直接修改阈值"
+      "editThresholdDirectly": "直接修改阈值",
+      "kbHealthCheck": "检查知识库状态"
     },
     "field": {
       "code": "编码",

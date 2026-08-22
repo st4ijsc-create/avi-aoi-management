@@ -3091,6 +3091,8 @@ export const machineApiRouter = router({
               success: false,
               inspectionId: null,
               rateLimited: true,
+              // data-raw-ok: kết quả TỪNG DÒNG của batch ingest, khách hàng là MÁY —
+              // tiếng Anh là quy ước đúng, y như tuyến REST. Dịch đi là phá hợp đồng máy-máy.
               error: rlErr.message,
             };
             return;
@@ -3329,6 +3331,8 @@ export const machineApiRouter = router({
               success: false,
               processResultId: null,
               rateLimited: true,
+              // data-raw-ok: kết quả TỪNG DÒNG của batch ingest, khách hàng là MÁY —
+              // tiếng Anh là quy ước đúng, y như tuyến REST. Dịch đi là phá hợp đồng máy-máy.
               error: rlErr.message,
             };
             return;
@@ -3981,6 +3985,8 @@ export const machineApiRouter = router({
             errors.push({
               code: point.code,
               message: error instanceof TRPCError
+                // data-raw-ok: danh sách lỗi TỪNG ĐIỂM trả cho MÁY (đồng bộ point-spec) —
+                // tiếng Anh là quy ước máy-máy, y như tuyến REST.
                 ? error.message
                 : error instanceof Error
                   ? error.message

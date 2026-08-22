@@ -152,7 +152,14 @@ export const equipmentIntegrationRouter = router({
       } catch (err) {
         // Honest: report the failure; serve the last cache (source:'cache'|'none'), no fabrication.
         const snap = adapter.readSnapshot();
-        return { ...snap, error: err instanceof Error ? err.message : String(err) };
+        return {
+          ...snap,
+          // data-raw-ok: chi tiết KỸ THUẬT của phiên OPC UA, ĐI KÈM errorCode ngay dưới
+          // để client dịch câu cho người vận hành.
+          error: err instanceof Error ? err.message : String(err),
+          errorCode: "DEVICE_UNREACHABLE" as const,
+          errorParams: { entity: "opcua" },
+        };
       }
     }),
 

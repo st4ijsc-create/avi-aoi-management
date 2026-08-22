@@ -3998,7 +3998,8 @@
       "rotateDeviceCert": "rotate device certificate",
       "issueServiceIdentity": "issue service identity",
       "useInstrument": "use the measurement instrument",
-      "editThresholdDirectly": "edit threshold directly"
+      "editThresholdDirectly": "edit threshold directly",
+      "kbHealthCheck": "check knowledge-base health"
     },
     "field": {
       "code": "code",

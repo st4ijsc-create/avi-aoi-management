@@ -922,7 +922,9 @@ export const productModelRouter = router({
     .mutation(async ({ ctx, input }) => {
       let inserted = 0;
       let updated = 0;
-      const errors: Array<{ row: number; message: string }> = [];
+      // F14 — mã máy-đọc-được đi KÈM chuỗi kỹ thuật: thủ tục này trả 200 OK kèm danh sách
+      // lỗi từng dòng, nên `onError` phía client không chạy và `mapTrpcError` không thấy gì.
+      const errors: Array<{ row: number; message: string; errorCode?: "OPERATION_FAILED"; errorParams?: Record<string, string | number> }> = [];
 
       const str = (v: unknown): string | undefined => {
         const s = v == null ? "" : String(v).trim();
@@ -985,7 +987,14 @@ export const productModelRouter = router({
             inserted++;
           }
         } catch (err: any) {
-          errors.push({ row: rowNo, message: err?.message ? String(err.message) : "Lỗi không xác định" });
+          errors.push({
+            row: rowNo,
+            // data-raw-ok: chi tiết KỸ THUẬT của DÒNG này trong file nhập — người sửa file
+            // cần biết dòng nào sai vì sao. Câu cho người dùng lấy từ errorCode ngay dưới.
+            message: err?.message ? String(err.message) : "Lỗi không xác định",
+            errorCode: "OPERATION_FAILED",
+            errorParams: { operation: "importProductPackage" },
+          });
         }
       }
 

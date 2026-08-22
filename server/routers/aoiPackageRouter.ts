@@ -1061,6 +1061,9 @@ export const aoiPackageRouter = router({
             .update(inspectionPackages)
             .set({
               status: "failed",
+              // data-raw-ok: đây là object `.values()` của một INSERT — chuỗi này đi vào
+              // BẢNG NHẬT KÝ, không rời máy chủ. Ở nhật ký kỹ thuật, chuỗi GỐC mới đúng:
+              // nó là bằng chứng truy nguyên, không phải câu nói với người dùng.
               errorMessage: err.message || "Failed to process package",
               updatedAt: new Date(),
             })
