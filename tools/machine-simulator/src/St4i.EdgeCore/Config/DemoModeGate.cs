@@ -65,7 +65,16 @@ public sealed class DemoModeGate
     /// <c>ExtraDefectRate</c>, <c>FaultRate</c> and <c>CycleRateMultiplier</c> change what the simulated
     /// machines produce and are deliberately left ungated, because their output still goes to the real
     /// server and is still reported truthfully by <c>GET /v1/scenario</c>. Turning this flag off buys
-    /// "this machine will not fabricate its TRANSPORT", not "this machine will not simulate".</summary>
+    /// "this machine will not fabricate its TRANSPORT", not "this machine will not simulate".
+    ///
+    /// <para>🔴 CORRECTED 2026-08-22 (item 33) — "still reported truthfully by <c>GET /v1/scenario</c>"
+    /// held for the three simulator knobs and it still does; it did NOT hold for the fourth field on that
+    /// same response. <c>NetworkOutage</c> reported a DECLARED flag, and <c>PUT /v1/mode</c> /
+    /// <c>PUT /v1/settings</c> / a switch to Demo each replace the outage transport without clearing it,
+    /// so the one field on that payload that is about THIS flag's own axis was the one that could lie.
+    /// It now reports the transport actually installed. <b>This gate is not affected either way</b> — it
+    /// runs before <c>FleetHost.ApplyScenario</c> and decides admission, not reporting; what changed is
+    /// the honesty of the surface that the gate's own rationale pointed at.</para></summary>
     public bool Enabled { get; }
 
     /// <summary>Normal entry point — reads the real process environment variable.</summary>

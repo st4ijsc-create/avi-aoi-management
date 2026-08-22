@@ -314,8 +314,38 @@ public sealed class FleetHost
     /// path and no latch reads either field. If that ever stops being true — if anything on the write or
     /// safety path starts reading this pair — this exemption dies and the pair must be resolved inside
     /// <see cref="FleetCore"/> and returned as one record, like every other pair on this seam.</para></para>
-    /// </summary>
-    public ScenarioDto CurrentScenarioDto() => ScenarioDto.From(_core.CurrentScenario, _core.ActivePresetName);
+    ///
+    /// <para>🔴 <b>2026-08-22 (item 33) — THE EXEMPTION NOW COVERS THREE READS, NOT TWO, AND THE THIRD IS
+    /// WHY THIS RESPONSE STOPPED LYING.</b> <c>FleetCore.NetworkOutageTransportInstalled</c> joins the
+    /// pair. It survives the same test the pair does and fails none of the exemption's own kill
+    /// conditions: it is a lock-free read of a reference, no guard/latch/write path reads it, and a torn
+    /// three-way read can only report a transport swap one instant early or late — the same staleness the
+    /// one-second poll on the other end of this route already has. <b>What it is NOT:</b> a fourth
+    /// unsynchronised pair sneaking in under an old label. It is here because
+    /// <c>ScenarioConfig.NetworkOutage</c> alone could not answer the question this DTO is asked.</para>
+    ///
+    /// <para><b>What changed on the wire, and it is a MEANING and not a shape.</b> Same record, same six
+    /// members, same types. <c>NetworkOutage</c> and the outage clause of <c>StatusLine</c> now report
+    /// <b>the transport actually installed</b> instead of the flag an operator once declared. Those two
+    /// answers used to be identical and are not: <c>PUT /v1/mode</c> (including a re-apply of the mode
+    /// already running, which raises no event), <c>PUT /v1/settings</c> on a Live/Auto host, and a switch
+    /// to Demo all take the outage transport away without touching <c>_scenario</c> — so this response
+    /// carried <c>networkOutage: true</c>, <c>activePreset: "network-outage"</c> and a status line naming
+    /// an outage while every reading was flowing to the real ecosystem server, once per second, for as
+    /// long as the operator left the screen open.</para>
+    ///
+    /// <para>🔴 <b>The two things this deliberately still reports as DECLARED, said because reporting one
+    /// half and going quiet about the other is how the original defect reads.</b>
+    /// (1) <c>ActivePreset</c> still names the preset the operator selected — that IS a fact about the
+    /// operator's selection and it is true; only the transport clause was ever a claim about the wire.
+    /// So a cleared outage reads <c>"network-outage — … network normal."</c>, which is two true
+    /// statements, not one lie. (2) <c>CycleRate</c>/<c>DefectRate</c>/<c>FaultRate</c> stay exactly as
+    /// declared: nothing clears them, they change what the SIMULATORS produce rather than which transport
+    /// is installed, and inferring them from anything would be the blind-sync mistake on the other axis.
+    /// </para></summary>
+    public ScenarioDto CurrentScenarioDto() => ScenarioDto.From(
+        _core.CurrentScenario with { NetworkOutage = _core.NetworkOutageTransportInstalled },
+        _core.ActivePresetName);
 
     /// <summary>Starts the read pipeline. See <see cref="FleetCore.Start"/> — including why the NBIRTH
     /// publish stays inside the gate and the historian run-event stays outside it.</summary>
