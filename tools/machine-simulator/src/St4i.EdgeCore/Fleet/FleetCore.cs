@@ -2076,6 +2076,46 @@ internal sealed class FleetCore
 
     public string ActivePresetName => _activePresetName;
 
+    /// <summary>🔴 <b>Whether the fabricated outage transport is the one INSTALLED right now</b> — not
+    /// whether an operator ever asked for it. <see cref="CurrentScenario"/><c>.NetworkOutage</c> is a
+    /// DECLARED flag, written once by <see cref="ApplyScenario"/> and never unwritten by anything else;
+    /// this is the EVENT, read straight off <see cref="SwitchableTransport.Inner"/>. The two are allowed
+    /// to disagree, and measuring the disagreement is the entire reason this member exists.
+    ///
+    /// <para><b>How they come apart, measured rather than reasoned.</b> Three paths re-point
+    /// <see cref="SwitchableTransport"/> at a transport that is NOT
+    /// <see cref="ApplyNetworkOutageLocked"/>'s <c>DemoTransport</c>, and none of them touches
+    /// <see cref="_scenario"/>: <see cref="ApplyMode"/> (whose target set is <c>{_live, _auto, _demo}</c>
+    /// — the outage instance is not in it, so even a re-apply of the SAME mode, which raises no
+    /// <c>ModeChanged</c>, clears the outage); <see cref="UpdateSettings"/> via
+    /// <see cref="TransportCoordinator.RebuildLive"/>, which re-applies the current mode whenever it is
+    /// Live or Auto — so editing serverUrl/machineCode/verifyTls clears it too; and a switch TO Demo,
+    /// which installs the DI <c>DemoTransport</c> singleton (<c>latencyMs: 40</c>,
+    /// <c>fakeErrorRate: 0.0</c>), not the outage one (<see cref="OutageLatencyMs"/>,
+    /// <see cref="OutageFakeErrorRate"/>).</para>
+    ///
+    /// <para><b>Reference equality, not a mode comparison, and that is the load-bearing choice.</b>
+    /// <see cref="SwitchableTransport.Mode"/> answers <c>Demo</c> for BOTH the outage instance and the DI
+    /// Demo singleton, so a mode test cannot tell "the operator selected Demo" from "a scenario dragged
+    /// the fleet onto a 0.9-queueing fabricator". Reference identity can, and it is exact: this returns
+    /// true for precisely the instance <see cref="ApplyNetworkOutageLocked"/> installs.</para>
+    ///
+    /// <para><b>Lock-free on purpose, same contract as <see cref="CurrentScenario"/>.</b> Both reads are
+    /// unsynchronised snapshots; the worst a racing <see cref="ApplyScenario"/> or
+    /// <see cref="ApplyMode"/> can produce is an answer that was true a moment ago. That is the same
+    /// staleness a one-second poll already has, and no guard, latch or write path reads this member — see
+    /// <c>FleetHost.CurrentScenarioDto</c>'s own exemption note, which this member is now part of.</para>
+    ///
+    /// <para>🔴 <b>What this does NOT close.</b> The declared flag stays <see langword="true"/> after the
+    /// transport is taken away, so a later <see cref="Burst"/> — which re-applies
+    /// <c>_scenario with { CycleRateMultiplier = … }</c> — runs
+    /// <see cref="ApplyNetworkOutageLocked"/><c>(true)</c> again and REINSTALLS the outage transport from
+    /// a flag whose surface has meanwhile been reporting "no outage". Reporting the truth is not the same
+    /// as reconciling the two states, and reconciling them is a write-side change with its own price
+    /// (see item 33 in <c>docs/owner-decisions.md</c>).</para></summary>
+    public bool NetworkOutageTransportInstalled =>
+        _outageTransport is not null && ReferenceEquals(_transport.Inner, _outageTransport);
+
     /// <summary>🔴 E-2 — the per-machine live state, handed to the shell so it can project it
     /// (<c>GET /v1/machines/{code}</c>) and drive <c>POST /v1/machines/{code}/sync-config</c> without this
     /// class naming a single wire type. Deliberately the SAME lock-free <see cref="_states"/> read

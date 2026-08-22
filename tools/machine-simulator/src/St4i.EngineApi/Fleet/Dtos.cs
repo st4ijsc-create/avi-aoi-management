@@ -49,8 +49,34 @@ public sealed record ScenarioRequest(double CycleRate = 1.0, double DefectRate =
 
 public sealed record ScenarioPresetRequest(string Name);
 
+/// <summary>🔴 <b>2026-08-22 (item 33) — <c>NetworkOutage</c> ANSWERS A DIFFERENT QUESTION ON THE GET
+/// THAN ON THE POSTs, ON PURPOSE, AND THE SPLIT IS THE FIX RATHER THAN A LEAK.</b> This record's shape is
+/// unchanged (same six members, same types, same names) and <see cref="From"/> is still the only builder;
+/// what differs is the value its one caller on each side hands it.
+///
+/// <para><c>GET /v1/scenario</c> → <c>FleetHost.CurrentScenarioDto</c> reports <b>the transport actually
+/// installed</b>. That route is a STATUS surface polled once a second by <c>web/src/routes/Scenario.tsx</c>,
+/// and answering it from the declared flag is what let it draw a lit "Network outage" switch over a fleet
+/// whose readings were reaching the real server — see that member's own remarks for the three paths that
+/// take the outage transport away without touching the flag.</para>
+///
+/// <para><c>POST /v1/scenario</c>, <c>/preset</c> and <c>/burst</c> → <c>FleetHost.ApplyScenario</c>/
+/// <c>Burst</c> keep reporting <b>what was requested and accepted</b>. Deliberate, and the reason is the
+/// audit row: <c>ScenarioEndpoints</c> hands this exact instance to <c>AuditRecorder</c> as the
+/// <c>scenario.apply</c>/<c>scenario.preset</c> payload, and an audit trail answers "who asked for what",
+/// not "what survived the next second". Deriving it there would let a mode switch racing the apply record
+/// an operator as having asked for something they did not.</para>
+///
+/// <para><b>The two answers coincide except after a transport swap the scenario did not make</b>, which is
+/// the exact window item 33 measured; anywhere else the split is invisible. Naming it here rather than
+/// leaving one caller to be discovered is the point — the defect being fixed was itself a surface reporting
+/// one state while another was live.</para></summary>
 public sealed record ScenarioDto(double CycleRate, double DefectRate, double FaultRate, bool NetworkOutage, string ActivePreset, string StatusLine)
 {
+    /// <summary>Projects one <see cref="ScenarioConfig"/> onto the wire. Whether
+    /// <paramref name="config"/>'s <c>NetworkOutage</c> is the DECLARED flag or the INSTALLED-transport
+    /// truth is the CALLER's decision and is documented at each caller — see this record's own remarks for
+    /// which route picks which, and why.</summary>
     public static ScenarioDto From(ScenarioConfig config, string activePreset) => new(
         config.CycleRateMultiplier,
         config.ExtraDefectRate,
@@ -67,7 +93,15 @@ public sealed record ScenarioDto(double CycleRate, double DefectRate, double Fau
     /// text now says only what the transport does. This is the operator-visible string, so it is a
     /// published value: the DTO's SHAPE is unchanged (same record, same six members, same
     /// <see cref="StatusLine"/> field) — only the sentence inside it stopped promising something that
-    /// never happens.</summary>
+    /// never happens.
+    ///
+    /// <para>🔴 2026-08-22 (item 33) — the outage clause of this line follows
+    /// <paramref name="config"/><c>.NetworkOutage</c>, so on the <c>GET</c> it now names the transport
+    /// actually installed and on the <c>POST</c>s it names what was requested; see this record's own
+    /// remarks. A cleared outage under a still-selected preset therefore renders as
+    /// <c>"network-outage — … network normal."</c> — two true statements, because
+    /// <paramref name="activePreset"/> is a fact about the operator's SELECTION and was never a claim
+    /// about the wire.</para></summary>
     private static string BuildStatusLine(ScenarioConfig config, string activePreset)
     {
         var outageText = config.NetworkOutage ? "network outage (acks queued, never failed)" : "network normal";

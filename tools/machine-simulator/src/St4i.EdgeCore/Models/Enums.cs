@@ -47,7 +47,19 @@ public enum TransportMode
     /// not what is serving traffic. The surface that reports the outage is <c>GET /v1/scenario</c>, which
     /// carries the <c>NetworkOutage</c> flag and a status line naming it; the surface that reports the
     /// transport actually installed is <c>SwitchableTransport.Mode</c>, which the API-trace pane
-    /// reads.</para></summary>
+    /// reads.</para>
+    ///
+    /// <para>🔴 CORRECTED 2026-08-22 (item 33) — the paragraph above is kept verbatim and its last clause
+    /// was only ever half of a measurement. <c>GET /v1/scenario</c> reported the flag an operator had
+    /// DECLARED, and three paths take the outage transport away without clearing it
+    /// (<c>PUT /v1/mode</c> including a re-apply of the running mode, <c>PUT /v1/settings</c> on a
+    /// Live/Auto host, and a switch to this member), so that route answered "outage" over a fleet whose
+    /// readings were reaching the real server. It now reports the transport actually installed, via
+    /// <c>FleetCore.NetworkOutageTransportInstalled</c>. And <see cref="Mode"/> on
+    /// <c>SwitchableTransport</c> is the WEAKER of the two instruments, not the stronger: it answers this
+    /// member for both the outage <c>DemoTransport</c> and the DI Demo singleton, so it cannot tell a
+    /// selected exhibition posture from a scenario that dragged a Live fleet onto a fabricator. Reference
+    /// identity can, and that is what the new member uses.</para></summary>
     Demo,
 
     /// <summary>Try live for every call and re-route to demo on a network failure, re-probing live

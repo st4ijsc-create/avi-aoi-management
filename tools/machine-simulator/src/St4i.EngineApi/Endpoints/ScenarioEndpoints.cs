@@ -46,7 +46,30 @@ namespace St4i.EngineApi.Endpoints;
 /// when a scenario drags the transport away from the selected mode" already has an answer that ships:
 /// <c>GET /v1/scenario</c> returns <c>NetworkOutage</c> and a status line naming the outage, under
 /// <c>Policies.Operator</c>. <c>GET /v1/mode</c> continues to answer the SELECTED mode, which is what its
-/// own doc on <c>TransportCoordinator.Mode</c> says it answers.</summary>
+/// own doc on <c>TransportCoordinator.Mode</c> says it answers.
+///
+/// 🔴 <b>CORRECTED 2026-08-22 (item 33) — THE PARAGRAPH ABOVE IS KEPT VERBATIM AND IT WAS TRUE IN EXACTLY
+/// ONE DIRECTION.</b> It closed a STOP condition ("do not add a field to a published payload") on the
+/// ground that a truthful surface already shipped. Measured on the OTHER direction it was false: the
+/// question that paragraph answers is "a scenario drags the transport away from the selected mode", and
+/// the mirror case — <b>a MODE CHANGE drags the transport away from the scenario</b> — got the opposite
+/// answer. <c>PUT /v1/mode</c> re-points <c>SwitchableTransport</c> at one of <c>{_live, _auto, _demo}</c>
+/// and the outage instance is in none of them, so it silently replaced the fabricator while
+/// <c>FleetCore._scenario.NetworkOutage</c> stayed <see langword="true"/> — and this route's own
+/// <c>GET</c> went on answering <c>networkOutage: true</c> with a status line naming an outage, once per
+/// second, over a fleet that was reaching the real server. Two further paths do the same:
+/// <c>PUT /v1/settings</c> (via <c>TransportCoordinator.RebuildLive</c>, on any Live/Auto host) and a
+/// <c>PUT /v1/mode</c> that does not change the value at all, which re-applies without raising
+/// <c>ModeChanged</c>.
+///
+/// <b>The conclusion survives; its ground was replaced.</b> No field was added now either — the fix is on
+/// the READ side and changes what <c>NetworkOutage</c> MEANS on this <c>GET</c>, from "declared" to
+/// "installed", with the record's shape untouched. See <c>ScenarioDto</c>'s own remarks for why the three
+/// <c>POST</c> routes deliberately keep answering "requested" (their value is what the audit row records),
+/// and <c>FleetCore.NetworkOutageTransportInstalled</c> for why reference identity rather than
+/// <c>SwitchableTransport.Mode</c> is what the <c>GET</c> now reads. <b>The gate authored below is
+/// untouched by all of this</b> — it runs before <c>FleetHost.ApplyScenario</c> and decides admission,
+/// and its four witnesses are unmoved.</summary>
 public static class ScenarioEndpoints
 {
     /// <summary>The honest 400 body, worded like <c>ModeEndpoints</c>' own Demo rejection so an operator

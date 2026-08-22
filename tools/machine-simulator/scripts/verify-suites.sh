@@ -3600,7 +3600,39 @@ EXPECT_EDGESERVICE=52
 # AU-1: no .editorconfig change, no <NoWarn>, no #pragma, no SuppressMessage. The two control mutations were
 # a one-line `if (false)` and a one-character default flip; both were reverted and `git diff` at the branch tip
 # contains neither. AU-1 does NOT touch web/, so no web build was required (and none of its edits are TS).
-EXPECT_ENGINEAPI=1395
+#
+# 🔴 AV-1 (2026-08-22, owner item 33 — base e6faec60) RAISES THIS 1395 -> 1405 (+10) AND MOVES NO OTHER SUITE
+# TOTAL. COUNTED FROM THE RUNNER (`dotnet test --list-tests`: 1405), not by hand, and counted AFTER the files
+# were written rather than predicted before them. ONE new file, tests/St4i.EngineApi.Tests/
+# ScenarioTransportTruthTests.cs (nine [Fact]s), plus ONE [Fact] appended to
+# tests/St4i.EngineApi.Tests/Auth/AuditWiringTests.cs. No existing test was rewritten or deleted, and no test
+# fake changed shape — EXPECT_ABSTRACTIONS 161, EXPECT_CONFORMANCE 24, EXPECT_EDGECORE 1179 and
+# EXPECT_EDGESERVICE 52 are all unmoved. New suite total 2821.
+#
+# 🔴 WHAT THE TEN ARE, TAXONOMY TAKEN FROM THE CONTROL RUN AND NOT FROM THE AUTHOR'S INTENT. The one-line
+# control mutation is `FleetHost.CurrentScenarioDto` reverted to `ScenarioDto.From(_core.CurrentScenario, …)`
+# — i.e. the fix removed, the new `FleetCore.NetworkOutageTransportInstalled` member and all ten tests left in
+# place, so everything still compiles and the comparison isolates exactly the behaviour change.
+#   - ScenarioTransportTruthTests under the control: `Failed: 6, Passed: 3`. Restored: `Passed: 9`.
+#   - AuditWiringTests.ModeSwitch_* under the control: `Failed: 1, Passed: 1` (the pre-existing
+#     ModeSwitch_WrittenByEngineer_… stayed green, the new one went red). Restored: `Passed: 2`.
+#   - 🔴 THE AUTHOR WROTE "three of the nine go red" INTO THE TEST FILE'S OWN DOC COMMENT BEFORE RUNNING THE
+#     CONTROL, AND THE MEASUREMENT SAID SIX. Three tests carry a witness assertion AND a guard assertion in
+#     one body (the simulator-knob, active-preset and declared-flag-residue tests), which is why they redden.
+#     The doc comment was corrected in place rather than quietly; the miscount is recorded because a
+#     witness/guard label asserted from intent is the thing this convention exists to prevent.
+#   - GREEN ON BOTH SIDES, therefore guards and NOT witnesses, and labelled so on themselves:
+#     WhileTheOutageTransportIsInstalled_…, WithNoScenarioEverApplied_… and
+#     TheApplyResponse_ReportsWhatWasREQUESTED_NotWhatTheGetWouldDerive.
+#
+# EXPECT_WARNINGS and EXPECT_BUILD_NODES: re-measured on a full `MSBUILDDISABLENODEREUSE=1 dotnet build
+# -t:Rebuild` after this task, not assumed — stated at their own constants below. Nothing was suppressed for
+# AV-1: no .editorconfig change, no <NoWarn>, no #pragma, no SuppressMessage. The single control mutation was
+# the one-line revert described above; it was reverted and `git diff` at the branch tip contains neither it
+# nor any pragma. AV-1 does NOT touch web/, so no web build was required (and none of its edits are TS) —
+# note that `web/src/routes/Scenario.tsx` nonetheless CHANGES BEHAVIOUR as a consequence, because it seeds
+# every outgoing POST body from the polled snapshot; that is the point of the fix and is recorded in item 33.
+EXPECT_ENGINEAPI=1405
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

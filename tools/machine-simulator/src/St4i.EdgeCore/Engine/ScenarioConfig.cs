@@ -44,6 +44,20 @@ namespace St4i.EdgeCore.Engine;
 /// misnaming is what this sentence used to repeat. So an operator running this scenario sees acks that
 /// are queued, never acks that failed, and a soak or acceptance run that uses this scenario to exercise
 /// failed-ack handling exercises nothing and is green for that reason.
+///
+/// 🔴 CORRECTED 2026-08-22 (item 33): "restoring this to false re-points the transport" is true and is
+/// only half the traffic. <b>This field is a DECLARED intent, not a reading of the transport.</b> It is
+/// written in one place (<c>FleetCore.ApplyScenario</c>) and nothing else ever clears it — while THREE
+/// other paths replace the installed transport without going near it:
+/// <c>TransportCoordinator.ApplyMode</c> (target set <c>{_live, _auto, _demo}</c>, which excludes the
+/// outage instance, and which re-applies even when the mode does not change),
+/// <c>TransportCoordinator.RebuildLive</c> reached from a settings edit on a Live/Auto host, and a switch
+/// to Demo, which installs the DI <c>DemoTransport</c> singleton rather than this scenario's
+/// <c>fakeErrorRate: 0.9</c> one. So <c>true</c> here means "an operator asked for an outage and nothing
+/// has re-applied a mode since", NOT "the fleet is behind a fabricator". Anything that needs the second
+/// question answered must read <c>FleetCore.NetworkOutageTransportInstalled</c>; <c>GET /v1/scenario</c>
+/// now does. <b>The flag still reaches back:</b> a later <c>Burst</c> re-applies this record and
+/// therefore re-installs the outage transport from a stale <c>true</c>.
 /// </param>
 public sealed record ScenarioConfig(
     double CycleRateMultiplier = 1.0,

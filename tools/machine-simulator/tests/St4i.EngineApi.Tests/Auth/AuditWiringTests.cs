@@ -173,6 +173,58 @@ public sealed class AuditWiringTests
         Assert.Equal("Auto", entry.NewValueJson?.Trim('"'));
     }
 
+    /// <summary>🔴 <b>Item 33 — the one END-TO-END witness over real HTTP</b> for the mirror of item 18's
+    /// defect: a <c>PUT /v1/mode</c> silently replaces the fabricating transport a scenario installed, and
+    /// before 2026-08-22 <c>GET /v1/scenario</c> went on answering <c>networkOutage: true</c> — once a
+    /// second, to <c>web/src/routes/Scenario.tsx</c>'s poll — over a fleet whose readings were reaching the
+    /// real server.
+    ///
+    /// <para><b>Why it belongs in THIS file rather than beside the seam-level suite.</b> Its second half is
+    /// an audit-wiring statement and is the reason the defect could not be caught after the fact: the
+    /// <c>mode.switch</c> row carries <c>old</c>/<c>new</c> MODE and nothing else, so a mode flip that
+    /// dismantled an audited <c>scenario.apply</c> leaves no row saying so. The rest of the paths are
+    /// witnessed at the <c>FleetHost</c> seam in <c>ScenarioTransportTruthTests</c> — see that class's
+    /// remarks for the witness/guard split and why the route wiring is measured once and not five
+    /// times.</para>
+    ///
+    /// <para><b>RED at BASE <c>e6faec60</c></b> on the final assertion; the two before it were green there
+    /// and are the guards that keep this from passing against a build with no outage feature at all.</para>
+    /// </summary>
+    [Fact]
+    public async Task ModeSwitch_AfterAnOutageScenario_LeavesNoAuditTrailOfTheClearedOutage()
+    {
+        // demoEnabled:true — same auto-login convention the ScenarioApply_..._WithDemoEnabled test above
+        // uses, and required here: the outage scenario is exactly what item 18's gate refuses when Demo is
+        // off, so this path only exists to be measured on a Demo-enabled deployment.
+        await using var factory = await CreateFactoryAsync(demoEnabled: true);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+
+        using var applied = await client.PostAsJsonAsync(
+            "/v1/scenario", new { cycleRate = 1.0, networkOutage = true }, JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, applied.StatusCode);
+
+        using var beforeGet = await client.GetAsync("/v1/scenario");
+        var before = await beforeGet.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
+        Assert.True(before.GetProperty("current").GetProperty("networkOutage").GetBoolean());
+
+        using var put = await client.PutAsJsonAsync("/v1/mode", new { mode = "Auto" }, JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+
+        // The audit half: the row for the switch records the MODE and only the mode. Nothing anywhere says
+        // the outage scenario an Engineer applied (and which DID write a scenario.apply row) stopped being
+        // in force. That asymmetry is why the surface had to become truthful instead of the log.
+        var modeRow = Assert.Single(await GetAuditEntriesAsync(client, "mode.switch"));
+        Assert.Equal("Auto", modeRow.NewValueJson?.Trim('"'));
+        Assert.DoesNotContain("networkOutage", modeRow.NewValueJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(await GetAuditEntriesAsync(client, "scenario.apply"));
+
+        // The witness.
+        using var afterGet = await client.GetAsync("/v1/scenario");
+        var after = await afterGet.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
+        Assert.False(after.GetProperty("current").GetProperty("networkOutage").GetBoolean());
+        Assert.Contains("network normal", after.GetProperty("current").GetProperty("statusLine").GetString()!, StringComparison.Ordinal);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // settings.update + settings.verifyTls_disabled
     // ─────────────────────────────────────────────────────────────────────
