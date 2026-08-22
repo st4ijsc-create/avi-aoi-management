@@ -68,6 +68,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 37 | 🔴 **HỒ SƠ — LỖI CỦA ĐIỀU PHỐI VIÊN:** một phán quyết của chủ sở hữu sống trọn một vòng nhiệm vụ **KHÔNG có bản ghi tại chỗ** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), và **mục này là của điều phối viên, không phải của mã**. Phán quyết mục 16 ngày 2026-08-22 tới người thi hành **chỉ qua một task brief**; `grep "2026-08-22"` trên file tại `ce1ce2be` trả **đúng hai dòng, cả hai thuộc mục 27**. **"Đừng thi hành" đã bị đọc thành "đừng ghi"** — một phán quyết và một lần thi hành là **hai hiện vật khác nhau**. Cộng: danh sách Phần I **lỗi thời qua ba nhiệm vụ liên tiếp** và **không dụng cụ nào bắt được, vì không cổng nào đọc file này** — cùng lớp với mục 26 và 32. 🔴 **Và con số ấy được ĐO LẠI: brief mở mục này nói "chín mục"; đo trên `659bcfb2` là MƯỜI MỘT** (16, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29 — Phần I thật chỉ chứa 17, 25, 26, 30, 31, 32). **Chính lời khai về khuyết tật kiểm đếm cũng đếm sai**, theo đúng cơ chế mục này mô tả → ✅ **ĐÃ THI HÀNH 2026-08-22 (AW-1)** theo 🔨 **QUYẾT: BẮT CỔNG ĐỌC FILE NÀY** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). `scripts/check-owner-decisions.sh`, chạy trong `scripts/verify-suites.sh`: **cổng nay ĐỌC `docs/owner-decisions.md`** — câu *"không cổng nào đọc file này"* trong thân mục **hết đúng kể từ hôm nay**, và nó được rút tại chỗ chứ không lặng lẽ. Phép kiểm ghim **CẤU TRÚC, không ghim VĂN XUÔI**, đúng lối rẻ nhất mà chính mục này nêu ra: mỗi số hiệu trong bảng có **đúng một** thân mục và ngược lại; **trạng thái ghi trong hàng khớp PHẦN mà thân mục đứng dưới**; **phép liệt kê Phần I nêu đúng tập số hiệu thật sự nằm ở Phần I**, cả ở trường máy đọc lẫn ở câu văn người đọc. 🔴 **Đo được hôm nay, trước khi sửa: NĂM chỗ lệch** — (1) mục 17 ở Phần III với hàng tự khai *"MỘT PHẦN"*; (2)(3)(4) **BA** đoạn liệt kê Phần I trần nằm cạnh nhau ở dòng 111, 168, 237 mà **chỉ một là hiện hành**, không gì phân biệt được; (5) không có trường máy đọc nào nói cái nào hiện hành. **Cả năm sửa ở HỒ SƠ, không sửa dụng cụ cho vừa hồ sơ.** 🔴 **Và cái phép kiểm này KHÔNG bắt được, nói thẳng vì một nửa sự thật ở đây đúng là loại lỗi mục này nói về: NỬA THỨ NHẤT CỦA MỤC 37 — một phán quyết KHÔNG BAO GIỜ ĐƯỢC GHI — vẫn KHÔNG có bộ dò nào.** Không phép kiểm nào trên file này thấy được một sự kiện không nằm trong file. Nó cũng không đọc văn xuôi, không phán được một mục "MỘT PHẦN" thuộc Phần I hay Phần II (nó chỉ nói **KHÔNG PHẢI Phần III**), và **chỉ** ghim phép liệt kê Phần I — Phần II và Phần III không có trường máy đọc. Xem Phần III |
 | 38 | `pollIntervalMs` là trường cadence DUY NHẤT không được kiểm miền, trên **cả hai** bản đồ | 🔴 **CHỜ ANH** — mở 2026-08-22 (AZ-1), đo bởi AY-1 (mục 12 đợt 9), **xác nhận lại trên mã VÀ trên assembly đã dựng**. `ModbusRegisterMap.FromJson` và `OpcUaNodeMap.FromJson` lưu `pollIntervalMs` **y như khai** — đo: `0`, `-1`, `-2`, `-2147483648` đều lưu nguyên — trong khi hai trường kề nó, `readTimeoutMs` và `retries`, đi qua `ParseOptionalPositiveInt`, bị chặn, **có cảnh báo** và rơi về mặc định. Hậu quả đo trên chính runtime này: `Task.Delay(0)` xong trong **0 ms** ⇒ vòng poll **không tiết chế**; `Task.Delay(-1)` **chưa xong sau 750 ms** (`Timeout.Infinite`) ⇒ thiết bị được poll **đúng một lần rồi im**; `Task.Delay(≤ -2)` ném `ArgumentOutOfRangeException`, và cả ba driver bọc lời gọi ấy trong một `try` **chỉ bắt `OperationCanceledException`**, nên nó **thoát ra khỏi iterator**. 🔴 **Và "cả hai driver" của đợt 9 là một phép ĐẾM THIẾU: có BA** — `ModbusTcpDriver` và `OpcUaDriver` gọi `Task.Delay(_map.PollIntervalMs, ct)` trực tiếp, `ModbusRtuDriver` qua `NextPollDelayMs()`. **Chiều ngược:** `EffectiveReadTimeoutMs` sàn ở 1000 nên read timeout **không** hỏng theo, và backoff RTU sản xuất **che** giá trị âm **sau lần hỏng đầu** (`Math.Max`) — nên trên RTU cái bẫy chỉ cắn khi thiết bị **khoẻ**. **Không sửa mã.** Xem mục 38 |
 | 39 | `"registers": null` / `"nodes": null` thoả `required` rồi ném `NullReferenceException` **trần** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AZ-1), đo bởi AY-1 (mục 12 đợt 9), **xác nhận lại trên assembly đã dựng**. `required` được thoả bằng việc **KHOÁ CÓ MẶT**, nên một `null` tường minh bind qua nó và `map.Registers.Count` / `map.Nodes.Count` ném `NullReferenceException` với thông điệp `"Object reference not set to an instance of an object."` — **không nêu file, không nêu trường, không nêu máy**. Đối chứng đo cùng lần: khoá **VẮNG** cho `JsonException: … was missing required properties including: 'Registers'` / `'Nodes'`, tức đường tốt đã có sẵn và chỉ ca `null` tường minh rơi ra ngoài. **Đúng hình dạng mà `ModbusRegisterMap.FromJson` tự ghi là ĐÃ SỬA cho `commands`.** **Chiều ngược:** cả hai `FromJson` là *"parse ném thẳng"* theo thiết kế và `ModbusRtuConnectorFactory.TryCreate` **bọc mọi throw** thành một `error` chuỗi, nên hậu quả là **một thông điệp vô dụng cho vận hành viên**, không phải một tiến trình chết. **Không sửa mã.** Xem mục 39 |
+| 40 | Một dụng cụ TỰ KIỂM có thể mù đúng ở đường mặc định của chính nó, và cổng vẫn xanh | 🔴 **CHỜ ANH** — mở 2026-08-22 (BA-1). Khuyết tật tìm bởi AZ-1 (mục 12 đợt 10), điều phối viên xác nhận độc lập **hai lần**. `scripts/repo-scan.sh` — **dụng cụ dựng CHO mục 32** — mang **đúng khuyết tật của mục 32** ở đường mặc định của nó từ `cfcfae42` tới `89018893`: không pathspec ⇒ `SPECS=(".")` ⇒ `:(top).`, thứ git **không khớp gì**, nên nó in `result lines : 0 … a measurement, not an error` cho **mọi** pattern. Đo: `'class'` trả **0** với `:(top).`, **1804** với `:(top)`. 🔴 **Vì sao `--self-test` không thấy:** ba khẳng định của nó **đều truyền pathspec tường minh**, và cái duy nhất nói về mặc định là *bất biến theo cwd* — mà **mặc định hỏng ĐÚNG LÀ bất biến theo cwd: bất biến bằng 0**. Khuyết tật **thoả** phép kiểm. **BA-1 đã sửa cả ba dụng cụ** (mặc định `:(top)`; ca self-test KHÔNG-pathspec + từ chối MIỀN RỖNG, chứng minh đỏ-được bằng **ba cặp đối chứng chạy trọn rồi hoàn nguyên**; `C0` cho `check-owner-decisions.sh`; ba guard quần thể cho `scan-doc-negations.sh`). **Chiều ngược, và nó thu hẹp thiệt hại:** mặc định hỏng trả **0 vô điều kiện**, nên **không** khẳng định nào mang một con số KHÁC 0 có thể đã đi qua nó — quần thể `cfcfae42..HEAD` đã liệt kê rồi kiểm, và **hai** câu sai tìm được sai vì lý do KHÁC (tự tham chiếu, và một quần thể cũ), không phải vì khuyết tật này. **Cái CHỜ ANH là câu hỏi tầng hai:** cái gì cưỡng chế rằng một dụng cụ tự kiểm không mù đúng ở chỗ đối tượng của nó mù — mục 26/32/37 ở tầng **dụng cụ đo dụng cụ**. Xem mục 40 |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -207,7 +208,7 @@ sự thật** — câu này chỉ là một con trỏ vào nó.
 > `<!-- gate:phần-i-rút -->` hoặc `<!-- gate:phần-i = … -->`, và cổng đòi **đúng một** cái sống. **Không
 > một chữ nào của ba đoạn bị sửa và không dòng nào bị xoá.**
 
-**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 17, 25, 30, 35, 38 và 39.** Tất cả mang `🔴 CHỜ ANH` ở bảng
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 17, 25, 30, 35, 38, 39 và 40.** Tất cả mang `🔴 CHỜ ANH` ở bảng
 phán quyết trên, và **bảng ấy là nguồn sự thật** — câu này chỉ là một con trỏ vào nó.
 🔴 **MỞ RỘNG 2026-08-22 (AZ-1), không phải RÚT: mục 38 và 39 là hai khuyết tật MÃ mà đợt 9 của mục 12
 DỪNG LẠI và BÁO** — chúng đã nằm trong báo cáo và trong thân mục 12 §14 suốt một vòng nhiệm vụ mà
@@ -225,7 +226,13 @@ phần) cho tới hôm nay; cái còn treo là **một QUYẾT ĐỊNH của anh
 🔴 **Câu này KHÔNG còn tự bảo trì bằng việc có ai đó nhìn, và đó là cái đổi kể từ hôm nay:** dòng ngay
 dưới là trường máy đọc mà `scripts/check-owner-decisions.sh` so với tập đầu mục `^## ` thật sự nằm giữa
 banner Phần I và banner Phần II, **và** với chính câu văn này. Lệch một số hiệu ⇒ **cổng đỏ**.
-<!-- gate:phần-i = 17 25 30 35 38 39 -->
+🔴 **MỞ RỘNG 2026-08-22 (BA-1): mục 40 — dụng cụ của cổng tự nó mang khuyết tật nó được dựng để bắt.**
+Đây là mục ở **tầng thứ hai**: 26/32/37 nói về việc đo sản phẩm; 40 nói về việc **đo dụng cụ đo**. BA-1
+**đã sửa** cả ba dụng cụ và chứng minh bằng cặp đối chứng; cái để anh phán là **cơ chế**, không phải bản
+sửa. 🔴 **Và chính câu này là ví dụ của mục 40:** phép kiểm ngay trên đây đọc trường máy đọc bên dưới —
+nếu tập ấy rỗng ở cả hai phía thì nó **so hai cái rỗng và vẫn xanh**; `C0` thêm hôm nay là thứ chặn đúng
+ca đó, và nó được thêm vì đã **đo được** một file cho `DIVERGENCES : 0` trên **0 hàng, 0 thân mục**.
+<!-- gate:phần-i = 17 25 30 35 38 39 40 -->
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
 > tới vòng sửa thứ hai của cùng ngày, và nó **không sai, nó THIẾU**.** Ba thao tác của file này vẫn
@@ -1335,6 +1342,125 @@ Hai `FromJson` giữ **một ca chẩn đoán trần** mỗi cái, và bản ghi
 viết lên chính hai property ấy cộng mục này. **Cái phép đo này KHÔNG thấy:** nó mở đúng hai trường
 (`registers`, `nodes`) trên hai bản đồ ấy; **không** ai đã mở HẾT tập các property `required` khác
 trong cây để xem còn chỗ nào cùng hình dạng — nêu tên chứ không đoán.
+
+---
+
+## 40. Một dụng cụ TỰ KIỂM có thể mù đúng ở đường mặc định của chính nó, và cổng vẫn xanh
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (BA-1). Khuyết tật tìm bởi **AZ-1** (mục 12 đợt 10), điều phối viên **xác
+nhận độc lập hai lần**. AZ-1 **không sửa** vì nó nằm ngoài ba sản phẩm của nó — lựa chọn đúng. BA-1 **đã
+sửa dụng cụ**; **cái CHỜ ANH là cơ chế ở §4**, không phải bản sửa.
+
+### 1. Đo được cái gì — LIỆT KÊ TRƯỚC, con số SAU
+
+**(a) Khuyết tật gốc.** `scripts/repo-scan.sh` là dụng cụ dựng **CHO mục 32** — mục nói rằng *một phép
+quét thu hẹp trả 0 chứ không báo lỗi, nên 0-hit-đúng và 0-hit-vì-pathspec không phân biệt được*. Đứng tại
+`tools/machine-simulator`, ở `89018893`:
+
+```
+git grep --full-name -l 'class' HEAD -- ':(top).'   ->     0      (và 0 từ CẢ repo root)
+git grep --full-name -l 'class' HEAD -- ':(top)'    ->  1804
+git grep --full-name -l 'class' HEAD                ->   641      (thu về cwd)
+```
+
+`repo-scan.sh:161` — `[[ ${#SPECS[@]} -eq 0 ]] && SPECS=(".")` ⇒ `rewrite_pathspec` ⇒ `:(top).`. Dụng cụ
+**in** *"1 means NO MATCH, which is a measurement, not an error"*, nên số 0 ấy được **trình bày như một
+kết quả đã kiểm**. Đó là mục 32, do dụng cụ của mục 32, trong **ba** vòng nhiệm vụ.
+
+**(b) Vì sao `--self-test` xanh suốt thời gian ấy — và đây là hạt nhân của mục này.** Ba khẳng định của
+nó là *bất biến theo cwd*, *không rỗng*, *hazard còn sống*; **cả ba đều truyền pathspec tường minh**, nên
+**không cái nào đi qua đường mặc định**. Cái duy nhất nói về mặc định là bất biến-theo-cwd — và **mặc
+định hỏng ĐÚNG LÀ bất biến theo cwd: bất biến bằng 0**, đo được từ cả hai thư mục. **Khuyết tật THOẢ phép
+kiểm.** Một dụng cụ tự kiểm mù **đúng ở chỗ** đối tượng của nó mù.
+
+**(c) Quét hai dụng cụ kia cùng loài — LIỆT KÊ rồi mới ĐẾM.** Quần thể là **ba** dụng cụ mà
+`verify-suites.sh` chạy làm cổng: `repo-scan.sh --self-test`, `check-owner-decisions.sh`,
+`scan-doc-negations.sh --since`. Loài: *một quần thể có thể RỖNG, mà công cụ vẫn in một con số như thể đã
+đo*. Kết quả, **hai trong ba** có nó ngoài `repo-scan.sh` — tức **cả ba**:
+
+* `check-owner-decisions.sh` — **CÓ, và tái lập được.** C1–C4 đều là vòng `for` trên một quần thể mà
+  parser phục hồi từ **văn xuôi** bằng regex. Một file mang banner Phần I và **một** marker liệt kê
+  sống, **không bảng phán quyết, không thân mục**, cho `verdict rows : 0 · body sections : 0 ·
+  DIVERGENCES : 0 · exit 0`. Tập rỗng thoả mọi khẳng định phổ quát.
+* `scan-doc-negations.sh` — **CÓ, ở hai chỗ, hỏng theo hai chiều NGƯỢC nhau.** `scan_into` gặp danh sách
+  file rỗng thì ghi `0 câu / 0 hit` **không nói một lời**; và `--since` — **chế độ cổng chạy** — trước hôm
+  nay **không in kích thước quần thể nào cả**, nên một corpus rỗng cho `NEW absolute doc claims : 0` +
+  `PASS`. Chiều kia: corpus **BASE** rỗng làm **mọi** câu hiện tại thành "mới", tức đỏ với một con số
+  thuần hiện vật. Cả hai **không** với tới được qua corpus mặc định hôm nay (`find` trả 546 file `.cs`) —
+  nêu ra chứ không phóng đại.
+
+**(d) Một loài THỨ HAI, tìm được lúc kiểm lại quần thể khẳng định, và không dụng cụ nào ở đây bắt được
+nó.** `GatewayTcpBusLink.InfiniteTimeout` công bố *"Measured over every tracked `*.cs` (20 lines)"*. Đo
+lại cùng phép quét:
+
+```
+tools/machine-simulator/*.cs @ 3f564039  (BASE lúc viết)   -> 20
+tools/machine-simulator/*.cs @ 9da2b2f6  (commit CÔNG BỐ)  -> 22
+```
+
+Con số **đúng lúc đo và sai trong chính commit xuất bản nó**: hai dòng thêm vào là **câu văn ấy**. 🔴 **Một
+phép quét toàn cây tìm một CHUỖI, mà kết quả được viết ngược lại vào chính cái cây vừa quét, tự vô hiệu
+hoá con số của nó trong cùng một commit.** Đã **rút tại chỗ kèm ngày**, không xoá dòng nào.
+
+### 2. Ở đâu trong mã — trỏ bằng TÊN
+
+* `scripts/repo-scan.sh:161` ở `89018893` — `SPECS=(".")`. Nay là `default_pathspec()`, trả `:(top)`.
+* `scripts/repo-scan.sh` `self_test()` — ba khẳng định cũ `(a)(b)(c)`, **cả ba** với pathspec tường minh.
+* `scripts/check-owner-decisions.sh` khối `END` — `C1`–`C4`, vòng `for` trên `rowline`/`bodypart`.
+* `scripts/scan-doc-negations.sh` `scan_into()` — nhánh `[[ ! -s "$2" ]]` ⇒ `printf '0\t0\n'`.
+* `src/St4i.EdgeCore/Drivers/Modbus/GatewayTcpBusLink.cs` — `InfiniteTimeout`, literal `20 lines`.
+
+### 3. Hậu quả vận hành, HAI CHIỀU
+
+**Chiều thuận — vì sao nó nguy hiểm chứ không chỉ hỏng.** `0` là **hình dạng của "không có ở đó"**, đúng
+loài mục 32 tồn tại để chặn. §8.1(f) **LỆNH** mọi nhiệm vụ dùng dụng cụ này cho phép quét toàn cây, và ba
+nhiệm vụ sau `cfcfae42` đã được lệnh ấy. Một phủ định tồn tại là thứ **đắt nhất** để sai, vì nó chỉ đúng
+nếu người viết đã **mở hết tập** — và ở đây cái vỏ bọc **vi phạm luật ấy giùm nhiều người cùng lúc**.
+
+🔴 **Chiều ngược, và nó THU HẸP thiệt hại — nói ra vì một sự thật viết chỉ theo chiều thuận là một nửa sự
+thật.** Mặc định hỏng trả **0 vô điều kiện**. Nên **bất kỳ khẳng định nào mang một con số KHÁC 0 đều
+KHÔNG THỂ đã đi qua nó** — con số ấy tự chứng minh miền của nó không rỗng. Bộ lọc đó cắt quần thể
+`cfcfae42..HEAD` xuống còn các câu **dựa trên một kết quả 0**. BA-1 liệt kê rồi kiểm quần thể ấy, và
+**hai** câu sai tìm được **sai vì lý do KHÁC**: một vì **tự tham chiếu** (d), một vì một **quần thể cũ**
+(`ModbusRegisterMap.PollIntervalMs` nói *"Both drivers"* trong khi mục 38 cùng cửa sổ đã đo được **BA** —
+sổ được sửa, **NGUỒN thì không**, suốt một vòng nhiệm vụ). **Không câu nào trong quần thể được tìm thấy
+là sai VÌ khuyết tật này.** Đó là một kết quả **may**, không phải một sự bào chữa: cùng cái vỏ ấy sẽ
+biến bất kỳ phủ định tồn tại nào tiếp theo thành một số 0 trông sạch sẽ.
+
+### 4. Nếu KHÔNG quyết định — cái gì CƯỠNG CHẾ được, và cái gì KHÔNG
+
+**Cưỡng chế được, và đã cưỡng chế hôm nay:**
+
+1. **Một ca self-test đi ĐÚNG đường mặc định.** `repo-scan.sh --self-test` nay chạy chính CLI của mình
+   **không pathspec** như một tiến trình con, và đòi mặc định phủ **toàn cây**. Đỏ-được: **ba** cặp đối
+   chứng chạy trọn rồi hoàn nguyên — đặt lại `SPECS=(".")` ⇒ đỏ ở `(g)`; `default_pathspec()` trả `.` ⇒
+   đỏ ở `(d)` **và** `(g)`; tắt từ chối miền-rỗng ⇒ đỏ ở `(e)`.
+2. **Phân biệt được KHÔNG-KHỚP-THẬT với PATHSPEC-KHÔNG-KHỚP-GÌ.** Miền được **đếm trước khi chạy
+   pattern**; miền rỗng bị **TỪ CHỐI (exit 2)**, không in một con số. Nên câu *"1 nghĩa là không khớp,
+   đó là một phép đo"* **thành đúng** thay vì chỉ được in ra: exit 1 chỉ tới được khi có một miền khác
+   rỗng đứng sau nó. Hai bờ đều bị ghim: miền rỗng ⇒ 2, không-khớp-thật trên miền thật ⇒ 1.
+3. **Khẳng định KHÔNG-RỖNG trên hai dụng cụ kia.** `C0` cho `check-owner-decisions.sh`; ba guard quần thể
+   cho `scan-doc-negations.sh`, cộng việc **in cả hai corpus** trong `--since`.
+
+🔴 **KHÔNG cưỡng chế được — nêu tên, vì một cái trần nêu quá nhỏ còn tệ hơn không nêu trần:**
+
+* **Không gì bắt được một self-test mà phép thử của nó chưa bao giờ đi qua một nhánh.** Đó là **độ phủ**,
+  và repo này **không có** dụng cụ đo độ phủ cho shell. Mục này được tìm bằng một con người đọc, đúng như
+  mục 37 được tìm bằng một con người đọc. Ba khẳng định mới hôm nay đóng **ba** đường đã biết; chúng
+  **không** nói gì về đường thứ tư.
+* **Không gì buộc ai chạy cặp đối chứng.** Một khẳng định mới có thể được thêm vào bất kỳ self-test nào
+  mà **chưa từng được chứng minh là đỏ-được**, và cổng sẽ xanh. Đây là **tiền lệ**, không phải cơ chế.
+* **Không gì bắt được loài (d).** Không cổng nào biết một con số trong một chú thích **đến từ** một phép
+  quét cái cây chứa chú thích ấy. Cách chữa duy nhất đã biết là **thói quen**: chạy lại phép quét và
+  trích dẫn lần chạy, đừng tin một literal — đúng thứ mục 26 đã kết luận cho trần census của nó, nay
+  gặp lại ở một mặt khác.
+* **Không gì làm cho ai đó DÙNG dụng cụ.** Ranh giới (a) của chính `repo-scan.sh` đã nói vậy từ đầu, và
+  bản sửa hôm nay **không** đổi điều đó.
+
+**Câu hỏi để anh phán:** cổng có nên đòi rằng **mỗi khẳng định của mỗi dụng cụ tự kiểm phải kèm một cặp
+đối chứng đã chạy** — tức một dụng cụ đo dụng cụ ở tầng thứ ba — hay đó là chi phí quá lớn và **tiền lệ
+cộng một con người đọc** là cái trần đúng? Điều phối viên **không tự quyết**. Cái đã trả nằm ở §4 mục 1–3;
+cái chưa trả là **cơ chế**.
 
 ---
 

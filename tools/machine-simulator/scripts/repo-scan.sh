@@ -22,6 +22,22 @@
 # paths relative to the cwd, so a path that exists BOTH at the repo root AND under
 # tools/machine-simulator prints identically from the two places and the reader cannot resolve it.
 #
+# 🔴 AND THIS INSTRUMENT SHIPPED CARRYING THE DEFECT IT WAS BUILT TO CATCH, from cfcfae42
+# (2026-08-22) to 89018893. Found by AZ-1, confirmed twice independently, fixed here by BA-1
+# (2026-08-22, item 40). The default when the caller named NO pathspec was `SPECS=(".")`, which the
+# rewriting rule below turned into `:(top).` — a pathspec git matches against NOTHING. Measured at
+# 89018893, and note that the standing place does NOT change it:
+#
+#     git grep --full-name -l 'class' HEAD -- ':(top).'   ->     0   from EITHER directory
+#     git grep --full-name -l 'class' HEAD -- ':(top)'    ->  1804
+#     git grep --full-name -l 'class' HEAD                ->   641   (narrowed to cwd)
+#
+# 🔴 THE SECOND COLUMN IS WHY --self-test DID NOT CATCH IT, and it is worth stating as a property
+# rather than as an oversight: the broken default is PERFECTLY cwd-INVARIANT — invariantly zero —
+# so assertion (a), the only property this self-test asserted about the default, was SATISFIED by
+# the defect. The probe never reached the default path at all, because every self-test reading
+# passed an explicit pathspec. A self-test can be blind exactly where its subject is blind.
+#
 # THE PRICE ALREADY PAID, recorded here and not only in the ledger: item 14 was RULED BY THE OWNER
 # carrying a ceiling that was FALSE — "the consumer cannot be measured from this repo" — while the
 # consumer's code (server/contracts/machineDataContract.ts, server/services/processResultService.ts,
@@ -41,6 +57,14 @@
 #     5. the domain claim is EMITTED WITH THE RESULT — caller cwd, repo root, full SHA, worktree
 #        state, the pathspecs after rewriting, the exact argv, and the match count. A `0` from this
 #        tool carries the evidence that makes it readable as "nothing matched".
+#     6. 🔴 THE DOMAIN IS COUNTED BEFORE THE PATTERN IS RUN, AND AN EMPTY DOMAIN IS REFUSED, NOT
+#        REPORTED. `files in scope` is measured with `git ls-files --with-tree=<SHA>` (plain `git
+#        ls-files` for the working tree) over the SAME rewritten pathspecs — see domain_size() for
+#        why it is not `ls-tree`. If it is 0 the tool exits 2 and prints no
+#        count, because a `0` matches over `0` files is not a fact about the pattern. This is what
+#        makes the sentence in the header — "1 means NO MATCH, which is a measurement" — TRUE
+#        rather than structural: exit 1 is now only reachable with a non-empty domain behind it.
+#        It is the same refusal, and the same reasoning, as the missing-PATTERN guard further down.
 #
 # ── WHAT THIS DOES NOT ENFORCE — a ceiling stated too small is worse than no ceiling ─────────────
 #     a. IT CANNOT MAKE ANYBODY USE IT. There is no mechanism in git, in this repo, or in this shell
@@ -58,19 +82,33 @@
 #     e. IT DOES NOT REACH OUTSIDE THE REPO. The MQTT retained-mirror subscriber of item 32 — 37
 #        files under server/+client/ mention `syn/`, none proven to BE a subscriber — is outside
 #        every scan this tool can run, and stays unmeasured.
+#     f. 🔴 THE EMPTY-DOMAIN REFUSAL DOES NOT MAKE A NON-EMPTY DOMAIN THE RIGHT ONE. It separates
+#        "0 files were in scope" from "0 of N files matched"; it cannot tell you that N was the N
+#        you meant. `-- 'docs/*.md'` over a tree whose docs live elsewhere selects a non-empty N
+#        and answers a question you did not ask. The refusal catches a domain narrowed to NOTHING,
+#        which is the shape item 32 is about; it does not catch a domain narrowed to the WRONG
+#        SOMETHING, and no check in this file does.
 #
 # Usage:
 #   scripts/repo-scan.sh [--sha <tree-ish>] [--] <git-grep-arg>... [-- <pathspec>...]
 #   scripts/repo-scan.sh --self-test
 #
-# Exit: 0 matches found · 1 no match (NOT an error — read the header) · 2 usage/setup failure
-#       --self-test: 0 invariant holds · 1 it does not
+#   With no `-- <pathspec>`, the scan covers THE WHOLE TREE (`:(top)`). It is never narrowed to the
+#   directory you typed it in, and it is never narrowed to nothing.
+#
+# Exit: 0 matches found · 1 no match over a NON-EMPTY domain (NOT an error — read the header)
+#       2 usage/setup failure, INCLUDING a pathspec that selects no files at all
+#       --self-test: 0 all assertions hold · 1 one or more do not
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
 CALLER_PWD="$(pwd -P)"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   echo "repo-scan: not inside a git work tree (cwd: $CALLER_PWD)" >&2; exit 2; }
+
+# Resolved BEFORE anything chdirs, because the self-test re-invokes this file as a subprocess from
+# other directories and `$0` may have arrived relative.
+SELF_ABS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")"
 
 # ── the rewriting rule, in one function so the self-test exercises the SAME code the caller does ──
 # A pathspec that already carries a magic prefix is left alone: `:(top)`, `:/`, `:(exclude)` and
@@ -86,6 +124,42 @@ rewrite_pathspec() {
                exit 2 ;;
     *)         printf ':(top)%s' "$p" ;;
   esac
+}
+
+# 🔴 THE DEFAULT WHEN THE CALLER NAMES NO PATHSPEC — the line this task exists to fix. It is a
+# FUNCTION for the same reason `rewrite_pathspec` is one: the self-test must measure the value the
+# main path actually uses, not a literal the self-test wrote for itself. `:(top)` is the whole tree;
+# the previous value `.` became `:(top).`, which git matches against nothing at all.
+default_pathspec() { printf ':(top)'; }
+
+# ── how many FILES the rewritten pathspecs select, before any pattern is applied ──────────────────
+# The separation this whole file is about, in one measurement: `0 matches` is only a fact about the
+# pattern if the set it searched was non-empty. `git grep` will not tell you the difference, so it
+# is asked here, of the same tree-ish and the same rewritten specs.
+#
+# 🔴 IT IS `ls-files --with-tree` AND NOT `ls-tree -r`, AND THE FIRST DRAFT OF THIS FUNCTION GOT IT
+# WRONG. `git ls-tree` does not honour wildcard pathspecs the way `git grep` does — measured at
+# 89018893 with git 2.55.0.windows.3, the SAME pathspec on the SAME commit:
+#
+#     git grep  -l -e '' <SHA> -- ':(top)tools/machine-simulator/scripts/*.sh'  ->  5
+#     git ls-files --with-tree=<SHA> -- ':(top)tools/machine-simulator/scripts/*.sh'  ->  5
+#     git ls-tree -r --name-only <SHA> -- ':(top)tools/machine-simulator/scripts/*.sh'  ->  0
+#
+# and likewise 1534 / 1534 / 0 for ':(top)server/*.ts'. An `ls-tree` domain would therefore have
+# REFUSED a large class of perfectly good scans as "empty domain" — trading a silent wrong zero for
+# a loud wrong refusal, which is not an improvement. Caught by assertion (f) below, which went RED
+# on the first run of this very change; the probe it reddened on was `scripts/*.sh`.
+#
+# The remaining inexactness is stated rather than hidden: `--with-tree` lists the INDEX UNIONED WITH
+# the tree, so a path staged-but-not-in-<SHA> counts toward the domain. That direction is the safe
+# one — it can only make an empty domain look non-empty, never the reverse — so it cannot cause a
+# false refusal. It can in principle let a genuinely empty domain through as exit 1; a scan of a
+# tree-ish far from the index is where to expect that.
+domain_size() {                                # $1 = SHA or empty for working tree; $2.. = specs
+  local sha="$1"; shift
+  (cd "$ROOT" && { if [[ -n "$sha" ]]; then git ls-files --with-tree="$sha" -- "$@"
+                   else                    git ls-files                    -- "$@"; fi; } 2>/dev/null) \
+    | grep -c . || true
 }
 
 # ── self-test: the wrapper's ONE property, asserted against a live hazard ─────────────────────────
@@ -142,7 +216,66 @@ self_test() {
       certify nothing. Re-measure item 32 and re-choose the probe." >&2
     rc=1
   fi
-  [[ $rc -eq 0 ]] && echo "PASS: rooted scans are cwd-invariant ($from_root from both places) while the naive form loses $((from_root - naive))."
+
+  # ═══ (d)(e)(f) THE DEFAULT PATH — added by BA-1 because (a)(b)(c) NEVER WALKED IT ═══════════════
+  # 🔴 Every reading above passes an explicit pathspec, so all three assertions stayed green for the
+  # whole life of the `SPECS=(".")` default. The three below are the no-pathspec case, and they are
+  # run through the CLI as a SUBPROCESS — not by calling the parse logic in-process — because what
+  # broke was the WIRING between "caller named no pathspec" and "what git was handed".
+  local dom_default dom_top def_n empty_rc nomatch_rc
+  local rooted_default; rooted_default="$(rewrite_pathspec "$(default_pathspec)")"
+  dom_default=$(domain_size "$probe_sha" "$rooted_default")
+  dom_top=$(domain_size "$probe_sha" ':(top)')
+
+  # (d) the default must name the WHOLE TREE. Stated as an equality against `:(top)` rather than as
+  # "> 0", because ">0" would also accept a default that quietly covered some smaller slice.
+  echo "  default pathspec '$(default_pathspec)' selects       : $dom_default files"
+  echo "  explicit ':(top)' selects                  : $dom_top files"
+  if [[ "$dom_top" -eq 0 ]]; then
+    echo "FAIL: even ':(top)' selects no files at $probe_sha. The domain probe itself is broken; every
+      assertion below it would be two zeroes agreeing." >&2
+    rc=1
+  elif [[ "$dom_default" != "$dom_top" ]]; then
+    echo "FAIL: the NO-PATHSPEC DEFAULT selects $dom_default files but the whole tree is $dom_top. A scan
+      that names no pathspec is being silently narrowed, and with $dom_default = 0 it returns a clean-
+      looking 0 for every pattern on earth. This is docs/owner-decisions.md item 40 reoccurring —
+      see default_pathspec() above; the value that caused it was '.', becoming ':(top).'." >&2
+    rc=1
+  fi
+
+  # (e) and (f) are the two banks of the same claim, and neither alone is worth anything: a tool
+  # that refused EVERY zero would be useless, and a tool that reported every zero is what item 32
+  # is about. So both are pinned — an empty domain must be REFUSED (2), and a genuine no-match over
+  # a non-empty domain must still be REPORTED (1).
+  (cd "$sub" && bash "$SELF_ABS" --sha "$probe_sha" -l 'zzq-no-such-pattern-zzq' \
+       -- 'no/such/directory/anywhere/*.zzz') >/dev/null 2>&1; empty_rc=$?
+  (cd "$sub" && bash "$SELF_ABS" --sha "$probe_sha" -l 'zzq-no-such-pattern-zzq' \
+       -- 'tools/machine-simulator/scripts/*.sh') >/dev/null 2>&1; nomatch_rc=$?
+  echo "  empty domain -> exit                       : $empty_rc   (must be 2, REFUSED)"
+  echo "  true no-match over a real domain -> exit   : $nomatch_rc   (must be 1, MEASURED)"
+  if [[ "$empty_rc" -ne 2 ]]; then
+    echo "FAIL: a pathspec selecting zero files exited $empty_rc, not 2. The wrapper is again presenting
+      an empty domain as a result, which is the sentence 'result lines : 0' meaning nothing." >&2
+    rc=1
+  fi
+  if [[ "$nomatch_rc" -ne 1 ]]; then
+    echo "FAIL: a genuine no-match over a non-empty domain exited $nomatch_rc, not 1. The empty-domain
+      refusal has swallowed the true negative it was supposed to be distinguishable FROM; the tool
+      can no longer report 'searched, found nothing', which is a measurement callers need." >&2
+    rc=1
+  fi
+
+  # (g) end-to-end through the CLI with NO pathspec at all. (d) proves the default names the whole
+  # tree; this proves the default is actually REACHED by an invocation that omits `--`.
+  def_n=$( (cd "$sub" && bash "$SELF_ABS" --sha "$probe_sha" -l "$probe_pat" 2>/dev/null) | grep -c . || true)
+  echo "  CLI, no pathspec, '$probe_pat'                : $def_n files matched"
+  if [[ "$def_n" -eq 0 ]]; then
+    echo "FAIL: the CLI with no '--' returned 0 for '$probe_pat', which the whole tree does contain. The
+      default is not being reached, or is being rewritten into something empty." >&2
+    rc=1
+  fi
+
+  [[ $rc -eq 0 ]] && echo "PASS: rooted scans are cwd-invariant ($from_root from both places) while the naive form loses $((from_root - naive)); the no-pathspec default covers the whole tree ($dom_default files); empty domain refused (2) and true no-match reported (1)."
   return $rc
 }
 
@@ -158,7 +291,7 @@ for a in "$@"; do
   if [[ $seen_dashdash -eq 0 && "$a" == "--" ]]; then seen_dashdash=1; continue; fi
   if [[ $seen_dashdash -eq 1 ]]; then SPECS+=("$a"); else ARGS+=("$a"); fi
 done
-[[ ${#SPECS[@]} -eq 0 ]] && SPECS=(".")
+[[ ${#SPECS[@]} -eq 0 ]] && SPECS=("$(default_pathspec)")
 
 # 🔴 A GUARD THIS TOOL EARNED BY FAILING ITS OWN TEST DRIVE. `scripts/repo-scan.sh --sha HEAD -l --
 # 'server/*.ts'` — no pattern — printed `result lines : 0` and looked exactly like a clean negative.
@@ -190,6 +323,38 @@ fi
 DIRTY="clean"
 git diff --quiet 2>/dev/null && git diff --cached --quiet 2>/dev/null || DIRTY="DIRTY (tracked changes not committed)"
 
+# 🔴 THE DOMAIN IS COUNTED BEFORE THE PATTERN IS RUN. Everything above this line describes WHERE the
+# scan will look; this is the first line that measures whether "where" contains anything. It is done
+# before the grep on purpose — a refusal must not depend on how long the search took.
+DOMAIN=$(domain_size "$SHA" "${ROOTED[@]}")
+
+_claim() {
+  echo "── repo-scan domain claim ──────────────────────────────────────────────────────────────"
+  echo "  typed from   : $CALLER_PWD"
+  echo "  ran from     : $ROOT   (the wrapper chdirs; your directory did not narrow this)"
+  echo "  scanned      : $SHA_LABEL"
+  echo "  worktree     : $DIRTY"
+  echo "  pathspecs    : ${SPECS[*]}   ->   ${ROOTED[*]}"
+  echo "  files in scope: $DOMAIN   (git ls-files${SHA:+ --with-tree} over those same rewritten pathspecs, before any pattern)"
+}
+
+# 🔴 THE REFUSAL THIS TASK EXISTS FOR. A pathspec that selects NO FILES cannot produce a fact about
+# the pattern, so no count is printed and exit 1 is not used: exit 1 is reserved for "searched N
+# files, matched none", and that sentence must stay true. This is the same shape as the missing-
+# PATTERN guard above — a 0 with no question asked, versus a 0 with nowhere to ask it.
+if [[ "$DOMAIN" -eq 0 ]]; then
+  { _claim
+    echo "  result       : REFUSED — the pathspecs above select ZERO FILES at the scanned tree-ish."
+    echo "────────────────────────────────────────────────────────────────────────────────────────"
+    echo "repo-scan: EMPTY DOMAIN, not a measurement. git grep would have printed nothing and exited
+       1, and that 0 would have been indistinguishable from a true negative — the exact defect of
+       docs/owner-decisions.md item 32, and the defect this wrapper itself shipped with (item 40).
+       Check the pathspec: it is applied from the REPO ROOT, so it must be repo-root-relative.
+       Nothing is claimed about '${ARGS[*]}' by this run."
+  } >&2
+  exit 2
+fi
+
 OUT=$(cd "$ROOT" && { if [[ -n "$SHA" ]]; then git grep --full-name "${ARGS[@]}" "$SHA" -- "${ROOTED[@]}"
                       else                    git grep --full-name "${ARGS[@]}"        -- "${ROOTED[@]}"; fi; } 2>&1)
 RC=$?
@@ -197,14 +362,11 @@ COUNT=$(printf '%s\n' "$OUT" | grep -c . || true)
 [[ -z "$OUT" ]] && COUNT=0
 
 {
-  echo "── repo-scan domain claim ──────────────────────────────────────────────────────────────"
-  echo "  typed from   : $CALLER_PWD"
-  echo "  ran from     : $ROOT   (the wrapper chdirs; your directory did not narrow this)"
-  echo "  scanned      : $SHA_LABEL"
-  echo "  worktree     : $DIRTY"
-  echo "  pathspecs    : ${SPECS[*]}   ->   ${ROOTED[*]}"
+  _claim
   echo "  argv         : git grep --full-name ${ARGS[*]} ${SHA:+$SHA }-- ${ROOTED[*]}"
-  echo "  result lines : $COUNT   (exit $RC; 1 means NO MATCH, which is a measurement, not an error)"
+  echo "  result lines : $COUNT   (exit $RC; 1 means NO MATCH AMONG THOSE $DOMAIN FILES — a
+       measurement, not an error. The domain was counted above and is non-empty, which is what
+       makes this sentence true rather than merely printed.)"
   echo "────────────────────────────────────────────────────────────────────────────────────────"
 } >&2
 

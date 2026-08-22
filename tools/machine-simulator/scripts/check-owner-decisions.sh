@@ -21,6 +21,21 @@
 #       both in its machine field and in the prose sentence a human reads
 #   C4  no item number appears under two part headings
 #   C5  every bare Part I enumeration paragraph declares whether it is LIVE or RETRACTED
+#   C0  🔴 THE POPULATION IS NON-EMPTY. Added by BA-1 (2026-08-22, item 40) after repo-scan.sh was
+#       found shipping item 32's own defect and the other two instruments were swept for the same
+#       species. This one HAD it, and it is demonstrable: a file carrying a Part I banner and one
+#       LIVE enumeration marker, with NO verdict table and NO body sections, produced
+#
+#           verdict rows : 0      body sections : 0      DIVERGENCES : 0      exit 0
+#
+#       Every one of C1–C4 is a FOR-loop over a population this parser recovers from PROSE by
+#       regex. An empty population satisfies all of them the way an empty set satisfies any
+#       universal claim, so the tool reported CONSISTENT about a file it had read nothing out of.
+#       That is the same shape as item 32 — a 0 that means "not measured" wearing the clothes of a
+#       0 that means "measured, and clean". The en-dash bug recorded further down is the same
+#       parser failing in the LOUD direction; this is it failing in the SILENT one.
+#       C0 does not check that the population is the RIGHT size — only that a check ran on
+#       something. A table that lost half its rows still passes C0 and is caught, if at all, by C1.
 #
 # ── HOW STATUS IS READ, AND WHY IT IS NOT "THE FIRST EMOJI IN THE CELL" ──────────────────────────
 # The file is append-only by rule: a superseded status is kept VERBATIM, so a single cell can carry
@@ -72,7 +87,11 @@ function exec_token(s) {
 }
 function bad(msg) { fail[++nfail] = msg }
 
-BEGIN { FS = "\n"; part = "HEAD"; in_table = 0 }
+# `split("", a)` forces ARRAY type. Without it, C0 calling length(rowline) on a file that produced
+# no rows types the name as a SCALAR, and the very next `for (n in rowline)` dies with "attempt to
+# use scalar as array" — exit 2 instead of the divergence C0 exists to report. Measured on the
+# empty-population fixture while adding C0.
+BEGIN { FS = "\n"; part = "HEAD"; in_table = 0; split("", rowline); split("", bodypart) }
 
 # ── part banners ──────────────────────────────────────────────────────────────────────────────────
 /^# / {
@@ -141,6 +160,14 @@ part == "I" && /^<!-- gate:phần-i/ {
 }
 
 END {
+  # ── C0: the population is non-empty, checked BEFORE the loops that quantify over it ────────────
+  # Listed first because every check below is vacuously true on an empty file. See the C0 paragraph
+  # in the header for the measurement that put this here.
+  if (length(rowline) == 0)
+    bad("C0  the verdict table parsed to ZERO rows. Every check below quantifies over that table, so a green here would mean nothing was examined. Either the file is not owner-decisions.md, or the shape of the table changed and this parser stopped recognising it.")
+  if (length(bodypart) == 0)
+    bad("C0  ZERO body sections parsed under any part banner. Same reason: C1-C4 are loops over this set, and an empty set passes all of them without reading anything.")
+
   # ── C1: coverage both ways ─────────────────────────────────────────────────────────────────────
   for (n in rowline) if (!(n in bodypart)) bad(sprintf("C1  verdict-table row %s (line %d) has NO body section", n, rowline[n]))
   for (n in bodypart) if (!(n in rowline)) bad(sprintf("C1  body section %d (part %s, line %d) has NO verdict-table row", n, bodypart[n], bodyline[n]))
