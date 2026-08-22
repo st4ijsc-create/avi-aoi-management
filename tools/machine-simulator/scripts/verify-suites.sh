@@ -4354,8 +4354,37 @@ note "exclusive-run lock held: pid ${GATE_SELF_WINPID} (lock $GATE_LOCK_DIR)"
 #   eight simulators and this stage did not.
 # Re-running the filter after the corrections took the flagged set from 49 to 47: no correction
 # reintroduced an absolute word this time, and two removed one. All 47 were read.
+#
+# 🔴 TASK BC-1 (item 12 stage 12, the last coverage stage) — 106 -> 203. Baseline `cfcfae42` UNMOVED. The
+# +97 is exactly what `--since 5e194ab0` (this stage's own base) counted, and 106 + 97 = 203 agrees with a
+# run made directly against the pinned baseline; both numbers were produced, not one and an inference.
+#   ROUND 1, mechanical (`scan-doc-negations.sh --since 5e194ab0`): flagged 92, every one read against the
+#   code. EIGHTEEN corrections at the source, of which EIGHT were outright FALSE. The three worth naming:
+#   (a) ModbusConnectorFactory.Kind claimed an entry keyed on `DriverKinds.Modbus` "can never produce an
+#   RTU driver" — ModbusRtuConnectorFactory reports the SAME id, so the true statement is about which
+#   adapter backs the entry, and the two collide on the default registry key; (b) both connector factories
+#   claimed "nothing in this repository asserts" the factory/driver Kind pairing — two tests assert each
+#   SIDE against the constant, which is a weaker pin than a pair but not nothing; (c) IotSensorSim claimed
+#   to be "the one simulator that never reaches VerdictHelper" while AoiInspectorSim's own new doc, written
+#   forty minutes earlier, said VerdictHelper "is never consulted" there either — a contradiction between
+#   two files of the same cluster, which is precisely the eleven-parallel-classes hazard stage 11 warned
+#   this stage about.
+#   ROUND 2, manual, aimed at MECHANISM and at claims carrying no absolute word: FIVE more. The one that
+#   matters: SimulatorBase.NextCycle said its cycle index "is supplied by SimulatedDriver". Measured over
+#   src/, there are SIX call sites — the pacing loop and five preview paths (FleetCore, three in the WPF
+#   App.xaml.cs, FleetService) that all pass the literal `cycle: 1`. Also LeakTestSim's warn band was
+#   stated as "17.0 Pa/s and up" when Fail resumes above 23.0.
+#   The two rates are 18/92 and 5, and they are NOT summed into one ratio. TRUE TOTAL 23.
+#   🔴 ROUND 2 CAME IN LOWER THAN ROUND 1 FOR THE SECOND STAGE RUNNING (5 vs 18), so stage 11's reading —
+#   "a cluster whose subject is a CONTRACT will flag high on round 1" — does not explain this one, whose
+#   subject is physics models. The reading offered instead: round 1's yield tracks how many sentences the
+#   author wrote as UNIVERSALS, and a stage that documents N parallel implementations writes many, because
+#   distinguishing them is the whole content. Stated so stage 13, if there is one, can disagree on record.
+# Re-running the filter after the corrections took the flagged set from 92 to 97: the corrections are
+# themselves absolute-carrying sentences (naming what IS true after removing what was not), so this number
+# rises rather than falls. All 97 were read.
 DOC_ABSOLUTES_BASELINE="cfcfae42"
-EXPECT_NEW_DOC_ABSOLUTES=106
+EXPECT_NEW_DOC_ABSOLUTES=203
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
@@ -6240,7 +6269,70 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # FALSE — it was true of the five source files and was generalised to the whole change before the whole
 # change existed. Caught by re-running `git diff --numstat` after the documents were edited, which is the
 # same "re-measure your own product after writing it" step that caught the last three stages.
-EXPECT_WARNINGS=257
+#
+# ══ TASK BC-1 (.superpowers/sdd/item25-stage12/task-1-brief.md) — item 12 stage 12, THE LAST COVERAGE
+#    STAGE. EXPECT_WARNINGS 257 -> 219 AND TWO LEDGER ROWS REACH ZERO AND DISAPPEAR (16 -> 14). ══════
+#
+# THE CLUSTER: EVERYTHING THAT WAS LEFT. All 38 remaining coverage gaps sat under ONE directory tree,
+# src/St4i.EdgeCore/Drivers, on 32 members in 17 files, and this stage takes all 17 whole with a per-file
+# residue of 0 measured on the finished tree. The population was ENUMERATED BY NAME from this stage's own
+# -t:Rebuild at BASE 5e194ab0 before a word was written, and it reproduces stage 11's grouping exactly:
+# Simulators/ 27 (11 files, 21 members) - Modbus/ 4 - OpcUa/ 4 - HotFolder/ 2 - Mqtt/ 1. Because it is the
+# last one, the cluster is not a chosen subset; it is decomposed into three questions instead, each of
+# which every member under it answers:
+#   S. Simulators/ (11 files, 27) -- what does this machine model produce for a cycle, what may be tuned
+#      about it, and what is fixed?
+#   F. the four connector/driver factories (4 files, 8) -- what is decided BEFORE a driver exists, and
+#      what is deliberately not done here?
+#   R. Doc28ValidationException's two constructors + InProcessBroker.DisposeAsync (2 files, 3) -- what
+#      does the failure/teardown path of the two remaining loose ends promise?
+#
+# 🔴 219 IS MEASURED, NOT SUBTRACTED. `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo` over the
+# whole solution, SDK 10.0.302: `Build succeeded.`, `0 Error(s)`, `219 Warning(s)`, zero MSB3101. The
+# build-server population was sampled TWICE ~22 s apart before the run and was 0 both times (posture
+# 0,0,0,0), so no foreign node was waited out this time. 257 - 38 = 219 is arithmetic that AGREES; it was
+# reported after the measurement, not in place of it. EXPECT_BUILD_NODES stays 0. No suppression of any
+# kind was added -- no #pragma, no NoWarn, no analyzer-config entry, and no <see cref> deleted to dodge a
+# CS1574. 🔴 ZERO ACCESS LEVELS CHANGED and zero public names changed.
+#
+# 🔴 THE LEDGER LOSES TWO ROWS, AND THAT IS THE ASSERTION RATHER THAN A NOTE. `OURS CS1591 30` and
+# `OURS CS1573 8` both reach 0, and warning_ledger() only emits rows it counted, so the expected table
+# below drops from sixteen rows to FOURTEEN. This is the first time any row has reached zero since the
+# flag was turned on at AF-1. OURS is now 34 (CS8601 7, CS8604 14, CS8767 2, NU1701 9, xUnit1013 1,
+# xUnit2029 1) -- none of them a documentation warning. The eight VENDORED rows do not move one unit
+# (185), and 103 of the 219 that remain are that vendored file, which this repository may not edit.
+#
+# 🔴 NO NEW CS1573 WAS CREATED, and the shape that could have created one was handled by rule rather than
+# by luck: for every constructor documented here the choice was <summary>-ONLY or <summary>-PLUS-EVERY-
+# <param>, never a subset. The two members that already carried a partial <param> set (SimulatorBase's
+# ctor, 4 missing tags; SimulatorFactory.Create, 4 missing tags) were completed exactly, which is where
+# the whole `OURS CS1573` row went.
+#
+# 🔴 AND ONE PUBLISHED CLAIM INSIDE THE CLUSTER DID NOT SURVIVE MEASUREMENT -- retracted at the source, in
+# place, with its prior text preserved verbatim, and no code changed. ModbusDriverFactory's class block
+# said Program.cs "registers its Create method as the Func<IDeviceDriver> singleton St4i.EngineApi's
+# FleetHost optional ctor param resolves". Measured at 5e194ab0: St4i.EngineApi/Program.cs has no such
+# registration -- its three mentions of that type name are comments calling the arrangement historical,
+# and it says GP-4 "removed BOTH registrations". A second measurement in the same file: there is exactly
+# ONE `new ModbusDriverFactory(...)` in the whole tree and exactly ONE `new OpcUaDriverFactory(...)`, each
+# inside its own connector adapter's TryCreate, constructed and dropped in one expression -- so the "one
+# long-lived factory, many restarts" premise both classes describe no longer matches how either is used.
+#
+# 🔴 LINES REMOVED, MEASURED AFTER THE DIFF EXISTED BECAUSE THE FIRST WRITING OF THIS WAS WRONG. The
+# decision record's version of this paragraph read "0 `///` lines removed and 0 lines of any kind removed
+# from any C# file" -- written BEFORE the ModbusDriverFactory retraction above was made, which is the same
+# "a sentence about the diff written before the diff existed" species stage 11 caught in itself, now three
+# stages running. The true figures, listed rather than summarised: 16 of the 17 C# files have a deletion
+# column of exactly 0; ModbusDriverFactory.cs removes exactly FOUR `///` lines and all four are the
+# retraction, with the retracted sentence quoted verbatim inside its replacement. THIS FILE removes FIVE
+# lines, all single-line replacements: EXPECT_WARNINGS, EXPECT_NEW_DOC_ABSOLUTES, and the three opening
+# lines of EXPECT_WARNING_LEDGER (the two rows that reached zero, plus the assignment line that had to be
+# rewritten because the table's first row changed). docs/owner-decisions.md reports 6608 deletions and
+# that number is an artefact of line diffing a MOVE: two item bodies changed part heading, and a multiset
+# comparison against the base shows exactly FOUR non-blank base lines absent from the new file -- the two
+# verdict-table rows, the Part I enumeration sentence, and the `gate:phần-i` machine field.
+#
+EXPECT_WARNINGS=219
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
@@ -6860,9 +6952,12 @@ warning_ledger() {
 #       in IDeviceDriver.Id's own doc comment ("it keys slot labels and, through those, alarms") and a
 #       second in ScenarioAwareDriver.Id's. Both are OUTSIDE this cluster and BOTH WERE LEFT ALONE — see
 #       the task report; the measurement is written at the five points of use instead.
-EXPECT_WARNING_LEDGER="OURS CS1573 8
-OURS CS1591 30
-OURS CS8601 7
+# 🔴 BC-1: `OURS CS1573 8` and `OURS CS1591 30` USED TO HEAD THIS TABLE AND ARE GONE BECAUSE THEY REACHED
+# ZERO, not because anyone stopped asserting them. warning_ledger() emits a row only for a (bucket, code)
+# it actually counted, so a documentation warning reappearing anywhere in our source adds a row this
+# comparison does not expect and the gate goes red on it -- the absence below is a stronger assertion than
+# the `0` a literal row would have been. Fourteen rows, 185 vendored + 34 ours = 219.
+EXPECT_WARNING_LEDGER="OURS CS8601 7
 OURS CS8604 14
 OURS CS8767 2
 OURS NU1701 9

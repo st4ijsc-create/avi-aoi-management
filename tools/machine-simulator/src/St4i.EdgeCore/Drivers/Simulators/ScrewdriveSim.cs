@@ -63,11 +63,64 @@ public sealed class ScrewdriveSim : SimulatorBase
     /// per-board screw-count parameter to drive this from.</summary>
     private const int FasteningPositionsPerCycle = 4;
 
+    /// <summary>Builds a SCREWDRIVE model and declares its config kind as
+    /// <see cref="MachineParameterSchema.ScrewProgram"/>, which is what makes the whole live-config path
+    /// below reachable. See <see cref="SimulatorBase"/>'s own constructor for what each argument does and
+    /// for the two failure modes a <paramref name="configStore"/> brings with it — in particular that
+    /// passing one makes this constructor <see cref="MachineConfigStore.Ensure"/> a <c>screw_program</c>
+    /// record for <paramref name="d"/>'s code, which WRITES A FILE on first construction and throws
+    /// <see cref="InvalidOperationException"/> if that machine already has a record under another kind.
+    ///
+    /// <para>🔴 <b>This type is also the factory's last-resort fallback, so machines that are not
+    /// screwdrivers are built here.</b> <c>SimulatorFactory.Create</c> reaches
+    /// <c>FallbackByDeviceClass</c> for any <see cref="MachineDescriptor.MachineType"/> its switch does not
+    /// recognise, and that method's own default arm — everything that is not
+    /// <see cref="DeviceClass.Iot"/> or <see cref="DeviceClass.AoiAvi"/> — constructs this class. With a
+    /// store wired, such a machine therefore gets a <c>screw_program</c> record ensured and persisted under
+    /// its code, while <c>MachineParameterSchema.ConfigKindForMachineType</c> returns null for its unknown
+    /// type and the machine-settings API answers "unsupported machine type" for the very same
+    /// machine.</para>
+    ///
+    /// <para><paramref name="cycleRateMultiplier"/> matters here and not for most siblings, because this is
+    /// one of only two types that define a config-derived <see cref="CycleSecondsOverride"/>; see that
+    /// property.</para></summary>
     public ScrewdriveSim(MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null, double cycleRateMultiplier = 1.0)
         : base(d, seed, MachineParameterSchema.ScrewProgram, configStore, productCodeProvider, cycleRateMultiplier)
     {
     }
 
+    /// <summary>Resolves the live config once at the top, derives the torque distribution and the pass band
+    /// from it (falling back to the constants above when no store is wired), draws torque and angle, builds
+    /// the torque-vs-angle waveform, judges the torque, and then builds the four-position fastening plan
+    /// described at <see cref="BuildFasteningPlan"/>.
+    ///
+    /// <para><b>The plan can only make the verdict worse.</b> After the primary judgement, any step whose
+    /// own result is NG forces the reading to <see cref="Verdict.Fail"/>; nothing in this method can move a
+    /// verdict the other way. So a Pass primary torque can leave with a Fail reading, and a Warn primary
+    /// with no NG step stays Warn — the aggregate is a tally, not a re-judgement.</para>
+    ///
+    /// <para><b>Of the five <c>screw_program</c> parameters, this class reads four.</b>
+    /// <c>torqueTarget</c> and <c>torqueTolerance</c> here, <c>speedRpm</c> and <c>clampTimeMs</c> in
+    /// <see cref="CycleSecondsOverride"/>. <c>angleTarget</c> reaches no draw: the angle metric is always
+    /// <c>N(350, 10)</c> from the constants above, is published with no LSL/USL, and takes no part in the
+    /// verdict — so an operator who edits <c>angleTarget</c> changes the stored record and nothing this
+    /// machine reports.</para>
+    ///
+    /// <para>🔴 <b>Wiring a store changes the reported torque by roughly a factor of nine before any
+    /// operator touches anything.</b> The un-wired path draws <c>N(12.0, 0.4)</c> Nm against
+    /// <c>[10.8, 13.2]</c>. A freshly ensured record is seeded from the schema's own defaults, so the wired
+    /// path resolves <c>torqueTarget = 1.35</c> and <c>torqueTolerance = 0.15</c> and draws
+    /// <c>N(1.35, 0.0405)</c> against <c>[1.20, 1.50]</c>. Both are plausible screwdrivers and both keep the
+    /// monotonicity the design doc asks for; what they do not do is agree on the value. Measured at commit
+    /// <c>5e194ab0</c>, the two <c>SimulatorFactory.Create</c> call sites in <c>FleetCore</c> pass a store
+    /// and the two in <c>St4i.EdgeService.EdgeWorker</c> and
+    /// <c>St4iMachineSimulator.Services.FleetService</c> do not, so the same descriptor reports about 12 Nm
+    /// under one host and about 1.35 Nm under another.</para>
+    ///
+    /// <para><b>Two independent config resolutions happen inside one cycle</b> — this method's own, and a
+    /// second one through <see cref="CycleSecondsOverride"/> when the plan's duration is computed. They are
+    /// separate reads of a store another thread may write between, which is the cost of the "never memoize"
+    /// rule <c>SimulatorBase.ResolveEffectiveConfig</c> states.</para></summary>
     public override DeviceReading NextCycle(long cycle)
     {
         var rng = Rng(cycle);

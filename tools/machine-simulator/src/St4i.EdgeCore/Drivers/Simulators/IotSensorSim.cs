@@ -44,6 +44,24 @@ public sealed class IotSensorSim : SimulatorBase
     /// agree at 0.05 today by intention, not by derivation.</para></summary>
     private const double MinCycleSecondsFloor = 0.05;
 
+    /// <summary>Builds an IOT_SENSOR model and declares its config kind as
+    /// <see cref="MachineParameterSchema.IotSettings"/>. See <see cref="SimulatorBase"/>'s own constructor
+    /// for what each argument does, including that supplying a <paramref name="configStore"/> makes this
+    /// constructor <see cref="MachineConfigStore.Ensure"/> an <c>iot_settings</c> record — a file write on
+    /// first construction — and that it throws <see cref="InvalidOperationException"/> if this machine code
+    /// already carries a record of another kind.
+    ///
+    /// <para><b><paramref name="productCodeProvider"/> is invoked and then ignored on this machine type,
+    /// and that is by design rather than by omission.</b> <c>iot_settings</c> is the one
+    /// <c>configKind</c> for which <c>MachineParameterSchema.SupportsProductScope</c> answers false, so
+    /// <c>MachineConfigStore.Resolve</c> drops the product code before it looks at any adjustment layer.
+    /// <c>SimulatorBase.ResolveEffectiveConfig</c> still calls the delegate to obtain that code on every
+    /// resolve, so a slow or throwing provider costs exactly as much here as anywhere else while its answer
+    /// can change nothing.</para>
+    ///
+    /// <para>This is also the only machine type that reads its config kind WHOLE: <c>iot_settings</c>
+    /// defines two parameters, <c>sampleRateHz</c> and <c>reportIntervalSec</c>, and
+    /// <see cref="CycleSecondsOverride"/> reads both.</para></summary>
     public IotSensorSim(MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null, double cycleRateMultiplier = 1.0)
         : base(d, seed, MachineParameterSchema.IotSettings, configStore, productCodeProvider, cycleRateMultiplier)
     {
@@ -70,6 +88,32 @@ public sealed class IotSensorSim : SimulatorBase
         }
     }
 
+    /// <summary>Emits a <see cref="ReadingKind.Telemetry"/> reading carrying three channels — temperature,
+    /// humidity, current — and no measurements, no metrics and no waveform. Its
+    /// <see cref="DeviceReading.Verdict"/> is set to <see cref="Verdict.Skip"/> explicitly rather than left
+    /// at a default, because telemetry has no pass/fail concept here. It is one of the TWO simulators in
+    /// this directory that never reach <c>VerdictHelper</c> — <see cref="AoiInspectorSim"/> is the other,
+    /// for the unrelated reason that a board's result is a conjunction of its points rather than a margin
+    /// judgement — and it is the only one that reports <see cref="Verdict.Skip"/>.
+    ///
+    /// <para>The three channels are NOT independent: all three ride one phase derived from
+    /// <c>cycle % 120</c>, separated by fixed offsets of π/3 and π/6, so their sinusoids are locked to each
+    /// other and to the cycle index for as long as the machine runs. Only the noise term differs per
+    /// channel.</para>
+    ///
+    /// <para>🔴 <b>The "drift event" is a 200-cycle square wave, not a transient, and it is reported on
+    /// three channels while it is applied to one.</b> The state is the parity of
+    /// <c>cycle / DriftEveryCycles</c>, so drift is OFF for cycles 1..199, ON for 200..399, OFF for
+    /// 400..599, and so on — about half of all cycles are drifted, indefinitely. While it is on, the
+    /// <c>+1.5 °C</c> offset is added to the TEMPERATURE only, but the quality flag written onto every one
+    /// of the three <c>TelemetrySample</c>s flips to <c>uncertain</c>. So a consumer that trusts the
+    /// humidity or current quality flag is told those readings are suspect during a temperature-only
+    /// event.</para>
+    ///
+    /// <para>The cycle plan carries one step per channel with a null <c>Result</c> — the same "no verdict
+    /// exists here" decision as above, expressed a second time rather than invented — and its duration is
+    /// read from <see cref="CycleSecondsOverride"/>, which resolves the config a SECOND time inside this
+    /// same cycle when a store is wired.</para></summary>
     public override DeviceReading NextCycle(long cycle)
     {
         var rng = Rng(cycle);
