@@ -7559,9 +7559,15 @@ tên**, không bị thu hẹp cho dễ nhìn.
 
 #### 4. Cặp đối chứng — chạy trọn, rồi **hoàn nguyên**
 
-Trồng một câu phủ định phổ quát **sai** vào một khối `///` của `src/St4i.EdgeCore/Fleet/FleetCore.cs`
-(*"no code in this repository ever writes to disk"* — sai hiển nhiên trên một cây có bốn store ghi
-đĩa). `--since HEAD`: **đỏ**, exit 1, và nó **nêu tên file cùng nguyên văn câu ấy**. Gỡ câu ra: **xanh**,
+Trồng một khối `///` **mới** ở đầu `src/St4i.EdgeCore/Fleet/FleetCore.cs`, mang một câu phủ định phổ
+quát **sai**: *"no code in this repository ever writes to disk"*. 🔴 **Nhân chứng cho việc nó sai nằm
+trong chính cổng đang chạy nó, nên nó không cần một con số:** `scripts/verify-suites.sh` đóng khung
+**thư mục credential thật của sản phẩm** trước và sau mỗi lần chạy — cái khung ấy tồn tại vì
+`CredentialStore` **ghi xuống đĩa**. *(Bản nháp của khối này viết *"một cây có **bốn** store ghi
+đĩa"*. **Con số ấy không được đo và đã bị gỡ**: một phép quét `*Store` dưới `src/` trả về **năm** lớp,
+còn `verify-suites.sh` nói **MƯỜI BA**. Một con số bịa trong đúng mục nói về khẳng định không kiểm
+được — bắt bằng cách đọc lại phần mình vừa viết, và ghi ra chứ không lặng lẽ sửa.)*
+`--since HEAD`: **đỏ**, exit 1, và nó **nêu tên file cùng nguyên văn câu ấy**. Gỡ câu ra: **xanh**,
 exit 0, `git status` sạch. Con số census trong lần chạy đỏ đọc **5 781 / 15 966**, tức nó thấy đúng một
 câu thêm — không nhiều hơn, không ít hơn.
 
