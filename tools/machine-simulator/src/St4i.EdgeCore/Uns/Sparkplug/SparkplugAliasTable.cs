@@ -4,11 +4,29 @@ namespace St4i.EdgeCore.Uns.Sparkplug;
 /// G2-2 — per-equipment Sparkplug B metric name&lt;-&gt;alias table. Per spec, a device's (D)BIRTH
 /// declares each metric's <c>name</c> together with a numeric <c>alias</c>; every subsequent (D)DATA for
 /// that device is then allowed to carry ONLY the alias (cheaper on the wire) instead of repeating the
-/// name. G2-2 does not yet emit NBIRTH/DBIRTH (see <see cref="St4i.EdgeCore.Uns.SparkplugMsgType"/>'s doc
-/// comment — that sequencing is G2-3), so today every metric this table hands out an alias for is a
-/// first-seen name assigned lazily on first (D)DATA rather than at a real BIRTH; <see cref="Reset"/> is
-/// what a genuine (D)BIRTH (G2-3) will call to start a device's aliasing over from scratch, matching the
-/// spec's "aliases are only valid for the current BIRTH/DEATH session" rule.
+/// name.
+///
+/// <para>🔴 <b>RETRACTED 2026-08-22 (owner-decisions.md item 35). The two sentences that stood here were
+/// forward-looking and both have since become false, in OPPOSITE directions.</b> They read: <i>"G2-2 does
+/// not yet emit NBIRTH/DBIRTH … that sequencing is G2-3 … <c>Reset</c> is what a genuine (D)BIRTH (G2-3)
+/// will call to start a device's aliasing over from scratch"</i>. Measured today:
+/// <list type="bullet">
+///   <item><b>NBIRTH IS emitted.</b> <c>UnsPublisher.PublishNodeBirthCoreAsync</c> publishes it, driven by
+///     <c>FleetCore</c>'s Start transition; NDEATH likewise on Stop / E-stop. G2-3 landed that half.</item>
+///   <item><b>No (D)BIRTH will call <see cref="Reset"/>, because the DBIRTH path was REMOVED.</b> On
+///     2026-08-21 the owner ruled <c>IUnsPublisher.PublishBirth</c>/<c>PublishDeath</c> deleted
+///     (owner-decisions.md item 23), and that publisher was this method's only production caller. What is
+///     measurable now, repo-wide at <c>cfcfae42</c> including <c>server/</c> and <c>client/</c>: exactly
+///     ONE call site for <see cref="Reset"/>, and it is
+///     <c>SparkplugAliasTableTests.Reset_ClearsAssignmentsAndRestartsNumberingAtOne</c> — a unit test.</item>
+/// </list>
+/// So the standing state, rather than a plan: <see cref="GetOrAssign"/> runs on each metric of each
+/// reading this spine publishes, nothing clears the table for the life of the process, and its clearing
+/// half has no production caller. Aliases therefore survive a Start→Stop→Start cycle, which is harmless
+/// because <c>SparkplugPayload.EncodeMetric</c> writes both <c>Name</c> and <c>Alias</c> on a metric
+/// unconditionally (measured 2026-08-22 at its two <c>WriteTag</c> pairs, not inferred) — so a subscriber
+/// has no alias to resolve that it was not also handed the name for. Restoring a real
+/// DBIRTH would put a new message on the wire and is NOT a decision this file may take — see item 35.</para>
 ///
 /// One instance = one equipment/device's alias space; <see cref="UnsPublisher"/> keeps one per device
 /// code (never shared across devices — two machines each own metric named e.g. "temperature" must not
@@ -47,8 +65,14 @@ public sealed class SparkplugAliasTable
         }
     }
 
-    /// <summary>Clears every assigned alias and restarts numbering at 1 — the G2-3 (D)BIRTH hook (see the
-    /// class doc comment).</summary>
+    /// <summary>Clears every assigned alias and restarts numbering at 1.
+    /// <para>🔴 <b>RETRACTED 2026-08-22 (item 35): this used to call itself "the G2-3 (D)BIRTH hook".</b>
+    /// There is no DBIRTH hook — the path that would have called this was removed on 2026-08-21 under the
+    /// owner's item-23 ruling. Measured repo-wide at <c>cfcfae42</c>, the one caller of this method is
+    /// <c>SparkplugAliasTableTests</c>. It is kept, not deleted, because deleting a member of a published
+    /// type is a second contract change that no ruling covers (the same reasoning that kept
+    /// <c>SparkplugMsgType.DBIRTH</c>) — but a reader should not infer a live mechanism from its
+    /// existence.</para></summary>
     public void Reset()
     {
         lock (_gate)
