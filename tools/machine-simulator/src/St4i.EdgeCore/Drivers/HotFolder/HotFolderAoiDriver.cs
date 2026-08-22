@@ -39,6 +39,32 @@ public sealed class HotFolderAoiDriver : IDeviceDriver
     private readonly SemaphoreSlim _wake = new(0, int.MaxValue);
     private volatile bool _disposed;
 
+    /// <summary>Null-checks the three directories, CREATES all three on disk, starts a
+    /// <see cref="FileSystemWatcher"/> over the watch directory if the platform allows one, and latches
+    /// <see cref="Health"/> to <see cref="DriverHealthState.Connected"/>.
+    ///
+    /// <para>🔴 <b>This constructor performs real I/O, which is a direct violation of
+    /// <see cref="IDeviceDriver"/>'s type-level rule that "construction is non-blocking and performs no
+    /// I/O", and it is recorded rather than fixed here.</b> Three
+    /// <see cref="Directory.CreateDirectory(string)"/> calls plus a live watcher handle are file-system work,
+    /// and on a slow or unreachable volume they are unbounded. The rule exists because a driver constructed
+    /// under a fleet lock delays the supervisory halt call that takes the same lock; the reason this has not
+    /// bitten is narrower than the rule, and it was re-measured here rather than carried forward — the only
+    /// two construction sites outside tests are <c>FleetCore.RunHotFolderAoiDemoAsync</c> and
+    /// <c>St4iMachineSimulator.Services.FleetService.RunHotFolderAoiDemoAsync</c>, both demo entry points,
+    /// and neither holds that lock. The conformance harness does not catch it either: it
+    /// overrides the device-backed flag to <see langword="false"/>, which disables the very assertion that
+    /// would have looked, leaving a stopwatch as the only guard. Both halves are already written down in
+    /// <c>DeviceDriverConformanceSuite</c> and in <c>HotFolderAoiDriverConformanceTests</c>; this comment
+    /// exists so the fact is legible from the driver itself, which is where a reader looks
+    /// first.</para></summary>
+    /// <param name="watchDir">Directory scanned for completed result files. Created if absent. Files whose
+    /// name ends in <c>.tmp</c> are skipped, which is what makes the doc-28 §6.3 atomic-write protocol
+    /// sufficient on its own.</param>
+    /// <param name="archiveDir">Where a successfully parsed file is moved BEFORE its reading is yielded.
+    /// Created if absent. A name collision is disambiguated with a suffix rather than overwritten.</param>
+    /// <param name="errorDir">Where a file that fails doc-28 validation is moved, intact and never deleted.
+    /// Created if absent. A file landing here produces no reading and no exception to any caller.</param>
     public HotFolderAoiDriver(string watchDir, string archiveDir, string errorDir)
     {
         if (watchDir is null) throw new ArgumentNullException(nameof(watchDir));
@@ -59,12 +85,73 @@ public sealed class HotFolderAoiDriver : IDeviceDriver
         Health = DriverHealthState.Connected;
     }
 
+    /// <summary>Composed once by the constructor as <c>"hotfolder-aoi:"</c> followed by the watch directory
+    /// EXACTLY as it was handed in — not normalised, not made absolute, not case-folded. Two drivers given
+    /// the same directory by two different spellings therefore report two different ids while contending for
+    /// the same files, and the id carries a filesystem path into whatever logs or surfaces read it. Fixed for
+    /// the lifetime of the instance, as <see cref="IDeviceDriver.Id"/> requires.</summary>
     public string Id { get; }
 
+    /// <summary>Always <c>DriverKinds.HotFolderAoi</c>, one of the five ids this codebase reserves. Read in
+    /// production by <c>FleetCore.GetDriverHealth()</c> into <c>DriverHealthSnapshot.Kind</c>, which
+    /// <c>St4i.EngineApi.Alarms.AlarmEvaluator</c> interpolates twice into the TEXT of a degraded/down alarm.
+    /// It is not the alarm's key or target — those are the slot label. The DEGRADED text in particular is out
+    /// of reach for this driver, since <see cref="Health"/> is never assigned that value here; only the DOWN
+    /// text is, and only from disposal onward.</summary>
     public string Kind => DriverKinds.HotFolderAoi;
 
+    /// <summary>Takes exactly two values over the life of an instance:
+    /// <see cref="DriverHealthState.Connected"/> from the moment the constructor returns, and
+    /// <see cref="DriverHealthState.Down"/> from the moment <see cref="DisposeAsync"/> runs.
+    /// <see cref="DriverHealthState.Degraded"/> is never assigned anywhere in this class.
+    ///
+    /// <para>🔴 <b>So this reports Connected in three states a reader would not call connected</b>, and each
+    /// is reachable: the watch directory being deleted after construction (the scan catches
+    /// <see cref="DirectoryNotFoundException"/> and simply finds nothing);
+    /// <see cref="FileSystemWatcher"/> creation having failed, e.g. on a network share, leaving the driver on
+    /// the 120 ms poll with no event path at all; and the watcher LOSING events afterwards, since its
+    /// <c>Error</c> handler only nudges the poll and reports nowhere else. In each of those this member keeps
+    /// reading Connected, so nothing about it reaches the driver-health path
+    /// <c>St4i.EngineApi.Alarms.AlarmEvaluator</c> watches. What is left to notice is the ABSENCE of
+    /// readings, which is a different alarm source and not this one.</para>
+    ///
+    /// <para><b>Where that sits against the contract.</b> <see cref="IDeviceDriver.Health"/> exempts a driver
+    /// with no external device from its "never report Connected while unreachable" rule, but requires such a
+    /// driver to claim the exemption in its own CLASS doc comment and to state the values Health takes
+    /// instead. This class's class-level comment does neither, while
+    /// <c>HotFolderAoiDriverConformanceTests</c> claims the exemption on its behalf and says in its own words
+    /// that it is judging BY ANALOGY, not from anything this driver states. The values are stated here, at
+    /// the member; the class-level claim the contract actually asks for is still absent, and a watched
+    /// directory on a network share is in any case not obviously "no external device at
+    /// all".</para></summary>
     public DriverHealthState Health { get; private set; }
 
+    /// <summary>The pickup loop. Each pass rescans the watch directory, takes the ORDINALLY SMALLEST
+    /// non-<c>.tmp</c> filename, reads it, parses it, moves it, and yields at most one reading; with nothing
+    /// to take it parks until the watcher nudges it or 120 ms elapse, whichever comes first. Pickup order is
+    /// therefore filename order, not arrival order — the doc-28 naming convention is what makes that
+    /// approximate time order, and a producer that names files otherwise will see them picked up in the
+    /// order it named them.
+    ///
+    /// <para><b>Three failures are absorbed rather than raised, and each disappears differently.</b> A file
+    /// that vanished between the scan and the read is skipped silently. A file still locked despite the
+    /// atomic-rename convention costs one poll interval and is retried on the next pass, indefinitely. A file
+    /// that fails doc-28 validation is moved to the error directory and produces nothing — no reading, no
+    /// log, no exception to the caller. What is NOT absorbed is everything else: an
+    /// <see cref="UnauthorizedAccessException"/> from the read, or any failure of the archive/error move,
+    /// leaves this method and ends the enumeration, alongside the
+    /// <see cref="OperationCanceledException"/> cancellation raises.</para>
+    ///
+    /// <para><b>The archive move happens BEFORE the yield, on purpose</b>, so a caller that stops enumerating
+    /// on the item it was just handed cannot leave that file sitting in the watch directory to be picked up
+    /// twice. The cost of that ordering is the other direction: a reading whose consumer never processed it
+    /// has already been moved out of the hot folder, so a crash between the move and the consumer's commit
+    /// loses it from the folder's point of view.</para></summary>
+    /// <param name="ct">Checked at the top of every pass and honoured while parked, which is where this loop
+    /// spends nearly all of its time. It does NOT bound the whole method: the archive/error move is
+    /// synchronous file I/O taking no token, so on a wedged volume cancellation waits for that call to
+    /// return.</param>
+    /// <returns>One reading per successfully parsed file, filename order, at most one per pass.</returns>
     public async IAsyncEnumerable<DeviceReading> ReadAsync([EnumeratorCancellation] CancellationToken ct)
     {
         while (!_disposed)

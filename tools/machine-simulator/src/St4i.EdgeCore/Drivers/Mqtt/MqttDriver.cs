@@ -33,6 +33,34 @@ public sealed class MqttDriver : IDeviceDriver
     private readonly Task _connectTask;
     private volatile bool _disposed;
 
+    /// <summary>Builds the driver and STARTS the connect+subscribe attempt on a background task before
+    /// returning. Construction itself neither blocks nor waits for the broker — which is what
+    /// <see cref="IDeviceDriver"/>'s type-level rule requires — but it is not inert either: by the time this
+    /// returns, an attempt against <paramref name="host"/>:<paramref name="port"/> is already in flight, and
+    /// <see cref="Health"/> can move off <see cref="DriverHealthState.Down"/> with the caller having called
+    /// nothing.
+    ///
+    /// <para><b>What is validated here, and what is not.</b> <paramref name="host"/>,
+    /// <paramref name="topics"/> and <paramref name="map"/> are null-checked and raise
+    /// <see cref="ArgumentNullException"/>. <paramref name="port"/> is not checked at all: an out-of-range or
+    /// nonsense port is accepted, fails inside the background attempt, is swallowed there, and surfaces only
+    /// as <see cref="Health"/> staying <see cref="DriverHealthState.Down"/> with no exception reaching any
+    /// caller. A topic filter is likewise not validated — a malformed filter fails at
+    /// <c>SubscribeAsync</c> on that same background task, and the failure lands in the same silent
+    /// place.</para></summary>
+    /// <param name="host">Broker hostname or address, passed straight to the MQTTnet TCP client
+    /// options.</param>
+    /// <param name="port">Broker TCP port. Unvalidated — see the summary for where a bad value
+    /// surfaces.</param>
+    /// <param name="topics">The filters to subscribe to, in order, each at QoS 1
+    /// (<c>AtLeastOnce</c>). The ARRAY is stored by reference and read later on the background
+    /// connect task, so mutating it after this constructor returns races that read; hand over an array
+    /// nobody else still holds. Subscription is NOT atomic: the loop stops at the first filter that fails,
+    /// the filters after it are never subscribed, and no caller is told which.</param>
+    /// <param name="map">Turns one received <c>(topic, payload)</c> pair into a reading, or
+    /// <see langword="null"/> to drop the message. It runs ON THE MQTTnet RECEIVE CALLBACK and is awaited
+    /// there, so it must be prompt — a slow mapper delays the messages queued behind it. It may throw: an
+    /// exception is caught, that one message is dropped, and the subscription survives.</param>
     public MqttDriver(string host, int port, string[] topics, Func<string, string, DeviceReading?> map)
     {
         if (host is null) throw new ArgumentNullException(nameof(host));
@@ -59,12 +87,68 @@ public sealed class MqttDriver : IDeviceDriver
         _connectTask = ConnectAndSubscribeAsync(options, _cts.Token);
     }
 
+    /// <summary>Composed once by the constructor as <c>"mqtt:{host}:{port}"</c> and fixed thereafter, as
+    /// <see cref="IDeviceDriver.Id"/> requires.
+    ///
+    /// <para>🔴 <b>It identifies the BROKER, not this subscription.</b> Neither the topic filters nor the
+    /// generated MQTT client id enters the string, so two <see cref="MqttDriver"/> instances pointed at one
+    /// broker with disjoint filter sets report the SAME <see cref="Id"/> — a caller that needs to tell two
+    /// live subscriptions apart cannot do it with this. The instances are still distinct to the broker: each
+    /// constructor builds its own <c>st4i-mqttdriver-{guid}</c> client id, and that guid is deliberately not
+    /// exposed here, so the value that IS unique per instance is the one no reader can see.</para></summary>
     public string Id { get; }
 
+    /// <summary>Always <c>DriverKinds.Mqtt</c>, one of the five ids this codebase reserves. The one
+    /// production reader of this property is <c>FleetCore.GetDriverHealth()</c>, which copies it into
+    /// <c>DriverHealthSnapshot.Kind</c>; <c>St4i.EngineApi.Alarms.AlarmEvaluator</c> then interpolates it
+    /// twice into the TEXT of a degraded/down alarm. It is not the alarm's key or target — those are the slot
+    /// label — so this value is read by an operator and not branched on.</summary>
     public string Kind => DriverKinds.Mqtt;
 
+    /// <summary>Reports the state of the connection to the BROKER, and it is worth reading that literally:
+    /// <see cref="DriverHealthState.Connected"/> here means the TCP/MQTT session was established, not that
+    /// any filter has been subscribed or that any device is publishing. The constructor sets
+    /// <see cref="DriverHealthState.Down"/>; the background attempt sets
+    /// <see cref="DriverHealthState.Connected"/> the instant <c>ConnectAsync</c> returns and BEFORE the
+    /// subscribe loop runs, so there is a real window in which this reads Connected while nothing is
+    /// subscribed yet.
+    ///
+    /// <para>🔴 <b>Once that single attempt has finished, <see cref="DriverHealthState.Degraded"/> is
+    /// terminal for the life of the instance.</b> The only assignment of
+    /// <see cref="DriverHealthState.Connected"/> is inside the connect+subscribe attempt the constructor
+    /// starts, and that attempt runs exactly ONCE — this driver has no reconnect or backoff policy, by the
+    /// deliberate scope decision recorded on the class. A broker disconnect after it therefore moves this to
+    /// Degraded and it stays there until
+    /// <see cref="DisposeAsync"/> moves it to Down; a rebuilt driver is the only way back to Connected. A
+    /// reader that treats Degraded as "will recover shortly" would be wrong about this
+    /// implementation.</para></summary>
     public DriverHealthState Health { get; private set; }
 
+    /// <summary>Drains the buffer the MQTT receive callback fills. This method does no network work of its
+    /// own — connecting and subscribing belong to the background task the constructor started, and this call
+    /// neither waits for that task nor learns whether it succeeded. Messages that arrive before the first
+    /// enumeration are held rather than lost.
+    ///
+    /// <para>🔴 <b>That buffer is UNBOUNDED, and the write side cannot fail.</b> The callback pushes with
+    /// <c>TryWrite</c> onto an unbounded channel, so a consumer slower than the broker's publish rate is
+    /// absorbed as memory growth rather than as backpressure or as a dropped message. This is the opposite
+    /// choice from the bounded <c>DropOldest</c> channels elsewhere in this codebase, and it is the shape to
+    /// weigh before pointing this at a high-rate topic.</para>
+    ///
+    /// <para><b>How it ends.</b> Cancelling <paramref name="ct"/> throws
+    /// <see cref="OperationCanceledException"/> out of the enumerator.
+    /// <see cref="DisposeAsync"/> both cancels an internal token and completes the buffer, in that order,
+    /// so an in-flight enumeration may end either way — by returning normally when the completion is observed
+    /// first, or by throwing <see cref="OperationCanceledException"/> when the cancellation is; readings
+    /// already sitting in the buffer at that moment are not guaranteed to be delivered. Enumerating a driver
+    /// that has ALREADY been disposed is the one case that is neither: the first step of this method reads a
+    /// token off the internal source <see cref="DisposeAsync"/> has disposed, which raises
+    /// <see cref="ObjectDisposedException"/> (measured on this SDK, 2026-08-22) rather than yielding an empty
+    /// sequence.</para></summary>
+    /// <param name="ct">Ends the enumeration by throwing when cancelled. It is linked with the driver's own
+    /// internal token, so either source ends the stream.</param>
+    /// <returns>Whatever the caller-supplied mapper produced, in the order the broker delivered it, with
+    /// dropped (<see langword="null"/>-mapped) and mapper-throwing messages already removed.</returns>
     public async IAsyncEnumerable<DeviceReading> ReadAsync([EnumeratorCancellation] CancellationToken ct)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
@@ -133,6 +217,27 @@ public sealed class MqttDriver : IDeviceDriver
         return Task.CompletedTask;
     }
 
+    /// <summary>Tears the subscription down in a fixed order: latch <see cref="Health"/> to
+    /// <see cref="DriverHealthState.Down"/>, cancel the internal token, complete the reading buffer, await
+    /// the constructor's connect+subscribe task, then disconnect and dispose the MQTT client. Idempotent
+    /// through the same flag it sets first, so a second call returns immediately — which is what
+    /// <see cref="IDeviceDriver"/>'s type-level rule asks for.
+    ///
+    /// <para>🔴 <b>Its two waits are not equally bounded, and the second one is the gap.</b> The awaited
+    /// connect+subscribe task was started with the token that is cancelled one line earlier, so that wait
+    /// ends. The graceful <c>DisconnectAsync</c> underneath it is issued with
+    /// <see cref="CancellationToken.None"/> and is attempted whenever the client still reports itself
+    /// connected — nothing in THIS class bounds it, so how long a broker that accepts the socket and stops
+    /// answering can hold teardown here is decided entirely by whatever timeout the MQTT client applies
+    /// internally, which this class neither sets nor asserts. Both waits are wrapped so a THROWN failure on
+    /// either cannot stop the disposal; being wrapped is not the same as being bounded.</para>
+    ///
+    /// <para>🔴 <b>The internal cancellation source is disposed at the end, and that closes the driver to
+    /// re-enumeration rather than merely ending it.</b> See <see cref="ReadAsync"/>: a call made after this
+    /// method completes raises <see cref="ObjectDisposedException"/> instead of returning an empty
+    /// sequence.</para></summary>
+    /// <returns>A task that completes once the client has been disconnected (best effort) and disposed.
+    /// Nothing here waits on a consumer, so an abandoned enumeration does not delay it.</returns>
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;

@@ -165,6 +165,41 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
     /// <see cref="_writablePoints"/>; see that field's own remarks.</summary>
     private readonly IReadOnlyList<string> _commands;
 
+    /// <summary>Builds the poller without contacting the server and without touching the file system: the
+    /// application configuration and the app-instance certificate are built lazily on the first session
+    /// attempt, not here, and <see cref="OpcUaPkiPaths.ResolveRoot"/> is path arithmetic that creates
+    /// nothing. <see cref="Health"/> is left <see cref="DriverHealthState.Down"/>, so
+    /// <see cref="IDeviceDriver"/>'s type-level "construction is non-blocking and performs no I/O" rule holds
+    /// here in the strict sense. The only real work is snapshotting the node map's writable-point and command
+    /// names into genuine read-only collections, once.
+    ///
+    /// <para><b>One argument is validated; the rest fail later or not at all.</b>
+    /// <paramref name="map"/> raises <see cref="ArgumentNullException"/>. The endpoint is not reached, the
+    /// pki root is not created, and <paramref name="operationTimeoutMs"/> is stored exactly as given —
+    /// zero and negative values included, since this class neither rejects nor normalises them. What the
+    /// OPC-UA stack then does with such a value is not decided here and is not asserted anywhere in this
+    /// repository; whatever it is, it surfaces through <see cref="Health"/> rather than as an argument
+    /// error.</para></summary>
+    /// <param name="map">The node map: the endpoint URL, the machine code, the nodes to read, the poll
+    /// cadence and the security mode. Non-null, and treated as immutable — the writable-point and command
+    /// lists are read out of it exactly once, right here. This is also where the endpoint comes from; the
+    /// environment variable that looks like it should supply one does not reach this
+    /// driver.</param>
+    /// <param name="logWarning">Optional sink for non-fatal notices. <see langword="null"/> discards
+    /// them.</param>
+    /// <param name="logError">Optional sink for a poll or write failure, called with the exception and a
+    /// message naming the machine code. <see langword="null"/> discards them, and because a poll failure is
+    /// otherwise absorbed into <see cref="DriverHealthState.Degraded"/> without throwing, that leaves a
+    /// reconnect loop against a dead server with no diagnostic at all.</param>
+    /// <param name="pkiDir">Overrides where the auto-generated app-instance certificate is stored.
+    /// <see langword="null"/> defers to the <c>ST4I_OPCUA_PKI_DIR</c> environment variable and then to the
+    /// built-in ProgramData root. Keep it SHORT: a deep root pushes the certificate file path far enough to
+    /// trip a legacy path-length limit in the native crypto reload, which is recorded on
+    /// <see cref="OpcUaPkiPaths"/> as a measured failure, not a hypothetical one.</param>
+    /// <param name="operationTimeoutMs">The per-service-call bound handed to the OPC-UA stack, defaulting to
+    /// 15000. It bounds ONE attempt: neither the write path nor the command path retries, so this is the
+    /// whole tolerance for a healthy-but-slow server rather than a per-try slice of a larger
+    /// budget.</param>
     public OpcUaDriver(
         OpcUaNodeMap map, Action<string>? logWarning = null, Action<Exception, string>? logError = null,
         string? pkiDir = null, int operationTimeoutMs = 15000)
@@ -182,10 +217,35 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         _commands = new List<string>(_map.CommandNames).AsReadOnly();
     }
 
+    /// <summary>Composed once by the constructor as <c>"opcua:{endpointUrl}:{machineCode}"</c> from the node
+    /// map, and fixed thereafter, as <see cref="IDeviceDriver.Id"/> requires. Because the endpoint URL is
+    /// embedded whole, this string carries a scheme and a colon-separated port inside a colon-separated id —
+    /// it is an identity to compare, not a format to parse.</summary>
     public string Id { get; }
 
+    /// <summary>Always <c>DriverKinds.OpcUa</c>, one of the five ids this codebase reserves. Read in
+    /// production by <c>FleetCore.GetDriverHealth()</c> into <c>DriverHealthSnapshot.Kind</c>, which
+    /// <c>St4i.EngineApi.Alarms.AlarmEvaluator</c> interpolates twice into the TEXT of a degraded/down alarm.
+    /// It is not the alarm's key or target — those are the slot label — so this value is read by an operator
+    /// and not branched on.</summary>
     public string Kind => DriverKinds.OpcUa;
 
+    /// <summary>The state of the OPC-UA session, on the same contract as
+    /// <see cref="Modbus.ModbusTcpDriver.Health"/>: <see cref="DriverHealthState.Down"/> from construction
+    /// until a poll succeeds, <see cref="DriverHealthState.Connected"/> only after a whole poll iteration has
+    /// completed, <see cref="DriverHealthState.Degraded"/> on any session-setup or read failure — which also
+    /// tears down the session so the next iteration rebuilds one — and
+    /// <see cref="DriverHealthState.Down"/> again after <see cref="DisposeAsync"/>.
+    ///
+    /// <para><b>Connected describes the LAST completed poll, not this instant</b>, so between two polls it
+    /// repeats the previous outcome and the node map's cadence is also the resolution of this signal. A write
+    /// or command failing does not move it: apart from the constructor and <see cref="DisposeAsync"/>, the
+    /// poll loop is the only place this is assigned, so a server that reads fine while rejecting every write
+    /// keeps reporting Connected. Whether that is the right reading of "health" is not settled here; what is
+    /// measured is that this member says nothing about the write path.</para>
+    ///
+    /// <para>Written from the poll loop and read from another thread with no lock, so a reader sees a value
+    /// that was true at some recent moment rather than a synchronised one.</para></summary>
     public DriverHealthState Health { get; private set; }
 
     /// <inheritdoc/>
