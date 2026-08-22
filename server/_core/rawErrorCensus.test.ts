@@ -27,6 +27,34 @@
  *
  * ⚠ KHÔNG BAO GIỜ nâng ngân sách để test xanh. Nâng nó nghĩa là vừa thêm một câu
  *   tiếng Anh mà người dùng Việt/Trung sẽ đọc nguyên văn.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỌC TRƯỚC KHI ĐỊNH "TRẢ NỐT" 502 CHỖ CÒN LẠI — ĐO NGÀY 2026-08-22
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * Con số 502 dễ đọc thành "còn 502 việc phải làm". KHÔNG PHẢI. Phép đo:
+ *
+ *   • **299 CÂU KHÁC NHAU** trên 502 chỗ, và **266 câu (89%) chỉ xuất hiện ĐÚNG MỘT LẦN.**
+ *     Họ đồng nhất DUY NHẤT — "driver không kết nối", 45 chỗ — đã đóng ở Pha 1 (`592d26ef`).
+ *     Sau nó **không còn họ nào nữa**.
+ *   • Trong 339 chỗ có chuỗi hằng đọc được: chỉ **80 chỗ** khớp một mã CHUNG đã có
+ *     (`INVALID_VALUE` 39 · `FIELD_REQUIRED` 23 · `ENTITY_NOT_FOUND` 12 · `FEATURE_DISABLED` 6);
+ *     **259 chỗ không mã nào hợp.** ~163 chỗ còn lại dùng template/biến.
+ *   • 12 chỗ "not found" hoá ra là lỗi **HỆ THỐNG TỆP** (`GGUF model file not found: <path>`,
+ *     `Backup file not found: <path>`…) — ánh xạ sang `ENTITY_NOT_FOUND` sẽ NUỐT MẤT đường
+ *     dẫn, thứ mang toàn bộ giá trị chẩn đoán. Đúng kết luận lô 4 đã rút trước đây.
+ *
+ * ⇒ **Đẻ 259 mã dùng-một-lần là tệ hơn để nguyên.** Một registry mã lỗi mà mỗi mã chỉ dùng
+ *   một chỗ thì không còn là registry — nó là bản dịch tiếng Việt của chính chuỗi tiếng
+ *   Anh, đội thêm chi phí bảo trì ba locale, mà không thêm được một chút khả năng máy-đọc
+ *   nào. Mã lỗi có giá trị vì nó GOM các chỗ cùng nghĩa lại; không gom được thì không có giá trị.
+ *
+ * ── LUẬT CHO MỌI ĐỢT SAU: chỉ di trú khi ĐỦ CẢ HAI ──────────────────────────────
+ *   (a) chỗ đó THẬT SỰ tới được người dùng cuối (không phải kỹ sư/máy/LLM — xem kết luận
+ *       F14 ở `dataErrorStringCensus.test.ts`: trong 164 chỗ trông y hệt nhau chỉ 13 là nợ);
+ *   (b) có một mã CHUNG ĐÃ CÓ diễn đạt đúng nghĩa, và di trú KHÔNG làm mất thông tin
+ *       (đường dẫn, mã lỗi socket, số hiệu bước…) mà chuỗi gốc đang mang.
+ * Thiếu một trong hai ⇒ giữ nguyên. Ngân sách đứng yên KHÔNG phải là thất bại; nó là
+ * kết quả đúng khi phần còn lại không phải nợ.
  */
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -144,5 +172,33 @@ describe("F3 — `throw new Error(...)` ngoài server/routers (cổng cũ mù v�
       }
     }
     expect(con).toEqual([]);
+  });
+
+  it("★★★ KHÔNG CÒN HỌ ĐỒNG NHẤT nào để di trú — kết luận này TỰ ĐO LẠI mỗi lần chạy", () => {
+    // ⚠ Ca này không canh một món nợ. Nó canh một KẾT LUẬN, và canh bằng cách tính lại
+    // thay vì tin vào chữ trong docblock — chính thứ đợt 21–22/08 đã bác bỏ 22 lần ở
+    // backlog. Nếu một ngày nào đó có họ đồng nhất mới xuất hiện (ai đó chép-dán một câu
+    // lỗi ra 20 chỗ), ca này ĐỎ và nói đích danh câu đó — tức nó vừa bảo vệ kết luận
+    // "không còn gì để di trú", vừa tự huỷ kết luận ấy đúng lúc nó hết đúng.
+    const cau = new Map<string, number>();
+    for (const file of walkTs(SERVER)) {
+      const src = readFileSync(file, "utf8");
+      for (const m of src.matchAll(/throw new Error\((["'`])([^"'`]*)\1\)/g)) {
+        // Chuẩn hoá: nội suy `${…}` và số → dấu chỗ, để hai câu cùng KHUÔN gom về một.
+        const k = m[2].replace(/\$\{[^}]*\}/g, "<X>").replace(/[0-9]+/g, "N").trim();
+        if (k) cau.set(k, (cau.get(k) ?? 0) + 1);
+      }
+    }
+    const ho = [...cau.entries()].filter(([, n]) => n >= 8).sort((a, b) => b[1] - a[1]);
+    if (ho.length) {
+      console.error("[F3] HỌ ĐỒNG NHẤT MỚI — đáng một đợt di trú, xem lại kết luận:", ho);
+    }
+    // Ngưỡng 8: dưới mức đó thì gom lại không đủ trả chi phí một mã lỗi mới + 3 bản dịch.
+    // Họ "driver không kết nối" (45 chỗ) đã đóng ở Pha 1; nay câu lặp nhiều nhất chỉ 4 lần.
+    expect(ho).toEqual([]);
+
+    // Cầu chì: phải THẤY nhiều câu khác nhau, không thì phép quét đang rỗng và khẳng
+    // định trên đúng một cách vô nghĩa.
+    expect(cau.size).toBeGreaterThan(200);
   });
 });

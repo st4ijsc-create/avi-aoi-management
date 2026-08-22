@@ -6,7 +6,7 @@
 
 ---
 
-## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 9), HEAD `592d26ef` (remote `fresh`)
+## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 10), HEAD `e862fe07`+ (remote `fresh`)
 
 > ### ⚠ ĐỌC DÒNG NÀY TRƯỚC KHI ĐỌC BẤT KỲ CON SỐ NÀO Ở DƯỚI
 > Trong hai ngày 21–22/08, **hai mươi hai** mục của tài liệu này bị phép đo bác bỏ: E1 · F3 ·
@@ -100,6 +100,34 @@ làm khoá thì hoặc tra trúng khoá KHÁC NGHĨA, hoặc không có khoá n�
 Cổng: `server/_core/deviceErrors.test.ts` — đường này **nằm ngoài tầm nói của**
 `entityDictionaryCoverage` (cổng đó chỉ quét `appError(...)`).
 
+### ⚠ PHA 2/3 ĐÃ ĐƯỢC ĐO LẠI — VÀ KẾT LUẬN ĐỔI (2026-08-22)
+
+Kế hoạch pha 2/3 bên dưới viết **trước khi** đo hình dạng câu chữ. Đo xong thì nó sai giả
+định nền, nên giữ lại để đối chiếu chứ đừng làm theo:
+
+- **299 CÂU KHÁC NHAU** trên 502 chỗ, **266 câu (89%) chỉ xuất hiện ĐÚNG MỘT LẦN.**
+  Họ đồng nhất DUY NHẤT — "driver không kết nối", 45 chỗ — đã đóng ở Pha 1. **Không còn họ nào.**
+- Trong 339 chỗ có chuỗi hằng: chỉ **80 chỗ** khớp một mã CHUNG đã có; **259 chỗ không mã nào hợp.**
+- 12 chỗ `"not found"` hoá ra là lỗi **HỆ THỐNG TỆP** — ánh xạ sang `ENTITY_NOT_FOUND` sẽ
+  nuốt mất ĐƯỜNG DẪN, thứ mang toàn bộ giá trị chẩn đoán.
+
+⇒ **Đẻ 259 mã dùng-một-lần là TỆ HƠN để nguyên.** Một registry mà mỗi mã chỉ dùng một chỗ
+thì không còn là registry — nó là bản dịch tiếng Việt của chính chuỗi tiếng Anh, đội thêm
+chi phí bảo trì ba locale mà không thêm một chút khả năng máy-đọc nào. Mã lỗi có giá trị vì
+nó **GOM** các chỗ cùng nghĩa; không gom được thì không có giá trị.
+
+**LUẬT CHO MỌI ĐỢT SAU — chỉ di trú khi ĐỦ CẢ HAI:**
+&nbsp;&nbsp;(a) chỗ đó THẬT SỰ tới người dùng cuối (không phải kỹ sư/máy/LLM — F14 đo được 13/164);
+&nbsp;&nbsp;(b) có mã CHUNG ĐÃ CÓ diễn đạt đúng nghĩa, và di trú KHÔNG làm mất thông tin (đường dẫn, mã socket, số hiệu bước) mà chuỗi gốc đang mang.
+Thiếu một trong hai ⇒ **giữ nguyên**. Ngân sách đứng yên KHÔNG phải thất bại; nó là kết quả
+ĐÚNG khi phần còn lại không phải nợ.
+
+**Kết luận đó nay TỰ ĐO LẠI mỗi lần chạy test** — `rawErrorCensus.test.ts` có một ca tính
+lại phân bố câu và ĐỎ nếu có họ ≥8 chỗ xuất hiện. Nó vừa bảo vệ kết luận "không còn gì để
+di trú", vừa tự huỷ kết luận ấy đúng lúc nó hết đúng.
+
+<details><summary>Kế hoạch pha 2/3 nguyên bản (đã lạc hậu — giữ để đối chiếu)</summary>
+
 **Pha 2 — 224 chỗ trong file được router import.**
 Với từng chỗ, hỏi **"có ai BẮT nó giữa đường không?"**:
 - có `catch` bọc và chuyển thành `appError` ⇒ **không phải nợ**, đánh dấu lý do;
@@ -109,6 +137,8 @@ Với từng chỗ, hỏi **"có ai BẮT nó giữa đường không?"**:
 **Pha 3 — 323 chỗ nội bộ thuần.**
 Ưu tiên thấp nhất. Nhiều chỗ trong đây là lỗi codec/protocol mà **chuỗi gốc mới là nội
 dung đúng** (xem kết luận F14). Chỉ đụng khi có bằng chứng nó nổi lên tới một màn hình.
+
+</details>
 
 #### ⚠ Ba điều KHÔNG được làm
 
