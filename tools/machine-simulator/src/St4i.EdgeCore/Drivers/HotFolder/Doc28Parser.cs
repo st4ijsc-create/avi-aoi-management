@@ -14,8 +14,44 @@ namespace St4i.EdgeCore.Drivers.HotFolder;
 /// </summary>
 public class Doc28ValidationException : Exception
 {
+    /// <summary>The overload every rule violation this parser detects for itself uses — 32 of the 34
+    /// construction sites in this file, measured at commit <c>5e194ab0</c>.
+    ///
+    /// <para><b>The file name is the thrower's job and it is not always done.</b> This type prepends
+    /// nothing; the house convention is a message shaped <c>'{fileName}': what was wrong</c>, and 28 of the
+    /// 34 sites follow it. The six that do not are the field-level helpers, none of which is handed a file
+    /// name at all: the three JSON <c>GetJson*</c> readers, the two format-agnostic numeric readers
+    /// <c>ParseIntOrNull</c>/<c>ParseDoubleOrNull</c> (reached from BOTH the XML and the CSV paths), and
+    /// <c>MapVerdict</c>'s <c>header.result</c> token check. Their messages name a field and no document,
+    /// and no <see langword="catch"/> anywhere in this file re-wraps them on the way out, so those six
+    /// reach a caller identifying neither the file nor the machine.</para>
+    ///
+    /// <para>🔴 <b>And on the one production path the message is discarded unread.</b>
+    /// <c>HotFolderAoiDriver</c> catches this type with a binding-less
+    /// <c>catch (Doc28ValidationException)</c> and moves the offending file to <c>error/</c>; it does not log
+    /// the message, does not write it beside the file, and does not surface it anywhere. Measured over every
+    /// <c>*.cs</c> in the tree, the only other references are seven <c>Assert.Throws&lt;&gt;</c> calls in
+    /// <c>Doc28ParserTests</c>, and none of them looks at <see cref="Exception.Message"/> either. So the
+    /// text a thrower composes here is, today, read by nobody.</para></summary>
+    /// <param name="message">What rule was broken; see the summary for the file-name convention.</param>
     public Doc28ValidationException(string message) : base(message) { }
 
+    /// <summary>The wrapping overload, used at exactly TWO of this file's 34 construction sites and both for
+    /// the same reason: a THIRD-PARTY parser has already produced a diagnostic worth keeping.
+    /// <c>ParseJson</c> wraps a <see cref="System.Text.Json.JsonException"/> and <c>ParseXml</c> wraps the
+    /// <see cref="System.Xml.XmlException"/> that DTD-prohibited reading raises, each folding
+    /// <see cref="Exception.Message"/> from the inner exception into its own text as well as chaining it.
+    ///
+    /// <para>Both of those sites do name the file, so this overload is not part of the six-site gap
+    /// described on the single-argument constructor. But the same reading applies to
+    /// <paramref name="innerException"/> as to the message: <c>HotFolderAoiDriver</c>'s
+    /// <c>catch (Doc28ValidationException)</c> binds nothing, so the chained exception is not logged either
+    /// and the underlying parser diagnostic ends at that catch.</para>
+    ///
+    /// <para>This type declares no parameterless and no serialization constructor — these two are the whole
+    /// public surface — so it cannot be constructed without a message.</para></summary>
+    /// <param name="message">What rule was broken.</param>
+    /// <param name="innerException">The underlying parser failure, chained rather than swallowed.</param>
     public Doc28ValidationException(string message, Exception innerException) : base(message, innerException) { }
 }
 

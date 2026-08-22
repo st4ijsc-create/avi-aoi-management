@@ -62,6 +62,29 @@ public sealed class AoiInspectorSim : SimulatorBase
     /// <see cref="ResolveRealPoints"/>.</summary>
     private readonly ProductConfigStore? _productConfigStore;
 
+    /// <summary>Builds an AOI/AVI model and declares its config kind as
+    /// <see cref="MachineParameterSchema.AoiInspection"/>. See <see cref="SimulatorBase"/>'s own constructor
+    /// for what the shared arguments do, including the file write and the
+    /// <see cref="InvalidOperationException"/> a <paramref name="configStore"/> can raise from here. The two
+    /// stores are different things and both are optional: <paramref name="configStore"/> holds this
+    /// MACHINE's imaging parameters, <paramref name="productConfigStore"/> holds the PRODUCT's measurement
+    /// points.
+    ///
+    /// <para><b>This is the one config-aware simulator that does NOT forward a cycle-rate multiplier</b> —
+    /// the base call ends at <paramref name="productCodeProvider"/>, so
+    /// <c>SimulatorBase.CycleRateMultiplier</c> is 1.0 on every instance. That is consistent rather than
+    /// missing: this class defines no <c>CycleSecondsOverride</c>, so its cadence comes from
+    /// <see cref="MachineDescriptor.CycleSeconds"/>, which the fleet build has already pre-scaled by the
+    /// active scenario's multiplier.</para>
+    ///
+    /// <para>🔴 <b><paramref name="pointsPerBoard"/> and <paramref name="ngRate"/> have no production
+    /// supplier.</b> Measured at commit <c>5e194ab0</c>: <c>SimulatorFactory.Create</c>'s AOI arm names
+    /// only <c>configStore</c>, <c>productCodeProvider</c> and <c>productConfigStore</c>, and no other
+    /// non-test caller exists — so every board this product inspects on the fixed-rate path is 20 points at
+    /// 0.05. Both are corrected rather than validated (<c>pointsPerBoard</c> is floored at 1, so 0 and
+    /// negatives become a one-point board; <c>ngRate</c> is clamped into [0, 1]), and
+    /// <paramref name="pointsPerBoard"/> is ignored outright whenever real product points
+    /// resolve.</para></summary>
     public AoiInspectorSim(
         MachineDescriptor d, int seed, int pointsPerBoard = 20, double ngRate = 0.05,
         MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null,
@@ -73,6 +96,34 @@ public sealed class AoiInspectorSim : SimulatorBase
         _productConfigStore = productConfigStore;
     }
 
+    /// <summary>Inspects one board: resolves the live config, decides how many points to visit and where
+    /// they are, calls each one OK or NG, and emits a <see cref="ReadingKind.Inspection"/> reading whose
+    /// <see cref="DeviceReading.Verdict"/> is <see cref="Verdict.Fail"/> if ANY point was NG and
+    /// <see cref="Verdict.Pass"/> otherwise.
+    ///
+    /// <para><b>Only those two verdicts are reachable</b> — no <see cref="Verdict.Warn"/>, no
+    /// <see cref="Verdict.Skip"/>, and <c>VerdictHelper</c> is never consulted, because doc-28 §8.5 makes a
+    /// board's overall result the conjunction of its points rather than a margin judgement. The practical
+    /// consequence of that conjunction is worth stating in numbers: at the shipped defaults a point is NG
+    /// about 5% of the time on either decision path, and a 20-point board therefore reports Fail on roughly
+    /// two thirds of cycles. A high board-level Fail rate here is the arithmetic of 20 independent points,
+    /// not a sign that the per-point model is harsh.</para>
+    ///
+    /// <para><b>Of the six <c>aoi_inspection</c> parameters, this class reads three</b> —
+    /// <c>matchThreshold</c> as the NG bar, <c>exposureUs</c> and <c>lightIntensity</c> as deviations from
+    /// the ideal that widen the match-score spread. <c>gain</c>, <c>conveyorSpeed</c> and
+    /// <c>fiducialTolerance</c> reach no draw, so editing them changes the stored record and nothing this
+    /// machine reports. The schema's defaults for exposure and light are exactly the
+    /// <see cref="IdealExposureUs"/>/<see cref="IdealLightIntensity"/> constants above, so a freshly
+    /// ensured record adds no extra spread at all.</para>
+    ///
+    /// <para><b>The point SET and the cycle plan come from one resolution, never two.</b> When real product
+    /// points are available the plan steps are built from the same per-point draws as the measurements, in
+    /// the same loop; when they are not, the reading carries the generic <c>PT-001…</c> points and NO plan
+    /// at all rather than a fabricated one. <paramref name="cycle"/> and the seed still determine the whole
+    /// reading, but note that the OK and NG measurement builders consume different numbers of draws, so a
+    /// point's result depends on the results of the points before it — the reproducible unit is the whole
+    /// cycle, not an individual point.</para></summary>
     public override DeviceReading NextCycle(long cycle)
     {
         var rng = Rng(cycle);

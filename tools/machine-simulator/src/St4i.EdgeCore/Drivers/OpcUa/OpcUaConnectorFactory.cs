@@ -35,6 +35,25 @@ public sealed class OpcUaConnectorFactory : IConnectorFactory
     private readonly Action<string>? _logWarning;
     private readonly Action<Exception, string>? _logError;
 
+    /// <summary>Captures the certificate-store root and the two optional log sinks that every driver this
+    /// adapter later builds will share. The endpoint is NOT captured here — unlike
+    /// <see cref="Modbus.ModbusConnectorFactory"/>, which owns a host and port, an OPC-UA endpoint URL
+    /// travels inside the node-map text <see cref="TryCreate"/> is handed, so one instance of this adapter
+    /// can serve maps pointing at different servers.
+    ///
+    /// <para>🔴 <b>This constructor rejects NOTHING, and that is a real difference from its Modbus twin.</b>
+    /// All three arguments are optional and nullable and are stored exactly as handed over — there is no
+    /// <see cref="ArgumentNullException"/> anywhere in it, where <see cref="Modbus.ModbusConnectorFactory"/>
+    /// throws on a null options. <c>new OpcUaConnectorFactory()</c> is a legal, fully functional adapter with
+    /// no logging and no explicit PKI root.</para>
+    ///
+    /// <para><paramref name="pkiDir"/> null is not "no certificates": the driver resolves it through
+    /// <c>OpcUaPkiPaths.ResolveRoot</c>, which falls back to the <c>ST4I_OPCUA_PKI_DIR</c> environment
+    /// variable and only then to a built-in root — so passing null hands the choice to the process
+    /// environment rather than disabling the store. The two delegates are stored and forwarded and never wrapped, and — unlike the Modbus
+    /// adapter, whose parse step takes a warning sink — <see cref="OpcUaNodeMap.FromJson"/> takes no logger,
+    /// so neither delegate is invoked anywhere inside <see cref="TryCreate"/>. They are first called by the
+    /// driver, after this adapter has returned.</para></summary>
     public OpcUaConnectorFactory(
         string? pkiDir = null,
         Action<string>? logWarning = null,
@@ -45,6 +64,23 @@ public sealed class OpcUaConnectorFactory : IConnectorFactory
         _logError = logError;
     }
 
+    /// <summary>Always <see cref="DriverKinds.OpcUa"/>, read from the constant rather than spelled — which
+    /// is how <see cref="IConnectorFactory.Kind"/>'s "MUST match the <see cref="IDeviceDriver.Kind"/> every
+    /// driver <see cref="TryCreate"/> produces reports back" obligation is kept: the
+    /// <see cref="OpcUaDriver"/> built below reads the same constant, so it holds because there is one
+    /// constant rather than two spellings. The two sides are pinned separately rather than as a pair —
+    /// <c>OpcUaConnectorFactoryTests.Kind_ReportsTheOpcUaBuiltInId</c> and
+    /// <c>OpcUaDriverLoopbackTests</c> each assert their own side equals the constant, and no test compares
+    /// a factory's value with the value of the driver it just built.
+    ///
+    /// <para>Unlike <see cref="Modbus.ModbusConnectorFactory.Kind"/>, this id maps to exactly one driver
+    /// type — <see cref="OpcUaDriver"/> is the only class in this tree that reports it — so there is no
+    /// second transport hidden behind the same value.</para>
+    ///
+    /// <para>The registry reads this through <c>DriverKinds.Normalize</c>, which folds the five built-in ids
+    /// case-insensitively; a getter that threw, or a blank value, would make
+    /// <c>ConnectorRegistry.Register</c> return false rather than propagate. Neither is reachable from a
+    /// non-empty compile-time constant.</para></summary>
     public string Kind => DriverKinds.OpcUa;
 
     /// <summary><paramref name="config"/> is the OPC-UA node-map JSON text (see the class doc comment) —

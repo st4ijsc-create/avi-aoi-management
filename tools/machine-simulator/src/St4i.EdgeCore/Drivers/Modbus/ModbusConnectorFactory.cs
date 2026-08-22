@@ -29,6 +29,27 @@ public sealed class ModbusConnectorFactory : IConnectorFactory
     private readonly Action<string>? _logWarning;
     private readonly Action<Exception, string>? _logError;
 
+    /// <summary>Binds this adapter to ONE Modbus endpoint for its whole life. Everything
+    /// <see cref="TryCreate"/> is later handed is register-map text; the host and port are fixed here and
+    /// there is no path to change them afterwards (<see cref="ModbusOptions.Host"/> and
+    /// <see cref="ModbusOptions.Port"/> are <see langword="init"/>-only).
+    ///
+    /// <para><b>The registry consequence a caller can get wrong.</b>
+    /// <c>ConnectorRegistry.Register</c> keys on the normalized <see cref="Kind"/> unless an explicit
+    /// instance id is supplied, and a repeat key REPLACES the earlier entry rather than being refused. So
+    /// registering a second <see cref="ModbusConnectorFactory"/> for a second endpoint without giving it its
+    /// own instance id silently retires the first endpoint — and the same is true across the two Modbus
+    /// adapters, because <see cref="ModbusRtuConnectorFactory"/> reports the same <see cref="Kind"/> and so
+    /// defaults to the same key.</para>
+    ///
+    /// <para><paramref name="options"/> is the only argument checked — null raises
+    /// <see cref="ArgumentNullException"/>. The two delegates are stored exactly as handed over and are
+    /// never wrapped: <paramref name="logWarning"/> reaches two places (<see cref="ModbusRegisterMap.FromJson"/>
+    /// during a parse, and the driver afterwards) while <paramref name="logError"/> reaches only the driver.
+    /// Because the parse call sits inside <see cref="TryCreate"/>'s <see langword="catch"/>, a
+    /// <paramref name="logWarning"/> that THROWS does not escape — it turns into a failed
+    /// <see cref="TryCreate"/> whose <c>error</c> string is the logger's own exception message, i.e. a
+    /// logging fault presented to an operator as a bad register map.</para></summary>
     public ModbusConnectorFactory(
         ModbusOptions options,
         Action<string>? logWarning = null,
@@ -39,6 +60,26 @@ public sealed class ModbusConnectorFactory : IConnectorFactory
         _logError = logError;
     }
 
+    /// <summary>Always <see cref="DriverKinds.Modbus"/>, read from the constant rather than spelled — which
+    /// is how <see cref="IConnectorFactory.Kind"/>'s "MUST match the <see cref="IDeviceDriver.Kind"/> every
+    /// driver <see cref="TryCreate"/> produces reports back" obligation is kept here: the
+    /// <see cref="ModbusTcpDriver"/> built below reads the same constant, so the two cannot drift. The two
+    /// sides are pinned separately rather than as a pair —
+    /// <c>ModbusConnectorFactoryTests.Kind_ReportsTheModbusBuiltInId</c> and
+    /// <c>ModbusTcpDriverLoopbackTests</c> each assert their own side equals the constant, and no test
+    /// compares a factory's value with the value of the driver it just built.
+    ///
+    /// <para>🔴 <b>That id is not one-to-one with a transport, and it is not unique to this factory
+    /// either.</b> <see cref="DriverKinds.Modbus"/> is deliberately ONE id for the protocol:
+    /// <see cref="ModbusRtuDriver"/> reports it, and so does <see cref="ModbusRtuConnectorFactory"/>. So an
+    /// entry backed by THIS adapter always yields a TCP driver and never a serial one, while a registry
+    /// holding both adapters under the default key holds only the one registered last — the two are
+    /// distinguishable only by the explicit instance id described on the constructor.</para>
+    ///
+    /// <para>The registry reads this property through <c>DriverKinds.Normalize</c> and guards it the same
+    /// way it guards <see cref="TryCreate"/>: a getter that threw, or a blank value, makes
+    /// <c>ConnectorRegistry.Register</c> return false rather than propagate. Neither is reachable from this
+    /// implementation, which returns a non-empty compile-time constant.</para></summary>
     public string Kind => DriverKinds.Modbus;
 
     /// <summary><paramref name="config"/> is the Modbus register-map JSON text (see the class doc
