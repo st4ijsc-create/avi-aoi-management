@@ -4107,6 +4107,70 @@ UPDATE=0
 note() { printf '  %s\n' "$*"; }
 note "exclusive-run lock held: pid ${GATE_SELF_WINPID} (lock $GATE_LOCK_DIR)"
 
+# ══ THE THREE TOOLING CHECKS (task AW-1 — owner-decisions.md items 26, 32 and 37) ════════════════
+#
+# 🔴 WHY THEY ARE HERE AT ALL. Items 26, 32 and 37 are not defects in the PRODUCT; they are defects in
+# the INSTRUMENTS, and each of them had the same shape: a rule that existed only as advice. Item 37's
+# was the sharpest — "no gate reads docs/owner-decisions.md", so that file's verdict table could
+# disagree with its own bodies, and its Part I enumeration could list ELEVEN items that had already
+# moved, for THREE CONSECUTIVE TASKS, with the gate green throughout. These three lines are what makes
+# that sentence stop being true. THE GATE NOW READS docs/owner-decisions.md.
+#
+# WHY HERE AND NOT AT THE VERDICT. They run before the build so they run at all even on the early
+# `exit 1` paths' side of the tree, and their results are folded into FAILURES rather than exiting, so
+# the normal path still prints EXACTLY ONE PASS/FAIL line — the same contract the credential and
+# output-directory brackets keep.
+#
+# 🔴 WHAT IS DELIBERATELY *NOT* HERE, because item 26 measured the cost of putting it here. There is NO
+# whole-tree assertion on the universal-negation census. That census flags 5780 of 15965 doc-comment
+# sentences — more than a third of the tree — so a gate on it would redden for any documentation edit
+# whatsoever. Item 26's own text names that shape: "a tool with no green definition". The census is a
+# CEILING, reported by `scan-doc-negations.sh --census` on demand; what is gated is the far narrower
+# and green-definable question of what this branch ADDED since its recorded baseline.
+#
+# 🔴 AND WHAT NONE OF THE THREE CAN DO: none of them can see a ruling that was never written down.
+# That is the first half of item 37 and it stays unenforceable — see the boundaries at the head of
+# each script, which are the load-bearing part of each of them.
+#
+# Each script is standalone-runnable, which matters: this gate takes a machine and many minutes, and
+# an author who has just edited a markdown table should not have to buy that to learn one line is out
+# of sync. Run them directly:
+#     bash scripts/check-owner-decisions.sh
+#     bash scripts/repo-scan.sh --self-test
+#     bash scripts/scan-doc-negations.sh --since "$DOC_ABSOLUTES_BASELINE" --expect "$EXPECT_NEW_DOC_ABSOLUTES"
+#
+# ── THE BASELINE PAIR, MEASURED AND THEN WRITTEN, the way every other constant in this file moves ──
+# DOC_ABSOLUTES_BASELINE is the commit this branch's documentation claims are measured against, and
+# EXPECT_NEW_DOC_ABSOLUTES is how many absolute doc-comment claims have been ADDED since it. Moving
+# either is an act of REVIEW: every sentence the tool lists must be read and shown to be true first.
+# Raising the number to make this green is the one thing it exists to prevent.
+#
+# 🔴 MEASURED AFTER THE WORK WAS WRITTEN, NOT PREDICTED BEFORE IT: 0 at e99019c0 for task AW-1, which
+# added three shell scripts and no C# doc comments at all. A zero here is an assertion about the C#
+# corpus only — see boundary (c) in scan-doc-negations.sh for the four surfaces it does not read.
+DOC_ABSOLUTES_BASELINE="e99019c0"
+EXPECT_NEW_DOC_ABSOLUTES=0
+
+# `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
+# this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
+# on the drive letter. Argument vectors, not string surgery.
+_SCRIPTDIR="$(dirname "$0")"
+run_tooling_check() {                       # $1 = human name, $2.. = argv
+  local _name="$1"; shift
+  local _log="$LOGDIR/tool-$(printf '%s' "$_name" | tr ' /' '--').log"
+  if bash "$@" > "$_log" 2>&1; then
+    note "$_name: OK"
+  else
+    FAILURES+=("$_name: $(cat "$_log")")
+    note "$_name: FAILED (see verdict below)"
+  fi
+}
+
+run_tooling_check "owner-decisions structure" "$_SCRIPTDIR/check-owner-decisions.sh"
+run_tooling_check "repo-scan cwd-invariance"  "$_SCRIPTDIR/repo-scan.sh" --self-test
+run_tooling_check "new absolute doc claims"   "$_SCRIPTDIR/scan-doc-negations.sh" \
+                  --since "$DOC_ABSOLUTES_BASELINE" --expect "$EXPECT_NEW_DOC_ABSOLUTES"
+
 # ══ THE BRACKET ON THE REAL CREDENTIAL DIRECTORY (task K-1, branch review §2) ═══════════════════
 #
 # WHAT THIS IS FOR. tests/Shared/RealCredentialStoreLeakGuard.cs asserts that the product's REAL
