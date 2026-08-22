@@ -6,7 +6,7 @@
 
 ---
 
-## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 7), HEAD `8556b342` (remote `fresh`)
+## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 8), HEAD `adc24316` (remote `fresh`)
 
 > ### ⚠ ĐỌC DÒNG NÀY TRƯỚC KHI ĐỌC BẤT KỲ CON SỐ NÀO Ở DƯỚI
 > Trong hai ngày 21–22/08, **hai mươi hai** mục của tài liệu này bị phép đo bác bỏ: E1 · F3 ·
@@ -32,18 +32,19 @@
 | **E4** (env gõ sai im lặng) | ✅ ĐÓNG `a93afd69` | `server/_core/envNumber.ts` |
 | **E2** | ✅ vốn ĐÃ ĐÓNG TRỌN | cooldown qua Redis + 3 ca test. Nhãn "cần chủ dự án" là SAI |
 | **E7** | ✅ vốn ĐÃ ĐÓNG cả ba | E7(a) alarmKpiMissingTable:129 · E7(c) valve.test:113 · E7(b) nhánh không còn tồn tại |
-| **F14** (lớp nợ MỚI) | ✅ kênh tRPC ĐÓNG `54b60b56` | `20→0`. Còn **41 chỗ kênh service** cần truy vết từng chỗ |
+| **F14** (lớp nợ MỚI) | ✅ ĐÓNG TRỌN `adc24316` | tRPC `20→0` · service `49→0` · REST 95 + log = KHÔNG phải nợ. Nợ thật chỉ **13 chỗ** trong 164 |
 | **F1** (chỉ 15% màn hưởng lợi) | ✅ ĐÓNG `4b157955` | ⚠ **cả bốn con số của F1 đã lạc hậu theo hướng BI QUAN** — xem ghi chú dưới. Nợ thật `139 → 0`, nay là BẤT BIẾN (`rawErrorMessageCensus`) |
 | **F2** | ✅ ĐÓNG `8993b868` | khai 75 chỗ — đo được **3**. Nay BẤT BIẾN 0 |
 | **F4, F5, F6, F7, F8** | ✅ vốn ĐÃ ĐÓNG | đo 2026-08-22: F7a **0/77** câu en chữ thường (khai 336/384) · `errors.reason.*` 45 khoá + 12 khoá `_WITH_REASON` · entity hết trùng nghĩa · zh hết lệch thuật ngữ · `entity.factory` KHÔNG chết (dùng 3 chỗ) |
-| **F3** | ⏳ CÒN | **547 chỗ** (không phải 64), phần lớn là lỗi codec/driver NỘI BỘ |
+| **F3** | ⏳ CÒN — mục DUY NHẤT | **547 chỗ** (không phải 64), phần lớn là lỗi codec/driver NỘI BỘ |
 | **F9** | ✅ vốn ĐÃ ĐÓNG (doc71 task 11) | hash giả sinh runtime đúng cost · `bcrypt.compare` chạy MỌI nhánh · truy vấn `userId=-1` giữ nguyên hình dạng · có ca đo TRUNG VỊ độ trễ (F9-D, F9-E) |
 | **F10-F13** (nhãn giao diện en/zh) | ✅ ĐÓNG | xem §4c/§4d — hình-dạng-3 `914 → 0` qua 17 lô |
 | **G** (machine-auth + giấy phép) | ✅ ĐÓNG | `fa00e4cb` — 17→0 khoá plaintext (mig 0334), hai đường yếu nay mặc định `deny` |
 
-**Nợ còn lại — CHỈ CÒN HAI MỤC, cả hai đều KHÔNG chặn ai:**
-1. **F14 kênh service — 41 chỗ.** Cần TRUY VẾT từng chỗ: giá trị trả về của service có đi tiếp vào phản hồi tRPC hay chỉ dừng ở log. Kênh tRPC đã về 0; kênh REST (95 chỗ) và kênh log **KHÔNG phải nợ** — dịch chúng là phá hợp đồng máy-máy và làm hỏng nhật ký kỹ thuật.
-2. **F3 — 547 chỗ ném thô ngoài `server/routers/**`.** Phần lớn là lỗi tầng codec/driver NỘI BỘ. ⚠ Trước khi di trú, hỏi *"chỗ này có TỚI ĐƯỢC người dùng không?"* — chính câu hỏi đó đã dẫn tới phát hiện F14, và nó đáng giá hơn việc di trú hàng loạt 547 chỗ.
+**Nợ còn lại — CHỈ CÒN MỘT MỤC:**
+1. **F3 — 547 chỗ ném thô ngoài `server/routers/**`.** Phần lớn là lỗi tầng codec/driver NỘI BỘ.
+   ⚠ **ĐỪNG di trú hàng loạt.** Bài học vừa rút từ F14: trong 164 chỗ trông y hệt nhau, chỉ **13** là nợ thật; 151 chỗ còn lại mà "sửa" thì hỏng (phá hợp đồng SDK OpenAI, làm bẩn dữ liệu quan trắc, làm mô hình LLM khó hiểu hơn, nuốt mất chỗ hỏng của kỹ sư).
+   ⇒ Việc đúng là hỏi **"AI đọc chuỗi này?"** ở TỪNG chỗ, rồi truy tới tận nơi tiêu thụ. Hình dạng mã KHÔNG cho biết ai đọc nó — năm chỗ ở `edgeCoordinator` giống hệt nhau mà bốn cái là luồng máy-máy.
 
 **⚠ MỌI MỤC KHÁC ĐÃ ĐÓNG — kể cả ba mục từng gắn nhãn "cần chủ dự án".** Trong đó **hai mươi hai** mục hoá ra đã đóng từ trước hoặc sai số; xem cảnh báo đầu tài liệu.
 
