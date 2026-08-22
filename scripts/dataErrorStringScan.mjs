@@ -119,8 +119,49 @@ const RE_REST = /\bres\s*(?:\.\s*status\s*\([^)]*\)\s*)?\.\s*json\s*\(/;
  * ⇒ Bài học lặp lại (lần thứ hai trong cùng phép đo này, sau trục REST): **phân loại
  *   khó hơn đếm.** Một con số gộp các thứ có bản chất NGƯỢC nhau thì to hơn mà vô dụng —
  *   nó chỉ dẫn người ta đi sửa vào chỗ sửa là hỏng.
+ *
+ * ── LẦN NỚI THỨ HAI (2026-08-22, khi đi truy vết 47 chỗ "kênh service") ──────────
+ * Bản đầu chỉ bắt `db.insert(`. Nhưng khuôn phổ biến nhất trong `server/services/**` là
+ * CẬP NHẬT một dòng trạng thái đã có:
+ *     await dbAdvanced.updateTrainingJob(job.id, { status: "FAILED", errorMessage: … });
+ *     return { …, error: … };                       ← chỗ NÀY mới là giá trị trả về
+ * Hai dòng liền nhau, một là nhật ký một là phản hồi. Không tách được thì cả hai cùng bị
+ * tính là nợ, và người sửa sẽ đi "dịch" cả dòng ghi CSDL.
+ * ⇒ Nay nhận diện theo ĐỐI TƯỢNG lưu trữ (`db`/`dbAdvanced`/`storage`/`tx`) + động từ ghi
+ *   (`insert`/`update*`/`create*`/`log*`/`record*`/`mark*`), không theo một tên hàm cụ thể.
  */
-const RE_NHAT_KY = /\b(?:db|tx|trx)\s*\.\s*(?:insert\s*\(|create[A-Za-z]*Log\s*\(|log[A-Za-z]*\s*\()/;
+const RE_NHAT_KY =
+  /\b(?:db|dbAdvanced|dbm|tx|trx|storage)\s*\.\s*(?:insert|update|create[A-Za-z]*|update[A-Za-z]*|log[A-Za-z]*|record[A-Za-z]*|mark[A-Za-z]*)\s*\(/;
+
+/**
+ * `idx` có nằm BÊN TRONG danh sách đối số của một lời gọi GHI CSDL không?
+ *
+ * ⚠ THAY CHO CỬA SỔ THEO DÒNG, và đây là lần thứ hai bài học ấy phải trả giá trong cùng
+ * file này. Cửa sổ 14 dòng xếp NHẦM dòng dưới đây thành "nhật ký":
+ *     await dbAdvanced.updateTrainingJob(job.id, { status: "FAILED", errorMessage: … });
+ *     return { …, error: … };        ← là GIÁ TRỊ TRẢ VỀ, cửa sổ vẫn thấy lời gọi ở trên
+ * Xếp nhầm theo chiều này NGUY HIỂM HƠN chiều kia: nó tự cấp miễn trừ cho đúng thứ nó
+ * phải canh, và cổng sẽ xanh trong khi nợ vẫn còn (bài học `timeframeGuard` M1).
+ *
+ * Phép đo đúng không phải khoảng cách mà là PHẠM VI: đi ngược từ `idx`, đếm cân bằng
+ * ngoặc; nếu gặp một lời gọi ghi khi vẫn còn ngoặc mở thì `idx` nằm TRONG đối số của nó.
+ * `return {` đóng ngoặc của lời gọi trước đó rồi, nên không bao giờ khớp.
+ */
+function trongLoiGoiGhi(src, idx) {
+  let can = 0;
+  for (let i = idx; i > 0 && idx - i < 4000; i--) {
+    const c = src[i];
+    if (c === ")") can++;
+    else if (c === "(") {
+      if (can === 0) {
+        // Ngoặc mở BAO QUANH `idx` — lời gọi mở nó có phải lời gọi ghi không?
+        const truoc = src.slice(Math.max(0, i - 80), i + 1);
+        if (RE_NHAT_KY.test(truoc)) return true;
+      } else can--;
+    }
+  }
+  return false;
+}
 
 /** @returns {{file:string,dong:number,cau:string,kenh:"trpc"|"rest"|"log"|"service"}[]} */
 export function demDataError(goc = "server") {
@@ -135,13 +176,9 @@ export function demDataError(goc = "server") {
       if (DAU_MIEN_TRU.test(van)) continue;
       // Lời gọi `res.json` có thể xuống dòng ⇒ nhìn lùi tối đa 3 dòng.
       const quanh = dongSrc.slice(Math.max(0, dong - 4), dong).join("\n");
-      // Khối `.values({ … })` của một INSERT thường dài hơn ⇒ cửa sổ rộng hơn. Vẫn phải
-      // CÓ GIỚI HẠN: nhìn quá xa sẽ nhận nhầm một `db.insert` ở thủ tục bên cạnh, và khi
-      // ấy thước tự cấp miễn trừ cho thứ nó phải canh (bài học `timeframeGuard`).
-      const quanhRong = dongSrc.slice(Math.max(0, dong - 14), dong).join("\n");
       const kenh = RE_REST.test(quanh)
         ? "rest"
-        : RE_NHAT_KY.test(quanhRong)
+        : trongLoiGoiGhi(src, m.index)
           ? "log"
           : rel.includes("/routers/")
             ? "trpc"

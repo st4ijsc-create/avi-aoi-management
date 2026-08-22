@@ -61,14 +61,27 @@ import { demDataError, duyetTs, DAU_MIEN_TRU } from "../../scripts/dataErrorStri
 const ALLOWED_TRPC_DATA_ERROR = 0;
 
 /**
- * Kênh service — cần TRUY VẾT từng chỗ mới biết nó nổi lên đâu (có chỗ chỉ vào log,
- * có chỗ đi tiếp vào phản hồi tRPC). CHỈ ĐƯỢC GIẢM. Mốc đo 2026-08-22: **49 chỗ**.
+ * Kênh service — cần TRUY VẾT từng chỗ mới biết nó nổi lên đâu. CHỈ ĐƯỢC GIẢM.
+ * `49 → 41` (2026-08-22) — và **8 chỗ giảm đi là HIỆU CHỈNH NHIỆT KẾ, không phải trả nợ**.
+ *
+ * Khuôn phổ biến nhất ở `server/services/**` là hai dòng LIỀN NHAU, một là nhật ký một là
+ * phản hồi:
+ *     await dbAdvanced.updateTrainingJob(job.id, { status: "FAILED", errorMessage: … });
+ *     return { …, error: … };                       ← chỉ dòng NÀY là nợ
+ * Bộ dò cũ chỉ bắt `db.insert(` nên tính CẢ HAI là nợ.
+ *
+ * ⚠ Bản sửa ĐẦU TIÊN dùng cửa sổ 14 dòng và xếp nhầm theo chiều NGUY HIỂM HƠN: dòng
+ *   `return` cũng thành "nhật ký" vì cửa sổ vẫn thấy lời gọi ghi phía trên ⇒ thước TỰ CẤP
+ *   MIỄN TRỪ cho đúng thứ nó phải canh (số tụt xuống 38 một cách giả tạo).
+ *   Phép đo đúng không phải khoảng cách mà là PHẠM VI: đếm cân bằng ngoặc để biết `idx` có
+ *   nằm TRONG danh sách đối số của lời gọi ghi hay không. `return {` đã đóng ngoặc rồi nên
+ *   không bao giờ khớp. Cùng lớp lỗi với cửa sổ 8 dòng ở `timeframeGuard` (M1 sống sót).
  *
  * ⚠ Đừng "trả" ngân sách này bằng cách đổi `.message` thành `String(err)` — cùng chuỗi
  *   tiếng Anh, chỉ khác cách viết. Ai làm vậy thì cổng xanh mà người dùng không đỡ hơn
  *   một chữ nào.
  */
-const ALLOWED_SERVICE_DATA_ERROR = 49;
+const ALLOWED_SERVICE_DATA_ERROR = 41;
 
 describe("F14 — chuỗi lỗi thô trả về như DỮ LIỆU (cửa THÀNH CÔNG)", () => {
   it("cầu chì: phép quét phải THẤY file, không thì nó đang canh tập rỗng", () => {
@@ -107,6 +120,17 @@ describe("F14 — chuỗi lỗi thô trả về như DỮ LIỆU (cửa THÀNH C
     expect(demDataError().filter((x) => x.kenh === "service").length).toBeLessThanOrEqual(
       ALLOWED_SERVICE_DATA_ERROR,
     );
+  });
+
+  it("★★★ ngân sách service phải bám SÁT số thật — số TỤT cũng phải giải thích được", () => {
+    // ⚠ Ca này thêm sau khi một đột biến SỐNG SÓT: nới bộ nhận diện "nhật ký" (bỏ phép cân
+    // bằng ngoặc) làm nhiều chỗ NỢ THẬT bị xếp thành `log` ⇒ `service` TỤT xuống, và một
+    // cổng chỉ có `≤` thì xanh mượt.
+    //
+    // Đó là chiều nguy hiểm hơn hẳn chiều phình: phình thì có người thấy đỏ và đi sửa; tụt
+    // thì cổng tự chúc mừng và món nợ biến mất khỏi tầm nhìn. Nên số này phải khớp CHÍNH
+    // XÁC — hạ nó là một hành động phải nói ra, y như tRPC.
+    expect(ALLOWED_SERVICE_DATA_ERROR).toBe(demDataError().filter((x) => x.kenh === "service").length);
   });
 
   it("★★★ dấu miễn trừ phải KÈM LÝ DO — không cho tắt cổng bằng một từ", () => {
