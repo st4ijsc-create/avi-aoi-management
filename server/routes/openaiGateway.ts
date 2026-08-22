@@ -863,6 +863,9 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       if (!res.headersSent) {
         jsonError(res, 500, err?.message || "chat completion failed", "server_error");
       } else {
+        // data-raw-ok: khung lỗi SSE theo ĐÚNG chuẩn OpenAI — khách là API client (SDK
+        // openai, LangChain…) parse trường `error.message` này theo hợp đồng của họ.
+        // Dịch nó sang tiếng Việt là phá tương thích, không phải cải thiện.
         res.write(`data: ${JSON.stringify({ error: { message: err?.message || "error" } })}\n\n`);
         res.end();
       }
@@ -940,6 +943,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           }
         } catch (e: any) {
           plan?.record({ latencyMs: Date.now() - engineStart, outcome: "error" });
+          // data-raw-ok: khung lỗi SSE chuẩn OpenAI — xem ghi chú ở nhánh chat phía trên.
           res.write(
             `data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [{ index: 0, text: "", finish_reason: "error" }], error: { message: e?.message || "generation error" } })}\n\n`,
           );

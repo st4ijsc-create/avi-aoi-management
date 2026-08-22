@@ -58,6 +58,8 @@ export async function runReconciliationCycle(): Promise<CycleResult> {
       tickets += report.tickets.length;
       reports.push({ id: p.id, description: p.description, report });
     } catch (err) {
+      // data-raw-ok: báo cáo của một lượt CRON đối soát — đọc bởi kỹ sư qua log/artefact,
+      // không có màn hình nào hiển thị. Chuỗi gốc là thứ truy nguyên được.
       reports.push({ id: p.id, description: p.description, report: null, error: err instanceof Error ? err.message : String(err) });
     }
   }

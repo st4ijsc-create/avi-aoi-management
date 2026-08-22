@@ -394,6 +394,9 @@ export async function startAcquisitionWorker(config: AcquisitionWorkerConfig): P
     source = createImageSource(config.source as CreateImageSourceOptions);
     await source.open();
   } catch (err) {
+    // data-raw-ok: lý do MỞ NGUỒN ẢNH thất bại (camera/thư mục/GigE). Người đọc là kỹ sư
+    // thị giác máy đang đấu nối thiết bị — "không mở được nguồn ảnh" nói ít hơn hẳn
+    // chuỗi gốc của driver, vốn chỉ ra đúng tham số nào sai.
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
 

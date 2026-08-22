@@ -688,6 +688,8 @@ export function simulateWorkflow(
     totalDurationMs = simSequence(sim, def.steps, 0);
   } catch (err) {
     // FAIL-SAFE — a walk error never throws to the caller.
+    // data-raw-ok: cảnh báo của BỘ MÔ PHỎNG kịch bản — công cụ cho kỹ sư đang dựng quy
+    // trình, không phải bề mặt vận hành. Chuỗi gốc nói được bước nào dị dạng ở đâu.
     sim.warnings.push({ stepId: "?", kind: "malformed_step", message: err instanceof Error ? err.message : String(err) });
   }
 

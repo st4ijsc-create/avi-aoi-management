@@ -160,6 +160,7 @@ async function replicateToDir(filePath: string, bytes: number, offsiteDir: strin
       durationMs: Date.now() - t0,
     };
   } catch (err: any) {
+    // data-raw-ok: đối số của `logger.error` — đi vào log kỹ thuật, không rời máy chủ.
     logger.error({ err: err.message, offsiteDir }, "Off-site dir replication failed");
     return { skipped: false, target: offsiteDir, mode: "offsite_dir", error: err.message };
   }

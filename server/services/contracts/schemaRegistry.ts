@@ -284,6 +284,8 @@ export async function seedCanonicalSchemas(
         file,
         subject,
         action: "error",
+        // data-raw-ok: kết quả nạp SCHEMA hợp đồng theo từng FILE — người đọc là kỹ sư
+        // đang sửa chính file đó; câu generic sẽ không nói được file nào sai ở đâu.
         error: err instanceof Error ? err.message : String(err),
       });
     }
