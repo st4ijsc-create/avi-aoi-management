@@ -59,7 +59,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 28 | ~~**BA** cái trần~~ **BỐN** cái trần trên lịch sử API-trace, và **không cái nào được UI gọi tên là trần** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **KHÔNG phải ba mà BỐN**: mục bỏ sót vòng đệm của chính vỏ WPF (`InspectorViewModel.MaxEvents`). Cái trần backfill nay **CÓ TÊN** (`InspectorStreamEndpoint.BackfillEventCount`) thay vì một literal `200`; pane web nay **gọi tên** ba cái trần áp vào nó và nói **cái nào chặn khi nào**. Đổi lời, không đổi hành vi. Xem Phần III |
 | 29 | Cả fleet liên kết ra ngoài bằng **MỘT danh tính thiết bị** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **và CƠ CHẾ mà mục mô tả KHÔNG đứng vững: route KHÔNG "trả 200 cho việc nó không làm"** — nó thật sự lưu khoá, câu *"Pasted mk_ key stored for WELD-01"* là **ĐÚNG**; cái sai là suy luận nó mời người đọc rút ra. Nên bản sửa là **sửa câu, không sửa mã trạng thái** — một 4xx sẽ từ chối một cú ghi có thật và lấy đi đúng đường mà chính mục nêu là hợp lệ. 🔴 **Và mục nêu THIẾU một bề mặt: có HAI biểu mẫu web POST route ấy, không một.** Cái trần vendored giữ nguyên. Xem Phần III |
 | 30 | Gốc mặc định của ~~bốn~~ **BA** store cạnh-binary là `%ProgramFiles%`, và **lần chạy đầu chính là lần GHI** | 🔴 **CHỜ ANH — VÀ NAY CÓ MỘT PHÉP ĐO THỰC TẾ ĐI KÈM.** Mở 2026-08-20 (AO-1). Câu hỏi này **bị nhiều brief liên tiếp CẤM mở**; lệnh cấm hết hiệu lực ở nhiệm vụ AV-1. 🔴 **AV-1 (2026-08-22) ĐƯỢC GIAO THI HÀNH VÀ ĐÃ DỪNG: điều kiện DỪNG *"bản sửa cần DI CHUYỂN dữ liệu vận hành viên đã có"* NỔ** — xem khối phép đo trong thân mục, ở **Phần I**. 🔴 **Và chữ "bốn" ở ô này là một phép ĐẾM THIẾU CHÍNH XÁC theo chiều ngược**: quần thể là **BA store** sinh **NĂM file**, trong đó cổng miễn trừ đích danh **BỐN**. Thân mục đã viết đúng "ba store" từ đầu; ô tóm tắt này đếm nhầm file thành store, và lời giao việc của AV-1 thừa hưởng chữ ấy |
-| 31 | **Mười hai artefact build** (7 `.xml` + 5 `.pdb`) đi vào MSI | ✅ **ĐÃ QUYẾT VÀ ĐÃ THI HÀNH 2026-08-22 (AV-1)** theo 🔨 **QUYẾT: GIAO CẢ MƯỜI HAI, KHÔNG ĐỔI MỘT BYTE NÀO CỦA BAO BÌ** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). Mở 2026-08-20 (AO-1); đã ĐO ở §8 của mục 12 từ 2026-08-19 (AF-1) nhưng **chưa bao giờ thành một mục phán được**. **N = 12 đo lại và ĐỨNG VỮNG.** 🔴 **Nhưng câu *"cái giá của việc GIỮ NGUYÊN là KHÔNG"* trong thân mục KHÔNG sống sót qua phép đo**: năm `.pdb` mang đường dẫn tuyệt đối của máy dựng, **266 tên file nguồn**, và một bản đồ SourceLink nêu đích danh **kho GitHub + SHA commit**. Giá được ghi tên chứ không còn là "không". Xem **Phần III** |
+| 31 | **Mười hai artefact build** (7 `.xml` + 5 `.pdb`) đi vào MSI | ✅ **ĐÃ QUYẾT VÀ ĐÃ THI HÀNH 2026-08-22 (AV-1)** theo 🔨 **QUYẾT: GIAO CẢ MƯỜI HAI, KHÔNG ĐỔI MỘT BYTE NÀO CỦA BAO BÌ** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). Mở 2026-08-20 (AO-1); đã ĐO ở §8 của mục 12 từ 2026-08-19 (AF-1) nhưng **chưa bao giờ thành một mục phán được**. **N = 12 đo lại và ĐỨNG VỮNG.** 🔴 **Nhưng câu *"cái giá của việc GIỮ NGUYÊN là KHÔNG"* trong thân mục KHÔNG sống sót qua phép đo**: năm `.pdb` mang đường dẫn tuyệt đối của máy dựng, **259 tên file nguồn phân biệt** (266 cộng rời), và một bản đồ SourceLink nêu đích danh **kho GitHub + SHA commit**. Giá được ghi tên chứ không còn là "không". Xem **Phần III** |
 | 32 | **Một lời khai miền dụng cụ không kiểm được nếu không ghi NƠI lệnh được chạy** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Pathspec của git là **tương đối với cwd** và một pathspec bị thu hẹp **trả 0 chứ không báo lỗi**: `-- 'server/*.ts'` **0** đối lại `-- ':(top)server/*.ts'` **197**; và **glob đuôi trần cũng hỏng** — `'*.ts'` **1** đối lại **214**. 🔴 **Giá đã trả: mục 14 được PHÁN kèm một cái trần SAI** (*"không đo được từ repo này"* — bên tiêu thụ nằm trong chính commit này). **Năm khẳng định khác đo lại vẫn ĐỨNG VỮNG**, gồm kết luận "ba chỗ xuất bản `TransportMode`" của AM-1. **Người đăng ký gương MQTT retained: CHƯA ĐO** (37 file nhắc `syn/`) |
 | 33 | `GET /v1/scenario` nói dối theo chiều **NGƯỢC LẠI** — tấm gương của mục 18 | ✅ **ĐÃ QUYẾT VÀ ĐÃ THI HÀNH 2026-08-22 (AV-1)** theo 🔨 **QUYẾT: SỬA PHÍA ĐỌC — `GET /v1/scenario` BÁO TRANSPORT ĐANG LẮP** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). Mở 2026-08-22 (AU-1). Một `PUT /v1/mode` **ghi đè transport outage** trong khi `_scenario.NetworkOutage` **vẫn `true`**; mục 18 đóng chiều *"cổng không gác"*, chiều này nay đã phán. 🔴 **Tập ghi rộng hơn brief nêu: KHÔNG chỉ `PUT /v1/mode`** — `PUT /v1/settings` cũng xoá, một `PUT /v1/mode` **không đổi giá trị** cũng xoá, và chuyển **sang Demo** cũng xoá; **cả ba đo lại và ĐỨNG VỮNG**, mỗi cái một nhân chứng đỏ-được. 🔴 **Hướng bị loại là sửa phía GHI, và giá của nó ghi tại chỗ.** 🔴 **Nó BÁC một lập luận AR-1 đã dùng để đóng nửa kia của mục 18** — lập luận ấy đã rút tại chỗ trong ghi chép thi hành của mục 18. Xem **Phần III** |
 | 34 | Bốn chuỗi web i18n còn nợ từ mục 22 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã: **đúng bốn**, hai khoá × hai locale, và cả bốn **đang hiển thị cho vận hành viên**. `DemoTransport` **không có đường nào** trả ack thất bại. 🔴 **Web của machine-simulator KHÔNG có job CI nào và KHÔNG có dụng cụ i18n nào** — bốn chuỗi này không có nhân chứng thuộc bất kỳ loại nào |
@@ -597,18 +597,46 @@ ném thẳng ra:
 * `MachineConfigStore` ctor, gốc chỉ-đọc trống: **KHÔNG ném**. Ghi đầu tiên của vận hành viên (`Ensure`):
   **NÉM**.
 
-**Hậu quả trên đường khởi động, và cây này ĐÃ DỰ BÁO nó ở một chỗ khác.** `src/St4i.EngineApi/Program.cs`
-gọi `app.Services.GetRequiredService<FleetHost>()` **eager**, và cả hai store không-seam là tham số hàm
-dựng của `FleetHost`, nên cả hai được dựng **ở đó**. `docs/startup-failure-posture.md` §3.5 (hàng 32–33)
-đã viết đúng câu ấy — *"Both also call `Save()` on first run when a file is missing, so a read-only
-install directory is a second fatal arm"* — và xếp cả hai là **S** (stop). 🔴 **Cái §3.5 chưa từng có là
-một phép ĐO**: nó là một suy luận từ mã. Phép đo ở trên là lần đầu tiên nhánh ấy được **chạy**, và nó
-**xác nhận §3.5**, kể cả chi tiết §3.5 không nêu (nhánh `ecosystem\` chết sớm hơn một bước).
+**Hậu quả trên đường khởi động.** `src/St4i.EngineApi/Program.cs` gọi
+`app.Services.GetRequiredService<FleetHost>()` **eager**, và cả hai store không-seam là tham số hàm dựng
+của `FleetHost`, nên cả hai được dựng **ở đó**; `docs/startup-failure-posture.md` §3.5 xếp cả hai là **S**
+(tiến trình kết thúc).
+
+> 🔴 **RÚT MỘT KHẲNG ĐỊNH CỦA CHÍNH AV-1, 2026-08-22, cùng ngày nó được viết, giữ nguyên văn.** Bản đầu
+> của đoạn ngay trên đọc: *"🔴 **Cái §3.5 chưa từng có là một phép ĐO**: nó là một suy luận từ mã. Phép đo
+> ở trên là lần đầu tiên nhánh ấy được **chạy**, và nó **xác nhận §3.5**, kể cả chi tiết §3.5 không nêu
+> (nhánh `ecosystem\` chết sớm hơn một bước)."* **Câu ấy SAI, và nó sai theo đúng cách file này tồn tại để
+> bắt: nó tuyên bố mới cho một thứ đã có hồ sơ.** Nhiệm vụ **AC-1** đã chạy nhánh ấy rồi, **trên chính
+> `publish-desktop\engine\St4i.EngineApi.exe`**, dưới một deny ACE thật, và đã ghi:
+> `UnauthorizedAccessException` ra từ `SimulatedEcosystem..ctor` → `Directory.CreateDirectory`, mã thoát
+> `0xE0434352`, **không** dòng `Now listening on:`; cộng một phép đo **trên bản `.msi` đã dựng** (nó mang
+> `fleet.json` và **không** mang `products.json`); cộng chính câu *"quần thể là ba store, số file là bốn"*;
+> cộng chính lập luận *"bản sửa không phải một seam"*. Và nó **có nhân chứng đang chạy trong cổng này**:
+> `OperatorDataRemovalCensusTests.OverANonWritableRoot_TheTwoSeamlessBesideTheBinaryStoresEndTheProcess_AndTheSeamedOneDoesNot`,
+> bài test khẳng định **bit deny của chính nó** trước rồi mới khẳng định về store. **Tôi đã không đọc nó
+> trước khi viết probe của mình.** Ghi ra thay vì sửa lặng, vì *"đo lại rồi tuyên bố mới"* tốn đúng bằng
+> *"không đo"* đối với người đọc sau.
+
+🔴 **CÁI PROBE CỦA AV-1 THẬT SỰ THÊM VÀO — bốn thứ, không phải một phép đo đầu tiên:**
+1. **`ProductConfigStore` ctor trên gốc chỉ-đọc ĐÃ CÓ CẢ HAI FILE: KHÔNG ném.** Bài test đã ghim dùng một
+   thư mục **rỗng**, nên nó chỉ đi qua nhánh **SEED**. Đây là thứ biến *"nhánh chết đúng là lần khởi động
+   đầu của một bản cài mới"* từ một cách đọc thành một phép đo.
+2. **Ghi ĐẦU TIÊN của vận hành viên ném** — `ProductConfigStore.UpsertProduct` và `MachineConfigStore.Ensure`.
+   Bài test đã ghim dừng ở hàm dựng.
+3. 🔴 **`SimulatedEcosystem` ghi lại CẢ HAI file khi chỉ MỘT vắng** — không có ở §3.5, không có ở §3.6,
+   không ghim ở đâu. Xem khối cuối mục này.
+4. **Một sai lầm của dụng cụ, của chính tôi.** Vòng probe đầu dùng `icacls /deny …:(W)`; quyền đơn giản
+   `(W)` ánh xạ sang `FILE_GENERIC_WRITE`, **bao gồm `SYNCHRONIZE`**, nên nó chặn cả một lần mở ĐỌC — và
+   probe báo (1) **ném**, tức ngược hẳn. Quyền cụ thể `(WD,AD,DC,DE)` đảo lại kết quả. Bài test đã ghim
+   dùng `CreateFiles | CreateDirectories`, vốn không có tật ấy; **nếu tôi đọc nó trước, tôi đã không mắc**.
+   Nếu tôi tin vòng đầu, tôi đã báo một khuyết tật không tồn tại.
 
 🔴 **BỐN CHỖ TRONG MỤC NÀY KHÔNG SỐNG SÓT NGUYÊN VẸN, ghi ra chứ không vá đè:**
 1. *"bốn store"* ở ô bảng phán quyết — **ba**. Đã sửa tại chỗ ở bảng.
 2. *"Hàm dựng của nó GHI"* — đúng hậu quả, **sai vị trí**: hai dòng ấy ở trong `Load()`.
-3. *"MSI **không mang** file nào trong bốn"* — **đúng cho đường mặc định, KHÔNG đúng vô điều kiện.**
+3. *"MSI **không mang** file nào trong bốn"* — **đúng cho đường mặc định, KHÔNG đúng vô điều kiện.** (Và
+   nửa "đúng" của nó mạnh hơn lý do mục nêu: mục suy từ *"không được git theo dõi"*; **AC-1 đã đo trên một
+   bản `.msi` ĐÃ DỰNG** — nó mang `fleet.json` và **không** mang `products.json`.)
    `build-installer.ps1` **xoá `publish-desktop/`** trước mỗi lần publish, nên một lần dựng đầy đủ đúng
    là không mang gì. Nhưng script ấy công bố cờ **`-SkipDotnetPublish`**, và ở nhánh đó nó **không xoá**;
    harvest thì đọc **cả thư mục**. **Đo trên đĩa hôm nay:** `publish-desktop/engine/products.json` và
@@ -7456,11 +7484,14 @@ phẩm này nay **ngang cỡ** tài liệu của WebView2.
 
 🔴 **GIÁ CỦA VIỆC GỠ, VÀ GIÁ CỦA VIỆC GIỮ — CẢ HAI, và nửa thứ hai là chỗ mục này nói SAI.**
 
-*Giá của việc GỠ `.pdb`* — **đo được, không phải một lo ngại chung chung.** Năm file ấy mang, cộng lại,
-**266 tên file `.cs` phân biệt** (`EdgeCore.pdb` 119, `EngineApi.pdb` 113, `Connector.Abstractions.pdb`
-17, `EdgeCore.Serial.pdb` 9, `DesktopShell.pdb` 8) cùng ánh xạ dòng. Đó **chính xác** là thứ biến một
-stack trace của khách hàng thành một số dòng đọc được. Gỡ chúng là **tự làm mù mình lúc hỗ trợ hiện
-trường**, và mục nói đúng.
+*Giá của việc GỠ `.pdb`* — **đo được, không phải một lo ngại chung chung.** Từng file mang, phân biệt
+trong phạm vi của nó: `EdgeCore.pdb` **119**, `EngineApi.pdb` **113**, `Connector.Abstractions.pdb` **17**,
+`EdgeCore.Serial.pdb` **9**, `DesktopShell.pdb` **8** tên file `.cs`, cùng ánh xạ dòng. 🔴 **Cộng lại là
+266, HỢP LẠI là 259, và hai con số ấy không thay thế được nhau** — chỗ chênh là các file sinh tự động
+(`AssemblyInfo.cs`, `*.GlobalUsings.g.cs`, `v10.0.AssemblyAttributes.cs`) cộng `Enums.cs` xuất hiện trong
+hai assembly. Bản đầu của dòng này viết *"266 tên file `.cs` phân biệt"*, tức trình bày một **tổng** như
+một **hợp**; sửa tại chỗ. Đó **chính xác** là thứ biến một stack trace của khách hàng thành một số dòng
+đọc được. Gỡ chúng là **tự làm mù mình lúc hỗ trợ hiện trường**, và mục nói đúng.
 
 *Giá của việc GỠ `.xml`* — mất IntelliSense trên `St4i.Connector.Abstractions` cho đúng đối tượng mà mục
 25 gọi là *"driver author or integrator"*, tức **lấy lại chính thứ mà phán quyết *"BẬT CỜ"* của mục 12
@@ -7473,7 +7504,8 @@ bộ":
 1. **Đường dẫn tuyệt đối của máy dựng.** Bảng document của PDB portable dựng lại
    `D:\SOURCES\avi-aoi-sim\tools\machine-simulator\src\…\*.cs` — bố cục thư mục của người dựng, ổ đĩa
    và tất cả.
-2. **266 tên file nguồn**, tức bản đồ mô-đun nội bộ của sản phẩm, giao cho mọi khách hàng nhận `.msi`.
+2. **259 tên file nguồn phân biệt** (266 nếu cộng năm file rời), tức bản đồ mô-đun nội bộ của sản phẩm,
+   giao cho mọi khách hàng nhận `.msi`.
 3. 🔴 **Một bản đồ SourceLink nêu đích danh kho và commit.** Nguyên văn, đo được trong
    `engine/St4i.EdgeCore.pdb`:
    `{"documents":{"D:\\SOURCES\\avi-aoi-sim\\*":"https://raw.githubusercontent.com/BGJackFrost/avi-aoi-management/bcbd29dc3ab26a4bb1a1e9d71f92ee06bfebd043/*"}`

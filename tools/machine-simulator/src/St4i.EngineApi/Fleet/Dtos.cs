@@ -62,10 +62,11 @@ public sealed record ScenarioPresetRequest(string Name);
 ///
 /// <para><c>POST /v1/scenario</c>, <c>/preset</c> and <c>/burst</c> → <c>FleetHost.ApplyScenario</c>/
 /// <c>Burst</c> keep reporting <b>what was requested and accepted</b>. Deliberate, and the reason is the
-/// audit row: <c>ScenarioEndpoints</c> hands this exact instance to <c>AuditRecorder</c> as the
-/// <c>scenario.apply</c>/<c>scenario.preset</c> payload, and an audit trail answers "who asked for what",
-/// not "what survived the next second". Deriving it there would let a mode switch racing the apply record
-/// an operator as having asked for something they did not.</para>
+/// audit row: every one of the three carries this value into <c>AuditRecorder</c> — bare as the
+/// <c>scenario.apply</c> and <c>scenario.burst</c> payloads, and nested as <c>{ scenario, hotFolderStatus }</c>
+/// for <c>scenario.preset</c> — and an audit trail answers "who asked for what", not "what survived the
+/// next second". Deriving it there would let a mode switch racing the apply record an operator as having
+/// asked for something they did not.</para>
 ///
 /// <para><b>The two answers coincide except after a transport swap the scenario did not make</b>, which is
 /// the exact window item 33 measured; anywhere else the split is invisible. Naming it here rather than

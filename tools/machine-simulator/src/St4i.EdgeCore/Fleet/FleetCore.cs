@@ -2100,11 +2100,18 @@ internal sealed class FleetCore
     /// the fleet onto a 0.9-queueing fabricator". Reference identity can, and it is exact: this returns
     /// true for precisely the instance <see cref="ApplyNetworkOutageLocked"/> installs.</para>
     ///
-    /// <para><b>Lock-free on purpose, same contract as <see cref="CurrentScenario"/>.</b> Both reads are
-    /// unsynchronised snapshots; the worst a racing <see cref="ApplyScenario"/> or
-    /// <see cref="ApplyMode"/> can produce is an answer that was true a moment ago. That is the same
-    /// staleness a one-second poll already has, and no guard, latch or write path reads this member — see
-    /// <c>FleetHost.CurrentScenarioDto</c>'s own exemption note, which this member is now part of.</para>
+    /// <para><b>It does not take <see cref="_gate"/>, and "lock-free" would be the wrong word for it —
+    /// corrected here rather than left standing, because the first draft of this paragraph said exactly
+    /// that.</b> <see cref="SwitchableTransport.Inner"/> reads under that class's OWN lock, so this
+    /// property does take one; the <see cref="_outageTransport"/> read beside it is unsynchronised
+    /// (reference assignment, written only under <see cref="_gate"/> in
+    /// <see cref="ApplyNetworkOutageLocked"/>). <b>The property that actually matters is the one about
+    /// <see cref="_gate"/>:</b> this member cannot serialise against a fleet restart and cannot deadlock
+    /// with one, which is what makes it safe on the read path of a route polled once a second. What a
+    /// racing <see cref="ApplyScenario"/> or <see cref="ApplyMode"/> can produce is an answer that was
+    /// true a moment ago — the same staleness the poll already has — and no guard, latch or write path
+    /// reads this member; see <c>FleetHost.CurrentScenarioDto</c>'s own exemption note, which this member
+    /// is now part of.</para>
     ///
     /// <para>🔴 <b>What this does NOT close.</b> The declared flag stays <see langword="true"/> after the
     /// transport is taken away, so a later <see cref="Burst"/> — which re-applies
