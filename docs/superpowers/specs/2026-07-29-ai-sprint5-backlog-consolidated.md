@@ -6,10 +6,10 @@
 
 ---
 
-## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 5), HEAD `a3b02fe3` (remote `fresh`)
+## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 6), HEAD `20f751bb` (remote `fresh`)
 
 > ### ⚠ ĐỌC DÒNG NÀY TRƯỚC KHI ĐỌC BẤT KỲ CON SỐ NÀO Ở DƯỚI
-> Trong hai ngày 21–22/08, **mười ba** mục của tài liệu này bị phép đo bác bỏ: E1 · F3 ·
+> Trong hai ngày 21–22/08, **hai mươi mốt** mục của tài liệu này bị phép đo bác bỏ: E1 · F3 ·
 > F1 · D2 · D3 · E3 · E5 · E6 (đã đóng hoặc sai số) và ba mục nữa sai về *bản chất*
 > (C1↔C2 là một việc chứ không phải hai; F3 chỉ ra sai file; F1 sai theo hướng **bi quan**
 > gấp ba). Tỉ lệ ấy đủ cao để đảo ngược mặc định:
@@ -21,7 +21,7 @@
 | **A** (làm phiền người thật) | ✅ ĐÓNG | A1-A4, sprint 5 `6ad3e57d..13b58676` |
 | **B1** (hai bản sao logic) | ✅ ĐÓNG | cùng sprint 5 |
 | **B3.3** (sweeper có gọi prune?) | ✅ ĐÓNG `17f78546` | khoảng trống ĐƯỢC ĐO: gỡ lời gọi ⇒ 7/7 vẫn xanh. Nay có lưới đồng-hồ-giả |
-| **B2, B3.1, B3.2** | ⏳ CÒN | ba ca test rẻ, chưa đo lại |
+| **B2, B3.2** | ✅ ĐÓNG `20f751bb` | B3.1 vốn ĐÃ ĐÓNG (kbDocParser.test.ts:124) |
 | **C1, C2** | ✅ ĐÓNG `b74a3b33` | **là MỘT việc, không phải hai** — C2 là điều kiện cần của C1 |
 | **C3** (sắp sai trục) | ✅ ĐÓNG `17f78546` | `ORDER BY` sai + `LIMIT` = MẤT DÒNG |
 | **D1, D2** | ✅ ĐÓNG `17f78546` | ⚠ D2 khai 9 khoá thiếu — đo được **1** |
@@ -31,18 +31,22 @@
 | **E3, E5, E6** | ✅ vốn ĐÃ ĐÓNG | xác minh bằng ĐỌC MÃ 2026-08-22, không bằng comment |
 | **E4** (env gõ sai im lặng) | ✅ ĐÓNG `a93afd69` | `server/_core/envNumber.ts` |
 | **E2** | ✅ vốn ĐÃ ĐÓNG TRỌN | cooldown qua Redis + 3 ca test. Nhãn "cần chủ dự án" là SAI |
-| **E7** | ⏳ CÒN | ba khoảng trống test nhỏ, chưa đo lại |
-| **F14** (lớp nợ MỚI) | 🆕 ĐÓNG một phần `891e1751` | lỗi đi ra bằng cửa THÀNH CÔNG — bốn cổng i18n đều mù. tRPC 18 chỗ còn lại |
+| **E7** | ✅ vốn ĐÃ ĐÓNG cả ba | E7(a) alarmKpiMissingTable:129 · E7(c) valve.test:113 · E7(b) nhánh không còn tồn tại |
+| **F14** (lớp nợ MỚI) | ✅ kênh tRPC ĐÓNG `54b60b56` | `20→0`. Còn **47 chỗ kênh service** cần truy vết từng chỗ |
 | **F1** (chỉ 15% màn hưởng lợi) | ✅ ĐÓNG `4b157955` | ⚠ **cả bốn con số của F1 đã lạc hậu theo hướng BI QUAN** — xem ghi chú dưới. Nợ thật `139 → 0`, nay là BẤT BIẾN (`rawErrorMessageCensus`) |
-| **F2-F9** (nợ A4 sau di trú) | ⏳ CÒN | **F3 còn 547 chỗ** (không phải 64 — xem `rawErrorCensus.test.ts`) · F7 chất lượng bản dịch |
+| **F2** | ✅ ĐÓNG `8993b868` | khai 75 chỗ — đo được **3**. Nay BẤT BIẾN 0 |
+| **F4, F5, F6, F7, F8** | ✅ vốn ĐÃ ĐÓNG | đo 2026-08-22: F7a **0/77** câu en chữ thường (khai 336/384) · `errors.reason.*` 45 khoá + 12 khoá `_WITH_REASON` · entity hết trùng nghĩa · zh hết lệch thuật ngữ · `entity.factory` KHÔNG chết (dùng 3 chỗ) |
+| **F3** | ⏳ CÒN | **547 chỗ** (không phải 64), phần lớn là lỗi codec/driver NỘI BỘ |
+| **F9** | ⛔ ngoài phạm vi | bảo mật đăng nhập TIỀN TỒN TẠI (side-channel thời gian) — cần chủ dự án quyết |
 | **F10-F13** (nhãn giao diện en/zh) | ✅ ĐÓNG | xem §4c/§4d — hình-dạng-3 `914 → 0` qua 17 lô |
 | **G** (machine-auth + giấy phép) | ✅ ĐÓNG | `fa00e4cb` — 17→0 khoá plaintext (mig 0334), hai đường yếu nay mặc định `deny` |
 
-**Nợ còn lại đáng làm trước, theo thứ tự:**
-1. **F14 kênh tRPC — 18 chỗ.** Lớp nợ MỚI phát hiện 2026-08-22: lỗi được BẮT rồi TRẢ VỀ như dữ liệu (`return { ok: false, error: err.message }`) ⇒ phản hồi 200 OK ⇒ `onError` không chạy, `appCode` không tồn tại, `mapTrpcError` không bao giờ thấy. Cổng: `server/_core/dataErrorStringCensus.test.ts`. **49 chỗ kênh service** cần truy vết từng chỗ; **95 chỗ kênh REST KHÔNG phải nợ** (khách là máy — dịch đi là phá hợp đồng API).
-2. **F3 — 547 chỗ ném thô ngoài `server/routers/**`.** Phần còn lại KHÔNG đồng nhất, phần lớn là lỗi tầng codec/driver nội bộ. ⚠ Trước khi di trú, hỏi *"chỗ này có TỚI ĐƯỢC người dùng không?"* — chính câu hỏi đó đã dẫn tới phát hiện F14.
-3. **B2, B3.1, B3.2, E7** — vài ca test rẻ. Đo lại trước.
-4. **F2, F4-F9** — chưa đo lại lần nào kể từ 2026-07-30.
+**Nợ còn lại — CHỈ CÒN BA MỤC:**
+1. **F14 kênh service — 47 chỗ.** Cần TRUY VẾT từng chỗ mới biết nó nổi lên đâu (có chỗ chỉ vào log, có chỗ đi tiếp vào phản hồi tRPC). Kênh tRPC đã về 0; kênh REST (95 chỗ) và kênh log (6 chỗ) **KHÔNG phải nợ** — dịch chúng là làm hỏng hợp đồng máy-máy và làm hỏng nhật ký kỹ thuật.
+2. **F3 — 547 chỗ ném thô ngoài `server/routers/**`.** Phần lớn là lỗi tầng codec/driver NỘI BỘ. ⚠ Trước khi di trú, hỏi *"chỗ này có TỚI ĐƯỢC người dùng không?"* — chính câu hỏi đó đã dẫn tới phát hiện F14, và nó đáng giá hơn việc di trú hàng loạt 547 chỗ.
+3. **F9 — bảo mật đăng nhập, TIỀN TỒN TẠI.** Kiểm `isActive`/`lockedUntil` chạy TRƯỚC `bcrypt.compare` ⇒ chỉ cần username là phân biệt được "tồn tại + bị khoá" với "không tồn tại"; nhánh unknown-user bỏ qua bcrypt ⇒ side-channel thời gian. **Cần chủ dự án quyết** vì sửa đúng cách sẽ làm chậm mọi lượt đăng nhập thất bại (bcrypt giả) — một đánh đổi về trải nghiệm.
+
+**⚠ MỌI MỤC KHÁC ĐÃ ĐÓNG.** Trong đó **hai mươi mốt** mục hoá ra đã đóng từ trước hoặc sai số — xem cảnh báo đầu tài liệu.
 
 **✅ BA MỤC TỪNG "CHỜ CHỦ DỰ ÁN" NAY ĐÃ ĐÓNG HẾT (2026-08-22).**
 Chủ dự án xác nhận dữ liệu hệ thống là dữ liệu TEST ⇒ hai mục bị chặn vì rủi ro mất dữ
