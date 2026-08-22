@@ -1062,7 +1062,11 @@ export const vi = {
     defectRate: "Tỷ lệ lỗi (Defect rate)",
     faultRate: "Tỷ lệ lỗi thiết bị (Fault rate)",
     networkOutage: "Mất mạng (Network outage)",
-    networkOutageHint: "Chuyển transport sang store-and-forward lỗi cao.",
+    // 🔴 2026-08-22 (mục 34) — trước là "store-and-forward lỗi cao". Sai cả hai chữ: `DemoTransport.SendAsync`
+    // có bốn đường trả ack và cả bốn trả `Success: true`; `fakeErrorRate` chọn nhánh QUEUED chứ không phải
+    // tỉ lệ hỏng. Câu dưới đây là câu mục 22 đã thi hành vào năm chỗ `.cs` ngày 2026-08-21
+    // (`ScenarioViewModel.RefreshStatusLine`: "MẤT MẠNG (ack chỉ queued, không bao giờ lỗi)").
+    networkOutageHint: "Chuyển transport sang store-and-forward: ack chỉ queued, không bao giờ lỗi.",
     burst: "Burst (6x, 4s)",
     presetsTitle: "Preset trình diễn",
     presetsHint: "Mỗi nút đặt lại cả 3 chỉ số + trạng thái mạng, áp dụng một lần lên fleet đang chạy.",
@@ -1070,7 +1074,9 @@ export const vi = {
       normal: { label: "Ca bình thường", description: "Tốc độ và tỷ lệ lỗi mặc định của dây chuyền — nền cho mọi demo khác." },
       highDefect: { label: "Lô lỗi cao", description: "Tăng mạnh tỷ lệ lỗi tiêm thêm để trình diễn andon/cảnh báo." },
       sensorDrift: { label: "Sensor drift", description: "Tăng tốc chu kỳ để lộ sự kiện trôi hiệu chuẩn định kỳ của IOT_SENSOR." },
-      networkOutage: { label: "Mất mạng demo", description: "Chuyển sang store-and-forward lỗi cao (~90%) trong khi fleet vẫn chạy." },
+      // 🔴 2026-08-22 (mục 34) — trước là "store-and-forward lỗi cao (~90%)". ~90% là phần đi vào nhánh
+      // QUEUED (`FleetCore.OutageFakeErrorRate = 0.9`), không phải tỉ lệ lỗi.
+      networkOutage: { label: "Mất mạng demo", description: "Chuyển sang store-and-forward trong khi fleet vẫn chạy — ~90% ack trả về queued, không ack nào thất bại." },
       hotfolderAoi: { label: "Hot-folder AOI", description: "Ghi một file đo lường mẫu rồi để driver AOI đọc lại thật." },
     },
     presetCustomDescription: "Preset tùy chỉnh.",

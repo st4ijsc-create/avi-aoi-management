@@ -36,8 +36,19 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// elsewhere: <c>README.md</c> §16.4/§16.6's two env-var tables, and, until this was written, two test
 /// files. <c>ConnectorEndpointsTests</c> and <c>ConnectorEndpointsEnvSeedingSideEffectsTests</c> now call
 /// these constants by name instead of retyping the strings, which removes two of the three copies and
-/// makes a rename of any value here reach them by compilation. The README tables remain a hand-kept copy
-/// with no witness: nothing goes red if they drift, and that is still true.</para>
+/// makes a rename of any value here reach them by compilation.</para>
+///
+/// <para>🔴 <b>THE LAST SENTENCE OF THAT PARAGRAPH IS RETRACTED, 2026-08-22 (owner-decisions.md item 36).</b>
+/// It read: <i>"The README tables remain a hand-kept copy with no witness: nothing goes red if they drift,
+/// and that is still true."</i> It was true when written and it is no longer:
+/// <c>St4i.EngineApi.Tests.DriverDocumentationTests</c> derives the four names below (and the OPC-UA four,
+/// and both classes' numeric defaults and guards) from THIS FILE and compares them against README
+/// §16.4/§16.6, so a rename here now reddens a test instead of rotting a table. <b>What that witness does
+/// not buy, said here rather than left to be assumed:</b> it compares VALUES and NAME SETS, plus the
+/// handful of value-bearing sentences its own remarks name one by one. The rationale and deferral prose in
+/// those two sections is still a hand-kept copy no instrument reads, and building the witness is how two
+/// already-drifted sentences were found (§16.6's "hardcoded 15 seconds" and §16.4's six-of-seven
+/// argument-type list).</para>
 /// </summary>
 public sealed class ModbusOptions
 {

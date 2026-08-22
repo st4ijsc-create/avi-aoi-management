@@ -3632,7 +3632,32 @@ EXPECT_EDGESERVICE=52
 # nor any pragma. AV-1 does NOT touch web/, so no web build was required (and none of its edits are TS) —
 # note that `web/src/routes/Scenario.tsx` nonetheless CHANGES BEHAVIOUR as a consequence, because it seeds
 # every outgoing POST body from the polled snapshot; that is the point of the fix and is recorded in item 33.
-EXPECT_ENGINEAPI=1405
+# 🔴 TASK AX-1 (.superpowers/sdd/items-34-35-36/task-1-brief.md — owner-decisions.md items 34, 35, 36)
+# raises EXPECT_ENGINEAPI 1405 -> 1408 (+3). Grand total 2821 -> 2824. It is the ONLY total that moves, and
+# that is a check on the task's scope rather than a convenience: items 34 and 35 add NO test at all (34 is
+# four `web/` i18n strings plus a fifth README row it found; 35 STOPS on its own condition and pays only in
+# doc retractions), so a move in any other suite would mean AX-1 reached somewhere it had no business
+# reaching. EXPECT_ABSTRACTIONS stays 161, EXPECT_CONFORMANCE stays 24 — AX-1 adds no driver and no
+# connector kind — EXPECT_EDGECORE stays 1179 and EXPECT_EDGESERVICE stays 52.
+#
+# The +3 is one new file, tests/St4i.EngineApi.Tests/DriverDocumentationTests.cs, three [Fact]s and no
+# [Theory]: item 36's witness for README §16.4/§16.6. Nothing is rewritten, split or deleted. It lives in
+# THIS suite rather than in St4i.EdgeCore.Tests even though its subjects are EdgeCore types, because the two
+# doc-pinning precedents it copies — PerHostDataRootsTests and Alarms/NotificationDocumentationTests, both
+# named by item 36 — are here, along with the repo-root walk all three now share.
+#
+# 🔴 CONTROL PAIR, RUN TO COMPLETION AND REVERTED, one mutation per [Fact] so no fact is certified by
+# another's failure. (1) ModbusOptions.EnvVarPort "ST4I_MODBUS_PORT" -> "ST4I_MODBUS_TCP_PORT": fact 1 RED
+# ("Collections differ"). (2) OpcUaDriver's `operationTimeoutMs = 15000` -> 20000: fact 2 RED ("Not found:
+# 20000"). (3) a seventh member added to CommandArgumentType: fact 3 RED ("Collections differ"). Each was
+# reverted and the trio re-run green; `git diff` at the branch tip carries none of the three.
+#
+# EXPECT_WARNINGS and EXPECT_BUILD_NODES: re-measured on a full `-t:Rebuild` after this task, stated at their
+# own constants below. Nothing was suppressed — no .editorconfig change, no <NoWarn>, no #pragma, no
+# SuppressMessage. AX-1 DOES touch web/ (item 34's four i18n strings), so `npm run build` — which is
+# `tsc -b && vite build`, the gate compiles no TypeScript — was run and passed; the two dictionaries are the
+# only web files changed and no web test asserts either string (measured with repo-scan.sh before editing).
+EXPECT_ENGINEAPI=1408
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -4148,8 +4173,47 @@ note "exclusive-run lock held: pid ${GATE_SELF_WINPID} (lock $GATE_LOCK_DIR)"
 # 🔴 MEASURED AFTER THE WORK WAS WRITTEN, NOT PREDICTED BEFORE IT: 0 at e99019c0 for task AW-1, which
 # added three shell scripts and no C# doc comments at all. A zero here is an assertion about the C#
 # corpus only — see boundary (c) in scan-doc-negations.sh for the four surfaces it does not read.
-DOC_ABSOLUTES_BASELINE="e99019c0"
-EXPECT_NEW_DOC_ABSOLUTES=0
+#
+# ══ TASK AX-1 (owner-decisions.md items 34/35/36) MOVES BOTH, AND THE TWO MOVES DO DIFFERENT WORK ══
+#
+# AW-1's author predicted this constant would go red for the next task and warned, in as many words,
+# that "if someone just raises the number the tool becomes decoration". AX-1's brief inherited that
+# warning and proposed a specific escape: move DOC_ABSOLUTES_BASELINE to AX-1's base commit instead of
+# touching the number. 🔴 THAT PROPOSAL DOES NOT SURVIVE MEASUREMENT, and it was measured rather than
+# reasoned about. Both readings were run on the finished worktree:
+#
+#     scripts/scan-doc-negations.sh --since e99019c0   ->   NEW absolute doc claims : 19
+#     scripts/scan-doc-negations.sh --since cfcfae42   ->   NEW absolute doc claims : 19
+#
+# Identical, because AW-1 added ZERO between those two commits. Moving the baseline forward across a
+# commit that contributed nothing subtracts nothing. There is no baseline short of AX-1's own tip that
+# makes this green, and moving it to the tip is precisely the decoration the warning names — it would
+# make the field mean "measured against myself" and the assertion mean nothing, forever.
+#
+# So the baseline move here is a SEMANTIC REPAIR and is not load-bearing for the colour of this gate:
+# the field says "the commit this branch's documentation claims are measured against", AX-1's branch
+# starts at cfcfae42, and leaving it at e99019c0 would keep charging AX-1's number against a span that
+# includes three commits AX-1 did not write. It happens to change no measurement today, and that is
+# stated here so nobody later reads the move as the thing that bought the green.
+#
+# 🔴 WHAT ACTUALLY BOUGHT THE GREEN IS THE REVIEW, and it is the review the script's own FAIL message
+# demands: all 19 sentences were listed, read one at a time, and checked against the code. FOUR DID NOT
+# SURVIVE READING and were corrected AT THE SOURCE rather than counted:
+#   * ModbusOptions + DriverDocumentationTests both claimed "every rationale, deferral and limitation
+#     paragraph" in README §16.4/§16.6 stays unwitnessed. False by four of this task's own assertions —
+#     rewritten to LIST the phrase-level pins instead of denying they exist.
+#   * DriverDocumentationTests called the "hardcoded" pin "the ONE claim that was measured false". TWO
+#     were. Rewritten.
+#   * DriverDocumentationTests' second [Fact] was headed "EVERY number these two sections publish".
+#     False — those sections carry register addresses, a worked scale example, FC03/FC04 and a
+#     relicensing date, none of them covered. Rewritten, with the uncovered numbers LISTED.
+#   * SparkplugSeqTracker claimed NDATA "has never had one" (a producer). The measurement is of THIS
+#     commit, not of the project's history. Narrowed to what was actually measured.
+# The count was re-measured after each correction; 24 -> 19 is the review's arithmetic, not a rewrite
+# to dodge the filter. The remaining 19 are true, and the four surfaces boundary (c) names are still
+# outside the corpus, so 19 is a statement about `*.cs` under tools/machine-simulator and nothing else.
+DOC_ABSOLUTES_BASELINE="cfcfae42"
+EXPECT_NEW_DOC_ABSOLUTES=19
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

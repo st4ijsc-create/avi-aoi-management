@@ -62,9 +62,9 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 31 | **Mười hai artefact build** (7 `.xml` + 5 `.pdb`) đi vào MSI | ✅ **ĐÃ QUYẾT VÀ ĐÃ THI HÀNH 2026-08-22 (AV-1)** theo 🔨 **QUYẾT: GIAO CẢ MƯỜI HAI, KHÔNG ĐỔI MỘT BYTE NÀO CỦA BAO BÌ** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). Mở 2026-08-20 (AO-1); đã ĐO ở §8 của mục 12 từ 2026-08-19 (AF-1) nhưng **chưa bao giờ thành một mục phán được**. **N = 12 đo lại và ĐỨNG VỮNG.** 🔴 **Nhưng câu *"cái giá của việc GIỮ NGUYÊN là KHÔNG"* trong thân mục KHÔNG sống sót qua phép đo**: năm `.pdb` mang đường dẫn tuyệt đối của máy dựng, **259 tên file nguồn phân biệt** (266 cộng rời), và một bản đồ SourceLink nêu đích danh **kho GitHub + SHA commit**. Giá được ghi tên chứ không còn là "không". Xem **Phần III** |
 | 32 | **Một lời khai miền dụng cụ không kiểm được nếu không ghi NƠI lệnh được chạy** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Pathspec của git là **tương đối với cwd** và một pathspec bị thu hẹp **trả 0 chứ không báo lỗi**: `-- 'server/*.ts'` **0** đối lại `-- ':(top)server/*.ts'` **197**; và **glob đuôi trần cũng hỏng** — `'*.ts'` **1** đối lại **214**. 🔴 **Giá đã trả: mục 14 được PHÁN kèm một cái trần SAI** (*"không đo được từ repo này"* — bên tiêu thụ nằm trong chính commit này). **Năm khẳng định khác đo lại vẫn ĐỨNG VỮNG**, gồm kết luận "ba chỗ xuất bản `TransportMode`" của AM-1. **Người đăng ký gương MQTT retained: CHƯA ĐO** (37 file nhắc `syn/`) → ✅ **ĐÃ THI HÀNH 2026-08-22 (AW-1)** theo 🔨 **QUYẾT: DỰNG MỘT BỌC CƯỠNG CHẾ CHO MIỀN PHÉP QUÉT** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). `scripts/repo-scan.sh` — **không phải một dòng hướng dẫn**: nó **tự `cd` về gốc repo**, **tự viết lại mọi pathspec trần thành `:(top)…`**, **luôn truyền `--full-name`** (nửa thứ hai, do mục 15 tìm ra), **phân giải tree-ish thành SHA đầy đủ** và **in ra lời khai miền cùng kết quả**: nơi lệnh được gõ, nơi nó chạy, SHA, cây sạch hay bẩn, pathspec trước và sau khi viết lại, argv, và số dòng. Một `0` từ nó **đọc được là "không có"**. 🔴 **`--self-test` là nhân chứng và nó ĐỎ ĐƯỢC:** ba khẳng định — bất biến theo cwd, **và** phép dò phải khác 0, **và** dạng ngây thơ phải trả ÍT HƠN; hai số 0 bằng nhau bị **từ chối** là xanh. Đo hôm nay ở `e99019c0`: **197 = 197** qua bọc, **0** cho dạng ngây thơ gõ từ `tools/machine-simulator`. 🔴 **Cái nó KHÔNG cưỡng chế, và nêu đủ rộng vì một cái trần nêu quá nhỏ còn tệ hơn không nêu:** (a) **nó KHÔNG buộc được ai dùng nó** — không gì chặn người sau gõ `git grep` tay; nó là một **mặc định** và một **nhân chứng**, không phải một cổng trên cách người ta gõ; (b) **nó không thấy được `grep -r`/ripgrep/tìm-trong-editor**, vốn đọc **cây làm việc**, mà cây này là sparse — `server/` (1589 file) và `client/` (711) **có trong commit, không trên đĩa**; (c) nó không kiểm được rằng một báo cáo có chép lại phần đầu ấy hay không; (d) nó không nói gì về việc **mẫu tìm** có đúng hay không; (e) nó **không với ra ngoài repo** — người đăng ký gương MQTT retained `syn/…` **vẫn CHƯA ĐO** và vẫn nằm ngoài mọi phép quét dụng cụ này chạy được. 🔴 **Giá đã trả giữ nguyên trong hồ sơ và được ghi lại lần nữa ở đầu chính dụng cụ:** mục 14 được chủ sở hữu **phán kèm một cái trần SAI** — *"người tiêu thụ không đo được từ repo này"* — trong khi mã bên tiêu thụ nằm trong đúng commit ấy. Xem Phần III |
 | 33 | `GET /v1/scenario` nói dối theo chiều **NGƯỢC LẠI** — tấm gương của mục 18 | ✅ **ĐÃ QUYẾT VÀ ĐÃ THI HÀNH 2026-08-22 (AV-1)** theo 🔨 **QUYẾT: SỬA PHÍA ĐỌC — `GET /v1/scenario` BÁO TRANSPORT ĐANG LẮP** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). Mở 2026-08-22 (AU-1). Một `PUT /v1/mode` **ghi đè transport outage** trong khi `_scenario.NetworkOutage` **vẫn `true`**; mục 18 đóng chiều *"cổng không gác"*, chiều này nay đã phán. 🔴 **Tập ghi rộng hơn brief nêu: KHÔNG chỉ `PUT /v1/mode`** — `PUT /v1/settings` cũng xoá, một `PUT /v1/mode` **không đổi giá trị** cũng xoá, và chuyển **sang Demo** cũng xoá; **cả ba đo lại và ĐỨNG VỮNG**, mỗi cái một nhân chứng đỏ-được. 🔴 **Hướng bị loại là sửa phía GHI, và giá của nó ghi tại chỗ.** 🔴 **Nó BÁC một lập luận AR-1 đã dùng để đóng nửa kia của mục 18** — lập luận ấy đã rút tại chỗ trong ghi chép thi hành của mục 18. Xem **Phần III** |
-| 34 | Bốn chuỗi web i18n còn nợ từ mục 22 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã: **đúng bốn**, hai khoá × hai locale, và cả bốn **đang hiển thị cho vận hành viên**. `DemoTransport` **không có đường nào** trả ack thất bại. 🔴 **Web của machine-simulator KHÔNG có job CI nào và KHÔNG có dụng cụ i18n nào** — bốn chuỗi này không có nhân chứng thuộc bất kỳ loại nào |
-| 35 | `DBIRTH`/`DDEATH` không sinh ra được, và `SparkplugAliasTable.Reset()` cùng thế — hệ quả ĐÃ ĐO của mục 23 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1). 🔴 **Nhưng chữ *"HOÀN TOÀN"* của brief KHÔNG đứng vững ở phạm vi repo:** `server/` có một bộ phát DBIRTH/DDEATH **đang sống** bằng TypeScript. Đúng ở phạm vi `tools/machine-simulator`. `Reset()`: **một** caller, và nó là một unit test — **không caller sản xuất nào**, trong khi `GetOrAssign` chạy trên **mọi** reading: bảng alias **nửa sống** |
-| 36 | README §16.4/§16.6 là một bản sao **không có nhân chứng** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã. Không test/script/CI nào giữ chúng đúng, và **`ModbusOptions.cs` TỰ KHAI điều đó**. 🔴 **Và phép kiểm tra chéo tìm thấy một câu ĐÃ TRÔI rồi** — §16.6 nói `OperationTimeout` *"hardcoded"* trong khi nó là tham số constructor từ Task B-5 |
+| 34 | Bốn chuỗi web i18n còn nợ từ mục 22 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã: **đúng bốn**, hai khoá × hai locale, và cả bốn **đang hiển thị cho vận hành viên**. `DemoTransport` **không có đường nào** trả ack thất bại. 🔴 **Web của machine-simulator KHÔNG có job CI nào và KHÔNG có dụng cụ i18n nào** — bốn chuỗi này không có nhân chứng thuộc bất kỳ loại nào → ✅ **ĐÃ THI HÀNH 2026-08-22 (AX-1)** theo 🔨 **QUYẾT: SỬA LỜI CHO KHỚP CÂU MỤC 22 ĐÃ VIẾT** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8). **Bốn** đứng vững — hai locale là một sự thật CỦA KIỂU (`type Language = "vi" \| "en"`), không phải một phép đếm file. Câu mục 22 được **đo lại trước khi nhân bản** trên `DemoTransport.SendAsync` (bốn đường ra, cả bốn `Success: true`) và **đứng vững**, nên không có gì phải rút ở đó. 🔴 **Nhưng *"bề mặt CUỐI CÙNG"* trong đầu đề mục này là một PHỦ ĐỊNH TỒN TẠI SAI: `README.md` §7 mang chỗ thứ NĂM** — *"a ~90%-error `DemoTransport` … queued/failed rows"* — cùng lời hứa sai, và là bề mặt một BÊN TÍCH HỢP đọc; **rút tại chỗ kèm ngày**. Không phải nhân chứng đỏ được (chỉ đổi lời); `npm run build` xanh, không hằng số nào dịch. Xem **Phần III** |
+| 35 | `DBIRTH`/`DDEATH` không sinh ra được, và `SparkplugAliasTable.Reset()` cùng thế — hệ quả ĐÃ ĐO của mục 23 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1). 🔴 **Nhưng chữ *"HOÀN TOÀN"* của brief KHÔNG đứng vững ở phạm vi repo:** `server/` có một bộ phát DBIRTH/DDEATH **đang sống** bằng TypeScript. Đúng ở phạm vi `tools/machine-simulator`. `Reset()`: **một** caller, và nó là một unit test — **không caller sản xuất nào**, trong khi `GetOrAssign` chạy trên **mọi** reading: bảng alias **nửa sống** → 🔴 **DỪNG 2026-08-22 (AX-1), Ở LẠI PHẦN I.** **Điều kiện DỪNG đã nổ:** làm spine này tuân đặc tả đòi **phát một thông điệp MQTT MỚI** (DBIRTH mức device) lên dây — tức **đổi payload MQTT**, một trong **ba mục chủ sở hữu KHÔNG uỷ quyền**. Điều phối viên **không tự quyết**; chờ anh. Phần nằm TRONG uỷ quyền đã trả và ghi trong thân mục: vòng đời hôm nay **liệt kê rồi đếm — BA loại Sparkplug rời spine này (NBIRTH, NDEATH, DDATA) trên sáu thành viên enum**; bề mặt gọi `Reset()` đo lại bằng `scripts/repo-scan.sh` ở miền có **cả `server/` và `client/`** (2300 file nằm trong commit, ngoài đĩa) — **vẫn đúng MỘT, vẫn là unit test ấy**, nên đây là **MỞ RỘNG miền chứ không RÚT**; **bốn** câu tài liệu nói sản phẩm phát/sẽ phát DBIRTH **rút tại chỗ kèm ngày** (hai trong bốn sai theo hai chiều NGƯỢC nhau, cùng một file). 🔴 **Chỗ trống "người đăng ký gương retained CHƯA ĐO" GIỮ NGUYÊN là chỗ trống** — không phép đo mới, và **không suy đoán nào được viết vào thay cho một phép đo** |
+| 36 | README §16.4/§16.6 là một bản sao **không có nhân chứng** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã. Không test/script/CI nào giữ chúng đúng, và **`ModbusOptions.cs` TỰ KHAI điều đó**. 🔴 **Và phép kiểm tra chéo tìm thấy một câu ĐÃ TRÔI rồi** — §16.6 nói `OperationTimeout` *"hardcoded"* trong khi nó là tham số constructor từ Task B-5 → ✅ **ĐÃ THI HÀNH 2026-08-22 (AX-1)** theo 🔨 **QUYẾT: DỰNG NHÂN CHỨNG, KHÔNG PHẢI SỬA LỜI** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8). `tests/St4i.EngineApi.Tests/DriverDocumentationTests.cs`, **ba `[Fact]` ĐỎ ĐƯỢC**, đặt cạnh hai tiền lệ mục này nêu tên; **cặp đối chứng chạy trọn, MỘT đột biến cho MỖI fact** (đổi tên `EnvVarPort`; `operationTimeoutMs` 15000→20000; thêm thành viên thứ bảy vào `CommandArgumentType`), cả ba ĐỎ đúng bài của nó rồi **hoàn nguyên**. **22 khẳng định liệt kê rồi kiểm; HAI sai, và mục này chỉ thấy MỘT:** ngoài *"hardcoded"*, 🔴 **§16.4 công bố kiểu tham số lệnh là tập ĐÓNG SÁU trong khi `CommandArgumentType` có BẢY** (`String` được `ValidateSelf` chấp nhận — phép kiểm lược đồ **duy nhất** cả hai map chạy). Cả hai **rút/bổ sung tại chỗ kèm ngày**, và câu **tự khai** của `ModbusOptions.cs` (*"remain a hand-kept copy with no witness … still true"*) **hết đúng hôm nay** nên bị rút ngay trong file ấy. 🔴 **Nhân chứng ghim GIÁ TRỊ và TẬP TÊN, không ghim văn xuôi** — bốn chỗ cụm-từ được kể tên trong chính doc của nó; đoạn lý lẽ, hai danh sách *"honest deferral"* và khối RTU **vẫn không có nhân chứng**. `EXPECT_ENGINEAPI` 1405 → **1408**, tổng 2821 → **2824**, **0 lệnh đè**. Xem **Phần III** |
 | 37 | 🔴 **HỒ SƠ — LỖI CỦA ĐIỀU PHỐI VIÊN:** một phán quyết của chủ sở hữu sống trọn một vòng nhiệm vụ **KHÔNG có bản ghi tại chỗ** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), và **mục này là của điều phối viên, không phải của mã**. Phán quyết mục 16 ngày 2026-08-22 tới người thi hành **chỉ qua một task brief**; `grep "2026-08-22"` trên file tại `ce1ce2be` trả **đúng hai dòng, cả hai thuộc mục 27**. **"Đừng thi hành" đã bị đọc thành "đừng ghi"** — một phán quyết và một lần thi hành là **hai hiện vật khác nhau**. Cộng: danh sách Phần I **lỗi thời qua ba nhiệm vụ liên tiếp** và **không dụng cụ nào bắt được, vì không cổng nào đọc file này** — cùng lớp với mục 26 và 32. 🔴 **Và con số ấy được ĐO LẠI: brief mở mục này nói "chín mục"; đo trên `659bcfb2` là MƯỜI MỘT** (16, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29 — Phần I thật chỉ chứa 17, 25, 26, 30, 31, 32). **Chính lời khai về khuyết tật kiểm đếm cũng đếm sai**, theo đúng cơ chế mục này mô tả → ✅ **ĐÃ THI HÀNH 2026-08-22 (AW-1)** theo 🔨 **QUYẾT: BẮT CỔNG ĐỌC FILE NÀY** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). `scripts/check-owner-decisions.sh`, chạy trong `scripts/verify-suites.sh`: **cổng nay ĐỌC `docs/owner-decisions.md`** — câu *"không cổng nào đọc file này"* trong thân mục **hết đúng kể từ hôm nay**, và nó được rút tại chỗ chứ không lặng lẽ. Phép kiểm ghim **CẤU TRÚC, không ghim VĂN XUÔI**, đúng lối rẻ nhất mà chính mục này nêu ra: mỗi số hiệu trong bảng có **đúng một** thân mục và ngược lại; **trạng thái ghi trong hàng khớp PHẦN mà thân mục đứng dưới**; **phép liệt kê Phần I nêu đúng tập số hiệu thật sự nằm ở Phần I**, cả ở trường máy đọc lẫn ở câu văn người đọc. 🔴 **Đo được hôm nay, trước khi sửa: NĂM chỗ lệch** — (1) mục 17 ở Phần III với hàng tự khai *"MỘT PHẦN"*; (2)(3)(4) **BA** đoạn liệt kê Phần I trần nằm cạnh nhau ở dòng 111, 168, 237 mà **chỉ một là hiện hành**, không gì phân biệt được; (5) không có trường máy đọc nào nói cái nào hiện hành. **Cả năm sửa ở HỒ SƠ, không sửa dụng cụ cho vừa hồ sơ.** 🔴 **Và cái phép kiểm này KHÔNG bắt được, nói thẳng vì một nửa sự thật ở đây đúng là loại lỗi mục này nói về: NỬA THỨ NHẤT CỦA MỤC 37 — một phán quyết KHÔNG BAO GIỜ ĐƯỢC GHI — vẫn KHÔNG có bộ dò nào.** Không phép kiểm nào trên file này thấy được một sự kiện không nằm trong file. Nó cũng không đọc văn xuôi, không phán được một mục "MỘT PHẦN" thuộc Phần I hay Phần II (nó chỉ nói **KHÔNG PHẢI Phần III**), và **chỉ** ghim phép liệt kê Phần I — Phần II và Phần III không có trường máy đọc. Xem Phần III |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
@@ -205,8 +205,11 @@ sự thật** — câu này chỉ là một con trỏ vào nó.
 > `<!-- gate:phần-i-rút -->` hoặc `<!-- gate:phần-i = … -->`, và cổng đòi **đúng một** cái sống. **Không
 > một chữ nào của ba đoạn bị sửa và không dòng nào bị xoá.**
 
-**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 17, 25, 30, 34, 35 và 36.** Tất cả mang `🔴 CHỜ ANH` ở bảng
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 17, 25, 30 và 35.** Tất cả mang `🔴 CHỜ ANH` ở bảng
 phán quyết trên, và **bảng ấy là nguồn sự thật** — câu này chỉ là một con trỏ vào nó.
+🔴 **Cập nhật 2026-08-22 (AX-1): mục 34 và 36 rời sang Phần III; mục 35 Ở LẠI vì điều kiện DỪNG của nó
+đã nổ** — đóng nó đòi phát một thông điệp MQTT MỚI lên dây, tức **đổi payload MQTT**, một trong ba mục
+chủ sở hữu **không** uỷ quyền. Phép đo đi kèm nằm ngay trong thân mục 35, ở phần này, không ở Phần III.
 🔴 **Mục 17 ở đây là mục QUAY VỀ, không phải mục mới**: nó ở Phần III từ 2026-08-22 (AU-1, thi hành một
 phần) cho tới hôm nay; cái còn treo là **một QUYẾT ĐỊNH của anh** — mặc định của `GET /v1/historian/telemetry`
 — **không phải một việc còn nợ**, nên nó không thuộc Phần II. Lập luận đầy đủ ở hàng 17 của bảng và ở
@@ -216,7 +219,7 @@ phần) cho tới hôm nay; cái còn treo là **một QUYẾT ĐỊNH của anh
 🔴 **Câu này KHÔNG còn tự bảo trì bằng việc có ai đó nhìn, và đó là cái đổi kể từ hôm nay:** dòng ngay
 dưới là trường máy đọc mà `scripts/check-owner-decisions.sh` so với tập đầu mục `^## ` thật sự nằm giữa
 banner Phần I và banner Phần II, **và** với chính câu văn này. Lệch một số hiệu ⇒ **cổng đỏ**.
-<!-- gate:phần-i = 17 25 30 34 35 36 -->
+<!-- gate:phần-i = 17 25 30 35 -->
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
 > tới vòng sửa thứ hai của cùng ngày, và nó **không sai, nó THIẾU**.** Ba thao tác của file này vẫn
@@ -948,56 +951,6 @@ viết lại file ấy thành 2 byte — định dạng của vận hành viên 
 
 ---
 
-## 34. Bốn chuỗi web i18n còn nợ từ mục 22 — vẫn nợ, và chúng là bề mặt CUỐI CÙNG còn hứa một thứ không tồn tại
-
-🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1), xác nhận lại trên mã.
-
-**Đo được cái gì.** Mục 22 đã thi hành 2026-08-21 (AR-1) và **tự ghi món nợ**: *"🔴 **BỐN CHUỖI NỮA ĐO ĐƯỢC MÀ
-CỐ Ý KHÔNG ĐỤNG, vì nêu thiếu còn tệ hơn** … **Đây là việc còn nợ, ghi lại chứ không im lặng.**"* Đếm lại hôm
-nay: **vẫn đúng bốn**, hai khoá × hai locale, và **liệt kê trước khi đếm** —
-`en.scenario.networkOutageHint` (*"Switches the transport to high-failure store-and-forward."*),
-`en.scenario.presets.networkOutage.description` (*"…high-failure (~90%) store-and-forward…"*),
-`vi.scenario.networkOutageHint` (*"…store-and-forward **lỗi cao**."*),
-`vi.scenario.presets.networkOutage.description` (*"…store-and-forward lỗi cao (~90%)…"*).
-
-**Và lời hứa ấy là sai, đo trên mã:** `DemoTransport.SendAsync` có **bốn** đường ra và **cả bốn** trả
-`Success: true` — đường queued, `AckProcessResult` (201), `AckInspection` (201), `AckTelemetry` (202).
-`ShouldSimulateQueued` biến `_fakeErrorRate` thành xác suất **QUEUED**, không phải tỉ lệ **thất bại**. Nên
-`~90 %` là phần **xếp hàng**, và *"high-failure"*/*"lỗi cao"* sai **ở cả hai chữ**.
-
-🔴 **Một chỗ lệch so với brief, nêu rõ:** brief nói mục 22 *"trả sáu chuỗi `.cs`"*. Đo lại: mục 22 **đo được
-SÁU** và **trả NĂM** — chỗ thứ sáu (`App.xaml.cs`, doc comment của selftest) **cố ý để lại**. Bốn chuỗi i18n
-là một món nợ **riêng**, nằm ngoài cả sáu.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `tools/machine-simulator/web/src/i18n/en.ts`,
-`tools/machine-simulator/web/src/i18n/vi.ts`; render bởi `web/src/routes/Scenario.tsx`
-(`t("scenario.networkOutageHint")` và `t(\`scenario.presets.${meta.i18nKey}.description\`)`);
-sự thật đối chiếu là `St4i.EdgeCore.Transport.DemoTransport.SendAsync` và
-`DemoTransport.ShouldSimulateQueued`. (`client/src/i18n/locales/*.json` ở gốc repo thuộc **ứng dụng khác**,
-không phải machine-simulator.)
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* web là bề mặt **phần lớn vận hành viên dùng**, và nay là bề mặt **DUY NHẤT còn hứa một ack thất
-bại** — WPF, dòng trạng thái DTO và mô tả preset của `GET /v1/scenario` đều đã sửa ngày 2026-08-21. Sản phẩm
-**tự mâu thuẫn giữa các tầng**, và một lần chạy nghiệm thu lái từ trang Scenario với chữ *"high-failure"* sẽ
-**xanh vĩnh viễn trong khi không chứng minh gì** về xử lý lỗi.
-*Chiều ngược:* bốn phép sửa chuỗi nằm trong một build **không có nhân chứng i18n và không có job CI nào**, nên
-thay đổi **không kiểm được** ngoài mắt người và một lần chạy Playwright cục bộ. Và `~90 %` là con số một vận
-hành viên **có thể đã neo vào**; viết lại thành *"≈90 % xếp hàng"* là **một thay đổi lời hứa đã xuất bản thứ
-hai** — đúng loại mà chủ sở hữu giữ lại cho mình ở mục 22 — chứ không phải sửa lỗi chính tả. Bốn phép sửa ấy
-cũng **vượt qua cổng publish của web**, đúng trục rủi ro mà AR-1 đã từ chối bước vào trên một mục phạm vi
-.NET.
-
-**Nếu KHÔNG quyết định.** Bốn chuỗi ở lại **hiển thị cho vận hành viên** và **không dụng cụ nào có thể bắt
-được chúng**: `web/package.json` không có script i18n; `web/scripts/` chỉ có ngân sách test và reset engine;
-`scripts/i18n-check.mjs`/`i18n-audit.mjs` ở gốc repo thuộc `client/` và **không được** `verify-suites.sh` gọi;
-`.github/workflows/` **không nhắc `machine-simulator` một lần nào** — máy mô phỏng **không có job CI nào cả**.
-Guard cấu trúc duy nhất là `en.ts` khai `const en: Dictionary` nên `tsc -b` bắt được **khoá thiếu** — nó nói
-khoá tồn tại, **không nói gì về chữ đằng sau khoá**. `EnumSpellingContractTests` có ghim hai file này nhưng
-chỉ ở các khối enum, và **tự khai** giới hạn ấy.
-
----
-
 ## 35. `DBIRTH`/`DDEATH` không còn sinh ra được từ spine này, `SparkplugAliasTable.Reset()` mất caller sản xuất — hệ quả ĐÃ ĐO của mục 23, và một câu hỏi vòng đời chưa ai trả lời
 
 🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1), xác nhận lại trên mã.
@@ -1064,64 +1017,96 @@ và nó thuộc cùng câu hỏi vòng đời: KHÔNG có MQTT Will nào đượ
 kill đột ngột **cũng không phát NDEATH** — vòng đời node chỉ thật một nửa, và câu hỏi Will đã nằm trong
 `verify-suites.sh` mà **chưa ai phán**.
 
----
+### 🔴 DỪNG 2026-08-22 (AX-1) — ĐIỀU KIỆN DỪNG CỦA MỤC NÀY ĐÃ NỔ. Ở LẠI PHẦN I. Phần nằm TRONG uỷ quyền — đo, và rút bốn câu tài liệu — đã trả
 
-## 36. README §16.4/§16.6 là một bản sao KHÔNG CÓ NHÂN CHỨNG — và chính file nguồn TỰ KHAI điều đó, trong khi một câu đã trôi rồi
+**Điều kiện DỪNG, và kết quả của nó.** Brief đặt điều kiện: *nếu đóng mục này đòi phát ra một thông điệp
+MQTT MỚI (DBIRTH/DDEATH lên dây) thì đó là **đổi payload MQTT** — một trong ba mục chủ sở hữu KHÔNG uỷ
+quyền — DỪNG VÀ BÁO.* **Điều kiện ấy NỔ, và nó nổ theo đường trực tiếp nhất:** thân mục này gọi spine
+`tools/machine-simulator` là *"một bộ phát Sparkplug không tuân đặc tả vĩnh viễn"*, và **cách duy nhất
+làm cho nó tuân đặc tả là phát DBIRTH cho từng device** — tức đặt một loại thông điệp mới lên dây, cho
+những người đăng ký hôm nay chưa từng nhận nó. Không có phiên bản nhỏ hơn của phép sửa ấy: một DBIRTH
+không phát ra thì không phải một DBIRTH. **Mục ở lại Phần I chờ anh.**
 
-🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1), xác nhận lại trên mã.
+📎 Ba đường thay thế đã cân và bị loại, ghi ra để anh không phải hỏi lại: (a) **gỡ**
+`SparkplugMsgType.DBIRTH`/`.DDEATH`, nhánh mức-device và `Reset()` — chính thân mục 23 đã gọi đây là
+*"một phép đổi hợp đồng THỨ HAI mà phán quyết không phủ"*, và P-2 nói cách viết tên một thành viên công
+khai **là** hợp đồng đã xuất bản; (b) **để nguyên và im lặng** — đúng thứ mục này tồn tại để chấm dứt;
+(c) **chỉ sửa lời** — đó là phần đã trả, ngay dưới đây, và nó **không đóng** mục.
 
-**Đo được cái gì.** `README.md` §16.4 (*Modbus TCP driver*) và §16.6 (*OPC-UA client driver*) mỗi cái mang một
-**bảng biến môi trường** (4 hàng mỗi bên: tên, ngữ nghĩa, mặc định) cộng hình dạng JSON của file map với mặc
-định từng trường. Chúng là **bản sao chép tay** của `ModbusOptions` / `OpcUaOptions` (`EnvVarEnabled/Host/
-Port/MapPath`, `DefaultHost`, `DefaultPort`, `FromEnvironment`; `EnvVarEnabled/Endpoint/MapPath/PkiDir`) và
-của `ModbusRegisterMap.FromJson` / `OpcUaNodeMap.FromJson`.
+**VÒNG ĐỜI SPARKPLUG HÔM NAY, LIỆT KÊ RỒI MỚI ĐẾM.** Quần thể là **năm** chỗ gọi `_client.PublishAsync`
+dưới `src/` ngoài `Site/UnsBridge.cs` (liệt kê bằng `scripts/repo-scan.sh --sha HEAD -n -E 'PublishAsync\('
+-- 'tools/machine-simulator/src/*'`, tám dòng, ba trong đó thuộc `UnsBridge` — bridge liên kết Site, không
+phải spine UNS cục bộ):
 
-**Không test, script hay bước CI nào kiểm chúng — liệt kê những gì ĐÃ tìm, rồi mới kết luận:**
-`.github/workflows/` **không nhắc `machine-simulator`** (máy mô phỏng **không có CI**); `verify-suites.sh`
-nhắc README ở §15.9, §23.6, §24.4, §24.5, §8.1 — **không** §16.x (một lần nhắc `ST4I_MODBUS_PORT` chỉ để
-**loại trừ** một dương tính giả); năm file C# mở `README.md` chỉ dùng nó làm **mốc thư mục gốc**, không phải
-khẳng định; `PerHostDataRootsTests` và `NotificationDocumentationTests` **là** tiền lệ ghim tài liệu thật
-nhưng phạm vi ở **§15.9** và mục notifications; `EnumSpellingContractTests` **tự khai** README nằm **ngoài**
-ba gốc của nó; `git grep -E "§16\.4|§16\.6"` trên `tests/`, `scripts/`, `web/tests/` trả **0**.
+1. `UnsPublisher.PublishReadingCoreAsync`, publish (1) — **mirror ngữ nghĩa retained**, JSON của
+   `CanonicalEnvelope` trên `syn/…`. **Không phải Sparkplug.**
+2. `UnsPublisher.PublishReadingCoreAsync`, publish (2) — **DDATA**, mã hoá Sparkplug, topic mức device
+   qua `UnsTopicBuilder.BuildSparkplugDataTopic`, một lần mỗi reading đã commit.
+3. `UnsPublisher.PublishNodeBirthCoreAsync` — **NBIRTH**, mức node, gọi từ `FleetCore` ở Start.
+4. `UnsPublisher.PublishNodeDeathCoreAsync` — **NDEATH**, mức node, gọi từ `FleetCore` ở Stop và E-stop.
+5. `UnsPublisher.PublishLineStateCoreAsync` — JSON retained `{ state, atUtc }` trên `_line/state`.
+   **Không phải Sparkplug.**
 
-🔴 **Và mã TỰ KHAI khoảng trống này.** `ModbusOptions` viết, nguyên văn: *"The README tables remain a
-hand-kept copy with no witness: nothing goes red if they drift, and that is still true."* Hai bản sao **khác**
-mà cùng đoạn ấy nêu tên (hai file test) **đã được cho một nhân chứng biên dịch** bằng cách gọi hằng số theo
-tên — **README bị cố ý để lại làm bản sao thứ ba, không có nhân chứng.**
+**Đếm sau khi liệt kê: BA loại thông điệp Sparkplug rời spine này — NBIRTH, NDEATH, DDATA.** `enum
+SparkplugMsgType` khai **sáu** thành viên; ba cái không có bộ sinh là **DBIRTH**, **DDEATH** (mất bộ sinh
+2026-08-21, mục 23) và **NDATA** (không có bộ sinh trong cây như đo hôm nay — một phát biểu về commit
+này, không phải về cả lịch sử dự án). Cộng một chỗ trống của cùng câu hỏi vòng đời: `WithWill`/`LastWill`
+**không xuất hiện trong file `.cs` nào** — đo lại hôm nay bằng `repo-scan.sh`, sáu dòng khớp và **không
+một dòng nào là mã**, chỉ là tài liệu nói về sự vắng mặt ấy. Nên một cú kill đột ngột phát **không gì**.
 
-🔴 **Phép kiểm tra chéo tìm được một câu ĐÃ TRÔI, nên đây không phải rủi ro giả định:** §16.6 nói
-`OperationTimeout` là *"hardcoded 15 seconds, not configurable via any env var/setting"*. Đo:
-`OpcUaDriver` nhận `int operationTimeoutMs = 15000` **làm tham số constructor** từ Task B-5. Nửa sau của câu
-(*"không cấu hình được qua env var/setting"*) **vẫn đúng**; chữ *"hardcoded"* **không còn đúng theo nghĩa
-đen**. Sáu spot-check khác **sạch** (mặc định `127.0.0.1`/`502`; `dataType` chỉ `UInt16`/`Int16`; `unitId` 1,
-`pollIntervalMs` 1000, chặn 60 000/5; stack ghim `1.5.378.156`; `ST4I_OPCUA_ENDPOINT` *"không được đọc"*;
-`securityMode` chỉ `None`).
+**`SparkplugAliasTable.Reset()` — bề mặt ĐỌC/GỌI, đo bằng `scripts/repo-scan.sh` trên miền RỘNG NHẤT có
+được.** Pathspec gồm `tools/machine-simulator/*` **và** `server/*` (1589 file), `client/*` (711 file),
+`examples/*` — ba cái sau **nằm trong commit** dù sparse checkout để hai cái đầu ngoài đĩa, nên một phép
+quét cây làm việc **không thấy chúng** và phép quét này thì thấy. Kết quả: **một** dòng chứa `.Reset()`
+trong toàn repo ở `cfcfae42`, và nó là `SparkplugAliasTableTests.cs:76`. **Không caller sản xuất nào, và
+lần này phủ định ấy được nói ở miền đã mở hết tập.** Nửa ghi thì ngược lại: `GetOrAssign` chạy trên từng
+metric của từng reading spine này phát, `UnsPublisher._aliasTables` giữ một bảng cho mỗi `MachineCode` và
+không bao giờ gỡ. **Nửa ghi chạy mãi; nửa xoá đã chết** — phép đo của mục này đứng vững.
 
-**Ở đâu trong mã — trỏ bằng TÊN.** `tools/machine-simulator/README.md` §16.4 và §16.6;
-`St4i.EdgeCore.Drivers.Modbus.ModbusOptions`, `St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap`,
-`St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions`, `St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap`,
-`St4i.EdgeCore.Drivers.OpcUa.OpcUaDriver`; tiền lệ ghim: `PerHostDataRootsTests`,
-`NotificationDocumentationTests`.
+**Cái gì hỏng vì thiếu DBIRTH — và một nửa câu trả lời là một CHỖ TRỐNG được giữ nguyên là chỗ trống.**
+Theo đặc tả Sparkplug B, một device chưa có giấy khai sinh là **không hợp lệ**: một host nghiêm (Ignition,
+HiveMQ) coi nó là không biết / STALE. Nhưng *"có người đăng ký nào TRONG TẦM ĐO bị ảnh hưởng không"* là
+một câu hỏi khác, và câu trả lời là: **CHƯA ĐO ĐƯỢC TỪ ĐÂY.** Mục 32 ghi lại rằng người đăng ký gương
+MQTT retained nằm **ngoài mọi phép quét dụng cụ này chạy được** — 37 file dưới `server/`+`client/` nhắc
+`syn/`, **chưa cái nào chứng minh là một người đăng ký**. AX-1 **không** lấp chỗ trống ấy: không có phép
+đo mới nào về nó trong nhiệm vụ này, và **không suy đoán nào được viết vào đây thay cho một phép đo**.
+Cái đo được, và nó làm dịu hậu quả chứ không xoá nó: `SparkplugPayload.EncodeMetric` ghi **cả `Name` lẫn
+`Alias`** trên mọi metric vô điều kiện — đo lại 2026-08-22 tại hai cặp `WriteTag` của nó, không suy ra —
+nên một subscriber giải mã được DDATA đầy đủ **mà không cần DBIRTH nào**. Cái hỏng là **tuân thủ đặc
+tả**, không phải **giải mã được**.
 
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* độc giả là **một bên tích hợp đang cấu hình một nhà máy**, và cách hỏng **im lặng** — đổi tên
-một hằng số hay đổi một mặc định để README **xanh** trong khi vận hành viên gõ một biến không còn tồn tại và
-nhận hành vi *"mặc định TẮT"* **không có lỗi nào**, vì cả hai driver đều được ghi là log-rồi-tắt chứ không
-sập. Repo **đã có dụng cụ cho việc này** (lối cắt-mục-theo-heading của `NotificationDocumentationTests`, lối
-ghim-regex của `PerHostDataRootsTests`) — nên khoảng trống là **một lựa chọn, không phải một giới hạn năng
-lực**. Câu *"hardcoded 15 seconds"* đã trôi là **bằng chứng tồn tại** rằng nó trôi thật.
-*Chiều ngược:* một bài test ghim mục sẽ ghim **văn xuôi**, nên **mọi lần viết lại hợp lệ** §16.4/§16.6 kéo
-theo một lần sửa test — đúng thứ ma sát làm người ta **ngại cập nhật** chính các khối RTU/deferral trung thực
-mà hai mục này đang giữ. §16.4 riêng nó là **~160 dòng văn xuôi** quanh một bảng 4 hàng; một phép ghim cả mục
-kiểu ngây thơ sẽ **đỏ vì những sửa đổi không liên quan**. Bản hẹp (ghim 8 hàng `ST4I_*` và các mặc định số
-theo hằng số) mua **~90 %** giá trị với **~10 %** độ giòn — **nhưng nó để lại toàn bộ khẳng định văn xuôi,
-gồm cả câu đã trôi, vẫn không có nhân chứng.**
+**TÀI LIỆU NÓI SẢN PHẨM PHÁT DBIRTH — liệt kê trước, rồi mới rút.** Quét `DBIRTH|DDEATH` toàn
+`tools/machine-simulator` qua `repo-scan.sh`: **bốn** câu khẳng định còn sống và **hai** trong bốn sai
+theo hai chiều NGƯỢC NHAU, cả hai trong cùng một file:
 
-**Nếu KHÔNG quyết định.** Hai mục ở lại là **bản sao thứ ba không có nhân chứng** của một sự thật có **ba** bản
-sao, trong khi hai bản kia đã được cho nhân chứng — nên chỗ trôi tiếp theo sẽ xảy ra **đúng ở đây**, và sẽ
-được phát hiện bởi một bên tích hợp chứ không bởi một cổng. Đây **cùng một lớp với mục 26** (không gì trả cho
-**tính đúng** của một chú thích đã viết) và **mục 32** (một lời khai chỉ kiểm được nếu nó ghi lại điều kiện
-của chính nó) — nhưng khác cả hai ở chỗ **bản sửa đã được tiền lệ hoá hai lần trong chính repo này**.
+* `SparkplugAliasTable` (doc lớp) — *"G2-2 does not yet emit NBIRTH/DBIRTH … that sequencing is G2-3"*.
+  **SAI theo chiều ngược**: NBIRTH **được phát** hôm nay, G2-3 đã làm nửa ấy. **Rút tại chỗ kèm ngày.**
+* `SparkplugAliasTable` (doc lớp) — *"`Reset` is what a genuine (D)BIRTH (G2-3) **will** call"*. **SAI**:
+  đường ấy đã bị xoá 2026-08-21. **Rút tại chỗ kèm ngày.**
+* `SparkplugAliasTable.Reset` (doc method) — *"the G2-3 (D)BIRTH hook"*. **SAI**, cùng lý do. **Rút.**
+* `SparkplugSeqTracker` (doc lớp) — liệt kê sáu loại thông điệp như thể chúng chảy qua bộ đếm này.
+  Đúng **như một phát biểu của ĐẶC TẢ**, gây hiểu nhầm như một phát biểu về spine này. **Thu hẹp tại chỗ
+  kèm ngày**, kèm phép đếm ba-trong-sáu ở trên.
+
+📎 **Hai chỗ ĐO RỒI VÀ KHÔNG SỬA, nói ra để phép liệt kê trên không đọc như một tập rỗng có chọn lọc:**
+(a) `README.md` §16.1 mô tả vòng đời Sparkplug của spine này là *"NBIRTH … on a real operator Start;
+NDEATH on Stop or Estop; DDATA once per committed reading"* — **KHÔNG nhắc DBIRTH, và đúng nguyên văn
+với phép đo hôm nay**; không có gì để rút. (b) `docs/plans/2026-07-27-giaidoan2-…-blueprint.md` liệt kê
+`NBIRTH|DBIRTH|NDATA|DDATA` trong một họ topic — đó là một **bản thiết kế** tự khai *"NEEDS user scoping
+decisions before execute"*, tức một dự định lịch sử, **không phải một khẳng định về sản phẩm**; không
+sửa một tài liệu kế hoạch để nó khớp kết quả.
+
+🔴 **Và một câu của chính mục này KHÔNG đứng vững sau khi đo lại.** Thân mục viết
+*"`SparkplugAliasTable.Reset()` — liệt kê caller trước khi đếm: `SparkplugAliasTableTests.Reset_Clears
+AssignmentsAndRestartsNumberingAtOne`. Hết."* Con số **một** đúng, nhưng nó được đo ở **miền hẹp hơn miền
+nó được phát biểu**: phép đo ấy không nêu là đã mở `server/` và `client/`. AX-1 mở, và kết luận không
+đổi. **Đây là MỞ RỘNG, không phải RÚT** — câu gốc giữ nguyên văn ở trên.
+
+**Nhân chứng.** 🔴 **KHÔNG có nhân chứng đỏ được cho mục này, và không thể có một cái trung thực:** mục
+**DỪNG**, không đổi hành vi, nên không có hành vi mới nào để gác. Bốn phép rút tài liệu là **đổi lời**.
+**Không hằng số nào của cổng dịch vì mục 35.** Cái duy nhất mục này để lại cho cổng là bốn câu doc mới,
+và chúng nằm trong 19 khẳng định tuyệt đối mà `EXPECT_NEW_DOC_ABSOLUTES` nay ghi — đọc từng câu một, xem
+khối hằng số trong `verify-suites.sh`.
 
 ---
 
@@ -7943,6 +7928,268 @@ chỉ trở thành **năm** sau khi phép kiểm bị đem đo lại — đúng 
 **Không hằng số nào của cổng dịch vì mục này.** Phép kiểm là một script chạy trong `verify-suites.sh`
 và gộp kết quả vào **cùng một dòng phán quyết**; nó không thêm bài test, không đụng `EXPECT_WARNINGS`,
 không đụng năm tổng bộ, không một lệnh đè.
+
+---
+
+## 34. Bốn chuỗi web i18n còn nợ từ mục 22 — vẫn nợ, và chúng là bề mặt CUỐI CÙNG còn hứa một thứ không tồn tại
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1), xác nhận lại trên mã.
+
+**Đo được cái gì.** Mục 22 đã thi hành 2026-08-21 (AR-1) và **tự ghi món nợ**: *"🔴 **BỐN CHUỖI NỮA ĐO ĐƯỢC MÀ
+CỐ Ý KHÔNG ĐỤNG, vì nêu thiếu còn tệ hơn** … **Đây là việc còn nợ, ghi lại chứ không im lặng.**"* Đếm lại hôm
+nay: **vẫn đúng bốn**, hai khoá × hai locale, và **liệt kê trước khi đếm** —
+`en.scenario.networkOutageHint` (*"Switches the transport to high-failure store-and-forward."*),
+`en.scenario.presets.networkOutage.description` (*"…high-failure (~90%) store-and-forward…"*),
+`vi.scenario.networkOutageHint` (*"…store-and-forward **lỗi cao**."*),
+`vi.scenario.presets.networkOutage.description` (*"…store-and-forward lỗi cao (~90%)…"*).
+
+**Và lời hứa ấy là sai, đo trên mã:** `DemoTransport.SendAsync` có **bốn** đường ra và **cả bốn** trả
+`Success: true` — đường queued, `AckProcessResult` (201), `AckInspection` (201), `AckTelemetry` (202).
+`ShouldSimulateQueued` biến `_fakeErrorRate` thành xác suất **QUEUED**, không phải tỉ lệ **thất bại**. Nên
+`~90 %` là phần **xếp hàng**, và *"high-failure"*/*"lỗi cao"* sai **ở cả hai chữ**.
+
+🔴 **Một chỗ lệch so với brief, nêu rõ:** brief nói mục 22 *"trả sáu chuỗi `.cs`"*. Đo lại: mục 22 **đo được
+SÁU** và **trả NĂM** — chỗ thứ sáu (`App.xaml.cs`, doc comment của selftest) **cố ý để lại**. Bốn chuỗi i18n
+là một món nợ **riêng**, nằm ngoài cả sáu.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `tools/machine-simulator/web/src/i18n/en.ts`,
+`tools/machine-simulator/web/src/i18n/vi.ts`; render bởi `web/src/routes/Scenario.tsx`
+(`t("scenario.networkOutageHint")` và `t(\`scenario.presets.${meta.i18nKey}.description\`)`);
+sự thật đối chiếu là `St4i.EdgeCore.Transport.DemoTransport.SendAsync` và
+`DemoTransport.ShouldSimulateQueued`. (`client/src/i18n/locales/*.json` ở gốc repo thuộc **ứng dụng khác**,
+không phải machine-simulator.)
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* web là bề mặt **phần lớn vận hành viên dùng**, và nay là bề mặt **DUY NHẤT còn hứa một ack thất
+bại** — WPF, dòng trạng thái DTO và mô tả preset của `GET /v1/scenario` đều đã sửa ngày 2026-08-21. Sản phẩm
+**tự mâu thuẫn giữa các tầng**, và một lần chạy nghiệm thu lái từ trang Scenario với chữ *"high-failure"* sẽ
+**xanh vĩnh viễn trong khi không chứng minh gì** về xử lý lỗi.
+*Chiều ngược:* bốn phép sửa chuỗi nằm trong một build **không có nhân chứng i18n và không có job CI nào**, nên
+thay đổi **không kiểm được** ngoài mắt người và một lần chạy Playwright cục bộ. Và `~90 %` là con số một vận
+hành viên **có thể đã neo vào**; viết lại thành *"≈90 % xếp hàng"* là **một thay đổi lời hứa đã xuất bản thứ
+hai** — đúng loại mà chủ sở hữu giữ lại cho mình ở mục 22 — chứ không phải sửa lỗi chính tả. Bốn phép sửa ấy
+cũng **vượt qua cổng publish của web**, đúng trục rủi ro mà AR-1 đã từ chối bước vào trên một mục phạm vi
+.NET.
+
+**Nếu KHÔNG quyết định.** Bốn chuỗi ở lại **hiển thị cho vận hành viên** và **không dụng cụ nào có thể bắt
+được chúng**: `web/package.json` không có script i18n; `web/scripts/` chỉ có ngân sách test và reset engine;
+`scripts/i18n-check.mjs`/`i18n-audit.mjs` ở gốc repo thuộc `client/` và **không được** `verify-suites.sh` gọi;
+`.github/workflows/` **không nhắc `machine-simulator` một lần nào** — máy mô phỏng **không có job CI nào cả**.
+Guard cấu trúc duy nhất là `en.ts` khai `const en: Dictionary` nên `tsc -b` bắt được **khoá thiếu** — nó nói
+khoá tồn tại, **không nói gì về chữ đằng sau khoá**. `EnumSpellingContractTests` có ghim hai file này nhưng
+chỉ ở các khối enum, và **tự khai** giới hạn ấy.
+
+### ✅ ĐÃ THI HÀNH 2026-08-22 (AX-1) — sửa LỜI, không đổi hành vi. 🔴 **Và *"bề mặt CUỐI CÙNG"* trong đầu đề mục này là một PHỦ ĐỊNH TỒN TẠI SAI: có chỗ thứ NĂM**
+
+**Quần thể liệt kê trước khi đếm, và liệt kê bằng `scripts/repo-scan.sh` (mục 32) chứ không bằng lệnh
+gõ tay.** `web/src/i18n/` chứa **đúng ba** file — `en.ts`, `vi.ts`, `index.ts`. Rằng chỉ có **hai**
+locale không phải một phép đếm file mà là một sự thật **của kiểu**: `index.ts` khai
+`export type Language = "vi" | "en"` và `const dictionaries: Record<Language, Dictionary> = { vi, en }`,
+nên một locale thứ ba **không biên dịch được** nếu không sửa chính hai dòng ấy. Tập đã mở HẾT, không
+phải tập chưa mở hết.
+
+**Con số BỐN của mục này ĐỨNG VỮNG. Bốn chuỗi, trước → sau, nguyên văn:**
+
+1. `en.scenario.networkOutageHint` — *"Switches the transport to high-failure store-and-forward."* →
+   *"Switches the transport to store-and-forward: acks come back queued, never failed."*
+2. `en.scenario.presets.networkOutage.description` — *"Switches to high-failure (~90%)
+   store-and-forward while the fleet keeps running."* → *"Switches to store-and-forward while the fleet
+   keeps running — ~90% of acks come back queued, and none of them ever fails."*
+3. `vi.scenario.networkOutageHint` — *"Chuyển transport sang store-and-forward lỗi cao."* →
+   *"Chuyển transport sang store-and-forward: ack chỉ queued, không bao giờ lỗi."*
+4. `vi.scenario.presets.networkOutage.description` — *"Chuyển sang store-and-forward lỗi cao (~90%)
+   trong khi fleet vẫn chạy."* → *"Chuyển sang store-and-forward trong khi fleet vẫn chạy — ~90% ack trả
+   về queued, không ack nào thất bại."*
+
+**Câu chúng phải đồng ý là câu mục 22 đã viết ra, không phải một câu mới.** Ghi chép thi hành của mục
+22 (2026-08-21, AR-1) sửa **năm** chỗ `.cs`; hai chỗ mang câu chuẩn cho hai thứ tiếng và bốn chuỗi trên
+được viết để **khớp chúng từng chữ**: `Dtos.BuildStatusLine` — *"network outage (acks queued, never
+failed)"*; `ScenarioViewModel.RefreshStatusLine` — *"MẤT MẠNG (ack chỉ queued, không bao giờ lỗi)"*;
+`FleetHost.Presets` — *"~90% ack tra ve queued, khong ack nao that bai"*.
+
+🔴 **Câu ấy được ĐO LẠI trước khi nhân bản, không được thừa hưởng** — brief nói rõ: nếu phép đo cho
+thấy câu của mục 22 sai thì rút tại chỗ chứ đừng chép sai sang bốn chỗ nữa. Đo hôm nay trên
+`DemoTransport.SendAsync`: **bốn** đường trả ack — nhánh queued (`Success: true, Queued: true`),
+`AckProcessResult` (201), `AckInspection` (201), `AckTelemetry` (202) — **cả bốn `Success: true`**; lối
+ra thứ năm là một `throw` cho `ReadingKind` lạ, **không phải một ack thất bại**. `ShouldSimulateQueued`
+so `_fakeErrorRate` với một bucket băm của `IdempotencyKey`, và `FleetCore.OutageFakeErrorRate = 0.9` là
+hằng số duy nhất nuôi nó. **Câu của mục 22 đứng vững; không có gì phải rút.**
+
+🔴 **CHỖ THỨ NĂM, VÀ NÓ BÁC ĐẦU ĐỀ CỦA CHÍNH MỤC NÀY.** Mục 34 tự nhận bốn chuỗi web là *"bề mặt CUỐI
+CÙNG còn hứa một thứ không tồn tại"* và *"bề mặt DUY NHẤT còn hứa một ack thất bại"*. Quét toàn cây qua
+`repo-scan.sh` ở `cfcfae42` cho `high-failure|lỗi cao|loi cao` rồi cho `queued/fail|queued/lỗi|ack…thất
+bại` tìm ra **`README.md` §7, bảng preset, dòng "Mất mạng demo"**: *"Swaps the live transport for a
+~90%-error `DemoTransport` — API Inspector shows queued/failed rows"*. **Cùng một lời hứa sai, cùng lớp
+với năm chỗ mục 22 đã sửa, và nó là bề mặt một BÊN TÍCH HỢP đọc.** Đã sửa tại chỗ kèm ngày và kèm câu
+rút. Phủ định tồn tại của mục 34 **chỉ đúng nếu giới hạn vào `web/`**; ở phạm vi cây nó **SAI**, và đây
+đúng là loại nhầm phạm vi mục 32 tồn tại để chấm dứt — lần này trong chính một mục Phần I.
+
+📎 **Một chỗ CỐ Ý không đụng, nói ra chứ không im lặng:** `St4iMachineSimulator/App.xaml.cs` vẫn mang
+*"must make acks come back queued/failed"* (doc comment của selftest, dòng 1389) và hai chuỗi console
+*"queued/failed"*. Mục 22 đã xét chỗ này và để lại **có lý do ghi rõ**: nó mô tả **ý định của bài
+selftest**, bài ấy chấp nhận `Queued`, và nó không hiển thị cho vận hành viên. Phán quyết ấy giữ nguyên.
+Nên câu đúng hôm nay là: **không còn bề mặt VẬN HÀNH VIÊN hay TÍCH HỢP nào hứa một ack thất bại**; ba
+chuỗi selftest thì còn, và chúng được kể ra chứ không bị đếm sót.
+
+**Nhân chứng.** 🔴 **KHÔNG phải một nhân chứng đỏ được — mục này chỉ đổi lời**, và mục 34 đã đo sẵn vì
+sao: web của machine-simulator **không có job CI nào** và **không có dụng cụ i18n nào**. Cái thay cho
+nhân chứng là ba phép đo: (a) `npm run build` (`tsc -b && vite build`) **xanh** — cổng không biên dịch
+TypeScript, nên bước này phải chạy tay; (b) quét bằng `repo-scan.sh` **trước khi sửa** cho thấy **không
+bài test nào** trong `web/tests/` hay `tests/` khẳng định bốn chuỗi cũ theo nguyên văn (`06-scenario.
+spec.ts` khớp `/Lô lỗi cao/`, thuộc preset **high-defect**, một preset khác và ở đó *"lỗi cao"* **đúng**);
+(c) phép đo bốn đường ra của `DemoTransport.SendAsync` ở trên. **Không hằng số nào của cổng dịch vì mục
+này** — bốn chuỗi `.ts` và một dòng README không thêm bài test nào.
+
+---
+
+## 36. README §16.4/§16.6 là một bản sao KHÔNG CÓ NHÂN CHỨNG — và chính file nguồn TỰ KHAI điều đó, trong khi một câu đã trôi rồi
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1), xác nhận lại trên mã.
+
+**Đo được cái gì.** `README.md` §16.4 (*Modbus TCP driver*) và §16.6 (*OPC-UA client driver*) mỗi cái mang một
+**bảng biến môi trường** (4 hàng mỗi bên: tên, ngữ nghĩa, mặc định) cộng hình dạng JSON của file map với mặc
+định từng trường. Chúng là **bản sao chép tay** của `ModbusOptions` / `OpcUaOptions` (`EnvVarEnabled/Host/
+Port/MapPath`, `DefaultHost`, `DefaultPort`, `FromEnvironment`; `EnvVarEnabled/Endpoint/MapPath/PkiDir`) và
+của `ModbusRegisterMap.FromJson` / `OpcUaNodeMap.FromJson`.
+
+**Không test, script hay bước CI nào kiểm chúng — liệt kê những gì ĐÃ tìm, rồi mới kết luận:**
+`.github/workflows/` **không nhắc `machine-simulator`** (máy mô phỏng **không có CI**); `verify-suites.sh`
+nhắc README ở §15.9, §23.6, §24.4, §24.5, §8.1 — **không** §16.x (một lần nhắc `ST4I_MODBUS_PORT` chỉ để
+**loại trừ** một dương tính giả); năm file C# mở `README.md` chỉ dùng nó làm **mốc thư mục gốc**, không phải
+khẳng định; `PerHostDataRootsTests` và `NotificationDocumentationTests` **là** tiền lệ ghim tài liệu thật
+nhưng phạm vi ở **§15.9** và mục notifications; `EnumSpellingContractTests` **tự khai** README nằm **ngoài**
+ba gốc của nó; `git grep -E "§16\.4|§16\.6"` trên `tests/`, `scripts/`, `web/tests/` trả **0**.
+
+🔴 **Và mã TỰ KHAI khoảng trống này.** `ModbusOptions` viết, nguyên văn: *"The README tables remain a
+hand-kept copy with no witness: nothing goes red if they drift, and that is still true."* Hai bản sao **khác**
+mà cùng đoạn ấy nêu tên (hai file test) **đã được cho một nhân chứng biên dịch** bằng cách gọi hằng số theo
+tên — **README bị cố ý để lại làm bản sao thứ ba, không có nhân chứng.**
+
+🔴 **Phép kiểm tra chéo tìm được một câu ĐÃ TRÔI, nên đây không phải rủi ro giả định:** §16.6 nói
+`OperationTimeout` là *"hardcoded 15 seconds, not configurable via any env var/setting"*. Đo:
+`OpcUaDriver` nhận `int operationTimeoutMs = 15000` **làm tham số constructor** từ Task B-5. Nửa sau của câu
+(*"không cấu hình được qua env var/setting"*) **vẫn đúng**; chữ *"hardcoded"* **không còn đúng theo nghĩa
+đen**. Sáu spot-check khác **sạch** (mặc định `127.0.0.1`/`502`; `dataType` chỉ `UInt16`/`Int16`; `unitId` 1,
+`pollIntervalMs` 1000, chặn 60 000/5; stack ghim `1.5.378.156`; `ST4I_OPCUA_ENDPOINT` *"không được đọc"*;
+`securityMode` chỉ `None`).
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `tools/machine-simulator/README.md` §16.4 và §16.6;
+`St4i.EdgeCore.Drivers.Modbus.ModbusOptions`, `St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap`,
+`St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions`, `St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap`,
+`St4i.EdgeCore.Drivers.OpcUa.OpcUaDriver`; tiền lệ ghim: `PerHostDataRootsTests`,
+`NotificationDocumentationTests`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* độc giả là **một bên tích hợp đang cấu hình một nhà máy**, và cách hỏng **im lặng** — đổi tên
+một hằng số hay đổi một mặc định để README **xanh** trong khi vận hành viên gõ một biến không còn tồn tại và
+nhận hành vi *"mặc định TẮT"* **không có lỗi nào**, vì cả hai driver đều được ghi là log-rồi-tắt chứ không
+sập. Repo **đã có dụng cụ cho việc này** (lối cắt-mục-theo-heading của `NotificationDocumentationTests`, lối
+ghim-regex của `PerHostDataRootsTests`) — nên khoảng trống là **một lựa chọn, không phải một giới hạn năng
+lực**. Câu *"hardcoded 15 seconds"* đã trôi là **bằng chứng tồn tại** rằng nó trôi thật.
+*Chiều ngược:* một bài test ghim mục sẽ ghim **văn xuôi**, nên **mọi lần viết lại hợp lệ** §16.4/§16.6 kéo
+theo một lần sửa test — đúng thứ ma sát làm người ta **ngại cập nhật** chính các khối RTU/deferral trung thực
+mà hai mục này đang giữ. §16.4 riêng nó là **~160 dòng văn xuôi** quanh một bảng 4 hàng; một phép ghim cả mục
+kiểu ngây thơ sẽ **đỏ vì những sửa đổi không liên quan**. Bản hẹp (ghim 8 hàng `ST4I_*` và các mặc định số
+theo hằng số) mua **~90 %** giá trị với **~10 %** độ giòn — **nhưng nó để lại toàn bộ khẳng định văn xuôi,
+gồm cả câu đã trôi, vẫn không có nhân chứng.**
+
+**Nếu KHÔNG quyết định.** Hai mục ở lại là **bản sao thứ ba không có nhân chứng** của một sự thật có **ba** bản
+sao, trong khi hai bản kia đã được cho nhân chứng — nên chỗ trôi tiếp theo sẽ xảy ra **đúng ở đây**, và sẽ
+được phát hiện bởi một bên tích hợp chứ không bởi một cổng. Đây **cùng một lớp với mục 26** (không gì trả cho
+**tính đúng** của một chú thích đã viết) và **mục 32** (một lời khai chỉ kiểm được nếu nó ghi lại điều kiện
+của chính nó) — nhưng khác cả hai ở chỗ **bản sửa đã được tiền lệ hoá hai lần trong chính repo này**.
+
+### ✅ ĐÃ THI HÀNH 2026-08-22 (AX-1) — **MỘT NHÂN CHỨNG ĐỎ ĐƯỢC**, không phải một lần sửa lời. 🔴 **Và dựng nó tìm ra khẳng định sai THỨ HAI mà mục này chưa thấy**
+
+**Sản phẩm là `tests/St4i.EngineApi.Tests/DriverDocumentationTests.cs`** — ba `[Fact]`, đặt cạnh hai tiền
+lệ mà chính mục này nêu tên (`PerHostDataRootsTests`, `Alarms/NotificationDocumentationTests`), dùng lại
+lối đi-ngược-lên-gốc-repo và lối cắt-mục-theo-heading của chúng. Vì sao **ở suite EngineApi** chứ không ở
+`St4i.EdgeCore.Tests` dù chủ thể là kiểu của EdgeCore: hai tiền lệ ở đây, và một nhân chứng tài liệu học
+lối của tiền lệ thì nên ở cạnh tiền lệ.
+
+**TỪNG KHẲNG ĐỊNH CỦA §16.4/§16.6 — LIỆT KÊ, RỒI KIỂM. Không đếm trước.** Chỉ những khẳng định **có
+nguồn sự thật trong mã** mới vào bảng này; văn xuôi lý lẽ thì không, và ranh giới ấy được nêu ở cuối.
+
+*§16.4 (Modbus TCP):* (1) bốn tên biến `ST4I_MODBUS_{ENABLED,HOST,PORT,MAP}` — **đúng**, và nay so hai
+chiều với bốn hằng `ModbusOptions.EnvVar*`. (2) mặc định TẮT — **đúng** (`new ModbusOptions().Enabled ==
+false`). (3) host mặc định `127.0.0.1` = `ModbusOptions.DefaultHost` — **đúng**. (4) port mặc định `502` =
+`DefaultPort` — **đúng**. (5) `unitId` mặc định `1` — **đúng**, lấy bằng cách nạp một map tối thiểu qua
+`FromJson` thật. (6) `pollIntervalMs` mặc định `1000` — **đúng**, cùng cách. (7) trần `readTimeoutMs`
+60 000 ms = `MaxReadTimeoutMs` — **đúng**. (8) trần `retries` 5 = `MaxRetries` — **đúng**. (9)
+`type ∈ {Holding, Input}` = `enum ModbusRegisterType` — **đúng**, hai thành viên. (10)
+`dataType ∈ {UInt16, Int16}` = `enum ModbusDataType` — **đúng**, hai thành viên. (11) timeout suy ra
+`Math.Max(1000ms, pollIntervalMs × 4)` — **đúng**, và **cả hai nhánh của `max` được chạy**, không chỉ
+đọc. (12) NModbus retry hạ về 1 mặc định = `EffectiveRetries` — **đúng**. (13) 🔴 **kiểu tham số lệnh
+`"UInt16" | "Int16" | "Int32" | "UInt32" | "Bool" | "Double"` — SAI.**
+
+*§16.6 (OPC-UA):* (14) bốn tên biến `ST4I_OPCUA_{ENABLED,ENDPOINT,MAP,PKI_DIR}` — **đúng**, so hai chiều.
+(15) mặc định TẮT — **đúng**. (16) `ST4I_OPCUA_ENDPOINT` *"không được dùng"* — **đúng**, và giữ được ở
+mức một phép kiểm quyết được: `OpcUaDriver` **không có tham số endpoint nào** trong constructor. (17) gốc
+PKI mặc định `%ProgramData%\ST4I\sim\opcua-pki` = `OpcUaPkiPaths.DefaultRoot()` — **đúng**, so bằng phần
+đuôi dẫn xuất chứ không gõ lại. (18) `securityMode` chỉ có `"None"` = `enum OpcUaSecurityMode` — **đúng**,
+một thành viên, và **tính ĐÓNG** của tập là thứ được ghim. (19) `pollIntervalMs` mặc định `1000` —
+**đúng**. (20) stack `1.5.378.156` — **đúng**, đọc từ `PackageReference` trong `St4i.EdgeCore.csproj`.
+(21) `valueType` của `writable` gồm sáu kiểu, **String bị từ chối** — **đúng**, và sự bất đối xứng với
+(13) nay được **chạy** chứ không mô tả: `OpcUaNodeMap.FromJson` ném với `"valueType": "String"` và nhận
+với `"Bool"`. (22) 🔴 ***"hardcoded 15 seconds"* — SAI**, đúng như mục này đã đo.
+
+**HAI KHẲNG ĐỊNH SAI, và mục 36 chỉ thấy MỘT.**
+
+* **(22), mục này đã tìm ra:** §16.6 gọi ngưỡng chọn-endpoint là *"**hardcoded** 15 seconds, not
+  configurable via any env var/setting"*. Nó là tham số constructor `operationTimeoutMs = 15000` của
+  `OpcUaDriver` từ Task B-5. **Nửa sau vẫn đúng** — không biến môi trường, không cài đặt nào đổi nó.
+  Rút tại chỗ kèm ngày, ở **cả** đoạn EN và đoạn VI; câu mới nêu đích danh tham số ấy.
+* 🔴 **(13), mục 36 KHÔNG thấy — tìm được lúc dựng nhân chứng:** §16.4 công bố kiểu của một tham số lệnh
+  là một tập **ĐÓNG SÁU** thành viên. `St4i.Connector.Abstractions.Models.CommandArgumentType` có **BẢY**:
+  `String` được `CommandArgumentDeclaration.ValidateSelf` **chấp nhận** — và `ValidateSelf` là **phép kiểm
+  lược đồ duy nhất** mà `FromJson` của **cả hai** map chạy trên một tham số lệnh — rồi `TryNarrow` thu hẹp
+  nó như mọi thành viên khác. **Một tập đóng công bố thiếu một thành viên là một câu một bên tích hợp
+  hành động theo.** Đã bổ sung tại chỗ kèm ngày, kèm lý do vì sao danh sách của §16.6 **đúng** khi chỉ có
+  sáu (setpoint và tham số lệnh là **hai tập khác nhau**, và nay sự khác nhau ấy được đo).
+
+📎 **Sáu spot-check mà mục này đã làm và gọi là *"sạch"* — kiểm lại, cả sáu ĐỨNG VỮNG** (mặc định
+`127.0.0.1`/`502`; `dataType` chỉ `UInt16`/`Int16`; `unitId` 1, `pollIntervalMs` 1000, chặn 60 000/5;
+stack ghim `1.5.378.156`; `ST4I_OPCUA_ENDPOINT` không được đọc; `securityMode` chỉ `None`). **Cả sáu nay
+có nhân chứng** thay vì có một lần nhìn.
+
+🔴 **VÀ MỘT CÂU CỦA CHÍNH MÃ NGUỒN ĐƯỢC RÚT.** `ModbusOptions` tự khai — mục này trích nguyên văn —
+*"The README tables remain a hand-kept copy with no witness: nothing goes red if they drift, and that is
+still true."* Câu ấy **hết đúng kể từ hôm nay** và được rút **tại chỗ trong `ModbusOptions.cs`**, không
+chỉ ở đây, kèm phát biểu chính xác về cái nhân chứng mới mua được và cái nó không mua.
+
+**CẶP ĐỐI CHỨNG — chạy TRỌN, một đột biến cho MỖI `[Fact]`, rồi hoàn nguyên.** Một đột biến duy nhất sẽ
+chứng nhận một bài và để hai bài kia không được chứng nhận:
+
+1. `ModbusOptions.EnvVarPort` `"ST4I_MODBUS_PORT"` → `"ST4I_MODBUS_TCP_PORT"` ⇒ **fact 1 ĐỎ**
+   (*"Assert.Equal() Failure: Collections differ"*), hai fact kia xanh.
+2. `OpcUaDriver`'s `operationTimeoutMs = 15000` → `20000` ⇒ **fact 2 ĐỎ** (*"Not found: 20000"*).
+3. Thêm một thành viên thứ bảy vào `CommandArgumentType` ⇒ **fact 3 ĐỎ** (*"Collections differ"*).
+
+Cả ba **hoàn nguyên**, bộ ba chạy lại **3/3 xanh**, và `git diff` ở ngọn nhánh không mang một cái nào.
+
+🔴 **CÁI NHÂN CHỨNG NÀY KHÔNG VỚI TỚI — nêu dài bằng cái nó với tới, vì một cái trần nêu quá nhỏ còn tệ
+hơn không nêu trần.** Ranh giới **không** phải *"văn bản đối lại mã"*: mọi phép so ở đây đều so **văn
+bản**, README là văn bản. Ranh giới là thứ được so **có phải một GIÁ TRỊ do mã sinh ra hay không**. Giá
+trị: tám tên biến, hai mặc định Modbus, đuôi PKI, hai trần map, ba mặc định map nạp qua `FromJson`, mặc
+định retry, phiên bản stack, ngưỡng timeout, hai tập kiểu. **Cụm từ, và đây là bốn chỗ yếu, kể ra chứ
+không giấu:** *"not consulted"*; *"only `\"None\"` exists"*; công thức `Math.Max(1000ms, pollIntervalMs ×
+4)` (hai con số của nó **gõ vào mẫu**, không dẫn xuất); và một phép kiểm **phủ định** trên tính từ
+*"hardcoded"* — ghim một TỪ, việc mà một bài test tài liệu thường không nên làm, có mặt ở đây vì trong hai
+khẳng định sai thì đó là **nửa mà không phép so giá trị nào thấy được**: con số 15 000 vốn **vẫn đúng**,
+chỉ chữ quanh nó là sai. Ngoài bốn chỗ ấy, **các đoạn lý lẽ, hai danh sách *"honest deferral"* và khối
+RTU vẫn không có nhân chứng y như trước**, và một bản viết lại giữ nguyên các con số mà lật một khẳng
+định thì **xanh**. Đây cùng lớp với **mục 26** và mục này **thu hẹp** chứ không **đóng** nó. Cộng: chiều
+NGƯỢC được so trọn cho **hai** tập kiểu (hai cái công bố dạng `"A" | "B"` máy đọc được); với
+`ModbusRegisterType`, `ModbusDataType`, `OpcUaSecurityMode` — công bố trong văn xuôi có trích cả token
+không liên quan (`"writable"` nằm trong chính gạch đầu dòng của `type`) — phép gác là **thành viên có mặt
++ ĐẾM bị ghim**: thêm/bớt một thành viên thì đỏ, **đổi TÊN** một thành viên thành một chính tả mà văn xuôi
+vốn đã chứa thì **không**. Và khối RTU của §16.4 (`rtu-gateway`/`rtu-serial`, mảng `devices`, 19200-8-E-1)
+**ngoài phạm vi**: nó thuộc phép phân tích `connectors.json`, không thuộc hai lớp option này.
+
+**Hằng số.** `EXPECT_ENGINEAPI` **1405 → 1408** (+3, ba `[Fact]`, không `[Theory]`); tổng **2821 → 2824**.
+**Đó là tổng DUY NHẤT dịch**, và đấy là một phép kiểm phạm vi chứ không phải tiện lợi. `EXPECT_WARNINGS`
+đo lại trên `-t:Rebuild` trọn vẹn; **không một lệnh đè** — không `.editorconfig`, không `<NoWarn>`, không
+`#pragma`, không `SuppressMessage`. Biện minh nằm **ngay cạnh hằng số** trong `verify-suites.sh`.
 
 ---
 

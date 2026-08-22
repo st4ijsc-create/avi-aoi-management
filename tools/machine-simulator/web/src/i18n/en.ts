@@ -1076,7 +1076,12 @@ export const en: Dictionary = {
     defectRate: "Defect rate",
     faultRate: "Fault rate",
     networkOutage: "Network outage",
-    networkOutageHint: "Switches the transport to high-failure store-and-forward.",
+    // 🔴 2026-08-22 (item 34) — was "Switches the transport to high-failure store-and-forward." Both
+    // halves of "high-failure" were false: `DemoTransport.SendAsync` has four ack-returning exits and all
+    // four return `Success: true`, and `fakeErrorRate` selects the QUEUED branch, not a failure rate. The
+    // wording below is the one item 22 executed into the five .cs surfaces on 2026-08-21
+    // (`Dtos.BuildStatusLine`: "network outage (acks queued, never failed)").
+    networkOutageHint: "Switches the transport to store-and-forward: acks come back queued, never failed.",
     burst: "Burst (6x, 4s)",
     presetsTitle: "Demo presets",
     presetsHint: "Each button resets all 3 sliders + network state, applied once to the running fleet.",
@@ -1084,7 +1089,9 @@ export const en: Dictionary = {
       normal: { label: "Normal shift", description: "The line's default speed and defect rate — the baseline for every other demo." },
       highDefect: { label: "High-defect batch", description: "Sharply raises the injected defect rate to demo andon/alerts." },
       sensorDrift: { label: "Sensor drift", description: "Speeds up the cycle to surface IOT_SENSOR's periodic calibration-drift events." },
-      networkOutage: { label: "Demo network outage", description: "Switches to high-failure (~90%) store-and-forward while the fleet keeps running." },
+      // 🔴 2026-08-22 (item 34) — was "high-failure (~90%) store-and-forward". The ~90% is the fraction of
+      // sends routed into the QUEUED branch (`FleetCore.OutageFakeErrorRate = 0.9`), not an error rate.
+      networkOutage: { label: "Demo network outage", description: "Switches to store-and-forward while the fleet keeps running — ~90% of acks come back queued, and none of them ever fails." },
       hotfolderAoi: { label: "Hot-folder AOI", description: "Writes a sample measurement file and lets the AOI driver read it back for real." },
     },
     presetCustomDescription: "Custom preset.",

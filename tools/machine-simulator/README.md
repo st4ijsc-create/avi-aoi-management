@@ -205,7 +205,7 @@ fault-rate, network-outage toggle) plus 5 one-click presets and a **Burst** butt
 | **Ca bình thường** (Normal) | Baseline — every other preset compares against this. |
 | **Lô lỗi cao** (High-defect lot) | Injects extra fail-rate to trigger andon/alert behavior. |
 | **Sensor drift** | Speeds up cycles to surface `IOT_SENSOR`'s periodic calibration-drift event within a short demo window. |
-| **Mất mạng demo** (Network outage) | Swaps the live transport for a ~90%-error `DemoTransport` — API Inspector shows queued/failed rows while the fleet keeps running; re-selecting "Ca bình thường" restores clean acks. |
+| **Mất mạng demo** (Network outage) | Swaps the live transport for a `DemoTransport` that routes ~90% of sends into its store-and-forward QUEUED branch — API Inspector shows queued rows while the fleet keeps running; re-selecting "Ca bình thường" restores direct acks. 🔴 **Corrected 2026-08-22 (owner-decisions.md item 34).** This row used to say "a ~90%-error `DemoTransport` — API Inspector shows queued/failed rows". Neither half was true and both are the same defect item 22 closed in five `.cs` places on 2026-08-21: `DemoTransport.SendAsync` has four ack-returning exits and all four return `Success: true`, and `fakeErrorRate` is the probability of taking the QUEUED branch, not a failure rate. **Item 34 called the four `web/` i18n strings "the LAST surface still promising a failed ack"; this row is a fifth, and it is the one an integrator reads.** |
 | **Hot-folder AOI** | One-shot doc-28 write+ingest demo — see §6.1. |
 | **Burst** (button) | 6× cycle-rate for 4s, then auto-reverts to whatever rate was active before — proves throughput visibly spikes without restarting the demo. |
 
@@ -2351,11 +2351,19 @@ them (a map with neither is a read-only connector exactly as before):
   `dataType` once inverse-scaled (÷`scale`, rounded) is **rejected at parse time**, naming the offending
   point — never silently treated as unbounded.
 - A top-level `"commands": [ { "name": "...", "coilAddress": <ushort>, "arguments": [ { "name": "...",
-  "type": "UInt16" | "Int16" | "Int32" | "UInt32" | "Bool" | "Double", "min"?: <number>, "max"?: <number> }
+  "type": "Bool" | "Int16" | "UInt16" | "Int32" | "UInt32" | "Double" | "String", "min"?: <number>,
+  "max"?: <number> }
   ] } ]` declares a named coil-pulse command (mirroring a real vendor's "start cycle" button) and its
   argument types — every argument value a future driver receives is narrowed against the declared type
   (an OPC-UA-style boxed integer is re-narrowed to the exact declared width) before it could ever reach a
-  device.
+  device. `min`/`max` are meaningful only for the four integral types and `Double`; declaring either on a
+  `Bool` or a `String` argument is rejected at parse time. 🔴 **`"String"` added 2026-08-22
+  (owner-decisions.md item 36).** This list said SIX types and `St4i.Connector.Abstractions.CommandArgumentType`
+  has SEVEN — `String` is accepted by `CommandArgumentDeclaration.ValidateSelf`, which is the one check both
+  maps' `FromJson` run over a command argument, and it narrows in `TryNarrow` like any other member. A
+  published CLOSED SET stated one member short is a claim an integrator acts on. (The `writable` `valueType`
+  list in §16.6 is a DIFFERENT set and is correctly six: `OpcUaNodeMap.FromJson` rejects a `String` setpoint
+  explicitly, and that asymmetry is deliberate — see §16.6.)
 
 Neither declaration performs any I/O by itself — `ModbusRegisterMap` stays a plain, throwing parse
 function, exactly as before. `ModbusTcpDriver` is the one that acts on what a map declares: it still
@@ -2629,8 +2637,9 @@ Registry auto-upsert, §16.5) an asset row, not just an invisible telemetry stre
 
 **Reliability fix (GP-6b) — the other bug the connector conformance suite (§19.5) found:**
 `OpcUaDriver` used to reconnect via the synchronous `CoreClientUtils.SelectEndpoint` call, which blocks
-for exactly this driver's own `TransportQuotas.OperationTimeout` (**hardcoded 15 seconds**, not
-configurable via any env var/setting) **regardless of cancellation** — five times `FleetHost`'s own
+for exactly this driver's own `TransportQuotas.OperationTimeout` (**15 000 ms**, the default of
+`OpcUaDriver`'s `operationTimeoutMs` constructor parameter — a caller may pass another value, and no env
+var or setting does) **regardless of cancellation** — five times `FleetHost`'s own
 3-second teardown budget, and completely uninterruptible while in flight (`DisposeAsync` cannot unstick
 it either, since the session field is still unset at that point). Fixed by switching to
 `CoreClientUtils.SelectEndpointAsync` — confirmed present in the installed 1.5.378.156 package by
@@ -2647,6 +2656,30 @@ to keep the suppression rather than re-attempt the swap.
 (today: poll-only, one batched `Read` service call per cycle); complex/structured-type node decoding (an
 unexpected node value falls back to `ToString()` rather than a real decode); `Sign`/`SignAndEncrypt`
 security modes; Siemens S7 / EtherNet-IP drivers (still future, unstarted).
+
+> 🔴 **§16.4 and §16.6 now have a witness — and the reason they needed one is written above them, dated.**
+> Until 2026-08-22 these two sections were a HAND-KEPT third copy of `ModbusOptions` / `OpcUaOptions` /
+> `ModbusRegisterMap` / `OpcUaNodeMap`, and `ModbusOptions`' own doc comment said so in as many words:
+> *"The README tables remain a hand-kept copy with no witness: nothing goes red if they drift, and that is
+> still true."* Two facts were already wrong when that witness was finally built, and each is retracted at
+> the sentence that carried it rather than only here: (1) §16.6 called the 15-second endpoint-selection
+> bound **"hardcoded"** — it has been `OpcUaDriver`'s `operationTimeoutMs` constructor parameter since Task
+> B-5, and only the "no env var / no setting" half survived; (2) §16.4's command-argument `"type"` list
+> named **six** of `CommandArgumentType`'s **seven** members.
+> `St4i.EngineApi.Tests/DriverDocumentationTests` is the witness: it derives the eight `ST4I_*` variable
+> names, the two Modbus defaults, the two register-map guards, the OPC-UA PKI root, the stack version, the
+> operation-timeout value and both declared type sets FROM THE CODE, and compares each against what these
+> two sections spell. **What it does NOT reach, stated because a ceiling put too low is worse than none:**
+> it pins values and name sets, not prose. Every rationale paragraph, every deferral list and every
+> "honest limitation" in these two sections remains unwitnessed, exactly as before — a rewrite that keeps
+> the numbers and inverts a claim stays green.
+>
+> *(VI: §16.4/§16.6 nay CÓ nhân chứng — `St4i.EngineApi.Tests/DriverDocumentationTests` — vì tới 2026-08-22
+> chúng vẫn là bản chép tay thứ ba, không dụng cụ nào giữ. Hai chỗ đã trôi, mỗi chỗ được rút tại câu mang
+> nó: chữ **"hardcoded"** cho ngưỡng 15 giây (thực ra là tham số constructor `operationTimeoutMs` từ Task
+> B-5), và danh sách kiểu tham số lệnh của §16.4 nêu **sáu** trong **bảy** thành viên
+> `CommandArgumentType`. **Nhân chứng KHÔNG với tới văn xuôi** — nó ghim GIÁ TRỊ và TẬP TÊN; mọi đoạn lý
+> lẽ, mọi danh sách "chưa làm" trong hai mục này vẫn không có nhân chứng.)*
 
 *(VI: `St4i.EdgeCore.Drivers.OpcUa` là driver giao thức trường thật thứ HAI (giống Modbus, §16.4) — vòng
 lặp poll đọc định kỳ dựa trên bộ thư viện tham chiếu .NET của OPC Foundation
@@ -2678,8 +2711,9 @@ historian, asset) chứ không chỉ là luồng telemetry vô hình.
 
 **Fix độ tin cậy (GP-6b) — lỗi thứ hai bộ conformance connector (§19.5) tìm ra:** `OpcUaDriver` trước
 đây kết nối lại qua lệnh ĐỒNG BỘ `CoreClientUtils.SelectEndpoint`, chặn đúng bằng
-`TransportQuotas.OperationTimeout` của chính driver này (**cố định 15 giây, KHÔNG cấu hình được** qua
-biến môi trường/cài đặt nào) **bất kể có huỷ hay không** — gấp 5 lần ngân sách teardown 3 giây của
+`TransportQuotas.OperationTimeout` của chính driver này (**15 000 ms**, giá trị mặc định của tham số
+constructor `operationTimeoutMs` trên `OpcUaDriver` — người gọi truyền giá trị khác được, nhưng KHÔNG có
+biến môi trường hay cài đặt nào đổi nó) **bất kể có huỷ hay không** — gấp 5 lần ngân sách teardown 3 giây của
 `FleetHost`, và hoàn toàn không huỷ được khi đang chạy (`DisposeAsync` cũng không gỡ được vì trường
 session lúc đó vẫn chưa gán). Đã sửa bằng cách chuyển sang `CoreClientUtils.SelectEndpointAsync` — xác
 nhận CÓ THẬT trong gói 1.5.378.156 đã cài (kiểm chứng bằng reflection) — truyền CÙNG giá trị 15 giây đó
