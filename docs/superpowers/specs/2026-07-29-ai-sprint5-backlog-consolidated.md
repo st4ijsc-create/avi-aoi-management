@@ -41,10 +41,96 @@
 | **F10-F13** (nhãn giao diện en/zh) | ✅ ĐÓNG | xem §4c/§4d — hình-dạng-3 `914 → 0` qua 17 lô |
 | **G** (machine-auth + giấy phép) | ✅ ĐÓNG | `fa00e4cb` — 17→0 khoá plaintext (mig 0334), hai đường yếu nay mặc định `deny` |
 
-**Nợ còn lại — CHỈ CÒN MỘT MỤC:**
-1. **F3 — 547 chỗ ném thô ngoài `server/routers/**`.** Phần lớn là lỗi tầng codec/driver NỘI BỘ.
-   ⚠ **ĐỪNG di trú hàng loạt.** Bài học vừa rút từ F14: trong 164 chỗ trông y hệt nhau, chỉ **13** là nợ thật; 151 chỗ còn lại mà "sửa" thì hỏng (phá hợp đồng SDK OpenAI, làm bẩn dữ liệu quan trắc, làm mô hình LLM khó hiểu hơn, nuốt mất chỗ hỏng của kỹ sư).
-   ⇒ Việc đúng là hỏi **"AI đọc chuỗi này?"** ở TỪNG chỗ, rồi truy tới tận nơi tiêu thụ. Hình dạng mã KHÔNG cho biết ai đọc nó — năm chỗ ở `edgeCoordinator` giống hệt nhau mà bốn cái là luồng máy-máy.
+---
+
+## ⓘ NỢ CÒN LẠI — CHỈ CÒN MỘT MỤC, KÈM KẾ HOẠCH
+
+### F3 — 547 chỗ `throw new Error(...)` ngoài `server/routers/**`
+
+Cổng: `server/_core/rawErrorCensus.test.ts` (ngân sách 547, chỉ được GIẢM; cộng hai bất biến
+"0 chỗ ném thô họ DB" cho `server/db/**` và cho toàn server).
+
+**⚠ F3 KHÁC F14 Ở MỘT ĐIỂM QUYẾT ĐỊNH — đọc trước khi lập kế hoạch.**
+F14 là lỗi **TRẢ VỀ** như dữ liệu: nó chỉ tới người dùng nếu có ai đó hiển thị nó.
+F3 là lỗi **ĐƯỢC NÉM**: nó tự động nổi lên qua tRPC tới `mapTrpcError` **trừ khi** có ai
+bắt lại giữa đường. Nghĩa là mặc định của F3 là *"tới được người dùng"*, ngược hẳn F14.
+⇒ Câu hỏi phải hỏi ở đây là **"có ai BẮT nó giữa đường không?"**, không phải "có ai hiển
+thị nó không".
+
+#### Phép đo 2026-08-22 (đo lại trước khi làm — đừng tin bảng này)
+
+| Phân nhóm | Số chỗ |
+|---|---|
+| driver / giao thức OT (`ot`, `secsgem`, `robot`, `equipment`) | **127** |
+| AI engine / model (`aiGguf`, `aiInference`, `aiLocal*`, `aiTraining`…) | **83** |
+| thị giác (`services/vision/**`) | **72** |
+| bảo mật / chính sách / giấy phép | **32** |
+| `server/db/**` | **20** |
+| lập trình / PLC / IEC | **19** |
+| chưa phân nhóm (76 file lẻ) | **194** |
+
+Theo khả năng tới người dùng:
+- **224 chỗ / 69 file** nằm trong file mà **một router có import** ⇒ có đường sống tới giao diện;
+- **323 chỗ** nằm trong file **không router nào import** ⇒ nội bộ thuần, chỉ tới được người dùng qua chuỗi gọi dài hơn.
+
+#### Kế hoạch — ba pha, theo GIÁ TRỊ chứ không theo số lượng
+
+**Pha 1 — họ "driver không kết nối" (~60 chỗ, giá trị cao nhất).**
+Đây là họ ĐỒNG NHẤT duy nhất trong 547 chỗ: `"ModbusDriver: not connected"`,
+`"OpcuaDriver: not connected"`, `"${protocol} driver not implemented"`… Nó nổi lên đúng lúc
+người vận hành thử nói chuyện với một cái máy — chuyện thường ngày ở nhà máy.
+Hai mã đã DỰNG SẴN từ F14 và đủ ba locale: `DEVICE_UNREACHABLE` /
+`DEVICE_PROTOCOL_UNSUPPORTED`, cùng 7 khoá `errors.entity.<protocol>`.
+⇒ Việc còn lại chỉ là dùng chúng, theo đúng khuôn `deviceAdapter.testConnection`: **trả mã
+cho người vận hành, GIỮ chuỗi kỹ thuật cho kỹ sư**.
+
+**Pha 2 — 224 chỗ trong file được router import.**
+Với từng chỗ, hỏi **"có ai BẮT nó giữa đường không?"**:
+- có `catch` bọc và chuyển thành `appError` ⇒ **không phải nợ**, đánh dấu lý do;
+- không ai bắt ⇒ nợ thật, đổi sang `appError(...)` hoặc một lớp lỗi tự mang `appCode`
+  (khuôn `DbUnavailableError` — không đổi hình dạng phản hồi, chỉ đặt đúng tên).
+
+**Pha 3 — 323 chỗ nội bộ thuần.**
+Ưu tiên thấp nhất. Nhiều chỗ trong đây là lỗi codec/protocol mà **chuỗi gốc mới là nội
+dung đúng** (xem kết luận F14). Chỉ đụng khi có bằng chứng nó nổi lên tới một màn hình.
+
+#### ⚠ Ba điều KHÔNG được làm
+
+1. **Đừng di trú hàng loạt theo hình dạng mã.** F14 đã đo: trong 164 chỗ trông y hệt nhau,
+   chỉ **13** là nợ thật; 151 chỗ còn lại mà "sửa" thì HỎNG — phá hợp đồng SDK OpenAI, làm
+   bẩn dữ liệu OpenTelemetry, làm chính mô hình LLM khó hiểu hơn, nuốt mất chỗ hỏng kỹ sư cần.
+2. **Đừng tin hình dạng mã để đoán người đọc.** Năm chỗ ở `edgeCoordinator` giống hệt nhau,
+   mà bốn cái là luồng MÁY-MÁY. Phải đọc tới docblock của router tiêu thụ.
+3. **Đừng "trả nợ" bằng cách đổi cách viết.** Đổi `throw new Error(x)` thành
+   `throw new Error(String(x))` làm ngân sách xanh mà người dùng không đỡ hơn một chữ.
+
+---
+
+## ⓘ CÁC CỔNG ĐANG CANH — tra ở đây TRƯỚC khi dựng cổng mới
+
+Đợt 21–22/08 để lại tám cổng. Ba cái đầu dùng chung một bộ đếm ở `scripts/` (bài học
+hình-dạng-3: bản sao của bộ đếm sẽ TRÔI LỆCH mà không ai thấy — một bộ đếm, cổng IMPORT nó).
+
+| Cổng | Canh gì | Mốc |
+|---|---|---|
+| `client/src/lib/rawErrorMessageCensus.unit.test.ts` | `err.message` thô tới mắt người dùng (client) | **0** — bất biến |
+| `server/_core/dataErrorStringCensus.test.ts` | F14: lỗi đi ra bằng cửa THÀNH CÔNG | tRPC **0** · service **0** — bất biến |
+| `server/_core/rawErrorCensus.test.ts` | F3: `throw new Error(` ngoài routers | **547** — chỉ được GIẢM |
+| `server/routers/appErrorCoverage.test.ts` | ném thô TRONG routers | **0** — bất biến |
+| `server/_core/envNumber.test.ts` | env gõ sai không được im lặng | — |
+| `server/services/weakAuthFailClosed.test.ts` | hai đường xác thực yếu ĐÓNG SẴN | — |
+| `server/services/alertExpirySweeperInit.test.ts` | nhịp quét gọi ĐỦ hai việc, và LẶP LẠI | — |
+| `server/routers/predictiveAlertFieldPassthrough.test.ts` | trường đi HẾT đường tới client | — |
+
+**Bốn tính chất mà mọi cổng ở đây đều có — giữ nguyên khi thêm cổng mới:**
+1. **Cầu chì**: phép quét phải THẤY file/entity, nếu không nó đang canh tập rỗng và mọi
+   khẳng định đúng một cách vô nghĩa (bài học glob rỗng, Pha 4).
+2. **Bám SÁT số thật (`toBe`, không chỉ `≤`)** — cả hai chiều. Số PHÌNH thì có người thấy đỏ
+   và đi sửa; **số TỤT thì cổng tự chúc mừng và món nợ biến mất khỏi tầm nhìn**.
+3. **Bất biến 0 phải có cầu chì riêng**: bơm một chuỗi ĐÚNG hình dạng nợ rồi hỏi thước có
+   thấy không — một bộ đếm HỎNG cũng trả 0 và trông y hệt "đã sạch".
+4. **Dấu miễn trừ bắt buộc kèm LÝ DO** (`i18n-raw-ok:` / `data-raw-ok:` + nội dung). Không
+   cho tắt cổng bằng một từ, và buộc mỗi chỗ phải được nghĩ RIÊNG.
 
 **⚠ MỌI MỤC KHÁC ĐÃ ĐÓNG — kể cả ba mục từng gắn nhãn "cần chủ dự án".** Trong đó **hai mươi hai** mục hoá ra đã đóng từ trước hoặc sai số; xem cảnh báo đầu tài liệu.
 
