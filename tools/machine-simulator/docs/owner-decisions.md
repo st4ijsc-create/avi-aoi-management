@@ -45,7 +45,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT**. 🔴 **KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: KHẢ THI — `Normalizer` có đủ thông tin, `WaveformSeries` và `WelderSim` KHÔNG phải đổi. Nhưng nó KHÔNG nằm trọn ở một đường dây: cùng một envelope đi ra BA bề mặt, và một trong ba là gương ngữ nghĩa MQTT RETAINED — một **bề mặt đã xuất bản thứ hai; NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này** (hợp đồng TỰ KHAI rằng họ ở ngoài repo — đó là lời của tài liệu, không phải một phép đếm). 🔴 **Giá gương ấy KHÔNG phải của riêng lựa chọn 3: lựa chọn 1 trả CÙNG giá đó CỘNG THÊM, lựa chọn 2 không trả giá nào trong cây này nhưng trả TOÀN BỘ ở ngoài (hợp đồng ingest đã xuất bản + ba SDK).** Và KHÔNG một bài kiểm nào trong 2763 bài đỏ lên, tức lối này KHÔNG CÓ NHÂN CHỨNG. **Ràng buộc thi hành cứng: `LiveTransport.ReadSampleSeries` chỉ nhận hàng `double[]` và bỏ im lặng mọi kiểu khác.** Ba lựa chọn VẪN CHƯA QUYẾT** — 📎 **câu ngay trước giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1), và lý do là chủ sở hữu ĐÃ PHÁN, không phải câu ấy từng sai; AK-1 dùng đúng MỘT kiểu bảo tồn — kiểu AB-1 lập và AI-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG dấu gạch ngang ở bất kỳ đâu, không xoá một dòng nào.** → 🔨 **QUYẾT: LỰA CHỌN 3 — DỰNG CẶP `[t, v]` Ở RANH GIỚI `Normalizer`** (2026-08-19, chủ sở hữu). `WaveformSeries`, `WelderSim`, `ScrewdriveSim` **không đổi một dòng**; thứ đổi là **payload đi ra**. 🔴 **Giá đã chấp nhận và ghi vào mục: HAI bề mặt đã xuất bản đổi CÙNG LÚC, không một** — payload ingest HTTP **và** gương ngữ nghĩa MQTT retained `syn/…`; **NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này**. Cộng một bề mặt thứ ba, riêng tư: hàng đợi store-and-forward của SDK ghi nguyên payload **xuống đĩa** và **phát lại hình dạng CŨ sau khi mã đã đổi** — **cửa sổ ấy CHƯA ĐO**. **Đã thi hành, AK-1 (2026-08-19)** — cơ chế của `t` **SUY ra chứ không chọn**: `t(i) = i / rateHz`, tức **thời điểm mà `rateHz` HÀM Ý**, **không** phải thời điểm `WelderSim` vẽ đường cong; lý do là ở ranh giới chỉ có **bốn trường** của `WaveformSeries`, còn dựng lại thời điểm THẬT đòi **tham số hoá riêng của từng bộ sinh** — không có trên hồ sơ, khác nhau theo driver, và **vắng hẳn** với driver bên thứ ba mà ranh giới này cũng phục vụ. 🔴 **`rateHz` KHÔNG đổi nghĩa và KHÔNG đổi giá trị** — đó là điều kiện DỪNG của nhiệm vụ và nó không bị chạm. 🔴 **Nửa bất lợi, viết ngay cạnh:** chỗ lệch **4,17 %** của `WelderSim` **không được tạo ra và cũng không được sửa** ở đây (phép chuyển tính đúng cái `t` mà một bên tiêu thụ tuân hợp đồng đã tính hôm nay) — **nhưng nó chuyển `t` từ NGẦM sang ĐÃ VIẾT RA**, nên sửa chỗ lệch ấy về sau là **đổi những con số đã xuất bản**, không còn là đổi một tài liệu. Nhân chứng **MỚI** `WaveformPairAtTheWireBoundaryTests` (bảy `[Fact]`): gỡ phép chuyển ⇒ **BỐN đỏ**; trả kiểu hàng khác `double[]` ⇒ **SÁU đỏ**; 🔴 `WaveformSeriesRowShapeContractTests` **VẪN XANH, và đó là im lặng, không phải chấp thuận** — nó nhìn thượng nguồn |
 | 15 | `DropOldest` + một cảnh báo "queue saturated" không với tới được — **BA chỗ**, và chỗ **thứ tư** đã giải xong | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Gộp phát hiện đợt 6 (`HistorianWriter`) và đợt 8 (`UnsPublisher`) làm **MỘT mục**, và phép liệt kê thêm chỗ **thứ ba chưa ai báo**: `UnsBridge`. `AlarmNotifier` cùng chế độ nhưng **đã đúng** → 🔨 **QUYẾT: ÁP MẪU ĐÃ GIẢI XONG CỦA `AlarmNotifier` VÀO CẢ BA CHỖ** (2026-08-20, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8 — mục này không thuộc ba mục đổi thứ người ngoài đang dựa vào). 🔴 **`FullMode` **KHÔNG** đổi: `DropOldest` ở lại `DropOldest`** — thứ đổi là **kế toán**, không phải chính sách. **Đã thi hành, AP-1 (2026-08-21)**: `itemDropped` được truyền ở cả ba, cú đuổi được **đếm** và được **cảnh báo bằng lời SATURATION**, còn nhánh `if (!TryWrite(...))` — vốn chỉ với tới được khi writer ĐÃ ĐÓNG — được đếm riêng và viết lại thành lời **SHUTDOWN**. 🔴 **Tiền đề của phán quyết được KIỂM LẠI trên mã và nó ĐỨNG VỮNG**: `AlarmNotifier` thật sự đã giải xong (nó truyền `itemDropped`, phân loại năm đường rơi, log sau khi nhả khoá). 🔴 **Nhưng MỘT mảnh của hình dạng ấy KHÔNG mang sang được, và nói ra chứ không lặng lẽ bỏ:** phép *bracket* `Evicted` quanh `TryWrite` trong `EmitLocked` chỉ chính xác vì mọi thứ ở đó chạy dưới `_gate`; ba lớp EdgeCore **cố ý không có khoá nào trên đường enqueue**, nên cảnh báo được phát **từ trong chính callback `itemDropped`** — chính xác vì một lý do khác (callback chạy đồng bộ, một lần cho mỗi phần tử bị đuổi, và nhận đúng phần tử ấy). 🔴 **`UnsBridge.DroppedTotal` KHÔNG bị nới nghĩa**, và bề mặt ĐỌC nó được nêu tên: `GET /v1/site`, trang `/site`, **và bản ghi resync GIỮ LẠI phát lên broker của Site — một hợp đồng dây bên thứ ba tiêu thụ**. Cú đuổi kênh có tên riêng, `UnsBridge.ForwardQueueStats.Evicted`. 🔴 **Dư lượng còn mở, ghi vào mục chứ không để trong báo cáo: bộ đếm mới KHÔNG có trên `/v1/site` lẫn trang `/site`** — thêm một trường ở đó là **đổi payload đã xuất bản**, đúng thứ nằm ngoài uỷ quyền mục này. Trên hình thái cài Windows Service (README §"đường mất dữ liệu", mục 4) log **không có nơi nào để đi**, nên trên hình thái ấy mất mát này **được đếm nhưng operator vẫn chưa nhìn thấy được**. Xem Phần III |
 | 16 | `OeeCalculator` — Quality **không** kẹp `[0,1]` | ✅ **ĐÃ THI HÀNH 2026-08-22 (AT-1)** theo 🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU ngày 2026-08-22: MỘT TRANSACTION** bọc bốn câu lệnh của `AggregateForOeeAsync` — **lựa chọn THỨ TƯ**, không kẹp/không ném/không để nguyên; `OeeCalculator` **không sửa một dòng mã**. 🔴 **Mục này CỐ Ý đổi một con số đã báo cáo, và nửa bất lợi ghi trong mục: OEE từ nay KHÁC OEE trước 2026-08-22 ở đúng những lúc trước đây sai — báo cáo đã in không đổi, nhưng ai so hai kỳ sẽ thấy một bậc nhảy không do sản xuất gây ra.** **Đo:** `deferred: true` (=`BEGIN` trần) giữ ảnh chụp qua một commit song song và **không chặn bên ghi** (0–1 ms); `BeginTransaction()` **không tham số** phát `BEGIN IMMEDIATE`, lấy khoá GHI cho một hàm chỉ đọc và làm bên ghi **hỏng hẳn** sau **33 121 ms** (`database is locked`) — **hai dạng cùng báo `Serializable`, nên TÊN mức cô lập không phân biệt được chúng**. Ba chỗ gọi **đều đồng bộ**: `GET /v1/historian/oee`, `GET /v1/historian/oee/fleet` (vòng lặp — mười máy = mười transaction/request), báo cáo PDF. **Nhân chứng đỏ được 5/5** ở cả hai đối chứng (gỡ transaction; đổi sang không-tham-số), xanh 8/8 sau sửa. 🔴 **Ba con số "Quality lớn nhất" của AQ-1 KHÔNG tái lập được** (đo lại: 1,25 và 1,0168, không phải 1,00333 và 1,00888) — chúng là tạo tác của cách gieo dữ liệu; ba con số "số lần vi phạm" thì tái lập được. 🔴 **Khẳng định đã công bố THỨ HAI mà AQ-1 ghi là "kiểm kê THIẾU" nay ĐÃ RÚT**: `web/src/lib/api.ts`. 🔴 **Và một khác biệt hồ sơ: phán quyết mục 16 KHÔNG có bản ghi tại chỗ ở BASE `ce1ce2be`** — `grep "2026-08-22"` trả đúng hai dòng, cả hai thuộc mục 27; nội dung phán quyết đến qua brief AT-1. Xem Phần III. **Câu trạng thái CŨ giữ nguyên văn ngay dưới:** 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. Biên hôm nay do **hai vị từ SQL ở một file khác** giữ. 🔴 **AQ-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG trong brief đã NỔ, không một dòng `OeeCalculator` bị sửa, mục Ở LẠI PHẦN I.** Câu ngay trên **giữ nguyên văn**; cái được rút, tại chỗ và kèm ngày, là **chỉ** mệnh đề *"trên đường đang ship hôm nay con số ấy KHÔNG THỂ XẢY RA"* trong thân mục. **Đo được:** `AggregateForOeeAsync` chạy **bốn câu lệnh rời nhau trên một connection KHÔNG có transaction**; SQLite ở WAL cho mỗi câu lệnh **một ảnh chụp riêng**; nên hai vị từ lồng nhau chỉ giữ **trong một ảnh chụp**, và một `AppendResultsAsync` song song commit giữa câu `total` và câu `good` làm `GoodCount > TotalCount`. **Ba nhánh, đối chứng nằm trong phép đo:** không người ghi → **93 291 lần đọc, 0 vi phạm**; **10 hàng/giây — xấp xỉ nhịp của chính `fleet.json` đang ship** → **87 vi phạm**, Quality tới **1.00333**; người ghi nóng → **1 112 vi phạm**, Quality tới **1.00888**. **Nên một cái kẹp ĐỔI một con số OEE đã báo cáo, và đó là một trong ba mục chủ sở hữu KHÔNG uỷ quyền.** 🔴 **Và phép đo ĐỔI CÂU HỎI: mục mở ra như một câu hỏi phòng thủ chiều sâu, đo được nó là một khuyết tật ĐANG SỐNG — `Math.Clamp` không sửa nó, chỉ che nó. Bản sửa thật nằm ở `AggregateForOeeAsync` (đọc hai `COUNT(*)` trong MỘT transaction), tức một file khác, một rủi ro khác — LỰA CHỌN THỨ TƯ mà ba lựa chọn của mục không có.** 🔴 **Kèm một khẳng định đã công bố THỨ HAI vẫn đang sai và chưa được rút:** `web/src/lib/api.ts` nói `quality`/`oee` *"never … over 1 (`OeeCalculator.Calculate` clamps/guards every division)"* — đúng câu AL-1 đã rút trên doc lớp ngày 2026-08-20, ở **bề mặt khách hàng đọc**; một **bản kiểm kê THIẾU**, AQ-1 **không sửa** vì ngoài uỷ quyền |
-| 17 | `QueryTelemetryAsync` không áp cổng xuất xứ, và ~~**không áp được**~~ | ✅ **ĐÃ THI HÀNH MỘT PHẦN 2026-08-22 (AU-1)** theo 🔨 **QUYẾT: ĐÓNG KHOẢNG TRỐNG XUẤT XỨ CỦA `QueryTelemetryAsync`** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/21). 🔴 **VÀ TIỀN ĐỀ TRUNG TÂM CỦA MỤC NÀY — *"không áp được"* — KHÔNG SỐNG SÓT QUA PHÉP ĐO.** Nó áp được, bằng đúng cái mà chính mục nêu ra làm lý do nó không áp được: `historian_telemetry.result_id` khai `NOT NULL REFERENCES historian_results(id)`, nên **phép join tới xuất xứ là TOÀN PHẦN** — mọi hàng mẫu có đúng một hàng reading cha, và hàng cha ấy đã mang `is_fabricated`. **Không cần cột mới và KHÔNG THÊM CỘT NÀO; không có migration nào chạy trên cơ sở dữ liệu của khách hàng.** 🔴 **CÂU HỎI "hàng cũ mang giá trị gì" KHÔNG TỒN TẠI ở dạng brief đặt ra** — nó giả định cơ chế THÊM CỘT. Một hàng mẫu cũ mang **đúng cái cha nó mang**, và đó là một **phép đo**, không phải một giá trị phải chọn; ba trạng thái được **THỪA KẾ** chứ không phát minh, và trạng thái thứ ba (`NULL` = *Unknown*) đã có sẵn một luật xử lý đã quyết mà nhiệm vụ này **không được quyền quyết lại**. 🔴 **ĐIỀU KIỆN DỪNG ĐÃ NỔ, và nó nổ ở NỬA MẶC ĐỊNH:** đo được rằng nối route này vào `ResolveIncludeFabricated` **không làm hẹp phản hồi mà làm RỖNG nó** — `machine` là tham số **bắt buộc**, nên phép dò của cổng luôn chạy trong phạm vi **một máy**; với một máy mô phỏng bình thường trên một bản triển khai **không phải demo** (tức mọi bản cài sản phẩm) phép dò không thấy gì thật, và **toàn bộ** mẫu của máy ấy bị loại — biểu đồ xu hướng hôm nay có đường, ngày mai rỗng, vĩnh viễn. Đó đúng hình dạng hỏng mà `ResolveIncludeFabricated` tự ghi cho các route anh em trước Fix 1 (*"not 'narrower than intended,' literally zero"*). **Nên mặc định KHÔNG bị đổi và AU-1 KHÔNG tự quyết nó.** **Đã thi hành:** `QueryTelemetryAsync` nhận `includeFabricated` và **gọi CHÍNH `ApplyRealPresenceGateAsync`** qua `result_id IN (SELECT id FROM historian_results WHERE …)` — **không có bản sao thứ hai của luật**, nên luật không thể trôi khỏi read này lần nữa; khi `includeFabricated: true` câu lệnh phát ra **giống hệt từng ký tự** câu lệnh trước khi có tham số. `GET /v1/historian/telemetry` nhận `includeFabricated`, và **mặc định `?? true`** — **KHÔNG** dùng miễn trừ Demo, vì miễn trừ ấy tồn tại để **trả lại** hàng mà cổng lấy đi, và ở đây cổng không lấy gì. 🔴 **Nửa bất lợi, ghi ngay cạnh:** sau bản sửa này **HAI route hướng khách hàng VẪN trả lời khác nhau về cùng một câu hỏi** — `GET /v1/historian/results` giấu reading của máy bịa, `GET /v1/historian/telemetry` vẫn vẽ mẫu của chính máy ấy, và **không gì trong phản hồi nói cái nào là cái nào**. Chỗ lệch ấy **không do bản sửa tạo ra** (nó LÀ mục 17) nhưng bản sửa **không đóng** nó; cái mới là nó nay là **một quyết định một dòng xem lại được** thay vì một khẳng định cấu trúc rằng cổng *"không áp được"*. **Nửa còn nợ, nêu tên chứ không im lặng: chọn mặc định là việc CỦA ANH.** 🔴 **Kèm một khẳng định đã công bố được RÚT TẠI NGUỒN, không chỉ trong hồ sơ:** doc của `ApplyRealPresenceGateAsync` nói *"the one rule **every** customer-facing historian query/aggregate in this store applies"* — AL-1 đã rút câu ấy trong **file này** ngày 2026-08-20 nhưng **phép rút chưa bao giờ tới mã**, nên suốt hai ngày người đọc MÃ vẫn thấy câu sai. Nay sửa tại nguồn, kèm phép liệt kê thật (áp được: `QueryResultsAsync`, `QueryBySerialAsync`, `AggregateForOeeAsync`, `QueryTelemetryAsync`; **mặc định bật ở BA**). **Đo:** `EXPECT_ENGINEAPI` 1388 → **1395** (+7, đếm từ runner SAU khi viết), `EXPECT_WARNINGS` **328 KHÔNG dịch** (đo trên `-t:Rebuild` đầy đủ), `EXPECT_BUILD_NODES` 0, **0 lệnh đè**. **Cặp đối chứng chạy trọn rồi hoàn nguyên:** gỡ cổng ⇒ **4 đỏ**; lật mặc định ⇒ **đúng 1 đỏ** — 🔴 **và cái 1 ấy là một phát hiện: trước file test này, KHÔNG bài nào trong 2 804 bài thấy được phép lật mặc định.** 🔴 **Một lỗi của chính AU-1 bị chính bài test của AU-1 bắt:** bản nháp thêm tham số vào endpoint mà **quên truyền nó xuống store**, nên mặc định rơi về cổng-BẬT — tức đúng thứ điều kiện DỪNG cấm; bắt được lúc chạy, không phải lúc đọc. Xem Phần III. **Câu trạng thái CŨ giữ nguyên văn ngay dưới:** 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. `historian_telemetry` **không có cột `is_fabricated`**; `GET /v1/historian/telemetry` **không nhận `includeFabricated`** |
+| 17 | `QueryTelemetryAsync` không áp cổng xuất xứ, và ~~**không áp được**~~ | ✅ **ĐÃ THI HÀNH MỘT PHẦN 2026-08-22 (AU-1)** theo 🔨 **QUYẾT: ĐÓNG KHOẢNG TRỐNG XUẤT XỨ CỦA `QueryTelemetryAsync`** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/21). 🔴 **VÀ TIỀN ĐỀ TRUNG TÂM CỦA MỤC NÀY — *"không áp được"* — KHÔNG SỐNG SÓT QUA PHÉP ĐO.** Nó áp được, bằng đúng cái mà chính mục nêu ra làm lý do nó không áp được: `historian_telemetry.result_id` khai `NOT NULL REFERENCES historian_results(id)`, nên **phép join tới xuất xứ là TOÀN PHẦN** — mọi hàng mẫu có đúng một hàng reading cha, và hàng cha ấy đã mang `is_fabricated`. **Không cần cột mới và KHÔNG THÊM CỘT NÀO; không có migration nào chạy trên cơ sở dữ liệu của khách hàng.** 🔴 **CÂU HỎI "hàng cũ mang giá trị gì" KHÔNG TỒN TẠI ở dạng brief đặt ra** — nó giả định cơ chế THÊM CỘT. Một hàng mẫu cũ mang **đúng cái cha nó mang**, và đó là một **phép đo**, không phải một giá trị phải chọn; ba trạng thái được **THỪA KẾ** chứ không phát minh, và trạng thái thứ ba (`NULL` = *Unknown*) đã có sẵn một luật xử lý đã quyết mà nhiệm vụ này **không được quyền quyết lại**. 🔴 **ĐIỀU KIỆN DỪNG ĐÃ NỔ, và nó nổ ở NỬA MẶC ĐỊNH:** đo được rằng nối route này vào `ResolveIncludeFabricated` **không làm hẹp phản hồi mà làm RỖNG nó** — `machine` là tham số **bắt buộc**, nên phép dò của cổng luôn chạy trong phạm vi **một máy**; với một máy mô phỏng bình thường trên một bản triển khai **không phải demo** (tức mọi bản cài sản phẩm) phép dò không thấy gì thật, và **toàn bộ** mẫu của máy ấy bị loại — biểu đồ xu hướng hôm nay có đường, ngày mai rỗng, vĩnh viễn. Đó đúng hình dạng hỏng mà `ResolveIncludeFabricated` tự ghi cho các route anh em trước Fix 1 (*"not 'narrower than intended,' literally zero"*). **Nên mặc định KHÔNG bị đổi và AU-1 KHÔNG tự quyết nó.** **Đã thi hành:** `QueryTelemetryAsync` nhận `includeFabricated` và **gọi CHÍNH `ApplyRealPresenceGateAsync`** qua `result_id IN (SELECT id FROM historian_results WHERE …)` — **không có bản sao thứ hai của luật**, nên luật không thể trôi khỏi read này lần nữa; khi `includeFabricated: true` câu lệnh phát ra **giống hệt từng ký tự** câu lệnh trước khi có tham số. `GET /v1/historian/telemetry` nhận `includeFabricated`, và **mặc định `?? true`** — **KHÔNG** dùng miễn trừ Demo, vì miễn trừ ấy tồn tại để **trả lại** hàng mà cổng lấy đi, và ở đây cổng không lấy gì. 🔴 **Nửa bất lợi, ghi ngay cạnh:** sau bản sửa này **HAI route hướng khách hàng VẪN trả lời khác nhau về cùng một câu hỏi** — `GET /v1/historian/results` giấu reading của máy bịa, `GET /v1/historian/telemetry` vẫn vẽ mẫu của chính máy ấy, và **không gì trong phản hồi nói cái nào là cái nào**. Chỗ lệch ấy **không do bản sửa tạo ra** (nó LÀ mục 17) nhưng bản sửa **không đóng** nó; cái mới là nó nay là **một quyết định một dòng xem lại được** thay vì một khẳng định cấu trúc rằng cổng *"không áp được"*. **Nửa còn nợ, nêu tên chứ không im lặng: chọn mặc định là việc CỦA ANH.** 🔴 **Kèm một khẳng định đã công bố được RÚT TẠI NGUỒN, không chỉ trong hồ sơ:** doc của `ApplyRealPresenceGateAsync` nói *"the one rule **every** customer-facing historian query/aggregate in this store applies"* — AL-1 đã rút câu ấy trong **file này** ngày 2026-08-20 nhưng **phép rút chưa bao giờ tới mã**, nên suốt hai ngày người đọc MÃ vẫn thấy câu sai. Nay sửa tại nguồn, kèm phép liệt kê thật (áp được: `QueryResultsAsync`, `QueryBySerialAsync`, `AggregateForOeeAsync`, `QueryTelemetryAsync`; **mặc định bật ở BA**). **Đo:** `EXPECT_ENGINEAPI` 1388 → **1395** (+7, đếm từ runner SAU khi viết), `EXPECT_WARNINGS` **328 KHÔNG dịch** (đo trên `-t:Rebuild` đầy đủ), `EXPECT_BUILD_NODES` 0, **0 lệnh đè**. **Cặp đối chứng chạy trọn rồi hoàn nguyên:** gỡ cổng ⇒ **4 đỏ**; lật mặc định ⇒ **đúng 1 đỏ** — 🔴 **và cái 1 ấy là một phát hiện: trước file test này, KHÔNG bài nào trong 2 804 bài thấy được phép lật mặc định.** 🔴 **Một lỗi của chính AU-1 bị chính bài test của AU-1 bắt:** bản nháp thêm tham số vào endpoint mà **quên truyền nó xuống store**, nên mặc định rơi về cổng-BẬT — tức đúng thứ điều kiện DỪNG cấm; bắt được lúc chạy, không phải lúc đọc. Xem Phần III. **Câu trạng thái CŨ giữ nguyên văn ngay dưới:** 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. `historian_telemetry` **không có cột `is_fabricated`**; `GET /v1/historian/telemetry` **không nhận `includeFabricated`** 🔴 **ĐẶT LẠI ĐÚNG PHẦN 2026-08-22 (AW-1) — MỤC NÀY VỀ PHẦN I. Không một chữ nào ở trên bị sửa và không một dòng nào của thân mục bị xoá; cái đổi là CHỖ nó đứng.** Lập luận suy từ định nghĩa của các phần, không từ cảm giác: Phần III là *"ĐÃ QUYẾT **VÀ** ĐÃ THI HÀNH"* và ô này tự khai **"MỘT PHẦN"** — chính chữ ấy phủ nhận điều kiện vào. Phần II là *"ĐÃ QUYẾT, **VIỆC** CÒN NỢ"*, và thứ còn treo ở mục 17 **không phải một việc**: cơ chế đã ship, `QueryTelemetryAsync` đã gọi `ApplyRealPresenceGateAsync`, không còn dòng mã nào phải viết — thứ còn treo là **MỘT QUYẾT ĐỊNH**, mặc định của `GET /v1/historian/telemetry`, mà chính AU-1 viết là *"chọn mặc định là việc CỦA ANH"*. Một quyết định đang chờ chủ sở hữu thì ở **Phần I**, đó là định nghĩa của Phần I. **Tiền lệ trong chính file này, ba cái, cùng hình dạng:** mục 12 mang tiêu đề *"PHÁN QUYẾT ĐÃ THI HÀNH **MỘT PHẦN**"* và **ở lại Phần II** (thứ còn nợ là VIỆC); mục 27 và mục 16 mỗi cái từng có phán quyết mà chưa có ghi chép thi hành và **ở lại Phần I**. 🔴 **AW-1 KHÔNG quyết mặc định** — đó là việc của chủ sở hữu và mục quay về đây để được quyết. 🔴 **Và cái đưa mục này về đây KHÔNG phải một dụng cụ:** phép kiểm mới `scripts/check-owner-decisions.sh` bắt được nó **chỉ sau khi** hàng này được đọc là *"MỘT PHẦN"*; cái tìm ra nó là một người đọc định nghĩa của các phần. Xem thân mục ở **Phần I** |
 | 18 | Cổng Demo gác **CHẾ ĐỘ**, không gác **BỘ SINH GIẢ** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — cổng nay gác **CẢ HAI** route dựng transport bịa (`POST /v1/scenario` **và** `POST /v1/scenario/preset`; mục chỉ nêu một). Xem Phần III |
 | 19 | `TransportCoordinator.Auto` và `.Demo` — hai trong bốn bộ truy cập công bố **không ai đọc** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — **KHÔNG gỡ thành viên nào**; hai câu tài liệu SAI đã sửa, và **khoá KHÔNG bỏ được** (đo rồi mới từ chối). Xem Phần III |
 | 20 | `TransportCoordinator` không có đường tắt máy ⇒ `LiveTransport` cuối cùng không bao giờ được dispose | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — `IDisposable` + nhân chứng đỏ được. **Cái trần "không phải rò rỉ sản xuất" giữ nguyên.** Xem Phần III |
@@ -54,18 +54,18 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 23 | `IUnsPublisher.PublishBirth`/`PublishDeath` — có cài đặt, **không caller nào dưới `src/`** | ✅ **ĐÃ GỠ 2026-08-21 (AR-1)** theo **phán quyết chủ sở hữu**; tiền đề "không caller" đã đo lại **toàn cây gồm `server/`/`client/`/`examples/`** và **đứng vững**. Giá P-2 ghi trong mục |
 | 24 | `ModbusOptions`/`OpcUaOptions` — hằng số TÊN biến môi trường công khai | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — phép đo đã sửa **tự kiểm lại và ĐỨNG VỮNG cả hai nửa**; hai file test nay gọi hằng số thay vì gõ lại chuỗi. Xem Phần III |
 | 25 | **Điều kiện rời Phần II của mục 12** — họ driver: tài liệu hay thu hẹp? | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). 109 cảnh báo trên **97 thành viên**; câu hỏi *"có nên `public` không"* **không tồn tại với 46**, **sai trong im lặng với 9**, miễn phí với 17, tốn một IVT mới với 25 — và 🔴 **ít nhất 55 trong 97 sẽ `public` DÙ PHÁN THẾ NÀO** |
-| 26 | **Không gì trong repo này trả cho TÍNH ĐÚNG của một chú thích đã viết** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Mục 12 trả cho **bao phủ**; W-1 kiểm **hình thức**. Năm con số đã đo — **KHÔNG cộng được**, và mục nói vì sao |
+| 26 | **Không gì trong repo này trả cho TÍNH ĐÚNG của một chú thích đã viết** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Mục 12 trả cho **bao phủ**; W-1 kiểm **hình thức**. Năm con số đã đo — **KHÔNG cộng được**, và mục nói vì sao → ✅ **ĐÃ THI HÀNH 2026-08-22 (AW-1)** theo 🔨 **QUYẾT: DỰNG BỘ LỌC PHỦ ĐỊNH PHỔ QUÁT THÀNH MỘT DỤNG CỤ CHẠY ĐƯỢC** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). `scripts/scan-doc-negations.sh` — hình dạng **suy từ cách hỏng đã đo**, không phát minh: đúng năm từ mà đợt 6, 7, 8 dùng và đều bắt được (*nothing · never · every · only · no code*), cộng phép chạy lại sau từng câu, nay là chế độ `--since <ref>` **đỏ được**. 🔴 **Năm con số của mục đã kiểm lại từng cái trên thân mục và cả năm ĐỨNG VỮNG** (101 · 17/48 · 5 trên 129 **cảnh báo** · 13/199 · 12/287), và lý do không cộng được vẫn nguyên. 🔴 **Phép đo mới, và nó là một CÁI TRẦN chứ không phải một món nợ: bộ lọc ấy quét toàn cây gắn cờ 5 780 câu trên 15 965 câu chú thích, ở 481 trong 545 file `.cs` — HƠN MỘT PHẦN BA mọi câu chú thích trong cây.** Liệt kê trước (`--census` in ra từng câu), con số viết sau. **Không nhiệm vụ nào trả được tập ấy**, và **cố ý KHÔNG có cổng toàn cây**: một cổng trên con số đó sẽ đỏ với mọi lần sửa tài liệu, tức đúng *"dụng cụ không có định nghĩa xanh"* mà chính mục này cảnh báo. 🔴 **Cái dụng cụ KHÔNG cưỡng chế, nêu đủ rộng: nó KHÔNG phải một cái máy phân biệt đúng-sai** — nó chỉ chọn câu để người đọc, và phần lớn câu bị gắn cờ là **đúng**; **độ nhạy của nó vẫn CHƯA BIẾT** (đợt 7 vòng 2 bắt thêm 6 cái vòng 1 mù; đợt 8 vòng 2 bắt thêm 5), và loại tệ nhất — một câu **không chứa từ tuyệt đối nào** mà khẳng định một **mục đích** hay một **cơ chế** — nằm ngoài nó hoàn toàn; nó chỉ đọc `.cs` **của ta** (`web/`, `server/`, `client/` và file SDK vendored ở ngoài). Xem Phần III |
 | 27 | API Inspector **không phơi THÂN request** | ✅ **ĐÃ THI HÀNH 2026-08-22 (AT-1)** theo 🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU ngày 2026-08-22: BỀ MẶT MỚI** (phán quyết ấy đọc được trong thân mục). Bề mặt mới = record `ApiTraceBody` + route `GET /v1/inspector/bodies` (cùng `Policies.Engineer` với luồng WS). 🔴 **BA bề mặt đã xuất bản KHÔNG dịch một byte, chứng minh bằng diff: `ApiTraceEvent.cs`, `ApiInspector.tsx`, `inspector.ts`, `InspectorViewModel.cs`, `ApiInspectorView.xaml`, `TraceTable.tsx` — 0 dòng đổi ở mỗi file**; `ApiTraceEvent` giữ đúng mười thành phần và `EventBus.Traced` vẫn mang một `ApiTraceEvent`. **Trần kích thước ĐO rồi mới chọn: 16 KiB/thân**, vì thân thật của bộ sinh hôm nay là **1 314 byte** (24 mẫu) / **1 207** (20 mẫu) / **255** (telemetry), còn sóng **100 000 mẫu** = **2 169 909 byte** và **BỊ cắt** kèm cờ `Truncated`; ngân sách thật là **500 × 16 KiB = 8 MiB**. **Danh sách CHO PHÉP có BẢY khoá**; che `serialNumber`, `recipe`, `metrics`, `waveforms`, `measurements`, `samples` **và mọi khoá genealogy (do cấu trúc)**, mỗi cái **nêu tên** trong `WithheldKeys`. 🔴 **Một lỗ rò của chính bản sửa bị bắt bởi chính bài test của nó: `idempotencyKey` từng nằm trên danh sách cho phép, nhưng `BuildIdempotencyKey` dựng nó từ MÃ CÔNG THỨC và (hình dạng inspection) SỐ SERIAL** — nay là `IdempotencyDigest` (SHA-256, 16 hex), và giới hạn được nêu: **phi-định-danh, không phải bí mật**. **Vòng đời thân nằm trong vòng đời trace DO CẤU TRÚC** — một hàng đợi cặp, đuổi cùng một `Dequeue`. 🔴 **Đóng MỘT PHẦN: không dụng cụ UI nào được thêm** — bề mặt mới là một route, và **không chạm `web/` là CỐ Ý**, vì `handleExport` sống trong `ApiInspector.tsx`. Xem Phần III. **Câu trạng thái CŨ giữ nguyên văn ngay dưới:** 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo lại từ mã 2026-08-20. `ApiTraceEvent` **không có trường thân**; `TraceTable` **không có trình xử lý click hàng nào**. 🔴 **AS-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG của brief đã NỔ: `ApiTraceEvent` rời tiến trình trên BA bề mặt đã xuất bản, nên thêm một trường thân LÀ đổi hình dạng một payload đã xuất bản. Không một dòng nào bị sửa cho mục này; mục Ở LẠI PHẦN I.** Kèm hai phép đo BÁC hai tiền đề của brief: thân request đi ra **KHÔNG mang khoá `mk_`** (khoá đi bằng header), và sóng hàn hôm nay là **24 mẫu**, không phải 100.000. → 🔨 **QUYẾT: BỀ MẶT MỚI** (2026-08-22, **chủ sở hữu**) — một đường RIÊNG cho thân request; khung WS và **hai** file JSON xuất **giữ nguyên hình dạng**. 🔴 **Phép DỪNG của AS-1 là thứ TẠO RA phán quyết này**: nếu cứ thêm trường thì đã đổi ba payload đã xuất bản, hai trong đó **không đo được ai đang đọc**. 🔴 **Ở LẠI PHẦN I** — phán quyết đã có, **ghi chép thi hành CHƯA**; một nhiệm vụ khác thi hành. Ba điều kiện che (trần byte + dấu hiệu đã cắt, che ở chỗ dựng sự kiện, **danh sách CHO PHÉP**) **KHÔNG được miễn**. Xem thân mục |
 | 28 | ~~**BA** cái trần~~ **BỐN** cái trần trên lịch sử API-trace, và **không cái nào được UI gọi tên là trần** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **KHÔNG phải ba mà BỐN**: mục bỏ sót vòng đệm của chính vỏ WPF (`InspectorViewModel.MaxEvents`). Cái trần backfill nay **CÓ TÊN** (`InspectorStreamEndpoint.BackfillEventCount`) thay vì một literal `200`; pane web nay **gọi tên** ba cái trần áp vào nó và nói **cái nào chặn khi nào**. Đổi lời, không đổi hành vi. Xem Phần III |
 | 29 | Cả fleet liên kết ra ngoài bằng **MỘT danh tính thiết bị** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **và CƠ CHẾ mà mục mô tả KHÔNG đứng vững: route KHÔNG "trả 200 cho việc nó không làm"** — nó thật sự lưu khoá, câu *"Pasted mk_ key stored for WELD-01"* là **ĐÚNG**; cái sai là suy luận nó mời người đọc rút ra. Nên bản sửa là **sửa câu, không sửa mã trạng thái** — một 4xx sẽ từ chối một cú ghi có thật và lấy đi đúng đường mà chính mục nêu là hợp lệ. 🔴 **Và mục nêu THIẾU một bề mặt: có HAI biểu mẫu web POST route ấy, không một.** Cái trần vendored giữ nguyên. Xem Phần III |
 | 30 | Gốc mặc định của ~~bốn~~ **BA** store cạnh-binary là `%ProgramFiles%`, và **lần chạy đầu chính là lần GHI** | 🔴 **CHỜ ANH — VÀ NAY CÓ MỘT PHÉP ĐO THỰC TẾ ĐI KÈM.** Mở 2026-08-20 (AO-1). Câu hỏi này **bị nhiều brief liên tiếp CẤM mở**; lệnh cấm hết hiệu lực ở nhiệm vụ AV-1. 🔴 **AV-1 (2026-08-22) ĐƯỢC GIAO THI HÀNH VÀ ĐÃ DỪNG: điều kiện DỪNG *"bản sửa cần DI CHUYỂN dữ liệu vận hành viên đã có"* NỔ** — xem khối phép đo trong thân mục, ở **Phần I**. 🔴 **Và chữ "bốn" ở ô này là một phép ĐẾM THIẾU CHÍNH XÁC theo chiều ngược**: quần thể là **BA store** sinh **NĂM file**, trong đó cổng miễn trừ đích danh **BỐN**. Thân mục đã viết đúng "ba store" từ đầu; ô tóm tắt này đếm nhầm file thành store, và lời giao việc của AV-1 thừa hưởng chữ ấy |
 | 31 | **Mười hai artefact build** (7 `.xml` + 5 `.pdb`) đi vào MSI | ✅ **ĐÃ QUYẾT VÀ ĐÃ THI HÀNH 2026-08-22 (AV-1)** theo 🔨 **QUYẾT: GIAO CẢ MƯỜI HAI, KHÔNG ĐỔI MỘT BYTE NÀO CỦA BAO BÌ** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). Mở 2026-08-20 (AO-1); đã ĐO ở §8 của mục 12 từ 2026-08-19 (AF-1) nhưng **chưa bao giờ thành một mục phán được**. **N = 12 đo lại và ĐỨNG VỮNG.** 🔴 **Nhưng câu *"cái giá của việc GIỮ NGUYÊN là KHÔNG"* trong thân mục KHÔNG sống sót qua phép đo**: năm `.pdb` mang đường dẫn tuyệt đối của máy dựng, **259 tên file nguồn phân biệt** (266 cộng rời), và một bản đồ SourceLink nêu đích danh **kho GitHub + SHA commit**. Giá được ghi tên chứ không còn là "không". Xem **Phần III** |
-| 32 | **Một lời khai miền dụng cụ không kiểm được nếu không ghi NƠI lệnh được chạy** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Pathspec của git là **tương đối với cwd** và một pathspec bị thu hẹp **trả 0 chứ không báo lỗi**: `-- 'server/*.ts'` **0** đối lại `-- ':(top)server/*.ts'` **197**; và **glob đuôi trần cũng hỏng** — `'*.ts'` **1** đối lại **214**. 🔴 **Giá đã trả: mục 14 được PHÁN kèm một cái trần SAI** (*"không đo được từ repo này"* — bên tiêu thụ nằm trong chính commit này). **Năm khẳng định khác đo lại vẫn ĐỨNG VỮNG**, gồm kết luận "ba chỗ xuất bản `TransportMode`" của AM-1. **Người đăng ký gương MQTT retained: CHƯA ĐO** (37 file nhắc `syn/`) |
+| 32 | **Một lời khai miền dụng cụ không kiểm được nếu không ghi NƠI lệnh được chạy** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Pathspec của git là **tương đối với cwd** và một pathspec bị thu hẹp **trả 0 chứ không báo lỗi**: `-- 'server/*.ts'` **0** đối lại `-- ':(top)server/*.ts'` **197**; và **glob đuôi trần cũng hỏng** — `'*.ts'` **1** đối lại **214**. 🔴 **Giá đã trả: mục 14 được PHÁN kèm một cái trần SAI** (*"không đo được từ repo này"* — bên tiêu thụ nằm trong chính commit này). **Năm khẳng định khác đo lại vẫn ĐỨNG VỮNG**, gồm kết luận "ba chỗ xuất bản `TransportMode`" của AM-1. **Người đăng ký gương MQTT retained: CHƯA ĐO** (37 file nhắc `syn/`) → ✅ **ĐÃ THI HÀNH 2026-08-22 (AW-1)** theo 🔨 **QUYẾT: DỰNG MỘT BỌC CƯỠNG CHẾ CHO MIỀN PHÉP QUÉT** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). `scripts/repo-scan.sh` — **không phải một dòng hướng dẫn**: nó **tự `cd` về gốc repo**, **tự viết lại mọi pathspec trần thành `:(top)…`**, **luôn truyền `--full-name`** (nửa thứ hai, do mục 15 tìm ra), **phân giải tree-ish thành SHA đầy đủ** và **in ra lời khai miền cùng kết quả**: nơi lệnh được gõ, nơi nó chạy, SHA, cây sạch hay bẩn, pathspec trước và sau khi viết lại, argv, và số dòng. Một `0` từ nó **đọc được là "không có"**. 🔴 **`--self-test` là nhân chứng và nó ĐỎ ĐƯỢC:** ba khẳng định — bất biến theo cwd, **và** phép dò phải khác 0, **và** dạng ngây thơ phải trả ÍT HƠN; hai số 0 bằng nhau bị **từ chối** là xanh. Đo hôm nay ở `e99019c0`: **197 = 197** qua bọc, **0** cho dạng ngây thơ gõ từ `tools/machine-simulator`. 🔴 **Cái nó KHÔNG cưỡng chế, và nêu đủ rộng vì một cái trần nêu quá nhỏ còn tệ hơn không nêu:** (a) **nó KHÔNG buộc được ai dùng nó** — không gì chặn người sau gõ `git grep` tay; nó là một **mặc định** và một **nhân chứng**, không phải một cổng trên cách người ta gõ; (b) **nó không thấy được `grep -r`/ripgrep/tìm-trong-editor**, vốn đọc **cây làm việc**, mà cây này là sparse — `server/` (1589 file) và `client/` (711) **có trong commit, không trên đĩa**; (c) nó không kiểm được rằng một báo cáo có chép lại phần đầu ấy hay không; (d) nó không nói gì về việc **mẫu tìm** có đúng hay không; (e) nó **không với ra ngoài repo** — người đăng ký gương MQTT retained `syn/…` **vẫn CHƯA ĐO** và vẫn nằm ngoài mọi phép quét dụng cụ này chạy được. 🔴 **Giá đã trả giữ nguyên trong hồ sơ và được ghi lại lần nữa ở đầu chính dụng cụ:** mục 14 được chủ sở hữu **phán kèm một cái trần SAI** — *"người tiêu thụ không đo được từ repo này"* — trong khi mã bên tiêu thụ nằm trong đúng commit ấy. Xem Phần III |
 | 33 | `GET /v1/scenario` nói dối theo chiều **NGƯỢC LẠI** — tấm gương của mục 18 | ✅ **ĐÃ QUYẾT VÀ ĐÃ THI HÀNH 2026-08-22 (AV-1)** theo 🔨 **QUYẾT: SỬA PHÍA ĐỌC — `GET /v1/scenario` BÁO TRANSPORT ĐANG LẮP** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). Mở 2026-08-22 (AU-1). Một `PUT /v1/mode` **ghi đè transport outage** trong khi `_scenario.NetworkOutage` **vẫn `true`**; mục 18 đóng chiều *"cổng không gác"*, chiều này nay đã phán. 🔴 **Tập ghi rộng hơn brief nêu: KHÔNG chỉ `PUT /v1/mode`** — `PUT /v1/settings` cũng xoá, một `PUT /v1/mode` **không đổi giá trị** cũng xoá, và chuyển **sang Demo** cũng xoá; **cả ba đo lại và ĐỨNG VỮNG**, mỗi cái một nhân chứng đỏ-được. 🔴 **Hướng bị loại là sửa phía GHI, và giá của nó ghi tại chỗ.** 🔴 **Nó BÁC một lập luận AR-1 đã dùng để đóng nửa kia của mục 18** — lập luận ấy đã rút tại chỗ trong ghi chép thi hành của mục 18. Xem **Phần III** |
 | 34 | Bốn chuỗi web i18n còn nợ từ mục 22 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã: **đúng bốn**, hai khoá × hai locale, và cả bốn **đang hiển thị cho vận hành viên**. `DemoTransport` **không có đường nào** trả ack thất bại. 🔴 **Web của machine-simulator KHÔNG có job CI nào và KHÔNG có dụng cụ i18n nào** — bốn chuỗi này không có nhân chứng thuộc bất kỳ loại nào |
 | 35 | `DBIRTH`/`DDEATH` không sinh ra được, và `SparkplugAliasTable.Reset()` cùng thế — hệ quả ĐÃ ĐO của mục 23 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1). 🔴 **Nhưng chữ *"HOÀN TOÀN"* của brief KHÔNG đứng vững ở phạm vi repo:** `server/` có một bộ phát DBIRTH/DDEATH **đang sống** bằng TypeScript. Đúng ở phạm vi `tools/machine-simulator`. `Reset()`: **một** caller, và nó là một unit test — **không caller sản xuất nào**, trong khi `GetOrAssign` chạy trên **mọi** reading: bảng alias **nửa sống** |
 | 36 | README §16.4/§16.6 là một bản sao **không có nhân chứng** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã. Không test/script/CI nào giữ chúng đúng, và **`ModbusOptions.cs` TỰ KHAI điều đó**. 🔴 **Và phép kiểm tra chéo tìm thấy một câu ĐÃ TRÔI rồi** — §16.6 nói `OperationTimeout` *"hardcoded"* trong khi nó là tham số constructor từ Task B-5 |
-| 37 | 🔴 **HỒ SƠ — LỖI CỦA ĐIỀU PHỐI VIÊN:** một phán quyết của chủ sở hữu sống trọn một vòng nhiệm vụ **KHÔNG có bản ghi tại chỗ** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), và **mục này là của điều phối viên, không phải của mã**. Phán quyết mục 16 ngày 2026-08-22 tới người thi hành **chỉ qua một task brief**; `grep "2026-08-22"` trên file tại `ce1ce2be` trả **đúng hai dòng, cả hai thuộc mục 27**. **"Đừng thi hành" đã bị đọc thành "đừng ghi"** — một phán quyết và một lần thi hành là **hai hiện vật khác nhau**. Cộng: danh sách Phần I **lỗi thời qua ba nhiệm vụ liên tiếp** và **không dụng cụ nào bắt được, vì không cổng nào đọc file này** — cùng lớp với mục 26 và 32. 🔴 **Và con số ấy được ĐO LẠI: brief mở mục này nói "chín mục"; đo trên `659bcfb2` là MƯỜI MỘT** (16, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29 — Phần I thật chỉ chứa 17, 25, 26, 30, 31, 32). **Chính lời khai về khuyết tật kiểm đếm cũng đếm sai**, theo đúng cơ chế mục này mô tả |
+| 37 | 🔴 **HỒ SƠ — LỖI CỦA ĐIỀU PHỐI VIÊN:** một phán quyết của chủ sở hữu sống trọn một vòng nhiệm vụ **KHÔNG có bản ghi tại chỗ** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), và **mục này là của điều phối viên, không phải của mã**. Phán quyết mục 16 ngày 2026-08-22 tới người thi hành **chỉ qua một task brief**; `grep "2026-08-22"` trên file tại `ce1ce2be` trả **đúng hai dòng, cả hai thuộc mục 27**. **"Đừng thi hành" đã bị đọc thành "đừng ghi"** — một phán quyết và một lần thi hành là **hai hiện vật khác nhau**. Cộng: danh sách Phần I **lỗi thời qua ba nhiệm vụ liên tiếp** và **không dụng cụ nào bắt được, vì không cổng nào đọc file này** — cùng lớp với mục 26 và 32. 🔴 **Và con số ấy được ĐO LẠI: brief mở mục này nói "chín mục"; đo trên `659bcfb2` là MƯỜI MỘT** (16, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29 — Phần I thật chỉ chứa 17, 25, 26, 30, 31, 32). **Chính lời khai về khuyết tật kiểm đếm cũng đếm sai**, theo đúng cơ chế mục này mô tả → ✅ **ĐÃ THI HÀNH 2026-08-22 (AW-1)** theo 🔨 **QUYẾT: BẮT CỔNG ĐỌC FILE NÀY** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). `scripts/check-owner-decisions.sh`, chạy trong `scripts/verify-suites.sh`: **cổng nay ĐỌC `docs/owner-decisions.md`** — câu *"không cổng nào đọc file này"* trong thân mục **hết đúng kể từ hôm nay**, và nó được rút tại chỗ chứ không lặng lẽ. Phép kiểm ghim **CẤU TRÚC, không ghim VĂN XUÔI**, đúng lối rẻ nhất mà chính mục này nêu ra: mỗi số hiệu trong bảng có **đúng một** thân mục và ngược lại; **trạng thái ghi trong hàng khớp PHẦN mà thân mục đứng dưới**; **phép liệt kê Phần I nêu đúng tập số hiệu thật sự nằm ở Phần I**, cả ở trường máy đọc lẫn ở câu văn người đọc. 🔴 **Đo được hôm nay, trước khi sửa: NĂM chỗ lệch** — (1) mục 17 ở Phần III với hàng tự khai *"MỘT PHẦN"*; (2)(3)(4) **BA** đoạn liệt kê Phần I trần nằm cạnh nhau ở dòng 111, 168, 237 mà **chỉ một là hiện hành**, không gì phân biệt được; (5) không có trường máy đọc nào nói cái nào hiện hành. **Cả năm sửa ở HỒ SƠ, không sửa dụng cụ cho vừa hồ sơ.** 🔴 **Và cái phép kiểm này KHÔNG bắt được, nói thẳng vì một nửa sự thật ở đây đúng là loại lỗi mục này nói về: NỬA THỨ NHẤT CỦA MỤC 37 — một phán quyết KHÔNG BAO GIỜ ĐƯỢC GHI — vẫn KHÔNG có bộ dò nào.** Không phép kiểm nào trên file này thấy được một sự kiện không nằm trong file. Nó cũng không đọc văn xuôi, không phán được một mục "MỘT PHẦN" thuộc Phần I hay Phần II (nó chỉ nói **KHÔNG PHẢI Phần III**), và **chỉ** ghim phép liệt kê Phần I — Phần II và Phần III không có trường máy đọc. Xem Phần III |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -111,6 +111,7 @@ nó đã làm đúng thế (xem khối ngay dưới). Phần này **không bị 
 **Các mục ở đây, LIỆT KÊ chứ không đếm: mục 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
 28, 29, 30, 31 và 32.** Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn
 sự thật** — câu này chỉ là một con trỏ vào nó.
+<!-- gate:phần-i-rút -->
 
 > 📎 **CÂU NGAY TRÊN — RÚT 2026-08-21 (AP-1), giữ NGUYÊN VĂN, cùng kiểu bảo tồn AB-1 lập và
 > AI-1/AK-1/AO-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG gạch ngang, không xoá một
@@ -171,6 +172,51 @@ sự thật** — câu này chỉ là một con trỏ vào nó.
 **điều kiện DỪNG của nó đã nổ**; phép đo đi kèm nằm ngay trong thân mục, ở phần này, không ở Phần III.
 🔴 **Câu này được viết ngày 2026-08-22 và sẽ lại lỗi thời theo đúng cơ chế mà mục 37 mô tả, trừ khi mục 37
 được quyết** — nó không tự bảo trì được, và bốn lần liên tiếp nó đã không tự bảo trì.
+<!-- gate:phần-i-rút -->
+
+> 📎 **CÂU NGAY TRÊN — RÚT 2026-08-22 (AW-1), giữ NGUYÊN VĂN, cùng kiểu bảo tồn AB-1 lập và
+> AI-1/AK-1/AO-1/AP-1/AU-1/AV-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG gạch ngang,
+> không xoá một dòng nào.** Nó đọc: *"**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 25, 26, 30, 32, 34, 35,
+> 36 và 37.** Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn sự thật** — câu này
+> chỉ là một con trỏ vào nó."*
+>
+> **Lý do rút KHÔNG phải nó từng sai** — nó mô tả đúng trạng thái hồ sơ từ lúc AV-1 viết nó cho tới nhiệm
+> vụ này. Cái làm nó lỗi thời là **hai cơ chế cùng lúc, và một trong hai chưa từng xảy ra với câu này**:
+> *(i)* **ba mục được QUYẾT và THI HÀNH** — 26, 32 và 37, cả ba ngày 2026-08-22 bởi AW-1 — tức cơ chế thứ
+> hai trong sáu; *(ii)* 🔴 **một mục QUAY VỀ Phần I từ Phần III** — mục **17**, đặt lại đúng phần theo
+> chính mục 37. **Chiều ấy là MỚI.** Năm lần trước tập này chỉ nới ra bằng phản biện hoặc co lại bằng
+> phán quyết; đây là lần đầu một số hiệu **đi ngược** vì nó đã bị đặt sai chỗ, và điều đó chỉ lộ ra khi
+> có người **suy từ định nghĩa của các phần** thay vì đọc dấu ✅ ở đầu ô.
+>
+> 🔴 **VÀ ĐÂY LÀ CHỖ CÂU BỊ RÚT TỰ DỰ BÁO ĐÚNG, RỒI VẪN KHÔNG TỰ CỨU ĐƯỢC.** Nó viết: *"sẽ lại lỗi thời
+> theo đúng cơ chế mà mục 37 mô tả, trừ khi mục 37 được quyết — nó không tự bảo trì được, và bốn lần liên
+> tiếp nó đã không tự bảo trì."* Nó lỗi thời đúng như đã dự báo. Cái khác lần này: **mục 37 ĐÃ được
+> quyết**, và câu thay thế bên dưới **không còn chỉ dựa vào việc có ai đó nhìn** — nó mang một trường máy
+> đọc ngay dưới nó, và `scripts/check-owner-decisions.sh` **so trường ấy VÀ câu văn này với tập số hiệu
+> thật sự nằm ở Phần I** ở mỗi lần chạy cổng. 🔴 **Nói cho hết cái nó vẫn KHÔNG làm được: nó bắt được câu
+> này lỗi thời, nó KHÔNG bắt được một phán quyết chưa bao giờ được ghi vào đây.** Nửa ấy của mục 37 vẫn
+> không có bộ dò, và nói ra chứ không để câu trên đọc như một lời hứa rộng hơn cái nó giữ.
+>
+> 📎 **BA ĐOẠN LIỆT KÊ PHẦN I TRẦN — MỘT PHÁT HIỆN CỦA AW-1, VÀ CHÚNG KHÔNG BỊ XOÁ.** Trước nhiệm vụ này
+> Phần I chứa **ba** đoạn liệt kê **không nằm trong khối trích dẫn nào** (ở đây, và hai đoạn nữa bên trên
+> và bên dưới), mỗi đoạn nêu một tập khác nhau, và **chỉ một là hiện hành**. Một người đọc lướt gặp cả ba
+> ở cùng một cấp độ trình bày. Cách file này bảo tồn một câu đã rút — giữ nó ở đúng chỗ nó được viết — là
+> đúng, nhưng nó **chưa bao giờ đánh dấu cái nào còn sống**. Nay mỗi đoạn mang một dòng máy đọc:
+> `<!-- gate:phần-i-rút -->` hoặc `<!-- gate:phần-i = … -->`, và cổng đòi **đúng một** cái sống. **Không
+> một chữ nào của ba đoạn bị sửa và không dòng nào bị xoá.**
+
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 17, 25, 30, 34, 35 và 36.** Tất cả mang `🔴 CHỜ ANH` ở bảng
+phán quyết trên, và **bảng ấy là nguồn sự thật** — câu này chỉ là một con trỏ vào nó.
+🔴 **Mục 17 ở đây là mục QUAY VỀ, không phải mục mới**: nó ở Phần III từ 2026-08-22 (AU-1, thi hành một
+phần) cho tới hôm nay; cái còn treo là **một QUYẾT ĐỊNH của anh** — mặc định của `GET /v1/historian/telemetry`
+— **không phải một việc còn nợ**, nên nó không thuộc Phần II. Lập luận đầy đủ ở hàng 17 của bảng và ở
+đầu thân mục.
+🔴 **Mục 30 ở lại đây KHÔNG phải vì chưa ai đo nó**, mà vì AV-1 được giao thi hành nó ngày 2026-08-22 và
+**điều kiện DỪNG của nó đã nổ**; phép đo đi kèm nằm ngay trong thân mục, ở phần này, không ở Phần III.
+🔴 **Câu này KHÔNG còn tự bảo trì bằng việc có ai đó nhìn, và đó là cái đổi kể từ hôm nay:** dòng ngay
+dưới là trường máy đọc mà `scripts/check-owner-decisions.sh` so với tập đầu mục `^## ` thật sự nằm giữa
+banner Phần I và banner Phần II, **và** với chính câu văn này. Lệch một số hiệu ⇒ **cổng đỏ**.
+<!-- gate:phần-i = 17 25 30 34 35 36 -->
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
 > tới vòng sửa thứ hai của cùng ngày, và nó **không sai, nó THIẾU**.** Ba thao tác của file này vẫn
@@ -239,6 +285,17 @@ phán quyết trên, và **bảng ấy là nguồn sự thật** — câu này c
 này được ĐO LẠI từ chính Phần I sau khi nhiệm vụ này sửa xong file** — quét đầu mục `^## ` giữa banner
 Phần I và banner Phần II — chứ không chép từ brief: brief của AT-1 khai **tám** mục (16, 17, 25, 26, 27,
 30, 31, 32), và **tám ấy đúng ở BASE `ce1ce2be`**, trước khi mục 16 và 27 rời đi.
+<!-- gate:phần-i-rút -->
+
+> 📎 **PHÉP LIỆT KÊ NGAY TRÊN — RÚT 2026-08-22 (AW-1), giữ NGUYÊN VĂN, không xoá một dòng nào, và
+> đánh dấu `<!-- gate:phần-i-rút -->` thay vì để nó tiếp tục đọc như một đoạn đang sống.** Nó đúng vào
+> ngày AT-1 viết nó và **không đúng kể từ AU-1**: mục 26 và 32 nay ở Phần III, mục 31 rời đi ngày
+> 2026-08-22 (AV-1), và mục 34–37 chưa tồn tại khi câu ấy được viết. 🔴 **Chỗ đáng nói không phải nó
+> sai — mà là nó nằm BÊN DƯỚI đoạn liệt kê hiện hành ở cùng một cấp độ trình bày, nên thứ tự đọc trên
+> trang KHÔNG nói được cái nào mới hơn.** Ba đoạn như thế nằm trong Phần I trước hôm nay. Đó là hình
+> dạng thứ hai của mục 37, đo được trong chính phần mà mục 37 mở ra để nói về: một hồ sơ chỉ **thêm
+> vào** thì cuối cùng có nhiều câu cùng khẳng định một trạng thái, và **không câu nào trong số đó nói nó
+> có còn đúng hay không**.
 
 **Cho tới 2026-08-18 phần này có năm mục — 8, 9, 10, 11, 12.** Bốn trong số đó nay **đã
 được quyết**, và **ai quyết cái nào là một phần của hồ sơ, không được gộp lại**: mục
@@ -321,6 +378,301 @@ một con số ước lượng đặt ở đây sẽ **đọc như một phép �
 > **điều kiện DỪNG trong brief đã nổ**, nên mục **không** được thi hành. Nó nay mang thêm một khối đo
 > ngày 2026-08-21 **bác một tiền đề của chính nó** và **đổi câu hỏi** chủ sở hữu đang được mời quyết —
 > đọc khối ấy trước khi quyết mục 16. Số mục còn chờ ở Phần I: **mười sáu** (16–20, 22–32).
+
+## 17. `QueryTelemetryAsync` là truy vấn hướng khách hàng DUY NHẤT không áp cổng xuất xứ, và nó KHÔNG áp được: bảng không có cột để lọc
+
+> 🔴 **ĐẶT LẠI ĐÚNG PHẦN — 2026-08-22 (AW-1). MỤC NÀY VỀ PHẦN I TỪ PHẦN III, VÀ KHÔNG MỘT DÒNG NÀO
+> BÊN DƯỚI BỊ SỬA HAY XOÁ.** Cả thân mục gốc lẫn toàn bộ ghi chép thi hành của AU-1 giữ **nguyên
+> văn**; thứ đổi là **chỗ đứng của mục**, và khối này ghi lại vì sao.
+>
+> **Suy từ định nghĩa của ba phần, không từ dấu ở đầu ô — và thứ tự suy là bắt buộc, vì đọc dấu ✅
+> chính là cách chỗ lệch này được tạo ra.**
+> * **Phần III = *"ĐÃ QUYẾT VÀ ĐÃ THI HÀNH"*.** Ô bảng của mục này tự khai **"ĐÃ THI HÀNH MỘT
+>   PHẦN"**. Chữ *"MỘT PHẦN"* phủ nhận đúng vế thứ hai của điều kiện vào. Không cần đọc thêm gì.
+> * **Phần II = *"ĐÃ QUYẾT, VIỆC CÒN NỢ"*** — banner của nó viết rõ: *"đã có một phán quyết ghi kèm
+>   ngày, và **việc** của nó chưa được thi hành."* Ở mục 17 **không còn việc nào**: cơ chế đã ship,
+>   `QueryTelemetryAsync` **gọi chính** `ApplyRealPresenceGateAsync`, endpoint nhận `includeFabricated`,
+>   bảy `[Fact]` mới, hai đối chứng đã chạy trọn và đã hoàn nguyên. Không dòng mã nào còn phải viết.
+> * **Thứ còn treo là MỘT QUYẾT ĐỊNH** — mặc định của `GET /v1/historian/telemetry` — và AU-1 nêu tên
+>   nó bằng đúng những chữ này: *"Nửa còn nợ, nêu tên chứ không im lặng: **chọn mặc định là việc CỦA
+>   ANH**."* **Phần I = *"ĐANG CHỜ ANH"*.** Một quyết định đang chờ chủ sở hữu ở Phần I theo định
+>   nghĩa của Phần I.
+>
+> 🔴 **Ba tiền lệ trong chính file này, cùng hình dạng, và chúng phân biệt được I với II:** mục **12**
+> mang tiêu đề *"PHÁN QUYẾT ĐÃ THI HÀNH **MỘT PHẦN**"* và **ở lại Phần II** — vì cái nó còn nợ là
+> **VIỆC** (món nợ tài liệu), không phải một quyết định; mục **27** có phán quyết mà chưa có ghi chép
+> thi hành và **ở lại Phần I**; mục **16** bị AQ-1 dừng và **ở lại Phần I**. Nên luật đọc được từ hồ
+> sơ là: *"MỘT PHẦN" ⇒ KHÔNG phải Phần III*, rồi **I hay II tuỳ vào phần dư là QUYẾT ĐỊNH hay VIỆC.*
+>
+> 🔴 **AW-1 KHÔNG quyết mặc định, và điều đó là cố ý.** Mục quay về đây để **được** quyết. Cái giá của
+> việc lật nó, cái bẫy `DemoModeGate?` phải đi kèm trong CÙNG một thay đổi, và phép đo *"3 mẫu ⇒ 0
+> mẫu"* nằm nguyên ở §6 và §7 bên dưới — **đọc chúng trước khi quyết.**
+>
+> 🔴 **Và nói cho hết, vì một nửa sự thật ở đây đúng là loài lỗi mục 37 nói về: DỤNG CỤ MỚI KHÔNG PHẢI
+> THỨ TÌM RA CHỖ LỆCH NÀY.** `scripts/check-owner-decisions.sh` bắt được nó, nhưng chỉ vì hàng bảng
+> **đã tự khai "MỘT PHẦN"** và vì luật *"MỘT PHẦN ⇒ không phải Phần III"* được viết vào phép kiểm sau
+> khi một người đọc định nghĩa của các phần. **Một mục thi hành một phần mà ô bảng KHÔNG nói "một
+> phần" thì phép kiểm ấy vẫn cho qua.** Đó là một cái trần của dụng cụ, không phải một chi tiết.
+>
+> 📎 **Một khẳng định của lời giao việc AW-1 KHÔNG sống sót khi đo lại, và nêu ra vì nó là bằng chứng
+> chính mà lời giao việc dùng:** brief viết *"Thân mục 17 vẫn mang 🔴 CHỜ ANH"* như dấu hiệu mục bị đặt
+> sai chỗ. Câu ấy **đúng về sự kiện và vô giá trị làm bằng chứng**: đo trên file **ở BASE `e99019c0`,
+> tức trước khi AW-1 chạm vào nó**, **MƯỜI LĂM** mục khi ấy đang ở Phần III mở đầu thân bằng đúng chuỗi
+> `🔴 **CHỜ ANH.**` — 15, 16, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29, 31, 33 và mục này — vì luật bảo
+> tồn của file **đòi** giữ nguyên văn câu trạng thái cũ. (Sau nhiệm vụ này con số ấy đổi vì tập đổi:
+> mục 17 rời đi, mục 26, 32 và 37 tới, và cả ba cũng mang đúng chuỗi ấy. **Con số MƯỜI LĂM là phép đo
+> ở base, không phải một tính chất của Phần III** — viết ra chỗ nó được đo, đúng luật của file này.) Một dấu
+> hiệu mà mọi mục đã thi hành cũng mang thì **không phân biệt được gì**. Cái phân biệt được là chữ
+> *"MỘT PHẦN"* ở ô bảng, và phép kiểm mới đứng trên chữ ấy chứ không đứng trên câu mở đầu thân mục.
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6), xác nhận lại trên mã.
+
+**Đo được cái gì — quần thể mở TRỌN, không lấy mẫu.** `IHistorianStore` có **bảy** phương thức đọc
+công khai. Ba cái gọi `ApplyRealPresenceGateAsync`: `QueryResultsAsync`, `QueryBySerialAsync`,
+`AggregateForOeeAsync`. Bốn cái không: `QueryTelemetryAsync`, `QueryRunEventsAsync`,
+`GetStatsAsync`, và `PruneOlderThanAsync` (một phép ghi). Ba trong bốn cái không áp **không có gì để
+áp**: `QueryRunEventsAsync` và `PruneOlderThanAsync` chạy trên bảng không mang khái niệm xuất xứ, và
+`GetStatsAsync` cố ý là một báo cáo **về** store.
+
+**`QueryTelemetryAsync` là phản ví dụ thật, và nó là phản ví dụ CẤU TRÚC.** DDL của
+`historian_telemetry` mang đúng bảy cột: `id`, `result_id`, `machine_code`, `metric`, `value`,
+`unit`, `quality`, `event_time_utc` — **không có `is_fabricated`**. Cột ấy chỉ tồn tại trên
+`historian_results`, được thêm bởi migration 2. Nên cổng không thể áp bằng một cờ; nó cần **một
+phép join mà phương thức này cố ý không làm**, hoặc **một cột mới**.
+
+**Và bề mặt HTTP nói cùng một chuyện:** `HistorianEndpoints.GetTelemetryAsync` nhận
+`machine, metric, from, to, store, ct` — **không `includeFabricated`, không `DemoModeGate`** — trong
+khi mọi route lân cận (`GetResultsAsync`, `GetBySerialAsync`, `GetOeeAsync`, `ExportCsvAsync`,
+danh sách fleet) đều đi qua `ResolveIncludeFabricated(...)`.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Historian.SqliteHistorianStore.ApplyRealPresenceGateAsync`
+(và ba chỗ gọi nó); `SqliteHistorianStore.QueryTelemetryAsync`; DDL `historian_telemetry` trong
+`SqliteHistorianStore`'s migration ladder; `St4i.EngineApi.Endpoints.HistorianEndpoints.GetTelemetryAsync`
+và `HistorianEndpoints.ResolveIncludeFabricated`; route `GET /v1/historian/telemetry`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* trên một fleet trộn — vài máy thật, vài máy mô phỏng — biểu đồ xu hướng trộn dữ liệu
+giả với dữ liệu thật, **không gì trong dữ liệu và không gì trong phản hồi nói cái nào là cái nào**.
+Đó đúng là kiểu hỏng mà vòng sửa số 1 của SM-2 được viết ra để đóng cho bề mặt kết quả và phả hệ;
+nó vẫn mở trên bề mặt telemetry.
+*Chiều ngược, và nó quyết định giá:* trên một bản cài **triển lãm 100 % mô phỏng**, đây là bề mặt
+historian **duy nhất còn CHẠY** theo mặc định. Đóng nó lại đòi đúng cái carve-out Demo mà
+`ResolveIncludeFabricated` đã có cho các route kia — cộng **một cột schema hoặc một phép join**, tức
+một migration trên một cơ sở dữ liệu của khách hàng.
+
+**Nếu KHÔNG quyết định.** Bề mặt này ở lại **không gác được**, và câu đã công bố của cổng — *"the
+one rule every customer-facing historian query/aggregate in this store applies"* — ở lại đúng với
+sáu trong bảy phương thức. Cái tốn kém không phải một dòng sửa: đó là **một migration**, và mỗi ngày
+trôi qua là thêm hàng `historian_telemetry` không mang xuất xứ, nên phép sửa **hồi tố** đắt dần.
+
+### ✅ ĐÃ THI HÀNH **MỘT PHẦN** 2026-08-22 (AU-1, base `659bcfb2`) — cổng nay **áp được và có áp**, còn **mặc định thì KHÔNG đổi**, và **tiền đề ở tiêu đề mục này không sống sót**
+
+🔨 **QUYẾT: ĐÓNG KHOẢNG TRỐNG XUẤT XỨ CỦA `QueryTelemetryAsync`** (2026-08-22, **điều phối viên quyết theo
+uỷ quyền**, cùng khuôn mục 8, 15 và 21 — mục này không đổi payload MQTT, không đổi hình dạng dây, không đổi
+con số OEE nào). **Mọi dòng thân mục gốc ở trên giữ NGUYÊN VĂN.**
+
+#### 🔴 1. Tiền đề trung tâm — *"và nó KHÔNG áp được"* — BỊ BÁC, và cái bác nó nằm trong chính câu của mục
+
+Mục viết: cổng *"cần **một phép join mà phương thức này cố ý không làm**, hoặc **một cột mới**."* Câu ấy nêu
+đúng hai lối và rồi tiêu đề mục lại tuyên bố **không lối nào đi được**. Đo trên DDL: `historian_telemetry`
+khai `result_id INTEGER NOT NULL REFERENCES historian_results(id) ON DELETE CASCADE`. **`NOT NULL` là chỗ
+quyết định:** phép join tới xuất xứ **TOÀN PHẦN** — không có hàng mẫu mồ côi, không có hàng mẫu nào mà xuất
+xứ *"không biết được"* vì thiếu đường đi. Xuất xứ của một mẫu **chưa bao giờ vắng mặt; nó cách một bước nhảy
+và không ai nhảy.**
+
+Cùng một câu sai ấy sống ở **ba nơi đã công bố** và cả ba được sửa **tại nguồn** trong nhiệm vụ này: tiêu đề
+mục 17 (sửa bằng gạch ngang ở hàng bảng phán quyết), doc của `IHistorianStore.QueryTelemetryAsync`
+(*"the asymmetry cannot be closed by passing a flag here"*), và doc của
+`SqliteHistorianStore.QueryTelemetryAsync` (*"not an omission that a flag would fix"*). **Cả hai doc được rút
+theo lối trích-nguyên-văn-rồi-rút, không gạch ngang, không xoá dòng nào.**
+
+#### 🔴 2. Câu khó nhất — *"hàng cũ mang giá trị gì"* — KHÔNG TỒN TẠI ở dạng nó được đặt ra, và đó là câu trả lời chứ không phải một lối né
+
+Câu hỏi giả định cơ chế **THÊM MỘT CỘT**. §8.1(a) đòi **suy cơ chế ra**, đừng nhận một mặc định — và cơ chế
+suy ra được **không phải là thêm cột**:
+
+* Xuất xứ của một hàng telemetry **không phải một sự kiện độc lập**. Nó là **hàm của hàng reading cha**, và
+  quan hệ ấy được **cưỡng chế bởi lược đồ** (`NOT NULL` + khoá ngoại), không phải bởi quy ước.
+* Nên một hàng mẫu cũ mang **đúng cái cha nó mang**. Đó là **một PHÉP ĐO**, không phải một giá trị phải chọn.
+  **Không có sự kiện nào bị bịa ra, vì không có sự kiện nào phải bịa.**
+* **Ba trạng thái vẫn còn — nhưng chúng được THỪA KẾ, không phát minh.** Cha mang `0`/`1`/`NULL`; `NULL` là
+  *"Unknown provenance"* mà migration 2 đã cố ý tạo ra (thêm cột **không DEFAULT**, để chính ngữ nghĩa
+  ADD-COLUMN của SQLite gán `NULL` cho mọi hàng cũ) và `HistorianResultRecord.IsFabricated` đã ghi rõ là
+  **trạng thái THỨ BA, không bao giờ được lặng lẽ gộp vào "thật" hay "giả"**.
+* **Và luật xử lý *Unknown* ĐÃ ĐƯỢC QUYẾT rồi.** `ApplyRealPresenceGateAsync` đã mang nó cho ba read kia.
+  Nhiệm vụ này **không được quyền quyết lại nó**, và **không quyết lại**: nó **gọi** luật ấy.
+
+**Giá, hai chiều, và cả hai đều là giá THỪA KẾ chứ không phải giá mới:**
+*Che *không biết* đi:* khi trong phạm vi có một reading thật rõ ràng, **mọi** mẫu Unknown cùng phạm vi bị loại
+— kể cả mẫu của một máy thật sự thật chỉ vì nó có trước cột. Vận hành viên mất một đoạn đường cong họ vẫn
+thấy hôm qua, và **không gì trong phản hồi nói là đã mất**.
+*Cho *không biết* qua:* khi không có gì rõ ràng thật trong phạm vi, mẫu Unknown đi qua — nên một chuỗi được
+gán nhãn *"đã gác"* vẫn có thể chứa dữ liệu mà **không ai chứng minh được là thật**. **Cổng có một lỗ mà tên
+nó không nói.** Đây đúng là *"Known residual limitation"* mà doc của chính cổng đã ghi, nay chạm tới bề mặt
+telemetry **y nguyên** — vì luật được **gọi**, không được **chép**.
+
+#### 3. Đường di trú — đo được, và **KHÔNG MẤT DỮ LIỆU vì KHÔNG CÓ MIGRATION NÀO CHẠY**
+
+🔴 **Brief nói *"mục 5 ghi rằng HAI store khác `DROP TABLE` lúc khởi động"*. Đọc lại mục 5: nó nêu HAI phát
+hiện, và chỉ MỘT là `DROP TABLE`** — `ConnectorConfigStore` migration v4. Phát hiện kia
+(`ProductConfigStore.Load` ghi lại `products.json`) **không phải một `DROP TABLE`**. Và cái `DROP TABLE` duy
+nhất ấy **đã được phán ✅ KHÔNG ĐỔI**, vì nó là nấc 4 của một thang `PRAGMA user_version` chạy **trong cùng
+một transaction**, theo đúng thứ tự tạo/chép/xoá/đổi-tên mà SQLite quy định — **các hàng sống sót, và việc
+sống sót được ghim bởi một bài test dựng database v3 thật bằng SQL thô.**
+
+Đo trên `SqliteHistorianStore`: thang di trú của nó là **`PRAGMA user_version`, cộng dồn, và KHÔNG có
+`DROP TABLE` ở bất kỳ nấc nào** — nấc 1 là `CREATE TABLE IF NOT EXISTS` ×3, nấc 2 là một
+`ALTER TABLE … ADD COLUMN`. Mỗi nấc chạy trong transaction riêng; `EnsureSchema()` chỉ áp nấc mới hơn
+`user_version` hiện tại.
+
+🔴 **Nhưng bằng chứng "không mất dữ liệu" ở đây KHÔNG dựa vào chất lượng của thang, mà mạnh hơn thế:
+AU-1 KHÔNG THÊM NẤC NÀO. Không có migration nào chạy trên cơ sở dữ liệu của khách hàng, không một byte nào
+được đọc-ghi-lại, `user_version` không dịch.** Bản sửa là **một phép ĐỌC**. Đó là hệ quả trực tiếp của §2: khi
+xuất xứ đã được ghi đúng một lần trên hàng cha, thêm một cột thứ hai lên hàng con chỉ tạo ra **một bản sao có
+thể trôi** mà `AppendResultsAsync` phải giữ đồng bộ vĩnh viễn.
+
+#### 4. Chỗ GHI **CÓ** biết xuất xứ — đo, không đoán
+
+`AppendResultsAsync` là **chỗ ghi DUY NHẤT** của `historian_telemetry` trong toàn commit (một câu
+`INSERT INTO historian_telemetry`, và không có câu nào khác ở đâu, kể cả `server/`, `client/`, `examples/`).
+Nó ghi hàng reading với `@is_fabricated` tường minh, đọc lại `last_insert_rowid()`, rồi ghi các hàng mẫu với
+`result_id` ấy — **cùng một transaction, cùng một vòng lặp, cùng một biến `record`**. Nên chỗ ghi **cầm câu
+trả lời trong tay** ở đúng lúc nó ghi hàng mẫu. **Cột ấy điền được cho tử tế** — và chính vì thế nó **thừa**.
+
+Một phép đo phụ làm cửa sổ thời gian khớp **chính xác** chứ không xấp xỉ: `AppendResultsAsync` tính **một**
+`eventTimeIso` và đóng dấu nó lên **cả** reading **và** mọi mẫu của reading ấy. Nên một mẫu nằm trong cửa sổ
+**khi và chỉ khi** cha nó nằm trong cửa sổ.
+
+#### 5. Bề mặt ĐỌC — **LIỆT KÊ trước, con số SAU**
+
+Quét toàn commit (`git grep --full-name … HEAD -- ':(top)'`, chạy từ **gốc repo** `D:\SOURCES\avi-aoi-sim`;
+`server/` và `client/` vắng khỏi cây nhưng **có trong commit** và **đã được quét**):
+
+**Gọi `IHistorianStore.QueryTelemetryAsync`:** `HistorianEndpoints.GetTelemetryAsync` (sản xuất) · ba fake
+`IHistorianStore` trong test (`HistorianWriterTests`, `FleetHostGateCommitCompletionTests`,
+`FleetHostHistorianWiringTests`) · `SqliteHistorianStoreQueryTests` · `SqliteHistorianStoreTests`.
+
+**Gọi `GET /v1/historian/telemetry`:** chỗ đăng ký route trong `HistorianEndpoints` ·
+`RbacPolicyTests` (điều tra dân số chính sách) · `HistorianEndpointsReadTests` (ba `[Fact]`) ·
+`HistorianTelemetryProvenanceTests` (mới, bảy `[Fact]`) · và các bản ghi tài liệu.
+
+🔴 **Cái phép liệt kê này KHÔNG liệt kê được, và nó là kết quả quan trọng nhất của mục §5:
+KHÔNG MỘT BIỂU ĐỒ NÀO. KHÔNG MỘT BÁO CÁO NÀO. KHÔNG MỘT KHÁCH HÀNG ĐÃ SHIP NÀO.** Không trang web nào,
+không view WPF nào, không PDF nào gọi route này. Bề mặt ĐỌC hướng-người-dùng của nó là **rỗng**, và bản thân
+điều đó là một phát hiện: **mục 17 mô tả tác hại của nó bằng một "biểu đồ xu hướng" mà trong cây này không
+tồn tại.** (`getTelemetrySeries` trong `server/` là **một hệ khác** — Postgres/drizzle, bảng `ot_telemetry` —
+không phải route này.)
+
+🔴 **Và nửa ngược lại, vì "không có bên tiêu thụ" KHÔNG có nghĩa là "không có ai đọc":** route mang
+`RequireAuthorization(Policies.Operator)` và là một bề mặt HTTP **đã xuất bản**. Một bên tích hợp gọi thẳng
+API **đo không được từ repo này** — cùng cái trần mà mục 14 và mục 32 đã trả giá để học. Doc của
+`ResolveIncludeFabricated` tự nói ra khả năng ấy: *"no shipped web route sends one today, but a direct API
+caller can."*
+
+#### 🔴 6. ĐIỀU KIỆN DỪNG — **ĐÃ NỔ**, ở nửa MẶC ĐỊNH, và đây là phép đo
+
+Nối route này vào `ResolveIncludeFabricated` như các route anh em **không làm hẹp phản hồi — nó làm RỖNG
+phản hồi**, và cơ chế đo được:
+
+* `machine` là tham số **BẮT BUỘC** trên route này, nên phép dò real-presence của cổng **luôn** chạy trong
+  phạm vi **đúng một máy**.
+* Với một máy **mô phỏng bình thường** trên một bản triển khai **không phải demo** (`DemoModeGate` tắt — tức
+  **mọi bản cài sản phẩm**), phép dò không tìm thấy gì rõ ràng thật **trong phạm vi máy ấy**, tập được nhận
+  thành `(is_fabricated IS NULL OR is_fabricated = 0)`, và **mọi** mẫu của máy ấy bị loại.
+* **Đo bằng cách chạy, không bằng lập luận:**
+  `GateOptIn_OnAPurelyFabricatedMachine_ReturnsNothing_WhileTheUngatedReadReturnsEverySample` khẳng định
+  **cùng một hạt giống**: không gác ⇒ **3 mẫu**; gác ⇒ **0 mẫu**. **Không phải ít hơn — bằng không.**
+* Một biểu đồ xu hướng hôm nay có đường thì ngày mai **rỗng, vĩnh viễn**. Đó **đúng** hình dạng hỏng mà
+  `ResolveIncludeFabricated` tự ghi cho các route anh em **trước** Fix 1: *"not 'narrower than intended,'
+  literally zero, permanently."*
+
+**Nên: DỪNG ở nửa ấy. Mặc định KHÔNG bị đổi, và AU-1 không tự quyết nó.** Cái được ship là **cơ chế** với
+**mặc định hôm nay được giữ nguyên từng ký tự**; cái được giao lên là **quyết định về mặc định**.
+
+#### 7. Miễn trừ Demo — **KHÔNG dùng**, và lý do là chính điều kiện DỪNG
+
+Route mới **KHÔNG** đi qua `ResolveIncludeFabricated`. Nó mặc định `includeFabricated ?? true`.
+
+**Vì sao:** miễn trừ Demo tồn tại để **TRẢ LẠI** những hàng mà cổng lấy đi trên một hộp demo. Ở đây cổng
+**không lấy gì đi**, nên **không có gì để trả lại** — nối nó vào sẽ là một cái không-làm-gì trên hộp demo và
+**chính là hành vi làm nổ điều kiện DỪNG** trên hộp thật (`demoGate?.Enabled ?? false` = `false` = cổng bật).
+Route **cố ý không nhận** tham số `DemoModeGate?`: nhận rồi bỏ qua thì tệ hơn, còn không nhận làm cho việc
+không-dùng **thành cấu trúc và nhìn thấy được**.
+
+🔴 **Điều kiện kèm theo, ghi vào mục vì nó là một cái bẫy:** nếu chủ sở hữu phán lật mặc định, thì
+`DemoModeGate?` **phải được thêm trong CÙNG một thay đổi**, không phải sau. Thiếu nó, telemetry của một bản
+cài triển lãm 100 % mô phỏng **về không** — đúng con bug mà Fix 1 đã sửa cho các route kia.
+
+#### 🔴 8. Nửa bất lợi của chính bản sửa này — hai route vẫn trả lời khác nhau
+
+Sau bản sửa, `GET /v1/historian/results` vẫn **giấu** reading của một máy bịa trong khi
+`GET /v1/historian/telemetry` vẫn **vẽ** mẫu của **chính máy ấy**, và **không gì trong phản hồi nói cái nào
+là cái nào**. Chỗ lệch ấy **không do bản sửa tạo ra** — nó **LÀ** mục 17 — nhưng bản sửa **KHÔNG ĐÓNG** nó.
+Cái thay đổi là: trước đây nó là một **khẳng định cấu trúc** (*"không áp được"*) mà không ai xem lại được;
+nay nó là **một dòng, một mặc định, xem lại được**, và nằm cạnh phép đo về giá của việc lật nó.
+
+#### 9. Nhân chứng, cặp đối chứng, và hằng số — **đo SAU khi viết**
+
+**File mới** `tests/St4i.EngineApi.Tests/HistorianTelemetryProvenanceTests.cs`, **bảy `[Fact]`**. Taxonomy
+dưới đây là **kết quả chạy hai đối chứng**, không phải nhãn tự phong — và **nó đã sửa một nhãn viết sai**:
+
+* **Đối chứng A** (gỡ cổng khỏi `SqliteHistorianStore.QueryTelemetryAsync`): **4 ĐỎ / 3 xanh**. Bốn cái đỏ là
+  nhân chứng thật.
+* **Đối chứng B** (lật mặc định endpoint sang luật anh em): **đúng 1 ĐỎ**, và nó là
+  `Default_WithNoExplicitValue_…_LegacyContinuity`. 🔴 **Đó là một phát hiện, không phải một cái pass: mọi bài
+  test telemetry ĐÃ CÓ vẫn XANH dưới đối chứng B, nên trước file này KHÔNG bài nào trong 2 804 bài nhìn thấy
+  được phép lật mặc định** — chính cái mất mát mà điều kiện DỪNG tồn tại để chặn thì **không có nhân chứng**.
+* **ĐỎ dưới KHÔNG đối chứng nào, và được tự dán nhãn *guard, KHÔNG phải nhân chứng* ngay trên bài test:**
+  `TheJoinThisReadWasSaidToBeUnableToMake_IsTotal_…` (một phép đo cấu trúc, cố ý độc lập với cổng) và
+  🔴 `GateOptIn_UnknownProvenanceSamples_PassWhenNothingExplicitlyReal…` — **viết ra như một nhân chứng, ĐO
+  RA là một guard, và đã đổi nhãn tại chỗ.** Cả hai đối chứng đã **hoàn nguyên**; `git diff` ở ngọn nhánh
+  không chứa cái nào.
+
+**Hằng số — ĐO rồi mới viết:** `EXPECT_ENGINEAPI` **1388 → 1395** (+7, đếm từ runner `--list-tests` **sau
+khi** viết file, không dự báo trước), tổng **2804 → 2811**. `EXPECT_WARNINGS` **328 KHÔNG dịch**,
+`EXPECT_BUILD_NODES` **0**, sổ cảnh báo **16 hàng không dịch một đơn vị**, **0 lệnh đè** — không
+`.editorconfig`, không `<NoWarn>`, không `#pragma`, không `SuppressMessage`. `EXPECT_EDGECORE` **1179 không
+dịch**: ba fake chỉ đổi một dòng chữ ký mỗi cái. **AU-1 không chạm `web/`.**
+
+🔴 **Một `-t:Rebuild` trả *13 Error(s)* rồi chạy lại trả *0 Error(s)*, cùng cây, không sửa gì** — đúng cái
+bẫy mà ràng buộc toàn cục nêu tên. **Con số được tin là con số của lần chạy lại.**
+
+#### 🔴 10. Một lỗi CỦA CHÍNH AU-1, bị bắt bởi chính bài test của AU-1
+
+Bản nháp đầu thêm `includeFabricated` vào `GetTelemetryAsync` nhưng **quên truyền nó xuống**
+`store.QueryTelemetryAsync`. Hệ quả: store rơi về mặc định của **chính nó** (`false`) và **cổng BẬT theo mặc
+định** — tức **đúng thứ điều kiện DỪNG cấm**, ship kèm một doc comment dài giải thích rằng nó không làm thế.
+Hai bài đỏ ngay lần chạy đầu (`Default_…` trả `[72]` thay vì `[71, 72, 73]`;
+`GateOptIn_OnAPurelyFabricatedMachine_…` trả `0` thay vì `3` ở vế **không gác**). **Nó được bắt lúc CHẠY, không
+phải lúc đọc** — và nếu bài guard `Default_…` không được viết ra vì "nó xanh ở cả hai phía nên vô dụng", bản
+sửa đã đi qua cổng và làm biến mất dữ liệu của khách hàng đúng như đã bị cấm.
+
+#### 11. Một khẳng định đã công bố được RÚT **TẠI NGUỒN**, không chỉ trong hồ sơ
+
+Doc của `ApplyRealPresenceGateAsync` mở đầu bằng *"the one rule **every** customer-facing historian
+query/aggregate in this store applies"*. **AL-1 đã đo và rút câu ấy trong FILE NÀY ngày 2026-08-20** (mục 12,
+§11) — **nhưng phép rút chưa bao giờ tới mã**. Suốt hai ngày, người đọc **hồ sơ** thấy câu đã rút còn người
+đọc **mã** vẫn thấy câu sai, ở ngay trên hàm mà nó nói sai về. Nay sửa tại nguồn, kèm phép **liệt kê** thật:
+với tới cổng — `QueryResultsAsync`, `QueryBySerialAsync`, `AggregateForOeeAsync`, `QueryTelemetryAsync`;
+**mặc định BẬT ở BA**. Không với tới — `QueryRunEventsAsync` (bảng không mang máy lẫn xuất xứ) và
+`GetStatsAsync` (cố ý là báo cáo **về** store).
+
+🔴 **Và đó chính là mục 37 ở dạng thu nhỏ, gặp trong lúc thi hành một mục khác:** một phán quyết/phép rút
+sống trong hồ sơ mà **không có bản ghi tại chỗ**, và **không dụng cụ nào bắt được**.
+
+#### 12. Hai phép đếm trong thân mục gốc **không khớp phép liệt kê của chính chúng** — sửa ở đây, thân mục giữ nguyên văn
+
+* Thân mục viết `historian_telemetry` *"mang đúng **bảy** cột"* rồi **liệt kê tám**: `id`, `result_id`,
+  `machine_code`, `metric`, `value`, `unit`, `quality`, `event_time_utc`. **DDL có TÁM.** Phép liệt kê đúng,
+  con số sai — đúng lý do luật *"LIỆT KÊ trước, con số viết SAU"* tồn tại, và lần này chính luật ấy bắt được
+  lỗi trong một mục đã công bố.
+* Thân mục viết `IHistorianStore` có *"**bảy** phương thức ĐỌC công khai"* rồi liệt kê bảy cái **trong đó có
+  `PruneOlderThanAsync`, mà chính câu ấy gọi là "một phép ghi"**. Đọc thật: **sáu**. (Và interface còn hai
+  phép ghi nữa — `AppendResultsAsync`, `AppendRunEventAsync` — không nằm trong phép đếm nào.)
+
+**Không dòng nào của thân mục gốc bị sửa**; hai chỗ lệch được ghi ở đây.
+
+---
 
 ## 25. ĐIỀU KIỆN RỜI PHẦN II CỦA MỤC 12 — họ driver: viết tài liệu, hay thu hẹp bề mặt? Và với hơn một nửa, câu hỏi ấy KHÔNG TỒN TẠI
 
@@ -422,71 +774,6 @@ người tiêu thụ ngoài repo này.** Mọi con số bề mặt-đọc ở tr
 chết. Thêm nữa, **phép phân lớp 84/13/0 là một PHÁN ĐOÁN, không phải một phép đo** — chính đợt 8 nói
 thế — trong khi các con số bề mặt-đọc trong bảng thì kiểm được tới từng dòng. Hai loại ấy **không
 được đọc với cùng mức tin cậy**.
-
----
-
-## 26. Không gì trong repo này trả cho TÍNH ĐÚNG của một chú thích đã viết — mục 12 trả cho BAO PHỦ, và W-1 kiểm HÌNH THỨC
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Tổng hợp từ AG-1, AH-1 + phản biện, AL-1, AM-1, AN-1.
-
-**Đo được cái gì — LIỆT KÊ TRƯỚC, và ĐỪNG CỘNG.** Năm phép đo về khẳng định sai trong chú thích của
-chính dự án này, mỗi cái kèm **đơn vị của nó**:
-
-| ai | đo được | mẫu số | khẳng định thuộc loại nào | có phải một phép kiểm đếm không |
-|---|---|---|---|---|
-| đợt 4 (AG-1) | **101** khẳng định `cref`/`paramref` đã sai (75 CS1574 + 23 CS1734 + 3 CS0419), 29 file | quần thể ĐẦY ĐỦ | **có sẵn**, đã đứng trong cây từ trước | **có** — và do TRÌNH BIÊN DỊCH tìm |
-| đợt 5 (AH-1) + phản biện | **17** câu SAI | một **mẫu 48** rút từ **120** câu vừa viết | **vừa viết** | **không** — một mẫu |
-| đợt 6 (AL-1) | **5** câu sửa, **2** sai hẳn | 🔴 **129 CẢNH BÁO**, không phải 129 câu | **vừa viết** | không — một bộ lọc |
-| đợt 7 (AM-1) | **13** câu sửa (7 + 6, hai vòng) | **199 CÂU** | **vừa viết** | không — hai bộ lọc |
-| đợt 8 (AN-1) | **12** câu sửa (6 do hai vòng + 6 bắt lúc viết) | **287 CÂU** | **vừa viết** | không — hai bộ lọc + tự kiểm |
-
-🔴 **Năm con số ấy KHÔNG cộng được, và ba lý do phải nói riêng ra.** *(i)* Hai loại vật khác nhau:
-101 là khẳng định **CÓ SẴN**, bốn cái sau là khẳng định **VỪA VIẾT** — cộng chúng là đo hai quần thể
-như một. *(ii)* **Một mẫu không phải một phép kiểm đếm**: 17/48 là một tỉ lệ ~35 % trên một mẫu, và
-báo cáo đợt 5 tự nói vì sao nó **không ngoại suy được** (12 trong 17 hỏng vì cùng một tiền đề sai về
-seed). *(iii)* 🔴 **Mẫu số của đợt 6 KHÔNG cùng đơn vị với đợt 7 và 8**: 129 là số **cảnh báo** đợt
-6 trả, và đợt 6 **không bao giờ đếm số câu của nó** — chính đợt 8 ghi lại chuỗi ấy là
-`120 → ? → 199 → 287`, với dấu `?` đúng ở chỗ đợt 6. Ở **đợt 5** thì hai đơn vị **trùng nhau**, và
-chỉ ở đó: cả 120 cảnh báo đều là một `<summary>` trên một property, một cảnh báo một câu.
-
-**Cái repo này CÓ dụng cụ, và cái nó KHÔNG có.** Có: trình biên dịch bắt **con trỏ hỏng**
-(CS1574/CS1734/CS0419) và **chỗ trống** (CS1591/CS1573). Có: **W-1**, tức
-`tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs`, **bảy** `[Fact]` — bộ quét có tới được corpus
-của nó không, mọi khối `///` của ta có parse được như XML không, khối trong file SDK vendored có
-parse được không, mọi tên phần tử có nằm trong `RegisteredElementNames` không, không đâu dùng chú
-thích `/** */`, cộng hai bài tự kiểm chính bộ kiểm. **Không có: một dụng cụ nào trả lời "câu này
-đúng hay sai".** W-1 kiểm một khối **có hình thức hợp lệ**; nó không thể và không tự nhận kiểm được
-một câu là **thật**.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs` (bảy `[Fact]`,
-`RegisteredElementNames`); `scripts/verify-suites.sh` (`EXPECT_WARNINGS`, `EXPECT_WARNING_LEDGER` —
-hai hằng số duy nhất canh chú thích, và cả hai đếm **sự vắng mặt**, không đếm **tính đúng**);
-`Directory.Build.props` (khối N-1/N-2 đặt ra phép thử *"can this sentence be recovered"*, tức tiêu
-chí đã có nhưng **không có bộ cưỡng chế**).
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* **một chú thích sai còn tệ hơn không có chú thích**, vì nó làm người đọc **thôi
-kiểm**. Bốn phép đo trên đều bắt được câu sai, và loại tệ nhất trong đó không chứa một sự kiện sai
-nào — nó khẳng định một **mục đích** hoặc một **cơ chế** (một caller, một timer, một người dùng) mà
-không có gì để kiểm: đợt 6 tìm ra một `<summary>` nói phương thức tồn tại *"để người gọi cho vận
-hành viên biết vì sao cửa sổ ấy chấm điểm như thế"* cho một phương thức **không có caller sản xuất
-nào**; đợt 7 khẳng định một **heartbeat nền mà repo này không có**, lấy từ một doc comment hàng xóm
-đã hedge đúng. Với `GenerateDocumentationFile` đã bật, những câu ấy **đi vào `St4i.EdgeCore.xml`**
-và ra tới bản cài (xem mục 31).
-*Chiều ngược, và nó không nhẹ:* **không ai biết dụng cụ ấy trông như thế nào.** Đợt 7 và đợt 8 đều
-đo được rằng **một bộ lọc cơ học đơn lẻ báo thiếu**: đợt 7 vòng 1 bắt 7, vòng 2 bắt **6 cái vòng 1
-mù hoàn toàn**; đợt 8 vòng 1 bắt 1, vòng 2 bắt 5. Đợt 8 tự nói rằng **recall của bộ lọc vòng 2 của
-nó là chưa biết**. Nên một "cổng soát tài liệu" sẽ là một dụng cụ **không có định nghĩa xanh** và
-**không biết độ nhạy của chính nó** — đúng loại dụng cụ mà file này lập ra để chấm dứt. Và một nửa
-nữa phải nói: **quá trình viết chú thích ĐANG LÀ dụng cụ** — cả mười khuyết tật mã ở các mục 15–24
-đều được tìm ra **trong lúc viết chú thích**, không phải bằng một cổng.
-
-**Nếu KHÔNG quyết định.** Mục 12 hoàn tất (hoặc rời Phần II bằng mục 25) và để lại một cây có
-**bao phủ** chú thích cao và **không dụng cụ nào** về tính đúng, tức đúng trạng thái mà tỉ lệ ~35 %
-của đợt 5 được đo trên. Con số đáng sợ không phải một trong năm con số trên; nó là cái **không ai
-đo**: **các khẳng định đã có sẵn trong cây và chưa từng bị đọc lại** — đợt 4 đã cho thấy **101** cái
-trong số đó sai đủ nặng để trình biên dịch bắt được, và **không ai từng đo số cái sai theo cách
-trình biên dịch KHÔNG bắt được.**
 
 ---
 
@@ -658,79 +945,6 @@ viết lại file ấy thành 2 byte — định dạng của vận hành viên 
 đều mất, trên một lần khởi động **bình thường**, không ai yêu cầu thay đổi gì. Đối chứng cùng probe:
 `ProductConfigStore` ở đúng hình dạng ấy **không đụng** file (4 byte trước, 4 byte sau) — bản sửa của V-1
 đứng vững. Đây là hình dạng của mục **1/5/11/13**; nó cần một mục riêng, không phải một dòng phụ ở đây.
-
----
-
-## 32. Một lời khai miền dụng cụ chỉ KIỂM ĐƯỢC nếu nó ghi lại NƠI lệnh được chạy — và cái giá đã trả là một phán quyết của chủ sở hữu mang một cái trần SAI
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1), sau một phép đo của điều phối viên bác đúng chỗ AO-1 nói
-*"không giải được từ chỗ tôi đứng"*. **Mục này KHÔNG về một lần grep hỏng. Nó về một LỚP.**
-
-**Đo được cái gì — phép kiểm quyết định, cùng mẫu, cùng SHA, chỉ khác chỗ đứng.** Pathspec của git
-**tương đối với thư mục hiện hành**, và một pathspec bị thu hẹp **không báo lỗi — nó trả 0**:
-
-| lệnh (chạy từ `tools/machine-simulator`, SHA `a70ed5d6`) | kết quả |
-|---|---:|
-| `git grep -l 'ingest' <SHA> -- 'server/*.ts'` | **0** |
-| `git grep -l 'ingest' <SHA> -- ':(top)server/*.ts'` | **197** |
-| `git grep -l 'ingest' <SHA> -- '*.ts'` | **1** |
-| `git grep -l 'ingest' <SHA> -- ':(top)*.ts'` | **214** |
-
-🔴 **Và ranh giới KHÔNG hẹp như lần sửa đầu tiên tưởng — đây là một phép đo, không phải một lời
-nhượng bộ.** Một bản sửa trung gian ghi rằng chỉ pathspec **nêu tên thư mục gốc** mới hỏng còn
-**glob đuôi trần** thì không. **Hai hàng cuối bảng trên bác điều đó:** `'*.ts'` trần cũng bị thêm
-tiền tố cwd, `1` đối lại `214`. Hình dạng đúng, viết đủ rộng chứ không hẹp hơn phép đo: **mọi
-pathspec tương đối đều bị thu hẹp theo cwd.** `server/` có **1589** file trong commit và `client/`
-có **711**; cả hai **không nằm trên đĩa** (sparse checkout) nhưng **đều nằm trong commit object**,
-nên chúng luôn với tới được — bằng đúng một tiền tố.
-
-🔴 **Hệ quả trung tâm, và nó là lý do mục này tồn tại: `0` từ một phép quét ĐÚNG và `0` từ một
-pathspec loại trừ cả cây là KHÔNG PHÂN BIỆT ĐƯỢC trong một báo cáo.** Không báo cáo nào trong chuỗi
-này — kể cả bản đầu của AO-1 — ghi lại **thư mục nó đứng khi gõ lệnh**. Nên mọi lời khai miền dụng
-cụ trong chuỗi này là **không kiểm được**, kể cả những lời khai đúng.
-
-**Cái giá đã trả, ĐO chứ không suy đoán.** Bảy khẳng định dựa trên phép quét ấy, chạy lại cả hai
-cách trên `server/` + `client/`:
-
-* ✅ **NĂM SỐNG SÓT — `0` ở CẢ HAI cách:** `TransportMode`, `machine-simulator`, `St4i\.`,
-  `EngineApi`, `Waveforms`. 🔴 **Điều này phải được viết ra, vì một mối nghi không giải để lại một
-  vết bẩn ở chỗ nó không thuộc về:** kết luận của **AM-1** rằng `TransportMode` được xuất bản ở
-  **ba** chỗ và **ba là toàn bộ tập** — **ĐỨNG VỮNG**. Máy chủ hệ sinh thái và client trình duyệt
-  thật sự không tiêu thụ hợp đồng mode của sản phẩm này.
-* 🔴 **HAI KHÔNG:** `rateHz` **0 → 6** file, `waveform` **0 → 8** file.
-
-**Ở đâu — trỏ bằng TÊN.** Ngữ nghĩa pathspec của `git grep` (dụng cụ, không phải mã của ta);
-`server/contracts/machineDataContract.ts`, `server/services/processResultService.ts`,
-`server/api/v1/openapi.ts`, `server/routers/machineApiRouters.ts`,
-`server/contracts/machineDataContract.test.ts`,
-`client/src/components/apiDocs/AutomationProcessFeedSection.tsx` (**bên tiêu thụ, trong commit này**);
-khối lời-khai-miền của **AM-1 §11(f)** và **AN-1 §6.3**; **mục 14** ở Phần III (khối rút kèm ngày);
-**mục 29** (ca §8.1(f) mà chính AO-1 tự sinh ra); `scripts/verify-suites.sh` — **nêu tên vì nó KHÔNG
-chứa phép kiểm nào cho chuyện này.**
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* một **phán quyết của chủ sở hữu đã ra kèm một cái trần sai**. Mục 14 ghi rằng bên
-tiêu thụ *"không đo được từ repo này"*; với hợp đồng ingest HTTP điều đó **luôn luôn sai**, và cái
-làm nó trông đúng là một pathspec. Một phán quyết ra dưới một cái trần sai là **chính xác** thứ file
-này tồn tại để ghi lại. Rộng hơn: **mọi câu phủ định tồn tại** trong chuỗi này đứng trên một lời
-khai không ai kiểm được.
-*Chiều ngược, và nó đủ mạnh để "không làm gì" là một lựa chọn có lý:* **phần lớn phép quét của chuỗi
-này nhắm vào `src/` và `tests/`, tức NẰM TRONG cwd, nên chúng không bị ảnh hưởng** — và phép đo vừa
-rồi cho thấy **năm trên bảy** khẳng định bị nghi ngờ vẫn đứng. Thiệt hại đã đo là **hai** chuỗi, cả
-hai trên **một** mục, và cả hai đọc theo chiều **thuận** cho phán quyết ấy. Bản vá là **một dòng**
-(`:(top)` hoặc `:/` trên mọi pathspec, hoặc **ghi cwd cạnh SHA** trong mỗi lời khai miền) — nhưng
-**chưa dụng cụ nào cưỡng chế nó**, và dựng một dụng cụ để canh cách người ta gõ một lệnh tra cứu là
-một bộ kiểm mới trên thứ **không phải mã sản phẩm**. Một quy ước viết tay rẻ hơn nhiều và **không có
-gì đỏ lên khi ai đó quên**.
-
-**Nếu KHÔNG quyết định.** Lời khai miền tiếp tục được viết ở mỗi báo cáo, tiếp tục **không kiểm
-được**, và lần sau `0` sẽ lại được đọc là *"không có"* thay vì *"tôi đã không nhìn"*. 🔴 **Và một
-chỗ CHƯA ĐO được nêu tên chứ không lấp, vì lấp nó ở đây sẽ lặp lại đúng khuyết tật này:** **người
-đăng ký gương MQTT retained `syn/…`** — bề mặt đã xuất bản thứ hai mà mục 14 đổi — **vẫn chưa ai
-đo**. **37** file dưới `server/` + `client/` nhắc chuỗi `syn/`; **chưa file nào được chứng minh là
-một người ĐĂNG KÝ**; các lần xuất hiện của `retained` đã mở ra đều là chuyện khác (leo thang cảnh
-báo, chú thích UI). Nhiệm vụ này **cố ý dừng ở đó** — đó là một mục cần mở, không phải một chướng
-ngại phải dọn dở dang trên đường.
 
 ---
 
@@ -908,78 +1122,6 @@ sao, trong khi hai bản kia đã được cho nhân chứng — nên chỗ trô
 được phát hiện bởi một bên tích hợp chứ không bởi một cổng. Đây **cùng một lớp với mục 26** (không gì trả cho
 **tính đúng** của một chú thích đã viết) và **mục 32** (một lời khai chỉ kiểm được nếu nó ghi lại điều kiện
 của chính nó) — nhưng khác cả hai ở chỗ **bản sửa đã được tiền lệ hoá hai lần trong chính repo này**.
-
----
-
-## 37. 🔴 HỒ SƠ — LỖI CỦA ĐIỀU PHỐI VIÊN: một phán quyết của chủ sở hữu đã sống trọn một vòng nhiệm vụ mà KHÔNG có bản ghi tại chỗ, và không dụng cụ nào bắt được
-
-🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1). 🔴 **Mục này KHÔNG nói về mã. Nó nói về quy trình đã tạo ra file này, và
-nó được điều phối viên yêu cầu viết THẲNG. Viết thẳng.**
-
-**Đo được cái gì.** Phán quyết mục 16 của chủ sở hữu ngày **2026-08-22** — *một transaction bọc bốn câu lệnh
-của `AggregateForOeeAsync`*, tức **lựa chọn thứ tư** mà mục không có — tới tay người thi hành **chỉ qua một
-task brief**. Ở base `ce1ce2be`, `grep "2026-08-22"` trên `docs/owner-decisions.md` trả **đúng hai dòng, và cả
-hai thuộc mục 27**. Điều phối viên bảo nhiệm vụ trước ghi phán quyết mục 27 và nói mục 16 *"không phải việc
-của anh"* — tức đã coi **"đừng thi hành"** là **"đừng ghi"**. 🔴 **Một phán quyết và một lần thi hành là HAI
-HIỆN VẬT KHÁC NHAU.** Một phán quyết là dữ kiện ngay khi được phát ra; nó không chờ ai thi hành để trở thành
-thật, và **đúng loại hiện vật mà file này tồn tại để giữ**. Trong một vòng nhiệm vụ, kênh duy nhất mang nó là
-một task brief — **và task brief nằm dưới `.superpowers/`, bị gitignore**, tức đúng cái kênh mà đoạn mở đầu
-của file này gọi tên là thiếu sót nó lập ra để chấm dứt.
-
-**Bằng chứng thứ hai, cùng lớp, đo trong chính nhiệm vụ này.** Câu tóm tắt Phần I —
-*"Các mục ở đây, LIỆT KÊ chứ không đếm: mục 16, 17, 18, … 32"* — **đã sai từ trước khi AU-1 chạm vào nó**:
-mười một mục (16, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29) đã rời sang Phần III ở các nhiệm vụ trước và câu ấy
-vẫn liệt kê cả mười một. Nó **lỗi thời qua ba nhiệm vụ liên tiếp** và **không nhiệm vụ nào phát hiện ra**, vì
-**không cổng nào đọc file này**.
-
-🔴 **Và con số ấy phải được ĐO chứ không nhận, vì lời khai mở mục này cũng đếm sai.** Brief giao mục này viết
-*"danh sách Phần I đã lỗi thời **chín** mục"*. Đo trên `659bcfb2`: Phần I **thật sự** chứa **17, 25, 26, 30,
-31, 32**, còn câu tóm tắt liệt kê **mười bảy** số hiệu — nên phần thừa là **MƯỜI MỘT**, không phải chín.
-**Lời khai về một khuyết tật kiểm đếm tự nó đếm sai, theo đúng cơ chế nó đang mô tả** — một con số vô hướng
-tóm tắt một tập thay đổi ở chỗ khác. Đây là **lần thứ tư trong bốn nhiệm vụ liên tiếp** một con số như thế bị
-phép liệt kê ngay cạnh nó bác bỏ, và lần này nó xảy ra **trong chính câu chẩn đoán**. Mọi phép rút trước đó đều viết được câu *"không phải nó từng sai — nó mô tả
-đúng trạng thái cho tới lúc ấy"*; **lần này câu đó viết không được.**
-
-🔴 **Và một lời tự khen của chính file này không sống sót qua phép đo.** Bốn khối bảo tồn lập luận rằng cách
-viết *liệt kê, không đếm* làm một phép liệt kê sai **"sai NHÌN THẤY ĐƯỢC"**. Nó chỉ nhìn thấy được **nếu có
-ai đó nhìn**. **Không ai nhìn trong ba nhiệm vụ.** Phép liệt kê làm cho việc **SỬA** rẻ; nó không làm cho việc
-**PHÁT HIỆN** tự động — và cái thiếu là phát hiện.
-
-**Ở đâu — trỏ bằng TÊN.** `tools/machine-simulator/docs/owner-decisions.md` (bảng phán quyết đầu file; banner
-Phần I; mục 16, mục 27); `.superpowers/sdd/**/task-*-brief.md` và `task-*-report.md` (**bị gitignore**, xem
-`.gitignore`); `tools/machine-simulator/scripts/verify-suites.sh` (**cổng — và nó KHÔNG đọc
-`owner-decisions.md`**, đó là cả vấn đề).
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* file này tự nhận là **nguồn sự thật** cho các quyết định của chủ sở hữu, và trong một vòng nó
-**không phải**. Một chủ sở hữu mở file để hỏi *"tôi đã phán gì?"* sẽ nhận câu trả lời **thiếu**, mà không có
-dấu hiệu nào rằng nó thiếu — đúng cách hỏng mà đoạn mở đầu nói nó chấm dứt. Nếu phiên làm việc đứt đúng giữa
-hai nhiệm vụ ấy, phán quyết mục 16 **biến mất khỏi hồ sơ hoàn toàn**, vì kênh duy nhất mang nó không được
-commit. Và vì **không cổng nào đọc file này**, một mục có thể sai ở **bất kỳ** trường nào — trạng thái, số
-hiệu, phép liệt kê — trong **bất kỳ** số nhiệm vụ nào, và cổng vẫn **xanh**.
-*Chiều ngược, và nó là lý do mục này CHỜ ANH thay vì được ai đó tự sửa:* mọi phép **cưỡng chế** đều tốn thật.
-(i) **Bắt cổng đọc file này** biến một tài liệu văn xuôi tiếng Việt thành **đầu vào có lược đồ** — bảng phán
-quyết thành dữ liệu phải phân tích, và **mọi** phép viết lại văn xuôi thành một thay đổi có thể làm đỏ cổng;
-đó là **chính xác** cái ma sát mục 36 đo được ở README, nay áp lên tài liệu **hay đổi nhất** trong repo.
-(ii) **Bắt mọi task brief phải commit** đưa `.superpowers/` vào repo, mà nó bị gitignore **có lý do** và chứa
-transcript cùng đường dẫn cục bộ. (iii) **Bắt điều phối viên ghi trước khi giao** không có bộ cưỡng chế **kỹ
-thuật** nào cả — nó là một luật về hành vi con người, và luật ấy **vừa bị vi phạm bởi chính người viết ra
-nó**. 🔴 **Nên câu trả lời trung thực cho *"cái gì sẽ CƯỠNG CHẾ nó"* là: KHÔNG CÓ GÌ CƯỠNG CHẾ ĐƯỢC, ở hình
-dạng repo hôm nay** — và ba lối trên là ba cái giá, không phải ba giải pháp. Cái rẻ nhất trong ba, và nó vẫn
-**không phải cưỡng chế mà là phát hiện**: một bài test ghim **giao ước hẹp** rằng mọi số hiệu mang
-`🔴 CHỜ ANH` ở **bảng phán quyết** xuất hiện đúng một lần ở **phép liệt kê Phần I** và ngược lại — nó bắt được
-chỗ lệch chín-mục vừa xảy ra, **không** bắt được một phán quyết chưa bao giờ được ghi, và nó ghim **cấu trúc**
-chứ không ghim **văn xuôi**, nên tránh được cái giá (i).
-
-**Nếu KHÔNG quyết định.** Cơ chế lặp lại, và **nó đã lặp lại rồi** — hai lần trong ba ngày: mục 16 (một phán
-quyết không có bản ghi) và banner Phần I (một phép liệt kê sai **mười một** mục qua ba nhiệm vụ). Không có bộ
-dò nào,
-nên **lần tới sẽ lại được phát hiện bằng cách một người tình cờ nhìn** — lần này là người thi hành mục 17, đọc
-banner Phần I vì một lý do khác hẳn. 🔴 **Và nêu cho hết, vì một nửa sự thật ở đây sẽ là loại lỗi mà chính mục
-này nói về: AU-1 KHÔNG sửa được lớp gốc, chỉ ghi lại nó.** Mục 17 vừa cho một ví dụ thu nhỏ trong cùng nhiệm
-vụ này — AL-1 rút một khẳng định đã công bố **trong hồ sơ** ngày 2026-08-20, phép rút **chưa bao giờ tới mã**,
-và suốt hai ngày người đọc **mã** vẫn thấy câu sai. **Cùng một lớp, ở hướng ngược lại: hồ sơ đúng, nguồn
-sai.** Nên bất kỳ phán quyết nào cho mục này phải trả lời **cả hai hướng**, không chỉ hướng *"ghi vào file"*.
 
 ---
 
@@ -6919,257 +7061,6 @@ phép ⇒ **HAI** nhân chứng **ĐỎ**; bỏ phép cắt ⇒ nhân chứng tr
 
 ---
 
-## 17. `QueryTelemetryAsync` là truy vấn hướng khách hàng DUY NHẤT không áp cổng xuất xứ, và nó KHÔNG áp được: bảng không có cột để lọc
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6), xác nhận lại trên mã.
-
-**Đo được cái gì — quần thể mở TRỌN, không lấy mẫu.** `IHistorianStore` có **bảy** phương thức đọc
-công khai. Ba cái gọi `ApplyRealPresenceGateAsync`: `QueryResultsAsync`, `QueryBySerialAsync`,
-`AggregateForOeeAsync`. Bốn cái không: `QueryTelemetryAsync`, `QueryRunEventsAsync`,
-`GetStatsAsync`, và `PruneOlderThanAsync` (một phép ghi). Ba trong bốn cái không áp **không có gì để
-áp**: `QueryRunEventsAsync` và `PruneOlderThanAsync` chạy trên bảng không mang khái niệm xuất xứ, và
-`GetStatsAsync` cố ý là một báo cáo **về** store.
-
-**`QueryTelemetryAsync` là phản ví dụ thật, và nó là phản ví dụ CẤU TRÚC.** DDL của
-`historian_telemetry` mang đúng bảy cột: `id`, `result_id`, `machine_code`, `metric`, `value`,
-`unit`, `quality`, `event_time_utc` — **không có `is_fabricated`**. Cột ấy chỉ tồn tại trên
-`historian_results`, được thêm bởi migration 2. Nên cổng không thể áp bằng một cờ; nó cần **một
-phép join mà phương thức này cố ý không làm**, hoặc **một cột mới**.
-
-**Và bề mặt HTTP nói cùng một chuyện:** `HistorianEndpoints.GetTelemetryAsync` nhận
-`machine, metric, from, to, store, ct` — **không `includeFabricated`, không `DemoModeGate`** — trong
-khi mọi route lân cận (`GetResultsAsync`, `GetBySerialAsync`, `GetOeeAsync`, `ExportCsvAsync`,
-danh sách fleet) đều đi qua `ResolveIncludeFabricated(...)`.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Historian.SqliteHistorianStore.ApplyRealPresenceGateAsync`
-(và ba chỗ gọi nó); `SqliteHistorianStore.QueryTelemetryAsync`; DDL `historian_telemetry` trong
-`SqliteHistorianStore`'s migration ladder; `St4i.EngineApi.Endpoints.HistorianEndpoints.GetTelemetryAsync`
-và `HistorianEndpoints.ResolveIncludeFabricated`; route `GET /v1/historian/telemetry`.
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* trên một fleet trộn — vài máy thật, vài máy mô phỏng — biểu đồ xu hướng trộn dữ liệu
-giả với dữ liệu thật, **không gì trong dữ liệu và không gì trong phản hồi nói cái nào là cái nào**.
-Đó đúng là kiểu hỏng mà vòng sửa số 1 của SM-2 được viết ra để đóng cho bề mặt kết quả và phả hệ;
-nó vẫn mở trên bề mặt telemetry.
-*Chiều ngược, và nó quyết định giá:* trên một bản cài **triển lãm 100 % mô phỏng**, đây là bề mặt
-historian **duy nhất còn CHẠY** theo mặc định. Đóng nó lại đòi đúng cái carve-out Demo mà
-`ResolveIncludeFabricated` đã có cho các route kia — cộng **một cột schema hoặc một phép join**, tức
-một migration trên một cơ sở dữ liệu của khách hàng.
-
-**Nếu KHÔNG quyết định.** Bề mặt này ở lại **không gác được**, và câu đã công bố của cổng — *"the
-one rule every customer-facing historian query/aggregate in this store applies"* — ở lại đúng với
-sáu trong bảy phương thức. Cái tốn kém không phải một dòng sửa: đó là **một migration**, và mỗi ngày
-trôi qua là thêm hàng `historian_telemetry` không mang xuất xứ, nên phép sửa **hồi tố** đắt dần.
-
-### ✅ ĐÃ THI HÀNH **MỘT PHẦN** 2026-08-22 (AU-1, base `659bcfb2`) — cổng nay **áp được và có áp**, còn **mặc định thì KHÔNG đổi**, và **tiền đề ở tiêu đề mục này không sống sót**
-
-🔨 **QUYẾT: ĐÓNG KHOẢNG TRỐNG XUẤT XỨ CỦA `QueryTelemetryAsync`** (2026-08-22, **điều phối viên quyết theo
-uỷ quyền**, cùng khuôn mục 8, 15 và 21 — mục này không đổi payload MQTT, không đổi hình dạng dây, không đổi
-con số OEE nào). **Mọi dòng thân mục gốc ở trên giữ NGUYÊN VĂN.**
-
-#### 🔴 1. Tiền đề trung tâm — *"và nó KHÔNG áp được"* — BỊ BÁC, và cái bác nó nằm trong chính câu của mục
-
-Mục viết: cổng *"cần **một phép join mà phương thức này cố ý không làm**, hoặc **một cột mới**."* Câu ấy nêu
-đúng hai lối và rồi tiêu đề mục lại tuyên bố **không lối nào đi được**. Đo trên DDL: `historian_telemetry`
-khai `result_id INTEGER NOT NULL REFERENCES historian_results(id) ON DELETE CASCADE`. **`NOT NULL` là chỗ
-quyết định:** phép join tới xuất xứ **TOÀN PHẦN** — không có hàng mẫu mồ côi, không có hàng mẫu nào mà xuất
-xứ *"không biết được"* vì thiếu đường đi. Xuất xứ của một mẫu **chưa bao giờ vắng mặt; nó cách một bước nhảy
-và không ai nhảy.**
-
-Cùng một câu sai ấy sống ở **ba nơi đã công bố** và cả ba được sửa **tại nguồn** trong nhiệm vụ này: tiêu đề
-mục 17 (sửa bằng gạch ngang ở hàng bảng phán quyết), doc của `IHistorianStore.QueryTelemetryAsync`
-(*"the asymmetry cannot be closed by passing a flag here"*), và doc của
-`SqliteHistorianStore.QueryTelemetryAsync` (*"not an omission that a flag would fix"*). **Cả hai doc được rút
-theo lối trích-nguyên-văn-rồi-rút, không gạch ngang, không xoá dòng nào.**
-
-#### 🔴 2. Câu khó nhất — *"hàng cũ mang giá trị gì"* — KHÔNG TỒN TẠI ở dạng nó được đặt ra, và đó là câu trả lời chứ không phải một lối né
-
-Câu hỏi giả định cơ chế **THÊM MỘT CỘT**. §8.1(a) đòi **suy cơ chế ra**, đừng nhận một mặc định — và cơ chế
-suy ra được **không phải là thêm cột**:
-
-* Xuất xứ của một hàng telemetry **không phải một sự kiện độc lập**. Nó là **hàm của hàng reading cha**, và
-  quan hệ ấy được **cưỡng chế bởi lược đồ** (`NOT NULL` + khoá ngoại), không phải bởi quy ước.
-* Nên một hàng mẫu cũ mang **đúng cái cha nó mang**. Đó là **một PHÉP ĐO**, không phải một giá trị phải chọn.
-  **Không có sự kiện nào bị bịa ra, vì không có sự kiện nào phải bịa.**
-* **Ba trạng thái vẫn còn — nhưng chúng được THỪA KẾ, không phát minh.** Cha mang `0`/`1`/`NULL`; `NULL` là
-  *"Unknown provenance"* mà migration 2 đã cố ý tạo ra (thêm cột **không DEFAULT**, để chính ngữ nghĩa
-  ADD-COLUMN của SQLite gán `NULL` cho mọi hàng cũ) và `HistorianResultRecord.IsFabricated` đã ghi rõ là
-  **trạng thái THỨ BA, không bao giờ được lặng lẽ gộp vào "thật" hay "giả"**.
-* **Và luật xử lý *Unknown* ĐÃ ĐƯỢC QUYẾT rồi.** `ApplyRealPresenceGateAsync` đã mang nó cho ba read kia.
-  Nhiệm vụ này **không được quyền quyết lại nó**, và **không quyết lại**: nó **gọi** luật ấy.
-
-**Giá, hai chiều, và cả hai đều là giá THỪA KẾ chứ không phải giá mới:**
-*Che *không biết* đi:* khi trong phạm vi có một reading thật rõ ràng, **mọi** mẫu Unknown cùng phạm vi bị loại
-— kể cả mẫu của một máy thật sự thật chỉ vì nó có trước cột. Vận hành viên mất một đoạn đường cong họ vẫn
-thấy hôm qua, và **không gì trong phản hồi nói là đã mất**.
-*Cho *không biết* qua:* khi không có gì rõ ràng thật trong phạm vi, mẫu Unknown đi qua — nên một chuỗi được
-gán nhãn *"đã gác"* vẫn có thể chứa dữ liệu mà **không ai chứng minh được là thật**. **Cổng có một lỗ mà tên
-nó không nói.** Đây đúng là *"Known residual limitation"* mà doc của chính cổng đã ghi, nay chạm tới bề mặt
-telemetry **y nguyên** — vì luật được **gọi**, không được **chép**.
-
-#### 3. Đường di trú — đo được, và **KHÔNG MẤT DỮ LIỆU vì KHÔNG CÓ MIGRATION NÀO CHẠY**
-
-🔴 **Brief nói *"mục 5 ghi rằng HAI store khác `DROP TABLE` lúc khởi động"*. Đọc lại mục 5: nó nêu HAI phát
-hiện, và chỉ MỘT là `DROP TABLE`** — `ConnectorConfigStore` migration v4. Phát hiện kia
-(`ProductConfigStore.Load` ghi lại `products.json`) **không phải một `DROP TABLE`**. Và cái `DROP TABLE` duy
-nhất ấy **đã được phán ✅ KHÔNG ĐỔI**, vì nó là nấc 4 của một thang `PRAGMA user_version` chạy **trong cùng
-một transaction**, theo đúng thứ tự tạo/chép/xoá/đổi-tên mà SQLite quy định — **các hàng sống sót, và việc
-sống sót được ghim bởi một bài test dựng database v3 thật bằng SQL thô.**
-
-Đo trên `SqliteHistorianStore`: thang di trú của nó là **`PRAGMA user_version`, cộng dồn, và KHÔNG có
-`DROP TABLE` ở bất kỳ nấc nào** — nấc 1 là `CREATE TABLE IF NOT EXISTS` ×3, nấc 2 là một
-`ALTER TABLE … ADD COLUMN`. Mỗi nấc chạy trong transaction riêng; `EnsureSchema()` chỉ áp nấc mới hơn
-`user_version` hiện tại.
-
-🔴 **Nhưng bằng chứng "không mất dữ liệu" ở đây KHÔNG dựa vào chất lượng của thang, mà mạnh hơn thế:
-AU-1 KHÔNG THÊM NẤC NÀO. Không có migration nào chạy trên cơ sở dữ liệu của khách hàng, không một byte nào
-được đọc-ghi-lại, `user_version` không dịch.** Bản sửa là **một phép ĐỌC**. Đó là hệ quả trực tiếp của §2: khi
-xuất xứ đã được ghi đúng một lần trên hàng cha, thêm một cột thứ hai lên hàng con chỉ tạo ra **một bản sao có
-thể trôi** mà `AppendResultsAsync` phải giữ đồng bộ vĩnh viễn.
-
-#### 4. Chỗ GHI **CÓ** biết xuất xứ — đo, không đoán
-
-`AppendResultsAsync` là **chỗ ghi DUY NHẤT** của `historian_telemetry` trong toàn commit (một câu
-`INSERT INTO historian_telemetry`, và không có câu nào khác ở đâu, kể cả `server/`, `client/`, `examples/`).
-Nó ghi hàng reading với `@is_fabricated` tường minh, đọc lại `last_insert_rowid()`, rồi ghi các hàng mẫu với
-`result_id` ấy — **cùng một transaction, cùng một vòng lặp, cùng một biến `record`**. Nên chỗ ghi **cầm câu
-trả lời trong tay** ở đúng lúc nó ghi hàng mẫu. **Cột ấy điền được cho tử tế** — và chính vì thế nó **thừa**.
-
-Một phép đo phụ làm cửa sổ thời gian khớp **chính xác** chứ không xấp xỉ: `AppendResultsAsync` tính **một**
-`eventTimeIso` và đóng dấu nó lên **cả** reading **và** mọi mẫu của reading ấy. Nên một mẫu nằm trong cửa sổ
-**khi và chỉ khi** cha nó nằm trong cửa sổ.
-
-#### 5. Bề mặt ĐỌC — **LIỆT KÊ trước, con số SAU**
-
-Quét toàn commit (`git grep --full-name … HEAD -- ':(top)'`, chạy từ **gốc repo** `D:\SOURCES\avi-aoi-sim`;
-`server/` và `client/` vắng khỏi cây nhưng **có trong commit** và **đã được quét**):
-
-**Gọi `IHistorianStore.QueryTelemetryAsync`:** `HistorianEndpoints.GetTelemetryAsync` (sản xuất) · ba fake
-`IHistorianStore` trong test (`HistorianWriterTests`, `FleetHostGateCommitCompletionTests`,
-`FleetHostHistorianWiringTests`) · `SqliteHistorianStoreQueryTests` · `SqliteHistorianStoreTests`.
-
-**Gọi `GET /v1/historian/telemetry`:** chỗ đăng ký route trong `HistorianEndpoints` ·
-`RbacPolicyTests` (điều tra dân số chính sách) · `HistorianEndpointsReadTests` (ba `[Fact]`) ·
-`HistorianTelemetryProvenanceTests` (mới, bảy `[Fact]`) · và các bản ghi tài liệu.
-
-🔴 **Cái phép liệt kê này KHÔNG liệt kê được, và nó là kết quả quan trọng nhất của mục §5:
-KHÔNG MỘT BIỂU ĐỒ NÀO. KHÔNG MỘT BÁO CÁO NÀO. KHÔNG MỘT KHÁCH HÀNG ĐÃ SHIP NÀO.** Không trang web nào,
-không view WPF nào, không PDF nào gọi route này. Bề mặt ĐỌC hướng-người-dùng của nó là **rỗng**, và bản thân
-điều đó là một phát hiện: **mục 17 mô tả tác hại của nó bằng một "biểu đồ xu hướng" mà trong cây này không
-tồn tại.** (`getTelemetrySeries` trong `server/` là **một hệ khác** — Postgres/drizzle, bảng `ot_telemetry` —
-không phải route này.)
-
-🔴 **Và nửa ngược lại, vì "không có bên tiêu thụ" KHÔNG có nghĩa là "không có ai đọc":** route mang
-`RequireAuthorization(Policies.Operator)` và là một bề mặt HTTP **đã xuất bản**. Một bên tích hợp gọi thẳng
-API **đo không được từ repo này** — cùng cái trần mà mục 14 và mục 32 đã trả giá để học. Doc của
-`ResolveIncludeFabricated` tự nói ra khả năng ấy: *"no shipped web route sends one today, but a direct API
-caller can."*
-
-#### 🔴 6. ĐIỀU KIỆN DỪNG — **ĐÃ NỔ**, ở nửa MẶC ĐỊNH, và đây là phép đo
-
-Nối route này vào `ResolveIncludeFabricated` như các route anh em **không làm hẹp phản hồi — nó làm RỖNG
-phản hồi**, và cơ chế đo được:
-
-* `machine` là tham số **BẮT BUỘC** trên route này, nên phép dò real-presence của cổng **luôn** chạy trong
-  phạm vi **đúng một máy**.
-* Với một máy **mô phỏng bình thường** trên một bản triển khai **không phải demo** (`DemoModeGate` tắt — tức
-  **mọi bản cài sản phẩm**), phép dò không tìm thấy gì rõ ràng thật **trong phạm vi máy ấy**, tập được nhận
-  thành `(is_fabricated IS NULL OR is_fabricated = 0)`, và **mọi** mẫu của máy ấy bị loại.
-* **Đo bằng cách chạy, không bằng lập luận:**
-  `GateOptIn_OnAPurelyFabricatedMachine_ReturnsNothing_WhileTheUngatedReadReturnsEverySample` khẳng định
-  **cùng một hạt giống**: không gác ⇒ **3 mẫu**; gác ⇒ **0 mẫu**. **Không phải ít hơn — bằng không.**
-* Một biểu đồ xu hướng hôm nay có đường thì ngày mai **rỗng, vĩnh viễn**. Đó **đúng** hình dạng hỏng mà
-  `ResolveIncludeFabricated` tự ghi cho các route anh em **trước** Fix 1: *"not 'narrower than intended,'
-  literally zero, permanently."*
-
-**Nên: DỪNG ở nửa ấy. Mặc định KHÔNG bị đổi, và AU-1 không tự quyết nó.** Cái được ship là **cơ chế** với
-**mặc định hôm nay được giữ nguyên từng ký tự**; cái được giao lên là **quyết định về mặc định**.
-
-#### 7. Miễn trừ Demo — **KHÔNG dùng**, và lý do là chính điều kiện DỪNG
-
-Route mới **KHÔNG** đi qua `ResolveIncludeFabricated`. Nó mặc định `includeFabricated ?? true`.
-
-**Vì sao:** miễn trừ Demo tồn tại để **TRẢ LẠI** những hàng mà cổng lấy đi trên một hộp demo. Ở đây cổng
-**không lấy gì đi**, nên **không có gì để trả lại** — nối nó vào sẽ là một cái không-làm-gì trên hộp demo và
-**chính là hành vi làm nổ điều kiện DỪNG** trên hộp thật (`demoGate?.Enabled ?? false` = `false` = cổng bật).
-Route **cố ý không nhận** tham số `DemoModeGate?`: nhận rồi bỏ qua thì tệ hơn, còn không nhận làm cho việc
-không-dùng **thành cấu trúc và nhìn thấy được**.
-
-🔴 **Điều kiện kèm theo, ghi vào mục vì nó là một cái bẫy:** nếu chủ sở hữu phán lật mặc định, thì
-`DemoModeGate?` **phải được thêm trong CÙNG một thay đổi**, không phải sau. Thiếu nó, telemetry của một bản
-cài triển lãm 100 % mô phỏng **về không** — đúng con bug mà Fix 1 đã sửa cho các route kia.
-
-#### 🔴 8. Nửa bất lợi của chính bản sửa này — hai route vẫn trả lời khác nhau
-
-Sau bản sửa, `GET /v1/historian/results` vẫn **giấu** reading của một máy bịa trong khi
-`GET /v1/historian/telemetry` vẫn **vẽ** mẫu của **chính máy ấy**, và **không gì trong phản hồi nói cái nào
-là cái nào**. Chỗ lệch ấy **không do bản sửa tạo ra** — nó **LÀ** mục 17 — nhưng bản sửa **KHÔNG ĐÓNG** nó.
-Cái thay đổi là: trước đây nó là một **khẳng định cấu trúc** (*"không áp được"*) mà không ai xem lại được;
-nay nó là **một dòng, một mặc định, xem lại được**, và nằm cạnh phép đo về giá của việc lật nó.
-
-#### 9. Nhân chứng, cặp đối chứng, và hằng số — **đo SAU khi viết**
-
-**File mới** `tests/St4i.EngineApi.Tests/HistorianTelemetryProvenanceTests.cs`, **bảy `[Fact]`**. Taxonomy
-dưới đây là **kết quả chạy hai đối chứng**, không phải nhãn tự phong — và **nó đã sửa một nhãn viết sai**:
-
-* **Đối chứng A** (gỡ cổng khỏi `SqliteHistorianStore.QueryTelemetryAsync`): **4 ĐỎ / 3 xanh**. Bốn cái đỏ là
-  nhân chứng thật.
-* **Đối chứng B** (lật mặc định endpoint sang luật anh em): **đúng 1 ĐỎ**, và nó là
-  `Default_WithNoExplicitValue_…_LegacyContinuity`. 🔴 **Đó là một phát hiện, không phải một cái pass: mọi bài
-  test telemetry ĐÃ CÓ vẫn XANH dưới đối chứng B, nên trước file này KHÔNG bài nào trong 2 804 bài nhìn thấy
-  được phép lật mặc định** — chính cái mất mát mà điều kiện DỪNG tồn tại để chặn thì **không có nhân chứng**.
-* **ĐỎ dưới KHÔNG đối chứng nào, và được tự dán nhãn *guard, KHÔNG phải nhân chứng* ngay trên bài test:**
-  `TheJoinThisReadWasSaidToBeUnableToMake_IsTotal_…` (một phép đo cấu trúc, cố ý độc lập với cổng) và
-  🔴 `GateOptIn_UnknownProvenanceSamples_PassWhenNothingExplicitlyReal…` — **viết ra như một nhân chứng, ĐO
-  RA là một guard, và đã đổi nhãn tại chỗ.** Cả hai đối chứng đã **hoàn nguyên**; `git diff` ở ngọn nhánh
-  không chứa cái nào.
-
-**Hằng số — ĐO rồi mới viết:** `EXPECT_ENGINEAPI` **1388 → 1395** (+7, đếm từ runner `--list-tests` **sau
-khi** viết file, không dự báo trước), tổng **2804 → 2811**. `EXPECT_WARNINGS` **328 KHÔNG dịch**,
-`EXPECT_BUILD_NODES` **0**, sổ cảnh báo **16 hàng không dịch một đơn vị**, **0 lệnh đè** — không
-`.editorconfig`, không `<NoWarn>`, không `#pragma`, không `SuppressMessage`. `EXPECT_EDGECORE` **1179 không
-dịch**: ba fake chỉ đổi một dòng chữ ký mỗi cái. **AU-1 không chạm `web/`.**
-
-🔴 **Một `-t:Rebuild` trả *13 Error(s)* rồi chạy lại trả *0 Error(s)*, cùng cây, không sửa gì** — đúng cái
-bẫy mà ràng buộc toàn cục nêu tên. **Con số được tin là con số của lần chạy lại.**
-
-#### 🔴 10. Một lỗi CỦA CHÍNH AU-1, bị bắt bởi chính bài test của AU-1
-
-Bản nháp đầu thêm `includeFabricated` vào `GetTelemetryAsync` nhưng **quên truyền nó xuống**
-`store.QueryTelemetryAsync`. Hệ quả: store rơi về mặc định của **chính nó** (`false`) và **cổng BẬT theo mặc
-định** — tức **đúng thứ điều kiện DỪNG cấm**, ship kèm một doc comment dài giải thích rằng nó không làm thế.
-Hai bài đỏ ngay lần chạy đầu (`Default_…` trả `[72]` thay vì `[71, 72, 73]`;
-`GateOptIn_OnAPurelyFabricatedMachine_…` trả `0` thay vì `3` ở vế **không gác**). **Nó được bắt lúc CHẠY, không
-phải lúc đọc** — và nếu bài guard `Default_…` không được viết ra vì "nó xanh ở cả hai phía nên vô dụng", bản
-sửa đã đi qua cổng và làm biến mất dữ liệu của khách hàng đúng như đã bị cấm.
-
-#### 11. Một khẳng định đã công bố được RÚT **TẠI NGUỒN**, không chỉ trong hồ sơ
-
-Doc của `ApplyRealPresenceGateAsync` mở đầu bằng *"the one rule **every** customer-facing historian
-query/aggregate in this store applies"*. **AL-1 đã đo và rút câu ấy trong FILE NÀY ngày 2026-08-20** (mục 12,
-§11) — **nhưng phép rút chưa bao giờ tới mã**. Suốt hai ngày, người đọc **hồ sơ** thấy câu đã rút còn người
-đọc **mã** vẫn thấy câu sai, ở ngay trên hàm mà nó nói sai về. Nay sửa tại nguồn, kèm phép **liệt kê** thật:
-với tới cổng — `QueryResultsAsync`, `QueryBySerialAsync`, `AggregateForOeeAsync`, `QueryTelemetryAsync`;
-**mặc định BẬT ở BA**. Không với tới — `QueryRunEventsAsync` (bảng không mang máy lẫn xuất xứ) và
-`GetStatsAsync` (cố ý là báo cáo **về** store).
-
-🔴 **Và đó chính là mục 37 ở dạng thu nhỏ, gặp trong lúc thi hành một mục khác:** một phán quyết/phép rút
-sống trong hồ sơ mà **không có bản ghi tại chỗ**, và **không dụng cụ nào bắt được**.
-
-#### 12. Hai phép đếm trong thân mục gốc **không khớp phép liệt kê của chính chúng** — sửa ở đây, thân mục giữ nguyên văn
-
-* Thân mục viết `historian_telemetry` *"mang đúng **bảy** cột"* rồi **liệt kê tám**: `id`, `result_id`,
-  `machine_code`, `metric`, `value`, `unit`, `quality`, `event_time_utc`. **DDL có TÁM.** Phép liệt kê đúng,
-  con số sai — đúng lý do luật *"LIỆT KÊ trước, con số viết SAU"* tồn tại, và lần này chính luật ấy bắt được
-  lỗi trong một mục đã công bố.
-* Thân mục viết `IHistorianStore` có *"**bảy** phương thức ĐỌC công khai"* rồi liệt kê bảy cái **trong đó có
-  `PruneOlderThanAsync`, mà chính câu ấy gọi là "một phép ghi"**. Đọc thật: **sáu**. (Và interface còn hai
-  phép ghi nữa — `AppendResultsAsync`, `AppendRunEventAsync` — không nằm trong phép đếm nào.)
-
-**Không dòng nào của thân mục gốc bị sửa**; hai chỗ lệch được ghi ở đây.
-
----
-
 ## 33. `GET /v1/scenario` nói dối theo chiều NGƯỢC LẠI — tấm gương của mục 18, và nó BÁC một lập luận mà mục 18 đã dùng để tự đóng
 
 🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1). Phát hiện này trước đó **chỉ sống trong một thông điệp merge và trong
@@ -7556,6 +7447,502 @@ project bật cờ tài liệu.
 **Bằng chứng:** `.superpowers/sdd/items-33-30-31/task-1-report.md`. **Không file mã nào, không file bao
 bì nào, không hằng số cổng nào thay đổi cho mục này** — phán quyết là *giao nguyên như đang giao*, và
 thay đổi duy nhất là hồ sơ này.
+
+---
+
+## 26. Không gì trong repo này trả cho TÍNH ĐÚNG của một chú thích đã viết — mục 12 trả cho BAO PHỦ, và W-1 kiểm HÌNH THỨC
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Tổng hợp từ AG-1, AH-1 + phản biện, AL-1, AM-1, AN-1.
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC, và ĐỪNG CỘNG.** Năm phép đo về khẳng định sai trong chú thích của
+chính dự án này, mỗi cái kèm **đơn vị của nó**:
+
+| ai | đo được | mẫu số | khẳng định thuộc loại nào | có phải một phép kiểm đếm không |
+|---|---|---|---|---|
+| đợt 4 (AG-1) | **101** khẳng định `cref`/`paramref` đã sai (75 CS1574 + 23 CS1734 + 3 CS0419), 29 file | quần thể ĐẦY ĐỦ | **có sẵn**, đã đứng trong cây từ trước | **có** — và do TRÌNH BIÊN DỊCH tìm |
+| đợt 5 (AH-1) + phản biện | **17** câu SAI | một **mẫu 48** rút từ **120** câu vừa viết | **vừa viết** | **không** — một mẫu |
+| đợt 6 (AL-1) | **5** câu sửa, **2** sai hẳn | 🔴 **129 CẢNH BÁO**, không phải 129 câu | **vừa viết** | không — một bộ lọc |
+| đợt 7 (AM-1) | **13** câu sửa (7 + 6, hai vòng) | **199 CÂU** | **vừa viết** | không — hai bộ lọc |
+| đợt 8 (AN-1) | **12** câu sửa (6 do hai vòng + 6 bắt lúc viết) | **287 CÂU** | **vừa viết** | không — hai bộ lọc + tự kiểm |
+
+🔴 **Năm con số ấy KHÔNG cộng được, và ba lý do phải nói riêng ra.** *(i)* Hai loại vật khác nhau:
+101 là khẳng định **CÓ SẴN**, bốn cái sau là khẳng định **VỪA VIẾT** — cộng chúng là đo hai quần thể
+như một. *(ii)* **Một mẫu không phải một phép kiểm đếm**: 17/48 là một tỉ lệ ~35 % trên một mẫu, và
+báo cáo đợt 5 tự nói vì sao nó **không ngoại suy được** (12 trong 17 hỏng vì cùng một tiền đề sai về
+seed). *(iii)* 🔴 **Mẫu số của đợt 6 KHÔNG cùng đơn vị với đợt 7 và 8**: 129 là số **cảnh báo** đợt
+6 trả, và đợt 6 **không bao giờ đếm số câu của nó** — chính đợt 8 ghi lại chuỗi ấy là
+`120 → ? → 199 → 287`, với dấu `?` đúng ở chỗ đợt 6. Ở **đợt 5** thì hai đơn vị **trùng nhau**, và
+chỉ ở đó: cả 120 cảnh báo đều là một `<summary>` trên một property, một cảnh báo một câu.
+
+**Cái repo này CÓ dụng cụ, và cái nó KHÔNG có.** Có: trình biên dịch bắt **con trỏ hỏng**
+(CS1574/CS1734/CS0419) và **chỗ trống** (CS1591/CS1573). Có: **W-1**, tức
+`tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs`, **bảy** `[Fact]` — bộ quét có tới được corpus
+của nó không, mọi khối `///` của ta có parse được như XML không, khối trong file SDK vendored có
+parse được không, mọi tên phần tử có nằm trong `RegisteredElementNames` không, không đâu dùng chú
+thích `/** */`, cộng hai bài tự kiểm chính bộ kiểm. **Không có: một dụng cụ nào trả lời "câu này
+đúng hay sai".** W-1 kiểm một khối **có hình thức hợp lệ**; nó không thể và không tự nhận kiểm được
+một câu là **thật**.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `tests/St4i.EdgeCore.Tests/DocCommentProseTests.cs` (bảy `[Fact]`,
+`RegisteredElementNames`); `scripts/verify-suites.sh` (`EXPECT_WARNINGS`, `EXPECT_WARNING_LEDGER` —
+hai hằng số duy nhất canh chú thích, và cả hai đếm **sự vắng mặt**, không đếm **tính đúng**);
+`Directory.Build.props` (khối N-1/N-2 đặt ra phép thử *"can this sentence be recovered"*, tức tiêu
+chí đã có nhưng **không có bộ cưỡng chế**).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* **một chú thích sai còn tệ hơn không có chú thích**, vì nó làm người đọc **thôi
+kiểm**. Bốn phép đo trên đều bắt được câu sai, và loại tệ nhất trong đó không chứa một sự kiện sai
+nào — nó khẳng định một **mục đích** hoặc một **cơ chế** (một caller, một timer, một người dùng) mà
+không có gì để kiểm: đợt 6 tìm ra một `<summary>` nói phương thức tồn tại *"để người gọi cho vận
+hành viên biết vì sao cửa sổ ấy chấm điểm như thế"* cho một phương thức **không có caller sản xuất
+nào**; đợt 7 khẳng định một **heartbeat nền mà repo này không có**, lấy từ một doc comment hàng xóm
+đã hedge đúng. Với `GenerateDocumentationFile` đã bật, những câu ấy **đi vào `St4i.EdgeCore.xml`**
+và ra tới bản cài (xem mục 31).
+*Chiều ngược, và nó không nhẹ:* **không ai biết dụng cụ ấy trông như thế nào.** Đợt 7 và đợt 8 đều
+đo được rằng **một bộ lọc cơ học đơn lẻ báo thiếu**: đợt 7 vòng 1 bắt 7, vòng 2 bắt **6 cái vòng 1
+mù hoàn toàn**; đợt 8 vòng 1 bắt 1, vòng 2 bắt 5. Đợt 8 tự nói rằng **recall của bộ lọc vòng 2 của
+nó là chưa biết**. Nên một "cổng soát tài liệu" sẽ là một dụng cụ **không có định nghĩa xanh** và
+**không biết độ nhạy của chính nó** — đúng loại dụng cụ mà file này lập ra để chấm dứt. Và một nửa
+nữa phải nói: **quá trình viết chú thích ĐANG LÀ dụng cụ** — cả mười khuyết tật mã ở các mục 15–24
+đều được tìm ra **trong lúc viết chú thích**, không phải bằng một cổng.
+
+**Nếu KHÔNG quyết định.** Mục 12 hoàn tất (hoặc rời Phần II bằng mục 25) và để lại một cây có
+**bao phủ** chú thích cao và **không dụng cụ nào** về tính đúng, tức đúng trạng thái mà tỉ lệ ~35 %
+của đợt 5 được đo trên. Con số đáng sợ không phải một trong năm con số trên; nó là cái **không ai
+đo**: **các khẳng định đã có sẵn trong cây và chưa từng bị đọc lại** — đợt 4 đã cho thấy **101** cái
+trong số đó sai đủ nặng để trình biên dịch bắt được, và **không ai từng đo số cái sai theo cách
+trình biên dịch KHÔNG bắt được.**
+
+### ✅ ĐÃ THI HÀNH 2026-08-22 (AW-1, base `e99019c0`) — thói quen thành **thứ chạy được**, và phép đo toàn cây trả về một **cái trần**, không phải một món nợ
+
+🔨 **QUYẾT: DỰNG BỘ LỌC PHỦ ĐỊNH PHỔ QUÁT THÀNH MỘT DỤNG CỤ CHẠY ĐƯỢC** (2026-08-22, **điều phối viên
+quyết theo uỷ quyền**, cùng khuôn mục 8, 15, 17 và 21 — mục này không đổi payload MQTT, không đổi hình
+dạng dây, không đổi con số OEE nào; nó không chạm một dòng mã sản phẩm nào). **Mọi dòng thân mục gốc ở
+trên giữ NGUYÊN VĂN.**
+
+#### 1. Hình dạng dụng cụ **suy từ cách hỏng đã đo**, không phát minh — §8.1(a)
+
+Mục này đã liệt kê sẵn cái repo **có** (trình biên dịch bắt con trỏ hỏng và chỗ trống; W-1 bắt hình
+thức) và cái nó **không có**. Nó cũng đã ghi thứ **đã chứng minh là bắt được**: **bộ lọc phủ định phổ
+quát cộng chạy lại sau từng câu** — đợt 6, 7, 8 đều dùng, đều bắt. Nên dụng cụ **không được thiết kế**;
+nó là **bản chép lại của thứ đã hoạt động**: `scripts/scan-doc-negations.sh`, đúng năm từ —
+*nothing · never · every · only · no code* — trên corpus `///` của cây này.
+
+**Hai chế độ, và cái thứ hai là cái cưỡng chế:**
+* `--census` — quét toàn cây, **LIỆT KÊ từng câu rồi mới in con số**.
+* `--since <ref> [--expect N]` — **chính là thói quen**: mọi câu chú thích có mặt **bây giờ** và vắng ở
+  `<ref>` mà mang một khẳng định tuyệt đối được **liệt kê**, rồi **đếm**, và con số phải khớp cái đã
+  ghi. Một câu vừa viết mang *"never"*, *"every"* hay *"nothing"* **không vào được commit mà không có
+  người nhìn nó**. Đây là chỗ dụng cụ **đỏ được**.
+
+#### 2. Năm con số của mục — **kiểm lại từng cái, cả năm ĐỨNG VỮNG**
+
+Đối chiếu với bảng ở thân mục trên: đợt 4 **101** (75 CS1574 + 23 CS1734 + 3 CS0419, 29 file, quần thể
+đầy đủ) · đợt 5 **17 trên mẫu 48** rút từ 120 · đợt 6 **5 câu sửa / 2 sai hẳn**, mẫu số là **129 CẢNH
+BÁO chứ không phải 129 câu** · đợt 7 **13 / 199 CÂU** · đợt 8 **12 / 287 CÂU**. **Không con số nào
+dịch**, và ba lý do không cộng được vẫn nguyên: hai quần thể khác nhau (có sẵn / vừa viết), một mẫu
+không phải một phép kiểm đếm, và mẫu số đợt 6 khác đơn vị với đợt 7–8.
+
+#### 🔴 3. Phép đo MỚI — **LIỆT KÊ trước, con số SAU**, và con số là một **CÁI TRẦN**
+
+`--census` in ra **từng câu bị gắn cờ** kèm file và dòng, rồi mới in tổng. Đo ở base `e99019c0`:
+
+* corpus: **545** file `.cs` dưới `tools/machine-simulator` (bin/obj/TestResults/node_modules đã cắt);
+* câu chú thích đọc được: **15 965**;
+* 🔴 **GẮN CỜ: 5 780 câu, ở 481 trong 545 file — HƠN MỘT PHẦN BA mọi câu chú thích trong cây.**
+
+🔴 **Con số ấy là một cái trần phải nêu, KHÔNG phải một món nợ nhiệm vụ này bỏ dở.** Nó cũng **không**
+có nghĩa là 5 780 câu sai: bộ lọc **chọn câu để người đọc**, và phần lớn câu bị gắn cờ **đúng**. Và nó
+là lý do **cố ý không có cổng toàn cây**: một cổng ghim con số đó sẽ đỏ với **mọi** lần sửa tài liệu,
+tức đúng thứ chính mục này đã cảnh báo — *"một dụng cụ không có định nghĩa xanh"*. Cái trần được **nêu
+tên**, không bị thu hẹp cho dễ nhìn.
+
+#### 4. Cặp đối chứng — chạy trọn, rồi **hoàn nguyên**
+
+Trồng một khối `///` **mới** ở đầu `src/St4i.EdgeCore/Fleet/FleetCore.cs`, mang một câu phủ định phổ
+quát **sai**: *"no code in this repository ever writes to disk"*. 🔴 **Nhân chứng cho việc nó sai nằm
+trong chính cổng đang chạy nó, nên nó không cần một con số:** `scripts/verify-suites.sh` đóng khung
+**thư mục credential thật của sản phẩm** trước và sau mỗi lần chạy — cái khung ấy tồn tại vì
+`CredentialStore` **ghi xuống đĩa**. *(Bản nháp của khối này viết *"một cây có **bốn** store ghi
+đĩa"*. **Con số ấy không được đo và đã bị gỡ**: một phép quét `*Store` dưới `src/` trả về **năm** lớp,
+còn `verify-suites.sh` nói **MƯỜI BA**. Một con số bịa trong đúng mục nói về khẳng định không kiểm
+được — bắt bằng cách đọc lại phần mình vừa viết, và ghi ra chứ không lặng lẽ sửa.)*
+`--since HEAD`: **đỏ**, exit 1, và nó **nêu tên file cùng nguyên văn câu ấy**. Gỡ câu ra: **xanh**,
+exit 0, `git status` sạch. Con số census trong lần chạy đỏ đọc **5 781 / 15 966**, tức nó thấy đúng một
+câu thêm — không nhiều hơn, không ít hơn.
+
+#### 🔴 5. Cái dụng cụ này **KHÔNG** cưỡng chế — nêu đủ rộng, vì một cái trần nêu quá nhỏ còn tệ hơn không nêu
+
+* **(a) Nó KHÔNG phải một cái máy phân biệt đúng-sai.** Nó không đọc được ý nghĩa; nó chọn câu.
+* **(b) Độ nhạy của nó CHƯA BIẾT, và điều này đã nằm trên hồ sơ từ trước:** đợt 7 vòng 1 bắt 7, vòng 2
+  bắt thêm **6 cái vòng 1 mù hoàn toàn**; đợt 8 vòng 1 bắt 1, vòng 2 bắt 5; và đợt 8 **tự viết** rằng
+  recall của bộ lọc vòng 2 của nó là chưa biết. **Điều đó không đổi.** Loại tệ nhất — một câu **không
+  chứa một từ tuyệt đối nào** mà khẳng định một **mục đích** hoặc một **cơ chế** (một caller, một
+  timer, một người dùng) — nằm **hoàn toàn ngoài** dụng cụ này. Đúng loại mà đợt 6 và đợt 7 tìm ra.
+* **(c) Nó chỉ đọc `.cs` của ta.** `web/` (`.ts`/`.tsx`), `server/`, `client/`, và **file SDK vendored**
+  `examples/device-client/csharp/St4iDeviceClient.cs` mà `St4i.EdgeCore` `Compile`-link từ ngoài cone
+  của nó — **tất cả ở ngoài**. Một lần chạy xanh **không nói gì** về chúng.
+* **(d) Một file đổi tên đọc thành toàn-mới** dưới `--since`, vì danh tính ở đây là cặp (đường dẫn, câu).
+* **(e) Bộ tách câu là TEXTUAL**, không phải một lexer: `e.g. Foo` bị tách, một dấu đầu dòng `1.` bị
+  tách. Nó dịch **văn bản được hiển thị** và có thể dịch **con số**; nó không giấu được một từ tuyệt đối.
+* **(f) Và nửa còn lại của mục vẫn đúng nguyên văn:** *"quá trình viết chú thích ĐANG LÀ dụng cụ"* —
+  cả mười khuyết tật mã ở mục 15–24 được tìm ra **trong lúc viết**, không bằng một cổng. Dụng cụ này
+  **không thay** việc ấy; nó chỉ làm cho một phần của nó **không quên được**.
+
+#### 6. Hằng số
+
+**Không hằng số nào của cổng dịch vì mục này.** Dụng cụ là một script; nó không thêm bài test, không
+sửa mã sản phẩm, không đụng `EXPECT_WARNINGS`, không đụng năm tổng bộ.
+
+---
+
+## 32. Một lời khai miền dụng cụ chỉ KIỂM ĐƯỢC nếu nó ghi lại NƠI lệnh được chạy — và cái giá đã trả là một phán quyết của chủ sở hữu mang một cái trần SAI
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1), sau một phép đo của điều phối viên bác đúng chỗ AO-1 nói
+*"không giải được từ chỗ tôi đứng"*. **Mục này KHÔNG về một lần grep hỏng. Nó về một LỚP.**
+
+**Đo được cái gì — phép kiểm quyết định, cùng mẫu, cùng SHA, chỉ khác chỗ đứng.** Pathspec của git
+**tương đối với thư mục hiện hành**, và một pathspec bị thu hẹp **không báo lỗi — nó trả 0**:
+
+| lệnh (chạy từ `tools/machine-simulator`, SHA `a70ed5d6`) | kết quả |
+|---|---:|
+| `git grep -l 'ingest' <SHA> -- 'server/*.ts'` | **0** |
+| `git grep -l 'ingest' <SHA> -- ':(top)server/*.ts'` | **197** |
+| `git grep -l 'ingest' <SHA> -- '*.ts'` | **1** |
+| `git grep -l 'ingest' <SHA> -- ':(top)*.ts'` | **214** |
+
+🔴 **Và ranh giới KHÔNG hẹp như lần sửa đầu tiên tưởng — đây là một phép đo, không phải một lời
+nhượng bộ.** Một bản sửa trung gian ghi rằng chỉ pathspec **nêu tên thư mục gốc** mới hỏng còn
+**glob đuôi trần** thì không. **Hai hàng cuối bảng trên bác điều đó:** `'*.ts'` trần cũng bị thêm
+tiền tố cwd, `1` đối lại `214`. Hình dạng đúng, viết đủ rộng chứ không hẹp hơn phép đo: **mọi
+pathspec tương đối đều bị thu hẹp theo cwd.** `server/` có **1589** file trong commit và `client/`
+có **711**; cả hai **không nằm trên đĩa** (sparse checkout) nhưng **đều nằm trong commit object**,
+nên chúng luôn với tới được — bằng đúng một tiền tố.
+
+🔴 **Hệ quả trung tâm, và nó là lý do mục này tồn tại: `0` từ một phép quét ĐÚNG và `0` từ một
+pathspec loại trừ cả cây là KHÔNG PHÂN BIỆT ĐƯỢC trong một báo cáo.** Không báo cáo nào trong chuỗi
+này — kể cả bản đầu của AO-1 — ghi lại **thư mục nó đứng khi gõ lệnh**. Nên mọi lời khai miền dụng
+cụ trong chuỗi này là **không kiểm được**, kể cả những lời khai đúng.
+
+**Cái giá đã trả, ĐO chứ không suy đoán.** Bảy khẳng định dựa trên phép quét ấy, chạy lại cả hai
+cách trên `server/` + `client/`:
+
+* ✅ **NĂM SỐNG SÓT — `0` ở CẢ HAI cách:** `TransportMode`, `machine-simulator`, `St4i\.`,
+  `EngineApi`, `Waveforms`. 🔴 **Điều này phải được viết ra, vì một mối nghi không giải để lại một
+  vết bẩn ở chỗ nó không thuộc về:** kết luận của **AM-1** rằng `TransportMode` được xuất bản ở
+  **ba** chỗ và **ba là toàn bộ tập** — **ĐỨNG VỮNG**. Máy chủ hệ sinh thái và client trình duyệt
+  thật sự không tiêu thụ hợp đồng mode của sản phẩm này.
+* 🔴 **HAI KHÔNG:** `rateHz` **0 → 6** file, `waveform` **0 → 8** file.
+
+**Ở đâu — trỏ bằng TÊN.** Ngữ nghĩa pathspec của `git grep` (dụng cụ, không phải mã của ta);
+`server/contracts/machineDataContract.ts`, `server/services/processResultService.ts`,
+`server/api/v1/openapi.ts`, `server/routers/machineApiRouters.ts`,
+`server/contracts/machineDataContract.test.ts`,
+`client/src/components/apiDocs/AutomationProcessFeedSection.tsx` (**bên tiêu thụ, trong commit này**);
+khối lời-khai-miền của **AM-1 §11(f)** và **AN-1 §6.3**; **mục 14** ở Phần III (khối rút kèm ngày);
+**mục 29** (ca §8.1(f) mà chính AO-1 tự sinh ra); `scripts/verify-suites.sh` — **nêu tên vì nó KHÔNG
+chứa phép kiểm nào cho chuyện này.**
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* một **phán quyết của chủ sở hữu đã ra kèm một cái trần sai**. Mục 14 ghi rằng bên
+tiêu thụ *"không đo được từ repo này"*; với hợp đồng ingest HTTP điều đó **luôn luôn sai**, và cái
+làm nó trông đúng là một pathspec. Một phán quyết ra dưới một cái trần sai là **chính xác** thứ file
+này tồn tại để ghi lại. Rộng hơn: **mọi câu phủ định tồn tại** trong chuỗi này đứng trên một lời
+khai không ai kiểm được.
+*Chiều ngược, và nó đủ mạnh để "không làm gì" là một lựa chọn có lý:* **phần lớn phép quét của chuỗi
+này nhắm vào `src/` và `tests/`, tức NẰM TRONG cwd, nên chúng không bị ảnh hưởng** — và phép đo vừa
+rồi cho thấy **năm trên bảy** khẳng định bị nghi ngờ vẫn đứng. Thiệt hại đã đo là **hai** chuỗi, cả
+hai trên **một** mục, và cả hai đọc theo chiều **thuận** cho phán quyết ấy. Bản vá là **một dòng**
+(`:(top)` hoặc `:/` trên mọi pathspec, hoặc **ghi cwd cạnh SHA** trong mỗi lời khai miền) — nhưng
+**chưa dụng cụ nào cưỡng chế nó**, và dựng một dụng cụ để canh cách người ta gõ một lệnh tra cứu là
+một bộ kiểm mới trên thứ **không phải mã sản phẩm**. Một quy ước viết tay rẻ hơn nhiều và **không có
+gì đỏ lên khi ai đó quên**.
+
+**Nếu KHÔNG quyết định.** Lời khai miền tiếp tục được viết ở mỗi báo cáo, tiếp tục **không kiểm
+được**, và lần sau `0` sẽ lại được đọc là *"không có"* thay vì *"tôi đã không nhìn"*. 🔴 **Và một
+chỗ CHƯA ĐO được nêu tên chứ không lấp, vì lấp nó ở đây sẽ lặp lại đúng khuyết tật này:** **người
+đăng ký gương MQTT retained `syn/…`** — bề mặt đã xuất bản thứ hai mà mục 14 đổi — **vẫn chưa ai
+đo**. **37** file dưới `server/` + `client/` nhắc chuỗi `syn/`; **chưa file nào được chứng minh là
+một người ĐĂNG KÝ**; các lần xuất hiện của `retained` đã mở ra đều là chuyện khác (leo thang cảnh
+báo, chú thích UI). Nhiệm vụ này **cố ý dừng ở đó** — đó là một mục cần mở, không phải một chướng
+ngại phải dọn dở dang trên đường.
+
+### ✅ ĐÃ THI HÀNH 2026-08-22 (AW-1, base `e99019c0`) — một BỌC CƯỠNG CHẾ, không một dòng hướng dẫn; và nó bắt được một lỗi của chính nó ở lần chạy thử đầu tiên
+
+🔨 **QUYẾT: DỰNG MỘT BỌC CƯỠNG CHẾ CHO MIỀN PHÉP QUÉT** (2026-08-22, **điều phối viên quyết theo uỷ
+quyền**, cùng khuôn mục 8, 15, 17 và 21). **Mọi dòng thân mục gốc ở trên giữ NGUYÊN VĂN.**
+
+#### 1. Vì sao là một BỌC, và vì sao KHÔNG phải một quy ước viết tay
+
+Thân mục trên đã cân đúng bài toán và kết luận rằng bản vá là *"một dòng"* nhưng **chưa dụng cụ nào
+cưỡng chế nó**, và rằng *"một quy ước viết tay rẻ hơn nhiều và **không có gì đỏ lên khi ai đó quên**."*
+**Vế thứ hai của chính câu ấy là lý do lựa chọn quy ước bị loại.** Ba hình dạng được cân, và cái được
+chọn là cái duy nhất **đổi mặc định** thay vì **thêm một lời nhắc**:
+
+* *một script bọc* — **CHỌN**: cwd thôi không còn là đầu vào của pathspec;
+* *một hàm dùng chung mọi phép quét phải đi qua* — **cùng vật** ở dạng khác, không thêm gì;
+* *một phép kiểm đọc transcript* — **LOẠI**, và lý do là một phép đo chứ không phải sở thích:
+  transcript nằm dưới `.superpowers/`, **bị gitignore**, tức đúng cái kênh mà mục 37 vừa đo được là
+  không tới tay chủ sở hữu. Một bộ cưỡng chế đọc một artefact không được commit thì **không cưỡng chế
+  được gì** ở chỗ nó cần cưỡng chế.
+
+#### 2. `scripts/repo-scan.sh` — cái nó CƯỠNG CHẾ, cho mọi phép quét đi qua nó
+
+1. **Tự `cd` về gốc repo.** Thư mục người gõ đứng thành **dữ liệu trong phần đầu**, không còn là đầu
+   vào của pathspec.
+2. **Tự viết lại mọi pathspec trần thành `:(top)…`.** Pathspec đã mang tiền tố magic (`:(top)`, `:/`,
+   `:(exclude)`) được để nguyên — đó là chủ ý của người gõ. Đường dẫn **tuyệt đối** bị **từ chối**, vì
+   nới nó thành `:(top)` sẽ đổi nghĩa của nó.
+3. **Luôn truyền `--full-name`** — nửa thứ hai của mục này, do mục 15 tìm ra. Đường dẫn in ra là
+   tương-đối-gốc-repo và **phân giải được**, kể cả với những đường dẫn tồn tại ở cả hai nơi.
+4. **Phân giải tree-ish thành SHA đầy đủ** và **in ra cây sạch hay bẩn**, nên một phép quét `HEAD`
+   không bao giờ bị báo cáo như một phép quét cái đang nằm trên đĩa.
+5. **Phát lời khai miền CÙNG kết quả**: nơi gõ, nơi chạy, SHA, trạng thái cây, pathspec **trước và
+   sau** khi viết lại, argv chính xác, số dòng. 🔴 **Một `0` từ dụng cụ này đọc được là *"không có"*
+   thay vì *"tôi đã không nhìn"* — đó là toàn bộ lý do mục này tồn tại.**
+
+#### 3. Nhân chứng `--self-test`, và **nó từ chối chính cái xanh đầu tiên của mình**
+
+Ba khẳng định, và cái thứ ba là cái giữ nó khỏi thành một guard xanh vì không thấy gì: **(a)** bất
+biến theo cwd; **(b)** phép dò phải **khác 0** — hai số 0 bằng nhau chứng minh **không gì**; **(c)**
+dạng **ngây thơ** phải trả **ÍT HƠN** — nếu chỗ hỏng không còn tái lập được bằng phép dò này thì một
+màu xanh ở đây **chứng nhận rỗng**, nên nó được báo là **thất bại**, không phải bỏ qua.
+
+🔴 **Bản nháp đầu của `--self-test` quét CÂY LÀM VIỆC, và nó tự đỏ với ba số 0.** Lý do đúng là ranh
+giới **(b)** ghi ở đầu chính dụng cụ ấy: checkout này là **sparse**, `server/` **không nằm trên đĩa**,
+nên một phép quét cây làm việc **không thể** thấy đúng những file phép dò nói về. **Dụng cụ bắt được
+dụng cụ**, và bản sửa là quét **một commit**. Đo lại ở `e99019c0`:
+
+| phép dò `ingest` trên `server/*.ts`, tại `e99019c0` | kết quả |
+|---|---:|
+| qua bọc, gõ ở **gốc repo** | **197** |
+| qua bọc, gõ ở **`tools/machine-simulator`** | **197** |
+| **ngây thơ**, tương đối, gõ ở `tools/machine-simulator` | **0** |
+
+**197 khớp con số mục này đo ở `a70ed5d6`** — cùng phép đo, base khác, không dịch.
+
+#### 4. Cặp đối chứng — chạy trọn, rồi **hoàn nguyên**
+
+Gỡ luật viết-lại (`:(top)` → không làm gì) trong `rewrite_pathspec`: `--self-test` **ĐỎ**, exit 1,
+`197 vs 0`, và thông điệp nêu đúng nguyên nhân. Trả luật về: **XANH**, exit 0. 🔴 **Và hai vế bất biến
+đi QUA `rewrite_pathspec` chứ không qua một chuỗi `":(top)"` gõ tay** — nếu chúng gõ tay, xoá luật ấy
+sẽ để self-test xanh trong khi mọi phép quét thật âm thầm bị thu hẹp, tức bài kiểm sẽ khẳng định một
+chuỗi do chính nó viết ra.
+
+#### 🔴 5. Một lỗi CỦA CHÍNH BỌC NÀY, bắt được lúc chạy thử, và nó là mục 32 trong bộ đồ thứ hai
+
+`scripts/repo-scan.sh --sha HEAD -l -- 'server/*.ts'` — **thiếu mẫu tìm** — in ra
+`result lines : 0` và trông **y hệt một phủ định sạch**. Cơ chế: `git grep` lấy từ **không phải tuỳ
+chọn** đầu tiên làm **PATTERN**, nên khi không có mẫu nó đã nuốt **chính cái SHA** làm mẫu. **Đó là
+một `0` nghĩa là *"anh chưa hỏi gì cả"*.** Nay bị **từ chối** (exit 2) thay vì in ra. Ghi vào mục vì
+nó chứng minh lớp mà mục này mô tả rộng hơn pathspec: **mọi con đường tạo ra một `0` không có câu hỏi
+đằng sau** đều thuộc lớp ấy.
+
+#### 🔴 6. Cái bọc này **KHÔNG** cưỡng chế — nêu đủ rộng
+
+* **(a) Nó KHÔNG buộc được ai dùng nó.** Không có gì trong git, trong repo này hay trong shell này
+  chặn người sau gõ `git grep foo -- 'server/*.ts'` bằng tay. Nó là một **mặc định** và một **nhân
+  chứng**, **không** phải một cổng trên cách con người gõ phím. Thứ **được** cổng cưỡng chế là tính
+  bất biến theo cwd của chính bọc này (`--self-test` chạy trong `scripts/verify-suites.sh`).
+* **(b) Nó không thấy được phép quét KHÔNG-git.** `grep -r`, ripgrep, tìm-trong-editor đọc **cây làm
+  việc**; checkout này sparse — `server/` **1589** file và `client/` **711** file **có trong commit,
+  không trên đĩa**. Những dụng cụ ấy sẽ trả 0 cho chúng và bọc này **không biết chúng đã chạy**.
+* **(c) Nó không kiểm được rằng một báo cáo đã chép lại phần đầu.** Nó in lời khai miền; nó không
+  bắt được một con người không dán nó.
+* **(d) Nó không nói gì về việc MẪU TÌM có đúng không.** Một phép quét sai chuỗi vẫn là một phép quét
+  sai chuỗi, chỉ là đã đúng phạm vi.
+* **(e) Nó KHÔNG với ra ngoài repo.** 🔴 **Người đăng ký gương MQTT retained `syn/…` VẪN CHƯA ĐO** —
+  **37** file dưới `server/` + `client/` nhắc chuỗi ấy, **chưa file nào được chứng minh là một người
+  ĐĂNG KÝ** — và nó nằm ngoài mọi phép quét dụng cụ này chạy được. Nêu tên, không lấp.
+
+#### 7. Cái giá đã trả, ghi lại chứ không tóm tắt
+
+**Mục 14 được CHỦ SỞ HỮU phán kèm một cái trần SAI** — *"người tiêu thụ không đo được từ repo này"* —
+trong khi mã của bên tiêu thụ nằm trong **đúng commit ấy**. Câu ấy nay đứng ở **đầu
+`scripts/repo-scan.sh`**, cùng bảng bốn dòng của mục này, để người mở dụng cụ ra đọc được **vì sao nó
+tồn tại** mà không phải tìm sang file này. **Năm khẳng định khác đo lại vẫn ĐỨNG VỮNG**, gồm kết luận
+*"ba chỗ xuất bản `TransportMode`"* của AM-1.
+
+#### 8. Hằng số
+
+**Không hằng số nào của cổng dịch vì mục này.**
+
+---
+
+## 37. 🔴 HỒ SƠ — LỖI CỦA ĐIỀU PHỐI VIÊN: một phán quyết của chủ sở hữu đã sống trọn một vòng nhiệm vụ mà KHÔNG có bản ghi tại chỗ, và không dụng cụ nào bắt được
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1). 🔴 **Mục này KHÔNG nói về mã. Nó nói về quy trình đã tạo ra file này, và
+nó được điều phối viên yêu cầu viết THẲNG. Viết thẳng.**
+
+**Đo được cái gì.** Phán quyết mục 16 của chủ sở hữu ngày **2026-08-22** — *một transaction bọc bốn câu lệnh
+của `AggregateForOeeAsync`*, tức **lựa chọn thứ tư** mà mục không có — tới tay người thi hành **chỉ qua một
+task brief**. Ở base `ce1ce2be`, `grep "2026-08-22"` trên `docs/owner-decisions.md` trả **đúng hai dòng, và cả
+hai thuộc mục 27**. Điều phối viên bảo nhiệm vụ trước ghi phán quyết mục 27 và nói mục 16 *"không phải việc
+của anh"* — tức đã coi **"đừng thi hành"** là **"đừng ghi"**. 🔴 **Một phán quyết và một lần thi hành là HAI
+HIỆN VẬT KHÁC NHAU.** Một phán quyết là dữ kiện ngay khi được phát ra; nó không chờ ai thi hành để trở thành
+thật, và **đúng loại hiện vật mà file này tồn tại để giữ**. Trong một vòng nhiệm vụ, kênh duy nhất mang nó là
+một task brief — **và task brief nằm dưới `.superpowers/`, bị gitignore**, tức đúng cái kênh mà đoạn mở đầu
+của file này gọi tên là thiếu sót nó lập ra để chấm dứt.
+
+**Bằng chứng thứ hai, cùng lớp, đo trong chính nhiệm vụ này.** Câu tóm tắt Phần I —
+*"Các mục ở đây, LIỆT KÊ chứ không đếm: mục 16, 17, 18, … 32"* — **đã sai từ trước khi AU-1 chạm vào nó**:
+mười một mục (16, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29) đã rời sang Phần III ở các nhiệm vụ trước và câu ấy
+vẫn liệt kê cả mười một. Nó **lỗi thời qua ba nhiệm vụ liên tiếp** và **không nhiệm vụ nào phát hiện ra**, vì
+**không cổng nào đọc file này**.
+
+🔴 **Và con số ấy phải được ĐO chứ không nhận, vì lời khai mở mục này cũng đếm sai.** Brief giao mục này viết
+*"danh sách Phần I đã lỗi thời **chín** mục"*. Đo trên `659bcfb2`: Phần I **thật sự** chứa **17, 25, 26, 30,
+31, 32**, còn câu tóm tắt liệt kê **mười bảy** số hiệu — nên phần thừa là **MƯỜI MỘT**, không phải chín.
+**Lời khai về một khuyết tật kiểm đếm tự nó đếm sai, theo đúng cơ chế nó đang mô tả** — một con số vô hướng
+tóm tắt một tập thay đổi ở chỗ khác. Đây là **lần thứ tư trong bốn nhiệm vụ liên tiếp** một con số như thế bị
+phép liệt kê ngay cạnh nó bác bỏ, và lần này nó xảy ra **trong chính câu chẩn đoán**. Mọi phép rút trước đó đều viết được câu *"không phải nó từng sai — nó mô tả
+đúng trạng thái cho tới lúc ấy"*; **lần này câu đó viết không được.**
+
+🔴 **Và một lời tự khen của chính file này không sống sót qua phép đo.** Bốn khối bảo tồn lập luận rằng cách
+viết *liệt kê, không đếm* làm một phép liệt kê sai **"sai NHÌN THẤY ĐƯỢC"**. Nó chỉ nhìn thấy được **nếu có
+ai đó nhìn**. **Không ai nhìn trong ba nhiệm vụ.** Phép liệt kê làm cho việc **SỬA** rẻ; nó không làm cho việc
+**PHÁT HIỆN** tự động — và cái thiếu là phát hiện.
+
+**Ở đâu — trỏ bằng TÊN.** `tools/machine-simulator/docs/owner-decisions.md` (bảng phán quyết đầu file; banner
+Phần I; mục 16, mục 27); `.superpowers/sdd/**/task-*-brief.md` và `task-*-report.md` (**bị gitignore**, xem
+`.gitignore`); `tools/machine-simulator/scripts/verify-suites.sh` (**cổng — và nó KHÔNG đọc
+`owner-decisions.md`**, đó là cả vấn đề).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* file này tự nhận là **nguồn sự thật** cho các quyết định của chủ sở hữu, và trong một vòng nó
+**không phải**. Một chủ sở hữu mở file để hỏi *"tôi đã phán gì?"* sẽ nhận câu trả lời **thiếu**, mà không có
+dấu hiệu nào rằng nó thiếu — đúng cách hỏng mà đoạn mở đầu nói nó chấm dứt. Nếu phiên làm việc đứt đúng giữa
+hai nhiệm vụ ấy, phán quyết mục 16 **biến mất khỏi hồ sơ hoàn toàn**, vì kênh duy nhất mang nó không được
+commit. Và vì **không cổng nào đọc file này**, một mục có thể sai ở **bất kỳ** trường nào — trạng thái, số
+hiệu, phép liệt kê — trong **bất kỳ** số nhiệm vụ nào, và cổng vẫn **xanh**.
+*Chiều ngược, và nó là lý do mục này CHỜ ANH thay vì được ai đó tự sửa:* mọi phép **cưỡng chế** đều tốn thật.
+(i) **Bắt cổng đọc file này** biến một tài liệu văn xuôi tiếng Việt thành **đầu vào có lược đồ** — bảng phán
+quyết thành dữ liệu phải phân tích, và **mọi** phép viết lại văn xuôi thành một thay đổi có thể làm đỏ cổng;
+đó là **chính xác** cái ma sát mục 36 đo được ở README, nay áp lên tài liệu **hay đổi nhất** trong repo.
+(ii) **Bắt mọi task brief phải commit** đưa `.superpowers/` vào repo, mà nó bị gitignore **có lý do** và chứa
+transcript cùng đường dẫn cục bộ. (iii) **Bắt điều phối viên ghi trước khi giao** không có bộ cưỡng chế **kỹ
+thuật** nào cả — nó là một luật về hành vi con người, và luật ấy **vừa bị vi phạm bởi chính người viết ra
+nó**. 🔴 **Nên câu trả lời trung thực cho *"cái gì sẽ CƯỠNG CHẾ nó"* là: KHÔNG CÓ GÌ CƯỠNG CHẾ ĐƯỢC, ở hình
+dạng repo hôm nay** — và ba lối trên là ba cái giá, không phải ba giải pháp. Cái rẻ nhất trong ba, và nó vẫn
+**không phải cưỡng chế mà là phát hiện**: một bài test ghim **giao ước hẹp** rằng mọi số hiệu mang
+`🔴 CHỜ ANH` ở **bảng phán quyết** xuất hiện đúng một lần ở **phép liệt kê Phần I** và ngược lại — nó bắt được
+chỗ lệch chín-mục vừa xảy ra, **không** bắt được một phán quyết chưa bao giờ được ghi, và nó ghim **cấu trúc**
+chứ không ghim **văn xuôi**, nên tránh được cái giá (i).
+
+**Nếu KHÔNG quyết định.** Cơ chế lặp lại, và **nó đã lặp lại rồi** — hai lần trong ba ngày: mục 16 (một phán
+quyết không có bản ghi) và banner Phần I (một phép liệt kê sai **mười một** mục qua ba nhiệm vụ). Không có bộ
+dò nào,
+nên **lần tới sẽ lại được phát hiện bằng cách một người tình cờ nhìn** — lần này là người thi hành mục 17, đọc
+banner Phần I vì một lý do khác hẳn. 🔴 **Và nêu cho hết, vì một nửa sự thật ở đây sẽ là loại lỗi mà chính mục
+này nói về: AU-1 KHÔNG sửa được lớp gốc, chỉ ghi lại nó.** Mục 17 vừa cho một ví dụ thu nhỏ trong cùng nhiệm
+vụ này — AL-1 rút một khẳng định đã công bố **trong hồ sơ** ngày 2026-08-20, phép rút **chưa bao giờ tới mã**,
+và suốt hai ngày người đọc **mã** vẫn thấy câu sai. **Cùng một lớp, ở hướng ngược lại: hồ sơ đúng, nguồn
+sai.** Nên bất kỳ phán quyết nào cho mục này phải trả lời **cả hai hướng**, không chỉ hướng *"ghi vào file"*.
+
+### ✅ ĐÃ THI HÀNH 2026-08-22 (AW-1, base `e99019c0`) — **CỔNG NAY ĐỌC FILE NÀY**; năm chỗ lệch đo được và sửa ở HỒ SƠ; và **nửa thứ nhất của mục này vẫn KHÔNG có bộ dò**
+
+🔨 **QUYẾT: BẮT CỔNG ĐỌC FILE NÀY** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục
+8, 15, 17 và 21). **Mọi dòng thân mục gốc ở trên giữ NGUYÊN VĂN.**
+
+#### 🔴 1. Một câu của chính mục này HẾT ĐÚNG kể từ hôm nay — rút TẠI CHỖ, kèm ngày, không xoá
+
+Mục viết, hai lần: *"**không cổng nào đọc file này**"*, và ở §"Ở đâu — trỏ bằng TÊN" nó nêu
+`tools/machine-simulator/scripts/verify-suites.sh` (**cổng — và nó KHÔNG đọc `owner-decisions.md`**,
+đó là cả vấn đề)". 📎 **Cả hai câu giữ NGUYÊN VĂN ở trên và được RÚT tại đây, 2026-08-22 (AW-1), cùng
+kiểu bảo tồn AB-1 lập** — trích nguyên văn rồi rút, kèm ngày và người, **không gạch ngang, không xoá
+một dòng nào**. **Lý do rút không phải chúng từng sai**: chúng mô tả đúng trạng thái cho tới hết ngày
+2026-08-22 sáng. Cái làm chúng hết đúng là `scripts/check-owner-decisions.sh`, chạy **trong**
+`scripts/verify-suites.sh`. **Cổng đọc `docs/owner-decisions.md`.**
+
+#### 2. Phép kiểm ghim **CẤU TRÚC**, không ghim **VĂN XUÔI** — và đó là cái giá (i) mà mục này định giá
+
+Mục đã định giá đúng ba lối và chọn sẵn cái rẻ nhất: *"một bài test ghim **giao ước hẹp** … nó ghim
+**cấu trúc** chứ không ghim **văn xuôi**, nên tránh được cái giá (i)."* Dụng cụ đúng hình dạng đó, và
+rộng hơn giao ước mục nêu ở đúng một chỗ — nó cũng đọc **PHẦN mà thân mục đứng dưới**:
+
+* **C1** — mỗi số hiệu trong bảng phán quyết có **đúng một** thân mục, và mỗi thân mục có đúng một
+  hàng. *(Đây là chính chỗ V-1 bắt được bằng tay: bảng thiếu hai hàng.)*
+* **C2** — thân mục nằm dưới **đúng tiêu đề PHẦN** mà trạng thái ghi ở hàng đòi hỏi.
+* **C3** — phép liệt kê Phần I **hiện hành** nêu đúng tập số hiệu **thật sự** nằm ở Phần I — cả ở
+  **trường máy đọc** lẫn ở **câu văn** người đọc thấy.
+* **C4** — không số hiệu nào nằm dưới hai tiêu đề PHẦN.
+* **C5** — **mọi** đoạn liệt kê Phần I trần phải khai nó **đang sống** hay **đã rút**.
+
+🔴 **Trạng thái KHÔNG đọc bằng "dấu đầu tiên trong ô", và lý do là một phép đo trên cả 37 hàng.** File
+này append-only theo luật, nên một ô đơn lẻ có thể mang `🔴 CHỜ ANH` **và** `✅ ĐÃ THI HÀNH` **và**
+`Ở LẠI PHẦN I` cùng lúc. **Cả "dấu đầu wins" lẫn "dấu cuối wins" đều SAI**: hàng 16, 17 và 27 **kết
+thúc** bằng câu trạng thái **CŨ** được bảo tồn, còn hàng 1 và 5–11 **mở đầu** bằng một 🔨 mà chúng đã
+thi hành từ lâu. Nên trạng thái đọc như một **TẬP token** cộng một luật cho mỗi phần, mỗi luật **một
+chiều** có chủ ý.
+
+#### 🔴 3. Luật có răng — *"MỘT PHẦN ⇒ KHÔNG phải Phần III"* — **suy ra, không phát minh**
+
+Banner Phần III đọc *"ĐÃ QUYẾT **VÀ** ĐÃ THI HÀNH"*. Chữ *"MỘT PHẦN"* nói bằng chính lời của hồ sơ
+rằng vế thứ hai chưa đủ. **File này đã đồng ý với luật ấy ở ba chỗ trước khi luật được viết ra:** mục
+**12** mang tiêu đề *"PHÁN QUYẾT ĐÃ THI HÀNH **MỘT PHẦN**"* và **ở lại Phần II**; mục **27** và mục
+**16** mỗi cái từng có phán quyết mà chưa có ghi chép thi hành và **ở lại Phần I**.
+
+#### 🔴 4. **NĂM chỗ lệch đo được hôm nay**, trước khi sửa một chữ — LIỆT KÊ trước, con số SAU
+
+1. **Mục 17 ở Phần III** trong khi hàng bảng của nó tự khai *"ĐÃ THI HÀNH MỘT PHẦN"*.
+2. Đoạn liệt kê Phần I trần ở **dòng 111** không khai đang sống hay đã rút.
+3. Đoạn liệt kê Phần I trần ở **dòng 168** — cùng thế.
+4. Đoạn liệt kê Phần I trần ở **dòng 237** — cùng thế.
+5. **Không có trường máy đọc nào** nói cái nào trong ba đoạn ấy là hiện hành.
+
+🔴 **Chỗ lệch 2–5 là một PHÁT HIỆN mà lời giao việc không biết: Phần I chứa BA đoạn liệt kê TRẦN, nêu
+ba tập KHÁC NHAU, ở cùng một cấp độ trình bày, và chỉ MỘT là hiện hành.** Chúng đúng luật bảo tồn của
+file (giữ câu đã rút ở đúng chỗ nó được viết) và vẫn để người đọc lướt gặp ba lời khai mâu thuẫn mà
+không gì phân biệt được. **Đó là mục 37 ở hình dạng thứ hai, tìm thấy trong chính phần mà mục 37 mở
+ra để nói về.**
+
+**Cả năm sửa ở HỒ SƠ, không sửa dụng cụ cho vừa hồ sơ:** mục 17 về **Phần I** kèm lập luận từ định
+nghĩa các phần; ba đoạn liệt kê mang `<!-- gate:phần-i-rút -->`; một đoạn liệt kê **mới** kèm
+`<!-- gate:phần-i = 17 25 30 34 35 36 -->`. **Không một chữ nào của ba đoạn cũ bị sửa, không dòng nào
+bị xoá.** Sau khi sửa: **0 chỗ lệch**, 37 hàng ↔ 37 thân mục.
+
+#### 5. Cặp đối chứng — ba chỗ lệch giả, chạy trọn, rồi **hoàn nguyên**
+
+* Đổi hàng của một mục Phần I (mục 35) thành lời khai đã-thi-hành ⇒ **2 ĐỎ** (C2, cả hai chiều).
+* Bỏ một số hiệu khỏi trường máy đọc ⇒ **1 ĐỎ** (C3, trường ≠ Phần I thật).
+* Làm hỏng một đầu mục thân (mục 36) ⇒ **3 ĐỎ** (C1 hàng không có thân, C3 trường, C3 câu văn).
+
+Cả ba hoàn nguyên; `git diff` ở ngọn nhánh không chứa cái nào; phép kiểm trở về **0**.
+
+#### 🔴 6. Một lỗi CỦA CHÍNH PHÉP KIỂM, bắt bằng cách đo lại sản phẩm của mình
+
+Bản chạy đầu báo **7** chỗ lệch, trong đó *"hàng 6 và hàng 7 không có thân mục"*. **Hai cái đó là do
+dụng cụ bịa ra, không phải hồ sơ.** Đầu mục gộp `## 5–7.` dùng **gạch nối en (U+2013), ba byte**, và
+bản nháp viết nó vào một lớp ký tự `[–—-]`; awk tách ký tự nhiều byte thành từng byte nên lớp ấy không
+bao giờ khớp. Bản sửa phân tích **theo vị trí**, không dùng lớp ký tự, và thêm một chốt tự kiểm: một
+khoảng vô nghĩa được báo là *"đọc lại bộ phân tích, đừng đọc lại file"*. **Con số thật là NĂM**, và nó
+chỉ trở thành **năm** sau khi phép kiểm bị đem đo lại — đúng thao tác mà bảy nhiệm vụ liên tiếp dùng.
+
+#### 🔴 7. Cái phép kiểm này **KHÔNG** bắt được — và nửa lớn nhất là **nửa thứ nhất của chính mục này**
+
+* **(a) 🔴 NÓ KHÔNG BẮT ĐƯỢC MỘT PHÁN QUYẾT KHÔNG BAO GIỜ ĐƯỢC GHI.** Đó là **nửa thứ nhất** của mục
+  này — phán quyết mục 16 của chủ sở hữu tới người thi hành chỉ qua một task brief bị gitignore — và
+  **không phép kiểm nào trên file này thấy được một sự kiện không nằm trong file**. Mục đã nói thế
+  (*"KHÔNG CÓ GÌ CƯỠNG CHẾ ĐƯỢC, ở hình dạng repo hôm nay"*); dựng dụng cụ **không đổi điều đó**.
+  Cái được thêm là **phát hiện** cho nửa thứ hai, đúng như mục dự báo, **không hơn**.
+* **(b) Nó không đọc văn xuôi.** Một thân mục có thể nói bất cứ điều gì; nó kiểm token, tiêu đề, phép
+  đếm.
+* **(c) Nó KHÔNG phán được Phần I hay Phần II cho một mục "MỘT PHẦN".** Nó chỉ nói **KHÔNG PHẢI Phần
+  III** rồi dừng. Phần dư là **QUYẾT ĐỊNH** hay **VIỆC** là một phán đoán từ định nghĩa các phần và
+  **ở lại với con người**.
+* **(d) Nó chỉ ghim phép liệt kê PHẦN I.** Banner Phần II và Phần III không có trường máy đọc, và
+  hàng chục câu trích trong khối bảo tồn là **lịch sử**, không phải trạng thái. Chỉ Phần I được ghim,
+  vì đó là chỗ đã lỗi thời.
+* **(e) Nó không nói gì về TÍNH ĐÚNG** của một phán quyết, một ngày tháng, hay một lời quy trách.
+* **(f) Và một cái trần cụ thể của luật có răng ở §3:** một mục thi hành một phần mà ô bảng **không**
+  viết chữ *"MỘT PHẦN"* thì **vẫn đi qua**. Luật đứng trên một lời tự khai; nó không đo được sự thi
+  hành.
+
+#### 8. Hằng số
+
+**Không hằng số nào của cổng dịch vì mục này.** Phép kiểm là một script chạy trong `verify-suites.sh`
+và gộp kết quả vào **cùng một dòng phán quyết**; nó không thêm bài test, không đụng `EXPECT_WARNINGS`,
+không đụng năm tổng bộ, không một lệnh đè.
 
 ---
 

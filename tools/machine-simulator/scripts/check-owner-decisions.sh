@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+# ═════════════════════════════════════════════════════════════════════════════════════════════════
+# check-owner-decisions.sh — ITEM 37'S INSTRUMENT: THE GATE NOW READS docs/owner-decisions.md.
+#
+# THE DEFECT, as item 37 records it: "no gate reads this file", so an item could be wrong in ANY
+# field — status, number, enumeration — for ANY number of tasks, and the gate stayed GREEN. It did:
+# the Part I enumeration listed ELEVEN items that had already moved to Part III, went stale across
+# THREE CONSECUTIVE TASKS, and was found only because a human happened to read it for another
+# reason. The same class produced an owner ruling (item 16) that lived a whole task cycle with no
+# in-place record at all.
+#
+# WHAT SHAPE THE INSTRUMENT HAD TO TAKE, and item 37 argued this before it was built: making the
+# gate parse the PROSE would turn a Vietnamese prose document into schema input, so every rewrite
+# could redden the gate — the exact friction item 36 measured on the README, applied to the most
+# frequently edited document in the repo. So this pins STRUCTURE, not prose:
+#
+#   C1  every number in the verdict table has EXACTLY ONE body section, and every body section has
+#       exactly one table row  (this is the defect V-1 found by hand: the table was missing two rows)
+#   C2  the body sits under the PART HEADING its recorded status requires
+#   C3  the LIVE Part I enumeration names exactly the item numbers that are actually in Part I —
+#       both in its machine field and in the prose sentence a human reads
+#   C4  no item number appears under two part headings
+#   C5  every bare Part I enumeration paragraph declares whether it is LIVE or RETRACTED
+#
+# ── HOW STATUS IS READ, AND WHY IT IS NOT "THE FIRST EMOJI IN THE CELL" ──────────────────────────
+# The file is append-only by rule: a superseded status is kept VERBATIM, so a single cell can carry
+# `🔴 CHỜ ANH` and `✅ ĐÃ THI HÀNH` and `Ở LẠI PHẦN I` at once. Measured across all 37 rows, neither
+# "first marker wins" nor "last marker wins" is sound — rows 16, 17 and 27 end with the PRESERVED
+# OLD status, and rows 1 and 5-11 begin with a 🔨 they have long since executed. So status is read
+# as a SET of tokens plus one rule per part, and each rule is one-directional on purpose:
+#
+#   Part I   requires  CHỜ ANH   and forbids any execution token
+#   Part II  requires  "việc còn nợ" or "Ở LẠI PHẦN II"   and forbids any execution token
+#   Part III requires  an execution token   and forbids "THI HÀNH MỘT PHẦN"
+#
+# 🔴 THE LAST CLAUSE IS THE ONE WITH TEETH AND IT IS DERIVED, NOT INVENTED. Part III's banner reads
+# "ĐÃ QUYẾT VÀ ĐÃ THI HÀNH" — decided AND executed. "MỘT PHẦN" says in the record's own words that
+# execution is partial, so the entry condition is not met. The file already agrees with this in
+# three places: item 12 is headed "PHÁN QUYẾT ĐÃ THI HÀNH MỘT PHẦN" and stays in Part II; item 27
+# and item 16 each had a ruling with no execution record and were kept in Part I.
+#
+# ── WHAT THIS DOES NOT ENFORCE — a ceiling stated too small is worse than no ceiling ─────────────
+#   a. 🔴 IT CANNOT CATCH A RULING THAT WAS NEVER WRITTEN DOWN. That is the FIRST half of item 37 —
+#      the owner's item-16 ruling reaching an executor only through a gitignored task brief — and no
+#      check over this file can see a fact that is not in it. Item 37 says so; building this does
+#      not change it. Only the second half, the stale enumeration, is now detected.
+#   b. IT DOES NOT READ THE PROSE. A body can say anything; this checks tokens, headings, counts.
+#   c. IT CANNOT DECIDE PART I vs PART II for a partially-executed item. It routes such an item to
+#      "NOT Part III" and stops. Whether what remains is a DECISION (Part I) or WORK (Part II) is a
+#      judgement from the part definitions and stays with the human.
+#   d. IT DOES NOT CHECK THE OTHER ENUMERATIONS in the file — the Part II and Part III banners have
+#      no machine field, and the dozens of preserved quotations inside blockquotes are history, not
+#      state. Only the Part I enumeration is pinned, because that is the one that went stale.
+#   e. IT SAYS NOTHING ABOUT CORRECTNESS OF A VERDICT, a date, or an attribution.
+#
+# Usage:  scripts/check-owner-decisions.sh [--file <path>]
+# Exit:   0 consistent · 1 divergence(s) found · 2 setup failure
+# ═════════════════════════════════════════════════════════════════════════════════════════════════
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+DOC="$(dirname "$HERE")/docs/owner-decisions.md"
+[[ "${1:-}" == "--file" ]] && { DOC="${2:-}"; shift 2; }
+[[ -r "$DOC" ]] || { echo "check-owner-decisions: cannot read $DOC" >&2; exit 2; }
+
+awk -v DOC="$DOC" '
+function strip(s) { gsub(/[*`_~]/, "", s); return s }
+function has(s, t) { return index(s, t) > 0 }
+function exec_token(s) {
+  return has(s, "ĐÃ THI HÀNH") || has(s, "Đã thi hành") || has(s, "đã thi hành") \
+      || has(s, "ĐÃ GỠ")      || has(s, "Đã gỡ")       || has(s, "đã gỡ")
+}
+function bad(msg) { fail[++nfail] = msg }
+
+BEGIN { FS = "\n"; part = "HEAD"; in_table = 0 }
+
+# ── part banners ──────────────────────────────────────────────────────────────────────────────────
+/^# / {
+  if      (index($0, "PHẦN I —")   > 0) part = "I"
+  else if (index($0, "PHẦN II —")  > 0) part = "II"
+  else if (index($0, "PHẦN III —") > 0) part = "III"
+  else if (index($0, "PHẦN IV")    > 0) part = "IV"
+  else                                  part = "HEAD"
+  seen_part[part] = FNR
+  next
+}
+
+# ── the verdict table: the first pipe table in the header section, nothing else ───────────────────
+part == "HEAD" && /^\| *[0-9—-]+ *\|/ {
+  in_table = 1
+  line = $0
+  n = line; sub(/^\| */, "", n); sub(/ *\|.*$/, "", n)
+  if (n ~ /^[0-9]+$/) {
+    if (n in rowline) bad(sprintf("C1  item %s has TWO rows in the verdict table (lines %d and %d)", n, rowline[n], FNR))
+    rowline[n] = FNR
+    cell[n] = strip(line)
+  }
+  next
+}
+part == "HEAD" && in_table && $0 !~ /^\|/ { in_table = 0 }
+
+# ── body sections: "## N." or "## N–M." under a part banner ───────────────────────────────────────
+part != "HEAD" && part != "IV" && /^## [0-9]+/ {
+  # 🔴 THE RANGE HEADING "## 5–7." USES AN EN DASH (U+2013), WHICH IS THREE BYTES. The first draft
+  # of this parser wrote it into a bracket expression `[–—-]`; awk split the multibyte character
+  # into bytes and the class never matched, so items 6 and 7 were reported as rows with no body —
+  # TWO FALSE DIVERGENCES INVENTED BY THE INSTRUMENT. Caught by re-measuring the output of this
+  # script against a hand count of the file. Parsed by position now, with no character class.
+  h = $0; sub(/^## /, "", h)
+  lo = h; sub(/[^0-9].*$/, "", lo)
+  hi = lo
+  rest = substr(h, length(lo) + 1)
+  if (substr(rest, 1, 1) != ".") {
+    seg = rest; sub(/\..*$/, "", seg)
+    gsub(/[^0-9]/, " ", seg)
+    m = split(seg, ga, / +/)
+    for (k = 1; k <= m; k++) if (ga[k] ~ /^[0-9]+$/) hi = ga[k]
+  }
+  if (hi + 0 < lo + 0 || hi - lo > 20) {
+    bad(sprintf("C1  heading at line %d parses to the nonsense range %s..%s — re-read the parser, not the file", FNR, lo, hi))
+    hi = lo
+  }
+  for (i = lo + 0; i <= hi + 0; i++) {
+    if (i in bodypart) bad(sprintf("C1/C4  item %d has TWO body sections (part %s line %d, and part %s line %d)", i, bodypart[i], bodyline[i], part, FNR))
+    bodypart[i] = part; bodyline[i] = FNR
+  }
+  next
+}
+
+# ── Part I enumeration paragraphs, and the machine field that says which one is live ──────────────
+part == "I" && /^\*\*Các mục ở đây, LIỆT KÊ/ { enum_n++; enum_line[enum_n] = FNR; enum_text[enum_n] = $0; enum_mark[enum_n] = "" ; last_enum = enum_n; next }
+part == "I" && /^<!-- gate:phần-i/ {
+  if (last_enum == 0) { bad(sprintf("C5  line %d: a gate:phần-i marker with no enumeration paragraph above it", FNR)); next }
+  if (index($0, "gate:phần-i-rút") > 0) { enum_mark[last_enum] = "RUT" }
+  else {
+    enum_mark[last_enum] = "LIVE"; live_n++; live_line = FNR
+    f = $0; sub(/^<!-- *gate:phần-i *= */, "", f); sub(/ *-->.*$/, "", f)
+    live_field = f
+  }
+  next
+}
+
+END {
+  # ── C1: coverage both ways ─────────────────────────────────────────────────────────────────────
+  for (n in rowline) if (!(n in bodypart)) bad(sprintf("C1  verdict-table row %s (line %d) has NO body section", n, rowline[n]))
+  for (n in bodypart) if (!(n in rowline)) bad(sprintf("C1  body section %d (part %s, line %d) has NO verdict-table row", n, bodypart[n], bodyline[n]))
+
+  # ── C2: the part heading the recorded status requires ──────────────────────────────────────────
+  for (n in rowline) {
+    if (!(n in bodypart)) continue
+    c = cell[n]; p = bodypart[n]
+    partial = has(c, "THI HÀNH MỘT PHẦN")
+    ex = exec_token(c)
+    if (p == "I") {
+      if (!has(c, "CHỜ ANH")) bad(sprintf("C2  item %s is in PART I but its row (line %d) does not say CHỜ ANH", n, rowline[n]))
+      if (ex && !partial)     bad(sprintf("C2  item %s is in PART I but its row (line %d) claims execution", n, rowline[n]))
+    } else if (p == "II") {
+      if (!(has(c, "việc còn nợ") || has(c, "Ở LẠI PHẦN II")))
+        bad(sprintf("C2  item %s is in PART II but its row (line %d) records no outstanding work", n, rowline[n]))
+      if (ex && !partial)     bad(sprintf("C2  item %s is in PART II but its row (line %d) claims execution", n, rowline[n]))
+    } else if (p == "III") {
+      if (!ex)      bad(sprintf("C2  item %s is in PART III but its row (line %d) records no execution", n, rowline[n]))
+      if (partial)  bad(sprintf("C2  item %s is in PART III (\"ĐÃ QUYẾT VÀ ĐÃ THI HÀNH\") but its row (line %d) says THI HÀNH MỘT PHẦN — partial execution does not meet that entry condition. It belongs in PART I if what remains is a DECISION, in PART II if what remains is WORK; this check does not choose between them.", n, rowline[n]))
+    }
+  }
+
+  # ── C3/C5: the Part I enumeration ──────────────────────────────────────────────────────────────
+  actual = ""
+  for (n = 1; n <= 999; n++) if ((n in bodypart) && bodypart[n] == "I") actual = actual (actual == "" ? "" : " ") n
+
+  if (enum_n == 0) bad("C3  PART I has no enumeration paragraph at all")
+  for (i = 1; i <= enum_n; i++)
+    if (enum_mark[i] == "")
+      bad(sprintf("C5  line %d: a Part I enumeration paragraph that declares neither <!-- gate:phần-i = ... --> nor <!-- gate:phần-i-rút -->. Three of these sit in Part I today and only one is current; a reader cannot tell them apart and neither can a gate.", enum_line[i]))
+  if (live_n == 0) bad("C3  no LIVE Part I enumeration: exactly one paragraph must carry <!-- gate:phần-i = <numbers> -->")
+  if (live_n > 1)  bad(sprintf("C3  %d LIVE Part I enumerations; there must be exactly one", live_n))
+
+  if (live_n == 1) {
+    nf = split(live_field, fa, /[ ,]+/); fs_ = ""
+    for (i = 1; i <= nf; i++) if (fa[i] ~ /^[0-9]+$/) fs_ = fs_ (fs_ == "" ? "" : " ") fa[i]
+    if (fs_ != actual)
+      bad(sprintf("C3  the machine field (line %d) says [%s]; PART I actually contains [%s]", live_line, fs_, actual))
+
+    # the prose a human reads must name the same set as the field beside it
+    for (i = 1; i <= enum_n; i++) if (enum_mark[i] == "LIVE") {
+      t = enum_text[i]; sub(/^.*LIỆT KÊ chứ không đếm: */, "", t); sub(/\*\*.*$/, "", t)
+      gsub(/mục|và|\./, " ", t)
+      np = split(t, pa, /[ ,]+/); ps = ""
+      for (j = 1; j <= np; j++) if (pa[j] ~ /^[0-9]+$/) ps = ps (ps == "" ? "" : " ") pa[j]
+      if (ps != actual)
+        bad(sprintf("C3  the PROSE enumeration (line %d) names [%s]; PART I actually contains [%s]", enum_line[i], ps, actual))
+    }
+  }
+
+  # ── report ─────────────────────────────────────────────────────────────────────────────────────
+  printf "── item 37 · owner-decisions.md structural check ───────────────────────────────────────\n"
+  printf "   file          : %s\n", DOC
+  printf "   verdict rows  : %d      body sections : %d\n", length(rowline), length(bodypart)
+  printf "   PART I holds  : [%s]\n", actual
+  printf "── DIVERGENCES LISTED FIRST; the count is derived from this list ───────────────────────\n"
+  for (i = 1; i <= nfail; i++) printf "   %2d. %s\n", i, fail[i]
+  if (nfail == 0) printf "   (none)\n"
+  printf "────────────────────────────────────────────────────────────────────────────────────────\n"
+  printf "   DIVERGENCES : %d\n", nfail
+  if (nfail > 0) {
+    printf "   🔴 Each one is a finding about the RECORD. Fix the record; do not fit the tool to it.\n"
+    exit 1
+  }
+  exit 0
+}
+' "$DOC"
