@@ -173,6 +173,9 @@ export async function storageDelete(relKey: string): Promise<{ deleted: boolean;
       return { deleted: true };
     } catch (err: any) {
       if (err?.code === "ENOENT") return { deleted: false }; // already gone
+      // data-raw-ok: lỗi HỆ THỐNG TỆP khi xoá tệp lưu trữ (EACCES/EBUSY/EPERM…). Nhánh
+      // ENOENT đã được xử riêng ở trên, nên tới đây là sự cố THẬT ở đĩa/quyền — chuỗi
+      // gốc của Node là thứ duy nhất chỉ ra đường dẫn và mã lỗi để người quản trị gỡ.
       return { deleted: false, error: err?.message ?? String(err) };
     }
   }

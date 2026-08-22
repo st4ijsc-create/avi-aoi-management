@@ -238,6 +238,9 @@ export async function syncPoliciesFromFiles(opts: { dir?: string } = {}): Promis
   try {
     defs = loadPolicyFiles(opts.dir);
   } catch (err) {
+    // data-raw-ok: lỗi ĐỌC/PHÂN TÍCH tệp chính sách trên đĩa (YAML hỏng, thiếu tệp).
+    // `policyId: "(load)"` cho thấy đây là sự cố tầng TỆP, không phải một chính sách cụ
+    // thể. Người sửa là quản trị đang biên tập chính tệp đó.
     return [{ policyId: "(load)", version: 0, action: "error", detail: err instanceof Error ? err.message : String(err) }];
   }
   if (defs.length === 0) return results;

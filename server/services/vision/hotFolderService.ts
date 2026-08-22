@@ -795,6 +795,9 @@ export function dryRunSample(input: DryRunInput): DryRunResult {
   try {
     parsed = parseResultFile(input.fileName, input.content);
   } catch (err) {
+    // data-raw-ok: lỗi PHÂN TÍCH tệp kết quả do máy AOI ghi ra hot-folder. `stage:"parse"`
+    // đã là mã máy-đọc-được cho giao diện; chuỗi kèm theo chỉ ra dòng/trường nào sai
+    // trong tệp — thứ kỹ sư tích hợp cần để sửa đúng chỗ.
     return { ok: false, stage: "parse", error: err instanceof Error ? err.message : String(err) };
   }
   try {

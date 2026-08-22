@@ -153,6 +153,9 @@ class OtEquipmentAdapter implements EquipmentAdapter {
       await driver.disconnect().catch(() => undefined);
       return { ok: health.connected, latencyMs: Date.now() - t0, detail: { protocol: this.protocol } };
     } catch (err) {
+    // data-raw-ok: dò kết nối thiết bị ở tầng adapter. KHÁC `deviceAdapter.testConnection`
+    // (đã có errorCode): hàm này là API NỘI BỘ cho `equipmentIntegrationRouter`, và chính
+    // router đó mới là nơi gắn mã cho người dùng — gắn thêm ở đây là hai nguồn sự thật.
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
