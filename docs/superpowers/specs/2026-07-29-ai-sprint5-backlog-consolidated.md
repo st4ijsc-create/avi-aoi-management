@@ -26,7 +26,7 @@
 | **C3** (sắp sai trục) | ✅ ĐÓNG `17f78546` | `ORDER BY` sai + `LIMIT` = MẤT DÒNG |
 | **D1, D2** | ✅ ĐÓNG `17f78546` | ⚠ D2 khai 9 khoá thiếu — đo được **1** |
 | **D3** | ✅ vốn ĐÃ ĐÓNG | đã có `.limit()` + zod `max(500)` từ trước |
-| **D4** (cột chỉ-ghi) | ✅ ĐÓNG `a3b02fe3` | bỏ cột; mig 0335 chờ quyền owner để chạy DDL |
+| **D4** (cột chỉ-ghi) | ✅ ĐÓNG | mig 0335 ĐÃ CHẠY (owner `aoi`): cột biến mất, 73 dòng nhật ký giữ nguyên |
 | **E1** | ✅ vốn ĐÃ ĐÓNG `7d2d42d9` | + lưới `timeframeGuard` bổ sung |
 | **E3, E5, E6** | ✅ vốn ĐÃ ĐÓNG | xác minh bằng ĐỌC MÃ 2026-08-22, không bằng comment |
 | **E4** (env gõ sai im lặng) | ✅ ĐÓNG `a93afd69` | `server/_core/envNumber.ts` |
@@ -51,10 +51,9 @@ liệu thật không còn bị chặn. Mục thứ ba hoá ra chưa từng cần
 - **G** ✅ `fa00e4cb` — mig 0334 xoá **17 → 0** khoá plaintext (đo live, 42/42 máy vẫn có khoá `mk_` riêng), và hai chính sách xác thực yếu đổi mặc định `allow` → `deny`.
 - **E2** ✅ **vốn đã đóng trọn từ trước** — cooldown cho nhóm không-`machineId` đã có qua Redis, đóng dấu sau khi gửi thành công, và đã có ba ca test phủ. Nhãn "cần chủ dự án" là SAI.
   ⚠ Đây là loại sai đắt nhất trong tài liệu này: nó **chặn việc bằng một hàng đợi người**, và không ai đi kiểm lại thứ đang chờ người khác quyết.
-- **D4** ✅ `a3b02fe3` — bỏ cột chỉ-ghi `occurrences.confidenceScore` (mig 0335 cần quyền owner `aoi` để chạy DDL; phía mã đã xong và an toàn ở trạng thái trung gian).
+- **D4** ✅ `a3b02fe3` — bỏ cột chỉ-ghi `occurrences.confidenceScore`. **mig 0335 ĐÃ ÁP** bằng owner `aoi`: đo trước/sau cho thấy cột biến mất và **73 dòng nhật ký giữ nguyên**; 10 file test đường nhật ký xanh trên CSDL đã đổi.
 
 **Việc ops còn lại (không phải việc của agent):**
-- Chạy `drizzle/0335_drop_occurrence_confidence_score.sql` bằng owner `aoi` (`DATABASE_URL` hiện là `avi_app`, không có quyền DDL).
 - Xoá file `machine-keys-2026-08-21.csv` trong thư mục tạm sau khi nạp 23 khoá `mk_` vào máy.
 
 ⚠ **Trước khi làm bất kỳ mục nào: ĐO LẠI.** Bảng này đã sai theo cách đó **ba lần**:
