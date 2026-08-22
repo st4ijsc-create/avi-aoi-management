@@ -45,7 +45,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 14 | **hai hợp đồng hàng `Samples` đá nhau, một cái được CƯỠNG CHẾ** | 🔴 **CHỜ ANH** — phần dư của mục 4, mở 2026-08-18 (AA-1, vòng phản biện 1); `WelderSim` phát hình dạng **cổng ingest TỪ CHỐI**. 🔴 **ĐO trên cổng đang chạy 2026-08-18 (AB-1): từ chối là THẬT (HTTP 400 ở bước lược đồ) — VÀ cờ `PROCESS_RESULT_INGEST_ENABLED` MẶC ĐỊNH TẮT, nên chưa bản triển khai nào nạp. Hai nửa đọc cùng nhau; ba lựa chọn vẫn CHƯA QUYẾT**. 🔴 **KHẢ NĂNG THỨ BA ĐÃ ĐO 2026-08-19 (AI-1), SỬA sau phản biện: KHẢ THI — `Normalizer` có đủ thông tin, `WaveformSeries` và `WelderSim` KHÔNG phải đổi. Nhưng nó KHÔNG nằm trọn ở một đường dây: cùng một envelope đi ra BA bề mặt, và một trong ba là gương ngữ nghĩa MQTT RETAINED — một **bề mặt đã xuất bản thứ hai; NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này** (hợp đồng TỰ KHAI rằng họ ở ngoài repo — đó là lời của tài liệu, không phải một phép đếm). 🔴 **Giá gương ấy KHÔNG phải của riêng lựa chọn 3: lựa chọn 1 trả CÙNG giá đó CỘNG THÊM, lựa chọn 2 không trả giá nào trong cây này nhưng trả TOÀN BỘ ở ngoài (hợp đồng ingest đã xuất bản + ba SDK).** Và KHÔNG một bài kiểm nào trong 2763 bài đỏ lên, tức lối này KHÔNG CÓ NHÂN CHỨNG. **Ràng buộc thi hành cứng: `LiveTransport.ReadSampleSeries` chỉ nhận hàng `double[]` và bỏ im lặng mọi kiểu khác.** Ba lựa chọn VẪN CHƯA QUYẾT** — 📎 **câu ngay trước giữ NGUYÊN VĂN, RÚT 2026-08-19 (AK-1), và lý do là chủ sở hữu ĐÃ PHÁN, không phải câu ấy từng sai; AK-1 dùng đúng MỘT kiểu bảo tồn — kiểu AB-1 lập và AI-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG dấu gạch ngang ở bất kỳ đâu, không xoá một dòng nào.** → 🔨 **QUYẾT: LỰA CHỌN 3 — DỰNG CẶP `[t, v]` Ở RANH GIỚI `Normalizer`** (2026-08-19, chủ sở hữu). `WaveformSeries`, `WelderSim`, `ScrewdriveSim` **không đổi một dòng**; thứ đổi là **payload đi ra**. 🔴 **Giá đã chấp nhận và ghi vào mục: HAI bề mặt đã xuất bản đổi CÙNG LÚC, không một** — payload ingest HTTP **và** gương ngữ nghĩa MQTT retained `syn/…`; **NGƯỜI ĐĂNG KÝ CHƯA ĐO và không đo được từ repo này**. Cộng một bề mặt thứ ba, riêng tư: hàng đợi store-and-forward của SDK ghi nguyên payload **xuống đĩa** và **phát lại hình dạng CŨ sau khi mã đã đổi** — **cửa sổ ấy CHƯA ĐO**. **Đã thi hành, AK-1 (2026-08-19)** — cơ chế của `t` **SUY ra chứ không chọn**: `t(i) = i / rateHz`, tức **thời điểm mà `rateHz` HÀM Ý**, **không** phải thời điểm `WelderSim` vẽ đường cong; lý do là ở ranh giới chỉ có **bốn trường** của `WaveformSeries`, còn dựng lại thời điểm THẬT đòi **tham số hoá riêng của từng bộ sinh** — không có trên hồ sơ, khác nhau theo driver, và **vắng hẳn** với driver bên thứ ba mà ranh giới này cũng phục vụ. 🔴 **`rateHz` KHÔNG đổi nghĩa và KHÔNG đổi giá trị** — đó là điều kiện DỪNG của nhiệm vụ và nó không bị chạm. 🔴 **Nửa bất lợi, viết ngay cạnh:** chỗ lệch **4,17 %** của `WelderSim` **không được tạo ra và cũng không được sửa** ở đây (phép chuyển tính đúng cái `t` mà một bên tiêu thụ tuân hợp đồng đã tính hôm nay) — **nhưng nó chuyển `t` từ NGẦM sang ĐÃ VIẾT RA**, nên sửa chỗ lệch ấy về sau là **đổi những con số đã xuất bản**, không còn là đổi một tài liệu. Nhân chứng **MỚI** `WaveformPairAtTheWireBoundaryTests` (bảy `[Fact]`): gỡ phép chuyển ⇒ **BỐN đỏ**; trả kiểu hàng khác `double[]` ⇒ **SÁU đỏ**; 🔴 `WaveformSeriesRowShapeContractTests` **VẪN XANH, và đó là im lặng, không phải chấp thuận** — nó nhìn thượng nguồn |
 | 15 | `DropOldest` + một cảnh báo "queue saturated" không với tới được — **BA chỗ**, và chỗ **thứ tư** đã giải xong | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Gộp phát hiện đợt 6 (`HistorianWriter`) và đợt 8 (`UnsPublisher`) làm **MỘT mục**, và phép liệt kê thêm chỗ **thứ ba chưa ai báo**: `UnsBridge`. `AlarmNotifier` cùng chế độ nhưng **đã đúng** → 🔨 **QUYẾT: ÁP MẪU ĐÃ GIẢI XONG CỦA `AlarmNotifier` VÀO CẢ BA CHỖ** (2026-08-20, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8 — mục này không thuộc ba mục đổi thứ người ngoài đang dựa vào). 🔴 **`FullMode` **KHÔNG** đổi: `DropOldest` ở lại `DropOldest`** — thứ đổi là **kế toán**, không phải chính sách. **Đã thi hành, AP-1 (2026-08-21)**: `itemDropped` được truyền ở cả ba, cú đuổi được **đếm** và được **cảnh báo bằng lời SATURATION**, còn nhánh `if (!TryWrite(...))` — vốn chỉ với tới được khi writer ĐÃ ĐÓNG — được đếm riêng và viết lại thành lời **SHUTDOWN**. 🔴 **Tiền đề của phán quyết được KIỂM LẠI trên mã và nó ĐỨNG VỮNG**: `AlarmNotifier` thật sự đã giải xong (nó truyền `itemDropped`, phân loại năm đường rơi, log sau khi nhả khoá). 🔴 **Nhưng MỘT mảnh của hình dạng ấy KHÔNG mang sang được, và nói ra chứ không lặng lẽ bỏ:** phép *bracket* `Evicted` quanh `TryWrite` trong `EmitLocked` chỉ chính xác vì mọi thứ ở đó chạy dưới `_gate`; ba lớp EdgeCore **cố ý không có khoá nào trên đường enqueue**, nên cảnh báo được phát **từ trong chính callback `itemDropped`** — chính xác vì một lý do khác (callback chạy đồng bộ, một lần cho mỗi phần tử bị đuổi, và nhận đúng phần tử ấy). 🔴 **`UnsBridge.DroppedTotal` KHÔNG bị nới nghĩa**, và bề mặt ĐỌC nó được nêu tên: `GET /v1/site`, trang `/site`, **và bản ghi resync GIỮ LẠI phát lên broker của Site — một hợp đồng dây bên thứ ba tiêu thụ**. Cú đuổi kênh có tên riêng, `UnsBridge.ForwardQueueStats.Evicted`. 🔴 **Dư lượng còn mở, ghi vào mục chứ không để trong báo cáo: bộ đếm mới KHÔNG có trên `/v1/site` lẫn trang `/site`** — thêm một trường ở đó là **đổi payload đã xuất bản**, đúng thứ nằm ngoài uỷ quyền mục này. Trên hình thái cài Windows Service (README §"đường mất dữ liệu", mục 4) log **không có nơi nào để đi**, nên trên hình thái ấy mất mát này **được đếm nhưng operator vẫn chưa nhìn thấy được**. Xem Phần III |
 | 16 | `OeeCalculator` — Quality **không** kẹp `[0,1]` | ✅ **ĐÃ THI HÀNH 2026-08-22 (AT-1)** theo 🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU ngày 2026-08-22: MỘT TRANSACTION** bọc bốn câu lệnh của `AggregateForOeeAsync` — **lựa chọn THỨ TƯ**, không kẹp/không ném/không để nguyên; `OeeCalculator` **không sửa một dòng mã**. 🔴 **Mục này CỐ Ý đổi một con số đã báo cáo, và nửa bất lợi ghi trong mục: OEE từ nay KHÁC OEE trước 2026-08-22 ở đúng những lúc trước đây sai — báo cáo đã in không đổi, nhưng ai so hai kỳ sẽ thấy một bậc nhảy không do sản xuất gây ra.** **Đo:** `deferred: true` (=`BEGIN` trần) giữ ảnh chụp qua một commit song song và **không chặn bên ghi** (0–1 ms); `BeginTransaction()` **không tham số** phát `BEGIN IMMEDIATE`, lấy khoá GHI cho một hàm chỉ đọc và làm bên ghi **hỏng hẳn** sau **33 121 ms** (`database is locked`) — **hai dạng cùng báo `Serializable`, nên TÊN mức cô lập không phân biệt được chúng**. Ba chỗ gọi **đều đồng bộ**: `GET /v1/historian/oee`, `GET /v1/historian/oee/fleet` (vòng lặp — mười máy = mười transaction/request), báo cáo PDF. **Nhân chứng đỏ được 5/5** ở cả hai đối chứng (gỡ transaction; đổi sang không-tham-số), xanh 8/8 sau sửa. 🔴 **Ba con số "Quality lớn nhất" của AQ-1 KHÔNG tái lập được** (đo lại: 1,25 và 1,0168, không phải 1,00333 và 1,00888) — chúng là tạo tác của cách gieo dữ liệu; ba con số "số lần vi phạm" thì tái lập được. 🔴 **Khẳng định đã công bố THỨ HAI mà AQ-1 ghi là "kiểm kê THIẾU" nay ĐÃ RÚT**: `web/src/lib/api.ts`. 🔴 **Và một khác biệt hồ sơ: phán quyết mục 16 KHÔNG có bản ghi tại chỗ ở BASE `ce1ce2be`** — `grep "2026-08-22"` trả đúng hai dòng, cả hai thuộc mục 27; nội dung phán quyết đến qua brief AT-1. Xem Phần III. **Câu trạng thái CŨ giữ nguyên văn ngay dưới:** 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. Biên hôm nay do **hai vị từ SQL ở một file khác** giữ. 🔴 **AQ-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG trong brief đã NỔ, không một dòng `OeeCalculator` bị sửa, mục Ở LẠI PHẦN I.** Câu ngay trên **giữ nguyên văn**; cái được rút, tại chỗ và kèm ngày, là **chỉ** mệnh đề *"trên đường đang ship hôm nay con số ấy KHÔNG THỂ XẢY RA"* trong thân mục. **Đo được:** `AggregateForOeeAsync` chạy **bốn câu lệnh rời nhau trên một connection KHÔNG có transaction**; SQLite ở WAL cho mỗi câu lệnh **một ảnh chụp riêng**; nên hai vị từ lồng nhau chỉ giữ **trong một ảnh chụp**, và một `AppendResultsAsync` song song commit giữa câu `total` và câu `good` làm `GoodCount > TotalCount`. **Ba nhánh, đối chứng nằm trong phép đo:** không người ghi → **93 291 lần đọc, 0 vi phạm**; **10 hàng/giây — xấp xỉ nhịp của chính `fleet.json` đang ship** → **87 vi phạm**, Quality tới **1.00333**; người ghi nóng → **1 112 vi phạm**, Quality tới **1.00888**. **Nên một cái kẹp ĐỔI một con số OEE đã báo cáo, và đó là một trong ba mục chủ sở hữu KHÔNG uỷ quyền.** 🔴 **Và phép đo ĐỔI CÂU HỎI: mục mở ra như một câu hỏi phòng thủ chiều sâu, đo được nó là một khuyết tật ĐANG SỐNG — `Math.Clamp` không sửa nó, chỉ che nó. Bản sửa thật nằm ở `AggregateForOeeAsync` (đọc hai `COUNT(*)` trong MỘT transaction), tức một file khác, một rủi ro khác — LỰA CHỌN THỨ TƯ mà ba lựa chọn của mục không có.** 🔴 **Kèm một khẳng định đã công bố THỨ HAI vẫn đang sai và chưa được rút:** `web/src/lib/api.ts` nói `quality`/`oee` *"never … over 1 (`OeeCalculator.Calculate` clamps/guards every division)"* — đúng câu AL-1 đã rút trên doc lớp ngày 2026-08-20, ở **bề mặt khách hàng đọc**; một **bản kiểm kê THIẾU**, AQ-1 **không sửa** vì ngoài uỷ quyền |
-| 17 | `QueryTelemetryAsync` không áp cổng xuất xứ, và **không áp được** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. `historian_telemetry` **không có cột `is_fabricated`**; `GET /v1/historian/telemetry` **không nhận `includeFabricated`** |
+| 17 | `QueryTelemetryAsync` không áp cổng xuất xứ, và ~~**không áp được**~~ | ✅ **ĐÃ THI HÀNH MỘT PHẦN 2026-08-22 (AU-1)** theo 🔨 **QUYẾT: ĐÓNG KHOẢNG TRỐNG XUẤT XỨ CỦA `QueryTelemetryAsync`** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/21). 🔴 **VÀ TIỀN ĐỀ TRUNG TÂM CỦA MỤC NÀY — *"không áp được"* — KHÔNG SỐNG SÓT QUA PHÉP ĐO.** Nó áp được, bằng đúng cái mà chính mục nêu ra làm lý do nó không áp được: `historian_telemetry.result_id` khai `NOT NULL REFERENCES historian_results(id)`, nên **phép join tới xuất xứ là TOÀN PHẦN** — mọi hàng mẫu có đúng một hàng reading cha, và hàng cha ấy đã mang `is_fabricated`. **Không cần cột mới và KHÔNG THÊM CỘT NÀO; không có migration nào chạy trên cơ sở dữ liệu của khách hàng.** 🔴 **CÂU HỎI "hàng cũ mang giá trị gì" KHÔNG TỒN TẠI ở dạng brief đặt ra** — nó giả định cơ chế THÊM CỘT. Một hàng mẫu cũ mang **đúng cái cha nó mang**, và đó là một **phép đo**, không phải một giá trị phải chọn; ba trạng thái được **THỪA KẾ** chứ không phát minh, và trạng thái thứ ba (`NULL` = *Unknown*) đã có sẵn một luật xử lý đã quyết mà nhiệm vụ này **không được quyền quyết lại**. 🔴 **ĐIỀU KIỆN DỪNG ĐÃ NỔ, và nó nổ ở NỬA MẶC ĐỊNH:** đo được rằng nối route này vào `ResolveIncludeFabricated` **không làm hẹp phản hồi mà làm RỖNG nó** — `machine` là tham số **bắt buộc**, nên phép dò của cổng luôn chạy trong phạm vi **một máy**; với một máy mô phỏng bình thường trên một bản triển khai **không phải demo** (tức mọi bản cài sản phẩm) phép dò không thấy gì thật, và **toàn bộ** mẫu của máy ấy bị loại — biểu đồ xu hướng hôm nay có đường, ngày mai rỗng, vĩnh viễn. Đó đúng hình dạng hỏng mà `ResolveIncludeFabricated` tự ghi cho các route anh em trước Fix 1 (*"not 'narrower than intended,' literally zero"*). **Nên mặc định KHÔNG bị đổi và AU-1 KHÔNG tự quyết nó.** **Đã thi hành:** `QueryTelemetryAsync` nhận `includeFabricated` và **gọi CHÍNH `ApplyRealPresenceGateAsync`** qua `result_id IN (SELECT id FROM historian_results WHERE …)` — **không có bản sao thứ hai của luật**, nên luật không thể trôi khỏi read này lần nữa; khi `includeFabricated: true` câu lệnh phát ra **giống hệt từng ký tự** câu lệnh trước khi có tham số. `GET /v1/historian/telemetry` nhận `includeFabricated`, và **mặc định `?? true`** — **KHÔNG** dùng miễn trừ Demo, vì miễn trừ ấy tồn tại để **trả lại** hàng mà cổng lấy đi, và ở đây cổng không lấy gì. 🔴 **Nửa bất lợi, ghi ngay cạnh:** sau bản sửa này **HAI route hướng khách hàng VẪN trả lời khác nhau về cùng một câu hỏi** — `GET /v1/historian/results` giấu reading của máy bịa, `GET /v1/historian/telemetry` vẫn vẽ mẫu của chính máy ấy, và **không gì trong phản hồi nói cái nào là cái nào**. Chỗ lệch ấy **không do bản sửa tạo ra** (nó LÀ mục 17) nhưng bản sửa **không đóng** nó; cái mới là nó nay là **một quyết định một dòng xem lại được** thay vì một khẳng định cấu trúc rằng cổng *"không áp được"*. **Nửa còn nợ, nêu tên chứ không im lặng: chọn mặc định là việc CỦA ANH.** 🔴 **Kèm một khẳng định đã công bố được RÚT TẠI NGUỒN, không chỉ trong hồ sơ:** doc của `ApplyRealPresenceGateAsync` nói *"the one rule **every** customer-facing historian query/aggregate in this store applies"* — AL-1 đã rút câu ấy trong **file này** ngày 2026-08-20 nhưng **phép rút chưa bao giờ tới mã**, nên suốt hai ngày người đọc MÃ vẫn thấy câu sai. Nay sửa tại nguồn, kèm phép liệt kê thật (áp được: `QueryResultsAsync`, `QueryBySerialAsync`, `AggregateForOeeAsync`, `QueryTelemetryAsync`; **mặc định bật ở BA**). **Đo:** `EXPECT_ENGINEAPI` 1388 → **1395** (+7, đếm từ runner SAU khi viết), `EXPECT_WARNINGS` **328 KHÔNG dịch** (đo trên `-t:Rebuild` đầy đủ), `EXPECT_BUILD_NODES` 0, **0 lệnh đè**. **Cặp đối chứng chạy trọn rồi hoàn nguyên:** gỡ cổng ⇒ **4 đỏ**; lật mặc định ⇒ **đúng 1 đỏ** — 🔴 **và cái 1 ấy là một phát hiện: trước file test này, KHÔNG bài nào trong 2 804 bài thấy được phép lật mặc định.** 🔴 **Một lỗi của chính AU-1 bị chính bài test của AU-1 bắt:** bản nháp thêm tham số vào endpoint mà **quên truyền nó xuống store**, nên mặc định rơi về cổng-BẬT — tức đúng thứ điều kiện DỪNG cấm; bắt được lúc chạy, không phải lúc đọc. Xem Phần III. **Câu trạng thái CŨ giữ nguyên văn ngay dưới:** 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo bởi đợt 6. `historian_telemetry` **không có cột `is_fabricated`**; `GET /v1/historian/telemetry` **không nhận `includeFabricated`** |
 | 18 | Cổng Demo gác **CHẾ ĐỘ**, không gác **BỘ SINH GIẢ** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — cổng nay gác **CẢ HAI** route dựng transport bịa (`POST /v1/scenario` **và** `POST /v1/scenario/preset`; mục chỉ nêu một). Xem Phần III |
 | 19 | `TransportCoordinator.Auto` và `.Demo` — hai trong bốn bộ truy cập công bố **không ai đọc** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — **KHÔNG gỡ thành viên nào**; hai câu tài liệu SAI đã sửa, và **khoá KHÔNG bỏ được** (đo rồi mới từ chối). Xem Phần III |
 | 20 | `TransportCoordinator` không có đường tắt máy ⇒ `LiveTransport` cuối cùng không bao giờ được dispose | ✅ **ĐÃ THI HÀNH 2026-08-21 (AR-1)** — `IDisposable` + nhân chứng đỏ được. **Cái trần "không phải rò rỉ sản xuất" giữ nguyên.** Xem Phần III |
@@ -61,6 +61,11 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 30 | Gốc mặc định của bốn store cạnh-binary là `%ProgramFiles%`, và **lần chạy đầu chính là lần GHI** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Câu hỏi này **bị nhiều brief liên tiếp CẤM mở**; lệnh cấm hết hiệu lực ở nhiệm vụ này |
 | 31 | **Mười hai artefact build** (7 `.xml` + 5 `.pdb`) đi vào MSI | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Đã ĐO ở §8 của mục 12 từ 2026-08-19 (AF-1) nhưng **chưa bao giờ thành một mục phán được**; **ba trong số đó đã ở đó từ N-1/N-2** |
 | 32 | **Một lời khai miền dụng cụ không kiểm được nếu không ghi NƠI lệnh được chạy** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Pathspec của git là **tương đối với cwd** và một pathspec bị thu hẹp **trả 0 chứ không báo lỗi**: `-- 'server/*.ts'` **0** đối lại `-- ':(top)server/*.ts'` **197**; và **glob đuôi trần cũng hỏng** — `'*.ts'` **1** đối lại **214**. 🔴 **Giá đã trả: mục 14 được PHÁN kèm một cái trần SAI** (*"không đo được từ repo này"* — bên tiêu thụ nằm trong chính commit này). **Năm khẳng định khác đo lại vẫn ĐỨNG VỮNG**, gồm kết luận "ba chỗ xuất bản `TransportMode`" của AM-1. **Người đăng ký gương MQTT retained: CHƯA ĐO** (37 file nhắc `syn/`) |
+| 33 | `GET /v1/scenario` nói dối theo chiều **NGƯỢC LẠI** — tấm gương của mục 18 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã. Một `PUT /v1/mode` **ghi đè transport outage** trong khi `_scenario.NetworkOutage` **vẫn `true`**; mục 18 đóng chiều *"cổng không gác"*, chiều này chưa ai phán. 🔴 **Và tập ghi rộng hơn brief nêu: KHÔNG chỉ `PUT /v1/mode`** — `PUT /v1/settings` cũng xoá, một `PUT /v1/mode` **không đổi giá trị** cũng xoá, và chuyển **sang Demo** cũng xoá. 🔴 **Nó BÁC một lập luận AR-1 đã dùng để đóng nửa kia của mục 18** |
+| 34 | Bốn chuỗi web i18n còn nợ từ mục 22 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã: **đúng bốn**, hai khoá × hai locale, và cả bốn **đang hiển thị cho vận hành viên**. `DemoTransport` **không có đường nào** trả ack thất bại. 🔴 **Web của machine-simulator KHÔNG có job CI nào và KHÔNG có dụng cụ i18n nào** — bốn chuỗi này không có nhân chứng thuộc bất kỳ loại nào |
+| 35 | `DBIRTH`/`DDEATH` không sinh ra được, và `SparkplugAliasTable.Reset()` cùng thế — hệ quả ĐÃ ĐO của mục 23 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1). 🔴 **Nhưng chữ *"HOÀN TOÀN"* của brief KHÔNG đứng vững ở phạm vi repo:** `server/` có một bộ phát DBIRTH/DDEATH **đang sống** bằng TypeScript. Đúng ở phạm vi `tools/machine-simulator`. `Reset()`: **một** caller, và nó là một unit test — **không caller sản xuất nào**, trong khi `GetOrAssign` chạy trên **mọi** reading: bảng alias **nửa sống** |
+| 36 | README §16.4/§16.6 là một bản sao **không có nhân chứng** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã. Không test/script/CI nào giữ chúng đúng, và **`ModbusOptions.cs` TỰ KHAI điều đó**. 🔴 **Và phép kiểm tra chéo tìm thấy một câu ĐÃ TRÔI rồi** — §16.6 nói `OperationTimeout` *"hardcoded"* trong khi nó là tham số constructor từ Task B-5 |
+| 37 | 🔴 **HỒ SƠ — LỖI CỦA ĐIỀU PHỐI VIÊN:** một phán quyết của chủ sở hữu sống trọn một vòng nhiệm vụ **KHÔNG có bản ghi tại chỗ** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), và **mục này là của điều phối viên, không phải của mã**. Phán quyết mục 16 ngày 2026-08-22 tới người thi hành **chỉ qua một task brief**; `grep "2026-08-22"` trên file tại `ce1ce2be` trả **đúng hai dòng, cả hai thuộc mục 27**. **"Đừng thi hành" đã bị đọc thành "đừng ghi"** — một phán quyết và một lần thi hành là **hai hiện vật khác nhau**. Cộng: danh sách Phần I **lỗi thời qua ba nhiệm vụ liên tiếp** và **không dụng cụ nào bắt được, vì không cổng nào đọc file này** — cùng lớp với mục 26 và 32. 🔴 **Và con số ấy được ĐO LẠI: brief mở mục này nói "chín mục"; đo trên `659bcfb2` là MƯỜI MỘT** (16, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29 — Phần I thật chỉ chứa 17, 25, 26, 30, 31, 32). **Chính lời khai về khuyết tật kiểm đếm cũng đếm sai**, theo đúng cơ chế mục này mô tả |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -120,9 +125,29 @@ sự thật** — câu này chỉ là một con trỏ vào nó.
 > một phép liệt kê thiếu một số hiệu sai **nhìn thấy được**; một con số `18` viết ở đây sẽ phải bị rút
 > mà không ai đọc ra tại sao.
 
-**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-30, 31 và 32.** Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn sự thật** —
-câu này chỉ là một con trỏ vào nó.
+> 📎 **CÂU NGAY DƯỚI — RÚT 2026-08-22 (AU-1), giữ NGUYÊN VĂN, cùng kiểu bảo tồn AB-1 lập và
+> AI-1/AK-1/AO-1/AP-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG gạch ngang, không xoá một
+> dòng nào.** Nó đọc: *"**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+> 26, 27, 28, 29, 30, 31 và 32.** Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn sự
+> thật** — câu này chỉ là một con trỏ vào nó."*
+>
+> 🔴 **Lý do rút KHÔNG giống mọi lần trước, và chỗ khác nhau chính là mục 37.** Mọi phép rút trước đó ghi
+> *"không phải nó từng sai — nó mô tả đúng trạng thái hồ sơ cho tới đúng lúc ấy."* **Lần này không viết được
+> câu đó.** Phép liệt kê này **đã sai từ trước khi AU-1 chạm vào nó**: mục 16, 18, 19, 20, 21, 22, 23, 24, 27,
+> 28 và 29 đều đã rời sang **Phần III** ở những nhiệm vụ trước, và câu này vẫn liệt kê cả mười một. Nó lỗi
+> thời **qua ba nhiệm vụ liên tiếp** và **không dụng cụ nào bắt được** — vì **không cổng nào đọc file này**.
+> Đó chính là mục **37**, và nó vừa được chứng minh **ở trong chính câu tóm tắt của phần mà nó tóm tắt** —
+> đúng loài mà V-1 bắt được trong bảng phán quyết năm ngày trước.
+>
+> 🔴 **Và cách viết *liệt kê, không đếm* KHÔNG cứu được lần này, nên nói thẳng thay vì lặp lại lời khen cũ.**
+> Bốn khối trên đều lập luận rằng một phép liệt kê sai thì *"sai nhìn thấy được"*. Nó chỉ nhìn thấy được
+> **nếu có ai đó nhìn**. Không ai nhìn trong ba nhiệm vụ. Phép liệt kê làm cho phép **sửa** rẻ; nó không làm
+> cho phép **phát hiện** tự động — và cái thiếu ở đây là phát hiện, không phải sửa.
+
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 25, 26, 30, 31, 32, 33, 34, 35, 36 và 37.** Tất cả mang
+`🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn sự thật** — câu này chỉ là một con trỏ vào nó.
+🔴 **Câu này được viết ngày 2026-08-22 và sẽ lại lỗi thời theo đúng cơ chế vừa nêu, trừ khi mục 37 được
+quyết** — nó không tự bảo trì được.
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
 > tới vòng sửa thứ hai của cùng ngày, và nó **không sai, nó THIẾU**.** Ba thao tác của file này vẫn
@@ -273,51 +298,6 @@ một con số ước lượng đặt ở đây sẽ **đọc như một phép �
 > **điều kiện DỪNG trong brief đã nổ**, nên mục **không** được thi hành. Nó nay mang thêm một khối đo
 > ngày 2026-08-21 **bác một tiền đề của chính nó** và **đổi câu hỏi** chủ sở hữu đang được mời quyết —
 > đọc khối ấy trước khi quyết mục 16. Số mục còn chờ ở Phần I: **mười sáu** (16–20, 22–32).
-
-## 17. `QueryTelemetryAsync` là truy vấn hướng khách hàng DUY NHẤT không áp cổng xuất xứ, và nó KHÔNG áp được: bảng không có cột để lọc
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6), xác nhận lại trên mã.
-
-**Đo được cái gì — quần thể mở TRỌN, không lấy mẫu.** `IHistorianStore` có **bảy** phương thức đọc
-công khai. Ba cái gọi `ApplyRealPresenceGateAsync`: `QueryResultsAsync`, `QueryBySerialAsync`,
-`AggregateForOeeAsync`. Bốn cái không: `QueryTelemetryAsync`, `QueryRunEventsAsync`,
-`GetStatsAsync`, và `PruneOlderThanAsync` (một phép ghi). Ba trong bốn cái không áp **không có gì để
-áp**: `QueryRunEventsAsync` và `PruneOlderThanAsync` chạy trên bảng không mang khái niệm xuất xứ, và
-`GetStatsAsync` cố ý là một báo cáo **về** store.
-
-**`QueryTelemetryAsync` là phản ví dụ thật, và nó là phản ví dụ CẤU TRÚC.** DDL của
-`historian_telemetry` mang đúng bảy cột: `id`, `result_id`, `machine_code`, `metric`, `value`,
-`unit`, `quality`, `event_time_utc` — **không có `is_fabricated`**. Cột ấy chỉ tồn tại trên
-`historian_results`, được thêm bởi migration 2. Nên cổng không thể áp bằng một cờ; nó cần **một
-phép join mà phương thức này cố ý không làm**, hoặc **một cột mới**.
-
-**Và bề mặt HTTP nói cùng một chuyện:** `HistorianEndpoints.GetTelemetryAsync` nhận
-`machine, metric, from, to, store, ct` — **không `includeFabricated`, không `DemoModeGate`** — trong
-khi mọi route lân cận (`GetResultsAsync`, `GetBySerialAsync`, `GetOeeAsync`, `ExportCsvAsync`,
-danh sách fleet) đều đi qua `ResolveIncludeFabricated(...)`.
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Historian.SqliteHistorianStore.ApplyRealPresenceGateAsync`
-(và ba chỗ gọi nó); `SqliteHistorianStore.QueryTelemetryAsync`; DDL `historian_telemetry` trong
-`SqliteHistorianStore`'s migration ladder; `St4i.EngineApi.Endpoints.HistorianEndpoints.GetTelemetryAsync`
-và `HistorianEndpoints.ResolveIncludeFabricated`; route `GET /v1/historian/telemetry`.
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* trên một fleet trộn — vài máy thật, vài máy mô phỏng — biểu đồ xu hướng trộn dữ liệu
-giả với dữ liệu thật, **không gì trong dữ liệu và không gì trong phản hồi nói cái nào là cái nào**.
-Đó đúng là kiểu hỏng mà vòng sửa số 1 của SM-2 được viết ra để đóng cho bề mặt kết quả và phả hệ;
-nó vẫn mở trên bề mặt telemetry.
-*Chiều ngược, và nó quyết định giá:* trên một bản cài **triển lãm 100 % mô phỏng**, đây là bề mặt
-historian **duy nhất còn CHẠY** theo mặc định. Đóng nó lại đòi đúng cái carve-out Demo mà
-`ResolveIncludeFabricated` đã có cho các route kia — cộng **một cột schema hoặc một phép join**, tức
-một migration trên một cơ sở dữ liệu của khách hàng.
-
-**Nếu KHÔNG quyết định.** Bề mặt này ở lại **không gác được**, và câu đã công bố của cổng — *"the
-one rule every customer-facing historian query/aggregate in this store applies"* — ở lại đúng với
-sáu trong bảy phương thức. Cái tốn kém không phải một dòng sửa: đó là **một migration**, và mỗi ngày
-trôi qua là thêm hàng `historian_telemetry` không mang xuất xứ, nên phép sửa **hồi tố** đắt dần.
-
----
-
 
 ## 25. ĐIỀU KIỆN RỜI PHẦN II CỦA MỤC 12 — họ driver: viết tài liệu, hay thu hẹp bề mặt? Và với hơn một nửa, câu hỏi ấy KHÔNG TỒN TẠI
 
@@ -681,6 +661,335 @@ chỗ CHƯA ĐO được nêu tên chứ không lấp, vì lấp nó ở đây s
 một người ĐĂNG KÝ**; các lần xuất hiện của `retained` đã mở ra đều là chuyện khác (leo thang cảnh
 báo, chú thích UI). Nhiệm vụ này **cố ý dừng ở đó** — đó là một mục cần mở, không phải một chướng
 ngại phải dọn dở dang trên đường.
+
+---
+
+## 33. `GET /v1/scenario` nói dối theo chiều NGƯỢC LẠI — tấm gương của mục 18, và nó BÁC một lập luận mà mục 18 đã dùng để tự đóng
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1). Phát hiện này trước đó **chỉ sống trong một thông điệp merge và trong
+`.superpowers/`** — thư mục **bị gitignore** — nên chủ sở hữu không có đường dẫn nào để mở nó. **Xác nhận lại
+trên mã trước khi viết**, và phép xác nhận **làm tập ghi rộng ra**, xem dưới.
+
+**Đo được cái gì.** `GET /v1/scenario` đọc **duy nhất** `_scenario` và `_activePresetName`. `PUT /v1/mode`
+**không ghi cái nào trong hai**: nó đi `ApplyMode` → `TransportCoordinator.ApplyModeInternal` →
+`SwitchableTransport.SetInner(target)`, và tập đích của nó là `{_live, _auto, _demo}` — **`_outageTransport`
+KHÔNG nằm trong tập ấy**. Nên transport outage bị **ghi đè**, còn `_scenario.NetworkOutage` **vẫn `true`**:
+phản hồi tiếp tục mang `networkOutage: true`, `activePreset: "network-outage"` và dòng trạng thái
+*"network outage (acks queued, never failed)"* trong khi cái transport đang lắp là một cái khác hẳn.
+
+🔴 **Ba phép đo làm tập ghi RỘNG HƠN câu chuyện ban đầu — nêu ra chứ không giữ phiên bản gọn hơn:**
+1. **Chuyển SANG Demo cũng xoá outage.** Đích là `_demo`, tức singleton DI `new DemoTransport()` với mặc
+   định (`latencyMs: 40`, `fakeErrorRate: 0.0`) — **không phải** cái outage `latencyMs: 60`,
+   `fakeErrorRate: 0.9`.
+2. **Một `PUT /v1/mode` KHÔNG ĐỔI GIÁ TRỊ cũng xoá.** `ApplyMode` tự khai *"Idempotent — always re-applies"*
+   và chỉ phát `ModeChanged` **khi giá trị khác đi**. Nên đặt lại đúng chế độ đang chạy **lắp lại transport
+   mà KHÔNG phát sự kiện nào**.
+3. **`PUT /v1/mode` KHÔNG phải route duy nhất.** `PUT /v1/settings` → `FleetCore.UpdateSettings` →
+   `TransportCoordinator.RebuildLive(...)` → `if (Mode is Live or Auto) ApplyModeInternal(Mode)` → cùng
+   `SetInner`. **Đổi serverUrl / machineCode / verifyTls là xoá outage** trên mọi host Live/Auto. Đây đúng
+   hình dạng mà AR-1 đã tự sửa cho mục 18 (*"🔴 Câu SAI thứ nhất — 'một route'"*), lặp lại ở chiều gương.
+
+🔴 **Và nó BÁC một lập luận đã công bố mà mục 18 dùng để tự đóng.** AR-1 rút khẳng định của mục 18 rằng pane
+API-trace là bề mặt trung thực duy nhất, với lý do *"bề mặt nói thật ĐÃ CÓ SẴN"* — chính là
+`GET /v1/scenario`, vì nó có trường `NetworkOutage` và một `StatusLine` gọi tên outage; và trên cơ sở đó AR-1
+kết luận điều kiện DỪNG *"không nổ"*. **Câu ấy chỉ đúng theo CHIỀU AR-1 đã đo** (outage được yêu cầu ⇒ outage
+được báo). **Theo chiều ngược lại — outage đã bị xoá ⇒ vẫn được báo là còn — nó SAI**, và pane API-trace lại
+là bề mặt duy nhất nói thật. Cùng khẳng định ấy nay nằm trong **ba doc comment** do AR-1 viết
+(`ScenarioEndpoints`, `DemoModeGate`, `Enums`) và cả ba thừa hưởng cùng điểm mù. **Cổng của AR-1 KHÔNG bị
+ảnh hưởng** — nó chạy trước `ApplyScenario`; cái bị ảnh hưởng là **lập luận** AR-1 dùng để đóng nửa
+*"bề mặt nào nói thật"* mà không thêm trường.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EngineApi.Endpoints.ScenarioEndpoints` (route `GET /v1/scenario`);
+`St4i.EngineApi.Endpoints.ModeEndpoints` (route `PUT /v1/mode`); `St4i.EdgeCore.Fleet.FleetCore._scenario`,
+`FleetCore._activePresetName`, `FleetCore.CurrentScenario`, `FleetCore.ApplyScenario`,
+`FleetCore.ApplyNetworkOutageLocked`, `FleetCore._outageTransport`, `FleetCore.UpdateSettings`;
+`St4i.EngineApi.Fleet.FleetHost.CurrentScenarioDto`, `FleetHost.ApplyMode`;
+`St4i.EdgeCore.Transport.TransportCoordinator.ApplyMode`, `TransportCoordinator.ApplyModeInternal`,
+`TransportCoordinator.RebuildLive`; `St4i.EdgeCore.Transport.SwitchableTransport.SetInner`;
+`St4i.EngineApi.Fleet.ScenarioDto.BuildStatusLine`. **Bề mặt ĐỌC, liệt kê rồi đếm:** `web/src/lib/api.ts`
+(`endpoints.scenario`, `useScenario` — **poll 1 000 ms**, `setScenarioCurrent`) và
+`web/src/routes/Scenario.tsx`; test `AuditWiringTests`, `RbacPolicyTests`. **Một bên tiêu thụ HTTP sản
+xuất**, và không cái nào ngoài `tools/machine-simulator/` — `server/`, `client/`, `examples/` và vỏ WPF
+**đều KHÔNG gọi route này** (WPF bind trong tiến trình qua `FleetService.Scenario`).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận (lời nói dối, như đang ship):* vận hành viên bật outage, rồi bất kỳ ai lật chế độ ở TopBar hoặc
+lưu một thay đổi Settings — **kể cả lật sang đúng giá trị đang có** — làm reading thật chảy ra hệ sinh thái
+thật, trong khi trang Scenario **vẫn vẽ công tắc "Network outage" BẬT** mỗi giây. Người vận hành tin fleet
+đang nằm sau một bộ bịa; nó đang sống. **Không dòng audit nào ghi việc xoá** — `mode.switch` chỉ mang
+`old`/`new` **mode**. Mục 18 là một **âm tính giả** (cổng không gác); cái này là một **dương tính giả** về sự
+bịa đặt — **cùng trục, ngược dấu**, nên "tấm gương" là cách gọi đúng. 🔴 **Và một hiệu ứng bậc hai mà brief
+không nêu:** `Scenario.tsx` gieo `latestRef` từ ảnh chụp vừa poll và **trộn nó vào MỌI thân POST**, nên sau
+một lần lật chế độ, **kéo thanh trượt cycleRate sẽ POST `networkOutage: true` và LẮP LẠI transport outage** —
+một phép đọc cũ biến thành một phép ghi, từ một cái điều khiển không nói gì về mạng.
+*Chiều ngược (giá của việc sửa), và phải nói cả hai nhánh:*
+**(b1) sửa phía GHI** (lật chế độ thì xoá `_scenario.NetworkOutage`): một lần lật chế độ sẽ **lặng lẽ sửa một
+scenario mà một Engineer đã áp và đã được audit**, không có dòng `scenario.apply` nào để đối chiếu, và công
+tắc lật dưới tay người dùng. Cơ học còn nặng hơn vẻ ngoài: `_scenario` chỉ ghi được trong `ApplyScenario`
+dưới `_gate`, mà `_gate` **có thể dừng và dựng lại mọi pipeline** — biến `PUT /v1/mode`, hôm nay là hai câu
+lệnh **không khoá** và được ghi rõ là *"Neither call takes a lock"*, thành một đường có thể lấy `_gate` và
+khởi động lại fleet.
+**(b2) sửa phía ĐỌC** (`GET /v1/scenario` báo cái transport đang thật sự lắp): không mất năng lực nào, không
+gì khởi động lại. **Nhưng nó đổi NGHĨA của một trường đã xuất bản** từ *"đã yêu cầu"* sang *"đang lắp"* mà
+không đổi hình dạng payload — đúng loại thay đổi mà AR-1 đã đặt cược lập luận DỪNG của mình lên. Nó cũng đổi
+hành vi client, vì `Scenario.tsx` dùng chính giá trị ấy để gieo thân request kế tiếp.
+
+**Nếu KHÔNG quyết định.** Bề mặt mà AR-1 đề cử làm *"bề mặt nói thật"* của sản phẩm ở lại **đúng một nửa thời
+gian**, và **không nhân chứng nào tồn tại**: file test duy nhất nhắc cả `networkOutage` lẫn `/v1/mode` là
+`AuditWiringTests`, và bốn bài outage (349–444) với các bài mode (158–178, 706) **không bao giờ chạm nhau** —
+không gì ở đâu khẳng định chuỗi ấy. Nên chỗ lệch này **không thể được phát hiện bởi cổng**, chỉ bởi một vận
+hành viên tin nhầm. 🔴 **Và vỏ WPF mang MỘT BẢN SAO của cùng chỗ lệch** (`FleetService` có một
+`ApplyNetworkOutageLocked` tương đương từng byte, trong khi `SettingsViewModel`/`AppShellViewModel` gọi
+`ApplyMode` thẳng, không ghi lại scenario) — nên "không quyết" là để **hai** bản sao trôi, không phải một.
+
+---
+
+## 34. Bốn chuỗi web i18n còn nợ từ mục 22 — vẫn nợ, và chúng là bề mặt CUỐI CÙNG còn hứa một thứ không tồn tại
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1), xác nhận lại trên mã.
+
+**Đo được cái gì.** Mục 22 đã thi hành 2026-08-21 (AR-1) và **tự ghi món nợ**: *"🔴 **BỐN CHUỖI NỮA ĐO ĐƯỢC MÀ
+CỐ Ý KHÔNG ĐỤNG, vì nêu thiếu còn tệ hơn** … **Đây là việc còn nợ, ghi lại chứ không im lặng.**"* Đếm lại hôm
+nay: **vẫn đúng bốn**, hai khoá × hai locale, và **liệt kê trước khi đếm** —
+`en.scenario.networkOutageHint` (*"Switches the transport to high-failure store-and-forward."*),
+`en.scenario.presets.networkOutage.description` (*"…high-failure (~90%) store-and-forward…"*),
+`vi.scenario.networkOutageHint` (*"…store-and-forward **lỗi cao**."*),
+`vi.scenario.presets.networkOutage.description` (*"…store-and-forward lỗi cao (~90%)…"*).
+
+**Và lời hứa ấy là sai, đo trên mã:** `DemoTransport.SendAsync` có **bốn** đường ra và **cả bốn** trả
+`Success: true` — đường queued, `AckProcessResult` (201), `AckInspection` (201), `AckTelemetry` (202).
+`ShouldSimulateQueued` biến `_fakeErrorRate` thành xác suất **QUEUED**, không phải tỉ lệ **thất bại**. Nên
+`~90 %` là phần **xếp hàng**, và *"high-failure"*/*"lỗi cao"* sai **ở cả hai chữ**.
+
+🔴 **Một chỗ lệch so với brief, nêu rõ:** brief nói mục 22 *"trả sáu chuỗi `.cs`"*. Đo lại: mục 22 **đo được
+SÁU** và **trả NĂM** — chỗ thứ sáu (`App.xaml.cs`, doc comment của selftest) **cố ý để lại**. Bốn chuỗi i18n
+là một món nợ **riêng**, nằm ngoài cả sáu.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `tools/machine-simulator/web/src/i18n/en.ts`,
+`tools/machine-simulator/web/src/i18n/vi.ts`; render bởi `web/src/routes/Scenario.tsx`
+(`t("scenario.networkOutageHint")` và `t(\`scenario.presets.${meta.i18nKey}.description\`)`);
+sự thật đối chiếu là `St4i.EdgeCore.Transport.DemoTransport.SendAsync` và
+`DemoTransport.ShouldSimulateQueued`. (`client/src/i18n/locales/*.json` ở gốc repo thuộc **ứng dụng khác**,
+không phải machine-simulator.)
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* web là bề mặt **phần lớn vận hành viên dùng**, và nay là bề mặt **DUY NHẤT còn hứa một ack thất
+bại** — WPF, dòng trạng thái DTO và mô tả preset của `GET /v1/scenario` đều đã sửa ngày 2026-08-21. Sản phẩm
+**tự mâu thuẫn giữa các tầng**, và một lần chạy nghiệm thu lái từ trang Scenario với chữ *"high-failure"* sẽ
+**xanh vĩnh viễn trong khi không chứng minh gì** về xử lý lỗi.
+*Chiều ngược:* bốn phép sửa chuỗi nằm trong một build **không có nhân chứng i18n và không có job CI nào**, nên
+thay đổi **không kiểm được** ngoài mắt người và một lần chạy Playwright cục bộ. Và `~90 %` là con số một vận
+hành viên **có thể đã neo vào**; viết lại thành *"≈90 % xếp hàng"* là **một thay đổi lời hứa đã xuất bản thứ
+hai** — đúng loại mà chủ sở hữu giữ lại cho mình ở mục 22 — chứ không phải sửa lỗi chính tả. Bốn phép sửa ấy
+cũng **vượt qua cổng publish của web**, đúng trục rủi ro mà AR-1 đã từ chối bước vào trên một mục phạm vi
+.NET.
+
+**Nếu KHÔNG quyết định.** Bốn chuỗi ở lại **hiển thị cho vận hành viên** và **không dụng cụ nào có thể bắt
+được chúng**: `web/package.json` không có script i18n; `web/scripts/` chỉ có ngân sách test và reset engine;
+`scripts/i18n-check.mjs`/`i18n-audit.mjs` ở gốc repo thuộc `client/` và **không được** `verify-suites.sh` gọi;
+`.github/workflows/` **không nhắc `machine-simulator` một lần nào** — máy mô phỏng **không có job CI nào cả**.
+Guard cấu trúc duy nhất là `en.ts` khai `const en: Dictionary` nên `tsc -b` bắt được **khoá thiếu** — nó nói
+khoá tồn tại, **không nói gì về chữ đằng sau khoá**. `EnumSpellingContractTests` có ghim hai file này nhưng
+chỉ ở các khối enum, và **tự khai** giới hạn ấy.
+
+---
+
+## 35. `DBIRTH`/`DDEATH` không còn sinh ra được từ spine này, `SparkplugAliasTable.Reset()` mất caller sản xuất — hệ quả ĐÃ ĐO của mục 23, và một câu hỏi vòng đời chưa ai trả lời
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1), xác nhận lại trên mã.
+
+**Đo được cái gì.** Mục 23 được chủ sở hữu phán **GỠ** và AR-1 thi hành 2026-08-21: `IUnsPublisher.PublishBirth`
+/`PublishDeath`, `UnsPublisher.PublishBirthCoreAsync`/`PublishDeathCoreAsync`, hai work-item và hai nhánh
+dispatch đã bị xoá. Hệ quả đo được hôm nay:
+* Dưới `tools/machine-simulator/src/`, mọi chỗ còn nhắc `DBIRTH`/`DDEATH` là **khai báo enum hoặc bia mộ** —
+  **không một chỗ sinh nào**. `NBIRTH`/`NDEATH` thì **vẫn sống** (`PublishNodeBirthCoreAsync`/
+  `PublishNodeDeathCoreAsync`, gọi từ `FleetCore` ở Start / Stop / E-stop).
+* **`SparkplugAliasTable.Reset()` — liệt kê caller trước khi đếm:** `SparkplugAliasTableTests.
+  Reset_ClearsAssignmentsAndRestartsNumberingAtOne`. Hết. **Một caller, và nó là một unit test; KHÔNG caller
+  sản xuất nào.**
+* 🔴 **Bảng alias NỬA SỐNG, và đây là nửa mà brief không nêu:** `GetOrAssign` chạy trên **mọi** reading
+  (`UnsPublisher` giữ một `SparkplugAliasTable` cho **mỗi** `MachineCode`, không bao giờ gỡ), trong khi
+  `Reset()` không ai gọi. **Nửa ghi chạy mãi mãi; nửa xoá đã chết.**
+
+🔴 **Và một chỗ brief KHÔNG đứng vững, nêu rõ.** Brief viết *"`DBIRTH`/`DDEATH` nay **HOÀN TOÀN** không sinh ra
+được"*. Ở phạm vi **repo** câu ấy **SAI**: `server/services/uns/sparkplugNode.ts` dựng topic `DBIRTH` và
+`DDEATH`, gọi từ `server/services/unsPublisher.ts` (*"Lazy DBIRTH khi device chưa birthed"*, re-DBIRTH khi có
+tên metric mới, DDEATH khi tắt êm), lái bởi `mqttService.ts` và tiêu thụ bởi
+`federation/unsSubscriber.ts`. **Sản phẩm VẪN phát DBIRTH hôm nay.** Câu đúng là: **không sinh ra được từ
+spine `tools/machine-simulator`**. Đây đúng là loại nhầm phạm vi mà **mục 32** tồn tại để chấm dứt, và nó tái
+diễn trong chính brief mở mục này.
+
+🔴 **Một tiền đề thứ hai được đo lại và nó DỊU HƠN mục 23 tuyên bố.** Mục 23 (và doc `IUnsPublisher`) viết
+*"mọi DDATA mang alias mà subscriber không có giấy khai sinh"*. Đo trên `SparkplugPayload.EncodeMetric`: nó
+ghi **CẢ `Name` LẪN `Alias`** trên **mọi** metric, vô điều kiện. Nên **một subscriber giải mã được DDATA đầy
+đủ mà không cần DBIRTH nào** — cái hỏng **không phải "dữ liệu không giải mã được"** mà là **không tuân đặc
+tả**: một host Sparkplug nghiêm (Ignition, HiveMQ) coi thiết bị không có giấy khai sinh là **không biết /
+STALE** và thường bỏ hoặc từ chối đăng ký nó.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Uns.IUnsPublisher` (bia mộ + giá P-2);
+`St4i.EdgeCore.Uns.UnsPublisher` (`PublishReadingCoreAsync`, `BuildSparkplugMetrics`, `_aliasTables`,
+`PublishNodeBirthCoreAsync`); `St4i.EdgeCore.Uns.UnsTopicBuilder` (`SparkplugMsgType.DBIRTH`/`.DDEATH`,
+`BuildSparkplugDataTopic`, `IsDeviceLevel`); `St4i.EdgeCore.Uns.Sparkplug.SparkplugAliasTable.Reset`;
+`St4i.EdgeCore.Uns.Sparkplug.SparkplugPayload.EncodeMetric`; `St4i.EdgeCore.Fleet.FleetCore` (Start / Stop /
+E-stop). Bên ngoài spine này: `server/services/uns/sparkplugNode.ts`, `server/services/unsPublisher.ts`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* spine `tools/machine-simulator` là một bộ phát Sparkplug **không tuân đặc tả vĩnh viễn** — nó
+phát NBIRTH/NDEATH ở mức node nhưng đẩy DDATA trên **topic mức device** cho những device **chưa bao giờ có
+DBIRTH**. Alias **sống qua một phiên birth**: `ResetOnBirth()` đặt lại **sequence** ở NBIRTH nhưng **không
+đặt lại alias**, nên qua một chu kỳ Start→Stop→Start thật của vận hành viên, alias lặng lẽ mang sang — vô hại
+**chỉ vì** tên đi kèm inline. Bảng alias **tăng không chặn** theo tên metric do thiết bị cấp (nhỏ trên thực
+tế, **không chặn** trên hình thức). Và hai thành viên đã xoá khỏi một interface công khai **đang làm hỏng biên
+dịch của bất kỳ implementor/caller ngoài repo nào ngay lúc này**, mà **không lệnh nào trong repo phát hiện
+được** (đúng giá P-2 chủ sở hữu đã chấp nhận).
+*Chiều ngược (giá phục hồi):* thêm lại hai thành viên vào `IUnsPublisher` là **thay đổi phá vỡ với MỌI
+implementor**, gồm **năm** fake test mục 23 nêu tên; phải dựng lại hai core method, hai work-item, hai nhánh
+dispatch; phải nối chỗ gọi thật — chỗ hợp lý duy nhất là các chuyển trạng thái `FleetCore` đã giữ dưới
+`_gate`, tức **một thay đổi HÀNH VI GIAO THỨC** chứ không phải một bổ sung; phải thêm một latch trạng thái
+birth **mà spine này không có**; phải quyết luật *"NBIRTH có xoá alias của mọi device không"* mà hôm nay
+**không tồn tại**; và phải phục hồi
+`UnsNodeLifecycleTests.PublishBirth_DeviceLevelDbirth_DoesNotResetTheNodeSequence` (mục 23 ghi rõ: *"Nếu một
+ngày đường DBIRTH quay lại, bài test này phải quay lại cùng nó"*) kèm `EXPECT_EDGECORE` +1.
+
+**Nếu KHÔNG quyết định.** `SparkplugMsgType.DBIRTH`/`.DDEATH`, nhánh mức-device của `BuildSparkplugTopic`,
+`IsDeviceLevel` và `SparkplugAliasTable.Reset()` ở lại là **bề mặt công khai đã xuất bản không có bộ sinh**,
+trong khi `UnsTopicBuilderTests` tiếp tục kiểm một hình dạng **không gì phát ra được** — một bài test xanh
+đang trả cho một đường đã chết. Nhân chứng hồi quy cho bug *"DBIRTH không được đặt lại node sequence"* đã mất,
+nên nếu đường ấy quay lại mà không có nó, bug G2-3 **không được gác**. 🔴 **Cộng một dư lượng chưa ai trả lời
+và nó thuộc cùng câu hỏi vòng đời: KHÔNG có MQTT Will nào được cấu hình ở bất kỳ file `.cs` nào**, nên một cú
+kill đột ngột **cũng không phát NDEATH** — vòng đời node chỉ thật một nửa, và câu hỏi Will đã nằm trong
+`verify-suites.sh` mà **chưa ai phán**.
+
+---
+
+## 36. README §16.4/§16.6 là một bản sao KHÔNG CÓ NHÂN CHỨNG — và chính file nguồn TỰ KHAI điều đó, trong khi một câu đã trôi rồi
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1), xác nhận lại trên mã.
+
+**Đo được cái gì.** `README.md` §16.4 (*Modbus TCP driver*) và §16.6 (*OPC-UA client driver*) mỗi cái mang một
+**bảng biến môi trường** (4 hàng mỗi bên: tên, ngữ nghĩa, mặc định) cộng hình dạng JSON của file map với mặc
+định từng trường. Chúng là **bản sao chép tay** của `ModbusOptions` / `OpcUaOptions` (`EnvVarEnabled/Host/
+Port/MapPath`, `DefaultHost`, `DefaultPort`, `FromEnvironment`; `EnvVarEnabled/Endpoint/MapPath/PkiDir`) và
+của `ModbusRegisterMap.FromJson` / `OpcUaNodeMap.FromJson`.
+
+**Không test, script hay bước CI nào kiểm chúng — liệt kê những gì ĐÃ tìm, rồi mới kết luận:**
+`.github/workflows/` **không nhắc `machine-simulator`** (máy mô phỏng **không có CI**); `verify-suites.sh`
+nhắc README ở §15.9, §23.6, §24.4, §24.5, §8.1 — **không** §16.x (một lần nhắc `ST4I_MODBUS_PORT` chỉ để
+**loại trừ** một dương tính giả); năm file C# mở `README.md` chỉ dùng nó làm **mốc thư mục gốc**, không phải
+khẳng định; `PerHostDataRootsTests` và `NotificationDocumentationTests` **là** tiền lệ ghim tài liệu thật
+nhưng phạm vi ở **§15.9** và mục notifications; `EnumSpellingContractTests` **tự khai** README nằm **ngoài**
+ba gốc của nó; `git grep -E "§16\.4|§16\.6"` trên `tests/`, `scripts/`, `web/tests/` trả **0**.
+
+🔴 **Và mã TỰ KHAI khoảng trống này.** `ModbusOptions` viết, nguyên văn: *"The README tables remain a
+hand-kept copy with no witness: nothing goes red if they drift, and that is still true."* Hai bản sao **khác**
+mà cùng đoạn ấy nêu tên (hai file test) **đã được cho một nhân chứng biên dịch** bằng cách gọi hằng số theo
+tên — **README bị cố ý để lại làm bản sao thứ ba, không có nhân chứng.**
+
+🔴 **Phép kiểm tra chéo tìm được một câu ĐÃ TRÔI, nên đây không phải rủi ro giả định:** §16.6 nói
+`OperationTimeout` là *"hardcoded 15 seconds, not configurable via any env var/setting"*. Đo:
+`OpcUaDriver` nhận `int operationTimeoutMs = 15000` **làm tham số constructor** từ Task B-5. Nửa sau của câu
+(*"không cấu hình được qua env var/setting"*) **vẫn đúng**; chữ *"hardcoded"* **không còn đúng theo nghĩa
+đen**. Sáu spot-check khác **sạch** (mặc định `127.0.0.1`/`502`; `dataType` chỉ `UInt16`/`Int16`; `unitId` 1,
+`pollIntervalMs` 1000, chặn 60 000/5; stack ghim `1.5.378.156`; `ST4I_OPCUA_ENDPOINT` *"không được đọc"*;
+`securityMode` chỉ `None`).
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `tools/machine-simulator/README.md` §16.4 và §16.6;
+`St4i.EdgeCore.Drivers.Modbus.ModbusOptions`, `St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap`,
+`St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions`, `St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap`,
+`St4i.EdgeCore.Drivers.OpcUa.OpcUaDriver`; tiền lệ ghim: `PerHostDataRootsTests`,
+`NotificationDocumentationTests`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* độc giả là **một bên tích hợp đang cấu hình một nhà máy**, và cách hỏng **im lặng** — đổi tên
+một hằng số hay đổi một mặc định để README **xanh** trong khi vận hành viên gõ một biến không còn tồn tại và
+nhận hành vi *"mặc định TẮT"* **không có lỗi nào**, vì cả hai driver đều được ghi là log-rồi-tắt chứ không
+sập. Repo **đã có dụng cụ cho việc này** (lối cắt-mục-theo-heading của `NotificationDocumentationTests`, lối
+ghim-regex của `PerHostDataRootsTests`) — nên khoảng trống là **một lựa chọn, không phải một giới hạn năng
+lực**. Câu *"hardcoded 15 seconds"* đã trôi là **bằng chứng tồn tại** rằng nó trôi thật.
+*Chiều ngược:* một bài test ghim mục sẽ ghim **văn xuôi**, nên **mọi lần viết lại hợp lệ** §16.4/§16.6 kéo
+theo một lần sửa test — đúng thứ ma sát làm người ta **ngại cập nhật** chính các khối RTU/deferral trung thực
+mà hai mục này đang giữ. §16.4 riêng nó là **~160 dòng văn xuôi** quanh một bảng 4 hàng; một phép ghim cả mục
+kiểu ngây thơ sẽ **đỏ vì những sửa đổi không liên quan**. Bản hẹp (ghim 8 hàng `ST4I_*` và các mặc định số
+theo hằng số) mua **~90 %** giá trị với **~10 %** độ giòn — **nhưng nó để lại toàn bộ khẳng định văn xuôi,
+gồm cả câu đã trôi, vẫn không có nhân chứng.**
+
+**Nếu KHÔNG quyết định.** Hai mục ở lại là **bản sao thứ ba không có nhân chứng** của một sự thật có **ba** bản
+sao, trong khi hai bản kia đã được cho nhân chứng — nên chỗ trôi tiếp theo sẽ xảy ra **đúng ở đây**, và sẽ
+được phát hiện bởi một bên tích hợp chứ không bởi một cổng. Đây **cùng một lớp với mục 26** (không gì trả cho
+**tính đúng** của một chú thích đã viết) và **mục 32** (một lời khai chỉ kiểm được nếu nó ghi lại điều kiện
+của chính nó) — nhưng khác cả hai ở chỗ **bản sửa đã được tiền lệ hoá hai lần trong chính repo này**.
+
+---
+
+## 37. 🔴 HỒ SƠ — LỖI CỦA ĐIỀU PHỐI VIÊN: một phán quyết của chủ sở hữu đã sống trọn một vòng nhiệm vụ mà KHÔNG có bản ghi tại chỗ, và không dụng cụ nào bắt được
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AU-1). 🔴 **Mục này KHÔNG nói về mã. Nó nói về quy trình đã tạo ra file này, và
+nó được điều phối viên yêu cầu viết THẲNG. Viết thẳng.**
+
+**Đo được cái gì.** Phán quyết mục 16 của chủ sở hữu ngày **2026-08-22** — *một transaction bọc bốn câu lệnh
+của `AggregateForOeeAsync`*, tức **lựa chọn thứ tư** mà mục không có — tới tay người thi hành **chỉ qua một
+task brief**. Ở base `ce1ce2be`, `grep "2026-08-22"` trên `docs/owner-decisions.md` trả **đúng hai dòng, và cả
+hai thuộc mục 27**. Điều phối viên bảo nhiệm vụ trước ghi phán quyết mục 27 và nói mục 16 *"không phải việc
+của anh"* — tức đã coi **"đừng thi hành"** là **"đừng ghi"**. 🔴 **Một phán quyết và một lần thi hành là HAI
+HIỆN VẬT KHÁC NHAU.** Một phán quyết là dữ kiện ngay khi được phát ra; nó không chờ ai thi hành để trở thành
+thật, và **đúng loại hiện vật mà file này tồn tại để giữ**. Trong một vòng nhiệm vụ, kênh duy nhất mang nó là
+một task brief — **và task brief nằm dưới `.superpowers/`, bị gitignore**, tức đúng cái kênh mà đoạn mở đầu
+của file này gọi tên là thiếu sót nó lập ra để chấm dứt.
+
+**Bằng chứng thứ hai, cùng lớp, đo trong chính nhiệm vụ này.** Câu tóm tắt Phần I —
+*"Các mục ở đây, LIỆT KÊ chứ không đếm: mục 16, 17, 18, … 32"* — **đã sai từ trước khi AU-1 chạm vào nó**:
+mười một mục (16, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29) đã rời sang Phần III ở các nhiệm vụ trước và câu ấy
+vẫn liệt kê cả mười một. Nó **lỗi thời qua ba nhiệm vụ liên tiếp** và **không nhiệm vụ nào phát hiện ra**, vì
+**không cổng nào đọc file này**.
+
+🔴 **Và con số ấy phải được ĐO chứ không nhận, vì lời khai mở mục này cũng đếm sai.** Brief giao mục này viết
+*"danh sách Phần I đã lỗi thời **chín** mục"*. Đo trên `659bcfb2`: Phần I **thật sự** chứa **17, 25, 26, 30,
+31, 32**, còn câu tóm tắt liệt kê **mười bảy** số hiệu — nên phần thừa là **MƯỜI MỘT**, không phải chín.
+**Lời khai về một khuyết tật kiểm đếm tự nó đếm sai, theo đúng cơ chế nó đang mô tả** — một con số vô hướng
+tóm tắt một tập thay đổi ở chỗ khác. Đây là **lần thứ tư trong bốn nhiệm vụ liên tiếp** một con số như thế bị
+phép liệt kê ngay cạnh nó bác bỏ, và lần này nó xảy ra **trong chính câu chẩn đoán**. Mọi phép rút trước đó đều viết được câu *"không phải nó từng sai — nó mô tả
+đúng trạng thái cho tới lúc ấy"*; **lần này câu đó viết không được.**
+
+🔴 **Và một lời tự khen của chính file này không sống sót qua phép đo.** Bốn khối bảo tồn lập luận rằng cách
+viết *liệt kê, không đếm* làm một phép liệt kê sai **"sai NHÌN THẤY ĐƯỢC"**. Nó chỉ nhìn thấy được **nếu có
+ai đó nhìn**. **Không ai nhìn trong ba nhiệm vụ.** Phép liệt kê làm cho việc **SỬA** rẻ; nó không làm cho việc
+**PHÁT HIỆN** tự động — và cái thiếu là phát hiện.
+
+**Ở đâu — trỏ bằng TÊN.** `tools/machine-simulator/docs/owner-decisions.md` (bảng phán quyết đầu file; banner
+Phần I; mục 16, mục 27); `.superpowers/sdd/**/task-*-brief.md` và `task-*-report.md` (**bị gitignore**, xem
+`.gitignore`); `tools/machine-simulator/scripts/verify-suites.sh` (**cổng — và nó KHÔNG đọc
+`owner-decisions.md`**, đó là cả vấn đề).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* file này tự nhận là **nguồn sự thật** cho các quyết định của chủ sở hữu, và trong một vòng nó
+**không phải**. Một chủ sở hữu mở file để hỏi *"tôi đã phán gì?"* sẽ nhận câu trả lời **thiếu**, mà không có
+dấu hiệu nào rằng nó thiếu — đúng cách hỏng mà đoạn mở đầu nói nó chấm dứt. Nếu phiên làm việc đứt đúng giữa
+hai nhiệm vụ ấy, phán quyết mục 16 **biến mất khỏi hồ sơ hoàn toàn**, vì kênh duy nhất mang nó không được
+commit. Và vì **không cổng nào đọc file này**, một mục có thể sai ở **bất kỳ** trường nào — trạng thái, số
+hiệu, phép liệt kê — trong **bất kỳ** số nhiệm vụ nào, và cổng vẫn **xanh**.
+*Chiều ngược, và nó là lý do mục này CHỜ ANH thay vì được ai đó tự sửa:* mọi phép **cưỡng chế** đều tốn thật.
+(i) **Bắt cổng đọc file này** biến một tài liệu văn xuôi tiếng Việt thành **đầu vào có lược đồ** — bảng phán
+quyết thành dữ liệu phải phân tích, và **mọi** phép viết lại văn xuôi thành một thay đổi có thể làm đỏ cổng;
+đó là **chính xác** cái ma sát mục 36 đo được ở README, nay áp lên tài liệu **hay đổi nhất** trong repo.
+(ii) **Bắt mọi task brief phải commit** đưa `.superpowers/` vào repo, mà nó bị gitignore **có lý do** và chứa
+transcript cùng đường dẫn cục bộ. (iii) **Bắt điều phối viên ghi trước khi giao** không có bộ cưỡng chế **kỹ
+thuật** nào cả — nó là một luật về hành vi con người, và luật ấy **vừa bị vi phạm bởi chính người viết ra
+nó**. 🔴 **Nên câu trả lời trung thực cho *"cái gì sẽ CƯỠNG CHẾ nó"* là: KHÔNG CÓ GÌ CƯỠNG CHẾ ĐƯỢC, ở hình
+dạng repo hôm nay** — và ba lối trên là ba cái giá, không phải ba giải pháp. Cái rẻ nhất trong ba, và nó vẫn
+**không phải cưỡng chế mà là phát hiện**: một bài test ghim **giao ước hẹp** rằng mọi số hiệu mang
+`🔴 CHỜ ANH` ở **bảng phán quyết** xuất hiện đúng một lần ở **phép liệt kê Phần I** và ngược lại — nó bắt được
+chỗ lệch chín-mục vừa xảy ra, **không** bắt được một phán quyết chưa bao giờ được ghi, và nó ghim **cấu trúc**
+chứ không ghim **văn xuôi**, nên tránh được cái giá (i).
+
+**Nếu KHÔNG quyết định.** Cơ chế lặp lại, và **nó đã lặp lại rồi** — hai lần trong ba ngày: mục 16 (một phán
+quyết không có bản ghi) và banner Phần I (một phép liệt kê sai **mười một** mục qua ba nhiệm vụ). Không có bộ
+dò nào,
+nên **lần tới sẽ lại được phát hiện bằng cách một người tình cờ nhìn** — lần này là người thi hành mục 17, đọc
+banner Phần I vì một lý do khác hẳn. 🔴 **Và nêu cho hết, vì một nửa sự thật ở đây sẽ là loại lỗi mà chính mục
+này nói về: AU-1 KHÔNG sửa được lớp gốc, chỉ ghi lại nó.** Mục 17 vừa cho một ví dụ thu nhỏ trong cùng nhiệm
+vụ này — AL-1 rút một khẳng định đã công bố **trong hồ sơ** ngày 2026-08-20, phép rút **chưa bao giờ tới mã**,
+và suốt hai ngày người đọc **mã** vẫn thấy câu sai. **Cùng một lớp, ở hướng ngược lại: hồ sơ đúng, nguồn
+sai.** Nên bất kỳ phán quyết nào cho mục này phải trả lời **cả hai hướng**, không chỉ hướng *"ghi vào file"*.
 
 ---
 
@@ -6597,6 +6906,257 @@ tuỳ chọn vào `ApiTraceEvent` ⇒ nhân chứng bề-mặt-đóng-băng **Đ
 phép ⇒ **HAI** nhân chứng **ĐỎ**; bỏ phép cắt ⇒ nhân chứng trần **ĐỎ**. Sau khi hoàn nguyên: **6/6 xanh**.
 
 ---
+
+---
+
+## 17. `QueryTelemetryAsync` là truy vấn hướng khách hàng DUY NHẤT không áp cổng xuất xứ, và nó KHÔNG áp được: bảng không có cột để lọc
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). Đo bởi AL-1 (đợt 6), xác nhận lại trên mã.
+
+**Đo được cái gì — quần thể mở TRỌN, không lấy mẫu.** `IHistorianStore` có **bảy** phương thức đọc
+công khai. Ba cái gọi `ApplyRealPresenceGateAsync`: `QueryResultsAsync`, `QueryBySerialAsync`,
+`AggregateForOeeAsync`. Bốn cái không: `QueryTelemetryAsync`, `QueryRunEventsAsync`,
+`GetStatsAsync`, và `PruneOlderThanAsync` (một phép ghi). Ba trong bốn cái không áp **không có gì để
+áp**: `QueryRunEventsAsync` và `PruneOlderThanAsync` chạy trên bảng không mang khái niệm xuất xứ, và
+`GetStatsAsync` cố ý là một báo cáo **về** store.
+
+**`QueryTelemetryAsync` là phản ví dụ thật, và nó là phản ví dụ CẤU TRÚC.** DDL của
+`historian_telemetry` mang đúng bảy cột: `id`, `result_id`, `machine_code`, `metric`, `value`,
+`unit`, `quality`, `event_time_utc` — **không có `is_fabricated`**. Cột ấy chỉ tồn tại trên
+`historian_results`, được thêm bởi migration 2. Nên cổng không thể áp bằng một cờ; nó cần **một
+phép join mà phương thức này cố ý không làm**, hoặc **một cột mới**.
+
+**Và bề mặt HTTP nói cùng một chuyện:** `HistorianEndpoints.GetTelemetryAsync` nhận
+`machine, metric, from, to, store, ct` — **không `includeFabricated`, không `DemoModeGate`** — trong
+khi mọi route lân cận (`GetResultsAsync`, `GetBySerialAsync`, `GetOeeAsync`, `ExportCsvAsync`,
+danh sách fleet) đều đi qua `ResolveIncludeFabricated(...)`.
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Historian.SqliteHistorianStore.ApplyRealPresenceGateAsync`
+(và ba chỗ gọi nó); `SqliteHistorianStore.QueryTelemetryAsync`; DDL `historian_telemetry` trong
+`SqliteHistorianStore`'s migration ladder; `St4i.EngineApi.Endpoints.HistorianEndpoints.GetTelemetryAsync`
+và `HistorianEndpoints.ResolveIncludeFabricated`; route `GET /v1/historian/telemetry`.
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* trên một fleet trộn — vài máy thật, vài máy mô phỏng — biểu đồ xu hướng trộn dữ liệu
+giả với dữ liệu thật, **không gì trong dữ liệu và không gì trong phản hồi nói cái nào là cái nào**.
+Đó đúng là kiểu hỏng mà vòng sửa số 1 của SM-2 được viết ra để đóng cho bề mặt kết quả và phả hệ;
+nó vẫn mở trên bề mặt telemetry.
+*Chiều ngược, và nó quyết định giá:* trên một bản cài **triển lãm 100 % mô phỏng**, đây là bề mặt
+historian **duy nhất còn CHẠY** theo mặc định. Đóng nó lại đòi đúng cái carve-out Demo mà
+`ResolveIncludeFabricated` đã có cho các route kia — cộng **một cột schema hoặc một phép join**, tức
+một migration trên một cơ sở dữ liệu của khách hàng.
+
+**Nếu KHÔNG quyết định.** Bề mặt này ở lại **không gác được**, và câu đã công bố của cổng — *"the
+one rule every customer-facing historian query/aggregate in this store applies"* — ở lại đúng với
+sáu trong bảy phương thức. Cái tốn kém không phải một dòng sửa: đó là **một migration**, và mỗi ngày
+trôi qua là thêm hàng `historian_telemetry` không mang xuất xứ, nên phép sửa **hồi tố** đắt dần.
+
+### ✅ ĐÃ THI HÀNH **MỘT PHẦN** 2026-08-22 (AU-1, base `659bcfb2`) — cổng nay **áp được và có áp**, còn **mặc định thì KHÔNG đổi**, và **tiền đề ở tiêu đề mục này không sống sót**
+
+🔨 **QUYẾT: ĐÓNG KHOẢNG TRỐNG XUẤT XỨ CỦA `QueryTelemetryAsync`** (2026-08-22, **điều phối viên quyết theo
+uỷ quyền**, cùng khuôn mục 8, 15 và 21 — mục này không đổi payload MQTT, không đổi hình dạng dây, không đổi
+con số OEE nào). **Mọi dòng thân mục gốc ở trên giữ NGUYÊN VĂN.**
+
+#### 🔴 1. Tiền đề trung tâm — *"và nó KHÔNG áp được"* — BỊ BÁC, và cái bác nó nằm trong chính câu của mục
+
+Mục viết: cổng *"cần **một phép join mà phương thức này cố ý không làm**, hoặc **một cột mới**."* Câu ấy nêu
+đúng hai lối và rồi tiêu đề mục lại tuyên bố **không lối nào đi được**. Đo trên DDL: `historian_telemetry`
+khai `result_id INTEGER NOT NULL REFERENCES historian_results(id) ON DELETE CASCADE`. **`NOT NULL` là chỗ
+quyết định:** phép join tới xuất xứ **TOÀN PHẦN** — không có hàng mẫu mồ côi, không có hàng mẫu nào mà xuất
+xứ *"không biết được"* vì thiếu đường đi. Xuất xứ của một mẫu **chưa bao giờ vắng mặt; nó cách một bước nhảy
+và không ai nhảy.**
+
+Cùng một câu sai ấy sống ở **ba nơi đã công bố** và cả ba được sửa **tại nguồn** trong nhiệm vụ này: tiêu đề
+mục 17 (sửa bằng gạch ngang ở hàng bảng phán quyết), doc của `IHistorianStore.QueryTelemetryAsync`
+(*"the asymmetry cannot be closed by passing a flag here"*), và doc của
+`SqliteHistorianStore.QueryTelemetryAsync` (*"not an omission that a flag would fix"*). **Cả hai doc được rút
+theo lối trích-nguyên-văn-rồi-rút, không gạch ngang, không xoá dòng nào.**
+
+#### 🔴 2. Câu khó nhất — *"hàng cũ mang giá trị gì"* — KHÔNG TỒN TẠI ở dạng nó được đặt ra, và đó là câu trả lời chứ không phải một lối né
+
+Câu hỏi giả định cơ chế **THÊM MỘT CỘT**. §8.1(a) đòi **suy cơ chế ra**, đừng nhận một mặc định — và cơ chế
+suy ra được **không phải là thêm cột**:
+
+* Xuất xứ của một hàng telemetry **không phải một sự kiện độc lập**. Nó là **hàm của hàng reading cha**, và
+  quan hệ ấy được **cưỡng chế bởi lược đồ** (`NOT NULL` + khoá ngoại), không phải bởi quy ước.
+* Nên một hàng mẫu cũ mang **đúng cái cha nó mang**. Đó là **một PHÉP ĐO**, không phải một giá trị phải chọn.
+  **Không có sự kiện nào bị bịa ra, vì không có sự kiện nào phải bịa.**
+* **Ba trạng thái vẫn còn — nhưng chúng được THỪA KẾ, không phát minh.** Cha mang `0`/`1`/`NULL`; `NULL` là
+  *"Unknown provenance"* mà migration 2 đã cố ý tạo ra (thêm cột **không DEFAULT**, để chính ngữ nghĩa
+  ADD-COLUMN của SQLite gán `NULL` cho mọi hàng cũ) và `HistorianResultRecord.IsFabricated` đã ghi rõ là
+  **trạng thái THỨ BA, không bao giờ được lặng lẽ gộp vào "thật" hay "giả"**.
+* **Và luật xử lý *Unknown* ĐÃ ĐƯỢC QUYẾT rồi.** `ApplyRealPresenceGateAsync` đã mang nó cho ba read kia.
+  Nhiệm vụ này **không được quyền quyết lại nó**, và **không quyết lại**: nó **gọi** luật ấy.
+
+**Giá, hai chiều, và cả hai đều là giá THỪA KẾ chứ không phải giá mới:**
+*Che *không biết* đi:* khi trong phạm vi có một reading thật rõ ràng, **mọi** mẫu Unknown cùng phạm vi bị loại
+— kể cả mẫu của một máy thật sự thật chỉ vì nó có trước cột. Vận hành viên mất một đoạn đường cong họ vẫn
+thấy hôm qua, và **không gì trong phản hồi nói là đã mất**.
+*Cho *không biết* qua:* khi không có gì rõ ràng thật trong phạm vi, mẫu Unknown đi qua — nên một chuỗi được
+gán nhãn *"đã gác"* vẫn có thể chứa dữ liệu mà **không ai chứng minh được là thật**. **Cổng có một lỗ mà tên
+nó không nói.** Đây đúng là *"Known residual limitation"* mà doc của chính cổng đã ghi, nay chạm tới bề mặt
+telemetry **y nguyên** — vì luật được **gọi**, không được **chép**.
+
+#### 3. Đường di trú — đo được, và **KHÔNG MẤT DỮ LIỆU vì KHÔNG CÓ MIGRATION NÀO CHẠY**
+
+🔴 **Brief nói *"mục 5 ghi rằng HAI store khác `DROP TABLE` lúc khởi động"*. Đọc lại mục 5: nó nêu HAI phát
+hiện, và chỉ MỘT là `DROP TABLE`** — `ConnectorConfigStore` migration v4. Phát hiện kia
+(`ProductConfigStore.Load` ghi lại `products.json`) **không phải một `DROP TABLE`**. Và cái `DROP TABLE` duy
+nhất ấy **đã được phán ✅ KHÔNG ĐỔI**, vì nó là nấc 4 của một thang `PRAGMA user_version` chạy **trong cùng
+một transaction**, theo đúng thứ tự tạo/chép/xoá/đổi-tên mà SQLite quy định — **các hàng sống sót, và việc
+sống sót được ghim bởi một bài test dựng database v3 thật bằng SQL thô.**
+
+Đo trên `SqliteHistorianStore`: thang di trú của nó là **`PRAGMA user_version`, cộng dồn, và KHÔNG có
+`DROP TABLE` ở bất kỳ nấc nào** — nấc 1 là `CREATE TABLE IF NOT EXISTS` ×3, nấc 2 là một
+`ALTER TABLE … ADD COLUMN`. Mỗi nấc chạy trong transaction riêng; `EnsureSchema()` chỉ áp nấc mới hơn
+`user_version` hiện tại.
+
+🔴 **Nhưng bằng chứng "không mất dữ liệu" ở đây KHÔNG dựa vào chất lượng của thang, mà mạnh hơn thế:
+AU-1 KHÔNG THÊM NẤC NÀO. Không có migration nào chạy trên cơ sở dữ liệu của khách hàng, không một byte nào
+được đọc-ghi-lại, `user_version` không dịch.** Bản sửa là **một phép ĐỌC**. Đó là hệ quả trực tiếp của §2: khi
+xuất xứ đã được ghi đúng một lần trên hàng cha, thêm một cột thứ hai lên hàng con chỉ tạo ra **một bản sao có
+thể trôi** mà `AppendResultsAsync` phải giữ đồng bộ vĩnh viễn.
+
+#### 4. Chỗ GHI **CÓ** biết xuất xứ — đo, không đoán
+
+`AppendResultsAsync` là **chỗ ghi DUY NHẤT** của `historian_telemetry` trong toàn commit (một câu
+`INSERT INTO historian_telemetry`, và không có câu nào khác ở đâu, kể cả `server/`, `client/`, `examples/`).
+Nó ghi hàng reading với `@is_fabricated` tường minh, đọc lại `last_insert_rowid()`, rồi ghi các hàng mẫu với
+`result_id` ấy — **cùng một transaction, cùng một vòng lặp, cùng một biến `record`**. Nên chỗ ghi **cầm câu
+trả lời trong tay** ở đúng lúc nó ghi hàng mẫu. **Cột ấy điền được cho tử tế** — và chính vì thế nó **thừa**.
+
+Một phép đo phụ làm cửa sổ thời gian khớp **chính xác** chứ không xấp xỉ: `AppendResultsAsync` tính **một**
+`eventTimeIso` và đóng dấu nó lên **cả** reading **và** mọi mẫu của reading ấy. Nên một mẫu nằm trong cửa sổ
+**khi và chỉ khi** cha nó nằm trong cửa sổ.
+
+#### 5. Bề mặt ĐỌC — **LIỆT KÊ trước, con số SAU**
+
+Quét toàn commit (`git grep --full-name … HEAD -- ':(top)'`, chạy từ **gốc repo** `D:\SOURCES\avi-aoi-sim`;
+`server/` và `client/` vắng khỏi cây nhưng **có trong commit** và **đã được quét**):
+
+**Gọi `IHistorianStore.QueryTelemetryAsync`:** `HistorianEndpoints.GetTelemetryAsync` (sản xuất) · ba fake
+`IHistorianStore` trong test (`HistorianWriterTests`, `FleetHostGateCommitCompletionTests`,
+`FleetHostHistorianWiringTests`) · `SqliteHistorianStoreQueryTests` · `SqliteHistorianStoreTests`.
+
+**Gọi `GET /v1/historian/telemetry`:** chỗ đăng ký route trong `HistorianEndpoints` ·
+`RbacPolicyTests` (điều tra dân số chính sách) · `HistorianEndpointsReadTests` (ba `[Fact]`) ·
+`HistorianTelemetryProvenanceTests` (mới, bảy `[Fact]`) · và các bản ghi tài liệu.
+
+🔴 **Cái phép liệt kê này KHÔNG liệt kê được, và nó là kết quả quan trọng nhất của mục §5:
+KHÔNG MỘT BIỂU ĐỒ NÀO. KHÔNG MỘT BÁO CÁO NÀO. KHÔNG MỘT KHÁCH HÀNG ĐÃ SHIP NÀO.** Không trang web nào,
+không view WPF nào, không PDF nào gọi route này. Bề mặt ĐỌC hướng-người-dùng của nó là **rỗng**, và bản thân
+điều đó là một phát hiện: **mục 17 mô tả tác hại của nó bằng một "biểu đồ xu hướng" mà trong cây này không
+tồn tại.** (`getTelemetrySeries` trong `server/` là **một hệ khác** — Postgres/drizzle, bảng `ot_telemetry` —
+không phải route này.)
+
+🔴 **Và nửa ngược lại, vì "không có bên tiêu thụ" KHÔNG có nghĩa là "không có ai đọc":** route mang
+`RequireAuthorization(Policies.Operator)` và là một bề mặt HTTP **đã xuất bản**. Một bên tích hợp gọi thẳng
+API **đo không được từ repo này** — cùng cái trần mà mục 14 và mục 32 đã trả giá để học. Doc của
+`ResolveIncludeFabricated` tự nói ra khả năng ấy: *"no shipped web route sends one today, but a direct API
+caller can."*
+
+#### 🔴 6. ĐIỀU KIỆN DỪNG — **ĐÃ NỔ**, ở nửa MẶC ĐỊNH, và đây là phép đo
+
+Nối route này vào `ResolveIncludeFabricated` như các route anh em **không làm hẹp phản hồi — nó làm RỖNG
+phản hồi**, và cơ chế đo được:
+
+* `machine` là tham số **BẮT BUỘC** trên route này, nên phép dò real-presence của cổng **luôn** chạy trong
+  phạm vi **đúng một máy**.
+* Với một máy **mô phỏng bình thường** trên một bản triển khai **không phải demo** (`DemoModeGate` tắt — tức
+  **mọi bản cài sản phẩm**), phép dò không tìm thấy gì rõ ràng thật **trong phạm vi máy ấy**, tập được nhận
+  thành `(is_fabricated IS NULL OR is_fabricated = 0)`, và **mọi** mẫu của máy ấy bị loại.
+* **Đo bằng cách chạy, không bằng lập luận:**
+  `GateOptIn_OnAPurelyFabricatedMachine_ReturnsNothing_WhileTheUngatedReadReturnsEverySample` khẳng định
+  **cùng một hạt giống**: không gác ⇒ **3 mẫu**; gác ⇒ **0 mẫu**. **Không phải ít hơn — bằng không.**
+* Một biểu đồ xu hướng hôm nay có đường thì ngày mai **rỗng, vĩnh viễn**. Đó **đúng** hình dạng hỏng mà
+  `ResolveIncludeFabricated` tự ghi cho các route anh em **trước** Fix 1: *"not 'narrower than intended,'
+  literally zero, permanently."*
+
+**Nên: DỪNG ở nửa ấy. Mặc định KHÔNG bị đổi, và AU-1 không tự quyết nó.** Cái được ship là **cơ chế** với
+**mặc định hôm nay được giữ nguyên từng ký tự**; cái được giao lên là **quyết định về mặc định**.
+
+#### 7. Miễn trừ Demo — **KHÔNG dùng**, và lý do là chính điều kiện DỪNG
+
+Route mới **KHÔNG** đi qua `ResolveIncludeFabricated`. Nó mặc định `includeFabricated ?? true`.
+
+**Vì sao:** miễn trừ Demo tồn tại để **TRẢ LẠI** những hàng mà cổng lấy đi trên một hộp demo. Ở đây cổng
+**không lấy gì đi**, nên **không có gì để trả lại** — nối nó vào sẽ là một cái không-làm-gì trên hộp demo và
+**chính là hành vi làm nổ điều kiện DỪNG** trên hộp thật (`demoGate?.Enabled ?? false` = `false` = cổng bật).
+Route **cố ý không nhận** tham số `DemoModeGate?`: nhận rồi bỏ qua thì tệ hơn, còn không nhận làm cho việc
+không-dùng **thành cấu trúc và nhìn thấy được**.
+
+🔴 **Điều kiện kèm theo, ghi vào mục vì nó là một cái bẫy:** nếu chủ sở hữu phán lật mặc định, thì
+`DemoModeGate?` **phải được thêm trong CÙNG một thay đổi**, không phải sau. Thiếu nó, telemetry của một bản
+cài triển lãm 100 % mô phỏng **về không** — đúng con bug mà Fix 1 đã sửa cho các route kia.
+
+#### 🔴 8. Nửa bất lợi của chính bản sửa này — hai route vẫn trả lời khác nhau
+
+Sau bản sửa, `GET /v1/historian/results` vẫn **giấu** reading của một máy bịa trong khi
+`GET /v1/historian/telemetry` vẫn **vẽ** mẫu của **chính máy ấy**, và **không gì trong phản hồi nói cái nào
+là cái nào**. Chỗ lệch ấy **không do bản sửa tạo ra** — nó **LÀ** mục 17 — nhưng bản sửa **KHÔNG ĐÓNG** nó.
+Cái thay đổi là: trước đây nó là một **khẳng định cấu trúc** (*"không áp được"*) mà không ai xem lại được;
+nay nó là **một dòng, một mặc định, xem lại được**, và nằm cạnh phép đo về giá của việc lật nó.
+
+#### 9. Nhân chứng, cặp đối chứng, và hằng số — **đo SAU khi viết**
+
+**File mới** `tests/St4i.EngineApi.Tests/HistorianTelemetryProvenanceTests.cs`, **bảy `[Fact]`**. Taxonomy
+dưới đây là **kết quả chạy hai đối chứng**, không phải nhãn tự phong — và **nó đã sửa một nhãn viết sai**:
+
+* **Đối chứng A** (gỡ cổng khỏi `SqliteHistorianStore.QueryTelemetryAsync`): **4 ĐỎ / 3 xanh**. Bốn cái đỏ là
+  nhân chứng thật.
+* **Đối chứng B** (lật mặc định endpoint sang luật anh em): **đúng 1 ĐỎ**, và nó là
+  `Default_WithNoExplicitValue_…_LegacyContinuity`. 🔴 **Đó là một phát hiện, không phải một cái pass: mọi bài
+  test telemetry ĐÃ CÓ vẫn XANH dưới đối chứng B, nên trước file này KHÔNG bài nào trong 2 804 bài nhìn thấy
+  được phép lật mặc định** — chính cái mất mát mà điều kiện DỪNG tồn tại để chặn thì **không có nhân chứng**.
+* **ĐỎ dưới KHÔNG đối chứng nào, và được tự dán nhãn *guard, KHÔNG phải nhân chứng* ngay trên bài test:**
+  `TheJoinThisReadWasSaidToBeUnableToMake_IsTotal_…` (một phép đo cấu trúc, cố ý độc lập với cổng) và
+  🔴 `GateOptIn_UnknownProvenanceSamples_PassWhenNothingExplicitlyReal…` — **viết ra như một nhân chứng, ĐO
+  RA là một guard, và đã đổi nhãn tại chỗ.** Cả hai đối chứng đã **hoàn nguyên**; `git diff` ở ngọn nhánh
+  không chứa cái nào.
+
+**Hằng số — ĐO rồi mới viết:** `EXPECT_ENGINEAPI` **1388 → 1395** (+7, đếm từ runner `--list-tests` **sau
+khi** viết file, không dự báo trước), tổng **2804 → 2811**. `EXPECT_WARNINGS` **328 KHÔNG dịch**,
+`EXPECT_BUILD_NODES` **0**, sổ cảnh báo **16 hàng không dịch một đơn vị**, **0 lệnh đè** — không
+`.editorconfig`, không `<NoWarn>`, không `#pragma`, không `SuppressMessage`. `EXPECT_EDGECORE` **1179 không
+dịch**: ba fake chỉ đổi một dòng chữ ký mỗi cái. **AU-1 không chạm `web/`.**
+
+🔴 **Một `-t:Rebuild` trả *13 Error(s)* rồi chạy lại trả *0 Error(s)*, cùng cây, không sửa gì** — đúng cái
+bẫy mà ràng buộc toàn cục nêu tên. **Con số được tin là con số của lần chạy lại.**
+
+#### 🔴 10. Một lỗi CỦA CHÍNH AU-1, bị bắt bởi chính bài test của AU-1
+
+Bản nháp đầu thêm `includeFabricated` vào `GetTelemetryAsync` nhưng **quên truyền nó xuống**
+`store.QueryTelemetryAsync`. Hệ quả: store rơi về mặc định của **chính nó** (`false`) và **cổng BẬT theo mặc
+định** — tức **đúng thứ điều kiện DỪNG cấm**, ship kèm một doc comment dài giải thích rằng nó không làm thế.
+Hai bài đỏ ngay lần chạy đầu (`Default_…` trả `[72]` thay vì `[71, 72, 73]`;
+`GateOptIn_OnAPurelyFabricatedMachine_…` trả `0` thay vì `3` ở vế **không gác**). **Nó được bắt lúc CHẠY, không
+phải lúc đọc** — và nếu bài guard `Default_…` không được viết ra vì "nó xanh ở cả hai phía nên vô dụng", bản
+sửa đã đi qua cổng và làm biến mất dữ liệu của khách hàng đúng như đã bị cấm.
+
+#### 11. Một khẳng định đã công bố được RÚT **TẠI NGUỒN**, không chỉ trong hồ sơ
+
+Doc của `ApplyRealPresenceGateAsync` mở đầu bằng *"the one rule **every** customer-facing historian
+query/aggregate in this store applies"*. **AL-1 đã đo và rút câu ấy trong FILE NÀY ngày 2026-08-20** (mục 12,
+§11) — **nhưng phép rút chưa bao giờ tới mã**. Suốt hai ngày, người đọc **hồ sơ** thấy câu đã rút còn người
+đọc **mã** vẫn thấy câu sai, ở ngay trên hàm mà nó nói sai về. Nay sửa tại nguồn, kèm phép **liệt kê** thật:
+với tới cổng — `QueryResultsAsync`, `QueryBySerialAsync`, `AggregateForOeeAsync`, `QueryTelemetryAsync`;
+**mặc định BẬT ở BA**. Không với tới — `QueryRunEventsAsync` (bảng không mang máy lẫn xuất xứ) và
+`GetStatsAsync` (cố ý là báo cáo **về** store).
+
+🔴 **Và đó chính là mục 37 ở dạng thu nhỏ, gặp trong lúc thi hành một mục khác:** một phán quyết/phép rút
+sống trong hồ sơ mà **không có bản ghi tại chỗ**, và **không dụng cụ nào bắt được**.
+
+#### 12. Hai phép đếm trong thân mục gốc **không khớp phép liệt kê của chính chúng** — sửa ở đây, thân mục giữ nguyên văn
+
+* Thân mục viết `historian_telemetry` *"mang đúng **bảy** cột"* rồi **liệt kê tám**: `id`, `result_id`,
+  `machine_code`, `metric`, `value`, `unit`, `quality`, `event_time_utc`. **DDL có TÁM.** Phép liệt kê đúng,
+  con số sai — đúng lý do luật *"LIỆT KÊ trước, con số viết SAU"* tồn tại, và lần này chính luật ấy bắt được
+  lỗi trong một mục đã công bố.
+* Thân mục viết `IHistorianStore` có *"**bảy** phương thức ĐỌC công khai"* rồi liệt kê bảy cái **trong đó có
+  `PruneOlderThanAsync`, mà chính câu ấy gọi là "một phép ghi"**. Đọc thật: **sáu**. (Và interface còn hai
+  phép ghi nữa — `AppendResultsAsync`, `AppendRunEventAsync` — không nằm trong phép đếm nào.)
+
+**Không dòng nào của thân mục gốc bị sửa**; hai chỗ lệch được ghi ở đây.
 
 ---
 

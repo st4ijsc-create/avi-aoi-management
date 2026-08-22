@@ -3573,7 +3573,34 @@ EXPECT_EDGESERVICE=52
 # lines existed transiently INSIDE control mutation 1 and were removed with it; `git diff` at the branch
 # tip contains neither.) AS-1 also touches web/ (five files) — `npm run build` (`tsc -b && vite build`)
 # was run green, because this gate does not compile TypeScript.
-EXPECT_ENGINEAPI=1388
+# 🔴 AU-1 (2026-08-22, owner item 17 — base 659bcfb2) RAISES THIS 1388 -> 1395 (+7) AND MOVES NO OTHER SUITE
+# TOTAL. COUNTED FROM THE RUNNER (`dotnet test --list-tests`: 1395), not by hand, and counted AFTER the file
+# was written rather than predicted before it. ONE new file, tests/St4i.EngineApi.Tests/
+# HistorianTelemetryProvenanceTests.cs, seven [Fact]s; no existing test was rewritten or deleted. The three
+# IHistorianStore test fakes that had to gain the new optional parameter (HistorianWriterTests,
+# FleetHostGateCommitCompletionTests, FleetHostHistorianWiringTests) each changed exactly one signature line
+# and moved no count — EXPECT_EDGECORE stays 1179.
+#
+# 🔴 WHAT THE SEVEN ARE, MEASURED BY RUNNING BOTH CONTROLS RATHER THAN ASSERTED. The taxonomy below CORRECTED
+# a label the author had written wrong, which is the reason it is stated here at all:
+#   - Control A (the gate deleted from SqliteHistorianStore.QueryTelemetryAsync): 4 RED / 3 green. The four
+#     reds are the witnesses — GateOptIn_OnAMachineWithBothKinds_…, GateOptIn_OnAPurelyFabricatedMachine_…,
+#     GateOptIn_UnknownProvenanceSamples_AreExcludedOnce…, StoreLevelDefault_IsTheGatedOne_….
+#   - Control B (the endpoint default flipped from `?? true` to the sibling rule): exactly 1 RED —
+#     Default_WithNoExplicitValue_StillReturnsEverySampleIncludingFabricated_LegacyContinuity — and it was the
+#     ONLY red anywhere. 🔴 That is a finding, not a pass: before this file existed NOTHING in the suite could
+#     see that flip, so the row-loss item 17's STOP condition exists to prevent had no witness at all.
+#   - RED under NEITHER control: TheJoinThisReadWasSaidToBeUnableToMake_IsTotal_… (a structural measurement,
+#     deliberately independent of the gate) and GateOptIn_UnknownProvenanceSamples_PassWhenNothingExplicitly
+#     Real… — 🔴 THE LATTER WAS WRITTEN AS A WITNESS AND MEASURED AS A GUARD, then relabelled in the file.
+#     Both carry that label on themselves. A test green on both sides of a control measures nothing about it.
+#
+# EXPECT_WARNINGS and EXPECT_BUILD_NODES: re-measured on a full `MSBUILDDISABLENODEREUSE=1 dotnet build
+# -t:Rebuild` after this task, not assumed — stated at their own constants below. Nothing was suppressed for
+# AU-1: no .editorconfig change, no <NoWarn>, no #pragma, no SuppressMessage. The two control mutations were
+# a one-line `if (false)` and a one-character default flip; both were reverted and `git diff` at the branch tip
+# contains neither. AU-1 does NOT touch web/, so no web build was required (and none of its edits are TS).
+EXPECT_ENGINEAPI=1395
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

@@ -188,10 +188,51 @@ public static class HistorianEndpoints
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // GET /v1/historian/telemetry?machine=&metric=&from=&to=
+    // GET /v1/historian/telemetry?machine=&metric=&from=&to=&includeFabricated=
     // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 <b>This route resolves <c>includeFabricated</c> DIFFERENTLY from every sibling route in
+    /// this file, deliberately, and the difference is an owner's open question rather than a settled design.
+    /// Read both halves before changing the line.</b>
+    ///
+    /// <para>Siblings resolve through <see cref="ResolveIncludeFabricated"/>, whose default is
+    /// <c>demoGate?.Enabled ?? false</c> — on a real (non-demo) deployment that is <see langword="false"/>,
+    /// so the provenance gate is ON and fabricated rows are hidden. This route defaults to
+    /// <see langword="true"/> instead, so the gate stays OFF and the response is exactly what it was before
+    /// <see cref="IHistorianStore.QueryTelemetryAsync"/> gained the parameter at all.</para>
+    ///
+    /// <para><b>Why, measured rather than assumed.</b> Wiring this route to
+    /// <see cref="ResolveIncludeFabricated"/> does not narrow the response — for the case that matters it
+    /// EMPTIES it. <c>machine</c> is a REQUIRED parameter here, so the gate's real-presence probe always runs
+    /// inside a single machine's scope. For a machine whose readings are all fabricated — an ordinary
+    /// simulated machine on a roster that also has real ones, on a deployment where <c>DemoModeGate</c> is
+    /// off, which is every product install — the probe finds nothing explicitly real, the admitted set becomes
+    /// <c>(is_fabricated IS NULL OR is_fabricated = 0)</c>, and every one of that machine's samples is
+    /// excluded. A trend chart that shows a series today would show an empty series, permanently. That is the
+    /// same failure shape <see cref="ResolveIncludeFabricated"/>'s own doc comment records for the sibling
+    /// routes before its Fix 1 — "not 'narrower than intended,' literally zero" — and it is why flipping this
+    /// default is not a free correction.</para>
+    ///
+    /// <para><b>And the cost of the default as it stands, which is the half this comment must not omit.</b>
+    /// Leaving it <see langword="true"/> means two customer-facing routes answer the SAME question about the
+    /// SAME data differently: <c>GET /v1/historian/results</c> hides a fabricated machine's readings while
+    /// <c>GET /v1/historian/telemetry</c> charts that machine's samples, and nothing in the response says
+    /// which it is. That divergence is not created here — it is item 17, it predates this parameter, and
+    /// before this parameter existed it could not even be expressed. What is new is that it is now a
+    /// one-line, reviewable decision instead of a structural claim that the gate "cannot be applied".</para>
+    ///
+    /// <para><b>If the owner rules the default should flip:</b> replace <c>includeFabricated ?? true</c> below
+    /// with <c>ResolveIncludeFabricated(includeFabricated, demoGate)</c> and add the
+    /// <see cref="DemoModeGate"/><c>?</c> trailing parameter this route deliberately does NOT take today.
+    /// Taking it must happen in the SAME change, not after: without it an exhibition install's telemetry goes
+    /// to zero on a 100%-simulated roster, which is precisely the bug Fix 1 fixed for the other routes.</para>
+    ///
+    /// <para>An explicit <c>?includeFabricated=false</c> opts IN to the gate on this route today. No shipped
+    /// client sends one — no web page, no WPF view and no report calls this route at all; its only in-repo
+    /// callers are tests.</para></summary>
     internal static async Task<IResult> GetTelemetryAsync(
-        string? machine, string? metric, string? from, string? to, IHistorianStore store, CancellationToken ct)
+        string? machine, string? metric, string? from, string? to, IHistorianStore store, CancellationToken ct,
+        bool? includeFabricated = null)
     {
         if (string.IsNullOrWhiteSpace(machine)) return Results.BadRequest(new ApiErrorDto("machine is required."));
         if (string.IsNullOrWhiteSpace(metric)) return Results.BadRequest(new ApiErrorDto("metric is required."));
@@ -201,7 +242,13 @@ public static class HistorianEndpoints
         if (!TryParseDate(from, out var fromParsed)) return BadDate("from", from);
         if (!TryParseDate(to, out var toParsed)) return BadDate("to", to);
 
-        var points = await store.QueryTelemetryAsync(machine, metric, fromParsed, toParsed, ct).ConfigureAwait(false);
+        // 🔴 NOT ResolveIncludeFabricated — the one line item 17's open half turns on. `?? true` reproduces
+        // this route's pre-2026-08-22 response exactly; see this method's doc comment for the measurement of
+        // what `ResolveIncludeFabricated(includeFabricated, demoGate)` would cost here and what leaving it
+        // costs instead.
+        var points = await store
+            .QueryTelemetryAsync(machine, metric, fromParsed, toParsed, ct, includeFabricated ?? true)
+            .ConfigureAwait(false);
         return Results.Ok(points.Select(p => new TelemetryPointDto(p.At, p.Value)).ToArray());
     }
 
