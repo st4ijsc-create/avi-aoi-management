@@ -6,7 +6,7 @@
 
 ---
 
-## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 8), HEAD `adc24316` (remote `fresh`)
+## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 9), HEAD `592d26ef` (remote `fresh`)
 
 > ### ⚠ ĐỌC DÒNG NÀY TRƯỚC KHI ĐỌC BẤT KỲ CON SỐ NÀO Ở DƯỚI
 > Trong hai ngày 21–22/08, **hai mươi hai** mục của tài liệu này bị phép đo bác bỏ: E1 · F3 ·
@@ -36,7 +36,7 @@
 | **F1** (chỉ 15% màn hưởng lợi) | ✅ ĐÓNG `4b157955` | ⚠ **cả bốn con số của F1 đã lạc hậu theo hướng BI QUAN** — xem ghi chú dưới. Nợ thật `139 → 0`, nay là BẤT BIẾN (`rawErrorMessageCensus`) |
 | **F2** | ✅ ĐÓNG `8993b868` | khai 75 chỗ — đo được **3**. Nay BẤT BIẾN 0 |
 | **F4, F5, F6, F7, F8** | ✅ vốn ĐÃ ĐÓNG | đo 2026-08-22: F7a **0/77** câu en chữ thường (khai 336/384) · `errors.reason.*` 45 khoá + 12 khoá `_WITH_REASON` · entity hết trùng nghĩa · zh hết lệch thuật ngữ · `entity.factory` KHÔNG chết (dùng 3 chỗ) |
-| **F3** | ⏳ CÒN — mục DUY NHẤT | **547 chỗ** (không phải 64), phần lớn là lỗi codec/driver NỘI BỘ |
+| **F3** | ⏳ CÒN — mục DUY NHẤT | **Pha 1 XONG** `592d26ef`: 547 → **502**. Còn pha 2 (224 chỗ có đường tới giao diện) + pha 3 (nội bộ) |
 | **F9** | ✅ vốn ĐÃ ĐÓNG (doc71 task 11) | hash giả sinh runtime đúng cost · `bcrypt.compare` chạy MỌI nhánh · truy vấn `userId=-1` giữ nguyên hình dạng · có ca đo TRUNG VỊ độ trễ (F9-D, F9-E) |
 | **F10-F13** (nhãn giao diện en/zh) | ✅ ĐÓNG | xem §4c/§4d — hình-dạng-3 `914 → 0` qua 17 lô |
 | **G** (machine-auth + giấy phép) | ✅ ĐÓNG | `fa00e4cb` — 17→0 khoá plaintext (mig 0334), hai đường yếu nay mặc định `deny` |
@@ -47,7 +47,7 @@
 
 ### F3 — 547 chỗ `throw new Error(...)` ngoài `server/routers/**`
 
-Cổng: `server/_core/rawErrorCensus.test.ts` (ngân sách 547, chỉ được GIẢM; cộng hai bất biến
+Cổng: `server/_core/rawErrorCensus.test.ts` (ngân sách **502**, chỉ được GIẢM; cộng hai bất biến
 "0 chỗ ném thô họ DB" cho `server/db/**` và cho toàn server).
 
 **⚠ F3 KHÁC F14 Ở MỘT ĐIỂM QUYẾT ĐỊNH — đọc trước khi lập kế hoạch.**
@@ -75,14 +75,30 @@ Theo khả năng tới người dùng:
 
 #### Kế hoạch — ba pha, theo GIÁ TRỊ chứ không theo số lượng
 
-**Pha 1 — họ "driver không kết nối" (~60 chỗ, giá trị cao nhất).**
-Đây là họ ĐỒNG NHẤT duy nhất trong 547 chỗ: `"ModbusDriver: not connected"`,
-`"OpcuaDriver: not connected"`, `"${protocol} driver not implemented"`… Nó nổi lên đúng lúc
-người vận hành thử nói chuyện với một cái máy — chuyện thường ngày ở nhà máy.
-Hai mã đã DỰNG SẴN từ F14 và đủ ba locale: `DEVICE_UNREACHABLE` /
-`DEVICE_PROTOCOL_UNSUPPORTED`, cùng 7 khoá `errors.entity.<protocol>`.
-⇒ Việc còn lại chỉ là dùng chúng, theo đúng khuôn `deviceAdapter.testConnection`: **trả mã
-cho người vận hành, GIỮ chuỗi kỹ thuật cho kỹ sư**.
+**Pha 1 — họ "driver không kết nối" — ✅ XONG `592d26ef` (2026-08-22).**
+45 chỗ / 17 file: 38 chỗ `"<X>Driver: not connected"` → `DeviceUnreachableError` (7 driver OT
++ 6 driver robot + ursim + rosbridge + HSMS), 7 chỗ driver chưa hiện thực →
+`DeviceProtocolUnsupportedError`.
+
+Dùng **LỚP LỖI** (khuôn `DbUnavailableError`) chứ không `appError()`: `appError` dựng một
+`TRPCError`, tức kéo `@trpc/server` vào tầng driver — một driver Modbus không nên phụ thuộc
+giao thức truyền tải để nói được câu "tôi chưa kết nối". tRPC bọc mọi throw thành
+`TRPCError({ cause })`, và `readAppErrorMeta()` đọc `cause.appCode` **và** `cause.appParams`.
+
+⚠ **Ở ĐÂY KHÔNG MẤT THÔNG TIN, KHÁC F14.** F14 phải trả CẢ HAI (mã + chuỗi thô) vì chuỗi thô
+mang thông tin mã không có (`"ECONNREFUSED 10.0.0.5:502"`). Còn `"ModbusDriver: not connected"`
+chỉ mang ĐÚNG MỘT thông tin — driver nào — mà `appParams.entity` đã chở rồi. Chỗ nào chuỗi
+gốc có thêm chi tiết thì truyền vào tham số `chiTiet` → vào `message` → làm fallback.
+
+⚠ **Bẫy "hai tập trùng MỘT PHẦN" (lần thứ tư trong đợt):** `OtProtocol` khớp đúng 7 khoá
+entity đã có, nhưng `RobotVendor` thì không — và nguy hiểm nhất là nó có `"mitsubishi"`
+(robot) trong khi `OtProtocol` có `"mitsubishi-mc"` (PLC MELSEC). Dùng thẳng giá trị vendor
+làm khoá thì hoặc tra trúng khoá KHÁC NGHĨA, hoặc không có khoá nào và người dùng đọc
+*"Không kết nối được tới thiết bị mitsubishi"*. ⇒ Bảng ánh xạ tường minh
+`KHOA_THUC_THE_ROBOT` + 9 khoá entity mới ×3 locale.
+
+Cổng: `server/_core/deviceErrors.test.ts` — đường này **nằm ngoài tầm nói của**
+`entityDictionaryCoverage` (cổng đó chỉ quét `appError(...)`).
 
 **Pha 2 — 224 chỗ trong file được router import.**
 Với từng chỗ, hỏi **"có ai BẮT nó giữa đường không?"**:
