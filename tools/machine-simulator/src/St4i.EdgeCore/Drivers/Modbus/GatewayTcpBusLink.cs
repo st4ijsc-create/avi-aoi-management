@@ -131,7 +131,18 @@ public sealed class GatewayTcpBusLink : IModbusBusLink
     /// <c>System.IO.Ports</c> — the dependency scoping <c>SerialDependencyScopingTests</c> pins, and a
     /// <c>cref</c> here raises <c>CS1574</c>. <b>The consumer that scan cannot see is NModbus's own
     /// transport, which holds this link as an <c>IStreamResource</c> and lives outside this
-    /// repository.</b></para></summary>
+    /// repository.</b></para>
+    ///
+    /// <para>📐 <b>The literal "20 lines" above is RETRACTED 2026-08-22 (task BA-1, item 40). The
+    /// sentence is kept verbatim and its finding — FORWARDED, not BRANCHED on — survives
+    /// re-measurement.</b> The number was right when it was taken and wrong in the commit that shipped
+    /// it. Re-run over the tracked <c>*.cs</c> of this tree, the same scan reads 20 at <c>3f564039</c>,
+    /// the base this paragraph was written on, and 22 at <c>9da2b2f6</c>, the commit that published it;
+    /// the two added lines are this paragraph's own predecessor. <b>A whole-tree scan for a string,
+    /// whose result is then written back into the tree it scanned, invalidates its own number in the
+    /// same commit</b> — and a reader who re-runs it to check the claim gets a mismatch that looks like
+    /// drift. Treat any literal here as a sample from the day it was taken and re-run the scan; the
+    /// count is 22 as of <c>89018893</c>, and this paragraph will have moved it again.</para></summary>
     public int InfiniteTimeout => -1;
 
     /// <summary>Set by NModbus's transport before each transaction; probing confirmed the transport propagates

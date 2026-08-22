@@ -150,6 +150,27 @@ scan_into "$SIMROOT" "$TMP/now.list" "$TMP/now.hits" "$TMP/now.count"
 read -r NOW_SENT NOW_HITS < "$TMP/now.count"
 NOW_FILES=$(grep -c . "$TMP/now.list" || true)
 
+# 🔴 NON-VACUITY, added by BA-1 (2026-08-22, item 40). repo-scan.sh was found shipping the very
+# defect it was built to catch — a default that returned 0 for every scan — and all three
+# instruments were then swept for the same species: a population that can go EMPTY while the tool
+# reports a number as though it had measured something. This script had two places for it.
+#
+# The first is `scan_into`, which on an empty file list writes `0 sentences / 0 hits` and returns
+# without a word. In `--census` that is visible, because census PRINTS the corpus size. In
+# `--since` — the mode the GATE runs — the corpus size was never printed at all: an empty corpus
+# produced "NEW absolute doc claims : 0" and "PASS", which is the shape of a clean run.
+#
+# Not reachable through the default corpus today, and that is stated rather than implied: `find`
+# over $SIMROOT returns hundreds of *.cs. It is reachable through `--files`, and it is reachable
+# by anything that moves the tree. A guard costs one comparison; the failure it prevents is a
+# green gate that read nothing.
+if [[ "$NOW_FILES" -eq 0 ]]; then
+  echo "scan-doc-negations: the corpus is EMPTY — 0 *.cs files under $PREFIX. Every number this
+      script could print would be about nothing, and a 0 here is not 'no absolute claims', it is
+      'no files were read'. Refusing rather than reporting. (docs/owner-decisions.md item 40.)" >&2
+  exit 2
+fi
+
 if [[ "$MODE" == census ]]; then
   echo "── item 26 · universal-negation census ─────────────────────────────────────────────────"
   echo "   corpus : $NOW_FILES *.cs under $PREFIX (bin/obj/TestResults/node_modules pruned)"
@@ -175,6 +196,27 @@ git -C "$REPOROOT" archive "$SHA" "$PREFIX" | tar -x -C "$TMP/base" 2>/dev/null 
   echo "scan-doc-negations: could not extract $PREFIX at $SHA" >&2; exit 2; }
 corpus_of "$TMP/base/$PREFIX" "$TMP/base.list"
 scan_into "$TMP/base/$PREFIX" "$TMP/base.list" "$TMP/base.hits" "$TMP/base.count"
+BASE_FILES=$(grep -c . "$TMP/base.list" || true)
+read -r BASE_SENT _BASE_HITS < "$TMP/base.count"
+
+# The second empty-population hole, and it fails in the OPPOSITE direction to the first — worth
+# separating, because "it errors loudly" is not the same as "it is guarded". If the archive/extract
+# above yields no *.cs, every sentence present now reads as ADDED, so NEW jumps to the whole census
+# and the run goes red with a number that is pure artefact. Loud, but wrong, and a red for the
+# wrong reason teaches the next reader to raise --expect. Named here instead.
+if [[ "$BASE_FILES" -eq 0 ]]; then
+  echo "scan-doc-negations: the BASE corpus at $REF ($SHA) is EMPTY — 0 *.cs extracted for
+      $PREFIX. Every current sentence would count as new, so the number below would be the whole
+      census wearing the label 'added since $REF'. Refusing. Check that $PREFIX existed at that
+      commit. (docs/owner-decisions.md item 40.)" >&2
+  exit 2
+fi
+if [[ "$NOW_SENT" -eq 0 ]]; then
+  echo "scan-doc-negations: $NOW_FILES files were read and they contain ZERO doc-comment sentences.
+      A comparison against $REF is vacuous — 0 new claims because there are no claims. Refusing.
+      (docs/owner-decisions.md item 40.)" >&2
+  exit 2
+fi
 
 # Identity is (path, sentence) — line numbers move for reasons that are not claims.
 cut -f1,3 "$TMP/now.hits"  | LC_ALL=C sort -u > "$TMP/now.id"
@@ -183,6 +225,10 @@ LC_ALL=C comm -23 "$TMP/now.id" "$TMP/base.id" > "$TMP/new.id"
 NEW=$(grep -c . "$TMP/new.id" || true)
 
 echo "── item 26 · absolute doc claims ADDED since $REF ($SHA) ───────────────────────────────"
+# The population, printed BEFORE the list and the count — until item 40 this mode named neither
+# corpus, so a reader could not tell a clean run from a run over nothing.
+echo "   corpus now  : $NOW_FILES *.cs under $PREFIX, $NOW_SENT doc-comment sentences"
+echo "   corpus base : $BASE_FILES *.cs at $SHA, $BASE_SENT doc-comment sentences"
 echo "── LISTED FIRST; the count is at the bottom and is derived from this list ──────────────"
 awk -F'\t' '{printf "  %s\n      %s\n", $1, $2}' "$TMP/new.id"
 echo "────────────────────────────────────────────────────────────────────────────────────────"

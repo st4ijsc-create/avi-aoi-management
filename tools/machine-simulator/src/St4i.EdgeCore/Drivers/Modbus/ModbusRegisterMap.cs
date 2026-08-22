@@ -397,7 +397,18 @@ public sealed class ModbusRegisterMap
     /// <c>ArgumentOutOfRangeException</c> at <c>-2</c> and below, out of a <c>catch</c> that handles
     /// cancellation and does not handle this. Recorded here as measured behaviour: the task that wrote this
     /// sentence documents the driver family under <c>docs/owner-decisions.md</c> item 25 and is not
-    /// permitted to change code, so this is a report at the point of use and not a fix.</para></summary>
+    /// permitted to change code, so this is a report at the point of use and not a fix.</para>
+    ///
+    /// <para>📐 <b>The words "Both drivers" above are RETRACTED 2026-08-22 (task BA-1, item 40). The
+    /// sentence is kept verbatim and the three measured failure shapes it records are untouched; what
+    /// does not survive re-measurement is the population.</b> Listed before counted, the consumers that
+    /// hand this value to <c>Task.Delay</c> are THREE, not two: <c>ModbusTcpDriver.ReadAsync</c> and
+    /// <c>OpcUaDriver.ReadAsync</c> pass <c>_map.PollIntervalMs</c> straight in, and
+    /// <c>ModbusRtuDriver.ReadAsync</c> passes it through <c>NextPollDelayMs()</c>. Two maps, three
+    /// drivers — so the unthrottled-loop and indefinite-wait shapes above reach the OPC-UA driver too,
+    /// which the sentence as written excludes. <c>docs/owner-decisions.md</c> item 38 measured this
+    /// correction on 2026-08-22 and recorded it in the ledger; THIS line, the source the ledger was
+    /// correcting, was left standing for a task cycle. Retracted at the source now.</para></summary>
     public int PollIntervalMs { get; init; } = 1000;
 
     /// <summary>The registers this map declares, in the order the poll loop reads them — one request per
