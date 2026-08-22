@@ -27,6 +27,21 @@
  * nhiễu). Cấu hình không đổi giữa chừng, nên một lần là đủ.
  */
 
+/**
+ * ⚠ ĐÃ CÓ MỘT BỘ IN KHÁC — ĐỌC TRƯỚC KHI THÊM BIẾN VÀO `inCauHinhHieuLuc`.
+ *
+ * `aiSmartAlertRouter.logEffectiveAlertRoutingEnvOnce()` (commit `bd895e92`) in ba biến
+ * `ALERT_RENOTIFY_COOLDOWN_*` + `ROUTE_ALERT_MAX_PER_WINDOW`, và xử lý được ca `"060"` /
+ * `"1e3"` (số HỢP LỆ nhưng lệch định dạng chuỗi) mà file này không xử lý.
+ *
+ * Ranh giới CỐ Ý giữa hai bộ:
+ *   • bộ kia — bảng "đang chạy bằng số nào" cho các biến của `aiSmartAlertRouter`;
+ *   • file này — cảnh báo TẠI ĐIỂM ĐỌC khi một biến ĐƯỢC ĐẶT mà vô nghĩa, cộng bảng cho
+ *     các biến của `alertExpirySweeper`.
+ * Mỗi biến chỉ thuộc MỘT bộ. Thêm biến vào cả hai là tạo hai nguồn sự thật sẽ lệch nhau —
+ * đúng lỗi tôi đã mắc ngày 2026-08-22 và phải gỡ ra.
+ */
+
 /** Biến đã cảnh báo — không lặp lại trên mỗi lời gọi. */
 const daCanhBao = new Set<string>();
 

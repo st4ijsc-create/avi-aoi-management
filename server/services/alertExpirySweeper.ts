@@ -94,23 +94,25 @@ export function initAlertExpirySweeper(): void {
   if (timer) return;
   const minutes = soDuongTuEnv("ALERT_EXPIRY_SWEEP_MINUTES", 30);
 
-  // E4 — in MỘT LƯỢT các giá trị ĐANG CÓ HIỆU LỰC của cả đường cảnh báo.
+  // E4 — in MỘT LƯỢT các giá trị ĐANG CÓ HIỆU LỰC của **ba biến thuộc bộ quét này**.
   //
-  // Trước bản này, người vận hành không có cách nào biết mình đang chạy với giá trị nào:
-  // gõ sai một biến ⇒ im lặng rơi về mặc định, không một dòng log. Người định TẮT bằng
-  // cách gõ nhầm nhận đúng hành vi BẬT — với cooldown, "bật" là bốn giờ im lặng về một
-  // cái máy sắp hỏng.
+  // ⚠ DANH SÁCH NÀY TỪNG CÓ SÁU BIẾN, VÀ ĐÓ LÀ MỘT LỖI CỦA TÔI (2026-08-22).
+  // `aiSmartAlertRouter.logEffectiveAlertRoutingEnvOnce()` (commit `bd895e92`) ĐÃ in ba
+  // biến `ALERT_RENOTIFY_COOLDOWN_*` + `ROUTE_ALERT_MAX_PER_WINDOW` từ trước — kèm cả xử
+  // lý ca "060"/"1e3" mà bản của tôi không có. Tôi không thấy nó vì đã đo bằng cách tìm
+  // TÊN BIẾN đứng cạnh `console.log`, trong khi hàm đó nhận tên biến làm THAM SỐ
+  // (`describeOne(envName, …)`).
+  //   ⇒ Bài học: **grep theo mặt chữ không tìm được thứ được truyền vào như dữ liệu.**
+  //     Cùng họ với bài học "phép đếm thô ≠ kiểm kê" đã trả giá ở doc 78.
+  //   ⇒ Và hậu quả nếu để nguyên đúng là thứ tôi cảnh báo cả đợt này: HAI bộ in chồng
+  //     nhau, sẽ lệch nhau ở lần sửa kế tiếp. Nay mỗi module chỉ in biến của CHÍNH NÓ.
   //
-  // In ở đây vì đây là điểm khởi động DUY NHẤT của đường này; `soDuongTuEnv` tự cảnh báo
-  // riêng cho từng biến đặt-sai, còn dòng dưới trả lời câu hỏi khác: *"rốt cuộc hệ đang
-  // chạy bằng số nào?"* — thứ mà một dòng cảnh báo lẻ không trả lời được.
-  inCauHinhHieuLuc("vòng đời cảnh báo", [
+  // Phần KHÔNG trùng và vẫn giữ: `soDuongTuEnv` cảnh báo ngay TẠI ĐIỂM ĐỌC khi một biến
+  // được đặt mà vô nghĩa — bộ in kia chỉ chạy một lần lúc khởi động module của nó.
+  inCauHinhHieuLuc("vòng đời cảnh báo (bộ quét)", [
     ["ALERT_EXPIRY_SWEEP_MINUTES", 30],
     ["ALERT_OCCURRENCE_RETENTION_DAYS", 90],
     ["ALERT_TTL_HOURS", 72],
-    ["ALERT_RENOTIFY_COOLDOWN_MINUTES", 240, "khongAm"],
-    ["ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES", 0, "khongAm"],
-    ["ROUTE_ALERT_MAX_PER_WINDOW", 200],
   ]);
   timer = setInterval(() => {
     // Task 3 — gọi ĐỘC LẬP: đóng cảnh báo và dọn nhật ký là hai việc khác
