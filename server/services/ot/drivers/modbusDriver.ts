@@ -27,6 +27,7 @@ import type {
   OnOtSample,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import {
   parseModbusAddress,
   decodeModbus,
@@ -221,7 +222,7 @@ export class ModbusDriver extends NotImplementedDriver {
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
     if (!this.connected || !this.client) {
-      throw new Error("ModbusDriver: not connected");
+      throw new DeviceUnreachableError("modbus");
     }
     if (tags.length === 0) return [];
 
@@ -240,7 +241,7 @@ export class ModbusDriver extends NotImplementedDriver {
     onSample: OnOtSample,
     intervalMs = 5000,
   ): Promise<OtSubscriptionHandle> {
-    if (!this.connected) throw new Error("ModbusDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("modbus");
 
     const tick = async () => {
       try {
@@ -311,7 +312,7 @@ export class ModbusDriver extends NotImplementedDriver {
    */
   override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
     if (!this.connected || !this.client) {
-      throw new Error("ModbusDriver: not connected");
+      throw new DeviceUnreachableError("modbus");
     }
     if (writes.length === 0) return [];
 

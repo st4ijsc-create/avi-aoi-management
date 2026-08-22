@@ -9,6 +9,7 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
 } from "../robotDriver";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
 export class SimRobotDriver implements RobotDriver {
   readonly vendor: RobotVendor = "sim";
@@ -42,12 +43,12 @@ export class SimRobotDriver implements RobotDriver {
   }
 
   async getState(): Promise<RobotState> {
-    if (!this.connected) throw new Error("SimRobotDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("simRobot");
     return this.snapshot();
   }
 
   async subscribeState(onState: OnRobotState, intervalMs = 5000): Promise<RobotStateHandle> {
-    if (!this.connected) throw new Error("SimRobotDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("simRobot");
     const timer = setInterval(() => {
       try {
         void onState(this.snapshot());

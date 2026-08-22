@@ -23,6 +23,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import type WebSocket from "ws";
+import { DeviceUnreachableError } from "../../_core/deviceErrors";
 
 export type Ros2Message = Record<string, unknown>;
 export type Ros2MessageHandler = (topic: string, msg: Ros2Message) => void;
@@ -157,7 +158,7 @@ export class RosbridgeClient {
   }
 
   private send(payload: Record<string, unknown>): void {
-    if (!this.ws || !this.connected) throw new Error("rosbridge not connected");
+    if (!this.ws || !this.connected) throw new DeviceUnreachableError("rosbridge");
     this.ws.send(JSON.stringify(payload));
   }
 

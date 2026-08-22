@@ -3861,7 +3861,16 @@
       "slmp": "SLMP",
       "mitsubishi-mc": "Mitsubishi MELSEC MC",
       "ethernet-ip": "EtherNet/IP",
-      "stub": "stub (simulated)"
+      "stub": "stub (simulated)",
+      "deltaRobot": "Delta robot",
+      "fanucRobot": "Fanuc robot",
+      "mitsubishiRobot": "Mitsubishi robot",
+      "techmanRobot": "Techman robot",
+      "simRobot": "simulated robot",
+      "ursimRobot": "UR robot (URSim)",
+      "rosbridge": "ROS bridge",
+      "hsms": "HSMS (SECS/GEM)",
+      "vda5050Robot": "VDA5050 AGV"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",

@@ -48,7 +48,7 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * Cả hai lô đổi sang `DbUnavailableError` — lớp tự mang `appCode: "DB_UNAVAILABLE"`
  * (mã đã có sẵn, đã đủ ba bản dịch), nên client dịch được mà formatter không đổi dòng nào.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 547;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 502;
 
 /**
  * Họ "DB không sẵn sàng": `407 → 83 → 1 → **0**` — nay là BẤT BIẾN, không phải ngân sách.

@@ -23,6 +23,7 @@
  *   - Giao dịch tuần tự (1 outstanding/socket) — tránh trộn response 3E/4E.
  */
 import net from "node:net";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import type {
   OtProtocol,
   OtDriver,
@@ -212,7 +213,7 @@ export class SlmpDriver implements OtDriver {
   private transact(request: Buffer): Promise<Buffer> {
     const run = async (): Promise<Buffer> => {
       const socket = this.socket;
-      if (!this.connected || !socket) throw new Error("SlmpDriver: not connected");
+      if (!this.connected || !socket) throw new DeviceUnreachableError("slmp");
       this.rxBuf = Buffer.alloc(0);
       return await new Promise<Buffer>((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -293,7 +294,7 @@ export class SlmpDriver implements OtDriver {
   }
 
   async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
-    if (!this.connected || !this.socket) throw new Error("SlmpDriver: not connected");
+    if (!this.connected || !this.socket) throw new DeviceUnreachableError("slmp");
     if (tags.length === 0) return [];
     const t0 = Date.now();
     const out: OtSample[] = [];
@@ -303,7 +304,7 @@ export class SlmpDriver implements OtDriver {
   }
 
   async subscribe(tags: OtTagAddress[], onSample: OnOtSample, intervalMs = 5000): Promise<OtSubscriptionHandle> {
-    if (!this.connected) throw new Error("SlmpDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("slmp");
 
     const tick = async () => {
       try {
@@ -368,7 +369,7 @@ export class SlmpDriver implements OtDriver {
    * 2 word; X/DX read-only → ok:false. endCode != 0 → ok:false (KHÔNG throw).
    */
   async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
-    if (!this.connected || !this.socket) throw new Error("SlmpDriver: not connected");
+    if (!this.connected || !this.socket) throw new DeviceUnreachableError("slmp");
     if (writes.length === 0) return [];
     const out: OtCommandResult[] = [];
     for (const w of writes) out.push(await this.writeOne(w));

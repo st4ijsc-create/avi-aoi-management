@@ -24,6 +24,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { UrsimClient, UR_PORTS, type UrsimEndpoint } from "./ursim/ursimClient";
+import { DeviceUnreachableError } from "../../_core/deviceErrors";
 import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
@@ -143,7 +144,7 @@ export class UrsimBridgeDriver implements RobotDriver {
   }
 
   async getState(): Promise<RobotState> {
-    if (!this.connected || !this.client) throw new Error("UrsimBridge: not connected");
+    if (!this.connected || !this.client) throw new DeviceUnreachableError("ursimRobot");
     try {
       const [modeReply, running] = await Promise.all([
         this.client.robotMode(),
@@ -169,7 +170,7 @@ export class UrsimBridgeDriver implements RobotDriver {
   }
 
   async subscribeState(onState: OnRobotState, intervalMs = 5000): Promise<RobotStateHandle> {
-    if (!this.connected) throw new Error("UrsimBridge: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("ursimRobot");
     const tick = async () => {
       try {
         const s = await this.getState();

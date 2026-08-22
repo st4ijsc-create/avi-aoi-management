@@ -59,6 +59,7 @@
  * ──────────────────────────────────────────────────────────────────────────
  */
 import { createConnection } from "node:net";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
@@ -467,7 +468,7 @@ export class FanucDriver implements RobotDriver {
   }
 
   async getState(): Promise<RobotState> {
-    if (!this.connected || !this.client) throw new Error("FanucDriver: not connected");
+    if (!this.connected || !this.client) throw new DeviceUnreachableError("fanucRobot");
     try {
       const status = await this.client.send(buildGetStatusPacket(), this.timeoutMs);
       const errId = Number(status.ErrorID ?? 0);
@@ -527,7 +528,7 @@ export class FanucDriver implements RobotDriver {
   }
 
   async subscribeState(onState: OnRobotState, intervalMs = 5000): Promise<RobotStateHandle> {
-    if (!this.connected) throw new Error("FanucDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("fanucRobot");
     const tick = async () => {
       try {
         const s = await this.getState();

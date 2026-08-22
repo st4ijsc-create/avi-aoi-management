@@ -86,6 +86,7 @@ import type {
 } from "../robotDriver";
 import type { RobotValidationStatus } from "../index";
 import { TcpLineClient } from "./tcpLineClient";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
 /**
  * FABRICATED default port for the mock ASCII channel — NOT a documented Delta port.
@@ -237,7 +238,7 @@ export class DeltaDriver implements RobotDriver {
 
   /** Send one command frame, await the reply, and throw if it is a Delta error. */
   private async command(cmd: string, args: Array<string | number> = []): Promise<DeltaReply> {
-    if (!this.client) throw new Error("DeltaDriver: not connected");
+    if (!this.client) throw new DeviceUnreachableError("deltaRobot");
     const frame = frameDeltaCommand(this.seq++, cmd, args);
     const reply = parseDeltaResponse(await this.client.send(frame, this.timeoutMs));
     if (!reply.ok) throw new Error(`Delta ${cmd} failed: error ${reply.errorCode ?? "?"}`);
@@ -301,7 +302,7 @@ export class DeltaDriver implements RobotDriver {
   }
 
   async getState(): Promise<RobotState> {
-    if (!this.connected || !this.client) throw new Error("DeltaDriver: not connected");
+    if (!this.connected || !this.client) throw new DeviceUnreachableError("deltaRobot");
     try {
       const status = decodeDeltaStatus((await this.command("RDSTS")).fields);
 
@@ -329,7 +330,7 @@ export class DeltaDriver implements RobotDriver {
   }
 
   async subscribeState(onState: OnRobotState, intervalMs = 5000): Promise<RobotStateHandle> {
-    if (!this.connected) throw new Error("DeltaDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("deltaRobot");
     const tick = async () => {
       try {
         const s = await this.getState();

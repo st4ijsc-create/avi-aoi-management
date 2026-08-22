@@ -33,6 +33,7 @@
 import net from "node:net";
 import { encodeItem, decodeItem, type SecsMessage, type SecsItem } from "./secsMessages";
 import { decodeItem as decodeSecs2Item, type Secs2Item } from "./secs2Codec";
+import { DeviceUnreachableError } from "../../_core/deviceErrors";
 import {
   encodeBody as encodeSecs2Body,
   s1f1,
@@ -395,7 +396,7 @@ export class HsmsClient {
   }
 
   private send(frame: Buffer): void {
-    if (!this.socket) throw new Error("HSMS not connected");
+    if (!this.socket) throw new DeviceUnreachableError("hsms");
     this.socket.write(frame);
   }
 

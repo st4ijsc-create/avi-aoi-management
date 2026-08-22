@@ -3861,7 +3861,16 @@
       "slmp": "SLMP",
       "mitsubishi-mc": "Mitsubishi MELSEC MC",
       "ethernet-ip": "EtherNet/IP",
-      "stub": "giả lập (stub)"
+      "stub": "giả lập (stub)",
+      "deltaRobot": "robot Delta",
+      "fanucRobot": "robot Fanuc",
+      "mitsubishiRobot": "robot Mitsubishi",
+      "techmanRobot": "robot Techman",
+      "simRobot": "robot mô phỏng",
+      "ursimRobot": "robot UR (URSim)",
+      "rosbridge": "ROS bridge",
+      "hsms": "HSMS (SECS/GEM)",
+      "vda5050Robot": "AGV theo chuẩn VDA5050"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",

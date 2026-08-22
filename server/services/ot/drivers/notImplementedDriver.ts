@@ -18,6 +18,7 @@ import type {
   OtHealth,
   OnOtSample,
 } from "../otDriver";
+import { DeviceProtocolUnsupportedError } from "../../../_core/deviceErrors";
 
 export abstract class NotImplementedDriver implements OtDriver {
   abstract readonly protocol: OtProtocol;
@@ -34,7 +35,7 @@ export abstract class NotImplementedDriver implements OtDriver {
   }
 
   async connect(_cfg: OtConnectionConfig): Promise<void> {
-    throw new Error(`${this.protocol} driver not implemented (${this.phase})`);
+    throw new DeviceProtocolUnsupportedError(this.protocol, this.phase);
   }
 
   async disconnect(): Promise<void> {
@@ -46,15 +47,15 @@ export abstract class NotImplementedDriver implements OtDriver {
   }
 
   async readTags(_tags: OtTagAddress[]): Promise<OtSample[]> {
-    throw new Error(`${this.protocol} driver not implemented (${this.phase})`);
+    throw new DeviceProtocolUnsupportedError(this.protocol, this.phase);
   }
 
   async subscribe(_tags: OtTagAddress[], _onSample: OnOtSample, _intervalMs?: number): Promise<OtSubscriptionHandle> {
-    throw new Error(`${this.protocol} driver not implemented (${this.phase})`);
+    throw new DeviceProtocolUnsupportedError(this.protocol, this.phase);
   }
 
   async writeTags(_writes: OtWrite[]): Promise<OtCommandResult[]> {
-    throw new Error(`${this.protocol} driver not implemented (${this.phase})`);
+    throw new DeviceProtocolUnsupportedError(this.protocol, this.phase);
   }
 
   async health(): Promise<OtHealth> {
