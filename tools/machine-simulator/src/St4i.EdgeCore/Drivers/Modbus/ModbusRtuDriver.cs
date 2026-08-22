@@ -138,6 +138,20 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// <see cref="DisposeAsync"/> — that is what makes the reference count track driver lifetime, which is
     /// what D-4 needs when N drivers share one link. A caller that wants the bus to outlive this driver takes
     /// its own second lease; it must not hand this one out twice.</param>
+    /// <param name="map">This device's register map: the unit id addressed on the wire, the poll cadence,
+    /// the per-attempt read timeout and retry count handed to
+    /// <see cref="ModbusBus.BeginTransactionAsync"/>, the writable points and the commands. <b>It is the one
+    /// argument <see cref="ModbusRtuConnectorFactory"/> varies per device</b> — that factory hands every
+    /// driver on its bus the same lease source, the same backoff, the same queue budget and the same log
+    /// callbacks, so on the production path the map is what one machine on a shared line has that its
+    /// neighbours do not. It is read here to build <see cref="Id"/>, <see cref="WritablePoints"/> and
+    /// <see cref="Commands"/>, and re-read on every poll and every write; the REFERENCE is stored rather
+    /// than a copy of the map, so the object handed in is the one this driver runs on for its whole life.
+    ///
+    /// <para><b><see langword="null"/> throws <see cref="ArgumentNullException"/> AFTER the lease has been
+    /// taken over, and that is not a corner case — it is the counterexample the
+    /// <see cref="ArgumentOutOfRangeException"/> remarks below were rewritten around.</b> The throw happens
+    /// inside the guard, so the lease is released on the way out.</para></param>
     /// <exception cref="ArgumentOutOfRangeException">🔴 Task D-4 — <paramref name="map"/>'s
     /// <see cref="ModbusRegisterMap.UnitId"/> is 0 (broadcast) or 248–255 (reserved). <b>The RTU construction
     /// boundary is where this rule lives</b> — see the class doc comment for why not in the shared parse path.
@@ -187,6 +201,19 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// covering every construction site rather than every construction site this product happens to have
     /// today, and <see cref="ModbusRtuConnectorFactory"/> keeps validating first because not taking a lease is
     /// still cheaper than handing one back.</para></exception>
+    /// <param name="logError">Where this driver's failures go, exception object and all: a failed poll (with
+    /// the streak count and what the next delay will be), a bus that refused a write, a device that rejected
+    /// one, and the two unexpected-failure backstops on the write paths. <see langword="null"/> is the
+    /// default and drops all of them.
+    ///
+    /// <para>🔴 <b>Passing <see langword="null"/> no longer disables the read backoff, and it once did.</b>
+    /// The consecutive-failure counter lived inside the argument to <c>_logError?.Invoke(...)</c>, and
+    /// <c>?.</c> short-circuits its arguments — so every driver built without this callback counted zero
+    /// failures forever and backed off never. It is a separate statement now; see
+    /// <see cref="ReadAsync"/>'s own remarks for how that was found, which was by an end-to-end measurement
+    /// and not by reading. What a <see langword="null"/> here still costs is the log line, not the
+    /// behaviour: health transitions, the backoff and every <c>WriteOutcome</c> detail are
+    /// unaffected.</para></param>
     /// <param name="readBackoff">🔴 Task D-7a — the per-device READ backoff (see
     /// <see cref="ModbusRtuReadBackoff"/>). <see langword="null"/> means
     /// <see cref="ModbusRtuReadBackoff.Disabled"/>, i.e. byte-for-byte this class's pre-D-7a poll cadence.
@@ -324,6 +351,22 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
         }
     }
 
+    /// <summary>This driver's stable identity, built once in the constructor and never recomputed:
+    /// <c>modbus-rtu:{busKey}:unit{unitId}:{machineCode}</c>.
+    ///
+    /// <para><b>It carries the unit id, and <see cref="ModbusTcpDriver"/>'s equivalent does not.</b> That
+    /// difference is the multidrop story in one string: over TCP an endpoint IS a device, whereas here N
+    /// devices share one <see cref="ModbusBusLease.Bus"/> key, so an id built from the bus alone would give
+    /// every machine on the line the same name. Both the bus key and the machine code are in there as well,
+    /// which makes it possible to read off which physical line a device sits on without consulting the
+    /// configuration.</para>
+    ///
+    /// <para><b>Two consequences of it being a derived string rather than an opaque handle.</b> It changes
+    /// if the map's unit id or machine code changes, because it is computed from them — so it is an
+    /// identity for a configured device, not for a driver instance. And this file's own constructor comment
+    /// records what it keys downstream — slot labels, and through them alarm <c>TargetId</c>s — which is
+    /// what makes a change to a machine code or a unit id a rename an operator can see, not an internal
+    /// detail.</para></summary>
     public string Id { get; }
 
     /// <summary>The same connector id as the TCP driver. RTU and TCP are two transports for ONE protocol, and
@@ -333,6 +376,25 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// configuration, and is visible in <see cref="Id"/>.</summary>
     public string Kind => DriverKinds.Modbus;
 
+    /// <summary>What this device's last poll did, as the fleet sees it. Four assignments exist in this class
+    /// and they are the whole state machine: the constructor sets <see cref="DriverHealthState.Down"/>, a
+    /// poll that returned a reading sets <see cref="DriverHealthState.Connected"/>, a poll that threw sets
+    /// <see cref="DriverHealthState.Degraded"/>, and <see cref="DisposeAsync"/> sets
+    /// <see cref="DriverHealthState.Down"/> again.
+    ///
+    /// <para><b><see cref="DriverHealthState.Down"/> therefore means "has not polled yet, or is gone" — it
+    /// is not the failure state.</b> A device that cannot be reached at all reads
+    /// <see cref="DriverHealthState.Degraded"/>, because the poll loop is resilient by design: a bus failure
+    /// is caught, recorded here, and retried on the next iteration rather than ending the
+    /// enumeration.</para>
+    ///
+    /// <para><b>It says nothing about the shared line, only about this device.</b> Two drivers on one bus
+    /// report independently, so a bus whose link is faulted shows up as several
+    /// <see cref="DriverHealthState.Degraded"/> devices rather than as one bus-level fact — there is no
+    /// bus-level fact on <see cref="St4i.Connector.Abstractions.IDeviceDriver"/> to put it in. Nor does it
+    /// distinguish a device being backed off from one being polled at its declared cadence;
+    /// <see cref="ModbusRtuReadBackoff"/>'s own remarks record that gap and why inventing a member for it
+    /// would put a Modbus concept on the seam every driver implements.</para></summary>
     public DriverHealthState Health { get; private set; }
 
     /// <inheritdoc/>
@@ -796,6 +858,21 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// classify a third-party exception type is the "trust the name" move this batch has already paid for
     /// twice.</para>
     /// </summary>
+    /// <param name="point">The declared metric name of the writable register, carried through only so the
+    /// <see cref="SetpointWriteResult"/> and this method's four <c>logError</c> lines can name what the
+    /// operator asked for — counted, because a doc comment that says "the log line" about a method with
+    /// four of them is the kind of number this file has already been caught on. Nothing
+    /// on this path looks it up again: <see cref="WriteSetpointAsync"/> has already resolved it against the
+    /// map, range-checked the engineering value and converted it, so by here it is a label rather than a
+    /// key.</param>
+    /// <param name="address">The Modbus register address the FC06 goes to, already resolved from the map by
+    /// the caller. Paired with the map's own <see cref="ModbusRegisterMap.UnitId"/> at the call to NModbus —
+    /// the address alone does not identify anything on a multidrop line.</param>
+    /// <param name="rawWord">The 16-bit word to write, already scaled and bit-cast by
+    /// <see cref="ModbusRegister.TryComputeRawWordForWrite"/>. This method applies no conversion of its
+    /// own, so what is here is what lands in the register — and it is also what NModbus compares the
+    /// device's echo against, which is what makes a normal return mean "the device confirmed THIS value"
+    /// rather than "the device answered".</param>
     /// <param name="ct">The CALLER's token. Everything after the bus has been taken is bounded by this alone —
     /// a self-imposed queue budget must never abort a request that is already on the wire, because that would
     /// turn a write that was one round trip from a definitive answer into an
@@ -900,6 +977,22 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// possibly-latched coil on the caller's behalf: deciding what to do about an unconfirmed device state is a
     /// human's call, and on a shared bus a second uninstructed write is also everyone else's problem.</para>
     /// </summary>
+    /// <param name="commandName">The declared command name, carried through so the
+    /// <see cref="CommandResult"/> and the log lines can name what was invoked. Already validated by
+    /// <see cref="InvokeCommandAsync"/> against the map, so by here it is a label rather than a key —
+    /// the same role <paramref name="coilAddress"/>'s counterpart <c>point</c> plays on the setpoint
+    /// path.</param>
+    /// <param name="coilAddress">The coil the FC05 pair asserts and then resets, resolved from the map by
+    /// the caller. <b>Which outcomes name it is not incidental: it appears in exactly the six results where
+    /// the coil's state is in question, and in none of the six where it provably is not.</b> The pre-wire
+    /// refusals (<see cref="NotOnTheWireDetail"/>, <see cref="QueueBudgetElapsedDetail"/>,
+    /// <see cref="BusRefusedDetail"/>, <see cref="BusDisposedDetail"/>, the unreachable-device case) and the
+    /// device's explicit rejection of the ASSERT all name the unit and the machine instead — for those the
+    /// coil was not touched, so naming it would invite a reader to go and look at something that did not
+    /// move. From the assert attempt's unknown outcome onwards it is named every time, including on the
+    /// success path. Where it does appear it is deliberately not the headline: an operator reading an
+    /// unconfirmed result is told the cycle may have started before being told which coil it was. It stays
+    /// in the text because it is what a commissioning engineer puts a meter on.</param>
     /// <param name="ct"><inheritdoc cref="ExecuteRegisterWriteAsync" path="/param[@name='ct']"/></param>
     /// <param name="acquireCt"><inheritdoc cref="ExecuteRegisterWriteAsync" path="/param[@name='acquireCt']"/></param>
     private async Task<CommandResult> ExecuteCoilPulseAsync(
@@ -1185,7 +1278,23 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// CANCELLATION, and pointing this one at it would attach the wrong explanation to the right conclusion.
     /// D-3's review found a doc block on <see cref="ModbusRegister"/> re-parented onto the wrong member once
     /// already, and nothing in this repository's build catches it — <c>GenerateDocumentationFile</c> is not
-    /// set anywhere, so no warning fires for a doc comment that describes something else.</summary>
+    /// set anywhere, so no warning fires for a doc comment that describes something else.
+    ///
+    /// <para>📐 <b>The clause <i>"<c>GenerateDocumentationFile</c> is not set anywhere"</i> is RETRACTED
+    /// 2026-08-22 (item 12, stage 10). The sentence above is kept verbatim, which is this repository's
+    /// convention for a withdrawn claim, and the CONCLUSION it draws survives.</b> The premise does not:
+    /// item 12 stage 3 set <c>&lt;GenerateDocumentationFile&gt;true&lt;/&gt;</c> on
+    /// <c>src/St4i.EdgeCore/St4i.EdgeCore.csproj</c> in 2026-08-19, and <c>SuppressionCensusTests</c> pins
+    /// the resulting table at EIGHT projects on and seven off (plus the vendored sample's own project) —
+    /// counted from that pinned table rather than asserted. What the flag actually buys is a warning for an
+    /// ABSENT doc block
+    /// (<c>CS1591</c>/<c>CS1573</c>), and a block re-parented onto the wrong member is present on both
+    /// members' terms, so it raises neither. <c>DocCommentProseTests</c> asks whether every block parses as
+    /// XML and uses registered element names; the question of WHICH member a block belongs to is outside it
+    /// — which is item 26's distinction between coverage and correctness, arriving on a member that had
+    /// already named the hazard. The same clause appears once more, on
+    /// <see cref="ModbusRegister.DecodeRawWord"/>, and is retracted there in the same
+    /// change.</para></summary>
     private string BusDisposedDetail() =>
         $"the shared RTU bus '{_lease.Bus.Key}' was disposed before this write could start, so no byte reached the " +
         $"line and unit {_map.UnitId} ({_map.MachineCode}) is untouched. The connector is being torn down.";

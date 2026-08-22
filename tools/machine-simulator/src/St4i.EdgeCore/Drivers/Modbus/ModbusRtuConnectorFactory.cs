@@ -80,6 +80,29 @@ public sealed class ModbusRtuConnectorFactory : IConnectorFactory
     /// <see cref="ModbusRtuDriver"/>'s own constructor default, deliberately: a directly-constructed driver
     /// keeps its pre-D-7a cadence so D-2…D-6's measurements stay comparable, while every driver that reaches
     /// production comes through here and gets the mitigation.</param>
+    /// <param name="busSettings">Post-timeout recovery tuning for the ONE bus this factory's
+    /// <paramref name="busKey"/> names. <see langword="null"/> — the value a host that has not tuned anything
+    /// passes — is handed on to <see cref="ModbusBusRegistry.Acquire"/>, which substitutes
+    /// <see cref="ModbusBusSettings.Default"/>. <b>It is applied only by the <see cref="TryCreate"/> call
+    /// that CREATES the bus</b>, for the same reason <paramref name="openLink"/> is: every later device on
+    /// the same key rides the bus that already exists, so a second factory naming the same key with
+    /// different settings changes nothing and reports nothing. Held per factory rather than per driver
+    /// because a quiet window is a property of the LINE, not of a device on it.</param>
+    /// <param name="logWarning">The map-parse warning sink, and it has a second consumer that its name does
+    /// not suggest. <see cref="TryCreate"/> hands it to <see cref="ModbusRegisterMap.FromJson"/>, which uses
+    /// it to say that a declared <c>readTimeoutMs</c>/<c>retries</c> was out of range and has been ignored —
+    /// a case that would otherwise be silent, because the parse succeeds. The SAME delegate is then passed
+    /// to the driver as its <c>logRecovery</c> channel, so it also carries the once-per-streak notice that a
+    /// device which had been failing is answering again. <see langword="null"/> drops both.</param>
+    /// <param name="logError">The error sink handed to every driver this factory builds. Thirteen call
+    /// sites in <see cref="ModbusRtuDriver"/> go out on it, each with the exception object itself, and they
+    /// cover one shape rather than a list worth reciting: <b>every failure that driver classifies</b> — a
+    /// failed poll, a bus that refused a write or a command, a device that rejected one, a write or a coil
+    /// half that did not complete, and the two unexpected-failure backstops.
+    /// Deliberately separate from <paramref name="logWarning"/>: a recovery notice is not an error,
+    /// and routing it through this one would have meant inventing an exception to satisfy the signature.
+    /// <see langword="null"/> drops them, and a driver constructed that way still degrades and still reports
+    /// through its <c>WriteOutcome</c> details — the log is the only thing lost.</param>
     public ModbusRtuConnectorFactory(
         string busKey,
         Func<CancellationToken, Task<IModbusBusLink>> openLink,

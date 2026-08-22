@@ -111,6 +111,27 @@ public sealed class GatewayTcpBusLink : IModbusBusLink
     public static Func<CancellationToken, Task<IModbusBusLink>> Opener(string host, int port)
         => ct => ConnectAsync(host, port, ct);
 
+    /// <summary><c>IStreamResource</c>'s "no deadline" sentinel, fixed at <c>-1</c> — the value
+    /// <see cref="ReadTimeout"/> and <see cref="WriteTimeout"/> are born holding, and the one to write back
+    /// into either of them to take a bound off. <c>SerialPortBusLink</c> publishes the same <c>-1</c>, which
+    /// is a fact about the two implementations rather than a rule either of them enforces on the other.
+    ///
+    /// <para><b>The two deadline tests in this class are not equality tests against it.</b>
+    /// <see cref="Read"/> asks <c>ReadTimeout &gt; 0</c> and <see cref="Write"/> asks
+    /// <c>WriteTimeout &gt; 0</c>, so <c>-1</c> is one of the non-positive values that mean "unbounded"
+    /// rather than the only one: <c>0</c> and <c>-7</c> behave identically here. Worth saying because the
+    /// name invites the opposite reading.</para>
+    ///
+    /// <para><b>What a scan of the tree does and does not show.</b> Measured over every tracked <c>*.cs</c>
+    /// (20 lines): the value is FORWARDED — three test decorator links answer <c>inner.InfiniteTimeout</c> —
+    /// but no site in this repository BRANCHES on it. Every comparison against a constant of this name is
+    /// against <c>System.IO.Ports.SerialPort</c>'s unrelated one instead, in
+    /// <c>SerialPortBusLink</c>/<c>serial-bench</c> and their tests. It is written as
+    /// <c>System.IO.Ports.SerialPort</c> and not as a <c>cref</c> because this assembly does not reference
+    /// <c>System.IO.Ports</c> — the dependency scoping <c>SerialDependencyScopingTests</c> pins, and a
+    /// <c>cref</c> here raises <c>CS1574</c>. <b>The consumer that scan cannot see is NModbus's own
+    /// transport, which holds this link as an <c>IStreamResource</c> and lives outside this
+    /// repository.</b></para></summary>
     public int InfiniteTimeout => -1;
 
     /// <summary>Set by NModbus's transport before each transaction; probing confirmed the transport propagates
@@ -126,8 +147,36 @@ public sealed class GatewayTcpBusLink : IModbusBusLink
     /// <see cref="AbortPendingRead"/>; it does not spin.</para></summary>
     public int ReadTimeout { get; set; } = -1;
 
+    /// <summary>The bound <see cref="Write"/> puts on the underlying <see cref="NetworkStream"/>, in
+    /// milliseconds. Consumed in exactly one place — <see cref="Write"/> assigns
+    /// <c>WriteTimeout &gt; 0 ? WriteTimeout : Timeout.Infinite</c> onto the stream immediately before the
+    /// write — so a value parked here does nothing until the next frame goes out.
+    ///
+    /// <para><b>What the read side has and this one does not.</b>
+    /// <see cref="ModbusBus.BeginTransactionAsync"/> rejects a non-positive <c>readTimeoutMs</c> before it
+    /// takes the arbitration lock and then assigns that one validated value to BOTH halves of the transport
+    /// (<c>transport.ReadTimeout</c> and <c>transport.WriteTimeout</c>), so on the bus's own path the
+    /// TRANSPORT's two bounds hold one validated number rather than two independently-arrived-at ones.
+    /// This property re-checks nothing of its own: it
+    /// is an auto-property with no validation, so a caller wiring the link up outside
+    /// <see cref="ModbusBus"/> — which nothing prevents — leaves it at <see cref="InfiniteTimeout"/>, and
+    /// <see cref="Write"/> then puts <c>Timeout.Infinite</c> on the stream.
+    /// That is the honest asymmetry, and there is a second one in the evidence rather than in the code:
+    /// <see cref="ReadTimeout"/>'s own remarks record a probe showing the transport propagates the READ
+    /// bound down to this object, and this file records no equivalent probe for the write bound. What is
+    /// certain either way is what <see cref="Write"/> does with whatever value it finds
+    /// here.</para></summary>
     public int WriteTimeout { get; set; } = -1;
 
+    /// <summary>Whether this link still believes it is usable — see <see cref="IModbusBusLink.IsOpen"/> for
+    /// the contract and for why <see cref="ModbusBus"/> does not rely on it for correctness. What this
+    /// implementation adds on top of that contract is the FIRST conjunct: a disposed link answers
+    /// <see langword="false"/> even though its <see cref="TcpClient"/> may still report itself connected.
+    /// <see cref="ModbusBus.EnsureLinkAsync"/> keeps its current link only while this reads
+    /// <see langword="true"/>, so either conjunct going false is what sends it down the rebuild path.
+    /// The second conjunct is <see cref="TcpClient.Connected"/>, which reports the outcome of the LAST I/O
+    /// rather than the state of the wire — a peer that vanished without a FIN still reads
+    /// <see langword="true"/> here until a read or write actually fails.</summary>
     public bool IsOpen => Volatile.Read(ref _disposed) == 0 && _client.Connected;
 
     /// <inheritdoc/>
@@ -255,6 +304,22 @@ public sealed class GatewayTcpBusLink : IModbusBusLink
         stream.Flush();
     }
 
+    /// <summary>Closes the socket and makes <see cref="IsOpen"/> answer <see langword="false"/> from that
+    /// moment on. <b>Idempotent by <c>Interlocked.Exchange</c>, and that is load-bearing
+    /// rather than tidy</b> — <see cref="ModbusBus.TearDownLink"/> disposes the master AND this link on the
+    /// same teardown, having recorded that disposing an NModbus master already disposes what it was built
+    /// over, so a second call here is the ordinary case and not an error.
+    ///
+    /// <para><b>It swallows the close.</b> A <see cref="TcpClient"/> that faults while being torn down must
+    /// not stop a teardown that is already running for a reason; the caller's reason is the one worth
+    /// keeping. The disposed flag is set BEFORE the close is attempted, so a throw cannot leave this link
+    /// claiming to be open.</para>
+    ///
+    /// <para><b>An in-flight <see cref="Read"/> is not what this is for.</b> It does end one — that loop
+    /// works on a socket this call has closed, so the next slice throws out of it rather than returning —
+    /// but it takes the line down for every other device on the bus,
+    /// which is the whole hazard this type exists to avoid. <see cref="AbortPendingRead"/> is the mechanism
+    /// for that; see <see cref="ModbusBus"/>'s own doc comment for the two-mechanism split.</para></summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;

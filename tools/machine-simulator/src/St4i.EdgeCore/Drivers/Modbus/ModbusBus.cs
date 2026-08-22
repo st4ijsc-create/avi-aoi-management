@@ -11,6 +11,24 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// starts from a fresh one.</summary>
 public sealed class ModbusBusResynchronisationException : Exception
 {
+    /// <summary>Raised from <see cref="ModbusBus.ResynchroniseAsync"/> and from nowhere else — both throw
+    /// sites fault the link first, so a caller that sees this has already lost the physical link and will get
+    /// a rebuilt one on the next transaction.
+    ///
+    /// <para>🔴 <b><see cref="Exception.InnerException"/> is the discriminator between the two ways the
+    /// recovery can end, and it is the only one.</b> <see langword="null"/> means the budget ran out: the
+    /// link kept producing bytes (or never went quiet) for longer than
+    /// <c>max(QuietWindowMs × 4, readTimeoutMs)</c>, and the message carries how many bytes were discarded
+    /// while trying. Non-<see langword="null"/> means the drain itself threw — the link failed while being
+    /// read — and the inner exception is that failure. The two are worth telling apart because the first is
+    /// a statement about a DEVICE that will not stop talking and the second is a statement about the
+    /// TRANSPORT, and the field engineer looks at different things for the two.</para></summary>
+    /// <param name="message">Names the bus by its <see cref="ModbusBus.Key"/> and says which of the two
+    /// endings this is. Surfaced to an operator through <see cref="ModbusRtuDriver"/>'s write path as a
+    /// <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Failed"/> detail, so it is read by someone
+    /// who is not looking at this file.</param>
+    /// <param name="inner">The drain's own failure when there was one; <see langword="null"/> — the default,
+    /// and the value the never-went-quiet site passes — when the recovery simply ran out of budget.</param>
     public ModbusBusResynchronisationException(string message, Exception? inner = null) : base(message, inner) { }
 }
 
@@ -48,6 +66,23 @@ public sealed class ModbusBusResynchronisationException : Exception
 /// </remarks>
 public sealed record ModbusBusSettings(int QuietWindowMs = 50, int PollSliceMs = 5)
 {
+    /// <summary>The one instance every deployment that does not tune recovery shares:
+    /// <c>QuietWindowMs = 50</c>, <c>PollSliceMs = 5</c>. <see cref="ModbusBusRegistry.Acquire"/> substitutes
+    /// it for a <see langword="null"/> <c>settings</c> argument, and
+    /// <see cref="ModbusRtuConnectorFactory"/> passes that <see langword="null"/> through unless a host
+    /// supplied one — so this is what a real RTU bus runs on until somebody decides otherwise.
+    ///
+    /// <para><b>Sharing one instance across every bus in the process is safe because the type is a record
+    /// with <c>init</c>-only members</b>: a bus reads <see cref="QuietWindowMs"/> and
+    /// <see cref="PollSliceMs"/> and holds no reference anything could mutate underneath a sibling.</para>
+    ///
+    /// <para>🔴 <b><c>new()</c> here is not interchangeable with <c>default</c>, and that is the whole
+    /// reason this type is a record CLASS.</b> See this type's own remarks: as a <c>readonly record
+    /// struct</c> both <c>new ModbusBusSettings()</c> and <c>default</c> produce the ZERO value and discard
+    /// the declared parameter defaults, which would have made this property a 0 ms quiet window — the
+    /// resynchronisation step present, running, and observing silence without ever looking. As a class,
+    /// <c>new()</c> applies the declared defaults, and <see cref="ModbusBus"/>'s constructor rejects the zero
+    /// anyway.</para></summary>
     public static ModbusBusSettings Default { get; } = new();
 }
 
@@ -160,6 +195,46 @@ public sealed class ModbusBus : IAsyncDisposable
     private int _lastTransactionRetries = -1;
     private int _linkGeneration;
 
+    /// <summary>Builds the bus object. <b>Performs no I/O and opens nothing</b> — the physical link is opened
+    /// lazily inside the first transaction (<see cref="EnsureLinkAsync"/>), which is what lets
+    /// <see cref="ModbusBusRegistry.Acquire"/> be called from a driver constructor and lets a bus whose
+    /// gateway is unplugged still construct and degrade at poll time instead of at start time.
+    ///
+    /// <para><b>Not the public way to get a bus.</b> Reaching this constructor directly produces an
+    /// UNSHARED bus: the reference counting that makes N devices on one RS-485 line share one link and one
+    /// arbitration lock lives in <see cref="ModbusBusRegistry"/>, and two buses built here over the same
+    /// endpoint would put two masters on one line — the shape <see cref="IModbusBusLink"/>'s own remarks
+    /// record as unsafe rather than merely heavier. Measured over the tracked <c>*.cs</c> of this tree,
+    /// <c>new ModbusBus(</c> appears at exactly one site and it is
+    /// <see cref="ModbusBusRegistry.Acquire"/> — so the unshared shape is reachable and unused. Nothing in
+    /// the type system tells the two apart; what separates them is this paragraph and the habit of going
+    /// through the registry.</para>
+    ///
+    /// <para>🔴 <b><paramref name="settings"/> is validated here rather than trusted, and that check has
+    /// already earned its keep</b> — see <see cref="ModbusBusSettings"/>'s own remarks for the
+    /// zero-initialisation trap it caught before this file was ever committed.</para></summary>
+    /// <param name="key">The identity this bus is shared under, exposed afterwards as <see cref="Key"/>.
+    /// The registry compares keys with <c>StringComparer.Ordinal</c> and nothing here parses it — see
+    /// <see cref="ModbusBusRegistry"/>'s doc comment for the obligation a key carries and what happens when
+    /// two callers disagree about the format.</param>
+    /// <param name="openLink">Opens a fresh physical link. Called on first use and again after
+    /// <see cref="FaultLink"/> has torn one down, always under the arbitration lock and always with the
+    /// caller's own token — so a cancellation that lands before the link exists is honoured by whatever this
+    /// delegate does with that token.</param>
+    /// <param name="settings">Recovery tuning. Non-nullable here on purpose: the "unsupplied" case is
+    /// resolved one layer up, where <see cref="ModbusBusRegistry.Acquire"/> substitutes
+    /// <see cref="ModbusBusSettings.Default"/>, so this constructor never has to tell "not supplied" from
+    /// "supplied and empty".</param>
+    /// <exception cref="ArgumentNullException"><paramref name="key"/> or <paramref name="openLink"/> is
+    /// <see langword="null"/>. A whitespace key is NOT refused here — that check lives on
+    /// <see cref="ModbusBusRegistry.Acquire"/>, which is the path a key actually arrives by.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="settings"/> carries a non-positive
+    /// <see cref="ModbusBusSettings.QuietWindowMs"/> or <see cref="ModbusBusSettings.PollSliceMs"/>. Thrown
+    /// at construction rather than at the first recovery because the damage a zero quiet window does is
+    /// invisible: <see cref="ResynchroniseAsync"/>'s <c>now - lastByteAt &gt;= quietWindowMs</c> is satisfied
+    /// by zero elapsed time, so the recovery would drain whatever had already arrived, declare the line
+    /// quiet without waiting a millisecond, and increment its own resynchronisation counter — present,
+    /// running, and proving nothing.</exception>
     public ModbusBus(string key, Func<CancellationToken, Task<IModbusBusLink>> openLink, ModbusBusSettings settings)
     {
         Key = key ?? throw new ArgumentNullException(nameof(key));
@@ -251,6 +326,22 @@ public sealed class ModbusBus : IAsyncDisposable
     /// to whatever the previous transaction happened to want. Đợt B's finding carries over unchanged: a retry
     /// re-sends the WHOLE request (probed: 2 writes for <c>Retries = 1</c>), which is a harmless extra read
     /// and a physical double-actuation hazard for the write path D-5 will build.</param>
+    /// <param name="ct">The caller's token, and it does <b>two different jobs</b> that this method's summary
+    /// names as mechanisms #1 and #2. (1) It cancels the wait for the arbitration lock, here, before any
+    /// request exists — exact and free. (2) The returned scope registers
+    /// <see cref="IModbusBusLink.AbortPendingRead"/> on it for the scope's whole life, so cancelling later
+    /// unblocks an in-flight read <b>without closing the link</b>. That registration runs SYNCHRONOUSLY on
+    /// the cancelling thread (see <see cref="ModbusBusTransaction"/>'s constructor), and if this token is
+    /// ALREADY cancelled when the scope is built the callback fires inline, so the first read fails instead
+    /// of putting a request on the line for a caller who has given up.
+    ///
+    /// <para><b>It does not bound the transaction's duration.</b> The read's deadline is
+    /// <paramref name="readTimeoutMs"/>; this token is how a caller gives up, not how long the device is
+    /// given. And a cancellation that lands in the second window is NOT free — the request may already be on
+    /// the wire, so the scope's disposal marks the bus desynchronised and the next device pays one quiet
+    /// window. <see cref="ModbusRtuDriver"/> reports that case as
+    /// <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Indeterminate"/> rather than as a failure,
+    /// which is the honest reading of it.</para></param>
     /// <exception cref="ArgumentOutOfRangeException">
     /// 🔴 <paramref name="readTimeoutMs"/> is not positive, or <paramref name="retries"/> is negative.
     /// <b>Validated BEFORE the arbitration lock is taken, and the reason is that the failure mode is not

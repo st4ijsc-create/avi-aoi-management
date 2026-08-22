@@ -44,6 +44,12 @@
 #      run. Any number in this comment is a sample from the day it was taken.
 #   d. THE CENSUS POPULATION IS FAR TOO LARGE TO ADJUDICATE IN ONE TASK. 5780 sentences is not a
 #      backlog this or any single task can pay. Stated as a ceiling rather than silently narrowed.
+#      🔴 THE LITERAL IN THE SENTENCE ABOVE IS RETRACTED, 2026-08-22 (task AZ-1, item 12 stage 10).
+#      It is the SAME stale pair boundary (c) retracts one paragraph up, and AY-1 corrected (c) and
+#      left this one — TWO copies in one file, one fixed. The sentence is kept verbatim, which is
+#      this repository's convention, and its POINT is untouched: the population is far too large for
+#      one task at every reading anyone has taken (5780, 5794, 5796, 5831 — four values on four
+#      commits). Do not write a fifth literal here. RUN `--census` and quote the run.
 #   e. C# ONLY, AND ONLY WHAT THIS REPOSITORY OWNS. `web/` (.ts/.tsx), `server/`, `client/` and the
 #      vendored examples/device-client/csharp/St4iDeviceClient.cs that St4i.EdgeCore Compile-links
 #      from outside its own cone are ALL OUTSIDE this corpus. A clean run says nothing about them.

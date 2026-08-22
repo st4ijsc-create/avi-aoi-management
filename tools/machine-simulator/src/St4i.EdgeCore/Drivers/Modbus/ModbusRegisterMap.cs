@@ -125,6 +125,14 @@ public sealed record ModbusRegister(
     /// member. The argument is this file's own history — that <c>&lt;remarks&gt;</c> exists precisely because
     /// a doc comment that said the wrong thing shipped a Critical once already. Keep the two methods'
     /// doc blocks adjacent to their own bodies.</para>
+    ///
+    /// <para>📐 <b>The clause <i>"<c>GenerateDocumentationFile</c> is not set anywhere in this
+    /// repository"</i> is RETRACTED 2026-08-22 (item 12, stage 10); the sentence above is kept verbatim and
+    /// its instruction stands unchanged.</b> Item 12 stage 3 set the flag on this project in 2026-08-19.
+    /// The reasoning it supported still holds, for a different reason than the one written: the flag warns
+    /// about an ABSENT doc block, and a block re-parented onto the wrong member is present as far as the
+    /// compiler is concerned. See <see cref="ModbusRtuDriver.BusDisposedDetail"/>, where the same clause was
+    /// written and is retracted at length in the same change.</para>
     /// </summary>
     public double DecodeRawWord(ushort rawWord)
     {
