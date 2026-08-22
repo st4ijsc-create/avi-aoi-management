@@ -10,7 +10,21 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// PLC link needs today. <c>Sign</c>/<c>SignAndEncrypt</c> (Basic256Sha256 + trusted app-instance
 /// certificates) are a DEFERRED follow-up — see the class doc comment on <see cref="OpcUaDriver"/> for the
 /// AutoAcceptUntrustedCertificates caveat this MVP leans on instead.</summary>
-public enum OpcUaSecurityMode { None }
+public enum OpcUaSecurityMode
+{
+    /// <summary>No message signing and no encryption on the session. The token a map file spells is this
+    /// C# member name, matched case-insensitively (<c>"none"</c> binds, measured 2026-08-22); a numeric
+    /// <c>0</c> binds here too, and a token that names no member fails the parse with a
+    /// <c>JsonException</c> pointing at <c>$.securityMode</c> (measured with <c>"SignAndEncrypt"</c>).
+    /// 🔴 <b>The operational consequence, which is a precondition on the deployment rather than a
+    /// setting:</b> <see cref="OpcUaDriver"/> selects its endpoint with <c>useSecurity: false</c> and then
+    /// builds a <c>UserIdentity</c> from <see cref="OpcUaNodeMap.Username"/> and
+    /// <see cref="OpcUaNodeMap.Password"/>, so those credentials reach the server without protection from
+    /// the OPC-UA security layer, and the same-host-or-trusted-network posture described on
+    /// <see cref="OpcUaDriver"/> is what keeps them private — see that class's doc comment for the deferred
+    /// <c>Sign</c>/<c>SignAndEncrypt</c> work this member is the placeholder for.</summary>
+    None,
+}
 
 /// <summary>
 /// Task B-3 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) — the mandatory
@@ -217,21 +231,94 @@ public sealed class OpcUaNodeMap
         Converters = { new JsonStringEnumConverter() },
     };
 
+    /// <summary>The equipment code this map's readings are attributed to — the identity handed to
+    /// <c>St4i.EngineApi.Fleet.FleetHost.RegisterMachine</c>, which forwards it to
+    /// <c>FleetCore.RegisterMachine</c> and the live roster. <b>Mandatory in two separate
+    /// senses with two different failure shapes, both measured 2026-08-22 against the built
+    /// assembly:</b> an ABSENT <c>"machineCode"</c> key fails inside the JSON binder with
+    /// <c>JsonException: … was missing required properties including: 'MachineCode'</c>, while a
+    /// PRESENT-but-blank value passes the binder and fails afterwards in <see cref="FromJson"/>'s own
+    /// check with a message naming the field. <c>required</c> buys the first and not the second, which is
+    /// why the second check exists. Both leave through <c>St4i.EngineApi.Program</c>'s try/catch, which
+    /// writes a startup warning to standard error and leaves the OPC-UA slot unfilled for the run.</summary>
     public required string MachineCode { get; init; }
 
     /// <summary>The OPC-UA server endpoint, e.g. <c>opc.tcp://host:port</c>. See the class doc comment's
     /// "EndpointUrl precedence" note — this is the ONLY source <see cref="OpcUaDriver"/> ever reads.</summary>
     public required string EndpointUrl { get; init; }
 
+    /// <summary>The session security mode negotiated for this endpoint. An absent key resolves to
+    /// <see cref="OpcUaSecurityMode.None"/> (measured 2026-08-22), and
+    /// <see cref="OpcUaSecurityMode"/> declares a single member, so a map cannot currently ask for
+    /// anything stronger — read the field as a statement of the deployment's posture rather than as a
+    /// knob, and see <see cref="OpcUaSecurityMode.None"/> for what that costs the credentials below.
+    ///
+    /// <para>🔴 <b>An out-of-range NUMERIC value is accepted here, which the string form is not.</b>
+    /// Measured 2026-08-22: <c>"securityMode": 1</c> binds and the resulting value prints as <c>1</c>,
+    /// naming no declared member, while <c>"securityMode": "SignAndEncrypt"</c> fails the parse. So the
+    /// enum's own token list is enforced on spellings and not on integers.</para>
+    ///
+    /// <para>🔴 <b>The ACCESSIBILITY of this member is load-bearing</b> for the reason recorded on
+    /// <see cref="Password"/>: the JSON binder skips members that are not public, so narrowing it would
+    /// compile and would then discard whatever a map declared, silently.</para></summary>
     public OpcUaSecurityMode SecurityMode { get; init; } = OpcUaSecurityMode.None;
 
     /// <summary><see langword="null"/> (default) means anonymous auth.</summary>
     public string? Username { get; init; }
 
+    /// <summary>The password presented with <see cref="Username"/> for username/password authentication.
+    /// An absent key and an explicit <c>"password": null</c> both resolve to <see langword="null"/>, which
+    /// means anonymous — the two are indistinguishable once parsed (measured 2026-08-22). A password
+    /// supplied WITHOUT a <see cref="Username"/> also parses successfully (measured) and is then
+    /// DISCARDED: <see cref="OpcUaDriver"/>'s session setup branches on <see cref="Username"/> alone and
+    /// builds a bare anonymous <c>UserIdentity</c> when it is blank, so the session-identity path does not
+    /// carry this field at all in that shape. The scope of that statement, enumerated 2026-08-22 rather
+    /// than assumed: across the <c>Drivers/OpcUa</c> cone this member has ONE code read,
+    /// <see cref="OpcUaDriver"/>'s identity construction, plus the copy in <see cref="FromJson"/>'s
+    /// null-<see cref="Commands"/> reconstruction; the other mentions are comments.
+    /// The value is held in an ordinary managed string for the lifetime of the map object;
+    /// it is not placed in a protected secret store, and the map file on disk is the credential's real
+    /// home.
+    ///
+    /// <para>🔴 <b>The ACCESSIBILITY of this member is load-bearing, and that is a measurement rather than
+    /// a style preference.</b> The JSON binder skips members that are not public, so narrowing this one
+    /// compiles and then binds the map with this field left at <see langword="null"/> while reporting a
+    /// successful parse. With <see cref="Username"/> still set, the driver's
+    /// <c>new UserIdentity(Username, UTF8.GetBytes(Password ?? string.Empty))</c> would present the right
+    /// user with an EMPTY password — an authentication attempt that looks correct in the map and is wrong
+    /// on the wire. Measured 2026-08-22 on an isolated control (a public class
+    /// whose properties were made <c>internal</c>: the declared JSON values were discarded, the CLR
+    /// defaults survived, and no exception was raised). <c>docs/owner-decisions.md</c> item 25 names this
+    /// member and <c>ModbusRegisterMap.UnitId</c> as the two worked examples of that class.</para></summary>
     public string? Password { get; init; }
 
+    /// <summary>Milliseconds the poll loop waits after each poll completes — a gap between polls rather
+    /// than a fixed period. An absent key resolves to 1000 (measured 2026-08-22).
+    ///
+    /// <para>🔴 <b>Not range checked, with the same three measured failure shapes as
+    /// <c>ModbusRegisterMap.PollIntervalMs</c>:</b> <see cref="FromJson"/> accepts <c>0</c> and negative
+    /// values and stores them as given (measured 2026-08-22 for <c>0</c>, <c>-1</c> and <c>-5</c>), and
+    /// <see cref="OpcUaDriver"/> hands the value to
+    /// <c>Task.Delay</c>, which was measured to complete immediately at <c>0</c> (an unthrottled poll
+    /// loop), to wait indefinitely at <c>-1</c> (the endpoint is read once and then stays quiet), and to
+    /// throw <c>ArgumentOutOfRangeException</c> at <c>-2</c> and below, out of a <c>catch</c> that handles
+    /// cancellation and does not handle this. Recorded as measured behaviour: the task that wrote this
+    /// sentence documents the driver family under <c>docs/owner-decisions.md</c> item 25 and is not
+    /// permitted to change code.</para></summary>
     public int PollIntervalMs { get; init; } = 1000;
 
+    /// <summary>The nodes this map declares, in the order the poll loop reads them each cycle — one
+    /// <c>DeviceReading</c> is yielded per poll, so the list's length is how wide that reading is.
+    ///
+    /// <para><b>Three ways to get this wrong, three different outcomes, all measured 2026-08-22.</b> An
+    /// ABSENT <c>"nodes"</c> key fails the bind with <c>JsonException: … was missing required properties
+    /// including: 'Nodes'</c>. A present-but-EMPTY array passes the binder and is refused by
+    /// <see cref="FromJson"/>'s own check with a message naming the field. 🔴 An explicit
+    /// <c>"nodes": null</c> satisfies the required-property check, binds a genuine null, and raises a bare
+    /// <c>NullReferenceException</c> out of <see cref="FromJson"/> — a parse failure that does not say
+    /// what was wrong. That is the same shape this file records as FIXED for <see cref="Commands"/>
+    /// further down, still live on this member; it is reported rather than repaired here, and the twin
+    /// lives on <c>ModbusRegisterMap.Registers</c>.</para></summary>
     public required IReadOnlyList<OpcUaNode> Nodes { get; init; }
 
     /// <summary>Task B-3 — the methods this map declares, by name. Defaults to empty (every map shipped

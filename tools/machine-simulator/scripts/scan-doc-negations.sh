@@ -30,10 +30,18 @@
 #      worst class it CANNOT see is a sentence with no absolute word at all that asserts a PURPOSE or
 #      a MECHANISM — "so the caller can tell the operator why" on a method with no production caller.
 #   c. 🔴 IT IS DELIBERATELY NOT A WHOLE-TREE GATE, and the reason is a measurement in this repo, not
-#      a preference. `--census` today flags 5780 of 15965 doc-comment sentences — MORE THAN A THIRD
-#      OF EVERY DOC SENTENCE IN THE TREE, spread over 481 of 545 files. A gate on that number would
-#      be red for any doc edit whatsoever; it would be, in item 26's own words, "a tool with no green
-#      definition". The census is a CEILING to be stated, not a threshold to be enforced.
+#      a preference. `--census` flags MORE THAN A THIRD OF EVERY DOC SENTENCE IN THE TREE. A gate on
+#      that number would be red for any doc edit whatsoever; it would be, in item 26's own words, "a
+#      tool with no green definition". The census is a CEILING to be stated, not a threshold to be
+#      enforced.
+#      🔴 THE CEILING IS A MOVING ONE, AND THE NUMBER WRITTEN HERE WENT STALE IN TWO DAYS. As shipped
+#      (AW-1, 2026-08-22) this paragraph read "5780 of 15965 ... spread over 481 of 545 files". Task
+#      AY-1 re-ran it on 2026-08-22 and got 5796 of 16131 in 482 of 546 files — and, importantly,
+#      5794 of 16041 in 482 files at AY-1's BASE, BEFORE AY-1 wrote a line. So most of the drift was
+#      already there: AX-1 added doc sentences and did not re-run this. That is the failure mode item
+#      26 names as worse than no ceiling — a ceiling stated too small — occurring inside the very
+#      script that names it. The durable fix is not a bigger literal: RUN `--census` and quote the
+#      run. Any number in this comment is a sample from the day it was taken.
 #   d. THE CENSUS POPULATION IS FAR TOO LARGE TO ADJUDICATE IN ONE TASK. 5780 sentences is not a
 #      backlog this or any single task can pay. Stated as a ceiling rather than silently narrowed.
 #   e. C# ONLY, AND ONLY WHAT THIS REPOSITORY OWNS. `web/` (.ts/.tsx), `server/`, `client/` and the
