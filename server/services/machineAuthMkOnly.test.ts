@@ -9,7 +9,7 @@
  *   Việc 3 — machineKeyFleetTtlDays fallback (180), buildMachineKeyExpiryInsight
  *            shape, and runMachineKeyExpiryAlertSweep gate + dedup insert.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const logs = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() }));
 vi.mock("../logger", () => ({ logger: logs, default: logs }));
@@ -46,6 +46,21 @@ beforeEach(() => {
   delete process.env.MACHINE_CRED_MK_ONLY_ENABLED;
   delete process.env.MACHINE_KEY_EXPIRY_ALERT_ENABLED;
   delete process.env.MACHINE_KEY_DEFAULT_TTL_DAYS;
+
+  // File này đo cờ `MACHINE_CRED_MK_ONLY_ENABLED` — nó KHÔNG nói gì về chính sách
+  // xác thực yếu. Trước 2026-08-22 nó mượn mặc định ngầm `allow` của hai đường yếu
+  // làm nền; nay mặc định là `deny` (mig 0334) nên phải dựng nền ra mặt.
+  //
+  // ⚠ Không làm bước này thì ba ca "flag OFF ⇒ vẫn xác thực được" sẽ đỏ vì một lý do
+  // HOÀN TOÀN KHÁC với thứ chúng đang canh — và người đọc kết quả sẽ tưởng cờ mk_-only
+  // bị hỏng. Một ca test mượn mặc định ngầm là một ca sẽ nói dối khi mặc định đổi.
+  process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
+  process.env.MACHINE_CODE_ONLY_ALLOWED = "true";
+});
+
+afterEach(() => {
+  delete process.env.MACHINE_SHARED_KEY_ALLOWED;
+  delete process.env.MACHINE_CODE_ONLY_ALLOWED;
 });
 
 // ── Việc 2: shared-key path ──────────────────────────────────────────────────

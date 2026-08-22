@@ -187,6 +187,11 @@ function envelope(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
+  // File này ĐÃ khai cờ shared-key, nhưng các ca lại đi đường `machineCode` — hai đường
+  // KHÁC nhau, hai cờ KHÁC nhau. Trước 2026-08-22 (mig 0334) chỉ khai một cờ vẫn chạy
+  // được vì cờ còn lại mặc định `allow`; nay mặc định là `deny` nên chỗ thiếu lộ ra.
+  // ⇒ Một khai báo NỬA VỜI trông y hệt một khai báo đầy đủ, cho tới ngày mặc định đổi.
+  process.env.MACHINE_CODE_ONLY_ALLOWED = "true";
   process.env.PROCESS_RESULT_INGEST_ENABLED = "true"; // ON for most tests; individual tests flip OFF
   process.env.PROCESS_STORE_FORWARD_ENABLED = "false";
   delete process.env.PROCESS_ATTR_VALIDATE_MODE; // default off

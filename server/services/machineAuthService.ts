@@ -130,19 +130,41 @@ function warnBadPolicyValueOnce(name: string, value: string, fallback: WeakAuthP
 }
 
 /**
- * Legacy shared plaintext `machines.apiKey` policy. Default `allow` (compat).
- * `MACHINE_SHARED_KEY_ALLOWED=false` keeps its original meaning: deny everywhere.
+ * Legacy shared plaintext `machines.apiKey` policy.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * MẶC ĐỊNH ĐỔI `allow` → `deny` (2026-08-22, mig 0334)
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * Mặc định cũ là `allow` "cho tương thích". Nhưng một mặc định tương thích trong xác
+ * thực nghĩa là: **cài mới, không đọc tài liệu, thì cửa yếu MỞ SẴN** — và người không
+ * đọc tài liệu chính là người cần được bảo vệ nhất.
+ *
+ * Tiền đề đã ĐO, không giả định (xem mig 0334): 50 khoá `mk_` riêng từng máy còn hiệu
+ * lực phủ đủ **42/42** máy, **0 máy đang dùng thiếu khoá riêng**. Không còn ai phụ thuộc
+ * đường yếu này, nên giữ nó mở không mua được gì mà vẫn trả đủ giá.
+ *
+ * Ai thật sự cần đường cũ vẫn bật lại được bằng `MACHINE_SHARED_KEY_ALLOWED=true` —
+ * nhưng nay đó là một QUYẾT ĐỊNH phải gõ ra, không còn là thứ thừa hưởng trong im lặng.
  */
 export function sharedMachineKeyPolicy(): WeakAuthPolicy {
-  return parseWeakAuthPolicy("MACHINE_SHARED_KEY_ALLOWED", process.env.MACHINE_SHARED_KEY_ALLOWED, "allow");
+  return parseWeakAuthPolicy("MACHINE_SHARED_KEY_ALLOWED", process.env.MACHINE_SHARED_KEY_ALLOWED, "deny");
 }
 
 /**
- * machineCode-only (NO secret) policy. Default `allow` (compat — doc 51 §5.6:
- * this is still the primary DOCUMENTED method, so production flips it, not dev).
+ * machineCode-only (KHÔNG có bí mật nào) policy.
+ *
+ * ⚠ ĐÂY LÀ ĐƯỜNG YẾU NHẤT TRONG CẢ HỆ: biết mã máy là xác thực được. Mã máy in trên
+ * nhãn dán ngoài vỏ máy, xuất hiện trong báo cáo, trong URL, trong ảnh chụp màn hình.
+ * Nó là ĐỊNH DANH, chưa bao giờ là bí mật.
+ *
+ * Mặc định cũ `allow` kèm ghi chú *"đây vẫn là phương thức CHÍNH được tài liệu hoá, nên
+ * production mới lật, dev thì không"*. Lập luận đó có một lỗ: **"production" không phải
+ * một trạng thái mà hệ thống tự biết** — nó là một lời hứa của con người, và không có
+ * lời hứa nào được kiểm ở đây. Hệ quả thực tế là mọi bản cài đều chạy mở cho tới khi có
+ * ai đó nhớ ra. Nay: đóng sẵn, muốn mở phải gõ `MACHINE_CODE_ONLY_ALLOWED=true`.
  */
 export function machineCodeOnlyPolicy(): WeakAuthPolicy {
-  return parseWeakAuthPolicy("MACHINE_CODE_ONLY_ALLOWED", process.env.MACHINE_CODE_ONLY_ALLOWED, "allow");
+  return parseWeakAuthPolicy("MACHINE_CODE_ONLY_ALLOWED", process.env.MACHINE_CODE_ONLY_ALLOWED, "deny");
 }
 
 /**

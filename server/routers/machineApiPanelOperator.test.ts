@@ -20,6 +20,19 @@ import { issueBadge, _resetBadgeCache } from "../services/operatorBadgeService";
 import { getVisionAdapter } from "../services/vision";
 import "../services/vision"; // side-effect: register built-in adapters
 import type { TrpcContext } from "../_core/context";
+// ── Xác thực: KHAI BÁO TƯỜNG MINH, không mượn mặc định ───────────────────────────
+// Các ca trong file này đo LOGIC INGEST (gate, phân loại lỗi, phạm vi ghi…), không đo
+// xác thực. Từ 2026-08-22 (mig 0334) hai đường yếu mặc định `deny`, nên nền mà chúng
+// vẫn ngầm dựa vào không còn nữa.
+//
+// ⚠ Một bộ test mượn mặc định ngầm là một bộ test sẽ NÓI DỐI vào ngày mặc định đổi:
+// nó đỏ vì một lý do hoàn toàn khác thứ nó đang canh, và người đọc kết quả sẽ đi sửa
+// nhầm chỗ. Khai ra đây thì mỗi file tự nói mình đang đứng trên nền nào.
+//
+// Đường MẠNH (khoá `mk_` riêng từng máy) có test riêng, KHÔNG bị nới ở đây:
+//   server/routers/machineApiBatchIngest.test.ts
+process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
+process.env.MACHINE_CODE_ONLY_ALLOWED = "true";
 
 const STAMP = Date.now();
 const API_KEY = `W8B-PANEL-${STAMP}`;
