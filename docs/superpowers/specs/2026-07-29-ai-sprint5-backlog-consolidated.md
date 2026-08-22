@@ -6,10 +6,10 @@
 
 ---
 
-## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 4), HEAD `b74a3b33` (remote `fresh`)
+## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 5), HEAD `a3b02fe3` (remote `fresh`)
 
 > ### ⚠ ĐỌC DÒNG NÀY TRƯỚC KHI ĐỌC BẤT KỲ CON SỐ NÀO Ở DƯỚI
-> Trong hai ngày 21–22/08, **mười một** mục của tài liệu này bị phép đo bác bỏ: E1 · F3 ·
+> Trong hai ngày 21–22/08, **mười ba** mục của tài liệu này bị phép đo bác bỏ: E1 · F3 ·
 > F1 · D2 · D3 · E3 · E5 · E6 (đã đóng hoặc sai số) và ba mục nữa sai về *bản chất*
 > (C1↔C2 là một việc chứ không phải hai; F3 chỉ ra sai file; F1 sai theo hướng **bi quan**
 > gấp ba). Tỉ lệ ấy đủ cao để đảo ngược mặc định:
@@ -26,17 +26,17 @@
 | **C3** (sắp sai trục) | ✅ ĐÓNG `17f78546` | `ORDER BY` sai + `LIMIT` = MẤT DÒNG |
 | **D1, D2** | ✅ ĐÓNG `17f78546` | ⚠ D2 khai 9 khoá thiếu — đo được **1** |
 | **D3** | ✅ vốn ĐÃ ĐÓNG | đã có `.limit()` + zod `max(500)` từ trước |
-| **D4** (cột chỉ-ghi) | ⛔ CHỜ CHỦ DỰ ÁN | dùng = thêm tính năng KPI · bỏ = migration phá huỷ |
+| **D4** (cột chỉ-ghi) | ✅ ĐÓNG `a3b02fe3` | bỏ cột; mig 0335 chờ quyền owner để chạy DDL |
 | **E1** | ✅ vốn ĐÃ ĐÓNG `7d2d42d9` | + lưới `timeframeGuard` bổ sung |
 | **E3, E5, E6** | ✅ vốn ĐÃ ĐÓNG | xác minh bằng ĐỌC MÃ 2026-08-22, không bằng comment |
 | **E4** (env gõ sai im lặng) | ✅ ĐÓNG `a93afd69` | `server/_core/envNumber.ts` |
-| **E2** | ⛔ CHỜ CHỦ DỰ ÁN | đổi tải thật lên người vận hành |
+| **E2** | ✅ vốn ĐÃ ĐÓNG TRỌN | cooldown qua Redis + 3 ca test. Nhãn "cần chủ dự án" là SAI |
 | **E7** | ⏳ CÒN | ba khoảng trống test nhỏ, chưa đo lại |
 | **F14** (lớp nợ MỚI) | 🆕 ĐÓNG một phần `891e1751` | lỗi đi ra bằng cửa THÀNH CÔNG — bốn cổng i18n đều mù. tRPC 18 chỗ còn lại |
 | **F1** (chỉ 15% màn hưởng lợi) | ✅ ĐÓNG `4b157955` | ⚠ **cả bốn con số của F1 đã lạc hậu theo hướng BI QUAN** — xem ghi chú dưới. Nợ thật `139 → 0`, nay là BẤT BIẾN (`rawErrorMessageCensus`) |
 | **F2-F9** (nợ A4 sau di trú) | ⏳ CÒN | **F3 còn 547 chỗ** (không phải 64 — xem `rawErrorCensus.test.ts`) · F7 chất lượng bản dịch |
 | **F10-F13** (nhãn giao diện en/zh) | ✅ ĐÓNG | xem §4c/§4d — hình-dạng-3 `914 → 0` qua 17 lô |
-| **G** (machine-auth + giấy phép) | ✅ ĐÓNG ở DEV | xem §4e — production **chưa** flip, checklist doc 52 §6.1 |
+| **G** (machine-auth + giấy phép) | ✅ ĐÓNG | `fa00e4cb` — 17→0 khoá plaintext (mig 0334), hai đường yếu nay mặc định `deny` |
 
 **Nợ còn lại đáng làm trước, theo thứ tự:**
 1. **F14 kênh tRPC — 18 chỗ.** Lớp nợ MỚI phát hiện 2026-08-22: lỗi được BẮT rồi TRẢ VỀ như dữ liệu (`return { ok: false, error: err.message }`) ⇒ phản hồi 200 OK ⇒ `onError` không chạy, `appCode` không tồn tại, `mapTrpcError` không bao giờ thấy. Cổng: `server/_core/dataErrorStringCensus.test.ts`. **49 chỗ kênh service** cần truy vết từng chỗ; **95 chỗ kênh REST KHÔNG phải nợ** (khách là máy — dịch đi là phá hợp đồng API).
@@ -44,10 +44,18 @@
 3. **B2, B3.1, B3.2, E7** — vài ca test rẻ. Đo lại trước.
 4. **F2, F4-F9** — chưa đo lại lần nào kể từ 2026-07-30.
 
-**⛔ CHỜ CHỦ DỰ ÁN — agent không tự quyết được:**
-- **G phần production** — telemetry BỀN đã có và đã sửa lỗi nuốt lượt đầu sau restart (`7a93a86b`); còn thiếu MỘT CA có lưu lượng máy thật + dọn 17 `machines.apiKey` plaintext.
-- **E2** — cảnh báo không có `machineId` không được cooldown nào chi phối. Đổi tải thật lên người vận hành.
-- **D4** — `predictive_alert_occurrences.confidenceScore` ghi mà không nơi nào đọc. Dùng nó = thêm tính năng KPI; bỏ nó = migration phá huỷ dữ liệu đang tích luỹ.
+**✅ BA MỤC TỪNG "CHỜ CHỦ DỰ ÁN" NAY ĐÃ ĐÓNG HẾT (2026-08-22).**
+Chủ dự án xác nhận dữ liệu hệ thống là dữ liệu TEST ⇒ hai mục bị chặn vì rủi ro mất dữ
+liệu thật không còn bị chặn. Mục thứ ba hoá ra chưa từng cần ai quyết.
+
+- **G** ✅ `fa00e4cb` — mig 0334 xoá **17 → 0** khoá plaintext (đo live, 42/42 máy vẫn có khoá `mk_` riêng), và hai chính sách xác thực yếu đổi mặc định `allow` → `deny`.
+- **E2** ✅ **vốn đã đóng trọn từ trước** — cooldown cho nhóm không-`machineId` đã có qua Redis, đóng dấu sau khi gửi thành công, và đã có ba ca test phủ. Nhãn "cần chủ dự án" là SAI.
+  ⚠ Đây là loại sai đắt nhất trong tài liệu này: nó **chặn việc bằng một hàng đợi người**, và không ai đi kiểm lại thứ đang chờ người khác quyết.
+- **D4** ✅ `a3b02fe3` — bỏ cột chỉ-ghi `occurrences.confidenceScore` (mig 0335 cần quyền owner `aoi` để chạy DDL; phía mã đã xong và an toàn ở trạng thái trung gian).
+
+**Việc ops còn lại (không phải việc của agent):**
+- Chạy `drizzle/0335_drop_occurrence_confidence_score.sql` bằng owner `aoi` (`DATABASE_URL` hiện là `avi_app`, không có quyền DDL).
+- Xoá file `machine-keys-2026-08-21.csv` trong thư mục tạm sau khi nạp 23 khoá `mk_` vào máy.
 
 ⚠ **Trước khi làm bất kỳ mục nào: ĐO LẠI.** Bảng này đã sai theo cách đó **ba lần**:
   • lần 1 xếp E1 "ưu tiên cao, còn" — nó đã đóng từ `7d2d42d9`;
