@@ -205,6 +205,24 @@ export interface YeuCauSinhChu {
    * Lệch ⇒ NÉM `CODING_PROMPT_REDACTED`, người gọi nói thẳng thay vì đề xuất một diff bẩn.
    */
   nguyenVanPrompt?: boolean;
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 — **HUỶ PHẢI LAN XUỐNG TỚI llama-server, KHÔNG DỪNG Ở TẦNG NODE.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * `generateTextStream` của `aiGgufEngine` nhận `AbortSignal` ở **đối số THỨ BA** và chuyền thẳng
+   * xuống `serverGenerateTextStream` → `streamChatCompletion`, nơi `finally` gọi `reader.cancel()`
+   * và nhả khe. Điểm gọi ở đây trước bản vá này truyền **HAI** đối số ⇒ tham số thứ ba luôn
+   * `undefined` ⇒ khi người dùng bấm Dừng, khe llama-server bị giữ tới khi idle-timeout
+   * **120.000 ms** nổ. Hai lần bấm = cả hai khe bận = mọi lượt sau xếp hàng.
+   *
+   * ⚠ Mọi tuyến stream KHÁC của repo đã làm đúng từ lâu (`aiStreamingApi`: `req.on("close") →
+   *   abortController.abort()` rồi truyền `abortController.signal`; `openaiGateway` y hệt).
+   *   `/api/ai/local-kb/stream` là **ngoại lệ DUY NHẤT** — và đây là ô để nó thôi là ngoại lệ.
+   * ⚠ Tuỳ chọn: vắng ⇒ hành vi cũ y nguyên. Nhưng vắng cũng có nghĩa là **chỉ** dựa vào việc
+   *   `.return()` lan qua chuỗi `yield*` (xem `try/finally` ở `motLuotModel`), tức huỷ chỉ có hiệu
+   *   lực khi mảnh token KẾ TIẾP tới. Có signal thì huỷ tức thì.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -245,6 +263,9 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
         contextSize: plan.decision.contextSize,
       },
       plan.decision.modelId,
+      // ★★★ ĐỐI SỐ THỨ BA — xem `YeuCauSinhChu.signal`. Thiếu nó, mỗi lượt Dừng giữ một khe
+      //   llama-server tới 120 s. Đây là con đường DUY NHẤT signal đi xuống ở đường lập trình.
+      y.signal,
     )) {
       if (chunk.type === "token" && typeof chunk.token === "string" && chunk.token.length > 0) {
         // CẮT thẻ suy luận TRƯỚC, CHE bí mật SAU — cả hai giữ trạng thái xuyên chunk (xem
@@ -955,6 +976,8 @@ export function promptSuaTep(
   khoiLichSu = "",
   /** ★ doc 82 — xem khối THẨM QUYỀN ↔ NHƯỜNG CHỖ ở `promptSinhMa`. Mặc định `""` ⇒ lời gọi cũ y nguyên. */
   khoiBaiHoc = "",
+  /** ★★★ 2026-08-23 — xem khối "ĐƯỜNG SỬA CŨNG PHẢI THẤY PHẦN CÒN LẠI CỦA REPO" ở `promptSinhMa`. */
+  khoiNguCanhMa = "",
 ): string {
   const nhan = nhanNgonNgu(duong);
   return [
@@ -964,6 +987,9 @@ export function promptSuaTep(
     ...(khoiLichSu ? [khoiLichSu, ""] : []),
     // ⚠ BÀI HỌC đứng SAU lịch sử, TRƯỚC nội dung tệp: nội dung tệp là bằng chứng của lượt này.
     ...(khoiBaiHoc ? [khoiBaiHoc, ""] : []),
+    // ⚠ NGỮ CẢNH MÃ đứng SAU bài học, TRƯỚC nội dung tệp — **cùng thứ tự `promptSinhMa` đã dùng**.
+    //   Tệp đang sửa vẫn là bằng chứng gần yêu cầu nhất; mã tham chiếu đứng ngay trên nó.
+    ...(khoiNguCanhMa ? [khoiNguCanhMa, ""] : []),
     w(lang, `Tệp: ${duong}`, `File: ${duong}`, `文件：${duong}`),
     "",
     w(lang, "=== NỘI DUNG HIỆN TẠI (nguyên văn) ===", "=== CURRENT CONTENT (verbatim) ===", "=== 当前内容（原样）==="),
@@ -998,11 +1024,14 @@ export function promptSuaTepKhoi(
   khoiLichSu = "",
   /** ★ doc 82 — xem khối THẨM QUYỀN ↔ NHƯỜNG CHỖ ở `promptSinhMa`. Mặc định `""` ⇒ lời gọi cũ y nguyên. */
   khoiBaiHoc = "",
+  /** ★★★ 2026-08-23 — xem khối "ĐƯỜNG SỬA CŨNG PHẢI THẤY PHẦN CÒN LẠI CỦA REPO" ở `promptSinhMa`. */
+  khoiNguCanhMa = "",
 ): string {
   const nhan = nhanNgonNgu(duong);
   return [
     ...(khoiLichSu ? [khoiLichSu, ""] : []),
     ...(khoiBaiHoc ? [khoiBaiHoc, ""] : []),
+    ...(khoiNguCanhMa ? [khoiNguCanhMa, ""] : []),
     w(lang, `Tệp: ${duong}`, `File: ${duong}`, `文件：${duong}`),
     "",
     w(lang, "=== NỘI DUNG HIỆN TẠI (nguyên văn) ===", "=== CURRENT CONTENT (verbatim) ===", "=== 当前内容（原样）==="),
@@ -1037,11 +1066,18 @@ export function promptTaoTep(
   khoiLichSu = "",
   /** ★ doc 82 — xem khối THẨM QUYỀN ↔ NHƯỜNG CHỖ ở `promptSinhMa`. Mặc định `""` ⇒ lời gọi cũ y nguyên. */
   khoiBaiHoc = "",
+  /**
+   * ★★★ 2026-08-23 — và ở lượt TẠO thì khối này là **quan trọng nhất trong ba đường ghi**: không có
+   * "nội dung hiện tại" nào để bám, nên nếu model không thấy mã của repo thì nó viết một tệp mới
+   * theo thói quen (SHA-256 thay vì `bcryptjs`, một bảng tự bịa thay vì `user_secrets`).
+   */
+  khoiNguCanhMa = "",
 ): string {
   const nhan = nhanNgonNgu(duong);
   return [
     ...(khoiLichSu ? [khoiLichSu, ""] : []),
     ...(khoiBaiHoc ? [khoiBaiHoc, ""] : []),
+    ...(khoiNguCanhMa ? [khoiNguCanhMa, ""] : []),
     w(lang, `Tệp MỚI cần tạo: ${duong}`, `NEW file to create: ${duong}`, `要创建的新文件：${duong}`),
     w(
       lang,
@@ -1097,6 +1133,33 @@ export function promptTaoTep(
  *   ⚠ Và khi mã bị bỏ, persona được **dựng LẠI** (`personaSinhMa(..., false)`) để không dặn model
  *     tin vào một khối vừa biến mất. Khối bài học **không cần** đối xứng ấy: nó TỰ mô tả mình
  *     (tiêu đề + khối bọc nằm trong chính chuỗi), nên khi nó vắng thì không câu nào còn nhắc tới nó.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-08-23 — **ĐƯỜNG SỬA CŨNG PHẢI THẤY PHẦN CÒN LẠI CỦA REPO** (`promptSuaTep` ·
+ * `promptSuaTepKhoi` · `promptTaoTep` nay nhận CÙNG tham số `khoiNguCanhMa`)
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ─── LỆCH ĐO ĐƯỢC, KHÔNG PHẢI LO XA ──────────────────────────────────────────────────────────
+ * Trước lượt này, `khoiNguCanhMa` chỉ tồn tại ở **một** trong bốn đường: `promptSinhMa`. Ba đường
+ * GHI — sửa cả tệp · sửa theo khối · tạo tệp — không có tham số ấy. Hệ quả: *"sửa `X.ts` để dùng
+ * đúng cách băm mật khẩu của hệ thống"* cho model **đúng một tệp X.ts** và không một dòng nào của
+ * `bcryptjs`, `user_secrets`, hay lớp xác thực thật. Nghịch lý là đường **ghi ra đĩa** lại mù hơn
+ * đường chỉ in mã ra màn hình.
+ *
+ * ─── THỨ TỰ: GIỮ NGUYÊN KHUÔN, KHÔNG PHÁT MINH KHUÔN THỨ HAI ─────────────────────────────────
+ *      THẨM QUYỀN:  (nội dung tệp + yêu cầu) > MÃ THAM CHIẾU > BÀI HỌC > lịch sử
+ *      NHƯỜNG CHỖ:  lịch sử → MÃ THAM CHIẾU → BÀI HỌC → (không bao giờ) nội dung tệp + yêu cầu
+ * Đúng hai trục của đường sinh mã, đọc lại cho đường sửa. Vị trí chuỗi cũng đúng thế: `lịch sử →
+ * bài học → MÃ → tệp → yêu cầu`.
+ *
+ * ⚠⚠ **NGÂN SÁCH LÀ RÀNG BUỘC CỨNG Ở ĐÂY, KHÁC HẲN ĐƯỜNG SINH MÃ.** Prompt sinh mã đo được ~385
+ *   token vào ⇒ khối mã 4.000 token gần như không bao giờ phải nhường chỗ. Prompt SỬA chở **nguyên
+ *   văn tệp** (tới 60.000 ký tự ≈ 21.000 token) và đã sát trần slot 32.768 TỪ TRƯỚC (xem
+ *   `TRAN_KY_TU_TEP_SUA`). Nên ở đường sửa, tầng nhường chỗ "bỏ MÃ" là đường chạy **thường xuyên**,
+ *   không phải đường hiếm — và nó được cưỡng chế bằng CHÍNH `dungKhoiLichSu`/`kiemNganSachNguCanh`
+ *   trên chuỗi THẬT sẽ gửi (xem `motLuotModel`), không bằng một phép trừ token thứ hai.
+ * ⚠ Persona đường sửa **không** có cờ `coNguCanhMa` như `personaSinhMa`: nó chưa bao giờ khai
+ *   *"mã thật đã được đọc"*, nên khi khối mã bị nhường chỗ thì không câu nào trở thành lời khai
+ *   sai. Đó là lý do ở đây KHÔNG cần dựng lại persona — chứ không phải vì quên đối xứng.
  */
 export function promptSinhMa(
   cauHoi: string,

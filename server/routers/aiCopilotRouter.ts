@@ -30,7 +30,22 @@ function toCopilotUser(user: { id: number; role: string; name?: string | null })
 
 export const aiCopilotRouter = router({
   confirmAction: protectedProcedure
-    .input(z.object({ actionId: z.string().min(1), token: z.string().min(1), lang: langSchema.optional() }))
+    /**
+     * ★★★ ĐỢT 3 (2026-08-23) — `selectedHunkIds`: CHỈ SỐ các khối `apply_diff` người duyệt CHỌN GHI
+     * (0-based theo `keHoachKhoiDuyet`). **CHỈ LÀ SỐ** — client không bao giờ gửi byte nội dung;
+     * server dựng lại kế hoạch khối từ `argsJson` ĐÃ CHỐT trong CSDL rồi tự chiếu
+     * (`aiCopilotActions.confirmAction`). Vắng ⇒ áp TẤT CẢ (đường cũ, từng byte — CLI/MCP/client cũ
+     * không đổi gì). Lưới census soi đúng schema này: thêm một ô mang nội dung (`modified`/
+     * `original`/`content`) vào đây là mở lại đúng lỗ mà HITL sinh ra để đóng ⇒ ĐỎ.
+     * ⚠ Trần 1000 phần tử: kế hoạch khối bị `DEFAULT_MAX_DIFF_LINES=1500` chặn trên nên không một
+     *   tệp hợp lệ nào có nổi 1000 khối — mảng dài hơn chỉ có thể là client hỏng/độc hại.
+     */
+    .input(z.object({
+      actionId: z.string().min(1),
+      token: z.string().min(1),
+      lang: langSchema.optional(),
+      selectedHunkIds: z.array(z.number().int().min(0)).max(1000).optional(),
+    }))
     .mutation(async ({ input, ctx }) => {
       const user = toCopilotUser(ctx.user as any);
       const lang: ToolLang = input.lang ?? "vi";
@@ -38,7 +53,7 @@ export const aiCopilotRouter = router({
         ip: (ctx.req as any)?.ip,
         headers: (ctx.req as any)?.headers,
         socket: (ctx.req as any)?.socket,
-      });
+      }, {}, undefined, input.selectedHunkIds);
     }),
 
   cancelAction: protectedProcedure

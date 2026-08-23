@@ -151,6 +151,19 @@ export const MA_TU_CHOI_LENH = {
   CMD_RESOLVE_ERROR: "CMD_RESOLVE_ERROR",
   CMD_SPAWN_ERROR: "CMD_SPAWN_ERROR",
   CMD_TIMEOUT: "CMD_TIMEOUT",
+  /**
+   * ★★★ 2026-08-23 — BẮT ĐƯỢC Ở NGHIỆM THU LIVE, KHÔNG LƯỚI NÀO PHÁT BIỂU.
+   * Gốc được trỏ KHÔNG có `package.json`, mà lệnh này là lệnh của **hệ sinh thái Node**.
+   * `npm`/`npx` **đi NGƯỢC lên cây thư mục** để tìm `package.json` gần nhất — hộp cát giam đúng
+   * `cwd`, nhưng npm tự thoát ra. Đo thật: `npm prefix` chạy trong `sandbox-projects/csharp-demo`
+   * trả về `D:\SOURCES\avi-aoi-management`. Hệ quả **đã xảy ra**: người dùng hỏi *"chạy test của dự
+   * án này"* trong dự án C#, tác nhân chạy `npm run check:tests` và bê về **lỗi TypeScript của REPO
+   * CHÍNH** — thẻ duyệt khai *"Thư mục chạy: …csharp-demo"*, đúng chữ mà sai nghĩa.
+   * ⇒ Đây KHÔNG phải lỗ thực thi (danh sách trắng vẫn khớp chính xác, không chạy được script tuỳ
+   *   ý), mà là **một lời nói dối về việc lệnh tác động lên cái gì** — và người ta ra quyết định
+   *   dựa trên nó. Từ chối, nói rõ, để tác nhân chuyển sang lệnh ĐÚNG của dự án (`dotnet test`).
+   */
+  CMD_GOC_THIEU_PACKAGE_JSON: "CMD_GOC_THIEU_PACKAGE_JSON",
 } as const;
 
 export type MaTuChoiLenh = (typeof MA_TU_CHOI_LENH)[keyof typeof MA_TU_CHOI_LENH];
@@ -321,6 +334,18 @@ export interface MucDanhSachTrang {
    */
   readonly ghiDia: boolean;
   /**
+   * ★★★ **LỆNH NÀY CÓ ĐI NGƯỢC LÊN CÂY THƯ MỤC ĐỂ TÌM DỰ ÁN KHÔNG.**
+   * `true` ⇔ lệnh thuộc hệ sinh thái Node (`npm`/`npx`), tức nó **tự tìm `package.json` gần nhất
+   * TÍNH TỪ `cwd` TRỞ LÊN**. Hộp cát đặt đúng `cwd`, nhưng npm không dừng ở đó.
+   * ⇒ Khi gốc được trỏ KHÔNG có `package.json`, lệnh vẫn CHẠY — chỉ là nó chạy trên **một dự án
+   *   khác** với dự án người duyệt tưởng. Xem `CMD_GOC_THIEU_PACKAGE_JSON` để biết chuyện đã xảy ra.
+   *
+   * ⚠ Vì sao là DỮ LIỆU chứ không phải một phép `if` chôn trong `phanQuyetLenh`: mọi mục thêm vào
+   *   bảng sau này đều bị census bắt khai ô này, nên câu hỏi *"lệnh của bạn có thoát cwd không?"*
+   *   được hỏi **một lần cho mỗi mục**, thay vì phụ thuộc vào việc ai đó nhớ ra.
+   */
+  readonly thoatCwdTheoCayThuMuc: boolean;
+  /**
    * **LỆNH NÀY CÓ SINH/CẬP NHẬT SẢN PHẨM DỰNG KHÔNG** (`bin/`, `obj/`, `tsbuildinfo`…).
    * `true` ⇔ có byte rơi xuống đĩa, nhưng là byte **SINH RA**, không phải mã nguồn do người viết.
    *
@@ -366,6 +391,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["npm", "run", "check"],
     hanGioMs: 240_000,
     moTa: "Kiểm kiểu toàn bộ mã sản phẩm (tsc --noEmit, heap 8 GB qua cross-env). KHÔNG sinh mã, chỉ cập nhật bộ nhớ đệm tsbuildinfo trong node_modules.",
+    thoatCwdTheoCayThuMuc: true,
     ghiDia: false,
     // `--noEmit`, nhưng `"incremental": true` ⇒ ghi `node_modules/typescript/tsbuildinfo`.
     sinhSanPhamDung: true,
@@ -379,6 +405,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["npm", "run", "check:tests"],
     hanGioMs: 240_000,
     moTa: "Kiểm kiểu bộ lưới (tsconfig.tests.json). KHÔNG sinh mã, chỉ cập nhật tsbuildinfo.tests trong node_modules.",
+    thoatCwdTheoCayThuMuc: true,
     ghiDia: false,
     sinhSanPhamDung: true,
     phanGiai: () => {
@@ -391,6 +418,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["npx", "vitest", "run", null],
     hanGioMs: 180_000,
     moTa: "Chạy lưới cho MỘT đường dẫn (bộ lọc theo tên tệp). Đường dẫn BẮT BUỘC — bỏ trống là chạy cả 12.777 ca.",
+    thoatCwdTheoCayThuMuc: true,
     ghiDia: false,
     sinhSanPhamDung: false,
     /**
@@ -413,25 +441,38 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
       return vit === null ? null : { file: process.execPath, args: [vit, "run", oTuDo] };
     },
   },
+  /**
+   * ★★★ 2026-08-23 — **`-- .` KHÔNG PHẢI THẨM MỸ: NÓ ĐÓNG MỘT LỖ RÒ QUA RANH GIỚI DỰ ÁN.**
+   * `git` cũng đi NGƯỢC lên cây thư mục để tìm `.git` — cùng họ với npm, nhưng hậu quả KHÁC: npm
+   * chạy sai dự án, còn `git status` **báo cáo đúng repo mẹ**. Với hộp cát ĐA DỰ ÁN, dự án con nằm
+   * trong cây làm việc của repo mẹ ⇒ một lượt `git status` "trong dự án csharp" trả về **171 dòng
+   * đường dẫn của repo chính** (đo 2026-08-23), tức tên tệp và cấu trúc của một dự án mà phiên ấy
+   * KHÔNG được phép nhìn. `-- .` giới hạn vào cây con của `cwd`: cùng lượt ấy trả về **0 dòng**.
+   * ⚠ Với dự án `repo` (gốc = chính repo chính) thì `.` = toàn bộ repo ⇒ hành vi KHÔNG đổi.
+   * ⚠ `-- .` chứ không phải `.`: dấu `--` chốt rằng token sau nó là ĐƯỜNG DẪN, không phải một tên
+   *   nhánh/ref — `git status .` với một thư mục tên trùng tên nhánh là chỗ mơ hồ không cần thiết.
+   */
   {
     nhan: "git status",
     khuon: ["git", "status"],
     hanGioMs: 20_000,
     moTa: "Liệt kê tệp đã đổi/chưa theo dõi. CHỈ HỎI — không đổi một byte nào của cây làm việc.",
+    thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: false,
     // `--no-pager` là phòng vệ chứ không phải thẩm mỹ: git chỉ phân trang khi stdout là TTY, nhưng
     // một cấu hình `core.pager` cứng đầu vẫn có thể treo một tiến trình con đọc stdin đã đóng.
-    phanGiai: () => ({ file: "git", args: ["--no-pager", "status"] }),
+    phanGiai: () => ({ file: "git", args: ["--no-pager", "status", "--", "."] }),
   },
   {
     nhan: "git diff",
     khuon: ["git", "diff"],
     hanGioMs: 20_000,
     moTa: "Khác biệt chưa staged của cây làm việc. CHỈ HỎI — không hoàn nguyên gì (xem khối `git checkout` ở đầu file).",
+    thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: false,
-    phanGiai: () => ({ file: "git", args: ["--no-pager", "diff"] }),
+    phanGiai: () => ({ file: "git", args: ["--no-pager", "diff", "--", "."] }),
   },
   // ════════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ doc 79 · TRỤC 1 (D) — VÒNG KHÉP KÍN CHO DỰ ÁN THỬ C# (`dotnet`) VÀ REACT/NODE (`node --test`)
@@ -470,6 +511,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     moTa: "Biên dịch một dự án/solution C# (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore) — cần restore trước ở terminal. KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.",
     // ⚠ `bin/`+`obj/` là SẢN PHẨM DỰNG, không phải mã nguồn của người viết ⇒ `ghiDia: false`.
     //   Xem lý lẽ "vì sao HAI ô" ở `MucDanhSachTrang`.
+    thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: true,
     phanQuyetOTuDo: (v) => {
@@ -483,6 +525,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["dotnet", "test", null],
     hanGioMs: 240_000,
     moTa: "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore). KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.",
+    thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: true,
     phanQuyetOTuDo: (v) => {
@@ -508,6 +551,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
      *     rời đĩa mà không có người bấm;
      *   • cờ `AI_REPO_EXEC_GHIDIA_DOI_CANEDIT` (mặc định TẮT) đòi **thêm** `ai_repo_read/canEdit`.
      */
+    thoatCwdTheoCayThuMuc: false,
     ghiDia: true,
     // MSBuild workspace load ⇒ cũng chạm `obj/`. Hai ô độc lập, và mục này bật cả hai.
     sinhSanPhamDung: true,
@@ -522,6 +566,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["node", "--test", null],
     hanGioMs: 180_000,
     moTa: "Chạy trình chạy test tích hợp của Node cho MỘT đường (tệp .test.mjs hoặc thư mục). CHỈ chế độ --test, KHÔNG chạy script tuỳ ý.",
+    thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: false,
     phanQuyetOTuDo: (v) => {
@@ -560,6 +605,22 @@ export function phanQuyetLenh(argv: readonly string[], goc = gocHopCat()): KetQu
   }
   for (const muc of DANH_SACH_TRANG) {
     if (!khopKhuon(muc.khuon, argv)) continue;
+    /**
+     * ★★★ GỐC KHÔNG PHẢI DỰ ÁN NODE ⇒ TỪ CHỐI LỆNH NODE. Xem `CMD_GOC_THIEU_PACKAGE_JSON`.
+     * ⚠ Phép kiểm chỉ nhìn **đúng gốc**, KHÔNG đi ngược lên — đi ngược lên chính là hành vi của npm
+     *   mà đoạn này được viết ra để chặn. Tìm thấy `package.json` ở thư mục CHA nghĩa là npm sẽ dùng
+     *   dự án CHA, tức đúng tình huống phải từ chối chứ không phải lý do để cho qua.
+     */
+    if (muc.thoatCwdTheoCayThuMuc && !existsSync(path.join(goc, "package.json"))) {
+      return {
+        ok: false,
+        ma: MA_TU_CHOI_LENH.CMD_GOC_THIEU_PACKAGE_JSON,
+        chiTiet:
+          `${muc.nhan}: dự án đang mở KHÔNG có "package.json" ở gốc. ` +
+          `npm/npx sẽ đi NGƯỢC lên cây thư mục và chạy trên một dự án KHÁC — kết quả trả về sẽ ` +
+          `không nói gì về dự án này. Dùng lệnh của đúng hệ sinh thái dự án (ví dụ "dotnet test <đường>").`,
+      };
+    }
     const viTri = muc.khuon.indexOf(null);
     const oTuDo = viTri >= 0 ? (argv[viTri] ?? null) : null;
     if (viTri >= 0) {

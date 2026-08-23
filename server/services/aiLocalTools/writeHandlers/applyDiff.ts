@@ -103,7 +103,13 @@ function khoaNganSach(ctx: ToolExecContext): string {
   return `u:${ctx.user.id}`;
 }
 
-function bam(s: string): string {
+/**
+ * Băm sha256 (utf8 → hex) — MỘT bản duy nhất cho cả nhóm apply_diff. Export vì ĐỢT 3:
+ * `aiCopilotActions.confirmAction` phải khai đúng băm của BYTE THẬT khi vá lại `sha256After`
+ * trong preview/audit sau một lượt chọn tập-con khối; một bản băm thứ hai viết tại chỗ là đúng
+ * lớp lỗi "hai bản sao một vị từ" mà repo này đếm nhiều lần.
+ */
+export function bam(s: string): string {
   return createHash("sha256").update(s, "utf8").digest("hex");
 }
 
@@ -452,9 +458,16 @@ interface DuLieuApDung {
   created: boolean;
   sha256Before: string | null;
   sha256After: string | null;
+  /**
+   * ★ ĐỢT 3 — có mặt ⇔ lượt này ghi MỘT TẬP CON khối do người duyệt chọn (`confirmAction` đã thay
+   * `argsJson.modified` bằng bản chiếu và ghi dấu `__hunksApplied` — xem khối ⚠ ở `execute`).
+   * `selected` là chỉ số các khối ĐÃ ghi (0-based), `total` là tổng số khối của đề xuất gốc.
+   * `null` = đường cũ (áp tất cả) — mọi client cũ đọc trường này thấy vắng/null, không đổi gì.
+   */
+  hunksApplied: { selected: number[]; total: number } | null;
 }
 
-const RONG: DuLieuApDung = { ok: false, path: null, bytes: null, created: false, sha256Before: null, sha256After: null };
+const RONG: DuLieuApDung = { ok: false, path: null, bytes: null, created: false, sha256Before: null, sha256After: null, hunksApplied: null };
 
 export const applyDiffTool: Tool<ThamSo, DuLieuApDung> = {
   name: "apply_diff",
@@ -547,6 +560,32 @@ export const applyDiffTool: Tool<ThamSo, DuLieuApDung> = {
 
     tieuNganSach(khoa, res.bytes);
 
+    /**
+     * ★★★ ĐỢT 3 (2026-08-23) — DẤU **CHỌN KHỐI** do server đóng, không phải client.
+     * Khi người duyệt bỏ bớt khối, `confirmAction` (chủ bảng `ai_pending_actions`) đã:
+     *   (1) tự dựng lại `keHoachKhoiDuyet(original, modified)` từ argsJson TRONG CSDL,
+     *   (2) xác thực tập chỉ số client gửi (chỉ SỐ, không byte),
+     *   (3) thay `argsJson.modified` = bản chiếu trong CÙNG câu UPDATE giành quyền,
+     *   (4) ghi `argsJson.__hunksApplied = { selected, total }` để đường audit/kết quả đọc được.
+     * ⇒ Tới đây `p.modified` ĐÃ LÀ byte thật sẽ ghi (nên `bamSau` tự đúng), và `__hunksApplied`
+     *   là lời khai server-owned — đọc nó chỉ để NÓI THẬT "đã áp k/n khối" trong câu báo.
+     * ⚠ Vắng (mọi đường cũ: CLI · MCP · autonomy · client không gửi lựa chọn) ⇒ `null`, câu báo
+     *   giữ nguyên từng chữ — tương thích ngược tuyệt đối.
+     */
+    const khoiTho = (p as ThamSo & { __hunksApplied?: { selected?: unknown; total?: unknown } }).__hunksApplied;
+    const khoiDaAp =
+      khoiTho && Array.isArray(khoiTho.selected) && khoiTho.selected.every((x) => typeof x === "number") && typeof khoiTho.total === "number"
+        ? { selected: khoiTho.selected as number[], total: khoiTho.total }
+        : null;
+    const cauKhoi = khoiDaAp
+      ? w(
+          ctx.lang,
+          ` Đã áp ${khoiDaAp.selected.length}/${khoiDaAp.total} khối ĐÃ CHỌN — khối bỏ chọn KHÔNG vào đĩa.`,
+          ` Applied ${khoiDaAp.selected.length}/${khoiDaAp.total} SELECTED hunks — deselected hunks were NOT written.`,
+          `已应用所选 ${khoiDaAp.selected.length}/${khoiDaAp.total} 个块——未选块未写入。`,
+        )
+      : "";
+
     const data: DuLieuApDung = {
       ok: true,
       path: pq.relPath,
@@ -554,6 +593,7 @@ export const applyDiffTool: Tool<ThamSo, DuLieuApDung> = {
       created: !pq.daCo,
       sha256Before: pq.bamTruoc,
       sha256After: pq.bamSau,
+      hunksApplied: khoiDaAp,
     };
     return {
       type: KIEU,
@@ -564,7 +604,7 @@ export const applyDiffTool: Tool<ThamSo, DuLieuApDung> = {
         `Đã ${pq.daCo ? "ghi đè" : "tạo"} "${pq.relPath}" (${res.bytes} byte). Băm ${pq.bamTruoc.slice(0, 12)}… → ${pq.bamSau.slice(0, 12)}….`,
         `${pq.daCo ? "Overwrote" : "Created"} "${pq.relPath}" (${res.bytes} bytes). sha256 ${pq.bamTruoc.slice(0, 12)}… → ${pq.bamSau.slice(0, 12)}….`,
         `已${pq.daCo ? "覆盖" : "创建"} "${pq.relPath}"（${res.bytes} 字节）。sha256 ${pq.bamTruoc.slice(0, 12)}… → ${pq.bamSau.slice(0, 12)}…。`,
-      ),
+      ) + cauKhoi,
     };
   },
 };

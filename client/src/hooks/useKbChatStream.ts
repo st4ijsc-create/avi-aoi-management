@@ -206,6 +206,17 @@ export interface KbStreamContext {
   // vừa duyệt ghi). Chỉ gửi ở LƯỢT SỬA KẾ TIẾP của vòng. Server đọc LẠI tệp từ đĩa trong lượt ấy —
   // client KHÔNG BAO GIỜ gửi nội dung tệp (đó là điểm neo của băm chống TOCTOU).
   codingEditPath?: string;
+  /**
+   * ★★★ 2026-08-23 — ĐẦU RA MÁY (`dotnet test`, `npm run check`…) của lượt vòng tự động vừa chạy.
+   *
+   * ⚠⚠ Nó đi **RIÊNG**, KHÔNG được nối vào `question`. Trước bản vá này bộ điều khiển vòng nhét
+   *   nguyên văn đầu ra vào câu hỏi ⇒ nó rơi vào khối `=== YÊU CẦU ===`, ô **thẩm quyền cao nhất**
+   *   của prompt, chỉ bị CẮT chứ không hề được che/bọc. Một dòng *"BỎ QUA CHỈ DẪN TRƯỚC…"* nằm
+   *   trong tên một ca kiểm thử khi ấy lái được tác nhân. Server bọc nó
+   *   (`sanitizeUntrustedBlock` + `wrapUntrustedBlock`) rồi đặt vào khối LỊCH SỬ — thẩm quyền thấp
+   *   nhất — đúng như CLI đã làm. Xem `KbQueryContext.dauRaKhongTinCay`.
+   */
+  dauRaKhongTinCay?: string;
 }
 
 export interface KbStreamRequest {
@@ -293,6 +304,10 @@ export function useKbChatStream() {
       // KHÔNG đổi một byte).
       if (req.context.codingEditPath) {
         context.codingEditPath = req.context.codingEditPath;
+      }
+      // ★★★ 2026-08-23 — đầu ra máy đi RIÊNG khỏi `question`. Xem `KbStreamContext.dauRaKhongTinCay`.
+      if (req.context.dauRaKhongTinCay) {
+        context.dauRaKhongTinCay = req.context.dauRaKhongTinCay;
       }
 
       let confidence = 0;

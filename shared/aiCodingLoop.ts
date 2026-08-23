@@ -233,3 +233,45 @@ export function catLoiChoPrompt(dauRa: string | null | undefined, tran = TRAN_LO
   const boQua = s.length - tran;
   return `${s.slice(0, dau)}\n… [bỏ qua ${boQua} ký tự ở giữa] …\n${s.slice(s.length - cuoi)}`;
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-23 — "VÒNG ĐỜI ĐÃ CHẠY XONG" ≠ "BYTE ĐÃ VÀO ĐĨA"
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ **LỖI THẬT, ĐO ĐƯỢC — VÀ NÓ ĐÃ TỪNG ĐƯỢC VÁ Ở ĐÚNG MỘT NƠI TRONG HAI NƠI.**
+ *
+ * `ConfirmResult.ok === true` chỉ phát biểu *"vòng đời HITL chạy hết các chặng"*. Nó **KHÔNG**
+ * phát biểu *"tệp trên đĩa đã đổi"*. Khi băm neo lệch (`BASE_MISMATCH` — ai đó sửa tệp giữa lúc
+ * thẻ duyệt hiện ra và lúc bấm) hoặc tệp bẩn (`FILE_DIRTY`), `execute()` **TỪ CHỐI đúng như thiết
+ * kế** và trả một `ToolResult` mang `note`, nhưng `confirmAction` vẫn trả
+ * `{ok:true, status:"executed", result:<ToolResult mang note>}` (xem `aiCopilotActions.confirmAction`).
+ *
+ * ⇒ Phía WEB đọc `res.ok` rồi báo *"Đã ghi tệp."* + đẩy *"Đã áp diff"* vào transcript, rồi **vòng
+ *   tự động chạy tiếp trên một bản vá chưa hề vào đĩa**. Một cổng an toàn chạy ĐÚNG mà **báo cáo
+ *   SAI** thì người dùng (và tác nhân) hành động theo lời báo cáo, không theo sự thật.
+ *
+ * ⚠⚠ **VÌ SAO VỊ TỪ NÀY Ở `shared/` VÀ CHỈ CÓ MỘT BẢN**: CLI đã vá đúng lỗi này (2026-08-23) bằng
+ *   một biểu thức viết TẠI CHỖ. Web cần đúng phán quyết ấy. Hai bản sao của một vị từ an toàn là
+ *   cách chắc chắn nhất để chúng trôi khỏi nhau, và bản lỏng hơn bao giờ cũng là bản đang chạy —
+ *   bài học đã trả giá nhiều lần ở repo này. Nên nó đứng MỘT MÌNH, thuần, có lưới riêng, và cả
+ *   `aiCodingCli/cli.ts` lẫn `AICodingWorkspace.tsx` đều gọi CHÍNH nó.
+ *
+ * ⚠ Quy ước máy-đọc-được: `note` là chỗ cả nhóm tool repo khai mã từ chối (`PATH_REJECTED`,
+ *   `FILE_DIRTY`, `BASE_MISMATCH`, `NOT_FOUND`…). Có `note` KHÔNG rỗng ⇒ **TỪ CHỐI**.
+ * ⚠ `null`/`undefined`/không phải chuỗi/chuỗi rỗng ⇒ **KHÔNG** phải từ chối. Đảo chiều mặc định ở
+ *   đây sẽ biến mọi lượt ghi THÀNH CÔNG (tool ghi thành công không đặt `note`) thành "bị từ chối"
+ *   — tức đổi một lời khai sai lấy một lời khai sai khác.
+ */
+export function daBiTuChoiGhi(ketQua: unknown): boolean {
+  if (ketQua == null || typeof ketQua !== "object") return false;
+  const note = (ketQua as { note?: unknown }).note;
+  return typeof note === "string" && note !== "";
+}
+
+/**
+ * Mã từ chối máy-đọc-được của một lượt ghi bị từ chối. `null` ⇔ `daBiTuChoiGhi()` nói `false`.
+ * Tách khỏi vị từ trên để nơi hiển thị không phải tự đào lại `note` (và tự nghĩ ra một quy ước thứ hai).
+ */
+export function maTuChoiGhi(ketQua: unknown): string | null {
+  return daBiTuChoiGhi(ketQua) ? String((ketQua as { note?: unknown }).note) : null;
+}

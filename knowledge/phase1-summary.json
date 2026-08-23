@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-08-21T20:00:02.967Z",
+  "generatedAt": "2026-08-22T20:00:06.312Z",
   "patterns": {
     "protectedProcedureCount": 1914,
     "publicProcedureCount": 91,
     "zodObjectCount": 2131,
-    "totalSourceFiles": 3240,
-    "totalRouterFiles": 359,
-    "totalServiceFiles": 1269,
+    "totalSourceFiles": 3246,
+    "totalRouterFiles": 360,
+    "totalServiceFiles": 1270,
     "totalDocsFiles": 261,
     "totalRoutes": 221,
     "totalNavGroups": 10,

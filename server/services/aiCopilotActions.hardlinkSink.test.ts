@@ -44,7 +44,16 @@ vi.mock("../db/connection", () => ({
       },
     }),
     select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
-    update: () => ({ set: () => ({ where: async () => ({ rowCount: 0 }) }) }),
+    update: () => ({
+      set: () => ({
+        // Thenable + `.returning()` — xem `aiCopilotActions.test.ts`. Kho rỗng ⇒ 0 hàng ở cả hai lối.
+        where: () => ({
+          then: (ok: (v: unknown) => unknown, ng?: (e: unknown) => unknown) =>
+            Promise.resolve({ rowCount: 0 }).then(ok, ng),
+          returning: async () => [] as Array<{ id: string }>,
+        }),
+      }),
+    }),
   })),
 }));
 

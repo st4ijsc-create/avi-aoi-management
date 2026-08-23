@@ -43,11 +43,14 @@
  *   loại ở server. Xem `server/services/aiCodingVerify.ts`.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * ★★★ doc 79 · DANH SÁCH PHIÊN — KHUNG THỨ TƯ (ngoài cùng TRÁI), và ba thứ nó KHÔNG làm
+ * ★★★ doc 79 · DANH SÁCH PHIÊN — và ba thứ nó KHÔNG làm
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * Khung ba phần trên **giữ nguyên**; doc 79 chỉ THÊM một cột phiên bên trái (mẫu Claude Code
- * *"Sessions you start will show up here"*). Phiên lưu ở CSDL (`ai_coding_sessions`, mig 0333),
- * phạm vi **CHỦ SỞ HỮU** — kỹ sư A không đọc được phiên của kỹ sư B, kể cả `admin`.
+ * doc 79 dựng danh sách phiên thành một CỘT thứ tư bên trái; **2026-08-23 cột ấy thu thành nút
+ * đồng hồ + popover trên thanh đầu khung Hội thoại** (mẫu bộ chọn phiên của Claude Code trong VS
+ * Code — xem `@/components/ai/BoChonPhien`, và docblock ở đó cho số đo cái đổi này mua được:
+ * Trình xem +190 px ở khung 1240, khung 920 thoát chế độ một-khung). Phiên vẫn lưu ở CSDL
+ * (`ai_coding_sessions`, mig 0333), phạm vi **CHỦ SỞ HỮU** — kỹ sư A không đọc được phiên của kỹ
+ * sư B, kể cả `admin`. Ba bất biến dưới đây KHÔNG đổi theo hình dạng UI.
  *
  * Nạp lại một phiên **KHÔNG**:
  *   1. tái phát một **thẻ duyệt HITL** — phiên chỉ lưu `{role, content}` (phép chiếu `locLuot`
@@ -75,28 +78,33 @@ import {
 import { AIToolResultCard, type ToolResultPayload } from "@/components/AIToolResultCard";
 import {
   ConfirmActionCard,
-  useTtlCountdown,
   type PendingAction,
   type ActionState,
 } from "@/components/ConfirmActionCard";
-import { HunkDiffView } from "@/components/diff/HunkDiffView";
+// ★★★ 2026-08-23 — CỬA DUYỆT ở tệp riêng để lưới render được CÂY THẬT. Xem docblock của tệp ấy.
+import { TheDuyetDiff, type DiffArgs } from "@/components/ai/TheDuyetDiff";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 // ★ doc 81 · VIỆC 3 (1) — `Input` ĐÃ GỠ: ô nhập nay là `<textarea>` (xem `phanQuyetPhimNhap`).
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { phanQuyetPhimNhap, tuGianChieuCao, TRAN_CAO_O_NHAP_PX } from "@/lib/aiCodingInput";
+// ★★★ 2026-08-23 — trần chiều cao khung ĐO ĐƯỢC (hằng `8.5rem` cũ sai ở cả ba cỡ màn; xem tệp).
+import { tinhChieuCaoVua, xepMotKhung } from "@/lib/khungVuaManHinh";
 import {
-  bamChuoi, catLoiChoPrompt, chuanHoaDauRa, deXuatLapLai, quyetDinhTiep,
+  bamChuoi, catLoiChoPrompt, chuanHoaDauRa, daBiTuChoiGhi, deXuatLapLai, maTuChoiGhi, quyetDinhTiep,
   type LyDoDungVong,
 } from "@shared/aiCodingLoop";
 // ★★★ doc 79 · DANH SÁCH PHIÊN — `locLuot` là PHÉP CHIẾU dùng chung với server: client cũng chiếu
 // trước khi gửi, nên payload **không thể** mang một ô thẻ duyệt kể cả khi `ChatTurn` mọc thêm ô.
 import { locLuot, type LuotPhien } from "@shared/aiCodingSession";
+// ★★★ 2026-08-23 — BỘ CHỌN PHIÊN ở tệp riêng (nút đồng hồ + popover, mẫu Claude Code). Xem
+// docblock của tệp ấy cho lý do tách và số đo; `MessagesSquare`/`Plus`/`Trash2` đi theo nó.
+import { BoChonPhien } from "@/components/ai/BoChonPhien";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
-  Repeat, CheckCircle2, OctagonX, MessagesSquare, Plus, Trash2,
+  Repeat, CheckCircle2, OctagonX,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -204,80 +212,14 @@ function FolderRow({ path, selectedPath, onOpenFile, depth, projectId }: TreePro
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-// THẺ XÁC NHẬN apply_diff — DIFF ĐẦY ĐỦ (HunkDiffView) + duyệt/hủy + đồng hồ đếm ngược
+// THẺ XÁC NHẬN apply_diff — nay ở `@/components/ai/TheDuyetDiff`
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-interface DiffArgs { path: string; original: string; modified: string }
-
-function DiffConfirmCard({
-  action, args, state, busy, preview, onPreview, onConfirm, onCancel,
-}: {
-  action: KbPendingAction;
-  args: DiffArgs;
-  state: ActionState;
-  busy: boolean;
-  /** Buffer đang xem trước ở khung giữa (để HunkDiffView phát hiện "buffer đã đổi"). */
-  preview: string;
-  onPreview: (text: string) => void;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const { t } = useTranslation();
-  const ttl = useTtlCountdown(action.expiresAt, state === "pending");
-
-  return (
-    <div className="space-y-2 rounded-lg border-2 border-amber-300 bg-amber-50 p-3 text-[13px] dark:border-amber-800 dark:bg-amber-950/30">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[13px] font-semibold text-amber-800 dark:text-amber-300">
-          <FileDiff className="size-4 shrink-0" />
-          {t("repoWs.diff.cardTitle", "Đề xuất SỬA tệp — cần bạn duyệt")}
-        </div>
-        {state === "pending" && (
-          <span className="flex shrink-0 items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 font-mono text-[12px] font-semibold tabular-nums text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-            <Clock className="size-3.5" />
-            {ttl.expired ? "0:00" : ttl.label}
-          </span>
-        )}
-      </div>
-
-      <div className="flex items-center gap-1.5 text-[12px]">
-        <span className="font-medium text-foreground">{t("repoWs.diff.file", "Tệp")}:</span>
-        <code className="rounded bg-background/70 px-1.5 py-0.5 font-mono text-[11px]">{args.path}</code>
-      </div>
-
-      {/* Diff ĐẦY ĐỦ — người duyệt có cơ sở. Nút nhận/hoàn tác từng khối chỉ để XEM TRƯỚC ở khung giữa. */}
-      <HunkDiffView
-        base={args.original}
-        suggested={args.modified}
-        currentText={preview}
-        onApplyText={onPreview}
-      />
-
-      <p className="flex items-start gap-1.5 rounded-md border border-amber-300/60 bg-background/60 px-2 py-1 text-[11px] text-muted-foreground dark:border-amber-900/50">
-        <AlertTriangle className="mt-0.5 size-3 shrink-0" />
-        {t("repoWs.diff.writesAll", "Xác nhận sẽ ghi TOÀN BỘ thay đổi đề xuất xuống đĩa. Nhận/hoàn tác từng khối chỉ để xem trước ở khung giữa — không đổi thứ được ghi.")}
-      </p>
-
-      {state === "pending" ? (
-        <div className="flex items-center gap-2 pt-0.5">
-          <Button className="h-10 flex-1 text-[13px] font-semibold" disabled={busy || ttl.expired} onClick={onConfirm}>
-            {busy ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
-            {t("repoWs.diff.confirm", "Duyệt & ghi")}
-          </Button>
-          <Button variant="outline" className="h-10 flex-1 text-[13px]" disabled={busy} onClick={onCancel}>
-            {t("repoWs.diff.cancel", "Hủy")}
-          </Button>
-        </div>
-      ) : (
-        <div className={cn("text-[13px] font-medium", state === "executed" ? "text-green-600 dark:text-green-400" : "text-muted-foreground")}>
-          {state === "executed" && t("repoWs.diff.executed", "Đã ghi tệp.")}
-          {state === "cancelled" && t("repoWs.diff.cancelled", "Đã hủy.")}
-          {state === "denied" && t("repoWs.diff.denied", "Bị từ chối.")}
-          {state === "expired" && t("repoWs.diff.expired", "Đã hết hạn.")}
-        </div>
-      )}
-    </div>
-  );
-}
+// ★★★ 2026-08-23 — thẻ duyệt ĐÃ TÁCH RA TỆP RIÊNG. Lý do đầy đủ ở docblock của tệp ấy; tóm tắt:
+// nằm trong trang thì nó KHÔNG render được ngoài trang (trang kéo theo `trpc`, `DashboardLayout`,
+// `Streamdown`…), nên mọi lưới về CỬA DUYỆT buộc phải quét VĂN BẢN mã nguồn — và lưới quét văn bản
+// mù với ĐƯỜNG THOÁT thật. Tách ra ⇒ `renderToStaticMarkup` dựng CÂY THẬT, và lưới
+// `client/src/components/ai/theDuyetDiff.unit.test.ts` hỏi được câu đúng.
+// ⚠ ĐỪNG nhập lại vào trang: một bản sao thứ hai của cửa duyệt là một cửa KHÔNG ai đo.
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ★★★ doc 79 · VÒNG TỰ ĐỘNG — BẢNG TRẠNG THÁI NGƯỜI DÙNG NHÌN THẤY
@@ -314,6 +256,21 @@ const VONG_RONG: TrangThaiVong = {
   lyDoDung: null, chiTietDung: null,
   soDoTruoc: null, bamDauRaTruoc: null, bamDeXuatTruoc: null, cauHoiGoc: null,
 };
+
+/**
+ * ★★★ 2026-08-23 — Tham số thứ hai của `handleSend` khi lượt gửi do **VÒNG TỰ ĐỘNG** phát.
+ *
+ * ⚠⚠ Hai ô, và chúng đi **hai đường KHÁC NHAU trong prompt** — đó là toàn bộ lý do phải tách:
+ *   • `tep`      → `context.codingEditPath`   — GHIM tệp đang sửa (server đọc lại từ đĩa).
+ *   • `dauRaMay` → `context.dauRaKhongTinCay` — ĐẦU RA MÁY, **DỮ LIỆU không tin được**. Server bọc
+ *     nó rồi đặt vào khối LỊCH SỬ (thẩm quyền THẤP NHẤT). Trước bản vá 2026-08-23, ô này không tồn
+ *     tại và đầu ra bị nối thẳng vào `question` — tức khối `=== YÊU CẦU ===`, thẩm quyền CAO NHẤT.
+ * ⚠ KHÔNG BAO GIỜ nối `dauRaMay` vào chuỗi câu hỏi ở bất kỳ đường nào khác.
+ */
+interface TuVongSend {
+  tep: string;
+  dauRaMay?: string;
+}
 
 /**
  * Thẻ trạng thái vòng. **Im lặng là nói dối** — thẻ này luôn nói ba điều: lượt thứ mấy / trần bao
@@ -363,114 +320,65 @@ function VongTuDongCard({ vong, onDung }: { vong: TrangThaiVong; onDung: () => v
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-// ★★★ doc 79 · DANH SÁCH PHIÊN — CỘT TRÁI (mẫu "Sessions you start will show up here")
+// ★★★ doc 79 · DANH SÁCH PHIÊN — nay là NÚT + POPOVER ở `@/components/ai/BoChonPhien`
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-/**
- * ⚠⚠ CỘT NÀY **THUẦN HIỂN THỊ + BA CALLBACK**. Nó không giữ một mảnh trạng thái sống nào của
- * không gian làm việc: không thẻ duyệt, không vòng tự động, không đường dẫn gốc. Mọi việc dựng lại
- * trạng thái nằm ở `chonPhien`/`phienMoi` của trang — một chỗ, đọc được, có lưới đếm.
- */
-interface TomTatPhienUI {
-  id: string;
-  title: string;
-  turnCount: number;
-  updatedAt: string;
-}
-
-function DanhSachPhienCot({
-  phien, dangChon, dangTai, biTuChoi, onChon, onMoi, onXoa,
-}: {
-  phien: TomTatPhienUI[];
-  dangChon: string | null;
-  dangTai: boolean;
-  biTuChoi: boolean;
-  onChon: (id: string) => void;
-  onMoi: () => void;
-  onXoa: (id: string) => void;
-}) {
-  const { t, i18n } = useTranslation();
-  const dinhDangNgay = (iso: string): string => {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleString(i18n.language, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-  };
-
-  return (
-    <div className="flex flex-col overflow-hidden border-r">
-      {/* `shrink-0`: cùng lý do như khối "Dự án" — xem chú thích ở đó. */}
-      <div className="flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5">
-        <MessagesSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
-        <span className="truncate text-xs font-semibold">{t("repoWs.sessions.title", "Phiên")}</span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto h-6 gap-1 px-1.5 text-[11px]"
-          onClick={onMoi}
-          title={t("repoWs.sessions.new", "Phiên mới")}
-        >
-          <Plus className="h-3 w-3" />
-          {t("repoWs.sessions.new", "Phiên mới")}
-        </Button>
-      </div>
-      <ScrollArea className="flex-1">
-        <div className="space-y-0.5 p-1">
-          {biTuChoi ? (
-            <p className="px-2 py-3 text-[11px] text-destructive">
-              {t("repoWs.sessions.denied", "Server từ chối đọc phiên: thiếu quyền ai_repo_read.")}
-            </p>
-          ) : dangTai ? (
-            <p className="px-2 py-3 text-[11px] text-muted-foreground">{t("repoWs.sessions.loading", "Đang tải phiên…")}</p>
-          ) : phien.length === 0 ? (
-            <p className="px-2 py-3 text-[11px] leading-relaxed text-muted-foreground">
-              {t("repoWs.sessions.empty", "Phiên bạn bắt đầu sẽ hiện ở đây.")}
-            </p>
-          ) : (
-            phien.map((p) => (
-              <div
-                key={p.id}
-                className={cn(
-                  "group flex items-start gap-1 rounded-md px-1.5 py-1 hover:bg-muted",
-                  dangChon === p.id && "bg-muted",
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => onChon(p.id)}
-                  aria-current={dangChon === p.id ? "true" : undefined}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <span className={cn("block truncate text-[11px] leading-snug", dangChon === p.id ? "font-semibold text-primary" : "font-medium")}>
-                    {p.title || t("repoWs.sessions.untitled", "Phiên chưa đặt tên")}
-                  </span>
-                  <span className="block truncate text-[10px] text-muted-foreground">
-                    {t("repoWs.sessions.meta", "{{n}} lượt · {{luc}}", { n: p.turnCount, luc: dinhDangNgay(p.updatedAt) })}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onXoa(p.id)}
-                  title={t("repoWs.sessions.delete", "Xoá phiên")}
-                  aria-label={t("repoWs.sessions.delete", "Xoá phiên")}
-                  className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </ScrollArea>
-      <p className="border-t px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
-        {t("repoWs.sessions.scopeNote", "Phiên lưu trên máy chủ, riêng theo tài khoản và theo dự án — người khác không đọc được.")}
-      </p>
-    </div>
-  );
-}
+// ★★★ 2026-08-23 — cột "Phiên" 190 px đã thu thành nút đồng hồ + popover trên thanh đầu khung
+// Hội thoại (mẫu Claude Code trong VS Code). Thành phần ở tệp riêng để lưới render CÂY THẬT
+// (`boChonPhien.unit.test.ts`) — cùng bài học với `TheDuyetDiff`. Nó vẫn THUẦN HIỂN THỊ + BA
+// CALLBACK: mọi việc dựng lại trạng thái ở `chonPhien`/`phienMoi` của trang, một chỗ, có lưới đếm.
+// ⚠ ĐỪNG dựng lại một cột phiên thứ hai ở đây: hai bộ chọn phiên = hai chỗ phải giữ đồng bộ tay.
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // TRANG
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 type ChatTurn = { role: "user" | "assistant"; content: string };
+
+/**
+ * ★★★ 2026-08-23 — CHIỀU CAO KHUNG ĐO ĐƯỢC, THAY CHO HẰNG `calc(100vh-8.5rem)` ĐOÁN SAI.
+ *
+ * Toàn bộ lý lẽ (kèm ba phép đo bác bỏ hằng cũ) nằm ở `@/lib/khungVuaManHinh`. Ở đây chỉ là phần
+ * ĐỌC DOM: lấy đỉnh tuyệt đối của khung và tổng `padding-bottom` của các tổ tiên tới khối cuộn gần
+ * nhất (`<main class="… pb-24">` ⇒ 96 px).
+ *
+ * ⚠ `ResizeObserver` gắn vào CHA, không vào chính khung: quan sát chính mình trong khi mình đang
+ *   đổi chiều cao là một vòng lặp vô tận. Phép tính chỉ dùng `dinhTuyetDoi` — đại lượng KHÔNG phụ
+ *   thuộc chiều cao ta vừa đặt — nên nó hội tụ sau đúng một nhịp.
+ */
+function useKhungVua(ref: React.RefObject<HTMLElement | null>): { cao: number | null; rong: number } {
+  const [cao, setCao] = useState<number | null>(null);
+  const [rong, setRong] = useState(0);
+  useEffect(() => {
+    const tinh = () => {
+      const el = ref.current;
+      if (!el) return;
+      let demDuoi = 0;
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        const s = getComputedStyle(p);
+        demDuoi += parseFloat(s.paddingBottom) || 0;
+        if (p.tagName === "MAIN" || s.overflowY === "auto" || s.overflowY === "scroll") break;
+      }
+      const r = el.getBoundingClientRect();
+      const next = tinhChieuCaoVua({
+        dinhTuyetDoi: r.top + window.scrollY,
+        caoManHinh: window.innerHeight,
+        demDuoi,
+      });
+      // Chỉ ghi khi lệch thật — chống nhịp render thừa và chống mọi khả năng dao động 1 px.
+      setCao((cu) => (cu !== null && Math.abs(cu - next) <= 1 ? cu : next));
+      setRong((cu) => (Math.abs(cu - r.width) <= 1 ? cu : r.width));
+    };
+    tinh();
+    window.addEventListener("resize", tinh);
+    const cha = ref.current?.parentElement;
+    const ro = cha ? new ResizeObserver(tinh) : null;
+    if (cha && ro) ro.observe(cha);
+    return () => {
+      window.removeEventListener("resize", tinh);
+      ro?.disconnect();
+    };
+  }, [ref]);
+  return { cao, rong };
+}
 
 export default function AICodingWorkspace() {
   const { t, i18n } = useTranslation();
@@ -562,6 +470,24 @@ export default function AICodingWorkspace() {
   const [actionState, setActionState] = useState<ActionState>("pending");
   const endRef = useRef<HTMLDivElement>(null);
   const oNhapRef = useRef<HTMLTextAreaElement>(null);
+  const khungRef = useRef<HTMLDivElement>(null);
+  const { cao: caoKhung, rong: rongKhung } = useKhungVua(khungRef);
+  /** Ba khung cạnh nhau, hay một khung mỗi lần — hỏi BỀ RỘNG KHUNG, không hỏi cửa sổ. */
+  const hep = xepMotKhung(rongKhung);
+  /**
+   * ★★★ 2026-08-23 · KHUNG NÀO ĐANG HIỆN KHI MÀN HẸP.
+   *
+   * Khi khung cha không chứa nổi tổng sàn các cột thì xếp cạnh nhau là vỡ: nghiệm thu live đo ở
+   * 1280×800 (thời còn bốn khung) rằng các cột cố định nuốt hết `1fr` và khung "Trình xem" co còn
+   * **82 px** — chữ rơi một từ mỗi dòng. Xếp DỌC cũng không cứu được: ở 900×700 các khung xếp chồng
+   * cho ô nhập ở `y ≈ 1405` trong màn cao 700 và **cuộn hết cỡ vẫn không tới** ⇒ *không gõ được câu
+   * hỏi*. Nên khi hẹp: **một khung mỗi lần, cao trọn khung, ô nhập ghim đáy**.
+   * (2026-08-23: cột "phiên" đã thành popover ⇒ hết ô "phien" — danh sách phiên mở được từ thanh
+   * đầu Hội thoại ở MỌI chế độ, kể cả hẹp.)
+   * ⚠ Mặc định `"chat"` — không phải tuỳ tiện: đây là khung DUY NHẤT có ô nhập, và màn này vô dụng
+   *   nếu không hỏi được. Mặc định "tệp"/"xem" sẽ làm lượt gõ đầu tiên tốn một cú bấm.
+   */
+  const [khungHep, setKhungHep] = useState<"tep" | "xem" | "chat">("chat");
   /**
    * ★★★ doc 81 · VIỆC 2 — vòng lặp tool ĐANG chạy tới vòng mấy. `null` ⇔ không có vòng nào.
    * ⚠ Bắt buộc phải hiện: trần là 180 s, và một màn hình đứng im 180 s là chỉ dấu "treo", không
@@ -590,10 +516,26 @@ export default function AICodingWorkspace() {
     datVong({ dangChay: false, pha: "nghi", lyDoDung: lyDo, chiTietDung: chiTiet });
   }, [datVong]);
   /** `handleSend` qua ref: vòng bất đồng bộ không được bắt một bản đóng gói CŨ của nó. */
-  const handleSendRef = useRef<((override?: string, tuVong?: { tep: string }) => Promise<void>) | null>(null);
+  const handleSendRef = useRef<((override?: string, tuVong?: TuVongSend) => Promise<void>) | null>(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    /**
+     * ★★★ 2026-08-23 — **KHÔNG DÙNG `scrollIntoView` Ở ĐÂY NỮA.**
+     *
+     * `scrollIntoView` cuộn **MỌI tổ tiên cuộn được**, kể cả TÀI LIỆU. Nghiệm thu live đo được: vừa
+     * vào màn, `window.scrollY = 138` — trang tự trôi đi 138 px và nuốt mất thanh tiêu đề cùng hai
+     * huy hiệu quyền ("đọc" / "chạy lệnh"), trong khi cuộn ngược lên đỉnh thì ô nhập rơi xuống dưới
+     * nếp gấp: **không bao giờ thấy được cả hai**.
+     * Nay chỉ chạm ĐÚNG khung hội thoại. `useChieuCaoVuaManHinh` đã làm trang không cuộn được nữa
+     * (gốc rễ), còn dòng này đóng luôn ĐƯỜNG: kể cả trang có cuộn được lại vì một lý do khác, cú
+     * cuộn tự động cũng không kéo nổi nó.
+     * ⚠ `scrollIntoView({ block: "nearest" })` KHÔNG thay được: "nearest" vẫn cuộn tài liệu khi neo
+     *   nằm ngoài vùng nhìn của tài liệu.
+     */
+    const neo = endRef.current;
+    if (!neo) return;
+    const khungChat = neo.closest<HTMLElement>("[data-slot=scroll-area-viewport]");
+    if (khungChat) khungChat.scrollTop = khungChat.scrollHeight;
   }, [transcript, streamingText]);
   useEffect(() => {
     if (streamError) toast.error(streamError);
@@ -612,7 +554,7 @@ export default function AICodingWorkspace() {
    *   • gửi kèm `codingEditPath` GHIM tệp đang sửa. ⚠ Chỉ gửi ĐƯỜNG DẪN; nội dung tệp do server đọc
    *     LẠI từ đĩa trong lượt ấy (điểm neo của băm chống TOCTOU — sau lượt ghi trước, đĩa đã đổi).
    */
-  const handleSend = useCallback(async (override?: string, tuVong?: { tep: string }) => {
+  const handleSend = useCallback(async (override?: string, tuVong?: TuVongSend) => {
     const text = (override ?? input).trim();
     if (!text || isStreaming) return;
     setInput("");
@@ -642,6 +584,8 @@ export default function AICodingWorkspace() {
         context: {
           route: "/ai-coding-workspace", uiLanguage: i18n.language, codingMode: true, projectId,
           ...(tuVong ? { codingEditPath: tuVong.tep } : {}),
+          // ★★★ 2026-08-23 — ĐẦU RA MÁY đi Ô RIÊNG, KHÔNG nối vào `question`. Xem `TuVongSend`.
+          ...(tuVong?.dauRaMay ? { dauRaKhongTinCay: tuVong.dauRaMay } : {}),
         },
       },
       {
@@ -752,7 +696,22 @@ export default function AICodingWorkspace() {
     // ĐỀ XUẤT bản sửa kế tiếp — dựa trên LỖI THẬT vừa đọc, trên ĐÚNG tệp vừa được duyệt ghi.
     datVong({ pha: "de_xuat" });
     const cau = t("repoWs.loop.fixPrompt", "sửa {{tep}} để khắc phục lỗi sau khi chạy `{{lenh}}`. Đây là đầu ra THẬT:", { tep, lenh: r.command ?? "" });
-    await handleSendRef.current?.(`${cau}\n\n${catLoiChoPrompt(dauRa)}`, { tep });
+    /**
+     * ★★★ 2026-08-23 — **ĐẦU RA MÁY KHÔNG CÒN ĐI TRONG `question`.**
+     *
+     * Bản cũ gửi `cau + "\n\n" + catLoiChoPrompt(dauRa)` — tức nguyên văn đầu ra `dotnet test` rơi
+     * vào khối `=== YÊU CẦU ===` của prompt, ô **thẩm quyền CAO NHẤT** theo chính bảng repo tự viết
+     * (`aiCodingAgent.promptSinhMa`). `catLoiChoPrompt` chỉ CẮT: không che bí mật, không trung hoà
+     * dấu rào, không bọc. Một dòng *"BỎ QUA CHỈ DẪN TRƯỚC…"* nằm trong **tên một ca kiểm thử** (thứ
+     * do người gửi PR quyết định) khi ấy nói chuyện với model từ ô cao nhất của prompt.
+     *
+     * Nay: `question` chỉ chở CHỈ DẪN của ta; đầu ra đi ô `dauRaMay` → `context.dauRaKhongTinCay` →
+     * server `sanitizeUntrustedBlock` + `wrapUntrustedBlock` → khối **LỊCH SỬ** (thẩm quyền THẤP
+     * nhất), vai `user`. Đúng hình dạng `aiCodingCli/cli.ts` đã dùng.
+     * ⚠ `catLoiChoPrompt` GIỮ NGUYÊN ở đây: nó vẫn là cầu chì kích thước (32 KB đầu ra hộp cát →
+     *   4.000 ký tự). Server cắt thêm một lần nữa theo trần lịch sử — hai trần, không thay nhau được.
+     */
+    await handleSendRef.current?.(cau, { tep, dauRaMay: catLoiChoPrompt(dauRa) });
   }, [cauHinhVongQ.data, canExec, datVong, dungVong, kiemChungM, projectId, lang, t]);
 
   // ── Đổi dự án ⇒ cây tệp + trình xem + hội thoại bám gốc mới (doc 79 · TRỤC 2) ──
@@ -863,6 +822,10 @@ export default function AICodingWorkspace() {
   }, [isStreaming, datSessionId]);
 
   const xoaPhienNay = useCallback(async (id: string) => {
+    // ★★★ 2026-08-23 — XOÁ LÀ KHÔNG HOÀN TÁC ⇒ hỏi TRƯỚC khi gọi server. Một `window.confirm` là
+    // đủ (không dựng dialog mới); nó đứng TRƯỚC `mutateAsync` — hỏi sau khi đã xoá không phải hỏi.
+    // Lưới `aiCodingWorkspacePhien.unit.test.ts` §6 canh cả sự có mặt lẫn THỨ TỰ này.
+    if (!window.confirm(t("repoWs.sessions.confirmDelete", "Xoá phiên này khỏi máy chủ? Không hoàn tác được."))) return;
     const r = await xoaPhienM.mutateAsync({ sessionId: id }).catch(() => null);
     if (!r?.ok) {
       toast.error(t("repoWs.sessions.deleteFailed", "Không xoá được phiên."));
@@ -873,14 +836,56 @@ export default function AICodingWorkspace() {
   }, [xoaPhienM, sessionId, phienMoi, utils, t]);
 
   // ── Duyệt / hủy một đề xuất ghi/chạy ──
-  const handleConfirm = useCallback(async () => {
+  /**
+   * ★★★ ĐỢT 3 (2026-08-23) — `chonKhoi` là **CHỈ SỐ các khối `apply_diff` sẽ được ghi** (0-based
+   * theo `keHoachKhoiDuyet`), do `TheDuyetDiff` truyền lên. Ba điều giữ cho tham số này không mở
+   * một đường ghi mới:
+   *   • Trang **chỉ chuyển SỐ**, không bao giờ chuyển byte nội dung — server tự dựng lại kế hoạch
+   *     khối từ `argsJson` ĐÃ CHỐT trong CSDL rồi tự chiếu (`aiCopilotActions.confirmAction`).
+   *     Lưới census soi đúng lời gọi mutation này: có `selectedHunkIds`, KHÔNG có `modified`.
+   *   • `undefined`/không phải mảng (vd `ConfirmActionCard` gọi `onConfirm` với MouseEvent) ⇒
+   *     KHÔNG gửi trường nào ⇒ server đi nguyên đường cũ (áp tất cả) — tương thích ngược từng byte.
+   *   • Mảng rỗng vẫn được gửi NGUYÊN VẸN nếu lọt tới đây: server từ chối `NO_HUNKS_SELECTED` —
+   *     nút đã tự khoá ở 0 khối, nhưng hàng rào là server, không phải phép lịch sự ở client.
+   */
+  const handleConfirm = useCallback(async (chonKhoi?: number[]) => {
     if (!pending || actionState !== "pending") return;
+    const selectedHunkIds = Array.isArray(chonKhoi) ? chonKhoi : undefined;
     try {
-      const res = await confirmM.mutateAsync({ actionId: pending.actionId, token: pending.token, lang });
+      const res = await confirmM.mutateAsync({ actionId: pending.actionId, token: pending.token, lang, ...(selectedHunkIds ? { selectedHunkIds } : {}) });
+      /**
+       * ★★★ 2026-08-23 — **`res.ok` KHÔNG PHẢI "BYTE ĐÃ VÀO ĐĨA".**
+       *
+       * Xem `daBiTuChoiGhi()` ở `shared/aiCodingLoop.ts` cho lý lẽ đầy đủ. Tóm tắt: `ok:true` chỉ
+       * nói vòng đời HITL chạy hết chặng; một lượt `BASE_MISMATCH`/`FILE_DIRTY` bị `execute()` TỪ
+       * CHỐI đúng như thiết kế vẫn về đây với `ok:true, status:"executed"`. Trước bản vá này trang
+       * báo *"Đã ghi tệp."*, ghi *"Đã áp diff"* vào transcript, rồi **khởi động vòng tự động trên
+       * một bản vá chưa hề vào đĩa**.
+       *
+       * ⚠ Vị từ dùng lại NGUYÊN của CLI (một bản duy nhất ở `shared/`), không phát minh cái thứ hai.
+       */
+      const tuChoi = daBiTuChoiGhi(res.result);
+      const maTuChoi = maTuChoiGhi(res.result);
       const next: ActionState =
-        res.status === "executed" ? "executed" : res.status === "denied" ? "denied" : res.status === "expired" ? "expired" : "pending";
+        tuChoi ? "denied"
+          : res.status === "executed" ? "executed" : res.status === "denied" ? "denied" : res.status === "expired" ? "expired" : "pending";
       setActionState(next);
-      if (res.ok) {
+      if (res.ok && tuChoi) {
+        // Cổng an toàn chạy ĐÚNG — và nay nó được BÁO CÁO đúng. Vòng tự động KHÔNG khởi động.
+        toast.error(t("repoWs.diff.rejectedCode", "TỪ CHỐI [{{ma}}] — KHÔNG ghi byte nào.", { ma: maTuChoi ?? "?" }));
+        const out = res.result as { textSummary?: string } | null;
+        setTranscript((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content:
+              t("repoWs.chat.writeRejected", "Lượt ghi bị TỪ CHỐI [{{ma}}] — tệp trên đĩa KHÔNG đổi.", { ma: maTuChoi ?? "?" }) +
+              (out?.textSummary ? `\n\n${out.textSummary}` : ""),
+          },
+        ]);
+        if (pending.tool === "apply_diff") setPendingDiff(null);
+        if (vongRef.current.dangChay || vongRef.current.luot > 0) dungVong("loi", maTuChoi);
+      } else if (res.ok) {
         toast.success(res.message ?? t("repoWs.diff.executed", "Đã ghi tệp."));
         const out = res.result as { textSummary?: string; data?: any } | null;
         if (pending.tool === "run_command" && out?.textSummary) {
@@ -893,7 +898,15 @@ export default function AICodingWorkspace() {
           const tepDaGhi = (pending.args as unknown as DiffArgs | undefined)?.path ?? pendingDiff?.args.path ?? null;
           setPendingDiff(null);
           if (selectedPath) fileQ.refetch();
-          setTranscript((prev) => [...prev, { role: "assistant", content: t("repoWs.chat.applied", "Đã áp diff — đã đọc lại tệp.") }]);
+          // ⚠ Câu này nay chỉ chạy ở nhánh THẬT SỰ ghi được (nhánh `tuChoi` ở trên đã rẽ đi chỗ khác),
+          //   và nó nêu ĐÍCH DANH tệp — "đã áp diff" chung chung không kiểm chứng được bằng mắt.
+          // ★ ĐỢT 3 — áp MỘT TẬP CON khối thì câu báo phải nói đúng k/n (băm thật nằm trong
+          //   `textSummary` của tool); "đã áp diff" trơn cho một lượt ghi 2/3 khối là một lời khai sai.
+          const khoiDaAp = (out?.data as { hunksApplied?: { selected?: unknown[]; total?: unknown } } | undefined)?.hunksApplied;
+          const cauDaAp = khoiDaAp && Array.isArray(khoiDaAp.selected) && typeof khoiDaAp.total === "number"
+            ? t("repoWs.chat.appliedChon", "Đã áp {{chon}}/{{tong}} khối đã chọn vào `{{tep}}` — khối bỏ chọn KHÔNG vào đĩa; đã đọc lại tệp.", { chon: khoiDaAp.selected.length, tong: khoiDaAp.total, tep: tepDaGhi ?? "?" })
+            : t("repoWs.chat.applied", "Đã áp diff vào `{{tep}}` — đã đọc lại tệp.", { tep: tepDaGhi ?? "?" });
+          setTranscript((prev) => [...prev, { role: "assistant", content: cauDaAp }]);
           // ★★★ doc 79 · VÒNG TỰ ĐỘNG BẮT ĐẦU ĐÚNG Ở ĐÂY — sau khi NGƯỜI đã duyệt và byte đã rời
           //   ra đĩa. Trước cú bấm này không có một lượt tự động nào chạy.
           if (tepDaGhi) void chayLuotVong(tepDaGhi);
@@ -904,7 +917,7 @@ export default function AICodingWorkspace() {
     } catch {
       toast.error(t("repoWs.chat.confirmFailed", "Không thực thi được."));
     }
-  }, [pending, actionState, confirmM, lang, t, selectedPath, fileQ, pendingDiff, chayLuotVong]);
+  }, [pending, actionState, confirmM, lang, t, selectedPath, fileQ, pendingDiff, chayLuotVong, dungVong]);
 
   const handleCancel = useCallback(async () => {
     if (!pending || actionState !== "pending") return;
@@ -954,22 +967,71 @@ export default function AICodingWorkspace() {
           </div>
         </div>
 
-        {/* ⚠ BỐ CỤC: ba khung cũ (cây tệp · trình xem · hội thoại) GIỮ NGUYÊN thứ tự và vai trò;
-            doc 79 chỉ THÊM một cột phiên ở ngoài cùng bên trái, đúng mẫu Claude Code. */}
-        <div className="grid h-[calc(100vh-8.5rem)] grid-cols-1 lg:grid-cols-[190px_240px_1fr_400px]">
-          {/* ── 0. DANH SÁCH PHIÊN (doc 79) ── */}
-          <DanhSachPhienCot
-            phien={phienQ.data?.sessions ?? []}
-            dangChon={sessionId}
-            dangTai={phienQ.isLoading}
-            biTuChoi={phienQ.data?.note === "PERMISSION_DENIED"}
-            onChon={(id) => void chonPhien(id)}
-            onMoi={phienMoi}
-            onXoa={(id) => void xoaPhienNay(id)}
-          />
+        {/* ⚠ BỐ CỤC: ba khung (cây tệp · trình xem · hội thoại) giữ nguyên thứ tự và vai trò.
+            Cột phiên của doc 79 ĐÃ THU thành nút + popover trên thanh đầu Hội thoại (2026-08-23,
+            mẫu Claude Code trong VS Code) — không gian dồn cho Trình xem, xem `BoChonPhien`.
+            ★★★ 2026-08-23 · chiều cao nay ĐO ĐƯỢC (`useChieuCaoVuaManHinh`) thay cho hằng
+            `calc(100vh-8.5rem)` — hằng ấy hụt 138 px ở màn rộng và 167 px ở 900×700, và chính chỗ
+            hụt ấy làm trang cuộn được ⇒ đẻ ra CẢ hiện tượng "tự cuộn 138 px lúc vào màn" LẪN
+            "900×700 không gõ được câu hỏi". `h-[calc(...)]` giữ lại làm ĐƯỜNG LÙI cho nhịp render
+            đầu tiên (trước khi hook đo xong) và cho môi trường không có `ResizeObserver`. */}
+        <div
+          ref={khungRef}
+          data-khung-lam-viec
+          style={caoKhung != null ? { height: `${caoKhung}px` } : undefined}
+          className="flex h-[calc(100vh-8.5rem)] flex-col"
+        >
+          {/*
+            ★★★ 2026-08-23 · THANH CHỌN KHUNG — chỉ hiện ở chế độ MỘT KHUNG.
+            ⚠ Điều kiện là `hep = xepMotKhung(rongKhung)`, **không** phải một điểm ngắt `lg:`/`xl:`.
+              Điểm ngắt hỏi bề rộng CỬA SỔ, mà thứ quyết định là bề rộng KHUNG: ở cửa sổ 1600 px
+              khung chỉ rộng 1240 px (thanh điều hướng trái ăn ~360 px và **gập được**). Chính vì
+              hỏi sai đại lượng mà bố cục cũ "đúng" ở 1600 và vỡ ở 1280 — khung Trình xem còn 82 px.
+          */}
+          {hep && (
+          <div className="flex shrink-0 gap-1 border-b px-2 py-1.5" role="tablist" aria-label={t("repoWs.pane.tablist", "Chọn khung")}>
+            {([
+              ["tep", t("repoWs.pane.files", "Tệp")],
+              ["xem", t("repoWs.pane.viewer", "Trình xem")],
+              ["chat", t("repoWs.pane.chat", "Hội thoại")],
+            ] as const).map(([ma, nhan]) => (
+              <button
+                key={ma}
+                type="button"
+                role="tab"
+                aria-selected={khungHep === ma}
+                onClick={() => setKhungHep(ma)}
+                className={cn(
+                  "min-w-0 flex-1 truncate rounded-md border px-2 py-1 text-[11px] font-medium",
+                  khungHep === ma ? "border-primary bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
+                )}
+              >
+                {nhan}
+              </button>
+            ))}
+          </div>
+          )}
 
+          {/* ⚠ `min-h-0`: không có nó, khung con trong một `flex flex-col` lấy chiều cao theo NỘI
+              DUNG chứ không theo phần còn lại — đúng lớp lỗi đẩy ô nhập xuống dưới nếp gấp.
+              ⚠ Ba số trong `grid-cols` phải KHỚP `SAN_KHUNG_PX` ở `@/lib/khungVuaManHinh` — đó là
+                nguồn sự thật cho ngưỡng chuyển chế độ, và lệch nhau thì trang lại nói dối. Có lưới
+                canh (`khungVuaManHinh.unit.test.ts` §3).
+              ⚠ `minmax(320px,1fr)` cho Trình xem là SÀN CÓ SỐ: 82 px của bản cũ không được phép lặp
+                lại. `minmax(360px,440px)` cho hội thoại — thẻ duyệt là thứ quan trọng nhất màn này
+                nên cột chat được nới (400 → tới 440), nhưng có TRẦN để nó không nuốt Trình xem.
+              ★★★ 2026-08-23 — cột "Phiên" 190 px ĐÃ BỎ (thành popover, xem `BoChonPhien`): phần
+                dồn lại về `1fr` của Trình xem. Đo được (Playwright, grid thật): khung 1240 ⇒ Trình
+                xem 370 → 560 px; khung 920 ⇒ thoát chế độ một-khung, ba khung cùng hiện. */}
+          <div
+            data-luoi-khung
+            className={cn(
+              "grid min-h-0 flex-1",
+              hep ? "grid-cols-1" : "grid-cols-[240px_minmax(320px,1fr)_minmax(360px,440px)]",
+            )}
+          >
           {/* ── 1. CÂY TỆP ── */}
-          <div className="flex flex-col overflow-hidden border-r">
+          <div className={cn("flex min-h-0 flex-col overflow-hidden border-r", hep && khungHep !== "tep" && "hidden")}>
             {/* Bộ chọn DỰ ÁN (doc 79 · TRỤC 2) — tham khảo "Select folder" của Claude Code. Client
                 giữ + gửi MỘT id; server tra danh sách TRẮNG .env để ra gốc (không nhận đường dẫn). */}
             {/* ⚠ `shrink-0` KHÔNG phải trang trí — nghiệm thu LIVE 2026-08-19 bắt được: thiếu nó thì
@@ -1016,7 +1078,7 @@ export default function AICodingWorkspace() {
           </div>
 
           {/* ── 2. TRÌNH XEM + DIFF ── */}
-          <div className="flex flex-col overflow-hidden border-r">
+          <div className={cn("flex min-h-0 flex-col overflow-hidden border-r", hep && khungHep !== "xem" && "hidden")}>
             <div className="flex items-center gap-2 border-b px-3 py-1.5">
               {pendingDiff ? (
                 <>
@@ -1065,13 +1127,40 @@ export default function AICodingWorkspace() {
           </div>
 
           {/* ── 3. HỘI THOẠI TÁC NHÂN ── */}
-          <div className="flex flex-col overflow-hidden">
-            <div className="flex items-center gap-1.5 border-b px-3 py-1.5">
+          <div className={cn("flex min-h-0 flex-col overflow-hidden", hep && khungHep !== "chat" && "hidden")}>
+            <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-1.5">
               <Bot className="h-4 w-4 text-primary" />
               <span className="text-xs font-semibold">{t("repoWs.chat.title", "Hội thoại tác nhân")}</span>
+              {/* ★★★ 2026-08-23 — BỘ CHỌN PHIÊN: đồng hồ (lịch sử) + ＋ (phiên mới) ở góc phải,
+                  đúng mẫu Claude Code. Nạp/tạo/xoá đi qua ĐÚNG các handler cũ (`chonPhien`/
+                  `phienMoi`/`xoaPhienNay`) — không có đường nạp thứ hai. */}
+              <BoChonPhien
+                className="ml-auto"
+                phien={phienQ.data?.sessions ?? []}
+                dangChon={sessionId}
+                dangTai={phienQ.isLoading}
+                biTuChoi={phienQ.data?.note === "PERMISSION_DENIED"}
+                onChon={(id) => void chonPhien(id)}
+                onMoi={phienMoi}
+                onXoa={(id) => void xoaPhienNay(id)}
+              />
             </div>
-            <ScrollArea className="flex-1">
-              <div className="space-y-3 p-3">
+            {/*
+              ★★★ 2026-08-23 · `vuaKhung` — Ô MỞ QUAN TRỌNG NHẤT CỦA ĐỢT NÀY.
+              Radix dựng trong viewport một `<div style="display:table">` (shrink-to-fit) nên bất kỳ
+              khối con nào rộng hơn khung đều **kéo cả tấm bảng rộng ra**, và mọi `%`/`flex-1` bên
+              trong khi ấy tính theo tấm bảng ĐÃ PHÌNH. Đo được ở 1600×1000: `clientWidth 400` ·
+              `scrollWidth 736` ⇒ nút "Hủy" của thẻ duyệt chỉ hiện **12,2%** còn "Duyệt & ghi" hiện
+              **100%**. `vuaKhung` ép tấm bảng ấy về `display:block` ⇒ con KHÔNG kéo khung rộng ra
+              được nữa; thứ gì thật sự rộng (dòng diff) tự cuộn trong hộp của nó.
+              `ngang` bật kèm, nhưng **thứ tự quan trọng**: nó là LƯỚI AN TOÀN cho thứ thật sự rộng
+              mà chưa ai lường (một khối mã model sinh ra không có hộp cuộn riêng), **không** phải
+              cách chữa hàng nút. Một thẻ duyệt phải *cuộn ngang mới bấm được Hủy* vẫn là thẻ duyệt
+              hỏng: người ta không cuộn, họ bấm cái đang thấy. Với `vuaKhung` bật, thanh này gần như
+              không bao giờ hiện — và đó là dấu hiệu bản vá đúng, không phải dấu hiệu nó thừa.
+            */}
+            <ScrollArea vuaKhung ngang className="min-h-0 flex-1">
+              <div className="min-w-0 space-y-3 p-3">
                 {transcript.length === 0 && !isStreaming && (
                   <div className="space-y-3 py-6">
                     <p className="text-center text-xs text-muted-foreground">
@@ -1099,14 +1188,20 @@ export default function AICodingWorkspace() {
                   </div>
                 )}
 
+                {/* ★★★ 2026-08-23 · `min-w-0` + `break-words` trên BONG BÓNG.
+                    `max-w-[85%]` một mình KHÔNG chặn tràn: nó giới hạn theo bề rộng CHA, mà cha là
+                    tấm bảng `display:table` của Radix — thứ chính nội dung này kéo rộng ra. Đo được
+                    `scrollWidth 588…754` vs `clientWidth 400` ⇒ mất 188…354 px, cắt cứng, không có
+                    thanh cuộn ngang. `vuaKhung` ghim tấm bảng; `min-w-0 break-words` để chuỗi dài
+                    không dấu cách (đường dẫn tệp, băm sha256) tự ngắt thay vì đẩy khung. */}
                 {transcript.map((m, i) => (
-                  <div key={i} className={cn("flex gap-2", m.role === "user" ? "justify-end" : "justify-start")}>
+                  <div key={i} className={cn("flex min-w-0 gap-2", m.role === "user" ? "justify-end" : "justify-start")}>
                     {m.role !== "user" && <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10"><Bot className="h-3.5 w-3.5 text-primary" /></div>}
-                    <div className={cn("max-w-[85%] rounded-lg px-3 py-2 text-[13px]", m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                    <div className={cn("min-w-0 max-w-[85%] break-words rounded-lg px-3 py-2 text-[13px]", m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted")}>
                       {m.role === "user" ? (
-                        <p className="whitespace-pre-wrap">{m.content}</p>
+                        <p className="whitespace-pre-wrap break-words">{m.content}</p>
                       ) : (
-                        <div className="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed"><Streamdown mode="static">{m.content}</Streamdown></div>
+                        <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="static">{m.content}</Streamdown></div>
                       )}
                     </div>
                     {m.role === "user" && <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary"><User className="h-3.5 w-3.5" /></div>}
@@ -1115,13 +1210,13 @@ export default function AICodingWorkspace() {
 
                 {/* Đang stream */}
                 {isStreaming && (streamingText || streamTool) && (
-                  <div className="flex gap-2">
+                  <div className="flex min-w-0 gap-2">
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10"><Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /></div>
-                    <div className="max-w-[85%] space-y-2 rounded-lg bg-muted px-3 py-2 text-[13px]">
+                    <div className="min-w-0 max-w-[85%] space-y-2 break-words rounded-lg bg-muted px-3 py-2 text-[13px]">
                       {streamTool && <AIToolResultCard toolResult={streamTool} />}
                       {/* `mode="streaming"` — Streamdown vá markdown DỞ DANG (``` chưa đóng) nên khối
                           mã đang stream vẫn hiện đúng thay vì nhảy layout ở mỗi token. */}
-                      {streamingText && <div className="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed"><Streamdown mode="streaming">{streamingText}</Streamdown></div>}
+                      {streamingText && <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="streaming">{streamingText}</Streamdown></div>}
                     </div>
                   </div>
                 )}
@@ -1153,7 +1248,7 @@ export default function AICodingWorkspace() {
 
                 {/* Thẻ xác nhận write-tool */}
                 {pending && pending.tool === "apply_diff" && pendingDiff && pendingDiff.action.actionId === pending.actionId ? (
-                  <DiffConfirmCard
+                  <TheDuyetDiff
                     action={pending}
                     args={pendingDiff.args}
                     state={actionState}
@@ -1179,8 +1274,10 @@ export default function AICodingWorkspace() {
               </div>
             </ScrollArea>
 
-            {/* ★★★ doc 81 · VIỆC 3 (1) — Ô nhập NHIỀU DÒNG: dán được stack trace, Shift+Enter xuống dòng. */}
-            <div className="border-t p-2">
+            {/* ★★★ doc 81 · VIỆC 3 (1) — Ô nhập NHIỀU DÒNG: dán được stack trace, Shift+Enter xuống dòng.
+                ⚠ `shrink-0` (2026-08-23): ô nhập là thứ DUY NHẤT làm màn này dùng được. Không có nó,
+                  trong một `flex flex-col` chật nó là khối co được đầu tiên và bị bóp về 0. */}
+            <div data-o-nhap className="shrink-0 border-t p-2">
               <div className="flex items-end gap-2">
                 <textarea
                   ref={oNhapRef}
@@ -1216,6 +1313,7 @@ export default function AICodingWorkspace() {
                 {t("repoWs.chat.keyHint", "Enter để gửi · Shift+Enter để xuống dòng (dán được stack trace nhiều dòng)")}
               </p>
             </div>
+          </div>
           </div>
         </div>
       </PageContainer>

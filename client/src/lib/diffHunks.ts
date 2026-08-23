@@ -357,6 +357,90 @@ export function applyHunkSelection({
   return wanted;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 3 (2026-08-23) — DUYỆT THEO KHỐI **THẬT**: bộ vị từ dùng CHUNG client ↔ server
+// ══════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ KẾ HOẠCH KHỐI **CHUẨN** cho cửa duyệt HITL (`apply_diff`) — client VÀ server cùng gọi.
+ *
+ * Vì sao phải có MỘT hàm đứng tên: lựa chọn khối đi qua dây mạng **CHỈ BẰNG SỐ THỨ TỰ**
+ * (`selectedHunkIds: number[]`) — client KHÔNG BAO GIỜ gửi byte nội dung (nguyên tắc gốc của HITL:
+ * *"execute() args come from ai_pending_actions.argsJson, not the request"*). Muốn số thứ tự có
+ * nghĩa thì hai đầu dây phải dựng **CÙNG MỘT** kế hoạch khối từ cùng (original, modified) — tức là
+ * mọi tuỳ chọn của `computeHunkPlan` phải là **HÀM TẤT ĐỊNH của chính hai chuỗi ấy**, không phải
+ * một cái checkbox ai đó bấm ở một phía.
+ *
+ * Luật EOL vì thế bị GHIM: `matchEol` ⇔ hai chuỗi có kiểu xuống dòng ÁP ĐẢO khác nhau — đúng giá
+ * trị mặc định mà `HunkDiffView` tự bật khi phát hiện lệch. Hệ quả nói thẳng:
+ *   • không lệch EOL ⇒ `plan.modified === modified` nguyên văn ⇒ chọn đủ khối ≡ đường cũ, từng byte;
+ *   • lệch EOL ⇒ `plan.modified` là bản đã khớp EOL theo `original` — đó CHÍNH là cái người duyệt
+ *     nhìn thấy trong thẻ (thẻ cũng chiếu từ kế hoạch này), nên byte được ghi = byte được duyệt.
+ * ⚠ Đổi luật này ở MỘT phía (hay thêm tham số tuỳ chọn cho nó) là tách đôi kế hoạch giữa hai đầu
+ *   dây — số thứ tự khối khi ấy trỏ vào khối SAI mà không ai báo lỗi.
+ */
+export function keHoachKhoiDuyet(original: string, modified: string): HunkPlan {
+  return computeHunkPlan(original, modified, { matchEol: detectEol(original) !== detectEol(modified) });
+}
+
+export type KetQuaChieuChiSo =
+  | { ok: true; text: string; chiSo: number[]; tong: number }
+  | { ok: false; ma: "HUNK_IDS_INVALID" | "NO_HUNKS_SELECTED"; chiTiet: string };
+
+/**
+ * ★★★ XÁC THỰC + CHIẾU một tập **CHỈ SỐ khối** (0-based, theo `plan.hunks`) — vị từ mà server dùng
+ * để biến `selectedHunkIds` của request thành byte sẽ ghi. MỘT bản duy nhất, thuần, không I/O.
+ *
+ * Luật từ chối — **có mã, không âm thầm lọc** (một client độc hại gửi id lạ phải bị NÓI THẲNG là
+ * độc hại, không phải được "sửa hộ" thành một lượt ghi khác ý người duyệt):
+ *   • rỗng               ⇒ `NO_HUNKS_SELECTED` — "ghi 0 khối" không phải một lượt ghi; ghi một tệp
+ *     y nguyên vẫn đổi mtime, đánh thức watcher, đẻ một dòng audit "đã ghi" — ba lời nói dối nhỏ.
+ *   • không phải số nguyên / âm / ≥ tổng số khối ⇒ `HUNK_IDS_INVALID`.
+ *   • trùng nhau         ⇒ `HUNK_IDS_INVALID` — trùng là dấu client hỏng, không phải "chọn hai lần".
+ *
+ * Nhánh xanh: chiếu qua `projectHunks` (phép chiếu từ bản gốc — không dịch offset, không phụ thuộc
+ * thứ tự), trả `text` đúng TỪNG KÝ TỰ và `chiSo` đã sắp tăng dần để audit đọc được.
+ */
+export function chieuTheoChiSoKhoi(plan: HunkPlan, chiSoTho: readonly unknown[]): KetQuaChieuChiSo {
+  if (!Array.isArray(chiSoTho)) {
+    return { ok: false, ma: "HUNK_IDS_INVALID", chiTiet: "selectedHunkIds không phải mảng" };
+  }
+  if (chiSoTho.length === 0) {
+    return { ok: false, ma: "NO_HUNKS_SELECTED", chiTiet: "0 khối được chọn" };
+  }
+  const tong = plan.hunks.length;
+  const thay = new Set<number>();
+  for (const raw of chiSoTho) {
+    if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0 || raw >= tong) {
+      return { ok: false, ma: "HUNK_IDS_INVALID", chiTiet: `chỉ số ${String(raw)} ∉ [0, ${tong})` };
+    }
+    if (thay.has(raw)) {
+      return { ok: false, ma: "HUNK_IDS_INVALID", chiTiet: `chỉ số ${raw} bị lặp` };
+    }
+    thay.add(raw);
+  }
+  const chiSo = [...thay].sort((a, b) => a - b);
+  const r = projectHunks(plan, chiSo.map((i) => plan.hunks[i].id));
+  /* c8 ignore next — id lấy từ CHÍNH plan.hunks nên không thể "unknown-hunk" */
+  if (!r.ok) return { ok: false, ma: "HUNK_IDS_INVALID", chiTiet: r.id };
+  return { ok: true, text: r.text, chiSo, tong };
+}
+
+/**
+ * ★ Phía CLIENT: từ tập id đã chọn trong thẻ duyệt → mảng chỉ số gửi lên server.
+ *
+ * `null` ⇔ **chọn ĐỦ mọi khối** ⇒ client KHÔNG gửi trường `selectedHunkIds` ⇒ server đi nguyên
+ * đường cũ (ghi `argsJson.modified` nguyên văn) — tương thích ngược **từng byte** cho ca thường
+ * gặp nhất. Chỉ khi người duyệt BỎ bớt khối thì trường mới xuất hiện trên dây.
+ * ⚠ Tập rỗng trả `[]` (không phải null): nút Duyệt phải tự khoá ở 0 khối, nhưng hàm này không được
+ *   "lịch sự hộ" — nếu một đường gọi vẫn gửi `[]`, server từ chối `NO_HUNKS_SELECTED` đúng thiết kế.
+ */
+export function chiSoGuiLenServer(plan: HunkPlan, daChon: Iterable<string>): number[] | null {
+  const chon = new Set(daChon);
+  const chiSo: number[] = [];
+  for (let i = 0; i < plan.hunks.length; i++) if (chon.has(plan.hunks[i].id)) chiSo.push(i);
+  return chiSo.length === plan.hunks.length ? null : chiSo;
+}
+
 /** Đếm dòng thêm/xoá của một khối (nhãn "+n −m"). */
 export function hunkStats(h: DiffHunk): { added: number; removed: number } {
   return { added: h.added.length, removed: h.removed.length };

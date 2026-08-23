@@ -31,6 +31,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import ts from "typescript";
 import { spawn } from "node:child_process";
@@ -1146,4 +1147,97 @@ describe("§M — (D) CỔNG BỔ SUNG cho mục ghi đĩa: đòi THÊM ai_repo_
     ).toEqual(["execute"]);
   });
 
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ §K — **npm/npx ĐI NGƯỢC LÊN CÂY THƯ MỤC, HỘP CÁT CHỈ GIAM `cwd`.**
+ * Bắt được ở NGHIỆM THU LIVE 2026-08-23, không lưới nào phát biểu: hỏi *"chạy test của dự án này"*
+ * trong dự án C# ⇒ tác nhân chạy `npm run check:tests`, thẻ duyệt khai đúng thư mục
+ * `sandbox-projects/csharp-demo`, mà đầu ra là **lỗi TypeScript của REPO CHÍNH**. Đo lại bằng
+ * `npm prefix` trong đúng thư mục ấy: trả về `D:\SOURCES\avi-aoi-management`.
+ * ⇒ Không phải lỗ THỰC THI (khuôn vẫn khớp chính xác), mà là lời nói dối về **việc lệnh tác động
+ *   lên cái gì** — và người duyệt bấm 'y' dựa trên nó.
+ */
+describe("§K — lệnh Node đòi `package.json` Ở ĐÚNG GỐC", () => {
+  const gocCoNode = fs.mkdtempSync(path.join(os.tmpdir(), "goc-node-"));
+  const gocChaCoNode = fs.mkdtempSync(path.join(os.tmpdir(), "cha-node-"));
+  const gocConKhongNode = path.join(gocChaCoNode, "du-an-csharp");
+
+  beforeAll(() => {
+    fs.writeFileSync(path.join(gocCoNode, "package.json"), '{"name":"co-that"}');
+    // ★ Hình dạng THẬT của `sandbox-projects/csharp-demo`: gốc KHÔNG có package.json, thư mục CHA CÓ.
+    fs.writeFileSync(path.join(gocChaCoNode, "package.json"), '{"name":"repo-chinh"}');
+    fs.mkdirSync(gocConKhongNode, { recursive: true });
+  });
+  afterAll(() => {
+    for (const d of [gocCoNode, gocChaCoNode]) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  it("★★ dân số: đúng BA mục thoát cwd, và chúng đúng là ba mục npm/npx", () => {
+    const thoat = DANH_SACH_TRANG.filter((m) => m.thoatCwdTheoCayThuMuc).map((m) => m.nhan);
+    expect(
+      thoat,
+      "Thêm một lệnh `npm`/`npx`/`yarn`/`pnpm` vào bảng mà quên khai ô này ⇒ nó chạy trên dự án CHA " +
+        "trong khi thẻ duyệt khai thư mục CON. Đọc khối `thoatCwdTheoCayThuMuc` trước khi sửa số này.",
+    ).toEqual(["npm run check", "npm run check:tests", "npx vitest run <đường-dẫn>"]);
+    // Mọi mục đều PHẢI khai — thiếu ô là `undefined`, tức lọt qua cổng theo chiều KHÔNG an toàn.
+    for (const m of DANH_SACH_TRANG) expect(typeof m.thoatCwdTheoCayThuMuc, m.nhan).toBe("boolean");
+  });
+
+  it("★★★ gốc KHÔNG có package.json (mà CHA thì có) ⇒ TỪ CHỐI cả ba lệnh Node", () => {
+    for (const argv of [
+      ["npm", "run", "check"],
+      ["npm", "run", "check:tests"],
+      ["npx", "vitest", "run", "src"],
+    ]) {
+      const r = phanQuyetLenh(argv, gocConKhongNode);
+      expect(r.ok, `${JSON.stringify(argv)} phải bị từ chối`).toBe(false);
+      if (!r.ok) expect(r.ma).toBe(MA_TU_CHOI_LENH.CMD_GOC_THIEU_PACKAGE_JSON);
+    }
+  });
+
+  it("★★★ CHỐNG TỰ THOẢ: cùng gốc ấy, lệnh KHÔNG thoát cwd vẫn ĐƯỢC chạy", () => {
+    // Không có ca này thì một đột biến "từ chối tất cả ở gốc lạ" cũng xanh, và cổng mất hết ý nghĩa.
+    const r = phanQuyetLenh(["git", "status"], gocConKhongNode);
+    expect(r.ok, "git KHÔNG đi ngược cây thư mục để tìm dự án ⇒ không có lý do từ chối").toBe(true);
+  });
+
+  /**
+   * ★★★ Cùng họ "lệnh tự đi ngược lên cây thư mục", nhưng hậu quả KHÁC: `git status` không chạy sai
+   * dự án — nó báo cáo ĐÚNG repo mẹ, và đó mới là vấn đề. Đo 2026-08-23 trong
+   * `sandbox-projects/csharp-demo`: `git status --porcelain` trả **171 dòng** đường dẫn của repo
+   * chính; thêm `-- .` thì còn **0**. Một phiên mở dự án C# không được nhìn thấy cây tệp repo mẹ.
+   */
+  it("★★★ `git status`/`git diff` PHẢI giới hạn phạm vi vào cây con của cwd", () => {
+    for (const argv of [["git", "status"], ["git", "diff"]]) {
+      const r = phanQuyetLenh(argv, gocConKhongNode);
+      expect(r.ok, `${JSON.stringify(argv)} phải hợp lệ`).toBe(true);
+      if (!r.ok) continue;
+      expect(
+        r.spec.args,
+        "thiếu `-- .` ⇒ git đi ngược lên `.git` gần nhất và bê về TOÀN BỘ repo mẹ, tức rò tên tệp " +
+          "của một dự án mà phiên này không được phép nhìn",
+      ).toEqual(expect.arrayContaining(["--", "."]));
+    }
+  });
+
+  it("★★ CHIỀU DƯƠNG: gốc CÓ package.json ⇒ lệnh Node chạy được như cũ", () => {
+    /**
+     * ⚠ `npx vitest run <đường>` bị bỏ ra khỏi ca này **có chủ ý, và đo rồi mới bỏ**: `phanGiai` của
+     *   nó gọi `duongDanVitest(goc)` để tìm `node_modules/vitest/vitest.mjs` **dưới đúng gốc ấy**.
+     *   Thư mục tạm không có `node_modules` ⇒ nó đỏ vì `CMD_RESOLVE_ERROR` (hỏng CÀI ĐẶT), một trục
+     *   hoàn toàn khác với trục `package.json` mà §K này canh. Để nó ở đây là trộn hai nguyên nhân
+     *   vào một mệnh đề — nhìn thì "xanh/đỏ" vẫn đúng, nhưng nó sẽ đỏ vì lý do SAI.
+     * ⚠ Chiều ÂM của `npx vitest` vẫn được canh ở ca trên: chốt `package.json` chạy TRƯỚC
+     *   `phanQuyetOTuDo` lẫn `phanGiai`, nên nó phát biểu được mà không chạm hai trục kia.
+     */
+    for (const argv of [
+      ["npm", "run", "check"],
+      ["npm", "run", "check:tests"],
+    ]) {
+      const r = phanQuyetLenh(argv, gocCoNode);
+      expect(r.ok, `${JSON.stringify(argv)} là hợp lệ, KHÔNG được vá quá tay`).toBe(true);
+    }
+  });
 });

@@ -7708,6 +7708,14 @@
     "zodSchemas": []
   },
   {
+    "file": "server/_core/deviceErrors.ts",
+    "interfaces": [],
+    "aliases": [
+      "DeviceEntityKey"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/_core/eventBus.ts",
     "interfaces": [
       "DomainEvent"

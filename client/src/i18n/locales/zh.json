@@ -19271,15 +19271,25 @@
     "sessions": {
       "title": "会话",
       "new": "新建会话",
+      "history": "会话历史",
+      "search": "按名称搜索会话…",
+      "noMatch": "没有匹配的会话。",
       "loading": "正在加载会话…",
       "empty": "您开始的会话将显示在这里。",
       "untitled": "未命名会话",
       "meta": "{{n}} 轮 · {{luc}}",
       "delete": "删除会话",
+      "confirmDelete": "从服务器删除该会话？此操作无法撤销。",
       "denied": "服务器拒绝读取会话：缺少 ai_repo_read 权限。",
       "openFailed": "无法打开该会话（已被删除，或不属于您）。",
       "deleteFailed": "无法删除该会话。",
-      "scopeNote": "会话保存在服务器上，按账号和项目隔离——他人无法读取。"
+      "scopeNote": "会话保存在服务器上，按账号和项目隔离——他人无法读取。",
+      "rel": {
+        "now": "刚刚",
+        "min": "{{n}} 分钟",
+        "hour": "{{n}} 小时",
+        "day": "{{n}} 天"
+      }
     },
     "project": {
       "label": "项目",
@@ -19322,8 +19332,10 @@
       "placeholder": "向智能体提问：读取/搜索代码、提出修改、运行测试…",
       "keyHint": "Enter 发送 · Shift+Enter 换行（可粘贴多行堆栈信息）",
       "cmdOutput": "命令输出（已加入上下文以便继续修复）",
-      "applied": "已应用 diff——已重新读取文件。",
-      "confirmFailed": "无法执行。"
+      "applied": "差异已应用到 `{{tep}}` — 已重新读取文件。",
+      "appliedChon": "已将所选 {{chon}}/{{tong}} 个块应用到 `{{tep}}`——未选块未写入磁盘；已重新读取文件。",
+      "confirmFailed": "无法执行。",
+      "writeRejected": "写入被拒绝 [{{ma}}] — 磁盘上的文件未改变。"
     },
     "toolLoop": {
       "running": "读码循环 — 第 {{round}}/{{tran}} 轮"
@@ -19331,13 +19343,17 @@
     "diff": {
       "cardTitle": "建议编辑文件——需要你审核",
       "file": "文件",
-      "writesAll": "确认将把整个建议更改写入磁盘。接受/撤销单个代码块仅在中间面板预览——不改变实际写入的内容。",
+      "writesSelected": "确认将把所选 {{chon}}/{{tong}} 个块写入磁盘——未选块不会写入。浏览器只发送块序号；内容由服务器从已锁定的提议重新投影。",
+      "zeroChon": "未选择任何块——请至少选择一个块，或点击取消。（写入 0 个块不算写入；服务器同样会拒绝。）",
+      "confirmChon": "批准并写入（{{chon}}/{{tong}} 块）",
       "confirm": "批准并写入",
       "cancel": "取消",
       "executed": "文件已写入。",
       "cancelled": "已取消。",
       "denied": "已拒绝。",
-      "expired": "已过期。"
+      "expired": "已过期。",
+      "rejectedCode": "已拒绝 [{{ma}}] — 未写入任何字节。",
+      "warningsTitle": "批准前请阅读"
     },
     "suggest": {
       "read": "读取 server/routers.ts 并总结",
@@ -19370,6 +19386,12 @@
         "off": "自动循环已关闭（默认）——修改已写入，但需要你自己运行测试。设置 AI_CODING_AUTOLOOP=1 并重启服务器即可启用。",
         "error": "已停止：运行验证命令时发生真实故障。"
       }
+    },
+    "pane": {
+      "tablist": "选择面板",
+      "files": "文件",
+      "viewer": "查看器",
+      "chat": "对话"
     }
   },
   "masterDataCol": {

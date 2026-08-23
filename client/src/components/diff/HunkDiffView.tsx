@@ -45,6 +45,19 @@ export interface HunkDiffViewProps {
   /** Chụp lại `base` từ buffer hiện tại (lối thoát khi băng "buffer đã đổi" hiện lên). */
   onResync?: () => void;
   className?: string;
+  /**
+   * ★★★ ĐỢT 3 (2026-08-23) — CHẾ ĐỘ **ĐIỀU KHIỂN TỪ NGOÀI**, cho thẻ duyệt HITL (`TheDuyetDiff`).
+   * Ở đó tập khối đang chọn KHÔNG còn là "trạng thái xem trước" mà là **thứ quyết định byte sẽ
+   * ghi**, nên nó phải sống ở CHA (nơi bấm Duyệt) chứ không trong component vẽ diff. Có mặt ⇒
+   * component KHÔNG giữ state chọn riêng và KHÔNG tự đặt lại khi plan đổi — vòng đời thuộc về cha.
+   */
+  chonNgoai?: { daChon: string[]; onDoi: (ids: string[]) => void };
+  /**
+   * ★ GHIM luật EOL về đúng `keHoachKhoiDuyet` (matchEol ⇔ phát hiện lệch): ẩn checkbox tuỳ chọn.
+   * Bắt buộc bật cùng `chonNgoai` trong thẻ duyệt — một checkbox đổi được plan ở MỘT phía sẽ làm
+   * chỉ số khối client gửi trỏ vào khối SAI trên plan mà server tự dựng lại.
+   */
+  khoaEol?: boolean;
 }
 
 function LineRow({ sign, text }: { sign: "+" | "-"; text: string }) {
@@ -79,28 +92,40 @@ export function HunkDiffView({
   onApplyText,
   onResync,
   className,
+  chonNgoai,
+  khoaEol,
 }: HunkDiffViewProps) {
   const { t } = useTranslation();
 
   // Model hay trả LF cho một buffer CRLF. Không khớp lại thì MỌI dòng đều "khác" và diff
   // biến thành một khối nuốt cả file — đúng nhưng vô dụng. Mặc định BẬT khi phát hiện lệch.
+  // ⚠ `khoaEol` (ĐỢT 3): luật bị GHIM = đúng mặc định ấy, checkbox không render — xem docblock prop.
   const eolMismatch = detectEol(base) !== detectEol(suggested);
   const [matchEolPref, setMatchEolPref] = useState<boolean | null>(null);
-  const matchEol = matchEolPref ?? eolMismatch;
+  const matchEol = khoaEol ? eolMismatch : (matchEolPref ?? eolMismatch);
 
   const plan = useMemo(
     () => computeHunkPlan(base, suggested, { matchEol }),
     [base, suggested, matchEol],
   );
 
-  /** Tập khối phía ta TIN là đang nằm trong buffer. Nguồn sự thật cho cả nhận lẫn hoàn tác. */
-  const [applied, setApplied] = useState<string[]>([]);
+  /**
+   * Tập khối phía ta TIN là đang nằm trong buffer. Nguồn sự thật cho cả nhận lẫn hoàn tác.
+   * ⚠ ĐỢT 3: có `chonNgoai` ⇒ nguồn sự thật là CHA (thẻ duyệt — tập này quyết định byte sẽ ghi);
+   *   state nội bộ chỉ dùng cho chế độ cũ (xem-trước trong editor).
+   */
+  const [appliedNoiBo, setAppliedNoiBo] = useState<string[]>([]);
+  const applied = chonNgoai ? chonNgoai.daChon : appliedNoiBo;
+  const datApplied = chonNgoai ? chonNgoai.onDoi : setAppliedNoiBo;
 
   // Gợi ý mới / bản gốc mới ⇒ mọi id cũ vô nghĩa. Đặt lại tập chọn (và lựa chọn EOL).
+  // ⚠ Chế độ điều khiển từ ngoài KHÔNG đặt lại ở đây — cha sở hữu vòng đời (nó đặt lại về TẤT CẢ,
+  //   không phải về rỗng; hai mặc định khác nhau vì hai nghĩa khác nhau: xem-trước vs sẽ-ghi).
+  const dieuKhienNgoai = chonNgoai !== undefined;
   const planKey = `${plan.baseSignature}|${plan.modified.length}|${plan.hunks.length}|${plan.eolMatched}`;
   useEffect(() => {
-    setApplied([]);
-  }, [planKey]);
+    if (!dieuKhienNgoai) setAppliedNoiBo([]);
+  }, [planKey, dieuKhienNgoai]);
   useEffect(() => {
     setMatchEolPref(null);
   }, [base, suggested]);
@@ -122,7 +147,7 @@ export function HunkDiffView({
       }
       return;
     }
-    setApplied(next);
+    datApplied(next);
     onApplyText(r.text);
   };
 
@@ -147,9 +172,13 @@ export function HunkDiffView({
   }
 
   return (
-    <div className={cn("space-y-2", className)}>
+    // ★★★ 2026-08-23 · `min-w-0` — thành phần này sống trong thẻ duyệt HITL của
+    //   `/ai-coding-workspace`, một cột hẹp. Thiếu `min-w-0` thì bề rộng `max-content` của DÒNG
+    //   DIFF DÀI NHẤT trở thành bề rộng tối thiểu của cả thẻ, và thẻ kéo khung rộng ra (đo được
+    //   736 px trong khung 400 px) — đúng cơ chế đẩy nút "Hủy" ra ngoài vùng nhìn.
+    <div className={cn("min-w-0 space-y-2", className)}>
       {/* ── Thanh điều khiển ────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Badge variant="outline" className="text-[10px]">
           {t("diff.hunk.count", "{{n}} khối", { n: plan.hunks.length })}
         </Badge>
@@ -158,7 +187,10 @@ export function HunkDiffView({
         <Badge variant="secondary" className="text-[10px]">
           {t("diff.hunk.appliedN", "Đã nhận {{n}}", { n: applied.length })}
         </Badge>
-        <span className="ml-auto flex gap-1.5">
+        {/* `flex-wrap` + `ml-auto`: khi còn chỗ thì hai nút dạt phải như cũ; khi hẹp thì chúng
+            XUỐNG DÒNG. Không có `flex-wrap`, cặp nút này là một khối cứng ~200 px và nó góp vào
+            bề rộng tối thiểu của cả thẻ duyệt. */}
+        <span className="ml-auto flex flex-wrap gap-1.5">
           <Button
             type="button" size="sm" variant="outline" className="h-7 text-[11px]"
             disabled={stale || applied.length === 0} onClick={boHet}
@@ -175,7 +207,8 @@ export function HunkDiffView({
       </div>
 
       {/* ── Lệch kiểu xuống dòng (Windows: CRLF là ca thật) ─────────────────── */}
-      {eolMismatch && (
+      {/* `khoaEol` ⇒ KHÔNG có checkbox: luật EOL phải tất định để chỉ số khối hai đầu dây khớp nhau. */}
+      {!khoaEol && eolMismatch && (
         <label className="flex items-start gap-1.5 rounded-md border bg-muted/30 p-2 text-[11px] text-muted-foreground">
           <input
             type="checkbox" className="mt-0.5" checked={matchEol}
@@ -217,8 +250,8 @@ export function HunkDiffView({
         {plan.hunks.map((h) => {
           const on = appliedSet.has(h.id);
           return (
-            <div key={h.id} className={cn("overflow-hidden rounded-md border", on && "border-primary/50")}>
-              <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-2 py-1">
+            <div key={h.id} className={cn("min-w-0 overflow-hidden rounded-md border", on && "border-primary/50")}>
+              <div className="flex min-w-0 flex-wrap items-center gap-2 border-b bg-muted/40 px-2 py-1">
                 <span className="font-mono text-[10px] text-muted-foreground">#{h.index + 1}</span>
                 <span className="text-[11px] text-muted-foreground">{nhanPhamVi(h)}</span>
                 <span className="text-[10px] text-emerald-600 dark:text-emerald-400">+{h.added.length}</span>
@@ -240,7 +273,12 @@ export function HunkDiffView({
                   )}
                 </Button>
               </div>
-              <pre className="max-h-56 overflow-auto text-[11px] leading-relaxed">
+              {/* ★★★ 2026-08-23 · ĐÂY mới là chỗ đúng của một thanh cuộn ngang: dòng diff là nội
+                  dung THẬT SỰ rộng và **không được** xuống dòng (xuống dòng làm sai lệch mã). `w-full
+                  min-w-0` ghim hộp này bằng bề rộng khung, `overflow-auto` cho nó tự cuộn — nên nó
+                  KHÔNG còn kéo thẻ duyệt rộng ra. `overscroll-x-contain`: cuộn hết dòng thì dừng ở
+                  đây, không hất tiếp sang khung cha. */}
+              <pre className="max-h-56 w-full min-w-0 overflow-auto overscroll-x-contain text-[11px] leading-relaxed">
                 <code className="block">
                   {h.removed.map((l, i) => <LineRow key={`d${i}`} sign="-" text={l} />)}
                   {h.added.map((l, i) => <LineRow key={`a${i}`} sign="+" text={l} />)}

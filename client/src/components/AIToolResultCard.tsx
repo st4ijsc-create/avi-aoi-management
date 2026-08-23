@@ -331,7 +331,12 @@ export function AIToolResultCard({ toolResult }: Props) {
         (extractGenericRows(toolResult.data as unknown) ? (
           <GenericRowsBody rows={extractGenericRows(toolResult.data as unknown)!} textSummary={toolResult.textSummary} />
         ) : (
-          <div className="whitespace-pre-line text-foreground/90">{toolResult.textSummary}</div>
+          // ★★★ 2026-08-23 · `break-words` — `whitespace-pre-line` GIỮ xuống dòng nhưng **không**
+          //   cho phép ngắt trong một "từ" dài. `textSummary` ở đường mã nguồn chở đường dẫn tệp và
+          //   băm sha256 — chuỗi không dấu cách. Nghiệm thu live đo được thẻ này rộng 542 px trong
+          //   khung 400 px (`scrollWidth 588…754` vs `clientWidth 400`) ⇒ mất 188…354 px, không có
+          //   thanh cuộn ngang nào để tới. `min-w-0` để nó co được khi là con của flex/grid.
+          <div className="min-w-0 break-words whitespace-pre-line text-foreground/90">{toolResult.textSummary}</div>
         ))}
     </div>
   );
@@ -776,17 +781,18 @@ function InsightTextBody({ textSummary }: { textSummary: string }) {
 // ---- generic fallback: titled label/value list (Phase P2 read tools etc.) ----
 function GenericRowsBody({ rows, textSummary }: { rows: GenericRow[]; textSummary: string }) {
   return (
-    <div className="space-y-1 max-h-56 overflow-y-auto">
+    // `min-w-0` ở cả hộp lẫn từng dòng: xem lý lẽ `break-words` ở nhánh textSummary phía trên.
+    <div className="min-w-0 space-y-1 max-h-56 overflow-y-auto">
       {rows.slice(0, 20).map((r, i) => (
-        <div key={i} className="flex items-start justify-between gap-2 text-[11px]">
+        <div key={i} className="flex min-w-0 items-start justify-between gap-2 text-[11px]">
           <span className="font-mono text-muted-foreground truncate shrink-0 max-w-[45%]">{r.label}</span>
-          <span className="text-right text-foreground/90 break-words">{r.value}</span>
+          <span className="min-w-0 text-right text-foreground/90 break-words">{r.value}</span>
         </div>
       ))}
       {rows.length > 20 && (
         <div className="text-[10px] text-muted-foreground italic">… +{rows.length - 20} dòng nữa</div>
       )}
-      {rows.length === 0 && <div className="whitespace-pre-line text-foreground/90">{textSummary}</div>}
+      {rows.length === 0 && <div className="min-w-0 break-words whitespace-pre-line text-foreground/90">{textSummary}</div>}
     </div>
   );
 }

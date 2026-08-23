@@ -19243,15 +19243,25 @@
     "sessions": {
       "title": "Phiên",
       "new": "Phiên mới",
+      "history": "Lịch sử phiên",
+      "search": "Tìm phiên theo tên…",
+      "noMatch": "Không phiên nào khớp từ khoá.",
       "loading": "Đang tải phiên…",
       "empty": "Phiên bạn bắt đầu sẽ hiện ở đây.",
       "untitled": "Phiên chưa đặt tên",
       "meta": "{{n}} lượt · {{luc}}",
       "delete": "Xoá phiên",
+      "confirmDelete": "Xoá phiên này khỏi máy chủ? Không hoàn tác được.",
       "denied": "Server từ chối đọc phiên: thiếu quyền ai_repo_read.",
       "openFailed": "Không mở được phiên (đã bị xoá hoặc không thuộc về bạn).",
       "deleteFailed": "Không xoá được phiên.",
-      "scopeNote": "Phiên lưu trên máy chủ, riêng theo tài khoản và theo dự án — người khác không đọc được."
+      "scopeNote": "Phiên lưu trên máy chủ, riêng theo tài khoản và theo dự án — người khác không đọc được.",
+      "rel": {
+        "now": "vừa xong",
+        "min": "{{n}} phút",
+        "hour": "{{n}} giờ",
+        "day": "{{n}} ngày"
+      }
     },
     "project": {
       "label": "Dự án",
@@ -19294,8 +19304,10 @@
       "placeholder": "Hỏi tác nhân: đọc/tìm mã, đề xuất sửa, chạy test…",
       "keyHint": "Enter để gửi · Shift+Enter để xuống dòng (dán được stack trace nhiều dòng)",
       "cmdOutput": "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)",
-      "applied": "Đã áp diff — đã đọc lại tệp.",
-      "confirmFailed": "Không thực thi được."
+      "applied": "Đã áp diff vào `{{tep}}` — đã đọc lại tệp.",
+      "appliedChon": "Đã áp {{chon}}/{{tong}} khối đã chọn vào `{{tep}}` — khối bỏ chọn KHÔNG vào đĩa; đã đọc lại tệp.",
+      "confirmFailed": "Không thực thi được.",
+      "writeRejected": "Lượt ghi bị TỪ CHỐI [{{ma}}] — tệp trên đĩa KHÔNG đổi."
     },
     "toolLoop": {
       "running": "Vòng đọc mã — lượt {{round}}/{{tran}}"
@@ -19303,13 +19315,17 @@
     "diff": {
       "cardTitle": "Đề xuất SỬA tệp — cần bạn duyệt",
       "file": "Tệp",
-      "writesAll": "Xác nhận sẽ ghi TOÀN BỘ thay đổi đề xuất xuống đĩa. Nhận/hoàn tác từng khối chỉ để xem trước ở khung giữa — không đổi thứ được ghi.",
+      "writesSelected": "Xác nhận sẽ ghi {{chon}}/{{tong}} khối ĐANG CHỌN xuống đĩa — khối bỏ chọn KHÔNG được ghi. Trình duyệt chỉ gửi SỐ THỨ TỰ khối; nội dung được server chiếu lại từ đề xuất đã chốt.",
+      "zeroChon": "Chưa chọn khối nào — chọn ít nhất một khối để ghi, hoặc bấm Hủy. (Ghi 0 khối không phải một lượt ghi; server cũng sẽ từ chối.)",
+      "confirmChon": "Duyệt & ghi ({{chon}}/{{tong}} khối)",
       "confirm": "Duyệt & ghi",
       "cancel": "Hủy",
       "executed": "Đã ghi tệp.",
       "cancelled": "Đã hủy.",
       "denied": "Bị từ chối.",
-      "expired": "Đã hết hạn."
+      "expired": "Đã hết hạn.",
+      "rejectedCode": "TỪ CHỐI [{{ma}}] — KHÔNG ghi byte nào.",
+      "warningsTitle": "Đọc trước khi duyệt"
     },
     "suggest": {
       "read": "Đọc file server/routers.ts và tóm tắt",
@@ -19342,6 +19358,12 @@
         "off": "Vòng tự động đang TẮT (mặc định) — bản sửa ĐÃ ghi, nhưng bạn phải tự chạy test. Bật bằng AI_CODING_AUTOLOOP=1 rồi khởi động lại máy chủ.",
         "error": "DỪNG vì một hỏng THẬT ở lượt chạy kiểm chứng."
       }
+    },
+    "pane": {
+      "tablist": "Chọn khung",
+      "files": "Tệp",
+      "viewer": "Trình xem",
+      "chat": "Hội thoại"
     }
   },
   "masterDataCol": {

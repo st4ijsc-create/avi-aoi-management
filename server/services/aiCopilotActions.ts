@@ -14,17 +14,30 @@
  * Safety invariants (Mục 8):
  *   - confirm is mandatory; propose never auto-executes.
  *   - execute() args come from ai_pending_actions.argsJson, not the request.
+ *     ★ ĐỢT 3 (2026-08-23): với `apply_diff`, request ĐƯỢC PHÉP mang thêm `selectedHunkIds`
+ *     (CHỈ SỐ khối, không bao giờ là byte nội dung); server tự dựng lại kế hoạch khối từ argsJson
+ *     trong CSDL, xác thực, rồi CẬP NHẬT `argsJson.modified` = bản chiếu trong CÙNG câu UPDATE
+ *     giành quyền — bất biến trên vẫn đúng theo chữ: cái execute() nhận là cái vừa persist.
  *   - idempotencyKey unique → at most one execution.
  *   - RBAC checked TWICE (propose + execute), role taken from session.
  *   - audit logged at every milestone via audit_logs (append-only).
  */
 
 import { randomUUID } from "node:crypto";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, gt, lt } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { aiPendingActions } from "../../drizzle/schema";
 import { checkPermission } from "../_core/accessControl";
 import { getTool, isWriteTool, assertExecutable, type ActionPreview, type Tool, type ToolExecContext, type ToolLang } from "./aiLocalTools/toolRegistry";
+// ★★★ ĐỢT 3 (2026-08-23) — DUYỆT THEO KHỐI THẬT: server import THẲNG bộ vị từ khối của client
+// (`keHoachKhoiDuyet` + `chieuTheoChiSoKhoi`) — tiền lệ đã có (`aiCodingCli/cli.ts` import
+// `computeHunkPlan` từ đúng file này). KHÔNG chép hàm sang server: hai bản sao của một thuật toán
+// chiếu là đúng lớp lỗi "hai bản sao một vị từ" repo này đếm nhiều lần — bản lỏng hơn bao giờ
+// cũng là bản đang chạy.
+import { chieuTheoChiSoKhoi, keHoachKhoiDuyet } from "../../client/src/lib/diffHunks";
+// `bam` (sha256) + `trich` (trích-đã-che) của chính apply_diff — để lời khai audit sau một lượt
+// chọn tập-con mang đúng băm/trích của BYTE THẬT, bằng đúng thước mà tool dùng.
+import { bam as bamNoiDung, trich } from "./aiLocalTools/writeHandlers/applyDiff";
 import {
   AUDIT_ACTIONS,
   ENTITY_TYPES,
@@ -419,6 +432,202 @@ export async function proposeAction(
   };
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// HỘP THƯ ĐỀ XUẤT — đọc những gì ĐANG CHỜ chính một người duyệt
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ doc 83 · 2026-08-23 — **LỖ DÙNG-ĐƯỢC LỚN NHẤT CỦA LƯỢT TRƯỚC: MCP TẠO ĐƯỢC ĐỀ XUẤT MÀ KHÔNG
+ * CÓ CHỖ NÀO DUYỆT.** Hàng `ai_pending_actions` có thật, `confirmAction` duyệt được, nhưng không
+ * mặt tiếp xúc nào ĐỌC được chúng ⇒ một đề xuất do MCP tạo chỉ có một kết cục: **tự hết hạn**.
+ *
+ * ⚠⚠ **VÌ SAO HAI HÀM NÀY NẰM Ở ĐÂY chứ không ở `aiCodingCli/cauNoiCli.ts`** (nơi đã gọi chúng):
+ *   bảng `ai_pending_actions` có **một chủ**, và chủ của nó là file này (`propose` ghi vào,
+ *   `confirm` đọc ra). Bản đầu của tôi đặt hai hàm ấy trong `cauNoiCli.ts` và **census bắt được**:
+ *   file ấy có bất biến *"nó không biết làm gì cả — không hàng rào, không truy cập dữ liệu"*, và
+ *   một câu SQL trong đó là bước đầu tiên của lớp lỗi *"hai nơi cùng biết về một bảng"*.
+ *   ⇒ Census không chỉ đếm sai một con số; nó chỉ đúng chỗ đoạn mã nên nằm.
+ *
+ * ⚠⚠⚠ BA RÀNG BUỘC NẰM TRONG **MỆNH ĐỀ `where`**, KHÔNG PHẢI TRONG MỘT LƯỢT LỌC SAU KHI LẤY VỀ:
+ *  1. **CHỦ SỞ HỮU** — `summary`+`preview` của một đề xuất chứa **đường dẫn tệp và nguyên văn
+ *     diff**; liệt kê của người khác là rò nội dung mã nguồn, không phải "chỉ là một danh sách".
+ *  2. **CÒN HẠN** — TTL là hàng rào, và nó phải nhìn thấy được; một hàng hết hạn hiện ra chỉ để
+ *     người ta gõ id rồi nhận một lời từ chối khó hiểu.
+ *  3. **ĐANG CHỜ** — hàng `executed` giữ `resultJson` cho idempotency; hiện nó là mời duyệt lại
+ *     một thứ đã xong.
+ *
+ * ⚠ Cả hai hàm **CHỈ `select`**. Đường ghi duy nhất vẫn là `confirmAction`.
+ */
+export interface PendingActionSummary {
+  actionId: string;
+  tool: string;
+  summary: string;
+  createdAt: Date;
+  expiresAt: Date;
+  /** Gốc dự án đã neo lúc `propose` (doc 79 trục 2). `null` với write tool không-repo. */
+  projectRoot: string | null;
+}
+
+export async function listPendingActionsForUser(userId: number): Promise<PendingActionSummary[]> {
+  const db = await getDb();
+  /**
+   * ⚠⚠ CSDL VẮNG ⇒ **NÉM**, không trả `[]`. Bản đầu của tôi trả mảng rỗng — và CLI in nó ra thành
+   *   *"(không có đề xuất nào đang chờ bạn duyệt)"*, tức **một câu SAI về trạng thái thế giới** cho
+   *   một người đang có đề xuất chờ thật. Đúng lớp *"cổng chạy đúng mà báo cáo sai"* đã phải vá hai
+   *   lần trong chính doc này (`ConfirmResult.ok` và nhãn `CMD_TIMEOUT`). Hai thứ khác nhau về hậu
+   *   quả thì không được mang cùng một hình dạng trả về.
+   */
+  if (!db) throw new Error("DB_UNAVAILABLE — không đọc được hộp thư đề xuất (đây KHÔNG phải 'hộp thư rỗng').");
+  const rows = await db
+    .select({
+      id: aiPendingActions.id,
+      tool: aiPendingActions.tool,
+      summary: aiPendingActions.summary,
+      createdAt: aiPendingActions.createdAt,
+      expiresAt: aiPendingActions.expiresAt,
+      previewJson: aiPendingActions.previewJson,
+    })
+    .from(aiPendingActions)
+    .where(
+      and(
+        eq(aiPendingActions.userId, userId),
+        eq(aiPendingActions.status, "proposed"),
+        gt(aiPendingActions.expiresAt, new Date()),
+      ),
+    );
+  return rows
+    .map((r) => ({
+      actionId: r.id,
+      tool: r.tool,
+      summary: r.summary,
+      createdAt: r.createdAt,
+      expiresAt: r.expiresAt,
+      projectRoot: readProjectRoot(r.previewJson),
+    }))
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+/**
+ * Dựng lại một `PendingActionDTO` đủ để **VẼ LẠI ĐÚNG THẺ DUYỆT** (diff, cảnh báo, băm neo) rồi
+ * hỏi người. `null` khi không hàng nào khớp CẢ BA ràng buộc trên.
+ *
+ * ⚠ `token: id` đúng quy ước hiện hành (`token === actionId`, ràng vào `userId`) — không có bí mật
+ *   thứ hai để rò ở đây.
+ */
+export async function getPendingActionForUser(
+  userId: number,
+  actionId: unknown,
+): Promise<PendingActionDTO | null> {
+  if (typeof actionId !== "string" || actionId === "" || actionId.length > 64) return null;
+  const db = await getDb();
+  if (!db) throw new Error("DB_UNAVAILABLE — không đọc được đề xuất.");
+  const [r] = await db
+    .select()
+    .from(aiPendingActions)
+    .where(
+      and(
+        eq(aiPendingActions.id, actionId),
+        eq(aiPendingActions.userId, userId),
+        eq(aiPendingActions.status, "proposed"),
+        gt(aiPendingActions.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  if (!r) return null;
+  return {
+    actionId: r.id,
+    token: r.id,
+    tool: r.tool,
+    args: r.argsJson,
+    summary: r.summary,
+    preview: (r.previewJson ?? { entityType: "", entityName: "", changes: [], warnings: [] }) as unknown as ActionPreview,
+    requiredPermission: r.requiredPermissionJson ?? null,
+    expiresAt: r.expiresAt.toISOString(),
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 3 (2026-08-23) — DUYỆT THEO KHỐI **THẬT** cho `apply_diff`
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/** Mã từ chối lựa-chọn-khối — nổi lên `ConfirmResult.reason`, có mặt trong audit deny. */
+export const HUNK_REJECT_REASONS = {
+  /** id lạ / trùng / ngoài khoảng / gửi cho tool không hỗ trợ — client hỏng hoặc độc hại. */
+  HUNK_IDS_INVALID: "HUNK_IDS_INVALID",
+  /** 0 khối được chọn — "ghi y nguyên tệp" vẫn đổi mtime, đánh thức watcher, đẻ audit "đã ghi". */
+  NO_HUNKS_SELECTED: "NO_HUNKS_SELECTED",
+} as const;
+export type HunkRejectReason = (typeof HUNK_REJECT_REASONS)[keyof typeof HUNK_REJECT_REASONS];
+
+interface LuaChonKhoiXanh {
+  ok: true;
+  /** argsJson MỚI: `modified` = bản chiếu + dấu server-owned `__hunksApplied` cho audit/kết quả. */
+  args: Record<string, unknown>;
+  /** Chỉ số các khối ĐƯỢC ghi (0-based, đã sắp tăng dần). */
+  chiSo: number[];
+  tong: number;
+  /** Byte THẬT sẽ vào đĩa (bản chiếu) + băm của chính nó — để vá lời khai preview/audit. */
+  vanBan: string;
+  bamSau: string;
+}
+type KetQuaLuaChonKhoi = LuaChonKhoiXanh | { ok: false; reason: HunkRejectReason; chiTiet: string };
+
+/**
+ * ★★★ XÁC THỰC + CHIẾU lựa chọn khối của MỘT lượt confirm — mọi dữ liệu lấy từ HÀNG CSDL, request
+ * chỉ đóng góp **các con số**. Đây là chỗ giữ nguyên tắc gốc của HITL (*"execute() args come from
+ * ai_pending_actions.argsJson, not the request"*) theo CHỮ lẫn NGHĨA:
+ *   • kế hoạch khối được dựng lại bằng `keHoachKhoiDuyet(argsJson.original, argsJson.modified)` —
+ *     đúng hàm client dùng để vẽ thẻ duyệt, nên chỉ số hai đầu dây trỏ cùng một khối;
+ *   • tập chỉ số bị `chieuTheoChiSoKhoi` xác thực (lạ/trùng/ngoài khoảng/rỗng ⇒ TỪ CHỐI CÓ MÃ,
+ *     không âm thầm lọc — một client gửi id lạ phải bị nói thẳng, không được "sửa hộ");
+ *   • chỉ tool `apply_diff` (một tệp) hỗ trợ — `apply_diff_batch` giữ áp-tất-cả (chọn-khối-theo-
+ *     từng-tệp cần mỗi tệp một plan + UI phân trang, để dành; gửi lựa chọn cho nó ⇒ TỪ CHỐI).
+ * ⚠ THUẦN, không I/O — chạy TRƯỚC phép giành quyền để bản chiếu vào được CÙNG câu UPDATE.
+ */
+function apLuaChonKhoi(
+  toolName: string,
+  argsJson: Record<string, unknown>,
+  selectedHunkIds: readonly unknown[],
+): KetQuaLuaChonKhoi {
+  if (toolName !== "apply_diff") {
+    return {
+      ok: false,
+      reason: HUNK_REJECT_REASONS.HUNK_IDS_INVALID,
+      chiTiet: `tool "${toolName}" không hỗ trợ chọn khối (chỉ apply_diff một-tệp)`,
+    };
+  }
+  const original = argsJson.original;
+  const modified = argsJson.modified;
+  if (typeof original !== "string" || typeof modified !== "string") {
+    return { ok: false, reason: HUNK_REJECT_REASONS.HUNK_IDS_INVALID, chiTiet: "argsJson thiếu original/modified" };
+  }
+  const keHoach = keHoachKhoiDuyet(original, modified);
+  const chieu = chieuTheoChiSoKhoi(keHoach, selectedHunkIds);
+  if (!chieu.ok) return { ok: false, reason: HUNK_REJECT_REASONS[chieu.ma], chiTiet: chieu.chiTiet };
+  return {
+    ok: true,
+    args: { ...argsJson, modified: chieu.text, __hunksApplied: { selected: chieu.chiSo, total: chieu.tong } },
+    chiSo: chieu.chiSo,
+    tong: chieu.tong,
+    vanBan: chieu.text,
+    bamSau: bamNoiDung(chieu.text),
+  };
+}
+
+/** Câu từ chối lựa-chọn-khối theo ngôn ngữ phiên (cùng khuôn `contractRejectMessage`). */
+function hunkRejectMessage(lang: ToolLang, reason: HunkRejectReason, chiTiet: string): string {
+  if (reason === HUNK_REJECT_REASONS.NO_HUNKS_SELECTED) {
+    return lang === "en"
+      ? "No hunks selected — select at least one hunk, or cancel the proposal. Nothing was written."
+      : lang === "zh"
+        ? "未选择任何块——请至少选择一个块，或取消该提议。未写入任何内容。"
+        : "Chưa chọn khối nào — hãy chọn ít nhất một khối, hoặc Hủy đề xuất. KHÔNG có byte nào được ghi.";
+  }
+  return lang === "en"
+    ? `Invalid hunk selection (${chiTiet}) — nothing was written. Re-open the review card and try again.`
+    : lang === "zh"
+      ? `块选择无效（${chiTiet}）——未写入任何内容。请重新打开审核卡后重试。`
+      : `Lựa chọn khối không hợp lệ (${chiTiet}) — KHÔNG có byte nào được ghi. Mở lại thẻ duyệt rồi thử lại.`;
+}
+
 /**
  * Phase 2 — confirm. Verifies ownership/expiry/token, re-checks RBAC, then
  * executes with args from the DB row. Idempotent: a second confirm on an
@@ -440,6 +649,16 @@ export async function confirmAction(
    * auditor can tell an autonomous execution apart from a human one.
    */
   autonomy?: { reason: string },
+  /**
+   * ★★★ ĐỢT 3 (2026-08-23) — CHỈ SỐ các khối `apply_diff` người duyệt CHỌN GHI (0-based theo
+   * `keHoachKhoiDuyet`). `undefined` (mọi caller cũ: CLI · MCP · autonomy · client không gửi) ⇒
+   * áp TẤT CẢ — hành vi cũ, không đổi một byte. Có mặt ⇒ server TỰ dựng lại kế hoạch khối từ
+   * `argsJson` trong CSDL, xác thực tập chỉ số (lạ/trùng/rỗng/ngoài khoảng ⇒ từ chối CÓ MÃ, hàng
+   * để nguyên `proposed` — thử lại được trong TTL), rồi thay `argsJson.modified` bằng bản chiếu
+   * TRONG CÙNG câu UPDATE giành quyền — "args từ DB" vẫn đúng theo chữ, TOCTOU (`sha256Before` so
+   * với đĩa trong `execute`) giữ nguyên, và confirm-lại idempotent vẫn trả kết quả cache như cũ.
+   */
+  selectedHunkIds?: readonly number[],
 ): Promise<ConfirmResult> {
   const db = await getDb();
   if (!db) return { ok: false, status: "invalid", message: "DB_UNAVAILABLE" };
@@ -474,15 +693,84 @@ export async function confirmAction(
   assertExecutable(tool);
   const perm = row.requiredPermissionJson ?? tool.requiredPermission!;
 
-  // Mark confirmed + audit.
-  await db.update(aiPendingActions).set({ status: "confirmed" }).where(eq(aiPendingActions.id, actionId));
+  /**
+   * ★★★ ĐỢT 3 — LỰA CHỌN KHỐI: xác thực + chiếu **TRƯỚC** phép giành quyền (thuần, không I/O), để
+   * nhánh xanh đưa được bản chiếu vào CÙNG câu UPDATE có điều kiện bên dưới. Nhánh đỏ trả về mà
+   * KHÔNG chạm hàng: trạng thái giữ nguyên (`proposed`), TTL vẫn chạy — người duyệt sửa lựa chọn
+   * rồi confirm lại được; và đĩa không đổi một byte vì `execute` chưa hề tới lượt.
+   */
+  let luaChonKhoi: LuaChonKhoiXanh | null = null;
+  if (selectedHunkIds !== undefined) {
+    const chon = apLuaChonKhoi(row.tool, row.argsJson as Record<string, unknown>, selectedHunkIds);
+    if (!chon.ok) {
+      await auditConfirmFailure(user, req, row.tool, actionId, chon.reason);
+      return { ok: false, status: "invalid", reason: chon.reason, message: hunkRejectMessage(lang, chon.reason, chon.chiTiet) };
+    }
+    luaChonKhoi = chon;
+  }
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 — **GIÀNH QUYỀN, CHỨ KHÔNG PHẢI GHI NHÃN.** Đóng cửa sổ đua đọc-rồi-ghi.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Bản cũ là `UPDATE … SET status='confirmed' WHERE id=?` — **không điều kiện**. Giữa lượt `SELECT`
+   * ở đầu hàm và lượt `UPDATE` này có một khoảng thời gian thật (hai vòng mạng tới CSDL, cộng một
+   * lượt `checkPermission` **có I/O** ngay dưới). Hai lượt confirm cùng `actionId` gửi cùng lúc
+   * (người bấm hai lần · một tab thứ hai · client thử lại vì mạng chậm) thì **CẢ HAI** đều đọc thấy
+   * `status='proposed'`, **CẢ HAI** đều ghi nhãn thành công, và **CẢ HAI** đều chạy `execute()`.
+   * Với `run_command` đó là lệnh chạy hai lần; với `apply_diff` lượt thứ hai thường bị `BASE_MISMATCH`
+   * chặn — nhưng "thường bị một hàng rào KHÁC chặn" không phải là một hàng rào.
+   *
+   * ⚠⚠ **ĐIỀU KIỆN LÀ `status` ĐÃ QUAN SÁT ĐƯỢC Ở LƯỢT ĐỌC, KHÔNG PHẢI HẰNG `'proposed'`.**
+   *   Ghim cứng `'proposed'` sẽ **phá** đường thử lại mà `enforceAdviceContract` cố ý dựng: khi
+   *   POLICY_DENIED/TWIN_UNTRUSTED xảy ra, hàng được để nguyên ở `confirmed` để người dùng thử lại
+   *   CÙNG action trong khi TTL còn (xem khối TOKEN SEMANTICS bên dưới). Một lượt thử lại như thế
+   *   đọc thấy `confirmed`, nên phép giành phải so với `confirmed`.
+   *   ⇒ Ở PostgreSQL, lượt `UPDATE` thứ hai **chặn** tới khi lượt thứ nhất commit rồi **đánh giá
+   *     LẠI** mệnh đề `WHERE` trên hàng đã đổi ⇒ `proposed → confirmed` chỉ thắng được MỘT lần.
+   *
+   * ⚠ **LỖ CÒN LẠI, NÓI THẲNG (đã đo trên mã, chưa vá ở lượt này):** hai lượt thử-lại ĐỒNG THỜI của
+   *   một hàng đang ở `confirmed` (chỉ tới được khi `ADVICE_CONTRACT_ENABLED` bật **và** vừa có một
+   *   lượt từ chối tạm thời) vẫn cùng khớp `status='confirmed'` ⇒ vẫn lọt cả hai. Đóng nốt nó đòi
+   *   một cột "người giành" hoặc một trạng thái trung gian, tức một migration — ngoài phạm vi lượt
+   *   này. Cửa sổ đua của đường THƯỜNG (`proposed`) — đường mà mọi lượt duyệt của người dùng đi
+   *   qua — thì đã đóng.
+   */
+  // ★ ĐỢT 3 — bản chiếu (nếu có) đi CÙNG câu UPDATE giành quyền: thắng phép giành ⇔ argsJson đã là
+  //   bản chiếu; thua ⇒ không ai ghi gì. Không tồn tại trạng thái "giành được nhưng args còn cũ".
+  const daGianh = await db
+    .update(aiPendingActions)
+    .set({ status: "confirmed", ...(luaChonKhoi ? { argsJson: luaChonKhoi.args } : {}) })
+    .where(and(eq(aiPendingActions.id, actionId), eq(aiPendingActions.status, row.status)))
+    .returning({ id: aiPendingActions.id });
+  if (daGianh.length === 0) {
+    // 0 hàng ⇒ ai đó đã CẦM action này trước ta. Đọc lại để nói đúng kết cục, không đoán.
+    const [sau] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
+    if (sau?.status === "executed") {
+      // Nhánh idempotent y hệt nhánh đầu hàm: trả kết quả ĐÃ LƯU, không chạy lại `execute()`.
+      return { ok: true, status: "executed", result: sau.resultJson ?? null, message: "Đã thực thi trước đó." };
+    }
+    await auditConfirmFailure(user, req, row.tool, actionId, "CONCURRENT_CONFIRM");
+    return {
+      ok: false,
+      status: sau?.status === "expired" ? "expired" : "invalid",
+      message: `Một lượt duyệt khác đang xử lý action này (trạng thái: ${sau?.status ?? "không rõ"}).`,
+    };
+  }
   await logCrudOperation(buildAuditCtx(user, req), {
     action: AUDIT_ACTIONS.AI_ACTION_CONFIRMED,
     entityType: ENTITY_TYPES.AI_ACTION,
     entityName: row.tool,
     details: {
       operation: "AI_ACTION_CONFIRMED",
-      metadata: { actionId, tool: row.tool, requiredPermission: perm, ...autonomyAuditMeta(autonomy) },
+      metadata: {
+        actionId,
+        tool: row.tool,
+        requiredPermission: perm,
+        // ĐỢT 3 — người duyệt chọn TẬP CON ⇒ audit CONFIRMED nói rõ ngay từ lúc giành quyền.
+        ...(luaChonKhoi ? { hunksApplied: { selected: luaChonKhoi.chiSo, total: luaChonKhoi.tong } } : {}),
+        ...autonomyAuditMeta(autonomy),
+      },
     },
     status: "success",
   });
@@ -565,8 +853,34 @@ export async function confirmAction(
   // rơi về `gocHopCat()`), tương thích ngược cho mọi write tool không-repo.
   const projectRoot = readProjectRoot(row.previewJson as Record<string, unknown> | null);
   const execCtx: ToolExecContext = { user, lang, req, actionId, ...(projectRoot ? { projectRoot } : {}) };
-  const previewBefore = (row.previewJson as unknown as ActionPreview | null) ?? null;
-  const result = await tool.execute!(row.argsJson as Record<string, unknown>, execCtx);
+  /**
+   * ★ ĐỢT 3 — lời khai preview phải NÓI THẬT sau một lượt chọn tập-con: `sha256After` trong
+   * previewJson là băm của bản áp-TẤT-CẢ (đúng tại lúc propose), nhưng byte thật sắp vào đĩa là
+   * BẢN CHIẾU — nên hai ô `sha256After`/`content` trong `changes` được vá bằng băm/trích của chính
+   * bản chiếu TRƯỚC khi chúng chảy vào audit EXECUTED + logUpdate. Dùng đúng `bam`/`trich` của
+   * apply_diff, không dựng thước thứ hai.
+   */
+  let previewBefore = (row.previewJson as unknown as ActionPreview | null) ?? null;
+  if (luaChonKhoi && previewBefore) {
+    const lc = luaChonKhoi;
+    previewBefore = {
+      ...previewBefore,
+      changes: (previewBefore.changes ?? []).map((c) =>
+        c.field === "sha256After"
+          ? { ...c, newValue: lc.bamSau }
+          : c.field === "content"
+            ? { ...c, newValue: trich(lc.vanBan) }
+            : c,
+      ),
+    };
+  }
+  /**
+   * ⚠ Args cho `execute` = ĐÚNG đối tượng vừa được persist vào `argsJson` bởi câu UPDATE giành
+   * quyền ở trên (hoặc `row.argsJson` nguyên vẹn khi không có lựa chọn) — "args from DB" đúng theo
+   * cả chữ lẫn nghĩa; không SELECT lại để khỏi mở thêm một vòng mạng trong đúng đoạn vừa đóng đua.
+   */
+  const argsThucThi = (luaChonKhoi ? luaChonKhoi.args : row.argsJson) as Record<string, unknown>;
+  const result = await tool.execute!(argsThucThi, execCtx);
 
   await db
     .update(aiPendingActions)
@@ -590,7 +904,10 @@ export async function confirmAction(
         actionId,
         tool: row.tool,
         requiredPermission: perm,
-        args: sanitizeArgs(row.argsJson as Record<string, unknown>),
+        // ĐỢT 3 — args ĐÃ THỰC THI (bản chiếu khi có lựa chọn), không phải args lúc propose:
+        // audit của một lượt EXECUTED phải khai đúng cái vừa chạy.
+        args: sanitizeArgs(argsThucThi),
+        ...(luaChonKhoi ? { hunksApplied: { selected: luaChonKhoi.chiSo, total: luaChonKhoi.tong } } : {}),
         // D2 — the brief-mandated explicit marker: "the execution audit for an
         // auto-confirmed action must be clearly marked (autoConfirmed:true + the
         // policy decision/reason + the confirming principal recorded as the

@@ -135,6 +135,31 @@ describe("§2 — CẦU CHÌ ĐƯỢC NỐI DÂY (không phải nằm im trong m
     expect(MA).toContain("codingEditPath");
     expect(MA, "client gửi nội dung = phá điểm neo băm chống TOCTOU").not.toMatch(/codingEditContent|original:\s*goc/);
   });
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 · MỤC 2.2 — **ĐẦU RA MÁY KHÔNG ĐƯỢC NẰM TRONG `question`.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * `question` trở thành khối `=== YÊU CẦU ===` của prompt — ô **thẩm quyền CAO NHẤT** theo chính
+   * bảng repo tự viết (`aiCodingAgent.promptSinhMa`). Bản cũ gửi
+   *     `` handleSendRef.current?.(`${cau}\n\n${catLoiChoPrompt(dauRa)}`, { tep }) ``
+   * tức nguyên văn đầu ra `dotnet test` — chỉ CẮT, không che, không bọc — nói chuyện với model từ
+   * ô cao nhất. Một dòng *"BỎ QUA CHỈ DẪN TRƯỚC…"* nằm trong TÊN một ca kiểm thử lái được tác nhân.
+   *
+   * ⚠ Đây là lưới ĐỌC MÃ vì đúng hình dạng của lời gọi là thứ phải giữ; hành vi đầu–cuối (khối bọc
+   *   nằm trong lịch sử, dấu rào đóng trước `=== YÊU CẦU ===`) được đo riêng ở
+   *   `server/services/aiCodingDot02.stream.test.ts` §2.
+   */
+  it("★★★ MỤC 2.2 — đầu ra máy đi ô `dauRaMay`/`dauRaKhongTinCay`, KHÔNG nối vào `question`", () => {
+    expect(MA, "câu hỏi chỉ chở CHỈ DẪN của ta").toContain(
+      "handleSendRef.current?.(cau, { tep, dauRaMay: catLoiChoPrompt(dauRa) })",
+    );
+    expect(MA).toContain("dauRaKhongTinCay: tuVong.dauRaMay");
+    expect(
+      MA,
+      "★★★ nối đầu ra máy vào câu hỏi = nhét dữ liệu không tin được vào ô thẩm quyền cao nhất",
+    ).not.toMatch(/\$\{cau\}\\n\\n\$\{catLoiChoPrompt/);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════

@@ -30,17 +30,30 @@ function makeFakeDb() {
         }),
       }),
     }),
+    // ★★★ 2026-08-23 — `where(...)` nay là một THENABLE **và** có `.returning()`: `confirmAction`
+    // giành quyền bằng `UPDATE … WHERE status=<đã quan sát>` rồi ĐẾM hàng trả về. `run()` được nhớ
+    // lại (memo) để một lượt gọi không bao giờ áp `patch` hai lần dù người gọi `await` hay `.returning()`.
     update: (_table: unknown) => ({
       set: (patch: Row) => ({
-        where: async (pred: (r: Row) => boolean) => {
-          let count = 0;
-          for (const r of store.values()) {
-            if (pred(r)) {
-              Object.assign(r, patch);
-              count++;
+        where: (pred: (r: Row) => boolean) => {
+          let daChay: Row[] | null = null;
+          const run = (): Row[] => {
+            if (daChay) return daChay;
+            const trung: Row[] = [];
+            for (const r of store.values()) {
+              if (pred(r)) {
+                Object.assign(r, patch);
+                trung.push(r);
+              }
             }
-          }
-          return { rowCount: count };
+            daChay = trung;
+            return trung;
+          };
+          return {
+            then: (ok: (v: unknown) => unknown, ng?: (e: unknown) => unknown) =>
+              Promise.resolve({ rowCount: run().length }).then(ok, ng),
+            returning: async (_cols?: unknown) => run().map((r) => ({ id: r.id })),
+          };
         },
       }),
     }),

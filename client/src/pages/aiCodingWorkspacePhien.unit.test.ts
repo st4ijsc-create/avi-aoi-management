@@ -15,6 +15,12 @@
  *   • payload lưu gửi thẳng `transcript` thay vì `locLuot(...)`    ⇒ §3 ĐỎ
  *   • thêm một điểm gọi `confirmM.mutateAsync` thứ hai            ⇒ §4 ĐỎ
  *   • một nhãn phiên thiếu ở en/zh                                ⇒ §5 ĐỎ
+ *   • `xoaPhienNay` xoá mà KHÔNG hỏi xác nhận (hoặc hỏi SAU khi đã xoá) ⇒ §6 ĐỎ
+ *
+ * ★★★ 2026-08-23 — danh sách phiên đã thu thành nút + popover (`@/components/ai/BoChonPhien`);
+ * phần HIỂN THỊ có lưới render cây thật riêng (`boChonPhien.unit.test.ts`). File này vẫn canh
+ * ĐƯỜNG ĐI ở trang (nạp/lưu/xoá/HITL) — chúng không đổi theo hình dạng UI — và §5 nay quét nhãn
+ * trên CẢ HAI tệp, vì các nhãn phiên đã dọn nhà sang tệp thành phần.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -23,6 +29,8 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TRANG = join(HERE, "AICodingWorkspace.tsx");
+/** Bộ chọn phiên (nút + popover) — nơi các nhãn `repoWs.sessions.*` hiển thị sống từ 2026-08-23. */
+const BO_CHON = resolve(HERE, "..", "components", "ai", "BoChonPhien.tsx");
 const LOCALES = resolve(HERE, "..", "i18n", "locales");
 /**
  * ⚠ CHUẨN HOÁ **CRLF → LF** ngay lúc đọc. Repo này ở Windows và tệp lưu bằng `\r\n`; một phép so
@@ -30,12 +38,14 @@ const LOCALES = resolve(HERE, "..", "i18n", "locales");
  * lỗi đã ăn nhiều lượt (và đã ăn lượt đầu tiên của chính ca "mọi lượt đổi id đi qua `datSessionId`").
  */
 const NGUON = readFileSync(TRANG, "utf8").replace(/\r\n/g, "\n");
+const NGUON_BO_CHON = readFileSync(BO_CHON, "utf8").replace(/\r\n/g, "\n");
 
 /** Bỏ comment khối + comment dòng — phép ĐẾM không được tính một lời gọi nằm trong chú thích. */
 function boComment(s: string): string {
   return s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 }
 const MA = boComment(NGUON);
+const MA_BO_CHON = boComment(NGUON_BO_CHON);
 
 function dem(hay: string, kim: string): number {
   return hay.split(kim).length - 1;
@@ -94,6 +104,14 @@ describe("§0 — CẦU CHÌ: lưới có thật sự đọc trúng thứ nó t�
     expect(MA).toContain("repoWorkspace.luuPhien");
     expect(MA).toContain("repoWorkspace.danhSachPhien");
     expect(MA).toContain("repoWorkspace.xoaPhien");
+  });
+
+  it("★ 2026-08-23 — trang NỐI đúng bộ chọn phiên mới (nút + popover), không dựng cột thứ hai", () => {
+    // Lưới render cây thật của bộ chọn ở `boChonPhien.unit.test.ts`; ở đây chỉ canh DÂY NỐI:
+    // trang render `<BoChonPhien` đúng MỘT lần và không còn cột `DanhSachPhienCot` nào.
+    expect(dem(MA, "<BoChonPhien")).toBe(1);
+    expect(MA).not.toContain("DanhSachPhienCot");
+    expect(NGUON_BO_CHON.length).toBeGreaterThan(2_000);
   });
 
   it("bộ cắt thân hàm hoạt động (chống 'xanh vì thân RỖNG')", () => {
@@ -219,11 +237,19 @@ describe("§4 — HITL: VẪN ĐÚNG **MỘT** ĐIỂM GỌI XÁC NHẬN GHI", (
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 describe("§5 — MỌI NHÃN PHIÊN CÓ ĐỦ BA LOCALE", () => {
-  /** Mọi khoá `repoWs.sessions.*` được trang THỰC SỰ dùng, quét từ chính mã nguồn. */
-  const KHOA = [...new Set([...MA.matchAll(/t\(\s*"(repoWs\.sessions\.[A-Za-z0-9_.]+)"/g)].map((m) => m[1]!))];
+  /**
+   * Mọi khoá `repoWs.sessions.*` THỰC SỰ được dùng — quét trên CẢ trang LẪN `BoChonPhien.tsx`
+   * (2026-08-23: các nhãn hiển thị đã dọn sang tệp thành phần; chỉ quét trang là lượng từ chạy
+   * trên tập RỖNG DẦN — đúng lớp "glob rỗng ⇒ lưới im lặng khai xanh" mà cầu chì dưới canh).
+   */
+  const KHOA = [...new Set(
+    [...`${MA}\n${MA_BO_CHON}`.matchAll(/t\(\s*"(repoWs\.sessions\.[A-Za-z0-9_.]+)"/g)].map((m) => m[1]!),
+  )];
 
   it("cầu chì: quét ra một tập KHÔNG rỗng (glob rỗng ⇒ lưới im lặng khai xanh)", () => {
-    expect(KHOA.length).toBeGreaterThanOrEqual(9);
+    // ≥14: trang giữ 3 nhãn (openFailed/deleteFailed/confirmDelete), bộ chọn giữ phần còn lại
+    // (search/noMatch/history/rel.* …). Tụt dưới 14 nghĩa là một NGUỒN quét đã rơi — đỏ để tra.
+    expect(KHOA.length).toBeGreaterThanOrEqual(14);
   });
 
   for (const k of KHOA) {
@@ -240,5 +266,31 @@ describe("§5 — MỌI NHÃN PHIÊN CÓ ĐỦ BA LOCALE", () => {
       expect(s, `${ten}: mất {{n}}`).toContain("{{n}}");
       expect(s, `${ten}: mất {{luc}}`).toContain("{{luc}}");
     }
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+describe("§6 — XOÁ PHIÊN PHẢI HỎI TRƯỚC (2026-08-23)", () => {
+  const THAN_XOA = thanHam("xoaPhienNay");
+
+  it("★★★ `xoaPhienNay` gọi `window.confirm` — và hỏi TRƯỚC khi chạm server", () => {
+    // Xoá là KHÔNG HOÀN TÁC; một cú trượt chuột trên nút thùng rác không được phép là đủ.
+    const viTriHoi = THAN_XOA.indexOf("window.confirm(");
+    const viTriXoa = THAN_XOA.indexOf("xoaPhienM.mutateAsync(");
+    expect(viTriHoi, "xoá mà không hỏi xác nhận").toBeGreaterThanOrEqual(0);
+    expect(viTriXoa).toBeGreaterThanOrEqual(0);
+    // THỨ TỰ là một nửa của luật: hỏi SAU khi đã xoá thì câu hỏi là đồ trang trí.
+    expect(viTriHoi, "câu hỏi phải đứng TRƯỚC lời gọi xoá").toBeLessThan(viTriXoa);
+  });
+
+  it("★ câu hỏi dùng nhãn i18n `confirmDelete`, không phải chuỗi trần", () => {
+    expect(THAN_XOA).toContain('"repoWs.sessions.confirmDelete"');
+  });
+
+  it("★ bộ chọn phiên KHÔNG tự hỏi/tự xoá — MỘT đường xoá, một chỗ hỏi (ở trang)", () => {
+    // Nếu component cũng hỏi thì người dùng bị hỏi HAI lần (hoặc tệ hơn: ai đó gỡ câu hỏi ở trang
+    // vì "component đã hỏi rồi" — rồi một ngày component được tái dùng chỗ khác mà không hỏi).
+    expect(MA_BO_CHON).not.toContain("window.confirm");
+    expect(MA_BO_CHON).not.toContain("mutateAsync");
   });
 });

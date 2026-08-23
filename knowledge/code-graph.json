@@ -5193,6 +5193,10 @@
   },
   {
     "from": "server/routers/machineApiRouters.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
     "to": "../db"
   },
   {
@@ -16152,6 +16156,10 @@
     "to": "./otScale"
   },
   {
+    "from": "server/services/ot/drivers/ethernetIpDriver.ts",
+    "to": "../../../_core/deviceErrors"
+  },
+  {
     "from": "server/services/ot/drivers/mcAddress.test.ts",
     "to": "./mcAddress"
   },
@@ -16180,6 +16188,10 @@
     "to": "./otScale"
   },
   {
+    "from": "server/services/ot/drivers/mitsubishiMcDriver.ts",
+    "to": "../../../_core/deviceErrors"
+  },
+  {
     "from": "server/services/ot/drivers/modbusDecode.test.ts",
     "to": "./modbusDecode"
   },
@@ -16201,6 +16213,10 @@
   },
   {
     "from": "server/services/ot/drivers/modbusDriver.ts",
+    "to": "../../../_core/deviceErrors"
+  },
+  {
+    "from": "server/services/ot/drivers/modbusDriver.ts",
     "to": "./modbusDecode"
   },
   {
@@ -16210,6 +16226,10 @@
   {
     "from": "server/services/ot/drivers/notImplementedDriver.ts",
     "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/notImplementedDriver.ts",
+    "to": "../../../_core/deviceErrors"
   },
   {
     "from": "server/services/ot/drivers/opcuaAddress.test.ts",
@@ -16238,6 +16258,10 @@
   {
     "from": "server/services/ot/drivers/opcuaDriver.ts",
     "to": "./otScale"
+  },
+  {
+    "from": "server/services/ot/drivers/opcuaDriver.ts",
+    "to": "../../../_core/deviceErrors"
   },
   {
     "from": "server/services/ot/drivers/otScale.test.ts",
@@ -16284,12 +16308,20 @@
     "to": "./otScale"
   },
   {
+    "from": "server/services/ot/drivers/s7Driver.ts",
+    "to": "../../../_core/deviceErrors"
+  },
+  {
     "from": "server/services/ot/drivers/slmpDriver.test.ts",
     "to": "./slmpDriver"
   },
   {
     "from": "server/services/ot/drivers/slmpDriver.test.ts",
     "to": "./slmpEncoder"
+  },
+  {
+    "from": "server/services/ot/drivers/slmpDriver.ts",
+    "to": "../../../_core/deviceErrors"
   },
   {
     "from": "server/services/ot/drivers/slmpDriver.ts",
@@ -16314,6 +16346,10 @@
   {
     "from": "server/services/ot/drivers/stubDriver.ts",
     "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/stubDriver.ts",
+    "to": "../../../_core/deviceErrors"
   },
   {
     "from": "server/services/ot/index.ts",
@@ -17712,6 +17748,14 @@
     "to": "./tcpLineClient"
   },
   {
+    "from": "server/services/robot/drivers/deltaRobotDriver.ts",
+    "to": "../../../_core/deviceErrors"
+  },
+  {
+    "from": "server/services/robot/drivers/fanucDriver.ts",
+    "to": "../../../_core/deviceErrors"
+  },
+  {
     "from": "server/services/robot/drivers/fanucDriver.ts",
     "to": "../robotDriver"
   },
@@ -17724,12 +17768,28 @@
     "to": "./tcpLineClient"
   },
   {
+    "from": "server/services/robot/drivers/mitsubishiRobotDriver.ts",
+    "to": "../../../_core/deviceErrors"
+  },
+  {
     "from": "server/services/robot/drivers/notImplementedRobotDriver.ts",
     "to": "../robotDriver"
   },
   {
+    "from": "server/services/robot/drivers/notImplementedRobotDriver.ts",
+    "to": "../../../_core/deviceErrors"
+  },
+  {
     "from": "server/services/robot/drivers/simRobotDriver.ts",
     "to": "../robotDriver"
+  },
+  {
+    "from": "server/services/robot/drivers/simRobotDriver.ts",
+    "to": "../../../_core/deviceErrors"
+  },
+  {
+    "from": "server/services/robot/drivers/techmanDriver.ts",
+    "to": "../../../_core/deviceErrors"
   },
   {
     "from": "server/services/robot/drivers/techmanDriver.ts",
@@ -17921,6 +17981,10 @@
   },
   {
     "from": "server/services/robot/ursimBridge.ts",
+    "to": "../../_core/deviceErrors"
+  },
+  {
+    "from": "server/services/robot/ursimBridge.ts",
     "to": "./robotDriver"
   },
   {
@@ -17974,6 +18038,10 @@
   {
     "from": "server/services/ros2/ros2Mapping.ts",
     "to": "../telemetryBus"
+  },
+  {
+    "from": "server/services/ros2/rosbridgeClient.ts",
+    "to": "../../_core/deviceErrors"
   },
   {
     "from": "server/services/routingService.ts",
@@ -18282,6 +18350,10 @@
   {
     "from": "server/services/secsgem/hsmsClient.ts",
     "to": "./secs2Codec"
+  },
+  {
+    "from": "server/services/secsgem/hsmsClient.ts",
+    "to": "../../_core/deviceErrors"
   },
   {
     "from": "server/services/secsgem/hsmsClient.ts",
@@ -20920,6 +20992,10 @@
     "to": "../_core/accessControlLabels"
   },
   {
+    "from": "server/services/weakAuthFailClosed.test.ts",
+    "to": "./machineAuthService"
+  },
+  {
     "from": "server/services/wipIngestService.ts",
     "to": "../db/connection"
   },
@@ -21442,6 +21518,14 @@
   {
     "from": "server/_core/deploymentProfile.test.ts",
     "to": "./deploymentProfile"
+  },
+  {
+    "from": "server/_core/deviceErrors.test.ts",
+    "to": "./deviceErrors"
+  },
+  {
+    "from": "server/_core/deviceErrors.test.ts",
+    "to": "./appError"
   },
   {
     "from": "server/_core/envNumber.test.ts",

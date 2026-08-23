@@ -110,6 +110,20 @@ export interface ToolExecContext {
    * `ctx.projectRoot` trong preview/execute). KHÔNG mở quyền mới — RBAC không đổi.
    */
   projectRoot?: string;
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 — **CỜ HUỶ CỦA LƯỢT**, gắn bởi tuyến khi client rời kết nối.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Đi cùng lượt, KHÔNG phải quyền: nó không mở/đóng một cửa nào, chỉ nói *"người gọi đã bỏ đi"*.
+   * Người tiêu thụ hiện tại là đường sinh chữ (`aiCodingAgent.streamCodingModel` → `ggufStream(…,
+   * modelId, signal)`), nơi thiếu nó nghĩa là mỗi lượt Dừng giữ một khe llama-server tới khi
+   * idle-timeout **120.000 ms** nổ.
+   *
+   * ⚠ Tuỳ chọn và **thuần bổ sung**: mọi lời gọi cũ bỏ trống ⇒ hành vi không đổi một byte. Tool
+   *   KHÔNG bắt buộc phải đọc nó; một tool bỏ qua signal chỉ có nghĩa là nó chạy hết như cũ.
+   * ⚠ KHÔNG BAO GIỜ đến từ thân request — nó là một đối tượng do tuyến TỰ tạo (`AbortController`).
+   */
+  signal?: AbortSignal;
 }
 
 /** Result of a tool's execute() — reuses ToolResult shape for rendering. */

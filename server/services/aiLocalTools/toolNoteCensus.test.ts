@@ -170,10 +170,11 @@ const CENSUS: Record<string, XepLoai> = {
   INVALID_PATTERN: "chan",
   // ── doc 78 PHA B (2026-08-18) — CHẠY LỆNH (`writeHandlers/repoCommand.ts`) ──────────────────
   /**
-   * ⚠⚠ SÁU MÃ, TẤT CẢ `chan` — VÀ CÁI **KHÔNG** CÓ TRONG DANH SÁCH NÀY MỚI LÀ PHÉP ĐO.
+   * ⚠⚠ BẢY MÃ, TẤT CẢ `chan` — VÀ CÁI **KHÔNG** CÓ TRONG DANH SÁCH NÀY MỚI LÀ PHÉP ĐO.
    *
-   * Năm mã đầu là những lượt **lệnh CHƯA HỀ CHẠY** (bị chặn ở lớp ký tự · ngoài danh sách trắng ·
-   * đường dẫn xấu · không phân giải được tệp chạy · spawn hỏng): `data` rỗng hoàn toàn, không một
+   * Sáu mã đầu là những lượt **lệnh CHƯA HỀ CHẠY** (bị chặn ở lớp ký tự · ngoài danh sách trắng ·
+   * đường dẫn xấu · không phân giải được tệp chạy · spawn hỏng · gốc không phải dự án Node):
+   * `data` rỗng hoàn toàn, không một
    * byte hiện trường nào. `CMD_TIMEOUT` là ca gần biên nhất — nó CÓ đầu ra thật — nhưng đầu ra ấy
    * là **BẢN CẮT của một lệnh chưa xong**, và `textSummary` của nó nói đúng câu *"đây KHÔNG phải
    * kết luận lệnh chạy xong"*. Để LLM văn vẻ hoá câu ấy là mời nó rút thành *"build hỏng"* — biến
@@ -190,6 +191,13 @@ const CENSUS: Record<string, XepLoai> = {
   CMD_RESOLVE_ERROR: "chan",
   CMD_SPAWN_ERROR: "chan",
   CMD_TIMEOUT: "chan",
+  /**
+   * ★★★ 2026-08-23 — `CMD_GOC_THIEU_PACKAGE_JSON`: **`chan`, và ở đây lý do MẠNH hơn năm mã kia.**
+   * Lệnh chưa hề chạy (cùng họ với năm mã đầu), nhưng câu của nó còn mang **đường đi tiếp**: *"dùng
+   * lệnh của đúng hệ sinh thái dự án (ví dụ `dotnet test <đường>`)"*. Để LLM diễn giải lại là mời nó
+   * rút gọn thành *"không chạy được test"* — mất đúng mẩu tin làm cho vòng lặp tự sửa được.
+   */
+  CMD_GOC_THIEU_PACKAGE_JSON: "chan",
   /**
    * ★ 2026-08-20 — **`EXEC_WRITE_NEEDS_EDIT_BIT`: `chan`, và vì sao nó KHÔNG được `dien-giai`.**
    *

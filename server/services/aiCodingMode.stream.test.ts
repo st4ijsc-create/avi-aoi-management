@@ -780,15 +780,29 @@ describe("§7 — doc 79 (D): ngữ cảnh MÃ THẬT tới được prompt sinh
     expect(h.promptNhan).toContain("MOC_LICH_SU_7"); // lượt GẦN NHẤT luôn được giữ
   });
 
-  it("★★★ 7.8 ĐƯỜNG SỬA TỆP KHÔNG BỊ CHẠM — không có khối ngữ cảnh mã ở prompt sửa", async () => {
-    h.mucLucGia = [["server/routers.ts", 0.99]];
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 7.8 — **CA NÀY ĐÃ ĐẢO CHIỀU (2026-08-23), VÀ VIỆC NÓ ĐẢO CHIỀU LÀ MỘT PHÁT HIỆN.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Bản cũ khẳng định *"đường SỬA TỆP KHÔNG BỊ CHẠM — không có khối ngữ cảnh mã ở prompt sửa"* và
+   * biện minh bằng NGÂN SÁCH (*"đường sửa đã sát trần vì chở cả tệp"*). Lý lẽ ngân sách **đúng**;
+   * kết luận rút ra từ nó thì **sai**, và cái sai ấy đã trở thành một lỗ đo được (mục 2.1):
+   *   ⇒ *"sửa X cho đúng cách hệ thống băm mật khẩu"* cho model **đúng một tệp X** — không
+   *     `bcryptjs`, không `user_secrets`. Đường **GHI RA ĐĨA** mù hơn đường chỉ in mã ra màn hình.
+   *
+   * Cách đúng KHÔNG phải "cấm khối mã ở đường sửa", mà là **cho nó vào rồi bắt nó nhường chỗ TRƯỚC
+   * tiên khi hết ngân sách** — đúng cơ chế `dungKhoiLichSu`/`kiemNganSachNguCanh` mà đường sinh mã
+   * đã dùng (xem `motLuotModel`, tầng "BỎ ngữ cảnh mã và cân lại"). Ca này nay khẳng định CẢ HAI vế.
+   */
+  it("★★★ 7.8 ĐƯỜNG SỬA TỆP **CÓ** khối ngữ cảnh mã — và nó nhường chỗ ĐÚNG THỨ TỰ khi hết ngân sách", async () => {
+    h.mucLucGia = [["shared/const.ts", 0.99]];
     h.manh = ["```csharp\n", NOI_DUNG_THAT.replace("return a / b;", "return b == 0 ? 0 : a / b;"), "\n```"];
     await chay("sửa " + TEP_THI + " để Divide không chia cho 0", admin());
     expect(
       h.promptNhan,
-      "đường SỬA đã sát trần vì chở cả tệp — thêm ngữ cảnh mã ở đó là biến chức năng đang chạy thành chức năng luôn ném",
-    ).not.toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
-    expect(h.soLuotMucLuc).toBe(0);
+      "★★★ mục 2.1: đường GHI phải thấy phần còn lại của repo, không chỉ đúng tệp đang mở",
+    ).toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
+    expect(h.soLuotMucLuc, "có khối mã ⇒ phải thật sự đi truy hồi").toBeGreaterThan(0);
     expect(h.promptNhan).toContain("namespace CalculatorDemo"); // vẫn chở tệp đích như trước
   });
 

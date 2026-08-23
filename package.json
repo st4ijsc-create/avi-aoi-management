@@ -54,7 +54,9 @@
     "lake:verify": "tsx scripts/streaming/lake-verify.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "ai:bench": "node scripts/ai-bench/bench.mjs"
+    "ai:bench": "node scripts/ai-bench/bench.mjs",
+    "ai:cli": "tsx server/services/aiCodingCli/batDau.ts",
+    "ai:mcp": "tsx server/services/aiCodingCli/batDau.ts mcp"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1019.0",

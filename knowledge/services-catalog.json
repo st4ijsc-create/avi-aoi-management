@@ -9435,7 +9435,8 @@
       "../otDriver",
       "./notImplementedDriver",
       "./eipTag",
-      "./otScale"
+      "./otScale",
+      "../../../_core/deviceErrors"
     ]
   },
   {
@@ -9477,7 +9478,8 @@
       "../otDriver",
       "./notImplementedDriver",
       "./mcAddress",
-      "./otScale"
+      "./otScale",
+      "../../../_core/deviceErrors"
     ]
   },
   {
@@ -9520,6 +9522,7 @@
     "localImports": [
       "../otDriver",
       "./notImplementedDriver",
+      "../../../_core/deviceErrors",
       "./modbusDecode",
       "./otScale"
     ]
@@ -9529,7 +9532,8 @@
     "exportedFunctions": [],
     "exportedClasses": [],
     "localImports": [
-      "../otDriver"
+      "../otDriver",
+      "../../../_core/deviceErrors"
     ]
   },
   {
@@ -9571,7 +9575,8 @@
       "../otDriver",
       "./notImplementedDriver",
       "./opcuaAddress",
-      "./otScale"
+      "./otScale",
+      "../../../_core/deviceErrors"
     ]
   },
   {
@@ -9649,7 +9654,8 @@
       "../otDriver",
       "./notImplementedDriver",
       "./s7Address",
-      "./otScale"
+      "./otScale",
+      "../../../_core/deviceErrors"
     ]
   },
   {
@@ -9670,6 +9676,7 @@
       "SlmpDriver"
     ],
     "localImports": [
+      "../../../_core/deviceErrors",
       "../otDriver",
       "./otScale",
       "./slmpEncoder"
@@ -9713,7 +9720,8 @@
       "StubDriver"
     ],
     "localImports": [
-      "../otDriver"
+      "../otDriver",
+      "../../../_core/deviceErrors"
     ]
   },
   {
@@ -11554,7 +11562,8 @@
     "localImports": [
       "../robotDriver",
       "../index",
-      "./tcpLineClient"
+      "./tcpLineClient",
+      "../../../_core/deviceErrors"
     ]
   },
   {
@@ -11583,6 +11592,7 @@
       "FanucDriver"
     ],
     "localImports": [
+      "../../../_core/deviceErrors",
       "../robotDriver"
     ]
   },
@@ -11608,7 +11618,8 @@
     ],
     "localImports": [
       "../robotDriver",
-      "./tcpLineClient"
+      "./tcpLineClient",
+      "../../../_core/deviceErrors"
     ]
   },
   {
@@ -11618,7 +11629,8 @@
       "NotImplementedRobotDriver"
     ],
     "localImports": [
-      "../robotDriver"
+      "../robotDriver",
+      "../../../_core/deviceErrors"
     ]
   },
   {
@@ -11630,7 +11642,8 @@
       "SimRobotDriver"
     ],
     "localImports": [
-      "../robotDriver"
+      "../robotDriver",
+      "../../../_core/deviceErrors"
     ]
   },
   {
@@ -11660,6 +11673,7 @@
       "TechmanDriver"
     ],
     "localImports": [
+      "../../../_core/deviceErrors",
       "../robotDriver"
     ]
   },
@@ -11853,6 +11867,7 @@
     ],
     "localImports": [
       "./ursim/ursimClient",
+      "../../_core/deviceErrors",
       "./robotDriver"
     ]
   },
@@ -11923,7 +11938,9 @@
     "exportedClasses": [
       "RosbridgeClient"
     ],
-    "localImports": []
+    "localImports": [
+      "../../_core/deviceErrors"
+    ]
   },
   {
     "file": "server/services/routingService.ts",
@@ -12350,6 +12367,7 @@
     "localImports": [
       "./secsMessages",
       "./secs2Codec",
+      "../../_core/deviceErrors",
       "./s1Messages",
       "./gemStateModel",
       "./s5s6Messages"
@@ -15718,6 +15736,14 @@
       "./oeeService",
       "../db/reportAggregators",
       "../_core/accessControlLabels"
+    ]
+  },
+  {
+    "file": "server/services/weakAuthFailClosed.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./machineAuthService"
     ]
   },
   {

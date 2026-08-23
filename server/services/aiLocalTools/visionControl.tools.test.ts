@@ -102,10 +102,23 @@ function makeFakeDb() {
     }),
     update: (table: any) => ({
       set: (patch: Row) => ({
+        // ★★★ 2026-08-23 — `where()` nay vừa AWAIT được vừa có `.returning()`: `confirmAction`
+        // giành quyền bằng `UPDATE … WHERE status=<đã quan sát>` rồi ĐẾM hàng trả về. `run()` được
+        // nhớ lại (memo) nên một lượt gọi không bao giờ áp `patch` hai lần.
         where: (pred: any) => {
-          const rows = tableFor(table).filter((r) => matches(r, pred));
-          for (const r of rows) Object.assign(r, patch);
-          return Promise.resolve({ rowCount: rows.length });
+          let memo: Row[] | null = null;
+          const run = (): Row[] => {
+            if (memo) return memo;
+            const rows = tableFor(table).filter((r) => matches(r, pred));
+            for (const r of rows) Object.assign(r, patch);
+            memo = rows;
+            return rows;
+          };
+          return {
+            then: (ok: (v: unknown) => unknown, ng?: (e: unknown) => unknown) =>
+              Promise.resolve({ rowCount: run().length }).then(ok, ng),
+            returning: async (_c?: unknown) => run().map((r) => ({ id: r.id })),
+          };
         },
       }),
     }),

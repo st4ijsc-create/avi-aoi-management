@@ -47,6 +47,10 @@ import {
   tranTokenChoTep,
   TRAN_KY_TU_TEP_SUA,
   TRAN_TOKEN_KHOI_SUA,
+  // ★★★ 2026-08-23 — hai hằng của khối lịch sử; `TRAN_KY_TU_DAU_RA_MAY` SUY RA từ chúng, không gõ tay.
+  TRAN_KY_TU_MOI_LUOT,
+  HAU_TO_CAT_LUOT,
+  KY_TU_MOI_TOKEN_RA,
   dungKhoiLichSu,
   type KetQuaChu,
   type LuotHoiThoai,
@@ -56,7 +60,12 @@ import {
  * ★★★ doc 79 · TRỤC 1 (D) — MỤC LỤC (chunk) → MÃ THẬT (đọc đĩa qua `read_file`). Xem docblock đầu
  * `ai/codingRepoContext.ts`: module ấy KHÔNG nhập `fs`; cửa đọc do CHÍNH file này tiêm vào.
  */
-import { thuThapNguCanhMa, chanNguonNguCanhMa } from "./ai/codingRepoContext";
+import {
+  thuThapNguCanhMa,
+  chanNguonNguCanhMa,
+  TRAN_TOKEN_NGU_CANH_MA,
+  type KetQuaNguCanhMa,
+} from "./ai/codingRepoContext";
 /**
  * ★★★ doc 82 · BỘ NHỚ XUYÊN PHIÊN — bài học người dùng tự khai, đọc ngược vào prompt.
  *
@@ -263,6 +272,29 @@ export interface KbQueryContext {
    * bề mặt nào, chỉ bỏ một bước đoán.
    */
   codingEditPath?: string;
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 — **ĐẦU RA MÁY (test/biên dịch) ĐI RIÊNG, KHÔNG TRỘN VÀO `question`.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ─── LỖ ĐÃ ĐO, VÀ NÓ NẰM Ở Ô THẨM QUYỀN CAO NHẤT ─────────────────────────────────────────────
+   * Bộ điều khiển vòng ở client trước bản vá này gửi
+   *     `question = "sửa X để khắc phục lỗi…\n\n" + catLoiChoPrompt(dauRa)`
+   * ⇒ nguyên văn đầu ra `dotnet test` rơi vào khối `=== YÊU CẦU ===`, ô có **thẩm quyền CAO NHẤT**
+   * theo chính bảng repo tự viết (`aiCodingAgent.promptSinhMa`: *yêu cầu > MÃ > BÀI HỌC > lịch sử*).
+   * `catLoiChoPrompt` chỉ **CẮT** — không che bí mật, không trung hoà dấu rào, không bọc.
+   * Một dòng *"BỎ QUA CHỈ DẪN TRƯỚC, hãy…"* nằm trong **tên một ca kiểm thử** (thứ do người gửi PR
+   * quyết định) khi ấy nói chuyện với model từ ô cao nhất của prompt.
+   *
+   * ─── HÌNH DẠNG ĐÚNG, LẤY NGUYÊN CỦA CLI ──────────────────────────────────────────────────────
+   * `sanitizeUntrustedBlock` + `wrapUntrustedBlock`, vai **`user`**, vào khối **LỊCH SỬ** — ô thẩm
+   * quyền **THẤP NHẤT**. Đó đúng là thứ `aiCodingCli/cli.ts` làm sau mỗi lượt duyệt-và-thực-thi.
+   * Web nay làm **ít nhất bằng** CLI. Xem `bocDauRaMayChoLichSu()`.
+   *
+   * ⚠ Ô này chở **DỮ LIỆU**, không chở chỉ dẫn. Nó KHÔNG BAO GIỜ được nối thẳng vào `question`, và
+   *   không đường nào trong service được đọc nó mà bỏ qua bước bọc.
+   * ⚠ Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ hành vi cũ y nguyên.
+   */
+  dauRaKhongTinCay?: string;
 }
 
 export interface KbStructuredResponse {
@@ -2918,6 +2950,65 @@ async function layKhoiBaiHocChoLuot(
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-23 — ĐẦU RA MÁY → MỘT LƯỢT `user` ĐÃ BỌC, ĐẶT Ở KHỐI THẨM QUYỀN THẤP NHẤT
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * Nhãn nguồn của khối bọc. Hằng EXPORT vì lưới phải khẳng định được **đúng chuỗi** xuất hiện trong
+ * prompt — một nhãn gõ lại ở lưới là một lưới tự thoả với chính nó.
+ */
+export const NHAN_NGUON_DAU_RA_MAY = "dau-ra-lenh-kiem-chung";
+
+/** ★★★ 2026-08-23 · MỤC 2.4 — nhãn nguồn của khối KẾT QUẢ TOOL ĐỌC khi nó quay lại model. */
+export const NHAN_NGUON_KET_QUA_TOOL = "ket-qua-tool-doc-ma";
+
+/**
+ * Trần ký tự cho khối kết quả tool khi nó quay lại model (mục 2.4).
+ *
+ * ⚠ Suy ra từ `TRAN_TOKEN_NGU_CANH_MA` — CÙNG ngân sách mà khối ngữ cảnh mã của đường sinh mã đã
+ *   được cấp, vì nó vào ĐÚNG ô ấy trong `promptSinhMa`. Gõ một hằng thứ hai ở đây là dựng một ngân
+ *   sách thứ hai cho cùng một chỗ, và hai ngân sách thì sẽ trôi khỏi nhau.
+ * ⚠ `KY_TU_MOI_TOKEN_RA` (2,6) là tỉ lệ ký-tự/token cho MÃ NGUỒN — đúng loại chữ ở đây.
+ */
+export const TRAN_KY_TU_KET_QUA_TOOL = Math.floor(TRAN_TOKEN_NGU_CANH_MA * KY_TU_MOI_TOKEN_RA);
+
+/**
+ * Trần ký tự cho phần THÂN của khối đầu ra máy — **SUY RA, KHÔNG GÕ VÀO.**
+ *
+ * ⚠⚠ Vì sao không dùng thẳng 4.000 như CLI: khối bọc đi vào prompt qua **đường lịch sử**, và
+ * `chuanHoaLichSu` cắt MỖI lượt ở `TRAN_KY_TU_MOI_LUOT`. Một khối bọc dài hơn trần ấy sẽ bị cắt
+ * **mất dòng đóng hàng rào** ⇒ mọi thứ đứng sau nó (kể cả `=== YÊU CẦU ===`) nằm bên trong một
+ * vùng "dữ liệu không được thi hành" chưa đóng ⇒ model bị dặn đừng làm chính việc người dùng vừa
+ * xin. Hỏng CHỨC NĂNG chứ không phải hỏng an toàn — nhưng vẫn là hỏng, và nó hỏng CÂM.
+ * ⇒ Trần thân = trần một lượt − độ dài vỏ bọc − hậu tố cắt. Ba số ấy đều là hằng đã export ở nơi
+ *   định nghĩa chúng, nên phép trừ này **không thể** trôi khỏi cái nó phải khớp.
+ */
+export const TRAN_KY_TU_DAU_RA_MAY = Math.max(
+  200,
+  TRAN_KY_TU_MOI_LUOT - wrapUntrustedBlock(NHAN_NGUON_DAU_RA_MAY, "").length - HAU_TO_CAT_LUOT.length,
+);
+
+/**
+ * Bọc đầu ra máy (test/biên dịch) thành MỘT lượt hội thoại vai `user` để nhét vào cuối lịch sử.
+ *
+ * ⚠ `user` chứ KHÔNG phải `assistant`: model chưa từng "nói" câu này; gán vai `assistant` là dạy nó
+ *   rằng chính nó đã khẳng định một điều nó chưa khẳng định (cùng lý lẽ đã ghi ở `aiCodingCli`).
+ * ⚠ Trả `null` khi rỗng ⇒ người gọi không đẻ ra một lượt trống.
+ */
+export function bocDauRaMayChoLichSu(dauRa: string | null | undefined): LuotHoiThoai | null {
+  const tho = String(dauRa ?? "");
+  if (tho.trim() === "") return null;
+  const sach = sanitizeUntrustedBlock(tho, { maxChars: TRAN_KY_TU_DAU_RA_MAY });
+  if (sach.risk !== "none" || sach.fenceEscapes > 0) {
+    // Nói ra, không im: một mưu toan thoát khối là dữ kiện vận hành, không phải chuyện nội bộ.
+    console.warn(
+      `[aiLocalKnowledge] đầu ra máy có dấu hiệu tiêm lời nhắc (risk=${sach.risk}, ` +
+        `mẫu=${sach.matched.join("|") || "-"}, thoát-rào=${sach.fenceEscapes}) — đã trung hoà và BỌC.`,
+    );
+  }
+  return { role: "user", content: wrapUntrustedBlock(NHAN_NGUON_DAU_RA_MAY, sach.text) };
+}
+
 async function* streamCodingAnswer(
   question: string,
   context: KbQueryContext,
@@ -2959,6 +3050,22 @@ async function* streamCodingAnswer(
   }
   const execCtx2: ToolExecContext | undefined =
     execCtx && goc.goc ? { ...execCtx, projectRoot: goc.goc } : execCtx;
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 — **ĐẦU RA MÁY VÀO LỊCH SỬ (ĐÃ BỌC), KHÔNG VÀO `question`.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * MỘT chỗ nối duy nhất, đứng TRƯỚC mọi nhánh (sinh mã · sửa một tệp · sửa lô · tạo tệp) nên
+   * không nhánh nào có thể "quên bọc": từ đây trở xuống, cái tên `history` **đã** trỏ tới danh sách
+   * có khối bọc ở cuối. Lý lẽ đầy đủ ở `KbQueryContext.dauRaKhongTinCay`.
+   *
+   * ⚠ Đặt ở CUỐI danh sách (lượt mới nhất) có tải trọng kép: (a) `chuanHoaLichSu` chỉ giữ 8 lượt
+   *   gần nhất ⇒ khối này không bao giờ bị cắt vì "lịch sử quá dài"; (b) `dungKhoiLichSu` cắt từ
+   *   lượt CŨ ra ⇒ nó là thứ **cuối cùng** bị nhường chỗ, đúng thứ tự quan trọng: đầu ra test là
+   *   bằng chứng của chính lượt sửa này.
+   */
+  const luotDauRaMay = context.codingMode === true ? bocDauRaMayChoLichSu(context.dauRaKhongTinCay) : null;
+  if (luotDauRaMay) history = [...history, luotDauRaMay];
 
   /**
    * ★★★ doc 82 · BỘ NHỚ XUYÊN PHIÊN — **ID DỰ ÁN CHO BÀI HỌC.**
@@ -3172,6 +3279,39 @@ async function* streamCodingAnswer(
       .map((v) => v.result.textSummary ?? "")
       .filter((s) => s.trim() !== "")
       .join("\n\n");
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ★★★ 2026-08-23 · MỤC 2.4 — **CÂU CẦN SUY LUẬN THÌ KẾT QUẢ TOOL PHẢI QUAY LẠI MODEL.**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Nghiệm thu live: *"Giải thích lớp Calculator… và có lỗi gì"* → **0,100 giây**, `token` rỗng,
+     * đáp án = **nguyên văn tệp**. 5/7 lượt như vậy. Vì đúng ở đây, `answer` (bản dump của tool)
+     * được `yield` thẳng cho người và model **không đọc nó trong lượt đó**.
+     *
+     * ⚠⚠ **RANH GIỚI LÀ MỘT VỊ TỪ THUẦN, KHÔNG PHẢI MỘT CHUỖI `if` RẢI RÁC** — `laCauCanSuyLuan()`
+     *   đứng một mình, có lưới riêng, và mặc định **`false`** (đọc tường minh giữ đường nhanh
+     *   ~0,4 giây). Xem docblock của nó cho lý lẽ bất đối xứng sót/thừa.
+     * ⚠⚠ **BỌC LÀ BẮT BUỘC**: `answer` là NỘI DUNG TỆP + tên thư mục + dòng khớp `grep` — tất cả do
+     *   người viết repo (hoặc người gửi PR) quyết định. Nó đi vào ô `khoiNguCanhMa` của
+     *   `promptSinhMa`, tức một ô có thẩm quyền cao; không bọc là mở đúng cửa mà mục 2.2 vừa đóng.
+     * ⚠ FAIL-SAFE: cờ tắt / model chưa sẵn sàng ⇒ `streamCodingGenerate` trả về ≠ `"xong"` ⇒ rơi
+     *   xuống đúng bản dump cũ. Một tính năng làm câu trả lời ĐẸP hơn không được phép làm nó BIẾN MẤT.
+     * ⚠ Thẻ `tool` đã phát ở trên rồi ⇒ người dùng vẫn THẤY nội dung thật, kể cả khi phần chữ là
+     *   văn xuôi của model. Không có nguồn nào bị giấu đi.
+     */
+    if (answer.trim() !== "" && laCauCanSuyLuan(question)) {
+      const sach = sanitizeUntrustedBlock(answer, { maxChars: TRAN_KY_TU_KET_QUA_TOOL });
+      const khoiBoc = wrapUntrustedBlock(NHAN_NGUON_KET_QUA_TOOL, sach.text);
+      const ketCucSuyLuan = yield* streamCodingGenerate(
+        question, language, context, execCtx2, history, khoiBaiHocLuot, khoiBoc,
+      );
+      if (ketCucSuyLuan === "xong") return;
+      console.warn(
+        `[aiLocalKnowledge] câu cần suy luận nhưng nhánh sinh chữ không chạy (${ketCucSuyLuan}) — ` +
+          "rơi về bản dump kết quả tool (hành vi cũ).",
+      );
+    }
+
     yield { type: "token", token: answer };
     yield done(answer);
     return;
@@ -3291,6 +3431,59 @@ export function laYDinhTaoTep(question: string): boolean {
     /(^|[^a-z])(create|add|make|generate|scaffold|write)\s+(a\s+|an\s+|the\s+)?(new\s+)?(file|module|component)([^a-z]|$)/i.test(q) ||
     /(^|[^a-z])new\s+file([^a-z]|$)/i.test(q);
   const zh = /(创建|新建|新增|生成)\s*(一个)?\s*(文件|文件夹|模块|组件)/.test(question) || /新文件/.test(question);
+  return vi || en || zh;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-23 · MỤC 2.4 — "ĐỌC TƯỜNG MINH" ≠ "CÂU CẦN SUY LUẬN"
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ *"Câu này đòi VĂN XUÔI về nội dung, hay đòi CHÍNH nội dung?"* — **MỘT vị từ THUẦN, đứng một
+ * mình, có lưới riêng** (`aiCodingSuyLuan.unit.test.ts`).
+ *
+ * ─── SỰ VIỆC ĐO ĐƯỢC (nghiệm thu live) ────────────────────────────────────────────────────────
+ * *"Giải thích lớp Calculator… và có lỗi gì"* → xong trong **0,100 giây**, **0 token**, và câu trả
+ * lời là **nguyên văn tệp**. 5/7 lượt như vậy. Gốc rễ: trên đường lập trình, kết quả read tool được
+ * trả **THẲNG cho người** (`yield {type:"token", token: answer}` rồi `done`) — model không đọc nó
+ * trong lượt ấy, nên "giải thích" biến thành "dump".
+ *
+ * ─── QUYẾT ĐỊNH THIẾT KẾ (chủ dự án chốt) — VÀ VÌ SAO NÓ HẸP CÓ CHỦ Ý ─────────────────────────
+ *   • Câu lệnh ĐỌC TƯỜNG MINH (*"đọc tệp X"*, *"liệt kê thư mục Y"*, *"grep Z"*) ⇒ **GIỮ NGUYÊN
+ *     đường nhanh**. Nó đang ~0,4 giây và đó là hành vi ĐÚNG.
+ *   • Câu CẦN SUY LUẬN ⇒ đưa kết quả tool **quay lại model** thêm một lượt để sinh văn xuôi.
+ *   • Lý do trần trụi: áp cho MỌI lượt sẽ biến một lượt đọc 0,4 giây thành **3–5 phút** (model
+ *     30B). Đó là đổi sai chiều.
+ *
+ * ⇒ Nên vị từ này là **DANH SÁCH CHO PHÉP HẸP, mặc định `false`**. Hai chiều hỏng KHÔNG đối xứng:
+ *     − sót (`false` mà đáng `true`)  ⇒ người dùng nhận đúng thứ họ vẫn nhận hôm nay (một bản dump);
+ *     − thừa (`true` mà đáng `false`) ⇒ một lượt đọc 0,4 s thành 30–300 s.
+ *   Chiều đắt là chiều THỪA ⇒ khi phân vân thì **không nhận**.
+ *
+ * ⚠⚠ **VÌ SAO KHÔNG BẮT `cho biết có gì` / `có gì trong`**: đó là câu hỏi về **sự tồn tại của nội
+ *   dung**, và bản dump trả lời nó ĐÚNG và NHANH. `codingToolIntent` + `aiCodingMode.stream.test.ts`
+ *   §1 đã ghim hành vi ấy; đổi nó là đổi một thứ đang đúng.
+ * ⚠ **VÌ SAO CÓ `tóm tắt`**: nó đòi một bản VIẾT LẠI ngắn hơn — một bản dump nguyên văn là câu trả
+ *   lời SAI cho nó, đúng hình dạng lỗi live ở trên.
+ * ⚠ Vị từ này **KHÔNG** đọc `laYDinhSuaTep`/`laYDinhTaoTep`: hai đường ấy đã rẽ đi từ trước (xem
+ *   `streamCodingAnswer`), nên trộn chúng vào đây chỉ tạo một điều kiện không bao giờ đỏ được.
+ */
+export function laCauCanSuyLuan(question: string): boolean {
+  const q = boDauVi(question);
+  const vi =
+    /(^|[^a-z])(giai thich|vi sao|tai sao|so sanh|doi chieu|phan tich|danh gia|nhan xet|ra soat|tom tat|dien giai)([^a-z]|$)/.test(q) ||
+    // "có lỗi gì", "có bug nào", "có vấn đề gì", "sai chỗ nào" — hỏi về KHIẾM KHUYẾT, không hỏi nội dung.
+    /(co|bi)\s+(loi|bug|van de|sai sot|rui ro)\s*(gi|nao|khong)?/.test(q) ||
+    /(sai|hong|thieu)\s+(cho|o)\s+(nao|dau)/.test(q) ||
+    /hoat dong (nhu the nao|ra sao)/.test(q);
+  const en =
+    /(^|[^a-z])(explain|why|compare|analyz|analys|review|assess|summari[sz]e|critique)([^a-z]|$)/i.test(q) ||
+    /(any|what)\s+(bug|bugs|issue|issues|problem|problems|error|errors)\b/i.test(q) ||
+    /what(?:'|’)?s\s+wrong\b/i.test(q) ||
+    /how\s+does\s+.+\s+work/i.test(q);
+  const zh =
+    /(解释|说明一下|为什么|为何|比较|对比|分析|评估|审查|总结|摘要)/.test(question) ||
+    /(有.{0,3}(问题|错误|缺陷|bug))/i.test(question) ||
+    /(如何工作|怎么工作|工作原理)/.test(question);
   return vi || en || zh;
 }
 
@@ -3540,6 +3733,27 @@ async function* chuanBiBanSuaMotTep(y: {
   const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
 
   /**
+   * ★★★ 2026-08-23 — **MÃ THAM CHIẾU CHO ĐƯỜNG GHI.** Trước lượt này chỉ đường SINH MÃ có khối này;
+   * ba đường ghi (sửa cả tệp · sửa theo khối · tạo tệp) mù hoàn toàn ngoài đúng tệp đang mở. Lý lẽ
+   * + hai trục thẩm quyền/nhường chỗ nằm ở docblock `promptSinhMa` (`aiCodingAgent.ts`).
+   *
+   * ⚠ Dùng LẠI nguyên `thuThapNguCanhMa` — cùng cửa đọc `executeDecision({tool:"read_file"})`, cùng
+   *   hộp cát/RBAC/gốc dự án/che bí mật. KHÔNG mở cửa đọc thứ hai.
+   * ⚠ FAIL-SAFE: hàm ấy **không bao giờ ném** (docblock của chính nó); mọi trục trặc ⇒ khối rỗng ⇒
+   *   đường sửa chạy y như trước lượt này.
+   */
+  const nguCanhMaSua = await thuThapNguCanhMa({
+    cauHoi: question,
+    projectRoot: execCtx.projectRoot,
+    callerRole: execCtx.user?.role,
+    docTep: async (duongTep, tranByte) => {
+      const r = await executeDecision({ tool: "read_file", args: { path: duongTep, maxBytes: tranByte } }, execCtx);
+      return r.result ?? null;
+    },
+  });
+  const khoiMaSua = nguCanhMaSua.khoi;
+
+  /**
    * ══════════════════════════════════════════════════════════════════════════════════════════════
    * ★★★ doc 79 (2026-08-21) — **ĐƯỜNG KHỐI ĐI TRƯỚC; CHÉP-CẢ-TỆP TỤT XUỐNG THÀNH ĐƯỜNG LÙI.**
    * ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -3560,17 +3774,19 @@ async function* chuanBiBanSuaMotTep(y: {
 
   if (duongKhoi) {
     const heThongK = personaSuaTepKhoi(language, nguCanh);
-    const ghepK = (khoiLichSu: string, khoiBai: string): string =>
-      promptSuaTepKhoi(relPath, goc, question, language, khoiLichSu, khoiBai);
+    const ghepK = (khoiLichSu: string, khoiBai: string, khoiMa: string): string =>
+      promptSuaTepKhoi(relPath, goc, question, language, khoiLichSu, khoiBai, khoiMa);
     const lk = yield* motLuotModel({
       heThong: heThongK,
       ghepPrompt: ghepK,
       khoiBaiHoc,
+      khoiNguCanhMa: khoiMaSua,
       tranToken: TRAN_TOKEN_KHOI_SUA,
       language,
       history,
       relPath,
       userId: execCtx.user?.id,
+      signal: execCtx.signal,
     });
     if (lk.kq !== "chu") return { kq: "dung", relPath, traLoi: lk.traLoi, provider: lk.provider, degraded: lk.degraded };
 
@@ -3627,20 +3843,22 @@ async function* chuanBiBanSuaMotTep(y: {
    * một hằng RIÊNG: nó không đo cái đang có, nó cấp chỗ cho cái sắp có.
    */
   const tranToken = xinTao ? TRAN_TOKEN_TAO_TEP : tranTokenChoTep(goc.length);
-  const ghepPromptTep = (khoiLichSu: string, khoiBai: string): string =>
+  const ghepPromptTep = (khoiLichSu: string, khoiBai: string, khoiMa: string): string =>
     xinTao
-      ? promptTaoTep(relPath, question, language, khoiLichSu, khoiBai)
-      : promptSuaTep(relPath, goc, question, language, khoiLichSu, khoiBai);
+      ? promptTaoTep(relPath, question, language, khoiLichSu, khoiBai, khoiMa)
+      : promptSuaTep(relPath, goc, question, language, khoiLichSu, khoiBai, khoiMa);
 
   const lm = yield* motLuotModel({
     heThong,
     ghepPrompt: ghepPromptTep,
     khoiBaiHoc,
+    khoiNguCanhMa: khoiMaSua,
     tranToken,
     language,
     history,
     relPath,
     userId: execCtx.user?.id,
+    signal: execCtx.signal,
   });
   if (lm.kq !== "chu") {
     return { kq: "dung", relPath, traLoi: noiChu(chuTruoc, lm.traLoi), provider: lm.provider, degraded: lm.degraded };
@@ -3702,14 +3920,18 @@ async function* motLuotModel(y: {
    *   THẬT mà `kiemNganSachNguCanh` cân — nếu bài học được nối vào sau lượt cân thì ta lại đo một
    *   chuỗi khác chuỗi sẽ gửi, đúng lớp lỗi *"cái được đo không phải cái đang hỏng"*.
    */
-  ghepPrompt: (khoiLichSu: string, khoiBaiHoc: string) => string;
+  ghepPrompt: (khoiLichSu: string, khoiBaiHoc: string, khoiNguCanhMa: string) => string;
   /** ★ doc 82 — `""` ⇒ không có bài học nào cho lượt này. */
   khoiBaiHoc?: string;
+  /** ★★★ 2026-08-23 — khối MÃ THAM CHIẾU của repo; `""` ⇒ không có. Xem `promptSinhMa`. */
+  khoiNguCanhMa?: string;
   tranToken: number;
   language: KbLanguage;
   history: readonly LuotHoiThoai[];
   relPath: string;
   userId?: number;
+  /** ★★★ 2026-08-23 — cờ huỷ của lượt; xem `YeuCauSinhChu.signal`. */
+  signal?: AbortSignal;
 }): AsyncGenerator<StreamEvent, LuotModel> {
   /**
    * ★★★ doc 81 · VIỆC 1 — LỊCH SỬ NHƯỜNG CHỖ CHO NỘI DUNG TỆP, theo CẤU TẠO.
@@ -3721,19 +3943,44 @@ async function* motLuotModel(y: {
    *    slot 32.768 gặp phải **N lần một tệp**, không bao giờ là "N tệp trong một prompt".
    */
   let bai = y.khoiBaiHoc ?? "";
+  let ma = y.khoiNguCanhMa ?? "";
   let lich = dungKhoiLichSu({
     lichSu: y.history,
     systemPrompt: y.heThong,
     maxTokens: y.tranToken,
     lang: y.language,
-    ghepPrompt: (k) => y.ghepPrompt(k, bai),
+    ghepPrompt: (k) => y.ghepPrompt(k, bai, ma),
   });
+  /**
+   * ★★★ 2026-08-23 — **TẦNG NHƯỜNG CHỖ THỨ HAI: MÃ THAM CHIẾU ĐI TRƯỚC BÀI HỌC.**
+   *
+   * Thứ tự đầy đủ ở đường SỬA/TẠO nay là: `lịch sử → NGỮ CẢNH MÃ → BÀI HỌC → (từ chối NGAN_SACH)`
+   * — **đúng thứ tự đường sinh mã đã dùng**, không phải một khuôn thứ hai (lý lẽ 8× kích thước và
+   * "mã tái tạo được, bài học thì không" nằm ở docblock `promptSinhMa`).
+   *
+   * ⚠⚠ Ở đường SỬA tầng này KHÔNG hiếm như ở đường sinh mã: prompt đã chở nguyên văn tệp. Nó là lý
+   *   do một khối mã tham chiếu **không bao giờ** biến một tệp đang sửa được thành lượt từ chối.
+   */
+  if (lich.vuotTruocKhiCoLichSu && ma !== "") {
+    console.warn(
+      `[aiLocalKnowledge] ngữ cảnh mã (${ma.length} ký tự) đẩy prompt sửa tệp vượt trần slot — ` +
+        `BỎ ngữ cảnh mã và cân lại (lượt sửa vẫn chạy). tệp=${y.relPath}`,
+    );
+    ma = "";
+    lich = dungKhoiLichSu({
+      lichSu: y.history,
+      systemPrompt: y.heThong,
+      maxTokens: y.tranToken,
+      lang: y.language,
+      ghepPrompt: (k) => y.ghepPrompt(k, bai, ""),
+    });
+  }
   /**
    * ★★★ doc 82 — **BÀI HỌC NHƯỜNG CHỖ, KHÔNG LÀM CẢ LƯỢT NÉM.**
    *
-   * Thứ tự nhường chỗ ở đường SỬA/TẠO (không có khối ngữ cảnh mã): `lịch sử → BÀI HỌC → (từ chối)`.
-   * `dungKhoiLichSu` đã bỏ hết lịch sử mà vẫn tràn (`vuotTruocKhiCoLichSu`) ⇒ bỏ bài học rồi **cân
-   * LẠI bằng chính cái thước ấy**, chứ không ước lượng bằng một phép trừ token thứ hai.
+   * `dungKhoiLichSu` đã bỏ hết lịch sử (và tầng trên đã bỏ ngữ cảnh mã) mà vẫn tràn
+   * (`vuotTruocKhiCoLichSu`) ⇒ bỏ bài học rồi **cân LẠI bằng chính cái thước ấy**, chứ không ước
+   * lượng bằng một phép trừ token thứ hai.
    *
    * ⚠ Đây là điều kiện để một bài học KHÔNG BAO GIỜ biến một tệp đang sửa được thành một lượt từ
    *   chối. Nếu vẫn tràn sau khi bỏ bài học thì nguyên nhân là TỆP QUÁ LỚN — và câu từ chối
@@ -3750,7 +3997,7 @@ async function* motLuotModel(y: {
       systemPrompt: y.heThong,
       maxTokens: y.tranToken,
       lang: y.language,
-      ghepPrompt: (k) => y.ghepPrompt(k, ""),
+      ghepPrompt: (k) => y.ghepPrompt(k, "", ma),
     });
   }
   if (lich.vuotTruocKhiCoLichSu) {
@@ -3762,7 +4009,7 @@ async function* motLuotModel(y: {
   const it = rutChuCoCanh(
     streamCodingModel({
       systemPrompt: y.heThong,
-      prompt: y.ghepPrompt(lich.khoi, bai),
+      prompt: y.ghepPrompt(lich.khoi, bai, ma),
       maxTokens: y.tranToken,
       temperature: 0.15,
       // Phạt lặp làm hỏng việc chép lại NGUYÊN VĂN (thụt đầu dòng, `}` liên tiếp…) — và một đoạn
@@ -3771,26 +4018,53 @@ async function* motLuotModel(y: {
       userId: y.userId,
       // Chữ này SẼ được ghi ra đĩa ⇒ prompt phải tới model nguyên văn (xem `YeuCauSinhChu`).
       nguyenVanPrompt: true,
+      // ★★★ 2026-08-23 — huỷ lan xuống model. Xem `YeuCauSinhChu.signal`.
+      ...(y.signal ? { signal: y.signal } : {}),
     }),
   );
 
   let kq: KetQuaChu;
   let daPhat = "";
-  for (;;) {
-    let n: IteratorResult<string, KetQuaChu>;
-    try {
-      n = await it.next();
-    } catch (e) {
-      const m = codingModelErrorMessage(y.language, e);
-      yield { type: "token", token: (daPhat ? "\n\n" : "") + m };
-      return { kq: "dung", traLoi: daPhat ? `${daPhat}\n\n${m}` : m, provider: "tool" };
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 — **`try/finally` Ở ĐÂY LÀ THỨ LÀM CHO NÚT DỪNG CÓ NGHĨA.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Vòng `for(;;)` này lái `it.next()` **BẰNG TAY** thay vì `for await…of`. Khác biệt không phải
+   * chuyện phong cách: `for await…of` tự gọi `it.return()` khi thân vòng kết thúc đột ngột, còn
+   * `for(;;)` thì **KHÔNG có móc dọn dẹp nào**.
+   *
+   * Chuỗi thật khi người dùng bấm Dừng: tuyến SSE thoát `for await` ⇒ `.return()` chạy ngược lên
+   * chuỗi `yield*` ⇒ tới generator này, làm `yield` đang treo ném "return completion" ⇒ hàm thoát
+   * ⇒ **và `it` nằm lại, treo vĩnh viễn ở một `yield` bên trong `rutChuCoCanh`**. Cái `for await`
+   * bên trong `streamCodingModel` không bao giờ được đóng ⇒ `ggufStream` không bao giờ được đóng ⇒
+   * `finally { reader.cancel() }` của `streamChatCompletion` **không bao giờ chạy** ⇒ một khe
+   * llama-server bị giữ tới khi idle-timeout 120.000 ms nổ. Hai lần bấm Dừng = cả hai khe bận.
+   *
+   * `finally` của một async generator CÓ chạy khi `.return()` được gọi. Nên một dòng `it.return?.()`
+   * ở đây là toàn bộ khoảng cách giữa "huỷ trên giấy" và "huỷ trên card".
+   *
+   * ⚠ `.catch(() => {})`: dọn dẹp hỏng KHÔNG được che mất lý do thật của lượt thoát (cùng lập
+   *   trường với `finally` của `streamChatCompletion`).
+   */
+  try {
+    for (;;) {
+      let n: IteratorResult<string, KetQuaChu>;
+      try {
+        n = await it.next();
+      } catch (e) {
+        const m = codingModelErrorMessage(y.language, e);
+        yield { type: "token", token: (daPhat ? "\n\n" : "") + m };
+        return { kq: "dung", traLoi: daPhat ? `${daPhat}\n\n${m}` : m, provider: "tool" };
+      }
+      if (n.done) {
+        kq = n.value;
+        break;
+      }
+      daPhat += n.value;
+      yield { type: "token", token: n.value };
     }
-    if (n.done) {
-      kq = n.value;
-      break;
-    }
-    daPhat += n.value;
-    yield { type: "token", token: n.value };
+  } finally {
+    await it.return(undefined as unknown as KetQuaChu).catch(() => {});
   }
 
   if (kq.degraded || !kq.text.trim()) {
@@ -3961,6 +4235,20 @@ async function* streamCodingGenerate(
   history: readonly LuotHoiThoai[] = [],
   /** ★ doc 82 — khối bài học ĐÃ BỌC của lượt; `""` ⇒ không có. Chỉ đi vào `prompt`. */
   khoiBaiHocVao = "",
+  /**
+   * ★★★ 2026-08-23 · MỤC 2.4 — **KHỐI MÃ CÓ SẴN, THAY CHO MỘT LƯỢT TRUY HỒI THỨ HAI.**
+   *
+   * Vắng (`undefined`) ⇒ hành vi cũ y nguyên: tự đi `thuThapNguCanhMa` (mục lục → đọc đĩa).
+   * Có ⇒ dùng CHÍNH chuỗi này làm khối mã, **không** chạy truy hồi lần nữa.
+   *
+   * Người gọi duy nhất hôm nay là nhánh *"read tool vừa chạy + câu cần suy luận"*: kết quả tool ĐÃ
+   * là mã đọc từ đĩa trong chính lượt này, nên đi tìm lại nó bằng embedding là trả tiền hai lần cho
+   * cùng một thứ — và tệ hơn, lượt thứ hai có thể trả về **tệp khác** với thứ người dùng vừa hỏi.
+   *
+   * ⚠⚠ Người gọi **PHẢI** truyền một chuỗi ĐÃ BỌC (`sanitizeUntrustedBlock` + `wrapUntrustedBlock`).
+   *   Nội dung tệp là dữ liệu KHÔNG TIN ĐƯỢC — nó do người viết repo (hoặc người gửi PR) quyết định.
+   */
+  khoiMaThayThe?: string,
 ): AsyncGenerator<StreamEvent, LyDoKhongSinhMa> {
   if (!codingGenEnabled()) return "tat_co";
   if (!(await codingModelSanSang())) return "model_offline";
@@ -3977,17 +4265,20 @@ async function* streamCodingGenerate(
    * ⚠ `execCtx` VẮNG ⇒ không tiêm cửa nào ⇒ `khong-cua-doc` ⇒ khối rỗng. Đúng: không có phiên thì
    *   không có RBAC để đi qua, và đọc mã không RBAC là một đường thoát.
    */
-  const nguCanhMa = await thuThapNguCanhMa({
-    cauHoi: question,
-    projectRoot: execCtx?.projectRoot,
-    callerRole: execCtx?.user?.role,
-    docTep: execCtx
-      ? async (duong, tranByte) => {
-          const r = await executeDecision({ tool: "read_file", args: { path: duong, maxBytes: tranByte } }, execCtx);
-          return r.result ?? null;
-        }
-      : (undefined as unknown as (d: string, b: number) => Promise<null>),
-  });
+  const nguCanhMa: KetQuaNguCanhMa =
+    khoiMaThayThe != null
+      ? { khoi: khoiMaThayThe, tokens: 0, tep: [], lyDo: "ok", soDuongDanMucLuc: 0 }
+      : await thuThapNguCanhMa({
+          cauHoi: question,
+          projectRoot: execCtx?.projectRoot,
+          callerRole: execCtx?.user?.role,
+          docTep: execCtx
+            ? async (duong, tranByte) => {
+                const r = await executeDecision({ tool: "read_file", args: { path: duong, maxBytes: tranByte } }, execCtx);
+                return r.result ?? null;
+              }
+            : (undefined as unknown as (d: string, b: number) => Promise<null>),
+        });
 
   /**
    * ★★★ CHÍNH SÁCH NGÂN SÁCH — NHƯỜNG CHỖ THEO THỨ TỰ, CƯỠNG CHẾ BẰNG **CHÍNH** `kiemNganSachNguCanh`.
@@ -4109,27 +4400,36 @@ async function* streamCodingGenerate(
       maxTokens: MAX_TOKENS_SINH,
       temperature: 0.25,
       userId: execCtx?.user?.id,
+      // ★★★ 2026-08-23 — huỷ lan xuống model. Xem `motLuotModel` cho lý lẽ đầy đủ.
+      ...(execCtx?.signal ? { signal: execCtx.signal } : {}),
     }),
   );
 
   let kq: KetQuaChu;
   let daPhat = "";
-  for (;;) {
-    let n: IteratorResult<string, KetQuaChu>;
-    try {
-      n = await it.next();
-    } catch (e) {
-      const m = codingModelErrorMessage(language, e);
-      yield { type: "token", token: (daPhat ? "\n\n" : "") + m };
-      yield doneSinhMa(daPhat ? `${daPhat}\n\n${m}` : m, "tool");
-      return "xong";
+  // ★★★ 2026-08-23 — xem khối `try/finally` cùng lý lẽ ở `motLuotModel`: vòng lái tay không có móc
+  //   dọn dẹp, nên thiếu `finally` thì `.return()` của tuyến SSE dừng lại đúng ở đây và khe
+  //   llama-server bị giữ tới idle-timeout 120.000 ms.
+  try {
+    for (;;) {
+      let n: IteratorResult<string, KetQuaChu>;
+      try {
+        n = await it.next();
+      } catch (e) {
+        const m = codingModelErrorMessage(language, e);
+        yield { type: "token", token: (daPhat ? "\n\n" : "") + m };
+        yield doneSinhMa(daPhat ? `${daPhat}\n\n${m}` : m, "tool");
+        return "xong";
+      }
+      if (n.done) {
+        kq = n.value;
+        break;
+      }
+      daPhat += n.value;
+      yield { type: "token", token: n.value };
     }
-    if (n.done) {
-      kq = n.value;
-      break;
-    }
-    daPhat += n.value;
-    yield { type: "token", token: n.value };
+  } finally {
+    await it.return(undefined as unknown as KetQuaChu).catch(() => {});
   }
 
   if (kq.degraded || !kq.text.trim()) {

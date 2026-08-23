@@ -243,10 +243,6 @@
       {
         "field": "severity",
         "type": "varchar"
-      },
-      {
-        "field": "confidenceScore",
-        "type": "decimal"
       }
     ],
     "fks": [

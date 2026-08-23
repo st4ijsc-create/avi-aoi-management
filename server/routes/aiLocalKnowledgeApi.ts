@@ -100,6 +100,20 @@ function parseContext(raw: unknown): KbQueryContext | undefined {
   ) {
     ctx.codingEditPath = r.codingEditPath.trim();
   }
+  /**
+   * ★★★ 2026-08-23 — ĐẦU RA MÁY (test/biên dịch) của vòng tự động. Xem `KbQueryContext.dauRaKhongTinCay`.
+   *
+   * ⚠ Ở đây **KHÔNG** làm sạch gì — cố ý. Việc quét tiêm · trung hoà dấu rào · che bí mật · cắt là
+   *   của `bocDauRaMayChoLichSu()` trong service, và nó chạy trên MỌI đường vào (kể cả lượt gọi nội
+   *   bộ không đi qua tuyến này). Làm sạch hai chỗ = hai vị từ sẽ trôi khỏi nhau; và làm sạch ở
+   *   ĐÂY THÔI = một đường vào khác sẽ bỏ qua nó.
+   * ⚠ Trần thô 64 KB chỉ để chặn một thân request khổng lồ (`TRAN_DAU_RA` của hộp cát lệnh là 32 KB
+   *   nên đây rộng gấp đôi — không bao giờ cắt nhầm đầu ra thật). Trần THẬT đi vào prompt là
+   *   `TRAN_KY_TU_DAU_RA_MAY`, suy ra từ trần một lượt lịch sử.
+   */
+  if (typeof r.dauRaKhongTinCay === "string" && r.dauRaKhongTinCay.trim() !== "") {
+    ctx.dauRaKhongTinCay = r.dauRaKhongTinCay.slice(0, 64 * 1024);
+  }
 
   return Object.keys(ctx).length > 0 ? ctx : undefined;
 }
@@ -397,9 +411,32 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     }
   });
 
-  // SSE streaming endpoint. Emits `meta`, optional `tool`, one or more
-  // `token` events, then `done`. Falls back to chunked emission of the
-  // final answer when an LLM is not available locally.
+  /**
+   * SSE streaming endpoint.
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 — **DANH SÁCH SỰ KIỆN, ĐẾM TRÊN MÃ CHỨ KHÔNG CHÉP TỪ TRÍ NHỚ**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Bản chú thích cũ khai *"Emits `meta`, optional `tool`, one or more `token` events, then `done`"*
+   * — **thiếu 4 sự kiện tuyến này ĐANG PHÁT**: `vision`, `pending_action`, `client_action`, `error`.
+   * Danh sách ĐÚNG, đọc từ chính thân hàm dưới đây:
+   *
+   *   `vision` (trước vòng lặp, khi có ảnh đính kèm) · `meta` · `tool` · `tool_loop` ·
+   *   `pending_action` · `client_action` · `token`* · `done` · `error` (nhánh `catch`).
+   *
+   * Rơi về phát theo mảnh của câu trả lời cuối khi không có LLM cục bộ.
+   *
+   * ⚠⚠ **VÌ SAO GIỮ DANH SÁCH TRẮNG TƯỜNG MINH, KHÔNG THÊM `default:` CHUYỂN TIẾP.**
+   * Một `default: send(evt as any)` sẽ đẩy **nguyên vẹn mọi ô** của bất kỳ `StreamEvent` nào mọc
+   * thêm trong tương lai xuống trình duyệt. `StreamEvent` là kiểu NỘI BỘ của service và đã từng chở
+   * những ô không dành cho client (`toolResult.data` thô, `pendingAction.args`…). Một danh sách
+   * trắng SAI thì im lặng và sửa được trong một dòng; một `default:` SAI thì rò dữ liệu và **không
+   * ai thấy nó rò**. Đây đúng bài học *"lưới theo FILE, không theo ĐƯỜNG THOÁT"* đọc ngược lại:
+   * cổng ra phải liệt kê được, không phải suy ra được.
+   * ⇒ Giá phải trả cho lựa chọn ấy là: **thêm một `case` mỗi khi service phát một loại mới**, và
+   *   `aiLocalKbStreamEvents.census.test.ts` là thứ bắt ta trả đúng giá đó (nó đếm loại sự kiện
+   *   service phát và đối chiếu với danh sách `case` ở đây).
+   */
   app.post("/api/ai/local-kb/stream", async (req, res) => {
     const xacThuc = await thuXacThucRest(req);
     if (!xacThuc.ok) {
@@ -418,7 +455,11 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     const history = parseHistory(req.body?.history);
     const userRole = parseUserRole(req.body?.userRole);
     const context = parseContext(req.body?.context);
+    // ★★★ 2026-08-23 — cờ huỷ của LƯỢT, dựng TRƯỚC `buildExecCtx` để nó đi cùng ngữ cảnh xuống tận
+    //   `ggufStream`. Lý lẽ đầy đủ ở khối ⚠ tại chỗ đăng ký `req.on("close")` ngay dưới.
+    const boHuy = new AbortController();
     const execCtx = buildExecCtx(user as any, req, question, context);
+    execCtx.signal = boHuy.signal;
 
     res.status(200);
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -433,9 +474,26 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
 
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ★★★ 2026-08-23 — **HUỶ PHẢI ĐI XUỐNG MODEL, KHÔNG DỪNG Ở BIẾN `closed`.**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `closed = true` chỉ làm vòng `for await` dưới đây `return` **ở mảnh token KẾ TIẾP** — tức nó
+     * chờ model nói thêm một chữ nữa mới biết mình nên im. Với một lượt suy luận 30B đang bí, mảnh
+     * kế tiếp có thể không bao giờ tới, và khe llama-server bị giữ tới idle-timeout **120.000 ms**.
+     *
+     * `AbortController` + `req.on("close") → abort()` là ĐÚNG mẫu mà mọi tuyến stream khác của repo
+     * đã dùng từ lâu (`aiStreamingApi` /stream/generate và /stream/chat · `openaiGateway`). Tuyến
+     * này là **ngoại lệ DUY NHẤT** cho tới bản vá này. Signal đi xuống qua `ToolExecContext.signal`
+     * → `streamCodingModel` → `ggufStream(options, modelId, signal)` (đối số THỨ BA).
+     *
+     * ⚠ Giữ NGUYÊN `closed`: nó canh một việc KHÁC — *"còn được phép `res.write` không"*. Gỡ nó ra
+     *   là mời `ERR_STREAM_WRITE_AFTER_END` quay lại. Hai cờ, hai câu hỏi, không thay nhau được.
+     */
     let closed = false;
     req.on("close", () => {
       closed = true;
+      boHuy.abort();
     });
 
     try {
@@ -491,6 +549,32 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
               type: "tool",
               toolName: evt.toolName,
               toolResult: evt.toolResult,
+            });
+            break;
+          /**
+           * ★★★ 2026-08-23 — **THANH TIẾN ĐỘ "VÒNG ĐỌC MÃ" CHẾT ĐÚNG Ở ĐÂY, VÀ CHỈ Ở ĐÂY.**
+           *
+           * Bốn chặng còn lại của đường này ĐỀU LÀNH — đã kiểm từng chặng trên mã:
+           *   • service PHÁT (`aiLocalKnowledgeService`: 2 điểm `yield {type:"tool_loop"…}`);
+           *   • hook ĐỌC (`useKbChatStream`: `payload.type === "tool_loop"`);
+           *   • trang ĐĂNG KÝ (`AICodingWorkspace`: `onToolLoop`);
+           *   • trang VẼ (ô "vòng n: gọi `tool`…").
+           * Đứt đúng một mắt: `switch` này có 6 `case` và **không có `tool_loop`** ⇒ sự kiện bị
+           * NUỐT ở tầng HTTP. Triệu chứng với người dùng: vòng lặp tool đa bước (trần 180 s) chạy
+           * trong im lặng tuyệt đối — đúng thứ nó được dựng ra để tránh.
+           *
+           * ⚠ Chuyển tiếp ĐÚNG các ô của hợp đồng, không hơn. `stop` chỉ có ở `phase:"dung"`; nó
+           *   được BỎ HẲN khi vắng thay vì gửi `null` — hook khai `stop?: string`, và một `null`
+           *   lọt xuống sẽ vẽ ra chữ "null" ở đúng chỗ đáng lẽ nói lý do dừng.
+           */
+          case "tool_loop":
+            send({
+              type: "tool_loop",
+              round: evt.round,
+              phase: evt.phase,
+              toolName: evt.toolName,
+              elapsedMs: evt.elapsedMs,
+              ...(evt.stop ? { stop: evt.stop } : {}),
             });
             break;
           case "pending_action":

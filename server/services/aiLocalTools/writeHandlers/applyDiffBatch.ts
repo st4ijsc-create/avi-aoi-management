@@ -53,6 +53,17 @@
  *   `apply_diff` một tệp y hệt và không thu hẹp được nếu không khoá tệp — nói ra, không giấu.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ ĐỢT 3 (2026-08-23) — LÔ NÀY **GIỮ ÁP-TẤT-CẢ**, không nhận `selectedHunkIds`. CỐ Ý, không dở dang
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `apply_diff` (một tệp) nay cho người duyệt CHỌN KHỐI thật (`aiCopilotActions.confirmAction` +
+ * `selectedHunkIds`). Lô nhiều tệp thì KHÔNG — và gửi `selectedHunkIds` cho một confirm của tool
+ * này bị từ chối thẳng (`HUNK_IDS_INVALID`, xem `apLuaChonKhoi`), không âm thầm áp tất cả. Lý do
+ * để dành chứ không làm nửa vời: chọn-khối-theo-từng-tệp cần MỖI TỆP MỘT KẾ HOẠCH KHỐI riêng
+ * (`keHoachKhoiDuyet` chạy N lần), một hình dạng dây `{fileIndex, hunkIndex}` thay vì một mảng số
+ * trần, và một UI thẻ duyệt PHÂN TRANG theo tệp — ba thứ ấy là một đợt riêng; một bản "tạm" nhét
+ * mảng phẳng vào lô là mở đúng lỗ "chỉ số trỏ nhầm tệp" mà không lưới nào hiện có canh.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠ NGÂN SÁCH TOKEN — **LÔ NÀY KHÔNG CHỞ MỘT TOKEN NÀO LÊN MODEL.**
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * Đây là tầng ĐỀ XUẤT, không phải tầng prompt. Model được gọi **một tệp một lượt** ở

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-21T20:00:22.968Z",
+  "generatedAt": "2026-08-22T20:00:24.225Z",
   "settings": {
     "maxNodes": 1200,
     "topK": 3,
@@ -7,7 +7,7 @@
   },
   "totals": {
     "nodes": 1200,
-    "edges": 2785
+    "edges": 2783
   },
   "nodes": [
     {
@@ -4791,6 +4791,25 @@
         "server",
         "routers",
         "predictivealertclosedorder",
+        "test",
+        "names",
+        "procedure",
+        "calls"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "router:server/routers/predictiveAlertFieldPassthrough.test.ts#0",
+      "sourceType": "router",
+      "sourcePath": "server/routers/predictiveAlertFieldPassthrough.test.ts",
+      "title": "Router Summary",
+      "keywords": [
+        "router",
+        "usages",
+        "file",
+        "server",
+        "routers",
+        "predictivealertfieldpassthrough",
         "test",
         "names",
         "procedure",
@@ -22790,25 +22809,6 @@
         "exportcomparisontopowerpoint"
       ],
       "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/predictiveMaintenanceService.rul.test.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/predictiveMaintenanceService.rul.test.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "predictivemaintenanceservice",
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "test",
-        "functions",
-        "classes",
-        "local"
-      ],
-      "embeddingDim": 1024
     }
   ],
   "edges": [
@@ -26436,6 +26436,26 @@
       "from": "router:server/routers/powerpointRouter.ts#0",
       "to": "router:server/routers/pdfReportRouter.ts#0",
       "similarity": 0.791268
+    },
+    {
+      "from": "router:server/routers/predictiveAlertClosedOrder.test.ts#0",
+      "to": "router:server/routers/predictiveAlertFieldPassthrough.test.ts#0",
+      "similarity": 0.722051
+    },
+    {
+      "from": "router:server/routers/predictiveAlertFieldPassthrough.test.ts#0",
+      "to": "router:server/routers/generatePredictionsRoute.test.ts#0",
+      "similarity": 0.73757
+    },
+    {
+      "from": "router:server/routers/predictiveAlertFieldPassthrough.test.ts#0",
+      "to": "router:server/routers/aiRouters.ts#0",
+      "similarity": 0.732635
+    },
+    {
+      "from": "router:server/routers/predictiveAlertFieldPassthrough.test.ts#0",
+      "to": "router:server/routers/predictiveMaintenanceRouter.ts#0",
+      "similarity": 0.730047
     },
     {
       "from": "router:server/routers/predictiveMaintenanceRouter.ts#0",
@@ -32703,11 +32723,6 @@
       "similarity": 0.754613
     },
     {
-      "from": "service:server/services/aiTimeSeriesEngine.test.ts#0",
-      "to": "service:server/services/predictiveMaintenanceService.rul.test.ts#0",
-      "similarity": 0.80138
-    },
-    {
       "from": "service:server/services/aiTodayBriefing.test.ts#0",
       "to": "service:server/services/aiTodayBriefing.ts#0",
       "similarity": 0.904494
@@ -33894,8 +33909,8 @@
     },
     {
       "from": "service:server/services/energy/energyMeterTemplate.test.ts#0",
-      "to": "service:server/services/ot/drivers/modbusDriver.ts#0",
-      "similarity": 0.722843
+      "to": "service:server/services/ot/drivers/modbusDecode.ts#0",
+      "similarity": 0.721926
     },
     {
       "from": "service:server/services/energy/energyMeterTemplate.ts#0",
@@ -34045,7 +34060,7 @@
     {
       "from": "service:server/services/euromap/euromapOpcua.test.ts#0",
       "to": "service:server/services/ot/drivers/opcuaDriver.ts#0",
-      "similarity": 0.752744
+      "similarity": 0.730928
     },
     {
       "from": "service:server/services/euromap/euromapOpcuaReader.ts#0",
@@ -35458,11 +35473,6 @@
       "similarity": 0.747649
     },
     {
-      "from": "service:server/services/opcuaGateway.ts#0",
-      "to": "service:server/services/ot/drivers/opcuaDriver.ts#0",
-      "similarity": 0.728436
-    },
-    {
       "from": "service:server/services/operatorBadgeService.test.ts#0",
       "to": "service:server/services/operatorBadgeService.ts#0",
       "similarity": 0.898578
@@ -35895,7 +35905,7 @@
     {
       "from": "service:server/services/ot/driverRegistry.test.ts#0",
       "to": "service:server/services/ot/drivers/stubDriver.ts#0",
-      "similarity": 0.834928
+      "similarity": 0.80944
     },
     {
       "from": "service:server/services/ot/driverRegistry.ts#0",
@@ -35909,8 +35919,8 @@
     },
     {
       "from": "service:server/services/ot/driverRegistry.ts#0",
-      "to": "service:server/services/ot/drivers/notImplementedDriver.ts#0",
-      "similarity": 0.735253
+      "to": "service:server/services/ot/index.ts#0",
+      "similarity": 0.734186
     },
     {
       "from": "service:server/services/ot/drivers/eipTag.test.ts#0",
@@ -35925,12 +35935,12 @@
     {
       "from": "service:server/services/ot/drivers/ethernetIpDriver.test.ts#0",
       "to": "service:server/services/ot/drivers/ethernetIpDriver.ts#0",
-      "similarity": 0.92624
+      "similarity": 0.925316
     },
     {
       "from": "service:server/services/ot/drivers/ethernetIpDriver.ts#0",
       "to": "service:server/services/ot/drivers/ethernetIpDriver.test.ts#0",
-      "similarity": 0.92624
+      "similarity": 0.925316
     },
     {
       "from": "service:server/services/ot/drivers/mcAddress.test.ts#0",
@@ -35965,7 +35975,7 @@
     {
       "from": "service:server/services/ot/drivers/mitsubishiMcDriver.test.ts#0",
       "to": "service:server/services/ot/drivers/mitsubishiMcDriver.ts#0",
-      "similarity": 0.942107
+      "similarity": 0.939785
     },
     {
       "from": "service:server/services/ot/drivers/mitsubishiMcDriver.test.ts#0",
@@ -35980,12 +35990,7 @@
     {
       "from": "service:server/services/ot/drivers/mitsubishiMcDriver.ts#0",
       "to": "service:server/services/ot/drivers/mitsubishiMcDriver.test.ts#0",
-      "similarity": 0.942107
-    },
-    {
-      "from": "service:server/services/ot/drivers/mitsubishiMcDriver.ts#0",
-      "to": "service:server/services/ot/drivers/modbusDriver.ts#0",
-      "similarity": 0.720225
+      "similarity": 0.939785
     },
     {
       "from": "service:server/services/ot/drivers/modbusDecode.test.ts#0",
@@ -35994,13 +35999,13 @@
     },
     {
       "from": "service:server/services/ot/drivers/modbusDecode.test.ts#0",
-      "to": "service:server/services/ot/drivers/modbusDriver.ts#0",
-      "similarity": 0.844685
+      "to": "service:server/services/ot/drivers/modbusDriver.test.ts#0",
+      "similarity": 0.830587
     },
     {
       "from": "service:server/services/ot/drivers/modbusDecode.test.ts#0",
-      "to": "service:server/services/ot/drivers/modbusDriver.test.ts#0",
-      "similarity": 0.830587
+      "to": "service:server/services/ot/drivers/modbusDriver.ts#0",
+      "similarity": 0.829769
     },
     {
       "from": "service:server/services/ot/drivers/modbusDecode.ts#0",
@@ -36010,7 +36015,7 @@
     {
       "from": "service:server/services/ot/drivers/modbusDecode.ts#0",
       "to": "service:server/services/ot/drivers/modbusDriver.ts#0",
-      "similarity": 0.782859
+      "similarity": 0.766662
     },
     {
       "from": "service:server/services/ot/drivers/modbusDecode.ts#0",
@@ -36020,7 +36025,7 @@
     {
       "from": "service:server/services/ot/drivers/modbusDriver.test.ts#0",
       "to": "service:server/services/ot/drivers/modbusDriver.ts#0",
-      "similarity": 0.906425
+      "similarity": 0.904969
     },
     {
       "from": "service:server/services/ot/drivers/modbusDriver.test.ts#0",
@@ -36035,32 +36040,32 @@
     {
       "from": "service:server/services/ot/drivers/modbusDriver.ts#0",
       "to": "service:server/services/ot/drivers/modbusDriver.test.ts#0",
-      "similarity": 0.906425
+      "similarity": 0.904969
     },
     {
       "from": "service:server/services/ot/drivers/modbusDriver.ts#0",
       "to": "service:server/services/ot/drivers/modbusDecode.test.ts#0",
-      "similarity": 0.844685
+      "similarity": 0.829769
     },
     {
       "from": "service:server/services/ot/drivers/modbusDriver.ts#0",
       "to": "service:server/services/ot/drivers/modbusDecode.ts#0",
-      "similarity": 0.782859
+      "similarity": 0.766662
     },
     {
       "from": "service:server/services/ot/drivers/notImplementedDriver.ts#0",
       "to": "service:server/services/ot/otDriver.ts#0",
-      "similarity": 0.840494
+      "similarity": 0.784706
     },
     {
       "from": "service:server/services/ot/drivers/notImplementedDriver.ts#0",
       "to": "service:server/services/ot/drivers/stubDriver.test.ts#0",
-      "similarity": 0.79809
+      "similarity": 0.76161
     },
     {
       "from": "service:server/services/ot/drivers/notImplementedDriver.ts#0",
-      "to": "service:server/services/ot/driverRegistry.test.ts#0",
-      "similarity": 0.761529
+      "to": "service:server/services/ot/drivers/opcuaDriver.ts#0",
+      "similarity": 0.755403
     },
     {
       "from": "service:server/services/ot/drivers/opcuaAddress.test.ts#0",
@@ -36075,7 +36080,7 @@
     {
       "from": "service:server/services/ot/drivers/opcuaAddress.test.ts#0",
       "to": "service:server/services/ot/drivers/opcuaDriver.ts#0",
-      "similarity": 0.836005
+      "similarity": 0.817844
     },
     {
       "from": "service:server/services/ot/drivers/opcuaAddress.ts#0",
@@ -36085,7 +36090,7 @@
     {
       "from": "service:server/services/ot/drivers/opcuaAddress.ts#0",
       "to": "service:server/services/ot/drivers/opcuaDriver.ts#0",
-      "similarity": 0.774747
+      "similarity": 0.758865
     },
     {
       "from": "service:server/services/ot/drivers/opcuaAddress.ts#0",
@@ -36095,7 +36100,7 @@
     {
       "from": "service:server/services/ot/drivers/opcuaDriver.test.ts#0",
       "to": "service:server/services/ot/drivers/opcuaDriver.ts#0",
-      "similarity": 0.91535
+      "similarity": 0.9072
     },
     {
       "from": "service:server/services/ot/drivers/opcuaDriver.test.ts#0",
@@ -36110,17 +36115,17 @@
     {
       "from": "service:server/services/ot/drivers/opcuaDriver.ts#0",
       "to": "service:server/services/ot/drivers/opcuaDriver.test.ts#0",
-      "similarity": 0.91535
+      "similarity": 0.9072
     },
     {
       "from": "service:server/services/ot/drivers/opcuaDriver.ts#0",
       "to": "service:server/services/ot/drivers/opcuaAddress.test.ts#0",
-      "similarity": 0.836005
+      "similarity": 0.817844
     },
     {
       "from": "service:server/services/ot/drivers/opcuaDriver.ts#0",
       "to": "service:server/services/ot/index.ts#0",
-      "similarity": 0.78011
+      "similarity": 0.775205
     },
     {
       "from": "service:server/services/ot/drivers/otScale.test.ts#0",
@@ -36131,11 +36136,6 @@
       "from": "service:server/services/ot/drivers/otScale.test.ts#0",
       "to": "service:server/services/ot/otDriver.ts#0",
       "similarity": 0.744891
-    },
-    {
-      "from": "service:server/services/ot/drivers/otScale.test.ts#0",
-      "to": "service:server/services/ot/drivers/opcuaDriver.ts#0",
-      "similarity": 0.726123
     },
     {
       "from": "service:server/services/ot/drivers/otScale.ts#0",
@@ -36160,7 +36160,7 @@
     {
       "from": "service:server/services/ot/drivers/s7Address.test.ts#0",
       "to": "service:server/services/ot/drivers/s7Driver.ts#0",
-      "similarity": 0.84049
+      "similarity": 0.81789
     },
     {
       "from": "service:server/services/ot/drivers/s7Address.test.ts#0",
@@ -36175,7 +36175,7 @@
     {
       "from": "service:server/services/ot/drivers/s7Address.ts#0",
       "to": "service:server/services/ot/drivers/s7Driver.ts#0",
-      "similarity": 0.792969
+      "similarity": 0.771742
     },
     {
       "from": "service:server/services/ot/drivers/s7Address.ts#0",
@@ -36185,7 +36185,7 @@
     {
       "from": "service:server/services/ot/drivers/s7Driver.test.ts#0",
       "to": "service:server/services/ot/drivers/s7Driver.ts#0",
-      "similarity": 0.911611
+      "similarity": 0.906147
     },
     {
       "from": "service:server/services/ot/drivers/s7Driver.test.ts#0",
@@ -36200,22 +36200,22 @@
     {
       "from": "service:server/services/ot/drivers/s7Driver.ts#0",
       "to": "service:server/services/ot/drivers/s7Driver.test.ts#0",
-      "similarity": 0.911611
+      "similarity": 0.906147
     },
     {
       "from": "service:server/services/ot/drivers/s7Driver.ts#0",
       "to": "service:server/services/ot/drivers/s7Address.test.ts#0",
-      "similarity": 0.84049
+      "similarity": 0.81789
     },
     {
       "from": "service:server/services/ot/drivers/s7Driver.ts#0",
       "to": "service:server/services/ot/drivers/s7Address.ts#0",
-      "similarity": 0.792969
+      "similarity": 0.771742
     },
     {
       "from": "service:server/services/ot/drivers/slmpDriver.test.ts#0",
       "to": "service:server/services/ot/drivers/slmpDriver.ts#0",
-      "similarity": 0.947655
+      "similarity": 0.921575
     },
     {
       "from": "service:server/services/ot/drivers/slmpDriver.test.ts#0",
@@ -36225,7 +36225,7 @@
     {
       "from": "service:server/services/ot/drivers/slmpDriver.ts#0",
       "to": "service:server/services/ot/drivers/slmpDriver.test.ts#0",
-      "similarity": 0.947655
+      "similarity": 0.921575
     },
     {
       "from": "service:server/services/ot/drivers/slmpEncoder.ts#0",
@@ -36235,7 +36235,7 @@
     {
       "from": "service:server/services/ot/drivers/stubDriver.test.ts#0",
       "to": "service:server/services/ot/drivers/stubDriver.ts#0",
-      "similarity": 0.947289
+      "similarity": 0.920582
     },
     {
       "from": "service:server/services/ot/drivers/stubDriver.test.ts#0",
@@ -36244,18 +36244,23 @@
     },
     {
       "from": "service:server/services/ot/drivers/stubDriver.test.ts#0",
-      "to": "service:server/services/ot/drivers/notImplementedDriver.ts#0",
-      "similarity": 0.79809
+      "to": "service:server/services/ot/otDriver.ts#0",
+      "similarity": 0.783726
     },
     {
       "from": "service:server/services/ot/drivers/stubDriver.ts#0",
       "to": "service:server/services/ot/drivers/stubDriver.test.ts#0",
-      "similarity": 0.947289
+      "similarity": 0.920582
     },
     {
       "from": "service:server/services/ot/drivers/stubDriver.ts#0",
       "to": "service:server/services/ot/driverRegistry.test.ts#0",
-      "similarity": 0.834928
+      "similarity": 0.80944
+    },
+    {
+      "from": "service:server/services/ot/drivers/stubDriver.ts#0",
+      "to": "service:server/services/ot/drivers/notImplementedDriver.ts#0",
+      "similarity": 0.745111
     },
     {
       "from": "service:server/services/ot/index.ts#0",
@@ -36270,7 +36275,7 @@
     {
       "from": "service:server/services/ot/index.ts#0",
       "to": "service:server/services/ot/drivers/opcuaDriver.ts#0",
-      "similarity": 0.78011
+      "similarity": 0.775205
     },
     {
       "from": "service:server/services/ot/ingest.mapping.test.ts#0",
@@ -36319,13 +36324,13 @@
     },
     {
       "from": "service:server/services/ot/otDriver.ts#0",
-      "to": "service:server/services/ot/drivers/notImplementedDriver.ts#0",
-      "similarity": 0.840494
+      "to": "service:server/services/ot/otManager.test.ts#0",
+      "similarity": 0.810534
     },
     {
       "from": "service:server/services/ot/otDriver.ts#0",
-      "to": "service:server/services/ot/otManager.test.ts#0",
-      "similarity": 0.810534
+      "to": "service:server/services/ot/index.ts#0",
+      "similarity": 0.809022
     },
     {
       "from": "service:server/services/ot/otManager.deadband.test.ts#0",
@@ -36476,11 +36481,6 @@
       "from": "service:server/services/pdmR0.test.ts#0",
       "to": "service:server/services/pdmAutoWorkOrderService.ts#0",
       "similarity": 0.821855
-    },
-    {
-      "from": "service:server/services/pdmR0.test.ts#0",
-      "to": "service:server/services/predictiveMaintenanceService.rul.test.ts#0",
-      "similarity": 0.739354
     },
     {
       "from": "service:server/services/pdmWorkOrderService.ts#0",
@@ -36726,16 +36726,6 @@
       "from": "service:server/services/pointResultEvaluator.versionGate.test.ts#0",
       "to": "service:server/services/pointResultEvaluator.unitConvert.test.ts#0",
       "similarity": 0.884024
-    },
-    {
-      "from": "service:server/services/predictiveMaintenanceService.rul.test.ts#0",
-      "to": "service:server/services/aiTimeSeriesEngine.test.ts#0",
-      "similarity": 0.80138
-    },
-    {
-      "from": "service:server/services/predictiveMaintenanceService.rul.test.ts#0",
-      "to": "service:server/services/pdmR0.test.ts#0",
-      "similarity": 0.739354
     }
   ]
 }

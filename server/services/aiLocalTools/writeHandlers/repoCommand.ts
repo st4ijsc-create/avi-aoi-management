@@ -227,14 +227,38 @@ function cauTuChoiLenh(ma: MaTuChoiLenh, chiTiet: string, lang: ToolLang): strin
         `Failed to spawn the child process: ${chiTiet}. The command never ran.`,
         `无法创建子进程：${chiTiet}。命令从未运行。`,
       );
+    case "CMD_GOC_THIEU_PACKAGE_JSON":
+      return w(
+        lang,
+        `Lệnh KHÔNG chạy: ${chiTiet}`,
+        `The command did NOT run: ${chiTiet}`,
+        `命令未运行：${chiTiet}`,
+      );
     case "CMD_TIMEOUT":
-    default:
       return w(
         lang,
         `Lệnh bị GIẾT vì quá hạn (${chiTiet}). Đầu ra dưới đây là một BẢN CẮT — nó KHÔNG phải kết luận "lệnh chạy xong" hay "mã nguồn có/không có lỗi".`,
         `The command was KILLED on timeout (${chiTiet}). The output below is PARTIAL — it is not a verdict on the code.`,
         `命令因超时被终止（${chiTiet}）。以下输出是部分结果，不构成对代码的结论。`,
       );
+    default: {
+      /**
+       * ★★★ 2026-08-23 — **`default` TỪNG DÍNH LIỀN `case "CMD_TIMEOUT"`, VÀ NÓ ĐÃ NÓI DỐI THẬT.**
+       * Thêm `CMD_GOC_THIEU_PACKAGE_JSON` mà chưa viết câu cho nó ⇒ lượt từ chối rơi vào nhánh
+       * chung và người dùng đọc được *"Lệnh bị GIẾT vì quá hạn"* cho một lệnh **chưa hề chạy** —
+       * bắt được ở nghiệm thu live, không lưới nào phát biểu (lưới chỉ so `r.ma`, không đọc câu chữ).
+       * ⇒ Tách ra, và `never` biến "quên viết câu" từ **lời nói dối lúc chạy** thành **lỗi biên dịch**:
+       *   thêm một mã vào `MA_TU_CHOI_LENH` mà không thêm `case` ở đây thì `npm run check` ĐỎ.
+       * ⚠ Vẫn trả về một câu (không `throw`): một lời từ chối mà làm sập tiến trình còn tệ hơn.
+       */
+      const chuaKhai: never = ma;
+      return w(
+        lang,
+        `Lệnh bị từ chối (${String(chuaKhai)}): ${chiTiet}`,
+        `The command was refused (${String(chuaKhai)}): ${chiTiet}`,
+        `命令被拒绝（${String(chuaKhai)}）：${chiTiet}`,
+      );
+    }
   }
 }
 
@@ -403,6 +427,19 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
     const title = w(ctx.lang, "Chạy lệnh trong repo", "Run command in repo", "在仓库中运行命令");
     const napLoi = (ma: MaTuChoiLenh, chiTiet: string, data: DuLieuChay) => {
       const cau = cauTuChoiLenh(ma, chiTiet, ctx.lang);
+      /**
+       * ★★★ 2026-08-23 — NHÁNH CUỐI TỪNG LÀ `case "CMD_TIMEOUT": default:` DÙNG CHUNG. Đo được ở
+       * nghiệm thu live: một lượt từ chối vì `CMD_GOC_THIEU_PACKAGE_JSON` hiện lên màn hình là
+       * **`[CMD_TIMEOUT]`** — lệnh chưa hề chạy mà nhãn nói nó bị giết vì quá hạn. Câu chữ sai ở
+       * `cauTuChoiLenh`, NHÃN sai ở đây: hai chỗ khác nhau, cùng một cơ chế.
+       *
+       * ⚠⚠ VÌ SAO KHÔNG GỌN LẠI THÀNH `note: ma` (đã thử, và **census bắt được**):
+       *   `toolNoteCensus` soi **VĂN BẢN** để liệt kê mọi nhãn người dùng có thể thấy. Viết `note: ma`
+       *   thì nhãn vẫn đúng lúc chạy nhưng census hoá mù — nó báo *"mã không còn ai sinh ra"* cho cả
+       *   năm mã. Gọn hơn mà mất một phép đo là đổi sai chiều.
+       * ⇒ Giữ chữ cho census đọc được, và đóng cái bẫy bằng `never`: thêm mã vào `MA_TU_CHOI_LENH`
+       *   mà quên nhánh ở đây thì `npm run check` ĐỎ, thay vì lặng lẽ mang nhãn của người khác.
+       */
       switch (ma) {
         case "CMD_METACHAR":
           return { type: KIEU, title, data, note: "CMD_METACHAR", textSummary: cau };
@@ -414,9 +451,14 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
           return { type: KIEU, title, data, note: "CMD_RESOLVE_ERROR", textSummary: cau };
         case "CMD_SPAWN_ERROR":
           return { type: KIEU, title, data, note: "CMD_SPAWN_ERROR", textSummary: cau };
+        case "CMD_GOC_THIEU_PACKAGE_JSON":
+          return { type: KIEU, title, data, note: "CMD_GOC_THIEU_PACKAGE_JSON", textSummary: cau };
         case "CMD_TIMEOUT":
-        default:
           return { type: KIEU, title, data, note: "CMD_TIMEOUT", textSummary: cau };
+        default: {
+          const chuaKhai: never = ma;
+          return { type: KIEU, title, data, note: String(chuaKhai), textSummary: cau };
+        }
       }
     };
 
