@@ -671,6 +671,9 @@ export const en: Dictionary = {
       hint: "Click the image to add a point at that position — click a point to edit it.",
       noImageCaption: "No reference image yet",
       unplacedNote: (vars: Vars) => `${vars.count} point${vars.count === 1 ? "" : "s"} not yet positioned on the image — edit them in the list below.`,
+      // BN-1 — owner-decisions item 57, defect 4: a fiducial the canvas cannot place used to vanish
+      // with no count and no note, while a point in the same state got the line above.
+      unplacedFiducialsNote: (vars: Vars) => `${vars.count} fiducial${vars.count === 1 ? "" : "s"} not yet positioned on the image — edit ${vars.count === 1 ? "it" : "them"} in the fiducials panel.`,
       ariaLabel: (vars: Vars) => `Points map — ${vars.count} point${vars.count === 1 ? "" : "s"} shown`,
       pointAria: (vars: Vars) => `Point ${vars.code} — ${vars.name}`,
       figTitle: "FIG. 02 — BOARD REFERENCE MAP",

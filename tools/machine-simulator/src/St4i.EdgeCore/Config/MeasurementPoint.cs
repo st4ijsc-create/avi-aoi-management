@@ -8,13 +8,29 @@ namespace St4i.EdgeCore.Config;
 /// in caps on the wire (unlike every other enum in this file) — see
 /// <see cref="SnakeUpperEnumConverter"/>.</summary>
 /// <remarks>
-/// 🔴 THE PUSH PATH DOES NOT GO THROUGH THAT CONVERTER. <c>ConfigSyncEngine.ToWireDto</c> spells this
-/// field for the outbound <c>sync-points</c> body with a plain <c>ToString().ToUpperInvariant()</c>.
-/// The two agree today for one reason only, and it is a property of the member list rather than of the
-/// code: every member below is a SINGLE WORD, so <c>SnakeCaseUpper</c> has no boundary to insert an
-/// underscore at. Adding a two-word member (a <c>SolderJoint</c>) would make the pull say
-/// <c>SOLDER_JOINT</c> and the push say <c>SOLDERJOINT</c> for the same value. This is named, not
-/// fixed — no code was touched in the round that found it.
+/// 📎 <b>THE PARAGRAPH BELOW IS RETRACTED, 2026-08-24 (BN-1)</b> — <c>docs/owner-decisions.md</c> item 57,
+/// leg 1, under the owner's ruling of 2026-08-23. Kept verbatim and un-struck: it was true, it is what
+/// made the fix measurable, and its last clause ("named, not fixed") is precisely what stopped being
+/// true. <c>ConfigSyncEngine.ToWireDto</c> now takes the token from <c>ConfigSyncEngine.WireToken</c>,
+/// which serializes through <c>ConfigJson.Options</c> — the SAME options instance the Live backend
+/// deserializes every response with, so the push token and the pull token come from one converter.
+/// <b>The wire did not move:</b> the byte-identity was measured member by member BEFORE the edit and came
+/// back seven of seven identical, which is the condition the ruling attached to doing this at all.
+/// <para><i>Retracted text, verbatim:</i> "🔴 THE PUSH PATH DOES NOT GO THROUGH THAT CONVERTER.
+/// <c>ConfigSyncEngine.ToWireDto</c> spells this field for the outbound <c>sync-points</c> body with a
+/// plain <c>ToString().ToUpperInvariant()</c>. The two agree today for one reason only, and it is a
+/// property of the member list rather than of the code: every member below is a SINGLE WORD, so
+/// <c>SnakeCaseUpper</c> has no boundary to insert an underscore at. Adding a two-word member (a
+/// <c>SolderJoint</c>) would make the pull say <c>SOLDER_JOINT</c> and the push say <c>SOLDERJOINT</c>
+/// for the same value. This is named, not fixed — no code was touched in the round that found it."</para>
+/// <para>🔴 <b>ONE SIBLING OF THAT DEFECT IS STILL LIVE AND IS NAMED RATHER THAN FILLED IN.</b>
+/// <c>ConfigSyncEngine.ToWireDto</c>'s NEXT-BUT-ONE argument still reads
+/// <c>p.Shape.ToString().ToLowerInvariant()</c> for <see cref="PointShape"/> — the identical shape, one
+/// line down, and measured identically (all seven <c>PointShape</c> members are single words, so
+/// <c>SnakeCaseLower</c> agrees with <c>ToLowerInvariant</c> seven of seven today). It was NOT fixed
+/// here: item 57 delegates <c>ConfigSyncEngine.cs:420</c> and names <see cref="MeasurementType"/>, and
+/// widening an owner-held item from inside the task that executes it is the back door this repository's
+/// records exist to close.</para>
 /// </remarks>
 [JsonConverter(typeof(SnakeUpperEnumConverter))]
 public enum MeasurementType
@@ -323,9 +339,13 @@ public sealed class MeasurementPoint
     /// <summary>Resolution-independent horizontal position, 0..1 across the reference image. This is
     /// the value every renderer actually wants, and the reason both the AOI simulator and the HMI
     /// derive it identically: <c>NormalizedX</c> when authored, else
-    /// <c>PositionX / ImageWidth</c>, clamped to [0,1] either way. Because of that fallback — unlike
-    /// <see cref="Fiducial.NormalizedX"/>, which has none — a point with only absolute coordinates
-    /// still places correctly.</summary>
+    /// <c>PositionX / ImageWidth</c>, clamped to [0,1] either way. Because of that fallback a point with
+    /// only absolute coordinates still places correctly.
+    /// <para>📎 <b>RETRACTED 2026-08-24 (BN-1)</b>, <c>docs/owner-decisions.md</c> item 57 defect 4: the
+    /// clause above read "— unlike <see cref="Fiducial.NormalizedX"/>, which has none —". It was true
+    /// when written and this task made it false: <c>BoardCanvas.tsx</c>'s <c>placeFiducial</c> now
+    /// mirrors <c>placePoint</c>. The asymmetry it named is gone; the fallback it describes for POINTS is
+    /// unchanged.</para></summary>
     public double? NormalizedX { get; set; }
 
     /// <summary>Resolution-independent vertical position, 0..1 down the reference image, derived and

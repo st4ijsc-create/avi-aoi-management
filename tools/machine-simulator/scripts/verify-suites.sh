@@ -2376,7 +2376,92 @@ EXPECT_CONFORMANCE=24
 #         ONLY red in the whole 1409-test suite when the fix landed, which is the measurement that
 #         says the blast radius is exactly the assertion that pinned the defect.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1261
+# 🔴 TASK BN-1 (.superpowers/sdd/item-46-and-split-57/task-1-brief.md — docs/owner-decisions.md item 46,
+# and the SPLIT of item 57) raises EXPECT_EDGECORE 1261 -> 1267 (+6) and EXPECT_ENGINEAPI 1415 -> 1427
+# (+12). Grand total 2913 -> 2931. EXPECT_ABSTRACTIONS stays 161, EXPECT_CONFORMANCE stays 24,
+# EXPECT_EDGESERVICE stays 52 — and those three staying put is a check on scope, not a convenience:
+# neither item touches a connector, a driver or the edge host.
+#
+# 🔴 COUNTED FROM THE RUNNER BY RUNNING BOTH SUITES TO COMPLETION, not from `--list-tests`, for exactly
+# the reason the Q-1 block below records: `dotnet test --list-tests` does not enumerate a [Theory]'s data
+# rows, and this task adds two theories. Measured: EdgeCore `Total: 1267, Failed: 0`; EngineApi
+# `Total: 1427, Failed: 0`. `--list-tests` reports 1260 and 1427 for the same tree — anyone re-deriving
+# these with --list-tests will get 1260 for EdgeCore and must not "correct" the constant to match.
+#
+# +6 EdgeCore, ONE new file, tests/St4i.EdgeCore.Tests/InstallerHarvestExclusionTests.cs, six [Fact]s and
+# no [Theory] — item 46's witness. It is here rather than in St4i.EngineApi.Tests because it reads the
+# real packaging/installer/ artefacts as TEXT and needs no assembly it does not already have; it lives
+# beside PackagingFleetJsonTests, whose repo-root walk it copies.
+#      1  the load-bearing one: the needle set in exclude-shell-and-engine-exe.xslt must EQUAL the two
+#         explicitly-authored exes plus every persisted-filename constant declared by every src/ file
+#         that calls LegacyRootMigration.CopyOnce. XSLT cannot read C#, so the stylesheet's list is a
+#         COPY; this is what stops the copy outliving its source. The population is a CENSUS (the
+#         CopyOnce call sites), not a hand-maintained registry, so a fourth beside-the-binary store
+#         joins it without anybody editing the test.
+#      1  bank one — every operator-authorable store file is dropped from the harvested fragment.
+#      1  bank two, and it is the QUIET one — every file the published payload actually ships must
+#         SURVIVE, including three deliberate near-misses (my-products.json, engine-recipes.json,
+#         products.json.bak) whose basenames embed a needle without a path separator in front of it. A
+#         too-wide filter drops a real asset and the MSI still builds, validates and installs.
+#      1  the non-vacuity floor: the two exe needles are KNOWN to fire against real heat output (the
+#         harvested fragment on this tree came back 63 Components / 63 Files / 63 ComponentRefs with
+#         both exes already absent), so a fixture the transform can no longer reach fails HERE rather
+#         than letting the two banks above pass on a document nothing matches.
+#      1  the dangling-ComponentRef half: the stylesheet spells its needle list TWICE (XSLT 1.0 has no
+#         variables usable inside a match pattern), so one template can be edited without the other.
+#      1  the WIRING: St4i.Installer.wixproj's HarvestDirectory/@Transforms must still name the file
+#         this suite exercises. A mis-wired Transforms value fails SILENTLY — the harvest simply stops
+#         excluding and the MSI still builds — which is the exact failure class item 46 exists to close.
+#
+# 🔴 WHAT THAT FILE DOES NOT MEASURE, recorded here as well as in the file and in every failure message
+# it prints: heat.exe is NOT run, no MSI is built, and build-installer.ps1 is NOT executed. There is no
+# runner in this repository that can execute that script, and building a real MSI needs the pinned WiX
+# v4.0.5 SDK restored from nuget.org against a real publish-desktop\ tree — a release artefact, which a
+# test must not produce. The one piece of the pipeline that is a PURE FUNCTION is the transform, and that
+# is what is under test.
+#
+# 🔴 CONTROL PAIR FOR THE ABOVE, RUN TO COMPLETION AND REVERTED, one arm per bank so neither bank is
+# certified by the other's failure. (A) one needle removed ('\products.json' -> an unused name): 2 RED
+# (the set-equality fact and the drop fact), reverted -> 6/6 green. (B) the same needle WIDENED (leading
+# path separator dropped): 2 RED, and the bank-two failure printed the exact line "1 file(s) the
+# published payload actually ships were dropped by the harvest transform:
+# SourceDir\engine\my-products.json"; reverted -> 6/6 green. `git diff` at the branch tip carries neither.
+#
+# +12 EngineApi, ALL in tests/St4i.EngineApi.Tests/ConfigSyncEngineTests.cs (no new file) — item 57 legs
+# 1 and 2. Nothing is rewritten, split or deleted; RecordingConfigSyncBackend gains two members.
+#      7  a [Theory], one row per MeasurementType member, asserting the token on the SyncPointsRequestDto
+#         the engine actually builds against the PUBLISHED contract vocabulary
+#         (DIMENSION|VISUAL|ELECTRICAL|POSITION|COLOR|SURFACE|OTHER) written as literals. Deliberately
+#         NOT re-derived from the converter: asking the converter what the converter says is an identity,
+#         not a measurement, and it would have agreed with the hand-spelling it replaced too.
+#      1  the completeness floor for that theory — the member list is enumerated by hand, so a member
+#         added without a row would be pushed by untested code.
+#      1  the premise of leg 2 named rather than assumed: SimulatedEcosystem answers TRUE and
+#         LiveConfigSyncBackend answers FALSE for PullCarriesLifecycleStatus.
+#      2  the two banks of leg 2: a backend that carries no lifecycleStatus must not have its C# default
+#         written over the machine's value, AND a backend that DOES carry one must still overwrite. A
+#         blanket "always keep the local one" passes the first and fails the second.
+#      1  the boundary in the other direction: a product the machine has never held has nothing to keep,
+#         and "keep the local one" must not become "refuse to store anything".
+#
+# 🔴 THE THEORY IS GREEN BOTH BEFORE AND AFTER LEG 1'S EDIT, and that is stated rather than left to be
+# discovered. Seven of seven tokens were measured byte-identical BEFORE the change — that was the
+# OWNER'S PRECONDITION for the change being inside the delegation at all — so a red there would have
+# meant the wire moved. Its standing job is the regression: it reddens if the hand-spelling returns.
+#
+# 🔴 THE LEG-2 PAIR CAUGHT ITSELF, and it is recorded because it is the failure mode this file keeps
+# paying for. Their first draft hard-coded `Active` as "the value the ecosystem is not"; the ecosystem's
+# own MODEL-A seed IS Active, so both would have compared a value against itself. The non-vacuity guard
+# fired. The value is now DERIVED (DifferentFrom), not chosen, and the guard is unnecessary.
+#
+# EXPECT_WARNINGS: re-measured on a full solution build after this task — 219, UNCHANGED, stated at its
+# own constant below. Nothing was suppressed: no .editorconfig change, no <NoWarn>, no #pragma, no
+# SuppressMessage. EXPECT_BUILD_NODES stays 0. BN-1 DOES touch web/ (item 57 leg 3 — BoardCanvas.tsx plus
+# one i18n key in each of the two dictionaries), so `npm run build` (`tsc -b && vite build`, which the
+# gate does not do) was RUN AND PASSED; that build is the only witness leg 3 has, and saying so is the
+# point rather than a hedge.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1267
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4026,7 +4111,9 @@ EXPECT_EDGESERVICE=52
 # only web files changed and no web test asserts either string (measured with repo-scan.sh before editing).
 # 🔴 BM-1, 2026-08-23 — 1409 -> 1415 (+6). The whole justification, per file and per test, is beside
 # EXPECT_EDGECORE above; it is written once rather than twice because it is one task and one ruling.
-EXPECT_ENGINEAPI=1415
+# 🔴 BN-1, 2026-08-24 — 1415 -> 1427 (+12). The whole justification, per file and per test, is beside
+# EXPECT_EDGECORE above; it is written once rather than twice because it is one task and one ruling.
+EXPECT_ENGINEAPI=1427
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -4937,7 +5024,28 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #
 # The baseline cfcfae42 is NOT moved.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_NEW_DOC_ABSOLUTES=432
+# 🔴 EXPECT_NEW_DOC_ABSOLUTES: 432 -> 469 (+37), BN-1, 2026-08-24 (docs/owner-decisions.md item 46, and
+# the SPLIT of item 57). MEASURED AFTER the prose was written, and measured TWICE so the two framings
+# reconcile rather than one being carried forward:
+#     scripts/scan-doc-negations.sh --since cfcfae42   ->  469   (the gated baseline)
+#     scripts/scan-doc-negations.sh --since 46576c36   ->   37   (this task against its own base)
+# 432 + 37 = 469, so the delta is ACCOUNTED FOR rather than absorbed.
+#
+# WHERE THE 37 COME FROM, and none of them is a new unqualified absolute smuggled in: the great majority
+# are RETRACTION blocks, which this repository writes as prose that QUOTES the retracted sentence
+# verbatim — so a claim being WITHDRAWN adds to this count exactly as a claim being made does, and the
+# scanner cannot tell them apart (its own boundary (b)). The four retractions this task writes are
+# MeasurementType's "named, not fixed" remarks, ProductModel.LifecycleStatus, Fiducial.NormalizedX and
+# MeasurementPoint.NormalizedX. The rest are the two new seam members
+# (IConfigSyncBackend.PullCarriesLifecycleStatus and its two implementations), ConfigSyncEngine.WireToken,
+# and the new EdgeCore test file's class remarks — which are mostly a NOT-MEASURED list, i.e. prose whose
+# entire job is to say what is NOT claimed, and which nevertheless counts here.
+#
+# 🔴 Also outside this number, said because a count that looks whole invites being read as whole: the
+# corpus is C# only (boundary (e)). This task's web/ edits — BoardCanvas.tsx's placeFiducial doc block
+# and two i18n comments — carry absolute claims of their own and NO instrument in this repository reads
+# them. That gap predates BN-1 and is recorded here rather than closed.
+EXPECT_NEW_DOC_ABSOLUTES=469
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

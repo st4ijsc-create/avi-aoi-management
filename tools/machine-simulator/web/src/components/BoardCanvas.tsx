@@ -91,6 +91,42 @@ function placePoint(point: MeasurementPoint, imageWidth?: number | null, imageHe
   return null
 }
 
+interface PlacedFiducial {
+  fiducial: Fiducial
+  nx: number
+  ny: number
+}
+
+/** 🔴 BN-1, 2026-08-24 — docs/owner-decisions.md item 57, defect 4. The fiducial half of `placePoint`,
+ * which until now did not exist: this component derived a point's position from `positionX/imageWidth`
+ * when its normalized pair was null, and DROPPED a fiducial in the identical condition — silently, with
+ * no counterpart to the "N points not yet positioned" note below the canvas. `Fiducial.positionX` and
+ * `positionY` are non-nullable in the very same contract that makes `normalizedX/Y` optional, so the
+ * fallback was always available and simply unused.
+ *
+ * The asymmetry was reachable through this app's own UI: `ProductFiducialsPanel` writes `null` for a
+ * cleared normalized field, its table renders that as an em-dash, and the mark then vanished from the
+ * board with nothing said. `Fiducial.cs`'s own XML doc described the drop before it was fixed.
+ *
+ * Deliberately the same shape as `placePoint`, including its limitation: neither consults the product's
+ * `coordinateMode`, so for a `mm` product the pixel ratio is not meaningful — the fallback is a
+ * best-effort placement, and a mark that lands somewhere approximate is still strictly better than one
+ * that disappears without a count. Returns null only when neither source is resolvable, and the caller
+ * now reports that count instead of swallowing it. */
+function placeFiducial(fiducial: Fiducial, imageWidth?: number | null, imageHeight?: number | null): PlacedFiducial | null {
+  if (fiducial.normalizedX != null && fiducial.normalizedY != null) {
+    return { fiducial, nx: clamp(fiducial.normalizedX, 0, 1), ny: clamp(fiducial.normalizedY, 0, 1) }
+  }
+  if (imageWidth && imageHeight) {
+    return {
+      fiducial,
+      nx: clamp(fiducial.positionX / imageWidth, 0, 1),
+      ny: clamp(fiducial.positionY / imageHeight, 0, 1),
+    }
+  }
+  return null
+}
+
 interface BoardCanvasProps {
   referenceImageUrl?: string | null
   imageWidth?: number | null
@@ -185,14 +221,11 @@ export function BoardCanvas({
   const placedFiducials = React.useMemo(
     () =>
       fiducials
-        .map((f) =>
-          f.normalizedX != null && f.normalizedY != null
-            ? { fiducial: f, nx: clamp(f.normalizedX, 0, 1), ny: clamp(f.normalizedY, 0, 1) }
-            : null
-        )
-        .filter((f): f is { fiducial: Fiducial; nx: number; ny: number } => f !== null),
-    [fiducials]
+        .map((f) => placeFiducial(f, imageWidth, imageHeight))
+        .filter((f): f is PlacedFiducial => f !== null),
+    [fiducials, imageWidth, imageHeight]
   )
+  const unplacedFiducialCount = fiducials.length - placedFiducials.length
 
   function handleBackgroundClick(event: React.MouseEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -314,6 +347,12 @@ export function BoardCanvas({
       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-text-muted">
         <p>{t("pointsEditor.canvas.hint")}</p>
         {unplacedCount > 0 ? <p>{t("pointsEditor.canvas.unplacedNote", { count: unplacedCount })}</p> : null}
+        {/* 🔴 BN-1 — the fiducial counterpart of the note above. A dropped fiducial used to produce no
+            signal at all: no marker, no count, no aria text. Silence is what made it a defect rather
+            than a limitation. */}
+        {unplacedFiducialCount > 0 ? (
+          <p>{t("pointsEditor.canvas.unplacedFiducialsNote", { count: unplacedFiducialCount })}</p>
+        ) : null}
       </div>
     </div>
   )

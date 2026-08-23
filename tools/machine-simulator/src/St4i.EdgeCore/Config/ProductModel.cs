@@ -88,15 +88,42 @@ public sealed class ProductModel
     public string Name { get; set; } = "";
 
     /// <summary>Where the product sits in its life cycle — the input to the server's threshold
-    /// governance, spelled out on each <see cref="ProductLifecycleStatus"/> member. 🔴 A Live pull can
-    /// never populate it truthfully: <c>get-points</c>' response shape carries no
-    /// <c>lifecycleStatus</c> at all, and the wire record it deserializes into has no member for one
-    /// either, so <c>LiveConfigSyncBackend.ToProductModel</c> leaves every pulled product at the
-    /// <see cref="ProductLifecycleStatus.Development"/> default. That is not a mapping that forgot a
-    /// field — there is nothing arriving to map. Reading this as "so limit edits will be accepted" is
-    /// therefore unsafe: locally it reads <c>Development</c> for products the ecosystem may hold as
-    /// released, and the real verdict arrives only as <c>limitBlocked</c> on the sync-points
-    /// response.</summary>
+    /// governance, spelled out on each <see cref="ProductLifecycleStatus"/> member.
+    ///
+    /// <para>📎 <b>THE PARAGRAPH BELOW IS RETRACTED, 2026-08-24 (BN-1), verbatim and un-struck —
+    /// <c>docs/owner-decisions.md</c> item 57, leg 2. It was TRUE when written and half of it still is;
+    /// the half that stopped being true is the CONSEQUENCE, which is what the item called "a testimony
+    /// paid, a defect unpaid".</b> Still true: <c>get-points</c> carries no <c>lifecycleStatus</c>,
+    /// <c>GetPointsProductWire</c> declares no member for one, and
+    /// <c>LiveConfigSyncBackend.ToProductModel</c> assigns nothing here. No longer true: that the
+    /// default therefore REACHES this property on a machine that already had a value.
+    /// <c>ConfigSyncEngine.PullAsync</c> now asks
+    /// <c>IConfigSyncBackend.PullCarriesLifecycleStatus</c> and, when the answer is no, carries the
+    /// machine's existing value across the wholesale <c>UpsertProduct</c>. The backend is asked rather
+    /// than the model inspected because a defaulted <c>Development</c> and a genuine one are the same
+    /// bytes.</para>
+    ///
+    /// <para>🔴 <b>And the cost of that fix, said in the same breath because half a truth here is the
+    /// expensive kind:</b> a machine's lifecycle can now diverge from the server's and NOTHING on this
+    /// wire converges them — the Live pull that used to flatten the difference was also the only thing
+    /// that ever cleared it. That is the same shape as the twenty-eight push-absent point fields item 57
+    /// splits out, and closing it needs the server to carry the field, which is not this product's to
+    /// decide. A Demo pull is unaffected: <c>SimulatedEcosystem</c> answers <see langword="true"/>, its
+    /// lifecycle really does arrive, and it still overwrites.</para>
+    ///
+    /// <para><i>Retracted text, verbatim:</i> "🔴 A Live pull can never populate it truthfully:
+    /// <c>get-points</c>' response shape carries no <c>lifecycleStatus</c> at all, and the wire record it
+    /// deserializes into has no member for one either, so <c>LiveConfigSyncBackend.ToProductModel</c>
+    /// leaves every pulled product at the <see cref="ProductLifecycleStatus.Development"/> default. That
+    /// is not a mapping that forgot a field — there is nothing arriving to map. Reading this as 'so limit
+    /// edits will be accepted' is therefore unsafe: locally it reads <c>Development</c> for products the
+    /// ecosystem may hold as released, and the real verdict arrives only as <c>limitBlocked</c> on the
+    /// sync-points response."</para>
+    ///
+    /// <para>The last sentence of that text survives its own retraction and is repeated because it is
+    /// the operationally important half: this field is DESCRIPTIVE locally. Threshold governance for a
+    /// Live push is enforced server-side and its verdict arrives as <c>limitBlocked</c> on the
+    /// sync-points response — never computed from this value.</para></summary>
     public ProductLifecycleStatus LifecycleStatus { get; set; } = ProductLifecycleStatus.Development;
 
     /// <summary>The board image points are authored against. Three different kinds of string land here

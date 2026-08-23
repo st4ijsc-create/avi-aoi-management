@@ -558,7 +558,19 @@ public sealed class ConfigSyncEngineTests
         public List<string> GetRecipeConfigKinds { get; } = new();
         public List<(string ConfigKind, string? Code, int? Version, string? Checksum)> Acks { get; } = new();
 
+        /// <summary>🔴 Task BN-1 — every <see cref="SyncPointsRequestDto"/> the engine actually built, so
+        /// a test can read the exact token <c>ConfigSyncEngine.ToWireDto</c> put on the wire without
+        /// needing a Live server or an HTTP handler.</summary>
+        public List<SyncPointsRequestDto> SyncPointsRequests { get; } = new();
+
         public string Name => _inner.Name;
+
+        /// <summary>🔴 Task BN-1 — SETTABLE, and that is the point: the decorator wraps a real
+        /// <see cref="SimulatedEcosystem"/> (which genuinely carries a lifecycle, hence the
+        /// <see langword="true"/> default), and flipping this to <see langword="false"/> reproduces
+        /// exactly what <c>LiveConfigSyncBackend</c> answers while every other behaviour stays real.
+        /// That is what lets both banks of the item-57 leg-2 fix be witnessed against one backend.</summary>
+        public bool PullCarriesLifecycleStatus { get; set; } = true;
 
         public Task<IReadOnlyList<ProductVersionDto>> CheckPointsVersionAsync(string? productModelCode, CancellationToken ct) =>
             _inner.CheckPointsVersionAsync(productModelCode, ct);
@@ -569,8 +581,11 @@ public sealed class ConfigSyncEngineTests
         public Task<PointsDeltaResultDto> DeltaSyncPointsAsync(string productModelCode, int sinceVersion, CancellationToken ct) =>
             _inner.DeltaSyncPointsAsync(productModelCode, sinceVersion, ct);
 
-        public Task<SyncPointsResultDto> SyncPointsAsync(string productModelCode, SyncPointsRequestDto request, CancellationToken ct) =>
-            _inner.SyncPointsAsync(productModelCode, request, ct);
+        public Task<SyncPointsResultDto> SyncPointsAsync(string productModelCode, SyncPointsRequestDto request, CancellationToken ct)
+        {
+            SyncPointsRequests.Add(request);
+            return _inner.SyncPointsAsync(productModelCode, request, ct);
+        }
 
         public Task<(bool Found, string? ImageUrl)> GetProductImageAsync(string productModelCode, CancellationToken ct) =>
             _inner.GetProductImageAsync(productModelCode, ct);
@@ -604,6 +619,157 @@ public sealed class ConfigSyncEngineTests
 
         public Task<MachineSettingsReportResultDto> ReportSettingsAsync(MachineSettingsReportRequestDto request, CancellationToken ct) =>
             _inner.ReportSettingsAsync(request, ct);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task BN-1, 2026-08-24 — docs/owner-decisions.md item 57, legs 1 and 2, under the owner's
+    // ruling of 2026-08-23.
+    //
+    // WHAT THESE MEASURE AND WHAT THEY DO NOT. The theory below is a measurement against the PUBLISHED
+    // contract vocabulary (CONFIG_SYNC_SERVER_CONTRACT.md's
+    // DIMENSION|VISUAL|ELECTRICAL|POSITION|COLOR|SURFACE|OTHER), written out as literals rather than
+    // re-derived from the converter — a check that asked the converter what the converter says would be
+    // an identity, not a measurement, and would have agreed with the hand-spelling it replaced too.
+    // It is deliberately GREEN both before and after leg 1's edit: seven of seven tokens were measured
+    // byte-identical BEFORE the change, which is the precondition the owner attached to making it, so a
+    // red here would have meant the wire moved. Its standing job is the regression: it goes red if the
+    // hand-spelling comes back, and red if a member's token ever stops matching the server's vocabulary.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(MeasurementType.Dimension, "DIMENSION")]
+    [InlineData(MeasurementType.Visual, "VISUAL")]
+    [InlineData(MeasurementType.Electrical, "ELECTRICAL")]
+    [InlineData(MeasurementType.Position, "POSITION")]
+    [InlineData(MeasurementType.Color, "COLOR")]
+    [InlineData(MeasurementType.Surface, "SURFACE")]
+    [InlineData(MeasurementType.Other, "OTHER")]
+    public async Task Push_spells_every_MeasurementType_member_with_the_published_contract_token(
+        MeasurementType member, string expectedToken)
+    {
+        var local = new ProductConfigStore(TempDir());
+        var recording = new RecordingConfigSyncBackend(new SimulatedEcosystem(TempDir()));
+        var engine = new ConfigSyncEngine(local, recording);
+
+        local.UpsertPoint("MODEL-A", new MeasurementPoint
+        {
+            Code = "P-TOKEN", Name = "Token witness", MeasurementType = member,
+            PositionX = 100, PositionY = 100, OrderIndex = 99, IsActive = true,
+        });
+
+        await engine.PushAsync(AoiMachine, "MODEL-A", confirm: true, default);
+
+        var request = Assert.Single(recording.SyncPointsRequests);
+        var pushed = Assert.Single(request.Points, p => p.Code == "P-TOKEN");
+        Assert.Equal(expectedToken, pushed.MeasurementType);
+    }
+
+    /// <summary>Non-vacuity floor for the theory above: it enumerates the member list by hand, so a
+    /// member added without a row would be pushed by untested code. Listed, then counted.</summary>
+    [Fact]
+    public void Every_MeasurementType_member_has_a_row_in_the_push_token_theory()
+    {
+        string[] covered =
+            ["Dimension", "Visual", "Electrical", "Position", "Color", "Surface", "Other"];
+
+        var declared = Enum.GetNames<MeasurementType>();
+
+        Assert.Equal(covered.OrderBy(n => n, StringComparer.Ordinal), declared.OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Equal(7, declared.Length);
+    }
+
+    /// <summary>🔴 The two answers, named rather than assumed. This is the whole of leg 2's premise:
+    /// one backend carries the field and one does not, and the engine's behaviour forks on exactly
+    /// that.</summary>
+    [Fact]
+    public void The_two_backends_disagree_about_carrying_LifecycleStatus_and_that_is_the_premise()
+    {
+        using var live = LiveConfigSyncBackend.ForMachine("http://synapse.local", "mk_test", "AOI-01", verifyTls: true);
+
+        Assert.True(new SimulatedEcosystem(TempDir()).PullCarriesLifecycleStatus);
+        Assert.False(live.PullCarriesLifecycleStatus);
+    }
+
+    /// <summary>🔴 Any lifecycle member that is NOT <paramref name="other"/>, derived rather than picked.
+    /// The first draft of the two tests below hard-coded <c>Active</c> as "the value the ecosystem is
+    /// not", and the ecosystem's own MODEL-A seed IS <c>Active</c> — so both would have compared a value
+    /// against itself and passed while measuring nothing. The non-vacuity guard caught it; the guard is
+    /// now unnecessary because the value cannot collide by construction.</summary>
+    private static ProductLifecycleStatus DifferentFrom(ProductLifecycleStatus other) =>
+        Enum.GetValues<ProductLifecycleStatus>().First(v => v != other);
+
+    /// <summary>Bank one — a backend whose get-points carries no lifecycleStatus must not have its
+    /// C# default written over the machine's value by <c>PullAsync</c>'s wholesale UpsertProduct.</summary>
+    [Fact]
+    public async Task Pull_from_a_backend_that_carries_no_LifecycleStatus_keeps_the_machines_own()
+    {
+        var local = new ProductConfigStore(TempDir());
+        var ecosystem = new SimulatedEcosystem(TempDir());
+        var recording = new RecordingConfigSyncBackend(ecosystem) { PullCarriesLifecycleStatus = false };
+        var engine = new ConfigSyncEngine(local, recording);
+
+        var ecoLifecycle = (await ecosystem.GetPointsAsync("MODEL-A", null, default))!.LifecycleStatus;
+        var machineLifecycle = DifferentFrom(ecoLifecycle);
+
+        var product = local.GetProduct("MODEL-A")!;
+        product.LifecycleStatus = machineLifecycle;
+        local.UpsertProduct(product);
+
+        await engine.PullAsync(AoiMachine, "MODEL-A", default);
+
+        Assert.Equal(machineLifecycle, local.GetProduct("MODEL-A")!.LifecycleStatus);
+    }
+
+    /// <summary>🔴 Bank two, and it is the one a narrow fix would have broken silently: when the value
+    /// really did arrive, the ecosystem is still the authority and the pull still overwrites. A blanket
+    /// "always keep the local one" would pass the test above and fail here.</summary>
+    [Fact]
+    public async Task Pull_from_a_backend_that_does_carry_LifecycleStatus_still_applies_the_ecosystems()
+    {
+        var local = new ProductConfigStore(TempDir());
+        var ecosystem = new SimulatedEcosystem(TempDir());
+        var engine = new ConfigSyncEngine(local, ecosystem);
+
+        var ecoLifecycle = (await ecosystem.GetPointsAsync("MODEL-A", null, default))!.LifecycleStatus;
+
+        var product = local.GetProduct("MODEL-A")!;
+        product.LifecycleStatus = DifferentFrom(ecoLifecycle);
+        local.UpsertProduct(product);
+
+        await engine.PullAsync(AoiMachine, "MODEL-A", default);
+
+        Assert.Equal(ecoLifecycle, local.GetProduct("MODEL-A")!.LifecycleStatus);
+    }
+
+    /// <summary>The boundary the fix has to get right in the other direction: a product this machine has
+    /// never held has no value to KEEP, so the pull stores whatever the aggregate carried and "keep the
+    /// local one" must not become "refuse to store anything".
+    ///
+    /// <para>🔴 What this asserts and what it deliberately does not. Against a REAL
+    /// <c>LiveConfigSyncBackend</c> the aggregate's lifecycle is <c>Development</c>, because nothing
+    /// arrives to map. This test drives a decorator that ANSWERS like Live while wrapping a real
+    /// <c>SimulatedEcosystem</c> that genuinely holds one, so the honest assertion here is "the stored
+    /// value is the one the backend handed over", not the literal <c>Development</c> — writing the
+    /// literal would have been asserting a fact about the fake rather than about the fix, and it is how
+    /// the first draft of this test failed.</para></summary>
+    [Fact]
+    public async Task Pull_of_a_product_the_machine_has_never_seen_stores_what_the_backend_handed_over()
+    {
+        var local = new ProductConfigStore(TempDir());
+        var ecosystem = new SimulatedEcosystem(TempDir());
+        var recording = new RecordingConfigSyncBackend(ecosystem) { PullCarriesLifecycleStatus = false };
+        var engine = new ConfigSyncEngine(local, recording);
+
+        var ecoLifecycle = (await ecosystem.GetPointsAsync("MODEL-A", null, default))!.LifecycleStatus;
+
+        local.DeleteProduct("MODEL-A");
+        Assert.Null(local.GetProduct("MODEL-A"));
+
+        await engine.PullAsync(AoiMachine, "MODEL-A", default);
+
+        var stored = local.GetProduct("MODEL-A");
+        Assert.NotNull(stored);
+        Assert.Equal(ecoLifecycle, stored!.LifecycleStatus);
     }
 
     // ─────────────────────────────────────────────────────────────────────

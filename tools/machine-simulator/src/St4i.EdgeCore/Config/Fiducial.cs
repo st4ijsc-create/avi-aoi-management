@@ -56,15 +56,33 @@ public sealed class Fiducial
     /// <summary>Resolution-independent position, 0..1 across the reference image's WIDTH — the only
     /// geometry any renderer here actually consumes, and the only one
     /// <c>ProductFiducialsPanel.tsx</c> lets an operator author (it defaults a new mark to
-    /// <c>0.5</c>). 🔴 Null is not treated as "derive it from <see cref="PositionX"/>": unlike
-    /// <c>AoiInspectorSim</c>, which falls back to <c>PositionX/ImageWidth</c> for a POINT,
-    /// <c>BoardCanvas.tsx</c> DROPS a fiducial whose normalized pair is null. A pulled mark carrying
-    /// only absolute coordinates therefore does not appear on the board at all.</summary>
+    /// <c>0.5</c>).
+    ///
+    /// <para>📎 <b>THE SENTENCE BELOW IS RETRACTED, 2026-08-24 (BN-1) — <c>docs/owner-decisions.md</c>
+    /// item 57, defect 4 — kept verbatim and un-struck.</b> It was an accurate description of
+    /// <c>BoardCanvas.tsx</c> when written, and it is what let that defect be located after an earlier
+    /// scan reported it "not reproducible from the description": this repository had already written the
+    /// finding down in its own source. <c>BoardCanvas.tsx</c> now carries a <c>placeFiducial</c> that
+    /// mirrors its own <c>placePoint</c> — normalized pair when authored, else
+    /// <c>PositionX/ImageWidth</c> — and counts what it still cannot place, beside the note it already
+    /// showed for points.
+    /// <i>Retracted text, verbatim:</i> "🔴 Null is not treated as 'derive it from
+    /// <see cref="PositionX"/>': unlike <c>AoiInspectorSim</c>, which falls back to
+    /// <c>PositionX/ImageWidth</c> for a POINT, <c>BoardCanvas.tsx</c> DROPS a fiducial whose normalized
+    /// pair is null. A pulled mark carrying only absolute coordinates therefore does not appear on the
+    /// board at all."</para>
+    ///
+    /// <para><b>What did NOT change, because the fix is narrower than the retraction might suggest:</b>
+    /// this is still the only geometry an ecosystem ALIGNER is given, the fallback is still meaningless
+    /// for a <c>mm</c>-mode product (neither <c>placePoint</c> nor <c>placeFiducial</c> consults
+    /// <see cref="ProductModel.CoordinateMode"/>), and a mark with neither source resolvable is still
+    /// unplaced — it is now COUNTED rather than silent, which is the half that made it a defect.</para></summary>
     public double? NormalizedX { get; set; }
 
     /// <summary>Resolution-independent position, 0..1 down the reference image's HEIGHT. Same
     /// null-handling as <see cref="NormalizedX"/> — the canvas requires BOTH to be non-null before it
-    /// places the mark, so setting only one is equivalent to setting neither.</summary>
+    /// prefers the normalized pair, so setting only one is equivalent to setting neither and the
+    /// absolute-coordinate fallback is what places the mark.</summary>
     public double? NormalizedY { get; set; }
 
     /// <summary>Window the ecosystem's aligner should search for this mark, expressed in the same

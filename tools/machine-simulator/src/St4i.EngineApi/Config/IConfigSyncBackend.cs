@@ -21,6 +21,31 @@ public interface IConfigSyncBackend
     /// Demo-vs-Live indicator next to the sync controls).</summary>
     string Name { get; }
 
+    /// <summary>🔴 <b>Task BN-1, 2026-08-24 — <c>docs/owner-decisions.md</c> item 57, leg 2. Whether the
+    /// aggregate this backend returns from <see cref="GetPointsAsync"/> carries a real
+    /// <see cref="ProductModel.LifecycleStatus"/>, or merely the type's own default because nothing
+    /// arrived to map.</b>
+    ///
+    /// <para><b>Why this is on the seam rather than solved inside one implementation.</b>
+    /// <see cref="ConfigSyncEngine.PullAsync"/> applies a pulled aggregate with a WHOLESALE
+    /// <c>UpsertProduct</c> — a replace, not a merge. For a field the backend genuinely carries that is
+    /// correct: the ecosystem is the authority. For a field it does NOT carry, the replace writes the
+    /// C# default over an operator's value, and <c>ProductLifecycleStatus.Development</c> is
+    /// indistinguishable from a real <c>Development</c>, so no amount of inspecting the returned model
+    /// can tell the two apart. Only the backend knows, so the backend says.</para>
+    ///
+    /// <para><b>Both directions, because a flag like this is two claims.</b> <see langword="false"/>
+    /// buys "a Live pull no longer silently resets the field" and costs "a machine's local lifecycle can
+    /// now differ from the server's with nothing on this wire able to converge them" — the same shape as
+    /// the twenty-eight push-absent point fields item 57 splits out, and it is a REPORTED consequence of
+    /// this fix, not a hidden one. <see langword="true"/> keeps the ecosystem authoritative and costs an
+    /// operator's local edit on every pull, which is correct precisely because the value did arrive.</para>
+    ///
+    /// <para>Demo returns <see langword="true"/> (<see cref="SimulatedEcosystem"/> persists a real
+    /// lifecycle per product); Live returns <see langword="false"/> (<c>get-points</c>' response shape
+    /// has no <c>lifecycleStatus</c> field, and neither does the wire record it deserializes into).</para></summary>
+    bool PullCarriesLifecycleStatus { get; }
+
     // ── System B: points (AOI/AVI) — always-live, true 2-way ───────────────────────────────────
     Task<IReadOnlyList<ProductVersionDto>> CheckPointsVersionAsync(string? productModelCode, CancellationToken ct);
 

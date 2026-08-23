@@ -145,6 +145,22 @@ public sealed class ConfigSyncEngine
             var localBefore = _localStore.GetProduct(productCode);
             var diff = ComputeDiff(machine.Code, productCode, localBefore, ecoProduct);
 
+            // 🔴 BN-1, 2026-08-24 — docs/owner-decisions.md item 57, leg 2. UpsertProduct below is a
+            // WHOLESALE REPLACE of the aggregate, which is right for every field the backend actually
+            // carries and wrong for one it does not. A Live get-points response has no lifecycleStatus,
+            // so ecoProduct holds ProductModel's own Development default there — and writing that over
+            // the machine's value is a field nobody sent replacing one somebody chose. The backend is
+            // asked rather than the model inspected, because a defaulted Development and a genuine
+            // Development are the same bytes; see IConfigSyncBackend.PullCarriesLifecycleStatus for the
+            // cost of the other direction, which is real and is recorded rather than hidden.
+            //
+            // localBefore null = the machine has never seen this product, so there is nothing to keep
+            // and the default is the honest starting value, not an overwrite.
+            if (!_backend.PullCarriesLifecycleStatus && localBefore is not null)
+            {
+                ecoProduct.LifecycleStatus = localBefore.LifecycleStatus;
+            }
+
             _localStore.UpsertProduct(ecoProduct);
 
             RecordHistory(machine.Code, "pull", "success", productCode, localBefore?.PointsConfigVersion, ecoProduct.PointsConfigVersion,
@@ -416,8 +432,42 @@ public sealed class ConfigSyncEngine
     // ─────────────────────────────────────────────────────────────────────
     // Wire conversion (local domain model → contract-shaped push DTO).
     // ─────────────────────────────────────────────────────────────────────
+    /// <summary>🔴 <b>Task BN-1, 2026-08-24 — <c>docs/owner-decisions.md</c> item 57, leg 1. The push
+    /// token for an enum comes from the SAME converter the pull reads it with, instead of being spelled
+    /// a second time by hand.</b>
+    ///
+    /// <para><b>What this replaced, and the precondition that let it be replaced today.</b>
+    /// <see cref="ToWireDto"/> used to write <c>p.MeasurementType.ToString().ToUpperInvariant()</c>.
+    /// That agreed with the contract for one reason and it was a property of the member list, not of the
+    /// code: every <see cref="MeasurementType"/> member is a single word, so <c>SnakeCaseUpper</c> has no
+    /// case boundary to put an underscore at. Measured member by member before this edit —
+    /// <c>Dimension→DIMENSION</c>, <c>Visual→VISUAL</c>, <c>Electrical→ELECTRICAL</c>,
+    /// <c>Position→POSITION</c>, <c>Color→COLOR</c>, <c>Surface→SURFACE</c>, <c>Other→OTHER</c>: seven
+    /// of seven byte-identical, so <b>this changes no byte on the wire today</b>, which is the condition
+    /// the owner set for it being doable at all. A <c>SolderJoint</c> added tomorrow would have made the
+    /// pull say <c>SOLDER_JOINT</c> and the push say <c>SOLDERJOINT</c>; after this it cannot.</para>
+    ///
+    /// <para><see cref="ConfigJson.Options"/> is deliberately the same options instance
+    /// <see cref="LiveConfigSyncBackend"/> deserializes every RESPONSE with: it registers no enum
+    /// converter of its own, so each enum's own type-level <c>[JsonConverter]</c> is the only one in
+    /// play. That is what makes this the converter rather than a second spelling of it.</para></summary>
+    /// <typeparam name="TEnum">A config enum carrying a type-level <c>[JsonConverter]</c>.</typeparam>
+    /// <param name="value">The member to spell for the wire.</param>
+    /// <returns>The contract token, e.g. <c>"DIMENSION"</c>.</returns>
+    private static string WireToken<TEnum>(TEnum value) where TEnum : struct, Enum
+    {
+        var element = JsonSerializer.SerializeToElement(value, ConfigJson.Options);
+        return element.ValueKind == JsonValueKind.String
+            ? element.GetString()!
+            : throw new InvalidOperationException(
+                $"{typeof(TEnum).Name} serialized to {element.ValueKind}, not a JSON string, so this " +
+                "product would put a number where CONFIG_SYNC_SERVER_CONTRACT.md specifies a token. The " +
+                "type-level [JsonConverter] is missing or an options-level converter is outranking it — " +
+                "see ConfigJson's own remarks for that precedence order.");
+    }
+
     private static SyncPointDto ToWireDto(MeasurementPoint p, DateTimeOffset? expectedUpdatedAt) => new(
-        p.Code, p.Name, p.Description, p.MeasurementType.ToString().ToUpperInvariant(), p.Unit,
+        p.Code, p.Name, p.Description, WireToken(p.MeasurementType), p.Unit,
         p.LowerLimit, p.UpperLimit, p.NominalValue,
         p.PositionX, p.PositionY, p.Radius,
         p.NormalizedX, p.NormalizedY, p.NormalizedRadius,

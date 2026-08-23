@@ -101,9 +101,17 @@ was confirmed, empirically, to be a v5+-only feature, not present in the pinned 
 heat-based MSBuild harvest is the correct v4 mechanism (this task's brief anticipated exactly this:
 "a `<Files Include=.../>` … or an explicit component group — pick what WiX v4 supports cleanly").
 
-Two files are **excluded** from this bulk harvest (via `exclude-shell-and-engine-exe.xslt`, wired
-through `HarvestDirectory`'s `Transforms` metadata) and installed instead as their own explicit,
-hand-authored `<Component>` in `Package.wxs`:
+> 📎 **THE SENTENCE BELOW READ "Two files are **excluded** from this bulk harvest" UNTIL 2026-08-24
+> (BN-1) — retracted here, verbatim and un-struck.** It was correct when written; task BN-1 made it
+> wrong by adding a second, unrelated exclusion population under the owner's ruling of 2026-08-23
+> (`docs/owner-decisions.md` item 46). **Seven** files are excluded now: the two below, plus the five
+> in "Operator-authorable files are excluded too" immediately after. The `- 2 + 3` arithmetic in "How
+> this was verified" further down is retracted by the same edit and for the same reason — see the note
+> there.
+
+Two files are excluded from this bulk harvest **because `Package.wxs` authors them itself** (via
+`exclude-shell-and-engine-exe.xslt`, wired through `HarvestDirectory`'s `Transforms` metadata) and are
+installed instead as their own explicit, hand-authored `<Component>` in `Package.wxs`:
 
 - **`St4i.DesktopShell.exe`** — needs a real, known component so the Start Menu `<Shortcut>` can
   nest inside its `<File>` element (a WiX v4 feature: a `Shortcut` nested in `File` needs no
@@ -117,6 +125,43 @@ explicit component) — invalid, two components claiming the same target path. T
 by `File/@Source` **suffix**, not `@Name` — heat's directory harvester omits `File/@Name` entirely
 when the name is inferable from `@Source` (confirmed empirically), so a `@Name=` match would
 silently never fire.
+
+### Operator-authorable files are excluded too (BN-1, 2026-08-24)
+
+**The defect this closes.** `build-installer.ps1 -SkipDotnetPublish` skips the
+`Remove-Item -Recurse -Force publish-desktop\` that the ordinary path performs, and the harvest above
+reads the **whole directory**. Anything a run of the product on the build box left beside the binary
+is therefore harvested into a customer's MSI. Under the owner's ruling of 2026-08-23
+(`docs/owner-decisions.md` item 46) the exclusion is **by name**, not by relying on that delete — a
+delete protects only the arm that runs it, and the flag exists to skip that arm.
+
+Five names are dropped, and they are **derived from who writes them**, not from what happened to be
+on disk: the three stores whose `LegacyRoot()` is `AppContext.BaseDirectory` (or a subfolder), each
+contributing its own persisted-filename constants.
+
+| Store source | Names it authors beside the binary |
+|---|---|
+| `src/St4i.EdgeCore/Config/ProductConfigStore.cs` | `products.json`, `recipes.json` |
+| `src/St4i.EngineApi/Config/SimulatedEcosystem.cs` | `ecosystem-products.json`, `ecosystem-recipes.json` |
+| `src/St4i.EdgeCore/Config/MachineConfigStore.cs` | `machine-operating-config.json` |
+
+Those three stores' **defaults** moved to `%ProgramData%\ST4I\sim\…` under the owner's ruling of
+2026-08-23(a), so a fresh run no longer writes here — but the exclusion is still load-bearing, in two
+directions. A `publish-desktop\` that predates that move still holds those files (this repository's
+did, dated 2026-08-20), and because `LegacyRootMigration.CopyOnce` reads exactly that location, an MSI
+carrying them would **seed a customer's `%ProgramData%` from the build box's data on first boot** — a
+worse outcome than the residue merely sitting there. And an explicit `ST4I_*_DIR` pointed back at the
+publish tree, or an older build, puts them back.
+
+**Both banks have a witness, and it is not this README.**
+`tests/St4i.EdgeCore.Tests/InstallerHarvestExclusionTests.cs` loads the real `.xslt` off the tree,
+applies it to a heat-shaped fragment, and asserts (a) all five names are dropped, (b) every file the
+publish actually ships survives — including three deliberate near-misses (`my-products.json`,
+`engine-recipes.json`, `products.json.bak`) that the separator-qualified needles must **not** catch,
+and (c) that `St4i.Installer.wixproj` still wires up the stylesheet the test just exercised. It also
+re-derives the five names from the three store sources on every run, so a sixth persisted file turns
+the suite red instead of shipping. It does **not** run heat.exe and does **not** build an MSI; that
+boundary is stated in the file and in every failure message it prints.
 
 ## Directory layout installed
 
@@ -260,7 +305,12 @@ Verified in this environment:
   e.g. 119 vs 65 source files seen across two different runs in this session, but the harvested-file
   count in the `.msi` always matched `(files under publish-desktop) - 2 + 3` exactly: minus the 2
   files excluded from the bulk harvest, plus the 3 explicit components — shell exe, engine exe,
-  `run-exhibition.bat` — with never a duplicate or a drop), correct `UpgradeCode`/`Version`/
+  `run-exhibition.bat` — with never a duplicate or a drop) 📎 **[the `- 2 + 3` arithmetic is
+  RETRACTED 2026-08-24 (BN-1), verbatim and un-struck: it was measured and correct at the time, and
+  BN-1's five extra name exclusions make the subtrahend depend on how many of those five the tree
+  holds — `- (2 + present) + 3`, which for a clean publish is `- 2 + 3` unchanged and for the tree
+  BN-1 measured is `- 6 + 3`. Nothing re-decompiled an `.msi` to confirm that; no MSI was built by
+  BN-1]**, correct `UpgradeCode`/`Version`/
   `Manufacturer`, `ServiceInstall`/`ServiceControl` wired to the right component, both `Shortcut`
   elements present with correct targets, `ARPPRODUCTICON` set, all 4 `Feature` elements present with
   the correct `Level` (1 vs 1000).
