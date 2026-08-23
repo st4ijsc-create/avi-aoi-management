@@ -46,9 +46,86 @@
 #   scripts/verify-suites.sh                 # verify against the expected totals below
 #   scripts/verify-suites.sh --update        # print the observed totals, to update them
 #
-# Run from tools/machine-simulator. Prints exactly one PASS/FAIL line at the end.
+# Run from anywhere. Prints exactly one PASS/FAIL line at the end.
 
 set -uo pipefail
+
+# ══ WHERE THIS SCRIPT RUNS IS ITS OWN, NOT THE OPERATOR'S (BJ-1, item 51 sub-item 6) ═════════════
+#
+# THE DEFECT, MEASURED, NOT FEARED. `_creds_src` below is the relative path
+# `src/St4i.EdgeCore/Infrastructure/CredentialStore.cs` and nothing ever chdir'd. Same commit, same
+# tree, two directories, two answers:
+#
+#   stood in tools/machine-simulator   ->  PASS ... 5/5 suites ... (2857)
+#   stood in the repo root, one up     ->  FAIL: could not derive the REAL creds root ...
+#                                          "Fix the derivation. Do NOT hardcode the directory here"
+#
+# Reproduced at e6e169f4 before this block existed. Two things were wrong and only one of them is the
+# obvious one. The answer depended on the caller's cwd — that is item 32's species living inside the
+# very gate that runs item 32's instrument. And the loud half was WORSE than the silent half in one
+# direction: it accused the DERIVATION, which is not broken, so a reader who believed the message
+# would go and repair something healthy. A wrong diagnosis costs the next person more than no
+# diagnosis.
+#
+# 🔴 WHY THE ONE-LINE PATCH WAS REFUSED, AND WHY THIS IS NOT IT. Repairing `_creds_src` alone moves
+# the failure later, it does not remove it: this script reads at least four other cwd-relative
+# things — `VENDORED_SOURCE_CSPROJ`, the five `tests/<project>` entries `dotnet test` is handed, the
+# three `src/` store paths the output-directory census reads, and the bare `dotnet build -t:Rebuild`
+# that picks up whatever project file is in the current directory. Fixing one and shipping it would
+# have produced a gate that fails FURTHER IN from the repo root, which is the same defect with a
+# longer fuse.
+#
+# So the anchor is taken once, here, before the first relative path is read. Item 51 prices this as
+# "changes the semantics of every other relative path in the script". It does, and the direction is
+# the whole point: for the DOCUMENTED invocation — typed from tools/machine-simulator — this chdir is
+# the identity, because `dirname/..` of the script IS that directory. For every other invocation it
+# makes the script behave exactly like the documented one. There is no third case; the script takes
+# no path arguments, and LOGDIR/GATE_LOCK_BASE are rooted at TMPDIR, not at cwd.
+#
+# 🔴 WHAT THIS DOES NOT MEASURE, and it is stated because a ceiling stated too small is worse than no
+# ceiling: it does NOT verify that any relative path in this file is CORRECT. It fixes what they are
+# resolved AGAINST. A path that is misspelled, or that resolves to a different real file, is exactly
+# as broken after this as before, and this block would not say a word. What it removes is the class
+# where the SAME text resolves to two different things for two different readers.
+GATE_INVOKED_FROM="$(pwd -P 2>/dev/null || pwd)"
+GATE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)" || GATE_SCRIPT_DIR=""
+if [[ -z "$GATE_SCRIPT_DIR" ]]; then
+  echo "NO-VERDICT: could not resolve this script's own directory from '${BASH_SOURCE[0]}'."
+  echo "  Every path this gate reads is relative to the tree root, and without the script's location"
+  echo "  there is nothing to make them relative TO. Refusing to guess — a guess here is how the same"
+  echo "  text came to mean two different files for two different callers. Nothing was measured. exit 3."
+  exit 3
+fi
+GATE_TREE_ROOT="$(cd "$GATE_SCRIPT_DIR/.." 2>/dev/null && pwd -P)" || GATE_TREE_ROOT=""
+if [[ -z "$GATE_TREE_ROOT" ]] || ! cd "$GATE_TREE_ROOT"; then
+  echo "NO-VERDICT: could not enter the tree root derived from this script's location."
+  echo "  script dir : ${GATE_SCRIPT_DIR}"
+  echo "  tree root  : ${GATE_TREE_ROOT:-<unresolvable>}"
+  echo "  Nothing about the tree was measured. exit 3."
+  exit 3
+fi
+# The anchor assertion. This is the half that replaces the WRONG diagnosis with a right one: if the
+# directory this script now stands in is not the tree it was written for, say THAT, by name, instead
+# of letting the first relative read fail and blame whatever it happened to be reading. Four anchors,
+# named, not counted — one file, two directories and the script's own home — so the message can print
+# which one is missing rather than a boolean.
+_gate_missing_anchors=""
+for _anchor in St4iMachineSimulator.sln src tests scripts/verify-suites.sh; do
+  [[ -e "$GATE_TREE_ROOT/$_anchor" ]] || _gate_missing_anchors="${_gate_missing_anchors}${_gate_missing_anchors:+ }${_anchor}"
+done
+if [[ -n "$_gate_missing_anchors" ]]; then
+  echo "NO-VERDICT: the directory derived from this script's location is not this product's tree."
+  echo "  invoked from : ${GATE_INVOKED_FROM}"
+  echo "  script dir   : ${GATE_SCRIPT_DIR}"
+  echo "  ran in       : ${GATE_TREE_ROOT}"
+  echo "  missing      : ${_gate_missing_anchors}"
+  echo "  🔴 THE CAUSE IS THE TREE, NOT THE DERIVATIONS INSIDE THIS FILE. Before BJ-1 this condition"
+  echo "     surfaced as 'could not derive the REAL creds root ... Fix the derivation', which sent the"
+  echo "     reader to repair a healthy expression. Copy the script back beside the tree it measures,"
+  echo "     or run the copy that lives in it. Nothing about any tree was measured. exit 3."
+  exit 3
+fi
+unset _anchor _gate_missing_anchors
 
 # 🔴 NODE-REUSE POSTURE IS THIS SCRIPT'S, NOT THE OPERATOR'S (K-1 re-review 2, Q2).
 # `MSBUILDDISABLENODEREUSE=1` was an inline prefix on the ONE `dotnet build` below. `dotnet test` carries
@@ -4290,6 +4367,12 @@ UPDATE=0
 
 note() { printf '  %s\n' "$*"; }
 note "exclusive-run lock held: pid ${GATE_SELF_WINPID} (lock $GATE_LOCK_DIR)"
+# §8.1(f) in this script's own voice: the domain declaration goes WITH the result, not in a comment
+# nobody prints. repo-scan.sh has printed "where it was typed / where it ran" since item 32; the gate
+# that RUNS repo-scan.sh did not print its own, which is how item 51 sub-item 6 survived. Both lines
+# are printed even when they are equal — an equality that is asserted is worth more than one assumed.
+note "typed in : ${GATE_INVOKED_FROM}"
+note "ran in   : ${GATE_TREE_ROOT}   (derived from this script's location; every relative path below resolves here)"
 
 # ══ THE THREE TOOLING CHECKS (task AW-1 — owner-decisions.md items 26, 32 and 37) ════════════════
 #
@@ -4589,12 +4672,54 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #     reports an excluded-row count; HistorianStatsDto is store-wide and ungated, so it cannot speak about
 #     a particular query either. The universal holds over the enumerated set, and the set is named here
 #     rather than left as "every surface".
-EXPECT_NEW_DOC_ABSOLUTES=310
+# 🔴 EXPECT_NEW_DOC_ABSOLUTES: 310 -> 322 (+12), BJ-1, 2026-08-23 (docs/owner-decisions.md items 52, 53,
+# 58). MEASURED BOTH WAYS, not derived from a diff: with this task's .cs edits reverted and everything
+# else in place the scan returns exactly 310 — which is what makes the recorded value verifiably correct
+# BEFORE the move — and with them restored, 322. The delta is ACCOUNTED FOR RATHER THAN ABSORBED; every
+# one of the twelve is enumerated below and every one is a RETRACTION of a published claim, which is the
+# one category this instrument was always going to flag and should.
+#   * IDeviceDriver.cs, THREE. The retraction of "it keys slot labels and, through those, alarms" (item
+#     52). "Both halves, because half of this is a half-truth: 'nothing consumes it' would be FALSE" and
+#     "Under src/ nothing reads the string's content..." are the two-directional statement the item's own
+#     one-directional claim lacked — measured: 12 assertion lines in 4 test files read the content, and
+#     no production surface does. "...it was restated in five further places rather than linked" is a
+#     count from the enumeration, not an estimate: six sites total, this one plus five.
+#   * DeviceDriverConformanceSuite.cs, FOUR. Same retraction at the site that QUOTED the wrong sentence
+#     verbatim in its own doc while item 52 cited this suite as the evidence against it. "It never
+#     inspects the string's CONTENT, so nothing here is weakened" is read off the method below it, which
+#     asserts non-empty and stable and nothing else.
+#   * HistorianDtos.cs, TWO. One is the new back-pointer paragraph for item 53 ("Nothing compiles that
+#     tree in this repository's gate, and there is no CI job for it") — measured, 0 of 7 tracked
+#     workflows mention this tree, and this script says twice that it compiles no TypeScript. The other,
+#     "Since this product is a SIMULATOR...", is an EXISTING sentence unchanged in text: it counts as new
+#     only because the splitter now glues the following block onto it. Named rather than hidden in a
+#     total.
+#   * OwnOutputDirectoryGuard.cs, TWO. The "23 sites across 20 files" retraction (item 52). "And 37/6 is
+#     itself a FLOOR" is measured: three `=> new(TempDir())` factories, two of them in files the literal
+#     scan never reaches, plus two DI registrations. The second is the pre-existing "The mechanism-level
+#     fix is a relocation variable..." sentence, unchanged in text and re-segmented by the addition.
+#   * SiteAdvertiserTests.cs, ONE. The "twelve" -> "twenty" correction (item 58); the sentence carrying
+#     "can only carry ONE [Collection] tag" changed text, so its (path, sentence) identity is new. This
+#     one was measured ALONE, before the other edits: 310 -> 311.
+# TEN of the twelve carry text this task wrote or changed (3 + 4 + 1 + 1 + 1); TWO are sentences whose
+# text did not change at all and whose identity moved only because the splitter re-segmented around an
+# insertion (HistorianDtos' "Since this product is a SIMULATOR...", OwnOutputDirectoryGuard's "The
+# mechanism-level fix..."). 10 + 2 = 12, and the split is stated because a total that hides how much of
+# itself is an artefact is the kind of number this file keeps having to retract. No absolute claim was
+# added that is not a retraction or the explanation of one.
+EXPECT_NEW_DOC_ABSOLUTES=322
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
 # on the drive letter. Argument vectors, not string surgery.
-_SCRIPTDIR="$(dirname "$0")"
+#
+# 🔴 IT IS THE ABSOLUTE ONE NOW (BJ-1, item 51 sub-item 6). This read `$(dirname "$0")`, which is
+# RELATIVE when `$0` is. That was harmless only because nothing chdir'd; the anchor block at the top
+# of this file does, so a relative `$0` — `bash tools/machine-simulator/scripts/verify-suites.sh`
+# typed from the repo root — would have left this pointing at a directory that no longer exists from
+# where the script now stands, and the three tooling checks would have failed to launch AT ALL. That
+# is a failure the fix would have INTRODUCED, so it is named here rather than discovered later.
+_SCRIPTDIR="$GATE_SCRIPT_DIR"
 # ══ THE POPULATION PROTOCOL (BD-1, 2026-08-23, docs/owner-decisions.md item 40) ═════════════════
 #
 # ITEM 40 ASKS: what enforces "every check must assert its own population is non-empty" on EVERY
@@ -4644,17 +4769,70 @@ _tooling_population_report() {              # $1 = log file; echoes a diagnosis,
   fi
 }
 
+# ══ THE DISCLOSURE PROTOCOL (BJ-1, 2026-08-23, docs/owner-decisions.md item 51) ═════════════════
+#
+# THE DEFECT, AND IT IS THE ONE THIS FILE IS WORST PLACED TO NOTICE. Three instruments run above.
+# Every one of them carries a careful, honest, enumerated statement of WHAT IT DOES NOT MEASURE:
+# check-owner-decisions.sh has five lettered clauses (a-e) under "WHAT THIS DOES NOT ENFORCE";
+# repo-scan.sh has its own; scan-doc-negations.sh has its own. All three are in HEADER COMMENTS. The
+# gate printed `owner-decisions structure: OK` and not one word of any of them. So the ceiling was
+# written by an author who would not be in the room, and read by nobody, while the word that WAS read
+# — "OK" — is the one that carries no ceiling at all. A limitation disclosed only where the result is
+# not is a limitation disclosed to the wrong person.
+#
+# THE PLACEMENT IS THE WHOLE MECHANISM, and it is the same argument the population protocol above
+# makes for itself: this sits at the chokepoint every instrument passes through, so a fourth
+# instrument added below inherits the requirement by being added. It is deliberately shaped as the
+# TWIN of POPULATION rather than as a second, different idea — one line format, one grep, one
+# refusal — because two protocols with two shapes at one chokepoint is a thing people stop reading.
+#
+# 🔴 WHAT THIS PROTOCOL DOES NOT MEASURE, stated here and PRINTED below, because a protocol about
+# disclosure that does not disclose its own hole would be the joke version of itself:
+#   * It cannot tell whether the declaration is TRUE. An instrument may declare "I do not measure
+#     the weather" and satisfy this completely while its real blind spot goes unnamed.
+#   * It cannot tell whether the declaration is COMPLETE. That is the same unenforceable shape item
+#     40 names for the population law — a coverage property of a shell program — and this repository
+#     still has no coverage instrument for shell. BA-1 found item 40's defect by READING. BG-1 found
+#     item 51 sub-item 6 by READING. Nothing here changes who finds the next one.
+#   * It cannot make anyone read it. It moves the sentence to where the result is; it does not move
+#     the reader.
+# What it DOES remove is the state this gate was actually in: a ceiling that existed, was correct,
+# and was invisible at the only moment anyone was looking.
+_tooling_disclosure_report() {              # $1 = log file; echoes a diagnosis, or nothing if OK
+  local _log="$1" _n
+  _n="$(grep -cE '^[[:space:]]*DOES-NOT-MEASURE[[:space:]]+[^[:space:]]' "$_log" 2>/dev/null || true)"
+  if [[ "${_n:-0}" -eq 0 ]]; then
+    echo "the run SUCCEEDED but printed no DOES-NOT-MEASURE line, so its result reached this gate"
+    echo "  with no ceiling attached. Every instrument here HAS such a ceiling written in its header;"
+    echo "  a ceiling the reader of the result never sees is disclosed to the wrong person. Print at"
+    echo "  least one 'DOES-NOT-MEASURE <what this check is blind to>' line."
+  fi
+}
+
+_tooling_disclosure_echo() {                # $1 = log file; reprints the declarations under the OK
+  awk '/^[[:space:]]*DOES-NOT-MEASURE[[:space:]]+[^[:space:]]/ {
+         sub(/^[[:space:]]*DOES-NOT-MEASURE[[:space:]]+/, ""); print "      does not measure: " $0 }' "$1"
+}
+
 run_tooling_check() {                       # $1 = human name, $2.. = argv
   local _name="$1"; shift
   local _log="$LOGDIR/tool-$(printf '%s' "$_name" | tr ' /' '--').log"
   if bash "$@" > "$_log" 2>&1; then
-    local _popfail
+    local _popfail _disfail
     _popfail="$(_tooling_population_report "$_log")"
+    _disfail="$(_tooling_disclosure_report "$_log")"
     if [[ -n "$_popfail" ]]; then
       FAILURES+=("$_name: $_popfail")
       note "$_name: FAILED the population protocol (see verdict below)"
+    elif [[ -n "$_disfail" ]]; then
+      FAILURES+=("$_name: $_disfail")
+      note "$_name: FAILED the disclosure protocol (see verdict below)"
     else
       note "$_name: OK"
+      # The point of the whole protocol: the ceiling prints HERE, beside the word "OK", not in a
+      # header comment. Indented under it so the OK stays scannable — the false-positive budget of a
+      # gate is spent on volume as surely as on wrong reds.
+      _tooling_disclosure_echo "$_log"
     fi
   else
     FAILURES+=("$_name: $(cat "$_log")")
@@ -4666,6 +4844,13 @@ run_tooling_check "owner-decisions structure" "$_SCRIPTDIR/check-owner-decisions
 run_tooling_check "repo-scan cwd-invariance"  "$_SCRIPTDIR/repo-scan.sh" --self-test
 run_tooling_check "new absolute doc claims"   "$_SCRIPTDIR/scan-doc-negations.sh" \
                   --since "$DOC_ABSOLUTES_BASELINE" --expect "$EXPECT_NEW_DOC_ABSOLUTES"
+# The two protocols speak about THEMSELVES here, at the results, under the same rule they impose on
+# the three instruments above. Neither is exempt from its own law just because it is the law.
+note "tooling protocols: POPULATION asserts a set was non-empty, not that it was the RIGHT set;"
+note "                   DOES-NOT-MEASURE asserts a ceiling was PRINTED, not that it is true or complete."
+note "                   Both are declarations. Neither is a coverage proof; this repo has no shell"
+note "                   coverage instrument, and every defect in these three tools so far was found"
+note "                   by a person reading them (BA-1 item 40, BG-1 item 51.6), not by a tool."
 
 # ══ THE BRACKET ON THE REAL CREDENTIAL DIRECTORY (task K-1, branch review §2) ═══════════════════
 #
@@ -7531,6 +7716,14 @@ fi
 # today's N and none of tomorrow's, and the (N+1)th leaks silently with nothing in the way. Here N is 23
 # sites across 20 files. The mechanism-level fix is a relocation variable, and THAT is the src/ change --
 # shipped behaviour on every install -- which task X-1 was told to REPORT rather than do.
+# 🔴 "23 sites across 20 files" IS RETRACTED, 2026-08-23, BJ-1 (docs/owner-decisions.md item 52), in this
+# copy AND in tests/Shared/OwnOutputDirectoryGuard.cs, which carries the identical sentence. Kept verbatim.
+# It does not reproduce in any direction and no artefact names the instrument that produced it. Re-measured
+# at e6e169f4 over :(top): `new ProductConfigStore(` 26 lines / 5 files, `new SimulatedEcosystem(` 11 lines
+# / 4 files, union 37 lines / 6 files -- and 37/6 is a FLOOR, because three `=> new(TempDir())` factories
+# (two in files the literal scan never reaches) take it to 40/8, and the two Program.cs DI registrations to
+# 42/9. The ARGUMENT is untouched: a call-site count that four framings count four ways is precisely why
+# closing a leak call-site-by-call-site was the wrong shape. Do not paste a fifth literal here.
 # Their files are exempt, and the filenames are read out of
 # those two stores' OWN SOURCES together with the justification -- the sources must still declare their
 # filenames and must still declare NO EnvVarDir. The day either store gains a seam this derivation fails

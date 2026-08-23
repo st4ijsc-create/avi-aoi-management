@@ -89,6 +89,19 @@ public sealed record PruneResultDto(int DeletedRows);
 ///   <c>Quality</c> and <c>Oee</c> of 0, which is not the same fact as "this machine ran
 ///   nothing".</description></item>
 /// </list></para>
+///
+/// <para>🔴 <b>A FOURTH SURFACE NOW CARRIES THIS RULE, AND IT IS THE ONE A SUPERVISOR READS</b> — BJ-1,
+/// 2026-08-23, coordinator under delegation (<c>docs/owner-decisions.md</c> item 53). AA-1's own review
+/// round retracted the three-site ceiling as stated too small and named a place closer to the number
+/// holder than any of the three; it stood for forty-two tasks. The mirrors are
+/// <c>web/src/lib/api.ts</c> (the doc block on <c>interface OeeResult</c>) and, rendered,
+/// <c>reports.oeeDefinition.*</c> in <c>web/src/i18n/vi.ts</c> and <c>en.ts</c>, shown on the Quality
+/// tile and the "Quality loss" column of <c>/reports</c>. They are named as strings rather than linked,
+/// because no reference from this assembly to that tree exists or should.
+/// <b>The pointer runs both ways on purpose, and it is a pointer and not a witness.</b> Nothing compiles
+/// that tree in this repository's gate, and there is no CI job for it, so a copy over there can drift
+/// from this record with no instrument saying a word. THIS doc comment is the record; a disagreement is a
+/// defect in the mirror, not here.</para>
 /// </summary>
 public sealed record OeeResultDto(
     string MachineCode, DateTimeOffset From, DateTimeOffset To,

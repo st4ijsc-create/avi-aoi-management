@@ -781,6 +781,93 @@ that behaves CORRECTLY** (it takes a `logWarning` and surfaces a tolerated fallb
 inherited from where the author stood, inside the WAL vocabulary: the correct comparison is not one good
 neighbour but the eight siblings that share the defect.
 
+#### 3.4a — 🔴 THE TABLE IS RIGHT AND ITS DOMAIN CLAIM WAS SHORT — BJ-1, 2026-08-23, điều phối viên theo uỷ quyền
+
+Everything above is kept verbatim: it is correct about what it counted. What follows is the correction
+`docs/owner-decisions.md` item 56 asked for, plus a second correction the same measurement forces onto item
+56 itself. **Measured at `e6e169f4`, standing in `tools/machine-simulator`, through
+`scripts/repo-scan.sh -n -E 'GetEnvironmentVariable\(' -- 'tools/machine-simulator/src/*.cs'` — 285 files
+in scope, 57 result lines, every one opened. LISTED FIRST; the numbers come after the lists.**
+
+**THE NINE STAND.** Every line number and every variable name in the table above verifies unchanged, and an
+independent census of all 68 `TryParse` lines in the tree — `int`, `long`, `double`, `Enum`,
+`DateTimeOffset`; there is no `TimeSpan.TryParse` anywhere here — finds **no tenth** numeric parse over an
+environment variable. The nine misses nothing and names nothing spurious. The accompanying claim also
+stands: all five `FromEnvironment()` are `public static` and parameterless. (`OpcUaOptions.FromEnvironment`
+is a sixth of that shape and correctly outside the nine — it parses no number.)
+
+**WHAT THE SENTENCE ABOVE THE TABLE ACTUALLY QUANTIFIES OVER.** The shape is written as *"unparseable →
+silent fallback, with no warning channel at all"*. It says neither "numeric" nor "boolean". Read as
+written, the population has three classes, not one:
+
+* **Numeric — 9 sites, 9 names.** The table.
+* **Boolean — 9 comparison sites, 8 names.** `ST4I_WAL_ENABLED` (`WalOptions.cs`), `ST4I_UNS_ENABLED`
+  (`UnsOptions.cs`), `ST4I_BRIDGE_SPOOL_ENABLED` (`BridgeSpoolOptions.cs`) — each `"0"`/`"false"` to turn
+  OFF, so `ST4I_WAL_ENABLED=flase` silently stays ON. `ST4I_MODBUS_ENABLED` (`ModbusOptions.cs`),
+  `ST4I_OPCUA_ENABLED` (`OpcUaOptions.cs`) — each `"1"`/`"true"` to turn ON, so a typo silently leaves the
+  driver down. `ST4I_MDNS_ADVERTISE` (`SiteAdvertiser.IsAdvertiseEnabled`), `ST4I_VERIFY_TLS`
+  (`EdgeService/EdgeWorker.ParseVerifyTls`), `ST4I_DEMO_ENABLED` (`DemoModeGate.ParseFlag`, reached from
+  three production call sites).
+  🔴 **The ninth site is a DUPLICATE the item did not find, and it is the one that matters most:**
+  `St4i.EngineApi/Program.cs` re-implements `ParseVerifyTls` by hand for the same `ST4I_VERIFY_TLS`, in the
+  composition root §3.1 enumerates, and its result is one of the three fields that arm `rebuildNeeded` —
+  i.e. §3.1a's own stated precondition. A typo there does not merely mis-set TLS; it silently arms the
+  live-settings overwrite arm. Three lines above it the file states the silence in its own words: *"Never
+  logged — none of these three are secrets, but there's no reason to echo config back into a log sink
+  either."*
+* **String — 29 names.** Every one resolves through the identical `string.IsNullOrWhiteSpace(x) ? default
+  : x`, so a value the operator supplied but the code cannot use is discarded to a built-in default with
+  nothing said. Sixteen relocatable roots — `ST4I_WAL_DIR`, `ST4I_SETTINGS_DIR`, `ST4I_MACHINE_CONFIG_DIR`,
+  `ST4I_PRODUCTS_DIR`, `ST4I_IDENTITY_DIR`, `ST4I_CREDS_DIR`, `ST4I_SITELINK_DIR`,
+  `ST4I_BRIDGE_SPOOL_DIR`, `ST4I_OPCUA_PKI_DIR`, `ST4I_ALARMS_DIR`, `ST4I_NOTIFICATIONS_DIR`,
+  `ST4I_ASSETS_DIR`, `ST4I_SECURITY_DIR`, `ST4I_ECOSYSTEM_DIR`, `ST4I_CONNECTOR_CONFIG_DIR`,
+  `ST4I_HISTORIAN_DIR` — where a typo silently puts the store back under `%ProgramData%\ST4I\sim\*`; twelve
+  non-root strings — `ST4I_UNS_SITE`, `ST4I_UNS_AREA`, `ST4I_UNS_LINE`, `ST4I_UNS_CELL` (the UNS topic
+  address, so a blank one silently republishes every message under `site/area/line/cell`),
+  `ST4I_MODBUS_HOST`, `ST4I_MODBUS_MAP`, `ST4I_OPCUA_ENDPOINT`, `ST4I_OPCUA_MAP`,
+  `ST4I_MDNS_SERVICE_TYPE`, `ST4I_SITE_SERVICE_TYPE`, `ST4I_SERVER_URL`, `ST4I_MACHINE_CODE`; and
+  `ASPNETCORE_URLS`, whose test is `is null` rather than `IsNullOrWhiteSpace`, so `ASPNETCORE_URLS=""`
+  silently suppresses the `http://localhost:5199` default.
+
+⇒ **At least 46 environment-variable NAMES answer to the sentence, not seventeen.**
+
+🔴 **AND ITEM 56's OWN "SEVENTEEN" DOES NOT SURVIVE — retracted here, by the task sent to execute it.**
+Three reasons, and the first is the one worth carrying forward: **17 = 9 + 8 adds a count of SITES to a
+count of NAMES.** By sites the boolean class is nine; by names the numeric class is nine as well, so the
+two units happen to coincide there and hid the mistake. Second, the shape's population is the ≥46 above.
+Third, 17 is not even internally consistent with the shape it claims, because **"no warning channel at
+all" is FALSE for three of the eight booleans in one host**: `EdgeWorker.BuildTransport` logs
+`verifyTls=`, `wal=` and the demo-mode line at Information, so an operator reading the `St4i.EdgeService`
+boot log can see the knob did not take. It is not a warning about the typo — nothing says "you typed
+`flase`" — but it is not nothing, and the same three knobs have no such echo in `St4i.EngineApi`. **The
+silence is per-HOST, and the item states it per-KNOB.**
+
+**THE OTHER ASYMMETRY IS THREE-WAY, NOT TWO-WAY.** Item 56 names `BridgeSpoolOptions`' `parsedMaxBytes > 0`
+latch against `WalOptions`' throwing `Validate()`. Both halves verify — and the group is five files, not
+two, and it answers three ways. `BridgeSpoolOptions` latches SILENTLY, and with **two** latches, not one
+(`parsedMaxAgeHours > 0` is the identical unnamed twin). `WalOptions` is the only file in the group with a
+`Validate()`, and it THROWS. The remaining three — `UnsOptions`, `ModbusOptions`, `AlarmThresholds` —
+have neither latch nor validation, so a value that parses but is nonsense is **accepted and propagated**:
+`ST4I_UNS_PORT=0` becomes the broker port, `ST4I_MODBUS_PORT=-1` becomes the port,
+`ST4I_ALARM_EVAL_INTERVAL_MS=0` becomes the evaluator's poll period. That is **seven of the nine knobs**,
+the largest of the three behaviours, and arguably the worst: BridgeSpool discards the bad value, Wal
+refuses to run on it, and these three run on it.
+
+**A smaller inconsistency inside the boolean class, named because it is the commonest real typo:** members
+1–6 do not `Trim()` and members 7–8 do. `ST4I_WAL_ENABLED="false "` — one trailing space — silently leaves
+WAL ON, while `ST4I_VERIFY_TLS="false "` is honoured.
+
+**WHAT THIS ENTRY DOES NOT DO, AND WHY — a ceiling stated too small is worse than no ceiling.** No warning
+channel was threaded, and no behaviour changed. The delegation row for item 56 predicted the fix would be
+*"a check/warning at the parse boundary, same mould as items 38/39/50"*. §8.1(a) says the shape of a repair
+is derived from the measured failure, and the measured failure here is a **domain claim narrower than the
+sentence above it** — a document defect, which a document fixes. Threading a channel would change the
+signature of five `public static` parameterless factories used at ten production call sites, and to cover
+the shape as written it would have to reach the sixteen `ST4I_*_DIR` roots, which are the subject of item
+30 — **still awaiting the owner**. So the wide fix is not available to a delegated task, and the narrow one
+would leave the domain claim exactly as short as it was. Both directions stated: nothing here loses data,
+nothing here is silent in a dangerous direction *for a valid value*, and the defaults are published.
+
 ### 3.5 — Divergence: two operator-editable catalogues end the process, and their twins do not
 
 🔴 **BF-1, 2026-08-23 — READ THIS BEFORE §3.5, AND §3.5 IS OTHERWISE UNCHANGED AND UNRETRACTED.** The owner

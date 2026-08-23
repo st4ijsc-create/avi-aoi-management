@@ -42,7 +42,17 @@ public sealed class ScenarioAwareDriver : IDeviceDriver
 
     /// <summary>The inner driver's id, unchanged. The decorator deliberately does not decorate the NAME:
     /// a pipeline slot, an alarm target and a trace row all key on this, so wrapping must not move
-    /// them.</summary>
+    /// them.
+    /// <para>🔴 <b>"a pipeline slot, an alarm target ... all key on this" IS RETRACTED, 2026-08-23, BJ-1</b>
+    /// (<c>docs/owner-decisions.md</c> item 52). Kept verbatim above, as this repository does with a
+    /// published claim that measurement refutes. The pipeline slot label and the alarm <c>TargetId</c> are
+    /// derived in the host from the roster's driver kind or a connector instance id
+    /// (<c>FleetCore.ResolveSlotLabelFor</c> / <c>ResolveConnectorSlotLabel</c>, and
+    /// <c>AlarmEvaluator</c>'s <c>TargetId: slot.SlotLabel</c>); neither reads a driver's id.
+    /// <b>The DECISION the sentence defends is unchanged and is still right</b> — this decorator must not
+    /// decorate the name — but the reason is narrower than it was written: what keys on the id is logging,
+    /// UI and four test suites that assert on its content, not the alarm route. The retraction moves the
+    /// justification, not the behaviour.</para></summary>
     public string Id => _inner.Id;
 
     /// <summary>The inner driver's kind, unchanged — so a fleet built on simulators still reports

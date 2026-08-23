@@ -506,7 +506,17 @@ public abstract class DeviceDriverConformanceSuite
     }
 
     /// <summary>Enforces: "Id and Kind are non-empty and stable across the driver's lifetime (they key slot
-    /// labels and, through those, alarms)".</summary>
+    /// labels and, through those, alarms)".
+    /// <para>🔴 <b>THE QUOTED PARENTHESIS IS RETRACTED, 2026-08-23, BJ-1</b> (<c>docs/owner-decisions.md</c>
+    /// item 52). It is a verbatim quotation of the contract sentence on <c>IDeviceDriver.Id</c>, and that
+    /// sentence is now retracted at its source: slot labels and alarm <c>TargetId</c>s are derived in the
+    /// host from the roster's driver kind or a connector instance id, never from a driver's id.
+    /// <b>This site is the sharpest one, and it is worth saying why:</b> item 52 cited THIS SUITE as the
+    /// evidence that nothing consumes the value, while the suite's own doc quoted the refuted sentence.
+    /// The quotation was never re-read against what the method below actually asserts.
+    /// <b>What the method really enforces, in both directions:</b> non-empty AND stable, including across
+    /// <c>DisposeAsync</c>. It never inspects the string's CONTENT, so nothing here is weakened by the
+    /// retraction — and nothing here ever supported the retracted clause either.</para></summary>
     public virtual async Task Check_Id_And_Kind_AreNonEmpty_AndStableAcrossLifetime()
     {
         await using var driver = CreateDriver();
@@ -534,6 +544,12 @@ public abstract class DeviceDriverConformanceSuite
 
         // Stable even post-dispose — a slot label/alarm referencing this driver's Id must remain
         // meaningful even after the slot has been torn down.
+        // 🔴 THAT REASON IS RETRACTED, 2026-08-23, BJ-1 (docs/owner-decisions.md item 52): no slot label and
+        // no alarm references a driver's Id — both are derived host-side from the driver KIND or a connector
+        // instance id. The ASSERTION stays, with a reason that survives measurement: a log line, a trace row
+        // or a test that captured this string before dispose must still be able to compare it after, and a
+        // property that changes at dispose is one no caller can cache. Kept verbatim above per this repo's
+        // convention for a published claim that was wrong.
         Assert.Equal(id, driver.Id);
         Assert.Equal(kind, driver.Kind);
     }

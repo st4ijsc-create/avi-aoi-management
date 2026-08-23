@@ -88,6 +88,14 @@
 #        and answers a question you did not ask. The refusal catches a domain narrowed to NOTHING,
 #        which is the shape item 32 is about; it does not catch a domain narrowed to the WRONG
 #        SOMETHING, and no check in this file does.
+#        🔴 ONE NAMED INSTANCE OF (f) IS NOW CLOSED, AND THE REST OF (f) IS NOT (BJ-1, 2026-08-23,
+#        item 51 sub-item 3). Inside a LIST of pathspecs, one mis-cased member used to contribute
+#        zero while the others kept the aggregate above zero — measured, 579 files silently became
+#        267 with exit 0. Per-spec domains are now printed always, and a spec that selects zero
+#        while its `:(icase)` twin selects something is REFUSED by name. That is CASE only. A spec
+#        narrowed to the wrong something by a non-case typo, a moved directory or a subtly wrong
+#        glob is still a non-empty domain answering a question you did not ask, and this file still
+#        has no check for it.
 #
 # Usage:
 #   scripts/repo-scan.sh [--sha <tree-ish>] [--] <git-grep-arg>... [-- <pathspec>...]
@@ -282,12 +290,63 @@ self_test() {
     rc=1
   fi
 
+  # (h) 🔴 THE CASE PROBE, AND IT IS ASSERTED AS A PAIR BECAUSE ONE HALF ALONE PROVES NOTHING
+  # (BJ-1, 2026-08-23, item 51 sub-item 3). A refusal that fires on everything is not a check, so the
+  # correctly-cased twin must go GREEN over a domain the mis-cased one loses. Both invocations are
+  # real CLI runs of this same file, and both numbers are read, not assumed: the pair is the witness.
+  # It is deliberately built from a spec that is CORRECT plus one that differs ONLY in case, because
+  # the single-spec case is already caught by the empty-domain refusal and would prove the wrong thing.
+  case_good_spec='tools/machine-simulator/src/*'
+  case_bad_spec='tools/machine-simulator/Src/*'
+  case_other_spec='tools/machine-simulator/tests/*'
+  (cd "$sub" && bash "$SELF_ABS" --sha "$probe_sha" -l -E 'class' \
+       -- "$case_good_spec" "$case_other_spec") >/dev/null 2>&1; case_good_rc=$?
+  (cd "$sub" && bash "$SELF_ABS" --sha "$probe_sha" -l -E 'class' \
+       -- "$case_bad_spec" "$case_other_spec") >/dev/null 2>&1; case_bad_rc=$?
+  case_good_dom=$(domain_size "$probe_sha" ":(top)$case_good_spec" ":(top)$case_other_spec")
+  case_bad_dom=$(domain_size "$probe_sha" ":(top)$case_bad_spec" ":(top)$case_other_spec")
+  echo "  mixed list, CORRECT case -> exit          : $case_good_rc   (must be 0, over $case_good_dom files)"
+  echo "  mixed list, ONE spec mis-cased -> exit     : $case_bad_rc   (must be 2, aggregate would be $case_bad_dom)"
+  if [[ "$case_good_rc" -ne 0 ]]; then
+    echo "FAIL: a correctly-cased pathspec list exited $case_good_rc, not 0. The case probe is refusing a
+      valid invocation, which is the false-positive shape that gets a gate ignored." >&2
+    rc=1
+  fi
+  if [[ "$case_bad_rc" -ne 2 ]]; then
+    echo "FAIL: a pathspec list containing a MIS-CASED spec exited $case_bad_rc, not 2. git pathspecs are
+      case-sensitive; inside a list the mis-cased member contributes nothing while the others keep the
+      aggregate above zero, so the scan answers over a domain silently smaller than the one named
+      ($case_bad_dom instead of $case_good_dom here). That is item 32's species and it is back." >&2
+    rc=1
+  fi
+  if [[ "$case_bad_dom" -ge "$case_good_dom" ]]; then
+    echo "FAIL: the mis-cased list selects $case_bad_dom files and the correct one $case_good_dom — the
+      probe is not measuring a narrowing at all, so the assertion above is vacuous. Two equal numbers
+      are refused as green here for the same reason the cwd-invariance assertion refuses two zeroes." >&2
+    rc=1
+  fi
+
   # The population protocol (verify-suites.sh run_tooling_check, docs/owner-decisions.md item 40).
   # The sets every assertion above quantifies over: the default pathspec's domain — the one whose
-  # collapse to 0 WAS the defect — and the probe's own match count, which is what makes (a)'s
-  # cwd-invariance an agreement between two real numbers rather than between two zeroes.
+  # collapse to 0 WAS the defect — the probe's own match count, which is what makes (a)'s
+  # cwd-invariance an agreement between two real numbers rather than between two zeroes, and the
+  # correctly-cased mixed domain (h) asserts a green over.
   echo "POPULATION default-domain $dom_default"
   echo "POPULATION probe-matches $from_root"
+  echo "POPULATION case-probe-domain $case_good_dom"
+
+  # The disclosure protocol (verify-suites.sh run_tooling_check, docs/owner-decisions.md item 51).
+  # The ceiling above under "WHAT THIS DOES NOT ENFORCE" was written for a reader of this FILE. The
+  # gate prints "repo-scan cwd-invariance: OK" and nothing else, so the only person who ever saw the
+  # result never saw the ceiling. These lines are that same ceiling, compressed to one line each, at
+  # the place the result appears. They are the SAME six clauses, not a new and softer set.
+  echo "DOES-NOT-MEASURE (a) it cannot make anyone USE it — a hand-typed \`git grep\` is unscoped and invisible to this"
+  echo "DOES-NOT-MEASURE (b) non-git scans (grep -r, ripgrep, editor search) read the WORKING TREE, which is sparse here: server/ and client/ are in the commit, not on disk"
+  echo "DOES-NOT-MEASURE (c) it cannot make a report copy the provenance header it prints"
+  echo "DOES-NOT-MEASURE (d) nothing here says the PATTERN was the right pattern"
+  echo "DOES-NOT-MEASURE (e) it does not reach outside the repo — item 32's MQTT retained-mirror subscriber stays unmeasured"
+  echo "DOES-NOT-MEASURE (f) the empty-domain refusal separates '0 in scope' from '0 matched'; it does NOT catch a domain narrowed to the WRONG something. CASE is the one instance now refused by name (item 51 sub-item 3); a non-case typo, a moved directory or a subtly wrong glob still selects a non-empty set and answers a question you did not ask"
+  echo "DOES-NOT-MEASURE (g) the case probe compares a zero-selecting spec against its :(icase) twin. It says nothing about a spec that selects SOMETHING wrongly, and it cannot rewrite non-parenthesised magic (:/ and friends), which it skips rather than guesses at"
 
   [[ $rc -eq 0 ]] && echo "PASS: rooted scans are cwd-invariant ($from_root from both places) while the naive form loses $((from_root - naive)); the no-pathspec default covers the whole tree ($dom_default files); empty domain refused (2) and true no-match reported (1)."
   return $rc
@@ -342,6 +401,48 @@ git diff --quiet 2>/dev/null && git diff --cached --quiet 2>/dev/null || DIRTY="
 # before the grep on purpose — a refusal must not depend on how long the search took.
 DOMAIN=$(domain_size "$SHA" "${ROOTED[@]}")
 
+# ── PER-PATHSPEC DOMAINS, AND THE CASE PROBE (BJ-1, 2026-08-23, item 51 sub-item 3) ───────────────
+#
+# THE HOLE, MEASURED RATHER THAN ASSUMED, AND THE ITEM'S OWN CLAIM IS NARROWED BY THE MEASUREMENT.
+# Item 51 sub-item 3 says a wrong-case pathspec "silently narrows the domain" on Windows. Measured at
+# e6e169f4 with `core.ignorecase = true`: for a SINGLE spec that is no longer true — BA-1's empty-
+# domain refusal already catches it LOUDLY, exit 2, every time. The silence needs a MIXED list, where
+# at least one spec is correctly cased and carries the aggregate above zero. Reproduced:
+#
+#   -- 'tools/machine-simulator/src/*' 'tools/machine-simulator/tests/*'   ->  579 files, exit 0
+#   -- 'tools/machine-simulator/Src/*' 'tools/machine-simulator/tests/*'   ->  267 files, exit 0
+#
+# Same pattern, same SHA, same standing place; 312 files gone and a clean exit. That is item 32's
+# species one layer in from where the aggregate guard sits, and boundary (f) at the top of this file
+# described the general shape without ever naming this instance.
+#
+# WHY THE FIX IS A PROBE AND NOT A REFUSAL ON EVERY ZERO. A spec selecting zero is not by itself an
+# error: `-- 'docs/*.md' 'web/*.md'` over a tree whose web has no markdown is a legitimate question,
+# and refusing it would be a false positive on a correct invocation. So a zero is REPORTED, always;
+# it is REFUSED only when the identical spec with `icase` selects something — which is not an opinion
+# about what the caller meant but a demonstration that the same characters in a different case do
+# match this tree. That keeps the false-positive rate at zero on correctly-spelled specs while making
+# the one shape that is always a mistake impossible to pass through in silence.
+#
+# 🔴 WHAT THIS DOES NOT MEASURE: only CASE. A spec narrowed to the wrong SOMETHING for any other
+# reason — a typo that is not a case difference, a directory that moved, a glob that is subtly wrong
+# — still selects a non-empty set and still answers a question you did not ask. Boundary (f) stands
+# unamended; this closes one named instance of it, not the class.
+PERSPEC=(); CASE_ERRORS=()
+if [[ ${#ROOTED[@]} -gt 1 ]] || [[ "$DOMAIN" -gt 0 ]]; then
+  for _s in "${ROOTED[@]}"; do
+    _n=$(domain_size "$SHA" "$_s")
+    PERSPEC+=("${_s}=${_n}")
+    [[ "$_n" -ne 0 ]] && continue
+    case "$_s" in
+      :\(*\)*) _icase=":(icase,${_s#:\(}" ;;   # :(top)foo -> :(icase,top)foo
+      *)       continue ;;                     # :/ and friends: no safe rewrite, do not guess
+    esac
+    _m=$(domain_size "$SHA" "$_icase")
+    [[ "$_m" -gt 0 ]] && CASE_ERRORS+=("${_s} selects 0, but ${_icase} selects ${_m}")
+  done
+fi
+
 _claim() {
   echo "── repo-scan domain claim ──────────────────────────────────────────────────────────────"
   echo "  typed from   : $CALLER_PWD"
@@ -350,7 +451,26 @@ _claim() {
   echo "  worktree     : $DIRTY"
   echo "  pathspecs    : ${SPECS[*]}   ->   ${ROOTED[*]}"
   echo "  files in scope: $DOMAIN   (git ls-files${SHA:+ --with-tree} over those same rewritten pathspecs, before any pattern)"
+  # Per-spec, always, even when every spec is non-empty: an aggregate hides a zero inside a sum, and
+  # the whole point of this wrapper is that a domain claim is printed rather than assumed.
+  [[ ${#PERSPEC[@]} -gt 0 ]] && echo "  per pathspec : ${PERSPEC[*]}"
 }
+
+if [[ ${#CASE_ERRORS[@]} -gt 0 ]]; then
+  { _claim
+    echo "  result       : REFUSED — a pathspec selects ZERO FILES and differs from this tree only in CASE."
+    echo "────────────────────────────────────────────────────────────────────────────────────────"
+    for _e in "${CASE_ERRORS[@]}"; do echo "repo-scan:   $_e"; done
+    echo "repo-scan: git PATHSPECS ARE CASE-SENSITIVE even where the index is not (core.ignorecase is
+       $(git config core.ignorecase 2>/dev/null || echo unset) here). Inside a list of pathspecs a
+       mis-cased one contributes nothing while the others keep the aggregate above zero, so the scan
+       exits 0 over a domain silently smaller than the one you named — docs/owner-decisions.md item
+       32's species, one layer in from the empty-domain refusal. Fix the case. Do NOT add ':(icase)'
+       to make this pass: on a case-insensitive filesystem that would make the scan match paths the
+       repository does not contain. Nothing is claimed about '${ARGS[*]}' by this run."
+  } >&2
+  exit 2
+fi
 
 # 🔴 THE REFUSAL THIS TASK EXISTS FOR. A pathspec that selects NO FILES cannot produce a fact about
 # the pattern, so no count is printed and exit 1 is not used: exit 1 is reserved for "searched N

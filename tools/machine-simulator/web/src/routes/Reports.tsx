@@ -1,6 +1,6 @@
 import * as React from "react"
 import { motion } from "framer-motion"
-import { Download, Loader2, Save } from "lucide-react"
+import { Download, Info, Loader2, Save } from "lucide-react"
 import { toast } from "sonner"
 
 import { useGloss } from "@/components/hmi/bilingual"
@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * Task 13 (WS-A, docs/plans/2026-07-26-ws-a-historian-blueprint.md) — `/reports`: per-machine OEE
@@ -43,6 +44,61 @@ import { StatusBadge } from "@/components/ui/status-badge"
  * computed for exactly one machine at a time) and no verdict/serial filters, so a shared component
  * would need as many escape hatches as it saved.
  */
+
+/**
+ * 🔴 OWNER RULING ITEM 2 (2026-08-16), PAID ON THE SURFACE THAT ACTUALLY HOLDS THE NUMBER — BJ-1,
+ * 2026-08-23, coordinator under delegation (`docs/owner-decisions.md` item 53).
+ *
+ * The ruling was "keep the behaviour, PUBLISH the definition, at the place the number is read".
+ * AA-1 delivered three sites in `src/` — `OeeResultDto`, `GetOeeFleetAsync`, `BuildReportPdf` — and
+ * AA-1's own review round retracted that ceiling as **stated too small**, naming a fourth place
+ * closer to the number-holder than any of the three: this screen. It then stood for forty-two
+ * tasks, because AA-1 was forbidden to touch `web/` and nobody read the retraction as an address.
+ *
+ * A supervisor reading `Quality 98.4 %` had no route to the fact that a `Warn` cycle was counted as
+ * good, or that a `Skip` cycle is in neither count. That is exactly the person the ruling names.
+ *
+ * SHAPE, AND WHY THIS ONE. Not headline prose: the ruling asks for the definition to be REACHABLE
+ * where the number is, not for the tile to become a paragraph. This is the affordance `/reports`'s
+ * sibling screen already uses for an honest limitation — `Audit.tsx`'s `audit.limitation` — an
+ * `Info` glyph whose ACCESSIBLE NAME is the whole sentence (so a screen reader gets it on focus,
+ * not on hover) with the same text in the visual tooltip. Both halves of the ruling are carried:
+ * what the number counts, AND that the formula has no version.
+ *
+ * 🔴 WHAT HOLDS THIS TEXT TRUE, STATED HONESTLY BECAUSE THE ANSWER IS "less than you would like".
+ * The two locale strings are pinned to each other by the type system — `en.ts` is annotated
+ * `Dictionary`, which is `typeof vi`, so a missing key is a `tsc -b` error and `npm run build` is
+ * a real gate on parity. NOTHING pins them to the C# wording they mirror. There is no CI job for
+ * this tree at all (measured: 0 of 7 workflows mention it), and `scripts/verify-suites.sh` compiles
+ * no TypeScript. So this text can drift from `HistorianDtos.OeeResultDto` and no instrument in this
+ * repository will say a word — the same species as item 36. The mitigation is a pointer, not a
+ * witness: the dictionary comment beside each string names its source, and `OeeResultDto`'s doc now
+ * names this screen back, so whoever edits either end can find the other.
+ */
+function OeeDefinitionNote() {
+  const t = useT()
+  const full = `${t("reports.oeeDefinition.body")} ${t("reports.oeeDefinition.noVersion")}`
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              className="hmi-micro inline-flex items-center gap-1 self-start text-text-muted outline-none hover:text-text-body focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+              aria-label={full}
+            />
+          }
+        >
+          <Info className="size-3.5" aria-hidden="true" />
+          {t("reports.oeeDefinition.label")}
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{full}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
 
 function DateField({
   id,
@@ -387,7 +443,9 @@ export default function Reports() {
                       labelEn={gloss("reports.kpi.quality")}
                       value={(oee.data.quality * 100).toFixed(1)}
                       unit="%"
-                    />
+                    >
+                      <OeeDefinitionNote />
+                    </KpiTile>
                     <KpiTile
                       label={t("reports.kpi.oee")}
                       labelEn={gloss("reports.kpi.oee")}

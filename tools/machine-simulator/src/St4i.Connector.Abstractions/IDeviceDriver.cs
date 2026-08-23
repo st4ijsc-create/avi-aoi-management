@@ -36,7 +36,27 @@ public interface IDeviceDriver : IAsyncDisposable
 {
     /// <summary>Stable identifier for this driver instance (for logging/UI, not a machine code) — non-empty
     /// and unchanging for the lifetime of this instance (it keys slot labels and, through those,
-    /// alarms).</summary>
+    /// alarms).
+    /// <para>🔴 <b>THE PARENTHESISED CLAUSE ABOVE IS RETRACTED, 2026-08-23, BJ-1</b>
+    /// (<c>docs/owner-decisions.md</c> item 52, measured first by BB-1 on 2026-08-22). Quoted and retired in
+    /// place, the style this repository uses for a published claim that is wrong; the requirement it sits
+    /// beside — non-empty, unchanging for the lifetime of the instance — is unaffected and is what the
+    /// conformance suite still enforces.
+    /// <b>This value does not key slot labels, and no alarm reaches it.</b> The slot label an alarm targets
+    /// is produced in the host from the roster's declared driver kind, or from a connector instance id when
+    /// one claims the machine code — <c>FleetCore.ResolveSlotLabelFor</c> and
+    /// <c>FleetCore.ResolveConnectorSlotLabel</c> — and the alarm's <c>TargetId</c> is that label, set in
+    /// <c>AlarmEvaluator</c>. Neither function takes a driver, and neither reads this property.
+    /// <b>Both halves, because half of this is a half-truth:</b> "nothing consumes it" would be FALSE. Under
+    /// <c>src/</c> nothing reads the string's content — the decorators forward it and the conformance suite
+    /// asserts only that it is non-empty and does not move. Under <c>tests/</c> twelve assertion lines in
+    /// four files DO read it, and they are the reason a rename here is not free: the Modbus RTU loopback and
+    /// multidrop suites assert the unit id and bus key are IN it, and two suites assert distinctness across
+    /// three drivers. So the honest sentence is "no production surface consumes the value; four test files
+    /// do".
+    /// <b>Why the wrong clause survived so long:</b> it was restated in five further places rather than
+    /// linked, and BJ-1 found four of them only by enumerating rather than by trusting the two the item
+    /// named. All six are corrected in the same change.</para></summary>
     string Id { get; }
 
     /// <summary>The connector's own id — GP-3 opened this from a closed enum into a free-form string so

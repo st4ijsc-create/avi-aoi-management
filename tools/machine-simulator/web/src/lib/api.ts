@@ -1136,7 +1136,36 @@ export function buildHistorianExportCsvUrl(filter: HistorianResultsFilter): stri
  * one deferred transaction so they come from a single snapshot. Before that transaction existed the
  * bound did NOT hold: a concurrent writer landing between the two counts produced `quality` above 1,
  * measured on the shipped fleet's own cadence. So "never over 1" is true for what this endpoint returns
- * today, and it is true structurally rather than because anything here clamps. */
+ * today, and it is true structurally rather than because anything here clamps.
+ *
+ * 🔴 WHAT THESE NUMBERS COUNT — owner ruling of 2026-08-16 (`docs/owner-decisions.md` item 2), written
+ * here by BJ-1 on 2026-08-23 under item 53, in the terms of the fields THIS shape carries. The ruling
+ * was: keep the behaviour, publish the definition, at the place the number is read. Three `src/` sites
+ * carried it — `OeeResultDto`, `HistorianEndpoints.GetOeeFleetAsync`, `HistorianEndpoints.BuildReportPdf`
+ * — and this file, the copy a `web/` caller reads, was not one of them.
+ *
+ *   - `totalCount` is the DENOMINATOR: every cycle in the window recorded as a process result whose
+ *     stored verdict is anything other than `Skip`.
+ *   - `goodCount` is the NUMERATOR: of those, the ones whose stored verdict is `Pass` or `Warn`. A
+ *     `Fail` cycle is in `totalCount` and not in `goodCount`.
+ *   - A `Skip` cycle is in NEITHER count. It does not lower the number; it is absent from it.
+ *   - `quality` is `goodCount / totalCount` (zero when `totalCount` is zero), and `oee` is
+ *     `availability * performance * quality`. So A CYCLE JUDGED `Warn` COUNTS AS GOOD here — deliberately,
+ *     by the owner's ruling, and by the same rule the live pass-rate tally already applies in-process.
+ *
+ * 🔴 AND THIS FORMULA CARRIES NO VERSION. Nothing in this shape, and nothing else in the response that
+ * carries it, records WHICH definition of good produced these counts — no formula id, no revision, no
+ * date of the rule. Two `oee` values obtained months apart are therefore not known to be comparable, and
+ * a value already exported cannot be re-attributed to a formula later. That is precisely why the ruling
+ * was to PUBLISH the definition rather than change it: changing it would rewrite every OEE number already
+ * reported, including ones printed to PDF and sent out, with nothing on either copy to tell the two apart.
+ *
+ * TWO SCOPE FILTERS SIT UPSTREAM OF ALL OF THIS, and they are the usual reason a real machine reports
+ * `totalCount 0 / goodCount 0 / quality 0`: only `ProcessResult` readings are counted at all, and
+ * FABRICATED-provenance rows are excluded — which on this product is usually the decisive one.
+ * `OeeResultDto`'s own doc comment is the full statement and the record; this is its mirror.
+ * The rendered surfaces that show these numbers to a supervisor — the Quality tile and the "Quality loss"
+ * column on `/reports` — carry the same sentence through `reports.oeeDefinition.*` in both locales. */
 export interface OeeResult {
   machineCode: string
   from: string

@@ -258,6 +258,15 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
 
             // Includes the unit id, unlike the TCP driver's — on a multidrop bus the endpoint alone does not
             // identify a device, and this string keys slot labels and therefore alarm TargetIds.
+            // 🔴 "keys slot labels and therefore alarm TargetIds" IS RETRACTED, 2026-08-23, BJ-1
+            // (docs/owner-decisions.md item 52). It is a restatement of the IDeviceDriver.Id contract
+            // sentence, which measurement refutes: FleetCore derives a slot label from the roster's driver
+            // kind or from a connector instance id, and AlarmEvaluator sets TargetId from that label. The
+            // FIRST half of the sentence — the unit id must be in here, because on a multidrop bus the
+            // endpoint alone does not identify a device — is unaffected and is asserted by
+            // ModbusRtuDriverLoopbackTests and ModbusRtuMultidropConformanceTests, which read this string's
+            // CONTENT. So the id is load-bearing; it is just not load-bearing for alarms.
+
             Id = $"modbus-rtu:{lease.Bus.Key}:unit{map.UnitId}:{map.MachineCode}";
             Health = DriverHealthState.Down;
             _writablePoints = new List<string>(_map.WritablePointNames).AsReadOnly();
@@ -366,7 +375,15 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// identity for a configured device, not for a driver instance. And this file's own constructor comment
     /// records what it keys downstream — slot labels, and through them alarm <c>TargetId</c>s — which is
     /// what makes a change to a machine code or a unit id a rename an operator can see, not an internal
-    /// detail.</para></summary>
+    /// detail.</para>
+    /// <para>🔴 <b>"slot labels, and through them alarm TargetIds" IS RETRACTED, 2026-08-23, BJ-1</b>
+    /// (<c>docs/owner-decisions.md</c> item 52). Kept verbatim; the constructor comment it points at is
+    /// retracted in the same change. Slot labels and alarm targets are derived host-side from the driver
+    /// KIND or a connector instance id, not from this string.
+    /// <b>The conclusion it was supporting survives, by a different route:</b> a change to the machine code
+    /// or the unit id IS a rename an operator can see, because this string is what logging and the UI show,
+    /// and because four test suites assert on its content — the unit id, the bus key, and distinctness
+    /// across three drivers. What it is NOT is the alarm's key.</para></summary>
     public string Id { get; }
 
     /// <summary>The same connector id as the TCP driver. RTU and TCP are two transports for ONE protocol, and
