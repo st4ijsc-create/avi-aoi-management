@@ -953,6 +953,8 @@ export function promptSuaTep(
   yeuCau: string,
   lang: NgonNguMa,
   khoiLichSu = "",
+  /** ★ doc 82 — xem khối THẨM QUYỀN ↔ NHƯỜNG CHỖ ở `promptSinhMa`. Mặc định `""` ⇒ lời gọi cũ y nguyên. */
+  khoiBaiHoc = "",
 ): string {
   const nhan = nhanNgonNgu(duong);
   return [
@@ -960,6 +962,8 @@ export function promptSuaTep(
     // sát nhất, nên chúng ở GẦN cuối prompt (vị trí model chú ý mạnh nhất). Lịch sử chỉ là ngữ
     // cảnh của mạch hội thoại.
     ...(khoiLichSu ? [khoiLichSu, ""] : []),
+    // ⚠ BÀI HỌC đứng SAU lịch sử, TRƯỚC nội dung tệp: nội dung tệp là bằng chứng của lượt này.
+    ...(khoiBaiHoc ? [khoiBaiHoc, ""] : []),
     w(lang, `Tệp: ${duong}`, `File: ${duong}`, `文件：${duong}`),
     "",
     w(lang, "=== NỘI DUNG HIỆN TẠI (nguyên văn) ===", "=== CURRENT CONTENT (verbatim) ===", "=== 当前内容（原样）==="),
@@ -992,10 +996,13 @@ export function promptSuaTepKhoi(
   yeuCau: string,
   lang: NgonNguMa,
   khoiLichSu = "",
+  /** ★ doc 82 — xem khối THẨM QUYỀN ↔ NHƯỜNG CHỖ ở `promptSinhMa`. Mặc định `""` ⇒ lời gọi cũ y nguyên. */
+  khoiBaiHoc = "",
 ): string {
   const nhan = nhanNgonNgu(duong);
   return [
     ...(khoiLichSu ? [khoiLichSu, ""] : []),
+    ...(khoiBaiHoc ? [khoiBaiHoc, ""] : []),
     w(lang, `Tệp: ${duong}`, `File: ${duong}`, `文件：${duong}`),
     "",
     w(lang, "=== NỘI DUNG HIỆN TẠI (nguyên văn) ===", "=== CURRENT CONTENT (verbatim) ===", "=== 当前内容（原样）==="),
@@ -1023,10 +1030,18 @@ export function promptSuaTepKhoi(
  * ⚠ Vẫn nêu ĐƯỜNG DẪN: đuôi tệp quyết định ngôn ngữ, và thư mục cha là ngữ cảnh kiến trúc rẻ nhất
  *   ta có (`server/routers/x.ts` ≠ `client/src/lib/x.ts` dù cùng đuôi).
  */
-export function promptTaoTep(duong: string, yeuCau: string, lang: NgonNguMa, khoiLichSu = ""): string {
+export function promptTaoTep(
+  duong: string,
+  yeuCau: string,
+  lang: NgonNguMa,
+  khoiLichSu = "",
+  /** ★ doc 82 — xem khối THẨM QUYỀN ↔ NHƯỜNG CHỖ ở `promptSinhMa`. Mặc định `""` ⇒ lời gọi cũ y nguyên. */
+  khoiBaiHoc = "",
+): string {
   const nhan = nhanNgonNgu(duong);
   return [
     ...(khoiLichSu ? [khoiLichSu, ""] : []),
+    ...(khoiBaiHoc ? [khoiBaiHoc, ""] : []),
     w(lang, `Tệp MỚI cần tạo: ${duong}`, `NEW file to create: ${duong}`, `要创建的新文件：${duong}`),
     w(
       lang,
@@ -1055,10 +1070,44 @@ export function promptTaoTep(duong: string, yeuCau: string, lang: NgonNguMa, kho
  *   nhất), mã tham chiếu ngay trên nó, lịch sử xa nhất — cùng lý lẽ đã ghi ở `promptSuaTep`.
  * ⚠ Tham số THỨ TƯ và có mặc định `""` ⇒ mọi lời gọi 3 tham số cũ không đổi một byte, và
  *   `promptSinhMa(q, lang, "")` vẫn **bằng đúng** `promptSinhMa(q, lang)`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ doc 82 — `khoiBaiHoc` (tham số THỨ NĂM): **BỘ NHỚ XUYÊN PHIÊN**, đã bọc trong khối dữ liệu
+ * không tin cậy bởi `ai/codingLessonContext.khoiBaiHocChoPrompt()`.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠ **VỊ TRÍ**: `lịch sử → BÀI HỌC → ngữ cảnh mã → yêu cầu`. Bài học đứng **TRÊN** ngữ cảnh mã,
+ *   tức XA yêu cầu hơn, tức YẾU hơn — có chủ ý và khớp đúng câu dặn trong chính khối bài học
+ *   (*"mâu thuẫn với MÃ NGUỒN đọc từ đĩa thì theo MÃ NGUỒN"*). Mã là **bằng chứng của lượt này**;
+ *   bài học là **lời kể của lượt trước**. Xếp lời kể mạnh hơn bằng chứng là dựng lại đúng lớp lỗi
+ *   mà VÁ LIVE 2026-08-20 đã trả giá (model tin trí nhớ hơn thứ vừa đọc được).
+ *
+ * ⚠⚠ **VÀ THỨ TỰ NHƯỜNG CHỖ THÌ NGƯỢC LẠI — hai TRỤC KHÁC NHAU, cả hai đều cố ý:**
+ *
+ *        THẨM QUYỀN  (ai thắng khi mâu thuẫn):  yêu cầu > MÃ > BÀI HỌC > lịch sử
+ *        NHƯỜNG CHỖ  (ai bị bỏ trước hết):      lịch sử → MÃ → BÀI HỌC → (không bao giờ) yêu cầu
+ *
+ *   Mã có thẩm quyền CAO hơn bài học nhưng lại bị bỏ TRƯỚC bài học. Hai lý do đo được:
+ *     1. **Chênh lệch kích thước 8×.** Trần khối mã là 4.000 token; trần khối bài học suy ra từ
+ *        `SO_BAI_VAO_PROMPT × KY_TU_MOI_BAI` ≈ 1.400 ký tự ≈ 500 token. Khi đã tràn hàng nghìn
+ *        token, bỏ bài học trước là một thao tác **gần như không giải phóng gì** rồi vẫn phải bỏ
+ *        mã ⇒ mất CẢ HAI. Bỏ mã trước thường là đủ ⇒ giữ được bài học.
+ *     2. **Mã TÁI TẠO ĐƯỢC ở lượt sau** (một lượt truy hồi + đọc đĩa). Bài học là thứ người dùng
+ *        đã trả tiền MỘT LẦN để dạy hệ thống; mất nó là mất vĩnh viễn cho tới khi họ gõ lại.
+ *
+ *   ⚠ Và khi mã bị bỏ, persona được **dựng LẠI** (`personaSinhMa(..., false)`) để không dặn model
+ *     tin vào một khối vừa biến mất. Khối bài học **không cần** đối xứng ấy: nó TỰ mô tả mình
+ *     (tiêu đề + khối bọc nằm trong chính chuỗi), nên khi nó vắng thì không câu nào còn nhắc tới nó.
  */
-export function promptSinhMa(cauHoi: string, lang: NgonNguMa, khoiLichSu = "", khoiNguCanhMa = ""): string {
+export function promptSinhMa(
+  cauHoi: string,
+  lang: NgonNguMa,
+  khoiLichSu = "",
+  khoiNguCanhMa = "",
+  khoiBaiHoc = "",
+): string {
   return [
     ...(khoiLichSu ? [khoiLichSu, ""] : []),
+    ...(khoiBaiHoc ? [khoiBaiHoc, ""] : []),
     ...(khoiNguCanhMa ? [khoiNguCanhMa, ""] : []),
     w(lang, "=== YÊU CẦU LẬP TRÌNH ===", "=== CODING REQUEST ===", "=== 编程需求 ==="),
     cauHoi,

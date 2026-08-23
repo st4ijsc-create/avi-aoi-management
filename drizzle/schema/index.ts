@@ -80,3 +80,4 @@ export * from "./processMart"; // doc 56 Đ5 — process analytics daily rollup 
 export * from "./kbStudio"; // doc69 Giai đoạn 5/Wave E3 (E3-1) — multi-corpus pgvector chunk store for Training Studio doc ingest, migration 0304
 export * from "./vram"; // 2026-08-02 VRAM Pha 1 Task 2 — nhật ký chỉ-ghi-thêm điều phối VRAM, migration 0310
 export * from "./aiCodingSession"; // doc 79 DANH SÁCH PHIÊN — mạch hội thoại tác nhân lập trình, phạm vi CHỦ SỞ HỮU, migration 0333
+export * from "./aiCodingLesson"; // doc 82 BỘ NHỚ XUYÊN PHIÊN — bài học người dùng tự khai, phạm vi CHỦ SỞ HỮU, migration 0336

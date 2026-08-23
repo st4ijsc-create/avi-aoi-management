@@ -57,6 +57,16 @@ import {
  * `ai/codingRepoContext.ts`: module ấy KHÔNG nhập `fs`; cửa đọc do CHÍNH file này tiêm vào.
  */
 import { thuThapNguCanhMa, chanNguonNguCanhMa } from "./ai/codingRepoContext";
+/**
+ * ★★★ doc 82 · BỘ NHỚ XUYÊN PHIÊN — bài học người dùng tự khai, đọc ngược vào prompt.
+ *
+ * ⚠ `khoiBaiHocChoPrompt` trả về một chuỗi **ĐÃ BỌC** trong khối dữ liệu không tin cậy của
+ *   `ai/aiSafety` (quét tiêm · trung hoà dấu rào · che bí mật · chỉ dẫn KHÔNG THI HÀNH). File này
+ *   chỉ **nhét chuỗi ấy vào `prompt`** — không bao giờ vào `systemPrompt`, không vào một quyết
+ *   định nào. Xem khối "vì sao bài học không nới được quyền" ở `ai/codingLessonContext.ts`.
+ */
+import { baiHocEnabled, khoiBaiHocChoPrompt, lamSachBaiHoc } from "./ai/codingLessonContext";
+import { bocYDinhBaiHoc, GIOI_HAN_BAI_HOC } from "@shared/aiCodingLesson";
 import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
 // ★ G4-B — trọng số hạng nguồn (module LÁ, dùng CHUNG với bộ eval `--parity`).
 import { sourceTypeWeight, sourceLanguageWeight, devJournalWeight } from "./aiKbSourceWeights";
@@ -2714,6 +2724,200 @@ export type StreamEvent =
  * của TRỤC 1 là *"read_file hiện NỘI DUNG THẬT (không phải chunk RAG)"*, và nội dung thật nằm ở
  * `toolResult.textSummary`. Trục 1 (C) KHÔNG chạm đường ấy.
  */
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ doc 82 — MỘT LƯỢT VỀ **BÀI HỌC** (ghi · liệt kê · quên). Trả về câu trả lời cho người dùng.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ * ⚠⚠ **VÌ SAO ĐƯỜNG SINH BÀI HỌC LÀ "NGƯỜI GÕ THẲNG", VÀ HAI ĐƯỜNG KIA THÌ KHÔNG** — tôi đã ĐO,
+ *    không suy đoán:
+ *
+ *   • **"AI đề xuất → người TỪ CHỐI → hỏi lý do"**: tín hiệu từ chối **CÓ THẬT** và ở phía server —
+ *     nút *"Hủy"* của `AICodingWorkspace` gọi `aiCopilot.cancelAction({actionId})`. Nhưng một lượt
+ *     huỷ **không mang lý do**, và *"tôi đổi ý"* không phải một bài học. Biến nó thành bài học đòi
+ *     một lượt hỏi "vì sao?" — tức một bề mặt client mới + 3 locale — và nếu tự SINH bài học từ
+ *     một lượt huỷ trần thì ta chế ra những bài học người dùng chưa bao giờ đồng ý, rồi nhét chúng
+ *     vào mọi prompt sau đó. Đó là chiều hỏng tệ nhất của cả tính năng này. ⇒ **Chưa làm.**
+ *   • **"người sửa tay lại chính tệp đó trong X phút ⇒ diff là bài học"**: nghe hay nhất, và **ĐO
+ *     ĐƯỢC LÀ KHÔNG CÓ CƠ CHẾ**. Không có bộ theo dõi tệp nào trên gốc hộp cát: `fs.watch`/
+ *     `chokidar` trong `server/` chỉ xuất hiện ở `vision/hotFolderService.ts` (thư mục ảnh AOI) và
+ *     `license/runtime-security.ts` — không cái nào nhìn `AI_REPO_SANDBOX_ROOTS`. Băm chống TOCTOU
+ *     của `apply_diff` phát hiện được tệp đổi giữa ĐỀ XUẤT và DUYỆT, nhưng cửa sổ ấy là vài phút
+ *     TTL và kết cục của nó là một lời từ chối, không phải một bài học. Dựng được thì phải thêm
+ *     một sổ băm-sau-khi-ghi rồi so ở lượt `read_file` kế — làm được, nhưng nó chỉ trả lời *"có ai
+ *     đó đã sửa"*, **không** rút ra được NỘI DUNG bài học nếu không gọi model hoặc hỏi lại người
+ *     dùng. ⇒ **Không khai là có.**
+ *
+ *   ⇒ Còn lại một đường **tất định, đo được đầu-cuối, và không bao giờ bịa**: người dùng nói ra.
+ *     Hệ **không bao giờ tự phát minh một bài học** — đó là một tính chất, không phải một thiếu sót.
+ *
+ * ⚠ Mọi chuỗi ở đây là chuỗi **SERVER** (ba ngôn ngữ, `w()`), nên lượt này thêm **0 nhãn client**
+ *   ⇒ `viStringCoverage` và `i18n:check` không bị chạm.
+ */
+async function xuLyLuotBaiHoc(
+  yDinh: NonNullable<ReturnType<typeof bocYDinhBaiHoc>>,
+  language: KbLanguage,
+  projectId: string,
+  userId?: number,
+): Promise<string> {
+  const lang: "vi" | "en" | "zh" = language === "en" ? "en" : language === "zh" ? "zh" : "vi";
+  const w3 = (vi: string, en: string, zh: string): string => (lang === "en" ? en : lang === "zh" ? zh : vi);
+
+  /**
+   * ⚠ KHÔNG có phiên đăng nhập ⇒ KHÔNG ghi, KHÔNG đọc. Bài học là dữ liệu thuộc một CHỦ SỞ HỮU;
+   *   một hàng không có chủ là một hàng ai cũng đọc được — đúng thứ trục chủ sở hữu tồn tại để chặn.
+   */
+  if (!Number.isInteger(userId) || (userId as number) <= 0) {
+    return w3(
+      "⚠ Không xác định được tài khoản của bạn trong lượt này, nên tôi **không** ghi/đọc bài học. Bài học là dữ liệu riêng của từng người.",
+      "⚠ I could not identify your account this turn, so I did **not** read or write any lesson. Lessons are per-user private data.",
+      "⚠ 本轮无法确定你的账号，因此我**没有**读写任何经验。经验是每个用户的私有数据。",
+    );
+  }
+  const uid = userId as number;
+  const { danhSachBaiHoc, luuBaiHoc, xoaBaiHocTheoThuTu } = await import("../db/aiCodingLessons");
+
+  if (yDinh.kieu === "liet_ke") {
+    const ds = await danhSachBaiHoc(uid, projectId);
+    if (ds.length === 0) {
+      return w3(
+        `📗 Chưa có bài học nào cho dự án **${projectId}**.\n\nGhi một bài học bằng cách gõ: \`nhớ giùm: <điều cần nhớ>\``,
+        `📗 No lessons saved for project **${projectId}** yet.\n\nSave one by typing: \`remember: <what to remember>\``,
+        `📗 项目 **${projectId}** 尚无已保存的经验。\n\n输入 \`记住：<需要记住的内容>\` 即可保存。`,
+      );
+    }
+    const dong = ds.map((b, i) => `${i + 1}. ${b.noiDung}`).join("\n");
+    return w3(
+      `📗 **${ds.length} bài học** đã nhớ cho dự án **${projectId}** (chỉ mình bạn đọc được):\n\n${dong}\n\nXoá một mục: \`quên bài học <số>\``,
+      `📗 **${ds.length} lesson(s)** remembered for project **${projectId}** (visible only to you):\n\n${dong}\n\nRemove one: \`forget lesson <number>\``,
+      `📗 项目 **${projectId}** 已记住 **${ds.length} 条经验**（仅你可见）：\n\n${dong}\n\n删除某条：\`忘记经验 <编号>\``,
+    );
+  }
+
+  if (yDinh.kieu === "quen") {
+    const r = await xoaBaiHocTheoThuTu(uid, projectId, yDinh.thuTu);
+    if (!r.ok) {
+      return w3(
+        `⚠ Không có bài học số **${yDinh.thuTu}** cho dự án **${projectId}**. Gõ \`liệt kê bài học\` để xem danh sách hiện tại.`,
+        `⚠ There is no lesson **#${yDinh.thuTu}** for project **${projectId}**. Type \`list lessons\` to see the current list.`,
+        `⚠ 项目 **${projectId}** 没有第 **${yDinh.thuTu}** 条经验。输入 \`list lessons\` 查看当前列表。`,
+      );
+    }
+    return w3(
+      `🗑 Đã quên bài học **#${yDinh.thuTu}**: "${r.noiDung}"`,
+      `🗑 Forgot lesson **#${yDinh.thuTu}**: "${r.noiDung}"`,
+      `🗑 已忘记第 **#${yDinh.thuTu}** 条经验："${r.noiDung}"`,
+    );
+  }
+
+  /**
+   * ★★★ CỬA GHI — LÀM SẠCH TRƯỚC, LƯU SAU. Bộ làm sạch là `ai/codingLessonContext.lamSachBaiHoc`,
+   * tức chính `ai/aiSafety` (khuôn đã có của repo), **không** một bộ quét thứ hai viết ở đây.
+   */
+  const sach = lamSachBaiHoc(yDinh.noiDung);
+  if (!sach.ok) {
+    if (sach.ma === "rui_ro_cao") {
+      /**
+       * ⚠ Nêu ĐÍCH DANH nhãn mẫu đã khớp. Một lời từ chối không nói được nó từ chối CÁI GÌ là lời
+       *   từ chối mà người dùng chỉ có thể thử lại một cách mù — và đó chính là chế độ hỏng mà
+       *   `bocKhoiMa()` trả `null` đã bị ghi sổ (doc 79, 2026-08-21).
+       */
+      return w3(
+        `🛑 **Không lưu bài học này.** Nó chứa hình dạng của một mưu toan **ghi đè chỉ dẫn hệ thống** (mẫu khớp: \`${sach.nhan.join("`, `") || "?"}\`).\n\n` +
+          "Bài học được nhét vào **mọi** prompt sau đó, nên một câu ra lệnh nằm trong đó sẽ chạy mãi mà không ai duyệt lại. " +
+          "Bài học là **sự kiện về dự án** (thư viện nào, quy ước nào, bảng nào) — không phải chỉ dẫn cho trợ lý.\n\n" +
+          "⚠ Và kể cả nếu nó được lưu: bài học **không nới được quyền** — mọi lượt ghi tệp/chạy lệnh vẫn phải qua thẻ duyệt của bạn.",
+        `🛑 **This lesson was not saved.** It matches the shape of an attempt to **override system instructions** (matched: \`${sach.nhan.join("`, `") || "?"}\`).\n\n` +
+          "A lesson is injected into **every** later prompt, so a command hidden inside one would run forever without review. " +
+          "A lesson is a **fact about the project** (which library, which convention, which table) — not an instruction to the assistant.\n\n" +
+          "⚠ And even if it were saved: lessons **cannot widen permissions** — every file write / command run still needs your approval card.",
+        `🛑 **未保存该经验。** 它符合**覆盖系统指令**的攻击形状（匹配：\`${sach.nhan.join("`, `") || "?"}\`）。\n\n` +
+          "经验会被注入**此后每一个** prompt，因此其中隐藏的命令会一直生效且无人复核。经验应是**关于项目的事实**（用哪个库、哪条约定、哪张表），而不是对助手的指令。\n\n" +
+          "⚠ 即使保存了：经验**也无法放宽权限**——每次写文件/执行命令仍需你点击批准卡。",
+      );
+    }
+    return w3(
+      "⚠ Bài học rỗng — không có gì để nhớ. Gõ `nhớ giùm: <điều cần nhớ>`.",
+      "⚠ Empty lesson — nothing to remember. Type `remember: <what to remember>`.",
+      "⚠ 经验内容为空——没有可记住的内容。请输入 `记住：<需要记住的内容>`。",
+    );
+  }
+
+  const r = await luuBaiHoc(uid, { projectId, noiDung: sach.noiDung, mucRuiRo: sach.mucRuiRo });
+  if (r.ma === "hong") {
+    return w3(
+      "⚠ Không lưu được bài học (kho bài học chưa sẵn sàng). Phiên lập trình vẫn chạy bình thường.",
+      "⚠ Could not save the lesson (lesson store unavailable). The coding session still works normally.",
+      "⚠ 无法保存经验（经验库不可用）。编程会话仍可正常使用。",
+    );
+  }
+  if (r.ma === "day") {
+    return w3(
+      `⚠ Đã đạt trần **${GIOI_HAN_BAI_HOC.SO_BAI_TOI_DA}** bài học cho dự án **${projectId}**. Hãy \`quên bài học <số>\` một mục cũ rồi ghi lại.`,
+      `⚠ Reached the cap of **${GIOI_HAN_BAI_HOC.SO_BAI_TOI_DA}** lessons for project **${projectId}**. Use \`forget lesson <number>\` on an old one first.`,
+      `⚠ 项目 **${projectId}** 已达 **${GIOI_HAN_BAI_HOC.SO_BAI_TOI_DA}** 条经验上限。请先用 \`forget lesson <编号>\` 删除旧的一条。`,
+    );
+  }
+  // ⚠ Nói rõ khi TRÙNG: người dùng phải biết họ **không** vừa tạo ra bản thứ hai.
+  const dauCau = r.ma === "trung" ? w3("♻ Bài học này **đã có sẵn**", "♻ This lesson **already existed**", "♻ 该经验**已存在**") : w3("✅ Đã nhớ", "✅ Remembered", "✅ 已记住");
+  const themCheBiMat =
+    sach.soCheBiMat > 0
+      ? w3(
+          `\n⚠ ${sach.soCheBiMat} chuỗi trông như bí mật/PII đã bị **che** trước khi lưu.`,
+          `\n⚠ ${sach.soCheBiMat} secret/PII-looking string(s) were **redacted** before saving.`,
+          `\n⚠ 保存前已**遮蔽** ${sach.soCheBiMat} 处疑似密钥/个人信息。`,
+        )
+      : "";
+  return w3(
+    `${dauCau}: "${sach.noiDung}"\n\nBài học này chỉ **của riêng bạn**, gắn với dự án **${projectId}**, và sẽ tự đi vào các lượt sau khi liên quan. Xem tất cả: \`liệt kê bài học\`.${themCheBiMat}`,
+    `${dauCau}: "${sach.noiDung}"\n\nThis lesson is **yours alone**, bound to project **${projectId}**, and will reach later turns on its own when relevant. See all: \`list lessons\`.${themCheBiMat}`,
+    `${dauCau}："${sach.noiDung}"\n\n该经验**仅属于你**，绑定到项目 **${projectId}**，并会在相关时自动进入后续轮次。查看全部：\`list lessons\`。${themCheBiMat}`,
+  );
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ doc 82 — **CỬA ĐỌC**: dựng khối bài học cho MỘT lượt. Đây là chỗ vòng được ĐÓNG.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Kế hoạch LACP để việc *"đọc bảng lessons"* cho một nhịp THỦ CÔNG hằng tháng — một nhịp sẽ trôi.
+ * Ở đây phép chọn chạy **mỗi lượt lập trình**, tất định, **không gọi model, không gọi embedding**:
+ * kho của một (người × dự án) là vài chục hàng, còn đường truy hồi vector đo được là NGUỘI ~14 s
+ * (doc 79) — nó đắt hơn giá trị nó mang lại ở quy mô này.
+ *
+ * ⚠ **GỌI MỘT LẦN MỖI LƯỢT**, ở đây, rồi truyền chuỗi xuống. KHÔNG gọi lại trong vòng lặp lô: câu
+ *   hỏi giống hệt nhau cho cả N tệp, nên N lượt đọc CSDL cho ra N kết quả y hệt — và một dòng log
+ *   lặp N lần làm dòng log hết nói lên điều gì.
+ *
+ * ⚠ **FAIL-SAFE**: bảng chưa có / DB vắng / không có userId ⇒ `""` ⇒ đúng hành vi trước lượt này.
+ * ⚠ **LUÔN ghi một dòng log kết cục** khi có bài học hoặc có bài bị chặn — bài học của VÁ LIVE
+ *   2026-08-20: triệu chứng tệ nhất không phải "sai" mà là **CÂM**.
+ */
+async function layKhoiBaiHocChoLuot(
+  question: string,
+  language: KbLanguage,
+  projectId: string,
+  userId?: number,
+): Promise<string> {
+  if (!baiHocEnabled()) return "";
+  if (!Number.isInteger(userId) || (userId as number) <= 0) return "";
+  const lang: "vi" | "en" | "zh" = language === "en" ? "en" : language === "zh" ? "zh" : "vi";
+  try {
+    const { danhSachBaiHoc } = await import("../db/aiCodingLessons");
+    const ds = await danhSachBaiHoc(userId as number, projectId);
+    if (ds.length === 0) return "";
+    const kq = khoiBaiHocChoPrompt(question, ds, lang);
+    if (kq.khoi === "" && kq.soBiChan === 0) return "";
+    console.log(
+      `[aiLocalKnowledge] bài học: kho=${ds.length} · vào prompt=${kq.dung.length} · bị chặn ở cửa đọc=${kq.soBiChan} · ` +
+        `${kq.khoi.length} ký tự · dự án=${projectId}`,
+    );
+    return kq.khoi;
+  } catch (e) {
+    console.warn("[aiLocalKnowledge] không dựng được khối bài học (degrade về rỗng):", (e as Error)?.message);
+    return "";
+  }
+}
+
 async function* streamCodingAnswer(
   question: string,
   context: KbQueryContext,
@@ -2745,7 +2949,7 @@ async function* streamCodingAnswer(
   // ★★★ doc 79 · TRỤC 2 — phân giải projectId → gốc SERVER-SIDE (danh sách trắng). id lạ / client gửi
   //   ĐƯỜNG DẪN thay vì id ⇒ TỪ CHỐI, KHÔNG âm thầm chạy trên gốc mặc định. Gốc đã phân giải đi vào
   //   `execCtx.projectRoot` → `argsWithAuthCtx` tiêm cho read tool, và write tool đọc thẳng ở HITL.
-  const { phanGiaiGoc } = await import("./aiLocalTools/repoProjects");
+  const { phanGiaiGoc, ID_DU_AN_MAC_DINH } = await import("./aiLocalTools/repoProjects");
   const goc = phanGiaiGoc(context.projectId);
   if (!goc.ok) {
     const msg = codingProjectDeniedMessage(language, context.projectId);
@@ -2755,6 +2959,46 @@ async function* streamCodingAnswer(
   }
   const execCtx2: ToolExecContext | undefined =
     execCtx && goc.goc ? { ...execCtx, projectRoot: goc.goc } : execCtx;
+
+  /**
+   * ★★★ doc 82 · BỘ NHỚ XUYÊN PHIÊN — **ID DỰ ÁN CHO BÀI HỌC.**
+   *
+   * `phanGiaiGoc` trả `id === null` cho dự án MẶC ĐỊNH (client không gửi `projectId`). Bài học thì
+   * **bắt buộc** phải có một khoá dự án hợp lệ (`CHECK` ở mig 0336), nên ta quy về hằng
+   * `ID_DU_AN_MAC_DINH` — CÙNG chuỗi mà `danhSachDuAn()` gán cho gốc mặc định, chứ không phải một
+   * chuỗi thứ hai. Hai tên cho một dự án là cách bài học của "Repo chính" chia làm hai kho.
+   */
+  const idDuAnBaiHoc = goc.id ?? ID_DU_AN_MAC_DINH;
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ doc 82 — **CỬA GHI BÀI HỌC**, đứng TRƯỚC mọi nhánh lập trình.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠ Vì sao ĐỨNG TRƯỚC: *"nhớ giùm: dự án này dùng bcryptjs, đừng dùng crypto"* có chứa tên thư
+   *   viện và động từ — đủ để bộ chọn tất định đi lạc. Và vì sao AN TOÀN khi đứng trước: cửa này
+   *   **fail-through** — `bocYDinhBaiHoc` trả `null` cho mọi câu không mở đầu bằng cụm khởi phát
+   *   KÈM dấu ngăn, và khi ấy không một byte nào của lượt này đổi.
+   *
+   * ⚠ Cờ TẮT (`AI_CODING_LESSONS=0`) ⇒ **không gọi cả bộ nhận ý định**: câu *"nhớ giùm: …"* rơi
+   *   xuống đường lập trình bình thường y như trước lượt này. Một cờ chỉ tắt cửa ĐỌC mà vẫn âm
+   *   thầm GHI là thu thập dữ liệu người dùng cho một tính năng họ tưởng đã tắt.
+   */
+  if (baiHocEnabled()) {
+    const yDinh = bocYDinhBaiHoc(question);
+    if (yDinh) {
+      const m = await xuLyLuotBaiHoc(yDinh, language, idDuAnBaiHoc, execCtx2?.user?.id);
+      yield { type: "token", token: m };
+      yield done(m);
+      return;
+    }
+  }
+
+  /**
+   * ★★★ doc 82 — khối bài học của LƯỢT NÀY, dựng **một lần**, dùng cho MỌI nhánh phía dưới (sinh
+   * mã · sửa một tệp · sửa lô · tạo tệp). `""` khi: cờ tắt · không có phiên đăng nhập · kho rỗng ·
+   * không bài nào qua được cửa đọc. Xem `layKhoiBaiHocChoLuot`.
+   */
+  const khoiBaiHocLuot = await layKhoiBaiHocChoLuot(question, language, idDuAnBaiHoc, execCtx2?.user?.id);
 
   /**
    * ★★★ doc 79 · VÒNG TỰ ĐỘNG — LƯỢT SỬA KẾ TIẾP, TỆP ĐƯỢC **GHIM** BỞI BỘ ĐIỀU KHIỂN VÒNG.
@@ -2771,7 +3015,16 @@ async function* streamCodingAnswer(
    * ⚠ Cờ `AI_CODING_EDIT=0` ⇒ `streamCodingEdit` trả `false` ngay ⇒ rơi xuống đường cũ, không im lặng.
    */
   if (typeof context?.codingEditPath === "string" && context.codingEditPath.trim() !== "") {
-    const daXuLyGhim = yield* streamCodingEdit(question, context.codingEditPath.trim(), language, context, execCtx2, history);
+    const daXuLyGhim = yield* streamCodingEdit(
+      question,
+      context.codingEditPath.trim(),
+      language,
+      context,
+      execCtx2,
+      history,
+      false,
+      khoiBaiHocLuot,
+    );
     if (daXuLyGhim) return;
   }
 
@@ -2803,10 +3056,28 @@ async function* streamCodingAnswer(
   if (quyetDinh.tool === "read_file" && typeof quyetDinh.args.path === "string" && yDinhGhi) {
     const nhieuDuong = trichMoiDuongDanRepo(question);
     if (nhieuDuong.length >= 2) {
-      const daXuLyLo = yield* streamCodingSuaNhieuTep(question, nhieuDuong, language, context, execCtx2, history, yDinhTao);
+      const daXuLyLo = yield* streamCodingSuaNhieuTep(
+        question,
+        nhieuDuong,
+        language,
+        context,
+        execCtx2,
+        history,
+        yDinhTao,
+        khoiBaiHocLuot,
+      );
       if (daXuLyLo) return;
     }
-    const daXuLy = yield* streamCodingEdit(question, quyetDinh.args.path, language, context, execCtx2, history, yDinhTao);
+    const daXuLy = yield* streamCodingEdit(
+      question,
+      quyetDinh.args.path,
+      language,
+      context,
+      execCtx2,
+      history,
+      yDinhTao,
+      khoiBaiHocLuot,
+    );
     if (daXuLy) return;
   }
 
@@ -2922,7 +3193,7 @@ async function* streamCodingAnswer(
    * trả thẳng `codingNoToolMessage()` mà **KHÔNG BAO GIỜ gọi model**. Nay nó gọi model với persona
    * KỸ SƯ LẬP TRÌNH (không RAG vận hành, không [1][2]) và stream mã thật ra.
    */
-  const ketCuc = yield* streamCodingGenerate(question, language, context, execCtx2, history);
+  const ketCuc = yield* streamCodingGenerate(question, language, context, execCtx2, history, khoiBaiHocLuot);
   if (ketCuc === "xong") return;
 
   // KHÔNG tool nào khớp VÀ nhánh sinh mã không chạy (cờ tắt / model chưa sẵn sàng) → nói thẳng.
@@ -3095,6 +3366,13 @@ async function* streamCodingEdit(
    * *"tệp KHÔNG tồn tại: đó là LỖI của người dùng, hay là Ý của họ?"*
    */
   yDinhTao = false,
+  /**
+   * ★ doc 82 — khối bài học ĐÃ DỰNG của lượt này (`streamCodingAnswer` dựng một lần). `""` ⇒ không
+   * một byte nào vào prompt. Mặc định `""` ⇒ mọi lời gọi 7-tham-số cũ giữ nguyên hành vi.
+   * ⚠ Nó là một CHUỖI đã bọc, không phải một danh sách để hàm này diễn giải — đường duy nhất của nó
+   *   là đi vào `promptSuaTep*`/`promptTaoTep`, tức vào `prompt`, KHÔNG vào `systemPrompt`.
+   */
+  khoiBaiHoc = "",
 ): AsyncGenerator<StreamEvent, boolean> {
   const bs = yield* chuanBiBanSuaMotTep({
     question,
@@ -3104,6 +3382,7 @@ async function* streamCodingEdit(
     execCtx,
     history,
     yDinhTao,
+    khoiBaiHoc,
     phatTheTool: true,
   });
   if (bs.kq === "bo_qua") return false;
@@ -3173,6 +3452,8 @@ async function* chuanBiBanSuaMotTep(y: {
   execCtx?: ToolExecContext;
   history: readonly LuotHoiThoai[];
   yDinhTao: boolean;
+  /** ★ doc 82 — chuỗi khối bài học ĐÃ BỌC; `""` ⇒ không có. Đi thẳng vào `prompt`, không đi đâu khác. */
+  khoiBaiHoc?: string;
   /**
    * Phát thẻ `tool` cho lượt `read_file` này hay không.
    * ⚠ Đường NHIỀU TỆP đặt `false` vì một sự thật ĐO ĐƯỢC về client: `AICodingWorkspace` giữ
@@ -3182,6 +3463,7 @@ async function* chuanBiBanSuaMotTep(y: {
   phatTheTool: boolean;
 }): AsyncGenerator<StreamEvent, BanSuaMotTep> {
   const { question, duong, language, context, execCtx, history, yDinhTao } = y;
+  const khoiBaiHoc = y.khoiBaiHoc ?? "";
   if (!codingEditEnabled()) return { kq: "bo_qua" };
   if (!execCtx) return { kq: "bo_qua" };
   if (!(await codingModelSanSang())) return { kq: "bo_qua" };
@@ -3278,10 +3560,12 @@ async function* chuanBiBanSuaMotTep(y: {
 
   if (duongKhoi) {
     const heThongK = personaSuaTepKhoi(language, nguCanh);
-    const ghepK = (khoi: string): string => promptSuaTepKhoi(relPath, goc, question, language, khoi);
+    const ghepK = (khoiLichSu: string, khoiBai: string): string =>
+      promptSuaTepKhoi(relPath, goc, question, language, khoiLichSu, khoiBai);
     const lk = yield* motLuotModel({
       heThong: heThongK,
       ghepPrompt: ghepK,
+      khoiBaiHoc,
       tranToken: TRAN_TOKEN_KHOI_SUA,
       language,
       history,
@@ -3343,12 +3627,15 @@ async function* chuanBiBanSuaMotTep(y: {
    * một hằng RIÊNG: nó không đo cái đang có, nó cấp chỗ cho cái sắp có.
    */
   const tranToken = xinTao ? TRAN_TOKEN_TAO_TEP : tranTokenChoTep(goc.length);
-  const ghepPromptTep = (khoi: string): string =>
-    xinTao ? promptTaoTep(relPath, question, language, khoi) : promptSuaTep(relPath, goc, question, language, khoi);
+  const ghepPromptTep = (khoiLichSu: string, khoiBai: string): string =>
+    xinTao
+      ? promptTaoTep(relPath, question, language, khoiLichSu, khoiBai)
+      : promptSuaTep(relPath, goc, question, language, khoiLichSu, khoiBai);
 
   const lm = yield* motLuotModel({
     heThong,
     ghepPrompt: ghepPromptTep,
+    khoiBaiHoc,
     tranToken,
     language,
     history,
@@ -3410,7 +3697,14 @@ type LuotModel =
 
 async function* motLuotModel(y: {
   heThong: string;
-  ghepPrompt: (khoiLichSu: string) => string;
+  /**
+   * ⚠ HAI tham số, không phải một: khối lịch sử **và** khối bài học. Cả hai phải nằm trong CHUỖI
+   *   THẬT mà `kiemNganSachNguCanh` cân — nếu bài học được nối vào sau lượt cân thì ta lại đo một
+   *   chuỗi khác chuỗi sẽ gửi, đúng lớp lỗi *"cái được đo không phải cái đang hỏng"*.
+   */
+  ghepPrompt: (khoiLichSu: string, khoiBaiHoc: string) => string;
+  /** ★ doc 82 — `""` ⇒ không có bài học nào cho lượt này. */
+  khoiBaiHoc?: string;
   tranToken: number;
   language: KbLanguage;
   history: readonly LuotHoiThoai[];
@@ -3426,13 +3720,39 @@ async function* motLuotModel(y: {
    * ⚠⚠ ĐƯỜNG NHIỀU TỆP KHÔNG NỚI TRẦN NÀY MỘT BYTE: mỗi tệp cân RIÊNG bằng chính hàm này, nên trần
    *    slot 32.768 gặp phải **N lần một tệp**, không bao giờ là "N tệp trong một prompt".
    */
-  const lich = dungKhoiLichSu({
+  let bai = y.khoiBaiHoc ?? "";
+  let lich = dungKhoiLichSu({
     lichSu: y.history,
     systemPrompt: y.heThong,
     maxTokens: y.tranToken,
     lang: y.language,
-    ghepPrompt: y.ghepPrompt,
+    ghepPrompt: (k) => y.ghepPrompt(k, bai),
   });
+  /**
+   * ★★★ doc 82 — **BÀI HỌC NHƯỜNG CHỖ, KHÔNG LÀM CẢ LƯỢT NÉM.**
+   *
+   * Thứ tự nhường chỗ ở đường SỬA/TẠO (không có khối ngữ cảnh mã): `lịch sử → BÀI HỌC → (từ chối)`.
+   * `dungKhoiLichSu` đã bỏ hết lịch sử mà vẫn tràn (`vuotTruocKhiCoLichSu`) ⇒ bỏ bài học rồi **cân
+   * LẠI bằng chính cái thước ấy**, chứ không ước lượng bằng một phép trừ token thứ hai.
+   *
+   * ⚠ Đây là điều kiện để một bài học KHÔNG BAO GIỜ biến một tệp đang sửa được thành một lượt từ
+   *   chối. Nếu vẫn tràn sau khi bỏ bài học thì nguyên nhân là TỆP QUÁ LỚN — và câu từ chối
+   *   `NGAN_SACH` nói đúng nguyên nhân ấy, không đổ cho bài học.
+   */
+  if (lich.vuotTruocKhiCoLichSu && bai !== "") {
+    console.warn(
+      `[aiLocalKnowledge] khối bài học (${bai.length} ký tự) đẩy prompt sửa tệp vượt trần slot — ` +
+        `BỎ bài học và cân lại (lượt sửa vẫn chạy). tệp=${y.relPath}`,
+    );
+    bai = "";
+    lich = dungKhoiLichSu({
+      lichSu: y.history,
+      systemPrompt: y.heThong,
+      maxTokens: y.tranToken,
+      lang: y.language,
+      ghepPrompt: (k) => y.ghepPrompt(k, ""),
+    });
+  }
   if (lich.vuotTruocKhiCoLichSu) {
     const m = codingKhongTuSuaMessage(y.language, y.relPath, "NGAN_SACH");
     yield { type: "token", token: m };
@@ -3442,7 +3762,7 @@ async function* motLuotModel(y: {
   const it = rutChuCoCanh(
     streamCodingModel({
       systemPrompt: y.heThong,
-      prompt: y.ghepPrompt(lich.khoi),
+      prompt: y.ghepPrompt(lich.khoi, bai),
       maxTokens: y.tranToken,
       temperature: 0.15,
       // Phạt lặp làm hỏng việc chép lại NGUYÊN VĂN (thụt đầu dòng, `}` liên tiếp…) — và một đoạn
@@ -3510,6 +3830,8 @@ async function* streamCodingSuaNhieuTep(
   execCtx?: ToolExecContext,
   history: readonly LuotHoiThoai[] = [],
   yDinhTao = false,
+  /** ★ doc 82 — khối bài học của lượt, dựng MỘT lần ở `streamCodingAnswer`; dùng chung cho cả lô. */
+  khoiBaiHoc = "",
 ): AsyncGenerator<StreamEvent, boolean> {
   if (!codingEditEnabled()) return false;
   if (!execCtx) return false;
@@ -3540,6 +3862,7 @@ async function* streamCodingSuaNhieuTep(
       execCtx,
       history,
       yDinhTao,
+      khoiBaiHoc,
       // MỘT thẻ tool tổng ở cuối, không N thẻ — `streamTool` của client là một ô GHI ĐÈ.
       phatTheTool: false,
     });
@@ -3636,6 +3959,8 @@ async function* streamCodingGenerate(
   context: KbQueryContext,
   execCtx?: ToolExecContext,
   history: readonly LuotHoiThoai[] = [],
+  /** ★ doc 82 — khối bài học ĐÃ BỌC của lượt; `""` ⇒ không có. Chỉ đi vào `prompt`. */
+  khoiBaiHocVao = "",
 ): AsyncGenerator<StreamEvent, LyDoKhongSinhMa> {
   if (!codingGenEnabled()) return "tat_co";
   if (!(await codingModelSanSang())) return "model_offline";
@@ -3683,6 +4008,16 @@ async function* streamCodingGenerate(
    */
   let khoiMa = nguCanhMa.khoi;
   /**
+   * ★★★ doc 82 — BÀI HỌC chen vào **giữa** hai tầng đã có. Thứ tự nhường chỗ đầy đủ của đường sinh mã:
+   *
+   *      lịch sử  →  NGỮ CẢNH MÃ  →  BÀI HỌC  →  (không bao giờ) prompt gốc
+   *
+   * Lý lẽ đầy đủ (chênh lệch kích thước 8× · mã tái tạo được còn bài học thì không · thẩm quyền và
+   * nhường chỗ là HAI TRỤC khác nhau) nằm ở docblock `promptSinhMa` trong `aiCodingAgent.ts` — một
+   * chỗ, không hai bản.
+   */
+  let khoiBai = khoiBaiHocVao;
+  /**
    * ★★★ VÁ LIVE 2026-08-20 — persona ĐƯỢC DỰNG SAU khi biết có mã hay không, và **dựng LẠI** khi
    * ngữ cảnh mã bị nhường chỗ. Đây không phải chuyện sắp xếp cho gọn: nếu persona nói *"mã thật đã
    * được đọc, hãy dựa vào nó"* trong một lượt mà khối mã vừa bị bỏ vì hết ngân sách, ta vừa dạy
@@ -3694,7 +4029,7 @@ async function* streamCodingGenerate(
     systemPrompt: heThong,
     maxTokens: MAX_TOKENS_SINH,
     lang: language,
-    ghepPrompt: (khoi) => promptSinhMa(question, language, khoi, khoiMa),
+    ghepPrompt: (khoi) => promptSinhMa(question, language, khoi, khoiMa, khoiBai),
   });
   if (lich.vuotTruocKhiCoLichSu && khoiMa !== "") {
     console.warn(
@@ -3708,7 +4043,29 @@ async function* streamCodingGenerate(
       systemPrompt: heThong,
       maxTokens: MAX_TOKENS_SINH,
       lang: language,
-      ghepPrompt: (khoi) => promptSinhMa(question, language, khoi, ""),
+      ghepPrompt: (khoi) => promptSinhMa(question, language, khoi, "", khoiBai),
+    });
+  }
+  /**
+   * ★★★ doc 82 — TẦNG NHƯỜNG CHỖ THỨ BA. Chỉ chạy khi đã bỏ HẾT lịch sử **và** đã bỏ ngữ cảnh mã mà
+   * vẫn tràn. Bỏ bài học rồi cân lại bằng CHÍNH `dungKhoiLichSu` — không có thước thứ hai ở đây.
+   *
+   * ⚠ Persona KHÔNG phải dựng lại ở nhánh này (khác nhánh ngữ cảnh mã ngay trên): persona chưa bao
+   *   giờ khai gì về bài học — khối bài học TỰ mô tả mình và nằm trọn trong `prompt`. Đó chính là
+   *   tính chất làm cho *"bài học không nới được quyền"* đúng theo cấu tạo chứ không theo lời hứa.
+   */
+  if (lich.vuotTruocKhiCoLichSu && khoiBai !== "") {
+    console.warn(
+      `[aiLocalKnowledge] khối bài học (${khoiBai.length} ký tự) đẩy prompt sinh mã vượt trần slot — ` +
+        "BỎ bài học và cân lại (lượt sinh mã vẫn chạy).",
+    );
+    khoiBai = "";
+    lich = dungKhoiLichSu({
+      lichSu: history,
+      systemPrompt: heThong,
+      maxTokens: MAX_TOKENS_SINH,
+      lang: language,
+      ghepPrompt: (khoi) => promptSinhMa(question, language, khoi, khoiMa, ""),
     });
   }
   /** Tệp THỰC SỰ vào prompt. Rỗng khi ngữ cảnh mã bị nhường chỗ ⇒ KHÔNG khoe thẻ/chân nguồn dối. */
@@ -3748,7 +4105,7 @@ async function* streamCodingGenerate(
   const it = rutChuCoCanh(
     streamCodingModel({
       systemPrompt: heThong,
-      prompt: promptSinhMa(question, language, lich.khoi, khoiMa),
+      prompt: promptSinhMa(question, language, lich.khoi, khoiMa, khoiBai),
       maxTokens: MAX_TOKENS_SINH,
       temperature: 0.25,
       userId: execCtx?.user?.id,
