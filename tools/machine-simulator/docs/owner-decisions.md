@@ -523,8 +523,9 @@ một con số ước lượng đặt ở đây sẽ **đọc như một phép �
 > AV-1 (năm)**: hai đợt ấy ghi khuyết tật của mình **CHỈ trong thông điệp merge**, và không báo cáo
 > nào trong bốn cái được lời giao việc nêu tên nhắc lại chúng.
 >
-> 🔴 **MỖI CÁI ĐƯỢC MỞ MÃ RA XÁC NHẬN LẠI, và bốn cái KHÔNG TÁI LẬP ĐƯỢC** — chúng nằm ở **Phần IV**
-> với phép đo bác chúng, **không** mở thành mục. Mọi phép đo dưới đây chạy qua
+> 🔴 **MỖI CÁI ĐƯỢC MỞ MÃ RA XÁC NHẬN LẠI, và BẢY cái KHÔNG THÀNH MỤC** — **năm** vì đã được trả
+> hoặc đã được phán ở nơi khác, **hai** vì không tái lập được / không phải một tính chất của cây.
+> Cả bảy nằm ở **Phần IV** kèm phép đo, **không** mở thành mục. Mọi phép đo dưới đây chạy qua
 > `scripts/repo-scan.sh` với **pathspec tường minh** ở SHA `9255ea98`, **đứng tại
 > `D:\SOURCES\avi-aoi-sim` (gốc repo)** — ghi lại vì cây này là **sparse checkout**: `server/` và
 > `client/` **có trong commit, KHÔNG có trên đĩa**, và đợt trước vừa trả giá cho đúng chỗ ấy.
@@ -10677,8 +10678,18 @@ chứ không với một khẳng định.
 chưa ai liệt kê thì không phải một sự thật.** Lời giao việc nói *"mười tám"*; khối 📌 của BF-1 ở
 Phần I nói *"mười một + năm + hai + một"* = **mười chín**. Liệt kê từ nguồn cấp một — bốn
 `task-1-report.md` **cộng** thông điệp merge của AV-1 → BF-1 đọc bằng `git log` — trả về **ba mươi
-ba** mục ứng viên. Đếm **sau khi** liệt kê: **33 ứng viên → 4 không tái lập được → 4 đã được trả
-hoặc đã được phán → 25 còn mở, gom thành 12 mục**.
+ba** mục ứng viên. Đếm **sau khi** liệt kê, và đếm **từ chính bảng dưới đây** chứ không từ trí nhớ:
+**33 ứng viên = 8 (C) + 18 (N) + 7 (K)** ⇒ **26 còn mở**, gom thành **12 mục**.
+
+> 🔴 **CÂU NGAY TRÊN — SỬA TẠI CHỖ 2026-08-23 (BG-1, vòng đo lại sản phẩm của chính mình), câu sai
+> giữ NGUYÊN VĂN.** Nó đọc: *“Đếm **sau khi** liệt kê: **33 ứng viên → 4 không tái lập được → 4 đã
+> được trả hoặc đã được phán → 25 còn mở, gom thành 12 mục**.”* **Ba trong bốn con số ấy sai.** Nhóm
+> (K) là **bảy** hàng, không phải 4+4=8: **năm** đã được trả hoặc đã được phán (ca a–e) và **hai**
+> không tái lập được hoặc không phải tính chất của cây (ca f, g). Nên số còn mở là **26**, không phải
+> 25. 🔴 **Chỗ đáng nói không phải phép trừ — mà là con số 25 được viết TRƯỚC KHI bảng bên dưới được
+> đếm**, tức đúng cái mà chính đoạn này lập ra để chấm dứt: *một số vô hướng tóm tắt một tập chưa ai
+> liệt kê thì không phải một sự thật*. Bắt được bằng cách đếm lại bảng bằng `grep -c` sau khi viết,
+> **không** bằng cách đọc lại ý định. Số mục (**12**) và số ứng viên (**33**) thì đúng nguyên.
 
 Cột **triage**: **(N)** nằm trong uỷ quyền của điều phối viên · **(C)** cần chủ sở hữu · **(K)**
 không phải khuyết tật, vì phép đo lại bác nó.
