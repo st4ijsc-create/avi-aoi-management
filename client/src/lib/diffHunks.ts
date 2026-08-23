@@ -193,20 +193,64 @@ export function computeHunkPlan(
   const aLines = original.split("\n");
   const bLines = target.split("\n");
 
-  if (aLines.length > maxLines || bLines.length > maxLines) {
-    // Cầu chì: một khối duy nhất phủ cả file. Bất biến B1 vẫn giữ (áp khối đó ⇒ modified),
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════
+   * ★★★ doc 79 (2026-08-21) — CẮT ĐẦU/ĐUÔI GIỐNG NHAU **TRƯỚC** KHI ĐỤNG TỚI LCS
+   * ══════════════════════════════════════════════════════════════════════════════════
+   * Lý do là một PHÉP ĐO, không phải tối ưu vu vơ. Với `DEFAULT_MAX_DIFF_LINES = 1500`,
+   * một tệp **1.602 dòng** (≈28 KB — nhỏ hơn cả trần cũ của tác nhân sửa tệp) đổi ĐÚNG
+   * MỘT DÒNG cho ra `oversize:true` và thẻ duyệt hiện **+1602 / −1602**. Tức người duyệt
+   * được mời bấm "Duyệt & ghi" trên một diff nói rằng CẢ TỆP vừa bị thay — đúng thứ hàng
+   * rào "người duyệt" sinh ra để chặn, bị vô hiệu hoá bằng nhiễu.
+   *
+   * Dòng giống nhau ở ĐẦU và ở ĐUÔI **không thể** thuộc bất kỳ khối diff nào, nên cắt
+   * chúng đi là một phép biến đổi BẢO TOÀN kết quả, không phải một phép xấp xỉ. Sau khi
+   * cắt, một lượt sửa có đích trên tệp 2.800 dòng còn lại vài dòng để chạy LCS ⇒ cầu chì
+   * kích thước không còn bị chạm, và thẻ duyệt hiện đúng "+1 −0".
+   *
+   * ⚠ Bất biến B1 (`projectHunks(mọi id) === modified`, TỪNG KÝ TỰ) giữ nguyên theo cấu
+   *   tạo: toạ độ khối được dời lại đúng bằng `dau`, và phần bị cắt là phần GIỐNG HỆT ở
+   *   cả hai bên nên nó không đổi một byte dù có được chiếu hay không.
+   * ⚠ Cầu chì KHÔNG bị bỏ — nó chỉ được đo trên PHẦN LÕI, tức đúng phần LCS phải chạy.
+   */
+  let dau = 0;
+  const chung = Math.min(aLines.length, bLines.length);
+  while (dau < chung && aLines[dau] === bLines[dau]) dau++;
+  let duoi = 0;
+  while (
+    duoi < chung - dau &&
+    aLines[aLines.length - 1 - duoi] === bLines[bLines.length - 1 - duoi]
+  ) {
+    duoi++;
+  }
+  const aLoi = aLines.slice(dau, aLines.length - duoi);
+  const bLoi = bLines.slice(dau, bLines.length - duoi);
+  const loiOrigEnd = aLines.length - duoi;
+  const loiModEnd = bLines.length - duoi;
+
+  if (aLoi.length > maxLines || bLoi.length > maxLines) {
+    // Cầu chì: một khối duy nhất phủ PHẦN LÕI. Bất biến B1 vẫn giữ (áp khối đó ⇒ modified),
     // chỉ mất khả năng chọn lẻ — và nói thẳng điều đó qua cờ `oversize`.
     return {
       ...base,
       oversize: true,
-      hunks: [makeHunk(0, 0, aLines.length, 0, bLines.length, aLines, bLines)],
+      hunks: [makeHunk(0, dau, loiOrigEnd, dau, loiModEnd, aLoi, bLoi)],
     };
   }
 
-  const rows = computeLineDiff(original, target);
+  /**
+   * Lõi rỗng một bên ⇒ thuần CHÈN hoặc thuần XOÁ; LCS không có gì để tìm.
+   * ⚠ Và phải chặn ở đây chứ không để rơi xuống: `[].join("\n")` cho `""`, mà `""` split ra
+   *   **một dòng rỗng** — tức một mảng 0 dòng sẽ hoá thành 1 dòng và diff lệch đi một dòng ma.
+   */
+  if (aLoi.length === 0 || bLoi.length === 0) {
+    return { ...base, oversize: false, hunks: [makeHunk(0, dau, loiOrigEnd, dau, loiModEnd, aLoi, bLoi)] };
+  }
+
+  const rows = computeLineDiff(aLoi.join("\n"), bLoi.join("\n"));
   const hunks: DiffHunk[] = [];
-  let ai = 0;
-  let bi = 0;
+  let ai = dau;
+  let bi = dau;
   let cur: { origStart: number; modStart: number; removed: string[]; added: string[] } | null = null;
 
   const flush = () => {

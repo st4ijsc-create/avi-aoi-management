@@ -84,6 +84,90 @@ export function codingEditEnabled(): boolean {
   return (process.env.AI_CODING_EDIT ?? "1") !== "0";
 }
 
+/**
+ * ★★★ doc 79 (2026-08-21) — `AI_CODING_EDIT_HUNKS`: **SỬA THEO KHỐI** thay vì bắt model chép lại
+ * cả tệp. Mặc định **BẬT**; `"0"` ⇒ quay về đúng đường chép-cả-tệp của hôm qua, một byte không đổi.
+ *
+ * ⚠ Cờ này KHÔNG mở thêm quyền và KHÔNG đẻ ra tool mới — nó chỉ đổi **thứ model phải phát ra**.
+ *   Hợp đồng của `apply_diff` vẫn là `{path, original, modified}`, và `original` vẫn là byte đọc
+ *   từ đĩa TRONG lượt này. Xem khối ★★★ HỢP ĐỒNG KHỐI ở dưới.
+ */
+export function codingKhoiSuaEnabled(): boolean {
+  return (process.env.AI_CODING_EDIT_HUNKS ?? "1") !== "0";
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 79 (2026-08-21) — **HỢP ĐỒNG KHỐI**: MỐC, và vì sao là ba dòng mốc chứ không phải JSON
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * BỐN HÌNH DẠNG ĐÃ CÂN — VÀ VÌ SAO CHỌN `neo → thay`
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * (a) **DIFF HỢP NHẤT** (`@@ -a,b +c,d @@`). Đúng chuẩn, nhưng nó bắt model **ĐẾM DÒNG**, và một
+ *     model 30B đếm sai thường xuyên. Tệ hơn: một bộ áp diff "khoan dung" (fuzzy) sẽ áp được cả khi
+ *     số dòng sai ⇒ **hỏng theo chiều MỞ** (ghi nhầm chỗ trong im lặng). Muốn nó fail-closed thì
+ *     phải viết thêm một bộ áp diff nghiêm ngặt — tức một **bản sao thứ hai của chính sách ghi**.
+ * (b) **`{doDongTu, doDongDen, thayBang}`** (khoảng dòng). Rẻ nhất để hiện thực và **sai nhất về
+ *     bản chất**: một số dòng lệch KHÔNG phát hiện được — mã ở đúng dải ấy vẫn tồn tại, vẫn bị thay,
+ *     và không có mệnh đề nào để bác bỏ. Đây là fail-**OPEN** theo cấu tạo. LOẠI.
+ * (c) **JSON `{path, blocks:[{search, replace}]}`**. Cùng NGHĨA với (d) nhưng đầu ra phải qua một
+ *     lượt thoát chuỗi: mã nguồn có `"` `\` xuống dòng ở mọi dòng. Model 30B hỏng escape thường
+ *     xuyên hơn hỏng khoảng trắng — tức đổi một lớp lỗi lấy một lớp lỗi TỆ HƠN.
+ * (d) ✅ **BA DÒNG MỐC `SEARCH/=======/REPLACE`, NHIỀU KHỐI MỘT TỆP.** Không số dòng · không thoát
+ *     chuỗi · giữ nguyên khoảng trắng · và **nhập nhằng là ĐO ĐƯỢC** (đếm số lần đoạn neo xuất hiện).
+ *
+ * ĐÁNH ĐỔI PHẢI NÓI RA: (d) đòi model chép NGUYÊN VĂN đoạn neo. Một khoảng trắng lệch ⇒ neo hỏng.
+ * Ta trả giá ấy bằng HAI thứ, không phải bằng lời dặn: một phép so khớp **nới đúng một trục**
+ * (khoảng trắng CUỐI dòng — xem `apDungKhoiSua`) và một **đường lùi** về chép-cả-tệp cho tệp đủ nhỏ.
+ *
+ * ⚠ Mốc là **ba dòng ASCII cố định**, cố ý trùng khuôn dấu xung đột của git: đó là hình dạng model
+ *   đã gặp nhiều nhất trong dữ liệu huấn luyện. KHÔNG nội địa hoá từ khoá theo `lang` — một mốc đổi
+ *   theo ngôn ngữ là ba bộ phân tích cú pháp trôi khỏi nhau.
+ */
+export const MOC_MO = "<<<<<<< SEARCH";
+export const MOC_NGAN = "=======";
+export const MOC_DONG = ">>>>>>> REPLACE";
+
+/**
+ * ⚠ Nhận theo **HÌNH DẠNG**, không theo danh sách trắng chuỗi — đúng bài học của hậu tố
+ * `REPO_PATH_REGEX` (2026-08-21): mọi danh sách trắng đều có phần tử thứ N+1, và cái thiếu tiếp
+ * theo hỏng IM LẶNG. Ở đây: "≥3 dấu `<` rồi tới từ SEARCH" là một mệnh đề về hình dạng, nên
+ * `<<<<<<<< SEARCH` (8 dấu) hay `<<< SEARCH` đều nhận, còn một dòng mã bình thường thì không.
+ */
+const RE_MO = /^<{3,}\s*SEARCH\s*$/i;
+const RE_NGAN = /^={3,}\s*$/;
+const RE_DONG = /^>{3,}\s*REPLACE\s*$/i;
+
+/** Một khối sửa có đích: thay `truoc` (phải DUY NHẤT trong tệp) bằng `sau`. */
+export interface KhoiSua {
+  /** Đoạn NEO — nguyên văn, phải xuất hiện **đúng một lần**. `""` là vô nghĩa ⇒ bị từ chối. */
+  readonly truoc: string;
+  /** Đoạn thay thế. `""` hợp lệ (xoá). */
+  readonly sau: string;
+}
+
+/**
+ * ⚠ Mỗi mã một hành động KHÁC của người dùng — cùng luật đã dùng cho `MaApplyDiff`:
+ *   • `KHONG_CO_KHOI`  — không tìm thấy mốc nào ⇒ model trả lời bằng văn xuôi/chép cả tệp.
+ *   • `KHOI_CUT`       — mở `SEARCH` mà không có `REPLACE` đóng ⇒ **đầu ra bị CẮT giữa chừng**
+ *                        (đúng triệu chứng của trần token). Đây là mã quan trọng nhất: nó phân biệt
+ *                        "model không hiểu" với "model bị cắt".
+ *   • `KHOI_MO_HO`     — nhiều hơn MỘT dòng ngăn `=======` trong một khối ⇒ không biết đâu là ranh
+ *                        giới neo/thay. Từ chối thay vì lấy cái đầu tiên.
+ *   • `NEO_RONG`       — đoạn neo rỗng: nó "khớp" ở mọi vị trí ⇒ nhập nhằng tuyệt đối.
+ *   • `NEO_KHONG_THAY` — đoạn neo **0 lần** trong tệp ⇒ model đang nhìn thứ không có ở đó.
+ *   • `NEO_NHIEU_CHO`  — đoạn neo **≥2 lần** ⇒ "chắc là cái đầu tiên" chính là cách ghi đè nhầm chỗ.
+ *   • `KHOI_KHONG_DOI` — áp xong mà tệp y nguyên (mọi khối `truoc === sau`).
+ */
+export type MaKhoiHong =
+  | "KHONG_CO_KHOI"
+  | "KHOI_CUT"
+  | "KHOI_MO_HO"
+  | "NEO_RONG"
+  | "NEO_KHONG_THAY"
+  | "NEO_NHIEU_CHO"
+  | "KHOI_KHONG_DOI";
+
 /** Xem khối ⚠⚠ VRAM ở đầu file. `"code"` là opt-in có ý thức. */
 function tacVuModel(): "chat" | "code" {
   return process.env.AI_CODING_MODEL_TASK === "code" ? "code" : "chat";
@@ -431,6 +515,89 @@ export function personaSuaTep(lang: NgonNguMa, nguCanhDuAn: string): string {
 }
 
 /**
+ * ★★★ doc 79 (2026-08-21) — Persona **SỬA THEO KHỐI**. Thay `personaSuaTep` ở đường mặc định.
+ *
+ * ⚠ Ba luật đầu KHÔNG phải lời khuyên phong cách — chúng là ĐIỀU KIỆN để `apDungKhoiSua` chạy được:
+ *   luật 1 (đoạn neo DUY NHẤT) là thứ làm nhập nhằng thành phát hiện được; luật 2 (nguyên văn) là
+ *   thứ làm phép so khớp có nghĩa; luật 4 (không "…") là thứ chặn model rút gọn giữa đoạn neo — một
+ *   dấu ba chấm trong `SEARCH` biến neo thành một chuỗi không tồn tại trên đĩa.
+ */
+export function personaSuaTepKhoi(lang: NgonNguMa, nguCanhDuAn: string): string {
+  const than = w(
+    lang,
+    [
+      "Bạn là KỸ SƯ LẬP TRÌNH đang SỬA một tệp trong repo thật.",
+      "",
+      "ĐẦU RA BẮT BUỘC — chỉ những KHỐI SỬA CÓ ĐÍCH. TUYỆT ĐỐI KHÔNG chép lại cả tệp.",
+      "Mỗi thay đổi là MỘT khối đúng khuôn sau (ba dòng mốc viết y nguyên, kể cả chữ in hoa):",
+      "",
+      `${MOC_MO}`,
+      "<đoạn NGUYÊN VĂN đang có trong tệp>",
+      `${MOC_NGAN}`,
+      "<đoạn thay thế>",
+      `${MOC_DONG}`,
+      "",
+      "LUẬT:",
+      `1. Đoạn giữa ${MOC_MO} và ${MOC_NGAN} phải XUẤT HIỆN ĐÚNG MỘT LẦN trong tệp. Nếu đoạn bạn`,
+      "   định chép ngắn quá nên trùng ở nhiều nơi, hãy MỞ RỘNG thêm dòng phía trên/dưới cho tới khi",
+      "   nó là DUY NHẤT. Trùng ở nhiều chỗ ⇒ tôi TỪ CHỐI cả lượt, không đoán chỗ nào.",
+      "2. Chép NGUYÊN VĂN: đúng thụt đầu dòng, đúng dấu cách, đúng hoa/thường, đúng dấu ngoặc.",
+      "3. Được phép NHIỀU khối cho cùng một tệp; chúng được áp theo ĐÚNG THỨ TỰ bạn viết.",
+      "4. KHÔNG dùng \"…\"/\"...\" để bỏ bớt trong đoạn neo. KHÔNG đánh số dòng. KHÔNG viết patch/diff.",
+      "5. SAU tất cả các khối, viết tối đa 3 gạch đầu dòng nói bạn đã đổi GÌ và VÌ SAO.",
+      "",
+      "Không làm được thì nói thẳng — ĐỪNG bịa một đoạn neo không có trong tệp.",
+    ].join("\n"),
+    [
+      "You are a SOFTWARE ENGINEER EDITING one file in a real repository.",
+      "",
+      "REQUIRED OUTPUT — targeted EDIT BLOCKS only. Never reproduce the whole file.",
+      "Each change is ONE block in exactly this shape (the three marker lines verbatim, uppercase):",
+      "",
+      `${MOC_MO}`,
+      "<text EXACTLY as it currently appears in the file>",
+      `${MOC_NGAN}`,
+      "<replacement text>",
+      `${MOC_DONG}`,
+      "",
+      "RULES:",
+      `1. The text between ${MOC_MO} and ${MOC_NGAN} must occur EXACTLY ONCE in the file. If your`,
+      "   snippet is too short and appears in several places, EXPAND it with surrounding lines until",
+      "   it is unique. Multiple matches ⇒ I refuse the whole turn rather than guess which one.",
+      "2. Copy VERBATIM: exact indentation, spaces, case, brackets.",
+      "3. MULTIPLE blocks per file are allowed; they are applied in the ORDER you write them.",
+      '4. Never use "…"/"..." to elide inside the anchor. No line numbers. No patch/diff format.',
+      "5. AFTER all blocks, at most 3 bullets on WHAT changed and WHY.",
+      "",
+      "If you cannot do it, say so — never invent an anchor that is not in the file.",
+    ].join("\n"),
+    [
+      "你是正在修改真实仓库中某个文件的软件工程师。",
+      "",
+      "输出要求——只给出有明确目标的**修改块**，绝不要重写整个文件。",
+      "每处改动写成一个如下形状的块（三行标记原样照抄，保持大写）：",
+      "",
+      `${MOC_MO}`,
+      "<文件中现有的原文片段>",
+      `${MOC_NGAN}`,
+      "<替换后的片段>",
+      `${MOC_DONG}`,
+      "",
+      "规则：",
+      `1. ${MOC_MO} 与 ${MOC_NGAN} 之间的片段必须在文件中**恰好出现一次**。若片段太短而多处重复，`,
+      "   请向上下扩展直到唯一。出现多处则我会拒绝整轮，而不是替你猜。",
+      "2. 逐字照抄：缩进、空格、大小写、括号都要一致。",
+      "3. 同一文件可以有多个块；按你书写的顺序依次应用。",
+      "4. 锚点内不要用“…”/“...”省略。不要写行号。不要写补丁/diff。",
+      "5. 所有块之后，最多 3 条要点说明改了什么、为什么。",
+      "",
+      "做不到就直说——绝不要臆造文件中不存在的锚点。",
+    ].join("\n"),
+  );
+  return nguCanhDuAn ? `${than}\n\n${nguCanhDuAn}` : than;
+}
+
+/**
  * ★★★ doc 79 (2026-08-20) — Persona **TẠO TỆP MỚI**.
  *
  * ⚠ Vì sao KHÔNG dùng lại `personaSuaTep`: nguyên tắc 2 của nó (*"GIỮ NGUYÊN từng ký tự mọi phần
@@ -506,6 +673,182 @@ export function bocKhoiMa(text: string): string | null {
     if (daiNhat === null || than.length > daiNhat.length) daiNhat = than;
   }
   return daiNhat;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ BÓC KHỐI SỬA — thuần, không I/O, không phụ thuộc ngôn ngữ giao diện
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+export type KetQuaBocKhoi =
+  | { ok: true; khoi: KhoiSua[] }
+  | { ok: false; ma: MaKhoiHong; chiTiet: string };
+
+/**
+ * Bóc MỌI khối `SEARCH/=======/REPLACE` trong câu trả lời của model.
+ *
+ * ⚠ Quét theo DÒNG chứ không bằng một regex `[\s\S]*?`: một regex "lười" sẽ ghép nhầm dòng ngăn của
+ *   khối 1 với dòng đóng của khối 2 khi khối 1 bị cắt, và cho ra một khối trông hợp lệ mà nội dung
+ *   là rác. Máy trạng thái theo dòng thì trạng thái "đang mở mà hết chữ" là **quan sát được**, và
+ *   đó chính là `KHOI_CUT`.
+ *
+ * ⚠ Dòng rào ``` (model hay bọc khối trong một fence) nằm NGOÀI khối nên tự bị bỏ qua — không cần
+ *   một luật riêng cho nó.
+ *
+ * ⚠ HIỂM HOẠ ĐÃ BIẾT, và nó fail-CLOSED: một dòng chỉ gồm dấu `=` **bên trong** đoạn neo trông y
+ *   hệt dòng ngăn. Ta KHÔNG đoán (không "lấy cái cuối"): thấy ≥2 dòng ngăn trong một khối ⇒
+ *   `KHOI_MO_HO`. Repo này dùng `═` (U+2550) cho khung chú thích nên va chạm thực tế là hiếm, và
+ *   khi va thì hậu quả là một lời từ chối, không phải một lượt ghi sai chỗ.
+ */
+export function bocKhoiSua(text: string): KetQuaBocKhoi {
+  const dong = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
+  const khoi: KhoiSua[] = [];
+  let i = 0;
+  while (i < dong.length) {
+    if (!RE_MO.test(dong[i] ?? "")) {
+      i++;
+      continue;
+    }
+    const moTai = i;
+    i++;
+    const than: string[] = [];
+    const ngan: number[] = [];
+    let dongTai = -1;
+    for (; i < dong.length; i++) {
+      const d = dong[i] ?? "";
+      if (RE_DONG.test(d)) {
+        dongTai = i;
+        break;
+      }
+      if (RE_MO.test(d)) break; // khối mới mở khi khối cũ chưa đóng ⇒ khối cũ CỤT
+      if (RE_NGAN.test(d)) ngan.push(than.length);
+      than.push(d);
+    }
+    if (dongTai < 0) {
+      return {
+        ok: false,
+        ma: "KHOI_CUT",
+        chiTiet: `khối mở ở dòng ${moTai + 1} của câu trả lời không có dòng "${MOC_DONG}"`,
+      };
+    }
+    if (ngan.length === 0) {
+      return { ok: false, ma: "KHOI_MO_HO", chiTiet: `khối #${khoi.length + 1} thiếu dòng ngăn "${MOC_NGAN}"` };
+    }
+    if (ngan.length > 1) {
+      return {
+        ok: false,
+        ma: "KHOI_MO_HO",
+        chiTiet: `khối #${khoi.length + 1} có ${ngan.length} dòng ngăn "${MOC_NGAN}" — không xác định được ranh giới neo/thay`,
+      };
+    }
+    const cat = ngan[0]!;
+    khoi.push({ truoc: than.slice(0, cat).join("\n"), sau: than.slice(cat + 1).join("\n") });
+    i = dongTai + 1;
+  }
+  if (khoi.length === 0) return { ok: false, ma: "KHONG_CO_KHOI", chiTiet: "không có dòng mốc nào" };
+  const rong = khoi.findIndex((k) => k.truoc === "");
+  if (rong >= 0) return { ok: false, ma: "NEO_RONG", chiTiet: `khối #${rong + 1} có đoạn neo RỖNG` };
+  return { ok: true, khoi };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ÁP KHỐI — **NHẬP NHẰNG LÀ MỘT LỜI TỪ CHỐI, KHÔNG PHẢI MỘT PHÉP ĐOÁN**
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+export type KetQuaApKhoi =
+  | { ok: true; ketQua: string; soKhoi: number; soNoiLong: number }
+  | { ok: false; ma: MaKhoiHong; chiTiet: string };
+
+function demXuatHien(trong: string, mau: string): number {
+  if (mau === "") return 0;
+  let n = 0;
+  let tu = 0;
+  for (;;) {
+    const k = trong.indexOf(mau, tu);
+    if (k < 0) return n;
+    n++;
+    tu = k + mau.length; // KHÔNG chồng lấn: hai lần khớp chồng nhau vẫn là "≥2 chỗ" ⇒ vẫn từ chối
+  }
+}
+
+/** Cắt khoảng trắng CUỐI dòng. **Chỉ cuối** — thụt đầu dòng là ngữ nghĩa (Python/YAML/Makefile). */
+function catDuoiDong(s: string): string {
+  return s.replace(/[ \t\f\v ]+$/, "");
+}
+
+/** Bỏ phần tử `""` ở cuối mảng dòng (dấu vết của chuỗi kết bằng `\n`). */
+function boDongCuoiRong(ds: string[]): string[] {
+  return ds.length > 1 && ds[ds.length - 1] === "" ? ds.slice(0, -1) : ds;
+}
+
+/**
+ * Tìm MỌI vị trí (theo chỉ số DÒNG) mà `neo` khớp `noi` **khi bỏ qua khoảng trắng cuối dòng**.
+ *
+ * ⚠ Đây là phép nới DUY NHẤT, và nó có lý do đo được: trong ba lớp lỗi chép tay của một model 30B
+ *   (khoảng trắng cuối dòng · thụt đầu dòng · nội dung), chỉ lớp THỨ NHẤT là thứ **không mang một
+ *   byte ngữ nghĩa nào** ở mọi ngôn ngữ repo này dùng. Nới hai lớp còn lại là cho phép neo trượt
+ *   sang một khối lệnh khác.
+ * ⚠ Phép nới KHÔNG nới điều kiện DUY NHẤT: đếm được ≥2 chỗ thì vẫn từ chối.
+ */
+function timNoiLong(noiDong: readonly string[], neoDong: readonly string[]): number[] {
+  if (neoDong.length === 0 || neoDong.length > noiDong.length) return [];
+  const a = neoDong.map(catDuoiDong);
+  const ra: number[] = [];
+  for (let i = 0; i + a.length <= noiDong.length; i++) {
+    let khop = true;
+    for (let j = 0; j < a.length; j++) {
+      if (catDuoiDong(noiDong[i + j] ?? "") !== a[j]) {
+        khop = false;
+        break;
+      }
+    }
+    if (khop) ra.push(i);
+  }
+  return ra;
+}
+
+/**
+ * Áp lần lượt các khối lên `goc` (đã chuẩn hoá LF). Trả nội dung MỚI, hoặc một lời từ chối có mã.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ FAIL-CLOSED, PHÁT BIỂU THÀNH BA MỆNH ĐỀ
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *  1. Đoạn neo xuất hiện **0 lần** ⇒ `NEO_KHONG_THAY`. Không có "gần đúng", không có "chắc ý nó là".
+ *  2. Đoạn neo xuất hiện **≥2 lần** ⇒ `NEO_NHIEU_CHO`. *"Chắc là cái đầu tiên"* chính là cách ghi
+ *     đè nhầm chỗ TRONG IM LẶNG — thứ nguy hiểm nhất một tool ghi có thể làm.
+ *  3. Chỉ khi **đúng 1 lần** mới thay, và thay đúng lần ấy.
+ *
+ * ⚠ Các khối áp **tuần tự trên nội dung ĐANG BIẾN ĐỔI**, không phải song song trên bản gốc: đó là
+ *   thứ người viết khối trông đợi, và nó khiến hai khối chồng lấn nhau tự lộ ra (khối sau mất neo ⇒
+ *   `NEO_KHONG_THAY`) thay vì âm thầm cho ra một kết quả phụ thuộc thứ tự áp.
+ */
+export function apDungKhoiSua(goc: string, khoi: readonly KhoiSua[]): KetQuaApKhoi {
+  if (khoi.length === 0) return { ok: false, ma: "KHONG_CO_KHOI", chiTiet: "danh sách khối rỗng" };
+  let hienTai = goc;
+  let soNoiLong = 0;
+  for (let i = 0; i < khoi.length; i++) {
+    const k = khoi[i]!;
+    const nhan = `khối #${i + 1} (neo bắt đầu bằng "${(k.truoc.split("\n")[0] ?? "").slice(0, 60)}")`;
+    if (k.truoc === "") return { ok: false, ma: "NEO_RONG", chiTiet: nhan };
+
+    const n = demXuatHien(hienTai, k.truoc);
+    if (n >= 2) return { ok: false, ma: "NEO_NHIEU_CHO", chiTiet: `${nhan} khớp ${n} chỗ` };
+    if (n === 1) {
+      const tai = hienTai.indexOf(k.truoc);
+      hienTai = hienTai.slice(0, tai) + k.sau + hienTai.slice(tai + k.truoc.length);
+      continue;
+    }
+
+    // n === 0 ⇒ thử phép nới MỘT TRỤC (khoảng trắng cuối dòng), vẫn đòi DUY NHẤT.
+    const noiDong = hienTai.split("\n");
+    const neoDong = boDongCuoiRong(k.truoc.split("\n"));
+    const vt = timNoiLong(noiDong, neoDong);
+    if (vt.length >= 2) return { ok: false, ma: "NEO_NHIEU_CHO", chiTiet: `${nhan} khớp ${vt.length} chỗ (đã bỏ qua khoảng trắng cuối dòng)` };
+    if (vt.length === 0) return { ok: false, ma: "NEO_KHONG_THAY", chiTiet: `${nhan} KHÔNG có trong tệp` };
+    const dau = vt[0]!;
+    const thayDong = k.sau === "" ? [] : boDongCuoiRong(k.sau.split("\n"));
+    hienTai = [...noiDong.slice(0, dau), ...thayDong, ...noiDong.slice(dau + neoDong.length)].join("\n");
+    soNoiLong++;
+  }
+  if (hienTai === goc) return { ok: false, ma: "KHOI_KHONG_DOI", chiTiet: `${khoi.length} khối áp xong mà tệp không đổi` };
+  return { ok: true, ketQua: hienTai, soKhoi: khoi.length, soNoiLong };
 }
 
 /**
@@ -632,6 +975,42 @@ export function promptSuaTep(
       "Trả về TOÀN BỘ tệp sau khi sửa trong một khối mã duy nhất.",
       "Return the ENTIRE file after the edit in a single code block.",
       "在唯一一个代码块中返回修改后的整个文件。",
+    ),
+  ].join("\n");
+}
+
+/**
+ * ★★★ doc 79 (2026-08-21) — prompt **SỬA THEO KHỐI**.
+ *
+ * Khác `promptSuaTep` ở đúng câu chốt cuối: thay *"trả về TOÀN BỘ tệp"* bằng *"chỉ trả về các khối"*.
+ * Nội dung tệp **vẫn đi trọn vẹn vào prompt** — model phải NHÌN THẤY tệp mới chép đúng được đoạn
+ * neo. Cái được cắt là chiều **ĐẦU RA**, và đó chính là chiều đang hỏng (xem `tranTokenChoTep`).
+ */
+export function promptSuaTepKhoi(
+  duong: string,
+  noiDung: string,
+  yeuCau: string,
+  lang: NgonNguMa,
+  khoiLichSu = "",
+): string {
+  const nhan = nhanNgonNgu(duong);
+  return [
+    ...(khoiLichSu ? [khoiLichSu, ""] : []),
+    w(lang, `Tệp: ${duong}`, `File: ${duong}`, `文件：${duong}`),
+    "",
+    w(lang, "=== NỘI DUNG HIỆN TẠI (nguyên văn) ===", "=== CURRENT CONTENT (verbatim) ===", "=== 当前内容（原样）==="),
+    "```" + nhan,
+    noiDung,
+    "```",
+    "",
+    w(lang, "=== YÊU CẦU ===", "=== REQUEST ===", "=== 需求 ==="),
+    yeuCau,
+    "",
+    w(
+      lang,
+      `Chỉ trả về các KHỐI SỬA theo khuôn ${MOC_MO} / ${MOC_NGAN} / ${MOC_DONG}. KHÔNG chép lại cả tệp.`,
+      `Return ONLY edit blocks in the ${MOC_MO} / ${MOC_NGAN} / ${MOC_DONG} shape. Do NOT reproduce the whole file.`,
+      `只返回 ${MOC_MO} / ${MOC_NGAN} / ${MOC_DONG} 形状的修改块。不要重写整个文件。`,
     ),
   ].join("\n");
 }
@@ -830,11 +1209,60 @@ export function dungKhoiLichSu(y: {
 }
 
 /**
+ * ★ Số ký tự mỗi token ở chiều RA (mã nguồn). Tách thành hằng vì `chepCaTepDuocKhong` phải suy ra
+ * ngưỡng từ CHÍNH con số này — hai bản sao của một tỉ lệ là cách chắc chắn nhất để hai ngưỡng trôi
+ * khỏi nhau. (Chiều VÀO có hằng riêng `KY_TU_MOI_TOKEN_UOC_LUONG = 2,8`, đo trên tiếng Việt.)
+ */
+export const KY_TU_MOI_TOKEN_RA = 2.6;
+/** Trần cứng token ra của một lượt. Vượt qua đây là chỗ `tranTokenChoTep` **thôi lớn theo tệp**. */
+export const TRAN_TOKEN_RA_TOI_DA = 12_000;
+
+/**
  * Trần token cho một lượt sinh. Đường SỬA phải đủ chỗ chép lại CẢ tệp cộng phần giải thích, nếu
  * không model bị cắt giữa chừng và ta nhận về một tệp cụt (đã chặn ở `rutChuCoCanh`, nhưng chặn
  * xong thì người dùng không có gì — thà cấp đủ token ngay từ đầu).
  */
 export function tranTokenChoTep(soKyTu: number): number {
   // ~2,6 ký tự/token cho mã nguồn là ước tính thận trọng; cộng 700 cho phần giải thích + lề.
-  return Math.min(12_000, Math.max(1_400, Math.ceil(soKyTu / 2.6) + 700));
+  return Math.min(TRAN_TOKEN_RA_TOI_DA, Math.max(1_400, Math.ceil(soKyTu / KY_TU_MOI_TOKEN_RA) + 700));
 }
+
+/**
+ * ★★★ doc 79 (2026-08-21) — **TRẦN THẬT CỦA ĐƯỜNG CHÉP-CẢ-TỆP, SUY RA CHỨ KHÔNG GÕ VÀO.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ CÓ **BA** TRẦN TRÊN ĐƯỜNG SỬA, VÀ LƯỢT ĐỐI CHIẾU TRƯỚC CHỈ SO HAI
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *   T1 — bộ lọc thô `TRAN_KY_TU_TEP_SUA` = 60.000 ký tự.
+ *   T2 — ngân sách VÀO (`kiemNganSachNguCanh`): điểm hoà **56.890 (vi) · 56.876 (en) · 57.316 (zh)**
+ *        khi `maxTokens = tranTokenChoTep(n)` (đo 2026-08-21 bằng chính hàm sản phẩm).
+ *   T3 — ngân sách **RA**, và đây là trần NHỎ NHẤT, **chưa từng có mặt trong phép đối chiếu nào**:
+ *        `tranTokenChoTep` bị `TRAN_TOKEN_RA_TOI_DA` kẹp ở 12.000, mà chép lại một tệp `n` ký tự
+ *        cần `n / 2,6` token ⇒ chép được **chỉ khi `n ≤ 12.000 × 2,6 = 31.200`**.
+ *
+ * Trên 31.200 ký tự, model bị cắt giữa chừng ⇒ khối ``` không có dòng đóng ⇒ `bocKhoiMa()` trả
+ * `null` ⇒ người dùng chờ hết một lượt suy luận để nhận một lời từ chối. **Hai trần kia không hề
+ * biết chuyện đó**: một tệp 40.000 ký tự lọt T1, lọt T2, và hỏng ở T3 mỗi lần.
+ *
+ * ⇒ Hàm này là **T3 phát biểu thành một vị từ**, suy thẳng từ `tranTokenChoTep` + tỉ lệ ký tự/token
+ *   nên không có con số thứ hai để trôi. Nó có đúng một chỗ dùng: quyết định **đường lùi** khi khối
+ *   hỏng còn dùng được không.
+ */
+export function chepCaTepDuocKhong(soKyTu: number): boolean {
+  return tranTokenChoTep(soKyTu) >= Math.ceil(soKyTu / KY_TU_MOI_TOKEN_RA);
+}
+
+/**
+ * ★★★ Trần token RA của một lượt **SỬA THEO KHỐI** — một HẰNG, cố ý không phụ thuộc `n`.
+ *
+ * Đầu ra của một lượt khối tỉ lệ với **THAY ĐỔI**, không với kích thước tệp; buộc nó lớn theo tệp
+ * là chép lại đúng cái sai của `tranTokenChoTep`. 4.000 token ≈ 10 KB khối — quá 10 KB khối thì
+ * việc đang làm thực chất là viết lại tệp, và đường lùi mới là chỗ của nó.
+ *
+ * ⚠ ĐO ĐƯỢC (2026-08-21, `kiemNganSachNguCanh` trên chính `personaSuaTepKhoi` + `promptSuaTepKhoi`):
+ * với `maxTokens = 4.000`, điểm hoà ngân sách VÀO là **79.290 (vi) · 79.276 (en) · 79.716 (zh)** —
+ * **CAO HƠN** cả `TRAN_KY_TU_TEP_SUA` (60.000) lẫn trần byte của `read_file` (65.536). Tức sau lượt
+ * này, T2 và T3 đều **thôi ràng buộc**, và 60.000 lần đầu tiên trở thành trần THẬT chứ không phải
+ * một con số cao hơn thực tế 2×.
+ */
+export const TRAN_TOKEN_KHOI_SUA = 4_000;

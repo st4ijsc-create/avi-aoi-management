@@ -102,7 +102,7 @@ vi.mock("./aiLocalTools", async (goc) => {
 });
 
 import { streamAnswer, laYDinhTaoTep, laYDinhSuaTep, type StreamEvent } from "./aiLocalKnowledgeService";
-import { chuanHoaTepMoi, dongBoXuongDong } from "./aiCodingAgent";
+import { chuanHoaTepMoi, dongBoXuongDong, MOC_DONG, MOC_MO, MOC_NGAN } from "./aiCodingAgent";
 import {
   trichMoiDuongDanRepo,
   locQuyetDinhLLMLapTrinh,
@@ -116,6 +116,18 @@ const TEP_B = "sandbox-projects/csharp-demo/tests/CalculatorTests.cs";
 const TEP_MOI = "sandbox-projects/csharp-demo/src/ChuaTonTai_LuoiTest.cs";
 
 const MA_MOI = ["```csharp", "namespace CalculatorDemo;", "public static class NgayThang { }", "```", "", "- Tệp tiện ích."].join("\n");
+
+/**
+ * ★ doc 79 (2026-08-21) — đường SỬA mặc định nay là **SỬA THEO KHỐI**: model phát ra một thay đổi
+ * CÓ ĐÍCH thay vì chép lại cả tệp. `MA_MOI` (một bản chép cả tệp) vẫn đúng cho đường **TẠO** — ở đó
+ * không có nội dung cũ để neo vào — nên nó được giữ nguyên; các ca SỬA dùng khối.
+ * ⚠ Neo phải DUY NHẤT trong tệp đích, nếu không `apDungKhoiSua` từ chối (đúng thiết kế).
+ */
+function khoiSua(truoc: string, sau: string): string {
+  return [MOC_MO, truoc, MOC_NGAN, sau, MOC_DONG].join("\n");
+}
+const KHOI_A = khoiSua("        return a / b;", "        return a / b; // đã sửa");
+const KHOI_B = khoiSua("    public void Add_HaiSoDuong()", "    public void Add_HaiSoDuongDaDoi()");
 
 let idPhien = 7000;
 /**
@@ -404,7 +416,10 @@ describe("§8 — SỬA NHIỀU TỆP: N lượt model, MỘT thẻ duyệt, N b
   });
 
   it("★★★ NGÂN SÁCH TOKEN: model được gọi MỘT TỆP MỘT LƯỢT (không nhồi N tệp vào một prompt)", async () => {
-    h.manh = [MA_MOI];
+    // ★ doc 79 (2026-08-21): đường mặc định nay là SỬA THEO KHỐI ⇒ đầu ra model là khối, không phải
+    //   một bản chép cả tệp. Một bản chép cả tệp sẽ kích hoạt ĐƯỜNG LÙI (thêm một lượt model/tệp)
+    //   và làm phép đếm ở đây nói về một chuyện khác. Xem `aiCodingKhoiSua.stream.test.ts`.
+    h.hangDoi = [[KHOI_A], [KHOI_B]];
     await chay(`sửa ${TEP_A} và ${TEP_B} để đổi tên hàm Divide thành Chia`, admin());
     expect(h.moiPrompt.length, "hai tệp ⇒ hai lượt gọi model, mỗi lượt cân ngân sách RIÊNG").toBe(2);
     const [p1, p2] = h.moiPrompt;
@@ -454,14 +469,10 @@ describe("§8 — SỬA NHIỀU TỆP: N lượt model, MỘT thẻ duyệt, N b
   });
 
   it("★★★ MỘT tệp đổi trong lô hai tệp ⇒ dùng `apply_diff` (thẻ diff giàu hơn), KHÔNG dùng lô", async () => {
-    // Lượt 2 của model trả lại NGUYÊN nội dung tệp B ⇒ B "không đổi" ⇒ chỉ còn A có thay đổi.
-    const LF = String.fromCharCode(10);
-    const noiDungB = fs
-      .readFileSync(path.resolve(process.cwd(), TEP_B), "utf8")
-      .split(String.fromCharCode(13, 10))
-      .join(LF)
-      .replace(new RegExp(`${LF}+$`), "");
-    h.hangDoi = [[MA_MOI], [`\`\`\`csharp${LF}${noiDungB}${LF}\`\`\``]];
+    // Lượt 2 của model trả một khối `truoc === sau` ⇒ B "không đổi" ⇒ chỉ còn A có thay đổi.
+    // ★ doc 79 (2026-08-21): trước đây lượt 2 chép lại NGUYÊN tệp B; đường mặc định nay là KHỐI,
+    //   và "không đổi" ở đường khối là một khối áp xong mà tệp y nguyên.
+    h.hangDoi = [[KHOI_A], [khoiSua("    private readonly Calculator _calc = new();", "    private readonly Calculator _calc = new();")]];
     await chay(`sửa ${TEP_A} và ${TEP_B} để đổi tên hàm Divide thành Chia`, admin());
     expect(h.quyetDinh.filter((q) => q.tool === "apply_diff").length, "một tệp ⇒ apply_diff").toBe(1);
     expect(h.quyetDinh.filter((q) => q.tool === "apply_diff_batch").length, "không dựng lô một mục").toBe(0);
@@ -567,8 +578,20 @@ describe("§11 — CÂU THẬT CỦA NGƯỜI DÙNG PHẢI TỚI ĐƯỢC `apply
   /** Đường dẫn TƯƠNG ĐỐI theo gốc dự án — đúng thứ người dùng gõ khi đã chọn dự án. */
   const R_CALC = "src/Calculator.cs";
   const R_TEST = "tests/CalculatorTests.cs";
-  /** Tệp người dùng nêu trong câu live nhưng KHÔNG có trong đề thi (họ tạo nó ở một lượt khác). */
-  const R_CHUA_CO = "src/StringUtils.cs";
+  /**
+   * ★★★ ĐÍNH CHÍNH (2026-08-21) — **NỢ CÓ SẴN, KHÔNG PHẢI CỦA LƯỢT SỬA-THEO-KHỐI.**
+   *
+   * Hằng này từng tên là `R_CHUA_CO` và mang lời khai *"tệp người dùng nêu trong câu live nhưng
+   * KHÔNG có trong đề thi"*. Lời khai ấy **hết đúng ở chính commit `e3c0dd09`** — commit cuối của
+   * lượt trước, tên nó là *"thêm StringUtils.cs vào đề thi C#"*. Từ lúc ấy ca dưới đây ĐỎ ở HEAD:
+   * cả hai tệp đều có thật ⇒ lô KHÔNG dừng nữa, nó đề xuất — tức mệnh đề đúng đã ĐẢO CHIỀU.
+   * (Đo bằng cách chạy file này với `AI_CODING_EDIT_HUNKS=0`, tức hành vi trước lượt này: vẫn ĐỎ
+   * đúng ca này và chỉ ca này.)
+   *
+   * Sửa theo hướng ĐÚNG SỰ THẬT HÔM NAY chứ không theo hướng làm cổng xanh: giữ nguyên văn câu
+   * live, và khẳng định thứ người dùng thật sự muốn — **cả hai tệp cùng vào MỘT lô**.
+   */
+  const R_STR = "src/StringUtils.cs";
 
   /** Nguyên văn, ký tự một ký tự, câu đã gõ trên `/ai-coding-workspace` phiên 2026-08-21. */
   const CAU_LIVE =
@@ -585,32 +608,45 @@ describe("§11 — CÂU THẬT CỦA NGƯỜI DÙNG PHẢI TỚI ĐƯỢC `apply
    * dấu câu gây hỏng mà không cần cả chuỗi định tuyến. Bản trước trả `["src/Calculator.cs"]`.
    */
   it("★★★ NGUYÊN VĂN câu live ⇒ bộ trích thấy ĐỦ HAI đường dẫn (bản trước chỉ thấy MỘT)", () => {
-    expect(trichMoiDuongDanRepo(CAU_LIVE)).toEqual([R_CALC, R_CHUA_CO]);
+    expect(trichMoiDuongDanRepo(CAU_LIVE)).toEqual([R_CALC, R_STR]);
   });
 
   /**
-   * ★★★ ĐÂY LÀ CA TÁI HIỆN ĐÚNG PHIÊN LIVE, và nó khẳng định hai điều NGƯỢC hẳn hành vi cũ:
-   *   • hệ ĐỌC cả hai tệp (tức đã vào đường LÔ), thay vì đọc đúng tệp đầu;
-   *   • và vì tệp thứ hai chưa tồn tại ⇒ **KHÔNG đề xuất ghi nào cả** — thay vì lặng lẽ đề xuất
-   *     ghi đè MỘT tệp rồi để tệp còn lại y nguyên, đúng thứ đã đo được trên trình duyệt
-   *     (`Calculator.cs` có chú thích, `StringUtils.cs` không, `grep -c` = 1 và 0).
-   * Một lượt sửa "một nửa" im lặng là chế độ hỏng tệ hơn hẳn một lời từ chối to tiếng.
+   * ★★★ CA TÁI HIỆN ĐÚNG PHIÊN LIVE. Lỗi live là: chỉ **MỘT** thẻ duyệt hiện ra, cho
+   * `Calculator.cs`, và `StringUtils.cs` bị bỏ quên trong im lặng (`grep -c` = 1 và 0). Mệnh đề
+   * phải chặn đúng chuyện ấy là: câu ấy ra **MỘT lô mang ĐỦ HAI đường dẫn**, mỗi tệp một băm neo
+   * riêng lấy từ ĐĨA.
+   *
+   * ⚠ Ca này từng khẳng định *"TỪ CHỐI cả lô"* vì hồi đó `StringUtils.cs` chưa nằm trong đề thi;
+   *   commit `e3c0dd09` đã thêm nó ⇒ mệnh đề đúng đảo chiều. Xem khối ★★★ ở `R_STR`.
    */
-  it("★★★ NGUYÊN VĂN câu live qua ĐÚNG chuỗi định tuyến ⇒ đi đường LÔ, và TỪ CHỐI cả lô", async () => {
+  it("★★★ NGUYÊN VĂN câu live qua ĐÚNG chuỗi định tuyến ⇒ MỘT lô, ĐỦ hai đường, hai neo RIÊNG", async () => {
     const truoc = bamCay();
-    h.manh = [MA_MOI];
+    h.hangDoi = [
+      [khoiSua("public class Calculator", "// Dự án thử AI local\npublic class Calculator")],
+      [khoiSua("    public static class StringUtils", "    // Dự án thử AI local\n    public static class StringUtils")],
+    ];
     const r = await trongDuAn(CAU_LIVE);
 
     const daDoc = h.quyetDinh.filter((q) => q.tool === "read_file").map((q) => String(q.args.path));
     expect(daDoc, "cả hai đường dẫn phải được ĐỌC ⇒ chứng minh đã vào vòng lặp của đường LÔ").toContain(R_CALC);
-    expect(daDoc).toContain(R_CHUA_CO);
+    expect(daDoc).toContain(R_STR);
 
+    const lo = h.quyetDinh.filter((q) => q.tool === "apply_diff_batch");
+    expect(lo.length, "MỘT thẻ duyệt cho cả lô — lỗi live là chỉ có thẻ cho tệp ĐẦU").toBe(1);
     expect(
       h.quyetDinh.some((q) => q.tool === "apply_diff"),
-      "bản trước đề xuất ghi ĐÈ đúng Calculator.cs rồi bỏ quên tệp kia — chính là lỗi live",
+      "KHÔNG được đề xuất lẻ một tệp rồi bỏ quên tệp kia — chính là lỗi live",
     ).toBe(false);
-    expect(r.chu).toContain("CẢ LÔ dừng");
-    expect(r.chu).toContain(R_CHUA_CO);
+    const files = lo[0]!.args.files as Array<{ path: string; original: string }>;
+    expect(files.map((f) => f.path)).toEqual([R_CALC, R_STR]);
+    for (const f of files) {
+      expect(f.original, `${f.path}: neo băm phải là byte TRÊN ĐĨA`).toBe(
+        fs.readFileSync(path.resolve(GOC_DU_AN, f.path), "utf8"),
+      );
+    }
+    expect(files[0]!.original, "hai tệp ⇒ hai neo KHÁC nhau").not.toBe(files[1]!.original);
+    expect(r.events.some((e) => e.type === "pending_action")).toBe(true);
     expect(bamCay(), "đề thi KHÔNG đổi một byte").toBe(truoc);
   });
 

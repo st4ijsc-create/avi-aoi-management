@@ -23,25 +23,34 @@ import { classifyCodingToolIntent, trichMoiDuongDanRepo } from "./aiLocalTools/i
  * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
  */
 import {
+  apDungKhoiSua,
   bocKhoiMa,
+  bocKhoiSua,
+  chepCaTepDuocKhong,
   chuanHoaTepMoi,
   codingEditEnabled,
   codingGenEnabled,
+  codingKhoiSuaEnabled,
   codingModelSanSang,
   dongBoXuongDong,
+  MOC_MO,
   personaSinhMa,
   personaSuaTep,
+  personaSuaTepKhoi,
   personaTaoTep,
   promptSinhMa,
   promptSuaTep,
+  promptSuaTepKhoi,
   promptTaoTep,
   rutChuCoCanh,
   streamCodingModel,
   tranTokenChoTep,
   TRAN_KY_TU_TEP_SUA,
+  TRAN_TOKEN_KHOI_SUA,
   dungKhoiLichSu,
   type KetQuaChu,
   type LuotHoiThoai,
+  type MaKhoiHong,
 } from "./aiCodingAgent";
 /**
  * ★★★ doc 79 · TRỤC 1 (D) — MỤC LỤC (chunk) → MÃ THẬT (đọc đĩa qua `read_file`). Xem docblock đầu
@@ -3247,6 +3256,86 @@ async function* chuanBiBanSuaMotTep(y: {
   }
 
   const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ doc 79 (2026-08-21) — **ĐƯỜNG KHỐI ĐI TRƯỚC; CHÉP-CẢ-TỆP TỤT XUỐNG THÀNH ĐƯỜNG LÙI.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Hai thứ đổi, và chỉ hai:
+   *   • **thứ model phải phát ra** — vài khối `SEARCH/REPLACE` thay cho một bản chép lại cả tệp;
+   *   • **trần token RA** — một hằng 4.000 thay cho `tranTokenChoTep(n)` bị kẹp ở 12.000.
+   * KHÔNG đổi: hợp đồng `apply_diff` (`{path, original, modified}`), điểm neo băm, HITL, hộp cát,
+   * hàng rào tệp bẩn, RBAC, danh sách tool. `original` vẫn là **byte đọc từ đĩa trong lượt này** và
+   * `modified` là **chính byte ấy sau khi áp khối** — nên thẻ duyệt dựng diff từ vật thật, và diff
+   * ấy nay chỉ chứa những dòng THẬT SỰ đổi (bản chép tay của model làm nhiễu cả tệp).
+   *
+   * ⚠ Lượt TẠO **không** đi đường khối: không có nội dung cũ để neo vào. Nó giữ nguyên đường
+   *   chép-cả-tệp, một byte không đổi.
+   */
+  const duongKhoi = !xinTao && codingKhoiSuaEnabled();
+  /** Chữ model đã phát ở một lượt khối HỎNG — người dùng đã đọc rồi, không được đánh rơi khi lùi. */
+  let chuTruoc = "";
+
+  if (duongKhoi) {
+    const heThongK = personaSuaTepKhoi(language, nguCanh);
+    const ghepK = (khoi: string): string => promptSuaTepKhoi(relPath, goc, question, language, khoi);
+    const lk = yield* motLuotModel({
+      heThong: heThongK,
+      ghepPrompt: ghepK,
+      tranToken: TRAN_TOKEN_KHOI_SUA,
+      language,
+      history,
+      relPath,
+      userId: execCtx.user?.id,
+    });
+    if (lk.kq !== "chu") return { kq: "dung", relPath, traLoi: lk.traLoi, provider: lk.provider, degraded: lk.degraded };
+
+    const boc = bocKhoiSua(lk.text);
+    /**
+     * ⚠ So khớp trên bản LF: model gần như luôn phát `\n`, còn tệp trên đĩa có thể là CRLF. Neo đúng
+     *   từng ký tự mà lệch kiểu xuống dòng thì `indexOf` trả −1 — một lượt "neo không thấy" HOÀN
+     *   TOÀN giả. Chuẩn hoá hai bên để SO, rồi `dongBoXuongDong` trả kiểu cũ về khi GHI.
+     */
+    const gocLF = goc.replace(/\r\n/g, "\n");
+    const ap = boc.ok ? apDungKhoiSua(gocLF, boc.khoi) : null;
+    if (ap?.ok) {
+      const moiK = dongBoXuongDong(goc, ap.ketQua);
+      if (moiK === goc) {
+        const m = codingKhongDoiMessage(language, relPath);
+        yield { type: "token", token: `\n\n${m}` };
+        return { kq: "khong_doi", relPath, traLoi: `${lk.text}\n\n${m}`, provider: "ollama" };
+      }
+      return { kq: "ok", relPath, original: goc, modified: moiK, taoMoi: false, vanBanModel: lk.text };
+    }
+
+    /**
+     * ⚠ `KHOI_KHONG_DOI` **KHÔNG phải khối hỏng**: các khối đã áp sạch, chỉ là chúng không đổi gì.
+     *   Đây đúng nghĩa `moi === goc` của đường chép-cả-tệp. Đẩy nó xuống đường lùi là đốt thêm một
+     *   lượt model 30B (~30 s) để hỏi lại đúng câu model vừa trả lời xong.
+     */
+    if (ap && !ap.ok && ap.ma === "KHOI_KHONG_DOI") {
+      const m = codingKhongDoiMessage(language, relPath);
+      yield { type: "token", token: `\n\n${m}` };
+      return { kq: "khong_doi", relPath, traLoi: `${lk.text}\n\n${m}`, provider: "ollama" };
+    }
+
+    /**
+     * ★★★ KHỐI HỎNG ⇒ **ĐƯỜNG LÙI, KHÔNG PHẢI IM LẶNG.**
+     *
+     * Lùi được hay không do `chepCaTepDuocKhong` phán — tức do trần token RA, đúng thứ đã bó đường
+     * cũ. Tệp đủ nhỏ ⇒ chạy lại bằng persona chép-cả-tệp (mất thêm một lượt model, và ta NÓI RA
+     * điều đó). Tệp quá lớn ⇒ **từ chối có mã**, kèm đích danh đoạn neo hỏng: đó là thứ người dùng
+     * hành động được, khác hẳn "chờ 45 giây rồi nhận số không" của hôm qua.
+     */
+    const ma: MaKhoiHong = ap ? ap.ma : (boc as Extract<typeof boc, { ok: false }>).ma;
+    const chiTiet = ap ? ap.chiTiet : (boc as Extract<typeof boc, { ok: false }>).chiTiet;
+    const luiDuoc = chepCaTepDuocKhong(goc.length);
+    const m = codingKhoiHongMessage(language, relPath, ma, chiTiet, luiDuoc);
+    yield { type: "token", token: `\n\n${m}\n\n` };
+    if (!luiDuoc) return { kq: "dung", relPath, traLoi: `${lk.text}\n\n${m}`, provider: "ollama" };
+    chuTruoc = `${lk.text}\n\n${m}`;
+  }
+
   const heThong = xinTao ? personaTaoTep(language, nguCanh) : personaSuaTep(language, nguCanh);
   /**
    * ⚠ Lượt TẠO KHÔNG suy trần token từ `goc.length` được — `goc` RỖNG, và `tranTokenChoTep(0)` cho
@@ -3256,43 +3345,110 @@ async function* chuanBiBanSuaMotTep(y: {
   const tranToken = xinTao ? TRAN_TOKEN_TAO_TEP : tranTokenChoTep(goc.length);
   const ghepPromptTep = (khoi: string): string =>
     xinTao ? promptTaoTep(relPath, question, language, khoi) : promptSuaTep(relPath, goc, question, language, khoi);
+
+  const lm = yield* motLuotModel({
+    heThong,
+    ghepPrompt: ghepPromptTep,
+    tranToken,
+    language,
+    history,
+    relPath,
+    userId: execCtx.user?.id,
+  });
+  if (lm.kq !== "chu") {
+    return { kq: "dung", relPath, traLoi: noiChu(chuTruoc, lm.traLoi), provider: lm.provider, degraded: lm.degraded };
+  }
+
+  const boc = bocKhoiMa(lm.text);
+  if (boc === null) {
+    const m = codingKhongCoKhoiMaMessage(language);
+    yield { type: "token", token: `\n\n${m}` };
+    return { kq: "dung", relPath, traLoi: noiChu(chuTruoc, `${lm.text}\n\n${m}`), provider: "ollama" };
+  }
+
   /**
-   * ★★★ doc 81 · VIỆC 1 — Ở ĐƯỜNG SỬA TỆP, LỊCH SỬ NHƯỜNG CHỖ CHO NỘI DUNG TỆP, theo CẤU TẠO.
+   * ⚠ Lượt TẠO KHÔNG dùng `dongBoXuongDong(goc, …)` được: hàm ấy suy kiểu xuống dòng TỪ TỆP GỐC, mà
+   * ở đây gốc là chuỗi RỖNG ⇒ nó sẽ CẮT dòng trống cuối của mọi tệp mới. Xem `chuanHoaTepMoi`.
+   */
+  const moi = xinTao ? chuanHoaTepMoi(boc) : dongBoXuongDong(goc, boc);
+  if (moi === goc) {
+    const m = xinTao ? codingTaoRongMessage(language, relPath) : codingKhongDoiMessage(language, relPath);
+    yield { type: "token", token: `\n\n${m}` };
+    return { kq: "khong_doi", relPath, traLoi: noiChu(chuTruoc, `${lm.text}\n\n${m}`), provider: "ollama" };
+  }
+
+  return {
+    kq: "ok",
+    relPath,
+    original: goc,
+    modified: moi,
+    taoMoi: xinTao,
+    vanBanModel: noiChu(chuTruoc, lm.text),
+  };
+}
+
+/** Nối phần chữ của lượt khối hỏng với phần chữ của lượt lùi. `""` ⇒ trả nguyên phần sau. */
+function noiChu(truoc: string, sau: string): string {
+  return truoc ? `${truoc}\n\n${sau}` : sau;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 79 (2026-08-21) — MỘT LƯỢT GỌI MODEL: ngân sách → luồng → canh thoái hoá
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠⚠ VÌ SAO TÁCH RA: đường KHỐI và đường CHÉP-CẢ-TỆP cần **cùng một** chính sách quanh lượt gọi
+ * model (cân ngân sách bằng `dungKhoiLichSu` trên chuỗi THẬT sẽ gửi · bắt lỗi ném · canh vòng lặp
+ * thoái hoá · phát token ra ngoài). Chép chính sách ấy thành hai bản là đúng lớp lỗi đã trả giá
+ * nhiều lần ở repo này: hai bản trôi khỏi nhau, và bản lỏng hơn bao giờ cũng là bản đang chạy.
+ *
+ * ⚠ Nó **không phát `done`** và không quyết định gì về việc ghi — nó chỉ trả CHỮ, hoặc một lời từ
+ *   chối trung thực đã có mã.
+ */
+type LuotModel =
+  | { kq: "chu"; text: string }
+  | { kq: "dung"; traLoi: string; provider: "ollama" | "tool"; degraded?: { reason: string } };
+
+async function* motLuotModel(y: {
+  heThong: string;
+  ghepPrompt: (khoiLichSu: string) => string;
+  tranToken: number;
+  language: KbLanguage;
+  history: readonly LuotHoiThoai[];
+  relPath: string;
+  userId?: number;
+}): AsyncGenerator<StreamEvent, LuotModel> {
+  /**
+   * ★★★ doc 81 · VIỆC 1 — LỊCH SỬ NHƯỜNG CHỖ CHO NỘI DUNG TỆP, theo CẤU TẠO.
    *
    * `ghepPrompt` dựng ĐÚNG chuỗi sẽ gửi lên model, nên phép cân là trên vật thật. Prompt gốc (đã
    * chở cả tệp) vượt trần ⇒ `soLuotGiu = 0` **và** `vuotTruocKhiCoLichSu = true`.
    *
-   * ⚠⚠ NỢ CÓ SẴN ĐƯỢC ĐÓNG Ở ĐÂY: `TRAN_KY_TU_TEP_SUA = 60.000` ký tự ⇒ ~21.429 token vào; cộng
-   * `tranTokenChoTep(60.000) = 12.000` token ra = ~33.900 > **32.768** trần mỗi slot. Tức một tệp
-   * đúng bằng trần **đã** làm `congNganSachNguCanh` NÉM từ trước lượt này, và người dùng nhận một
-   * bức tường chữ kỹ thuật thay vì một câu nói rõ phải làm gì. Nay nó thành `NGAN_SACH` — một lời
-   * từ chối trung thực, và nó bắt cả những tệp nhỏ hơn 60k mà persona/ngữ cảnh dự án đẩy quá trần.
-   *
    * ⚠⚠ ĐƯỜNG NHIỀU TỆP KHÔNG NỚI TRẦN NÀY MỘT BYTE: mỗi tệp cân RIÊNG bằng chính hàm này, nên trần
-   *    slot 32.768 gặp phải **N lần một tệp**, không bao giờ là "N tệp trong một prompt". Đó là lý
-   *    do đường nhiều tệp gọi model N lượt thay vì gộp — gộp là cách nhanh nhất để mọi lượt đều ném.
+   *    slot 32.768 gặp phải **N lần một tệp**, không bao giờ là "N tệp trong một prompt".
    */
   const lich = dungKhoiLichSu({
-    lichSu: history,
-    systemPrompt: heThong,
-    maxTokens: tranToken,
-    lang: language,
-    ghepPrompt: ghepPromptTep,
+    lichSu: y.history,
+    systemPrompt: y.heThong,
+    maxTokens: y.tranToken,
+    lang: y.language,
+    ghepPrompt: y.ghepPrompt,
   });
   if (lich.vuotTruocKhiCoLichSu) {
-    const m = codingKhongTuSuaMessage(language, relPath, "NGAN_SACH");
+    const m = codingKhongTuSuaMessage(y.language, y.relPath, "NGAN_SACH");
     yield { type: "token", token: m };
-    return { kq: "dung", relPath, traLoi: m, provider: "tool" };
+    return { kq: "dung", traLoi: m, provider: "tool" };
   }
+
   const it = rutChuCoCanh(
     streamCodingModel({
-      systemPrompt: heThong,
-      prompt: ghepPromptTep(lich.khoi),
-      maxTokens: tranToken,
+      systemPrompt: y.heThong,
+      prompt: y.ghepPrompt(lich.khoi),
+      maxTokens: y.tranToken,
       temperature: 0.15,
-      // Phạt lặp làm hỏng việc chép lại NGUYÊN VĂN một tệp (thụt đầu dòng, `}` liên tiếp…).
+      // Phạt lặp làm hỏng việc chép lại NGUYÊN VĂN (thụt đầu dòng, `}` liên tiếp…) — và một đoạn
+      // NEO cũng là một bản chép nguyên văn, nên đường khối cần đúng con số này.
       repeatPenalty: 1.0,
-      userId: execCtx.user?.id,
+      userId: y.userId,
       // Chữ này SẼ được ghi ra đĩa ⇒ prompt phải tới model nguyên văn (xem `YeuCauSinhChu`).
       nguyenVanPrompt: true,
     }),
@@ -3305,9 +3461,9 @@ async function* chuanBiBanSuaMotTep(y: {
     try {
       n = await it.next();
     } catch (e) {
-      const m = codingModelErrorMessage(language, e);
+      const m = codingModelErrorMessage(y.language, e);
       yield { type: "token", token: (daPhat ? "\n\n" : "") + m };
-      return { kq: "dung", relPath, traLoi: daPhat ? `${daPhat}\n\n${m}` : m, provider: "tool" };
+      return { kq: "dung", traLoi: daPhat ? `${daPhat}\n\n${m}` : m, provider: "tool" };
     }
     if (n.done) {
       kq = n.value;
@@ -3318,30 +3474,11 @@ async function* chuanBiBanSuaMotTep(y: {
   }
 
   if (kq.degraded || !kq.text.trim()) {
-    const m = codingThoaiHoaMessage(language, kq.reason);
+    const m = codingThoaiHoaMessage(y.language, kq.reason);
     // Đã phát chữ rác ra rồi ⇒ `degraded:true` để client THAY chữ đã tích luỹ bằng câu sạch này.
-    return { kq: "dung", relPath, traLoi: m, provider: "tool", degraded: { reason: kq.reason || "empty" } };
+    return { kq: "dung", traLoi: m, provider: "tool", degraded: { reason: kq.reason || "empty" } };
   }
-
-  const boc = bocKhoiMa(kq.text);
-  if (boc === null) {
-    const m = codingKhongCoKhoiMaMessage(language);
-    yield { type: "token", token: `\n\n${m}` };
-    return { kq: "dung", relPath, traLoi: `${kq.text}\n\n${m}`, provider: "ollama" };
-  }
-
-  /**
-   * ⚠ Lượt TẠO KHÔNG dùng `dongBoXuongDong(goc, …)` được: hàm ấy suy kiểu xuống dòng TỪ TỆP GỐC, mà
-   * ở đây gốc là chuỗi RỖNG ⇒ nó sẽ CẮT dòng trống cuối của mọi tệp mới. Xem `chuanHoaTepMoi`.
-   */
-  const moi = xinTao ? chuanHoaTepMoi(boc) : dongBoXuongDong(goc, boc);
-  if (moi === goc) {
-    const m = xinTao ? codingTaoRongMessage(language, relPath) : codingKhongDoiMessage(language, relPath);
-    yield { type: "token", token: `\n\n${m}` };
-    return { kq: "khong_doi", relPath, traLoi: `${kq.text}\n\n${m}`, provider: "ollama" };
-  }
-
-  return { kq: "ok", relPath, original: goc, modified: moi, taoMoi: xinTao, vanBanModel: kq.text };
+  return { kq: "chu", text: kq.text };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -3712,6 +3849,64 @@ function codingKhongCoKhoiMaMessage(language: KbLanguage): string {
   if (language === "zh") return "⚠ 未提出写入：模型的回答中没有代码块，因此无法构造完整的新文件内容。宁可不改，也不猜。";
   if (language === "en") return "⚠ No write proposed: the model's answer contains no code block, so the full new file content could not be built. Refusing to guess.";
   return "⚠ KHÔNG đề xuất ghi: câu trả lời của model không có khối mã nào nên tôi không dựng được nội dung tệp mới đầy đủ. Thà không sửa còn hơn đoán.";
+}
+
+/**
+ * ★★★ doc 79 (2026-08-21) — **KHỐI SỬA HỎNG.** Hai kết cục, và câu chữ phải phân biệt được chúng:
+ * còn ĐƯỜNG LÙI (tệp đủ nhỏ để chép lại cả tệp) hay ĐÃ HẾT ĐƯỜNG.
+ *
+ * ⚠ Câu này luôn nêu **mã** + **đích danh đoạn neo**. Lỗi mà lượt trước để lại là một lời từ chối
+ *   KHÔNG nói được nó từ chối cái gì; người dùng chỉ thấy mình chờ 45 giây rồi không có gì. Ba mã
+ *   nhập nhằng (`NEO_KHONG_THAY` · `NEO_NHIEU_CHO` · `NEO_RONG`) dẫn tới **ba việc khác nhau** người
+ *   dùng phải làm, nên chúng không được gộp thành một câu chung.
+ */
+function codingKhoiHongMessage(
+  language: KbLanguage,
+  relPath: string,
+  ma: MaKhoiHong,
+  chiTiet: string,
+  luiDuoc: boolean,
+): string {
+  const vi: Record<MaKhoiHong, string> = {
+    KHONG_CO_KHOI: `model không phát ra khối sửa nào (không có dòng mốc \`${MOC_MO}\`)`,
+    KHOI_CUT: `khối sửa bị CẮT giữa chừng — ${chiTiet}. Đây là dấu hiệu đầu ra chạm trần token`,
+    KHOI_MO_HO: `khối sửa không rõ ranh giới — ${chiTiet}`,
+    NEO_RONG: `đoạn neo RỖNG (${chiTiet}) — một đoạn neo rỗng "khớp" ở mọi vị trí nên không xác định được chỗ nào`,
+    NEO_KHONG_THAY: `KHÔNG tìm thấy đoạn neo trong tệp — ${chiTiet}. Model đang chép lại một đoạn không có ở đó`,
+    NEO_NHIEU_CHO: `đoạn neo trùng ở NHIỀU CHỖ — ${chiTiet}. Tôi TỪ CHỐI thay vì đoán "chắc là chỗ đầu tiên": đoán ở đây là ghi đè nhầm chỗ trong im lặng`,
+    KHOI_KHONG_DOI: `các khối áp xong mà tệp không đổi (${chiTiet})`,
+  };
+  const en: Record<MaKhoiHong, string> = {
+    KHONG_CO_KHOI: `the model produced no edit block (no \`${MOC_MO}\` marker line)`,
+    KHOI_CUT: `an edit block was CUT OFF — ${chiTiet}. That is the signature of hitting the output token cap`,
+    KHOI_MO_HO: `an edit block has ambiguous boundaries — ${chiTiet}`,
+    NEO_RONG: `the anchor is EMPTY (${chiTiet}) — an empty anchor "matches" everywhere, so no position can be determined`,
+    NEO_KHONG_THAY: `the anchor was NOT found in the file — ${chiTiet}. The model copied text that is not there`,
+    NEO_NHIEU_CHO: `the anchor matches MULTIPLE places — ${chiTiet}. Refusing rather than assuming "probably the first one": guessing here means overwriting the wrong place silently`,
+    KHOI_KHONG_DOI: `the blocks applied cleanly but changed nothing (${chiTiet})`,
+  };
+  const zh: Record<MaKhoiHong, string> = {
+    KHONG_CO_KHOI: `模型未产生任何修改块（没有 \`${MOC_MO}\` 标记行）`,
+    KHOI_CUT: `修改块被截断——${chiTiet}。这是输出触达 token 上限的特征`,
+    KHOI_MO_HO: `修改块边界不明确——${chiTiet}`,
+    NEO_RONG: `锚点为空（${chiTiet}）——空锚点在任何位置都“匹配”，无法确定位置`,
+    NEO_KHONG_THAY: `文件中找不到锚点——${chiTiet}。模型抄录了并不存在的片段`,
+    NEO_NHIEU_CHO: `锚点匹配到多处——${chiTiet}。我拒绝而不是假定“大概是第一处”：在这里猜测等于静默改错地方`,
+    KHOI_KHONG_DOI: `所有块都应用了，但文件没有变化（${chiTiet}）`,
+  };
+  if (language === "zh") {
+    return luiDuoc
+      ? `⚠ 基于块的修改未成功（"${relPath}"）：${zh[ma]}。该文件足够小，可以整文件重写——正在重试一次（会再花一次模型调用）。`
+      : `⛔ 未提出写入（"${relPath}"）：${zh[ma]}。该文件太大，无法退回整文件重写（会超出输出 token 上限），所以这里没有可用的退路。请指明要改的函数或片段，或把文件拆小。`;
+  }
+  if (language === "en") {
+    return luiDuoc
+      ? `⚠ The block edit did not succeed on "${relPath}": ${en[ma]}. The file is small enough for a whole-file rewrite — retrying that once (costs one more model call).`
+      : `⛔ No write proposed for "${relPath}": ${en[ma]}. The file is too large to fall back to a whole-file rewrite (it would exceed the output token cap), so there is no fallback here. Name the function or snippet to change, or split the file.`;
+  }
+  return luiDuoc
+    ? `⚠ Lượt sửa THEO KHỐI không thành trên "${relPath}": ${vi[ma]}. Tệp này đủ nhỏ để chép lại cả tệp — tôi đang thử lại theo đường đó (tốn thêm một lượt gọi model).`
+    : `⛔ KHÔNG đề xuất ghi cho "${relPath}": ${vi[ma]}. Tệp quá lớn để lùi về đường chép-cả-tệp (sẽ vượt trần token ĐẦU RA nên bản chép sẽ bị cắt cụt), nên ở đây KHÔNG có đường lùi nào. Hãy nêu rõ hàm/đoạn cần sửa, hoặc tách nhỏ tệp.`;
 }
 
 /** Model trả lại đúng tệp cũ — không phải sự cố, chỉ là không có gì để áp. */

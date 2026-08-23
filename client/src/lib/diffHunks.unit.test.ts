@@ -448,16 +448,74 @@ describe("B3 — buffer đổi giữa chừng ⇒ TỪ CHỐI, tuyệt đối kh
 
 // ────────────────────────────────────────────────────────────────────────────────
 describe("cầu chì kích thước — LCS là O(n·m), không được treo trình duyệt", () => {
-  it("file quá lớn ⇒ MỘT khối cả-file, khai báo oversize, bất biến B1 vẫn giữ", () => {
+  /**
+   * ★★★ doc 79 (2026-08-21) — CA NÀY ĐÃ ĐỔI, VÀ ĐỔI VÌ MỘT PHÉP ĐO.
+   *
+   * Bản cũ khẳng định *"file quá lớn ⇒ MỘT khối cả-file"* với dữ liệu là một tệp 1.550 dòng
+   * đổi **đúng một dòng**. Nó xanh, và nó mô tả một hành vi HỎNG: thẻ duyệt hiện
+   * **+1550 / −1550** cho một lượt sửa một dòng, tức người duyệt được mời bấm "Duyệt & ghi"
+   * trên một diff nói rằng cả tệp vừa bị thay. Đo được ở live: một tệp **1.602 dòng** (≈28 KB,
+   * nhỏ hơn cả trần của tác nhân sửa tệp) đã chạm ngưỡng này.
+   *
+   * Cầu chì vẫn còn — nó chỉ được đo trên PHẦN LÕI (sau khi cắt đầu/đuôi giống nhau), tức
+   * đúng phần LCS phải chạy. Nên ca này nay nuôi bằng một diff mà phần lõi THẬT SỰ lớn.
+   */
+  it("PHẦN LÕI quá lớn ⇒ MỘT khối phủ lõi, khai báo oversize, bất biến B1 vẫn giữ", () => {
     const n = DEFAULT_MAX_DIFF_LINES + 50;
     const a = Array.from({ length: n }, (_, i) => `dong ${i}`).join("\n");
-    const b = Array.from({ length: n }, (_, i) => (i === 7 ? "DA SUA" : `dong ${i}`)).join("\n");
+    // MỌI dòng đều khác ⇒ không cắt được gì ⇒ lõi = cả tệp ⇒ cầu chì nổ đúng lúc.
+    const b = Array.from({ length: n }, (_, i) => `DONG KHAC ${i}`).join("\n");
     const plan = computeHunkPlan(a, b);
     expect(plan.oversize).toBe(true);
     expect(plan.hunks).toHaveLength(1);
     expect(applyAll(plan)).toBe(b);
     const rong = projectHunks(plan, []);
     expect(rong.ok && rong.text).toBe(a);
+  });
+
+  /**
+   * ★★★ HÀNH VI MỚI — và đây là mệnh đề mà cả đường "sửa theo khối" dựa vào: một lượt sửa CÓ
+   * ĐÍCH trên một tệp rất lớn phải cho ra một diff CÓ ĐÍCH, không phải một khối nuốt cả tệp.
+   */
+  it("★★★ tệp RẤT LỚN nhưng sửa CÓ ĐÍCH ⇒ KHÔNG oversize, đúng một khối +1 −1", () => {
+    const n = DEFAULT_MAX_DIFF_LINES * 3;
+    const a = Array.from({ length: n }, (_, i) => `dong ${i}`).join("\n");
+    const b = Array.from({ length: n }, (_, i) => (i === 2000 ? "DA SUA" : `dong ${i}`)).join("\n");
+    const plan = computeHunkPlan(a, b);
+    expect(plan.oversize, "cắt đầu/đuôi giống nhau ⇒ lõi chỉ còn 1 dòng ⇒ cầu chì không chạm").toBe(false);
+    expect(plan.hunks).toHaveLength(1);
+    expect(plan.hunks[0].origStart).toBe(2000);
+    expect(plan.hunks[0].removed).toEqual(["dong 2000"]);
+    expect(plan.hunks[0].added).toEqual(["DA SUA"]);
+    expect(applyAll(plan), "bất biến B1 TỪNG KÝ TỰ").toBe(b);
+    const rong = projectHunks(plan, []);
+    expect(rong.ok && rong.text).toBe(a);
+  });
+
+  it("★★★ CHÈN thuần vào GIỮA một tệp rất lớn ⇒ một khối +1 −0 (lõi rỗng một bên)", () => {
+    const n = DEFAULT_MAX_DIFF_LINES * 2;
+    const aLines = Array.from({ length: n }, (_, i) => `dong ${i}`);
+    const bLines = [...aLines.slice(0, 900), "DONG MOI", ...aLines.slice(900)];
+    const plan = computeHunkPlan(aLines.join("\n"), bLines.join("\n"));
+    expect(plan.oversize).toBe(false);
+    expect(plan.hunks).toHaveLength(1);
+    expect(plan.hunks[0].removed).toEqual([]);
+    expect(plan.hunks[0].added).toEqual(["DONG MOI"]);
+    expect(applyAll(plan)).toBe(bLines.join("\n"));
+    const rong = projectHunks(plan, []);
+    expect(rong.ok && rong.text).toBe(aLines.join("\n"));
+  });
+
+  it("★★★ XOÁ thuần ở GIỮA một tệp rất lớn ⇒ một khối +0 −1", () => {
+    const n = DEFAULT_MAX_DIFF_LINES * 2;
+    const aLines = Array.from({ length: n }, (_, i) => `dong ${i}`);
+    const bLines = [...aLines.slice(0, 900), ...aLines.slice(901)];
+    const plan = computeHunkPlan(aLines.join("\n"), bLines.join("\n"));
+    expect(plan.oversize).toBe(false);
+    expect(plan.hunks).toHaveLength(1);
+    expect(plan.hunks[0].removed).toEqual(["dong 900"]);
+    expect(plan.hunks[0].added).toEqual([]);
+    expect(applyAll(plan)).toBe(bLines.join("\n"));
   });
 
   it("dưới ngưỡng ⇒ tách khối bình thường", () => {

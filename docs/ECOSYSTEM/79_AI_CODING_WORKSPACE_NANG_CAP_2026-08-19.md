@@ -954,3 +954,199 @@ giả tự viết cho lưới; khác câu người dùng **đúng một dấu ha
 mà ngoài cổng). Suite AI 230 tệp: **12 tệp đỏ, cùng danh sách**; ba tệp lệch giữa các lượt đều hỏng
 vì `Test timed out in 5000ms` (không phải sai khẳng định), xanh khi chạy riêng, và HEAD cũng có ca
 timeout của chính nó ⇒ **nhiễu hạn giờ, không phải hồi quy**.
+
+---
+
+# ✅ SỬA THEO KHỐI — thôi bắt model chép lại cả tệp (2026-08-21)
+
+Chủ dự án nêu: hợp đồng `apply_diff` là `{path, original, modified}` với **cả hai là chuỗi ĐẦY ĐỦ**,
+nên model phải chép lại nguyên tệp để đổi một dòng. Đo lại: đúng, và hậu quả lớn hơn brief nêu.
+
+## ⚠⚠⚠ CÓ **BA** TRẦN TRÊN ĐƯỜNG SỬA — LƯỢT ĐỐI CHIẾU 2026-08-20 CHỈ SO HAI
+
+| | trần | ai canh | đo được |
+|---|---|---|---|
+| T1 | `TRAN_KY_TU_TEP_SUA` = **60.000** ký tự | bộ lọc thô | có trong lượt trước |
+| T2 | ngân sách **VÀO** (`kiemNganSachNguCanh`) | `dungKhoiLichSu` | **56.890 vi · 56.876 en · 57.316 zh** |
+| T3 | ngân sách **RA** (`tranTokenChoTep` bị kẹp ở 12.000) | **KHÔNG AI** | **31.200** ký tự |
+
+`T3 = 12.000 token × 2,6 ký tự/token`. Trên 31.200 ký tự model bị cắt giữa chừng ⇒ khối ba-dấu-huyền
+không có dòng đóng ⇒ `bocKhoiMa()` trả `null` ⇒ người dùng chờ hết một lượt suy luận để nhận một lời
+từ chối. **T1 và T2 không hề biết chuyện đó**: một tệp 40.000 ký tự lọt cả hai và hỏng ở T3 **mỗi lần**.
+
+⇒ Kết luận *"giữ 60.000"* của lượt trước KHÔNG sai, nhưng nó **đúng trên một tập trần thiếu**. Trần
+thật của đường chép-cả-tệp là **31.200**, không phải 57.000 và càng không phải 60.000.
+
+## Hợp đồng khối — bốn hình dạng đã cân, và vì sao chọn `neo → thay`
+
+* **diff hợp nhất** — bắt model ĐẾM DÒNG; một bộ áp diff khoan dung sẽ áp được cả khi số dòng sai ⇒
+  hỏng theo chiều **MỞ**. Muốn fail-closed thì phải viết bản sao thứ hai của chính sách ghi.
+* **`{doDongTu, doDongDen, thayBang}`** — rẻ nhất, **sai nhất**: lệch vài dòng KHÔNG phát hiện được
+  (mã ở đúng dải ấy vẫn tồn tại, vẫn bị thay). Fail-**OPEN** theo cấu tạo. LOẠI.
+* **JSON `{search, replace}`** — cùng nghĩa nhưng đầu ra phải thoát chuỗi; model 30B hỏng escape
+  thường xuyên hơn hỏng khoảng trắng ⇒ đổi một lớp lỗi lấy lớp lỗi tệ hơn.
+* ✅ **ba dòng mốc `SEARCH` / `=======` / `REPLACE`, nhiều khối một tệp** — không số dòng · không thoát
+  chuỗi · giữ nguyên khoảng trắng · **nhập nhằng ĐO ĐƯỢC** (đếm số lần đoạn neo xuất hiện).
+
+Mốc nhận theo **HÌNH DẠNG** (`/^<{3,}\s*SEARCH\s*$/i`), không theo danh sách trắng chuỗi — đúng bài
+học hậu tố `REPO_PATH_REGEX`: mọi danh sách trắng đều có phần tử thứ N+1 và cái thiếu tiếp theo hỏng
+IM LẶNG.
+
+## Nhập nhằng — ba mệnh đề fail-closed
+
+1. neo **0 lần** ⇒ `NEO_KHONG_THAY`. Không "gần đúng", không "chắc ý nó là".
+2. neo **≥2 lần** ⇒ `NEO_NHIEU_CHO`. *"Chắc là cái đầu tiên"* chính là ghi đè nhầm chỗ TRONG IM LẶNG.
+3. đúng **1 lần** mới thay, và thay đúng lần ấy.
+
+Thêm `KHOI_CUT` (mở `SEARCH` mà không đóng) — mã quan trọng nhất: nó phân biệt *"model không hiểu"*
+với *"model bị CẮT vì trần token"*, hai việc khác nhau người dùng phải làm.
+
+## Neo hỏng — HAI đường lùi, không phải một lời dặn
+
+* **Nới đúng MỘT trục**: bỏ qua khoảng trắng **CUỐI dòng** (lớp lỗi chép tay có thật của 30B, và là
+  lớp DUY NHẤT không mang một byte ngữ nghĩa nào). Thụt ĐẦU dòng **không nới** — nới nó là cho neo
+  trượt sang khối lệnh khác. Phép nới **không** nới điều kiện DUY NHẤT.
+* **Quay về chép-cả-tệp** khi `chepCaTepDuocKhong(n)` — một vị từ suy thẳng từ `tranTokenChoTep`
+  (không có hằng số thứ hai để trôi). Tệp quá lớn ⇒ **TỪ CHỐI CÓ MÃ, nêu đích danh đoạn neo hỏng**,
+  chứ không phải "chờ 45 giây rồi nhận số không".
+
+## Băm chống TOCTOU **KHÔNG yếu đi một byte** — và vì sao không cần tool mới
+
+Hợp đồng `apply_diff` **giữ nguyên** `{path, original, modified}`. Cái đổi là **thứ MODEL phát ra**:
+server đọc đĩa (`read_file` trong chính lượt này) → `original` = byte đĩa → áp khối → `modified`.
+Hệ quả: 0 tool mới · `AUTONOMY_INELIGIBLE` / `CODING_TOOL_NAMES` / `locQuyetDinhLLMLapTrinh` không đổi ·
+`writeConfined` vẫn đúng MỘT điểm gọi · HITL, hộp cát, tệp bẩn, RBAC, mỗi-tệp-một-băm còn nguyên.
+
+★ Và thẻ duyệt nay **sạch theo cấu tạo**: `modified` khác `original` **chỉ ở chỗ khối chạm tới**, thay
+vì khác ở mọi ký tự model gõ lệch khi chép lại.
+
+## Hai trần sau khi đo — **GIỮ 60.000, và lần đầu tiên nó là trần THẬT**
+
+`TRAN_TOKEN_KHOI_SUA = 4.000` (hằng, **không** phụ thuộc `n` — đầu ra khối tỉ lệ với THAY ĐỔI, không
+với tệp). Đo bằng `kiemNganSachNguCanh` trên chính `personaSuaTepKhoi` + `promptSuaTepKhoi`:
+
+```
+maxTokens=4.000 → điểm hoà ngân sách VÀO = 79.290 (vi) · 79.276 (en) · 79.716 (zh)
+```
+
+**Cao hơn cả T1 (60.000) lẫn trần byte của `read_file` (65.536).** Tức T2 và T3 **thôi ràng buộc**;
+60.000 nay là trần nhỏ nhất, đúng như nó tự khai. Ba trần lần đầu nhất quán.
+
+**Tệp cỡ nào NAY sửa được mà trước không** (đếm theo đúng luật hộp cát: đoạn thư mục cấm + đuôi trắng):
+
+| tập | sửa được TRƯỚC (≤31.200 kt) | sửa được SAU (≤60.000 kt) | **mới** |
+|---|---|---|---|
+| 4.911 tệp hộp cát đọc được | 4.437 (90,35%) | 4.738 (96,48%) | **+301** |
+| 4.295 tệp MÃ (bỏ docs/knowledge) | 3.898 (90,76%) | 4.152 (96,67%) | **+254** |
+
+Trong đó có `client/src/App.tsx`, `server/routers.ts`, `server/license/license-service.ts`,
+`server/routes/openaiGateway.ts`, `client/src/pages/OEEDashboard.tsx`… ⚠ 3 tệp lọt trần KÝ TỰ nhưng
+chạm trần **BYTE** 65.536 vì tiếng Việt đa byte — trần thật là `min(ký tự, byte)`, đã nói ra.
+
+## ⚠⚠ LỖ (D) TÌM ĐƯỢC KHI ĐO — thẻ duyệt **đã** mù từ trước, và bản vá này làm nó lộ ra
+
+`computeHunkPlan` có cầu chì `DEFAULT_MAX_DIFF_LINES = 1500`. Đo: một tệp **1.602 dòng (≈28 KB —
+NHỎ HƠN cả trần cũ 31.200)** đổi **đúng một dòng** cho ra `oversize:true` và thẻ duyệt hiện
+**+1602 / −1602**. Người duyệt được mời bấm "Duyệt & ghi" trên một diff nói rằng CẢ TỆP vừa bị thay —
+hàng rào "người duyệt" bị vô hiệu hoá **bằng nhiễu**. Lưới cũ XANH vì nó khẳng định đúng hành vi hỏng ấy.
+
+**Vá**: cắt đầu/đuôi GIỐNG NHAU trước khi chạy LCS. Dòng giống nhau ở hai đầu không thể thuộc bất kỳ
+khối diff nào ⇒ đây là phép biến đổi **BẢO TOÀN**, không phải xấp xỉ. Cầu chì vẫn còn, chỉ đo trên
+PHẦN LÕI. Bất biến B1 (`projectHunks(mọi id) === modified`, TỪNG KÝ TỰ) giữ nguyên. Kết quả: tệp
+4.500 dòng sửa một dòng ⇒ **1 khối, +1 −1**.
+
+## Lưới — nó phát biểu *"câu người dùng gõ thật SẼ TỚI ĐƯỢC đường khối"*
+
+`server/services/aiCodingKhoiSua.stream.test.ts` — **59 ca**, tách đôi có chủ ý:
+
+* **§1–§3 · §7** — hàm THUẦN (0 mock): hợp đồng khối · phép áp khối · ba trần (§3 **tự hiệu chỉnh**:
+  nó khẳng định một QUAN HỆ — ở đúng 60.000, prompt khối LỌT còn prompt chép-cả-tệp KHÔNG — chứ không
+  ghim một điểm hoà) · băm TOCTOU trên **repo git THẬT** (`git init` + commit, `core.autocrlf=false`).
+* **§4–§6 · §8–§9** — chạy `streamAnswer` qua **đúng chuỗi định tuyến**, trong **đúng hình dạng phiên
+  live**: dự án chọn bằng `projectId` ⇒ `AI_REPO_SANDBOX_ROOTS`, đường dẫn **tương đối theo gốc dự
+  án**, tệp **CRLF thật** trên đĩa thật, 7 biến thể câu vi/en/zh (kể cả tiếng Việt KHÔNG DẤU).
+* Thước của mệnh đề "diff sạch" là **CHÍNH `computeHunkPlan` + `planStats`** — cái thước người duyệt
+  nhìn. Không viết phép so dòng thứ hai.
+
+**15 đột biến, 15 bị bắt**:
+
+| # | đột biến | kết quả |
+|---|---|---|
+| M1 | bỏ hẳn đường KHỐI | ĐỎ 23 |
+| M2 | neo ≥2 chỗ ⇒ lấy cái đầu tiên | ĐỎ 4 |
+| M3 | neo 0 chỗ ⇒ bỏ qua khối trong im lặng | ĐỎ 6 |
+| M4 | phép nới bỏ luôn thụt ĐẦU dòng | ĐỎ 1 |
+| M5 | phép nới bỏ điều kiện DUY NHẤT | ĐỎ 1 |
+| M6 | đường lùi LUÔN mở | ĐỎ 4 |
+| M7 | đường lùi KHÔNG BAO GIỜ mở | ĐỎ 3 |
+| M8 | trần RA nối lại vào `tranTokenChoTep(n)` | ĐỎ 1 |
+| M9 | khối CỤT coi là hợp lệ (EOF = đóng) | ĐỎ 3 |
+| M10 | hai dòng ngăn ⇒ lấy dòng đầu | ĐỎ 1 |
+| M11 | bỏ chuẩn hoá CRLF trước khi so neo | **SỐNG lượt 1** → xem dưới · ĐỎ 2 |
+| M12 | `original` = bản model dựng thay vì byte đĩa | ĐỎ 10 |
+| M13 | bỏ phép cắt đầu/đuôi của thẻ duyệt | ĐỎ 4 |
+| M14 | bỏ hàng rào băm TOCTOU của `apply_diff` | ĐỎ 2 |
+| M15 | `KHOI_KHONG_DOI` coi là khối HỎNG | ĐỎ 1 |
+
+### ★★★ M11 SỐNG SÓT — thiết bị đo lại nói dối, đúng chỗ nó tự nhận là đang đo
+
+Ca trung tâm §8 dùng neo **MỘT DÒNG** (`return a / b;`). Với neo một dòng, chuẩn hoá CRLF→LF **không
+có tác dụng gì** — chuỗi ấy nằm gọn trong một dòng nên khớp tệp CRLF y hệt khớp tệp LF. Tức có một
+hàng rào không ai đo, và một ca **tự nhận là đang đo nó**. Sửa ở THIẾT BỊ ĐO: neo bắc qua ranh giới
+dòng (3 dòng), cộng một khẳng định `expect(neo).toContain(...)` để không ai làm yếu lại. M11 áp lại
+⇒ **ĐỎ 2**. (Cùng lớp với M3 của trục 1 (D).)
+
+## Đối chứng `git stash` với HEAD — **và nó lại bắt được một chuyện**
+
+Chạy **hai lượt mỗi phía** trên cùng 232 tệp lưới AI (`server/services/ai*`, `ai/**`,
+`aiLocalTools/**`, `client/src/lib/diffHunks*`):
+
+| | tệp đỏ lượt 1 | tệp đỏ lượt 2 | HỢP |
+|---|---|---|---|
+| HEAD | 9 | 10 | 10 |
+| bản vá | 10 | 9 | 10 |
+
+`diff` hai HỢP khác đúng **hai dòng**:
+
+* **`aiCodingTaoTep.stream.test.ts` ĐỎ ở HEAD (cả hai lượt), XANH với bản vá** ⇒ bản vá **đóng một
+  con đỏ CÓ SẴN**. Truy ra: commit **`e3c0dd09`** — *commit cuối của lượt trước* — thêm
+  `src/StringUtils.cs` vào đề thi, làm tiền đề của §11 (*"tệp KHÔNG có trong đề thi"*) hết đúng và
+  **mệnh đề đúng ĐẢO CHIỀU** (hai tệp đều có ⇒ lô KHÔNG dừng nữa, nó phải đề xuất). Đã sửa theo
+  hướng đúng-sự-thật-hôm-nay, giữ nguyên văn câu live.
+* `aiRcaCopilot.test.ts` đỏ **một** trong hai lượt bản vá, xanh khi chạy riêng ×2, và file test ấy
+  `vi.mock("./aiLocalKnowledgeService")` **toàn bộ** ⇒ mã tôi sửa không có đường tới nó. Nhiễu chạy
+  song song. `aiProviderGatewayRouting.test.ts` đỏ ở **cả HEAD lẫn bản vá** (lượt 2 / lượt 1+2), xanh
+  khi chạy riêng — cùng loại nhiễu.
+
+⇒ **0 hồi quy, −1 tệp đỏ.**
+
+`npm run check` sạch · `i18n:check` exit 0 (hai phía) · `check:tests` **12 lỗi, GIỐNG HỆT TỪNG DÒNG**
+ở HEAD và bản vá (nợ có sẵn: `.mjs` không khai báo kiểu) · 13 lưới vùng ảnh hưởng + 4 census
+(`phamViDocCensus` · `congGiayPhepAiCensus` · `phamViTuyenCensus` · `thinkingSurfaces.quantifier`):
+**547 ca, 0 đỏ** · `vramPha5Gate` vẫn **2 ca đỏ y như HEAD** (nợ có sẵn, không tệp nào của lượt này
+nằm trong danh sách nó canh).
+
+## ⚠ TIỀN ĐỀ CỦA BRIEF ĐÃ KIỂM — cái nào SAI
+
+1. **SAI (một phần)**: *"model bị cắt … `bocKhoiMa()` trả `null` ⇒ người dùng chờ ~45 s rồi **không
+   nhận được gì**"*. Đo mã: họ VẪN nhận `kq.text` (bản chép **cụt**) + `codingKhongCoKhoiMaMessage`.
+   Chế độ hỏng thật **tệ hơn** cách brief mô tả: không phải màn hình trống mà là một **tệp cắt cụt**
+   hiện ra như thể là câu trả lời, kèm một câu từ chối không nói được nó từ chối **cái gì**.
+2. **SAI**: *"`TRAN_KY_TU_TEP_SUA = 60.000` cao hơn ngưỡng thật ~2×"*. So với T2 (~57.000) thì nó cao
+   hơn **~5%**; con số "2×" chỉ đúng khi so với T3 (31.200) — mà T3 chưa từng có trong phép đối chiếu
+   nào. Hai lời khai ấy nói về hai cái trần khác nhau.
+3. **Số đo lệch**: *"3.053 tệp nguồn, 80 tệp (2,6%) > 60.000"*. Đếm theo đúng luật hộp cát ra
+   **4.911 tệp / 173 tệp (3,52%)**; riêng vùng MÃ là **4.295 / 143 (3,33%)**. Kết luận định tính của
+   brief đúng; con số thì không.
+4. **ĐÚNG và đắt hơn brief nghĩ**: *"`computeHunkPlan` là công cụ HIỂN THỊ, đừng nhầm nó là lời giải"*
+   — đúng, và khi đo thì chính nó đang **mù** ở đúng dải tệp mà bản vá này mở ra (mục ⚠⚠ (D) trên).
+5. **ĐÚNG**: hợp đồng chuỗi-đầy-đủ, `tranTokenChoTep`, `vramPha5Gate` đỏ sẵn ở HEAD, `viStringCoverage`
+   ghim 410, nhóm A của `phamViDocCensus` = 363 — tất cả đo lại đều khớp.
+
+## Chưa làm (nói thẳng)
+
+* **CHƯA nghiệm thu LIVE** (chủ dự án giữ việc này): chưa build, chưa restart, chưa Playwright, KHÔNG
+  gọi model thật, KHÔNG chạm CSDL, `sandbox-projects/` **0 thay đổi** (băm đề thi khẳng định trong lưới).
+* Lượt **TẠO tệp mới** vẫn đi đường chép-cả-tệp — không có nội dung cũ để neo vào; đúng thiết kế.
+* Trần **byte** của `read_file` (65.536) chưa đụng tới: nó là trần dùng chung của nhóm read tool, và
+  nới nó là một quyết định khác, thuộc lớp an toàn khác.
