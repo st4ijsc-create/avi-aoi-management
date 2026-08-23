@@ -719,4 +719,119 @@ public sealed class ConnectorRegistryTests
         Assert.Null(driver);
         Assert.Contains("gone-by-then", error);
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 Task BP-1, 2026-08-24 — docs/owner-decisions.md item 63, MEASURED AND NOT EXECUTED.
+    //
+    // Item 63's premise is that ModbusMultidropRegistration.OwnedBySomethingElse — "refuse when the
+    // incumbent under this explicit id serves a DIFFERENT machine", taken OUTSIDE _registerGate — is a
+    // LOCAL mitigation for a GLOBAL property, and that ConnectorRegistry should therefore adopt it. Both
+    // candidate shapes were built and priced against the full suite before this file was written:
+    //
+    //   * THROW on any duplicate explicit id (the literal reading of "turn a collision into an error"):
+    //     ConnectorEndpoints reaches Register with an explicit id on the path its own comment calls "the
+    //     ordinary idempotent-update path", so this turns every connector EDIT into a 500.
+    //   * REFUSE (return false) narrowed to the latch's own rule: this reddens
+    //     ConnectorEndpointsEnvSeedingSideEffectsTests.
+    //     PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s. Task
+    //     B-6 built that behaviour deliberately and that test exists to keep it.
+    //
+    // So ModbusMultidropRegistration REFUSES the shape ConnectorEndpoints REQUIRES, and what separates the
+    // two is PROVENANCE (Seeded vs Operator) — a fact this registry does not hold. The latch is a
+    // per-caller POLICY, not a global invariant with one local implementation, and it cannot be made
+    // redundant here. The three tests below are the measurement, not a fix: all three are GREEN on the
+    // unchanged code and are labelled that way rather than left to look like evidence of a change.
+    //
+    // 🔴 What they do NOT measure: reachability of the window between the latch's snapshot and its
+    // Register calls, and RtuBusConfiguration.TryRegisterAll, which fans out over derived device ids with
+    // no equivalent check at all. Both stay open, and both are named in item 63's record.
+    // ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>🔴 <b>GUARD, self-labelled: green before this task and after it, and the whole of why item
+    /// 63's fix was refused.</b> An explicit id whose incumbent serves a DIFFERENT machine still replaces,
+    /// and the incumbent's claim moves with it. That is the <c>POST /v1/connectors</c> behaviour task B-6
+    /// deliberately created for an env-var-seeded row, read at the registry level rather than through the
+    /// endpoint — so the constraint is visible to whoever next reads item 63 and reaches for the obvious
+    /// fix.</summary>
+    [Fact]
+    public void AnExplicitId_WhoseIncumbentServesADifferentMachine_StillReplaces_AndTaskB6RequiresThat()
+    {
+        var registry = new ConnectorRegistry();
+        var secondDriver = new FakeDriver();
+
+        Assert.True(registry.Register(
+            new FakeFactory("vendor.acme.widget", _ => (true, new FakeDriver(), null)), "first",
+            instanceId: "line-a", machineCode: "M-OLD"));
+        Assert.True(registry.Register(
+            new FakeFactory("vendor.acme.widget", _ => (true, secondDriver, null)), "second",
+            instanceId: "line-a", machineCode: "M-NEW"));
+
+        Assert.Equal(new[] { "line-a" }, registry.RegisteredIds);
+        Assert.True(registry.TryCreateDriver("line-a", out var driver, out _));
+        Assert.Same(secondDriver, driver);
+
+        // 🔴 And the claim MOVED, which is the half item 63 is right about: M-OLD is now served by nothing
+        // and nothing said so. The item's remedy is refused; the consequence it names is real.
+        Assert.True(registry.TryGetInstanceIdForMachine("M-NEW", out var nowServing));
+        Assert.Equal("line-a", nowServing);
+        Assert.False(registry.TryGetInstanceIdForMachine("M-OLD", out _));
+    }
+
+    /// <summary>🔴 <b>GUARD, self-labelled: green both sides.</b> The ordinary idempotent-update path — an
+    /// operator re-saving a connector's register map under the same id for the same machine. This is what
+    /// the THROW candidate would have turned into a 500.</summary>
+    [Fact]
+    public void AnExplicitId_WhoseIncumbentServesTheSameMachine_StillReplaces_TheIdempotentUpdatePath()
+    {
+        var registry = new ConnectorRegistry();
+        var secondDriver = new FakeDriver();
+
+        Assert.True(registry.Register(
+            new FakeFactory("vendor.acme.widget", _ => (true, new FakeDriver(), null)), "first",
+            instanceId: "line-a", machineCode: "M-SAME"));
+        Assert.True(registry.Register(
+            new FakeFactory("vendor.acme.widget", _ => (true, secondDriver, null)), "second",
+            instanceId: "line-a", machineCode: "m-same"));
+
+        Assert.Equal(new[] { "line-a" }, registry.RegisteredIds);
+        Assert.True(registry.TryCreateDriver("line-a", out var driver, out _));
+        Assert.Same(secondDriver, driver);
+    }
+
+    /// <summary>🔴 <b>The registry's answer for every incumbent shape the out-of-lock latch distinguishes
+    /// — listed before counted, so "the latch is not redundant" is a reading rather than an opinion.</b>
+    /// The latch answers refuse / allow / allow for different-machine / same-machine / unbound; the
+    /// registry answers allow / allow / allow. They disagree on exactly one row, and that row is the one
+    /// task B-6 pinned. The fourth row — an incoming registration with NO claim landing on an incumbent
+    /// that holds one — is a claim-drop NEITHER instrument refuses, and it is listed here because a
+    /// three-row table would have read as an exhaustive one.</summary>
+    [Fact]
+    public void TheRegistryAndTheOutOfLockLatch_DisagreeOnExactlyOneIncumbentShape()
+    {
+        // incumbent claim, incoming claim, what Register does, what OwnedBySomethingElse would say
+        (string? Incumbent, string? Incoming, bool RegistryAccepts, bool LatchWouldRefuse)[] cases =
+        [
+            ("M-OLD", "M-NEW", true,  true),   // the one disagreement — B-6 requires the accept
+            ("M-OLD", "M-OLD", true,  false),  // ordinary update      — both allow
+            (null,    "M-NEW", true,  false),  // unbound incumbent    — both allow
+            ("M-OLD", null,    true,  false),  // claim-drop neither refuses
+        ];
+
+        foreach (var (incumbent, incoming, registryAccepts, _) in cases)
+        {
+            var registry = new ConnectorRegistry();
+            Assert.True(registry.Register(
+                new FakeFactory("vendor.acme.widget", _ => (true, new FakeDriver(), null)), "first",
+                instanceId: "line-a", machineCode: incumbent));
+
+            var actual = registry.Register(
+                new FakeFactory("vendor.acme.widget", _ => (true, new FakeDriver(), null)), "second",
+                instanceId: "line-a", machineCode: incoming);
+
+            Assert.Equal(registryAccepts, actual);
+        }
+
+        Assert.Equal(4, cases.Length);
+        Assert.Equal(1, cases.Count(c => c.RegistryAccepts && c.LatchWouldRefuse));
+    }
 }

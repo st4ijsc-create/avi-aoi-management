@@ -447,6 +447,19 @@ public sealed class ConfigSyncEngine
     /// the owner set for it being doable at all. A <c>SolderJoint</c> added tomorrow would have made the
     /// pull say <c>SOLDER_JOINT</c> and the push say <c>SOLDERJOINT</c>; after this it cannot.</para>
     ///
+    /// <para>🔴 <b>Task BP-1, 2026-08-24 — item 66. <see cref="PointShape"/> was the sibling BN-1 measured,
+    /// named and deliberately did not touch, six lines below the line it did touch; it now comes through
+    /// here too, so <see cref="ToWireDto"/> holds ONE spelling mechanism rather than teaching two habits
+    /// six lines apart.</b> The same precondition was re-measured for it member by member rather than
+    /// inferred from <see cref="MeasurementType"/>'s result — <c>Circle→circle</c>, <c>Rect→rect</c>,
+    /// <c>Polygon→polygon</c>, <c>Line→line</c>, <c>Ring→ring</c>, <c>Mask→mask</c>, <c>Array→array</c>:
+    /// seven of seven byte-identical, so this moved no byte on the wire either. The measurement is
+    /// <c>ConfigSyncEngineTests.Push_spells_every_PointShape_member_with_the_published_contract_token</c>,
+    /// which ran GREEN against the hand-spelling before this edit and GREEN against the converter after
+    /// it — that pair of greens IS the byte-identity, and a red on either side would have meant the wire
+    /// moved. A <c>RoundedRect</c> added tomorrow would have made the pull say <c>rounded_rect</c> and the
+    /// push say <c>roundedrect</c>; after this it cannot.</para>
+    ///
     /// <para><see cref="ConfigJson.Options"/> is deliberately the same options instance
     /// <see cref="LiveConfigSyncBackend"/> deserializes every RESPONSE with: it registers no enum
     /// converter of its own, so each enum's own type-level <c>[JsonConverter]</c> is the only one in
@@ -473,7 +486,7 @@ public sealed class ConfigSyncEngine
         p.NormalizedX, p.NormalizedY, p.NormalizedRadius,
         p.CropWidth, p.CropHeight, p.OrderIndex, null, p.IsActive,
         null, null, p.ReferenceImageUrl,
-        p.Shape.ToString().ToLowerInvariant(), p.Geometry,
+        WireToken(p.Shape), p.Geometry,
         expectedUpdatedAt);
 
     private static string BuildPushMessage(SyncPointsResultDto r)

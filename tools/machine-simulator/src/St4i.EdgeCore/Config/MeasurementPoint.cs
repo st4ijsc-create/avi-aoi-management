@@ -23,14 +23,22 @@ namespace St4i.EdgeCore.Config;
 /// <c>SnakeCaseUpper</c> has no boundary to insert an underscore at. Adding a two-word member (a
 /// <c>SolderJoint</c>) would make the pull say <c>SOLDER_JOINT</c> and the push say <c>SOLDERJOINT</c>
 /// for the same value. This is named, not fixed — no code was touched in the round that found it."</para>
-/// <para>🔴 <b>ONE SIBLING OF THAT DEFECT IS STILL LIVE AND IS NAMED RATHER THAN FILLED IN.</b>
-/// <c>ConfigSyncEngine.ToWireDto</c>'s NEXT-BUT-ONE argument still reads
+/// <para>🔴 <b>THE PARAGRAPH BELOW IS RETRACTED IN TURN, 2026-08-24 (BP-1) — item 66 — AND TWO OF ITS
+/// DESCRIPTIONS WERE WRONG WHEN IT WAS WRITTEN, WHICH IS A SEPARATE CORRECTION FROM THE FIX.</b> The
+/// sibling is fixed: <c>ToWireDto</c> now reads <c>WireToken(p.Shape)</c>, so both enums on that wire
+/// point come from one converter. And the two descriptions: it is NOT the "NEXT-BUT-ONE argument" — it is
+/// the <b>23rd positional argument of 25</b> in the <c>SyncPointDto</c> constructor call — and it is not
+/// "one line down" — it is <b>SIX source lines</b> down. <c>47862d2a</c>'s merge message said "six lines
+/// down" and was right; the block left on the tree said otherwise and was read by nobody until item 66
+/// re-measured it. A sentence to correct whether or not any code changed.
+/// <para><i>Retracted text, verbatim:</i> "🔴 ONE SIBLING OF THAT DEFECT IS STILL LIVE AND IS NAMED
+/// RATHER THAN FILLED IN. <c>ConfigSyncEngine.ToWireDto</c>'s NEXT-BUT-ONE argument still reads
 /// <c>p.Shape.ToString().ToLowerInvariant()</c> for <see cref="PointShape"/> — the identical shape, one
 /// line down, and measured identically (all seven <c>PointShape</c> members are single words, so
 /// <c>SnakeCaseLower</c> agrees with <c>ToLowerInvariant</c> seven of seven today). It was NOT fixed
 /// here: item 57 delegates <c>ConfigSyncEngine.cs:420</c> and names <see cref="MeasurementType"/>, and
 /// widening an owner-held item from inside the task that executes it is the back door this repository's
-/// records exist to close.</para>
+/// records exist to close."</para></para>
 /// </remarks>
 [JsonConverter(typeof(SnakeUpperEnumConverter))]
 public enum MeasurementType
@@ -129,8 +137,13 @@ public enum ToleranceMode
 /// parses that JSON, so a <see cref="Rect"/> point carrying a ring's payload persists, hashes and
 /// renders without objection. The one place shape does drive behaviour is the board marker, which
 /// sizes itself from <see cref="MeasurementPoint.NormalizedRadius"/> regardless of which member is set.
-/// This enum IS pushed, by the same hand-written <c>ToString().ToLowerInvariant()</c> that
-/// <see cref="MeasurementType"/>'s remarks describe, and is safe for the same single-word reason.
+/// 🔴 <b>RETRACTED IN PLACE 2026-08-24 (BP-1, item 66), original kept verbatim:</b> "This enum IS pushed,
+/// by the same hand-written <c>ToString().ToLowerInvariant()</c> that <see cref="MeasurementType"/>'s
+/// remarks describe, and is safe for the same single-word reason." It is no longer hand-written:
+/// <c>ConfigSyncEngine.ToWireDto</c> spells it with <c>ConfigSyncEngine.WireToken</c>, i.e. with the
+/// <see cref="SnakeLowerEnumConverter"/> attached above, so push and pull now share one converter. The
+/// single-word property of the member list is what made the swap cost zero bytes on the wire (seven of
+/// seven measured, both before and after the edit) — it is no longer what the agreement RESTS on.
 /// </remarks>
 [JsonConverter(typeof(SnakeLowerEnumConverter))]
 public enum PointShape

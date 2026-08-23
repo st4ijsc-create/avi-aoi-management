@@ -797,4 +797,123 @@ public sealed class ConfigSyncEngineTests
         var (_, _, engine) = CreateHarness();
         Assert.Empty(engine.History("NEVER-SYNCED"));
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 Task BP-1, 2026-08-24 — docs/owner-decisions.md item 66, the sibling BN-1 deliberately left.
+    //
+    // THREE INSTRUMENTS, AND THEY MEASURE THREE DIFFERENT THINGS. Stated here because two of them are
+    // green on both sides of the edit by design, and a reader who did not know that would take their
+    // green for a proof the edit did something.
+    //
+    //  (1) The seven-row theory below measures WIRE BYTES against the published vocabulary
+    //      (docs/CONFIG_SYNC_SERVER_CONTRACT.md's <POINT>: shape(circle|rect|polygon|line|ring|mask|
+    //      array)), written as literals rather than re-derived from the converter — asking the converter
+    //      what the converter says is an identity, not a measurement. It is GREEN BEFORE and GREEN AFTER:
+    //      that is the owner's byte-identity precondition, and a red would have meant the wire moved.
+    //  (2) The floor pins the member list so a new member cannot arrive untested.
+    //  (3) The SOURCE assertion is the only RED-ABLE witness the edit has, and it has to be a source
+    //      assertion precisely because the edit moves zero bytes. It measures the SPELLING MECHANISM —
+    //      whether ToWireDto still spells a contract token by hand — and it measures NOTHING about the
+    //      wire. Red before, green after.
+    //
+    // What none of the three measure: the hazard itself. The hazard is a MULTI-WORD member added
+    // tomorrow (SnakeCaseLower would say `rounded_rect`, ToLowerInvariant `roundedrect`), and no test can
+    // add an enum member. What (3) buys is that the hazard can no longer be reintroduced at this line.
+    // ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData(PointShape.Circle, "circle")]
+    [InlineData(PointShape.Rect, "rect")]
+    [InlineData(PointShape.Polygon, "polygon")]
+    [InlineData(PointShape.Line, "line")]
+    [InlineData(PointShape.Ring, "ring")]
+    [InlineData(PointShape.Mask, "mask")]
+    [InlineData(PointShape.Array, "array")]
+    public async Task Push_spells_every_PointShape_member_with_the_published_contract_token(
+        PointShape member, string expectedToken)
+    {
+        var local = new ProductConfigStore(TempDir());
+        var recording = new RecordingConfigSyncBackend(new SimulatedEcosystem(TempDir()));
+        var engine = new ConfigSyncEngine(local, recording);
+
+        local.UpsertPoint("MODEL-A", new MeasurementPoint
+        {
+            Code = "P-SHAPE", Name = "Shape token witness", MeasurementType = MeasurementType.Visual,
+            Shape = member,
+            PositionX = 100, PositionY = 100, OrderIndex = 98, IsActive = true,
+        });
+
+        await engine.PushAsync(AoiMachine, "MODEL-A", confirm: true, default);
+
+        var request = Assert.Single(recording.SyncPointsRequests);
+        var pushed = Assert.Single(request.Points, p => p.Code == "P-SHAPE");
+        Assert.Equal(expectedToken, pushed.Shape);
+    }
+
+    /// <summary>Non-vacuity floor for the theory above — listed, then counted. Seven members, and the
+    /// count is written second because a count alone cannot say WHICH member went missing.</summary>
+    [Fact]
+    public void Every_PointShape_member_has_a_row_in_the_push_token_theory()
+    {
+        string[] covered = ["Circle", "Rect", "Polygon", "Line", "Ring", "Mask", "Array"];
+
+        var declared = Enum.GetNames<PointShape>();
+
+        Assert.Equal(covered.OrderBy(n => n, StringComparer.Ordinal), declared.OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Equal(7, declared.Length);
+    }
+
+    /// <summary>🔴 <b>Item 66's red-able witness, and the ONLY one the edit can have.</b> A push token for
+    /// an enum must come from the converter the pull reads it with, never from a second hand-spelling in
+    /// the same method. Before this task <c>ToWireDto</c> held both mechanisms six lines apart —
+    /// <c>WireToken(p.MeasurementType)</c> and <c>p.Shape.ToString().ToLowerInvariant()</c> — so the file
+    /// taught both habits to the next reader.
+    ///
+    /// <para><b>What it does NOT measure, said where the result appears:</b> it reads ONE method's source
+    /// text. It says nothing about the rest of <c>src/</c>, where five other
+    /// <c>ToString().To*Invariant()</c> sites are live and correct (human-readable mail subjects and audit
+    /// action strings), and nothing about whether the token is right — that is the theory above.</para></summary>
+    [Fact]
+    public void ToWireDto_spells_no_contract_token_by_hand()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            MachineSimulatorRoot(), "src", "St4i.EngineApi", "Config", "ConfigSyncEngine.cs"));
+
+        var start = source.IndexOf("private static SyncPointDto ToWireDto(", StringComparison.Ordinal);
+        Assert.True(start >= 0, "ToWireDto's declaration moved or was renamed; this instrument found no method to read.");
+
+        var end = source.IndexOf("private static string BuildPushMessage(", start, StringComparison.Ordinal);
+        Assert.True(end > start, "Could not bound ToWireDto's body; refusing to report a clean run on an unread method.");
+
+        var body = source[start..end];
+
+        Assert.DoesNotContain("ToLowerInvariant", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("ToUpperInvariant", body, StringComparison.Ordinal);
+
+        // Non-vacuity: the method really is the one that builds the wire point, so an empty/blank read
+        // cannot pass this by finding nothing.
+        Assert.Contains("WireToken(p.MeasurementType)", body, StringComparison.Ordinal);
+        Assert.Contains("WireToken(p.Shape)", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>Walks up to the solution file, the same precondition <c>EnumSpellingContractTests</c>
+    /// states: an instrument that cannot find its corpus FAILS rather than reporting a clean run.</summary>
+    private static string MachineSimulatorRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "St4iMachineSimulator.sln")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException(
+            $"Could not locate St4iMachineSimulator.sln by walking up from \"{AppContext.BaseDirectory}\". " +
+            "This instrument reads ConfigSyncEngine.cs off the tree; with no tree it has measured nothing, " +
+            "and \"nothing measured\" must never read as \"nothing wrong\".");
+    }
 }
