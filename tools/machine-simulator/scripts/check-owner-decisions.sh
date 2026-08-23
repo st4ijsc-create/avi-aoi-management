@@ -222,9 +222,20 @@ END {
   if (live_n == 0) bad("C3  no LIVE Part I enumeration: exactly one paragraph must carry <!-- gate:phần-i = <numbers> -->")
   if (live_n > 1)  bad(sprintf("C3  %d LIVE Part I enumerations; there must be exactly one", live_n))
 
+  # 🔴 BF-1 — WHAT THE SUMMARY LINE DECLARES, so that "[]" is not the whole of what a reader gets.
+  # BE-1 measured this on four fixtures and found `PART I holds : []` printed IDENTICALLY for the valid
+  # empty state and for all three broken ones; the distinction lived entirely in the DIVERGENCES list and
+  # the exit code. That is a real defect in a line people grep. `declared_i` is filled below when there is
+  # exactly one LIVE field to read, and stays at its "-" sentinel when there is none or more than one —
+  # which is precisely the case a bare "[]" could not tell apart. Kept as a SEPARATE variable from `fs_`
+  # so the report cannot accidentally print a value C3 never validated.
+  declared_i = "-none-"
+  if (live_n > 1) declared_i = "-ambiguous(" live_n ")-"
+
   if (live_n == 1) {
     nf = split(live_field, fa, /[ ,]+/); fs_ = ""
     for (i = 1; i <= nf; i++) if (fa[i] ~ /^[0-9]+$/) fs_ = fs_ (fs_ == "" ? "" : " ") fa[i]
+    declared_i = fs_
     if (fs_ != actual)
       bad(sprintf("C3  the machine field (line %d) says [%s]; PART I actually contains [%s]", live_line, fs_, actual))
 
@@ -258,7 +269,16 @@ END {
   printf "── item 37 · owner-decisions.md structural check ───────────────────────────────────────\n"
   printf "   file          : %s\n", DOC
   printf "   verdict rows  : %d      body sections : %d\n", length(rowline), length(bodypart)
-  printf "   PART I holds  : [%s]\n", actual
+  # 🔴 BF-1 — the Part I line now carries its DECLARED field, exactly as the Part II line below always
+  # has. That asymmetry WAS the defect: at zero items "[%s]" collapses to "[]" for four different states
+  # (legitimately empty; banner broken so nothing parses; machine field missing; two machine fields), and
+  # a reader — or a grep — saw one string for all four. With the declaration beside it the valid empty
+  # state prints "[]   (declared: [])", an EQUALITY at zero, which is exactly what C3 asserts; a broken
+  # banner prints "(declared: -none-)"; two fields print "(declared: -ambiguous(2)-)"; and a stale field
+  # prints its own contents. It does NOT replace the DIVERGENCES list or the exit code and is not asked
+  # to — this is a line a human reads, and the repair is that it now says different things about cases
+  # that differ.
+  printf "   PART I holds  : [%s]   (declared: [%s])\n", actual, declared_i
   printf "   PART II holds : [%s]   (declared: [%s])\n", actual_ii, fs2
   # The population protocol verify-suites.sh run_tooling_check enforces. These are the two sets
   # C1-C4 loop over; C0 above refuses on either being empty, and this makes that refusal auditable

@@ -6,16 +6,34 @@
 
 .DESCRIPTION
   The MSI installer (packaging/installer/) only ever removes what IT installed, under Program Files -
-  it has no idea this exe/service, once running, goes on to create THIRTEEN directories under
+  it has no idea this exe/service, once running, goes on to create SIXTEEN directories under
   %ProgramData%\ST4I\sim\ - the historian database, the store-and-forward WAL buffer, the local
   user/session/audit-log database, the DPAPI-protected machine credential, the alarm-notification
   channel configuration and its credentials, the DEVICE IDENTITY PRIVATE KEY, saved device connections
   (whose OPC-UA map carries a plaintext password), the OPC-UA client certificate and key, the Site link
-  and its pinned PEM, the alarm store, the asset registry, fleet settings, and the bridge spool. That is entirely
+  and its pinned PEM, the alarm store, the asset registry, fleet settings, the bridge spool, the machine
+  operating configuration, the product/recipe configuration, and the simulated-ecosystem configuration.
+  That is entirely
   intentional: uninstalling (or upgrading via MajorUpgrade) must never silently destroy a customer's
   production history, audit trail, or credentials. This script is the separate, explicit, opt-in tool
   for an operator who genuinely wants a clean-slate wipe (e.g. decommissioning a machine, resetting a
   demo box back to a fresh-install state).
+
+  IT CREATES SIXTEEN AND PURGES FOURTEEN. Two of the sixteen - `products` and `ecosystem`, holding the
+  four files products.json / recipes.json / ecosystem-products.json / ecosystem-recipes.json - are
+  DELIBERATELY KEPT, by the owner's ruling of 2026-08-23(b), and are listed separately in the banner
+  this script prints. The reason, in the owner's words: CONFIGURATION AN OPERATOR AUTHORED IS NOT
+  OPERATIONAL DATA - IT IS SOMETHING THEY BUILT, and "remove data" should not cost them that. This is
+  NOT the pre-2026-08-23 arrangement re-labelled: before that date those files sat beside the binary and
+  went when the install directory went, which was an accident of layout; now they are under
+  %ProgramData% and are kept ON PURPOSE, which is a decision with a name and a date on it.
+
+  THE OTHER DIRECTION OF THE SAME RULING, because a kept directory is a survival and survivals cut both
+  ways: a machine handed on, scrapped or returned after running this script still carries its product
+  and recipe definitions, including anything an operator typed into them. They hold no credential and no
+  production history - that is why the ruling was available at all - but they are not nothing. An
+  operator who wants them gone deletes those two directories by hand; the banner prints their resolved
+  paths for exactly that reason.
 
   Run this from an elevated ("Run as administrator") PowerShell prompt - stopping/deleting the
   service needs it, and %ProgramData% is typically not writable by a non-admin user either.
@@ -73,6 +91,23 @@
 .PARAMETER BridgeSpoolDir
   Task C-8 review (I-1) - the durable northbound bridge spool (ST4I_BRIDGE_SPOOL_DIR).
 
+.PARAMETER MachineConfigDir
+  Task BF-1, owner ruling 2026-08-23(a) - the machine operating configuration
+  (ST4I_MACHINE_CONFIG_DIR): per-machine parameter baselines, the operator's adjustments, and the
+  append-only History list behind them. Until 2026-08-23 this store wrote BESIDE THE BINARY and this
+  script deliberately had no parameter for it - see the retraction in .NOTES.
+
+.PARAMETER ProductsDir
+  Task BF-1 - the product/recipe configuration (ST4I_PRODUCTS_DIR), holding products.json and
+  recipes.json. RESOLVED FOR REPORTING, NOT FOR DELETION: this directory is on the KEPT list by the
+  owner's ruling of 2026-08-23(b). Pass it so the banner prints the right path for a relocated install;
+  passing it does NOT cause a purge, and there is no flag that makes it one.
+
+.PARAMETER EcosystemDir
+  Task BF-1 - the simulated-ecosystem configuration (ST4I_ECOSYSTEM_DIR), holding
+  ecosystem-products.json and ecosystem-recipes.json. Same status as -ProductsDir: resolved for
+  reporting, KEPT by the 2026-08-23(b) ruling, never deleted by this script.
+
 .PARAMETER CredsDir
   Dot F branch review (F-9) - the DPAPI-sealed machine credential store, one .bin per machine code
   (ST4I_CREDS_DIR). THIS BLOCK WAS MISSING while the parameter itself has existed since the test-hygiene
@@ -88,9 +123,11 @@
 .EXAMPLE
   .\packaging\remove-data.ps1
   Interactive - prompts (Y/N) before stopping/deleting the service and before deleting each of the
-  13 data directories (each resolved per the matching -XxxDir parameter or the matching
+  14 purged data directories (each resolved per the matching -XxxDir parameter or the matching
   ST4I_*_DIR environment variable or the default %ProgramData%\ST4I\sim\<name> - see the
-  WARNING below about relocated directories this script cannot discover on its own).
+  WARNING below about relocated directories this script cannot discover on its own). The 2 KEPT
+  directories (products, ecosystem - owner ruling 2026-08-23(b)) are printed but never prompted for,
+  because there is nothing to confirm: this script does not delete them.
 
 .EXAMPLE
   .\packaging\remove-data.ps1 -Force
@@ -100,9 +137,11 @@
   .\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -WalDir D:\St4iData\wal -SecurityDir D:\St4iData\security -IdentityDir D:\St4iData\identity
   Purges relocated data directories explicitly - needed whenever the service was configured (via its
   registry Environment value, README section 15.2) with a directory that is NOT the default
-  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - THIRTEEN of
-  them, all thirteen documented under .PARAMETER above (-CredsDir's block was missing until the Dot F
-  branch review, F-9).
+  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - SIXTEEN of
+  them, all sixteen documented under .PARAMETER above (-CredsDir's block was missing until the Dot F
+  branch review, F-9; -MachineConfigDir, -ProductsDir and -EcosystemDir arrived with task BF-1). FOURTEEN
+  of those sixteen name a directory this script PURGES; -ProductsDir and -EcosystemDir resolve the two the
+  owner's 2026-08-23(b) ruling KEEPS, so passing them changes what is PRINTED and never what is deleted.
 
 .NOTES
   WS-F1 final-review fix F3 - README section 15.2 advertises ST4I_HISTORIAN_DIR/ST4I_WAL_DIR/
@@ -182,6 +221,41 @@
   operator reads. That variable is also why the ST4I_*_DIR literal count in src/ is FOURTEEN while the
   directory count here is THIRTEEN - two populations, not an off-by-one.
 
+  TASK BF-1, 2026-08-23 - THE TWO BLOCKS DIRECTLY ABOVE ARE RETRACTED, kept verbatim and not struck
+  through, in the house style docs/owner-decisions.md established. Every sentence in them was true from
+  H-1c until the owner's ruling of 2026-08-23(a); the ruling moved all three beside-the-binary defaults
+  under %ProgramData%\ST4I\sim, and each clause fails for that one reason:
+    * "the thirteen names below are every directory the engine creates there" - SIXTEEN now.
+    * "This script has never purged them and is not being taught to" - it is being taught to purge ONE
+      of the three, machine-config. The other two are on the KEPT list, which is a THIRD status this
+      script did not previously have and is not the same thing as being out of reach.
+    * "they go when the install directory goes" - they no longer live in the install directory, so an
+      uninstall no longer touches them at all. For products/ecosystem that is now the POINT (ruling (b));
+      for machine-config it is why the -MachineConfigDir parameter had to exist.
+    * "there is deliberately NO -MachineConfigDir parameter ... would put a beside-the-binary store into
+      a parameter list whose own count sentences are about %ProgramData%" - the reasoning was sound and
+      its premise is gone: machine-config IS a %ProgramData% leaf now, so the parameter belongs in the
+      list rather than confusing it.
+    * "FOURTEEN ... while the directory count here is THIRTEEN - two populations" - SIXTEEN and SIXTEEN,
+      ONE population. The beside-the-binary population is empty, and PerHostDataRootsTests pins it at
+      exactly zero rather than merely quantifying over it.
+  What SURVIVES unretracted is the shape of the warning, in a new subject: this script still reads only
+  its OWN shell's environment, so a deployment that relocated any of the sixteen through the service's
+  registry Environment value still needs the matching -XxxDir passed by hand.
+
+  TASK BF-1 - THE KEPT LIST, AND WHY A THIRD STATUS WAS NEEDED RATHER THAN A SILENT OMISSION. Moving
+  products/recipes/ecosystem-products/ecosystem-recipes under %ProgramData% automatically enlisted them
+  in this purge, because NotificationDocumentationTests.
+  EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript required EVERY leaf
+  the engine declares to appear as a `Name = '<leaf>'` entry here. That was a NEW data-loss path nobody
+  had asked for, and the owner ruled on it explicitly (2026-08-23(b)): the four config files are exempt,
+  because configuration an operator authored is not operational data. The published assertion was
+  therefore RETRACTED and NARROWED rather than deleted - it now reads "every leaf is either purged or
+  KEPT BY NAME with a stated reason", the kept set is pinned at exactly {ecosystem, products}, and a
+  leaf that is in neither list still fails the run. The mechanical difference that makes it checkable:
+  a purged directory is spelled `Name = '<leaf>'` and a kept one `Keep = '<leaf>'`, so the two can never
+  be confused by the scan and a leaf cannot appear in both.
+
   TASK F-1 CENSUS - THE COUNT ABOVE SAID "FOURTEEN" IN THREE PLACES AND "THIRTEEN" IN FOUR, about
   the same set, since Task C-8. Measured rather than reasoned about: this script declares thirteen
   `Name = '<dir>'` entries and thirteen -XxxDir parameters, and
@@ -227,7 +301,13 @@ param(
     [string]$OpcUaPkiDir,
     [string]$BridgeSpoolDir,
     [string]$ConnectorConfigDir,
-    [string]$CredsDir
+    [string]$CredsDir,
+    # Task BF-1 - the three leaves the owner's 2026-08-23(a) ruling created. -MachineConfigDir is a
+    # purge parameter like the thirteen above it; -ProductsDir and -EcosystemDir are RESOLVED FOR
+    # REPORTING ONLY (ruling (b) keeps those two), and nothing in this script deletes what they name.
+    [string]$MachineConfigDir,
+    [string]$ProductsDir,
+    [string]$EcosystemDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -291,6 +371,29 @@ $subdirs = @(
     @{ Name = 'assets';           Path = (Resolve-DataDir $AssetsDir          'ST4I_ASSETS_DIR'           (Join-Path $root 'assets'));           Warning = 'the asset registry - every registered asset and its lifecycle state (assets.db)' }
     @{ Name = 'settings';         Path = (Resolve-DataDir $SettingsDir        'ST4I_SETTINGS_DIR'         (Join-Path $root 'settings'));         Warning = 'fleet settings - server URL, machine code, TLS verification, transport mode' }
     @{ Name = 'bridge-spool';     Path = (Resolve-DataDir $BridgeSpoolDir     'ST4I_BRIDGE_SPOOL_DIR'     (Join-Path $root 'bridge-spool'));     Warning = 'any northbound bridge messages spooled but not yet delivered to the Site' }
+
+    # ---- Task BF-1, owner ruling 2026-08-23(a) --------------------------------------------------
+    # machine-config joined this list the day its store's default moved under %ProgramData%. It is
+    # PURGED and its two new siblings are not, and the split is the owner's ruling (b) rather than a
+    # judgement made here: this file holds the machine's operating parameters and the append-only
+    # History of every adjustment - a record of what the machine DID, which is operational data - while
+    # products/ecosystem hold definitions an operator AUTHORED. See $keptByDesign below.
+    @{ Name = 'machine-config';   Path = (Resolve-DataDir $MachineConfigDir   'ST4I_MACHINE_CONFIG_DIR'   (Join-Path $root 'machine-config'));   Warning = 'per-machine operating parameters, every operator adjustment, and the append-only History behind them (machine-operating-config.json)' }
+)
+
+# ---- Task BF-1, owner ruling 2026-08-23(b): THE KEPT LIST -----------------------------------------
+# Directories the engine creates under %ProgramData%\ST4I\sim that this script resolves, REPORTS, and
+# deliberately does NOT delete. Spelled `Keep =` rather than `Name =` so the census in
+# NotificationDocumentationTests can tell the two statuses apart mechanically and a leaf can never be
+# silently counted as purged because it appeared in a list at all.
+#
+# This is a THIRD status, and it is new. Before 2026-08-23 a leaf was either purged or did not exist;
+# these four files existed beside the binary, out of this script's reach by ACCIDENT OF LAYOUT. Keeping
+# them is now a decision with a date and an owner on it, and the reason is recorded where it is acted
+# on rather than only in a report: configuration an operator authored is not operational data.
+$keptByDesign = @(
+    @{ Keep = 'products';  Path = (Resolve-DataDir $ProductsDir  'ST4I_PRODUCTS_DIR'  (Join-Path $root 'products'));  Reason = 'products.json + recipes.json - product and recipe definitions an operator authored' }
+    @{ Keep = 'ecosystem'; Path = (Resolve-DataDir $EcosystemDir 'ST4I_ECOSYSTEM_DIR' (Join-Path $root 'ecosystem')); Reason = 'ecosystem-products.json + ecosystem-recipes.json - the simulated ecosystem an operator authored' }
 )
 
 Write-Host ""
@@ -303,6 +406,14 @@ foreach ($d in $subdirs) {
     Write-Host ("  {0,-10} - {1}" -f $d.Name, $d.Warning) -ForegroundColor Yellow
     Write-Host ("               -> $($d.Path)") -ForegroundColor DarkYellow
 }
+Write-Host ""
+Write-Host "KEPT BY DESIGN - owner ruling 2026-08-23(b). These are created by the engine under the same" -ForegroundColor Cyan
+Write-Host "root and are NOT deleted: configuration an operator authored is not operational data." -ForegroundColor Cyan
+foreach ($k in $keptByDesign) {
+    Write-Host ("  {0,-10} - {1}" -f $k.Keep, $k.Reason) -ForegroundColor Cyan
+    Write-Host ("               -> $($k.Path)") -ForegroundColor DarkCyan
+}
+Write-Host "If you want these gone too, delete those directories by hand - there is no flag for it." -ForegroundColor Cyan
 Write-Host ""
 Write-Host "None of this is recoverable. Nothing here is touched by the MSI uninstaller by design -" -ForegroundColor Yellow
 Write-Host "this is a separate, explicit, manual step. Ctrl-C now if you are not certain." -ForegroundColor Yellow
@@ -329,8 +440,10 @@ elseif ($PSCmdlet.ShouldProcess("Windows service '$serviceName'", "Stop and dele
     }
 }
 
-# ---- Step 2: delete the 13 data subdirectories (each already resolved above per -XxxDir / ST4I_*_DIR
-# / the %ProgramData% default - see $subdirs) --------------------------------------------------
+# ---- Step 2: delete the 14 purged data subdirectories (each already resolved above per -XxxDir /
+# ST4I_*_DIR / the %ProgramData% default - see $subdirs). $keptByDesign is deliberately NOT iterated
+# here: the owner's 2026-08-23(b) ruling keeps those two, and the way that ruling is enforced is that
+# this loop has no access to the list at all. ---------------------------------------------------
 Write-Host ""
 foreach ($d in $subdirs) {
     $path = $d.Path

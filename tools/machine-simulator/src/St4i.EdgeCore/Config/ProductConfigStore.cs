@@ -44,18 +44,77 @@ public sealed class ProductConfigStore
     private readonly Dictionary<string, ProductModel> _products = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Recipe> _recipes = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>🔴 <b>Task BF-1 — the relocation seam this store did not have, added because the owner moved
+    /// its default (ruling 2026-08-23(a)).</b> Same <c>explicit path &gt; environment variable &gt; default</c>
+    /// contract as <see cref="MachineConfigStore.EnvVarDir"/> and
+    /// <see cref="FleetSettingsStore.EnvVarDir"/>, and — unlike the pre-BF-1 arrangement — the name is
+    /// DERIVABLE from this store's directory: <c>products</c> → <c>ST4I_PRODUCTS_DIR</c>, which is the rule
+    /// README §15.9 states to an operator and the rule <c>PerHostDataRootsTests</c> asserts.
+    ///
+    /// <para><b>What this seam cost, said in both directions.</b> Two instruments used the ABSENCE of this
+    /// constant as their justification — <c>tests/Shared/OwnOutputDirectoryGuard.cs</c> and
+    /// <c>scripts/verify-suites.sh</c> both exempted this store's files from their output-directory bracket
+    /// and both re-derived, on every run, that this source declared no <c>EnvVarDir</c>. Declaring it here
+    /// spends that exemption, which is the outcome both of them named as the good one.</para></summary>
+    public const string EnvVarDir = "ST4I_PRODUCTS_DIR";
+
     /// <summary>Directory holding <c>products.json</c>/<c>recipes.json</c>.</summary>
     public string RootDirectory { get; }
 
-    /// <param name="directory">Where products.json/recipes.json live. Defaults to
-    /// <see cref="AppContext.BaseDirectory"/> — the same "beside fleet.json" location
-    /// <c>FleetHost</c>/<c>FleetService</c> resolve <c>fleet.json</c> from (see their
-    /// <c>ResolveFleetPath</c>), so a hand-edit session finds every simulator config file in one
-    /// folder. Tests pass a temp directory so runs don't share (or clobber) each other's state.</param>
+    /// <summary>🔴 <b>The machine-wide default root — <c>%ProgramData%\ST4I\sim\products</c> — as of the
+    /// owner's ruling of 2026-08-23(a).</b> Before that ruling it was <see cref="AppContext.BaseDirectory"/>,
+    /// which on a default MSI install is a directory under <c>%ProgramFiles%</c> that a non-elevated account
+    /// cannot write; this store SEEDS during construction, so that install's first boot was its first write.
+    ///
+    /// <para>Same arithmetic as the fifteen stores that already resolve this way, <c>CredentialStore</c>
+    /// included. What is deliberately NOT copied from <c>CredentialStore</c> is <c>SecurityDirAcl.Apply</c>:
+    /// these two files are the ones this repository's own gate calls <i>operator-editable</i>, and stripping
+    /// <c>Authenticated Users</c> read from them would lock the operator out of the files the move exists to
+    /// keep findable.</para>
+    ///
+    /// <para><b>The other direction of the same move, because it is a real cost and not a footnote:</b> an
+    /// install that already has these two files beside its binary stops reading them there. That is why
+    /// <see cref="LegacyRootMigration"/> runs — once, as a COPY that deletes nothing — and why README §15.9
+    /// tells an operator that the two copies diverge afterwards.</para></summary>
+    public static string DefaultRoot() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ST4I", "sim", "products");
+
+    /// <summary>The root an install written before the owner's 2026-08-23(a) ruling used, and the source of
+    /// the one-time copy. <see cref="AppContext.BaseDirectory"/> is not relocatable by any environment
+    /// variable, which is exactly why the copy is gated — see <see cref="LegacyRootMigration"/>.</summary>
+    public static string LegacyRoot() => AppContext.BaseDirectory;
+
+    /// <summary>Resolves the effective products directory: <paramref name="directory"/> if given, else
+    /// <see cref="EnvVarDir"/> if set, else <see cref="DefaultRoot"/>. Pure path arithmetic — does not create
+    /// anything on disk (the constructor does that).</summary>
+    /// <param name="directory">Explicit override, or <see langword="null"/> to consult the environment.</param>
+    /// <returns>The directory this store will read and write.</returns>
+    public static string ResolveRoot(string? directory = null)
+    {
+        if (!string.IsNullOrWhiteSpace(directory)) return directory;
+        var env = Environment.GetEnvironmentVariable(EnvVarDir);
+        return string.IsNullOrWhiteSpace(env) ? DefaultRoot() : env;
+    }
+
+    /// <param name="directory">Where products.json/recipes.json live, or <see langword="null"/> to resolve
+    /// via <see cref="ResolveRoot"/> (<see cref="EnvVarDir"/>, then <see cref="DefaultRoot"/>). Tests pass a
+    /// temp directory so runs don't share (or clobber) each other's state.</param>
     public ProductConfigStore(string? directory = null)
     {
-        RootDirectory = string.IsNullOrWhiteSpace(directory) ? AppContext.BaseDirectory : directory;
+        RootDirectory = ResolveRoot(directory);
         System.IO.Directory.CreateDirectory(RootDirectory);
+
+        // 🔴 Gated on the resolved root BEING the machine-wide default, not on how it was reached. An
+        // equality against DefaultRoot() is a measurement on the path that is about to be written; a
+        // provenance flag would be a second copy of ResolveRoot's precedence order, free to drift from it.
+        // Every test root, every ST4I_PRODUCTS_DIR redirect and every explicit directory therefore skips
+        // this — which is what stops a test process from sucking build residue out of its own bin folder.
+        if (string.Equals(RootDirectory, DefaultRoot(), StringComparison.OrdinalIgnoreCase))
+        {
+            LegacyRootMigration.CopyOnce(
+                LegacyRoot(), RootDirectory, [ProductsFileName, RecipesFileName], "productconfigstore");
+        }
+
         Load();
     }
 

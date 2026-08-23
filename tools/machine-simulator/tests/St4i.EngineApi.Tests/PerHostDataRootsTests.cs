@@ -20,7 +20,7 @@ namespace St4i.EngineApi.Tests;
 /// say so. 🔴 <b>A fourteenth BESIDE-THE-BINARY store does NOT fail the same way</b>, and this was the one
 /// paragraph in the file where the qualifier was still missing — the paragraph that introduces the file
 /// (whole-branch review, Minor 8). That is what the fourth guard below exists for; see
-/// <see cref="TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes"/>.</para>
+/// <see cref="TheBesideTheBinaryStorePopulation_IsEmpty_AndTheSixteenMachineWideOnesAccountForEveryVariable"/>.</para>
 ///
 /// <para>🔴 <b>The task brief that produced this file named FOUR stores. The enumeration found THIRTEEN, and
 /// the brief's own instruction was to start from the SET rather than from its list</b> (blueprint §8.1: "not
@@ -38,7 +38,7 @@ namespace St4i.EngineApi.Tests;
 /// <c>%LOCALAPPDATA%\St4iMachineSimulator\{logs,WebView2}</c>. That was a false statement of COMPLETENESS,
 /// and it had been in the tree since F-1: the product also writes THREE persistent stores BESIDE THE
 /// BINARY (<c>MachineConfigStore</c>, <c>ProductConfigStore</c>, <c>SimulatedEcosystem</c> — see
-/// <see cref="TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes"/>
+/// <see cref="TheBesideTheBinaryStorePopulation_IsEmpty_AndTheSixteenMachineWideOnesAccountForEveryVariable"/>
 /// for the enumeration, the exclusions and the instrument's own blind spots). The claim was written from
 /// inside a <c>%ProgramData%</c>-shaped instrument and inherited that instrument's domain — blueprint
 /// §8.1(f) — and its cost is the one §8.1 names as invisible by construction: a reader who believed it
@@ -138,6 +138,14 @@ public sealed class PerHostDataRootsTests
         // all literals here would silently turn thirteen into fourteen on the variable side of a pairing
         // whose directory side is still thirteen — the number would stop meaning what six artefacts say it
         // means, in the direction nobody intended. The second population gets its own guard below.
+        //
+        // 🔴 BF-1 (2026-08-23) — THE PARTITION IS UNCHANGED AND ITS SECOND HALF IS NOW EMPTY. The owner's
+        // ruling moved all three beside-the-binary defaults under %ProgramData%\ST4I\sim, so every
+        // ST4I_*_DIR literal in src/ is once again derivable from a declared directory and the pairing is
+        // SIXTEEN and SIXTEEN. The partition is deliberately NOT deleted along with its last member: it is
+        // what makes the emptiness a measurement instead of an assumption, and the guard below pins that
+        // half at exactly zero for the reason an empty set always needs pinning — it satisfies every
+        // universal claim made about it.
         Assert.True(machineWideVariables.Count >= 13,
             $"Only {machineWideVariables.Count} MACHINE-WIDE ST4I_*_DIR literal(s) were found in src/ " +
             $"({string.Join(", ", machineWideVariables)}); the beside-the-binary population held " +
@@ -366,13 +374,23 @@ public sealed class PerHostDataRootsTests
     /// <c>src/</c>) and the <c>public static</c> helper H-1c itself added, through which a new store can
     /// reach the root without ever naming <see cref="AppContext.BaseDirectory"/>. Adding an idiom here is
     /// how a newly-discovered route gets swept; the guard's own remarks say what a text scan can never
-    /// close.</summary>
+    /// close.
+    ///
+    /// <para>🔴 <b>BF-1 swapped two idioms for three, and the swap is not cosmetic.</b>
+    /// <c>MachineConfigStore.DefaultRoot</c>/<c>ResolveRoot</c> stopped being routes to the beside-the-binary
+    /// root on 2026-08-23: that store's default is now <c>%ProgramData%\ST4I\sim\machine-config</c>, so a
+    /// caller reaching the root through them would reach the WRONG root and the idiom would sweep files that
+    /// have nothing to do with this population. The three <c>LegacyRoot</c> helpers replace them — they are
+    /// what each store now calls the pre-BF-1 root, they are <c>public static</c> in exactly the shape that
+    /// made the old pair worth sweeping, and they are the ONLY thing in <c>src/</c> that still resolves
+    /// beside the binary on purpose.</para></summary>
     private static readonly string[] BesideBinaryRootIdioms =
     [
         "AppContext.BaseDirectory",
         "Environment.ProcessPath",
-        "MachineConfigStore.DefaultRoot",
-        "MachineConfigStore.ResolveRoot",
+        "MachineConfigStore.LegacyRoot",
+        "ProductConfigStore.LegacyRoot",
+        "SimulatedEcosystem.LegacyRoot",
     ];
 
     /// <summary>🔴 <b>H-1c — the two populations, split by the one property that actually separates them:
@@ -592,28 +610,41 @@ public sealed class PerHostDataRootsTests
     /// while EngineApi's left it would have kept this green over a changed population.</para>
     /// </summary>
     [Fact]
-    public void TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes()
+    public void TheBesideTheBinaryStorePopulation_IsEmpty_AndTheSixteenMachineWideOnesAccountForEveryVariable()
     {
         // The variable side first: whatever is NOT derivable from a machine-wide directory relocates
         // something that is not machine-wide, so the partition itself is the classification.
         var (machineWide, besideBinary) = PartitionRelocationVariables();
 
         Assert.Equal(DeclaredDirectoryNames().Count, machineWide.Count);
-        Assert.Equal(new[] { "ST4I_MACHINE_CONFIG_DIR" }, besideBinary.ToArray());
+
+        // 🔴 BF-1 — population two's VARIABLE side is now EMPTY, and an empty set satisfies every universal
+        // claim anyone might make about it, so it is pinned at exactly zero rather than merely quantified
+        // over. A store that re-acquires a beside-the-binary default with a non-derivable variable lands
+        // here and reddens; before BF-1 the same line pinned the single member ST4I_MACHINE_CONFIG_DIR,
+        // whose literal did not change — only the directory it is now derivable FROM came into existence.
+        Assert.Equal(Array.Empty<string>(), besideBinary.ToArray());
 
         // The store side: every file naming any KNOWN ROUTE to the beside-the-binary root, mapped to its
         // category. See the remarks for why the domain is a set of idioms and what the category check
         // can and cannot decide.
-        const string Store2 = "POPULATION TWO — persists product data, default root beside the binary";
+        const string Migration =
+            "MIGRATION SOURCE — names the pre-BF-1 beside-the-binary root to COPY from it once; its own " +
+            "default root is machine-wide";
         const string ReadOnly = "READS ONLY — operator-authored input beside the binary; a shared copy is the intent";
         const string NotAStore = "NOT A DATA STORE";
         const string Prose = "PROSE ONLY — names a root in a doc comment, resolves nothing";
 
         var expected = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["src/St4i.EdgeCore/Config/MachineConfigStore.cs"] = Store2,      // machine-operating-config.json
-            ["src/St4i.EdgeCore/Config/ProductConfigStore.cs"] = Store2,      // products.json + recipes.json
-            ["src/St4i.EngineApi/Config/SimulatedEcosystem.cs"] = Store2,     // ecosystem/ecosystem-{products,recipes}.json
+            // 🔴 These three were category "POPULATION TWO — persists product data, default root beside the
+            // binary" until 2026-08-23. They still NAME the beside-the-binary root, in LegacyRoot(), which
+            // is why they are still in this map — but they name it as the SOURCE of a one-time copy, not as
+            // a place they write. Re-categorised rather than deleted, so the day one of them starts
+            // resolving that root again the entry is here to be re-read instead of re-invented.
+            ["src/St4i.EdgeCore/Config/MachineConfigStore.cs"] = Migration,   // machine-operating-config.json
+            ["src/St4i.EdgeCore/Config/ProductConfigStore.cs"] = Migration,   // products.json + recipes.json
+            ["src/St4i.EngineApi/Config/SimulatedEcosystem.cs"] = Migration,  // ecosystem-{products,recipes}.json
 
             ["src/St4i.EdgeCore/Fleet/FleetCore.cs"] = ReadOnly,              // fleet.json + mapping/*.json
             ["src/St4i.EdgeService/EdgeConnectors.cs"] = ReadOnly,            // connectors.json
@@ -624,6 +655,11 @@ public sealed class PerHostDataRootsTests
             ["src/St4i.EngineApi/ServiceHost/ServiceInstallVerbs.cs"] = NotAStore, // Environment.ProcessPath -> the service binPath for sc.exe
             ["src/St4iMachineSimulator/App.xaml.cs"] = NotAStore,             // --capture output dir (CLI arg) + a %TEMP% selftest file
 
+            // 🔴 BF-1 — the migration helper itself names the legacy root only to EXPLAIN why its callers
+            // must gate on it; it takes both roots as parameters and resolves neither. Prose, and the
+            // category check enforces that: the day it starts composing a path from the base directory,
+            // every occurrence stops being on a `///` line and this entry goes red.
+            ["src/St4i.EdgeCore/Config/LegacyRootMigration.cs"] = Prose,
             ["src/St4i.EdgeCore/Engine/EdgeAgentPipelines.cs"] = Prose,
             ["src/St4i.EdgeCore/Mapping/MappingProfileResolver.cs"] = Prose,
             ["src/St4i.EngineApi/Config/ConnectorsJsonRegistration.cs"] = Prose,

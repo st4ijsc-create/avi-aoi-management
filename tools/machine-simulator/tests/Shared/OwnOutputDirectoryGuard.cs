@@ -118,6 +118,24 @@ namespace St4i.TestHygiene;
 /// a hand-maintained list outlives its reason. Restating the four filenames here would have made the
 /// exemption survive its own justification silently.</para>
 ///
+/// <para>📎 <b>THE THREE PARAGRAPHS ABOVE ARE RETRACTED, 2026-08-23 (BF-1), verbatim and un-struck — and
+/// the last of them is retracted by being PAID, which is the outcome it asked for in as many words.</b> The
+/// owner ruled on 2026-08-23(a) that all three stores' defaults move to
+/// <c>%ProgramData%\ST4I\sim\{products,ecosystem,machine-config}</c>. That forced a seam onto the two that
+/// had none, because twenty <c>WebApplicationFactory&lt;Program&gt;</c> classes resolve them through the
+/// real DI graph — a moved default without a seam would have redirected every suite's writes from a watched
+/// directory (this one) into an UNWATCHED one (a real install). The derivation duly went red, exactly as
+/// designed, in the module initializer of all five assemblies. <b>The exemption is now EMPTY</b>: nothing
+/// under this tree is excused, <see cref="TestRunTempRoot"/> carries all three redirects, and
+/// <see cref="DeriveExemptFileNames"/> now re-earns the OPPOSITE property on every run — each of the three
+/// sources must still DECLARE a seam.</para>
+///
+/// <para>🔴 <b>What that swap did NOT buy, stated because an empty exemption reads like a stronger claim
+/// than it is.</b> This guard's domain is still one directory in one process. Moving the stores took their
+/// writes out of that domain rather than making them visible to it: the new roots are watched by
+/// <c>scripts/verify-suites.sh</c>'s credential bracket for <c>creds</c> only, and by nothing at all for
+/// the other fifteen leaves. That gap predates BF-1 and is recorded rather than closed here.</para>
+///
 /// <para><b>What the exemption costs, stated as a quantity rather than as a shrug.</b> Measured on this
 /// machine at the start of task X-1: <c>products.json</c> in <c>St4i.EngineApi.Tests</c>' output directory
 /// held <b>625</b> products, of which <b>623</b> were <c>AUDIT-MODEL-</c> plus a GUID, one minted per run
@@ -165,21 +183,18 @@ internal static class OwnOutputDirectoryWatch
     /// does not.</summary>
     internal readonly record struct FileFacts(long Length, long LastWriteUtcTicks);
 
-    /// <summary>The product sources whose stores this guard exempts, each of which must still declare at
-    /// least one persisted filename and must still declare NO relocation variable. Named as paths rather
-    /// than as <c>cref</c>s because two of the five projects this file is linked into reference only their
-    /// own contract assembly and cannot see either type.</summary>
-    private static readonly string[] UnseamedStoreSources =
+    /// <summary>🔴 <b>Task BF-1 — the population that USED to be split two-unseamed / one-seamed, now all
+    /// three seamed, and the exemption is therefore SPENT rather than inherited.</b> Every one of these must
+    /// still declare a relocation variable and must still declare at least one persisted filename; the day
+    /// one of them loses its seam this derivation goes RED and demands the arrangement be re-derived. Named
+    /// as paths rather than as <c>cref</c>s because two of the five projects this file is linked into
+    /// reference only their own contract assembly and cannot see the types.</summary>
+    private static readonly string[] SeamedStoreSources =
     {
         Path.Combine("src", "St4i.EdgeCore", "Config", "ProductConfigStore.cs"),
         Path.Combine("src", "St4i.EngineApi", "Config", "SimulatedEcosystem.cs"),
+        Path.Combine("src", "St4i.EdgeCore", "Config", "MachineConfigStore.cs"),
     };
-
-    /// <summary>The store that DOES have a seam, and whose seam <see cref="TestRunTempRoot"/> relies on.
-    /// Asserted present for the same reason the two above are asserted absent: the exemption's shape is
-    /// "one of three stores is relocatable", and that sentence has to be re-earned on every run.</summary>
-    private static readonly string SeamedStoreSource =
-        Path.Combine("src", "St4i.EdgeCore", "Config", "MachineConfigStore.cs");
 
     /// <summary>Matches a store's persisted filename constant, e.g.
     /// <c>private const string ProductsFileName = "products.json";</c>.</summary>
@@ -234,36 +249,49 @@ internal static class OwnOutputDirectoryWatch
         return files;
     }
 
-    /// <summary>Reads the exempted stores' own sources and returns the filenames they persist, having
-    /// first re-checked the reason they are exempt at all. Every failure throws: an exemption that cannot
-    /// state its justification must stop the run, not shrink quietly to nothing.</summary>
+    /// <summary>🔴 <b>Task BF-1 — re-earns, on every run, the reason this guard now exempts NOTHING, and
+    /// returns the empty set.</b> Every failure throws: a justification that cannot be re-stated must stop
+    /// the run, not shrink quietly.
+    ///
+    /// <para><b>The direction of the check inverted and the shape did not.</b> Before BF-1 this read two
+    /// sources and required them to declare NO <c>EnvVarDir</c>, deriving the filenames to exempt from the
+    /// same read. It now reads all THREE and requires each to declare one — because
+    /// <see cref="TestRunTempRoot"/>'s three redirects are what keep those stores out of this directory, and
+    /// a store that loses its seam is a store writing here again. An empty return is therefore the STRONG
+    /// state, not a vacuous one: nothing under this tree is excused any more.</para>
+    ///
+    /// <para><b>The filename constants are still read, and still required to exist</b>, even though nothing
+    /// is exempted with them. That is deliberate: it keeps the "this source really is the store I think it
+    /// is" half of the old derivation alive, so pointing this array at an unrelated file fails loudly rather
+    /// than passing on a file that happens to contain the word <c>EnvVarDir</c>.</para></summary>
     private static SortedSet<string> DeriveExemptFileNames()
     {
         var repo = MachineSimulatorRoot();
         var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var relative in UnseamedStoreSources)
+        foreach (var relative in SeamedStoreSources)
         {
             var source = Path.Combine(repo, relative);
             if (!File.Exists(source))
             {
                 throw new FileNotFoundException(
-                    $"Could not read \"{source}\" to derive which files an UNSEAMED beside-the-binary store " +
-                    "persists. Do NOT restate the filenames here — a restated list outlives the reason it " +
-                    "was written, which is the whole defect this derivation exists to prevent. If the store " +
-                    "moved, point this at its new home; if it is gone, delete the exemption.", source);
+                    $"Could not read \"{source}\" to re-check that a relocatable store still declares its " +
+                    "seam. Do NOT delete this entry to make the run green — that would silently restore an " +
+                    "exemption this repository has already spent. If the store moved, point this at its " +
+                    "new home; if it is gone, remove it here AND from tests/Shared/TestRunTempRoot.cs.",
+                    source);
             }
 
             var text = File.ReadAllText(source);
 
-            if (SeamMarker.IsMatch(text))
+            if (!SeamMarker.IsMatch(text))
             {
                 throw new InvalidOperationException(
-                    $"\"{relative}\" now declares a relocation seam (EnvVarDir), so it is NO LONGER an " +
-                    "unseamed store and must not be exempted from this guard. Set that variable in " +
-                    "tests/Shared/TestRunTempRoot.cs beside ST4I_CREDS_DIR and ST4I_MACHINE_CONFIG_DIR, " +
-                    "then remove this source from UnseamedStoreSources. This is the good outcome: the " +
-                    "exemption existed only because the store could not be moved.");
+                    $"\"{relative}\" no longer declares a relocation seam (EnvVarDir). " +
+                    "tests/Shared/TestRunTempRoot.cs redirects that store away from this directory through " +
+                    "exactly that variable, so without it the store is writing into every suite's own " +
+                    "output directory again — and, worse, into a REAL %ProgramData% install whenever the " +
+                    "redirect is absent. Restore the seam; do NOT re-add an exemption here.");
             }
 
             var found = PersistedFileNameConst.Matches(text)
@@ -273,25 +301,10 @@ internal static class OwnOutputDirectoryWatch
             if (found.Count == 0)
             {
                 throw new InvalidOperationException(
-                    $"Found no persisted-filename constant in \"{relative}\", so this guard cannot tell " +
-                    "which of that store's files to exempt. A scan that stops matching must fail loudly " +
-                    "rather than exempt nothing and report the store's every write as an unexplained one.");
+                    $"Found no persisted-filename constant in \"{relative}\", so this guard cannot confirm " +
+                    "the file it just read is the store it believes it is. A scan that stops matching must " +
+                    "fail loudly rather than vouch for a file it did not recognise.");
             }
-
-            foreach (var name in found)
-            {
-                names.Add(name);
-            }
-        }
-
-        var seamed = Path.Combine(repo, SeamedStoreSource);
-        if (!File.Exists(seamed) || !SeamMarker.IsMatch(File.ReadAllText(seamed)))
-        {
-            throw new InvalidOperationException(
-                $"\"{SeamedStoreSource}\" no longer declares an EnvVarDir seam. TestRunTempRoot's " +
-                "ST4I_MACHINE_CONFIG_DIR redirect depends on it, so without it that store is writing into " +
-                "this directory again and the exemption below is describing a population that has changed " +
-                "shape. Re-derive the whole arrangement rather than widening the exemption.");
         }
 
         return names;

@@ -54,7 +54,16 @@ namespace St4i.TestHygiene;
 /// otherwise read as the whole store population.</b> The product roots THREE stores beside the binary
 /// (<c>MachineConfigStore</c>'s own remarks enumerate them). Only this one has a relocation variable;
 /// <c>ProductConfigStore</c> and <c>SimulatedEcosystem</c> have none, so no value set here can move them.
-/// See <see cref="OwnOutputDirectoryWatch"/> for what that costs and how it is measured.</para></para>
+/// See <see cref="OwnOutputDirectoryWatch"/> for what that costs and how it is measured.</para>
+///
+/// <para>📎 <b>THE PARAGRAPH ABOVE IS RETRACTED, 2026-08-23 (BF-1), verbatim.</b> Both stores now declare a
+/// seam (<c>ST4I_PRODUCTS_DIR</c>, <c>ST4I_ECOSYSTEM_DIR</c>) and both are set below, so the redirect
+/// reaches all three. It is retracted rather than edited because its reasoning was right and only its
+/// subject changed: the two stores had no variable because moving a store's default is a deployment
+/// decision, and on 2026-08-23 the owner took that decision. 🔴 <b>The three stores are no longer beside
+/// the binary at all</b> — their defaults are <c>%ProgramData%\ST4I\sim\{products,ecosystem,machine-config}</c>
+/// — so what these three variables now buy is not "a file leaves this directory" but "a suite does not
+/// write into a real install". That is a bigger prize and a different one.</para></para>
 ///
 /// <para><b>The one leak this cannot close, stated honestly — and measured.</b> A root is removed on
 /// <see cref="AppDomain.ProcessExit"/>, but that is not guaranteed to succeed:
@@ -135,6 +144,28 @@ internal static class TestRunTempRoot
             {
                 Environment.SetEnvironmentVariable(
                     "ST4I_MACHINE_CONFIG_DIR", Path.Combine(root, "machine-config"));
+            }
+
+            // 🔴 Task BF-1 — the "two thirds this redirect does not reach" is now zero thirds, and the two
+            // lines below are the whole of what changed here. The owner's 2026-08-23(a) ruling moved
+            // ProductConfigStore's and SimulatedEcosystem's defaults to %ProgramData%\ST4I\sim\{products,
+            // ecosystem}, which forced both stores to grow a seam: twenty WebApplicationFactory<Program>
+            // classes resolve them through the real DI graph, so without these two variables every suite
+            // would write into a REAL install's data instead of into its own output directory. That would
+            // have been strictly WORSE than the leak it replaced — the output-directory bracket watches
+            // bin/, and nothing at all watches %ProgramData%\ST4I\sim\products.
+            //
+            // Spelled as literals for the same reason ST4I_MACHINE_CONFIG_DIR is: two of the five projects
+            // this file is linked into reference only their own contract assembly and cannot see the
+            // constants. TestRunTempRootTests pins each literal to the product's own name for it.
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ST4I_PRODUCTS_DIR")))
+            {
+                Environment.SetEnvironmentVariable("ST4I_PRODUCTS_DIR", Path.Combine(root, "products"));
+            }
+
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ST4I_ECOSYSTEM_DIR")))
+            {
+                Environment.SetEnvironmentVariable("ST4I_ECOSYSTEM_DIR", Path.Combine(root, "ecosystem"));
             }
 
             Root = root;

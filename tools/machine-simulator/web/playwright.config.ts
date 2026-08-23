@@ -165,6 +165,13 @@ export default defineConfig({
       // this Playwright-launched engine process.) task-7 (below) isolates historian; task C-5 added
       // `notifications`; the test-hygiene batch added `creds`, the last one out.
       //
+      // 🔴 TASK BF-1 (2026-08-23) — THE TWO "🔴" BLOCKS ABOVE ARE RETRACTED, kept verbatim. The owner
+      // moved all three beside-the-binary store defaults under `%ProgramData%\ST4I\sim`, so there are now
+      // SIXTEEN machine-wide directories, SIXTEEN `ST4I_*_DIR` variables and SIXTEEN entries in the `env:`
+      // block below — one population, one number. "Every 'thirteen' in this file means machine-wide
+      // directories and is still true" is the sentence that stopped being true; every one of them now
+      // reads sixteen. The historical 12-name SM-6 list is left alone, still labelled as a record.
+      //
       // 🔴 ALL THIRTEEN MACHINE-WIDE stores are now redirected under an isolated `../.e2e-data` root that
       // `scripts/reset-engine-state.mjs` wipes in full before every boot — isolated AND disposable,
       // not merely relocated to accumulate somewhere else instead. Three separate audits each declared
@@ -265,6 +272,19 @@ export default defineConfig({
         // set from EVERY `ST4I_*_DIR` literal in `src/` — its property is "every store the engine writes
         // to is isolated", which is population-blind on purpose — so this line is required, not optional.
         ST4I_MACHINE_CONFIG_DIR: join(e2eDataDir, "machine-config"),
+        // 🔴 TASK BF-1, owner ruling 2026-08-23(a) — THE BLOCK ABOVE IS RETRACTED, kept verbatim. Its
+        // premise ("MachineConfigStore defaults to AppContext.BaseDirectory") ended that day: all three
+        // beside-the-binary defaults moved under `%ProgramData%\ST4I\sim`, so the count sentences in this
+        // file now read SIXTEEN machine-wide directories and SIXTEEN `ST4I_*_DIR` variables — ONE
+        // population, not two, and the second population is empty. What did NOT change is the reason the
+        // line above is required: this harness isolates on "the engine writes there", and it always did.
+        //
+        // The two new entries are what stops `npm run test:e2e` and `npm run dev` from reading and writing
+        // a REAL install's products/recipes — which, before the move, they merely did to the engine's own
+        // build output. That is a strictly larger blast radius, and it is the reason these two lines are
+        // not optional either.
+        ST4I_PRODUCTS_DIR: join(e2eDataDir, "products"),
+        ST4I_ECOSYSTEM_DIR: join(e2eDataDir, "ecosystem"),
       },
     },
   ],

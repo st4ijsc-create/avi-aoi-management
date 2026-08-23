@@ -1870,9 +1870,25 @@ public sealed class OperatorDataRemovalCensusTests
     /// every "throws" assertion below pass for the wrong reason, so the probe write must fail first — and
     /// the <see cref="MachineConfigStore"/> leg is the other half of the same guard: if the rig had made
     /// the directory unusable rather than unwritable, that constructor would throw too and the split this
-    /// fact reports would be an artifact.</para></summary>
+    /// fact reports would be an artifact.</para>
+    ///
+    /// <para>📎 <b>RENAMED AND PARTLY RETRACTED, 2026-08-23 (BF-1) — the BEHAVIOUR measured here is
+    /// unchanged and every assertion below is byte-identical; only two words in the name were false.</b>
+    /// The owner's ruling of that date gave <see cref="ProductConfigStore"/> and
+    /// <c>SimulatedEcosystem</c> relocation seams and moved all three defaults under
+    /// <c>%ProgramData%\ST4I\sim</c>, so "the two SEAMLESS BESIDE-THE-BINARY stores" now names a
+    /// population with no members. What this fact actually measures — and always did — is the
+    /// CONSTRUCTOR split: two stores seed-and-persist while building and one only reads, so a root they
+    /// cannot write ends the process for two of them and costs the third nothing. That property is
+    /// independent of where the root is, which is why the assertions did not have to move: every one of
+    /// them hands in an EXPLICIT directory, the first arm of <c>explicit &gt; env &gt; default</c>.
+    /// 🔴 <b>And the explicit arm is load-bearing for a second reason now:</b> an explicit root is not
+    /// the store's <c>DefaultRoot()</c>, so the one-time <c>LegacyRootMigration</c> copy does not run —
+    /// which is what keeps <c>Assert.Empty(Directory.GetFileSystemEntries(dir))</c> below honest. Were
+    /// that gate removed, this fact would go red by finding a migrated <c>products.json</c> in a
+    /// directory nothing was supposed to have written to.</para></summary>
     [Fact]
-    public void OverANonWritableRoot_TheTwoSeamlessBesideTheBinaryStoresEndTheProcess_AndTheSeamedOneDoesNot()
+    public void OverANonWritableRoot_TheTwoSeedingStoresEndTheProcess_AndTheReadOnlyConstructorDoesNot()
     {
         var dir = EmptyDir();
         var me = WindowsIdentity.GetCurrent().User;

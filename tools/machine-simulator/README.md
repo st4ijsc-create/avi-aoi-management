@@ -1212,9 +1212,11 @@ pass) removes only what the MSI itself installed — everything under `%ProgramF
 Simulator\`, the Start Menu/Startup shortcuts, and — if `ServiceFeature` was enabled — stops and
 deletes the `St4iEngineApi` service.
 
-**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine creates **thirteen**
+**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine creates **sixteen**
 directories there (`historian`, `wal`, `security`, `creds`, `notifications`, `identity`,
-`connector-config`, `opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`) and
+`connector-config`, `opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`,
+`machine-config`, `products`, `ecosystem` — 🔴 the last three arrived on **2026-08-23**, when the owner
+moved three stores that until then wrote **beside the engine binary**; see §15.9) and
 the MSI has no `<Component>` referencing anything there (it's all runtime-created by the engine, not
 installed), so Windows Installer's uninstall/remove sequence never touches it. This is deliberate: an
 uninstall or upgrade must never silently destroy production history, the audit trail, or a machine's
@@ -1232,10 +1234,28 @@ destructive script — **never** invoked by the MSI itself:
 .\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -SecurityDir D:\St4iData\security -IdentityDir D:\St4iData\identity
 ```
 
-It stops+deletes the `St4iEngineApi` service if present, then deletes **all thirteen** data directories
-— printing an explicit "this destroys the audit chain + historian + credentials" warning up front, and a
-per-directory line naming exactly what each one loses, gated through PowerShell's
+It stops+deletes the `St4iEngineApi` service if present, then deletes **fourteen of the sixteen** data
+directories — printing an explicit "this destroys the audit chain + historian + credentials" warning up
+front, and a per-directory line naming exactly what each one loses, gated through PowerShell's
 `ShouldProcess`/`-WhatIf`/`-Confirm`.
+
+🔴 **FOURTEEN, NOT SIXTEEN — the owner ruled on 2026-08-23 that two directories are KEPT.** `products`
+(`products.json`, `recipes.json`) and `ecosystem` (`ecosystem-products.json`, `ecosystem-recipes.json`)
+are printed with their resolved paths under a **KEPT BY DESIGN** heading and are never deleted. The
+reason, in the ruling's own words: **configuration an operator authored is not operational data — it is
+something they built**, and "remove data" should not cost them that.
+
+**Read the other direction of that before you hand a machine on.** Those four files SURVIVE a wipe this
+section otherwise calls clean-slate. They hold no credential and no production history — which is why the
+ruling was available at all — but they do hold whatever product and recipe definitions an operator typed.
+If you want them gone, delete those two directories by hand; there is deliberately **no flag** that makes
+the script do it, because a flag would be one keystroke away from re-creating the data-loss path the
+ruling closed. 🔴 **This is not the pre-2026-08-23 arrangement re-labelled:** before that date those four
+files sat beside the binary and went when the install directory went, which was an accident of layout.
+Now they are under `%ProgramData%` and are kept **on purpose**. `machine-config` is the third new
+directory and it **is** purged — it holds the machine's operating parameters and the append-only
+`History` of every adjustment, which is a record of what the machine did rather than something an
+operator authored.
 
 🔴 **The purge list went from four directories to thirteen in Đợt C (C-8 and its review), and the gap was
 real rather than documentary.** C-8 first added `notifications` — `notifications.db` holds the webhook
@@ -1255,8 +1275,10 @@ missed hold credentials**:
 The remaining six (`opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`) are customer
 data or trust material rather than bearer credentials, but this script's stated purpose is a clean-slate
 wipe — leaving them meant it did not do that, and an operator reading the old output would reasonably
-have believed the machine was clean. 🔴 **All THIRTEEN directories are relocatable and each has its own
-`-XxxDir` parameter** — `creds` included. (This paragraph said "every directory except `creds`" until the
+have believed the machine was clean. 🔴 **All SIXTEEN directories are relocatable and each has its own
+`-XxxDir` parameter** — `creds` included, and since 2026-08-23 `-MachineConfigDir`, `-ProductsDir` and
+`-EcosystemDir` too. (The last two resolve a path the script **prints and does not delete**; they exist so
+a relocated install's KEPT directories are named correctly in the banner.) (This paragraph said "every directory except `creds`" until the
 Đợt F branch review: `creds` became relocatable in the test-hygiene batch via `ST4I_CREDS_DIR`
 (`CredentialStore.cs`), `remove-data.ps1` gained `-CredsDir` in the same change, and this sentence was not
 updated with them. It mattered: it told an operator who HAD relocated `creds` that the wipe would still find
@@ -1266,7 +1288,7 @@ it at the default, so the DPAPI-sealed machine credential survived a "clean-slat
 real data doesn't have to live under
 `%ProgramData%\ST4I\sim\*` at all — the script used to assume it always did, silently deleting an
 empty default directory while the real data sat untouched elsewhere. It now resolves **each of the
-thirteen relocatable directories** per its own `-XxxDir` parameter, else the matching `ST4I_*_DIR` environment variable
+sixteen relocatable directories** per its own `-XxxDir` parameter, else the matching `ST4I_*_DIR` environment variable
 in **this same PowerShell process**, else the `%ProgramData%` default — printing the resolved path for
 each before doing anything. **It does NOT read the service's own registry `Environment` value** (only
 this shell's own env) — if a relocated directory was only ever configured there, pass the matching
@@ -1300,7 +1322,20 @@ test-hygiene qua `ST4I_CREDS_DIR`, `remove-data.ps1` nhận `-CredsDir` trong c�
 mặc định, nên khoá máy niêm DPAPI sống sót qua một lần "xoá sạch để thanh lý".) Nếu đã chuyển chỗ
 qua một biến `ST4I_*_DIR` nào đó, truyền tham số `-XxxDir` tương ứng — script KHÔNG tự đọc giá trị
 registry `Environment` của service, chỉ đọc biến môi trường của CHÍNH shell đang chạy nó; nếu không khớp,
-phải xoá thư mục thật bằng tay.)*
+phải xoá thư mục thật bằng tay.
+🔴 **CẬP NHẬT 2026-08-23 — engine nay tạo MƯỜI SÁU thư mục, và script xoá MƯỜI BỐN.** Chủ sở hữu phán ngày
+2026-08-23 rằng ba store trước đây ghi **cạnh file binary** chuyển gốc xuống `%ProgramData%\ST4I\sim\`
+(`machine-config`, `products`, `ecosystem` — xem §15.9), và cùng ngày phán tiếp rằng **hai thư mục
+`products` và `ecosystem` được MIỄN TRỪ khỏi lượt xoá**. Lý do, đúng lời phán: **cấu hình do vận hành viên
+soạn KHÔNG phải dữ liệu vận hành — nó là thứ họ DỰNG LÊN**, và "gỡ dữ liệu" không nên làm họ mất nó. Script
+in đường dẫn của hai thư mục ấy dưới tiêu đề **KEPT BY DESIGN** rồi để nguyên.
+🔴 **Nói cả chiều ngược lại:** bốn file `products.json`, `recipes.json`, `ecosystem-products.json`,
+`ecosystem-recipes.json` **SỐNG SÓT** qua một lần xoá mà mục này vẫn gọi là "xoá sạch để thanh lý". Chúng
+không chứa thông tin đăng nhập và không chứa lịch sử sản xuất — chính vì thế phán quyết mới khả thi — nhưng
+chúng chứa mọi định nghĩa sản phẩm/công thức mà vận hành viên đã gõ vào. Muốn xoá thì xoá hai thư mục ấy
+bằng tay; **cố ý KHÔNG có cờ nào** làm việc đó. `machine-config` là thư mục mới thứ ba và nó **CÓ** bị xoá:
+nó giữ tham số vận hành của máy và danh sách `History` chỉ-thêm của mọi lần điều chỉnh — một bản ghi về
+việc máy ĐÃ LÀM GÌ, không phải thứ vận hành viên dựng lên.)*
 
 ### 15.5 `St4i.DesktopShell` coexistence / Cùng tồn tại với DesktopShell
 
@@ -1499,10 +1534,20 @@ Windows machine** (§24). They share no roster, no claim registry and no channel
 **The rule, and it is the whole mechanism — and it is scoped to the MACHINE-WIDE population:** every
 directory this product creates under
 `%ProgramData%\ST4I\sim\<name>` is relocatable by an environment variable whose name is derived from the
-directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **thirteen** of them
+directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **sixteen** of them
 today, and there is no exception **within that population**. 🔴 **It is not the whole of what this product
 writes**: three more stores live BESIDE THE ENGINE BINARY and are isolated only by accident — see "The
 SECOND store population" below, and read it before concluding two hosts are separated.
+
+📎 **THE SENTENCE AFTER THE COUNT IS RETRACTED, 2026-08-23 (BF-1), kept verbatim.** It read *"three more
+stores live BESIDE THE ENGINE BINARY and are isolated only by accident"*, and it was true from F-1 until
+that date. The owner ruled on **2026-08-23(a)** that those three move their defaults under
+`%ProgramData%\ST4I\sim\` — which is why the count above went **thirteen → sixteen** in the same edit.
+🔴 **The second population is now EMPTY, and "empty" is asserted rather than assumed**: an empty set
+satisfies every universal anyone states about it, so `PerHostDataRootsTests` pins the beside-the-binary
+variable set at exactly zero members instead of merely quantifying over it. The subsection below is kept
+in place with its own retraction, because everything it says about WHY accidental isolation is not
+isolation is still the reason the move happened.
 
 🔴 **Read the WRITES/READS columns before you relocate anything.** Relocating a root a host **writes**
 gives that host its own copy of something it produces — that is isolation, and it is what this section is for.
@@ -1525,6 +1570,9 @@ effect.
 | `settings` | `ST4I_SETTINGS_DIR` | EngineApi | EngineApi | `fleet-settings.json` — serverUrl/machineCode/verifyTls |
 | `sitelink` | `ST4I_SITELINK_DIR` | EngineApi | EngineApi | the Site link and its operator-pinned PEM |
 | `bridge-spool` | `ST4I_BRIDGE_SPOOL_DIR` | EngineApi | EngineApi | the durable northbound spool |
+| `machine-config` | `ST4I_MACHINE_CONFIG_DIR` | EngineApi (`MachineConfigStore`, on the operator's first write) | EngineApi | `machine-operating-config.json` — per-machine baselines, every operator adjustment, and the append-only `History` behind them. 🔴 **joined this table on 2026-08-23**; the only root written **under the fleet's global lock** |
+| `products` | `ST4I_PRODUCTS_DIR` | EngineApi (`ProductConfigStore`, **during construction**) | EngineApi | `products.json`, `recipes.json` — the product and recipe definitions. 🔴 **joined on 2026-08-23**, and **KEPT by `remove-data.ps1`** (§15.4) |
+| `ecosystem` | `ST4I_ECOSYSTEM_DIR` | EngineApi (`SimulatedEcosystem`, **during construction**) | EngineApi | `ecosystem-products.json`, `ecosystem-recipes.json` — the Demo-mode ecosystem. 🔴 **joined on 2026-08-23**, and **KEPT by `remove-data.ps1`** (§15.4) |
 
 *(The WRITES/READS columns are an enumeration of CALL SITES in `src/`, not an inference from which assembly
 references which type: `CredentialStore.Save` appears in `St4i.EngineApi/Fleet/OnboardingService.cs` and in the
@@ -1538,7 +1586,7 @@ Pinned by `PerHostDataRootsTests` — `EveryMachineWideDirectory_IsRelocatable_B
 fourteenth store, it **did** arrive, and this guard stayed green — correctly, because it is not machine-wide.
 The guard that turned red was `TestHarnessIsolationTests`, for a different reason. The beside-the-binary
 population has its own guard,
-`TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes`), and
+`TheBesideTheBinaryStorePopulation_IsEmpty_AndTheSixteenMachineWideOnesAccountForEveryVariable`), and
 `EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared` requires each variable to reach a real
 `Environment.GetEnvironmentVariable` call rather than merely existing as a literal somewhere. That is
 deliberate: the mechanism was already complete before this section existed, and the thing that would break
@@ -1568,6 +1616,36 @@ host that ever constructed a historian store without going through that root wou
 with no env-var step. None does today.)*
 
 #### 🔴 The SECOND store population — written BESIDE THE BINARY, and isolated only BY ACCIDENT
+
+> 📎🔴 **THIS WHOLE SUBSECTION IS RETRACTED, 2026-08-23 (BF-1), and kept VERBATIM below rather than
+> rewritten — including its table, its three numbered consequences and the AC-1 ruling table.** The owner
+> ruled on **2026-08-23(a)**: all three stores move their default roots to
+> `%ProgramData%\ST4I\sim\{machine-config,products,ecosystem}`. **The second population is now empty.**
+>
+> **Why it is kept rather than deleted.** Nothing in it was wrong. It is the argument that *accidental*
+> separation is not isolation — the same distinction §24.2 draws for a COM port — and that argument is
+> precisely what got the move ruled. A reader who arrives here from an older build, or from a machine that
+> still has files beside its binary, needs to find this text, not a gap where it used to be.
+>
+> **What is true today, in five lines:**
+> 1. All three roots are `%ProgramData%\ST4I\sim\<leaf>` and all three variables are derivable from the
+>    leaf: `ST4I_MACHINE_CONFIG_DIR`, `ST4I_PRODUCTS_DIR`, `ST4I_ECOSYSTEM_DIR`. **Sixteen directories,
+>    sixteen variables, one population.**
+> 2. Two hosts launched from **one install directory** no longer share these files by accident — they
+>    share them by DEFAULT, machine-wide, exactly like the other thirteen, and the fix is the same fix:
+>    give each host its own roots. That is a real change of shape, not a repeal of the warning.
+> 3. 🔴 **An existing install stops reading its old files**, and this is the cost the owner accepted with
+>    the ruling. It is mitigated, not erased: on the first start under the new default each store performs
+>    a **one-time COPY** from the old beside-the-binary location, and **never deletes the original**
+>    (`LegacyRootMigration`). It runs only when the root resolved from the DEFAULT — an explicit path or
+>    an `ST4I_*_DIR` value skips it, which is what keeps a test process from importing build residue.
+> 4. 🔴 **After that first write the two copies DIVERGE and nothing converges them.** An operator who keeps
+>    hand-editing the old path beside the binary will see no effect and no error. There is no warning on
+>    that path; the old file simply stops being read. **Delete it once you are satisfied the new root has
+>    what you need** — the product will not, because deleting an operator's bytes is not a thing this
+>    product does.
+> 5. `products` and `ecosystem` are **KEPT** by `packaging/remove-data.ps1` (owner ruling 2026-08-23(b),
+>    §15.4); `machine-config` is **purged** like the other thirteen.
 
 **EN** — Everything above is about the **thirteen machine-wide** directories under `%ProgramData%\ST4I\sim\`.
 The product also writes **three** persistent stores **next to the engine's own .exe**
@@ -1645,6 +1723,21 @@ existing install writing exactly where it writes today; what moves that row is m
 a store's default relocates live customer data on the next start — a deployment decision, not a seam, in the
 same words `MachineConfigStore.DefaultRoot`'s remarks already use. AC-1 measured the arm and **reported** the
 decision rather than taking it.
+
+> 📎🔴 **TOÀN BỘ ĐOẠN VI NGAY DƯỚI ĐÂY ĐƯỢC RÚT, 2026-08-23 (BF-1), giữ NGUYÊN VĂN.** Chủ sở hữu phán ngày
+> **2026-08-23(a)**: cả ba store chuyển gốc mặc định xuống
+> `%ProgramData%\ST4I\sim\{machine-config,products,ecosystem}`. **Quần thể thứ hai nay RỖNG** — và cái
+> rỗng ấy được **ghim bằng test** chứ không phải được giả định, vì một tập rỗng thoả mọi khẳng định phổ
+> quát. Giữ nguyên văn vì không câu nào trong đó từng sai: chính lập luận "tách vì tình cờ thì không phải
+> đã cô lập" là thứ khiến phép chuyển được phán.
+> **Hôm nay, năm dòng:** (1) mười sáu thư mục, mười sáu biến, MỘT quần thể — tên biến suy được từ tên thư
+> mục. (2) Hai host chạy từ một thư mục cài nay dùng chung các file ấy **theo mặc định**, giống hệt mười ba
+> cái kia; cách tách vẫn là cho mỗi host một gốc riêng. (3) 🔴 Một bản cài ĐÃ TỒN TẠI **thôi đọc file cũ**
+> — đó là cái giá chủ sở hữu đã chấp nhận; nó được giảm nhẹ bằng **một phép CHÉP MỘT LẦN** từ gốc cũ,
+> **KHÔNG BAO GIỜ xoá bản cũ** (`LegacyRootMigration`), và phép chép chỉ chạy khi gốc giải ra từ MẶC ĐỊNH.
+> (4) 🔴 Sau lần ghi đầu **hai bản PHÂN KỲ và không có gì hợp nhất chúng**: sửa file cũ cạnh binary sẽ
+> không có tác dụng và không có báo lỗi nào. (5) `products` và `ecosystem` **ĐƯỢC GIỮ** khi chạy
+> `packaging/remove-data.ps1` (phán quyết 2026-08-23(b), §15.4); `machine-config` **BỊ XOÁ**.
 
 *(VI: 🔴 **Quần thể store THỨ HAI — ghi CẠNH FILE BINARY, và chỉ cô lập một cách TÌNH CỜ.** Mọi thứ bên trên
 nói về **mười ba** thư mục **toàn máy** dưới `%ProgramData%\ST4I\sim\`. Sản phẩm còn ghi **ba** store bền vững
@@ -1785,13 +1878,20 @@ triển khai bình thường (§24). Hai host không chia sẻ roster, không ch
 nào — nhưng mặc định chúng **dùng chung một bộ file**. Mục này nói cách cho mỗi host một bộ riêng, và cái giá
 phải trả. **Quy tắc:** mọi thư mục sản phẩm tạo dưới `%ProgramData%\ST4I\sim\<tên>` đều dời chỗ được bằng một
 biến môi trường suy ra được từ tên thư mục — **`ST4I_` + `<TÊN>` (viết hoa, `-` → `_`) + `_DIR`**. Hôm nay có
-**mười ba** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên) — 🔴 nhưng đó **không phải toàn bộ
-những gì sản phẩm ghi**: còn **ba** store nữa nằm **cạnh file binary của engine**, chỉ cô lập một cách tình cờ,
-xem mục "Quần thể store THỨ HAI" bên dưới. Và có **hai** test ghim trong
+**mười sáu** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên).
+📎 **RÚT 2026-08-23 (BF-1), giữ nguyên văn:** câu ngay trên đọc *"Hôm nay có **mười ba** thư mục"* và tiếp
+*"🔴 nhưng đó **không phải toàn bộ những gì sản phẩm ghi**: còn **ba** store nữa nằm **cạnh file binary của
+engine**, chỉ cô lập một cách tình cờ, xem mục 'Quần thể store THỨ HAI' bên dưới."* Cả hai nửa đúng cho tới
+2026-08-23. Chủ sở hữu phán chuyển ba store ấy xuống `%ProgramData%\ST4I\sim\` cùng ngày, nên **mười ba
+thành mười sáu** và **quần thể thứ hai RỖNG** — cái rỗng ấy được ghim ở đúng số không, vì một tập rỗng thoả
+mọi khẳng định phổ quát. Mục "Quần thể store THỨ HAI" vẫn ở dưới, giữ nguyên văn, mang khối rút của chính
+nó. Và có **hai** test ghim trong
 `PerHostDataRootsTests`: `EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName` suy ra **cả hai** tập
-bằng cách quét `src/` (store **toàn máy** thứ mười bốn làm test đỏ cho tới khi nó cũng có biến — 🔴 chữ "toàn
-máy" là chịu lực: `MachineConfigStore` ĐÚNG là store thứ mười bốn, nó ĐÃ ra đời, và phép ghim này vẫn XANH,
-đúng như thiết kế, vì nó không thuộc quần thể toàn máy; quần thể cạnh-binary có phép ghim riêng của nó), và
+bằng cách quét `src/` (store **toàn máy** thứ mười bảy làm test đỏ cho tới khi nó cũng có biến — 🔴 chữ "toàn
+máy" từng là chịu lực và **nay không còn phân chia gì**: `MachineConfigStore` ĐÚNG là store thứ mười bốn khi
+H-1c thêm nó và phép ghim khi ấy vẫn XANH đúng như thiết kế, vì nó chưa thuộc quần thể toàn máy; từ
+2026-08-23 nó **thuộc**, cùng với hai store còn lại, nên quần thể cạnh-binary rỗng và phép ghim riêng của nó
+nay ghim đúng **số không**), và
 `EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared` đòi mỗi biến phải tới được một lời gọi
 `Environment.GetEnvironmentVariable` thật, chứ không chỉ tồn tại như một chuỗi ở đâu đó.
 *(🔴 Cái hai phép ghim ấy **KHÔNG** đo: chúng chứng minh biến **được khai báo và được ĐỌC ở một điểm phân
@@ -5917,10 +6017,15 @@ holds COM3 — and on a **gateway** there is no such protection to reason about 
   is the WAL queue), so nothing regressed — **and E-5 did not change that either: an RS-485 bus opens a COM
   port and a gateway bus opens a socket; neither is a store, and the shared-open bookkeeping is an in-process
   dictionary the host owns.** 🔴 **F-1 changed the "by default": per-host data roots are now a SUPPORTED
-  deployment (§15.9)** — every one of the thirteen **machine-wide** directories under `%ProgramData%` is
+  deployment (§15.9)** — every one of the **sixteen** (🔴 thirteen until 2026-08-23) **machine-wide**
+  directories under `%ProgramData%` is
   relocatable by a derivable `ST4I_*_DIR`
-  variable, and a test derives both sets from `src/` so a fourteenth **machine-wide** store cannot arrive
-  without one — a beside-the-binary store can, and does; that is what the second population below is. What
+  variable, and a test derives both sets from `src/` so a **seventeenth** machine-wide store cannot arrive
+  without one. 📎 **The clause that used to follow — *"a beside-the-binary store can, and does; that is what
+  the second population below is"* — is RETRACTED 2026-08-23 (BF-1) and kept verbatim:** the owner moved all
+  three of those stores under `%ProgramData%`, so the second population is EMPTY and a store arriving beside
+  the binary is no longer something this product does. The guard for that population still exists and now
+  pins it at exactly zero, which is the only form in which an emptiness is worth asserting. What
   F-1 did **not** do is set them for you: unset still means one shared set of files, and nothing migrates when
   you change one. 🔴 **H-1c added the qualifier "machine-wide" here because it was load-bearing and missing:**
   the product writes three further stores BESIDE THE ENGINE BINARY, where isolation between two hosts is
@@ -6157,12 +6262,15 @@ của nó là hàng đợi WAL), nên không có gì thụt lùi — **và E-5 c
 cổng COM còn một tuyến gateway mở một socket; không cái nào là store, và sổ sách chia sẻ lần mở là một
 dictionary trong tiến trình do host sở hữu.** **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
 động lại** (§23.5), không đổi. 🔴 **F-1 đổi phần "mặc định" ấy: gốc dữ liệu theo host giờ là hình dạng triển
-khai ĐƯỢC HỖ TRỢ (§15.9)** — cả mười ba thư mục **toàn máy** dưới `%ProgramData%` đều dời chỗ được bằng một
-biến `ST4I_*_DIR` suy ra được (🔴 H-1c thêm chữ "toàn máy": sản phẩm còn ba store ghi **cạnh binary**, ở đó sự
-cô lập giữa hai host là **tình cờ** — đọc mục quần thể thứ hai của §15.9 trước khi lên kế hoạch một máy hai
-host), và
-một test suy ra cả hai tập từ `src/` nên store **toàn máy** thứ mười bốn không thể ra đời mà thiếu biến — còn
-một store cạnh-binary thì có thể, và đã có. Cái F-1 **không**
+khai ĐƯỢC HỖ TRỢ (§15.9)** — cả **mười sáu** thư mục **toàn máy** dưới `%ProgramData%` đều dời chỗ được bằng
+một biến `ST4I_*_DIR` suy ra được (📎 **RÚT 2026-08-23 (BF-1), giữ nguyên văn:** chỗ này đọc *"cả mười ba thư
+mục"* và *"🔴 H-1c thêm chữ 'toàn máy': sản phẩm còn ba store ghi **cạnh binary**, ở đó sự cô lập giữa hai
+host là **tình cờ** — đọc mục quần thể thứ hai của §15.9 trước khi lên kế hoạch một máy hai host"*. Chủ sở
+hữu chuyển cả ba store ấy xuống `%ProgramData%` ngày 2026-08-23, nên **mười ba thành mười sáu** và quần thể
+cạnh-binary **RỖNG**; hai host trên một máy nay dùng chung ba file ấy **theo mặc định** giống hệt mười ba cái
+kia, và cách tách vẫn là cho mỗi host một gốc riêng), và
+một test suy ra cả hai tập từ `src/` nên store **toàn máy** thứ mười bảy không thể ra đời mà thiếu biến — còn
+một store cạnh-binary thì **không còn cái nào**, và phép ghim của quần thể ấy nay ghim đúng số không. Cái F-1 **không**
 làm là đặt chúng thay bạn: không đặt gì thì vẫn là một bộ file dùng chung, và đổi gốc thì **không có gì được
 di trú**. **Do đó quyết định đang chặn OPC-UA ở biên đã ĐÓNG** — xem §24.2, phần còn lại là công việc kỹ
 thuật chứ không phải một phán quyết.

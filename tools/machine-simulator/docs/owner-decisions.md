@@ -58,7 +58,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 27 | API Inspector **không phơi THÂN request** | ✅ **ĐÃ THI HÀNH 2026-08-22 (AT-1)** theo 🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU ngày 2026-08-22: BỀ MẶT MỚI** (phán quyết ấy đọc được trong thân mục). Bề mặt mới = record `ApiTraceBody` + route `GET /v1/inspector/bodies` (cùng `Policies.Engineer` với luồng WS). 🔴 **BA bề mặt đã xuất bản KHÔNG dịch một byte, chứng minh bằng diff: `ApiTraceEvent.cs`, `ApiInspector.tsx`, `inspector.ts`, `InspectorViewModel.cs`, `ApiInspectorView.xaml`, `TraceTable.tsx` — 0 dòng đổi ở mỗi file**; `ApiTraceEvent` giữ đúng mười thành phần và `EventBus.Traced` vẫn mang một `ApiTraceEvent`. **Trần kích thước ĐO rồi mới chọn: 16 KiB/thân**, vì thân thật của bộ sinh hôm nay là **1 314 byte** (24 mẫu) / **1 207** (20 mẫu) / **255** (telemetry), còn sóng **100 000 mẫu** = **2 169 909 byte** và **BỊ cắt** kèm cờ `Truncated`; ngân sách thật là **500 × 16 KiB = 8 MiB**. **Danh sách CHO PHÉP có BẢY khoá**; che `serialNumber`, `recipe`, `metrics`, `waveforms`, `measurements`, `samples` **và mọi khoá genealogy (do cấu trúc)**, mỗi cái **nêu tên** trong `WithheldKeys`. 🔴 **Một lỗ rò của chính bản sửa bị bắt bởi chính bài test của nó: `idempotencyKey` từng nằm trên danh sách cho phép, nhưng `BuildIdempotencyKey` dựng nó từ MÃ CÔNG THỨC và (hình dạng inspection) SỐ SERIAL** — nay là `IdempotencyDigest` (SHA-256, 16 hex), và giới hạn được nêu: **phi-định-danh, không phải bí mật**. **Vòng đời thân nằm trong vòng đời trace DO CẤU TRÚC** — một hàng đợi cặp, đuổi cùng một `Dequeue`. 🔴 **Đóng MỘT PHẦN: không dụng cụ UI nào được thêm** — bề mặt mới là một route, và **không chạm `web/` là CỐ Ý**, vì `handleExport` sống trong `ApiInspector.tsx`. Xem Phần III. **Câu trạng thái CŨ giữ nguyên văn ngay dưới:** 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1), đo lại từ mã 2026-08-20. `ApiTraceEvent` **không có trường thân**; `TraceTable` **không có trình xử lý click hàng nào**. 🔴 **AS-1 (2026-08-21) ĐƯỢC GIAO THI HÀNH MỤC NÀY VÀ ĐÃ DỪNG — điều kiện DỪNG của brief đã NỔ: `ApiTraceEvent` rời tiến trình trên BA bề mặt đã xuất bản, nên thêm một trường thân LÀ đổi hình dạng một payload đã xuất bản. Không một dòng nào bị sửa cho mục này; mục Ở LẠI PHẦN I.** Kèm hai phép đo BÁC hai tiền đề của brief: thân request đi ra **KHÔNG mang khoá `mk_`** (khoá đi bằng header), và sóng hàn hôm nay là **24 mẫu**, không phải 100.000. → 🔨 **QUYẾT: BỀ MẶT MỚI** (2026-08-22, **chủ sở hữu**) — một đường RIÊNG cho thân request; khung WS và **hai** file JSON xuất **giữ nguyên hình dạng**. 🔴 **Phép DỪNG của AS-1 là thứ TẠO RA phán quyết này**: nếu cứ thêm trường thì đã đổi ba payload đã xuất bản, hai trong đó **không đo được ai đang đọc**. 🔴 **Ở LẠI PHẦN I** — phán quyết đã có, **ghi chép thi hành CHƯA**; một nhiệm vụ khác thi hành. Ba điều kiện che (trần byte + dấu hiệu đã cắt, che ở chỗ dựng sự kiện, **danh sách CHO PHÉP**) **KHÔNG được miễn**. Xem thân mục |
 | 28 | ~~**BA** cái trần~~ **BỐN** cái trần trên lịch sử API-trace, và **không cái nào được UI gọi tên là trần** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **KHÔNG phải ba mà BỐN**: mục bỏ sót vòng đệm của chính vỏ WPF (`InspectorViewModel.MaxEvents`). Cái trần backfill nay **CÓ TÊN** (`InspectorStreamEndpoint.BackfillEventCount`) thay vì một literal `200`; pane web nay **gọi tên** ba cái trần áp vào nó và nói **cái nào chặn khi nào**. Đổi lời, không đổi hành vi. Xem Phần III |
 | 29 | Cả fleet liên kết ra ngoài bằng **MỘT danh tính thiết bị** | ✅ **ĐÃ THI HÀNH 2026-08-21 (AS-1)** — 🔴 **và CƠ CHẾ mà mục mô tả KHÔNG đứng vững: route KHÔNG "trả 200 cho việc nó không làm"** — nó thật sự lưu khoá, câu *"Pasted mk_ key stored for WELD-01"* là **ĐÚNG**; cái sai là suy luận nó mời người đọc rút ra. Nên bản sửa là **sửa câu, không sửa mã trạng thái** — một 4xx sẽ từ chối một cú ghi có thật và lấy đi đúng đường mà chính mục nêu là hợp lệ. 🔴 **Và mục nêu THIẾU một bề mặt: có HAI biểu mẫu web POST route ấy, không một.** Cái trần vendored giữ nguyên. Xem Phần III |
-| 30 | Gốc mặc định của ~~bốn~~ **BA** store cạnh-binary là `%ProgramFiles%`, và **lần chạy đầu chính là lần GHI** | 🔴 **CHỜ ANH — VÀ NAY CÓ MỘT PHÉP ĐO THỰC TẾ ĐI KÈM.** Mở 2026-08-20 (AO-1). Câu hỏi này **bị nhiều brief liên tiếp CẤM mở**; lệnh cấm hết hiệu lực ở nhiệm vụ AV-1. 🔴 **AV-1 (2026-08-22) ĐƯỢC GIAO THI HÀNH VÀ ĐÃ DỪNG: điều kiện DỪNG *"bản sửa cần DI CHUYỂN dữ liệu vận hành viên đã có"* NỔ** — xem khối phép đo trong thân mục, ở **Phần I**. 🔴 **Và chữ "bốn" ở ô này là một phép ĐẾM THIẾU CHÍNH XÁC theo chiều ngược**: quần thể là **BA store** sinh **NĂM file**, trong đó cổng miễn trừ đích danh **BỐN**. Thân mục đã viết đúng "ba store" từ đầu; ô tóm tắt này đếm nhầm file thành store, và lời giao việc của AV-1 thừa hưởng chữ ấy 🔴 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-23: CHUYỂN GỐC SANG `%ProgramData%`** — chủ sở hữu **đã được nêu** rằng một bản cài ĐÃ TỒN TẠI sẽ thôi thấy dữ liệu ở gốc cũ và **vẫn chọn hướng này**. 🔴 **Mục Ở LẠI PHẦN I vì phép chuyển CHƯA được làm, KHÔNG vì thiếu phán quyết** — đây là một giới hạn dung lượng của nhiệm vụ BE-1, **không phải một điều kiện DỪNG**. **Phép đo điều-kiện-tiên-quyết đã trả, và nó BÁC tiền đề của chính câu hỏi:** bốn miễn trừ ở cổng trỏ theo **TÊN (basename)**, không theo **ĐƯỜNG DẪN** — `outdir_snapshot` cắt `sub(/^.*\//, "", p)` rồi mới tra, và danh sách tên được **RÚT RA từ chính nguồn hai store**; quan sát trực tiếp trên một lần chạy cổng đầy đủ: `exempt: products.json recipes.json ecosystem-products.json ecosystem-recipes.json`. 🔴 **Nhưng đổi gốc VẪN làm hỏng cổng qua một cửa câu hỏi không nêu tên:** cả `verify-suites.sh` lẫn `OwnOutputDirectoryGuard` **FAIL tường minh** ngay khi hai store ấy khai `EnvVarDir` — mà seam là **bắt buộc**, vì **20 lớp test dựng `WebApplicationFactory`** giải chúng qua DI thật và nếu không có seam thì suite bắt đầu ghi vào **`%ProgramData%` THẬT** (không dụng cụ nào hôm nay gác chỗ ấy — hai bracket credential chỉ canh `…\sim\creds`). **Khuôn dùng lại, và một PHÁT HIỆN:** dùng lại **nửa giải gốc** của `CredentialStore` (`DefaultRoot`/`EnvVarDir`/`ResolveRoot` explicit>env>default + `CreateDirectory`), **KHÔNG** dùng lại `SecurityDirAcl.Apply` — nó gỡ quyền đọc của `Authenticated Users` và sẽ **KHOÁ VẬN HÀNH VIÊN RA NGOÀI** chính bốn file mà cổng gọi là *"operator-editable"*. **Ba hướng đo giá, chọn một:** *(b) dự phòng khi đọc* **LOẠI** (không bao giờ hội tụ; hai gốc phân kỳ lặng lẽ = mất dấu ở dạng chậm); *(c) chỉ đổi gốc + log* **LOẠI làm giải pháp đứng một mình** (kênh giao hàng là stderr của một service, không ai đọc); ✅ *(a) **DI TRÚ MỘT LẦN**, chép nếu gốc mới trống, **KHÔNG XOÁ BẢN CŨ*** (miễn trừ di-chuyển của mục 10 **chỉ áp cho mục 10**), cộng dòng log của (c) — kèm một cái bẫy phải đóng: nguồn di trú là `AppContext.BaseDirectory`, **không dời được**, nên phép chép **chỉ chạy khi gốc giải ra từ MẶC ĐỊNH**. 🔴 **GIÁ THẬT, đo chứ không ước: một dòng mã kéo theo MƯỜI SÁU artefact** bị bốn dụng cụ điều tra dân số **cưỡng chế đi cùng nhau** (`DefaultRoot_IsBesideTheBinary_AndIsNotUnderProgramData` đỏ theo cấu trúc — **thông điệp hỏng của nó chính là bản kê việc**; `PerHostDataRootsTests` dòng 602 đỏ vô điều kiện; chữ `thirteen` ở README §15.9 và `remove-data.ps1` bị **ghim bằng test** nên phải thành `sixteen` cùng lúc). 🔴 **VÀ MỘT PHÁN QUYẾT PHỤ CHƯA AI NÊU, nêu ra chứ không để nó tự xảy ra:** `NotificationDocumentationTests` **đòi** mọi thư mục `…\sim\<leaf>` phải bị `packaging/remove-data.ps1` **xoá**, nên chuyển bốn file vận hành viên vào đó **tự động đưa chúng vào tầm lệnh xoá khi ngừng sử dụng** — trong khi hôm nay script ấy **cố ý** không đụng chúng và tự khai thế. **Một đường mất dữ liệu MỚI, phải được quyết tường minh.** Xem khối `BE-1` trong thân mục |
+| 30 | Gốc mặc định của ~~bốn~~ **BA** store cạnh-binary là `%ProgramFiles%`, và **lần chạy đầu chính là lần GHI** | 🔴 **CHỜ ANH — VÀ NAY CÓ MỘT PHÉP ĐO THỰC TẾ ĐI KÈM.** Mở 2026-08-20 (AO-1). Câu hỏi này **bị nhiều brief liên tiếp CẤM mở**; lệnh cấm hết hiệu lực ở nhiệm vụ AV-1. 🔴 **AV-1 (2026-08-22) ĐƯỢC GIAO THI HÀNH VÀ ĐÃ DỪNG: điều kiện DỪNG *"bản sửa cần DI CHUYỂN dữ liệu vận hành viên đã có"* NỔ** — xem khối phép đo trong thân mục, ở **Phần I**. 🔴 **Và chữ "bốn" ở ô này là một phép ĐẾM THIẾU CHÍNH XÁC theo chiều ngược**: quần thể là **BA store** sinh **NĂM file**, trong đó cổng miễn trừ đích danh **BỐN**. Thân mục đã viết đúng "ba store" từ đầu; ô tóm tắt này đếm nhầm file thành store, và lời giao việc của AV-1 thừa hưởng chữ ấy 🔴 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-23: CHUYỂN GỐC SANG `%ProgramData%`** — chủ sở hữu **đã được nêu** rằng một bản cài ĐÃ TỒN TẠI sẽ thôi thấy dữ liệu ở gốc cũ và **vẫn chọn hướng này**. 🔴 **Mục Ở LẠI PHẦN I vì phép chuyển CHƯA được làm, KHÔNG vì thiếu phán quyết** — đây là một giới hạn dung lượng của nhiệm vụ BE-1, **không phải một điều kiện DỪNG**. **Phép đo điều-kiện-tiên-quyết đã trả, và nó BÁC tiền đề của chính câu hỏi:** bốn miễn trừ ở cổng trỏ theo **TÊN (basename)**, không theo **ĐƯỜNG DẪN** — `outdir_snapshot` cắt `sub(/^.*\//, "", p)` rồi mới tra, và danh sách tên được **RÚT RA từ chính nguồn hai store**; quan sát trực tiếp trên một lần chạy cổng đầy đủ: `exempt: products.json recipes.json ecosystem-products.json ecosystem-recipes.json`. 🔴 **Nhưng đổi gốc VẪN làm hỏng cổng qua một cửa câu hỏi không nêu tên:** cả `verify-suites.sh` lẫn `OwnOutputDirectoryGuard` **FAIL tường minh** ngay khi hai store ấy khai `EnvVarDir` — mà seam là **bắt buộc**, vì **20 lớp test dựng `WebApplicationFactory`** giải chúng qua DI thật và nếu không có seam thì suite bắt đầu ghi vào **`%ProgramData%` THẬT** (không dụng cụ nào hôm nay gác chỗ ấy — hai bracket credential chỉ canh `…\sim\creds`). **Khuôn dùng lại, và một PHÁT HIỆN:** dùng lại **nửa giải gốc** của `CredentialStore` (`DefaultRoot`/`EnvVarDir`/`ResolveRoot` explicit>env>default + `CreateDirectory`), **KHÔNG** dùng lại `SecurityDirAcl.Apply` — nó gỡ quyền đọc của `Authenticated Users` và sẽ **KHOÁ VẬN HÀNH VIÊN RA NGOÀI** chính bốn file mà cổng gọi là *"operator-editable"*. **Ba hướng đo giá, chọn một:** *(b) dự phòng khi đọc* **LOẠI** (không bao giờ hội tụ; hai gốc phân kỳ lặng lẽ = mất dấu ở dạng chậm); *(c) chỉ đổi gốc + log* **LOẠI làm giải pháp đứng một mình** (kênh giao hàng là stderr của một service, không ai đọc); ✅ *(a) **DI TRÚ MỘT LẦN**, chép nếu gốc mới trống, **KHÔNG XOÁ BẢN CŨ*** (miễn trừ di-chuyển của mục 10 **chỉ áp cho mục 10**), cộng dòng log của (c) — kèm một cái bẫy phải đóng: nguồn di trú là `AppContext.BaseDirectory`, **không dời được**, nên phép chép **chỉ chạy khi gốc giải ra từ MẶC ĐỊNH**. 🔴 **GIÁ THẬT, đo chứ không ước: một dòng mã kéo theo MƯỜI SÁU artefact** bị bốn dụng cụ điều tra dân số **cưỡng chế đi cùng nhau** (`DefaultRoot_IsBesideTheBinary_AndIsNotUnderProgramData` đỏ theo cấu trúc — **thông điệp hỏng của nó chính là bản kê việc**; `PerHostDataRootsTests` dòng 602 đỏ vô điều kiện; chữ `thirteen` ở README §15.9 và `remove-data.ps1` bị **ghim bằng test** nên phải thành `sixteen` cùng lúc). 🔴 **VÀ MỘT PHÁN QUYẾT PHỤ CHƯA AI NÊU, nêu ra chứ không để nó tự xảy ra:** `NotificationDocumentationTests` **đòi** mọi thư mục `…\sim\<leaf>` phải bị `packaging/remove-data.ps1` **xoá**, nên chuyển bốn file vận hành viên vào đó **tự động đưa chúng vào tầm lệnh xoá khi ngừng sử dụng** — trong khi hôm nay script ấy **cố ý** không đụng chúng và tự khai thế. **Một đường mất dữ liệu MỚI, phải được quyết tường minh.** Xem khối `BE-1` trong thân mục 🔨 **ĐÃ THI HÀNH 2026-08-23 (BF-1) — trên HAI phán quyết của CHỦ SỞ HỮU cùng ngày: (a) CHUYỂN GỐC SANG `%ProgramData%`, và (b) MIỄN TRỪ BỐN FILE CẤU HÌNH KHỎI LƯỢT XOÁ CỦA `remove-data.ps1`** — *"cấu hình do vận hành viên soạn KHÔNG phải dữ liệu vận hành; nó là thứ họ DỰNG LÊN"*. Ba lá mới `%ProgramData%\ST4I\sim\{products,ecosystem,machine-config}`; quần thể toàn máy **13 → 16 thư mục và 13 → 16 biến**, quần thể cạnh-binary **RỖNG và được GHIM ở số không**. **CHÉP MỘT LẦN, KHÔNG XOÁ BẢN CŨ**, gác trên điều kiện gốc BẰNG `DefaultRoot()`; chỉ **nửa giải gốc** của credential store được dùng lại, `SecurityDirAcl` **không**. `remove-data.ps1` xoá **14/16** và **GIỮ** `products` + `ecosystem`. 🔴 **Một khẳng định đã công bố bị RÚT:** `NotificationDocumentationTests.EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript` đòi **mọi** lá phải bị xoá; nay đòi mọi lá **hoặc bị xoá hoặc được GIỮ có nêu tên kèm lý do**, tập giữ **ghim đúng bằng** `{ecosystem, products}`. 🔴 **MƯỜI LĂM artefact dịch cùng nhau, KHÔNG phải mười sáu** — con số của BE-1 đo lại không sống sót: `TestHarnessIsolationTests.cs` **không phải dịch**, vì phép ghim của nó suy tập ra từ `src/` nên nó tự xanh lại khi `playwright.config.ts` dịch (commit hai mươi mốt file — ba con số, ba câu hỏi, xem thân mục §4). **Mục rời PHẦN I → PHẦN III**, và với nó **PHẦN I TRỐNG** — lần đầu cả hai phần chờ-quyết cùng trống kể từ khi file này được lập. Xem khối `BF-1` trong thân mục |
 | 31 | **Mười hai artefact build** (7 `.xml` + 5 `.pdb`) đi vào MSI | ✅ **ĐÃ QUYẾT VÀ ĐÃ THI HÀNH 2026-08-22 (AV-1)** theo 🔨 **QUYẾT: GIAO CẢ MƯỜI HAI, KHÔNG ĐỔI MỘT BYTE NÀO CỦA BAO BÌ** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). Mở 2026-08-20 (AO-1); đã ĐO ở §8 của mục 12 từ 2026-08-19 (AF-1) nhưng **chưa bao giờ thành một mục phán được**. **N = 12 đo lại và ĐỨNG VỮNG.** 🔴 **Nhưng câu *"cái giá của việc GIỮ NGUYÊN là KHÔNG"* trong thân mục KHÔNG sống sót qua phép đo**: năm `.pdb` mang đường dẫn tuyệt đối của máy dựng, **259 tên file nguồn phân biệt** (266 cộng rời), và một bản đồ SourceLink nêu đích danh **kho GitHub + SHA commit**. Giá được ghi tên chứ không còn là "không". Xem **Phần III** |
 | 32 | **Một lời khai miền dụng cụ không kiểm được nếu không ghi NƠI lệnh được chạy** | 🔴 **CHỜ ANH** — mở 2026-08-20 (AO-1). Pathspec của git là **tương đối với cwd** và một pathspec bị thu hẹp **trả 0 chứ không báo lỗi**: `-- 'server/*.ts'` **0** đối lại `-- ':(top)server/*.ts'` **197**; và **glob đuôi trần cũng hỏng** — `'*.ts'` **1** đối lại **214**. 🔴 **Giá đã trả: mục 14 được PHÁN kèm một cái trần SAI** (*"không đo được từ repo này"* — bên tiêu thụ nằm trong chính commit này). **Năm khẳng định khác đo lại vẫn ĐỨNG VỮNG**, gồm kết luận "ba chỗ xuất bản `TransportMode`" của AM-1. **Người đăng ký gương MQTT retained: CHƯA ĐO** (37 file nhắc `syn/`) → ✅ **ĐÃ THI HÀNH 2026-08-22 (AW-1)** theo 🔨 **QUYẾT: DỰNG MỘT BỌC CƯỠNG CHẾ CHO MIỀN PHÉP QUÉT** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). `scripts/repo-scan.sh` — **không phải một dòng hướng dẫn**: nó **tự `cd` về gốc repo**, **tự viết lại mọi pathspec trần thành `:(top)…`**, **luôn truyền `--full-name`** (nửa thứ hai, do mục 15 tìm ra), **phân giải tree-ish thành SHA đầy đủ** và **in ra lời khai miền cùng kết quả**: nơi lệnh được gõ, nơi nó chạy, SHA, cây sạch hay bẩn, pathspec trước và sau khi viết lại, argv, và số dòng. Một `0` từ nó **đọc được là "không có"**. 🔴 **`--self-test` là nhân chứng và nó ĐỎ ĐƯỢC:** ba khẳng định — bất biến theo cwd, **và** phép dò phải khác 0, **và** dạng ngây thơ phải trả ÍT HƠN; hai số 0 bằng nhau bị **từ chối** là xanh. Đo hôm nay ở `e99019c0`: **197 = 197** qua bọc, **0** cho dạng ngây thơ gõ từ `tools/machine-simulator`. 🔴 **Cái nó KHÔNG cưỡng chế, và nêu đủ rộng vì một cái trần nêu quá nhỏ còn tệ hơn không nêu:** (a) **nó KHÔNG buộc được ai dùng nó** — không gì chặn người sau gõ `git grep` tay; nó là một **mặc định** và một **nhân chứng**, không phải một cổng trên cách người ta gõ; (b) **nó không thấy được `grep -r`/ripgrep/tìm-trong-editor**, vốn đọc **cây làm việc**, mà cây này là sparse — `server/` (1589 file) và `client/` (711) **có trong commit, không trên đĩa**; (c) nó không kiểm được rằng một báo cáo có chép lại phần đầu ấy hay không; (d) nó không nói gì về việc **mẫu tìm** có đúng hay không; (e) nó **không với ra ngoài repo** — người đăng ký gương MQTT retained `syn/…` **vẫn CHƯA ĐO** và vẫn nằm ngoài mọi phép quét dụng cụ này chạy được. 🔴 **Giá đã trả giữ nguyên trong hồ sơ và được ghi lại lần nữa ở đầu chính dụng cụ:** mục 14 được chủ sở hữu **phán kèm một cái trần SAI** — *"người tiêu thụ không đo được từ repo này"* — trong khi mã bên tiêu thụ nằm trong đúng commit ấy. Xem Phần III |
 | 33 | `GET /v1/scenario` nói dối theo chiều **NGƯỢC LẠI** — tấm gương của mục 18 | ✅ **ĐÃ QUYẾT VÀ ĐÃ THI HÀNH 2026-08-22 (AV-1)** theo 🔨 **QUYẾT: SỬA PHÍA ĐỌC — `GET /v1/scenario` BÁO TRANSPORT ĐANG LẮP** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). Mở 2026-08-22 (AU-1). Một `PUT /v1/mode` **ghi đè transport outage** trong khi `_scenario.NetworkOutage` **vẫn `true`**; mục 18 đóng chiều *"cổng không gác"*, chiều này nay đã phán. 🔴 **Tập ghi rộng hơn brief nêu: KHÔNG chỉ `PUT /v1/mode`** — `PUT /v1/settings` cũng xoá, một `PUT /v1/mode` **không đổi giá trị** cũng xoá, và chuyển **sang Demo** cũng xoá; **cả ba đo lại và ĐỨNG VỮNG**, mỗi cái một nhân chứng đỏ-được. 🔴 **Hướng bị loại là sửa phía GHI, và giá của nó ghi tại chỗ.** 🔴 **Nó BÁC một lập luận AR-1 đã dùng để đóng nửa kia của mục 18** — lập luận ấy đã rút tại chỗ trong ghi chép thi hành của mục 18. Xem **Phần III** |
@@ -273,7 +273,41 @@ quyết ghi kèm ngày, và **việc** của nó chưa được thi hành"* — 
 **Nhiệm vụ này KHÔNG tự chuyển nó sang Phần II**, vì hàng bảng của nó vẫn mang `🔴 CHỜ ANH` và
 `check-owner-decisions.sh` C2 đòi Phần II ghi *"việc còn nợ"*; đổi cả hai là một thao tác trên **trạng
 thái đã công bố** của một mục, và người kế tiếp nên làm nó **cùng** lúc thi hành, không phải trước.
-<!-- gate:phần-i = 30 -->
+<!-- gate:phần-i-rút -->
+
+> 📎 **PHÉP LIỆT KÊ NGAY TRÊN — RÚT 2026-08-23 (BF-1), giữ NGUYÊN VĂN, cùng kiểu bảo tồn AB-1 lập và
+> AI-1/AK-1/AO-1/AP-1/AU-1/AV-1/AW-1/BE-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG gạch
+> ngang, không xoá một dòng nào.** Nó đọc: *"**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 30.** Nó mang
+> `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy là nguồn sự thật** — câu này chỉ là một con trỏ vào
+> nó."*
+>
+> **Lý do rút KHÔNG phải nó từng sai** — nó mô tả đúng trạng thái hồ sơ từ lúc BE-1 viết nó cho tới
+> nhiệm vụ này. Cái làm nó lỗi thời là cơ chế **thứ hai** trong sáu, **mục được QUYẾT và THI HÀNH**:
+> mục **30** thi hành xong ngày **2026-08-23** trên **hai** phán quyết của chủ sở hữu cùng ngày, và nay
+> ở **Phần III** với một ghi chép thi hành ghi kèm ngày.
+>
+> 🔴 **VÀ ĐÂY LÀ MỘT TRẠNG THÁI CHƯA TỪNG CÓ KỂ TỪ KHI FILE NÀY ĐƯỢC LẬP: cả Phần I lẫn Phần II đều
+> TRỐNG cùng một lúc.** Không một câu hỏi nào đang chờ chủ sở hữu, và không một việc đã-quyết nào chưa
+> làm.
+>
+> 🔴 **Nói cho hết cái điều đó KHÔNG có nghĩa là gì, vì đây đúng là chỗ một cái rỗng dễ bị đọc quá
+> rộng.** Nó **không** nói sản phẩm hết khuyết tật. Mười một khuyết tật đợt 12 (nặng nhất: mô-men xoắn
+> SCREWDRIVE lệch ~9 lần giữa hai host), năm khuyết tật của BD-1, hai của BE-1 và một của BF-1 **đang
+> mở và chưa ai phán** — chúng không ở Phần I vì **chưa có ai mở mục cho chúng**, và mục 37 nói đúng về
+> khoảng trống ấy: **cái không được ghi vào file này thì không có bộ dò nào bắt.** Hai phần trống là
+> một phát biểu về **hồ sơ này**, không phải về **cây mã**.
+
+**Các mục ở đây, LIỆT KÊ chứ không đếm: KHÔNG CÒN MỤC NÀO — phần này TRỐNG.** Không mục nào mang
+`🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy vẫn là nguồn sự thật** — câu này chỉ là một con trỏ
+vào nó. ⚠️ **Một phần RỖNG không phải một phần BỊ XOÁ**, đúng cùng phân biệt mà Phần II đã phải nêu
+ngày 2026-08-22: trạng thái *"đang chờ anh"* vẫn là một trạng thái thật và banner ở trên vẫn định nghĩa
+nó; hôm nay chỉ là không có mục nào ở trong nó. 🔴 **Và dòng tóm tắt của `check-owner-decisions.sh` nay
+PHÂN BIỆT được cái rỗng hợp lệ với cái hỏng** — nó in `PART I holds : []   (declared: [])`, một phép so
+BẰNG ở số không; một banner hỏng in `(declared: -none-)`, hai trường máy đọc in `(declared: -ambiguous(2)-)`,
+và một trường lỗi thời in chính nội dung của nó. Trước hôm nay cả bốn ca in ra **một chuỗi giống hệt
+nhau**; BE-1 đo được điều đó trên bốn fixture và nêu ra, và đây là chỗ nó được trả.
+<!-- gate:phần-i =  -->
+
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
 > tới vòng sửa thứ hai của cùng ngày, và nó **không sai, nó THIẾU**.** Ba thao tác của file này vẫn
@@ -436,290 +470,6 @@ một con số ước lượng đặt ở đây sẽ **đọc như một phép �
 > ngày 2026-08-21 **bác một tiền đề của chính nó** và **đổi câu hỏi** chủ sở hữu đang được mời quyết —
 > đọc khối ấy trước khi quyết mục 16. Số mục còn chờ ở Phần I: **mười sáu** (16–20, 22–32).
 
-## 30. Gốc mặc định của các store cạnh-binary là `%ProgramFiles%`, MSI không mang bốn file ấy, nên lần chạy đầu của một bản cài mặc định CHÍNH LÀ lần phải GHI
-
-🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). 🔴 **Câu hỏi này bị các brief liên tiếp CẤM mở — mỗi đợt từ 4
-tới 8 đều mang dòng *"no new question of the two forbidden kinds"*. Lệnh cấm ấy hết hiệu lực ở nhiệm
-vụ này, và đây là chỗ nó được mở.**
-
-**Đo được cái gì — LIỆT KÊ TRƯỚC, và KHÔNG dựng MSI, KHÔNG đụng `publish-desktop/`.** Ba store ghi
-cạnh nhị phân, và bốn file mà cổng của chính repo này miễn trừ đích danh là *"operator-editable"*
-đến từ hai trong ba:
-
-* **`ProductConfigStore`** — `RootDirectory = string.IsNullOrWhiteSpace(directory) ? AppContext.BaseDirectory : directory`,
-  ghi `products.json` và `recipes.json`. 🔴 **Hàm dựng của nó GHI:** `if (!productsExisted) SaveProducts(); if (!recipesExisted) SaveRecipes();` — và chú thích ngay trên nói rõ ý định: *"so a fresh install has real files on disk the moment it boots"*.
-* **`SimulatedEcosystem`** — mặc định `Path.Combine(AppContext.BaseDirectory, "ecosystem")`, ghi
-  `ecosystem-products.json` và `ecosystem-recipes.json`.
-* **`MachineConfigStore`** — `DefaultRoot() => AppContext.BaseDirectory`, ghi
-  `machine-operating-config.json`.
-
-🔴 **Và một bất đối xứng chỉ lộ ra khi liệt kê cả ba: chỉ MỘT trong ba có đường thoát.**
-`MachineConfigStore` có `EnvVarDir = "ST4I_MACHINE_CONFIG_DIR"` và đọc nó. Hai store kia **không có
-biến môi trường nào** và được đăng ký bằng `builder.Services.AddSingleton<ProductConfigStore>()` /
-`AddSingleton<SimulatedEcosystem>()`, tức **hàm dựng không tham số**, tức **luôn** là gốc mặc định.
-Hai store không có đường thoát chính là hai store sinh ra bốn file mà cổng gọi là của vận hành viên.
-
-**Bốn file ấy KHÔNG được git theo dõi** (`git ls-files` không trả về cái nào), nên chúng không nằm
-trong nguồn để `dotnet publish` chép vào `publish-desktop/`, nên bản harvest cả-thư-mục của
-`St4i.Installer.wixproj` **không có gì để mang**. Và `Package.wxs` cài vào
-`StandardDirectory Id="ProgramFiles6432Folder"` → `ST4I` → `Machine Simulator` (`INSTALLFOLDER`), với
-engine ở thư mục con `engine`. **Nên `AppContext.BaseDirectory` của một bản cài mặc định là một thư
-mục dưới `%ProgramFiles%`, và lần khởi động đầu tiên là lần đầu tiên có ai đó GHI vào đó.**
-
-**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Config.ProductConfigStore` (hàm dựng,
-`SaveProducts`, `SaveRecipes`, `WriteAllTextAtomic`);
-`St4i.EngineApi.Config.SimulatedEcosystem`; `St4i.EdgeCore.Config.MachineConfigStore.DefaultRoot`
-và `.EnvVarDir`; `St4i.EngineApi.Program` (ba dòng `AddSingleton`);
-`packaging/installer/Package.wxs` (`ProgramFiles6432Folder`, `INSTALLFOLDER`, `EngineDir`);
-`packaging/installer/St4i.Installer.wixproj`; `scripts/verify-suites.sh` (danh sách miễn trừ bốn
-file, trong bracket `suite output directories under watch`).
-
-**Hậu quả vận hành, HAI CHIỀU.**
-*Chiều thuận:* `%ProgramFiles%` **thường chỉ đọc với người dùng thường**. Một bản cài mặc định chạy
-dưới một tài khoản không nâng quyền gặp đường ghi ấy **ở hàm dựng của một singleton DI**, tức **trên
-đường khởi động**, trước khi bất kỳ ai yêu cầu một thay đổi nào. Đó là đúng hình dạng mà mục 6 và
-mục 7 của file này đã phải quyết một lần rồi: một lần cài đặt hỏng phát ra ở đâu và tiến trình dừng
-hay đi tiếp. Và nó chạm mục 1/5/11/13 — cả bốn nói về việc một lần khởi động **bình thường** ghi đè
-dữ liệu của vận hành viên.
-*Chiều ngược, và nó là lý do thiết kế này tồn tại:* để bốn file ấy **cạnh nhị phân** khiến chúng
-**tìm thấy được**: một kỹ sư hiện trường mở thư mục cài đặt và thấy đúng cấu hình đang chạy, không
-phải một cây `%ProgramData%` ẩn. Và trên hai cách chạy phổ biến nhất **hôm nay** — chạy từ thư mục
-build, và chạy bản triển lãm — thư mục ấy **ghi được**, nên vấn đề chưa từng nổ. Chuyển gốc sang
-`%ProgramData%` là **đổi chỗ dữ liệu của một bản cài đã có**, tức đúng loại phép **DI CHUYỂN** mà
-file này đã miễn trừ **chỉ cho mục 10**.
-
-**Nếu KHÔNG quyết định.** Ba khả năng ở lại cùng lúc và không cái nào được ghi là đã chọn: bản cài
-mặc định chạy được vì người dùng tình cờ có quyền; hoặc nó hỏng ở khởi động; hoặc nó chạy nhưng
-**bốn file cấu hình không bao giờ bền vững qua một lần khởi động lại**. 🔴 **Và phép đo này tự nêu
-tên chỗ nó không tới được: nó KHÔNG dựng MSI và KHÔNG chạy một bản cài.** Nó đọc `Package.wxs`,
-`.wixproj`, các hàm dựng store và `git ls-files` — bốn thứ đều tra lại được. Câu *"chuyện gì thực sự
-xảy ra khi một người dùng không nâng quyền chạy bản `.msi`"* đòi một dụng cụ thứ ba, và dựng nó là
-một brief khác.
-
-### 🔴 AV-1 (2026-08-22, base `e6faec60`) — ĐƯỢC GIAO THI HÀNH, **ĐÃ DỪNG**. Điều kiện DỪNG nổ, và bốn câu của mục này không sống sót nguyên vẹn qua phép đo
-
-**Vì sao DỪNG, một câu.** Mọi bản sửa trả lời **câu hỏi ở tiêu đề** — *"gốc mặc định nên là gì"* — đều
-**đổi nơi dữ liệu vận hành viên sống**, và với một bản cài đã tồn tại đó chính là phép **DI CHUYỂN** mà
-lời giao việc của AV-1 nêu tên là điều kiện dừng. Miễn trừ di-chuyển của mục 10 **chỉ áp cho mục 10**.
-Mục này **ở lại Phần I**; những gì thêm ở đây là phép đo, không phải một phán quyết.
-
-🔴 **Và một đường thoát KHÔNG-di-chuyển đã được xét rồi bỏ, chứ không bị bỏ quên.** Thêm một
-`EnvVarDir` cho hai store không seam (kiểu `MachineConfigStore`) **không** dời gốc mặc định, nên
-**không** di chuyển gì. Nó bị bỏ vì hai lý do đo được, không phải vì khẩu vị: (1) nó **không trả lời**
-câu hỏi ở tiêu đề, vốn là về **mặc định**, không về khả năng dời; (2) `scripts/verify-suites.sh` có một
-nhánh **FAIL tường minh** bắn ngay khi một trong hai file ấy khai `EnvVarDir` — cổng tự nói rằng miễn trừ
-outdir của nó **tồn tại chỉ vì store không dời được**, và đòi store được nối vào
-`tests/Shared/TestRunTempRoot.cs` cùng lúc. Đó là một thay đổi có thật, đúng hướng, và nó là **một quyết
-định của chủ sở hữu về cơ chế dời**, không phải một phép sửa lặng lẽ kèm theo.
-
-**QUẦN THỂ — LIỆT KÊ TRƯỚC, ĐẾM SAU, và con số trong lời giao việc của AV-1 SAI.** Lời giao việc nói
-*"**bốn** store"*. Đo được: **BA** store, sinh **NĂM** file, trong đó cổng miễn trừ đích danh **BỐN**.
-Thân mục này đã viết đúng *"ba store"* từ đầu — chữ "bốn" đến từ **ô tóm tắt ở bảng phán quyết**, đã sửa
-tại chỗ ở trên. Quần thể **không phải lấy từ ba cái tên ai đó đưa**: nó đã được liệt kê độc lập trong
-cây, ở `tests/St4i.EngineApi.Tests/PerHostDataRootsTests` —
-`TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes` — và phép
-liệt kê ấy đo lại **ĐỨNG VỮNG**, gồm cả lý do nó **loại** `FleetConfig` (không có bộ ghi nào).
-
-| store | gốc mặc định | đường thoát | file | AI ghi, và ghi LÚC NÀO |
-|---|---|---|---|---|
-| `ProductConfigStore` | `AppContext.BaseDirectory` | **không có** — `AddSingleton<ProductConfigStore>()`, hàm dựng không tham số | `products.json`, `recipes.json` | **hàm dựng**, gián tiếp: ctor → `Load()` → `if (!productsExisted) SaveProducts(); if (!recipesExisted) SaveRecipes();`. 🔴 Câu của mục này — *"hàm dựng của nó GHI"* — **đúng về hậu quả**, nhưng hai dòng ấy nằm trong `Load()`, không nằm trong hàm dựng; ai đi tìm chúng trong ctor sẽ không thấy |
-| `SimulatedEcosystem` | `AppContext.BaseDirectory` + `\ecosystem` | **không có** — cùng hình dạng | `ecosystem-products.json`, `ecosystem-recipes.json` | **hàm dựng**: ctor → `Directory.CreateDirectory(<gốc>\ecosystem)` → `Load()` → `if (!productsExisted \|\| !recipesExisted) Save();`, và `Save()` ghi **CẢ HAI** |
-| `MachineConfigStore` | `AppContext.BaseDirectory` | **có** — `ST4I_MACHINE_CONFIG_DIR` | `machine-operating-config.json` | **KHÔNG phải hàm dựng**: `Load()` `return` ngay khi file vắng. Ghi lần đầu ở **thao tác đầu tiên của vận hành viên** |
-
-🔴 **HỎNG THẾ NÀO KHI THƯ MỤC CHỈ ĐỌC — ĐO THỰC TẾ, KHÔNG ĐỌC MÃ RỒI ĐOÁN.** Một probe ngoài cây dựng
-đúng ba lớp store ấy trên một thư mục thật bị `icacls /deny (OI)(CI)(WD,AD,DC,DE)`. **Không có nhánh nào
-nuốt lỗi và không có nhánh nào ghi sang chỗ khác** — mọi thất bại là một `UnauthorizedAccessException`
-ném thẳng ra:
-
-* `ProductConfigStore` ctor, gốc chỉ-đọc **trống**: **NÉM**, tại file `products.json.tmp-<guid>` mà
-  `WriteAllTextAtomic` tạo. Trên đĩa sau đó: **rỗng**.
-* `ProductConfigStore` ctor, gốc chỉ-đọc **đã có cả hai file**: **KHÔNG ném**, nạp bình thường. Nên
-  nhánh chết **chỉ là nhánh SEED** — đúng cái ca *"lần chạy đầu của một bản cài mặc định"* mà tiêu đề
-  mục này nêu, và không phải ca nào khác.
-* `ProductConfigStore.UpsertProduct` (ghi đầu tiên của vận hành viên) trên gốc chỉ-đọc: **NÉM**.
-* `SimulatedEcosystem` ctor, thư mục CHA chỉ-đọc: **NÉM tại `Directory.CreateDirectory(...\ecosystem)`**
-  — **trước cả khi tới một file nào**. Đây là store hỏng **sớm nhất** trong ba, và mục này không nêu:
-  hai store kia gọi `CreateDirectory` trên một thư mục **đã tồn tại**, tức một no-op không đòi quyền ghi.
-* `MachineConfigStore` ctor, gốc chỉ-đọc trống: **KHÔNG ném**. Ghi đầu tiên của vận hành viên (`Ensure`):
-  **NÉM**.
-
-**Hậu quả trên đường khởi động.** `src/St4i.EngineApi/Program.cs` gọi
-`app.Services.GetRequiredService<FleetHost>()` **eager**, và cả hai store không-seam là tham số hàm dựng
-của `FleetHost`, nên cả hai được dựng **ở đó**; `docs/startup-failure-posture.md` §3.5 xếp cả hai là **S**
-(tiến trình kết thúc).
-
-> 🔴 **RÚT MỘT KHẲNG ĐỊNH CỦA CHÍNH AV-1, 2026-08-22, cùng ngày nó được viết, giữ nguyên văn.** Bản đầu
-> của đoạn ngay trên đọc: *"🔴 **Cái §3.5 chưa từng có là một phép ĐO**: nó là một suy luận từ mã. Phép đo
-> ở trên là lần đầu tiên nhánh ấy được **chạy**, và nó **xác nhận §3.5**, kể cả chi tiết §3.5 không nêu
-> (nhánh `ecosystem\` chết sớm hơn một bước)."* **Câu ấy SAI, và nó sai theo đúng cách file này tồn tại để
-> bắt: nó tuyên bố mới cho một thứ đã có hồ sơ.** Nhiệm vụ **AC-1** đã chạy nhánh ấy rồi, **trên chính
-> `publish-desktop\engine\St4i.EngineApi.exe`**, dưới một deny ACE thật, và đã ghi:
-> `UnauthorizedAccessException` ra từ `SimulatedEcosystem..ctor` → `Directory.CreateDirectory`, mã thoát
-> `0xE0434352`, **không** dòng `Now listening on:`; cộng một phép đo **trên bản `.msi` đã dựng** (nó mang
-> `fleet.json` và **không** mang `products.json`); cộng chính câu *"quần thể là ba store, số file là bốn"*;
-> cộng chính lập luận *"bản sửa không phải một seam"*. Và nó **có nhân chứng đang chạy trong cổng này**:
-> `OperatorDataRemovalCensusTests.OverANonWritableRoot_TheTwoSeamlessBesideTheBinaryStoresEndTheProcess_AndTheSeamedOneDoesNot`,
-> bài test khẳng định **bit deny của chính nó** trước rồi mới khẳng định về store. **Tôi đã không đọc nó
-> trước khi viết probe của mình.** Ghi ra thay vì sửa lặng, vì *"đo lại rồi tuyên bố mới"* tốn đúng bằng
-> *"không đo"* đối với người đọc sau.
-
-🔴 **CÁI PROBE CỦA AV-1 THẬT SỰ THÊM VÀO — bốn thứ, không phải một phép đo đầu tiên:**
-1. **`ProductConfigStore` ctor trên gốc chỉ-đọc ĐÃ CÓ CẢ HAI FILE: KHÔNG ném.** Bài test đã ghim dùng một
-   thư mục **rỗng**, nên nó chỉ đi qua nhánh **SEED**. Đây là thứ biến *"nhánh chết đúng là lần khởi động
-   đầu của một bản cài mới"* từ một cách đọc thành một phép đo.
-2. **Ghi ĐẦU TIÊN của vận hành viên ném** — `ProductConfigStore.UpsertProduct` và `MachineConfigStore.Ensure`.
-   Bài test đã ghim dừng ở hàm dựng.
-3. 🔴 **`SimulatedEcosystem` ghi lại CẢ HAI file khi chỉ MỘT vắng** — không có ở §3.5, không có ở §3.6,
-   không ghim ở đâu. Xem khối cuối mục này.
-4. **Một sai lầm của dụng cụ, của chính tôi.** Vòng probe đầu dùng `icacls /deny …:(W)`; quyền đơn giản
-   `(W)` ánh xạ sang `FILE_GENERIC_WRITE`, **bao gồm `SYNCHRONIZE`**, nên nó chặn cả một lần mở ĐỌC — và
-   probe báo (1) **ném**, tức ngược hẳn. Quyền cụ thể `(WD,AD,DC,DE)` đảo lại kết quả. Bài test đã ghim
-   dùng `CreateFiles | CreateDirectories`, vốn không có tật ấy; **nếu tôi đọc nó trước, tôi đã không mắc**.
-   Nếu tôi tin vòng đầu, tôi đã báo một khuyết tật không tồn tại.
-
-🔴 **BỐN CHỖ TRONG MỤC NÀY KHÔNG SỐNG SÓT NGUYÊN VẸN, ghi ra chứ không vá đè:**
-1. *"bốn store"* ở ô bảng phán quyết — **ba**. Đã sửa tại chỗ ở bảng.
-2. *"Hàm dựng của nó GHI"* — đúng hậu quả, **sai vị trí**: hai dòng ấy ở trong `Load()`.
-3. *"MSI **không mang** file nào trong bốn"* — **đúng cho đường mặc định, KHÔNG đúng vô điều kiện.** (Và
-   nửa "đúng" của nó mạnh hơn lý do mục nêu: mục suy từ *"không được git theo dõi"*; **AC-1 đã đo trên một
-   bản `.msi` ĐÃ DỰNG** — nó mang `fleet.json` và **không** mang `products.json`.)
-   `build-installer.ps1` **xoá `publish-desktop/`** trước mỗi lần publish, nên một lần dựng đầy đủ đúng
-   là không mang gì. Nhưng script ấy công bố cờ **`-SkipDotnetPublish`**, và ở nhánh đó nó **không xoá**;
-   harvest thì đọc **cả thư mục**. **Đo trên đĩa hôm nay:** `publish-desktop/engine/products.json` và
-   `recipes.json` mang dấu thời gian **07:11 ngày 2026-08-20**, tức **SAU** lần publish 07:09–07:10, và
-   `publish-desktop/engine/ecosystem/` chứa đủ hai file cùng dấu thời gian ấy. Tức có người **đã chạy**
-   bản engine vừa publish, và bốn file ấy là **sản phẩm của chính cơ chế mục này mô tả**, đang nằm sẵn
-   trong cây harvest. Một `-SkipDotnetPublish` chạy hôm nay **giao chúng cho khách hàng**.
-4. *"nó KHÔNG dựng MSI và KHÔNG chạy một bản cài"* — vẫn đúng cho AV-1 (không bản `.msi` nào được dựng),
-   nhưng chỗ-thiếu **nhỏ hơn** mục nghĩ: phép đo hỏng-thế-nào **không** cần một bản cài, chỉ cần một thư
-   mục chỉ-đọc, và nó đã chạy. Cái còn thiếu thật sự là **hành vi của Windows Installer + UAC**, không
-   phải hành vi của store.
-
-**Một khuyết tật LIỀN KỀ, tìm thấy khi đo, KHÔNG sửa ở đây vì nó không phải mục này.**
-`SimulatedEcosystem.Load` chạy `if (!productsExisted || !recipesExisted) Save();` và `Save()` ghi **cả
-hai** file. Đó **đúng bằng byte** khuyết tật mà V-1 đã sửa cho `ProductConfigStore` (*"seeding one file is
-not a reason to rewrite the other"*), còn sống trong store anh em. **Đo được:** với một
-`ecosystem-products.json` viết tay dài 4 byte và `ecosystem-recipes.json` vắng, chỉ **DỰNG** store đã
-viết lại file ấy thành 2 byte — định dạng của vận hành viên và mọi trường mà `ProductModel` không khai
-đều mất, trên một lần khởi động **bình thường**, không ai yêu cầu thay đổi gì. Đối chứng cùng probe:
-`ProductConfigStore` ở đúng hình dạng ấy **không đụng** file (4 byte trước, 4 byte sau) — bản sửa của V-1
-đứng vững. Đây là hình dạng của mục **1/5/11/13**; nó cần một mục riêng, không phải một dòng phụ ở đây.
-
-### 🔴 BE-1 (2026-08-23, base `90c67503`) — **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-23: CHUYỂN GỐC SANG `%ProgramData%`.** Phép đo điều-kiện-tiên-quyết đã trả và **BÁC tiền đề của chính câu hỏi**; đường di trú đã chọn; **phép CHUYỂN CHƯA THI HÀNH** — mục **Ở LẠI PHẦN I**
-
-🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU, 2026-08-23: CHUYỂN GỐC SANG `%ProgramData%`.** Chủ sở hữu **đã được nêu**
-rằng một bản cài ĐÃ TỒN TẠI sẽ thôi thấy dữ liệu ở gốc cũ, và **vẫn chọn hướng này**. **Mọi dòng thân mục
-gốc ở trên giữ NGUYÊN VĂN.**
-
-#### 1. 🔴 PHÉP ĐO PHẢI LÀM **TRƯỚC** KHI ĐỔI GỐC — **bốn miễn trừ trỏ theo TÊN, không theo ĐƯỜNG DẪN**. Tiền đề của câu hỏi **KHÔNG sống sót**
-
-Câu hỏi đặt ra: nếu bốn miễn trừ trỏ theo **đường dẫn** thì đổi gốc **làm hỏng cổng**. **Đo: chúng trỏ
-theo TÊN — theo BASENAME — nên đổi gốc KHÔNG làm hỏng chúng theo đường ấy.** Hai nửa của bằng chứng, cả
-hai đọc được lại:
-
-* **Miền so khớp là basename.** `scripts/verify-suites.sh`, hàm `outdir_snapshot`, lọc bằng
-  `{ p = $1; sub(/^.*\//, "", p); if (!(p in e)) print }` — nó **cắt bỏ mọi thứ tới dấu `/` cuối** rồi mới
-  tra tập miễn trừ. Không một thành phần đường dẫn nào tham gia. `tests/Shared/OwnOutputDirectoryGuard.cs`
-  mang **cùng** hình dạng ấy ở nửa C#.
-* **Danh sách tên KHÔNG được viết tay ở cổng — nó được RÚT RA từ chính nguồn của hai store**, bằng
-  `const\s+string\s+\w*FileName\w*\s*=\s*"…\.json"` đọc trên `ProductConfigStore.cs` và
-  `SimulatedEcosystem.cs`. **Quan sát trực tiếp trên một lần chạy cổng đầy đủ ở base `90c67503`:**
-  `suite output directories under watch: 5 (1092 files at start, exempt: products.json recipes.json
-  ecosystem-products.json ecosystem-recipes.json)` — bốn **tên trần**, không đường dẫn.
-
-🔴 **NHƯNG CÂU TRẢ LỜI ĐÚNG DÀI HƠN CÂU HỎI, VÀ NỬA THỨ HAI MỚI LÀ NỬA ĐẮT: đổi gốc VẪN làm hỏng cổng —
-qua một cái cửa mà câu hỏi không nêu tên.** Cả hai dụng cụ mang một nhánh **FAIL tường minh** bắn ngay khi
-một trong hai store ấy khai `EnvVarDir` (`verify-suites.sh` dòng ~7413, `exit 1`; `OwnOutputDirectoryGuard`
-`DeriveExemptFileNames`, `throw` trong module initializer của **cả năm** assembly test). Và
-`EnvVarDir` là **bắt buộc** nếu gốc dời: đo được là **20 lớp test dựng `WebApplicationFactory<Program>`**
-giải cả ba store qua đồ thị DI thật, nên nếu gốc mặc định dời mà **không** có seam thì hai store ấy bắt
-đầu ghi vào **`%ProgramData%\ST4I\sim\…` THẬT** ở mỗi lần chạy suite — và
-`AuditWiringTests.ProductUpsert_…` đúc **một sản phẩm mới mỗi lần chạy** (625 sản phẩm, 623 cái một-lần-
-một, đã đo và ghi ở `OwnOutputDirectoryGuard`), tức một rò rỉ **không chặn**. **Không dụng cụ nào hôm nay
-gác chỗ ấy:** `RealCredentialStoreLeakGuard` và bracket credential của cổng đều **chỉ** canh `…\sim\creds`.
-Nên trình tự bắt buộc là **seam + `TestRunTempRoot` + gỡ hai nguồn khỏi danh sách miễn trừ, TRONG CÙNG một
-thay đổi** — và cổng tự nói đó là **kết cục TỐT** (*"the exemption existed only because the store could not
-be moved"*).
-
-#### 2. Cách credential store tạo thư mục và đặt quyền — **dùng lại một NỬA, và nửa kia là một KHUYẾT TẬT nếu chép**
-
-`CredentialStore` làm hai việc, và chúng **phải tách ra**:
-* **Nửa PHẢI dùng lại — phép giải gốc.** `DefaultRoot() => Path.Combine(GetFolderPath(CommonApplicationData),
-  "ST4I", "sim", "<leaf>")`, cộng `EnvVarDir`, cộng `ResolveRoot(directory)` theo thứ tự **explicit > env >
-  default** (*"pure path arithmetic — does not create anything"*), cộng `Directory.CreateDirectory` ở chỗ
-  ghi. Đây là khuôn **đã có 15 store dùng** trong cây này, không phải một phát minh.
-* 🔴 **Nửa PHẢI KHÔNG dùng lại — `SecurityDirAcl.Apply`, và đây là một PHÁT HIỆN.** Nó **tắt kế thừa** rồi
-  thay mọi rule bằng **đúng ba** grant FullControl: `SYSTEM`, `BUILTIN\Administrators`, và **chủ sở hữu thư
-  mục**. Doc của chính nó nói mục đích: gỡ quyền **Read của `Authenticated Users`** mà `%ProgramData%` cho
-  mặc định. Áp nó lên bốn file mà **cổng của chính repo này gọi là *"operator-editable"*** sẽ **KHOÁ VẬN
-  HÀNH VIÊN RA NGOÀI** chính những file họ được cho là sửa — tức **lật ngược** đúng cái giá trị chiều-thuận
-  mà thân mục này nêu (*"một kỹ sư hiện trường mở thư mục cài đặt và thấy đúng cấu hình đang chạy"*).
-  **`SecurityDirAcl` là dụng cụ cho thư mục NHẠY CẢM (creds, security, notifications, identity) — bốn file
-  cấu hình sản phẩm không thuộc loài ấy.** Chép cả gói vì *"dùng lại cùng cách ấy"* sẽ là một khuyết tật
-  ship kèm một lời biện minh.
-
-#### 3. Ba hướng di trú — **đo giá từng cái, chọn một, và ghi lý do hai cái bị loại**
-
-* **(b) Dự phòng khi đọc** *(gốc mới trước, gốc cũ sau, ghi luôn về gốc mới)* — **LOẠI.** Giá: nó **không
-  bao giờ hội tụ**. Sau lần ghi đầu, hai gốc **phân kỳ lặng lẽ**; một vận hành viên sửa file ở gốc cũ thấy
-  thay đổi có tác dụng **cho tới** lần ghi đầu tiên rồi **thôi có tác dụng mà không có tín hiệu nào**. Đó
-  đúng là *"mất dấu"* ở dạng chậm, và nó nhân thêm đúng loài mục **1/5/11/13** (một lần khởi động **bình
-  thường** quyết định số phận dữ liệu vận hành viên) trên **mỗi** lần đọc, vĩnh viễn.
-* **(c) Chỉ đổi gốc, nêu tên gốc cũ trong log** — **LOẠI làm giải pháp đứng một mình, GIỮ làm phần bổ
-  sung.** Giá: rẻ nhất và an toàn nhất về mã, nhưng kênh giao hàng của nó là **stderr của một Windows
-  service**, thứ không ai đọc. Với một bản cài đã tồn tại, đó là *"họ thôi thấy dữ liệu của mình"* kèm một
-  dòng log làm biện pháp giảm nhẹ duy nhất — tức **chính là** mất dấu, chỉ có thêm một chú thích.
-* ✅ **(a) DI TRÚ MỘT LẦN — CHỌN CÁI NÀY**, cộng dòng log của (c) (hai cái **không loại trừ nhau**). Đọc
-  gốc cũ, **chép** sang gốc mới **nếu gốc mới chưa có file ấy**, **KHÔNG XOÁ BẢN CŨ** — miễn trừ di-chuyển
-  của mục 10 **chỉ áp cho mục 10**, nên bản cũ ở lại đĩa nguyên vẹn và đây là một phép **CHÉP**, không phải
-  một phép **DI CHUYỂN**.
-  🔴 **Và một cái bẫy đo được, phải đóng trong cùng thiết kế:** nguồn di trú là `AppContext.BaseDirectory`,
-  thứ **không dời được bằng biến môi trường**. Nếu chép vô điều kiện thì **mỗi tiến trình test** sẽ hút
-  `products.json` còn sót trong **thư mục bin của chính nó** vào gốc đã chuyển hướng — một đầu vào **không
-  tất định**, phụ thuộc cặn bã của lần build trước. Nên phép di trú **chỉ được chạy khi gốc được giải ra từ
-  MẶC ĐỊNH**, không khi nó đến từ `explicit` hay từ biến môi trường. Điều kiện ấy là một phép đo trên
-  `ResolveRoot`, không phải một quy ước.
-
-#### 4. 🔴 GIÁ THẬT CỦA PHÁN QUYẾT, ĐO CHỨ KHÔNG ƯỚC — **một dòng mã kéo theo MƯỜI SÁU artefact, bị bốn dụng cụ điều tra dân số CƯỠNG CHẾ đi cùng nhau**
-
-Phán quyết đọc như một dòng. Đo ra thì nó là một **phép sửa đồng bộ** mà bốn phép kiểm độc lập **từ chối
-cho tách rời** — và đó **không phải ma sát tình cờ, đó là thiết kế**: `PerHostDataRootsTests` tồn tại đúng
-để ép mọi chỗ phát biểu con số phải dịch cùng nhau. Liệt kê trước:
-`ProductConfigStore.cs` · `SimulatedEcosystem.cs` · `MachineConfigStore.cs` · `tests/Shared/TestRunTempRoot.cs`
-· `tests/Shared/OwnOutputDirectoryGuard.cs` · `scripts/verify-suites.sh` · `PerHostDataRootsTests.cs` ·
-`MachineConfigStoreRootResolutionTests.cs` · `Alarms/NotificationDocumentationTests.cs` ·
-`TestHarnessIsolationTests.cs` · `packaging/remove-data.ps1` · `web/playwright.config.ts` ·
-`web/scripts/reset-engine-state.mjs` · `README.md` · `docs/startup-failure-posture.md` ·
-`OperatorDataRemovalCensusTests.cs`. **Đếm sau khi liệt kê: mười sáu.** Trong đó:
-`MachineConfigStoreRootResolutionTests.DefaultRoot_IsBesideTheBinary_AndIsNotUnderProgramData` **đỏ theo
-cấu trúc** — và **thông điệp hỏng của chính nó CHÍNH LÀ bản kê việc** ấy; `PerHostDataRootsTests` dòng 602
-(`Assert.Equal(new[] { "ST4I_MACHINE_CONFIG_DIR" }, besideBinary…)`) **đỏ vô điều kiện** ở mọi biến thể;
-và **con số `thirteen` viết bằng CHỮ** ở `README.md` §15.9 và `remove-data.ps1` `.DESCRIPTION` bị **ghim
-bằng test** nên phải thành `sixteen` cùng lúc.
-
-🔴 **VÀ MỘT ĐƯỜNG MẤT DỮ LIỆU **MỚI** MÀ CHỦ SỞ HỮU CHƯA ĐƯỢC NÊU KHI PHÁN — nêu ra ở đây chứ không để nó
-tự xảy ra.** Cái đã được nêu là *"bản cài cũ thôi thấy dữ liệu của nó"*. Cái **chưa** được nêu:
-`NotificationDocumentationTests.EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioning
-Script` **đòi** mọi thư mục `…\sim\<leaf>` phải được `packaging/remove-data.ps1` **xoá**. Nên chuyển bốn
-file vận hành viên vào `%ProgramData%\ST4I\sim\` **tự động đưa chúng vào tầm của lệnh xoá khi ngừng sử
-dụng** — trong khi hôm nay `remove-data.ps1` **cố ý** không đụng tới chúng và **tự khai** điều đó:
-*"This script has never purged them and is not being taught to: they go when the install directory goes."*
-**Đó là một phán quyết thứ hai nằm trong phán quyết thứ nhất**, và nó phải được quyết một cách tường minh:
-hoặc bốn file ấy **vào** danh sách xoá (một đường mất dữ liệu mới), hoặc chúng được **miễn trừ** khỏi nó
-(và phép kiểm điều tra dân số kia phải được dạy về một hạng mục thứ ba). **Không hướng nào được chọn lặng
-lẽ ở đây.**
-
-#### 5. 🔴 CHỖ NÀY DỪNG, VÀ NÓI THẲNG NÓ LÀ MỘT GIỚI HẠN CỦA NHIỆM VỤ CHỨ KHÔNG PHẢI MỘT ĐIỀU KIỆN DỪNG
-
-**Phép CHUYỂN GỐC chưa được thi hành.** Đây **KHÔNG** phải một câu hỏi ngược lại chủ sở hữu — phán quyết
-rõ, hướng di trú đã chọn ở §3, và không có điều kiện DỪNG nào nổ. Đây là một phát biểu về **dung lượng**:
-phép sửa là mười sáu artefact đồng bộ cộng một phán quyết phụ chưa quyết (§4), và thi hành nó **một phần**
-sẽ để lại một cây mà **cổng không chạy nổi** — hai dụng cụ ném ngay trong module initializer của cả năm
-assembly test. Một nửa phép di trú đắt hơn không có phép di trú nào. **Cái nhiệm vụ này nợ lại, nêu tên
-chứ không im lặng: bản sửa mã, nhân chứng đỏ được của nó, và cặp đối chứng của nó.** Cái đã trả: phép đo
-điều-kiện-tiên-quyết (§1), khuôn dùng lại được cùng khuyết tật của nó (§2), ba hướng đã đo giá và một
-hướng đã chọn kèm cái bẫy của nó (§3), và cái giá thật kèm một phán quyết phụ chưa ai nêu (§4). **Mục ở
-lại Phần I.**
 
 ---
 
@@ -9717,6 +9467,464 @@ trên chứng minh lời mới đúng**. Câu *"không có nhân chứng đỏ �
 từng chữ** và không bị rút. **Không hằng số suite nào dịch vì mục 35** — bốn bề mặt sửa là `README.md` và
 một `docs/*.md`, và cả hai **nằm NGOÀI corpus của `scan-doc-negations.sh`**, vốn **chỉ quét C#** (§e của
 chính nó), nên `EXPECT_NEW_DOC_ABSOLUTES` **không dịch vì mục 35** — đo lại, không suy ra.
+
+
+---
+
+## 30. Gốc mặc định của các store cạnh-binary là `%ProgramFiles%`, MSI không mang bốn file ấy, nên lần chạy đầu của một bản cài mặc định CHÍNH LÀ lần phải GHI
+
+🔴 **CHỜ ANH.** Mở 2026-08-20 (AO-1). 🔴 **Câu hỏi này bị các brief liên tiếp CẤM mở — mỗi đợt từ 4
+tới 8 đều mang dòng *"no new question of the two forbidden kinds"*. Lệnh cấm ấy hết hiệu lực ở nhiệm
+vụ này, và đây là chỗ nó được mở.**
+
+**Đo được cái gì — LIỆT KÊ TRƯỚC, và KHÔNG dựng MSI, KHÔNG đụng `publish-desktop/`.** Ba store ghi
+cạnh nhị phân, và bốn file mà cổng của chính repo này miễn trừ đích danh là *"operator-editable"*
+đến từ hai trong ba:
+
+* **`ProductConfigStore`** — `RootDirectory = string.IsNullOrWhiteSpace(directory) ? AppContext.BaseDirectory : directory`,
+  ghi `products.json` và `recipes.json`. 🔴 **Hàm dựng của nó GHI:** `if (!productsExisted) SaveProducts(); if (!recipesExisted) SaveRecipes();` — và chú thích ngay trên nói rõ ý định: *"so a fresh install has real files on disk the moment it boots"*.
+* **`SimulatedEcosystem`** — mặc định `Path.Combine(AppContext.BaseDirectory, "ecosystem")`, ghi
+  `ecosystem-products.json` và `ecosystem-recipes.json`.
+* **`MachineConfigStore`** — `DefaultRoot() => AppContext.BaseDirectory`, ghi
+  `machine-operating-config.json`.
+
+🔴 **Và một bất đối xứng chỉ lộ ra khi liệt kê cả ba: chỉ MỘT trong ba có đường thoát.**
+`MachineConfigStore` có `EnvVarDir = "ST4I_MACHINE_CONFIG_DIR"` và đọc nó. Hai store kia **không có
+biến môi trường nào** và được đăng ký bằng `builder.Services.AddSingleton<ProductConfigStore>()` /
+`AddSingleton<SimulatedEcosystem>()`, tức **hàm dựng không tham số**, tức **luôn** là gốc mặc định.
+Hai store không có đường thoát chính là hai store sinh ra bốn file mà cổng gọi là của vận hành viên.
+
+**Bốn file ấy KHÔNG được git theo dõi** (`git ls-files` không trả về cái nào), nên chúng không nằm
+trong nguồn để `dotnet publish` chép vào `publish-desktop/`, nên bản harvest cả-thư-mục của
+`St4i.Installer.wixproj` **không có gì để mang**. Và `Package.wxs` cài vào
+`StandardDirectory Id="ProgramFiles6432Folder"` → `ST4I` → `Machine Simulator` (`INSTALLFOLDER`), với
+engine ở thư mục con `engine`. **Nên `AppContext.BaseDirectory` của một bản cài mặc định là một thư
+mục dưới `%ProgramFiles%`, và lần khởi động đầu tiên là lần đầu tiên có ai đó GHI vào đó.**
+
+**Ở đâu trong mã — trỏ bằng TÊN.** `St4i.EdgeCore.Config.ProductConfigStore` (hàm dựng,
+`SaveProducts`, `SaveRecipes`, `WriteAllTextAtomic`);
+`St4i.EngineApi.Config.SimulatedEcosystem`; `St4i.EdgeCore.Config.MachineConfigStore.DefaultRoot`
+và `.EnvVarDir`; `St4i.EngineApi.Program` (ba dòng `AddSingleton`);
+`packaging/installer/Package.wxs` (`ProgramFiles6432Folder`, `INSTALLFOLDER`, `EngineDir`);
+`packaging/installer/St4i.Installer.wixproj`; `scripts/verify-suites.sh` (danh sách miễn trừ bốn
+file, trong bracket `suite output directories under watch`).
+
+**Hậu quả vận hành, HAI CHIỀU.**
+*Chiều thuận:* `%ProgramFiles%` **thường chỉ đọc với người dùng thường**. Một bản cài mặc định chạy
+dưới một tài khoản không nâng quyền gặp đường ghi ấy **ở hàm dựng của một singleton DI**, tức **trên
+đường khởi động**, trước khi bất kỳ ai yêu cầu một thay đổi nào. Đó là đúng hình dạng mà mục 6 và
+mục 7 của file này đã phải quyết một lần rồi: một lần cài đặt hỏng phát ra ở đâu và tiến trình dừng
+hay đi tiếp. Và nó chạm mục 1/5/11/13 — cả bốn nói về việc một lần khởi động **bình thường** ghi đè
+dữ liệu của vận hành viên.
+*Chiều ngược, và nó là lý do thiết kế này tồn tại:* để bốn file ấy **cạnh nhị phân** khiến chúng
+**tìm thấy được**: một kỹ sư hiện trường mở thư mục cài đặt và thấy đúng cấu hình đang chạy, không
+phải một cây `%ProgramData%` ẩn. Và trên hai cách chạy phổ biến nhất **hôm nay** — chạy từ thư mục
+build, và chạy bản triển lãm — thư mục ấy **ghi được**, nên vấn đề chưa từng nổ. Chuyển gốc sang
+`%ProgramData%` là **đổi chỗ dữ liệu của một bản cài đã có**, tức đúng loại phép **DI CHUYỂN** mà
+file này đã miễn trừ **chỉ cho mục 10**.
+
+**Nếu KHÔNG quyết định.** Ba khả năng ở lại cùng lúc và không cái nào được ghi là đã chọn: bản cài
+mặc định chạy được vì người dùng tình cờ có quyền; hoặc nó hỏng ở khởi động; hoặc nó chạy nhưng
+**bốn file cấu hình không bao giờ bền vững qua một lần khởi động lại**. 🔴 **Và phép đo này tự nêu
+tên chỗ nó không tới được: nó KHÔNG dựng MSI và KHÔNG chạy một bản cài.** Nó đọc `Package.wxs`,
+`.wixproj`, các hàm dựng store và `git ls-files` — bốn thứ đều tra lại được. Câu *"chuyện gì thực sự
+xảy ra khi một người dùng không nâng quyền chạy bản `.msi`"* đòi một dụng cụ thứ ba, và dựng nó là
+một brief khác.
+
+### 🔴 AV-1 (2026-08-22, base `e6faec60`) — ĐƯỢC GIAO THI HÀNH, **ĐÃ DỪNG**. Điều kiện DỪNG nổ, và bốn câu của mục này không sống sót nguyên vẹn qua phép đo
+
+**Vì sao DỪNG, một câu.** Mọi bản sửa trả lời **câu hỏi ở tiêu đề** — *"gốc mặc định nên là gì"* — đều
+**đổi nơi dữ liệu vận hành viên sống**, và với một bản cài đã tồn tại đó chính là phép **DI CHUYỂN** mà
+lời giao việc của AV-1 nêu tên là điều kiện dừng. Miễn trừ di-chuyển của mục 10 **chỉ áp cho mục 10**.
+Mục này **ở lại Phần I**; những gì thêm ở đây là phép đo, không phải một phán quyết.
+
+🔴 **Và một đường thoát KHÔNG-di-chuyển đã được xét rồi bỏ, chứ không bị bỏ quên.** Thêm một
+`EnvVarDir` cho hai store không seam (kiểu `MachineConfigStore`) **không** dời gốc mặc định, nên
+**không** di chuyển gì. Nó bị bỏ vì hai lý do đo được, không phải vì khẩu vị: (1) nó **không trả lời**
+câu hỏi ở tiêu đề, vốn là về **mặc định**, không về khả năng dời; (2) `scripts/verify-suites.sh` có một
+nhánh **FAIL tường minh** bắn ngay khi một trong hai file ấy khai `EnvVarDir` — cổng tự nói rằng miễn trừ
+outdir của nó **tồn tại chỉ vì store không dời được**, và đòi store được nối vào
+`tests/Shared/TestRunTempRoot.cs` cùng lúc. Đó là một thay đổi có thật, đúng hướng, và nó là **một quyết
+định của chủ sở hữu về cơ chế dời**, không phải một phép sửa lặng lẽ kèm theo.
+
+**QUẦN THỂ — LIỆT KÊ TRƯỚC, ĐẾM SAU, và con số trong lời giao việc của AV-1 SAI.** Lời giao việc nói
+*"**bốn** store"*. Đo được: **BA** store, sinh **NĂM** file, trong đó cổng miễn trừ đích danh **BỐN**.
+Thân mục này đã viết đúng *"ba store"* từ đầu — chữ "bốn" đến từ **ô tóm tắt ở bảng phán quyết**, đã sửa
+tại chỗ ở trên. Quần thể **không phải lấy từ ba cái tên ai đó đưa**: nó đã được liệt kê độc lập trong
+cây, ở `tests/St4i.EngineApi.Tests/PerHostDataRootsTests` —
+`TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes` — và phép
+liệt kê ấy đo lại **ĐỨNG VỮNG**, gồm cả lý do nó **loại** `FleetConfig` (không có bộ ghi nào).
+
+| store | gốc mặc định | đường thoát | file | AI ghi, và ghi LÚC NÀO |
+|---|---|---|---|---|
+| `ProductConfigStore` | `AppContext.BaseDirectory` | **không có** — `AddSingleton<ProductConfigStore>()`, hàm dựng không tham số | `products.json`, `recipes.json` | **hàm dựng**, gián tiếp: ctor → `Load()` → `if (!productsExisted) SaveProducts(); if (!recipesExisted) SaveRecipes();`. 🔴 Câu của mục này — *"hàm dựng của nó GHI"* — **đúng về hậu quả**, nhưng hai dòng ấy nằm trong `Load()`, không nằm trong hàm dựng; ai đi tìm chúng trong ctor sẽ không thấy |
+| `SimulatedEcosystem` | `AppContext.BaseDirectory` + `\ecosystem` | **không có** — cùng hình dạng | `ecosystem-products.json`, `ecosystem-recipes.json` | **hàm dựng**: ctor → `Directory.CreateDirectory(<gốc>\ecosystem)` → `Load()` → `if (!productsExisted \|\| !recipesExisted) Save();`, và `Save()` ghi **CẢ HAI** |
+| `MachineConfigStore` | `AppContext.BaseDirectory` | **có** — `ST4I_MACHINE_CONFIG_DIR` | `machine-operating-config.json` | **KHÔNG phải hàm dựng**: `Load()` `return` ngay khi file vắng. Ghi lần đầu ở **thao tác đầu tiên của vận hành viên** |
+
+🔴 **HỎNG THẾ NÀO KHI THƯ MỤC CHỈ ĐỌC — ĐO THỰC TẾ, KHÔNG ĐỌC MÃ RỒI ĐOÁN.** Một probe ngoài cây dựng
+đúng ba lớp store ấy trên một thư mục thật bị `icacls /deny (OI)(CI)(WD,AD,DC,DE)`. **Không có nhánh nào
+nuốt lỗi và không có nhánh nào ghi sang chỗ khác** — mọi thất bại là một `UnauthorizedAccessException`
+ném thẳng ra:
+
+* `ProductConfigStore` ctor, gốc chỉ-đọc **trống**: **NÉM**, tại file `products.json.tmp-<guid>` mà
+  `WriteAllTextAtomic` tạo. Trên đĩa sau đó: **rỗng**.
+* `ProductConfigStore` ctor, gốc chỉ-đọc **đã có cả hai file**: **KHÔNG ném**, nạp bình thường. Nên
+  nhánh chết **chỉ là nhánh SEED** — đúng cái ca *"lần chạy đầu của một bản cài mặc định"* mà tiêu đề
+  mục này nêu, và không phải ca nào khác.
+* `ProductConfigStore.UpsertProduct` (ghi đầu tiên của vận hành viên) trên gốc chỉ-đọc: **NÉM**.
+* `SimulatedEcosystem` ctor, thư mục CHA chỉ-đọc: **NÉM tại `Directory.CreateDirectory(...\ecosystem)`**
+  — **trước cả khi tới một file nào**. Đây là store hỏng **sớm nhất** trong ba, và mục này không nêu:
+  hai store kia gọi `CreateDirectory` trên một thư mục **đã tồn tại**, tức một no-op không đòi quyền ghi.
+* `MachineConfigStore` ctor, gốc chỉ-đọc trống: **KHÔNG ném**. Ghi đầu tiên của vận hành viên (`Ensure`):
+  **NÉM**.
+
+**Hậu quả trên đường khởi động.** `src/St4i.EngineApi/Program.cs` gọi
+`app.Services.GetRequiredService<FleetHost>()` **eager**, và cả hai store không-seam là tham số hàm dựng
+của `FleetHost`, nên cả hai được dựng **ở đó**; `docs/startup-failure-posture.md` §3.5 xếp cả hai là **S**
+(tiến trình kết thúc).
+
+> 🔴 **RÚT MỘT KHẲNG ĐỊNH CỦA CHÍNH AV-1, 2026-08-22, cùng ngày nó được viết, giữ nguyên văn.** Bản đầu
+> của đoạn ngay trên đọc: *"🔴 **Cái §3.5 chưa từng có là một phép ĐO**: nó là một suy luận từ mã. Phép đo
+> ở trên là lần đầu tiên nhánh ấy được **chạy**, và nó **xác nhận §3.5**, kể cả chi tiết §3.5 không nêu
+> (nhánh `ecosystem\` chết sớm hơn một bước)."* **Câu ấy SAI, và nó sai theo đúng cách file này tồn tại để
+> bắt: nó tuyên bố mới cho một thứ đã có hồ sơ.** Nhiệm vụ **AC-1** đã chạy nhánh ấy rồi, **trên chính
+> `publish-desktop\engine\St4i.EngineApi.exe`**, dưới một deny ACE thật, và đã ghi:
+> `UnauthorizedAccessException` ra từ `SimulatedEcosystem..ctor` → `Directory.CreateDirectory`, mã thoát
+> `0xE0434352`, **không** dòng `Now listening on:`; cộng một phép đo **trên bản `.msi` đã dựng** (nó mang
+> `fleet.json` và **không** mang `products.json`); cộng chính câu *"quần thể là ba store, số file là bốn"*;
+> cộng chính lập luận *"bản sửa không phải một seam"*. Và nó **có nhân chứng đang chạy trong cổng này**:
+> `OperatorDataRemovalCensusTests.OverANonWritableRoot_TheTwoSeamlessBesideTheBinaryStoresEndTheProcess_AndTheSeamedOneDoesNot`,
+> bài test khẳng định **bit deny của chính nó** trước rồi mới khẳng định về store. **Tôi đã không đọc nó
+> trước khi viết probe của mình.** Ghi ra thay vì sửa lặng, vì *"đo lại rồi tuyên bố mới"* tốn đúng bằng
+> *"không đo"* đối với người đọc sau.
+
+🔴 **CÁI PROBE CỦA AV-1 THẬT SỰ THÊM VÀO — bốn thứ, không phải một phép đo đầu tiên:**
+1. **`ProductConfigStore` ctor trên gốc chỉ-đọc ĐÃ CÓ CẢ HAI FILE: KHÔNG ném.** Bài test đã ghim dùng một
+   thư mục **rỗng**, nên nó chỉ đi qua nhánh **SEED**. Đây là thứ biến *"nhánh chết đúng là lần khởi động
+   đầu của một bản cài mới"* từ một cách đọc thành một phép đo.
+2. **Ghi ĐẦU TIÊN của vận hành viên ném** — `ProductConfigStore.UpsertProduct` và `MachineConfigStore.Ensure`.
+   Bài test đã ghim dừng ở hàm dựng.
+3. 🔴 **`SimulatedEcosystem` ghi lại CẢ HAI file khi chỉ MỘT vắng** — không có ở §3.5, không có ở §3.6,
+   không ghim ở đâu. Xem khối cuối mục này.
+4. **Một sai lầm của dụng cụ, của chính tôi.** Vòng probe đầu dùng `icacls /deny …:(W)`; quyền đơn giản
+   `(W)` ánh xạ sang `FILE_GENERIC_WRITE`, **bao gồm `SYNCHRONIZE`**, nên nó chặn cả một lần mở ĐỌC — và
+   probe báo (1) **ném**, tức ngược hẳn. Quyền cụ thể `(WD,AD,DC,DE)` đảo lại kết quả. Bài test đã ghim
+   dùng `CreateFiles | CreateDirectories`, vốn không có tật ấy; **nếu tôi đọc nó trước, tôi đã không mắc**.
+   Nếu tôi tin vòng đầu, tôi đã báo một khuyết tật không tồn tại.
+
+🔴 **BỐN CHỖ TRONG MỤC NÀY KHÔNG SỐNG SÓT NGUYÊN VẸN, ghi ra chứ không vá đè:**
+1. *"bốn store"* ở ô bảng phán quyết — **ba**. Đã sửa tại chỗ ở bảng.
+2. *"Hàm dựng của nó GHI"* — đúng hậu quả, **sai vị trí**: hai dòng ấy ở trong `Load()`.
+3. *"MSI **không mang** file nào trong bốn"* — **đúng cho đường mặc định, KHÔNG đúng vô điều kiện.** (Và
+   nửa "đúng" của nó mạnh hơn lý do mục nêu: mục suy từ *"không được git theo dõi"*; **AC-1 đã đo trên một
+   bản `.msi` ĐÃ DỰNG** — nó mang `fleet.json` và **không** mang `products.json`.)
+   `build-installer.ps1` **xoá `publish-desktop/`** trước mỗi lần publish, nên một lần dựng đầy đủ đúng
+   là không mang gì. Nhưng script ấy công bố cờ **`-SkipDotnetPublish`**, và ở nhánh đó nó **không xoá**;
+   harvest thì đọc **cả thư mục**. **Đo trên đĩa hôm nay:** `publish-desktop/engine/products.json` và
+   `recipes.json` mang dấu thời gian **07:11 ngày 2026-08-20**, tức **SAU** lần publish 07:09–07:10, và
+   `publish-desktop/engine/ecosystem/` chứa đủ hai file cùng dấu thời gian ấy. Tức có người **đã chạy**
+   bản engine vừa publish, và bốn file ấy là **sản phẩm của chính cơ chế mục này mô tả**, đang nằm sẵn
+   trong cây harvest. Một `-SkipDotnetPublish` chạy hôm nay **giao chúng cho khách hàng**.
+4. *"nó KHÔNG dựng MSI và KHÔNG chạy một bản cài"* — vẫn đúng cho AV-1 (không bản `.msi` nào được dựng),
+   nhưng chỗ-thiếu **nhỏ hơn** mục nghĩ: phép đo hỏng-thế-nào **không** cần một bản cài, chỉ cần một thư
+   mục chỉ-đọc, và nó đã chạy. Cái còn thiếu thật sự là **hành vi của Windows Installer + UAC**, không
+   phải hành vi của store.
+
+**Một khuyết tật LIỀN KỀ, tìm thấy khi đo, KHÔNG sửa ở đây vì nó không phải mục này.**
+`SimulatedEcosystem.Load` chạy `if (!productsExisted || !recipesExisted) Save();` và `Save()` ghi **cả
+hai** file. Đó **đúng bằng byte** khuyết tật mà V-1 đã sửa cho `ProductConfigStore` (*"seeding one file is
+not a reason to rewrite the other"*), còn sống trong store anh em. **Đo được:** với một
+`ecosystem-products.json` viết tay dài 4 byte và `ecosystem-recipes.json` vắng, chỉ **DỰNG** store đã
+viết lại file ấy thành 2 byte — định dạng của vận hành viên và mọi trường mà `ProductModel` không khai
+đều mất, trên một lần khởi động **bình thường**, không ai yêu cầu thay đổi gì. Đối chứng cùng probe:
+`ProductConfigStore` ở đúng hình dạng ấy **không đụng** file (4 byte trước, 4 byte sau) — bản sửa của V-1
+đứng vững. Đây là hình dạng của mục **1/5/11/13**; nó cần một mục riêng, không phải một dòng phụ ở đây.
+
+### 🔴 BE-1 (2026-08-23, base `90c67503`) — **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-23: CHUYỂN GỐC SANG `%ProgramData%`.** Phép đo điều-kiện-tiên-quyết đã trả và **BÁC tiền đề của chính câu hỏi**; đường di trú đã chọn; **phép CHUYỂN CHƯA THI HÀNH** — mục **Ở LẠI PHẦN I**
+
+🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU, 2026-08-23: CHUYỂN GỐC SANG `%ProgramData%`.** Chủ sở hữu **đã được nêu**
+rằng một bản cài ĐÃ TỒN TẠI sẽ thôi thấy dữ liệu ở gốc cũ, và **vẫn chọn hướng này**. **Mọi dòng thân mục
+gốc ở trên giữ NGUYÊN VĂN.**
+
+#### 1. 🔴 PHÉP ĐO PHẢI LÀM **TRƯỚC** KHI ĐỔI GỐC — **bốn miễn trừ trỏ theo TÊN, không theo ĐƯỜNG DẪN**. Tiền đề của câu hỏi **KHÔNG sống sót**
+
+Câu hỏi đặt ra: nếu bốn miễn trừ trỏ theo **đường dẫn** thì đổi gốc **làm hỏng cổng**. **Đo: chúng trỏ
+theo TÊN — theo BASENAME — nên đổi gốc KHÔNG làm hỏng chúng theo đường ấy.** Hai nửa của bằng chứng, cả
+hai đọc được lại:
+
+* **Miền so khớp là basename.** `scripts/verify-suites.sh`, hàm `outdir_snapshot`, lọc bằng
+  `{ p = $1; sub(/^.*\//, "", p); if (!(p in e)) print }` — nó **cắt bỏ mọi thứ tới dấu `/` cuối** rồi mới
+  tra tập miễn trừ. Không một thành phần đường dẫn nào tham gia. `tests/Shared/OwnOutputDirectoryGuard.cs`
+  mang **cùng** hình dạng ấy ở nửa C#.
+* **Danh sách tên KHÔNG được viết tay ở cổng — nó được RÚT RA từ chính nguồn của hai store**, bằng
+  `const\s+string\s+\w*FileName\w*\s*=\s*"…\.json"` đọc trên `ProductConfigStore.cs` và
+  `SimulatedEcosystem.cs`. **Quan sát trực tiếp trên một lần chạy cổng đầy đủ ở base `90c67503`:**
+  `suite output directories under watch: 5 (1092 files at start, exempt: products.json recipes.json
+  ecosystem-products.json ecosystem-recipes.json)` — bốn **tên trần**, không đường dẫn.
+
+🔴 **NHƯNG CÂU TRẢ LỜI ĐÚNG DÀI HƠN CÂU HỎI, VÀ NỬA THỨ HAI MỚI LÀ NỬA ĐẮT: đổi gốc VẪN làm hỏng cổng —
+qua một cái cửa mà câu hỏi không nêu tên.** Cả hai dụng cụ mang một nhánh **FAIL tường minh** bắn ngay khi
+một trong hai store ấy khai `EnvVarDir` (`verify-suites.sh` dòng ~7413, `exit 1`; `OwnOutputDirectoryGuard`
+`DeriveExemptFileNames`, `throw` trong module initializer của **cả năm** assembly test). Và
+`EnvVarDir` là **bắt buộc** nếu gốc dời: đo được là **20 lớp test dựng `WebApplicationFactory<Program>`**
+giải cả ba store qua đồ thị DI thật, nên nếu gốc mặc định dời mà **không** có seam thì hai store ấy bắt
+đầu ghi vào **`%ProgramData%\ST4I\sim\…` THẬT** ở mỗi lần chạy suite — và
+`AuditWiringTests.ProductUpsert_…` đúc **một sản phẩm mới mỗi lần chạy** (625 sản phẩm, 623 cái một-lần-
+một, đã đo và ghi ở `OwnOutputDirectoryGuard`), tức một rò rỉ **không chặn**. **Không dụng cụ nào hôm nay
+gác chỗ ấy:** `RealCredentialStoreLeakGuard` và bracket credential của cổng đều **chỉ** canh `…\sim\creds`.
+Nên trình tự bắt buộc là **seam + `TestRunTempRoot` + gỡ hai nguồn khỏi danh sách miễn trừ, TRONG CÙNG một
+thay đổi** — và cổng tự nói đó là **kết cục TỐT** (*"the exemption existed only because the store could not
+be moved"*).
+
+#### 2. Cách credential store tạo thư mục và đặt quyền — **dùng lại một NỬA, và nửa kia là một KHUYẾT TẬT nếu chép**
+
+`CredentialStore` làm hai việc, và chúng **phải tách ra**:
+* **Nửa PHẢI dùng lại — phép giải gốc.** `DefaultRoot() => Path.Combine(GetFolderPath(CommonApplicationData),
+  "ST4I", "sim", "<leaf>")`, cộng `EnvVarDir`, cộng `ResolveRoot(directory)` theo thứ tự **explicit > env >
+  default** (*"pure path arithmetic — does not create anything"*), cộng `Directory.CreateDirectory` ở chỗ
+  ghi. Đây là khuôn **đã có 15 store dùng** trong cây này, không phải một phát minh.
+* 🔴 **Nửa PHẢI KHÔNG dùng lại — `SecurityDirAcl.Apply`, và đây là một PHÁT HIỆN.** Nó **tắt kế thừa** rồi
+  thay mọi rule bằng **đúng ba** grant FullControl: `SYSTEM`, `BUILTIN\Administrators`, và **chủ sở hữu thư
+  mục**. Doc của chính nó nói mục đích: gỡ quyền **Read của `Authenticated Users`** mà `%ProgramData%` cho
+  mặc định. Áp nó lên bốn file mà **cổng của chính repo này gọi là *"operator-editable"*** sẽ **KHOÁ VẬN
+  HÀNH VIÊN RA NGOÀI** chính những file họ được cho là sửa — tức **lật ngược** đúng cái giá trị chiều-thuận
+  mà thân mục này nêu (*"một kỹ sư hiện trường mở thư mục cài đặt và thấy đúng cấu hình đang chạy"*).
+  **`SecurityDirAcl` là dụng cụ cho thư mục NHẠY CẢM (creds, security, notifications, identity) — bốn file
+  cấu hình sản phẩm không thuộc loài ấy.** Chép cả gói vì *"dùng lại cùng cách ấy"* sẽ là một khuyết tật
+  ship kèm một lời biện minh.
+
+#### 3. Ba hướng di trú — **đo giá từng cái, chọn một, và ghi lý do hai cái bị loại**
+
+* **(b) Dự phòng khi đọc** *(gốc mới trước, gốc cũ sau, ghi luôn về gốc mới)* — **LOẠI.** Giá: nó **không
+  bao giờ hội tụ**. Sau lần ghi đầu, hai gốc **phân kỳ lặng lẽ**; một vận hành viên sửa file ở gốc cũ thấy
+  thay đổi có tác dụng **cho tới** lần ghi đầu tiên rồi **thôi có tác dụng mà không có tín hiệu nào**. Đó
+  đúng là *"mất dấu"* ở dạng chậm, và nó nhân thêm đúng loài mục **1/5/11/13** (một lần khởi động **bình
+  thường** quyết định số phận dữ liệu vận hành viên) trên **mỗi** lần đọc, vĩnh viễn.
+* **(c) Chỉ đổi gốc, nêu tên gốc cũ trong log** — **LOẠI làm giải pháp đứng một mình, GIỮ làm phần bổ
+  sung.** Giá: rẻ nhất và an toàn nhất về mã, nhưng kênh giao hàng của nó là **stderr của một Windows
+  service**, thứ không ai đọc. Với một bản cài đã tồn tại, đó là *"họ thôi thấy dữ liệu của mình"* kèm một
+  dòng log làm biện pháp giảm nhẹ duy nhất — tức **chính là** mất dấu, chỉ có thêm một chú thích.
+* ✅ **(a) DI TRÚ MỘT LẦN — CHỌN CÁI NÀY**, cộng dòng log của (c) (hai cái **không loại trừ nhau**). Đọc
+  gốc cũ, **chép** sang gốc mới **nếu gốc mới chưa có file ấy**, **KHÔNG XOÁ BẢN CŨ** — miễn trừ di-chuyển
+  của mục 10 **chỉ áp cho mục 10**, nên bản cũ ở lại đĩa nguyên vẹn và đây là một phép **CHÉP**, không phải
+  một phép **DI CHUYỂN**.
+  🔴 **Và một cái bẫy đo được, phải đóng trong cùng thiết kế:** nguồn di trú là `AppContext.BaseDirectory`,
+  thứ **không dời được bằng biến môi trường**. Nếu chép vô điều kiện thì **mỗi tiến trình test** sẽ hút
+  `products.json` còn sót trong **thư mục bin của chính nó** vào gốc đã chuyển hướng — một đầu vào **không
+  tất định**, phụ thuộc cặn bã của lần build trước. Nên phép di trú **chỉ được chạy khi gốc được giải ra từ
+  MẶC ĐỊNH**, không khi nó đến từ `explicit` hay từ biến môi trường. Điều kiện ấy là một phép đo trên
+  `ResolveRoot`, không phải một quy ước.
+
+#### 4. 🔴 GIÁ THẬT CỦA PHÁN QUYẾT, ĐO CHỨ KHÔNG ƯỚC — **một dòng mã kéo theo MƯỜI SÁU artefact, bị bốn dụng cụ điều tra dân số CƯỠNG CHẾ đi cùng nhau**
+
+Phán quyết đọc như một dòng. Đo ra thì nó là một **phép sửa đồng bộ** mà bốn phép kiểm độc lập **từ chối
+cho tách rời** — và đó **không phải ma sát tình cờ, đó là thiết kế**: `PerHostDataRootsTests` tồn tại đúng
+để ép mọi chỗ phát biểu con số phải dịch cùng nhau. Liệt kê trước:
+`ProductConfigStore.cs` · `SimulatedEcosystem.cs` · `MachineConfigStore.cs` · `tests/Shared/TestRunTempRoot.cs`
+· `tests/Shared/OwnOutputDirectoryGuard.cs` · `scripts/verify-suites.sh` · `PerHostDataRootsTests.cs` ·
+`MachineConfigStoreRootResolutionTests.cs` · `Alarms/NotificationDocumentationTests.cs` ·
+`TestHarnessIsolationTests.cs` · `packaging/remove-data.ps1` · `web/playwright.config.ts` ·
+`web/scripts/reset-engine-state.mjs` · `README.md` · `docs/startup-failure-posture.md` ·
+`OperatorDataRemovalCensusTests.cs`. **Đếm sau khi liệt kê: mười sáu.** Trong đó:
+`MachineConfigStoreRootResolutionTests.DefaultRoot_IsBesideTheBinary_AndIsNotUnderProgramData` **đỏ theo
+cấu trúc** — và **thông điệp hỏng của chính nó CHÍNH LÀ bản kê việc** ấy; `PerHostDataRootsTests` dòng 602
+(`Assert.Equal(new[] { "ST4I_MACHINE_CONFIG_DIR" }, besideBinary…)`) **đỏ vô điều kiện** ở mọi biến thể;
+và **con số `thirteen` viết bằng CHỮ** ở `README.md` §15.9 và `remove-data.ps1` `.DESCRIPTION` bị **ghim
+bằng test** nên phải thành `sixteen` cùng lúc.
+
+🔴 **VÀ MỘT ĐƯỜNG MẤT DỮ LIỆU **MỚI** MÀ CHỦ SỞ HỮU CHƯA ĐƯỢC NÊU KHI PHÁN — nêu ra ở đây chứ không để nó
+tự xảy ra.** Cái đã được nêu là *"bản cài cũ thôi thấy dữ liệu của nó"*. Cái **chưa** được nêu:
+`NotificationDocumentationTests.EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioning
+Script` **đòi** mọi thư mục `…\sim\<leaf>` phải được `packaging/remove-data.ps1` **xoá**. Nên chuyển bốn
+file vận hành viên vào `%ProgramData%\ST4I\sim\` **tự động đưa chúng vào tầm của lệnh xoá khi ngừng sử
+dụng** — trong khi hôm nay `remove-data.ps1` **cố ý** không đụng tới chúng và **tự khai** điều đó:
+*"This script has never purged them and is not being taught to: they go when the install directory goes."*
+**Đó là một phán quyết thứ hai nằm trong phán quyết thứ nhất**, và nó phải được quyết một cách tường minh:
+hoặc bốn file ấy **vào** danh sách xoá (một đường mất dữ liệu mới), hoặc chúng được **miễn trừ** khỏi nó
+(và phép kiểm điều tra dân số kia phải được dạy về một hạng mục thứ ba). **Không hướng nào được chọn lặng
+lẽ ở đây.**
+
+#### 5. 🔴 CHỖ NÀY DỪNG, VÀ NÓI THẲNG NÓ LÀ MỘT GIỚI HẠN CỦA NHIỆM VỤ CHỨ KHÔNG PHẢI MỘT ĐIỀU KIỆN DỪNG
+
+**Phép CHUYỂN GỐC chưa được thi hành.** Đây **KHÔNG** phải một câu hỏi ngược lại chủ sở hữu — phán quyết
+rõ, hướng di trú đã chọn ở §3, và không có điều kiện DỪNG nào nổ. Đây là một phát biểu về **dung lượng**:
+phép sửa là mười sáu artefact đồng bộ cộng một phán quyết phụ chưa quyết (§4), và thi hành nó **một phần**
+sẽ để lại một cây mà **cổng không chạy nổi** — hai dụng cụ ném ngay trong module initializer của cả năm
+assembly test. Một nửa phép di trú đắt hơn không có phép di trú nào. **Cái nhiệm vụ này nợ lại, nêu tên
+chứ không im lặng: bản sửa mã, nhân chứng đỏ được của nó, và cặp đối chứng của nó.** Cái đã trả: phép đo
+điều-kiện-tiên-quyết (§1), khuôn dùng lại được cùng khuyết tật của nó (§2), ba hướng đã đo giá và một
+hướng đã chọn kèm cái bẫy của nó (§3), và cái giá thật kèm một phán quyết phụ chưa ai nêu (§4). **Mục ở
+lại Phần I.**
+
+### 🔨 BF-1 (2026-08-23, base `7600d6a4`) — **THI HÀNH XONG.** Hai phán quyết của CHỦ SỞ HỮU ngày 2026-08-23 — **(a) chuyển gốc sang `%ProgramData%`** và **(b) miễn trừ bốn file cấu hình khỏi lượt xoá** — đều đã ship trong một commit chạy được. Mục rời **PHẦN I → PHẦN III**
+
+🔨 **GHI CHÉP THI HÀNH, GHI NGÀY, VÀ GHI RÕ AI PHÁN. Cả hai phán quyết là của CHỦ SỞ HỮU, ngày
+2026-08-23**, không của điều phối viên và không của nhiệm vụ này:
+
+> 🔨 **2026-08-23 (a) — CHỦ SỞ HỮU: CHUYỂN GỐC MẶC ĐỊNH SANG `%ProgramData%`.** Chủ sở hữu **đã được
+> nêu** rằng một bản cài ĐÃ TỒN TẠI sẽ thôi thấy dữ liệu ở gốc cũ, và **vẫn chọn hướng này**.
+>
+> 🔨 **2026-08-23 (b) — CHỦ SỞ HỮU: MIỄN TRỪ BỐN FILE CẤU HÌNH KHỎI LƯỢT XOÁ CỦA `remove-data.ps1`.**
+> Lý do, đúng lời phán: **cấu hình do vận hành viên soạn KHÔNG phải dữ liệu vận hành — nó là thứ họ
+> DỰNG LÊN**, và *"gỡ dữ liệu"* không nên làm họ mất nó. Phán quyết này được ra **vì BE-1 tìm ra một
+> đường mất dữ liệu MỚI mà chủ sở hữu chưa được nói khi phán (a)**.
+
+**Mọi dòng thân mục ở trên — của AO-1, của AV-1 và của BE-1 — sống NGUYÊN VĂN. Không một dòng nào bị
+sửa hay xoá bởi nhiệm vụ này.**
+
+#### 1. Gốc mới, và ba lá thay vì hai
+
+`%ProgramData%\ST4I\sim\products` · `…\ecosystem` · `…\machine-config`. Ba biến dời chỗ, tên **suy
+được** từ tên lá đúng quy tắc §15.9: `ST4I_PRODUCTS_DIR` (mới), `ST4I_ECOSYSTEM_DIR` (mới),
+`ST4I_MACHINE_CONFIG_DIR` (**không đổi một ký tự** — nó vốn đã suy được từ `machine-config`, chỉ là
+chưa có thư mục nào để suy TỪ). Quần thể toàn máy: **13 → 16 thư mục, 13 → 16 biến**; quần thể
+cạnh-binary: **RỖNG**, và cái rỗng ấy **được GHIM ở đúng số không** bởi `PerHostDataRootsTests` chứ
+không được để cho một khẳng định phổ quát tự thoả trên tập rỗng.
+
+**Chỉ NỬA phân giải gốc của credential store được dùng lại** — `DefaultRoot`/`EnvVarDir`/`ResolveRoot`
+(explicit > env > default) + `Directory.CreateDirectory`. **`SecurityDirAcl.Apply` KHÔNG được dùng**,
+đúng như phát hiện của BE-1: nó sẽ khoá vận hành viên ra ngoài chính bốn file mà cổng gọi là
+*"operator-editable"*, tức lật ngược giá trị chiều-thuận mà thân mục này nêu ở trên.
+
+#### 2. Phép CHÉP MỘT LẦN — chạy khi nào, chép gì, và vì sao nó không bao giờ xoá
+
+`St4i.EdgeCore.Config.LegacyRootMigration.CopyOnce`. **Chạy trong hàm dựng của mỗi store, và CHỈ khi
+gốc đã phân giải BẰNG `DefaultRoot()`** — một phép so bằng trên giá trị sắp được ghi, chứ không phải
+một cờ xuất xứ (một cờ xuất xứ là bản sao thứ hai của thứ tự ưu tiên trong `ResolveRoot` và có thể
+trôi khỏi nó). Mọi gốc tường minh và mọi `ST4I_*_DIR` **bỏ qua** phép chép — **đó chính là cái đóng
+cái bẫy BE-1 nêu**: nguồn di trú là `AppContext.BaseDirectory`, thứ không dời được, nên một phép chép
+vô điều kiện sẽ hút cặn build của chính tiến trình test vào gốc đã chuyển hướng.
+
+**Chép gì:** đúng những tên file mà store tự khai bằng hằng số của nó, và **chỉ khi gốc mới CHƯA có
+tên ấy**. **Không xoá bản cũ, và điều đó được ghim bằng byte** — miễn trừ di-chuyển của mục 10 **chỉ
+áp cho mục 10**, nên đây là phép **CHÉP**. Dùng `File.Copy/2` chứ không `File.Copy/3`: cổng điều tra
+dân số gỡ-bỏ đọc **IL**, và IL mang **arity** chứ không mang giá trị đối số, nên `overwrite:false` nói
+đúng với trình biên dịch mà **không** nói được với dụng cụ đo. Overload hai tham số nói cùng một điều
+với cả ba người đọc.
+
+🔴 **Giá của phép chuyển, viết CẢ HAI CHIỀU vì một sự thật viết một chiều là một nửa sự thật.**
+*Thuận:* một bản cài mặc định không còn ghi vào `%ProgramFiles%` ở đường khởi động; `%ProgramData%`
+ghi được với một service chạy LocalSystem, nên đúng cái hỏng mà tiêu đề mục này nêu **không còn nổ ở
+ca mặc định**. *Nghịch, không mềm hoá:* **sau lần ghi đầu tiên vào gốc mới, hai bản PHÂN KỲ và không
+có gì hợp nhất chúng.** Vận hành viên tiếp tục sửa file cũ cạnh binary sẽ **không thấy tác dụng và
+không thấy lỗi**. Bản cũ ở lại đĩa **mãi mãi** — sản phẩm này không xoá byte của vận hành viên — nên
+dọn nó là việc **thủ công**, và README §15.9 nói đúng câu ấy ở chỗ vận hành viên đọc. **Đường ghi log
+của hướng (c) được giữ** (một dòng `stderr` cho mỗi file thật sự được chép), và nó **vẫn là kênh mà
+BE-1 gọi là không ai đọc** — nó bổ sung cho phép chép, không thay được nó.
+
+#### 3. Phán quyết (b): bài test bị đổi, và khẳng định đã công bố bị RÚT
+
+**Tên bài:** `NotificationDocumentationTests.EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript`.
+
+**Nó khẳng định gì:** *"lượt xoá khi ngừng sử dụng phải xoá MỌI thư mục engine tạo ra dưới
+`%ProgramData%\ST4I\sim`"* — một khẳng định **phổ quát**, suy tập ra từ `src/` chứ không viết tay, và
+thông điệp hỏng của nó **chỉ dẫn người thi hành thêm lá thiếu vào `$subdirs`**.
+
+**Vì sao khẳng định ấy nay HẸP LẠI:** phán quyết (a) đưa ba lá mới vào tầm của chính khẳng định ấy, và
+với hai trong ba lá thì việc **tuân theo** nó là một đường mất dữ liệu **mới mà không ai quyết** — bốn
+file cấu hình do vận hành viên soạn sẽ bị một lệnh "gỡ dữ liệu" xoá mất. Chủ sở hữu được nêu và phán
+(b). Nên khẳng định phổ quát ấy **bị RÚT tại chỗ, giữ nguyên văn**, và thay bằng một khẳng định **hẹp
+hơn chứ không yếu hơn**: **mọi lá phải HOẶC bị xoá (`Name = '<lá>'`) HOẶC được GIỮ có nêu tên kèm lý
+do (`Keep = '<lá>'`), không được cả hai và không được không cái nào**; và **tập được giữ bị GHIM đúng
+bằng `{ecosystem, products}`**, không phải bị chặn trên. Bài test đổi tên theo đúng cái nó còn khẳng
+định: `…_IsEitherPurged_OrKeptByNameWithAStatedReason`. **Việc cũ của khẳng định phổ quát — một lá mới
+ra đời và bị bỏ sót lặng lẽ — KHÔNG mất một chút nào**: một lá không nằm trong danh sách nào vẫn đỏ,
+với đúng thông điệp cũ.
+
+🔴 **Vì sao GHIM chứ không CHẶN TRÊN:** danh sách GIỮ là danh sách duy nhất trong file ấy mà một người
+đang bị dí thời gian có thể **nới ra để làm mất một vệt đỏ**. *"Nhiều nhất vài cái"* sẽ cấp phép cho
+đúng việc đó. Thêm một store thứ mười bảy có mang thông tin đăng nhập vào danh sách GIỮ nay là một vệt
+đỏ **tự nêu tên mình**.
+
+🔴 **Và chiều ngược của phán quyết (b), ghi vào mục chứ không để vận hành viên tự gặp:** một cỗ máy
+được chuyển đi, thanh lý hay trả lại **sau khi đã chạy lệnh xoá** vẫn **mang theo** định nghĩa sản
+phẩm và công thức của nó, gồm mọi thứ vận hành viên đã gõ vào. Chúng **không** chứa thông tin đăng
+nhập và **không** chứa lịch sử sản xuất — chính vì thế phán quyết mới khả thi — nhưng chúng không phải
+là không có gì. Script **in đường dẫn của chúng** dưới tiêu đề `KEPT BY DESIGN` và `.DESCRIPTION` nói
+thẳng điều đó; **cố ý không có cờ nào** làm script xoá chúng, vì một cái cờ chỉ cách việc dựng lại
+đường mất dữ liệu đúng một phím.
+
+**`machine-config` KHÔNG được miễn trừ, và sự bất đối xứng ấy được nêu chứ không để im:** nó giữ tham
+số vận hành của máy và danh sách `History` chỉ-thêm của mọi lần điều chỉnh — một bản ghi về việc máy
+**đã làm gì**, không phải thứ vận hành viên **dựng lên**. Bốn file được miễn trừ; file thứ **năm** thì
+không. Phán quyết nói *"bốn file"*, và bốn là đúng bốn.
+
+#### 4. 🔴 **MƯỜI SÁU artefact — ĐO LẠI, VÀ CON SỐ CỦA BE-1 KHÔNG SỐNG SÓT: đúng MƯỜI LĂM cái phải dịch, cái thứ mười sáu KHÔNG**
+
+Liệt kê trước, đếm sau. Mười sáu artefact BE-1 nêu tên:
+`ProductConfigStore.cs` · `SimulatedEcosystem.cs` · `MachineConfigStore.cs` ·
+`tests/Shared/TestRunTempRoot.cs` · `tests/Shared/OwnOutputDirectoryGuard.cs` · `scripts/verify-suites.sh`
+· `PerHostDataRootsTests.cs` · `MachineConfigStoreRootResolutionTests.cs` ·
+`Alarms/NotificationDocumentationTests.cs` · `TestHarnessIsolationTests.cs` · `packaging/remove-data.ps1`
+· `web/playwright.config.ts` · `web/scripts/reset-engine-state.mjs` · `README.md` ·
+`docs/startup-failure-posture.md` · `OperatorDataRemovalCensusTests.cs`. **Đếm: mười sáu.**
+
+🔴 **ĐO LẠI SAU KHI SỬA XONG, VÀ MỘT CÁI TRONG MƯỜI SÁU KHÔNG PHẢI DỊCH:
+`tests/St4i.EngineApi.Tests/TestHarnessIsolationTests.cs`.** Không một ký tự **khẳng định** nào của nó
+đổi. Đó là một tính chất chứ không phải may mắn, và đúng là tính chất mà chính file ấy được dựng để
+mua: phép ghim của nó **suy tập `ST4I_*_DIR` ra từ `src/`** rồi đòi `web/playwright.config.ts` đặt từng
+cái — nên khi hai biến mới ra đời nó **đỏ**, và khi `playwright.config.ts` được dịch nó **xanh lại**,
+không cần ai chạm vào nó. Dụng cụ là `git diff --name-only`, và nó nói **MƯỜI LĂM**.
+
+*(Cái file ấy vẫn có mặt trong commit, nhưng vì một lý do khác và nhỏ hơn: một đoạn **văn xuôi** trong
+doc comment của nó viết *"`PerHostDataRootsTests` phân hoạch tập `ST4I_*_DIR` thành **THIRTEEN** thư mục
+toàn máy … và các store cạnh-binary (`ST4I_MACHINE_CONFIG_DIR` hôm nay)"* — câu ấy nay sai, nên nó được
+**rút tại chỗ**. Sửa một câu đã hỏng **không phải** là "phải dịch cùng nhau"; gộp hai thứ ấy vào một con
+số là đúng cái nhầm mà chính mục này đang sửa.)*
+
+🔴 **Và commit có HAI MƯƠI MỐT file, chứ không mười sáu — nói "mười sáu" rồi im về phần còn lại sẽ là
+đúng loài chỗ lệch mà file này tồn tại để chấm dứt.** Ngoài mười lăm cái phải dịch, commit mang:
+`src/St4i.EdgeCore/Config/LegacyRootMigration.cs` (mới — phép chép),
+`tests/St4i.EdgeCore.Tests/LegacyRootMigrationTests.cs` (mới — nhân chứng (i) và (ii)),
+`tests/St4i.EngineApi.Tests/OperatorConfigSurvivesDecommissioningTests.cs` (mới — nhân chứng (iii)),
+`scripts/check-owner-decisions.sh` (dòng tóm tắt Phần I), `TestHarnessIsolationTests.cs` (chỉ văn xuôi,
+ở trên), và **chính file này**.
+
+**MƯỜI LĂM** là con số của **phép dịch bắt buộc**; **HAI MƯƠI MỐT** là con số của **commit**; **MƯỜI
+SÁU** là con số của **một danh sách viết TRƯỚC khi bản sửa tồn tại**. Ba câu hỏi khác nhau, ba con số
+khác nhau, cả ba nêu ra — và con số bị bác là con số của nhiệm vụ trước, đo trên chính sản phẩm của
+nhiệm vụ này.
+🔴 **Nhưng commit có HAI MƯƠI MỐT file, và nói "mười sáu" mà im về năm cái kia sẽ là đúng loài chỗ
+lệch mà file này tồn tại để chấm dứt.** Năm cái BE-1 không thể biết vì chúng chỉ tồn tại khi có bản
+sửa: `src/St4i.EdgeCore/Config/LegacyRootMigration.cs` (mới — phép chép),
+`tests/St4i.EdgeCore.Tests/LegacyRootMigrationTests.cs` (mới — nhân chứng (i) và (ii)),
+`tests/St4i.EngineApi.Tests/OperatorConfigSurvivesDecommissioningTests.cs` (mới — nhân chứng (iii)),
+`scripts/check-owner-decisions.sh` (dòng tóm tắt Phần I), và **chính file này**. **Mười sáu là con số
+của phép DỊCH; hai mươi mốt là con số của COMMIT.** Hai câu hỏi khác nhau, hai con số khác nhau, cả
+hai nêu ra.
+
+#### 5. Nhân chứng — ba thứ, và cặp đối chứng chạy trọn rồi hoàn nguyên
+
+| # | nhân chứng | gác cái gì |
+|---|---|---|
+| (i) | `LegacyRootMigrationTests.WithNoEnvironmentOverride_AllThreeStoresResolveUnderProgramData_AtTheirDerivedLeaf` | gốc mới được dùng khi **không** có `ST4I_*_DIR`, ở đúng lá suy từ tên biến, và **không** phải gốc cạnh binary; cộng một arm ngược chứng minh biến môi trường vẫn **thắng** |
+| (ii) | `LegacyRootMigrationTests.CopyOnce_CarriesTheLegacyBytes_LeavesTheOriginalIntact_AndDoesNotRunASecondTime` | chép đúng byte; **bản cũ còn nguyên byte VÀ nguyên dấu thời gian**; lượt thứ hai báo chép **không gì** và **không đè** lên bản sửa ở đích |
+| (iii) | `OperatorConfigSurvivesDecommissioningTests.TheDecommissioningWipe_DeletesHistorianCredsAndTheAuditLog_AndKEEPSTheFourConfigFiles` | **CHẠY THẬT** `remove-data.ps1`: `historian`/`creds`/`security` **biến mất**, bốn file cấu hình **còn nguyên byte** |
+
+**Vì sao (iii) chạy script thay vì đọc nó:** một mảng `$keptByDesign` mà vòng lặp xoá tình cờ duyệt
+qua sẽ **thoả mọi phép kiểm văn bản** trong khi vẫn xoá đúng những file phán quyết bảo vệ. Hai dụng cụ
+bổ sung cho nhau, không cái nào thay cái nào.
+
+**Cặp đối chứng — CHẠY TRỌN, ĐÃ HOÀN NGUYÊN**, ghi trong báo cáo BF-1.
+
+#### 6. Hằng số, và cái KHÔNG dịch
+
+`EXPECT_EDGECORE` **1204 → 1206**, `EXPECT_ENGINEAPI` **1408 → 1409**, tổng **2849 → 2852** (+3 nhân
+chứng). `EXPECT_NEW_DOC_ABSOLUTES` **232 → 290**, và **cả 58 câu mới đều nằm trong file nhiệm vụ này
+sửa** — 55 + 3, phép cộng khớp đúng, và mọi file không bị chạm thì **không thể** dịch vì chúng giống
+BASE từng byte. **`EXPECT_WARNINGS` ĐO LẠI trên một `-t:Rebuild` đầy đủ và GIỮ 219**; sổ cảnh báo
+**14 hàng, 185/34, không dịch một đơn vị**; **0 lệnh đè** — không `NoWarn`, không `#pragma`, không
+`SuppressMessage`, không `.editorconfig`. `EXPECT_BUILD_NODES` **0**. Baseline `cfcfae42` **không dời**.
+
+#### 7. Khuyết tật nhìn thấy và DỪNG lại
+
+Mười một khuyết tật đợt 12 (nặng nhất: mô-men xoắn SCREWDRIVE lệch ~9 lần giữa hai host), năm khuyết
+tật BD-1, hai khuyết tật BE-1 — **không đụng**. 🔴 **Và khuyết tật thứ tư của BE-1 vẫn MỞ, còn nhiệm vụ
+này làm nó LỚN HƠN — nói thẳng ra:** không dụng cụ nào gác `%ProgramData%\ST4I\sim\` ngoài `creds`.
+Trước hôm nay đó là mười ba lá không ai canh; nay là **mười sáu**, và ba lá mới là đúng ba lá mà một
+seam hỏng sẽ làm suite ghi vào. Cái chặn hôm nay là `TestRunTempRoot` cộng ba phép ghim
+(`TestHarnessIsolationTests`, `OwnOutputDirectoryGuard`, bracket của cổng) — **không** phải một watcher
+trên `%ProgramData%`. Nêu ra, **không sửa**: nó cần một mục riêng.
 
 ---
 
