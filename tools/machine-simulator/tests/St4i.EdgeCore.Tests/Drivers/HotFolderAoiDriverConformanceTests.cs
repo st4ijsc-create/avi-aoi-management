@@ -16,6 +16,17 @@ namespace St4i.EdgeCore.Tests.Drivers;
 /// <c>SimulatedDriver</c>/<c>ModbusTcpDriver</c>/<c>OpcUaDriver</c> ever populate those fields. All 9 checks
 /// pass — but see the batch-review finding below for a KNOWN gap in what "pass" means for one of them.
 ///
+/// <para>🔴 <b>THE INTERPRETATION CALL BELOW IS RETRACTED IN ITS PREMISE, 2026-08-23, BK-1 — the override
+/// itself stands, its stated REASON does not.</b> Quoted and retired in place. The paragraph says this driver
+/// "does NOT explicitly state a 'no external link to lose' exemption", and BI-1 made that false EARLIER THE
+/// SAME DAY by writing exactly such a claim into <see cref="HotFolderAoiDriver"/>'s class doc comment
+/// (<c>docs/owner-decisions.md</c> item 48, defect 5). Two artefacts were left behind saying the claim is
+/// absent — this one and a paragraph on the driver's own <c>Health</c> member — so the change that closed
+/// "the class doc is silent" shipped with two live statements that it still is. Both are retired now. What
+/// the override rests on TODAY is the driver's own class-level claim, which exists, and which says in its own
+/// words that it is uncomfortable; this file no longer claims the exemption on the driver's behalf and no
+/// longer judges BY ANALOGY.</para>
+///
 /// <para><b>Interpretation call, flagged per task-6-report.md's own convention:</b>
 /// <see cref="ModelsExternalDeviceConnection"/> is overridden <see langword="false"/> here. Unlike
 /// <c>SimulatedDriver</c>, <see cref="HotFolderAoiDriver"/>'s own class doc comment does NOT explicitly state
@@ -29,6 +40,18 @@ namespace St4i.EdgeCore.Tests.Drivers;
 /// exemption is for), not a literal reading of this driver's own doc comment — which I judge to currently be
 /// SILENT on the point, not explicit either way. I did not change <see cref="HotFolderAoiDriver"/>'s
 /// behaviour or doc comment to resolve this; see task-6-report.md for the full writeup.</para>
+///
+/// <para>🔴 <b>AND THE VIOLATION THE NEXT PARAGRAPH RECORDS IS FIXED, 2026-08-23, BK-1</b>
+/// (<c>docs/owner-decisions.md</c> item 48, defect 1, under the owner's ruling of that day). Its measurement
+/// was correct — three <c>Directory.CreateDirectory</c> calls and a live <see cref="System.IO.FileSystemWatcher"/>
+/// in the constructor — and all four moved to the first pass of <c>ReadAsync</c>. The paragraph is kept whole
+/// rather than edited because its SECOND half did not stop being true: the override still guts
+/// <see cref="Check_Construction_IsNonBlocking_AndPerformsNoIO"/>'s I/O assertion, so this suite still would
+/// not have caught it, and a timing-only stopwatch is still all that guards this constructor HERE. What
+/// caught it instead is a direct assertion in
+/// <c>DriverTeardownSeamTests.HotFolderAoiDriver_Construction_TouchesNoDisk_AndTheFirstReadPassCreatesAllThree</c> —
+/// which is a witness written outside the conformance harness precisely because the harness cannot see this
+/// class of defect at all. That gap is unchanged and is not closed by the fix.</para>
 ///
 /// <para><b>Batch review finding — that same override also guts a SECOND check, and hides a REAL
 /// violation.</b> <see cref="ModelsExternalDeviceConnection"/> = <see langword="false"/> also gates

@@ -168,6 +168,34 @@ internal static class TestRunTempRoot
                 Environment.SetEnvironmentVariable("ST4I_ECOSYSTEM_DIR", Path.Combine(root, "ecosystem"));
             }
 
+            // 🔴 Task BK-1 — THESE TWO ARE NOT SPECULATIVE COVERAGE. They close a leak that was OBSERVED,
+            // four separate times, into a REAL install's data: BJ-1 measured C:\ProgramData\ST4I\sim\assets\
+            // assets.db rewritten at 16:55:04 and again at 18:30:16 on 2026-08-23 — two independent gate
+            // windows, with the notifications leaf's directory mtime moving alongside both — and this task
+            // reproduced it a third and fourth time on the same day. So it is a PROPERTY of running the gate,
+            // not an incident. The reason it was invisible for so long is exactly what docs/owner-decisions.md
+            // item 51 sub-item 5 is about: assets and notifications are two of the leaves nothing watches, so
+            // the one guarded leaf (creds) stayed green through every one of those writes.
+            //
+            // 🔴 AND THE HALF THAT IS NOT A FIX, said here rather than left to be discovered: this redirects
+            // where the TEST SUITE writes. It does not give the product a new default, does not touch either
+            // store, and settles nothing about the sixteen %ProgramData% roots as a product question. The
+            // stores' own EnvVarDir seams already existed; nothing in src/ changed for this.
+            //
+            // Spelled as literals for the same reason the four above are: two of the five projects this file
+            // is linked into reference only their own contract assembly and cannot see
+            // AssetRegistryStore.EnvVarDir or NotificationConfigStore.EnvVarDir. RealProgramDataLeakGuard is
+            // what now measures the CONSEQUENCE, which is the assertion that does not depend on the spelling.
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ST4I_ASSETS_DIR")))
+            {
+                Environment.SetEnvironmentVariable("ST4I_ASSETS_DIR", Path.Combine(root, "assets"));
+            }
+
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ST4I_NOTIFICATIONS_DIR")))
+            {
+                Environment.SetEnvironmentVariable("ST4I_NOTIFICATIONS_DIR", Path.Combine(root, "notifications"));
+            }
+
             Root = root;
             AppDomain.CurrentDomain.ProcessExit += (_, _) => TryDeleteTree(root);
         }
