@@ -435,9 +435,41 @@ public sealed class NotificationDocumentationTests
     /// meant to be; see README §15.9's second-population subsection for what an operator has to do by
     /// hand if they relocate it. The identical sentence was qualified in five other artefacts in the same
     /// branch and missed here — the summary-contradicts-its-list class, at the summary.</para>
+    ///
+    /// <para>📎🔴 <b>THE PUBLISHED ASSERTION OF THIS TEST IS RETRACTED AND NARROWED, 2026-08-23 (BF-1), by
+    /// the owner's ruling (b) of that date. Every paragraph above is kept verbatim.</b> What was claimed —
+    /// in the test's own name, in its first line of remarks, and in its failure message — was:
+    /// <i>"the decommissioning wipe must purge EVERY directory the engine creates."</i> That is no longer
+    /// true, and it stopped being true because of a data-loss path this very test would otherwise have
+    /// CREATED.</para>
+    ///
+    /// <para><b>The mechanism, because it is the interesting part.</b> The owner's ruling (a) of the same
+    /// day moved three beside-the-binary stores under <c>%ProgramData%\ST4I\sim</c>. This test's universal
+    /// then applied to them automatically, and its failure message would have instructed the implementer to
+    /// add <c>products</c> and <c>ecosystem</c> to <c>$subdirs</c> — enrolling four operator-authored
+    /// configuration files into a destructive wipe that had never touched them. Nobody decided that; it
+    /// would have arrived as a side effect of a directory changing address. The owner was told, and ruled
+    /// (b): <b>configuration an operator authored is not operational data — it is something they built, and
+    /// "remove data" should not cost them that.</b></para>
+    ///
+    /// <para><b>What replaces it, and it is strictly narrower rather than merely weaker.</b> Every declared
+    /// leaf must be EITHER purged (<c>Name = '&lt;leaf&gt;'</c>) OR kept by name with a stated reason
+    /// (<c>Keep = '&lt;leaf&gt;'</c>), never both and never neither. The kept set is then pinned at exactly
+    /// <c>{ecosystem, products}</c> — not merely bounded, because a KEPT list is the one list in this file
+    /// that an implementer under time pressure can grow to make a red go away, and "at most a few" would
+    /// have licensed exactly that. Adding a fourteenth credential-bearing store to the kept list is now a
+    /// red that names itself. 🔴 The old universal's real work — a leaf arriving and being silently missed —
+    /// is untouched: a leaf in neither list still fails, with the same message.</para>
+    ///
+    /// <para><b>The other direction of the ruling, recorded here because a test that only states the
+    /// comfortable half is how this class of defect survives.</b> A machine handed on, scrapped or returned
+    /// after this script runs now KEEPS its product and recipe definitions. They carry no credential and no
+    /// production history — which is why the ruling was available — but they are operator-typed content
+    /// surviving a wipe advertised as clean-slate, and the script says so in its banner and its
+    /// <c>.DESCRIPTION</c> rather than leaving an operator to discover it.</para>
     /// </summary>
     [Fact]
-    public void EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript()
+    public void EveryDirectoryTheEngineCreatesUnderProgramData_IsEitherPurged_OrKeptByNameWithAStatedReason()
     {
         var root = MachineSimulatorRoot();
         var script = Flatten(ReadRepoFile("packaging", "remove-data.ps1"));
@@ -477,17 +509,53 @@ public sealed class NotificationDocumentationTests
             Assert.Contains(mustFind, declared);
         }
 
-        var missing = declared
-            .Where(name => !Regex.IsMatch(script, $@"Name\s*=\s*'{Regex.Escape(name)}'", RegexOptions.IgnoreCase))
-            .ToList();
+        bool Purges(string name) =>
+            Regex.IsMatch(script, $@"Name\s*=\s*'{Regex.Escape(name)}'", RegexOptions.IgnoreCase);
+        bool Keeps(string name) =>
+            Regex.IsMatch(script, $@"Keep\s*=\s*'{Regex.Escape(name)}'", RegexOptions.IgnoreCase);
+
+        var missing = declared.Where(name => !Purges(name) && !Keeps(name)).ToList();
 
         Assert.True(missing.Count == 0,
-            "packaging/remove-data.ps1 does not purge every directory the engine creates under " +
-            $"%ProgramData%\\ST4I\\sim. Missing: {string.Join(", ", missing)}. A decommissioning wipe that " +
-            "skips one of these leaves it on a machine being handed on, scrapped or returned — and " +
-            "`identity` and `connector-config` hold a private key and a plaintext password respectively. " +
-            "Add it to $subdirs (with its ST4I_*_DIR relocation), or state in the script's .NOTES AND " +
-            "README §15.4 (EN and VI) that it is deliberately kept and why.");
+            "packaging/remove-data.ps1 neither purges nor deliberately keeps every directory the engine " +
+            $"creates under %ProgramData%\\ST4I\\sim. Missing: {string.Join(", ", missing)}. A " +
+            "decommissioning wipe that silently skips one of these leaves it on a machine being handed on, " +
+            "scrapped or returned — and `identity` and `connector-config` hold a private key and a " +
+            "plaintext password respectively. Add it to $subdirs (with its ST4I_*_DIR relocation) — or, if " +
+            "it genuinely must survive a wipe, add it to $keptByDesign with a Reason AND get that decided " +
+            "by the owner first: the kept set is pinned below, so growing it is not something this message " +
+            "is inviting you to do quietly.");
+
+        // 🔴 A leaf must not claim BOTH statuses. Without this, adding a `Keep =` entry beside an existing
+        // `Name =` entry would read as an exemption while the directory was still being deleted — the
+        // worst of the three outcomes, because the script would then DOCUMENT a survival it does not
+        // deliver.
+        var both = declared.Where(name => Purges(name) && Keeps(name)).ToList();
+        Assert.True(both.Count == 0,
+            $"These leaves are listed as BOTH purged and kept in packaging/remove-data.ps1: " +
+            $"{string.Join(", ", both)}. The script deletes what is in $subdirs, so a directory in both " +
+            "lists is deleted while advertising that it is not.");
+
+        // 🔴 THE KEPT SET IS PINNED, NOT BOUNDED — owner ruling 2026-08-23(b). These two hold the four
+        // operator-authored configuration files and nothing else. A third member is a NEW decision about
+        // what survives a clean-slate wipe, and it belongs to the owner, not to whoever is making a red go
+        // away. Derived from src/ on the left so the pin cannot outlive the leaves it names.
+        Assert.Equal(
+            new[] { "ecosystem", "products" },
+            declared.Where(Keeps).OrderBy(n => n, StringComparer.Ordinal).ToArray());
+
+        // And the reason must actually be stated ON THE SAME LINE as the entry, because "kept" without a
+        // reason is indistinguishable from "forgotten, then legitimised". Read UNFLATTENED on purpose: the
+        // flattened text has no line breaks, so a same-entry check over it would silently accept a Reason
+        // belonging to the next entry.
+        var rawScript = ReadRepoFile("packaging", "remove-data.ps1");
+        foreach (var kept in new[] { "ecosystem", "products" })
+        {
+            Assert.Matches(
+                new Regex($@"^[^\n]*Keep\s*=\s*'{kept}'[^\n]*Reason\s*=\s*'[^'\n]{{20,}}'",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline),
+                rawScript);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

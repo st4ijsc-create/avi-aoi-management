@@ -299,9 +299,9 @@ other `U` row; the residual above is unchanged.
 | 28 | `Directory.CreateDirectory(webRootPath)` | install layout | yes | **S** | ✓ |
 | 29 | `GetRequiredService<FleetHost>()` → `SqliteHistorianStore` ctor | `ST4I_HISTORIAN_DIR` | yes | **S** | ✓ |
 | 30 | → `AssetRegistryStore` ctor | `ST4I_ASSETS_DIR` | yes | **S** | ✓ |
-| 31 | → `MachineConfigStore` ctor | `ST4I_MACHINE_CONFIG_DIR` | yes | **S** | ✓ |
-| 32 | → **`ProductConfigStore` ctor + `Load()`** | `products.json`, `recipes.json` beside the binary | **no** | **S** | **✗ §3.5** |
-| 33 | → **`SimulatedEcosystem` ctor + `Load()`** | `ecosystem\*.json` beside the binary | **no** | **S** | **✗ §3.5** |
+| 31 | → `MachineConfigStore` ctor | `ST4I_MACHINE_CONFIG_DIR` — 🔴 default is **`%ProgramData%\ST4I\sim\machine-config` since 2026-08-23**, beside the binary before that | yes | **S** | ✓ |
+| 32 | → **`ProductConfigStore` ctor + `Load()`** | `products.json`, `recipes.json` — 🔴 **`%ProgramData%\ST4I\sim\products` since 2026-08-23**, beside the binary before that | 🔴 **yes**, `ST4I_PRODUCTS_DIR` | **S** | **✗ §3.5** |
+| 33 | → **`SimulatedEcosystem` ctor + `Load()`** | `ecosystem-*.json` — 🔴 **`%ProgramData%\ST4I\sim\ecosystem` since 2026-08-23**, an `ecosystem\` subfolder beside the binary before that | 🔴 **yes**, `ST4I_ECOSYSTEM_DIR` | **S** | **✗ §3.5** |
 | 34 | → `ConnectorRegistry` factory | rows, `connectors.json` | no | **U** per entry (every arm is a `Try*`) | ✓ |
 | 35 | → `FleetCore.ResolveFleet` | `fleet.json`, `--fleet` | no | **U** | ✓ |
 | 36 | `settingsStore.Read()` | `fleet-settings.json` | no | **U** — *Q-1; what the arm DOES changed by owner item 9(b), 2026-08-19* | ✓ — **both halves checked**, see §3.1a-now |
@@ -783,6 +783,20 @@ neighbour but the eight siblings that share the defect.
 
 ### 3.5 — Divergence: two operator-editable catalogues end the process, and their twins do not
 
+🔴 **BF-1, 2026-08-23 — READ THIS BEFORE §3.5, AND §3.5 IS OTHERWISE UNCHANGED AND UNRETRACTED.** The owner
+moved all three of these stores' default roots from beside the binary to
+`%ProgramData%\ST4I\sim\{products,ecosystem,machine-config}`. **The POSTURE is untouched by that move** —
+every constructor still throws on a root it cannot write, the process still ends, and rows 31/32/33 still
+read **S**. What changed is WHICH directory has to be writable, and the practical effect points in the
+safer direction: `%ProgramData%` is writable by a service running as LocalSystem, whereas
+`%ProgramFiles%\ST4I\Machine Simulator\engine` — where a default MSI install put the old root — is not
+writable by a non-elevated account, which is the failure this whole section was written about. 🔴 **It does
+not make the arm unreachable**: a locked-down `%ProgramData%` ACL, a full disk, or a relocation via
+`ST4I_*_DIR` to somewhere unwritable all reach it exactly as before, and the measurement below was taken
+against a directory with a deny ACE rather than against a particular path. Every sentence in §3.5 that says
+"beside the binary" should now be read as "at the store's resolved root"; they are left verbatim because
+the transcript they quote was taken on a real published build whose root really was beside its binary.
+
 `ProductConfigStore` and `SimulatedEcosystem` both do `Directory.CreateDirectory(...)` then `Load()` in the
 constructor, and `Load()` deserializes JSON from beside the binary with **no `catch` of any kind**. Both are
 `FleetHost` constructor parameters, so both are built by the unguarded `GetRequiredService<FleetHost>()` that
@@ -839,13 +853,17 @@ this exe. Nor was the LocalSystem service arm run.
 `MachineConfigStore`'s constructor only reads (`CreateDirectory` on an existing directory, then a `Load` that
 returns early when the file is absent), so the same non-writable directory costs it nothing until something
 asks it to persist — which happens later, at `Ensure`, under the fleet's global lock. Pinned by
-`OperatorDataRemovalCensusTests.OverANonWritableRoot_TheTwoSeamlessBesideTheBinaryStoresEndTheProcess_AndTheSeamedOneDoesNot`,
+`OperatorDataRemovalCensusTests.OverANonWritableRoot_TheTwoSeedingStoresEndTheProcess_AndTheReadOnlyConstructorDoesNot`
+(renamed from `…_TheTwoSeamlessBesideTheBinaryStoresEndTheProcess_AndTheSeamedOneDoesNot` on 2026-08-23, BF-1 — the
+assertions did not change, the two words "seamless" and "beside-the-binary" stopped being true),
 which asserts its own deny ACE bit before it asserts anything about a store.
 
 **Rows 32 and 33 are unchanged: still S, still ✗.** AC-1 measured this arm and did not repair it, because the
 repair is not a seam. Giving these two stores a relocation variable leaves every existing default exactly
 where it is and therefore does not move this arm at all; moving the default root does move it, and moving a
-store's default relocates live customer data on the next start — which `MachineConfigStore.DefaultRoot`'s own
+store's default relocates live customer data on the next start — 🔴 **which is exactly the decision the owner
+took on 2026-08-23, having been told that cost; see `LegacyRootMigration` for the one-time copy that
+mitigates it and README §15.9 for the divergence it does not fix** — which `MachineConfigStore.DefaultRoot`'s own
 remarks already call a deployment decision rather than a seam. That decision is reported, not taken.
 
 ### 3.6 — 🔴 The law for *"the artefact is present and this process cannot use its bytes"*, and the set it was checked against (task V-1)
@@ -1162,6 +1180,9 @@ chỗ chúng đồng thuận."* The memberships differ, and the differences deco
 **A number this list previously stated and which is now withdrawn: "thirteen of them are roots."** It is
 refuted by README §15.9's own two tables without any re-derivation — that section's thirteen machine-wide
 roots include `creds` and `opcua-pki`, which the outcome table itself declares to have *no startup decision*,
-while `machine-config` is a member here and is **not** one of the thirteen (it defaults beside the binary,
+while `machine-config` is a member here and is **not** one of the thirteen (🔴 **retracted 2026-08-23 (BF-1):
+`machine-config` IS one of them now — there are sixteen, and this clause's premise, "it defaults beside the
+binary", ended with the owner's ruling of that date. The withdrawal of the number "thirteen of them are
+roots" stands and is only reinforced: the number moved again, in a file that does not spell it.** It defaults beside the binary,
 which is why `PerHostDataRootsTests` puts it in population two). A summary contradicting the list it
 summarises, in the artefact written to end an ambiguity. **No replacement scalar is offered. Count the rows.**

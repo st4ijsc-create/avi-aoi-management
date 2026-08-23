@@ -32,6 +32,24 @@
 // Deletes are best-effort (ENOENT is fine — first-ever run, or an already-clean tree) and cover
 // every bin output folder found under St4i.EngineApi (Debug/Release, any TFM) so the fix isn't
 // pinned to today's `net10.0-windows` moniker.
+//
+// 🔴 TASK BF-1 (2026-08-23) — EVERYTHING ABOVE IS RETRACTED AS A DESCRIPTION OF WHERE THESE FILES LIVE,
+// and kept verbatim because it is the only written record of the contamination it fixed. The owner moved
+// all three stores' default roots to `%ProgramData%\ST4I\sim\{products,ecosystem,machine-config}` and
+// `playwright.config.ts` now redirects all three into `../.e2e-data`, which the block at the bottom of
+// this file wipes WHOLESALE before every boot. So the pristine-engine guarantee is now delivered by that
+// one `rmSync`, not by the five named deletes below.
+//
+// The five deletes are KEPT, and not as decoration. Two reasons, both measurable:
+//   1. LEGACY RESIDUE. A checkout that ran the engine before 2026-08-23 has real files sitting in those
+//      bin folders. They are no longer read by the engine — but `LegacyRootMigration` reads exactly that
+//      location on a DEFAULT-rooted start, so leaving them is leaving an input for a code path that is
+//      supposed to be inert here.
+//   2. THE REDIRECT COULD REGRESS. If someone removes `ST4I_PRODUCTS_DIR` from the webServer env block,
+//      the engine falls back to `%ProgramData%` — not to bin/ — so these deletes would NOT catch it. That
+//      is stated so nobody reads them as a safety net they are not:
+//      `EveryStoreTheEngineCreates_IsIsolatedByThePlaywrightHarness` is what catches that, and it is a
+//      test rather than a cleanup.
 import { existsSync, readdirSync, rmSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"

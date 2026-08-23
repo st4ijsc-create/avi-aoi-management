@@ -58,6 +58,23 @@ namespace St4i.EdgeCore.Config;
 /// <c>packaging/remove-data.ps1</c> — which purges <c>%ProgramData%</c> — cannot reach it. Relocating
 /// this root puts data somewhere the decommissioning wipe does not look; README §15.9 says so where an
 /// operator reads.</para>
+///
+/// <para>📎 <b>THE PARAGRAPH DIRECTLY ABOVE IS RETRACTED, 2026-08-23 (BF-1), and kept VERBATIM rather than
+/// edited, in this file's own house style.</b> Every clause of it was true from H-1c until the owner's
+/// ruling of 2026-08-23(a), and each is now false for the same single reason: the default moved.
+/// <c>machine-config</c> IS a <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> leaf; <see cref="EnvVarDir"/> IS
+/// one of the machine-wide variables (its name was already derivable from that leaf, which is why the
+/// literal did not have to change); <c>packaging/remove-data.ps1</c> DOES reach it, through a
+/// <c>-MachineConfigDir</c> parameter the same script's <c>.NOTES</c> used to argue against. What survives
+/// unretracted is the sentence's last clause in a NEW form: relocating this root still puts data somewhere
+/// the wipe does not look unless the operator passes the parameter, because this script reads only its own
+/// shell's environment.</para>
+///
+/// <para>🔴 <b>And the two other members of the population no longer have "no seam at all" either</b> —
+/// <see cref="ProductConfigStore.EnvVarDir"/> and <c>SimulatedEcosystem.EnvVarDir</c> were added by the same
+/// ruling, because twenty <c>WebApplicationFactory</c> test classes resolve all three through the real DI
+/// graph and a moved default without a seam would have had every suite writing into the REAL
+/// <c>%ProgramData%</c>.</para>
 /// </summary>
 public sealed class MachineConfigStore
 {
@@ -69,7 +86,17 @@ public sealed class MachineConfigStore
     /// because this store has no such directory: the default is beside the binary. <c>PerHostDataRootsTests</c>
     /// partitions the <c>ST4I_*_DIR</c> population on exactly that property, so a reader who finds
     /// FOURTEEN variables and THIRTEEN machine-wide directories is looking at two populations rather than
-    /// at an off-by-one.</para></summary>
+    /// at an off-by-one.</para>
+    ///
+    /// <para>📎 <b>THE PARAGRAPH ABOVE IS RETRACTED, 2026-08-23 (BF-1), verbatim.</b> The literal is
+    /// unchanged and always was derivable — <c>machine-config</c> → <c>ST4I_MACHINE_CONFIG_DIR</c> — but
+    /// there was no such directory for it to be derivable FROM until the owner's 2026-08-23(a) ruling created
+    /// one. There are now SIXTEEN machine-wide directories and SIXTEEN <c>ST4I_*_DIR</c> variables, the
+    /// beside-the-binary variable population is EMPTY, and the two-populations reading this paragraph taught
+    /// is the thing to unlearn. 🔴 The emptiness is asserted rather than assumed, because an empty set
+    /// satisfies every universal claim made about it: <c>PerHostDataRootsTests</c> pins the partition's
+    /// second half at exactly zero members, so a store rejoining that population reddens rather than
+    /// vanishes.</para></summary>
     public const string EnvVarDir = "ST4I_MACHINE_CONFIG_DIR";
 
     private const string FileName = "machine-operating-config.json";
@@ -93,19 +120,40 @@ public sealed class MachineConfigStore
     {
         RootDirectory = ResolveRoot(directory);
         Directory.CreateDirectory(RootDirectory);
+
+        // 🔴 Gated on the resolved root BEING the machine-wide default — see ProductConfigStore's ctor for
+        // why that equality is preferred to a provenance flag. This store's constructor does not otherwise
+        // write, and the copy does not change that for any root but the default one.
+        if (string.Equals(RootDirectory, DefaultRoot(), StringComparison.OrdinalIgnoreCase))
+        {
+            LegacyRootMigration.CopyOnce(LegacyRoot(), RootDirectory, [FileName], "machineconfigstore");
+        }
+
         Load();
     }
 
-    /// <summary>The default machine-config root: <see cref="AppContext.BaseDirectory"/>, i.e. BESIDE THE
-    /// BUILT BINARY — the same convention <see cref="ProductConfigStore"/> uses and the same folder
-    /// <c>FleetConfig.Load</c> reads <c>fleet.json</c> from, so a hand-edit session finds every simulator
-    /// config file in one place.
+    /// <summary>🔴 <b>The machine-config root — <c>%ProgramData%\ST4I\sim\machine-config</c> — as of the
+    /// owner's ruling of 2026-08-23(a).</b>
     ///
-    /// <para><b>Unchanged by H-1c, on purpose.</b> This is NOT
-    /// <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> and H-1c did not make it so — moving a store's default
-    /// relocates live customer data on the next start and is a deployment decision, not a seam. See this
-    /// class's own remarks for what that costs two hosts on one machine.</para></summary>
-    public static string DefaultRoot() => AppContext.BaseDirectory;
+    /// <para><b>What that ruling reversed, kept here rather than deleted because the reasoning was sound and
+    /// only the decision changed.</b> H-1c added this store's seam and deliberately did NOT move the default,
+    /// on the ground that moving it relocates live customer data on the next start and is a deployment
+    /// decision rather than a seam. That reading was correct; the owner took the deployment decision on
+    /// 2026-08-23, having been told that an existing install stops seeing its data at the old root, and
+    /// <see cref="LegacyRootMigration"/> is the mitigation that came with it — a one-time COPY that deletes
+    /// nothing.</para>
+    ///
+    /// <para><b>And it is why this store stopped being a second-population member.</b> <c>machine-config</c>
+    /// is now a <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> leaf whose relocation variable is derivable from
+    /// its own directory name, so <see cref="EnvVarDir"/> — unchanged since H-1c — is now one of the
+    /// MACHINE-WIDE variables rather than the sole exception to that pairing.</para></summary>
+    public static string DefaultRoot() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "ST4I", "sim", "machine-config");
+
+    /// <summary>The root an install written before the owner's 2026-08-23(a) ruling used —
+    /// <see cref="AppContext.BaseDirectory"/> — and the source of the one-time copy.</summary>
+    public static string LegacyRoot() => AppContext.BaseDirectory;
 
     /// <summary>Resolves the effective machine-config directory: <paramref name="directory"/> if given,
     /// else <see cref="EnvVarDir"/> if set, else <see cref="DefaultRoot"/>. Pure path arithmetic — does

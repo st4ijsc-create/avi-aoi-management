@@ -2042,7 +2042,73 @@ EXPECT_CONFORMANCE=24
 # #pragma, no .editorconfig severity change — and the warning ledger stays at its FOURTEEN rows, unmoved
 # unit for unit; the eight VENDORED rows do not move by one unit.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1204
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 TASK BF-1 (2026-08-23, item 30 EXECUTED on the owner's two rulings of that date) — TOTALS
+# 2849 -> 2852 (+3), EXPECT_EDGECORE 1204 -> 1206 (+2), EXPECT_ENGINEAPI 1408 -> 1409 (+1). Every number
+# below was COUNTED from a runner, not derived from the diff.
+#
+# WHAT SHIPPED: the owner ruled (a) that the three beside-the-binary stores move their default roots to
+# %ProgramData%\ST4I\sim\{products,ecosystem,machine-config}, and (b) that the four operator-authored
+# configuration files are EXEMPT from packaging/remove-data.ps1's purge. Both rulings are dated
+# 2026-08-23 and are recorded as the OWNER's in docs/owner-decisions.md item 30.
+#
+# THE THREE ADDED FACTS, listed rather than counted, each one a witness the deliverable demanded:
+#   LegacyRootMigrationTests
+#       .WithNoEnvironmentOverride_AllThreeStoresResolveUnderProgramData_AtTheirDerivedLeaf   +1
+#           WITNESS (i). With every ST4I_*_DIR cleared, all three stores resolve under
+#           %ProgramData%\ST4I\sim at the leaf their variable name derives from, and NOT beside the
+#           binary. Deliberately a RESOLUTION fact and never a construction fact: constructing any of the
+#           three with no override would create and write the real %ProgramData% root of the machine
+#           running the gate, which is the exact leak TestRunTempRoot exists to prevent.
+#       .CopyOnce_CarriesTheLegacyBytes_LeavesTheOriginalIntact_AndDoesNotRunASecondTime      +1
+#           WITNESS (ii). The one-time carry-over copies the legacy bytes, leaves the ORIGINAL byte- and
+#           timestamp-identical, and a second pass reports carrying nothing and does not overwrite an
+#           edit made at the destination in between.
+#   OperatorConfigSurvivesDecommissioningTests
+#       .TheDecommissioningWipe_DeletesHistorianCredsAndTheAuditLog_AndKEEPSTheFourConfigFiles +1
+#           WITNESS (iii) for ruling (b), and it RUNS packaging/remove-data.ps1 rather than reading it —
+#           a $keptByDesign array the deletion loop happened to iterate would satisfy every text
+#           assertion while deleting the files the ruling protects. Every leaf is redirected into a temp
+#           sandbox through the child process's own environment block, the leaf list is DERIVED from
+#           src/ so a seventeenth store is redirected automatically rather than deleted for real, and
+#           Get-Service is shadowed with a function returning $null so a developer machine with the real
+#           St4iEngineApi service installed cannot have it stopped and deleted by a test run.
+#
+# EXPECT_WARNINGS: RE-MEASURED on a full `dotnet build -t:Rebuild` after this task and UNCHANGED at 219.
+# The ledger stays at FOURTEEN rows, 185 vendored / 34 ours, not one unit moved; the eight VENDORED rows
+# do not move by one unit. NO suppression of any kind was added — no <NoWarn>, no #pragma, no
+# SuppressMessage, no .editorconfig severity change. The new public members on three EdgeCore types all
+# carry XML docs, which is why a project with GenerateDocumentationFile=true absorbed them at zero cost.
+#
+# EXPECT_NEW_DOC_ABSOLUTES: 232 -> 290 (+58), and the delta is ACCOUNTED FOR RATHER THAN ABSORBED. Every
+# one of the 58 lives in a file this task edited, and the accounting closes exactly: 55 across
+# LegacyRootMigration.cs, MachineConfigStore.cs, ProductConfigStore.cs, SimulatedEcosystem.cs,
+# tests/Shared/{OwnOutputDirectoryGuard,TestRunTempRoot}.cs, LegacyRootMigrationTests.cs,
+# OperatorConfigSurvivesDecommissioningTests.cs, PerHostDataRootsTests.cs,
+# OperatorDataRemovalCensusTests.cs and NotificationDocumentationTests.cs, plus 3 in
+# MachineConfigStoreRootResolutionTests.cs. 55 + 3 = 58. Files this task did not touch are byte-identical
+# to the base, so their counts cannot have moved — which is what makes "all of them are mine" a
+# measurement rather than an assumption. Each was READ before this number was written, and the reason
+# the number is large is structural rather than careless: a RETRACTION is a sentence about what is no
+# longer true, and "no longer true" is spelled with the same absolute vocabulary this scanner hunts.
+# The baseline cfcfae42 is NOT moved.
+#
+# 🔴 TWO PUBLISHED CLAIMS OF THIS FILE ARE RETRACTED BY THIS TASK, in place and verbatim:
+#   * the output-directory bracket's exemption block, which required ProductConfigStore.cs and
+#     SimulatedEcosystem.cs to declare NO EnvVarDir. Both declare one now, the exemption is SPENT, and
+#     OUTDIR_EXEMPT is empty — the outcome that block's own text named as the good one.
+#   * two historical ledger entries above name tests that BF-1 renamed. They are left verbatim because
+#     they are records of what an earlier task added, and the renames are:
+#       TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes
+#         -> TheBesideTheBinaryStorePopulation_IsEmpty_AndTheSixteenMachineWideOnesAccountForEveryVariable
+#       OperatorDataRemovalCensusTests.OverANonWritableRoot_TheTwoSeamlessBesideTheBinaryStoresEndTheProcess_AndTheSeamedOneDoesNot
+#         -> OperatorDataRemovalCensusTests.OverANonWritableRoot_TheTwoSeedingStoresEndTheProcess_AndTheReadOnlyConstructorDoesNot
+#       NotificationDocumentationTests.EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript
+#         -> NotificationDocumentationTests.EveryDirectoryTheEngineCreatesUnderProgramData_IsEitherPurged_OrKeptByNameWithAStatedReason
+#     NO TEST WAS DELETED and no assertion was weakened by any of the three renames; the third is the
+#     only one whose SUBJECT narrowed, and that narrowing is owner ruling (b).
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1206
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -3690,7 +3756,7 @@ EXPECT_EDGESERVICE=52
 # SuppressMessage. AX-1 DOES touch web/ (item 34's four i18n strings), so `npm run build` — which is
 # `tsc -b && vite build`, the gate compiles no TypeScript — was run and passed; the two dictionaries are the
 # only web files changed and no web test asserts either string (measured with repo-scan.sh before editing).
-EXPECT_ENGINEAPI=1408
+EXPECT_ENGINEAPI=1409
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -4463,7 +4529,7 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #     reports an excluded-row count; HistorianStatsDto is store-wide and ungated, so it cannot speak about
 #     a particular query either. The universal holds over the enumerated set, and the set is named here
 #     rather than left as "every surface".
-EXPECT_NEW_DOC_ABSOLUTES=232
+EXPECT_NEW_DOC_ABSOLUTES=290
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
@@ -7422,45 +7488,47 @@ fi
 #     THE DIRECTORIES over the window, not "the test processes". A `dotnet build` in another shell, an
 #     IDE writing into bin/, or a developer running the engine out of one of these folders reddens it and
 #     is not a test defect. The C# guard is what attributes; keep both.
-_x1_unseamed_srcs=(
+# 🔴 TASK BF-1 — THE EXEMPTION IS SPENT, AND THIS BLOCK NOW RE-EARNS THE OPPOSITE PROPERTY.
+# The owner ruled on 2026-08-23(a) that all three beside-the-binary stores move their defaults to
+# %ProgramData%\ST4I\sim\{products,ecosystem,machine-config}. Two of the three had no relocation variable,
+# and a moved default WITHOUT one would have taken every suite's writes out of THIS watched directory and
+# into a real install that nothing watches -- strictly worse than the leak it replaced. So both grew a seam,
+# tests/Shared/TestRunTempRoot.cs sets all three variables, and OUTDIR_EXEMPT is now EMPTY: nothing under
+# these five directories is excused any more. The paragraphs above are kept verbatim and RETRACTED here
+# rather than rewritten, because their reasoning was correct and only their subject moved -- and the last
+# of them asked for exactly this outcome ("the exemption existed only because the store could not be
+# moved"). What is checked on every run is now the reverse of what was checked before: each of the three
+# sources must still DECLARE a seam, and must still declare a persisted filename so that pointing this list
+# at an unrelated file fails loudly instead of vouching for it.
+_bf1_seamed_srcs=(
   "src/St4i.EdgeCore/Config/ProductConfigStore.cs"
   "src/St4i.EngineApi/Config/SimulatedEcosystem.cs"
+  "src/St4i.EdgeCore/Config/MachineConfigStore.cs"
 )
-_x1_seamed_src="src/St4i.EdgeCore/Config/MachineConfigStore.cs"
 OUTDIR_EXEMPT=()
-for _src in "${_x1_unseamed_srcs[@]}"; do
+for _src in "${_bf1_seamed_srcs[@]}"; do
   if [[ ! -f "$_src" ]]; then
-    echo "FAIL: could not read \"$_src\" to derive which files an UNSEAMED beside-the-binary store persists."
-    echo "  Do NOT restate the filenames here -- a restated list outlives the reason it was written, which"
-    echo "  is the defect this derivation exists to prevent. Point this at the store's new home, or delete"
-    echo "  the exemption if the store is gone."
+    echo "FAIL: could not read \"$_src\" to re-check that a relocatable store still declares its seam."
+    echo "  Do NOT delete the entry to make this green -- that silently restores an exemption this"
+    echo "  repository has already spent. Point this at the store's new home, or remove it here AND from"
+    echo "  tests/Shared/TestRunTempRoot.cs if the store is gone."
     exit 1
   fi
-  if grep -q 'EnvVarDir' "$_src"; then
-    echo "FAIL: \"$_src\" now declares a relocation seam (EnvVarDir), so it is NO LONGER an unseamed store"
-    echo "  and must not be exempt from this bracket. Set that variable in tests/Shared/TestRunTempRoot.cs"
-    echo "  beside ST4I_CREDS_DIR and ST4I_MACHINE_CONFIG_DIR, then remove this source from the list above."
-    echo "  This is the GOOD outcome: the exemption existed only because the store could not be moved."
+  if ! grep -q 'EnvVarDir' "$_src"; then
+    echo "FAIL: \"$_src\" no longer declares a relocation seam (EnvVarDir)."
+    echo "  tests/Shared/TestRunTempRoot.cs redirects that store away from these directories through"
+    echo "  exactly that variable, so without it the store writes into every suite's own output directory"
+    echo "  again -- and into a REAL %ProgramData% install wherever the redirect is absent. Restore the"
+    echo "  seam; do NOT re-add an exemption here."
     exit 1
   fi
-  mapfile -t _x1_names < <(
-    grep -oE 'const[[:space:]]+string[[:space:]]+[A-Za-z0-9_]*FileName[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"[^"]+\.json"' "$_src" \
-      | grep -oE '"[^"]+\.json"' | tr -d '"')
-  if [[ ${#_x1_names[@]} -eq 0 ]]; then
-    echo "FAIL: found no persisted-filename constant in \"$_src\", so this bracket cannot tell which of that"
-    echo "  store's files to exempt. A scan that stops matching must fail loudly rather than exempt nothing"
-    echo "  and report that store's every write as an unexplained one."
+  if ! grep -qE 'const[[:space:]]+string[[:space:]]+[A-Za-z0-9_]*FileName[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"[^"]+\.json"' "$_src"; then
+    echo "FAIL: found no persisted-filename constant in \"$_src\", so this bracket cannot confirm the file"
+    echo "  it just read is the store it believes it is. A scan that stops matching must fail loudly rather"
+    echo "  than vouch for a file it did not recognise."
     exit 1
   fi
-  OUTDIR_EXEMPT+=("${_x1_names[@]}")
 done
-if [[ ! -f "$_x1_seamed_src" ]] || ! grep -q 'EnvVarDir' "$_x1_seamed_src"; then
-  echo "FAIL: \"$_x1_seamed_src\" no longer declares an EnvVarDir seam. TestRunTempRoot's"
-  echo "  ST4I_MACHINE_CONFIG_DIR redirect depends on it, so without it that store is writing into these"
-  echo "  directories again and the exemption above is describing a population that has changed shape."
-  echo "  Re-derive the whole arrangement rather than widening the exemption."
-  exit 1
-fi
 
 # The five directories, derived from SUITES rather than listed -- a sixth suite is bracketed the day it is
 # added. `bin/Debug/*` because the target framework differs across them (net10.0 vs net10.0-windows) and
@@ -7489,7 +7557,7 @@ outdir_snapshot() {
   while IFS= read -r d; do
     find "$d" -type f -printf '%p\t%s\t%T@\n' || return 1
   done < <(outdir_list) \
-    | awk -F'\t' -v ex="$(IFS='|'; printf '%s' "${OUTDIR_EXEMPT[*]}")" '
+    | awk -F'\t' -v ex="$(IFS='|'; printf '%s' "${OUTDIR_EXEMPT[*]-}")" '
         BEGIN { n = split(ex, a, "|"); for (i = 1; i <= n; i++) e[a[i]] = 1 }
         { p = $1; sub(/^.*\//, "", p); if (!(p in e)) print }' \
     | LC_ALL=C sort
@@ -7524,7 +7592,9 @@ fi
 # 🔴 THE CAVEAT TRAVELS WITH THE GREEN TOO (review Minor 2). The failure text below carries the window
 # caveat; this line is what a reader meets when everything passes, and a green OwnOutputDirectoryGuardTests
 # is the single most misreadable output this change produces. Say what green does NOT mean, here.
-note "suite output directories under watch: ${#SUITES[@]} ($(grep -c . < "$OUTDIR_BEFORE" || true) files at start, exempt: ${OUTDIR_EXEMPT[*]})"
+# 🔴 BF-1 — "exempt: none" is printed as WORDS rather than as an empty tail, because a trailing
+# "exempt: " reads to a human, and to a grep, exactly like a line that got truncated.
+note "suite output directories under watch: ${#SUITES[@]} ($(grep -c . < "$OUTDIR_BEFORE" || true) files at start, exempt: ${OUTDIR_EXEMPT[*]:-none (spent by BF-1: all three stores now seamed and redirected)})"
 note "  green here means NOTHING WAS LEFT BEHIND -- never that nothing was READ; a residue file loaded at"
 note "  startup and not written back is invisible to both halves of this instrument."
 

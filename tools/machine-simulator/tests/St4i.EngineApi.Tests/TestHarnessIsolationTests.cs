@@ -55,6 +55,23 @@ namespace St4i.EngineApi.Tests;
 /// the right response was to isolate it — not to narrow this scan to the machine-wide half, which would
 /// have traded a real isolation guarantee for a tidier number.</para>
 ///
+/// <para>🔴 <b>TASK BF-1 (2026-08-23) — THIS FILE'S ASSERTIONS DID NOT HAVE TO MOVE, AND THAT IS THE
+/// FINDING, NOT A LUCKY ESCAPE.</b> The owner moved all three beside-the-binary stores under
+/// <c>%ProgramData%\ST4I\sim\{products,ecosystem,machine-config}</c>, which added TWO new
+/// <c>ST4I_*_DIR</c> literals to <c>src/</c>. This test went red, <c>web/playwright.config.ts</c> gained
+/// the two entries, and it went green again — <b>with not one character of this file changed.</b> That is
+/// exactly what "does not hold a list" was built to buy, and BF-1's own brief carried a hand-written list
+/// of sixteen artefacts that would have to move together, on which this file was the sixteenth. It did
+/// not have to move. The list was right about fifteen.
+///
+/// <para>What DID rot here is PROSE, and it is retracted in place rather than edited: the paragraph above
+/// says <c>PerHostDataRootsTests</c> "partitions the <c>ST4I_*_DIR</c> set into the THIRTEEN machine-wide
+/// directories ... and the beside-the-binary stores (<c>ST4I_MACHINE_CONFIG_DIR</c> today)". <b>There are
+/// SIXTEEN machine-wide directories now and the beside-the-binary half is EMPTY</b>, pinned at exactly
+/// zero. The partition still exists and this test is still population-blind on purpose; the floor of 13 is
+/// still a non-vacuity floor on the SCAN rather than a census, which is why it did not have to move
+/// either.</para></para>
+///
 /// <para>This is the isolation counterpart to
 /// <c>NotificationDocumentationTests.EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript</c>,
 /// which derives the same set for the DECOMMISSIONING side. The two failure modes are different — a store

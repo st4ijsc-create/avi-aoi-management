@@ -84,23 +84,40 @@ public sealed class MachineConfigStoreRootResolutionTests : IDisposable
     /// moving it would relocate live customer data on the next start, which is a deployment decision. This
     /// asserts the property that makes the store a second-population member — its default is beside the
     /// running binary and is NOT under <c>%ProgramData%</c> — rather than the literal path, so a legitimate
-    /// change of base directory does not make it red for the wrong reason.</summary>
+    /// change of base directory does not make it red for the wrong reason.
+    ///
+    /// <para>📎 <b>THE PARAGRAPH ABOVE IS RETRACTED, 2026-08-23 (BF-1), verbatim, and the test it describes
+    /// is INVERTED below.</b> It was never wrong: it named the change as a DEPLOYMENT DECISION and refused
+    /// to make it, and its failure message listed, correctly and in order, every artefact such a decision
+    /// would have to move. The owner took that decision on 2026-08-23(a), having been told what it costs an
+    /// existing install, and the work list this message spelled out is what BF-1 carried out — a
+    /// <c>%ProgramData%\ST4I\sim\machine-config</c> constant, a derivable variable name (unchanged, because
+    /// it always was derivable from that leaf), a README §15.9 row, a <c>-MachineConfigDir</c> parameter,
+    /// and the count in every artefact that spells it.</para>
+    ///
+    /// <para>🔴 <b>What the inversion must keep, and it is the half that is easy to lose.</b> The old test's
+    /// real subject was <i>"nothing migrates it, so the next start silently reads an empty store"</i>. That
+    /// hazard did not disappear with the ruling; it was PAID FOR, by
+    /// <c>LegacyRootMigration</c>. So the direction is asserted here and the payment is asserted in
+    /// <c>MachineConfigStoreLegacyMigrationTests</c> — separately, because a green here would otherwise read
+    /// as though the move had been free.</para></summary>
     [Fact]
-    public void DefaultRoot_IsBesideTheBinary_AndIsNotUnderProgramData()
+    public void DefaultRoot_IsUnderProgramData_AndIsNoLongerBesideTheBinary()
     {
-        Assert.Equal(AppContext.BaseDirectory, MachineConfigStore.DefaultRoot());
-
         var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-        Assert.False(
-            MachineConfigStore.DefaultRoot().StartsWith(
-                Path.Combine(programData, "ST4I"), StringComparison.OrdinalIgnoreCase),
-            "MachineConfigStore's default root moved under %ProgramData%\\ST4I. That is a DEPLOYMENT " +
-            "change, not a seam: every existing install keeps its machine-operating-config.json beside " +
-            "the binary and nothing migrates it, so the next start silently reads an empty store. If it " +
-            "is genuinely wanted, it needs its own %ProgramData%\\ST4I\\sim\\<name> directory constant, a " +
-            "derivable variable name, a row in README §15.9's table, a -XxxDir parameter in " +
-            "packaging/remove-data.ps1 and the count in every artefact that spells it — i.e. it joins the " +
-            "FIRST population, and every guard in PerHostDataRootsTests then applies to it.");
+        Assert.Equal(
+            Path.Combine(programData, "ST4I", "sim", "machine-config"), MachineConfigStore.DefaultRoot());
+
+        // The other direction, because "starts with %ProgramData%\ST4I" alone would still be satisfied by a
+        // root that ALSO happened to be the base directory on some exotic layout.
+        Assert.NotEqual(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(AppContext.BaseDirectory)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(MachineConfigStore.DefaultRoot())));
+
+        // 🔴 And the pre-BF-1 root is still REACHABLE, because that is what the one-time copy reads. A
+        // "tidy-up" that deletes LegacyRoot() silently ends migration for every install that has not yet
+        // started once under the new default — which is a data-loss path, not a cleanup.
+        Assert.Equal(AppContext.BaseDirectory, MachineConfigStore.LegacyRoot());
     }
 
     /// <summary>🔴 The end-to-end arm: the resolved value is HONOURED all the way to a file. Constructs the

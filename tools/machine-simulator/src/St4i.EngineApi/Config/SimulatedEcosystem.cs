@@ -44,21 +44,68 @@ public sealed class SimulatedEcosystem : IConfigSyncBackend
     private readonly Dictionary<string, ProductModel> _products = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Recipe> _recipes = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>🔴 <b>Task BF-1 — the relocation seam this store did not have, added because the owner moved
+    /// its default (ruling 2026-08-23(a)).</b> Same <c>explicit &gt; env &gt; default</c> contract as every
+    /// other store's, and the name is DERIVABLE from the directory (<c>ecosystem</c> →
+    /// <c>ST4I_ECOSYSTEM_DIR</c>), which is the rule README §15.9 states to an operator.
+    ///
+    /// <para>Declaring it spends the output-directory exemption that
+    /// <c>tests/Shared/OwnOutputDirectoryGuard.cs</c> and <c>scripts/verify-suites.sh</c> both derived from
+    /// its absence — the outcome both of those instruments name as the good one.</para></summary>
+    public const string EnvVarDir = "ST4I_ECOSYSTEM_DIR";
+
+    /// <summary>Directory holding <c>ecosystem-products.json</c>/<c>ecosystem-recipes.json</c>.</summary>
     public string RootDirectory { get; }
 
+    /// <summary>Backend name shown in config-sync surfaces.</summary>
     public string Name => "Demo";
 
-    /// <param name="directory">Where ecosystem-products.json/ecosystem-recipes.json live. Defaults to
-    /// an "ecosystem" subfolder beside the engine's other config files — deliberately NOT the same
-    /// directory/filenames <see cref="ProductConfigStore"/> uses, so the two stores can never collide on
-    /// disk even though they usually run side by side in the same process. Tests pass a temp
+    /// <summary>🔴 The machine-wide default root — <c>%ProgramData%\ST4I\sim\ecosystem</c> — as of the owner's
+    /// ruling of 2026-08-23(a). Before it, an <c>ecosystem</c> subfolder of
+    /// <see cref="AppContext.BaseDirectory"/>; this store called <see cref="Directory.CreateDirectory"/> on
+    /// that subfolder in its constructor, so on a read-only install directory it was the store that died
+    /// FIRST, one step before any file was touched.</summary>
+    /// <returns>The <c>%ProgramData%</c> directory this store defaults to.</returns>
+    public static string DefaultRoot() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ST4I", "sim", "ecosystem");
+
+    /// <summary>The root an install written before the owner's 2026-08-23(a) ruling used, and the source of
+    /// the one-time copy. Not relocatable by any environment variable, which is why
+    /// <see cref="LegacyRootMigration"/> is gated by its caller.</summary>
+    /// <returns>The pre-BF-1 beside-the-binary <c>ecosystem</c> subfolder.</returns>
+    public static string LegacyRoot() => Path.Combine(AppContext.BaseDirectory, "ecosystem");
+
+    /// <summary>Resolves the effective ecosystem directory: <paramref name="directory"/> if given, else
+    /// <see cref="EnvVarDir"/> if set, else <see cref="DefaultRoot"/>. Pure path arithmetic — creates
+    /// nothing.</summary>
+    /// <param name="directory">Explicit override, or <see langword="null"/> to consult the environment.</param>
+    /// <returns>The directory this store will read and write.</returns>
+    public static string ResolveRoot(string? directory = null)
+    {
+        if (!string.IsNullOrWhiteSpace(directory)) return directory;
+        var env = Environment.GetEnvironmentVariable(EnvVarDir);
+        return string.IsNullOrWhiteSpace(env) ? DefaultRoot() : env;
+    }
+
+    /// <param name="directory">Where ecosystem-products.json/ecosystem-recipes.json live, or
+    /// <see langword="null"/> to resolve via <see cref="ResolveRoot"/>. The default is deliberately NOT the
+    /// same directory or filenames <see cref="ProductConfigStore"/> uses, so the two stores can never collide
+    /// on disk even though they usually run side by side in the same process. Tests pass a temp
     /// directory.</param>
     public SimulatedEcosystem(string? directory = null)
     {
-        RootDirectory = string.IsNullOrWhiteSpace(directory)
-            ? Path.Combine(AppContext.BaseDirectory, "ecosystem")
-            : directory;
+        RootDirectory = ResolveRoot(directory);
         Directory.CreateDirectory(RootDirectory);
+
+        // 🔴 Gated on the resolved root BEING the machine-wide default — see ProductConfigStore's ctor for
+        // why that equality is preferred to a provenance flag, and LegacyRootMigration for the build-residue
+        // trap the gate exists to close.
+        if (string.Equals(RootDirectory, DefaultRoot(), StringComparison.OrdinalIgnoreCase))
+        {
+            LegacyRootMigration.CopyOnce(
+                LegacyRoot(), RootDirectory, [ProductsFileName, RecipesFileName], "simulatedecosystem");
+        }
+
         Load();
     }
 
