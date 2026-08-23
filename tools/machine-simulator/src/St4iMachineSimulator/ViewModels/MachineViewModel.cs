@@ -237,12 +237,20 @@ public sealed partial class MachineViewModel : ObservableObject
             PassRate = _judgedCount == 0 ? 0.0 : (double)_passCount / _judgedCount;
         }
 
+        // 🔴 BI-1 (2026-08-23, docs/owner-decisions.md item 55, COORDINATOR RULING UNDER DELEGATION) — the
+        // WPF twin of St4i.EdgeCore.Fleet.MachineState's identical switch, changed identically and for the
+        // same reasons; that one carries the full argument, this one carries the pointer so the two cannot
+        // drift again. THE FOUR IN-DOMAIN ANSWERS ARE BYTE-IDENTICAL: Pass fell through the old `_` to "OK"
+        // and still reads "OK". Only the arm nothing in this tree can reach changed, from a silent "OK" to
+        // a named "UNKNOWN". This one binds straight into DashboardView.xaml rather than through
+        // FleetProjections, so its unmapped value is shown verbatim in the shell.
         StatusText = reading.Verdict switch
         {
             Verdict.Fail => "FAIL",
             Verdict.Warn => "WARN",
             Verdict.Skip => "TELEMETRY",
-            _ => "OK",
+            Verdict.Pass => "OK",
+            _ => "UNKNOWN",
         };
 
         LastCycleSummary = BuildSummary(reading, ack);

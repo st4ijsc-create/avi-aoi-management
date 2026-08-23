@@ -246,14 +246,31 @@ public static class Normalizer
             return "OK";
         }
 
+        // 🔴 BI-1 (2026-08-23, docs/owner-decisions.md item 55, COORDINATOR RULING UNDER DELEGATION) — this
+        // switch and VerdictToResult immediately below sit in ONE FILE and used to answer DIFFERENTLY about
+        // the SAME out-of-domain value: "OK" here (the good bucket) against "skip" there (the not-counted
+        // bucket), on two exits of the same envelope. They now agree, and they agree on the NOT-COUNTED
+        // side, which is also what Doc28Writer.MapVerdict's own discard already answered.
+        //
+        // THE THREE IN-DOMAIN ANSWERS ARE BYTE-IDENTICAL TO BEFORE: Pass and Warn fell through the old `_`
+        // to "OK" and are now spelled out to "OK". Only the arm nothing in this tree can reach moved, from
+        // "OK" to "NTF". The contract on this method is OK|NG|NTF, so "UNKNOWN" is not available here the
+        // way it is on MachineState.StatusText; NTF is the token this format already uses for "flagged,
+        // not judged a true defect", i.e. the bucket that neither claims a pass nor invents a failure.
         return r.Verdict switch
         {
             Verdict.Fail => "NG",
             Verdict.Skip => "NTF",
-            _ => "OK", // Pass, Warn
+            Verdict.Pass or Verdict.Warn => "OK",
+            _ => "NTF",
         };
     }
 
+    /// <summary>The sibling of <see cref="ComputeOverallResult"/> on the other exit of the same envelope.
+    /// Its discard arm was ALREADY on the not-counted side and is unchanged by BI-1 — see
+    /// <see cref="ComputeOverallResult"/> for the disagreement that was resolved by moving the OTHER one.
+    /// All four members are enumerated, so the discard is reachable only by a value no path in this tree
+    /// produces (measured at 44383e23).</summary>
     private static string VerdictToResult(Verdict v) => v switch
     {
         Verdict.Pass => "pass",

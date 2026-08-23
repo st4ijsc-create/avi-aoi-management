@@ -145,9 +145,16 @@ public static class ConnectorsJsonRegistration
             // TargetId — for no gain this task needs. Promoting entry.Id to a real instance id (which is
             // what would let connectors.json express two RTU connectors on one bus) is a file-format change
             // with no migration behind it, and belongs with D-7's configuration work.
+            // 🔴 BI-1 (2026-08-23, docs/owner-decisions.md item 50 defect 3) — the cadence sink. A
+            // connectors.json entry whose pollIntervalMs/readTimeoutMs/retries is out of domain is parsed,
+            // warned about, and silently defaulted; before this line the warning had nowhere to go on this
+            // path. This caller already owns an ILogger an operator reads, so it passes one.
             ConnectorConfigValidation.TryValidate(
                 entry.Kind, modbusOptions.Host, modbusOptions.Port, entry.SettingsJson, opcUaOptions.PkiDir,
-                out var entryValidated, out _);
+                out var entryValidated, out _,
+                logWarning: msg => logger.LogWarning(
+                    "connectors.json entry '{ConnectorId}' (kind '{ConnectorKind}'): {MapWarning}",
+                    entry.Id, entry.Kind, msg));
 
             if (!registry.Register(factory, entry.SettingsJson, machineCode: entryValidated?.MachineCode))
             {

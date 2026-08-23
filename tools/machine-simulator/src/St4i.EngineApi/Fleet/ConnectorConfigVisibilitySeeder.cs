@@ -132,7 +132,12 @@ public static class ConnectorConfigVisibilitySeeder
                 return;
             }
 
-            if (!ConnectorConfigValidation.TryValidate(kind, host, port, mapJson, pkiDir, out var validated, out var error))
+            // 🔴 BI-1 (2026-08-23, docs/owner-decisions.md item 50 defect 3) — the cadence sink, routed
+            // into this seeder's own existing logWarning delegate. Same map, same parse, same operator:
+            // a tolerated out-of-domain cadence now says so here instead of being dropped.
+            if (!ConnectorConfigValidation.TryValidate(
+                    kind, host, port, mapJson, pkiDir, out var validated, out var error,
+                    logWarning: msg => logWarning?.Invoke($"Connector kind '{kind}': {msg}")))
             {
                 logWarning?.Invoke(
                     $"Could not seed connector-configuration visibility for kind '{kind}' — the map that " +

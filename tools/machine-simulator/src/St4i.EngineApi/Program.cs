@@ -1162,7 +1162,13 @@ if (opcUaOptions.Enabled)
         }
 
         var mapJson = File.ReadAllText(opcUaOptions.MapPath);
-        opcUaMap = St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap.FromJson(mapJson);
+        // 🔴 BI-1 (2026-08-23, docs/owner-decisions.md item 50 defect 3) — this call used to omit the sink
+        // its Modbus twin thirty lines up has always passed, so a tolerated (non-fatal) pollIntervalMs
+        // fallback on the OPC-UA map fell on the floor while the identical fallback on the Modbus map
+        // printed a startup line. Same sink, same prefix, same reason: a value the operator declared and
+        // the parser ignored must be visible even though nothing crashed.
+        opcUaMap = St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap.FromJson(mapJson, logWarning: msg =>
+            Console.Error.WriteLine($"[startup] {msg}"));
         opcUaMapJson = mapJson;
     }
     catch (Exception ex)

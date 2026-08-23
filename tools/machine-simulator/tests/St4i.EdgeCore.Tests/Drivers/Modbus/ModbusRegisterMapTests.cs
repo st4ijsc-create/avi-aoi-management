@@ -1098,4 +1098,98 @@ public class ModbusRegisterMapTests
 
         Assert.Contains("registers", ex.Message, StringComparison.Ordinal);
     }
+
+    // ══ docs/owner-decisions.md item 50 — BI-1, 2026-08-23, coordinator ruling under delegation ═══════
+    //
+    // 🔴 THE TWO [Fact]s BELOW ARE WITNESSES, NOT GUARDS: both were measured RED on the pre-fix tree at
+    // 44383e23 and green after, and the pair was re-run with the fix reverted to confirm the red comes
+    // from the product and not from the test.
+    //
+    // WHAT THEY DO NOT MEASURE, stated here because that is where the result is read: neither says
+    // anything about OPC-UA. OpcUaNodeMap has no [JsonIgnore] field and no EffectiveReadTimeoutMs, so
+    // neither defect has a twin there — checked over that file rather than assumed.
+
+    /// <summary>Item 50 defect 1 — <c>readTimeoutMs</c>/<c>retries</c> are the only two fields on this type
+    /// read off the RAW JsonElement instead of through the binder, and the raw probe matched ORDINALLY
+    /// while the binder beside it matches case-INSENSITIVELY. A C#-flavoured spelling of either key used to
+    /// bind to null with ZERO warnings, so the operator lost a declared knob and was told nothing.</summary>
+    [Fact]
+    public void ReadTimeoutMsAndRetries_DeclaredInPascalCase_AreHonouredLikeTheBinderDoes_NotDroppedSilently()
+    {
+        const string json = """
+        { "machineCode": "PLC-PASCAL", "PollIntervalMs": 200, "ReadTimeoutMs": 3000, "Retries": 4,
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        var warnings = new List<string>();
+        var map = ModbusRegisterMap.FromJson(json, logWarning: warnings.Add);
+
+        // The binder already accepted "PollIntervalMs" in this same document — that is the asymmetry the
+        // defect was: two neighbouring cadence knobs, one spelling, two different answers.
+        Assert.Equal(200, map.PollIntervalMs);
+        Assert.Equal(3000, map.ReadTimeoutMs);
+        Assert.Equal(4, map.Retries);
+        Assert.Equal(3000, map.EffectiveReadTimeoutMs);
+        Assert.Equal(4, map.EffectiveRetries);
+        Assert.Empty(warnings);
+    }
+
+    /// <summary>The other bank of the same fix: widening the match must not make the canonical spelling
+    /// lose, and must not make the answer depend on JSON property ORDER. The exact-case probe runs first,
+    /// so the canonical key wins whichever side of the off-case duplicate it is written on.</summary>
+    [Fact]
+    public void ReadTimeoutMs_DeclaredTwiceInTwoCasings_ResolvesToTheExactSpelling_RegardlessOfOrder()
+    {
+        const string offCaseFirst = """
+        { "machineCode": "PLC-DUP-A", "pollIntervalMs": 200, "ReadTimeoutMs": 9000, "readTimeoutMs": 3000,
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+        const string exactFirst = """
+        { "machineCode": "PLC-DUP-B", "pollIntervalMs": 200, "readTimeoutMs": 3000, "ReadTimeoutMs": 9000,
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        Assert.Equal(3000, ModbusRegisterMap.FromJson(offCaseFirst).ReadTimeoutMs);
+        Assert.Equal(3000, ModbusRegisterMap.FromJson(exactFirst).ReadTimeoutMs);
+    }
+
+    /// <summary>Item 50 defect 2 — item 38 closed the PARSE road onto <c>EffectiveReadTimeoutMs</c>'s
+    /// <c>* 4</c>; the OBJECT INITIALIZER road stayed open, and an out-of-domain cadence wrapped to a
+    /// negative product so <c>Math.Max</c> returned the 1000 ms FLOOR. The slowest declarable cadence
+    /// produced the shortest legal timeout. Both banks are asserted: the out-of-domain input, and an
+    /// in-domain one that must NOT have moved.</summary>
+    [Fact]
+    public void EffectiveReadTimeoutMs_FromAnOutOfDomainPollInterval_DerivesFromTheDefault_InsteadOfWrappingToTheFloor()
+    {
+        var register = new ModbusRegister(
+            Address: 0, Type: ModbusRegisterType.Holding, DataType: ModbusDataType.UInt16,
+            Scale: 1.0, Metric: "m");
+
+        var overflowing = new ModbusRegisterMap
+        {
+            MachineCode = "PLC-OVERFLOW",
+            PollIntervalMs = int.MaxValue,
+            Registers = new[] { register },
+        };
+
+        // Pre-fix this was 1000 — the wrap made Math.Max pick the floor. Now it derives from the same
+        // DefaultPollIntervalMs the parse road falls back to, which is the rule this type already had.
+        Assert.Equal(ModbusRegisterMap.DefaultPollIntervalMs * 4, overflowing.EffectiveReadTimeoutMs);
+
+        // The bank that must not move: every value the parse road can produce is in [1, MaxPollIntervalMs]
+        // and derives exactly as it always did.
+        var inDomain = new ModbusRegisterMap
+        {
+            MachineCode = "PLC-INDOMAIN",
+            PollIntervalMs = 5000,
+            Registers = new[] { register },
+        };
+        Assert.Equal(20_000, inDomain.EffectiveReadTimeoutMs);
+        Assert.Equal(ModbusRegisterMap.MaxPollIntervalMs * 4, new ModbusRegisterMap
+        {
+            MachineCode = "PLC-MAX",
+            PollIntervalMs = ModbusRegisterMap.MaxPollIntervalMs,
+            Registers = new[] { register },
+        }.EffectiveReadTimeoutMs);
+    }
 }

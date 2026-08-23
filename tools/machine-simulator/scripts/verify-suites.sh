@@ -2108,7 +2108,67 @@ EXPECT_CONFORMANCE=24
 #     NO TEST WAS DELETED and no assertion was weakened by any of the three renames; the third is the
 #     only one whose SUBJECT narrowed, and that narrowing is owner ruling (b).
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1206
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 TASK BI-1 (2026-08-23, docs/owner-decisions.md items 50 and 55 EXECUTED — COORDINATOR RULINGS UNDER
+# DELEGATION, NOT THE OWNER'S) — TOTALS 2852 -> 2857 (+5), EXPECT_EDGECORE 1206 -> 1211 (+5), AND NO
+# OTHER SUITE TOTAL MOVES. EXPECT_ABSTRACTIONS 161, EXPECT_CONFORMANCE 24, EXPECT_EDGESERVICE 52,
+# EXPECT_ENGINEAPI 1409 all unmoved. Every number here was COUNTED from a runner, not derived from a diff.
+#
+# THE FIVE ADDED FACTS, LISTED RATHER THAN COUNTED:
+#   tests/St4i.EdgeCore.Tests/Drivers/Modbus/ModbusRegisterMapTests.cs                              +3
+#     .ReadTimeoutMsAndRetries_DeclaredInPascalCase_AreHonouredLikeTheBinderDoes_NotDroppedSilently
+#         WITNESS, item 50 defect 1. readTimeoutMs/retries are [JsonIgnore]d, so a raw ORDINAL
+#         TryGetProperty was their only source while the binder beside them matches case-INSENSITIVELY;
+#         "ReadTimeoutMs": 3000 bound to null with ZERO warnings. MEASURED RED before the fix.
+#     .ReadTimeoutMs_DeclaredTwiceInTwoCasings_ResolvesToTheExactSpelling_RegardlessOfOrder
+#         🔴 GUARD, NOT A WITNESS — green on BOTH sides of the fix, and labelled so here rather than
+#         counted as evidence. It exists so widening the match cannot make the canonical spelling lose,
+#         and cannot make the answer depend on JSON property order.
+#     .EffectiveReadTimeoutMs_FromAnOutOfDomainPollInterval_DerivesFromTheDefault_InsteadOfWrappingToTheFloor
+#         WITNESS, item 50 defect 2. Item 38 closed the PARSE road; the object-initializer road wrapped
+#         PollIntervalMs * 4 negative so Math.Max returned the 1000 ms FLOOR — the slowest declarable
+#         cadence produced the shortest legal timeout. MEASURED RED before the fix. Both banks asserted:
+#         the out-of-domain input AND two in-domain ones that must not have moved.
+#   tests/St4i.EdgeCore.Tests/VerdictFoldingCensusTests.cs                              (NEW FILE)  +2
+#     .Verdict_has_exactly_the_four_members_the_five_folding_sites_enumerate
+#         WITNESS, item 55. MEASURED RED by adding a fifth Verdict member, running the class, and
+#         reverting — not asserted. It is the only red-able thing item 55 has, because the arms the fix
+#         changed are UNREACHABLE by construction.
+#     .Normalizer_in_domain_verdict_answers_are_unchanged_by_item_55
+#         🔴 GUARD, NOT A WITNESS — green on both sides. It pins the eight in-domain answers that must
+#         not move, which is the whole content of item 55's STOP condition.
+#
+# 🔴 WHAT THE ITEM AUTHORS COUNTED, AND WHAT THE TREE COUNTED — three of their numbers did not survive:
+#   item 55 says FOUR switch defaults on Verdict; enumerated over every *.cs under src/ there are FIVE
+#     (Doc28Writer.MapVerdict is the fifth, named in §55.3 as a "relative" and never counted).
+#   item 50 defect 3 says TWO sink-less production FromJson call sites; there are THREE
+#     (ConnectorConfigValidation.TryValidateModbus, in the very file the item names).
+#   item 49's ⚖️ "coordinator may decide" label is FALSE — two of its three halves change the MQTT
+#     payload, one of them by moving the reported torque 12.0 -> 1.35 Nm, which IS item 41, an
+#     owner-reserved item. Item 49 therefore STOPPED and stays in Part I. No code changed for it.
+#
+# 🔴 EXPECT_WARNINGS STAYS 219, MEASURED ON A FULL `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild`
+# of the solution AFTER every edit: `0 Error(s)`, `219 Warning(s)`. It was measured, not asserted — and
+# the FIRST measurement returned 221. Both were MINE and both were FIXED AT SOURCE, not re-baselined:
+# two CS1570 from one badly-formed XML doc comment (a <para> I opened in ModbusRegisterMap's
+# EffectiveReadTimeoutMs summary and never closed, so </summary> matched the wrong start tag). This is
+# the SECOND consecutive task to add a CS1570 by appending a <para> to an existing summary, which is
+# worth saying out loud: the shape is not a slip, it is what this file's doc-comment style invites.
+# The ledger stays at FOURTEEN rows, 185 vendored / 34 ours, not one unit moved; the eight VENDORED rows
+# do not move by one unit. EXPECT_BUILD_NODES stays 0. NO suppression of any kind was added — no
+# <NoWarn>, no #pragma, no SuppressMessage, no .editorconfig severity change.
+#
+# EXPECT_NEW_DOC_ABSOLUTES: 290 -> 310 (+20), and the delta is ACCOUNTED FOR RATHER THAN ABSORBED. Every
+# one of the 20 lives in a file this task edited — ModbusRegisterMap.cs, Normalizer.cs, MachineState.cs,
+# MachineViewModel.cs, Doc28Writer.cs, HotFolderAoiDriver.cs, ConnectorConfigValidation.cs,
+# ConnectorsJsonRegistration.cs, ConnectorConfigVisibilitySeeder.cs, Program.cs, and the two test files
+# above. Files this task did not touch are byte-identical to the base, so their counts cannot have
+# moved, which is what makes "all of them are mine" a measurement rather than an assumption. The reason
+# the number is not smaller is structural and the same one BF-1 named: a sentence recording that a count
+# did NOT survive re-measurement is spelled with exactly the absolute vocabulary this scanner hunts.
+# The baseline cfcfae42 is NOT moved.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1211
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4529,7 +4589,7 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #     reports an excluded-row count; HistorianStatsDto is store-wide and ungated, so it cannot speak about
 #     a particular query either. The universal holds over the enumerated set, and the set is named here
 #     rather than left as "every surface".
-EXPECT_NEW_DOC_ABSOLUTES=290
+EXPECT_NEW_DOC_ABSOLUTES=310
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

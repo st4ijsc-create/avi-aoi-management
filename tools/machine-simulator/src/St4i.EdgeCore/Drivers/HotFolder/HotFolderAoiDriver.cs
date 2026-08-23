@@ -27,6 +27,33 @@ namespace St4i.EdgeCore.Drivers.HotFolder;
 /// signal); the periodic re-scan is what a test (or production) can always rely on, even if the
 /// watcher fails to start (e.g. a network share) or misses an event.</item>
 /// </list>
+///
+/// <para>🔴 <b>THE <see cref="IDeviceDriver.Health"/> EXEMPTION, CLAIMED HERE BECAUSE THE CONTRACT SAYS IT
+/// MUST BE CLAIMED IN THE CLASS DOC AND UNTIL 2026-08-23 IT WAS NOT</b> — <c>docs/owner-decisions.md</c>
+/// item 48, defect 5, ruled by BI-1 under the coordinator's delegation. <see cref="IDeviceDriver.Health"/>
+/// forbids reporting <see cref="DriverHealthState.Connected"/> while no external device is reachable,
+/// exempts "a driver with no external device at all", and states that <b>claiming that exemption without
+/// documenting it is itself a conformance violation</b>. This driver was claiming it in behaviour, and
+/// only <c>HotFolderAoiDriverConformanceTests</c> — which says in its own words that it is judging BY
+/// ANALOGY — said so on its behalf. That is the defect: the class the contract asks was silent.
+///
+/// <para><b>The claim is made in the narrow form the measurement supports, not the wide one.</b> This
+/// driver has no socket, no session and no handshake: it reads a directory. <see cref="Health"/> takes
+/// exactly two values over an instance's life — <see cref="DriverHealthState.Connected"/> from the moment
+/// the constructor returns and <see cref="DriverHealthState.Down"/> from the moment
+/// <see cref="DisposeAsync"/> runs — and <see cref="DriverHealthState.Degraded"/> is never assigned
+/// anywhere in this class.
+///
+/// <para>🔴 <b>AND THE CLAIM IS QUALIFIED RATHER THAN ASSERTED FLAT, because the honest reading is that it
+/// does not obviously hold.</b> A watch directory on a network share IS an external dependency by any
+/// operator's reading of the word, and this member keeps reporting Connected in three states a reader
+/// would not call connected — the watch directory deleted after construction, watcher creation having
+/// failed, and the watcher losing events afterwards. Those three are enumerated with their mechanisms at
+/// <see cref="Health"/>'s own declaration and are NOT retracted by this paragraph. So what is written down
+/// here is the exemption this driver relies on TODAY plus the reason it is uncomfortable, which is what the
+/// contract asked for and is strictly more than the silence it replaces. Narrowing the exemption — or
+/// giving this driver a real Degraded state — is a behaviour change and is one of the four defects item 48
+/// records as NOT taken.</para></para></para>
 /// </summary>
 public sealed class HotFolderAoiDriver : IDeviceDriver
 {
