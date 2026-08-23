@@ -163,9 +163,26 @@ public static class FleetConfig
                         ? DriverKinds.Simulated
                         : DriverKinds.Normalize(descriptor.DriverKind);
                     machines.Add(descriptor with { DriverKind = driverKind });
+
+                    // 🔴 OWNER'S RULING 2026-08-23, item 41 — the ONE place all three hosts already pass a
+                    // warning sink through (FleetCore's _logWarning, EdgeWorker's ILogger, FleetService's
+                    // Debug.WriteLine), which is why the undeclared notice is emitted HERE rather than from
+                    // the simulator, which has no sink at all. It states BOTH candidate outcomes and picks
+                    // neither: an undeclared screwdriver keeps exactly the behaviour it had, and the reader
+                    // is told that behaviour depends on the host. See ScrewTorqueSpec.DescribeUndeclared.
+                    if (descriptor.ScrewTorque is null && IsScrewdriveType(descriptor.MachineType))
+                    {
+                        logWarning?.Invoke($"{ScrewTorqueSpec.DescribeUndeclared(descriptor.Code)} (path: {path})");
+                    }
                 }
-                catch (Exception e) when (e is JsonException or NotSupportedException or FormatException)
+                catch (Exception e) when (e is JsonException or NotSupportedException or FormatException or ArgumentException)
                 {
+                    // ArgumentException was added by BL-1 (2026-08-23, item 41) and it is NOT a widening of
+                    // what this loader tolerates in spirit — ScrewTorqueSpec validates its own band in its
+                    // constructor (ArgumentOutOfRangeException derives from ArgumentException), so without
+                    // this clause ONE out-of-range torqueTarget in ONE entry would have escaped the
+                    // per-entry guard and destroyed the whole roster: exactly the "one operator typo
+                    // destroys the whole fleet" bug GP-3 closed for deviceClass.
                     logWarning?.Invoke($"fleet.json entry #{index}{DescribeCode(element)} is malformed and was skipped: {e.Message} (path: {path})");
                 }
             }
@@ -192,6 +209,19 @@ public static class FleetConfig
             throw new FleetConfigException(path, $"Failed to load fleet config: {e.Message}", e);
         }
     }
+
+    /// <summary>🔴 Item 41 — the machine types this loader warns about when
+    /// <see cref="MachineDescriptor.ScrewTorque"/> is absent, and it is deliberately NARROWER than "every
+    /// machine that ends up as a <c>ScrewdriveSim</c>". <c>SimulatorFactory</c>'s device-class fallback
+    /// also builds that class for any unrecognised type on an <c>Automation</c> machine; counting those
+    /// here would have made this warning fire for a typo'd <c>machineType</c>, which is item 49's subject
+    /// and is not settled. So this reads the ONE declared type, matched the way
+    /// <c>SimulatorFactory.Create</c>'s own switch matches it — trimmed and upper-invariant — and says so
+    /// rather than leaving the gap for a reader to find.</summary>
+    /// <param name="machineType">The descriptor's raw <c>machineType</c>, null included.</param>
+    /// <returns>True only for the literal <c>SCREWDRIVE</c> type, any casing, any surrounding space.</returns>
+    private static bool IsScrewdriveType(string? machineType) =>
+        string.Equals((machineType ?? string.Empty).Trim(), "SCREWDRIVE", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Best-effort label for a per-entry warning: the entry's own <c>code</c> field if it's
     /// readable (the common case — most malformed entries still have an intact <c>code</c>, since the

@@ -70,6 +70,21 @@ Mỗi tham số khai báo: khóa, nhãn vi/en, đơn vị, kiểu, **min/max (ch
 
 **Chặn cứng min/max là bắt buộc**, không phải trang trí: đây là giao diện vận hành máy công nghiệp, không được để nhập mô-men ngoài dải an toàn. Server đã có `parameter_guardrails` — dải tại máy phải nằm trong dải đó.
 
+> 🔴 **HAI HÀNG TRONG BẢNG TRÊN KHÔNG BỊ XOÁ MỘT CHỮ, VÀ MỘT LỜI KHAI ĐƯỢC THÊM VÀO — 2026-08-23
+> (BL-1, mục 42).** `dispense_program` và `weld_profile` **được khai đủ, kiểm miền cứng khi ghi, lưu đĩa và
+> phục vụ qua `GET /v1/machines/{code}/settings` — và KHÔNG bộ mô phỏng nào đọc chúng.**
+> `SimulatorFactory.Create` dựng `new DispensingSim(d, seed)` và `new WelderSim(d, seed)`, **hai constructor
+> duy nhất trong họ không nhận `MachineConfigStore`**, nên `ResolveEffectiveConfig` trả null suốt đời hai
+> instance ấy. Bảng này nói **vựng từ nào được phục vụ**, nó **không** nói **giá trị có tác dụng**; hai câu
+> ấy khác nhau và trước hôm nay không chỗ nào phân biệt. Trường máy đọc:
+> `MachineParameterSchema.IsConsumedBySimulator`, ghim bằng
+> `UnconsumedConfigKindsTests` — bài test ấy **đỏ theo cả hai chiều**, kể cả chiều ai đó nối dây mà quên sửa
+> lời khai.
+>
+> **Và hàng WELDER ở trên nêu *"lực ép, tiền/hậu nhiệt"* trong khi mã khai `tempMax`/`voltage`** — chỗ lệch
+> này **ghi lại, không sửa**: sửa bảng là sửa thiết kế, và mã hay bảng cái nào đúng là một câu hỏi chưa ai
+> phán.
+
 ---
 
 ## 4. Tham số phải THẬT SỰ tác động vào mô phỏng
@@ -82,6 +97,24 @@ Nếu sửa cấu hình mà máy chạy y hệt thì đây chỉ là cái form c
 - `exposureUs` / `lightIntensity` / `matchThreshold` → tỷ lệ lỗi giả của AOI (siết ngưỡng → nhiều NG hơn)
 
 Đây cũng là cách chứng minh cho khách rằng "chỉnh tại máy" là thật.
+
+> 🔴 **CÂU MỞ ĐẦU MỤC NÀY GIỮ NGUYÊN VĂN, PHẠM VI CỦA NÓ ĐƯỢC RÚT — 2026-08-23 (BL-1, mục 42).** Câu
+> *"Cấu hình hiệu lực phải lái bộ mô phỏng"* là một **yêu cầu phổ quát**, còn bốn gạch đầu dòng ngay dưới nó
+> chỉ liệt kê **ba** trong **năm** `configKind` — và **không câu nào nói hai cái còn lại nằm ngoài**. Đọc
+> đúng luật, một danh sách không đầy đủ mà không nêu trần chính là chỗ khuyết tật sống suốt vòng đời tính
+> năng: `weld_profile` và `dispense_program` **chưa bao giờ lái gì cả**, kể từ ngày tính năng ship. Con số
+> đúng hôm nay: **3 kind được tiêu thụ** (`screw_program`, `iot_settings`, `aoi_inspection`), **2 kind
+> KHÔNG** (`weld_profile`, `dispense_program`).
+>
+> 🔴 **Và một cái trần cho chính phép đếm ấy: "kind được tiêu thụ" KHÔNG có nghĩa "mọi khoá của nó tới được
+> một phép vẽ".** Ít nhất một khoá của một kind "được tiêu thụ" thì không: `screw_program.angleTarget` —
+> `ScrewdriveSim` tự khai điều đó trong doc comment của chính nó. Phép đo hôm nay là **khả năng với tới của
+> store**, theo **kind**, không phải theo **khoá**; nói ra ở đây vì đơn vị của một con số là thứ hỏng nhiều
+> nhất trong hồ sơ này.
+>
+> **Câu *"Đây cũng là cách chứng minh cho khách rằng 'chỉnh tại máy' là thật"* vẫn đúng — cho ba kind kia.**
+> Với WELDER và DISPENSING, cái được chứng minh cho khách hôm nay là **một bản ghi đổi**, không phải **một
+> cỗ máy đổi**; `POST .../settings/push` nay **nói đúng điều đó trong `message` của chính nó**.
 
 ---
 

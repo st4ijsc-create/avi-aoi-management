@@ -69,8 +69,8 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 38 | `pollIntervalMs` là trường cadence DUY NHẤT không được kiểm miền, trên **cả hai** bản đồ | 🔴 **CHỜ ANH** — mở 2026-08-22 (AZ-1), đo bởi AY-1 (mục 12 đợt 9), **xác nhận lại trên mã VÀ trên assembly đã dựng**. `ModbusRegisterMap.FromJson` và `OpcUaNodeMap.FromJson` lưu `pollIntervalMs` **y như khai** — đo: `0`, `-1`, `-2`, `-2147483648` đều lưu nguyên — trong khi hai trường kề nó, `readTimeoutMs` và `retries`, đi qua `ParseOptionalPositiveInt`, bị chặn, **có cảnh báo** và rơi về mặc định. Hậu quả đo trên chính runtime này: `Task.Delay(0)` xong trong **0 ms** ⇒ vòng poll **không tiết chế**; `Task.Delay(-1)` **chưa xong sau 750 ms** (`Timeout.Infinite`) ⇒ thiết bị được poll **đúng một lần rồi im**; `Task.Delay(≤ -2)` ném `ArgumentOutOfRangeException`, và cả ba driver bọc lời gọi ấy trong một `try` **chỉ bắt `OperationCanceledException`**, nên nó **thoát ra khỏi iterator**. 🔴 **Và "cả hai driver" của đợt 9 là một phép ĐẾM THIẾU: có BA** — `ModbusTcpDriver` và `OpcUaDriver` gọi `Task.Delay(_map.PollIntervalMs, ct)` trực tiếp, `ModbusRtuDriver` qua `NextPollDelayMs()`. **Chiều ngược:** `EffectiveReadTimeoutMs` sàn ở 1000 nên read timeout **không** hỏng theo, và backoff RTU sản xuất **che** giá trị âm **sau lần hỏng đầu** (`Math.Max`) — nên trên RTU cái bẫy chỉ cắn khi thiết bị **khoẻ**. **Không sửa mã.** Xem mục 38 🔴 **ĐÃ THI HÀNH 2026-08-23 (BD-1, base `889c72ab`), điều phối viên quyết theo uỷ quyền — hướng (i): `pollIntervalMs` nay đi qua đúng luật miền của hai hàng xóm (`> 0`, `<= MaxPollIntervalMs = int.MaxValue/4`, vi phạm ⇒ cảnh báo + mặc định 1000), trên **cả hai** bản đồ, ở **biên parse**. Ba driver **liệt kê rồi đếm**, xác nhận BA. Bề mặt ĐỌC quét toàn cây: **100 file, 45 ngoài `tools/machine-simulator`**; không bản triển khai hợp lệ nào bị giam, và cái **cố ý dùng `0`** — `ModbusMultidropBusTests.ASlowPollerIsNotStarved_...` — được **nêu tên** và sống sót vì nó dựng bằng object initializer. Mục rời **Phần I → Phần III** |
 | 39 | `"registers": null` / `"nodes": null` thoả `required` rồi ném `NullReferenceException` **trần** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AZ-1), đo bởi AY-1 (mục 12 đợt 9), **xác nhận lại trên assembly đã dựng**. `required` được thoả bằng việc **KHOÁ CÓ MẶT**, nên một `null` tường minh bind qua nó và `map.Registers.Count` / `map.Nodes.Count` ném `NullReferenceException` với thông điệp `"Object reference not set to an instance of an object."` — **không nêu file, không nêu trường, không nêu máy**. Đối chứng đo cùng lần: khoá **VẮNG** cho `JsonException: … was missing required properties including: 'Registers'` / `'Nodes'`, tức đường tốt đã có sẵn và chỉ ca `null` tường minh rơi ra ngoài. **Đúng hình dạng mà `ModbusRegisterMap.FromJson` tự ghi là ĐÃ SỬA cho `commands`.** **Chiều ngược:** cả hai `FromJson` là *"parse ném thẳng"* theo thiết kế và `ModbusRtuConnectorFactory.TryCreate` **bọc mọi throw** thành một `error` chuỗi, nên hậu quả là **một thông điệp vô dụng cho vận hành viên**, không phải một tiến trình chết. **Không sửa mã.** Xem mục 39 🔴 **ĐÃ THI HÀNH 2026-08-23 (BD-1, base `889c72ab`), điều phối viên quyết theo uỷ quyền — **HAI ca đo RIÊNG**: `null` tường minh nay ném `InvalidOperationException` **nêu trường + mã máy**, còn khoá **VẮNG** **KHÔNG ĐỔI** (vẫn là `JsonException` của binder) — và việc nó không đổi là một kết quả **đo được** bằng cặp đối chứng, không phải một giả định. `FromJson` nhận **văn bản**, không nhận đường dẫn, nên **tên file do khung có đường dẫn nêu** (`Program.cs` đã bọc sẵn trong `{MapPath}`). Mục rời **Phần I → Phần III** |
 | 40 | Một dụng cụ TỰ KIỂM có thể mù đúng ở đường mặc định của chính nó, và cổng vẫn xanh | 🔴 **CHỜ ANH** — mở 2026-08-22 (BA-1). Khuyết tật tìm bởi AZ-1 (mục 12 đợt 10), điều phối viên xác nhận độc lập **hai lần**. `scripts/repo-scan.sh` — **dụng cụ dựng CHO mục 32** — mang **đúng khuyết tật của mục 32** ở đường mặc định của nó từ `cfcfae42` tới `89018893`: không pathspec ⇒ `SPECS=(".")` ⇒ `:(top).`, thứ git **không khớp gì**, nên nó in `result lines : 0 … a measurement, not an error` cho **mọi** pattern. Đo: `'class'` trả **0** với `:(top).`, **1804** với `:(top)`. 🔴 **Vì sao `--self-test` không thấy:** ba khẳng định của nó **đều truyền pathspec tường minh**, và cái duy nhất nói về mặc định là *bất biến theo cwd* — mà **mặc định hỏng ĐÚNG LÀ bất biến theo cwd: bất biến bằng 0**. Khuyết tật **thoả** phép kiểm. **BA-1 đã sửa cả ba dụng cụ** (mặc định `:(top)`; ca self-test KHÔNG-pathspec + từ chối MIỀN RỖNG, chứng minh đỏ-được bằng **ba cặp đối chứng chạy trọn rồi hoàn nguyên**; `C0` cho `check-owner-decisions.sh`; ba guard quần thể cho `scan-doc-negations.sh`). **Chiều ngược, và nó thu hẹp thiệt hại:** mặc định hỏng trả **0 vô điều kiện**, nên **không** khẳng định nào mang một con số KHÁC 0 có thể đã đi qua nó — quần thể `cfcfae42..HEAD` đã liệt kê rồi kiểm, và **hai** câu sai tìm được sai vì lý do KHÁC (tự tham chiếu, và một quần thể cũ), không phải vì khuyết tật này. **Cái CHỜ ANH là câu hỏi tầng hai:** cái gì cưỡng chế rằng một dụng cụ tự kiểm không mù đúng ở chỗ đối tượng của nó mù — mục 26/32/37 ở tầng **dụng cụ đo dụng cụ**. Xem mục 40 🔴 **ĐÃ THI HÀNH 2026-08-23 (BD-1, base `889c72ab`), điều phối viên quyết theo uỷ quyền — `G1` **GIỮ** (đo: trên `--since` nó thừa vì `G3` bắt cùng đầu vào; vùng phủ riêng là `--census`, gỡ nó ⇒ exit 0 trên corpus rỗng) và **tự dán nhãn "guard, KHÔNG phải nhân chứng"**; `C0` nay phân biệt được Phần II **TRỐNG** với **HỎNG** qua `C6` (đẳng thức khai-báo == phân-tích-được, vì `count > 0` sẽ sai hôm nay); thêm `G4` cho `BASE_SENT` — quần thể **thứ TƯ** chưa ai canh. 🔴 **Câu hỏi tầng hai được TRẢ LỜI: luật ấy KHÔNG CƯỠNG CHẾ ĐƯỢC** — nó là một tính chất độ phủ của shell và repo này không có dụng cụ đo độ phủ shell. Cái cưỡng chế được là **phép KHAI BÁO**, đặt ở chỗ nghẽn duy nhất `run_tooling_check`: mọi tooling check thành công phải in `POPULATION <nhãn> <số>` và mọi số phải > 0. **KHÔNG dựng dụng cụ tầng thứ ba** cho cặp đối chứng, lý do ghi ở thân mục. Mục rời **Phần I → Phần III** |
-| 41 | 🔴 **Nối một config store làm MÔ-MEN XOẮN báo ra lệch ~9 lần** — hai host trong cùng sản phẩm báo VẬT LÝ KHÁC NHAU cho cùng một descriptor | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1), đo lần đầu bởi BC-1 và xác nhận lại trên mã ở `9255ea98`. **Không uỷ quyền được**: nó đổi một con số ĐÃ ĐI RA NGOÀI trên `POST /api/v1/ingest/process-result`, cùng lớp mục 16 |
-| 42 | `weld_profile` và `dispense_program` được định nghĩa, kiểm miền, phục vụ qua REST — và **không bộ mô phỏng nào đọc**; hai khoá của DISPENSING **trùng chính xác TÊN** một metric cùng máy phát ra (ở WELDER là cùng đại lượng, khác cách viết — lời khai nguồn nói quá, đo lại trong mục) | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1). **Không uỷ quyền được**: nối dây làm đổi giá trị metric đã báo cáo; gỡ vựng từ là gỡ một bề mặt REST công khai |
+| 41 | 🔴 **Nối một config store làm MÔ-MEN XOẮN báo ra lệch ~9 lần** — hai host trong cùng sản phẩm báo VẬT LÝ KHÁC NHAU cho cùng một descriptor | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1), đo lần đầu bởi BC-1 và xác nhận lại trên mã ở `9255ea98`. **Không uỷ quyền được**: nó đổi một con số ĐÃ ĐI RA NGOÀI trên `POST /api/v1/ingest/process-result`, cùng lớp mục 16. 🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-23: DESCRIPTOR PHẢI KHAI LOẠI VÍT / DẢI MÔ-MEN, ba host đọc CÙNG MỘT NGUỒN.** 🔧 **THI HÀNH MỘT PHẦN 2026-08-23 (BL-1, base `334575b2`): cơ chế đã ship — `MachineDescriptor.ScrewTorque` soạn trong `fleet.json`, cả ba host đọc nó, chưa khai thì `FleetConfig.Load` CẢNH BÁO TO và hành vi không đổi. `fleet.json` KHÔNG sửa một byte và fleet demo KHÔNG dịch một con số nào.** 🔴 **Mục Ở LẠI PHẦN I**: fleet demo hôm nay báo HAI con số chứ không một, nên "ba host một nguồn" và "không con số nào dịch" LOẠI TRỪ NHAU — đóng hết đòi viết một dải vào roster, và **con vít của demo là của ANH chọn, không phải của người thi hành** |
+| 42 | `weld_profile` và `dispense_program` được định nghĩa, kiểm miền, phục vụ qua REST — và **không bộ mô phỏng nào đọc**; hai khoá của DISPENSING **trùng chính xác TÊN** một metric cùng máy phát ra (ở WELDER là cùng đại lượng, khác cách viết — lời khai nguồn nói quá, đo lại trong mục) | ~~🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1). **Không uỷ quyền được**: nối dây làm đổi giá trị metric đã báo cáo; gỡ vựng từ là gỡ một bề mặt REST công khai~~ 🔨 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-23: GHI LÀ CHƯA NỐI, CHỜ MỤC 41.** ✅ **ĐÃ THI HÀNH 2026-08-23 (BL-1, base `334575b2`)**: không một `configStore` nào được nối; `MachineParameterSchema.IsConsumedBySimulator` là trường máy đọc được, ghim bằng `UnconsumedConfigKindsTests`; **BẢY câu bị rút tại chỗ kèm ngày** (5 trong mã, 2 trong thiết kế), gồm chính `message` của `POST .../settings/push`; **`MachineSettingsResponseDto` KHÔNG thêm trường** — tiền lệ mục 27. Lời khai nguồn của BC-1 (*"hai khoá MỖI BÊN"*) đo lại lần thứ ba: **2 cho DISPENSING, 0 cho WELDER** — phép sửa của mục 42 ĐỨNG VỮNG. Mục **PHẦN I → PHẦN III** |
 | 43 | Hai bộ mô phỏng có **phán quyết không thể sai**, và cả hai tính là TỐT cho OEE — `AssemblySim` chỉ đạt `Warn`, `LeakTestSim` cảnh báo vì rò **QUÁ ÍT** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1). **Không uỷ quyền được**: cùng loài mục 2 và mục 16 — sửa là dịch con số OEE đã báo cáo |
 | 44 | Hai tham số constructor **công khai** không chỗ gọi nào trong repo cấp — `LeakTestSim.maxLeakRatePa`, `FunctionalTestSim.targetPassRate` — và cái thứ nhất **không được kiểm miền** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1). **Không uỷ quyền được**: một trong ba hướng là **gỡ một tên công khai**, đúng thứ uỷ quyền loại trừ; cùng câu hỏi mục 25 |
 | 45 | `SimulatedEcosystem.Load` **ghi lại CẢ HAI file khi chỉ MỘT vắng** — và kể từ mục 30 nó đè lên một file `%ProgramData%` mà phép xoá ngừng-hoạt-động **cố ý GIỮ** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); AV-1 đo 2026-08-22, BF-1 đo lại là ĐẮT HƠN 2026-08-23. Theo tiền lệ mục 10 và 30, **một đường mất dữ liệu MỚI là của anh** |
@@ -411,7 +411,24 @@ KHOÁ CẢ BA"*: 48, 51 và 52.** Cả ba dừng ở **cùng một chỗ** — m
 trả nó. Nói cho hết, vì nó lật một câu đứng ở đây suốt hôm nay: cái mở khoá mục 52 mục con 3 **không**
 phải nhãn ⚖️ của mục 52 (nhãn ấy **vẫn hẹp hơn mục**, đúng như BJ-1 đo) mà là phán quyết ấy;
 và cái mở khoá mục 51 mục con 5 không phải một dụng cụ rẻ hơn mà là **cùng một quyết định**.
-<!-- gate:phần-i = 41 42 43 44 45 46 47 49 54 57 -->
+<!-- gate:phần-i-rút -->
+
+> 📎 **RÚT 2026-08-23 (BL-1), giữ NGUYÊN VĂN, cùng kiểu bảo tồn AB-1 lập:** phép liệt kê ngay trên
+> **không sai khi viết** — nó mô tả đúng Phần I cho tới hôm nay — mà **nhiệm vụ này làm nó sai**: **mục
+> 42 rời sang Phần III** theo phán quyết *"GHI LÀ CHƯA NỐI, CHỜ MỤC 41"* của chủ sở hữu ngày
+> 2026-08-23. **Mục 41 Ở LẠI** dù cơ chế đã ship, vì thứ còn lại là một **QUYẾT ĐỊNH** — con vít của
+> fleet demo — chứ không phải một việc.
+
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 41, 43, 44, 45, 46, 47, 49, 54 và 57.**
+Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy vẫn là nguồn sự thật**. 🔴 **Phép liệt
+kê này ĐO LẠI từ chính Phần I sau khi nhiệm vụ này sửa xong file** — quét đầu mục `^## ` giữa banner
+Phần I và banner Phần II — chứ không chép từ brief. **Tám mục — 41, 43, 44, 45, 46, 47, 49, 57 — chạm
+một trong ba miễn trừ và chỉ anh quyết được**; **đúng MỘT mục còn lại — 54 — mang nhãn ⚖️**, và nó ở
+lại vì phép đo lại bác tiền đề của chính mục (§54.6), không vì thiếu quyền.
+🔴 **Mục 41 là ca đầu tiên trong tập này mà CƠ CHẾ đã thi hành xong và mục vẫn ở lại**: bản sửa dựng
+được chỗ để trả lời, và **câu trả lời thì không phải của người thi hành**. Xem §41 khối
+`🔧 THI HÀNH MỘT PHẦN 2026-08-23`.
+<!-- gate:phần-i = 41 43 44 45 46 47 49 54 57 -->
 
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
@@ -779,51 +796,139 @@ nào bắt.
   cũng nhận `configStore`. Cùng bốn chỗ gọi, nên **cùng bất đối xứng có thể tồn tại ở đó**; chưa ai
   mở ra.
 
----
+### 🔧 THI HÀNH MỘT PHẦN 2026-08-23 (BL-1, base `334575b2`) — cơ chế đã ship, **CON VÍT CỦA FLEET DEMO THÌ CHƯA VÀ KHÔNG PHẢI CỦA TÔI ĐỂ CHỌN. Mục Ở LẠI PHẦN I**
 
-## 42. `weld_profile` và `dispense_program` được định nghĩa, kiểm miền, phục vụ qua REST — và KHÔNG bộ mô phỏng nào đọc chúng
+**Phán quyết đã thi hành:** 🔨 **DESCRIPTOR PHẢI KHAI LOẠI VÍT / DẢI MÔ-MEN, và cả BA host đọc CÙNG MỘT
+NGUỒN** (chủ sở hữu, 2026-08-23).
 
-**Đo được cái gì.** `MachineParameterSchema` khai đủ hai vựng từ, **bốn tham số mỗi bên**, mỗi tham
-số có min/max cứng, bước nhảy và số chữ số thập phân: `dispense_program` = `volumeTarget`,
-`pressure`, `speed`, `temperature`; `weld_profile` = `current`, `time`, `tempMax`, `voltage`.
-`MachineTypeToConfigKind` ánh xạ `DISPENSING`/`WELDER` vào chúng, nên
-`GET /v1/machines/{code}/settings` phục vụ chúng và một cú ghi được kiểm miền. **Nhưng**
-`SimulatorFactory.Create` dựng `new DispensingSim(d, seed)` và `new WelderSim(d, seed)` — **hai
-constructor duy nhất trong họ không nhận `configStore`** — nên `ResolveEffectiveConfig` trả null
-suốt đời hai instance ấy và **không giá trị nào tới được một phép vẽ**.
+#### Chỗ SỐNG của lời khai — SUY ra từ "ai sửa, ai đọc", không từ chỗ dễ thêm
+`MachineDescriptor.ScrewTorque` (kiểu mới `ScrewTorqueSpec`), soạn trong `fleet.json` dưới khoá
+`screwTorque`. Phép suy có hai vế và cả hai **loại trừ** chứ không **gợi ý**:
+* **Ai phải ĐỌC:** cả ba host. Artefact per-machine **duy nhất** mà cả ba đã đọc sẵn là **descriptor**.
+  `MachineConfigStore` **chính là cái hai host kia KHÔNG có** — đặt lời khai ở đó là dựng lại đúng
+  bất đối xứng nó sinh ra để đóng.
+* **Ai phải SỬA:** **bản triển khai**. Cỡ vít là một sự thật lúc lắp đặt, không phải một nút vặn theo
+  ca; `fleet.json` cạnh exe là quy ước đã có (README §10). Chiều theo-ca **không mất**: một điều chỉnh
+  theo máy / theo sản phẩm trên màn Settings **vẫn thắng** lời khai của roster.
 
-🔴 **Sắc hơn ở DISPENSING — và lời khai NGUỒN NÓI QUÁ ở WELDER; đo lại, không chép.** BC-1 §7.2 viết
-*“hai trong bốn khoá MỖI BÊN trùng TÊN với một metric cùng bộ mô phỏng phát ra”*. Đo trên mã ở
-`9255ea98`:
+🔴 **Có phải một bề mặt ĐÃ XUẤT BẢN không? ĐO, không đoán.** `MachineDescriptor` **không được tuần tự
+hoá ra bất kỳ payload HTTP nào** — quét toàn commit, nó chỉ xuất hiện trong doc comment và một phép tra
+nội bộ ở `ConfigEndpoints.FindMachine`. Trường mới là **tuỳ chọn**: một `fleet.json` viết trước hôm nay
+parse **y hệt**. Nên tiền lệ mục 27 **không nổ** ở đây — và điều đó được **nói ra để kiểm được**, chứ
+không im.
 
-* **DISPENSING — ĐÚNG, và trùng CHÍNH XÁC.** Khoá cấu hình `pressure`, `temperature`; khoá metric
-  `volume`, **`pressure`**, **`temperature`**. Hai khoá trùng từng ký tự. Vận hành viên nâng
-  `pressure`, thấy **bản ghi cấu hình đổi** và **metric `pressure` không đổi**. Đó không phải
-  *“chưa nối dây”*; đó là một bề mặt **nói dối theo chiều khẳng định**.
-* **WELDER — SAI theo chữ, ĐÚNG theo đại lượng.** Khoá cấu hình `current`, `time`; khoá metric
-  **`weld_current`**, **`weld_time`**. **Không ký tự nào trùng.** Chúng nêu **cùng hai đại lượng**
-  dưới hai cách viết, và doc của chính `WelderSim` nói đúng thế (*“name the very quantities
-  `NextCycle` draws”*) — nên **chính lớp ấy viết đúng trong khi báo cáo nguồn viết quá**. *Một cái
-  sai trong một báo cáo nguồn là một phát hiện, không phải một lỗi chính tả*, nên nó đứng trong mục
-  chứ không ở một chú thích.
+#### Ba host nay đọc gì
+Bốn chỗ gọi `SimulatorFactory.Create` trong `src/`, ba host, chia 2–2, **đo lại ở `334575b2`**:
+`FleetCore.BuildStartPlan` và `FleetCore.StartLocked` (nhánh reuse-miss) truyền `_configStore`;
+`EdgeWorker` và `FleetService.BuildSimulator` không. **Khi descriptor KHAI**, cả ba đọc **lời khai của
+roster** — `ScrewdriveSim.ResolveTorqueBand` lấy dải từ đó dù có store hay không, nên một descriptor cho
+**một** vật lý dưới **mọi** host. **Khi KHÔNG khai**, cả ba đọc đúng thứ chúng đọc hôm qua.
 
-**Hệ quả hai chiều của chính phép đo lại này:** cái **bẫy cho vận hành viên** — sửa một khoá và thấy
-metric cùng tên đứng yên — chỉ sống ở **DISPENSING**; cái **khoảng trống dây nối** sống ở **cả hai**.
+#### 🔴 Fleet demo có dịch con số nào không: KHÔNG — và ràng buộc kiểm được của brief KHÔNG THOẢ ĐƯỢC
+`fleet.json` **không được sửa một byte**. `SCRW-01`/`SCRW-02` vẫn khai `null`, vẫn báo `nominal 12,0`,
+dải `[10,8; 13,2]` dưới host không dây và `nominal 1,35`, dải `[1,20; 1,50]` dưới host có dây — ghim
+bằng `ScrewTorqueDeclarationTests`.
 
-**Ở đâu trong mã.** `src/St4i.EdgeCore/Config/MachineParameterSchema.cs` (hai khối `Registry`);
-`src/St4i.EdgeCore/Drivers/Simulators/SimulatorFactory.cs` (hai nhánh `"DISPENSING"`/`"WELDER"`);
-`src/St4i.EdgeCore/Drivers/Simulators/WelderSim.cs` và `DispensingSim.cs` (`: base(d, seed)`).
-`WelderSim`'s own doc comment **đã tự khai điều này** — nên nó không phải một phát hiện mới, mà là
-một phát hiện **đã ghi và chưa ai phán**.
+🔴 **Và đây là chỗ tiền đề của brief không sống sót qua phép đo.** Brief viết: *"fleet demo hôm nay phải
+giữ NGUYÊN con số nó đang báo … Đây là cách duy nhất bản sửa không ngầm chọn một con vít."* **Fleet demo
+hôm nay KHÔNG báo MỘT con số.** Nó báo **hai**, và cái bạn thấy phụ thuộc host bạn khởi động — *đó chính
+là mục 41*. Nên ba điều kiện sau **không đồng thời thoả được**, và chứng minh dài hai dòng:
 
-**Hậu quả vận hành, hai chiều.** Nối dây làm **giá trị metric `current`/`time`/`pressure`/
-`temperature` đi ra ngoài đổi** — cùng đường ingest của mục 41, cùng lớp miễn trừ. Gỡ vựng từ
-**gỡ một bề mặt REST công khai** mà UI cấu hình máy đang vẽ, và làm hỏng mọi bản ghi đã gieo. Chiều
-để nguyên: hôm nay **không dữ liệu nào sai** — chỉ có một mặt điều khiển không nối vào gì, và một số
-người sẽ coi đó là "chỗ dành sẵn cho phần cứng thật", đúng vai của một bộ mô phỏng.
+> (a) ba host đọc **một** nguồn cho **một** descriptor ⇒ **một** dải mô-men ⇒ **một** vật lý báo ra.
+> (b) hôm nay hai host báo ~12,0 và một host báo ~1,35 cho **cùng** descriptor ấy.
+> ⇒ hợp nhất **buộc** ít nhất một host dịch. **(a) và (c) "không host nào dịch" loại trừ nhau.**
 
-**Nếu không quyết.** Mặt điều khiển tiếp tục nhận giá trị, tiếp tục ghi đĩa, tiếp tục không có tác
-dụng. Mỗi bản ghi mới làm phép gỡ đắt thêm.
+Hệ quả: **mọi** đường làm mục 41 "đóng hoàn toàn" cho roster đang ship đều **phải viết một con số vào
+`fleet.json`**, và viết con số ấy **là chọn thay chủ sở hữu**. Nên nhiệm vụ này **dựng cơ chế và KHÔNG
+viết con số**. Cả 12,0 lẫn 1,35 **đều không** thành mặc định thực tế: cả hai ở nguyên chỗ cũ, và mỗi cái
+vẫn đúng cho host của nó.
+
+#### Chuyện gì xảy ra khi descriptor KHÔNG khai — và **giá của hai hướng bị loại**
+**Đã chọn: CẢNH BÁO TO, hành vi không đổi.** `FleetConfig.Load` phát **một** cảnh báo cho **mỗi**
+SCREWDRIVE chưa khai, qua đúng cái `logWarning` mà **cả ba host đã truyền sẵn** (`FleetCore._logWarning`,
+`ILogger` của `EdgeWorker`, `Debug.WriteLine` của `FleetService`). Câu ấy **nêu CẢ HAI** ứng viên kèm
+dải và **không chọn cái nào**, rồi chỉ đúng khoá đóng câu hỏi lại. Đây **không** phải một *mặc định im
+lặng*: một mặc định im lặng là cái nói *"đây là con số"*; câu này nói *"chưa ai nói con số nào, và đây
+là hai thứ sẽ xảy ra"*.
+
+* **Giá của hướng NÉM** (chưa khai ⇒ chết ngay lúc nạp): to nhất và nó **tự mâu thuẫn**. Mọi
+  `fleet.json` đang chạy — gồm cả roster đang ship — **ngừng khởi động** sau khi nâng cấp, nên để dựng
+  lại nó phải viết một con số vào roster, **tức chọn thay chủ sở hữu**, và trong lúc chờ thì fleet demo
+  báo **không con số nào**, vi phạm ràng buộc (iii) ở mức nặng nhất có thể.
+* **Giá của hướng MẶC ĐỊNH IM LẶNG** (chưa khai ⇒ cả ba dùng hằng số lớp, hoặc cả ba dùng baseline của
+  schema): **rẻ về mã và chính là khuyết tật đang sửa**. Hướng thứ nhất phong 12,0 thành mặc định thực
+  tế và dịch host `EngineApi`; hướng thứ hai phong 1,35 và dịch hai host kia. **Cả hai là chọn thay chủ
+  sở hữu**, chỉ khác chỗ đặt chữ ký.
+* **Giá của hướng ĐÃ CHỌN, ghi cho đủ hai bờ:** máy chưa khai **vẫn** lệch giữa các host. Cái đổi là
+  chỗ lệch ấy **có tên, có tiếng nói, và kiểm được** thay vì im. Một cảnh báo chỉ tốt bằng người đọc log
+  — nói ra ở đây chứ không giấu.
+
+#### 🔴 CÂU CÒN LẠI THUỘC VỀ ANH, và nó là câu duy nhất
+**`SCRW-01`/`SCRW-02` của fleet demo là con vít nào?** Khai `screwTorque` một dòng thì mục này đóng
+hoàn toàn. Không khai thì cơ chế đã sẵn và chỗ lệch đã lên tiếng. **Mục Ở LẠI PHẦN I** vì thứ còn lại
+là một **QUYẾT ĐỊNH**, không phải một **VIỆC**.
+
+#### Hai khẳng định của chính mục này không sống sót qua phép đo
+1. 🔴 **§41.1 viết *"Doc comment của chính `ScrewdriveSim` viết 'hai host'"* — SAI.** Quét **toàn bộ
+   63447 file** của commit: chuỗi `two host` và `hai host` **không xuất hiện ở đâu cả**. Chỗ duy nhất
+   `ScrewdriveSim` nói tới "host" là câu *"…under one host and about 1.35 Nm under another"*, và câu ấy
+   đếm **HÀNH VI**, không đếm **HOST** — nó **đúng**. Chữ *"HAI HOST"* nằm ở **tiêu đề của chính mục
+   41** và ở ô bảng phán quyết. **Hồ sơ buộc tội mã đúng lỗi của hồ sơ.** Đây là hỏng **CHỦ THỂ**, đúng
+   loài mà luật câu chữ nêu tên.
+2. **§41.1 viết *"`Fleet/FleetCore.cs` — hai chỗ trong `StartLocked` và nhánh reuse-miss"* — sai về chỗ
+   thứ nhất.** Chỉ **một** trong hai nằm trong `StartLocked`; chỗ kia đã được nhiệm vụ J-1 **nhấc ra
+   khỏi khoá** vào `BuildStartPlan`. Hai chỗ **trong `FleetCore`** thì đúng.
+
+#### Bảy bề mặt ĐỌC — kiểm lại, và bảng §41.4 KHÔNG đứng vững nguyên vẹn
+Bốn chỗ sai/thiếu, và một **quần thể lớn hơn bảy**:
+1. **Ingest** — ✅ đúng, và **thiếu**: payload mang **sáu** khoá mỗi metric (`name`, `value`, **`unit`**,
+   `lsl`, `usl`, `nominal`), không phải bốn. Phía nhận lưu chúng phẳng ra `torque__lsl`/`__usl`/
+   `__nominal`.
+2. **Historian `Metrics[0]`** — ✅ đúng.
+3. **PDF** — ⚠️ **sai về CHỦ THỂ**: `report.pdf` **không in giá trị mô-men nào cả**, chỉ khối OEE và
+   bảng đếm phán quyết. Bề mặt in ra **giá trị** là `export.csv` và `GET /v1/historian/results` — **hai
+   bề mặt §41.4 bỏ sót**. Câu của §41.5 về cột `Warn` dịch ~3,7 lần thì **vẫn đứng**.
+4. **OEE qua phán quyết** — ✅ đúng: `OeeInputAggregate` **không có trường nào** mang được một giá trị.
+5. **Sparkplug/UNS** — ⚠️ **sai một nửa**: `SparkplugPayload.cs` **không đọc `DeviceReading.Metrics`**
+   (nó là codec protobuf trên một danh sách đã chuyển đổi). Và **mạnh hơn §41.4 nói**: `UnsPublisher`
+   phát **hai** lần — bản mirror JSON **giữ lại (retained)** mang **cả sáu** khoá, còn DDATA chỉ mang
+   tên+giá trị.
+6. **WPF `MachineViewModel`** — ✅ đúng, và là **ba** chỗ hiển thị (SPC, sparkline, cột log — chỗ duy
+   nhất hiện đơn vị: `torque=12.043Nm`).
+7. **SYNAPSE** — ⚠️ **`server/routers/processResultAnalytics.ts` KHÔNG TỒN TẠI** ở commit này: cái có
+   là `processResultAnalytics.test.ts`, một **file test**. Bản thi hành là `processResultRouter.ts`.
+   *"`spcChart` có nhận `usl`/`lsl`"* — **nói quá**: hai trường ấy là **tuỳ chọn do người gọi truyền**,
+   và người gọi sản xuất duy nhất (`ProcessAnalytics.tsx`) **không truyền**, nên trên đường đang ship
+   khối năng lực ấy luôn null. `metricKey` mặc định `"torque"` — ✅ đúng. `intentClassifier` ánh xạ
+   — ✅ đúng, **kèm một khuyết tật mới**: nó đặt luôn `stepType: "torque"`, mà mọi descriptor SCREWDRIVE
+   mang `screw_tightening`, nên **bộ lọc ấy không bao giờ khớp**. *"`handlersF6`/`handlersF7` trả lời
+   bằng SPC"* — **sai một nửa**: F7 có, **F6 thì không** (nó chạy EWMA/dự báo).
+
+**Bề mặt §41.4 bỏ sót, liệt kê:** `MachineState.cs` (bản song sinh headless của số 6),
+`FleetProjections.cs` (đưa nó **lên dây** qua `GET /v1/machines/{code}`), `export.csv`,
+`GET /v1/historian/results`, `SqliteHistorianStore` (chỗ con số **thật sự nằm trên đĩa**), các bước
+`CyclePlan` (**cùng một mô-men lần thứ hai, làm tròn 3 chữ số**, trên **cùng** endpoint — nên endpoint
+ấy ship **hai** con số hơi khác nhau cho **một** mô-men vật lý), và `processResultService` phía server
+(**đọc giá trị và phán lại nó** dưới `PROCESS_SPEC_GATE_ENABLED`). **"Bảy" là một cái trần nêu quá
+nhỏ**, và một cái trần nêu quá nhỏ tệ hơn không nêu trần.
+
+#### Nhân chứng, và cặp đối chứng chạy trọn
+`tests/St4i.EdgeCore.Tests/ScrewTorqueDeclarationTests.cs`. **ĐỎ ở nhánh đối chứng** (bỏ lời khai khỏi
+`ResolveTorqueBand` + tắt cảnh báo của loader): (i) `Declared_band_reports_the_same_physics_under_every_host_wiring`,
+(ii) `Undeclared_screwdrive_is_reported_by_the_loader_and_still_diverges`, và
+`An_operator_adjustment_still_outranks_the_roster_declaration`. **XANH CẢ HAI NHÁNH — tự dán nhãn
+"GUARD", không phải nhân chứng của thay đổi này:** (iii)
+`Shipped_roster_declares_nothing_and_the_numbers_it_reports_have_not_moved` cùng bốn bài kiểm miền/
+tương thích ngược. (iii) **đỏ được** — nó đỏ đúng vào ngày ai đó viết một dải vào `fleet.json`, tức là
+đúng vào ngày một bản sửa chọn thay chủ sở hữu — nhưng nó **không** đỏ ở nhánh đối chứng của hôm nay,
+và nói rõ như thế.
+
+🔴 **Cái nhân chứng KHÔNG đo, ghi ở chỗ kết quả hiện ra:** nó chạy **hình dạng đối số** của ba host,
+không chạy ba tiến trình. Ba host chỉ khác nhau đúng một thứ chạm tới dải mô-men — có truyền store hay
+không — nên "có dây / không dây" **chính là** phép rút gọn ấy; nhưng một host mọc thêm cách dựng
+simulator **thứ tư** thì phép này không thấy, và `FleetService.BuildSimulator` là `internal` trong một
+project **không có assembly test nào** trong năm suite của cổng.
+
 
 ---
 
@@ -1389,6 +1494,134 @@ trên nói, vì `## 5–7.` là **một** tiêu đề chứa **ba** mục.
 > tắt một tập chưa ai liệt kê thì không phải một sự thật* — và ở đây tập **đã được liệt kê
 > ngay cạnh**, nên phép liệt kê tự bác con số. Thay bằng phép liệt kê; câu sai giữ lại ở
 > đây làm hồ sơ chứ không xoá.
+
+---
+
+## 42. `weld_profile` và `dispense_program` được định nghĩa, kiểm miền, phục vụ qua REST — và KHÔNG bộ mô phỏng nào đọc chúng
+
+**Đo được cái gì.** `MachineParameterSchema` khai đủ hai vựng từ, **bốn tham số mỗi bên**, mỗi tham
+số có min/max cứng, bước nhảy và số chữ số thập phân: `dispense_program` = `volumeTarget`,
+`pressure`, `speed`, `temperature`; `weld_profile` = `current`, `time`, `tempMax`, `voltage`.
+`MachineTypeToConfigKind` ánh xạ `DISPENSING`/`WELDER` vào chúng, nên
+`GET /v1/machines/{code}/settings` phục vụ chúng và một cú ghi được kiểm miền. **Nhưng**
+`SimulatorFactory.Create` dựng `new DispensingSim(d, seed)` và `new WelderSim(d, seed)` — **hai
+constructor duy nhất trong họ không nhận `configStore`** — nên `ResolveEffectiveConfig` trả null
+suốt đời hai instance ấy và **không giá trị nào tới được một phép vẽ**.
+
+🔴 **Sắc hơn ở DISPENSING — và lời khai NGUỒN NÓI QUÁ ở WELDER; đo lại, không chép.** BC-1 §7.2 viết
+*“hai trong bốn khoá MỖI BÊN trùng TÊN với một metric cùng bộ mô phỏng phát ra”*. Đo trên mã ở
+`9255ea98`:
+
+* **DISPENSING — ĐÚNG, và trùng CHÍNH XÁC.** Khoá cấu hình `pressure`, `temperature`; khoá metric
+  `volume`, **`pressure`**, **`temperature`**. Hai khoá trùng từng ký tự. Vận hành viên nâng
+  `pressure`, thấy **bản ghi cấu hình đổi** và **metric `pressure` không đổi**. Đó không phải
+  *“chưa nối dây”*; đó là một bề mặt **nói dối theo chiều khẳng định**.
+* **WELDER — SAI theo chữ, ĐÚNG theo đại lượng.** Khoá cấu hình `current`, `time`; khoá metric
+  **`weld_current`**, **`weld_time`**. **Không ký tự nào trùng.** Chúng nêu **cùng hai đại lượng**
+  dưới hai cách viết, và doc của chính `WelderSim` nói đúng thế (*“name the very quantities
+  `NextCycle` draws”*) — nên **chính lớp ấy viết đúng trong khi báo cáo nguồn viết quá**. *Một cái
+  sai trong một báo cáo nguồn là một phát hiện, không phải một lỗi chính tả*, nên nó đứng trong mục
+  chứ không ở một chú thích.
+
+**Hệ quả hai chiều của chính phép đo lại này:** cái **bẫy cho vận hành viên** — sửa một khoá và thấy
+metric cùng tên đứng yên — chỉ sống ở **DISPENSING**; cái **khoảng trống dây nối** sống ở **cả hai**.
+
+**Ở đâu trong mã.** `src/St4i.EdgeCore/Config/MachineParameterSchema.cs` (hai khối `Registry`);
+`src/St4i.EdgeCore/Drivers/Simulators/SimulatorFactory.cs` (hai nhánh `"DISPENSING"`/`"WELDER"`);
+`src/St4i.EdgeCore/Drivers/Simulators/WelderSim.cs` và `DispensingSim.cs` (`: base(d, seed)`).
+`WelderSim`'s own doc comment **đã tự khai điều này** — nên nó không phải một phát hiện mới, mà là
+một phát hiện **đã ghi và chưa ai phán**.
+
+**Hậu quả vận hành, hai chiều.** Nối dây làm **giá trị metric `current`/`time`/`pressure`/
+`temperature` đi ra ngoài đổi** — cùng đường ingest của mục 41, cùng lớp miễn trừ. Gỡ vựng từ
+**gỡ một bề mặt REST công khai** mà UI cấu hình máy đang vẽ, và làm hỏng mọi bản ghi đã gieo. Chiều
+để nguyên: hôm nay **không dữ liệu nào sai** — chỉ có một mặt điều khiển không nối vào gì, và một số
+người sẽ coi đó là "chỗ dành sẵn cho phần cứng thật", đúng vai của một bộ mô phỏng.
+
+**Nếu không quyết.** Mặt điều khiển tiếp tục nhận giá trị, tiếp tục ghi đĩa, tiếp tục không có tác
+dụng. Mỗi bản ghi mới làm phép gỡ đắt thêm.
+
+---
+
+### ✅ ĐÃ THI HÀNH 2026-08-23 (BL-1, base `334575b2`) — **GHI LÀ CHƯA NỐI**, theo phán quyết của chủ sở hữu cùng ngày. Không một dòng `configStore` nào được nối; và **lời khai nguồn của BC-1 đo lại lần thứ hai, kết quả của mục 42 ĐỨNG VỮNG**
+
+**Phán quyết đã thi hành:** 🔨 **GHI LÀ CHƯA NỐI, CHỜ MỤC 41** (chủ sở hữu, 2026-08-23). Việc của
+nhiệm vụ này là làm **bề mặt REST và tài liệu nói đúng sự thật**, không phải nối dây.
+
+🔴 **KHÔNG một `configStore` nào được nối vào một simulator nào.** `SimulatorFactory.Create` vẫn dựng
+`new DispensingSim(d, seed)` và `new WelderSim(d, seed)`; hai constructor ấy vẫn không nhận store; giá
+trị metric đi ra ngoài **không dịch một đơn vị nào**. Đó là cùng cơ chế làm mô-men lệch chín lần ở mục
+41, và nó ở nguyên chỗ cũ.
+
+#### Cái gì được thêm — một trường MÁY ĐỌC ĐƯỢC, không phải một câu văn nữa
+`MachineParameterSchema.IsConsumedBySimulator(configKind)` — **có simulator nào đọc kind này không**.
+`screw_program`/`iot_settings`/`aoi_inspection` → `true`; `weld_profile`/`dispense_program` → `false`.
+Lý do nó là **dữ liệu** chứ không phải một câu doc thứ sáu: văn xuôi chính là thứ đã để câu trả lời sai
+sống suốt vòng đời tính năng. Ghim bằng `UnconsumedConfigKindsTests`, và bài ghim **đo chứ không chép**:
+với mỗi machine type trong bản đồ của schema nó dựng simulator qua `SimulatorFactory.Create` **có** store
+rồi hỏi store xem đã có bản ghi chưa — một bản ghi chỉ xuất hiện được nếu `SimulatorBase` gọi `Ensure`,
+tức là nếu factory **thật sự** trao store xuống.
+
+🔴 **Cái trần của con số ấy, nêu tại chỗ kết quả hiện ra:** nó đo **khả năng với tới của store, theo
+KIND**, **không** đo **từng KHOÁ tới được một phép vẽ**. Ít nhất một khoá của một kind "được tiêu thụ"
+thì không tới: `screw_program.angleTarget`, và `ScrewdriveSim` tự khai điều đó. **Đơn vị là KIND, không
+phải KHOÁ.**
+
+#### Những câu bị RÚT TẠI CHỖ, kèm ngày — liệt kê, rồi mới đếm
+1. `MachineParameterSchema` doc lớp — *"what CAN be **tuned**, and within what hard limits"*. **Ghi được
+   là thật; TUNED thì không**, với hai trong năm kind.
+2. `MachineParameterSchema.DispenseProgram` — doc chỉ nói *"Four parameters, product scope supported"*.
+   **Thiếu**, và chỗ thiếu ấy là toàn bộ khuyết tật: nay nói rõ **không simulator nào đọc**, và nói rõ
+   **hai khoá trùng CHÍNH XÁC tên metric** (`pressure`, `temperature`).
+3. `MachineParameterSchema.WeldProfile` — cùng chỗ thiếu, cộng phép đo lại về trùng tên (xem dưới).
+4. `MachineParameterSchema.MachineTypeToConfigKind` — câu *"một loại máy KHÔNG có trong bảng này thì
+   đơn giản là chưa có bộ tham số"* **giữ nguyên văn**, còn **hàm ý** của nó bị rút: nó dựng đúng một
+   phân biệt (*có trong bảng = đã trong phạm vi*) và người đọc lấy phần bù. `DISPENSING` và `WELDER`
+   **có** trong bảng và **chưa nối** y như ba loại vắng mặt. Đây là câu doc gây hiểu sai nặng nhất trong
+   file ấy.
+5. `MachineSettingsEndpoints.BuildPushMessage` — 🔴 **đây là bề mặt REST tự nói, không phải một doc
+   comment.** Câu cũ, cho **mọi** kind: *"Reported N parameter(s) as **this machine's actual
+   configuration**…"*. Với hai kind kia nó **SAI**: cấu hình thực tế của cỗ máy là khối `const` riêng
+   trong `WelderSim`/`DispensingSim`. Nay: khi kind không được tiêu thụ, câu đổi thành *"Reported N
+   **stored** parameter(s)…"* kèm **một câu NOTE nói thẳng rằng không simulator nào đọc kind này**.
+6. `docs/MACHINE_CONFIG_DESIGN.md` §3 — hai hàng bảng **không xoá một chữ**, thêm lời khai bên dưới.
+7. `docs/MACHINE_CONFIG_DESIGN.md` §4 — câu *"Cấu hình hiệu lực phải lái bộ mô phỏng"* **giữ nguyên
+   văn**, **phạm vi** bị rút: nó phổ quát, còn bốn gạch đầu dòng dưới nó chỉ nêu **ba trong năm** kind và
+   **không nêu trần**. Con số đúng: **3 được tiêu thụ, 2 KHÔNG**.
+
+**Bảy chỗ. Năm trong mã, hai trong thiết kế.** 🔴 **Và một chỗ CỐ Ý KHÔNG đụng, nêu tên chứ không lấp:
+`MachineSettingsResponseDto` KHÔNG có trường mới.** Thêm một cờ máy-đọc-được vào đó là **đổi hình dạng
+một payload đã xuất bản**, và mục 27 đã lập tiền lệ rằng đó là quyết định của chủ sở hữu, không phải của
+người thi hành. Giá của hướng bị loại, nói thẳng: **một client đọc bằng máy sẽ không thấy lời cảnh báo**,
+vì nó chỉ sống trong `message` — một trường văn tự do đã có sẵn.
+
+#### 🔴 Lời khai NGUỒN của BC-1 đo lại lần thứ hai — phép sửa của mục 42 ĐỨNG VỮNG
+BC-1 §7.2 viết *"hai trong bốn khoá **MỖI BÊN** trùng tên với một metric cùng bộ mô phỏng phát ra"*.
+Mục 42 đã đo lại và nói: đúng với DISPENSING, sai với WELDER. **Đo lại lần thứ ba hôm nay, trên mã ở
+`334575b2`, và kết quả của mục 42 ĐỨNG VỮNG từng ký tự:**
+
+* **DISPENSING** — khoá cấu hình `volumeTarget`, `pressure`, `speed`, `temperature`; khoá metric
+  `volume`, `pressure`, `temperature`. **Trùng chính xác: 2** (`pressure`, `temperature`).
+* **WELDER** — khoá cấu hình `current`, `time`, `tempMax`, `voltage`; khoá metric **chỉ có hai**:
+  `weld_current`, `weld_time`. **Trùng chính xác: 0.** Máy hàn **không phát metric điện áp nào cả**.
+
+**2 và 0, không phải "hai mỗi bên".** Cả hai con số nay được **một bài test ghim** chứ không phải một
+câu văn. Và chỗ đáng ghi về HỒ SƠ: `WelderSim` tự viết *"name the very **quantities** `NextCycle`
+draws"* — **đúng**, trong khi báo cáo nguồn viết quá. **Lớp viết đúng, báo cáo viết sai.**
+
+#### Cái mục này KHÔNG trả, nêu tên chứ không lấp
+* 🔴 **Giao diện web KHÔNG được đụng, và đó là bề mặt nói dối to nhất.** `machineSettings.*` vẽ cột
+  **"Hiệu lực" / "Effective"**, huy hiệu **"Chỉnh theo máy"**, nút **"Về mặc định"**, và một bộ đếm lệch
+  — **không một chuỗi nào phân biệt loại máy**. Lối thoát duy nhất của UI (*"Loại máy … chưa có bộ tham
+  số vận hành"*) treo vào `ConfigKindForMachineType` trả null, mà với WELDER/DISPENSING nó **không bao
+  giờ** null. Sửa chỗ ấy là **sửa component + i18n hai ngôn ngữ**, ngoài chữ *"bề mặt REST và tài liệu"*
+  của uỷ quyền này. **Một mục mới xứng đáng cho nó.**
+* **Không đo:** `docs/plans/2026-07-21-machine-config.md` mang **cùng câu phổ quát** ở Task 3 và
+  **không** bị rút — kế hoạch có ngày là **hồ sơ lịch sử**, khác với một bản thiết kế đang sống. Nêu ra
+  để lựa chọn ấy kiểm được, không phải để nó im.
+* **Không trả:** hàng WELDER của §3 nêu *"lực ép, tiền/hậu nhiệt"* còn mã khai `tempMax`/`voltage`.
+  **Bảng và mã lệch nhau**, và cái nào đúng là câu hỏi chưa ai phán.
+
 
 ---
 

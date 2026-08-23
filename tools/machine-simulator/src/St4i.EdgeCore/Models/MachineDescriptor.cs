@@ -77,6 +77,26 @@ namespace St4i.EdgeCore.Models;
 /// <see cref="St4i.EdgeCore.Historian.OeeMachineSettings.IdealCycleSecondsOverride"/> is null — so a
 /// descriptor whose cadence was chosen to make a demo look busy also sets that machine's OEE
 /// denominator.</param>
+/// <param name="ScrewTorque">🔴 OWNER'S RULING 2026-08-23, item 41 — the SCREWDRIVE torque band this roster
+/// entry declares, or <see langword="null"/> for "this roster does not say". It is the ONE member of this
+/// record that exists to make three hosts agree: it is read by <c>ScrewdriveSim</c> whether or not a
+/// <c>MachineConfigStore</c> is wired, which is exactly the difference between the three hosts that ship in
+/// this product, so a descriptor that declares it reports the same physics under all of them. See
+/// <see cref="ScrewTorqueSpec"/> for why the declaration lives HERE rather than in the config store, and
+/// for what is validated.
+///
+/// <para><b>Null is the state the shipped roster is in today, and it is REPORTED rather than
+/// resolved.</b> <see cref="St4i.EdgeCore.Infrastructure.FleetConfig.Load"/> emits one warning per
+/// undeclared SCREWDRIVE naming both candidate outcomes (~12.0 Nm un-wired, ~1.35 Nm wired) and choosing
+/// neither; the simulator's behaviour for a null is byte-for-byte what it was before this member existed.
+/// 🔴 The warning covers <c>MachineType == "SCREWDRIVE"</c> only — a machine that reaches
+/// <c>ScrewdriveSim</c> through <c>SimulatorFactory</c>'s unrecognised-type fallback is item 49's subject
+/// and is deliberately NOT counted here.</para>
+///
+/// <para>It is meaningless for every other machine type and is ignored by every other simulator — the same
+/// footing <paramref name="MappingProfile"/> and <paramref name="StepType"/> already stand on. Optional in
+/// <c>fleet.json</c>: a roster written before this member existed parses byte-for-byte as it did, since an
+/// absent key deserializes to null.</para></param>
 public record MachineDescriptor(
     string Code,
     string SerialSeed,
@@ -86,4 +106,5 @@ public record MachineDescriptor(
     string DriverKind,
     string? RecipeCode,
     string? MappingProfile,
-    double CycleSeconds);
+    double CycleSeconds,
+    ScrewTorqueSpec? ScrewTorque = null);
