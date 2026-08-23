@@ -63,10 +63,22 @@
 #   c. IT CANNOT DECIDE PART I vs PART II for a partially-executed item. It routes such an item to
 #      "NOT Part III" and stops. Whether what remains is a DECISION (Part I) or WORK (Part II) is a
 #      judgement from the part definitions and stays with the human.
-#   d. IT DOES NOT CHECK THE OTHER ENUMERATIONS in the file — the Part II and Part III banners have
-#      no machine field, and the dozens of preserved quotations inside blockquotes are history, not
-#      state. Only the Part I enumeration is pinned, because that is the one that went stale.
+#   d. IT DOES NOT CHECK THE OTHER ENUMERATIONS in the file. 🔴 THIS CLAUSE WAS ITSELF STALE UNTIL
+#      BJ-1 (2026-08-23, item 51): it read "the Part II and Part III banners have no machine field",
+#      and Part II acquired one — C6 — when BD-1 built it for item 40. The correct ceiling today is
+#      narrower AND wider than the old sentence: Part I is pinned by C3 and Part II by C6; PART III
+#      AND PART IV ARE NOT PINNED AT ALL, and the dozens of preserved quotations inside blockquotes
+#      are history, not state. Found while making these clauses print beside the result, which is
+#      the argument for making them print: a ceiling nobody reads is a ceiling nobody corrects.
 #   e. IT SAYS NOTHING ABOUT CORRECTNESS OF A VERDICT, a date, or an attribution.
+#   f. C0 ASSERTS THE POPULATION IS NON-EMPTY, NOT THAT IT IS THE RIGHT SIZE (this is stated at C0
+#      above too; it is repeated in the enumerated list because the list is what gets printed).
+#   g. 🔴 C2 IS ONE-DIRECTIONAL BY DESIGN, and item 51 sub-item 2 is about the consequence. It asks
+#      "is this body under the part its row's status requires"; it never asks "does this row still
+#      carry a status the body has outgrown". It cannot: this file's own rule is that a superseded
+#      status is preserved VERBATIM, so a row carrying `Ở LẠI PHẦN II` beside a Part III body is the
+#      record working as designed, not a divergence. Making C2 bidirectional would redden rows that
+#      are CORRECT, which is the false-positive shape that gets a gate ignored.
 #
 # Usage:  scripts/check-owner-decisions.sh [--file <path>]
 # Exit:   0 consistent · 1 divergence(s) found · 2 setup failure
@@ -287,6 +299,20 @@ END {
   # What guards Part II is C6, which asserts an EQUALITY and therefore still says something at zero.
   printf "POPULATION verdict-rows %d\n", length(rowline)
   printf "POPULATION body-sections %d\n", length(bodypart)
+  # The disclosure protocol (verify-suites.sh run_tooling_check, docs/owner-decisions.md item 51).
+  # The "WHAT THIS DOES NOT ENFORCE" block at the top of this file is correct, careful, and was
+  # invisible: the gate printed "owner-decisions structure: OK" and not one of its clauses. Item 51
+  # names that as a live defect. These are the same clauses a-e, one line each, plus the two the
+  # header states elsewhere (C0s size blindness and C2s one-directionality), at the place the
+  # result is read. Compressed, not softened — if a clause here is weaker than the header, the
+  # header is the record and this is the bug.
+  printf "DOES-NOT-MEASURE (a) it cannot see a ruling that was never written into this file — item 37s first half is untouched by this check\n"
+  printf "DOES-NOT-MEASURE (b) it does not read the PROSE; a body may say anything. Tokens, headings and counts only\n"
+  printf "DOES-NOT-MEASURE (c) it cannot decide Part I vs Part II for a partially-executed item; it routes to NOT-Part-III and stops\n"
+  printf "DOES-NOT-MEASURE (d) it pins ONLY the Part I and Part II enumerations; Part III and Part IV have no machine field and are unchecked\n"
+  printf "DOES-NOT-MEASURE (e) it says nothing about whether a verdict, a date or an attribution is CORRECT\n"
+  printf "DOES-NOT-MEASURE (f) C0 asserts the population is non-empty, NOT that it is the right size; a table that lost half its rows still passes C0\n"
+  printf "DOES-NOT-MEASURE (g) C2 is ONE-DIRECTIONAL by design: it asks whether the body sits under the part its row status requires, never whether the row still carries a status the body has outgrown. This file keeps superseded statuses VERBATIM, so a row reading %s beside a Part III body is the record working as designed, not a divergence (item 51 sub-item 2)\n", "Ở LẠI PHẦN II"
   printf "── DIVERGENCES LISTED FIRST; the count is derived from this list ───────────────────────\n"
   for (i = 1; i <= nfail; i++) printf "   %2d. %s\n", i, fail[i]
   if (nfail == 0) printf "   (none)\n"

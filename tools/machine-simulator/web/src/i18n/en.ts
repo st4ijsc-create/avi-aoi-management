@@ -1712,6 +1712,26 @@ export const en: Dictionary = {
       quality: "Quality",
       oee: "OEE",
     },
+    // 🔴 Owner ruling item 2 (2026-08-16) requires the OEE definition to be published AT THE PLACE
+    // THE NUMBER IS READ. AA-1 delivered three sites under `src/` — where a DRIVER AUTHOR reads —
+    // and called that ceiling "stated too small" in its own review round: the surface a supervisor
+    // actually holds the number on is `/reports`. BJ-1 paid it on 2026-08-23 (docs/owner-decisions.md
+    // item 53). The wording mirrors the canonical statement on `HistorianDtos.OeeResultDto`, the same
+    // way `audit.limitation.body` mirrors `SqliteAuditStore`'s own honest claim — so if the two ever
+    // disagree, `src/` is the record and this is the bug.
+    oeeDefinition: {
+      label: "What this number counts",
+      body:
+        "The denominator is every cycle in this window whose stored verdict is anything other than Skip. " +
+        "The numerator is those of them judged Pass or Warn. A Fail cycle is in the denominator and not " +
+        "the numerator. A Skip cycle is in NEITHER — it does not lower the number, it is absent from it. " +
+        "So a cycle judged WARN counts as GOOD here, and OEE = Availability × Performance × Quality " +
+        "carries that same rule.",
+      noVersion:
+        "And this formula carries NO VERSION: no formula id, no revision, no date of the rule. Two OEE " +
+        "values obtained months apart are therefore not known to be comparable, and a value already " +
+        "exported cannot be re-attributed to a different formula later.",
+    },
     lossChart: {
       title: "OEE loss (3 buckets)",
       downtime: "Downtime loss",

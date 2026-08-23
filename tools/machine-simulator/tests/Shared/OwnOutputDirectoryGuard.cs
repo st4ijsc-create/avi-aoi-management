@@ -110,6 +110,25 @@ namespace St4i.TestHygiene;
 /// behaviour on every existing install — which is out of task X-1's bounds and is REPORTED rather than
 /// done.</para>
 ///
+/// <para>🔴 <b>"23 sites across 20 files" IS RETRACTED, 2026-08-23, BJ-1</b> (<c>docs/owner-decisions.md</c>
+/// item 52). Kept verbatim above. It does not reproduce in ANY direction, and no artefact in this
+/// repository names the instrument that produced it, so it cannot be re-derived either. Re-measured at
+/// <c>e6e169f4</c> over pathspec <c>:(top)</c>, listed before counted:
+/// <c>new ProductConfigStore(</c> — 26 lines in 5 files; <c>new SimulatedEcosystem(</c> — 11 lines in 4
+/// files; union <b>37 lines in 6 files</b>. Neither 23 nor 20 appears at any framing, and 20 FILES is more
+/// than three times the measured file count.
+/// <b>And 37/6 is itself a FLOOR, not the answer</b>, because a literal scan cannot see a target-typed
+/// factory: <c>CyclePlanTests.NewProductStore()</c>, <c>ConfigEndpointsRequestBodyTests.NewStore()</c> and
+/// <c>MachineSettingsEndpointsTests.NewDemoBackend()</c> are all <c>=&gt; new(TempDir())</c>, and TWO of
+/// their files are files the literal scan never reaches ⇒ 40 declaration sites in 8 files. Add the two
+/// production registrations in <c>Program.cs</c> (<c>AddSingleton&lt;ProductConfigStore&gt;</c>,
+/// <c>AddSingleton&lt;SimulatedEcosystem&gt;</c>) ⇒ 42 in 9.
+/// <b>The argument the number was carrying is untouched and is now stronger:</b> N was cited to show that
+/// call-site closure fixes today's N and not tomorrow's. A quantity nobody can reproduce, over a population
+/// that four framings count four ways, is exactly why a call-site count was the wrong thing to lean on.
+/// Do not write a fifth literal here — name the pathspec and the scan, or say "the union of these two
+/// constructors" and let the reader count.</para>
+///
 /// <para>So this guard exempts those two stores' files — and it derives WHICH files from the stores' own
 /// source, together with the JUSTIFICATION for exempting them. Both halves are checked on every run:
 /// the exempted sources must still declare their filenames, and they must still declare NO

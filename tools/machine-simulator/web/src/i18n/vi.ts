@@ -1755,6 +1755,25 @@ export const vi = {
       quality: "Chất lượng",
       oee: "OEE",
     },
+    // 🔴 Phán quyết mục 2 (2026-08-16) đòi công bố định nghĩa OEE NGAY TẠI CHỖ con số được đọc.
+    // AA-1 trả ba chỗ trong `src/` — chỗ tác giả driver đọc — và tự gọi cái trần ấy là "nêu quá
+    // nhỏ": bề mặt mà quản đốc thật sự cầm con số là `/reports`. BJ-1 trả chỗ ấy 2026-08-23
+    // (docs/owner-decisions.md mục 53). Lời văn ở đây là bản dịch của câu chuẩn trên
+    // `HistorianDtos.OeeResultDto` — cùng cách `audit.limitation.body` chép lời khai thật thà của
+    // `SqliteAuditStore` — nên nếu hai bên lệch nhau thì `src/` là bản ghi, và đây là chỗ sai.
+    oeeDefinition: {
+      label: "Con số này đếm gì",
+      body:
+        "Mẫu số là mọi chu kỳ trong khoảng thời gian này có phán quyết KHÁC Skip. Tử số là những chu kỳ " +
+        "trong đó được phán Pass hoặc Warn. Một chu kỳ Fail nằm ở mẫu số và không nằm ở tử số. Một chu kỳ " +
+        "Skip KHÔNG nằm ở đâu cả — nó không kéo con số xuống, nó vắng mặt khỏi con số. Nên một chu kỳ bị " +
+        "CẢNH BÁO được tính là hàng TỐT ở đây, và OEE = Tính sẵn sàng × Hiệu suất × Chất lượng mang theo " +
+        "đúng quy tắc ấy.",
+      noVersion:
+        "Và công thức này KHÔNG CÓ PHIÊN BẢN: không mã công thức, không số hiệu, không ngày của quy tắc. " +
+        "Hai giá trị OEE lấy cách nhau nhiều tháng vì thế không chắc so sánh được với nhau, và một con số " +
+        "đã xuất ra không thể gán lại cho một công thức khác về sau.",
+    },
     lossChart: {
       title: "Tổn thất OEE (3 nhóm)",
       downtime: "Tổn thất dừng máy",

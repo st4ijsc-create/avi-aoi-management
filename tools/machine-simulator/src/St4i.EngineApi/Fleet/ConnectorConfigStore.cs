@@ -459,9 +459,25 @@ public sealed class ConnectorConfigStore
         // sqlite.org is followed in the shortened form that is valid here — create, copy, drop, rename —
         // because this database contains exactly ONE table, no foreign keys pointing at it, no triggers, no
         // views and no indexes, so the steps that exist to preserve those have nothing to preserve. It runs
-        // inside the same transaction as every other rung of this ladder (see EnsureSchema), so a failure
-        // anywhere leaves the ORIGINAL table intact and user_version at 3 — this migration either completes
-        // or never happened; there is no state where the old table is gone and the new one is not there.
+        // inside ONE transaction PER RUNG, the way every rung of this ladder does (see EnsureSchema:
+        // BeginTransaction and Commit both sit INSIDE the `foreach (var (version, statements) in Migrations)`
+        // loop, and `PRAGMA user_version = <version>` is issued on that same transaction before it commits).
+        // So a failure anywhere in THIS rung leaves the ORIGINAL table intact and user_version at 3 — this
+        // migration either completes or never happened; there is no state where the old table is gone and the
+        // new one is not there.
+        //
+        // 🔴 THE SENTENCE ABOVE USED TO SAY "the same transaction as every other rung of this ladder", AND
+        // THAT WAS FALSE — retracted in place by BJ-1, 2026-08-23 (docs/owner-decisions.md item 58, measured
+        // by BH-1 while re-checking item 5). There is no ladder-wide transaction; there never was. The
+        // conclusion the comment draws is unaffected and was re-measured, which is why this is a correction
+        // and not a fix: all four statements of this rung PLUS the user_version pragma commit together, so
+        // per-rung atomicity delivers exactly the guarantee the next sentence promises. What was wrong was
+        // the SCOPE — it advertised atomicity BETWEEN rungs, which does not exist. State it in both
+        // directions, because half of it is a lie: a crash BETWEEN rung 4 and rung 5 stops at
+        // user_version = 4 with CONSISTENT data, and the next startup resumes at rung 5 (EnsureSchema reads
+        // the pragma and `continue`s past every version <= it). Correct behaviour, by a different mechanism
+        // than the retracted sentence named. Anyone adding a sixth rung must not assume the ladder rolls
+        // back as a unit; it does not, and it never did.
         //
         // 🔴 The SELECT list is spelled out COLUMN BY COLUMN rather than `SELECT *`: an installed system's
         // real connector rows are the thing this rung must not lose, and `INSERT INTO ... SELECT *` binds by

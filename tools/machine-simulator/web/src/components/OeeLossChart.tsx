@@ -61,6 +61,21 @@ function buildLossTooltip(t: (key: string, vars?: Record<string, string | number
         <p className="font-numeric text-[11px] text-text-muted">
           {t("reports.lossChart.tooltipSeconds", { seconds: Math.round(point.seconds) })}
         </p>
+        {/* 🔴 Owner ruling item 2 (2026-08-16), paid on this surface by BJ-1 2026-08-23
+            (docs/owner-decisions.md item 53). "Quality loss" is the only one of the three buckets
+            whose size depends on a VERDICT RULE rather than on a clock, and this column said nothing
+            about which verdicts it counts. The other two are deliberately left alone: downtime and
+            speed are measured in seconds against a planned window and carry no such rule, so
+            repeating the definition under them would be noise, and a definition read as noise is the
+            state this ruling exists to end. Both halves of the ruling are printed here rather than
+            one, because the "no version" half is the one a supervisor comparing two months needs. */}
+        {point.key === "quality" ? (
+          <div className="mt-2 max-w-[22rem] border-t pt-2 text-[11px] leading-snug text-text-muted" style={{ borderColor: chartTokens.border }}>
+            <p className="font-medium text-text-body">{t("reports.oeeDefinition.label")}</p>
+            <p className="mt-0.5">{t("reports.oeeDefinition.body")}</p>
+            <p className="mt-1">{t("reports.oeeDefinition.noVersion")}</p>
+          </div>
+        ) : null}
       </div>
     )
   }

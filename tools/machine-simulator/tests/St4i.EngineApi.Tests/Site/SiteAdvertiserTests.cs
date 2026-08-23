@@ -26,7 +26,22 @@ namespace St4i.EngineApi.Tests.Site;
 /// <see cref="Start_WhenAdvertiseEnvVarIsZero_NeverAdvertises"/> still mutates the real process-wide
 /// <c>ST4I_MDNS_ADVERTISE</c> env var — a class can only carry ONE <c>[Collection]</c> tag, so this
 /// deliberately accepts NOT sharing <see cref="St4i.EngineApi.Tests.Auth.SecurityEnvVarTests.CollectionName"/>
-/// with the twelve <c>WebApplicationFactory&lt;Program&gt;</c>-building classes that also read this var.
+/// with the <b>twenty</b> <c>WebApplicationFactory&lt;Program&gt;</c>-building classes whose booted host reads
+/// this var.
+/// 🔴 <b>That number said "twelve" until 2026-08-23 and it had drifted</b> — retracted and re-measured in
+/// place by BJ-1 (<c>docs/owner-decisions.md</c> item 58); a correction, not a fix, because no test behaviour
+/// changes. It was TRUE when written at <c>c6a47c79</c> (2026-07-28), when the population was exactly twelve.
+/// Re-measured at <c>e6e169f4</c>: 21 files under <c>tests/</c> mention
+/// <c>WebApplicationFactory&lt;Program&gt;</c>, one of them the helper <c>tests/Shared/TestRunTempRoot.cs</c>
+/// (a comment, not a factory) ⇒ <b>20 test classes, one factory-building class per file</b>, and all 20 also
+/// carry <c>SecurityEnvVarTests.CollectionName</c>. Z-1 measured the same 20 on 2026-08-18 and booked it in a
+/// report instead of here, so the stale sentence was quoted again afterwards.
+/// <b>The wording moved with the number, because the old wording would have made the new number wrong too:</b>
+/// it said those classes "read this var", and measured, none of them does — <c>ST4I_MDNS_ADVERTISE</c> appears
+/// by name in exactly one test class, this one. The 20 reach the read TRANSITIVELY: <c>Program</c> registers
+/// <c>SiteAdvertiser</c> as a hosted service and <c>SiteAdvertiser.IsAdvertiseEnabled</c> reads the var at
+/// <c>ApplicationStarted</c>. A strict reading of "classes that read this var" measures ONE, not twenty, which
+/// is why it now says "whose booted host reads".
 /// That residual window is already narrow (env var set → one synchronous, no-I/O <c>Start()</c> call that
 /// short-circuits immediately when disabled → immediate restore) and, separately, was already NOT a hard
 /// guarantee for this specific var even under that other collection: <c>SiteAdvertiser.StartAsync</c>

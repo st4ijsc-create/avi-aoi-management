@@ -57,11 +57,35 @@
 #   g. THE SENTENCE SPLITTER IS TEXTUAL. It splits on `.`/`!`/`?` followed by space and a capital,
 #      digit or quote, so "e.g. Foo" splits and a bare "1." list marker splits. That shifts which
 #      TEXT is shown, and can shift the count; it does not hide an absolute word.
+#   h. 🔴 `--files` NARROWS THE **NOW** CORPUS ONLY; THE BASE CORPUS IS ALWAYS THE WHOLE TREE AT
+#      <ref>. Added by BJ-1, 2026-08-23 (docs/owner-decisions.md item 51 sub-item 1), which is the
+#      first time this was written down anywhere: `FILES` is read at exactly one place (the NOW list),
+#      and the BASE list is built unconditionally over the extracted tree. So `comm -23` compares a
+#      narrow left side against a full right side, and the usage line below — "restrict THE corpus" —
+#      reads as though it narrowed both.
+#      🔴 AND THE ITEM'S OWN REASONING FOR WHY THIS IS HARMLESS DOES NOT SURVIVE, so it is corrected
+#      here rather than repeated. Item 51 says the asymmetry "can only OVER-report". Measured: it can
+#      do neither, because identity is (path, sentence) — see (f). A BASE key whose PATH is not among
+#      the named files cannot cancel any NOW key, so `now(named) \ base(full)` is set-identical to
+#      `now(named) \ base(named)`. The asymmetry is a NO-OP on the count, not a bias.
+#      What IS reachable, and is the real hazard, is stated in both directions:
+#        * OVER-report, by PATH FORM, not by set size. `relname` is the file's path with the corpus
+#          root stripped. A `--files` argument spelled `./src/Foo.cs`, or spelled relative to the
+#          repo root, or spelled absolute, yields a NOW key its BASE twin cannot match, and EVERY
+#          flagged sentence in that file reads as new. Pass paths exactly as `corpus_of` would emit
+#          them, i.e. relative to tools/machine-simulator.
+#        * UNDER-COVERAGE, not under-count. A new absolute claim in a file you did not name is never
+#          looked at. That is a domain narrowed silently, which is item 32's species, and no number
+#          this script prints says it happened.
+#      The gate does not pass `--files` (verify-suites.sh calls `--since ... --expect ...`), so the
+#      recorded expectation is not exposed to any of this. That is a fact about the CALLER, not a
+#      property of this script, and it stops being true the day someone adds the flag.
 #
 # Usage:
 #   scripts/scan-doc-negations.sh [--census]                 list every flagged sentence, then count
 #   scripts/scan-doc-negations.sh --since <ref> [--expect N] list sentences new vs <ref>, then count
-#   scripts/scan-doc-negations.sh --files <f>...             restrict the corpus to named files
+#   scripts/scan-doc-negations.sh --files <f>...             restrict the NOW corpus to named files
+#                                                            (the BASE corpus stays whole — see (h))
 #
 # Exit: 0 ok · 1 assertion failed (--expect not met, or --since found new claims with no --expect)
 #       2 usage/setup failure
@@ -281,7 +305,29 @@ echo "POPULATION now-files $NOW_FILES"
 echo "POPULATION now-sentences $NOW_SENT"
 echo "POPULATION base-files $BASE_FILES"
 echo "POPULATION base-sentences $BASE_SENT"
-echo "   (whole-tree census for context: $NOW_HITS of $NOW_SENT sentences — a ceiling, not a gate)"
+# 🔴 THIS LINE CALLED ITSELF "whole-tree" UNCONDITIONALLY, AND UNDER `--files` IT WAS A ONE-FILE
+# CENSUS WEARING THAT LABEL (BJ-1, 2026-08-23, item 51 sub-item 1 — found while writing boundary (h),
+# and it is the same species as the boundary: a domain claim printed wider than the domain measured).
+# Measured before the fix: `--files <one file>` printed "(whole-tree census for context: 22 of 66
+# sentences)". The word now follows the corpus instead of asserting one.
+if [[ ${#FILES[@]} -gt 0 ]]; then
+  echo "   (census over the ${NOW_FILES} NAMED file(s) only, NOT the tree: $NOW_HITS of $NOW_SENT sentences — a ceiling, not a gate)"
+  echo "   🔴 --files narrows the NOW corpus and NOT the BASE corpus (${BASE_FILES} files at $SHA). See boundary (h)."
+else
+  echo "   (whole-tree census for context: $NOW_HITS of $NOW_SENT sentences — a ceiling, not a gate)"
+fi
+# The disclosure protocol (verify-suites.sh run_tooling_check, docs/owner-decisions.md item 51). The
+# seven-and-now-eight lettered boundaries at the top of this file were written for a reader of this
+# FILE; the gate printed "new absolute doc claims: OK" and none of them. One line each, here, where
+# the result is.
+echo "DOES-NOT-MEASURE (a) it is not an oracle — it selects sentences a human must READ and decides nothing about their truth"
+echo "DOES-NOT-MEASURE (b) its RECALL is unknown and measured to be poor: a sentence asserting a purpose or mechanism with no absolute word in it is invisible here"
+echo "DOES-NOT-MEASURE (c) it is deliberately NOT a whole-tree gate; the census is a ceiling to quote, never a threshold — run --census, do not trust a literal"
+echo "DOES-NOT-MEASURE (d) the census population is far larger than any one task can adjudicate; a green --since says nothing about the backlog of claims already standing"
+echo "DOES-NOT-MEASURE (e) C# only, and only what this repo owns: web/ (.ts/.tsx), server/, client/ and the vendored examples/device-client source are OUTSIDE this corpus"
+echo "DOES-NOT-MEASURE (f) a RENAMED file reads as all-new, because identity is (path, sentence)"
+echo "DOES-NOT-MEASURE (g) the sentence splitter is textual; it can shift which text is shown and the count, though not hide an absolute word"
+echo "DOES-NOT-MEASURE (h) --files narrows the NOW corpus only, never the BASE corpus; a claim added to a file you did not name is never looked at, and no number printed here says so"
 
 if [[ -n "$EXPECT" ]]; then
   if [[ "$NEW" != "$EXPECT" ]]; then

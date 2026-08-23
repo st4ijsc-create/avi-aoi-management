@@ -409,11 +409,37 @@ foreach ($d in $subdirs) {
 Write-Host ""
 Write-Host "KEPT BY DESIGN - owner ruling 2026-08-23(b). These are created by the engine under the same" -ForegroundColor Cyan
 Write-Host "root and are NOT deleted: configuration an operator authored is not operational data." -ForegroundColor Cyan
+# 🔴 EACH KEPT PATH IS TESTED BEFORE IT IS ANNOUNCED (BJ-1, 2026-08-23, docs/owner-decisions.md item
+# 51 sub-item 4). This loop printed the two resolved paths UNCONDITIONALLY, and four lines below it
+# told the operator to "delete those directories by hand". Measured on the machine this was written
+# on: neither C:\ProgramData\ST4I\sim\products nor ...\ecosystem exists, and the banner named both as
+# though they did — so the instruction sent an operator hunting for two directories that were never
+# created. The purge list beside it has had the guarded idiom since it was written (see the delete
+# loop's "does not exist - nothing to remove"); this list simply never got it. The asymmetry was the
+# defect, not the printing: $subdirs gets a SECOND pass that corrects the banner, and $keptByDesign
+# gets none, so its banner is the operator's only reading.
+#
+# It stays a PRINT and not a filter: a kept path that does not exist is still worth naming, because
+# the ruling is about what this script will not touch, not about what happens to be on disk today.
+# What changes is that the sentence now says which of the two it is.
+$keptExisting = 0
 foreach ($k in $keptByDesign) {
     Write-Host ("  {0,-10} - {1}" -f $k.Keep, $k.Reason) -ForegroundColor Cyan
-    Write-Host ("               -> $($k.Path)") -ForegroundColor DarkCyan
+    if (Test-Path -LiteralPath $k.Path) {
+        $keptExisting++
+        Write-Host ("               -> $($k.Path)  [EXISTS - kept]") -ForegroundColor DarkCyan
+    }
+    else {
+        Write-Host ("               -> $($k.Path)  [does not exist - nothing to keep and nothing to delete]") -ForegroundColor DarkGray
+    }
 }
-Write-Host "If you want these gone too, delete those directories by hand - there is no flag for it." -ForegroundColor Cyan
+if ($keptExisting -eq 0) {
+    Write-Host "None of the kept directories exists on this machine, so there is nothing here for you to" -ForegroundColor Cyan
+    Write-Host "remove by hand either." -ForegroundColor Cyan
+}
+else {
+    Write-Host "If you want these gone too, delete those directories by hand - there is no flag for it." -ForegroundColor Cyan
+}
 Write-Host ""
 Write-Host "None of this is recoverable. Nothing here is touched by the MSI uninstaller by design -" -ForegroundColor Yellow
 Write-Host "this is a separate, explicit, manual step. Ctrl-C now if you are not certain." -ForegroundColor Yellow
