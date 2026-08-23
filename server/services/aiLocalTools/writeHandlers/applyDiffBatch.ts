@@ -79,6 +79,7 @@
  */
 import { z } from "zod";
 import {
+  cauCanhBaoKhongGit,
   cauTuChoi,
   ghiTheoPhanQuyet,
   khoaNganSachApDung,
@@ -270,6 +271,13 @@ async function xemTruoc(p: ThamSoLo, ctx: ToolExecContext): Promise<ActionPrevie
       `${pl.muc.length} 个文件，每个文件各自的锚定哈希——审批时全部重新校验。任一文件被改动则拒绝整批，磁盘不变。`,
     ),
   );
+
+  // ★ 2026-08-24 — cả lô đi qua nhờ miễn trừ TẠO-vào-gốc-không-git ⇒ MỘT cảnh báo tổng, in TRƯỚC
+  //   danh sách tệp (in N lần cùng một câu là làm loãng đúng chỗ người duyệt phải đọc kỹ).
+  const mucKhongGit = pl.muc.filter((m) => m.pq.khongGit);
+  if (mucKhongGit.length > 0) {
+    warnings.push(cauCanhBaoKhongGit(mucKhongGit.map((m) => m.pq.relPath).join(", "), ctx.lang));
+  }
 
   const changes: AuditChangeField[] = [];
   for (const m of pl.muc) {

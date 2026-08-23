@@ -197,6 +197,16 @@ export const DUOI_CHO_PHEP: ReadonlySet<string> = new Set([
   ".cs",
   ".csproj",
   ".sln",
+  // ★ 2026-08-24 — đường TẠO KHUNG DỰ ÁN: một khung WPF là bất khả thi nếu thiếu `.xaml`
+  // (App.xaml/MainWindow.xaml là XML văn bản thuần, cùng họ `.html`/`.xml` đã cho). Đo trước khi
+  // thêm: `duoiDuocPhep("App.xaml")` = false ⇒ `apply_diff_batch` từ chối DENIED_EXT cả lô khung.
+  ".xaml",
+  // ★ 2026-08-24 — NGHIỆM THU LIVE lượt tạo khung ĐẦU TIÊN bắt được ngay: model 30B đưa
+  //   `Resources/Strings.resx` vào khung WPF ⇒ cả lô bị từ chối `DUONG_KHONG_HOP_LE` (đúng thiết
+  //   kế fail-closed, "chưa một byte nào được ghi") — nhưng `.resx` là định dạng tài nguyên CHUẨN
+  //   của C#/WPF: XML văn bản thuần, cùng họ `.xaml` ngay trên. Thiếu nó thì mọi khung có chuỗi
+  //   đa ngôn ngữ đều chết ở cửa. Cùng phép đo, cùng lý lẽ, cùng ngày với `.xaml`.
+  ".resx",
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════

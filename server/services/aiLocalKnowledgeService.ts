@@ -20,9 +20,18 @@ import {
 import {
   classifyCodingToolIntent,
   laCauCanSuyLuan,
+  laYDinhTaoDuAn,
   trichDuongSuaTatDinh,
   trichMoiDuongDanRepo,
 } from "./aiLocalTools/intentClassifier";
+/**
+ * ★★★ 2026-08-24 — đường TẠO KHUNG DỰ ÁN dùng LẠI đúng hai lớp phán quyết THUẦN của hộp cát
+ * (`phanQuyetDuongDan` + `duoiDuocPhep`) để bắt-sớm đường xấu TRƯỚC khi đốt một lượt `read_file`
+ * nào — tool `apply_diff_batch` vẫn kiểm LẠI độc lập từng tệp (hai hàng rào, một nguồn chính sách).
+ * `TRAN_TEP_MOI_LO` nhập từ CHÍNH tool lô: trần khung = trần thẻ duyệt, không đẻ hằng thứ hai.
+ */
+import { duoiDuocPhep, phanQuyetDuongDan } from "./aiLocalTools/repoSandbox";
+import { TRAN_TEP_MOI_LO } from "./aiLocalTools/writeHandlers/applyDiffBatch";
 /**
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
  * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
@@ -31,6 +40,7 @@ import {
   apDungKhoiSua,
   bocKhoiMa,
   bocKhoiSua,
+  bocManifestKhung,
   chepCaTepDuocKhong,
   chuanHoaTepMoi,
   codingEditEnabled,
@@ -39,13 +49,16 @@ import {
   codingModelSanSang,
   dongBoXuongDong,
   MOC_MO,
+  MOC_TEP_KHUNG,
   personaSinhMa,
   personaSuaTep,
   personaSuaTepKhoi,
+  personaTaoKhung,
   personaTaoTep,
   promptSinhMa,
   promptSuaTep,
   promptSuaTepKhoi,
+  promptTaoKhung,
   promptTaoTep,
   rutChuCoCanh,
   streamCodingModel,
@@ -60,6 +73,7 @@ import {
   type KetQuaChu,
   type LuotHoiThoai,
   type MaKhoiHong,
+  type MaManifestKhung,
 } from "./aiCodingAgent";
 /**
  * ★★★ doc 79 · TRỤC 1 (D) — MỤC LỤC (chunk) → MÃ THẬT (đọc đĩa qua `read_file`). Xem docblock đầu
@@ -3170,6 +3184,23 @@ async function* streamCodingAnswer(
   }
 
   /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-24 — CỬA **TẠO KHUNG DỰ ÁN** TẤT ĐỊNH (`laYDinhTaoDuAn`), đứng SAU cửa "sửa X:"
+   * và TRƯỚC bộ chọn + vòng tool.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Đo live (chủ dự án, 2026-08-24): *"tạo dự án C# WPF đọc file pdf"* — câu KHÔNG THỂ nêu đường
+   * dẫn nào (tệp chưa tồn tại) ⇒ đường nhiều-tệp (`≥2` đường NGƯỜI GÕ) là bất khả, câu rơi xuống
+   * nhánh SINH MÃ: mã in ra màn hình mà **không một tệp nào rơi xuống đĩa**. Cửa này là ngoại lệ
+   * CREATE-ONLY duy nhất của luật "model không tự chọn tệp ghi" — lý lẽ + bốn hàng rào hậu kiểm ở
+   * docblock `streamCodingTaoKhung`.
+   * ⚠ Fail-through y hệt mọi cửa: cờ tắt / model vắng ⇒ trả `false` ⇒ rơi xuống đường cũ (sinh mã).
+   */
+  if (laYDinhTaoDuAn(question)) {
+    const daXuLyKhung = yield* streamCodingTaoKhung(question, language, context, execCtx2, history, khoiBaiHocLuot);
+    if (daXuLyKhung) return;
+  }
+
+  /**
    * ★★★ doc 79 · TRỤC 1 (C) — NHÁNH **SỬA TỆP**, đứng TRƯỚC bộ chọn tool tất định.
    *
    * Vì sao trước: một câu *"sửa src/Calculator.cs để Divide ném ArgumentException khi chia 0"* CÓ
@@ -3385,6 +3416,14 @@ async function* streamCodingAnswer(
  * ~28.700 token dư địa trên slot 32.768 cho persona + lịch sử.
  */
 const TRAN_TOKEN_TAO_TEP = 4_000;
+
+/**
+ * ★ Trần token ĐẦU RA cho một lượt **TẠO KHUNG DỰ ÁN** — MỘT lượt model phát tới 8 tệp.
+ * 8.000 token ≈ 20 KB mã: dư cho một khung tối thiểu (csproj + App.xaml(.cs) + MainWindow.xaml(.cs)
+ * + service + README ≈ 6–8 KB), và prompt của lượt này KHÔNG chở nội dung tệp nào (các tệp chưa
+ * tồn tại) nên slot 32.768 còn ~24.700 token dư địa — trần này không bao giờ ép prompt nhường chỗ.
+ */
+const TRAN_TOKEN_TAO_KHUNG = 8_000;
 
 /**
  * ★★ Trần số tệp mà đường **SỬA NHIỀU TỆP** chịu xử lý trong một lượt.
@@ -4213,6 +4252,241 @@ async function* streamCodingSuaNhieuTep(
   return true;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-24 — TẠO KHUNG DỰ ÁN: MỘT lượt model → manifest N tệp → MỘT thẻ duyệt, mọi neo RỖNG
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠⚠⚠ ĐÂY LÀ NGOẠI LỆ **CREATE-ONLY** DUY NHẤT của luật *"model không bao giờ tự chọn danh sách
+ * tệp ghi"* (đo live 2026-08-19: bộ chọn LLM bịa đường dẫn). Vì sao nó KHÔNG mở lại lỗ ấy:
+ *
+ *   1. **Chỉ TẠO, không SỬA.** Mọi mục đề xuất mang `original: ""` — băm neo là băm("") — và tệp
+ *      nào ĐÃ tồn tại làm CẢ LÔ bị từ chối ở đây (mã `TEP_DA_TON_TAI`, liệt kê đích danh) TRƯỚC
+ *      khi một đề xuất nào được dựng; `apply_diff_batch` còn chặn độc lập lần nữa (`BASE_MISMATCH`
+ *      + kiểm lại ở confirm). Một đường model-chọn-tệp chỉ chạm được vào chỗ **không có gì để phá**.
+ *   2. **Từng đường vẫn qua chính sách hộp cát** hai lần: bắt-sớm ở đây (`phanQuyetDuongDan` +
+ *      `duoiDuocPhep`, thuần, trước mọi I/O) và kiểm THẬT trong tool (confine + realpath + đuôi).
+ *   3. **Thẻ duyệt hiện ĐỦ nội dung từng tệp** (preview lô trích từng mục) — người bấm là người
+ *      quyết, đúng chỗ HITL sinh ra để đứng.
+ *   4. **KHÔNG chạm `locQuyetDinhLLMLapTrinh`**: cửa này là ý-định-NGƯỜI-DÙNG-tất-định
+ *      (`laYDinhTaoDuAn`) + hậu xử lý đầu ra model — bộ chọn LLM vẫn KHÔNG khởi xướng được
+ *      `apply_diff*` từ bất kỳ đường nào.
+ *
+ * ⚠ FAIL-SAFE về câu trả lời thường: manifest rỗng/hỏng/quá trần/đường xấu ⇒ chữ model ĐÃ stream
+ *   được giữ nguyên như một câu trả lời, cộng đúng MỘT câu nói thật vì sao không có đề xuất —
+ *   **không đề xuất một phần**, không đoán.
+ * ⚠ Trả `true` ⇔ đã trả lời xong (kể cả bằng lời từ chối). `false` ⇒ nhường đường cũ (sinh mã).
+ */
+async function* streamCodingTaoKhung(
+  question: string,
+  language: KbLanguage,
+  context: KbQueryContext,
+  execCtx?: ToolExecContext,
+  history: readonly LuotHoiThoai[] = [],
+  /** ★ doc 82 — khối bài học ĐÃ BỌC của lượt; `""` ⇒ không có. Chỉ đi vào `prompt`. */
+  khoiBaiHoc = "",
+): AsyncGenerator<StreamEvent, boolean> {
+  if (!codingEditEnabled()) return false;
+  if (!execCtx) return false;
+  if (!(await codingModelSanSang())) return false;
+
+  const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
+  const lm = yield* motLuotModel({
+    heThong: personaTaoKhung(language, nguCanh),
+    // ⚠ KHÔNG có khối ngữ cảnh mã: thư mục đích TRỐNG — mục lục repo nền tảng không nói gì về nó.
+    ghepPrompt: (khoiLichSu, khoiBai) => promptTaoKhung(question, language, khoiLichSu, khoiBai),
+    khoiBaiHoc,
+    tranToken: TRAN_TOKEN_TAO_KHUNG,
+    language,
+    history,
+    relPath: "(khung dự án)",
+    userId: execCtx.user?.id,
+    signal: execCtx.signal,
+  });
+  if (lm.kq !== "chu") {
+    yield doneSinhMa(lm.traLoi, lm.provider, lm.degraded);
+    return true;
+  }
+
+  /**
+   * Kết một lượt FAIL-SAFE: chữ model ĐÃ stream giữ nguyên như câu trả lời thường + đúng MỘT câu
+   * nói thật vì sao không có đề xuất. Generator con không `yield` hộ được nên trả câu về cho vòng
+   * ngoài phát — cùng lý do `chuanBiBanSuaMotTep` trả `traLoi` thay vì tự phát.
+   */
+  /**
+   * ★ KIỂM MANIFEST — rút thành hàm cục bộ vì nó chạy TỐI ĐA HAI LẦN (lượt gốc + đúng MỘT lượt tự
+   * sửa). Nội dung là NGUYÊN khối kiểm cũ, không đổi một phép nào — chỉ đổi chỗ đứng.
+   */
+  const kiemManifest = async (
+    vanBan: string,
+  ): Promise<{ ok: true; tep: { duong: string; noiDung: string }[]; cauLoai: string | null } | { ok: false; cau: string }> => {
+    const boc = bocManifestKhung(vanBan);
+    if (!boc.ok) return { ok: false, cau: codingKhungHongMessage(language, boc.ma, boc.chiTiet) };
+    if (boc.tep.length > TRAN_TEP_MOI_LO) return { ok: false, cau: codingKhungQuaTranMessage(language, boc.tep.length) };
+    // ── (1) CHÍNH SÁCH ĐƯỜNG — thuần, TRƯỚC mọi I/O: hộp cát + đuôi trắng, liệt kê ĐỦ tệp phạm.
+    // ⚠ HAI loại phạm, HAI số phận: HÌNH DẠNG đường xấu (tuyệt đối/`..`/ổ đĩa/thư mục cấm) là dấu
+    //   hiệu model cố thoát hộp cát ⇒ LUÔN từ chối, la to — không bao giờ "loại êm" một mưu toan.
+    //   Phạm ĐUÔI đơn thuần (dotfile, .ico) chỉ là thói quen xấu ⇒ mới được xét loại-an-toàn dưới.
+    const phamDuongXau: string[] = [];
+    const phamChinhSach: string[] = [];
+    for (const t of boc.tep) {
+      const ten = t.duong.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "";
+      if (phanQuyetDuongDan(t.duong) !== null) phamDuongXau.push(t.duong);
+      else if (!duoiDuocPhep(ten)) phamChinhSach.push(t.duong);
+    }
+    if (phamDuongXau.length > 0) {
+      return { ok: false, cau: codingKhungTuChoiMessage(language, "DUONG_KHONG_HOP_LE", phamDuongXau) };
+    }
+    /**
+     * ★★★ LOẠI-AN-TOÀN thay vì từ chối mù — luật TẤT ĐỊNH, đo được, sinh từ BỐN lượt live liên
+     * tiếp chơi đập chuột với model (resx → ico+editorconfig → ico → editorconfig: lượt tự sửa bỏ
+     * đúng tệp bị mắng rồi thêm tệp phạm KHÁC).
+     *
+     * Tệp phạm chia hai loại theo MỘT vị từ: có tệp NÀO KHÁC trong manifest nhắc tới TÊN nó không?
+     *  • KHÔNG ai tham chiếu (`.editorconfig`, `.gitignore`…) ⇒ LOẠI khỏi lô + NÓI RÕ trong thẻ và
+     *    câu trả lời — khung còn lại vẫn nguyên vẹn, build không mất gì. Im lặng loại là nói dối;
+     *    loại CÓ nói là đúng chuẩn "không cắt bớt âm thầm" của repo.
+     *  • CÓ tham chiếu (`appicon.ico` trong `<ApplicationIcon>` của csproj) ⇒ loại là build GÃY
+     *    ngay lượt sau ⇒ giữ nguyên đường TỪ CHỐI/tự sửa, kèm tên tệp tham chiếu để model biết phải
+     *    gỡ cả hai đầu.
+     */
+    if (phamChinhSach.length > 0) {
+      const thamChieu = new Map<string, string[]>();
+      for (const pham of phamChinhSach) {
+        const ten = pham.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? pham;
+        // ⚠ Tệp .md là VĂN XUÔI (README nhắc tên ≠ phụ thuộc build) — không tính là tham chiếu.
+        const nhac = boc.tep
+          .filter((t) => !phamChinhSach.includes(t.duong) && !/.md$/i.test(t.duong) && t.noiDung.includes(ten))
+          .map((t) => t.duong);
+        if (nhac.length > 0) thamChieu.set(pham, nhac);
+      }
+      if (thamChieu.size > 0) {
+        const chiTiet = phamChinhSach.map((p) => {
+          const n = thamChieu.get(p);
+          return n ? `${p} (được tham chiếu bởi: ${n.join(", ")})` : p;
+        });
+        return { ok: false, cau: codingKhungTuChoiMessage(language, "DUONG_KHONG_HOP_LE", chiTiet) };
+      }
+      // Mọi tệp phạm đều KHÔNG ai tham chiếu ⇒ loại + nói, đi tiếp với phần còn lại.
+      const conLai = boc.tep.filter((t) => !phamChinhSach.includes(t.duong));
+      if (conLai.length === 0) {
+        return { ok: false, cau: codingKhungTuChoiMessage(language, "DUONG_KHONG_HOP_LE", phamChinhSach) };
+      }
+      boc.tep.length = 0;
+      boc.tep.push(...conLai);
+      var cauLoaiTam: string | null = codingKhungLoaiTepMessage(language, phamChinhSach, conLai.length);
+    } else {
+      var cauLoaiTam: string | null = null;
+    }
+    // ── (2) CHƯA TỒN TẠI — hỏi qua ĐÚNG cửa đọc (`read_file` qua executeDecision: hộp cát +
+    //   RBAC + gốc dự án server-authoritative). KHÔNG mở `fs` thứ hai — `programmingFileIo.census`
+    //   cưỡng chế. Tệp ĐÃ tồn tại ⇒ từ chối CẢ LÔ: khung dự án nửa vời tệ hơn không có.
+    const daTonTai: string[] = [];
+    const khongKiemDuoc: string[] = [];
+    for (const t of boc.tep) {
+      const rf = await executeDecision({ tool: "read_file", args: { path: t.duong } }, execCtx);
+      const note = rf.result?.note;
+      if (note === "NOT_FOUND") continue; // đúng điều kiện TẠO
+      else if (rf.result && note == null) daTonTai.push(t.duong); // đọc được ⇒ tệp ĐÃ có
+      else khongKiemDuoc.push(note ? `${t.duong} (${note})` : t.duong); // lỗi/từ chối khác ⇒ fail-closed
+    }
+    if (daTonTai.length > 0) return { ok: false, cau: codingKhungTuChoiMessage(language, "TEP_DA_TON_TAI", daTonTai) };
+    if (khongKiemDuoc.length > 0) return { ok: false, cau: codingKhungTuChoiMessage(language, "KHONG_KIEM_DUOC", khongKiemDuoc) };
+    return { ok: true, tep: boc.tep, cauLoai: cauLoaiTam };
+  };
+
+  let vanBanCuoi = lm.text;
+  let ketQuaKiem = await kiemManifest(vanBanCuoi);
+  if (!ketQuaKiem.ok) {
+    /**
+     * ★★★ ĐÚNG MỘT LƯỢT TỰ SỬA — vì sao có, và vì sao chỉ MỘT.
+     *
+     * Nghiệm thu live 2026-08-24: BA lượt liên tiếp model 30B nhét tệp ngoài danh sách trắng vào
+     * khung WPF (`Strings.resx` → `appicon.ico` + `.editorconfig` → lại `appicon.ico` — lượt CUỐI
+     * persona ĐÃ liệt kê nguyên danh sách trắng mà thói quen "WPF thì có icon" vẫn thắng lời dặn).
+     * Mỗi lượt đoán sai đốt ~4 phút của người dùng chỉ để nhận một câu từ chối rồi tự gõ lại.
+     * ⇒ Vòng đọc-lỗi-rồi-sửa là đúng triết lý repo (doc 78 nhịp 5), áp cho chính manifest: đưa
+     *   NGUYÊN VĂN câu từ chối lại cho model, bắt xuất lại toàn bộ khung sạch.
+     * ⚠ Trần là MỘT, không phải N: lỗi manifest là lỗi HÌNH THỨC — model đọc được câu từ chối là
+     *   sửa được ngay; hỏng cả lượt thứ hai nghĩa là model không theo nổi hợp đồng, lặp thêm chỉ
+     *   đốt thời gian để che một vấn đề cần con người nhìn thấy. Fail-safe cũ giữ nguyên sau trần.
+     */
+    const thongBaoTuSua = codingKhungTuSuaThongBao(language, ketQuaKiem.cau);
+    yield { type: "token", token: `\n\n${thongBaoTuSua}` };
+    const lm2 = yield* motLuotModel({
+      heThong: personaTaoKhung(language, nguCanh),
+      ghepPrompt: (khoiLichSu, khoiBai) =>
+        promptTaoKhung(codingKhungCauTuSua(language, question, ketQuaKiem.ok ? "" : ketQuaKiem.cau), language, khoiLichSu, khoiBai),
+      khoiBaiHoc,
+      tranToken: TRAN_TOKEN_TAO_KHUNG,
+      language,
+      history,
+      relPath: "(khung dự án — tự sửa)",
+      userId: execCtx.user?.id,
+      signal: execCtx.signal,
+    });
+    if (lm2.kq !== "chu") {
+      yield doneSinhMa(lm2.traLoi, lm2.provider, lm2.degraded);
+      return true;
+    }
+    // ★ Nối thông báo vào văn bản CUỐI: client thay cả bong bóng bằng answer của done — thông báo
+    //   chỉ nằm trong token stream sẽ BIẾN MẤT khỏi bản ghi (đo live 2026-08-24, lượt 5).
+    //   Kiểm trên lm2.text THUẦN (không kèm thông báo) — parser không cần, và văn-bản-kiểm ≠
+    //   văn-bản-hiển-thị là hai vai khác nhau, đừng trộn.
+    vanBanCuoi = `${thongBaoTuSua}\n\n${lm2.text}`;
+    ketQuaKiem = await kiemManifest(lm2.text);
+    if (!ketQuaKiem.ok) {
+      const cau = ketQuaKiem.cau;
+      yield { type: "token", token: `\n\n${cau}` };
+      yield doneSinhMa(`${vanBanCuoi}\n\n${cau}`, "ollama");
+      return true;
+    }
+  }
+  const tepKhung = ketQuaKiem.tep;
+  // ★ Tệp bị LOẠI-an-toàn: nói NGAY trong dòng chữ — trước cả thẻ duyệt, để người đọc thẻ biết vì sao thiếu.
+  if (ketQuaKiem.cauLoai) {
+    yield { type: "token", token: `
+
+${ketQuaKiem.cauLoai}` };
+  }
+  const cauLoaiCuoi = ketQuaKiem.cauLoai;
+
+  /**
+   * ── ĐỀ XUẤT: MỘT `apply_diff_batch`, MỌI mục `original: ""` (neo = băm("") — tool tự chứng minh
+   * lại "chưa tồn tại" ở CẢ propose LẪN confirm). Kể cả khung 1 tệp vẫn đi lô: một khuôn duyệt duy
+   * nhất cho "khung dự án", không rẽ nhánh theo N.
+   * ⚠ HITL nguyên vẹn: `executeDecision` gửi mọi `kind:"write"` vào `proposeAction` — ở đây không
+   *   có nhánh nào chạm đĩa.
+   */
+  const ad = await executeDecision(
+    { tool: "apply_diff_batch", args: { files: tepKhung.map((t) => ({ path: t.duong, original: "", modified: t.noiDung })) } },
+    execCtx,
+  );
+  /**
+   * ⚠ `vanBanCuoi` chứ KHÔNG phải `lm.text` — ba dòng dưới từng dùng `lm.text` và bị lưới §7B bắt:
+   *   client thay cả bong bóng bằng `answer` của done, nên văn bản lượt TỰ SỬA (thông báo + manifest
+   *   sạch) sẽ biến mất khỏi bản ghi nếu done vẫn chở văn bản lượt MỘT. Câu LOẠI-an-toàn cũng phải
+   *   sống sót vào done với cùng lý do.
+   */
+  const duoiDone = cauLoaiCuoi ? `${cauLoaiCuoi}\n\n` : "";
+  if (ad.pendingAction) {
+    yield { type: "pending_action", toolName: "apply_diff_batch", pendingAction: ad.pendingAction };
+    const m = ad.pendingAction.summary;
+    yield { type: "token", token: `\n\n${m}` };
+    yield doneSinhMa(`${vanBanCuoi}\n\n${duoiDone}${m}`, "ollama");
+    return true;
+  }
+  if (ad.denied) {
+    const m = ad.denied.message;
+    yield { type: "token", token: `\n\n${m}` };
+    yield doneSinhMa(`${vanBanCuoi}\n\n${duoiDone}${m}`, "tool");
+    return true;
+  }
+  const m = codingErrorMessage(language, "apply_diff_batch", ad.error ?? "PROPOSE_FAILED");
+  yield { type: "token", token: `\n\n${m}` };
+  yield doneSinhMa(`${vanBanCuoi}\n\n${duoiDone}${m}`, "tool");
+  return true;
+}
+
 /** Vì sao nhánh sinh mã KHÔNG chạy — mỗi lý do là một câu khác nhau với người dùng. */
 type LyDoKhongSinhMa = "xong" | "tat_co" | "model_offline";
 
@@ -4617,6 +4891,106 @@ function codingLoKhongDoiMessage(language: KbLanguage, khongDoi: readonly string
   if (language === "zh") return `⚠ 未提出写入：模型对所有文件返回的内容都与当前一致（${ds}）。`;
   if (language === "en") return `⚠ No write proposed: the model returned content identical to the current one for every file (${ds}).`;
   return `⚠ KHÔNG đề xuất ghi: model trả về nội dung GIỐNG HỆT bản hiện tại cho mọi tệp (${ds}).`;
+}
+
+/**
+ * ★★★ 2026-08-24 — MANIFEST KHUNG HỎNG ⇒ **FAIL-SAFE VỀ CÂU TRẢ LỜI THƯỜNG**, không đề xuất gì.
+ * Chữ model đã stream cho người đọc rồi; câu này chỉ nói thật vì sao không có thẻ duyệt, kèm mã +
+ * chi tiết máy-đọc-được để lượt sau (người hoặc lưới) hành động được.
+ */
+/**
+ * ★ Thông báo NGƯỜI DÙNG thấy khi lượt tự-sửa khởi động — nói thật đang làm gì và vì sao, kèm
+ * nguyên văn lỗi để người chờ không mù (một lượt 30B ~vài phút).
+ */
+/**
+ * ★ Tệp phạm chính sách nhưng KHÔNG ai tham chiếu ⇒ bị LOẠI khỏi lô, và câu này là lời khai —
+ * loại ÂM THẦM là một kiểu cắt bớt nói dối, đúng lớp "không silent-truncation" của repo.
+ */
+function codingKhungLoaiTepMessage(language: KbLanguage, tepLoai: string[], conLai: number): string {
+  const ds = tepLoai.join(", ");
+  if (language === "zh")
+    return `⚠ 已从骨架中剔除 ${tepLoai.length} 个白名单外的文件（清单中无其他文件引用它）：${ds}。其余 ${conLai} 个文件照常提交审批。`;
+  if (language === "en")
+    return `⚠ Dropped ${tepLoai.length} file(s) outside the whitelist (nothing else in the manifest references them): ${ds}. The remaining ${conLai} file(s) proceed to approval as usual.`;
+  return `⚠ Đã LOẠI ${tepLoai.length} tệp ngoài danh sách trắng (không tệp nào khác trong manifest tham chiếu tới): ${ds}. ${conLai} tệp còn lại vẫn được đề xuất duyệt như thường.`;
+}
+
+function codingKhungTuSuaThongBao(language: KbLanguage, cauLoi: string): string {
+  if (language === "zh") return `⚠ 首版清单被拒绝：${cauLoi}\n→ 正在自动让模型重出一版干净的骨架（仅重试一次）…`;
+  if (language === "en") return `⚠ First manifest refused: ${cauLoi}\n→ Automatically asking the model for a clean skeleton (single retry)…`;
+  return `⚠ Manifest lượt đầu bị từ chối: ${cauLoi}\n→ Đang tự yêu cầu model xuất lại khung sạch (đúng MỘT lượt tự sửa)…`;
+}
+
+/**
+ * ★ Câu hỏi của LƯỢT TỰ SỬA — câu gốc + nguyên văn lỗi + mệnh lệnh sửa. Lỗi là chữ do CHÍNH server
+ * sinh (không phải dữ liệu ngoài) nên đứng thẳng trong ô yêu cầu được.
+ */
+function codingKhungCauTuSua(language: KbLanguage, question: string, cauLoi: string): string {
+  if (language === "zh")
+    return `${question}\n\n[上一轮错误 — 必须修复] ${cauLoi}\n重新输出完整骨架（所有文件，同样的 ${MOC_TEP_KHUNG} 格式）；彻底去掉违规文件，并删除其他文件（csproj、XAML…）中对它的一切引用。`;
+  if (language === "en")
+    return `${question}\n\n[PREVIOUS-TURN ERROR — MUST FIX] ${cauLoi}\nRe-emit the FULL skeleton (every file, same ${MOC_TEP_KHUNG} format); drop the offending file entirely and remove every reference to it in the other files (csproj, XAML…).`;
+  return `${question}\n\n[LỖI LƯỢT TRƯỚC — BẮT BUỘC SỬA] ${cauLoi}\nXuất lại TOÀN BỘ khung (mọi tệp, đúng khuôn ${MOC_TEP_KHUNG}); BỎ HẲN tệp phạm quy và xoá MỌI tham chiếu tới nó trong các tệp khác (csproj, XAML…).`;
+}
+
+function codingKhungHongMessage(language: KbLanguage, ma: MaManifestKhung, chiTiet: string): string {
+  const viMa: Record<MaManifestKhung, string> = {
+    KHONG_CO_TEP: `không có dòng "${MOC_TEP_KHUNG}" nào — model trả lời văn xuôi thay vì manifest`,
+    TEP_KHONG_DUONG: `một dòng tiêu đề tệp không có đường dẫn (${chiTiet})`,
+    TEP_THIEU_KHOI: `tệp "${chiTiet}" khai tên mà không có khối mã nội dung`,
+    TEP_RONG: `tệp "${chiTiet}" có khối mã RỖNG — tạo tệp rỗng là vô nghĩa`,
+    TEP_TRUNG: `cùng một đường khai HAI LẦN: ${chiTiet}`,
+  };
+  const enMa: Record<MaManifestKhung, string> = {
+    KHONG_CO_TEP: `no "${MOC_TEP_KHUNG}" line at all — the model answered in prose instead of a manifest`,
+    TEP_KHONG_DUONG: `a file header line carries no path (${chiTiet})`,
+    TEP_THIEU_KHOI: `file "${chiTiet}" is named but has no content code block`,
+    TEP_RONG: `file "${chiTiet}" has an EMPTY code block — creating an empty file is pointless`,
+    TEP_TRUNG: `the same path is declared TWICE: ${chiTiet}`,
+  };
+  const zhMa: Record<MaManifestKhung, string> = {
+    KHONG_CO_TEP: `完全没有 "${MOC_TEP_KHUNG}" 行——模型用散文作答而不是清单`,
+    TEP_KHONG_DUONG: `某个文件标题行没有路径（${chiTiet}）`,
+    TEP_THIEU_KHOI: `文件 "${chiTiet}" 只有名字，没有内容代码块`,
+    TEP_RONG: `文件 "${chiTiet}" 的代码块为空——创建空文件没有意义`,
+    TEP_TRUNG: `同一路径声明了两次：${chiTiet}`,
+  };
+  if (language === "zh") return `⚠ 未提出写入 [${ma}]：${zhMa[ma]}。上面的回答保留为普通回答；请再说一次「创建项目 …」重试。`;
+  if (language === "en") return `⚠ No write proposed [${ma}]: ${enMa[ma]}. The answer above stands as a plain answer; say "create a project …" again to retry.`;
+  return `⚠ KHÔNG đề xuất ghi [${ma}]: ${viMa[ma]}. Câu trả lời phía trên giữ nguyên như một câu trả lời thường; gõ lại *"tạo dự án …"* để thử lượt khác.`;
+}
+
+/** ★ Khung vượt trần số tệp của MỘT thẻ duyệt — nói thẳng con số, không âm thầm cắt bớt. */
+function codingKhungQuaTranMessage(language: KbLanguage, soTep: number): string {
+  if (language === "zh") return `⚠ 未提出写入：骨架有 ${soTep} 个文件，超过一张审批卡的上限 ${TRAN_TEP_MOI_LO}。请要求“最小骨架”（入口 + 项目文件 + 1–2 个核心文件），其余留到下一轮。我不会悄悄截断清单。`;
+  if (language === "en") return `⚠ No write proposed: the skeleton has ${soTep} files, above the ${TRAN_TEP_MOI_LO}-file cap of ONE approval card. Ask for a "minimal skeleton" (entry point + project file + 1–2 core files) and add the rest next turn. I will not silently truncate the list.`;
+  return `⚠ KHÔNG đề xuất ghi: khung có ${soTep} tệp, vượt trần **${TRAN_TEP_MOI_LO} tệp** của MỘT thẻ duyệt. Hãy yêu cầu *"khung tối thiểu"* (điểm vào + tệp dự án + 1–2 tệp lõi), phần còn lại để lượt sau — tôi KHÔNG âm thầm cắt bớt danh sách.`;
+}
+
+/**
+ * ★★★ Khung bị TỪ CHỐI CẢ LÔ ở tầng hậu kiểm — ba lý do, mỗi lý do một hành động khác của người
+ * dùng, và luôn LIỆT KÊ ĐÍCH DANH tệp phạm (một lời từ chối không nêu được nó từ chối cái gì là
+ * lớp lỗi đã trả giá ở đường sửa-theo-khối).
+ */
+function codingKhungTuChoiMessage(
+  language: KbLanguage,
+  ma: "TEP_DA_TON_TAI" | "DUONG_KHONG_HOP_LE" | "KHONG_KIEM_DUOC",
+  danhSach: readonly string[],
+): string {
+  const ds = danhSach.join(", ");
+  if (ma === "TEP_DA_TON_TAI") {
+    if (language === "zh") return `⛔ 整个骨架被拒绝 [TEP_DA_TON_TAI]：以下文件**已存在**：${ds}。半套骨架比没有更糟，所以一个文件已存在就拒绝整批——没有任何字节被写入。要修改现有文件请说「修改 <文件>: …」；要新建骨架请选一个空目录。`;
+    if (language === "en") return `⛔ The whole skeleton was refused [TEP_DA_TON_TAI]: these files ALREADY EXIST: ${ds}. A half-scaffold is worse than none, so one existing file refuses the whole batch — nothing was written. To edit an existing file say "edit <file>: …"; to scaffold, pick an empty folder.`;
+    return `⛔ TỪ CHỐI CẢ KHUNG [TEP_DA_TON_TAI]: các tệp sau **ĐÃ TỒN TẠI**: ${ds}. Một khung dự án nửa vời tệ hơn không có, nên chỉ cần MỘT tệp đã tồn tại là cả lô bị từ chối — chưa một byte nào được ghi. Muốn sửa tệp đang có, nói *"sửa <tệp>: …"*; muốn dựng khung, chọn một thư mục trống.`;
+  }
+  if (ma === "DUONG_KHONG_HOP_LE") {
+    if (language === "zh") return `⛔ 整个骨架被拒绝 [DUONG_KHONG_HOP_LE]：以下路径未通过沙箱策略（绝对路径 / ".." / 盘符 / 受禁目录 / 扩展名不在白名单）：${ds}。未写入任何字节。`;
+    if (language === "en") return `⛔ The whole skeleton was refused [DUONG_KHONG_HOP_LE]: these paths failed the sandbox policy (absolute / ".." / drive letter / denied dir / extension outside the whitelist): ${ds}. Nothing was written.`;
+    return `⛔ TỪ CHỐI CẢ KHUNG [DUONG_KHONG_HOP_LE]: các đường sau không qua được chính sách hộp cát (tuyệt đối / \`..\` / ổ đĩa / thư mục cấm / đuôi ngoài danh sách trắng): ${ds}. Chưa một byte nào được ghi.`;
+  }
+  if (language === "zh") return `⛔ 整个骨架被拒绝 [KHONG_KIEM_DUOC]：无法证明以下文件不存在：${ds}。无法证明就不写（fail-closed）。`;
+  if (language === "en") return `⛔ The whole skeleton was refused [KHONG_KIEM_DUOC]: could not prove these files do not exist: ${ds}. Cannot prove ⇒ do not write (fail-closed).`;
+  return `⛔ TỪ CHỐI CẢ KHUNG [KHONG_KIEM_DUOC]: không chứng minh được các tệp sau CHƯA tồn tại: ${ds}. Không chứng minh được thì không ghi (fail-closed).`;
 }
 
 /** ★ Lượt TẠO mà model không cho ra nội dung nào — khác hẳn "giống hệt tệp cũ" (không có tệp cũ). */

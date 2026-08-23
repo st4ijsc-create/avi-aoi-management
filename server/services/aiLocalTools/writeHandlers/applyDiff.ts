@@ -282,11 +282,58 @@ export type PhanQuyet =
       daCo: boolean;
       bamTruoc: string;
       bamSau: string;
+      /**
+       * ★ 2026-08-24 — `true` ⇔ lượt này đi qua nhờ **miễn trừ TẠO-vào-gốc-không-git**
+       * (`mienKiemGitChoLuotTao`): git không hỏi được VÀ tệp chưa tồn tại. Preview đọc cờ này để
+       * in cảnh báo "không có lưới hoàn tác" — cho qua mà im lặng là giấu người duyệt một sự thật.
+       */
+      khongGit: boolean;
     }
   | { ok: false; ma: MaApplyDiff; chiTiet: string };
 
 /** Nhánh XANH của `phanQuyet` — thứ DUY NHẤT mở được cửa ghi. */
 export type PhanQuyetXanh = Extract<PhanQuyet, { ok: true }>;
+
+/**
+ * ★★★ 2026-08-24 — **MIỄN KIỂM GIT CHO ĐÚNG MỘT HÌNH DẠNG: TẠO tệp CHƯA TỒN TẠI khi git KHÔNG HỎI
+ * ĐƯỢC.** Vị từ THUẦN, tách riêng để lưới + đột biến đo được một mình.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * VÌ SAO MIỄN TRỪ NÀY ĐÚNG VỚI CHÍNH LÝ LẼ CỦA HÀNG RÀO
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Hàng rào tệp-bẩn tồn tại để bảo vệ **công-việc-chưa-commit của con người trong ĐÚNG tệp sắp ghi**
+ * (sự cố 2026-08-18: mất 123 dòng chưa commit). Đo 2026-08-24: thư mục TRỐNG mới thêm qua Quản lý
+ * dự án KHÔNG có `.git` ⇒ `git status` thoát ≠0 ⇒ `GIT_STATUS_FAILED` ⇒ **không tạo nổi một tệp
+ * nào** — hàng rào chặn một lượt không thể chạm tới thứ nó bảo vệ: một tệp **CHƯA TỒN TẠI**
+ * (`daCo === false`, đã chứng minh bằng `confineTargetUnder`/`readConfined` NGAY TRƯỚC bước này,
+ * và băm neo đã khớp băm("")) thì **không chứa một byte công việc nào để mất** — trong MỌI nguyên
+ * nhân làm git không trả lời được (không có repo · git vắng · hết giờ).
+ *
+ * ⚠⚠ HẸP ĐÚNG CHỖ, KHÔNG NỚI:
+ *   • Lượt **SỬA** tệp đang có (`daCo === true`) trong gốc không-git ⇒ **GIỮ fail-closed**
+ *     (`GIT_STATUS_FAILED` y nguyên): tệp có thật + không hỏi được git = không cách nào chứng minh
+ *     nó không chứa công việc chưa lưu.
+ *   • git HỎI ĐƯỢC (`git.ok === true`) ⇒ vị từ này KHÔNG có tiếng nói — đường FILE_DIRTY/sạch cũ
+ *     chạy y nguyên từng byte.
+ * ⇒ Cho qua thì preview PHẢI khai `khongGit: true` để người duyệt thấy cảnh báo "không có lưới
+ *   hoàn tác" (xem `cauCanhBaoKhongGit`).
+ */
+export function mienKiemGitChoLuotTao(daCo: boolean, gitOk: boolean): boolean {
+  return !gitOk && !daCo;
+}
+
+/**
+ * ★ Cảnh báo đi kèm MỌI lượt qua cửa nhờ `mienKiemGitChoLuotTao` — in ở thẻ duyệt (một tệp LẪN lô).
+ * Người duyệt phải biết lượt ghi này KHÔNG có `git checkout --` để hoàn tác.
+ */
+export function cauCanhBaoKhongGit(relPath: string, lang: ToolLang): string {
+  return w(
+    lang,
+    `⚠ Thư mục dự án CHƯA có git — "${relPath}" là tệp TẠO MỚI nên không có gì để mất, nhưng cũng KHÔNG có lưới hoàn tác. Cân nhắc chạy \`git init\` trong thư mục dự án sau khi tạo khung.`,
+    `⚠ The project folder has NO git — "${relPath}" is a NEW file so nothing can be lost, but there is also NO undo net. Consider running \`git init\` in the project folder after scaffolding.`,
+    `⚠ 项目目录没有 git——"${relPath}" 是新建文件，不会丢失任何内容，但也没有回退网。建议在骨架创建后于项目目录运行 \`git init\`。`,
+  );
+}
 
 /**
  * ★ Bốn hàng rào, theo đúng thứ tự (rẻ và không-I/O trước, sinh-tiến-trình sau):
@@ -359,9 +406,19 @@ export async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQu
   }
 
   // 4. TỆP BẨN — hỏi git về ĐÚNG tệp này, với cwd = gốc DỰ ÁN đang chọn (doc 79 TRỤC 2).
+  //    ★ 2026-08-24 — MỘT ngoại lệ hẹp: git KHÔNG hỏi được + tệp CHƯA tồn tại ⇒ lượt TẠO đi tiếp
+  //    với cờ `khongGit` (docblock `mienKiemGitChoLuotTao`). Lượt SỬA trong gốc không-git vẫn
+  //    fail-closed y nguyên — đây là ca then chốt của lưới chống-nới-rộng.
   const git = await trangThaiGitCuaTep(confined.target.relPath, goc);
-  if (!git.ok) return { ok: false, ma: "GIT_STATUS_FAILED", chiTiet: confined.target.relPath };
-  if (!git.sach) return { ok: false, ma: "FILE_DIRTY", chiTiet: `${confined.target.relPath} [git: ${git.trangThai}]` };
+  let khongGit = false;
+  if (!git.ok) {
+    if (!mienKiemGitChoLuotTao(daCo, git.ok)) {
+      return { ok: false, ma: "GIT_STATUS_FAILED", chiTiet: confined.target.relPath };
+    }
+    khongGit = true;
+  } else if (!git.sach) {
+    return { ok: false, ma: "FILE_DIRTY", chiTiet: `${confined.target.relPath} [git: ${git.trangThai}]` };
+  }
 
   return {
     ok: true,
@@ -371,6 +428,7 @@ export async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQu
     daCo,
     bamTruoc,
     bamSau: bam(p.modified),
+    khongGit,
   };
 }
 
@@ -425,6 +483,8 @@ async function xemTruoc(p: ThamSo, ctx: ToolExecContext): Promise<ActionPreview>
       pq.daCo ? `文件干净——将覆盖 "${pq.relPath}"。` : `将创建新文件 "${pq.relPath}"。`,
     ),
   );
+  // ★ 2026-08-24 — lượt TẠO đi qua nhờ miễn trừ không-git ⇒ người duyệt PHẢI thấy điều đó.
+  if (pq.khongGit) warnings.push(cauCanhBaoKhongGit(pq.relPath, ctx.lang));
   warnings.push(
     w(
       ctx.lang,

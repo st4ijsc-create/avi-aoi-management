@@ -511,3 +511,99 @@ describe("§K — WORM: preview mang đủ băm TRƯỚC/SAU CỦA TỪNG TỆP 
     ).toContain("MỖI TỆP MỘT BĂM NEO RIÊNG");
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ §L (2026-08-24) — **GỐC KHÔNG CÓ GIT: miễn trừ HẸP cho lượt TẠO, fail-closed Y NGUYÊN cho
+ * lượt SỬA.** Đây là lưới tool-level của "rào 2" đường tạo-khung-dự-án.
+ *
+ * Sự việc đo được: thư mục TRỐNG mới thêm qua Quản lý dự án không có `.git` ⇒ `git status` thoát
+ * ≠0 ⇒ trước bản vá, MỌI lượt ghi (kể cả TẠO tệp chưa tồn tại) bị `GIT_STATUS_FAILED` — hàng rào
+ * tệp-bẩn chặn một lượt không thể chạm tới thứ nó bảo vệ. Miễn trừ (`mienKiemGitChoLuotTao`) chỉ
+ * mở cho hình dạng `git KHÔNG hỏi được + tệp CHƯA tồn tại`; hai ca "chống nới" ở dưới là mỏ neo
+ * cho hai đột biến bắt buộc: (a) bỏ kiểm CHƯA-tồn-tại ⇒ ĐỎ; (b) nới luôn cho lượt SỬA ⇒ ĐỎ.
+ */
+describe("§L — gốc KHÔNG git: TẠO đi qua (kèm cảnh báo), SỬA vẫn GIT_STATUS_FAILED", () => {
+  let KHONG_GIT = "";
+  /** ctx trỏ gốc dự án vào thư mục không-git — đúng đường `ctx.projectRoot` của doc 79 TRỤC 2. */
+  const ctxKhongGit = () => ({ ...CTX, projectRoot: KHONG_GIT }) as typeof CTX & { projectRoot: string };
+  const TEP_CU = "src/co-san.cs";
+  const ND_CU = "namespace X;\npublic class CoSan { }\n";
+
+  beforeAll(() => {
+    KHONG_GIT = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lo-khong-git-")));
+    fs.mkdirSync(path.join(KHONG_GIT, "src"), { recursive: true });
+    fs.writeFileSync(path.join(KHONG_GIT, TEP_CU), ND_CU);
+  });
+  afterAll(() => {
+    try {
+      fs.rmSync(KHONG_GIT, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
+  });
+
+  it("★ ĐỐI CHỨNG HIỆU CHUẨN — gốc tạm THẬT SỰ không hỏi được git (mọi ca dưới đứng trên tiền đề này)", async () => {
+    // Nếu máy chạy lưới có một `.git` ở TRÊN thư mục tạm, git sẽ đi ngược lên và trả lời được —
+    // khi ấy ca này đỏ TO TIẾNG thay vì để các ca dưới đỏ vì một lý do khó hiểu.
+    const st = await trangThaiGitCuaTep("src/bat-ky.cs", KHONG_GIT);
+    expect(st.ok, "thư mục tạm phải nằm NGOÀI mọi repo git để phép đo có nghĩa").toBe(false);
+    if (!st.ok) expect(st.ma).toBe("GIT_STATUS_FAILED");
+  });
+
+  it("★★★ vị từ THUẦN `mienKiemGitChoLuotTao`: đúng MỘT ô của bảng chân trị được mở", async () => {
+    const { mienKiemGitChoLuotTao } = await import("./writeHandlers/applyDiff");
+    expect(mienKiemGitChoLuotTao(false, false), "TẠO + git hỏng ⇒ miễn (ô DUY NHẤT mở)").toBe(true);
+    expect(mienKiemGitChoLuotTao(true, false), "SỬA + git hỏng ⇒ KHÔNG miễn — ca then chốt chống nới").toBe(false);
+    expect(mienKiemGitChoLuotTao(false, true), "git hỏi được ⇒ vị từ không có tiếng nói").toBe(false);
+    expect(mienKiemGitChoLuotTao(true, true)).toBe(false);
+  });
+
+  it("★★★ lô TOÀN TẠO vào gốc không-git ⇒ GHI THẬT, đĩa đúng từng byte, preview MANG cảnh báo git init", async () => {
+    const m1 = { path: "App.xaml", original: "", modified: "<Application />\n" };
+    const m2 = { path: "src/App.xaml.cs", original: "", modified: "namespace X;\npublic class App { }\n" };
+
+    const pv = await tool().preview!({ files: [m1, m2] } as never, ctxKhongGit() as never);
+    const canhBao = pv.warnings.join("\n");
+    expect(canhBao, "người duyệt PHẢI được báo là không có lưới hoàn tác").toContain("CHƯA có git");
+    expect(canhBao).toContain("git init");
+
+    const r = await tool().execute!({ files: [m1, m2] } as never, ctxKhongGit() as never);
+    expect(r.note, `lô TẠO hợp lệ phải XANH trong gốc không-git — nhận: ${r.textSummary}`).toBeUndefined();
+    expect(fs.readFileSync(path.join(KHONG_GIT, m1.path), "utf8")).toBe(m1.modified);
+    expect(fs.readFileSync(path.join(KHONG_GIT, m2.path), "utf8")).toBe(m2.modified);
+    fs.rmSync(path.join(KHONG_GIT, m1.path), { force: true });
+    fs.rmSync(path.join(KHONG_GIT, m2.path), { force: true });
+  });
+
+  it("★★★ CHỐNG NỚI (ca then chốt) — SỬA tệp CÓ SẴN trong gốc không-git ⇒ TỪ CHỐI GIT_STATUS_FAILED, đĩa nguyên vẹn", async () => {
+    const r = await tool().execute!(
+      { files: [{ path: TEP_CU, original: ND_CU, modified: ND_CU + "// them\n" }] } as never,
+      ctxKhongGit() as never,
+    );
+    expect(r.note).toBe("BATCH_REJECTED");
+    expect(String(r.textSummary), "mã phải là GIT_STATUS_FAILED — không chứng minh được tệp sạch thì không ghi").toContain(
+      "GIT_STATUS_FAILED",
+    );
+    expect(fs.readFileSync(path.join(KHONG_GIT, TEP_CU), "utf8"), "tệp có thật KHÔNG được đổi một byte").toBe(ND_CU);
+  });
+
+  it("★★★ lô TRỘN tạo + sửa trong gốc không-git ⇒ TỪ CHỐI CẢ LÔ, tệp TẠO cũng KHÔNG được ghi lẻ", async () => {
+    const taoMoi = { path: "src/moi-tron.cs", original: "", modified: "class MoiTron { }\n" };
+    const r = await tool().execute!(
+      { files: [taoMoi, { path: TEP_CU, original: ND_CU, modified: ND_CU + "// x\n" }] } as never,
+      ctxKhongGit() as never,
+    );
+    expect(r.note).toBe("BATCH_REJECTED");
+    expect(fs.existsSync(path.join(KHONG_GIT, taoMoi.path)), "pha PHÁN QUYẾT đỏ ⇒ 0 byte, kể cả mục hợp lệ").toBe(false);
+    expect(fs.readFileSync(path.join(KHONG_GIT, TEP_CU), "utf8")).toBe(ND_CU);
+  });
+
+  it("★★ CHỐNG VÁ QUÁ TAY — trong repo CÓ git, lượt TẠO không mang cảnh báo không-git nào", async () => {
+    const pv = await tool().preview!(
+      { files: [{ path: "src/tao-trong-git.ts", original: "", modified: "export const G = 1;\n" }] } as never,
+      CTX as never,
+    );
+    expect(pv.warnings.join("\n"), "cảnh báo này chỉ dành cho gốc KHÔNG git").not.toContain("CHƯA có git");
+  });
+});

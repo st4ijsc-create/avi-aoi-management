@@ -2187,6 +2187,47 @@ export function trichDuongSuaTatDinh(question: string): string | null {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-24 — Ý ĐỊNH **TẠO KHUNG DỰ ÁN** (scaffold): vị từ TẤT ĐỊNH, đứng TRƯỚC vòng tool
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ *"Câu này xin dựng KHUNG MỘT DỰ ÁN MỚI (nhiều tệp, model tự chọn danh sách)?"*
+ *
+ * ─── VÌ SAO VỊ TỪ NÀY TỒN TẠI, VÀ VÌ SAO NÓ LÀ MỘT NGOẠI LỆ **HẸP** ─────────────────────────────
+ * Đường NHIỀU TỆP đòi ≥2 đường dẫn NGƯỜI DÙNG TỰ GÕ (`trichMoiDuongDanRepo`) — đo live 2026-08-19:
+ * bộ chọn LLM **bịa đường dẫn**, nên cấm model tự chọn danh sách tệp GHI là đúng cho lượt SỬA.
+ * Nhưng câu *"tạo dự án C# WPF đọc file pdf"* không thể nêu đường dẫn nào — các tệp CHƯA TỒN TẠI.
+ * Miễn trừ chỉ mở cho CREATE-ONLY vì ba lý do đo được (xem `streamCodingTaoKhung`,
+ * `aiLocalKnowledgeService.ts`): (a) tệp chưa tồn tại ⇒ không có gì để phá; (b) thẻ duyệt hiện ĐỦ
+ * nội dung từng tệp; (c) từng đường vẫn qua `phanQuyetDuongDan` + hộp cát + kiểm CHƯA-tồn-tại.
+ *
+ * ─── CỐ Ý HẸP — chiều SÓT rẻ, chiều THỪA đắt ────────────────────────────────────────────────────
+ *   • Sót ⇒ câu rơi về đường sinh-mã cũ (in mã ra màn hình, không đề xuất ghi) — mất tiện, không
+ *     mất an toàn.  Thừa ⇒ một lượt model ~30 s + một thẻ duyệt N tệp người dùng không xin.
+ *   • vi đòi **động từ + danh từ dự án ĐỨNG SÁT** (`tạo dự án`, `khởi tạo project`, `dựng khung dự
+ *     án`): "dùng dự án X" không khớp (không có `dung` trần — bỏ dấu nó trùng "dùng").
+ *   • en đòi hình dạng sát tương tự (`create/generate/bootstrap/init [a|the|new] project`) hoặc từ
+ *     `scaffold` đứng rời — KHÔNG có `.*` giữa động từ và danh từ, vì "create a file in the
+ *     project" phải trượt (đó là ý định tạo MỘT tệp — `laYDinhTaoTep` lo).
+ *   • "tạo file mới src/x.ts" ⇒ **false** (đường tạo-MỘT-tệp cũ giữ nguyên); "sửa X: tạo thêm hàm"
+ *     ⇒ false (không có danh từ dự án).
+ *
+ * ⚠ THUẦN + chịu không-dấu (`boDauThuong`, cùng khuôn `laCauCanSuyLuan`); lưới A/B có/không dấu ở
+ *   `aiCodingTaoKhung.stream.test.ts` §1.
+ */
+export function laYDinhTaoDuAn(question: string): boolean {
+  const q = boDauThuong(question);
+  const vi =
+    /(^|[^a-z])(tao|khoi tao|sinh|dung khung|dung bo khung)\s+(mot\s+|1\s+)?(du an|project)([^a-z]|$)/.test(q) ||
+    /(^|[^a-z])(tao|dung|lam|sinh|khoi tao)\s+(bo\s+)?khung\s+(du an|project)([^a-z]|$)/.test(q);
+  const en =
+    /(^|[^a-z])scaffold([^a-z]|$)/.test(q) ||
+    /(^|[^a-z])(create|generate|bootstrap|init|initiali[sz]e)\s+(a\s+|an\s+|the\s+)?(new\s+)?project([^a-z]|$)/.test(q) ||
+    /(^|[^a-z])new\s+project([^a-z]|$)/.test(q);
+  const zh = /(创建|新建|初始化|搭建|生成)\s*(一个)?\s*(项目|工程)/.test(question);
+  return vi || en || zh;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
 // ★★★ doc 81 · VIỆC 2 — BỘ CHỌN TOOL CHO **VÒNG ≥2** CỦA CHẾ ĐỘ LẬP TRÌNH
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 /**

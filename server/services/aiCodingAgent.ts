@@ -131,6 +131,12 @@ export function codingKhoiSuaEnabled(): boolean {
  */
 export { MOC_MO, MOC_NGAN, MOC_DONG } from "@shared/aiCodingMoc";
 import { MOC_MO, MOC_NGAN, MOC_DONG, RE_MO, RE_NGAN, RE_DONG } from "@shared/aiCodingMoc";
+// ★ 2026-08-24 — nghiệm thu live tạo-khung lượt 1 và 2 ĐỀU chết ở cửa đuôi tệp (`Strings.resx`
+//   rồi `appicon.ico` + `.editorconfig`): persona chỉ dặn "đường tương đối" mà KHÔNG nói model
+//   biết DANH SÁCH TRẮNG đuôi ⇒ nó đoán mù, mỗi lần đoán sai đốt một lượt 30B ~4 phút và cả lô
+//   bị từ chối. Tiêm danh sách THẬT từ đúng nguồn (`DUOI_CHO_PHEP`) vào persona — một nguồn,
+//   không chép tay; đổi danh sách là persona tự đổi theo.
+import { DUOI_CHO_PHEP } from "./aiLocalTools/repoSandbox";
 
 /** Một khối sửa có đích: thay `truoc` (phải DUY NHẤT trong tệp) bằng `sau`. */
 export interface KhoiSua {
@@ -667,6 +673,101 @@ export function personaTaoTep(lang: NgonNguMa, nguCanhDuAn: string): string {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-24 — TẠO KHUNG DỰ ÁN: persona + khuôn manifest "### FILE:" (MỘT lượt model, N tệp)
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★ Dòng tiêu đề MỖI TỆP trong manifest khung. ASCII thuần có chủ ý: model 30B chép `FILE` ổn định
+ * hơn hẳn một mốc mang dấu tiếng Việt, và dòng này phải được chép ĐÚNG N lần trong một lượt.
+ */
+export const MOC_TEP_KHUNG = "### FILE:";
+/**
+ * Nhận theo **HÌNH DẠNG** (bài học `RE_MO` ở `shared/aiCodingMoc.ts`): 2–6 dấu `#`, chữ FILE, dấu
+ * hai chấm — nên `## FILE:` hay `#### file :` đều nhận, còn một dòng markdown thường thì không.
+ */
+export const RE_TEP_KHUNG = /^#{2,6}\s*FILE\s*[:：]\s*(.*)$/i;
+
+/**
+ * ★★★ Persona **TẠO KHUNG DỰ ÁN** — model ĐƯỢC PHÉP tự chọn danh sách tệp (ngoại lệ CREATE-ONLY
+ * duy nhất của luật "model không tự chọn tệp ghi"; lý lẽ ở `laYDinhTaoDuAn` + `streamCodingTaoKhung`).
+ *
+ * ⚠ Vì sao KHÔNG dùng `personaTaoTep`: nó dặn "ĐÚNG MỘT khối mã" — đúng cho một tệp, chết cho một
+ *   khung N tệp. Ở đây hợp đồng là N cặp (tiêu đề `### FILE:` + MỘT khối mã), server bóc bằng
+ *   `bocManifestKhung` rồi tự dựng `apply_diff_batch` với mọi `original: ""`.
+ * ⚠ Trần 8 tệp nói THẲNG trong persona vì nó là trần THẺ DUYỆT (`applyDiffBatch.TRAN_TEP_MOI_LO`):
+ *   vượt là cả lô bị từ chối, nên thà model biết trước còn hơn đốt một lượt 30B.
+ * ⚠ "KHÔNG NuGet ngoài" là ràng buộc MÔI TRƯỜNG đo được: nhà máy offline, `dotnet build` chạy
+ *   `--no-restore` — một `<PackageReference>` lạ là một khung KHÔNG BUILD ĐƯỢC ngay lượt sau.
+ */
+export function personaTaoKhung(lang: NgonNguMa, nguCanhDuAn: string): string {
+  const than = w(
+    lang,
+    [
+      "Bạn là KỸ SƯ LẬP TRÌNH đang DỰNG KHUNG MỘT DỰ ÁN MỚI trong một thư mục TRỐNG. Các tệp CHƯA TỒN TẠI.",
+      "",
+      "ĐẦU RA BẮT BUỘC — với TỪNG tệp của khung, theo đúng khuôn này:",
+      `${MOC_TEP_KHUNG} <đường/tương/đối/tên.tệp>`,
+      "```<ngôn ngữ>",
+      "<TOÀN BỘ nội dung tệp, từ dòng đầu tới dòng cuối>",
+      "```",
+      "",
+      "LUẬT:",
+      "1. Tối đa 8 tệp. Khung TỐI THIỂU CHẠY ĐƯỢC trước — tệp phụ (test, CI, tài nguyên) để lượt sau.",
+      "2. Đường dẫn TƯƠNG ĐỐI, dùng dấu `/`, không có `..`, không có ổ đĩa.",
+      `2b. CHỈ các đuôi tệp sau được ghi (danh sách trắng của hộp cát): ${[...DUOI_CHO_PHEP].join(" ")}.`,
+      "    KHÔNG tệp nhị phân (icon/ảnh/font), KHÔNG dotfile (.editorconfig, .gitignore) — một tệp",
+      "    ngoài danh sách làm CẢ KHUNG bị từ chối, không byte nào được ghi.",
+      "3. Mỗi tệp ĐỦ và ĐỘC LẬP: đủ import/namespace để cả khung biên dịch được ngay.",
+      "4. KHÔNG thêm package/NuGet NGOÀI trừ khi người dùng nêu đích danh — máy build OFFLINE",
+      "   (`dotnet build --no-restore`); nếu việc đòi package ngoài, NÓI THẲNG là cần local NuGet feed.",
+      "5. Không viết patch/diff, không bịa 'nội dung hiện tại' — chưa có nội dung nào.",
+      "6. SAU tệp cuối, tối đa 3 gạch đầu dòng: khung gồm gì và lệnh build/chạy.",
+    ].join("\n"),
+    [
+      "You are a SOFTWARE ENGINEER SCAFFOLDING A NEW PROJECT in an EMPTY folder. The files do NOT exist yet.",
+      "",
+      "REQUIRED OUTPUT — for EACH file of the skeleton, exactly this shape:",
+      `${MOC_TEP_KHUNG} <relative/path/name.ext>`,
+      "```<language>",
+      "<the ENTIRE file content, first line to last>",
+      "```",
+      "",
+      "RULES:",
+      "1. At most 8 files. MINIMAL RUNNABLE skeleton first — extras (tests, CI, assets) next turn.",
+      "2. RELATIVE paths with `/`, no `..`, no drive letters.",
+      `2b. ONLY these file extensions are writable (sandbox whitelist): ${[...DUOI_CHO_PHEP].join(" ")}.`,
+      "    NO binary files (icons/images/fonts), NO dotfiles (.editorconfig, .gitignore) — one file",
+      "    outside the list gets the WHOLE skeleton refused, zero bytes written.",
+      "3. Each file complete and self-contained so the skeleton compiles as a whole.",
+      "4. NO external packages/NuGet unless the user named them — the build machine is OFFLINE",
+      "   (`dotnet build --no-restore`); if the task needs one, SAY a local NuGet feed is required.",
+      "5. No patches/diffs, no invented 'current content' — there is none.",
+      "6. AFTER the last file, at most 3 bullets: what the skeleton contains and how to build/run.",
+    ].join("\n"),
+    [
+      "你是正在空目录中为新项目搭建骨架的软件工程师。这些文件尚不存在。",
+      "",
+      "输出要求——骨架中的每个文件都必须使用如下形状：",
+      `${MOC_TEP_KHUNG} <相对/路径/文件名.扩展名>`,
+      "```<语言>",
+      "<文件完整内容（首行到末行）>",
+      "```",
+      "",
+      "规则：",
+      "1. 最多 8 个文件。先给出最小可运行骨架——测试/CI/资源等留到下一轮。",
+      "2. 相对路径，使用 `/`，不得含 `..` 或盘符。",
+      `2b. 只允许以下扩展名（沙箱白名单）：${[...DUOI_CHO_PHEP].join(" ")}。`,
+      "    不得有二进制文件（图标/图片/字体）、不得有点文件（.editorconfig、.gitignore）——一个越界文件会导致整个骨架被拒绝，零字节写入。",
+      "3. 每个文件完整自包含，使整个骨架可以直接编译。",
+      "4. 除非用户点名，不要引入外部包/NuGet——构建机是离线的（`dotnet build --no-restore`）；",
+      "   若确实需要，请明说需要本地 NuGet 源。",
+      "5. 不要写补丁/diff，不要臆造“当前内容”——并不存在。",
+      "6. 最后一个文件之后，最多 3 条要点：骨架包含什么、如何构建/运行。",
+    ].join("\n"),
+  );
+  return nguCanhDuAn ? `${than}\n\n${nguCanhDuAn}` : than;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
 // BÓC KHỐI MÃ + ĐỒNG BỘ KẾT THÚC DÒNG
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 /**
@@ -901,6 +1002,94 @@ export function chuanHoaTepMoi(noiDung: string): string {
   return lf === "" ? "" : `${lf}\n`;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-24 — BÓC MANIFEST KHUNG DỰ ÁN: thuần, không I/O, fail-CLOSED về một mã có tên
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+export interface TepKhung {
+  /** Đường dẫn NGUYÊN VĂN model khai (chỉ gọt nháy/khoảng trắng bao quanh) — hộp cát mới là bên phán quyết. */
+  duong: string;
+  /** Nội dung đã qua `chuanHoaTepMoi` (LF + đúng một dòng trống cuối) — sẵn để làm `modified` của một lượt TẠO. */
+  noiDung: string;
+}
+
+/**
+ * ⚠ Mỗi mã một hành động khác nhau của người đọc câu từ chối (cùng luật `MaKhoiHong`):
+ *   • `KHONG_CO_TEP`   — không có một dòng `### FILE:` nào ⇒ model trả lời văn xuôi/không theo khuôn.
+ *   • `TEP_KHONG_DUONG`— có dòng tiêu đề nhưng KHÔNG có đường dẫn phía sau.
+ *   • `TEP_THIEU_KHOI` — một tệp khai tên mà không có khối ``` nào ⇒ không có nội dung để ghi.
+ *   • `TEP_RONG`       — khối mã rỗng ⇒ tạo tệp rỗng là vô nghĩa, từ chối cả manifest.
+ *   • `TEP_TRUNG`      — cùng một đường khai hai lần ⇒ mục sau đè mục trước trong im lặng nếu nhận.
+ */
+export type MaManifestKhung = "KHONG_CO_TEP" | "TEP_KHONG_DUONG" | "TEP_THIEU_KHOI" | "TEP_RONG" | "TEP_TRUNG";
+
+export type KetQuaManifestKhung =
+  | { ok: true; tep: TepKhung[] }
+  | { ok: false; ma: MaManifestKhung; chiTiet: string };
+
+/**
+ * ★★★ Bóc manifest khung dự án từ câu trả lời của model: N cặp (dòng `### FILE:` + MỘT khối ```).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ TIỀN ĐỀ ĐÃ KIỂM (2026-08-24) — VÌ SAO ĐÂY LÀ MỘT BỘ **CHIA ĐOẠN** MỚI CHỨ KHÔNG PHẢI BỘ
+ * PARSE THỨ HAI, VÀ VÌ SAO KHÔNG DÙNG KHUÔN SEARCH/REPLACE
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Brief gốc đề nghị tái dùng "bộ parse của đường nhiều-tệp" với original RỖNG. Kiểm lại mã:
+ *   • `streamCodingSuaNhieuTep` KHÔNG parse một đầu-ra-nhiều-tệp — nó gọi model N LƯỢT, mỗi lượt
+ *     một tệp. Không tồn tại bộ parse nhiều-tệp nào để tái dùng.
+ *   • Khuôn SEARCH/REPLACE (`bocKhoiSua`) TỪ CHỐI neo rỗng theo thiết kế (`NEO_RONG` — một đoạn neo
+ *     rỗng "khớp" ở mọi vị trí), và khối của nó KHÔNG chở đường dẫn. Nới `NEO_RONG` để chở lượt TẠO
+ *     là nới một bất biến an toàn của đường SỬA — đúng thứ không được làm.
+ * ⇒ Cái MỚI duy nhất ở đây là phép CHIA ĐOẠN theo dòng tiêu đề (`RE_TEP_KHUNG`, máy trạng thái theo
+ *   dòng + biết fence — cùng khuôn `lamSachMocChoHienThi`). Nội dung TỪNG tệp vẫn đi qua ĐÚNG cặp
+ *   parser của đường TẠO-MỘT-TỆP đang chạy: `bocKhoiMa` (khối dài nhất trong đoạn) +
+ *   `chuanHoaTepMoi` (LF, một dòng trống cuối). KHÔNG có bộ bóc nội dung thứ hai.
+ *
+ * ⚠ Dòng tiêu đề nằm TRONG một fence đang mở là NỘI DUNG (một README dạy lại chính khuôn này không
+ *   được phép cắt đôi manifest) — nên máy trạng thái phải biết fence.
+ * ⚠ CRLF: quét trên bản LF; nội dung cuối cùng qua `chuanHoaTepMoi` nên tệp mới luôn LF thuần.
+ */
+export function bocManifestKhung(text: string): KetQuaManifestKhung {
+  const dong = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
+  /** Chỉ số dòng tiêu đề + đường dẫn đã gọt. */
+  const tieuDe: Array<{ tai: number; duong: string }> = [];
+  let trongFence = false;
+  for (let i = 0; i < dong.length; i++) {
+    const d = dong[i]!;
+    if (/^\s*(```|~~~)/.test(d)) {
+      trongFence = !trongFence;
+      continue;
+    }
+    if (trongFence) continue;
+    const m = d.match(RE_TEP_KHUNG);
+    if (!m) continue;
+    // Gọt nháy/backtick/sao markdown bao quanh — phần còn lại NGUYÊN VĂN cho hộp cát phán quyết.
+    const duong = (m[1] ?? "").trim().replace(/^[`'"*\s]+/, "").replace(/[`'"*\s]+$/, "");
+    if (duong === "") return { ok: false, ma: "TEP_KHONG_DUONG", chiTiet: `dòng ${i + 1} của câu trả lời` };
+    tieuDe.push({ tai: i, duong });
+  }
+  if (tieuDe.length === 0) return { ok: false, ma: "KHONG_CO_TEP", chiTiet: `không có dòng "${MOC_TEP_KHUNG}" nào` };
+
+  const tep: TepKhung[] = [];
+  const daThay = new Map<string, number>();
+  for (let k = 0; k < tieuDe.length; k++) {
+    const { tai, duong } = tieuDe[k]!;
+    const het = k + 1 < tieuDe.length ? tieuDe[k + 1]!.tai : dong.length;
+    const doan = dong.slice(tai + 1, het).join("\n");
+    const khoi = bocKhoiMa(doan);
+    if (khoi === null) return { ok: false, ma: "TEP_THIEU_KHOI", chiTiet: duong };
+    const noiDung = chuanHoaTepMoi(khoi);
+    if (noiDung === "") return { ok: false, ma: "TEP_RONG", chiTiet: duong };
+    // Khoá trùng trên bản chuẩn hoá NHẸ (\\→/ · bỏ ./ đầu · thường hoá) — tool lô còn kiểm LẠI trên
+    // relPath đã qua hộp cát; đây chỉ là lớp bắt-sớm để câu từ chối nêu được đích danh.
+    const khoa = duong.replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+    const truoc = daThay.get(khoa);
+    if (truoc !== undefined) return { ok: false, ma: "TEP_TRUNG", chiTiet: `${duong} (mục #${truoc + 1} và #${k + 1})` };
+    daThay.set(khoa, k);
+    tep.push({ duong, noiDung });
+  }
+  return { ok: true, tep };
+}
+
 /** Nhãn ngôn ngữ cho khối ``` theo đuôi tệp — chỉ để prompt đọc tự nhiên, không phải cổng an toàn. */
 export function nhanNgonNgu(duong: string): string {
   const duoi = (duong.match(/\.[A-Za-z0-9]+$/)?.[0] ?? "").toLowerCase();
@@ -1088,6 +1277,29 @@ export function promptTaoTep(
       `Trả về TOÀN BỘ nội dung tệp mới trong một khối mã duy nhất (\`\`\`${nhan}).`,
       `Return the ENTIRE new file content in a single code block (\`\`\`${nhan}).`,
       `在唯一一个代码块中返回新文件的完整内容（\`\`\`${nhan}）。`,
+    ),
+  ].join("\n");
+}
+
+/**
+ * ★★★ 2026-08-24 — prompt **TẠO KHUNG DỰ ÁN** (một lượt model, N tệp). Cùng khuôn `promptSinhMa`
+ * (lịch sử → bài học → yêu cầu ở CUỐI); KHÔNG có khối "nội dung hiện tại" — chưa có tệp nào — và
+ * KHÔNG có khối ngữ cảnh mã: thư mục đích là thư mục TRỐNG, mục lục repo nền tảng không nói gì về nó.
+ *
+ * ⚠ Câu nhắc khuôn lặp LẠI đúng `MOC_TEP_KHUNG` của persona: một nguồn (`hằng`), hai chỗ đọc.
+ */
+export function promptTaoKhung(yeuCau: string, lang: NgonNguMa, khoiLichSu = "", khoiBaiHoc = ""): string {
+  return [
+    ...(khoiLichSu ? [khoiLichSu, ""] : []),
+    ...(khoiBaiHoc ? [khoiBaiHoc, ""] : []),
+    w(lang, "=== YÊU CẦU DỰNG KHUNG DỰ ÁN ===", "=== PROJECT SCAFFOLD REQUEST ===", "=== 项目骨架需求 ==="),
+    yeuCau,
+    "",
+    w(
+      lang,
+      `Xuất TỪNG tệp theo đúng khuôn: một dòng "${MOC_TEP_KHUNG} <đường/tương/đối>" rồi MỘT khối mã chứa toàn bộ nội dung tệp đó. Tối đa 8 tệp.`,
+      `Emit EACH file in the exact shape: one "${MOC_TEP_KHUNG} <relative/path>" line, then ONE code block with that file's entire content. At most 8 files.`,
+      `每个文件严格按此形状输出：一行 "${MOC_TEP_KHUNG} <相对路径>"，随后一个包含该文件全部内容的代码块。最多 8 个文件。`,
     ),
   ].join("\n");
 }
