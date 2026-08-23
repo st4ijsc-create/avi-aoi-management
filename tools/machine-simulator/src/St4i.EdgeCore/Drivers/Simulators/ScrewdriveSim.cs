@@ -106,16 +106,37 @@ public sealed class ScrewdriveSim : SimulatorBase
     /// verdict — so an operator who edits <c>angleTarget</c> changes the stored record and nothing this
     /// machine reports.</para>
     ///
-    /// <para>🔴 <b>Wiring a store changes the reported torque by roughly a factor of nine before any
-    /// operator touches anything.</b> The un-wired path draws <c>N(12.0, 0.4)</c> Nm against
-    /// <c>[10.8, 13.2]</c>. A freshly ensured record is seeded from the schema's own defaults, so the wired
-    /// path resolves <c>torqueTarget = 1.35</c> and <c>torqueTolerance = 0.15</c> and draws
-    /// <c>N(1.35, 0.0405)</c> against <c>[1.20, 1.50]</c>. Both are plausible screwdrivers and both keep the
-    /// monotonicity the design doc asks for; what they do not do is agree on the value. Measured at commit
-    /// <c>5e194ab0</c>, the two <c>SimulatorFactory.Create</c> call sites in <c>FleetCore</c> pass a store
-    /// and the two in <c>St4i.EdgeService.EdgeWorker</c> and
-    /// <c>St4iMachineSimulator.Services.FleetService</c> do not, so the same descriptor reports about 12 Nm
-    /// under one host and about 1.35 Nm under another.</para>
+    /// <para>🔴 <b>WHEN THE DESCRIPTOR DECLARES, THE STORE NO LONGER DECIDES THE BAND — owner's ruling
+    /// 2026-08-23, item 41.</b> A descriptor carrying a <see cref="MachineDescriptor.ScrewTorque"/> gets its
+    /// target and tolerance from THAT, wired or un-wired, so all three hosts of this product report one
+    /// physics for one roster entry. An operator adjustment still wins over the declaration — see
+    /// <see cref="ResolveTorqueBand"/> for the exact precedence and for why it is keyed on PROVENANCE rather
+    /// than on the value.</para>
+    ///
+    /// <para>🔴 <b>With NO declaration, wiring a store still changes the reported torque by roughly a factor
+    /// of nine before any operator touches anything, and that is UNCHANGED on purpose.</b> The un-wired path
+    /// draws <c>N(12.0, 0.4)</c> Nm against <c>[10.8, 13.2]</c>. A freshly ensured record is seeded from the
+    /// schema's own defaults, so the wired path resolves <c>torqueTarget = 1.35</c> and
+    /// <c>torqueTolerance = 0.15</c> and draws <c>N(1.35, 0.0405)</c> against <c>[1.20, 1.50]</c>. Both are
+    /// plausible screwdrivers and both keep the monotonicity the design doc asks for; what they do not do is
+    /// agree on the value, and NOTHING in this repository says which one the shipped roster means. Choosing
+    /// one here would have been choosing a screw on the owner's behalf, so the undeclared case is REPORTED
+    /// instead — <see cref="St4i.EdgeCore.Infrastructure.FleetConfig.Load"/> emits
+    /// <see cref="ScrewTorqueSpec.DescribeUndeclared"/> once per undeclared SCREWDRIVE, naming both
+    /// candidates and picking neither.</para>
+    ///
+    /// <para><b>The measurement behind that, re-taken at commit <c>334575b2</c></b> (and it corrects the
+    /// record in two places): there are FOUR <c>SimulatorFactory.Create</c> call sites in <c>src/</c> across
+    /// THREE hosts, split 2–2 — <c>FleetCore.BuildStartPlan</c> and <c>FleetCore.StartLocked</c>'s
+    /// reuse-miss arm pass <c>_configStore</c>; <c>St4i.EdgeService.EdgeWorker</c> and
+    /// <c>St4iMachineSimulator.Services.FleetService.BuildSimulator</c> pass none. Both of the first pair
+    /// are in <c>FleetCore</c>, but only ONE of them is in <c>StartLocked</c> — the other was hoisted off
+    /// the gate into <c>BuildStartPlan</c> by task J-1, which is why <c>docs/owner-decisions.md</c> §41.1's
+    /// cell naming them "hai chỗ trong <c>StartLocked</c>" is wrong about the first. And the same §41.1
+    /// says THIS doc comment writes <i>"hai host"</i>: measured over all 63447 files of that commit, the
+    /// strings <c>two host</c> and <c>hai host</c> appear NOWHERE in the tree, and the only occurrence of
+    /// <c>host</c> in this file was the sentence "…under one host and about 1.35 Nm under another", which
+    /// counted BEHAVIOURS, not hosts, and was true.</para>
     ///
     /// <para><b>Two independent config resolutions happen inside one cycle</b> — this method's own, and a
     /// second one through <see cref="CycleSecondsOverride"/> when the plan's duration is computed. They are
@@ -126,11 +147,7 @@ public sealed class ScrewdriveSim : SimulatorBase
         var rng = Rng(cycle);
         var cfg = ResolveEffectiveConfig();
 
-        var torqueTarget = GetValue(cfg, "torqueTarget", TorqueMean);
-        var torqueTolerance = GetValue(cfg, "torqueTolerance", TorqueUsl - TorqueMean);
-        var torqueStd = cfg is null ? TorqueStd : Math.Max(torqueTarget * ProcessNoiseFraction, 1e-6);
-        var lsl = cfg is null ? TorqueLsl : torqueTarget - torqueTolerance;
-        var usl = cfg is null ? TorqueUsl : torqueTarget + torqueTolerance;
+        var (torqueTarget, torqueStd, lsl, usl) = ResolveTorqueBand(cfg);
 
         var torque = rng.NextGaussian(torqueTarget, torqueStd);
         var angle = rng.NextGaussian(AngleMean, AngleStd);
@@ -157,6 +174,64 @@ public sealed class ScrewdriveSim : SimulatorBase
         reading.Plan = plan;
 
         return reading;
+    }
+
+    /// <summary>🔴 OWNER'S RULING 2026-08-23, item 41 — the ONE place this class decides what physics it is
+    /// reporting, extracted so there is a single answer to "where does the torque band come from" instead of
+    /// three ternaries a reader has to intersect.
+    ///
+    /// <para><b>Precedence, highest first, and each rung states who owns it.</b>
+    /// (1) an OPERATOR adjustment in <paramref name="cfg"/> — machine- or product-scoped, i.e. any
+    /// <see cref="EffectiveParameter.Source"/> that is not <see cref="ConfigProvenance.Baseline"/>;
+    /// (2) the DEPLOYMENT's <see cref="MachineDescriptor.ScrewTorque"/> declaration;
+    /// (3) the store's baseline, when there is a store and no declaration;
+    /// (4) this class's own constants, when there is neither.</para>
+    ///
+    /// <para>🔴 <b>Rung 1 is keyed on PROVENANCE, not on the value, and that is load-bearing.</b> A
+    /// baseline of 1.35 and an operator adjustment that happens to also be 1.35 are the same number and
+    /// different facts; comparing values would have made a deliberate operator setting invisible whenever it
+    /// coincided with the seed. Because it reads <see cref="EffectiveParameter.Source"/>, declaring a band
+    /// does NOT take the settings screen away from an operator: the "siết dung sai ⇒ nhiều NG hơn" property
+    /// <c>MachineConfigDrivesSimulationTests</c> pins is unchanged for a declared machine and for an
+    /// undeclared one alike.</para>
+    ///
+    /// <para><b>Rungs 3 and 4 are byte-for-byte what this method did before the declaration existed</b> —
+    /// including <see cref="TorqueStd"/> being an ABSOLUTE 0.4 Nm on the un-wired path while every other
+    /// rung derives the spread as <see cref="ProcessNoiseFraction"/> of the target. That asymmetry is
+    /// preserved deliberately: changing it would move a number the shipped roster reports today, which is
+    /// exactly the thing item 41 must not do on its own authority.</para></summary>
+    /// <param name="cfg">The live resolved config, or null when no store is wired.</param>
+    /// <returns>Target (Nm), the generated distribution's standard deviation (Nm), and the pass band's two
+    /// limits (Nm).</returns>
+    private (double Target, double Std, double Lsl, double Usl) ResolveTorqueBand(EffectiveConfig? cfg)
+    {
+        var declared = Descriptor.ScrewTorque;
+        if (declared is null)
+        {
+            var baseTarget = GetValue(cfg, "torqueTarget", TorqueMean);
+            var baseTolerance = GetValue(cfg, "torqueTolerance", TorqueUsl - TorqueMean);
+            return cfg is null
+                ? (baseTarget, TorqueStd, TorqueLsl, TorqueUsl)
+                : (baseTarget, Math.Max(baseTarget * ProcessNoiseFraction, 1e-6), baseTarget - baseTolerance, baseTarget + baseTolerance);
+        }
+
+        var target = AdjustedOrDeclared(cfg, "torqueTarget", declared.TargetNm);
+        var tolerance = AdjustedOrDeclared(cfg, "torqueTolerance", declared.ToleranceNm);
+        return (target, Math.Max(target * ProcessNoiseFraction, 1e-6), target - tolerance, target + tolerance);
+    }
+
+    /// <summary>An operator's adjustment for <paramref name="key"/> if one exists at either scope, otherwise
+    /// the roster's declared value. See <see cref="ResolveTorqueBand"/> for why this asks
+    /// <see cref="EffectiveParameter.Source"/> rather than comparing numbers.</summary>
+    /// <param name="cfg">The resolved config, or null when no store is wired — in which case there is no
+    /// adjustment layer at all and <paramref name="declared"/> is returned unchanged.</param>
+    /// <param name="key">The <c>screw_program</c> parameter key to look up, case-insensitively.</param>
+    /// <param name="declared">The roster's own value, returned whenever no adjustment outranks it.</param>
+    /// <returns>The value this cycle should use, in Nm.</returns>
+    private static double AdjustedOrDeclared(EffectiveConfig? cfg, string key, double declared)
+    {
+        var p = cfg?.Parameters.FirstOrDefault(x => string.Equals(x.Def.Key, key, StringComparison.OrdinalIgnoreCase));
+        return p is null || p.Source == ConfigProvenance.Baseline ? declared : p.Value;
     }
 
     /// <summary>See <see cref="FasteningPositionsPerCycle"/> and this method's call site for the

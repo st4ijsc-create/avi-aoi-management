@@ -448,11 +448,44 @@ public static class MachineSettingsEndpoints
                 ? new Dictionary<string, ParameterAdjustment>()
                 : cfg.MachineAdjustments;
 
+    /// <summary>The human-readable <c>message</c> a push response carries.
+    ///
+    /// <para>🔴 <b>RETRACTED IN PLACE 2026-08-23 (BL-1, item 42) — the old sentence was FALSE for two of
+    /// the five kinds, and it was the REST surface's own words, not a doc comment.</b> It read, for every
+    /// kind alike: <i>"Reported N parameter(s) as this machine's actual configuration…"</i>. For
+    /// <c>weld_profile</c> and <c>dispense_program</c> the reported parameters are not this machine's
+    /// actual configuration and never were — nothing carries them into a draw, so the machine's actual
+    /// configuration is the private constant block inside <c>WelderSim</c>/<c>DispensingSim</c>. Saying
+    /// "actual configuration" to a server that is about to store it as exactly that is the surface lying in
+    /// the affirmative direction, which is the sharper half of item 42.</para>
+    ///
+    /// <para><b>What changed and what deliberately did NOT.</b> Only this string. No field was added or
+    /// removed from <c>MachineSettingsPushResultDto</c> or from any other DTO on this surface, and no
+    /// status code moved: item 27's precedent is that adding a field to an already-published payload is the
+    /// owner's call, not an executor's, so the truth is told in a field that already exists and carries free
+    /// text. The consequence, stated rather than hidden: a machine-reading client that switches on this
+    /// message will not see the caveat, because a machine-readable flag would have been the new field this
+    /// task is not authorised to add.</para></summary>
+    /// <param name="effective">The resolved set being reported; its <see cref="EffectiveConfig.ConfigKind"/>
+    /// is what decides whether the caveat is appended.</param>
+    /// <param name="checksum">The adjustments checksum, truncated for readability.</param>
+    /// <returns>One sentence, plus one more when this kind reaches no simulator.</returns>
     private static string BuildPushMessage(EffectiveConfig effective, string checksum)
     {
         var productPart = effective.ProductCode is not null ? $" for product \"{effective.ProductCode}\"" : "";
         var shortChecksum = checksum.Length > 12 ? checksum[..12] : checksum;
-        return $"Reported {effective.Parameters.Count} parameter(s) as this machine's actual configuration{productPart} (checksum {shortChecksum}...).";
+        var consumed = MachineParameterSchema.IsConsumedBySimulator(effective.ConfigKind);
+
+        var head = consumed
+            ? $"Reported {effective.Parameters.Count} parameter(s) as this machine's actual configuration{productPart}"
+            : $"Reported {effective.Parameters.Count} stored parameter(s){productPart}";
+
+        var caveat = consumed
+            ? ""
+            : $" NOTE: no simulator in this build reads \"{effective.ConfigKind}\" — these values are stored," +
+              " range-checked and reported, and they do not affect what this machine generates.";
+
+        return $"{head} (checksum {shortChecksum}...).{caveat}";
     }
 
     // ─────────────────────────────────────────────────────────────────────

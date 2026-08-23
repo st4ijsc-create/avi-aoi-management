@@ -2,9 +2,20 @@ namespace St4i.EdgeCore.Config;
 
 /// <summary>
 /// Machine operating-configuration design (docs/MACHINE_CONFIG_DESIGN.md §3) — static parameter
-/// vocabularies, one set per <c>configKind</c>. This is the "what CAN be tuned, and within what hard
-/// limits" side of the feature; <see cref="MachineConfigStore"/> is the "what HAS been tuned, per
+/// vocabularies, one set per <c>configKind</c>. This is the "what MAY BE WRITTEN, and within what hard
+/// limits" side of the feature; <see cref="MachineConfigStore"/> is the "what HAS been written, per
 /// machine × product" side.
+///
+/// <para>🔴 <b>RETRACTED IN PLACE 2026-08-23 (BL-1, item 42), original kept verbatim:</b> the two sentences
+/// above used to read <i>"This is the 'what CAN be tuned, and within what hard limits' side of the feature;
+/// <c>MachineConfigStore</c> is the 'what HAS been tuned, per machine × product' side."</i> <b>"Tuned" is
+/// false for two of the five kinds.</b> <see cref="DispenseProgram"/> and <see cref="WeldProfile"/> are
+/// declared here, range-checked on write, persisted, and served over
+/// <c>GET /v1/machines/{code}/settings</c> — and NO simulator reads them: <c>SimulatorFactory.Create</c>
+/// builds <c>new DispensingSim(d, seed)</c> and <c>new WelderSim(d, seed)</c>, the only two constructors in
+/// the family that take no <see cref="MachineConfigStore"/>, so <c>ResolveEffectiveConfig</c> answers null
+/// for the whole life of those instances. Writing a value is real; TUNING is not. See
+/// <see cref="IsConsumedBySimulator"/>, which is the machine-readable half of this sentence.</para>
 ///
 /// Four kinds mirror the server's own typed recipe shapes (<c>server/services/recipes/recipeSchemas.ts</c>
 /// — read-only reference, not imported since this is a separate deployable) so the same parameter, on
@@ -29,11 +40,39 @@ public static class MachineParameterSchema
     public const string ScrewProgram = "screw_program";
 
     /// <summary>DISPENSING machines. <c>dispense_program</c>, again the server's own spelling. Four
-    /// parameters, product scope supported.</summary>
+    /// parameters, product scope supported.
+    ///
+    /// <para>🔴 <b>NO SIMULATOR READS IT — measured 2026-08-23 (BL-1, item 42) at commit <c>334575b2</c>,
+    /// and this sentence is added because its absence was the whole defect.</b> <c>SimulatorFactory.Create</c>'s
+    /// <c>DISPENSING</c> arm builds <c>new DispensingSim(d, seed)</c>, which takes no
+    /// <see cref="MachineConfigStore"/>, so every value written under this kind is validated, persisted,
+    /// served and then consumed by nothing.</para>
+    ///
+    /// <para>🔴 <b>And here the surface does not merely stay silent — it lies in the affirmative.</b> TWO of
+    /// these four keys are spelled EXACTLY as metric keys <c>DispensingSim.NextCycle</c> publishes:
+    /// <c>pressure</c> and <c>temperature</c>, character for character. An operator who raises
+    /// <c>pressure</c> sees the stored record change and the <c>pressure</c> metric not change. (The third
+    /// near-miss, <c>volumeTarget</c>, names the quantity behind the <c>volume</c> metric without matching
+    /// its key; <c>speed</c> has no metric at all.) Contrast <see cref="WeldProfile"/>, where the same trap
+    /// does NOT exist.</para></summary>
     public const string DispenseProgram = "dispense_program";
 
     /// <summary>WELDER machines. <c>weld_profile</c>, the server's own spelling. Four parameters, product
-    /// scope supported.</summary>
+    /// scope supported.
+    ///
+    /// <para>🔴 <b>NO SIMULATOR READS IT</b> — same measurement, same date, same reason:
+    /// <c>SimulatorFactory.Create</c>'s <c>WELDER</c> arm builds <c>new WelderSim(d, seed)</c>, the other
+    /// constructor in this family that takes no <see cref="MachineConfigStore"/>.</para>
+    ///
+    /// <para><b>The name collision is where this kind DIFFERS from <see cref="DispenseProgram"/>, and the
+    /// difference was measured rather than assumed.</b> A source report (BC-1 §7.2) wrote that "two of the
+    /// four keys on EACH side share a name with a metric that same simulator emits". Re-measured
+    /// 2026-08-23 against <c>WelderSim.NextCycle</c>, whose only two metric keys are <c>weld_current</c> and
+    /// <c>weld_time</c>: <b>ZERO of these four keys collide exactly</b> — <c>current</c> and <c>time</c> are
+    /// the same QUANTITIES under a different spelling, <c>tempMax</c> has no metric, and a welder emits no
+    /// voltage metric at all. So the operator-facing trap ("edit a key, watch the identically-named metric
+    /// stand still") lives at DISPENSING only, while the unwired-vocabulary gap lives at both. The count is
+    /// 2 for DISPENSING and 0 for WELDER, not "two on each side".</para></summary>
     public const string WeldProfile = "weld_profile";
 
     /// <summary>IOT_SENSOR and IOT_GATEWAY machines — the one kind mapped from TWO machine types, and the
@@ -58,6 +97,14 @@ public static class MachineParameterSchema
     /// → <see cref="AoiInspection"/>. A machine type not listed here (ASSEMBLY, LEAK_TEST,
     /// FUNCTIONAL_TEST, ...) simply has no operating-configuration parameter set yet — out of this
     /// task's scope, not an error condition callers need to special-case beyond checking for null.
+    ///
+    /// <para>🔴 <b>THE SENTENCE ABOVE IS KEPT VERBATIM AND ITS IMPLICATION IS RETRACTED — 2026-08-23
+    /// (BL-1, item 42).</b> It draws exactly one distinction, "listed = in scope, absent = not yet", and a
+    /// reader takes the complement: that a type present in this dictionary is wired. <c>DISPENSING</c> and
+    /// <c>WELDER</c> are present here and are as unwired as the three named absentees — their values reach
+    /// no draw. Membership of THIS map decides only which REST vocabulary a machine is served; whether
+    /// anything consumes it is a separate fact, and <see cref="IsConsumedBySimulator"/> is where that fact
+    /// now lives so the two questions cannot be confused again.</para>
     /// </summary>
     private static readonly Dictionary<string, string> MachineTypeToConfigKind = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -77,6 +124,33 @@ public static class MachineParameterSchema
         !string.IsNullOrWhiteSpace(machineType) && MachineTypeToConfigKind.TryGetValue(machineType.Trim(), out var kind)
             ? kind
             : null;
+
+    /// <summary>🔴 Item 42, 2026-08-23 — <b>does any simulator in this product actually READ values written
+    /// under <paramref name="configKind"/>?</b> Declared here as data rather than left as prose in five
+    /// doc comments, because prose is what let the answer stay wrong: two kinds have been fully declared,
+    /// range-checked, persisted and served over REST since the feature shipped, and consumed by nothing.
+    ///
+    /// <para><b>What it measures, exactly:</b> whether <c>SimulatorFactory.Create</c> forwards a
+    /// <see cref="MachineConfigStore"/> to the simulator class it builds for that kind's machine types.
+    /// <c>ScrewdriveSim</c>, <c>IotSensorSim</c> and <c>AoiInspectorSim</c> take one;
+    /// <c>DispensingSim</c> and <c>WelderSim</c> take no such argument at all, which is the whole of the
+    /// answer for those two.</para>
+    ///
+    /// <para>🔴 <b>What it does NOT measure, stated here because the result is read here.</b> It is
+    /// REACHABILITY of the store, not the fate of any individual key: a <see langword="true"/> means the
+    /// values arrive at a simulator, NOT that every parameter of the kind reaches a draw. At least one key
+    /// on a "true" kind does not — <c>screw_program</c>'s <c>angleTarget</c>, which
+    /// <c>ScrewdriveSim.NextCycle</c>'s own doc comment records as reaching no draw. A per-KEY answer would
+    /// be a different instrument and this is not it.</para></summary>
+    /// <param name="configKind">One of the five kind constants on this class; any other string answers
+    /// <see langword="false"/>, which is the safe direction — an unknown vocabulary is certainly not being
+    /// consumed by a simulator that has never heard of it.</param>
+    /// <returns>True when a store reaches the simulator built for that kind's machine types.</returns>
+    public static bool IsConsumedBySimulator(string? configKind) =>
+        configKind is not null &&
+        (string.Equals(configKind, ScrewProgram, StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(configKind, IotSettings, StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(configKind, AoiInspection, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>IoT sensor/gateway machines run no product — per
     /// docs/MACHINE_CONFIG_DESIGN.md §2 ("Máy không chạy sản phẩm... chỉ có lớp theo máy; giao diện

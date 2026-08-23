@@ -2289,8 +2289,60 @@ EXPECT_CONFORMANCE=24
 # xunit schedules it. It was deleted and rebuilt as a gate bracket instead (see the %ProgramData% bracket
 # beside the output-directory one). Four of the five suite constants therefore do NOT move, and the
 # reason they do not is a measurement rather than a scope decision.
+#
+# ══ TASK BL-1 (.superpowers/sdd/items-41-42/task-1-brief.md) — items 41 and 42, under the OWNER'S ══════
+# RULINGS of 2026-08-23 ("the descriptor MUST DECLARE the screw / torque band, and all three hosts read
+# ONE source"; "record that weld_profile/dispense_program are NOT wired, and wait for item 41").
+#
+# EXPECT_EDGECORE 1221 -> 1241 (+20). Grand total 2867 -> 2887. NO OTHER SUITE MOVES: 161 / 24 / 52 /
+# 1409 are unchanged, and that is ASSERTED rather than assumed -- the twenty are in TWO new files, both
+# under tests/St4i.EdgeCore.Tests/, and nothing was added to the other four assemblies. 🔴 COUNTED FROM
+# THE EXECUTED TOTAL (`dotnet test` reporting `Passed: 1241`), not from `--list-tests | grep -c`, which
+# returned 1234 on the same build for the reason line ~3400 already records about that grep form. Both
+# numbers were produced; the one written here is the runner's.
+#
+# THE TWENTY, ENUMERATED BEFORE THEY ARE TOTALLED, AND EACH LABELLED WITNESS OR GUARD -- a
+# green-on-both-branches test is not a witness unless it says so, which is this repository's own rule:
+#
+#   tests/St4i.EdgeCore.Tests/ScrewTorqueDeclarationTests.cs -- ELEVEN cases (6 [Fact] + 3 + 2 inline)
+#     THREE WITNESSES, all three proved RED by a control pair that was RUN IN FULL and then reverted.
+#     The mutation: `ResolveTorqueBand` reads a hard-coded null instead of `Descriptor.ScrewTorque`, and
+#     the loader's undeclared warning is switched off -- i.e. exactly the pre-ruling behaviour.
+#       1. Declared_band_reports_the_same_physics_under_every_host_wiring        (property (i))
+#       2. Undeclared_screwdrive_is_reported_by_the_loader_and_still_diverges    (property (ii))
+#       3. An_operator_adjustment_still_outranks_the_roster_declaration          (the precedence rung
+#          that keeps the settings screen working for a DECLARED machine)
+#     EIGHT GUARDS, and the first of them is the one that matters:
+#       4. Shipped_roster_declares_nothing_and_the_numbers_it_reports_have_not_moved  -- property (iii).
+#          🔴 GREEN ON BOTH BRANCHES of the control pair, and SAID SO in its own doc comment. It is
+#          still RED-ABLE, against the change it exists to prevent: it reddens the day anyone writes a
+#          screwTorque band into the shipped fleet.json, i.e. the day a fix picks a screw on the owner's
+#          behalf. That is a different mutation from the one this control pair ran, and calling it a
+#          witness for THIS change would have been the overstatement the ledger keeps having to retract.
+#       5-7. An_out_of_range_declaration_is_rejected_never_clamped (3 inline cases)
+#       8-9. A_declaration_with_no_screw_code_is_rejected          (2 inline cases)
+#       10.  An_out_of_range_declaration_skips_only_its_own_entry  -- the per-entry tolerance GP-3 built
+#            for deviceClass, now covering the new field; without it ONE bad band killed a whole roster.
+#       11.  A_roster_written_before_the_declaration_existed_still_parses -- backward compatibility.
+#
+#   tests/St4i.EdgeCore.Tests/UnconsumedConfigKindsTests.cs -- NINE cases (7 MemberData rows + 2 [Fact])
+#     SEVEN WITNESSES for item 42, proved RED by their own control pair (RUN and reverted): with
+#     `IsConsumedBySimulator` mutated to answer true for every kind -- which is what the record CLAIMED
+#     before this task -- the DISPENSING and WELDER rows go RED and the other five stay green. So the
+#     assertion discriminates, and it discriminates in BOTH directions: it also reddens the day somebody
+#     wires those two simulators to a store without correcting the doc comments and item 42's record.
+#       1-7. The_declared_consumption_of_a_kind_matches_what_the_factory_actually_wires
+#     TWO GUARDS, green on both branches by construction (they measure today's code, not the change):
+#       8. Exactly_two_dispense_program_keys_are_spelled_as_metrics_the_same_simulator_publishes
+#       9. No_weld_profile_key_is_spelled_as_a_metric_the_welder_publishes -- pins the CORRECTED count,
+#          0 for WELDER, against BC-1 §7.2's "two on EACH side", which did not survive re-measurement.
+#
+# 🔴 AND WHAT THE TWENTY DO NOT MEASURE, recorded here because this is where the total is read: they
+# exercise the ARGUMENT SHAPE the three hosts use (store passed vs not), not three host processes.
+# St4iMachineSimulator has no test assembly among the five suites below, so FleetService.BuildSimulator
+# is reached only through the factory it delegates to. Stated in the test file's own remarks too.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1221
+EXPECT_EDGECORE=1241
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4797,8 +4849,37 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # of thing that gets rounded away and then quoted.
 #
 # The baseline cfcfae42 is NOT moved.
+#
+# ══ TASK BL-1 (2026-08-23, items 41 and 42 under the OWNER'S RULINGS of the same day) ═════════════════
+# EXPECT_NEW_DOC_ABSOLUTES: 343 -> 384 (+41), MEASURED AFTER the prose was written and RE-MEASURED after
+# it was corrected, never predicted beside the diff. Two numbers were produced and they do NOT agree by
+# arithmetic, which is the interesting part and is why both are written:
+#     scripts/scan-doc-negations.sh --since cfcfae42   ->  384
+#     scripts/scan-doc-negations.sh --since 334575b2   ->   42     (this task's own base)
+# 343 + 42 = 385, not 384. The difference is NOT an error in either run: identity in that scanner is
+# (path, sentence), and this task REPLACED a flagged sentence in ScrewdriveSim.cs -- the old
+# "…so the same descriptor reports about 12 Nm under one host and about 1.35 Nm under another" -- which
+# leaves the since-baseline corpus one sentence lighter while the since-base corpus counts only what was
+# added. The literal written below is the SCANNER's answer to the question the gate actually asks
+# (--since "$DOC_ABSOLUTES_BASELINE"), not a sum.
+#
+# ALL 42 WERE READ, and the reading changed two of them at the source rather than counting them as true:
+#   * ScrewTorqueSpec.cs claimed the descriptor is "the only per-machine artefact all three already
+#     READ". Not measured, and probably false -- mapping/*.json is per-machine for two of the three
+#     hosts. The true claim, and the one that carries the inference, is narrower: it is the only
+#     per-machine artefact all three HAND TO SimulatorFactory.Create. Rewritten to say that.
+#   * UnconsumedConfigKindsTests.cs claimed its measurement is "nothing that a rename could quietly
+#     satisfy". FALSE as written: the machine-type strings in its TheoryData are literals, so renaming a
+#     type in the schema's map without touching that file would leave a row measuring a machine type
+#     that no longer exists. Now names that hole and names the assertion that turns it into a failure.
+# 🔴 Two of the 42 are RETRACTIONS OF PUBLISHED CLAIMS rather than new assertions -- the
+# MachineParameterSchema class-doc "what CAN be TUNED" retraction and the MachineSettingsEndpoints
+# "this machine's actual configuration" retraction. They raise this count while REMOVING falsehood,
+# which is the same behaviour BC-1 recorded above: a correction is itself an absolute-carrying sentence.
+#
+# The baseline cfcfae42 is NOT moved.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_NEW_DOC_ABSOLUTES=343
+EXPECT_NEW_DOC_ABSOLUTES=384
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

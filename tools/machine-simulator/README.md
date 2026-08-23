@@ -290,6 +290,30 @@ dotnet run --project src/St4i.EdgeService -- --fleet fleet.json --smoke 20
   `defaultStepType`/`defaultRecipeCode`/`unitMap` (e.g. mapping a device-native `"C"` to the
   platform's canonical `"°C"`). `fleet.json` entries reference these by name via `mappingProfile`
   (`null` for machine types with no dedicated preset yet — ASSEMBLY/LEAK_TEST/FUNCTIONAL_TEST).
+- 🔴 **`screwTorque` — a SCREWDRIVE entry declares which screw it drives (owner's ruling 2026-08-23,
+  item 41).** Optional per entry, and meaningless on any other machine type:
+  `"screwTorque": { "screwCode": "M4", "targetNm": 1.35, "toleranceNm": 0.15 }`. All three hosts of this
+  product read the roster, so a declared band is the band **every** host reports; both numbers are
+  range-checked against exactly the bands `GET /v1/machines/{code}/settings` publishes for
+  `screw_program` (`targetNm` 0.10–20.00 Nm, `toleranceNm` 0.00–5.00 Nm) and an out-of-range value is
+  **rejected, never clamped** — that one entry is skipped with a named warning and the rest of the roster
+  still loads. An operator's machine- or product-scoped adjustment on the settings screen still overrides
+  the declaration; the roster sets the commissioning fact, not the shift.
+  **Omitting it is a real state, and a REPORTED one.** The shipped roster above omits it on both
+  screwdrivers, so `FleetConfig.Load` raises one warning per undeclared SCREWDRIVE, naming what actually
+  happens: a machine with no declaration reports **~12.0 Nm** under a host that wires no machine config
+  store (`St4i.EdgeService`, the WPF app) and **~1.35 Nm** under one that does (`St4i.EngineApi`, through
+  `FleetCore`) — a factor of about nine, for one descriptor, decided by which host you started. 🔴 **This
+  product does not choose between those two for you and this release does not either**: nothing in the
+  tree says which screw the demo roster is, so the roster stays undeclared and the divergence is
+  announced rather than silently resolved. Declare `screwTorque` and the question is closed for that
+  machine. See `docs/owner-decisions.md` item 41.
+  ⚠️ **Where that warning actually lands, measured rather than assumed: two sinks out of three.**
+  `St4i.EngineApi` routes it to `FleetCore`'s logger and `St4i.EdgeService` to its `ILogger`. The WPF
+  kiosk passes `Debug.WriteLine`, which is `[Conditional("DEBUG")]` — **compiled out of a Release
+  build**, so on the shipped kiosk this warning (and every other `fleet.json` warning, which has been
+  true since GP-3 wrote them) reaches nobody. Not introduced here and not fixed here; recorded because
+  a warning is only as good as the sink it lands in.
 - Both are shipped with the build/publish output (`CopyToOutputDirectory=PreserveNewest` in the WPF
   csproj) so an operator can hand-edit `fleet.json`/`mapping/*.json` next to a published exe with no
   rebuild. Proven to parse via `PackagingFleetJsonTests` in the xUnit suite, `St4i.EdgeService --fleet
