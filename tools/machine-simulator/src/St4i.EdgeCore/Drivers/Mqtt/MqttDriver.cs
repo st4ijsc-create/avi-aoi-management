@@ -26,11 +26,19 @@ public sealed class MqttDriver : IDeviceDriver
     private static readonly MqttClientFactory Factory = new();
 
     /// <summary>How long <see cref="DisposeAsync"/> waits for EACH of its two shutdown steps — draining the
-    /// constructor's connect+subscribe task, then the graceful disconnect. One second each, and the arithmetic
-    /// is the reason: <c>FleetCore.RestartTeardownTimeout</c> gives a whole driver 3 s before abandoning it,
-    /// so two sequential steps at 1 s leave this method a worst case of about 2 s and keep a full second of
-    /// headroom under the budget the host actually applies. A per-step ceiling equal to the host's own would
-    /// have been no ceiling at all.</summary>
+    /// constructor's connect+subscribe task, then the graceful disconnect. One second each, against the 3 s
+    /// <c>FleetCore.RestartTeardownTimeout</c> gives a whole driver before abandoning it. A per-step ceiling
+    /// equal to the host's own would have been no ceiling at all.
+    ///
+    /// <para>🔴 <b>THE ARITHMETIC HERE SAID "a worst case of about 2 s and a full second of headroom", AND IT
+    /// WAS WRONG — corrected by the task that wrote it, BK-1, 2026-08-23, one commit later.</b> It was
+    /// computed before <see cref="BoundedTeardown"/> grew its cooperative grace, and that grace is added to
+    /// every budget it is handed: each step's real wall-clock ceiling is 1 s + 250 ms, so two sequential steps
+    /// are about <b>2.5 s</b> and the headroom under the host's 3 s is <b>half a second</b>. The margin is
+    /// still real and this constant does not move; what was wrong was a published number, arrived at by
+    /// reasoning about a mechanism and then not re-derived when the mechanism changed inside the same task.
+    /// Named rather than silently rewritten, because that is the exact failure mode this file's neighbours
+    /// keep having to retract.</para></summary>
     private static readonly TimeSpan TeardownStepBudget = TimeSpan.FromSeconds(1);
 
     private readonly string[] _topics;

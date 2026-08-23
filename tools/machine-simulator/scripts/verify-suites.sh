@@ -4754,11 +4754,12 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # added that is not a retraction or the explanation of one.
 # ══ TASK BK-1 — items 48, 51, 52 under the owner's ruling of 2026-08-23 ═══════════════════════════════
 #
-# EXPECT_NEW_DOC_ABSOLUTES: 322 -> 342 (+20), ACCOUNTED FOR RATHER THAN ABSORBED, and the accounting is a
+# EXPECT_NEW_DOC_ABSOLUTES: 322 -> 343 (+21), ACCOUNTED FOR RATHER THAN ABSORBED, and the accounting is a
 # MEASUREMENT rather than an inference from a diff. The scanner was run twice on this machine: once with
 # this branch's tree stashed (BASE, `git stash push -u`) and once with it restored. BASE printed 322 --
-# the value that stood here, confirmed rather than assumed -- and the restored tree printed 342. The
-# per-file difference between the two listings is 20, and all 20 sit in files this task edited; every file
+# the value that stood here, confirmed rather than assumed -- and the restored tree printed 342 -- then 343 after a
+# second commit corrected a number this task had itself published (see the +3 row). The per-file
+# difference between the two listings is 21, and all 21 sit in files this task edited; every file
 # it did not touch is byte-identical to BASE and its count did not move, which is what makes "all of them
 # are mine" a reading rather than an assumption.
 #
@@ -4772,8 +4773,11 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #   +2  src/St4i.EdgeCore/Drivers/HotFolder/HotFolderAoiDriver.cs  (14 -> 16). Two RETRACTIONS: the
 #       constructor-does-I/O paragraph (item 48 defect 1) and the "the class-level claim is still absent"
 #       paragraph BI-1 left contradicting its own fix.
-#   +2  src/St4i.EdgeCore/Drivers/Mqtt/MqttDriver.cs           (8 -> 10). The DisposeAsync retraction plus
-#       the new "what is still NOT bounded" paragraph.
+#   +3  src/St4i.EdgeCore/Drivers/Mqtt/MqttDriver.cs           (8 -> 11). The DisposeAsync retraction, the
+#       new "what is still NOT bounded" paragraph, and -- added in a SECOND commit -- the retraction of
+#       this task's OWN arithmetic beside TeardownStepBudget, whose new sentence says the cooperative
+#       grace is added to EVERY budget and is picked up for that word. Re-measured after that edit rather
+#       than assumed unchanged: 342 -> 343, which is why this line reads +3 and the total below reads 343.
 #   +2  src/St4i.EdgeCore/Drivers/Mqtt/InProcessBroker.cs      (2 -> 4). The "deliberately blind" and
 #       "not bounded" retractions, and the "what did NOT change" paragraph beside them.
 #   +1  tests/St4i.EdgeCore.Tests/Drivers/HotFolderAoiDriverConformanceTests.cs  (0 -> 1). The retraction
@@ -4786,14 +4790,15 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #
 # 🔴 AND A COUNTING TOOL WRITTEN FOR THIS BLOCK DISAGREED WITH THE SCANNER BY ONE, IN BOTH DIRECTIONS.
 # A throwaway parser over the scanner's own listing totalled 323 at BASE and 343 now, against the
-# scanner's 322 and 342 -- one wrapped line it mis-split, on each side. The DELTA it reports (20) is
+# scanner's 322 and 342 -- one wrapped line it mis-split, on each side. The DELTA it reports (20 at
+# that point) is
 # therefore sound and the TOTALS it reports are not; the totals written above are the SCANNER's. Named
 # rather than quietly corrected, because "my tool and the real tool disagree by one" is exactly the kind
 # of thing that gets rounded away and then quoted.
 #
 # The baseline cfcfae42 is NOT moved.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_NEW_DOC_ABSOLUTES=342
+EXPECT_NEW_DOC_ABSOLUTES=343
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

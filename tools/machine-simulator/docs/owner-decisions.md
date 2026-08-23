@@ -1482,8 +1482,13 @@ duy nhất thay đổi là **thời gian của người gọi**, không phải n
    nó chịu lực riêng, vì một bản "sửa" chỉ xoá phép tạo thư mục sẽ qua nửa đầu và **phá cả hai điểm
    vào demo**.
 2. **`MqttDriver.DisposeAsync` không có trần — TRẢ.** **Cả hai** phép chờ nay đi qua
-   `BoundedTeardown` với trần 1 s mỗi bước; số học được viết cạnh hằng số: `FleetCore
-   .RestartTeardownTimeout` cho **cả** driver 3 s, nên hai bước tuần tự ở 1 s để lại một giây dư.
+   `BoundedTeardown` với trần 1 s mỗi bước; `FleetCore.RestartTeardownTimeout` cho **cả** driver 3 s.
+   🔴 **Số học viết cạnh hằng số SAI ở commit đầu và được chính nhiệm vụ này sửa:** `BoundedTeardown`
+   cộng một khoảng ân hạn 250 ms vào mọi trần (để "tự huỷ lịch sự" và "phớt lờ token rồi bị bỏ rơi"
+   không rơi vào cùng một khoảnh khắc), nên trần thật mỗi bước là **1 s + 250 ms**, hai bước tuần tự
+   là **≈2,5 s**, và phần dư dưới 3 s là **nửa giây** — không phải "một giây" như câu đầu tiên viết.
+   Hằng số không dời; **một con số đã công bố** thì dời, và nó dời vì được suy từ một cơ chế rồi không
+   được suy lại khi cơ chế đổi **trong cùng nhiệm vụ**.
 3. **Không liệt kê lại được sau dispose — TRẢ BẰNG PHỦ, và **tự dán nhãn GUARD**.** Đây **không**
    phải một hành vi hỏng; nó là một hành vi **không ai kiểm** — đúng chữ của mục. Nên bài kiểm là
    **xanh ở cả hai nhánh theo cấu tạo**, và nó tự khai điều ấy ngay trong tên và trong doc của nó.
