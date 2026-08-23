@@ -171,6 +171,17 @@ public class Doc28Writer
         return token is "OK" or "NG" or "NTF" ? token : "NTF";
     }
 
+    /// <summary>🔴 <b>BI-1 (2026-08-23) — this is the FIFTH switch on <c>Verdict</c> carrying a discard arm,
+    /// and <c>docs/owner-decisions.md</c> item 55 counted FOUR.</b> The item's own table lists
+    /// <c>MachineState.cs:174</c>, <c>MachineViewModel.cs:245</c>, <c>Normalizer.cs:253</c> and
+    /// <c>Normalizer.cs:263</c>; it names this method in its §55.3 "two relatives" paragraph for the
+    /// <c>Warn</c> → <c>"NTF"</c> mapping, and never counts the <c>_</c> arm sitting one line below it. The
+    /// population, enumerated from the tree rather than from the item, is those four plus this one.
+    ///
+    /// <para><b>No code changed here.</b> Like <c>Normalizer.VerdictToResult</c>, all four members are
+    /// already enumerated above and the discard already folds an out-of-domain value to the NOT-COUNTED
+    /// token rather than to the good one, which is the side BI-1 moved the other two switches onto. It is
+    /// recorded rather than edited so the count is legible from the site the count missed.</para></summary>
     private static string MapVerdict(Verdict v) => v switch
     {
         Verdict.Pass => "OK",

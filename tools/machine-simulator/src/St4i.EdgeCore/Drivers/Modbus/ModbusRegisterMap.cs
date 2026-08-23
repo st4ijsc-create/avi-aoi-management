@@ -617,8 +617,32 @@ public sealed class ModbusRegisterMap
     /// <see cref="EffectiveRetries"/> + 1 and is charged to the SHARED arbitration lock. See
     /// <see cref="WorstCaseBusHoldMs"/> for the number and <see cref="ModbusMultidropMap.FanOut"/> for the
     /// parse-time warning. <b>A multidrop device should normally DECLARE this field</b>, sized for its slowest
-    /// legitimate single round trip, rather than inherit a value derived from its poll cadence.</para></summary>
-    public int EffectiveReadTimeoutMs => ReadTimeoutMs ?? Math.Max(1000, PollIntervalMs * 4);
+    /// legitimate single round trip, rather than inherit a value derived from its poll cadence.</para>
+    ///
+    /// <para>🔴 <b>BI-1 (2026-08-23, docs/owner-decisions.md item 50 defect 2) — the <c>* 4</c> below no
+    /// longer wraps.</b> Item 38 closed the PARSE road onto this expression by refusing a declared
+    /// <see cref="PollIntervalMs"/> above <see cref="MaxPollIntervalMs"/>
+    /// (<c>int.MaxValue / 4</c>), but this type is a record with <c>init</c> setters and the OBJECT
+    /// INITIALIZER road was left open: <c>new ModbusRegisterMap { PollIntervalMs = int.MaxValue, ... }</c>
+    /// made <c>PollIntervalMs * 4</c> overflow to a NEGATIVE number, whereupon <c>Math.Max</c> quietly
+    /// returned the 1000 ms floor. A cadence declared as "very slow" therefore produced the SHORTEST legal
+    /// per-attempt timeout, silently, which is the opposite of what the value asked for.</para>
+    ///
+    /// <para><b>The rule applied is the one this type already has, not a new one.</b> An out-of-domain
+    /// <see cref="PollIntervalMs"/> derives from <see cref="DefaultPollIntervalMs"/>, which is exactly what
+    /// <c>ResolvePollIntervalMs</c> does on the parse road — "the same law, not a third one invented for
+    /// this field", in that method's own words. <b>Every value the parse road can produce is in
+    /// <c>[1, MaxPollIntervalMs]</c> and is therefore UNAFFECTED, bit for bit:</b> no shipped map, no
+    /// fixture and no test moves. What changes is only what a hand-built instance carrying an
+    /// out-of-domain cadence derives.</para>
+    ///
+    /// <para><b>What this does NOT do.</b> It does not clamp the RESULT to
+    /// <see cref="MaxReadTimeoutMs"/>. A legal <see cref="PollIntervalMs"/> can legitimately derive a value
+    /// far above that ceiling, that has always been true, and capping it here would change in-domain
+    /// behaviour to fix an out-of-domain one. It also does not make the property throw or warn — a getter
+    /// has nowhere to warn to; the guard against reaching it is <c>ResolvePollIntervalMs</c>, upstream.</para></summary>
+    public int EffectiveReadTimeoutMs =>
+        ReadTimeoutMs ?? Math.Max(1000, (PollIntervalMs is > 0 and <= MaxPollIntervalMs ? PollIntervalMs : DefaultPollIntervalMs) * 4);
 
     /// <summary>The value <see cref="ModbusTcpDriver"/> and <see cref="ModbusRtuDriver"/> apply to
     /// <c>Transport.Retries</c>: <see cref="Retries"/> if the register map set one, else the original default
@@ -858,7 +882,7 @@ public sealed class ModbusRegisterMap
     /// behaviour that deliberately did not extend to it.</para></summary>
     private static int? ParseOptionalPositiveInt(JsonElement root, string propertyName, int maxValue, Action<string>? logWarning)
     {
-        if (!root.TryGetProperty(propertyName, out var prop) || prop.ValueKind == JsonValueKind.Null)
+        if (!TryGetPropertyLikeTheBinder(root, propertyName, out var prop) || prop.ValueKind == JsonValueKind.Null)
         {
             return null;
         }
@@ -882,6 +906,49 @@ public sealed class ModbusRegisterMap
         }
 
         return value;
+    }
+
+    /// <summary>🔴 <b>BI-1 (2026-08-23, docs/owner-decisions.md item 50 defect 1) — the case-matching this
+    /// method exists to supply, and the reason it is a named method rather than an inline
+    /// <c>TryGetProperty</c>.</b> <see cref="ReadTimeoutMs"/>/<see cref="Retries"/> are
+    /// <c>[JsonIgnore]</c>d, so the raw <see cref="JsonElement"/> is their ONLY source and that type's
+    /// <c>TryGetProperty</c> matches ORDINALLY, while the
+    /// strongly-typed bind beside them runs with
+    /// <see cref="JsonSerializerOptions.PropertyNameCaseInsensitive"/> set. A map declaring
+    /// <c>"ReadTimeoutMs": 3000, "Retries": 4</c> therefore used to bind BOTH to <see langword="null"/> with
+    /// ZERO warnings — the two knobs simply vanished, and <see cref="EffectiveReadTimeoutMs"/> fell back to
+    /// its derived value. <c>ResolvePollIntervalMs</c>'s own doc comment named this defect on 2026-08-23
+    /// and left it standing as out of item 38's scope; item 50 is where it was ruled.
+    ///
+    /// <para><b>Exact spelling still wins.</b> The ordinal probe runs first, so a document carrying both
+    /// <c>"readTimeoutMs"</c> and <c>"ReadTimeoutMs"</c> resolves to the canonical one and does not depend
+    /// on JSON property order. Only when the ordinal probe MISSES does this fall back to a
+    /// case-insensitive scan — so every document that parses today parses to the identical value, and the
+    /// only documents whose behaviour changes are the ones that were being silently discarded.</para>
+    ///
+    /// <para><b>What this deliberately does NOT do.</b> It does not warn about the odd spelling. Item 50
+    /// records that a later reader may want the opposite direction — REFUSE the off-case key rather than
+    /// accept it — and that direction is still open; this one matches the binder because a knob the binder
+    /// would have accepted must not disappear depending on which of two sibling fields it sits next
+    /// to.</para></summary>
+    private static bool TryGetPropertyLikeTheBinder(JsonElement root, string propertyName, out JsonElement value)
+    {
+        if (root.TryGetProperty(propertyName, out value))
+        {
+            return true;
+        }
+
+        foreach (var property in root.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     /// <summary>

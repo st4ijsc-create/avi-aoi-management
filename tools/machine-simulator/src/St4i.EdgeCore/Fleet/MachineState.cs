@@ -166,12 +166,36 @@ public sealed class MachineState
                 PassRate = _judgedCount == 0 ? 0.0 : (double)_passCount / _judgedCount;
             }
 
+            // 🔴 BI-1 (2026-08-23, docs/owner-decisions.md item 55, COORDINATOR RULING UNDER DELEGATION)
+            // — `Verdict.Pass` is now spelled out and the discard arm NAMES an out-of-domain value instead
+            // of answering "OK" for it. THE FOUR IN-DOMAIN ANSWERS ARE BYTE-IDENTICAL TO BEFORE: Pass fell
+            // through the old `_` to "OK" and still reads "OK". What changed is only the arm no value in
+            // this tree can reach today (measured at 44383e23: `enum Verdict` has exactly four members, no
+            // `(Verdict)` cast exists anywhere under src/ or tests/, and the one Verdict-typed member that
+            // crosses a serialization boundary — DeviceReading.Verdict — is bound by ConnectorJson, which
+            // registers JsonStringEnumConverter(..., allowIntegerValues: false), so an integer is REFUSED
+            // rather than accepted-and-folded).
+            //
+            // WHY NAME RATHER THAN THROW. This runs on every cycle of every machine; throwing here would
+            // change runtime behaviour on the hottest path in the product to guard a value nothing produces.
+            // WHY NAME RATHER THAN DROP THE DISCARD. Removing `_` makes the switch non-exhaustive in the
+            // compiler's eyes (an enum can hold any underlying int), which raises CS8509 — and
+            // EXPECT_WARNINGS is a PINNED constant, so a new warning reddens the gate rather than reaching
+            // a reader. Naming costs nothing and turns a silent "it's fine" into a legible "I don't know".
+            //
+            // WHAT THIS DOES NOT DO, said here because the result shows up on an operator surface: "UNKNOWN"
+            // has no entry in web/src/components/MachineCard.tsx's STATUS_META (nor in Machines.tsx /
+            // MachineDetail.tsx / ReadoutGrid.tsx), so those surfaces fall back to a neutral badge showing
+            // the raw string. That is the intended outcome — a value nobody mapped reads as unmapped — but
+            // it is NOT a translated label, and it is not exercised by any test because nothing can produce
+            // it. See MachineViewModel.StatusText for the WPF twin of this same switch.
             StatusText = reading.Verdict switch
             {
                 Verdict.Fail => "FAIL",
                 Verdict.Warn => "WARN",
                 Verdict.Skip => "TELEMETRY",
-                _ => "OK",
+                Verdict.Pass => "OK",
+                _ => "UNKNOWN",
             };
 
             LastCycleSummary = BuildSummary(reading, ack);

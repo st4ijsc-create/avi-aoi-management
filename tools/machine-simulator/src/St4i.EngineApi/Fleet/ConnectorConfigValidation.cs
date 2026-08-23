@@ -60,6 +60,21 @@ public static class ConnectorConfigValidation
     /// every exception a malformed map/kind could produce is caught and translated into
     /// <paramref name="error"/>, the same non-throwing contract <see cref="IConnectorFactory.TryCreate"/>
     /// itself is held to.</returns>
+    /// <param name="logWarning">🔴 <b>BI-1 (2026-08-23, docs/owner-decisions.md item 50 defect 3) — the
+    /// cadence-warning sink both parsers underneath this method have always accepted and this method never
+    /// passed.</b> A map whose <c>pollIntervalMs</c> (or, on Modbus, <c>readTimeoutMs</c>/<c>retries</c>) is
+    /// out of domain is NOT a validation failure — the parsers warn and fall back — so before this
+    /// parameter existed the fallback happened here and said nothing to anyone. Optional and defaulting to
+    /// <see langword="null"/>, which is byte-for-byte today's behaviour: every existing call site that does
+    /// not pass one behaves exactly as it did.
+    ///
+    /// <para><b>Two of the four call sites deliberately still pass nothing, and that is a limit rather
+    /// than an oversight.</b> <c>ConnectorEndpoints</c>' two <c>TryValidate</c> calls answer HTTP requests,
+    /// and this record's shape is what those responses are built from — surfacing a warning to the caller
+    /// of the route means adding a field to a published response, which is a different decision from this
+    /// one and was not taken here. The two call sites that DO pass a sink are the ones that already own a
+    /// warning channel an operator reads: <c>ConnectorsJsonRegistration</c> (an <c>ILogger</c>) and
+    /// <c>ConnectorConfigVisibilitySeeder</c> (its own <c>logWarning</c> delegate).</para></param>
     public static bool TryValidate(
         string? kindRaw,
         string? host,
@@ -67,7 +82,8 @@ public static class ConnectorConfigValidation
         string? mapJson,
         string? pkiDir,
         [NotNullWhen(true)] out ConnectorValidationResult? result,
-        [NotNullWhen(false)] out string? error)
+        [NotNullWhen(false)] out string? error,
+        Action<string>? logWarning = null)
     {
         result = null;
 
@@ -87,12 +103,12 @@ public static class ConnectorConfigValidation
 
         if (kind == DriverKinds.Modbus)
         {
-            return TryValidateModbus(host, port, mapJson, out result, out error);
+            return TryValidateModbus(host, port, mapJson, out result, out error, logWarning);
         }
 
         if (kind == DriverKinds.OpcUa)
         {
-            return TryValidateOpcUa(mapJson, pkiDir, out result, out error);
+            return TryValidateOpcUa(mapJson, pkiDir, out result, out error, logWarning);
         }
 
         error = $"Unsupported connector kind '{kindRaw}' — only Modbus TCP ('Modbus') and OPC-UA ('OpcUa') " +
@@ -103,7 +119,8 @@ public static class ConnectorConfigValidation
     private static bool TryValidateModbus(
         string? host, int? port, string mapJson,
         [NotNullWhen(true)] out ConnectorValidationResult? result,
-        [NotNullWhen(false)] out string? error)
+        [NotNullWhen(false)] out string? error,
+        Action<string>? logWarning = null)
     {
         result = null;
 
@@ -122,7 +139,12 @@ public static class ConnectorConfigValidation
         ModbusRegisterMap map;
         try
         {
-            map = ModbusRegisterMap.FromJson(mapJson);
+            // 🔴 BI-1, item 50 defect 3 — the item's own enumeration names TWO sink-less production call
+            // sites and both are OPC-UA (this file's TryValidateOpcUa, and Program.cs). Re-measured over
+            // every `(ModbusRegisterMap|OpcUaNodeMap).FromJson(` under src/ at 44383e23, there are THREE,
+            // and the third is this line — the MODBUS parser, in the very file the item names, one method
+            // above the one it names. So the count does not survive; the shape the item describes does.
+            map = ModbusRegisterMap.FromJson(mapJson, logWarning);
         }
         catch (Exception ex)
         {
@@ -192,14 +214,17 @@ public static class ConnectorConfigValidation
     private static bool TryValidateOpcUa(
         string mapJson, string? pkiDir,
         [NotNullWhen(true)] out ConnectorValidationResult? result,
-        [NotNullWhen(false)] out string? error)
+        [NotNullWhen(false)] out string? error,
+        Action<string>? logWarning = null)
     {
         result = null;
 
         OpcUaNodeMap map;
         try
         {
-            map = OpcUaNodeMap.FromJson(mapJson);
+            // 🔴 BI-1, item 50 defect 3 — one of the two sink-less sites the item names. See
+            // TryValidateModbus above for the third one it does not.
+            map = OpcUaNodeMap.FromJson(mapJson, logWarning);
         }
         catch (Exception ex)
         {
