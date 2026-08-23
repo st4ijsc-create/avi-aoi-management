@@ -2342,7 +2342,41 @@ EXPECT_CONFORMANCE=24
 # St4iMachineSimulator has no test assembly among the five suites below, so FleetService.BuildSimulator
 # is reached only through the factory it delegates to. Stated in the test file's own remarks too.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1241
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 BM-1, 2026-08-23 (docs/owner-decisions.md items 43/44/45/47, THE OWNER'S RULING of 2026-08-23,
+# base 47862d2a) raises EXPECT_EDGECORE 1241 -> 1261 (+20) and EXPECT_ENGINEAPI 1409 -> 1415 (+6).
+# Grand total 2887 -> 2913. EXPECT_ABSTRACTIONS/EXPECT_CONFORMANCE/EXPECT_EDGESERVICE do not move
+# (161 / 24 / 52), and no existing test is rewritten, split or deleted EXCEPT the one named below.
+#
+# +20 EdgeCore, ONE new file, tests/St4i.EdgeCore.Tests/LeakAndFunctionalVerdictDomainTests.cs:
+#      3  item 43 witnesses (1 fact + a 2-case theory), reddened by restoring the literal `0.0`
+#         LeakTestSim used to pass as its LSL. Control pair run: 3 red / 17 green, then 20/20 green.
+#      2  item 43 GUARDS, self-labelled in their own summaries: the good-count partition does NOT
+#         move (Pass and Warn are both "good" at all four folding sites, so Quality/OEE/PassRate are
+#         byte-identical across the fix), and the published MetricSample still declares an LSL the
+#         verdict deliberately no longer uses.
+#     10  item 44 witnesses — two 5-case theories, one per constructor parameter, each asserting on
+#         ArgumentOutOfRangeException.ParamName AND .ActualValue rather than on message text.
+#      1  the BCL/IEEE-754 measurement both new doc comments rest on: Math.Clamp(NaN, 0, 1) returns
+#         NaN and every ordered comparison against it is false. Asserted so nobody takes it on trust.
+#      4  item 44 GUARDS, self-labelled: both parameters are KEPT (a 3-case in-domain theory
+#         including both endpoints) and both DEFAULTS are unmoved.
+#
+# +6 EngineApi, and it is +4 and +2 from two files:
+#      4  tests/St4i.EngineApi.Tests/Config/SimulatedEcosystemSeedingTests.cs (NEW FILE) — item 45:
+#         TWO witnesses covering the MISSING-ONE case from each side, and TWO guards (neither-file,
+#         both-files) that carry the word GUARD in their own summaries. The neither-file guard is
+#         what stops the fix degrading to "write nothing", which would pass both witnesses.
+#      2  tests/St4i.EngineApi.Tests/Fleet/ConnectorRegistryTests.cs — item 47, a NET of +2 from
+#         -1 and +3. 🔴 THE DELETION IS THE POINT AND IS NOT A REWRITE FOR TIDINESS:
+#         Register_CalledTwiceForTheSameId_ReplacesThePreviousEntry PINNED the defect item 47 is
+#         about — "the second registration silently replaces the first" — so the ruling required it
+#         to stop being true. Its verbatim text is preserved in the summary of the method that
+#         replaces it, the same way this repository retires any published claim. It was also the
+#         ONLY red in the whole 1409-test suite when the fix landed, which is the measurement that
+#         says the blast radius is exactly the assertion that pinned the defect.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1261
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -3990,7 +4024,9 @@ EXPECT_EDGESERVICE=52
 # SuppressMessage. AX-1 DOES touch web/ (item 34's four i18n strings), so `npm run build` — which is
 # `tsc -b && vite build`, the gate compiles no TypeScript — was run and passed; the two dictionaries are the
 # only web files changed and no web test asserts either string (measured with repo-scan.sh before editing).
-EXPECT_ENGINEAPI=1409
+# 🔴 BM-1, 2026-08-23 — 1409 -> 1415 (+6). The whole justification, per file and per test, is beside
+# EXPECT_EDGECORE above; it is written once rather than twice because it is one task and one ruling.
+EXPECT_ENGINEAPI=1415
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -4879,7 +4915,29 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #
 # The baseline cfcfae42 is NOT moved.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_NEW_DOC_ABSOLUTES=384
+# 🔴 BM-1, 2026-08-23 (items 43/44/45/47, base 47862d2a) raises this 384 -> 432 (+48), and the +48 is a
+# NET rather than a count of additions. MEASURED, both halves:
+#
+#   ADDED   53, all of them in the SEVEN files this task touched, listed before they are counted:
+#           LeakAndFunctionalVerdictDomainTests.cs 16 · LeakTestSim.cs 10 · SimulatedEcosystemSeedingTests.cs 8
+#           · ConnectorRegistry.cs 8 · ConnectorRegistryTests.cs 4 · FunctionalTestSim.cs 4 · SimulatedEcosystem.cs 3
+#           (`scan-doc-negations.sh --since 47862d2a`, i.e. this task against its own base).
+#   REMOVED 5, DERIVED rather than listed: 384 - 5 + 53 = 432. The derivation assumes no other file
+#           moved, which holds — the only other edit is docs/owner-decisions.md, and this corpus is
+#           C# only (clause (e) below).
+#
+# 🔴 THE FIVE REMOVALS ARE RETRACTIONS OF PUBLISHED CLAIMS THE RULING MADE FALSE, not deletions of
+# inconvenient prose, and each one is quoted inside the sentence that replaces it: LeakTestSim's
+# "It is NOT validated or clamped" and its "the verdict warns at BOTH ends of that band" paragraph;
+# FunctionalTestSim's "Unlike LeakTestSim's limit this one IS corrected rather than trusted"; and
+# ConnectorRegistry.Register's "every pre-existing call site keeps its exact previous behaviour,
+# including last-write-wins for a second registration of the same kind". This is the same behaviour
+# BC-1 and the 2026-08-23 rounds recorded: a correction is itself an absolute-carrying sentence, so
+# fixing a falsehood RAISES this number.
+#
+# The baseline cfcfae42 is NOT moved.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_NEW_DOC_ABSOLUTES=432
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
