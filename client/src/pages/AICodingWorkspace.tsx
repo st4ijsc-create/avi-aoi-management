@@ -114,6 +114,11 @@ import { BoChonPhien } from "@/components/ai/BoChonPhien";
 // ★★★ QUẢN LÝ DỰ ÁN 2026-08-23 — nút bánh răng + dialog thêm/xoá dự án (admin-only, tệp riêng
 // cùng lý do BoChonPhien: Portal nuốt ruột dialog khỏi mọi lưới render tĩnh dựng từ trang).
 import { QuanLyDuAnRepo } from "@/components/ai/QuanLyDuAnRepo";
+// ★★★ 2026-08-23 · LÔ 3 — NHÃN TIN CẬY cho khối mã trong văn xuôi model (tầng 1: nguồn gốc; tầng
+// 2: chip đối chiếu tất định với thẻ đọc tệp). Component ở tệp riêng để lưới render CÂY THẬT —
+// cùng bài học TheDuyetDiff; phép so THUẦN + neo ở `@/lib/soKhoiMa` (lưới + đột biến riêng).
+import { taoBoKhoiMaCoNhan } from "@/components/ai/KhoiMaCoNhan";
+import { bocTheDocTep, dinhDangLucNhan, viTriCauTraLoiCungLuot } from "@/lib/soKhoiMa";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
@@ -545,6 +550,13 @@ export default function AICodingWorkspace() {
   const [transcript, setTranscript] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
   const [streamTool, setStreamTool] = useState<ToolResultPayload | null>(null);
+  /**
+   * ★ LÔ 3 — MỐC-NHẬN của `streamTool` (đã định dạng), đóng dấu ngay trong `onToolResult`.
+   * Display-only: payload thẻ đọc không mang timestamp và lô này cấm đổi server để cõng thêm —
+   * nên chip nói "đọc {{luc}}" với mốc client NHẬN sự kiện, ghi rõ ở `dinhDangLucNhan`. Không cần
+   * xoá kèm `setStreamTool(null)`: mốc chỉ được ĐỌC khi có thẻ/neo tương ứng đang hiện.
+   */
+  const [lucNhanTool, setLucNhanTool] = useState<string | null>(null);
   const [pending, setPending] = useState<KbPendingAction | null>(null);
   const [actionState, setActionState] = useState<ActionState>("pending");
   /**
@@ -585,6 +597,21 @@ export default function AICodingWorkspace() {
    * phải "đang làm việc". Đây là điều kiện brief nêu đích danh cho việc 2.
    */
   const [vongTool, setVongTool] = useState<KbToolLoopProgress | null>(null);
+
+  /**
+   * ★★★ LÔ 3 — NEO ĐỐI CHIẾU KHỐI↔TỆP và hai bộ component nhãn cho `<Streamdown>`.
+   *
+   * `neoDocTep` chỉ khác `null` khi thẻ tool ĐANG GIỮ là một bản đọc tệp CÓ NỘI DUNG
+   * (`bocTheDocTep` — thẻ tổng `{files:[…]}` của đường sinh-mã không có nội dung ⇒ null ⇒ tầng 2
+   * im lặng, giới hạn đã khai ở docblock `KhoiMaCoNhan`). Neo CHỈ áp cho văn bản đang stream và
+   * cho câu trả lời CÙNG LƯỢT với thẻ (`viTriNeo` — xem `viTriCauTraLoiCungLuot`): `streamTool`
+   * bị xoá đầu mỗi lượt gửi nên mọi câu cũ hơn được sinh khi thẻ này CHƯA tồn tại — so chúng với
+   * nó là so với một mốc thời gian sai. Các câu ấy nhận bộ KHÔNG neo (chỉ nhãn nguồn gốc tầng 1).
+   */
+  const neoDocTep = useMemo(() => (streamTool ? bocTheDocTep(streamTool.data as unknown) : null), [streamTool]);
+  const boKhoiCoNeo = useMemo(() => taoBoKhoiMaCoNhan(neoDocTep, lucNhanTool), [neoDocTep, lucNhanTool]);
+  const boKhoiKhongNeo = useMemo(() => taoBoKhoiMaCoNhan(null, null), []);
+  const viTriNeo = useMemo(() => viTriCauTraLoiCungLuot(transcript), [transcript]);
 
   const {
     streamingText, isStreaming, error: streamError, abortedRef, startKbStream, stopKbStream,
@@ -681,7 +708,9 @@ export default function AICodingWorkspace() {
         },
       },
       {
-        onToolResult: (tr) => setStreamTool(tr),
+        // ★ LÔ 3 — đóng dấu MỐC-NHẬN cùng nhịp với thẻ, để chip bằng chứng và chip đối chiếu nói
+        // cùng một `luc`. Đây là mốc client nhận SSE, không phải mốc server đọc đĩa (đã khai).
+        onToolResult: (tr) => { setStreamTool(tr); setLucNhanTool(dinhDangLucNhan(new Date())); },
         // ★★★ doc 81 · VIỆC 2 — "đang ở vòng mấy". `phase:"dung"` mang theo lý do dừng.
         onToolLoop: (p) => setVongTool(p),
         onPendingAction: (pa) => {
@@ -1375,7 +1404,9 @@ export default function AICodingWorkspace() {
                         /* ★ UX (D1) — `lamSachMocChoHienThi`: dòng mốc SEARCH/REPLACE trong văn xuôi
                            model đang thành H1/blockquote qua markdown; lọc CHỈ ở chỗ render, chuỗi
                            lưu phiên/gửi server không đổi một byte. */
-                        <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="static">{lamSachMocChoHienThi(m.content)}</Streamdown></div>
+                        /* ★ LÔ 3 — nhãn khối mã: câu CÙNG LƯỢT với thẻ đọc nhận bộ CÓ neo (tầng 2
+                           so được), mọi câu cũ hơn nhận bộ KHÔNG neo — xem docblock `viTriNeo`. */
+                        <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="static" components={i === viTriNeo ? boKhoiCoNeo : boKhoiKhongNeo}>{lamSachMocChoHienThi(m.content)}</Streamdown></div>
                       )}
                     </div>
                     {m.role === "user" && <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary"><User className="h-3.5 w-3.5" /></div>}
@@ -1387,12 +1418,13 @@ export default function AICodingWorkspace() {
                   <div className="flex min-w-0 gap-2">
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10"><Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /></div>
                     <div className="min-w-0 max-w-[85%] space-y-2 break-words rounded-lg bg-muted px-3 py-2 text-[13px]">
-                      {streamTool && <AIToolResultCard toolResult={streamTool} />}
+                      {streamTool && <AIToolResultCard toolResult={streamTool} lucNhan={lucNhanTool ?? undefined} />}
                       {/* `mode="streaming"` — Streamdown vá markdown DỞ DANG (``` chưa đóng) nên khối
                           mã đang stream vẫn hiện đúng thay vì nhảy layout ở mỗi token. */}
                       {/* ★ UX (D1) — cùng phép lọc mốc với bản tĩnh; dòng mốc đang gõ dở chưa khớp
                           hình dạng thì giữ nguyên, dòng đã trọn được bọc ở nhịp render sau. */}
-                      {streamingText && <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="streaming">{lamSachMocChoHienThi(streamingText)}</Streamdown></div>}
+                      {/* ★ LÔ 3 — văn bản đang stream LUÔN cùng lượt với thẻ đang giữ ⇒ bộ CÓ neo. */}
+                      {streamingText && <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="streaming" components={boKhoiCoNeo}>{lamSachMocChoHienThi(streamingText)}</Streamdown></div>}
                     </div>
                   </div>
                 )}
@@ -1422,7 +1454,7 @@ export default function AICodingWorkspace() {
                 )}
 
                 {/* Kết quả tool đã xong (không stream nữa) */}
-                {!isStreaming && streamTool && <AIToolResultCard toolResult={streamTool} />}
+                {!isStreaming && streamTool && <AIToolResultCard toolResult={streamTool} lucNhan={lucNhanTool ?? undefined} />}
 
                 {/* ★★★ doc 79 · VÒNG TỰ ĐỘNG — lượt/trần · đang làm gì · vì sao dừng.
                     ★ UX (A3) — `laAdmin`: câu "cờ TẮT" nói tên biến env cho admin, nói "liên hệ

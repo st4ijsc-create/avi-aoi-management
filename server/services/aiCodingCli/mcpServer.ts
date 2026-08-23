@@ -57,6 +57,10 @@
  *     "env": { "AVI_MCP_USER": "…", "AVI_MCP_PASSWORD": "…" } }
  */
 import { BIEN_MAT_KHAU, BIEN_NGUOI_DUNG, xacThucCli, type DanhTinhCli } from "./danhTinhCli";
+// ★ QUẢN LÝ DỰ ÁN 2026-08-23 — nạp ảnh chụp dự án nguồn DB đúng MỘT lần lúc MCP khởi động (xem
+// điểm gọi trong `chayMcp` — chép đúng khuôn `chayCli`). Danh sách vẫn chỉ có MỘT chủ:
+// `repoProjects.danhSachDuAn()`.
+import { napLaiDuAnTuDb } from "../aiLocalTools/repoProjects";
 import { chayTool, chotAnToanTienTrinh, danhSachDuAnCli, moPhienCli } from "./cauNoiCli";
 
 export const TEN_MAY_CHU = "avi-coding-repo";
@@ -394,6 +398,11 @@ async function* dongTuStdin(): AsyncGenerator<string> {
  */
 export async function chayMcp(): Promise<void> {
   chotAnToanTienTrinh();
+  // ★ QUẢN LÝ DỰ ÁN (2026-08-23) — nạp ẢNH CHỤP dự án nguồn DB đúng MỘT lần lúc tiến trình MCP
+  // khởi động (đối xứng với `chayCli`; trước dòng này MCP chỉ thấy danh sách `.env` nên
+  // `avi_list_projects` thiếu dự án admin vừa thêm qua UI). Máy không với được DB ⇒ degrade im
+  // lặng về danh sách env thuần — cùng khuôn fail-safe, xem docblock `napLaiDuAnTuDb`.
+  await napLaiDuAnTuDb();
   ke(`sẵn sàng — ${SO_TOOL_MCP.length} tool, KHÔNG có tool duyệt (HITL ở web hoặc ở ai:cli).`);
   await phucVu(dongTuStdin(), (s) => process.stdout.write(s));
 }

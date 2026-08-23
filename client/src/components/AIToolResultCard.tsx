@@ -5,11 +5,15 @@
  * registry. Dispatches by `type` to a small dedicated card.
  */
 
-import { Activity, AlertTriangle, CheckCircle2, Database, Gauge, TrendingDown, TrendingUp, XCircle } from "lucide-react";
+import { useRef } from "react";
+import { Activity, AlertTriangle, CheckCircle2, Database, Gauge, HardDrive, TrendingDown, TrendingUp, XCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Line, LineChart, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+// ★★★ 2026-08-23 · LÔ 3 — chip bằng chứng "byte thật từ đĩa" cho thẻ đọc tệp (xem khối docblock
+// tại chỗ render); hai vị từ THUẦN sống ở `@/lib/soKhoiMa` để lưới + trang dùng chung một bản.
+import { dinhDangLucNhan, laKetQuaDocTuDia } from "@/lib/soKhoiMa";
 
 export type ToolResultPayload =
   | {
@@ -249,10 +253,33 @@ const KNOWN_CARD_TYPES = new Set<string>([
 
 interface Props {
   toolResult: ToolResultPayload;
+  /**
+   * ★ LÔ 3 — mốc-NHẬN sự kiện tool (đã định dạng bằng `dinhDangLucNhan`), do trang đóng dấu lúc
+   * nhận SSE. Truyền vào để chip bằng chứng ở đây và chip đối chiếu của khối mã (`KhoiMaCoNhan`)
+   * nói CÙNG một mốc. Vắng ⇒ thẻ tự đóng dấu ở lần render đầu (vẫn là mốc-nhận, xem dưới).
+   */
+  lucNhan?: string;
 }
 
-export function AIToolResultCard({ toolResult }: Props) {
+export function AIToolResultCard({ toolResult, lucNhan }: Props) {
   const { t } = useTranslation();
+  /**
+   * ★★★ 2026-08-23 · LÔ 3 — CHIP BẰNG CHỨNG "Byte thật từ đĩa · {{luc}}" cho thẻ đọc tệp.
+   *
+   * Vì sao: ca đo buổi đóng vai — văn xuôi model chứa khối mã CÓ guard trong khi thẻ đọc ngay dưới
+   * cho thấy tệp thật CHƯA có; người xem lại cần một dấu hiệu phân ĐẲNG CẤP nguồn: thẻ này là byte
+   * ĐỌC TỪ ĐĨA, văn xuôi là lời MODEL. Chip chỉ gắn khi `data` mang đúng hình dạng một lượt đọc
+   * thật (`laKetQuaDocTuDia` — bản đọc một tệp có `content`, hoặc thẻ tổng `{files:[…]}` của đường
+   * sinh-mã); các lượt TỪ CHỐI của hộp cát mang `data` rỗng nên tự trượt vị từ ấy.
+   *
+   * ⚠ `luc` là MỐC-NHẬN (client), KHÔNG phải mốc-đọc (server): payload thẻ đọc không mang
+   *   timestamp và lô này cấm đổi server để cõng thêm. Không có `lucNhan` từ trang ⇒ đóng dấu Ở
+   *   LẦN RENDER ĐẦU qua ref (cùng nhịp với lượt nhận sự kiện) — ghi ref trong render là khởi tạo
+   *   lười idempotent, không phải side-effect lặp.
+   */
+  const lucTuDongRef = useRef<string | null>(null);
+  if (lucTuDongRef.current === null) lucTuDongRef.current = dinhDangLucNhan(new Date());
+  const lucBangChung = lucNhan ?? lucTuDongRef.current;
   return (
     <div className="rounded-xl border border-primary/20 bg-background/80 p-2.5 space-y-2 text-xs">
       <div className="flex items-center gap-1.5">
@@ -260,6 +287,13 @@ export function AIToolResultCard({ toolResult }: Props) {
         <span className="font-semibold text-primary">{toolResult.title}</span>
         <Badge variant="outline" className="ml-auto h-4 px-1.5 text-[10px]">Real-time</Badge>
       </div>
+
+      {laKetQuaDocTuDia(toolResult.data as unknown) && (
+        <div data-chip-bang-chung className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          <HardDrive className="size-3 shrink-0" />
+          <span>{t("repoWs.khoi.bangChung", "Byte thật từ đĩa · {{luc}}", { luc: lucBangChung })}</span>
+        </div>
+      )}
 
       {toolResult.note === "DB_UNAVAILABLE" && (
         <div className="flex items-center gap-1.5 text-amber-600">

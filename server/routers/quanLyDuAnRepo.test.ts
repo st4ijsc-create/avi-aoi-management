@@ -19,6 +19,9 @@
  *      ⇒ ĐỎ); CHECK 0337 của CSDL chặn INSERT thẳng một id-là-đường-dẫn.
  *   §4 xoá — mục env từ chối (đột biến: cho xoá env ⇒ ĐỎ); mục DB xoá được, kể cả hàng MẤT GỐC
  *      (danh sách admin vẫn hiện nó với hoatDong:false — không có hàng mồ côi vĩnh viễn).
+ *   §5 (2026-08-23, BỘ CHỌN THƯ MỤC) — `duyetThuMuc` qua ĐÚNG tuyến tRPC: cùng sàn admin+2FA;
+ *      ổ đĩa có `C:\`; thấy đúng con trong thư mục tạm; đường xấu ⇒ `DUONG_KHONG_HOP_LE` (không
+ *      ném thô); trần 500 đo bằng **501 thư mục THẬT** (rẻ: mkdirSync rỗng) + hằng/logic cắt thuần.
  *
  * ⚠ Dọn dẹp GIỚI HẠN theo tiền tố id CHÍNH FILE NÀY tạo — vitest chạy song song trên MỘT CSDL test.
  * ⚠ Dự án thử = thư mục TẠM `fs.mkdtempSync` (KHÔNG trỏ vào `sandbox-projects/`).
@@ -43,6 +46,7 @@ import { getDb } from "../db/connection";
 import { users, aiRepoDuAn } from "../../drizzle/schema";
 import { repoWorkspaceRouter } from "./repoWorkspaceRouter";
 import { danhSachDuAn, gocTheoId } from "../services/aiLocalTools/repoProjects";
+import { TRAN_MUC_MOI_CAP, apDungTranMuc } from "../services/aiLocalTools/duyetThuMuc";
 
 const TAG = `qlda${Date.now().toString(36)}`; // tiền tố id: [A-Za-z0-9_-] — hợp khuôn CHECK 0337
 const idThu = (s: string): string => `${TAG}-${s}`;
@@ -246,5 +250,91 @@ describe("§4 — XOÁ: mục env TỪ CHỐI; mục DB xoá được, kể cả
     if (!coDb) return;
     const r = await caller(idAdmin, "admin").xoaDuAn({ id: idThu("khong-co") });
     expect(r).toEqual({ ok: false, ma: "KHONG_TIM_THAY" });
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+describe("§5 — BỘ CHỌN THƯ MỤC (`duyetThuMuc`) qua ĐÚNG tuyến tRPC: RBAC + fail-closed + trần", () => {
+  it("★★★ engineer (có 2FA) VÀ admin CHƯA 2FA ⇒ FORBIDDEN — cùng sàn adminProcedure với themDuAn", async () => {
+    if (!coDb) return;
+    await expect(caller(idEng, "engineer", true).duyetThuMuc({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller(idAdmin, "admin", false).duyetThuMuc({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("★★★ admin+2FA, KHÔNG `duong` ⇒ danh sách Ổ ĐĨA (Windows: có C:\\) — chưa đứng ở thư mục nào", async () => {
+    if (!coDb) return;
+    const r = await caller(idAdmin, "admin").duyetThuMuc({});
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.duongHienTai).toBeNull();
+    expect(r.duongCha).toBeNull();
+    if (process.platform === "win32") {
+      expect(r.muc.some((m) => /^[Cc]:\\$/.test(m.duong)), "máy Windows nào cũng phải thấy C:\\").toBe(true);
+    } else {
+      expect(r.muc.some((m) => m.duong === "/")).toBe(true);
+    }
+  });
+
+  it("★★★ duyệt thư mục tạm ⇒ thấy ĐÚNG các con (CHỈ thư mục — tệp bị lọc) + `duongCha` cho nút lên-cấp", async () => {
+    if (!coDb) return;
+    const cha = path.join(GOC, "duyet-cha");
+    fs.mkdirSync(path.join(cha, "con-a"), { recursive: true });
+    fs.mkdirSync(path.join(cha, "con-b"), { recursive: true });
+    fs.writeFileSync(path.join(cha, "mot-tep.txt"), "x", "utf8");
+    const r = await caller(idAdmin, "admin").duyetThuMuc({ duong: cha });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const chaThat = fs.realpathSync(cha);
+    expect(r.duongHienTai).toBe(chaThat);
+    expect(r.duongCha).toBe(fs.realpathSync(GOC));
+    expect(r.muc.map((m) => m.ten), "tệp mot-tep.txt KHÔNG được lộ — API chỉ trả THƯ MỤC").toEqual(["con-a", "con-b"]);
+    expect(r.muc.map((m) => m.duong)).toEqual([path.join(chaThat, "con-a"), path.join(chaThat, "con-b")]);
+    expect(r.biCat).toBe(false);
+  });
+
+  it("★★ tương đối / không tồn tại / là TỆP ⇒ `DUONG_KHONG_HOP_LE` (fail-closed, KHÔNG ném thô)", async () => {
+    if (!coDb) return;
+    const c = caller(idAdmin, "admin");
+    const tep = path.join(GOC, "duyet-tep.txt");
+    fs.writeFileSync(tep, "x", "utf8");
+    for (const duong of ["./tuong-doi", path.join(GOC, "khong-co-that-x"), tep]) {
+      expect(await c.duyetThuMuc({ duong }), duong).toEqual({ ok: false, ma: "DUONG_KHONG_HOP_LE" });
+    }
+  });
+
+  it("★★★ TRẦN: dựng TRAN+1 thư mục con THẬT ⇒ trả đúng TRAN mục + biCat + `tran` khai từ server", async () => {
+    if (!coDb) return;
+    const to = path.join(GOC, "duyet-tran");
+    fs.mkdirSync(to, { recursive: true });
+    for (let i = 0; i < TRAN_MUC_MOI_CAP + 1; i++) {
+      fs.mkdirSync(path.join(to, `d${String(i).padStart(4, "0")}`));
+    }
+    try {
+      const r = await caller(idAdmin, "admin").duyetThuMuc({ duong: to });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.muc.length, "chạm trần thì trả ĐÚNG trần, không tràn payload").toBe(TRAN_MUC_MOI_CAP);
+      expect(r.biCat).toBe(true);
+      expect(r.tran, "client hiện con số CỦA SERVER — server phải khai nó").toBe(TRAN_MUC_MOI_CAP);
+    } finally {
+      fs.rmSync(to, { recursive: true, force: true }); // 501 thư mục rỗng — dọn ngay cho afterAll nhẹ
+    }
+  });
+
+  it("★ hằng trần đúng lời khai (500) + logic cắt THUẦN trên bảng giả (đột biến nới biên ⇒ ĐỎ)", () => {
+    expect(TRAN_MUC_MOI_CAP).toBe(500);
+    expect(apDungTranMuc([1, 2, 3], 3)).toEqual({ muc: [1, 2, 3], biCat: false });
+    expect(apDungTranMuc([1, 2, 3, 4], 3)).toEqual({ muc: [1, 2, 3], biCat: true });
+    expect(apDungTranMuc([], 3)).toEqual({ muc: [], biCat: false });
+  });
+
+  it("★ gốc Ổ ĐĨA ⇒ `duongCha` = null (lên cấp = quay về danh sách ổ đĩa)", async () => {
+    if (!coDb || process.platform !== "win32") return;
+    const oDia = path.parse(GOC).root; // vd "C:\\"
+    const r = await caller(idAdmin, "admin").duyetThuMuc({ duong: oDia });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.duongHienTai).toBe(fs.realpathSync(oDia));
+    expect(r.duongCha).toBeNull();
   });
 });

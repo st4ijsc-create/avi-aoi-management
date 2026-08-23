@@ -424,14 +424,16 @@ export const repoWorkspaceRouter = router({
     }),
 
   // ════════════════════════════════════════════════════════════════════════════════════════════
-  // ★★★ QUẢN LÝ DỰ ÁN (2026-08-23) — ba thủ tục ADMIN, và NGOẠI LỆ ĐƯỜNG DẪN được nói thành lời
+  // ★★★ QUẢN LÝ DỰ ÁN (2026-08-23) — bốn thủ tục ADMIN, và NGOẠI LỆ ĐƯỜNG DẪN được nói thành lời
   // ════════════════════════════════════════════════════════════════════════════════════════════
-  // ⚠⚠⚠ `themDuAn` là chỗ DUY NHẤT của cả bề mặt tRPC nhận một ĐƯỜNG DẪN cho hộp cát repo — và nó
-  //   KHÔNG phải đường thực thi tool. Bất biến trục 2 ("client gửi ID, không gửi đường dẫn") nói về
-  //   lượt THỰC THI: mọi tool vẫn chỉ nhận `projectId`, server tra id → gốc. Mutation này là lượt
-  //   CẤU HÌNH của admin — cùng mức tin cậy với admin sửa tay `AI_REPO_SANDBOX_ROOTS` trong `.env`
-  //   — và mọi đường dẫn đi qua `kiemTraDangKyDuAn` (fail-closed, mỗi lỗi một mã: tuyệt đối ·
-  //   realpath tồn tại · là thư mục · không lồng gốc đã có · không node_modules/.git/dist · trần).
+  // ⚠⚠⚠ ĐÚNG HAI thủ tục của cả bề mặt tRPC nhận một ĐƯỜNG DẪN, cả hai ở khối này và KHÔNG cái nào
+  //   là đường thực thi tool: `themDuAn` (ĐĂNG KÝ một gốc — cửa duy nhất một đường dẫn thành mục
+  //   danh sách trắng, qua `kiemTraDangKyDuAn` fail-closed: tuyệt đối · realpath tồn tại · là thư
+  //   mục · không lồng gốc đã có · không node_modules/.git/dist · trần) và `duyetThuMuc` (CHỈ liệt
+  //   kê TÊN thư mục con một cấp cho form — không ghi gì, không mở byte nào, không đổi danh sách
+  //   trắng). Bất biến trục 2 ("client gửi ID, không gửi đường dẫn") nói về lượt THỰC THI: mọi tool
+  //   vẫn chỉ nhận `projectId`, server tra id → gốc. Cả hai đều là lượt CẤU HÌNH/thăm dò của admin
+  //   — cùng mức tin cậy với admin sửa tay `AI_REPO_SANDBOX_ROOTS` trong `.env`.
   //
   // ⚠⚠ SÀN `adminProcedure` (admin + 2FA bắt buộc) + `moduleGate("MOD_AI")` — đúng khuôn §4 của
   //   `congGiayPhepAiCensus`: file này thuộc bề mặt AI nên mọi thủ tục phải đứng sau cổng giấy
@@ -466,6 +468,23 @@ export const repoWorkspaceRouter = router({
     }
     return { projects: muc, tranDb: TRAN_DU_AN_DB };
   }),
+
+  /**
+   * ★ BỘ DUYỆT THƯ MỤC MÁY CHỦ (2026-08-23) — cho nút "Chọn thư mục…" của form đăng ký, thay lượt
+   * gõ tay đường dẫn (chủ dự án đã gõ sai thật). Cùng sàn `adminProcedure` + `moduleGate("MOD_AI")`
+   * với `themDuAn` — admin (đã 2FA) tìm thư mục để đăng ký dự án, cùng mức tin cậy với việc admin
+   * gõ đường dẫn tay hôm nay. Nó KHÔNG mở nội dung tệp (CHỈ tên thư mục con một cấp), và mọi đường
+   * CHỌN xong vẫn đi qua `kiemTraDangKyDuAn` fail-closed lúc đăng ký — bộ duyệt không phải hàng
+   * rào, hàng rào vẫn ở chỗ cũ. KHÔNG cache, KHÔNG ghi gì. Phán quyết + trần 500 mục/cấp ở
+   * `services/aiLocalTools/duyetThuMuc.ts`; lưới qua tuyến thật ở `quanLyDuAnRepo.test.ts` §5.
+   */
+  duyetThuMuc: adminProcedure
+    .use(moduleGate("MOD_AI"))
+    .input(z.object({ duong: z.string().max(1024).optional() }))
+    .query(async ({ input }) => {
+      const { duyetThuMucServer } = await import("../services/aiLocalTools/duyetThuMuc");
+      return duyetThuMucServer(input.duong);
+    }),
 
   /** ĐĂNG KÝ một dự án mới (nguồn DB). `{ok:false, ma}` — mỗi mã một câu hướng dẫn ở client. */
   themDuAn: adminProcedure

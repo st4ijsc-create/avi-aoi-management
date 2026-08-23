@@ -224,8 +224,15 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   thông điệp §4 chỉ dẫn cho sàn admin. Cả ba CÓ cổng ngay từ lượt sinh ra ⇒ `aiMienTru` KHÔNG
  *   đổi (62 — sổ ký tên không phình), `ngoaiAiCoCong` vẫn **0**. `tong` 2222 trùng ĐÚNG
  *   `phamViDocCensus.test.ts#GHIM.tong` — hai bộ suy độc lập vẫn đếm ra cùng một dân số.
+ *
+ * ★ 2026-08-23 lượt 2 (BỘ CHỌN THƯ MỤC) — **tong 2222 → 2223 · beMatAi 356 → 357 · aiCoCong
+ *   294 → 295.** Lời khai: `repoWorkspaceRouter.ts` mọc thủ tục thứ tư của khối QUẢN LÝ DỰ ÁN —
+ *   `duyetThuMuc` (query duyệt TÊN thư mục con một cấp cho form đăng ký, thay lượt admin gõ tay
+ *   đường dẫn), cùng sàn `adminProcedure.use(moduleGate("MOD_AI"))` ⇒ CÓ cổng từ lượt sinh ra:
+ *   `aiMienTru` KHÔNG đổi (62), `ngoaiAiCoCong` vẫn **0**. `tong` 2223 trùng ĐÚNG
+ *   `phamViDocCensus.test.ts#GHIM.tong` (nhóm C của nó +1 — query không chạm bảng tenant).
  */
-const GHIM = { tong: 2222, beMatAi: 356, aiCoCong: 294, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+const GHIM = { tong: 2223, beMatAi: 357, aiCoCong: 295, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

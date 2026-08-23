@@ -19242,6 +19242,12 @@
     }
   },
   "repoWs": {
+    "khoi": {
+      "modelSinh": "Mã do model viết — có thể khác tệp trên đĩa",
+      "bangChung": "Byte thật từ đĩa · {{luc}}",
+      "khacDia": "≠ tệp trên đĩa (đọc {{luc}}) — nếu model nói đây là mã HIỆN TẠI thì đừng tin",
+      "khopDia": "khớp tệp trên đĩa ({{luc}})"
+    },
     "sessions": {
       "title": "Phiên",
       "new": "Phiên mới",
@@ -19294,6 +19300,14 @@
       "nutThem": "Thêm",
       "daThem": "Đã thêm dự án — selectBox đã có mục mới.",
       "daXoa": "Đã xoá dự án khỏi danh sách.",
+      "loiTai": "Không tải được danh sách dự án — đây là LỖI truy vấn, không phải danh sách rỗng.",
+      "chonNut": "Chọn thư mục…",
+      "chonLenCap": "Lên một cấp",
+      "chonODia": "Ổ đĩa trên máy chủ",
+      "chonDay": "Chọn thư mục này",
+      "chonDangTai": "Đang đọc thư mục trên máy chủ…",
+      "chonRong": "Không có thư mục con nào — bấm “Chọn thư mục này” nếu đây là nơi cần đăng ký.",
+      "chonBiCat": "Chỉ hiện {{tran}} mục đầu — thư mục này còn nhiều hơn; gõ tay phần còn lại của đường dẫn nếu cần.",
       "err": {
         "idKhongHopLe": "ID chỉ được chứa chữ không dấu, số, gạch dưới, gạch nối (1–64 ký tự). Ví dụ: du-an-moi",
         "tenKhongHopLe": "Tên phải có 1–100 ký tự và không chứa các ký tự # ; = | — hãy bỏ chúng khỏi tên.",
@@ -19308,6 +19322,8 @@
         "luuThatBai": "Không lưu được (CSDL từ chối — có thể một admin khác vừa thêm cùng ID). Tải lại danh sách rồi thử lại.",
         "mucEnv": "Mục này khai trong .env của máy chủ — chỉ sửa được bằng tay trong .env, không xoá được ở đây.",
         "khongTimThay": "Không thấy dự án này nữa (có thể đã bị xoá). Tải lại danh sách.",
+        "duongKhongHopLe": "Không duyệt được đường này (không tồn tại, không phải thư mục, hoặc hệ điều hành chặn đọc). Lên một cấp hoặc chọn ổ đĩa khác.",
+        "guiThatBai": "Không gửi được yêu cầu tới máy chủ — chi tiết: {{chiTiet}}",
         "khac": "Server từ chối với mã {{ma}} — báo cho người phụ trách hệ thống."
       }
     },

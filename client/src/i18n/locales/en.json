@@ -19262,6 +19262,12 @@
     }
   },
   "repoWs": {
+    "khoi": {
+      "modelSinh": "Code written by the model — may differ from the file on disk",
+      "bangChung": "Real bytes from disk · {{luc}}",
+      "khacDia": "≠ file on disk (read {{luc}}) — if the model claims this is the CURRENT code, do not trust it",
+      "khopDia": "matches the file on disk ({{luc}})"
+    },
     "sessions": {
       "title": "Sessions",
       "new": "New session",
@@ -19314,6 +19320,14 @@
       "nutThem": "Add",
       "daThem": "Project added — the selectBox already has the new entry.",
       "daXoa": "Project removed from the list.",
+      "loiTai": "Could not load the project list — this is a QUERY ERROR, not an empty list.",
+      "chonNut": "Browse…",
+      "chonLenCap": "Up one level",
+      "chonODia": "Server drives",
+      "chonDay": "Choose this folder",
+      "chonDangTai": "Reading server folder…",
+      "chonRong": "No subfolders — click “Choose this folder” if this is the place to register.",
+      "chonBiCat": "Showing the first {{tran}} entries — this folder has more; type the rest of the path by hand if needed.",
       "err": {
         "idKhongHopLe": "The ID may only contain unaccented letters, digits, underscore and hyphen (1–64 chars). Example: new-project",
         "tenKhongHopLe": "The name must be 1–100 characters and must not contain # ; = | — remove those characters.",
@@ -19328,6 +19342,8 @@
         "luuThatBai": "Could not save (database refused — another admin may have just added the same ID). Reload the list and try again.",
         "mucEnv": "This entry is declared in the server's .env — it can only be edited by hand in .env, not deleted here.",
         "khongTimThay": "That project no longer exists (it may have been deleted). Reload the list.",
+        "duongKhongHopLe": "Cannot browse this path (it does not exist, is not a folder, or the OS denies reading). Go up one level or pick another drive.",
+        "guiThatBai": "Could not send the request to the server — details: {{chiTiet}}",
         "khac": "The server refused with code {{ma}} — report it to your system owner."
       }
     },

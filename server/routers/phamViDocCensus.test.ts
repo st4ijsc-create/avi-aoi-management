@@ -205,7 +205,16 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   tại `quanLyDuAnRepo.test.ts` + `repoProjectsDangKy.test.ts`).
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-const GHIM = { A: 363, B: 8, C: 468, D: 1097, S: 286, tong: 2222 } as const;
+/**
+ * ★ 2026-08-23 lượt 2 (BỘ CHỌN THƯ MỤC) — **tong: 2222 → 2223, C: 468 → 469.** Một thủ tục:
+ * `repoWorkspace.duyetThuMuc` (query, sàn `adminProcedure`+2FA+`moduleGate("MOD_AI")`) — duyệt
+ * TÊN thư mục con MỘT CẤP trên đĩa máy chủ cho form đăng ký dự án (thay lượt admin gõ tay đường
+ * dẫn; chủ dự án đã gõ sai thật). Vào **C** vì nó là query KHÔNG chạm một bảng nào (hệ tệp, không
+ * CSDL) — cùng ô với `listProjects`/`cauHinhVong`. **A/B/D/S KHÔNG đổi.** Nó nhận một ĐƯỜNG DẪN
+ * như `themDuAn` (đã khai ở khối trên) nhưng KHÔNG ghi gì và KHÔNG mở nội dung tệp — chỉ
+ * `readdirSync` tên thư mục, fail-closed ở `duyetThuMuc.ts`, đo tại `quanLyDuAnRepo.test.ts` §5.
+ */
+const GHIM = { A: 363, B: 8, C: 469, D: 1097, S: 286, tong: 2223 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
