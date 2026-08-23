@@ -1005,7 +1005,7 @@ bằng KIẾN TẠO, không bằng lập luận**, vì file dùng chung không �
 🔴 **ĐỘ LỚN CÚ DỊCH OEE — ĐO, KHÔNG ƯỚC, TRÊN CHÍNH `fleet.json` DEMO.** LEAK-01 đúng như roster khai
 (`cycleSeconds` 1,4), seed 11, **100 000 chu kỳ**, cùng một chuỗi gieo cho cả hai phía:
 
-| | `Pass` | `Warn` | `Fail` | good (`Pass|Warn`) | Quality | OEE |
+| | `Pass` | `Warn` | `Fail` | good (`Pass` \| `Warn`) | Quality | OEE |
 |---|---|---|---|---|---|---|
 | **TRƯỚC** | 95 119 | 4 881 | 0 | 100 000 | 1,000000000 | 1,000000000 |
 | **SAU** | 99 873 | 127 | 0 | 100 000 | 1,000000000 | 1,000000000 |
@@ -1048,7 +1048,7 @@ SCREWDRIVE-only, mục 41), không `mapping/`, không doc-62 nào trong cây man
 lại là **phân phối của chính bộ mô phỏng** (`N(450; 25)` N và `N(8; 0,3)` mm) — và dựng một cặp giới hạn từ
 đó là **bịa một con số của chủ sở hữu**, tức **lặp lại đúng khuyết tật mục 41**, mà brief cấm bằng tên.
 
-Nên nửa ấy **không thi hành**, và mục **Ở LẠI PHẦN I** — đúng tiền lệ §41.9 và điều kiện vào Phần III mà
+Nên nửa ấy **không thi hành**, và mục **Ở LẠI PHẦN I** — đúng tiền lệ khối `🔧 THI HÀNH MỘT PHẦN 2026-08-23` của mục 41 (nó KHÔNG mang số mục con — kiểm lại thay vì chép: mục 41 dừng ở §41.8) và điều kiện vào Phần III mà
 `check-owner-decisions.sh` cưỡng chế (`C2`: Phần III cấm *"THI HÀNH MỘT PHẦN"*).
 `SimulatorTests.Assembly_has_no_seeded_spec_so_verdict_is_warn_only` **giữ nguyên** và vẫn ghim rằng lớp ấy
 có **đúng một phán quyết với tới được**.
