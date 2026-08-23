@@ -119,6 +119,13 @@ export interface AuditLogEntry {
     stackTrace?: string;
     affectedFields?: string[];
     relatedEntities?: Array<{ type: string; id: number; name?: string }>;
+    /**
+     * Chế độ 2FA theo triển khai (2026-08-24, `AUTH_2FA_BAT_BUOC=0`): lượt MUTATION chạm
+     * máy/deploy đi QUA cổng step-up KHÔNG có OTP vì người gọi CHƯA bật 2FA. Người ghi DUY
+     * NHẤT: `_core/trpc.ts` (`stepUpTotpMiddleware`) — kiểu literal để giá trị không trôi;
+     * lưới đọc lại bảng thật: `_core/cheDo2faTheoTrienKhai.test.ts` §3.
+     */
+    stepUp?: "bo_qua_che_do_noi_bo";
   };
   status: "success" | "failure";
 }

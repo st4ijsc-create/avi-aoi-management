@@ -19,7 +19,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { router, moduleProcedure, qualityProcedure, roleProcedure } from "../_core/trpc";
+import { router, moduleProcedure, qualityProcedure, roleProcedure, batBuoc2FA } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_QUALITY (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`
 // (read surface). Write mutations keep their qualityProcedure role-floor + 2FA.
@@ -163,7 +163,11 @@ export const defectDispositionRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       // Mirror _core require2FA for privileged roles (roleProcedure alone does not).
-      if (TWO_FA_ROLES.has(ctx.user.role) && !ctx.user.twoFactorEnabled) {
+      // ★ 2026-08-24 — theo CÙNG công tắc `AUTH_2FA_BAT_BUOC` với require2FA (quyết định chủ dự án:
+      //   nội bộ nhà máy không ép 2FA). Đây là bản CHÉP TAY của require2FA nên khi ba tầng ở
+      //   `trpc.ts` nhận công tắc, chỗ này bị audit (d)(1) bắt là điểm LỆCH — quality_inspector
+      //   chuyển trạng thái trạm sửa lỗi nhiều lượt mỗi ngày là đúng nhóm chủ dự án nêu.
+      if (batBuoc2FA() && TWO_FA_ROLES.has(ctx.user.role) && !ctx.user.twoFactorEnabled) {
         // Review round 1 (M-5) — reason chỉ áp cho luồng CẦN 2FA để tiếp tục (setup),
         // KHÔNG áp cho luồng đang TẮT 2FA (twoFactorRouter.ts disable/userRouters.ts
         // disable2FA giữ câu trần — chỉ dẫn "đi thiết lập" ngược ý định ở đó).

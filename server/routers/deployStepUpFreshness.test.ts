@@ -343,6 +343,11 @@ describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", async () 
       DEPLOY_TRONG_LUOI.map((t) => `${t.file}#${t.ten}`).sort(),
       "phép thử M3 khai trong lưới đã biến mất ⇒ 'thủ tục deploy MỚI được che tự động' thôi được chứng minh",
     ).toEqual([
+      // ⚠ Chế độ 2FA theo triển khai (2026-08-24) — lưới A/B của cờ `AUTH_2FA_BAT_BUOC` cần một
+      //   thủ tục đứng trên ĐÚNG `deployProcedure` sản xuất để đo tầng step-up (người CHƯA bật
+      //   2FA đi qua ở chế độ nội bộ phải ĐỂ LẠI DẤU audit). Cùng khuôn M3 với ba mục dưới, và
+      //   phải **NÓI RA** ở đây thay vì lặng lẽ nở con số ghim.
+      "server/_core/cheDo2faTheoTrienKhai.test.ts#lenhChamMay",
       "server/routers/deployStepUpFreshness.test.ts#deployMoi",
       // ⚠ Pha 6 Task 6 — phép thử M3 **thứ ba**, trong lưới chống phát lại. Nó dùng đúng
       //   `deployProcedure` export của `_core/trpc.ts`, nên nó chia sẻ đúng middleware của mã sản

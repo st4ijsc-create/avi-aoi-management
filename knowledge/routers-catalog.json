@@ -2294,6 +2294,13 @@
     "publicUses": 0
   },
   {
+    "file": "server/routers/quanLyDuAnRepo.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 1,
+    "publicUses": 0
+  },
+  {
     "file": "server/routers/readinessRouter.ts",
     "routerNames": [
       "readinessRouter"
@@ -2373,7 +2380,7 @@
     "routerNames": [
       "repoWorkspaceRouter"
     ],
-    "procedureCalls": 10,
+    "procedureCalls": 14,
     "protectedUses": 11,
     "publicUses": 0
   },

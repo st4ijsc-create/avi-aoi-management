@@ -1,16 +1,16 @@
 {
-  "generatedAt": "2026-08-22T20:00:06.312Z",
+  "generatedAt": "2026-08-23T20:00:08.146Z",
   "patterns": {
-    "protectedProcedureCount": 1914,
+    "protectedProcedureCount": 1916,
     "publicProcedureCount": 91,
-    "zodObjectCount": 2131,
-    "totalSourceFiles": 3246,
-    "totalRouterFiles": 360,
-    "totalServiceFiles": 1270,
+    "zodObjectCount": 2134,
+    "totalSourceFiles": 3304,
+    "totalRouterFiles": 361,
+    "totalServiceFiles": 1289,
     "totalDocsFiles": 261,
     "totalRoutes": 221,
     "totalNavGroups": 10,
-    "totalSchemaTables": 357,
+    "totalSchemaTables": 359,
     "totalModules": 13
   },
   "outputs": [

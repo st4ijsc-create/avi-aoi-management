@@ -3319,6 +3319,47 @@
     "fks": []
   },
   {
+    "table": "ai_coding_lessons",
+    "file": "drizzle/schema/aiCodingLesson.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "uuid"
+      },
+      {
+        "field": "userId",
+        "type": "integer"
+      },
+      {
+        "field": "projectId",
+        "type": "varchar"
+      },
+      {
+        "field": "noiDung",
+        "type": "text"
+      },
+      {
+        "field": "khoaTrung",
+        "type": "text"
+      },
+      {
+        "field": "mucRuiRo",
+        "type": "varchar"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "users.id"
+    ]
+  },
+  {
     "table": "ai_coding_sessions",
     "file": "drizzle/schema/aiCodingSession.ts",
     "columns": [
@@ -3622,6 +3663,33 @@
       },
       {
         "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "ai_repo_du_an",
+    "file": "drizzle/schema/aiRepoDuAn.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "varchar"
+      },
+      {
+        "field": "ten",
+        "type": "varchar"
+      },
+      {
+        "field": "goc",
+        "type": "text"
+      },
+      {
+        "field": "nguoiTao",
         "type": "integer"
       },
       {

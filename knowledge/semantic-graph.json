@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-22T20:00:24.225Z",
+  "generatedAt": "2026-08-23T20:00:36.261Z",
   "settings": {
     "maxNodes": 1200,
     "topK": 3,
@@ -7,7 +7,7 @@
   },
   "totals": {
     "nodes": 1200,
-    "edges": 2783
+    "edges": 2807
   },
   "nodes": [
     {
@@ -5312,6 +5312,25 @@
       "embeddingDim": 1024
     },
     {
+      "id": "router:server/routers/quanLyDuAnRepo.test.ts#0",
+      "sourceType": "router",
+      "sourcePath": "server/routers/quanLyDuAnRepo.test.ts",
+      "title": "Router Summary",
+      "keywords": [
+        "router",
+        "usages",
+        "file",
+        "server",
+        "routers",
+        "quanlyduanrepo",
+        "test",
+        "names",
+        "procedure",
+        "calls"
+      ],
+      "embeddingDim": 1024
+    },
+    {
       "id": "router:server/routers/readinessRouter.ts#0",
       "sourceType": "router",
       "sourcePath": "server/routers/readinessRouter.ts",
@@ -7037,6 +7056,44 @@
         "functions",
         "classes",
         "local"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/ai/codingLessonContext.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/ai/codingLessonContext.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "codinglessoncontext",
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "test",
+        "functions",
+        "classes",
+        "local"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/ai/codingLessonContext.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/ai/codingLessonContext.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "codinglessoncontext",
+        "functions",
+        "baihocenabled",
+        "lamsachbaihoc",
+        "khoibaihocchoprompt"
       ],
       "embeddingDim": 1024
     },
@@ -9164,7 +9221,178 @@
         "functions",
         "codinggenenabled",
         "codingeditenabled",
-        "codingmodelsansang"
+        "codingkhoisuaenabled"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCodingCli/batDau.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCodingCli/batDau.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aicodingcli",
+        "batdau",
+        "functions",
+        "classes",
+        "local"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCodingCli/cauNoiCli.census.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCodingCli/cauNoiCli.census.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aicodingcli",
+        "caunoicli",
+        "census",
+        "test",
+        "functions"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCodingCli/cauNoiCli.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCodingCli/cauNoiCli.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "ailocaltools",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aicodingcli",
+        "caunoicli",
+        "functions",
+        "chotantoantientrinh"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCodingCli/cli.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCodingCli/cli.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aicodingcli",
+        "functions",
+        "phantichthamso",
+        "vediff",
+        "hoiroiduyet"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCodingCli/cliVongThat.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCodingCli/cliVongThat.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "auth",
+        "drizzle",
+        "schema",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aicodingcli",
+        "clivongthat"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCodingCli/danhTinhCli.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCodingCli/danhTinhCli.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aicodingcli",
+        "danhtinhcli",
+        "functions",
+        "cautuchoidanhtinh",
+        "xacthuccli"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCodingCli/mcpGiaoThuc.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCodingCli/mcpGiaoThuc.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aicodingcli",
+        "mcpgiaothuc",
+        "test",
+        "functions",
+        "classes"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCodingCli/mcpServer.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCodingCli/mcpServer.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aicodingcli",
+        "mcpserver",
+        "functions",
+        "xoadanhtinhnho",
+        "goitoolmcp"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCodingDot02.stream.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aicodingdot02",
+        "stream",
+        "test",
+        "functions",
+        "classes"
       ],
       "embeddingDim": 1024
     },
@@ -9184,6 +9412,44 @@
         "functions",
         "classes",
         "local"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCodingKhoiSua.stream.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCodingKhoiSua.stream.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "ailocaltools",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aicodingkhoisua",
+        "stream",
+        "test",
+        "functions"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCodingLesson.stream.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCodingLesson.stream.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aicodinglesson",
+        "stream",
+        "test",
+        "functions",
+        "classes"
       ],
       "embeddingDim": 1024
     },
@@ -9283,6 +9549,25 @@
       "embeddingDim": 1024
     },
     {
+      "id": "service:server/services/aiCopilotActions.chonKhoi.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCopilotActions.chonKhoi.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "ailocaltools",
+        "aicopilotactions",
+        "exported",
+        "writehandlers",
+        "auth",
+        "drizzle",
+        "schema",
+        "service",
+        "file",
+        "server"
+      ],
+      "embeddingDim": 1024
+    },
+    {
       "id": "service:server/services/aiCopilotActions.contract.test.ts#0",
       "sourceType": "service",
       "sourcePath": "server/services/aiCopilotActions.contract.test.ts",
@@ -9295,6 +9580,25 @@
         "server",
         "services",
         "contract",
+        "test",
+        "functions",
+        "classes"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiCopilotActions.giandQuyen.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiCopilotActions.giandQuyen.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "aicopilotactions",
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "giandquyen",
         "test",
         "functions",
         "classes"
@@ -9346,6 +9650,7 @@
       "title": "Service Summary",
       "keywords": [
         "exported",
+        "ailocaltools",
         "service",
         "file",
         "server",
@@ -9353,8 +9658,7 @@
         "aicopilotactions",
         "functions",
         "isadvicecontractenabled",
-        "proposeaction",
-        "confirmaction"
+        "proposeaction"
       ],
       "embeddingDim": 1024
     },
@@ -11050,6 +11354,25 @@
       "embeddingDim": 1024
     },
     {
+      "id": "service:server/services/aiLocalTools/duyetThuMuc.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiLocalTools/duyetThuMuc.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "ailocaltools",
+        "duyetthumuc",
+        "functions",
+        "duyetthumucserver",
+        "classes"
+      ],
+      "embeddingDim": 1024
+    },
+    {
       "id": "service:server/services/aiLocalTools/handlers.scopeDb.test.ts#0",
       "sourceType": "service",
       "sourcePath": "server/services/aiLocalTools/handlers.scopeDb.test.ts",
@@ -11753,6 +12076,25 @@
       "embeddingDim": 1024
     },
     {
+      "id": "service:server/services/aiLocalTools/repoGrepDinhNghia.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiLocalTools/repoGrepDinhNghia.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "ailocaltools",
+        "repogrepdinhnghia",
+        "test",
+        "functions",
+        "phangiaigoc"
+      ],
+      "embeddingDim": 1024
+    },
+    {
       "id": "service:server/services/aiLocalTools/repoProjects.test.ts#0",
       "sourceType": "service",
       "sourcePath": "server/services/aiLocalTools/repoProjects.test.ts",
@@ -11786,7 +12128,26 @@
         "repoprojects",
         "functions",
         "danhsachduan",
-        "goctheoid"
+        "naplaiduantudb"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiLocalTools/repoProjectsDangKy.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiLocalTools/repoProjectsDangKy.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "ailocaltools",
+        "repoprojectsdangky",
+        "test",
+        "functions",
+        "classes"
       ],
       "embeddingDim": 1024
     },
@@ -11804,8 +12165,8 @@
         "ailocaltools",
         "reporeadtools",
         "functions",
-        "dangkyreporeadtools",
-        "classes"
+        "nhanxetchithaydinhnghia",
+        "dangkyreporeadtools"
       ],
       "embeddingDim": 1024
     },
@@ -12414,6 +12775,25 @@
         "repocommand",
         "functions",
         "congghidiabat"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiLocalTools/writeHandlers/repoCommandTuChoiNgan.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiLocalTools/writeHandlers/repoCommandTuChoiNgan.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "ailocaltools",
+        "writehandlers",
+        "repocommandtuchoingan",
+        "test",
+        "functions"
       ],
       "embeddingDim": 1024
     },
@@ -22429,386 +22809,6 @@
         "parseplugindrivermanifests"
       ],
       "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/pluginRegistry.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/pluginRegistry.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "pluginregistry",
-        "functions",
-        "registerplugin",
-        "tryregisterplugin"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/sidecar/nodeSpawner.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/sidecar/nodeSpawner.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "sidecar",
-        "nodespawner",
-        "functions",
-        "createnodespawner"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/sidecar/pluginLifecycle.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/sidecar/pluginLifecycle.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "sidecar",
-        "pluginlifecycle",
-        "functions",
-        "transition"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/sidecar/pluginQuota.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/sidecar/pluginQuota.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "sidecar",
-        "pluginquota",
-        "functions",
-        "createbucket"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/sidecar/pluginSidecarBootstrap.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/sidecar/pluginSidecarBootstrap.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "sidecar",
-        "pluginsidecarbootstrap",
-        "functions",
-        "pluginsidecarenabled"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/sidecar/pluginSignature.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/sidecar/pluginSignature.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "sidecar",
-        "pluginsignature",
-        "functions",
-        "verifypluginsignature"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/sidecar/pluginSupervisor.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/sidecar/pluginSupervisor.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "pluginsupervisor",
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "sidecar",
-        "functions",
-        "computebackoffms"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/sidecar/sampleSidecar.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/sidecar/sampleSidecar.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "sidecar",
-        "samplesidecar",
-        "functions",
-        "handlesidecarrequest"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/sidecar/sidecar.test.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/sidecar/sidecar.test.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "sidecar",
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "test",
-        "functions",
-        "classes"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/sidecar/sidecarTransport.test.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/sidecar/sidecarTransport.test.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "sidecar",
-        "sidecartransport",
-        "test",
-        "functions"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/sidecar/stdioTransport.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/sidecar/stdioTransport.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "stdiotransport",
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "sidecar",
-        "functions",
-        "classes"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/plugins/templates/deviceConnectorSidecar.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/plugins/templates/deviceConnectorSidecar.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "plugins",
-        "templates",
-        "deviceconnectorsidecar",
-        "functions",
-        "createconnectorstate"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/pmScheduleService.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/pmScheduleService.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "pmscheduleservice",
-        "functions",
-        "ispmschedulegenenabled",
-        "ispmschedulegenrunning",
-        "runpmschedulegenerationcycle"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/pointResultEvaluator.snapshotGate.test.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/pointResultEvaluator.snapshotGate.test.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "pointresultevaluator",
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "snapshotgate",
-        "test",
-        "functions",
-        "classes"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/pointResultEvaluator.test.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/pointResultEvaluator.test.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "pointresultevaluator",
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "test",
-        "functions",
-        "classes",
-        "local"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/pointResultEvaluator.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/pointResultEvaluator.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "pointresultevaluator",
-        "functions",
-        "isunitconvertenabled",
-        "lengthunittomm",
-        "convertmeasuredvaluetodefunit"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/pointResultEvaluator.unitConvert.test.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/pointResultEvaluator.unitConvert.test.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "pointresultevaluator",
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "unitconvert",
-        "test",
-        "functions",
-        "classes"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/pointResultEvaluator.versionGate.test.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/pointResultEvaluator.versionGate.test.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "pointresultevaluator",
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "versiongate",
-        "test",
-        "functions",
-        "classes"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/pointSpecGateIngest.test.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/pointSpecGateIngest.test.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "pointspecgateingest",
-        "test",
-        "functions",
-        "classes",
-        "local"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "service:server/services/powerpointService.ts#0",
-      "sourceType": "service",
-      "sourcePath": "server/services/powerpointService.ts",
-      "title": "Service Summary",
-      "keywords": [
-        "exported",
-        "service",
-        "file",
-        "server",
-        "services",
-        "powerpointservice",
-        "functions",
-        "exportdashboardtopowerpoint",
-        "exportqualityreporttopowerpoint",
-        "exportcomparisontopowerpoint"
-      ],
-      "embeddingDim": 1024
     }
   ],
   "edges": [
@@ -24104,13 +24104,13 @@
     },
     {
       "from": "router:server/routers/contractsRouter.quarantine.test.ts#0",
-      "to": "router:server/routers/programmingRouter.safetyGuard.test.ts#0",
-      "similarity": 0.762952
+      "to": "router:server/routers/quanLyDuAnRepo.test.ts#0",
+      "similarity": 0.770332
     },
     {
       "from": "router:server/routers/contractsRouter.quarantine.test.ts#0",
-      "to": "router:server/routers/programmingRouter.copilotComplete.test.ts#0",
-      "similarity": 0.755344
+      "to": "router:server/routers/programmingRouter.safetyGuard.test.ts#0",
+      "similarity": 0.762952
     },
     {
       "from": "router:server/routers/contractsRouter.ts#0",
@@ -26848,6 +26848,21 @@
       "similarity": 0.731655
     },
     {
+      "from": "router:server/routers/quanLyDuAnRepo.test.ts#0",
+      "to": "router:server/routers/rumRouter.test.ts#0",
+      "similarity": 0.813979
+    },
+    {
+      "from": "router:server/routers/quanLyDuAnRepo.test.ts#0",
+      "to": "router:server/routers/processRouter.test.ts#0",
+      "similarity": 0.801813
+    },
+    {
+      "from": "router:server/routers/quanLyDuAnRepo.test.ts#0",
+      "to": "router:server/routers/annotationComparison.test.ts#0",
+      "similarity": 0.783234
+    },
+    {
       "from": "router:server/routers/readinessRouter.ts#0",
       "to": "router:server/routers/routingRouter.ts#0",
       "similarity": 0.759055
@@ -26970,17 +26985,17 @@
     {
       "from": "router:server/routers/repoWorkspaceRouter.ts#0",
       "to": "router:server/routers/wipRouter.ts#0",
-      "similarity": 0.814114
+      "similarity": 0.782331
     },
     {
       "from": "router:server/routers/repoWorkspaceRouter.ts#0",
       "to": "router:server/routers/robotRouter.ts#0",
-      "similarity": 0.784023
+      "similarity": 0.755071
     },
     {
       "from": "router:server/routers/repoWorkspaceRouter.ts#0",
-      "to": "router:server/routers/pluginRouter.ts#0",
-      "similarity": 0.77786
+      "to": "router:server/routers/webhookRouter.ts#0",
+      "similarity": 0.749119
     },
     {
       "from": "router:server/routers/robotRouter.ts#0",
@@ -28133,6 +28148,36 @@
       "similarity": 0.754273
     },
     {
+      "from": "service:server/services/ai/codingLessonContext.test.ts#0",
+      "to": "service:server/services/ai/codingLessonContext.ts#0",
+      "similarity": 0.870238
+    },
+    {
+      "from": "service:server/services/ai/codingLessonContext.test.ts#0",
+      "to": "service:server/services/aiCodingLesson.stream.test.ts#0",
+      "similarity": 0.83718
+    },
+    {
+      "from": "service:server/services/ai/codingLessonContext.test.ts#0",
+      "to": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "similarity": 0.817719
+    },
+    {
+      "from": "service:server/services/ai/codingLessonContext.ts#0",
+      "to": "service:server/services/ai/codingLessonContext.test.ts#0",
+      "similarity": 0.870238
+    },
+    {
+      "from": "service:server/services/ai/codingLessonContext.ts#0",
+      "to": "service:server/services/aiCodingLesson.stream.test.ts#0",
+      "similarity": 0.762381
+    },
+    {
+      "from": "service:server/services/ai/codingLessonContext.ts#0",
+      "to": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "similarity": 0.754158
+    },
+    {
       "from": "service:server/services/ai/codingRepoContext.test.ts#0",
       "to": "service:server/services/ai/repoContextService.repoIndex.test.ts#0",
       "similarity": 0.895662
@@ -28160,7 +28205,7 @@
     {
       "from": "service:server/services/ai/codingRepoContext.ts#0",
       "to": "service:server/services/aiCodingAgent.ts#0",
-      "similarity": 0.761168
+      "similarity": 0.750355
     },
     {
       "from": "service:server/services/ai/costSensitiveThreshold.test.ts#0",
@@ -28684,8 +28729,8 @@
     },
     {
       "from": "service:server/services/ai/rcaActionSuggester.test.ts#0",
-      "to": "service:server/services/aiRcaCopilot.test.ts#0",
-      "similarity": 0.749176
+      "to": "service:server/services/aiCopilotActions.giandQuyen.test.ts#0",
+      "similarity": 0.763098
     },
     {
       "from": "service:server/services/ai/rcaActionSuggester.ts#0",
@@ -28839,13 +28884,13 @@
     },
     {
       "from": "service:server/services/aiActionInbox.test.ts#0",
-      "to": "service:server/services/aiCopilotActions.hardlinkSink.test.ts#0",
-      "similarity": 0.740983
+      "to": "service:server/services/aiCopilotActions.giandQuyen.test.ts#0",
+      "similarity": 0.759278
     },
     {
       "from": "service:server/services/aiActionInbox.test.ts#0",
-      "to": "service:server/services/aiCopilotActions.contract.test.ts#0",
-      "similarity": 0.729329
+      "to": "service:server/services/aiCopilotActions.hardlinkSink.test.ts#0",
+      "similarity": 0.740983
     },
     {
       "from": "service:server/services/aiActionInbox.ts#0",
@@ -29344,28 +29389,163 @@
     },
     {
       "from": "service:server/services/aiCodingAgent.test.ts#0",
+      "to": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "similarity": 0.863299
+    },
+    {
+      "from": "service:server/services/aiCodingAgent.test.ts#0",
       "to": "service:server/services/aiCodingTaoTep.stream.test.ts#0",
       "similarity": 0.844979
     },
     {
-      "from": "service:server/services/aiCodingAgent.test.ts#0",
-      "to": "service:server/services/aiCodingAgent.ts#0",
-      "similarity": 0.812222
-    },
-    {
       "from": "service:server/services/aiCodingAgent.ts#0",
       "to": "service:server/services/aiCodingAgent.test.ts#0",
-      "similarity": 0.812222
+      "similarity": 0.794071
     },
     {
       "from": "service:server/services/aiCodingAgent.ts#0",
-      "to": "service:server/services/aiCodingHistory.test.ts#0",
-      "similarity": 0.777607
+      "to": "service:server/services/aiCodingKhoiSua.stream.test.ts#0",
+      "similarity": 0.771181
     },
     {
       "from": "service:server/services/aiCodingAgent.ts#0",
-      "to": "service:server/services/ai/codingRepoContext.ts#0",
-      "similarity": 0.761168
+      "to": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "similarity": 0.770108
+    },
+    {
+      "from": "service:server/services/aiCodingCli/batDau.ts#0",
+      "to": "service:server/services/aiCodingCli/cauNoiCli.census.test.ts#0",
+      "similarity": 0.867451
+    },
+    {
+      "from": "service:server/services/aiCodingCli/batDau.ts#0",
+      "to": "service:server/services/aiCodingCli/mcpGiaoThuc.test.ts#0",
+      "similarity": 0.866385
+    },
+    {
+      "from": "service:server/services/aiCodingCli/batDau.ts#0",
+      "to": "service:server/services/aiCodingCli/cauNoiCli.ts#0",
+      "similarity": 0.844275
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cauNoiCli.census.test.ts#0",
+      "to": "service:server/services/aiCodingCli/batDau.ts#0",
+      "similarity": 0.867451
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cauNoiCli.census.test.ts#0",
+      "to": "service:server/services/aiCodingCli/cauNoiCli.ts#0",
+      "similarity": 0.823308
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cauNoiCli.census.test.ts#0",
+      "to": "service:server/services/aiCodingAgent.test.ts#0",
+      "similarity": 0.778846
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cauNoiCli.ts#0",
+      "to": "service:server/services/aiCodingCli/batDau.ts#0",
+      "similarity": 0.844275
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cauNoiCli.ts#0",
+      "to": "service:server/services/aiCodingCli/cauNoiCli.census.test.ts#0",
+      "similarity": 0.823308
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cauNoiCli.ts#0",
+      "to": "service:server/services/aiCodingCli/cli.ts#0",
+      "similarity": 0.812796
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cli.ts#0",
+      "to": "service:server/services/aiCodingCli/cauNoiCli.ts#0",
+      "similarity": 0.812796
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cli.ts#0",
+      "to": "service:server/services/aiCodingKhoiSua.stream.test.ts#0",
+      "similarity": 0.796595
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cli.ts#0",
+      "to": "service:server/services/aiCodingCli/batDau.ts#0",
+      "similarity": 0.787372
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cliVongThat.test.ts#0",
+      "to": "service:server/services/aiCodingCli/batDau.ts#0",
+      "similarity": 0.75708
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cliVongThat.test.ts#0",
+      "to": "service:server/services/aiCodingAgent.test.ts#0",
+      "similarity": 0.749804
+    },
+    {
+      "from": "service:server/services/aiCodingCli/cliVongThat.test.ts#0",
+      "to": "service:server/services/aiCodingCli/mcpGiaoThuc.test.ts#0",
+      "similarity": 0.748866
+    },
+    {
+      "from": "service:server/services/aiCodingCli/danhTinhCli.ts#0",
+      "to": "service:server/services/aiCodingCli/cauNoiCli.ts#0",
+      "similarity": 0.798844
+    },
+    {
+      "from": "service:server/services/aiCodingCli/danhTinhCli.ts#0",
+      "to": "service:server/services/aiCodingCli/batDau.ts#0",
+      "similarity": 0.765418
+    },
+    {
+      "from": "service:server/services/aiCodingCli/danhTinhCli.ts#0",
+      "to": "service:server/services/aiCodingCli/mcpServer.ts#0",
+      "similarity": 0.744609
+    },
+    {
+      "from": "service:server/services/aiCodingCli/mcpGiaoThuc.test.ts#0",
+      "to": "service:server/services/aiCodingCli/batDau.ts#0",
+      "similarity": 0.866385
+    },
+    {
+      "from": "service:server/services/aiCodingCli/mcpGiaoThuc.test.ts#0",
+      "to": "service:server/services/aiCodingCli/mcpServer.ts#0",
+      "similarity": 0.826914
+    },
+    {
+      "from": "service:server/services/aiCodingCli/mcpGiaoThuc.test.ts#0",
+      "to": "service:server/services/aiCodingAgent.test.ts#0",
+      "similarity": 0.752962
+    },
+    {
+      "from": "service:server/services/aiCodingCli/mcpServer.ts#0",
+      "to": "service:server/services/aiCodingCli/batDau.ts#0",
+      "similarity": 0.828221
+    },
+    {
+      "from": "service:server/services/aiCodingCli/mcpServer.ts#0",
+      "to": "service:server/services/aiCodingCli/mcpGiaoThuc.test.ts#0",
+      "similarity": 0.826914
+    },
+    {
+      "from": "service:server/services/aiCodingCli/mcpServer.ts#0",
+      "to": "service:server/services/aiCodingCli/cauNoiCli.ts#0",
+      "similarity": 0.800521
+    },
+    {
+      "from": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "to": "service:server/services/aiCodingLesson.stream.test.ts#0",
+      "similarity": 0.909064
+    },
+    {
+      "from": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "to": "service:server/services/aiCodingAgent.test.ts#0",
+      "similarity": 0.863299
+    },
+    {
+      "from": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "to": "service:server/services/aiCodingMode.stream.test.ts#0",
+      "similarity": 0.85809
     },
     {
       "from": "service:server/services/aiCodingHistory.test.ts#0",
@@ -29374,13 +29554,43 @@
     },
     {
       "from": "service:server/services/aiCodingHistory.test.ts#0",
+      "to": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "similarity": 0.804494
+    },
+    {
+      "from": "service:server/services/aiCodingHistory.test.ts#0",
       "to": "service:server/services/aiLlamaServerClient.napTrung.test.ts#0",
       "similarity": 0.796117
     },
     {
-      "from": "service:server/services/aiCodingHistory.test.ts#0",
-      "to": "service:server/services/aiCodingAgent.ts#0",
-      "similarity": 0.777607
+      "from": "service:server/services/aiCodingKhoiSua.stream.test.ts#0",
+      "to": "service:server/services/aiCodingTaoTep.stream.test.ts#0",
+      "similarity": 0.841309
+    },
+    {
+      "from": "service:server/services/aiCodingKhoiSua.stream.test.ts#0",
+      "to": "service:server/services/aiCodingMode.stream.test.ts#0",
+      "similarity": 0.82388
+    },
+    {
+      "from": "service:server/services/aiCodingKhoiSua.stream.test.ts#0",
+      "to": "service:server/services/aiCodingAgent.test.ts#0",
+      "similarity": 0.816974
+    },
+    {
+      "from": "service:server/services/aiCodingLesson.stream.test.ts#0",
+      "to": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "similarity": 0.909064
+    },
+    {
+      "from": "service:server/services/aiCodingLesson.stream.test.ts#0",
+      "to": "service:server/services/aiCodingTaoTep.stream.test.ts#0",
+      "similarity": 0.871099
+    },
+    {
+      "from": "service:server/services/aiCodingLesson.stream.test.ts#0",
+      "to": "service:server/services/ai/codingLessonContext.test.ts#0",
+      "similarity": 0.83718
     },
     {
       "from": "service:server/services/aiCodingMode.stream.test.ts#0",
@@ -29394,8 +29604,8 @@
     },
     {
       "from": "service:server/services/aiCodingMode.stream.test.ts#0",
-      "to": "service:server/services/aiLocalKnowledge.gd1.test.ts#0",
-      "similarity": 0.858022
+      "to": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "similarity": 0.85809
     },
     {
       "from": "service:server/services/aiCodingTaoTep.stream.test.ts#0",
@@ -29409,8 +29619,8 @@
     },
     {
       "from": "service:server/services/aiCodingTaoTep.stream.test.ts#0",
-      "to": "service:server/services/aiCodingAgent.test.ts#0",
-      "similarity": 0.844979
+      "to": "service:server/services/aiCodingLesson.stream.test.ts#0",
+      "similarity": 0.871099
     },
     {
       "from": "service:server/services/aiCodingVerify.test.ts#0",
@@ -29430,7 +29640,7 @@
     {
       "from": "service:server/services/aiCodingVerify.ts#0",
       "to": "service:server/services/aiLocalTools/repoCommandSandbox.ts#0",
-      "similarity": 0.802913
+      "similarity": 0.80032
     },
     {
       "from": "service:server/services/aiCodingVerify.ts#0",
@@ -29439,8 +29649,8 @@
     },
     {
       "from": "service:server/services/aiCodingVerify.ts#0",
-      "to": "service:server/services/ai/codingRepoContext.ts#0",
-      "similarity": 0.728585
+      "to": "service:server/services/aiCodingCli/cli.ts#0",
+      "similarity": 0.751953
     },
     {
       "from": "service:server/services/aiCopilotActions.autonomy.test.ts#0",
@@ -29454,8 +29664,23 @@
     },
     {
       "from": "service:server/services/aiCopilotActions.autonomy.test.ts#0",
-      "to": "service:server/services/aiCopilotActions.hardlinkSink.test.ts#0",
-      "similarity": 0.901497
+      "to": "service:server/services/aiCopilotActions.giandQuyen.test.ts#0",
+      "similarity": 0.915985
+    },
+    {
+      "from": "service:server/services/aiCopilotActions.chonKhoi.test.ts#0",
+      "to": "service:server/services/aiCopilotActions.giandQuyen.test.ts#0",
+      "similarity": 0.843578
+    },
+    {
+      "from": "service:server/services/aiCopilotActions.chonKhoi.test.ts#0",
+      "to": "service:server/services/aiCopilotActions.contract.test.ts#0",
+      "similarity": 0.821681
+    },
+    {
+      "from": "service:server/services/aiCopilotActions.chonKhoi.test.ts#0",
+      "to": "service:server/services/aiCopilotActions.test.ts#0",
+      "similarity": 0.817355
     },
     {
       "from": "service:server/services/aiCopilotActions.contract.test.ts#0",
@@ -29469,8 +29694,23 @@
     },
     {
       "from": "service:server/services/aiCopilotActions.contract.test.ts#0",
-      "to": "service:server/services/aiCopilotActions.hardlinkSink.test.ts#0",
-      "similarity": 0.929843
+      "to": "service:server/services/aiCopilotActions.giandQuyen.test.ts#0",
+      "similarity": 0.931509
+    },
+    {
+      "from": "service:server/services/aiCopilotActions.giandQuyen.test.ts#0",
+      "to": "service:server/services/aiCopilotActions.contract.test.ts#0",
+      "similarity": 0.931509
+    },
+    {
+      "from": "service:server/services/aiCopilotActions.giandQuyen.test.ts#0",
+      "to": "service:server/services/aiCopilotActions.test.ts#0",
+      "similarity": 0.928774
+    },
+    {
+      "from": "service:server/services/aiCopilotActions.giandQuyen.test.ts#0",
+      "to": "service:server/services/aiCopilotActions.autonomy.test.ts#0",
+      "similarity": 0.915985
     },
     {
       "from": "service:server/services/aiCopilotActions.hardlinkSink.test.ts#0",
@@ -29484,8 +29724,8 @@
     },
     {
       "from": "service:server/services/aiCopilotActions.hardlinkSink.test.ts#0",
-      "to": "service:server/services/aiCopilotActions.autonomy.test.ts#0",
-      "similarity": 0.901497
+      "to": "service:server/services/aiCopilotActions.giandQuyen.test.ts#0",
+      "similarity": 0.910043
     },
     {
       "from": "service:server/services/aiCopilotActions.test.ts#0",
@@ -29505,17 +29745,17 @@
     {
       "from": "service:server/services/aiCopilotActions.ts#0",
       "to": "service:server/services/aiCopilotActions.autonomy.test.ts#0",
-      "similarity": 0.808006
+      "similarity": 0.788958
     },
     {
       "from": "service:server/services/aiCopilotActions.ts#0",
       "to": "service:server/services/aiCopilotActions.contract.test.ts#0",
-      "similarity": 0.798074
+      "similarity": 0.780537
     },
     {
       "from": "service:server/services/aiCopilotActions.ts#0",
-      "to": "service:server/services/aiCopilotActions.test.ts#0",
-      "similarity": 0.768173
+      "to": "service:server/services/aiCopilotActions.giandQuyen.test.ts#0",
+      "similarity": 0.776707
     },
     {
       "from": "service:server/services/aiCostModel.test.ts#0",
@@ -30469,8 +30709,8 @@
     },
     {
       "from": "service:server/services/aiLocalKnowledge.toolLoopHonesty.test.ts#0",
-      "to": "service:server/services/aiLocalKnowledge.emptyToolGate.test.ts#0",
-      "similarity": 0.777184
+      "to": "service:server/services/aiCodingDot02.stream.test.ts#0",
+      "similarity": 0.801639
     },
     {
       "from": "service:server/services/aiLocalKnowledgeSafety.test.ts#0",
@@ -30490,17 +30730,17 @@
     {
       "from": "service:server/services/aiLocalKnowledgeService.ts#0",
       "to": "service:server/services/aiLocalKnowledge.emptyToolGate.test.ts#0",
-      "similarity": 0.829192
-    },
-    {
-      "from": "service:server/services/aiLocalKnowledgeService.ts#0",
-      "to": "service:server/services/aiLocalKnowledge.gguf.test.ts#0",
-      "similarity": 0.807513
+      "similarity": 0.833208
     },
     {
       "from": "service:server/services/aiLocalKnowledgeService.ts#0",
       "to": "service:server/services/aiLocalKnowledge.gd1.test.ts#0",
-      "similarity": 0.806891
+      "similarity": 0.811973
+    },
+    {
+      "from": "service:server/services/aiLocalKnowledgeService.ts#0",
+      "to": "service:server/services/aiLocalKnowledge.gguf.test.ts#0",
+      "similarity": 0.809784
     },
     {
       "from": "service:server/services/aiLocalKnowledgeStudio.ts#0",
@@ -30609,8 +30849,8 @@
     },
     {
       "from": "service:server/services/aiLocalTools/codingModeExecute.test.ts#0",
-      "to": "service:server/services/aiCodingVerify.test.ts#0",
-      "similarity": 0.77112
+      "to": "service:server/services/aiCodingCli/batDau.ts#0",
+      "similarity": 0.773616
     },
     {
       "from": "service:server/services/aiLocalTools/codingToolIntent.test.ts#0",
@@ -30920,17 +31160,17 @@
     {
       "from": "service:server/services/aiLocalTools/intentClassifier.ts#0",
       "to": "service:server/services/aiLocalTools/intentClassifier.khongDau.test.ts#0",
-      "similarity": 0.87542
+      "similarity": 0.887697
     },
     {
       "from": "service:server/services/aiLocalTools/intentClassifier.ts#0",
       "to": "service:server/services/aiLocalTools/codingToolIntent.test.ts#0",
-      "similarity": 0.859503
+      "similarity": 0.879057
     },
     {
       "from": "service:server/services/aiLocalTools/intentClassifier.ts#0",
-      "to": "service:server/services/aiLocalTools/intentClassifier.gd3.test.ts#0",
-      "similarity": 0.850416
+      "to": "service:server/services/aiLocalTools/intentClassifier.f6.test.ts#0",
+      "similarity": 0.865875
     },
     {
       "from": "service:server/services/aiLocalTools/llmKhongKhoiXuongGhi.test.ts#0",
@@ -31025,7 +31265,7 @@
     {
       "from": "service:server/services/aiLocalTools/readToolRbac.ts#0",
       "to": "service:server/services/aiLocalTools/repoReadTools.ts#0",
-      "similarity": 0.779333
+      "similarity": 0.79453
     },
     {
       "from": "service:server/services/aiLocalTools/readToolRbac.ts#0",
@@ -31139,33 +31379,53 @@
     },
     {
       "from": "service:server/services/aiLocalTools/repoCommand.census.test.ts#0",
+      "to": "service:server/services/aiLocalTools/writeHandlers/repoCommandTuChoiNgan.test.ts#0",
+      "similarity": 0.850853
+    },
+    {
+      "from": "service:server/services/aiLocalTools/repoCommand.census.test.ts#0",
       "to": "service:server/services/aiLocalTools/applyDiff.census.test.ts#0",
       "similarity": 0.815173
     },
     {
-      "from": "service:server/services/aiLocalTools/repoCommand.census.test.ts#0",
-      "to": "service:server/services/aiLocalTools/repoProjects.test.ts#0",
-      "similarity": 0.812475
-    },
-    {
       "from": "service:server/services/aiLocalTools/repoCommandSandbox.ts#0",
       "to": "service:server/services/aiCodingVerify.ts#0",
-      "similarity": 0.802913
+      "similarity": 0.80032
     },
     {
       "from": "service:server/services/aiLocalTools/repoCommandSandbox.ts#0",
       "to": "service:server/services/aiLocalTools/repoSandbox.ts#0",
-      "similarity": 0.795999
+      "similarity": 0.776481
     },
     {
       "from": "service:server/services/aiLocalTools/repoCommandSandbox.ts#0",
-      "to": "service:server/services/aiLocalTools/repoCommand.census.test.ts#0",
-      "similarity": 0.739651
+      "to": "service:server/services/aiLocalTools/writeHandlers/repoCommandTuChoiNgan.test.ts#0",
+      "similarity": 0.774602
     },
     {
       "from": "service:server/services/aiLocalTools/repoGitStatus.ts#0",
       "to": "service:server/services/aiLocalTools/applyDiff.census.test.ts#0",
       "similarity": 0.754814
+    },
+    {
+      "from": "service:server/services/aiLocalTools/repoGrepDinhNghia.test.ts#0",
+      "to": "service:server/services/aiLocalTools/repoReadTools.ts#0",
+      "similarity": 0.758997
+    },
+    {
+      "from": "service:server/services/aiLocalTools/repoGrepDinhNghia.test.ts#0",
+      "to": "service:server/services/aiLocalTools/repoCommandSandbox.ts#0",
+      "similarity": 0.749237
+    },
+    {
+      "from": "service:server/services/aiLocalTools/repoGrepDinhNghia.test.ts#0",
+      "to": "service:server/services/aiLocalTools/repoSandbox.ts#0",
+      "similarity": 0.747339
+    },
+    {
+      "from": "service:server/services/aiLocalTools/repoProjects.test.ts#0",
+      "to": "service:server/services/aiLocalTools/repoProjectsDangKy.test.ts#0",
+      "similarity": 0.92184
     },
     {
       "from": "service:server/services/aiLocalTools/repoProjects.test.ts#0",
@@ -31178,39 +31438,49 @@
       "similarity": 0.812475
     },
     {
-      "from": "service:server/services/aiLocalTools/repoProjects.test.ts#0",
-      "to": "service:server/services/aiLocalTools/readProjectFile.hardlink.test.ts#0",
-      "similarity": 0.809771
+      "from": "service:server/services/aiLocalTools/repoProjects.ts#0",
+      "to": "service:server/services/aiLocalTools/repoProjectsDangKy.test.ts#0",
+      "similarity": 0.830533
     },
     {
       "from": "service:server/services/aiLocalTools/repoProjects.ts#0",
       "to": "service:server/services/aiLocalTools/repoProjects.test.ts#0",
-      "similarity": 0.784647
+      "similarity": 0.753642
     },
     {
       "from": "service:server/services/aiLocalTools/repoProjects.ts#0",
-      "to": "service:server/services/aiLocalTools/repoSandbox.ts#0",
-      "similarity": 0.750776
+      "to": "service:server/services/aiCodingCli/cauNoiCli.ts#0",
+      "similarity": 0.753034
     },
     {
-      "from": "service:server/services/aiLocalTools/repoProjects.ts#0",
-      "to": "service:server/services/aiLocalTools/readProjectFile.hardlink.test.ts#0",
-      "similarity": 0.736254
+      "from": "service:server/services/aiLocalTools/repoProjectsDangKy.test.ts#0",
+      "to": "service:server/services/aiLocalTools/repoProjects.test.ts#0",
+      "similarity": 0.92184
     },
     {
-      "from": "service:server/services/aiLocalTools/repoReadTools.ts#0",
+      "from": "service:server/services/aiLocalTools/repoProjectsDangKy.test.ts#0",
+      "to": "service:server/services/aiLocalTools/repoProjects.ts#0",
+      "similarity": 0.830533
+    },
+    {
+      "from": "service:server/services/aiLocalTools/repoProjectsDangKy.test.ts#0",
       "to": "service:server/services/aiLocalTools/repoSandbox.census.test.ts#0",
-      "similarity": 0.807881
-    },
-    {
-      "from": "service:server/services/aiLocalTools/repoReadTools.ts#0",
-      "to": "service:server/services/aiLocalTools/repoCommand.census.test.ts#0",
-      "similarity": 0.782345
+      "similarity": 0.780539
     },
     {
       "from": "service:server/services/aiLocalTools/repoReadTools.ts#0",
       "to": "service:server/services/aiLocalTools/readToolRbac.ts#0",
-      "similarity": 0.779333
+      "similarity": 0.79453
+    },
+    {
+      "from": "service:server/services/aiLocalTools/repoReadTools.ts#0",
+      "to": "service:server/services/aiLocalTools/repoGrepDinhNghia.test.ts#0",
+      "similarity": 0.758997
+    },
+    {
+      "from": "service:server/services/aiLocalTools/repoReadTools.ts#0",
+      "to": "service:server/services/aiLocalTools/writeHandlers/repoCommandTuChoiNgan.test.ts#0",
+      "similarity": 0.749897
     },
     {
       "from": "service:server/services/aiLocalTools/repoSandbox.census.test.ts#0",
@@ -31230,17 +31500,17 @@
     {
       "from": "service:server/services/aiLocalTools/repoSandbox.ts#0",
       "to": "service:server/services/aiLocalTools/repoCommandSandbox.ts#0",
-      "similarity": 0.795999
+      "similarity": 0.776481
     },
     {
       "from": "service:server/services/aiLocalTools/repoSandbox.ts#0",
-      "to": "service:server/services/aiLocalTools/repoProjects.ts#0",
-      "similarity": 0.750776
+      "to": "service:server/services/aiLocalTools/repoGrepDinhNghia.test.ts#0",
+      "similarity": 0.747339
     },
     {
       "from": "service:server/services/aiLocalTools/repoSandbox.ts#0",
       "to": "service:server/services/aiLocalTools/writeHandlers/applyDiff.ts#0",
-      "similarity": 0.731773
+      "similarity": 0.727953
     },
     {
       "from": "service:server/services/aiLocalTools/toolArgCoverage.test.ts#0",
@@ -31284,8 +31554,8 @@
     },
     {
       "from": "service:server/services/aiLocalTools/toolLoop.ts#0",
-      "to": "service:server/services/aiLocalTools/codingToolLoop.test.ts#0",
-      "similarity": 0.815152
+      "to": "service:server/services/aiLocalTools/intentClassifier.ts#0",
+      "similarity": 0.817904
     },
     {
       "from": "service:server/services/aiLocalTools/toolLoopWiring.test.ts#0",
@@ -31470,12 +31740,17 @@
     {
       "from": "service:server/services/aiLocalTools/writeHandlers/applyDiff.ts#0",
       "to": "service:server/services/aiLocalTools/writeHandlers/applyDiffBatch.ts#0",
-      "similarity": 0.749969
+      "similarity": 0.777768
+    },
+    {
+      "from": "service:server/services/aiLocalTools/writeHandlers/applyDiff.ts#0",
+      "to": "service:server/services/aiCodingCli/cli.ts#0",
+      "similarity": 0.744914
     },
     {
       "from": "service:server/services/aiLocalTools/writeHandlers/applyDiff.ts#0",
       "to": "service:server/services/aiLocalTools/repoSandbox.ts#0",
-      "similarity": 0.731773
+      "similarity": 0.727953
     },
     {
       "from": "service:server/services/aiLocalTools/writeHandlers/applyDiffBatch.ts#0",
@@ -31490,7 +31765,7 @@
     {
       "from": "service:server/services/aiLocalTools/writeHandlers/applyDiffBatch.ts#0",
       "to": "service:server/services/aiLocalTools/writeHandlers/applyDiff.ts#0",
-      "similarity": 0.749969
+      "similarity": 0.777768
     },
     {
       "from": "service:server/services/aiLocalTools/writeHandlers/client.ts#0",
@@ -31674,13 +31949,33 @@
     },
     {
       "from": "service:server/services/aiLocalTools/writeHandlers/repoCommand.ts#0",
+      "to": "service:server/services/aiLocalTools/writeHandlers/repoCommandTuChoiNgan.test.ts#0",
+      "similarity": 0.781856
+    },
+    {
+      "from": "service:server/services/aiLocalTools/writeHandlers/repoCommand.ts#0",
       "to": "service:server/services/aiLocalTools/repoCommand.census.test.ts#0",
       "similarity": 0.775013
     },
     {
       "from": "service:server/services/aiLocalTools/writeHandlers/repoCommand.ts#0",
       "to": "service:server/services/aiLocalTools/repoReadTools.ts#0",
-      "similarity": 0.72796
+      "similarity": 0.738243
+    },
+    {
+      "from": "service:server/services/aiLocalTools/writeHandlers/repoCommandTuChoiNgan.test.ts#0",
+      "to": "service:server/services/aiLocalTools/repoCommand.census.test.ts#0",
+      "similarity": 0.850853
+    },
+    {
+      "from": "service:server/services/aiLocalTools/writeHandlers/repoCommandTuChoiNgan.test.ts#0",
+      "to": "service:server/services/aiLocalTools/writeHandlers/repoCommand.ts#0",
+      "similarity": 0.781856
+    },
+    {
+      "from": "service:server/services/aiLocalTools/writeHandlers/repoCommandTuChoiNgan.test.ts#0",
+      "to": "service:server/services/aiLocalTools/repoSandbox.census.test.ts#0",
+      "similarity": 0.776892
     },
     {
       "from": "service:server/services/aiLocalTools/writeHandlers/visionControl.ts#0",
@@ -32101,11 +32396,6 @@
       "from": "service:server/services/aiProgrammingKnowledgeService.ts#0",
       "to": "service:server/services/aiProgrammingKnowledgeService.test.ts#0",
       "similarity": 0.77821
-    },
-    {
-      "from": "service:server/services/aiProgrammingKnowledgeService.ts#0",
-      "to": "service:server/services/aiLocalKnowledgeService.ts#0",
-      "similarity": 0.720865
     },
     {
       "from": "service:server/services/aiProviderGatewayRouting.test.ts#0",
@@ -36548,11 +36838,6 @@
       "similarity": 0.801101
     },
     {
-      "from": "service:server/services/plugins/pluginDriverBridge.ts#0",
-      "to": "service:server/services/plugins/sidecar/sidecar.test.ts#0",
-      "similarity": 0.74715
-    },
-    {
       "from": "service:server/services/plugins/pluginDriverManifests.ts#0",
       "to": "service:server/services/plugins/pluginConformance.ts#0",
       "similarity": 0.805163
@@ -36561,171 +36846,6 @@
       "from": "service:server/services/plugins/pluginDriverManifests.ts#0",
       "to": "service:server/services/plugins/pluginDriverBridge.ts#0",
       "similarity": 0.801101
-    },
-    {
-      "from": "service:server/services/plugins/pluginDriverManifests.ts#0",
-      "to": "service:server/services/plugins/sidecar/sidecar.test.ts#0",
-      "similarity": 0.750815
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/nodeSpawner.ts#0",
-      "to": "service:server/services/plugins/sidecar/sidecarTransport.test.ts#0",
-      "similarity": 0.878917
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/nodeSpawner.ts#0",
-      "to": "service:server/services/plugins/sidecar/pluginSidecarBootstrap.ts#0",
-      "similarity": 0.796389
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/pluginSidecarBootstrap.ts#0",
-      "to": "service:server/services/plugins/sidecar/nodeSpawner.ts#0",
-      "similarity": 0.796389
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/pluginSidecarBootstrap.ts#0",
-      "to": "service:server/services/plugins/sidecar/sidecarTransport.test.ts#0",
-      "similarity": 0.79354
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/pluginSidecarBootstrap.ts#0",
-      "to": "service:server/services/plugins/pluginDriverManifests.ts#0",
-      "similarity": 0.748912
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/pluginSignature.ts#0",
-      "to": "service:server/services/plugins/sidecar/sidecar.test.ts#0",
-      "similarity": 0.816064
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/pluginSignature.ts#0",
-      "to": "service:server/services/plugins/pluginDriverManifests.ts#0",
-      "similarity": 0.733753
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/pluginSupervisor.ts#0",
-      "to": "service:server/services/plugins/sidecar/pluginSidecarBootstrap.ts#0",
-      "similarity": 0.736823
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/sampleSidecar.ts#0",
-      "to": "service:server/services/plugins/templates/deviceConnectorSidecar.ts#0",
-      "similarity": 0.725877
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/sidecar.test.ts#0",
-      "to": "service:server/services/plugins/sidecar/pluginSignature.ts#0",
-      "similarity": 0.816064
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/sidecar.test.ts#0",
-      "to": "service:server/services/plugins/pluginDriverManifests.ts#0",
-      "similarity": 0.750815
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/sidecar.test.ts#0",
-      "to": "service:server/services/plugins/pluginDriverBridge.ts#0",
-      "similarity": 0.74715
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/sidecarTransport.test.ts#0",
-      "to": "service:server/services/plugins/sidecar/nodeSpawner.ts#0",
-      "similarity": 0.878917
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/sidecarTransport.test.ts#0",
-      "to": "service:server/services/plugins/sidecar/pluginSidecarBootstrap.ts#0",
-      "similarity": 0.79354
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/sidecarTransport.test.ts#0",
-      "to": "service:server/services/plugins/sidecar/stdioTransport.ts#0",
-      "similarity": 0.781781
-    },
-    {
-      "from": "service:server/services/plugins/sidecar/stdioTransport.ts#0",
-      "to": "service:server/services/plugins/sidecar/sidecarTransport.test.ts#0",
-      "similarity": 0.781781
-    },
-    {
-      "from": "service:server/services/plugins/templates/deviceConnectorSidecar.ts#0",
-      "to": "service:server/services/plugins/sidecar/sampleSidecar.ts#0",
-      "similarity": 0.725877
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.snapshotGate.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.versionGate.test.ts#0",
-      "similarity": 0.951766
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.snapshotGate.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.test.ts#0",
-      "similarity": 0.91519
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.snapshotGate.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.unitConvert.test.ts#0",
-      "similarity": 0.827645
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.versionGate.test.ts#0",
-      "similarity": 0.965519
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.snapshotGate.test.ts#0",
-      "similarity": 0.91519
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.unitConvert.test.ts#0",
-      "similarity": 0.902807
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.ts#0",
-      "to": "service:server/services/pointResultEvaluator.unitConvert.test.ts#0",
-      "similarity": 0.819554
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.ts#0",
-      "to": "service:server/services/pointResultEvaluator.versionGate.test.ts#0",
-      "similarity": 0.766004
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.ts#0",
-      "to": "service:server/services/pointResultEvaluator.test.ts#0",
-      "similarity": 0.748346
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.unitConvert.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.test.ts#0",
-      "similarity": 0.902807
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.unitConvert.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.versionGate.test.ts#0",
-      "similarity": 0.884024
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.unitConvert.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.snapshotGate.test.ts#0",
-      "similarity": 0.827645
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.versionGate.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.test.ts#0",
-      "similarity": 0.965519
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.versionGate.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.snapshotGate.test.ts#0",
-      "similarity": 0.951766
-    },
-    {
-      "from": "service:server/services/pointResultEvaluator.versionGate.test.ts#0",
-      "to": "service:server/services/pointResultEvaluator.unitConvert.test.ts#0",
-      "similarity": 0.884024
     }
   ]
 }

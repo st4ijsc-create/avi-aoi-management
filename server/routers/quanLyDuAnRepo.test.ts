@@ -122,11 +122,22 @@ describe("§1 — RBAC: sàn adminProcedure (admin + 2FA), KHÔNG cổng tự ch
 
   it("★★★ admin CHƯA BẬT 2FA ⇒ FORBIDDEN (đòi 2FA là của sàn adminProcedure — dùng đúng khuôn có sẵn)", async () => {
     if (!coDb) return;
-    const c = caller(idAdmin, "admin", false);
-    await expect(c.themDuAn({ id: idThu("no2fa"), ten: "T", duongDan: GOC })).rejects.toMatchObject({
-      code: "FORBIDDEN",
-    });
-    expect(await soHang(idThu("no2fa"))).toBe(0);
+    // Chế độ 2FA theo triển khai (2026-08-24): sàn adminProcedure nay đọc `AUTH_2FA_BAT_BUOC` —
+    // ca này khai hành vi của chế độ BẮT BUỘC nên GHIM cờ "1" trong ca (lưới không nạp `.env`,
+    // nhưng lời khai không được phụ thuộc env của máy chạy). Chiều cờ "0": lưới riêng
+    // `_core/cheDo2faTheoTrienKhai.test.ts`.
+    const coTruoc = process.env.AUTH_2FA_BAT_BUOC;
+    process.env.AUTH_2FA_BAT_BUOC = "1";
+    try {
+      const c = caller(idAdmin, "admin", false);
+      await expect(c.themDuAn({ id: idThu("no2fa"), ten: "T", duongDan: GOC })).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+      expect(await soHang(idThu("no2fa"))).toBe(0);
+    } finally {
+      if (coTruoc === undefined) delete process.env.AUTH_2FA_BAT_BUOC;
+      else process.env.AUTH_2FA_BAT_BUOC = coTruoc;
+    }
   });
 });
 
@@ -257,8 +268,16 @@ describe("§4 — XOÁ: mục env TỪ CHỐI; mục DB xoá được, kể cả
 describe("§5 — BỘ CHỌN THƯ MỤC (`duyetThuMuc`) qua ĐÚNG tuyến tRPC: RBAC + fail-closed + trần", () => {
   it("★★★ engineer (có 2FA) VÀ admin CHƯA 2FA ⇒ FORBIDDEN — cùng sàn adminProcedure với themDuAn", async () => {
     if (!coDb) return;
-    await expect(caller(idEng, "engineer", true).duyetThuMuc({})).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(caller(idAdmin, "admin", false).duyetThuMuc({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    // Ghim cờ "1" cùng lý do ca no2fa ở §1: nhánh admin-chưa-2FA của ca này khai chế độ BẮT BUỘC.
+    const coTruoc = process.env.AUTH_2FA_BAT_BUOC;
+    process.env.AUTH_2FA_BAT_BUOC = "1";
+    try {
+      await expect(caller(idEng, "engineer", true).duyetThuMuc({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller(idAdmin, "admin", false).duyetThuMuc({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    } finally {
+      if (coTruoc === undefined) delete process.env.AUTH_2FA_BAT_BUOC;
+      else process.env.AUTH_2FA_BAT_BUOC = coTruoc;
+    }
   });
 
   it("★★★ admin+2FA, KHÔNG `duong` ⇒ danh sách Ổ ĐĨA (Windows: có C:\\) — chưa đứng ở thư mục nào", async () => {

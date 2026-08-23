@@ -184,11 +184,29 @@
     "zodSchemas": []
   },
   {
+    "file": "server/db/aiCodingLessons.ts",
+    "interfaces": [
+      "KetQuaLuuBaiHoc"
+    ],
+    "aliases": [
+      "MaLuuBaiHoc"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/db/aiCodingSessions.ts",
     "interfaces": [
       "TomTatPhien",
       "PhienDayDu",
       "KetQuaLuu"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/db/aiRepoDuAn.ts",
+    "interfaces": [
+      "HangDuAnDb"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -1231,6 +1249,14 @@
     "zodSchemas": []
   },
   {
+    "file": "server/routes/aiLocalKbStreamEvents.census.test.ts",
+    "interfaces": [],
+    "aliases": [
+      "StreamEvent"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/routes/aiLocalKnowledgeApi.ts",
     "interfaces": [
       "ChatVisionNote"
@@ -1323,6 +1349,18 @@
     ],
     "aliases": [
       "PhanLoaiTuTri"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/codingLessonContext.ts",
+    "interfaces": [
+      "KetQuaKhoiBaiHoc"
+    ],
+    "aliases": [
+      "NgonNguBaiHoc",
+      "MaTuChoiBaiHoc",
+      "KetQuaLamSach"
     ],
     "zodSchemas": []
   },
@@ -1881,13 +1919,63 @@
   {
     "file": "server/services/aiCodingAgent.ts",
     "interfaces": [
+      "KhoiSua",
       "YeuCauSinhChu",
       "KetQuaChu",
       "LuotHoiThoai",
       "KetQuaLichSu"
     ],
     "aliases": [
-      "NgonNguMa"
+      "NgonNguMa",
+      "MaKhoiHong",
+      "KetQuaBocKhoi",
+      "KetQuaApKhoi"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiCodingCli/cauNoiCli.ts",
+    "interfaces": [
+      "PhienCli"
+    ],
+    "aliases": [
+      "MaPhien",
+      "KetQuaMoPhien",
+      "KetQuaDuyet",
+      "DeXuatCho"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiCodingCli/cli.ts",
+    "interfaces": [
+      "CongTerminal",
+      "ThamSoCli"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiCodingCli/danhTinhCli.ts",
+    "interfaces": [
+      "DanhTinhCli",
+      "ThamSoXacThuc"
+    ],
+    "aliases": [
+      "NguonDanhTinh",
+      "MaDanhTinh",
+      "KetQuaDanhTinh"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/aiCodingCli/mcpServer.ts",
+    "interfaces": [
+      "KetQuaGoiMcp",
+      "GoiJsonRpc"
+    ],
+    "aliases": [
+      "TraLoiJsonRpc"
     ],
     "zodSchemas": []
   },
@@ -1914,10 +2002,12 @@
       "PendingActionDTO",
       "ProposeResult",
       "ConfirmResult",
-      "ConfirmContractDeps"
+      "ConfirmContractDeps",
+      "PendingActionSummary"
     ],
     "aliases": [
-      "AdviceRequirement"
+      "AdviceRequirement",
+      "HunkRejectReason"
     ],
     "zodSchemas": []
   },
@@ -2205,6 +2295,17 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiLocalTools/duyetThuMuc.ts",
+    "interfaces": [
+      "MucThuMucCon"
+    ],
+    "aliases": [
+      "MaTuChoiDuyet",
+      "KetQuaDuyetThuMuc"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiLocalTools/handlers.ts",
     "interfaces": [],
     "aliases": [],
@@ -2297,7 +2398,10 @@
       "DuAnHopCat"
     ],
     "aliases": [
-      "KetQuaPhanGiaiGoc"
+      "KetQuaPhanGiaiGoc",
+      "MaTuChoiDangKy",
+      "KetQuaDangKy",
+      "MaTuChoiXoa"
     ],
     "zodSchemas": []
   },
@@ -8136,12 +8240,31 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/ai/BoChonPhien.tsx",
+    "interfaces": [
+      "TomTatPhienUI"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/ai/ProposeDefectButton.tsx",
     "interfaces": [
       "ProposeDefectFinding"
     ],
     "aliases": [
       "VisionSource"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/ai/QuanLyDuAnRepo.tsx",
+    "interfaces": [
+      "MucDuAnUI",
+      "TrangThaiChonThuMuc"
+    ],
+    "aliases": [
+      "LoiThemUI"
     ],
     "zodSchemas": []
   },
@@ -8154,6 +8277,15 @@
       "SearchMode",
       "EmbeddingSource"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/ai/TheDuyetDiff.tsx",
+    "interfaces": [
+      "DiffArgs",
+      "HanhDongCanDuyet"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -9681,7 +9813,8 @@
     "aliases": [
       "Eol",
       "ProjectResult",
-      "HunkApplyResult"
+      "HunkApplyResult",
+      "KetQuaChieuChiSo"
     ],
     "zodSchemas": []
   },
@@ -9715,6 +9848,22 @@
     "file": "client/src/lib/exportUtils.ts",
     "interfaces": [
       "ExportData"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/goiYDuAn.ts",
+    "interfaces": [
+      "GoiYDuAn"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/khungVuaManHinh.ts",
+    "interfaces": [
+      "ThamSoCaoKhung"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -9836,6 +9985,16 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/lib/soKhoiMa.ts",
+    "interfaces": [
+      "NeoDocTep"
+    ],
+    "aliases": [
+      "KetCucSoKhoi"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/lib/stateVocabulary.ts",
     "interfaces": [
       "StateToken"
@@ -9953,9 +10112,20 @@
     "zodSchemas": []
   },
   {
+    "file": "shared/aiCodingLesson.ts",
+    "interfaces": [
+      "BaiHoc"
+    ],
+    "aliases": [
+      "YDinhBaiHoc"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "shared/aiCodingLoop.ts",
     "interfaces": [
       "KetQuaTest",
+      "KetLuanTest",
       "TrangThaiSauTest",
       "PhanQuyetVong"
     ],
@@ -10156,6 +10326,15 @@
     "zodSchemas": []
   },
   {
+    "file": "drizzle/schema/aiCodingLesson.ts",
+    "interfaces": [],
+    "aliases": [
+      "AiCodingLesson",
+      "InsertAiCodingLesson"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/aiCodingSession.ts",
     "interfaces": [],
     "aliases": [
@@ -10192,6 +10371,15 @@
       "InsertRobotBehaviorAnomaly",
       "ModelRollbackEvent",
       "InsertModelRollbackEvent"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/aiRepoDuAn.ts",
+    "interfaces": [],
+    "aliases": [
+      "AiRepoDuAn",
+      "InsertAiRepoDuAn"
     ],
     "zodSchemas": []
   },

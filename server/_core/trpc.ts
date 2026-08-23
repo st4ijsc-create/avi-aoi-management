@@ -321,6 +321,35 @@ export function moduleProcedure(moduleCode: string) {
 // `adminProcedure.use(moduleGate('MOD_FEDERATION'))`.
 export { moduleGate };
 
+/**
+ * ★★★ CHẾ ĐỘ 2FA THEO TRIỂN KHAI (quyết định chủ dự án 2026-08-24) — MỘT công tắc, MỘT chủ.
+ *
+ * Hai kiểu triển khai có hai bài toán ngược nhau: cấp qua INTERNET thì 2FA bắt buộc là đúng;
+ * nội bộ nhà máy không internet thì "100 kỹ sư, đăng nhập/đăng xuất nhiều lần một ngày, mỗi lần
+ * móc máy xác thực" là chi phí thật mà không mua thêm được bao nhiêu (nguyên văn chủ dự án ở
+ * docblock `PRIVILEGED_ROLES` bên dưới — cạnh viện dẫn IEC mà nó nới ra).
+ *
+ * `AUTH_2FA_BAT_BUOC=0` ⇒ chế độ NỘI BỘ. Ba tầng ép 2FA nới ra, TỪNG TẦNG một chính sách riêng:
+ *   (1) `adminProcedure`  — thôi đòi BẬT 2FA; kiểm VAI giữ NGUYÊN TỪNG CHỮ.
+ *   (2) `require2FA`      — thôi đòi BẬT cho vai đặc quyền; nhánh chưa-đăng-nhập giữ NGUYÊN.
+ *   (3) step-up OTP       — người ĐÃ bật 2FA vẫn bị hỏi OTP như cũ (đã có thiết bị thì bước xác
+ *       nhận trước lệnh chạm máy vật lý là rẻ và đáng); người CHƯA bật được cho qua nhưng lượt
+ *       bỏ-qua GHI SỔ AUDIT (`details.stepUp = "bo_qua_che_do_noi_bo"`) để còn truy được.
+ * MỌI giá trị khác `"0"` — kể cả VẮNG biến — ⇒ bắt buộc như cũ: mặc định trong MÃ phải an toàn
+ * cho triển khai cấp-qua-internet, vì đổi mặc định là đổi tư thế an ninh của mọi bản cài chưa
+ * khai biến này.
+ *
+ * ⚠ KHÔNG nới kèm: kiểm VAI ở mọi tầng · TOTP lúc ĐĂNG NHẬP của tài khoản đã bật (opt-in theo
+ *   người dùng, chủ dự án kiểm soát ai bật) · CLI từ chối tài khoản có 2FA (`danhTinhCli.ts`) ·
+ *   `protectedProcedure`/phiên/RBAC bit. Cờ này chỉ chạm đúng ba khối trên.
+ * ⚠ Đọc TẠI THỜI ĐIỂM GỌI, không phải lúc nạp module — cùng bài học `TENANT_RLS_ENABLED` ở trên:
+ *   lưới đặt env trong ca phải lật được cờ mà không cần nạp lại module.
+ * Lưới + đột biến A/B hai chiều từng tầng: `server/_core/cheDo2faTheoTrienKhai.test.ts`.
+ */
+export function batBuoc2FA(): boolean {
+  return process.env.AUTH_2FA_BAT_BUOC !== "0";
+}
+
 export const adminProcedure = thuTucGoc.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
@@ -336,7 +365,11 @@ export const adminProcedure = thuTucGoc.use(
       throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "adminAccess" }, NOT_ADMIN_ERR_MSG);
     }
 
-    if (!ctx.user.twoFactorEnabled) {
+    // Chế độ 2FA theo triển khai (xem `batBuoc2FA`): ở chế độ NỘI BỘ (cờ `0`) khối đòi-bật-2FA
+    // này được bỏ qua — kiểm VAI ở NGAY TRÊN giữ nguyên từng chữ (nới 2FA không bao giờ kèm nới
+    // vai). Hệ quả phụ đo được: admin chưa bật 2FA hết bị `license.systemState` ném
+    // TWO_FACTOR_NOT_SET_UP ra console ở mọi trang.
+    if (batBuoc2FA() && !ctx.user.twoFactorEnabled) {
       throw appError(
         "FORBIDDEN",
         "TWO_FACTOR_NOT_SET_UP",
@@ -362,6 +395,16 @@ type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'mai
 
 // Privileged roles that MUST have 2FA enabled (IEC 62443-2-1 CL2 requirement).
 // engineer holds machine_control (OT command authority) → 2FA required (doc 34 P3b decision).
+//
+// ⚠ CHẾ ĐỘ NỘI BỘ (2026-08-24, quyết định chủ dự án) — viện dẫn CL2 ở trên KHÔNG bị xoá: nó vẫn
+// là khuyến nghị đúng khi hệ sinh thái cấp QUA INTERNET (`AUTH_2FA_BAT_BUOC` vắng/`1` ⇒ ép như
+// cũ). Riêng triển khai KHÔNG-internet trong nhà máy, chủ dự án chốt nới đòi-bật-2FA, nguyên văn:
+//   "Việc yêu cầu 2FA là không cần thiết, nếu sau này có 100 kỹ sư mà mỗi lần đăng nhập phải dùng
+//    2FA trong môi trường công nghiệp là cực kỳ bất tiện, 2FA chỉ sử dụng khi mà hệ sinh thái cấp
+//    từ máy chủ của tôi qua mạng internet, nếu chỉ sử dụng trong nội bộ thì rất mất thười gian vì
+//    người dùng đăng nhập và đăng xuất nhiều lần trong ngày, hãy linh động để xử lý theo từng case
+//    thay vì quá bảo mật cũng không tốt."
+// Cách nới (từng tầng, không gộp) + cái KHÔNG được nới: xem docblock `batBuoc2FA()` ở trên.
 const PRIVILEGED_ROLES: UserRole[] = ['admin', 'supervisor', 'quality_inspector', 'engineer'];
 
 // Exported so routers whose privileged-role set doesn't match one of the
@@ -373,7 +416,9 @@ export const require2FA = t.middleware(async opts => {
   if (!ctx.user) {
     throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
   }
-  if (PRIVILEGED_ROLES.includes(ctx.user.role as UserRole) && !ctx.user.twoFactorEnabled) {
+  // Chế độ nội bộ (cờ `0`, xem `batBuoc2FA`): bỏ qua đòi-BẬT — nhánh `!ctx.user` UNAUTHORIZED ở
+  // trên giữ NGUYÊN, và sàn vai (`roleProcedure`) đứng TRƯỚC middleware này không hề bị chạm.
+  if (batBuoc2FA() && PRIVILEGED_ROLES.includes(ctx.user.role as UserRole) && !ctx.user.twoFactorEnabled) {
     throw appError(
       "FORBIDDEN",
       "TWO_FACTOR_NOT_SET_UP",
@@ -479,9 +524,56 @@ async function verifyFreshTotp(
  */
 function stepUpTotpMiddleware(dungCachePhien: boolean) {
   return t.middleware(async (opts) => {
-  const { ctx, next, type } = opts;
+  const { ctx, next, type, path } = opts;
   if (!actuationStepUp2faEnabled() || type !== "mutation") return next();
   if (!ctx.user) throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
+
+  /**
+   * ★★★ CHẾ ĐỘ NỘI BỘ (`batBuoc2FA()` = false, quyết định chủ dự án 2026-08-24) — "linh động
+   * theo case" đúng nghĩa cho step-up:
+   *   · người ĐÃ bật 2FA ⇒ RƠI XUỐNG đường OTP y như cũ (kể cả cache phiên) — đã có thiết bị
+   *     thì bước xác nhận trước một lệnh chạm máy vật lý là rẻ và đáng;
+   *   · người CHƯA bật ⇒ cho qua, KHÔNG chặn — nhưng lượt bỏ-qua GHI SỔ AUDIT **trước khi**
+   *     lệnh chạy, để sự kiện "lệnh chạm máy/deploy không có OTP" còn truy được về sau
+   *     (`details.stepUp = "bo_qua_che_do_noi_bo"`, cùng khuôn `logCrudOperation` của
+   *     `auditMutationMiddleware`).
+   * ⚠ Nguồn sự thật của "đã bật" là `ctx.user.twoFactorEnabled` — ĐÚNG nguồn mà
+   *   `adminProcedure`/`require2FA` dùng; `enable2FA`/`disable2FA` gọi `invalidateAuthUser`
+   *   (server/db/auth.ts) nên cờ trên phiên không sống lâu hơn lượt đổi. KHÔNG đọc lại DB ở
+   *   đây: hai nguồn cho một vị từ là chỗ luật trôi đi (bài học `get2FAStatus`).
+   * ⚠ `deployProcedure` chạy middleware này HAI lần cho một lượt bấm nút (vram: BA — khối I-4
+   *   bên dưới); dấu `__boQua2faDaGhiSo` truyền xuôi trong CÙNG lượt gọi giữ cho sổ chỉ nhận
+   *   MỘT hàng. Cùng cơ chế với `__luotXacMinhTotp`: ctx chỉ chảy xuôi trong chính lượt gọi ấy.
+   * ⚠ KHÔNG đúc dấu `__luotXacMinhTotp` ở nhánh này — không mã nào được verify (xem cảnh báo
+   *   ở cuối hàm). `await` lượt ghi sổ nhưng `logCrudOperation` nuốt lỗi nội bộ (trả `{id:-1}`)
+   *   ⇒ sổ hỏng không chặn lệnh — cùng tư thế "audit không bao giờ giết request" đã có.
+   * ⚠ Khi cờ vắng/`1`: khối này chết hẳn — người chưa bật 2FA không tới được đây qua các sàn
+   *   thật (require2FA đứng trước đã chặn), và tới thẳng cũng fail-closed ở `verifyFreshTotp`.
+   */
+  if (!batBuoc2FA() && !ctx.user.twoFactorEnabled) {
+    if ((ctx as { __boQua2faDaGhiSo?: boolean }).__boQua2faDaGhiSo) return next();
+    const { logCrudOperation } = await import("../services/auditTrailService");
+    await logCrudOperation(
+      {
+        userId: ctx.user.id,
+        userName: ctx.user.username ?? ctx.user.name ?? null,
+        ipAddress: ctx.req?.ip ?? null,
+        userAgent: (ctx.req?.headers?.["user-agent"] as string | undefined) ?? null,
+        source: "trpc",
+      },
+      {
+        action: path,
+        entityType: "trpc_mutation",
+        details: {
+          operation: "mutation",
+          stepUp: "bo_qua_che_do_noi_bo",
+          metadata: { path, lyDo: "AUTH_2FA_BAT_BUOC=0 và người dùng CHƯA bật 2FA — không có OTP để hỏi" },
+        },
+        status: "success",
+      },
+    );
+    return next({ ctx: { ...ctx, __boQua2faDaGhiSo: true } });
+  }
 
   const sessionKey = ctx.sessionToken || `user:${ctx.user.id}`;
   const now = Date.now();

@@ -820,6 +820,30 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/db/aiCodingLessons.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/aiCodingLessons.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/aiCodingLessons.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/aiCodingLessonScope.test.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/aiCodingLessonScope.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/aiCodingLessonScope.test.ts",
+    "to": "./aiCodingLessons"
+  },
+  {
     "from": "server/db/aiCodingSessions.test.ts",
     "to": "./aiCodingSessions"
   },
@@ -833,6 +857,18 @@
   },
   {
     "from": "server/db/aiCodingSessions.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/aiRepoDuAn.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/aiRepoDuAn.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/aiRepoDuAn.ts",
     "to": "../_core/dbErrors"
   },
   {
@@ -6764,6 +6800,26 @@
     "to": "../../drizzle/schema/spc"
   },
   {
+    "from": "server/routers/quanLyDuAnRepo.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/quanLyDuAnRepo.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/quanLyDuAnRepo.test.ts",
+    "to": "./repoWorkspaceRouter"
+  },
+  {
+    "from": "server/routers/quanLyDuAnRepo.test.ts",
+    "to": "../services/aiLocalTools/repoProjects"
+  },
+  {
+    "from": "server/routers/quanLyDuAnRepo.test.ts",
+    "to": "../services/aiLocalTools/duyetThuMuc"
+  },
+  {
     "from": "server/routers/readinessRouter.ts",
     "to": "../_core/trpc"
   },
@@ -9028,6 +9084,10 @@
     "to": "./routers/alarmKpiRouter"
   },
   {
+    "from": "server/routes/aiLocalKbStreamEvents.census.test.ts",
+    "to": "./aiLocalKnowledgeApi"
+  },
+  {
     "from": "server/routes/aiLocalKnowledgeApi.ts",
     "to": "./_xacThucRest"
   },
@@ -9306,6 +9366,18 @@
   {
     "from": "server/services/ai/autonomyWriteToolCensus.test.ts",
     "to": "./autonomyPolicy"
+  },
+  {
+    "from": "server/services/ai/codingLessonContext.test.ts",
+    "to": "./codingLessonContext"
+  },
+  {
+    "from": "server/services/ai/codingLessonContext.test.ts",
+    "to": "./aiSafety"
+  },
+  {
+    "from": "server/services/ai/codingLessonContext.ts",
+    "to": "./aiSafety"
   },
   {
     "from": "server/services/ai/codingRepoContext.test.ts",
@@ -10448,12 +10520,180 @@
     "to": "./aiGateway"
   },
   {
+    "from": "server/services/aiCodingCli/batDau.ts",
+    "to": "./cli"
+  },
+  {
+    "from": "server/services/aiCodingCli/batDau.ts",
+    "to": "./mcpServer"
+  },
+  {
+    "from": "server/services/aiCodingCli/batDau.ts",
+    "to": "./cauNoiCli"
+  },
+  {
+    "from": "server/services/aiCodingCli/cauNoiCli.ts",
+    "to": "../aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiCodingCli/cauNoiCli.ts",
+    "to": "../aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiCodingCli/cauNoiCli.ts",
+    "to": "../aiLocalTools"
+  },
+  {
+    "from": "server/services/aiCodingCli/cauNoiCli.ts",
+    "to": "../aiLocalTools/repoProjects"
+  },
+  {
+    "from": "server/services/aiCodingCli/cauNoiCli.ts",
+    "to": "./danhTinhCli"
+  },
+  {
+    "from": "server/services/aiCodingCli/cli.ts",
+    "to": "../../../client/src/lib/diffHunks"
+  },
+  {
+    "from": "server/services/aiCodingCli/cli.ts",
+    "to": "../../../shared/aiCodingLoop"
+  },
+  {
+    "from": "server/services/aiCodingCli/cli.ts",
+    "to": "../ai/aiSafety"
+  },
+  {
+    "from": "server/services/aiCodingCli/cli.ts",
+    "to": "../aiLocalTools/repoProjects"
+  },
+  {
+    "from": "server/services/aiCodingCli/cli.ts",
+    "to": "./danhTinhCli"
+  },
+  {
+    "from": "server/services/aiCodingCli/cli.ts",
+    "to": "./cauNoiCli"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliVongThat.test.ts",
+    "to": "./cli"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliVongThat.test.ts",
+    "to": "./mcpServer"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliVongThat.test.ts",
+    "to": "../aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliVongThat.test.ts",
+    "to": "../../db/auth"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliVongThat.test.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliVongThat.test.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliVongThat.test.ts",
+    "to": "../../../drizzle/schema/auth"
+  },
+  {
+    "from": "server/services/aiCodingCli/danhTinhCli.ts",
+    "to": "../../_core/authService"
+  },
+  {
+    "from": "server/services/aiCodingCli/danhTinhCli.ts",
+    "to": "../../db/auth"
+  },
+  {
+    "from": "server/services/aiCodingCli/mcpGiaoThuc.test.ts",
+    "to": "./mcpServer"
+  },
+  {
+    "from": "server/services/aiCodingCli/mcpServer.ts",
+    "to": "./danhTinhCli"
+  },
+  {
+    "from": "server/services/aiCodingCli/mcpServer.ts",
+    "to": "../aiLocalTools/repoProjects"
+  },
+  {
+    "from": "server/services/aiCodingCli/mcpServer.ts",
+    "to": "./cauNoiCli"
+  },
+  {
+    "from": "server/services/aiCodingDot02.stream.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiCodingDot02.stream.test.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiCodingDot02.stream.test.ts",
+    "to": "./ai/aiSafety"
+  },
+  {
     "from": "server/services/aiCodingHistory.test.ts",
     "to": "./aiCodingAgent"
   },
   {
     "from": "server/services/aiCodingHistory.test.ts",
     "to": "./aiLlamaServerClient"
+  },
+  {
+    "from": "server/services/aiCodingKhoiSua.stream.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiCodingKhoiSua.stream.test.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiCodingKhoiSua.stream.test.ts",
+    "to": "./aiLlamaServerClient"
+  },
+  {
+    "from": "server/services/aiCodingKhoiSua.stream.test.ts",
+    "to": "../../client/src/lib/diffHunks"
+  },
+  {
+    "from": "server/services/aiCodingKhoiSua.stream.test.ts",
+    "to": "./aiLocalTools/writeHandlers/applyDiff"
+  },
+  {
+    "from": "server/services/aiCodingKhoiSua.stream.test.ts",
+    "to": "./aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/aiCodingKhoiSua.stream.test.ts",
+    "to": "./ai/autonomyPolicy"
+  },
+  {
+    "from": "server/services/aiCodingLesson.stream.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiCodingLesson.stream.test.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiCodingLesson.stream.test.ts",
+    "to": "./ai/autonomyPolicy"
+  },
+  {
+    "from": "server/services/aiCodingLesson.stream.test.ts",
+    "to": "./aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/aiCodingLesson.stream.test.ts",
+    "to": "./ai/aiSafety"
   },
   {
     "from": "server/services/aiCodingMode.stream.test.ts",
@@ -10504,11 +10744,51 @@
     "to": "./aiCopilotActions"
   },
   {
+    "from": "server/services/aiCopilotActions.chonKhoi.test.ts",
+    "to": "./aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiCopilotActions.chonKhoi.test.ts",
+    "to": "./aiLocalTools/writeHandlers/applyDiff"
+  },
+  {
+    "from": "server/services/aiCopilotActions.chonKhoi.test.ts",
+    "to": "./aiLocalTools/writeHandlers/applyDiffBatch"
+  },
+  {
+    "from": "server/services/aiCopilotActions.chonKhoi.test.ts",
+    "to": "./aiLocalTools/repoSandbox"
+  },
+  {
+    "from": "server/services/aiCopilotActions.chonKhoi.test.ts",
+    "to": "./auditTrailService"
+  },
+  {
+    "from": "server/services/aiCopilotActions.chonKhoi.test.ts",
+    "to": "../db/auth"
+  },
+  {
+    "from": "server/services/aiCopilotActions.chonKhoi.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiCopilotActions.chonKhoi.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiCopilotActions.chonKhoi.test.ts",
+    "to": "../../drizzle/schema/auth"
+  },
+  {
     "from": "server/services/aiCopilotActions.contract.test.ts",
     "to": "./aiLocalTools/toolRegistry"
   },
   {
     "from": "server/services/aiCopilotActions.contract.test.ts",
+    "to": "./aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiCopilotActions.giandQuyen.test.ts",
     "to": "./aiCopilotActions"
   },
   {
@@ -10542,6 +10822,14 @@
   {
     "from": "server/services/aiCopilotActions.ts",
     "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiCopilotActions.ts",
+    "to": "../../client/src/lib/diffHunks"
+  },
+  {
+    "from": "server/services/aiCopilotActions.ts",
+    "to": "./aiLocalTools/writeHandlers/applyDiff"
   },
   {
     "from": "server/services/aiCopilotActions.ts",
@@ -11089,6 +11377,10 @@
   },
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./ai/codingLessonContext"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
     "to": "./aiReranker"
   },
   {
@@ -11138,6 +11430,10 @@
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
     "to": "./ai/dataCitation"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiLocalTools/intentClassifier"
   },
   {
     "from": "server/services/aiLocalTools/analyticsTools.test.ts",
@@ -11632,6 +11928,10 @@
     "to": "./repoSandbox"
   },
   {
+    "from": "server/services/aiLocalTools/repoGrepDinhNghia.test.ts",
+    "to": "./repoReadTools"
+  },
+  {
     "from": "server/services/aiLocalTools/repoProjects.test.ts",
     "to": "./repoProjects"
   },
@@ -11645,6 +11945,14 @@
   },
   {
     "from": "server/services/aiLocalTools/repoProjects.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoProjectsDangKy.test.ts",
+    "to": "./repoProjects"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoProjectsDangKy.test.ts",
     "to": "./repoSandbox"
   },
   {
@@ -12070,6 +12378,14 @@
   {
     "from": "server/services/aiLocalTools/writeHandlers/repoCommand.ts",
     "to": "../../auditTrailService"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/repoCommandTuChoiNgan.test.ts",
+    "to": "../repoCommandSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/repoCommandTuChoiNgan.test.ts",
+    "to": "../toolRegistry"
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers/visionControl.ts",
@@ -22416,6 +22732,10 @@
     "to": "./BetaBadge"
   },
   {
+    "from": "client/src/components/confirmActionCardChan.unit.test.ts",
+    "to": "./ConfirmActionCard"
+  },
+  {
     "from": "client/src/components/ConnectionBanner.tsx",
     "to": "../lib/socketManager"
   },
@@ -23236,6 +23556,10 @@
     "to": "./canonicalStatusColor"
   },
   {
+    "from": "client/src/lib/cayTepHienThi.unit.test.ts",
+    "to": "./cayTepHienThi"
+  },
+  {
     "from": "client/src/lib/congDoiMatKhau.unit.test.ts",
     "to": "./congDoiMatKhau"
   },
@@ -23245,6 +23569,10 @@
   },
   {
     "from": "client/src/lib/diffHunks.unit.test.ts",
+    "to": "./diffHunks"
+  },
+  {
+    "from": "client/src/lib/diffHunksChonKhoi.unit.test.ts",
     "to": "./diffHunks"
   },
   {
@@ -23286,6 +23614,14 @@
   {
     "from": "client/src/lib/featureFlagError.unit.test.ts",
     "to": "./featureFlagError"
+  },
+  {
+    "from": "client/src/lib/goiYDuAn.unit.test.ts",
+    "to": "./goiYDuAn"
+  },
+  {
+    "from": "client/src/lib/khungVuaManHinh.unit.test.ts",
+    "to": "./khungVuaManHinh"
   },
   {
     "from": "client/src/lib/kinematics.unit.test.ts",
@@ -23358,6 +23694,10 @@
   {
     "from": "client/src/lib/severityCanonical.unit.test.ts",
     "to": "./severityCanonical"
+  },
+  {
+    "from": "client/src/lib/soKhoiMa.unit.test.ts",
+    "to": "./soKhoiMa"
   },
   {
     "from": "client/src/lib/trpc.ts",
@@ -23676,12 +24016,28 @@
     "to": "./useAuth"
   },
   {
+    "from": "shared/aiCodingLesson.ts",
+    "to": "./aiCodingSession"
+  },
+  {
     "from": "shared/aiCodingLoop.test.ts",
     "to": "./aiCodingLoop"
   },
   {
+    "from": "shared/aiCodingMoc.test.ts",
+    "to": "./aiCodingMoc"
+  },
+  {
     "from": "shared/aiCodingSession.test.ts",
     "to": "./aiCodingSession"
+  },
+  {
+    "from": "shared/aiCodingTuChoi.test.ts",
+    "to": "./aiCodingTuChoi"
+  },
+  {
+    "from": "shared/aiCodingTuChoiGhi.test.ts",
+    "to": "./aiCodingLoop"
   },
   {
     "from": "shared/editions.ts",
@@ -23706,6 +24062,10 @@
   {
     "from": "drizzle/schema/ai.ts",
     "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/aiCodingLesson.ts",
+    "to": "./auth"
   },
   {
     "from": "drizzle/schema/aiCodingSession.ts",
@@ -24070,6 +24430,14 @@
   {
     "from": "drizzle/schema/index.ts",
     "to": "./aiCodingSession"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./aiCodingLesson"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./aiRepoDuAn"
   },
   {
     "from": "drizzle/schema/inspection.ts",
