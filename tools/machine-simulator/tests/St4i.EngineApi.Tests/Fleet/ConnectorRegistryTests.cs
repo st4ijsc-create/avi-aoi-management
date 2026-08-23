@@ -84,19 +84,121 @@ public sealed class ConnectorRegistryTests
         Assert.Equal(new[] { DriverKinds.Modbus, DriverKinds.OpcUa }, registry.RegisteredIds.OrderBy(x => x, StringComparer.Ordinal));
     }
 
+    /// <summary>🔴 <b>THE ITEM 47 WITNESS — and it is a REPLACEMENT of an assertion, not an addition beside
+    /// one.</b> This method used to be
+    /// <c>Register_CalledTwiceForTheSameId_ReplacesThePreviousEntry</c>, and it read: register two different
+    /// factories under one defaulted key, then <c>Assert.Same(secondDriver, driver)</c>. That assertion
+    /// PINNED the defect — the silent retirement item 47 is about — so under the owner's ruling of
+    /// 2026-08-23 it could not merely be joined by a new test; it had to stop being true. It is quoted here
+    /// rather than deleted, the way this repository retires any published claim.
+    ///
+    /// <para><b>It goes red on the pre-fix tree.</b> Measured, not assumed: reverting the single
+    /// <c>keyWasDefaulted</c> block in <see cref="ConnectorRegistry.Register"/> makes
+    /// <c>Assert.Throws</c> fail with "no exception was thrown", and restoring it makes it pass. The control
+    /// pair is recorded in the task report.</para>
+    ///
+    /// <para><b>What it does NOT measure.</b> It does not reach either shipped composition root — see
+    /// <see cref="ConnectorRegistry.Register"/>'s own "what this check does not measure" paragraph for the
+    /// measurement that says no shipped wiring can reach this throw today. It says nothing about two
+    /// registrations under the same EXPLICIT id (those still replace; the sibling test below pins that), and
+    /// nothing about whether the surviving connector was the RIGHT one — the whole point is that the question
+    /// is no longer asked.</para></summary>
     [Fact]
-    public void Register_CalledTwiceForTheSameId_ReplacesThePreviousEntry()
+    public void TwoDefaultKeyedRegistrations_ThrowNamingBothConnectors_RatherThanSilentlyRetiringOne()
     {
         var registry = new ConnectorRegistry();
         var firstDriver = new FakeDriver();
         var secondDriver = new FakeDriver();
 
         registry.Register(new FakeFactory("vendor.acme.widget", _ => (true, firstDriver, null)), config: "first");
-        registry.Register(new FakeFactory("vendor.acme.widget", _ => (true, secondDriver, null)), config: "second");
 
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            registry.Register(new FakeFactory("vendor.acme.widget", _ => (true, secondDriver, null)), config: "second"));
+
+        // "nêu tên CẢ HAI" — both sides have to be in the message, or an operator reading a startup crash
+        // learns only that something collided.
+        Assert.Contains("vendor.acme.widget", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("INCUMBENT", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("REJECTED", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(typeof(FakeFactory).FullName!, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("item 47", ex.Message, StringComparison.Ordinal);
+
+        // NOTHING was mutated: the incumbent is still the one that answers, so a caller that catches this
+        // exception is left with a consistent registry rather than a half-applied one.
         Assert.Single(registry.RegisteredIds);
-        registry.TryCreateDriver("vendor.acme.widget", out var driver, out _);
+        Assert.True(registry.TryCreateDriver("vendor.acme.widget", out var driver, out _));
+        Assert.Same(firstDriver, driver);
+    }
+
+    /// <summary>🔴 Item 47's other half, and it is the GUARD rather than the witness: it was green before the
+    /// fix and is green after it. An EXPLICITLY NAMED id still replaces, because naming an id is the caller
+    /// saying which connector it means — <c>ConnectorEndpoints</c>' upsert,
+    /// <c>RtuBusConfiguration.TryRegisterAll</c> and <c>ModbusMultidropRegistration.RegisterAll</c> all rest
+    /// on that, and the ruling was about the key nobody chose.</summary>
+    [Fact]
+    public void ANamedInstanceId_StillReplaces_BecauseTheCallerSaidWhichConnectorItMeant()
+    {
+        var registry = new ConnectorRegistry();
+        var firstDriver = new FakeDriver();
+        var secondDriver = new FakeDriver();
+
+        registry.Register(
+            new FakeFactory("vendor.acme.widget", _ => (true, firstDriver, null)), "first", instanceId: "line-a");
+        registry.Register(
+            new FakeFactory("vendor.acme.widget", _ => (true, secondDriver, null)), "second", instanceId: "line-a");
+
+        Assert.Equal(new[] { "line-a" }, registry.RegisteredIds);
+        Assert.True(registry.TryCreateDriver("line-a", out var driver, out _));
         Assert.Same(secondDriver, driver);
+    }
+
+    /// <summary>🔴 <b>Item 47's SUBJECT, measured on the real factory types rather than restated as prose —
+    /// and the POPULATION IS LISTED BEFORE IT IS COUNTED.</b> The list comes from the assembly, not from this
+    /// file: every non-abstract <see cref="IConnectorFactory"/> implementation <c>St4i.EdgeCore</c> ships. If
+    /// a fourth arrives, or if a future task splits <c>modbus</c> into two ids, this goes red and whoever did
+    /// it has to come back and read the ruling.
+    ///
+    /// <para><b>What it does NOT measure:</b> nothing about WIRING. It never touches a composition root, so
+    /// it cannot tell you whether any host actually registers two of these with a defaulted key — see
+    /// <see cref="ConnectorRegistry.Register"/>'s own remarks for that measurement, which says no shipped host
+    /// does. It also ignores test doubles and any third-party factory, which live in other assemblies.</para></summary>
+    [Fact]
+    public void TheEdgeCoreConnectorFactories_AreThree_AndTheTwoModbusOnesShareOneDefaultKey()
+    {
+        var factoryTypes = typeof(ConnectorRegistry).Assembly
+            .GetTypes()
+            .Where(t => typeof(IConnectorFactory).IsAssignableFrom(t) && t is { IsAbstract: false, IsInterface: false })
+            .Select(t => t.FullName!)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            new[]
+            {
+                "St4i.EdgeCore.Drivers.Modbus.ModbusConnectorFactory",
+                "St4i.EdgeCore.Drivers.Modbus.ModbusRtuConnectorFactory",
+                "St4i.EdgeCore.Drivers.OpcUa.OpcUaConnectorFactory",
+            },
+            factoryTypes);
+
+        var tcp = new St4i.EdgeCore.Drivers.Modbus.ModbusConnectorFactory(new St4i.EdgeCore.Drivers.Modbus.ModbusOptions());
+        var rtu = new St4i.EdgeCore.Drivers.Modbus.ModbusRtuConnectorFactory(
+            busKey: "COM9:19200:8E1",
+            openLink: _ => throw new NotSupportedException("this test never opens a link"),
+            busRegistry: new St4i.EdgeCore.Drivers.Modbus.ModbusBusRegistry());
+
+        // The collision itself: two DIFFERENT factory types, one Kind, therefore one default key.
+        Assert.Equal(DriverKinds.Modbus, tcp.Kind);
+        Assert.Equal(DriverKinds.Modbus, rtu.Kind);
+        Assert.NotSame(tcp.GetType(), rtu.GetType());
+
+        // And what that used to do, driven through the real registry rather than argued about.
+        var registry = new ConnectorRegistry();
+        Assert.True(registry.Register(tcp, "{}"));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => registry.Register(rtu, "{}"));
+        Assert.Contains("ModbusConnectorFactory", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("ModbusRtuConnectorFactory", ex.Message, StringComparison.Ordinal);
     }
 
     // ─────────────────────────────────────────────────────────────────────

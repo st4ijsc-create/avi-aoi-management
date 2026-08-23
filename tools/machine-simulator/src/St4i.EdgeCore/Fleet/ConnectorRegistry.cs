@@ -118,8 +118,40 @@ public sealed class ConnectorRegistry
     /// key, so an omitted id reproduces this method's previous behaviour exactly).
     /// <paramref name="config"/> is stored verbatim and opaque — this method never parses it, only hands it
     /// back to <paramref name="factory"/> unchanged on every future <see cref="TryCreateDriver"/> call for
-    /// this id. Re-registering the same instance id replaces the previous entry (last write wins) rather than
-    /// throwing — a host is free to reconfigure a connector and register again.
+    /// this id. Re-registering the same instance id — <b>named explicitly</b> — replaces the previous entry
+    /// (last write wins) rather than throwing: a host is free to reconfigure a connector and register again,
+    /// and <c>ConnectorEndpoints</c>' upsert, <c>RtuBusConfiguration.TryRegisterAll</c> and
+    /// <c>ModbusMultidropRegistration.RegisterAll</c> all depend on that.
+    ///
+    /// <para>🔴 <b>OWNER'S RULING 2026-08-23, docs/owner-decisions.md item 47 — A REGISTRATION THAT DID NOT
+    /// NAME AN INSTANCE ID AND LANDS ON AN OCCUPIED KEY NOW THROWS, NAMING BOTH SIDES.</b> That is the whole
+    /// change, and its shape comes from the measured failure rather than from the word "duplicate":
+    /// <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusConnectorFactory"/> and
+    /// <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusRtuConnectorFactory"/> both report
+    /// <see cref="DriverKinds.Modbus"/> as their <see cref="IConnectorFactory.Kind"/>, so two DIFFERENT
+    /// connectors that each let this method DEFAULT their key both derive <c>"Modbus"</c> — and whichever
+    /// registered second used to retire the first with no message at all, making the survivor a function of
+    /// registration ORDER, a variable nobody declares. The same shape applies to two TCP endpoints, whose
+    /// host/port are baked into the adapter at construction. An id the caller CHOSE is a different act: the
+    /// caller named the thing it meant to replace, and every path that does so already carries its own
+    /// collision message.</para>
+    ///
+    /// <para>🔴 <b>THE PRICE, RECORDED HERE BECAUSE THIS IS WHERE IT IS PAID.</b> A host that wires two
+    /// default-keyed connectors of one kind used to start, run on one of them, and say nothing. It now
+    /// FAILS LOUDLY AT STARTUP: production calls this from inside a DI singleton factory lambda, so the
+    /// exception faults <c>GetRequiredService&lt;FleetHost&gt;()</c> and the process does not come up. That
+    /// is the outcome the owner chose over a silent one.</para>
+    ///
+    /// <para>🔴 <b>WHAT THIS CHECK DOES NOT MEASURE, said where its result shows up.</b> (1) It says nothing
+    /// about two registrations under the SAME EXPLICIT id — those still replace, by design, and what guards
+    /// them is <c>ConnectorsConfig.ResolveEntries</c>' first-entry-per-registration-key rule, which skips the
+    /// later entry with a warning naming both. (2) Measured over both shipped composition roots at
+    /// <c>47862d2a</c>, <b>no path reaches this throw today</b>: <c>St4i.EngineApi/Program.cs</c> guards its
+    /// three default-keyed sources with <c>alreadyConfiguredKinds</c> (env vars, then unioned with every
+    /// connectors.json key before the persisted rows are replayed), and <c>St4i.EdgeService/EdgeConnectors</c>
+    /// has no env-var route at all and passes an explicit key. So this is a guard on the API's CONTRACT, not
+    /// a repair of a live wiring — a third-party host, or a future source added to either root, is what it
+    /// exists for.</para>
     ///
     /// <para><b>Review finding (fix round 1) — this is the one unguarded third-party entry point.</b>
     /// <paramref name="factory"/>'s <see cref="IConnectorFactory.Kind"/> getter is vendor-implemented code,
@@ -143,12 +175,18 @@ public sealed class ConnectorRegistry
     /// <param name="config">Stored verbatim and opaque; see the remarks above.</param>
     /// <param name="instanceId">Task D-1 — this connector INSTANCE's own id, the key this registry uses.
     /// <see langword="null"/>/blank (the default) means "use the factory's own normalized
-    /// <see cref="IConnectorFactory.Kind"/>", which is byte-for-byte the key this method used before D-1 —
-    /// so every pre-existing call site keeps its exact previous behaviour, including last-write-wins for a
-    /// second registration of the same kind. Pass a distinct id to run two connectors of the SAME kind side
-    /// by side (the whole point of D-1). Normalized through <see cref="DriverKinds.Normalize"/> like every
-    /// other id in this codebase, which is also what keeps an operator-chosen id of <c>"modbus"</c> from
-    /// becoming a SECOND entry alongside the built-in <c>"Modbus"</c>.</param>
+    /// <see cref="IConnectorFactory.Kind"/>", which is byte-for-byte the key this method used before D-1.
+    /// Pass a distinct id to run two connectors of the SAME kind side by side (the whole point of D-1).
+    /// Normalized through <see cref="DriverKinds.Normalize"/> like every other id in this codebase, which is
+    /// also what keeps an operator-chosen id of <c>"modbus"</c> from becoming a SECOND entry alongside the
+    /// built-in <c>"Modbus"</c>.
+    ///
+    /// <para>🔴 <b>OWNER'S RULING 2026-08-23, item 47 — OMITTING THIS ARGUMENT ONTO AN OCCUPIED KEY IS NOW AN
+    /// ERROR, NOT A REPLACEMENT.</b> See <see cref="Register"/>'s own remarks for the whole statement,
+    /// including the price. The sentence that used to stand here — "so every pre-existing call site keeps its
+    /// exact previous behaviour, including last-write-wins for a second registration of the same kind" — is
+    /// quoted rather than deleted because it is exactly the behaviour the ruling removed, and only for the
+    /// half of it that concerns an OMITTED id. Naming an id explicitly still replaces.</para></param>
     /// <param name="machineCode">Task D-1 — the machine code this instance serves, if it knows it. This is
     /// the binding <c>FleetHost</c> routes a write on; see the class doc comment for why a claim that
     /// another instance already holds is REFUSED rather than allowed to overwrite. <see langword="null"/>
@@ -159,6 +197,9 @@ public sealed class ConnectorRegistry
     /// <paramref name="machineCode"/> is already claimed by a DIFFERENT instance id (in which case nothing
     /// is mutated — the existing claim wins, and the caller can name the incumbent via
     /// <see cref="TryGetInstanceIdForMachine"/> to log a message an operator can act on).</returns>
+    /// <exception cref="InvalidOperationException">🔴 Item 47 — <paramref name="instanceId"/> was omitted (or
+    /// blank) and the key derived from <paramref name="factory"/>'s own <see cref="IConnectorFactory.Kind"/>
+    /// is already registered. The message names BOTH connectors. Nothing is mutated.</exception>
     public bool Register(IConnectorFactory factory, string config, string? instanceId = null, string? machineCode = null)
     {
         ArgumentNullException.ThrowIfNull(factory);
@@ -183,7 +224,8 @@ public sealed class ConnectorRegistry
         // The instance id defaults to the kind — the pre-D-1 key, verbatim. A blank/whitespace explicit id is
         // treated the same as omitting it rather than rejected: an empty key is never a useful identity, and
         // silently keying on "" would be strictly worse than falling back to the one sensible default.
-        var id = string.IsNullOrWhiteSpace(instanceId) ? kind : DriverKinds.Normalize(instanceId.Trim());
+        var keyWasDefaulted = string.IsNullOrWhiteSpace(instanceId);
+        var id = keyWasDefaulted ? kind : DriverKinds.Normalize(instanceId!.Trim());
         if (string.IsNullOrWhiteSpace(id))
         {
             return false;
@@ -193,6 +235,24 @@ public sealed class ConnectorRegistry
 
         lock (_registerGate)
         {
+            // 🔴 Item 47's whole fix. Inside the gate, because "is this key free" and "take this key" are one
+            // question about one moment — asked outside it, two concurrent default-keyed registrations would
+            // each look, each find the key free, and one would still vanish silently.
+            if (keyWasDefaulted && _entries.TryGetValue(id, out var incumbent))
+            {
+                throw new InvalidOperationException(
+                    $"Two connectors both claim the default registration key '{id}'. " +
+                    $"INCUMBENT: factory '{incumbent.Factory.GetType().FullName}' (kind '{incumbent.Kind}', machine " +
+                    $"'{incumbent.MachineCode ?? "(unbound)"}'). " +
+                    $"REJECTED: factory '{factory.GetType().FullName}' (kind '{kind}', machine " +
+                    $"'{claim ?? "(unbound)"}'). " +
+                    "A registration that does not name an instanceId keys on its factory's Kind, and this build " +
+                    "has more than one factory per kind — so which of these two survives would be decided by " +
+                    "registration ORDER and the other would disappear with no message. Give at least one of them " +
+                    "an explicit instanceId (ConnectorRegistry.Register's third argument), or remove one of the " +
+                    "two configuration sources. See docs/owner-decisions.md item 47.");
+            }
+
             if (claim is not null)
             {
                 foreach (var (existingId, existingEntry) in _entries)

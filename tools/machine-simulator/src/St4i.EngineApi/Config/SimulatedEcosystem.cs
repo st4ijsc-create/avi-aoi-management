@@ -556,18 +556,47 @@ public sealed class SimulatedEcosystem : IConfigSyncBackend
             foreach (var r in BuildSeedRecipes()) _recipes[r.Code] = r;
         }
 
-        if (!productsExisted || !recipesExisted) Save();
+        // 🔴 OWNER'S RULING 2026-08-23, item 45 — SEED ONLY THE FILE THAT IS ACTUALLY MISSING. This line
+        // read `if (!productsExisted || !recipesExisted) Save();`, and Save() writes BOTH files: an operator
+        // who deleted exactly one of them lost the OTHER one, the one they had authored, to a re-serialize
+        // from a constructor, with no warning. Byte-for-byte the defect V-1 fixed for ProductConfigStore
+        // (item 5) still living in the sibling store — and since item 30 moved this store's default root to
+        // %ProgramData%\ST4I\sim\, the file it overwrote was one `remove-data.ps1` DELIBERATELY KEEPS under
+        // the owner's 2026-08-23(b) ruling, on the grounds that operator-authored configuration is not
+        // operational data.
+        //
+        // 🔴 WHAT THIS FIX OPENS, and item 45 says so before this line was written: the two files are no
+        // longer guaranteed mutually consistent after Load. Before it, a missing file on either side forced
+        // BOTH back to a matched seed pair; now a surviving operator-authored products.json can name a recipe
+        // that the freshly-seeded ecosystem-recipes.json does not contain, and NOTHING in this class checks
+        // cross-file integrity. That is the trade the ruling accepted: a new inconsistent state that an
+        // operator can see and repair, in place of a silent deletion they cannot.
+        if (!productsExisted) SaveProducts();
+        if (!recipesExisted) SaveRecipes();
     }
 
+    /// <summary>Writes BOTH files. Every mutation path calls this, because a mutation has touched the
+    /// in-memory state both files project from. 🔴 <see cref="Load"/> is the one caller that must NOT — see
+    /// its own comment, and <see cref="SaveProducts"/>/<see cref="SaveRecipes"/> below.</summary>
     private void Save()
     {
-        var productsPath = Path.Combine(RootDirectory, ProductsFileName);
-        var recipesPath = Path.Combine(RootDirectory, RecipesFileName);
-        WriteAllTextAtomic(productsPath, JsonSerializer.Serialize(
-            _products.Values.OrderBy(p => p.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
-        WriteAllTextAtomic(recipesPath, JsonSerializer.Serialize(
-            _recipes.Values.OrderBy(r => r.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
+        SaveProducts();
+        SaveRecipes();
     }
+
+    /// <summary>Writes <c>ecosystem-products.json</c> only. Exists so <see cref="Load"/> can seed exactly the
+    /// file it found missing (item 45) instead of rewriting its sibling as collateral.</summary>
+    private void SaveProducts() => WriteAllTextAtomic(
+        Path.Combine(RootDirectory, ProductsFileName),
+        JsonSerializer.Serialize(
+            _products.Values.OrderBy(p => p.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
+
+    /// <summary>Writes <c>ecosystem-recipes.json</c> only. The recipes half of <see cref="SaveProducts"/>'s
+    /// reason for existing.</summary>
+    private void SaveRecipes() => WriteAllTextAtomic(
+        Path.Combine(RootDirectory, RecipesFileName),
+        JsonSerializer.Serialize(
+            _recipes.Values.OrderBy(r => r.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
 
     /// <summary>Task review #6 — <c>File.WriteAllText</c> writes IN PLACE: a crash/power-loss mid-write
     /// (a real risk for an exhibition kiosk someone might just unplug) can leave a truncated/corrupt file
