@@ -1590,31 +1590,56 @@ export const en: Dictionary = {
     },
   },
 
+  // 🔴 BQ-1, 2026-08-24 — docs/owner-decisions.md item 68. THE WORDING ON THIS SCREEN ASSERTED, IN
+  // THE PRESENT AND PAST TENSE, THINGS THAT ARE NOT TRUE FOR EVERY MACHINE TYPE. "Effective" claimed
+  // the number IS the value in force; "Machine-adjusted" claimed the machine HAS BEEN adjusted. For a
+  // WELDER or a DISPENSING machine neither holds — `SimulatorFactory.Create` builds `WelderSim` and
+  // `DispensingSim` with no config store at all, so nothing reads these values, and the screen's only
+  // machine-type-aware escape hatch (`notSupported`) is UNREACHABLE for both because
+  // `ConfigKindForMachineType` never returns null for them.
+  //
+  // 🔴 WHY THE FIX IS WORDING AND NOT A BADGE. The fact "does a simulator consume this kind" EXISTS
+  // as `MachineParameterSchema.IsConsumedBySimulator`, but it reaches only `BuildPushMessage` on
+  // `POST /v1/machines/{code}/settings/push` — an endpoint web/src never calls (0 hits) — and item 42
+  // ruled, deliberately, that `MachineSettingsResponseDto` gains NO field. So this client cannot
+  // know which machines consume their settings, and a per-type badge would be a hard-coded copy of
+  // server knowledge, which is the rot that produced this defect.
+  //
+  // So every string below says only what IS known here: a value was STORED. Nothing claims it is in
+  // force, because from this client that is not knowable — and `limitation` says so out loud rather
+  // than leaving the silence to read as a promise. That is the same move `audit.limitation` makes on
+  // the Audit screen, and it is deliberately type-INDEPENDENT: it is true for every machine, so it
+  // cannot go stale the day a new simulator is wired or unwired.
   machineSettings: {
     title: "Machine Settings",
-    description: "Server recommendations — adjustable per machine or per running product when needed.",
+    description: "Server recommendations — adjustable per machine or per running product when needed. Saving a value records it; it does not by itself change how the machine runs.",
     productLabel: "Product",
     productSelectAria: "Select a product to view its configuration",
     noProducts: "No products yet.",
     iotHint: "IoT machines run no product — every adjustment applies to this machine.",
     baselineInfo: (vars: Vars) =>
-      `Recommended v${vars.version} · ${vars.driftedCount} parameter${Number(vars.driftedCount) === 1 ? "" : "s"} adjusted from the recommendation`,
+      `Recommended v${vars.version} · ${vars.driftedCount} parameter${Number(vars.driftedCount) === 1 ? "" : "s"} stored differently from the recommendation`,
     notSupported: {
       title: "No operating-configuration parameters",
       description: (vars: Vars) => `Machine type "${vars.machineType}" has no operating-configuration parameter set for this feature yet.`,
     },
+    // The honest ceiling, on the screen it applies to — same shape as `audit.limitation`.
+    limitation: {
+      title: "About these values",
+      body: "These are the values stored for this machine. Whether the machine's simulator reads them depends on its type, and this screen cannot tell you which — see the machine configuration documentation.",
+    },
     loadFailed: "Couldn't load the machine configuration.",
     columns: {
       label: "Parameter",
-      value: "Effective",
+      value: "Stored",
       range: "Allowed Range",
       recommended: "Recommended",
       source: "Source",
     },
     provenance: {
       baseline: "Recommended",
-      machine: "Machine-adjusted",
-      machineProduct: "Product-adjusted",
+      machine: "Machine override stored",
+      machineProduct: "Product override stored",
     },
     adjustedBy: (vars: Vars) => `${vars.by} · ${vars.when}`,
     adjustedByUnknown: (vars: Vars) => `${vars.when}`,

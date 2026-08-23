@@ -1621,9 +1621,28 @@ export const vi = {
   // between the HMI's CÀI ĐẶT/SETTINGS tab (`SettingsTab.tsx`, at the machine) and the machine detail
   // screen's own settings tab (`MachineSettingsPanel.tsx`, from the office) — same data source, same
   // vocabulary, per the design doc's §5.
+  // 🔴 BQ-1, 2026-08-24 — docs/owner-decisions.md mục 68. Lời văn màn hình này KHẲNG ĐỊNH THEO THÌ
+  // HIỆN TẠI VÀ QUÁ KHỨ những điều không đúng với mọi loại máy. "Hiệu lực" khẳng định con số ĐANG LÀ
+  // giá trị có tác dụng; "Chỉnh theo máy" khẳng định máy ĐÃ ĐƯỢC chỉnh. Với WELDER và DISPENSING cả
+  // hai đều sai — `SimulatorFactory.Create` dựng `WelderSim`/`DispensingSim` KHÔNG có config store,
+  // nên không gì đọc các giá trị ấy; và lối thoát duy nhất có nhận biết loại máy (`notSupported`)
+  // KHÔNG với tới được cho cả hai, vì `ConfigKindForMachineType` không bao giờ trả null cho chúng.
+  //
+  // 🔴 VÌ SAO SỬA LỜI CHỨ KHÔNG THÊM HUY HIỆU. Sự thật "có sim nào đọc kind này không" CÓ TỒN TẠI ở
+  // `MachineParameterSchema.IsConsumedBySimulator`, nhưng nó chỉ tới được `BuildPushMessage` trên
+  // `POST /v1/machines/{code}/settings/push` — endpoint mà web/src KHÔNG BAO GIỜ gọi (0 kết quả) —
+  // và mục 42 đã CỐ Ý quyết `MachineSettingsResponseDto` KHÔNG thêm trường. Nên client này thật sự
+  // không biết được, và một huy hiệu theo loại máy sẽ là bản chép tay kiến thức của server, đúng thứ
+  // rữa đã sinh ra khuyết tật này.
+  //
+  // Nên mọi chuỗi dưới đây chỉ nói cái BIẾT ĐƯỢC: một giá trị ĐÃ ĐƯỢC LƯU. Không câu nào khẳng định
+  // nó đang có tác dụng, vì từ client đó là điều không biết được — và `limitation` NÓI THẲNG ra thay
+  // vì để sự im lặng đọc như một lời hứa. Cùng một nước đi với `audit.limitation` ở màn hình Audit,
+  // và nó cố ý KHÔNG phụ thuộc loại máy: đúng với mọi máy, nên không thể lỗi thời vào ngày một sim
+  // mới được nối hoặc bị gỡ.
   machineSettings: {
     title: "Cài đặt máy",
-    description: "Khuyến nghị từ máy chủ — chỉnh riêng theo máy hoặc theo từng sản phẩm khi cần.",
+    description: "Khuyến nghị từ máy chủ — chỉnh riêng theo máy hoặc theo từng sản phẩm khi cần. Lưu một giá trị là ghi lại giá trị ấy; tự nó không làm đổi cách máy chạy.",
     productLabel: "Sản phẩm",
     productSelectAria: "Chọn sản phẩm để xem cấu hình",
     noProducts: "Chưa có sản phẩm nào.",
@@ -1631,15 +1650,20 @@ export const vi = {
     // không hiện chiều sản phẩm."
     iotHint: "Máy IoT không chạy sản phẩm — mọi điều chỉnh áp dụng cho máy này.",
     baselineInfo: (vars: Vars) =>
-      `Khuyến nghị v${vars.version} · ${vars.driftedCount} tham số đã chỉnh so với khuyến nghị`,
+      `Khuyến nghị v${vars.version} · ${vars.driftedCount} tham số đã lưu khác khuyến nghị`,
     notSupported: {
       title: "Chưa có bộ tham số vận hành",
       description: (vars: Vars) => `Loại máy "${vars.machineType}" chưa có bộ tham số vận hành cho tính năng này.`,
     },
+    // Ranh giới thật thà, đặt ngay trên màn hình nó nói về — cùng khuôn `audit.limitation`.
+    limitation: {
+      title: "Về các giá trị này",
+      body: "Đây là các giá trị đã lưu cho máy này. Bộ mô phỏng của máy có đọc chúng hay không tuỳ theo loại máy, và màn hình này không biết được loại nào — xem tài liệu cấu hình máy.",
+    },
     loadFailed: "Không thể tải cấu hình máy.",
     columns: {
       label: "Tham số",
-      value: "Hiệu lực",
+      value: "Đã lưu",
       range: "Dải cho phép",
       recommended: "Khuyến nghị",
       source: "Nguồn",
@@ -1649,8 +1673,8 @@ export const vi = {
     // which deliberately never uses the status-fault/status-warn ramp for these three values.
     provenance: {
       baseline: "Khuyến nghị",
-      machine: "Chỉnh theo máy",
-      machineProduct: "Chỉnh cho sản phẩm này",
+      machine: "Đã lưu chỉnh riêng cho máy",
+      machineProduct: "Đã lưu chỉnh cho sản phẩm này",
     },
     adjustedBy: (vars: Vars) => `${vars.by} · ${vars.when}`,
     adjustedByUnknown: (vars: Vars) => `${vars.when}`,

@@ -105,7 +105,8 @@
       substring(@Source, string-length(@Source) - string-length('\recipes.json') + 1) = '\recipes.json' or
       substring(@Source, string-length(@Source) - string-length('\ecosystem-products.json') + 1) = '\ecosystem-products.json' or
       substring(@Source, string-length(@Source) - string-length('\ecosystem-recipes.json') + 1) = '\ecosystem-recipes.json' or
-      substring(@Source, string-length(@Source) - string-length('\machine-operating-config.json') + 1) = '\machine-operating-config.json']]" />
+      substring(@Source, string-length(@Source) - string-length('\machine-operating-config.json') + 1) = '\machine-operating-config.json' or
+      substring(@Source, string-length(@Source) - string-length('\run-exhibition.bat') + 1) = '\run-exhibition.bat']]" />
 
   <!-- Drop the matching <ComponentRef> in the harvested ComponentGroup fragment (same-document
        lookup — the dropped Component's @Id is still resolvable here since template matching for
@@ -117,5 +118,6 @@
       substring(@Source, string-length(@Source) - string-length('\recipes.json') + 1) = '\recipes.json' or
       substring(@Source, string-length(@Source) - string-length('\ecosystem-products.json') + 1) = '\ecosystem-products.json' or
       substring(@Source, string-length(@Source) - string-length('\ecosystem-recipes.json') + 1) = '\ecosystem-recipes.json' or
-      substring(@Source, string-length(@Source) - string-length('\machine-operating-config.json') + 1) = '\machine-operating-config.json']]/@Id]" />
+      substring(@Source, string-length(@Source) - string-length('\machine-operating-config.json') + 1) = '\machine-operating-config.json' or
+      substring(@Source, string-length(@Source) - string-length('\run-exhibition.bat') + 1) = '\run-exhibition.bat']]/@Id]" />
 </xsl:stylesheet>

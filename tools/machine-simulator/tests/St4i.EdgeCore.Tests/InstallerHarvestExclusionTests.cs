@@ -82,6 +82,46 @@ public class InstallerHarvestExclusionTests
     private static string WixProjPath() => Path.Combine(
         MachineSimulatorRoot(), "packaging", "installer", "St4i.Installer.wixproj");
 
+    private static string PackageWxsPath() => Path.Combine(
+        MachineSimulatorRoot(), "packaging", "installer", "Package.wxs");
+
+    /// <summary>🔴 The files <c>Package.wxs</c> authors EXPLICITLY, read off Package.wxs (BQ-1,
+    /// 2026-08-24, docs/owner-decisions.md item 67).
+    ///
+    /// <para>This half of the derivation used to be the hand-typed pair
+    /// <c>{ \St4i.DesktopShell.exe, \St4i.EngineApi.exe }</c>, and that literal was the whole of item
+    /// 67: <c>ExhibitionLauncherComponent</c> was added to Package.wxs authoring a THIRD file, nobody
+    /// updated the pair, and the harvest kept a second component claiming the same installed target
+    /// path. Two components on one target path is ICE30; and because the harvested copy lands in
+    /// <c>HarvestedFiles</c> → <c>MainFeature</c> (<c>Level="1"</c>, always installed) while the
+    /// explicit one sits behind <c>ExhibitionFeature</c> (<c>Level="1000"</c>, OFF by default), it
+    /// also silently REVOKES the opt-in gate that component exists to build.</para>
+    ///
+    /// <para>Derived rather than listed for the same reason the store half is: a set fitted to
+    /// today's Package.wxs breaks at the next <c>&lt;File&gt;</c>. A fourth explicit component now
+    /// appears here on its own.</para></summary>
+    private static IReadOnlyList<string> ExplicitlyAuthoredFileNames()
+    {
+        XNamespace wix = "http://wixtoolset.org/schemas/v4/wxs";
+        var names = XDocument.Load(PackageWxsPath())
+            .Descendants(wix + "File")
+            .Select(f => (string?)f.Attribute("Name")
+                         ?? Path.GetFileName((string)f.Attribute("Source")!))
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Select(n => n!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        Assert.True(
+            names.Count > 0,
+            "Package.wxs yielded NO explicitly-authored <File> elements. Either the file moved, or its " +
+            "namespace changed and this derivation stopped matching — in which case the set below " +
+            "collapses to the store files alone and this whole assertion goes quietly vacuous, which is " +
+            "the failure shape docs/owner-decisions.md item 40 is about." + NotMeasured);
+
+        return names;
+    }
+
     // ══ WHO AUTHORS THE FILE — §8.1(a) ═════════════════════════════════════════════════════════════
     //
     // The name list is NOT "the files that happened to be in publish-desktop\ the day this was written".
@@ -288,14 +328,28 @@ public class InstallerHarvestExclusionTests
 
     /// <summary>The names that MUST survive the transform — the published payload, plus the three
     /// near-misses. Kept as a list rather than "everything not in the drop set" on purpose: the point of
-    /// the second bank is that somebody wrote down, by hand, which files the product actually ships.</summary>
+    /// the second bank is that somebody wrote down, by hand, which files the product actually ships.
+    ///
+    /// <para>🔴 <c>SourceDir\run-exhibition.bat</c> WAS ON THIS LIST AND DID NOT MEET ITS MEMBERSHIP
+    /// RULE (BQ-1, 2026-08-24, docs/owner-decisions.md item 67). This bank's own definition, one
+    /// paragraph up, is "what <c>St4i.EngineApi.csproj</c>/<c>St4i.DesktopShell.csproj</c> actually
+    /// publish". <c>run-exhibition.bat</c> is published by NEITHER — measured at BQ-1 over a domain
+    /// of <b>18 files</b> (16 <c>.csproj</c> + 1 <c>.props</c> + 1 <c>.wixproj</c>; the repository
+    /// contains no <c>.targets</c>), which mention it ZERO times. The domain is stated because a 0
+    /// over an empty set is not a fact about the pattern — <c>scripts/repo-scan.sh</c> printed both
+    /// numbers, which is what makes this sentence a measurement rather than an absence.
+    /// It reaches <c>publish-desktop\</c> only through the manual <c>copy</c> step README.md §13.5
+    /// documents (<c>build-installer.ps1</c> contains no <c>Copy-Item</c> at all), and Package.wxs
+    /// installs it itself under <c>ExhibitionFeature</c>. So it belongs in
+    /// the DROPPED bank, and its presence here was the assertion that held item 67's defect in
+    /// place — a test standing on the side of the defect, which is the worst shape a pinned defect
+    /// takes.</para></summary>
     private static readonly string[] MustSurvive =
     {
         @"SourceDir\St4i.DesktopShell.pdb",
         @"SourceDir\St4i.DesktopShell.xml",
         @"SourceDir\WebView2Loader.dll",
         @"SourceDir\wpfgfx_cor3.dll",
-        @"SourceDir\run-exhibition.bat",
         @"SourceDir\engine\fleet.json",
         @"SourceDir\engine\connectors.json",
         @"SourceDir\engine\St4i.EngineApi.staticwebassets.endpoints.json",
@@ -385,7 +439,9 @@ public class InstallerHarvestExclusionTests
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var expected = new[] { @"\St4i.DesktopShell.exe", @"\St4i.EngineApi.exe" }
+        // BOTH halves are now read off the tree (BQ-1, item 67): the explicitly-authored files come
+        // from Package.wxs instead of from a pair typed here, which is what let item 67 exist.
+        var expected = ExplicitlyAuthoredFileNames().Select(n => "\\" + n)
             .Concat(derived.Select(n => "\\" + n))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
@@ -471,6 +527,62 @@ public class InstallerHarvestExclusionTests
             "WITHOUT a path separator in front of it, which is exactly what the leading `\\` in every " +
             "needle exists to require. A needle that lost its separator, or a `contains()` rewrite, drops " +
             "them." + NotMeasured);
+    }
+
+    /// <summary>🔴 ITEM 67, AS AN ASSERTION RATHER THAN A PARAGRAPH (BQ-1, 2026-08-24).
+    ///
+    /// <para>Every file Package.wxs authors EXPLICITLY must be dropped from the harvest, because the
+    /// harvest lands in <c>[INSTALLFOLDER]</c> too — <c>St4i.Installer.wixproj</c> declares
+    /// <c>&lt;HarvestDirectory Include="..\..\publish-desktop"&gt;</c> with
+    /// <c>DirectoryRefId=INSTALLFOLDER</c> AND <c>SuppressRootDirectory=true</c>, so a file at the root
+    /// of <c>publish-desktop\</c> lands on exactly the path the explicit component claims.</para>
+    ///
+    /// <para>TWO consequences, and the second is the one no prior record named. (1) Two components on
+    /// one target path is ICE30 — a link-time failure. (2) The harvested copy is referenced by
+    /// <c>MainFeature</c> (<c>Level="1"</c>, always installed) while the explicit one sits behind its
+    /// own <c>Feature</c>; for <c>ExhibitionFeature</c> that Level is <c>1000</c> — OFF by default — so
+    /// the harvest does not merely duplicate the file, it INSTALLS A FEATURE THE OPERATOR DID NOT
+    /// CHOOSE. This assertion is one-directional on purpose: it says the explicit set must be dropped,
+    /// never that the drop set must be explicit — the five store files are dropped for an unrelated
+    /// reason (item 46) and must not be dragged into this claim.</para></summary>
+    [Fact]
+    public void EveryFilePackageWxsAuthorsExplicitly_IsDroppedFromTheHarvest()
+    {
+        var explicitNames = ExplicitlyAuthoredFileNames();
+        var before = FixtureSources();
+
+        // Non-vacuity, same rule as the store bank: a fixture that never held the file cannot witness
+        // its removal, and a silently-absent name would make this test pass by measuring nothing.
+        foreach (var name in explicitNames)
+        {
+            Assert.True(
+                before.Any(s => s.EndsWith("\\" + name, StringComparison.OrdinalIgnoreCase)),
+                $"The fixture in this file does not contain a harvested \"{name}\", which Package.wxs " +
+                "authors explicitly, so asserting that the transform drops it would pass without " +
+                "measuring anything. Add it to HarvestedFragment at the depth heat really emits it." +
+                NotMeasured);
+        }
+
+        var after = SurvivingSources(Transformed());
+        var collided = after
+            .Where(s => explicitNames.Any(n => s.EndsWith("\\" + n, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        Assert.True(
+            collided.Count == 0,
+            $"{collided.Count} file(s) survive the harvest that Package.wxs ALSO authors explicitly: " +
+            $"{string.Join(", ", collided)}\n" +
+            "  Both copies resolve to the SAME installed path ([INSTALLFOLDER], via " +
+            "SuppressRootDirectory + DirectoryRefId=INSTALLFOLDER), so the build either fails ICE30 or " +
+            "installs the file from the HARVESTED component — which MainFeature (Level=\"1\") always " +
+            "installs, revoking the opt-in gate the explicit Feature was authored to provide.\n" +
+            "  Reachable only from `build-installer.ps1 -SkipDotnetPublish`: the ordinary path runs " +
+            "`Remove-Item -Recurse -Force publish-desktop` first (build-installer.ps1:91), and that " +
+            "delete is exactly the protection the owner's 2026-08-23 ruling on item 46 said the " +
+            "exclusion must not lean on.\n" +
+            "  Fix by adding the needle to BOTH templates in the stylesheet, not by editing this test: " +
+            "the tree's own authored intent (ExhibitionFeature Level=\"1000\", \"OFF by default\") is " +
+            "the source of truth here." + NotMeasured);
     }
 
     /// <summary>The floor under the transcription. These two needles are known to fire against real heat

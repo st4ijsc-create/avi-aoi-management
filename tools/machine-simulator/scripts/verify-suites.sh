@@ -2493,8 +2493,29 @@ EXPECT_CONFORMANCE=24
 # task and UNCHANGED at 219, with the fourteen-row ledger unmoved unit for unit. Nothing was suppressed —
 # no .editorconfig change, no <NoWarn>, no #pragma, no SuppressMessage. EXPECT_BUILD_NODES stays 0.
 # BP-1 touches NO web/ file, so the `npm run build` leg BN-1 had to run does not arise here.
+#
+# ── BQ-1, 2026-08-24 — EXPECT_EDGECORE 1274 -> 1275 (+1). ONE TEST, NAMED ─────────────────────────────
+# +1  tests/St4i.EdgeCore.Tests/InstallerHarvestExclusionTests.cs —
+#     EveryFilePackageWxsAuthorsExplicitly_IsDroppedFromTheHarvest, item 67. It states item 67's defect
+#     as an assertion DERIVED from the tree (Package.wxs's own <File> elements) rather than as a
+#     paragraph, and it carries a non-vacuity guard first, so a fixture that lost the file fails loudly
+#     instead of passing by measuring nothing.
+#
+# 🔴 THE NUMBER WAS MEASURED BEFORE IT WAS WRITTEN, and it was measured by THIS GATE going RED on it:
+# the run at 9c3e0704 reported "St4i.EdgeCore.Tests: total 1275, expected 1274" and refused. 1275 is
+# read off that refusal, not predicted from "I added one [Fact]" — which would have been an arithmetic
+# claim about a discovery process this repo has twice found to be wrong about itself.
+# The other four suites are UNCHANGED and were re-measured in the same run: 161, 24, 52, 1443.
+# Grand total 2954 -> 2955; `grand` is COMPUTED from the five constants, so there is no second literal
+# to move and no place for the two to disagree.
+#
+# NOT MOVED by this task: EXPECT_WARNINGS (219, re-measured in the same run, ledger 185/34 unmoved),
+# EXPECT_BUILD_NODES (0), the three settle constants, the process matcher, the exclusive lock.
+# BQ-1 DOES touch web/ (item 68), so `npm run build` was run by hand and is green — and the web/ domain
+# declaration below is DERIVED, so it corrected itself from 28 specs/142 sites to 29/144 on this run
+# without anybody editing a number. That is the shape every constant in this block is trying to be.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1274
+EXPECT_EDGECORE=1275
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -5210,8 +5231,38 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # instrument in this repository reads. That gap predates BP-1 and is recorded, not closed.
 #
 # The baseline cfcfae42 is NOT moved.
+#
+# ── BQ-1, 2026-08-24 — 497 -> 500. THREE ADDED, NONE WITHDRAWN, ALL IN ONE FILE ────────────────────────
+# 497 + 3 = 500. The corpus is C# only, and this task touched exactly ONE .cs file —
+# tests/St4i.EdgeCore.Tests/InstallerHarvestExclusionTests.cs (item 67). Every other edit it made lands
+# in .xslt, .sh, .ts/.tsx and .md, which boundary (e) does not read.
+#
+# 🔴 EACH OF THE THREE WAS READ AND SHOWN TO BE TRUE BEFORE THIS NUMBER MOVED, which is the whole
+# protocol; they are listed rather than counted so a later reader can re-check them one at a time:
+#
+#   1. "Every file Package.wxs authors EXPLICITLY must be dropped from the harvest, because the harvest
+#      lands in [INSTALLFOLDER] too..." — VERIFIED against St4i.Installer.wixproj: <HarvestDirectory
+#      Include="..\..\publish-desktop"> (:47) with <DirectoryRefId>INSTALLFOLDER</DirectoryRefId> (:49)
+#      AND <SuppressRootDirectory>true</SuppressRootDirectory> (:52). Read as stated: it is a claim about
+#      what MUST hold, and the test beside it is what makes it hold.
+#   2. "This assertion is one-directional on purpose: it says the explicit set must be dropped, never that
+#      the drop set must be explicit..." — VERIFIED against the test body, which iterates ONLY
+#      ExplicitlyAuthoredFileNames() and never asserts the converse. The five store files (item 46) are
+#      dropped for an unrelated reason and are not touched by it.
+#   3. "run-exhibition.bat is published by NEITHER — measured at BQ-1 over a domain of 18 files ... which
+#      mention it ZERO times." — 🔴 THIS ONE IS AN EXISTENCE NEGATION, so the DOMAIN was measured before
+#      the zero was believed, through scripts/repo-scan.sh: 18 files in scope
+#      (:(top)*.csproj=16, :(top)*.props=1, :(top)*.targets=0, :(top)*.wixproj=1), 0 result lines, exit 1.
+#      A 0 over an empty set would have been item 32's species; over 18 files it is a measurement. The
+#      domain is written into the doc comment itself for the same reason. Corroborated independently:
+#      build-installer.ps1 contains no Copy-Item at all.
+#
+# NONE WITHDRAWN: no existing claim in that file was retracted or reworded out of the corpus, so unlike
+# BP-1's 469 - 3 + 31 there is no subtraction term here. The arithmetic is 497 + 3 and nothing else.
+#
+# The baseline cfcfae42 is STILL not moved.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_NEW_DOC_ABSOLUTES=497
+EXPECT_NEW_DOC_ABSOLUTES=500
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
@@ -5345,6 +5396,12 @@ run_tooling_check() {                       # $1 = human name, $2.. = argv
 }
 
 run_tooling_check "owner-decisions structure" "$_SCRIPTDIR/check-owner-decisions.sh"
+# 🔴 BQ-1, 2026-08-24, item 73. The line above asserts the RECORD is consistent; this one asserts the
+# INSTRUMENT still reads the two shapes it was repaired to read. They are different claims and the
+# first has never implied the second: check-owner-decisions.sh was green on every run for the whole
+# time C2 could not tell a quoted status token from a claimed one. The fixture bank includes two
+# cases that must NOT change, so a green here is not merely "something happened".
+run_tooling_check "owner-decisions C2 shapes"  "$_SCRIPTDIR/check-owner-decisions.sh" --self-test
 run_tooling_check "repo-scan cwd-invariance"  "$_SCRIPTDIR/repo-scan.sh" --self-test
 run_tooling_check "new absolute doc claims"   "$_SCRIPTDIR/scan-doc-negations.sh" \
                   --since "$DOC_ABSOLUTES_BASELINE" --expect "$EXPECT_NEW_DOC_ABSOLUTES"
