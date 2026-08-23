@@ -43,6 +43,10 @@ public sealed class SwitchableConfigSyncBackend : IConfigSyncBackend
 
     public string Name => Inner.Name;
 
+    /// <summary>Forwarded, like everything else — the answer belongs to whichever backend is actually
+    /// mounted right now, and a swap between Demo and Live changes it.</summary>
+    public bool PullCarriesLifecycleStatus => Inner.PullCarriesLifecycleStatus;
+
     public Task<IReadOnlyList<ProductVersionDto>> CheckPointsVersionAsync(string? productModelCode, CancellationToken ct) =>
         Inner.CheckPointsVersionAsync(productModelCode, ct);
 

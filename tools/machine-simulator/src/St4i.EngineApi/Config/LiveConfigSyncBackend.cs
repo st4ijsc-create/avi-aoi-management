@@ -114,6 +114,22 @@ public sealed class LiveConfigSyncBackend : IConfigSyncBackend, IDisposable
 
     public string Name => "Live";
 
+    /// <summary>🔴 <b>Task BN-1, 2026-08-24 — <c>docs/owner-decisions.md</c> item 57, leg 2 —
+    /// <see langword="false"/>, and this is the whole defect stated as a value.</b> <c>get-points</c>'
+    /// response shape carries no <c>lifecycleStatus</c>, and <c>GetPointsProductWire</c> declares no
+    /// member for one, so <see cref="ToProductModel"/> has nothing to assign and the aggregate it
+    /// returns holds <see cref="ProductModel"/>'s own <c>Development</c> default. Until BN-1 that default
+    /// travelled into <c>ConfigSyncEngine.PullAsync</c>'s wholesale <c>UpsertProduct</c> and OVERWROTE
+    /// whatever the machine held — a value nobody sent, replacing one somebody chose.
+    ///
+    /// <para><b>This flag is a declaration, not a fix by itself.</b> Nothing here changes what goes on
+    /// the wire in either direction; the wire is out of this product's gift (see this class's own
+    /// remarks and <c>LiveConfigSyncWireDtos</c>' header — the DTOs MIRROR a server this repository does
+    /// not own). What changes is that the engine now knows the difference between "the ecosystem says
+    /// Development" and "nothing arrived", which is exactly the distinction the returned model cannot
+    /// carry.</para></summary>
+    public bool PullCarriesLifecycleStatus => false;
+
     public void Dispose() => _http.Dispose();
 
     // ─────────────────────────────────────────────────────────────────────
@@ -674,6 +690,12 @@ public sealed class LiveConfigSyncBackend : IConfigSyncBackend, IDisposable
         // default (Development). Purely descriptive locally either way: threshold governance for a Live
         // push is enforced SERVER-SIDE and its outcome (limitBlocked) comes back on the sync-points
         // response, not computed from this field.
+        //
+        // 🔴 BN-1, 2026-08-24 — that default no longer REACHES the machine's stored product. This class
+        // answers PullCarriesLifecycleStatus => false, and ConfigSyncEngine.PullAsync carries the
+        // machine's existing value across its wholesale UpsertProduct when a backend says so. Nothing
+        // here changed; what changed is that the engine can now tell "nothing arrived" apart from "the
+        // ecosystem said Development", which this model cannot express.
     };
 
     /// <summary>Flattens a parsed <see cref="JsonElement"/> object into a plain

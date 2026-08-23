@@ -60,6 +60,14 @@ public sealed class SimulatedEcosystem : IConfigSyncBackend
     /// <summary>Backend name shown in config-sync surfaces.</summary>
     public string Name => "Demo";
 
+    /// <summary>🔴 Task BN-1 — <see langword="true"/>: this store persists a whole
+    /// <see cref="ProductModel"/>, <see cref="ProductModel.LifecycleStatus"/> included, and
+    /// <see cref="GetPointsAsync"/> hands back a deep clone of it. A pull from Demo therefore carries a
+    /// real lifecycle and SHOULD overwrite the machine's — the ecosystem is the authority for a field
+    /// the ecosystem actually holds. See <see cref="IConfigSyncBackend.PullCarriesLifecycleStatus"/> for
+    /// what the other answer costs.</summary>
+    public bool PullCarriesLifecycleStatus => true;
+
     /// <summary>🔴 The machine-wide default root — <c>%ProgramData%\ST4I\sim\ecosystem</c> — as of the owner's
     /// ruling of 2026-08-23(a). Before it, an <c>ecosystem</c> subfolder of
     /// <see cref="AppContext.BaseDirectory"/>; this store called <see cref="Directory.CreateDirectory"/> on

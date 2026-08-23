@@ -662,6 +662,9 @@ export const vi = {
       hint: "Bấm vào ảnh để thêm điểm đo tại vị trí đó — bấm vào một điểm để chỉnh sửa.",
       noImageCaption: "Chưa có ảnh tham chiếu",
       unplacedNote: (vars: Vars) => `${vars.count} điểm chưa xác định vị trí trên ảnh — chỉnh trong danh sách bên dưới.`,
+      // BN-1 — owner-decisions mục 57, khuyết tật 4: một fiducial không đặt được từng biến mất không
+      // đếm, không báo, trong khi một điểm đo ở đúng trạng thái ấy có dòng ngay trên.
+      unplacedFiducialsNote: (vars: Vars) => `${vars.count} fiducial chưa xác định vị trí trên ảnh — chỉnh trong bảng fiducial.`,
       ariaLabel: (vars: Vars) => `Bản đồ điểm đo — ${vars.count} điểm đang hiển thị`,
       pointAria: (vars: Vars) => `Điểm đo ${vars.code} — ${vars.name}`,
       figTitle: "HÌNH 02 — SƠ ĐỒ THAM CHIẾU BO MẠCH",
