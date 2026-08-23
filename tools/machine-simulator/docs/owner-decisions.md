@@ -82,7 +82,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 51 | **SÁU dụng cụ đo tự báo hụt miền của chính mình** — kể cả **chính `verify-suites.sh`**, đỏ hay xanh tuỳ **thư mục người gõ đang đứng**; cộng một gốc `%ProgramData%` **không dụng cụ nào canh ngoài `creds`** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BD-1/BE-1/BF-1 đo. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 32 và 40, và ~~**hai mục ấy đều do CHỦ SỞ HỮU quyết**~~, nên hàng này nêu tiền lệ chứ không tự nhận → 🔧 **thi hành một phần *(lịch sử)* 2026-08-23 (BJ-1), điều phối viên theo uỷ quyền — mục Ở LẠI PHẦN I.** 🔴 **Lời biện minh của chính nhãn BỊ RÚT bằng phép đo:** mục 32 (AW-1, 2026-08-22) và mục 40 (BD-1, 2026-08-23) **đều do ĐIỀU PHỐI VIÊN quyết theo uỷ quyền**, không phải chủ sở hữu — nhãn mạnh hơn nó tự khai. **Năm trên sáu mục con đã trả:** (6) `verify-suites.sh` lấy neo tuyệt đối từ vị trí script và `cd` một lần trước phép đọc tương đối đầu tiên ⇒ cổng cho **cùng kết quả từ mọi thư mục**, chứng minh bằng cặp đo trước/sau chạy từ HAI chỗ, cộng bốn cái neo thay chẩn đoán SAI *"Fix the derivation"* bằng một chẩn đoán nêu tên chỗ đứng; (1) ranh giới `--files` được khai + dòng *"whole-tree census"* thôi nói dối dưới `--files`, **và tiền đề *"chỉ có thể báo thừa"* của mục con BỊ BÁC — bất đối xứng là một no-op vì định danh là (đường dẫn, câu)**; (2) tính MỘT CHIỀU của `C2` được khai và **phép sửa hai chiều bị TỪ CHỐI bằng phép đo: 20 trên 58 hàng sẽ đỏ, 19 trong đó ĐÚNG theo luật giữ-nguyên-văn của file này** — con số **mười** của mục con đứng vững; (3) `repo-scan.sh` in miền TỪNG pathspec và **từ chối** một spec chọn 0 mà bản `:(icase)` chọn >0, có nhân chứng trong `--self-test` — **tiền đề của mục con THU HẸP: một spec sai hoa thường ĐƠN LẺ nay đã bị bắt ồn ào, chỉ DANH SÁCH TRỘN mới im lặng (579 → 267 file, exit 0)**; (4) `remove-data.ps1` kiểm tồn tại trước khi công bố hai đường dẫn GIỮ — xác nhận trên máy: **cả hai KHÔNG tồn tại**. 🔴 **Mục con 5 DỪNG, với một lý do MỚI:** 16 lá / 1 được canh đứng vững, **không có cửa sau vào mục 45 hay 30** (đo: `TestRunTempRoot` chuyển hướng `ST4I_PRODUCTS_DIR`/`ST4I_ECOSYSTEM_DIR`), **nhưng một dụng cụ như thế sẽ ĐỎ NGAY LẦN CHẠY ĐẦU vì một cái rò chưa mục nào ghi — `assets/assets.db` bị bộ test ghi vào gốc THẬT lúc 2026-08-23 16:55 (cửa sổ cổng của nhiệm vụ trước) VÀ TÁI LẬP lúc 18:30 trong lần chạy cổng sạch của chính nhiệm vụ này, trong khi lá `creds` — lá DUY NHẤT được canh — đứng nguyên 31 mục qua cả ba lần chạy**. Cộng hai lỗ cấu trúc ngoặc creds tự khai (so tập TÊN ⇒ mù với ghi đè tại chỗ; miền rộng hơn tiêu chí ⇒ đo CẢ MÁY). Xem §51.7–51.8 → ✅ **ĐÃ THI HÀNH 2026-08-23 (BK-1). Mục PHẦN I → PHẦN III.** Mục con 5 trả: cái rò `assets`/`notifications` **sửa TẠI NGUỒN** (`TestRunTempRoot` thêm hai `ST4I_*_DIR`), và một **ngoặc `%ProgramData%` toàn cây** vào `verify-suites.sh` so **đường dẫn + kích thước + mtime**, tức đóng lỗ "so tập TÊN". 🔴 **Hình dạng ĐẦU TIÊN của dụng cụ bị chính cặp đối chứng của nó BÁC BỎ và bị XOÁ**: một guard trong tiến trình nối vào cả năm bộ **vẫn XANH** trong lần chạy đã ghi `assets.db`, vì cửa sổ một `[Fact]` kết thúc khi xunit xếp lịch — cùng kết quả khối X-1 đã ghi cho một lá khác. 🔴 **Và lời khai của báo cáo BJ-1 rằng mục 30 "VẪN CHỜ CHỦ SỞ HỮU" là SAI**: mục 30 ở Phần III từ 2026-08-23. Xem §51.9 🔴 **DẤU TRẠNG THÁI cũ của hàng này được HẠ CẤP THÀNH LỊCH SỬ, 2026-08-23 (BK-1), và chỉ dấu ấy — không một chữ nào của nội dung bị sửa hay xoá.** Lý do là một phép đo, không phải một sở thích: C2 của `check-owner-decisions.sh` đọc chuỗi `thi hành một phần` **viết hoa toàn bộ** ở BẤT KỲ đâu trong ô như một trạng thái ĐANG SỐNG, nên một hàng Phần III mang lịch sử "một phần" của chính nó bị báo là phân kỳ. Ranh giới (g) của dụng cụ khai C2 một chiều và cho phép `Ở LẠI PHẦN II` tồn tại cạnh thân Phần III; nó **không** cho phép cái này. 🔴 **Và thứ duy nhất giữ hàng `| 12 |` xanh với cùng hình dạng là `has()` PHÂN BIỆT HOA THƯỜNG** (BJ-1 đo, §51.7) — tức một sự tình cờ, không một quy ước. Nên trạng thái cũ ở đây viết thường và mang nhãn *(lịch sử)*, và cái sống là `ĐÃ THI HÀNH`. **Đây là một phát hiện về DỤNG CỤ được ghi ở đây thay vì được sửa qua dụng cụ**: C2 không phân biệt được một dấu trạng thái LỊCH SỬ với một dấu ĐANG SỐNG, và mọi mục đi *một phần → trọn vẹn* sẽ gặp lại nó. |
 | 52 | **Hai lời khai đã công bố đo được là SAI và cố ý để nguyên**, cộng sáu chỗ ném lỗi không nêu file mà thông điệp **không ai đọc** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BB-1/BC-1/BE-1 đo. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — rút một câu văn xuôi tại chỗ không chạm ba miễn trừ → 🔧 **thi hành một phần *(lịch sử)* 2026-08-23 (BJ-1), điều phối viên theo uỷ quyền — mục Ở LẠI PHẦN I.** Nhãn đứng vững cho thứ nó khai, và nó khai **hai trên ba** mục con. **(1) và (2) đã trả.** 🔴 **Hai con số của mục con 1 KHÔNG SỐNG SÓT:** *"không gì trong cây tiêu thụ giá trị của `IDeviceDriver.Id`"* **BỊ BÁC** — **12 dòng khẳng định trong 4 file test** đọc nội dung chuỗi (`Assert.Contains` unit id/bus key, `StartsWith`, `EndsWith`, `Distinct().Count()`); câu đúng là *"không bề mặt SẢN XUẤT nào"*, và `SimulatedDriver.cs` đã viết đúng thế kèm chữ *"under `src/`"* mà mục bỏ mất. Và *"câu thứ hai"* là **phép đếm THIẾU: quần thể là SÁU** (thêm hai chỗ trong `DeviceDriverConformanceSuite` — **chính bộ conformance mục viện dẫn làm bằng chứng lại TRÍCH NGUYÊN VĂN câu bị bác** — và hai chỗ trong `ModbusRtuDriver`); **cả sáu rút trong cùng một thay đổi**. **Mục con 2:** ba cặp số của mục con **tái lập chính xác** (26/5, 11/4 ⇒ 37/6) và `"23 sites across 20 files"` không tái lập ở bất kỳ khung nào — rút ở **CẢ HAI** file mang nó, kèm cảnh báo rằng **37/6 là một SÀN** (ba nhà máy `=> new(TempDir())`, hai trong file phép quét không chạm tới ⇒ 40/8; cộng hai đăng ký DI ⇒ 42/9). 🔴 **MỤC CON 3 KHÔNG THI HÀNH — CỬA SAU VÀO MỤC 48.** Mọi con số của nó đứng vững (6/34 chỗ ném không nêu file; `catch` không binding; đúng bảy `Assert.Throws<>` không cái nào đọc `.Message`; đường `error/` không ghi lý do ở đâu). Nhưng mục con tự nói phép sửa thật nằm ở `catch`, và `HotFolderAoiDriver` **không có trường logger, không `Action<string>`, không `Console`/`Trace` nào** — nên sửa nó là **thêm một seam**, đúng câu hỏi *"ai trả cho seam"* mà **mục 48 để mở** trên chính lớp ấy. Nửa rẻ (thêm tên file vào sáu chỗ ném) **cố ý không làm**: nó đổi lời mà không tạo ra một người đọc nào. Xem §52.4 → ✅ **ĐÃ THI HÀNH 2026-08-23 (BK-1). Mục PHẦN I → PHẦN III.** Mục con 3 trả: `catch` nay **binding** exception và báo tên file + thư mục đích + lý do ra một sink tuỳ chọn. 🔴 **NHÃN ⚖️ VẪN HẸP HƠN MỤC — phép đo của BJ-1 đứng vững** — và cái mở khoá mục con 3 **không phải nhãn** mà là **phán quyết của chủ sở hữu**; BJ-1 dừng vì đó là cửa sau sang mục 48, và chủ sở hữu đã trả lời câu ấy ở cửa trước. 🔴 **Nửa rẻ VẪN không làm, nay vì một phép đo:** driver đã cầm tên file, nên báo ở `catch` phủ **cả 34** chỗ ném tại **một** chỗ — bản rẻ HẸP hơn, không rộng hơn. Xem §52.5 🔴 **DẤU TRẠNG THÁI cũ của hàng này được HẠ CẤP THÀNH LỊCH SỬ, 2026-08-23 (BK-1), và chỉ dấu ấy — không một chữ nào của nội dung bị sửa hay xoá.** Lý do là một phép đo, không phải một sở thích: C2 của `check-owner-decisions.sh` đọc chuỗi `thi hành một phần` **viết hoa toàn bộ** ở BẤT KỲ đâu trong ô như một trạng thái ĐANG SỐNG, nên một hàng Phần III mang lịch sử "một phần" của chính nó bị báo là phân kỳ. Ranh giới (g) của dụng cụ khai C2 một chiều và cho phép `Ở LẠI PHẦN II` tồn tại cạnh thân Phần III; nó **không** cho phép cái này. 🔴 **Và thứ duy nhất giữ hàng `| 12 |` xanh với cùng hình dạng là `has()` PHÂN BIỆT HOA THƯỜNG** (BJ-1 đo, §51.7) — tức một sự tình cờ, không một quy ước. Nên trạng thái cũ ở đây viết thường và mang nhãn *(lịch sử)*, và cái sống là `ĐÃ THI HÀNH`. **Đây là một phát hiện về DỤNG CỤ được ghi ở đây thay vì được sửa qua dụng cụ**: C2 không phân biệt được một dấu trạng thái LỊCH SỬ với một dấu ĐANG SỐNG, và mọi mục đi *một phần → trọn vẹn* sẽ gặp lại nó. |
 | 53 | **Định nghĩa OEE của mục 2 vắng ở ba bề mặt `web/`** — chỗ quản đốc thật sự cầm con số — và cái giữ nó nguyên nhiều tuần là một **lệnh cấm phạm vi**, không phải một pathspec | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); nêu lần đầu 2026-08-18 (AA-1, vòng phản biện 1) và **không nhiệm vụ nào trong bốn mươi hai nhiệm vụ tiếp theo chạm tới**. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — chính AA-1 viết *"ai nhặt nó lên không cần hỏi chủ sở hữu"*: không đổi payload MQTT, không đổi hình dạng dây, không đổi một con số OEE nào → ✅ **ĐÃ THI HÀNH 2026-08-23 (BJ-1), điều phối viên theo uỷ quyền.** Nhãn ⚖️ **kiểm lại và ĐỨNG VỮNG** — nhưng chỉ sau khi một tiền đề của chính thân mục bị bác: §53.4 cảnh báo rằng viết vào giao diện *"đụng đúng món nợ mà **mục 34** đang chờ anh"*, và **mục 34 ĐÃ THI HÀNH 2026-08-22 (AX-1)** trước khi mục 53 được mở, nên cửa sau ấy **không tồn tại**. Định nghĩa của phán quyết mục 2 nay có mặt ở **cả ba** bề mặt, bằng lời của bản ghi chuẩn `OeeResultDto`, và **cả hai nửa** (mẫu số = không `Skip`, tử số = `Pass`/`Warn`, `Fail` ở mẫu không ở tử, `Skip` **không ở đâu cả**, ⇒ `Warn` là hàng TỐT — **cộng** *"công thức KHÔNG CÓ PHIÊN BẢN"*): khối doc của `interface OeeResult` trong `web/src/lib/api.ts`; ô KPI `Quality` trên `/reports` qua đúng khuôn `audit.limitation` đã có sẵn trong cây (glyph `Info`, `aria-label` LÀ cả câu, khe `children` mà `KpiTile` đã có — **không thêm prop nào**); và tooltip cột *"Quality loss"* của `OeeLossChart` (hai cột kia **cố ý không**: chúng đo bằng đồng hồ, không mang quy tắc phán quyết). Chuỗi ở `reports.oeeDefinition.*`, **cả hai locale**. 🔴 **Chạm `web/` ⇒ `npm run build` (`tsc -b && vite build`) CHẠY VÀ XANH**, cộng `oxlint` xanh — cổng **không** biên dịch TypeScript, nên build này là nhân chứng duy nhất tồn tại. **Mọi con số của tác giả mục sống sót** (ba bề mặt; dòng 386–388; mười lăm trường; năm biến thể `unversion…` cho 0 khớp, **mở rộng ra toàn `web/` 230 file** vẫn 0). 🔴 **Nhưng tiền đề *"không có dụng cụ i18n nào"* KHÔNG sống sót nguyên văn:** đối xứng khoá vi↔en **được cưỡng chế tĩnh** bởi `export const en: Dictionary` + `tsc -b`, và **15 spec Playwright** (gồm một trên chính `/reports`) khẳng định không khoá thô nào rò ra — cái thiếu là một **kích hoạt tự động**, không phải dụng cụ. Nửa *"không có job CI nào"* **đứng** (0/7 workflow). **Cái KHÔNG có nhân chứng, nói ra: không gì ghim văn bản `web/` vào lời văn C# nó soi gương** — bản giảm nhẹ là một **con trỏ hai chiều**, không phải một nhân chứng. Không phải nhân chứng đỏ được (chỉ đổi lời + một affordance UI). Xem **Phần III**, §53.6 |
-| 54 | **`FleetCore.Start()` không ghi `LastError`** — cùng cú ném P5, tới từ phương thức đối xứng, để một fleet ĐÃ DỪNG báo HEALTHY; U-1 **nêu tên chứ không đóng** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); nêu 2026-08-17 (U-1) tại `LastError`'s declaration và trong thông điệp merge `f18f5c29`, chưa bao giờ có hàng riêng. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 33 (sửa phía ĐỌC của một route REST), không chạm ba miễn trừ. 🔴 **KHÔNG thi hành 2026-08-23 (BI-1), và lý do là một PHÉP ĐO chứ không phải hết giờ: TIỀN ĐỀ CỦA CHÍNH §54.3 KHÔNG SỐNG SÓT.** §54.3 nói cái thật sự đang mở là một `Start()` ném **giữa vòng lặp slot**, và cú ném nó nêu tên là P5 (`MachineConfigStore.Ensure`). Đo ở 44383e23: **cả hai chỗ gọi `SimulatorFactory.Create` trên đường start đều chạy TRƯỚC lần `StartSlot` đầu tiên** — `BuildStartPlan` (off-lock) và nhánh reuse-miss của `StartLocked` (`FleetCore.cs:3801`, trên vòng `foreach … StartSlot` ở ~4046). Nên P5 để lại `_slots` **RỖNG**, tức nhánh mà U-1 đã trả lời đúng, **không phải** nhánh §54.3 muốn đóng. Mục **Ở LẠI PHẦN I**. Xem §54.6 |
+| 54 | **`FleetCore.Start()` không ghi `LastError`** — cùng cú ném P5, tới từ phương thức đối xứng, để một fleet ĐÃ DỪNG báo HEALTHY; U-1 **nêu tên chứ không đóng** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); nêu 2026-08-17 (U-1) tại `LastError`'s declaration và trong thông điệp merge `f18f5c29`, chưa bao giờ có hàng riêng. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 33 (sửa phía ĐỌC của một route REST), không chạm ba miễn trừ. 🔴 **KHÔNG thi hành 2026-08-23 (BI-1), và lý do là một PHÉP ĐO chứ không phải hết giờ: TIỀN ĐỀ CỦA CHÍNH §54.3 KHÔNG SỐNG SÓT.** §54.3 nói cái thật sự đang mở là một `Start()` ném **giữa vòng lặp slot**, và cú ném nó nêu tên là P5 (`MachineConfigStore.Ensure`). Đo ở 44383e23: **cả hai chỗ gọi `SimulatorFactory.Create` trên đường start đều chạy TRƯỚC lần `StartSlot` đầu tiên** — `BuildStartPlan` (off-lock) và nhánh reuse-miss của `StartLocked` (`FleetCore.cs:3801`, trên vòng `foreach … StartSlot` ở ~4046). Nên P5 để lại `_slots` **RỖNG**, tức nhánh mà U-1 đã trả lời đúng, **không phải** nhánh §54.3 muốn đóng. Mục **Ở LẠI PHẦN I**. Xem §54.6. ⚖️ **KỆ MỚI 2026-08-24 (BQ-1), PHÁN QUYẾT CỦA ĐIỀU PHỐI VIÊN — §54.8:** mục nay đứng ở trường máy `chờ-điều-phối-viên`, **không còn trong danh sách của chủ sở hữu**. Trường gộp `gate:phần-i` tách làm hai, cổng kiểm `C7` (hợp = quần thể Phần I, giao rỗng). **KHÔNG quyết** — §54.6 đo rằng bản sửa **không có nhân chứng đỏ được**. 🔴 Nhân chứng sống đo trong lúc làm **CỦNG CỐ §54.6**: cú ném P5 quan sát trực tiếp, ném ra khỏi `BuildStartPlan` (`FleetCore.cs:3295`), **ngoài khoá, trước `StartLocked`** ⇒ `_slots` RỖNG. Mục **Ở LẠI PHẦN I** |
 | 55 | **Bốn mặc định `switch` trên `Verdict` gấp một giá trị lạ về phía AN TOÀN**, và **hai trong bốn nằm trong CÙNG MỘT FILE mà bất đồng nhau** (`_ => "OK"` đối lại `_ => "skip"`) | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); nêu 2026-08-17 (P-2, *"NAMED, NOT FIXED"*) và 2026-08-18 (AA-1 tồn dư 4 và 5, Phần IV). 🔴 **Đo lại BÁC nửa lời khai của P-2:** không đường nào trong cây sinh ra một `Verdict` ngoài miền hôm nay, nên nhánh ấy **tiềm ẩn**, không phải đang hiển thị cho vận hành viên. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** → ✅ **ĐÃ THI HÀNH 2026-08-23 (BI-1)** theo 🔨 **QUYẾT: GỌI TÊN GIÁ TRỊ LẠ, KHÔNG GẤP NÓ VÀO MỘT CÂU TRẢ LỜI HỢP LỆ — VÀ KHÔNG DỊCH MỘT CÂU TRẢ LỜI TRONG MIỀN NÀO** (2026-08-23, **điều phối viên theo uỷ quyền**). 🔴 **Con số của tác giả mục KHÔNG sống sót: đo lại là NĂM mặc định, không phải bốn** — cái thứ năm là `Doc28Writer.MapVerdict`, mà chính §55.3 nêu tên như "họ hàng" rồi không đếm. Xem Phần III |
 | 56 | **Lớp "bỏ qua parse trong im lặng"** — `docs/startup-failure-posture.md` §3.4 khai **CHÍN** chỗ, và **chín ĐÚNG NGUYÊN** khi đếm lại; nhưng hình dạng mà chính §3.4 phát biểu bắt thêm **TÁM** núm boolean nữa | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); đo lần đầu 2026-08-17 (M-1). ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — ~~cùng khuôn mục 38/39/50: một kiểm/cảnh báo ở BIÊN PARSE~~, không đổi payload, không đổi hình dạng dây → ✅ **ĐÃ THI HÀNH 2026-08-23 (BJ-1), điều phối viên theo uỷ quyền.** Nhãn đứng vững **như một phép uỷ quyền** (38/39/50 đều do điều phối viên quyết) nhưng **HÌNH DẠNG nó nêu là SAI**: §8.1(a) suy hình dạng từ cách hỏng đã đo, và cách hỏng đã đo — mục tự viết — là *"Bảng không sai, **lời khai miền của nó thiếu**"*, tức một khuyết tật **tài liệu**. Trả ở `docs/startup-failure-posture.md` **§3.4a**; §3.4 giữ **nguyên văn**. **CHÍN sống sót không dịch một đơn vị** (kiểm kê độc lập 68 dòng `TryParse` trên 552 file: **không có chỗ thứ mười**; năm `FromEnvironment()` đều static không tham số; mười chỗ gọi đúng mười). 🔴 **TÁM sống sót như phép đếm TÊN, hỏng như phép đếm CHỖ — có CHÍN biểu thức, và chỗ bị bỏ sót nằm trong composition root `St4i.EngineApi/Program.cs`: một bản `ParseVerifyTls` viết tay THỨ HAI cho cùng `ST4I_VERIFY_TLS`, và kết quả của nó ARM `rebuildNeeded`, tức tiền đề §3.1a tự phát biểu.** 🔴 **MƯỜI BẢY KHÔNG SỐNG SÓT — ba lý do:** (a) `9 + 8` **cộng một phép đếm CHỖ với một phép đếm TÊN**, đúng khuyết tật §8.1 của chính mục; (b) câu §3.4 không nói "số" và cũng không nói "boolean", nên **29 tên chuỗi nữa** trả lời đúng hình dạng ấy (16 gốc `ST4I_*_DIR`, bốn đoạn địa chỉ UNS, hai service type mDNS, `SERVER_URL`, `MACHINE_CODE`, host/map Modbus, endpoint/map OPC-UA, cộng nhánh chuỗi-rỗng `ASPNETCORE_URLS`) ⇒ **ít nhất 46 TÊN**; (c) *"no warning channel at all"* **SAI cho ba trên tám** trong host `St4i.EdgeService` (`EdgeWorker.BuildTransport` in `verifyTls=`/`wal=`/dòng demo ở Information) — **sự im lặng là theo HOST, mục phát biểu theo NÚM**. **Bất đối xứng thứ hai nêu trên hai file khi nhóm là NĂM và nhóm trả lời BA cách:** BridgeSpool chốt im lặng (**hai** chốt, không một), Wal **ném** (file duy nhất có `Validate()`), còn `UnsOptions`/`ModbusOptions`/`AlarmThresholds` **nhận và truyền tiếp** — **bảy trên chín núm**, cột lớn nhất, mục không nhắc. **Không luồn kênh cảnh báo, và lý do là phép đo:** nó đổi chữ ký năm factory static tại mười chỗ gọi, và để phủ hình dạng như câu viết nó phải với tới **mười sáu gốc `ST4I_*_DIR` — đúng chủ đề mục 30, vẫn CHỜ CHỦ SỞ HỮU**. Không dựng phép kiểm mới: luật cưỡng chế được ở đây là đúng câu hỏi tầng hai **mục 40 đã đo là KHÔNG cưỡng chế được** trong shell. Không phải nhân chứng đỏ được (chỉ đổi lời). Xem **Phần III**, §56.5 |
 | 57 | **Bốn khuyết tật config-sync do AH-1 đo 2026-08-19 và ghi CHỈ trong thông điệp merge** — không cái nào từng vào file này | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1). **Không uỷ quyền được:** một trong bốn là *"hai mươi tám trường vận hành viên soạn được KHÔNG có chỗ trong hợp đồng đồng bộ"*, và nới hợp đồng ấy là **đổi một hình dạng dây đã xuất bản với một server ngoài sản phẩm này** — cùng hạng mục 14 🔧 **THI HÀNH MỘT PHẦN 2026-08-24 (BN-1, base `46576c36`) — PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-23: ba vế theo uỷ quyền, vế thứ tư TÁCH thành MỤC 59. Mục Ở LẠI PHẦN I.** **Vế (1)** — điều kiện tiên quyết ĐO TRƯỚC KHI SỬA và nó **THOẢ**: bảy trên bảy thành viên `MeasurementType` cho token **giống hệt từng byte** giữa `ToString().ToUpperInvariant()` và `SnakeCaseUpper` (cả bảy là một-từ-đơn), ⇒ **dây không đổi hôm nay** ⇒ trong uỷ quyền; nay đi qua `ConfigJson.Options`, đúng instance mà đường pull dùng. 🔴 **Một anh em CÙNG hình dạng cách đó sáu dòng — `p.Shape.ToString().ToLowerInvariant()`, `PointShape`, cũng bảy-trên-bảy — KHÔNG sửa và nêu tên: mục uỷ quyền dòng 420 và nêu tên `MeasurementType`.** **Vế (2)** — khuyết tật sửa ở `PullAsync` qua `IConfigSyncBackend.PullCarriesLifecycleStatus` (backend được HỎI chứ model không bị SOI, vì một `Development` mặc định và một `Development` thật là cùng một byte); câu doc **rút tại chỗ kèm ngày**; **giá nêu cùng một hơi: lifecycle nay lệch được và không gì trên dây kéo về** — đúng hình dạng mục 59. **Vế (3)** — 🔴 **KẾT LUẬN NHỊ PHÂN: TỒN TẠI**, ở `web/src/components/BoardCanvas.tsx` dòng 185–195; tập đã mở là **cả cây 63.452 file có trong index** cộng lịch sử mọi ref, và **lần quét cũ trượt vì `web/` bị một nhiệm vụ trước tuyên là không có trên đĩa — sai**; chính `Fiducial.cs:56–62` đã mô tả khuyết tật ấy. Đã sửa + hai khoá i18n + `npm run build` xanh. **Vế (4)** — **rời sang mục 59**. Xem §57.5 |
@@ -95,13 +95,14 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 64 | **`SimulatedEcosystem` không kiểm toàn vẹn chéo** — và trạng thái mà bản sửa mục 45 mở ra KHÔNG phải trạng thái mã của nó nêu tên | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); backend Demo, `:442` tự khai *"never puts anything on the wire"*. Không phép kiểm nào bắc qua hai file. 🔴 **Tiền đề của chính chú thích `:578–579` KHÔNG SỐNG SÓT:** nó nêu một *"products.json nêu tên một recipe không có"*, nhưng **`ProductModel` không có trường recipe và `Recipe` không có trường product** — hai không gian khoá **độc lập**, `CheckRecipeAsync` giải theo mã máy/`MachineType`. Trạng thái thật là một **CẶP PHÂN KỲ NỬA-ÁP-DỤNG** (seed cộng +2 phiên bản cho products, +1 cho recipes), và lần sửa kế tiếp gọi `Save()` **đóng băng chỗ lệch xuống đĩa**. **Một câu phải RÚT dù có sửa mã hay không.** Xem §64 ✅ **ĐÃ THI HÀNH 2026-08-24 (BP-1, base `d9d3aafc`), theo nhãn ⚖️ kiểm lại bằng ba miễn trừ.** Chú thích `:576–581` **RÚT nguyên văn** và thay bằng trạng thái ĐO ĐƯỢC; phép kiểm toàn vẹn chéo ship dưới dạng `SeedIntegrityWarning` — nó khai **XUẤT XỨ** (*"đúng một nửa vừa được gieo"*), **không** khai số học phiên bản, nên **không đóng băng hằng số nào chưa ai công bố**. 🔴 **Và một con số của chính mục này KHÔNG sống sót: *"seed cộng +2 phiên bản cho MODEL-A/B"* — đo lại: MODEL-A **+2**, MODEL-B **+1**, SCREWDRIVE-M4 **+1**; `ConfigSyncEngineTests` đã ghi đúng ba số ấy từ trước.** Mục **PHẦN I → PHẦN III** |
 | 65 | **`ConnectorsJsonRegistration.RegistrationKeyOf` trả `entry.Kind` cho TCP/OPC-UA** — tường minh về cú pháp, mặc định về ngữ nghĩa; MỘT file, HAI câu trả lời trên hai host | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). 🔴 **LỜI KHAI GỐC BỊ BÁC Ở CHỦ THỂ và khuyết tật thì CÓ THẬT:** BM-1 nêu tên `EdgeConnectors.RegistrationKeyOf`, nhưng `EdgeConnectors.cs:148–152` trả `DriverKinds.Normalize(entry.Id.Trim())` **VÔ ĐIỀU KIỆN cho mọi kind** và **không bao giờ đọc `entry.Kind`**. Chỗ trả `entry.Kind` là `ConnectorsJsonRegistration.cs:211`. **Đặc tả đúng, địa chỉ sai: sai file, sai assembly, sai host.** Hậu quả thật: hai mục Modbus-TCP với **id khác nhau** quy về khoá `"Modbus"`, mục thứ hai **bị bỏ** kèm cảnh báo **nêu tên một KIND với người vừa đặt hai ID**; cùng file trên `EdgeService` cho **hai** connector. 🔴 **Nhãn 🔴 là nhãn tôi ít chắc nhất trong mười bốn:** nó chạm (b) theo **GIÁ TRỊ**, không theo **HÌNH DẠNG** — bản sửa dời `TargetId` của cảnh báo, trường đi ra ở `WebhookNotification` và **đã lưu** trong `SqliteAuditStore`. Giải theo chiều thận trọng; §49.5 cho phép lật. Xem §65 |
 | 66 | **`PointShape` vẫn được ĐÁNH VẦN BẰNG TAY trên đường push** — cùng khuyết tật vừa sửa, cách nó SÁU DÒNG | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1), và nhãn ⚖️ **suy từ chính phán quyết của anh 2026-08-23**, vốn đặt **byte-identity** làm điều kiện để một vế nằm trong uỷ quyền. 🔴 **Số dòng của lời khai ĐÃ CŨ:** *"426"* là số **trước** bản sửa; hôm nay là **`:476`** (`p.Shape.ToString().ToLowerInvariant()`) so với `:470` (`WireToken(p.MeasurementType)`) — **"sáu dòng" thì ĐỨNG VỮNG**. **Byte-identity đo từng thành viên: 7/7 THOẢ** (`Circle/Rect/Polygon/Line/Ring/Mask/Array`, không cái nào nhiều từ) ⇒ **dây không dịch hôm nay**, nguy cơ **tiềm ẩn** ở thành viên nhiều từ đầu tiên. **Enum đánh vần tay CUỐI CÙNG trong `ToWireDto`.** 🔴 **Phát hiện phụ: `MeasurementPoint.cs:27–29` nêu tên sibling này SAI HAI mô tả** — *"NEXT-BUT-ONE argument"* (thật: **23 trên 25**) và *"one line down"* (thật: **sáu**); thông điệp merge `47907c67` viết đúng, khối doc trên cây thì không. Xem §66 ✅ **ĐÃ THI HÀNH 2026-08-24 (BP-1, base `d9d3aafc`).** **Điều kiện byte-identity ĐO LẠI RIÊNG cho `PointShape`, không suy từ `MeasurementType`: 7/7 THOẢ**, đo bằng một theory bảy hàng đối chiếu với vựng từ ĐÃ CÔNG BỐ (`circle|rect|polygon|line|ring|mask|array`), **XANH trước bản sửa và XANH sau** — cặp xanh ấy **CHÍNH LÀ** phép đo byte-identity, đỏ ở bờ nào cũng có nghĩa dây đã dịch. `:476` nay là `WireToken(p.Shape)`; **0 byte dịch trên dây**. Hai mô tả sai ở `MeasurementPoint.cs:27–29` **RÚT nguyên văn** (đo: **23 trên 25**, và **SÁU** dòng). 🔴 **Một con số của mục này KHÔNG sống sót: *"còn đúng bốn chỗ"*** — đo lại: **bốn FILE**, nhưng **năm vị trí dòng** và **sáu lần xuất hiện** (`WebhookNotification.cs:294` mang hai). Mục **PHẦN I → PHẦN III** |
-| 67 | **HAI component đòi MỘT target path cho `run-exhibition.bat`** — và bản HARVEST hạ cánh ở một FEATURE LUÔN BẬT, phá chính cổng opt-in mà component kia dựng ra | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); đóng gói, không chạm ba miễn trừ. **Bốn mệnh đề đo riêng:** (a) trùng byte ✅ (cùng sha256, 1093 byte); (b) không bước publish nào sinh ra nó ✅ — và **NÊU QUÁ DÈ DẶT**, nó tới đó bằng **một bước THỦ CÔNG ĐÃ GHI Ở `README.md:738–745`**, nên có mặt là **được mong đợi**, không phải rác sót; (c) *"component thứ BA"* **LỎNG** — `Package.wxs` khai **BỐN** component, nó là **thứ TƯ**, và thứ ba chỉ dưới cách đọc *"component mang FILE"*; (d) cùng target path ✅ — `SuppressRootDirectory` + `DirectoryRefId=INSTALLFOLDER`, và **XSLT bảy cái kim KHÔNG bỏ nó**; xác nhận mạnh nhất là `InstallerHarvestExclusionTests.cs:298` **liệt kê nó trong ngân hàng `MustSurvive`**. 🔴 **NÊU QUÁ DÈ DẶT ở hậu quả:** bản harvest vào `MainFeature Level="1"` (**luôn cài**) còn bản tường minh sau `ExhibitionFeature Level="1000"` (**tắt mặc định**) ⇒ một bản dựng `-SkipDotnetPublish` **ship trình khởi chạy triển lãm trên MỌI bản cài mặc định**. **Không dựng MSI**, nên không ai quan sát được một ICE30 thật. 📎 §46.5 **đã nêu** ba mệnh đề đầu; cái mới là **phá cổng feature**. Xem §67 |
-| 68 | **Màn hình cài đặt web NÓI SAI THEO CHIỀU KHẲNG ĐỊNH với vận hành viên WELDER và DISPENSING** — và lối thoát duy nhất của chính nó KHÔNG với tới được cho hai loại máy ấy | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** cho bản sửa **lời văn + affordance** — mở 2026-08-24 (BO-1). 🔴 **Bờ MÁY ĐỌC ĐƯỢC là của anh** (cờ trên `MachineSettingsResponseDto` = đổi hình dạng DTO đã công bố; mục 42 đã định giá thế). `notSupported` (`:431–432`) chỉ hiện khi HTTP 400, và 400 ấy đòi `ConfigKindForMachineType(...) is null` — mà `MachineParameterSchema.cs:112–113` ánh xạ **cả** `WELDER` **và** `DISPENSING`, nên nó **KHÔNG BAO GIỜ null** ⇒ lối thoát **không với tới được**, cho hai máy **có ship trong `fleet.json`**. 🔴 **Chiều của lời sai đo chính xác: HIỆN TẠI và QUÁ KHỨ, không phải tương lai** — cột *"Effective"/"Hiệu lực"* và huy hiệu *"Machine-adjusted"/"Chỉnh theo máy"*; một biến thể thì-tương-lai sẽ là lời nói dối **YẾU HƠN** cái đang ship. 🔴 **NÊU QUÁ DÈ DẶT hai lần:** câu cảnh báo mục 42 chỉ sống trên `settings/push`, mà **toàn `web/src` có 0 lời gọi** endpoint ấy; và `13-machine-settings.spec.ts` **không chạm `WELD` lẫn `DISP`** (0 lần). Xem §68 |
-| 69 | **`intentClassifier` gửi BỐN chuỗi ngoài vựng từ `stepType` vào một mệnh đề `WHERE`** — nên mọi câu hỏi mô-men và lượng keo trả về *"không đủ dữ liệu"* TRÊN MỘT BẢNG CÓ DỮ LIỆU | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); không chạm ba miễn trừ (`metricTrendParams` đã nhận `stepType?: string`, nên sửa là đổi một **giá trị**, không phải hình dạng). Vựng từ sản xuất là **bảng DB được gieo** `process_step_types` (**tám** giá trị, `screw_tightening`/`glue_dispense`/…), khớp với hợp đồng đã công bố và với chính `fleet.json`. **`"torque"` là một khoá METRIC, không phải một step type; `"dispense"` cũng không — mã thật là `glue_dispense`.** ⇒ **BỐN literal**, không một. 🔴 **Chữ *"CHẾT"* SAI theo chiều làm nó nghe vô hại:** nhánh **luôn được chọn**, và điều kiện SQL **AND với machineId** ⇒ 0 hàng ⇒ `"NOT_FOUND"`. **Đó là NGƯỢC LẠI của mã chết.** 🔴 **Hai bài test ĐANG GHIM khuyết tật** (`intentClassifier.f6.test.ts:17`, `:28`) — dụng cụ đứng về phía khuyết tật. 📎 Độc lập chứng thực phép rút của BL-1 về §41.4. Xem §69 |
+| 67 | **HAI component đòi MỘT target path cho `run-exhibition.bat`** — và bản HARVEST hạ cánh ở một FEATURE LUÔN BẬT, phá chính cổng opt-in mà component kia dựng ra | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); đóng gói, không chạm ba miễn trừ. **Bốn mệnh đề đo riêng:** (a) trùng byte ✅ (cùng sha256, 1093 byte); (b) không bước publish nào sinh ra nó ✅ — và **NÊU QUÁ DÈ DẶT**, nó tới đó bằng **một bước THỦ CÔNG ĐÃ GHI Ở `README.md:738–745`**, nên có mặt là **được mong đợi**, không phải rác sót; (c) *"component thứ BA"* **LỎNG** — `Package.wxs` khai **BỐN** component, nó là **thứ TƯ**, và thứ ba chỉ dưới cách đọc *"component mang FILE"*; (d) cùng target path ✅ — `SuppressRootDirectory` + `DirectoryRefId=INSTALLFOLDER`, và **XSLT bảy cái kim KHÔNG bỏ nó**; xác nhận mạnh nhất là `InstallerHarvestExclusionTests.cs:298` **liệt kê nó trong ngân hàng `MustSurvive`**. 🔴 **NÊU QUÁ DÈ DẶT ở hậu quả:** bản harvest vào `MainFeature Level="1"` (**luôn cài**) còn bản tường minh sau `ExhibitionFeature Level="1000"` (**tắt mặc định**) ⇒ một bản dựng `-SkipDotnetPublish` **ship trình khởi chạy triển lãm trên MỌI bản cài mặc định**. **Không dựng MSI**, nên không ai quan sát được một ICE30 thật. 📎 §46.5 **đã nêu** ba mệnh đề đầu; cái mới là **phá cổng feature**. Xem §67. ✅ **ĐÃ THI HÀNH — BQ-1, 2026-08-24, base `2530b94c`, điều phối viên theo uỷ quyền (§67.5).** Cây đã tự trả lời câu *bật hay tắt mặc định* ở ba chỗ (`Level="1000"`, *OFF by default*), nên thêm cái kim **khôi phục** ý định đã viết chứ không quyết một câu hỏi sản phẩm mới. XSLT nay **tám** kim (cả hai template); phép suy trong `InstallerHarvestExclusionTests` nay **đọc `Package.wxs`** thay cho một cặp tên gõ tay — **chính cặp ấy LÀ mục 67**; kiểm mới `EveryFilePackageWxsAuthorsExplicitly_IsDroppedFromTheHarvest`. 🔴 **PHÁT HIỆN:** `MustSurvive:298` **không đúng theo luật của chính ngân hàng nó đứng trong** — **0** csproj publish `run-exhibition.bat`, nên đó là mục **đặt nhầm ngân hàng**, không phải assertion đúng bị lật. **Cặp đối chứng: 2 đỏ / 7 xanh.** **Không MSI nào được dựng**, và bộ test in câu ấy ở mọi thông điệp. Mục **PHẦN I → PHẦN III** |
+| 68 | **Màn hình cài đặt web NÓI SAI THEO CHIỀU KHẲNG ĐỊNH với vận hành viên WELDER và DISPENSING** — và lối thoát duy nhất của chính nó KHÔNG với tới được cho hai loại máy ấy | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** cho bản sửa **lời văn + affordance** — mở 2026-08-24 (BO-1). 🔴 **Bờ MÁY ĐỌC ĐƯỢC là của anh** (cờ trên `MachineSettingsResponseDto` = đổi hình dạng DTO đã công bố; mục 42 đã định giá thế). `notSupported` (`:431–432`) chỉ hiện khi HTTP 400, và 400 ấy đòi `ConfigKindForMachineType(...) is null` — mà `MachineParameterSchema.cs:112–113` ánh xạ **cả** `WELDER` **và** `DISPENSING`, nên nó **KHÔNG BAO GIỜ null** ⇒ lối thoát **không với tới được**, cho hai máy **có ship trong `fleet.json`**. 🔴 **Chiều của lời sai đo chính xác: HIỆN TẠI và QUÁ KHỨ, không phải tương lai** — cột *"Effective"/"Hiệu lực"* và huy hiệu *"Machine-adjusted"/"Chỉnh theo máy"*; một biến thể thì-tương-lai sẽ là lời nói dối **YẾU HƠN** cái đang ship. 🔴 **NÊU QUÁ DÈ DẶT hai lần:** câu cảnh báo mục 42 chỉ sống trên `settings/push`, mà **toàn `web/src` có 0 lời gọi** endpoint ấy; và `13-machine-settings.spec.ts` **không chạm `WELD` lẫn `DISP`** (0 lần). Xem §68. 🔧 **THI HÀNH MỘT PHẦN — BQ-1, 2026-08-24 (§68.5). Mục Ở LẠI PHẦN I, chuyển sang CHỜ CHỦ SỞ HỮU.** Bờ lời văn đã trả, **không thêm trường DTO** (mục 42 giữ nguyên): `Effective`/`Hiệu lực` → `Stored`/`Đã lưu`, huy hiệu provenance nói **đã LƯU** chứ không **đã CHỈNH**, cộng một dòng `limitation` khai thẳng cái màn hình **không biết** — cả hai locale, cả hai bề mặt. Cảnh báo hiện cho **mọi** loại máy vì client **không thể** biết loại nào được đọc (`IsConsumedBySimulator` chỉ tới `BuildPushMessage`, endpoint web không gọi). Nhân chứng `web/tests/29-…spec.ts` (WELD-01, DISP-01, SCRW-01) **chạy TAY, 3/3; cổng KHÔNG chạy nó — mục 60**. 🔴 Trích dẫn `MachineParameterSchema.cs:112–113` **không sống sót**: nay `:142–143` (vị ngữ đúng nguyên). Bờ **cờ trên DTO** chạm miễn trừ (b) và **vẫn của anh** |
+| 69 | **`intentClassifier` gửi BỐN chuỗi ngoài vựng từ `stepType` vào một mệnh đề `WHERE`** — nên mọi câu hỏi mô-men và lượng keo trả về *"không đủ dữ liệu"* TRÊN MỘT BẢNG CÓ DỮ LIỆU | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); không chạm ba miễn trừ (`metricTrendParams` đã nhận `stepType?: string`, nên sửa là đổi một **giá trị**, không phải hình dạng). Vựng từ sản xuất là **bảng DB được gieo** `process_step_types` (**tám** giá trị, `screw_tightening`/`glue_dispense`/…), khớp với hợp đồng đã công bố và với chính `fleet.json`. **`"torque"` là một khoá METRIC, không phải một step type; `"dispense"` cũng không — mã thật là `glue_dispense`.** ⇒ **BỐN literal**, không một. 🔴 **Chữ *"CHẾT"* SAI theo chiều làm nó nghe vô hại:** nhánh **luôn được chọn**, và điều kiện SQL **AND với machineId** ⇒ 0 hàng ⇒ `"NOT_FOUND"`. **Đó là NGƯỢC LẠI của mã chết.** 🔴 **Hai bài test ĐANG GHIM khuyết tật** (`intentClassifier.f6.test.ts:17`, `:28`) — dụng cụ đứng về phía khuyết tật. 📎 Độc lập chứng thực phép rút của BL-1 về §41.4. Xem §69. 🔴 **KHÔNG THI HÀNH — BQ-1, 2026-08-24 (§69.5). NHÃN ⚖️ BỊ MỘT PHÉP ĐO BÁC; mục chuyển sang CHỜ CHỦ SỞ HỮU và Ở LẠI PHẦN I.** Mọi mệnh đề **kỹ thuật** đo lại **ĐỨNG** (bốn literal; tám mã gieo; `WHERE` AND với `machineId`; hai test ghim). Cái không đứng là **thẩm quyền**: `server/` **không thuộc sản phẩm này** — `package.json` gốc khai `synapse-platform` và chạy toàn `server/*`; `St4iMachineSimulator.sln` nhắc `server` **0** lần; **621 commit** chạm `tools/machine-simulator` và **0** chạm `server/` kể từ **2026-07-18**; `repo-scan.sh:43–46` gọi nó là *the CONSUMER's code*. Uỷ quyền **không phủ được sự đồng ý của bên thứ ba** — luật mục 59. **Nửa thứ hai, độc lập:** cổng không dựng/không chạy/không thấy `server/`, nên bản sửa ở đó **hạ cánh không nhân chứng**. 🔴 Tiền đề *"ngoài nón thưa nên không đo được"* **SAI**: `git show`/`git grep` đọc cả 1.589 file — mọi phép đo trên đây làm đúng thế; xem **mục 74**. 📎 `:17` là dòng `metricKey`, assertion `stepType` ở `:18` |
 | 70 | **`GET /v1/machines/{code}` ship BỐN con số mô-men cho MỘT chu kỳ** mà payload ingest, chuỗi SPC và historian đều báo MỘT | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **(b) hình dạng dây** (`MachineDetailDto` đã công bố, soi gương ở `web/src/lib/api.ts:207–244`) **và (c) OEE theo ĐÚNG MỘT chiều sửa**. 🔴 **Lời khai *"hai con số"* đúng theo CHỮ nhưng VỊ NGỮ mời hiểu sai:** độ lệch duy nhất giữa `spc.values[]` (thô) và `plan.steps[0].metricValue` là **`Math.Round(…,3)`**, tức ≤ 5·10⁻⁴ Nm — **không** phải loài phân kỳ 12,0→1,35 Nm của mục 41. 🔴 **NÊU QUÁ DÈ DẶT ở chỗ đáng kể hơn nhiều:** `plan.steps[1..3].metricValue` là **BA lần rút ĐỘC LẬP MỚI**, không vào `Metrics`, không vào `spc`, không vào `Normalizer` (0 hit `Plan`), không vào historian, không lên Sparkplug. 🔴 **Và ba lần rút ấy ĐANG QUYẾT PHÁN QUYẾT** (`ScrewdriveSim.cs:173`), nên một bản sửa **xoá** chúng **hạ tỉ lệ Fail và dịch `Quality` của OEE** — miễn trừ (c); một bản sửa **chỉ chỉnh độ chính xác** thì không. **Hai bờ lệch nhau một bậc và lời khai gốc gộp chúng làm một.** Xem §70 |
 | 71 | **Doc thiết kế và mã bất đồng ở BỐN trên NĂM hàng tham số** — và cái được ghi lại là hàng ÍT nguy hiểm nhất trong bốn | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** cho bản sửa **tài liệu** — mở 2026-08-24 (BO-1). 🔴 **ĐƠN VỊ của lời khai SAI: KHOÁ KHÔNG LỆCH.** `weld_profile` **khớp ở cả BA nơi khai độc lập** (doc `:65`, `MachineParameterSchema.cs:76`, `recipeSchemas.ts`). Cái lệch là **DANH SÁCH THAM SỐ**: doc nêu *"lực ép, tiền/hậu nhiệt"*, mã khai `tempMax`/`voltage` — và §3 của doc nói nó **đi theo** đúng file nó mâu thuẫn. **Sim dùng cái nào? KHÔNG CÁI NÀO** — `WelderSim.cs:25–31` không nhận `MachineConfigStore`. 🔴 **Đã ghi HAI LẦN trước khi thành "khuyết tật dừng lại"** (`MACHINE_CONFIG_DESIGN.md:84–86` và mục 42 `:2186–2187`), cả hai **do chính BL-1 viết**. 🔴 **NÊU QUÁ DÈ DẶT: bốn trên năm hàng lệch, chỉ HAI được ghi** — `sequence[]` (SCREWDRIVE) và `retestPolicy` (AOI/AVI) vắng trong mã, và **hàng DISPENSING là hàng SẮC NHẤT chưa ai ghi** vì nó giấu `temperature`, đúng khoá mục 42 dựng phát hiện *"bẫy vận hành viên"* lên. **Bờ ngược — sửa MÃ cho khớp doc — là của anh** (vựng từ REST đã công bố; mọi `weld_profile` đã gieo mất hiệu lực). Xem §71 🔧 **THI HÀNH MỘT PHẦN 2026-08-24 (BP-1, base `d9d3aafc`) — bờ tài liệu đã trả, MỤC Ở LẠI PHẦN I.** 🔴 **VÀ CON SỐ TRUNG TÂM CỦA MỤC KHÔNG SỐNG SÓT.** Hướng sửa suy RIÊNG từng hàng, phân xử bằng chính nguồn §3 viện dẫn (`recipeSchemas.ts`, đọc từ kho object vì `server/` **nằm ngoài nón checkout thưa** của bản sao này): **DISPENSING và WELDER — DOC SAI**, TS khai `volumeTarget/pressure/speed/temperature` và `current/time/tempMax/voltage`, **trùng từng ký tự với C#** ⇒ đã sửa bảng, nguyên văn cũ giữ. **SCREWDRIVE `sequence[]` và IOT `thresholds{}` — DOC ĐÚNG, C# mới là kẻ lệch**: `recipeSchemas.ts` khai **CẢ HAI** ⇒ **không đụng bảng**, ghi lý do miễn trừ tại hằng số. **AOI `retestPolicy` — KHÔNG CÓ TRỌNG TÀI** (`RECIPE_KINDS` không có `aoi_inspection`) ⇒ ghi, không xoá. ⇒ **đo lại: HAI trên năm hàng doc sai, không phải BỐN**; *"bốn"* là số hàng **CHƯA AI GHI LÝ DO**, không phải số hàng lệch — và ba trong bốn ấy có **CÙNG MỘT lý do** với hàng duy nhất đã được ghi. **Vì sao hàng ít nguy hiểm nhất là hàng được ghi: vì luật ghi là *"ghi cái mình vấp phải"*** — BL-1 đang thi hành mục 42, mà chủ thể mục 42 đúng là hai kind KHÔNG sim nào đọc — **luật ấy không tương quan gì với mức nguy hiểm**, và đo được rằng WELDER là hàng duy nhất trong bốn **vừa không được sim nào đọc vừa không có va tên**. Cái hỏng thật: **bảng §3 CHƯA TỪNG có phép kiểm nào**; nay có `MachineConfigDesignDocTableTests`, hai chiều. **Bờ *"cái nào ĐÚNG về vật lý"* vẫn của anh.** Xem §71.5 |
 | 72 | **Chỉ SÁU trên mười sáu lá `%ProgramData%\ST4I\sim\` được chuyển hướng CẤU TRÚC** — chín lá dựa vào một quy ước lặp bằng tay, `opcua-pki` gần như không có seam, và cái ngoặc canh chúng MÙ với đúng loại bằng chứng đã dựng ra nó | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **(c)**: `sim\historian` là gốc của **cả** `SqliteHistorianStore` (bảng sự kiện OEE) **và** `OeeSettingsStore` (chủ đề mục 11 và 13). 🔴 **LỜI KHAI GỐC SAI THEO CẢ HAI CHIỀU.** *Nói quá:* nửa `assets` **ĐÃ ĐƯỢC TRẢ TẠI NGUỒN** — BK-1 (`9f95dd8a`) thêm `ST4I_ASSETS_DIR` + `ST4I_NOTIFICATIONS_DIR` với cặp đối chứng chạy trọn suite; trên đĩa `assets.db` đứng nguyên ở mtime của chính lần đối chứng ấy. *Nói quá dè dặt:* **LOÀI còn sống trên MƯỜI lá** — `historian` (hai người sinh) · `security` · `alarms` · `connector-config` · `settings` · `identity` · `sitelink` · `bridge-spool` · `wal` · `opcua-pki`. 🔴 **VÀ MỘT VỊ NGỮ CỦA CHÍNH BO-1 KHÔNG SỐNG SÓT PHÉP ĐO THỨ HAI, theo chiều NÓI QUÁ:** bản viết đầu nói mười lá ấy *"chưa ai đặt seam"*; đếm lại trong `tests/` thì **CHÍN trên mười ĐƯỢC seam, 20–24 file mỗi biến**. Khuyết tật là **HÌNH DẠNG của seam**, không phải sự vắng mặt của nó: **sáu lá được chuyển hướng CẤU TRÚC** (`[ModuleInitializer]`, cả năm assembly, mọi bài **gồm bài chưa ai viết**), **chín lá theo QUY ƯỚC LẶP BẰNG TAY** — hai mươi lớp nhớ **không chứng minh gì về lớp thứ 21** — và **`opcua-pki` có ĐÚNG MỘT file đặt nó**. 🔴 **Nói cho đúng mức: "seam theo từng lớp" KHÔNG bằng "đang rò"** — không lần ghi nào quan sát được trên mười lá ấy. 🔴 **HAI khuyết tật của chính DỤNG CỤ, chưa ai ghi:** ngoặc là `find -type f` nên **mù với một cú dịch mtime THƯ MỤC** — đúng loại bằng chứng `notifications` đã dựng ra nó; và `TestRunTempRoot.cs:187–188` nêu tên `RealProgramDataLeakGuard` như thứ *"now measures the CONSEQUENCE"*, **file ấy KHÔNG TỒN TẠI**, bị xoá trong cùng commit. **Ngoặc PHÁT HIỆN, không NGĂN**, và chỉ chạy trong cổng. Xem §72 |
-| 73 | **`C2` không phân biệt một dấu trạng thái LỊCH SỬ với một dấu ĐANG SỐNG** — BỐN hàng xanh chỉ nhờ `has()` phân biệt hoa thường, và hình dạng thứ hai KHÔNG có ví dụ sống là hình dạng nguy hiểm | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); khuyết tật của **DỤNG CỤ**, không chạm ba miễn trừ. 🔴 **BO-1 ĐÃ BÁC lời khai này rồi TỰ LẬT PHÉP BÁC:** đọc §51.7/§51.9 tôi kết luận *"đã trả bằng một lời khai"*, nhưng ranh giới **(g)** nói về `Ở LẠI PHẦN II` và **IM LẶNG về ca `MỘT PHẦN`** — đúng chỗ khuyết tật sống. **Mệnh đề con ĐÚNG, đo bằng bản sao awk của `strip()`/`has()`:** hàng `| 12 |` cho `has "THI HÀNH MỘT PHẦN" = 0` nhưng `has "thi hành một phần" = 1` ⇒ gập hoa-thường thì `:222` **nổ ngay**. 🔴 **NÊU QUÁ DÈ DẶT: BỐN hàng, không một** — 12, 48, 51, 52, cả bốn Phần III; ba trong bốn viết thường **có chủ ý và tự khai**. 🔴 **Hình dạng B chưa có ví dụ sống là hình dạng nguy hiểm:** một mục ở **Phần I** mà `CHỜ ANH` chỉ còn là lịch sử được bảo tồn sẽ **xanh mãi mãi**; hơn hai mươi hàng đã mang một `CHỜ ANH` bị thay thế. **Bản sửa hiển nhiên không dùng được:** `toupper()` của awk làm việc **theo byte**. 📎 Ranh giới (g) và phần đầu `:51–55` nay **CŨ** (mục 12 sang Phần III, Phần II rỗng). Xem §73 |
+| 73 | **`C2` không phân biệt một dấu trạng thái LỊCH SỬ với một dấu ĐANG SỐNG** — BỐN hàng xanh chỉ nhờ `has()` phân biệt hoa thường, và hình dạng thứ hai KHÔNG có ví dụ sống là hình dạng nguy hiểm | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); khuyết tật của **DỤNG CỤ**, không chạm ba miễn trừ. 🔴 **BO-1 ĐÃ BÁC lời khai này rồi TỰ LẬT PHÉP BÁC:** đọc §51.7/§51.9 tôi kết luận *"đã trả bằng một lời khai"*, nhưng ranh giới **(g)** nói về `Ở LẠI PHẦN II` và **IM LẶNG về ca `MỘT PHẦN`** — đúng chỗ khuyết tật sống. **Mệnh đề con ĐÚNG, đo bằng bản sao awk của `strip()`/`has()`:** hàng `| 12 |` cho `has "THI HÀNH MỘT PHẦN" = 0` nhưng `has "thi hành một phần" = 1` ⇒ gập hoa-thường thì `:222` **nổ ngay**. 🔴 **NÊU QUÁ DÈ DẶT: BỐN hàng, không một** — 12, 48, 51, 52, cả bốn Phần III; ba trong bốn viết thường **có chủ ý và tự khai**. 🔴 **Hình dạng B chưa có ví dụ sống là hình dạng nguy hiểm:** một mục ở **Phần I** mà `CHỜ ANH` chỉ còn là lịch sử được bảo tồn sẽ **xanh mãi mãi**; hơn hai mươi hàng đã mang một `CHỜ ANH` bị thay thế. **Bản sửa hiển nhiên không dùng được:** `toupper()` của awk làm việc **theo byte**. 📎 Ranh giới (g) và phần đầu `:51–55` nay **CŨ** (mục 12 sang Phần III, Phần II rỗng). Xem §73. 🔧 **THI HÀNH MỘT PHẦN — BQ-1, 2026-08-24, điều phối viên theo uỷ quyền (§73.7). Mục Ở LẠI PHẦN I, kệ ⚖️.** Mệnh đề **BỐN hàng ĐỨNG VỮNG** (12/48/51/52; hàng mục 12 đo **14 334** ký tự, khớp từng ký tự). 🔴 **HAI con số của mục KHÔNG sống sót:** *"ba hàng dạng HOA"* nay là **SÁU** (thêm 60, 71 **và chính hàng 73**), và *"cả 59 hàng"* nay là **73**. C2 nay đọc trạng thái từ **giọng của hàng** — cắt bỏ code span và đoạn trong ngoặc kép trước khi đọc token, đúng bản sửa hẹp §73.5 nêu tên. **Giá đo trên cả 73 hàng: đúng MỘT hàng đổi** (hàng 73, `partial` 1→0), so với **20/58** của bản hai chiều BK-1 đã bác. **Hình dạng B được DỰNG RA** thành fixture, không đợi: bốn hồ sơ giả lập, **hai lật và hai giữ** (A1 đỏ→xanh, A2 đỏ→đỏ, B1 xanh→**đỏ**, B2 xanh→xanh), chạy trong cổng qua `--self-test`. 🔴 **LỖ HOA-THƯỜNG KHÔNG được bịt, và đo được là không bịt nổi rẻ:** gập hoa-thường làm **cả bốn hàng đỏ KỂ CẢ khi đã cắt trích dẫn** — hai lỗ độc lập; ranh giới **(h)** nay khai điều đó ở chỗ kết quả hiện ra |
+| 74 | **Nón checkout thưa giấu 62.443 file được git theo dõi khỏi ĐĨA trong khi `git status` báo SẠCH** — nên mọi phép quét không-qua-git trả *"không thấy"* ở chỗ sự thật là *"không đo"* | 🔴 **CHỜ ANH** — mở 2026-08-24 (BQ-1); **không chạm ba miễn trừ**, đây là **môi trường**, và nhãn 🔴 nói về **GIÁ**, không về quyền (cùng loài mục 60). **Nón thưa, LIỆT KÊ trước:** chế độ cone, **đúng hai** thư mục — `examples/device-client`, `tools/machine-simulator` — cộng file gốc. **Rồi đếm:** **62.443/63.454** đường dẫn vắng mặt trên đĩa, trải **26 trên 27** thư mục cấp một (chỉ `examples/` nguyên vẹn). **ĐƠN VỊ đếm lại:** **1.589** của BP-1 cho `server/` **ĐÚNG** và đơn vị là **file (blob, mode 100644)** — không phải mục nhập cây, vốn là **1.703** kể cả 111 thư mục. 🔴 **Vị ngữ quanh nó là NỬA SỰ THẬT:** `server/` là **2/26** thư mục và **1.589/62.443** đường dẫn — **2,5%**, nhỏ hơn sự thật **39 lần**. 🔴 **VÀ PHÂN BIỆT HAI NHIỆM VỤ ĐÃ TRỘN: *không có trên ĐĨA* ≠ *không đo được*** — `git grep`/`git show` đọc cả 62.443; mù là `grep -r`, ripgrep, editor, `find`. ✅ **NỬA KHÔNG CHỜ AI ĐÃ TRẢ (§74.3):** `repo-scan.sh` nay **ĐO** vùng ấy mỗi lần chạy và **IN trong khối `_claim`**, chỗ mọi kết quả hiện ra; ranh giới `(b)` **hằng gõ tay → số đo** (câu cũ giữ nguyên văn; **cả 1.589 và 711 vẫn đúng**, cái sai là **phạm vi**); cặp đối chứng `--sparse-gap-self-test` (BANK A thật / BANK B checkout đầy đủ) + assertion rằng một đường dẫn vắng **đọc được qua git**. **Hai bờ (§74.4):** nới nón = **62.443 file** lên đĩa, **58.940 trong đó là `uploads/`** (94% giá cho thư mục không ai đọc) + thời gian checkout mọi người; để nguyên = lời khai **chỉ ràng buộc một dụng cụ**, và cái giá ấy **đã trả hai lần** (`web/` không được mở; cổng in PASS mà không khai). 📎 Nước đi giữa chưa ai định giá: `server`+`client`+`shared`+`contracts`+`drizzle` **không** kèm `uploads` = **2.909** file, **4,7%** giá. Xem §74 |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -540,7 +541,35 @@ nó **sống sót** cả ba miễn trừ. **Mục 71** ở lại vì nó **THI H
 mã vẫn của anh (§71.5). 📎 Cộng **mục 54**, mà §54.7 đo được là **không còn gì chờ chủ sở hữu** và
 vẫn ở đây vì file **chưa có KỆ** cho hình dạng ấy — BP-1 **cố ý không dựng kệ ấy**, vì đó là một
 quyết định về **hình dạng file** và nó đáng một mục riêng.
-<!-- gate:phần-i = 41 43 49 54 57 59 60 61 62 63 65 67 68 69 70 71 72 73 -->
+<!-- gate:phần-i-rút -->
+
+🔴 **ĐOẠN NGAY TRÊN ĐÃ RÚT — 2026-08-24 (BQ-1), KHÔNG một chữ nào bị sửa**, và trường máy của nó đổi
+thành `<!-- gate:phần-i-rút -->` **ngay tại chỗ nó được viết**. Nó **đúng ở base `2530b94c`** và sai
+kể từ nhiệm vụ này, vì **mục 67 đã THI HÀNH và sang PHẦN III** (§67.5) và **mục 74 vừa được mở**.
+🔴 **VÀ NÓ ĐƯỢC THAY BỞI HAI DÒNG MÁY, KHÔNG MỘT — xem §54.8 cho phán quyết của điều phối viên ngày
+2026-08-24 và lý do.** Trường gộp `<!-- gate:phần-i = … -->` **nghỉ**: nó trộn *"chờ CHỦ SỞ HỮU"* với
+*"chờ ĐIỀU PHỐI VIÊN"*, nên người chủ mở file ra **không thấy được cái nào là của mình**. Phép liệt
+kê thay thế cũng **ĐO LẠI từ chính Phần I sau khi nhiệm vụ này sửa xong file** — quét đầu mục `^## `
+giữa banner Phần I và banner Phần II — chứ không trừ đi bằng số học từ đoạn cũ.
+
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 41, 43, 49, 54, 57, 59, 60, 61, 62, 63, 65, 68, 69, 70, 71, 72, 73 và 74.**
+Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy vẫn là nguồn sự thật**.
+🔴 **NHƯNG BANNER *"ĐANG CHỜ ANH"* RỘNG HƠN SỰ THẬT, VÀ TỪ HÔM NAY HAI DÒNG DƯỚI ĐÂY NÓI RÕ RỘNG Ở
+CHỖ NÀO.** Trong mười tám mục ở đây, **mười bốn thật sự chờ CHỦ SỞ HỮU** và **bốn chờ ĐIỀU PHỐI
+VIÊN**. Hợp của hai trường **bằng đúng** quần thể Phần I, giao của chúng **rỗng**, và
+`check-owner-decisions.sh` **kiểm `C7`** cả ba mệnh đề ấy mỗi lần chạy cổng.
+🔴 **BỐN MỤC ĐỔI KỆ HÔM NAY, và mỗi cái vì một phép đo khác nhau — nói ra thay vì để chúng đọc như
+một phép dọn dẹp:** **mục 54** sang ⚖️ vì §54.7/§54.8 đo được **không còn gì chờ chủ sở hữu**, chỉ
+thiếu chỗ để nói thế. **Mục 68** sang 🔴 vì bờ ⚖️ **đã trả** và cái còn lại — một cờ trên DTO — chạm
+**miễn trừ (b)** (§68.5). 🔴 **Mục 69 sang 🔴 vì NHÃN ⚖️ CỦA NÓ BỊ BÁC:** `server/` đo được là
+**sản phẩm khác** (`package.json` gốc khai `synapse-platform`; solution của sản phẩm này nhắc `server`
+**0** lần; **621 commit** chạm `tools/machine-simulator` và **0** chạm `server/` kể từ 2026-07-18),
+nên uỷ quyền trên sản phẩm này **không phủ** được nó — đúng luật mục 59 (§69.5). **Mục 73** ở lại ⚖️
+với **THI HÀNH MỘT PHẦN** (§73.7).
+📎 **Mục 63 và mục 71 KHÔNG bị nhiệm vụ này đụng tới** và giữ nguyên lý do cũ: 63 vì **hướng sửa bị
+một phép đo bác** (§63.5), 71 vì **thi hành một phần** (§71.5).
+<!-- gate:phần-i-chờ-chủ-sở-hữu = 41 43 49 57 59 60 61 62 65 68 69 70 72 74 -->
+<!-- gate:phần-i-chờ-điều-phối-viên = 54 63 71 73 -->
 
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
@@ -1367,6 +1396,68 @@ dạng file** và không phải của người thi hành.
 thắng cái kệ**, nên hàng `| 54 |` mang `🔴 CHỜ ANH` phải được **sửa kèm ngày và lý do** trước; một
 phép dời kệ đơn thuần để hàng ấy **mâu thuẫn với banner**.
 
+### 54.8 ⚖️ PHÁN QUYẾT CỦA ĐIỀU PHỐI VIÊN — 2026-08-24, BQ-1. **KỆ ĐÃ DỰNG, VÀ NÓ KHÔNG PHẢI MỘT PHẦN MỚI**
+
+**Ai quyết, và ghi rõ:** **ĐIỀU PHỐI VIÊN**, ngày **2026-08-24**, theo uỷ quyền về **hình dạng file**.
+Không phải chủ sở hữu. §54.7 đo đúng vấn đề và **cố ý không tự dựng kệ**; đây là chỗ nó được dựng.
+
+**Khuyết tật, phát biểu lại cho chính xác — nó KHÔNG phải "thiếu một Phần".** Trường máy đọc
+`<!-- gate:phần-i = … -->` **gộp hai quần thể thuộc về HAI NGƯỜI ĐỌC KHÁC NHAU**: mục chờ **chủ sở
+hữu** (🔴) và mục chờ **điều phối viên** (⚖️). Banner Phần I đọc *"ĐANG CHỜ ANH"* — nói với chủ sở
+hữu — nên người chủ mở file ra nhận **một danh sách mười tám số hiệu mà bảy trong đó chưa bao giờ là
+của mình**, và **không dòng nào trong hồ sơ nói được cái nào là cái nào**.
+
+🔴 **VÌ SAO KHÔNG DỰNG PHẦN THỨ NĂM, và điều này bác một giả định của chính §54.7.** §54.7 kết luận
+*"không có chỗ nào để rời TỚI"* rồi suy ra hồ sơ thiếu một **kệ**. Nửa đầu đúng; **nửa sau nhầm chỗ
+đau**. Ba Phần hiện có phân loại theo **TRẠNG THÁI CỦA VIỆC** (chưa quyết / đã quyết-chưa làm / đã
+làm) và **phép phân loại ấy không hỏng** — mục 54 thật sự **chưa ai quyết**, nên Phần I là **đúng
+chỗ**. Cái hỏng là **Phần I không khai AI đang chờ**. Một Phần thứ năm sẽ trộn hai trục phân loại
+vào một chiều và làm mọi mục ⚖️ tương lai phải chọn giữa *trạng thái* và *người chờ*. **Nên trục thứ
+hai được khai bằng một TRƯỜNG, không bằng một PHẦN** — và BH-1 vẫn đúng rằng dựng một Phần mới không
+phải của người thi hành.
+
+**Việc đã làm, đo được:** `<!-- gate:phần-i = … -->` **nghỉ**, thay bằng **hai trường, mỗi cái MỘT
+dòng**, đặt ngay dưới đoạn liệt kê đang sống:
+* `<!-- gate:phần-i-chờ-chủ-sở-hữu = … -->`
+* `<!-- gate:phần-i-chờ-điều-phối-viên = … -->`
+
+🔴 **TÊN SUY TỪ "AI ĐỌC", không từ cái gì tiện phân tích.** Chủ sở hữu `grep` chữ `chờ-chủ-sở-hữu`;
+điều phối viên `grep` chữ `chờ-điều-phối-viên`. **Mỗi trường gọi tên NGƯỜI ĐỌC của nó bằng chính chữ
+người ấy dùng**, và mỗi cái đọc được **mà không cần đọc cái kia**. Chỗ đặt cũng suy từ đó: **ngay
+dưới đoạn văn xuôi đang sống**, nơi người vừa đọc xong câu liệt kê đang nhìn — không phải đầu file,
+vì người ta tới Phần I qua **banner của nó**, không qua một mục lục mà file này không có.
+
+**Cổng cưỡng chế gì — `check-owner-decisions.sh`, kiểm mới `C7`:** đúng **một** trường mỗi loại
+(hai thông điệp riêng, vì *"chủ sở hữu không tìm thấy danh sách của mình"* và *"điều phối viên không
+tìm thấy của mình"* là hai hỏng hóc của hai người); **HỢP của hai trường = ĐÚNG quần thể Phần I**;
+và **giao của hai phải RỖNG**. 🔴 **Là một phép HỢP chứ không phải hai phép "tập con", và đó là chỗ
+có răng:** hai phép tập con riêng lẻ đều xanh trong khi một mục **rơi ra khỏi cả hai trường** và ra
+khỏi hàng đợi của mọi người — đúng cái rơi âm thầm mà phép tách này tồn tại để chặn. Dạng cũ
+`<!-- gate:phần-i = … -->` nay bị **gọi tên và từ chối**, không bỏ qua im lặng.
+
+**Và kết quả in ra chỗ người đọc**, không chỉ được assert: dòng tóm tắt nay có hai dòng con
+`⏳ waiting on the OWNER` và `⚖️ waiting on the COORDINATOR`. Người chủ đọc **một dòng** rồi dừng.
+
+**MỤC 54 XỬ THEO KỆ MỚI — kết cục:** mục **Ở LẠI PHẦN I**, và nay đứng trong trường
+`chờ-điều-phối-viên`. **Nó KHÔNG được quyết bởi nhiệm vụ này**, và lý do là một phép đo, không phải
+một sự e dè: §54.6 đo rằng bản sửa **không có nhân chứng đỏ được** — không đường nào trong cây đưa
+`Start()` vào trạng thái mục nêu tên — và §54.7 xác nhận lại bằng cấu trúc. **Một mục ⚖️ không có
+nhân chứng vẫn là một mục không thi hành được**, và nhãn ⚖️ nói *ai được quyết*, không nói *đã đủ
+bằng chứng để quyết*. 📎 Cái đổi hôm nay là: người chủ sở hữu mở file ra **không còn thấy 54 trong
+danh sách của mình**, và đó chính là toàn bộ điều §54.7 đòi.
+
+🔴 **NHÂN CHỨNG SỐNG TRÊN CHÍNH ĐƯỜNG NÀY, ĐO TRONG LÚC LÀM — và nó CỦNG CỐ §54.6 chứ không lật.**
+Chạy `web/tests` bằng tay, `POST /v1/fleet/start` **đầu tiên** trên một engine vừa khởi động trả
+**500** với đúng cú ném P5 mà mục này nêu tên suốt: `UnauthorizedAccessException` →
+`MachineConfigStore.WriteAllTextAtomic` (`:655`) → `.Save` (`:644`) → `.Ensure` (`:199`) →
+`SimulatorBase..ctor` (`:121`) → `SimulatorFactory.Create` (`:92`) → **`FleetCore.BuildStartPlan`
+(`FleetCore.cs:3295`)** → `FleetCore.Start` (`:2606`). **Cú ném ra khỏi `BuildStartPlan`, tức NGOÀI
+KHOÁ và TRƯỚC `StartLocked`** — đúng chỗ §54.6 và §54.7 tính toán bằng số dòng, nay **quan sát trực
+tiếp**. Nên `_slots` **RỖNG**, đúng nhánh U-1 đã trả lời. **§54.6 và §54.7 ĐỨNG VỮNG, và giờ chúng
+có một quan sát chứ không chỉ một phép suy.** Cái mục này còn chờ **không đổi**: một cú ném từ *bên
+trong* `StartSlot`, mà không ai nêu tên được. 📎 Bản thân cú 500 ấy là **một khuyết tật riêng, chưa
+có mục**, và nó **không phải của mục 54** — xem báo cáo BQ-1.
+
 ---
 
 ## 57. BỐN khuyết tật config-sync do AH-1 đo 2026-08-19 và ghi CHỈ trong thông điệp merge — không cái nào từng vào file này
@@ -2096,96 +2187,6 @@ host và so.
 
 ---
 
-## 67. HAI component đòi MỘT target path cho `run-exhibition.bat` — và cái được HARVEST hạ cánh ở một FEATURE LUÔN BẬT, phá chính cái cổng opt-in mà component kia dựng ra
-
-⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — đóng gói và installer; không chạm payload MQTT, không chạm hình
-dạng dây, không chạm một con số OEE.
-
-### 67.1 Đo được cái gì — 2026-08-24, bốn mệnh đề đo RIÊNG
-
-**(a) Trùng byte — ĐÚNG.** `cmp` thoát 0; `sha256` **giống nhau**
-(`66ce3c9848b86283d3c0151dff72d078661b810b7851dcf7db2b0b0586804cdd`); **1093 byte** mỗi file.
-`packaging/run-exhibition.bat` mtime 2026-08-01; `publish-desktop/run-exhibition.bat` mtime 2026-08-20.
-
-**(b) Không bước publish nào sinh ra nó — ĐÚNG, và NÊU QUÁ DÈ DẶT.**
-`packaging/installer/build-installer.ps1` chạy đúng **hai** `dotnet publish` (`:95–104`) và **không có
-một `Copy-Item` nào**. Không csproj nào nhắc file. `publish-desktop/` bị **gitignore** (`.gitignore:4`).
-🔴 **Nó tới đó bằng một bước THỦ CÔNG ĐÃ GHI TRONG TÀI LIỆU** — `README.md:738–745`:
-`copy tools\machine-simulator\packaging\run-exhibition.bat publish-desktop\`. Nên sự có mặt của nó
-trên một máy dựng là **ĐƯỢC MONG ĐỢI**, không phải rác sót — điều đó làm va chạm **DỄ GẶP HƠN** chứ
-không hiếm hơn, và đó là chiều ngược với cái chữ "sót" gợi ra.
-
-**(c) "Component thứ BA" — SỐ ĐÚNG THEO MỘT CÁCH ĐỌC, LỎNG THEO CÁCH KHÁC.** Đúng **một** component
-nhắc tới file: `ExhibitionLauncherComponent` (`Package.wxs:160`), chứa
-`<File Id="ExhibitionBatFile" Name="run-exhibition.bat" Source="..\run-exhibition.bat" KeyPath="yes" />`
-(`:161`), nằm dưới `<DirectoryRef Id="INSTALLFOLDER">` (`:159`), được `ExhibitionFeature`
-`Level="1000"` tham chiếu (`:191–194`). Nhưng `Package.wxs` khai **BỐN** component tường minh —
-`ShellExeComponent` (`:71`), `EngineServiceComponent` (`:100`), `StartupShortcutComponent` (`:136`),
-`ExhibitionLauncherComponent` (`:160`). Nó là component **thứ TƯ**, và **thứ BA** trong số những cái
-cài một **FILE** (`StartupShortcutComponent` lấy KeyPath là một `RegistryValue` HKCU, không phải
-file). **Ordinal chỉ đứng được dưới cách đọc "component mang file".**
-
-**(d) Hai component thật sự quy về CÙNG một target path — ĐÚNG.** Đây là mệnh đề tôi nghi nhất và nó
-**đứng**: tường minh cho `[INSTALLFOLDER]\run-exhibition.bat`
-(`INSTALLFOLDER` = `ProgramFiles6432Folder\ST4I\Machine Simulator`, `Package.wxs:43–47`); harvest thì
-`St4i.Installer.wixproj` khai `<HarvestDirectory Include="..\..\publish-desktop">` với
-`<DirectoryRefId>INSTALLFOLDER</DirectoryRefId>` **và** `<SuppressRootDirectory>true</SuppressRootDirectory>`
-⇒ file ở gốc `publish-desktop` hạ cánh **thẳng** vào `[INSTALLFOLDER]`, **cùng đường, cùng tên**.
-Phép loại trừ **không** bỏ nó: `exclude-shell-and-engine-exe.xslt` (`:101–108` và `:113–120`) mang
-đúng **bảy** cái kim, và `run-exhibition.bat` **không** trong đó.
-🔴 **Xác nhận mạnh nhất nằm trong chính bộ test của repo:** `InstallerHarvestExclusionTests.cs:298`
-liệt kê `@"SourceDir\run-exhibition.bat"` trong ngân hàng **`MustSurvive`**, với fixture
-`cmpExhibitionBat`/`filExhibitionBat` (`:206–208`). **Bộ test khẳng định harvest phải GIỮ đúng cái
-file mà `Package.wxs` cũng khai.**
-
-🔴 **NÊU QUÁ DÈ DẶT — HẬU QUẢ TỆ HƠN "hai component đòi một đường".** Bản harvest hạ cánh vào
-`HarvestedFiles` → `MainFeature` `Level="1"` (**luôn được cài**), còn bản tường minh nằm sau
-`ExhibitionFeature` `Level="1000"` (**TẮT mặc định**). Nên ngoài khuyết tật ICE30 trùng target path,
-một bản dựng nhánh `-SkipDotnetPublish` sẽ **ship trình khởi chạy triển lãm trên MỌI bản cài mặc
-định**, tức **phá chính cái cổng opt-in mà component ấy tồn tại để dựng**. **Không lời khai nào và
-không bản ghi nào trong file này nói câu đó.**
-
-🔴 **Vì sao chưa ai gặp:** `obj/x64/Release/_HarvestedFiles_dir.wxs` (mtime 2026-07-28, 63 component)
-**không có** một hit `run-exhibition` nào — nó có **trước** khi file xuất hiện (2026-08-20). Chỉ
-nhánh `-SkipDotnetPublish` với tới được: đường thường chạy `Remove-Item -Recurse -Force publish-desktop`
-(`build-installer.ps1:91`), xoá bản chép tay. **Cùng điều kiện với tới của mục 46.**
-
-🔴 **VÀ KHÔNG PHẢI PHÁT HIỆN MỚI — nói ra thay vì nhận công:** `§46.5` (`docs/owner-decisions.md:2048–2056`)
-**đã nêu đúng khuyết tật này** — cùng 1093 byte, cùng chữ "trùng byte", cùng ordinal "component tường
-minh thứ ba", cùng bằng chứng `_HarvestedFiles_dir.wxs`, và cùng một quyết định **không sửa**. Cái
-duy nhất **mới** ở đây là **phá cổng feature**.
-
-**Không có nhân chứng:** **không MSI nào được dựng** (nhiệm vụ này bị cấm), nên **không** ai quan sát
-được một lỗi ICE30 thật.
-
-### 67.2 Ở đâu trong mã — trỏ bằng TÊN
-
-`packaging/run-exhibition.bat` · `publish-desktop/run-exhibition.bat` ·
-`packaging/installer/Package.wxs` (`ExhibitionLauncherComponent` `:160`, `ExhibitionFeature` `:191`,
-`INSTALLFOLDER` `:43`) · `packaging/installer/St4i.Installer.wixproj` (`HarvestDirectory`,
-`SuppressRootDirectory`) · `packaging/installer/exclude-shell-and-engine-exe.xslt` (`:101–120`) ·
-`packaging/installer/build-installer.ps1` (`:91`, `:95–104`) ·
-`St4i.EdgeCore.Tests.InstallerHarvestExclusionTests` (`MustSurvive`, `:298`) · `README.md:738–745`.
-
-### 67.3 Hậu quả vận hành, HAI CHIỀU
-
-**Chiều để nguyên.** Một bản dựng `-SkipDotnetPublish` hoặc **hỏng lúc link** (ICE30) hoặc **cài một
-tính năng người vận hành không chọn**. Cả hai kết quả đều xuất hiện **chỉ trên máy có bước thủ công
-của README** — tức trên máy của người **làm theo tài liệu**.
-
-**Chiều sửa.** Hai lựa chọn, giá khác nhau và phải nói rõ: thêm `\run-exhibition.bat` vào bảy cái kim
-của XSLT (**rẻ**, nhưng `InstallerHarvestExclusionTests` đang khẳng định điều **ngược lại** ở
-`MustSurvive:298`, nên bộ test phải dịch cùng lúc), hoặc bỏ `ExhibitionLauncherComponent` và để
-harvest mang nó (**mất cổng opt-in**). **Cái phải quyết là muốn trình khởi chạy triển lãm bật hay
-tắt mặc định** — một câu hỏi sản phẩm, không phải một câu hỏi build.
-
-### 67.4 Nếu KHÔNG quyết định
-
-Bước thủ công trong README tiếp tục là một cái bẫy có tài liệu hướng dẫn, và **cách duy nhất chưa ai
-gặp nó là chưa ai dựng MSI từ nhánh ấy kể từ 2026-08-20**.
-
----
-
 ## 68. Màn hình cài đặt web NÓI SAI THEO CHIỀU KHẲNG ĐỊNH với vận hành viên WELDER và DISPENSING — và lối thoát duy nhất của chính màn hình ấy KHÔNG với tới được cho hai loại máy đó
 
 ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** cho bản sửa **lời văn + một affordance UI** — không chạm ba miễn
@@ -2267,6 +2268,57 @@ Hai loại máy ship trong `fleet.json` mặc định tiếp tục có một mà
 đổi không tồn tại, **và bộ e2e không chạm hai loại ấy**, nên ngay cả khi cổng có chạy `web/` (mục 60)
 nó vẫn sẽ **không đỏ**.
 
+### 68.5 🔧 THI HÀNH MỘT PHẦN — BQ-1, 2026-08-24, base `2530b94c`. **BỜ LỜI VĂN ĐÃ TRẢ; BỜ MÁY ĐỌC ĐƯỢC VẪN CỦA ANH. MỤC Ở LẠI PHẦN I.**
+
+**NHÃN ⚖️ kiểm bằng ba miễn trừ, cho bờ đã trả:** *(a)* không chạm payload MQTT; *(b)* **không chạm
+hình dạng dây** — `MachineSettingsResponseDto` **không thêm một trường nào**, đúng phán quyết mục 42;
+*(c)* không chạm số OEE. **Nhãn ⚖️ đứng vững cho bờ lời văn.** Bờ còn lại — một cờ trên DTO — chạm
+**(b)** và **vẫn của chủ sở hữu**.
+
+**Mọi lời khai của §68.1 ĐO LẠI, và con số thì đứng còn MỘT TRÍCH DẪN THÌ KHÔNG.** Đứng vững:
+`MachineSettingsPanel.tsx` **558 dòng**; `notSupported` ở **`:431`**; `:447`, `:511`, `:524` đúng
+chỗ; `SettingsTab.tsx:41` và `MachineDetail.tsx:354` đúng; quét **toàn bộ `web/src`** cho
+`settings/push`/`settings/pull` ⇒ **0**; `13-machine-settings.spec.ts` chỉ chạy `SCRW-01`/`AOI-01`/
+`IOT-01`, **0** lần `WELD` hoặc `DISP` trên **cả 28 spec**. 🔴 **KHÔNG đứng vững:**
+`MachineParameterSchema.cs:112–113` — hai dòng ấy hôm nay ở **`:142–143`**. Vị ngữ **đúng nguyên**
+(`["DISPENSING"]`/`["WELDER"]` có mặt, `ConfigKindForMachineType` **không bao giờ** trả null cho
+chúng), chỉ **số dòng dời 30**, và nó dời vì `5775a1f1` (BP-1, mục 64/66) chạm chính file ấy **sau
+khi** BO-1 viết mục này. **Một lời khai hai ngày tuổi đã lệch — đúng §8.1(h5.1).**
+
+**NHÂN CHỨNG — CÓ DỰNG ĐƯỢC, VÀ NÓ KHÔNG CHẠY TRONG CỔNG. Trả lời trước khi sửa.**
+`web/tests/29-machine-settings-unwired-types.spec.ts` (mới) chạy **WELD-01, DISP-01** và — cố ý —
+**SCRW-01**. 🔴 **Cổng KHÔNG chạy nó**: `verify-suites.sh` không dịch TypeScript và không mở trình
+duyệt, **0** trên `${#SUITES[@]}` suite nào chạy dưới `web/`. Đó là **mục 60**, chờ chủ sở hữu **vì
+giá hạ tầng**, và nhiệm vụ này **KHÔNG nối `web/` vào cổng**. Câu ấy được ghi **trong chính file
+spec**, ở đầu, kèm lệnh chạy tay — không chỉ ở đây.
+
+**CẶP ĐỐI CHỨNG, chạy trọn và hoàn nguyên** (bằng tay, từ `tools/machine-simulator/web`): với
+`web/src` **hoàn nguyên về `2530b94c`** → **3/3 ĐỎ**; với bản sửa → **3/3 XANH**. `npm run build`
+(`tsc -b && vite build`) xanh. `13-machine-settings.spec.ts` chạy lại **không đỏ vì bản sửa này**.
+
+**Việc đã làm — SỬA LỜI KHAI, không thêm khả năng biết:** `columns.value` **"Effective"/"Hiệu lực"
+→ "Stored"/"Đã lưu"**; `provenance.machine` **"Machine-adjusted"/"Chỉnh theo máy" → "Machine override
+stored"/"Đã lưu chỉnh riêng cho máy"**; `provenance.machineProduct` cùng kiểu; `baselineInfo`
+*"adjusted from"* → *"stored differently from"*; `description` thêm mệnh đề **lưu ≠ đổi cách máy
+chạy**; và **một dòng `limitation` mới** (khuôn `audit.limitation` mục 53 dựng), render trên **cả
+hai** bề mặt vận hành viên. **Cả hai locale.**
+
+🔴 **VÌ SAO DÒNG CẢNH BÁO HIỆN CHO MỌI LOẠI MÁY — đó là kết luận của phép đo, không phải một sự lười
+biếng.** Muốn hiện có chọn lọc thì client phải **biết** loại nào được sim đọc. Sự thật ấy **có tồn
+tại** — `MachineParameterSchema.IsConsumedBySimulator` — nhưng nó chỉ tới được `BuildPushMessage`
+trên `POST …/settings/push`, **endpoint mà `web/src` không bao giờ gọi**, và **mục 42 đã CỐ Ý quyết
+`MachineSettingsResponseDto` không thêm trường**. ⇒ Một huy hiệu theo loại máy sẽ là **bản chép tay
+kiến thức của server trong client**, đúng thứ rữa đã sinh ra mục này. Nên mọi chuỗi chỉ nói cái
+**biết được**: một giá trị **đã được LƯU**. Và dòng `limitation` **nói thẳng cái màn hình KHÔNG
+biết** — luật (3) áp vào một bề mặt người dùng. Lời văn ấy **không phụ thuộc loại máy**, nên **không
+thể lỗi thời** vào ngày một sim được nối hoặc bị gỡ; spec ghim tính chất ấy bằng ca `SCRW-01`.
+
+**Cái KHÔNG được trả, nói thẳng:** vận hành viên **vẫn không biết máy CỦA MÌNH** có đọc hay không —
+họ chỉ không còn bị **khẳng định điều ngược lại**. §68.3 nói đúng và câu ấy giữ nguyên: *"hai bờ ấy
+KHÔNG thay nhau được — bản rẻ sửa **lời khai**, bản đắt sửa **khả năng biết**"*. **Bờ đắt vẫn của
+anh**, và nó chạm miễn trừ (b). Mục **Ở LẠI PHẦN I**, và nay đứng ở trường **`chờ-chủ-sở-hữu`**:
+sau khi bờ ⚖️ đã trả, cái còn lại **chỉ** chờ chủ sở hữu.
+
 ---
 
 ## 69. `intentClassifier` gửi BỐN chuỗi không thuộc vựng từ `stepType` vào một mệnh đề `WHERE` — nên mọi câu hỏi mô-men và mọi câu hỏi lượng keo trả về "không đủ dữ liệu" TRÊN MỘT BẢNG CÓ DỮ LIỆU
@@ -2339,6 +2391,65 @@ test. Giá thật: **không ai biết bốn literal ấy có ĐÚNG không** —
 Hai bài test tiếp tục khẳng định giá trị sai là đúng, nên **bất kỳ ai sửa đúng sẽ thấy cổng đỏ** và
 nhiều khả năng lùi lại. Đó là hình dạng tệ nhất của một khuyết tật được ghim: **dụng cụ đứng về phía
 khuyết tật.**
+
+### 69.5 🔴 KHÔNG THI HÀNH — BQ-1, 2026-08-24. **NHÃN ⚖️ BỊ MỘT PHÉP ĐO BÁC. `server/` KHÔNG THUỘC SẢN PHẨM NÀY.** Mục **Ở LẠI PHẦN I**, chuyển sang **CHỜ CHỦ SỞ HỮU**
+
+**Mọi mệnh đề KỸ THUẬT của mục này ĐỨNG VỮNG, đo lại độc lập** — và đo được **dù `server/` không có
+trên đĩa**, xem ngay dưới. `mapProcessMetric` trả `stepType: "torque"` và `"dispense"`;
+`mapCorrelationArgs` trả `upstreamStepType` cùng hai giá trị ⇒ **BỐN literal**.
+`drizzle/0289_process_step_spec.sql` gieo đúng **TÁM** mã, và **không mã nào** là `torque` hay
+`dispense` (mã thật: `screw_tightening`, `glue_dispense`). `processResult.ts` có đúng
+`if (opts.stepType) conds.push(eq(processResults.stepType, opts.stepType))`, **AND với `machineId`**.
+Hai bài test ghim đúng hai giá trị sai. **Vị ngữ *"sai theo CẢ HAI CHIỀU"* cũng đứng: nhánh LUÔN được
+chọn, và mệnh đề SQL KHÔNG BAO GIỜ khớp được.** 📎 Một lệch nhỏ: mục trỏ
+`intentClassifier.f6.test.ts:17` cho `expect(a.stepType).toBe("torque")`; **`:17` là dòng
+`metricKey`**, assertion `stepType` ở **`:18`**. `:28` thì đúng.
+
+🔴 **NHƯNG TIỀN ĐỀ VỀ THẨM QUYỀN KHÔNG SỐNG SÓT, VÀ ĐÓ LÀ TOÀN BỘ KẾT CỤC CỦA MỤC NÀY.**
+Lời giao việc hỏi thẳng: ***`server/` có thuộc sản phẩm này không?*** **Đo, đừng đoán — bốn phép đo
+độc lập, tất cả nói KHÔNG:**
+
+1. **`package.json` ở gốc repo khai `"name": "synapse-platform"`**, và **toàn bộ** `dev`/`build`/
+   `start` của nó chạy `server/_core/index.ts`, `server/worker.ts`, `server/edge/edgeGatewayMain.ts`.
+   `server/` là **mã ứng dụng của synapse-platform**.
+2. **`St4iMachineSimulator.sln` nhắc tới `server` ĐÚNG 0 lần**, và **không csproj nào** của sản phẩm
+   này trỏ ra ngoài `tools/machine-simulator`. Sản phẩm này là **một dụng cụ nằm trong `tools/`** của
+   repo ấy, có solution riêng, cổng riêng, hồ sơ quyết định riêng.
+3. **Lịch sử, và đây là phép đo mạnh nhất:** commit **cuối cùng** chạm `server/` là `adff917c`,
+   **2026-07-18**. Kể từ đó **621 commit** chạm `tools/machine-simulator` và **0** chạm `server/`.
+   **Ba mươi bảy ngày, một chiều tuyệt đối.** Quy ước thông điệp commit cũng là hai họ khác hẳn
+   (`feat(machine-api)`/`doc5x` so với `docs(owner)`/`merge: Bx-1`).
+4. **Chính dụng cụ của sản phẩm này đã ghi điều đó**: `repo-scan.sh` (`:43–46`) gọi mã dưới
+   `server/` là ***"the CONSUMER's code"*** — bên **tiêu thụ** process feed mà sản phẩm này **phát**.
+
+⇒ **`server/` là sản phẩm KHÁC.** Nên nhãn **⚖️ "ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC" là SAI** — và **không
+phải vì chạm một trong ba miễn trừ** (nó không chạm cái nào: đây là một giá trị phát ra trong một
+tiến trình Node, không phải payload MQTT, không phải hình dạng dây của sản phẩm này, không phải số
+OEE). Nó sai vì **uỷ quyền trên sản phẩm NÀY không cấp quyền sửa mã của sản phẩm KHÁC.** Đó đúng
+luật mục 59 đã dùng và đã ghi: ***"uỷ quyền phủ được 'làm hay không làm', KHÔNG phủ được sự đồng ý
+của bên thứ ba."*** **§49.5 cho phép một phép đo thắng nhãn của tác giả mục; đây là phép đo ấy.**
+
+🔴 **VÀ MỘT NỬA THỨ HAI, ĐỘC LẬP VỚI THẨM QUYỀN: KHÔNG CÓ NHÂN CHỨNG NÀO DỰNG ĐƯỢC TỪ ĐÂY.** Cổng
+của sản phẩm này **không dựng, không chạy, không nhìn thấy** `server/`. Bộ test của nó là `vitest`
+khai ở `package.json` **gốc repo**, thứ `verify-suites.sh` **không bao giờ gọi**. Nên một bản sửa ở
+`server/` — kể cả bản sửa đúng — **hạ cánh không nhân chứng**, tệ hơn cả khoảng trống `web/` của mục
+60 (ở đó ít nhất có 28 spec và một `npm run build` chạy tay được). **Bốn mươi tám nhiệm vụ liên tiếp
+từ chối bản sửa không nhân chứng; nhiệm vụ này không phá lệ.** Hai lý do độc lập, mỗi lý do đủ để
+dừng.
+
+🔴 **CÁI KHÔNG ĐÚNG LÀ TIỀN ĐỀ *"KHÔNG ĐO ĐƯỢC"*, VÀ NÓ SAI THEO CHIỀU LÀM MỤC NÀY NGHE BẾ TẮC HƠN
+THỰC TẾ.** Nằm ngoài nón checkout thưa **KHÔNG** có nghĩa là không đo được: nón thưa gỡ file khỏi
+**ĐĨA**, không khỏi **KHO ĐỐI TƯỢNG**. `git show HEAD:server/…`, `git grep`, `git ls-files` đọc cả
+**1.589** file ấy bình thường — mọi con số ở đoạn đầu §69.5 được đo đúng bằng cách đó, trên một cây
+mà `server/` không tồn tại trên đĩa. Cái mù là **grep -r, ripgrep, tìm-kiếm-trong-editor, `find`**.
+**Xem mục 74**, mở hôm nay, cho cả phép đo lẫn hai bờ định giá. ⇒ **Mục này KHÔNG dừng vì không đo
+được — nó dừng vì THẨM QUYỀN và vì NHÂN CHỨNG.**
+
+**Kết cục:** mục **Ở LẠI PHẦN I**, chuyển từ trường `chờ-điều-phối-viên` sang **`chờ-chủ-sở-hữu`**.
+**Câu chờ anh không phải *"sửa vựng từ hay bỏ bộ lọc"*** — đó là câu §69.3 nêu và nó **chỉ trả lời
+được sau** câu này: ***ai được sửa `server/`, và bản sửa ấy lấy nhân chứng ở đâu?*** Đường đi có thể
+là chuyển mục sang workstream của `synapse-platform`; **quyết định ấy không nằm trong uỷ quyền của
+điều phối viên sản phẩm này.**
 
 ---
 
@@ -2787,6 +2898,183 @@ trích dẫn được bảo tồn** với một token **trong văn đang sống*
 Hình dạng A tiếp tục vô hại đúng chừng nào bốn hàng kia còn viết thường. **Hình dạng B đợi mục đầu
 tiên đi *phán quyết → Phần I* và sẽ không báo gì cả** — và vì file này vừa mở **mười bốn** mục mới
 vào Phần I hôm nay, quần thể có thể vào hình dạng B **vừa lớn hơn đáng kể**.
+
+### 73.7 🔧 THI HÀNH MỘT PHẦN — BQ-1, 2026-08-24, base `2530b94c`, **ĐIỀU PHỐI VIÊN THEO UỶ QUYỀN**. **LỖ TRÍCH DẪN ĐÃ BỊT; LỖ HOA-THƯỜNG THÌ KHÔNG, VÀ NÓI RA. MỤC Ở LẠI PHẦN I.**
+
+**NHÃN ⚖️ kiểm bằng ba miễn trừ:** khuyết tật của **dụng cụ đọc một file markdown**; không chạm
+payload MQTT, không chạm hình dạng dây, không chạm số OEE. **ĐỨNG VỮNG.**
+
+**MỆNH ĐỀ TRUNG TÂM ĐO LẠI — ĐỨNG VỮNG NGUYÊN ĐƠN VỊ.** Chạy lại bằng bản sao awk của
+`strip()`/`has()`/`exec_token()` trên **mọi** hàng: đúng **BỐN** hàng có dạng thường mà không có dạng
+hoa — **12** (`:43`), **48** (`:79`), **51** (`:82`), **52** (`:83`) — cả bốn thân ở Phần III với
+`ex=1`. Hàng mục 12 đo được **14 334 ký tự** sau `strip()`, **khớp đến từng ký tự** với §73.2.
+
+🔴 **HAI CON SỐ CỦA TÁC GIẢ MỤC KHÔNG SỐNG SÓT, và cả hai là loài mà chính file này tồn tại để bắt.**
+*(i)* §73.2 viết *"(Ba hàng mang dạng **HOA** — 41 `:72`, 43 `:74`, 57 `:88`)"*. **Hôm nay là SÁU**:
+41, 43, 57 **cộng 60 (`:91`), 71 (`:102`) và 73 (`:104`) — chính hàng của mục này.** Ba hàng thêm ra
+được BO-1 viết **cùng ngày, cùng nhiệm vụ**, sau khi đoạn ấy đã viết xong. *(ii)* §73.2 viết *"Cùng
+phép đo trên cả **59** hàng"*; bảng nay có **73** hàng. **Kết luận không đổi** — cả sáu hàng dạng hoa
+đều ở Phần I với `ex=0`, nơi `partial` chỉ tắt mệnh đề thi hành — nhưng **hai con số thì đổi**, và
+một mục **hai ngày tuổi** đã lệch ở hai chỗ.
+
+🔴 **VÀ LỜI GIAO VIỆC ĐÚNG Ở MỘT ĐIỀU KHÔNG AI GHI: HÀNG CỦA MỤC 73 LÀ MỘT CÁI BẪY CHO CHÍNH PHÉP
+THI HÀNH NÀY.** Hàng `| 73 |` chứa **CẢ HAI** cách viết, vì nó **trích lại phép đo**:
+`` has "THI HÀNH MỘT PHẦN" = 0 `` **nhưng** `` has "thi hành một phần" = 1 ``. Dạng HOA có mặt
+**chỉ để báo rằng nó vắng**. ⇒ Ngày mục này sang Phần III, `partial` = 1 và **`:222` nổ** — **phép
+thi hành mục 73 tự chặn chính nó**. Đó là **ví dụ SỐNG của hình dạng A**, và nó không phải giả định:
+nó nằm trên đường đi của nhiệm vụ này.
+
+**BẢN SỬA — HẸP, VÀ ĐÚNG CÁI §73.5 NÊU TÊN.** §73.5 đã loại *"làm C2 hai chiều"* bằng phép đo của
+BK-1 (**20/58 hàng đỏ, 19 trên 20 ĐÚNG theo luật của file** — vi phạm luật (2)), và nêu thứ hẹp hơn
+**chưa ai định giá**: *"phân biệt một token trong khối trích dẫn được bảo tồn với một token trong
+văn đang sống… đòi C2 biết CHỖ một token đứng"*. **Nay đã định giá và đã làm:** trước khi đọc trạng
+thái, C2 **cắt bỏ các đoạn TRÍCH** — code span trong backtick và đoạn trong ngoặc kép. Phần còn lại
+là **giọng của chính hàng**. 📎 Chính `strip()` là thứ làm hỏng: nó xoá backtick **TRƯỚC**, tiêu huỷ
+đúng bằng chứng phân biệt trích với khai.
+
+**GIÁ, ĐO TRÊN CẢ 73 HÀNG TRƯỚC KHI VIẾT:** **đúng MỘT hàng đổi phán quyết** — hàng 73, `partial`
+**1 → 0**. **Không** hàng nào đổi `ex`; **không** hàng nào đổi `CHỜ ANH`. **1/73 = 1,4 %**, so với
+34 % của bản hai chiều đã bị bác.
+
+🔴 **CÁI KHÔNG ĐƯỢC BỊT, VÀ NÓ ĐƯỢC ĐO CHỨ KHÔNG ĐƯỢC ĐOÁN: LỖ HOA-THƯỜNG.** Bốn hàng 12/48/51/52
+**vẫn xanh nhờ cách viết**, không nhờ hồ sơ. Đo: gập hoa-thường làm **cả bốn đỏ** — **VÀ VẪN ĐỎ CẢ
+BỐN KHI ĐÃ CẮT TRÍCH DẪN**, vì token viết thường của chúng nằm trong **văn đang sống**, không trong
+trích dẫn. ⇒ **Cắt trích dẫn KHÔNG làm phép gập hoa-thường trở nên an toàn; hai lỗ ĐỘC LẬP**, và
+nhiệm vụ này bịt **một**. `toupper()` của awk vẫn không dùng được (`THI HàNH MộT PHầN`), đúng §73.3.
+Câu ấy nay in ra ở **ranh giới (h)** của chính dụng cụ, chỗ kết quả hiện ra.
+
+**NHÂN CHỨNG — VÀ HÌNH DẠNG B ĐƯỢC *DỰNG RA*, KHÔNG ĐỢI.** §73.3 nói hình dạng B **chưa có ví dụ
+sống**; lời giao việc nói đúng rằng *"một tập không có ví dụ sống KHÔNG phải một tập rỗng"*. Nên ví
+dụ ấy được **chế tạo**: `tests/fixtures/owner-decisions/` giữ **bốn** hồ sơ giả lập, chạy bằng
+`check-owner-decisions.sh --self-test`, nay là một `run_tooling_check` trong cổng.
+
+| fixture | ở `2530b94c` | sau bản sửa | nghĩa |
+|---|---|---|---|
+| **A1** Phần III, token `MỘT PHẦN` trong backtick | **ĐỎ** | **XANH** | dương tính giả **bị gỡ** |
+| **A2** Phần III, token `MỘT PHẦN` trong văn sống | **ĐỎ** | **ĐỎ** | dương tính thật **giữ nguyên** — luật (1), nó vẫn đỏ được |
+| **B1** Phần I, `CHỜ ANH` **chỉ** trong trích dẫn | **XANH** | **ĐỎ** | **hình dạng B nay BẮT ĐƯỢC** |
+| **B2** Phần I, `CHỜ ANH` trần nhưng đã bị thay | **XANH** | **XANH** | **vẫn mù — và ranh giới (h)/(j) KHAI ra** |
+
+🔴 **Hai ca ĐỔI và hai ca KHÔNG ĐỔI, và hai ca không đổi là thứ làm hai ca đổi có nghĩa.** Một ngân
+hàng mà mọi ca đều lật chỉ chứng minh rằng *có gì đó* đã đổi. **B2 được assert là XANH CÓ CHỦ Ý**:
+bộ kiểm chứng nhận rằng nó **vẫn không thấy** hình dạng B ở dạng văn trần — nó không vá chỗ ấy.
+
+**Việc đã làm, LIỆT KÊ:** hàm `unquoted()` + biến `voice[]` tách khỏi `cell[]` (để một kiểm tương lai
+không lỡ tay đọc bản đã cắt và mất một token thật) · C2 đọc trạng thái từ `voice[]` · ba ranh giới
+mới **(h)(i)(j)** in cùng kết quả · `--self-test` + bốn fixture · đăng ký
+`run_tooling_check "owner-decisions C2 shapes"` trong cổng, **cạnh** kiểm cấu trúc sẵn có chứ không
+thay nó — *"hồ sơ nhất quán"* và *"dụng cụ còn đọc đúng hai hình dạng"* là **hai lời khai khác nhau**,
+và lời thứ nhất đã xanh suốt thời gian lời thứ hai sai.
+
+**Vì sao mục Ở LẠI PHẦN I:** cái còn nợ là **lỗ hoa-thường**, và trả nó đòi **hoặc** chấp nhận bốn
+dương tính giả, **hoặc** viết lại bốn hàng trạng thái **được bảo tồn** — tức đụng vào luật *"giữ
+nguyên văn"*, một quyết định về **hình dạng file**. Mục đứng ở trường **`chờ-điều-phối-viên`**.
+📎 Và vì bản sửa là **MỘT PHẦN**, `C2` nhánh Phần III (`:222`) **tự cấm** mục này sang Phần III —
+dụng cụ áp đúng luật của nó lên chính mục sửa nó.
+
+---
+
+## 74. Nón checkout thưa giấu **62 443** file được git theo dõi khỏi ĐĨA trong khi `git status` báo SẠCH — nên mọi phép quét không-qua-git trả *"không thấy"* ở chỗ sự thật là *"không đo"*
+
+🔴 **CHỜ ANH.** Mở **2026-08-24** (BQ-1). **Không chạm ba miễn trừ** — không payload MQTT, không hình
+dạng dây, không số OEE; đây là **môi trường làm việc**, không phải mã sản phẩm. Nhãn 🔴 **không nói
+về quyền** mà về **giá**: nới nón tiêu **đĩa và thời gian checkout** của mọi người dùng cây này, và
+đó là ví tiền của anh — cùng loài với nhãn của mục 60.
+
+### 74.1 Đo được cái gì — 2026-08-24. **LIỆT KÊ TRƯỚC, SỐ SAU**
+
+**Nón thưa gồm những gì — liệt kê, không đếm:** chế độ **cone** đang bật, và nó chứa **đúng hai thư
+mục** cộng **các file ở gốc repo**: `examples/device-client` và `tools/machine-simulator`. Đó là
+toàn bộ.
+
+**Cây HEAD có 27 thư mục cấp một.** Liệt kê những cái **KHÔNG** có mặt đầy đủ trên đĩa: `uploads`,
+`server`, `client`, `drizzle`, `scripts`, `FactoryAlertSystem`, `docs`, `knowledge`, `deploy`,
+`contracts`, `apidocs`, `shared`, `monitoring`, `.github`, `models`, `e2e`, `apps`, `tools`,
+`.superpowers`, `tests`, `.storybook`, `test-results`, `programming-workspace`, `patches`,
+`.continue`, `.claude` — **HAI MƯƠI SÁU**. Chỉ **`examples/`** nguyên vẹn. 📎 Cả `tools/` cũng
+khuyết (`tools/trainer/` — 3 file), nên *"thư mục của tôi thì đủ"* cũng chỉ đúng ở mức
+`tools/machine-simulator`, **0** file khuyết.
+
+**Rồi mới đếm:** **62 443** mục nhập được git theo dõi vắng mặt trên đĩa, trên tổng **63 454**;
+**1 011** có mặt (880 dưới `tools/`, 121 file gốc, 10 dưới `examples/`). Và **`git status` SẠCH** —
+0 dòng.
+
+🔴 **ĐƠN VỊ, đếm lại như lời giao việc đòi, vì nó có BA cách đọc và chỉ một khớp.** Con số **1.589**
+của BP-1 cho `server/` **ĐÚNG**, và **711** cho `client/` cũng đúng. Đơn vị là **mục nhập index =
+đường dẫn FILE (blob)**: cả 1 589 đều mode `100644`, **1 589 blob riêng biệt**, không symlink không
+gitlink. Hai cách đọc kia **không** cho con số ấy: `server/` trải trên **111** thư mục con, và đếm
+**mục nhập cây kể cả thư mục** cho **1 703**, không phải 1 589. ⇒ **"file" là chữ đúng cho 1 589.**
+
+🔴 **NHƯNG VỊ NGỮ QUANH CON SỐ ẤY LÀ MỘT NỬA SỰ THẬT, VÀ ĐÓ MỚI LÀ MỤC NÀY.** `server/` là **2 trong
+26** thư mục vắng mặt và **1 589 trong 62 443** đường dẫn — **2,5 %**. Câu *"`server/` nằm ngoài nón
+thưa"* đúng và **được viết chỉ theo chiều thuận**: nó không sai, nó **nhỏ hơn sự thật 39 lần**.
+
+🔴 **VÀ MỘT PHÂN BIỆT MÀ HAI NHIỆM VỤ ĐÃ TRỘN, VÌ NÓ LÀ TOÀN BỘ GIÁ TRỊ CỦA MỤC NÀY: "KHÔNG CÓ TRÊN
+ĐĨA" ≠ "KHÔNG ĐO ĐƯỢC".** Nón thưa gỡ file khỏi **ĐĨA**, không khỏi **KHO ĐỐI TƯỢNG**. `git grep`,
+`git show`, `git ls-files` đọc cả 62 443 đường dẫn **hoàn hảo** — mục **69** được đo lại nguyên vẹn
+hôm nay bằng đúng cách đó, trên một cây mà `server/` không tồn tại trên đĩa. Mù là **`grep -r`,
+ripgrep, tìm-kiếm-trong-editor, `find`** và mọi dụng cụ đọc working tree. ⇒ **Một phép quét ĐI QUA
+`repo-scan.sh` không mất gì cả**; cái hỏng là mọi phép quét **đi vòng qua nó**.
+
+### 74.2 Ở đâu — trỏ bằng TÊN
+
+`.git/info/sparse-checkout` (cone: `/examples/device-client/`, `/tools/machine-simulator/`) ·
+`scripts/repo-scan.sh` — ranh giới `(b)`, `sparse_gap_measure()`, `sparse_gap_declaration()`,
+`_claim()`, nhãn `SHA_LABEL` · `scripts/scan-doc-negations.sh` ranh giới `(e)` ·
+`scripts/verify-suites.sh` `run_tooling_check` (giao thức `DOES-NOT-MEASURE`).
+
+### 74.3 🔴 NỬA KHÔNG CHỜ AI — ĐÃ THI HÀNH 2026-08-24 (BQ-1), và nó không đợi mục này
+
+**Luật (3) — một phép kiểm phải KHAI thứ nó KHÔNG đo, ở chỗ kết quả hiện ra.** Nửa ấy đã trả.
+
+**Cái đã có từ trước, ghi cho công bằng:** `repo-scan.sh` **đã** khai ranh giới này ở `(b)` từ BA-1.
+🔴 **Nhưng nó khai bằng một HẰNG GÕ TAY** — *"server/ (1589 files) and client/ (711 files) are IN THE
+COMMIT and NOT ON DISK"* — và **cả hai con số vẫn ĐÚNG hôm nay**. Cái sai là **phạm vi**: hai thư mục
+đứng thay cho hai mươi sáu. **Đó là loài khuyết tật quen thuộc nhất của dự án này — một con số viết
+một lần trong văn xuôi trong khi tập nó mô tả đổi ở chỗ khác — nằm ngay trong mệnh đề tồn tại để
+chặn việc khai miền quá rộng.** Dòng in lúc chạy còn **bỏ luôn cả hai con số** và chỉ nêu hai cái tên.
+
+**Việc đã làm:** `repo-scan.sh` nay **ĐO** vùng ấy **mỗi lần chạy** (`git ls-files -v`, 0,22 s) và
+**IN nó trong khối `_claim`** — tức **cùng chỗ mọi kết quả và mọi lời từ chối hiện ra**, không chỉ
+trong header mà chỉ người sửa script mới đọc. Ranh giới `(b)` nay dẫn số đo thay vì hằng số, **giữ
+nguyên văn câu cũ** kèm ghi chú vì sao nó lệch. Nhãn `SHA_LABEL` — vốn cũng nêu hai thư mục — nay
+đọc con số. **Và cả hai chỗ nói thêm cái mệnh đề cũ để sót: quét QUA wrapper này không bị ảnh hưởng.**
+
+**CẶP ĐỐI CHỨNG, bắt buộc và chạy được:** `repo-scan.sh --sparse-gap-self-test` gọi **cùng một hàm**
+hai lần — **BANK A** với phép đo thật của cây này, **BANK B** với phép đo của một checkout **đầy đủ**
+(0 vắng mặt). A in `62443 … across 26 top-level entries` + cảnh báo; B in `NOTHING` + không cảnh báo.
+**Nếu hai bank đọc giống nhau thì lời khai ấy là một hằng số đội lốt phép đo** — cùng lập luận BO-1
+dựng `web_domain_declaration` trên. Thêm **assertion (i)** trong `--self-test`: vùng vắng phải
+**khác rỗng** ở đây, **và** một đường dẫn vắng lấy **từ chính phép đo** phải **đọc được qua git** —
+đó là mệnh đề tách *"vắng mặt trên đĩa"* khỏi *"không đo được"*, và nếu nó gãy thì lời khai in ra
+đã thành lời nói dối. Cộng `POPULATION sparse-absent-paths`.
+
+### 74.4 Hậu quả vận hành, HAI CHIỀU — và đây là **HAI BỜ ĐỊNH GIÁ**
+
+**BỜ NỚI NÓN** (`git sparse-checkout disable`, hoặc thêm thư mục). *Được:* mọi dụng cụ đọc đĩa —
+ripgrep, editor, `find`, và dụng cụ `Grep` mà các nhiệm vụ này dùng suốt — thấy đúng cây thật, và
+một *"không thấy"* trở lại nghĩa là *"không có"*. *Mất, và phải nói con số:* **62 443 file** đổ lên
+đĩa, trong đó **`uploads/` một mình đã 58 940** — tức **94 %** cái giá là một thư mục **không ai
+trong workstream này từng đọc**. Cộng thời gian checkout mỗi lần đổi nhánh, cho **mọi** người dùng
+cây. 📎 **Có một nước đi giữa chưa ai định giá:** thêm `server/`, `client/`, `shared/`, `contracts/`,
+`drizzle/` mà **không** thêm `uploads/` — **2 909** file thay vì 62 443, tức **4,7 %** giá của bờ đầy
+đủ. **Nhiệm vụ này không chọn nó** vì nó vẫn là ví tiền của anh, nhưng nó là con số anh nên có.
+
+**BỜ ĐỂ NGUYÊN.** *Được:* cây nhỏ, checkout nhanh, và — **sau hôm nay** — dụng cụ **tự khai** vùng
+nó không đọc được, ở chỗ kết quả hiện ra. *Mất:* lời khai ấy **chỉ ràng buộc `repo-scan.sh`**. Không
+gì ngăn người sau gõ `rg foo` và đọc `0` là *"không có"*. 🔴 **Và cái giá ấy KHÔNG giả thuyết — nó
+đã được trả hai lần**: câu *"`web/` không có trên đĩa"* làm **một thư mục không được mở** suốt nhiều
+nhiệm vụ và giấu một khuyết tật sản phẩm; rồi cổng in `PASS` mà không khai nó **không đo `web/`**
+(mục 60). **Đây là lần thứ BA cùng một luật bị vi phạm.**
+
+### 74.5 Nếu KHÔNG quyết định
+
+Cây vẫn thưa và dụng cụ vẫn khai — **nhưng chỉ một dụng cụ khai**. Mỗi nhiệm vụ mới thừa hưởng một
+cây mà **97 %** thư mục cấp một khuyết trên đĩa và **`git status` nói SẠCH**, và mỗi nhiệm vụ tự
+khám phá lại điều đó — hoặc **không**, và viết một câu phủ định tồn tại dựa trên một tập chưa bao
+giờ mở hết. 🔴 **Một câu phủ định tồn tại chỉ đúng nếu đã mở HẾT tập**, và trên cây này mặc định
+là **chưa**.
+
 ---
 
 # 🔨 PHẦN II — ĐÃ QUYẾT, VIỆC CÒN NỢ
@@ -2995,6 +3283,159 @@ trên nói, vì `## 5–7.` là **một** tiêu đề chứa **ba** mục.
 > tắt một tập chưa ai liệt kê thì không phải một sự thật* — và ở đây tập **đã được liệt kê
 > ngay cạnh**, nên phép liệt kê tự bác con số. Thay bằng phép liệt kê; câu sai giữ lại ở
 > đây làm hồ sơ chứ không xoá.
+
+---
+
+## 67. HAI component đòi MỘT target path cho `run-exhibition.bat` — và cái được HARVEST hạ cánh ở một FEATURE LUÔN BẬT, phá chính cái cổng opt-in mà component kia dựng ra
+
+⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — đóng gói và installer; không chạm payload MQTT, không chạm hình
+dạng dây, không chạm một con số OEE.
+
+### 67.1 Đo được cái gì — 2026-08-24, bốn mệnh đề đo RIÊNG
+
+**(a) Trùng byte — ĐÚNG.** `cmp` thoát 0; `sha256` **giống nhau**
+(`66ce3c9848b86283d3c0151dff72d078661b810b7851dcf7db2b0b0586804cdd`); **1093 byte** mỗi file.
+`packaging/run-exhibition.bat` mtime 2026-08-01; `publish-desktop/run-exhibition.bat` mtime 2026-08-20.
+
+**(b) Không bước publish nào sinh ra nó — ĐÚNG, và NÊU QUÁ DÈ DẶT.**
+`packaging/installer/build-installer.ps1` chạy đúng **hai** `dotnet publish` (`:95–104`) và **không có
+một `Copy-Item` nào**. Không csproj nào nhắc file. `publish-desktop/` bị **gitignore** (`.gitignore:4`).
+🔴 **Nó tới đó bằng một bước THỦ CÔNG ĐÃ GHI TRONG TÀI LIỆU** — `README.md:738–745`:
+`copy tools\machine-simulator\packaging\run-exhibition.bat publish-desktop\`. Nên sự có mặt của nó
+trên một máy dựng là **ĐƯỢC MONG ĐỢI**, không phải rác sót — điều đó làm va chạm **DỄ GẶP HƠN** chứ
+không hiếm hơn, và đó là chiều ngược với cái chữ "sót" gợi ra.
+
+**(c) "Component thứ BA" — SỐ ĐÚNG THEO MỘT CÁCH ĐỌC, LỎNG THEO CÁCH KHÁC.** Đúng **một** component
+nhắc tới file: `ExhibitionLauncherComponent` (`Package.wxs:160`), chứa
+`<File Id="ExhibitionBatFile" Name="run-exhibition.bat" Source="..\run-exhibition.bat" KeyPath="yes" />`
+(`:161`), nằm dưới `<DirectoryRef Id="INSTALLFOLDER">` (`:159`), được `ExhibitionFeature`
+`Level="1000"` tham chiếu (`:191–194`). Nhưng `Package.wxs` khai **BỐN** component tường minh —
+`ShellExeComponent` (`:71`), `EngineServiceComponent` (`:100`), `StartupShortcutComponent` (`:136`),
+`ExhibitionLauncherComponent` (`:160`). Nó là component **thứ TƯ**, và **thứ BA** trong số những cái
+cài một **FILE** (`StartupShortcutComponent` lấy KeyPath là một `RegistryValue` HKCU, không phải
+file). **Ordinal chỉ đứng được dưới cách đọc "component mang file".**
+
+**(d) Hai component thật sự quy về CÙNG một target path — ĐÚNG.** Đây là mệnh đề tôi nghi nhất và nó
+**đứng**: tường minh cho `[INSTALLFOLDER]\run-exhibition.bat`
+(`INSTALLFOLDER` = `ProgramFiles6432Folder\ST4I\Machine Simulator`, `Package.wxs:43–47`); harvest thì
+`St4i.Installer.wixproj` khai `<HarvestDirectory Include="..\..\publish-desktop">` với
+`<DirectoryRefId>INSTALLFOLDER</DirectoryRefId>` **và** `<SuppressRootDirectory>true</SuppressRootDirectory>`
+⇒ file ở gốc `publish-desktop` hạ cánh **thẳng** vào `[INSTALLFOLDER]`, **cùng đường, cùng tên**.
+Phép loại trừ **không** bỏ nó: `exclude-shell-and-engine-exe.xslt` (`:101–108` và `:113–120`) mang
+đúng **bảy** cái kim, và `run-exhibition.bat` **không** trong đó.
+🔴 **Xác nhận mạnh nhất nằm trong chính bộ test của repo:** `InstallerHarvestExclusionTests.cs:298`
+liệt kê `@"SourceDir\run-exhibition.bat"` trong ngân hàng **`MustSurvive`**, với fixture
+`cmpExhibitionBat`/`filExhibitionBat` (`:206–208`). **Bộ test khẳng định harvest phải GIỮ đúng cái
+file mà `Package.wxs` cũng khai.**
+
+🔴 **NÊU QUÁ DÈ DẶT — HẬU QUẢ TỆ HƠN "hai component đòi một đường".** Bản harvest hạ cánh vào
+`HarvestedFiles` → `MainFeature` `Level="1"` (**luôn được cài**), còn bản tường minh nằm sau
+`ExhibitionFeature` `Level="1000"` (**TẮT mặc định**). Nên ngoài khuyết tật ICE30 trùng target path,
+một bản dựng nhánh `-SkipDotnetPublish` sẽ **ship trình khởi chạy triển lãm trên MỌI bản cài mặc
+định**, tức **phá chính cái cổng opt-in mà component ấy tồn tại để dựng**. **Không lời khai nào và
+không bản ghi nào trong file này nói câu đó.**
+
+🔴 **Vì sao chưa ai gặp:** `obj/x64/Release/_HarvestedFiles_dir.wxs` (mtime 2026-07-28, 63 component)
+**không có** một hit `run-exhibition` nào — nó có **trước** khi file xuất hiện (2026-08-20). Chỉ
+nhánh `-SkipDotnetPublish` với tới được: đường thường chạy `Remove-Item -Recurse -Force publish-desktop`
+(`build-installer.ps1:91`), xoá bản chép tay. **Cùng điều kiện với tới của mục 46.**
+
+🔴 **VÀ KHÔNG PHẢI PHÁT HIỆN MỚI — nói ra thay vì nhận công:** `§46.5` (`docs/owner-decisions.md:2048–2056`)
+**đã nêu đúng khuyết tật này** — cùng 1093 byte, cùng chữ "trùng byte", cùng ordinal "component tường
+minh thứ ba", cùng bằng chứng `_HarvestedFiles_dir.wxs`, và cùng một quyết định **không sửa**. Cái
+duy nhất **mới** ở đây là **phá cổng feature**.
+
+**Không có nhân chứng:** **không MSI nào được dựng** (nhiệm vụ này bị cấm), nên **không** ai quan sát
+được một lỗi ICE30 thật.
+
+### 67.2 Ở đâu trong mã — trỏ bằng TÊN
+
+`packaging/run-exhibition.bat` · `publish-desktop/run-exhibition.bat` ·
+`packaging/installer/Package.wxs` (`ExhibitionLauncherComponent` `:160`, `ExhibitionFeature` `:191`,
+`INSTALLFOLDER` `:43`) · `packaging/installer/St4i.Installer.wixproj` (`HarvestDirectory`,
+`SuppressRootDirectory`) · `packaging/installer/exclude-shell-and-engine-exe.xslt` (`:101–120`) ·
+`packaging/installer/build-installer.ps1` (`:91`, `:95–104`) ·
+`St4i.EdgeCore.Tests.InstallerHarvestExclusionTests` (`MustSurvive`, `:298`) · `README.md:738–745`.
+
+### 67.3 Hậu quả vận hành, HAI CHIỀU
+
+**Chiều để nguyên.** Một bản dựng `-SkipDotnetPublish` hoặc **hỏng lúc link** (ICE30) hoặc **cài một
+tính năng người vận hành không chọn**. Cả hai kết quả đều xuất hiện **chỉ trên máy có bước thủ công
+của README** — tức trên máy của người **làm theo tài liệu**.
+
+**Chiều sửa.** Hai lựa chọn, giá khác nhau và phải nói rõ: thêm `\run-exhibition.bat` vào bảy cái kim
+của XSLT (**rẻ**, nhưng `InstallerHarvestExclusionTests` đang khẳng định điều **ngược lại** ở
+`MustSurvive:298`, nên bộ test phải dịch cùng lúc), hoặc bỏ `ExhibitionLauncherComponent` và để
+harvest mang nó (**mất cổng opt-in**). **Cái phải quyết là muốn trình khởi chạy triển lãm bật hay
+tắt mặc định** — một câu hỏi sản phẩm, không phải một câu hỏi build.
+
+### 67.4 Nếu KHÔNG quyết định
+
+Bước thủ công trong README tiếp tục là một cái bẫy có tài liệu hướng dẫn, và **cách duy nhất chưa ai
+gặp nó là chưa ai dựng MSI từ nhánh ấy kể từ 2026-08-20**.
+
+### 67.5 ✅ ĐÃ THI HÀNH — BQ-1, 2026-08-24, base `2530b94c`, **ĐIỀU PHỐI VIÊN THEO UỶ QUYỀN**. Mục **PHẦN I → PHẦN III**
+
+**NHÃN ⚖️ KIỂM LẠI BẰNG BA MIỄN TRỪ, từng cái một:** *(a) payload MQTT* — không chạm, đây là XSLT
+harvest và một bank test; *(b) hình dạng dữ liệu trên dây* — không chạm, không DTO nào đổi; *(c) số
+OEE đã báo cáo* — không chạm, không sim nào đổi hành vi. **Nhãn ⚖️ ĐỨNG VỮNG.**
+
+🔴 **VÀ CÂU HỎI "SẢN PHẨM HAY BUILD" MÀ §67.3 ĐỂ MỞ, TRẢ LỜI BẰNG PHÉP ĐO CHỨ KHÔNG BẰNG QUYỀN.**
+§67.3 viết *"cái phải quyết là muốn trình khởi chạy triển lãm bật hay tắt mặc định — một câu hỏi sản
+phẩm"*. **Cây này ĐÃ TRẢ LỜI câu ấy, tường minh, ở ba chỗ:** `Package.wxs:191–193`
+(`ExhibitionFeature Level="1000"`, mô tả kết bằng đúng chữ **"OFF by default."**),
+`packaging/installer/README.md:208`, và `README.md:1217`. **Nên hai hướng sửa KHÔNG cân nhau:** thêm
+cái kim vào XSLT **khôi phục ý định đã được viết ra**; bỏ `ExhibitionLauncherComponent` **huỷ** nó.
+Chỉ hướng thứ hai là một quyết định sản phẩm mới. **Điều phối viên chọn hướng thứ nhất**, và đó
+không phải quyết một câu hỏi sản phẩm — đó là làm cho cây chạy đúng cái nó đã tự khai.
+
+**NHÂN CHỨNG — CÓ DỰNG ĐƯỢC, và câu hỏi ấy trả lời TRƯỚC khi sửa.** Tiền lệ mục 46 đứng vững: thứ
+kiểm được là **hàm THUẦN trong đường ống — XSLT**. `InstallerHarvestExclusionTests` nạp **stylesheet
+thật** khỏi cây và chạy nó trên một bản chép fragment của heat. **Không MSI nào được dựng, heat.exe
+không chạy, `build-installer.ps1` không chạy** — và hằng số `NotMeasured` của chính bộ test **in câu
+ấy vào MỌI thông điệp lỗi**, nên không ai đọc một phân kỳ ở đây mà tưởng đã có ICE30 thật.
+
+**Bốn mệnh đề của §67.1 ĐO LẠI, cả bốn ĐỨNG:** (a) `cmp` thoát 0, cùng `sha256`
+`66ce3c98…04cdd`, **1093 byte** mỗi file; (c) `Package.wxs` khai đúng **BỐN** `<Component>` và đúng
+**BA** `<File>`; (d) bảy cái kim XSLT, `run-exhibition.bat` **không** trong đó, `SuppressRootDirectory`
++ `DirectoryRefId=INSTALLFOLDER` đúng như mô tả.
+
+🔴 **MỘT PHÁT HIỆN MỚI, VÀ NÓ ĐỔI BẢN CHẤT CỦA BẢN SỬA.** §67.3 định giá hướng rẻ là *"thêm kim vào
+XSLT, **nhưng** `InstallerHarvestExclusionTests` đang khẳng định điều NGƯỢC LẠI ở `MustSurvive:298`,
+nên bộ test phải dịch cùng lúc"* — đọc như thể phải **hạ một assertion đúng** để nhường cho bản sửa.
+**Đo lại: assertion ấy KHÔNG đúng, và nó sai theo LUẬT CỦA CHÍNH NGÂN HÀNG NÓ ĐỨNG TRONG.**
+Docstring của `MustSurvive` định nghĩa thành viên là *"what `St4i.EngineApi.csproj`/
+`St4i.DesktopShell.csproj` actually publish"*. **Không csproj nào publish `run-exhibition.bat`** —
+đo bằng `git grep` trên **mọi** `.csproj`/`.props`/`.targets`/`.wixproj` được theo dõi trong repo:
+**0 kết quả**. Nó tới `publish-desktop/` **chỉ** bằng bước `copy` thủ công của `README.md:738–745`,
+và `Package.wxs` tự cài nó dưới `ExhibitionFeature`. ⇒ **Nó là một mục ĐẶT NHẦM NGÂN HÀNG ngay từ
+đầu, không phải một assertion đúng bị bản sửa này lật.** Dời nó đi là **sửa một lỗi hồ sơ**, không
+phải trả giá.
+
+**Việc đã làm, LIỆT KÊ:**
+1. `exclude-shell-and-engine-exe.xslt` — thêm `\run-exhibition.bat` vào **CẢ HAI** template
+   (`Component` và `ComponentRef`), thành **tám** cái kim. Hai template phải giống hệt nhau và bộ
+   test đỏ nếu chỉ một cái được sửa.
+2. `InstallerHarvestExclusionTests` — 🔴 **nửa "component tường minh" của phép suy nay ĐỌC TỪ
+   `Package.wxs`, không còn là một cặp tên gõ tay.** Cặp cũ
+   `{ \St4i.DesktopShell.exe, \St4i.EngineApi.exe }` **chính là mục 67**: ai đó thêm
+   `ExhibitionLauncherComponent` khai file thứ BA, không ai sửa cặp ấy, và harvest giữ một component
+   thứ hai đòi cùng target path. Nay một `<File>` thứ tư **tự xuất hiện** trong phép suy.
+3. `MustSurvive` — `SourceDir\run-exhibition.bat` **rời**, kèm ghi chép nguyên do ngay tại chỗ.
+4. **Kiểm mới `EveryFilePackageWxsAuthorsExplicitly_IsDroppedFromTheHarvest`** — phát biểu mục 67
+   thành một assertion suy từ cây, kèm **kiểm không-rỗng** trước (một fixture không chứa file thì
+   không chứng kiến được phép loại nó), và thông điệp lỗi nêu **cả hai** hậu quả: ICE30 **và** phá
+   cổng opt-in.
+
+**CẶP ĐỐI CHỨNG, chạy trọn và hoàn nguyên:** với XSLT **hoàn nguyên về `2530b94c`** →
+**2 test ĐỎ** trong 7 (`EveryFilePackageWxsAuthorsExplicitly…` và
+`TheNamesTheTransformDrops_AreExactlyTheOnes…`); với bản sửa → **7/7 XANH**. Cây được trả về nguyên
+trạng sau phép đo.
+
+**Cái KHÔNG được trả, nói ra:** **không MSI nào được dựng**, nên **không ai quan sát được một lỗi
+ICE30 thật** — điều đó **không đổi** so với §67.1, và bộ test khai đúng câu ấy ở mọi thông điệp.
+Bước `copy` thủ công của README **vẫn còn** và vẫn là cách file tới `publish-desktop/`; cái đổi là
+harvest **không còn mang nó vào MSI**, nên `ExhibitionFeature` lại là cổng duy nhất.
 
 ---
 

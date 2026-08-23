@@ -515,6 +515,25 @@ export function MachineSettingsPanel({
             </span>
           </div>
 
+          {/* 🔴 BQ-1, 2026-08-24 — docs/owner-decisions.md item 68. The honest ceiling, rendered on
+              BOTH surfaces this component serves (`hmi/SettingsTab.tsx` at the machine and
+              `routes/MachineDetail.tsx` from the office), because an operator meets the false
+              reading at either one.
+
+              Shown for EVERY machine type, and that is the point rather than a compromise: this
+              client cannot know which types a simulator consumes. The fact exists server-side
+              (`MachineParameterSchema.IsConsumedBySimulator`) but reaches only the push endpoint's
+              message, which web/src never calls, and item 42 ruled that the settings DTO gains no
+              field. A per-type banner would therefore be a hard-coded guess; a type-independent
+              statement is one this screen can actually stand behind. */}
+          <p
+            data-testid="machine-settings-limitation"
+            className="border-b border-border-subtle px-3 pb-1.5 text-[11px] leading-snug text-text-muted"
+          >
+            <span className="font-medium">{t("machineSettings.limitation.title")}</span>{" "}
+            {t("machineSettings.limitation.body")}
+          </p>
+
           <div
             tabIndex={0}
             className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"

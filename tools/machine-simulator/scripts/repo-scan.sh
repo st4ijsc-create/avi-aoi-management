@@ -71,10 +71,24 @@
 #        that stops the next person typing `git grep foo -- 'server/*.ts'` by hand. This is a
 #        DEFAULT and a WITNESS, not a gate on human typing. The one thing that IS enforced by the
 #        gate is that the wrapper's own cwd-invariance keeps holding (`--self-test`).
-#     b. IT DOES NOT COVER NON-GIT SCANS. `grep -r`, ripgrep, editor search and the Grep tool read
-#        the WORKING TREE, and this checkout is sparse: server/ (1589 files) and client/ (711 files)
-#        are IN THE COMMIT and NOT ON DISK. Those tools will report 0 for them and this wrapper
-#        cannot know they were run.
+#     b. IT DOES NOT COVER NON-GIT SCANS. `grep -r`, ripgrep, editor search, `find` and the Grep
+#        tool read the WORKING TREE, and this checkout is SPARSE. Those tools report 0 for every
+#        absent path, that 0 means NOT LOOKED AT rather than NOT PRESENT, and this wrapper cannot
+#        know they were run.
+#        🔴 THE SIZE OF THAT REGION IS NOW MEASURED ON EVERY RUN AND PRINTED IN THE CLAIM BLOCK
+#        (BQ-1, 2026-08-24, item 74). It is not written here, because it was written here and went
+#        wrong in the way this whole file exists to stop. The old text of this clause read
+#        "server/ (1589 files) and client/ (711 files) are IN THE COMMIT and NOT ON DISK", kept
+#        verbatim in this sentence rather than deleted. BOTH NUMBERS ARE STILL EXACTLY RIGHT — 1589
+#        and 711, re-counted at BQ-1. What was wrong is the SCOPE the clause implies: at BQ-1 the
+#        absent set is 62443 tracked file paths across 26 of the 27 top-level entries (only
+#        examples/ is whole), so the two directories named were 3.7% of the gap standing in for all
+#        of it. See sparse_gap_measure() / sparse_gap_declaration().
+#        🔴 AND THE SENTENCE THIS CLAUSE MUST NOT BE READ AS. "Absent from disk" is NOT
+#        "unmeasurable": git grep, git show and git ls-files all read the object store and see every
+#        one of those paths. A scan THROUGH this wrapper loses nothing to sparseness. The blindness
+#        is a property of tools that go AROUND it, which is why the remedy is a declaration and not
+#        a wider checkout.
 #     c. IT DOES NOT CHECK THAT A REPORT COPIED THE HEADER. It prints provenance; it cannot make a
 #        human paste it.
 #     d. IT SAYS NOTHING ABOUT WHETHER THE PATTERN WAS THE RIGHT PATTERN. A scan for the wrong
@@ -168,6 +182,63 @@ domain_size() {                                # $1 = SHA or empty for working t
   (cd "$ROOT" && { if [[ -n "$sha" ]]; then git ls-files --with-tree="$sha" -- "$@"
                    else                    git ls-files                    -- "$@"; fi; } 2>/dev/null) \
     | grep -c . || true
+}
+
+# ══ THE REGION THIS CHECKOUT CANNOT READ FROM DISK (BQ-1, 2026-08-24, item 74) ═══════════════════
+# 🔴 WHY THIS IS MEASURED AND NOT WRITTEN DOWN. Boundary (b) below has named the sparse gap since
+# BA-1 — but it named it as a HAND-TYPED LITERAL, "server/ (1589 files) and client/ (711 files)".
+# Both numbers are still exactly right, re-counted at BQ-1. The predicate around them is not: those
+# two directories are 2 of the 26 top-level entries that are in the commit and not on disk, and
+# 2300 of the 62443 absent paths — 3.7% of the gap, printed as if it were the gap. That is this
+# repository's most-repeated defect (a number written once in prose while the set it describes
+# changes elsewhere) sitting inside the very clause that exists to stop a domain being over-claimed,
+# and it is why the numbers here are counted on every run instead of typed.
+#
+# 🔴 AND THE DISTINCTION THE OLD CLAUSE BLURRED, because "not on disk" and "not measurable" are not
+# the same sentence and the difference is the whole of item 74. `git grep`, `git show` and
+# `git ls-files` read the OBJECT STORE and see every absent path perfectly; only tools that read the
+# WORKING TREE (grep -r, ripgrep, editor search, the Grep tool, `find`) are blind to them. So a scan
+# THROUGH this wrapper is not degraded by sparseness at all. What is degraded is every scan that
+# goes around it — and those return "not found" where the truth is "not looked at".
+#
+# The unit is stated because BQ-1 re-measured it and it has three readings: these are INDEX ENTRIES,
+# i.e. tracked FILE paths (blobs). For server/ they are 1589 blobs, all mode 100644, spanning 111
+# directories; counting tree entries INCLUDING directories gives 1703 instead. "Files" is the right
+# word for 1589 and the two other readings are not it.
+sparse_gap_measure() {                         # -> "<absent-total> <top-level-count> <top3 desc>"
+  (cd "$ROOT" && git ls-files -v 2>/dev/null) | awk '
+    /^S/ { p = substr($0, 3); i = index(p, "/")
+           top = (i > 0 ? substr(p, 1, i - 1) : "(a root file)")
+           n++; cnt[top]++ }
+    END { d = 0; for (t in cnt) d++
+          printf "%d %d", n + 0, d + 0
+          # top three by size, selection-sorted; a full sort is not worth a pipe here
+          for (k = 0; k < 3; k++) {
+            best = ""; bn = -1
+            for (t in cnt) if (cnt[t] > bn) { bn = cnt[t]; best = t }
+            if (best == "") break
+            printf " %s=%d", best, bn; delete cnt[best] }
+          printf "\n" }'
+}
+
+# Split from the measurement on purpose, so the CONTROL PAIR can drive it with numbers this tree
+# cannot produce. A declaration that prints the same words for a sparse and a complete checkout is a
+# constant wearing a measurement's manners — the same argument, and the same remedy, that BO-1's
+# web_domain_declaration in verify-suites.sh is built on.
+sparse_gap_declaration() {                     # $1 total  $2 top-level count  $3.. "name=n" list
+  local total="$1" dirs="$2"; shift 2
+  if [[ "$total" -eq 0 ]]; then
+    echo "  not on disk  : NOTHING — every tracked path is present in this working tree, so a"
+    echo "                 non-git scan run here reads the same set this wrapper does."
+    return 0
+  fi
+  echo "  not on disk  : $total tracked file paths across $dirs top-level entries are IN THE COMMIT"
+  echo "                 AND ABSENT FROM THIS WORKING TREE (sparse checkout), while \`git status\` is"
+  echo "                 CLEAN. Largest: ${*}."
+  echo "                 THIS WRAPPER READS THEM ANYWAY — git grep reads the object store. The"
+  echo "                 warning is for every scan that does NOT come through here: grep -r,"
+  echo "                 ripgrep, editor search and find report 0 for all $total, and that 0 means"
+  echo "                 NOT LOOKED AT, not NOT PRESENT."
 }
 
 # ── self-test: the wrapper's ONE property, asserted against a live hazard ─────────────────────────
@@ -326,14 +397,54 @@ self_test() {
     rc=1
   fi
 
+  # (i) 🔴 THE SPARSE GAP IS MEASURED, AND THE MEASUREMENT IS ASSERTED AGAINST THE ONE THING THAT
+  # WOULD MAKE IT A LIE (BQ-1, 2026-08-24, item 74). Two assertions, and the second is the one with
+  # teeth: the gap must be non-empty HERE (a zero would mean the measurement stopped working, since
+  # this checkout is known-sparse), and the paths it counts must be READABLE THROUGH GIT. The second
+  # is what separates "absent from disk" from "unmeasurable", which is the distinction the old
+  # boundary (b) blurred and the whole reason item 74 is not just "widen the cone".
+  local _gap _gap_total _gap_dirs _gap_top _probe_absent _git_readable
+  _gap="$(sparse_gap_measure)"
+  _gap_total="$(echo "$_gap" | awk '{print $1}')"
+  _gap_dirs="$(echo "$_gap"  | awk '{print $2}')"
+  _gap_top="$(echo "$_gap"   | awk '{$1="";$2="";sub(/^ +/,"");print}')"
+  echo "  tracked paths NOT on disk (sparse)         : $_gap_total across $_gap_dirs top-level entries"
+  echo "  largest absent entries                     : $_gap_top"
+
+  # A path that is absent from disk, chosen from the measurement itself rather than named here, so
+  # this cannot go green against a directory that stopped being absent.
+  _probe_absent=$( (cd "$ROOT" && git ls-files -v 2>/dev/null) | awk '/^S/{print substr($0,3); exit}')
+  if [[ "$_gap_total" -eq 0 ]]; then
+    echo "FAIL: the sparse-gap measurement returned 0 absent paths. Either this checkout stopped being
+      sparse — in which case boundary (b) and item 74 need re-reading, not this assertion deleting —
+      or sparse_gap_measure() has stopped parsing \`git ls-files -v\`, and the claim block is now
+      printing a reassuring zero about a region it can no longer see." >&2
+    rc=1
+  elif [[ -e "$ROOT/$_probe_absent" ]]; then
+    echo "FAIL: '$_probe_absent' was reported as skip-worktree but EXISTS on disk. The measurement is
+      not measuring absence, so every number it prints in the claim block is unfounded." >&2
+    rc=1
+  else
+    _git_readable=$( (cd "$ROOT" && git show "HEAD:$_probe_absent" 2>/dev/null) | grep -c . || true)
+    echo "  absent probe '$(basename "$_probe_absent")' readable via git : $_git_readable lines"
+    if [[ "$_git_readable" -eq 0 ]]; then
+      echo "FAIL: '$_probe_absent' is absent from disk AND unreadable through git ($_git_readable lines).
+        The claim block tells callers that scans through this wrapper are unaffected by sparseness;
+        that sentence is now false, and a wrapper that mis-states its own reach is worse than one
+        that states nothing." >&2
+      rc=1
+    fi
+  fi
+
   # The population protocol (verify-suites.sh run_tooling_check, docs/owner-decisions.md item 40).
   # The sets every assertion above quantifies over: the default pathspec's domain — the one whose
   # collapse to 0 WAS the defect — the probe's own match count, which is what makes (a)'s
-  # cwd-invariance an agreement between two real numbers rather than between two zeroes, and the
-  # correctly-cased mixed domain (h) asserts a green over.
+  # cwd-invariance an agreement between two real numbers rather than between two zeroes, the
+  # correctly-cased mixed domain (h) asserts a green over, and the absent region (i) declares.
   echo "POPULATION default-domain $dom_default"
   echo "POPULATION probe-matches $from_root"
   echo "POPULATION case-probe-domain $case_good_dom"
+  echo "POPULATION sparse-absent-paths $_gap_total"
 
   # The disclosure protocol (verify-suites.sh run_tooling_check, docs/owner-decisions.md item 51).
   # The ceiling above under "WHAT THIS DOES NOT ENFORCE" was written for a reader of this FILE. The
@@ -341,7 +452,7 @@ self_test() {
   # result never saw the ceiling. These lines are that same ceiling, compressed to one line each, at
   # the place the result appears. They are the SAME six clauses, not a new and softer set.
   echo "DOES-NOT-MEASURE (a) it cannot make anyone USE it — a hand-typed \`git grep\` is unscoped and invisible to this"
-  echo "DOES-NOT-MEASURE (b) non-git scans (grep -r, ripgrep, editor search) read the WORKING TREE, which is sparse here: server/ and client/ are in the commit, not on disk"
+  echo "DOES-NOT-MEASURE (b) non-git scans (grep -r, ripgrep, editor search, find) read the WORKING TREE, which is sparse here: ${_gap_total} tracked file paths across ${_gap_dirs} top-level entries are in the commit and NOT on disk (measured this run, largest ${_gap_top}), git status stays CLEAN, and those tools return 0 for every one of them — a 0 that means NOT LOOKED AT. Scans through THIS wrapper are unaffected: git grep reads the object store"
   echo "DOES-NOT-MEASURE (c) it cannot make a report copy the provenance header it prints"
   echo "DOES-NOT-MEASURE (d) nothing here says the PATTERN was the right pattern"
   echo "DOES-NOT-MEASURE (e) it does not reach outside the repo — item 32's MQTT retained-mirror subscriber stays unmeasured"
@@ -353,6 +464,25 @@ self_test() {
 }
 
 [[ "${1:-}" == "--self-test" ]] && { self_test; exit $?; }
+
+# ── CONTROL PAIR for sparse_gap_declaration (BQ-1, item 74) ───────────────────────────────────────
+# Runnable, not described. BANK A drives the declaration with the numbers THIS tree produces; BANK B
+# drives the same function with the numbers a COMPLETE checkout would produce (0, 0). If the two
+# banks print the same words the declaration is a constant and the claim block is decoration. Placed
+# beside --self-test rather than inside it because it measures nothing about this tree and must stay
+# runnable when the tree is not sparse at all — which is exactly the state BANK B stands in for.
+if [[ "${1:-}" == "--sparse-gap-self-test" ]]; then
+  echo "CONTROL PAIR for sparse_gap_declaration (task BQ-1, docs/owner-decisions.md item 74)."
+  echo
+  echo "BANK A — the real measurement of this checkout. Expect: a non-zero count, the word ABSENT,"
+  echo "and the sentence that git still reads them."
+  sparse_gap_declaration $(sparse_gap_measure)
+  echo
+  echo "BANK B — the same function driven with a COMPLETE checkout's measurement (0 absent). Expect:"
+  echo "'NOTHING', and no warning at all. If A and B read alike, this declaration measures nothing."
+  sparse_gap_declaration 0 0
+  exit 0
+fi
 
 # ── argument split ────────────────────────────────────────────────────────────────────────────────
 TREEISH=""
@@ -389,8 +519,12 @@ if [[ -n "$TREEISH" ]]; then
     echo "repo-scan: '$TREEISH' does not resolve to a commit" >&2; exit 2; }
   SHA_LABEL="$TREEISH -> $SHA"
 else
-  SHA_LABEL="WORKING TREE (no --sha given; server/ and client/ are NOT on disk in this sparse
-       checkout, so a working-tree scan CANNOT see them — pass --sha HEAD to scan the commit)"
+  # 🔴 The count is read, not named (BQ-1, item 74). This label used to say "server/ and client/ are
+  # NOT on disk", naming two directories out of the 26 that are absent — the same under-stated scope
+  # boundary (b) carried, in the line printed directly above the declaration that now measures it.
+  SHA_LABEL="WORKING TREE (no --sha given; $( (cd "$ROOT" && git ls-files -v 2>/dev/null) | grep -c '^S' || true) tracked
+       paths are NOT on disk in this sparse checkout, so a working-tree scan CANNOT see them —
+       pass --sha HEAD to scan the commit; see 'not on disk' below for the breakdown)"
 fi
 
 DIRTY="clean"
@@ -454,6 +588,11 @@ _claim() {
   # Per-spec, always, even when every spec is non-empty: an aggregate hides a zero inside a sum, and
   # the whole point of this wrapper is that a domain claim is printed rather than assumed.
   [[ ${#PERSPEC[@]} -gt 0 ]] && echo "  per pathspec : ${PERSPEC[*]}"
+  # 🔴 The region no WORKING-TREE tool can read, printed WITH THE RESULT rather than only in this
+  # file's header (item 74, and boundary (b) below). It is here and not only in --self-test because
+  # the header is read by whoever edits this script and the claim block is read by whoever runs it,
+  # and the person who needs this sentence is the second one.
+  sparse_gap_declaration $(sparse_gap_measure)
 }
 
 if [[ ${#CASE_ERRORS[@]} -gt 0 ]]; then
