@@ -1359,6 +1359,8 @@
     "before": "之前",
     "after": "之后",
     "confirm": "确认",
+    "blockedRetype": "命令无效——请重新输入",
+    "showAllCmds": "查看完整的允许命令列表",
     "cancel": "取消",
     "executed": "已执行。",
     "cancelled": "已取消。",
@@ -19298,6 +19300,45 @@
       "loading": "正在加载项目…",
       "none": "暂无可显示的项目。"
     },
+    "duan": {
+      "title": "项目管理",
+      "moTitle": "项目管理（管理员）",
+      "moTa": "为 AI 编程工作区添加/删除项目文件夹。.env 条目只能手工修改；在此添加的条目立即生效，无需重启。",
+      "loading": "正在加载项目列表…",
+      "empty": "暂无项目。",
+      "nguonEnv": ".env",
+      "nguonDb": "UI",
+      "hong": "根目录丢失",
+      "hongTip": "根目录已不在服务器上，或该 ID 被 .env 条目遮蔽——此条目不会出现在下拉框中；建议删除以保持整洁。",
+      "khoaEnv": "在 .env 中声明——只能在服务器的 .env 中手工修改。",
+      "xoa": "从列表中删除该项目（不会触碰磁盘上的文件夹）",
+      "hoiXoa": "从列表中删除该项目？磁盘上的文件夹不会被触碰。",
+      "themTitle": "添加项目（{{so}}/{{tran}} 经 UI）",
+      "oId": "ID（字母/数字/-/_）",
+      "oTen": "显示名称",
+      "oTenGoiY": "新项目",
+      "oDuong": "服务器上的绝对路径",
+      "ghiChu": "文件夹必须已存在于服务器上；服务器验证通过后才会接受。",
+      "nutThem": "添加",
+      "daThem": "项目已添加——下拉框中已出现新条目。",
+      "daXoa": "已从列表中删除该项目。",
+      "err": {
+        "idKhongHopLe": "ID 只能包含无重音字母、数字、下划线和连字符（1–64 个字符）。例如：new-project",
+        "tenKhongHopLe": "名称须为 1–100 个字符，且不得包含 # ; = | ——请去掉这些字符。",
+        "trungId": "该 ID 已存在（在 .env 中或已注册）。请换一个 ID。",
+        "khongTuyetDoi": "路径必须是服务器上的绝对路径（例如 D:\\Projects\\my-project），不能是相对路径。",
+        "khongTonTai": "服务器上不存在该文件夹。请先创建，再注册。",
+        "khongPhaiThuMuc": "该路径指向一个文件。请指向项目的根文件夹。",
+        "thuMucCam": "不能注册位于 node_modules、.git 或 dist 内的文件夹。请选择真正的源码文件夹。",
+        "namTrongGocDaCo": "该文件夹位于（或等于）一个已有项目之内——两个沙箱会重叠。请选择已有项目之外的文件夹。",
+        "chuaGocDaCo": "该文件夹包含一个已有项目——两个沙箱会重叠。请选择更窄、不包裹其他项目的文件夹。",
+        "vuotTran": "经 UI 注册的项目数已达上限。请先删除不再使用的项目，再添加。",
+        "luuThatBai": "保存失败（数据库拒绝——可能另一位管理员刚添加了相同 ID）。请刷新列表后重试。",
+        "mucEnv": "该条目在服务器的 .env 中声明——只能在 .env 中手工修改，无法在此删除。",
+        "khongTimThay": "该项目已不存在（可能已被删除）。请刷新列表。",
+        "khac": "服务器以代码 {{ma}} 拒绝——请报告给系统负责人。"
+      }
+    },
     "title": "AI 编程工作区",
     "subtitle": "读代码 → 提出 diff → 人工审核 → 运行测试 → 读真实错误再继续修复",
     "noPermission": "您没有读取源码的权限（ai_repo_read）。请联系管理员。",
@@ -19306,13 +19347,21 @@
       "exec": "运行命令",
       "execOff": "运行命令（已隐藏）"
     },
+    "badgeTip": {
+      "read": "该账户拥有读取源代码权限（ai_repo_read）：文件树、文件内容、搜索。服务器沙箱决定哪些文件可读。",
+      "exec": "该账户拥有运行命令权限（ai_repo_exec）：仅限白名单命令，且每次运行都需要您先批准。",
+      "execOff": "该账户没有运行命令权限（ai_repo_exec）——运行测试的建议已隐藏；直接调用仍会被服务器拦截。",
+      "local": "源代码与 AI 模型都运行在工厂本地服务器上——没有一个字节的代码离开内网。"
+    },
     "tree": {
       "title": "文件树",
       "loading": "加载中…",
       "error": "无法读取目录",
       "denied": "服务器拒绝：缺少 ai_repo_read 权限",
       "empty": "沙箱没有可显示的条目",
-      "refresh": "刷新"
+      "refresh": "刷新",
+      "showOther": "显示其他文件（{{n}}）",
+      "hideOther": "隐藏其他文件（{{n}}）"
     },
     "viewer": {
       "title": "查看器",
@@ -19327,15 +19376,21 @@
       "title": "智能体会话",
       "empty": "让智能体读取真实代码、提出 diff（由你审核），再运行测试并阅读真实错误。",
       "thinking": "思考中…",
+      "thinkingEta": "读取：通常 8–20 秒 · 修改文件：通常 15–30 秒；大文件/长命令可能更久",
       "noAnswer": "（无回答内容）",
       "streamFailed": "流式失败——请重试。",
       "placeholder": "向智能体提问：读取/搜索代码、提出修改、运行测试…",
       "keyHint": "Enter 发送 · Shift+Enter 换行（可粘贴多行堆栈信息）",
       "cmdOutput": "命令输出（已加入上下文以便继续修复）",
+      "klXanh": "✅ {{xanh}}/{{tong}} 通过——没有失败用例。",
+      "klDo": "❌ {{do}} 个失败 / 共 {{tong}} 个用例。",
       "applied": "差异已应用到 `{{tep}}` — 已重新读取文件。",
       "appliedChon": "已将所选 {{chon}}/{{tong}} 个块应用到 `{{tep}}`——未选块未写入磁盘；已重新读取文件。",
       "confirmFailed": "无法执行。",
-      "writeRejected": "写入被拒绝 [{{ma}}] — 磁盘上的文件未改变。"
+      "writeRejected": "写入被拒绝 [{{ma}}] — 磁盘上的文件未改变。",
+      "cmdRejected": "命令未完成 [{{ma}}]——详情：",
+      "cmdRejectedToast": "命令被拦截 [{{ma}}]——详情见对话。",
+      "rejectedGeneric": "被拒绝 [{{ma}}]——详情见对话。"
     },
     "toolLoop": {
       "running": "读码循环 — 第 {{round}}/{{tran}} 轮"
@@ -19358,7 +19413,13 @@
     "suggest": {
       "read": "读取 server/routers.ts 并总结",
       "grep": "在仓库中查找 executeDecision 的调用位置",
-      "check": "运行 npm run check 并阅读错误"
+      "check": "运行 npm run check 并阅读错误",
+      "csharpRead": "读取 src/Calculator.cs 并总结",
+      "csharpTest": "运行 dotnet test CalculatorDemo.sln",
+      "csharpWhy": "解释为什么两个 Divide_ByZero 用例失败",
+      "reactRead": "读取 src/validate.mjs 并总结",
+      "reactTest": "运行 node --test test/validate.test.mjs",
+      "reactWhy": "解释为什么 validateTodo 的两个用例失败"
     },
     "exec": {
       "noPerm": "您的账户没有运行命令的权限（ai_repo_exec）——运行测试的建议已隐藏。若直接调用，服务器仍会拦截。"
@@ -19384,6 +19445,7 @@
         "noCmd": "循环未运行：无法为该项目推断验证命令（需要 .sln/.csproj，或 package.json 加 test 目录）。请在请求中明确写出命令。",
         "perm": "循环未运行：账户缺少运行命令权限（ai_repo_exec）。服务器才是真正的关卡——取得权限后重试。",
         "off": "自动循环已关闭（默认）——修改已写入，但需要你自己运行测试。设置 AI_CODING_AUTOLOOP=1 并重启服务器即可启用。",
+        "offUser": "自动循环处于关闭状态——修复已写入，但您需要自己运行测试。此功能由管理员在服务器上启用——请联系管理员。",
         "error": "已停止：运行验证命令时发生真实故障。"
       }
     },

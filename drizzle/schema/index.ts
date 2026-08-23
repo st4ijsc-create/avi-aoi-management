@@ -81,3 +81,4 @@ export * from "./kbStudio"; // doc69 Giai đoạn 5/Wave E3 (E3-1) — multi-cor
 export * from "./vram"; // 2026-08-02 VRAM Pha 1 Task 2 — nhật ký chỉ-ghi-thêm điều phối VRAM, migration 0310
 export * from "./aiCodingSession"; // doc 79 DANH SÁCH PHIÊN — mạch hội thoại tác nhân lập trình, phạm vi CHỦ SỞ HỮU, migration 0333
 export * from "./aiCodingLesson"; // doc 82 BỘ NHỚ XUYÊN PHIÊN — bài học người dùng tự khai, phạm vi CHỦ SỞ HỮU, migration 0336
+export * from "./aiRepoDuAn"; // QUẢN LÝ DỰ ÁN 2026-08-23 — dự án hộp cát đăng ký qua UI (nguồn DB, env thắng khi trùng id), migration 0337

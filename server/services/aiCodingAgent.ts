@@ -123,20 +123,14 @@ export function codingKhoiSuaEnabled(): boolean {
  * ⚠ Mốc là **ba dòng ASCII cố định**, cố ý trùng khuôn dấu xung đột của git: đó là hình dạng model
  *   đã gặp nhiều nhất trong dữ liệu huấn luyện. KHÔNG nội địa hoá từ khoá theo `lang` — một mốc đổi
  *   theo ngôn ngữ là ba bộ phân tích cú pháp trôi khỏi nhau.
+ *
+ * ★★★ 2026-08-23 (UX D1) — hằng mốc + regex HÌNH DẠNG dọn nhà sang `@shared/aiCodingMoc` và
+ * RE-EXPORT lại từ đây: client phải lọc các dòng mốc ở TẦNG HIỂN THỊ (chúng đang thành H1/blockquote
+ * qua markdown), mà file này kéo `aiGateway`/`aiSafety` — client import nó là kéo đồ thị server vào
+ * bundle. Mọi điểm gọi cũ giữ nguyên đường import; bộ phân tích dưới đây dùng ĐÚNG các regex ấy.
  */
-export const MOC_MO = "<<<<<<< SEARCH";
-export const MOC_NGAN = "=======";
-export const MOC_DONG = ">>>>>>> REPLACE";
-
-/**
- * ⚠ Nhận theo **HÌNH DẠNG**, không theo danh sách trắng chuỗi — đúng bài học của hậu tố
- * `REPO_PATH_REGEX` (2026-08-21): mọi danh sách trắng đều có phần tử thứ N+1, và cái thiếu tiếp
- * theo hỏng IM LẶNG. Ở đây: "≥3 dấu `<` rồi tới từ SEARCH" là một mệnh đề về hình dạng, nên
- * `<<<<<<<< SEARCH` (8 dấu) hay `<<< SEARCH` đều nhận, còn một dòng mã bình thường thì không.
- */
-const RE_MO = /^<{3,}\s*SEARCH\s*$/i;
-const RE_NGAN = /^={3,}\s*$/;
-const RE_DONG = /^>{3,}\s*REPLACE\s*$/i;
+export { MOC_MO, MOC_NGAN, MOC_DONG } from "@shared/aiCodingMoc";
+import { MOC_MO, MOC_NGAN, MOC_DONG, RE_MO, RE_NGAN, RE_DONG } from "@shared/aiCodingMoc";
 
 /** Một khối sửa có đích: thay `truoc` (phải DUY NHẤT trong tệp) bằng `sau`. */
 export interface KhoiSua {

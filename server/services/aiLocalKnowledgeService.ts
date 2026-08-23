@@ -17,7 +17,12 @@ import {
  * *"câu này có nêu một đường dẫn tệp không?"* trước khi quyết định ĐỌC hay SỬA. Nhập từ module con
  * để KHÔNG mở thêm một bộ trích đường dẫn thứ hai (hai bộ trích = hai sự thật về cùng một câu).
  */
-import { classifyCodingToolIntent, trichMoiDuongDanRepo } from "./aiLocalTools/intentClassifier";
+import {
+  classifyCodingToolIntent,
+  laCauCanSuyLuan,
+  trichDuongSuaTatDinh,
+  trichMoiDuongDanRepo,
+} from "./aiLocalTools/intentClassifier";
 /**
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
  * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
@@ -3136,6 +3141,35 @@ async function* streamCodingAnswer(
   }
 
   /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 · UX LÔ 1 (C3) — CỬA SỬA **TẤT ĐỊNH** cho hình dạng *"sửa <đường>: <việc>"*.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Đo live: cùng câu ấy, lượt ra thẻ duyệt, lượt ra dump grep — số phận do bộ chọn LLM vòng 1.
+   * Cửa này đứng TRƯỚC bộ chọn + vòng tool: khớp vị từ thuần `trichDuongSuaTatDinh` (dùng lại
+   * `REPO_PATH_REGEX`, xem docblock ở `intentClassifier.ts`) ⇒ đi THẲNG `streamCodingEdit` với
+   * đúng đường người dùng gõ — 10/10 lượt, không một model nào được hỏi ở bước định tuyến.
+   * ⚠ Nó làm cửa `yDinhGhi` bên dưới HẾT phụ thuộc `quyetDinh.tool === "read_file"` cho hình dạng
+   *   tường minh nhất; các hình dạng mơ hồ hơn ("sửa hàm Divide trong X") vẫn đi cửa cũ.
+   * ⚠ Fail-through: `streamCodingEdit` trả `false` (cờ tắt/model vắng) ⇒ rơi xuống đường cũ y hệt
+   *   mọi cửa khác — không im lặng, không mất lượt.
+   */
+  const yDinhTao = laYDinhTaoTep(question);
+  const duongSuaTatDinh = trichDuongSuaTatDinh(question);
+  if (duongSuaTatDinh !== null) {
+    const daXuLyTatDinh = yield* streamCodingEdit(
+      question,
+      duongSuaTatDinh,
+      language,
+      context,
+      execCtx2,
+      history,
+      yDinhTao,
+      khoiBaiHocLuot,
+    );
+    if (daXuLyTatDinh) return;
+  }
+
+  /**
    * ★★★ doc 79 · TRỤC 1 (C) — NHÁNH **SỬA TỆP**, đứng TRƯỚC bộ chọn tool tất định.
    *
    * Vì sao trước: một câu *"sửa src/Calculator.cs để Divide ném ArgumentException khi chia 0"* CÓ
@@ -3158,7 +3192,6 @@ async function* streamCodingAnswer(
    * live 2026-08-19 cho thấy bộ chọn LLM bịa ra một đường dẫn tệp lõi cho một câu không nêu tệp
    * nào — nhân chuyện đó lên 6 tệp là điều tệ nhất có thể làm ở một tool ghi.
    */
-  const yDinhTao = laYDinhTaoTep(question);
   const yDinhGhi = laYDinhSuaTep(question) || yDinhTao;
   if (quyetDinh.tool === "read_file" && typeof quyetDinh.args.path === "string" && yDinhGhi) {
     const nhieuDuong = trichMoiDuongDanRepo(question);
@@ -3438,54 +3471,15 @@ export function laYDinhTaoTep(question: string): boolean {
 // ★★★ 2026-08-23 · MỤC 2.4 — "ĐỌC TƯỜNG MINH" ≠ "CÂU CẦN SUY LUẬN"
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 /**
- * ★★★ *"Câu này đòi VĂN XUÔI về nội dung, hay đòi CHÍNH nội dung?"* — **MỘT vị từ THUẦN, đứng một
- * mình, có lưới riêng** (`aiCodingSuyLuan.unit.test.ts`).
+ * ★★★ 2026-08-23 (UX C2-ii) — `laCauCanSuyLuan` **DỌN NHÀ** sang
+ * `aiLocalTools/intentClassifier.ts` (docblock đầy đủ + phần MỞ RỘNG câu-hỏi-kết-cục ở đó).
  *
- * ─── SỰ VIỆC ĐO ĐƯỢC (nghiệm thu live) ────────────────────────────────────────────────────────
- * *"Giải thích lớp Calculator… và có lỗi gì"* → xong trong **0,100 giây**, **0 token**, và câu trả
- * lời là **nguyên văn tệp**. 5/7 lượt như vậy. Gốc rễ: trên đường lập trình, kết quả read tool được
- * trả **THẲNG cho người** (`yield {type:"token", token: answer}` rồi `done`) — model không đọc nó
- * trong lượt ấy, nên "giải thích" biến thành "dump".
- *
- * ─── QUYẾT ĐỊNH THIẾT KẾ (chủ dự án chốt) — VÀ VÌ SAO NÓ HẸP CÓ CHỦ Ý ─────────────────────────
- *   • Câu lệnh ĐỌC TƯỜNG MINH (*"đọc tệp X"*, *"liệt kê thư mục Y"*, *"grep Z"*) ⇒ **GIỮ NGUYÊN
- *     đường nhanh**. Nó đang ~0,4 giây và đó là hành vi ĐÚNG.
- *   • Câu CẦN SUY LUẬN ⇒ đưa kết quả tool **quay lại model** thêm một lượt để sinh văn xuôi.
- *   • Lý do trần trụi: áp cho MỌI lượt sẽ biến một lượt đọc 0,4 giây thành **3–5 phút** (model
- *     30B). Đó là đổi sai chiều.
- *
- * ⇒ Nên vị từ này là **DANH SÁCH CHO PHÉP HẸP, mặc định `false`**. Hai chiều hỏng KHÔNG đối xứng:
- *     − sót (`false` mà đáng `true`)  ⇒ người dùng nhận đúng thứ họ vẫn nhận hôm nay (một bản dump);
- *     − thừa (`true` mà đáng `false`) ⇒ một lượt đọc 0,4 s thành 30–300 s.
- *   Chiều đắt là chiều THỪA ⇒ khi phân vân thì **không nhận**.
- *
- * ⚠⚠ **VÌ SAO KHÔNG BẮT `cho biết có gì` / `có gì trong`**: đó là câu hỏi về **sự tồn tại của nội
- *   dung**, và bản dump trả lời nó ĐÚNG và NHANH. `codingToolIntent` + `aiCodingMode.stream.test.ts`
- *   §1 đã ghim hành vi ấy; đổi nó là đổi một thứ đang đúng.
- * ⚠ **VÌ SAO CÓ `tóm tắt`**: nó đòi một bản VIẾT LẠI ngắn hơn — một bản dump nguyên văn là câu trả
- *   lời SAI cho nó, đúng hình dạng lỗi live ở trên.
- * ⚠ Vị từ này **KHÔNG** đọc `laYDinhSuaTep`/`laYDinhTaoTep`: hai đường ấy đã rẽ đi từ trước (xem
- *   `streamCodingAnswer`), nên trộn chúng vào đây chỉ tạo một điều kiện không bao giờ đỏ được.
+ * Vì sao dọn: vị từ nay còn gánh vai trọng tài cho `chanLenhKhiCauHoi` — bộ lọc chặn `run_command`
+ * trước một câu HỎI, đứng trong `chonToolLapTrinh` (`aiLocalTools/index.ts`). File ấy import ngược
+ * `aiLocalKnowledgeService` là một vòng tròn module. Re-export ở đây giữ NGUYÊN đường import của
+ * mọi điểm gọi cũ (`aiCodingDot02.stream.test.ts` §4 vẫn đo qua chính đường này).
  */
-export function laCauCanSuyLuan(question: string): boolean {
-  const q = boDauVi(question);
-  const vi =
-    /(^|[^a-z])(giai thich|vi sao|tai sao|so sanh|doi chieu|phan tich|danh gia|nhan xet|ra soat|tom tat|dien giai)([^a-z]|$)/.test(q) ||
-    // "có lỗi gì", "có bug nào", "có vấn đề gì", "sai chỗ nào" — hỏi về KHIẾM KHUYẾT, không hỏi nội dung.
-    /(co|bi)\s+(loi|bug|van de|sai sot|rui ro)\s*(gi|nao|khong)?/.test(q) ||
-    /(sai|hong|thieu)\s+(cho|o)\s+(nao|dau)/.test(q) ||
-    /hoat dong (nhu the nao|ra sao)/.test(q);
-  const en =
-    /(^|[^a-z])(explain|why|compare|analyz|analys|review|assess|summari[sz]e|critique)([^a-z]|$)/i.test(q) ||
-    /(any|what)\s+(bug|bugs|issue|issues|problem|problems|error|errors)\b/i.test(q) ||
-    /what(?:'|’)?s\s+wrong\b/i.test(q) ||
-    /how\s+does\s+.+\s+work/i.test(q);
-  const zh =
-    /(解释|说明一下|为什么|为何|比较|对比|分析|评估|审查|总结|摘要)/.test(question) ||
-    /(有.{0,3}(问题|错误|缺陷|bug))/i.test(question) ||
-    /(如何工作|怎么工作|工作原理)/.test(question);
-  return vi || en || zh;
-}
+export { laCauCanSuyLuan } from "./aiLocalTools/intentClassifier";
 
 /**
  * Ngữ cảnh DỰ ÁN ĐANG CHỌN đưa vào persona: tên dự án + vài mục ở gốc. Không có nó, model trả lời

@@ -216,8 +216,16 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `causalGraph: MOD.AI` từ doc 38 mà **chưa bao giờ nối dây**, còn `/causal-graph` thì đã nằm
  *   trong `MOD_AI.routes` — tức client chặn tuyến trong khi máy chủ vẫn mở. `tong` KHÔNG đổi
  *   (router ấy vốn đã được đếm), `aiMienTru` KHÔNG đổi, `ngoaiAiCoCong` vẫn **0**.
+ *
+ * ★ 2026-08-23 (QUẢN LÝ DỰ ÁN) — **tong 2219 → 2222 · beMatAi 353 → 356 · aiCoCong 291 → 294.**
+ *   Lời khai: `repoWorkspaceRouter.ts` (file đã khai trong `FILE_AI_TUONG_MINH`) mọc ba thủ tục
+ *   admin `danhSachDayDu`/`themDuAn`/`xoaDuAn` (thêm/xoá dự án hộp cát qua UI, bảng
+ *   `ai_repo_du_an` mig 0337), sàn `adminProcedure.use(moduleGate("MOD_AI"))` — đúng khuôn mà
+ *   thông điệp §4 chỉ dẫn cho sàn admin. Cả ba CÓ cổng ngay từ lượt sinh ra ⇒ `aiMienTru` KHÔNG
+ *   đổi (62 — sổ ký tên không phình), `ngoaiAiCoCong` vẫn **0**. `tong` 2222 trùng ĐÚNG
+ *   `phamViDocCensus.test.ts#GHIM.tong` — hai bộ suy độc lập vẫn đếm ra cùng một dân số.
  */
-const GHIM = { tong: 2219, beMatAi: 353, aiCoCong: 291, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+const GHIM = { tong: 2222, beMatAi: 356, aiCoCong: 294, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

@@ -28,6 +28,13 @@
  * ⚠ MẬT KHẨU **KHÔNG CÓ CỜ DÒNG LỆNH** (xem `danhTinhCli.ts` ràng buộc 2): `argv` hiện nguyên văn
  *   trong bảng tiến trình và trong lịch sử shell.
  *
+ * ⚠ DỰ ÁN ĐĂNG KÝ QUA UI (bảng `ai_repo_du_an`, 2026-08-23): `--liet-ke-du-an` và `--du-an` đọc
+ *   `repoProjects.danhSachDuAn()` — chủ DUY NHẤT của danh sách, nên CLI **không có mã liệt kê
+ *   riêng** cho nguồn DB. Danh sách DB là ẢNH CHỤP: `chayCli` gọi `napLaiDuAnTuDb()` đúng MỘT lần
+ *   lúc tiến trình khởi động (đối xứng với lượt nạp lúc server boot) ⇒ dự án admin vừa thêm qua UI
+ *   hiện ở phiên CLI MỞ SAU đó; phiên CLI đang mở sẵn giữ ảnh chụp của nó (chấp nhận được — mở
+ *   phiên mới). Máy không với được DB ⇒ degrade im lặng về danh sách `.env` thuần.
+ *
  * CÁCH CHẠY
  *   npm run ai:cli -- --du-an repo
  *   npm run ai:cli -- --du-an csharp --lenh "đọc src/Calculator.cs"
@@ -38,6 +45,9 @@ import { computeHunkPlan, planStats } from "../../../client/src/lib/diffHunks";
 // ★★★ 2026-08-23 — vị từ "lượt ghi có bị TỪ CHỐI không" là MỘT bản duy nhất, dùng chung với web.
 import { daBiTuChoiGhi, maTuChoiGhi } from "../../../shared/aiCodingLoop";
 import { sanitizeUntrustedBlock, wrapUntrustedBlock } from "../ai/aiSafety";
+// ★ QUẢN LÝ DỰ ÁN 2026-08-23 — nạp ảnh chụp dự án nguồn DB đúng MỘT lần lúc CLI khởi động (xem
+//   điểm gọi trong `chayCli`). Danh sách vẫn chỉ có MỘT chủ: `repoProjects.danhSachDuAn()`.
+import { napLaiDuAnTuDb } from "../aiLocalTools/repoProjects";
 import {
   BIEN_MAT_KHAU,
   BIEN_NGUOI_DUNG,
@@ -392,6 +402,14 @@ export async function chayCli(argv: readonly string[], cong: CongTerminal): Prom
     cong.in(`✖ Tham số không nhận ra: ${t.coLa.join(" ")}\n${HUONG_DAN}\n`);
     return MA_THOAT.THAM_SO;
   }
+
+  // ★ QUẢN LÝ DỰ ÁN (2026-08-23) — nạp ẢNH CHỤP dự án nguồn DB đúng MỘT lần, lúc tiến trình CLI
+  // khởi động (đối xứng với lượt nạp lúc server boot). KHÔNG có mã liệt kê riêng cho nguồn DB:
+  // `danhSachDuAnCli()` vẫn chỉ hỏi `repoProjects.danhSachDuAn()` — chủ duy nhất của danh sách.
+  // Máy không với được DB (CLI offline thuần .env) ⇒ `napLaiDuAnTuDb` degrade im lặng, danh sách
+  // env chạy y như trước — cùng khuôn fail-safe với danh tính (xacThucCli mới là thứ ĐÒI DB).
+  await napLaiDuAnTuDb();
+
   if (t.lietKeDuAn) {
     for (const d of danhSachDuAnCli()) cong.in(`  ${d.id}\t${d.ten}\n`);
     return MA_THOAT.XONG;

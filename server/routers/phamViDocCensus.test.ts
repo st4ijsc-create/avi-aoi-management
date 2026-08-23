@@ -189,7 +189,23 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  * `eq(userId, ctx.user.id)` (CHỦ SỞ HỮU) trong mọi câu truy vấn, đo trên CSDL thật ở
  * `aiCodingSessionScope.test.ts` (kể cả `admin` cũng không đọc được phiên người khác).
  */
-const GHIM = { A: 363, B: 8, C: 467, D: 1095, S: 286, tong: 2219 } as const;
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-08-23 (QUẢN LÝ DỰ ÁN) — **tong: 2219 → 2222.** Phép quy trách nhiệm ĐẦY ĐỦ, không dư
+ * một đơn vị — cả ba thủ tục cùng file `repoWorkspaceRouter.ts`, sàn `adminProcedure` + 2FA +
+ * `moduleGate("MOD_AI")`:
+ *       · `danhSachDayDu` (query)    → **C 467 → 468** — bảng `ai_repo_du_an` (mig 0337) KHÔNG
+ *         thuộc tenant (0 cột mã tenant; dự án hộp cát là CẤU HÌNH hạ tầng, không phải dữ liệu
+ *         nhà máy nào) — đúng ô mà `listProjects` (cùng danh sách, cho mọi người dùng) đã nằm.
+ *       · `themDuAn` / `xoaDuAn` (mutation) → **D 1095 → 1097** (phạm vi ĐỌC không áp cho mutation).
+ * ★ **NHÓM (A) VẪN 363** — lượt này không mở một lượt đọc tenant không lọc nào. Chú ý riêng cho
+ *   `themDuAn`: nó là thủ tục DUY NHẤT của bề mặt AI nhận một ĐƯỜNG DẪN — ngoại lệ CÓ CHỦ ĐÍCH
+ *   của bất biến trục 2 ("client chỉ gửi ID"), phạm vi ADMIN-cấu-hình chứ không phải đường thực
+ *   thi tool; server xác thực fail-closed ở `repoProjects.kiemTraDangKyDuAn` (mỗi lỗi một mã, đo
+ *   tại `quanLyDuAnRepo.test.ts` + `repoProjectsDangKy.test.ts`).
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+const GHIM = { A: 363, B: 8, C: 468, D: 1097, S: 286, tong: 2222 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

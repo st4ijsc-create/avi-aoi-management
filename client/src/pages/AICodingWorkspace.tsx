@@ -92,15 +92,28 @@ import { phanQuyetPhimNhap, tuGianChieuCao, TRAN_CAO_O_NHAP_PX } from "@/lib/aiC
 // ★★★ 2026-08-23 — trần chiều cao khung ĐO ĐƯỢC (hằng `8.5rem` cũ sai ở cả ba cỡ màn; xem tệp).
 import { tinhChieuCaoVua, xepMotKhung } from "@/lib/khungVuaManHinh";
 import {
-  bamChuoi, catLoiChoPrompt, chuanHoaDauRa, daBiTuChoiGhi, deXuatLapLai, maTuChoiGhi, quyetDinhTiep,
-  type LyDoDungVong,
+  bamChuoi, catLoiChoPrompt, chuanHoaDauRa, daBiTuChoiGhi, deXuatLapLai, ketLuanTest, maTuChoiGhi,
+  quyetDinhTiep, type LyDoDungVong,
 } from "@shared/aiCodingLoop";
+// ★★★ 2026-08-23 · UX (D1) — lọc dòng mốc SEARCH/REPLACE ở TẦNG HIỂN THỊ (chúng đang thành H1/
+// blockquote qua markdown). MỘT nguồn hình dạng mốc ở `shared/` — xem docblock ở đó; KHÔNG áp lên
+// chuỗi gửi server/lưu phiên, chỉ áp ngay tại chỗ render <Streamdown>.
+import { lamSachMocChoHienThi } from "@shared/aiCodingMoc";
+// ★★★ 2026-08-23 · UX (B1) — gợi ý mở đầu THEO DỰ ÁN (một bảng, khoá theo id; id lạ ⇒ ẩn gợi ý).
+import { goiYTheoDuAn } from "@/lib/goiYDuAn";
+// ★★★ 2026-08-23 · UX (D2) — lọc nhiễu cây tệp ở TẦNG HIỂN THỊ (ảnh/log/nhị phân gom sau một nút).
+import { chiaTepHienThi } from "@/lib/cayTepHienThi";
+// ★ UX (B2) — tooltip cho ba huy hiệu quyền; provider đã bọc cả App (App.tsx).
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 // ★★★ doc 79 · DANH SÁCH PHIÊN — `locLuot` là PHÉP CHIẾU dùng chung với server: client cũng chiếu
 // trước khi gửi, nên payload **không thể** mang một ô thẻ duyệt kể cả khi `ChatTurn` mọc thêm ô.
 import { locLuot, type LuotPhien } from "@shared/aiCodingSession";
 // ★★★ 2026-08-23 — BỘ CHỌN PHIÊN ở tệp riêng (nút đồng hồ + popover, mẫu Claude Code). Xem
 // docblock của tệp ấy cho lý do tách và số đo; `MessagesSquare`/`Plus`/`Trash2` đi theo nó.
 import { BoChonPhien } from "@/components/ai/BoChonPhien";
+// ★★★ QUẢN LÝ DỰ ÁN 2026-08-23 — nút bánh răng + dialog thêm/xoá dự án (admin-only, tệp riêng
+// cùng lý do BoChonPhien: Portal nuốt ruột dialog khỏi mọi lưới render tĩnh dựng từ trang).
+import { QuanLyDuAnRepo } from "@/components/ai/QuanLyDuAnRepo";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
@@ -127,6 +140,18 @@ function baseName(p: string): string {
   return parts[parts.length - 1] ?? p;
 }
 
+/**
+ * ★ UX (A1) — CÂU ĐẦU của `textSummary` server cho chân thẻ duyệt: chân thẻ là một DÒNG trạng thái,
+ * không phải chỗ chứa cả bài giải thích (bài đầy đủ đã vào transcript ngay trên nó). Cắt ở ngắt
+ * dòng đầu tiên + trần ký tự — KHÔNG viết lại câu (câu của server phải tới người dùng nguyên nghĩa).
+ */
+function cauDauKetCuc(textSummary: string | null | undefined, tran = 300): string | null {
+  const s = String(textSummary ?? "").trim();
+  if (s === "") return null;
+  const dong = s.split("\n", 1)[0]!.trim();
+  return dong.length > tran ? `${dong.slice(0, tran - 1)}…` : dong;
+}
+
 // ★★★ doc 81 · VIỆC 3 (1) — chính sách ô nhập ở module LÁ `@/lib/aiCodingInput` (thuần, đo thẳng
 // bằng lưới đơn vị). Xem docblock ở đó để biết vì sao nó KHÔNG nằm inline trong JSX.
 
@@ -144,6 +169,11 @@ interface TreeProps {
 
 function FolderChildren({ path, selectedPath, onOpenFile, depth, projectId }: TreeProps) {
   const { t } = useTranslation();
+  /**
+   * ★ UX (D2) — nếp gấp "tệp khác" MỞ/ĐÓNG theo TỪNG thư mục (state cục bộ của component này).
+   * Mặc định ĐÓNG: nhiễu (ảnh/log/nhị phân) gom sau một nút đếm số — cây chỉ còn tệp mã thật.
+   */
+  const [hienNhieu, setHienNhieu] = useState(false);
   const q = trpc.repoWorkspace.listFiles.useQuery(
     { path: path || undefined, depth: 1, projectId },
     { staleTime: 30_000, enabled: !!projectId },
@@ -165,27 +195,44 @@ function FolderChildren({ path, selectedPath, onOpenFile, depth, projectId }: Tr
     return <div className="px-2 py-1 text-xs text-muted-foreground">{t("repoWs.tree.empty", "Không có mục nào hộp cát cho phép hiện")}</div>;
   }
   const dirs = entries.filter((e) => e.kind === "dir");
-  const files = entries.filter((e) => e.kind !== "dir");
+  // ★ UX (D2) — chia ở TẦNG HIỂN THỊ (`chiaTepHienThi`, thuần, có lưới riêng); API server KHÔNG đổi.
+  const { chinh, nhieu } = chiaTepHienThi(entries.filter((e) => e.kind !== "dir"));
+  const veTep = (e: { path: string }, mo: boolean) => (
+    <button
+      key={e.path}
+      type="button"
+      onClick={() => onOpenFile(e.path)}
+      style={{ paddingLeft: `${depth * 12 + 8}px` }}
+      className={cn(
+        "flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-muted",
+        mo && "opacity-60",
+        selectedPath === e.path && "bg-muted font-medium text-primary",
+      )}
+    >
+      <FileCode className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span className="truncate">{baseName(e.path)}</span>
+    </button>
+  );
   return (
     <div>
       {dirs.map((e) => (
         <FolderRow key={e.path} path={e.path} selectedPath={selectedPath} onOpenFile={onOpenFile} depth={depth} projectId={projectId} />
       ))}
-      {files.map((e) => (
+      {chinh.map((e) => veTep(e, false))}
+      {nhieu.length > 0 && (
         <button
-          key={e.path}
           type="button"
-          onClick={() => onOpenFile(e.path)}
+          data-hien-tep-khac
+          onClick={() => setHienNhieu((v) => !v)}
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          className={cn(
-            "flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-muted",
-            selectedPath === e.path && "bg-muted font-medium text-primary",
-          )}
+          className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[11px] italic text-muted-foreground hover:bg-muted"
         >
-          <FileCode className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="truncate">{baseName(e.path)}</span>
+          {hienNhieu
+            ? t("repoWs.tree.hideOther", "Ẩn tệp khác ({{n}})", { n: nhieu.length })
+            : t("repoWs.tree.showOther", "Hiện tệp khác ({{n}})", { n: nhieu.length })}
         </button>
-      ))}
+      )}
+      {hienNhieu && nhieu.map((e) => veTep(e, true))}
     </div>
   );
 }
@@ -276,7 +323,7 @@ interface TuVongSend {
  * Thẻ trạng thái vòng. **Im lặng là nói dối** — thẻ này luôn nói ba điều: lượt thứ mấy / trần bao
  * nhiêu · đang làm gì · (khi dừng) VÌ SAO dừng. Nó cũng là chỗ người dùng bấm DỪNG giữa chừng.
  */
-function VongTuDongCard({ vong, onDung }: { vong: TrangThaiVong; onDung: () => void }) {
+function VongTuDongCard({ vong, onDung, laAdmin }: { vong: TrangThaiVong; onDung: () => void; laAdmin: boolean }) {
   const { t } = useTranslation();
   if (!vong.dangChay && vong.lyDoDung === null) return null;
 
@@ -294,7 +341,16 @@ function VongTuDongCard({ vong, onDung }: { vong: TrangThaiVong; onDung: () => v
     nguoi_tu_choi: t("repoWs.loop.stop.user", "DỪNG vì bạn đã hủy đề xuất hoặc bấm dừng vòng."),
     khong_co_lenh: t("repoWs.loop.stop.noCmd", "KHÔNG chạy được vòng: không suy ra được lệnh kiểm chứng cho dự án này (cần .sln/.csproj, hoặc package.json kèm thư mục test). Hãy nêu đích danh lệnh trong câu hỏi."),
     khong_quyen: t("repoWs.loop.stop.perm", "KHÔNG chạy được vòng: tài khoản thiếu quyền CHẠY LỆNH (ai_repo_exec). Server mới là hàng rào — xin quyền rồi thử lại."),
-    co_tat: t("repoWs.loop.stop.off", "Vòng tự động đang TẮT (mặc định) — bản sửa ĐÃ ghi, nhưng bạn phải tự chạy test. Bật bằng AI_CODING_AUTOLOOP=1 rồi khởi động lại máy chủ."),
+    /**
+     * ★ UX (A3) — câu "Bật bằng AI_CODING_AUTOLOOP=1 rồi khởi động lại" là chỉ dẫn cho NGƯỜI SỬA
+     * ĐƯỢC `.env` máy chủ. Nói nó với một kỹ sư thường là bảo họ đi sửa một thứ họ không chạm được
+     * (đo ở buổi trải nghiệm: "Vòng tự động bảo tôi sửa biến môi trường máy chủ"). Vai thường nhận
+     * câu đúng việc-phải-làm: liên hệ quản trị viên. Đây là phép LỊCH SỰ hiển thị — cờ vẫn do server
+     * quyết (`cauHinhVong`), không có nhánh quyền mới nào.
+     */
+    co_tat: laAdmin
+      ? t("repoWs.loop.stop.off", "Vòng tự động đang TẮT (mặc định) — bản sửa ĐÃ ghi, nhưng bạn phải tự chạy test. Bật bằng AI_CODING_AUTOLOOP=1 rồi khởi động lại máy chủ.")
+      : t("repoWs.loop.stop.offUser", "Vòng tự động đang TẮT — bản sửa ĐÃ ghi, nhưng bạn phải tự chạy test. Tính năng này do quản trị viên bật trên máy chủ — hãy liên hệ quản trị viên."),
     loi: t("repoWs.loop.stop.error", "DỪNG vì một hỏng THẬT ở lượt chạy kiểm chứng."),
   };
 
@@ -388,24 +444,47 @@ export default function AICodingWorkspace() {
   const canExec = hasPermission("ai_repo_exec", "canCreate");
 
   // ── Bộ chọn DỰ ÁN (doc 79 · TRỤC 2) — danh sách từ server (danh sách TRẮNG .env). Client giữ và
-  //    gửi lên MỘT id, KHÔNG BAO GIỜ đường dẫn. Phiên nhớ id đang chọn qua sessionStorage. ──
+  //    gửi lên MỘT id, KHÔNG BAO GIỜ đường dẫn. ──
+  // ★★★ 2026-08-23 · UX (D2) — NHỚ dự án qua **localStorage khoá theo userId** (bản trước chỉ
+  //   sessionStorage: đóng tab là quên, người dùng mở lại luôn rơi về "Repo chinh" — đo ở buổi trải
+  //   nghiệm). sessionStorage GIỮ LẠI làm liên tục cùng-tab; localStorage per-user để hai tài khoản
+  //   trên một máy xưởng không kế thừa lựa chọn của nhau. Vẫn CHỈ là một id danh sách trắng — id lạ
+  //   bị effect dưới đưa về defaultId, đúng luật trục 2.
   const PROJECT_KEY = "aiCodingWorkspace.projectId";
+  const khoaLuuTheoUser = user?.id != null ? `${PROJECT_KEY}.u${user.id}` : null;
   const projectsQ = trpc.repoWorkspace.listProjects.useQuery(undefined, { staleTime: 5 * 60_000 });
   const [projectId, setProjectId] = useState<string>(() => {
     try { return sessionStorage.getItem(PROJECT_KEY) ?? ""; } catch { return ""; }
   });
-  // Khi danh sách nạp xong: đảm bảo id đang chọn CÒN hợp lệ; nếu không, về defaultId (hoặc mục đầu).
+  /** Khôi phục từ localStorage đúng MỘT lần (khi user + danh sách cùng sẵn sàng) — không giật lại
+   *  lựa chọn người dùng vừa đổi tay ở lượt sau. */
+  const daKhoiPhucDuAnRef = useRef(false);
+  // Khi danh sách nạp xong: khôi phục per-user (một lần) → đảm bảo id CÒN hợp lệ → defaultId.
   useEffect(() => {
     const data = projectsQ.data;
     if (!data) return;
     const ids = data.projects.map((p) => p.id);
+    if (!daKhoiPhucDuAnRef.current && khoaLuuTheoUser !== null) {
+      daKhoiPhucDuAnRef.current = true;
+      if (!projectId || !ids.includes(projectId)) {
+        try {
+          const luu = localStorage.getItem(khoaLuuTheoUser);
+          if (luu && ids.includes(luu)) { setProjectId(luu); return; }
+        } catch { /* ignore */ }
+      }
+    }
     if (projectId && ids.includes(projectId)) return;
     const next = data.defaultId && ids.includes(data.defaultId) ? data.defaultId : (ids[0] ?? "");
     if (next) setProjectId(next);
-  }, [projectsQ.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectsQ.data, khoaLuuTheoUser]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    try { if (projectId) sessionStorage.setItem(PROJECT_KEY, projectId); } catch { /* ignore */ }
-  }, [projectId]);
+    try {
+      if (projectId) {
+        sessionStorage.setItem(PROJECT_KEY, projectId);
+        if (khoaLuuTheoUser !== null) localStorage.setItem(khoaLuuTheoUser, projectId);
+      }
+    } catch { /* ignore */ }
+  }, [projectId, khoaLuuTheoUser]);
 
   // ══════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ doc 79 · DANH SÁCH PHIÊN — trạng thái + ba bất biến, đọc trước khi sửa
@@ -468,6 +547,18 @@ export default function AICodingWorkspace() {
   const [streamTool, setStreamTool] = useState<ToolResultPayload | null>(null);
   const [pending, setPending] = useState<KbPendingAction | null>(null);
   const [actionState, setActionState] = useState<ActionState>("pending");
+  /**
+   * ★★★ 2026-08-23 · UX (A1) — CÂU KẾT CỤC cho chân thẻ duyệt khi một lượt xác nhận bị TỪ CHỐI.
+   *
+   * Đo live: lệnh bị chặn vì KÝ TỰ CẤM (`CMD_METACHAR`) mà chân thẻ hiện *"Bạn không có quyền thực
+   * hiện thao tác này."* — vì `ConfirmActionCard` không được truyền `message`, nó rơi về câu mặc
+   * định `copilot.denied` (một câu về RBAC) cho MỌI kết cục "denied". Người dùng đi tìm nhầm chỗ
+   * (đi xin quyền, trong khi lỗi là một chữ "và" lọt vào lệnh).
+   * ⇒ State này giữ CÂU THẬT của server (`textSummary` — `cauTuChoiLenh` đã viết đúng bản chất +
+   *   việc-phải-làm cho từng mã CMD_*) và được truyền vào `message` của thẻ. KHÔNG chép một bảng
+   *   mã→câu thứ hai ở client: câu của server phải TỚI người dùng, không bị một câu generic đè.
+   */
+  const [ketCucThongDiep, setKetCucThongDiep] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const oNhapRef = useRef<HTMLTextAreaElement>(null);
   const khungRef = useRef<HTMLDivElement>(null);
@@ -568,6 +659,7 @@ export default function AICodingWorkspace() {
     setStreamTool(null);
     setPending(null);
     setActionState("pending");
+    setKetCucThongDiep(null);
     setVongTool(null);
     // Ô nhập vừa bị xoá ⇒ trả chiều cao về một dòng (nếu không nó giữ nguyên chiều cao cũ).
     requestAnimationFrame(() => tuGianChieuCao(oNhapRef.current));
@@ -595,6 +687,7 @@ export default function AICodingWorkspace() {
         onPendingAction: (pa) => {
           setPending(pa);
           setActionState("pending");
+          setKetCucThongDiep(null);
           // apply_diff → mở diff ở khung giữa (dựng từ args THẬT server gửi kèm).
           if (pa.tool === "apply_diff" && pa.args && typeof pa.args.path === "string") {
             const a = pa.args as unknown as DiffArgs;
@@ -673,10 +766,19 @@ export default function AICodingWorkspace() {
     }
 
     // ĐỌC ĐẦU RA THẬT — đưa nguyên văn vào hội thoại để người dùng thấy đúng thứ tác nhân thấy.
+    // ★ UX (C2-i) — dòng kết luận từ CON SỐ SERVER ĐÃ ĐỌC (`docKetQuaTest` phía chayKiemChung):
+    //   đếm được cả hai vế mới nói; `null` (tsc) ⇒ im lặng như cũ. Cùng khuôn câu với lượt lệnh tay.
     const dauRa = r.output ?? "";
+    const klVong = r.soDo !== null && r.soDo !== undefined && r.soXanh !== null && r.soXanh !== undefined
+      ? (r.soDo === 0 && r.xanh
+          ? `${t("repoWs.chat.klXanh", "✅ {{xanh}}/{{tong}} PASS — không ca nào đỏ.", { xanh: r.soXanh, tong: r.soXanh + r.soDo })}\n\n`
+          : r.soDo > 0
+            ? `${t("repoWs.chat.klDo", "❌ {{do}} ca đỏ / {{tong}} ca.", { do: r.soDo, tong: r.soXanh + r.soDo })}\n\n`
+            : "")
+      : "";
     setTranscript((prev) => [
       ...prev,
-      { role: "assistant", content: `${t("repoWs.loop.ranTurn", "Vòng tự động — lượt {{luot}}/{{tran}} đã chạy `{{lenh}}`", { luot, tran: cfg.tran, lenh: r.command ?? "" })}\n\n\`\`\`\n${dauRa}\n\`\`\`` },
+      { role: "assistant", content: `${t("repoWs.loop.ranTurn", "Vòng tự động — lượt {{luot}}/{{tran}} đã chạy `{{lenh}}`", { luot, tran: cfg.tran, lenh: r.command ?? "" })}\n\n${klVong}\`\`\`\n${dauRa}\n\`\`\`` },
     ]);
 
     const bamDauRa = bamChuoi(chuanHoaDauRa(dauRa));
@@ -797,6 +899,7 @@ export default function AICodingWorkspace() {
     setStreamTool(null);
     setDiffPreview("");
     setActionState("pending");
+    setKetCucThongDiep(null);
     vongRef.current = { ...VONG_RONG };
     setVong({ ...VONG_RONG });
     datSessionId(r.session.id);
@@ -814,6 +917,7 @@ export default function AICodingWorkspace() {
     setStreamTool(null);
     setDiffPreview("");
     setActionState("pending");
+    setKetCucThongDiep(null);
     vongRef.current = { ...VONG_RONG };
     setVong({ ...VONG_RONG });
     dangKhoiPhucRef.current = true;
@@ -872,14 +976,30 @@ export default function AICodingWorkspace() {
       setActionState(next);
       if (res.ok && tuChoi) {
         // Cổng an toàn chạy ĐÚNG — và nay nó được BÁO CÁO đúng. Vòng tự động KHÔNG khởi động.
-        toast.error(t("repoWs.diff.rejectedCode", "TỪ CHỐI [{{ma}}] — KHÔNG ghi byte nào.", { ma: maTuChoi ?? "?" }));
         const out = res.result as { textSummary?: string } | null;
+        /**
+         * ★★★ UX (A1) — LỜI KHAI PHẢI ĐÚNG BẢN CHẤT LƯỢT BỊ TỪ CHỐI.
+         * `run_command` bị chặn (CMD_*) KHÔNG phải một "lượt ghi" và cũng KHÔNG phải chuyện quyền:
+         * câu cho transcript + toast nói "LỆNH bị chặn", còn chân thẻ nhận CÂU THẬT của server
+         * (`cauDauKetCuc(textSummary)`) thay vì rơi về "Bạn không có quyền…" mặc định.
+         * ⚠ CMD_TIMEOUT vẫn qua đây: textSummary của nó tự nói "bị GIẾT vì quá hạn" — không tự chế
+         *   một câu "lệnh chưa chạy" cho mọi mã (hai mã có hai sự thật khác nhau).
+         */
+        const laLenh = pending.tool === "run_command";
+        toast.error(
+          laLenh
+            ? t("repoWs.chat.cmdRejectedToast", "Lệnh bị chặn [{{ma}}] — xem chi tiết trong hội thoại.", { ma: maTuChoi ?? "?" })
+            : t("repoWs.diff.rejectedCode", "TỪ CHỐI [{{ma}}] — KHÔNG ghi byte nào.", { ma: maTuChoi ?? "?" }),
+        );
+        setKetCucThongDiep(cauDauKetCuc(out?.textSummary) ?? t("repoWs.chat.rejectedGeneric", "Bị từ chối [{{ma}}] — xem chi tiết trong hội thoại.", { ma: maTuChoi ?? "?" }));
         setTranscript((prev) => [
           ...prev,
           {
             role: "assistant",
             content:
-              t("repoWs.chat.writeRejected", "Lượt ghi bị TỪ CHỐI [{{ma}}] — tệp trên đĩa KHÔNG đổi.", { ma: maTuChoi ?? "?" }) +
+              (laLenh
+                ? t("repoWs.chat.cmdRejected", "Lệnh KHÔNG hoàn thành [{{ma}}] — chi tiết:", { ma: maTuChoi ?? "?" })
+                : t("repoWs.chat.writeRejected", "Lượt ghi bị TỪ CHỐI [{{ma}}] — tệp trên đĩa KHÔNG đổi.", { ma: maTuChoi ?? "?" })) +
               (out?.textSummary ? `\n\n${out.textSummary}` : ""),
           },
         ]);
@@ -889,10 +1009,24 @@ export default function AICodingWorkspace() {
         toast.success(res.message ?? t("repoWs.diff.executed", "Đã ghi tệp."));
         const out = res.result as { textSummary?: string; data?: any } | null;
         if (pending.tool === "run_command" && out?.textSummary) {
+          /**
+           * ★★★ UX (C2-i) — DÒNG KẾT LUẬN đứng TRÊN khối đầu ra thô. Đo live: người dùng nhận
+           * nguyên bức tường `dotnet test` rồi phải tự tìm dòng `Failed: N` — và câu hỏi "xanh
+           * chưa?" tiếp theo không bao giờ được trả lời. `ketLuanTest` (shared — CÙNG bộ đọc bốn
+           * khuôn với vòng tự động) CHẮC mới nói: đếm không được (tsc) / mâu thuẫn (0 đỏ nhưng mã
+           * thoát ≠ 0) ⇒ `null` ⇒ không thêm dòng nào, đúng hành vi cũ.
+           */
+          const d = (out.data ?? {}) as { output?: string | null; exitCode?: number | null; timedOut?: boolean };
+          const kl = ketLuanTest(d.output ?? out.textSummary, d.exitCode ?? null, d.timedOut === true);
+          const dongKetLuan = kl === null
+            ? ""
+            : kl.xanh
+              ? `${t("repoWs.chat.klXanh", "✅ {{xanh}}/{{tong}} PASS — không ca nào đỏ.", { xanh: kl.soXanh, tong: kl.soXanh + kl.soDo })}\n\n`
+              : `${t("repoWs.chat.klDo", "❌ {{do}} ca đỏ / {{tong}} ca.", { do: kl.soDo, tong: kl.soXanh + kl.soDo })}\n\n`;
           // ★ NHỊP KHÉP VÒNG — đưa đầu ra THẬT vào lịch sử để lượt sau tác nhân đọc lỗi rồi sửa tiếp.
           setTranscript((prev) => [
             ...prev,
-            { role: "assistant", content: `${t("repoWs.chat.cmdOutput", "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)")}:\n\n\`\`\`\n${out.textSummary}\n\`\`\`` },
+            { role: "assistant", content: `${dongKetLuan}${t("repoWs.chat.cmdOutput", "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)")}:\n\n\`\`\`\n${out.textSummary}\n\`\`\`` },
           ]);
         } else if (pending.tool === "apply_diff") {
           const tepDaGhi = (pending.args as unknown as DiffArgs | undefined)?.path ?? pendingDiff?.args.path ?? null;
@@ -959,11 +1093,29 @@ export default function AICodingWorkspace() {
           <span className="hidden text-xs text-muted-foreground sm:inline">
             {t("repoWs.subtitle", "Đọc mã → đề xuất diff → người duyệt → chạy test → đọc lỗi thật rồi sửa tiếp")}
           </span>
+          {/* ★ UX (B2) — ba huy hiệu trần trụi ("đọc"/"chạy lệnh"/"Cục bộ") không tự giải nghĩa cho
+              người lần đầu; tooltip nói chúng LÀ GÌ (Radix Tooltip, provider đã bọc cả App). */}
           <div className="ml-auto flex items-center gap-1.5">
-            <Badge variant="outline" className="text-[10px]">{t("repoWs.badge.read", "đọc")}</Badge>
-            <Badge variant={canExec ? "outline" : "secondary"} className="text-[10px]">
-              {canExec ? t("repoWs.badge.exec", "chạy lệnh") : t("repoWs.badge.execOff", "chạy lệnh (ẩn)")}
-            </Badge>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className="cursor-help text-[10px]">{t("repoWs.badge.read", "đọc")}</Badge>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[280px] text-xs">
+                {t("repoWs.badgeTip.read", "Tài khoản có quyền ĐỌC mã nguồn (ai_repo_read): cây tệp, nội dung tệp, tìm kiếm. Hộp cát server quyết định tệp nào đọc được.")}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant={canExec ? "outline" : "secondary"} className="cursor-help text-[10px]">
+                  {canExec ? t("repoWs.badge.exec", "chạy lệnh") : t("repoWs.badge.execOff", "chạy lệnh (ẩn)")}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[280px] text-xs">
+                {canExec
+                  ? t("repoWs.badgeTip.exec", "Tài khoản có quyền CHẠY LỆNH (ai_repo_exec): chỉ các lệnh trong danh sách trắng, và luôn phải bấm duyệt trước khi chạy.")
+                  : t("repoWs.badgeTip.execOff", "Tài khoản KHÔNG có quyền CHẠY LỆNH (ai_repo_exec) — gợi ý chạy test bị ẩn; server vẫn chặn nếu gọi thẳng.")}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
@@ -1041,12 +1193,27 @@ export default function AICodingWorkspace() {
                 "không còn thứ TÔI BIẾT CÁCH NHÌN"). Cột phiên của đợt này làm lưới co chặt hơn nên
                 lỗi mới lộ. */}
             <div className="flex shrink-0 flex-col gap-1 border-b px-2 py-1.5">
-              <label htmlFor="repows-project" className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
-                <FolderTree className="h-3.5 w-3.5" /> {t("repoWs.project.label", "Dự án")}
-                <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide">
-                  {t("repoWs.project.local", "Cục bộ")}
-                </span>
-              </label>
+              <div className="flex items-center gap-1.5">
+                <label htmlFor="repows-project" className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                  <FolderTree className="h-3.5 w-3.5" /> {t("repoWs.project.label", "Dự án")}
+                  {/* ★ UX (B2) — "Cục bộ" là lời cam kết quan trọng nhất màn này với khách nhà máy;
+                      tooltip nói rõ nó nghĩa là gì thay vì bắt người dùng đoán. */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="ml-auto cursor-help rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide">
+                        {t("repoWs.project.local", "Cục bộ")}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-[280px] text-xs">
+                      {t("repoWs.badgeTip.local", "Mã nguồn và model AI chạy NGAY TRÊN máy chủ nội bộ của nhà máy — không một byte mã nào rời khỏi mạng nội bộ.")}
+                    </TooltipContent>
+                  </Tooltip>
+                </label>
+                {/* ★ QUẢN LÝ DỰ ÁN — bánh răng NGOÀI <label> (nút trong label ăn cú bấm của label)
+                    và chỉ gắn cho admin: phép LỊCH SỰ; hàng rào thật là `adminProcedure` ở server
+                    (repoWorkspace.themDuAn/xoaDuAn) — gọi thẳng API vẫn FORBIDDEN. */}
+                {user?.role === "admin" && <QuanLyDuAnRepo />}
+              </div>
               <select
                 id="repows-project"
                 value={projectId}
@@ -1166,18 +1333,22 @@ export default function AICodingWorkspace() {
                     <p className="text-center text-xs text-muted-foreground">
                       {t("repoWs.chat.empty", "Hỏi để tác nhân đọc mã thật, đề xuất diff (bạn duyệt), rồi chạy test và đọc lỗi thật.")}
                     </p>
+                    {/* ★★★ UX (B1) — gợi ý THEO DỰ ÁN đang chọn (`goiYTheoDuAn`): bản cũ viết cứng
+                        cho repo chính nên ở dự án csharp nút đầu tiên dẫn vào một tệp KHÔNG tồn tại.
+                        Id lạ (dự án admin tự đăng ký) ⇒ mảng rỗng ⇒ ẨN gợi ý thay vì gợi sai. */}
                     <div className="flex flex-col gap-1.5">
-                      <button type="button" onClick={() => handleSend(t("repoWs.suggest.read", "Đọc file server/routers.ts và tóm tắt"))} className="rounded-md border px-2.5 py-1.5 text-left text-xs hover:bg-muted">
-                        {t("repoWs.suggest.read", "Đọc file server/routers.ts và tóm tắt")}
-                      </button>
-                      <button type="button" onClick={() => handleSend(t("repoWs.suggest.grep", "Tìm nơi gọi executeDecision trong repo"))} className="rounded-md border px-2.5 py-1.5 text-left text-xs hover:bg-muted">
-                        {t("repoWs.suggest.grep", "Tìm nơi gọi executeDecision trong repo")}
-                      </button>
-                      {canExec && (
-                        <button type="button" onClick={() => handleSend(t("repoWs.suggest.check", "Chạy npm run check rồi đọc lỗi"))} className="rounded-md border px-2.5 py-1.5 text-left text-xs hover:bg-muted">
-                          {t("repoWs.suggest.check", "Chạy npm run check rồi đọc lỗi")}
-                        </button>
-                      )}
+                      {goiYTheoDuAn(projectId)
+                        .filter((g) => !g.canChayLenh || canExec)
+                        .map((g) => (
+                          <button
+                            key={g.khoa}
+                            type="button"
+                            onClick={() => handleSend(t(g.khoa, g.macDinh))}
+                            className="rounded-md border px-2.5 py-1.5 text-left text-xs hover:bg-muted"
+                          >
+                            {t(g.khoa, g.macDinh)}
+                          </button>
+                        ))}
                     </div>
                     {!canExec && (
                       <p className="flex items-start gap-1.5 rounded-md border border-dashed px-2 py-1.5 text-[11px] text-muted-foreground">
@@ -1201,7 +1372,10 @@ export default function AICodingWorkspace() {
                       {m.role === "user" ? (
                         <p className="whitespace-pre-wrap break-words">{m.content}</p>
                       ) : (
-                        <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="static">{m.content}</Streamdown></div>
+                        /* ★ UX (D1) — `lamSachMocChoHienThi`: dòng mốc SEARCH/REPLACE trong văn xuôi
+                           model đang thành H1/blockquote qua markdown; lọc CHỈ ở chỗ render, chuỗi
+                           lưu phiên/gửi server không đổi một byte. */
+                        <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="static">{lamSachMocChoHienThi(m.content)}</Streamdown></div>
                       )}
                     </div>
                     {m.role === "user" && <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary"><User className="h-3.5 w-3.5" /></div>}
@@ -1216,7 +1390,9 @@ export default function AICodingWorkspace() {
                       {streamTool && <AIToolResultCard toolResult={streamTool} />}
                       {/* `mode="streaming"` — Streamdown vá markdown DỞ DANG (``` chưa đóng) nên khối
                           mã đang stream vẫn hiện đúng thay vì nhảy layout ở mỗi token. */}
-                      {streamingText && <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="streaming">{streamingText}</Streamdown></div>}
+                      {/* ★ UX (D1) — cùng phép lọc mốc với bản tĩnh; dòng mốc đang gõ dở chưa khớp
+                          hình dạng thì giữ nguyên, dòng đã trọn được bọc ở nhịp render sau. */}
+                      {streamingText && <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="streaming">{lamSachMocChoHienThi(streamingText)}</Streamdown></div>}
                     </div>
                   </div>
                 )}
@@ -1234,14 +1410,24 @@ export default function AICodingWorkspace() {
                   </div>
                 )}
                 {isStreaming && !streamingText && !streamTool && (
-                  <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t("repoWs.chat.thinking", "Đang suy nghĩ…")}</div>
+                  <div className="px-1">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t("repoWs.chat.thinking", "Đang suy nghĩ…")}</div>
+                    {/* ★ UX (B2) — kỳ vọng thời gian THEO SỐ ĐO THẬT (buổi trải nghiệm 2026-08-23:
+                        đọc 8–20 s · sửa tệp nhỏ 15–20 s trên model 30B cục bộ) — không chép một con
+                        số "3–5 phút" từ tài liệu nào. */}
+                    <p className="mt-0.5 pl-6 text-[10px] text-muted-foreground/80">
+                      {t("repoWs.chat.thinkingEta", "đọc: thường 8–20 giây · sửa tệp: thường 15–30 giây, tệp lớn/lệnh dài có thể lâu hơn")}
+                    </p>
+                  </div>
                 )}
 
                 {/* Kết quả tool đã xong (không stream nữa) */}
                 {!isStreaming && streamTool && <AIToolResultCard toolResult={streamTool} />}
 
-                {/* ★★★ doc 79 · VÒNG TỰ ĐỘNG — lượt/trần · đang làm gì · vì sao dừng. */}
-                <VongTuDongCard vong={vong} onDung={() => dungVong("nguoi_tu_choi")} />
+                {/* ★★★ doc 79 · VÒNG TỰ ĐỘNG — lượt/trần · đang làm gì · vì sao dừng.
+                    ★ UX (A3) — `laAdmin`: câu "cờ TẮT" nói tên biến env cho admin, nói "liên hệ
+                    quản trị viên" cho vai thường (họ không sửa được `.env` máy chủ). */}
+                <VongTuDongCard vong={vong} onDung={() => dungVong("nguoi_tu_choi")} laAdmin={user?.role === "admin"} />
                 {vong.dangChay && vong.pha === "chay_test" && (
                   <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t("repoWs.loop.waitCmd", "Đang chờ lệnh kiểm chứng chạy xong (có thể tới vài phút)…")}</div>
                 )}
@@ -1260,9 +1446,12 @@ export default function AICodingWorkspace() {
                   />
                 ) : pending ? (
                   // run_command (và mọi write tool khác) — ConfirmActionCard hiện argv + cwd + hạn giờ + cảnh báo.
+                  // ★ UX (A1) — `message`: câu kết cục THẬT của server; không truyền thì thẻ rơi về
+                  //   câu RBAC mặc định ("Bạn không có quyền…") cho MỌI kết cục denied — đo live sai.
                   <ConfirmActionCard
                     action={pending as unknown as PendingAction}
                     state={actionState}
+                    message={ketCucThongDiep}
                     busy={busyConfirm}
                     onConfirm={handleConfirm}
                     onCancel={handleCancel}

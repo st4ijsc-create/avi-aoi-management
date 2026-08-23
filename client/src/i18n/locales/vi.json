@@ -1359,6 +1359,8 @@
     "before": "Trước",
     "after": "Sau",
     "confirm": "Xác nhận",
+    "blockedRetype": "Lệnh không hợp lệ — gõ lại",
+    "showAllCmds": "Xem cả danh sách lệnh được phép",
     "cancel": "Hủy",
     "executed": "Đã thực thi.",
     "cancelled": "Đã hủy.",
@@ -19270,6 +19272,45 @@
       "loading": "Đang tải dự án…",
       "none": "Chưa có dự án nào để hiển thị."
     },
+    "duan": {
+      "title": "Quản lý dự án",
+      "moTitle": "Quản lý dự án (admin)",
+      "moTa": "Thêm/xoá thư mục dự án cho không gian lập trình AI. Mục .env chỉ sửa được bằng tay; mục thêm ở đây có hiệu lực NGAY, không cần khởi động lại.",
+      "loading": "Đang tải danh sách dự án…",
+      "empty": "Chưa có dự án nào.",
+      "nguonEnv": ".env",
+      "nguonDb": "UI",
+      "hong": "mất gốc",
+      "hongTip": "Thư mục gốc không còn trên máy chủ, hoặc ID bị một mục .env che — mục này không hiện trong selectBox; xoá đi cho gọn.",
+      "khoaEnv": "Khai trong .env — chỉ sửa được bằng tay trong .env của máy chủ.",
+      "xoa": "Xoá dự án này khỏi danh sách (không đụng vào thư mục trên đĩa)",
+      "hoiXoa": "Xoá dự án này khỏi danh sách? Thư mục trên đĩa KHÔNG bị đụng tới.",
+      "themTitle": "Thêm dự án ({{so}}/{{tran}} qua UI)",
+      "oId": "ID (chữ/số/-/_)",
+      "oTen": "Tên hiển thị",
+      "oTenGoiY": "Dự án mới",
+      "oDuong": "Đường dẫn TUYỆT ĐỐI trên máy chủ",
+      "ghiChu": "Thư mục phải CÓ SẴN trên máy chủ; server kiểm tra rồi mới nhận.",
+      "nutThem": "Thêm",
+      "daThem": "Đã thêm dự án — selectBox đã có mục mới.",
+      "daXoa": "Đã xoá dự án khỏi danh sách.",
+      "err": {
+        "idKhongHopLe": "ID chỉ được chứa chữ không dấu, số, gạch dưới, gạch nối (1–64 ký tự). Ví dụ: du-an-moi",
+        "tenKhongHopLe": "Tên phải có 1–100 ký tự và không chứa các ký tự # ; = | — hãy bỏ chúng khỏi tên.",
+        "trungId": "ID này đã tồn tại (trong .env hoặc đã đăng ký). Chọn một ID khác.",
+        "khongTuyetDoi": "Đường dẫn phải là đường TUYỆT ĐỐI trên máy chủ (ví dụ D:\\DuAn\\ten-du-an), không phải đường tương đối.",
+        "khongTonTai": "Thư mục này không tồn tại trên máy chủ. Tạo thư mục trước, rồi đăng ký lại.",
+        "khongPhaiThuMuc": "Đường dẫn trỏ vào một TỆP. Hãy trỏ vào THƯ MỤC gốc của dự án.",
+        "thuMucCam": "Không đăng ký được thư mục nằm trong node_modules, .git hoặc dist. Chọn thư mục mã nguồn thật.",
+        "namTrongGocDaCo": "Thư mục này nằm TRONG (hoặc trùng) một dự án đã có — hai hộp cát sẽ chồng lấn. Chọn thư mục ngoài các dự án hiện có.",
+        "chuaGocDaCo": "Thư mục này CHỨA một dự án đã có — hai hộp cát sẽ chồng lấn. Chọn thư mục hẹp hơn, không bao trùm dự án khác.",
+        "vuotTran": "Đã đạt trần số dự án đăng ký qua UI. Xoá bớt một dự án không còn dùng rồi thêm lại.",
+        "luuThatBai": "Không lưu được (CSDL từ chối — có thể một admin khác vừa thêm cùng ID). Tải lại danh sách rồi thử lại.",
+        "mucEnv": "Mục này khai trong .env của máy chủ — chỉ sửa được bằng tay trong .env, không xoá được ở đây.",
+        "khongTimThay": "Không thấy dự án này nữa (có thể đã bị xoá). Tải lại danh sách.",
+        "khac": "Server từ chối với mã {{ma}} — báo cho người phụ trách hệ thống."
+      }
+    },
     "title": "Không gian lập trình AI",
     "subtitle": "Đọc mã → đề xuất diff → người duyệt → chạy test → đọc lỗi thật rồi sửa tiếp",
     "noPermission": "Bạn không có quyền ĐỌC mã nguồn (ai_repo_read). Liên hệ quản trị viên.",
@@ -19284,7 +19325,15 @@
       "error": "Không đọc được thư mục",
       "denied": "Server từ chối: thiếu quyền ai_repo_read",
       "empty": "Không có mục nào hộp cát cho phép hiện",
-      "refresh": "Làm mới"
+      "refresh": "Làm mới",
+      "showOther": "Hiện tệp khác ({{n}})",
+      "hideOther": "Ẩn tệp khác ({{n}})"
+    },
+    "badgeTip": {
+      "read": "Tài khoản có quyền ĐỌC mã nguồn (ai_repo_read): cây tệp, nội dung tệp, tìm kiếm. Hộp cát server quyết định tệp nào đọc được.",
+      "exec": "Tài khoản có quyền CHẠY LỆNH (ai_repo_exec): chỉ các lệnh trong danh sách trắng, và luôn phải bấm duyệt trước khi chạy.",
+      "execOff": "Tài khoản KHÔNG có quyền CHẠY LỆNH (ai_repo_exec) — gợi ý chạy test bị ẩn; server vẫn chặn nếu gọi thẳng.",
+      "local": "Mã nguồn và model AI chạy NGAY TRÊN máy chủ nội bộ của nhà máy — không một byte mã nào rời khỏi mạng nội bộ."
     },
     "viewer": {
       "title": "Trình xem",
@@ -19299,15 +19348,21 @@
       "title": "Hội thoại tác nhân",
       "empty": "Hỏi để tác nhân đọc mã thật, đề xuất diff (bạn duyệt), rồi chạy test và đọc lỗi thật.",
       "thinking": "Đang suy nghĩ…",
+      "thinkingEta": "đọc: thường 8–20 giây · sửa tệp: thường 15–30 giây, tệp lớn/lệnh dài có thể lâu hơn",
       "noAnswer": "(không có nội dung trả lời)",
       "streamFailed": "Luồng bị lỗi — thử lại.",
       "placeholder": "Hỏi tác nhân: đọc/tìm mã, đề xuất sửa, chạy test…",
       "keyHint": "Enter để gửi · Shift+Enter để xuống dòng (dán được stack trace nhiều dòng)",
       "cmdOutput": "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)",
+      "klXanh": "✅ {{xanh}}/{{tong}} PASS — không ca nào đỏ.",
+      "klDo": "❌ {{do}} ca đỏ / {{tong}} ca.",
       "applied": "Đã áp diff vào `{{tep}}` — đã đọc lại tệp.",
       "appliedChon": "Đã áp {{chon}}/{{tong}} khối đã chọn vào `{{tep}}` — khối bỏ chọn KHÔNG vào đĩa; đã đọc lại tệp.",
       "confirmFailed": "Không thực thi được.",
-      "writeRejected": "Lượt ghi bị TỪ CHỐI [{{ma}}] — tệp trên đĩa KHÔNG đổi."
+      "writeRejected": "Lượt ghi bị TỪ CHỐI [{{ma}}] — tệp trên đĩa KHÔNG đổi.",
+      "cmdRejected": "Lệnh KHÔNG hoàn thành [{{ma}}] — chi tiết:",
+      "cmdRejectedToast": "Lệnh bị chặn [{{ma}}] — xem chi tiết trong hội thoại.",
+      "rejectedGeneric": "Bị từ chối [{{ma}}] — xem chi tiết trong hội thoại."
     },
     "toolLoop": {
       "running": "Vòng đọc mã — lượt {{round}}/{{tran}}"
@@ -19330,7 +19385,13 @@
     "suggest": {
       "read": "Đọc file server/routers.ts và tóm tắt",
       "grep": "Tìm nơi gọi executeDecision trong repo",
-      "check": "Chạy npm run check rồi đọc lỗi"
+      "check": "Chạy npm run check rồi đọc lỗi",
+      "csharpRead": "Đọc src/Calculator.cs và tóm tắt",
+      "csharpTest": "Chạy dotnet test CalculatorDemo.sln",
+      "csharpWhy": "Giải thích vì sao hai ca Divide_ByZero đỏ",
+      "reactRead": "Đọc src/validate.mjs và tóm tắt",
+      "reactTest": "Chạy node --test test/validate.test.mjs",
+      "reactWhy": "Giải thích vì sao hai ca của validateTodo đang đỏ"
     },
     "exec": {
       "noPerm": "Tài khoản của bạn không có quyền CHẠY LỆNH (ai_repo_exec) — gợi ý chạy test bị ẩn. Nếu gọi thẳng, server vẫn chặn."
@@ -19356,6 +19417,7 @@
         "noCmd": "KHÔNG chạy được vòng: không suy ra được lệnh kiểm chứng cho dự án này (cần .sln/.csproj, hoặc package.json kèm thư mục test). Hãy nêu đích danh lệnh trong câu hỏi.",
         "perm": "KHÔNG chạy được vòng: tài khoản thiếu quyền CHẠY LỆNH (ai_repo_exec). Server mới là hàng rào — xin quyền rồi thử lại.",
         "off": "Vòng tự động đang TẮT (mặc định) — bản sửa ĐÃ ghi, nhưng bạn phải tự chạy test. Bật bằng AI_CODING_AUTOLOOP=1 rồi khởi động lại máy chủ.",
+        "offUser": "Vòng tự động đang TẮT — bản sửa ĐÃ ghi, nhưng bạn phải tự chạy test. Tính năng này do quản trị viên bật trên máy chủ — hãy liên hệ quản trị viên.",
         "error": "DỪNG vì một hỏng THẬT ở lượt chạy kiểm chứng."
       }
     },

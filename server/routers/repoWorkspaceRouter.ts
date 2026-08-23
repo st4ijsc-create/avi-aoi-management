@@ -41,14 +41,22 @@
  * ⇒ Client ẩn nút chỉ là phép LỊCH SỰ; đây mới là hàng rào.
  */
 import { z } from "zod";
-import { router, moduleProcedure } from "../_core/trpc";
+import { router, moduleProcedure, adminProcedure, moduleGate } from "../_core/trpc";
 import {
   executeDecision,
   type ToolExecContext,
   type ToolLang,
 } from "../services/aiLocalTools";
 // ★★★ doc 79 · TRỤC 2 — phân giải projectId (client gửi) → gốc, tra DANH SÁCH TRẮNG server-side.
-import { phanGiaiGoc } from "../services/aiLocalTools/repoProjects";
+// ★★★ QUẢN LÝ DỰ ÁN 2026-08-23 — phán quyết đăng ký/xoá + nạp lại ảnh chụp DB (xem khối dưới cùng).
+import {
+  phanGiaiGoc,
+  danhSachDuAn,
+  kiemTraDangKyDuAn,
+  kiemTraXoaDuAn,
+  napLaiDuAnTuDb,
+  TRAN_DU_AN_DB,
+} from "../services/aiLocalTools/repoProjects";
 // ★★★ doc 79 · DANH SÁCH PHIÊN — tầng dữ liệu phạm vi CHỦ SỞ HỮU (xem khối ⚠ PHIÊN dưới cùng).
 import { checkPermission } from "../_core/accessControl";
 import {
@@ -413,5 +421,120 @@ export const repoWorkspaceRouter = router({
       if (!cong.ok) return { ok: false, note: "PERMISSION_DENIED" };
       const r = await dbXoaPhien(cong.userId, input.sessionId);
       return { ok: r.ok, note: r.ok ? null : "NOT_FOUND" };
+    }),
+
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ QUẢN LÝ DỰ ÁN (2026-08-23) — ba thủ tục ADMIN, và NGOẠI LỆ ĐƯỜNG DẪN được nói thành lời
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // ⚠⚠⚠ `themDuAn` là chỗ DUY NHẤT của cả bề mặt tRPC nhận một ĐƯỜNG DẪN cho hộp cát repo — và nó
+  //   KHÔNG phải đường thực thi tool. Bất biến trục 2 ("client gửi ID, không gửi đường dẫn") nói về
+  //   lượt THỰC THI: mọi tool vẫn chỉ nhận `projectId`, server tra id → gốc. Mutation này là lượt
+  //   CẤU HÌNH của admin — cùng mức tin cậy với admin sửa tay `AI_REPO_SANDBOX_ROOTS` trong `.env`
+  //   — và mọi đường dẫn đi qua `kiemTraDangKyDuAn` (fail-closed, mỗi lỗi một mã: tuyệt đối ·
+  //   realpath tồn tại · là thư mục · không lồng gốc đã có · không node_modules/.git/dist · trần).
+  //
+  // ⚠⚠ SÀN `adminProcedure` (admin + 2FA bắt buộc) + `moduleGate("MOD_AI")` — đúng khuôn §4 của
+  //   `congGiayPhepAiCensus`: file này thuộc bề mặt AI nên mọi thủ tục phải đứng sau cổng giấy
+  //   phép. KHÔNG dùng `congPhien` (bit `ai_repo_read`): đăng ký một gốc MỚI là việc quản trị hạ
+  //   tầng, không phải việc đọc mã — một engineer có `ai_repo_read` vẫn KHÔNG được thêm/xoá dự án.
+  //
+  // ⚠ Sau MỖI mutation: `napLaiDuAnTuDb()` — để `danhSachDuAn()` (sync, ảnh chụp) thấy ngay thay
+  //   đổi trong TIẾN TRÌNH NÀY, không cần restart. Tiến trình CLI/MCP riêng nạp lúc nó khởi động
+  //   (ngữ nghĩa ảnh chụp — khai ở docblock `repoProjects.ts`).
+  //
+  // ⚠ Audit: ngoài middleware audit chung của `adminProcedure`, mỗi mutation ghi thêm một dòng
+  //   `logCrudOperation` CÓ chi tiết (id + gốc) — "ai đã mở gốc nào cho AI đọc" là câu một cuộc
+  //   điều tra sẽ hỏi, và middleware chung cố ý không ghi input.
+
+  /**
+   * Danh sách ĐẦY ĐỦ cho màn quản lý của admin — kèm `nguon` (env|db) và `hoatDong`. Khác
+   * `listProjects` (mọi người dùng, KHÔNG trả đường dẫn), thủ tục này trả cả `goc`: admin là người
+   * đã/đang khai các gốc ấy (qua `.env` hoặc qua form này) — không có gì để giấu chính họ, và
+   * không thấy gốc thì không quản được. Hàng DB có gốc đã biến mất trên đĩa (hoặc bị env che) vẫn
+   * hiện với `hoatDong:false` — để admin còn XOÁ được nó (nếu lọc đi thì hàng ấy mồ côi vĩnh viễn).
+   */
+  danhSachDayDu: adminProcedure.use(moduleGate("MOD_AI")).query(async () => {
+    const { danhSachDuAnDb } = await import("../db/aiRepoDuAn");
+    const hopNhat = danhSachDuAn();
+    const muc: Array<{ id: string; ten: string; goc: string; nguon: "env" | "db"; hoatDong: boolean }> = [];
+    for (const d of hopNhat) {
+      if (d.nguon === "env") muc.push({ id: d.id, ten: d.ten, goc: d.goc, nguon: "env", hoatDong: true });
+    }
+    const dangHoatDong = new Set(hopNhat.filter((d) => d.nguon === "db").map((d) => d.id));
+    for (const r of await danhSachDuAnDb()) {
+      muc.push({ id: r.id, ten: r.ten, goc: r.goc, nguon: "db", hoatDong: dangHoatDong.has(r.id) });
+    }
+    return { projects: muc, tranDb: TRAN_DU_AN_DB };
+  }),
+
+  /** ĐĂNG KÝ một dự án mới (nguồn DB). `{ok:false, ma}` — mỗi mã một câu hướng dẫn ở client. */
+  themDuAn: adminProcedure
+    .use(moduleGate("MOD_AI"))
+    .input(
+      z.object({
+        // Trần độ dài chỉ là lớp mặt tiếp xúc; `kiemTraDangKyDuAn` mới là cửa phán quyết (mỗi lỗi
+        // một mã). KHÔNG regex ở đây: một id sai khuôn phải ra `ID_KHONG_HOP_LE` (câu hướng dẫn),
+        // không phải một BAD_REQUEST chung chung của zod.
+        id: z.string().max(200),
+        ten: z.string().max(400),
+        duongDan: z.string().max(1024),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const kq = kiemTraDangKyDuAn(input);
+      if (!kq.ok) return { ok: false as const, ma: kq.ma };
+      const { themDuAnDb } = await import("../db/aiRepoDuAn");
+      const them = await themDuAnDb({ id: kq.id, ten: kq.ten, goc: kq.goc, nguoiTao: Number(ctx.user.id) });
+      // Chèn hỏng sau khi phán quyết đã xanh = DB vắng hoặc một admin khác vừa chèn cùng id trong
+      // cửa sổ giữa hai lượt (PK từ chối). Cả hai đều là "KHÔNG thêm được" — nói thật, không đoán.
+      if (!them.ok) return { ok: false as const, ma: "LUU_THAT_BAI" as const };
+      await napLaiDuAnTuDb();
+      const { logCrudOperation } = await import("../services/auditTrailService");
+      await logCrudOperation(
+        {
+          userId: Number(ctx.user.id),
+          userName: (ctx.user as { name?: string | null }).name ?? null,
+          ipAddress: (ctx.req as { ip?: string } | undefined)?.ip ?? null,
+          source: "trpc",
+        },
+        {
+          action: "create",
+          entityType: "ai_repo_du_an",
+          entityName: kq.id,
+          details: { operation: "create", after: { id: kq.id, ten: kq.ten, goc: kq.goc } },
+          status: "success",
+        },
+      );
+      return { ok: true as const, ma: null };
+    }),
+
+  /** XOÁ một dự án nguồn DB. Mục env ⇒ từ chối (env chỉ sửa được bằng tay, đúng thiết kế). */
+  xoaDuAn: adminProcedure
+    .use(moduleGate("MOD_AI"))
+    .input(z.object({ id: z.string().max(200) }))
+    .mutation(async ({ input, ctx }) => {
+      const kq = kiemTraXoaDuAn(input.id);
+      if (!kq.ok) return { ok: false as const, ma: kq.ma };
+      const { xoaDuAnDb } = await import("../db/aiRepoDuAn");
+      const xoa = await xoaDuAnDb(kq.id);
+      if (!xoa.ok) return { ok: false as const, ma: "KHONG_TIM_THAY" as const };
+      await napLaiDuAnTuDb();
+      const { logCrudOperation } = await import("../services/auditTrailService");
+      await logCrudOperation(
+        {
+          userId: Number(ctx.user.id),
+          userName: (ctx.user as { name?: string | null }).name ?? null,
+          ipAddress: (ctx.req as { ip?: string } | undefined)?.ip ?? null,
+          source: "trpc",
+        },
+        {
+          action: "delete",
+          entityType: "ai_repo_du_an",
+          entityName: kq.id,
+          details: { operation: "delete", before: { id: kq.id } },
+          status: "success",
+        },
+      );
+      return { ok: true as const, ma: null };
     }),
 });

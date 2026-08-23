@@ -111,6 +111,43 @@ export function docKetQuaTest(dauRa: string | null | undefined, maThoat: number 
 }
 
 /**
+ * ★★★ 2026-08-23 · UX LÔ 1 (C2-i) — **DÒNG KẾT LUẬN CHẮC-MỚI-NÓI** cho một lượt lệnh vừa chạy.
+ *
+ * Sự việc đo được ở buổi trải nghiệm người-dùng-thật: sau một lượt `dotnet test`, người dùng nhận
+ * nguyên khối đầu ra thô và phải TỰ tìm dòng `Failed: N, Passed: M` — rồi hỏi *"xanh chưa?"* và
+ * không bao giờ được trả lời. Bản vá: client thêm MỘT dòng kết luận lên đầu khối đầu ra — nhưng
+ * CHỈ khi phép đọc CHẮC CHẮN, vì một dòng "✅ PASS" đoán mò còn tệ hơn không có gì.
+ *
+ * Vì sao ở `shared/` cạnh `docKetQuaTest`: cùng MỘT bộ đọc đầu ra (bốn khuôn của bốn bộ chạy) phải
+ * là nguồn duy nhất — client tự viết một regex "Passed!" thứ hai là hai thước trôi khỏi nhau.
+ *
+ * Hợp đồng CHẮC-MỚI-NÓI (`null` = im lặng, giữ nguyên hành vi cũ):
+ *   • `soDo`/`soXanh` đọc được cả hai  ⇒ mới có kết luận (đếm được thì mới dám nói về CA);
+ *   • `soDo > 0`                       ⇒ ❌ chắc chắn (bất kể mã thoát);
+ *   • `soDo === 0` VÀ mã thoát 0, không hết giờ ⇒ ✅ chắc chắn;
+ *   • `soDo === 0` mà mã thoát ≠ 0 / hết giờ    ⇒ MÂU THUẪN — không nói gì (`null`), người đọc
+ *     tự xem đầu ra thô; một "✅" ở đây là đúng lớp "cổng chạy đúng mà báo cáo sai".
+ *   • `tsc` (không in con số) ⇒ `null` — mã thoát đã có sẵn ở dòng đầu textSummary của tool.
+ */
+export interface KetLuanTest {
+  xanh: boolean;
+  soDo: number;
+  soXanh: number;
+}
+
+export function ketLuanTest(
+  dauRa: string | null | undefined,
+  maThoat: number | null,
+  hetGio = false,
+): KetLuanTest | null {
+  const kq = docKetQuaTest(dauRa, maThoat, hetGio);
+  if (kq.soDo === null || kq.soXanh === null) return null;
+  if (kq.soDo > 0) return { xanh: false, soDo: kq.soDo, soXanh: kq.soXanh };
+  if (maThoat === 0 && !hetGio) return { xanh: true, soDo: 0, soXanh: kq.soXanh };
+  return null;
+}
+
+/**
  * Chuẩn hoá đầu ra trước khi so hai lượt: bỏ những thứ ĐỔI mỗi lượt mà không mang tin (thời gian
  * chạy, dấu thời gian, đường tuyệt đối chứa tên máy).
  *

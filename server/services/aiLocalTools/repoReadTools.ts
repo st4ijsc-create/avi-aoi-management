@@ -315,6 +315,46 @@ interface DuLieuGrep {
 
 const RONG_GREP: DuLieuGrep = { pattern: null, scanned: 0, count: 0, truncated: false, timedOut: false, matches: [] };
 
+/**
+ * ★★★ 2026-08-23 · UX LÔ 1 (C4) — *"Grep 1 kết quả là ĐỊNH NGHĨA mà không ai nói cho tôi 'không
+ * nơi nào gọi'."*
+ *
+ * Người hỏi *"X gọi ở đâu"* nhận về một dòng `export function X(...)` và phải TỰ suy ra rằng đó là
+ * chính chỗ khai báo — tức cả repo (trong phạm vi quét) KHÔNG có một điểm gọi nào. Hàm này nói hộ
+ * điều ấy, và CHỈ nói khi CHẮC — ba điều kiện, thiếu một là im lặng (`null`, giữ nguyên câu cũ):
+ *
+ *   1. **Phép quét TRỌN VẸN** (`catBot === false`): một bản cắt (trần tệp/kết quả/hạn giờ) không
+ *      cho phép phát biểu "chưa nơi nào gọi" — điểm gọi có thể nằm đúng ở phần chưa quét. Đây là
+ *      cùng lý lẽ với `GREP_DEADLINE` ("phép đo BỘ PHẬN không được thành khẳng định TOÀN THỂ").
+ *   2. **Mẫu là một ĐỊNH DANH trần** (chữ/số/`_`/`$`): với một regex thật (`log.*Error`) thì khái
+ *      niệm "dòng khai báo của nó" không tồn tại.
+ *   3. **MỌI dòng khớp đều là dòng KHAI BÁO của đúng định danh ấy** — nhận theo các khuôn khai báo
+ *      hẹp (`function|class|interface|type|enum|const|let|var|def|struct|record` + tên). Một dòng
+ *      `const kq = X(...)` là ĐIỂM GỌI (tên nằm sau `=` chứ không sau từ khoá khai báo) ⇒ không khớp
+ *      khuôn ⇒ cả phép nhận xét tắt. Hẹp là chủ ý: nói sai "chưa ai gọi" đắt hơn nhiều so với không nói.
+ *
+ * THUẦN, xuất ra để lưới + đột biến đo thẳng (`repoGrepDinhNghia.test.ts`).
+ */
+export function nhanXetChiThayDinhNghia(
+  mau: string,
+  matches: ReadonlyArray<{ path: string; line: number; text: string }>,
+  catBot: boolean,
+): string | null {
+  if (catBot || matches.length === 0) return null;
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(mau)) return null;
+  // `$` là ký tự regex — thoát trước khi ghép khuôn (định danh JS hợp lệ có thể chứa nó).
+  const ten = mau.replace(/\$/g, "\\$");
+  const khuonKhaiBao = new RegExp(
+    `\\b(?:function\\*?|class|interface|type|enum|const|let|var|def|struct|record)\\s+${ten}\\b`,
+  );
+  if (!matches.every((m) => khuonKhaiBao.test(m.text))) return null;
+  const tep = [...new Set(matches.map((m) => m.path))].join(", ");
+  return (
+    `⚠ Cả ${matches.length} kết quả đều là dòng KHAI BÁO/ĐỊNH NGHĨA của "${mau}" (${tep}) — ` +
+    `trong phạm vi đã quét CHƯA thấy nơi nào GỌI/dùng nó.`
+  );
+}
+
 /** Trần độ dài MỘT dòng đem đi khớp — xem khối ⚠ ReDoS ở `grepRepoTool`. */
 const TRAN_KY_TU_MOI_DONG = 1_000;
 /** Số dòng giữa hai lượt hỏi đồng hồ. Hỏi mỗi dòng là tốn; hỏi mỗi tệp là quá thưa. */
@@ -449,10 +489,13 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
       matches.length >= tranKetQua ? `chạm trần ${tranKetQua} kết quả` : "",
     ].filter(Boolean);
     const dongRa = matches.map((m) => `${m.path}:${m.line}: ${m.text}`);
+    // ★ (C4) — chỉ-thấy-định-nghĩa: nói hộ điều người dùng phải tự suy; CHẮC mới nói (xem docblock).
+    const nhanXet = nhanXetChiThayDinhNghia(mau, matches, catBot);
     const than =
       `/${mau}/ — ${matches.length} kết quả trong ${quet} tệp đã quét` +
       (canhBao.length ? ` (BẢN CẮT: ${canhBao.join(", ")})` : "") +
-      `:\n${dongRa.join("\n")}`;
+      `:\n${dongRa.join("\n")}` +
+      (nhanXet ? `\n\n${nhanXet}` : "");
     if (khoa !== undefined) tieuNganSach(khoa, than.length);
     return { type: KIEU, title, data, textSummary: than };
   },

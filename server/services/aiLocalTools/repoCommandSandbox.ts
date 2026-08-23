@@ -670,6 +670,26 @@ export function phanQuyetLenh(argv: readonly string[], goc = gocHopCat()): KetQu
   return { ok: false, ma: MA_TU_CHOI_LENH.CMD_NOT_ALLOWED, chiTiet: argv.join(" ") };
 }
 
+/**
+ * ★ 2026-08-23 · UX LÔ 1 (B3) — **GỢI Ý LỆNH GẦN ĐÚNG NHẤT theo `argv[0]`**, cho câu từ chối
+ * `CMD_NOT_ALLOWED`.
+ *
+ * Sự việc đo được: mỗi lượt gõ sai, người dùng "ăn nguyên bức tường 9 lệnh (~2.300 ký tự)" — trong
+ * khi họ chỉ cần 1–3 mục CÙNG HỌ với thứ vừa gõ. Hàm này trả về các mục danh sách trắng có
+ * `khuon[0]` trùng chữ đầu của lệnh bị từ chối (`dotnet` ⇒ 3 mục dotnet · `npm` ⇒ 2 · `git` ⇒ 2 ·
+ * `npx`/`node` ⇒ 1); không đoán được ⇒ `[]` (câu từ chối khi ấy chỉ nói "N lệnh được phép, xem
+ * danh sách đầy đủ").
+ *
+ * ⚠ THUẦN, đọc thẳng `DANH_SACH_TRANG` — thêm một mục vào bảng là gợi ý tự có, không ai phải nhớ
+ *   cập nhật một bảng ánh xạ thứ hai (bảng thứ hai nào rồi cũng trôi khỏi bảng thứ nhất).
+ * ⚠ CHỈ đổi LỜI KHAI, không đổi phán quyết: danh sách trắng vẫn khớp cấu trúc argv y nguyên.
+ */
+export function goiYLenhGanNhat(argv0: unknown): MucDanhSachTrang[] {
+  if (typeof argv0 !== "string" || argv0 === "") return [];
+  const dau = argv0.toLowerCase();
+  return DANH_SACH_TRANG.filter((m) => m.khuon[0] === dau);
+}
+
 /** Hạn giờ THỰC TẾ: kẹp hai đầu. Người gọi hạ được, **không nâng được** quá trần của mục. */
 export function hanGioThucTe(hanGioMuc: number, yeuCau?: number): number {
   const tran = Math.min(hanGioMuc, HAN_GIO_TOI_DA_MS);

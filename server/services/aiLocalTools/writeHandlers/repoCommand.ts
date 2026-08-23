@@ -81,12 +81,17 @@ import {
   TRAN_DAU_RA,
   TRAN_KY_TU_LENH,
   chayLenhTrongHopCat,
+  goiYLenhGanNhat,
   hanGioThucTe,
   phanQuyetLenh,
   tachArgv,
   type MaTuChoiLenh,
   type MucDanhSachTrang,
 } from "../repoCommandSandbox";
+// ★★★ 2026-08-23 · UX LÔ 1 (A2/B3) — dấu máy-đọc-được trong `preview.warnings`: `[MÃ]` cho lời
+// chặn-chắc-chắn (client khoá nút Xác nhận) + `[DANH_SACH_LENH]` cho bảng lệnh (client gấp lại sau
+// nút "Xem cả danh sách"). MỘT nguồn ở `shared/` — client đọc bằng đúng cặp hàm này.
+import { danhDauDanhSachLenh, danhDauMaChan } from "@shared/aiCodingTuChoi";
 import {
   TRAN_BYTE_MOI_PHIEN,
   gocHopCat,
@@ -182,7 +187,7 @@ const thamSo = z
  * `toolNoteCensus.test.ts` §1 quét mã nguồn tìm `note:` + hằng chữ VIẾT HOA. Viết `note: BANG[ma]`
  * làm §1 mù và §2 đỏ.
  */
-function cauTuChoiLenh(ma: MaTuChoiLenh, chiTiet: string, lang: ToolLang): string {
+function cauTuChoiLenh(ma: MaTuChoiLenh, chiTiet: string, lang: ToolLang, argv0?: string): string {
   /**
    * ⚠⚠ SỐ LƯỢNG LẤY TỪ **CHÍNH BẢNG**, KHÔNG VIẾT TAY. Bản trước viết cứng *"Năm lệnh được phép"* /
    * *"The five allowed commands"* / *"允许的五条命令"* rồi in **chín** dòng ngay bên dưới — một câu tự
@@ -190,7 +195,6 @@ function cauTuChoiLenh(ma: MaTuChoiLenh, chiTiet: string, lang: ToolLang): strin
    * lớp lỗi ấy **không còn chỗ tồn tại**, thay vì phải nhớ sửa ở ba chỗ mỗi lần bảng đổi.
    */
   const so = DANH_SACH_TRANG.length;
-  const bang = DANH_SACH_TRANG.map((m) => `• ${m.nhan}${m.ghiDia ? " ⚠ GHI ĐÈ TỆP MÃ NGUỒN" : ""} — ${m.moTa}`).join("\n");
   switch (ma) {
     case "CMD_METACHAR":
       return w(
@@ -199,13 +203,33 @@ function cauTuChoiLenh(ma: MaTuChoiLenh, chiTiet: string, lang: ToolLang): strin
         `The command contains a character outside the allowed set (${chiTiet}). Only letters, digits, space and _ . / \\ : - @ are accepted, so every shell chaining/redirect character is rejected here. To run two commands, call the tool twice; chaining is never allowed.`,
         `命令包含不在允许字符集内的字符（${chiTiet}）。仅接受字母、数字、空格及 _ . / \\ : - @，因此所有 shell 连接/重定向字符都会在此被拒绝。需要运行两条命令请调用工具两次；串联永远不被允许。`,
       );
-    case "CMD_NOT_ALLOWED":
+    case "CMD_NOT_ALLOWED": {
+      /**
+       * ★★★ 2026-08-23 · UX (B3) — **CÂU NGẮN + GỢI Ý GẦN ĐÚNG NHẤT, KHÔNG CÒN BỨC TƯỜNG 9 LỆNH.**
+       *
+       * Đo được ở buổi trải nghiệm người-dùng-thật: mỗi lượt gõ sai là ~2.300 ký tự bảng lệnh đập
+       * vào mặt — người dùng cần 1–3 mục CÙNG HỌ (`goiYLenhGanNhat` đoán từ argv[0]), không cần cả
+       * bảng. Bảng ĐẦY ĐỦ **không mất đi**: nó đi kênh máy-đọc-được — `preview.warnings` mang một
+       * mục `[DANH_SACH_LENH]` (client gấp sau nút "Xem cả danh sách", xem `xemTruoc`), và
+       * `data.danhSachChoPhep` ở lượt execute — chỉ THÔI chiếm 2.300 ký tự văn xuôi.
+       * ⚠ Cụm "`${so} lệnh được phép`" (và bản en/zh) GIỮ NGUYÊN VĂN: `repoCommand.census.test.ts`
+       *   đo con số này khớp bảng sống — đó là bất biến chống "năm viết cứng", không phải văn trang trí.
+       */
+      const goiY = goiYLenhGanNhat(argv0 ?? chiTiet.split(" ")[0]);
+      const dongGoiY = goiY.map((m) => `• ${m.nhan}${m.ghiDia ? " ⚠ GHI ĐÈ TỆP MÃ NGUỒN" : ""}`).join("\n");
       return w(
         lang,
-        `Lệnh "${chiTiet}" KHÔNG nằm trong danh sách TRẮNG. Đây là danh sách trắng, không phải danh sách đen: mọi lệnh không được khai đều bị từ chối, và danh sách không nới ra lúc chạy. ${so} lệnh được phép:\n${bang}\n⚠ git checkout / git reset / rm / DROP KHÔNG BAO GIỜ được thêm vào — ngày 2026-08-18 một tác nhân chạy "git checkout <file>" để hoàn nguyên một sửa đổi 1 dòng và xoá mất 123 dòng chưa commit.`,
-        `Command "${chiTiet}" is NOT on the allowlist. This is an allowlist, not a denylist: anything not declared is refused, and the list never widens at runtime. The ${so} allowed commands:\n${bang}\n⚠ git checkout / git reset / rm / DROP will never be added.`,
-        `命令 "${chiTiet}" 不在白名单中。这是白名单而非黑名单：未声明的一律拒绝，且运行时不会放宽。允许的 ${so} 条命令：\n${bang}\n⚠ git checkout / git reset / rm / DROP 永不加入。`,
+        `Lệnh "${chiTiet}" KHÔNG nằm trong danh sách TRẮNG (mọi lệnh không được khai đều bị từ chối; danh sách không nới ra lúc chạy). Có ${so} lệnh được phép — xem "Xem cả danh sách" trên thẻ duyệt.` +
+          (goiY.length > 0 ? `\nCó phải bạn định chạy:\n${dongGoiY}` : "") +
+          `\n⚠ git checkout / git reset / rm / DROP KHÔNG BAO GIỜ được thêm vào.`,
+        `Command "${chiTiet}" is NOT on the allowlist (anything not declared is refused; the list never widens at runtime). The ${so} allowed commands are behind "Show full list" on the review card.` +
+          (goiY.length > 0 ? `\nDid you mean:\n${dongGoiY}` : "") +
+          `\n⚠ git checkout / git reset / rm / DROP will never be added.`,
+        `命令 "${chiTiet}" 不在白名单中（未声明的一律拒绝，运行时不会放宽）。允许的 ${so} 条命令可在审批卡的"查看完整列表"中查看。` +
+          (goiY.length > 0 ? `\n您是想运行：\n${dongGoiY}` : "") +
+          `\n⚠ git checkout / git reset / rm / DROP 永不加入。`,
       );
+    }
     case "CMD_ARG_PATH_REJECTED":
       return w(
         lang,
@@ -274,19 +298,35 @@ function tomTat(p: ThamSo, lang: ToolLang): string {
   );
 }
 
+/** Bảng ĐẦY ĐỦ (9 dòng) — nay chỉ đi kênh máy-đọc-được: `[DANH_SACH_LENH]` + `data.danhSachChoPhep`. */
+function dongBangLenh(): string[] {
+  return DANH_SACH_TRANG.map((m) => `• ${m.nhan}${m.ghiDia ? " ⚠ GHI ĐÈ TỆP MÃ NGUỒN" : ""} — ${m.moTa}`);
+}
+
 async function xemTruoc(p: ThamSo, ctx: ToolExecContext): Promise<ActionPreview> {
   const warnings: string[] = [];
-  const chan = (msg: string): ActionPreview => {
-    warnings.push(msg);
+  /**
+   * ★★★ 2026-08-23 · UX (A2) — nhánh TỪ CHỐI của preview nay GHI DẤU `[MÃ]` vào câu cảnh báo
+   * (`danhDauMaChan`). Client (`ConfirmActionCard`) đọc dấu ấy để KHOÁ nút Xác nhận: mọi mã đi qua
+   * `chan()` đều là chặn-chắc-chắn theo CẤU TẠO — `execute` chạy LẠI đúng hai lớp phán quyết này
+   * nên một lệnh bị `chan()` không có đường nào thành công ở lượt bấm.
+   * ⚠ Các cảnh báo THÔNG TIN (ghi đè · thư mục chạy · hạn giờ · môi trường · trần đầu ra) KHÔNG
+   *   mang dấu — khoá nhầm nút vì một cảnh báo bình thường là đổi lỗi UX này lấy lỗi UX khác.
+   * ⚠ (B3) riêng `CMD_NOT_ALLOWED` đính kèm bảng đầy đủ dưới dấu `[DANH_SACH_LENH]` — client gấp
+   *   nó sau nút "Xem cả danh sách"; mặt tiếp xúc không biết dấu hiện nguyên văn (không mất tin).
+   */
+  const chan = (ma: MaTuChoiLenh, msg: string): ActionPreview => {
+    warnings.push(danhDauMaChan(ma, msg));
+    if (ma === MA_TU_CHOI_LENH.CMD_NOT_ALLOWED) warnings.push(danhDauDanhSachLenh(dongBangLenh()));
     return { entityType: "repo_command", entityName: String(p.command ?? ""), changes: [], warnings, humanSummary: tomTat(p, ctx.lang) };
   };
 
   // doc 79 TRỤC 2 — gốc dự án đang chọn (server-authoritative), mặc định repo.
   const goc = ctx.projectRoot ?? gocHopCat();
   const tach = tachArgv(p.command);
-  if (!tach.ok) return chan(cauTuChoiLenh(tach.ma, tach.chiTiet, ctx.lang));
+  if (!tach.ok) return chan(tach.ma, cauTuChoiLenh(tach.ma, tach.chiTiet, ctx.lang));
   const pq = phanQuyetLenh(tach.argv, goc);
-  if (!pq.ok) return chan(cauTuChoiLenh(pq.ma, pq.chiTiet, ctx.lang));
+  if (!pq.ok) return chan(pq.ma, cauTuChoiLenh(pq.ma, pq.chiTiet, ctx.lang, tach.argv[0]));
 
   const hanGio = hanGioThucTe(pq.hanGioMs, p.timeoutMs);
 
@@ -383,6 +423,12 @@ interface DuLieuChay {
   truncated: boolean;
   redacted: boolean;
   output: string | null;
+  /**
+   * ★ (B3) CHỈ có mặt ở lượt từ chối `CMD_NOT_ALLOWED`: bảng ĐẦY ĐỦ các lệnh được phép (mỗi dòng
+   * một mục). `textSummary` nay là câu NGẮN + gợi ý gần đúng; bảng dọn vào đây để client nào muốn
+   * "Xem cả danh sách" vẫn có đủ — thông tin không mất, chỉ thôi chiếm 2.300 ký tự văn xuôi.
+   */
+  danhSachChoPhep?: string[];
 }
 
 const RONG: DuLieuChay = {
@@ -425,8 +471,10 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
    */
   execute: async (p, ctx) => {
     const title = w(ctx.lang, "Chạy lệnh trong repo", "Run command in repo", "在仓库中运行命令");
-    const napLoi = (ma: MaTuChoiLenh, chiTiet: string, data: DuLieuChay) => {
-      const cau = cauTuChoiLenh(ma, chiTiet, ctx.lang);
+    const napLoi = (ma: MaTuChoiLenh, chiTiet: string, data: DuLieuChay, argv0?: string) => {
+      const cau = cauTuChoiLenh(ma, chiTiet, ctx.lang, argv0);
+      // ★ (B3) — bảng đầy đủ đi trong `data`, không đi trong văn xuôi. Xem `DuLieuChay.danhSachChoPhep`.
+      if (ma === MA_TU_CHOI_LENH.CMD_NOT_ALLOWED) data = { ...data, danhSachChoPhep: dongBangLenh() };
       /**
        * ★★★ 2026-08-23 — NHÁNH CUỐI TỪNG LÀ `case "CMD_TIMEOUT": default:` DÙNG CHUNG. Đo được ở
        * nghiệm thu live: một lượt từ chối vì `CMD_GOC_THIEU_PACKAGE_JSON` hiện lên màn hình là
@@ -467,7 +515,7 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
     const tach = tachArgv(p.command);
     if (!tach.ok) return napLoi(tach.ma, tach.chiTiet, RONG);
     const pq = phanQuyetLenh(tach.argv, goc);
-    if (!pq.ok) return napLoi(pq.ma, pq.chiTiet, { ...RONG, command: tach.argv.join(" ") });
+    if (!pq.ok) return napLoi(pq.ma, pq.chiTiet, { ...RONG, command: tach.argv.join(" ") }, tach.argv[0]);
 
     /**
      * ★★★ (D) CỔNG BỔ SUNG CHO MỤC `ghiDia` — **MẶC ĐỊNH TẮT, HỎI CỜ TRƯỚC.**

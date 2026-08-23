@@ -5593,9 +5593,25 @@ async function startServer() {
   
   // Start offline machine monitor
   startOfflineMonitor();
-  
+
   // Initialize email transporter
   initializeEmailTransporter();
+
+  // ★★★ QUẢN LÝ DỰ ÁN (2026-08-23) — nạp ẢNH CHỤP dự án hộp cát nguồn DB (bảng `ai_repo_du_an`,
+  // mig 0337) vào bộ đệm của `repoProjects` NGAY LÚC BOOT. Vì sao phải ở đây: `danhSachDuAn()` là
+  // SYNC (nhiều điểm gọi sync: tRPC listProjects, chat, CLI, MCP) nên nguồn DB chỉ đến được nó qua
+  // một ảnh chụp nạp bất đồng bộ — không nạp lúc boot thì selectBox chỉ thấy dự án DB sau mutation
+  // đầu tiên. Sau mỗi mutation thêm/xoá, router tự nạp lại. Non-fatal: DB vắng/bảng chưa migrate ⇒
+  // hệ chạy tiếp với danh sách `.env` thuần, đúng hành vi trước khi bảng tồn tại.
+  try {
+    const { napLaiDuAnTuDb } = await import("../services/aiLocalTools/repoProjects");
+    const kq = await napLaiDuAnTuDb();
+    if (kq.ok && kq.soMuc > 0) {
+      console.log(`[repoProjects] đã nạp ${kq.soMuc} dự án hộp cát từ DB (cộng thêm vào danh sách .env)`);
+    }
+  } catch (err) {
+    console.error("[repoProjects] không nạp được dự án từ DB (chạy tiếp với .env):", (err as any)?.message || err);
+  }
 
   // W4-D (doc 27 §8 B7) — cron-like background schedulers (reports, backups,
   // retention, integrity scan, AI cron jobs, ERP outbox drain, fleet DB

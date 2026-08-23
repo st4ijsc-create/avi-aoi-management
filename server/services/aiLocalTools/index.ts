@@ -48,6 +48,7 @@ import {
   classifyToolIntentLLM,
   classifyCodingToolIntent,
   classifyCodingToolIntentLLM,
+  chanLenhKhiCauHoi,
   decideNextToolLLM,
   decideNextCodingToolLLM,
   type ToolContext,
@@ -139,7 +140,13 @@ async function chonToolLapTrinh(question: string, context?: ToolContext) {
     const llm = await classifyCodingToolIntentLLM(question);
     if (llm.tool) decision = llm;
   }
-  return decision;
+  /**
+   * ★★★ 2026-08-23 · UX (C2-ii) — MỘT CÂU HỎI KHÔNG ĐƯỢC ĐẺ RA THẺ `run_command`. Bộ lọc đứng ở
+   * ĐIỂM HẸP duy nhất này nên phủ CẢ heuristic ("vì sao dotnet test X đỏ?" — lệnh nằm trong câu
+   * hỏi) LẪN bộ chọn LLM đoán mò ("xanh chưa?" ⇒ nó từng đề xuất chạy tiếp, 3 lần liền, đo live).
+   * Mệnh lệnh tường minh ("Chạy dotnet test X…") KHÔNG bị đụng — xem `chanLenhKhiCauHoi`.
+   */
+  return chanLenhKhiCauHoi(question, decision);
 }
 
 /**

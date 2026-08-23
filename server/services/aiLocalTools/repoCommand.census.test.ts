@@ -1065,8 +1065,20 @@ describe("§L — dòng catalog quyền `ai_repo_exec` khai ĐÚNG bảng SỐNG
       expect(ra.note, `locale ${lang}: phải là một lượt TỪ CHỐI`).toBe("CMD_NOT_ALLOWED");
       expect(s, `locale ${lang}`).toContain(phaiCo);
       expect(camCo.test(s), `locale ${lang}: còn chữ "năm" viết cứng trong khi bảng có ${n} mục`).toBe(false);
-      // Và bảng in ra phải có đủ chín dòng — con số và nội dung không được lệch nhau.
-      for (const m of DANH_SACH_TRANG) expect(s, `locale ${lang}: bảng thiếu "${m.nhan}"`).toContain(m.nhan);
+      /**
+       * ★★★ ĐẢO CHIỀU CÓ GHI LÝ DO (2026-08-23 · UX B3) — bản trước đòi CẢ BẢNG chín dòng nằm trong
+       * `textSummary`. Buổi trải nghiệm người-dùng-thật đo được đó chính là "bức tường ~2.300 ký tự
+       * mỗi lần gõ sai". Bất biến THẬT của ca này ("con số và nội dung không được lệch nhau") giữ
+       * nguyên — chỉ đổi KÊNH: bảng đầy đủ nay là `data.danhSachChoPhep` (máy-đọc-được, client gấp
+       * sau nút "Xem cả danh sách"), còn văn xuôi chỉ mang câu ngắn + gợi ý gần đúng.
+       */
+      const bang = (ra.data as { danhSachChoPhep?: string[] }).danhSachChoPhep ?? [];
+      expect(bang.length, `locale ${lang}: bảng đầy đủ phải theo lượt từ chối trong data`).toBe(n);
+      for (const m of DANH_SACH_TRANG) {
+        expect(bang.some((d) => d.includes(m.nhan)), `locale ${lang}: bảng data thiếu "${m.nhan}"`).toBe(true);
+      }
+      // Văn xuôi KHÔNG được phình trở lại thành bức tường — trần có SỐ, đo được, hai chiều với ca cũ.
+      expect(s.length, `locale ${lang}: câu từ chối lại phình thành bức tường`).toBeLessThan(700);
     }
   });
 });

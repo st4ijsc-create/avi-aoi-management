@@ -1359,6 +1359,8 @@
     "before": "Before",
     "after": "After",
     "confirm": "Confirm",
+    "blockedRetype": "Invalid command — retype it",
+    "showAllCmds": "Show the full list of allowed commands",
     "cancel": "Cancel",
     "executed": "Executed.",
     "cancelled": "Cancelled.",
@@ -19290,6 +19292,45 @@
       "loading": "Loading projects…",
       "none": "No project to show yet."
     },
+    "duan": {
+      "title": "Manage projects",
+      "moTitle": "Manage projects (admin)",
+      "moTa": "Add/remove project folders for the AI coding workspace. .env entries can only be edited by hand; entries added here take effect IMMEDIATELY, no restart needed.",
+      "loading": "Loading project list…",
+      "empty": "No projects yet.",
+      "nguonEnv": ".env",
+      "nguonDb": "UI",
+      "hong": "root gone",
+      "hongTip": "The root folder no longer exists on the server, or the ID is shadowed by an .env entry — this entry does not appear in the selectBox; delete it to keep things tidy.",
+      "khoaEnv": "Declared in .env — can only be edited by hand in the server's .env.",
+      "xoa": "Remove this project from the list (the folder on disk is untouched)",
+      "hoiXoa": "Remove this project from the list? The folder on disk will NOT be touched.",
+      "themTitle": "Add project ({{so}}/{{tran}} via UI)",
+      "oId": "ID (letters/digits/-/_)",
+      "oTen": "Display name",
+      "oTenGoiY": "New project",
+      "oDuong": "ABSOLUTE path on the server",
+      "ghiChu": "The folder must ALREADY exist on the server; the server verifies before accepting.",
+      "nutThem": "Add",
+      "daThem": "Project added — the selectBox already has the new entry.",
+      "daXoa": "Project removed from the list.",
+      "err": {
+        "idKhongHopLe": "The ID may only contain unaccented letters, digits, underscore and hyphen (1–64 chars). Example: new-project",
+        "tenKhongHopLe": "The name must be 1–100 characters and must not contain # ; = | — remove those characters.",
+        "trungId": "This ID already exists (in .env or already registered). Pick a different ID.",
+        "khongTuyetDoi": "The path must be an ABSOLUTE path on the server (e.g. D:\\Projects\\my-project), not a relative one.",
+        "khongTonTai": "That folder does not exist on the server. Create it first, then register again.",
+        "khongPhaiThuMuc": "The path points to a FILE. Point it at the project's root FOLDER.",
+        "thuMucCam": "Folders inside node_modules, .git or dist cannot be registered. Pick a real source folder.",
+        "namTrongGocDaCo": "This folder is INSIDE (or equal to) an existing project — the two sandboxes would overlap. Pick a folder outside the existing projects.",
+        "chuaGocDaCo": "This folder CONTAINS an existing project — the two sandboxes would overlap. Pick a narrower folder that does not wrap another project.",
+        "vuotTran": "The cap on UI-registered projects has been reached. Delete an unused project, then add again.",
+        "luuThatBai": "Could not save (database refused — another admin may have just added the same ID). Reload the list and try again.",
+        "mucEnv": "This entry is declared in the server's .env — it can only be edited by hand in .env, not deleted here.",
+        "khongTimThay": "That project no longer exists (it may have been deleted). Reload the list.",
+        "khac": "The server refused with code {{ma}} — report it to your system owner."
+      }
+    },
     "title": "AI Coding Workspace",
     "subtitle": "Read code → propose diff → human review → run tests → read real errors, then keep fixing",
     "noPermission": "You do not have permission to READ source code (ai_repo_read). Contact an administrator.",
@@ -19298,13 +19339,21 @@
       "exec": "run command",
       "execOff": "run command (hidden)"
     },
+    "badgeTip": {
+      "read": "Your account can READ source code (ai_repo_read): file tree, file contents, search. The server sandbox decides which files are readable.",
+      "exec": "Your account can RUN COMMANDS (ai_repo_exec): allowlisted commands only, and every run needs your approval first.",
+      "execOff": "Your account has NO run-command permission (ai_repo_exec) — the run-tests suggestion is hidden; the server still blocks direct calls.",
+      "local": "Source code and the AI model run ON the factory's own server — not a single byte of code leaves the local network."
+    },
     "tree": {
       "title": "File tree",
       "loading": "Loading…",
       "error": "Could not read directory",
       "denied": "Server refused: missing ai_repo_read permission",
       "empty": "No entries the sandbox allows to show",
-      "refresh": "Refresh"
+      "refresh": "Refresh",
+      "showOther": "Show other files ({{n}})",
+      "hideOther": "Hide other files ({{n}})"
     },
     "viewer": {
       "title": "Viewer",
@@ -19319,15 +19368,21 @@
       "title": "Agent conversation",
       "empty": "Ask the agent to read real code, propose a diff (you review), then run tests and read the real errors.",
       "thinking": "Thinking…",
+      "thinkingEta": "reads: usually 8–20 s · file edits: usually 15–30 s; large files/long commands can take longer",
       "noAnswer": "(no answer content)",
       "streamFailed": "Stream failed — try again.",
       "placeholder": "Ask the agent: read/search code, propose a fix, run tests…",
       "keyHint": "Enter to send · Shift+Enter for a new line (multi-line stack traces paste fine)",
       "cmdOutput": "Command output (added to context so you can keep fixing)",
+      "klXanh": "✅ {{xanh}}/{{tong}} PASS — no failing tests.",
+      "klDo": "❌ {{do}} failing / {{tong}} tests.",
       "applied": "Diff applied to `{{tep}}` — file re-read.",
       "appliedChon": "Applied {{chon}}/{{tong}} selected hunks to `{{tep}}` — deselected hunks were NOT written; file re-read.",
       "confirmFailed": "Could not execute.",
-      "writeRejected": "The write was REJECTED [{{ma}}] — the file on disk is unchanged."
+      "writeRejected": "The write was REJECTED [{{ma}}] — the file on disk is unchanged.",
+      "cmdRejected": "The command did NOT complete [{{ma}}] — details:",
+      "cmdRejectedToast": "Command blocked [{{ma}}] — see the conversation for details.",
+      "rejectedGeneric": "Refused [{{ma}}] — see the conversation for details."
     },
     "toolLoop": {
       "running": "Code-reading loop — round {{round}}/{{tran}}"
@@ -19350,7 +19405,13 @@
     "suggest": {
       "read": "Read server/routers.ts and summarize it",
       "grep": "Find where executeDecision is called in the repo",
-      "check": "Run npm run check and read the errors"
+      "check": "Run npm run check and read the errors",
+      "csharpRead": "Read src/Calculator.cs and summarize it",
+      "csharpTest": "Run dotnet test CalculatorDemo.sln",
+      "csharpWhy": "Explain why the two Divide_ByZero tests fail",
+      "reactRead": "Read src/validate.mjs and summarize it",
+      "reactTest": "Run node --test test/validate.test.mjs",
+      "reactWhy": "Explain why the two validateTodo tests are failing"
     },
     "exec": {
       "noPerm": "Your account has no RUN-COMMAND permission (ai_repo_exec) — the run-tests suggestion is hidden. If called directly, the server still blocks it."
@@ -19376,6 +19437,7 @@
         "noCmd": "Loop did not run: no verification command could be inferred for this project (needs a .sln/.csproj, or a package.json plus a test directory). Name the command explicitly in your request.",
         "perm": "Loop did not run: your account lacks RUN-COMMAND permission (ai_repo_exec). The server is the real gate — get the permission and retry.",
         "off": "The auto loop is OFF (the default) — the fix WAS written, but you must run the tests yourself. Enable it with AI_CODING_AUTOLOOP=1 and restart the server.",
+        "offUser": "The auto loop is OFF — the fix WAS written, but you must run the tests yourself. This feature is enabled by an administrator on the server — contact your administrator.",
         "error": "STOPPED by a REAL failure while running the verification command."
       }
     },

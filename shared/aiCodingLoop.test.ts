@@ -26,6 +26,7 @@ import {
   deXuatLapLai,
   docKetQuaTest,
   kepTranVong,
+  ketLuanTest,
   quyetDinhTiep,
   type TrangThaiSauTest,
 } from "./aiCodingLoop";
@@ -194,5 +195,45 @@ describe("§4 — băm + cắt lỗi đưa vào prompt", () => {
   it("★ đầu ra ngắn đi qua NGUYÊN VĂN (không cắt, không thêm gì)", () => {
     expect(catLoiChoPrompt("ngan")).toBe("ngan");
     expect(catLoiChoPrompt(null)).toBe("");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-23 · UX LÔ 1 (C2-i) — §5: DÒNG KẾT LUẬN "CHẮC MỚI NÓI" (`ketLuanTest`)
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ĐỘT BIẾN PHẢI BẮT ĐƯỢC:
+ *   • nói "✅" khi mã thoát ≠ 0 dù đếm ra 0 đỏ (mâu thuẫn)  ⇒ ca "mâu thuẫn ⇒ im lặng" ĐỎ
+ *   • nói kết luận cho `tsc` (không có con số)              ⇒ ca "tsc ⇒ null" ĐỎ
+ *   • bỏ vế `hetGio` (bản cắt được khai là PASS)            ⇒ ca "hết giờ ⇒ im lặng" ĐỎ
+ *   • đảo chiều: "❌" đòi thêm mã thoát ≠ 0                  ⇒ ca "2 đỏ + mã thoát 0" ĐỎ
+ */
+describe("§5 — `ketLuanTest`: chắc mới nói, mâu thuẫn thì im lặng", () => {
+  it("★★★ dotnet HỎNG (2 đỏ / 4 xanh) ⇒ ❌ chắc chắn, BẤT KỂ mã thoát", () => {
+    const out = "Failed! - Failed: 2, Passed: 4, Skipped: 0, Total: 6";
+    expect(ketLuanTest(out, 1)).toEqual({ xanh: false, soDo: 2, soXanh: 4 });
+    // mã thoát 0 mà vẫn khai Failed: 2 — con số thắng: 2 ca đỏ là 2 ca đỏ.
+    expect(ketLuanTest(out, 0)).toEqual({ xanh: false, soDo: 2, soXanh: 4 });
+  });
+
+  it("★★★ dotnet XANH (0 đỏ / 6 xanh, mã thoát 0) ⇒ ✅", () => {
+    expect(ketLuanTest("Passed! - Failed: 0, Passed: 6, Total: 6", 0)).toEqual({ xanh: true, soDo: 0, soXanh: 6 });
+  });
+
+  it("★★ vitest: `Tests  2 failed | 4 passed (6)` ⇒ ❌ 2/6; `Tests  6 passed (6)` + mã 0 ⇒ ✅", () => {
+    expect(ketLuanTest("Tests  2 failed | 4 passed (6)", 1)).toEqual({ xanh: false, soDo: 2, soXanh: 4 });
+    expect(ketLuanTest("Tests  6 passed (6)", 0)).toEqual({ xanh: true, soDo: 0, soXanh: 6 });
+  });
+
+  it("★★★ MÂU THUẪN (0 đỏ đếm được nhưng mã thoát ≠ 0 / hết giờ) ⇒ null — KHÔNG nói dối '✅'", () => {
+    expect(ketLuanTest("Passed! - Failed: 0, Passed: 6", 1)).toBeNull();
+    expect(ketLuanTest("Passed! - Failed: 0, Passed: 6", 0, true)).toBeNull();
+    expect(ketLuanTest("Passed! - Failed: 0, Passed: 6", null)).toBeNull();
+  });
+
+  it("★★★ `tsc` (không in con số nào) ⇒ null — mã thoát đã có ở dòng đầu textSummary, đừng đoán thêm", () => {
+    expect(ketLuanTest("src/a.ts(3,1): error TS2304: Cannot find name 'x'.", 2)).toBeNull();
+    expect(ketLuanTest("", 0)).toBeNull();
+    expect(ketLuanTest(null, 0)).toBeNull();
   });
 });

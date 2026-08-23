@@ -1816,21 +1816,53 @@ const CODING_STOPWORDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * ★★★ 2026-08-23 · UX LÔ 1 (C1) — **TOKEN VĂN XUÔI KHÔNG PHẢI ĐỐI SỐ LỆNH.**
+ *
+ * Đo được ở buổi trải nghiệm người-dùng-thật: gõ *"Chạy dotnet test và cho tôi biết…"* ⇒ bộ trích
+ * nuốt chữ **"và"** vào ô đối số ⇒ lệnh `dotnet test và` ⇒ `CMD_METACHAR` (ký tự "à") — một lời từ
+ * chối ĐÚNG về một lệnh mà người dùng KHÔNG HỀ gõ. Bản vá: cắt tại token đầu tiên KHÔNG hợp lệ
+ * theo ngữ pháp danh sách trắng, theo HAI mệnh đề — thiếu một thì không cắt:
+ *
+ *   1. **Ngoài ASCII** ⇒ chắc chắn văn xuôi: `tachArgv` chỉ nhận `[A-Za-z0-9 _./\:@-]`, nên một
+ *      token có dấu tiếng Việt/Hán tự KHÔNG BAO GIỜ qua nổi cửa lệnh — trích nó chỉ đổi câu từ
+ *      chối đúng lấy câu từ chối gây lạc đường.
+ *   2. **Từ nối/đệm tiếng Việt-không-dấu + tiếng Anh** (`va` `roi` `xong` `sau` `do` `de` `cho`…):
+ *      chúng là ASCII thuần nên mệnh đề 1 mù; danh sách này hẹp và chỉ gồm từ CHỨC NĂNG — một thư
+ *      mục thật trùng tên (`cho/`) là ca hy sinh chấp nhận được, vì người dùng vẫn còn đường gõ
+ *      lệnh tường minh có `/` (`dotnet test cho/du-an`, token có `/` không nằm trong danh sách).
+ *
+ * Cắt xong mà KHÔNG còn đối số ⇒ vẫn trả lệnh CỤT (`dotnet test`): danh sách trắng từ chối nó bằng
+ * `CMD_NOT_ALLOWED` + gợi ý `dotnet test <đường-dẫn>` (B3) — tức người dùng được chỉ đúng việc phải
+ * làm (thêm đường dẫn), thay vì một câu về ký tự cấm.
+ */
+const TU_NOI_VAN_XUOI: ReadonlySet<string> = new Set([
+  "va", "roi", "xong", "sau", "do", "de", "cho", "la", "thi", "nhe", "di", "giup", "gium", "ho",
+  "and", "then", "please",
+]);
+
+function laTokenVanXuoi(tok: string): boolean {
+  if (/[^ -]/.test(tok)) return true;
+  return TU_NOI_VAN_XUOI.has(tok.toLowerCase());
+}
+
+/**
  * ★ Trích một chuỗi lệnh KHỚP DANH SÁCH TRẮNG từ câu hỏi tự nhiên. **KHÔNG làm sạch** — chuỗi trả về
  * còn đi qua `tachArgv` + `phanQuyetLenh` (hai lớp phòng vệ) ở `run_command.preview`/`execute`, nên
  * đây chỉ là bước NHẬN DẠNG "người dùng định chạy lệnh nào". Trả `undefined` khi không nhận ra.
+ * ⚠ Ô đối số đi qua `laTokenVanXuoi` (C1): token văn xuôi bị BỎ, lệnh trả về dạng CỤT để danh sách
+ *   trắng nói đúng bệnh ("thiếu đường dẫn"), không phải "ký tự cấm".
  */
 function extractRunCommand(question: string): string | undefined {
   const q = question;
   // dotnet build/test/format <đường> — một đường không có khoảng trắng.
   let m = q.match(/\bdotnet\s+(build|test|format)\s+([^\s"'`,;]+)/i);
-  if (m) return `dotnet ${m[1]!.toLowerCase()} ${m[2]}`;
+  if (m) return laTokenVanXuoi(m[2]!) ? `dotnet ${m[1]!.toLowerCase()}` : `dotnet ${m[1]!.toLowerCase()} ${m[2]}`;
   // node --test <đường>
   m = q.match(/\bnode\s+--test\s+([^\s"'`,;]+)/i);
-  if (m) return `node --test ${m[1]}`;
+  if (m) return laTokenVanXuoi(m[1]!) ? "node --test" : `node --test ${m[1]}`;
   // npx vitest run <đường>
   m = q.match(/\bnpx\s+vitest\s+run\s+([^\s"'`,;]+)/i);
-  if (m) return `npx vitest run ${m[1]}`;
+  if (m) return laTokenVanXuoi(m[1]!) ? "npx vitest run" : `npx vitest run ${m[1]}`;
   if (/\bnpm\s+run\s+check:tests\b/i.test(q)) return "npm run check:tests";
   if (/\bnpm\s+run\s+check\b/i.test(q)) return "npm run check";
   if (/\bgit\s+status\b/i.test(q)) return "git status";
@@ -2024,6 +2056,134 @@ export function locQuyetDinhLLMLapTrinh(d: ToolDecision): ToolDecision {
     return { tool: null, args: {}, reason: "CODING_LLM_KHONG_KHOI_XUONG_GHI" };
   }
   return d;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-23 · MỤC 2.4 + UX LÔ 1 (C2) — "ĐỌC TƯỜNG MINH" ≠ "CÂU CẦN SUY LUẬN"
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/** Bỏ dấu tiếng Việt + hạ chữ thường — bản dùng riêng cho hai vị từ câu-chữ dưới đây. */
+function boDauThuong(s: string): string {
+  return boDauTiengViet(normalizeText(s));
+}
+
+/**
+ * ★★★ *"Câu này đòi VĂN XUÔI về nội dung, hay đòi CHÍNH nội dung?"* — **MỘT vị từ THUẦN, đứng một
+ * mình, có lưới riêng** (`aiCodingDot02.stream.test.ts` §4).
+ *
+ * ─── SỰ VIỆC ĐO ĐƯỢC (nghiệm thu live, mục 2.4) ───────────────────────────────────────────────
+ * *"Giải thích lớp Calculator… và có lỗi gì"* → xong trong **0,100 giây**, **0 token**, và câu trả
+ * lời là **nguyên văn tệp**. 5/7 lượt như vậy. Gốc rễ: trên đường lập trình, kết quả read tool được
+ * trả **THẲNG cho người** — model không đọc nó trong lượt ấy, nên "giải thích" biến thành "dump".
+ *
+ * ─── QUYẾT ĐỊNH THIẾT KẾ (chủ dự án chốt) — VÀ VÌ SAO NÓ HẸP CÓ CHỦ Ý ─────────────────────────
+ *   • Câu lệnh ĐỌC TƯỜNG MINH (*"đọc tệp X"*, *"liệt kê thư mục Y"*, *"grep Z"*) ⇒ **GIỮ NGUYÊN
+ *     đường nhanh** (~0,4 giây). Áp suy luận cho MỌI lượt là biến 0,4 giây thành 30–300 giây.
+ *   • Câu CẦN SUY LUẬN ⇒ đưa kết quả tool **quay lại model** thêm một lượt để sinh văn xuôi.
+ *   • Hai chiều hỏng KHÔNG đối xứng: sót ⇒ người dùng nhận đúng bản dump như hôm nay; thừa ⇒ một
+ *     lượt 0,4 s thành 30–300 s. Chiều đắt là chiều THỪA ⇒ khi phân vân thì **không nhận**.
+ *
+ * ─── MỞ RỘNG 2026-08-23 (UX C2-ii) — CÂU HỎI SAU MỘT LƯỢT LỆNH, VÀ NHÀ MỚI CỦA VỊ TỪ ──────────
+ * Đo live: chạy test xong, hỏi *"xanh chưa"* ⇒ tác nhân ĐỀ XUẤT CHẠY LỆNH TIẾP — 3 lần, không bao
+ * giờ trả lời. Vị từ này vì thế gánh thêm vai TRỌNG TÀI cho `chanLenhKhiCauHoi` (một câu HỎI không
+ * được đẻ ra một thẻ duyệt `run_command`), và nhận thêm ba mệnh đề:
+ *   • **MỆNH LỆNH CHẠY TƯỜNG MINH THẮNG TẤT CẢ**: câu MỞ ĐẦU bằng `chạy|hãy chạy|thực thi|run|
+ *     execute` ⇒ `false` NGAY — *"Chạy dotnet test X và cho tôi biết kết quả"* phải VẪN ra thẻ lệnh
+ *     (chống vá quá tay; lưới A/B giữ cả hai chiều).
+ *   • Từ khoá hỏi-kết-cục: `xanh hay đỏ` · `kết luận` · `(xanh|đỏ|pass|fail|qua) chưa` · `kết quả
+ *     thế nào/ra sao` — đúng các câu đã đo bị nuốt.
+ *   • **Dấu `?` cuối câu** ⇒ câu hỏi. Đánh đổi khai thẳng: *"trong server/ có gì?"* nay đi đường
+ *     model (chậm hơn) thay vì dump — chủ dự án đã duyệt chiều này ở brief UX ("câu chứa '?' ⇒ ưu
+ *     tiên văn xuôi"); người cần đường nhanh vẫn có nó bằng cách bỏ dấu hỏi (*"liệt kê server/"*).
+ * Vị từ DỌN NHÀ từ `aiLocalKnowledgeService.ts` sang đây (re-export giữ nguyên đường import cũ) vì
+ * người gọi mới (`chanLenhKhiCauHoi`, dùng ở `chonToolLapTrinh`) sống trong `aiLocalTools/` — import
+ * ngược `aiLocalKnowledgeService` từ đây là một vòng tròn module.
+ *
+ * ⚠⚠ **VÌ SAO KHÔNG BẮT `cho biết có gì` / `có gì trong`** (không kèm `?`): đó là câu hỏi về **sự
+ *   tồn tại của nội dung**, bản dump trả lời nó ĐÚNG và NHANH — `aiCodingMode.stream.test.ts` §1
+ *   ghim hành vi ấy.
+ * ⚠ Vị từ này **KHÔNG** đọc `laYDinhSuaTep`/`laYDinhTaoTep`: hai đường ấy đã rẽ đi từ trước.
+ */
+export function laCauCanSuyLuan(question: string): boolean {
+  const q = boDauThuong(question);
+  // Mệnh lệnh chạy tường minh mở đầu câu ⇒ KHÔNG phải câu hỏi, bất kể phần đuôi nói gì.
+  if (/^\s*(hay\s+)?(chay|thuc thi|run|execute)([^a-z]|$)/.test(q)) return false;
+  const vi =
+    /(^|[^a-z])(giai thich|vi sao|tai sao|so sanh|doi chieu|phan tich|danh gia|nhan xet|ra soat|tom tat|dien giai|ket luan)([^a-z]|$)/.test(q) ||
+    // "có lỗi gì", "có bug nào", "có vấn đề gì", "sai chỗ nào" — hỏi về KHIẾM KHUYẾT, không hỏi nội dung.
+    /(co|bi)\s+(loi|bug|van de|sai sot|rui ro)\s*(gi|nao|khong)?/.test(q) ||
+    /(sai|hong|thieu)\s+(cho|o)\s+(nao|dau)/.test(q) ||
+    /hoat dong (nhu the nao|ra sao)/.test(q) ||
+    // (C2-ii) hỏi KẾT CỤC một lượt lệnh: "xanh chưa", "pass chưa", "xanh hay đỏ", "kết quả thế nào".
+    /(^|[^a-z])(xanh|do|pass|fail|qua)\s+(chua|hay chua|hay khong)([^a-z]|$)/.test(q) ||
+    /(^|[^a-z])xanh\s+hay\s+do([^a-z]|$)/.test(q) ||
+    /ket qua\s+(the nao|ra sao)/.test(q);
+  const en =
+    /(^|[^a-z])(explain|why|compare|analyz|analys|review|assess|summari[sz]e|critique|conclusion|verdict)([^a-z]|$)/i.test(q) ||
+    /(any|what)\s+(bug|bugs|issue|issues|problem|problems|error|errors)\b/i.test(q) ||
+    /what(?:'|’)?s\s+wrong\b/i.test(q) ||
+    /how\s+does\s+.+\s+work/i.test(q) ||
+    /\b(did|do|does)\s+.*\b(pass|fail)/i.test(q);
+  const zh =
+    /(解释|说明一下|为什么|为何|比较|对比|分析|评估|审查|总结|摘要|结论)/.test(question) ||
+    /(有.{0,3}(问题|错误|缺陷|bug))/i.test(question) ||
+    /(如何工作|怎么工作|工作原理)/.test(question) ||
+    /(通过了吗|绿了吗|结果如何|结果怎么样)/.test(question);
+  // (C2-ii) dấu hỏi CUỐI CÂU — sau khi guard mệnh-lệnh-chạy ở trên đã nhường quyền cho lệnh tường minh.
+  const dauHoi = /[?？]\s*$/.test(question.trim());
+  return vi || en || zh || dauHoi;
+}
+
+/**
+ * ★★★ (C2-ii) — **MỘT CÂU HỎI KHÔNG ĐƯỢC ĐẺ RA MỘT THẺ DUYỆT `run_command`.**
+ *
+ * Đo live: *"xanh chưa?"* sau một lượt test ⇒ bộ chọn LLM (heuristic trả `null` — đúng, câu không
+ * có lệnh nào) đề xuất CHẠY LỆNH TIẾP; ba lượt liền, người dùng không bao giờ nhận được câu trả
+ * lời. Bộ lọc này đứng ở **điểm hẹp duy nhất** (`chonToolLapTrinh`, `aiLocalTools/index.ts`) nên
+ * chặn được CẢ hai nguồn: heuristic (`extractRunCommand` khớp một lệnh nằm trong câu hỏi — *"vì sao
+ * dotnet test X đỏ?"*) LẪN bộ chọn LLM đoán mò.
+ *
+ * ⚠ THUẦN + hẹp: chỉ đụng `run_command`. `read_file`/`grep_repo` cho một câu hỏi vẫn CHẠY — đọc
+ *   xong, `laCauCanSuyLuan` (đúng vị từ này) đưa kết quả quay lại model để trả lời bằng văn xuôi.
+ * ⚠ Chống vá quá tay theo CẤU TẠO: `laCauCanSuyLuan` trả `false` ngay cho câu mở đầu bằng mệnh
+ *   lệnh chạy ⇒ *"Chạy dotnet test X và cho tôi biết kết quả"* KHÔNG bị chặn ở đây.
+ */
+export function chanLenhKhiCauHoi(question: string, d: ToolDecision): ToolDecision {
+  if (d.tool === "run_command" && laCauCanSuyLuan(question)) {
+    return { tool: null, args: {}, reason: "CODING_RUN_BI_CHAN_CAU_HOI" };
+  }
+  return d;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-23 · UX LÔ 1 (C3) — ĐỊNH TUYẾN "sửa <đường>:" PHẢI TẤT ĐỊNH
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ Đo live: CÙNG một câu *"sửa src/Calculator.cs: thêm chú thích"*, lượt thì ra thẻ duyệt sửa,
+ * lượt thì ra một bản dump grep — số phận do bộ chọn LLM vòng 1 quyết. Một hình dạng câu TƯỜNG MINH
+ * đến thế không được phép phụ thuộc một model đang bận/đang đoán.
+ *
+ * Vị từ: câu MỞ ĐẦU bằng động từ sửa (`sửa|sua|fix|chỉnh sửa|chinh sua|chỉnh|chinh`) + MỘT đường
+ * dẫn repo + dấu ngăn (`:` `：` — dính liền được; `—`/`–`/`-` — phải có khoảng trắng trước, vì `-`
+ * là ký tự HỢP LỆ trong tên tệp) ⇒ trả về ĐÚNG đường dẫn ấy; mọi hình dạng khác ⇒ `null` (đi đường
+ * cũ, không đổi một byte).
+ *
+ * ⚠ Token đường dẫn được XÁC NHẬN bằng chính `trichMoiDuongDanRepo` (tức `REPO_PATH_REGEX`) — cả
+ *   token phải LÀ một đường dẫn repo, không viết một regex đường dẫn thứ hai (hai bảng đuôi sẽ trôi
+ *   khỏi nhau — bài học đã ghi ở chính `trichMoiDuongDanRepo`).
+ * ⚠ *"sửa a.cs và b.cs: …"* KHÔNG khớp (token đầu không đứng sát dấu ngăn) ⇒ rơi về đường LÔ ≥2
+ *   đường dẫn như cũ. *"sửa Calc.cs để khắc phục…"* (câu vòng tự động phát) cũng KHÔNG khớp —
+ *   `aiCodingMode.stream.test.ts` §5.5 ghim hành vi ấy và nó không được đổi.
+ * ⚠ Người dùng HỢP LỆ duy nhất: cửa tất định trong `streamCodingAnswer` (đứng TRƯỚC vòng tool),
+ *   nơi nó đi THẲNG vào `streamCodingEdit` — không hỏi bộ chọn LLM.
+ */
+export function trichDuongSuaTatDinh(question: string): string | null {
+  const m = String(question ?? "").match(
+    /^\s*(?:sửa|sua|fix|chỉnh\s+sửa|chinh\s+sua|chỉnh|chinh)\s+(\S{1,1024}?)(?:\s*[:：]|\s+[—–-])/iu,
+  );
+  if (!m) return null;
+  const token = m[1]!;
+  const duong = trichMoiDuongDanRepo(token);
+  return duong.length === 1 && duong[0] === token ? token : null;
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
