@@ -79,7 +79,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 48 | Hợp đồng của chính seam driver bị vi phạm ở **năm chỗ đo được** — I/O trong constructor, hai đường dispose không có trần, một driver không liệt kê lại được, và một miễn trừ Health không được khai | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BB-1 đo 2026-08-22. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ; nằm đây vì **chưa ai quyết** |
 | 49 | Hai vựng từ machine-type **không phải một danh sách**, và một loại máy không nhận ra **âm thầm thành máy bắt vít** rồi **GHI một bản ghi cấu hình** dưới mã của nó | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BC-1 đo 2026-08-22. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ |
 | 50 | Ba khuyết tật parse trên bản đồ connector: hai khoá **viết hoa bị vứt IM LẶNG**, `EffectiveReadTimeoutMs` **vẫn tràn `int`** qua object initializer, và hai bề mặt parse **không truyền sink cảnh báo** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BD-1 đo 2026-08-23, **ngoài phạm vi mục 38**. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ |
-| 51 | **Năm dụng cụ đo tự báo hụt miền của chính mình** — và một gốc `%ProgramData%` mà **không dụng cụ nào canh ngoài `creds`** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BD-1/BE-1/BF-1 đo. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 32 và 40, và **hai mục ấy đều do CHỦ SỞ HỮU quyết**, nên hàng này nêu tiền lệ chứ không tự nhận |
+| 51 | **SÁU dụng cụ đo tự báo hụt miền của chính mình** — kể cả **chính `verify-suites.sh`**, đỏ hay xanh tuỳ **thư mục người gõ đang đứng**; cộng một gốc `%ProgramData%` **không dụng cụ nào canh ngoài `creds`** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BD-1/BE-1/BF-1 đo. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 32 và 40, và **hai mục ấy đều do CHỦ SỞ HỮU quyết**, nên hàng này nêu tiền lệ chứ không tự nhận |
 | 52 | **Hai lời khai đã công bố đo được là SAI và cố ý để nguyên**, cộng sáu chỗ ném lỗi không nêu file mà thông điệp **không ai đọc** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BB-1/BC-1/BE-1 đo. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — rút một câu văn xuôi tại chỗ không chạm ba miễn trừ |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
@@ -981,7 +981,7 @@ nhận**); (2) hôm nay không với tới được qua parse, nên rủi ro th�
 
 ---
 
-## 51. NĂM dụng cụ đo tự báo hụt miền của chính mình, và một gốc `%ProgramData%` không ai canh
+## 51. SÁU dụng cụ đo tự báo hụt miền của chính mình — và cái thứ sáu là CHÍNH `verify-suites.sh`, đo được trong lúc chạy cổng cho mục này
 
 ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 32 và 40. 🔴 **Nói cho hết: cả mục 32 và mục 40 đều
 do CHỦ SỞ HỮU quyết**, nên nhãn ở đây nêu một tiền lệ ngược với chính nó, và anh có thể lật.
@@ -1004,8 +1004,32 @@ do CHỦ SỞ HỮU quyết**, nên nhãn ở đây nêu một tiền lệ ngư�
    và bracket credential của cổng đều rút gốc **duy nhất** từ `CredentialStore`. Một store rò vào
    `…\sim\products` hay bất kỳ lá nào khác **hoàn toàn không ai thấy**. BE-1 đo **13** lá không ai
    canh trước mục 30; BF-1 đo **16** sau, **và ba lá mới là đúng ba lá mà một seam hỏng sẽ ghi vào**.
+6. 🔴 **MỚI — `verify-suites.sh` ĐỎ HAY XANH TUỲ THƯ MỤC NGƯỜI GÕ ĐANG ĐỨNG, và thông điệp lỗi của
+   nó ĐỔ TỘI CHO SAI CHỖ. Đo được bởi BG-1 trong lúc chạy cổng cho chính mười hai mục này.** Dòng
+   `_creds_src="src/St4i.EdgeCore/Infrastructure/CredentialStore.cs"` là một **đường dẫn tương
+   đối**, và script **không bao giờ `cd` về gốc của chính nó** — `_SCRIPTDIR` có tồn tại nhưng
+   không được dùng ở đây. **Cặp đo, cùng commit, cùng cây, chỉ khác chỗ đứng:**
 
-**Hậu quả vận hành, hai chiều.** Bốn cái đầu là **dụng cụ đo nói quá về miền của mình** — đúng cái
+   | đứng ở | kết quả |
+   |---|---|
+   | `tools/machine-simulator` (nơi mọi lời giao việc bảo chạy) | `PASS … 5/5 suites … (2852)` |
+   | gốc repo, một cấp trên | `FAIL: could not derive the REAL creds root … (found 0 …, expected exactly 1)` |
+
+   🔴 **Đây ĐÚNG loài mục 32** — *một đường dẫn tương đối được giải theo thư mục hiện tại* — sống
+   trong **chính cái cổng** mà dụng cụ của mục 32 (`repo-scan.sh`) được dựng để bảo vệ. Khác mục 32
+   ở một điểm và **điểm ấy làm nó tệ hơn theo một chiều và nhẹ hơn theo chiều kia**: `repo-scan`
+   hỏng **im lặng** (trả 0), cái này hỏng **ồn ào** — nhưng nó ồn ào bằng một **chẩn đoán SAI**,
+   *“Fix the derivation. Do NOT hardcode the directory here”*, tức nó bảo người đọc đi sửa phép
+   dẫn xuất trong khi nguyên nhân là **chỗ họ đứng**. Một người tin thông điệp ấy sẽ sửa một thứ
+   không hỏng.
+
+   **Chiều để nguyên:** cổng **được thiết kế để chạy từ `tools/machine-simulator`**, mọi lời giao
+   việc đều nói thế, và nó **fail-closed** — nó không bao giờ xanh nhầm. Nên rủi ro không phải một
+   kết quả sai, mà **thời gian của người kế tiếp**. Phép sửa rẻ nhất — `cd "$_SCRIPTDIR/.."` một
+   lần ở đầu — **đổi ngữ nghĩa của mọi đường dẫn tương đối khác trong 7 894 dòng script**, nên nó
+   **không** phải một dòng vá, và đó là lý do mục này không tự thi hành nó.
+
+**Hậu quả vận hành, hai chiều.** Năm cái đầu là **dụng cụ đo nói quá về miền của mình** — đúng cái
 giá mục 32 ghi lại: một phán quyết của chủ sở hữu đã từng mang một cái trần SAI. Cái thứ năm là một
 **lỗ trong hàng rào của cổng**. Chiều để nguyên: (1) và (3) hôm nay **không sai theo chiều nguy
 hiểm**; (4) là bề mặt vận hành viên, và thêm một dòng *"(không có)"* là một **quyết định về cách nói
@@ -1014,7 +1038,9 @@ assembly**, cần baseline riêng như `RealCredentialStoreWatch` — BF-1 đã 
 đúng lý do ấy.
 
 **Nếu không quyết.** Cổng tiếp tục xanh trên những miền chưa ai khai, và đó là chính xác định nghĩa
-của mục 40.
+của mục 40. 🔴 **Và cái thứ sáu nói thêm một điều mà năm cái kia không nói:** loài khuyết tật này
+**vẫn đang sinh ra**, không phải một tồn dư lịch sử — nó được đo lần đầu **trong chính lần chạy cổng
+của nhiệm vụ đang mở mục này**.
 
 ---
 
@@ -10694,6 +10720,12 @@ Phần I nói *"mười một + năm + hai + một"* = **mười chín**. Liệt
 ba** mục ứng viên. Đếm **sau khi** liệt kê, và đếm **từ chính bảng dưới đây** chứ không từ trí nhớ:
 **33 ứng viên = 8 (C) + 18 (N) + 7 (K)** ⇒ **26 còn mở**, gom thành **12 mục**.
 
+🔴 **CỘNG MỘT CÁI THỨ BA MƯƠI TƯ, và nó KHÔNG thừa kế — BG-1 tự đo nó.** Hàng 34 dưới đây là một
+khuyết tật **mới**, tìm ra trong **lần chạy cổng thứ ba của chính nhiệm vụ này**, khi tôi gõ lệnh cổng
+từ **gốc repo** thay vì từ `tools/machine-simulator` và nó đỏ ở một chỗ **không liên quan gì đến cây**.
+Nó được để **ngoài** phép cộng `8+18+7` ở trên, vì phép cộng ấy nói về **quần thể thừa kế**; trộn một
+cái tự đo vào đó sẽ làm con số 33 không tra lại được từ nguồn cấp một. **Tổng thật đang mở là 27.**
+
 > 🔴 **CÂU NGAY TRÊN — SỬA TẠI CHỖ 2026-08-23 (BG-1, vòng đo lại sản phẩm của chính mình), câu sai
 > giữ NGUYÊN VĂN.** Nó đọc: *“Đếm **sau khi** liệt kê: **33 ứng viên → 4 không tái lập được → 4 đã
 > được trả hoặc đã được phán → 25 còn mở, gom thành 12 mục**.”* **Ba trong bốn con số ấy sai.** Nhóm
@@ -10732,6 +10764,7 @@ không phải khuyết tật, vì phép đo lại bác nó.
 | 21 | `repo-scan.sh` không kiểm hoa thường của pathspec | BD-1 §7.6 | **N** | mục **51** |
 | 22 | `remove-data.ps1` in danh sách GIỮ vô điều kiện | BF-1 §8.6 | **N** | mục **51** |
 | 23 | không dụng cụ nào gác `%ProgramData%\ST4I\sim\` ngoài `creds` | BE-1 §8.4 · BF-1 §8.4 | **N** | mục **51** |
+| 34 | 🔴 **MỚI, KHÔNG THỪA KẾ** — `verify-suites.sh` đỏ hay xanh tuỳ thư mục người gõ đang đứng, và thông điệp lỗi đổ tội cho sai chỗ | **BG-1 tự đo**, trong lần chạy cổng thứ ba của chính nhiệm vụ này | **N** | mục **51** |
 | 24 | `IDeviceDriver.Id`'s lời khai slot-label bị bác, để nguyên | BB-1 merge | **N** | mục **52** |
 | 25 | `"23 sites across 20 files"` không tái lập được | BE-1 §8.5 · BF-1 §8.5 | **N** | mục **52** |
 | 26 | `Doc28Parser`: 6/34 chỗ ném không nêu file, thông điệp không ai đọc | BC-1 §7.7 | **N** | mục **52** |
