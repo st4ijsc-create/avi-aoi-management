@@ -164,6 +164,28 @@ NOW_FILES=$(grep -c . "$TMP/now.list" || true)
 # over $SIMROOT returns hundreds of *.cs. It is reachable through `--files`, and it is reachable
 # by anything that moves the tree. A guard costs one comparison; the failure it prevents is a
 # green gate that read nothing.
+#
+# ── 🔴 G1 IS A GUARD, NOT A WITNESS — KEPT, AND HERE IS THE MEASUREMENT THAT DECIDED IT ──────────
+# BD-1 (2026-08-23, item 40) was asked whether this guard earns its place, on the grounds that the
+# right question is not "can this go red?" but "is this what turns the GATE path red?". Measured,
+# not argued: the NOW corpus was forced empty (corpus_of returning an empty list for $SIMROOT only,
+# so the BASE corpus stayed full) and the script was run three ways.
+#
+#   G1 present,  --since  -> exit 2, refused HERE                                  (this guard)
+#   G1 disabled, --since  -> exit 2, refused at the NOW_SENT guard below            (G3 catches it)
+#   G1 disabled, --census -> exit 0, "corpus : 0", "FLAGGED : 0"                    🔴 GREEN
+#
+# So on `--since` — the ONLY mode verify-suites.sh runs — this guard is redundant with the NOW_SENT
+# guard, and it must not be counted as gate-path coverage by anyone reading the list of guards. It
+# is kept for two measured reasons and neither of them is the gate:
+#
+#   1. Its exclusive coverage is `--census`, where the NOW_SENT guard is never reached (census
+#      returns before it). Line 3 above IS item 40's defect — a printed zero and a clean exit over
+#      a population nobody established was non-empty. Deleting G1 puts it back.
+#   2. Diagnosis. With G1 gone, the message a `--since` operator gets is the NOW_SENT one, which
+#      reads "0 files were read and they contain ZERO doc-comment sentences" — a sentence that
+#      presumes files were read and sends the reader to look for missing doc comments instead of a
+#      missing corpus. Redundant coverage with a wrong explanation is not free.
 if [[ "$NOW_FILES" -eq 0 ]]; then
   echo "scan-doc-negations: the corpus is EMPTY — 0 *.cs files under $PREFIX. Every number this
       script could print would be about nothing, and a 0 here is not 'no absolute claims', it is
@@ -217,6 +239,24 @@ if [[ "$NOW_SENT" -eq 0 ]]; then
       (docs/owner-decisions.md item 40.)" >&2
   exit 2
 fi
+# 🔴 THE FOURTH POPULATION, AND IT WAS UNGUARDED UNTIL NOW (BD-1, 2026-08-23, item 40). Re-listing
+# the populations this mode quantifies over turned up FOUR, not three: NOW_FILES, BASE_FILES,
+# NOW_SENT — and BASE_SENT, which was read, printed, and never tested. The guard above it checks the
+# base corpus's FILE count; a base tree can hold hundreds of *.cs and still yield zero doc-comment
+# sentences (a $PREFIX that existed at $SHA but had not been commented yet, or a reader change that
+# stops matching the old block syntax). In that state every current sentence diffs as ADDED, NEW
+# becomes the entire census, and the run goes RED — with a number that is pure artefact. The
+# opposite direction to a vacuous green and just as wrong: a red for the wrong reason teaches the
+# next reader to raise --expect until it passes, which is how a real regression gets absorbed. Item
+# 40's own §1(c) named the file-count version of this hole and stopped there; this is the sentence-
+# count version, found by listing the population set again instead of trusting the earlier list.
+if [[ "$BASE_SENT" -eq 0 ]]; then
+  echo "scan-doc-negations: the BASE corpus at $REF ($SHA) holds $BASE_FILES *.cs but ZERO
+      doc-comment sentences. Every sentence present now would diff as ADDED, so the count below
+      would be the whole census wearing the label 'added since $REF'. Refusing rather than
+      reporting a red with an artefact for a number. (docs/owner-decisions.md item 40.)" >&2
+  exit 2
+fi
 
 # Identity is (path, sentence) — line numbers move for reasons that are not claims.
 cut -f1,3 "$TMP/now.hits"  | LC_ALL=C sort -u > "$TMP/now.id"
@@ -233,6 +273,14 @@ echo "── LISTED FIRST; the count is at the bottom and is derived from this l
 awk -F'\t' '{printf "  %s\n      %s\n", $1, $2}' "$TMP/new.id"
 echo "────────────────────────────────────────────────────────────────────────────────────────"
 echo "   NEW absolute doc claims : $NEW"
+# The population protocol (verify-suites.sh run_tooling_check, item 40). All FOUR populations this
+# mode quantifies over, each already refused above when empty — declared here so the refusal is
+# auditable from outside this script. NEW itself is deliberately absent: 0 new claims is the
+# expected, healthy answer, and a protocol that forbade it would forbid a clean run.
+echo "POPULATION now-files $NOW_FILES"
+echo "POPULATION now-sentences $NOW_SENT"
+echo "POPULATION base-files $BASE_FILES"
+echo "POPULATION base-sentences $BASE_SENT"
 echo "   (whole-tree census for context: $NOW_HITS of $NOW_SENT sentences — a ceiling, not a gate)"
 
 if [[ -n "$EXPECT" ]]; then

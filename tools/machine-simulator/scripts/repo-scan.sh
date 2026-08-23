@@ -282,6 +282,13 @@ self_test() {
     rc=1
   fi
 
+  # The population protocol (verify-suites.sh run_tooling_check, docs/owner-decisions.md item 40).
+  # The sets every assertion above quantifies over: the default pathspec's domain — the one whose
+  # collapse to 0 WAS the defect — and the probe's own match count, which is what makes (a)'s
+  # cwd-invariance an agreement between two real numbers rather than between two zeroes.
+  echo "POPULATION default-domain $dom_default"
+  echo "POPULATION probe-matches $from_root"
+
   [[ $rc -eq 0 ]] && echo "PASS: rooted scans are cwd-invariant ($from_root from both places) while the naive form loses $((from_root - naive)); the no-pathspec default covers the whole tree ($dom_default files); empty domain refused (2) and true no-match reported (1)."
   return $rc
 }

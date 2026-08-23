@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Drivers.Modbus;
 using Xunit;
@@ -911,5 +913,189 @@ public class ModbusRegisterMapTests
         var target99 = Assert.Single(ModbusRegisterMap.FromJson(json99).CommandTargets);
 
         Assert.NotEqual(target5.Target, target99.Target);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 docs/owner-decisions.md ITEM 38 — pollIntervalMs was the one cadence key with no domain
+    // check, beside two that had one. These are the witnesses; each one FAILS against the parse
+    // path as it stood at 889c72ab, where every value below was stored exactly as declared.
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    private static string MapWithPollInterval(string rawJsonValue, string machineCode = "PLC-CADENCE") => $$"""
+    { "machineCode": "{{machineCode}}", "pollIntervalMs": {{rawJsonValue}},
+      "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "v" } ] }
+    """;
+
+    /// <summary>
+    /// 🔴 <b>The three measured failure shapes, refused at the parse boundary — and the third one is why
+    /// this item was worth paying.</b> <c>0</c> gives an unthrottled poll loop and <c>≤ -2</c> throws
+    /// <see cref="ArgumentOutOfRangeException"/> out of a <c>catch</c> that only handles cancellation:
+    /// both are LOUD. <c>-1</c> is <c>Timeout.Infinite</c> — the device is polled exactly once and then
+    /// goes quiet with Health frozen at whatever the first poll produced, which from outside is
+    /// indistinguishable from a healthy device on a slow cadence. A plant can see the other two. It
+    /// cannot see that one, which is why "store it as declared" was never a safe default.
+    /// </summary>
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("-2")]
+    [InlineData("-2147483648")]
+    public void FromJson_RefusesNonPositivePollIntervalMs_WarnsAndFallsBackToTheDefault(string declared)
+    {
+        var warnings = new List<string>();
+
+        var map = ModbusRegisterMap.FromJson(MapWithPollInterval(declared), logWarning: warnings.Add);
+
+        Assert.Equal(ModbusRegisterMap.DefaultPollIntervalMs, map.PollIntervalMs);
+        var warning = Assert.Single(warnings);
+        Assert.Contains("pollIntervalMs", warning, StringComparison.Ordinal);
+        Assert.Contains(declared, warning, StringComparison.Ordinal);
+    }
+
+    /// <summary>The upper half of the domain. Item 38 deliberately puts this ceiling where the type stops
+    /// being able to describe itself rather than at a hand-picked round number — see
+    /// <see cref="ModbusRegisterMap.MaxPollIntervalMs"/>.</summary>
+    [Fact]
+    public void FromJson_RefusesPollIntervalMsAboveTheCeiling_WarnsAndFallsBackToTheDefault()
+    {
+        var warnings = new List<string>();
+        var tooLarge = ModbusRegisterMap.MaxPollIntervalMs + 1;
+
+        var map = ModbusRegisterMap.FromJson(MapWithPollInterval(tooLarge.ToString(CultureInfo.InvariantCulture)), logWarning: warnings.Add);
+
+        Assert.Equal(ModbusRegisterMap.DefaultPollIntervalMs, map.PollIntervalMs);
+        var warning = Assert.Single(warnings);
+        Assert.Contains("pollIntervalMs", warning, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴 <b>The ceiling is DERIVED, and this is the derivation — an assertion, not a sentence about
+    /// one.</b> <see cref="ModbusRegisterMap.EffectiveReadTimeoutMs"/> computes
+    /// <c>PollIntervalMs * 4</c> in <see langword="int"/>. At the ceiling that product is still positive;
+    /// one millisecond above it, the multiplication wraps negative and <c>Math.Max(1000, …)</c> quietly
+    /// returns the floor, so the derived per-attempt timeout stops having anything to do with the declared
+    /// cadence. That is the measured reason the line sits exactly here.
+    /// </summary>
+    [Fact]
+    public void MaxPollIntervalMs_IsTheLargestValueEffectiveReadTimeoutMsCanMultiplyWithoutOverflow()
+    {
+        Assert.True(ModbusRegisterMap.MaxPollIntervalMs * 4 > 0);
+        Assert.True(unchecked((ModbusRegisterMap.MaxPollIntervalMs + 1) * 4) < 0);
+
+        var atCeiling = new ModbusRegisterMap
+        {
+            MachineCode = "PLC-CEILING",
+            PollIntervalMs = ModbusRegisterMap.MaxPollIntervalMs,
+            Registers = new List<ModbusRegister>
+            {
+                new(Address: 0, Type: ModbusRegisterType.Holding, DataType: ModbusDataType.UInt16, Scale: 1.0, Metric: "v", Unit: null),
+            },
+        };
+
+        Assert.Equal(ModbusRegisterMap.MaxPollIntervalMs * 4, atCeiling.EffectiveReadTimeoutMs);
+    }
+
+    /// <summary>
+    /// 🔴 <b>A regression this fix's own first draft would have shipped, kept as a standing witness.</b>
+    /// The binder matches property names case-INSENSITIVELY; an ordinal <c>TryGetProperty</c> does not.
+    /// The first draft read the raw element the way <c>readTimeoutMs</c>/<c>retries</c> do — which are
+    /// <c>[JsonIgnore]</c>d and have no bound value to disagree with — and so would have missed this
+    /// document entirely and silently replaced a perfectly valid declared cadence with the default. An
+    /// in-domain value must survive every spelling the product already accepts.
+    /// </summary>
+    [Theory]
+    [InlineData("pollIntervalMs")]
+    [InlineData("PollIntervalMs")]
+    [InlineData("pollintervalms")]
+    [InlineData("POLLINTERVALMS")]
+    public void FromJson_KeepsAnInDomainPollIntervalMs_UnderEverySpellingTheBinderAccepts(string key)
+    {
+        var json = $$"""
+        { "machineCode": "PLC-SPELLING", "{{key}}": 250,
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "v" } ] }
+        """;
+
+        var warnings = new List<string>();
+        var map = ModbusRegisterMap.FromJson(json, logWarning: warnings.Add);
+
+        Assert.Equal(250, map.PollIntervalMs);
+        Assert.Empty(warnings);
+    }
+
+    /// <summary>The one intentional <c>0</c> measured anywhere in this product — three maps built flat-out
+    /// by <c>ModbusMultidropBusTests.ASlowPollerIsNotStarved_ByThreeDevicesPollingFlatOut</c> — is built
+    /// through an object initializer, not through <see cref="ModbusRegisterMap.FromJson"/>. Item 38 put
+    /// the check at the parse boundary, where its two neighbours put theirs, precisely so that construction
+    /// stays legal. This asserts the boundary, so that moving the check onto the property (which would
+    /// break that suite) fails here first and explains itself.</summary>
+    [Fact]
+    public void ProgrammaticConstruction_IsNotSubjectToTheParseTimeDomainCheck()
+    {
+        var flatOut = new ModbusRegisterMap
+        {
+            MachineCode = "FAIR-F1",
+            PollIntervalMs = 0,
+            Registers = new List<ModbusRegister>
+            {
+                new(Address: 0, Type: ModbusRegisterType.Holding, DataType: ModbusDataType.UInt16, Scale: 1.0, Metric: "v", Unit: null),
+            },
+        };
+
+        Assert.Equal(0, flatOut.PollIntervalMs);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 docs/owner-decisions.md ITEM 39 — `"registers": null` satisfied `required`, bound a genuine
+    // null, and threw a BARE NullReferenceException. TWO cases, measured separately: an explicit null
+    // and an ABSENT key are different inputs with different mechanisms, and only one of them was broken.
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>Case 1 — explicit <c>null</c>.</b> <c>required</c> is satisfied by the KEY BEING PRESENT, so
+    /// an explicit null passes the binder's required-property check and binds through into a property
+    /// declared non-nullable. Before this fix the next statement dereferenced it and the operator received
+    /// <c>"Object reference not set to an instance of an object."</c> — no field, no machine code, nothing
+    /// to act on — passed out verbatim by <c>ModbusConnectorFactory.TryCreate</c> as its <c>error</c>.
+    /// </summary>
+    [Fact]
+    public void FromJson_ExplicitNullRegisters_ThrowsNamingTheFieldAndTheMachine_NotABareNullReference()
+    {
+        const string json = """{ "machineCode": "PLC-NULLREG", "registers": null }""";
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+
+        Assert.Contains("registers", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("PLC-NULLREG", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Object reference not set", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>Case 2 — the key is ABSENT.</b> A different mechanism entirely: the binder's required-property
+    /// enforcement fires and never constructs the object. This case was already correct before item 39 and
+    /// is asserted here so the fix for case 1 cannot quietly swallow it — a null check placed after a
+    /// successful bind must not change what happens when there is no bind at all. Item 39's own text named
+    /// only case 1; both are measured here.
+    /// </summary>
+    [Fact]
+    public void FromJson_AbsentRegistersKey_StillFailsInTheBinderNamingTheProperty()
+    {
+        const string json = """{ "machineCode": "PLC-NOREG" }""";
+
+        var ex = Assert.Throws<JsonException>(() => ModbusRegisterMap.FromJson(json));
+
+        Assert.Contains("Registers", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The third neighbour in the same family, asserted so the set is closed rather than
+    /// sampled: a present-but-EMPTY array is refused by this method's own check, naming the field. Three
+    /// inputs, three distinct outcomes, and after item 39 none of them is a bare CLR message.</summary>
+    [Fact]
+    public void FromJson_EmptyRegistersArray_IsRefusedByThisMethodNamingTheField()
+    {
+        const string json = """{ "machineCode": "PLC-EMPTYREG", "registers": [] }""";
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+
+        Assert.Contains("registers", ex.Message, StringComparison.Ordinal);
     }
 }

@@ -146,6 +146,26 @@ part != "HEAD" && part != "IV" && /^## [0-9]+/ {
   next
 }
 
+# ── The DECLARED population of Part II, the C6 discriminator (BD-1, 2026-08-23, item 40) ─────────
+# C0 asserts the GLOBAL populations are non-empty. It cannot say anything about a PART, and Part II
+# went genuinely empty on 2026-08-22 — so "Part II holds nothing because every item was executed"
+# and "Part II holds nothing because this parser stopped recognising its bodies" became two states
+# with byte-identical observable output: no key with bodypart == "II", no contribution to
+# length(bodypart), and the Part-II arm of C2 looping over the empty set. An empty set satisfies
+# every universal claim, which is the whole content of item 40, and here it was doing it to the tool
+# written to enforce item 37.
+#
+# The fix is the mechanism Part I has already proved: make the population DECLARED, then assert
+# declared == parsed. An equality between two sets is not vacuous when both are empty — it is the
+# one form of assertion that still says something there, which is exactly why this shape was chosen
+# over "count > 0" (false today, and it would be a lie about a legitimate state).
+part == "II" && /^<!-- gate:phần-ii/ {
+  ii_n++; ii_line = FNR
+  f = $0; sub(/^<!-- *gate:phần-ii *= */, "", f); sub(/ *-->.*$/, "", f)
+  ii_field = f
+  next
+}
+
 # ── Part I enumeration paragraphs, and the machine field that says which one is live ──────────────
 part == "I" && /^\*\*Các mục ở đây, LIỆT KÊ/ { enum_n++; enum_line[enum_n] = FNR; enum_text[enum_n] = $0; enum_mark[enum_n] = "" ; last_enum = enum_n; next }
 part == "I" && /^<!-- gate:phần-i/ {
@@ -219,11 +239,34 @@ END {
     }
   }
 
+  # ── C6: the declared population of Part II must equal its parsed one ───────────────────────────
+  actual_ii = ""
+  for (n = 1; n <= 999; n++) if ((n in bodypart) && bodypart[n] == "II") actual_ii = actual_ii (actual_ii == "" ? "" : " ") n
+
+  if (ii_n == 0)
+    bad("C6  PART II declares no population. Exactly one <!-- gate:phần-ii = <numbers, possibly none> --> must sit under the Part II banner. Without it an EMPTY Part II and a Part II whose bodies this parser stopped recognising produce identical output, and so does a Part II banner that no longer matches at all -- in which case its items are silently attributed to Part I. The empty declaration is the assertion; its absence is the defect.")
+  else if (ii_n > 1)
+    bad(sprintf("C6  %d gate:phần-ii declarations under PART II; there must be exactly one", ii_n))
+  else {
+    nf2 = split(ii_field, fb, /[ ,]+/); fs2 = ""
+    for (i = 1; i <= nf2; i++) if (fb[i] ~ /^[0-9]+$/) fs2 = fs2 (fs2 == "" ? "" : " ") fb[i]
+    if (fs2 != actual_ii)
+      bad(sprintf("C6  the PART II machine field (line %d) declares [%s]; PART II actually contains [%s]. If an item was just executed, move the field with it; if the field is right, this parser has lost sight of a body that is still there.", ii_line, fs2, actual_ii))
+  }
+
   # ── report ─────────────────────────────────────────────────────────────────────────────────────
   printf "── item 37 · owner-decisions.md structural check ───────────────────────────────────────\n"
   printf "   file          : %s\n", DOC
   printf "   verdict rows  : %d      body sections : %d\n", length(rowline), length(bodypart)
   printf "   PART I holds  : [%s]\n", actual
+  printf "   PART II holds : [%s]   (declared: [%s])\n", actual_ii, fs2
+  # The population protocol verify-suites.sh run_tooling_check enforces. These are the two sets
+  # C1-C4 loop over; C0 above refuses on either being empty, and this makes that refusal auditable
+  # from OUTSIDE the script rather than only from inside it. Part II is deliberately NOT declared
+  # here: it is legitimately empty, and a protocol that demanded otherwise would be demanding a lie.
+  # What guards Part II is C6, which asserts an EQUALITY and therefore still says something at zero.
+  printf "POPULATION verdict-rows %d\n", length(rowline)
+  printf "POPULATION body-sections %d\n", length(bodypart)
   printf "── DIVERGENCES LISTED FIRST; the count is derived from this list ───────────────────────\n"
   for (i = 1; i <= nfail; i++) printf "   %2d. %s\n", i, fail[i]
   if (nfail == 0) printf "   (none)\n"
