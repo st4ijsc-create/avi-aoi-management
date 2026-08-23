@@ -106,6 +106,10 @@ public class UnconsumedConfigKindsTests
         var configKeys = MachineParameterSchema.ParametersFor(MachineParameterSchema.WeldProfile).Select(p => p.Key).ToList();
 
         Assert.Equal(new[] { "weld_current", "weld_time" }, metricKeys);
-        Assert.Empty(configKeys.Where(k => metricKeys.Contains(k, StringComparer.Ordinal)));
+
+        // Assert.DoesNotContain with a predicate rather than Assert.Empty over a Where — the latter is
+        // xUnit2029, and this suite's warning count is pinned, so the analyzer's preferred form is the
+        // one that keeps EXPECT_WARNINGS where it is instead of moving it by one.
+        Assert.DoesNotContain(configKeys, k => metricKeys.Contains(k, StringComparer.Ordinal));
     }
 }
