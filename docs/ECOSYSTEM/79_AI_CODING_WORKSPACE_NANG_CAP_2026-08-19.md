@@ -868,3 +868,89 @@ persona A/B).
 
 ★ Và lưới bắt được **một lỗi THẬT trong lúc viết**: alternation `ts|tsx` khiến `x.tsx` mót ra
 `client/src/lib/x.ts` — một đường dẫn không tồn tại, tức một lượt `read_file` đốt vào hư không.
+
+---
+
+# ⚠⚠⚠ VÁ LIVE 2026-08-21 — `apply_diff_batch` DỰNG XONG, 16 ĐỘT BIẾN ĐỎ, **VÀ CHƯA AI GỌI TỚI NÓ**
+
+Nghiệm thu live (`engineer1` · `/ai-coding-workspace` · dự án **"Demo Csharp"**). Câu đã gõ:
+
+> *"sửa `src/Calculator.cs` và `src/StringUtils.cs`**:** thêm dòng chú thích `// Dự án thử AI local`
+> lên đầu mỗi tệp"*
+
+Đo được: model **có** in nội dung cả hai tệp, nhưng chỉ **MỘT** thẻ duyệt hiện ra và nó dành cho
+`src/Calculator.cs`; bấm duyệt ⇒ `Calculator.cs` có chú thích (`grep -c` = 1), `StringUtils.cs`
+không (`grep -c` = 0). **`grep -ci "apply_diff_batch"` trên log máy chủ = 0** — tool lô chưa từng
+được gọi một lần nào.
+
+## Bảng đo — chỗ nào quyết định "một tệp" thay vì "lô" (đo bằng chính ba hàm sản phẩm)
+
+| câu | `trichMoiDuongDanRepo` | `classifyCodingToolIntent` | `laYDinhSuaTep` | nhánh |
+|---|---|---|---|---|
+| `sửa src/Calculator.cs và src/StringUtils.cs**:** thêm …` | **["src/Calculator.cs"] · n=1** | `read_file{path:"src/Calculator.cs"}` | `true` | **MỘT TỆP** |
+| `sửa src/Calculator.cs và src/StringUtils.cs**,** thêm …` | `[…Calculator.cs, …StringUtils.cs]` n=2 | như trên | `true` | LÔ |
+| `sửa src/Calculator.cs**:** thêm chú thích` | **[] · n=0** | **`null` / `CODING_NO_MATCH`** | `true` | **KHÔNG vào nhánh ghi** |
+| `sửa server/a.ts và server/b.ts để đổi tên hàm …` (câu của LƯỚI) | n=2 | `read_file` | `true` | LÔ ✅ |
+
+⇒ Nút thắt nằm ở **một dòng duy nhất**: hậu tố của `REPO_PATH_REGEX`. Nó là một **danh sách TRẮNG
+dấu câu** `(?=$|[\s"'`,;)\]。，、])` — có `,` và `;`, **không có `:`** — trong khi phần MỞ ĐẦU của
+chính mẫu ấy lại có cả `:` lẫn `：`. Dấu hai chấm sau đường dẫn thứ hai làm đường dẫn ấy biến mất,
+`nhieuDuong.length >= 2` không thoả, và toàn bộ `apply_diff_batch` thành **mã chết**.
+
+## Bản vá — đổi từ DANH SÁCH TRẮNG sang phát biểu "token đã KẾT THÚC"
+
+Không thêm `:` vào danh sách: danh sách nào cũng có phần tử thứ N+1 (`：` `?` `!` `？` dấu chấm cuối
+câu…), và cái thiếu tiếp theo lại hỏng **im lặng** đúng kiểu này. Hậu tố nay là `(?![\w@~$/\-])` —
+ký tự kế tiếp không phải một ký tự **nối tiếp được** của đường dẫn. Mọi dấu câu, đã biết hay chưa
+biết, tự động là dấu kết thúc. Đo trên dàn 28 câu: bản mới khác bản cũ **đúng** ở các câu có
+`: ： ? .` sau đường dẫn và **không câu nào khác** đổi kết quả (`b.tsx` vẫn ra `b.tsx`, không cụt
+thành `b.ts`, vì `x` là ký tự nối tiếp nên phép khớp cụt bị bác).
+
+**1 dòng mã đổi.** Không đụng `streamCodingSuaNhieuTep`, `applyDiffBatch.ts`, HITL, hay danh sách
+tool — hai tuần trước chúng đã đúng, chỉ không ai đi tới được.
+
+## Hai câu hỏi bỏ ngỏ trong brief — quyết và nói thẳng
+
+* **≥2 đường dẫn + ý định TẠO** ⇒ **đi đường LÔ y như SỬA.** `apply_diff_batch` nhận `original` RỖNG
+  cho một mục là hợp đồng hợp lệ có băm neo (băm(`""`)), nên tạo N tệp trong MỘT lượt duyệt không
+  cần bề mặt thứ hai.
+* **TRỘN tạo-mới + sửa trong một câu** ⇒ **hợp lệ, MỘT lô duy nhất.** Cái phân xử TẠO-hay-SỬA vẫn là
+  **ĐĨA**, xét RIÊNG cho từng tệp: tệp chưa có ⇒ neo `""`, tệp đã có ⇒ neo là byte thật. Không có
+  "chế độ lô cho tạo" và "chế độ lô cho sửa" — chỉ có một lô, N phán quyết.
+  ⚠ Chiều nguy hiểm vẫn đóng: câu **CHỈ** nói TẠO mà tệp ĐÃ CÓ thì bị từ chối tường minh.
+
+## ★★★ BÀI HỌC THÀNH LƯỚI — `aiCodingTaoTep.stream.test.ts` §11
+
+Hai lượt liên tiếp cùng một hình dạng lỗi: dựng xong · lưới xanh · đột biến đỏ · **live không chạy**
+(#1 `codingRepoContext` 101 ca; #2 lô 16 đột biến). Gốc rễ chung **không phải "thiếu ca"** mà là
+**ĐẦU VÀO CỦA CA ĐÃ ĐƯỢC DỌN SẴN**. §8 chạy đúng chuỗi định tuyến thật, nhưng câu của nó là câu tác
+giả tự viết cho lưới; khác câu người dùng **đúng một dấu hai chấm**.
+
+> Một lưới chỉ chứa câu do chính tác giả dọn sẵn là lưới **TỰ THOẢ**: nó chứng minh *"tool làm đúng
+> KHI ĐƯỢC GỌI"*, không bao giờ chứng minh *"câu người dùng gõ thật SẼ TỚI ĐƯỢC tool"*.
+
+§11 phát biểu mệnh đề thứ hai, dữ liệu ca là **văn bản đã đi qua bàn phím thật**: nguyên văn câu live
++ 9 biến thể vi/en/zh, chạy qua đúng chuỗi định tuyến, **trong đúng hình dạng phiên live** (một dự án
+được chọn qua `projectId` ⇒ `AI_REPO_SANDBOX_ROOTS`, đường dẫn **tương đối theo gốc dự án**) — điều mà
+§8 cũng không có.
+
+| # | đột biến | kết quả |
+|---|---|---|
+| M1 | hoàn nguyên hậu tố về danh sách trắng cũ | **ĐỎ 11 ca** (toàn §11) |
+| M2 | ngưỡng lô `≥2` → `≥3` | **ĐỎ 19 ca** |
+| M3 | một băm neo dùng CHUNG cho cả lô | **ĐỎ 3 ca** |
+| M4 | ép mọi lượt ghi xuống đường lô (`motTep = false`) | ĐỎ 1 ca (§8) |
+| M5 | nới ngưỡng lô `≥2` → `≥1` (vá quá tay) | **ĐỎ 1 ca** — và ca đó phải khẳng định vào **thẻ `read_file` THẬT**, vì đếm tên tool thôi thì lô-một-mục tự thu về `apply_diff` và cổng vẫn xanh |
+
+⚠ M5 lộ một khuyết của chính ca chống-vá-quá-tay bản đầu: nó đếm `apply_diff === 1` — một mệnh đề
+**đúng ở cả hai phía** của đột biến. Đã siết vào thứ thật sự đổi (thẻ tool tổng `{files:[…]}` của
+đường lô ≠ kết quả `read_file` có `content`).
+
+## Đối chứng `git stash` với HEAD
+
+`check` sạch · `i18n:check` exit 0 · `check:tests` **12 lỗi, GIỐNG HỆT từng dòng** ở HEAD và ở bản vá
+(nợ CÓ SẴN trong `*.mjs` không có khai báo kiểu). Bộ 13 lưới census/định tuyến: danh sách tệp đỏ
+**y hệt** HEAD — chỉ `vramPha5Gate` (2 ca, nợ CÓ SẴN: đếm 127≠126 + `dataErrorStringCensus` tự khai
+mà ngoài cổng). Suite AI 230 tệp: **12 tệp đỏ, cùng danh sách**; ba tệp lệch giữa các lượt đều hỏng
+vì `Test timed out in 5000ms` (không phải sai khẳng định), xanh khi chạy riêng, và HEAD cũng có ca
+timeout của chính nó ⇒ **nhiễu hạn giờ, không phải hồi quy**.

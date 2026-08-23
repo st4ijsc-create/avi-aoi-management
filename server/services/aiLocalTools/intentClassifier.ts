@@ -400,9 +400,33 @@ function extractProjectPath(question: string): string | undefined {
  *
  * ⚠ Trả **NGUYÊN VĂN** — `..`, đường tuyệt đối, `C:` đều đi qua để **cửa** `repoSandbox` là cái từ
  * chối, đúng nguyên tắc đã dùng cho `extractProjectPath`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ 2026-08-21 — **HẬU TỐ TỪNG LÀ MỘT DANH SÁCH TRẮNG DẤU CÂU, VÀ NÓ THIẾU DẤU HAI CHẤM.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trước kết thúc bằng `(?=$|[\s"'`,;)\]。，、])` — một **danh sách TRẮNG** các dấu được phép đứng
+ * sau đường dẫn. Nó có `,` và `;` nhưng **không có `:`**, trong khi phần MỞ ĐẦU lại có cả `:` lẫn
+ * `：`. Sự bất đối xứng ấy là toàn bộ gốc rễ của một lỗi ĐO ĐƯỢC LIVE (2026-08-21):
+ *
+ *   *"sửa src/Calculator.cs và src/StringUtils.cs**:** thêm dòng chú thích …"*
+ *   ⇒ `trichMoiDuongDanRepo` trả **["src/Calculator.cs"]** — đúng MỘT đường —
+ *   ⇒ điều kiện `≥2` của đường LÔ không thoả ⇒ `apply_diff_batch` **chưa từng được gọi một lần nào**
+ *     (`grep -ci apply_diff_batch` trên log máy chủ = 0), người dùng nhận một thẻ duyệt cho một tệp.
+ * Và nặng hơn: *"sửa src/Calculator.cs**:** thêm chú thích"* (MỘT đường + dấu hai chấm) trả **[]**,
+ * tức `classifyCodingToolIntent` ra `CODING_NO_MATCH` — câu ấy không vào nổi cả đường sửa một tệp.
+ *
+ * ⇒ Bản vá **KHÔNG** thêm `:` vào danh sách trắng: danh sách nào cũng có phần tử thứ N+1 (`?`, `!`,
+ *   `：`, `？`, dấu chấm cuối câu…), và cái thiếu tiếp theo sẽ lại hỏng **im lặng** đúng kiểu này.
+ *   Hậu tố nay phát biểu điều DUY NHẤT thật sự cần: ***token đường dẫn đã KẾT THÚC*** — ký tự kế
+ *   tiếp không phải một ký tự **nối tiếp được** của đường dẫn (`[\w@~$/\\-]`). Mọi dấu câu, đã biết
+ *   hay chưa biết, đều tự động là dấu kết thúc.
+ * ⚠ `.` cố ý KHÔNG nằm trong bộ "nối tiếp": nhờ đó `src/a.ts.` (chấm cuối câu) nhận được, còn
+ *   `client/src/b.tsx` **vẫn** ra `b.tsx` chứ không cụt thành `b.ts` — vì `x` là `\w`, tức là một ký
+ *   tự nối tiếp, nên phép khớp cụt bị bác và bộ máy lùi về đuôi dài. Đo trên dàn 28 câu: bản mới
+ *   khác bản cũ ĐÚNG ở các câu có `: ： ? .` sau đường dẫn, và **không câu nào khác** đổi kết quả.
  */
 const REPO_PATH_REGEX =
-  /(?:^|[\s"'`:：(\[])((?:[\w.@~$-]+[/\\])*[\w.@~$-]+\.(?:tsx?|jsx?|mjs|cjs|mts|cts|json|sql|md|css|scss|html?|ya?ml|toml|txt|sh|png|jpe?g|jsonl|log|pem|key|env|cs|csproj|sln))(?=$|[\s"'`,;)\]。，、])/i;
+  /(?:^|[\s"'`:：(\[])((?:[\w.@~$-]+[/\\])*[\w.@~$-]+\.(?:tsx?|jsx?|mjs|cjs|mts|cts|json|sql|md|css|scss|html?|ya?ml|toml|txt|sh|png|jpe?g|jsonl|log|pem|key|env|cs|csproj|sln))(?![\w@~$/\\-])/i;
 
 /** Thư mục trong repo: một token có `/` mà KHÔNG có đuôi tệp (vd `server/services/aiLocalTools`). */
 const REPO_DIR_REGEX = /(?:^|[\s"'`:：(\[])((?:[\w.@~$-]+\/){1,}[\w.@~$-]*)(?=$|[\s"'`,;)\]。，、])/;
