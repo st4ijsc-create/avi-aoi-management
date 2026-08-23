@@ -4123,6 +4123,112 @@ SUITES=(
   "tests/St4i.EngineApi.Tests:$EXPECT_ENGINEAPI"
 )
 
+# ══ WHAT THIS GATE DOES NOT MEASURE, SAID WHERE THE VERDICT IS READ (task BO-1, 2026-08-24) ═══════
+#
+# THE LAW BEING APPLIED, and it is applied here to THIS SCRIPT rather than to something this script
+# inspects: a CHECK owes three things — (1) it must be able to go red, (2) its false-positive rate must
+# be low enough that a human still reads it, and (3) IT MUST DECLARE WHAT IT DOES NOT MEASURE, AT THE
+# PLACE THE RESULT APPEARS. This file has been sound on (1) and (2) for a long time and has been in
+# open breach of (3) about one whole directory.
+#
+# THE BREACH, MEASURED RATHER THAN ASSERTED. The five entries above are five .NET test projects, all
+# under tests/. NONE of them is under web/. This script starts no browser, runs no Playwright, and —
+# as it already says TWICE in its own comments, at the EXPECT_ENGINEAPI block and beside AS-1's row —
+# "compiles no TypeScript". So a PASS below has always been silent about web/, and silence read next
+# to the word PASS is not neutral: it reads as covered.
+#
+# 🔴 WHY THIS STOPPED BEING TOLERABLE ON 2026-08-24. BN-1 shipped a PRODUCT fix into
+# web/src/components/BoardCanvas.tsx (item 57 leg 3 — the fiducial that vanished with no marker, no
+# count and no aria text), plus both i18n dictionaries. That fix went past this gate and this gate
+# said PASS. BN-1's own commit message says the `npm run build` it ran by hand "is the only witness
+# leg 3 has" — which is true, and which is exactly the sentence that should not have to live in a
+# commit message to be known.
+#
+# 🔴 AND THE FACT ITSELF IS NOT NEW — SAYING OTHERWISE WOULD BE THIS TASK CLAIMING A DISCOVERY IT DID
+# NOT MAKE. It is written, today, in at least four places: twice in this script's comments, in item
+# 53's ruling cell, and in item 57 leg 3's body. What was missing was never the knowledge. It was
+# that every one of those four places is a COMMENT OR A DOCUMENT NOBODY PRINTS, and this gate's own
+# §8.1(f) block forty lines below says the rule in its own voice: "the domain declaration goes WITH
+# the result, not in a comment nobody prints." That block was written about repo-scan.sh's cwd. The
+# same sentence indicts this script's silence about web/, and item 51 sub-item 6 is the precedent for
+# what happens when a tool's undeclared domain is left to a comment: it survives.
+#
+# WHAT THIS BLOCK IS AND IS NOT. It is a DECLARATION, not a check — it never fails the gate, because
+# the gate not running web/ is not a defect of the run, it is a property of the gate. Closing it costs
+# a second build ecosystem (Node/npm, a browser download) inside a gate that today needs only .NET;
+# that is a PRICE, and pricing it is the owner's, which is why the two banks are written up as owner
+# item 60 rather than decided here. What does not wait for anybody is saying it out loud.
+#
+# 🔴 EVERY NUMBER BELOW IS DERIVED AT RUN TIME, NOT PASTED. The count of suites under web/ is read off
+# the SUITES array itself, so the day someone adds a web suite this sentence corrects itself instead
+# of becoming the next retraction. The corpus figures are counted off the disk on each run. The
+# test()-site figure is declared as a FLOOR and not as a total, because call sites are not test cases
+# — a set this script cannot count exactly is still not an empty set, and rounding it to zero is the
+# error this whole declaration exists to stop.
+#
+# CONTROL PAIR, and it is runnable rather than described: `verify-suites.sh --web-domain-self-test`
+# calls the same function twice, once with the real SUITES (expect: 0 covered, the declaration reads
+# "does not") and once with a synthetic list that has a web/ entry appended (expect: 1 covered, the
+# declaration reads "partially"). A declaration whose text is the same in both worlds is a constant
+# with a measurement's manners, and this proves this one is not.
+web_domain_declaration() {
+  local suite_count=$# entry covered=0 root="$GATE_TREE_ROOT/web"
+  local specs=0 cases=0 sources=0
+  for entry in "$@"; do
+    case "${entry%%:*}" in web|web/*) covered=$((covered + 1)) ;; esac
+  done
+  if [[ ! -d "$root" ]]; then
+    echo "  DOMAIN OF THIS VERDICT: web/ is NOT PRESENT in this tree, so there is nothing unmeasured"
+    echo "     to declare here. If you expected it to be present, you are measuring the wrong tree —"
+    echo "     a previous task recorded 'web/ is not on disk' about a directory that was, and that one"
+    echo "     sentence kept a whole directory unopened across three briefs."
+    return 0
+  fi
+  specs=$(find "$root/tests" -maxdepth 1 -type f -name '*.spec.ts' 2>/dev/null | grep -c . || true)
+  cases=$(grep -h '^[[:space:]]*test(' "$root"/tests/*.spec.ts 2>/dev/null | grep -c . || true)
+  sources=$(find "$root/src" -type f \( -name '*.ts' -o -name '*.tsx' \) 2>/dev/null | grep -c . || true)
+  local corpus_label
+  if [[ $covered -eq 0 ]]; then
+    echo "  🔴 WHAT THIS VERDICT DOES NOT MEASURE — web/. ${covered} of ${suite_count} suites above run"
+    echo "     anything under it. This gate compiles no TypeScript and starts no browser."
+    corpus_label="PRESENT AND UNMEASURED"
+  else
+    echo "  🔴 WHAT THIS VERDICT MEASURES ONLY PARTIALLY — web/. ${covered} of ${suite_count} suites above"
+    echo "     run under it; read the per-suite lines for which, and do not read this as full coverage."
+    # 🔴 The word "UNMEASURED" is withdrawn on this branch rather than reused. With a suite under web/
+    # this function can say what EXISTS there but not what that suite reaches, and a label that keeps
+    # claiming "unmeasured" over a partially measured corpus is the same over-claim in the mirror.
+    corpus_label="PRESENT, COVERAGE OF IT NOT DETERMINED HERE"
+  fi
+  echo "     ${corpus_label}, counted off this tree on this run: ${sources} TypeScript sources"
+  echo "     under web/src, ${specs} Playwright spec files under web/tests carrying AT LEAST ${cases}"
+  echo "     test() call sites (a floor — call sites are not cases), and web/package.json's own"
+  echo "     build / lint / test:e2e scripts, none of which this script invokes."
+  echo "     CONSEQUENCE, stated plainly because a PASS beside a silence reads as coverage: a product"
+  echo "     fix that lands entirely in web/ passes this gate WITHOUT A WITNESS. It has happened —"
+  echo "     item 57 leg 3, web/src/components/BoardCanvas.tsx, 2026-08-24."
+  echo "     THE ONLY WITNESS AVAILABLE TODAY is run by hand, from ${root}:"
+  echo "         npm run build   (tsc -b && vite build)      npm run lint   (oxlint)"
+  echo "         npm run test:e2e   (playwright test)"
+  echo "     WIRING THAT INTO THIS GATE COSTS A SECOND BUILD ECOSYSTEM (Node/npm + a browser) in a"
+  echo "     gate that needs only .NET today. That price is the owner's to accept or refuse: see"
+  echo "     docs/owner-decisions.md item 60, which carries both banks. This line does not wait on it."
+}
+
+# The control pair for the declaration above. Placed here — before the exclusive-run lock is taken —
+# on purpose: it measures nothing machine-wide, so it must not be able to lock a real gate run out.
+if [[ "${1:-}" == "--web-domain-self-test" ]]; then
+  echo "CONTROL PAIR for web_domain_declaration (task BO-1)."
+  echo
+  echo "BANK A — the real SUITES array, ${#SUITES[@]} entries. Expect: 0 covered, wording 'DOES NOT MEASURE'."
+  web_domain_declaration "${SUITES[@]}"
+  echo
+  echo "BANK B — the same array with one synthetic web/ entry appended. Expect: 1 covered, wording"
+  echo "'MEASURES ONLY PARTIALLY'. If A and B print the same words, this declaration is a constant."
+  web_domain_declaration "${SUITES[@]}" "web/tests:0"
+  exit 0
+fi
+
 LOGDIR="${TMPDIR:-/tmp}/st4i-verify-$$"
 
 # ══ ONE MEASURING RUN AT A TIME — AND A RUN IS NOT ITS CORPSE (task R-1, §8.1(a)/(h6)) ══════════
@@ -8585,6 +8691,9 @@ if [[ -f "$SIM_BEFORE" ]]; then
 fi
 
 echo "[3/3] Verdict:"
+# 🔴 Law (3) applied to this script: printed on BOTH branches, because the verdict appears on both and
+# a domain declaration that only accompanies good news is an advertisement. See the block beside SUITES.
+web_domain_declaration "${SUITES[@]}"
 if [[ $UPDATE -eq 1 ]]; then
   echo "Observed totals (paste into the EXPECT_* constants above, and justify each change):"
   for entry in "${SUITES[@]}"; do
@@ -8595,7 +8704,9 @@ fi
 
 if [[ ${#FAILURES[@]} -eq 0 ]]; then
   grand=$((EXPECT_ABSTRACTIONS + EXPECT_CONFORMANCE + EXPECT_EDGECORE + EXPECT_EDGESERVICE + EXPECT_ENGINEAPI))
-  echo "PASS: 0 build errors, ${#SUITES[@]}/${#SUITES[@]} suites at their exact expected totals (${grand}), 0 failed, 0 skipped, none aborted."
+  # 🔴 The one-line summary carries the domain too. A reader who greps only for PASS gets exactly one
+  # line, and before today that line said five suites were green and nothing about the sixth directory.
+  echo "PASS: 0 build errors, ${#SUITES[@]}/${#SUITES[@]} suites at their exact expected totals (${grand}), 0 failed, 0 skipped, none aborted. NOT MEASURED: web/ — see the domain declaration above."
   exit 0
 fi
 echo "FAIL:"
