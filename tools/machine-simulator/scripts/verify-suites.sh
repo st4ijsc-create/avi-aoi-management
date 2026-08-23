@@ -2493,8 +2493,29 @@ EXPECT_CONFORMANCE=24
 # task and UNCHANGED at 219, with the fourteen-row ledger unmoved unit for unit. Nothing was suppressed —
 # no .editorconfig change, no <NoWarn>, no #pragma, no SuppressMessage. EXPECT_BUILD_NODES stays 0.
 # BP-1 touches NO web/ file, so the `npm run build` leg BN-1 had to run does not arise here.
+#
+# ── BQ-1, 2026-08-24 — EXPECT_EDGECORE 1274 -> 1275 (+1). ONE TEST, NAMED ─────────────────────────────
+# +1  tests/St4i.EdgeCore.Tests/InstallerHarvestExclusionTests.cs —
+#     EveryFilePackageWxsAuthorsExplicitly_IsDroppedFromTheHarvest, item 67. It states item 67's defect
+#     as an assertion DERIVED from the tree (Package.wxs's own <File> elements) rather than as a
+#     paragraph, and it carries a non-vacuity guard first, so a fixture that lost the file fails loudly
+#     instead of passing by measuring nothing.
+#
+# 🔴 THE NUMBER WAS MEASURED BEFORE IT WAS WRITTEN, and it was measured by THIS GATE going RED on it:
+# the run at 9c3e0704 reported "St4i.EdgeCore.Tests: total 1275, expected 1274" and refused. 1275 is
+# read off that refusal, not predicted from "I added one [Fact]" — which would have been an arithmetic
+# claim about a discovery process this repo has twice found to be wrong about itself.
+# The other four suites are UNCHANGED and were re-measured in the same run: 161, 24, 52, 1443.
+# Grand total 2954 -> 2955; `grand` is COMPUTED from the five constants, so there is no second literal
+# to move and no place for the two to disagree.
+#
+# NOT MOVED by this task: EXPECT_WARNINGS (219, re-measured in the same run, ledger 185/34 unmoved),
+# EXPECT_BUILD_NODES (0), the three settle constants, the process matcher, the exclusive lock.
+# BQ-1 DOES touch web/ (item 68), so `npm run build` was run by hand and is green — and the web/ domain
+# declaration below is DERIVED, so it corrected itself from 28 specs/142 sites to 29/144 on this run
+# without anybody editing a number. That is the shape every constant in this block is trying to be.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1274
+EXPECT_EDGECORE=1275
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
