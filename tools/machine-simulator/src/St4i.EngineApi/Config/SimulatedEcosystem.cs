@@ -57,6 +57,20 @@ public sealed class SimulatedEcosystem : IConfigSyncBackend
     /// <summary>Directory holding <c>ecosystem-products.json</c>/<c>ecosystem-recipes.json</c>.</summary>
     public string RootDirectory { get; }
 
+    /// <summary>🔴 <b>Task BP-1, 2026-08-24 — docs/owner-decisions.md item 64. Non-null when the last
+    /// <see cref="Load"/> seeded exactly ONE of the two files and read the other off disk</b>, which is the
+    /// state the item 45 fix opened and nothing reported. Null on a fresh install (both seeded) and on an
+    /// ordinary restart (both read) — the two states that must stay silent, or the warning becomes one
+    /// nobody reads.
+    ///
+    /// <para>🔴 <b>What it does NOT measure, said where the result is read.</b> (1) It is a statement about
+    /// PROVENANCE, not about content: it never claims the surviving half is wrong, and a half sitting at
+    /// exactly the version the seed would have produced is deliberately not flagged. Asserting the seed's
+    /// +2/+1/+1 deltas would freeze a constant no artifact in this tree publishes as a contract, and
+    /// publishing it is the owner's act. (2) It is observable and is wired to no endpoint, log or UI in the
+    /// task that added it — a caller that wants an operator to see this has to read it.</para></summary>
+    public string? SeedIntegrityWarning { get; private set; }
+
     /// <summary>Backend name shown in config-sync surfaces.</summary>
     public string Name => "Demo";
 
@@ -579,8 +593,43 @@ public sealed class SimulatedEcosystem : IConfigSyncBackend
         // that the freshly-seeded ecosystem-recipes.json does not contain, and NOTHING in this class checks
         // cross-file integrity. That is the trade the ruling accepted: a new inconsistent state that an
         // operator can see and repair, in place of a silent deletion they cannot.
+        //
+        // 🔴 THE PARAGRAPH ABOVE IS KEPT VERBATIM AND ITS MIDDLE CLAUSE IS RETRACTED — 2026-08-24 (BP-1,
+        // docs/owner-decisions.md item 64). "A surviving products.json can name a recipe the freshly-seeded
+        // recipes file does not contain" NAMES A STATE THAT CANNOT BE CONSTRUCTED. There is no field on
+        // either side to carry the reference: ProductModel holds Code/Name/LifecycleStatus/
+        // ReferenceImageUrl/ImageWidth/ImageHeight/ImageHash/CoordinateMode/PointsConfigVersion/Fiducials/
+        // Variants/Points and ProductVariant holds Code/Name/IsBase/PointsConfigVersion/ReferenceImageUrl/
+        // CoordinateMode/Overrides — no recipe field on either; Recipe holds Code/Name/MachineType/Version/
+        // Payload/Checksum/Status — no product field. _products and _recipes are two independent key spaces,
+        // and CheckRecipeAsync resolves by machine code or MachineType, never through a product. Measured by
+        // SimulatedEcosystemSeedingTests.Item64_NeitherHalf_CanReferenceTheOther rather than restated here,
+        // so a field added later reddens instead of making this paragraph quietly wrong a second time.
+        //
+        // 🔴 THE STATE THIS ACTUALLY OPENS IS A HALF-APPLIED DIVERGENCE PAIR. This store exists to run
+        // DELIBERATELY AHEAD of ProductConfigStore's local seed — BuildSeedProducts adds +2 versions to
+        // MODEL-A and +1 to MODEL-B, BuildSeedRecipes adds +1 to SCREWDRIVE-M4 — so that the first check/
+        // diff/pull a fresh install performs is non-trivial. After the item 45 fix one half can be an
+        // operator's file at any version while the other is freshly seeded, so the divergence the whole
+        // config-sync demo rests on can be applied on one side only. Save() then writes BOTH halves on the
+        // first mutation and freezes it.
+        //
+        // 🔴 WHAT THE CHECK BELOW MEASURES, AND WHAT IT REFUSES TO: it reports PROVENANCE — "exactly one of
+        // these two files was seeded by this Load" — and NOT version arithmetic. Item 64 §64.3 is right
+        // that asserting the +2/+1/+1 deltas would freeze a constant no artifact in this tree publishes as
+        // a contract, and publishing it is the owner's act, not this one's. So a surviving half that
+        // happens to sit at exactly the seeded version is NOT flagged, correctly, and a green here is not a
+        // claim that the pair is consistent — only that both halves came from the same source.
         if (!productsExisted) SaveProducts();
         if (!recipesExisted) SaveRecipes();
+
+        SeedIntegrityWarning = productsExisted == recipesExisted
+            ? null
+            : $"{(productsExisted ? RecipesFileName : ProductsFileName)} was missing and has been re-seeded " +
+              $"while {(productsExisted ? ProductsFileName : RecipesFileName)} was read from disk, so this " +
+              "ecosystem's deliberate divergence from the machine's own seed may be applied on one side " +
+              "only. The next change writes both files and makes that permanent. See " +
+              "docs/owner-decisions.md item 64.";
     }
 
     /// <summary>Writes BOTH files. Every mutation path calls this, because a mutation has touched the

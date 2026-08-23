@@ -375,7 +375,29 @@ public static class ModbusMultidropRegistration
     /// serves a DIFFERENT machine — the m5 collision, asked against the one pre-pass snapshot so it cannot see
     /// a half-mutated registry. A same-machine incumbent is an ORDINARY UPDATE of this device's own
     /// registration (the map's registers changed, say) and must be allowed through; an unbound incumbent
-    /// (<c>MachineCode is null</c>) is one nothing can route a write to, so replacing it strands nothing.</summary>
+    /// (<c>MachineCode is null</c>) is one nothing can route a write to, so replacing it strands nothing.
+    ///
+    /// <para>🔴 <b>2026-08-24 (BP-1, docs/owner-decisions.md item 63) — THIS CHECK CANNOT BE MOVED INTO
+    /// <c>ConnectorRegistry.Register</c>, AND THAT IS A MEASUREMENT RATHER THAN A PREFERENCE.</b> Item 63
+    /// read this method as a LOCAL mitigation for a GLOBAL property — a check-then-act outside the
+    /// registry's gate that every new caller has to remember to rebuild — and proposed giving the rule to
+    /// the registry. Built and priced against the suite: the registry adopting this exact three-way answer
+    /// reddens <c>ConnectorEndpointsEnvSeedingSideEffectsTests.
+    /// PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s</c>, because
+    /// task B-6 deliberately made an env-var-SEEDED registration overwritable by an operator's <c>POST</c>
+    /// naming a DIFFERENT machine under the same id. <b>This method refuses that shape and
+    /// <c>ConnectorEndpoints</c> requires it</b>, and what separates the two is PROVENANCE — a fact the
+    /// registry does not hold and should not, since it stores factories and opaque configuration strings.
+    /// So the rule is a per-caller POLICY, not a global invariant with one local implementation, and it
+    /// stays here.</para>
+    ///
+    /// <para>🔴 <b>What that leaves genuinely open, named rather than closed by assertion:</b> the window
+    /// between the snapshot at the top of <c>RegisterAll</c> and each <c>Register</c> call in its loop is
+    /// real, and <c>RtuBusConfiguration.TryRegisterAll</c> — the other fan-out over derived device ids —
+    /// has no equivalent of this check at all. Neither is reachable today (<c>RegisterAll</c> runs once per
+    /// process from the <c>ConnectorRegistry</c> DI singleton lambda), and both are the two-pass shape the
+    /// <see cref="SweepGhosts"/> remarks already assign to whoever builds run-time
+    /// reconfiguration.</para></summary>
     private static bool OwnedBySomethingElse(
         IReadOnlyList<ConnectorRegistry.ConnectorBinding> before, ModbusBusDevice device, out string incumbentMachine)
     {

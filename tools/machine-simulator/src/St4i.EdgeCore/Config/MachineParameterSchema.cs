@@ -36,7 +36,18 @@ public static class MachineParameterSchema
 {
     /// <summary>SCREWDRIVE machines. The literal <c>screw_program</c> is the server's own
     /// <c>recipeSchemas.ts</c> kind name, matched character for character so the same parameter carries the
-    /// same key on both sides of the wire. Five parameters, product scope supported.</summary>
+    /// same key on both sides of the wire. Five parameters, product scope supported.
+    ///
+    /// <para>🔴 <b>Item 71, 2026-08-24 (BP-1) — the SIXTH key both the design doc and the server declare is
+    /// deliberately absent here, and until now nobody had written that down.</b> <c>sequence[]</c> is an
+    /// array of <c>{step, torque, angle}</c> objects in <c>recipeSchemas.ts</c>' own
+    /// <c>screwProgramShape</c>, and every parameter in THIS schema is one number with a hard min/max band
+    /// — the same shape argument already recorded at <see cref="IotSettings"/> for <c>thresholds{}</c>, and
+    /// the same one that applies to <see cref="AoiInspection"/>'s <c>retestPolicy</c>. Three omissions, one
+    /// reason, and before this task exactly one of the three was stated. The design doc row is RIGHT to
+    /// list it: it mirrors the server, and it is this schema that is narrower than both. Whether to widen
+    /// the schema to non-scalar parameters changes a published REST vocabulary on a kind a simulator
+    /// actually reads, and is not a documentation decision.</para></summary>
     public const string ScrewProgram = "screw_program";
 
     /// <summary>DISPENSING machines. <c>dispense_program</c>, again the server's own spelling. Four
@@ -80,14 +91,33 @@ public static class MachineParameterSchema
     /// alone, which is what makes a product-scoped write against an IoT machine throw. Two parameters;
     /// design doc §3 also lists a <c>thresholds{}</c> map for this kind and it is deliberately absent here,
     /// because every parameter in this schema is one number with a hard band and a free-form map is not
-    /// that shape.</summary>
+    /// that shape.
+    ///
+    /// <para>🔴 <b>Item 71, 2026-08-24 (BP-1) — narrowed: the sentence above credits the DESIGN DOC with
+    /// listing <c>thresholds{}</c>, and the doc is not where it comes from.</b> <c>recipeSchemas.ts</c>'
+    /// <c>iotSettingsShape</c> declares <c>thresholds: z.record(z.string(), z.number()).optional()</c>, so
+    /// the omission is a divergence from the SERVER contract this schema mirrors, not merely from an
+    /// internal design note — a materially larger statement than the one that stood here. Same reason,
+    /// wider consequence. See <see cref="ScrewProgram"/> and <see cref="AoiInspection"/> for the two
+    /// siblings that share it.</para></summary>
     public const string IotSettings = "iot_settings";
 
     /// <summary>AOI and AVI machines, and the only one of the five with NO counterpart on the server —
     /// <c>recipeSchemas.ts</c> has no typed schema for inspection machine types at all, so nothing on the
     /// far side will recognize this kind or its six parameter keys. It exists because AOI/AVI is the
     /// family most affected by ambient conditions, which is the case the whole feature was built
-    /// for.</summary>
+    /// for.
+    ///
+    /// <para>🔴 <b>Item 71, 2026-08-24 (BP-1) — the SEVENTH key the design doc lists is deliberately absent
+    /// here, and until now nobody had written that down.</b> <c>retestPolicy</c> is a policy, not a
+    /// magnitude, and every parameter in this schema is one number with a hard min/max band — the same
+    /// reason recorded at <see cref="IotSettings"/> for <c>thresholds{}</c> and at
+    /// <see cref="ScrewProgram"/> for <c>sequence[]</c>. 🔴 <b>And this row differs from those two in a way
+    /// worth stating: it has NO arbiter.</b> <c>RECIPE_KINDS</c> holds four kinds and this is not one of
+    /// them, so there is no server declaration to be right or wrong against — the design doc invented the
+    /// vocabulary and this schema implemented six of the seven it invented. <c>retestPolicy</c> appears
+    /// nowhere in <c>src/</c>, and removing it from the doc would decide a design question by
+    /// deletion.</para></summary>
     public const string AoiInspection = "aoi_inspection";
 
     /// <summary>

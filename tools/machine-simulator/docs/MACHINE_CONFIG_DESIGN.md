@@ -61,8 +61,8 @@ Bám vựng từ server đã định nghĩa (`recipeSchemas.ts`) để sau này 
 | Loại máy | `configKind` | Tham số |
 |---|---|---|
 | SCREWDRIVE | `screw_program` | `torqueTarget` (Nm), `torqueTolerance` (Nm), `angleTarget` (°), `speedRpm`, `clampTimeMs`, `sequence[]` |
-| DISPENSING | `dispense_program` | lưu lượng, áp suất, thời gian nhả, tốc độ di chuyển |
-| WELDER | `weld_profile` | dòng, thời gian, lực ép, tiền/hậu nhiệt |
+| DISPENSING | `dispense_program` | `volumeTarget` (mL), `pressure` (kPa), `speed` (mm/s), `temperature` (°C) |
+| WELDER | `weld_profile` | `current` (A), `time` (ms), `tempMax` (°C), `voltage` (V) |
 | IOT_SENSOR / IOT_GATEWAY | `iot_settings` | `sampleRateHz`, `reportIntervalSec`, `thresholds{}` |
 | **AOI / AVI (mới)** | `aoi_inspection` | `exposureUs`, `gain`, `lightIntensity` (theo kênh sáng), `conveyorSpeed`, `fiducialTolerance`, `matchThreshold`, `retestPolicy` |
 
@@ -84,6 +84,33 @@ Mỗi tham số khai báo: khóa, nhãn vi/en, đơn vị, kiểu, **min/max (ch
 > **Và hàng WELDER ở trên nêu *"lực ép, tiền/hậu nhiệt"* trong khi mã khai `tempMax`/`voltage`** — chỗ lệch
 > này **ghi lại, không sửa**: sửa bảng là sửa thiết kế, và mã hay bảng cái nào đúng là một câu hỏi chưa ai
 > phán.
+
+> 🔴 **HAI HÀNG ĐÃ SỬA, BA HÀNG CỐ Ý KHÔNG — 2026-08-24 (BP-1, mục 71). Hướng sửa SUY RIÊNG cho từng hàng
+> chứ không mặc định "doc sai".** Nguồn phân xử là chính cái §3 ở trên viện dẫn: `server/services/recipes/
+> recipeSchemas.ts`. Đo từng hàng:
+>
+> - **DISPENSING và WELDER — DOC SAI, đã sửa.** `recipeSchemas.ts` khai `volumeTarget/pressure/speed/
+>   temperature` và `current/time/tempMax/voltage`, **trùng từng ký tự** với `MachineParameterSchema`. Hai
+>   hàng này là hai hàng duy nhất trong bảng viết bằng **văn xuôi tiếng Việt** thay vì khoá, nên chúng
+>   **bất đồng với đúng file §3 nêu là nguồn của mình**, và không dụng cụ nào đọc được chúng. *Nguyên văn bị
+>   thay:* DISPENSING — *"lưu lượng, áp suất, thời gian nhả, tốc độ di chuyển"*; WELDER — *"dòng, thời gian,
+>   lực ép, tiền/hậu nhiệt"*. 🔴 Việc này **không** trả lời câu *"cái nào ĐÚNG về vật lý"* — không bộ mô
+>   phỏng nào đọc hai khoá ấy (`IsConsumedBySimulator` trả `false` cho cả hai), nên **không phép đo vật lý
+>   nào phân xử được**, và câu ấy **vẫn thuộc chủ sở hữu**. Cái đã sửa là bảng **mô tả sai thứ sản phẩm
+>   đang phục vụ**.
+> - **SCREWDRIVE `sequence[]`, IOT `thresholds{}`, AOI `retestPolicy` — DOC KHÔNG SAI, ba hàng GIỮ NGUYÊN.**
+>   `recipeSchemas.ts` khai **cả** `sequence` **lẫn** `thresholds`; `aoi_inspection` thì server **không có**
+>   nên hàng ấy không có trọng tài nào cả. Cả ba là **cùng một lý do**: `MachineParameterSchema` chỉ nhận
+>   **một con số có dải cứng**, mà mảng/map/chính sách không phải hình dạng ấy. Trước hôm nay **một trong ba**
+>   được ghi lý do (`thresholds{}`); nay cả ba được ghi tại chính hằng số của mình. **Xoá chúng khỏi bảng là
+>   rẻ và SAI** — nó đẩy doc ra xa hợp đồng server mà doc tồn tại để soi.
+> - 🔴 **Cái thật sự hỏng là bảng này CHƯA TỪNG CÓ PHÉP KIỂM NÀO.** `UnconsumedConfigKindsTests` ghim
+>   `IsConsumedBySimulator`; **không gì** ghim bảng §3 với `MachineParameterSchema`. Nay có:
+>   `MachineConfigDesignDocTableTests`, đối chiếu **hai chiều**, với danh sách miễn trừ **khai tường minh**.
+>   Nó **không** đọc `recipeSchemas.ts` — file ấy nằm ngoài thư mục sản phẩm và **không có trên đĩa** trong
+>   một bản checkout thưa của repo này, nên mọi lần quét chạy từ `tools/machine-simulator` xưa nay trả
+>   *"không thấy"* thay vì *"không đo"*. Hướng của từng hàng ở trên được phân xử **bằng tay**, một lần, và
+>   ghi ở đây.
 
 ---
 

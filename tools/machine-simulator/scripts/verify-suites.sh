@@ -2461,7 +2461,40 @@ EXPECT_CONFORMANCE=24
 # gate does not do) was RUN AND PASSED; that build is the only witness leg 3 has, and saying so is the
 # point rather than a hedge.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1267
+# 🔴 BP-1, 2026-08-24 (docs/owner-decisions.md items 63/64/66/71, base d9d3aafc) raises EXPECT_EDGECORE
+# 1267 -> 1274 (+7) and EXPECT_ENGINEAPI 1427 -> 1443 (+16). Grand total 2931 -> 2954 (+23). LISTED per
+# file, then counted; nothing is rewritten, split or deleted, and no existing test's assertions changed.
+#
+#   +7  tests/St4i.EdgeCore.Tests/MachineConfigDesignDocTableTests.cs (NEW FILE) — item 71. Five theory
+#       rows (one per configKind in docs/MACHINE_CONFIG_DESIGN.md §3's table) plus two facts: the
+#       non-vacuity floor for the declared non-scalar omission list, and the kind-set equality between
+#       the table and MachineParameterSchema. RED before this task for the DISPENSING and WELDER rows,
+#       which were written in Vietnamese prose rather than keys and therefore declared nothing any
+#       instrument could compare.
+#   +9  tests/St4i.EngineApi.Tests/ConfigSyncEngineTests.cs — item 66. Seven theory rows (one per
+#       PointShape member, against CONFIG_SYNC_SERVER_CONTRACT.md's published
+#       circle|rect|polygon|line|ring|mask|array), the member-list floor, and ToWireDto_spells_no_
+#       contract_token_by_hand. Only the last is red-able for this edit, and it has to be a SOURCE
+#       assertion precisely because the edit moves zero bytes on the wire; the seven rows are the
+#       byte-identity precondition and are green on BOTH sides by design.
+#   +4  tests/St4i.EngineApi.Tests/Config/SimulatedEcosystemSeedingTests.cs — item 64. Two witnesses (the
+#       half-seeded state read from each side, because a one-directional witness is half a witness), the
+#       false-positive floor at both ends, and the reflection census that measures the type-model fact
+#       item 45's comment got wrong.
+#   +3  tests/St4i.EngineApi.Tests/Fleet/ConnectorRegistryTests.cs — item 63, and these are a
+#       MEASUREMENT rather than a fix. All three are GREEN on unchanged behaviour and are labelled that
+#       way in their own summaries: item 63's proposed fix was built in two shapes and BOTH were priced
+#       red against this suite (a throw 500s POST /v1/connectors' idempotent-update path; the narrower
+#       refusal reddens ConnectorEndpointsEnvSeedingSideEffectsTests.PostConnector_ForADifferentMachine_
+#       SucceedsOverwritingTheSeededRow_NoLongerFalsely409s, which task B-6 built deliberately). No
+#       production behaviour changed for item 63 and the item stays in Part I.
+#
+# EXPECT_WARNINGS: RE-MEASURED on a full `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild` after this
+# task and UNCHANGED at 219, with the fourteen-row ledger unmoved unit for unit. Nothing was suppressed —
+# no .editorconfig change, no <NoWarn>, no #pragma, no SuppressMessage. EXPECT_BUILD_NODES stays 0.
+# BP-1 touches NO web/ file, so the `npm run build` leg BN-1 had to run does not arise here.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1274
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4113,7 +4146,9 @@ EXPECT_EDGESERVICE=52
 # EXPECT_EDGECORE above; it is written once rather than twice because it is one task and one ruling.
 # 🔴 BN-1, 2026-08-24 — 1415 -> 1427 (+12). The whole justification, per file and per test, is beside
 # EXPECT_EDGECORE above; it is written once rather than twice because it is one task and one ruling.
-EXPECT_ENGINEAPI=1427
+# 🔴 BP-1, 2026-08-24 — 1427 -> 1443 (+16). The whole justification, per file and per test, is beside
+# EXPECT_EDGECORE above; it is written once rather than twice because it is one task and four items.
+EXPECT_ENGINEAPI=1443
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -5151,7 +5186,32 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # corpus is C# only (boundary (e)). This task's web/ edits — BoardCanvas.tsx's placeFiducial doc block
 # and two i18n comments — carry absolute claims of their own and NO instrument in this repository reads
 # them. That gap predates BN-1 and is recorded here rather than closed.
-EXPECT_NEW_DOC_ABSOLUTES=469
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 EXPECT_NEW_DOC_ABSOLUTES: 469 -> 497 (+28), BP-1, 2026-08-24 (items 63/64/66/71). MEASURED AFTER the
+# prose was written, and measured TWICE so the two framings reconcile rather than one being carried:
+#     scripts/scan-doc-negations.sh --since cfcfae42   ->  497   (the gated baseline)
+#     scripts/scan-doc-negations.sh --since d9d3aafc   ->   31   (this task against its own base)
+# 🔴 THE TWO NUMBERS DO NOT ADD UP AND THAT IS THE POINT: 469 + 31 = 500, not 497. THREE sentences that
+# the baseline corpus already counted stopped existing at their old (path, sentence) identity, because
+# this task RETRACTED them in place and the scanner's identity is the sentence text. 469 - 3 + 31 = 497.
+# The delta is ACCOUNTED FOR rather than absorbed, and the arithmetic is written out because a bare +28
+# would have hidden that three claims were withdrawn.
+#
+# WHERE THE 31 COME FROM: eleven are in src/ and twenty in tests/. The src/ eleven are the item 71
+# omission records at MachineParameterSchema (three), the item 66 retraction at MeasurementPoint and the
+# WireToken remarks at ConfigSyncEngine (three), the item 63 refutation records at
+# ModbusMultidropRegistration and ConnectorRegistry (five), and the item 64 SeedIntegrityWarning remarks
+# at SimulatedEcosystem (two). The tests/ twenty are overwhelmingly NOT-MEASURED lists — prose whose
+# entire job is to say what is NOT claimed, and which nevertheless counts here, exactly as BN-1 recorded.
+#
+# 🔴 Outside this number, said because a count that looks whole invites being read as whole: the corpus
+# is C# only (boundary (e)), so this task's edits to docs/MACHINE_CONFIG_DESIGN.md — including the two
+# rewritten table rows and the paragraph deriving each row's direction — carry absolute claims that NO
+# instrument in this repository reads. That gap predates BP-1 and is recorded, not closed.
+#
+# The baseline cfcfae42 is NOT moved.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_NEW_DOC_ABSOLUTES=497
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

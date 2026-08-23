@@ -153,6 +153,31 @@ public sealed class ConnectorRegistry
     /// a repair of a live wiring — a third-party host, or a future source added to either root, is what it
     /// exists for.</para>
     ///
+    /// <para>🔴 <b>CLAUSE (1)'S SECOND SENTENCE IS RETRACTED, 2026-08-24 (BP-1, docs/owner-decisions.md item
+    /// 63) — kept verbatim above because it is a claim made inside this method's own "what I do not measure"
+    /// block, the one place that must not overstate its own coverage.</b>
+    /// <c>ConnectorsConfig.ResolveEntries</c>' first-entry-per-key rule guards the <c>connectors.json</c>
+    /// PARSE path and nothing else. Five call sites in <c>src/</c> pass an explicit id —
+    /// <c>ConnectorEndpoints</c>' upsert, <c>RtuBusConfiguration.TryRegisterAll</c>,
+    /// <c>ModbusMultidropRegistration.RegisterAll</c>, <c>EdgeConnectors</c> and <c>Program.cs</c>'s
+    /// persisted-row replay — and <c>ResolveEntries</c> is upstream of none of them. So "what guards them"
+    /// named a guard that reaches a path none of the five take. Listed, then counted: four of the five are
+    /// unguarded by it entirely, and the fifth reaches this method only after <c>ResolveEntries</c> has
+    /// already collapsed duplicates, which is a different question from two SEPARATE sources landing on one
+    /// id.</para>
+    ///
+    /// <para>🔴 <b>And the successor sentence is narrower than the obvious one, because the obvious one was
+    /// built and measured false.</b> Item 63 read <c>ModbusMultidropRegistration</c>'s own out-of-lock check
+    /// as evidence that this method should refuse such a replacement globally. It must not: task B-6
+    /// deliberately made an env-var-SEEDED registration overwritable by an operator's <c>POST</c> naming a
+    /// DIFFERENT machine under the same defaulted id, and pins it with
+    /// <c>ConnectorEndpointsEnvSeedingSideEffectsTests.
+    /// PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s</c>, while
+    /// <c>ModbusMultidropRegistration</c> refuses the same shape. Two production callers, opposite answers,
+    /// separated by a fact — PROVENANCE — that this class does not hold. What is true is that a
+    /// same-explicit-id replacement is guarded by whatever the CALLER guards it with, and by nothing here;
+    /// the callers that guard it do so by policy, not by oversight. See the block inside the gate.</para>
+    ///
     /// <para><b>Review finding (fix round 1) — this is the one unguarded third-party entry point.</b>
     /// <paramref name="factory"/>'s <see cref="IConnectorFactory.Kind"/> getter is vendor-implemented code,
     /// read here with no try/catch in the original version of this method: a throwing or blank
@@ -253,6 +278,28 @@ public sealed class ConnectorRegistry
                     "two configuration sources. See docs/owner-decisions.md item 47.");
             }
 
+            // 🔴 ITEM 63 WAS MEASURED HERE ON 2026-08-24 (BP-1) AND ITS FIX WAS REFUSED, WITH A PRICE THAT
+            // THE ITEM DID NOT NAME. The item proposed extending item 47's refusal to the EXPLICIT-id path,
+            // reasoning from ModbusMultidropRegistration having built such a refusal for itself outside this
+            // gate. Both shapes were built and both were priced against the suite:
+            //
+            //   * a THROW on any duplicate explicit id turns every connector EDIT into a 500 —
+            //     ConnectorEndpoints reaches this method with an explicit id on the path its own comment
+            //     calls "the ordinary idempotent-update path";
+            //   * a REFUSAL (return false) narrowed to "the incumbent under this id serves a DIFFERENT
+            //     machine" — exactly ModbusMultidropRegistration.OwnedBySomethingElse's rule — reddens
+            //     ConnectorEndpointsEnvSeedingSideEffectsTests.
+            //     PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s,
+            //     because task B-6 deliberately made an env-var-SEEDED row overwritable by an operator's
+            //     POST naming a different machine under the same defaulted id, and that test exists to keep
+            //     it that way.
+            //
+            // So TWO production callers want OPPOSITE answers to one question, and the fact that separates
+            // them is PROVENANCE (Seeded vs Operator) — which this class does not hold and should not: it
+            // stores factories and opaque configuration strings. ConnectorEndpoints already forks on
+            // provenance before it gets here. The out-of-lock check in ModbusMultidropRegistration is
+            // therefore a LOCAL POLICY rather than a workaround for a missing global rule, and it cannot be
+            // made redundant by anything written at this line. Recorded rather than left to be rediscovered.
             if (claim is not null)
             {
                 foreach (var (existingId, existingEntry) in _entries)
