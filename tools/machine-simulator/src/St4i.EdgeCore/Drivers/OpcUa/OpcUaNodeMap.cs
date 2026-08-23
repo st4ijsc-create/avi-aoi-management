@@ -225,6 +225,22 @@ public sealed record OpcUaNode(string NodeId, string Metric, string? Unit = null
 /// </summary>
 public sealed class OpcUaNodeMap
 {
+    /// <summary>The value <see cref="PollIntervalMs"/> resolves to when the key is absent, or when a
+    /// declared value is refused by <see cref="FromJson"/>'s domain check. Named rather than repeated so
+    /// the property initializer and the parse fallback cannot drift apart. Same figure as
+    /// <c>ModbusRegisterMap.DefaultPollIntervalMs</c>, declared separately because these two maps mirror
+    /// each other rather than share a base.</summary>
+    public const int DefaultPollIntervalMs = 1000;
+
+    /// <summary>Upper guard for <see cref="PollIntervalMs"/>. <b>Derived, not chosen</b>, and derived for
+    /// the same arithmetic reason as <c>ModbusRegisterMap.MaxPollIntervalMs</c> even though this type has
+    /// no <c>EffectiveReadTimeoutMs</c> of its own: the figure is the largest value that survives a
+    /// <see langword="int"/> multiplication by four, which is where the sibling map stops being able to
+    /// describe its own behaviour. Item 38 (task BD-1, 2026-08-23) deliberately declines to invent a
+    /// smaller, rounder ceiling — a ceiling stated too small jails a legitimate slow-cadence deployment,
+    /// and the widest bound declared anywhere in the surrounding product is one hour.</summary>
+    public const int MaxPollIntervalMs = int.MaxValue / 4;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -304,8 +320,26 @@ public sealed class OpcUaNodeMap
     /// throw <c>ArgumentOutOfRangeException</c> at <c>-2</c> and below, out of a <c>catch</c> that handles
     /// cancellation and does not handle this. Recorded as measured behaviour: the task that wrote this
     /// sentence documents the driver family under <c>docs/owner-decisions.md</c> item 25 and is not
-    /// permitted to change code.</para></summary>
-    public int PollIntervalMs { get; init; } = 1000;
+    /// permitted to change code.</para>
+    ///
+    /// <para>📐 <b>EXECUTED 2026-08-23 (task BD-1, item 38). The paragraph above is kept verbatim; every
+    /// shape it records still reproduces for a map built programmatically, and only the PARSE path
+    /// changed.</b> <see cref="FromJson"/> now runs this key through
+    /// <see cref="ResolvePollIntervalMs"/> — a mirror of
+    /// <c>ModbusRegisterMap.ResolvePollIntervalMs</c>, which carries the domain rule that map's
+    /// <c>readTimeoutMs</c>/<c>retries</c> have always used. <b>Mirrored rather than shared, and that is a
+    /// choice worth naming:</b> this type already mirrors <see cref="ValidateWritableNodes"/> and
+    /// <see cref="ValidateCommands"/> off their Modbus counterparts instead of hoisting them into a common
+    /// helper, and the operator-facing message has to read "OPC-UA node map:" rather than "Modbus register
+    /// map:" — sharing the function would have required parameterising its prose, which buys nothing here
+    /// and makes both messages harder to find by grep.
+    ///
+    /// <para>🔴 <b>This map has NO range-checked neighbour to copy from.</b> Item 38's title says the two
+    /// adjacent fields ARE checked; measured on 2026-08-23, that is true of
+    /// <c>ModbusRegisterMap</c> and false here — <c>OpcUaNodeMap</c> declares no <c>readTimeoutMs</c> and
+    /// no <c>retries</c> at all, so on this side of the pair the fix imports a convention rather than
+    /// restoring one.</para></para></summary>
+    public int PollIntervalMs { get; init; } = DefaultPollIntervalMs;
 
     /// <summary>The nodes this map declares, in the order the poll loop reads them each cycle — one
     /// <c>DeviceReading</c> is yielded per poll, so the list's length is how wide that reading is.
@@ -421,9 +455,25 @@ public sealed class OpcUaNodeMap
     /// <para>Task B-3 additionally validates every <see cref="OpcUaNode.Writable"/>/<see cref="Commands"/>
     /// declaration the same way — see <see cref="ValidateWritableNodes"/>/<see cref="ValidateCommands"/> for
     /// the exact rules and messages.</para></summary>
-    public static OpcUaNodeMap FromJson(string json)
+    /// <param name="json">The node-map JSON document.</param>
+    /// <param name="logWarning">Item 38 (2026-08-23) — invoked once per malformed
+    /// <see cref="PollIntervalMs"/> value that was ignored in favour of
+    /// <see cref="DefaultPollIntervalMs"/>. Optional, and optional for a reason worth stating: before this
+    /// parameter existed <c>OpcUaConnectorFactory</c>'s own doc comment recorded that
+    /// "<c>OpcUaNodeMap.FromJson</c> takes no logger" as a known asymmetry with the Modbus adapter. It
+    /// takes one now, defaulted so that all three existing call sites compile unchanged; the connector
+    /// factory passes its real sink, and the two St4i.EngineApi call sites still pass nothing, so a bad
+    /// cadence declared through those paths is corrected silently. That residue is named rather than
+    /// hidden.</param>
+    public static OpcUaNodeMap FromJson(string json, Action<string>? logWarning = null)
     {
-        var map = JsonSerializer.Deserialize<OpcUaNodeMap>(json, JsonOptions);
+        // Item 38 — a JsonDocument alongside the strongly-typed bind, the same two-step
+        // ModbusRegisterMap.FromJson has always used, so the raw element is available for the domain
+        // check below. JsonDocument.Parse and JsonSerializer.Deserialize raise the same JsonException on
+        // malformed input, so the failure shape for a broken document is unchanged.
+        using var document = JsonDocument.Parse(json);
+
+        var map = document.RootElement.Deserialize<OpcUaNodeMap>(JsonOptions);
         if (map is null)
         {
             throw new InvalidOperationException("OpcUaNodeMap.FromJson: JSON deserialized to null.");
@@ -439,10 +489,33 @@ public sealed class OpcUaNodeMap
             throw new InvalidOperationException("OPC-UA node map: 'endpointUrl' must be a non-blank string.");
         }
 
+        // 🔴 Item 39 (task BD-1, 2026-08-23) — the twin of ModbusRegisterMap's `"registers": null`. An
+        // explicit JSON null satisfies `required` (which only demands the KEY be present), binds through
+        // into a property declared non-nullable, and used to raise a BARE NullReferenceException out of
+        // the `.Count` below — a string with no field, no machine code and nothing to act on, handed to
+        // the operator verbatim by OpcUaConnectorFactory.TryCreate. Unlike `commands` further down, an
+        // empty default is not available: an empty list is itself refused on the next line. It names the
+        // field and the machine code, the two identifiers this method has; the FILE is named by the frame
+        // that owns the path (St4i.EngineApi.Program's startup catch wraps this message in '{MapPath}').
+        if (map.Nodes is null)
+        {
+            throw new InvalidOperationException(
+                $"OPC-UA node map for machine '{map.MachineCode}': 'nodes' was declared as null. " +
+                "Give it an array of at least one node entry, or remove the key entirely to see which " +
+                "required field is missing. (A JSON null is not the same as an omitted key: 'required' " +
+                "accepts it.)");
+        }
+
         if (map.Nodes.Count == 0)
         {
             throw new InvalidOperationException("OPC-UA node map: 'nodes' must contain at least one entry.");
         }
+
+        // Item 38 — the domain check, mirroring ModbusRegisterMap's. Applied AFTER the identity and node
+        // checks so that a map which is wrong in more than one way reports the structural fault first;
+        // a cadence that falls back to its default is a warning, not a failure, and must not be the
+        // headline when 'nodes' is also broken.
+        var resolvedPollIntervalMs = ResolvePollIntervalMs(map.PollIntervalMs, logWarning);
 
         // Fix round 1 (minor) — an explicit JSON `"commands": null` (which OVERRIDES this property's
         // initializer default, unlike an omitted key) used to bind Commands to a genuine null, so
@@ -450,7 +523,12 @@ public sealed class OpcUaNodeMap
         // Same "explicit null treated as omitted" precedent as Modbus's own equivalent fix. OpcUaNodeMap is a
         // plain class (not a record — no `with` expression available), so a null Commands is normalized by
         // reconstructing rather than mutating an init-only property post-construction.
-        if (map.Commands is null)
+        //
+        // Item 38 widened this branch's trigger: the reconstruction is now also how a REFUSED
+        // pollIntervalMs gets replaced, since the property is init-only and this type has no `with`.
+        // Reconstructing only when something actually changed keeps the common path allocation-identical
+        // to before.
+        if (map.Commands is null || resolvedPollIntervalMs != map.PollIntervalMs)
         {
             map = new OpcUaNodeMap
             {
@@ -459,9 +537,9 @@ public sealed class OpcUaNodeMap
                 SecurityMode = map.SecurityMode,
                 Username = map.Username,
                 Password = map.Password,
-                PollIntervalMs = map.PollIntervalMs,
+                PollIntervalMs = resolvedPollIntervalMs,
                 Nodes = map.Nodes,
-                Commands = Array.Empty<OpcUaCommand>(),
+                Commands = map.Commands ?? Array.Empty<OpcUaCommand>(),
             };
         }
 
@@ -469,6 +547,38 @@ public sealed class OpcUaNodeMap
         ValidateCommands(map.Commands);
 
         return map;
+    }
+
+    /// <summary>Item 38 (task BD-1, 2026-08-23) — <see cref="PollIntervalMs"/>'s domain check, the mirror
+    /// of <c>ModbusRegisterMap.ResolvePollIntervalMs</c>: same rule, same message wording, this map's own
+    /// operator-facing prefix. Must be &gt; 0 and not above <see cref="MaxPollIntervalMs"/>; a violation
+    /// warns through <paramref name="logWarning"/> and falls back to <see cref="DefaultPollIntervalMs"/>
+    /// rather than failing the whole map, because a cadence typo should not disable an entire driver for
+    /// the run.
+    ///
+    /// <para>It takes the BOUND value rather than reading the raw <see cref="JsonElement"/>, for the
+    /// reason set out in full on the Modbus counterpart: the binder matches property names
+    /// case-insensitively and an ordinal <c>TryGetProperty</c> does not, so a raw lookup would miss a
+    /// document spelled <c>"PollIntervalMs"</c> and silently overwrite a valid declared cadence with the
+    /// default. Reading what the binder produced inherits the binder's matching rules exactly.</para>
+    ///
+    /// <para>An explicit JSON <c>null</c> and a wrong JSON type never reach here — both throw out of the
+    /// bind, unchanged by item 38.</para></summary>
+    private static int ResolvePollIntervalMs(int value, Action<string>? logWarning)
+    {
+        if (value <= 0)
+        {
+            logWarning?.Invoke($"OPC-UA node map: 'pollIntervalMs' must be > 0 (got {value}) — ignoring and using the default instead.");
+            return DefaultPollIntervalMs;
+        }
+
+        if (value > MaxPollIntervalMs)
+        {
+            logWarning?.Invoke($"OPC-UA node map: 'pollIntervalMs' {value} exceeds the maximum of {MaxPollIntervalMs} — ignoring and using the default instead.");
+            return DefaultPollIntervalMs;
+        }
+
+        return value;
     }
 
     /// <summary>

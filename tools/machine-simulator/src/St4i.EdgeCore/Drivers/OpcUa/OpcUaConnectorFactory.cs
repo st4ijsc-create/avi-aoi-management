@@ -53,7 +53,14 @@ public sealed class OpcUaConnectorFactory : IConnectorFactory
     /// environment rather than disabling the store. The two delegates are stored and forwarded and never wrapped, and — unlike the Modbus
     /// adapter, whose parse step takes a warning sink — <see cref="OpcUaNodeMap.FromJson"/> takes no logger,
     /// so neither delegate is invoked anywhere inside <see cref="TryCreate"/>. They are first called by the
-    /// driver, after this adapter has returned.</para></summary>
+    /// driver, after this adapter has returned.</para>
+    ///
+    /// <para>📐 <b>The clause "<see cref="OpcUaNodeMap.FromJson"/> takes no logger, so neither delegate is
+    /// invoked anywhere inside <see cref="TryCreate"/>" is RETRACTED 2026-08-23 (task BD-1, item 38).</b>
+    /// The sentence is kept verbatim; what stopped being true is the premise. That parse step now takes an
+    /// optional warning sink, <see cref="TryCreate"/> passes this adapter's <c>logWarning</c> into it, and
+    /// an out-of-domain <c>pollIntervalMs</c> therefore reaches the delegate BEFORE this adapter returns.
+    /// <c>logError</c> is still never invoked here.</para></summary>
     public OpcUaConnectorFactory(
         string? pkiDir = null,
         Action<string>? logWarning = null,
@@ -98,7 +105,7 @@ public sealed class OpcUaConnectorFactory : IConnectorFactory
     {
         try
         {
-            var map = OpcUaNodeMap.FromJson(config);
+            var map = OpcUaNodeMap.FromJson(config, _logWarning);
             driver = new OpcUaDriverFactory(map, _pkiDir, _logWarning, _logError).Create();
             error = null;
             return true;

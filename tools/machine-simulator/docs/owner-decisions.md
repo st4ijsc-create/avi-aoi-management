@@ -66,9 +66,9 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 35 | `DBIRTH`/`DDEATH` không sinh ra được, và `SparkplugAliasTable.Reset()` cùng thế — hệ quả ĐÃ ĐO của mục 23 | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1). 🔴 **Nhưng chữ *"HOÀN TOÀN"* của brief KHÔNG đứng vững ở phạm vi repo:** `server/` có một bộ phát DBIRTH/DDEATH **đang sống** bằng TypeScript. Đúng ở phạm vi `tools/machine-simulator`. `Reset()`: **một** caller, và nó là một unit test — **không caller sản xuất nào**, trong khi `GetOrAssign` chạy trên **mọi** reading: bảng alias **nửa sống** → 🔴 **DỪNG 2026-08-22 (AX-1), Ở LẠI PHẦN I.** **Điều kiện DỪNG đã nổ:** làm spine này tuân đặc tả đòi **phát một thông điệp MQTT MỚI** (DBIRTH mức device) lên dây — tức **đổi payload MQTT**, một trong **ba mục chủ sở hữu KHÔNG uỷ quyền**. Điều phối viên **không tự quyết**; chờ anh. Phần nằm TRONG uỷ quyền đã trả và ghi trong thân mục: vòng đời hôm nay **liệt kê rồi đếm — BA loại Sparkplug rời spine này (NBIRTH, NDEATH, DDATA) trên sáu thành viên enum**; bề mặt gọi `Reset()` đo lại bằng `scripts/repo-scan.sh` ở miền có **cả `server/` và `client/`** (2300 file nằm trong commit, ngoài đĩa) — **vẫn đúng MỘT, vẫn là unit test ấy**, nên đây là **MỞ RỘNG miền chứ không RÚT**; **bốn** câu tài liệu nói sản phẩm phát/sẽ phát DBIRTH **rút tại chỗ kèm ngày** (hai trong bốn sai theo hai chiều NGƯỢC nhau, cùng một file). 🔴 **Chỗ trống "người đăng ký gương retained CHƯA ĐO" GIỮ NGUYÊN là chỗ trống** — không phép đo mới, và **không suy đoán nào được viết vào thay cho một phép đo** |
 | 36 | README §16.4/§16.6 là một bản sao **không có nhân chứng** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), xác nhận lại trên mã. Không test/script/CI nào giữ chúng đúng, và **`ModbusOptions.cs` TỰ KHAI điều đó**. 🔴 **Và phép kiểm tra chéo tìm thấy một câu ĐÃ TRÔI rồi** — §16.6 nói `OperationTimeout` *"hardcoded"* trong khi nó là tham số constructor từ Task B-5 → ✅ **ĐÃ THI HÀNH 2026-08-22 (AX-1)** theo 🔨 **QUYẾT: DỰNG NHÂN CHỨNG, KHÔNG PHẢI SỬA LỜI** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8). `tests/St4i.EngineApi.Tests/DriverDocumentationTests.cs`, **ba `[Fact]` ĐỎ ĐƯỢC**, đặt cạnh hai tiền lệ mục này nêu tên; **cặp đối chứng chạy trọn, MỘT đột biến cho MỖI fact** (đổi tên `EnvVarPort`; `operationTimeoutMs` 15000→20000; thêm thành viên thứ bảy vào `CommandArgumentType`), cả ba ĐỎ đúng bài của nó rồi **hoàn nguyên**. **22 khẳng định liệt kê rồi kiểm; HAI sai, và mục này chỉ thấy MỘT:** ngoài *"hardcoded"*, 🔴 **§16.4 công bố kiểu tham số lệnh là tập ĐÓNG SÁU trong khi `CommandArgumentType` có BẢY** (`String` được `ValidateSelf` chấp nhận — phép kiểm lược đồ **duy nhất** cả hai map chạy). Cả hai **rút/bổ sung tại chỗ kèm ngày**, và câu **tự khai** của `ModbusOptions.cs` (*"remain a hand-kept copy with no witness … still true"*) **hết đúng hôm nay** nên bị rút ngay trong file ấy. 🔴 **Nhân chứng ghim GIÁ TRỊ và TẬP TÊN, không ghim văn xuôi** — bốn chỗ cụm-từ được kể tên trong chính doc của nó; đoạn lý lẽ, hai danh sách *"honest deferral"* và khối RTU **vẫn không có nhân chứng**. `EXPECT_ENGINEAPI` 1405 → **1408**, tổng 2821 → **2824**, **0 lệnh đè**. Xem **Phần III** |
 | 37 | 🔴 **HỒ SƠ — LỖI CỦA ĐIỀU PHỐI VIÊN:** một phán quyết của chủ sở hữu sống trọn một vòng nhiệm vụ **KHÔNG có bản ghi tại chỗ** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AU-1), và **mục này là của điều phối viên, không phải của mã**. Phán quyết mục 16 ngày 2026-08-22 tới người thi hành **chỉ qua một task brief**; `grep "2026-08-22"` trên file tại `ce1ce2be` trả **đúng hai dòng, cả hai thuộc mục 27**. **"Đừng thi hành" đã bị đọc thành "đừng ghi"** — một phán quyết và một lần thi hành là **hai hiện vật khác nhau**. Cộng: danh sách Phần I **lỗi thời qua ba nhiệm vụ liên tiếp** và **không dụng cụ nào bắt được, vì không cổng nào đọc file này** — cùng lớp với mục 26 và 32. 🔴 **Và con số ấy được ĐO LẠI: brief mở mục này nói "chín mục"; đo trên `659bcfb2` là MƯỜI MỘT** (16, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29 — Phần I thật chỉ chứa 17, 25, 26, 30, 31, 32). **Chính lời khai về khuyết tật kiểm đếm cũng đếm sai**, theo đúng cơ chế mục này mô tả → ✅ **ĐÃ THI HÀNH 2026-08-22 (AW-1)** theo 🔨 **QUYẾT: BẮT CỔNG ĐỌC FILE NÀY** (2026-08-22, **điều phối viên quyết theo uỷ quyền**, cùng khuôn mục 8/15/17/21). `scripts/check-owner-decisions.sh`, chạy trong `scripts/verify-suites.sh`: **cổng nay ĐỌC `docs/owner-decisions.md`** — câu *"không cổng nào đọc file này"* trong thân mục **hết đúng kể từ hôm nay**, và nó được rút tại chỗ chứ không lặng lẽ. Phép kiểm ghim **CẤU TRÚC, không ghim VĂN XUÔI**, đúng lối rẻ nhất mà chính mục này nêu ra: mỗi số hiệu trong bảng có **đúng một** thân mục và ngược lại; **trạng thái ghi trong hàng khớp PHẦN mà thân mục đứng dưới**; **phép liệt kê Phần I nêu đúng tập số hiệu thật sự nằm ở Phần I**, cả ở trường máy đọc lẫn ở câu văn người đọc. 🔴 **Đo được hôm nay, trước khi sửa: NĂM chỗ lệch** — (1) mục 17 ở Phần III với hàng tự khai *"MỘT PHẦN"*; (2)(3)(4) **BA** đoạn liệt kê Phần I trần nằm cạnh nhau ở dòng 111, 168, 237 mà **chỉ một là hiện hành**, không gì phân biệt được; (5) không có trường máy đọc nào nói cái nào hiện hành. **Cả năm sửa ở HỒ SƠ, không sửa dụng cụ cho vừa hồ sơ.** 🔴 **Và cái phép kiểm này KHÔNG bắt được, nói thẳng vì một nửa sự thật ở đây đúng là loại lỗi mục này nói về: NỬA THỨ NHẤT CỦA MỤC 37 — một phán quyết KHÔNG BAO GIỜ ĐƯỢC GHI — vẫn KHÔNG có bộ dò nào.** Không phép kiểm nào trên file này thấy được một sự kiện không nằm trong file. Nó cũng không đọc văn xuôi, không phán được một mục "MỘT PHẦN" thuộc Phần I hay Phần II (nó chỉ nói **KHÔNG PHẢI Phần III**), và **chỉ** ghim phép liệt kê Phần I — Phần II và Phần III không có trường máy đọc. Xem Phần III |
-| 38 | `pollIntervalMs` là trường cadence DUY NHẤT không được kiểm miền, trên **cả hai** bản đồ | 🔴 **CHỜ ANH** — mở 2026-08-22 (AZ-1), đo bởi AY-1 (mục 12 đợt 9), **xác nhận lại trên mã VÀ trên assembly đã dựng**. `ModbusRegisterMap.FromJson` và `OpcUaNodeMap.FromJson` lưu `pollIntervalMs` **y như khai** — đo: `0`, `-1`, `-2`, `-2147483648` đều lưu nguyên — trong khi hai trường kề nó, `readTimeoutMs` và `retries`, đi qua `ParseOptionalPositiveInt`, bị chặn, **có cảnh báo** và rơi về mặc định. Hậu quả đo trên chính runtime này: `Task.Delay(0)` xong trong **0 ms** ⇒ vòng poll **không tiết chế**; `Task.Delay(-1)` **chưa xong sau 750 ms** (`Timeout.Infinite`) ⇒ thiết bị được poll **đúng một lần rồi im**; `Task.Delay(≤ -2)` ném `ArgumentOutOfRangeException`, và cả ba driver bọc lời gọi ấy trong một `try` **chỉ bắt `OperationCanceledException`**, nên nó **thoát ra khỏi iterator**. 🔴 **Và "cả hai driver" của đợt 9 là một phép ĐẾM THIẾU: có BA** — `ModbusTcpDriver` và `OpcUaDriver` gọi `Task.Delay(_map.PollIntervalMs, ct)` trực tiếp, `ModbusRtuDriver` qua `NextPollDelayMs()`. **Chiều ngược:** `EffectiveReadTimeoutMs` sàn ở 1000 nên read timeout **không** hỏng theo, và backoff RTU sản xuất **che** giá trị âm **sau lần hỏng đầu** (`Math.Max`) — nên trên RTU cái bẫy chỉ cắn khi thiết bị **khoẻ**. **Không sửa mã.** Xem mục 38 |
-| 39 | `"registers": null` / `"nodes": null` thoả `required` rồi ném `NullReferenceException` **trần** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AZ-1), đo bởi AY-1 (mục 12 đợt 9), **xác nhận lại trên assembly đã dựng**. `required` được thoả bằng việc **KHOÁ CÓ MẶT**, nên một `null` tường minh bind qua nó và `map.Registers.Count` / `map.Nodes.Count` ném `NullReferenceException` với thông điệp `"Object reference not set to an instance of an object."` — **không nêu file, không nêu trường, không nêu máy**. Đối chứng đo cùng lần: khoá **VẮNG** cho `JsonException: … was missing required properties including: 'Registers'` / `'Nodes'`, tức đường tốt đã có sẵn và chỉ ca `null` tường minh rơi ra ngoài. **Đúng hình dạng mà `ModbusRegisterMap.FromJson` tự ghi là ĐÃ SỬA cho `commands`.** **Chiều ngược:** cả hai `FromJson` là *"parse ném thẳng"* theo thiết kế và `ModbusRtuConnectorFactory.TryCreate` **bọc mọi throw** thành một `error` chuỗi, nên hậu quả là **một thông điệp vô dụng cho vận hành viên**, không phải một tiến trình chết. **Không sửa mã.** Xem mục 39 |
-| 40 | Một dụng cụ TỰ KIỂM có thể mù đúng ở đường mặc định của chính nó, và cổng vẫn xanh | 🔴 **CHỜ ANH** — mở 2026-08-22 (BA-1). Khuyết tật tìm bởi AZ-1 (mục 12 đợt 10), điều phối viên xác nhận độc lập **hai lần**. `scripts/repo-scan.sh` — **dụng cụ dựng CHO mục 32** — mang **đúng khuyết tật của mục 32** ở đường mặc định của nó từ `cfcfae42` tới `89018893`: không pathspec ⇒ `SPECS=(".")` ⇒ `:(top).`, thứ git **không khớp gì**, nên nó in `result lines : 0 … a measurement, not an error` cho **mọi** pattern. Đo: `'class'` trả **0** với `:(top).`, **1804** với `:(top)`. 🔴 **Vì sao `--self-test` không thấy:** ba khẳng định của nó **đều truyền pathspec tường minh**, và cái duy nhất nói về mặc định là *bất biến theo cwd* — mà **mặc định hỏng ĐÚNG LÀ bất biến theo cwd: bất biến bằng 0**. Khuyết tật **thoả** phép kiểm. **BA-1 đã sửa cả ba dụng cụ** (mặc định `:(top)`; ca self-test KHÔNG-pathspec + từ chối MIỀN RỖNG, chứng minh đỏ-được bằng **ba cặp đối chứng chạy trọn rồi hoàn nguyên**; `C0` cho `check-owner-decisions.sh`; ba guard quần thể cho `scan-doc-negations.sh`). **Chiều ngược, và nó thu hẹp thiệt hại:** mặc định hỏng trả **0 vô điều kiện**, nên **không** khẳng định nào mang một con số KHÁC 0 có thể đã đi qua nó — quần thể `cfcfae42..HEAD` đã liệt kê rồi kiểm, và **hai** câu sai tìm được sai vì lý do KHÁC (tự tham chiếu, và một quần thể cũ), không phải vì khuyết tật này. **Cái CHỜ ANH là câu hỏi tầng hai:** cái gì cưỡng chế rằng một dụng cụ tự kiểm không mù đúng ở chỗ đối tượng của nó mù — mục 26/32/37 ở tầng **dụng cụ đo dụng cụ**. Xem mục 40 |
+| 38 | `pollIntervalMs` là trường cadence DUY NHẤT không được kiểm miền, trên **cả hai** bản đồ | 🔴 **CHỜ ANH** — mở 2026-08-22 (AZ-1), đo bởi AY-1 (mục 12 đợt 9), **xác nhận lại trên mã VÀ trên assembly đã dựng**. `ModbusRegisterMap.FromJson` và `OpcUaNodeMap.FromJson` lưu `pollIntervalMs` **y như khai** — đo: `0`, `-1`, `-2`, `-2147483648` đều lưu nguyên — trong khi hai trường kề nó, `readTimeoutMs` và `retries`, đi qua `ParseOptionalPositiveInt`, bị chặn, **có cảnh báo** và rơi về mặc định. Hậu quả đo trên chính runtime này: `Task.Delay(0)` xong trong **0 ms** ⇒ vòng poll **không tiết chế**; `Task.Delay(-1)` **chưa xong sau 750 ms** (`Timeout.Infinite`) ⇒ thiết bị được poll **đúng một lần rồi im**; `Task.Delay(≤ -2)` ném `ArgumentOutOfRangeException`, và cả ba driver bọc lời gọi ấy trong một `try` **chỉ bắt `OperationCanceledException`**, nên nó **thoát ra khỏi iterator**. 🔴 **Và "cả hai driver" của đợt 9 là một phép ĐẾM THIẾU: có BA** — `ModbusTcpDriver` và `OpcUaDriver` gọi `Task.Delay(_map.PollIntervalMs, ct)` trực tiếp, `ModbusRtuDriver` qua `NextPollDelayMs()`. **Chiều ngược:** `EffectiveReadTimeoutMs` sàn ở 1000 nên read timeout **không** hỏng theo, và backoff RTU sản xuất **che** giá trị âm **sau lần hỏng đầu** (`Math.Max`) — nên trên RTU cái bẫy chỉ cắn khi thiết bị **khoẻ**. **Không sửa mã.** Xem mục 38 🔴 **ĐÃ THI HÀNH 2026-08-23 (BD-1, base `889c72ab`), điều phối viên quyết theo uỷ quyền — hướng (i): `pollIntervalMs` nay đi qua đúng luật miền của hai hàng xóm (`> 0`, `<= MaxPollIntervalMs = int.MaxValue/4`, vi phạm ⇒ cảnh báo + mặc định 1000), trên **cả hai** bản đồ, ở **biên parse**. Ba driver **liệt kê rồi đếm**, xác nhận BA. Bề mặt ĐỌC quét toàn cây: **100 file, 45 ngoài `tools/machine-simulator`**; không bản triển khai hợp lệ nào bị giam, và cái **cố ý dùng `0`** — `ModbusMultidropBusTests.ASlowPollerIsNotStarved_...` — được **nêu tên** và sống sót vì nó dựng bằng object initializer. Mục rời **Phần I → Phần III** |
+| 39 | `"registers": null` / `"nodes": null` thoả `required` rồi ném `NullReferenceException` **trần** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AZ-1), đo bởi AY-1 (mục 12 đợt 9), **xác nhận lại trên assembly đã dựng**. `required` được thoả bằng việc **KHOÁ CÓ MẶT**, nên một `null` tường minh bind qua nó và `map.Registers.Count` / `map.Nodes.Count` ném `NullReferenceException` với thông điệp `"Object reference not set to an instance of an object."` — **không nêu file, không nêu trường, không nêu máy**. Đối chứng đo cùng lần: khoá **VẮNG** cho `JsonException: … was missing required properties including: 'Registers'` / `'Nodes'`, tức đường tốt đã có sẵn và chỉ ca `null` tường minh rơi ra ngoài. **Đúng hình dạng mà `ModbusRegisterMap.FromJson` tự ghi là ĐÃ SỬA cho `commands`.** **Chiều ngược:** cả hai `FromJson` là *"parse ném thẳng"* theo thiết kế và `ModbusRtuConnectorFactory.TryCreate` **bọc mọi throw** thành một `error` chuỗi, nên hậu quả là **một thông điệp vô dụng cho vận hành viên**, không phải một tiến trình chết. **Không sửa mã.** Xem mục 39 🔴 **ĐÃ THI HÀNH 2026-08-23 (BD-1, base `889c72ab`), điều phối viên quyết theo uỷ quyền — **HAI ca đo RIÊNG**: `null` tường minh nay ném `InvalidOperationException` **nêu trường + mã máy**, còn khoá **VẮNG** **KHÔNG ĐỔI** (vẫn là `JsonException` của binder) — và việc nó không đổi là một kết quả **đo được** bằng cặp đối chứng, không phải một giả định. `FromJson` nhận **văn bản**, không nhận đường dẫn, nên **tên file do khung có đường dẫn nêu** (`Program.cs` đã bọc sẵn trong `{MapPath}`). Mục rời **Phần I → Phần III** |
+| 40 | Một dụng cụ TỰ KIỂM có thể mù đúng ở đường mặc định của chính nó, và cổng vẫn xanh | 🔴 **CHỜ ANH** — mở 2026-08-22 (BA-1). Khuyết tật tìm bởi AZ-1 (mục 12 đợt 10), điều phối viên xác nhận độc lập **hai lần**. `scripts/repo-scan.sh` — **dụng cụ dựng CHO mục 32** — mang **đúng khuyết tật của mục 32** ở đường mặc định của nó từ `cfcfae42` tới `89018893`: không pathspec ⇒ `SPECS=(".")` ⇒ `:(top).`, thứ git **không khớp gì**, nên nó in `result lines : 0 … a measurement, not an error` cho **mọi** pattern. Đo: `'class'` trả **0** với `:(top).`, **1804** với `:(top)`. 🔴 **Vì sao `--self-test` không thấy:** ba khẳng định của nó **đều truyền pathspec tường minh**, và cái duy nhất nói về mặc định là *bất biến theo cwd* — mà **mặc định hỏng ĐÚNG LÀ bất biến theo cwd: bất biến bằng 0**. Khuyết tật **thoả** phép kiểm. **BA-1 đã sửa cả ba dụng cụ** (mặc định `:(top)`; ca self-test KHÔNG-pathspec + từ chối MIỀN RỖNG, chứng minh đỏ-được bằng **ba cặp đối chứng chạy trọn rồi hoàn nguyên**; `C0` cho `check-owner-decisions.sh`; ba guard quần thể cho `scan-doc-negations.sh`). **Chiều ngược, và nó thu hẹp thiệt hại:** mặc định hỏng trả **0 vô điều kiện**, nên **không** khẳng định nào mang một con số KHÁC 0 có thể đã đi qua nó — quần thể `cfcfae42..HEAD` đã liệt kê rồi kiểm, và **hai** câu sai tìm được sai vì lý do KHÁC (tự tham chiếu, và một quần thể cũ), không phải vì khuyết tật này. **Cái CHỜ ANH là câu hỏi tầng hai:** cái gì cưỡng chế rằng một dụng cụ tự kiểm không mù đúng ở chỗ đối tượng của nó mù — mục 26/32/37 ở tầng **dụng cụ đo dụng cụ**. Xem mục 40 🔴 **ĐÃ THI HÀNH 2026-08-23 (BD-1, base `889c72ab`), điều phối viên quyết theo uỷ quyền — `G1` **GIỮ** (đo: trên `--since` nó thừa vì `G3` bắt cùng đầu vào; vùng phủ riêng là `--census`, gỡ nó ⇒ exit 0 trên corpus rỗng) và **tự dán nhãn "guard, KHÔNG phải nhân chứng"**; `C0` nay phân biệt được Phần II **TRỐNG** với **HỎNG** qua `C6` (đẳng thức khai-báo == phân-tích-được, vì `count > 0` sẽ sai hôm nay); thêm `G4` cho `BASE_SENT` — quần thể **thứ TƯ** chưa ai canh. 🔴 **Câu hỏi tầng hai được TRẢ LỜI: luật ấy KHÔNG CƯỠNG CHẾ ĐƯỢC** — nó là một tính chất độ phủ của shell và repo này không có dụng cụ đo độ phủ shell. Cái cưỡng chế được là **phép KHAI BÁO**, đặt ở chỗ nghẽn duy nhất `run_tooling_check`: mọi tooling check thành công phải in `POPULATION <nhãn> <số>` và mọi số phải > 0. **KHÔNG dựng dụng cụ tầng thứ ba** cho cặp đối chứng, lý do ghi ở thân mục. Mục rời **Phần I → Phần III** |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -208,7 +208,7 @@ sự thật** — câu này chỉ là một con trỏ vào nó.
 > `<!-- gate:phần-i-rút -->` hoặc `<!-- gate:phần-i = … -->`, và cổng đòi **đúng một** cái sống. **Không
 > một chữ nào của ba đoạn bị sửa và không dòng nào bị xoá.**
 
-**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 17, 30, 35, 38, 39 và 40.** Tất cả mang `🔴 CHỜ ANH` ở bảng
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 17, 30 và 35.** Tất cả mang `🔴 CHỜ ANH` ở bảng
 phán quyết trên, và **bảng ấy là nguồn sự thật** — câu này chỉ là một con trỏ vào nó.
 🔴 **RÚT 2026-08-22 (BC-1) — câu ngay trên đọc *"mục 17, 25, 30, 35, 38, 39 và 40"* cho tới hôm nay, và
 nó giữ nguyên văn ở đây thay vì bị xoá: mục 25 RỜI sang Phần III.** Lý do là điều kiện mà chính ô phán
@@ -238,7 +238,7 @@ banner Phần I và banner Phần II, **và** với chính câu văn này. Lệc
 sửa. 🔴 **Và chính câu này là ví dụ của mục 40:** phép kiểm ngay trên đây đọc trường máy đọc bên dưới —
 nếu tập ấy rỗng ở cả hai phía thì nó **so hai cái rỗng và vẫn xanh**; `C0` thêm hôm nay là thứ chặn đúng
 ca đó, và nó được thêm vì đã **đo được** một file cho `DIVERGENCES : 0` trên **0 hàng, 0 thân mục**.
-<!-- gate:phần-i = 17 30 35 38 39 40 -->
+<!-- gate:phần-i = 17 30 35 -->
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
 > tới vòng sửa thứ hai của cùng ngày, và nó **không sai, nó THIẾU**.** Ba thao tác của file này vẫn
@@ -1063,288 +1063,6 @@ khối hằng số trong `verify-suites.sh`.
 
 ---
 
-## 38. `pollIntervalMs` là trường cadence DUY NHẤT không được kiểm miền, trên CẢ HAI bản đồ — trong khi hai trường kề nó thì có, và ba driver tiêu thụ nó
-
-🔴 **CHỜ ANH.** Mở 2026-08-22 (AZ-1, mục 12 đợt 10). Đo bởi AY-1 (đợt 9) trong lúc viết chú thích;
-**đợt 10 xác nhận lại trên mã VÀ chạy lại trên assembly đã dựng** trước khi mở mục này. Đợt 10
-**KHÔNG thi hành** — nó viết tài liệu và không được sửa mã.
-
-### 1. Đo được cái gì — LIỆT KÊ TRƯỚC, con số SAU
-
-**Ba trường cadence/timing mà một bản đồ khai**, và cái đối xử với chúng khác nhau:
-
-| trường | đường parse | giá trị ngoài miền |
-|---|---|---|
-| `readTimeoutMs` | `ParseOptionalPositiveInt(…, MaxReadTimeoutMs)` | **chặn**, cảnh báo qua `logWarning`, rơi về mặc định |
-| `retries` | `ParseOptionalPositiveInt(…, MaxRetries)` | **chặn**, cảnh báo, rơi về mặc định |
-| **`pollIntervalMs`** | gán thẳng `PollIntervalMs = map.PollIntervalMs` | 🔴 **lưu y như khai, im lặng** |
-
-**Đo trên assembly đã dựng** (`net10.0-windows`, SDK 10.0.302), gọi thẳng hai `FromJson`:
-
-```
-Modbus  pollIntervalMs=0            -> stored 0,            EffectiveReadTimeoutMs=1000
-Modbus  pollIntervalMs=-1           -> stored -1,           EffectiveReadTimeoutMs=1000
-Modbus  pollIntervalMs=-2           -> stored -2,           EffectiveReadTimeoutMs=1000
-Modbus  pollIntervalMs=-2147483648  -> stored -2147483648,  EffectiveReadTimeoutMs=1000
-OpcUa   pollIntervalMs=0/-1/-2/-2147483648  -> stored y như khai
-Modbus  readTimeoutMs=0/retries=0   -> warn ×2, ReadTimeoutMs=null, Retries=null
-Modbus  readTimeoutMs=-1/retries=-1 -> warn ×2, ReadTimeoutMs=null, Retries=null
-```
-
-**Và cái giá trị ấy làm gì**, đo trên cùng runtime:
-
-```
-Task.Delay(0)            -> hoàn tất trong 0 ms
-Task.Delay(-1)           -> CHƯA hoàn tất sau 750 ms   (Timeout.Infinite)
-Task.Delay(-2)           -> ArgumentOutOfRangeException
-Task.Delay(-3)           -> ArgumentOutOfRangeException
-Task.Delay(int.MinValue) -> ArgumentOutOfRangeException
-```
-
-🔴 **Phép đếm của đợt 9 — *"cả hai driver"* — LÀ MỘT PHÉP ĐẾM THIẾU. Liệt kê người tiêu thụ trước
-khi đếm: có BA.** `ModbusTcpDriver.ReadAsync` và `OpcUaDriver.ReadAsync` gọi
-`Task.Delay(_map.PollIntervalMs, ct)` **trực tiếp**; `ModbusRtuDriver.ReadAsync` gọi
-`Task.Delay(NextPollDelayMs(), ct)`, và `NextPollDelayMs()` là
-`_readBackoff.DelayMsFor(_map.PollIntervalMs, …)`. Hai bản đồ, ba driver.
-
-### 2. Ở đâu trong mã — trỏ bằng TÊN
-
-`St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap.PollIntervalMs` và `.FromJson`;
-`St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap.PollIntervalMs` và `.FromJson`;
-`ModbusRegisterMap.ParseOptionalPositiveInt` (đường mà hai trường kia ĐI QUA và trường này thì không);
-`ModbusTcpDriver.ReadAsync`, `OpcUaDriver.ReadAsync`, `ModbusRtuDriver.ReadAsync` +
-`ModbusRtuDriver.NextPollDelayMs`; `ModbusRtuReadBackoff.DelayMsFor`;
-`ModbusRegisterMap.EffectiveReadTimeoutMs`.
-
-### 3. Hậu quả vận hành, HAI CHIỀU
-
-*Chiều thuận.* **`0`** — vòng poll **không tiết chế**: mỗi lần lặp trả về ngay, nên một thiết bị
-quay hết tốc lực. Trên RTU nó còn là vấn đề của **hàng xóm**, vì mỗi vòng lấy khoá phân xử của cả
-bus. **`-1`** — `Task.Delay` chờ vô hạn, nên thiết bị được poll **đúng một lần rồi im**, và cái
-`IAsyncEnumerable` ấy **không kết thúc** mà cũng **không sinh gì**: `Health` đứng ở giá trị của lần
-poll đầu, và từ ngoài nhìn vào nó **không phân biệt được với một thiết bị khoẻ và chậm**.
-**`≤ -2`** — `ArgumentOutOfRangeException`. Cả ba driver bọc lời gọi delay trong một `try` mà
-`catch` **chỉ bắt `OperationCanceledException`**, nên nó **thoát khỏi iterator** — một hình dạng
-khác hẳn hai cái trên và khác hẳn cái mà vòng poll được thiết kế để chịu.
-
-*Chiều ngược, và nó thu hẹp mục này chứ không xoá nó.* **(a)** `EffectiveReadTimeoutMs` là
-`ReadTimeoutMs ?? Math.Max(1000, PollIntervalMs * 4)` — **sàn 1000 đo được cho cả bốn giá trị xấu**,
-nên một cadence âm **không** kéo theo read timeout hỏng, và `WorstCaseBusHoldMs` dựng trên nó cũng
-lành. **(b)** Trên `ModbusRtuDriver` với backoff **sản xuất**, giá trị âm bị **che sau lần hỏng đầu
-tiên** — đo được:
-
-```
-Default.DelayMsFor(poll=-2, hold=4000, failures=0) = -2      Disabled(...)= -2
-Default.DelayMsFor(poll=-2, hold=4000, failures=1) = 4000    Disabled(...)= -2
-Default.DelayMsFor(poll=-2, hold=4000, failures=5) = 60000   Disabled(...)= -2
-```
-
-nên trên RTU cái bẫy cắn **khi thiết bị KHOẺ**, và tự vá khi nó hỏng — thứ tự ngược với trực giác,
-và là lý do một phép thử "cắm giá trị âm rồi xem nó có hỏng không" **có thể xanh**. **(c)** Không có
-khách hàng nào đang báo lỗi này; nó đòi một bản đồ viết tay có giá trị âm hoặc `0`.
-
-### 4. Nếu KHÔNG quyết định
-
-Ba trường cạnh nhau trong cùng một tài liệu JSON tiếp tục có **hai luật khác nhau**, không ghi ở
-đâu ngoài chú thích mà đợt 9 vừa viết lên chính hai property ấy. Và **cái phép đo này KHÔNG thấy**:
-nó không mở `server/`, `client/` hay bất cứ người tạo bản đồ nào **ngoài repo này** — nếu một công
-cụ sinh cấu hình ở nơi khác phát ra `pollIntervalMs: 0`, chỗ này im lặng về chuyện đó.
-Ba hướng, **giá của cả ba, không đề xuất cái nào**: (i) **cho `pollIntervalMs` đi qua
-`ParseOptionalPositiveInt`** — rẻ nhất, cùng khuôn với hai hàng xóm, nhưng nó **đổi HÀNH VI của một
-bản đồ đang chạy** (một `0` đang chạy sẽ thành `1000`); (ii) **ném lúc parse** — to tiếng nhất và
-đúng với "một cấu hình không chạy được thì bị từ chối ở chỗ vận hành viên được báo", nhưng nó biến
-một fleet đang chạy với một bản đồ xấu thành một fleet **không khởi động**; (iii) **để nguyên và
-chỉ ghi tài liệu** — chính là trạng thái hôm nay, và đợt 9 + đợt 10 đã trả phần tài liệu ấy.
-
----
-
-## 39. `"registers": null` / `"nodes": null` thoả `required`, bind một null thật, rồi ném `NullReferenceException` TRẦN
-
-🔴 **CHỜ ANH.** Mở 2026-08-22 (AZ-1, mục 12 đợt 10). Đo bởi AY-1 (đợt 9); **đợt 10 chạy lại trên
-assembly đã dựng** trước khi mở mục này. Đợt 10 **KHÔNG thi hành**.
-
-### 1. Đo được cái gì — LIỆT KÊ TRƯỚC, con số SAU
-
-**Bốn ca, hai bản đồ, một lần chạy** trên assembly đã dựng:
-
-```
-Modbus registers:null    -> NullReferenceException: [Object reference not set to an instance of an object.]
-Modbus registers ABSENT  -> JsonException: [... was missing required properties including: 'Registers'.]
-OpcUa  nodes:null        -> NullReferenceException: [Object reference not set to an instance of an object.]
-OpcUa  nodes ABSENT      -> JsonException: [... was missing required properties including: 'Nodes'.]
-```
-
-**Cơ chế, nêu chứ không suy:** `required` của C# được thoả bằng việc **KHOÁ CÓ MẶT** trong JSON, chứ
-không phải bằng việc giá trị khác `null`. Một `null` tường minh **đi qua** phép kiểm ấy và bind vào
-một property khai là non-nullable; câu lệnh kế tiếp trong `FromJson` đọc `.Count` trên nó.
-**Thông điệp không nêu file, không nêu trường, không nêu mã máy** — nó là chuỗi mặc định của CLR.
-
-🔴 **Và đây là đúng hình dạng mà `ModbusRegisterMap.FromJson` TỰ GHI là đã sửa cho `commands`**, ở
-một chú thích trong chính phương thức ấy tự gọi mình là *"the one parse failure in this method that
-didn't name what was wrong"* — câu đã được **rút tại chỗ** bởi đợt 9 vì đo được **ít nhất hai**.
-
-### 2. Ở đâu trong mã — trỏ bằng TÊN
-
-`ModbusRegisterMap.Registers` (`public required IReadOnlyList<ModbusRegister>`), đọc ở
-`ModbusRegisterMap.FromJson`; `OpcUaNodeMap.Nodes` (`public required IReadOnlyList<OpcUaNode>`), đọc
-ở `OpcUaNodeMap.FromJson` (`if (map.Nodes.Count == 0)`); `ModbusRtuConnectorFactory.TryCreate`,
-`ModbusConnectorFactory.TryCreate` và `OpcUaConnectorFactory.TryCreate` — nơi mọi throw từ hai
-`FromJson` ấy trở thành một chuỗi `error` cho vận hành viên.
-
-### 3. Hậu quả vận hành, HAI CHIỀU
-
-*Chiều thuận.* Một vận hành viên hoặc một công cụ sinh cấu hình viết `"registers": null` thay vì bỏ
-khoá — điều một serializer phát ra một cách hoàn toàn bình thường cho một danh sách rỗng chưa gán —
-nhận lại **`"Object reference not set to an instance of an object."`** và **không có gì để hành
-động**: không tên file, không tên trường, không mã máy. Với `TryCreate` bọc ngoài, chuỗi ấy là
-`ex.Message` **nguyên vẹn**, nên đó chính xác là thứ hiện lên chỗ khởi động connector. Đối chứng
-đứng ngay cạnh và làm cái giá rõ ràng: **cùng lỗi ấy với khoá VẮNG** cho một `JsonException` **nêu
-đích danh trường**.
-
-*Chiều ngược.* **(a)** Không tiến trình nào chết: `IConnectorFactory.TryCreate` có hợp đồng
-**không-bao-giờ-ném** và cả ba cài đặt bọc trọn thân hàm, nên hậu quả là **một thông điệp vô dụng**,
-không phải một fleet đổ. **(b)** Đường **VẮNG khoá** — ca thường gặp hơn — đã đúng và đã có nhân
-chứng; cái hỏng là ca `null` tường minh. **(c)** Sửa nó là **sửa mã trên đường parse mà cả hai
-driver fieldbus đi qua**, tức đúng đường mà mục 12 vừa đi qua để viết tài liệu, và giá của nó phải
-đo bằng test chứ không bằng lập luận.
-
-### 4. Nếu KHÔNG quyết định
-
-Hai `FromJson` giữ **một ca chẩn đoán trần** mỗi cái, và bản ghi duy nhất về nó là chú thích đợt 9
-viết lên chính hai property ấy cộng mục này. **Cái phép đo này KHÔNG thấy:** nó mở đúng hai trường
-(`registers`, `nodes`) trên hai bản đồ ấy; **không** ai đã mở HẾT tập các property `required` khác
-trong cây để xem còn chỗ nào cùng hình dạng — nêu tên chứ không đoán.
-
----
-
-## 40. Một dụng cụ TỰ KIỂM có thể mù đúng ở đường mặc định của chính nó, và cổng vẫn xanh
-
-🔴 **CHỜ ANH.** Mở 2026-08-22 (BA-1). Khuyết tật tìm bởi **AZ-1** (mục 12 đợt 10), điều phối viên **xác
-nhận độc lập hai lần**. AZ-1 **không sửa** vì nó nằm ngoài ba sản phẩm của nó — lựa chọn đúng. BA-1 **đã
-sửa dụng cụ**; **cái CHỜ ANH là cơ chế ở §4**, không phải bản sửa.
-
-### 1. Đo được cái gì — LIỆT KÊ TRƯỚC, con số SAU
-
-**(a) Khuyết tật gốc.** `scripts/repo-scan.sh` là dụng cụ dựng **CHO mục 32** — mục nói rằng *một phép
-quét thu hẹp trả 0 chứ không báo lỗi, nên 0-hit-đúng và 0-hit-vì-pathspec không phân biệt được*. Đứng tại
-`tools/machine-simulator`, ở `89018893`:
-
-```
-git grep --full-name -l 'class' HEAD -- ':(top).'   ->     0      (và 0 từ CẢ repo root)
-git grep --full-name -l 'class' HEAD -- ':(top)'    ->  1804
-git grep --full-name -l 'class' HEAD                ->   641      (thu về cwd)
-```
-
-`repo-scan.sh:161` — `[[ ${#SPECS[@]} -eq 0 ]] && SPECS=(".")` ⇒ `rewrite_pathspec` ⇒ `:(top).`. Dụng cụ
-**in** *"1 means NO MATCH, which is a measurement, not an error"*, nên số 0 ấy được **trình bày như một
-kết quả đã kiểm**. Đó là mục 32, do dụng cụ của mục 32, trong **ba** vòng nhiệm vụ.
-
-**(b) Vì sao `--self-test` xanh suốt thời gian ấy — và đây là hạt nhân của mục này.** Ba khẳng định của
-nó là *bất biến theo cwd*, *không rỗng*, *hazard còn sống*; **cả ba đều truyền pathspec tường minh**, nên
-**không cái nào đi qua đường mặc định**. Cái duy nhất nói về mặc định là bất biến-theo-cwd — và **mặc
-định hỏng ĐÚNG LÀ bất biến theo cwd: bất biến bằng 0**, đo được từ cả hai thư mục. **Khuyết tật THOẢ phép
-kiểm.** Một dụng cụ tự kiểm mù **đúng ở chỗ** đối tượng của nó mù.
-
-**(c) Quét hai dụng cụ kia cùng loài — LIỆT KÊ rồi mới ĐẾM.** Quần thể là **ba** dụng cụ mà
-`verify-suites.sh` chạy làm cổng: `repo-scan.sh --self-test`, `check-owner-decisions.sh`,
-`scan-doc-negations.sh --since`. Loài: *một quần thể có thể RỖNG, mà công cụ vẫn in một con số như thể đã
-đo*. Kết quả, **hai trong ba** có nó ngoài `repo-scan.sh` — tức **cả ba**:
-
-* `check-owner-decisions.sh` — **CÓ, và tái lập được.** C1–C4 đều là vòng `for` trên một quần thể mà
-  parser phục hồi từ **văn xuôi** bằng regex. Một file mang banner Phần I và **một** marker liệt kê
-  sống, **không bảng phán quyết, không thân mục**, cho `verdict rows : 0 · body sections : 0 ·
-  DIVERGENCES : 0 · exit 0`. Tập rỗng thoả mọi khẳng định phổ quát.
-* `scan-doc-negations.sh` — **CÓ, ở hai chỗ, hỏng theo hai chiều NGƯỢC nhau.** `scan_into` gặp danh sách
-  file rỗng thì ghi `0 câu / 0 hit` **không nói một lời**; và `--since` — **chế độ cổng chạy** — trước hôm
-  nay **không in kích thước quần thể nào cả**, nên một corpus rỗng cho `NEW absolute doc claims : 0` +
-  `PASS`. Chiều kia: corpus **BASE** rỗng làm **mọi** câu hiện tại thành "mới", tức đỏ với một con số
-  thuần hiện vật. Cả hai **không** với tới được qua corpus mặc định hôm nay (`find` trả 546 file `.cs`) —
-  nêu ra chứ không phóng đại.
-
-**(d) Một loài THỨ HAI, tìm được lúc kiểm lại quần thể khẳng định, và không dụng cụ nào ở đây bắt được
-nó.** `GatewayTcpBusLink.InfiniteTimeout` công bố *"Measured over every tracked `*.cs` (20 lines)"*. Đo
-lại cùng phép quét:
-
-```
-tools/machine-simulator/*.cs @ 3f564039  (BASE lúc viết)   -> 20
-tools/machine-simulator/*.cs @ 9da2b2f6  (commit CÔNG BỐ)  -> 22
-```
-
-Con số **đúng lúc đo và sai trong chính commit xuất bản nó**: hai dòng thêm vào là **câu văn ấy**. 🔴 **Một
-phép quét toàn cây tìm một CHUỖI, mà kết quả được viết ngược lại vào chính cái cây vừa quét, tự vô hiệu
-hoá con số của nó trong cùng một commit.** Đã **rút tại chỗ kèm ngày**, không xoá dòng nào.
-
-🔴 **Và loài ấy cắn ngay chính dụng cụ vừa dựng để bắt nó — đo được, không phải một ví dụ nghĩ ra.**
-Khẳng định `(f)` mới ("không-khớp-thật vẫn phải báo exit 1") dùng một pattern chắc chắn vắng, và bản
-đầu viết nó thành **một literal**: `zzq-no-such-pattern-zzq`. Nó **xanh khi chạy tay** — lúc ấy phép
-quét đọc `HEAD = 89018893`, chưa có dòng đó — rồi **ĐỎ ở lần chạy cổng đầu tiên sau khi commit**, vì
-literal ấy nay **nằm trong chính cái cây mà phép thăm dò quét**, nên phép quét *"không-khớp"* **tìm
-thấy chính mình** và trả exit 0. Chữa bằng một **nonce sinh lúc chạy**: một chuỗi vừa tạo ra thì không
-thể nằm trong một commit. **Ba lần trong nhiệm vụ này, bộ khẳng định mới bắt lỗi của chính người viết
-nó** — `ls-tree` sai ngữ nghĩa pathspec, `length()` định kiểu scalar trong `awk`, và cái này.
-
-### 2. Ở đâu trong mã — trỏ bằng TÊN
-
-* `scripts/repo-scan.sh:161` ở `89018893` — `SPECS=(".")`. Nay là `default_pathspec()`, trả `:(top)`.
-* `scripts/repo-scan.sh` `self_test()` — ba khẳng định cũ `(a)(b)(c)`, **cả ba** với pathspec tường minh.
-* `scripts/check-owner-decisions.sh` khối `END` — `C1`–`C4`, vòng `for` trên `rowline`/`bodypart`.
-* `scripts/scan-doc-negations.sh` `scan_into()` — nhánh `[[ ! -s "$2" ]]` ⇒ `printf '0\t0\n'`.
-* `src/St4i.EdgeCore/Drivers/Modbus/GatewayTcpBusLink.cs` — `InfiniteTimeout`, literal `20 lines`.
-
-### 3. Hậu quả vận hành, HAI CHIỀU
-
-**Chiều thuận — vì sao nó nguy hiểm chứ không chỉ hỏng.** `0` là **hình dạng của "không có ở đó"**, đúng
-loài mục 32 tồn tại để chặn. §8.1(f) **LỆNH** mọi nhiệm vụ dùng dụng cụ này cho phép quét toàn cây, và ba
-nhiệm vụ sau `cfcfae42` đã được lệnh ấy. Một phủ định tồn tại là thứ **đắt nhất** để sai, vì nó chỉ đúng
-nếu người viết đã **mở hết tập** — và ở đây cái vỏ bọc **vi phạm luật ấy giùm nhiều người cùng lúc**.
-
-🔴 **Chiều ngược, và nó THU HẸP thiệt hại — nói ra vì một sự thật viết chỉ theo chiều thuận là một nửa sự
-thật.** Mặc định hỏng trả **0 vô điều kiện**. Nên **bất kỳ khẳng định nào mang một con số KHÁC 0 đều
-KHÔNG THỂ đã đi qua nó** — con số ấy tự chứng minh miền của nó không rỗng. Bộ lọc đó cắt quần thể
-`cfcfae42..HEAD` xuống còn các câu **dựa trên một kết quả 0**. BA-1 liệt kê rồi kiểm quần thể ấy, và
-**hai** câu sai tìm được **sai vì lý do KHÁC**: một vì **tự tham chiếu** (d), một vì một **quần thể cũ**
-(`ModbusRegisterMap.PollIntervalMs` nói *"Both drivers"* trong khi mục 38 cùng cửa sổ đã đo được **BA** —
-sổ được sửa, **NGUỒN thì không**, suốt một vòng nhiệm vụ). **Không câu nào trong quần thể được tìm thấy
-là sai VÌ khuyết tật này.** Đó là một kết quả **may**, không phải một sự bào chữa: cùng cái vỏ ấy sẽ
-biến bất kỳ phủ định tồn tại nào tiếp theo thành một số 0 trông sạch sẽ.
-
-### 4. Nếu KHÔNG quyết định — cái gì CƯỠNG CHẾ được, và cái gì KHÔNG
-
-**Cưỡng chế được, và đã cưỡng chế hôm nay:**
-
-1. **Một ca self-test đi ĐÚNG đường mặc định.** `repo-scan.sh --self-test` nay chạy chính CLI của mình
-   **không pathspec** như một tiến trình con, và đòi mặc định phủ **toàn cây**. Đỏ-được: **ba** cặp đối
-   chứng chạy trọn rồi hoàn nguyên — đặt lại `SPECS=(".")` ⇒ đỏ ở `(g)`; `default_pathspec()` trả `.` ⇒
-   đỏ ở `(d)` **và** `(g)`; tắt từ chối miền-rỗng ⇒ đỏ ở `(e)`.
-2. **Phân biệt được KHÔNG-KHỚP-THẬT với PATHSPEC-KHÔNG-KHỚP-GÌ.** Miền được **đếm trước khi chạy
-   pattern**; miền rỗng bị **TỪ CHỐI (exit 2)**, không in một con số. Nên câu *"1 nghĩa là không khớp,
-   đó là một phép đo"* **thành đúng** thay vì chỉ được in ra: exit 1 chỉ tới được khi có một miền khác
-   rỗng đứng sau nó. Hai bờ đều bị ghim: miền rỗng ⇒ 2, không-khớp-thật trên miền thật ⇒ 1.
-3. **Khẳng định KHÔNG-RỖNG trên hai dụng cụ kia.** `C0` cho `check-owner-decisions.sh`; ba guard quần thể
-   cho `scan-doc-negations.sh`, cộng việc **in cả hai corpus** trong `--since`.
-
-🔴 **KHÔNG cưỡng chế được — nêu tên, vì một cái trần nêu quá nhỏ còn tệ hơn không nêu trần:**
-
-* **Không gì bắt được một self-test mà phép thử của nó chưa bao giờ đi qua một nhánh.** Đó là **độ phủ**,
-  và repo này **không có** dụng cụ đo độ phủ cho shell. Mục này được tìm bằng một con người đọc, đúng như
-  mục 37 được tìm bằng một con người đọc. Ba khẳng định mới hôm nay đóng **ba** đường đã biết; chúng
-  **không** nói gì về đường thứ tư.
-* **Không gì buộc ai chạy cặp đối chứng.** Một khẳng định mới có thể được thêm vào bất kỳ self-test nào
-  mà **chưa từng được chứng minh là đỏ-được**, và cổng sẽ xanh. Đây là **tiền lệ**, không phải cơ chế.
-* **Không gì bắt được loài (d).** Không cổng nào biết một con số trong một chú thích **đến từ** một phép
-  quét cái cây chứa chú thích ấy. Cách chữa duy nhất đã biết là **thói quen**: chạy lại phép quét và
-  trích dẫn lần chạy, đừng tin một literal — đúng thứ mục 26 đã kết luận cho trần census của nó, nay
-  gặp lại ở một mặt khác.
-* **Không gì làm cho ai đó DÙNG dụng cụ.** Ranh giới (a) của chính `repo-scan.sh` đã nói vậy từ đầu, và
-  bản sửa hôm nay **không** đổi điều đó.
-
-**Câu hỏi để anh phán:** cổng có nên đòi rằng **mỗi khẳng định của mỗi dụng cụ tự kiểm phải kèm một cặp
-đối chứng đã chạy** — tức một dụng cụ đo dụng cụ ở tầng thứ ba — hay đó là chi phí quá lớn và **tiền lệ
-cộng một con người đọc** là cái trần đúng? Điều phối viên **không tự quyết**. Cái đã trả nằm ở §4 mục 1–3;
-cái chưa trả là **cơ chế**.
-
----
-
 # 🔨 PHẦN II — ĐÃ QUYẾT, VIỆC CÒN NỢ
 
 **Mỗi mục ở đây đã có một phán quyết ghi kèm ngày, và việc của nó chưa được thi hành.**
@@ -1436,6 +1154,16 @@ mục nào ở trong nó. Banner, lý lẽ dựng nó và toàn bộ hồ sơ c�
 tiếp theo mà chủ sở hữu quyết rồi giao đi sẽ cần đúng cái kệ này. 🔴 **Và cổng KHÔNG đọc được điều đó:**
 `check-owner-decisions.sh` chỉ đòi quần thể TOÀN CỤC khác rỗng (`C0`), không đòi từng phần khác rỗng —
 nên một Phần II rỗng **đi qua xanh**, và câu này là chỗ duy nhất nói ra rằng nó rỗng **có chủ ý**.
+
+📐 **Câu ngay trên HẾT ĐÚNG kể từ 2026-08-23 (BD-1, mục 40) — giữ nguyên văn, rút tại chỗ.** Nó đúng khi
+BC-1 viết nó, và cái nó mô tả là **đúng khuyết tật mục 40 đặt tên**: hai trạng thái *"rỗng vì đã trả hết"*
+và *"rỗng vì parser mất dấu thân mục"* cho ra **cùng một đầu ra từng byte**, nên tập rỗng thoả mọi khẳng
+định phổ quát ngay bên trong dụng cụ dựng để cưỡng chế mục 37. `C6` nay đọc trường máy ngay dưới đây và
+đòi **khai báo == phân tích được**; một đẳng thức giữa hai tập **vẫn nói được điều gì đó khi cả hai rỗng**,
+đó là lý do chọn hình dạng này thay vì `count > 0` — thứ hôm nay sẽ **sai**, vì rỗng là một trạng thái hợp
+lệ chứ không phải một lỗi. Dòng dưới là **khẳng định**, không phải chú thích: xoá nó đi thì cổng đỏ.
+
+<!-- gate:phần-ii =  -->
 
 ---
 
@@ -9193,6 +8921,535 @@ kỳ nghĩa nào**, và mục rời **Phần I** sang **Phần III**.
   `configKind` nào tồn tại cho `ASSEMBLY`, nên câu duy nhất là một sự VẮNG MẶT) và
   **`OpcUaConnectorFactory.Kind`** (nêu một GIÁ TRỊ và lý do nó không trôi được). **Số 0 tái lập lần
   thứ SÁU** — và mục 12 §"đợt 12" ghi vì sao đó là một phát hiện về **LUẬT** chứ không phải về cụm.
+---
+
+---
+
+## 38. `pollIntervalMs` là trường cadence DUY NHẤT không được kiểm miền, trên CẢ HAI bản đồ — trong khi hai trường kề nó thì có, và ba driver tiêu thụ nó
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AZ-1, mục 12 đợt 10). Đo bởi AY-1 (đợt 9) trong lúc viết chú thích;
+**đợt 10 xác nhận lại trên mã VÀ chạy lại trên assembly đã dựng** trước khi mở mục này. Đợt 10
+**KHÔNG thi hành** — nó viết tài liệu và không được sửa mã.
+
+### 1. Đo được cái gì — LIỆT KÊ TRƯỚC, con số SAU
+
+**Ba trường cadence/timing mà một bản đồ khai**, và cái đối xử với chúng khác nhau:
+
+| trường | đường parse | giá trị ngoài miền |
+|---|---|---|
+| `readTimeoutMs` | `ParseOptionalPositiveInt(…, MaxReadTimeoutMs)` | **chặn**, cảnh báo qua `logWarning`, rơi về mặc định |
+| `retries` | `ParseOptionalPositiveInt(…, MaxRetries)` | **chặn**, cảnh báo, rơi về mặc định |
+| **`pollIntervalMs`** | gán thẳng `PollIntervalMs = map.PollIntervalMs` | 🔴 **lưu y như khai, im lặng** |
+
+**Đo trên assembly đã dựng** (`net10.0-windows`, SDK 10.0.302), gọi thẳng hai `FromJson`:
+
+```
+Modbus  pollIntervalMs=0            -> stored 0,            EffectiveReadTimeoutMs=1000
+Modbus  pollIntervalMs=-1           -> stored -1,           EffectiveReadTimeoutMs=1000
+Modbus  pollIntervalMs=-2           -> stored -2,           EffectiveReadTimeoutMs=1000
+Modbus  pollIntervalMs=-2147483648  -> stored -2147483648,  EffectiveReadTimeoutMs=1000
+OpcUa   pollIntervalMs=0/-1/-2/-2147483648  -> stored y như khai
+Modbus  readTimeoutMs=0/retries=0   -> warn ×2, ReadTimeoutMs=null, Retries=null
+Modbus  readTimeoutMs=-1/retries=-1 -> warn ×2, ReadTimeoutMs=null, Retries=null
+```
+
+**Và cái giá trị ấy làm gì**, đo trên cùng runtime:
+
+```
+Task.Delay(0)            -> hoàn tất trong 0 ms
+Task.Delay(-1)           -> CHƯA hoàn tất sau 750 ms   (Timeout.Infinite)
+Task.Delay(-2)           -> ArgumentOutOfRangeException
+Task.Delay(-3)           -> ArgumentOutOfRangeException
+Task.Delay(int.MinValue) -> ArgumentOutOfRangeException
+```
+
+🔴 **Phép đếm của đợt 9 — *"cả hai driver"* — LÀ MỘT PHÉP ĐẾM THIẾU. Liệt kê người tiêu thụ trước
+khi đếm: có BA.** `ModbusTcpDriver.ReadAsync` và `OpcUaDriver.ReadAsync` gọi
+`Task.Delay(_map.PollIntervalMs, ct)` **trực tiếp**; `ModbusRtuDriver.ReadAsync` gọi
+`Task.Delay(NextPollDelayMs(), ct)`, và `NextPollDelayMs()` là
+`_readBackoff.DelayMsFor(_map.PollIntervalMs, …)`. Hai bản đồ, ba driver.
+
+### 2. Ở đâu trong mã — trỏ bằng TÊN
+
+`St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap.PollIntervalMs` và `.FromJson`;
+`St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap.PollIntervalMs` và `.FromJson`;
+`ModbusRegisterMap.ParseOptionalPositiveInt` (đường mà hai trường kia ĐI QUA và trường này thì không);
+`ModbusTcpDriver.ReadAsync`, `OpcUaDriver.ReadAsync`, `ModbusRtuDriver.ReadAsync` +
+`ModbusRtuDriver.NextPollDelayMs`; `ModbusRtuReadBackoff.DelayMsFor`;
+`ModbusRegisterMap.EffectiveReadTimeoutMs`.
+
+### 3. Hậu quả vận hành, HAI CHIỀU
+
+*Chiều thuận.* **`0`** — vòng poll **không tiết chế**: mỗi lần lặp trả về ngay, nên một thiết bị
+quay hết tốc lực. Trên RTU nó còn là vấn đề của **hàng xóm**, vì mỗi vòng lấy khoá phân xử của cả
+bus. **`-1`** — `Task.Delay` chờ vô hạn, nên thiết bị được poll **đúng một lần rồi im**, và cái
+`IAsyncEnumerable` ấy **không kết thúc** mà cũng **không sinh gì**: `Health` đứng ở giá trị của lần
+poll đầu, và từ ngoài nhìn vào nó **không phân biệt được với một thiết bị khoẻ và chậm**.
+**`≤ -2`** — `ArgumentOutOfRangeException`. Cả ba driver bọc lời gọi delay trong một `try` mà
+`catch` **chỉ bắt `OperationCanceledException`**, nên nó **thoát khỏi iterator** — một hình dạng
+khác hẳn hai cái trên và khác hẳn cái mà vòng poll được thiết kế để chịu.
+
+*Chiều ngược, và nó thu hẹp mục này chứ không xoá nó.* **(a)** `EffectiveReadTimeoutMs` là
+`ReadTimeoutMs ?? Math.Max(1000, PollIntervalMs * 4)` — **sàn 1000 đo được cho cả bốn giá trị xấu**,
+nên một cadence âm **không** kéo theo read timeout hỏng, và `WorstCaseBusHoldMs` dựng trên nó cũng
+lành. **(b)** Trên `ModbusRtuDriver` với backoff **sản xuất**, giá trị âm bị **che sau lần hỏng đầu
+tiên** — đo được:
+
+```
+Default.DelayMsFor(poll=-2, hold=4000, failures=0) = -2      Disabled(...)= -2
+Default.DelayMsFor(poll=-2, hold=4000, failures=1) = 4000    Disabled(...)= -2
+Default.DelayMsFor(poll=-2, hold=4000, failures=5) = 60000   Disabled(...)= -2
+```
+
+nên trên RTU cái bẫy cắn **khi thiết bị KHOẺ**, và tự vá khi nó hỏng — thứ tự ngược với trực giác,
+và là lý do một phép thử "cắm giá trị âm rồi xem nó có hỏng không" **có thể xanh**. **(c)** Không có
+khách hàng nào đang báo lỗi này; nó đòi một bản đồ viết tay có giá trị âm hoặc `0`.
+
+### 4. Nếu KHÔNG quyết định
+
+Ba trường cạnh nhau trong cùng một tài liệu JSON tiếp tục có **hai luật khác nhau**, không ghi ở
+đâu ngoài chú thích mà đợt 9 vừa viết lên chính hai property ấy. Và **cái phép đo này KHÔNG thấy**:
+nó không mở `server/`, `client/` hay bất cứ người tạo bản đồ nào **ngoài repo này** — nếu một công
+cụ sinh cấu hình ở nơi khác phát ra `pollIntervalMs: 0`, chỗ này im lặng về chuyện đó.
+Ba hướng, **giá của cả ba, không đề xuất cái nào**: (i) **cho `pollIntervalMs` đi qua
+`ParseOptionalPositiveInt`** — rẻ nhất, cùng khuôn với hai hàng xóm, nhưng nó **đổi HÀNH VI của một
+bản đồ đang chạy** (một `0` đang chạy sẽ thành `1000`); (ii) **ném lúc parse** — to tiếng nhất và
+đúng với "một cấu hình không chạy được thì bị từ chối ở chỗ vận hành viên được báo", nhưng nó biến
+một fleet đang chạy với một bản đồ xấu thành một fleet **không khởi động**; (iii) **để nguyên và
+chỉ ghi tài liệu** — chính là trạng thái hôm nay, và đợt 9 + đợt 10 đã trả phần tài liệu ấy.
+
+### ✅ ĐÃ THI HÀNH 2026-08-23 (BD-1, base `889c72ab`) — kiểm miền đặt ở **BIÊN PARSE**, dùng lại **đúng luật của hai hàng xóm**, và **một bản triển khai hợp lệ cố ý dùng `0` được NÊU TÊN và KHÔNG bị giam
+
+**Phán quyết:** 2026-08-23, **điều phối viên quyết theo uỷ quyền** (khuôn mục 8). Ba hướng ở §4 của
+thân mục được cân; **chọn (i)** — cho `pollIntervalMs` đi qua đúng phép kiểm miền của hai hàng xóm.
+Hướng (ii) bị loại vì nó biến một fleet đang chạy với bản đồ xấu thành một fleet **không khởi động**, một
+bán kính nổ không cân xứng với một con số cadence — và chính `FromJson` đã viết sẵn lý lẽ ấy cho hai hàng xóm.
+
+#### 1. Ba driver — **LIỆT KÊ trước, đếm SAU** — mở mã ra kiểm lại, không tin sổ
+
+`ModbusTcpDriver.ReadAsync` (`Task.Delay(_map.PollIntervalMs, ct)` thẳng); `OpcUaDriver.ReadAsync`
+(`Task.Delay(_map.PollIntervalMs, ct)` thẳng); `ModbusRtuDriver.ReadAsync` (qua `NextPollDelayMs()` ⇒
+`_readBackoff.DelayMsFor(_map.PollIntervalMs, …)`). **Liệt kê xong mới đếm: BA.** Phép sửa của đợt 10
+(*"cả hai driver"* ⇒ BA) **đứng vững** khi mở lại mã.
+
+#### 2. Hai hàng xóm kiểm miền **theo một cách DUY NHẤT**, đo được — và đây là chỗ câu hỏi của brief có một nửa trả lời khác
+
+`readTimeoutMs` và `retries` gọi **cùng một hàm** `ParseOptionalPositiveInt(root, name, maxValue,
+logWarning)`, chỉ khác tham số trần (`MaxReadTimeoutMs` 60 000 / `MaxRetries` 5). **Không có hai cách —
+có một.** Luật ấy được dùng lại nguyên văn: `> 0`, `<= trần`, vi phạm ⇒ **cảnh báo nêu tên trường +
+rơi về mặc định**, không làm hỏng cả bản đồ.
+
+🔴 **Nhưng chúng KHÔNG giống nhau ở một điểm, và điểm đó là một quyết định phải nêu chứ không được
+nuốt.** Hai hàng xóm là `[JsonIgnore]` — chúng **không bind**, nên hàm trên đọc thẳng `JsonElement` thô và
+một **SAI KIỂU** JSON cũng chỉ là cảnh báo. `PollIntervalMs` thì **có** bind. Bản sửa này **cố ý KHÔNG thêm
+`[JsonIgnore]`**: `[JsonIgnore]` là thiết bị dung thứ **KIỂU** của hai hàng xóm, không phải phép kiểm
+**MIỀN** của chúng, và thêm nó sẽ biến một lỗi đang **ỒN ÀO** (sai kiểu ⇒ ném) thành một lỗi **IM LẶNG** —
+đúng chiều mà chính mục 38 gọi là hình dạng tệ nhất. **Một luật cho MIỀN, hai luật cho KIỂU, có chủ ý.**
+Câu *"the ONE deliberate exception"* trong `FromJson` đã được **rút tại nguồn** kèm ngày (giữ nguyên văn).
+
+🔴 **Và một nửa thứ hai của câu hỏi ấy: `OpcUaNodeMap` KHÔNG CÓ hàng xóm nào.** Tiêu đề mục nói *"hai
+trường kề nó thì có"* — đo 2026-08-23, điều đó **đúng với `ModbusRegisterMap` và SAI với `OpcUaNodeMap`**:
+bản đồ OPC-UA không khai `readTimeoutMs`, không khai `retries`. Trên nửa ấy bản sửa **nhập khẩu** một quy
+ước chứ không khôi phục một quy ước. Phép kiểm được **NHÂN BẢN**, không chia sẻ — cùng khuôn mà file này
+đã dùng cho `ValidateWritableNodes`/`ValidateCommands`, và vì thông điệp phải đọc là *"OPC-UA node map:"*.
+
+#### 3. Cái trần — **SUY RA, không CHỌN**, và vì sao nó không phải một số tròn
+
+`ParseOptionalPositiveInt` đòi một trần. **Một cái trần nêu quá nhỏ còn tệ hơn không nêu trần**, nên con số
+không được bịa: bề mặt rộng nhất trong chính hệ sinh thái sản phẩm này cho phép tới `3_600_000`
+(`server/routers/deviceAdapterRouter.ts`), nên mọi con số quanh `MaxReadTimeoutMs` sẽ **giam cấu hình mà
+một bề mặt anh em chấp nhận**. Trần duy nhất **đo được từ chính kiểu này** là số học:
+`EffectiveReadTimeoutMs` tính `PollIntervalMs * 4` trong `int`, nên trên `int.MaxValue / 4` tích ấy **tràn
+âm** và `Math.Max(1000, …)` lặng lẽ trả về sàn 1000 — điểm mà lớp này **hết mô tả được hành vi của chính
+nó**. `MaxPollIntervalMs = int.MaxValue / 4`, và nó là một **KHẢNG ĐỊNH** chứ không phải một câu:
+`MaxPollIntervalMs_IsTheLargestValueEffectiveReadTimeoutMsCanMultiplyWithoutOverflow`. 🔴 **Phép tràn
+ấy là một khuyết tật CÓ SẮN mà mục 38 không nêu**, tìm được trong lúc đi tìm cơ sở cho trần.
+
+#### 4. Bề mặt **ĐỌC** — §8.1(h5.4), quét TOÀN CÂY, **LIỆT KÊ trước**
+
+Đứng tại `tools/machine-simulator`, `scripts/repo-scan.sh --sha HEAD -l -i 'pollintervalms' -- ':(top)'`:
+**100 file**, trong đó **45 file NẰM NGOÀI `tools/machine-simulator`** — chính là phần mà §4 của thân mục
+khai là *"phép đo này KHÔNG thấy"*: `server/` (23), `client/` (4), `drizzle/` (13), `knowledge/` (2),
+`scripts/sim-factory/` (2), `docs/ECOSYSTEM/` (1). **Chỗ trống ấy nay đã được mở.**
+
+**Câu hỏi trọng tâm — có bản triển khai hợp lệ nào CỐ Ý dùng `0` để nói "poll nhanh nhất có thể" không?**
+Ngoài repo này: **KHÔNG, và ngược lại.** Mọi bề mặt sinh cấu hình đo được đều áp một **SÀN DƯƠNG**:
+`otConnectorManifests.ts` `min(100).max(60_000).default(1000)`; `deviceAdapterRouter.ts`
+`min(100).max(3_600_000)`; `robotRouter.ts` `min(250).max(600000)`; `ursimHarness.ts` `Math.max(50, …)`;
+và `connectionSupervisor.ts` đọc `opts.pollIntervalMs > 0 ? opts.pollIntervalMs : 5000` — tức nó coi
+**`0` là "dùng mặc định"**, không phải "nhanh nhất có thể". Không bản triển khai nào bị giam.
+
+🔴 **Trong repo này thì CÓ MỘT, và nó được NÊU TÊN thay vì bỏ qua:**
+`ModbusMultidropBusTests.ASlowPollerIsNotStarved_ByThreeDevicesPollingFlatOut` dựng **ba** bản đồ với
+`pollIntervalMs: 0`, nghĩa đúng là *"poll hết tốc lực"*, qua
+`ModbusRtuLoopbackHarness.BuildSingleRegisterMap`. **Nó KHÔNG bị giam**, và không phải do may: hàm ấy dựng
+bằng **object initializer**, không đi qua `FromJson`. Đặt phép kiểm ở **biên parse** — đúng chỗ hai hàng
+xóm đặt phép kiểm của chúng — là thứ giữ nó sống. **Một phép kiểm đặt trên property sẽ phá bài test ấy**, và
+`ProgrammaticConstruction_IsNotSubjectToTheParseTimeDomainCheck` ghim chính biên đó lại.
+
+#### 5. Nhân chứng và **cặp đối chứng chạy trọn, hoàn nguyên**
+
+Nhân chứng: `FromJson_RefusesNonPositivePollIntervalMs_WarnsAndFallsBackToTheDefault` (`0`, `-1`, `-2`,
+`int.MinValue`) trên **cả hai** bản đồ; cộng trần, cộng
+`FromJson_RefusingACadence_PreservesEveryOtherDeclaredField` (OPC-UA dựng lại bản đồ — một thao tác
+**làm rơi mất một trường bằng cách quên nó**, nên mọi property đều được ghim).
+
+**Cặp đối chứng A** — đặt lại `PollIntervalMs = map.PollIntervalMs` trên cả hai bản đồ, chạy trọn:
+**11 đỏ / 129 xanh**, trong đó cả bốn giá trị xấu ở cả hai bản đồ — **`-1` đỏ trên cả hai**. Hoàn nguyên,
+chạy lại: **140 xanh**.
+
+🔴 #### 6. MỘT KHUYẾT TẬT CỦA CHÍNH BẢN SỬA NÀY, bắt được trước khi đo, và nay có nhân chứng đứng canh
+
+Bản nháp đầu tiên dùng đúng `ParseOptionalPositiveInt` trên `JsonElement` thô — cái trông giống "dùng lại
+y nguyên cách của hai hàng xóm" nhất. **Nó SAI.** `TryGetProperty` khớp **phân biệt hoa thường**, còn
+binder thì **KHÔNG** (`PropertyNameCaseInsensitive = true`). Với một tài liệu viết `"PollIntervalMs": 250`
+— một cách viết sản phẩm **đang chấp nhận hôm nay** — bản nháp ấy **thay một cadence hợp lệ bằng 1000, im
+lặng**: tức nó tạo ra đúng hình dạng hỏng mà mục này tồn tại để diệt. Bản sửa đọc **giá trị ĐÃ BIND**, nên
+nó **kế thừa đúng luật khớp tên của binder** và không thể bất đồng với phép bind. **Cặp đối chứng C:**
+khôi phục nguyên văn bản nháp ⇒ **3 đỏ** (`PollIntervalMs`, `pollintervalms`, `POLLINTERVALMS`; cách viết
+đúng hoa thường vẫn xanh, đúng như cơ chế tiên đoán) ⇒ hoàn nguyên ⇒ xanh.
+`FromJson_KeepsAnInDomainPollIntervalMs_UnderEverySpellingTheBinderAccepts` đứng lại trên cả hai bản đồ.
+
+#### 7. Cái bản sửa này **KHÔNG** làm — nêu đủ rộng
+
+* **Không chạm đường dựng bằng mã.** Mọi hình dạng hỏng thân mục ghi — `0`, `-1`, `<= -2` — **vẫn tái
+  lập được** cho một bản đồ dựng bằng object initializer. Đó là giá của việc giữ bài test fairness sống.
+* **Hai bề mặt vẫn nuốt cảnh báo.** `ConnectorConfigValidation.TryValidateOpcUa` và
+  `St4i.EngineApi.Program` gọi `OpcUaNodeMap.FromJson` **không truyền sink**, nên trên hai đường ấy một
+  cadence xấu bị sửa **lặng lẽ**. Phần dư, nêu tên chứ không im.
+* **Không kiểm `readTimeoutMs`/`retries` viết hoa.** Cùng bẫy hoa-thường ở §6 **vẫn sống** cho hai hàng
+  xóm: chúng là `[JsonIgnore]`, nên `"ReadTimeoutMs": 3000` bị **bỏ qua hoàn toàn**, không cảnh báo.
+  **Không sửa ở đây** — nó ngoài mục 38 và chưa ai phán. **Ghi làm phát hiện.**
+
+---
+
+## 39. `"registers": null` / `"nodes": null` thoả `required`, bind một null thật, rồi ném `NullReferenceException` TRẦN
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (AZ-1, mục 12 đợt 10). Đo bởi AY-1 (đợt 9); **đợt 10 chạy lại trên
+assembly đã dựng** trước khi mở mục này. Đợt 10 **KHÔNG thi hành**.
+
+### 1. Đo được cái gì — LIỆT KÊ TRƯỚC, con số SAU
+
+**Bốn ca, hai bản đồ, một lần chạy** trên assembly đã dựng:
+
+```
+Modbus registers:null    -> NullReferenceException: [Object reference not set to an instance of an object.]
+Modbus registers ABSENT  -> JsonException: [... was missing required properties including: 'Registers'.]
+OpcUa  nodes:null        -> NullReferenceException: [Object reference not set to an instance of an object.]
+OpcUa  nodes ABSENT      -> JsonException: [... was missing required properties including: 'Nodes'.]
+```
+
+**Cơ chế, nêu chứ không suy:** `required` của C# được thoả bằng việc **KHOÁ CÓ MẶT** trong JSON, chứ
+không phải bằng việc giá trị khác `null`. Một `null` tường minh **đi qua** phép kiểm ấy và bind vào
+một property khai là non-nullable; câu lệnh kế tiếp trong `FromJson` đọc `.Count` trên nó.
+**Thông điệp không nêu file, không nêu trường, không nêu mã máy** — nó là chuỗi mặc định của CLR.
+
+🔴 **Và đây là đúng hình dạng mà `ModbusRegisterMap.FromJson` TỰ GHI là đã sửa cho `commands`**, ở
+một chú thích trong chính phương thức ấy tự gọi mình là *"the one parse failure in this method that
+didn't name what was wrong"* — câu đã được **rút tại chỗ** bởi đợt 9 vì đo được **ít nhất hai**.
+
+### 2. Ở đâu trong mã — trỏ bằng TÊN
+
+`ModbusRegisterMap.Registers` (`public required IReadOnlyList<ModbusRegister>`), đọc ở
+`ModbusRegisterMap.FromJson`; `OpcUaNodeMap.Nodes` (`public required IReadOnlyList<OpcUaNode>`), đọc
+ở `OpcUaNodeMap.FromJson` (`if (map.Nodes.Count == 0)`); `ModbusRtuConnectorFactory.TryCreate`,
+`ModbusConnectorFactory.TryCreate` và `OpcUaConnectorFactory.TryCreate` — nơi mọi throw từ hai
+`FromJson` ấy trở thành một chuỗi `error` cho vận hành viên.
+
+### 3. Hậu quả vận hành, HAI CHIỀU
+
+*Chiều thuận.* Một vận hành viên hoặc một công cụ sinh cấu hình viết `"registers": null` thay vì bỏ
+khoá — điều một serializer phát ra một cách hoàn toàn bình thường cho một danh sách rỗng chưa gán —
+nhận lại **`"Object reference not set to an instance of an object."`** và **không có gì để hành
+động**: không tên file, không tên trường, không mã máy. Với `TryCreate` bọc ngoài, chuỗi ấy là
+`ex.Message` **nguyên vẹn**, nên đó chính xác là thứ hiện lên chỗ khởi động connector. Đối chứng
+đứng ngay cạnh và làm cái giá rõ ràng: **cùng lỗi ấy với khoá VẮNG** cho một `JsonException` **nêu
+đích danh trường**.
+
+*Chiều ngược.* **(a)** Không tiến trình nào chết: `IConnectorFactory.TryCreate` có hợp đồng
+**không-bao-giờ-ném** và cả ba cài đặt bọc trọn thân hàm, nên hậu quả là **một thông điệp vô dụng**,
+không phải một fleet đổ. **(b)** Đường **VẮNG khoá** — ca thường gặp hơn — đã đúng và đã có nhân
+chứng; cái hỏng là ca `null` tường minh. **(c)** Sửa nó là **sửa mã trên đường parse mà cả hai
+driver fieldbus đi qua**, tức đúng đường mà mục 12 vừa đi qua để viết tài liệu, và giá của nó phải
+đo bằng test chứ không bằng lập luận.
+
+### 4. Nếu KHÔNG quyết định
+
+Hai `FromJson` giữ **một ca chẩn đoán trần** mỗi cái, và bản ghi duy nhất về nó là chú thích đợt 9
+viết lên chính hai property ấy cộng mục này. **Cái phép đo này KHÔNG thấy:** nó mở đúng hai trường
+(`registers`, `nodes`) trên hai bản đồ ấy; **không** ai đã mở HẾT tập các property `required` khác
+trong cây để xem còn chỗ nào cùng hình dạng — nêu tên chứ không đoán.
+
+### ✅ ĐÃ THI HÀNH 2026-08-23 (BD-1, base `889c72ab`) — **HAI ca đo RIÊNG**, và không thêm một chỗ ném không nêu tên
+
+**Phán quyết:** 2026-08-23, **điều phối viên quyết theo uỷ quyền** (khuôn mục 8).
+
+#### 1. `required` **thật sự hứa gì** — và vì sao đây là HAI ca chứ không phải một
+
+`required` của C# được `System.Text.Json` thoả bằng việc **KHOÁ CÓ MẶT**, không phải bằng việc giá trị
+khác `null`. Hai ca, **đo riêng, hai cơ chế khác hẳn**:
+
+| ca | cơ chế | trước | sau |
+|---|---|---|---|
+| `"registers": null` / `"nodes": null` **tường minh** | qua được phép kiểm required, bind một null thật, `.Count` ném | 🔴 `NullReferenceException` **trần** | `InvalidOperationException` **nêu trường + mã máy** |
+| khoá **VẮNG** | binder từ chối, **không bao giờ dựng đối tượng** | `JsonException` nêu `'Registers'`/`'Nodes'` | **KHÔNG ĐỔI** |
+
+🔴 **Ca thứ hai đã đúng từ trước, và việc nó KHÔNG ĐỔI là một kết quả phải đo chứ không được giả định** —
+một phép kiểm null đặt sau một lần bind thành công rất dễ **nuốt** ca không-có-bind.
+`FromJson_Absent*Key_StillFailsInTheBinderNamingTheProperty` ghim nó trên cả hai bản đồ, và **cặp đối
+chứng B chứng minh nó đang đo một cơ chế KHÁC**: tắt hai phép kiểm null ⇒ **chỉ 2 đỏ**, đúng hai bài ca-1,
+hai bài ca-2 **vẫn xanh**.
+
+Ca thứ **ba** trong cùng họ được ghim luôn cho đủ tập chứ không lấy mẫu: mảng **RỖNG** ⇒
+`InvalidOperationException` nêu trường. **Ba đầu vào, ba kết cục, không cái nào còn là chuỗi mặc định của CLR.**
+
+#### 2. Thông điệp nêu **trường nào** và **máy nào** — còn **file nào** thì nói thật về chỗ nó đến từ đâu
+
+🔴 Đợt 12 đo được **sáu trong 34 chỗ ném của `Doc28Parser` không nêu tên file**, và yêu cầu là **đừng thêm cái
+thứ bảy**. Đo trước khi viết: **`FromJson` nhận VĂN BẢN, không nhận đường dẫn** — nó **không có** tên file
+để nêu, và bịa một cái sẽ tệ hơn im. Cái nó CÓ là **tên trường** và **mã máy** (đã được kiểm khác rỗng ngay
+trên), và cả hai đều vào thông điệp. **Tên file do khung CÓ đường dẫn nêu**, và nó đã nêu sẵn:
+`St4i.EngineApi.Program` bọc đúng thông điệp này trong `'{MapPath}'`. Đó là **câu trả lời đo được** cho yêu
+cầu "nêu file", chứ không phải một lối né: tầng biết đường dẫn nêu đường dẫn, tầng biết trường nêu trường.
+
+⚠️ **Nửa bất lợi, nói ra:** `ModbusConnectorFactory.TryCreate` / `OpcUaConnectorFactory.TryCreate` /
+`ConnectorConfigValidation` **không có file** — cấu hình tới từ `connectors.json` hoặc một cột DB dưới dạng
+blob. Trên những đường ấy vận hành viên nhận **trường + mã máy và KHÔNG có tên file**, vì không có tên file
+nào tồn tại để nêu. Mã máy là định danh hành động được ở đó.
+
+#### 3. Phần thân mục tự nêu là **KHÔNG THẤY** — vẫn chưa thấy, và nói ra chứ không đoán
+
+§4 của thân mục viết: *"không ai đã mở HẾT tập các property `required` khác trong cây để xem còn chỗ nào
+cùng hình dạng"*. **Nhiệm vụ này cũng KHÔNG mở hết tập đó.** Nó sửa đúng hai trường mà mục 39 nêu tên.
+**Một câu phủ định tồn tại chỉ đúng nếu đã mở hết tập**, nên ở đây không có câu phủ định nào được viết.
+Chỗ trống đó **đi tiếp**, không đóng theo mục này.
+
+---
+
+## 40. Một dụng cụ TỰ KIỂM có thể mù đúng ở đường mặc định của chính nó, và cổng vẫn xanh
+
+🔴 **CHỜ ANH.** Mở 2026-08-22 (BA-1). Khuyết tật tìm bởi **AZ-1** (mục 12 đợt 10), điều phối viên **xác
+nhận độc lập hai lần**. AZ-1 **không sửa** vì nó nằm ngoài ba sản phẩm của nó — lựa chọn đúng. BA-1 **đã
+sửa dụng cụ**; **cái CHỜ ANH là cơ chế ở §4**, không phải bản sửa.
+
+### 1. Đo được cái gì — LIỆT KÊ TRƯỚC, con số SAU
+
+**(a) Khuyết tật gốc.** `scripts/repo-scan.sh` là dụng cụ dựng **CHO mục 32** — mục nói rằng *một phép
+quét thu hẹp trả 0 chứ không báo lỗi, nên 0-hit-đúng và 0-hit-vì-pathspec không phân biệt được*. Đứng tại
+`tools/machine-simulator`, ở `89018893`:
+
+```
+git grep --full-name -l 'class' HEAD -- ':(top).'   ->     0      (và 0 từ CẢ repo root)
+git grep --full-name -l 'class' HEAD -- ':(top)'    ->  1804
+git grep --full-name -l 'class' HEAD                ->   641      (thu về cwd)
+```
+
+`repo-scan.sh:161` — `[[ ${#SPECS[@]} -eq 0 ]] && SPECS=(".")` ⇒ `rewrite_pathspec` ⇒ `:(top).`. Dụng cụ
+**in** *"1 means NO MATCH, which is a measurement, not an error"*, nên số 0 ấy được **trình bày như một
+kết quả đã kiểm**. Đó là mục 32, do dụng cụ của mục 32, trong **ba** vòng nhiệm vụ.
+
+**(b) Vì sao `--self-test` xanh suốt thời gian ấy — và đây là hạt nhân của mục này.** Ba khẳng định của
+nó là *bất biến theo cwd*, *không rỗng*, *hazard còn sống*; **cả ba đều truyền pathspec tường minh**, nên
+**không cái nào đi qua đường mặc định**. Cái duy nhất nói về mặc định là bất biến-theo-cwd — và **mặc
+định hỏng ĐÚNG LÀ bất biến theo cwd: bất biến bằng 0**, đo được từ cả hai thư mục. **Khuyết tật THOẢ phép
+kiểm.** Một dụng cụ tự kiểm mù **đúng ở chỗ** đối tượng của nó mù.
+
+**(c) Quét hai dụng cụ kia cùng loài — LIỆT KÊ rồi mới ĐẾM.** Quần thể là **ba** dụng cụ mà
+`verify-suites.sh` chạy làm cổng: `repo-scan.sh --self-test`, `check-owner-decisions.sh`,
+`scan-doc-negations.sh --since`. Loài: *một quần thể có thể RỖNG, mà công cụ vẫn in một con số như thể đã
+đo*. Kết quả, **hai trong ba** có nó ngoài `repo-scan.sh` — tức **cả ba**:
+
+* `check-owner-decisions.sh` — **CÓ, và tái lập được.** C1–C4 đều là vòng `for` trên một quần thể mà
+  parser phục hồi từ **văn xuôi** bằng regex. Một file mang banner Phần I và **một** marker liệt kê
+  sống, **không bảng phán quyết, không thân mục**, cho `verdict rows : 0 · body sections : 0 ·
+  DIVERGENCES : 0 · exit 0`. Tập rỗng thoả mọi khẳng định phổ quát.
+* `scan-doc-negations.sh` — **CÓ, ở hai chỗ, hỏng theo hai chiều NGƯỢC nhau.** `scan_into` gặp danh sách
+  file rỗng thì ghi `0 câu / 0 hit` **không nói một lời**; và `--since` — **chế độ cổng chạy** — trước hôm
+  nay **không in kích thước quần thể nào cả**, nên một corpus rỗng cho `NEW absolute doc claims : 0` +
+  `PASS`. Chiều kia: corpus **BASE** rỗng làm **mọi** câu hiện tại thành "mới", tức đỏ với một con số
+  thuần hiện vật. Cả hai **không** với tới được qua corpus mặc định hôm nay (`find` trả 546 file `.cs`) —
+  nêu ra chứ không phóng đại.
+
+**(d) Một loài THỨ HAI, tìm được lúc kiểm lại quần thể khẳng định, và không dụng cụ nào ở đây bắt được
+nó.** `GatewayTcpBusLink.InfiniteTimeout` công bố *"Measured over every tracked `*.cs` (20 lines)"*. Đo
+lại cùng phép quét:
+
+```
+tools/machine-simulator/*.cs @ 3f564039  (BASE lúc viết)   -> 20
+tools/machine-simulator/*.cs @ 9da2b2f6  (commit CÔNG BỐ)  -> 22
+```
+
+Con số **đúng lúc đo và sai trong chính commit xuất bản nó**: hai dòng thêm vào là **câu văn ấy**. 🔴 **Một
+phép quét toàn cây tìm một CHUỖI, mà kết quả được viết ngược lại vào chính cái cây vừa quét, tự vô hiệu
+hoá con số của nó trong cùng một commit.** Đã **rút tại chỗ kèm ngày**, không xoá dòng nào.
+
+🔴 **Và loài ấy cắn ngay chính dụng cụ vừa dựng để bắt nó — đo được, không phải một ví dụ nghĩ ra.**
+Khẳng định `(f)` mới ("không-khớp-thật vẫn phải báo exit 1") dùng một pattern chắc chắn vắng, và bản
+đầu viết nó thành **một literal**: `zzq-no-such-pattern-zzq`. Nó **xanh khi chạy tay** — lúc ấy phép
+quét đọc `HEAD = 89018893`, chưa có dòng đó — rồi **ĐỎ ở lần chạy cổng đầu tiên sau khi commit**, vì
+literal ấy nay **nằm trong chính cái cây mà phép thăm dò quét**, nên phép quét *"không-khớp"* **tìm
+thấy chính mình** và trả exit 0. Chữa bằng một **nonce sinh lúc chạy**: một chuỗi vừa tạo ra thì không
+thể nằm trong một commit. **Ba lần trong nhiệm vụ này, bộ khẳng định mới bắt lỗi của chính người viết
+nó** — `ls-tree` sai ngữ nghĩa pathspec, `length()` định kiểu scalar trong `awk`, và cái này.
+
+### 2. Ở đâu trong mã — trỏ bằng TÊN
+
+* `scripts/repo-scan.sh:161` ở `89018893` — `SPECS=(".")`. Nay là `default_pathspec()`, trả `:(top)`.
+* `scripts/repo-scan.sh` `self_test()` — ba khẳng định cũ `(a)(b)(c)`, **cả ba** với pathspec tường minh.
+* `scripts/check-owner-decisions.sh` khối `END` — `C1`–`C4`, vòng `for` trên `rowline`/`bodypart`.
+* `scripts/scan-doc-negations.sh` `scan_into()` — nhánh `[[ ! -s "$2" ]]` ⇒ `printf '0\t0\n'`.
+* `src/St4i.EdgeCore/Drivers/Modbus/GatewayTcpBusLink.cs` — `InfiniteTimeout`, literal `20 lines`.
+
+### 3. Hậu quả vận hành, HAI CHIỀU
+
+**Chiều thuận — vì sao nó nguy hiểm chứ không chỉ hỏng.** `0` là **hình dạng của "không có ở đó"**, đúng
+loài mục 32 tồn tại để chặn. §8.1(f) **LỆNH** mọi nhiệm vụ dùng dụng cụ này cho phép quét toàn cây, và ba
+nhiệm vụ sau `cfcfae42` đã được lệnh ấy. Một phủ định tồn tại là thứ **đắt nhất** để sai, vì nó chỉ đúng
+nếu người viết đã **mở hết tập** — và ở đây cái vỏ bọc **vi phạm luật ấy giùm nhiều người cùng lúc**.
+
+🔴 **Chiều ngược, và nó THU HẸP thiệt hại — nói ra vì một sự thật viết chỉ theo chiều thuận là một nửa sự
+thật.** Mặc định hỏng trả **0 vô điều kiện**. Nên **bất kỳ khẳng định nào mang một con số KHÁC 0 đều
+KHÔNG THỂ đã đi qua nó** — con số ấy tự chứng minh miền của nó không rỗng. Bộ lọc đó cắt quần thể
+`cfcfae42..HEAD` xuống còn các câu **dựa trên một kết quả 0**. BA-1 liệt kê rồi kiểm quần thể ấy, và
+**hai** câu sai tìm được **sai vì lý do KHÁC**: một vì **tự tham chiếu** (d), một vì một **quần thể cũ**
+(`ModbusRegisterMap.PollIntervalMs` nói *"Both drivers"* trong khi mục 38 cùng cửa sổ đã đo được **BA** —
+sổ được sửa, **NGUỒN thì không**, suốt một vòng nhiệm vụ). **Không câu nào trong quần thể được tìm thấy
+là sai VÌ khuyết tật này.** Đó là một kết quả **may**, không phải một sự bào chữa: cùng cái vỏ ấy sẽ
+biến bất kỳ phủ định tồn tại nào tiếp theo thành một số 0 trông sạch sẽ.
+
+### 4. Nếu KHÔNG quyết định — cái gì CƯỠNG CHẾ được, và cái gì KHÔNG
+
+**Cưỡng chế được, và đã cưỡng chế hôm nay:**
+
+1. **Một ca self-test đi ĐÚNG đường mặc định.** `repo-scan.sh --self-test` nay chạy chính CLI của mình
+   **không pathspec** như một tiến trình con, và đòi mặc định phủ **toàn cây**. Đỏ-được: **ba** cặp đối
+   chứng chạy trọn rồi hoàn nguyên — đặt lại `SPECS=(".")` ⇒ đỏ ở `(g)`; `default_pathspec()` trả `.` ⇒
+   đỏ ở `(d)` **và** `(g)`; tắt từ chối miền-rỗng ⇒ đỏ ở `(e)`.
+2. **Phân biệt được KHÔNG-KHỚP-THẬT với PATHSPEC-KHÔNG-KHỚP-GÌ.** Miền được **đếm trước khi chạy
+   pattern**; miền rỗng bị **TỪ CHỐI (exit 2)**, không in một con số. Nên câu *"1 nghĩa là không khớp,
+   đó là một phép đo"* **thành đúng** thay vì chỉ được in ra: exit 1 chỉ tới được khi có một miền khác
+   rỗng đứng sau nó. Hai bờ đều bị ghim: miền rỗng ⇒ 2, không-khớp-thật trên miền thật ⇒ 1.
+3. **Khẳng định KHÔNG-RỖNG trên hai dụng cụ kia.** `C0` cho `check-owner-decisions.sh`; ba guard quần thể
+   cho `scan-doc-negations.sh`, cộng việc **in cả hai corpus** trong `--since`.
+
+🔴 **KHÔNG cưỡng chế được — nêu tên, vì một cái trần nêu quá nhỏ còn tệ hơn không nêu trần:**
+
+* **Không gì bắt được một self-test mà phép thử của nó chưa bao giờ đi qua một nhánh.** Đó là **độ phủ**,
+  và repo này **không có** dụng cụ đo độ phủ cho shell. Mục này được tìm bằng một con người đọc, đúng như
+  mục 37 được tìm bằng một con người đọc. Ba khẳng định mới hôm nay đóng **ba** đường đã biết; chúng
+  **không** nói gì về đường thứ tư.
+* **Không gì buộc ai chạy cặp đối chứng.** Một khẳng định mới có thể được thêm vào bất kỳ self-test nào
+  mà **chưa từng được chứng minh là đỏ-được**, và cổng sẽ xanh. Đây là **tiền lệ**, không phải cơ chế.
+* **Không gì bắt được loài (d).** Không cổng nào biết một con số trong một chú thích **đến từ** một phép
+  quét cái cây chứa chú thích ấy. Cách chữa duy nhất đã biết là **thói quen**: chạy lại phép quét và
+  trích dẫn lần chạy, đừng tin một literal — đúng thứ mục 26 đã kết luận cho trần census của nó, nay
+  gặp lại ở một mặt khác.
+* **Không gì làm cho ai đó DÙNG dụng cụ.** Ranh giới (a) của chính `repo-scan.sh` đã nói vậy từ đầu, và
+  bản sửa hôm nay **không** đổi điều đó.
+
+**Câu hỏi để anh phán:** cổng có nên đòi rằng **mỗi khẳng định của mỗi dụng cụ tự kiểm phải kèm một cặp
+đối chứng đã chạy** — tức một dụng cụ đo dụng cụ ở tầng thứ ba — hay đó là chi phí quá lớn và **tiền lệ
+cộng một con người đọc** là cái trần đúng? Điều phối viên **không tự quyết**. Cái đã trả nằm ở §4 mục 1–3;
+cái chưa trả là **cơ chế**.
+
+### ✅ ĐÃ THI HÀNH 2026-08-23 (BD-1, base `889c72ab`) — hai món nợ trả, và **câu hỏi trung tâm được trả lời bằng "LUẬT ẤY KHÔNG CƯỠNG CHẾ ĐƯỢC"**
+
+**Phán quyết:** 2026-08-23, **điều phối viên quyết theo uỷ quyền** (khuôn mục 8).
+
+#### 1. `G1` — **GIỮ**, và quyết định này là một PHÉP ĐO chứ không phải một lập luận
+
+Câu hỏi đúng — *"guard này có phải cái tạo ra màu đỏ trên đường cổng THẬT SỰ đi không"* — được trả lời bằng
+cách **ép quan trắc**: `corpus_of` trả danh sách rỗng **chỉ cho `$SIMROOT`** (nên corpus BASE vẫn đầy đủ,
+không lẫn với `G2`), rồi chạy ba cách:
+
+```
+G1 có,      --since   -> exit 2, từ chối tại G1
+G1 tắt,     --since   -> exit 2, từ chối tại G3 (NOW_SENT)
+G1 tắt,     --census  -> exit 0, "corpus : 0", "FLAGGED : 0"     [XANH]
+```
+
+**Dòng hai là phép đo kết tội `G1`:** trên `--since` — **mode DUY NHẤT `verify-suites.sh` chạy** — `G1`
+**không phải** cái tạo ra màu đỏ; `G3` bắt cùng đầu vào. **Dòng ba là phép đo tha bổng nó:** vùng phủ riêng
+của nó là `--census`, và gỡ nó đi thì **đặt lại đúng khuyết tật của mục 40 vào đó** — một số 0 in ra kèm exit 0.
+Lý do thứ hai, nhỏ hơn nhưng thật: bỏ `G1` thì thông điệp `--since` thành *"0 files were read and they
+contain ZERO doc-comment sentences"* — một câu **giả định đã đọc file** và đẩy người đọc đi tìm nhầm chỗ.
+
+🔴 **`G1` được TỰ DÁN NHÃN ngay tại nguồn là *"guard, KHÔNG phải nhân chứng đường cổng"***, kèm cả ba
+dòng đo ở trên, để không ai đếm nó vào vùng phủ của cổng.
+
+🔴 **Và liệt kê lại quần thể tìm ra cái THỨ TƯ, chưa ai canh:** `BASE_SENT` được đọc, được **in ra**, và
+**không bao giờ được kiểm**. `G2` canh **số FILE** của corpus base; một cây base có hàng trăm `*.cs` mà
+**không câu doc-comment nào** làm **mọi** câu hiện tại thành "mới" ⇒ đỏ với một con số thuần hiện vật ⇒ người
+sau **nâng `--expect`** cho xanh. §1(c) của thân mục nêu bản số-file của lỗ này rồi **dừng ở đó**. `G4` đóng
+bản số-câu. **Đỏ được trên đúng argv của cổng** (`--since cfcfae42 --expect 203`): ép `BASE_SENT=0` ⇒ exit 2
+kèm thông điệp nêu `545 *.cs nhưng ZERO doc-comment sentences` ⇒ hoàn nguyên ⇒ xanh.
+
+#### 2. `C0` — **nay PHÂN BIỆT ĐƯỢC Phần II TRỐNG với Phần II HỞ NG**, bằng `C6`
+
+Chỗ hỏng, đo từ mã: `C0` khẳng định hai quần thể **TOÀN CỤC** khác rỗng; `seen_part[]` được ghi ở dòng 103
+và **không bao giờ được đọc lại**; không có phép đếm theo phần nào. Nên *"Phần II rỗng vì đã trả hết"* và
+*"Phần II rỗng vì parser mất dấu thân mục"* cho **cùng một đầu ra từng byte**. **Từ 2026-08-22 đây không còn là
+giả thuyết** — Phần II trống thật.
+
+**Hình dạng bản sửa suy từ cách hỏng, không phát minh:** Phần I **đã** có cơ chế đúng — một **trường máy**
+khai quần thể, và `C3` đòi **khai báo == phân tích được**. `C6` nhân bản nó cho Phần II. 🔴 **Vì sao là
+ĐẲNG THỨC chứ không phải `count > 0`:** `count > 0` sẽ **SAI hôm nay** — rỗng là một trạng thái **hợp lệ**, và
+một phép kiểm đòi nó khác rỗng là đòi một lời nói dối. **Một đẳng thức giữa hai tập vẫn nói được điều gì đó
+khi cả hai rỗng** — đó chính là cách thoát khỏi *"tập rỗng thoả mọi khẳng định phổ quát"*.
+
+**Cặp đối chứng, ba chiều, chạy trọn rồi hoàn nguyên** — chiều thứ hai chạy trên **đúng argv cổng dùng**
+(không `--file`), trên chính file thật:
+
+```
+trường bị xoá                          -> C6 "PART II declares no population"        exit 1
+trường khai [12], phân tích được []      -> C6 "declares [12]; actually contains []"   exit 1
+BANNER Phần II bị hỏng (em dash -> -)   -> C6 "declares no population"               exit 1
+```
+
+🔴 **Chiều thứ ba là cái `C0` KHÔNG BAO GIỜ thấy được**: banner hỏng thì các thân mục Phần II bị quy cho
+Phần I trong im lặng, và hôm nay — khi Phần II rỗng — **không có gì bị quy nhầm, nên `C0` xanh**.
+
+#### 3. 🔴 Câu hỏi trung tâm: **cái gì cưỡng chế được luật ấy trên MỌI dụng cụ tương lai?**
+
+**Câu trả lời: KHÔNG GÌ CƯỠNG CHẾ ĐƯỢC CHÍNH LUẬT ẤY, và đây là lý do đo được chứ không phải một lời từ chối.**
+Luật là một phát biểu về **QUAN HỆ** giữa một khẳng định và tập mà nó lượng hoá trên — *"cái vòng lặp này
+chạy trên đúng quần thể mà guard kia đã đo"*. Xác lập điều đó là một tính chất **luồng dữ liệu / độ phủ**
+của một chương trình shell, và repo này **không có dụng cụ đo độ phủ cho shell** — đúng điều §4 của thân mục
+đã nói, và chính khuyết tật này được tìm bằng **một con người đọc**.
+
+**Cái CƯỠNG CHẾ ĐƯỢC là PHÉP KHAI BÁO, và chỗ đặt nó đã có sẵn.** Mọi dụng cụ cổng chạy đều đi qua **một**
+hàm: `run_tooling_check`. Đó là tính chất làm cho cơ chế này **tổng quát** thay vì là ca đặc biệt thứ tư
+đóng đinh vào ba script đã biết. **Giao thức:** một tooling check **THÀNH CÔNG** phải in ít nhất một dòng
+`POPULATION <nhãn> <số>`, và **mọi số phải > 0**. Một dụng cụ mới thêm vào **thừa kế ràng buộc ấy chỉ bằng
+việc được thêm vào**, không ai phải nhớ gì.
+
+**Giá của hai ứng viên kia, đo rồi loại:** *(i)* một hàm dùng chung mọi dụng cụ phải gọi — rẻ nhất, **cưỡng
+chế KHÔNG GÌ**: không gì bắt một script mới phải `source` nó. *(ii)* một phép kiểm meta đọc các script —
+cưỡng chế **cú pháp**, và thoả được bằng cách gọi hàm ấy trên một thứ hiển nhiên khác rỗng — tức **đúng loài
+của mục 40 nâng lên một tầng**, một thứ tệ để dựng trong lúc đang sửa mục 40. Giao thức được chọn **không
+mạnh hơn về LOẠI** — nó mạnh hơn về **CHỖ ĐẶT**.
+
+🔴 **Cái giao thức này KHÔNG làm — nêu đủ rộng, vì một cái trần nêu quá nhỏ còn tệ hơn không nêu trần:**
+
+* **Nó không kiểm được rằng quần thể được KHAI chính là quần thể đã được LƯỢNG HOÁ TRÊN.** Một dụng cụ
+  tương lai có thể khai corpus A và vòng lặp trên corpus B, và cổng xanh. Nó biến **"rỗng trong im lặng"**
+  thành **"phải nói dối tường minh"**. Đó là toàn bộ phần cải thiện, không hơn.
+* **Không gì buộc ai chạy cặp đối chứng** — và đây là **câu hỏi thân mục đặt cho chủ sở hữu**. Quyết, theo
+  uỷ quyền: **KHÔNG dựng dụng cụ tầng thứ ba.** Lý do đo được: một dụng cụ như thế chỉ xác lập được rằng
+  **một cặp đối chứng ĐÃ CHẠY**, không xác lập được rằng nó **đã đột biến đúng thứ khẳng định ấy dựa vào** —
+  cùng hố quan-hệ-không-quan-sát-được ở trên, lần này ở tầng ba. **Tiền lệ cộng một con người đọc** là cái
+  trần đúng, và nó có hồ sơ: mục 37 và mục 40 **đều được tìm bằng một con người đọc**, không bằng một cổng.
+* **Không gì bắt được loài (d)** — một con số trong chú thích **đến từ** một phép quét cái cây chứa chú thích
+  ấy. Không đổi so với BA-1.
+* **Không gì làm cho ai đó DÙNG dụng cụ.** Không đổi.
+
+#### 4. Đỏ được trên **đường cổng chạy**, và một nhãn trung thực về chỗ phép đo ấy yếu
+
+`G4` và `C6` **đỏ được trên đúng argv cổng dùng** (§1 và §2 trên). ⚠️ **Giao thức POPULATION thì khác, và
+nói thật ở đây:** nó sống trong `verify-suites.sh`, nên màu đỏ của nó chỉ quan sát được trong **một lần
+chạy cổng đầy đủ**. Cái đã quan sát được ghi ở báo cáo nhiệm vụ; cái **chưa** quan sát được cũng ghi ở đó,
+không được suy ra từ *"logic nó đúng"*.
+
 ---
 
 # PHẦN IV — PHỤ LỤC: KHÔNG PHẢI QUYẾT ĐỊNH CỦA ANH, VÀ LỊCH SỬ CỦA CHÍNH FILE NÀY

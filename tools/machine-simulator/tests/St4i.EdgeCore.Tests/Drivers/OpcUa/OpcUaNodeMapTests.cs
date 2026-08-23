@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Drivers.OpcUa;
 using Xunit;
@@ -579,5 +581,138 @@ public class OpcUaNodeMapTests
         var targetB = Assert.Single(OpcUaNodeMap.FromJson(jsonB).CommandTargets);
 
         Assert.NotEqual(targetA.Target, targetB.Target);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 docs/owner-decisions.md ITEM 38 — the OPC-UA half. Item 38's title says the two adjacent
+    // fields ARE range checked; measured, that is true of ModbusRegisterMap and FALSE here: this map
+    // declares no readTimeoutMs and no retries at all, so on this side the fix imports a convention
+    // rather than restoring one. The failure shapes are identical because the consumer is identical
+    // (OpcUaDriver.ReadAsync hands the value straight to Task.Delay).
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    private static string MapWithPollInterval(string rawJsonValue, string machineCode = "PLC-OPCUA-CADENCE") => $$"""
+    { "machineCode": "{{machineCode}}", "endpointUrl": "opc.tcp://localhost:4840",
+      "pollIntervalMs": {{rawJsonValue}},
+      "nodes": [ { "nodeId": "ns=2;s=V", "metric": "v" } ] }
+    """;
+
+    /// <summary>
+    /// 🔴 The same three shapes, and the same reason <c>-1</c> is the worst of them: <c>0</c> burns CPU
+    /// visibly, <c>≤ -2</c> throws visibly, and <c>-1</c> is <c>Timeout.Infinite</c> — the endpoint is
+    /// read once and then stays quiet while looking exactly like a healthy slow one. Item 38's own
+    /// paragraph on this member excluded the OPC-UA driver ("Both drivers"); it was corrected to THREE,
+    /// and this is the assertion that the correction was about a real consumer.
+    /// </summary>
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("-2")]
+    [InlineData("-2147483648")]
+    public void FromJson_RefusesNonPositivePollIntervalMs_WarnsAndFallsBackToTheDefault(string declared)
+    {
+        var warnings = new List<string>();
+
+        var map = OpcUaNodeMap.FromJson(MapWithPollInterval(declared), logWarning: warnings.Add);
+
+        Assert.Equal(OpcUaNodeMap.DefaultPollIntervalMs, map.PollIntervalMs);
+        var warning = Assert.Single(warnings);
+        Assert.Contains("pollIntervalMs", warning, StringComparison.Ordinal);
+        Assert.Contains(declared, warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FromJson_RefusesPollIntervalMsAboveTheCeiling_WarnsAndFallsBackToTheDefault()
+    {
+        var warnings = new List<string>();
+        var tooLarge = OpcUaNodeMap.MaxPollIntervalMs + 1;
+
+        var map = OpcUaNodeMap.FromJson(MapWithPollInterval(tooLarge.ToString(CultureInfo.InvariantCulture)), logWarning: warnings.Add);
+
+        Assert.Equal(OpcUaNodeMap.DefaultPollIntervalMs, map.PollIntervalMs);
+        Assert.Single(warnings);
+    }
+
+    /// <summary>The same case-insensitivity regression guarded on the Modbus side. Kept on both maps
+    /// rather than on the one where it was caught, because the two parse paths are separate code and a
+    /// witness that only covers one of them is a witness for one of them.</summary>
+    [Theory]
+    [InlineData("pollIntervalMs")]
+    [InlineData("PollIntervalMs")]
+    [InlineData("pollintervalms")]
+    public void FromJson_KeepsAnInDomainPollIntervalMs_UnderEverySpellingTheBinderAccepts(string key)
+    {
+        var json = $$"""
+        { "machineCode": "PLC-OPCUA-SPELLING", "endpointUrl": "opc.tcp://localhost:4840",
+          "{{key}}": 250, "nodes": [ { "nodeId": "ns=2;s=V", "metric": "v" } ] }
+        """;
+
+        var warnings = new List<string>();
+        var map = OpcUaNodeMap.FromJson(json, logWarning: warnings.Add);
+
+        Assert.Equal(250, map.PollIntervalMs);
+        Assert.Empty(warnings);
+    }
+
+    /// <summary>A refused cadence must not disturb anything else the map declared. This type has no
+    /// <c>with</c> expression, so the refusal is applied by RECONSTRUCTING the map — an operation that can
+    /// drop a field by omission, silently, exactly once and forever. Every property is asserted here for
+    /// that reason.</summary>
+    [Fact]
+    public void FromJson_RefusingACadence_PreservesEveryOtherDeclaredField()
+    {
+        const string json = """
+        { "machineCode": "PLC-OPCUA-KEEP", "endpointUrl": "opc.tcp://host:4840",
+          "securityMode": "None", "username": "u", "password": "p", "pollIntervalMs": -1,
+          "nodes": [ { "nodeId": "ns=2;s=V", "metric": "v", "unit": "C" } ] }
+        """;
+
+        var map = OpcUaNodeMap.FromJson(json);
+
+        Assert.Equal(OpcUaNodeMap.DefaultPollIntervalMs, map.PollIntervalMs);
+        Assert.Equal("PLC-OPCUA-KEEP", map.MachineCode);
+        Assert.Equal("opc.tcp://host:4840", map.EndpointUrl);
+        Assert.Equal(OpcUaSecurityMode.None, map.SecurityMode);
+        Assert.Equal("u", map.Username);
+        Assert.Equal("p", map.Password);
+        Assert.Empty(map.Commands);
+        var node = Assert.Single(map.Nodes);
+        Assert.Equal("ns=2;s=V", node.NodeId);
+        Assert.Equal("C", node.Unit);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 docs/owner-decisions.md ITEM 39 — the OPC-UA twin. Two cases, measured separately.
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 <b>Case 1 — explicit <c>null</c>.</b> Satisfies <c>required</c>, binds a genuine null,
+    /// and used to leave through <c>OpcUaConnectorFactory.TryCreate</c> as the CLR's own
+    /// <c>"Object reference not set to an instance of an object."</c>.</summary>
+    [Fact]
+    public void FromJson_ExplicitNullNodes_ThrowsNamingTheFieldAndTheMachine_NotABareNullReference()
+    {
+        const string json = """
+        { "machineCode": "PLC-NULLNODES", "endpointUrl": "opc.tcp://localhost:4840", "nodes": null }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => OpcUaNodeMap.FromJson(json));
+
+        Assert.Contains("nodes", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("PLC-NULLNODES", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Object reference not set", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary><b>Case 2 — the key is ABSENT.</b> A different mechanism, already correct before item 39,
+    /// asserted so the case-1 fix cannot silently absorb it.</summary>
+    [Fact]
+    public void FromJson_AbsentNodesKey_StillFailsInTheBinderNamingTheProperty()
+    {
+        const string json = """
+        { "machineCode": "PLC-NONODES", "endpointUrl": "opc.tcp://localhost:4840" }
+        """;
+
+        var ex = Assert.Throws<JsonException>(() => OpcUaNodeMap.FromJson(json));
+
+        Assert.Contains("Nodes", ex.Message, StringComparison.Ordinal);
     }
 }

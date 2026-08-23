@@ -340,6 +340,29 @@ public sealed class ModbusRegisterMap
     /// an unreasonable worst case.</summary>
     public const int MaxRetries = 5;
 
+    /// <summary>The value <see cref="PollIntervalMs"/> resolves to when the key is absent, or when a
+    /// declared value is refused by <see cref="FromJson"/>'s domain check. Named rather than repeated as a
+    /// literal because it is now asserted in two places (the property initializer and the parse fallback)
+    /// and those two must not be able to drift apart.</summary>
+    public const int DefaultPollIntervalMs = 1000;
+
+    /// <summary>Upper guard for <see cref="PollIntervalMs"/> — <b>derived, not chosen</b>, which is why it
+    /// is not a round number like its two neighbours above.
+    ///
+    /// <para>🔴 <b>Item 38 (task BD-1, 2026-08-23) deliberately declines to invent a smaller ceiling.</b>
+    /// A ceiling stated too small is worse than no ceiling, because it jails a legitimate deployment; the
+    /// widest declared bound anywhere in this product's ecosystem is <c>3_600_000</c> (one hour, in
+    /// <c>server/routers/deviceAdapterRouter.ts</c>), so any hand-picked figure near
+    /// <see cref="MaxReadTimeoutMs"/> would refuse configurations a sibling surface accepts. The ONE bound
+    /// this type can measure about itself is arithmetic: <see cref="EffectiveReadTimeoutMs"/> computes
+    /// <c>PollIntervalMs * 4</c> in <see langword="int"/>, so above <c>int.MaxValue / 4</c> that product
+    /// wraps negative and <c>Math.Max(1000, …)</c> silently returns the 1000 ms floor — a derived
+    /// per-attempt timeout that no longer has anything to do with the declared cadence. That is the point
+    /// at which this class stops being able to describe its own behaviour, and it is therefore the only
+    /// honest place to put the line. Asserted, not asserted-about: see
+    /// <c>ModbusRegisterMapTests.MaxPollIntervalMs_IsTheLargestValueEffectiveReadTimeoutMsCanMultiplyWithoutOverflow</c>.</para></summary>
+    public const int MaxPollIntervalMs = int.MaxValue / 4;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -408,8 +431,40 @@ public sealed class ModbusRegisterMap
     /// drivers — so the unthrottled-loop and indefinite-wait shapes above reach the OPC-UA driver too,
     /// which the sentence as written excludes. <c>docs/owner-decisions.md</c> item 38 measured this
     /// correction on 2026-08-22 and recorded it in the ledger; THIS line, the source the ledger was
-    /// correcting, was left standing for a task cycle. Retracted at the source now.</para></summary>
-    public int PollIntervalMs { get; init; } = 1000;
+    /// correcting, was left standing for a task cycle. Retracted at the source now.</para>
+    ///
+    /// <para>📐 <b>EXECUTED 2026-08-23 (task BD-1, item 38). The two paragraphs above are kept verbatim.
+    /// What changed is the PARSE path, and only that — a map built PROGRAMMATICALLY still stores whatever
+    /// it is given, which is asserted by
+    /// <c>ModbusRegisterMapTests.ProgrammaticConstruction_IsNotSubjectToTheParseTimeDomainCheck</c>.
+    /// The three <c>Task.Delay</c> behaviours those paragraphs record were NOT re-measured by this task;
+    /// they are AY-1's and AZ-1's readings, carried forward unchanged and labelled as theirs.</b>
+    /// <see cref="FromJson"/> now runs this key through <see cref="ResolvePollIntervalMs"/>, which applies
+    /// the same domain RULE that <see cref="ParseOptionalPositiveInt"/> has always applied for
+    /// <see cref="ReadTimeoutMs"/> and <see cref="Retries"/> — the same law, not a third one invented for
+    /// this field, and a separate function only because this property is bound and those two are not (see
+    /// <see cref="ResolvePollIntervalMs"/> for the defect that distinction prevents). A declared
+    /// <c>0</c>, a negative, or a value above
+    /// <see cref="MaxPollIntervalMs"/> is refused with a warning naming the field, and
+    /// <see cref="DefaultPollIntervalMs"/> applies. <b>The <c>-1</c> shape is the reason this was worth
+    /// paying:</b> the other two out-of-range values fail LOUDLY (a hot loop shows up as CPU, an
+    /// <c>ArgumentOutOfRangeException</c> shows up as a stack trace), while <c>-1</c> leaves a device
+    /// polled exactly once and then indistinguishable from a healthy slow one — the only one of the three
+    /// that a running plant cannot see.
+    ///
+    /// <para>🔴 <b>What this deliberately does NOT jail, named because jailing it would have been the
+    /// error:</b> a map constructed through an object initializer never passes through
+    /// <see cref="FromJson"/> and is unaffected. <c>ModbusMultidropBusTests.</c>
+    /// <c>ASlowPollerIsNotStarved_ByThreeDevicesPollingFlatOut</c> builds three maps with
+    /// <c>pollIntervalMs: 0</c> — meaning, deliberately and legitimately, "poll flat out" — via
+    /// <c>ModbusRtuLoopbackHarness.BuildSingleRegisterMap</c>. It is the only intentional <c>0</c> that a
+    /// whole-tree scan for this member name turned up on 2026-08-23 — 100 files, 45 of them outside
+    /// <c>tools/machine-simulator</c> — which is a statement about that scan and not a proof that no other
+    /// exists: the scan matched a literal <c>0</c> beside the key, so a <c>0</c> arriving through a
+    /// variable would not have been seen. Putting the check at the parse boundary (where its two
+    /// neighbours put theirs) is what leaves this one standing; a check on the property itself would have
+    /// broken it.</para></para></summary>
+    public int PollIntervalMs { get; init; } = DefaultPollIntervalMs;
 
     /// <summary>The registers this map declares, in the order the poll loop reads them — one request per
     /// entry per poll, which is why <see cref="WorstCaseBusHoldMs"/> multiplies by <c>Registers.Count</c>
@@ -626,10 +681,26 @@ public sealed class ModbusRegisterMap
     /// NOT ordinary <see cref="JsonSerializer"/>-bound properties (see their <c>[JsonIgnore]</c>) — they
     /// are read straight off the raw <see cref="JsonElement"/> below, independently of the strongly-typed
     /// deserialize above, specifically so a malformed VALUE for one never throws out of the automatic
-    /// binding in the first place.</summary>
+    /// binding in the first place.
+    ///
+    /// <para>📐 <b>The words "the ONE deliberate exception" above are RETRACTED 2026-08-23 (task BD-1,
+    /// item 38). The paragraph is kept verbatim and everything it says about those two fields is still
+    /// true; what does not survive is the COUNT — there are now THREE fields whose out-of-domain value
+    /// warns instead of throwing.</b> <see cref="PollIntervalMs"/> joined them, and it joined them
+    /// HALFWAY, which is the part worth stating rather than smoothing over: it goes through the same
+    /// <see cref="ParseOptionalPositiveInt"/> for its DOMAIN (non-positive, or above
+    /// <see cref="MaxPollIntervalMs"/> — warn and fall back), but it is NOT <c>[JsonIgnore]</c>d, so a
+    /// wrong JSON TYPE still throws out of the strongly-typed bind exactly as it did before. That asymmetry
+    /// is deliberate and it is the one place this fix declines to copy its neighbours: <c>[JsonIgnore]</c>
+    /// is their TYPE-tolerance device, not their domain check, and adding it here would have converted a
+    /// currently-loud failure into a quiet one — the precise direction item 38 identifies as the worst of
+    /// the three shapes it measured. Two laws became one for the domain and stayed two for the type, on
+    /// purpose, recorded so the next reader does not "finish the job" without knowing it was a
+    /// choice.</para></summary>
     /// <param name="json">The register-map JSON document.</param>
-    /// <param name="logWarning">Invoked once per malformed <see cref="ReadTimeoutMs"/>/<see cref="Retries"/>
-    /// value that was ignored in favour of its computed default. Optional — a <see langword="null"/>
+    /// <param name="logWarning">Invoked once per malformed <see cref="PollIntervalMs"/>/
+    /// <see cref="ReadTimeoutMs"/>/<see cref="Retries"/> value that was ignored in favour of its computed
+    /// default. Optional — a <see langword="null"/>
     /// callback just means the fallback isn't surfaced anywhere (it still happens either way).</param>
     public static ModbusRegisterMap FromJson(string json, Action<string>? logWarning = null)
     {
@@ -644,6 +715,26 @@ public sealed class ModbusRegisterMap
         if (string.IsNullOrWhiteSpace(map.MachineCode))
         {
             throw new InvalidOperationException("Modbus register map: 'machineCode' must be a non-blank string.");
+        }
+
+        // 🔴 Item 39 (task BD-1, 2026-08-23) — an explicit `"registers": null`. `required` is satisfied by
+        // the KEY BEING PRESENT, not by the value being non-null, so an explicit null binds straight through
+        // it into a property declared non-nullable and the `.Count` below used to raise a BARE
+        // NullReferenceException: no file, no field, no machine code, and `TryCreate` hands that string to
+        // the operator verbatim. This is the same shape already fixed for `commands` immediately below, and
+        // the two differ in what the fix can be: `commands` has a meaningful empty default, `registers` does
+        // not — an empty list is itself refused on the next line — so this one must throw. It names the
+        // field and the machine code because those are the two identifiers this method actually has; the
+        // FILE is named by the caller that owns the path (Program.cs's startup catch prints
+        // `'{MapPath}'` around this message), because FromJson is handed TEXT and inventing a filename here
+        // would be a worse answer than deferring to the frame that knows one.
+        if (map.Registers is null)
+        {
+            throw new InvalidOperationException(
+                $"Modbus register map for machine '{map.MachineCode}': 'registers' was declared as null. " +
+                "Give it an array of at least one register entry, or remove the key entirely to see which " +
+                "required field is missing. (A JSON null is not the same as an omitted key: 'required' " +
+                "accepts it.)");
         }
 
         if (map.Registers.Count == 0)
@@ -688,7 +779,10 @@ public sealed class ModbusRegisterMap
         {
             MachineCode = map.MachineCode,
             UnitId = map.UnitId,
-            PollIntervalMs = map.PollIntervalMs,
+            // Item 38 — the SAME domain rule the two fields below have always used, applied to the value
+            // the binder produced. See ResolvePollIntervalMs for why it reads the BOUND value and not the
+            // raw element the way its two neighbours do.
+            PollIntervalMs = ResolvePollIntervalMs(map.PollIntervalMs, logWarning),
             Registers = map.Registers,
             Commands = commands,
             ReadTimeoutMs = ParseOptionalPositiveInt(document.RootElement, "readTimeoutMs", MaxReadTimeoutMs, logWarning),
@@ -706,13 +800,62 @@ public sealed class ModbusRegisterMap
     /// equal the CLR default.</summary>
     private sealed record RegisterFieldPresenceProbe(ushort? Address, ModbusRegisterType? Type, ModbusDataType? DataType);
 
+    /// <summary>Item 38 (task BD-1, 2026-08-23) — <see cref="PollIntervalMs"/>'s domain check. The RULE is
+    /// <see cref="ParseOptionalPositiveInt"/>'s, unchanged and worded identically: must be &gt; 0, must not
+    /// exceed <see cref="MaxPollIntervalMs"/>, and a violation warns through
+    /// <paramref name="logWarning"/> and falls back to <see cref="DefaultPollIntervalMs"/> rather than
+    /// failing the whole map.
+    ///
+    /// <para>🔴 <b>Why this takes the BOUND value where its two neighbours read the raw
+    /// <see cref="JsonElement"/> — a defect caught in this fix's own first draft, before it was
+    /// measured.</b> The neighbours are <c>[JsonIgnore]</c>d, so the raw element is their only source and
+    /// <c>TryGetProperty</c>'s ORDINAL, case-sensitive matching is the only matching they have — which,
+    /// noted here rather than smoothed over, means a document spelling either of them
+    /// <c>"ReadTimeoutMs"</c>/<c>"Retries"</c> in any other case is IGNORED WITHOUT A WARNING. That is a
+    /// live defect on those two fields, found while measuring this one; it is outside item 38 and is left
+    /// standing rather than fixed in passing. This property is
+    /// bound, and the binder matches case-INSENSITIVELY
+    /// (<see cref="JsonSerializerOptions.PropertyNameCaseInsensitive"/>). A raw
+    /// <c>TryGetProperty("pollIntervalMs")</c> therefore MISSES a document spelled
+    /// <c>"PollIntervalMs"</c> that the binder had already accepted — so the first draft of this fix would
+    /// have silently replaced a perfectly valid declared cadence with the default, on a spelling the
+    /// product accepts today. Validating what the binder produced inherits the binder's own matching rules
+    /// exactly, which is the only version of this check that cannot disagree with the bind.</para>
+    ///
+    /// <para>The one thing this cannot see, stated rather than left implicit: it cannot distinguish an
+    /// ABSENT key from an explicitly declared <c>1000</c>. It does not need to — both are in domain and
+    /// both resolve to the same value, so the distinction has no observable consequence here. An explicit
+    /// <c>null</c> and a wrong JSON type never reach this method at all; they throw out of the bind
+    /// above, unchanged by item 38.</para></summary>
+    private static int ResolvePollIntervalMs(int value, Action<string>? logWarning)
+    {
+        if (value <= 0)
+        {
+            logWarning?.Invoke($"Modbus register map: 'pollIntervalMs' must be > 0 (got {value}) — ignoring and using the default instead.");
+            return DefaultPollIntervalMs;
+        }
+
+        if (value > MaxPollIntervalMs)
+        {
+            logWarning?.Invoke($"Modbus register map: 'pollIntervalMs' {value} exceeds the maximum of {MaxPollIntervalMs} — ignoring and using the default instead.");
+            return DefaultPollIntervalMs;
+        }
+
+        return value;
+    }
+
     /// <summary>Tolerantly reads an optional positive-integer field directly off the raw JSON element —
     /// see <see cref="FromJson"/>'s own remarks for why <see cref="ReadTimeoutMs"/>/<see cref="Retries"/>
     /// are parsed this way instead of through the ordinary strongly-typed deserialize. Omitted, explicit
     /// JSON <c>null</c>, wrong JSON type, non-positive, or above <paramref name="maxValue"/> all resolve
     /// the SAME way: <see langword="null"/> (the caller's computed default applies) — the first case
     /// silently (nothing was wrong), every other case via <paramref name="logWarning"/> (a value WAS
-    /// given and it was ignored).</summary>
+    /// given and it was ignored).
+    ///
+    /// <para>Item 38 (2026-08-23) reused this RULE — not this method — for a third key,
+    /// <see cref="PollIntervalMs"/>; see <see cref="ResolvePollIntervalMs"/> for why that key needs the
+    /// bound value rather than the raw element, and <see cref="FromJson"/>'s retraction note for the one
+    /// behaviour that deliberately did not extend to it.</para></summary>
     private static int? ParseOptionalPositiveInt(JsonElement root, string propertyName, int maxValue, Action<string>? logWarning)
     {
         if (!root.TryGetProperty(propertyName, out var prop) || prop.ValueKind == JsonValueKind.Null)

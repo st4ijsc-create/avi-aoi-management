@@ -2008,8 +2008,41 @@ EXPECT_CONFORMANCE=24
 # crefs disambiguated to Publish(ApiTraceEvent) — and NOT re-baselined. EXPECT_BUILD_NODES stays 0. No
 # suppression of any kind was added: no NoWarn, no #pragma, no .editorconfig severity change, and
 # SuppressionCensusTests' tables are untouched.
+#
+# ══ TASK BD-1 (2026-08-23, base 889c72ab) — docs/owner-decisions.md ITEMS 38, 39 AND 40 EXECUTED ══════
+#
+# Raises EXPECT_EDGECORE 1179 -> 1204 (+25) AND MOVES NO OTHER SUITE TOTAL. EXPECT_ABSTRACTIONS 161,
+# EXPECT_CONFORMANCE 24, EXPECT_EDGESERVICE 52, EXPECT_ENGINEAPI 1408 all stand: the two files edited
+# under tests/ are both in St4i.EdgeCore.Tests. Grand total 2824 -> 2849, read off the five constants
+# below rather than carried forward.
+#
+# 🔴 COUNTED FROM THE RUNNER BY RUNNING IT, NOT BY DISCOVERY, and this task re-learned why the block
+# ~1,820 lines above says so. `--list-tests` returns 1197 for EdgeCore after the change, i.e. +18, while
+# the twenty-five cases it lists are individually enumerable. VSTest discovery and execution disagree on
+# InlineData rows. The suite was RUN to completion instead: `Passed! - Failed: 0, Passed: 1204,
+# Total: 1204`. 1179 + 25 = 1204, and the 25 are:
+#
+#   +14  tests/.../Drivers/Modbus/ModbusRegisterMapTests.cs   — item 38: a 4-row Theory over 0/-1/-2/
+#        int.MinValue, the ceiling, the ceiling's own overflow derivation, a 4-row Theory over the four
+#        spellings the binder accepts, and the parse-boundary assertion that keeps the deliberate
+#        pollIntervalMs:0 in ModbusMultidropBusTests legal; item 39: explicit null, ABSENT key, empty array.
+#   +11  tests/.../Drivers/OpcUa/OpcUaNodeMapTests.cs         — the same shapes on the OPC-UA half, plus
+#        one asserting that refusing a cadence preserves every other declared field (that map has no
+#        `with`, so a refusal RECONSTRUCTS it, and a reconstruction drops a field by forgetting it).
+#
+# 🔴 EXPECT_WARNINGS STAYS 219, MEASURED ON A FULL `MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild` of
+# the solution AFTER all three items: `0 Error(s)`, `219 Warning(s)`. It was measured, not asserted — and
+# the first measurement returned 221. The two were BOTH MINE and BOTH FIXED AT SOURCE, not re-baselined:
+# a CS1570 (I appended a new <para> after a </summary> that was already closed, so the whole addendum sat
+# outside the element) and a CS1734 (I inserted ResolvePollIntervalMs and its doc BETWEEN
+# ParseOptionalPositiveInt's doc comment and its method, so that doc bound to the wrong member and its
+# <paramref name="maxValue"/> named a parameter the new method does not have). The second is the more
+# instructive: it means the neighbouring method silently lost its documentation, and only the pinned
+# warning count noticed. EXPECT_BUILD_NODES stays 0. No suppression of any kind was added — no NoWarn, no
+# #pragma, no .editorconfig severity change — and the warning ledger stays at its FOURTEEN rows, unmoved
+# unit for unit; the eight VENDORED rows do not move by one unit.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1179
+EXPECT_EDGECORE=1204
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4384,17 +4417,93 @@ note "exclusive-run lock held: pid ${GATE_SELF_WINPID} (lock $GATE_LOCK_DIR)"
 # themselves absolute-carrying sentences (naming what IS true after removing what was not), so this number
 # rises rather than falls. All 97 were read.
 DOC_ABSOLUTES_BASELINE="cfcfae42"
-EXPECT_NEW_DOC_ABSOLUTES=203
+# 🔴 TASK BD-1 (2026-08-23, items 38/39/40) moves this 203 -> 225 (+22), MEASURED AFTER the prose was
+# written and re-measured after it was corrected, not written beside the diff in advance. All 22 are in
+# the three files item 38 touches (ModbusRegisterMap.cs, OpcUaNodeMap.cs, OpcUaConnectorFactory.cs) and
+# every one was read back. 🔴 THREE DID NOT SURVIVE THAT READING AND WERE REWRITTEN AT SOURCE RATHER THAN
+# COUNTED AS TRUE — this is the filter doing the job it exists for, on the author who added the sentences:
+#   * "runs this key through ParseOptionalPositiveInt, the same single function ReadTimeoutMs and Retries
+#     have always used" — FALSE by the time it was read. The implementation had moved to
+#     ResolvePollIntervalMs two edits earlier; the sentence described the FIRST DRAFT and went stale
+#     inside the same change. Now says "the same domain RULE ... not a third one invented for this field".
+#   * "every failure shape they record was re-measured and still reproduces" — NOT MEASURED by this task.
+#     The three Task.Delay behaviours are AY-1's and AZ-1's readings; the sentence now carries them
+#     forward labelled as theirs and claims only what BD-1 actually asserted.
+#   * "TryGetProperty's ORDINAL, case-sensitive matching is all they ever needed" — FALSE, and measured
+#     false: a map declaring "ReadTimeoutMs": 3000 / "Retries": 4 binds BOTH to null with ZERO warnings
+#     (measured 2026-08-23 on the built assembly), so those two fields silently discard a capitalised
+#     spelling. That is a live defect on fields item 38 does not cover; the sentence now names it and
+#     leaves it standing rather than claiming the behaviour was intended.
+# The corpus itself also moved under the count and both halves are stated: 545 -> 546 files, 15965 ->
+# 16749 doc-comment sentences. The census reading on the same run is 5995 of 16749 — a CEILING, quoted
+# from the run rather than copied from an older literal, which is what boundary (d) of the scanner asks.
+EXPECT_NEW_DOC_ABSOLUTES=225
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
 # on the drive letter. Argument vectors, not string surgery.
 _SCRIPTDIR="$(dirname "$0")"
+# ══ THE POPULATION PROTOCOL (BD-1, 2026-08-23, docs/owner-decisions.md item 40) ═════════════════
+#
+# ITEM 40 ASKS: what enforces "every check must assert its own population is non-empty" on EVERY
+# FUTURE instrument, not just the three that exist? The honest answer is in two halves and both
+# belong here, because a ceiling stated too small is worse than no ceiling.
+#
+# 🔴 THE LAW ITSELF IS NOT ENFORCEABLE, AND THIS DOES NOT ENFORCE IT. The law is a statement about
+# the RELATIONSHIP between an assertion and the set it quantifies over — "the population this loop
+# ran over was the one the guard measured". Establishing that is a dataflow/coverage property of a
+# shell program, and this repository has no coverage instrument for shell (item 40 §4 says so, and
+# BA-1 found its defect with a human reading, not a tool). Nothing written here changes that. A
+# future instrument can satisfy every line below and still be vacuous: declare a population it did
+# not quantify over, or guard corpus A and loop over corpus B. That gap is real, it is not closed,
+# and it is the reason this is called a protocol and not a proof.
+#
+# WHAT *IS* ENFORCEABLE IS THE DECLARATION, AND THE CHOKEPOINT ALREADY EXISTS. Every instrument the
+# gate runs goes through THIS function — that is the property that makes the mechanism general
+# rather than a fourth special case bolted onto three known scripts. So: a tooling check that
+# SUCCEEDS must print at least one `POPULATION <label> <count>` line, and every count must be > 0.
+# A new instrument added below inherits the requirement by being added, without anyone remembering
+# to; an instrument that reports success over nothing must now say the word "0" out loud, where
+# before it could print a clean summary and exit 0.
+#
+# Weighed against the two alternatives item 40 lists, and priced:
+#   * A shared assert_nonempty() helper every instrument calls — cheapest to write, enforces
+#     NOTHING: nothing compels a new script to source it. It is a convenience, not a gate.
+#   * A meta-check that greps the scripts for such a call — enforces syntax, and is satisfied by
+#     calling it on something trivially non-empty. It is item 40's own species one level up, which
+#     is a poor thing to build while fixing item 40.
+# The protocol below is not stronger in kind than those; it is stronger in PLACEMENT. It sits where
+# the gate already has the instrument's output in its hand, so it costs one grep and cannot be
+# skipped by forgetting.
+_tooling_population_report() {              # $1 = log file; echoes a diagnosis, or nothing if OK
+  local _log="$1" _pops _zeros
+  _pops="$(grep -cE '^[[:space:]]*POPULATION[[:space:]]+[^[:space:]]+[[:space:]]+[0-9]+[[:space:]]*$' "$_log" 2>/dev/null || true)"
+  if [[ "${_pops:-0}" -eq 0 ]]; then
+    echo "the run SUCCEEDED but declared no POPULATION line, so nothing establishes that any check"
+    echo "  in it ran over a non-empty set. An empty set satisfies every universal claim; a green"
+    echo "  from an instrument that read nothing is the defect item 40 exists for. Print at least"
+    echo "  one 'POPULATION <label> <count>' line naming what was actually measured."
+    return
+  fi
+  _zeros="$(awk '/^[[:space:]]*POPULATION[[:space:]]+[^[:space:]]+[[:space:]]+[0-9]+[[:space:]]*$/ && $3+0 == 0 {printf "%s ", $2}' "$_log")"
+  if [[ -n "$_zeros" ]]; then
+    echo "the run SUCCEEDED while declaring an EMPTY population: ${_zeros}"
+    echo "  A check over an empty set passes without reading anything. Refuse, or narrow the claim."
+  fi
+}
+
 run_tooling_check() {                       # $1 = human name, $2.. = argv
   local _name="$1"; shift
   local _log="$LOGDIR/tool-$(printf '%s' "$_name" | tr ' /' '--').log"
   if bash "$@" > "$_log" 2>&1; then
-    note "$_name: OK"
+    local _popfail
+    _popfail="$(_tooling_population_report "$_log")"
+    if [[ -n "$_popfail" ]]; then
+      FAILURES+=("$_name: $_popfail")
+      note "$_name: FAILED the population protocol (see verdict below)"
+    else
+      note "$_name: OK"
+    fi
   else
     FAILURES+=("$_name: $(cat "$_log")")
     note "$_name: FAILED (see verdict below)"
