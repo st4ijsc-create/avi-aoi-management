@@ -847,7 +847,16 @@ vẫn đúng cho host của nó.
 **Đã chọn: CẢNH BÁO TO, hành vi không đổi.** `FleetConfig.Load` phát **một** cảnh báo cho **mỗi**
 SCREWDRIVE chưa khai, qua đúng cái `logWarning` mà **cả ba host đã truyền sẵn** (`FleetCore._logWarning`,
 `ILogger` của `EdgeWorker`, `Debug.WriteLine` của `FleetService`). Câu ấy **nêu CẢ HAI** ứng viên kèm
-dải và **không chọn cái nào**, rồi chỉ đúng khoá đóng câu hỏi lại. Đây **không** phải một *mặc định im
+dải và **không chọn cái nào**, rồi chỉ đúng khoá đóng câu hỏi lại.
+
+🔴 **CÁI TRẦN CỦA CHÍNH CÂU TRÊN, ĐO CHỨ KHÔNG GIẢ ĐỊNH — và bản nháp đầu của README trong chính nhiệm
+vụ này đã viết quá nó.** **Ba host TRUYỀN sink; chỉ HAI host HIỆN được gì trong một bản dựng phát hành.**
+Sink của `FleetService` là `msg => System.Diagnostics.Debug.WriteLine(msg)`, mà `Debug.WriteLine` mang
+`[Conditional("DEBUG")]` — **trình biên dịch XOÁ lời gọi ấy ở cấu hình Release**, nên lambda thành no-op
+và kiosk WPF **không cho ai xem cảnh báo này cả**. **Không phải khuyết tật nhiệm vụ này tạo ra, và cũng
+không phải cái nó sửa**: đúng cái sink ấy đã nuốt cảnh báo "một mục fleet.json hỏng" của GP-3 từ ngày
+GP-3 viết chúng. Ghi ở đây vì **một cảnh báo chỉ tốt bằng cái sink nó rơi vào**, và cái này rơi vào **hai
+trên ba**. Đây **không** phải một *mặc định im
 lặng*: một mặc định im lặng là cái nói *"đây là con số"*; câu này nói *"chưa ai nói con số nào, và đây
 là hai thứ sẽ xảy ra"*.
 

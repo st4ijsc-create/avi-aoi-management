@@ -170,6 +170,18 @@ public static class FleetConfig
                     // the simulator, which has no sink at all. It states BOTH candidate outcomes and picks
                     // neither: an undeclared screwdriver keeps exactly the behaviour it had, and the reader
                     // is told that behaviour depends on the host. See ScrewTorqueSpec.DescribeUndeclared.
+                    //
+                    // 🔴 AND THE CEILING ON THAT SENTENCE, MEASURED RATHER THAN ASSUMED, because the first
+                    // draft of this task's own README text overstated it as "every host logs it". THREE
+                    // hosts PASS a sink; only TWO of them SURFACE anything in a shipped build.
+                    // FleetService's sink is `msg => System.Diagnostics.Debug.WriteLine(msg)`, and
+                    // Debug.WriteLine is [Conditional("DEBUG")] — the call is REMOVED BY THE COMPILER in a
+                    // Release build, so the lambda is a no-op there and the WPF kiosk shows this warning to
+                    // nobody. That is NOT a defect this task introduced and NOT one it fixes: the same sink
+                    // has swallowed FleetConfig's malformed-entry warnings since GP-3 built them, and
+                    // FleetService's own doc comment at the call site already records that this host has no
+                    // logging infrastructure in that static path. It is written here because a warning is
+                    // only as good as the sink it lands in, and this one lands in two sinks out of three.
                     if (descriptor.ScrewTorque is null && IsScrewdriveType(descriptor.MachineType))
                     {
                         logWarning?.Invoke($"{ScrewTorqueSpec.DescribeUndeclared(descriptor.Code)} (path: {path})");

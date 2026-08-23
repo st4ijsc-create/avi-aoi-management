@@ -300,7 +300,7 @@ dotnet run --project src/St4i.EdgeService -- --fleet fleet.json --smoke 20
   still loads. An operator's machine- or product-scoped adjustment on the settings screen still overrides
   the declaration; the roster sets the commissioning fact, not the shift.
   **Omitting it is a real state, and a REPORTED one.** The shipped roster above omits it on both
-  screwdrivers, so every host logs one warning per undeclared SCREWDRIVE at load, naming what actually
+  screwdrivers, so `FleetConfig.Load` raises one warning per undeclared SCREWDRIVE, naming what actually
   happens: a machine with no declaration reports **~12.0 Nm** under a host that wires no machine config
   store (`St4i.EdgeService`, the WPF app) and **~1.35 Nm** under one that does (`St4i.EngineApi`, through
   `FleetCore`) — a factor of about nine, for one descriptor, decided by which host you started. 🔴 **This
@@ -308,6 +308,12 @@ dotnet run --project src/St4i.EdgeService -- --fleet fleet.json --smoke 20
   tree says which screw the demo roster is, so the roster stays undeclared and the divergence is
   announced rather than silently resolved. Declare `screwTorque` and the question is closed for that
   machine. See `docs/owner-decisions.md` item 41.
+  ⚠️ **Where that warning actually lands, measured rather than assumed: two sinks out of three.**
+  `St4i.EngineApi` routes it to `FleetCore`'s logger and `St4i.EdgeService` to its `ILogger`. The WPF
+  kiosk passes `Debug.WriteLine`, which is `[Conditional("DEBUG")]` — **compiled out of a Release
+  build**, so on the shipped kiosk this warning (and every other `fleet.json` warning, which has been
+  true since GP-3 wrote them) reaches nobody. Not introduced here and not fixed here; recorded because
+  a warning is only as good as the sink it lands in.
 - Both are shipped with the build/publish output (`CopyToOutputDirectory=PreserveNewest` in the WPF
   csproj) so an operator can hand-edit `fleet.json`/`mapping/*.json` next to a published exe with no
   rebuild. Proven to parse via `PackagingFleetJsonTests` in the xUnit suite, `St4i.EdgeService --fleet
