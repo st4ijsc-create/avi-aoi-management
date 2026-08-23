@@ -100,7 +100,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 69 | **`intentClassifier` gửi BỐN chuỗi ngoài vựng từ `stepType` vào một mệnh đề `WHERE`** — nên mọi câu hỏi mô-men và lượng keo trả về *"không đủ dữ liệu"* TRÊN MỘT BẢNG CÓ DỮ LIỆU | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); không chạm ba miễn trừ (`metricTrendParams` đã nhận `stepType?: string`, nên sửa là đổi một **giá trị**, không phải hình dạng). Vựng từ sản xuất là **bảng DB được gieo** `process_step_types` (**tám** giá trị, `screw_tightening`/`glue_dispense`/…), khớp với hợp đồng đã công bố và với chính `fleet.json`. **`"torque"` là một khoá METRIC, không phải một step type; `"dispense"` cũng không — mã thật là `glue_dispense`.** ⇒ **BỐN literal**, không một. 🔴 **Chữ *"CHẾT"* SAI theo chiều làm nó nghe vô hại:** nhánh **luôn được chọn**, và điều kiện SQL **AND với machineId** ⇒ 0 hàng ⇒ `"NOT_FOUND"`. **Đó là NGƯỢC LẠI của mã chết.** 🔴 **Hai bài test ĐANG GHIM khuyết tật** (`intentClassifier.f6.test.ts:17`, `:28`) — dụng cụ đứng về phía khuyết tật. 📎 Độc lập chứng thực phép rút của BL-1 về §41.4. Xem §69 |
 | 70 | **`GET /v1/machines/{code}` ship BỐN con số mô-men cho MỘT chu kỳ** mà payload ingest, chuỗi SPC và historian đều báo MỘT | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **(b) hình dạng dây** (`MachineDetailDto` đã công bố, soi gương ở `web/src/lib/api.ts:207–244`) **và (c) OEE theo ĐÚNG MỘT chiều sửa**. 🔴 **Lời khai *"hai con số"* đúng theo CHỮ nhưng VỊ NGỮ mời hiểu sai:** độ lệch duy nhất giữa `spc.values[]` (thô) và `plan.steps[0].metricValue` là **`Math.Round(…,3)`**, tức ≤ 5·10⁻⁴ Nm — **không** phải loài phân kỳ 12,0→1,35 Nm của mục 41. 🔴 **NÊU QUÁ DÈ DẶT ở chỗ đáng kể hơn nhiều:** `plan.steps[1..3].metricValue` là **BA lần rút ĐỘC LẬP MỚI**, không vào `Metrics`, không vào `spc`, không vào `Normalizer` (0 hit `Plan`), không vào historian, không lên Sparkplug. 🔴 **Và ba lần rút ấy ĐANG QUYẾT PHÁN QUYẾT** (`ScrewdriveSim.cs:173`), nên một bản sửa **xoá** chúng **hạ tỉ lệ Fail và dịch `Quality` của OEE** — miễn trừ (c); một bản sửa **chỉ chỉnh độ chính xác** thì không. **Hai bờ lệch nhau một bậc và lời khai gốc gộp chúng làm một.** Xem §70 |
 | 71 | **Doc thiết kế và mã bất đồng ở BỐN trên NĂM hàng tham số** — và cái được ghi lại là hàng ÍT nguy hiểm nhất trong bốn | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** cho bản sửa **tài liệu** — mở 2026-08-24 (BO-1). 🔴 **ĐƠN VỊ của lời khai SAI: KHOÁ KHÔNG LỆCH.** `weld_profile` **khớp ở cả BA nơi khai độc lập** (doc `:65`, `MachineParameterSchema.cs:76`, `recipeSchemas.ts`). Cái lệch là **DANH SÁCH THAM SỐ**: doc nêu *"lực ép, tiền/hậu nhiệt"*, mã khai `tempMax`/`voltage` — và §3 của doc nói nó **đi theo** đúng file nó mâu thuẫn. **Sim dùng cái nào? KHÔNG CÁI NÀO** — `WelderSim.cs:25–31` không nhận `MachineConfigStore`. 🔴 **Đã ghi HAI LẦN trước khi thành "khuyết tật dừng lại"** (`MACHINE_CONFIG_DESIGN.md:84–86` và mục 42 `:2186–2187`), cả hai **do chính BL-1 viết**. 🔴 **NÊU QUÁ DÈ DẶT: bốn trên năm hàng lệch, chỉ HAI được ghi** — `sequence[]` (SCREWDRIVE) và `retestPolicy` (AOI/AVI) vắng trong mã, và **hàng DISPENSING là hàng SẮC NHẤT chưa ai ghi** vì nó giấu `temperature`, đúng khoá mục 42 dựng phát hiện *"bẫy vận hành viên"* lên. **Bờ ngược — sửa MÃ cho khớp doc — là của anh** (vựng từ REST đã công bố; mọi `weld_profile` đã gieo mất hiệu lực). Xem §71 |
-| 72 | **MƯỜI trên mười sáu lá `%ProgramData%\ST4I\sim\` vẫn KHÔNG có seam trong bộ test** — trong đó có `historian` — và cái ngoặc canh chúng MÙ với đúng loại bằng chứng đã dựng ra nó | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **(c)**: `sim\historian` là gốc của **cả** `SqliteHistorianStore` (bảng sự kiện OEE) **và** `OeeSettingsStore` (chủ đề mục 11 và 13). 🔴 **LỜI KHAI GỐC SAI THEO CẢ HAI CHIỀU.** *Nói quá:* nửa `assets` **ĐÃ ĐƯỢC TRẢ TẠI NGUỒN** — BK-1 (`9f95dd8a`) thêm `ST4I_ASSETS_DIR` + `ST4I_NOTIFICATIONS_DIR` với cặp đối chứng chạy trọn suite; trên đĩa `assets.db` đứng nguyên ở mtime của chính lần đối chứng ấy. *Nói quá dè dặt:* **LOÀI còn sống trên MƯỜI lá** — `historian` (hai người sinh) · `security` · `alarms` · `connector-config` · `settings` · `identity` · `sitelink` · `bridge-spool` · `wal` · `opcua-pki`; sáu được chuyển hướng, mười thì không. 🔴 **Nói cho đúng mức: "seam MỞ" KHÔNG bằng "đang rò"** — không lần ghi nào quan sát được trên mười lá ấy. 🔴 **HAI khuyết tật của chính DỤNG CỤ, chưa ai ghi:** ngoặc là `find -type f` nên **mù với một cú dịch mtime THƯ MỤC** — đúng loại bằng chứng `notifications` đã dựng ra nó; và `TestRunTempRoot.cs:187–188` nêu tên `RealProgramDataLeakGuard` như thứ *"now measures the CONSEQUENCE"*, **file ấy KHÔNG TỒN TẠI**, bị xoá trong cùng commit. **Ngoặc PHÁT HIỆN, không NGĂN**, và chỉ chạy trong cổng. Xem §72 |
+| 72 | **Chỉ SÁU trên mười sáu lá `%ProgramData%\ST4I\sim\` được chuyển hướng CẤU TRÚC** — chín lá dựa vào một quy ước lặp bằng tay, `opcua-pki` gần như không có seam, và cái ngoặc canh chúng MÙ với đúng loại bằng chứng đã dựng ra nó | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **(c)**: `sim\historian` là gốc của **cả** `SqliteHistorianStore` (bảng sự kiện OEE) **và** `OeeSettingsStore` (chủ đề mục 11 và 13). 🔴 **LỜI KHAI GỐC SAI THEO CẢ HAI CHIỀU.** *Nói quá:* nửa `assets` **ĐÃ ĐƯỢC TRẢ TẠI NGUỒN** — BK-1 (`9f95dd8a`) thêm `ST4I_ASSETS_DIR` + `ST4I_NOTIFICATIONS_DIR` với cặp đối chứng chạy trọn suite; trên đĩa `assets.db` đứng nguyên ở mtime của chính lần đối chứng ấy. *Nói quá dè dặt:* **LOÀI còn sống trên MƯỜI lá** — `historian` (hai người sinh) · `security` · `alarms` · `connector-config` · `settings` · `identity` · `sitelink` · `bridge-spool` · `wal` · `opcua-pki`. 🔴 **VÀ MỘT VỊ NGỮ CỦA CHÍNH BO-1 KHÔNG SỐNG SÓT PHÉP ĐO THỨ HAI, theo chiều NÓI QUÁ:** bản viết đầu nói mười lá ấy *"chưa ai đặt seam"*; đếm lại trong `tests/` thì **CHÍN trên mười ĐƯỢC seam, 20–24 file mỗi biến**. Khuyết tật là **HÌNH DẠNG của seam**, không phải sự vắng mặt của nó: **sáu lá được chuyển hướng CẤU TRÚC** (`[ModuleInitializer]`, cả năm assembly, mọi bài **gồm bài chưa ai viết**), **chín lá theo QUY ƯỚC LẶP BẰNG TAY** — hai mươi lớp nhớ **không chứng minh gì về lớp thứ 21** — và **`opcua-pki` có ĐÚNG MỘT file đặt nó**. 🔴 **Nói cho đúng mức: "seam theo từng lớp" KHÔNG bằng "đang rò"** — không lần ghi nào quan sát được trên mười lá ấy. 🔴 **HAI khuyết tật của chính DỤNG CỤ, chưa ai ghi:** ngoặc là `find -type f` nên **mù với một cú dịch mtime THƯ MỤC** — đúng loại bằng chứng `notifications` đã dựng ra nó; và `TestRunTempRoot.cs:187–188` nêu tên `RealProgramDataLeakGuard` như thứ *"now measures the CONSEQUENCE"*, **file ấy KHÔNG TỒN TẠI**, bị xoá trong cùng commit. **Ngoặc PHÁT HIỆN, không NGĂN**, và chỉ chạy trong cổng. Xem §72 |
 | 73 | **`C2` không phân biệt một dấu trạng thái LỊCH SỬ với một dấu ĐANG SỐNG** — BỐN hàng xanh chỉ nhờ `has()` phân biệt hoa thường, và hình dạng thứ hai KHÔNG có ví dụ sống là hình dạng nguy hiểm | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); khuyết tật của **DỤNG CỤ**, không chạm ba miễn trừ. 🔴 **BO-1 ĐÃ BÁC lời khai này rồi TỰ LẬT PHÉP BÁC:** đọc §51.7/§51.9 tôi kết luận *"đã trả bằng một lời khai"*, nhưng ranh giới **(g)** nói về `Ở LẠI PHẦN II` và **IM LẶNG về ca `MỘT PHẦN`** — đúng chỗ khuyết tật sống. **Mệnh đề con ĐÚNG, đo bằng bản sao awk của `strip()`/`has()`:** hàng `| 12 |` cho `has "THI HÀNH MỘT PHẦN" = 0` nhưng `has "thi hành một phần" = 1` ⇒ gập hoa-thường thì `:222` **nổ ngay**. 🔴 **NÊU QUÁ DÈ DẶT: BỐN hàng, không một** — 12, 48, 51, 52, cả bốn Phần III; ba trong bốn viết thường **có chủ ý và tự khai**. 🔴 **Hình dạng B chưa có ví dụ sống là hình dạng nguy hiểm:** một mục ở **Phần I** mà `CHỜ ANH` chỉ còn là lịch sử được bảo tồn sẽ **xanh mãi mãi**; hơn hai mươi hàng đã mang một `CHỜ ANH` bị thay thế. **Bản sửa hiển nhiên không dùng được:** `toupper()` của awk làm việc **theo byte**. 📎 Ranh giới (g) và phần đầu `:51–55` nay **CŨ** (mục 12 sang Phần III, Phần II rỗng). Xem §73 |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
@@ -506,12 +506,18 @@ kê này ĐO LẠI từ chính Phần I sau khi nhiệm vụ này sửa xong fil
 Phần I và banner Phần II — chứ không chép từ brief; brief của BO-1 khai *"Phần I giữ 41, 43, 49, 54,
 57, 59"* và *"mục cao nhất đang có: 59"*, và **cả hai đúng ở BASE `e791ba03`**.
 🔴 **NHÃN KHÔNG ĐỒNG NHẤT, và nói ra thay vì để chữ `CHỜ ANH` của bảng đọc như một lời khai về
-quyền.** Trong hai mươi mục ở đây, **mười một chạm một trong ba miễn trừ và chỉ anh quyết được** —
-41, 43, 49, 57, 59, 60, 61, 62, 65, 70, 72 — và **chín mang nhãn ⚖️**: 54, 63, 64, 66, 67, 68, 69,
-71, 73. Chín mục ấy ở đây **không vì thiếu quyền** mà vì **chưa ai quyết**, và Phần II đòi một phán
-quyết ghi kèm ngày mà chúng chưa có. 🔴 **Mục 60 là ca riêng phải nêu: nó KHÔNG chạm miễn trừ nào**
-— nhãn 🔴 của nó nói về việc **mua một hệ sinh thái build thứ hai**, không về quyền, nên nó là nhãn
-dễ lật nhất trong mười một, và §49.5 cho phép lật bằng một phép đo.
+quyền.** Trong hai mươi mục ở đây, **mười một mang nhãn 🔴** — 41, 43, 49, 57, 59, 60, 61, 62, 65,
+70, 72 — và **chín mang nhãn ⚖️**: 54, 63, 64, 66, 67, 68, 69, 71, 73. Chín mục ⚖️ ở đây **không vì
+thiếu quyền** mà vì **chưa ai quyết**, và Phần II đòi một phán quyết ghi kèm ngày mà chúng chưa có;
+xem §54.7 cho chỗ hồ sơ này **không có kệ** cho hình dạng ấy.
+🔴 **Và MƯỜI một không đồng nghĩa với mười một lần chạm miễn trừ — tách ra thay vì để chữ 🔴 đọc như
+một lời khai đồng nhất về quyền.** **MƯỜI** trong mười một chạm một trong ba miễn trừ (41, 43, 49,
+57, 59 thừa hưởng phép đo của phép liệt kê trước; 61, 62, 65, 70, 72 đo mới ở BO-1, từng cái ghi
+trong thân mục). **Mục 60 thì KHÔNG chạm cái nào**: nhãn 🔴 của nó nói về việc **mua một hệ sinh thái
+build thứ hai**, tức **hạ tầng**, không về **quyền** — nên nó là nhãn **dễ lật nhất trong mười một**,
+và §49.5 cho phép lật bằng một phép đo. 📎 **Mục 65 là nhãn ít chắc thứ hai**: nó chạm (b) theo
+**GIÁ TRỊ**, không theo **HÌNH DẠNG**, và được giải theo chiều thận trọng vì trường bị dời rời khỏi
+sản phẩm và **đã vào lịch sử đã lưu**.
 <!-- gate:phần-i = 41 43 49 54 57 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 -->
 
 
@@ -2521,7 +2527,7 @@ trỏ tới**.
 
 ---
 
-## 72. MƯỜI trên mười sáu lá `%ProgramData%\ST4I\sim\` vẫn KHÔNG có seam trong bộ test — trong đó có `historian`, nơi giữ bảng sự kiện OEE — và cái ngoặc canh chúng MÙ với đúng loại bằng chứng đã dựng ra nó
+## 72. Chỉ SÁU trên mười sáu lá `%ProgramData%\ST4I\sim\` được chuyển hướng CẤU TRÚC; chín lá còn lại dựa vào một quy ước lặp bằng tay và MỘT lá gần như không có seam — và cái ngoặc canh chúng MÙ với đúng loại bằng chứng đã dựng ra nó
 
 🔴 **CHỜ ANH.** Mở 2026-08-24 (BO-1). Chạm **(c) con số OEE đã báo cáo trong lịch sử**: `sim\historian`
 là gốc của **cả** `SqliteHistorianStore` (bảng sự kiện OEE) **và** `OeeSettingsStore`
@@ -2545,19 +2551,52 @@ lại vì đó là cùng loài lỗi mà file này tồn tại để bắt: dừ
 xuất hiện ở **18 chỗ** trong `src/` ⇒ **16 lá** riêng biệt (`historian` có **hai** người sinh).
 `TestRunTempRoot` chuyển hướng đúng **SÁU** — `ST4I_CREDS_DIR` (`:122–125`), `ST4I_MACHINE_CONFIG_DIR`
 (`:143–147`), `ST4I_PRODUCTS_DIR` (`:161–164`), `ST4I_ECOSYSTEM_DIR` (`:166–169`), `ST4I_ASSETS_DIR`,
-`ST4I_NOTIFICATIONS_DIR` — nên **MƯỜI lá còn seam MỞ**, liệt kê trước, đếm sau:
-`historian` (`SqliteHistorianStore.cs:115` + `OeeSettingsStore.cs:499`, `ST4I_HISTORIAN_DIR`) ·
+`ST4I_NOTIFICATIONS_DIR` — nên **MƯỜI lá không được `TestRunTempRoot` chuyển hướng**, liệt kê trước,
+đếm sau: `historian` (`SqliteHistorianStore.cs:115` + `OeeSettingsStore.cs:499`) ·
 `security` (`SecurityDb.cs:107`) · `alarms` (`AlarmStore.cs:202`) ·
 `connector-config` (`ConnectorConfigStore.cs:550`) · `settings` (`FleetSettingsStore.cs:189`) ·
 `identity` (`DeviceIdentityStore.cs:109`) · `sitelink` (`SiteLinkStore.cs:124`) ·
 `bridge-spool` (`BridgeSpoolOptions.cs:59`) · `wal` (`WalOptions.cs:68`) ·
 `opcua-pki` (`OpcUaOptions.cs:148`). Hình dạng giải gốc **giống hệt nhau**: explicit → env → `DefaultRoot()`.
-**Không env, không explicit ⇒ bản cài THẬT là câu trả lời.**
 
-🔴 **NÓI CHO ĐÚNG MỨC: "seam mở" KHÔNG bằng "đang rò".** Tôi **không** quan sát được một lần ghi nào
-vào mười lá ấy; `historian` mang mtime thư mục **2026-07-29**. Cái đo được là **khả năng**, và cái
-duy nhất từng biến khả năng ấy thành quan sát là **cái ngoặc** — vốn đã xanh từ khi nó tồn tại. Viết
-"đang rò" ở đây sẽ là đúng loài nói quá mà nửa trên vừa bác.
+🔴 **VÀ ĐÂY LÀ CHỖ MỘT VỊ NGỮ CỦA CHÍNH TÔI KHÔNG SỐNG SÓT PHÉP ĐO THỨ HAI — "KHÔNG CÓ SEAM" LÀ SAI,
+theo chiều NÓI QUÁ.** Bản viết đầu của mục này nói mười lá ấy *"còn seam MỞ / chưa ai đặt"*. **Đếm
+lại trong `tests/`, từng biến một, và con số nói ngược:**
+
+| biến | file đặt nó | lần nhắc |
+|---|---|---|
+| `ST4I_HISTORIAN_DIR` | **24** | 63 |
+| `ST4I_SECURITY_DIR` | **22** | 66 |
+| `ST4I_CONNECTOR_CONFIG_DIR` | **23** | 59 |
+| `ST4I_BRIDGE_SPOOL_DIR` | **23** | 58 |
+| `ST4I_WAL_DIR` | **23** | 65 |
+| `ST4I_ALARMS_DIR` | **20** | 55 |
+| `ST4I_SETTINGS_DIR` | **20** | 54 |
+| `ST4I_IDENTITY_DIR` | **20** | 56 |
+| `ST4I_SITELINK_DIR` | **20** | 57 |
+| **`ST4I_OPCUA_PKI_DIR`** | **1** | **2** |
+
+⇒ **Chín trên mười lá ĐƯỢC seam, và seam nhiều lần.** Khuyết tật **KHÔNG** phải *"không có seam"* —
+nó là **HÌNH DẠNG của seam**, và nói đúng thì nó vẫn là một khuyết tật, chỉ hẹp hơn một bậc:
+
+* **Sáu lá được chuyển hướng CẤU TRÚC** — `TestRunTempRoot` là một `[ModuleInitializer]` nối vào **cả
+  năm assembly**, nên **mọi** bài test có chúng, **gồm cả bài chưa ai viết**.
+* **Chín lá được chuyển hướng THEO TỪNG LỚP TEST**, ở 20–24 file mỗi biến. Đó là **phòng ngừa chọn
+  tham gia**: nó bảo vệ đúng những lớp đã nhớ, và **một lớp mới quên thì rơi thẳng xuống bản cài
+  THẬT** — không cảnh báo, không mặc định an toàn. **20 lớp nhớ không chứng minh gì về lớp thứ 21.**
+* 🔴 **`opcua-pki` là ngoại lệ và là lá đáng lo nhất: ĐÚNG MỘT file đặt nó.** Ở đó chữ *"gần như không
+  có seam"* là đúng nghĩa đen.
+
+**Nên vị ngữ đúng là: MỘT PHÒNG NGỪA CẤU TRÚC cho sáu lá, và MỘT QUY ƯỚC LẶP LẠI BẰNG TAY cho chín
+lá.** Ghi lại phép sửa này thay vì lặng lẽ viết lại câu, vì nó là **lần thứ ba trong nhiệm vụ này**
+một lời khai của tôi chỉ đứng được cho tới phép đo thứ hai — và hai lần trước là hai phép **bác** của
+tôi bị lật, lần này là một phép **khẳng định** của tôi bị thu hẹp. **Cùng một nguyên nhân: dừng ở
+phép đo đầu tiên hợp với điều mình đã nghĩ.**
+
+🔴 **NÓI CHO ĐÚNG MỨC LẦN NỮA: "seam theo từng lớp" KHÔNG bằng "đang rò".** Tôi **không** quan sát
+được một lần ghi nào vào mười lá ấy; `historian` mang mtime thư mục **2026-07-29**. Cái đo được là
+**khả năng**, và cái duy nhất từng biến khả năng ấy thành quan sát là **cái ngoặc** — vốn đã xanh từ
+khi nó tồn tại.
 
 ### 72.2 🔴 HAI KHUYẾT TẬT CỦA CHÍNH DỤNG CỤ, chưa ai ghi
 
@@ -2601,17 +2640,24 @@ mục tường minh** ghi vào **historian THẬT của một bản cài đang s
 mọi con số OEE đã báo cáo được tính ra từ đó**. Đó là miễn trừ thứ ba, không phải một sự bất tiện;
 và cách duy nhất ai đó biết là **cái ngoặc**, mà nó chỉ chạy trong cổng.
 
-**Chiều sửa.** Thêm mười seam vào `TestRunTempRoot` là mười khối gần giống nhau và **rẻ về mã**.
-Giá thật, nói thẳng: mỗi seam mới là một **biến môi trường mới** phải được `remove-data.ps1` và
-`NotificationDocumentationTests` công nhận — chính khuôn mà mục 30 đã trả với giá **mười lăm artefact
-dịch cùng nhau**. Nên đây **không** phải mười dòng; nó là mười lần cái giá ấy, hoặc một quyết định
-rằng mười lá kia **không đáng** và cái ngoặc là đủ.
+**Chiều sửa — và nó RẺ HƠN bản viết đầu của mục này nghĩ, đúng vì vị ngữ đã được sửa.** Chín trên
+mười biến ĐÃ TỒN TẠI và đã được 20–24 lớp test dùng; việc còn lại **không** phải phát minh ra chúng
+mà là **nâng chúng từ QUY ƯỚC lên CẤU TRÚC** — đặt chúng trong `TestRunTempRoot` bên cạnh sáu cái
+đang có, để một lớp mới **không thể quên**. Giá thật, nói thẳng: một gốc mặc định mới dưới
+`%TEMP%` cho mỗi biến phải được `remove-data.ps1` và `NotificationDocumentationTests` **công nhận** —
+chính khuôn mà mục 30 đã trả với giá **mười lăm artefact dịch cùng nhau** — và mỗi lớp hôm nay đang
+tự đặt biến ấy phải được kiểm rằng nó vẫn **thắng** (thứ tự explicit > env > default giữ nguyên, nên
+về nguyên tắc có, nhưng *"về nguyên tắc"* không phải một phép đo). **`opcua-pki` là ca rẻ nhất và
+đáng làm trước**: chỉ một lớp đang đặt nó, nên không có quần thể nào phải kiểm lại.
 
 ### 72.5 Nếu KHÔNG quyết định
 
-Sáu lá được phòng ngừa, mười lá được **phát hiện muộn** và chỉ khi chạy cổng, và một chú thích tiếp
-tục trỏ người đọc tới một file không tồn tại. 🔴 **Và vì cái ngoặc mù với mtime thư mục, ngay cả
-"phát hiện muộn" cũng không phải một lời hứa đầy đủ.**
+Sáu lá được phòng ngừa **cấu trúc**; chín lá phụ thuộc vào việc **mỗi tác giả test tương lai nhớ**
+lặp lại một quy ước mà **không gì nhắc họ**; `opcua-pki` phụ thuộc vào **một lớp duy nhất**. Cái duy
+nhất bắt được một lần quên là **phát hiện muộn** trong cổng, và một chú thích tiếp tục trỏ người đọc
+tới một file **không tồn tại**. 🔴 **Và vì cái ngoặc mù với mtime thư mục, ngay cả "phát hiện muộn"
+cũng không phải một lời hứa đầy đủ.** 🔴 **Hình dạng nguy hiểm không phải hôm nay — nó là bài test
+TIẾP THEO**, và đó chính là thứ một phòng ngừa cấu trúc mua mà một quy ước thì không.
 
 ---
 
