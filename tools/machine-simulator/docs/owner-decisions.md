@@ -81,6 +81,12 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 50 | Ba khuyết tật parse trên bản đồ connector: hai khoá **viết hoa bị vứt IM LẶNG**, `EffectiveReadTimeoutMs` **vẫn tràn `int`** qua object initializer, và hai bề mặt parse **không truyền sink cảnh báo** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BD-1 đo 2026-08-23, **ngoài phạm vi mục 38**. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ |
 | 51 | **SÁU dụng cụ đo tự báo hụt miền của chính mình** — kể cả **chính `verify-suites.sh`**, đỏ hay xanh tuỳ **thư mục người gõ đang đứng**; cộng một gốc `%ProgramData%` **không dụng cụ nào canh ngoài `creds`** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BD-1/BE-1/BF-1 đo. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 32 và 40, và **hai mục ấy đều do CHỦ SỞ HỮU quyết**, nên hàng này nêu tiền lệ chứ không tự nhận |
 | 52 | **Hai lời khai đã công bố đo được là SAI và cố ý để nguyên**, cộng sáu chỗ ném lỗi không nêu file mà thông điệp **không ai đọc** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BB-1/BC-1/BE-1 đo. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — rút một câu văn xuôi tại chỗ không chạm ba miễn trừ |
+| 53 | **Định nghĩa OEE của mục 2 vắng ở ba bề mặt `web/`** — chỗ quản đốc thật sự cầm con số — và cái giữ nó nguyên nhiều tuần là một **lệnh cấm phạm vi**, không phải một pathspec | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); nêu lần đầu 2026-08-18 (AA-1, vòng phản biện 1) và **không nhiệm vụ nào trong bốn mươi hai nhiệm vụ tiếp theo chạm tới**. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — chính AA-1 viết *"ai nhặt nó lên không cần hỏi chủ sở hữu"*: không đổi payload MQTT, không đổi hình dạng dây, không đổi một con số OEE nào |
+| 54 | **`FleetCore.Start()` không ghi `LastError`** — cùng cú ném P5, tới từ phương thức đối xứng, để một fleet ĐÃ DỪNG báo HEALTHY; U-1 **nêu tên chứ không đóng** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); nêu 2026-08-17 (U-1) tại `LastError`'s declaration và trong thông điệp merge `f18f5c29`, chưa bao giờ có hàng riêng. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 33 (sửa phía ĐỌC của một route REST), không chạm ba miễn trừ |
+| 55 | **Bốn mặc định `switch` trên `Verdict` gấp một giá trị lạ về phía AN TOÀN**, và **hai trong bốn nằm trong CÙNG MỘT FILE mà bất đồng nhau** (`_ => "OK"` đối lại `_ => "skip"`) | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); nêu 2026-08-17 (P-2, *"NAMED, NOT FIXED"*) và 2026-08-18 (AA-1 tồn dư 4 và 5, Phần IV). 🔴 **Đo lại BÁC nửa lời khai của P-2:** không đường nào trong cây sinh ra một `Verdict` ngoài miền hôm nay, nên nhánh ấy **tiềm ẩn**, không phải đang hiển thị cho vận hành viên. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** |
+| 56 | **Lớp "bỏ qua parse trong im lặng"** — `docs/startup-failure-posture.md` §3.4 khai **CHÍN** chỗ, và **chín ĐÚNG NGUYÊN** khi đếm lại; nhưng hình dạng mà chính §3.4 phát biểu bắt thêm **TÁM** núm boolean nữa | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); đo lần đầu 2026-08-17 (M-1). ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng khuôn mục 38/39/50: một kiểm/cảnh báo ở BIÊN PARSE, không đổi payload, không đổi hình dạng dây |
+| 57 | **Bốn khuyết tật config-sync do AH-1 đo 2026-08-19 và ghi CHỈ trong thông điệp merge** — không cái nào từng vào file này | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1). **Không uỷ quyền được:** một trong bốn là *"hai mươi tám trường vận hành viên soạn được KHÔNG có chỗ trong hợp đồng đồng bộ"*, và nới hợp đồng ấy là **đổi một hình dạng dây đã xuất bản với một server ngoài sản phẩm này** — cùng hạng mục 14 |
+| 58 | **Hai lời khai đếm được, đã công bố, đo lại là SAI và vẫn nguyên văn** — `SiteAdvertiserTests` nói *"twelve"* trên một tập đo được **20**, và chú thích nấc 4 của `ConnectorConfigStore` nói *"cùng một transaction với mọi nấc"* trong khi `EnsureSchema` mở **một transaction MỖI NẤC** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); cái thứ nhất nêu 2026-08-18 (Z-1, *"booked in the report, not fixed here"*), cái thứ hai **BH-1 tự đo** trong lúc kiểm lại mục 5. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 52, rút/sửa một câu văn xuôi tại chỗ |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
 > 🔴 **V-1 — bảng này THIẾU hai hàng kể từ lúc Q-1 thêm mục 8 và 9, và điều đó chỉ lộ ra
@@ -337,7 +343,38 @@ mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy vẫn l�
 trỏ vào nó. Bảy mục — **41, 42, 43, 44, 45, 46, 47** — chạm một trong **ba miễn trừ** và **chỉ anh
 quyết được**. Năm mục còn lại — **48, 49, 50, 51, 52** — mang nhãn ⚖️ **"điều phối viên quyết được"**:
 chúng nằm trọn trong uỷ quyền, nên một nhiệm vụ sau **không cần chờ anh** để thi hành chúng.
-<!-- gate:phần-i = 41 42 43 44 45 46 47 48 49 50 51 52 -->
+<!-- gate:phần-i-rút -->
+
+> 📎 **PHÉP LIỆT KÊ NGAY TRÊN — RÚT 2026-08-23 (BH-1), giữ NGUYÊN VĂN, cùng kiểu bảo tồn AB-1 lập và
+> AI-1/AK-1/AO-1/AP-1/AU-1/AV-1/AW-1/BG-1 dùng: trích nguyên văn rồi rút, kèm ngày và người, KHÔNG
+> gạch ngang, không xoá một dòng nào.** Nó đọc: *"**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 41, 42,
+> 43, 44, 45, 46, 47, 48, 49, 50, 51 và 52.** Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và
+> **bảng ấy vẫn là nguồn sự thật** — câu này chỉ là một con trỏ vào nó. Bảy mục — **41, 42, 43, 44,
+> 45, 46, 47** — chạm một trong **ba miễn trừ** và **chỉ anh quyết được**. Năm mục còn lại — **48,
+> 49, 50, 51, 52** — mang nhãn ⚖️ **"điều phối viên quyết được"**: chúng nằm trọn trong uỷ quyền, nên
+> một nhiệm vụ sau **không cần chờ anh** để thi hành chúng."*
+>
+> **Lý do rút KHÔNG phải nó từng sai** — nó mô tả đúng hồ sơ từ lúc BG-1 viết nó cho tới nhiệm vụ
+> này, và **không mục nào của nó bị quyết, bị thi hành hay bị chuyển phần**. Cái làm nó lỗi thời là
+> **một cơ chế thứ năm**, khác cả bốn cơ chế đã ghi ở các khối trên: một khối backlog **có trước
+> toàn bộ loạt 15–52**, sống trong `docs/startup-failure-posture.md`, trong Phần IV của chính file
+> này, và trong **thông điệp merge trước `AV-1`** — tức ở ba chỗ mà **không** phép quét nào của bốn
+> mươi hai nhiệm vụ vừa qua nhìn vào. Sáu mục mới, số hiệu **53–58**, mở từ đó.
+>
+> 🔴 **Và câu về nhãn ⚖️ được rút KÈM MỘT PHÉP ĐO, không chỉ kèm một ngày.** Xem §"Vì sao BH-1
+> KHÔNG dựng một PHẦN thứ tư" ở Phần IV: phép đo đếm được **mười một** hàng phán quyết mang ĐỒNG
+> THỜI `CHỜ ANH` và một phán quyết uỷ quyền, nên hình dạng *"một ô nói hai điều"* **không mới** và
+> **không do `C2` sinh ra**.
+
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57 và 58.**
+Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy vẫn là nguồn sự
+thật** — câu này chỉ là một con trỏ vào nó. Tám mục — **41, 42, 43, 44, 45, 46, 47, 57** — chạm một
+trong **ba miễn trừ** và **chỉ anh quyết được**. Mười mục còn lại — **48, 49, 50, 51, 52, 53, 54, 55,
+56, 58** — mang nhãn ⚖️ **"điều phối viên quyết được"**: chúng nằm trọn trong uỷ quyền, nên một nhiệm
+vụ sau **không cần chờ anh** để thi hành chúng. 🔴 **Nhãn ấy vẫn là một LỜI KHAI, không phải một phép
+đo** — BG-1 nói thế về năm cái của nó và câu ấy áp y nguyên cho năm cái mới của BH-1: **không dụng cụ
+nào trong repo này kiểm được rằng một hướng sửa không chạm ba miễn trừ.**
+<!-- gate:phần-i = 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 -->
 
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
@@ -1078,6 +1115,361 @@ sửa nó là **một phép đo khác** với một cái trần khác. (3) thêm
 làm ai đọc chúng — phép sửa thật nằm ở `catch`, và đó là một thay đổi hành vi.
 
 **Nếu không quyết.** Hai câu sai ở lại trong mã như tài liệu, và người tiếp theo đọc chúng sẽ tin.
+
+---
+
+## 53. Định nghĩa OEE của mục 2 vắng ở BA bề mặt `web/` — chỗ quản đốc thật sự cầm con số — và cái giữ nó nguyên nhiều tuần là một LỆNH CẤM PHẠM VI, không phải một pathspec
+
+⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ; chính AA-1 viết *"ai nhặt nó lên không
+cần hỏi chủ sở hữu"*.
+
+### 53.1 Đo được cái gì — LIỆT KÊ trước, con số SAU
+
+Phán quyết mục 2 (2026-08-16) đòi công bố định nghĩa OEE **ngay tại chỗ con số được đọc**. AA-1 trả
+ba chỗ trong `src/`. Vòng phản biện của chính AA-1 (2026-08-18) rút cái trần ấy là **nêu quá nhỏ** và
+nêu **một chỗ thứ TƯ, gần người cầm con số hơn cả ba chỗ kia**. Đo lại ở `26020fe7`, liệt kê từng
+file:
+
+* **`web/src/routes/Reports.tsx`** — dòng 386–388 in `(oee.data.quality * 100).toFixed(1)` dưới nhãn
+  `reports.kpi.quality`. **Không một chữ nào** về `Warn`, `Skip`, tử số hay mẫu số trên bề mặt ấy.
+* **`web/src/components/OeeLossChart.tsx`** — cột *"Quality loss"* (`buildBars`, khoá `"quality"`).
+  Cùng thế: không nói gì.
+* **`web/src/lib/api.ts`** — khối doc của `interface OeeResult`. **Nửa chỗ này ĐÃ ĐƯỢC TRẢ, và không
+  phải cho mục 2:** câu *"`Pass, Warn` is a subset of `not Skip`"* được AT-1 thêm ngày 2026-08-22
+  **cho mục 16** (lập luận về kẹp `[0,1]`), nên hai vị từ nay có mặt — nhưng **không ở dạng một định
+  nghĩa cho người đọc con số**, và **không** nói `Skip` không nằm ở tử lẫn mẫu.
+
+**Nửa thứ hai của phán quyết mục 2 — câu *"con số này không có phiên bản"* — vắng mặt hoàn toàn.**
+Quét `web/src/` bằng năm biến thể (`unversion`, `no version`, `not versioned`, `never versioned`,
+`versionless`): **không khớp nào**. Đó là cùng phép quét AA-1 chạy trên `src/`, áp lên cây mà AA-1
+bị cấm chạm.
+
+### 53.2 🔴 HAI TIỀN ĐỀ THỪA KẾ KHÔNG SỐNG SÓT PHÉP ĐO, và cả hai đều theo chiều "khó hơn thực tế"
+
+**(a) Chỗ thứ tư KHÔNG nằm trong `client/`.** Lời giao việc mở mục này nói nó nằm trong `client/` —
+cây có trong commit và vắng khỏi đĩa. Đo, chạy từ `tools/machine-simulator` qua
+`scripts/repo-scan.sh --sha HEAD` với pathspec tường minh:
+
+| phép quét | miền | kết quả |
+|---|---|---|
+| `-n -E 'v1/historian' -- 'client/*' 'server/*'` | **2300** file | **0 dòng** |
+| `-l -E 'GoodCount\|TotalCount' -- 'client/*' 'server/*' 'tools/machine-simulator/web/*'` | **2530** file | **2 file, CẢ HAI dưới `tools/machine-simulator/web/`** |
+
+Nên **không một bề mặt nào trong `client/` hay `server/` tiêu thụ con số OEE của sản phẩm này**, và
+chỗ thứ tư là `web/` — thư mục **nằm TRONG cone sparse** (`tools/machine-simulator`) và **có trên
+đĩa hôm nay**.
+
+**(b) Cái giữ nó nguyên KHÔNG phải một pathspec.** Nguồn cấp một nói ra lý do bằng chữ của nó: AA-1
+vòng phản biện 1 **bị cấm sửa bất cứ thứ gì dưới `web/`**, và cùng khối ấy viết *"đây là một việc
+còn nợ có địa chỉ, không phải một lệnh cấm"*. 🔴 **Chỗ SAI có thật nằm ở chỗ khác, và nó là một câu
+đã công bố:** tồn dư AJ-1 số 9 (Phần IV) viết *"`web/` **không nằm trên đĩa** (sparse checkout) nên
+không một phép quét cục bộ nào chạm tới nó"*. Đo hôm nay: `web/src/lib/api.ts`,
+`web/src/routes/Reports.tsx` và `web/src/components/OeeLossChart.tsx` **đọc được bằng một `Read`
+thường**, và `git ls-tree -r HEAD -- tools/machine-simulator/web/` trả **230** file. Câu ấy được giữ
+nguyên văn ở Phần IV theo luật của file này; nó được **nêu SAI ở đây**, không bị xoá ở đó.
+
+### 53.3 Ở đâu trong mã — trỏ bằng TÊN
+
+`web/src/routes/Reports.tsx` (`KpiTile` mang `reports.kpi.quality`) · `web/src/components/OeeLossChart.tsx`
+(`buildBars`, bar `"quality"`) · `web/src/lib/api.ts` (khối doc của `interface OeeResult`, mười lăm
+trường, tự khai *"Wire shapes mirror … `OeeResultDto` … exactly"*).
+
+### 53.4 Hậu quả vận hành, HAI CHIỀU
+
+**Chiều sửa:** một quản đốc đọc `/reports` thấy `Quality 98,4 %` và **không có đường nào** biết rằng
+một chu kỳ `Warn` đã được tính là hàng tốt, hay rằng `Skip` không nằm ở đâu cả. Đó **chính xác** là
+người mà phán quyết mục 2 nói nó tồn tại cho, và ba chỗ đã trả nằm trong `.cs` — chỗ **tác giả
+driver** đọc.
+
+**Chiều để nguyên, và nó không rỗng:** `web/` của machine-simulator **không có job CI nào và không
+có dụng cụ i18n nào** (đo bởi AU-1, ghi ở hàng mục 34), nên một câu viết ở đó **không có nhân chứng
+nào giữ nó đúng** — cùng loài mục 36. Thêm ba khối văn xuôi vào một cây không ai kiểm là thêm ba
+câu có thể trôi. Cộng: hai trong ba chỗ là **chuỗi hiển thị**, nên viết định nghĩa **vào giao diện**
+(chứ không vào chú thích) đụng i18n hai locale — tức đúng món nợ mà mục 34 đang chờ anh.
+
+### 53.5 Nếu KHÔNG quyết định
+
+Định nghĩa OEE ở lại **đọc được trong mã, không đọc được trong tay người cầm con số** — nguyên văn
+cái trần AA-1 tự viết và tự gọi là *"nêu quá nhỏ"*, nay đã đứng nguyên **hai mươi hai nhiệm vụ**.
+
+---
+
+## 54. `FleetCore.Start()` không ghi `LastError` — cùng cú ném, tới từ phương thức ĐỐI XỨNG, để một fleet ĐÃ DỪNG báo HEALTHY; U-1 nêu tên chứ không đóng
+
+⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 33: sửa phía ĐỌC của một route REST. Không đổi
+payload MQTT, không đổi hình dạng dây, không đổi con số OEE.
+
+### 54.1 Đo được cái gì
+
+`GET /v1/health` là **đúng nghĩa đen** `LastError is null` (`FleetEndpoints.cs:44`). `LastError` có
+**hai** producer, cả hai nêu tên tại chỗ khai báo: `StartSlot`'s per-slot catch và
+`RebuildPipelineOffLock`'s fault path. `Start()` **không** là producer: catch của nó ở
+`FleetCore.cs:2665–2671` là **đúng hai câu lệnh** — `installFaulted = true; throw;` — và không ghi
+gì. Nên cùng một cú ném P5 (`MachineConfigStore.Ensure` trên một gốc không ghi được), tới từ
+`Start()` thay vì từ một lần khởi động lại nội bộ, để lại một fleet **đã dừng** trả `{"ok": true}`.
+
+### 54.2 Ở đâu trong mã — trỏ bằng TÊN
+
+`St4i.EdgeCore.Fleet.FleetCore.Start` (catch), `FleetCore.StartLocked`, `FleetCore.LastError` (khối
+doc, mục *"THE SILENT TWIN"*), `FleetCore.StartSlot`, `FleetCore.RebuildPipelineOffLock`,
+`St4i.EngineApi.Endpoints.FleetEndpoints` (`MapGet("/v1/health")`), `St4i.EngineApi.Fleet.FleetHost.LastError`.
+
+### 54.3 🔴 CÁI THẬT SỰ ĐANG MỞ KHÔNG PHẢI CÂU HỎI Ở TIÊU ĐỀ — U-1 đã trả lời câu ấy, và trả lời đúng
+
+Lập luận U-1 dùng để **không** đóng nó được giữ nguyên văn tại chỗ khai báo, và đo lại nó vẫn đứng:
+trường này nghĩa là *"một pipeline dừng vì một lý do không ai yêu cầu"*; một `Start()` hỏng **không
+dừng gì cả** — fleet đã dừng trước nó và vẫn dừng sau nó. U-1 **cố ý từ chối** chân yếu (*"người gọi
+được báo"*) vì chính U-1 bác chân ấy cho `RegisterMachine` và `ApplyScenario`.
+
+🔴 **Chỗ hai bên THẬT SỰ gặp nhau là chỗ U-1 giao lại, và nó vẫn chưa ai nhận:** một `Start()` ném
+**giữa vòng lặp slot** để lại các slot **đang sống** với `_running == false` và `LastError` vẫn
+`null` — fleet **không chạy mà cũng không dừng sạch**, và `GET /v1/health` nói HEALTHY. Đó là
+*residual (2)* của S3. Câu ở tiêu đề mục này là câu U-1 đã trả; **câu này thì chưa.**
+
+### 54.4 Hậu quả vận hành, HAI CHIỀU
+
+**Chiều sửa:** một bộ giám sát hỏi `/v1/health` là thứ duy nhất trong sản phẩm này biết fleet hỏng
+mà không cần ai nhìn màn hình. Trên nhánh mid-slot-loop nó nói sai, **vô thời hạn** — không có
+đường ack, và chỉ một `Start()` **thật sự cài đặt** mới xoá trường ấy.
+
+**Chiều để nguyên:** ghi `LastError` trong catch của `Start()` **làm nhoè định nghĩa** mà U-1 vừa
+mua bằng bốn chỗ sửa — trường sẽ không còn nghĩa *"dừng vì lý do không ai yêu cầu"* mà thành *"lần
+gần nhất có gì đó ném"*, và một người vận hành gọi `Start()` hỏng rồi **sửa xong** vẫn thấy host
+unhealthy cho tới lần start thành công kế tiếp. U-1 gọi phép đóng ấy là *"hai câu lệnh trong một
+catch đã có sẵn"* — **giá là hai câu lệnh, không phải hai câu lệnh và một định nghĩa.**
+
+### 54.5 Nếu KHÔNG quyết định
+
+Nhánh mid-slot-loop tiếp tục báo HEALTHY cho một fleet không chạy, và lời khai này tiếp tục sống
+**chỉ** trong một khối doc của `FleetCore.cs` — nơi chủ sở hữu không có đường dẫn nào để mở, đúng
+lý do file này tồn tại.
+
+---
+
+## 55. BỐN mặc định `switch` trên `Verdict` gấp một giá trị lạ về phía AN TOÀN — và HAI trong bốn nằm trong CÙNG MỘT FILE mà bất đồng nhau
+
+⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ.
+
+### 55.1 Đo được cái gì — LIỆT KÊ trước, con số SAU
+
+| chỗ | mặc định | gấp về |
+|---|---|---|
+| `St4i.EdgeCore/Fleet/MachineState.cs:174` | `_ => "OK"` | tốt |
+| `St4iMachineSimulator/ViewModels/MachineViewModel.cs:245` | `_ => "OK"` | tốt |
+| `St4i.EdgeCore/Mapping/Normalizer.cs:253` (`ComputeOverallResult`) | `_ => "OK"` | tốt |
+| `St4i.EdgeCore/Mapping/Normalizer.cs:263` (`VerdictToResult`) | `_ => "skip"` | bỏ khỏi tỉ lệ |
+
+⇒ **BỐN chỗ**, và **hai cái cuối nằm trong CÙNG MỘT FILE**: `Normalizer` trả lời hai câu khác nhau
+về **cùng một giá trị lạ**, trên hai đường ra của cùng một envelope.
+
+### 55.2 🔴 Nửa lời khai của P-2 KHÔNG sống sót phép đo lại, và tôi nói ra chiều nó sai
+
+P-2 (2026-08-17, `f89da589`, mục *"NAMED, NOT FIXED"*) viết: *"MachineState renders an unknown
+Verdict member as `OK` **to operators**"* — thì hiện tại, có người xem. Đo ở `26020fe7`:
+
+* `enum Verdict` có **đúng bốn** thành viên (`Pass`, `Warn`, `Fail`, `Skip`).
+* Quét toàn commit tìm ép kiểu `(Verdict)`: **không khớp nào** trong `src/` lẫn `tests/`.
+* Thành viên kiểu `Verdict` **duy nhất** đi qua ranh giới tuần tự hoá là `DeviceReading.Verdict`, và
+  `ConnectorJson` đăng ký `JsonStringEnumConverter(..., allowIntegerValues: false)` — một số nguyên
+  bị **từ chối**, không **nhận rồi gấp**.
+
+⇒ **Không đường nào trong cây hôm nay sinh ra một `Verdict` ngoài miền**, nên nhánh ấy **TIỀM ẨN**.
+Nó là một khuyết tật của **mã**, không phải một sự kiện **vận hành viên đang thấy**. Nói ngược lại
+cũng phải nói: `_` ở `MachineState`/`MachineViewModel` **cũng** bắt `Verdict.Pass`, nên ba dòng ấy
+đang chạy mỗi chu kỳ — cái tiềm ẩn là *giá trị lạ*, không phải *dòng mã*.
+
+### 55.3 Ở đâu trong mã — trỏ bằng TÊN, và hai họ hàng phải nêu cùng
+
+`MachineState.StatusText` · `MachineViewModel.StatusText` · `Normalizer.ComputeOverallResult` ·
+`Normalizer.VerdictToResult`. **Cộng hai chỗ mà tồn dư AA-1 số 4 và số 5 (Phần IV) nêu tên và không
+ai gỡ:** `MachineState.PassRate` áp **đúng cùng một luật** (`!= Skip` vào mẫu, `Pass or Warn` vào
+tử) và nổi lên qua `FleetProjections` tới `web/.../ReadoutGrid.tsx` và `DashboardView.xaml`; và
+`Doc28Writer.MapVerdict` (`Warn` → `"NTF"`) cặp với `Doc28Parser.MapVerdict` (`"NTF"` →
+`Verdict.Skip`), nên **trên một vòng doc-28 kín `Warn` suy biến thành `Skip`**. 🔴 **Vòng ấy KHÔNG
+chảy vào OEE** — `Doc28Parser` đặt `Kind = Inspection` còn OEE lọc `ProcessResult` — nên nó **không**
+chạm miễn trừ "con số OEE đã báo cáo", và đó là lý do mục này ở nhóm quyết-được thay vì chờ anh.
+
+### 55.4 Hậu quả vận hành, HAI CHIỀU
+
+**Chiều sửa:** bốn mặc định gấp về phía **an toàn nhất trông thấy** là hình dạng *fail-open*: ngày
+một thành viên thứ năm được thêm vào `Verdict`, ba bề mặt sẽ gọi nó là `OK` và một sẽ bỏ nó khỏi tỉ
+lệ, **không nơi nào đỏ**. Và hôm nay đã có một bất đồng đọc được giữa hai hàm cùng file.
+
+**Chiều để nguyên:** một `switch` **vét cạn** trên một enum bốn thành viên khiến compiler cảnh báo
+khi thêm thành viên — nhưng `EXPECT_WARNINGS=219` là một hằng số **được ghim**, nên một cảnh báo mới
+làm **cổng đỏ**, không phải làm ai đọc. Và ném thay vì gấp là **đổi hành vi lúc chạy** trên một
+đường đi qua mỗi chu kỳ của mỗi máy.
+
+### 55.5 Nếu KHÔNG quyết định
+
+Bốn mặc định ở lại, và câu của P-2 — *"renders an unknown Verdict member as OK to operators"* — ở
+lại trong `git log` như một lời khai **không ai đọc và không ai kiểm**, đúng loài mục 52.
+
+---
+
+## 56. Lớp "bỏ qua parse trong IM LẶNG": §3.4 khai CHÍN chỗ và CHÍN đúng nguyên — nhưng hình dạng mà chính §3.4 phát biểu bắt thêm TÁM núm nữa
+
+⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng khuôn mục 38/39/50: một phép kiểm ở **biên parse**.
+
+### 56.1 🔴 Con số CHÍN được đếm lại và nó ĐỨNG VỮNG — LIỆT KÊ trước, con số SAU
+
+`docs/startup-failure-posture.md` §3.4 khai một *"divergence class: nine silent parse-ignores, not
+one site"*. Đếm lại ở `26020fe7`, mở từng file:
+
+| file | núm | dòng `TryParse` |
+|---|---|---|
+| `St4i.EdgeCore/Transport/WalOptions.cs` | `ST4I_WAL_MAX_BYTES` | 177 |
+| `St4i.EdgeCore/Uns/UnsOptions.cs` | `ST4I_UNS_PORT` | 116 |
+| `St4i.EdgeCore/Drivers/Modbus/ModbusOptions.cs` | `ST4I_MODBUS_PORT` | 164 |
+| `St4i.EdgeCore/Site/BridgeSpoolOptions.cs` | `…_MAX_BYTES`, `…_MAX_AGE_HOURS` | 90, 98 |
+| `St4i.EngineApi/Alarms/AlarmThresholds.cs` | `…_NGRATE_THRESHOLD`, `…_NGRATE_MINSAMPLE`, `…_EVAL_INTERVAL_MS`, `ST4I_IDENTITY_EXPIRY_WARN_DAYS` | 63, 71, 79, 87 |
+
+**1 + 1 + 1 + 2 + 4 = CHÍN**, năm file, y như đã khai — và lời khai kèm theo (*"none of which has a
+`logWarning` parameter to thread"*) cũng đúng: cả năm `FromEnvironment()` là **static, không tham
+số**. 🔴 **Đây là con số duy nhất trong lời giao việc SỐNG SÓT phép đo lại**, và nói ra điều đó là
+một nửa của sự thật hai chiều.
+
+### 56.2 🔴 Nhưng bảng ấy hẹp hơn CÂU mà chính nó đứng dưới — và đó là loài mục 32 ở dạng "lời khai miền"
+
+§3.4 phát biểu hình dạng là *"unparseable → silent fallback, with **no warning channel at all**"*.
+Câu ấy **không nói "số"**. Đo cùng hình dạng trên các núm **boolean**, liệt kê:
+
+`ST4I_WAL_ENABLED` · `ST4I_UNS_ENABLED` · `ST4I_BRIDGE_SPOOL_ENABLED` (cả ba: chỉ `"0"`/`"false"` tắt
+được; `ST4I_WAL_ENABLED=flase` **im lặng để BẬT**) · `ST4I_MODBUS_ENABLED` · `ST4I_OPCUA_ENABLED`
+(cả hai: chỉ `"1"`/`"true"` bật được; một lỗi gõ **im lặng để TẮT**, tức driver không bao giờ lên và
+không ai được báo) · `ST4I_MDNS_ADVERTISE` (`SiteAdvertiser`) · `ST4I_VERIFY_TLS`
+(`EdgeWorker.ParseVerifyTls`) · `DemoModeGate.ParseFlag` ⇒ **TÁM**.
+
+⇒ **Quần thể của HÌNH DẠNG là 9 + 8 = MƯỜI BẢY**; quần thể của **BẢNG** là chín. Bảng không sai —
+**lời khai miền của nó thiếu**, và một lời khai miền thiếu là đúng thứ mục 32 tồn tại vì nó.
+
+**Một bất đối xứng thứ hai, nhỏ hơn, đo được cùng lúc:** `BridgeSpoolOptions` bỏ thêm một giá trị
+**parse ĐƯỢC nhưng ≤ 0** (`&& parsedMaxBytes > 0`), cũng im lặng; `WalOptions` **không** có chốt ấy
+và để `Validate()` ném. Nên hai file cùng họ trả lời khác nhau cho cùng một đầu vào hỏng.
+
+### 56.3 Hậu quả vận hành, HAI CHIỀU
+
+**Chiều sửa:** mọi thành viên đều là **thứ vận hành viên gõ tay** vào một service, và nhánh *đã
+kiểm* của cùng những factory ấy thì **ném và dừng host**. Nên cùng một file cấu hình cho hai kết cục
+đối nghịch tuỳ núm nào bị gõ sai, và **không núm nào trong mười bảy nói gì cả**.
+
+**Chiều để nguyên:** không cái nào **mất dữ liệu** và không cái nào **im lặng theo chiều nguy hiểm
+với giá trị hợp lệ** — mặc định là giá trị đã xuất bản. Và luồn một kênh cảnh báo vào năm
+`FromEnvironment()` static là **đổi chữ ký của năm điểm vào** mà mười chỗ gọi đang dùng, tức không
+phải một dòng vá. `ModbusOptions` **tự khai** *"silently ignored"* trong doc của chính nó, nên với
+núm ấy khoảng cách là **không**.
+
+### 56.4 Nếu KHÔNG quyết định
+
+Lớp ấy tiếp tục sống, và lời khai *"chín"* tiếp tục được trích như thể nó nói về **hình dạng** trong
+khi nó nói về **bảng**.
+
+---
+
+## 57. BỐN khuyết tật config-sync do AH-1 đo 2026-08-19 và ghi CHỈ trong thông điệp merge — không cái nào từng vào file này
+
+🔴 **CHỜ ANH — KHÔNG UỶ QUYỀN ĐƯỢC.** Một trong bốn đòi **nới một hợp đồng dây đã xuất bản với một
+server ngoài sản phẩm này**, đúng hạng mục 3, 4 và 14.
+
+### 57.1 Đo được cái gì — LIỆT KÊ trước
+
+Nguyên văn từ `f08cb379` (AH-1, mục 12 đợt 5): *"Four defects were seen while writing and reported
+rather than fixed"*. Vòng phản biện **xác nhận cả bốn** và phán rằng **báo cáo là đúng việc phải
+làm** — *"the brief said stop and report, not open an item"*. **Không ai mở mục ấy.** Đo lại ở
+`26020fe7`:
+
+1. ✅ **CÒN SỐNG — `ConfigSyncEngine.cs:420`** viết `p.MeasurementType.ToString().ToUpperInvariant()`
+   trên đường **PUSH**, tự đánh vần lại một enum thay vì đi qua converter. Nó khớp **chỉ vì** mọi
+   thành viên hôm nay là một từ đơn; một thành viên hai từ sẽ **im lặng** phát sai token, và
+   `SPELLING IS the contract` là đúng lời AH-1 dùng để chọn cụm ấy.
+2. ✅ **CÒN SỐNG, và ĐÃ ĐƯỢC GHI TẠI CHỖ — `ProductModel.cs:91–100`:** một lần pull Live đưa
+   `LifecycleStatus` về mặc định `Development`, và khối doc **nói thẳng điều đó** (*"That is not a
+   mapping that forgot a field"*). Nên đây là **lời khai đã trả, khuyết tật chưa trả**.
+3. **Hai mươi tám trường vận hành viên soạn được KHÔNG có chỗ trong hợp đồng đồng bộ**, nên một
+   khác biệt chỉ xoá được bằng một lần **pull cũng vứt luôn bản sửa**. 🔴 **Đây là vế không uỷ quyền
+   được.**
+4. 🔴 **KHÔNG TÁI LẬP ĐƯỢC TỪ MÔ TẢ ĐÃ CHO** — *"the board canvas silently drops a fiducial that has
+   no normalised coordinates while doing the opposite for points"*. Quét `:(top)tools/machine-simulator/*`
+   tìm `fiducial` (không phân biệt hoa thường) trả về **hai mươi** file và **không cái nào là một
+   canvas**; quét `client/` cũng không tìm được bề mặt khớp mô tả. **Tôi không mở hết tập**, nên
+   đây là *"không tái lập được từ mô tả"*, **không** phải *"không tồn tại"* — một câu phủ định tồn
+   tại chỉ đúng nếu đã mở hết tập.
+
+### 57.2 Ở đâu trong mã — trỏ bằng TÊN
+
+`St4i.EngineApi.Config.ConfigSyncEngine` (đường push) · `St4i.EdgeCore.Config.ProductModel.LifecycleStatus`
+· `St4i.EngineApi.Config.LiveConfigSyncWireDtos` · `St4i.EngineApi.Config.LiveConfigSyncBackend` ·
+`St4i.EdgeCore.Config.MeasurementPoint` · `St4i.EdgeCore.Config.Fiducial`.
+
+### 57.3 Hậu quả vận hành, HAI CHIỀU
+
+**Chiều sửa:** (1) và (2) là **mất dữ liệu im lặng qua một cái dây** — một token sai hoặc một trạng
+thái vòng đời bị đặt lại không kêu ở đâu cả. (3) là hình dạng tệ nhất trong ba: cách duy nhất để
+xoá khác biệt cũng là cách xoá công của vận hành viên.
+
+**Chiều để nguyên:** cả ba nằm trên đường **Live config-sync**, và sản phẩm này **không phải** đầu
+định nghĩa hợp đồng — `LiveConfigSyncWireDtos` tự khai nó **phản chiếu** hình dạng của server. Sửa
+(1) đơn phương làm token **đổi**, tức có thể làm hỏng một bên đọc mà cây này không thấy; sửa (3) đòi
+server nới trước. Đó chính là lý do mục này chờ anh chứ không chờ một nhiệm vụ.
+
+### 57.4 Nếu KHÔNG quyết định
+
+Bốn phát hiện tiếp tục sống **chỉ** trong một thông điệp merge của tháng Tám — cùng cơ chế mà mục 37
+mô tả, và cùng cơ chế đã giấu **mười một** khuyết tật của BB-1 và AV-1 cho tới khi BG-1 đọc `git log`.
+
+---
+
+## 58. HAI lời khai đếm được, đã công bố, đo lại là SAI — và cả hai vẫn nguyên văn trong cây
+
+⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 52: rút hoặc sửa một câu văn xuôi tại chỗ.
+
+### 58.1 Đo được cái gì
+
+1. **`SiteAdvertiserTests` nói *"twelve"* trên một tập đo được là HAI MƯƠI.** Khối doc của lớp ấy
+   (dòng 29) viết *"… with the **twelve** `WebApplicationFactory<Program>`-building classes that also
+   read this var"*. Đo ở `26020fe7`, `:(top)tools/machine-simulator/tests/*.cs`:
+   `WebApplicationFactory<Program>` xuất hiện trong **21** file, một trong đó là helper
+   `tests/Shared/TestRunTempRoot.cs` ⇒ **20 lớp test**, và **cả 20** cũng mang
+   `SecurityEnvVarTests.CollectionName`. Con số đúng là **20**, không phải 12. Z-1 đo đúng thế ngày
+   2026-08-18 và ghi *"booked in the report, not fixed here"*; **không báo cáo nào sau đó nhắc lại**.
+2. 🔴 **BH-1 TỰ ĐO, trong lúc kiểm lại mục 5 — chú thích nấc 4 của `ConnectorConfigStore` nói sai về
+   phạm vi transaction của chính nó.** Chú thích ở `ConnectorConfigStore.cs:462` đọc: *"It runs
+   inside the same transaction as **every other rung of this ladder** (see EnsureSchema)"*. Mở
+   `EnsureSchema` ra: `using var transaction = connection.BeginTransaction();` nằm **BÊN TRONG**
+   vòng `foreach (var (version, statements) in Migrations)`, và `transaction.Commit()` cũng thế ⇒
+   **một transaction MỖI NẤC**, không phải một transaction cho cả thang.
+
+### 58.2 🔴 Vế thuận và vế nghịch, vì nêu một nửa là nói sai
+
+**Kết luận chịu lực của chú thích ấy KHÔNG hỏng.** Câu ngay sau nó — *"this migration either
+completes or never happened; there is no state where the old table is gone and the new one is not
+there"* — **vẫn đúng**, vì cả bốn câu lệnh của nấc 4 **cộng** `PRAGMA user_version = 4` nằm trong
+**một** transaction. Cái sai là **phạm vi**: nó hứa nguyên tử **giữa các nấc**, và cái đó không có.
+Hệ quả thật, nêu ra chứ không phóng đại: một máy chết giữa nấc 4 và nấc 5 dừng ở `user_version = 4`
+với dữ liệu **nhất quán**, và lần khởi động sau chạy tiếp nấc 5 — tức hành vi **đúng**, đạt được
+bằng một cơ chế **khác** cái mà chú thích khai.
+
+### 58.3 Ở đâu trong mã — trỏ bằng TÊN
+
+`tests/St4i.EngineApi.Tests/Site/SiteAdvertiserTests.cs` (khối doc của lớp) ·
+`src/St4i.EngineApi/Fleet/ConnectorConfigStore.cs` (chú thích nấc 4 của `Migrations`, và
+`ConnectorConfigStore.EnsureSchema`).
+
+### 58.4 Hậu quả vận hành, HAI CHIỀU
+
+**Chiều sửa:** cả hai là **hồ sơ nói sai về mã** ở chỗ người sau sẽ tin — (1) trong một khối doc
+giải thích **vì sao** một `[Collection]` được chọn, tức đúng chỗ người tiếp theo đọc trước khi đổi
+collection; (2) trong chú thích duy nhất giải thích **vì sao** một `DROP TABLE` được phán là an
+toàn, tức đúng chỗ người tiếp theo đọc trước khi thêm nấc thứ sáu.
+
+**Chiều để nguyên:** không cái nào đổi hành vi, và (2) đặc biệt: một người **tin** câu sai ấy sẽ
+kết luận thang **an toàn hơn** thực tế theo một chiều **không** dẫn tới mất dữ liệu, vì mỗi nấc vẫn
+nguyên tử. Nên giá của việc để nguyên là **niềm tin sai**, không phải **byte mất**.
+
+### 58.5 Nếu KHÔNG quyết định
+
+Hai câu ở lại, và con số *"twelve"* — đã bị bắt sai **một lần** ngày 2026-08-18 và **không ai sửa** —
+sẽ được trích lần thứ ba.
 
 ---
 
@@ -10924,6 +11316,223 @@ mệnh đề *"⇒ một phát hiện về thiết kế"*, tức phần tuyên b
    — **45** và **46** — được xếp thế **theo tiền lệ** (mục 10/30 cho đường mất dữ liệu, mục 31 cho
    cái đi tới khách hàng) chứ không vì chúng chạm đúng một trong ba câu chữ. Anh có thể hạ chúng
    xuống (N) và điều phối viên sẽ thi hành.
+
+---
+
+## Quần thể backlog CŨ (có trước loạt 15–52), liệt kê đầy đủ — BH-1 (2026-08-23)
+
+🔴 **Lời giao việc đưa xuống NĂM thứ và tự khai cả năm là con số CHƯA ĐO. Liệt kê từ nguồn cấp một
+trả về HAI MƯƠI TÁM ứng viên.** Ba nguồn, nêu tên chứ không tóm tắt: *(i)* năm thứ trong lời giao
+việc; *(ii)* **Phần IV của chính file này** — tồn dư AA-1 (1–8), AJ-1 (9–12), AK-1 (13–15), cả
+mười lăm có trước AO-1; *(iii)* **thông điệp merge trước `AV-1` (`e99019c0`)**, đọc bằng
+`git log --merges e99019c0`, lọc bằng chính chữ mà các vòng ấy dùng — *"reported rather than fixed"*,
+*"NAMED, NOT FIXED"*, *"deliberately not fixed"*, *"booked in the report, not fixed here"*,
+*"none opened as an item"*.
+
+**Đếm SAU KHI liệt kê, và đếm từ bảng dưới đây chứ không từ trí nhớ: 5 + 15 + 8 = 28 ứng viên**
+(nhóm (iii) đóng góp tám hàng **sau khi** trừ những cái đã thành mục — xem hàng C0). Trong đó
+**6 → (N)** · **1 → (C)** · **11 → (K)** · **10 → ĐÃ HẤP THU vào một mục đang có**. Sáu mục mới,
+số hiệu **53–58**, gom từ 6 (N) + 1 (C).
+
+🔴 **CỘNG MỘT CÁI THỨ HAI MƯƠI CHÍN, KHÔNG THỪA KẾ — BH-1 tự đo nó**, trong lúc mở mã ra kiểm lại
+mục 5: chú thích nấc 4 của `ConnectorConfigStore` khai một phạm vi transaction mà `EnsureSchema`
+không có. Nó nằm **ngoài** phép cộng 5+15+8, đúng lý do BG-1 để hàng 34 của mình ra ngoài phép cộng
+33: trộn một cái tự đo vào một tổng thừa kế làm cái tổng ấy **không tra lại được**. Nó đi vào mục
+**58** cùng với hàng C4.
+
+| # | thứ | nguồn cấp một | triage | đi đâu |
+|---|---|---|---|---|
+| A1 | mục 5 — *"HAI store `DROP TABLE` lúc khởi động"* | lời giao việc · mục 5 (S-1/V-1) | **K** | §(a) dưới — **ĐÃ ĐÓNG**, không mở lại |
+| A2 | chỗ thứ TƯ của mục 2 | lời giao việc · mục 2 (AA-1 phản biện 1) | **N** | mục **53** |
+| A3 | `Start()` không ghi `LastError` | lời giao việc · `f18f5c29` (U-1) | **N** | mục **54** |
+| A4 | `MachineState` render một `Verdict` lạ thành `"OK"` | lời giao việc · `f89da589` (P-2) | **N** | mục **55** |
+| A5 | lớp bỏ-qua-parse, *"CHÍN chỗ"* | lời giao việc · `startup-failure-posture.md` §3.4 (M-1) | **N** | mục **56** |
+| B1 | hai sàn nhân chứng đếm SERIES chứ không đếm HÀNG | Phần IV, tồn dư AA-1 §1 | **K** | §(f) — tự khai là lỗi **câu chữ**, đã sửa câu, cách chữa thật *"chưa làm"* |
+| B2 | một trong bốn `[Fact]` là test của MÃ TEST | Phần IV, tồn dư AA-1 §2 | **K** | §(f) — đã nói thẳng cạnh hằng số; hợp lệ theo §8.1(h6) |
+| B3 | `GetOeeAsync` không có doc comment | Phần IV, tồn dư AA-1 §3 | **K** | hấp thu — mục **12/25** (bao phủ doc) |
+| B4 | `MachineState.PassRate` là bề mặt thứ tư của cùng luật | Phần IV, tồn dư AA-1 §4 | **N** | hấp thu vào mục **55** §55.3 |
+| B5 | phép quét §8.1(h5.4) chưa đủ — `Normalizer` hai mặc định bất đồng, hai `StatusText`, vòng doc-28 | Phần IV, tồn dư AA-1 §5 | **N** | hấp thu vào mục **55** |
+| B6 | một câu về `WaveformSeries` bị **xoá** thay vì **rút**, xuất bản ở `84836ad6` | Phần IV, tồn dư AA-1 §6 | **K** | §(f) — đã được ghi nguyên văn ở Phần IV, tức đã trả bằng đúng cơ chế file này quy định |
+| B7 | hai câu tiếng Việt chữa KỀ BÊN chứ không trích tại chỗ | Phần IV, tồn dư AA-1 §7 | **K** | §(f) — tự khai *"vẫn gặp, chỉ không kín bằng"* |
+| B8 | tên `[Fact]` `…WhenOnlyTheRateHzFieldMoves` lệch với thân | Phần IV, tồn dư AA-1 §8 | **K** | §(f) — lệch **thừa kế**, không do vòng nào tạo |
+| B9 | `web/src/lib/api.ts` liệt kê chỉ `400` cho `PUT …/oee/settings` | Phần IV, tồn dư AJ-1 §9 | **K** | §(e) — **hành vi ĐÚNG và đã tự kiểm**; và §9 mang một câu về `web/` mà §(d) dưới đây bác |
+| B10 | không nhân chứng đầu–cuối cho `409` kiểu mới | Phần IV, tồn dư AJ-1 §10 | **K** | §(f) — tự khai là **suy ra**, không **quan sát**; tính chất vẫn đúng |
+| B11 | thông điệp arm mới hẹp hơn tập nó mô tả | Phần IV, tồn dư AJ-1 §11 | **K** | §(f) — tự khai *"rất nhỏ"* |
+| B12 | cửa sổ `Save()` ném + `.tmp-<guid>` mồ côi | Phần IV, tồn dư AJ-1 §12 | **K** | §(f) — tự khai *"kết cục đúng như mong muốn"*, **có sẵn từ trước** |
+| B13 | dụng cụ đếm bị bắt lỗi ở MỘT đầu ra, sửa MỘT nửa | Phần IV, tồn dư AK-1 §13 | **K** | bài học về PHƯƠNG PHÁP, không phải khuyết tật của cây |
+| B14 | hai lần tuyên bố một thứ CÒN ĐANG CHUYỂN ĐỘNG là đã dừng | Phần IV, tồn dư AK-1 §14 | **K** | như trên |
+| B15 | một chỉ thị TỰ MÂU THUẪN của điều phối viên | Phần IV, tồn dư AK-1 §15 | **K** | như trên — đã nhận và đã ghi |
+| C0 | *(mười cái đã HẤP THU, nêu tên để phép trừ tra lại được)* — `UnsPublisher` DropOldest → mục **15**; `PublishBirth/Death` không caller → mục **23**; hằng số env-var → mục **24** (cả ba từ `3a614f1c`); `LiveTransport.ReadSampleSeries` bỏ hàng không phải `double[]` và `WelderSim` lệch 4,17 % → **mục 14** (từ `abc6f0ca`); `GenerateDocumentationFile` → mục **12**; `DeviceIdentityStore`/`CredentialStore` → mục **1**/**10**; `fleet-settings.json` đọc không gác → mục **1**; ba store cạnh binary → mục **30** | `git log` trước AV-1 | — | **không phải ứng viên** |
+| C1 | đường PUSH tự đánh vần enum bằng `ToUpperInvariant` | `f08cb379` (AH-1) | **C** | mục **57** §1 |
+| C2 | `LifecycleStatus` luôn đọc `Development` sau một lần pull Live | `f08cb379` (AH-1) | **C** | mục **57** §2 |
+| C3 | 28 trường vận hành viên soạn được không có chỗ trong hợp đồng đồng bộ | `f08cb379` (AH-1) | **C** | mục **57** §3 |
+| C4 | board canvas bỏ im lặng một fiducial không có toạ độ chuẩn hoá | `f08cb379` (AH-1) | **K** | mục **57** §4 — **KHÔNG TÁI LẬP ĐƯỢC TỪ MÔ TẢ** |
+| C5 | `SiteAdvertiserTests` nói *"twelve"* trên một tập đo được 20 | `ec17f4f1` (Z-1, Minor 4) | **N** | mục **58** §1 |
+| C6 | `OeeSettingsStore` không giữ khoá file | `abc6f0ca` (AI-1) | **K** | §(c) — đo lại: store dùng `lock (_gate)` + so danh tính byte (mục 11/13), tức **đã được phán** |
+| C7 | cổng build-node đua: signal rồi lấy mẫu, không chờ | `811c9054` (M-1) | **K** | §(b) — **ĐÃ TRẢ**: cổng nay có **settle poll** + ba hằng số settle |
+| C8 | `RelayNotificationChannelTests.UnderAFlapStorm_…` là một khẳng định biên-không | `054b5525` (J-1) | **K** | §(b) — **ĐÃ TRẢ** ở vòng closeout B-2: khoảng cách nay **đo trên máy**, không giả định |
+| C9 | `Estop()` ném để lại một halt HOÀN TẤT không có hàng audit `fleet.estop` | `99ab7b61` (J-2, I-4) | — | 🔴 **LIỆT KÊ, KHÔNG ĐO** — xem §(g) |
+| C10 | `mutate-guard.sh restore` sai đơn vị (file thay vì hunk) | `f89da589` (P-2) | — | 🔴 **LIỆT KÊ, KHÔNG ĐO** — xem §(g) |
+| C11 | phép truy vấn danh tính của cổng không có timeout | `17fa6841` (Q-1) | — | 🔴 **LIỆT KÊ, KHÔNG ĐO** — xem §(g) |
+| C12 | `FleetService` của vỏ WPF mang cùng hình dạng commit/complete dưới khoá riêng | `05086fe7` (F-1) | — | 🔴 **LIỆT KÊ, KHÔNG ĐO** — xem §(g) |
+| C13 | `DrainQueue` cắt cụt một file nó không có gì để rút | `d3ca15e1` (Dot E) | **K** | SDK **vendored, ngoài giới hạn** — cùng trần mục 12 ghi cho 103 cảnh báo vendored |
+| C14 | 237 khẳng định `cref`/`paramref` không giải được trong chín project chưa bật cờ | `f1dba1a8` (N-1) | **K** | hấp thu — mục **12** (chín project ấy chính là tập mục 12 nói tới) |
+| D1 | 🔴 **MỚI, KHÔNG THỪA KẾ** — chú thích nấc 4 `ConnectorConfigStore` khai *"cùng transaction với mọi nấc"*; `EnsureSchema` mở một transaction **mỗi nấc** | **BH-1 tự đo** | **N** | mục **58** §2 |
+
+---
+
+## Mười một ca ĐO LẠI BÁC BỎ, ĐÃ ĐƯỢC TRẢ, hoặc KHÔNG TÁI LẬP ĐƯỢC — BH-1 (2026-08-23), GHI, KHÔNG MỞ MỤC
+
+**(a) 🔴 MỤC 5 — ĐÃ ĐÓNG TỪ 2026-08-17, CẢ HAI VẾ. Không mở lại.** Lời giao việc nói *"`ProductConfigStore`
+và `ConnectorConfigStore` `DROP TABLE` lúc khởi động"*. **Cả hai nửa của câu ấy sai, theo hai cơ chế
+khác nhau, và mỗi nửa được kiểm riêng:**
+
+* **Không có HAI store.** Quét `:(top)tools/machine-simulator/{src,tests}/*.cs` ở `26020fe7` tìm
+  `DROP TABLE`: **năm dòng, một dòng duy nhất trong mã sản phẩm** —
+  `src/St4i.EngineApi/Fleet/ConnectorConfigStore.cs:502`. Bốn dòng còn lại là **test**
+  (`NotificationEndpointsTests` dựng ca hỏng) và **census** (`OperatorDataRemovalCensusTests`, hai
+  dòng là regex và bảng kỳ vọng). `ProductConfigStore` **không có `DROP TABLE` nào**. Điều này xác
+  nhận đúng phép đo mà đợt 9 đã ghi và lời giao việc yêu cầu kiểm lại.
+* **Cái `DROP TABLE` duy nhất ấy ĐÃ ĐƯỢC PHÁN ✅ KHÔNG ĐỔI (2026-08-17, V-1)**, và bằng chứng vẫn
+  đứng: nó là nấc 4 của thang `PRAGMA user_version`, cả bốn câu lệnh **cộng** `PRAGMA user_version = 4`
+  chạy trong **một** transaction (`EnsureSchema`), `INSERT … SELECT` liệt kê **từng cột** chứ không
+  `SELECT *`, và việc các hàng sống sót được ghim bởi
+  `ConnectorConfigStoreTests.MigrationV4_AGenuineVersion3Database_KeepsEveryRow_EveryField_AndGivesEachOneItsKindAsItsInstanceId`
+  (`tests/St4i.EngineApi.Tests/Fleet/ConnectorConfigStoreTests.cs:506`), **vẫn có mặt**.
+* **Nửa kia của mục 5 — `ProductConfigStore.Load` ghi lại `products.json` khi chỉ thiếu
+  `recipes.json` — đã được 🔨 SỬA và bản sửa CÒN SỐNG:** `ProductConfigStore.cs:373–374` đọc
+  `if (!productsExisted) SaveProducts(); if (!recipesExisted) SaveRecipes();`.
+
+**Mục 5 nằm ở Phần III. Không có gì để phán, và mở lại nó sẽ là hỏi lại một câu đã trả lời hai lần.**
+🔴 **Cái DUY NHẤT còn lại ở chỗ ấy là một CÂU, không phải một hành vi** — xem D1 và mục 58 §2.
+
+**(b) Hai dụng cụ ĐÃ ĐƯỢC TRẢ giữa lúc chúng bị nêu và hôm nay.** *(i)* M-1 (2026-08-17) ghi cổng
+build-node là *"racy — signal teardown and the sample follows with no wait, poll or retry"*; đo hôm
+nay, `verify-suites.sh` mang một **settle poll** và **ba hằng số settle**, và `BUILD_NODE_SERIES` in
+ra một **dãy mẫu** chứ không một ảnh chụp — mối lo đã hết hiệu lực. *(ii)* J-1 ghi
+`RelayNotificationChannelTests.UnderAFlapStorm_TheCoilWriteRateIsBounded_MeasuredInElapsedTime` là
+một khẳng định **biên không**; đo hôm nay, vòng closeout B-2 thay con số cứng bằng
+`max(400 ms, 4 × mean(4 lần dispatch đo được))` và **ghi lại ba lần đo**. Cả hai được nêu ở đây
+thay vì bị bỏ im lặng, vì *"đã được trả"* cũng là một phép đo.
+
+**(c) `OeeSettingsStore` không giữ khoá file — ĐÃ ĐƯỢC PHÁN Ở NƠI KHÁC.** AI-1 nêu nó 2026-08-19.
+Câu hỏi *"hai người ghi cùng một file thì sao"* chính là nội dung **mục 11** và **mục 13**, cả hai
+đã được chủ sở hữu quyết (2026-08-18 / 2026-08-19) bằng một cơ chế **khác** khoá file: store ghi lại
+**danh tính của các byte** và từ chối bằng `409`. Một khoá file sẽ là **một cơ chế thứ hai cho cùng
+một bất biến**. Không mở mục.
+
+**(d) 🔴 MỘT CÂU Ở PHẦN IV NÀY ĐO ĐƯỢC LÀ SAI, và nó là câu đã che chỗ thứ tư của mục 2.** Tồn dư
+AJ-1 §9 viết: *"`web/` **không nằm trên đĩa** (sparse checkout) nên không một phép quét cục bộ nào
+chạm tới nó."* Đo ở `26020fe7`: cone sparse là `examples/device-client` **và**
+`tools/machine-simulator`, nên `tools/machine-simulator/web/` **nằm trong cone**; `git ls-tree -r
+HEAD -- tools/machine-simulator/web/` trả **230** file và `web/src/lib/api.ts` **đọc được trực
+tiếp**. Câu ấy được **giữ nguyên văn** ở §9 theo luật của file này; nó được **nêu SAI ở đây**.
+🔴 **Và đây là chỗ đắt nhất trong cả nhiệm vụ, vì cùng một câu sai được nhắc lại trong lời giao
+việc mở mục 53** — dưới dạng *"chỗ thứ tư nằm trong `client/`, không đo được suốt nhiều tuần CHỈ VÌ
+một pathspec"*. Cả hai vế bị bác bằng hai phép quét ghi ở §53.2: `v1/historian` khớp **0/2300** file
+trong `client/`+`server/`, và cái giữ chỗ ấy nguyên là một **lệnh cấm phạm vi** mà AA-1 tự viết ra.
+
+**(e) Tồn dư AJ-1 §9's nửa CÒN LẠI — hành vi ĐÚNG, và đã tự kiểm.** §9 tự viết *"Hành vi thì ĐÚNG
+và tôi kiểm chứ không nhận"*: `putOeeSettings` bắt **mọi** `!res.ok` và ném `OeeSettingsApiError`
+mang thông điệp server nguyên văn, kể cả `409`. Cái thiếu là **phép liệt kê trong hai doc comment**,
+tức đúng loài mục 12/26. Không mở mục riêng.
+
+**(f) Chín tồn dư của AA-1/AJ-1 tự khai là câu chữ, thừa kế, hoặc đã sửa — B1, B2, B6, B7, B8, B10,
+B11, B12, và B3 (đã hấp thu vào mục 12/25).** Cả chín **đã nằm ở Phần IV kèm phép đo của chính
+chúng** từ 2026-08-18/19. Chúng được **liệt kê lại ở bảng trên** chứ không đo lại, và lý do được nói
+ra: nhiệm vụ này đo **quần thể**, và một cái đã có phép đo tại chỗ thì phép đo lại nó là **đọc lại**,
+không phải **đo**. Ai muốn nâng một trong chín cái ấy thành mục **không cần phép đo mới** — nó đã có.
+
+**(g) 🔴 BỐN CÁI ĐƯỢC LIỆT KÊ VÀ KHÔNG ĐƯỢC ĐO — C9, C10, C11, C12 — và cái trần này được nêu chứ
+không giấu.** Chúng đến từ thông điệp merge của J-2, P-2, Q-1 và F-1, cả bốn mang chữ *"named, not
+fixed"* hoặc tương đương, và **không cái nào có hàng phán quyết hôm nay**. Chúng **không** được xếp
+(K), (N) hay (C), vì một triage không có phép đo là **một nhãn**, và đúng thứ này mục 40 và tồn dư
+BG-1 §4 nói tới. Nêu tên để người sau nhặt được: *"a throwing `Estop()` leaves a COMPLETED halt with
+no `fleet.estop` audit row"* (J-2/I-4) · *"`mutate-guard.sh restore` is mis-scoped for a file under
+active edit — the unit is the file, the thing to revert is a hunk"* (P-2) · *"the identity query is
+the first PowerShell call every run makes and has no timeout — a hang wedges the gate before it
+prints anything"* (Q-1) · *"the WPF host's `FleetService` carries the same commit/complete shape
+under its own separate lock"* (F-1). 🔴 **Nên con số *"28 ứng viên"* ở trên là một phép LIỆT KÊ đầy
+đủ và một phép ĐO chưa đầy đủ: 24 trong 28 được mở mã ra kiểm, 4 thì không.**
+
+---
+
+## 🔴 Vì sao BH-1 KHÔNG dựng một PHẦN thứ tư — và phép đo nói ngược với kết luận được chuyển giao
+
+**Câu hỏi, nguyên văn như nó tới:** `C2` của `check-owner-decisions.sh` đòi **mọi** hàng Phần I nói
+`CHỜ ANH`, nên năm mục nhóm *"điều phối viên quyết được"* (48–52) **bị buộc** nói *"chờ anh"* dù
+không phải thế, và ô ấy nay chứa **hai câu nói hai điều khác nhau** ⇒ *"một trạng thái thứ tư cần
+một PHẦN, không phải một nhãn."* BH-1 được trao quyền dựng Phần ấy. **BH-1 không dựng nó.** Bốn
+chân, và chân thứ nhất là một phép đo:
+
+**1. Hình dạng *"một ô nói hai điều"* KHÔNG mới, và `C2` không sinh ra nó — đo được: MƯỜI MỘT hàng.**
+Quét bảng phán quyết ở `26020fe7`, đếm các hàng mang **đồng thời** `CHỜ ANH` và
+`điều phối viên quyết theo uỷ quyền`: **15, 17, 21, 26, 32, 34, 36, 37, 38, 39, 40** ⇒ **mười một**.
+Ở cả mười một, `CHỜ ANH` là **trạng thái MỞ được giữ nguyên văn** theo luật append-only của file
+này, và phán quyết uỷ quyền được **nối vào sau nó**. Không hàng nào trong mười một cái ấy bị ai gọi
+là mâu thuẫn, và **cả mười một đều rời Phần I bằng một phán quyết được viết thêm, không bằng một
+Phần mới**. Cái duy nhất mới ở 48–52 là **thứ tự thời gian**: nhãn được công bố **trước** phán quyết
+nó dự báo. Đó là một khoảng trống trong **hồ sơ**, không phải một trạng thái thiếu trong **cấu trúc**.
+
+**2. 🔴 BG-1 đã viết câu trả lời VÀO CHÍNH FILE NÀY, và nó nói ngược với kết luận được chuyển giao
+cho BH-1.** Khối ⚖️ của BG-1 ở đầu Phần I đọc, nguyên văn: *"Chúng vẫn mang `🔴 CHỜ ANH` ở bảng vì
+**chưa ai quyết chúng**, và vì banner của phần này định nghĩa đúng thế."* Đó là một lời khai rằng
+`C2` và Phần I **đủ chỗ** cho trạng thái ấy. Lời giao việc mở nhiệm vụ này thuật lại kết luận của
+BG-1 theo chiều ngược hẳn. **Artefact nằm trong repo là cái sống sót:** một kết luận chỉ tồn tại
+trong một lời giao việc (`.superpowers/` bị gitignore) mà **mâu thuẫn với thứ cùng tác giả ấy đã
+commit** thì không phải một tiền đề dùng được — và đó **đúng bằng byte** cơ chế mà mục 37 tồn tại
+để chấm dứt.
+
+**3. Cái mà một PHẦN sẽ CƯỠNG CHẾ là một LỜI KHAI, không phải một phép đo — và tác giả của nó nói
+thế.** Tồn dư BG-1 §4, ngay phía trên: *"Nhãn (N)/(C) là LỜI KHAI của BG-1, không phải một phép đo.
+Không dụng cụ nào trong repo kiểm được rằng một hướng sửa **không** chạm ba miễn trừ."* Một **nhãn**
+đọc như một khẳng định và người đọc cân nhắc được nó. Một **PHẦN cộng một phép kiểm trong cổng** đọc
+như một **sự thật đã kiểm**: cổng xanh sẽ có nghĩa *"phân hoạch này đúng"*, trong khi thứ duy nhất
+được kiểm là *"mỗi số nằm đúng một chỗ"*. Đó là nâng một lời khai lên hạng sự thật bằng cách gắn cho
+nó một dụng cụ **không đo được thứ nó có vẻ đang đo** — cùng loài mục 32, mục 40, và cùng loài luật
+*"không có gì để nói"* mà BG-1 vừa rút. **Đổi một nhãn trung thực lấy một cỗ máy trông chắc chắn hơn
+nó biết không phải một cải thiện**, và đó là luật *"tỉ lệ dương tính giả"* của chính lời giao việc
+này áp theo chiều nó chưa được áp: một phép kiểm có thể **đúng 100 %** về thứ nó đo và vẫn **nói dối
+100 %** về thứ người đọc tưởng nó đo.
+
+**4. Giá cấu trúc, đo chứ không đoán.** `check-owner-decisions.sh` nhận diện banner bằng
+`index($0, "PHẦN IV")`, và một banner không khớp bốn chuỗi ấy rơi vào `part = "HEAD"` — ở đó **thân
+mục không được nhận diện nữa**, nên C1 sẽ báo *"row N has NO body section"* cho từng mục được
+chuyển. Nên Phần mới **phải** được dạy cho parser; đó là việc lời giao việc đã lường. Cái nó **không**
+lường: Phần chứa mục đang sống **phải đứng TRƯỚC Phần IV** (Y-1 chuyển phụ lục xuống cuối chính vì
+đặt nó trước các mục đang chờ là một khuyết tật), nên hoặc **`PHẦN IV` bị đánh số lại thành `PHẦN V`**
+— đo được: `Phần IV`/`PHẦN IV` xuất hiện **4** lần trong file này và **1** lần trong
+`scripts/check-owner-decisions.sh` — hoặc một **`PHẦN V` đứng vật lý TRƯỚC `PHẦN IV`**, tức số hiệu
+**không đơn điệu** trong tài liệu một con người đọc từ trên xuống. Cái giá này nhỏ; nó được nêu để
+phép từ chối không dựa **chỉ** vào nó.
+
+**Cái ĐÚNG là gì, nói ra chứ không để trống.** Cơ chế đã được dùng **mười một lần** và nó rẻ: nối
+`🔨 QUYẾT: … (2026-…, điều phối viên quyết theo uỷ quyền)` vào **từng** hàng 48–52, đúng như hàng 21
+và hàng 31 đang mang. Khi ấy ô không còn nói hai điều — nó nói *"mở như CHỜ ANH, rồi được quyết theo
+uỷ quyền"*, một câu chuyện theo thời gian, và mục rời Phần I theo đúng luật đã có. 🔴 **Nhiệm vụ này
+bị cấm làm đúng việc ấy** — lời giao việc viết *"mười hai mục 41–52: chỉ được CHUYỂN PHẦN, không
+được sửa nội dung"* và *"KHÔNG thi hành mục nhóm (N)"*. Nên phép từ chối ở đây **không** để lại một
+khoảng trống mới; nó nêu tên người phải lấp nó và bằng cái gì.
+
+---
+
+## Tồn dư của BH-1 (2026-08-23, backlog cũ) — GHI, KHÔNG SỬA
+
+1. 🔴 **Bốn ứng viên được liệt kê và KHÔNG được đo** (C9–C12, §(g) trên). Phép liệt kê đầy đủ,
+   phép đo **không**. Con số *"28"* đúng cho tập ứng viên và **không** đúng cho tập đã kiểm — tập ấy
+   là **24**.
+2. **Sáu mục mới KHÔNG có nhân chứng nào.** Nhiệm vụ này bị cấm dịch tổng `2852`, nên mọi khẳng định
+   ở §53–§58 được ghim bởi **một phép đọc mã**, không bởi một phép chạy. Ít nhất **hai** — mục 55
+   (bốn mặc định `switch`) và mục 58 §1 (con số 20) — cách một `[Fact]` là ghim được, và mục 58 §1
+   đặc biệt: nó là một phép đếm **mechanical**, tức đúng thứ một census test làm được.
+3. 🔴 **Tôi xếp mục 57 vào (C) theo TIỀN LỆ, không vì nó chạm đúng một trong ba câu chữ** — cùng chỗ
+   BG-1 tự khai cho mục 45 và 46. Ba trong bốn phát hiện của mục 57 nằm hoàn toàn bên trong sản phẩm
+   này; chỉ hàng C3 (*"28 trường không có chỗ"*) đòi nới một hợp đồng ngoài. Anh có thể **tách** mục
+   57: giữ C3 ở (C) và hạ C1/C2 xuống (N).
+4. **Phép quét nguồn (iii) lọc bằng CHỮ, nên nó bỏ sót mọi phát hiện được ghi mà KHÔNG dùng những
+   chữ ấy.** Bộ lọc là chín cụm tiếng Anh; một vòng viết *"we saw X and moved on"* sẽ không bị bắt.
+   Đây là một **sàn**, không phải một **census**, và nói thế ở đây vì chính bảng trên nói *"liệt kê
+   đầy đủ"*.
 
 ---
 
