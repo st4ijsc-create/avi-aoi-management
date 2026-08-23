@@ -4,6 +4,7 @@ using MQTTnet;
 using MQTTnet.Protocol;
 using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
+using St4i.EdgeCore.Infrastructure;
 
 namespace St4i.EdgeCore.Drivers.Mqtt;
 
@@ -24,12 +25,21 @@ public sealed class MqttDriver : IDeviceDriver
 {
     private static readonly MqttClientFactory Factory = new();
 
+    /// <summary>How long <see cref="DisposeAsync"/> waits for EACH of its two shutdown steps — draining the
+    /// constructor's connect+subscribe task, then the graceful disconnect. One second each, and the arithmetic
+    /// is the reason: <c>FleetCore.RestartTeardownTimeout</c> gives a whole driver 3 s before abandoning it,
+    /// so two sequential steps at 1 s leave this method a worst case of about 2 s and keep a full second of
+    /// headroom under the budget the host actually applies. A per-step ceiling equal to the host's own would
+    /// have been no ceiling at all.</summary>
+    private static readonly TimeSpan TeardownStepBudget = TimeSpan.FromSeconds(1);
+
     private readonly string[] _topics;
     private readonly Func<string, string, DeviceReading?> _map;
     private readonly IMqttClient _client;
     private readonly Channel<DeviceReading> _channel =
         Channel.CreateUnbounded<DeviceReading>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = false });
     private readonly CancellationTokenSource _cts = new();
+    private readonly Action<string>? _diagnostics;
     private readonly Task _connectTask;
     private volatile bool _disposed;
 
@@ -61,7 +71,18 @@ public sealed class MqttDriver : IDeviceDriver
     /// <see langword="null"/> to drop the message. It runs ON THE MQTTnet RECEIVE CALLBACK and is awaited
     /// there, so it must be prompt — a slow mapper delays the messages queued behind it. It may throw: an
     /// exception is caught, that one message is dropped, and the subscription survives.</param>
-    public MqttDriver(string host, int port, string[] topics, Func<string, string, DeviceReading?> map)
+    /// <param name="diagnostics">Optional sink for TEARDOWN outcomes only — one line per shutdown step, in
+    /// the shape <see cref="BoundedTeardown"/> emits. It is deliberately NOT a general log for this class:
+    /// the connect, subscribe and mapper failures described above are still swallowed exactly where they
+    /// were, and wiring a sink does not make any of them visible. Added by BK-1 on 2026-08-23 for
+    /// <c>docs/owner-decisions.md</c> item 48 defect 2; <see langword="null"/> — every call site that predates
+    /// it — behaves as before except that the disposal is now bounded.</param>
+    public MqttDriver(
+        string host,
+        int port,
+        string[] topics,
+        Func<string, string, DeviceReading?> map,
+        Action<string>? diagnostics = null)
     {
         if (host is null) throw new ArgumentNullException(nameof(host));
         if (topics is null) throw new ArgumentNullException(nameof(topics));
@@ -69,6 +90,7 @@ public sealed class MqttDriver : IDeviceDriver
 
         _topics = topics;
         _map = map;
+        _diagnostics = diagnostics;
 
         Id = $"mqtt:{host}:{port}";
         Health = DriverHealthState.Down;
@@ -223,14 +245,21 @@ public sealed class MqttDriver : IDeviceDriver
     /// through the same flag it sets first, so a second call returns immediately — which is what
     /// <see cref="IDeviceDriver"/>'s type-level rule asks for.
     ///
-    /// <para>🔴 <b>Its two waits are not equally bounded, and the second one is the gap.</b> The awaited
-    /// connect+subscribe task was started with the token that is cancelled one line earlier, so that wait
-    /// ends. The graceful <c>DisconnectAsync</c> underneath it is issued with
-    /// <see cref="CancellationToken.None"/> and is attempted whenever the client still reports itself
-    /// connected — nothing in THIS class bounds it, so how long a broker that accepts the socket and stops
-    /// answering can hold teardown here is decided entirely by whatever timeout the MQTT client applies
-    /// internally, which this class neither sets nor asserts. Both waits are wrapped so a THROWN failure on
-    /// either cannot stop the disposal; being wrapped is not the same as being bounded.</para>
+    /// <para>🔴 <b>"Its two waits are not equally bounded, and the second one is the gap" IS RETRACTED,
+    /// 2026-08-23, BK-1</b> (<c>docs/owner-decisions.md</c> item 48 defect 2, measured first by BB-1 on
+    /// 2026-08-22). Quoted and retired in place. It was true: <c>DisconnectAsync</c> was issued with
+    /// <see cref="CancellationToken.None"/>, so a broker that accepted the socket and stopped answering held
+    /// teardown here for whatever the MQTT client's own internal timeout happened to be — a value this class
+    /// neither set nor asserted. BOTH waits now go through <see cref="BoundedTeardown"/> at
+    /// <c>TeardownStepBudget</c> each, and both report to the constructor's sink. The first wait was already
+    /// ended by the cancellation one line earlier; it was routed anyway, because "a cancelled token will end
+    /// it" is a statement about a cooperative callee and the whole defect was trusting one.</para>
+    ///
+    /// <para>🔴 <b>What is still NOT bounded, named rather than left for a reader to discover.</b> A step
+    /// that overruns is DETACHED, not stopped — a client that never finishes disconnecting keeps its socket
+    /// for as long as it likes, and this method returning says only that THIS caller stopped waiting.
+    /// <c>_client.Dispose()</c> then runs against a client with a disconnect still in flight, which is the
+    /// same thing that happened before when the host abandoned the whole disposal.</para>
     ///
     /// <para>🔴 <b>The internal cancellation source is disposed at the end, and that closes the driver to
     /// re-enumeration rather than merely ending it.</b> See <see cref="ReadAsync"/>: a call made after this
@@ -247,25 +276,22 @@ public sealed class MqttDriver : IDeviceDriver
         _cts.Cancel();
         _channel.Writer.TryComplete();
 
-        try
-        {
-            await _connectTask.ConfigureAwait(false);
-        }
-        catch
-        {
-            // best-effort — connect/subscribe was already cancelled above.
-        }
+        // The token is DISCARDED here and the discard is deliberate: _connectTask was created with _cts.Token,
+        // which is already cancelled, so handing it a second token would add a source it does not observe.
+        // What this call buys is the RACE — the ceiling that holds if the task ignores the cancellation.
+        await BoundedTeardown.RunAsync(
+            "MqttDriver.connect+subscribe drain",
+            _ => _connectTask,
+            TeardownStepBudget,
+            _diagnostics).ConfigureAwait(false);
 
-        try
+        if (_client.IsConnected)
         {
-            if (_client.IsConnected)
-            {
-                await _client.DisconnectAsync(new MqttClientDisconnectOptions(), CancellationToken.None).ConfigureAwait(false);
-            }
-        }
-        catch
-        {
-            // best-effort shutdown.
+            await BoundedTeardown.RunAsync(
+                "MqttDriver.DisconnectAsync",
+                ct => _client.DisconnectAsync(new MqttClientDisconnectOptions(), ct),
+                TeardownStepBudget,
+                _diagnostics).ConfigureAwait(false);
         }
 
         _client.Dispose();

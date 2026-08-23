@@ -2244,8 +2244,53 @@ EXPECT_CONFORMANCE=24
 # the number is not smaller is structural and the same one BF-1 named: a sentence recording that a count
 # did NOT survive re-measurement is spelled with exactly the absolute vocabulary this scanner hunts.
 # The baseline cfcfae42 is NOT moved.
+#
+# ══ TASK BK-1 (.superpowers/sdd/seam-and-48-51-52/task-1-brief.md) — items 48, 51, 52, under the ═══════
+# owner's ruling of 2026-08-23 ("build the seam, unlock all three").
+#
+# EXPECT_EDGECORE 1211 -> 1221 (+10). Grand total 2857 -> 2867. NO OTHER SUITE MOVES: 161 / 24 / 52 /
+# 1409 are unchanged, and that is asserted rather than assumed -- the ten are in ONE new file,
+# tests/St4i.EdgeCore.Tests/Drivers/DriverTeardownSeamTests.cs, in the one assembly that references the
+# three classes item 48 and item 52 name.
+#
+# THE TEN, ENUMERATED BEFORE THEY ARE TOTALLED, AND EACH LABELLED WITNESS OR GUARD -- because "a check
+# that would still pass if the mechanism it claims to verify were deleted is worse than no check at all"
+# is this repository's own rule (DeviceDriverConformanceSuite's remarks) and a green-on-both-branches
+# test is that check unless it says so:
+#   SIX WITNESSES, every one of them proved RED by a control pair that was RUN and then reverted:
+#     1. BoundedTeardown_ReturnsWithinItsBudget_WhenTheStepNeverCompletes  (item 48 defect 2 + 4, the
+#        "bounded" half). Mutation: await the step directly instead of racing it. Result: the test HOST
+#        HUNG and the run ABORTED at a 60 s blame timeout, naming this test.
+#     2. BoundedTeardown_ReportsAFailingStep_RatherThanSwallowingIt        (item 48 defect 4, "blind")
+#     3. BoundedTeardown_HandsTheStepATokenThatFiresAtTheBudget            (the cooperative half)
+#     4. InProcessBroker_DisposeAsync_ReportsItsStopStep_ThroughTheSinkItWasGiven  (item 48 defect 4).
+#        Mutation: restore `try { await server.StopAsync(); } catch { }`. RED.
+#     5. MqttDriver_DisposeAsync_ReportsItsTeardownSteps_ThroughTheSinkItWasGiven  (item 48 defect 2).
+#        Mutation: restore CancellationToken.None. RED.
+#     6. HotFolderAoiDriver_Construction_TouchesNoDisk_AndTheFirstReadPassCreatesAllThree (defect 1) and
+#        HotFolderAoiDriver_ReportsWhyAFileWasMovedToTheErrorDirectory (item 52 sub-item 3). Mutations:
+#        constructor I/O restored; the `catch` un-bound. Both RED, each naming its own mechanism.
+#   (that is seven test names across six numbered witnesses -- 6 lists two, because one mutation pass
+#    covered both HotFolder defects and the attribution stayed one-to-one)
+#   THREE GUARDS, each of which SAYS SO in its own name or doc comment:
+#     8. MqttDriver_ReEnumeratingAfterDispose_RaisesObjectDisposed_GUARD_NotAWitness -- item 48 defect 3
+#        is not a broken behaviour, it is one NOBODY CHECKS, so paying it IS coverage and green on both
+#        branches is what that looks like. It also RE-MEASURES the one of the five defects BI-1 said
+#        plainly it did not re-measure; the property holds.
+#     9. BoundedTeardown_DoesNotThrow_WhenTheSinkItselfThrows
+#    10. InProcessBroker_WithNoSink_StillDisposesCleanly -- pins that the sink is optional, i.e. that
+#        every pre-existing `new InProcessBroker()` still behaves as it did.
+#
+# 🔴 A SIXTH TEST FILE WAS BUILT, MEASURED USELESS, AND DELETED -- recorded because a total that hides a
+# retraction is the kind this file keeps having to correct. BK-1 first paid item 51 sub-item 5 with an
+# in-process guard (tests/Shared/RealProgramDataLeakGuard.cs) linked into all five suites, +1 test each,
+# which would have made this 162/25/1222/53/1410. Its control pair refuted it: with the redirects removed
+# the suite rewrote the real assets.db and THE GUARD STAYED GREEN, because a [Fact]'s window ends when
+# xunit schedules it. It was deleted and rebuilt as a gate bracket instead (see the %ProgramData% bracket
+# beside the output-directory one). Four of the five suite constants therefore do NOT move, and the
+# reason they do not is a measurement rather than a scope decision.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1211
+EXPECT_EDGECORE=1221
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4707,7 +4752,48 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # mechanism-level fix..."). 10 + 2 = 12, and the split is stated because a total that hides how much of
 # itself is an artefact is the kind of number this file keeps having to retract. No absolute claim was
 # added that is not a retraction or the explanation of one.
-EXPECT_NEW_DOC_ABSOLUTES=322
+# ══ TASK BK-1 — items 48, 51, 52 under the owner's ruling of 2026-08-23 ═══════════════════════════════
+#
+# EXPECT_NEW_DOC_ABSOLUTES: 322 -> 342 (+20), ACCOUNTED FOR RATHER THAN ABSORBED, and the accounting is a
+# MEASUREMENT rather than an inference from a diff. The scanner was run twice on this machine: once with
+# this branch's tree stashed (BASE, `git stash push -u`) and once with it restored. BASE printed 322 --
+# the value that stood here, confirmed rather than assumed -- and the restored tree printed 342. The
+# per-file difference between the two listings is 20, and all 20 sit in files this task edited; every file
+# it did not touch is byte-identical to BASE and its count did not move, which is what makes "all of them
+# are mine" a reading rather than an assumption.
+#
+#   +7  src/St4i.EdgeCore/Infrastructure/BoundedTeardown.cs  (0 -> 7). New file: the seam. Its whole
+#       doc-comment burden is a WHAT-IT-DOES-NOT-MEASURE block plus the argument for why an injected
+#       IMqttClient was rejected -- both of which are stated in absolutes because a hedged ceiling is not
+#       a ceiling.
+#   +6  tests/St4i.EdgeCore.Tests/Drivers/DriverTeardownSeamTests.cs  (0 -> 6). New file: the ten
+#       witnesses/guards. Same shape -- the WITNESS-vs-GUARD labels and the "what this file does not
+#       measure" block are the absolutes.
+#   +2  src/St4i.EdgeCore/Drivers/HotFolder/HotFolderAoiDriver.cs  (14 -> 16). Two RETRACTIONS: the
+#       constructor-does-I/O paragraph (item 48 defect 1) and the "the class-level claim is still absent"
+#       paragraph BI-1 left contradicting its own fix.
+#   +2  src/St4i.EdgeCore/Drivers/Mqtt/MqttDriver.cs           (8 -> 10). The DisposeAsync retraction plus
+#       the new "what is still NOT bounded" paragraph.
+#   +2  src/St4i.EdgeCore/Drivers/Mqtt/InProcessBroker.cs      (2 -> 4). The "deliberately blind" and
+#       "not bounded" retractions, and the "what did NOT change" paragraph beside them.
+#   +1  tests/St4i.EdgeCore.Tests/Drivers/HotFolderAoiDriverConformanceTests.cs  (0 -> 1). The retraction
+#       of this file's own premise, which BI-1's fix falsified the same day.
+#
+# 🔴 tests/Shared/TestRunTempRoot.cs MOVED BY ZERO, and it is named because it is the one edited file a
+# reader would expect in the list: this task added a substantial `//` block there and the count did not
+# change. Reported as measured; not explained, because the reason (whether that scanner reads `//` runs at
+# all) was NOT measured here and a guess would be the third thing in this file to need retracting.
+#
+# 🔴 AND A COUNTING TOOL WRITTEN FOR THIS BLOCK DISAGREED WITH THE SCANNER BY ONE, IN BOTH DIRECTIONS.
+# A throwaway parser over the scanner's own listing totalled 323 at BASE and 343 now, against the
+# scanner's 322 and 342 -- one wrapped line it mis-split, on each side. The DELTA it reports (20) is
+# therefore sound and the TOTALS it reports are not; the totals written above are the SCANNER's. Named
+# rather than quietly corrected, because "my tool and the real tool disagree by one" is exactly the kind
+# of thing that gets rounded away and then quoted.
+#
+# The baseline cfcfae42 is NOT moved.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_NEW_DOC_ABSOLUTES=342
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
@@ -7851,6 +7937,73 @@ note "suite output directories under watch: ${#SUITES[@]} ($(grep -c . < "$OUTDI
 note "  green here means NOTHING WAS LEFT BEHIND -- never that nothing was READ; a residue file loaded at"
 note "  startup and not written back is invisible to both halves of this instrument."
 
+# ══ ITEM 51 SUB-ITEM 5'S BRACKET — the OTHER FIFTEEN %ProgramData% LEAVES ══════════════════════════
+# BK-1, 2026-08-23, docs/owner-decisions.md item 51 sub-item 5, under the owner's ruling of that day.
+#
+# WHAT THE ITEM SAID. "No tool guards %ProgramData%\ST4I\sim\ outside creds." True, and measured: the
+# credential bracket above and RealCredentialStoreLeakGuard both derive ONE leaf from CredentialStore.cs,
+# so a store leaking into any of the other fifteen was invisible to every instrument in this repository.
+#
+# 🔴 IT IS NOT A HYPOTHETICAL, AND THE PROOF IS WHY THIS SHIPPED RATHER THAN THE ARGUMENT FOR IT. BJ-1
+# measured ...\sim\assets\assets.db rewritten at 16:55:04 and again at 18:30:16 on 2026-08-23 -- two
+# independent gate windows -- while the one watched leaf stood at 31 entries through both. BK-1
+# reproduced it ON DEMAND: with the two ST4I_*_DIR redirects below removed, ONE full run of
+# St4i.EngineApi.Tests moved assets.db's mtime to 20:32:31 and the notifications directory's to 20:32:50.
+# The leak is fixed at its source (tests/Shared/TestRunTempRoot.cs now redirects ST4I_ASSETS_DIR and
+# ST4I_NOTIFICATIONS_DIR) rather than exempted here.
+#
+# 🔴 AND THE FIRST VERSION OF THIS INSTRUMENT WAS BUILT IN THE WRONG PLACE, MEASURED WRONG, AND THROWN
+# AWAY -- which is the part worth reading. BK-1 first wrote it as a C# module-initializer guard linked
+# into all five suites, the shape RealCredentialStoreLeakGuard uses. Its control pair REFUTED it: the run
+# above, with the redirects removed, wrote assets.db AND THE GUARD STAYED GREEN, because an in-process
+# [Fact]'s window ends when xunit happens to schedule it and the writers ran later. That is the same
+# result X-1 already recorded for OwnOutputDirectoryGuardTests three blocks down -- "X-1 MEASURED it
+# staying green while the pre-fix tree wrote machine-operating-config.json underneath it" -- arrived at
+# independently, on a different leaf, by a task that had not read it yet. A check that stays green
+# through the one defect it was built for is worse than no check, so the five tests were deleted and the
+# instrument put HERE, where the window is the whole test phase.
+REAL_SIM_ROOT=$(dirname "$REAL_CREDS_ROOT")
+
+# path + byte count + modification time, one FILE per line. Enumerates metadata and never opens, creates
+# or deletes anything. Same shape as outdir_snapshot above, and it inherits that function's dependency on
+# `set -o pipefail`: the body ends in a pipeline, so `find ... || return 1` runs in the LEFT-HAND
+# subshell and without pipefail an unreadable tree would return sort's 0 and read exactly like a clean
+# one. That is the absent-vs-unreadable hole the credential bracket had to close twice.
+sim_snapshot() {
+  if [[ ! -e "$REAL_SIM_ROOT" ]]; then
+    # Absent and unreadable are different answers. Ask the parent, which is what distinguishes them.
+    if ! ls -1a "$(dirname "$REAL_SIM_ROOT")" >/dev/null 2>&1; then
+      echo "FAIL: cannot read the parent of the REAL %ProgramData% root: $(dirname "$REAL_SIM_ROOT")" >&2
+      echo "  Nothing can be concluded about that tree from here, and 'nothing concluded' must not read" >&2
+      echo "  as 'nothing changed'." >&2
+      return 1
+    fi
+    # Genuinely absent -- a machine that has never run this product. An empty snapshot is correct: any
+    # file appearing later still reads as an addition.
+    return 0
+  fi
+  find "$REAL_SIM_ROOT" -type f -printf '%p\t%s\t%T@\n' || return 1
+}
+
+SIM_BEFORE="$LOGDIR/simroot-before.txt"
+SIM_AFTER="$LOGDIR/simroot-after.txt"
+if ! sim_snapshot | LC_ALL=C sort > "$SIM_BEFORE"; then
+  echo "FAIL: could not take the %ProgramData% bracket's BASELINE. Stopping rather than running the"
+  echo "  suites under a bracket that cannot fail."
+  exit 1
+fi
+# NOT a check -- a `note` is for a human reading alongside a verdict, never something a verdict depends
+# on. The leaf COUNT is printed beside the file count because "sixteen leaves" is the item's own unit and
+# a reader should be able to see the bracket armed against a plausible population rather than against one
+# directory.
+note "real %ProgramData% root under watch: $REAL_SIM_ROOT ($(grep -c . < "$SIM_BEFORE" || true) files in $(find "$REAL_SIM_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -c . || true) leaves at start)"
+note "  it watches EVERY leaf, creds included -- deliberately overlapping the credential bracket above,"
+note "  which compares NAMES only and is therefore blind to an in-place rewrite. This compares size and"
+note "  mtime too, and an in-place rewrite of an existing file is exactly the leak that went unseen."
+note "  green here does NOT mean the suites are isolated: this is a MACHINE-WIDE directory, so a St4i"
+note "  host running beside the gate would redden it, and a leak into a path this find cannot enter is a"
+note "  hard failure rather than a quiet zero."
+
 echo "[2/3] Running ${#SUITES[@]} suites sequentially..."
 for entry in "${SUITES[@]}"; do
   proj="${entry%%:*}"; expected="${entry##*:}"; name=$(basename "$proj")
@@ -8123,6 +8276,58 @@ if [[ -f "$OUTDIR_BEFORE" ]]; then
         echo "     pre-fix tree wrote machine-operating-config.json underneath it."
       } > "$LOGDIR/outdirs-report.txt"
       FAILURES+=("$(cat "$LOGDIR/outdirs-report.txt")")
+    fi
+  fi
+fi
+
+# BK-1 -- the closing reading of the %ProgramData% bracket (item 51 sub-item 5), folded into FAILURES for
+# the same reason the two above are: one PASS/FAIL line on the normal path. Three populations, not two,
+# for the reason X-1's block states: each line carries path + size + mtime, so a rewritten file leaves
+# BOTH sets, and reporting it as APPEARED/DISAPPEARED would send a reader hunting a deletion that never
+# happened. `-f` guards a future edit introducing a path that skips the baseline -- which must read as
+# "not measured", never as green.
+if [[ -f "$SIM_BEFORE" ]]; then
+  if ! sim_snapshot | LC_ALL=C sort > "$SIM_AFTER"; then
+    FAILURES+=("The REAL %ProgramData% root could NOT BE READ at the end of this run. NOTHING was measured
+    by this bracket -- that is not a pass, and it is not evidence of a writer either. Check for an ACL
+    change or a lock; do not disarm the bracket.")
+  else
+    _bk_gone=$(LC_ALL=C comm -23 "$SIM_BEFORE" "$SIM_AFTER" | cut -f1 | LC_ALL=C sort -u)
+    _bk_new=$(LC_ALL=C comm -13 "$SIM_BEFORE" "$SIM_AFTER" | cut -f1 | LC_ALL=C sort -u)
+    _bk_rewritten=$(LC_ALL=C comm -12 <(printf '%s\n' "$_bk_gone") <(printf '%s\n' "$_bk_new"))
+    _bk_appeared=$(LC_ALL=C comm -13 <(printf '%s\n' "$_bk_gone") <(printf '%s\n' "$_bk_new") | grep -v '^$' || true)
+    _bk_disappeared=$(LC_ALL=C comm -23 <(printf '%s\n' "$_bk_gone") <(printf '%s\n' "$_bk_new") | grep -v '^$' || true)
+    if [[ -n "$_bk_rewritten" || -n "$_bk_appeared" || -n "$_bk_disappeared" ]]; then
+      {
+        echo "The REAL %ProgramData% install root CHANGED across the test phase: $REAL_SIM_ROOT"
+        [[ -n "$_bk_rewritten" ]] && {
+          echo "  REWRITTEN ($(printf '%s\n' "$_bk_rewritten" | grep -c .)):"
+          printf '%s\n' "$_bk_rewritten" | head -25 | sed 's/^/      /'; }
+        [[ -n "$_bk_appeared" ]] && {
+          echo "  APPEARED ($(printf '%s\n' "$_bk_appeared" | grep -c .)):"
+          printf '%s\n' "$_bk_appeared" | head -25 | sed 's/^/      /'; }
+        [[ -n "$_bk_disappeared" ]] && {
+          echo "  DISAPPEARED ($(printf '%s\n' "$_bk_disappeared" | grep -c .)):"
+          printf '%s\n' "$_bk_disappeared" | head -25 | sed 's/^/      /'; }
+        echo "  WHY THIS MATTERS: that directory is a LIVE INSTALLATION'S DATA on this machine. A test"
+        echo "     suite writing there corrupts an operator's product, and it survives every clean this"
+        echo "     script or \`dotnet build\` performs. Measured, not feared: with two redirects removed, one"
+        echo "     run of St4i.EngineApi.Tests rewrote ...\\sim\\assets\\assets.db."
+        echo "  HOW TO FIX: set the offending store's ST4I_*_DIR variable in tests/Shared/TestRunTempRoot.cs"
+        echo "     beside the six already there -- one line covers every existing call site and every future"
+        echo "     one -- or hand the store an explicit directory at its construction site. Do NOT delete the"
+        echo "     file: this compares the tree against its own state at the START of the test phase, so"
+        echo "     removing it first makes the run CREATE it, which is still a difference."
+        echo "  SCOPE, AND IT IS WIDER THAN THE CRITERION: this measures A MACHINE-WIDE DIRECTORY over the"
+        echo "     test phase, not just the test processes. A St4i host running beside the gate -- the WPF"
+        echo "     shell, the edge service, an engine left up from a manual run -- reddens it and is NOT a"
+        echo "     test defect. Check what is running before hunting a test."
+        echo "  WHAT A GREEN RUN OF THE FIVE SUITES DOES NOT TELL YOU: nothing in-process can narrow this."
+        echo "     BK-1 built an in-process guard for exactly this leaf FIRST and measured it staying green"
+        echo "     through the reproduction above, because a [Fact]'s window ends when xunit schedules it."
+        echo "     That guard was deleted rather than shipped. This bracket is the only witness."
+      } > "$LOGDIR/simroot-report.txt"
+      FAILURES+=("$(cat "$LOGDIR/simroot-report.txt")")
     fi
   fi
 fi

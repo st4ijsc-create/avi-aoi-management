@@ -62,37 +62,59 @@ public sealed class HotFolderAoiDriver : IDeviceDriver
     private readonly string _watchDir;
     private readonly string _archiveDir;
     private readonly string _errorDir;
-    private readonly FileSystemWatcher? _watcher;
+    private readonly Action<string>? _diagnostics;
     private readonly SemaphoreSlim _wake = new(0, int.MaxValue);
+    private FileSystemWatcher? _watcher;
+    private int _started;
     private volatile bool _disposed;
 
-    /// <summary>Null-checks the three directories, CREATES all three on disk, starts a
-    /// <see cref="FileSystemWatcher"/> over the watch directory if the platform allows one, and latches
-    /// <see cref="Health"/> to <see cref="DriverHealthState.Connected"/>.
+    /// <summary>Null-checks the three directory paths, composes <see cref="Id"/>, and latches
+    /// <see cref="Health"/> to <see cref="DriverHealthState.Connected"/>. It touches no disk.
     ///
-    /// <para>🔴 <b>This constructor performs real I/O, which is a direct violation of
-    /// <see cref="IDeviceDriver"/>'s type-level rule that "construction is non-blocking and performs no
-    /// I/O", and it is recorded rather than fixed here.</b> Three
-    /// <see cref="Directory.CreateDirectory(string)"/> calls plus a live watcher handle are file-system work,
-    /// and on a slow or unreachable volume they are unbounded. The rule exists because a driver constructed
-    /// under a fleet lock delays the supervisory halt call that takes the same lock; the reason this has not
-    /// bitten is narrower than the rule, and it was re-measured here rather than carried forward — the only
-    /// two construction sites outside tests are <c>FleetCore.RunHotFolderAoiDemoAsync</c> and
-    /// <c>St4iMachineSimulator.Services.FleetService.RunHotFolderAoiDemoAsync</c>, both demo entry points,
-    /// and neither holds that lock. The conformance harness does not catch it either: it
-    /// overrides the device-backed flag to <see langword="false"/>, which disables the very assertion that
-    /// would have looked, leaving a stopwatch as the only guard. Both halves are already written down in
-    /// <c>DeviceDriverConformanceSuite</c> and in <c>HotFolderAoiDriverConformanceTests</c>; this comment
-    /// exists so the fact is legible from the driver itself, which is where a reader looks
-    /// first.</para></summary>
-    /// <param name="watchDir">Directory scanned for completed result files. Created if absent. Files whose
-    /// name ends in <c>.tmp</c> are skipped, which is what makes the doc-28 §6.3 atomic-write protocol
-    /// sufficient on its own.</param>
+    /// <para>🔴 <b>"This constructor performs real I/O, which is a direct violation of
+    /// <see cref="IDeviceDriver"/>'s type-level rule … and it is recorded rather than fixed here" IS
+    /// RETRACTED, 2026-08-23, BK-1</b> (<c>docs/owner-decisions.md</c> item 48 defect 1, measured first by
+    /// BB-1 on 2026-08-22 and re-confirmed by BI-1). Quoted and retired in place. It was true and it is now
+    /// fixed rather than recorded: the three <see cref="Directory.CreateDirectory(string)"/> calls and the
+    /// <see cref="FileSystemWatcher"/> moved to the FIRST pass of <see cref="ReadAsync"/>, which is where
+    /// <see cref="IDeviceDriver"/> says connection and session work belongs. The rule exists because
+    /// <c>FleetCore.StartLocked</c> builds drivers under the same lock <c>Estop()</c> takes, so a constructor
+    /// that blocks on a slow or unreachable volume blocks that halt call.</para>
+    ///
+    /// <para><b>What moved WITH the I/O, because the ordering is the part that could have broken something.</b>
+    /// The three directories now come into existence when the first read pass runs instead of when the
+    /// constructor returns. Re-measured rather than carried forward: the two construction sites outside tests
+    /// are <c>FleetCore.RunHotFolderAoiDemoAsync</c> and
+    /// <c>St4iMachineSimulator.Services.FleetService.RunHotFolderAoiDemoAsync</c>, and BOTH write their demo
+    /// file through <c>Doc28Writer.WriteAtomic</c>, which creates the watch directory itself, BEFORE they
+    /// construct this driver — so neither ever depended on the constructor for it. <c>MoveTo</c> likewise
+    /// creates its destination before every move. A caller that constructed this driver purely to have the
+    /// three directories appear, and never enumerated, would see a behaviour change; no such caller exists in
+    /// this tree.</para>
+    ///
+    /// <para><b>Health is still latched here, and that is not an oversight.</b> Narrowing it, or giving this
+    /// driver a real Degraded state, is a separate behaviour change that item 48 records as NOT taken; the
+    /// exemption claimed in this class's own doc comment is unchanged.</para></summary>
+    /// <param name="watchDir">Directory scanned for completed result files. Created on the first read pass,
+    /// not here. Files whose name ends in <c>.tmp</c> are skipped, which is what makes the doc-28 §6.3
+    /// atomic-write protocol sufficient on its own.</param>
     /// <param name="archiveDir">Where a successfully parsed file is moved BEFORE its reading is yielded.
-    /// Created if absent. A name collision is disambiguated with a suffix rather than overwritten.</param>
+    /// Created on the first read pass, and again by each move. A name collision is disambiguated with a
+    /// suffix rather than overwritten.</param>
     /// <param name="errorDir">Where a file that fails doc-28 validation is moved, intact and never deleted.
-    /// Created if absent. A file landing here produces no reading and no exception to any caller.</param>
-    public HotFolderAoiDriver(string watchDir, string archiveDir, string errorDir)
+    /// Created on the first read pass, and again by each move. A file landing here produces no reading and no
+    /// exception to any caller.</param>
+    /// <param name="diagnostics">Optional sink for the two things this driver used to discard: the reason a
+    /// file was moved to <paramref name="errorDir"/>, and a failure to start the watcher. Added by BK-1 on
+    /// 2026-08-23 for <c>docs/owner-decisions.md</c> item 52 sub-item 3, whose whole finding was that the
+    /// error path carried no reason anywhere — no log line, no sidecar, no informative rename. It is called on
+    /// the enumerating thread, inline, so it must be prompt; a throw out of it is contained and discarded.
+    /// <see langword="null"/> reproduces the previous silence exactly.</param>
+    public HotFolderAoiDriver(
+        string watchDir,
+        string archiveDir,
+        string errorDir,
+        Action<string>? diagnostics = null)
     {
         if (watchDir is null) throw new ArgumentNullException(nameof(watchDir));
         if (archiveDir is null) throw new ArgumentNullException(nameof(archiveDir));
@@ -101,14 +123,10 @@ public sealed class HotFolderAoiDriver : IDeviceDriver
         _watchDir = watchDir;
         _archiveDir = archiveDir;
         _errorDir = errorDir;
-
-        Directory.CreateDirectory(_watchDir);
-        Directory.CreateDirectory(_archiveDir);
-        Directory.CreateDirectory(_errorDir);
+        _diagnostics = diagnostics;
 
         Id = "hotfolder-aoi:" + _watchDir;
 
-        _watcher = TryCreateWatcher();
         Health = DriverHealthState.Connected;
     }
 
@@ -145,12 +163,21 @@ public sealed class HotFolderAoiDriver : IDeviceDriver
     /// <para><b>Where that sits against the contract.</b> <see cref="IDeviceDriver.Health"/> exempts a driver
     /// with no external device from its "never report Connected while unreachable" rule, but requires such a
     /// driver to claim the exemption in its own CLASS doc comment and to state the values Health takes
-    /// instead. This class's class-level comment does neither, while
-    /// <c>HotFolderAoiDriverConformanceTests</c> claims the exemption on its behalf and says in its own words
-    /// that it is judging BY ANALOGY, not from anything this driver states. The values are stated here, at
-    /// the member; the class-level claim the contract actually asks for is still absent, and a watched
-    /// directory on a network share is in any case not obviously "no external device at
-    /// all".</para></summary>
+    /// instead.
+    ///
+    /// <para>🔴 <b>"This class's class-level comment does neither … the class-level claim the contract
+    /// actually asks for is still absent" IS RETRACTED, 2026-08-23, BK-1.</b> Quoted and retired in place. It
+    /// was true when it was written and it stopped being true EARLIER THE SAME DAY, in the same file: BI-1
+    /// paid item 48 defect 5 by writing the class-level claim, and left this paragraph and
+    /// <c>HotFolderAoiDriverConformanceTests</c>' own remarks both still saying it is missing. So the fix for
+    /// "the class doc is silent" shipped alongside two surviving statements that it is — one of them nine
+    /// lines further down the same declaration. That is the defect this file exists to end, committed inside
+    /// the commit that closed an instance of it, and it is named here rather than quietly overwritten.</para>
+    ///
+    /// What still stands from that paragraph, because retracting the whole of it would lose the part that is
+    /// still the honest reading: the exemption is claimed BY ANALOGY rather than obviously, and a watched
+    /// directory on a network share is not clearly "no external device at all". The class-level claim says so
+    /// in as many words.</para></summary>
     public DriverHealthState Health { get; private set; }
 
     /// <summary>The pickup loop. Each pass rescans the watch directory, takes the ORDINALLY SMALLEST
@@ -181,6 +208,8 @@ public sealed class HotFolderAoiDriver : IDeviceDriver
     /// <returns>One reading per successfully parsed file, filename order, at most one per pass.</returns>
     public async IAsyncEnumerable<DeviceReading> ReadAsync([EnumeratorCancellation] CancellationToken ct)
     {
+        EnsureStarted();
+
         while (!_disposed)
         {
             ct.ThrowIfCancellationRequested();
@@ -215,9 +244,18 @@ public sealed class HotFolderAoiDriver : IDeviceDriver
             {
                 reading = Doc28Parser.Parse(content, fileName);
             }
-            catch (Doc28ValidationException)
+            catch (Doc28ValidationException ex)
             {
                 // §6.3 rule 4: files that fail to parse go to error/ — untouched, never deleted.
+                //
+                // 🔴 THE EXCEPTION IS BOUND NOW, AND THAT IS THE WHOLE OF item 52 sub-item 3. It used to be
+                // `catch (Doc28ValidationException)` with no binding: the message and any inner exception were
+                // discarded unread on the ONLY production path that catches this type, so a rejected file
+                // reached error/ carrying no reason anywhere. Six of Doc28Parser's 34 throw sites name no file
+                // either (its own remarks enumerate them) — reporting the file name HERE covers all 34 at one
+                // site instead of changing six signatures, and it is the file name this driver already holds
+                // rather than one threaded down through the parser's field-level helpers.
+                Report($"doc-28 rejected '{fileName}' -> {_errorDir}: {Describe(ex)}");
                 MoveTo(path, _errorDir);
                 continue;
             }
@@ -229,6 +267,61 @@ public sealed class HotFolderAoiDriver : IDeviceDriver
             yield return reading;
         }
     }
+
+    /// <summary>Does, on the first read pass, the file-system work the constructor used to do: creates the
+    /// three directories and starts the watcher. Runs at most once per instance — the
+    /// <see cref="Interlocked.CompareExchange(ref int, int, int)"/> latch makes that true even if two callers
+    /// enumerate concurrently, which nothing in this tree does but which the type does not forbid either.
+    ///
+    /// <para><b>A driver disposed before it was ever enumerated never does this work at all</b>, which is the
+    /// point of moving it: the cost is paid by the caller that actually reads, on that caller's thread, and
+    /// not by whoever happened to be holding the fleet lock at construction time.</para></summary>
+    private void EnsureStarted()
+    {
+        if (Interlocked.CompareExchange(ref _started, 1, 0) != 0) return;
+        if (_disposed) return;
+
+        Directory.CreateDirectory(_watchDir);
+        Directory.CreateDirectory(_archiveDir);
+        Directory.CreateDirectory(_errorDir);
+
+        var watcher = TryCreateWatcher();
+        _watcher = watcher;
+        if (watcher is null)
+        {
+            // One of the three states this driver's Health member documents as reported Connected while a
+            // reader would not call it connected. It stays Connected — narrowing Health is a behaviour change
+            // item 48 records as not taken — but it is no longer invisible to a caller that wired a sink.
+            Report($"watcher unavailable for '{_watchDir}' — falling back to the {PollInterval.TotalMilliseconds:F0} ms poll; Health still reads Connected");
+        }
+
+        // Disposal may have raced the work above; undo it rather than leave a live handle behind.
+        if (_disposed)
+        {
+            _watcher = null;
+            watcher?.Dispose();
+        }
+    }
+
+    /// <summary>Hands one line to the caller's sink, if there is one. A sink that throws is contained: this is
+    /// called from inside the read loop, where an exception out of a log call would end an enumeration that
+    /// the actual file-system work had already survived.</summary>
+    private void Report(string line)
+    {
+        var sink = _diagnostics;
+        if (sink is null) return;
+        try { sink(line); }
+        catch { /* a broken sink must not end the read loop it is describing */ }
+    }
+
+    /// <summary>Flattens a validation failure into one line: its own message, plus the inner exception's type
+    /// and message when it has one. <c>Doc28Parser</c> wraps the underlying JSON reader failure as an inner
+    /// exception on exactly one of its throw sites, and that is the site whose detail is worth the most —
+    /// "invalid JSON" without the parser's own position says very little.</summary>
+    private static string Describe(Doc28ValidationException ex) =>
+        ex.InnerException is { } inner
+            ? $"{ex.Message} (inner {inner.GetType().Name}: {inner.Message})"
+            : ex.Message;
 
     private string? FindNextCandidate()
     {

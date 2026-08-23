@@ -76,11 +76,11 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 45 | `SimulatedEcosystem.Load` **ghi lại CẢ HAI file khi chỉ MỘT vắng** — và kể từ mục 30 nó đè lên một file `%ProgramData%` mà phép xoá ngừng-hoạt-động **cố ý GIỮ** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); AV-1 đo 2026-08-22, BF-1 đo lại là ĐẮT HƠN 2026-08-23. Theo tiền lệ mục 10 và 30, **một đường mất dữ liệu MỚI là của anh** |
 | 46 | `-SkipDotnetPublish` của `build-installer.ps1` để **dữ liệu do vận hành viên soạn** đi vào MSI | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); AV-1 đo 2026-08-22 và ghi trong thân mục 30/31 mà **chưa bao giờ có hàng riêng**. Theo tiền lệ mục 31, **cái gì đi tới khách hàng là của anh** |
 | 47 | Hai nhà máy connector Modbus **đụng nhau ở khoá đăng ký mặc định** — `ConnectorRegistry.Register` THAY chứ không từ chối, nên đăng ký cả hai làm **một cái biến mất im lặng** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1). **Không uỷ quyền được**: mọi hướng sửa đều đổi một **id connector công khai** hoặc hành vi của một API đăng ký công khai |
-| 48 | Hợp đồng của chính seam driver bị vi phạm ở **năm chỗ đo được** — I/O trong constructor, hai đường dispose không có trần, một driver không liệt kê lại được, và một miễn trừ Health không được khai | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BB-1 đo 2026-08-22. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ; nằm đây vì **chưa ai quyết**. 🔧 **THI HÀNH MỘT PHẦN 2026-08-23 (BI-1, điều phối viên theo uỷ quyền): khuyết tật 5 — miễn trừ `Health` — nay được KHAI trong class doc của `HotFolderAoiDriver`, kèm phần định tính rằng nó không hiển nhiên đúng.** Bốn khuyết tật còn lại **KHÔNG** được thi hành và lý do đo được: cả bốn đổi hành vi lúc chạy và **nhiệm vụ này không dựng được nhân chứng đỏ-được cho ba trong bốn**. Mục **Ở LẠI PHẦN I**. Xem §48.6 |
+| 48 | Hợp đồng của chính seam driver bị vi phạm ở **năm chỗ đo được** — I/O trong constructor, hai đường dispose không có trần, một driver không liệt kê lại được, và một miễn trừ Health không được khai | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BB-1 đo 2026-08-22. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ; nằm đây vì **chưa ai quyết**. 🔧 **thi hành một phần *(lịch sử)* 2026-08-23 (BI-1, điều phối viên theo uỷ quyền): khuyết tật 5 — miễn trừ `Health` — nay được KHAI trong class doc của `HotFolderAoiDriver`, kèm phần định tính rằng nó không hiển nhiên đúng.** Bốn khuyết tật còn lại **KHÔNG** được thi hành và lý do đo được: cả bốn đổi hành vi lúc chạy và **nhiệm vụ này không dựng được nhân chứng đỏ-được cho ba trong bốn**. Mục **Ở LẠI PHẦN I**. Xem §48.6 → ✅ **ĐÃ THI HÀNH 2026-08-23 (BK-1), THEO PHÁN QUYẾT CỦA CHỦ SỞ HỮU CÙNG NGÀY: *"DỰNG SEAM, MỞ KHOÁ CẢ BA"*. Mục PHẦN I → PHẦN III.** Seam đã dựng; **cả năm** khuyết tật nay đóng. Nhãn ⚖️ **đứng vững**, và chỗ nó tới gần một miễn trừ nhất được nêu tên chứ không bỏ qua (một `DisconnectAsync` quá hạn nay bị bỏ rơi — nhưng trong cây cũ gói DISCONNECT ấy cũng không tới nơi). 🔴 **Phát hiện: bản trả khuyết tật 5 của BI-1 để lại HAI câu tự mâu thuẫn** — một trên chính member `Health` cách chỗ sửa chín dòng, một trong class doc của bộ conformance — **cả hai nói lời khai VẮNG trong khi nó đã được viết**. Rút tại chỗ. Xem §48.7 🔴 **DẤU TRẠNG THÁI cũ của hàng này được HẠ CẤP THÀNH LỊCH SỬ, 2026-08-23 (BK-1), và chỉ dấu ấy — không một chữ nào của nội dung bị sửa hay xoá.** Lý do là một phép đo, không phải một sở thích: C2 của `check-owner-decisions.sh` đọc chuỗi `thi hành một phần` **viết hoa toàn bộ** ở BẤT KỲ đâu trong ô như một trạng thái ĐANG SỐNG, nên một hàng Phần III mang lịch sử "một phần" của chính nó bị báo là phân kỳ. Ranh giới (g) của dụng cụ khai C2 một chiều và cho phép `Ở LẠI PHẦN II` tồn tại cạnh thân Phần III; nó **không** cho phép cái này. 🔴 **Và thứ duy nhất giữ hàng `| 12 |` xanh với cùng hình dạng là `has()` PHÂN BIỆT HOA THƯỜNG** (BJ-1 đo, §51.7) — tức một sự tình cờ, không một quy ước. Nên trạng thái cũ ở đây viết thường và mang nhãn *(lịch sử)*, và cái sống là `ĐÃ THI HÀNH`. **Đây là một phát hiện về DỤNG CỤ được ghi ở đây thay vì được sửa qua dụng cụ**: C2 không phân biệt được một dấu trạng thái LỊCH SỬ với một dấu ĐANG SỐNG, và mọi mục đi *một phần → trọn vẹn* sẽ gặp lại nó. |
 | 49 | Hai vựng từ machine-type **không phải một danh sách**, và một loại máy không nhận ra **âm thầm thành máy bắt vít** rồi **GHI một bản ghi cấu hình** dưới mã của nó | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BC-1 đo 2026-08-22. ~~⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ~~ 🔴 **NHÃN ⚖️ BỊ BÁC BỎ BẰNG PHÉP ĐO 2026-08-23 (BI-1) — MỤC NÀY CHẠM MIỄN TRỪ, NÊN NÓ DỪNG VÀ CHỜ CHỦ SỞ HỮU NHƯ CÁC MỤC 41–47.** Hai trong ba nửa của mục đổi **payload MQTT**: bỏ store khỏi nhánh dự phòng dịch mô-men báo ra **12,0 → 1,35 Nm** — **chính là mục 41**, mục KHÔNG uỷ quyền được; và cho `IOT_GATEWAY` một nhánh factory đổi hẳn lớp bộ mô phỏng của một descriptor. Nửa thứ ba (`AOI_AVI` vào từ điển schema) **KHÔNG** chạm miễn trừ và vẫn uỷ quyền được. Xem §49.5 |
 | 50 | Ba khuyết tật parse trên bản đồ connector: hai khoá **viết hoa bị vứt IM LẶNG**, `EffectiveReadTimeoutMs` **vẫn tràn `int`** qua object initializer, và ~~hai~~ **BA** bề mặt parse **không truyền sink cảnh báo** | ✅ **ĐÃ THI HÀNH 2026-08-23 (BI-1)** theo 🔨 **QUYẾT: KHỚP TÊN KHOÁ NHƯ BINDER, DẪN XUẤT THEO ĐÚNG LUẬT MIỀN ĐÃ CÓ, VÀ LUỒNG SINK QUA `TryValidate`** (2026-08-23, **điều phối viên theo uỷ quyền**, cùng khuôn mục 8/15/17/21/31/33). Mở 2026-08-23 (BG-1); BD-1 đo 2026-08-23, **ngoài phạm vi mục 38**. 🔴 **Con số của tác giả mục KHÔNG sống sót ở khuyết tật 3: đo lại là BA chỗ gọi không sink, không phải hai** — chỗ thứ ba là `ConnectorConfigValidation.TryValidateModbus`, trong đúng file mà mục nêu tên. Xem Phần III |
-| 51 | **SÁU dụng cụ đo tự báo hụt miền của chính mình** — kể cả **chính `verify-suites.sh`**, đỏ hay xanh tuỳ **thư mục người gõ đang đứng**; cộng một gốc `%ProgramData%` **không dụng cụ nào canh ngoài `creds`** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BD-1/BE-1/BF-1 đo. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 32 và 40, và ~~**hai mục ấy đều do CHỦ SỞ HỮU quyết**~~, nên hàng này nêu tiền lệ chứ không tự nhận → 🔧 **THI HÀNH MỘT PHẦN 2026-08-23 (BJ-1), điều phối viên theo uỷ quyền — mục Ở LẠI PHẦN I.** 🔴 **Lời biện minh của chính nhãn BỊ RÚT bằng phép đo:** mục 32 (AW-1, 2026-08-22) và mục 40 (BD-1, 2026-08-23) **đều do ĐIỀU PHỐI VIÊN quyết theo uỷ quyền**, không phải chủ sở hữu — nhãn mạnh hơn nó tự khai. **Năm trên sáu mục con đã trả:** (6) `verify-suites.sh` lấy neo tuyệt đối từ vị trí script và `cd` một lần trước phép đọc tương đối đầu tiên ⇒ cổng cho **cùng kết quả từ mọi thư mục**, chứng minh bằng cặp đo trước/sau chạy từ HAI chỗ, cộng bốn cái neo thay chẩn đoán SAI *"Fix the derivation"* bằng một chẩn đoán nêu tên chỗ đứng; (1) ranh giới `--files` được khai + dòng *"whole-tree census"* thôi nói dối dưới `--files`, **và tiền đề *"chỉ có thể báo thừa"* của mục con BỊ BÁC — bất đối xứng là một no-op vì định danh là (đường dẫn, câu)**; (2) tính MỘT CHIỀU của `C2` được khai và **phép sửa hai chiều bị TỪ CHỐI bằng phép đo: 20 trên 58 hàng sẽ đỏ, 19 trong đó ĐÚNG theo luật giữ-nguyên-văn của file này** — con số **mười** của mục con đứng vững; (3) `repo-scan.sh` in miền TỪNG pathspec và **từ chối** một spec chọn 0 mà bản `:(icase)` chọn >0, có nhân chứng trong `--self-test` — **tiền đề của mục con THU HẸP: một spec sai hoa thường ĐƠN LẺ nay đã bị bắt ồn ào, chỉ DANH SÁCH TRỘN mới im lặng (579 → 267 file, exit 0)**; (4) `remove-data.ps1` kiểm tồn tại trước khi công bố hai đường dẫn GIỮ — xác nhận trên máy: **cả hai KHÔNG tồn tại**. 🔴 **Mục con 5 DỪNG, với một lý do MỚI:** 16 lá / 1 được canh đứng vững, **không có cửa sau vào mục 45 hay 30** (đo: `TestRunTempRoot` chuyển hướng `ST4I_PRODUCTS_DIR`/`ST4I_ECOSYSTEM_DIR`), **nhưng một dụng cụ như thế sẽ ĐỎ NGAY LẦN CHẠY ĐẦU vì một cái rò chưa mục nào ghi — `assets/assets.db` bị bộ test ghi vào gốc THẬT lúc 2026-08-23 16:55 (cửa sổ cổng của nhiệm vụ trước) VÀ TÁI LẬP lúc 18:30 trong lần chạy cổng sạch của chính nhiệm vụ này, trong khi lá `creds` — lá DUY NHẤT được canh — đứng nguyên 31 mục qua cả ba lần chạy**. Cộng hai lỗ cấu trúc ngoặc creds tự khai (so tập TÊN ⇒ mù với ghi đè tại chỗ; miền rộng hơn tiêu chí ⇒ đo CẢ MÁY). Xem §51.7–51.8 |
-| 52 | **Hai lời khai đã công bố đo được là SAI và cố ý để nguyên**, cộng sáu chỗ ném lỗi không nêu file mà thông điệp **không ai đọc** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BB-1/BC-1/BE-1 đo. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — rút một câu văn xuôi tại chỗ không chạm ba miễn trừ → 🔧 **THI HÀNH MỘT PHẦN 2026-08-23 (BJ-1), điều phối viên theo uỷ quyền — mục Ở LẠI PHẦN I.** Nhãn đứng vững cho thứ nó khai, và nó khai **hai trên ba** mục con. **(1) và (2) đã trả.** 🔴 **Hai con số của mục con 1 KHÔNG SỐNG SÓT:** *"không gì trong cây tiêu thụ giá trị của `IDeviceDriver.Id`"* **BỊ BÁC** — **12 dòng khẳng định trong 4 file test** đọc nội dung chuỗi (`Assert.Contains` unit id/bus key, `StartsWith`, `EndsWith`, `Distinct().Count()`); câu đúng là *"không bề mặt SẢN XUẤT nào"*, và `SimulatedDriver.cs` đã viết đúng thế kèm chữ *"under `src/`"* mà mục bỏ mất. Và *"câu thứ hai"* là **phép đếm THIẾU: quần thể là SÁU** (thêm hai chỗ trong `DeviceDriverConformanceSuite` — **chính bộ conformance mục viện dẫn làm bằng chứng lại TRÍCH NGUYÊN VĂN câu bị bác** — và hai chỗ trong `ModbusRtuDriver`); **cả sáu rút trong cùng một thay đổi**. **Mục con 2:** ba cặp số của mục con **tái lập chính xác** (26/5, 11/4 ⇒ 37/6) và `"23 sites across 20 files"` không tái lập ở bất kỳ khung nào — rút ở **CẢ HAI** file mang nó, kèm cảnh báo rằng **37/6 là một SÀN** (ba nhà máy `=> new(TempDir())`, hai trong file phép quét không chạm tới ⇒ 40/8; cộng hai đăng ký DI ⇒ 42/9). 🔴 **MỤC CON 3 KHÔNG THI HÀNH — CỬA SAU VÀO MỤC 48.** Mọi con số của nó đứng vững (6/34 chỗ ném không nêu file; `catch` không binding; đúng bảy `Assert.Throws<>` không cái nào đọc `.Message`; đường `error/` không ghi lý do ở đâu). Nhưng mục con tự nói phép sửa thật nằm ở `catch`, và `HotFolderAoiDriver` **không có trường logger, không `Action<string>`, không `Console`/`Trace` nào** — nên sửa nó là **thêm một seam**, đúng câu hỏi *"ai trả cho seam"* mà **mục 48 để mở** trên chính lớp ấy. Nửa rẻ (thêm tên file vào sáu chỗ ném) **cố ý không làm**: nó đổi lời mà không tạo ra một người đọc nào. Xem §52.4 |
+| 51 | **SÁU dụng cụ đo tự báo hụt miền của chính mình** — kể cả **chính `verify-suites.sh`**, đỏ hay xanh tuỳ **thư mục người gõ đang đứng**; cộng một gốc `%ProgramData%` **không dụng cụ nào canh ngoài `creds`** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BD-1/BE-1/BF-1 đo. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 32 và 40, và ~~**hai mục ấy đều do CHỦ SỞ HỮU quyết**~~, nên hàng này nêu tiền lệ chứ không tự nhận → 🔧 **thi hành một phần *(lịch sử)* 2026-08-23 (BJ-1), điều phối viên theo uỷ quyền — mục Ở LẠI PHẦN I.** 🔴 **Lời biện minh của chính nhãn BỊ RÚT bằng phép đo:** mục 32 (AW-1, 2026-08-22) và mục 40 (BD-1, 2026-08-23) **đều do ĐIỀU PHỐI VIÊN quyết theo uỷ quyền**, không phải chủ sở hữu — nhãn mạnh hơn nó tự khai. **Năm trên sáu mục con đã trả:** (6) `verify-suites.sh` lấy neo tuyệt đối từ vị trí script và `cd` một lần trước phép đọc tương đối đầu tiên ⇒ cổng cho **cùng kết quả từ mọi thư mục**, chứng minh bằng cặp đo trước/sau chạy từ HAI chỗ, cộng bốn cái neo thay chẩn đoán SAI *"Fix the derivation"* bằng một chẩn đoán nêu tên chỗ đứng; (1) ranh giới `--files` được khai + dòng *"whole-tree census"* thôi nói dối dưới `--files`, **và tiền đề *"chỉ có thể báo thừa"* của mục con BỊ BÁC — bất đối xứng là một no-op vì định danh là (đường dẫn, câu)**; (2) tính MỘT CHIỀU của `C2` được khai và **phép sửa hai chiều bị TỪ CHỐI bằng phép đo: 20 trên 58 hàng sẽ đỏ, 19 trong đó ĐÚNG theo luật giữ-nguyên-văn của file này** — con số **mười** của mục con đứng vững; (3) `repo-scan.sh` in miền TỪNG pathspec và **từ chối** một spec chọn 0 mà bản `:(icase)` chọn >0, có nhân chứng trong `--self-test` — **tiền đề của mục con THU HẸP: một spec sai hoa thường ĐƠN LẺ nay đã bị bắt ồn ào, chỉ DANH SÁCH TRỘN mới im lặng (579 → 267 file, exit 0)**; (4) `remove-data.ps1` kiểm tồn tại trước khi công bố hai đường dẫn GIỮ — xác nhận trên máy: **cả hai KHÔNG tồn tại**. 🔴 **Mục con 5 DỪNG, với một lý do MỚI:** 16 lá / 1 được canh đứng vững, **không có cửa sau vào mục 45 hay 30** (đo: `TestRunTempRoot` chuyển hướng `ST4I_PRODUCTS_DIR`/`ST4I_ECOSYSTEM_DIR`), **nhưng một dụng cụ như thế sẽ ĐỎ NGAY LẦN CHẠY ĐẦU vì một cái rò chưa mục nào ghi — `assets/assets.db` bị bộ test ghi vào gốc THẬT lúc 2026-08-23 16:55 (cửa sổ cổng của nhiệm vụ trước) VÀ TÁI LẬP lúc 18:30 trong lần chạy cổng sạch của chính nhiệm vụ này, trong khi lá `creds` — lá DUY NHẤT được canh — đứng nguyên 31 mục qua cả ba lần chạy**. Cộng hai lỗ cấu trúc ngoặc creds tự khai (so tập TÊN ⇒ mù với ghi đè tại chỗ; miền rộng hơn tiêu chí ⇒ đo CẢ MÁY). Xem §51.7–51.8 → ✅ **ĐÃ THI HÀNH 2026-08-23 (BK-1). Mục PHẦN I → PHẦN III.** Mục con 5 trả: cái rò `assets`/`notifications` **sửa TẠI NGUỒN** (`TestRunTempRoot` thêm hai `ST4I_*_DIR`), và một **ngoặc `%ProgramData%` toàn cây** vào `verify-suites.sh` so **đường dẫn + kích thước + mtime**, tức đóng lỗ "so tập TÊN". 🔴 **Hình dạng ĐẦU TIÊN của dụng cụ bị chính cặp đối chứng của nó BÁC BỎ và bị XOÁ**: một guard trong tiến trình nối vào cả năm bộ **vẫn XANH** trong lần chạy đã ghi `assets.db`, vì cửa sổ một `[Fact]` kết thúc khi xunit xếp lịch — cùng kết quả khối X-1 đã ghi cho một lá khác. 🔴 **Và lời khai của báo cáo BJ-1 rằng mục 30 "VẪN CHỜ CHỦ SỞ HỮU" là SAI**: mục 30 ở Phần III từ 2026-08-23. Xem §51.9 🔴 **DẤU TRẠNG THÁI cũ của hàng này được HẠ CẤP THÀNH LỊCH SỬ, 2026-08-23 (BK-1), và chỉ dấu ấy — không một chữ nào của nội dung bị sửa hay xoá.** Lý do là một phép đo, không phải một sở thích: C2 của `check-owner-decisions.sh` đọc chuỗi `thi hành một phần` **viết hoa toàn bộ** ở BẤT KỲ đâu trong ô như một trạng thái ĐANG SỐNG, nên một hàng Phần III mang lịch sử "một phần" của chính nó bị báo là phân kỳ. Ranh giới (g) của dụng cụ khai C2 một chiều và cho phép `Ở LẠI PHẦN II` tồn tại cạnh thân Phần III; nó **không** cho phép cái này. 🔴 **Và thứ duy nhất giữ hàng `| 12 |` xanh với cùng hình dạng là `has()` PHÂN BIỆT HOA THƯỜNG** (BJ-1 đo, §51.7) — tức một sự tình cờ, không một quy ước. Nên trạng thái cũ ở đây viết thường và mang nhãn *(lịch sử)*, và cái sống là `ĐÃ THI HÀNH`. **Đây là một phát hiện về DỤNG CỤ được ghi ở đây thay vì được sửa qua dụng cụ**: C2 không phân biệt được một dấu trạng thái LỊCH SỬ với một dấu ĐANG SỐNG, và mọi mục đi *một phần → trọn vẹn* sẽ gặp lại nó. |
+| 52 | **Hai lời khai đã công bố đo được là SAI và cố ý để nguyên**, cộng sáu chỗ ném lỗi không nêu file mà thông điệp **không ai đọc** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); BB-1/BC-1/BE-1 đo. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — rút một câu văn xuôi tại chỗ không chạm ba miễn trừ → 🔧 **thi hành một phần *(lịch sử)* 2026-08-23 (BJ-1), điều phối viên theo uỷ quyền — mục Ở LẠI PHẦN I.** Nhãn đứng vững cho thứ nó khai, và nó khai **hai trên ba** mục con. **(1) và (2) đã trả.** 🔴 **Hai con số của mục con 1 KHÔNG SỐNG SÓT:** *"không gì trong cây tiêu thụ giá trị của `IDeviceDriver.Id`"* **BỊ BÁC** — **12 dòng khẳng định trong 4 file test** đọc nội dung chuỗi (`Assert.Contains` unit id/bus key, `StartsWith`, `EndsWith`, `Distinct().Count()`); câu đúng là *"không bề mặt SẢN XUẤT nào"*, và `SimulatedDriver.cs` đã viết đúng thế kèm chữ *"under `src/`"* mà mục bỏ mất. Và *"câu thứ hai"* là **phép đếm THIẾU: quần thể là SÁU** (thêm hai chỗ trong `DeviceDriverConformanceSuite` — **chính bộ conformance mục viện dẫn làm bằng chứng lại TRÍCH NGUYÊN VĂN câu bị bác** — và hai chỗ trong `ModbusRtuDriver`); **cả sáu rút trong cùng một thay đổi**. **Mục con 2:** ba cặp số của mục con **tái lập chính xác** (26/5, 11/4 ⇒ 37/6) và `"23 sites across 20 files"` không tái lập ở bất kỳ khung nào — rút ở **CẢ HAI** file mang nó, kèm cảnh báo rằng **37/6 là một SÀN** (ba nhà máy `=> new(TempDir())`, hai trong file phép quét không chạm tới ⇒ 40/8; cộng hai đăng ký DI ⇒ 42/9). 🔴 **MỤC CON 3 KHÔNG THI HÀNH — CỬA SAU VÀO MỤC 48.** Mọi con số của nó đứng vững (6/34 chỗ ném không nêu file; `catch` không binding; đúng bảy `Assert.Throws<>` không cái nào đọc `.Message`; đường `error/` không ghi lý do ở đâu). Nhưng mục con tự nói phép sửa thật nằm ở `catch`, và `HotFolderAoiDriver` **không có trường logger, không `Action<string>`, không `Console`/`Trace` nào** — nên sửa nó là **thêm một seam**, đúng câu hỏi *"ai trả cho seam"* mà **mục 48 để mở** trên chính lớp ấy. Nửa rẻ (thêm tên file vào sáu chỗ ném) **cố ý không làm**: nó đổi lời mà không tạo ra một người đọc nào. Xem §52.4 → ✅ **ĐÃ THI HÀNH 2026-08-23 (BK-1). Mục PHẦN I → PHẦN III.** Mục con 3 trả: `catch` nay **binding** exception và báo tên file + thư mục đích + lý do ra một sink tuỳ chọn. 🔴 **NHÃN ⚖️ VẪN HẸP HƠN MỤC — phép đo của BJ-1 đứng vững** — và cái mở khoá mục con 3 **không phải nhãn** mà là **phán quyết của chủ sở hữu**; BJ-1 dừng vì đó là cửa sau sang mục 48, và chủ sở hữu đã trả lời câu ấy ở cửa trước. 🔴 **Nửa rẻ VẪN không làm, nay vì một phép đo:** driver đã cầm tên file, nên báo ở `catch` phủ **cả 34** chỗ ném tại **một** chỗ — bản rẻ HẸP hơn, không rộng hơn. Xem §52.5 🔴 **DẤU TRẠNG THÁI cũ của hàng này được HẠ CẤP THÀNH LỊCH SỬ, 2026-08-23 (BK-1), và chỉ dấu ấy — không một chữ nào của nội dung bị sửa hay xoá.** Lý do là một phép đo, không phải một sở thích: C2 của `check-owner-decisions.sh` đọc chuỗi `thi hành một phần` **viết hoa toàn bộ** ở BẤT KỲ đâu trong ô như một trạng thái ĐANG SỐNG, nên một hàng Phần III mang lịch sử "một phần" của chính nó bị báo là phân kỳ. Ranh giới (g) của dụng cụ khai C2 một chiều và cho phép `Ở LẠI PHẦN II` tồn tại cạnh thân Phần III; nó **không** cho phép cái này. 🔴 **Và thứ duy nhất giữ hàng `| 12 |` xanh với cùng hình dạng là `has()` PHÂN BIỆT HOA THƯỜNG** (BJ-1 đo, §51.7) — tức một sự tình cờ, không một quy ước. Nên trạng thái cũ ở đây viết thường và mang nhãn *(lịch sử)*, và cái sống là `ĐÃ THI HÀNH`. **Đây là một phát hiện về DỤNG CỤ được ghi ở đây thay vì được sửa qua dụng cụ**: C2 không phân biệt được một dấu trạng thái LỊCH SỬ với một dấu ĐANG SỐNG, và mọi mục đi *một phần → trọn vẹn* sẽ gặp lại nó. |
 | 53 | **Định nghĩa OEE của mục 2 vắng ở ba bề mặt `web/`** — chỗ quản đốc thật sự cầm con số — và cái giữ nó nguyên nhiều tuần là một **lệnh cấm phạm vi**, không phải một pathspec | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); nêu lần đầu 2026-08-18 (AA-1, vòng phản biện 1) và **không nhiệm vụ nào trong bốn mươi hai nhiệm vụ tiếp theo chạm tới**. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — chính AA-1 viết *"ai nhặt nó lên không cần hỏi chủ sở hữu"*: không đổi payload MQTT, không đổi hình dạng dây, không đổi một con số OEE nào → ✅ **ĐÃ THI HÀNH 2026-08-23 (BJ-1), điều phối viên theo uỷ quyền.** Nhãn ⚖️ **kiểm lại và ĐỨNG VỮNG** — nhưng chỉ sau khi một tiền đề của chính thân mục bị bác: §53.4 cảnh báo rằng viết vào giao diện *"đụng đúng món nợ mà **mục 34** đang chờ anh"*, và **mục 34 ĐÃ THI HÀNH 2026-08-22 (AX-1)** trước khi mục 53 được mở, nên cửa sau ấy **không tồn tại**. Định nghĩa của phán quyết mục 2 nay có mặt ở **cả ba** bề mặt, bằng lời của bản ghi chuẩn `OeeResultDto`, và **cả hai nửa** (mẫu số = không `Skip`, tử số = `Pass`/`Warn`, `Fail` ở mẫu không ở tử, `Skip` **không ở đâu cả**, ⇒ `Warn` là hàng TỐT — **cộng** *"công thức KHÔNG CÓ PHIÊN BẢN"*): khối doc của `interface OeeResult` trong `web/src/lib/api.ts`; ô KPI `Quality` trên `/reports` qua đúng khuôn `audit.limitation` đã có sẵn trong cây (glyph `Info`, `aria-label` LÀ cả câu, khe `children` mà `KpiTile` đã có — **không thêm prop nào**); và tooltip cột *"Quality loss"* của `OeeLossChart` (hai cột kia **cố ý không**: chúng đo bằng đồng hồ, không mang quy tắc phán quyết). Chuỗi ở `reports.oeeDefinition.*`, **cả hai locale**. 🔴 **Chạm `web/` ⇒ `npm run build` (`tsc -b && vite build`) CHẠY VÀ XANH**, cộng `oxlint` xanh — cổng **không** biên dịch TypeScript, nên build này là nhân chứng duy nhất tồn tại. **Mọi con số của tác giả mục sống sót** (ba bề mặt; dòng 386–388; mười lăm trường; năm biến thể `unversion…` cho 0 khớp, **mở rộng ra toàn `web/` 230 file** vẫn 0). 🔴 **Nhưng tiền đề *"không có dụng cụ i18n nào"* KHÔNG sống sót nguyên văn:** đối xứng khoá vi↔en **được cưỡng chế tĩnh** bởi `export const en: Dictionary` + `tsc -b`, và **15 spec Playwright** (gồm một trên chính `/reports`) khẳng định không khoá thô nào rò ra — cái thiếu là một **kích hoạt tự động**, không phải dụng cụ. Nửa *"không có job CI nào"* **đứng** (0/7 workflow). **Cái KHÔNG có nhân chứng, nói ra: không gì ghim văn bản `web/` vào lời văn C# nó soi gương** — bản giảm nhẹ là một **con trỏ hai chiều**, không phải một nhân chứng. Không phải nhân chứng đỏ được (chỉ đổi lời + một affordance UI). Xem **Phần III**, §53.6 |
 | 54 | **`FleetCore.Start()` không ghi `LastError`** — cùng cú ném P5, tới từ phương thức đối xứng, để một fleet ĐÃ DỪNG báo HEALTHY; U-1 **nêu tên chứ không đóng** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); nêu 2026-08-17 (U-1) tại `LastError`'s declaration và trong thông điệp merge `f18f5c29`, chưa bao giờ có hàng riêng. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 33 (sửa phía ĐỌC của một route REST), không chạm ba miễn trừ. 🔴 **KHÔNG thi hành 2026-08-23 (BI-1), và lý do là một PHÉP ĐO chứ không phải hết giờ: TIỀN ĐỀ CỦA CHÍNH §54.3 KHÔNG SỐNG SÓT.** §54.3 nói cái thật sự đang mở là một `Start()` ném **giữa vòng lặp slot**, và cú ném nó nêu tên là P5 (`MachineConfigStore.Ensure`). Đo ở 44383e23: **cả hai chỗ gọi `SimulatorFactory.Create` trên đường start đều chạy TRƯỚC lần `StartSlot` đầu tiên** — `BuildStartPlan` (off-lock) và nhánh reuse-miss của `StartLocked` (`FleetCore.cs:3801`, trên vòng `foreach … StartSlot` ở ~4046). Nên P5 để lại `_slots` **RỖNG**, tức nhánh mà U-1 đã trả lời đúng, **không phải** nhánh §54.3 muốn đóng. Mục **Ở LẠI PHẦN I**. Xem §54.6 |
 | 55 | **Bốn mặc định `switch` trên `Verdict` gấp một giá trị lạ về phía AN TOÀN**, và **hai trong bốn nằm trong CÙNG MỘT FILE mà bất đồng nhau** (`_ => "OK"` đối lại `_ => "skip"`) | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); nêu 2026-08-17 (P-2, *"NAMED, NOT FIXED"*) và 2026-08-18 (AA-1 tồn dư 4 và 5, Phần IV). 🔴 **Đo lại BÁC nửa lời khai của P-2:** không đường nào trong cây sinh ra một `Verdict` ngoài miền hôm nay, nên nhánh ấy **tiềm ẩn**, không phải đang hiển thị cho vận hành viên. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** → ✅ **ĐÃ THI HÀNH 2026-08-23 (BI-1)** theo 🔨 **QUYẾT: GỌI TÊN GIÁ TRỊ LẠ, KHÔNG GẤP NÓ VÀO MỘT CÂU TRẢ LỜI HỢP LỆ — VÀ KHÔNG DỊCH MỘT CÂU TRẢ LỜI TRONG MIỀN NÀO** (2026-08-23, **điều phối viên theo uỷ quyền**). 🔴 **Con số của tác giả mục KHÔNG sống sót: đo lại là NĂM mặc định, không phải bốn** — cái thứ năm là `Doc28Writer.MapVerdict`, mà chính §55.3 nêu tên như "họ hàng" rồi không đếm. Xem Phần III |
@@ -395,24 +395,23 @@ nào trong repo này kiểm được rằng một hướng sửa không chạm b
 > 🔴 **Nhãn ⚖️ trên mục 48, 50, 54 và 55 thì ĐỨNG VỮNG dưới cùng phép đo ấy**, nên phép rút này
 > **không** là một lời bác nhãn nói chung — nó là một phép đo trên năm mục, bốn đúng một sai.
 
-**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 41, 42, 43, 44, 45, 46, 47, 48, 49, 51, 52, 54 và 57.**
+**Các mục ở đây, LIỆT KÊ chứ không đếm: mục 41, 42, 43, 44, 45, 46, 47, 49, 54 và 57.**
 Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy vẫn là nguồn sự thật** — câu này chỉ
 là một con trỏ vào nó. 🔴 **Phép liệt kê này được ĐO LẠI từ chính Phần I sau khi nhiệm vụ này sửa
 xong file** — quét đầu mục `^## ` giữa banner Phần I và banner Phần II — chứ không chép từ brief.
 **Chín mục — 41, 42, 43, 44, 45, 46, 47, 49, 57 — chạm một trong ba miễn trừ và chỉ anh quyết
 được**; mục **49** vào nhóm ấy ngày 2026-08-23 **bằng một phép đo bác nhãn ⚖️ của chính nó**, xem
-khối rút ngay trên và §49.5. Bốn mục còn lại — **48, 51, 52, 54** — mang nhãn ⚖️ *"điều phối viên
-quyết được"*. 🔴 **Nhãn ấy vẫn là một LỜI KHAI, không phải một phép đo**, và mục 49 là ca đầu tiên
-trong tập này mà phép đo bác lời khai. Cả bốn mang một ghi chép của điều phối viên ghi ngày
-2026-08-23 ở cuối thân mục, và **ở lại đây** vì cái còn lại của chúng là một QUYẾT ĐỊNH, không phải
-một việc: **48** (thi hành một phần, BI-1: khuyết tật 5 đã trả; bốn cái còn lại cần một seam tiêm
-được và câu hỏi mở là *"ai trả cho seam"*), **54** (đo lại bác tiền đề của chính mục),
-**51** (thi hành một phần, BJ-1: năm trên sáu mục con đã trả; mục con 5 dừng, và cái còn mở là ai
-trả cho một dụng cụ dùng chung năm assembly **cộng** một cái rò `assets` vừa đo được), và **52**
-(thi hành một phần, BJ-1: hai trên ba mục con đã trả; mục con 3 dừng vì phép sửa thật của nó **quyết
-câu hỏi seam của mục 48 qua cửa sau**).
+khối rút ngay trên và §49.5. **Đúng MỘT mục còn lại — 54 — mang nhãn ⚖️ *"điều phối viên quyết
+được"***, và nó ở lại vì phép **đo lại bác tiền đề của chính mục** (§54.6), không vì thiếu quyền.
+🔴 **Nhãn ⚖️ vẫn là một LỜI KHAI, không phải một phép đo**, và mục 49 là ca đầu tiên trong tập này
+mà phép đo bác lời khai.
 🔴 **Ba mục rời khỏi đây ngày 2026-08-23 (BJ-1) sang Phần III: 53, 56 và 58.**
-<!-- gate:phần-i = 41 42 43 44 45 46 47 48 49 51 52 54 57 -->
+🔴 **BA MỤC NỮA RỜI ĐI CÙNG NGÀY, MUỘN HƠN (BK-1), theo phán quyết của chủ sở hữu *"DỰNG SEAM, MỞ
+KHOÁ CẢ BA"*: 48, 51 và 52.** Cả ba dừng ở **cùng một chỗ** — một seam không ai trả — và chủ sở hữu
+trả nó. Nói cho hết, vì nó lật một câu đứng ở đây suốt hôm nay: cái mở khoá mục 52 mục con 3 **không**
+phải nhãn ⚖️ của mục 52 (nhãn ấy **vẫn hẹp hơn mục**, đúng như BJ-1 đo) mà là phán quyết ấy;
+và cái mở khoá mục 51 mục con 5 không phải một dụng cụ rẻ hơn mà là **cùng một quyết định**.
+<!-- gate:phần-i = 41 42 43 44 45 46 47 49 54 57 -->
 
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
@@ -961,72 +960,6 @@ trùng thay vì thay — **đổi hành vi của một API đăng ký công khai
 
 ---
 
-## 48. Hợp đồng của chính seam driver bị vi phạm ở NĂM chỗ đo được
-
-⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ. Ở đây vì chưa ai quyết.
-
-**Đo được cái gì — liệt kê trước, đếm sau.** BB-1 đo năm chỗ ngày 2026-08-22; cả năm **xác nhận lại
-trên mã** ở `9255ea98`:
-
-1. **`HotFolderAoiDriver` làm I/O trong constructor** — ba `Directory.CreateDirectory` và một
-   `FileSystemWatcher` sống. `IDeviceDriver` nói rõ *"mọi thiết lập kết nối/phiên thuộc hoàn toàn
-   trong `ReadAsync`, không bao giờ trong constructor"*, và lý do được nêu tại chỗ: `StartLocked`
-   dựng driver **dưới cùng khoá `Estop()` lấy**.
-2. **`MqttDriver.DisposeAsync` không có trần** — `DisconnectAsync` được phát với
-   `CancellationToken.None`, trong khi hợp đồng nói dispose *"nên tự nó trả về nhanh"*.
-3. **`MqttDriver` không liệt kê lại được sau khi dispose** — đo bằng một probe CLR độc lập, và
-   **bộ test không phủ**.
-4. **`InProcessBroker.DisposeAsync` không có trần VÀ mù** — `StopAsync()` không token, không timeout,
-   ngoại lệ bị nuốt vào một `catch` rỗng trong một lớp **không có sink log nào**. Một broker không
-   nhả được cổng **không phân biệt được** với một broker tắt sạch; triệu chứng nổi lên ở lần
-   `StartAsync` sau trên cùng cổng.
-5. **`HotFolderAoiDriver` nhận một miễn trừ `Health` mà class doc của nó không khai.**
-
-**Hậu quả vận hành, hai chiều.** (1) làm một `Estop()` chậm đi theo tốc độ đĩa; (2)(4) làm tắt máy
-treo không giới hạn; (3) là một tính chất không ai kiểm; (5) là hồ sơ sai. Chiều để nguyên: cả năm
-**chưa bao giờ được quan sát gây sự cố**, và ba trong năm **cách một [Fact] là ghim được** — nên giá
-đúng của việc sửa gồm cả **tổng suite dịch**, thứ nhiệm vụ này bị cấm.
-
-**Nếu không quyết.** Hợp đồng seam tiếp tục nói một đằng và năm chỗ triển khai làm một nẻo, và điều
-đó **đã** là lý do mục 12 tồn tại.
-
-### 48.6 🔧 THI HÀNH MỘT PHẦN — BI-1, 2026-08-23, ĐIỀU PHỐI VIÊN THEO UỶ QUYỀN. Mục Ở LẠI PHẦN I
-
-🔴 **Đây KHÔNG phải một phán quyết của chủ sở hữu.** Nhãn ⚖️ của mục này đứng vững dưới phép đo lại
-— không hướng sửa nào trong năm chạm payload MQTT, hình dạng dây, hay một con số OEE đã báo cáo.
-
-**Phép đếm của tác giả mục, kiểm lại — LIỆT KÊ trước.** Bốn trong năm xác nhận độc lập ở
-`44383e23`: (1) `HotFolderAoiDriver` có đúng **ba** `Directory.CreateDirectory` (dòng 78–80) cộng
-`TryCreateWatcher()` (dòng 85) trong constructor; (2) `MqttDriver.DisposeAsync` phát
-`DisconnectAsync(…, CancellationToken.None)` không trần; (4) `InProcessBroker.DisposeAsync` gọi
-`StopAsync()` không token trong một `catch` rỗng; (5) class doc **không** khai miễn trừ `Health`,
-trong khi doc của chính member thì nói ra là nó không khai. **(3) — "`MqttDriver` không liệt kê lại
-được sau khi dispose, đo bằng một probe CLR độc lập" — nhiệm vụ này KHÔNG đo lại**, và nói ra chỗ
-ấy thay vì để nó đọc như đã kiểm: bốn trên năm đứng, cái thứ năm chưa ai kiểm lần hai.
-
-**Cái đã trả.** Khuyết tật **(5)** đóng: class doc của `HotFolderAoiDriver` nay **khai miễn trừ
-`Health`** đúng hình dạng hợp đồng đòi (nêu miễn trừ ở CLASS doc, nêu các giá trị `Health` nhận
-thay), **và định tính nó**: ba trạng thái mà member vẫn báo `Connected` được giữ nguyên và không rút,
-và câu "một thư mục theo dõi trên network share không hiển nhiên là *không có thiết bị ngoài nào*"
-được viết vào chính chỗ khai. Đây là **đổi tài liệu, không đổi một dòng hành vi nào** — không hằng số
-nào dịch vì nó.
-
-🔴 **Cái KHÔNG được trả, và lý do là một phép đo chứ không phải một lời hứa.** (1), (2), (4) đều
-**đổi hành vi lúc chạy**, và luật của nhiệm vụ này là *không đổi hành vi nếu không có nhân chứng
-ĐỎ ĐƯỢC*. Với (2) và (4) nhân chứng ấy đòi một client MQTT / một broker **treo theo lệnh**, và
-không seam nào trong hai lớp ấy nhận một đôi giả từ ngoài: `MqttDriver._client` và
-`InProcessBroker`'s server đều dựng bên trong. Với (1), dời I/O ra khỏi constructor dời **thời điểm
-ba thư mục tồn tại**, và hai chỗ dựng ngoài test là hai điểm vào demo ghi file vào `watchDir` —
-nên phép dời cần một phép đo riêng về thứ tự ấy. (3) là **một tính chất không ai kiểm**; trả nó là
-thêm một `[Fact]`, và một `[Fact]` cho một tính chất **chưa ai đo lại** thì ghim một lời khai chứ
-không ghim một sự thật.
-
-**Cái mục này còn chờ, nói bằng một câu.** Bốn khuyết tật đổi hành vi, ba trong bốn cần một seam
-tiêm được mà hôm nay không có — nên câu hỏi còn mở **không** phải *"có sửa không"* mà là *"ai trả
-cho seam"*, và đó vẫn là một quyết định chưa ai ra.
-
----
-
 ## 49. Hai vựng từ machine-type không phải một danh sách, và một loại máy không nhận ra âm thầm thành máy bắt vít rồi GHI một bản ghi cấu hình
 
 ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ.
@@ -1106,283 +1039,6 @@ LEAK_TEST, FUNCTIONAL_TEST, …)"*, và **dấu ba chấm ấy làm nó thành m
 kê: `SCREWDRIVE`, `DISPENSING`, `WELDER`, `IOT_SENSOR`, `IOT_GATEWAY`, `AOI`, `AVI`. Chuỗi thật sự
 có trong switch của factory: `SCREWDRIVE`, `DISPENSING`, `WELDER`, `ASSEMBLY`, `LEAK_TEST`,
 `FUNCTIONAL_TEST`, `IOT_SENSOR`, `AOI`, `AOI_AVI`, `AVI`. Chỉ-factory: **bốn**. Chỉ-schema: **một**.
-
----
-
-## 51. SÁU dụng cụ đo tự báo hụt miền của chính mình — và cái thứ sáu là CHÍNH `verify-suites.sh`, đo được trong lúc chạy cổng cho mục này
-
-⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 32 và 40. 🔴 **Nói cho hết: cả mục 32 và mục 40 đều
-do CHỦ SỞ HỮU quyết**, nên nhãn ở đây nêu một tiền lệ ngược với chính nó, và anh có thể lật.
-
-**Đo được cái gì — liệt kê trước, đếm sau.**
-
-1. **`scan-doc-negations.sh --since --files`** thu hẹp corpus **NOW** nhưng **không** thu hẹp corpus
-   **BASE**, nên phép `comm -23` so một tập hẹp với một tập đầy. Vô hại theo chiều hiện tại (nó chỉ
-   có thể **báo thừa**), **nhưng không ai khai điều đó**.
-2. **`C2` của `check-owner-decisions.sh` một chiều theo thiết kế**, và hệ quả đang sống: hàng phán
-   quyết **mục 12** còn chứa `Ở LẠI PHẦN II` **mười lần** trong khi thân mục nay ở Phần III. Nó qua
-   được vì `has()` **phân biệt hoa thường** và chữ *"thi hành một phần"* của hàng ấy viết **thường**.
-3. **`repo-scan.sh` không có phép kiểm hoa-thường cho pathspec** — trên Windows một pathspec sai hoa
-   thường im lặng thu hẹp miền, đúng loài mục 32.
-4. **`remove-data.ps1` in danh sách GIỮ mà KHÔNG kiểm chúng có tồn tại không.** Với `$subdirs` nó in
-   *"does not exist - nothing to remove"*; với `$keptByDesign` nó in đường dẫn **vô điều kiện** ngay
-   trong banner, nên một vận hành viên thấy hai đường dẫn trông như *"đây là thứ bạn phải tự xoá"*
-   kể cả khi chúng **chưa từng tồn tại**.
-5. 🔴 **Không dụng cụ nào gác `%ProgramData%\ST4I\sim\` ngoài `creds`.** `RealCredentialStoreLeakGuard`
-   và bracket credential của cổng đều rút gốc **duy nhất** từ `CredentialStore`. Một store rò vào
-   `…\sim\products` hay bất kỳ lá nào khác **hoàn toàn không ai thấy**. BE-1 đo **13** lá không ai
-   canh trước mục 30; BF-1 đo **16** sau, **và ba lá mới là đúng ba lá mà một seam hỏng sẽ ghi vào**.
-6. 🔴 **MỚI — `verify-suites.sh` ĐỎ HAY XANH TUỲ THƯ MỤC NGƯỜI GÕ ĐANG ĐỨNG, và thông điệp lỗi của
-   nó ĐỔ TỘI CHO SAI CHỖ. Đo được bởi BG-1 trong lúc chạy cổng cho chính mười hai mục này.** Dòng
-   `_creds_src="src/St4i.EdgeCore/Infrastructure/CredentialStore.cs"` là một **đường dẫn tương
-   đối**, và script **không bao giờ `cd` về gốc của chính nó** — `_SCRIPTDIR` có tồn tại nhưng
-   không được dùng ở đây. **Cặp đo, cùng commit, cùng cây, chỉ khác chỗ đứng:**
-
-   | đứng ở | kết quả |
-   |---|---|
-   | `tools/machine-simulator` (nơi mọi lời giao việc bảo chạy) | `PASS … 5/5 suites … (2852)` |
-   | gốc repo, một cấp trên | `FAIL: could not derive the REAL creds root … (found 0 …, expected exactly 1)` |
-
-   🔴 **Đây ĐÚNG loài mục 32** — *một đường dẫn tương đối được giải theo thư mục hiện tại* — sống
-   trong **chính cái cổng** mà dụng cụ của mục 32 (`repo-scan.sh`) được dựng để bảo vệ. Khác mục 32
-   ở một điểm và **điểm ấy làm nó tệ hơn theo một chiều và nhẹ hơn theo chiều kia**: `repo-scan`
-   hỏng **im lặng** (trả 0), cái này hỏng **ồn ào** — nhưng nó ồn ào bằng một **chẩn đoán SAI**,
-   *“Fix the derivation. Do NOT hardcode the directory here”*, tức nó bảo người đọc đi sửa phép
-   dẫn xuất trong khi nguyên nhân là **chỗ họ đứng**. Một người tin thông điệp ấy sẽ sửa một thứ
-   không hỏng.
-
-   **Chiều để nguyên:** cổng **được thiết kế để chạy từ `tools/machine-simulator`**, mọi lời giao
-   việc đều nói thế, và nó **fail-closed** — nó không bao giờ xanh nhầm. Nên rủi ro không phải một
-   kết quả sai, mà **thời gian của người kế tiếp**. Phép sửa rẻ nhất — `cd "$_SCRIPTDIR/.."` một
-   lần ở đầu — **đổi ngữ nghĩa của mọi đường dẫn tương đối khác trong 7 894 dòng script**, nên nó
-   **không** phải một dòng vá, và đó là lý do mục này không tự thi hành nó.
-
-**Hậu quả vận hành, hai chiều.** Năm cái đầu là **dụng cụ đo nói quá về miền của mình** — đúng cái
-giá mục 32 ghi lại: một phán quyết của chủ sở hữu đã từng mang một cái trần SAI. Cái thứ năm là một
-**lỗ trong hàng rào của cổng**. Chiều để nguyên: (1) và (3) hôm nay **không sai theo chiều nguy
-hiểm**; (4) là bề mặt vận hành viên, và thêm một dòng *"(không có)"* là một **quyết định về cách nói
-với người dùng**, không phải một phép vá hiển nhiên; (5) là **một dụng cụ MỚI dùng chung cho năm
-assembly**, cần baseline riêng như `RealCredentialStoreWatch` — BF-1 đã cân nhắc dựng nó và **DỪNG**
-đúng lý do ấy.
-
-**Nếu không quyết.** Cổng tiếp tục xanh trên những miền chưa ai khai, và đó là chính xác định nghĩa
-của mục 40. 🔴 **Và cái thứ sáu nói thêm một điều mà năm cái kia không nói:** loài khuyết tật này
-**vẫn đang sinh ra**, không phải một tồn dư lịch sử — nó được đo lần đầu **trong chính lần chạy cổng
-của nhiệm vụ đang mở mục này**.
-
-### 51.7 🔧 THI HÀNH MỘT PHẦN — BJ-1, 2026-08-23, ĐIỀU PHỐI VIÊN THEO UỶ QUYỀN. Mục Ở LẠI PHẦN I
-
-🔴 **Nhãn ⚖️ đứng vững, nhưng LỜI BIỆN MINH CỦA CHÍNH NÓ KHÔNG.** Nhãn viết *"cùng loài mục 32 và 40.
-Nói cho hết: cả mục 32 và mục 40 đều do CHỦ SỞ HỮU quyết"*. Đo lại ở `e6e169f4` trên bảng phán quyết
-của chính file này: **mục 32 ĐÃ THI HÀNH 2026-08-22 (AW-1) *"điều phối viên quyết theo uỷ quyền"*, và
-mục 40 ĐÃ THI HÀNH 2026-08-23 (BD-1) *"điều phối viên quyết theo uỷ quyền"*.** Không mục nào do chủ sở
-hữu quyết. Câu ấy được **rút**, và nó rút theo chiều **làm nhãn MẠNH hơn**, không yếu hơn — tiền lệ
-mà hàng này nêu ngược với chính nó lại chính là tiền lệ cho phép nó. Không hướng sửa nào trong sáu
-mục con chạm payload MQTT, hình dạng dây, hay một con số OEE đã báo cáo.
-
-**Năm trên sáu đã trả; mục con 5 DỪNG. LIỆT KÊ trước.**
-
-1. **`scan-doc-negations.sh` — TRẢ, và tiền đề của mục con bị BÁC.** Miền được **khai**: một ranh
-   giới thứ **(h)** ở đầu script và một dòng `DOES-NOT-MEASURE (h)` **in ra cùng kết quả**. 🔴 **Câu
-   *"nó chỉ có thể báo thừa"* KHÔNG SỐNG SÓT:** vì định danh là `(đường dẫn, câu)`, một khoá BASE có
-   đường dẫn không nằm trong tập được nêu **không triệt tiêu được** khoá NOW nào, nên
-   `now(hẹp) \ base(đầy)` **đồng nhất** với `now(hẹp) \ base(hẹp)`. Bất đối xứng là một **no-op trên
-   con số**, không phải một thiên lệch. Chiều nguy hiểm thật là chiều khác và nay được khai: **báo
-   thừa theo DẠNG ĐƯỜNG DẪN** (`--files ./src/Foo.cs` sinh khoá NOW không khớp được khoá BASE ⇒ mọi
-   câu trong file ấy đọc là MỚI), và **thiếu ĐỘ PHỦ** (một khẳng định mới trong file không được nêu
-   thì không ai nhìn). 🔴 **Và một khuyết tật thứ hai tìm được ngay tại chỗ, chưa ai ghi:** dòng tổng
-   kết in *"whole-tree census"* **vô điều kiện** — dưới `--files` nó là một phép kiểm kê MỘT FILE đội
-   nhãn ấy (đo: *"22 of 66 sentences"*). Nay nhãn đi theo corpus.
-2. **`check-owner-decisions.sh` C2 — TRẢ BẰNG MỘT LỜI KHAI, và phép sửa hiển nhiên bị TỪ CHỐI bằng
-   một phép đo.** Con số **mười** của mục con **ĐỨNG VỮNG**: đúng 10 lần `Ở LẠI PHẦN II` trong hàng
-   `| 12 |`, và cơ chế đúng như mục con nói — `has()` dùng `index()` phân biệt hoa thường, còn hàng
-   ấy viết *"thi hành **một phần**"* thường nên luật cấm của Phần III không nổ. 🔴 **Nhưng làm C2
-   hai chiều thì ĐỎ 20 trên 58 hàng — 34%** (liệt kê: 18 hàng Phần III còn mang `CHỜ ANH` — 14, 15,
-   16, 17, 21, 25, 26, 27, 30, 32, 34, 35, 36, 37, 38, 39, 40, 55; cộng hàng **4** và hàng **12**
-   mang token Phần II). **Mười chín trong hai mươi là ĐÚNG theo luật của chính file này** — trạng
-   thái bị thay thế được giữ NGUYÊN VĂN. Đó là luật (2) về một phép kiểm: một dụng cụ đỏ trên một
-   phần ba cây là một dụng cụ không ai đọc. Nên C2 **giữ một chiều**, và tính một chiều ấy nay là
-   ranh giới **(g)** được **IN RA** cùng kết quả.
-3. **`repo-scan.sh` hoa-thường — TRẢ, và tiền đề của mục con bị THU HẸP.** Đo: một pathspec sai hoa
-   thường **ĐƠN LẺ** nay bị bắt **ỒN ÀO** (exit 2) bởi phép từ chối miền-rỗng của BA-1 — bốn phép
-   dò, cả bốn exit 2. Im lặng đòi một **DANH SÁCH** trộn. Tái lập: `'…/src/*' '…/tests/*'` ⇒ **579**
-   file, exit 0; `'…/Src/*' '…/tests/*'` ⇒ **267** file, **vẫn exit 0**. Nay: **miền TỪNG pathspec
-   được in luôn luôn**, và một pathspec chọn 0 file mà bản `:(icase)` của nó chọn >0 thì **BỊ TỪ
-   CHỐI nêu tên**. Một pathspec rỗng **hợp lệ** trong danh sách vẫn xanh — đo: `'…/docs/*.zzz'` cạnh
-   một spec đúng ⇒ exit 0, số 0 được in. Nhân chứng nằm trong `--self-test`, tức cổng chạy nó mỗi
-   lần.
-4. **`remove-data.ps1` — TRẢ.** Xác nhận trên máy này: `C:\ProgramData\ST4I\sim\products` và
-   `…\ecosystem` **KHÔNG TỒN TẠI**, mà banner in cả hai rồi bảo *"delete those directories by hand"*.
-   🔴 **Cơ chế mục con nêu hơi lệch và nói ra thay vì để nó đọc như đã kiểm:** banner in **cả** hai
-   danh sách vô điều kiện; cái `$subdirs` có là vòng **thứ hai** (vòng xoá) đính chính nó bằng
-   *"does not exist - nothing to remove"*, còn `$keptByDesign` **không có vòng thứ hai nào**. Nay mỗi
-   đường dẫn GIỮ mang `[EXISTS - kept]` hoặc `[does not exist - …]`, và khi **không** cái nào tồn tại
-   thì câu *"xoá bằng tay"* được thay bằng câu nói đúng sự thật. Không đụng `Name =`/`Keep =`, nên
-   phép kiểm kê `NotificationDocumentationTests` không dịch.
-6. **`verify-suites.sh` bất biến theo thư mục — TRẢ.** Xem §51.8.
-
-🔴 **MỤC CON 5 DỪNG — và lý do KHÔNG phải lý do BF-1 nêu.** BF-1 dừng vì *"cần baseline riêng"*. Đo
-lại hôm nay, ba điều:
-* **Con số của mục con ĐỨNG:** đúng **16** lá dưới `%ProgramData%\ST4I\sim\` (liệt kê từ mọi phép
-  ghép đường dẫn `CommonApplicationData` trong `src/`: settings, machine-config, products, opcua-pki,
-  historian, identity, creds, bridge-spool, sitelink, wal, alarms, notifications, assets, security,
-  ecosystem, connector-config), **một** được canh, **mười lăm** không. Cả hai dụng cụ rút gốc từ
-  **một** file nguồn `CredentialStore.cs` và **fail-closed** khi không khớp đúng một biểu thức.
-* 🔴 **KHÔNG có cửa sau vào mục 45 hay mục 30, và điều đó ĐO ĐƯỢC chứ không suy ra:**
-  `TestRunTempRoot` (module initializer, năm assembly) chuyển hướng `ST4I_PRODUCTS_DIR` và
-  `ST4I_ECOSYSTEM_DIR` sang `%TEMP%`, nên đường ghi-đè-cả-hai-file của `SimulatedEcosystem.Load` —
-  đúng seam của mục 45 — **không bao giờ chạm gốc thật trong một lần chạy cổng**. Chứng cứ trên đĩa:
-  `products`, `ecosystem`, `machine-config` **không tồn tại** dưới gốc thật trên một máy đã chạy cổng
-  nhiều lần.
-* 🔴 **NHƯNG NÓ SẼ ĐỎ NGAY LẦN CHẠY ĐẦU, VÌ MỘT THỨ KHÔNG MỤC NÀO ĐANG MỞ NÓI TỚI.** Đo độc lập bằng
-  `Get-ChildItem` trên `C:\ProgramData\ST4I\sim`: `assets\assets.db` **sửa lúc 2026-08-23 16:55:04**,
-  và cả `assets` lẫn `notifications` mang mtime thư mục **16:56:11** — nằm gọn giữa hai commit của
-  nhiệm vụ trước (`fc0da7f6` 16:42:17 và `e6e169f4` 17:02:11), và không tiến trình `St4i*` nào đang
-  sống. Tức **bộ test ghi vào gốc THẬT**, ở hai lá mà `TestRunTempRoot` **không** chuyển hướng.
-  🔴 **VÀ NÓ TÁI LẬP THEO YÊU CẦU, KHÔNG PHẢI MỘT DẤU VẾT THỪA KẾ.** Cùng phép đo chạy lại sau lần
-  chạy cổng SẠCH của chính nhiệm vụ này (bắt đầu 18:19:41, gõ từ gốc repo): `assets\assets.db` sang
-  **18:30:16**, mtime thư mục `assets` **18:30:51** và `notifications` **18:30:34**. Hai cửa sổ độc
-  lập, hai lần dịch — nên đây là **một tính chất của việc chạy cổng**, không phải một sự cố. Và
-  chiều đối chứng nằm ngay cạnh: lá `creds` — lá **duy nhất** được canh — đứng nguyên **31 mục**
-  qua cả ba lần chạy. Ngoặc creds xanh trong khi một lá không ai canh đang bị ghi vào: đó **chính
-  là** mục con 5, quan sát trực tiếp.
-  Dựng dụng cụ và **đồng thời** trả cái rò ấy là hai việc, và cái thứ hai chưa ai đo. Cộng hai lỗ
-  cấu trúc mà chính ngoặc creds đã tự khai: nó so **tập TÊN** nên một phép **ghi đè tại chỗ** như
-  `assets.db` **vô hình**, và **miền của nó rộng hơn tiêu chí** — nó đo CẢ MÁY, nên WPF shell hay
-  edge service chạy song song cũng làm nó đỏ. **Ba lý do, không phải một, và cái thứ ba là một
-  khuyết tật MỚI được ghi ở đây lần đầu.**
-
-**Vì sao mục Ở LẠI PHẦN I.** Cái còn lại của mục con 5 là một **QUYẾT ĐỊNH** — ai trả cho một dụng cụ
-dùng chung cho năm assembly, và có trả cái rò `assets`/`notifications` trước hay không — không phải
-một việc. Cùng khuôn mục 48 và mục 12.
-
-### 51.8 🔴 MỤC CON 6 ĐÃ TRẢ — CỔNG CHO CÙNG MỘT KẾT QUẢ TỪ MỌI THƯ MỤC
-
-**Cặp đo TRƯỚC, ở BASE `e6e169f4`, cùng commit, cùng cây, chỉ khác chỗ đứng** — tái lập đúng bảng
-trong thân mục: đứng ở `tools/machine-simulator` ⇒ `PASS`; đứng ở gốc repo ⇒
-`FAIL: could not derive the REAL creds root … Fix the derivation. Do NOT hardcode the directory here`.
-Chẩn đoán ấy **trỏ sai chỗ**: phép dẫn xuất không hỏng, chỗ đứng mới hỏng.
-
-🔴 **Bản vá một dòng bị TỪ CHỐI bằng một phép đo, không bằng một sở thích.** Sửa riêng `_creds_src`
-chỉ **dời** chỗ hỏng: script còn đọc ít nhất bốn thứ tương đối khác — `VENDORED_SOURCE_CSPROJ`, năm
-mục `tests/<project>` truyền cho `dotnet test`, ba đường `src/` của phép kiểm kê thư mục ra, và
-`dotnet build -t:Rebuild` **trần** (nó lấy project file trong thư mục hiện tại). Nên bản vá một dòng
-sinh ra một cổng hỏng **xa hơn**, tức cùng khuyết tật với ngòi dài hơn.
-
-**Bản sửa: lấy neo MỘT LẦN, ở đầu file, trước phép đọc tương đối đầu tiên** — `pwd -P` của thư mục
-script, `cd` về cha của nó, và `_SCRIPTDIR` **thành tuyệt đối** (nếu để tương đối, một `$0` tương đối
-sẽ trỏ vào hư không sau khi chdir và **ba tooling check không khởi chạy được** — một hỏng hóc mà bản
-sửa TỰ TẠO RA, nên nó được nêu tên ở đây chứ không để ai đó tìm ra sau). Thân mục định giá bản sửa
-này là *"đổi ngữ nghĩa của mọi đường dẫn tương đối khác"*. **Đúng, và chiều mới là điều đáng nói:**
-với lời gọi ĐÃ GHI TRONG TÀI LIỆU — gõ từ `tools/machine-simulator` — phép chdir là **phép đồng
-nhất**, vì `dirname/..` của script CHÍNH LÀ thư mục ấy; với mọi lời gọi khác nó làm script hành xử
-**y như** lời gọi đã ghi. Không có ca thứ ba: script không nhận tham số đường dẫn, và `LOGDIR` cùng
-`GATE_LOCK_BASE` cắm ở `TMPDIR`.
-
-**Nửa thứ hai — chẩn đoán SAI được thay bằng chẩn đoán ĐÚNG.** Bốn cái neo (`St4iMachineSimulator.sln`,
-`src`, `tests`, `scripts/verify-suites.sh`) được kiểm ngay sau chdir; thiếu cái nào thì cổng nói
-`NO-VERDICT` và **nêu tên** cái thiếu, cộng cả *"typed in"* lẫn *"ran in"*. §8.1(f) nay chạy trong
-chính giọng của cổng: hai dòng ấy **in ra mỗi lần**, kể cả khi bằng nhau.
-
-🔴 **Cái nó KHÔNG đo, nêu vì một cái trần nêu quá nhỏ còn tệ hơn không nêu:** nó **không** kiểm rằng
-một đường dẫn tương đối nào trong file là ĐÚNG. Nó sửa cái mà chúng được giải **theo**. Một đường dẫn
-viết sai, hay giải ra một file thật khác, vẫn hỏng y như trước và khối này không nói một chữ.
-
----
-
-## 52. HAI lời khai đã công bố đo được là SAI và cố ý để nguyên, cộng sáu chỗ ném lỗi mà thông điệp không ai đọc
-
-⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — rút một câu văn xuôi tại chỗ không chạm ba miễn trừ.
-
-**Đo được cái gì.**
-
-1. 🔴 **`IDeviceDriver.Id`'s doc nói nó *"keys slot labels and, through those, alarms"* — BỊ BÁC.**
-   BB-1 đo: **không gì trong cây tiêu thụ giá trị của nó** — bốn decorator chuyển tiếp nó, bộ
-   conformance chỉ khẳng định nó **không đổi**, và nhãn slot mà một alarm nhắm tới đến từ
-   `FleetCore.ResolveSlotLabelFor`/`ResolveConnectorSlotLabel`. Câu ấy **vẫn nguyên văn ở
-   `9255ea98`** — xác nhận lại hôm nay. `ScenarioAwareDriver.Id` mang câu thứ hai cùng loài. BB-1
-   **cố ý không rút**, vì cả hai nằm ngoài cụm nó được giao và sửa một khối đã hoàn chỉnh ở đó là
-   mối nguy batch 6 đã nêu tên. Lý do ấy đúng; **nó không làm câu kia thành đúng**.
-2. 🔴 **`"23 sites across 20 files"` KHÔNG tái lập được.** `tests/Shared/OwnOutputDirectoryGuard.cs`
-   và `scripts/verify-suites.sh` cùng viết con số ấy về quần thể chỗ dựng
-   `ProductConfigStore`/`SimulatedEcosystem`. Đo lại ở `9255ea98`, miền `:(top)`:
-   `new ProductConfigStore(` **26** dòng trên **5** file, `new SimulatedEcosystem(` **11** dòng trên
-   **4** file ⇒ **37 chỗ trên 6 file** — **cộng** các nhà máy target-typed `=> new(TempDir())` mà
-   phép quét chữ-nghĩa **không thấy**. **Không chiều nào khớp**, và **không artefact nào nêu tên
-   dụng cụ đã sinh ra "23/20"**, nên nó không tra lại được.
-3. **`Doc28Parser`: sáu trong 34 chỗ ném lỗi không nêu file**, và trên **đường sản xuất duy nhất**
-   `HotFolderAoiDriver` bắt bằng một `catch (Doc28ValidationException)` **không binding** rồi chuyển
-   file sang `error/` — **thông điệp và inner exception bị vứt chưa đọc**. Bảy tham chiếu còn lại
-   trong cây đều là `Assert.Throws<>` và **không cái nào nhìn `.Message`**.
-
-**Hậu quả vận hành, hai chiều.** (1)(2) là **hồ sơ nói sai về mã**, đúng loài file này lập ra để
-chấm dứt; (2) tệ hơn vì nó là một con số ghim một tập **đổi ở chỗ khác**. (3) là một chi phí chẩn
-đoán: một file doc-28 hỏng vào `error/` **không mang lý do đi cùng**. Chiều để nguyên: (1) sửa đúng
-cách đòi đọc lại năm điểm dùng chứ không chỉ xoá một mệnh đề — BB-1 đã ghi phép đo ở năm điểm ấy,
-nên **thông tin không mất**, chỉ đặt sai chỗ. (2) con số ấy nằm trong một đoạn **đã bị rút**, và
-sửa nó là **một phép đo khác** với một cái trần khác. (3) thêm tên file vào sáu chỗ ném **không**
-làm ai đọc chúng — phép sửa thật nằm ở `catch`, và đó là một thay đổi hành vi.
-
-**Nếu không quyết.** Hai câu sai ở lại trong mã như tài liệu, và người tiếp theo đọc chúng sẽ tin.
-
-### 52.4 🔧 THI HÀNH MỘT PHẦN — BJ-1, 2026-08-23, ĐIỀU PHỐI VIÊN THEO UỶ QUYỀN. Mục Ở LẠI PHẦN I
-
-**Nhãn ⚖️ đứng vững cho những gì nó khai** — *"rút một câu văn xuôi tại chỗ"* — và nó khai **hai
-trên ba** mục con. Mục con 3 nằm ngoài nó, và chỗ nó rơi vào là chỗ đáng nói.
-
-**Mục con 1 — TRẢ, và cả HAI con số của mục con đều KHÔNG SỐNG SÓT.**
-* Câu *"keys slot labels and, through those, alarms"* trên `IDeviceDriver.Id` được **rút tại chỗ,
-  giữ nguyên văn**. Phép dẫn xuất thật xác nhận lại: nhãn slot mà một alarm nhắm tới tới từ
-  `FleetCore.ResolveSlotLabelFor` (đầu vào: **driver kind** của roster) hoặc
-  `ResolveConnectorSlotLabel` (đầu vào: **connector instance id**), và `AlarmEvaluator` đặt
-  `TargetId: slot.SlotLabel`. Không hàm nào nhận một driver, không hàm nào đọc `.Id`.
-* 🔴 **"không gì trong cây tiêu thụ giá trị của nó" BỊ BÁC.** Đo ở `e6e169f4`, pathspec `:(top)*.cs`:
-  **mười hai dòng khẳng định trong bốn file test** đọc NỘI DUNG chuỗi —
-  `ModbusRtuDriverLoopbackTests` (`Assert.Contains("unit1", driver.Id)` và cặp min/max unit id),
-  `ModbusRtuMultidropConformanceTests` (bus key và hai unit id, cộng `NotEqual` giữa hai driver),
-  `ModbusRtuConnectorFactoryTests` và `ConnectorsJsonRegistrationTests` (`Distinct().Count()`,
-  `StartsWith`, `EndsWith`). Câu đúng là *"không bề mặt SẢN XUẤT nào tiêu thụ giá trị; bốn file test
-  thì có"* — và `SimulatedDriver.cs` đã viết đúng thế từ trước, có kèm chữ *"under `src/`"*, mà mục
-  52 **bỏ mất chữ ấy**. Bản rút viết cả hai chiều.
-* 🔴 **"câu thứ hai" là một phép ĐẾM THIẾU: quần thể là SÁU, không phải hai.** Liệt kê:
-  `IDeviceDriver.Id` (`///`), `ScenarioAwareDriver.Id` (`///`),
-  `DeviceDriverConformanceSuite.Check_Id_And_Kind_…` (`///`, **trích nguyên văn câu bị bác**),
-  cùng file ở chú thích hậu-dispose (`//`), `ModbusRtuDriver` chú thích constructor (`//`), và
-  `ModbusRtuDriver.Id` (`///`). **Cả sáu rút trong cùng một thay đổi.** Chỗ sắc nhất là chỗ thứ ba:
-  mục 52 viện dẫn **chính bộ conformance ấy** làm bằng chứng bác bỏ, trong khi doc của nó **chép lại
-  câu bị bác**. Không ai đọc lại lời trích ấy đối chiếu với thứ phương thức bên dưới thật sự khẳng
-  định. **Chiều ngược, vì nêu một nửa là nói sai:** bộ conformance khẳng định **hai** tính chất
-  (không rỗng **và** không đổi, kể cả sau `DisposeAsync`), mục 52 nói *"chỉ"* một; không tính chất
-  nào đọc nội dung, nên lập luận của mục đứng và chỉ chữ *"chỉ"* là hẹp.
-
-**Mục con 2 — TRẢ, và các con số của mục con TÁI LẬP CHÍNH XÁC.** Đo lại ở `e6e169f4`, `:(top)`:
-`new ProductConfigStore(` **26 dòng / 5 file**, `new SimulatedEcosystem(` **11 dòng / 4 file**, hợp
-**37 dòng / 6 file** — đúng ba cặp số mục con viết. `"23 sites across 20 files"` **không tái lập ở
-bất kỳ khung nào**, và không artefact nào nêu tên dụng cụ sinh ra nó. 🔴 **Và cảnh báo của mục con
-về nhà máy target-typed là NÓI NHẸ:** có **ba** (`CyclePlanTests.NewProductStore`,
-`ConfigEndpointsRequestBodyTests.NewStore`, `MachineSettingsEndpointsTests.NewDemoBackend`, cả ba
-`=> new(TempDir())`) và **hai trong ba nằm trong file mà phép quét chữ-nghĩa KHÔNG chạm tới** ⇒ 40
-chỗ / 8 file; cộng hai đăng ký DI sản xuất trong `Program.cs` ⇒ 42 / 9. Nên **37/6 là một SÀN, không
-phải câu trả lời**, và câu ấy được viết vào cả hai bản rút. Cả **hai** file mang câu sai —
-`tests/Shared/OwnOutputDirectoryGuard.cs` và `scripts/verify-suites.sh` — được sửa, không chỉ một.
-
-🔴 **MỤC CON 3 KHÔNG THI HÀNH — VÀ LÝ DO LÀ MỘT CỬA SAU VÀO MỤC 48.** Mọi con số của mục con **đứng
-vững**: đúng **6 trên 34** chỗ ném không nêu file (cả hai vế liệt kê), `HotFolderAoiDriver` bắt bằng
-`catch (Doc28ValidationException)` **không binding** rồi `MoveTo(path, _errorDir)`, và đúng **bảy**
-tham chiếu còn lại đều là `Assert.Throws<>` **không cái nào** đọc `.Message` hay `.InnerException`.
-Đường `error/` **không ghi lý do ở đâu cả** — không dòng log, không file kèm, không phép đổi tên
-mang thông tin; toàn bộ bề mặt ghi của lớp ấy là ba `Directory.CreateDirectory` và một `File.Move`.
-**Và mục con tự nói phép sửa thật nằm ở `catch`.** Đo: lớp `HotFolderAoiDriver` **không có trường
-logger, không có `Action<string>`, không có `Console`/`Trace` nào** — nên "sửa cái `catch`" nghĩa là
-**thêm một seam** vào lớp ấy. 🔴 **Đó chính xác là câu hỏi mục 48 để mở bằng chữ của nó:** *"câu hỏi
-còn mở không phải 'có sửa không' mà là 'ai trả cho seam'"*, và `HotFolderAoiDriver` là một trong hai
-lớp mục 48 nêu tên. Nhiệm vụ này bị cấm chạm mục 48. **Trả mục con 3 theo phép sửa thật sẽ quyết
-câu hỏi seam của mục 48 qua cửa sau — đúng hình dạng đã bắt được ở mục 49.** Nửa rẻ — thêm tên file
-vào sáu chỗ ném — **cố ý không làm**: nó đổi hành vi (văn bản thông điệp) mà **không tạo ra một người
-đọc nào**, đúng như mục con tự viết, nên nó mua một cảm giác tiến bộ và không mua một chẩn đoán.
-
-**Vì sao mục Ở LẠI PHẦN I.** Cái còn lại là một quyết định thuộc mục 48, không phải một việc thuộc
-mục 52.
 
 ---
 
@@ -1733,6 +1389,490 @@ trên nói, vì `## 5–7.` là **một** tiêu đề chứa **ba** mục.
 > tắt một tập chưa ai liệt kê thì không phải một sự thật* — và ở đây tập **đã được liệt kê
 > ngay cạnh**, nên phép liệt kê tự bác con số. Thay bằng phép liệt kê; câu sai giữ lại ở
 > đây làm hồ sơ chứ không xoá.
+
+---
+
+## 48. Hợp đồng của chính seam driver bị vi phạm ở NĂM chỗ đo được
+
+⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — không chạm ba miễn trừ. Ở đây vì chưa ai quyết.
+
+**Đo được cái gì — liệt kê trước, đếm sau.** BB-1 đo năm chỗ ngày 2026-08-22; cả năm **xác nhận lại
+trên mã** ở `9255ea98`:
+
+1. **`HotFolderAoiDriver` làm I/O trong constructor** — ba `Directory.CreateDirectory` và một
+   `FileSystemWatcher` sống. `IDeviceDriver` nói rõ *"mọi thiết lập kết nối/phiên thuộc hoàn toàn
+   trong `ReadAsync`, không bao giờ trong constructor"*, và lý do được nêu tại chỗ: `StartLocked`
+   dựng driver **dưới cùng khoá `Estop()` lấy**.
+2. **`MqttDriver.DisposeAsync` không có trần** — `DisconnectAsync` được phát với
+   `CancellationToken.None`, trong khi hợp đồng nói dispose *"nên tự nó trả về nhanh"*.
+3. **`MqttDriver` không liệt kê lại được sau khi dispose** — đo bằng một probe CLR độc lập, và
+   **bộ test không phủ**.
+4. **`InProcessBroker.DisposeAsync` không có trần VÀ mù** — `StopAsync()` không token, không timeout,
+   ngoại lệ bị nuốt vào một `catch` rỗng trong một lớp **không có sink log nào**. Một broker không
+   nhả được cổng **không phân biệt được** với một broker tắt sạch; triệu chứng nổi lên ở lần
+   `StartAsync` sau trên cùng cổng.
+5. **`HotFolderAoiDriver` nhận một miễn trừ `Health` mà class doc của nó không khai.**
+
+**Hậu quả vận hành, hai chiều.** (1) làm một `Estop()` chậm đi theo tốc độ đĩa; (2)(4) làm tắt máy
+treo không giới hạn; (3) là một tính chất không ai kiểm; (5) là hồ sơ sai. Chiều để nguyên: cả năm
+**chưa bao giờ được quan sát gây sự cố**, và ba trong năm **cách một [Fact] là ghim được** — nên giá
+đúng của việc sửa gồm cả **tổng suite dịch**, thứ nhiệm vụ này bị cấm.
+
+**Nếu không quyết.** Hợp đồng seam tiếp tục nói một đằng và năm chỗ triển khai làm một nẻo, và điều
+đó **đã** là lý do mục 12 tồn tại.
+
+### 48.6 🔧 THI HÀNH MỘT PHẦN — BI-1, 2026-08-23, ĐIỀU PHỐI VIÊN THEO UỶ QUYỀN. Mục Ở LẠI PHẦN I
+
+🔴 **Đây KHÔNG phải một phán quyết của chủ sở hữu.** Nhãn ⚖️ của mục này đứng vững dưới phép đo lại
+— không hướng sửa nào trong năm chạm payload MQTT, hình dạng dây, hay một con số OEE đã báo cáo.
+
+**Phép đếm của tác giả mục, kiểm lại — LIỆT KÊ trước.** Bốn trong năm xác nhận độc lập ở
+`44383e23`: (1) `HotFolderAoiDriver` có đúng **ba** `Directory.CreateDirectory` (dòng 78–80) cộng
+`TryCreateWatcher()` (dòng 85) trong constructor; (2) `MqttDriver.DisposeAsync` phát
+`DisconnectAsync(…, CancellationToken.None)` không trần; (4) `InProcessBroker.DisposeAsync` gọi
+`StopAsync()` không token trong một `catch` rỗng; (5) class doc **không** khai miễn trừ `Health`,
+trong khi doc của chính member thì nói ra là nó không khai. **(3) — "`MqttDriver` không liệt kê lại
+được sau khi dispose, đo bằng một probe CLR độc lập" — nhiệm vụ này KHÔNG đo lại**, và nói ra chỗ
+ấy thay vì để nó đọc như đã kiểm: bốn trên năm đứng, cái thứ năm chưa ai kiểm lần hai.
+
+**Cái đã trả.** Khuyết tật **(5)** đóng: class doc của `HotFolderAoiDriver` nay **khai miễn trừ
+`Health`** đúng hình dạng hợp đồng đòi (nêu miễn trừ ở CLASS doc, nêu các giá trị `Health` nhận
+thay), **và định tính nó**: ba trạng thái mà member vẫn báo `Connected` được giữ nguyên và không rút,
+và câu "một thư mục theo dõi trên network share không hiển nhiên là *không có thiết bị ngoài nào*"
+được viết vào chính chỗ khai. Đây là **đổi tài liệu, không đổi một dòng hành vi nào** — không hằng số
+nào dịch vì nó.
+
+🔴 **Cái KHÔNG được trả, và lý do là một phép đo chứ không phải một lời hứa.** (1), (2), (4) đều
+**đổi hành vi lúc chạy**, và luật của nhiệm vụ này là *không đổi hành vi nếu không có nhân chứng
+ĐỎ ĐƯỢC*. Với (2) và (4) nhân chứng ấy đòi một client MQTT / một broker **treo theo lệnh**, và
+không seam nào trong hai lớp ấy nhận một đôi giả từ ngoài: `MqttDriver._client` và
+`InProcessBroker`'s server đều dựng bên trong. Với (1), dời I/O ra khỏi constructor dời **thời điểm
+ba thư mục tồn tại**, và hai chỗ dựng ngoài test là hai điểm vào demo ghi file vào `watchDir` —
+nên phép dời cần một phép đo riêng về thứ tự ấy. (3) là **một tính chất không ai kiểm**; trả nó là
+thêm một `[Fact]`, và một `[Fact]` cho một tính chất **chưa ai đo lại** thì ghim một lời khai chứ
+không ghim một sự thật.
+
+**Cái mục này còn chờ, nói bằng một câu.** Bốn khuyết tật đổi hành vi, ba trong bốn cần một seam
+tiêm được mà hôm nay không có — nên câu hỏi còn mở **không** phải *"có sửa không"* mà là *"ai trả
+cho seam"*, và đó vẫn là một quyết định chưa ai ra.
+
+### 48.7 ✅ ĐÃ THI HÀNH — BK-1, 2026-08-23, THEO PHÁN QUYẾT CỦA CHỦ SỞ HỮU CÙNG NGÀY. Mục PHẦN I → PHẦN III
+
+🔴 **Phán quyết của chủ sở hữu, 2026-08-23: DỰNG SEAM, MỞ KHOÁ CẢ BA (48, 51, 52).** Câu hỏi §48.6 để
+mở — *"ai trả cho seam"* — **đã được trả lời**, và nó được trả lời bởi chủ sở hữu, không bởi nhiệm vụ
+này. Cái nhiệm vụ này quyết là **hình dạng** của seam, không phải việc có dựng nó hay không.
+
+**Nhãn ⚖️ kiểm lại, và chỗ nó tới GẦN một miễn trừ nhất được nêu tên thay vì để đọc như đã xét.** Nhãn
+đứng vững. Không bản sửa nào đổi payload MQTT, hình dạng dây, hay một con số OEE đã báo cáo. Chỗ gần
+nhất là bản sửa (2): một `DisconnectAsync` **quá hạn nay bị BỎ RƠI**, nên broker có thể thấy một
+socket đứt thay vì một gói DISCONNECT sạch. 🔴 **Đo hai chiều trước khi coi đó là vô hại:** ca ấy chỉ
+xảy ra khi `DisconnectAsync` **đã** không hoàn thành — và trong cây cũ, gói DISCONNECT ấy cũng **không**
+tới nơi, người gọi chỉ chờ vô hạn thêm. Trên đường bình thường gói vẫn được gửi y hệt. Nên chiều
+duy nhất thay đổi là **thời gian của người gọi**, không phải nội dung trên dây.
+
+**LIỆT KÊ trước, con số sau — năm khuyết tật, cả năm nay đóng.**
+
+1. **I/O trong constructor — TRẢ.** Ba `Directory.CreateDirectory` và `TryCreateWatcher()` **rời
+   constructor sang pass ĐẦU TIÊN của `ReadAsync`**. 🔴 **Cái đắt ở đây là THỨ TỰ, và nó được đo chứ
+   không suy:** hai chỗ dựng ngoài test (`FleetCore.RunHotFolderAoiDemoAsync`,
+   `FleetService.RunHotFolderAoiDemoAsync`) **đều** ghi file demo qua `Doc28Writer.WriteAtomic`, và
+   hàm ấy **tự tạo watchDir**, **TRƯỚC** khi dựng driver — nên không chỗ nào từng phụ thuộc vào
+   constructor cho việc đó. `MoveTo` cũng tự tạo đích trước mỗi lần chuyển. Nhân chứng **ĐỎ ĐƯỢC**:
+   `HotFolderAoiDriver_Construction_TouchesNoDisk_AndTheFirstReadPassCreatesAllThree` — nửa sau của
+   nó chịu lực riêng, vì một bản "sửa" chỉ xoá phép tạo thư mục sẽ qua nửa đầu và **phá cả hai điểm
+   vào demo**.
+2. **`MqttDriver.DisposeAsync` không có trần — TRẢ.** **Cả hai** phép chờ nay đi qua
+   `BoundedTeardown` với trần 1 s mỗi bước; số học được viết cạnh hằng số: `FleetCore
+   .RestartTeardownTimeout` cho **cả** driver 3 s, nên hai bước tuần tự ở 1 s để lại một giây dư.
+3. **Không liệt kê lại được sau dispose — TRẢ BẰNG PHỦ, và **tự dán nhãn GUARD**.** Đây **không**
+   phải một hành vi hỏng; nó là một hành vi **không ai kiểm** — đúng chữ của mục. Nên bài kiểm là
+   **xanh ở cả hai nhánh theo cấu tạo**, và nó tự khai điều ấy ngay trong tên và trong doc của nó.
+   🔴 **Nó cũng ĐO LẠI thứ BI-1 nói thẳng là mình không đo lại**, nên khuyết tật thứ năm-chưa-ai-kiểm
+   của §48.6 nay đã có lần kiểm thứ hai: tính chất **đứng**.
+4. **`InProcessBroker.DisposeAsync` không trần VÀ mù — TRẢ, cả hai nửa.** `StopAsync` đi qua
+   `BoundedTeardown` (trần 2 s) và kết cục — xong / quá hạn / hỏng — đi ra một sink. 🔴 **Nửa "mù"
+   được trả bằng một *lựa chọn của người gọi*, không bằng một log ép buộc:** một broker dựng không
+   sink vẫn im lặng y như cũ. Nói ra vì "nay có thể đọc được" và "nay đọc được" là hai câu khác nhau.
+5. **Miễn trừ `Health` không khai — BI-1 đã trả, và bản trả ấy **để lại hai câu tự mâu thuẫn**.**
+   🔴 **Đây là phát hiện mà nhiệm vụ này đóng góp cho mục, và nó nằm trong chính commit đã đóng
+   khuyết tật:** BI-1 viết lời khai vào class doc của `HotFolderAoiDriver` ngày 2026-08-23 và để
+   nguyên **hai** artefact vẫn nói lời khai ấy **VẮNG** — một đoạn trên chính member `Health` của
+   driver (cách chỗ sửa chín dòng) và class doc của `HotFolderAoiDriverConformanceTests`. Cả hai
+   **rút tại chỗ, giữ nguyên văn**. Không con số nào dịch vì việc này.
+
+**Cái KHÔNG được làm, và lý do là một phép đo.** Miễn trừ `Health` **không** bị thu hẹp và driver
+**không** được cho một trạng thái `Degraded` thật — §48.6 ghi đó là một thay đổi hành vi riêng, và
+phán quyết hôm nay nói về **seam**, không về hình dạng `Health`.
+
+---
+
+## 51. SÁU dụng cụ đo tự báo hụt miền của chính mình — và cái thứ sáu là CHÍNH `verify-suites.sh`, đo được trong lúc chạy cổng cho mục này
+
+⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 32 và 40. 🔴 **Nói cho hết: cả mục 32 và mục 40 đều
+do CHỦ SỞ HỮU quyết**, nên nhãn ở đây nêu một tiền lệ ngược với chính nó, và anh có thể lật.
+
+**Đo được cái gì — liệt kê trước, đếm sau.**
+
+1. **`scan-doc-negations.sh --since --files`** thu hẹp corpus **NOW** nhưng **không** thu hẹp corpus
+   **BASE**, nên phép `comm -23` so một tập hẹp với một tập đầy. Vô hại theo chiều hiện tại (nó chỉ
+   có thể **báo thừa**), **nhưng không ai khai điều đó**.
+2. **`C2` của `check-owner-decisions.sh` một chiều theo thiết kế**, và hệ quả đang sống: hàng phán
+   quyết **mục 12** còn chứa `Ở LẠI PHẦN II` **mười lần** trong khi thân mục nay ở Phần III. Nó qua
+   được vì `has()` **phân biệt hoa thường** và chữ *"thi hành một phần"* của hàng ấy viết **thường**.
+3. **`repo-scan.sh` không có phép kiểm hoa-thường cho pathspec** — trên Windows một pathspec sai hoa
+   thường im lặng thu hẹp miền, đúng loài mục 32.
+4. **`remove-data.ps1` in danh sách GIỮ mà KHÔNG kiểm chúng có tồn tại không.** Với `$subdirs` nó in
+   *"does not exist - nothing to remove"*; với `$keptByDesign` nó in đường dẫn **vô điều kiện** ngay
+   trong banner, nên một vận hành viên thấy hai đường dẫn trông như *"đây là thứ bạn phải tự xoá"*
+   kể cả khi chúng **chưa từng tồn tại**.
+5. 🔴 **Không dụng cụ nào gác `%ProgramData%\ST4I\sim\` ngoài `creds`.** `RealCredentialStoreLeakGuard`
+   và bracket credential của cổng đều rút gốc **duy nhất** từ `CredentialStore`. Một store rò vào
+   `…\sim\products` hay bất kỳ lá nào khác **hoàn toàn không ai thấy**. BE-1 đo **13** lá không ai
+   canh trước mục 30; BF-1 đo **16** sau, **và ba lá mới là đúng ba lá mà một seam hỏng sẽ ghi vào**.
+6. 🔴 **MỚI — `verify-suites.sh` ĐỎ HAY XANH TUỲ THƯ MỤC NGƯỜI GÕ ĐANG ĐỨNG, và thông điệp lỗi của
+   nó ĐỔ TỘI CHO SAI CHỖ. Đo được bởi BG-1 trong lúc chạy cổng cho chính mười hai mục này.** Dòng
+   `_creds_src="src/St4i.EdgeCore/Infrastructure/CredentialStore.cs"` là một **đường dẫn tương
+   đối**, và script **không bao giờ `cd` về gốc của chính nó** — `_SCRIPTDIR` có tồn tại nhưng
+   không được dùng ở đây. **Cặp đo, cùng commit, cùng cây, chỉ khác chỗ đứng:**
+
+   | đứng ở | kết quả |
+   |---|---|
+   | `tools/machine-simulator` (nơi mọi lời giao việc bảo chạy) | `PASS … 5/5 suites … (2852)` |
+   | gốc repo, một cấp trên | `FAIL: could not derive the REAL creds root … (found 0 …, expected exactly 1)` |
+
+   🔴 **Đây ĐÚNG loài mục 32** — *một đường dẫn tương đối được giải theo thư mục hiện tại* — sống
+   trong **chính cái cổng** mà dụng cụ của mục 32 (`repo-scan.sh`) được dựng để bảo vệ. Khác mục 32
+   ở một điểm và **điểm ấy làm nó tệ hơn theo một chiều và nhẹ hơn theo chiều kia**: `repo-scan`
+   hỏng **im lặng** (trả 0), cái này hỏng **ồn ào** — nhưng nó ồn ào bằng một **chẩn đoán SAI**,
+   *“Fix the derivation. Do NOT hardcode the directory here”*, tức nó bảo người đọc đi sửa phép
+   dẫn xuất trong khi nguyên nhân là **chỗ họ đứng**. Một người tin thông điệp ấy sẽ sửa một thứ
+   không hỏng.
+
+   **Chiều để nguyên:** cổng **được thiết kế để chạy từ `tools/machine-simulator`**, mọi lời giao
+   việc đều nói thế, và nó **fail-closed** — nó không bao giờ xanh nhầm. Nên rủi ro không phải một
+   kết quả sai, mà **thời gian của người kế tiếp**. Phép sửa rẻ nhất — `cd "$_SCRIPTDIR/.."` một
+   lần ở đầu — **đổi ngữ nghĩa của mọi đường dẫn tương đối khác trong 7 894 dòng script**, nên nó
+   **không** phải một dòng vá, và đó là lý do mục này không tự thi hành nó.
+
+**Hậu quả vận hành, hai chiều.** Năm cái đầu là **dụng cụ đo nói quá về miền của mình** — đúng cái
+giá mục 32 ghi lại: một phán quyết của chủ sở hữu đã từng mang một cái trần SAI. Cái thứ năm là một
+**lỗ trong hàng rào của cổng**. Chiều để nguyên: (1) và (3) hôm nay **không sai theo chiều nguy
+hiểm**; (4) là bề mặt vận hành viên, và thêm một dòng *"(không có)"* là một **quyết định về cách nói
+với người dùng**, không phải một phép vá hiển nhiên; (5) là **một dụng cụ MỚI dùng chung cho năm
+assembly**, cần baseline riêng như `RealCredentialStoreWatch` — BF-1 đã cân nhắc dựng nó và **DỪNG**
+đúng lý do ấy.
+
+**Nếu không quyết.** Cổng tiếp tục xanh trên những miền chưa ai khai, và đó là chính xác định nghĩa
+của mục 40. 🔴 **Và cái thứ sáu nói thêm một điều mà năm cái kia không nói:** loài khuyết tật này
+**vẫn đang sinh ra**, không phải một tồn dư lịch sử — nó được đo lần đầu **trong chính lần chạy cổng
+của nhiệm vụ đang mở mục này**.
+
+### 51.7 🔧 THI HÀNH MỘT PHẦN — BJ-1, 2026-08-23, ĐIỀU PHỐI VIÊN THEO UỶ QUYỀN. Mục Ở LẠI PHẦN I
+
+🔴 **Nhãn ⚖️ đứng vững, nhưng LỜI BIỆN MINH CỦA CHÍNH NÓ KHÔNG.** Nhãn viết *"cùng loài mục 32 và 40.
+Nói cho hết: cả mục 32 và mục 40 đều do CHỦ SỞ HỮU quyết"*. Đo lại ở `e6e169f4` trên bảng phán quyết
+của chính file này: **mục 32 ĐÃ THI HÀNH 2026-08-22 (AW-1) *"điều phối viên quyết theo uỷ quyền"*, và
+mục 40 ĐÃ THI HÀNH 2026-08-23 (BD-1) *"điều phối viên quyết theo uỷ quyền"*.** Không mục nào do chủ sở
+hữu quyết. Câu ấy được **rút**, và nó rút theo chiều **làm nhãn MẠNH hơn**, không yếu hơn — tiền lệ
+mà hàng này nêu ngược với chính nó lại chính là tiền lệ cho phép nó. Không hướng sửa nào trong sáu
+mục con chạm payload MQTT, hình dạng dây, hay một con số OEE đã báo cáo.
+
+**Năm trên sáu đã trả; mục con 5 DỪNG. LIỆT KÊ trước.**
+
+1. **`scan-doc-negations.sh` — TRẢ, và tiền đề của mục con bị BÁC.** Miền được **khai**: một ranh
+   giới thứ **(h)** ở đầu script và một dòng `DOES-NOT-MEASURE (h)` **in ra cùng kết quả**. 🔴 **Câu
+   *"nó chỉ có thể báo thừa"* KHÔNG SỐNG SÓT:** vì định danh là `(đường dẫn, câu)`, một khoá BASE có
+   đường dẫn không nằm trong tập được nêu **không triệt tiêu được** khoá NOW nào, nên
+   `now(hẹp) \ base(đầy)` **đồng nhất** với `now(hẹp) \ base(hẹp)`. Bất đối xứng là một **no-op trên
+   con số**, không phải một thiên lệch. Chiều nguy hiểm thật là chiều khác và nay được khai: **báo
+   thừa theo DẠNG ĐƯỜNG DẪN** (`--files ./src/Foo.cs` sinh khoá NOW không khớp được khoá BASE ⇒ mọi
+   câu trong file ấy đọc là MỚI), và **thiếu ĐỘ PHỦ** (một khẳng định mới trong file không được nêu
+   thì không ai nhìn). 🔴 **Và một khuyết tật thứ hai tìm được ngay tại chỗ, chưa ai ghi:** dòng tổng
+   kết in *"whole-tree census"* **vô điều kiện** — dưới `--files` nó là một phép kiểm kê MỘT FILE đội
+   nhãn ấy (đo: *"22 of 66 sentences"*). Nay nhãn đi theo corpus.
+2. **`check-owner-decisions.sh` C2 — TRẢ BẰNG MỘT LỜI KHAI, và phép sửa hiển nhiên bị TỪ CHỐI bằng
+   một phép đo.** Con số **mười** của mục con **ĐỨNG VỮNG**: đúng 10 lần `Ở LẠI PHẦN II` trong hàng
+   `| 12 |`, và cơ chế đúng như mục con nói — `has()` dùng `index()` phân biệt hoa thường, còn hàng
+   ấy viết *"thi hành **một phần**"* thường nên luật cấm của Phần III không nổ. 🔴 **Nhưng làm C2
+   hai chiều thì ĐỎ 20 trên 58 hàng — 34%** (liệt kê: 18 hàng Phần III còn mang `CHỜ ANH` — 14, 15,
+   16, 17, 21, 25, 26, 27, 30, 32, 34, 35, 36, 37, 38, 39, 40, 55; cộng hàng **4** và hàng **12**
+   mang token Phần II). **Mười chín trong hai mươi là ĐÚNG theo luật của chính file này** — trạng
+   thái bị thay thế được giữ NGUYÊN VĂN. Đó là luật (2) về một phép kiểm: một dụng cụ đỏ trên một
+   phần ba cây là một dụng cụ không ai đọc. Nên C2 **giữ một chiều**, và tính một chiều ấy nay là
+   ranh giới **(g)** được **IN RA** cùng kết quả.
+3. **`repo-scan.sh` hoa-thường — TRẢ, và tiền đề của mục con bị THU HẸP.** Đo: một pathspec sai hoa
+   thường **ĐƠN LẺ** nay bị bắt **ỒN ÀO** (exit 2) bởi phép từ chối miền-rỗng của BA-1 — bốn phép
+   dò, cả bốn exit 2. Im lặng đòi một **DANH SÁCH** trộn. Tái lập: `'…/src/*' '…/tests/*'` ⇒ **579**
+   file, exit 0; `'…/Src/*' '…/tests/*'` ⇒ **267** file, **vẫn exit 0**. Nay: **miền TỪNG pathspec
+   được in luôn luôn**, và một pathspec chọn 0 file mà bản `:(icase)` của nó chọn >0 thì **BỊ TỪ
+   CHỐI nêu tên**. Một pathspec rỗng **hợp lệ** trong danh sách vẫn xanh — đo: `'…/docs/*.zzz'` cạnh
+   một spec đúng ⇒ exit 0, số 0 được in. Nhân chứng nằm trong `--self-test`, tức cổng chạy nó mỗi
+   lần.
+4. **`remove-data.ps1` — TRẢ.** Xác nhận trên máy này: `C:\ProgramData\ST4I\sim\products` và
+   `…\ecosystem` **KHÔNG TỒN TẠI**, mà banner in cả hai rồi bảo *"delete those directories by hand"*.
+   🔴 **Cơ chế mục con nêu hơi lệch và nói ra thay vì để nó đọc như đã kiểm:** banner in **cả** hai
+   danh sách vô điều kiện; cái `$subdirs` có là vòng **thứ hai** (vòng xoá) đính chính nó bằng
+   *"does not exist - nothing to remove"*, còn `$keptByDesign` **không có vòng thứ hai nào**. Nay mỗi
+   đường dẫn GIỮ mang `[EXISTS - kept]` hoặc `[does not exist - …]`, và khi **không** cái nào tồn tại
+   thì câu *"xoá bằng tay"* được thay bằng câu nói đúng sự thật. Không đụng `Name =`/`Keep =`, nên
+   phép kiểm kê `NotificationDocumentationTests` không dịch.
+6. **`verify-suites.sh` bất biến theo thư mục — TRẢ.** Xem §51.8.
+
+🔴 **MỤC CON 5 DỪNG — và lý do KHÔNG phải lý do BF-1 nêu.** BF-1 dừng vì *"cần baseline riêng"*. Đo
+lại hôm nay, ba điều:
+* **Con số của mục con ĐỨNG:** đúng **16** lá dưới `%ProgramData%\ST4I\sim\` (liệt kê từ mọi phép
+  ghép đường dẫn `CommonApplicationData` trong `src/`: settings, machine-config, products, opcua-pki,
+  historian, identity, creds, bridge-spool, sitelink, wal, alarms, notifications, assets, security,
+  ecosystem, connector-config), **một** được canh, **mười lăm** không. Cả hai dụng cụ rút gốc từ
+  **một** file nguồn `CredentialStore.cs` và **fail-closed** khi không khớp đúng một biểu thức.
+* 🔴 **KHÔNG có cửa sau vào mục 45 hay mục 30, và điều đó ĐO ĐƯỢC chứ không suy ra:**
+  `TestRunTempRoot` (module initializer, năm assembly) chuyển hướng `ST4I_PRODUCTS_DIR` và
+  `ST4I_ECOSYSTEM_DIR` sang `%TEMP%`, nên đường ghi-đè-cả-hai-file của `SimulatedEcosystem.Load` —
+  đúng seam của mục 45 — **không bao giờ chạm gốc thật trong một lần chạy cổng**. Chứng cứ trên đĩa:
+  `products`, `ecosystem`, `machine-config` **không tồn tại** dưới gốc thật trên một máy đã chạy cổng
+  nhiều lần.
+* 🔴 **NHƯNG NÓ SẼ ĐỎ NGAY LẦN CHẠY ĐẦU, VÌ MỘT THỨ KHÔNG MỤC NÀO ĐANG MỞ NÓI TỚI.** Đo độc lập bằng
+  `Get-ChildItem` trên `C:\ProgramData\ST4I\sim`: `assets\assets.db` **sửa lúc 2026-08-23 16:55:04**,
+  và cả `assets` lẫn `notifications` mang mtime thư mục **16:56:11** — nằm gọn giữa hai commit của
+  nhiệm vụ trước (`fc0da7f6` 16:42:17 và `e6e169f4` 17:02:11), và không tiến trình `St4i*` nào đang
+  sống. Tức **bộ test ghi vào gốc THẬT**, ở hai lá mà `TestRunTempRoot` **không** chuyển hướng.
+  🔴 **VÀ NÓ TÁI LẬP THEO YÊU CẦU, KHÔNG PHẢI MỘT DẤU VẾT THỪA KẾ.** Cùng phép đo chạy lại sau lần
+  chạy cổng SẠCH của chính nhiệm vụ này (bắt đầu 18:19:41, gõ từ gốc repo): `assets\assets.db` sang
+  **18:30:16**, mtime thư mục `assets` **18:30:51** và `notifications` **18:30:34**. Hai cửa sổ độc
+  lập, hai lần dịch — nên đây là **một tính chất của việc chạy cổng**, không phải một sự cố. Và
+  chiều đối chứng nằm ngay cạnh: lá `creds` — lá **duy nhất** được canh — đứng nguyên **31 mục**
+  qua cả ba lần chạy. Ngoặc creds xanh trong khi một lá không ai canh đang bị ghi vào: đó **chính
+  là** mục con 5, quan sát trực tiếp.
+  Dựng dụng cụ và **đồng thời** trả cái rò ấy là hai việc, và cái thứ hai chưa ai đo. Cộng hai lỗ
+  cấu trúc mà chính ngoặc creds đã tự khai: nó so **tập TÊN** nên một phép **ghi đè tại chỗ** như
+  `assets.db` **vô hình**, và **miền của nó rộng hơn tiêu chí** — nó đo CẢ MÁY, nên WPF shell hay
+  edge service chạy song song cũng làm nó đỏ. **Ba lý do, không phải một, và cái thứ ba là một
+  khuyết tật MỚI được ghi ở đây lần đầu.**
+
+**Vì sao mục Ở LẠI PHẦN I.** Cái còn lại của mục con 5 là một **QUYẾT ĐỊNH** — ai trả cho một dụng cụ
+dùng chung cho năm assembly, và có trả cái rò `assets`/`notifications` trước hay không — không phải
+một việc. Cùng khuôn mục 48 và mục 12.
+
+### 51.8 🔴 MỤC CON 6 ĐÃ TRẢ — CỔNG CHO CÙNG MỘT KẾT QUẢ TỪ MỌI THƯ MỤC
+
+**Cặp đo TRƯỚC, ở BASE `e6e169f4`, cùng commit, cùng cây, chỉ khác chỗ đứng** — tái lập đúng bảng
+trong thân mục: đứng ở `tools/machine-simulator` ⇒ `PASS`; đứng ở gốc repo ⇒
+`FAIL: could not derive the REAL creds root … Fix the derivation. Do NOT hardcode the directory here`.
+Chẩn đoán ấy **trỏ sai chỗ**: phép dẫn xuất không hỏng, chỗ đứng mới hỏng.
+
+🔴 **Bản vá một dòng bị TỪ CHỐI bằng một phép đo, không bằng một sở thích.** Sửa riêng `_creds_src`
+chỉ **dời** chỗ hỏng: script còn đọc ít nhất bốn thứ tương đối khác — `VENDORED_SOURCE_CSPROJ`, năm
+mục `tests/<project>` truyền cho `dotnet test`, ba đường `src/` của phép kiểm kê thư mục ra, và
+`dotnet build -t:Rebuild` **trần** (nó lấy project file trong thư mục hiện tại). Nên bản vá một dòng
+sinh ra một cổng hỏng **xa hơn**, tức cùng khuyết tật với ngòi dài hơn.
+
+**Bản sửa: lấy neo MỘT LẦN, ở đầu file, trước phép đọc tương đối đầu tiên** — `pwd -P` của thư mục
+script, `cd` về cha của nó, và `_SCRIPTDIR` **thành tuyệt đối** (nếu để tương đối, một `$0` tương đối
+sẽ trỏ vào hư không sau khi chdir và **ba tooling check không khởi chạy được** — một hỏng hóc mà bản
+sửa TỰ TẠO RA, nên nó được nêu tên ở đây chứ không để ai đó tìm ra sau). Thân mục định giá bản sửa
+này là *"đổi ngữ nghĩa của mọi đường dẫn tương đối khác"*. **Đúng, và chiều mới là điều đáng nói:**
+với lời gọi ĐÃ GHI TRONG TÀI LIỆU — gõ từ `tools/machine-simulator` — phép chdir là **phép đồng
+nhất**, vì `dirname/..` của script CHÍNH LÀ thư mục ấy; với mọi lời gọi khác nó làm script hành xử
+**y như** lời gọi đã ghi. Không có ca thứ ba: script không nhận tham số đường dẫn, và `LOGDIR` cùng
+`GATE_LOCK_BASE` cắm ở `TMPDIR`.
+
+**Nửa thứ hai — chẩn đoán SAI được thay bằng chẩn đoán ĐÚNG.** Bốn cái neo (`St4iMachineSimulator.sln`,
+`src`, `tests`, `scripts/verify-suites.sh`) được kiểm ngay sau chdir; thiếu cái nào thì cổng nói
+`NO-VERDICT` và **nêu tên** cái thiếu, cộng cả *"typed in"* lẫn *"ran in"*. §8.1(f) nay chạy trong
+chính giọng của cổng: hai dòng ấy **in ra mỗi lần**, kể cả khi bằng nhau.
+
+🔴 **Cái nó KHÔNG đo, nêu vì một cái trần nêu quá nhỏ còn tệ hơn không nêu:** nó **không** kiểm rằng
+một đường dẫn tương đối nào trong file là ĐÚNG. Nó sửa cái mà chúng được giải **theo**. Một đường dẫn
+viết sai, hay giải ra một file thật khác, vẫn hỏng y như trước và khối này không nói một chữ.
+
+### 51.9 ✅ MỤC CON 5 ĐÃ TRẢ — BK-1, 2026-08-23. Mục PHẦN I → PHẦN III
+
+**Nhãn ⚖️ kiểm lại: ĐỨNG VỮNG.** Không phần nào của bản trả này chạm payload MQTT, hình dạng dây, hay
+một con số OEE. BJ-1 đã rút lời biện minh sai của nhãn; không có gì để rút thêm.
+
+🔴 **VÀ MỘT LỜI KHAI CỦA BÁO CÁO TRƯỚC KHÔNG SỐNG SÓT, theo chiều làm một việc trông BỊ KHOÁ trong khi
+nó không.** Báo cáo BJ-1 viết rằng phủ hình dạng của mục 56 phải với tới *"mười sáu gốc `ST4I_*_DIR`
+— **chủ đề mục 30, VẪN CHỜ CHỦ SỞ HỮU**"*. Đo lại trên chính file này: **mục 30 nằm ở PHẦN III** —
+đã quyết và **đã thi hành** (BF-1, 2026-08-23) — và nó **không** có trong trường máy đọc của Phần I.
+Nên "chờ chủ sở hữu" là **sai**, và điều đó quan trọng ở đây vì bản trả dưới đây **đặt thêm hai biến
+`ST4I_*_DIR`**: nếu lời khai kia đúng thì đó là một cửa sau, và nó **không** đúng.
+
+**Ba lý do BJ-1 nêu để DỪNG, kiểm lại từng cái.**
+
+1. *"Cần một baseline dùng chung năm assembly"* — **ĐÚNG NHƯNG KHÔNG PHẢI RÀO CẢN**: `verify-suites.sh`
+   đã có **hai** ngoặc đúng hình dạng ấy (ngoặc creds, ngoặc thư mục ra), và cái thứ hai đã so
+   **đường dẫn + kích thước + mtime**.
+2. *"Nó sẽ ĐỎ ngay lần chạy đầu vì rò `assets`/`notifications`"* — **ĐÚNG, VÀ ĐƯỢC TRẢ TẠI NGUỒN CHỨ
+   KHÔNG MIỄN TRỪ.** `TestRunTempRoot` nay chuyển hướng thêm `ST4I_ASSETS_DIR` và
+   `ST4I_NOTIFICATIONS_DIR`. 🔴 **Cái rò TÁI LẬP THEO YÊU CẦU, không phải một dấu vết:** bỏ đúng hai
+   dòng ấy rồi chạy TRỌN `St4i.EngineApi.Tests` (1410 bài, 4 phút 2 giây) ⇒ `assets.db` dời mtime sang
+   **20:32:31**, thư mục `notifications` sang **20:32:50**; khôi phục hai dòng, chạy trọn lại ⇒ **không
+   lá nào dịch**. Đó là cặp đối chứng, và nó cũng là lần quan sát thứ ba và thứ tư của cùng cái rò.
+3. *"Hai lỗ cấu trúc: nó so tập TÊN nên ghi-đè-tại-chỗ vô hình, và miền rộng hơn tiêu chí"* — **lỗ thứ
+   nhất ĐÓNG** (ngoặc mới mang kích thước + mtime, nên một `assets.db` bị ghi đè giữ nguyên tên là một
+   phép so KHÁC NHAU); **lỗ thứ hai KHÔNG ĐÓNG ĐƯỢC và được KHAI ở chỗ kết quả hiện ra** — nó đo **cả
+   máy**, nên một host St4i chạy song song làm nó đỏ mà không bài nào có lỗi, và thông điệp lỗi nói
+   đúng câu ấy.
+
+🔴 **VÀ HÌNH DẠNG ĐẦU TIÊN CỦA DỤNG CỤ NÀY BỊ CHÍNH CẶP ĐỐI CHỨNG CỦA NÓ BÁC BỎ — đây là phần đáng đọc
+nhất của mục con.** Nhiệm vụ này **trước hết** dựng nó đúng khuôn `RealCredentialStoreLeakGuard`: một
+guard `[ModuleInitializer]` + một `[Fact]`, nối vào cả năm bộ (+1 bài mỗi bộ). Cặp đối chứng ở (2)
+**bác bỏ nó**: lần chạy đã ghi `assets.db` ấy để **guard XANH**, vì cửa sổ của một `[Fact]` kết thúc
+khi xunit xếp lịch cho nó, còn người ghi chạy sau. Một phép kiểm xanh xuyên qua **đúng cái khuyết tật
+nó được dựng để bắt** thì tệ hơn không có phép kiểm — nên **năm bài bị XOÁ**, và dụng cụ được dựng lại
+làm một **ngoặc trong cổng**, nơi cửa sổ là **cả pha test**. 🔴 **Cùng kết quả ấy đã nằm sẵn trong
+`verify-suites.sh` từ trước, ở khối X-1, về một lá khác** — *"X-1 MEASURED it staying green while the
+pre-fix tree wrote machine-operating-config.json underneath it"* — và nhiệm vụ này tới nó **độc lập**,
+bằng một phép đo, trước khi đọc câu ấy. Nên hình dạng "guard trong tiến trình" nay **hỏng hai lần trên
+hai lá**, và đó là một sự thật về hình dạng, không về lá.
+
+**Quần thể, LIỆT KÊ trước — và một ĐƠN VỊ của mục con không sống sót.** Mười sáu **TÊN** lá dưới
+`%ProgramData%\ST4I\sim\`: settings, machine-config, products, opcua-pki, historian, identity, creds,
+bridge-spool, sitelink, wal, alarms, notifications, assets, security, ecosystem, connector-config.
+🔴 **Nhưng "16" là số TÊN, không phải số CHỖ SINH: có MƯỜI BẢY chỗ trong `src/` ghép một đường dẫn
+`CommonApplicationData`**, vì `historian` có **hai** người sinh (`SqliteHistorianStore` và
+`OeeSettingsStore`). Mục con nói "16 lá" và điều đó **đúng theo tên**; một người đọc nó như "16 chỗ
+phải sửa" sẽ hụt một chỗ. 🔴 **Và trên máy này chỉ **mười ba** lá TỒN TẠI** — products, ecosystem,
+machine-config không có — nên "16" cũng không phải số thư mục trên đĩa. Ba đơn vị, ba con số, một cái
+nhãn.
+
+**Cái ngoặc mới đo gì.** Ảnh chụp **cả cây** dưới gốc thật, mỗi FILE một dòng `đường dẫn + kích thước
++ mtime`, chụp trước pha test và sau pha test, ba quần thể (VIẾT LẠI / XUẤT HIỆN / BIẾN MẤT). Gốc
+**dẫn xuất** từ cha của gốc creds mà ngoặc cũ đã rút từ `CredentialStore.cs` — **một** phép dẫn xuất,
+fail-closed, không một literal mới nào phải giữ đồng bộ. Nó **cố ý chồng lên** lá creds: ngoặc creds
+so **tên**, cái này so **nội dung đã đổi hay chưa**.
+
+**Vì sao mục nay ĐÓNG.** Mục con 5 hỏi *"ai trả cho một dụng cụ dùng chung"*. Chủ sở hữu đã trả lời
+cho cả cụm; dụng cụ đã dựng, cái rò nó sẽ báo đã được trả tại nguồn, và cái nó **không** đo được khai
+ở chỗ verdict hiện ra.
+
+---
+
+## 52. HAI lời khai đã công bố đo được là SAI và cố ý để nguyên, cộng sáu chỗ ném lỗi mà thông điệp không ai đọc
+
+⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — rút một câu văn xuôi tại chỗ không chạm ba miễn trừ.
+
+**Đo được cái gì.**
+
+1. 🔴 **`IDeviceDriver.Id`'s doc nói nó *"keys slot labels and, through those, alarms"* — BỊ BÁC.**
+   BB-1 đo: **không gì trong cây tiêu thụ giá trị của nó** — bốn decorator chuyển tiếp nó, bộ
+   conformance chỉ khẳng định nó **không đổi**, và nhãn slot mà một alarm nhắm tới đến từ
+   `FleetCore.ResolveSlotLabelFor`/`ResolveConnectorSlotLabel`. Câu ấy **vẫn nguyên văn ở
+   `9255ea98`** — xác nhận lại hôm nay. `ScenarioAwareDriver.Id` mang câu thứ hai cùng loài. BB-1
+   **cố ý không rút**, vì cả hai nằm ngoài cụm nó được giao và sửa một khối đã hoàn chỉnh ở đó là
+   mối nguy batch 6 đã nêu tên. Lý do ấy đúng; **nó không làm câu kia thành đúng**.
+2. 🔴 **`"23 sites across 20 files"` KHÔNG tái lập được.** `tests/Shared/OwnOutputDirectoryGuard.cs`
+   và `scripts/verify-suites.sh` cùng viết con số ấy về quần thể chỗ dựng
+   `ProductConfigStore`/`SimulatedEcosystem`. Đo lại ở `9255ea98`, miền `:(top)`:
+   `new ProductConfigStore(` **26** dòng trên **5** file, `new SimulatedEcosystem(` **11** dòng trên
+   **4** file ⇒ **37 chỗ trên 6 file** — **cộng** các nhà máy target-typed `=> new(TempDir())` mà
+   phép quét chữ-nghĩa **không thấy**. **Không chiều nào khớp**, và **không artefact nào nêu tên
+   dụng cụ đã sinh ra "23/20"**, nên nó không tra lại được.
+3. **`Doc28Parser`: sáu trong 34 chỗ ném lỗi không nêu file**, và trên **đường sản xuất duy nhất**
+   `HotFolderAoiDriver` bắt bằng một `catch (Doc28ValidationException)` **không binding** rồi chuyển
+   file sang `error/` — **thông điệp và inner exception bị vứt chưa đọc**. Bảy tham chiếu còn lại
+   trong cây đều là `Assert.Throws<>` và **không cái nào nhìn `.Message`**.
+
+**Hậu quả vận hành, hai chiều.** (1)(2) là **hồ sơ nói sai về mã**, đúng loài file này lập ra để
+chấm dứt; (2) tệ hơn vì nó là một con số ghim một tập **đổi ở chỗ khác**. (3) là một chi phí chẩn
+đoán: một file doc-28 hỏng vào `error/` **không mang lý do đi cùng**. Chiều để nguyên: (1) sửa đúng
+cách đòi đọc lại năm điểm dùng chứ không chỉ xoá một mệnh đề — BB-1 đã ghi phép đo ở năm điểm ấy,
+nên **thông tin không mất**, chỉ đặt sai chỗ. (2) con số ấy nằm trong một đoạn **đã bị rút**, và
+sửa nó là **một phép đo khác** với một cái trần khác. (3) thêm tên file vào sáu chỗ ném **không**
+làm ai đọc chúng — phép sửa thật nằm ở `catch`, và đó là một thay đổi hành vi.
+
+**Nếu không quyết.** Hai câu sai ở lại trong mã như tài liệu, và người tiếp theo đọc chúng sẽ tin.
+
+### 52.4 🔧 THI HÀNH MỘT PHẦN — BJ-1, 2026-08-23, ĐIỀU PHỐI VIÊN THEO UỶ QUYỀN. Mục Ở LẠI PHẦN I
+
+**Nhãn ⚖️ đứng vững cho những gì nó khai** — *"rút một câu văn xuôi tại chỗ"* — và nó khai **hai
+trên ba** mục con. Mục con 3 nằm ngoài nó, và chỗ nó rơi vào là chỗ đáng nói.
+
+**Mục con 1 — TRẢ, và cả HAI con số của mục con đều KHÔNG SỐNG SÓT.**
+* Câu *"keys slot labels and, through those, alarms"* trên `IDeviceDriver.Id` được **rút tại chỗ,
+  giữ nguyên văn**. Phép dẫn xuất thật xác nhận lại: nhãn slot mà một alarm nhắm tới tới từ
+  `FleetCore.ResolveSlotLabelFor` (đầu vào: **driver kind** của roster) hoặc
+  `ResolveConnectorSlotLabel` (đầu vào: **connector instance id**), và `AlarmEvaluator` đặt
+  `TargetId: slot.SlotLabel`. Không hàm nào nhận một driver, không hàm nào đọc `.Id`.
+* 🔴 **"không gì trong cây tiêu thụ giá trị của nó" BỊ BÁC.** Đo ở `e6e169f4`, pathspec `:(top)*.cs`:
+  **mười hai dòng khẳng định trong bốn file test** đọc NỘI DUNG chuỗi —
+  `ModbusRtuDriverLoopbackTests` (`Assert.Contains("unit1", driver.Id)` và cặp min/max unit id),
+  `ModbusRtuMultidropConformanceTests` (bus key và hai unit id, cộng `NotEqual` giữa hai driver),
+  `ModbusRtuConnectorFactoryTests` và `ConnectorsJsonRegistrationTests` (`Distinct().Count()`,
+  `StartsWith`, `EndsWith`). Câu đúng là *"không bề mặt SẢN XUẤT nào tiêu thụ giá trị; bốn file test
+  thì có"* — và `SimulatedDriver.cs` đã viết đúng thế từ trước, có kèm chữ *"under `src/`"*, mà mục
+  52 **bỏ mất chữ ấy**. Bản rút viết cả hai chiều.
+* 🔴 **"câu thứ hai" là một phép ĐẾM THIẾU: quần thể là SÁU, không phải hai.** Liệt kê:
+  `IDeviceDriver.Id` (`///`), `ScenarioAwareDriver.Id` (`///`),
+  `DeviceDriverConformanceSuite.Check_Id_And_Kind_…` (`///`, **trích nguyên văn câu bị bác**),
+  cùng file ở chú thích hậu-dispose (`//`), `ModbusRtuDriver` chú thích constructor (`//`), và
+  `ModbusRtuDriver.Id` (`///`). **Cả sáu rút trong cùng một thay đổi.** Chỗ sắc nhất là chỗ thứ ba:
+  mục 52 viện dẫn **chính bộ conformance ấy** làm bằng chứng bác bỏ, trong khi doc của nó **chép lại
+  câu bị bác**. Không ai đọc lại lời trích ấy đối chiếu với thứ phương thức bên dưới thật sự khẳng
+  định. **Chiều ngược, vì nêu một nửa là nói sai:** bộ conformance khẳng định **hai** tính chất
+  (không rỗng **và** không đổi, kể cả sau `DisposeAsync`), mục 52 nói *"chỉ"* một; không tính chất
+  nào đọc nội dung, nên lập luận của mục đứng và chỉ chữ *"chỉ"* là hẹp.
+
+**Mục con 2 — TRẢ, và các con số của mục con TÁI LẬP CHÍNH XÁC.** Đo lại ở `e6e169f4`, `:(top)`:
+`new ProductConfigStore(` **26 dòng / 5 file**, `new SimulatedEcosystem(` **11 dòng / 4 file**, hợp
+**37 dòng / 6 file** — đúng ba cặp số mục con viết. `"23 sites across 20 files"` **không tái lập ở
+bất kỳ khung nào**, và không artefact nào nêu tên dụng cụ sinh ra nó. 🔴 **Và cảnh báo của mục con
+về nhà máy target-typed là NÓI NHẸ:** có **ba** (`CyclePlanTests.NewProductStore`,
+`ConfigEndpointsRequestBodyTests.NewStore`, `MachineSettingsEndpointsTests.NewDemoBackend`, cả ba
+`=> new(TempDir())`) và **hai trong ba nằm trong file mà phép quét chữ-nghĩa KHÔNG chạm tới** ⇒ 40
+chỗ / 8 file; cộng hai đăng ký DI sản xuất trong `Program.cs` ⇒ 42 / 9. Nên **37/6 là một SÀN, không
+phải câu trả lời**, và câu ấy được viết vào cả hai bản rút. Cả **hai** file mang câu sai —
+`tests/Shared/OwnOutputDirectoryGuard.cs` và `scripts/verify-suites.sh` — được sửa, không chỉ một.
+
+🔴 **MỤC CON 3 KHÔNG THI HÀNH — VÀ LÝ DO LÀ MỘT CỬA SAU VÀO MỤC 48.** Mọi con số của mục con **đứng
+vững**: đúng **6 trên 34** chỗ ném không nêu file (cả hai vế liệt kê), `HotFolderAoiDriver` bắt bằng
+`catch (Doc28ValidationException)` **không binding** rồi `MoveTo(path, _errorDir)`, và đúng **bảy**
+tham chiếu còn lại đều là `Assert.Throws<>` **không cái nào** đọc `.Message` hay `.InnerException`.
+Đường `error/` **không ghi lý do ở đâu cả** — không dòng log, không file kèm, không phép đổi tên
+mang thông tin; toàn bộ bề mặt ghi của lớp ấy là ba `Directory.CreateDirectory` và một `File.Move`.
+**Và mục con tự nói phép sửa thật nằm ở `catch`.** Đo: lớp `HotFolderAoiDriver` **không có trường
+logger, không có `Action<string>`, không có `Console`/`Trace` nào** — nên "sửa cái `catch`" nghĩa là
+**thêm một seam** vào lớp ấy. 🔴 **Đó chính xác là câu hỏi mục 48 để mở bằng chữ của nó:** *"câu hỏi
+còn mở không phải 'có sửa không' mà là 'ai trả cho seam'"*, và `HotFolderAoiDriver` là một trong hai
+lớp mục 48 nêu tên. Nhiệm vụ này bị cấm chạm mục 48. **Trả mục con 3 theo phép sửa thật sẽ quyết
+câu hỏi seam của mục 48 qua cửa sau — đúng hình dạng đã bắt được ở mục 49.** Nửa rẻ — thêm tên file
+vào sáu chỗ ném — **cố ý không làm**: nó đổi hành vi (văn bản thông điệp) mà **không tạo ra một người
+đọc nào**, đúng như mục con tự viết, nên nó mua một cảm giác tiến bộ và không mua một chẩn đoán.
+
+**Vì sao mục Ở LẠI PHẦN I.** Cái còn lại là một quyết định thuộc mục 48, không phải một việc thuộc
+mục 52.
+
+### 52.5 ✅ ĐÃ THI HÀNH — BK-1, 2026-08-23, THEO PHÁN QUYẾT CỦA CHỦ SỞ HỮU CÙNG NGÀY. Mục PHẦN I → PHẦN III
+
+🔴 **NHÃN ⚖️ CỦA MỤC NÀY VẪN HẸP HƠN MỤC, và phép đo của BJ-1 đứng vững — nhưng cái ĐÓNG mục con 3
+không phải nhãn.** Nhãn khai *"rút một câu văn xuôi tại chỗ"*; mục con 3 là một **thay đổi hành vi**
+và nằm ngoài nhãn, đúng như BJ-1 đo. Thứ cho phép nó là **phán quyết của chủ sở hữu ngày
+2026-08-23**, không phải một cách đọc rộng hơn của nhãn. Nói cho hết, vì đây là chỗ dễ đọc nhầm
+nhất: BJ-1 DỪNG vì trả mục con 3 sẽ **quyết câu hỏi seam của mục 48 qua cửa sau**. Phép đo ấy đúng.
+Cái đổi là **chủ sở hữu đã tự trả lời câu hỏi ấy ở cửa trước**, nên cùng một bản sửa nay đi qua một
+cánh cửa khác — không phải vì nó đã thôi chạm mục 48.
+
+**Mục con 3 — TRẢ, và mọi con số của mục con ĐỨNG VỮNG lần đo thứ ba.** Đúng **6 trên 34** chỗ ném
+không nêu file (253, 262, 270, 389, 396, 708 — liệt kê trước, đếm sau); `HotFolderAoiDriver` bắt bằng
+`catch (Doc28ValidationException)` **không binding**; bảy tham chiếu còn lại đều là `Assert.Throws<>`.
+
+**Phép sửa, và vì sao nó KHÔNG phải phép sửa hiển nhiên.** `catch` nay **binding** exception và báo ra
+một sink tuỳ chọn trên constructor: **tên file, thư mục đích, và lý do** (cộng inner exception khi có).
+🔴 **Nửa rẻ — thêm tên file vào sáu chỗ ném — vẫn KHÔNG làm, và nay lý do là một phép đo chứ không
+phải một sở thích.** Driver **đã cầm tên file**, nên báo nó ở `catch` phủ **cả 34** chỗ ném tại **một**
+chỗ, thay vì đổi chữ ký sáu helper cấp-trường để phủ sáu. Bản rẻ là **hẹp hơn** bản này, không rộng
+hơn. Mục con tự viết *"phép sửa thật nằm ở `catch`"*, và đó chính xác là chỗ nó được trả.
+
+**Nhân chứng ĐỎ ĐƯỢC:** `HotFolderAoiDriver_ReportsWhyAFileWasMovedToTheErrorDirectory`. Cặp đối
+chứng chạy trọn: hoàn nguyên `catch` về bản không binding ⇒ sink **không nhận gì** ⇒ ĐỎ; khôi phục
+⇒ XANH.
+
+🔴 **Cái KHÔNG được mua, nêu vì một cái trần nêu quá nhỏ còn tệ hơn không nêu trần.** Sink là **tuỳ
+chọn**, và **không chỗ dựng nào trong `src/` truyền nó hôm nay** — hai điểm vào demo dựng driver
+không sink. Nên hôm nay bản sửa mua **khả năng đọc**, không mua **một người đọc**. Đó vẫn là điều mục
+con đòi (*"đường `error/` không mang lý do đi cùng"* — nay nó mang, nếu ai hỏi), nhưng nó **chưa** là
+một dòng log trong sản phẩm, và nối nó vào một kênh log thật là một quyết định về **kênh log**, thứ
+mục này chưa bao giờ nói tới.
 
 ---
 
